@@ -735,7 +735,9 @@ class Q65Tab(QWidget):
         try:
             import sounddevice as sd
 
-            sd.play(audio, samplerate=SAMPLE_RATE, blocking=True)
+            sd.play(audio, samplerate=SAMPLE_RATE, blocking=False)
+            mgr.pin_active_output(_AUDIO_OWNER)
+            sd.wait()
         except Exception as exc:
             self._status_label.setText(f"Audio error: {exc}")
         finally:

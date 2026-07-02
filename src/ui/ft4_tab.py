@@ -106,7 +106,9 @@ class _TxWorker(QObject):
                 self._rig.set_ptt(True)
                 time.sleep(0.15)  # PTT lead time
 
-            sd.play(self._audio, samplerate=SAMPLE_RATE, device=self._out_device, blocking=True)
+            sd.play(self._audio, samplerate=SAMPLE_RATE, device=self._out_device, blocking=False)
+            mgr.pin_active_output(_AUDIO_OWNER)
+            sd.wait()
 
             if self._rig is not None:
                 time.sleep(0.10)  # PTT tail time

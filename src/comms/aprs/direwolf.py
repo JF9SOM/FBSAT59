@@ -308,6 +308,10 @@ class AudioBridge(QThread):
                         device=self._out_device,
                         blocking=False,
                     )
+                    # Only does real work once per bridge session — pops the
+                    # snapshot taken in acquire_output(), so later chunks are
+                    # a cheap no-op (see AudioDeviceManager.pin_active_output).
+                    mgr.pin_active_output(_AUDIO_OWNER)
         except Exception:  # noqa: BLE001
             pass
         finally:

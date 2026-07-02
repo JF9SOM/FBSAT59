@@ -215,3 +215,141 @@ class TestSingleton:
 
     def test_get_audio_device_manager_matches_instance(self) -> None:
         assert adm.get_audio_device_manager() is AudioDeviceManager.instance()
+
+
+# ---------------------------------------------------------------------------
+# Linux/PipeWire pinning (pactl subprocess calls are mocked — no real pactl
+# or Linux host required, so this runs the same on every CI platform)
+# ---------------------------------------------------------------------------
+
+
+class TestPinNewStream:
+    def test_noop_when_no_target(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls: list[list[str]] = []
+        monkeypatch.setattr(adm, "_snapshot_stream_ids", lambda kind: set())
+
+        def fake_run(cmd: list[str], **kwargs: Any) -> None:
+            calls.append(cmd)
+
+        monkeypatch.setattr(adm.subprocess, "run", fake_run)
+        adm._pin_new_stream("sink-inputs", "move-sink-input", "target", before=set())
+        assert calls == []
+
+    def test_moves_the_single_new_stream(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls: list[list[str]] = []
+        monkeypatch.setattr(adm, "_snapshot_stream_ids", lambda kind: {"41", "42"})
+
+        def fake_run(cmd: list[str], **kwargs: Any) -> None:
+            calls.append(cmd)
+
+        monkeypatch.setattr(adm.subprocess, "run", fake_run)
+        adm._pin_new_stream("sink-inputs", "move-sink-input", "target-sink", before={"41"})
+        assert calls == [["pactl", "move-sink-input", "42", "target-sink"]]
+
+    def test_ambiguous_new_streams_are_left_alone(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls: list[list[str]] = []
+        monkeypatch.setattr(adm, "_snapshot_stream_ids", lambda kind: {"41", "42", "43"})
+
+        def fake_run(cmd: list[str], **kwargs: Any) -> None:
+            calls.append(cmd)
+
+        monkeypatch.setattr(adm.subprocess, "run", fake_run)
+        adm._pin_new_stream("sink-inputs", "move-sink-input", "target-sink", before={"41"})
+        assert calls == []
+
+    def test_gives_up_after_timeout_without_matching_stream(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[list[str]] = []
+        monkeypatch.setattr(adm, "_snapshot_stream_ids", lambda kind: {"41"})
+        monkeypatch.setattr(adm.time, "sleep", lambda seconds: None)
+
+        def fake_run(cmd: list[str], **kwargs: Any) -> None:
+            calls.append(cmd)
+
+        monkeypatch.setattr(adm.subprocess, "run", fake_run)
+        adm._pin_new_stream("sink-inputs", "move-sink-input", "target-sink", before={"41"})
+        assert calls == []
+
+
+class TestSharedInputStreamPinning:
+    def test_opens_without_pinning_when_no_target_configured(
+        self, fake_sounddevice: type[_FakeInputStream], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(adm, "_read_pin_targets", lambda: (None, None))
+        pin_calls: list[Any] = []
+        monkeypatch.setattr(adm, "_pin_new_stream", lambda *a, **k: pin_calls.append((a, k)))
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("cw", 5, 48_000, lambda c: None)
+        assert pin_calls == []
+
+    def test_pins_input_when_target_configured(
+        self, fake_sounddevice: type[_FakeInputStream], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(adm, "_read_pin_targets", lambda: (None, "my-source"))
+        monkeypatch.setattr(adm, "_snapshot_stream_ids", lambda kind: set())
+        pin_calls: list[Any] = []
+        monkeypatch.setattr(adm, "_pin_new_stream", lambda *a, **k: pin_calls.append(a))
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("cw", 5, 48_000, lambda c: None)
+        assert pin_calls == [("source-outputs", "move-source-output", "my-source", set())]
+
+
+class TestOutputPinning:
+    def test_pin_active_output_is_noop_without_target(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(adm, "_read_pin_targets", lambda: (None, None))
+        pin_calls: list[Any] = []
+        monkeypatch.setattr(adm, "_pin_new_stream", lambda *a, **k: pin_calls.append(a))
+        mgr = AudioDeviceManager()
+        assert mgr.acquire_output("ft4", 2) is True
+        mgr.pin_active_output("ft4")
+        assert pin_calls == []
+
+    def test_pin_active_output_moves_the_stream_when_target_configured(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(adm, "_read_pin_targets", lambda: ("my-sink", None))
+        monkeypatch.setattr(adm, "_snapshot_stream_ids", lambda kind: {"99"})
+        pin_calls: list[Any] = []
+        monkeypatch.setattr(adm, "_pin_new_stream", lambda *a, **k: pin_calls.append(a))
+        mgr = AudioDeviceManager()
+        assert mgr.acquire_output("ft4", 2) is True
+        mgr.pin_active_output("ft4")
+        assert pin_calls == [("sink-inputs", "move-sink-input", "my-sink", {"99"})]
+
+    def test_pin_active_output_only_fires_once_per_acquire(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(adm, "_read_pin_targets", lambda: ("my-sink", None))
+        monkeypatch.setattr(adm, "_snapshot_stream_ids", lambda kind: {"99"})
+        pin_calls: list[Any] = []
+        monkeypatch.setattr(adm, "_pin_new_stream", lambda *a, **k: pin_calls.append(a))
+        mgr = AudioDeviceManager()
+        mgr.acquire_output("ft4", 2)
+        mgr.pin_active_output("ft4")
+        mgr.pin_active_output("ft4")  # e.g. Direwolf calling this once per audio chunk
+        assert len(pin_calls) == 1
+
+    def test_release_output_clears_pending_snapshot(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(adm, "_read_pin_targets", lambda: ("my-sink", None))
+        monkeypatch.setattr(adm, "_snapshot_stream_ids", lambda kind: {"99"})
+        pin_calls: list[Any] = []
+        monkeypatch.setattr(adm, "_pin_new_stream", lambda *a, **k: pin_calls.append(a))
+        mgr = AudioDeviceManager()
+        mgr.acquire_output("ft4", 2)
+        mgr.release_output("ft4", 2)
+        mgr.pin_active_output("ft4")
+        assert pin_calls == []
+
+
+class TestPublicPinHelpers:
+    def test_snapshot_and_pin_output_streams(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(adm, "_snapshot_stream_ids", lambda kind: {"7"})
+        assert adm.snapshot_output_streams() == {"7"}
+
+        calls: list[Any] = []
+        monkeypatch.setattr(adm, "_pin_new_stream", lambda *a, **k: calls.append(a))
+        adm.pin_output_stream("target-sink", before=set())
+        assert calls == [("sink-inputs", "move-sink-input", "target-sink", set())]

@@ -15,12 +15,35 @@ hardware:
     legitimate use case (e.g. CW Decoder and SSTV open at the same time).
   - TX (output) is exclusively locked to one owner at a time, since two tabs
     transmitting simultaneously would just garble the audio on air.
+
+Linux/PipeWire pinning
+-----------------------
+On Linux, ``sounddevice``/PortAudio can only target the generic ALSA
+``pipewire`` compatibility device (the real hardware nodes are held
+exclusively by PipeWire and reject a second open). That generic device
+always follows whatever PipeWire currently considers the *default* sink or
+source, which silently changes when other USB audio devices are plugged in
+or removed — so a rig's soundcard can end up receiving or sending audio
+without any error, just not through the device the user picked in Rig
+Settings > Sound Card.
+
+When the user has explicitly picked a target sink/source name there (stored
+as ``output_sink_name`` / ``input_source_name`` in ``soundcard_settings``),
+this module uses ``pactl move-sink-input`` / ``move-source-output`` right
+after a stream is opened to force it onto that specific device, regardless
+of whatever PipeWire's current default happens to be. This is a no-op on
+non-Linux platforms and when no pin target is configured.
 """
 
 from __future__ import annotations
 
 import contextlib
+import json
+import shutil
+import subprocess
+import sys
 import threading
+import time
 from collections.abc import Callable
 from typing import Any, cast
 
@@ -39,6 +62,80 @@ except ImportError:
 # is resampled from here to whatever rate it asked for.
 _HW_SAMPLE_RATE = 48_000
 
+
+def _pactl_available() -> bool:
+    """True when running on Linux with a usable ``pactl`` binary."""
+    return sys.platform == "linux" and shutil.which("pactl") is not None
+
+
+def _read_pin_targets() -> tuple[str | None, str | None]:
+    """Read (output_sink_name, input_source_name) from soundcard_settings.
+
+    Returns (None, None) when unset, unreadable, or pactl is unavailable.
+    """
+    if not _pactl_available():
+        return None, None
+    try:
+        import sqlite3
+
+        from data.database import get_db_path
+
+        conn = sqlite3.connect(str(get_db_path()))
+        try:
+            row = conn.execute(
+                "SELECT value FROM app_settings WHERE key = 'soundcard_settings'"
+            ).fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return None, None
+        data = json.loads(row[0])
+        return data.get("output_sink_name"), data.get("input_source_name")
+    except Exception:
+        return None, None
+
+
+def _snapshot_stream_ids(kind: str) -> set[str]:
+    """Return the current set of pactl object ids for `kind`.
+
+    `kind` is "sink-inputs" (playback streams) or "source-outputs"
+    (capture streams).
+    """
+    try:
+        result = subprocess.run(
+            ["pactl", "list", "short", kind],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        return {line.split("\t", 1)[0] for line in result.stdout.splitlines() if line.strip()}
+    except Exception:
+        return set()
+
+
+def _pin_new_stream(kind: str, move_verb: str, target: str, before: set[str]) -> None:
+    """Move the stream that appeared after `before` was snapshotted to `target`.
+
+    Polls briefly (up to ~1s) since the new stream may not show up in pactl's
+    listing the instant the sounddevice stream starts. Does nothing if zero
+    or more than one new stream shows up (ambiguous — safer to leave routing
+    alone than move the wrong stream).
+    """
+    for _ in range(20):
+        new_ids = _snapshot_stream_ids(kind) - before
+        if len(new_ids) == 1:
+            with contextlib.suppress(Exception):
+                subprocess.run(
+                    ["pactl", move_verb, next(iter(new_ids)), target],
+                    capture_output=True,
+                    timeout=2,
+                )
+            return
+        if len(new_ids) > 1:
+            return
+        time.sleep(0.05)
+
+
 AudioCallback = Callable[[NDArray[np.float32]], None]
 
 
@@ -56,6 +153,18 @@ def _resample(chunk: NDArray[np.float32], src_rate: int, dst_rate: int) -> NDArr
     x_old = np.linspace(0.0, 1.0, num=len(chunk), endpoint=False)
     x_new = np.linspace(0.0, 1.0, num=n_out, endpoint=False)
     return np.interp(x_new, x_old, chunk).astype(np.float32)
+
+
+def snapshot_output_streams() -> set[str]:
+    """Current pactl sink-input ids — for ad-hoc pinning outside the TX lock
+    (e.g. the Rig Settings > Sound Card "Test" button)."""
+    return _snapshot_stream_ids("sink-inputs")
+
+
+def pin_output_stream(target: str, before: set[str]) -> None:
+    """Move the sink-input that appeared after `before` was snapshotted to
+    `target` — see `snapshot_output_streams()`."""
+    _pin_new_stream("sink-inputs", "move-sink-input", target, before)
 
 
 class _SharedInputStream:
@@ -85,6 +194,9 @@ class _SharedInputStream:
     def _open(self) -> None:
         import sounddevice as sd
 
+        _, in_target = _read_pin_targets()
+        before = _snapshot_stream_ids("source-outputs") if in_target else None
+
         self._stream = sd.InputStream(
             samplerate=_HW_SAMPLE_RATE,
             channels=1,
@@ -93,6 +205,9 @@ class _SharedInputStream:
             callback=self._on_audio,
         )
         self._stream.start()
+
+        if in_target and before is not None:
+            _pin_new_stream("source-outputs", "move-source-output", in_target, before)
 
     def _close(self) -> None:
         if self._stream is not None:
@@ -123,6 +238,7 @@ class AudioDeviceManager:
         self._inputs_lock = threading.Lock()
         self._tx_owners: dict[int, str] = {}
         self._tx_lock = threading.Lock()
+        self._tx_pin_snapshots: dict[str, set[str]] = {}
 
     @classmethod
     def instance(cls) -> AudioDeviceManager:
@@ -176,7 +292,10 @@ class AudioDeviceManager:
         """Try to claim exclusive use of the output device for `owner`.
 
         Returns True if claimed (or already held by `owner`), False if a
-        different owner currently holds it.
+        different owner currently holds it. When a Linux pin target is
+        configured, also snapshots current pactl sink-inputs so a later
+        `pin_active_output(owner)` call can find the stream `owner` is about
+        to open.
         """
         key = self._key(device)
         with self._tx_lock:
@@ -184,6 +303,9 @@ class AudioDeviceManager:
             if current is not None and current != owner:
                 return False
             self._tx_owners[key] = owner
+            out_target, _ = _read_pin_targets()
+            if out_target:
+                self._tx_pin_snapshots[owner] = _snapshot_stream_ids("sink-inputs")
             return True
 
     def release_output(self, owner: str, device: int | None) -> None:
@@ -192,6 +314,24 @@ class AudioDeviceManager:
         with self._tx_lock:
             if self._tx_owners.get(key) == owner:
                 del self._tx_owners[key]
+            self._tx_pin_snapshots.pop(owner, None)
+
+    def pin_active_output(self, owner: str) -> None:
+        """Pin `owner`'s just-started output stream to the configured target.
+
+        Call this right after starting a *non-blocking* sounddevice output
+        stream (before waiting for it to finish) — the stream needs to
+        already exist in pactl's listing for this to find it. No-op when no
+        output pin target is configured or `acquire_output` wasn't called
+        first.
+        """
+        with self._tx_lock:
+            before = self._tx_pin_snapshots.pop(owner, None)
+        if before is None:
+            return
+        out_target, _ = _read_pin_targets()
+        if out_target:
+            _pin_new_stream("sink-inputs", "move-sink-input", out_target, before)
 
     def output_owner(self, device: int | None) -> str | None:
         """Return the name of the current TX owner of `device`, if any."""

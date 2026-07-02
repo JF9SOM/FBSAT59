@@ -19,6 +19,8 @@ from __future__ import annotations
 import contextlib
 import glob
 import json
+import shutil
+import subprocess
 import sys
 from typing import TYPE_CHECKING, Any
 
@@ -1189,6 +1191,34 @@ class _SdrSettingsPanel(QWidget):
             self._iq_dir_edit.setText(iq_dir)
 
 
+def _list_pactl_targets(kind: str) -> list[tuple[str, str]]:
+    """Enumerate PipeWire/PulseAudio sinks or sources as (name, description).
+
+    `kind` is "sinks" or "sources". Returns [] on non-Linux, when `pactl`
+    is unavailable, or on any error. Monitor sources (".monitor" — a mirror
+    of what a sink is playing, not a real capture device) are excluded.
+    """
+    if sys.platform != "linux" or shutil.which("pactl") is None:
+        return []
+    try:
+        result = subprocess.run(
+            ["pactl", "-f", "json", "list", kind],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        items = json.loads(result.stdout)
+        out: list[tuple[str, str]] = []
+        for item in items:
+            name = item.get("name", "")
+            if not name or name.endswith(".monitor"):
+                continue
+            out.append((name, item.get("description", name)))
+        return out
+    except Exception:
+        return []
+
+
 class _SoundCardPanel(QWidget):
     """Sound Card tab panel (4th tab in Rig Settings).
 
@@ -1196,6 +1226,12 @@ class _SoundCardPanel(QWidget):
     (APRS, Telemetry, future FT4/SSTV).  Uses :mod:`sounddevice` to
     enumerate host audio devices; falls back gracefully when the library
     is not installed.
+
+    On Linux, also offers an explicit PipeWire sink/source pin (see
+    ``src/comms/audio_device_manager.py`` module docstring) since the
+    generic ``pipewire`` ALSA device otherwise silently follows whatever
+    PipeWire currently considers the default — which changes when other USB
+    audio devices are plugged in or removed.
 
     DB key written on OK: ``soundcard_settings`` — JSON dict.
     """
@@ -1261,6 +1297,36 @@ class _SoundCardPanel(QWidget):
 
         layout.addWidget(dev_group)
 
+        # -- Linux/PipeWire explicit pin group (hidden elsewhere / when pactl
+        #    is unavailable) --
+        self._pactl_ok = sys.platform == "linux" and shutil.which("pactl") is not None
+        self._pin_in_combo: QComboBox | None = None
+        self._pin_out_combo: QComboBox | None = None
+        if self._pactl_ok:
+            pin_group = QGroupBox(_("Pin to Device (Linux)"))
+            pin_form = QFormLayout(pin_group)
+
+            pin_note = QLabel(
+                _(
+                    "The devices above follow PipeWire's current default, which can "
+                    "silently change when other USB audio devices are plugged in. "
+                    "Pick a specific device below to always route to it."
+                )
+            )
+            pin_note.setWordWrap(True)
+            pin_note.setStyleSheet("color: #aaa;")
+            pin_form.addRow(pin_note)
+
+            self._pin_in_combo = QComboBox()
+            self._pin_in_combo.setMinimumWidth(280)
+            pin_form.addRow(_("Pin input to:"), self._pin_in_combo)
+
+            self._pin_out_combo = QComboBox()
+            self._pin_out_combo.setMinimumWidth(280)
+            pin_form.addRow(_("Pin output to:"), self._pin_out_combo)
+
+            layout.addWidget(pin_group)
+
         # -- Sample rate (fixed at 48000 for Direwolf compatibility) --
         rate_group = QGroupBox(_("Sample Rate"))
         rate_form = QFormLayout(rate_group)
@@ -1320,6 +1386,25 @@ class _SoundCardPanel(QWidget):
         self._status_label.setText(_("{n} devices found.").format(n=len(devices)))
         self._status_label.setStyleSheet("color: #7bed9f;")
 
+        if self._pactl_ok:
+            self._populate_pin_combo(self._pin_in_combo, "sources")
+            self._populate_pin_combo(self._pin_out_combo, "sinks")
+
+    @staticmethod
+    def _populate_pin_combo(combo: QComboBox | None, kind: str) -> None:
+        if combo is None:
+            return
+        current = combo.currentData()
+        combo.clear()
+        combo.addItem(_("Auto (follow PipeWire default)"), None)
+        for name, description in _list_pactl_targets(kind):
+            combo.addItem(description, name)
+        if current is not None:
+            for i in range(combo.count()):
+                if combo.itemData(i) == current:
+                    combo.setCurrentIndex(i)
+                    break
+
     def _on_test(self) -> None:
         """Play a short 1 kHz tone through the selected output device."""
         if not self._sd_available:
@@ -1331,13 +1416,20 @@ class _SoundCardPanel(QWidget):
         if out_idx is None:
             return
 
+        pin_target = self._pin_out_combo.currentData() if self._pin_out_combo is not None else None
+
         try:
             import numpy as np
+
+            from comms.audio_device_manager import pin_output_stream, snapshot_output_streams
 
             sr = 48000
             t = np.linspace(0, 0.5, int(sr * 0.5), endpoint=False)
             tone = (0.3 * np.sin(2 * math.pi * 1000 * t)).astype(np.float32)
+            before = snapshot_output_streams() if pin_target else None
             self._sd.play(tone, samplerate=sr, device=out_idx, blocking=False)
+            if pin_target and before is not None:
+                pin_output_stream(pin_target, before)
             self._status_label.setText(_("Playing 1 kHz test tone…"))
             self._status_label.setStyleSheet("color: #4a9eff;")
         except Exception as exc:  # noqa: BLE001
@@ -1360,6 +1452,12 @@ class _SoundCardPanel(QWidget):
             "output_device_index": self._out_combo.currentData(),
             "output_device_label": self._out_combo.currentText(),
             "sample_rate_hz": 48000,
+            "input_source_name": (
+                self._pin_in_combo.currentData() if self._pin_in_combo is not None else None
+            ),
+            "output_sink_name": (
+                self._pin_out_combo.currentData() if self._pin_out_combo is not None else None
+            ),
         }
 
     def load(self, data: dict[str, object]) -> None:
@@ -1380,6 +1478,20 @@ class _SoundCardPanel(QWidget):
             for i in range(self._out_combo.count()):
                 if self._out_combo.itemData(i) == out_idx:
                     self._out_combo.setCurrentIndex(i)
+                    break
+
+        in_source = data.get("input_source_name")
+        if in_source is not None and self._pin_in_combo is not None:
+            for i in range(self._pin_in_combo.count()):
+                if self._pin_in_combo.itemData(i) == in_source:
+                    self._pin_in_combo.setCurrentIndex(i)
+                    break
+
+        out_sink = data.get("output_sink_name")
+        if out_sink is not None and self._pin_out_combo is not None:
+            for i in range(self._pin_out_combo.count()):
+                if self._pin_out_combo.itemData(i) == out_sink:
+                    self._pin_out_combo.setCurrentIndex(i)
                     break
 
 
