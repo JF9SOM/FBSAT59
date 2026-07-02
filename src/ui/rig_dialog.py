@@ -19,16 +19,21 @@ from __future__ import annotations
 import contextlib
 import glob
 import json
+import math
 import shutil
 import subprocess
 import sys
+import time
 from typing import TYPE_CHECKING, Any
+
+import numpy as np
+from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from sdr.device import SdrDeviceInfo
 
 from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtGui import QColor, QHideEvent, QPalette, QShowEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -39,6 +44,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QProgressBar,
     QPushButton,
     QRadioButton,
     QScrollArea,
@@ -1236,9 +1242,20 @@ class _SoundCardPanel(QWidget):
     DB key written on OK: ``soundcard_settings`` — JSON dict.
     """
 
+    #: Emitted from the shared-input audio callback thread with the current
+    #: chunk's peak level in dBFS; Qt auto-queues this to the UI thread.
+    level_updated = Signal(float)
+
+    _METER_OWNER = "RigSettings/Meter"
+    _METER_SAMPLE_RATE = 8_000  # plenty for a level meter, keeps resampling cheap
+    _METER_MIN_INTERVAL_S = 0.05  # ~20fps UI update cap
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._meter_active = False
+        self._last_meter_emit = 0.0
         self._setup_ui()
+        self.level_updated.connect(self._on_level_updated)
 
     # ------------------------------------------------------------------ #
     # UI construction
@@ -1276,6 +1293,20 @@ class _SoundCardPanel(QWidget):
         self._in_combo.setMinimumWidth(280)
         in_row.addWidget(self._in_combo)
         dev_form.addRow(_("Input device:"), in_row)
+        self._in_combo.currentIndexChanged.connect(self._on_input_device_changed)
+
+        # RX level meter — live while this tab/dialog is visible
+        level_row = QHBoxLayout()
+        self._level_bar = QProgressBar()
+        self._level_bar.setRange(0, 100)
+        self._level_bar.setValue(0)
+        self._level_bar.setTextVisible(False)
+        self._level_bar.setFixedHeight(14)
+        level_row.addWidget(self._level_bar)
+        self._level_label = QLabel(_("-- dBFS"))
+        self._level_label.setMinimumWidth(70)
+        level_row.addWidget(self._level_label)
+        dev_form.addRow(_("RX Level:"), level_row)
 
         # Output device row
         out_row = QHBoxLayout()
@@ -1405,12 +1436,71 @@ class _SoundCardPanel(QWidget):
                     combo.setCurrentIndex(i)
                     break
 
+    # ------------------------------------------------------------------ #
+    # RX level meter
+    # ------------------------------------------------------------------ #
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        self._start_meter()
+
+    def hideEvent(self, event: QHideEvent) -> None:
+        super().hideEvent(event)
+        self._stop_meter()
+
+    def _on_input_device_changed(self) -> None:
+        if self._meter_active:
+            self._stop_meter()
+            self._start_meter()
+
+    def _start_meter(self) -> None:
+        if not self._sd_available or self._meter_active:
+            return
+        try:
+            from comms.audio_device_manager import get_audio_device_manager
+
+            device = self._in_combo.currentData()
+            get_audio_device_manager().acquire_input(
+                self._METER_OWNER, device, self._METER_SAMPLE_RATE, self._on_audio_chunk
+            )
+            self._meter_active = True
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _stop_meter(self) -> None:
+        if not self._meter_active:
+            return
+        from comms.audio_device_manager import get_audio_device_manager
+
+        device = self._in_combo.currentData()
+        get_audio_device_manager().release_input(self._METER_OWNER, device)
+        self._meter_active = False
+        self._level_bar.setValue(0)
+        self._level_label.setText(_("-- dBFS"))
+
+    def _on_audio_chunk(self, chunk: NDArray[np.float32]) -> None:
+        """Runs on the shared audio callback thread — keep this fast."""
+        if len(chunk) == 0:
+            return
+        now = time.monotonic()
+        if now - self._last_meter_emit < self._METER_MIN_INTERVAL_S:
+            return
+        self._last_meter_emit = now
+        peak = float(np.max(np.abs(chunk)))
+        dbfs = 20.0 * math.log10(max(peak, 1e-6))
+        self.level_updated.emit(dbfs)
+
+    def _on_level_updated(self, dbfs: float) -> None:
+        pct = max(0.0, min(100.0, (dbfs + 60.0) / 60.0 * 100.0))
+        self._level_bar.setValue(int(pct))
+        color = "#2ecc71" if dbfs < -12.0 else ("#f1c40f" if dbfs < -3.0 else "#e74c3c")
+        self._level_bar.setStyleSheet(f"QProgressBar::chunk {{ background-color: {color}; }}")
+        self._level_label.setText(_("{db:.0f} dBFS").format(db=dbfs))
+
     def _on_test(self) -> None:
         """Play a short 1 kHz tone through the selected output device."""
         if not self._sd_available:
             return
-
-        import math
 
         out_idx = self._out_combo.currentData()
         if out_idx is None:

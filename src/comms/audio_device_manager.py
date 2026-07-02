@@ -183,13 +183,25 @@ class _SharedInputStream:
                 self._open()
 
     def remove_subscriber(self, owner: str) -> bool:
-        """Unsubscribe `owner`. Returns True once no subscribers remain."""
+        """Unsubscribe `owner`. Returns True once no subscribers remain.
+
+        `stream.stop()` blocks until the audio callback thread has returned
+        from its current invocation — and that thread also needs `self._lock`
+        (see `_on_audio`) to finish. Stopping the stream while still holding
+        the lock would deadlock the two threads against each other, so the
+        stream handle is claimed under the lock but actually stopped/closed
+        after releasing it.
+        """
         with self._lock:
             self._subscribers.pop(owner, None)
-            if not self._subscribers:
-                self._close()
-                return True
-            return False
+            if self._subscribers:
+                return False
+            stream, self._stream = self._stream, None
+        if stream is not None:
+            with contextlib.suppress(Exception):
+                stream.stop()
+                stream.close()
+        return True
 
     def _open(self) -> None:
         import sounddevice as sd
@@ -208,13 +220,6 @@ class _SharedInputStream:
 
         if in_target and before is not None:
             _pin_new_stream("source-outputs", "move-source-output", in_target, before)
-
-    def _close(self) -> None:
-        if self._stream is not None:
-            with contextlib.suppress(Exception):
-                self._stream.stop()
-                self._stream.close()
-            self._stream = None
 
     def _on_audio(
         self, indata: NDArray[np.float32], frames: int, time_info: Any, status: Any

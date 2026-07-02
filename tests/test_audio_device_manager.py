@@ -6,7 +6,10 @@ via sys.modules so these tests run in headless CI.
 
 from __future__ import annotations
 
+import subprocess
 import sys
+import threading
+import time
 import types
 from typing import Any
 
@@ -52,6 +55,46 @@ def fake_sounddevice(monkeypatch: pytest.MonkeyPatch) -> type[_FakeInputStream]:
     fake_module = types.SimpleNamespace(InputStream=_FakeInputStream)
     monkeypatch.setitem(sys.modules, "sounddevice", fake_module)
     return _FakeInputStream
+
+
+class _FakeInputStreamBlockingStop(_FakeInputStream):
+    """Mimics real PortAudio: `stop()` blocks until its audio callback
+    thread — which needs the manager's internal lock, same as the real
+    `_on_audio` — has finished a pending invocation. Used to reproduce (and
+    guard against regressing) the deadlock where `remove_subscriber` used to
+    call `stream.stop()` while still holding that same lock."""
+
+    instances: list[_FakeInputStream] = []
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        _FakeInputStreamBlockingStop.instances.append(self)
+
+    def stop(self) -> None:
+        # No timeout here, deliberately: real PortAudio's Pa_StopStream()
+        # blocks forever until its callback thread returns, so the fake has
+        # to actually reproduce that to catch a real deadlock. The test
+        # bounds the *outer* release_input() call with its own timeout
+        # instead of relying on this join() to give up.
+        t = threading.Thread(
+            target=lambda: self.kwargs["callback"](
+                np.zeros((1, 1), dtype=np.float32), 1, None, None
+            ),
+            daemon=True,
+        )
+        t.start()
+        t.join()
+        super().stop()
+
+
+@pytest.fixture
+def fake_sounddevice_blocking_stop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> type[_FakeInputStreamBlockingStop]:
+    _FakeInputStreamBlockingStop.instances = []
+    fake_module = types.SimpleNamespace(InputStream=_FakeInputStreamBlockingStop)
+    monkeypatch.setitem(sys.modules, "sounddevice", fake_module)
+    return _FakeInputStreamBlockingStop
 
 
 # ---------------------------------------------------------------------------
@@ -203,6 +246,28 @@ class TestInputSharing:
         mgr.acquire_input("cw", 5, 48_000, lambda c: None)
         assert len(fake_sounddevice.instances) == 2
 
+    def test_release_does_not_deadlock_against_a_blocking_stream_stop(
+        self, fake_sounddevice_blocking_stop: type[_FakeInputStreamBlockingStop]
+    ) -> None:
+        """Regression test: `stream.stop()` (real PortAudio) blocks until its
+        callback thread returns, and that thread needs the manager's lock —
+        so releasing the last subscriber must not call `stop()` while still
+        holding that lock, or the two threads deadlock forever."""
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("cw", 5, 48_000, lambda c: None)
+
+        done = threading.Event()
+
+        def _release() -> None:
+            mgr.release_input("cw", 5)
+            done.set()
+
+        t = threading.Thread(target=_release, daemon=True)
+        t.start()
+        t.join(timeout=5)
+        assert done.is_set(), "release_input deadlocked"
+        assert fake_sounddevice_blocking_stop.instances[0].closed is True
+
 
 # ---------------------------------------------------------------------------
 # Singleton accessor
@@ -231,7 +296,7 @@ class TestPinNewStream:
         def fake_run(cmd: list[str], **kwargs: Any) -> None:
             calls.append(cmd)
 
-        monkeypatch.setattr(adm.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
         adm._pin_new_stream("sink-inputs", "move-sink-input", "target", before=set())
         assert calls == []
 
@@ -242,7 +307,7 @@ class TestPinNewStream:
         def fake_run(cmd: list[str], **kwargs: Any) -> None:
             calls.append(cmd)
 
-        monkeypatch.setattr(adm.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
         adm._pin_new_stream("sink-inputs", "move-sink-input", "target-sink", before={"41"})
         assert calls == [["pactl", "move-sink-input", "42", "target-sink"]]
 
@@ -253,7 +318,7 @@ class TestPinNewStream:
         def fake_run(cmd: list[str], **kwargs: Any) -> None:
             calls.append(cmd)
 
-        monkeypatch.setattr(adm.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
         adm._pin_new_stream("sink-inputs", "move-sink-input", "target-sink", before={"41"})
         assert calls == []
 
@@ -262,12 +327,12 @@ class TestPinNewStream:
     ) -> None:
         calls: list[list[str]] = []
         monkeypatch.setattr(adm, "_snapshot_stream_ids", lambda kind: {"41"})
-        monkeypatch.setattr(adm.time, "sleep", lambda seconds: None)
+        monkeypatch.setattr(time, "sleep", lambda seconds: None)
 
         def fake_run(cmd: list[str], **kwargs: Any) -> None:
             calls.append(cmd)
 
-        monkeypatch.setattr(adm.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
         adm._pin_new_stream("sink-inputs", "move-sink-input", "target-sink", before={"41"})
         assert calls == []
 
