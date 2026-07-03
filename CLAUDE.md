@@ -666,10 +666,17 @@ sudo usermod -aG dialout $USER
 3. **初心者ファースト**: デフォルト設定で「インストールして起動するだけ」で動作。高度な設定はオプション
 4. **GPredict互換性**: NET Controlモードで従来のrigctld/rotctldとの互換性を維持
 5. **マルチプラットフォーム**: OS固有コードを最小化。プラットフォーム分岐は `src/core/platform.py` に集約
+6. **Rig Settingsダイアログを閉じても接続は維持**: `MainWindow._load_rig_settings()` は
+   OKを押すたびに `_build_rig_controller()` / `_build_sdr_rig_adapter()` で
+   Rig 1/2 コントローラーを**未接続の新規インスタンスとして作り直す**（設定を変更していなくても）。
+   このため以前は「設定ダイアログでOKを押すと無言でRigが切断される」問題があった
+   （FT4のPTTが黙って失敗する原因になっていた。2026-07-03 修正）。
+   現在は再構築前に旧コントローラーの `is_connected` を記録しておき、接続中だった場合は
+   `RadioControlWidget._on_connect_rig1()` / `_on_connect_rig2()` を呼んで自動再接続する。
 
 ---
 
-## 実装済み機能一覧（2026年6月30日時点・v0.2.6）
+## 実装済み機能一覧（2026年6月30日時点・v0.2.6。FT4関連の追加修正は2026-07-03・v0.2.8まで反映）
 
 - 衛星追尾エンジン（Skyfield）
 - **Moon/EME追尾**（JPL DE421エフェメリス・CelestialEngine）— 詳細は「Moon/EME 追尾設計」セクション参照
@@ -2950,6 +2957,40 @@ CI ビルド時は `git clone` で最新 main を取得すれば問題ない。
 値 = `clamp((dB + 120.0) * 2.0, 0, 255)`（`WF_ELEM_T = uint8_t` の場合）。
 `WATERFALL_USE_PHASE` マクロが未定義の場合は常に `uint8_t`（デフォルト）。
 
+#### ウォーターフォール計算 — time/frequency オーバーサンプリング必須（2026-07-03 確定）
+
+`compute_waterfall()`（`src/comms/ft4/codec.py`）は、本家 `kgoba/ft8_lib` の
+`common/monitor.c` の `monitor_process()` を忠実に再現する必要がある。
+当初の実装は 576 サンプル（1シンボル＝48ms）ごとに重ならない FFT を1回だけ計算し
+`time_osr=1, freq_osr=1` として `ftx_find_candidates()` に渡していたが、これは
+**信号強度に関係なくほぼ確実に同期検出に失敗する**（相手局の送信開始タイミングは
+こちらの録音バッファ境界とは無関係にランダムな位相を持つため、48ms 単位の粗い窓では
+シンボル境界がずれた分だけ2シンボル分の音が混ざり、Costas 同期相関が取れない）。
+
+**正しい実装**（`_WF_TIME_OSR = 2`, `_WF_FREQ_OSR = 2` — 本家デモデコーダー
+`demo/decode_ft8.c` の `kTime_osr`/`kFreq_osr` と同じ値）:
+
+- `block_size = FT4_SAMPLES_PER_SYM`（576）、`subblock_size = block_size // time_osr`、
+  `nfft = block_size * freq_osr`
+- 解析窓は `nfft` サンプル長で、`subblock_size` ずつスライドさせながら計算する
+  （`monitor_process()` の `last_frame` スライディングウィンドウと等価）
+- 窓関数は `np.hanning()`（対称型）ではなく、本家と同じ周期的 Hann窓
+  `window[i] = (2/nfft) * sin(π·i/nfft)^2` を使うこと。対称型窓を使うと
+  time_osr/freq_osr を入れても正しく同期しない
+- `mag` 配列は `(num_blocks, time_osr, freq_osr, num_bins)` の順で連続配置し、
+  `ftx_waterfall_t.block_stride = time_osr * freq_osr * num_bins` を正しく設定する
+  （`ft8/decode.c` の `get_cand_mag()` のインデックス計算式 `((time_offset*time_osr+time_sub)*freq_osr+freq_sub)*num_bins+freq_offset` と一致させること）
+
+**検証方法**: 自己エンコード→デコードのラウンドトリップで、シンボル境界に整合しない
+任意のオフセット（例: 0.123s, 0.4567s）に信号を配置してデコードできるかを確認する
+（`tests/test_ft4_codec.py`）。`time_osr=1` の旧実装ではオフセット 0.0s（完全整合）を
+含む全ケースで失敗することを確認済み。
+
+**SNR（dB表示）**: ft8_lib には真のSNR計算 API が無い。本家デモデコーダーも
+`cand->score * 0.5f`（`// TODO: compute better approximation of SNR` とコメントあり）
+という粗い近似を使っているため、本実装もこれに倣い `candidates[i].score * 0.5` を使用する
+（以前は `0.0` にハードコードされており、常に表示が +0 dB になるバグがあった。2026-07-03 修正）。
+
 #### ディレクトリ構成
 
 ```
@@ -2972,15 +3013,38 @@ src/
 | **リグ 1（TX）+ SDR（RX）** | Rig 1 AF IN → sounddevice OUT | SDR audio_ready → デコード | 高感度受信が必要な場合 |
 | SDR のみ | ❌ 不可 | — | TX できないため無効 |
 
-**タブを開く条件**:
-- Rig が接続済み かつ Sound Card が設定済み → 使用可能
-- Rig 接続済み・Sound Card 未設定 → 警告「Rig Settings > Sound Card タブを設定してください」
-- Rig 未接続 → タブを開かない（またはグレーアウト + 警告表示）
+**タブを開く条件**（実装確定・2026-07-03）: `Communications > FT4` は Rig の接続状態に
+関わらず常に開く（`_on_open_ft4()` にゲート条件は無い）。**受信はRigの接続状態と無関係に
+動作する**ため（音声取り込みは Sound Card 設定のデバイスのみを見ており、Rig の CAT 接続は
+参照しない）、タブを開いた瞬間に自動でRXスケジューラーが起動し、Sound Card さえ設定済みなら
+Rig 未接続でも即座にデコードが始まる。送信（PTT）だけは Rig 1 の接続が必須で、
+未接続のまま送信しようとすると `set_ptt()` の戻り値をチェックして
+「PTT command failed — check Rig 1 connection」を表示する（後述）。
+
+**Input バナーの意味に注意**: タブ上部の「Input: Rig connected」/「Input: Rig not connected」
+は **Rig 1 の CAT 接続状態のみ**を示し、サウンドカードの音声取り込み状態とは無関係。
+赤（Rig not connected）でも音声は正常に取れていることがあるので、実際にデコードできるか
+どうかの判断材料にはならない。
 
 **RX ソース切り替え（タブ内 UI）**:
 ```
 RX Input:  ● Rig Soundcard  ○ SDR (HackRF One)  ← SDR 接続時のみ SDR を選択可
 ```
+
+**RXの自動開始**（2026-07-03 確定）: `Ft4Tab.__init__()` の末尾で
+`self._start_scheduler(tx_even=True)` を無条件に呼び、CQ ボタンや TX Enable を
+一度も押さなくても受信スケジューラーが動き出すようにしている。以前は
+`_start_scheduler()` が CQ ボタン・TX Enable トグル・デコード行ダブルクリックからしか
+呼ばれず、タブを開いて音声を入力するだけでは何もデコードされない、という分かりにくい
+挙動だった。送信は `_tx_enabled` フラグで別途ガードされているため、この自動開始で
+勝手に送信されることはない。
+
+**TX Slot（Even/Odd）手動選択**（2026-07-03 実装）: Transmit 欄に
+「TX Slot: Auto / Even / Odd」コンボボックスがある。デフォルト（Auto）は従来通り
+CQ ボタン押下・TX Enable オン時点の6秒スロットで送信するが、Even/Odd を明示指定すると
+そのスロットで固定送信できる。デコード行への応答（相手の逆スロットで送るプロトコル上の
+制約がある）はこの設定の対象外で常に自動。`_resolve_tx_even()` が判定ロジックを持つ。
+設定は `ft4_settings` の `tx_slot_mode` キーで永続化。
 
 #### タブ UI 設計
 
@@ -3061,6 +3125,29 @@ APRS と同じパターンを使用:
 FT4 の TX は約 5.2 秒間継続するため、Doppler 補正はその間停止。
 衛星パス中央付近（最大仰角前後）での周波数変化は 5 秒で数 Hz 程度であり実用上無視できる。
 
+**`_TxWorker` のエラー通知**（2026-07-03 確定）: `set_ptt(True)` の戻り値を必ずチェックし、
+`False`（Rig 未接続・CAT失敗等）が返った場合は音声を再生せず
+`error` シグナルで「PTT command failed — check Rig 1 connection」を通知して即座に終了する。
+**`error` と `finished` シグナルは必ずどちらか一方だけを発行する**（両方発行すると、
+`finished` ハンドラーの「TX done」表示が `error` ハンドラーの表示を直後に上書きしてしまい、
+失敗が画面上まったく見えなくなるため）。この2つは以前 `finally` ブロックで
+`finished` を無条件発行していたために両方発行されるバグがあった。
+
+**TX Enable 成功時のステータス表示**: `_on_tx_enable_toggled(True)` が成功パスで
+「TX enabled — waiting for next period」を表示する。以前はここでステータス欄を
+一切更新しておらず、過去に表示された「TX halted」等の文言がそのまま残り続けて
+TX Enable が実際に効いているのか画面から判断できないという問題があった。
+
+#### CQ 応答時のコールサイン抽出（2026-07-03 確定）
+
+デコード行のダブルクリック応答は、`_parse_cq_call_grid()`（`src/ui/ft4_tab.py`）で
+末尾の単語が Maidenhead グリッド形式（`^[A-R]{2}[0-9]{2}$`）にマッチするかどうかを見て
+コールサインとグリッドを抽出する。単純に「CQの直後の単語＝コールサイン」とすると、
+"CQ WWA BI4SSB QM86" のような修飾子付き directed CQ（コンテスト/DX等のキーワードが
+コールサインの前に入る）でキーワード側を誤って相手コールサインとして扱ってしまう。
+グリッドにマッチする末尾の単語の**直前**の単語を常にコールサインとすることで、
+修飾子の有無・グリッドの有無に関わらず正しく抽出できる。
+
 #### 周波数設定
 
 Radio Control で選択したトランスポンダーの周波数を使用（Doppler 補正済み）。
@@ -3130,6 +3217,26 @@ RX 共有ストリームは常に `_HW_SAMPLE_RATE = 48000` Hz で実デバイ�
 - 非整数比（例: 48000→44100）は `scipy.signal.resample_poly`（利用不可時は `np.interp` による
   線形補間フォールバック。CLAUDE.md 記載のオプショナルインポートパターンに準拠し `type: ignore` 不要）
 
+#### 起動直後の入力レベル低下・自己修復（settle-reopen, 2026-07-03 確定）
+
+Linux/PipeWire環境で、一部のリグ用USBサウンドカード（FT-991Aで確認。FTX-1Fでは未確認）は、
+共有ストリームを最初に開いた直後だけ音声レベルが異常に低く、Rig Settings > Sound Cardの
+「Refresh Devices」を押す（副作用で入力デバイスコンボが再構築され `_on_input_device_changed()`
+経由でメーター用ストリームが開き直る）と正常なレベルに戻る、という現象が確認された。
+原因は特定できていない（USBオーディオコーデックのウォームアップ、PipeWireのルーティング
+安定化待ちなどが候補）が、**「一度閉じて開き直す」だけで直る**ことは確認済み。
+
+これを毎回手動で行わずに済むよう、`_SharedInputStream._open()` は最初に開いてから
+`_REOPEN_SETTLE_DELAY_S`（1.5秒）後、バックグラウンドで一度だけ内部の `sd.InputStream` を
+閉じて開き直す（PipeWireへのピン留めも再実行）。購読者（FT4・CW Decoder・SSTV・Rig Settings
+のレベルメーター等、すべて同じ `AudioDeviceManager` 経由）からは pub/sub インターフェースしか
+見えないため、この開き直しは完全に透過的——Rig Settings の Sound Card タブを一度も開かなくても、
+FT4 タブを開いて自動RX開始するだけで恩恵を受けられる。
+
+- 全購読者が開き直し前に離脱していた場合は何もしない（死んだストリームを復活させない）
+- 開き直し後の `_open(schedule_settle_reopen=False)` は再度タイマーを仕込まない
+  （無限に開閉を繰り返さないためのガード）
+
 #### API（`AudioDeviceManager` / `get_audio_device_manager()`）
 
 ```python
@@ -3168,9 +3275,14 @@ Direwolf は実際に送信していない間も継続的に stdout へ PCM を�
 
 #### 検証状況
 
-- `tests/test_audio_device_manager.py`（20ケース）: フェイクの `sounddevice.InputStream`
+- `tests/test_audio_device_manager.py`（35ケース）: フェイクの `sounddevice.InputStream`
   を使い、RXのファンアウト・購読者参照カウント・リサンプリング比率、TXの排他制御（同一owner
-  の再取得可・別ownerは拒否・解放後は他ownerが取得可）をハードウェア不要で検証済み
+  の再取得可・別ownerは拒否・解放後は他ownerが取得可）、settle-reopen（一度だけ開き直る・
+  全購読者離脱後は開き直らない・二重に開き直らない）をハードウェア不要で検証済み。
+  settle-reopenのテストは `_REOPEN_SETTLE_DELAY_S` を `monkeypatch` で上書きしており、
+  デフォルトでは自動フィクスチャで999秒に固定して既存テストへの影響を遮断している
+  （実値1.5秒のままだとテスト全体の実行時間内にタイマーが発火し、無関係な後続テストの
+  フェイクストリーム数を汚染してしまうため）
 - **実機での複数タブ同時使用（例: CW Decoder + SSTV 同時オープン）は未確認**。GUI上に
   「共有中」であることを示す表示は無いため、この機能が正しく動作しているかは目視では
   確認できない。ユニットテストの正しさを信頼する運用とする（2026-07-01、ユーザー判断）
