@@ -3407,6 +3407,10 @@ class MainWindow(QMainWindow):
         Rig 2 is loaded only when its 'enabled' flag is True.
         If an SDR device is assigned to a slot in 'sdr_settings', that slot
         gets a SdrRigAdapter instead of a Hamlib controller.
+
+        _build_rig_controller() / _build_sdr_rig_adapter() always return a
+        fresh, unconnected instance, so accepting this dialog silently drops
+        an existing connection unless we explicitly reconnect it below.
         """
         # Load SDR settings once so both rig slots can check assigned_rig
         sdr_cfg: dict[str, Any] = {}
@@ -3420,6 +3424,7 @@ class MainWindow(QMainWindow):
             logger.warning("Failed to load SDR settings: %s", exc)
 
         # ---------- Rig 1 ----------
+        was_rig1_connected = self._rig_controller is not None and self._rig_controller.is_connected
         try:
             # If SDR is assigned to slot 1, build an SdrRigAdapter
             if sdr_cfg.get("assigned_rig") == 1 and sdr_cfg.get("enabled", False):
@@ -3461,7 +3466,18 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             logger.warning("Failed to load Rig 1 settings: %s", exc)
 
+        if (
+            was_rig1_connected
+            and self._rig_controller is not None
+            and not self._rig_controller.is_connected
+        ):
+            logger.info("Rig1: was connected before settings reload — reconnecting")
+            self._radio_control._on_connect_rig1()
+
         # ---------- Rig 2 ----------
+        was_rig2_connected = (
+            self._rig2_controller is not None and self._rig2_controller.is_connected
+        )
         try:
             # If SDR is assigned to slot 2, build an SdrRigAdapter
             if sdr_cfg.get("assigned_rig") == 2 and sdr_cfg.get("enabled", False):
@@ -3482,6 +3498,14 @@ class MainWindow(QMainWindow):
                     self._radio_control.set_rig2(self._rig2_controller)
         except Exception as exc:
             logger.warning("Failed to load Rig 2 settings: %s", exc)
+
+        if (
+            was_rig2_connected
+            and self._rig2_controller is not None
+            and not self._rig2_controller.is_connected
+        ):
+            logger.info("Rig2: was connected before settings reload — reconnecting")
+            self._radio_control._on_connect_rig2()
 
         self._update_rig_label()
 
