@@ -47,6 +47,15 @@ _MIN_SYNC_SCORE: int = 10
 _WF_F_MIN: float = 200.0
 _WF_F_MAX: float = 3000.0
 
+# Time/frequency oversampling ratios — matches kgoba/ft8_lib's demo decoder
+# (kTime_osr / kFreq_osr in decode_ft8.c). Without oversampling,
+# ftx_find_candidates() only synchronizes when the received symbol boundary
+# happens to align exactly with our capture buffer, which is essentially
+# never the case in practice (satellite Doppler, propagation delay, and the
+# far station's own clock all shift the true symbol timing).
+_WF_TIME_OSR: int = 2
+_WF_FREQ_OSR: int = 2
+
 # ftx_protocol_t enum values
 _FTX_PROTOCOL_FT4: int = 0
 _FTX_PROTOCOL_FT8: int = 1
@@ -257,23 +266,25 @@ class _Ft8LibBindings:
     ) -> list[Ft4Message]:
         """Run ftx_lib sync + LDPC decode on a uint8 spectrogram.
 
-        mag_uint8: shape (num_blocks, num_bins), contiguous uint8.
-        bin_hz: Hz per frequency bin.
+        mag_uint8: shape (num_blocks, _WF_TIME_OSR * _WF_FREQ_OSR * num_bins),
+        contiguous uint8 — as produced by compute_waterfall().
+        bin_hz: Hz per (coarse) frequency bin.
         """
         if not self._decode_available:
             return []
 
-        flat = np.ascontiguousarray(mag_uint8[:num_blocks, :num_bins], dtype=np.uint8)
+        block_stride = _WF_TIME_OSR * _WF_FREQ_OSR * num_bins
+        flat = np.ascontiguousarray(mag_uint8[:num_blocks, :block_stride], dtype=np.uint8)
         flat_p = flat.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
 
         wf = _FtxWaterfall(
             max_blocks=num_blocks,
             num_blocks=num_blocks,
             num_bins=num_bins,
-            time_osr=1,
-            freq_osr=1,
+            time_osr=_WF_TIME_OSR,
+            freq_osr=_WF_FREQ_OSR,
             mag=flat_p,
-            block_stride=num_bins,
+            block_stride=block_stride,
             protocol=_FTX_PROTOCOL_FT4,
         )
         candidates = (_FtxCandidate * _MAX_CANDIDATES)()
@@ -298,7 +309,10 @@ class _Ft8LibBindings:
                 rc = self._lib.ftx_message_decode(ctypes.byref(msg), None, msg_buf, None)
                 if rc == 0:
                     text = msg_buf.value.decode("ascii", errors="replace").strip()
-                    freq = _WF_F_MIN + candidates[i].freq_offset * bin_hz
+                    min_bin = int(_WF_F_MIN / bin_hz)
+                    freq = (
+                        min_bin + candidates[i].freq_offset + candidates[i].freq_sub / _WF_FREQ_OSR
+                    ) * bin_hz
                     results.append(
                         Ft4Message(
                             text=text,
@@ -352,31 +366,62 @@ def compute_waterfall(
 ) -> tuple[NDArray[np.uint8], int, int, float]:
     """Compute uint8 spectrogram for ft8_lib decode.
 
-    Returns (mag_uint8, num_blocks, num_bins, bin_hz) where
-    mag_uint8 has shape (num_blocks, num_bins).
+    Reproduces kgoba/ft8_lib's monitor_process() (common/monitor.c): a
+    sliding analysis window of ``nfft = block_size * freq_osr`` samples,
+    advanced in steps of ``subblock_size = block_size // time_osr``, windowed
+    with the periodic Hann function ``sin(pi*i/nfft)^2`` and normalized by
+    ``2/nfft``. Oversampling in time and frequency is what lets
+    ftx_find_candidates() localize sync even when the transmitted symbol
+    boundary does not line up exactly with our capture buffer.
+
+    Returns (mag_uint8, num_blocks, num_bins, bin_hz) where mag_uint8 has
+    shape (num_blocks, time_osr * freq_osr * num_bins) — one flattened
+    [time_osr][freq_osr][num_bins] row per symbol, matching ftx_waterfall_t's
+    block_stride layout.
     """
-    nfft = FT4_SAMPLES_PER_SYM  # one FFT per symbol
-    bin_hz = sample_rate / nfft  # Hz per bin ≈ 20.833 Hz
+    block_size = FT4_SAMPLES_PER_SYM  # samples per symbol
+    time_osr = _WF_TIME_OSR
+    freq_osr = _WF_FREQ_OSR
+    subblock_size = block_size // time_osr
+    nfft = block_size * freq_osr
+
+    bin_hz = sample_rate / block_size  # coarse (tone-spacing) bin width
     min_bin = int(_WF_F_MIN / bin_hz)
-    max_bin = int(_WF_F_MAX / bin_hz)
+    max_bin = int(_WF_F_MAX / bin_hz) + 1
     num_bins = max_bin - min_bin
 
-    n_blocks = len(audio) // nfft
-    window = np.hanning(nfft).astype(np.float32)
-    mag_rows: list[NDArray[np.uint8]] = []
-
-    for i in range(n_blocks):
-        block = audio[i * nfft : (i + 1) * nfft] * window
-        fft_mag = np.abs(np.fft.rfft(block))
-        bins = fft_mag[min_bin:max_bin]
-        mag_db = 10.0 * np.log10(np.maximum(bins**2, 1e-10))
-        uint8_vals = np.clip((2.0 * (mag_db + 120.0)).astype(np.int32), 0, 255).astype(np.uint8)
-        mag_rows.append(uint8_vals)
-
-    if not mag_rows:
+    num_blocks = len(audio) // block_size
+    if num_blocks == 0:
         return np.zeros((0, num_bins), dtype=np.uint8), 0, num_bins, bin_hz
 
-    return np.stack(mag_rows), n_blocks, num_bins, bin_hz
+    i = np.arange(nfft, dtype=np.float64)
+    window = (2.0 / nfft) * np.sin(np.pi * i / nfft) ** 2
+
+    # last_frame in monitor_process() starts as (nfft - subblock_size) zeros
+    # and slides forward by subblock_size samples per step, so at global step
+    # s its content equals padded[s*subblock_size : s*subblock_size + nfft].
+    padded = np.concatenate([np.zeros(nfft - subblock_size, dtype=np.float32), audio]).astype(
+        np.float64
+    )
+
+    mag = np.zeros((num_blocks, time_osr, freq_osr, num_bins), dtype=np.uint8)
+    bin_idx = np.arange(min_bin, max_bin)
+
+    for s in range(num_blocks * time_osr):
+        block = s // time_osr
+        time_sub = s % time_osr
+        start = s * subblock_size
+        frame = padded[start : start + nfft] * window
+        spec = np.fft.rfft(frame)
+        for freq_sub in range(freq_osr):
+            src = bin_idx * freq_osr + freq_sub
+            mag2 = spec[src].real ** 2 + spec[src].imag ** 2
+            db = 10.0 * np.log10(np.maximum(mag2, 1e-12))
+            scaled = np.clip((2.0 * db + 240.0).astype(np.int64), 0, 255)
+            mag[block, time_sub, freq_sub, :] = scaled.astype(np.uint8)
+
+    flat = mag.reshape(num_blocks, time_osr * freq_osr * num_bins)
+    return flat, num_blocks, num_bins, bin_hz
 
 
 # ---------------------------------------------------------------------------
