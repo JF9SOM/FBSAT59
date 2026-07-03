@@ -97,6 +97,18 @@ def fake_sounddevice_blocking_stop(
     return _FakeInputStreamBlockingStop
 
 
+@pytest.fixture(autouse=True)
+def _disable_settle_reopen_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """_SharedInputStream._open() schedules a background timer that reopens
+    the stream after _REOPEN_SETTLE_DELAY_S seconds (see that module). Left
+    at its real 1.5s value, that timer can fire during a *later* test (this
+    whole file runs in a couple of seconds) and silently add extra fake
+    stream instances to whatever test happens to be running then. Tests
+    that want to exercise the settle-reopen behavior itself override this
+    back to a tiny value explicitly."""
+    monkeypatch.setattr(adm, "_REOPEN_SETTLE_DELAY_S", 999.0)
+
+
 # ---------------------------------------------------------------------------
 # _resample
 # ---------------------------------------------------------------------------
@@ -267,6 +279,66 @@ class TestInputSharing:
         t.join(timeout=5)
         assert done.is_set(), "release_input deadlocked"
         assert fake_sounddevice_blocking_stop.instances[0].closed is True
+
+
+# ---------------------------------------------------------------------------
+# Settle-reopen: closing and reopening the stream once shortly after it
+# first opens, to self-heal a quiet/misrouted PipeWire source (see
+# _REOPEN_SETTLE_DELAY_S in comms/audio_device_manager.py)
+# ---------------------------------------------------------------------------
+
+
+class TestSettleReopen:
+    @staticmethod
+    def _wait_for(predicate: Any, timeout: float = 2.0) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            time.sleep(0.01)
+        return bool(predicate())
+
+    def test_reopens_once_after_settle_delay(
+        self, fake_sounddevice: type[_FakeInputStream], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(adm, "_REOPEN_SETTLE_DELAY_S", 0.05)
+        mgr = AudioDeviceManager()
+        received: list[np.ndarray] = []
+        mgr.acquire_input("cw", 5, 48_000, received.append)
+        first = fake_sounddevice.instances[0]
+
+        assert self._wait_for(lambda: len(fake_sounddevice.instances) == 2)
+        second = fake_sounddevice.instances[1]
+        assert first.closed is True
+        assert second.started is True
+
+        # Subscribers only ever see the pub/sub interface, so they must keep
+        # receiving audio transparently through the replacement stream.
+        second.push(np.arange(480, dtype=np.float32))
+        assert len(received) == 1
+
+    def test_no_reopen_once_all_subscribers_have_left(
+        self, fake_sounddevice: type[_FakeInputStream], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(adm, "_REOPEN_SETTLE_DELAY_S", 0.05)
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("cw", 5, 48_000, lambda c: None)
+        mgr.release_input("cw", 5)
+
+        time.sleep(0.15)  # let the pending (should be no-op) settle timer fire
+        assert len(fake_sounddevice.instances) == 1
+        assert fake_sounddevice.instances[0].closed is True
+
+    def test_reopened_stream_does_not_schedule_another_reopen(
+        self, fake_sounddevice: type[_FakeInputStream], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(adm, "_REOPEN_SETTLE_DELAY_S", 0.05)
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("cw", 5, 48_000, lambda c: None)
+
+        assert self._wait_for(lambda: len(fake_sounddevice.instances) == 2)
+        time.sleep(0.2)  # long enough for a second, unwanted reopen to fire
+        assert len(fake_sounddevice.instances) == 2
 
 
 # ---------------------------------------------------------------------------

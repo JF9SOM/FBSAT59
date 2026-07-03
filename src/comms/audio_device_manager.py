@@ -62,6 +62,12 @@ except ImportError:
 # is resampled from here to whatever rate it asked for.
 _HW_SAMPLE_RATE = 48_000
 
+# Some USB audio interfaces (rig soundcards in particular) and/or PipeWire's
+# routing only settle into the real input level/target a moment after a
+# stream first opens -- closing and reopening once, a short while later,
+# has been observed to fix this reliably. See _SharedInputStream._open().
+_REOPEN_SETTLE_DELAY_S = 1.5
+
 
 def _pactl_available() -> bool:
     """True when running on Linux with a usable ``pactl`` binary."""
@@ -203,23 +209,50 @@ class _SharedInputStream:
                 stream.close()
         return True
 
-    def _open(self) -> None:
+    def _open(self, schedule_settle_reopen: bool = True) -> None:
         import sounddevice as sd
 
         _, in_target = _read_pin_targets()
         before = _snapshot_stream_ids("source-outputs") if in_target else None
 
-        self._stream = sd.InputStream(
+        stream = sd.InputStream(
             samplerate=_HW_SAMPLE_RATE,
             channels=1,
             dtype="float32",
             device=self._device,
             callback=self._on_audio,
         )
-        self._stream.start()
+        stream.start()
+        self._stream = stream
 
         if in_target and before is not None:
             _pin_new_stream("source-outputs", "move-source-output", in_target, before)
+
+        if schedule_settle_reopen:
+            timer = threading.Timer(_REOPEN_SETTLE_DELAY_S, self._reopen_once, args=(stream,))
+            timer.daemon = True
+            timer.start()
+
+    def _reopen_once(self, opened_stream: Any) -> None:
+        """Transparently close and reopen the hardware stream once, so a
+        quiet/misrouted first open self-heals without subscribers noticing
+        (they only ever see the pub/sub interface, never the raw stream).
+
+        No-ops if `opened_stream` is no longer the live stream — it was
+        already replaced (subscribers all left and came back, or this is a
+        stale timer from a previous generation).
+        """
+        with self._lock:
+            if self._stream is not opened_stream or not self._subscribers:
+                return
+            old_stream = self._stream
+            self._stream = None
+        with contextlib.suppress(Exception):
+            old_stream.stop()
+            old_stream.close()
+        with self._lock:
+            if self._subscribers and self._stream is None:
+                self._open(schedule_settle_reopen=False)
 
     def _on_audio(
         self, indata: NDArray[np.float32], frames: int, time_info: Any, status: Any
