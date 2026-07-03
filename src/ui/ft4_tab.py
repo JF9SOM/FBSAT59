@@ -176,6 +176,11 @@ class Ft4Tab(QWidget):
         self._scheduler.period_changed.connect(self._on_period_changed)
         self._scheduler.rx_period_ended.connect(self._on_rx_period_ended)
 
+        # Start listening immediately — decoding is a receive-only operation
+        # and must not require pressing CQ / TX Enable first. TX itself
+        # stays gated behind _tx_enabled, so this cannot transmit anything.
+        self._start_scheduler(tx_even=True)
+
     # ------------------------------------------------------------------ #
     # Setup                                                                #
     # ------------------------------------------------------------------ #
@@ -383,7 +388,7 @@ class Ft4Tab(QWidget):
                 sig.connect(self._on_rig_disconnected)
         # Reflect current connection state at tab-open time
         rig = getattr(rc, "_rig1", None)
-        already_connected = rig is not None and getattr(rig, "_connected", False)
+        already_connected = rig is not None and getattr(rig, "is_connected", False)
         self._refresh_input_source(already_connected)
 
     # ------------------------------------------------------------------ #
@@ -860,12 +865,17 @@ class Ft4Tab(QWidget):
         self._status_label.setText(_("Rig disconnected"))
 
     def _refresh_input_source(self, connected: bool) -> None:
-        """Update the input-source label text and colour (matches APRS/SSTV style)."""
+        """Update the input-source label text and colour (matches APRS/SSTV style).
+
+        This reflects Rig 1's CAT connection only — soundcard RX capture does
+        not depend on it (see _start_audio_capture), so the label must not
+        claim audio is unavailable when it may in fact be flowing fine.
+        """
         if connected:
             self._input_banner.setText(_("Input: Rig connected"))
             self._input_banner.setStyleSheet("color: #4caf50;")
         else:
-            self._input_banner.setText(_("Input: No audio source — connect Rig in Radio Control"))
+            self._input_banner.setText(_("Input: Rig not connected"))
             self._input_banner.setStyleSheet("color: #f44336;")
 
     # ------------------------------------------------------------------ #
