@@ -112,11 +112,13 @@ class _TxWorker(QObject):
         self._rig = rig
 
     def run(self) -> None:
+        """Emits exactly one of `error` or `finished` — never both, so a
+        failure status is never clobbered by an immediately-following
+        "TX done" (see finished/error handlers in Ft4Tab)."""
         mgr = get_audio_device_manager()
         if not mgr.acquire_output(_AUDIO_OWNER, self._out_device):
             other = mgr.output_owner(self._out_device) or "another tab"
             self.error.emit(f"Sound card output is in use by {other}")
-            self.finished.emit()
             return
         try:
             import sounddevice as sd  # optional dep
@@ -134,6 +136,8 @@ class _TxWorker(QObject):
             if self._rig is not None:
                 time.sleep(0.10)  # PTT tail time
                 self._rig.set_ptt(False)
+
+            self.finished.emit()
         except Exception as exc:
             if self._rig is not None:
                 with contextlib.suppress(Exception):
@@ -141,7 +145,6 @@ class _TxWorker(QObject):
             self.error.emit(str(exc))
         finally:
             mgr.release_output(_AUDIO_OWNER, self._out_device)
-            self.finished.emit()
 
 
 # ---------------------------------------------------------------------------
