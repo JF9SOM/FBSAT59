@@ -103,7 +103,9 @@ class _TxWorker(QObject):
             import sounddevice as sd  # optional dep
 
             if self._rig is not None:
-                self._rig.set_ptt(True)
+                if not self._rig.set_ptt(True):
+                    self.error.emit(_("PTT command failed — check Rig 1 connection"))
+                    return
                 time.sleep(0.15)  # PTT lead time
 
             sd.play(self._audio, samplerate=SAMPLE_RATE, device=self._out_device, blocking=False)
