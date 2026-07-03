@@ -313,11 +313,13 @@ class _Ft8LibBindings:
                     freq = (
                         min_bin + candidates[i].freq_offset + candidates[i].freq_sub / _WF_FREQ_OSR
                     ) * bin_hz
+                    # ft8_lib has no true SNR computation; its own demo decoder
+                    # (demo/decode_ft8.c) uses this same score*0.5 approximation.
                     results.append(
                         Ft4Message(
                             text=text,
                             freq_hz=freq,
-                            snr_db=0.0,  # SNR not directly available in this API
+                            snr_db=candidates[i].score * 0.5,
                             dt_sec=float(status.time),
                         )
                     )
