@@ -184,6 +184,7 @@ class Ft4Tab(QWidget):
         self._out_device: int | None = None
         self._in_device: int | None = None
         self._rx_source: str = "soundcard"  # "soundcard" or "sdr"
+        self._tx_slot_mode: str = "auto"  # "auto", "even", or "odd"
         self._sdr_connected: bool = False
 
         self._load_settings()
@@ -313,6 +314,25 @@ class Ft4Tab(QWidget):
             btn.clicked.connect(slot)
             btn_row.addWidget(btn)
 
+        btn_row.addWidget(QLabel(_("TX Slot:")))
+        self._tx_slot_combo = QComboBox()
+        self._tx_slot_combo.addItem(_("Auto"), "auto")
+        self._tx_slot_combo.addItem(_("Even"), "even")
+        self._tx_slot_combo.addItem(_("Odd"), "odd")
+        self._tx_slot_combo.setCurrentIndex(
+            max(0, self._tx_slot_combo.findData(self._tx_slot_mode))
+        )
+        self._tx_slot_combo.currentIndexChanged.connect(self._on_tx_slot_mode_changed)
+        self._tx_slot_combo.setToolTip(
+            _(
+                "Which 6s slot to transmit in when calling CQ / enabling TX.\n"
+                "Auto: whichever slot is current when you press CQ / TX Enable.\n"
+                "Responding to a decoded CQ always uses the correct opposite\n"
+                "slot regardless of this setting."
+            )
+        )
+        btn_row.addWidget(self._tx_slot_combo)
+
         btn_row.addStretch()
 
         self._tx_enable_btn = QPushButton(_("TX Enable"))
@@ -427,6 +447,7 @@ class Ft4Tab(QWidget):
             self._my_grid = data.get("my_grid", "")
             self._audio_freq = float(data.get("audio_freq_hz", _DEFAULT_AUDIO_FREQ))
             self._rx_source = data.get("rx_source", "soundcard")
+            self._tx_slot_mode = data.get("tx_slot_mode", "auto")
         # Fall back to global callsign / grid from Set QTH if not yet set per-tab
         if not self._my_call:
             r = self._conn.execute(
@@ -456,6 +477,7 @@ class Ft4Tab(QWidget):
                 "my_grid": self._my_grid,
                 "audio_freq_hz": self._audio_freq,
                 "rx_source": self._rx_source,
+                "tx_slot_mode": self._tx_slot_mode,
             }
         )
         self._conn.execute(
@@ -760,7 +782,7 @@ class Ft4Tab(QWidget):
         self._tx_edit.setText(msg)
         self._update_qso_display()
         is_even, _pos = Ft4Scheduler.current_slot_info()
-        self._start_scheduler(tx_even=is_even)
+        self._start_scheduler(tx_even=self._resolve_tx_even(is_even))
 
     def _on_btn_rst(self) -> None:
         call = self._my_call.strip().upper()
@@ -839,6 +861,24 @@ class Ft4Tab(QWidget):
         self._rx_source = self._rx_src_combo.currentData()
         self._save_settings()
 
+    @Slot(int)
+    def _on_tx_slot_mode_changed(self, _idx: int) -> None:
+        self._tx_slot_mode = self._tx_slot_combo.currentData()
+        self._save_settings()
+
+    def _resolve_tx_even(self, auto_is_even: bool) -> bool:
+        """Apply the user's manual TX Slot choice, if any, over the current slot.
+
+        Only used when *we* initiate a CQ / TX Enable — responding to a
+        decoded CQ always transmits in the opposite slot from the caller
+        regardless of this setting, since that is dictated by the protocol.
+        """
+        if self._tx_slot_mode == "even":
+            return True
+        if self._tx_slot_mode == "odd":
+            return False
+        return auto_is_even
+
     # ------------------------------------------------------------------ #
     # TX Enable / Halt                                                     #
     # ------------------------------------------------------------------ #
@@ -856,7 +896,7 @@ class Ft4Tab(QWidget):
                 return
             if not self._scheduler._running:
                 is_even, _pos = Ft4Scheduler.current_slot_info()
-                self._start_scheduler(tx_even=is_even)
+                self._start_scheduler(tx_even=self._resolve_tx_even(is_even))
             self._status_label.setText(_("TX enabled — waiting for next period"))
         else:
             self._status_label.setText(_("TX disabled"))
