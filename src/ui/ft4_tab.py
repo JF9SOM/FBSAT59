@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 import sqlite3
 import threading
 import time
@@ -59,6 +60,24 @@ _COL_DT = 2
 _COL_FREQ = 3
 _COL_MSG = 4
 _COL_COUNT = 5
+
+_GRID_RE = re.compile(r"^[A-R]{2}[0-9]{2}$")
+
+
+def _parse_cq_call_grid(words: list[str]) -> tuple[str, str]:
+    """Extract (callsign, grid) from the words following "CQ" in a decoded message.
+
+    Directed CQs insert a keyword before the callsign (e.g. "CQ WWA <call>
+    <grid>", "CQ DX <call>", "CQ POTA <call> <grid>"), so the callsign is not
+    always the first word — it is always the token immediately before the
+    grid, or the last token when no grid is present.
+    """
+    if not words:
+        return "", ""
+    if len(words) >= 2 and _GRID_RE.match(words[-1]):
+        return words[-2], words[-1]
+    return words[-1], ""
+
 
 _FT4_SETTINGS_KEY = "ft4_settings"
 _DEFAULT_AUDIO_FREQ = 1000.0  # Hz — base tone within SSB passband
@@ -711,8 +730,7 @@ class Ft4Tab(QWidget):
             return
 
         if words[0] == "CQ" and len(words) >= 2:
-            their_call = words[1]
-            their_grid = words[2] if len(words) >= 3 else ""
+            their_call, their_grid = _parse_cq_call_grid(words[1:])
             reply = qso.respond_to(their_call, their_grid)
             self._tx_edit.setText(reply)
             self._update_qso_display()
