@@ -854,6 +854,7 @@ class Ft4Tab(QWidget):
             if not self._scheduler._running:
                 is_even, _pos = Ft4Scheduler.current_slot_info()
                 self._start_scheduler(tx_even=is_even)
+            self._status_label.setText(_("TX enabled — waiting for next period"))
         else:
             self._status_label.setText(_("TX disabled"))
 
