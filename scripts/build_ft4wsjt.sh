@@ -187,16 +187,22 @@ echo "Compiling C++ CRC helper ..."
 "$CXX" -O2 -fPIC -fpermissive -I"$BOOST_INCLUDE_DIR" -c "$SRC_DIR/crc14.cpp" -o crc14.o
 OBJS+=("crc14.o")
 
+# Derive the lib dir from wherever fftw3.f03's include dir was found (e.g.
+# Homebrew on Apple Silicon: /opt/homebrew/include -> /opt/homebrew/lib).
+# The linker does not search this path by default any more than the
+# compiler searches the include path, so -lfftw3f needs an explicit -L.
+FFTW3_LIB_DIR="${FFTW3_F03_DIR%/include}/lib"
+
 mkdir -p "$OUT_DIR"
 echo "Linking $LIB_NAME ..."
 case "$(uname -s)" in
   Darwin)
     "$FC" -dynamiclib -undefined dynamic_lookup "${OBJS[@]}" \
-      -o "$OUT_DIR/$LIB_NAME" -lfftw3f -lstdc++
+      -L"$FFTW3_LIB_DIR" -o "$OUT_DIR/$LIB_NAME" -lfftw3f -lstdc++
     ;;
   *)
     "$FC" -shared -fPIC "${OBJS[@]}" \
-      -o "$OUT_DIR/$LIB_NAME" -lfftw3f -lstdc++ -lm
+      -L"$FFTW3_LIB_DIR" -o "$OUT_DIR/$LIB_NAME" -lfftw3f -lstdc++ -lm
     ;;
 esac
 
