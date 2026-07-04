@@ -106,6 +106,12 @@ class AprsTab(QWidget):
         self._connect_signals()
         self._refresh_input_source()
 
+        # Start receiving immediately when Sound Card is configured — this must
+        # not require pressing Connect on Rig 1 first, so ground-based APRS
+        # reception can be tested with no rig at all. TX stays gated behind
+        # can_tx in _refresh_input_source() (requires an actual rig for PTT).
+        self._try_start_engine()
+
     # ------------------------------------------------------------------ #
     # DB helpers
     # ------------------------------------------------------------------ #
@@ -393,6 +399,12 @@ class AprsTab(QWidget):
             self._input_label.setText(_("Input: {dev}  (receive only — SDR)").format(dev=label))
             self._input_label.setStyleSheet("color: #4a9eff;")
             self._send_btn.setEnabled(False)
+        elif sc_ok and self._engine.is_running:
+            self._input_label.setText(
+                _("Input: Sound Card + Direwolf  (receive only — Rig not connected)")
+            )
+            self._input_label.setStyleSheet("color: #4a9eff;")
+            self._send_btn.setEnabled(False)
         elif self._rig_connected and not sc_ok:
             self._input_label.setText(
                 _("Input: Sound Card not configured — open Rig Settings > Sound Card")
@@ -416,8 +428,13 @@ class AprsTab(QWidget):
         return self._engine
 
     def _try_start_engine(self) -> None:
-        """Start Direwolf engine when rig is connected and Sound Card is configured."""
-        if not self._rig_connected or not self._is_soundcard_configured():
+        """Start Direwolf engine whenever Sound Card is configured.
+
+        Direwolf runs in ADEVICE stdin stdout / PTT NONE mode, so it needs no
+        rig at all to receive. Rig 1 is only required later for PTT (send);
+        see can_tx in _refresh_input_source().
+        """
+        if not self._is_soundcard_configured():
             return
         if self._engine.is_running:
             return

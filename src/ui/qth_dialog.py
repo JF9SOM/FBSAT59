@@ -296,6 +296,8 @@ class QTHDialog(QDialog):
                 ew = "E" if lon >= 0 else "W"
                 self._grid_preview.setText(f"{abs(lat):.4f}°{ns}  {abs(lon):.4f}°{ew}")
                 self._grid_elev_status.setText("")
+                self._lat_spin.setValue(lat)
+                self._lon_spin.setValue(lon)
                 self._grid_debounce.start()
             except ValueError:
                 self._grid_preview.setText(_("Invalid grid locator"))
