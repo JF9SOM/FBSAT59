@@ -991,7 +991,8 @@ kgoba/ft8_lib（上記）は作者自身が「マイコン向け軽量参照実�
 - **Help → FT4 Enhanced Decoder Installation…** でバンドル版を自動ダウンロード・インストール（`src/ui/ft4wsjt_dialog.py`）。インストール先: `~/.local/share/fbsat59/ft4wsjt/`
 - CI で `.github/workflows/build-ft4wsjt.yml` が毎週 WSJT-X 最新リリースを監視してビルド（Linux/Windows/macOS）
   - **2026-07-05 に3プラットフォーム全て `workflow_dispatch` で実際に走らせグリーン確認済み**（Linux 55秒 / macOS 40秒 / Windows 2分47秒）。CI実装中に発覚した3件の不具合（Apple Silicon Homebrewのインクルード/ライブラリパス・Windows condaソルバーの遅さ・FFTW3ランタイムDLL同梱漏れ）とその対処は本ファイル「CI/CD トラブルシューティング履歴」内「ft4wsjt（libft4wsjt）ビルド固有」を参照
-  - `ft4wsjt-bundle` プレリリースタグは既に3プラットフォーム分のアセットが公開済みで、`Help` メニューからのダウンロードは今すぐ機能する。ただし **この Help メニュー項目自体（および本デコーダーのソースコード全体）はアプリ本体のビルド済み配布物（AppImage/.exe/.dmg）にはまだ含まれていない**（最新の app リリースタグは `v0.2.8`、本機能の実装より前）。ソースから直接実行している環境でのみ有効。次にバージョンタグを打って本体をリリースするまでは一般ユーザーには届かない
+  - `ft4wsjt-bundle` プレリリースタグは既に3プラットフォーム分のアセットが公開済みで、`Help` メニューからのダウンロードが機能する
+  - **v0.2.9（2026-07-04 リリース、3プラットフォーム全ビルド成功）でアプリ本体に本機能を含めて公開済み**。`Help > FT4 Enhanced Decoder Installation…` は v0.2.9 以降の AppImage/.exe/.dmg から利用可能
 - テスト: `tests/test_ft4_wsjt_decoder.py`（libft4wsjt 未インストール時は skip）。輻輳帯域回帰テストで ft8_lib フォールバックと比較し、弱信号の復号漏れがないことを確認
 
 **メニュー: Communications > Q65**（`src/ui/q65_tab.py`）
