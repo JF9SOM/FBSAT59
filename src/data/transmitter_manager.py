@@ -43,6 +43,19 @@ _MOON_ID: int = -1
 # Matches "CTCSS 67.0 Hz" or "CTCSS 100 Hz" in transmitter description text
 _CTCSS_RE = re.compile(r"CTCSS\s+([\d.]+)\s*Hz", re.IGNORECASE)
 
+# Matches the numeric placeholder names this module falls back to when no real
+# satellite name is known yet ("#12345", "Satellite #12345"). Space-Track's own
+# "OBJECT X" placeholder is checked separately since it never carries a "#".
+_PLACEHOLDER_NAME_RE = re.compile(r"^(Satellite\s+)?#\d+$", re.IGNORECASE)
+
+
+def _is_placeholder_name(name: str) -> bool:
+    """True when *name* is one of our own numeric placeholders or a
+    Space-Track generic object name — i.e. safe to overwrite with a real
+    name once one becomes known."""
+    return name.upper().startswith("OBJECT ") or bool(_PLACEHOLDER_NAME_RE.match(name))
+
+
 # SatNOGS status → DB status normalization map
 # 'future'/'re-entered' are converted to match the CHECK constraint ('alive','dead','unknown')
 _SATNOGS_STATUS_MAP: dict[str, str] = {
@@ -393,7 +406,7 @@ class TransmitterManager:
         if real_row:
             real_name = str(real_row["name"])
             # Replace Space-Track generic object names or internal placeholder names
-            if real_name.upper().startswith("OBJECT ") or real_name.startswith("#"):
+            if _is_placeholder_name(real_name):
                 self._conn.execute(
                     "UPDATE satellites SET name = ?, updated_at = ? WHERE norad_cat_id = ?",
                     (fake_row["name"], now, real_id),
@@ -554,13 +567,17 @@ class TransmitterManager:
             # Prefer target_norad_cat_id when explicitly specified (backward compatibility)
             storage_id = target_norad_cat_id if target_norad_cat_id is not None else auto_storage
 
-            # Ensure the satellite record exists
+            # Ensure the satellite record exists. Use a numeric placeholder, never
+            # the transmitter's own description — sync_satellite_names() only
+            # recognizes "#NNNNN"/"OBJECT ..." as placeholders worth overwriting
+            # once the real name is known, so a description here would stick
+            # forever (e.g. "Mode U - CW" as a permanent "satellite name").
             self._conn.execute(
                 """
                 INSERT OR IGNORE INTO satellites (norad_cat_id, name, updated_at)
                 VALUES (?, ?, ?)
             """,
-                (storage_id, xpdr.get("description", f"#{storage_id}"), now),
+                (storage_id, f"#{storage_id}", now),
             )
 
             # Provisional NORAD differs from official NORAD → auto-hide the

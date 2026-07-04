@@ -280,6 +280,35 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         )
         conn.commit()
 
+    # Data repair: TransmitterManager.sync_from_satnogs() used to seed a new
+    # satellite's placeholder name from the transmitter's own description
+    # (e.g. "Mode U - CW") instead of a recognizable "#NNNNN" placeholder.
+    # Since only names that look like a placeholder get corrected once the
+    # real name is known, satellites created this way were stuck with a
+    # garbage name forever even after the correct name became known on their
+    # (now-hidden) provisional-NORAD counterpart. Repair by copying the name
+    # from satnogs_source_id's satellite row whenever they differ. Safe to
+    # run on every startup: a no-op once the names already match.
+    conn.execute(
+        """
+        UPDATE satellites
+        SET name = (
+                SELECT p.name FROM satellites p
+                WHERE p.norad_cat_id = satellites.satnogs_source_id
+            ),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE satnogs_source_id IS NOT NULL
+          AND EXISTS (
+                SELECT 1 FROM satellites p WHERE p.norad_cat_id = satellites.satnogs_source_id
+            )
+          AND name != (
+                SELECT p.name FROM satellites p
+                WHERE p.norad_cat_id = satellites.satnogs_source_id
+            )
+        """
+    )
+    conn.commit()
+
 
 def init_database(db_path: Path | None = None) -> sqlite3.Connection:
     """
