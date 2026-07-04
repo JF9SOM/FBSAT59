@@ -136,6 +136,22 @@ if [ -z "$FFTW3_F03_DIR" ]; then
   exit 1
 fi
 
+# crc14.cpp needs <boost/crc.hpp> (header-only). Homebrew on Apple Silicon
+# installs to /opt/homebrew, which clang/g++ do not search by default, so
+# this must be located explicitly just like fftw3.f03 above.
+BOOST_INCLUDE_DIR=""
+for cand in /usr/include /usr/local/include /opt/homebrew/include \
+            "${CONDA_PREFIX:-}/include" "${CONDA_PREFIX:-}/Library/include"; do
+  if [ -f "$cand/boost/crc.hpp" ]; then
+    BOOST_INCLUDE_DIR="$cand"
+    break
+  fi
+done
+if [ -z "$BOOST_INCLUDE_DIR" ]; then
+  echo "ERROR: boost/crc.hpp not found (install libboost-dev / brew boost / conda-forge boost)" >&2
+  exit 1
+fi
+
 FFLAGS="-O2 -fPIC -I$SRC_DIR -I$FFTW3_F03_DIR"
 OBJS=()
 
@@ -168,7 +184,7 @@ OBJS+=("normalizebmet.o")
 OBJS+=("ft4wsjt_bridge.o")
 
 echo "Compiling C++ CRC helper ..."
-"$CXX" -O2 -fPIC -fpermissive -c "$SRC_DIR/crc14.cpp" -o crc14.o
+"$CXX" -O2 -fPIC -fpermissive -I"$BOOST_INCLUDE_DIR" -c "$SRC_DIR/crc14.cpp" -o crc14.o
 OBJS+=("crc14.o")
 
 mkdir -p "$OUT_DIR"
