@@ -131,28 +131,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install MinGW gfortran + FFTW3 + Boost
+      - name: Install MinGW gfortran
         run: |
           choco install mingw -y --no-progress
           echo "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin" >> "$GITHUB_PATH"
 
-      - name: Fetch FFTW3 + Boost headers (conda-forge)
-        run: |
-          curl -L -o miniforge.exe "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86_64.exe"
-          ./miniforge.exe /InstallationType=JustMe /RegisterPython=0 /S /D=$RUNNER_TEMP/miniforge
-          "$RUNNER_TEMP/miniforge/Scripts/conda.exe" create -y --prefix "$RUNNER_TEMP/ft4wsjt-deps" -c conda-forge fftw boost
-          echo "FT4WSJT_DEPS_INCLUDE=$RUNNER_TEMP/ft4wsjt-deps/Library/include" >> "$GITHUB_ENV"
-          echo "FT4WSJT_DEPS_LIB=$RUNNER_TEMP/ft4wsjt-deps/Library/lib" >> "$GITHUB_ENV"
+      - name: Fetch FFTW3 + Boost headers (conda-forge via micromamba)
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: ft4wsjt-deps
+          create-args: fftw boost
+          channels: conda-forge
+          init-shell: bash
 
+      # micromamba's activation (from init-shell above) only takes effect in
+      # a login bash shell, so this step — and only this step — needs
+      # `shell: bash -el {0}` instead of the job-level plain `bash` default.
+      # That activation is what sets $CONDA_PREFIX, which
+      # build_ft4wsjt.sh's own directory-scanning logic already knows to
+      # check (see FFTW3_F03_DIR / BOOST_INCLUDE_DIR in the script) — same
+      # mechanism as the Linux/macOS jobs, just via micromamba instead of
+      # apt/brew.
       - name: Build ft4wsjt.dll
+        shell: bash -el {0}
         env:
           WSJTX_TAG: ${{ needs.check-version.outputs.wsjtx_tag }}
         run: |
-          # build_ft4wsjt.sh looks for fftw3.f03 under common include dirs;
-          # add the conda-forge one via CONDA_PREFIX so its search loop finds it.
-          export CONDA_PREFIX="$RUNNER_TEMP/ft4wsjt-deps"
-          export CPLUS_INCLUDE_PATH="$FT4WSJT_DEPS_INCLUDE"
-          export LIBRARY_PATH="$FT4WSJT_DEPS_LIB"
           OUT_DIR="$RUNNER_TEMP/ft4wsjt-flat"
           ./scripts/build_ft4wsjt.sh "" "$OUT_DIR"
           echo "$WSJTX_TAG" > "$OUT_DIR/version.txt"
@@ -161,6 +165,10 @@ jobs:
             src="/c/ProgramData/chocolatey/lib/mingw/tools/install/mingw64/bin/$dll"
             [ -f "$src" ] && cp "$src" "$OUT_DIR/"
           done
+          # FFTW3 runtime DLL from the micromamba env (ft4wsjt.dll dynamically
+          # links against it; without this next to ft4wsjt.dll, ctypes.CDLL
+          # would fail to load it on an end user's machine).
+          find "$CONDA_PREFIX/Library/bin" -iname "*fftw3f*.dll" -exec cp {} "$OUT_DIR/" \;
           PKG_NAME="ft4wsjt-windows-x86_64.zip"
           (cd "$OUT_DIR" && 7z a "$RUNNER_TEMP/$PKG_NAME" .)
           echo "PKG=$RUNNER_TEMP/$PKG_NAME" >> "$GITHUB_ENV"
