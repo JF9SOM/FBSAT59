@@ -733,7 +733,8 @@ sudo usermod -aG dialout $USER
 - **`is_source_stale(source_name)` (TLEManager)**: `sync_log` を照会し、一度もフェッチされていないソース（`never-fetched`）を検出。初回起動時に cubesat/weather/science/earth-obs グループを即時フェッチするトリガーとして使用
 - **`_sort_sources_by_priority()` (MainWindow)**: TLE_SOURCES の `priority` フィールドでソース名を昇順ソート。amateur より先に cubesat/weather 等を上書きしないよう順序を制御
 - **GitHub Actions: `make_latest: true`**（`prerelease: true` を廃止）。3プラットフォーム全ビルドジョブで設定済み。最新リリース: `v0.1.0`
-- **Open in SatNOGS（クロスプラットフォーム）**: 右クリックメニューから衛星の SatNOGS ページをアプリモードで開く。`_open_url_app_mode` に統一済み（Linux: `shutil.which` / macOS: `.app` 絶対パス / Windows: `Program Files` 絶対パス）。Chromium系が見つからない場合は `QDesktopServices.openUrl` にフォールバック
+- **Open in SatNOGS（クロスプラットフォーム）**: 右クリックメニューから衛星の SatNOGS ページをアプリモードで開く。`_open_url_app_mode` に統一済み（Linux: `shutil.which` / macOS: `.app` 絶対パス / Windows: `Program Files` 絶対パス）。Chromium系が見つからない場合は `QDesktopServices.openUrl` にフォールバック。ネットワーク接続エラーと「本当に見つからない」を区別して表示（2026-07-04、`_satnogs_network_error` シグナル追加）
+- **Comms Quick Panel**（右側 Satellite Detail パネル下部）— Communicationsタブ表示中にミニレーダー・衛星クイック選択・周波数ミラー・Rig/Rotator接続ボタンを表示。詳細は「Comms Quick Panel 設計」セクション参照
 - **メニューバー構成**（v0.2.0 以降）
   - File / Satellite / Radio / **Communications** / **Autotrack/Record** / View / Help
   - **Communications**: サブメニュー APRS / Telemetry / SSTV・SSDV / FT4 / Q65 / **CW Decoder**（クリックで非常駐タブを開く。× で閉じる）
@@ -1098,6 +1099,95 @@ CREATE TABLE custom_groups (
 - 凡例は非表示。マウスホバーでツールチップ（衛星名＋最大仰角）
 - Range選択: 4h / 8h / 12h / 24h（Target Pass Chartと同じ）
 - UTC/Local 切り替えに連動
+
+### Comms Quick Panel 設計（src/comms/mode_detection.py, src/ui/main_window.py — 2026-07-04 実装）
+
+#### 概要
+
+Communicationsタブ（FT4・APRS・SSTV/SSDV・CW Decoder・Q65・METEOR・Telemetry）を開いている間、
+右側の「Satellite Detail」パネル下部に「Quick Comms Control」枠を表示する。Rig接続や周波数確認、
+衛星位置確認のために Radio Control / Dashboard タブへ行き来する手間を減らすための機能。
+
+表示要素（すべて `SatDetailPanel` クラス内、main_window.py）:
+- ミニレーダー（`RadarView(compact=True)` — 凡例・ステータス文字列を省略し円を最大化。NSWEラベルは6pt）
+- Input Source コンボ（衛星クイック選択。タブごとに対象衛星を動的フィルタ）
+- D:/U: 周波数（Radio Control のドップラー補正値、または METEOR は SatDump 固定周波数をミラー）
+- Rig 1 / Rig 2 / Rotator 接続プロキシボタン（`RadioControlWidget` の実ボタンを `.click()` するだけで、
+  接続ロジック自体は一切重複させない）
+
+Dashboard 等の常駐タブに切り替えると自動的に非表示になる（後述のスプリッター復元とセット）。
+
+#### mode_detection.py — タブ別設定の単一情報源
+
+`src/comms/mode_detection.py` の `COMMS_TAB_CONFIG` に、各タブの Quick Panel 表示設定を集約する:
+
+| タブ | Input Source | 周波数欄 | 理由 |
+|---|---|---|---|
+| FT4 / APRS / SSTV | ○（動的フィルタ） | Radio Control ミラー | 対象衛星が少数〜中程度で絞り込みが機能する |
+| CW Decoder | × | Radio Control ミラー | CW対応衛星が多すぎて絞り込みの意味がない |
+| Q65 | × | 非表示 | 固定EMEバンド運用でトランスポンダー選択と無関係 |
+| METEOR | × | SatDump固定周波数 | 独自の Pipeline コンボが既にあり、周波数もRadio Controlとは無関係（固定） |
+| Telemetry | × | Radio Control ミラー | 独自の専用衛星コンボ（AFSK/gr-satellites）が既にある |
+
+`is_ft4_transmitter()` / `is_aprs_transmitter()` / `is_sstv_transmitter()` / `is_cw_transmitter()` は
+`RadioControlWidget._check_comms_auto_open()`（トランスポンダー選択時の自動タブオープン判定）と
+**共有**しており、判定基準がQuick Panelの対象衛星リストと自動オープン判定とでズレることを防ぐ。
+
+`is_ft4_transmitter()` は `"FT4"` のみに一致し、`"FT8"` には一致しない（2026-07-04 修正）。
+FT4（6秒周期）とFT8（15秒周期）はプロトコルが異なり、アプリのFT4タブは6秒周期専用のため、
+"FT8" とだけ書かれたトランスポンダー（例: Ariane 6 上段の GENESIS-A ペイロード）を拾うと、
+実際には絶対に復号できないタブが開いてしまう。
+
+`get_norads_for_tab(conn, tab_key)` は `matcher` を使い、`transmitters` テーブルを
+`satellites.is_hidden = 0` で JOIN した上で対象衛星の NORAD 一覧を返す。この JOIN がないと、
+TLE自動クリーンアップや仮ID移行で `is_hidden=2` になった衛星の残存トランスミッタ行が
+Input Source コンボに混入する（2026-07-04、CAS-11 で発覚・修正済み）。
+
+#### 衛星選択フロー（`MainWindow._on_comms_satellite_requested`）
+
+Telemetryタブの `_on_telemetry_satellite_requested()` と同型の汎用ハンドラ:
+1. 衛星フィルターを「All Satellites」に切り替え
+2. `_select_satellite_by_norad(norad)` で左リストを選択
+3. `_refresh_radio_control(norad)` でトランスポンダー一覧を取得
+4. `COMMS_TAB_CONFIG[tab_key].matcher` に最初に一致するトランスポンダーを自動選択
+
+#### スプリッター自動縮小・復元（`MainWindow._on_tab_changed`）
+
+`_resident_tab_widgets`（Dashboard/World Map/Radar/Pass Chart/Group Pass Chart/Radio Control/
+SDR Control）に含まれないタブ（＝Communicationsタブ全般）がアクティブになったとき:
+- 直前のスプリッターサイズを `_pass_panel_saved_sizes` に退避（すでに退避済みなら上書きしない。
+  Comms タブ同士を連続で切り替えても元のサイズを覚え続ける）
+- 下部 Upcoming Passes パネルを `PassPanel.minimumHeight()`（200px）まで縮小し、
+  Decoded Messages 等の表示領域を最大化
+- resident タブに戻ったら退避したサイズへ復元し、Quick Comms Panel を非表示化
+
+`MainWindow._comms_tab_keys: dict[QWidget, str]` が各 Communications タブのウィジェットと
+`COMMS_TAB_CONFIG` のキー（`"ft4"` 等）を対応付ける。各 `_on_open_*()` でタブ生成直後に登録する。
+
+METEOR タブは `MeteorTab.current_rx_frequency_mhz()` を通じて選択中のパイプライン
+（`METEOR_PIPELINES`）の固定周波数を返す。SatDump は Radio Control の選択と無関係に
+この固定周波数で受信するため、D:欄はここから取得し、U:欄は常に「RX only」表示にする。
+
+#### `SatDetailPanel.refresh_freq_mirror()` の可視性判定に関する注意
+
+Quick Panel が表示中かどうかの判定には `self._active_comms_tab is not None` を使う。
+`QWidget.isVisible()` は、そのウィジェットの属するトップレベルウィンドウが実際に `show()` されて
+初めて `True` を返す仕様のため（オフスクリーンテスト等でウィンドウを show していないと常に
+`False` になる）、内部状態フラグの方を判定に使うこと。
+
+#### 関連する副次修正（Quick Panel 実装中に発覚・2026-07-04 修正）
+
+- **衛星名プレースホルダーバグ**（`TransmitterManager.sync_from_satnogs()`）: トランスポンダー
+  同期が先に衛星レコードを仮登録する際、トランスミッタの `description`（例: "Mode U - CW"）を
+  そのまま衛星名として使っていたため、後から正しい名前が判明しても永遠に上書きされない衛星が
+  発生していた（`satnogs_source_id` を持つ衛星10件で発覚）。プレースホルダー判定を
+  `_is_placeholder_name()` に共通化し、フォールバック名を `#{norad}` 形式に統一。既存の壊れた
+  データは `database.py` の `_apply_migrations()` に追加した自己修復クエリ（仮ID側の正しい
+  名前をコピー・冪等）で次回起動時に自動修復される
+- **Open in SatNOGS のネットワークエラー切り分け**（`MainWindow._fetch_satnogs_uuid_bg`）:
+  従来は接続エラー・タイムアウトも「SatNOGS page not found」に丸められ、実際の原因（回線側の
+  問題か本当に存在しないのか）が画面から判断できなかった。`httpx.HTTPError` を個別にキャッチし
+  `_satnogs_network_error` シグナルで別メッセージを表示するよう分離
 
 ### Autotrack 設計（src/core/autotrack.py）
 
@@ -1921,7 +2011,12 @@ GET https://db.satnogs.org/api/tle/?norad_cat_id={fake_id}&format=json
 
 実行される手順（各ステップはスキップ条件あり）：
 1. 実 ID の satellites レコードを作成（なければ）
-2. 実 ID の衛星名が `OBJECT *` 等のプレースホルダーなら SATNOGS 名で上書き
+2. 実 ID の衛星名が `OBJECT *` / `#NNNNN` / `Satellite #NNNNN` 等のプレースホルダー（
+   `_is_placeholder_name()`、src/data/transmitter_manager.py）なら SATNOGS 名で上書き。
+   以前は `OBJECT *` と `#` 始まりしか認識せず、`sync_from_satnogs()` がトランスミッタの
+   `description` をそのまま仮の衛星名として登録していたケース（例: "Mode U - CW"）が
+   永遠に上書きされないバグがあった（2026-07-04 修正、詳細は「Comms Quick Panel 設計」
+   セクションの「関連する副次修正」参照）
 3. TLE を仮 ID → 実 ID へコピー（実 ID 側に manual TLE があればスキップ）
 4. トランスミッタを仮 ID → 実 ID へ移行（実 ID 側に既存ならスキップ）
 5. `is_favorite` を実 ID にコピー
