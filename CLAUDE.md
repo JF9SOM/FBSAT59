@@ -664,6 +664,24 @@ $viVer = ($parts[0..3] -join '.')
 makensis /DAPP_VERSION=$ver /DVIVERSION=$viVer scripts\installer.nsi
 ```
 
+### ft4wsjt（libft4wsjt）ビルド固有（2026-07-05 解決・3プラットフォームCI緑確認済み）
+
+`build-ft4wsjt.yml`（WSJT-X の `lib/ft4_decode.f90` から `libft4wsjt` をビルド、詳細は Communications > FT4 セクション参照）の CI 実装時に判明した知見。
+
+**問題**: macOS で `fatal error: 'boost/crc.hpp' file not found`（`brew install boost` 実行後も発生）  
+**原因**: Apple Silicon版 Homebrew は `/opt/homebrew` にインストールされるが、clang/g++ はこのパスをデフォルトでは検索しない  
+**解決**: `scripts/build_ft4wsjt.sh` で `fftw3.f03` と同様に `boost/crc.hpp` の実在パスを候補ディレクトリ（`/usr/include`・`/usr/local/include`・`/opt/homebrew/include`・`${CONDA_PREFIX}/include` 等）から探索し、`crc14.cpp` のコンパイルに明示的に `-I` で渡す
+
+**問題**: macOS でコンパイルは通るがリンク時に `ld: library 'fftw3f' not found`  
+**原因**: 上記と同根。ライブラリ探索パスも `/opt/homebrew/lib` がデフォルトでは通っていない  
+**解決**: `fftw3.f03` が見つかったインクルードディレクトリから `${FFTW3_F03_DIR%/include}/lib` を導出し、リンクコマンドに `-L` で明示的に渡す（Homebrew・conda-forge 双方のディレクトリ構成に対応できる導出方法）
+
+**問題**: Windows で FFTW3/Boost を conda-forge から取得する際、`conda create` の依存解決に20分以上かかり終わらない  
+**原因**: Miniforge をサイレントインストールして通常の `conda` ソルバーで解決する方式は、Boost のような依存関係の大きいパッケージで著しく遅い  
+**解決**: `mamba-org/setup-micromamba@v2` アクションに置き換え。同じ conda-forge パッケージでも数分で解決完了する。`init-shell: bash` を指定し、後続ステップは `shell: bash -el {0}`（ログインシェル）にすることで `$CONDA_PREFIX` が自動設定され、`build_ft4wsjt.sh` 側の探索ロジック（上記2件と共通）がそのまま機能する
+
+**追加の見落とし**: Windows ビルドで FFTW3 の実行時 DLL（`fftw3f*.dll`）を出力に同梱し忘れていた（MinGW ランタイムDLLのみコピーしていた）。ビルドと ctypes ロードは別物であり、リンクが通っても実行時に依存 DLL が同梱されていなければ `ctypes.CDLL()` は失敗する。`$CONDA_PREFIX/Library/bin/*fftw3f*.dll` を出力ディレクトリにコピーして解決
+
 ---
 
 ## 開発環境セットアップ（Ubuntu）
@@ -971,7 +989,9 @@ kgoba/ft8_lib（上記）は作者自身が「マイコン向け軽量参照実�
   - 新規ネイティブ依存: `libfftw3`（本家と同じFFTW3ベースFFT）・Boost（`crc14.cpp` が `boost::augmented_crc` を使用。header-onlyで`libboost-dev`等で足りる）
 - ft8_lib のみ利用可能（libft4wsjt 未インストール）の場合は青バナーで案内表示（TX/RXともブロックしない、情報提供のみ）
 - **Help → FT4 Enhanced Decoder Installation…** でバンドル版を自動ダウンロード・インストール（`src/ui/ft4wsjt_dialog.py`）。インストール先: `~/.local/share/fbsat59/ft4wsjt/`
-- CI で `.github/workflows/build-ft4wsjt.yml` が毎週 WSJT-X 最新リリースを監視してビルド（Linux/Windows/macOS。**Windows/macOS ジョブは実機未検証**——conda-forge 経由の FFTW3/Boost 取得と MinGW gfortran の組み合わせは机上のみで、Hamlib/PlutoSDR の過去の CI 苦労歴と同様に実際に CI を回して反復修正が必要になる可能性が高い）
+- CI で `.github/workflows/build-ft4wsjt.yml` が毎週 WSJT-X 最新リリースを監視してビルド（Linux/Windows/macOS）
+  - **2026-07-05 に3プラットフォーム全て `workflow_dispatch` で実際に走らせグリーン確認済み**（Linux 55秒 / macOS 40秒 / Windows 2分47秒）。CI実装中に発覚した3件の不具合（Apple Silicon Homebrewのインクルード/ライブラリパス・Windows condaソルバーの遅さ・FFTW3ランタイムDLL同梱漏れ）とその対処は本ファイル「CI/CD トラブルシューティング履歴」内「ft4wsjt（libft4wsjt）ビルド固有」を参照
+  - `ft4wsjt-bundle` プレリリースタグは既に3プラットフォーム分のアセットが公開済みで、`Help` メニューからのダウンロードは今すぐ機能する。ただし **この Help メニュー項目自体（および本デコーダーのソースコード全体）はアプリ本体のビルド済み配布物（AppImage/.exe/.dmg）にはまだ含まれていない**（最新の app リリースタグは `v0.2.8`、本機能の実装より前）。ソースから直接実行している環境でのみ有効。次にバージョンタグを打って本体をリリースするまでは一般ユーザーには届かない
 - テスト: `tests/test_ft4_wsjt_decoder.py`（libft4wsjt 未インストール時は skip）。輻輳帯域回帰テストで ft8_lib フォールバックと比較し、弱信号の復号漏れがないことを確認
 
 **メニュー: Communications > Q65**（`src/ui/q65_tab.py`）
