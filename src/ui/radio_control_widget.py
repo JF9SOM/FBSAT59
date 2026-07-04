@@ -28,6 +28,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from comms.mode_detection import (
+    is_aprs_transmitter,
+    is_cw_transmitter,
+    is_ft4_transmitter,
+    is_sstv_transmitter,
+)
 from i18n import _
 from rig.controller import (
     HamlibDirectController,
@@ -504,19 +510,19 @@ class RadioControlWidget(QWidget):
             self._check_comms_auto_open(xpdr)
 
     def _check_comms_auto_open(self, xpdr: Any) -> None:
-        """Store the comms tab to open once the rig connects (not immediately)."""
-        desc = (xpdr.get("description") or "").upper()
+        """Store the comms tab to open once the rig connects (not immediately).
+
+        Classification is delegated to comms.mode_detection so the same
+        rules also drive the Comms Quick Panel's per-tab satellite filter.
+        """
         mode = (xpdr.get("mode") or "").upper()
-        # "SSTV" / "SSDV" explicit, plus "IMAGING" for ISS
-        # (SATNOGS labels ISS 145.800 MHz SSTV as "Mode V imaging")
-        # NOTE: "MODE V" alone is too broad — it also matches "Mode V APRS"
-        if "SSTV" in desc or "SSDV" in desc or "IMAGING" in desc:
+        if is_sstv_transmitter(xpdr):
             self._pending_comms_tab = "sstv"
-        elif "APRS" in desc or mode == "AFSK":
+        elif is_aprs_transmitter(xpdr):
             self._pending_comms_tab = "aprs"
-        elif "FT4" in desc or "FT8" in desc:
+        elif is_ft4_transmitter(xpdr):
             self._pending_comms_tab = "ft4"
-        elif mode in ("CW", "CW-R"):
+        elif is_cw_transmitter(xpdr):
             # CW is RX-only — emit immediately (no rig connection required)
             self.cw_transponder_selected.emit()
             self._pending_comms_tab = None

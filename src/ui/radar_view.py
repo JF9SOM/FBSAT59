@@ -137,10 +137,21 @@ class RadarView(QWidget):
 
     sat_clicked: Signal = Signal(str)
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, compact: bool = False) -> None:
+        """
+        Args:
+            compact: use a smaller layout suited for the Comms Quick Panel's
+                mini radar — smaller minimum size, no legend/status text
+                (redundant with the Satellite Detail fields above it), and
+                smaller cardinal labels so the circle can fill the widget.
+        """
         super().__init__(parent)
+        self._compact = compact
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.setMinimumSize(200, 200)
+        if compact:
+            self.setMinimumSize(120, 120)
+        else:
+            self.setMinimumSize(200, 200)
         self._tracks: list[SatTrackData] = []
         self._dot_hit_radius: float = 10.0
         self._rot_az: float | None = None
@@ -220,9 +231,20 @@ class RadarView(QWidget):
     # ------------------------------------------------------------------ #
 
     def _radar_geometry(self) -> tuple[float, float, float]:
-        """Return (center_x, center_y, radius) with bottom margin reserved for status text."""
+        """Return (center_x, center_y, radius) with bottom margin reserved for status text.
+
+        Compact mode skips the status-text/legend reservation entirely (those
+        are not drawn — see _draw()) and uses smaller label gutters, so the
+        circle fills almost the whole widget instead of being squeezed small.
+        """
         w = self.width()
         h = self.height()
+        if self._compact:
+            cx = w / 2.0
+            cy = h / 2.0
+            r = max(1.0, min(cx - 8.0, cy - 8.0) - 2.0)
+            return cx, cy, max(r, 1.0)
+
         status_h = 70  # reserved for next-pass text below circle
         # Centre the circle in the full widget area.  r is bounded so that:
         #   - top:    circle + N label (≥20px) fits above cy
@@ -246,8 +268,9 @@ class RadarView(QWidget):
             self._draw_satellite(p, track, color, cx, cy, r)
 
         self._draw_rotator_marker(p, cx, cy, r)
-        self._draw_legend(p)
-        self._draw_status(p, cx, cy, r)
+        if not self._compact:
+            self._draw_legend(p)
+            self._draw_status(p, cx, cy, r)
 
     def _draw_background(self, p: QPainter, cx: float, cy: float, r: float) -> None:
         p.setPen(Qt.PenStyle.NoPen)
@@ -259,7 +282,7 @@ class RadarView(QWidget):
 
     def _draw_rings(self, p: QPainter, cx: float, cy: float, r: float) -> None:
         label_font = QFont()
-        label_font.setPointSize(7)
+        label_font.setPointSize(6 if self._compact else 7)
         p.setFont(label_font)
 
         for el in _ELEVATION_RINGS:
@@ -269,8 +292,11 @@ class RadarView(QWidget):
             p.setPen(pen)
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawEllipse(int(cx) - cr, int(cy) - cr, cr * 2, cr * 2)
-            p.setPen(QColor("#7f8c8d"))
-            p.drawText(int(cx) + cr + 2, int(cy) + 5, f"{el}°")
+            # Skip the degree label in compact mode — the outer ring sits
+            # right at the widget edge there, leaving no room for text.
+            if not self._compact:
+                p.setPen(QColor("#7f8c8d"))
+                p.drawText(int(cx) + cr + 2, int(cy) + 5, f"{el}°")
 
     def _draw_crosshairs(self, p: QPainter, cx: float, cy: float, r: float) -> None:
         pen = QPen(QColor("#2c3e50"), 1)
@@ -281,13 +307,13 @@ class RadarView(QWidget):
 
     def _draw_cardinals(self, p: QPainter, cx: float, cy: float, r: float) -> None:
         font = QFont()
-        font.setPointSize(9)
+        font.setPointSize(6 if self._compact else 9)
         font.setBold(True)
         p.setFont(font)
 
         for label, az in _CARDINALS:
             x, y = az_el_to_xy(float(az), 0.0, cx, cy, r)
-            offset = 14
+            offset = 8 if self._compact else 14
             if az == 0:  # N — top
                 x -= 4.0
                 y -= float(offset - 4)

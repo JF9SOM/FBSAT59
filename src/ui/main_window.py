@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QFormLayout,
     QGroupBox,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -51,6 +52,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from comms import mode_detection
 from core.autotrack import AutotrackManager
 from core.celestial_engine import MOON_ID, CelestialEngine
 from core.engine import DopplerCalculator, Observation, PassPredictor, SatelliteEngine
@@ -146,10 +148,24 @@ class SatDetailPanel(QWidget):
     """
     Panel that displays selected satellite details (elevation, azimuth, range,
     range rate, visibility) using a QFormLayout.
+
+    Also hosts the "Comms Quick Panel": a mini radar, an optional satellite
+    quick-select combo, an optional Doppler-corrected DL/UL frequency mirror,
+    and Rig 1 / Rig 2 / Rotator connect proxy buttons. This section is hidden
+    unless a Communications tab (FT4, APRS, ...) is active — see
+    MainWindow._on_tab_changed() and comms.mode_detection.COMMS_TAB_CONFIG.
     """
+
+    # Emitted when the user picks a satellite from the Quick Panel's Input
+    # Source combo. Args: tab_key (e.g. "ft4"), norad_cat_id.
+    comms_satellite_requested: Signal = Signal(str, int)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._radio_control: Any = None
+        self._active_comms_tab: str | None = None
+        self._active_tab_widget: QWidget | None = None
+        self._freq_source: str | None = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -176,6 +192,52 @@ class SatDetailPanel(QWidget):
         form.addRow(_("Visible:"), self._vis_label)
 
         layout.addWidget(group)
+
+        # ── Comms Quick Panel (hidden until a Communications tab is active) ──
+        self._comms_group = QGroupBox(_("Quick Comms Control"))
+        comms_lay = QVBoxLayout(self._comms_group)
+        comms_lay.setContentsMargins(4, 4, 4, 4)
+        comms_lay.setSpacing(4)
+
+        self._mini_radar = RadarView(compact=True)
+        self._mini_radar.setMaximumHeight(200)
+        comms_lay.addWidget(self._mini_radar)
+
+        self._input_source_row = QWidget()
+        src_lay = QHBoxLayout(self._input_source_row)
+        src_lay.setContentsMargins(0, 0, 0, 0)
+        src_lay.addWidget(QLabel(_("Input:")))
+        self._input_source_combo = QComboBox()
+        # activated() (not currentIndexChanged()) — the latter does not fire
+        # when the user re-picks the item that is already current, which is
+        # exactly the first (alphabetically/NORAD-sorted first) entry shown
+        # right after the combo is populated, silently no-oping the most
+        # common click.
+        self._input_source_combo.activated.connect(self._on_input_source_changed)
+        src_lay.addWidget(self._input_source_combo, stretch=1)
+        comms_lay.addWidget(self._input_source_row)
+
+        self._quick_dl_label = QLabel("D: —")
+        self._quick_ul_label = QLabel("U: —")
+        comms_lay.addWidget(self._quick_dl_label)
+        comms_lay.addWidget(self._quick_ul_label)
+
+        rig_btn_row = QHBoxLayout()
+        self._quick_rig1_btn = QPushButton(_("Rig 1"))
+        self._quick_rig1_btn.clicked.connect(self._on_quick_connect_rig1)
+        self._quick_rig2_btn = QPushButton(_("Rig 2"))
+        self._quick_rig2_btn.clicked.connect(self._on_quick_connect_rig2)
+        rig_btn_row.addWidget(self._quick_rig1_btn)
+        rig_btn_row.addWidget(self._quick_rig2_btn)
+        comms_lay.addLayout(rig_btn_row)
+
+        self._quick_rot_btn = QPushButton(_("Rotator"))
+        self._quick_rot_btn.clicked.connect(self._on_quick_connect_rotator)
+        comms_lay.addWidget(self._quick_rot_btn)
+
+        layout.addWidget(self._comms_group)
+        self._comms_group.setVisible(False)
+
         layout.addStretch()
 
     def set_satellite(self, norad: int, name: str) -> None:
@@ -210,6 +272,99 @@ class SatDetailPanel(QWidget):
         ):
             label.setText("—")
 
+    # ------------------------------------------------------------------ #
+    # Comms Quick Panel
+    # ------------------------------------------------------------------ #
+
+    def bind_radio_control(self, radio_control: Any) -> None:
+        """Store a RadioControlWidget reference for the freq mirror and
+        Rig 1 / Rig 2 / Rotator connect-button proxies."""
+        self._radio_control = radio_control
+
+    def set_active_comms_tab(
+        self,
+        tab_key: str,
+        satellite_options: list[tuple[int, str]],
+        tab_widget: QWidget | None = None,
+    ) -> None:
+        """Show the Comms Quick Panel configured for *tab_key*.
+
+        satellite_options: (norad, name) pairs offered in the Input Source
+        combo (ignored when the tab's config has show_input_source=False).
+        tab_widget: the open Communications tab instance itself, used for
+        freq_source="satdump" (reads tab_widget.current_rx_frequency_mhz()).
+        """
+        config = mode_detection.COMMS_TAB_CONFIG.get(tab_key)
+        self._active_comms_tab = tab_key
+        self._active_tab_widget = tab_widget
+        self._freq_source = config.freq_source if config else None
+        self._comms_group.setVisible(True)
+
+        show_input = bool(config and config.show_input_source)
+        self._input_source_row.setVisible(show_input)
+        if show_input:
+            self._input_source_combo.blockSignals(True)
+            self._input_source_combo.clear()
+            for norad, name in satellite_options:
+                self._input_source_combo.addItem(name, norad)
+            self._input_source_combo.blockSignals(False)
+
+        show_freq = self._freq_source is not None
+        self._quick_dl_label.setVisible(show_freq)
+        self._quick_ul_label.setVisible(show_freq)
+        self.refresh_freq_mirror()
+
+    def deactivate_comms_panel(self) -> None:
+        """Hide the Comms Quick Panel (called when a resident tab becomes active)."""
+        self._active_comms_tab = None
+        self._active_tab_widget = None
+        self._comms_group.setVisible(False)
+
+    def update_radar_track(self, track: SatTrackData) -> None:
+        """Forward the current satellite track to the mini radar (skipped while hidden)."""
+        if self._active_comms_tab is not None:
+            self._mini_radar.set_tracks([track])
+
+    def refresh_freq_mirror(self) -> None:
+        """Refresh the D:/U: readout from the configured freq_source.
+
+        Called once per second from MainWindow._on_tick() while the Quick
+        Panel is active; a no-op otherwise.
+        """
+        if self._active_comms_tab is None:
+            return
+        if self._freq_source == "radio_control" and self._radio_control is not None:
+            self._quick_dl_label.setText(f"D: {self._radio_control._downlink_label.text()}")
+            self._quick_ul_label.setText(f"U: {self._radio_control._uplink_label.text()}")
+        elif self._freq_source == "satdump":
+            freq_mhz = None
+            getter = getattr(self._active_tab_widget, "current_rx_frequency_mhz", None)
+            if callable(getter):
+                freq_mhz = getter()
+            self._quick_dl_label.setText(
+                f"D: {freq_mhz:.6f} MHz" if freq_mhz is not None else "D: —"
+            )
+            self._quick_ul_label.setText("U: — (RX only)")
+
+    def _on_input_source_changed(self, index: int) -> None:
+        if self._active_comms_tab is None or index < 0:
+            return
+        norad = self._input_source_combo.itemData(index)
+        if norad is not None:
+            self.comms_satellite_requested.emit(self._active_comms_tab, int(norad))
+
+    def _on_quick_connect_rig1(self) -> None:
+        if self._radio_control is not None:
+            self._radio_control._connect_rig1_btn.click()
+
+    def _on_quick_connect_rig2(self) -> None:
+        if self._radio_control is not None:
+            self._radio_control._connect_rig2_btn.click()
+
+    def _on_quick_connect_rotator(self) -> None:
+        if self._radio_control is not None:
+            self._radio_control._connect_rot_btn.click()
+
 
 # ---------------------------------------------------------------------------
 # MainWindow
@@ -237,6 +392,10 @@ class MainWindow(QMainWindow):
     # Signals used by the SatNOGS UUID background fetch to update the UI thread.
     _satnogs_open_url: Signal = Signal(str)
     _satnogs_not_found: Signal = Signal()
+    # Distinct from _satnogs_not_found: fired when the SatNOGS API itself could
+    # not be reached at all (network/timeout/HTTP error), so the user isn't
+    # told "not found" for a satellite that may well exist on SatNOGS.
+    _satnogs_network_error: Signal = Signal(str)
     # Signal used to pass rotator position from a background thread to the UI thread.
     _rot_pos_updated: Signal = Signal(float, float)
     # Signal fired from the download thread when the default NASA map has been saved.
@@ -286,6 +445,13 @@ class MainWindow(QMainWindow):
         # Latest elevations computed in _update_world_map, reused by _check_autotrack
         self._last_elevations: dict[int, float] = {}
         self._current_transmitter: dict[str, Any] | None = None
+        # Maps a non-resident Communications tab widget -> its mode_detection
+        # tab key (e.g. "ft4"), used by _on_tab_changed to drive the Comms
+        # Quick Panel and to auto-resize the pass-prediction splitter.
+        self._comms_tab_keys: dict[QWidget, str] = {}
+        # Pass-prediction splitter sizes saved just before shrinking it for a
+        # Communications tab; restored when returning to a resident tab.
+        self._pass_panel_saved_sizes: list[int] | None = None
         self._web_server: Any | None = None
         self._web_server_url: str = ""
         # Celestial body tracking (Moon, etc.)
@@ -385,6 +551,7 @@ class MainWindow(QMainWindow):
         self._satnogs_not_found.connect(
             lambda: QMessageBox.information(self, "SatNOGS", "SatNOGS page not found")
         )
+        self._satnogs_network_error.connect(self._on_satnogs_network_error)
         self._radio_control.transmitter_changed.connect(self._on_transmitter_changed)
         self._radio_control.cycle_changed.connect(self._on_cycle_changed)
         self._radio_control.tune_requested.connect(self._on_tune_requested)
@@ -439,6 +606,7 @@ class MainWindow(QMainWindow):
     def _build_ui(self) -> None:
         """Build widgets and layout."""
         v_splitter = QSplitter(Qt.Orientation.Vertical)
+        self._v_splitter = v_splitter
         self.setCentralWidget(v_splitter)
 
         h_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -534,6 +702,8 @@ class MainWindow(QMainWindow):
         self._detail_panel = SatDetailPanel()
         self._detail_panel.setMinimumWidth(160)
         self._detail_panel.setMaximumWidth(260)
+        self._detail_panel.bind_radio_control(self._radio_control)
+        self._detail_panel.comms_satellite_requested.connect(self._on_comms_satellite_requested)
         h_splitter.addWidget(self._detail_panel)
 
         h_splitter.setStretchFactor(0, 0)
@@ -1200,6 +1370,7 @@ class MainWindow(QMainWindow):
             self._check_notifications()
             self._check_autotrack()
             self._update_rig_web_state()
+            self._detail_panel.refresh_freq_mirror()
         except Exception:
             logger.exception("_on_tick error")
 
@@ -1490,6 +1661,7 @@ class MainWindow(QMainWindow):
         if widget is None or widget in self._resident_tab_widgets:
             return
         self._tab_widget.removeTab(index)
+        self._comms_tab_keys.pop(widget, None)
         widget.deleteLater()
 
     def _notify_comms_tab_of_rig_state(self, tab: object) -> None:
@@ -1538,6 +1710,7 @@ class MainWindow(QMainWindow):
         from ui.aprs_tab import AprsTab
 
         tab = AprsTab(self._conn, self._radio_control, parent=self)
+        self._comms_tab_keys[tab] = "aprs"
         tab.aprs_stations_updated.connect(self._world_map.set_aprs_stations)
         tab.aprs_stations_cleared.connect(self._world_map.clear_aprs_stations)
         idx = self._tab_widget.addTab(tab, _("APRS"))
@@ -1555,6 +1728,7 @@ class MainWindow(QMainWindow):
 
         tab = TelemetryTab(self._conn, self._radio_control, parent=self)
         tab.satellite_selected.connect(self._on_telemetry_satellite_requested)
+        self._comms_tab_keys[tab] = "telemetry"
         idx = self._tab_widget.addTab(tab, _("Telemetry"))
         self._tab_widget.setCurrentIndex(idx)
         self._notify_comms_tab_of_rig_state(tab)
@@ -1648,6 +1822,7 @@ class MainWindow(QMainWindow):
                 break
 
         tab = SstvTab(self._conn, self._radio_control, aprs_engine=aprs_engine, parent=self)
+        self._comms_tab_keys[tab] = "sstv"
         idx = self._tab_widget.addTab(tab, tab_label)
         self._tab_widget.setCurrentIndex(idx)
         self._notify_comms_tab_of_rig_state(tab)
@@ -1663,9 +1838,37 @@ class MainWindow(QMainWindow):
         from ui.ft4_tab import Ft4Tab
 
         tab = Ft4Tab(self._conn, self._radio_control, parent=self)
+        self._comms_tab_keys[tab] = "ft4"
         idx = self._tab_widget.addTab(tab, tab_label)
         self._tab_widget.setCurrentIndex(idx)
         self._notify_comms_tab_of_rig_state(tab)
+
+    def _on_comms_satellite_requested(self, tab_key: str, norad: int) -> None:
+        """Comms Quick Panel's Input Source combo changed — switch filter to
+        All Satellites, select the satellite, and auto-pick the first
+        transponder matching this tab's mode_detection matcher (if any).
+
+        Generic counterpart of _on_telemetry_satellite_requested(), reused by
+        every Communications tab that has show_input_source=True in
+        COMMS_TAB_CONFIG (FT4 now; APRS/SSTV in a later phase).
+        """
+        all_text = "All Satellites"
+        if self._filter_combo.currentText() != all_text:
+            idx = self._filter_combo.findText(all_text)
+            if idx >= 0:
+                self._filter_combo.setCurrentIndex(idx)
+        self._select_satellite_by_norad(norad)
+        self._refresh_radio_control(norad)
+
+        config = mode_detection.COMMS_TAB_CONFIG.get(tab_key)
+        transmitters = self._radio_control._transmitters
+        if not transmitters or config is None or config.matcher is None:
+            return
+        best_idx = next(
+            (i for i, t in enumerate(transmitters) if config.matcher(t)),
+            0,
+        )
+        self._radio_control.set_transmitters(transmitters, default_index=best_idx)
 
     def _on_open_q65(self) -> None:
         """Open the Q65 tab (Communications > Q65)."""
@@ -1678,6 +1881,7 @@ class MainWindow(QMainWindow):
         from ui.q65_tab import Q65Tab
 
         tab = Q65Tab(self._conn, self._radio_control, parent=self)
+        self._comms_tab_keys[tab] = "q65"
         idx = self._tab_widget.addTab(tab, tab_label)
         self._tab_widget.setCurrentIndex(idx)
 
@@ -1708,6 +1912,7 @@ class MainWindow(QMainWindow):
         )
         # Connect MeteorTab → Radio Control / satellite list sync
         tab.satellite_selection_requested.connect(self._on_meteor_satellite_requested)
+        self._comms_tab_keys[tab] = "meteor"
         idx = self._tab_widget.addTab(tab, tab_label)
         self._tab_widget.setCurrentIndex(idx)
         if norad:
@@ -1758,6 +1963,7 @@ class MainWindow(QMainWindow):
         from ui.cw_tab import CwTab
 
         tab = CwTab(self._conn, self._radio_control, parent=self)
+        self._comms_tab_keys[tab] = "cw"
         idx = self._tab_widget.addTab(tab, tab_label)
         self._tab_widget.setCurrentIndex(idx)
 
@@ -1876,6 +2082,7 @@ class MainWindow(QMainWindow):
             next_duration_s=None,
         )
         self._radar_view.set_tracks([track])
+        self._detail_panel.update_radar_track(track)
 
         # Sub-lunar point: used for both the world map icon and the Dashboard zoom
         sub = self._celestial_engine.moon_subpoint()
@@ -2039,6 +2246,7 @@ class MainWindow(QMainWindow):
                 next_duration_s=next_dur,
             )
             self._radar_view.set_tracks([track])
+            self._detail_panel.update_radar_track(track)
 
             # Dashboard: update map+radar even without a transmitter
             if self._current_transmitter is None:
@@ -2254,9 +2462,41 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ #
 
     def _on_tab_changed(self, index: int) -> None:
-        """Hide the Satellite Detail panel when Dashboard tab is active (more space for map)."""
+        """Hide the Satellite Detail panel when Dashboard tab is active (more space
+        for map); drive the Comms Quick Panel and auto-resize the pass-prediction
+        splitter when switching to/from a non-resident Communications tab."""
         is_dashboard = index == self._dashboard_tab_idx
         self._detail_panel.setVisible(not is_dashboard)
+
+        widget = self._tab_widget.widget(index)
+        is_resident = widget is None or widget in self._resident_tab_widgets
+
+        if is_resident:
+            if self._pass_panel_saved_sizes is not None:
+                self._v_splitter.setSizes(self._pass_panel_saved_sizes)
+                self._pass_panel_saved_sizes = None
+            self._detail_panel.deactivate_comms_panel()
+            return
+
+        # Non-resident Communications tab (FT4, APRS, Telemetry, ...): shrink
+        # the pass-prediction panel to its minimum so the tab gets the space,
+        # and remember the previous sizes so returning to a resident tab
+        # restores exactly what the user had (which is the default on first use).
+        if self._pass_panel_saved_sizes is None:
+            self._pass_panel_saved_sizes = self._v_splitter.sizes()
+        total = sum(self._v_splitter.sizes())
+        min_pass_height = self._pass_list.minimumHeight()
+        self._v_splitter.setSizes([max(0, total - min_pass_height), min_pass_height])
+
+        tab_key = self._comms_tab_keys.get(widget) if widget is not None else None
+        if tab_key is not None:
+            options = [
+                (norad, self._sat_name_cache.get(norad, str(norad)))
+                for norad in mode_detection.get_norads_for_tab(self._conn, tab_key)
+            ]
+            self._detail_panel.set_active_comms_tab(tab_key, options, tab_widget=widget)
+        else:
+            self._detail_panel.deactivate_comms_panel()
 
     def _on_filter_changed(self, text: str) -> None:
         """Redraw the satellite list when the filter combo changes."""
@@ -2343,9 +2583,17 @@ class MainWindow(QMainWindow):
         ).start()
 
     def _fetch_satnogs_uuid_bg(self, norad: int, name: str) -> None:
-        """Background thread: fetch SatNOGS UUID by NORAD, fall back to name/provisional search."""
+        """Background thread: fetch SatNOGS UUID by NORAD, fall back to name/provisional search.
+
+        A connection/timeout/HTTP-status failure is reported distinctly from a
+        genuine "no match" — otherwise a network hiccup looks identical to
+        "this satellite isn't on SatNOGS", which is misleading and makes the
+        real problem (usually local connectivity) impossible to diagnose from
+        the UI alone.
+        """
         _SATNOGS_SAT_API = "https://db.satnogs.org/api/satellites/"
         sat_id: str | None = None
+        network_error: str | None = None
         try:
             with httpx.Client(timeout=10.0) as client:
                 # Primary: look up by NORAD ID
@@ -2387,6 +2635,14 @@ class MainWindow(QMainWindow):
                         results3 = data3.get("results", data3) if isinstance(data3, dict) else data3
                         if results3:
                             sat_id = str(results3[0]["sat_id"])
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "SatNOGS UUID fetch: could not reach SatNOGS for NORAD %s / name %r: %s",
+                norad,
+                name,
+                exc,
+            )
+            network_error = str(exc)
         except Exception:
             logger.exception("SatNOGS UUID fetch failed for NORAD %s / name %r", norad, name)
 
@@ -2398,8 +2654,17 @@ class MainWindow(QMainWindow):
                 )
                 self._conn.commit()
             self._satnogs_open_url.emit(f"https://db.satnogs.org/satellite/{sat_id}")
+        elif network_error:
+            self._satnogs_network_error.emit(network_error)
         else:
             self._satnogs_not_found.emit()
+
+    def _on_satnogs_network_error(self, error: str) -> None:
+        QMessageBox.warning(
+            self,
+            "SatNOGS",
+            _("Could not reach db.satnogs.org — check your network connection.\n\n") + error,
+        )
 
     def _toggle_favorite(self, norad: int, favorite: bool) -> None:
         """Save the favorite state to the DB and reload the satellite list (legacy)."""

@@ -360,6 +360,21 @@ class MeteorTab(QWidget):
             self._combo_sat.setCurrentIndex(best_idx)
             self._suppress_sync = False
 
+    def current_rx_frequency_mhz(self) -> float | None:
+        """Return the selected pipeline's fixed RX frequency in MHz, or None.
+
+        SatDump always tunes to METEOR_PIPELINES' own fixed frequency —
+        independent of whatever transponder happens to be selected in Radio
+        Control — so the Comms Quick Panel mirrors this instead of Radio
+        Control's Doppler-corrected DL/UL (see comms.mode_detection.COMMS_TAB_CONFIG,
+        freq_source="satdump").
+        """
+        p = self._combo_sat.currentData()
+        if not p:
+            return None
+        freq_hz = p.get("frequency")
+        return float(freq_hz) / 1e6 if freq_hz else None
+
     # ------------------------------------------------------------------
     # SDR Connect (reads Rig Settings SDR config)
     # ------------------------------------------------------------------
