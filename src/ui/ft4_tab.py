@@ -517,6 +517,7 @@ class Ft4Tab(QWidget):
                     "the shared library in ~/.local/share/fbsat59/ft8lib/"
                 )
             )
+            self._codec_banner.setStyleSheet("background:#e74c3c;color:white;padding:4px;")
             self._codec_banner.setVisible(True)
             self._tx_enable_btn.setEnabled(False)
         elif not self._codec.decode_available:
@@ -528,6 +529,18 @@ class Ft4Tab(QWidget):
             )
             self._codec_banner.setStyleSheet("background:#f39c12;color:white;padding:4px;")
             self._codec_banner.setVisible(True)
+        elif self._codec.decode_backend != "wsjtx":
+            self._codec_banner.setText(
+                _(
+                    "Using lightweight FT4 decoder — may miss weak or overlapping "
+                    "stations in a crowded pass.\n"
+                    "Help > FT4 Enhanced Decoder Installation… for WSJT-X-grade decoding."
+                )
+            )
+            self._codec_banner.setStyleSheet("background:#3498db;color:white;padding:4px;")
+            self._codec_banner.setVisible(True)
+        else:
+            self._codec_banner.setVisible(False)
 
     # ------------------------------------------------------------------ #
     # QSO helpers                                                          #
@@ -660,7 +673,7 @@ class Ft4Tab(QWidget):
         self._rx_buffer.clear()
         if not self._codec.decode_available:
             return
-        messages = self._codec.decode_audio(audio)
+        messages = self._codec.decode_audio(audio, my_call=self._my_call)
         if messages:
             self._display_decoded(messages)
 

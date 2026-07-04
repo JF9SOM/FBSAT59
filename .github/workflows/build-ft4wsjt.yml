@@ -1,0 +1,231 @@
+name: Build ft4wsjt Bundle
+
+# Checks weekly for new WSJT-X releases that might touch the FT4 decode
+# engine. Builds libft4wsjt — WSJT-X's own FT4 decode engine (3-pass
+# subtract + BP/OSD), wrapped via scripts/wsjtx_bridge/ — for all three
+# platforms using scripts/build_ft4wsjt.sh. Artifacts are stored in the
+# dedicated "ft4wsjt-bundle" pre-release tag.
+# Also supports manual triggering for emergencies.
+
+on:
+  schedule:
+    - cron: '0 11 * * 1'  # Every Monday 11:00 UTC (1 hour after q65lib check)
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force rebuild even if version unchanged'
+        required: false
+        default: 'false'
+
+jobs:
+  # ------------------------------------------------------------------ #
+  # Check whether a build is needed
+  # ------------------------------------------------------------------ #
+  check-version:
+    name: Check WSJT-X / ft4wsjt version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      needs_build: ${{ steps.check.outputs.needs_build }}
+      wsjtx_tag: ${{ steps.check.outputs.wsjtx_tag }}
+    steps:
+      - name: Compare upstream vs bundled version
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE: ${{ github.event.inputs.force_build }}
+        run: |
+          UPSTREAM=$(gh api repos/wsjtx/wsjtx/releases --jq '.[0].tag_name')
+          echo "Upstream WSJT-X: $UPSTREAM"
+          echo "wsjtx_tag=$UPSTREAM" >> "$GITHUB_OUTPUT"
+
+          if [ "$FORCE" = "true" ]; then
+            echo "needs_build=true" >> "$GITHUB_OUTPUT"
+            echo "Force build requested."
+            exit 0
+          fi
+
+          CURRENT=""
+          if gh release download ft4wsjt-bundle \
+               --repo "${{ github.repository }}" \
+               --pattern "ft4wsjt-linux-x86_64.tar.gz" \
+               --dir /tmp/ft4wsjt-check 2>/dev/null; then
+            tar -xzf /tmp/ft4wsjt-check/ft4wsjt-linux-x86_64.tar.gz \
+                -C /tmp/ft4wsjt-check 2>/dev/null || true
+            CURRENT=$(cat /tmp/ft4wsjt-check/version.txt 2>/dev/null || echo "")
+          fi
+
+          echo "Bundled version: '$CURRENT'"
+          if [ "$CURRENT" = "$UPSTREAM" ]; then
+            echo "needs_build=false" >> "$GITHUB_OUTPUT"
+            echo "Already up to date — skipping build."
+          else
+            echo "needs_build=true" >> "$GITHUB_OUTPUT"
+            echo "Build needed: $UPSTREAM (have: '$CURRENT')"
+          fi
+
+  # ------------------------------------------------------------------ #
+  # Linux
+  # ------------------------------------------------------------------ #
+  build-linux:
+    name: Build ft4wsjt (Linux)
+    needs: check-version
+    if: needs.check-version.outputs.needs_build == 'true'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y gfortran libfftw3-dev libboost-dev build-essential
+
+      - name: Build libft4wsjt
+        env:
+          WSJTX_TAG: ${{ needs.check-version.outputs.wsjtx_tag }}
+        run: |
+          ARCH=$(uname -m)
+          OUT_DIR=/tmp/ft4wsjt-flat
+          ./scripts/build_ft4wsjt.sh "" "$OUT_DIR"
+          echo "${WSJTX_TAG}" > "$OUT_DIR/version.txt"
+
+          PKG_NAME="ft4wsjt-linux-${ARCH}.tar.gz"
+          tar -czf "/tmp/${PKG_NAME}" -C /tmp ft4wsjt-flat
+          echo "PKG=/tmp/${PKG_NAME}" >> "$GITHUB_ENV"
+          echo "PKG_NAME=${PKG_NAME}" >> "$GITHUB_ENV"
+
+      - name: Upload to ft4wsjt-bundle release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view ft4wsjt-bundle \
+            --repo "${{ github.repository }}" 2>/dev/null || \
+          gh release create ft4wsjt-bundle \
+            --repo "${{ github.repository }}" \
+            --title "FT4 Enhanced Decoder (libft4wsjt) Bundle" \
+            --notes "Pre-built libft4wsjt — WSJT-X's own FT4 decode engine (3-pass subtract + BP/OSD), built from WSJT-X source." \
+            --prerelease
+          gh release upload ft4wsjt-bundle \
+            --repo "${{ github.repository }}" \
+            --clobber \
+            "${{ env.PKG }}"
+
+  # ------------------------------------------------------------------ #
+  # Windows
+  # ------------------------------------------------------------------ #
+  build-windows:
+    name: Build ft4wsjt (Windows)
+    needs: check-version
+    if: needs.check-version.outputs.needs_build == 'true'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install MinGW gfortran + FFTW3 + Boost
+        run: |
+          choco install mingw -y --no-progress
+          echo "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin" >> "$GITHUB_PATH"
+
+      - name: Fetch FFTW3 + Boost headers (conda-forge)
+        run: |
+          curl -L -o miniforge.exe "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86_64.exe"
+          ./miniforge.exe /InstallationType=JustMe /RegisterPython=0 /S /D=$RUNNER_TEMP/miniforge
+          "$RUNNER_TEMP/miniforge/Scripts/conda.exe" create -y --prefix "$RUNNER_TEMP/ft4wsjt-deps" -c conda-forge fftw boost
+          echo "FT4WSJT_DEPS_INCLUDE=$RUNNER_TEMP/ft4wsjt-deps/Library/include" >> "$GITHUB_ENV"
+          echo "FT4WSJT_DEPS_LIB=$RUNNER_TEMP/ft4wsjt-deps/Library/lib" >> "$GITHUB_ENV"
+
+      - name: Build ft4wsjt.dll
+        env:
+          WSJTX_TAG: ${{ needs.check-version.outputs.wsjtx_tag }}
+        run: |
+          # build_ft4wsjt.sh looks for fftw3.f03 under common include dirs;
+          # add the conda-forge one via CONDA_PREFIX so its search loop finds it.
+          export CONDA_PREFIX="$RUNNER_TEMP/ft4wsjt-deps"
+          export CPLUS_INCLUDE_PATH="$FT4WSJT_DEPS_INCLUDE"
+          export LIBRARY_PATH="$FT4WSJT_DEPS_LIB"
+          OUT_DIR="$RUNNER_TEMP/ft4wsjt-flat"
+          ./scripts/build_ft4wsjt.sh "" "$OUT_DIR"
+          echo "$WSJTX_TAG" > "$OUT_DIR/version.txt"
+          # MinGW runtime DLLs needed by ft4wsjt.dll
+          for dll in libgcc_s_seh-1.dll libgfortran-5.dll libwinpthread-1.dll libstdc++-6.dll; do
+            src="/c/ProgramData/chocolatey/lib/mingw/tools/install/mingw64/bin/$dll"
+            [ -f "$src" ] && cp "$src" "$OUT_DIR/"
+          done
+          PKG_NAME="ft4wsjt-windows-x86_64.zip"
+          (cd "$OUT_DIR" && 7z a "$RUNNER_TEMP/$PKG_NAME" .)
+          echo "PKG=$RUNNER_TEMP/$PKG_NAME" >> "$GITHUB_ENV"
+          echo "PKG_NAME=$PKG_NAME" >> "$GITHUB_ENV"
+
+      - name: Upload to ft4wsjt-bundle release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view ft4wsjt-bundle \
+            --repo "${{ github.repository }}" 2>/dev/null || \
+          gh release create ft4wsjt-bundle \
+            --repo "${{ github.repository }}" \
+            --title "FT4 Enhanced Decoder (libft4wsjt) Bundle" \
+            --notes "Pre-built libft4wsjt for FT4 decoding." \
+            --prerelease
+          gh release upload ft4wsjt-bundle \
+            --repo "${{ github.repository }}" \
+            --clobber \
+            "${{ env.PKG }}"
+
+  # ------------------------------------------------------------------ #
+  # macOS
+  # ------------------------------------------------------------------ #
+  build-macos:
+    name: Build ft4wsjt (macOS)
+    needs: check-version
+    if: needs.check-version.outputs.needs_build == 'true'
+    runs-on: macos-14
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install gfortran + FFTW3 + Boost
+        run: brew install gcc fftw boost
+
+      - name: Build libft4wsjt
+        env:
+          WSJTX_TAG: ${{ needs.check-version.outputs.wsjtx_tag }}
+        run: |
+          ARCH=$(uname -m)
+          OUT_DIR=/tmp/ft4wsjt-flat
+          FC=$(ls $(brew --prefix gcc)/bin/gfortran-* 2>/dev/null | head -1)
+          FC=${FC:-gfortran} ./scripts/build_ft4wsjt.sh "" "$OUT_DIR"
+          echo "${WSJTX_TAG}" > "$OUT_DIR/version.txt"
+
+          PKG_NAME="ft4wsjt-macos-${ARCH}.tar.gz"
+          tar -czf "/tmp/${PKG_NAME}" -C /tmp ft4wsjt-flat
+          echo "PKG=/tmp/${PKG_NAME}" >> "$GITHUB_ENV"
+          echo "PKG_NAME=${PKG_NAME}" >> "$GITHUB_ENV"
+
+      - name: Upload to ft4wsjt-bundle release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view ft4wsjt-bundle \
+            --repo "${{ github.repository }}" 2>/dev/null || \
+          gh release create ft4wsjt-bundle \
+            --repo "${{ github.repository }}" \
+            --title "FT4 Enhanced Decoder (libft4wsjt) Bundle" \
+            --notes "Pre-built libft4wsjt for FT4 decoding." \
+            --prerelease
+          gh release upload ft4wsjt-bundle \
+            --repo "${{ github.repository }}" \
+            --clobber \
+            "${{ env.PKG }}"

@@ -19,9 +19,13 @@ import ctypes.util
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
+
+if TYPE_CHECKING:
+    from comms.ft4.wsjt_decoder import Ft4WsjtDecoder
 
 # ---------------------------------------------------------------------------
 # FT4 physical-layer constants
@@ -444,6 +448,7 @@ class Ft4Codec:
         if _raw is not None:
             with contextlib.suppress(AttributeError):
                 self._lib = _Ft8LibBindings(_raw)
+        self._wsjt_decoder: Ft4WsjtDecoder | None = None
 
     @property
     def is_available(self) -> bool:
@@ -454,6 +459,22 @@ class Ft4Codec:
     def decode_available(self) -> bool:
         """True if ft8_lib's decode API is accessible."""
         return self._lib is not None and self._lib._decode_available
+
+    @property
+    def decode_backend(self) -> str:
+        """Which RX decode engine decode_audio() will use.
+
+        "wsjtx": full WSJT-X decode engine (libft4wsjt) — 3-pass subtract +
+        BP/OSD, recommended. "ft8lib": lightweight single-pass fallback.
+        "none": no RX decode available.
+        """
+        from comms.ft4.wsjt_decoder import is_available as _wsjt_available
+
+        if _wsjt_available():
+            return "wsjtx"
+        if self.decode_available:
+            return "ft8lib"
+        return "none"
 
     def encode_audio(
         self,
@@ -478,11 +499,24 @@ class Ft4Codec:
         self,
         audio: NDArray[np.float32],
         sample_rate: int = SAMPLE_RATE,
+        my_call: str = "",
     ) -> list[Ft4Message]:
         """Decode FT4 messages from one period of recorded audio.
 
-        Returns empty list if ft8_lib decode API is not available.
+        Prefers the full WSJT-X decode engine (libft4wsjt, see
+        wsjt_decoder.py) when installed, for much better recovery of
+        weak/overlapping stations. Falls back to the lightweight ft8_lib
+        single-pass decoder otherwise. Returns an empty list if neither is
+        available.
         """
+        from comms.ft4.wsjt_decoder import Ft4WsjtDecoder
+        from comms.ft4.wsjt_decoder import is_available as _wsjt_available
+
+        if _wsjt_available():
+            if self._wsjt_decoder is None or self._wsjt_decoder.my_call != my_call.upper():
+                self._wsjt_decoder = Ft4WsjtDecoder(my_call=my_call.upper())
+            return self._wsjt_decoder.decode_audio(audio, sample_rate)
+
         if self._lib is None or not self._lib._decode_available:
             return []
         mag, num_blocks, num_bins, bin_hz = compute_waterfall(audio, sample_rate)

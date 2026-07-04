@@ -641,6 +641,7 @@ class MainWindow(QMainWindow):
             help_menu.addAction(_("SDR Device Installation…"), self._on_sdr_install)
             help_menu.addAction(_("Hamlib Update…"), self._on_hamlib_update)
             help_menu.addAction(_("ft8lib Installation…"), self._on_ft8lib_help)
+            help_menu.addAction(_("FT4 Enhanced Decoder Installation…"), self._on_ft4wsjt_help)
             help_menu.addAction(_("Q65 Library Installation…"), self._on_q65lib_help)
             help_menu.addAction(_("Direwolf Installation…"), self._on_direwolf_help)
             help_menu.addAction(_("SatDump…"), self._on_satdump_help)
@@ -4077,6 +4078,12 @@ class MainWindow(QMainWindow):
         from ui.q65lib_dialog import Q65LibDialog
 
         dlg = Q65LibDialog(self)
+        dlg.exec()
+
+    def _on_ft4wsjt_help(self) -> None:
+        from ui.ft4wsjt_dialog import Ft4WsjtDialog
+
+        dlg = Ft4WsjtDialog(self)
         dlg.exec()
 
     def _on_direwolf_help(self) -> None:

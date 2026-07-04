@@ -928,6 +928,22 @@ src/
   - **Help → ft8lib Installation…** でバンドル版を自動ダウンロード・インストール（`src/ui/ft8lib_dialog.py`）
   - CI で `.github/workflows/build-ft8lib.yml` が毎週 kgoba/ft8_lib 最新タグを監視してビルド（Linux/Windows/macOS）
 
+**FT4 拡張デコーダー — libft4wsjt（2026-07-04 実装）**
+
+kgoba/ft8_lib（上記）は作者自身が「マイコン向け軽量参照実装」と明言する通り単一パス・BP（belief propagation）のみのデコーダーで、WSJT-X本家が持つ「3パス信号減算＋BP/OSD（Ordered Statistics Decoding）ハイブリッド復号」を持たない。RS-44の実パスで検証した結果、混雑した帯域ではWSJT-X本家に対し復号局数が大きく劣ることが判明したため、WSJT-X本体の実際のFT4デコードエンジン（`lib/ft4_decode.f90` 以下）を共有ライブラリとして移植した。
+
+- `src/comms/ft4/wsjt_decoder.py`: `Ft4WsjtDecoder` — libft4wsjt ctypes ラッパー（RXのみ。TXは引き続きft8_lib）
+- `Ft4Codec.decode_audio()`（`src/comms/ft4/codec.py`）: libft4wsjt 利用可能なら自動的にそちらを使用し、無ければ ft8_lib 単一パス復号にフォールバック。`decode_backend` プロパティで `"wsjtx"` / `"ft8lib"` / `"none"` を判定可能
+- `scripts/build_ft4wsjt.sh` + `scripts/wsjtx_bridge/`: WSJT-X ソース（`lib/ft4_decode.f90` とその依存閉包）から `libft4wsjt.{so,dylib,dll}` をビルド。GUI/Qt/ネットワーク層は一切引き込まない
+  - 依存閉包は静的解析＋実リンクで確定済み（`lib/ft4/*` の中核 + `lib/ft8/decode174_91.f90`・`osd174_91.f90` 等の LDPC/OSD 共有部 + `lib/77bit/packjt77.f90` 等の共通ユーティリティ）
+  - `ft4wsjt_bridge.f90`: `ft4_decode` モジュールのFortranコールバック手続きポインタをC関数ポインタへ橋渡しするbind(C)ブリッジ（自前保守）
+  - `normalizebmet.f90`: 本来 FT8 専用の `ft8b.f90` 末尾にのみ定義されているが FT4 側からも呼ばれる小さなサブルーチンを単体ファイルとして抽出・保守（アップストリーム変更時にドリフトする可能性あり、要注意）
+  - 新規ネイティブ依存: `libfftw3`（本家と同じFFTW3ベースFFT）・Boost（`crc14.cpp` が `boost::augmented_crc` を使用。header-onlyで`libboost-dev`等で足りる）
+- ft8_lib のみ利用可能（libft4wsjt 未インストール）の場合は青バナーで案内表示（TX/RXともブロックしない、情報提供のみ）
+- **Help → FT4 Enhanced Decoder Installation…** でバンドル版を自動ダウンロード・インストール（`src/ui/ft4wsjt_dialog.py`）。インストール先: `~/.local/share/fbsat59/ft4wsjt/`
+- CI で `.github/workflows/build-ft4wsjt.yml` が毎週 WSJT-X 最新リリースを監視してビルド（Linux/Windows/macOS。**Windows/macOS ジョブは実機未検証**——conda-forge 経由の FFTW3/Boost 取得と MinGW gfortran の組み合わせは机上のみで、Hamlib/PlutoSDR の過去の CI 苦労歴と同様に実際に CI を回して反復修正が必要になる可能性が高い）
+- テスト: `tests/test_ft4_wsjt_decoder.py`（libft4wsjt 未インストール時は skip）。輻輳帯域回帰テストで ft8_lib フォールバックと比較し、弱信号の復号漏れがないことを確認
+
 **メニュー: Communications > Q65**（`src/ui/q65_tab.py`）
 - **Phase 1（RX）**: libq65 ctypes デコーダー（WSJT-X ソースからビルド）
   - libq65 未インストール時はバナー表示・デコード無効化。インストール先: `~/.local/share/fbsat59/q65lib/`
@@ -2998,11 +3014,13 @@ src/
 ├── comms/
 │   ├── ft4/
 │   │   ├── __init__.py
-│   │   ├── codec.py        # Ft4Codec — ft8_lib ctypes ラッパー（エンコード・デコード）
+│   │   ├── codec.py        # Ft4Codec — ft8_lib ctypes ラッパー（エンコード・デコード）。RXはwsjt_decoder優先・ft8_libフォールバック
+│   │   ├── wsjt_decoder.py # Ft4WsjtDecoder — libft4wsjt ctypes ラッパー（WSJT-X本家3パスRXデコード）
 │   │   ├── scheduler.py    # Ft4Scheduler — 6秒周期タイミング管理
 │   │   └── qso.py          # Ft4QsoState — QSO ステートマシン
 ├── ui/
-│   └── ft4_tab.py          # Ft4Tab — Communications > FT4 タブ
+│   ├── ft4_tab.py          # Ft4Tab — Communications > FT4 タブ
+│   └── ft4wsjt_dialog.py   # Ft4WsjtDialog — Help > FT4 Enhanced Decoder Installation…
 ```
 
 #### 対応構成（音声入力ソース）
