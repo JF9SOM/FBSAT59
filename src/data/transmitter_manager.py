@@ -8,6 +8,7 @@ Records with manual_override=True are not overwritten by SATNOGS sync.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import sqlite3
 import sys
@@ -17,6 +18,8 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 SATNOGS_API_BASE = "https://db.satnogs.org/api"
 SATNOGS_TRANSMITTERS_URL = f"{SATNOGS_API_BASE}/transmitters/"
@@ -369,6 +372,10 @@ class TransmitterManager:
 
         Idempotent: safe to call multiple times on the same satellite pair.
 
+        Refuses to run entirely if the official satellite already has its own
+        transmitters (see guard below) — a well-established satellite must
+        never be linked to an unrelated provisional ID.
+
         Steps executed in order:
           1. Ensure the official satellite record exists in the DB.
           2. Update the official satellite's name if it is a Space-Track placeholder.
@@ -390,6 +397,26 @@ class TransmitterManager:
         ).fetchone()
         if not fake_row:
             return  # Nothing to migrate
+
+        # Guard: an official satellite that already has its own established
+        # transmitters is not a placeholder waiting for an identity. Refuse to
+        # link it to an unrelated provisional ID — this happens for real when a
+        # freshly deployed CubeSat's TLE briefly matches its host satellite's
+        # orbit right after deployment (e.g. Coconut/98292 vs. ISS/25544 on
+        # 2026-07-02), which would otherwise hijack the host's satnogs_source_id.
+        real_tx_count = self._conn.execute(
+            "SELECT COUNT(*) FROM transmitters WHERE norad_cat_id = ?",
+            (real_id,),
+        ).fetchone()[0]
+        if real_tx_count > 0:
+            logger.warning(
+                "Skipping migration pipeline %d -> %d: official satellite "
+                "already has %d transmitter(s) of its own",
+                fake_id,
+                real_id,
+                real_tx_count,
+            )
+            return
 
         # Ensure the official satellite record exists
         self._conn.execute(

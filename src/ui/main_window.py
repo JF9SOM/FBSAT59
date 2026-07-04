@@ -1171,6 +1171,13 @@ class MainWindow(QMainWindow):
                 id="active_tle_refresh",
                 misfire_grace_time=1800,
             )
+            self._scheduler.add_job(
+                self._refresh_satnogs_sync,
+                "interval",
+                hours=168,
+                id="satnogs_transmitter_refresh",
+                misfire_grace_time=3600,
+            )
             self._scheduler.start()
             logger.debug("APScheduler started")
         except Exception as exc:
@@ -4278,11 +4285,15 @@ class MainWindow(QMainWindow):
             "<tr><td><b>Active TLE fallback</b> (NORAD 10000–89999)</td>"
             "<td>every <b>24 hours</b></td></tr>"
             "<tr><td><b>AMSAT operational status</b></td><td>every <b>24 hours</b></td></tr>"
+            "<tr><td><b>Transponder Database (SATNOGS)</b></td>"
+            "<td>every <b>7 days</b></td></tr>"
             "</table>"
             "<h4>Transponder Database (SATNOGS)</h4>"
-            "<p>Transponder data is fetched from SATNOGS automatically on first launch. "
-            "After that, use <b>Satellite → Sync SATNOGS</b> to refresh transponder "
-            "frequencies and modes manually whenever needed.</p>"
+            "<p>Transponder data is fetched from SATNOGS automatically on first launch, "
+            "then refreshed automatically every 7 days in the background. "
+            "Use <b>Satellite → Sync SATNOGS</b> to refresh transponder "
+            "frequencies and modes manually whenever you need the very latest data sooner "
+            "(e.g. right after a newly launched satellite registers its transmitter).</p>"
             "<h4>At Startup</h4>"
             "<p>On each launch the app syncs satellite names and statuses from SATNOGS, "
             "and fetches any TLE sources whose cached data has expired.</p>"

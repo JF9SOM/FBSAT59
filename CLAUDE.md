@@ -226,8 +226,15 @@ CREATE TABLE tle_history (
 | Provisional TLEs（NORAD ≥ 90000） | 12時間ごと | `provisional_tle_refresh` |
 | Active TLE fallback（NORAD 10000–89999） | 24時間ごと | `active_tle_refresh` |
 | AMSAT運用状況 | 24時間ごと | `amsat_refresh` |
+| SATNOGSトランスポンダーDB | 7日ごと | `satnogs_transmitter_refresh`（2026-07-05 追加） |
 
-SATNOGSトランスポンダーは**初回起動時に自動取得**。以降は `Satellite → Sync SATNOGS` で手動更新。
+SATNOGSトランスポンダーは**初回起動時に自動取得**。以降は7日ごとにバックグラウンドで自動再同期される
+（`satnogs_transmitter_refresh`）。より早く最新化したい場合（新規打ち上げ衛星のトランスミッタ登録直後など）は
+引き続き `Satellite → Sync SATNOGS` で手動更新できる。
+
+**追加の経緯（2026-07-05）**: 初回起動時のみの自動取得だと、後から新たにトランスミッタが登録された衛星
+（例: ISSから放出直後のCubeSat「Coconut」(98292)）がいつまでも空のトランスポンダーリストのままになり、
+ユーザーが気づきにくいという問題があった。手動同期に頼らず定期的に自己修復するよう7日間隔の自動ジョブを追加した。
 
 ### TransmitterManager (src/data/)
 - SATNOGS取得データと手動追加データを統合管理
