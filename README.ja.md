@@ -80,6 +80,7 @@ Radio Control でLRPT/HRPTトランスポンダーを選択すると自動オー
 - **SSTV / SSDV** — アマチュア衛星（例：ISS 145.800 MHz PD120・437.550 MHz Robot36）のSSTV画像（Robot36、PD120、Martin、Scottie）とSSDVパケットを受信。SDR音声またはリグのサウンドカード入力に対応。トランスポンダー説明に「SSTV」「SSDV」「IMAGING」が含まれると自動オープン。
 - **FT4** — 内蔵 ft8_lib（ctypes）でFT4の送受信が可能（WSJT-X不要）。Rig + PTTで送信。RS-44・JO-97・MO-122 等のFT4運用衛星で自動オープン。ADIF出力対応。
 - **Q65** — EME（地球-月-地球）弱信号デジタルモード。libq65（WSJT-X ソースからビルド）でデコード（**Help → Q65 Library Installation** でバンドル版を自動インストール）。送信（TX）は純 Python 実装のため libq65 なしでも動作。QSOステートマシン（IDLE→CALLING→EXCHANGE→CONFIRM→LOGGED）、PTTはCAT制御・送信中ドップラー凍結。サブモード A〜E、周期 15/30/60 秒。ADIF出力対応。
+- **UDP ログブロードキャスト** — FT4・Q65・APRS（双方向メッセージ交換が確定したもの）のQSOがログされるたびに、ADIFレコード1件を設定可能なホスト:ポート（デフォルト `127.0.0.1:2333`）へUDP送信するオプション機能。wavelog-gate・JT-Linkerなど軽量なログ中継ソフトと互換（JTAlert/GridTracker等が使うWSJT-Xバイナリ形式ではなく、プレーンなADIFテキスト）。**File → General Settings → Logging** で有効化・送信先を設定（LAN内の別マシンも指定可能）。APRSはAPRS自体に信号レポート交換の概念がないため、`MODE=PKT`・レポートは固定599/599でログされる（eQSL/LoTWとの互換性のため）。
 - **Help → Direwolf Installation…** — 全プラットフォームでDirewolfの検出・インストール・更新が可能
 - **Help → gr-satellites…** — gr-satellitesのインストール状態確認・インストール案内（apt / brew / pip）
 

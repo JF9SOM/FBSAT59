@@ -3449,3 +3449,74 @@ Direwolf は実際に送信していない間も継続的に stdout へ PCM を�
 - **実機での複数タブ同時使用（例: CW Decoder + SSTV 同時オープン）は未確認**。GUI上に
   「共有中」であることを示す表示は無いため、この機能が正しく動作しているかは目視では
   確認できない。ユニットテストの正しさを信頼する運用とする（2026-07-01、ユーザー判断）
+
+### ログソフト連携 — UDP ADIF ブロードキャスト設計（src/comms/log_broadcast.py・2026-07-05 実装済み）
+
+#### 概要
+
+FT4・Q65・APRSでQSOがログされるたびに、ADIFレコード1件をUDPでブロードキャストするオプション機能。
+wavelog-gate・JT-LinkerのようにUDPポートでプレーンなADIFテキストを待ち受ける軽量なログ中継ソフトとの
+連携を想定している。**WSJT-Xが使うバイナリUDPプロトコル（JTAlert/GridTracker等が対象）ではない。**
+
+#### 対象・対象外
+
+| モジュール | 対象 | 除外されるもの |
+|---|---|---|
+| FT4 | 全QSO（LOGGED確定時） | — |
+| Q65 | 全QSO（LOGGED確定・手動ログ両方） | — |
+| APRS | `_is_confirmed_reply()` で双方向メッセージ交換が確定したものだけ | 位置ビーコン・ACKのみのやり取り・一方的な受信ログ |
+
+Telemetry・SSTV/SSDV・CW Decoder・METEORは受信専用でQSOの概念がないため対象外。
+
+#### APRSのADIF記録方針（2026-07-05 確定）
+
+APRSには信号レポート交換という概念自体が無いため、確定したメッセージ交換は
+`RST_SENT`/`RST_RCVD` とも固定値 `599`（フルクイエティング）としてログする。
+
+またADIF 3.x仕様の `MODE` 列挙値に `APRS` は存在しない（正規の値は `PKT`）。
+`MODE=APRS` のまま出力するとeQSL/LoTWがレコードを受け付けないため、APRSのQSOは
+必ず `MODE=PKT` でログする（手動ADIFエクスポート・UDPブロードキャストの両方に適用）。
+FT4/Q65は元々ADIF仕様の正規列挙値（`FT4`/`Q65`）なので対象外。
+
+#### ADIFレコード生成の共通化（`src/ui/adif_utils.py`）
+
+`build_adif_record(fields: dict[str, str]) -> str` が tag→value の辞書から
+1レコード分のADIF文字列（`<EOR>` 込み）を生成する。空値のフィールドは自動的に省略される。
+以下の両方から共有して使用することで、「エクスポートで見えるADIFフォーマット」と
+「UDPで飛ぶADIFフォーマット」が将来ズレないようにしている:
+- 手動一括エクスポート（`src/ui/log_export_dialog.py` の `LogExportDialog._collect_records()`）
+- 今回のリアルタイムUDPブロードキャスト
+
+#### フック位置
+
+| モジュール | 関数 |
+|---|---|
+| FT4 | `Ft4QsoManager.log_qso()` → `_broadcast_adif()`（src/comms/ft4/qso.py） |
+| Q65 | `Q65QsoManager._log_qso()` → `_broadcast_adif()`（src/comms/q65/qso.py） |
+| APRS | `AprsTab.append_packet()` の `log=True` 分岐 → `_broadcast_adif()`（src/ui/aprs_tab.py） |
+
+いずれもDBへのINSERT・commitが成功した直後にのみブロードキャストする（ログ失敗時は送信しない）。
+
+#### `LogBroadcaster`（src/comms/log_broadcast.py）
+
+- プロセス内シングルトン（`get_log_broadcaster()`）。`send_adif_record(adif_text: str)` は
+  無効時は即return、有効時はUDPで送信（送信失敗は例外を握りつぶすのみ。fire-and-forgetの
+  UDPが送信失敗でQSOログ処理自体を止めることは絶対に避ける）
+- 各フック呼び出し時に毎回 `reload_settings(conn)` を呼んでから送信するため、Settings
+  ダイアログ側から明示的にリロードを伝播させる仕組みは不要（次回QSO時に自動で最新設定を反映）
+- 設定は `app_settings` テーブルに単一JSONキー `log_broadcast_settings` として永続化
+  （`{"enabled": bool, "host": str, "port": int}`、デフォルト `127.0.0.1:2333`）。
+  `core/notifier.py` の `notification_settings` と同じ「単一キーJSON blob」パターンを踏襲
+
+#### Settings UI
+
+`File → General Settings` に「Logging」タブを追加（`src/ui/settings_dialog.py`）。
+Host はLAN内の別マシンも指定可能なフリーテキスト（デフォルト `127.0.0.1`）、Port は
+1–65535のスピンボックス（デフォルト `2333`）。
+
+#### テスト
+
+`tests/test_log_broadcast.py` — 実UDPソケット（127.0.0.1・OS割当ポート）を使い、
+有効/無効時の送受信・設定の永続化（不正なJSONからのフォールバック含む）・
+シングルトン性を検証（ネットワーク・実ログソフト不要）。実機のwavelog-gate/JT-Linkerとの
+疎通確認は未実施。
