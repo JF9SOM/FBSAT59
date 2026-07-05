@@ -293,7 +293,7 @@ class LogExportDialog(QDialog):
                         "CALL": cs,
                         "QSO_DATE": qso_date,
                         "TIME_ON": time_on,
-                        "MODE": "APRS",
+                        "MODE": "PKT",
                         "MY_CALL": my_station,
                         "COMMENT": str(comment or ""),
                         "VIA": str(via or ""),

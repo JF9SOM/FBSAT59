@@ -675,7 +675,7 @@ class AprsTab(QWidget):
             "CALL": cs,
             "QSO_DATE": now.strftime("%Y%m%d"),
             "TIME_ON": now.strftime("%H%M%S"),
-            "MODE": "APRS",
+            "MODE": "PKT",
             "MY_CALL": my_station,
             "COMMENT": str(comment or ""),
             "VIA": str(via or ""),
