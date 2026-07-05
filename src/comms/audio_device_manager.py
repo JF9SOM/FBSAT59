@@ -146,11 +146,17 @@ AudioCallback = Callable[[NDArray[np.float32]], None]
 
 
 def _resample(chunk: NDArray[np.float32], src_rate: int, dst_rate: int) -> NDArray[np.float32]:
-    """Resample a mono float32 chunk from src_rate to dst_rate."""
+    """Resample a mono float32 chunk from src_rate to dst_rate.
+
+    Always anti-alias filters before downsampling. Naive stride decimation
+    (picking every Nth sample with no low-pass filter) folds all energy
+    above the new Nyquist frequency straight back into the passband —
+    for the common 48000->12000 (FT4) and 48000->3200 (CW) ratios this adds
+    several dB of noise across the entire decode band, which is fatal for
+    weak-signal digital modes.
+    """
     if src_rate == dst_rate or len(chunk) == 0:
         return chunk
-    if src_rate % dst_rate == 0:
-        return chunk[:: src_rate // dst_rate]
     if _SCIPY_AVAILABLE:
         g = np.gcd(src_rate, dst_rate)
         resampled = sp_signal.resample_poly(chunk, dst_rate // g, src_rate // g)
