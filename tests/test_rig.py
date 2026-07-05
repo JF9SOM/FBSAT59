@@ -868,12 +868,35 @@ class TestHamlibNetController:
         data = b"".join(sent)
         assert b"S 1 Main\n" in data
 
-    def test_send_mode_only_unknown_mode_does_nothing(self) -> None:
-        """両モードが未知のとき何も送信しない。"""
+    def test_send_mode_only_unknown_mode_falls_back_to_fm(self) -> None:
+        """Unmapped modes (e.g. SSTV, SSDV, DOKA) must fall back to FM rather
+        than silently sending no CAT command at all — leaving the rig parked
+        in whatever mode a previously selected transponder had set is exactly
+        the bug that made APRS/SSTV transponders appear stuck in CW after
+        testing an FT4/CW-mode transponder beforehand."""
         ctrl = self._make_ctrl()
-        with patch("rig.controller.socket.socket") as mock_cls:
-            ctrl.send_mode_only("UNKNOWN", "UNKNOWN")
-        mock_cls.assert_not_called()
+        sent: list[bytes] = []
+        mock_sock = MagicMock(spec=socket.socket)
+        mock_sock.recv.return_value = b"RPRT 0\n"
+        mock_sock.sendall.side_effect = lambda data: sent.append(data)
+        with patch("rig.controller.socket.socket", return_value=mock_sock):
+            ctrl.send_mode_only("SSTV", "SSTV")
+        data = b"".join(sent)
+        assert b"M FM 0\n" in data
+
+    def test_send_mode_only_ft991_unknown_mode_falls_back_to_fm(self) -> None:
+        """Same fallback, but for the ctcss_method == "ft991" raw-CAT branch
+        (e.g. an FTX-1F configured with ctcss_method="ft991"): AFSK/SSTV must
+        still send MD0 4; (FM) rather than skipping the CAT command."""
+        ctrl = HamlibNetController(host="localhost", port=4532, ctcss_method="ft991")
+        sent: list[bytes] = []
+        mock_sock = MagicMock(spec=socket.socket)
+        mock_sock.recv.return_value = b"RPRT 0\n"
+        mock_sock.sendall.side_effect = lambda data: sent.append(data)
+        with patch("rig.controller.socket.socket", return_value=mock_sock):
+            ctrl.send_mode_only("AFSK", "AFSK")
+        data = b"".join(sent)
+        assert b"w MD04;\n" in data
 
     def test_send_mode_only_ssb_maps_to_usb(self) -> None:
         """SSB は rigctld の USB として送信される。"""

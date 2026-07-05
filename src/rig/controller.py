@@ -2451,10 +2451,16 @@ class HamlibNetController(RigController):
           On S 1 Main split: Sub=TX (uplink), Main=RX (downlink).
         """
         if self._ctcss_method == "ft991":
-            dl_code = _FT991_MODE_MAP.get(dl_mode)
-            ul_code = _FT991_MODE_MAP.get(ul_mode)
-            if not dl_code and not ul_code:
-                return
+            # Default to FM ("4") for modes absent from _FT991_MODE_MAP (e.g.
+            # SSTV, SSDV, AFSK, DOKA, FSK) so the rig always lands on a
+            # sensible receive mode. Mirrors the Direct-mode counterpart
+            # (_apply_mode_and_ctcss_cat_ft991's own .get(mode, "4")) — without
+            # this default, an unmapped mode silently sent no CAT command at
+            # all, leaving the rig parked in whatever mode a previous
+            # transponder selection had set (e.g. stuck in CW after testing a
+            # CW-mode transponder, then switching to an APRS/SSTV one).
+            dl_code = _FT991_MODE_MAP.get(dl_mode, "4")
+            ul_code = _FT991_MODE_MAP.get(ul_mode, "4")
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(self._TIMEOUT)
@@ -2482,10 +2488,11 @@ class HamlibNetController(RigController):
             except Exception as exc:
                 logger.warning("RigNet: FT-991 mode send failed: %s", exc)
             return
-        rigctld_ul = _SATNOGS_TO_RIGCTLD_MODE.get(ul_mode)
-        rigctld_dl = _SATNOGS_TO_RIGCTLD_MODE.get(dl_mode)
-        if not rigctld_ul and not rigctld_dl:
-            return
+        # Default to FM for modes absent from _SATNOGS_TO_RIGCTLD_MODE (e.g.
+        # SSTV, SSDV, DOKA, FSK) — see the ft991 branch above for why an
+        # unmapped mode must never silently skip sending a CAT command.
+        rigctld_ul = _SATNOGS_TO_RIGCTLD_MODE.get(ul_mode, "FM")
+        rigctld_dl = _SATNOGS_TO_RIGCTLD_MODE.get(dl_mode, "FM")
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(self._TIMEOUT)
