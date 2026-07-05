@@ -1069,11 +1069,15 @@ CREATE TABLE custom_groups (
 
 ### コミュニティ周波数（src/data/community_transmitters.json）
 
-| 衛星 | Rx (DL) | Tx (UL) | Mode | 出典 |
+| 衛星 | Rx (DL) | Tx (UL) | Mode（DB `mode`列） | 出典 |
 |------|---------|---------|------|------|
-| RS-44 (NORAD 44909) | 435.612 MHz | 145.993 MHz | FT4 | JH1NHK |
-| JO-97 (NORAD 43803) | 145.857 MHz | 435.118 MHz | FT4 | JH1NHK |
-| MO-122 (NORAD 60209) | 435.812 MHz | 145.938 MHz | FT4 | JH1NHK |
+| RS-44 (NORAD 44909) | 435.612 MHz | 145.993 MHz | USB-D（invert=true→UL側はLSB-D） | JH1NHK |
+| JO-97 (NORAD 43803) | 145.857 MHz | 435.118 MHz | USB-D | JH1NHK |
+| MO-122 (NORAD 60209) | 435.812 MHz | 145.938 MHz | USB-D | JH1NHK |
+
+`description` は引き続き「FT4 Calling — community standard」のまま（FT4タブの自動オープン判定は
+description文字列を見るため無関係）。`mode` 列だけ実際のリグCATモードを表す `USB-D`/`LSB-D` に
+変更している。詳細は後述の「モード文字列 → リグCATモード変換テーブル」参照。
 
 ### Dashboard タブ（src/ui/dashboard_view.py）
 
@@ -1670,6 +1674,38 @@ S 1 Main / S 1 VFOB は `apply_transponder_state()` 内の `_send_split_init_ind
 - PC: GPD MicroPC2 (Ubuntu)
 - Hamlib: 4.7.1-rc (2026-02-16) モデルID 1051
 - 接続: USB → /dev/FTX1CAT → udev/systemd → rigctld:4532
+
+### モード文字列 → リグCATモード変換テーブル（2026-07-05 確定）
+
+トランスポンダーの `mode` 文字列（SATNOGS形式）は、以下5つの独立したテーブルすべてに
+登録しないとリグに正しく反映されない（`src/rig/controller.py`）:
+
+| テーブル | 用途 |
+|---|---|
+| `MODE_MAP` | 汎用 Hamlib 定数（起動時に静的構築） |
+| `_build_live_hamlib_mode_map()` | Direct mode の satmode/generic Hamlib 経路（旧: 3箇所に重複していたのを統合） |
+| `_FTX1_MODE_CODES` | FTX-1F raw CAT（`MD` コマンド1桁コード） |
+| `_FT991_MODE_MAP` | FT-991/FT-991A raw CAT（Direct・NET両方の `ctcss_method=="ft991"` 経路で共用） |
+| `_SATNOGS_TO_RIGCTLD_MODE` | NET mode 汎用 rigctld（`M {mode} 0` コマンド名） |
+
+**未登録モードは必ずFMにフォールバックすること。** Direct mode 側は元々 `.get(mode, "4")` /
+`.get(mode, RIG_MODE_FM)` で徹底されていたが、NET mode 側（`HamlibNetController.send_mode_only()`
+の `ft991` 分岐・汎用rigctld分岐）はフォールバックせず「両VFOとも未登録なら何も送信しない」
+実装になっており、未登録モード選択時にリグが**直前のモードのまま放置される**バグがあった
+（2026-07-05 修正）。`SSTV`・`SSDV`・`DOKA`・`FSK` 等、SATNOGSには存在するが本アプリの
+CATテーブルには元々登録されていないモード文字列は今後も出てくるため、このフォールバックは
+どちらの経路でも必須。
+
+**FT4通話周波数の実装（`community_transmitters.json`）**: 当初 `mode: "FT4"` を使っていたが
+上記5テーブルのどこにも存在せず、リグがFMにフォールバック（Direct mode）または何も送信されない
+（NET mode）状態だった。FT4はUSB相当のデータモードで復調する必要があるため、`"USB-D"`
+（DATA-USB相当）／`"LSB-D"`（DATA-LSB相当）を新設し全5テーブルに追加。`_MODE_INVERT`
+（main_window.py）にも `USB-D⇔LSB-D` を追加し、RS-44のような反転トランスポンダーで
+既存のUSB⇔LSB反転と同じ仕組みでDL/ULのサイドバンドが自動的に入れ替わるようにした。
+
+**教訓**: 「あるトランスポンダーのモード文字列を選択してもリグの実際の動作が変わらない/前の
+モードのままになる」系の不具合を見たら、まずこの5テーブルすべてに当該モード文字列が登録されて
+いるか、かつNET mode側にFMフォールバックが効いているかを確認すること。
 
 ---
 
