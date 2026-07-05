@@ -17,7 +17,7 @@ import pytest
 from core.engine import Observation, PassInfo
 from data.database import SCHEMA_SQL
 from data.tle_manager import TLEManager
-from ui.main_window import MainWindow, SatDetailPanel
+from ui.main_window import _MODE_INVERT, MainWindow, SatDetailPanel
 from ui.pass_panel import PassPanel  # noqa: F401  (used in isinstance checks)
 from ui.radio_control_widget import RadioControlWidget
 from ui.world_map import WorldMapView
@@ -1792,3 +1792,15 @@ class TestRadioType:
         ctrl.set_vfo_frequencies(145_800_000, 435_000_000)
         assert any(c.startswith("F ") for c in sent)
         assert any(c.startswith("I ") for c in sent)
+
+
+class TestModeInvertDataModes:
+    """FT4 calling-frequency transponders (RS-44) use mode="USB-D" with
+    invert=True; the uplink must flip to the DATA-LSB equivalent just like
+    a plain USB/LSB inverting transponder."""
+
+    def test_usb_d_inverts_to_lsb_d(self) -> None:
+        assert _MODE_INVERT["USB-D"] == "LSB-D"
+
+    def test_lsb_d_inverts_to_usb_d(self) -> None:
+        assert _MODE_INVERT["LSB-D"] == "USB-D"

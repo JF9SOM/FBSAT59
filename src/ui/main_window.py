@@ -111,6 +111,8 @@ _MODE_INVERT: dict[str, str] = {
     "LSB": "USB",
     "CW": "CW-R",
     "CW-R": "CW",
+    "USB-D": "LSB-D",
+    "LSB-D": "USB-D",
 }
 
 

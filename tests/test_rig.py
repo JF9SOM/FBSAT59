@@ -14,6 +14,9 @@ import httpx
 import pytest
 
 from rig.controller import (
+    _FT991_MODE_MAP,
+    _FTX1_MODE_CODES,
+    _SATNOGS_TO_RIGCTLD_MODE,
     HAMLIB_AVAILABLE,
     FrequencyState,
     HamlibDirectController,
@@ -51,6 +54,32 @@ class TestModeMap:
         m = _build_mode_map()
         for mode in ("FM", "SSB", "USB", "LSB", "CW", "CW-R", "DIGITALVOICE", "BPSK", "AFSK", "AM"):
             assert mode in m
+
+
+class TestFt4DataModeMapping:
+    """FT4 calling-frequency transponders use mode="USB-D"/"LSB-D" (data-mode
+    equivalents of USB/LSB, e.g. DATA-USB on Yaesu rigs). Every mode
+    lookup table that a transponder mode string can pass through must
+    recognize them, or the rig silently falls back to FM (community
+    transmitters RS-44/JO-97/MO-122 FT4 calling frequencies)."""
+
+    def test_mode_map_has_data_modes(self) -> None:
+        m = _build_mode_map()
+        assert "USB-D" in m
+        assert "LSB-D" in m
+        assert m["USB-D"] != m["LSB-D"]
+
+    def test_ftx1_mode_codes_has_data_modes(self) -> None:
+        assert _FTX1_MODE_CODES["USB-D"] == "C"  # DATA-USB
+        assert _FTX1_MODE_CODES["LSB-D"] == "8"  # DATA-LSB
+
+    def test_ft991_mode_map_has_data_modes(self) -> None:
+        assert _FT991_MODE_MAP["USB-D"] == "C"  # DATA-USB
+        assert _FT991_MODE_MAP["LSB-D"] == "8"  # DATA-LSB
+
+    def test_satnogs_to_rigctld_mode_has_data_modes(self) -> None:
+        assert _SATNOGS_TO_RIGCTLD_MODE["USB-D"] == "PKTUSB"
+        assert _SATNOGS_TO_RIGCTLD_MODE["LSB-D"] == "PKTLSB"
 
 
 # ---------------------------------------------------------------------------

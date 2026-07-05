@@ -86,10 +86,42 @@ def _build_mode_map() -> dict[str, int]:
         "BPSK": 2048,  # RIG_MODE_PKTUSB
         "AFSK": 4096,  # RIG_MODE_PKTFM
         "AM": 1,  # RIG_MODE_AM
+        "USB-D": 2048,  # RIG_MODE_PKTUSB (data mode, e.g. FT4 calling freqs)
+        "LSB-D": 1024,  # RIG_MODE_PKTLSB
     }
 
 
 MODE_MAP: dict[str, int] = _build_mode_map()
+
+
+def _build_live_hamlib_mode_map(_H: Any) -> dict[str, int]:
+    """SATNOGS mode string → live Hamlib RIG_MODE_* constant.
+
+    Unlike MODE_MAP (built from stable public bitmask values so it can exist
+    at module load time), this reads the constants off an imported Hamlib
+    module. Shared by every call site that opens a fresh Hamlib session to
+    set mode (send_mode_only, _apply_mode_and_ctcss_hamlib,
+    _resend_mode_ctcss_via_rig) so a mode added in one path can't silently
+    stay missing in another — the exact gap that let FT4 fall back to FM.
+    """
+    return {
+        "FM": _H.RIG_MODE_FM,
+        "DIGITALVOICE": _H.RIG_MODE_FM,
+        # AFSK (e.g. APRS) is carried over FM; PKTFM is not universally
+        # supported (IC-9100 ignores it and leaves the rig in the previous
+        # mode).  Plain FM is the correct receiver mode for APRS monitoring.
+        "AFSK": _H.RIG_MODE_FM,
+        "USB": _H.RIG_MODE_USB,
+        "SSB": _H.RIG_MODE_USB,
+        "LSB": _H.RIG_MODE_LSB,
+        "CW": _H.RIG_MODE_CW,
+        "CW-R": _H.RIG_MODE_CWR,
+        "AM": _H.RIG_MODE_AM,
+        "BPSK": _H.RIG_MODE_PKTUSB,
+        "USB-D": _H.RIG_MODE_PKTUSB,  # data mode, e.g. FT4 calling freqs
+        "LSB-D": _H.RIG_MODE_PKTLSB,
+    }
+
 
 # Preset CAT command templates for known rigs that need custom CTCSS commands.
 # Keyed by ctcss_method value; value is (cat_on_template, cat_off_template).
@@ -208,6 +240,8 @@ _FTX1_MODE_CODES: dict[str, str] = {
     "CW": "3",  # CW-U
     "CW-R": "7",  # CW-L
     "AM": "5",
+    "USB-D": "C",  # DATA-USB (data mode, e.g. FT4 calling freqs)
+    "LSB-D": "8",  # DATA-LSB
 }
 
 # ---------------------------------------------------------------------------
@@ -1124,21 +1158,7 @@ class HamlibDirectController(RigController):
 
             # Build mode map from real Hamlib constants (available after import).
             # Python binding: set_mode(mode, passband[, vfo]) — vfo is the last arg.
-            hamlib_mode: dict[str, int] = {
-                "FM": _H.RIG_MODE_FM,
-                "DIGITALVOICE": _H.RIG_MODE_FM,
-                "USB": _H.RIG_MODE_USB,
-                "SSB": _H.RIG_MODE_USB,
-                "LSB": _H.RIG_MODE_LSB,
-                "CW": _H.RIG_MODE_CW,
-                "CW-R": _H.RIG_MODE_CWR,
-                "AM": _H.RIG_MODE_AM,
-                # AFSK (e.g. APRS) is carried over FM; PKTFM is not universally
-                # supported (IC-9100 ignores it and leaves the rig in the previous
-                # mode).  Plain FM is the correct receiver mode for APRS monitoring.
-                "AFSK": _H.RIG_MODE_FM,
-                "BPSK": _H.RIG_MODE_PKTUSB,
-            }
+            hamlib_mode: dict[str, int] = _build_live_hamlib_mode_map(_H)
             dl_hamlib = hamlib_mode.get(dl_mode, _H.RIG_MODE_FM)
             ul_hamlib = hamlib_mode.get(ul_mode, _H.RIG_MODE_FM)
             # For satmode rigs: use Main/Sub VFOs only while satmode is active
@@ -1216,18 +1236,7 @@ class HamlibDirectController(RigController):
             logger.error("RigDirect._apply_mode_and_ctcss_hamlib: Hamlib not available")
             return False
 
-        hamlib_mode: dict[str, int] = {
-            "FM": _H.RIG_MODE_FM,
-            "DIGITALVOICE": _H.RIG_MODE_FM,
-            "AFSK": _H.RIG_MODE_FM,
-            "USB": _H.RIG_MODE_USB,
-            "SSB": _H.RIG_MODE_USB,
-            "BPSK": _H.RIG_MODE_PKTUSB,
-            "LSB": _H.RIG_MODE_LSB,
-            "CW": _H.RIG_MODE_CW,
-            "CW-R": _H.RIG_MODE_CWR,
-            "AM": _H.RIG_MODE_AM,
-        }
+        hamlib_mode: dict[str, int] = _build_live_hamlib_mode_map(_H)
         dl_hamlib = hamlib_mode.get(dl_mode, _H.RIG_MODE_FM)
         ul_hamlib = hamlib_mode.get(ul_mode, _H.RIG_MODE_FM)
         vfo_main = int(_H.RIG_VFO_MAIN)
@@ -1492,18 +1501,7 @@ class HamlibDirectController(RigController):
         try:
             import Hamlib as _H  # noqa: PLC0415
 
-            hamlib_mode: dict[str, int] = {
-                "FM": _H.RIG_MODE_FM,
-                "DIGITALVOICE": _H.RIG_MODE_FM,
-                "AFSK": _H.RIG_MODE_FM,
-                "USB": _H.RIG_MODE_USB,
-                "SSB": _H.RIG_MODE_USB,
-                "LSB": _H.RIG_MODE_LSB,
-                "CW": _H.RIG_MODE_CW,
-                "CW-R": _H.RIG_MODE_CWR,
-                "AM": _H.RIG_MODE_AM,
-                "BPSK": _H.RIG_MODE_PKTUSB,
-            }
+            hamlib_mode: dict[str, int] = _build_live_hamlib_mode_map(_H)
             dl_hamlib = hamlib_mode.get(self._current_dl_mode, _H.RIG_MODE_FM)
             ul_hamlib = hamlib_mode.get(self._current_ul_mode, _H.RIG_MODE_FM)
             vfo_main = int(_H.RIG_VFO_MAIN)
@@ -1878,7 +1876,9 @@ _FT991_MODE_MAP: dict[str, str] = {
     "FM": "4",
     "AM": "5",
     "CW-R": "7",
+    "LSB-D": "8",  # DATA-LSB (data mode, e.g. FT4 calling freqs)
     "FM-N": "B",
+    "USB-D": "C",  # DATA-USB
 }
 
 
@@ -2706,6 +2706,8 @@ _SATNOGS_TO_RIGCTLD_MODE: dict[str, str] = {
     "BPSK": "PKTUSB",
     "AFSK": "PKTFM",
     "AM": "AM",
+    "USB-D": "PKTUSB",  # data mode, e.g. FT4 calling freqs
+    "LSB-D": "PKTLSB",
 }
 _RIGCTLD_MODE_TO_SATNOGS: dict[str, str] = {v: k for k, v in _SATNOGS_TO_RIGCTLD_MODE.items()}
 
