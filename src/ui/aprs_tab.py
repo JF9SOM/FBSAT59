@@ -14,6 +14,7 @@ This commit provides the complete UI and settings persistence.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from datetime import UTC, datetime
 from typing import Any
@@ -632,7 +633,64 @@ class AprsTab(QWidget):
                 (callsign, via, lat, lon, comment, raw_frame, norad),
             )
             self._conn.commit()
+            self._broadcast_adif(callsign, via, comment, lat, lon, norad)
         self._refresh_qso_count()
+
+    def _broadcast_adif(
+        self,
+        callsign: str,
+        via: str,
+        comment: str,
+        lat: float | None,
+        lon: float | None,
+        norad: int | None,
+    ) -> None:
+        """Send this confirmed APRS QSO to the UDP log broadcaster.
+
+        APRS has no signal-report exchange, so a confirmed message exchange
+        is logged as a nominal 599/599 report (see CLAUDE.md "ログソフト連携"
+        design note).
+        """
+        from comms.log_broadcast import get_log_broadcaster
+        from ui.adif_utils import build_adif_record
+
+        now = datetime.now(tz=UTC)
+        cs = str(callsign or "").split(">")[0].split("-")[0]
+        my_call = self._callsign_edit.text().strip().upper()
+        my_ssid = self._ssid_spin.value()
+        my_station = f"{my_call}-{my_ssid}" if my_ssid else my_call
+
+        sat_name = ""
+        if norad and hasattr(self._conn, "execute"):
+            with contextlib.suppress(Exception):
+                row = self._conn.execute(
+                    "SELECT name FROM satellites WHERE norad_cat_id = ?", (norad,)
+                ).fetchone()
+                if row:
+                    sat_name = str(row["name"])
+
+        grid = _latlon_to_grid(float(lat), float(lon or 0)) if lat is not None else ""
+
+        fields: dict[str, str] = {
+            "CALL": cs,
+            "QSO_DATE": now.strftime("%Y%m%d"),
+            "TIME_ON": now.strftime("%H%M%S"),
+            "MODE": "APRS",
+            "MY_CALL": my_station,
+            "COMMENT": str(comment or ""),
+            "VIA": str(via or ""),
+            "SAT_NAME": sat_name,
+        }
+        if sat_name:
+            fields["PROP_MODE"] = "SAT"
+        fields["RST_SENT"] = "599"
+        fields["RST_RCVD"] = "599"
+        if grid:
+            fields["GRIDSQUARE"] = grid
+
+        broadcaster = get_log_broadcaster()
+        broadcaster.reload_settings(self._conn)
+        broadcaster.send_adif_record(build_adif_record(fields))
 
     def _append_log_item(self, ts: str, callsign: str, via: str, comment: str) -> None:
         via_str = f",{via}" if via else ""

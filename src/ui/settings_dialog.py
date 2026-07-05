@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
@@ -187,6 +188,10 @@ class SettingsDialog(QDialog):
         self._notif_warn_spin: QSpinBox
         self._notif_los_cb: QCheckBox
         self._notif_los_spin: QSpinBox
+        # Logging tab state
+        self._log_broadcast_cb: QCheckBox
+        self._log_broadcast_host_edit: QLineEdit
+        self._log_broadcast_port_spin: QSpinBox
         self._setup_ui()
         self._load_settings()
 
@@ -202,6 +207,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._build_map_tab(), _("World Map"))
         tabs.addTab(self._build_groups_tab(), _("Custom Groups"))
         tabs.addTab(self._build_notifications_tab(), _("Notifications"))
+        tabs.addTab(self._build_logging_tab(), _("Logging"))
 
         layout.addWidget(tabs)
 
@@ -580,6 +586,64 @@ class SettingsDialog(QDialog):
         layout.addStretch()
         return tab
 
+    def _build_logging_tab(self) -> QWidget:
+        """Build the Logging settings tab (UDP ADIF broadcast to log-relay software)."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        group = QGroupBox(_("UDP Log Broadcast"))
+        form = QFormLayout(group)
+
+        self._log_broadcast_cb = QCheckBox(_("Broadcast logged QSOs via UDP (ADIF)"))
+        form.addRow(self._log_broadcast_cb)
+
+        self._log_broadcast_host_edit = QLineEdit()
+        self._log_broadcast_host_edit.setPlaceholderText("127.0.0.1")
+        form.addRow(_("Host:"), self._log_broadcast_host_edit)
+
+        self._log_broadcast_port_spin = QSpinBox()
+        self._log_broadcast_port_spin.setRange(1, 65535)
+        self._log_broadcast_port_spin.setValue(2333)
+        form.addRow(_("Port:"), self._log_broadcast_port_spin)
+
+        layout.addWidget(group)
+
+        note = QLabel(
+            _(
+                "Sends one ADIF record per logged QSO (FT4, Q65, confirmed APRS\n"
+                "exchanges) to the given host/port. Compatible with lightweight\n"
+                "log-relay tools such as wavelog-gate and JT-Linker. Host may be\n"
+                "a LAN address, not just this machine (127.0.0.1)."
+            )
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        layout.addStretch()
+        return tab
+
+    def _load_logging_settings(self) -> None:
+        """Load UDP log broadcast preferences from DB into the Logging tab widgets."""
+        from comms.log_broadcast import load_log_broadcast_settings  # noqa: PLC0415
+
+        s = load_log_broadcast_settings(self._conn)
+        self._log_broadcast_cb.setChecked(bool(s["enabled"]))
+        self._log_broadcast_host_edit.setText(str(s["host"]))
+        self._log_broadcast_port_spin.setValue(int(s["port"]))
+
+    def _save_logging_settings(self) -> None:
+        """Persist UDP log broadcast preferences from the tab widgets to the DB."""
+        from comms.log_broadcast import save_log_broadcast_settings  # noqa: PLC0415
+
+        host = self._log_broadcast_host_edit.text().strip() or "127.0.0.1"
+        save_log_broadcast_settings(
+            self._conn,
+            {
+                "enabled": self._log_broadcast_cb.isChecked(),
+                "host": host,
+                "port": self._log_broadcast_port_spin.value(),
+            },
+        )
+
     def _load_notification_settings(self) -> None:
         """Load notification preferences from DB into the Notifications tab widgets."""
         from core.notifier import load_notification_settings  # noqa: PLC0415
@@ -643,6 +707,9 @@ class SettingsDialog(QDialog):
         # Notifications
         self._load_notification_settings()
 
+        # Logging
+        self._load_logging_settings()
+
     def _save_settings(self) -> None:
         """Persist TLE source enablement and world map selection to the DB."""
         # TLE sources
@@ -670,6 +737,9 @@ class SettingsDialog(QDialog):
 
         # Notifications
         self._save_notification_settings()
+
+        # Logging
+        self._save_logging_settings()
 
     # ------------------------------------------------------------------ #
     # Static helpers

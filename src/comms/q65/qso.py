@@ -274,6 +274,9 @@ class Q65QsoManager:
         now = datetime.now(UTC)
         time_off = now.strftime("%H%M%S")
         qso_date = now.strftime("%Y%m%d")
+        time_on = self._time_on or now.strftime("%H%M%S")
+        rst_sent = self.rst_sent or "-05"
+        rst_rcvd = self.rst_rcvd or "-05"
         try:
             self._conn.execute(
                 "INSERT INTO q65_log "
@@ -282,12 +285,12 @@ class Q65QsoManager:
                 "VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (
                     qso_date,
-                    self._time_on or now.strftime("%H%M%S"),
+                    time_on,
                     time_off,
                     self.dx_call,
                     self.dx_grid,
-                    self.rst_sent or "-05",
-                    self.rst_rcvd or "-05",
+                    rst_sent,
+                    rst_rcvd,
                     self.freq_hz,
                     self._norad,
                     self._sat_name,
@@ -295,7 +298,35 @@ class Q65QsoManager:
             )
             self._conn.commit()
         except Exception:
-            pass
+            return
+        self._broadcast_adif(qso_date, time_on, time_off, rst_sent, rst_rcvd)
+
+    def _broadcast_adif(
+        self, qso_date: str, time_on: str, time_off: str, rst_sent: str, rst_rcvd: str
+    ) -> None:
+        """Send this QSO to the UDP log broadcaster (wavelog-gate / JT-Linker etc.)."""
+        from comms.log_broadcast import get_log_broadcaster  # noqa: PLC0415
+        from ui.adif_utils import build_adif_record  # noqa: PLC0415
+
+        freq_mhz = f"{self.freq_hz / 1e6:.6f}" if self.freq_hz else ""
+        record = build_adif_record(
+            {
+                "CALL": self.dx_call,
+                "QSO_DATE": qso_date,
+                "TIME_ON": time_on,
+                "TIME_OFF": time_off,
+                "MODE": "Q65",
+                "PROP_MODE": "SAT",
+                "FREQ": freq_mhz,
+                "SAT_NAME": self._sat_name,
+                "RST_SENT": rst_sent,
+                "RST_RCVD": rst_rcvd,
+                "GRIDSQUARE": self.dx_grid,
+            }
+        )
+        broadcaster = get_log_broadcaster()
+        broadcaster.reload_settings(self._conn)
+        broadcaster.send_adif_record(record)
 
     def _ensure_table(self) -> None:
         self._conn.execute(

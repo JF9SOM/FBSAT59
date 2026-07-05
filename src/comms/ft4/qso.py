@@ -197,15 +197,18 @@ class Ft4QsoManager:
             return
         now = datetime.now(UTC)
         self.ensure_table(conn)
+        qso_date = self._session.qso_start.strftime("%Y%m%d")
+        time_on = self._session.qso_start.strftime("%H%M%S")
+        time_off = now.strftime("%H%M%S")
         conn.execute(
             """INSERT INTO ft4_log
                (qso_date, time_on, time_off, call, gridsquare,
                 rst_sent, rst_rcvd, freq_hz, norad_cat_id, sat_name)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                self._session.qso_start.strftime("%Y%m%d"),
-                self._session.qso_start.strftime("%H%M%S"),
-                now.strftime("%H%M%S"),
+                qso_date,
+                time_on,
+                time_off,
                 self._session.their_call,
                 self._session.their_grid,
                 self._session.rst_sent,
@@ -216,3 +219,31 @@ class Ft4QsoManager:
             ),
         )
         conn.commit()
+        self._broadcast_adif(conn, qso_date, time_on, time_off)
+
+    def _broadcast_adif(
+        self, conn: sqlite3.Connection, qso_date: str, time_on: str, time_off: str
+    ) -> None:
+        """Send this QSO to the UDP log broadcaster (wavelog-gate / JT-Linker etc.)."""
+        from comms.log_broadcast import get_log_broadcaster  # noqa: PLC0415
+        from ui.adif_utils import build_adif_record  # noqa: PLC0415
+
+        freq_mhz = f"{self._session.freq_hz / 1e6:.6f}" if self._session.freq_hz else ""
+        record = build_adif_record(
+            {
+                "CALL": self._session.their_call,
+                "QSO_DATE": qso_date,
+                "TIME_ON": time_on,
+                "TIME_OFF": time_off,
+                "MODE": "FT4",
+                "PROP_MODE": "SAT",
+                "FREQ": freq_mhz,
+                "SAT_NAME": self._session.sat_name,
+                "RST_SENT": self._session.rst_sent,
+                "RST_RCVD": self._session.rst_rcvd,
+                "GRIDSQUARE": self._session.their_grid,
+            }
+        )
+        broadcaster = get_log_broadcaster()
+        broadcaster.reload_settings(conn)
+        broadcaster.send_adif_record(record)

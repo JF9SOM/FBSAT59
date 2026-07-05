@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from i18n import _
-from ui.adif_utils import adif_write_or_append
+from ui.adif_utils import adif_write_or_append, build_adif_record
 
 
 def _latlon_to_grid(lat: float, lon: float) -> str:
@@ -41,11 +41,6 @@ def _latlon_to_grid(lat: float, lon: float) -> str:
     sq_lon = int((lon_adj % 20) / 2)
     sq_lat = int(lat_adj % 10)
     return chr(ord("A") + field_lon) + chr(ord("A") + field_lat) + str(sq_lon) + str(sq_lat)
-
-
-def _adif_field(tag: str, value: str) -> str:
-    v = value.strip()
-    return f"<{tag}:{len(v)}>{v}" if v else ""
 
 
 class LogExportDialog(QDialog):
@@ -207,19 +202,21 @@ class LogExportDialog(QDialog):
                     qso_date, time_on, time_off, call, grid, rst_s, rst_r, freq_hz, sat = r
                     iso = f"{qso_date[:4]}-{qso_date[4:6]}-{qso_date[6:]} {time_on}"
                     freq_mhz = f"{freq_hz / 1e6:.6f}" if freq_hz else ""
-                    tokens = [
-                        _adif_field("CALL", call or ""),
-                        _adif_field("QSO_DATE", qso_date or ""),
-                        _adif_field("TIME_ON", time_on or ""),
-                        "<MODE:3>FT4",
-                        "<PROP_MODE:3>SAT",
-                        _adif_field("FREQ", freq_mhz),
-                        _adif_field("SAT_NAME", sat or ""),
-                        _adif_field("RST_SENT", rst_s or ""),
-                        _adif_field("RST_RCVD", rst_r or ""),
-                        _adif_field("GRIDSQUARE", grid or ""),
-                    ]
-                    records.append((iso, " ".join(t for t in tokens if t) + " <EOR>\n"))
+                    record = build_adif_record(
+                        {
+                            "CALL": call or "",
+                            "QSO_DATE": qso_date or "",
+                            "TIME_ON": time_on or "",
+                            "MODE": "FT4",
+                            "PROP_MODE": "SAT",
+                            "FREQ": freq_mhz,
+                            "SAT_NAME": sat or "",
+                            "RST_SENT": rst_s or "",
+                            "RST_RCVD": rst_r or "",
+                            "GRIDSQUARE": grid or "",
+                        }
+                    )
+                    records.append((iso, record))
             except sqlite3.OperationalError:
                 pass
 
@@ -236,20 +233,22 @@ class LogExportDialog(QDialog):
                     qso_date, time_on, time_off, call, grid, rst_s, rst_r, freq_hz, sat = row
                     iso = f"{qso_date[:4]}-{qso_date[4:6]}-{qso_date[6:]} {time_on}"
                     freq_mhz = f"{freq_hz / 1e6:.6f}" if freq_hz else ""
-                    tokens = [
-                        _adif_field("CALL", call or ""),
-                        _adif_field("QSO_DATE", qso_date or ""),
-                        _adif_field("TIME_ON", time_on or ""),
-                        _adif_field("TIME_OFF", time_off or time_on or ""),
-                        "<MODE:3>Q65",
-                        "<PROP_MODE:3>SAT",
-                        _adif_field("FREQ", freq_mhz),
-                        _adif_field("SAT_NAME", sat or ""),
-                        _adif_field("RST_SENT", rst_s or ""),
-                        _adif_field("RST_RCVD", rst_r or ""),
-                        _adif_field("GRIDSQUARE", grid or ""),
-                    ]
-                    records.append((iso, " ".join(t for t in tokens if t) + " <EOR>\n"))
+                    record = build_adif_record(
+                        {
+                            "CALL": call or "",
+                            "QSO_DATE": qso_date or "",
+                            "TIME_ON": time_on or "",
+                            "TIME_OFF": time_off or time_on or "",
+                            "MODE": "Q65",
+                            "PROP_MODE": "SAT",
+                            "FREQ": freq_mhz,
+                            "SAT_NAME": sat or "",
+                            "RST_SENT": rst_s or "",
+                            "RST_RCVD": rst_r or "",
+                            "GRIDSQUARE": grid or "",
+                        }
+                    )
+                    records.append((iso, record))
             except sqlite3.OperationalError:
                 pass
 
@@ -287,21 +286,26 @@ class LogExportDialog(QDialog):
                     grid = ""
                     if lat_deg is not None:
                         grid = _latlon_to_grid(float(lat_deg), float(lon_deg or 0))
-                    tokens = [
-                        _adif_field("CALL", cs),
-                        _adif_field("QSO_DATE", qso_date),
-                        _adif_field("TIME_ON", time_on),
-                        "<MODE:4>APRS",
-                        _adif_field("MY_CALL", my_station),
-                        _adif_field("COMMENT", str(comment or "")),
-                        _adif_field("VIA", str(via or "")),
-                        _adif_field("SAT_NAME", sat_name),
-                    ]
+                    # APRS has no signal-report exchange, so a confirmed message
+                    # exchange is logged as a nominal 599/599 report (see
+                    # CLAUDE.md "ログソフト連携" design note).
+                    fields = {
+                        "CALL": cs,
+                        "QSO_DATE": qso_date,
+                        "TIME_ON": time_on,
+                        "MODE": "APRS",
+                        "MY_CALL": my_station,
+                        "COMMENT": str(comment or ""),
+                        "VIA": str(via or ""),
+                        "SAT_NAME": sat_name,
+                    }
                     if sat_name:
-                        tokens.append("<PROP_MODE:3>SAT")
+                        fields["PROP_MODE"] = "SAT"
+                    fields["RST_SENT"] = "599"
+                    fields["RST_RCVD"] = "599"
                     if grid:
-                        tokens.append(_adif_field("GRIDSQUARE", grid))
-                    records.append((iso, " ".join(t for t in tokens if t) + " <EOR>\n"))
+                        fields["GRIDSQUARE"] = grid
+                    records.append((iso, build_adif_record(fields)))
             except sqlite3.OperationalError:
                 pass
 
