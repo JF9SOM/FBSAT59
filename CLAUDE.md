@@ -1042,7 +1042,10 @@ FT4タブ自体に2つの診断機能を追加した。
 - **Show Waterfallポップアップ**（`src/ui/ft4_waterfall_dialog.py`・`Ft4WaterfallDialog`）:
   WSJT-X風の静止スペクトログラムを表示する非モーダルダイアログ。`_on_rx_period_ended()`で
   RX期間終了ごとに直前6秒分の音声から`compute_display_spectrogram()`（単純STFT、200〜3000Hz
-  帯）を計算し描画。デコードできた局があれば周波数位置に白線マーカーを重ねる
+  帯）を計算し描画。デコードできた局があれば周波数位置に白の縦線マーカーを重ねる
+  - **軸の向きはWSJT-X慣例に合わせる**: 横軸=周波数（Hz、左が低い）・縦軸=時間（秒、上が
+    周期開始・下が周期終了）。目盛り・軸ラベルとも描画する（2026-07-06、初版は目盛りが
+    無く軸の向きも逆でユーザーが読み取れないと指摘があり修正）
   - **意図的に`codec.compute_waterfall()`とは別実装**: decode用のwaterfall計算は
     `ftx_find_candidates()`向けの time/frequency oversampling・固定小数点レイアウトに
     厳密に依存しており（前述「ウォーターフォール計算」セクション参照）、表示用ヘルパーを
