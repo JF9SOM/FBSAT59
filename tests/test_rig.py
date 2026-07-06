@@ -441,7 +441,9 @@ class TestHamlibNetController:
         no-op'ing like it used to when it only used self._cmd(). It also
         selects VFOB first (confirmed live: the IC-705 stores CTCSS tone
         independently per VFO, so writing without switching lands it on
-        whatever VFO send_mode_only() left selected — VFOA/downlink)."""
+        whatever VFO send_mode_only() left selected — VFOA/downlink), and
+        enables the encoder via "U TONE 1" — confirmed live that "C" only
+        sets the tone frequency and does NOT enable the encoder on its own."""
         ctrl = self._make_ctrl()
         assert ctrl._sock is None
         sent: list[bytes] = []
@@ -453,10 +455,27 @@ class TestHamlibNetController:
         assert result is True
         data = b"".join(sent)
         assert b"C 744\n" in data
+        assert b"U TONE 1\n" in data
         idx_vfob = data.index(b"V VFOB\n")
         idx_c = data.index(b"C 744\n")
+        idx_tone = data.index(b"U TONE 1\n")
         idx_vfoa = data.index(b"V VFOA\n")
-        assert idx_vfob < idx_c < idx_vfoa
+        assert idx_vfob < idx_c < idx_tone < idx_vfoa
+
+    def test_set_ctcss_tone_disconnected_zero_skips_c_disables_tone(self) -> None:
+        """tone_hz <= 0 skips "C" (rigctld rejects tone 0 with RPRT -9,
+        confirmed live) and only disables the encoder via "U TONE 0"."""
+        ctrl = self._make_ctrl()
+        sent: list[bytes] = []
+        mock_sock = MagicMock(spec=socket.socket)
+        mock_sock.recv.return_value = b"RPRT 0\n"
+        mock_sock.sendall.side_effect = lambda data: sent.append(data)
+        with patch("rig.controller.socket.socket", return_value=mock_sock):
+            result = ctrl.set_ctcss_tone(0.0)
+        assert result is True
+        data = b"".join(sent)
+        assert b"C " not in data
+        assert b"U TONE 0\n" in data
 
     def test_set_ctcss_tone_disconnected_connect_failure_returns_false(self) -> None:
         ctrl = self._make_ctrl()
@@ -497,11 +516,13 @@ class TestHamlibNetController:
         assert result is True
         sent = b"".join(calls)
         assert b"C 744\n" in sent
+        assert b"U TONE 1\n" in sent
         assert b"L CTCSS_TONE" not in sent
         idx_vfob = sent.index(b"V VFOB\n")
         idx_c = sent.index(b"C 744\n")
+        idx_tone = sent.index(b"U TONE 1\n")
         idx_vfoa = sent.index(b"V VFOA\n")
-        assert idx_vfob < idx_c < idx_vfoa
+        assert idx_vfob < idx_c < idx_tone < idx_vfoa
 
     def test_set_frequency_sends_command(self) -> None:
         ctrl = self._make_connected_ctrl()
@@ -884,6 +905,9 @@ class TestHamlibNetController:
     # -- _send_split_init_independent: same generic-vs-Yaesu split as _init_vfo --
 
     def test_send_split_init_independent_generic_sends_s1vfob(self) -> None:
+        """Generic rigs (e.g. IC-705) also get a trailing V VFOA to force the
+        display to refresh — confirmed live that the write lands correctly
+        internally but the screen doesn't update without reselecting VFOA."""
         ctrl = self._make_ctrl()  # default ctcss_method="hamlib"
         sent: list[bytes] = []
         mock_sock = MagicMock(spec=socket.socket)
@@ -894,8 +918,11 @@ class TestHamlibNetController:
         data = b"".join(sent)
         assert b"S 1 VFOB\n" in data
         assert b"S 1 Main\n" not in data
+        assert b"V VFOA\n" in data
 
     def test_send_split_init_independent_ftx1_sends_s1main(self) -> None:
+        """FTX-1F must not get the generic-rig V VFOA display-refresh call —
+        it's unnecessary and unvalidated for the Yaesu Main/Sub convention."""
         ctrl = self._make_ctrl(ctcss_method="ftx1")
         sent: list[bytes] = []
         mock_sock = MagicMock(spec=socket.socket)
@@ -905,6 +932,40 @@ class TestHamlibNetController:
             ctrl._send_split_init_independent()
         data = b"".join(sent)
         assert b"S 1 Main\n" in data
+        assert b"V VFOA\n" not in data
+
+    # -- _send_freq_preset_independent: same generic-vs-Yaesu V VFOA scoping --
+
+    def test_send_freq_preset_independent_generic_sends_v_vfoa(self) -> None:
+        ctrl = self._make_ctrl()  # default ctcss_method="hamlib"
+        ctrl._transponder_dl_hz = 145_920_000.0
+        ctrl._transponder_ul_hz = 435_830_000.0
+        sent: list[bytes] = []
+        mock_sock = MagicMock(spec=socket.socket)
+        mock_sock.recv.return_value = b"RPRT 0\n"
+        mock_sock.sendall.side_effect = lambda data: sent.append(data)
+        with patch("rig.controller.socket.socket", return_value=mock_sock):
+            ctrl._send_freq_preset_independent()
+        data = b"".join(sent)
+        assert b"F 145920000\n" in data
+        assert b"I 435830000\n" in data
+        assert b"V VFOA\n" in data
+        assert data.index(b"I 435830000\n") < data.index(b"V VFOA\n")
+
+    def test_send_freq_preset_independent_ftx1_no_v_vfoa(self) -> None:
+        ctrl = self._make_ctrl(ctcss_method="ftx1")
+        ctrl._transponder_dl_hz = 145_920_000.0
+        ctrl._transponder_ul_hz = 435_830_000.0
+        sent: list[bytes] = []
+        mock_sock = MagicMock(spec=socket.socket)
+        mock_sock.recv.return_value = b"RPRT 0\n"
+        mock_sock.sendall.side_effect = lambda data: sent.append(data)
+        with patch("rig.controller.socket.socket", return_value=mock_sock):
+            ctrl._send_freq_preset_independent()
+        data = b"".join(sent)
+        assert b"F 145920000\n" in data
+        assert b"I 435830000\n" in data
+        assert b"V VFOA\n" not in data
 
     # -- set_vfo_frequencies: F/I only, no M --
 

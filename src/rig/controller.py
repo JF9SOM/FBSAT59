@@ -2486,6 +2486,15 @@ class HamlibNetController(RigController):
         had no effect on the satellite uplink. Select VFOB first, then
         restore VFOA so the rig's display doesn't change.
 
+        "C" only sets the tone *frequency* — confirmed live that it does
+        NOT enable the encoder: "u TONE" read back 0 both before and after
+        a successful "C 670". The encoder is a separate rigctld func ("U
+        TONE 1"/"U TONE 0"), same func/frequency split already known from
+        the Direct-mode satmode path. Earlier manual tests only appeared to
+        work because TONE happened to already be enabled from prior
+        Direct-mode testing. A tone_hz <= 0 skips "C" (rigctld rejects tone
+        0 with RPRT -9) and only disables the encoder.
+
         When not yet connected (e.g. transponder selected before Connect is
         pressed), self._cmd() requires the persistent self._sock and would
         silently no-op. Open a short-lived independent socket instead,
@@ -2493,10 +2502,12 @@ class HamlibNetController(RigController):
         CTCSS is applied at transponder-selection time like DL/UL and mode
         already are, instead of requiring Connect first.
         """
+        enable = tone_hz > 0
         tone_int = int(round(tone_hz * 10))
         if self._sock is not None:
             self._cmd("V VFOB")
-            resp = self._cmd(f"C {tone_int}")
+            resp = self._cmd(f"C {tone_int}") if enable else "RPRT 0"
+            self._cmd(f"U TONE {1 if enable else 0}")
             self._cmd("V VFOA")
             return "RPRT 0" in resp
         try:
@@ -2517,7 +2528,8 @@ class HamlibNetController(RigController):
                 return buf.decode(errors="replace").strip()
 
             _send_recv("V VFOB")
-            resp = _send_recv(f"C {tone_int}")
+            resp = _send_recv(f"C {tone_int}") if enable else "RPRT 0"
+            _send_recv(f"U TONE {1 if enable else 0}")
             _send_recv("V VFOA")
             sock.close()
             logger.info("RigNet: CTCSS preset %.1fHz via independent socket -> %r", tone_hz, resp)
@@ -2782,6 +2794,11 @@ class HamlibNetController(RigController):
         Uses F (Main=DL) and I (Sub/TX=UL), matching the Doppler cycle.
         Called inside apply_transponder_state immediately after
         _send_split_init_independent() so SAT mode is already established.
+
+        Generic rigs (e.g. IC-705): F/I write to the correct VFO internally
+        (confirmed live via readback), but the display doesn't refresh to
+        show it unless VFOA is explicitly reselected afterward — same
+        display-refresh quirk as _send_split_init_independent().
         """
         if not self._transponder_dl_hz and not self._transponder_ul_hz:
             return
@@ -2789,6 +2806,10 @@ class HamlibNetController(RigController):
             "RigNet: freq preset DL=%.3fMHz UL=%.3fMHz via independent socket",
             (self._transponder_dl_hz or 0) / 1e6,
             (self._transponder_ul_hz or 0) / 1e6,
+        )
+        is_generic = not (self._satmode or self._is_satmode_rig) and self._ctcss_method not in (
+            "ftx1",
+            "ft991",
         )
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -2810,6 +2831,8 @@ class HamlibNetController(RigController):
                 _send_recv(f"F {int(self._transponder_dl_hz)}")
             if self._transponder_ul_hz:
                 _send_recv(f"I {int(self._transponder_ul_hz)}")
+            if is_generic:
+                _send_recv("V VFOA")
             sock.close()
             logger.info("RigNet: freq preset done")
         except Exception as exc:
@@ -2830,24 +2853,36 @@ class HamlibNetController(RigController):
         """
         is_satmode_rig = self._satmode or self._is_satmode_rig
         is_yaesu_cat = self._ctcss_method in ("ftx1", "ft991")
-        if (is_satmode_rig and self._is_same_band) or (not is_satmode_rig and not is_yaesu_cat):
-            cmd = "S 1 VFOB"
-        else:
-            cmd = "S 1 Main"
+        is_generic = not is_satmode_rig and not is_yaesu_cat
+        use_vfob_split = (is_satmode_rig and self._is_same_band) or is_generic
+        cmd = "S 1 VFOB" if use_vfob_split else "S 1 Main"
         logger.info("RigNet: pre-connect split init (%s) via independent socket", cmd)
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(self._TIMEOUT)
             sock.connect((self._host, self._port))
             sock.settimeout(2.0)
-            sock.sendall((cmd + "\n").encode())
-            buf = b""
-            with contextlib.suppress(OSError):
-                while b"RPRT" not in buf:
-                    chunk = sock.recv(256)
-                    if not chunk:
-                        break
-                    buf += chunk
+
+            def _send_recv(c: str) -> bytes:
+                sock.sendall((c + "\n").encode())
+                buf = b""
+                with contextlib.suppress(OSError):
+                    while b"RPRT" not in buf:
+                        chunk = sock.recv(256)
+                        if not chunk:
+                            break
+                        buf += chunk
+                return buf
+
+            buf = _send_recv(cmd)
+            if is_generic:
+                # IC-705 (and generic rigs like it): the frequency/mode
+                # writes below land on the correct VFO internally, but the
+                # display doesn't refresh unless VFOA is explicitly
+                # reselected afterward (confirmed live — same display-
+                # refresh quirk fixed for Direct mode elsewhere in this
+                # file). Restore VFOA so the display matches.
+                _send_recv("V VFOA")
             sock.close()
             logger.info(
                 "RigNet: pre-connect split init done -> %r",
