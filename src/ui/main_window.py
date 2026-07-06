@@ -3030,7 +3030,14 @@ class MainWindow(QMainWindow):
                     rig.send_mode_only(dl_mode, ul_mode)
                     if self._nonsatmode_gen != _gen:
                         return
-                    rig.send_ctcss_cat(ctcss_hz, cat_on, cat_off)
+                    # Dispatch CTCSS the same way _on_ctcss_send() does: CAT
+                    # methods (ftx1/ft991/custom_cat) go through send_ctcss_cat,
+                    # everything else (including generic Direct rigs like
+                    # IC-705) uses the standard Hamlib set_ctcss_tone() path.
+                    if self._ctcss_method in self._CAT_CTCSS_METHODS:
+                        rig.send_ctcss_cat(ctcss_hz, cat_on, cat_off)
+                    else:
+                        rig.set_ctcss_tone(ctcss_hz)
 
                 threading.Thread(target=_do_nonsatmode, daemon=True).start()
 

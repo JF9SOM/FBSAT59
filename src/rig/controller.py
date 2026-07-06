@@ -751,17 +751,82 @@ class HamlibDirectController(RigController):
             return True
 
         # Non-satmode rig: use Hamlib binding on current VFO.
-        if self._rig is None or self._hamlib is None:
+        if self._rig is None:
+            # Port is free (e.g. transponder selected before Connect is
+            # pressed) — open a short-lived session, same pattern as
+            # send_mode_only(), instead of silently doing nothing.
+            return self._apply_ctcss_hamlib_standalone(tone_hz)
+        if self._hamlib is None:
             return True
         try:
             _H = self._hamlib
             tone_int = int(round(abs(tone_hz) * 10))
+            # Icom CI-V over USB-serial needs a short gap between back-to-back
+            # transactions (same reason _apply_ctcss_civ_via_send_raw() sleeps
+            # 0.15s between raw frames) — firing set_ctcss_tone and set_func
+            # with no delay let the tone-frequency write land but silently
+            # dropped the TONE-enable write on an IC-705 (confirmed live).
             self._rig.set_ctcss_tone(_H.RIG_VFO_CURR, tone_int)
+            time.sleep(0.15)
             self._rig.set_func(_H.RIG_VFO_CURR, _H.RIG_FUNC_TONE, 1 if tone_hz > 0 else 0)
             return True
         except Exception as exc:
             logger.error("RigDirect.set_ctcss_tone (non-satmode): %s", exc)
             return False
+
+    def _apply_ctcss_hamlib_standalone(self, tone_hz: float) -> bool:
+        """Set CTCSS via a short-lived Hamlib session for a disconnected generic rig.
+
+        Mirrors send_mode_only(): opens its own Hamlib session (independent of
+        self._rig), applies the tone to VFO-B (the UL/TX vfo in the generic
+        split convention), then reselects VFO-A so the rig's main display
+        doesn't stay on the tone-setting VFO. Best-effort; errors are logged
+        and swallowed, matching the rest of the transponder-selection path.
+
+        Delays between each Hamlib call are required — confirmed live on an
+        IC-705: firing set_vfo/set_ctcss_tone/set_func back-to-back with no
+        gap let the tone frequency land (readback matched) but silently
+        dropped the TONE-enable command. Same reasoning as the 0.15s sleeps
+        in _apply_ctcss_civ_via_send_raw().
+        """
+        if not HAMLIB_AVAILABLE:
+            return True
+        rig: Any = None
+        try:
+            import Hamlib as _H
+
+            rig = _H.Rig(self._model_id)
+            rig.set_conf("rig_pathname", self._port)
+            rig.set_conf("serial_speed", str(self._baud_rate))
+            if self._civ_addr:
+                addr = self._civ_addr
+                if not addr.lower().startswith("0x"):
+                    addr = "0x" + addr
+                rig.set_conf("civaddr", addr)
+            tone_int = int(round(abs(tone_hz) * 10))
+            enable = tone_hz > 0
+            with self._port_lock:
+                rig.open()
+                vfo_b = int(_H.RIG_VFO_B)
+                vfo_a = int(_H.RIG_VFO_A)
+                rig.set_vfo(vfo_b)
+                time.sleep(0.15)
+                rig.set_ctcss_tone(vfo_b, tone_int)
+                time.sleep(0.15)
+                rig.set_func(vfo_b, _H.RIG_FUNC_TONE, 1 if enable else 0)
+                time.sleep(0.15)
+                rig.set_vfo(vfo_a)
+                time.sleep(0.15)
+                rig.set_func(vfo_a, _H.RIG_FUNC_TONE, 0)
+            logger.info("RigDirect: CTCSS standalone applied %.1fHz", tone_hz)
+            return True
+        except Exception as exc:
+            logger.error("RigDirect._apply_ctcss_hamlib_standalone: %s", exc)
+            return False
+        finally:
+            if rig is not None:
+                with contextlib.suppress(Exception):
+                    rig.close()
 
     def _civ_addr_int(self) -> int:
         """Return the CI-V rig address as an integer (default 0x65 for IC-9100)."""
