@@ -1,26 +1,34 @@
-"""Ft4WaterfallDialog — a WSJT-X-style static spectrogram popup for the FT4 tab.
+"""Ft4WaterfallDialog — a WSJT-X-style scrolling spectrogram popup for the
+FT4 tab.
 
-Renders the just-completed RX period's audio as a time/frequency image so
-the user can visually confirm whether real FT4 tone patterns are present
-in the passband, independent of whether the decoder actually recognized
-any of them. This is a diagnostic aid, not a live/continuous waterfall —
-it redraws once per completed ~6s RX period (see
-Ft4Tab._on_rx_period_ended), not continuously like WSJT-X's own display.
+Renders the audio from recent RX periods as a time/frequency image so the
+user can visually confirm whether real FT4 tone patterns are present in
+the passband, independent of whether the decoder actually recognized any
+of them. This is a diagnostic aid, not WSJT-X's own continuous waterfall —
+it only redraws once per completed ~6s RX period (see
+Ft4Tab._on_rx_period_ended) — but it does scroll across period boundaries
+like a real waterfall rather than replacing the whole image every period
+(that abrupt full-image swap every 6s was the original, confusing design;
+2026-07-06).
 
-Axis convention matches WSJT-X's own waterfall: frequency runs horizontally
-(low on the left), time runs vertically (period start at the top, period
-end at the bottom).
+Axis convention matches WSJT-X's own waterfall: frequency runs
+horizontally (low on the left). Time runs vertically, newest at the top —
+each new RX period enters at the top edge and previous periods are pushed
+down, scrolling off the bottom once _HISTORY_PERIODS periods have
+accumulated.
 """
 
 from __future__ import annotations
 
 import math
+from collections import deque
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import numpy as np
 from numpy.typing import NDArray
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QFont, QHideEvent, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QDialog, QLabel, QVBoxLayout, QWidget
 
 from comms.ft4.codec import SAMPLE_RATE, Ft4Message
@@ -36,6 +44,10 @@ _F_MAX = 3100.0
 _NFFT = 1024
 _HOP = 256
 
+# How many completed RX periods to keep scrolling through before the oldest
+# falls off the bottom (5 periods x 6s = 30s of history).
+_HISTORY_PERIODS = 5
+
 # Plot area (the spectrogram image itself, excluding axis margins)
 _PLOT_WIDTH = 620
 _PLOT_HEIGHT = 260
@@ -50,7 +62,9 @@ _CANVAS_WIDTH = _MARGIN_LEFT + _PLOT_WIDTH + _MARGIN_RIGHT
 _CANVAS_HEIGHT = _MARGIN_TOP + _PLOT_HEIGHT + _MARGIN_BOTTOM
 
 _FREQ_TICK_STEP_HZ = 500.0
-_TIME_TICK_STEP_S = 1.0
+# One gridline per RX period boundary (6s, 12s, 18s, ...) rather than every
+# second — this is a multi-period scroll now, not a single 0-6s period.
+_TIME_TICK_STEP_S = 6.0
 
 # Simple black -> blue -> green -> yellow -> red palette, similar in spirit
 # to WSJT-X's own waterfall coloring.
@@ -64,6 +78,14 @@ _PALETTE = [
     (255, 140, 0),
     (255, 30, 30),
 ]
+
+
+@dataclass
+class _PeriodEntry:
+    """One completed RX period's display spectrogram and its decode results."""
+
+    spec: NDArray[np.float32]  # (n_frames, n_bins), row 0 = period start
+    decoded: list[Ft4Message]
 
 
 def compute_display_spectrogram(
@@ -117,16 +139,18 @@ def _nice_ticks(lo: float, hi: float, step: float) -> list[float]:
 
 
 class Ft4WaterfallDialog(QDialog):
-    """Non-modal popup showing the last RX period as a static spectrogram.
+    """Non-modal popup showing recent RX periods as a scrolling spectrogram.
 
     Call update_waterfall() once per completed RX period while this dialog
     is visible; the caller (Ft4Tab) skips the call entirely while hidden to
-    avoid wasted computation.
+    avoid wasted computation. History is cleared when the dialog is hidden
+    so reopening it later (e.g. for a different pass) starts fresh instead
+    of splicing unrelated audio together.
     """
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle(_("FT4 Waterfall (last RX period)"))
+        self.setWindowTitle(_("FT4 Waterfall"))
         self.setMinimumSize(_CANVAS_WIDTH + 20, _CANVAS_HEIGHT + 40)
         layout = QVBoxLayout(self)
         self._image_label = QLabel(_("Waiting for the next RX period…"))
@@ -136,28 +160,41 @@ class Ft4WaterfallDialog(QDialog):
         layout.addWidget(self._image_label, stretch=1)
         self._status_label = QLabel("")
         layout.addWidget(self._status_label)
+        self._history: deque[_PeriodEntry] = deque(maxlen=_HISTORY_PERIODS)
+
+    def hideEvent(self, event: QHideEvent) -> None:
+        super().hideEvent(event)
+        self._history.clear()
+        self._image_label.setPixmap(QPixmap())
+        self._image_label.setText(_("Waiting for the next RX period…"))
 
     def update_waterfall(self, audio: NDArray[np.float32], decoded: list[Ft4Message]) -> None:
-        """Recompute and redraw from one period's audio."""
+        """Append one period's audio to the scroll history and redraw."""
         spec, bin_hz, min_bin = compute_display_spectrogram(audio)
         n_frames, n_bins = spec.shape
         if n_frames == 0:
             return
+        self._history.append(_PeriodEntry(spec=spec, decoded=decoded))
 
         freq_lo = min_bin * bin_hz
         freq_hi = (min_bin + n_bins) * bin_hz
-        duration_s = len(audio) / SAMPLE_RATE
 
-        # Per-period percentile normalization (like WSJT-X's auto waterfall level)
-        lo = float(np.percentile(spec, 5.0))
-        hi = float(np.percentile(spec, 99.5))
-        norm = (spec - lo) / max(hi - lo, 1e-6)
-        # rgb: (n_frames, n_bins, 3) — rows already in chronological order
-        # (period start at row 0) and columns already in ascending frequency
-        # order, i.e. exactly the (time=rows/height, freq=columns/width)
-        # layout WSJT-X uses, so no flip/transpose is needed here.
+        # Newest period first (top of the image). Each period's own rows are
+        # reversed so age keeps increasing continuously going down even
+        # across period boundaries — without this, time would visibly
+        # "snap back" to 0 at the start of every new period.
+        ordered = list(reversed(self._history))
+        full = np.concatenate([np.flip(entry.spec, axis=0) for entry in ordered], axis=0)
+        total_frames = full.shape[0]
+        duration_total_s = total_frames * _HOP / SAMPLE_RATE
+
+        # Percentile normalization over the whole visible history (like
+        # WSJT-X's auto waterfall level), recomputed fresh each period.
+        lo = float(np.percentile(full, 5.0))
+        hi = float(np.percentile(full, 99.5))
+        norm = (full - lo) / max(hi - lo, 1e-6)
         rgb = np.ascontiguousarray(_color_map(norm.astype(np.float32)))
-        qimg = QImage(rgb.data, n_bins, n_frames, n_bins * 3, QImage.Format.Format_RGB888)
+        qimg = QImage(rgb.data, n_bins, total_frames, n_bins * 3, QImage.Format.Format_RGB888)
         plot_pix = QPixmap.fromImage(qimg).scaled(
             _PLOT_WIDTH,
             _PLOT_HEIGHT,
@@ -169,14 +206,14 @@ class Ft4WaterfallDialog(QDialog):
         canvas.fill(QColor("#101010"))
         painter = QPainter(canvas)
         painter.drawPixmap(_MARGIN_LEFT, _MARGIN_TOP, plot_pix)
-        self._draw_axes(painter, freq_lo, freq_hi, duration_s)
-        self._draw_decoded_markers(painter, decoded, freq_lo, freq_hi)
+        self._draw_axes(painter, freq_lo, freq_hi, duration_total_s)
+        self._draw_history_markers(painter, ordered, freq_lo, freq_hi, total_frames)
         painter.end()
 
         self._image_label.setPixmap(canvas)
         ts = datetime.now(UTC).strftime("%H:%M:%S")
         self._status_label.setText(
-            _("Updated {ts} UTC — {n} message(s) decoded").format(ts=ts, n=len(decoded))
+            _("Updated {ts} UTC — {n} message(s) decoded this period").format(ts=ts, n=len(decoded))
         )
 
     def _draw_axes(
@@ -202,8 +239,10 @@ class Ft4WaterfallDialog(QDialog):
             _("Frequency (Hz)"),
         )
 
-        # Time ticks along the left (Y axis) — period start (0s) at the top
-        for sec in _nice_ticks(0.0, duration_s, _TIME_TICK_STEP_S):
+        # Time ticks along the left (Y axis) — one per RX period boundary.
+        # "Now" (age 0) is the top edge itself, marked by the plot border,
+        # so the first gridline is at _TIME_TICK_STEP_S, not 0.
+        for sec in _nice_ticks(_TIME_TICK_STEP_S, duration_s, _TIME_TICK_STEP_S):
             y = _MARGIN_TOP + int(sec / duration_s * _PLOT_HEIGHT)
             painter.drawLine(_MARGIN_LEFT - 4, y, _MARGIN_LEFT, y)
             painter.drawText(
@@ -212,23 +251,32 @@ class Ft4WaterfallDialog(QDialog):
         painter.save()
         painter.translate(12, _MARGIN_TOP + _PLOT_HEIGHT / 2)
         painter.rotate(-90)
-        painter.drawText(-60, -6, 120, 14, Qt.AlignmentFlag.AlignHCenter, _("Time (s)"))
+        painter.drawText(-60, -6, 120, 14, Qt.AlignmentFlag.AlignHCenter, _("Time ago (s)"))
         painter.restore()
 
         # Plot border
         painter.drawRect(_MARGIN_LEFT, _MARGIN_TOP, _PLOT_WIDTH, _PLOT_HEIGHT)
 
-    def _draw_decoded_markers(
+    def _draw_history_markers(
         self,
         painter: QPainter,
-        decoded: list[Ft4Message],
+        ordered_entries: list[_PeriodEntry],
         freq_lo: float,
         freq_hi: float,
+        total_frames: int,
     ) -> None:
-        if not decoded or freq_hi <= freq_lo:
+        """Draw each period's decoded-frequency markers within that period's
+        own vertical band only, not across the whole scroll history."""
+        if freq_hi <= freq_lo or total_frames <= 0:
             return
         painter.setPen(QPen(QColor(255, 255, 255, 160), 1))
-        for msg in decoded:
-            x = _MARGIN_LEFT + int((msg.freq_hz - freq_lo) / (freq_hi - freq_lo) * _PLOT_WIDTH)
-            painter.drawLine(x, _MARGIN_TOP, x, _MARGIN_TOP + _PLOT_HEIGHT)
-            painter.drawText(x + 2, _MARGIN_TOP + 10, f"{int(msg.freq_hz)}")
+        row_offset = 0
+        for entry in ordered_entries:
+            n = entry.spec.shape[0]
+            y_top = _MARGIN_TOP + int(row_offset / total_frames * _PLOT_HEIGHT)
+            y_bottom = _MARGIN_TOP + int((row_offset + n) / total_frames * _PLOT_HEIGHT)
+            for msg in entry.decoded:
+                x = _MARGIN_LEFT + int((msg.freq_hz - freq_lo) / (freq_hi - freq_lo) * _PLOT_WIDTH)
+                painter.drawLine(x, y_top, x, y_bottom)
+                painter.drawText(x + 2, y_top + 10, f"{int(msg.freq_hz)}")
+            row_offset += n
