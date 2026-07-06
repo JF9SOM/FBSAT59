@@ -539,10 +539,14 @@ class _RigPanel(QWidget):
         is_direct = self._radio_direct.isChecked()
         self._direct_group.setVisible(is_direct and not is_sdr)
         self._net_group.setVisible(not is_direct and not is_sdr)
-        self._ctcss_group.setEnabled(not is_direct and not is_sdr)
         # Gray out Hamlib-specific groups when SDR is selected
-        for grp in (self._direct_group, self._net_group, self._ctcss_group):
+        for grp in (self._direct_group, self._net_group):
             grp.setEnabled(not is_sdr)
+        # CTCSS Method only applies in NET mode; also grey out for SDR.
+        # Must be set after the loop above — it previously overwrote this
+        # with setEnabled(not is_sdr), silently re-enabling the group
+        # whenever SDR wasn't selected (i.e. always enabled in Direct mode).
+        self._ctcss_group.setEnabled(not is_direct and not is_sdr)
         self.sdr_mode_changed.emit(is_sdr)
 
     def _on_scan_ports(self) -> None:
