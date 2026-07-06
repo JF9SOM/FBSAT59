@@ -324,6 +324,7 @@ Claude Code 向け開発指示書は [CLAUDE.md](CLAUDE.md) を参照してく�
 | Yaesu FT-991AM | トランシーバー | ✓ | ✓ | Hamlib 4.7.1 モデル1036、NET Control、ドップラー補正確認済 |
 | Icom IC-9100 | トランシーバー | — | ✓ | Hamlib 4.7.1 モデル3068、NET/Direct、SATモード、ドップラー補正確認済（v0.1.27） |
 | Icom IC-9700 | トランシーバー | ✓ | ✓ | Hamlib 4.7.1 モデル3081、NET/Direct、SATモード、ドップラー補正確認済（v0.1.27） |
+| Icom IC-705 | トランシーバー | — | ✓ | Hamlib 4.7.1 モデル3085、NET/Direct、汎用（非satmode）リグ。周波数・モード・スプリット・CTCSS動作確認済み。複数のHamlibバックエンド不具合を生CAT/CI-Vで回避（2026-07） |
 | RTL-SDR | SDR | ✓（WinUSB/Zadig 要）* | ✓ | Windows: ctypes 直接、Linux/macOS: SoapyRTLSDR |
 | HackRF One | SDR | ✓（WinUSB/Zadig 要）* | ✓ | Windows: ctypes 直接、Linux/macOS: SoapyHackRF |
 | Airspy R2 / Mini | SDR | ❌ 非対応 | ✓ | SoapyAirspy（Linux/macOS のみ） |

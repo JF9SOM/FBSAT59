@@ -339,6 +339,7 @@ See [CLAUDE.md](CLAUDE.md) for the full architecture reference used during devel
 | Yaesu FT-991AM | Transceiver | ✓ | ✓ | Hamlib 4.7.1 model 1036, NET Control, Doppler |
 | Icom IC-9100 | Transceiver | — | ✓ | Hamlib 4.7.1 model 3068, NET+Direct, SAT mode, Doppler (v0.1.27) |
 | Icom IC-9700 | Transceiver | ✓ | ✓ | Hamlib 4.7.1 model 3081, NET+Direct, SAT mode, Doppler (v0.1.27) |
+| Icom IC-705 | Transceiver | — | ✓ | Hamlib 4.7.1 model 3085, NET+Direct, generic (non-satmode) rig, frequency/mode/split/CTCSS confirmed working via raw CAT/CI-V fallbacks for several Hamlib backend quirks (2026-07) |
 | RTL-SDR | SDR | ✓ (WinUSB/Zadig)* | ✓ | ctypes direct on Windows, SoapyRTLSDR on Linux/macOS |
 | HackRF One | SDR | ✓ (WinUSB/Zadig)* | ✓ | ctypes direct on Windows, SoapyHackRF on Linux/macOS |
 | Airspy R2 / Mini | SDR | ❌ not supported | ✓ | SoapyAirspy (Linux/macOS only) |

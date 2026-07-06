@@ -880,6 +880,7 @@ sudo usermod -aG dialout $USER
   - IC-9100（Hamlib 4.7.1 モデル3068、Direct モード）: クロスバンド・同バンド両方の周波数・モード・CTCSS 動作確認済み（v0.1.27・2026-06-25）— SAT モード ON/OFF・ドップラー補正・VFO 逆転バグ修正済み
   - IC-9100（Hamlib 4.7.1 モデル3068、NET Control）: クロスバンド・同バンド両方の周波数・モード・CTCSS 動作確認済み（v0.1.27・2026-06-25）
   - IC-9700（Hamlib 4.7.1 モデル3081、Direct/NET モード）: Linux・Windows 両方で IC-9100 と同様に動作確認済み（v0.1.27・2026-06-25）— `_SATMODE_USE_VFO_SUB` 分岐（VFO_SUB for UL）使用
+  - IC-705（Hamlib 4.7.1 モデル3085、Direct/NET モード両方、Linux）: 周波数・モード・CTCSS（トーン周波数＋エンコードON/OFF）・スプリット全て動作確認済み（2026-07-06〜07）— 汎用（非satmode）Icom CI-Vリグとして初の実地検証。詳細は「IC-705 (Hamlib model 3085) — 汎用（非satmode）Icom CI-Vリグの参照実装」セクション参照。Windows 未確認
   - HackRF One（SoapyHackRF）: NFM/USB/CW 復調・スペクトラム・Bias-T 動作確認済み（Linux）
   - HackRF One（ctypes直接実装 `HackRfDirectDevice`）: **Windows 実装済み v0.1.72（2026-06-25）** — 実機確認待ち。Zadig で WinUSB ドライバー適用要
   - RTL-SDR（SoapyRTLSDR）: 基本動作確認済み（Linux）
@@ -1584,6 +1585,45 @@ QT_LOGGING_RULES="qt.qpa.*=true" ./FBSAT59.AppImage 2>&1 | head -100
 
 ---
 
+### ICOM SATMODE機（IC-9100/9700等）NETモードCTCSS — `L CTCSS_TONE` が壊れている疑い（未検証・保留中、2026-07-07）
+
+**背景**: IC-705（汎用非satmodeリグ）のNETモードCTCSS調査で、`HamlibNetController.set_ctcss_tone()`が使っていた`L CTCSS_TONE {value}`コマンドは、rigctldのLEVEL設定構文であり、CTCSS_TONEはLEVELとして登録されていないため`RPRT -11`（ENAVAIL）で拒否されることが実機で確定した（`C {deci-Hz}`が正しい専用コマンド。詳細は「IC-705 (Hamlib model 3085)」セクション参照）。
+
+**懸念**: satmode NETモード（IC-9100/IC-9700等）のCTCSS自動適用実装 `_apply_ctcss_civ_direct()`（`src/rig/controller.py`）も、**全く同じ`L CTCSS_TONE`を使っている**：
+
+```python
+_cmd_drain("V Sub")
+_cmd_drain(f"L CTCSS_TONE {tone_deci}")   # ← IC-705と同じ理由でRPRT -11の可能性
+_cmd_drain(f"U TONE {'1' if enable else '0'}")  # ← これは正しいコマンドなので独立して成功する
+_cmd_drain("V Main")
+_cmd_drain("U TONE 0")
+```
+
+Hamlibソース（`src/misc.c`の`rig_parse_level()`・`rig_ext_lookup()`、`rigs/icom/ic9100.c`・`ic7300.c`のIC-9700定義）を確認したが、"CTCSS_TONE"という文字列はどのIcomモデルのLEVEL/extlevel/extfunc/extparmテーブルにも登録されていない。IC-9100/9700でも理論上は同じ`RPRT -11`が返るはずである。
+
+**なぜ「動いているように見える」可能性があるか**: `_cmd_drain()`は応答を検証せず握りつぶすため、`L CTCSS_TONE`が失敗しても後続の`U TONE 1`（エンコード有効化、これは正しいコマンドなので独立して成功する）は実行され、**TONEランプ自体は点灯する**。しかし周波数自体はリグに残っていた「以前の値」のままの可能性がある。ユーザーが実機で自動適用を「散々確認した」のは事実だが、テストした衛星の多くが67.0Hz系（ISS・AO-91等、AMSAT FM衛星で最も一般的な値）だった場合、たまたま以前の設定値と一致し続けて気づかなかった可能性を否定できない（本セッションでIC-705調査中に繰り返し遭遇した「残留状態のおかげでたまたま正しく見える」パターンと同型）。
+
+**保留の判断（2026-07-07、ユーザー判断）**: 実機（IC-9100/9700）での検証環境が整うまで、この修正は保留とする。**実装は行っていない**。
+
+**提案されている修正内容（未実装）**:
+```python
+_cmd_drain("V Sub")
+if enable:
+    _cmd_drain(f"C {tone_deci}")   # L CTCSS_TONE → C に変更
+_cmd_drain(f"U TONE {'1' if enable else '0'}")
+_cmd_drain("V Main")
+_cmd_drain("U TONE 0")
+```
+`tone_hz <= 0`（無効化）時は`C 0`を送らない（IC-705で`RPRT -9`拒否を確認済みのため、`C`コマンド自体をスキップし`U TONE 0`のみ送る）。
+
+**検証方法（次回対応時）**: 67.0Hz以外の値を要求する衛星（例: IO-86の88.5Hz、SO-50 Activation の74.4Hz）でトランスポンダーを自動選択し、実際にそのリグ設定（メニュー等でCTCSS周波数の現在値を確認できる機種であれば）が正しい値に切り替わるかを確認する。単に「Tランプが点くか」だけでは`U TONE`の成否しか分からず、周波数自体の正しさは検証できない。
+
+**関連ファイル**:
+- `src/rig/controller.py` — `HamlibNetController._apply_ctcss_civ_direct()`（約2557行目）
+- 同ファイル内 `set_ctcss_tone()`（汎用リグ用、今回修正済み — 同じ`L`→`C`の教訓が反映されている）
+
+---
+
 ## 次回の作業候補（v0.1.0 以降）
 
 ### 継続中・優先度高
@@ -2159,6 +2199,35 @@ Direct mode と同じ閾値を NET mode にも適用（`_last_ul_update_time` + 
 - SSB / CW など非 FM: 20 Hz / 15 秒
 
 残る 2フラッシュ（約1分ごとのUL更新時）は IC-9100 ハードウェアの動作（VFOB 更新直後に一瞬 VFOB 表示 → VFOA 表示に戻る）であり、ソフトウェアバグではない。
+
+### IC-705 (Hamlib model 3085) — 汎用（非satmode）Icom CI-Vリグの参照実装（2026-07-06〜07 確認済み）
+
+IC-9100/9700等と異なりMain/Sub概念を持たない、VFOA/VFOBのみの汎用Icom CI-Vリグ。実機での動作確認を通じて、**Hamlibの高レベルAPI（`set_split_vfo()`・`L CTCSS_TONE`・`set_func(FUNC_TONE)`）がこのモデルのバックエンドで複数箇所不安定/誤り**であることが判明し、生CAT/CI-Vへのバイパスで解決した。satmode機（`_SATMODE_RIG_IDS`）にもFTX-1F/FT-991A（`_FTX1_MODEL_IDS`/`_FT991_DIRECT_MODEL_IDS`）にも属さない、真に汎用的な非satmode NETモードリグとして初めて実地検証されたケース。
+
+**Direct モード（`HamlibDirectController`、`_IC705_MODEL_IDS = frozenset({3085})`）**:
+- `_init_split()`: `set_split_vfo(RIG_VFO_A, 1, tx_vfo)`（明示的にRX vfoを渡す）とすると、Hamlibバックエンドがtx_vfo割り当てを反転させる不具合を確認（`RIG_VFO_A`ではなく`RIG_VFO_CURR`を渡すことで解消。`_send_freq_preset_direct()`は元々`RIG_VFO_CURR`を使っており問題なかった）
+- UL書き込み（`set_freq(VFOB, ul_hz)`）後、Hamlibのicomバックエンド内部の「現在選択中VFO」がVFOBのまま残り、メイン画面がULを表示し続ける → `set_vfo(rx_vfo)`でVFOA表示に復元（IC-9100の同一バンドフォールバックで既に確立していたのと同じパターン）
+- split ON/OFF（`_init_split()`・`_send_freq_preset_direct()`・終了時の`_release_rig_split_on_exit()`）は結局すべて**生CI-Vフレーム**（`C_CTL_SPLT=0x0F`、`S_SPLT_ON=0x01`/`S_SPLT_OFF=0x00`）に置き換えた。`set_split_vfo()`自体が特定の引数の組み合わせで`icom_set_split_vfo: unsupported split <VFO定数の値>`という不可解なエラーを返すことがあり（Hamlib側のSWIGバインディングか内部ロジックの不具合と推定、根本原因は特定できず）、既存のFTX-1F/FT-991A同様「Hamlib呼び出しを信用せず生CATへ逃げる」方針に合流した
+- `rig.send_raw()`のPython SWIGバインディングは**`stack smashing detected`でプロセスがクラッシュする既知の危険**があり、生CI-V送信は`send_raw()`ではなく独立したpyserial/`os.open()`書き込みで行うこと（`_apply_ctcss_civ_via_send_raw()`のような既存のsatmode用ヘルパーも将来的に要注意）
+- CTCSS: `set_func(RIG_FUNC_TONE, ...)`はコマンド間に十分な遅延（0.15秒、既存の`_apply_ctcss_civ_via_send_raw()`と同じ値）を入れないと**トーン周波数は書き込めるがエンコードON自体が反映されない**。`_apply_ctcss_hamlib_standalone()`（未接続時の一時セッション）・`set_ctcss_tone()`（接続時）の両方に遅延を追加して解決
+- CTCSS設定枠（Rig Settings）は元々NETモードのみを想定した設計だが、Directモード選択時は`_ctcss_group`がグレイアウトされ**編集不可**になるだけで、**保存済みの古い値はモード判定ロジックに読み込まれ適用され続ける**。汎用Directリグ（satmode/FTX-1F/FT-991A以外）は`main_window._is_generic_direct_rig()`で判定し、`ctcss_method`の値に関わらず常に標準Hamlib経路（`set_ctcss_tone()`）を使うようにして、NETモード時代の設定値が紛れ込む余地を構造的に排除した（`_do_nonsatmode()`・`_on_ctcss_send()`両方に適用）
+
+**NET モード（`HamlibNetController`）— モデル自動判定は存在しない**:
+NETモードはDirectモードと異なりHamlibモデル番号を直接取得できない（`_`コマンドによる問い合わせは過去のソケット競合で廃止済み）。そのため各分岐は**Rig SettingsダイアログでユーザーがCTCSS Tone Settings枠内で選択した設定値のみ**を根拠にしている:
+```python
+is_satmode_rig = self._satmode or self._is_satmode_rig   # "Icom SAT mode rig" チェックボックス
+is_yaesu_cat   = self._ctcss_method in ("ftx1", "ft991")  # CTCSS Method プルダウン
+```
+どちらにも該当しない（デフォルトの"Hamlib standard"のまま）場合にのみ「汎用リグ」として扱われる、消去法の設計。IC-705を積極的に検出しているわけではないので、**この設定をユーザーが正しく選択している前提**であることに注意（FT-991Aを繋いだまま設定を"Hamlib standard"のままにすると汎用経路に落ちて誤動作する）。
+
+- `_init_vfo()`・`send_mode_only()`・`_send_split_init_independent()`が無条件に`S 1 Main`/`Main`/`Sub`命名を使っていたのは、FTX-1F/FT-991Aのrigctldバックエンド固有の癖（S 1 Main以外だと不定動作）を「非satmode リグ全般の仕様」と誤って一般化したもの。IC-705にはMain/Sub概念がなく、`"Main"`という文字列がバックエンドに誤解釈されRX/TXが入れ替わる（実機確認: ダウンリンクがVFOBに、アップリンクがVFOAに入った）。`is_yaesu_cat`で分岐し、汎用リグは素直な`VFOA`/`VFOB`命名（`S 1 VFOB`等）を使うよう修正
+- `HamlibNetController.set_ctcss_tone()`が`L CTCSS_TONE {value}`（rigctldの**LEVEL設定構文**）を使っていたが、CTCSS_TONEはLEVELではなく専用コマンド文字を持つため、rigctldは`RPRT -11`（ENAVAIL）で拒否する。正しくは`C {deci-Hz}`（専用コマンド）。**satmode NETモードのCTCSS実装（`_apply_ctcss_civ_direct()`）にも同一パターンの`L CTCSS_TONE`が存在する。詳細・検証方針は「既知のバグ（未修正）」内「ICOM SATMODE機（IC-9100/9700等）NETモードCTCSS — `L CTCSS_TONE` が壊れている疑い」セクション参照（2026-07-07、実機検証待ちで保留中）**
+- CTCSSトーンはVFOごとに独立して保持される（実機確認: VFOAとVFOBに別々の値を書き込み・読み戻し可能）。`send_mode_only()`はVFOA（ダウンリンク）を選択した状態で終わるため、VFO切り替えなしで`C`を送るとダウンリンク側に誤って書き込まれる → `V VFOB`で明示的に切り替えてから`C`、その後`V VFOA`で表示を復元
+- `C {value}`は**トーン周波数のみ**を設定し、エンコードのON/OFF自体は別のfunc（`U TONE 1`/`U TONE 0`）で制御する。この分離に気づかず`C`だけ送っていたため、以前のDirectモードテストでたまたまエンコードがONのまま残っていた間は「動いているように見えていた」だけだった。`tone_hz <= 0`の場合は`C 0`がrigctldに`RPRT -9`で拒否されるため`C`自体をスキップし、`U TONE 0`のみ送る
+- `set_ctcss_tone()`は接続前（`self._sock is None`）は独立ソケットを新規に開いて送信する（`_send_freq_preset_independent()`と同じパターン）。`_on_ctcss_send()`（Activateボタン等の手動送信ハンドラ）に残っていた`if not rig.is_connected: return`という古いガードが、この独立ソケット経路に到達する前にブロックしていたため削除済み
+- `_send_split_init_independent()`・`_send_freq_preset_independent()`は、周波数自体はVFOA/VFOBに正しく書き込まれる（読み戻しで確認済み）が、**画面表示が更新されないことがある**（Directモードで既知の「CURR復元」パターンと同根）。汎用リグ判定時のみ末尾に`V VFOA`を追加して表示を強制リフレッシュする（FTX-1F/FT-991A/satmode機には一切影響しないよう分岐）
+
+**教訓**: Hamlibの高レベルAPIが「本来動くはずのコマンド」でも、特定モデルのバックエンド実装次第で無反応・誤動作・クラッシュしうる。実機のない機種を新規サポートする際は、Direct/NET問わず生CAT/CI-Vへのフォールバックを疑い、可能な限り実機で個々のコマンドの読み戻しを確認すること。
 
 ### NET mode (rigctld) vs Direct mode (Hamlib built-in)
 - FTX-1F: both NET and Direct work; NET preferred (more stable)
