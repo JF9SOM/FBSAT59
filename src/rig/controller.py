@@ -1822,13 +1822,13 @@ class HamlibDirectController(RigController):
             else:
                 import Hamlib as _H
 
-                rx_vfo = self._vfo_str_to_const("VFOA")
+                # Passing an explicit RX vfo (RIG_VFO_A) here caused the
+                # Icom CI-V backend (confirmed on IC-705) to invert which
+                # VFO becomes TX.  RIG_VFO_CURR avoids the inversion — it's
+                # what _send_freq_preset_direct() already uses successfully.
                 tx_vfo = self._vfo_str_to_const("VFOB")
-                ret = self._rig.set_split_vfo(rx_vfo, 1, tx_vfo)
-                logger.info("RigDirect: set_split_vfo(VFOA,1,VFOB) ret=%d", ret)
-                if ret != 0:
-                    ret2 = self._rig.set_split_vfo(_H.RIG_VFO_CURR, 1, _H.RIG_VFO_B)
-                    logger.info("RigDirect: set_split_vfo(CURR,1,VFOB) ret=%d", ret2)
+                ret = self._rig.set_split_vfo(_H.RIG_VFO_CURR, 1, tx_vfo)
+                logger.info("RigDirect: set_split_vfo(CURR,1,VFOB) ret=%d", ret)
         except Exception as exc:
             logger.warning("RigDirect: _init_split failed — %s", exc)
 
