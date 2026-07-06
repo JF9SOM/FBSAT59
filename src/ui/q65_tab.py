@@ -106,6 +106,7 @@ class Q65Tab(QWidget):
         self._tx_active = False
         self._tx_slot: str = _TX_SLOT_EVEN
         self._tx_thread: threading.Thread | None = None
+        self._out_device: int | None = None
 
         # QSO manager (created after UI so callbacks can update labels)
         self._qso: Q65QsoManager | None = None
@@ -381,6 +382,15 @@ class Q65Tab(QWidget):
             idx = self._slot_combo.findText(d["tx_slot"])
             if idx >= 0:
                 self._slot_combo.setCurrentIndex(idx)
+
+        # Load output device index from shared soundcard_settings
+        row2 = self._conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'soundcard_settings'"
+        ).fetchone()
+        if row2:
+            sc = json.loads(row2[0])
+            val_out = sc.get("output_device_index")
+            self._out_device = int(val_out) if val_out is not None else None
 
     def _save_settings(self) -> None:
         import json
@@ -720,8 +730,8 @@ class Q65Tab(QWidget):
         import contextlib
 
         mgr = get_audio_device_manager()
-        if not mgr.acquire_output(_AUDIO_OWNER, None):
-            other = mgr.output_owner(None) or _("another tab")
+        if not mgr.acquire_output(_AUDIO_OWNER, self._out_device):
+            other = mgr.output_owner(self._out_device) or _("another tab")
             self._status_label.setText(
                 _("Sound card output is in use by {other}").format(other=other)
             )
@@ -737,7 +747,7 @@ class Q65Tab(QWidget):
         try:
             import sounddevice as sd
 
-            sd.play(audio, samplerate=SAMPLE_RATE, blocking=False)
+            sd.play(audio, samplerate=SAMPLE_RATE, device=self._out_device, blocking=False)
             mgr.pin_active_output(_AUDIO_OWNER)
             sd.wait()
         except Exception as exc:
@@ -746,7 +756,7 @@ class Q65Tab(QWidget):
             if rig is not None:
                 with contextlib.suppress(Exception):
                     rig.set_ptt(False)
-            mgr.release_output(_AUDIO_OWNER, None)
+            mgr.release_output(_AUDIO_OWNER, self._out_device)
 
     def _get_rig(self) -> Any | None:
         """Return RigController for Rig 1 if connected, else None."""
