@@ -1655,6 +1655,30 @@ class HamlibDirectController(RigController):
                         ser.write(f"FB{int(ul_hz):09d};".encode())
                         time.sleep(0.05)
                         ser.write(b"FT3;")  # VFO-B TX = split ON (FT-991)
+                elif self._model_id in _IC705_MODEL_IDS:
+                    # IC-705: Hamlib's set_split_vfo() intermittently rejects
+                    # this call (confirmed live — see _init_split() for the
+                    # same fix). Send the raw CI-V split-ON frame via a
+                    # separate pyserial connection first, then use Hamlib
+                    # normally for the DL/UL frequency writes (those are
+                    # reliable).
+                    import serial as _serial
+
+                    civ = int(self._civ_addr, 16) if self._civ_addr else _IC705_DEFAULT_CIV_ADDR
+                    with _serial.Serial(self._port, self._baud_rate, timeout=1) as ser:
+                        ser.write(bytes([0xFE, 0xFE, civ, 0xE0, 0x0F, 0x01, 0xFD]))
+                    time.sleep(0.1)
+
+                    import Hamlib as _H
+
+                    r = _H.Rig(self._model_id)
+                    r.set_conf("rig_pathname", self._port)
+                    r.set_conf("serial_speed", str(self._baud_rate))
+                    r.open()
+                    time.sleep(0.1)
+                    r.set_freq(_H.RIG_VFO_A, int(dl_hz))
+                    r.set_freq(_H.RIG_VFO_B, int(ul_hz))
+                    r.close()
                 else:
                     import Hamlib as _H
 
@@ -1893,6 +1917,24 @@ class HamlibDirectController(RigController):
                 finally:
                     _os.close(_fd)
                 logger.info("RigDirect: split enabled via raw CAT FT3; (FT-991)")
+            elif self._model_id in _IC705_MODEL_IDS:
+                # IC-705: Hamlib's set_split_vfo() intermittently rejects
+                # this call with "unsupported split" (confirmed live — same
+                # flakiness already worked around on the exit-cleanup path
+                # in main_window._release_rig_split_on_exit()).  Send the
+                # raw CI-V split-ON frame directly instead, same os.open()
+                # pattern as FTX-1F/FT-991 above (works alongside Hamlib
+                # already holding the port).
+                import os as _os
+
+                civ = int(self._civ_addr, 16) if self._civ_addr else _IC705_DEFAULT_CIV_ADDR
+                frame = bytes([0xFE, 0xFE, civ, 0xE0, 0x0F, 0x01, 0xFD])
+                _fd = _os.open(self._port, _os.O_WRONLY | _os.O_NOCTTY | _os.O_NONBLOCK)
+                try:
+                    _os.write(_fd, frame)
+                finally:
+                    _os.close(_fd)
+                logger.info("RigDirect: split enabled via raw CI-V 0F 01 (IC-705)")
             else:
                 import Hamlib as _H
 
