@@ -1056,6 +1056,47 @@ FT4タブ自体に2つの診断機能を追加した。
   - 6秒に1回の静止画更新であり、WSJT-Xのようなリアルタイム連続ウォーターフォールではない
   - ダイアログが非表示の間は`isVisible()`チェックで計算自体をスキップ（CPU負荷回避）
 
+**RX Levelメーターが実機で振れなかった根本原因と修正（`AudioDeviceManager`のデバイス検証、2026-07-06）**
+
+上記の診断ツール実装後、実機（FTX-1接続）でFT4タブのRX Levelメーターが振れず、Rig Settings
+側のメーターは振れる、という報告があった。調査の結果、`soundcard_settings`に保存された
+`input_device_index`（PortAudioの数値インデックス）が、保存時点から実機の状態が変わったこと
+で**別のデバイスを指すようになっていた**ことが直接の原因と判明した（例: 保存値が指すインデックス
+が現在は`max_input_channels=0`の"surround51"を指しており、録音不可能）。
+
+PortAudioのデバイスインデックスはOS再起動やUSBオーディオ機器の抜き差しのたびに並び順が変わり
+うる（本ファイル既出の「Linux/PipeWireピニング」設計セクション参照）。Rig Settings側のメーター
+は開くたびに`sd.query_devices()`で**その場で再列挙**してデフォルトを選び直すため影響を受けない
+が、FT4・CW・SSTV等の各タブは起動時にDBから読んだ**古い数値インデックスをそのまま**
+`sounddevice.InputStream(device=N, ...)`に渡していたため、無効化したインデックスに当たると
+PortAudioの生の例外（`except Exception as exc: status_label.setText(f"Audio open error: {exc}")`
+等）が出るのみで、原因（デバイス番号のズレ）が全く分かりにくいメッセージになっていた。
+
+**修正**: `src/comms/audio_device_manager.py`に`_validate_input_device(device)`を新設し、
+`_SharedInputStream._open()`（全Communicationsタブが共有する唯一の入口）内、実際に
+`sd.InputStream()`を呼ぶ前に検証する:
+- `device=None`（システムデフォルト）は常に許可（検証スキップ）
+- `sounddevice.query_devices`が無い環境（テストのフェイクモジュール等）も検証スキップし、
+  実際の`InputStream()`呼び出しにエラー判定を委ねる
+- インデックスが現在のデバイス一覧の範囲外、または`max_input_channels<=0`の場合は
+  `RuntimeError`で「Rig Settings > Sound Cardを開いて入力デバイスを再選択してください」と
+  明示するメッセージを送出
+
+`_SharedInputStream.add_subscriber()`側も、`_open()`が例外を送出した場合は追加しかけた
+subscriber登録を`pop()`で巻き戻してから re-raise するよう修正（開けなかったストリームに
+購読者だけが残る不整合を防止）。この検証は1箇所（`AudioDeviceManager`）に集約されているため、
+FT4・CW Decoder・SSTV/SSDV・APRS(Direwolf)・Rig Settingsメーターすべてに同時に効く。
+
+テスト: `tests/test_audio_device_manager.py`の`TestInputDeviceValidation`
+（`query_devices()`を返すフェイク`sounddevice`モジュールを使い、範囲外インデックス・
+`max_input_channels=0`のデバイス・正常なデバイス・`device=None`・`query_devices`欠如の
+5パターンを検証）。
+
+**教訓**: 数値デバイスインデックスをDBに保存して後から使い回す設計は、USB機器の抜き差しや
+OS再起動をまたぐと静かに破綻する。「片方のUIでは動くのにもう片方では動かない」という報告を
+受けたら、両者が同じ設定値をどう解決しているか（その場で再列挙 vs 保存値をそのまま信用）の
+違いをまず疑うこと。
+
 **メニュー: Communications > Q65**（`src/ui/q65_tab.py`）
 - **Phase 1（RX）**: libq65 ctypes デコーダー（WSJT-X ソースからビルド）
   - libq65 未インストール時はバナー表示・デコード無効化。インストール先: `~/.local/share/fbsat59/q65lib/`

@@ -57,6 +57,18 @@ def fake_sounddevice(monkeypatch: pytest.MonkeyPatch) -> type[_FakeInputStream]:
     return _FakeInputStream
 
 
+def _make_fake_sounddevice_with_devices(
+    monkeypatch: pytest.MonkeyPatch, devices: list[dict[str, Any]]
+) -> type[_FakeInputStream]:
+    """Like `fake_sounddevice`, but also exposes `query_devices()` — needed
+    to exercise `_validate_input_device()`, which no-ops when that function
+    is missing (as it is on the plain `fake_sounddevice` fixture above)."""
+    _FakeInputStream.instances = []
+    fake_module = types.SimpleNamespace(InputStream=_FakeInputStream, query_devices=lambda: devices)
+    monkeypatch.setitem(sys.modules, "sounddevice", fake_module)
+    return _FakeInputStream
+
+
 class _FakeInputStreamBlockingStop(_FakeInputStream):
     """Mimics real PortAudio: `stop()` blocks until its audio callback
     thread — which needs the manager's internal lock, same as the real
@@ -279,6 +291,66 @@ class TestInputSharing:
         t.join(timeout=5)
         assert done.is_set(), "release_input deadlocked"
         assert fake_sounddevice_blocking_stop.instances[0].closed is True
+
+
+# ---------------------------------------------------------------------------
+# Input device validation — a stale/invalid device index must raise a clear
+# error instead of either silently failing or opening the wrong hardware
+# (see _validate_input_device() in comms/audio_device_manager.py; this is
+# what let the FT4 tab report zero audio while Rig Settings' own meter,
+# which re-enumerates fresh, worked fine on the same machine).
+# ---------------------------------------------------------------------------
+
+
+class TestInputDeviceValidation:
+    def test_rejects_out_of_range_index(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _make_fake_sounddevice_with_devices(
+            monkeypatch, [{"name": "default", "max_input_channels": 2}]
+        )
+        mgr = AudioDeviceManager()
+        with pytest.raises(RuntimeError, match="no longer exists"):
+            mgr.acquire_input("ft4", 9, 48_000, lambda c: None)
+        # Failed open must not leave a dangling subscriber/stream entry.
+        assert mgr._inputs == {} or all(not s._subscribers for s in mgr._inputs.values())
+
+    def test_rejects_device_with_no_input_channels(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _make_fake_sounddevice_with_devices(
+            monkeypatch,
+            [
+                {"name": "default", "max_input_channels": 2},
+                {"name": "surround51", "max_input_channels": 0},
+            ],
+        )
+        mgr = AudioDeviceManager()
+        with pytest.raises(RuntimeError, match="no input channels"):
+            mgr.acquire_input("ft4", 1, 48_000, lambda c: None)
+
+    def test_accepts_valid_device(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        fake = _make_fake_sounddevice_with_devices(
+            monkeypatch, [{"name": "default", "max_input_channels": 2}]
+        )
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("ft4", 0, 48_000, lambda c: None)
+        assert len(fake.instances) == 1
+        assert fake.instances[0].started is True
+
+    def test_none_device_skips_validation(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """device=None means "system default" and is always accepted,
+        regardless of what query_devices() reports."""
+        fake = _make_fake_sounddevice_with_devices(monkeypatch, [])
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("ft4", None, 48_000, lambda c: None)
+        assert len(fake.instances) == 1
+
+    def test_missing_query_devices_skips_validation(
+        self, fake_sounddevice: type[_FakeInputStream]
+    ) -> None:
+        """Fakes (and any sounddevice build) without query_devices() must not
+        block opening — the real InputStream() call surfaces the actual
+        error instead."""
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("ft4", 9, 48_000, lambda c: None)
+        assert len(fake_sounddevice.instances) == 1
 
 
 # ---------------------------------------------------------------------------

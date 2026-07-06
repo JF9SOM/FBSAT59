@@ -51,6 +51,8 @@ import numpy as np
 from numpy.typing import NDArray
 from PySide6.QtCore import QObject, Signal
 
+from i18n import _
+
 try:
     from scipy import signal as sp_signal
 
@@ -128,7 +130,7 @@ def _pin_new_stream(kind: str, move_verb: str, target: str, before: set[str]) ->
     or more than one new stream shows up (ambiguous — safer to leave routing
     alone than move the wrong stream).
     """
-    for _ in range(20):
+    for _attempt in range(20):
         new_ids = _snapshot_stream_ids(kind) - before
         if len(new_ids) == 1:
             with contextlib.suppress(Exception):
@@ -168,6 +170,51 @@ def _resample(chunk: NDArray[np.float32], src_rate: int, dst_rate: int) -> NDArr
     return np.interp(x_new, x_old, chunk).astype(np.float32)
 
 
+def _validate_input_device(device: int | None) -> None:
+    """Raise a clear, actionable error if `device` cannot actually record audio.
+
+    PortAudio device indices are not stable across sessions on Linux: they
+    shift whenever ALSA/PipeWire's device list changes (e.g. a USB rig
+    soundcard being plugged in adds entries ahead of the generic
+    "pipewire"/"default" devices). A stale index silently pointing at an
+    unrelated, input-less device is what let the FT4 tab report zero audio
+    while Rig Settings' own meter — which re-enumerates fresh every time it
+    opens — worked fine on the same machine at the same time (2026-07-06).
+
+    No-ops for `device=None` (system default, always valid) and when
+    ``sounddevice`` doesn't expose ``query_devices`` (e.g. the fakes used in
+    tests) — in both cases the real `sd.InputStream()` call is left to
+    surface whatever error actually occurs.
+    """
+    if device is None:
+        return
+    import sounddevice as sd
+
+    query_devices = getattr(sd, "query_devices", None)
+    if query_devices is None:
+        return
+    try:
+        devices = query_devices()
+    except Exception:
+        return
+    if not (0 <= device < len(devices)):
+        raise RuntimeError(
+            _(
+                "Input device #{device} no longer exists (device list now has "
+                "{count} entries) — reopen Rig Settings > Sound Card and "
+                "re-select the input device."
+            ).format(device=device, count=len(devices))
+        )
+    if devices[device].get("max_input_channels", 0) <= 0:
+        raise RuntimeError(
+            _(
+                "Input device #{device} ({name}) has no input channels — "
+                "reopen Rig Settings > Sound Card and re-select the input "
+                "device."
+            ).format(device=device, name=devices[device].get("name", "?"))
+        )
+
+
 def snapshot_output_streams() -> set[str]:
     """Current pactl sink-input ids — for ad-hoc pinning outside the TX lock
     (e.g. the Rig Settings > Sound Card "Test" button)."""
@@ -193,7 +240,13 @@ class _SharedInputStream:
         with self._lock:
             self._subscribers[owner] = (samplerate, callback)
             if self._stream is None:
-                self._open()
+                try:
+                    self._open()
+                except Exception:
+                    # Don't leave a subscriber registered against a stream
+                    # that never actually started.
+                    self._subscribers.pop(owner, None)
+                    raise
 
     def remove_subscriber(self, owner: str) -> bool:
         """Unsubscribe `owner`. Returns True once no subscribers remain.
@@ -218,6 +271,8 @@ class _SharedInputStream:
 
     def _open(self, schedule_settle_reopen: bool = True) -> None:
         import sounddevice as sd
+
+        _validate_input_device(self._device)
 
         _, in_target = _read_pin_targets()
         before = _snapshot_stream_ids("source-outputs") if in_target else None
