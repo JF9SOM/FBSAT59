@@ -4618,6 +4618,11 @@ class MainWindow(QMainWindow):
                 settings: dict[str, Any] = json.loads(row[0])
                 if settings.get("is_sdr"):
                     continue
+                # Rig 2 has an explicit enabled flag (see _load_rig_settings());
+                # skip disabled slots so exit doesn't touch an unused port and
+                # log a misleading "split released" message.
+                if key == "rig2_settings" and not settings.get("enabled", False):
+                    continue
                 mode = settings.get("mode", "net")
 
                 if mode == "net":
