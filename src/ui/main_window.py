@@ -4008,9 +4008,11 @@ class MainWindow(QMainWindow):
             threading.Thread(target=_satmode_civ_reconnect, daemon=True).start()
             return
 
-        if not rig.is_connected:
-            return
-
+        # Generic rigs' set_ctcss_tone() handles both the connected case and
+        # the not-yet-connected case internally (HamlibDirectController via
+        # _apply_ctcss_hamlib_standalone(), HamlibNetController via an
+        # independent socket) — no is_connected guard needed here, unlike
+        # before those were added.
         def _send() -> None:
             try:
                 ok = rig.set_ctcss_tone(tone_hz)
