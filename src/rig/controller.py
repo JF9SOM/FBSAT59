@@ -2033,22 +2033,28 @@ class HamlibNetController(RigController):
             return False
 
     def disconnect(self) -> None:
-        """Disconnect the TCP connection."""
+        """Disconnect the TCP connection.
+
+        Closes the socket under _cmd_lock so this cannot race with an
+        in-flight _cmd_raw() call from the background Doppler-update thread
+        (which would otherwise raise "Bad file descriptor" there).
+        """
         with self._lock:
             if self._state == RigState.DISCONNECTED:
                 return
-        try:
-            if self._sock:
-                self._sock.close()
-        except OSError:
-            pass
-        finally:
-            self._sock = None
-            self._last_dl_hz = None
-            self._last_ul_hz = None
-            self._last_ul_update_time = 0.0
-            with self._lock:
-                self._state = RigState.DISCONNECTED
+        with self._cmd_lock:
+            try:
+                if self._sock:
+                    self._sock.close()
+            except OSError:
+                pass
+            finally:
+                self._sock = None
+        self._last_dl_hz = None
+        self._last_ul_hz = None
+        self._last_ul_update_time = 0.0
+        with self._lock:
+            self._state = RigState.DISCONNECTED
 
     # -- Low-level communication --
 
