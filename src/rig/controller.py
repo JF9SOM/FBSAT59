@@ -1128,7 +1128,16 @@ class HamlibDirectController(RigController):
                                 _os.close(_fd)
                             logger.debug("RigDirect FT-991 UL raw FB: %d Hz", int(vfob_hz))
                         else:
-                            self._rig.set_split_freq(rx_vfo, int(vfob_hz))
+                            # Hamlib set_split_freq is unreliable on generic
+                            # rigs (e.g. IC-705): passing either the RX vfo or
+                            # RIG_VFO_CURR ends up overwriting VFOA instead of
+                            # VFOB, or silently doing nothing (confirmed via
+                            # scripts/test_ic705_split.py 2026-07-06 — same
+                            # root cause already documented for the satmode
+                            # same-band fallback above).  Target VFO-B
+                            # directly instead.
+                            tx_vfo = self._vfo_str_to_const("VFOB")
+                            self._rig.set_freq(tx_vfo, int(vfob_hz))
                         self._last_ul_hz = vfob_hz
             return True
         except Exception as exc:
