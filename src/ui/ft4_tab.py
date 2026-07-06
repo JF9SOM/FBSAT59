@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import math
 import re
 import sqlite3
 import threading
@@ -34,6 +35,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QProgressBar,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -50,6 +52,7 @@ from comms.ft4.codec import (
 from comms.ft4.qso import Ft4QsoManager, QsoState
 from comms.ft4.scheduler import Ft4Scheduler
 from i18n import _
+from ui.ft4_waterfall_dialog import Ft4WaterfallDialog
 
 UTC = UTC
 
@@ -159,6 +162,14 @@ class Ft4Tab(QWidget):
     Opens via Communications > FT4 or when a FT4 transponder is selected.
     """
 
+    #: Emitted from the audio callback thread (soundcard or SDR) with the
+    #: current chunk's peak level in dBFS; Qt auto-queues this to the UI
+    #: thread. Lets the RX Level meter confirm audio is actually reaching
+    #: this tab, independent of whether anything decodes.
+    level_updated: Signal = Signal(float)
+
+    _LEVEL_MIN_INTERVAL_S = 0.05  # ~20fps UI update cap
+
     def __init__(
         self,
         conn: sqlite3.Connection,
@@ -177,6 +188,8 @@ class Ft4Tab(QWidget):
         self._tx_thread: threading.Thread | None = None
         self._tx_enabled: bool = False
         self._tx_in_progress: bool = False
+        self._last_level_emit: float = 0.0
+        self._waterfall_dialog: Ft4WaterfallDialog | None = None
 
         self._my_call: str = ""
         self._my_grid: str = ""
@@ -190,6 +203,7 @@ class Ft4Tab(QWidget):
         self._load_settings()
         self._ensure_table()
         self._setup_ui()
+        self.level_updated.connect(self._on_level_updated)
         self._connect_rig_signals()
         self._connect_sdr_audio()
         self._refresh_codec_status()
@@ -269,6 +283,31 @@ class Ft4Tab(QWidget):
         self._rx_src_combo.addItem(_("SDR"), "sdr")
         self._rx_src_combo.currentIndexChanged.connect(self._on_rx_source_changed)
         cfg_lay.addWidget(self._rx_src_combo)
+
+        # RX level meter — confirms audio is actually reaching this tab's
+        # decode pipeline, independent of whether anything decodes.
+        cfg_lay.addWidget(QLabel(_("RX Level:")))
+        self._level_bar = QProgressBar()
+        self._level_bar.setRange(0, 100)
+        self._level_bar.setValue(0)
+        self._level_bar.setTextVisible(False)
+        self._level_bar.setFixedHeight(14)
+        self._level_bar.setFixedWidth(80)
+        cfg_lay.addWidget(self._level_bar)
+        self._level_label = QLabel(_("-- dBFS"))
+        self._level_label.setMinimumWidth(65)
+        cfg_lay.addWidget(self._level_label)
+
+        self._waterfall_btn = QPushButton(_("Show Waterfall"))
+        self._waterfall_btn.setToolTip(
+            _(
+                "Open a popup showing the last RX period's audio as a "
+                "spectrogram, to check whether real FT4 signals are visible "
+                "in the passband even when nothing decodes."
+            )
+        )
+        self._waterfall_btn.clicked.connect(self._on_show_waterfall)
+        cfg_lay.addWidget(self._waterfall_btn)
 
         cfg_lay.addStretch()
         root.addWidget(cfg_grp)
@@ -602,7 +641,9 @@ class Ft4Tab(QWidget):
     def _on_sdr_audio_chunk(self, chunk: NDArray[np.float32]) -> None:
         if self._rx_source != "sdr":
             return
-        self._rx_buffer.append(chunk.astype(np.float32))
+        chunk = chunk.astype(np.float32)
+        self._rx_buffer.append(chunk)
+        self._emit_level(chunk)
 
     # ------------------------------------------------------------------ #
     # Sounddevice audio capture                                            #
@@ -636,9 +677,40 @@ class Ft4Tab(QWidget):
         if self._audio_active:
             get_audio_device_manager().release_input(_AUDIO_OWNER, self._in_device)
             self._audio_active = False
+            self._level_bar.setValue(0)
+            self._level_label.setText(_("-- dBFS"))
 
     def _audio_callback(self, chunk: NDArray[np.float32]) -> None:
         self._rx_buffer.append(chunk)
+        self._emit_level(chunk)
+
+    def _emit_level(self, chunk: NDArray[np.float32]) -> None:
+        """Runs on the audio callback thread (soundcard or SDR) — keep this fast."""
+        if len(chunk) == 0:
+            return
+        now = time.monotonic()
+        if now - self._last_level_emit < self._LEVEL_MIN_INTERVAL_S:
+            return
+        self._last_level_emit = now
+        peak = float(np.max(np.abs(chunk)))
+        dbfs = 20.0 * math.log10(max(peak, 1e-6))
+        self.level_updated.emit(dbfs)
+
+    @Slot(float)
+    def _on_level_updated(self, dbfs: float) -> None:
+        pct = max(0.0, min(100.0, (dbfs + 60.0) / 60.0 * 100.0))
+        self._level_bar.setValue(int(pct))
+        color = "#2ecc71" if dbfs < -12.0 else ("#f1c40f" if dbfs < -3.0 else "#e74c3c")
+        self._level_bar.setStyleSheet(f"QProgressBar::chunk {{ background-color: {color}; }}")
+        self._level_label.setText(_("{db:.0f} dBFS").format(db=dbfs))
+
+    @Slot()
+    def _on_show_waterfall(self) -> None:
+        if self._waterfall_dialog is None:
+            self._waterfall_dialog = Ft4WaterfallDialog(self)
+        self._waterfall_dialog.show()
+        self._waterfall_dialog.raise_()
+        self._waterfall_dialog.activateWindow()
 
     # ------------------------------------------------------------------ #
     # Scheduler slots                                                      #
@@ -671,11 +743,16 @@ class Ft4Tab(QWidget):
             return
         audio = np.concatenate(self._rx_buffer)
         self._rx_buffer.clear()
-        if not self._codec.decode_available:
-            return
-        messages = self._codec.decode_audio(audio, my_call=self._my_call)
-        if messages:
-            self._display_decoded(messages)
+        messages: list[Ft4Message] = []
+        if self._codec.decode_available:
+            messages = self._codec.decode_audio(audio, my_call=self._my_call)
+            if messages:
+                self._display_decoded(messages)
+        # Waterfall is a visual diagnostic independent of decode capability —
+        # update it even when nothing decoded (or decode is unavailable) so
+        # it can answer "is real FT4 audio here at all?" on its own.
+        if self._waterfall_dialog is not None and self._waterfall_dialog.isVisible():
+            self._waterfall_dialog.update_waterfall(audio, messages)
 
     # ------------------------------------------------------------------ #
     # Transmit path                                                        #
@@ -987,4 +1064,6 @@ class Ft4Tab(QWidget):
         self._on_halt()
         self._stop_audio_capture()
         self._scheduler.stop()
+        if self._waterfall_dialog is not None:
+            self._waterfall_dialog.close()
         super().closeEvent(event)

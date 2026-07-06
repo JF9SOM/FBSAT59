@@ -1026,6 +1026,33 @@ CW Decoder（48000→3200）など、同じ整数比ダウンサンプルを使�
 性能が上がらない」系の報告を受けたら、デコーダー自体だけでなく、音声取り込み・リサンプリングの
 経路全体（特に合成テスト音声では素通りしてしまう共有パイプライン）を疑うこと。
 
+**FT4 音声到達確認ツール（2026-07-06 実装）**
+
+上記のアンチエイリアシング修正後もRS-44の実パスで0局デコードという報告があり、調査の過程で
+「そもそもFT4タブに正しい音声が届いているか」を確認する手段がRig Settings > Sound Cardの
+RXレベルメーターしかなく、しかもそのメーターはデバイスコンボの変更イベント（Refreshボタン等）
+でしか再起動しないため開いた直後は無反応に見える、という診断性の低さが判明した。これを受けて
+FT4タブ自体に2つの診断機能を追加した。
+
+- **RX Levelメーター**（Configuration行、`src/ui/ft4_tab.py`）: `_audio_callback()` /
+  `_on_sdr_audio_chunk()`（既存のRX音声取り込みコールバック）にピークdBFS計算を追加し、
+  `level_updated` Signal 経由でQProgressBar+ラベルに反映。タブを開いている間・音声購読が
+  アクティブな間は常時ライブ更新される（Rig Settings側のメーターのように再起動操作は不要）。
+  色分けは同ファイルの`_start_meter()`と同じ基準（緑<-12dBFS・黄<-3dBFS・赤≥-3dBFS＝クリップ警告）
+- **Show Waterfallポップアップ**（`src/ui/ft4_waterfall_dialog.py`・`Ft4WaterfallDialog`）:
+  WSJT-X風の静止スペクトログラムを表示する非モーダルダイアログ。`_on_rx_period_ended()`で
+  RX期間終了ごとに直前6秒分の音声から`compute_display_spectrogram()`（単純STFT、200〜3000Hz
+  帯）を計算し描画。デコードできた局があれば周波数位置に白線マーカーを重ねる
+  - **意図的に`codec.compute_waterfall()`とは別実装**: decode用のwaterfall計算は
+    `ftx_find_candidates()`向けの time/frequency oversampling・固定小数点レイアウトに
+    厳密に依存しており（前述「ウォーターフォール計算」セクション参照）、表示用ヘルパーを
+    そこに結合すると誤って触った際にデコード自体を壊すリスクがあるため、完全に独立した
+    シンプルな STFT を新設した
+  - デコード可否に関わらず更新される（`decode_available`が false でも波形は見える）。
+    「音は来ているが実際にFT4のトーンパターンが見えるか」を判断する二次診断として機能する
+  - 6秒に1回の静止画更新であり、WSJT-Xのようなリアルタイム連続ウォーターフォールではない
+  - ダイアログが非表示の間は`isVisible()`チェックで計算自体をスキップ（CPU負荷回避）
+
 **メニュー: Communications > Q65**（`src/ui/q65_tab.py`）
 - **Phase 1（RX）**: libq65 ctypes デコーダー（WSJT-X ソースからビルド）
   - libq65 未インストール時はバナー表示・デコード無効化。インストール先: `~/.local/share/fbsat59/q65lib/`
