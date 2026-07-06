@@ -2233,16 +2233,25 @@ class HamlibNetController(RigController):
           (VFOA=RX, VFOB=TX).  Satmode rigs require this instead of S 1 Main
           because S 1 Main activates hardware satmode, which requires different
           bands on Main and Sub.
-        All other cases: S 1 Main.  Non-satmode rigs (FTX-1F, FT-991A etc.)
-          always use S 1 Main — their rigctld backend forces Sub=TX regardless
-          of the VFO argument, so S 1 VFOB would produce undefined behaviour.
+        Cross-band satmode, and FTX-1F/FT-991A (ctcss_method): S 1 Main.
+          FTX-1F/FT-991A's rigctld backend forces Sub=TX regardless of the
+          VFO argument, so S 1 VFOB would produce undefined behaviour — this
+          was confirmed working specifically for those two models.
+        Other non-satmode rigs (e.g. IC-705): S 1 VFOB.  These have no true
+          Main/Sub VFO concept, so sending the literal "Main" as the tx_vfo
+          argument gets misparsed by that rig's Hamlib backend and inverts
+          which VFO becomes RX/TX (confirmed live on IC-705 — downlink
+          landed on VFO-B instead of VFO-A). Plain VFOA/VFOB split (the same
+          command already used for the satmode same-band fallback above)
+          works correctly instead.
         Sent through _cmd() so _cmd_lock serialises it and prevents buffer
         residue from an independent recv loop on the raw socket.
         """
         is_satmode_rig = self._satmode or self._is_satmode_rig
-        if is_satmode_rig and self._is_same_band:
+        is_yaesu_cat = self._ctcss_method in ("ftx1", "ft991")
+        if (is_satmode_rig and self._is_same_band) or (not is_satmode_rig and not is_yaesu_cat):
             resp = self._cmd("S 1 VFOB")
-            logger.info("RigNet: same-band split init (S 1 VFOB)")
+            logger.info("RigNet: VFOA/VFOB split init (S 1 VFOB)")
         else:
             resp = self._cmd("S 1 Main")
         if "RPRT 0" not in resp:
@@ -2460,9 +2469,46 @@ class HamlibNetController(RigController):
         return "FM"
 
     def set_ctcss_tone(self, tone_hz: float) -> bool:
+        """Set CTCSS tone via rigctld's dedicated "C" command.
+
+        "L CTCSS_TONE {value}" (the LEVEL-set syntax) was used here
+        previously, but CTCSS_TONE is not a rigctld LEVEL — it has its own
+        command letter. rigctld rejects "L CTCSS_TONE" with RPRT -11
+        (ENAVAIL), so this silently never worked for generic (non-CAT-
+        template) rigs; confirmed live against an IC-705 via rigctld, where
+        "C {value}" succeeds (RPRT 0) and reads back correctly.
+
+        When not yet connected (e.g. transponder selected before Connect is
+        pressed), self._cmd() requires the persistent self._sock and would
+        silently no-op. Open a short-lived independent socket instead,
+        mirroring _send_freq_preset_independent() / send_mode_only(), so
+        CTCSS is applied at transponder-selection time like DL/UL and mode
+        already are, instead of requiring Connect first.
+        """
         tone_int = int(round(tone_hz * 10))
-        resp = self._cmd(f"L CTCSS_TONE {tone_int}")
-        return "RPRT 0" in resp
+        if self._sock is not None:
+            resp = self._cmd(f"C {tone_int}")
+            return "RPRT 0" in resp
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(self._TIMEOUT)
+            sock.connect((self._host, self._port))
+            sock.settimeout(2.0)
+            sock.sendall(f"C {tone_int}\n".encode())
+            buf = b""
+            with contextlib.suppress(OSError):
+                while b"RPRT" not in buf:
+                    chunk = sock.recv(256)
+                    if not chunk:
+                        break
+                    buf += chunk
+            sock.close()
+            resp = buf.decode(errors="replace").strip()
+            logger.info("RigNet: CTCSS preset %.1fHz via independent socket -> %r", tone_hz, resp)
+            return "RPRT 0" in resp
+        except Exception as exc:
+            logger.error("RigNet: set_ctcss_tone (independent socket): %s", exc)
+            return False
 
     def set_dcs_code(self, code: int) -> bool:
         resp = self._cmd(f"L DCS_CODE {code}")
@@ -2654,41 +2700,57 @@ class HamlibNetController(RigController):
             # Same-band (V/V or U/U): S 1 VFOB → normal split (VFOA=RX, VFOB=TX).
             # Cross-band: S 1 Main → satmode (Main=RX, Sub=TX).
             is_satmode_rig = self._satmode or self._is_satmode_rig
+            is_yaesu_cat = self._ctcss_method in ("ftx1", "ft991")
             if is_satmode_rig:
                 if self._is_same_band:
                     # Same-band (V/V or U/U): normal split, VFOB=TX
                     _send_recv("S 1 VFOB")
                     ul_vfo_v = "VFOB"
                     ul_vfo_set = "VFOB"
+                    dl_vfo_v = "VFOA"
                 else:
                     # Cross-band: satmode, Sub=TX
                     _send_recv("S 1 Main")
                     ul_vfo_v = "Sub"
                     ul_vfo_set = "Sub"
-            else:
-                # Non-satmode rigs: use Sub/Main (rigctld split convention)
+                    dl_vfo_v = "Main"
+            elif is_yaesu_cat:
+                # FTX-1F/FT-991A: Sub/Main naming, confirmed working for
+                # these two models' rigctld backend (see _init_vfo()).
                 ul_vfo_v = "Sub"
                 ul_vfo_set = "Sub"
+                dl_vfo_v = "Main"
+            else:
+                # Other non-satmode rigs (e.g. IC-705): no true Main/Sub
+                # concept — "Main"/"Sub" gets misparsed and inverts RX/TX
+                # (confirmed live). Use plain VFOA/VFOB instead.
+                ul_vfo_v = "VFOB"
+                ul_vfo_set = "VFOB"
+                dl_vfo_v = "VFOA"
 
             if self._vfo_mode:
                 # Extended rigctld protocol: VFO is specified inline.
                 if rigctld_ul:
                     _send_recv(f"\\set_mode {ul_vfo_set} {rigctld_ul} 0")
                 if rigctld_dl:
-                    _send_recv(f"\\set_mode Main {rigctld_dl} 0")
+                    _send_recv(f"\\set_mode {dl_vfo_v} {rigctld_dl} 0")
             else:
                 # Legacy rigctld protocol: switch active VFO then set mode.
                 if rigctld_ul:
                     _send_recv(f"V {ul_vfo_v}")
                     _send_recv(f"M {rigctld_ul} 0")
                 if rigctld_dl:
-                    _send_recv("V Main")
+                    _send_recv(f"V {dl_vfo_v}")
                     _send_recv(f"M {rigctld_dl} 0")
 
-            # For non-satmode rigs (FTX-1F etc.) the V Main above leaves TX on
-            # Main.  Re-send split init so TX returns to Sub (uplink) immediately.
+            # For non-satmode rigs the V <dl_vfo_v> above leaves TX on the RX
+            # VFO.  Re-send split init so TX returns to the uplink VFO
+            # immediately.
             if not is_satmode_rig:
-                split_cmd = "S 1 VFOB" if self._is_same_band else "S 1 Main"
+                if is_yaesu_cat:
+                    split_cmd = "S 1 VFOB" if self._is_same_band else "S 1 Main"
+                else:
+                    split_cmd = "S 1 VFOB"
                 _send_recv(split_cmd)
 
             sock.close()
@@ -2744,8 +2806,18 @@ class HamlibNetController(RigController):
         satmode is established — the same order as HamlibDirectController's
         _apply_mode_and_ctcss_hamlib().  If connect() later re-sends S 1 Main,
         the rig is already in satmode and will not reset the CTCSS state.
+
+        Non-satmode, non-Yaesu rigs (e.g. IC-705) have no true Main/Sub VFO
+        concept, so "S 1 Main" gets misparsed and inverts RX/TX (confirmed
+        live) — use plain VFOA/VFOB split instead. See _init_vfo() for the
+        satmode/FTX-1F/FT-991A cases this preserves unchanged.
         """
-        cmd = "S 1 VFOB" if self._is_same_band else "S 1 Main"
+        is_satmode_rig = self._satmode or self._is_satmode_rig
+        is_yaesu_cat = self._ctcss_method in ("ftx1", "ft991")
+        if (is_satmode_rig and self._is_same_band) or (not is_satmode_rig and not is_yaesu_cat):
+            cmd = "S 1 VFOB"
+        else:
+            cmd = "S 1 Main"
         logger.info("RigNet: pre-connect split init (%s) via independent socket", cmd)
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

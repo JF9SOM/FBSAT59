@@ -404,8 +404,8 @@ class TestHamlibDirectController:
 
 
 class TestHamlibNetController:
-    def _make_ctrl(self) -> HamlibNetController:
-        return HamlibNetController(host="localhost", port=4532)
+    def _make_ctrl(self, ctcss_method: str = "hamlib") -> HamlibNetController:
+        return HamlibNetController(host="localhost", port=4532, ctcss_method=ctcss_method)
 
     def test_initial_state_disconnected(self) -> None:
         ctrl = self._make_ctrl()
@@ -428,24 +428,66 @@ class TestHamlibNetController:
         assert ctrl.get_frequency() == -1.0
         assert ctrl.set_mode("FM") is False
         assert ctrl.get_mode() == "FM"
-        assert ctrl.set_ctcss_tone(88.5) is False
+        # set_ctcss_tone is exercised separately below: unlike these, it
+        # intentionally opens an independent socket when disconnected (see
+        # test_set_ctcss_tone_disconnected_*), so it isn't a pure no-op here.
         assert ctrl.set_dcs_code(23) is False
         assert ctrl.set_vfo("VFOA") is False
         assert ctrl.get_rig_info() is None
+
+    def test_set_ctcss_tone_disconnected_uses_independent_socket(self) -> None:
+        """set_ctcss_tone() opens its own socket when not yet connected (e.g.
+        transponder selected before Connect is pressed), instead of silently
+        no-op'ing like it used to when it only used self._cmd()."""
+        ctrl = self._make_ctrl()
+        assert ctrl._sock is None
+        sent: list[bytes] = []
+        mock_sock = MagicMock(spec=socket.socket)
+        mock_sock.recv.return_value = b"RPRT 0\n"
+        mock_sock.sendall.side_effect = lambda data: sent.append(data)
+        with patch("rig.controller.socket.socket", return_value=mock_sock):
+            result = ctrl.set_ctcss_tone(74.4)
+        assert result is True
+        assert b"C 744\n" in b"".join(sent)
+
+    def test_set_ctcss_tone_disconnected_connect_failure_returns_false(self) -> None:
+        ctrl = self._make_ctrl()
+        with patch("rig.controller.socket.socket") as mock_cls:
+            mock_sock = MagicMock()
+            mock_sock.connect.side_effect = ConnectionRefusedError("connection refused")
+            mock_cls.return_value = mock_sock
+            result = ctrl.set_ctcss_tone(74.4)
+        assert result is False
 
     def test_disconnect_when_disconnected_is_safe(self) -> None:
         ctrl = self._make_ctrl()
         ctrl.disconnect()
 
-    def _make_connected_ctrl(self) -> HamlibNetController:
+    def _make_connected_ctrl(self, ctcss_method: str = "hamlib") -> HamlibNetController:
         """Returns a connected controller with a mock socket injected."""
-        ctrl = self._make_ctrl()
+        ctrl = self._make_ctrl(ctcss_method=ctcss_method)
         mock_sock = MagicMock(spec=socket.socket)
         mock_sock.recv.return_value = b"RPRT 0\n"
         ctrl._sock = mock_sock
         with ctrl._lock:
             ctrl._state = RigState.CONNECTED
         return ctrl
+
+    def test_set_ctcss_tone_sends_c_command(self) -> None:
+        """set_ctcss_tone() sends rigctld's dedicated "C" command, not "L CTCSS_TONE".
+
+        "L CTCSS_TONE {value}" is rejected by rigctld with RPRT -11
+        (ENAVAIL) since CTCSS_TONE is not a LEVEL — confirmed live against
+        an IC-705, where this previously silently failed to change the tone.
+        """
+        ctrl = self._make_connected_ctrl()
+        calls: list[bytes] = []
+        ctrl._sock.sendall.side_effect = lambda data: calls.append(data)  # type: ignore[union-attr]
+        result = ctrl.set_ctcss_tone(74.4)
+        assert result is True
+        sent = b"".join(calls)
+        assert b"C 744\n" in sent
+        assert b"L CTCSS_TONE" not in sent
 
     def test_set_frequency_sends_command(self) -> None:
         ctrl = self._make_connected_ctrl()
@@ -744,9 +786,21 @@ class TestHamlibNetController:
         assert b"F " not in b"".join(calls)
         assert b"I " not in b"".join(calls)
 
-    def test_connect_sends_split_main(self) -> None:
-        """connect() 時に S 1 Main（split ON）を送信する。"""
-        ctrl = self._make_ctrl()
+    def test_connect_sends_split_vfob_for_generic_rig(self) -> None:
+        """connect() sends S 1 VFOB (split ON) for generic rigs like IC-705."""
+        ctrl = self._make_ctrl()  # default ctcss_method="hamlib"
+        with patch("rig.controller.socket.socket") as mock_cls:
+            mock_sock = MagicMock()
+            mock_sock.recv.return_value = b"RPRT 0\n"
+            mock_cls.return_value = mock_sock
+            result = ctrl.connect()
+        assert result is True
+        sent = b"".join(call.args[0] for call in mock_sock.sendall.call_args_list)
+        assert b"S 1 VFOB\n" in sent
+
+    def test_connect_sends_split_main_for_ftx1(self) -> None:
+        """connect() still sends S 1 Main (split ON) for FTX-1F."""
+        ctrl = self._make_ctrl(ctcss_method="ftx1")
         with patch("rig.controller.socket.socket") as mock_cls:
             mock_sock = MagicMock()
             mock_sock.recv.return_value = b"RPRT 0\n"
@@ -787,16 +841,56 @@ class TestHamlibNetController:
         assert ctrl.state == RigState.ERROR
         assert ctrl._sock is None
 
-    # -- _init_vfo: split ON (S 1 Main) --
+    # -- _init_vfo: split ON --
 
-    def test_init_vfo_sends_s1main(self) -> None:
-        """_init_vfo() sends S 1 Main."""
-        ctrl = self._make_connected_ctrl()
+    def test_init_vfo_generic_sends_s1vfob(self) -> None:
+        """_init_vfo() sends S 1 VFOB for generic (non-Yaesu) rigs like IC-705.
+
+        IC-705 has no true Main/Sub VFO concept; "S 1 Main" gets misparsed
+        by its Hamlib backend and inverts which VFO becomes RX/TX (confirmed
+        live). Plain VFOA/VFOB split works correctly instead.
+        """
+        ctrl = self._make_connected_ctrl()  # default ctcss_method="hamlib"
+        calls: list[bytes] = []
+        ctrl._sock.sendall.side_effect = lambda data: calls.append(data)  # type: ignore[union-attr]
+        ctrl._init_vfo()
+        sent = b"".join(calls)
+        assert b"S 1 VFOB\n" in sent
+        assert b"S 1 Main\n" not in sent
+
+    def test_init_vfo_ftx1_sends_s1main(self) -> None:
+        """_init_vfo() still sends S 1 Main for FTX-1F (ctcss_method='ftx1')."""
+        ctrl = self._make_connected_ctrl(ctcss_method="ftx1")
         calls: list[bytes] = []
         ctrl._sock.sendall.side_effect = lambda data: calls.append(data)  # type: ignore[union-attr]
         ctrl._init_vfo()
         sent = b"".join(calls)
         assert b"S 1 Main\n" in sent
+
+    # -- _send_split_init_independent: same generic-vs-Yaesu split as _init_vfo --
+
+    def test_send_split_init_independent_generic_sends_s1vfob(self) -> None:
+        ctrl = self._make_ctrl()  # default ctcss_method="hamlib"
+        sent: list[bytes] = []
+        mock_sock = MagicMock(spec=socket.socket)
+        mock_sock.recv.return_value = b"RPRT 0\n"
+        mock_sock.sendall.side_effect = lambda data: sent.append(data)
+        with patch("rig.controller.socket.socket", return_value=mock_sock):
+            ctrl._send_split_init_independent()
+        data = b"".join(sent)
+        assert b"S 1 VFOB\n" in data
+        assert b"S 1 Main\n" not in data
+
+    def test_send_split_init_independent_ftx1_sends_s1main(self) -> None:
+        ctrl = self._make_ctrl(ctcss_method="ftx1")
+        sent: list[bytes] = []
+        mock_sock = MagicMock(spec=socket.socket)
+        mock_sock.recv.return_value = b"RPRT 0\n"
+        mock_sock.sendall.side_effect = lambda data: sent.append(data)
+        with patch("rig.controller.socket.socket", return_value=mock_sock):
+            ctrl._send_split_init_independent()
+        data = b"".join(sent)
+        assert b"S 1 Main\n" in data
 
     # -- set_vfo_frequencies: F/I only, no M --
 
@@ -813,9 +907,70 @@ class TestHamlibNetController:
 
     # -- send_mode_only --
 
-    def test_send_mode_only_sends_v_sub_ul_v_main_dl(self) -> None:
-        """send_mode_only sends V Sub → M {ul} 0 → V Main → M {dl} 0 in that order."""
+    def test_send_mode_only_generic_sends_v_vfob_ul_v_vfoa_dl(self) -> None:
+        """Generic rigs (e.g. IC-705): V VFOB → M {ul} 0 → V VFOA → M {dl} 0.
+
+        "Main"/"Sub" naming is Yaesu-specific (see test_send_mode_only_ftx1_*
+        below); generic rigs have no such concept and use plain VFOA/VFOB.
+        """
+        ctrl = self._make_ctrl()  # default ctcss_method="hamlib"
+        sent: list[bytes] = []
+        mock_sock = MagicMock(spec=socket.socket)
+        mock_sock.recv.return_value = b"RPRT 0\n"
+        mock_sock.sendall.side_effect = lambda data: sent.append(data)
+        with patch("rig.controller.socket.socket", return_value=mock_sock):
+            ctrl.send_mode_only("FM", "FM")
+        data = b"".join(sent)
+        assert b"V VFOB\n" in data
+        assert b"M FM 0\n" in data
+        assert b"V VFOA\n" in data
+        assert b"V Sub\n" not in data
+        assert b"V Main\n" not in data
+        assert data.index(b"V VFOB\n") < data.index(b"V VFOA\n")
+
+    def test_send_mode_only_generic_invert_usb_dl_lsb_ul(self) -> None:
+        """invert=True case: ul=LSB (VFOB/TX) is sent before dl=USB (VFOA/RX)."""
         ctrl = self._make_ctrl()
+        sent: list[bytes] = []
+        mock_sock = MagicMock(spec=socket.socket)
+        mock_sock.recv.return_value = b"RPRT 0\n"
+        mock_sock.sendall.side_effect = lambda data: sent.append(data)
+        with patch("rig.controller.socket.socket", return_value=mock_sock):
+            ctrl.send_mode_only("USB", "LSB")  # dl=USB, ul=LSB (RS-44 style)
+        data = b"".join(sent)
+        # V VFOB must precede M LSB 0 (uplink/TX)
+        assert b"V VFOB\n" in data
+        assert b"M LSB 0\n" in data
+        idx_vfob = data.index(b"V VFOB\n")
+        idx_lsb = data.index(b"M LSB 0\n")
+        assert idx_vfob < idx_lsb
+        # V VFOA must precede M USB 0 (downlink/RX) and come after V VFOB
+        assert b"V VFOA\n" in data
+        assert b"M USB 0\n" in data
+        idx_vfoa = data.index(b"V VFOA\n")
+        idx_usb = data.index(b"M USB 0\n")
+        assert idx_vfoa < idx_usb
+        assert idx_vfob < idx_vfoa
+
+    def test_send_mode_only_generic_ends_with_split_init(self) -> None:
+        """send_mode_only re-sends S 1 VFOB at the end for generic non-satmode rigs.
+
+        V VFOA (used to set DL mode) leaves TX on VFOA. A trailing S 1 VFOB
+        restores TX=VFOB (uplink) immediately at transponder selection.
+        """
+        ctrl = self._make_ctrl()
+        sent: list[bytes] = []
+        mock_sock = MagicMock(spec=socket.socket)
+        mock_sock.recv.return_value = b"RPRT 0\n"
+        mock_sock.sendall.side_effect = lambda data: sent.append(data)
+        with patch("rig.controller.socket.socket", return_value=mock_sock):
+            ctrl.send_mode_only("USB", "USB")
+        data = b"".join(sent)
+        assert b"S 1 VFOB\n" in data
+
+    def test_send_mode_only_ftx1_sends_v_sub_ul_v_main_dl(self) -> None:
+        """FTX-1F (ctcss_method='ftx1') still sends V Sub → M {ul} 0 → V Main → M {dl} 0."""
+        ctrl = self._make_ctrl(ctcss_method="ftx1")
         sent: list[bytes] = []
         mock_sock = MagicMock(spec=socket.socket)
         mock_sock.recv.return_value = b"RPRT 0\n"
@@ -828,37 +983,9 @@ class TestHamlibNetController:
         assert b"V Main\n" in data
         assert data.index(b"V Sub\n") < data.index(b"V Main\n")
 
-    def test_send_mode_only_invert_usb_dl_lsb_ul(self) -> None:
-        """invert=True case: ul=LSB (Sub/TX) is sent before dl=USB (Main/RX)."""
-        ctrl = self._make_ctrl()
-        sent: list[bytes] = []
-        mock_sock = MagicMock(spec=socket.socket)
-        mock_sock.recv.return_value = b"RPRT 0\n"
-        mock_sock.sendall.side_effect = lambda data: sent.append(data)
-        with patch("rig.controller.socket.socket", return_value=mock_sock):
-            ctrl.send_mode_only("USB", "LSB")  # dl=USB, ul=LSB (RS-44 style)
-        data = b"".join(sent)
-        # V Sub must precede M LSB 0 (uplink/TX)
-        assert b"V Sub\n" in data
-        assert b"M LSB 0\n" in data
-        idx_vsub = data.index(b"V Sub\n")
-        idx_lsb = data.index(b"M LSB 0\n")
-        assert idx_vsub < idx_lsb
-        # V Main must precede M USB 0 (downlink/RX) and come after V Sub
-        assert b"V Main\n" in data
-        assert b"M USB 0\n" in data
-        idx_vmain = data.index(b"V Main\n")
-        idx_usb = data.index(b"M USB 0\n")
-        assert idx_vmain < idx_usb
-        assert idx_vsub < idx_vmain
-
-    def test_send_mode_only_ends_with_split_init(self) -> None:
-        """send_mode_only re-sends S 1 Main at the end for non-satmode rigs.
-
-        V Main (used to set DL mode) leaves TX on Main on rigs like FTX-1F.
-        A trailing S 1 Main restores TX=Sub immediately at transponder selection.
-        """
-        ctrl = self._make_ctrl()
+    def test_send_mode_only_ftx1_ends_with_split_init(self) -> None:
+        """FTX-1F still re-sends S 1 Main at the end (rigctld backend quirk)."""
+        ctrl = self._make_ctrl(ctcss_method="ftx1")
         sent: list[bytes] = []
         mock_sock = MagicMock(spec=socket.socket)
         mock_sock.recv.return_value = b"RPRT 0\n"
