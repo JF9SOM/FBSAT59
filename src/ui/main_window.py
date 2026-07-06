@@ -3019,6 +3019,12 @@ class MainWindow(QMainWindow):
                     if isinstance(rig, HamlibNetController):
                         rig._send_split_init_independent()
                         rig._send_freq_preset_independent()
+                    elif isinstance(rig, HamlibDirectController):
+                        _dl_hz = float((self._current_transmitter or {}).get("downlink_low") or 0)
+                        _ul_hz = float(
+                            (self._current_transmitter or {}).get("uplink_low") or _dl_hz
+                        )
+                        rig._send_freq_preset_direct(_dl_hz, _ul_hz)
                     if self._nonsatmode_gen != _gen:
                         return
                     rig.send_mode_only(dl_mode, ul_mode)
