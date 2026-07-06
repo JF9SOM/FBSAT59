@@ -53,6 +53,7 @@ from PySide6.QtWidgets import (
 )
 
 from comms import mode_detection
+from comms.audio_device_manager import get_audio_device_manager
 from core.autotrack import AutotrackManager
 from core.celestial_engine import MOON_ID, CelestialEngine
 from core.engine import DopplerCalculator, Observation, PassPredictor, SatelliteEngine
@@ -866,6 +867,10 @@ class MainWindow(QMainWindow):
         self._qr_button.clicked.connect(self._on_show_qr)
         self._rig_label = QLabel(_("RIG: Off"))
         self._rot_label = QLabel(_("ROT: Off"))
+        self._tx_owner_label = QLabel("")
+        self._tx_owner_label.setStyleSheet("color: #e74c3c; font-weight: bold;")
+        self._tx_owner_label.setVisible(False)
+        get_audio_device_manager().tx_owner_changed.connect(self._on_tx_owner_changed)
 
         if sb:
             sb.addWidget(self._qth_label)
@@ -874,6 +879,7 @@ class MainWindow(QMainWindow):
             sb.addWidget(self._sync_label)
             sb.addPermanentWidget(self._url_label)
             sb.addPermanentWidget(self._qr_button)
+            sb.addPermanentWidget(self._tx_owner_label)
             sb.addPermanentWidget(self._rig_label)
             sb.addPermanentWidget(self._rot_label)
 
@@ -4031,6 +4037,21 @@ class MainWindow(QMainWindow):
             self._conn.commit()
         except Exception as exc:
             logger.warning("Failed to save cycle setting: %s", exc)
+
+    def _on_tx_owner_changed(self, device: object, owner: object) -> None:
+        """Update the status bar TX-owner indicator.
+
+        Shows which Communications tab currently holds the shared soundcard
+        output lock (see `AudioDeviceManager` in
+        `src/comms/audio_device_manager.py`), so a tab whose transmit
+        silently fails with "Sound card output is in use by X" can be
+        cross-checked against what the status bar says is holding it.
+        """
+        if owner:
+            self._tx_owner_label.setText(_("\U0001f50a TX: {owner}").format(owner=owner))
+            self._tx_owner_label.setVisible(True)
+        else:
+            self._tx_owner_label.setVisible(False)
 
     def _update_rig_label(self) -> None:
         """Update the RIG status label in the status bar.

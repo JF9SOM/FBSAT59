@@ -49,6 +49,7 @@ from typing import Any, cast
 
 import numpy as np
 from numpy.typing import NDArray
+from PySide6.QtCore import QObject, Signal
 
 try:
     from scipy import signal as sp_signal
@@ -271,13 +272,23 @@ class _SharedInputStream:
                 callback(_resample(chunk, _HW_SAMPLE_RATE, samplerate))
 
 
-class AudioDeviceManager:
+class AudioDeviceManager(QObject):
     """Process-wide coordinator for shared RX streams and exclusive TX locks."""
+
+    #: Emitted whenever the TX owner of `device` changes — `owner` is the new
+    #: owner name, or None once the device becomes free again. Purely
+    #: informational (e.g. a status bar indicator); the exclusive-lock
+    #: decision itself is made by acquire_output()'s return value, not by
+    #: subscribers of this signal. Safe to connect from the UI thread even
+    #: though acquire_output()/release_output() are usually called from
+    #: background TX worker threads — Qt auto-queues the delivery.
+    tx_owner_changed = Signal(object, object)
 
     _instance: AudioDeviceManager | None = None
     _instance_lock = threading.Lock()
 
     def __init__(self) -> None:
+        super().__init__()
         self._inputs: dict[int, _SharedInputStream] = {}
         self._inputs_lock = threading.Lock()
         self._tx_owners: dict[int, str] = {}
@@ -346,19 +357,26 @@ class AudioDeviceManager:
             current = self._tx_owners.get(key)
             if current is not None and current != owner:
                 return False
+            became_owner = current != owner
             self._tx_owners[key] = owner
             out_target, _ = _read_pin_targets()
             if out_target:
                 self._tx_pin_snapshots[owner] = _snapshot_stream_ids("sink-inputs")
-            return True
+        if became_owner:
+            self.tx_owner_changed.emit(device, owner)
+        return True
 
     def release_output(self, owner: str, device: int | None) -> None:
         """Release `owner`'s exclusive claim on the output device, if held."""
         key = self._key(device)
+        released = False
         with self._tx_lock:
             if self._tx_owners.get(key) == owner:
                 del self._tx_owners[key]
+                released = True
             self._tx_pin_snapshots.pop(owner, None)
+        if released:
+            self.tx_owner_changed.emit(device, None)
 
     def pin_active_output(self, owner: str) -> None:
         """Pin `owner`'s just-started output stream to the configured target.

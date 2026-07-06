@@ -383,7 +383,7 @@ class DirewolfManager:
         mgr = get_audio_device_manager()
         if out_device is not None and not mgr.acquire_output(_AUDIO_OWNER, out_device):
             other = mgr.output_owner(out_device) or "another tab"
-            return False, f"Sound card output is in use by {other}."
+            return False, f"Sound card output is in use by {other}"
 
         conf_path = self._write_config(callsign, ssid)
         try:

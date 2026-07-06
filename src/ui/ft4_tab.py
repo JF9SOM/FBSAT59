@@ -117,8 +117,8 @@ class _TxWorker(QObject):
         "TX done" (see finished/error handlers in Ft4Tab)."""
         mgr = get_audio_device_manager()
         if not mgr.acquire_output(_AUDIO_OWNER, self._out_device):
-            other = mgr.output_owner(self._out_device) or "another tab"
-            self.error.emit(f"Sound card output is in use by {other}")
+            other = mgr.output_owner(self._out_device) or _("another tab")
+            self.error.emit(_("Sound card output is in use by {other}").format(other=other))
             return
         try:
             import sounddevice as sd  # optional dep

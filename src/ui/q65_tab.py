@@ -721,8 +721,10 @@ class Q65Tab(QWidget):
 
         mgr = get_audio_device_manager()
         if not mgr.acquire_output(_AUDIO_OWNER, None):
-            other = mgr.output_owner(None) or "another tab"
-            self._status_label.setText(f"Cannot transmit: sound card output is in use by {other}")
+            other = mgr.output_owner(None) or _("another tab")
+            self._status_label.setText(
+                _("Sound card output is in use by {other}").format(other=other)
+            )
             return
 
         rig = self._get_rig()
