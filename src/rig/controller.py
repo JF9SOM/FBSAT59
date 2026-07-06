@@ -228,6 +228,15 @@ _FTX1_MODEL_IDS: frozenset[int] = frozenset({1051})  # FTX-1F (Hamlib model 1051
 # FT-991 / FT-991A / FT-991AM (Hamlib model 1035) Direct mode raw CAT path.
 _FT991_DIRECT_MODEL_IDS: frozenset[int] = frozenset({1035})
 
+# IC-705 (Hamlib model 3085): Hamlib's set_split_vfo() intermittently rejects
+# the call with "unsupported split" for this backend (confirmed live —
+# same class of SWIG/binding flakiness as send_raw() and get_func()
+# readbacks elsewhere in this file), so split ON/OFF is sent as a raw CI-V
+# frame instead (C_CTL_SPLT=0x0F, S_SPLT_ON=0x01/S_SPLT_OFF=0x00), the same
+# approach already used for FTX-1F/FT-991 above.
+_IC705_MODEL_IDS: frozenset[int] = frozenset({3085})
+_IC705_DEFAULT_CIV_ADDR = 0xA4
+
 # FTX-1F CAT mode codes: MD P1 P2; where P1=0=MAIN, P1=1=SUB
 _FTX1_MODE_CODES: dict[str, str] = {
     "FM": "4",

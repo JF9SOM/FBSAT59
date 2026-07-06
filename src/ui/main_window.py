@@ -67,6 +67,8 @@ from i18n import _
 from rig.controller import (
     _FT991_DIRECT_MODEL_IDS,
     _FTX1_MODEL_IDS,
+    _IC705_DEFAULT_CIV_ADDR,
+    _IC705_MODEL_IDS,
     CTCSS_PRESET_TEMPLATES,
     HamlibDirectController,
     HamlibNetController,
@@ -4685,9 +4687,31 @@ class MainWindow(QMainWindow):
                         with _serial.Serial(serial_port, baud_rate, timeout=1) as ser:
                             ser.write(b"FT2;")
                         logger.info("exit: split released via raw CAT FT2; %s", serial_port)
-                    elif slot_ctrl is not None and slot_ctrl.is_connected:
-                        continue  # port is in use by Hamlib; skip to avoid double-open
+                    elif model_id in _IC705_MODEL_IDS:
+                        # IC-705: Hamlib's set_split_vfo() intermittently rejects
+                        # this call on IC-705's backend (confirmed live), so send
+                        # the raw CI-V split-OFF frame directly instead — same
+                        # bypass-Hamlib approach as FTX-1F/FT-991 above.
+                        import serial as _serial
+
+                        addr_str = str(settings.get("civ_addr") or "").strip()
+                        civ = int(addr_str, 16) if addr_str else _IC705_DEFAULT_CIV_ADDR
+                        frame = bytes([0xFE, 0xFE, civ, 0xE0, 0x0F, 0x00, 0xFD])
+                        with _serial.Serial(serial_port, baud_rate, timeout=1) as ser:
+                            ser.write(frame)
+                        logger.info(
+                            "exit: split released via raw CI-V %s civ=0x%02X",
+                            serial_port,
+                            civ,
+                        )
                     else:
+                        if slot_ctrl is not None and slot_ctrl.is_connected:
+                            # Release Hamlib's hold on the port first so the
+                            # fresh session below can open it (mirrors
+                            # FTX-1F/FT-991 above, which bypass this entirely
+                            # via a separate raw-pyserial handle).
+                            with contextlib.suppress(Exception):
+                                slot_ctrl.disconnect()
                         try:
                             import Hamlib as _H
                         except ImportError:
