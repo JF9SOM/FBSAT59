@@ -2469,7 +2469,7 @@ class HamlibNetController(RigController):
         return "FM"
 
     def set_ctcss_tone(self, tone_hz: float) -> bool:
-        """Set CTCSS tone via rigctld's dedicated "C" command.
+        """Set CTCSS tone on VFO-B (the UL/TX vfo) via rigctld's "C" command.
 
         "L CTCSS_TONE {value}" (the LEVEL-set syntax) was used here
         previously, but CTCSS_TONE is not a rigctld LEVEL — it has its own
@@ -2477,6 +2477,14 @@ class HamlibNetController(RigController):
         (ENAVAIL), so this silently never worked for generic (non-CAT-
         template) rigs; confirmed live against an IC-705 via rigctld, where
         "C {value}" succeeds (RPRT 0) and reads back correctly.
+
+        "C" applies to whichever VFO is currently selected — confirmed live
+        that CTCSS tone is stored independently per VFO on the IC-705 (VFOA
+        and VFOB can hold different tones). send_mode_only() leaves VFOA
+        (downlink) selected, so writing the tone without first switching to
+        VFOB landed it on the wrong (RX) side — it "succeeded" (RPRT 0) but
+        had no effect on the satellite uplink. Select VFOB first, then
+        restore VFOA so the rig's display doesn't change.
 
         When not yet connected (e.g. transponder selected before Connect is
         pressed), self._cmd() requires the persistent self._sock and would
@@ -2487,23 +2495,31 @@ class HamlibNetController(RigController):
         """
         tone_int = int(round(tone_hz * 10))
         if self._sock is not None:
+            self._cmd("V VFOB")
             resp = self._cmd(f"C {tone_int}")
+            self._cmd("V VFOA")
             return "RPRT 0" in resp
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(self._TIMEOUT)
             sock.connect((self._host, self._port))
             sock.settimeout(2.0)
-            sock.sendall(f"C {tone_int}\n".encode())
-            buf = b""
-            with contextlib.suppress(OSError):
-                while b"RPRT" not in buf:
-                    chunk = sock.recv(256)
-                    if not chunk:
-                        break
-                    buf += chunk
+
+            def _send_recv(cmd: str) -> str:
+                sock.sendall((cmd + "\n").encode())
+                buf = b""
+                with contextlib.suppress(OSError):
+                    while b"RPRT" not in buf:
+                        chunk = sock.recv(256)
+                        if not chunk:
+                            break
+                        buf += chunk
+                return buf.decode(errors="replace").strip()
+
+            _send_recv("V VFOB")
+            resp = _send_recv(f"C {tone_int}")
+            _send_recv("V VFOA")
             sock.close()
-            resp = buf.decode(errors="replace").strip()
             logger.info("RigNet: CTCSS preset %.1fHz via independent socket -> %r", tone_hz, resp)
             return "RPRT 0" in resp
         except Exception as exc:

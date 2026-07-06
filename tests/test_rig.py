@@ -438,7 +438,10 @@ class TestHamlibNetController:
     def test_set_ctcss_tone_disconnected_uses_independent_socket(self) -> None:
         """set_ctcss_tone() opens its own socket when not yet connected (e.g.
         transponder selected before Connect is pressed), instead of silently
-        no-op'ing like it used to when it only used self._cmd()."""
+        no-op'ing like it used to when it only used self._cmd(). It also
+        selects VFOB first (confirmed live: the IC-705 stores CTCSS tone
+        independently per VFO, so writing without switching lands it on
+        whatever VFO send_mode_only() left selected — VFOA/downlink)."""
         ctrl = self._make_ctrl()
         assert ctrl._sock is None
         sent: list[bytes] = []
@@ -448,7 +451,12 @@ class TestHamlibNetController:
         with patch("rig.controller.socket.socket", return_value=mock_sock):
             result = ctrl.set_ctcss_tone(74.4)
         assert result is True
-        assert b"C 744\n" in b"".join(sent)
+        data = b"".join(sent)
+        assert b"C 744\n" in data
+        idx_vfob = data.index(b"V VFOB\n")
+        idx_c = data.index(b"C 744\n")
+        idx_vfoa = data.index(b"V VFOA\n")
+        assert idx_vfob < idx_c < idx_vfoa
 
     def test_set_ctcss_tone_disconnected_connect_failure_returns_false(self) -> None:
         ctrl = self._make_ctrl()
@@ -479,6 +487,8 @@ class TestHamlibNetController:
         "L CTCSS_TONE {value}" is rejected by rigctld with RPRT -11
         (ENAVAIL) since CTCSS_TONE is not a LEVEL — confirmed live against
         an IC-705, where this previously silently failed to change the tone.
+        Also selects VFOB first and restores VFOA after (see the
+        disconnected-path test above for why).
         """
         ctrl = self._make_connected_ctrl()
         calls: list[bytes] = []
@@ -488,6 +498,10 @@ class TestHamlibNetController:
         sent = b"".join(calls)
         assert b"C 744\n" in sent
         assert b"L CTCSS_TONE" not in sent
+        idx_vfob = sent.index(b"V VFOB\n")
+        idx_c = sent.index(b"C 744\n")
+        idx_vfoa = sent.index(b"V VFOA\n")
+        assert idx_vfob < idx_c < idx_vfoa
 
     def test_set_frequency_sends_command(self) -> None:
         ctrl = self._make_connected_ctrl()
