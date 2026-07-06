@@ -1138,6 +1138,13 @@ class HamlibDirectController(RigController):
                             # directly instead.
                             tx_vfo = self._vfo_str_to_const("VFOB")
                             self._rig.set_freq(tx_vfo, int(vfob_hz))
+                            # Icom CI-V backends (e.g. IC-705) leave their
+                            # internal CURR on VFO-B after this call, so the
+                            # rig keeps displaying UL as the main frequency.
+                            # Same quirk as the satmode same-band fallback
+                            # above — explicitly reselect VFO-A to restore
+                            # the DL display.
+                            self._rig.set_vfo(rx_vfo)
                         self._last_ul_hz = vfob_hz
             return True
         except Exception as exc:
