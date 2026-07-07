@@ -4756,6 +4756,7 @@ class MainWindow(QMainWindow):
                         frame = bytes([0xFE, 0xFE, civ, 0xE0, 0x0F, 0x00, 0xFD])
                         with _serial.Serial(serial_port, baud_rate, timeout=1) as ser:
                             ser.write(frame)
+                            ser.read(32)  # drain the rig's ACK — see _init_split()
                         logger.info(
                             "exit: split released via raw CI-V %s civ=0x%02X",
                             serial_port,

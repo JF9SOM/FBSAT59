@@ -1718,11 +1718,17 @@ class HamlibDirectController(RigController):
                     # separate pyserial connection first, then use Hamlib
                     # normally for the DL/UL frequency writes (those are
                     # reliable).
+                    #
+                    # Read back the rig's ACK before closing this session —
+                    # see _init_split() for why an unread reply left in the
+                    # kernel's tty input queue desyncs the Hamlib session
+                    # opened right after.
                     import serial as _serial
 
                     civ = int(self._civ_addr, 16) if self._civ_addr else _IC705_DEFAULT_CIV_ADDR
                     with _serial.Serial(self._port, self._baud_rate, timeout=1) as ser:
                         ser.write(bytes([0xFE, 0xFE, civ, 0xE0, 0x0F, 0x01, 0xFD]))
+                        ser.read(32)
                     time.sleep(0.1)
 
                     import Hamlib as _H
@@ -1981,13 +1987,29 @@ class HamlibDirectController(RigController):
                 # raw CI-V split-ON frame directly instead, same os.open()
                 # pattern as FTX-1F/FT-991 above (works alongside Hamlib
                 # already holding the port).
+                #
+                # The write used to be fire-and-forget (no read of the
+                # rig's ACK).  The IC-705 always replies to a CI-V command;
+                # an unread reply byte sits in the kernel's tty input queue
+                # (shared across every fd opened on this device node, not
+                # per-fd) until *something* reads it — which ends up being
+                # Hamlib's own self._rig session on its next unrelated
+                # read(), permanently offsetting every subsequent
+                # request/response pair for the rest of the connection
+                # (confirmed 2026-07-07 via Hamlib debug trace: a VFO-select
+                # ACK request came back with an unrelated stale frequency-
+                # query response).  Read back the reply before closing so
+                # nothing is left for Hamlib to trip over.
                 import os as _os
 
                 civ = int(self._civ_addr, 16) if self._civ_addr else _IC705_DEFAULT_CIV_ADDR
                 frame = bytes([0xFE, 0xFE, civ, 0xE0, 0x0F, 0x01, 0xFD])
-                _fd = _os.open(self._port, _os.O_WRONLY | _os.O_NOCTTY | _os.O_NONBLOCK)
+                _fd = _os.open(self._port, _os.O_RDWR | _os.O_NOCTTY | _os.O_NONBLOCK)
                 try:
                     _os.write(_fd, frame)
+                    time.sleep(0.1)
+                    with contextlib.suppress(OSError):
+                        _os.read(_fd, 32)
                 finally:
                     _os.close(_fd)
                 logger.info("RigDirect: split enabled via raw CI-V 0F 01 (IC-705)")
