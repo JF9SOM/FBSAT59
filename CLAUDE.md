@@ -599,6 +599,24 @@ except ImportError:
 - **macOS**: PyInstaller → `.dmg`
 - **GitHub Actions**: タグpushで3プラットフォーム自動ビルド → GitHub Releases
 
+### タグを打たずに手動テストビルドする（2026-07-07 追加）
+
+`.github/workflows/ci.yml` に `workflow_dispatch`（`platforms` 入力: `macos`/`windows`/`linux`/`all`、デフォルト `macos`）を追加済み。GitHub の Actions タブ →
+左メニュー「CI / Build」→ 右上「Run workflow」から、バージョンタグを打たずに任意のブランチ/コミットで
+指定プラットフォームのみビルドできる。
+
+- タグpush時と同じ3つの`build-*`ジョブを流用し、`if:` 条件に
+  `github.event_name == 'workflow_dispatch' && contains(fromJSON('[...]'), github.event.inputs.platforms)`
+  を追加しただけ（ジョブ本体は変更なし）
+- バージョン文字列は各ジョブ冒頭の「Determine version」ステップで決定: タグpushなら通常通り
+  `github.ref_name`（`v`除去）、workflow_dispatch実行時は`0.0.0-dev`固定
+- `Attach to GitHub Release` / `Upload Hamlib bundle to hamlib-bundle release` の2ステップは
+  `if: startsWith(github.ref, 'refs/tags/v')` でガードし、workflow_dispatch実行時はスキップ
+  （**GitHub Releaseは一切作成・更新されない**）。成果物は`actions/upload-artifact`でアップロードされた
+  ものを、該当実行ページ下部の「Artifacts」からダウンロードする
+- 実機検証（IC-705のmacOS/Linux CI-V応答ズレバグ調査、後述）で実際に活用し、タグを消費せず
+  何度も再ビルド・再テストできることを確認済み
+
 ---
 
 ## CI/CD トラブルシューティング履歴（v0.1.0-beta.34 で解決済み）
@@ -900,7 +918,7 @@ sudo usermod -aG dialout $USER
   - IC-9100（Hamlib 4.7.1 モデル3068、Direct モード）: クロスバンド・同バンド両方の周波数・モード・CTCSS 動作確認済み（v0.1.27・2026-06-25）— SAT モード ON/OFF・ドップラー補正・VFO 逆転バグ修正済み
   - IC-9100（Hamlib 4.7.1 モデル3068、NET Control）: クロスバンド・同バンド両方の周波数・モード・CTCSS 動作確認済み（v0.1.27・2026-06-25）
   - IC-9700（Hamlib 4.7.1 モデル3081、Direct/NET モード）: Linux・Windows 両方で IC-9100 と同様に動作確認済み（v0.1.27・2026-06-25）— `_SATMODE_USE_VFO_SUB` 分岐（VFO_SUB for UL）使用
-  - IC-705（Hamlib 4.7.1 モデル3085、Direct/NET モード両方、Linux）: 周波数・モード・CTCSS（トーン周波数＋エンコードON/OFF）・スプリット全て動作確認済み（2026-07-06〜07）— 汎用（非satmode）Icom CI-Vリグとして初の実地検証。詳細は「IC-705 (Hamlib model 3085) — 汎用（非satmode）Icom CI-Vリグの参照実装」セクション参照。Windows 未確認
+  - IC-705（Hamlib 4.7.1 モデル3085、Direct/NET モード両方、Linux・macOS）: 周波数・モード・CTCSS（トーン周波数＋エンコードON/OFF）・スプリット全て動作確認済み（2026-07-06〜07）— 汎用（非satmode）Icom CI-Vリグとして初の実地検証。Connect後にドップラー補正でMain表示が固定される不具合（生CI-V応答未読み取りによる通信デシンクが原因）を2026-07-07にLinux/macOS両方で確認・修正済み。詳細は「IC-705 (Hamlib model 3085) — 汎用（非satmode）Icom CI-Vリグの参照実装」セクション参照。Windows 未確認
   - HackRF One（SoapyHackRF）: NFM/USB/CW 復調・スペクトラム・Bias-T 動作確認済み（Linux）
   - HackRF One（ctypes直接実装 `HackRfDirectDevice`）: **Windows 実装済み v0.1.72（2026-06-25）** — 実機確認待ち。Zadig で WinUSB ドライバー適用要
   - RTL-SDR（SoapyRTLSDR）: 基本動作確認済み（Linux）
@@ -2321,6 +2339,48 @@ is_yaesu_cat   = self._ctcss_method in ("ftx1", "ft991")  # CTCSS Method プル�
 - `_send_split_init_independent()`・`_send_freq_preset_independent()`は、周波数自体はVFOA/VFOBに正しく書き込まれる（読み戻しで確認済み）が、**画面表示が更新されないことがある**（Directモードで既知の「CURR復元」パターンと同根）。汎用リグ判定時のみ末尾に`V VFOA`を追加して表示を強制リフレッシュする（FTX-1F/FT-991A/satmode機には一切影響しないよう分岐）
 
 **教訓**: Hamlibの高レベルAPIが「本来動くはずのコマンド」でも、特定モデルのバックエンド実装次第で無反応・誤動作・クラッシュしうる。実機のない機種を新規サポートする際は、Direct/NET問わず生CAT/CI-Vへのフォールバックを疑い、可能な限り実機で個々のコマンドの読み戻しを確認すること。
+
+#### Connect後にMain（DL）表示が完全に固定される不具合と、生CI-V「応答未読み取り」による通信デシンク（2026-07-07 修正済み）
+
+**症状**: Direct モードでConnect後、しばらくすると（衛星・モードを問わず、RS-44/SO-50/ISS等すべてで再現）
+Main（DL）表示がConnect時点の値のまま完全に固定され、以降ドップラー補正が一切反映されなくなる。
+Sub（UL）側は正常に更新され続ける。macOSでもLinuxでも再現（Windows未検証）。
+
+**調査の迷走**（教訓として記録）:
+1. 当初「macOS固有のUSBシリアルドライバのタイミング問題」と誤診断し、DL/UL/VFO復元コマンド間の
+   sleepを0.05秒→0.15秒に拡大したところ、**それまで正常だった衛星まで含めて全滅**した。
+   sleepを増やすほど悪化するという事実が、後から振り返れば「コマンド間隔の問題ではない」ことを
+   示す決定的な手がかりだった（無関係な要素をいじって「改善しない」ならまだしも「悪化する」動きが
+   出たら、それは診断の前提そのものが誤っている合図として扱うべき）
+2. ユーザーが`HAMLIB_DEBUG`相当の詳細トレースログを取得してくれたことで真因が判明。トレースには
+   「`07 00`（VFO A選択）コマンドを送ったのに、返ってきたのは全く無関係な`25 00`（周波数照会）の
+   応答だった」という明確な証拠が残っていた（`icom_check_ack: command timed out (0x25)` として
+   Hamlib自身が矛盾を検出しログに残していた）
+
+**根本原因**: `_init_split()`・`_send_freq_preset_direct()`・`_release_rig_split_on_exit()`が、
+IC-705のSplit ON/OFF生CI-Vフレーム（`0F 01`/`0F 00`）を`os.open()`または独立した`pyserial.Serial`で
+**送信専用（応答を一切読み取らず）**に送っていた。IC-705は必ず何らかの応答を返すが、その応答バイト列は
+**同一デバイスノードに対する全てのfd/openセッションで共有されるカーネルのtty受信バッファ**に残り続ける
+（書き込んだ側のfdが既にcloseしていても消えない）。この読み捨てられなかった応答バイト列を、直後や
+少し後に開かれるHamlib自身のセッション（`self._rig`）が**自分の別コマンドへの応答だと誤解して**
+読み取ってしまい、そこから**セッション終了までの全てのリクエスト/レスポンスが恒久的に1つずつズレる**。
+一度発生すると自己修復せず、Connect後どれだけ待っても直らない（今回の「完全に固定」という症状と
+一致）。
+
+**修正**（`src/rig/controller.py`・`src/ui/main_window.py`）: 上記3箇所すべてで、生CI-Vフレーム送信後に
+**必ず応答を読み取ってから**閉じるよう変更。
+- `_init_split()`: `os.open()`のフラグを`O_WRONLY`→`O_RDWR`に変更し、`write()`後に`time.sleep(0.1)`
+  → `os.read(_fd, 32)`（`contextlib.suppress(OSError)`で保護）してから`close()`
+- `_send_freq_preset_direct()` / `_release_rig_split_on_exit()`: 既に`pyserial.Serial(..., timeout=1)`
+  を使っていたので、`ser.write(...)`の直後に`ser.read(32)`を追加するだけで済んだ
+
+**教訓**: Hamlibと同じシリアルポートに対して独立したfd/セッションで生CAT/CI-Vを送る際は、
+**書き込みっぱなしにせず必ず応答を読み取って捨てること**。書き込み専用（`O_WRONLY`）で
+`open→write→close`する既存パターン（FTX-1F・FT-991の生CAT送信等）は、対象コマンドが本当に
+無応答（ACKを返さない）と分かっている場合を除き、同じ危険を抱えている可能性がある。
+「Hamlibの呼び出しが例外を出さずに成功しているのに実機の挙動がおかしい」系の不具合を見たら、
+まずHamlibのデバッグトレース（`rig_debug`相当。今回はユーザーが取得したログに`icom_check_ack`
+のミスマッチとして残っていた）を確認し、リクエストと応答の対応関係がズレていないかを疑うこと。
 
 ### NET mode (rigctld) vs Direct mode (Hamlib built-in)
 - FTX-1F: both NET and Direct work; NET preferred (more stable)
