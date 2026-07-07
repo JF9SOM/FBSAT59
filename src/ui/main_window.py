@@ -2430,7 +2430,7 @@ class MainWindow(QMainWindow):
 
                     threading.Thread(target=_rig_send, daemon=True).start()
                 else:
-                    logger.info("RigNet: previous cycle still running, skipping tick")
+                    logger.debug("RigNet: previous cycle still running, skipping tick")
 
             # Transmit Doppler-corrected frequencies to Rig 2 (same non-blocking pattern).
             if self._rig2_controller is not None and self._rig2_controller.is_connected:
@@ -2456,7 +2456,7 @@ class MainWindow(QMainWindow):
 
                     threading.Thread(target=_rig2_send, daemon=True).start()
                 else:
-                    logger.info("Rig2: previous cycle still running, skipping tick")
+                    logger.debug("Rig2: previous cycle still running, skipping tick")
 
         # Send AZ/EL to the rotator every tick (same non-blocking pattern as rig).
         self._send_to_rotator(obs)
