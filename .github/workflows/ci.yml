@@ -6,6 +6,18 @@ on:
     tags: ["v*"]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: 'Manual test build (no tag/release) — which platform(s)?'
+        required: false
+        default: 'macos'
+        type: choice
+        options:
+          - macos
+          - windows
+          - linux
+          - all
 
 jobs:
   # ------------------------------------------------------------------ #
@@ -58,7 +70,9 @@ jobs:
     name: Build Linux (AppImage)
     runs-on: ubuntu-22.04
     needs: test
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: |
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && contains(fromJSON('["linux","all"]'), github.event.inputs.platforms))
     permissions:
       contents: write
     steps:
@@ -69,6 +83,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Determine version
+        id: ver
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install system dependencies
         run: |
@@ -220,7 +243,7 @@ jobs:
 
       - name: Build with PyInstaller
         run: |
-          echo "${{ github.ref_name }}" | sed 's/^v//' > src/version.txt
+          echo "${{ steps.ver.outputs.version }}" > src/version.txt
           export LD_LIBRARY_PATH=/opt/hamlib/4.7/lib:${LD_LIBRARY_PATH}
           PYTHONPATH=src pyinstaller scripts/fbsat59.spec --noconfirm
 
@@ -234,6 +257,7 @@ jobs:
           path: dist/FBSAT59-x86_64.AppImage
 
       - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -242,6 +266,7 @@ jobs:
           overwrite_files: true
 
       - name: Upload Hamlib bundle to hamlib-bundle release
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -261,7 +286,9 @@ jobs:
     name: Build Windows (.zip)
     runs-on: windows-latest
     needs: test
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: |
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && contains(fromJSON('["windows","all"]'), github.event.inputs.platforms))
     permissions:
       contents: write
     steps:
@@ -272,6 +299,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Determine version
+        id: ver
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install Python dependencies
         run: pip install -e ".[packaging]"
@@ -708,7 +745,7 @@ jobs:
       - name: Build with PyInstaller
         shell: pwsh
         run: |
-          $ver = "${{ github.ref_name }}".TrimStart("v")
+          $ver = "${{ steps.ver.outputs.version }}"
           $ver | Out-File -FilePath src\version.txt -Encoding ASCII -NoNewline
           $env:PYTHONPATH = "src"
           pyinstaller scripts/fbsat59.spec --noconfirm --distpath dist
@@ -721,8 +758,7 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "makensis path: $((Get-Command makensis -ErrorAction SilentlyContinue)?.Source)"
-          $tag = "${{ github.ref_name }}"
-          $ver = $tag.TrimStart("v")
+          $ver = "${{ steps.ver.outputs.version }}"
           # VIProductVersion requires X.X.X.X numeric format; strip pre-release suffix
           $numericVer = ($ver -replace '-.*$', '')
           $parts = $numericVer.Split('.')
@@ -739,6 +775,7 @@ jobs:
           path: dist/FBSAT59-Setup.exe
 
       - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -747,6 +784,7 @@ jobs:
           overwrite_files: true
 
       - name: Upload Hamlib bundle to hamlib-bundle release
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
@@ -769,7 +807,9 @@ jobs:
     name: Build macOS (.dmg)
     runs-on: macos-14
     needs: test
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: |
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && contains(fromJSON('["macos","all"]'), github.event.inputs.platforms))
     permissions:
       contents: write
     steps:
@@ -780,6 +820,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Determine version
+        id: ver
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install Hamlib and Python dependencies
         run: |
@@ -934,7 +983,7 @@ jobs:
 
       - name: Build with PyInstaller
         run: |
-          echo "${{ github.ref_name }}" | sed 's/^v//' > src/version.txt
+          echo "${{ steps.ver.outputs.version }}" > src/version.txt
           PYTHONPATH=src pyinstaller scripts/fbsat59.spec --noconfirm
 
       - name: Create DMG
@@ -947,6 +996,7 @@ jobs:
           path: dist/FBSAT59.dmg
 
       - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -954,6 +1004,7 @@ jobs:
           make_latest: true
 
       - name: Upload Hamlib bundle to hamlib-bundle release
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
