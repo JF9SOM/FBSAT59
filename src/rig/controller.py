@@ -1228,17 +1228,25 @@ class HamlibDirectController(RigController):
                             #
                             # Every other Icom CI-V write sequence in this
                             # file (mode/CTCSS setup) separates commands with
-                            # 0.05-0.4s sleeps because Icom rigs drop
+                            # 0.15-0.4s sleeps because Icom rigs drop
                             # closely-spaced CI-V frames.  This DL/UL/restore
-                            # triple had none, which on some platforms (macOS
-                            # confirmed 2026-07-07 with an IC-705: main
-                            # display stuck on VFOB or not updating at all —
-                            # no Python exception, since a dropped CI-V frame
-                            # isn't visible to Hamlib) let the rig silently
-                            # miss the restore (or even the frequency write
-                            # itself) despite every call reporting success.
+                            # triple originally had none, which on some
+                            # platforms (macOS confirmed 2026-07-07 with an
+                            # IC-705: main display stuck on VFOB) let the rig
+                            # silently miss the restore despite every call
+                            # reporting success.  0.05s fixed that, but FM
+                            # cross-band satellites (confirmed on both macOS
+                            # and Linux 2026-07-07: main display frozen at the
+                            # connect-time value, uplink unaffected) still
+                            # failed — the rig's internal settle time after a
+                            # VFO-swap-and-restore cycle apparently exceeds
+                            # 0.05s for FM (busier squelch/PLL handling than
+                            # SSB), so the *next* second's DL write consistently
+                            # arrived before the rig was ready to accept it.
+                            # Widened to 0.15s (matching the CTCSS/mode-setup
+                            # delays elsewhere in this file) to give more margin.
                             if dl_written:
-                                time.sleep(0.05)
+                                time.sleep(0.15)
                             tx_vfo = self._vfo_str_to_const("VFOB")
                             logger.info(
                                 "RigDirect generic UL: set_freq(VFOB, %d) (mode=%s)",
@@ -1246,7 +1254,7 @@ class HamlibDirectController(RigController):
                                 self._current_ul_mode,
                             )
                             self._rig.set_freq(tx_vfo, int(vfob_hz))
-                            time.sleep(0.05)
+                            time.sleep(0.15)
                             # Icom CI-V backends (e.g. IC-705) leave their
                             # internal CURR on VFO-B after this call, so the
                             # rig keeps displaying UL as the main frequency.
