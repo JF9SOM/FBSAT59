@@ -1183,10 +1183,23 @@ class HamlibDirectController(RigController):
                 dl_written = False
                 if vfoa_hz is not None:
                     last_dl = self._last_dl_hz
-                    if last_dl is None or abs(vfoa_hz - last_dl) >= 1.0:
+                    delta_dl = None if last_dl is None else abs(vfoa_hz - last_dl)
+                    if last_dl is None or (delta_dl is not None and delta_dl >= 1.0):
+                        logger.info(
+                            "RigDirect generic DL: set_freq(VFOA, %d) (delta=%s, mode=%s)",
+                            int(vfoa_hz),
+                            delta_dl,
+                            self._current_dl_mode,
+                        )
                         self._rig.set_freq(rx_vfo, int(vfoa_hz))
                         self._last_dl_hz = vfoa_hz
                         dl_written = True
+                    else:
+                        logger.debug(
+                            "RigDirect generic DL: skip (delta=%.3f < 1.0, mode=%s)",
+                            delta_dl,
+                            self._current_dl_mode,
+                        )
                 if vfob_hz is not None:
                     last_ul = self._last_ul_hz
                     if last_ul is None or abs(vfob_hz - last_ul) >= 1.0:
@@ -1227,6 +1240,11 @@ class HamlibDirectController(RigController):
                             if dl_written:
                                 time.sleep(0.05)
                             tx_vfo = self._vfo_str_to_const("VFOB")
+                            logger.info(
+                                "RigDirect generic UL: set_freq(VFOB, %d) (mode=%s)",
+                                int(vfob_hz),
+                                self._current_ul_mode,
+                            )
                             self._rig.set_freq(tx_vfo, int(vfob_hz))
                             time.sleep(0.05)
                             # Icom CI-V backends (e.g. IC-705) leave their
@@ -1235,6 +1253,7 @@ class HamlibDirectController(RigController):
                             # Same quirk as the satmode same-band fallback
                             # above — explicitly reselect VFO-A to restore
                             # the DL display.
+                            logger.info("RigDirect generic: set_vfo(VFOA) to restore DL display")
                             self._rig.set_vfo(rx_vfo)
                         self._last_ul_hz = vfob_hz
             return True
