@@ -290,7 +290,13 @@ class TestHamlibDirectController:
 
     @pytest.mark.skipif(HAMLIB_AVAILABLE, reason="mock-only test")
     def test_set_vfo_frequencies_sets_dl_and_ul(self) -> None:
-        """On first call, sets DL via set_freq and UL via set_split_freq."""
+        """On first call, sets both DL and UL via set_freq (not set_split_freq).
+
+        set_split_freq is unreliable on generic rigs (e.g. IC-705 — passing
+        either the RX vfo or RIG_VFO_CURR overwrites VFOA instead of VFOB,
+        confirmed live), so UL now uses set_freq(tx_vfo, ...) directly, same
+        as DL.
+        """
         ctrl = self._make_ctrl()
         ctrl.connect()
         mock_rig = MagicMock()
@@ -299,8 +305,10 @@ class TestHamlibDirectController:
         assert result is True
         assert ctrl._last_dl_hz == 435_000_000.0
         assert ctrl._last_ul_hz == 145_000_000.0
-        mock_rig.set_freq.assert_called_once_with(0, 435_000_000)
-        mock_rig.set_split_freq.assert_called_once_with(0, 145_000_000)
+        assert mock_rig.set_freq.call_count == 2
+        mock_rig.set_freq.assert_any_call(0, 435_000_000)
+        mock_rig.set_freq.assert_any_call(0, 145_000_000)
+        mock_rig.set_split_freq.assert_not_called()
 
     @pytest.mark.skipif(HAMLIB_AVAILABLE, reason="mock-only test")
     def test_set_vfo_frequencies_delta_suppression_below_1hz(self) -> None:
@@ -328,15 +336,19 @@ class TestHamlibDirectController:
 
     @pytest.mark.skipif(HAMLIB_AVAILABLE, reason="mock-only test")
     def test_set_vfo_frequencies_first_call_always_sends(self) -> None:
-        """When _last_dl_hz is None (just connected), always sends regardless of value."""
+        """When _last_dl_hz is None (just connected), always sends regardless of value.
+
+        Both DL and UL go through set_freq (see test_set_vfo_frequencies_sets_dl_and_ul
+        for why set_split_freq is no longer used).
+        """
         ctrl = self._make_ctrl()
         ctrl.connect()
         assert ctrl._last_dl_hz is None
         mock_rig = MagicMock()
         ctrl._rig = mock_rig
         ctrl.set_vfo_frequencies(435_000_000.0, 145_000_000.0)
-        mock_rig.set_freq.assert_called_once()
-        mock_rig.set_split_freq.assert_called_once()
+        assert mock_rig.set_freq.call_count == 2
+        mock_rig.set_split_freq.assert_not_called()
 
     def test_send_mode_only_disconnected_does_not_raise(self) -> None:
         """send_mode_only is a no-op when not connected."""
