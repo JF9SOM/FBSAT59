@@ -758,6 +758,101 @@ class TLEManager:
         self._log_sync("legacy-tle-check", stats)
         return stats
 
+    async def fetch_meteor_tles(
+        self,
+        progress_callback: Any = None,
+    ) -> dict[str, int]:
+        """Ensure every METEOR/HRPT satellite has a satellites row and current TLE.
+
+        comms.meteor.satdump.METEOR_NORAD_IDS lists the fixed set of satellites the
+        METEOR / HRPT reception tab supports.  Some of them (e.g. NOAA 18 / NOAA 19)
+        have been retired from CelesTrak's curated GROUP=WEATHER listing even though
+        CelesTrak still has current elements for them via an individual CATNR query —
+        so the normal group fetch (fetch_and_update) never creates a satellites row
+        for them and their TLE goes stale forever.  This method queries CelesTrak
+        individually for any METEOR satellite that is missing a TLE or whose
+        non-manual TLE has gone stale, so they always appear in the main satellite
+        list (needed for AOS/LOS pass prediction) regardless of CelesTrak's group
+        curation.  source='manual' TLEs are never touched.
+
+        Returns:
+            {"found": N, "skipped": N, "errors": N}
+        """
+        from comms.meteor.satdump import METEOR_NORAD_IDS
+
+        targets: list[int] = []
+        for norad in METEOR_NORAD_IDS:
+            existing = self._conn.execute(
+                "SELECT source FROM tle_data WHERE norad_cat_id = ?", (norad,)
+            ).fetchone()
+            if existing is None or (
+                existing["source"] != "manual" and self.needs_update(norad, max_age_hours=24.0)
+            ):
+                targets.append(norad)
+
+        stats: dict[str, int] = {"found": 0, "skipped": 0, "errors": 0}
+        if not targets:
+            return stats
+
+        now = datetime.now(UTC).isoformat()
+        url = "https://celestrak.org/NORAD/elements/gp.php"
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            for idx, norad in enumerate(targets):
+                if progress_callback:
+                    progress_callback(idx + 1, len(targets))
+
+                try:
+                    r = await client.get(url, params={"CATNR": str(norad), "FORMAT": "TLE"})
+                    r.raise_for_status()
+                    lines = [ln.strip() for ln in r.text.splitlines() if ln.strip()]
+
+                    if len(lines) < 3:
+                        stats["skipped"] += 1
+                        continue
+
+                    name, line1, line2 = lines[0], lines[1], lines[2]
+                    sat_obj = EarthSatellite(line1, line2, name, self._ts)
+                    epoch_dt = sat_obj.epoch.utc_datetime()
+                    quality = _calc_quality(epoch_dt)
+
+                    self._conn.execute(
+                        """
+                        INSERT OR IGNORE INTO satellites (norad_cat_id, name, updated_at)
+                        VALUES (?, ?, ?)
+                        """,
+                        (norad, name, now),
+                    )
+                    self._conn.execute(
+                        """
+                        INSERT OR REPLACE INTO tle_data
+                            (norad_cat_id, name, line1, line2, epoch,
+                             source, tle_group, fetched_at, quality_score)
+                        VALUES (?, ?, ?, ?, ?, 'celestrak', 'weather', ?, ?)
+                        """,
+                        (norad, name, line1, line2, epoch_dt.isoformat(), now, quality),
+                    )
+                    stats["found"] += 1
+
+                except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RemoteProtocolError):
+                    stats["errors"] += 1
+                except httpx.HTTPStatusError as exc:
+                    if exc.response.status_code == 404:
+                        stats["skipped"] += 1
+                    else:
+                        logger.warning(f"meteor TLE fetch error for {norad}: {exc}")
+                        stats["errors"] += 1
+                except httpx.HTTPError as exc:
+                    logger.warning(f"meteor TLE fetch error for {norad}: {exc}")
+                    stats["errors"] += 1
+                except Exception as exc:
+                    logger.warning(f"meteor TLE parse error for {norad}: {exc}")
+                    stats["errors"] += 1
+
+        self._conn.commit()
+        self._log_sync("meteor-tle-check", stats)
+        return stats
+
     async def fetch_provisional_tles(
         self,
         progress_callback: Any = None,

@@ -226,6 +226,7 @@ CREATE TABLE tle_history (
 | Provisional TLEs（NORAD ≥ 90000） | 12時間ごと | `provisional_tle_refresh` |
 | Active TLE fallback（NORAD 10000–89999） | 24時間ごと | `active_tle_refresh` |
 | AMSAT運用状況 | 24時間ごと | `amsat_refresh` |
+| METEOR/HRPT衛星（CelesTrakの群リストから除外された運用終了気象衛星の個別照会） | 12時間ごと | `meteor_tle_refresh`（2026-07-07 追加） |
 | SATNOGSトランスポンダーDB | 7日ごと | `satnogs_transmitter_refresh`（2026-07-05 追加） |
 
 SATNOGSトランスポンダーは**初回起動時に自動取得**。以降は7日ごとにバックグラウンドで自動再同期される
@@ -824,6 +825,25 @@ sudo usermod -aG dialout $USER
   - **トランスポンダーと周波数の独立性**: SatDump は `METEOR_PIPELINES` の固定周波数を使用するため、Autotrack に登録するトランスポンダーは受信に影響しない。ただし**衛星（NORAD ID）は受信対象と完全に一致させること**（AOS/LOS 計算が変わるため）
   - **`METEOR_NORAD_IDS`**: `frozenset({35865, 40069, 44387, 57166, 59051, 28654, 33591, 38771, 43689})`
   - Radio Control でトランスポンダー description に「LRPT」「HRPT」「METEOR」が含まれると自動オープン
+  - **パイプライン選択 → 左側衛星リスト連動**: `MeteorTab.satellite_selection_requested(norad, downlink_hz)`
+    シグナル（Pipeline コンボ変更時に発火）→ `main_window._on_meteor_satellite_requested()` が
+    `_select_satellite_by_norad(norad)` で左リストを自動選択し、Radio Control のトランスポンダーも
+    最寄りの LRPT/HRPT を自動選択する（`cc3d29b` で実装済み・双方向）。ただし対象衛星が
+    `satellites` テーブルに行を持たない場合はリストに現れず選択できない（次項参照）
+  - **NOAA 18/19 が衛星リストに出ない問題の原因と修正（2026-07-07）**: NOAA 18 (28654) と
+    NOAA 19 (33591) はアマチュア無線トランスポンダーを持たない（SATNOGS同期経路では
+    `satellites` 行が作られない）上、運用終了に伴い CelesTrak の `GROUP=WEATHER`
+    キュレーションリストからも外れていた（個別 `CATNR=` 照会には今も応答するが、群一括取得
+    には含まれない）ため、通常の自動TLE取得（`fetch_and_update`）が対象を一度も見つけられず
+    `satellites` 行が永遠に作られない、というのが根本原因だった（Metop-B/C・METEOR-M2-3/4は
+    現在も `GROUP=WEATHER` に含まれているため無関係に正常動作していた）。
+    `TLEManager.fetch_meteor_tles()`（`src/data/tle_manager.py`）が `METEOR_NORAD_IDS` 全件を
+    対象に、TLE未取得または非manual TLEが24時間超過している衛星のみ CelesTrak 個別 CATNR
+    照会を行い、`satellites` 行を `INSERT OR IGNORE` で保証しつつ `tle_group='weather'` で
+    TLE を保存する（`fetch_legacy_tles()` と同型の個別照会パターンだが、対象は既存の
+    `satellites` 行ではなく固定の `METEOR_NORAD_IDS` から出発する点が異なる）。
+    起動時に `_refresh_satellite_names_sync()` 内で一度実行され、以降は
+    `meteor_tle_refresh` ジョブ（12時間ごと）が自動追従する。
 - CI緑（mypy strict + pytest）
 
 ### SDR 機能（v0.1.0 時点で実装済み）

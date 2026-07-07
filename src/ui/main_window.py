@@ -1207,6 +1207,13 @@ class MainWindow(QMainWindow):
                 id="satnogs_transmitter_refresh",
                 misfire_grace_time=3600,
             )
+            self._scheduler.add_job(
+                self._refresh_meteor_tle_sync,
+                "interval",
+                hours=12,
+                id="meteor_tle_refresh",
+                misfire_grace_time=600,
+            )
             self._scheduler.start()
             logger.debug("APScheduler started")
         except Exception as exc:
@@ -1288,6 +1295,8 @@ class MainWindow(QMainWindow):
           2. fetch_provisional_tles() — TLEs for visible NORAD >= 90000 satellites
           3. fetch_legacy_tles() — one-time check for NORAD < 10000 satellites;
              hides those no longer tracked by CelesTrak (fast no-op after first run)
+          4. fetch_meteor_tles() — individual CATNR check for METEOR/HRPT satellites
+             CelesTrak has dropped from its curated group listings (e.g. NOAA 18/19)
         """
         from ui.settings_dialog import SettingsDialog  # local import to avoid circular dep
 
@@ -1327,6 +1336,19 @@ class MainWindow(QMainWindow):
                 logger.info("Legacy satellite TLE check completed: %s", legacy)
         except Exception as exc:
             logger.warning("Legacy satellite TLE check failed: %s", exc)
+
+        if self._shutdown_flag.is_set():
+            return
+
+        # Ensure METEOR/HRPT satellites (e.g. NOAA 18/19, retired from CelesTrak's
+        # curated GROUP=WEATHER listing) have a satellites row + TLE so they appear
+        # in the main list for AOS/LOS pass prediction.
+        try:
+            meteor = asyncio.run(self._tle_manager.fetch_meteor_tles())
+            if meteor.get("found", 0) > 0:
+                logger.info("METEOR satellite TLE check completed: %s", meteor)
+        except Exception as exc:
+            logger.warning("METEOR satellite TLE check failed: %s", exc)
 
         if self._shutdown_flag.is_set():
             return
@@ -3687,6 +3709,16 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             logger.warning("Provisional TLE refresh failed: %s", exc)
 
+    def _refresh_meteor_tle_sync(self) -> None:
+        """Ensure METEOR/HRPT satellites (e.g. NOAA 18/19) have a TLE from a background thread."""
+        try:
+            result = asyncio.run(self._tle_manager.fetch_meteor_tles())
+            if result.get("found", 0) > 0:
+                logger.info("METEOR satellite TLE refresh completed: %s", result)
+                self._satellite_list_refresh.emit()
+        except Exception as exc:
+            logger.warning("METEOR satellite TLE refresh failed: %s", exc)
+
     def _refresh_satnogs_sync(self) -> None:
         """Sync SATNOGS transponders from a background thread."""
         try:
@@ -4346,6 +4378,8 @@ class MainWindow(QMainWindow):
             "<tr><td><b>Active TLE fallback</b> (NORAD 10000–89999)</td>"
             "<td>every <b>24 hours</b></td></tr>"
             "<tr><td><b>AMSAT operational status</b></td><td>every <b>24 hours</b></td></tr>"
+            "<tr><td><b>METEOR/HRPT satellites dropped from CelesTrak groups</b></td>"
+            "<td>every <b>12 hours</b></td></tr>"
             "<tr><td><b>Transponder Database (SATNOGS)</b></td>"
             "<td>every <b>7 days</b></td></tr>"
             "</table>"
