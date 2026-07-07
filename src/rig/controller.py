@@ -1179,6 +1179,7 @@ class HamlibDirectController(RigController):
                                 logger.warning("RigDirect satmode UL %s: %s", vfo_name, exc)
 
             else:
+                _tick_start = time.monotonic()
                 rx_vfo = self._vfo_str_to_const("VFOA")
                 dl_written = False
                 if vfoa_hz is not None:
@@ -1228,25 +1229,31 @@ class HamlibDirectController(RigController):
                             #
                             # Every other Icom CI-V write sequence in this
                             # file (mode/CTCSS setup) separates commands with
-                            # 0.15-0.4s sleeps because Icom rigs drop
+                            # 0.05-0.4s sleeps because Icom rigs drop
                             # closely-spaced CI-V frames.  This DL/UL/restore
                             # triple originally had none, which on some
                             # platforms (macOS confirmed 2026-07-07 with an
                             # IC-705: main display stuck on VFOB) let the rig
                             # silently miss the restore despite every call
-                            # reporting success.  0.05s fixed that, but FM
-                            # cross-band satellites (confirmed on both macOS
-                            # and Linux 2026-07-07: main display frozen at the
-                            # connect-time value, uplink unaffected) still
-                            # failed — the rig's internal settle time after a
-                            # VFO-swap-and-restore cycle apparently exceeds
-                            # 0.05s for FM (busier squelch/PLL handling than
-                            # SSB), so the *next* second's DL write consistently
-                            # arrived before the rig was ready to accept it.
-                            # Widened to 0.15s (matching the CTCSS/mode-setup
-                            # delays elsewhere in this file) to give more margin.
+                            # reporting success.  0.05s fixed that for RS-44
+                            # (SSB), but FM cross-band satellites (SO-50, ISS
+                            # V/U) still showed main frozen at the connect-time
+                            # value.  Widening to 0.15s made ALL satellites
+                            # freeze, including ones that worked at 0.05s —
+                            # confirmed 2026-07-07 — which points away from
+                            # "the rig needs more settle time" and toward
+                            # "the whole DL/UL/restore sequence (plus Hamlib's
+                            # own per-call CI-V round-trip latency) is taking
+                            # too long and colliding with the *next* Doppler
+                            # tick (default 1000ms, MainWindow._timer)", whose
+                            # non-blocking _rig_busy_lock.acquire() then skips
+                            # the tick outright rather than queuing it — more
+                            # sleep here directly shrinks that margin instead
+                            # of giving the rig more time to settle.  Back to
+                            # 0.05s; elapsed-time logging below measures the
+                            # real per-tick duration instead of guessing.
                             if dl_written:
-                                time.sleep(0.15)
+                                time.sleep(0.05)
                             tx_vfo = self._vfo_str_to_const("VFOB")
                             logger.info(
                                 "RigDirect generic UL: set_freq(VFOB, %d) (mode=%s)",
@@ -1254,7 +1261,7 @@ class HamlibDirectController(RigController):
                                 self._current_ul_mode,
                             )
                             self._rig.set_freq(tx_vfo, int(vfob_hz))
-                            time.sleep(0.15)
+                            time.sleep(0.05)
                             # Icom CI-V backends (e.g. IC-705) leave their
                             # internal CURR on VFO-B after this call, so the
                             # rig keeps displaying UL as the main frequency.
@@ -1264,6 +1271,11 @@ class HamlibDirectController(RigController):
                             logger.info("RigDirect generic: set_vfo(VFOA) to restore DL display")
                             self._rig.set_vfo(rx_vfo)
                         self._last_ul_hz = vfob_hz
+                if dl_written:
+                    logger.info(
+                        "RigDirect generic: tick took %.3fs (DL/UL/restore)",
+                        time.monotonic() - _tick_start,
+                    )
             return True
         except Exception as exc:
             logger.error("RigDirect.set_vfo_frequencies: %s", exc)
