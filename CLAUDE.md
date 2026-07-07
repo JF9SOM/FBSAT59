@@ -1113,10 +1113,76 @@ OS再起動をまたぐと静かに破綻する。「片方のUIでは動くの�
 違いをまず疑うこと。
 
 **メニュー: Communications > Q65**（`src/ui/q65_tab.py`）
-- **Phase 1（RX）**: libq65 ctypes デコーダー（WSJT-X ソースからビルド）
+- **Phase 1（RX）**: libq65 ctypes デコーダー
   - libq65 未インストール時はバナー表示・デコード無効化。インストール先: `~/.local/share/fbsat59/q65lib/`
   - **Help → Q65 Library Installation…** でバンドル版を自動ダウンロード・インストール
-  - CI で build-q65lib.yml が毎週 WSJT-X 最新リリースを監視してビルド（ソース: `lib/qra/q65/`）
+  - CI で build-q65lib.yml が毎週 WSJT-X 最新リリースを監視してビルド
+
+**libq65 の実装 — WSJT-X 本家デコードエンジンへの生CATブリッジ（2026-07-07 完了）**
+
+旧`build-q65lib.yml`は`lib/qra/q65/*.f90`を機械的に全ファイルコンパイルするだけの実装で、以下2点が
+未解決のまま長期間放置されていた（CIは`genq65.f90`の`use packjt77`未解決エラーで恒常的に失敗）。
+
+1. **依存クロージャ不足**: `genq65.f90`（TXエンコード用サブルーチン、RXには不要）が`lib/77bit/packjt77.f90`
+   の`packjt77`モジュールに依存するが、そのファイルをコンパイル対象に含めていなかった
+2. **より根本的な問題**: 仮にコンパイルが通っても、`codec.py`が要求する「生音声サンプル→デコード済み
+   メッセージ」という高レベル関数（`q65_decode(samples, n, submode, ...)`）はWSJT-X生ソースの
+   どこにも存在しない。低レベルC実装（`q65.c`）はLDPCシンボルデコードのみを行い、音声処理
+   （FFT・同期検出・復調）は`q65.f90`等のFortranコードに散らばっており、両者を繋ぐブリッジが
+   一度も書かれていなかった（＝このビルドは仮に成功していても機能するデコーダーを生成したことがなかった）
+
+`ft4wsjt`（`scripts/wsjtx_bridge/ft4wsjt_bridge.f90` + `scripts/build_ft4wsjt.sh`）と全く同じ
+アプローチで、WSJT-X本家のトップレベル決定モジュール`lib/q65_decode.f90`（`module q65_decode`、
+`decode()`型束縛手続き＋コールバックインターフェース）を実際にコンパイル・リンクして依存クロージャを
+確定させ、`scripts/wsjtx_bridge/q65wsjt_bridge.f90`という新規ブリッジファイルを作成した。
+
+**依存クロージャの確定方法**: WSJT-Xソースを実際にクローンし、`lib/q65_decode.f90`から`gfortran`で
+繰り返しコンパイル→リンクを試行し、`undefined reference`が出るたびに該当ファイルを追加する反復法で
+確定（手動で全`use`文・`call`文を追うより確実）。最終的な依存ファイル一覧は`scripts/build_q65lib.sh`の
+`MODULE_CHAIN`/`LEAF_FILES`/`C_FILES`配列を参照。
+
+**重要な落とし穴（開発中に発覚）**:
+- `q65.f90`（Fortranの`module q65`定義）と`q65.c`（C言語のLDPCコーデック）が同じベース名`q65`を持つ。
+  フラットな1ディレクトリにステージングして両方を`gcc`/`gfortran`でコンパイルすると、後から
+  コンパイルした方が`q65.o`を上書きしてしまい、実際には正しくコンパイルされていた`module q65`の
+  シンボル（`__q65_MOD_nfa`等）がリンク時に「undefined reference」として大量に出るという分かりにくい
+  症状になった。`build_q65lib.sh`ではC側ソースを別ディレクトリ（`C_SRC_DIR`）にステージングし、
+  さらにオブジェクトファイル名にも明示的に`_c.o`サフィックスを付けて衝突を回避している
+- ブリッジ関数の動作確認テストプログラムで、書き換えられる仮引数（`lclearave`等）に対して
+  Fortranの**リテラル定数**（`.true.`）をそのまま渡すとセグフォルトする。リテラル定数は読み取り専用
+  メモリに配置されることがあり、呼び出し先が`lclearave=.false.`のように書き込もうとした瞬間に
+  クラッシュする。これはFortran自体の未定義動作であり、呼び出し側は必ずローカル変数を用意して渡す
+  必要がある（テストハーネス自身のバグであり、WSJT-X側のコードのバグではなかった）
+- WSJT-X本家の`ft4_decode`同様、`q65_decode`も型束縛手続き（`class(q65_decoder)`＋
+  `procedure(q65_decode_callback), pointer`）のコールバック方式で、bind(C)の仮引数に直接
+  取れないため、`c_f_procpointer`で保存したCファンクションポインタ経由でアダプトする
+  （`ft4wsjt_bridge.f90`と全く同じ`bridge_callback`パターン）
+
+**FBSAT59固有の簡略化**（コンテストモード関連ロジックは一切使わないため）:
+- `single_decode=.true.`（複数候補探索ループをスキップ、1周期1回のデコードのみ）
+- `ncontest=0`・`lapcqonly=.false.`・`nQSOprogress=0`（コンテストモード無効）
+- `lnewdat0=.true.`・`max_drift0=0`（毎回新規データとして扱う）
+- `q65_set_list2.f90`（コンテスト専用の複数局同時デコード用）は実行時には呼ばれないが、
+  Fortranはリンク時に全呼び出し先を解決するため、リンクには含める必要がある
+
+**`lclearave`・`emedelay`は公開パラメータとして残した**: Q65の弱信号EME用途では周期をまたいだ
+シンボルスペクトル累積平均（WSJT-X内部の`s1a`配列、モジュールレベルの`save`属性なのでライブラリが
+ロードされている間永続する）が実運用上重要な機能のため、`codec.py`の`Q65Codec`からは呼び出しごとに
+`lclearave=1`（累積クリア）を渡し、旧実装と同じ「1回のcallは1周期のみを見る」ステートレス挙動を
+維持している。周期をまたいだ累積平均を実際に活用する呼び出し側の配線（トランスポンダー変更時に
+クリアする等）は未着手（将来の拡張候補）。
+
+**検証方法**: `tests/test_q65_codec.py` — このリポジトリ自身のPython製Q65 TXエンコーダー
+（`src/comms/q65/encoder.py`）でメッセージを合成音声にエンコードし、その音声を新しい
+`libq65`でデコードして元のメッセージと一致するかを確認するラウンドトリップテスト。
+実機・実際のEME交信なしで実装の正しさを検証できる（`libq65`未インストール環境では自動スキップ）。
+
+**`Q65Codec`の内部インターフェース変更**: 旧実装は固定長配列バッファ（`msg_buf`・`snr_arr`等）を
+事前確保してCから書き込ませるポーリング方式だったが、`ft4wsjt`同様の「デコードごとにコールバックを
+1回呼ぶ」方式に変更（`q65wsjt_decode(..., callback, user_data)`）。`Q65Codec.decode()`の
+**外部インターフェース（`Q65Codec(submode=..., nfa=..., nfb=..., nfqso=...).decode(samples, period_seconds=...)`）
+はそのまま維持**しており、唯一の呼び出し元`src/ui/q65_tab.py`への変更は不要だった。
+
 - **Phase 2（TX/QSO）**: 純 Python エンコーダー（libq65 なしで TX 可能）
   - `encoder.py`: GF(64) 線形符号（生成行列 15×50）・CRC-12・65-FSK 音声合成（numpy）
     - WSJT-X `lib/qra/q65/q65_encoding_modules.f90` のアルゴリズムを Python に移植

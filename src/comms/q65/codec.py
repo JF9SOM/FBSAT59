@@ -1,8 +1,12 @@
-"""Q65 codec — wraps libq65 (built from WSJT-X source) via ctypes.
+"""Q65 codec — wraps libq65 (WSJT-X's own Q65 decode engine) via ctypes.
 
-RX path: capture 60-second audio block → q65_decode() → decoded messages
+RX path: capture one T/R period of audio → q65wsjt_decode() (callback-based,
+one invocation per decoded message) → decoded messages.
 
-libq65 must be installed as a shared library:
+libq65 is built from wsjtx/wsjtx's lib/q65_decode.f90 and its dependency
+closure (see scripts/build_q65lib.sh), wrapped through a small C ABI bridge
+(scripts/wsjtx_bridge/q65wsjt_bridge.f90) — same approach as libft4wsjt
+(src/comms/ft4/wsjt_decoder.py). It must be installed as a shared library:
   Linux:   libq65.so
   macOS:   libq65.dylib
   Windows: q65.dll
@@ -23,6 +27,21 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
+# Longest Q65 period (300s @ 12000 Hz) — must match Q65WSJT_NMAX in
+# scripts/wsjtx_bridge/q65wsjt_bridge.f90. Shorter buffers are zero-padded
+# inside the library; longer ones truncated.
+_Q65WSJT_NMAX: int = 300 * 12_000
+
+_DecodeCallbackT = ctypes.CFUNCTYPE(
+    None,
+    ctypes.c_int,  # snr
+    ctypes.c_float,  # dt
+    ctypes.c_float,  # freq
+    ctypes.c_char_p,  # decoded text (NUL-terminated)
+    ctypes.c_int,  # idec (a priori decode type, 0 = none)
+    ctypes.c_void_p,  # user_data (unused)
+)
+
 # ---------------------------------------------------------------------------
 # Q65 physical-layer constants
 # ---------------------------------------------------------------------------
@@ -42,12 +61,6 @@ Q65_PERIODS: dict[str, int] = {
 
 # Submode letter → index used by libq65
 Q65_SUBMODE: dict[str, int] = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4}
-
-# Maximum decoded messages returned per period
-_MAX_MESSAGES: int = 20
-
-# Output buffer length per message (Q65 messages are ≤ 22 chars + null)
-_MSG_BUFLEN: int = 37
 
 
 # ---------------------------------------------------------------------------
@@ -125,28 +138,28 @@ def _load_libq65() -> ctypes.CDLL | None:
         return None
     try:
         lib = ctypes.CDLL(str(path))
-        # q65_decode(samples, n_samples, submode, nfa, nfb, nfqso, nperiod,
-        #            messages_buf, snr_buf, dt_buf, freq_buf, max_messages)
-        # Returns: number of decoded messages
-        lib.q65_decode.restype = ctypes.c_int
-        lib.q65_decode.argtypes = [
-            ctypes.POINTER(ctypes.c_float),  # samples
-            ctypes.c_int,  # n_samples
-            ctypes.c_int,  # submode (0=A..4=E)
+        # q65wsjt_decode(iwave, nsamples, ntrperiod, nsubmode, nfqso, nfa, nfb,
+        #                ndepth, lclearave, emedelay, mycall, hiscall, hisgrid,
+        #                callback, user_data)
+        # Invokes callback once per decoded message; no return value.
+        lib.q65wsjt_decode.restype = None
+        lib.q65wsjt_decode.argtypes = [
+            ctypes.POINTER(ctypes.c_int16),  # iwave
+            ctypes.c_int,  # nsamples
+            ctypes.c_int,  # ntrperiod (seconds)
+            ctypes.c_int,  # nsubmode (0=A..4=E)
+            ctypes.c_int,  # nfqso
             ctypes.c_int,  # nfa (Hz low)
             ctypes.c_int,  # nfb (Hz high)
-            ctypes.c_int,  # nfqso (0 = search all)
-            ctypes.c_int,  # nperiod (seconds)
-            ctypes.c_char_p,  # messages output buffer
-            ctypes.POINTER(ctypes.c_float),  # snr output
-            ctypes.POINTER(ctypes.c_float),  # dt output
-            ctypes.POINTER(ctypes.c_int),  # freq output (Hz)
-            ctypes.c_int,  # max_messages
+            ctypes.c_int,  # ndepth
+            ctypes.c_int,  # lclearave (nonzero clears cross-period averaging)
+            ctypes.c_float,  # emedelay (seconds)
+            ctypes.c_char_p,  # mycall
+            ctypes.c_char_p,  # hiscall
+            ctypes.c_char_p,  # hisgrid
+            _DecodeCallbackT,  # callback
+            ctypes.c_void_p,  # user_data
         ]
-        # q65_lib_version() → const char* version string
-        with __import__("contextlib").suppress(AttributeError):
-            lib.q65_lib_version.restype = ctypes.c_char_p
-            lib.q65_lib_version.argtypes = []
         return lib
     except OSError:
         return None
@@ -161,14 +174,21 @@ def is_available() -> bool:
 
 
 def lib_version() -> str:
-    """Return libq65 version string, or empty string if not loaded."""
+    """Return libq65 version string, or empty string if unavailable.
+
+    q65wsjt_decode's bridge does not export a version symbol; the bundled
+    WSJT-X tag is recorded in version.txt next to the shared library
+    (see scripts/build_q65lib.sh) instead.
+    """
     if _lib is None:
         return ""
-    try:
-        ver = _lib.q65_lib_version()
-        return ver.decode() if ver else ""
-    except Exception:
-        return ""
+    with __import__("contextlib").suppress(Exception):
+        path = _find_libq65()
+        if path is not None:
+            version_file = path.parent / "version.txt"
+            if version_file.exists():
+                return version_file.read_text().strip()
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -177,13 +197,23 @@ def lib_version() -> str:
 
 
 class Q65Codec:
-    """Stateless Q65 decoder backed by libq65.
+    """Q65 decoder backed by libq65 (WSJT-X's own decode engine).
 
     Args:
         submode: One of 'A', 'B', 'C', 'D', 'E'.  Default 'A' (EME standard).
         nfa: Low frequency bound for search (Hz).
         nfb: High frequency bound for search (Hz).
         nfqso: Partner frequency in Hz; 0 means search the full nfa–nfb range.
+        my_call: Own callsign, used for a priori (AP) decoding of continuing
+            QSOs. May be empty.
+        hiscall, hisgrid: Partner callsign/grid, likewise used for AP
+            decoding. May be empty.
+        ndepth: Decode effort. Bits 0-1: 1=normal, 2=deep, 3=deepest
+            (default). Bit 4 (16): enable cross-period averaging for weak
+            EME signals — not set by default since this class always clears
+            the accumulator per call (see clear_averaging below).
+        emedelay: Extra sync-search delay (seconds) to cover EME path delay.
+            Default 1.0s; pass 0.0 for non-EME point-to-point use.
     """
 
     def __init__(
@@ -192,19 +222,34 @@ class Q65Codec:
         nfa: int = 200,
         nfb: int = 3000,
         nfqso: int = 0,
+        my_call: str = "",
+        hiscall: str = "",
+        hisgrid: str = "",
+        ndepth: int = 3,
+        emedelay: float = 1.0,
     ) -> None:
         self.submode = submode.upper()
         self.nfa = nfa
         self.nfb = nfb
         self.nfqso = nfqso
+        self.my_call = my_call
+        self.hiscall = hiscall
+        self.hisgrid = hisgrid
+        self.ndepth = ndepth
+        self.emedelay = emedelay
 
     def decode(self, samples: NDArray[np.float32], period_seconds: int = 60) -> list[Q65Message]:
         """Decode one complete Q65 audio period.
 
+        Each call clears libq65's cross-period averaging accumulator first
+        (lclearave), so results only reflect this one period — matching the
+        original stateless-per-call behavior. Weak-EME cross-period
+        averaging is a real WSJT-X capability but isn't wired up here yet.
+
         Args:
             samples: Float32 audio at SAMPLE_RATE Hz.
                      Length should be period_seconds * SAMPLE_RATE.
-            period_seconds: T/R period length (15, 30, or 60).
+            period_seconds: T/R period length (15, 30, 60, 120, or 300).
 
         Returns:
             List of decoded Q65Message objects (empty if none decoded or
@@ -213,45 +258,49 @@ class Q65Codec:
         if _lib is None:
             return []
 
-        n = len(samples)
-        buf = samples.astype(np.float32, copy=False)
-        c_buf = buf.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
+        n = min(len(samples), _Q65WSJT_NMAX)
+        iwave = np.zeros(_Q65WSJT_NMAX, dtype=np.int16)
+        iwave[:n] = np.clip(samples[:n], -1.0, 1.0) * 32767.0
+        c_arr = iwave.ctypes.data_as(ctypes.POINTER(ctypes.c_int16))
 
-        msg_buf = ctypes.create_string_buffer(_MSG_BUFLEN * _MAX_MESSAGES)
-        snr_arr = (ctypes.c_float * _MAX_MESSAGES)()
-        dt_arr = (ctypes.c_float * _MAX_MESSAGES)()
-        freq_arr = (ctypes.c_int * _MAX_MESSAGES)()
+        results: list[Q65Message] = []
 
+        def _on_decode(
+            snr: int,
+            dt: float,
+            freq: float,
+            decoded: bytes | None,
+            idec: int,
+            user_data: int | None,
+        ) -> None:
+            del idec, user_data  # unused
+            if decoded is None:
+                return
+            text = ctypes.string_at(decoded).decode("ascii", errors="replace").strip()
+            if text:
+                results.append(
+                    Q65Message(text=text, freq_hz=float(freq), snr_db=float(snr), dt_sec=float(dt))
+                )
+
+        cb = _DecodeCallbackT(_on_decode)
         try:
-            n_decoded = _lib.q65_decode(
-                c_buf,
-                ctypes.c_int(n),
+            _lib.q65wsjt_decode(
+                c_arr,
+                ctypes.c_int(len(iwave)),
+                ctypes.c_int(period_seconds),
                 ctypes.c_int(Q65_SUBMODE.get(self.submode, 0)),
+                ctypes.c_int(self.nfqso),
                 ctypes.c_int(self.nfa),
                 ctypes.c_int(self.nfb),
-                ctypes.c_int(self.nfqso),
-                ctypes.c_int(period_seconds),
-                msg_buf,
-                snr_arr,
-                dt_arr,
-                freq_arr,
-                ctypes.c_int(_MAX_MESSAGES),
+                ctypes.c_int(self.ndepth),
+                ctypes.c_int(1),  # lclearave: always clear (stateless per call)
+                ctypes.c_float(self.emedelay),
+                self.my_call.upper().encode("ascii", errors="ignore"),
+                self.hiscall.upper().encode("ascii", errors="ignore"),
+                self.hisgrid.upper().encode("ascii", errors="ignore"),
+                cb,
+                None,
             )
         except Exception:
             return []
-
-        results: list[Q65Message] = []
-        for i in range(max(0, n_decoded)):
-            offset = i * _MSG_BUFLEN
-            raw = msg_buf.raw[offset : offset + _MSG_BUFLEN]
-            text = raw.split(b"\x00", 1)[0].decode("ascii", errors="replace").strip()
-            if text:
-                results.append(
-                    Q65Message(
-                        text=text,
-                        freq_hz=float(freq_arr[i]),
-                        snr_db=float(snr_arr[i]),
-                        dt_sec=float(dt_arr[i]),
-                    )
-                )
         return results

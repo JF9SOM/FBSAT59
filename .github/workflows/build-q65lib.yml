@@ -1,13 +1,15 @@
 name: Build q65lib Bundle
 
-# Checks weekly for new WSJT-X releases that include Q65 source changes.
-# Builds libq65 from WSJT-X Fortran+C source for all three platforms.
-# Artifacts are stored in the dedicated "q65lib-bundle" pre-release tag.
+# Checks weekly for new WSJT-X releases that might touch the Q65 decode
+# engine. Builds libq65 — WSJT-X's own Q65 decode engine (lib/q65_decode.f90),
+# wrapped via scripts/wsjtx_bridge/q65wsjt_bridge.f90 — for all three
+# platforms using scripts/build_q65lib.sh. Artifacts are stored in the
+# dedicated "q65lib-bundle" pre-release tag.
 # Also supports manual triggering for emergencies.
 
 on:
   schedule:
-    - cron: '0 10 * * 1'  # Every Monday 10:00 UTC (1 hour after Direwolf check)
+    - cron: '0 10 * * 1'  # Every Monday 10:00 UTC (1 hour before ft4wsjt check)
   workflow_dispatch:
     inputs:
       force_build:
@@ -34,9 +36,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FORCE: ${{ github.event.inputs.force_build }}
         run: |
-          # Latest release from wsjtx/wsjtx on GitHub
-          UPSTREAM=$(gh api repos/wsjtx/wsjtx/releases \
-            --jq '.[0].tag_name')
+          UPSTREAM=$(gh api repos/wsjtx/wsjtx/releases --jq '.[0].tag_name')
           echo "Upstream WSJT-X: $UPSTREAM"
           echo "wsjtx_tag=$UPSTREAM" >> "$GITHUB_OUTPUT"
 
@@ -76,90 +76,21 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Install build dependencies
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y gfortran cmake build-essential
+          sudo apt-get install -y gfortran libfftw3-dev build-essential
 
-      - name: Build libq65 from WSJT-X source
+      - name: Build libq65
         env:
           WSJTX_TAG: ${{ needs.check-version.outputs.wsjtx_tag }}
         run: |
           ARCH=$(uname -m)
-
-          # Clone WSJT-X source from GitHub (wsjtx/wsjtx)
-          git clone --depth 1 --branch "${WSJTX_TAG}" \
-            https://github.com/wsjtx/wsjtx.git wsjtx-src 2>/dev/null || \
-          git clone --depth 1 \
-            https://github.com/wsjtx/wsjtx.git wsjtx-src 2>/dev/null || \
-          { echo "Clone failed; using stub build" && mkdir -p wsjtx-src/lib/q65; }
-
-          # Build q65 shared library from lib/qra/q65/ (WSJT-X source layout)
-          Q65_DIR="wsjtx-src/lib/qra/q65"
-          OUT_DIR="/tmp/q65lib-flat"
-          mkdir -p "$OUT_DIR"
-
-          if [ -d "$Q65_DIR" ]; then
-            # Compile Fortran sources
-            FFLAGS="-O2 -fPIC"
-            FC=gfortran
-            CC=gcc
-            OBJS=""
-
-            for f in "$Q65_DIR"/*.f90; do
-              [ -f "$f" ] || continue
-              obj="${f%.f90}.o"
-              $FC $FFLAGS -c "$f" -o "$obj"
-              OBJS="$OBJS $obj"
-            done
-            for f in "$Q65_DIR"/*.F90; do
-              [ -f "$f" ] || continue
-              obj="${f%.F90}.o"
-              $FC $FFLAGS -c "$f" -o "$obj"
-              OBJS="$OBJS $obj"
-            done
-            for f in "$Q65_DIR"/*.c; do
-              [ -f "$f" ] || continue
-              obj="${f%.c}.o"
-              $CC -O2 -fPIC -c "$f" -o "$obj"
-              OBJS="$OBJS $obj"
-            done
-
-            # Link into shared library
-            if [ -n "$OBJS" ]; then
-              $FC -shared -fPIC $OBJS -o "$OUT_DIR/libq65.so" -lgfortran
-              echo "libq65.so built successfully"
-            else
-              echo "No source files found — creating stub library"
-              # Stub: q65_decode returns 0 (no decodes), q65_lib_version returns "stub"
-              cat > /tmp/q65_stub.c << 'STUBEOF'
-          #include <string.h>
-          int q65_decode(const float *samples, int n, int submode,
-                         int nfa, int nfb, int nfqso, int nperiod,
-                         char *msgs, float *snr, float *dt, int *freq,
-                         int max_msgs) {
-              return 0;
-          }
-          const char *q65_lib_version(void) { return "stub-0.0"; }
-          STUBEOF
-              gcc -shared -fPIC -o "$OUT_DIR/libq65.so" /tmp/q65_stub.c
-              echo "Stub library created"
-            fi
-          else
-            echo "WSJT-X source not available; creating stub"
-            cat > /tmp/q65_stub.c << 'STUBEOF'
-          #include <string.h>
-          int q65_decode(const float *samples, int n, int submode,
-                         int nfa, int nfb, int nfqso, int nperiod,
-                         char *msgs, float *snr, float *dt, int *freq,
-                         int max_msgs) {
-              return 0;
-          }
-          const char *q65_lib_version(void) { return "stub-0.0"; }
-          STUBEOF
-            gcc -shared -fPIC -o "$OUT_DIR/libq65.so" /tmp/q65_stub.c
-          fi
-
+          OUT_DIR=/tmp/q65lib-flat
+          ./scripts/build_q65lib.sh "" "$OUT_DIR"
           echo "${WSJTX_TAG}" > "$OUT_DIR/version.txt"
 
           PKG_NAME="q65lib-linux-${ARCH}.tar.gz"
@@ -176,7 +107,7 @@ jobs:
           gh release create q65lib-bundle \
             --repo "${{ github.repository }}" \
             --title "Q65 Library Bundle" \
-            --notes "Pre-built libq65 for Q65 EME decoding. Built from WSJT-X source." \
+            --notes "Pre-built libq65 — WSJT-X's own Q65 decode engine, built from WSJT-X source." \
             --prerelease
           gh release upload q65lib-bundle \
             --repo "${{ github.repository }}" \
@@ -193,88 +124,65 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+    defaults:
+      run:
+        shell: bash
     steps:
-      - name: Install gfortran (MinGW)
-        shell: pwsh
-        run: choco install mingw -y --no-progress
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Build libq65 from WSJT-X source
-        shell: pwsh
+      - name: Install MinGW gfortran
+        run: |
+          choco install mingw -y --no-progress
+          echo "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin" >> "$GITHUB_PATH"
+
+      - name: Fetch FFTW3 headers (conda-forge via micromamba)
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: q65lib-deps
+          create-args: fftw
+          channels: conda-forge
+          init-shell: bash
+
+      # micromamba's activation (from init-shell above) only takes effect in
+      # a login bash shell, so this step needs `shell: bash -el {0}` instead
+      # of the job-level plain `bash` default — same mechanism used in
+      # build-ft4wsjt.yml.
+      - name: Build q65.dll
+        shell: bash -el {0}
         env:
           WSJTX_TAG: ${{ needs.check-version.outputs.wsjtx_tag }}
         run: |
-          $FLAT = "$env:RUNNER_TEMP\q65lib-flat"
-          New-Item -ItemType Directory -Force -Path $FLAT | Out-Null
-
-          # Try to clone WSJT-X source
-          $cloned = $false
-          try {
-            git clone --depth 1 --branch "$env:WSJTX_TAG" https://github.com/wsjtx/wsjtx.git wsjtx-src 2>$null
-            $cloned = Test-Path "wsjtx-src\lib\q65"
-          } catch {}
-
-          if ($cloned) {
-            $Q65_DIR = "wsjtx-src\lib\qra\q65"
-            $objs = @()
-            foreach ($f in Get-ChildItem "$Q65_DIR\*.f90","$Q65_DIR\*.F90") {
-              $obj = $f.FullName -replace '\.[fF]90$', '.o'
-              & gfortran -O2 -fPIC -c $f.FullName -o $obj
-              $objs += $obj
-            }
-            foreach ($f in Get-ChildItem "$Q65_DIR\*.c") {
-              $obj = $f.FullName -replace '\.c$', '.o'
-              & gcc -O2 -fPIC -c $f.FullName -o $obj
-              $objs += $obj
-            }
-            if ($objs.Count -gt 0) {
-              & gfortran -shared -o "$FLAT\q65.dll" @objs -lgfortran
-            }
-          }
-
-          # Fallback stub if build failed or source unavailable
-          if (-not (Test-Path "$FLAT\q65.dll")) {
-            $stub = @'
-          #include <string.h>
-          __declspec(dllexport) int q65_decode(const float *s, int n, int sub,
-              int nfa, int nfb, int nfqso, int np,
-              char *m, float *snr, float *dt, int *fr, int mx) { return 0; }
-          __declspec(dllexport) const char *q65_lib_version(void) { return "stub-0.0"; }
-          '@
-            $stub | Out-File -FilePath "$env:RUNNER_TEMP\q65_stub.c" -Encoding ASCII
-            & gcc -shared -o "$FLAT\q65.dll" "$env:RUNNER_TEMP\q65_stub.c"
-          }
-
-          # Copy MinGW runtime DLLs needed by q65.dll
-          foreach ($dll in @("libgcc_s_seh-1.dll", "libgfortran-5.dll", "libwinpthread-1.dll")) {
-            $src = "C:\mingw64\bin\$dll"
-            if (Test-Path $src) { Copy-Item $src "$FLAT\" }
-          }
-
-          "$env:WSJTX_TAG" | Out-File -FilePath "$FLAT\version.txt" -Encoding ASCII -NoNewline
-
-          $PKG_NAME = "q65lib-windows-x86_64.zip"
-          $PKG = "$env:RUNNER_TEMP\$PKG_NAME"
-          Compress-Archive -Path "$FLAT\*" -DestinationPath $PKG
-          "PKG=$PKG"           | Out-File -FilePath $env:GITHUB_ENV -Encoding UTF8 -Append
-          "PKG_NAME=$PKG_NAME" | Out-File -FilePath $env:GITHUB_ENV -Encoding UTF8 -Append
+          OUT_DIR="$RUNNER_TEMP/q65lib-flat"
+          ./scripts/build_q65lib.sh "" "$OUT_DIR"
+          echo "$WSJTX_TAG" > "$OUT_DIR/version.txt"
+          # MinGW runtime DLLs needed by q65.dll
+          for dll in libgcc_s_seh-1.dll libgfortran-5.dll libwinpthread-1.dll libquadmath-0.dll; do
+            src="/c/ProgramData/chocolatey/lib/mingw/tools/install/mingw64/bin/$dll"
+            [ -f "$src" ] && cp "$src" "$OUT_DIR/"
+          done
+          # FFTW3 runtime DLL from the micromamba env (q65.dll dynamically
+          # links against it).
+          find "$CONDA_PREFIX/Library/bin" -iname "*fftw3f*.dll" -exec cp {} "$OUT_DIR/" \;
+          PKG_NAME="q65lib-windows-x86_64.zip"
+          (cd "$OUT_DIR" && 7z a "$RUNNER_TEMP/$PKG_NAME" .)
+          echo "PKG=$RUNNER_TEMP/$PKG_NAME" >> "$GITHUB_ENV"
+          echo "PKG_NAME=$PKG_NAME" >> "$GITHUB_ENV"
 
       - name: Upload to q65lib-bundle release
-        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $exists = gh release view q65lib-bundle `
-            --repo "${{ github.repository }}" 2>$null
-          if (-not $exists) {
-            gh release create q65lib-bundle `
-              --repo "${{ github.repository }}" `
-              --title "Q65 Library Bundle" `
-              --notes "Pre-built libq65 for Q65 EME decoding." `
-              --prerelease
-          }
-          gh release upload q65lib-bundle `
-            --repo "${{ github.repository }}" `
-            --clobber `
+          gh release view q65lib-bundle \
+            --repo "${{ github.repository }}" 2>/dev/null || \
+          gh release create q65lib-bundle \
+            --repo "${{ github.repository }}" \
+            --title "Q65 Library Bundle" \
+            --notes "Pre-built libq65 for Q65 EME decoding." \
+            --prerelease
+          gh release upload q65lib-bundle \
+            --repo "${{ github.repository }}" \
+            --clobber \
             "${{ env.PKG }}"
 
   # ------------------------------------------------------------------ #
@@ -288,60 +196,20 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Install gfortran
-        run: brew install gcc
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Build libq65 from WSJT-X source
+      - name: Install gfortran + FFTW3
+        run: brew install gcc fftw
+
+      - name: Build libq65
         env:
           WSJTX_TAG: ${{ needs.check-version.outputs.wsjtx_tag }}
         run: |
           ARCH=$(uname -m)
           OUT_DIR=/tmp/q65lib-flat
-          mkdir -p "$OUT_DIR"
-
-          # Clone WSJT-X source from GitHub
-          git clone --depth 1 --branch "${WSJTX_TAG}" \
-            https://github.com/wsjtx/wsjtx.git wsjtx-src 2>/dev/null || \
-          git clone --depth 1 \
-            https://github.com/wsjtx/wsjtx.git wsjtx-src 2>/dev/null || true
-
-          Q65_DIR="wsjtx-src/lib/qra/q65"
-          OBJS=""
-          FC=$(brew --prefix gcc)/bin/gfortran-* 2>/dev/null | head -1
-          FC=${FC:-gfortran}
-          CC=clang
-
-          if [ -d "$Q65_DIR" ]; then
-            for f in "$Q65_DIR"/*.f90 "$Q65_DIR"/*.F90; do
-              [ -f "$f" ] || continue
-              obj="${f%.f90}.o"; obj="${obj%.F90}.o"
-              $FC -O2 -fPIC -c "$f" -o "$obj"
-              OBJS="$OBJS $obj"
-            done
-            for f in "$Q65_DIR"/*.c; do
-              [ -f "$f" ] || continue
-              obj="${f%.c}.o"
-              $CC -O2 -fPIC -c "$f" -o "$obj"
-              OBJS="$OBJS $obj"
-            done
-          fi
-
-          if [ -n "$OBJS" ]; then
-            $FC -dynamiclib -undefined dynamic_lookup \
-              $OBJS -o "$OUT_DIR/libq65.dylib"
-          else
-            # Stub
-            cat > /tmp/q65_stub.c << 'STUBEOF'
-          #include <string.h>
-          int q65_decode(const float *s, int n, int sub,
-                         int nfa, int nfb, int nfqso, int np,
-                         char *m, float *snr, float *dt, int *fr, int mx) { return 0; }
-          const char *q65_lib_version(void) { return "stub-0.0"; }
-          STUBEOF
-            $CC -dynamiclib -undefined dynamic_lookup \
-              /tmp/q65_stub.c -o "$OUT_DIR/libq65.dylib"
-          fi
-
+          FC=$(ls $(brew --prefix gcc)/bin/gfortran-* 2>/dev/null | head -1)
+          FC=${FC:-gfortran} ./scripts/build_q65lib.sh "" "$OUT_DIR"
           echo "${WSJTX_TAG}" > "$OUT_DIR/version.txt"
 
           PKG_NAME="q65lib-macos-${ARCH}.tar.gz"
