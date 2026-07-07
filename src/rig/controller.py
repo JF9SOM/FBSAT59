@@ -1180,11 +1180,13 @@ class HamlibDirectController(RigController):
 
             else:
                 rx_vfo = self._vfo_str_to_const("VFOA")
+                dl_written = False
                 if vfoa_hz is not None:
                     last_dl = self._last_dl_hz
                     if last_dl is None or abs(vfoa_hz - last_dl) >= 1.0:
                         self._rig.set_freq(rx_vfo, int(vfoa_hz))
                         self._last_dl_hz = vfoa_hz
+                        dl_written = True
                 if vfob_hz is not None:
                     last_ul = self._last_ul_hz
                     if last_ul is None or abs(vfob_hz - last_ul) >= 1.0:
@@ -1210,8 +1212,23 @@ class HamlibDirectController(RigController):
                             # root cause already documented for the satmode
                             # same-band fallback above).  Target VFO-B
                             # directly instead.
+                            #
+                            # Every other Icom CI-V write sequence in this
+                            # file (mode/CTCSS setup) separates commands with
+                            # 0.05-0.4s sleeps because Icom rigs drop
+                            # closely-spaced CI-V frames.  This DL/UL/restore
+                            # triple had none, which on some platforms (macOS
+                            # confirmed 2026-07-07 with an IC-705: main
+                            # display stuck on VFOB or not updating at all —
+                            # no Python exception, since a dropped CI-V frame
+                            # isn't visible to Hamlib) let the rig silently
+                            # miss the restore (or even the frequency write
+                            # itself) despite every call reporting success.
+                            if dl_written:
+                                time.sleep(0.05)
                             tx_vfo = self._vfo_str_to_const("VFOB")
                             self._rig.set_freq(tx_vfo, int(vfob_hz))
+                            time.sleep(0.05)
                             # Icom CI-V backends (e.g. IC-705) leave their
                             # internal CURR on VFO-B after this call, so the
                             # rig keeps displaying UL as the main frequency.
