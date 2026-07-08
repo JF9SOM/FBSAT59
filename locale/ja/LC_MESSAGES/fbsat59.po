@@ -3514,7 +3514,7 @@ msgstr "衛星が選択されていません。"
 #: src/ui/main_window.py:2809
 #, python-brace-format
 msgid "Hide {name} (NORAD {n}) from the satellite list?"
-msgstr ""
+msgstr "{name}（NORAD {n}）を衛星リストから非表示にしますか？"
 
 #: src/ui/main_window.py:3367
 msgid "Location manager not initialized."
@@ -3522,15 +3522,15 @@ msgstr ""
 
 #: src/ui/main_window.py:3588
 msgid "Transmitter added successfully."
-msgstr ""
+msgstr "トランスポンダーを追加しました。"
 
 #: src/ui/main_window.py:3607 src/ui/main_window.py:3643
 msgid "No transmitters found for this satellite."
-msgstr ""
+msgstr "この衛星のトランスポンダーが見つかりません。"
 
 #: src/ui/main_window.py:3618
 msgid "Select transmitter to edit:"
-msgstr ""
+msgstr "編集するトランスポンダーを選択:"
 
 # --- Transmitter panel ---
 #: src/ui/main_window.py:3633 src/ui/main_window.py:3643
@@ -3540,35 +3540,35 @@ msgstr "トランスポンダーを削除"
 
 #: src/ui/main_window.py:3654
 msgid "Select transmitter to delete:"
-msgstr ""
+msgstr "削除するトランスポンダーを選択:"
 
 #: src/ui/main_window.py:3664
 #, python-brace-format
 msgid "Delete transmitter '{desc}'?"
-msgstr ""
+msgstr "トランスポンダー「{desc}」を削除しますか？"
 
 #: src/ui/main_window.py:3684
 #, python-brace-format
 msgid "Satellite TLE added successfully (NORAD {n})."
-msgstr ""
+msgstr "衛星のTLEを追加しました（NORAD {n}）。"
 
 #: src/ui/main_window.py:3689
 msgid "TLE update has been queued in the background."
-msgstr ""
+msgstr "TLE更新をバックグラウンドで実行するようキューに追加しました。"
 
 #: src/ui/main_window.py:3701
 msgid "Syncing transmitter frequencies from SATNOGS..."
-msgstr ""
+msgstr "SATNOGSからトランスポンダー周波数を同期中..."
 
 #: src/ui/main_window.py:3735
 #, python-brace-format
 msgid "SATNOGS sync: {ins} inserted, {upd} updated, {skp} skipped"
-msgstr ""
+msgstr "SATNOGS同期: {ins}件追加、{upd}件更新、{skp}件スキップ"
 
 #: src/ui/main_window.py:3742
 #, python-brace-format
 msgid "SATNOGS sync failed: {err}"
-msgstr ""
+msgstr "SATNOGS同期に失敗しました: {err}"
 
 #: src/ui/main_window.py:4130
 #, python-brace-format
