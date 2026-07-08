@@ -1143,7 +1143,7 @@ msgstr "サウンドカード"
 
 #: src/ui/sstv_tab.py:272
 msgid "No audio source — connect Rig or SDR in Radio Control"
-msgstr "音声ソースなし — Radio Controlで無線機またはSDRを接続してください"
+msgstr "音声ソースなし — 無線機コントロールで無線機またはSDRを接続してください"
 
 #: src/ui/sstv_tab.py:274
 msgid "Input: "
@@ -2502,7 +2502,7 @@ msgstr "入力: サウンドカード未設定 — Rig Settings > Sound Card を
 
 #: src/ui/aprs_tab.py:417
 msgid "Input: No audio source — connect Rig or SDR in Radio Control"
-msgstr "入力: 音声ソースなし — Radio Controlで無線機またはSDRを接続してください"
+msgstr "入力: 音声ソースなし — 無線機コントロールで無線機またはSDRを接続してください"
 
 #: src/ui/aprs_tab.py:708
 #, python-brace-format
