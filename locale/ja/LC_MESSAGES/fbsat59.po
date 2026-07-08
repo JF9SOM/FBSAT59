@@ -2373,7 +2373,7 @@ msgstr "最小仰角:"
 
 #: src/ui/pass_panel.py:495 src/ui/pass_panel.py:766 src/ui/pass_panel.py:768
 msgid "Export CSV"
-msgstr "CSVをエクスポート"
+msgstr "CSVエクスポート"
 
 #: src/ui/pass_panel.py:539
 msgid "(Local)"
@@ -2795,7 +2795,7 @@ msgstr "ログをクリア"
 
 #: src/ui/telemetry_tab.py:196
 msgid "Export CSV…"
-msgstr "CSVをエクスポート…"
+msgstr "CSVエクスポート…"
 
 #: src/ui/telemetry_tab.py:377
 msgid "⚠ No satellite selected"
@@ -2851,7 +2851,7 @@ msgstr "—  （無線機またはSDRを接続後、▶ Startをクリック）"
 
 #: src/ui/telemetry_tab.py:660
 msgid "Export Telemetry CSV"
-msgstr "テレメトリーCSVをエクスポート"
+msgstr "テレメトリーCSVエクスポート"
 
 #: src/ui/autotrack_record_dialog.py:56
 msgid "Add Satellite"
