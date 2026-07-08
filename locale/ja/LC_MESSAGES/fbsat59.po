@@ -2441,7 +2441,7 @@ msgstr "自動ビーコン"
 
 #: src/ui/aprs_tab.py:262
 msgid " min"
-msgstr " 分ごと"
+msgstr " 分毎"
 
 #: src/ui/aprs_tab.py:266
 msgid "Symbol:"
