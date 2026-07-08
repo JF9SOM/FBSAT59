@@ -968,7 +968,7 @@ msgstr ""
 
 #: src/ui/dashboard_view.py:308 src/ui/main_window.py:281
 msgid "Below horizon"
-msgstr ""
+msgstr "視界外"
 
 #: src/ui/radar_view.py:532
 msgid "No visible passes from this location"
@@ -3140,15 +3140,15 @@ msgstr "方位角:"
 
 #: src/ui/main_window.py:214
 msgid "Range:"
-msgstr ""
+msgstr "レンジ:"
 
 #: src/ui/main_window.py:215
 msgid "Range rate:"
-msgstr ""
+msgstr "レンジ速度:"
 
 #: src/ui/main_window.py:216
 msgid "Visible:"
-msgstr ""
+msgstr "可視状況:"
 
 #: src/ui/main_window.py:221
 msgid "Quick Comms Control"
@@ -3156,7 +3156,7 @@ msgstr ""
 
 #: src/ui/main_window.py:281
 msgid "Visible"
-msgstr ""
+msgstr "視界内"
 
 #: src/ui/main_window.py:643
 msgid "Satellites"
