@@ -3189,7 +3189,7 @@ msgstr "無線機コントロール"
 
 #: src/ui/main_window.py:702
 msgid "SDR Control"
-msgstr ""
+msgstr "SDRコントロール"
 
 # --- Menu: File ---
 #: src/ui/main_window.py:756
