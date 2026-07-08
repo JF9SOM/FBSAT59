@@ -1007,7 +1007,7 @@ msgstr "レンジ"
 
 #: src/ui/dashboard_view.py:307
 msgid "Visible ▲"
-msgstr ""
+msgstr "視界内 ▲"
 
 #: src/ui/dashboard_view.py:310 src/ui/main_window.py:281
 msgid "Below horizon"
