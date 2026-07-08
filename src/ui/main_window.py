@@ -574,7 +574,7 @@ class MainWindow(QMainWindow):
         self._map_downloaded.connect(self._apply_world_map)
         self._satnogs_open_url.connect(self._open_url_app_mode)
         self._satnogs_not_found.connect(
-            lambda: QMessageBox.information(self, "SatNOGS", "SatNOGS page not found")
+            lambda: QMessageBox.information(self, "SatNOGS", _("SatNOGS page not found"))
         )
         self._satnogs_network_error.connect(self._on_satnogs_network_error)
         self._radio_control.transmitter_changed.connect(self._on_transmitter_changed)
@@ -2599,7 +2599,7 @@ class MainWindow(QMainWindow):
         ).fetchall()
 
         menu = QMenu(self)
-        fav_menu = menu.addMenu("★ Favorite Groups")
+        fav_menu = menu.addMenu("★ " + _("Favorite Groups"))
         fav_actions: dict[int, QAction] = {}
         for grp in groups:
             grp_id = int(grp["id"])
@@ -2610,14 +2610,14 @@ class MainWindow(QMainWindow):
             fav_actions[grp_id] = act
         if current_group > 0:
             fav_menu.addSeparator()
-            remove_fav_action: QAction | None = fav_menu.addAction("Remove from Favorites")
+            remove_fav_action: QAction | None = fav_menu.addAction(_("Remove from Favorites"))
         else:
             remove_fav_action = None
 
         hide_label = _("Unhide Satellite") if is_hidden else _("Hide Satellite")
         hide_action = menu.addAction(hide_label)
-        info_action = menu.addAction("Satellite Info...")
-        satnogs_action = menu.addAction("Open in SatNOGS")
+        info_action = menu.addAction(_("Satellite Info..."))
+        satnogs_action = menu.addAction(_("Open in SatNOGS"))
 
         action = menu.exec(self._sat_list.mapToGlobal(pos))
         if action is not None and action in fav_actions.values():
@@ -2819,19 +2819,23 @@ class MainWindow(QMainWindow):
             (norad,),
         ).fetchone()
 
-        info_parts = [f"Name: {name}", f"NORAD: {norad}"]
+        info_parts = [
+            _("Name: {name}").format(name=name),
+            _("NORAD: {norad}").format(norad=norad),
+        ]
         if tle_row:
-            epoch = str(tle_row["epoch"])[:16] if tle_row["epoch"] else "N/A"
+            epoch = str(tle_row["epoch"])[:16] if tle_row["epoch"] else _("N/A")
             info_parts += [
-                f"TLE Epoch: {epoch} UTC",
-                f"TLE Quality: {tle_row['quality_score']}",
-                f"Source: {tle_row['source']}",
-                f"Group: {tle_row['tle_group'] or 'amateur'}",
+                _("TLE Epoch: {epoch} UTC").format(epoch=epoch),
+                _("TLE Quality: {quality}").format(quality=tle_row["quality_score"]),
+                _("Source: {source}").format(source=tle_row["source"]),
+                _("Group: {group}").format(group=tle_row["tle_group"] or "amateur"),
             ]
         else:
-            info_parts.append("TLE: Not available")
+            info_parts.append(_("TLE: Not available"))
 
-        QMessageBox.information(self, f"Satellite Info — {name}", "\n".join(info_parts))
+        title = _("Satellite Info — {name}").format(name=name)
+        QMessageBox.information(self, title, "\n".join(info_parts))
 
     def _on_sat_selected(self, row: int) -> None:
         """Callback invoked when the satellite list selection changes."""
