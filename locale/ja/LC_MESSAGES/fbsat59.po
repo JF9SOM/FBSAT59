@@ -359,11 +359,11 @@ msgstr ""
 
 #: src/ui/log_export_dialog.py:68
 msgid "Export Log (ADIF)"
-msgstr ""
+msgstr "ログエクスポート（ADIF）"
 
 #: src/ui/log_export_dialog.py:82
 msgid "Date Range (UTC)"
-msgstr ""
+msgstr "日付範囲 (UTC)"
 
 #: src/ui/log_export_dialog.py:92 src/ui/pass_panel.py:396
 #: src/ui/pass_panel.py:445
@@ -377,19 +377,19 @@ msgstr ""
 
 #: src/ui/log_export_dialog.py:103
 msgid "Include modes"
-msgstr ""
+msgstr "対象モード"
 
 #: src/ui/log_export_dialog.py:118
 msgid "Matching QSOs: —"
-msgstr ""
+msgstr "該当QSO数: —"
 
 #: src/ui/log_export_dialog.py:123
 msgid "Output file"
-msgstr ""
+msgstr "出力ファイル"
 
 #: src/ui/log_export_dialog.py:126
 msgid "Click Browse… to choose location"
-msgstr ""
+msgstr "「参照…」をクリックして保存先を選択"
 
 #: src/ui/log_export_dialog.py:129 src/ui/rig_dialog.py:1014
 msgid "Browse…"
@@ -397,21 +397,21 @@ msgstr "参照…"
 
 #: src/ui/log_export_dialog.py:140 src/ui/log_export_dialog.py:341
 msgid "Export"
-msgstr ""
+msgstr "エクスポート"
 
 #: src/ui/log_export_dialog.py:180
 #, python-brace-format
 msgid "Matching QSOs: {n}"
-msgstr ""
+msgstr "該当QSO数: {n}"
 
 #: src/ui/log_export_dialog.py:322
 msgid "Save ADIF log"
-msgstr ""
+msgstr "ADIFログを保存"
 
 #: src/ui/log_export_dialog.py:342
 #, python-brace-format
 msgid "Exported {n} QSOs to {f}"
-msgstr ""
+msgstr "{n}件のQSOを{f}にエクスポートしました"
 
 #: src/ui/sdr_control_widget.py:133
 msgid "SDR Connected"
@@ -1463,7 +1463,7 @@ msgstr "QSOを記録"
 
 #: src/ui/q65_tab.py:307 src/ui/ft4_tab.py:471 src/ui/aprs_tab.py:297
 msgid "Export ADIF…"
-msgstr "ADIFをエクスポート…"
+msgstr "ADIFエクスポート"
 
 #: src/ui/q65_tab.py:320 src/ui/ft4_tab.py:484
 msgid "Decoded Messages"
