@@ -722,7 +722,8 @@ class Ft4Tab(QWidget):
             )
             self._audio_active = True
         except Exception as exc:
-            self._status_label.setText(f"Audio open error: {exc}")
+            self._status_label.setText("Audio Open Error")
+            self._status_label.setToolTip(str(exc))
             self._audio_active = False
 
     def _stop_audio_capture(self) -> None:
