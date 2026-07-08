@@ -2638,7 +2638,7 @@ msgstr "NORAD Cat ID:"
 
 #: src/ui/manual_tle_dialog.py:76
 msgid "Fetch from CelesTrak"
-msgstr ""
+msgstr "CelesTrakから取得"
 
 # --- Satellite list columns ---
 #: src/ui/manual_tle_dialog.py:85
@@ -2647,53 +2647,53 @@ msgstr "NORAD IDで取得"
 
 #: src/ui/manual_tle_dialog.py:90
 msgid "Paste TLE (3 lines: Name, Line 1, Line 2):"
-msgstr ""
+msgstr "TLEを貼り付け（3行: 衛星名・Line 1・Line 2）:"
 
 #: src/ui/manual_tle_dialog.py:98
 msgid "Manual TLE"
-msgstr ""
+msgstr "TLE手動入力"
 
 #: src/ui/manual_tle_dialog.py:116
 msgid "Fetching..."
-msgstr ""
+msgstr "取得中..."
 
 #: src/ui/manual_tle_dialog.py:124
 #, python-brace-format
 msgid "Successfully fetched TLE for NORAD {n}"
-msgstr ""
+msgstr "NORAD {n} のTLE取得に成功しました"
 
 #: src/ui/manual_tle_dialog.py:129
 msgid "Failed to fetch TLE. Check NORAD ID and network connection."
-msgstr ""
+msgstr "TLEの取得に失敗しました。NORAD IDとネットワーク接続を確認してください。"
 
 #: src/ui/manual_tle_dialog.py:142
 msgid "No TLE"
-msgstr ""
+msgstr "TLEなし"
 
 #: src/ui/manual_tle_dialog.py:143
 msgid "Please click 'Fetch from CelesTrak' first."
-msgstr ""
+msgstr "先に「CelesTrakから取得」をクリックしてください。"
 
 #: src/ui/manual_tle_dialog.py:157 src/ui/manual_tle_dialog.py:165
 #: src/ui/manual_tle_dialog.py:174 src/ui/manual_tle_dialog.py:184
 msgid "Invalid TLE"
-msgstr ""
+msgstr "無効なTLE"
 
 #: src/ui/manual_tle_dialog.py:158
 msgid "Please enter 3 lines: Name, Line 1, Line 2."
-msgstr ""
+msgstr "3行（衛星名・Line 1・Line 2）を入力してください。"
 
 #: src/ui/manual_tle_dialog.py:166
 msgid "Line 1 must start with '1 ' and Line 2 with '2 '."
-msgstr ""
+msgstr "Line 1は「1 」、Line 2は「2 」で始まる必要があります。"
 
 #: src/ui/manual_tle_dialog.py:175
 msgid "Cannot parse NORAD ID from Line 1."
-msgstr ""
+msgstr "Line 1からNORAD IDを解析できません。"
 
 #: src/ui/manual_tle_dialog.py:185
 msgid "TLE validation failed. Please check the format."
-msgstr ""
+msgstr "TLEの検証に失敗しました。形式を確認してください。"
 
 #: src/ui/gr_satellites_dialog.py:76
 msgid "gr-satellites requires GNU Radio 3.10 (available via Ubuntu 22.04+)."
