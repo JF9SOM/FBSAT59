@@ -781,7 +781,7 @@ msgstr "インストール済み: "
 
 #: src/ui/radio_control_widget.py:125 src/ui/main_window.py:210
 msgid "Name:"
-msgstr "名前:"
+msgstr "衛星名:"
 
 #: src/ui/radio_control_widget.py:135
 msgid "T"
@@ -3136,7 +3136,7 @@ msgstr "仰角:"
 
 #: src/ui/main_window.py:213
 msgid "Azimuth:"
-msgstr ""
+msgstr "方位角:"
 
 #: src/ui/main_window.py:214
 msgid "Range:"
