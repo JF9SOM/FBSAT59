@@ -1381,13 +1381,13 @@ msgstr "libq65が見つかりました"
 
 #: src/ui/q65_tab.py:149 src/ui/q65_tab.py:465
 msgid "Input: No audio source — connect Rig in Radio Control"
-msgstr ""
+msgstr "入力: 音声ソースなし — 無線機コントロールで無線機を接続してください"
 
 #: src/ui/q65_tab.py:157
 msgid ""
 "libq65 not installed — RX decoding disabled.\n"
 "TX encoding uses pure Python and works without libq65."
-msgstr ""
+msgstr "libq65がインストールされていません — 受信デコードは無効です。\n送信エンコードは純Python実装のため、libq65がなくても動作します。"
 
 #: src/ui/q65_tab.py:166 src/ui/rig_dialog.py:957 src/ui/ft4_tab.py:310
 msgid "Configuration"
@@ -1441,7 +1441,7 @@ msgstr ""
 
 #: src/ui/q65_tab.py:235
 msgid "Start calling CQ"
-msgstr ""
+msgstr "CQ送信を開始"
 
 #: src/ui/q65_tab.py:239
 msgid "RST"
@@ -1449,7 +1449,7 @@ msgstr ""
 
 #: src/ui/q65_tab.py:240
 msgid "Send signal report"
-msgstr ""
+msgstr "信号レポートを送信"
 
 #: src/ui/q65_tab.py:244
 msgid "R+RST"
@@ -1457,7 +1457,7 @@ msgstr ""
 
 #: src/ui/q65_tab.py:245
 msgid "Send R + signal report (confirm received)"
-msgstr ""
+msgstr "R + 信号レポートを送信（受信確認）"
 
 #: src/ui/q65_tab.py:249
 msgid "RR73"
@@ -1481,15 +1481,15 @@ msgstr "TX:"
 
 #: src/ui/q65_tab.py:279
 msgid "Message to transmit (auto-filled by state machine)"
-msgstr ""
+msgstr "送信メッセージ（ステートマシンが自動入力）"
 
 #: src/ui/q65_tab.py:284
 msgid "Send Once"
-msgstr ""
+msgstr "1回送信"
 
 #: src/ui/q65_tab.py:285
 msgid "Send the text above as a one-shot free message"
-msgstr ""
+msgstr "上のテキストを1回限りの自由メッセージとして送信"
 
 #: src/ui/q65_tab.py:293 src/ui/ft4_tab.py:456 src/ui/ft4_tab.py:655
 msgid "State: IDLE"
@@ -1497,7 +1497,7 @@ msgstr "状態: IDLE"
 
 #: src/ui/q65_tab.py:299
 msgid "DX: —"
-msgstr ""
+msgstr "DX: —"
 
 #: src/ui/q65_tab.py:302 src/ui/ft4_tab.py:466
 msgid "Log QSO"
@@ -1533,7 +1533,7 @@ msgstr "メッセージ"
 
 #: src/ui/q65_tab.py:342
 msgid "Waiting for period boundary…"
-msgstr ""
+msgstr "周期境界を待機中…"
 
 #: src/ui/q65_tab.py:462 src/ui/ft4_tab.py:1111
 msgid "Input: Rig connected"
@@ -1541,21 +1541,21 @@ msgstr "入力: 無線機接続中"
 
 #: src/ui/q65_tab.py:536
 msgid "No audio in last period"
-msgstr ""
+msgstr "直前の周期に音声がありません"
 
 #: src/ui/q65_tab.py:562
 #, python-brace-format
 msgid "Period {utc}: no decodes"
-msgstr ""
+msgstr "周期 {utc}: デコードなし"
 
 #: src/ui/q65_tab.py:565
 #, python-brace-format
 msgid "Period {utc}: {n} decode(s)"
-msgstr ""
+msgstr "周期 {utc}: {n}件デコード"
 
 #: src/ui/q65_tab.py:695
 msgid "QSO logged"
-msgstr ""
+msgstr "QSOを記録しました"
 
 #: src/ui/q65_tab.py:734 src/ui/ft4_tab.py:124
 msgid "another tab"
