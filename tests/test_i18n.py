@@ -6,6 +6,8 @@ i18n モジュールのユニットテスト
 
 from __future__ import annotations
 
+import gettext
+
 import pytest
 
 import i18n as i18n_mod
@@ -44,26 +46,26 @@ class TestTranslation:
     def test_english_passthrough(self) -> None:
         i18n_mod.set_language("en")
         assert i18n_mod._("Ready") == "Ready"
-        assert i18n_mod._("Settings") == "Settings"
+        assert i18n_mod._("General Settings") == "General Settings"
 
     def test_japanese_translation(self) -> None:
         i18n_mod.set_language("ja")
         assert i18n_mod._("Ready") == "準備完了"
-        assert i18n_mod._("Settings") == "設定"
-        assert i18n_mod._("Satellite Tracker") == "衛星追尾ソフト"
+        assert i18n_mod._("General Settings") == "全般設定"
+        assert i18n_mod._("About FBSAT59") == "FBSAT59について"
 
     def test_japanese_menu_translations(self) -> None:
         i18n_mod.set_language("ja")
         assert i18n_mod._("File") == "ファイル"
         assert i18n_mod._("View") == "表示"
         assert i18n_mod._("Radio") == "無線機"
-        assert i18n_mod._("Tools") == "ツール"
+        assert i18n_mod._("Communications") == "通信"
         assert i18n_mod._("Help") == "ヘルプ"
 
     def test_japanese_status_messages(self) -> None:
         i18n_mod.set_language("ja")
-        assert i18n_mod._("Updating TLE data...") == "TLEデータを更新中..."
-        assert i18n_mod._("No radio connected") == "無線機未接続"
+        assert i18n_mod._("Checking…") == "確認中…"
+        assert i18n_mod._("Downloading…") == "ダウンロード中…"
 
     def test_unknown_msgid_returns_msgid(self) -> None:
         """未登録の文字列はそのまま返す（フォールバック動作）。"""
@@ -73,14 +75,26 @@ class TestTranslation:
     def test_language_switch_at_runtime(self) -> None:
         """実行中の言語切り替えが正しく反映される。"""
         i18n_mod.set_language("en")
-        assert i18n_mod._("Quit") == "Quit"
+        assert i18n_mod._("Exit") == "Exit"
         i18n_mod.set_language("ja")
-        assert i18n_mod._("Quit") == "終了"
+        assert i18n_mod._("Exit") == "終了"
         i18n_mod.set_language("en")
-        assert i18n_mod._("Quit") == "Quit"
+        assert i18n_mod._("Exit") == "Exit"
 
 
 class TestNgettext:
+    """ngettext() は現状どのコードからも呼ばれていないため、実際の.po/.moの
+    内容には依存させず、gettext.GNUTranslations を直接組み立てて検証する。
+    """
+
+    def _make_translation(self) -> gettext.GNUTranslations:
+        """nplurals=1 (日本語相当) の最小カタログを持つ翻訳オブジェクトを作る。"""
+        t = gettext.GNUTranslations.__new__(gettext.GNUTranslations)
+        t._catalog = {("%(count)d satellite", 0): "%(count)d 衛星"}
+        t._fallback = None
+        t.plural = lambda n: 0
+        return t
+
     def test_english_singular(self) -> None:
         i18n_mod.set_language("en")
         result = i18n_mod.ngettext("%(count)d satellite", "%(count)d satellites", 1)
@@ -91,9 +105,9 @@ class TestNgettext:
         result = i18n_mod.ngettext("%(count)d satellite", "%(count)d satellites", 3)
         assert result == "%(count)d satellites"
 
-    def test_japanese_always_singular_form(self) -> None:
+    def test_japanese_always_singular_form(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """日本語は単複同形（nplurals=1）。"""
-        i18n_mod.set_language("ja")
+        monkeypatch.setattr(i18n_mod, "_translation", self._make_translation())
         singular = i18n_mod.ngettext("%(count)d satellite", "%(count)d satellites", 1)
         plural = i18n_mod.ngettext("%(count)d satellite", "%(count)d satellites", 5)
         assert singular == plural == "%(count)d 衛星"
