@@ -805,7 +805,7 @@ sudo usermod -aG dialout $USER
   - File / Satellite / Radio / **Communications** / **Autotrack/Record** / View / Help
   - **Communications**: サブメニュー APRS / Telemetry / SSTV・SSDV / FT4 / Q65 / **CW Decoder**（クリックで非常駐タブを開く。× で閉じる）
   - **Autotrack/Record**: サブメニューなし。クリックで AutotrackRecordDialog を開く
-  - **View メニュー**: Language（English 動作 / Japanese は「To be prepared later.」）・Time Zone（UTC / Local Time）
+  - **View メニュー**: Language（English / 日本語、チェック可能な `QActionGroup`。切替後は再起動が必要。詳細は「多言語化ロードマップ」参照）・Time Zone（UTC / Local Time）
   - Radar・Pass Chart エントリは削除済み（タブ直接選択で十分。Dashboard追加によるインデックスずれ問題を根本解決）
 - **フッター RIG ラベル**（`_update_rig_label`）: Hamlib リグだけでなく SDR（SdrRigAdapter）接続時も「RIG: 1」「RIG: 2」「RIG: 1+2」に更新。`RadioControlWidget` に `rig_disconnected` / `rig2_disconnected` シグナルを追加し、切断時も「RIG: Off」に戻るよう修正済み
 - **Q65 Phase 1（RX）**（`src/comms/q65/codec.py` + `src/ui/q65_tab.py`）— libq65 ctypes デコーダー。WSJT-X ソースから CI でビルド（build-q65lib.yml / ソースパス: `lib/qra/q65/`）。Help > Q65 Library Installation でバンドル版を自動インストール
@@ -1829,7 +1829,7 @@ _cmd_drain("U TONE 0")
 
 ### データ・連携
 16. **観測ログ機能** — 実際に追尾・通信した衛星パスを記録・集計・エクスポートする機能
-17. **多言語対応（日本語）** — フェーズ2として日本語UIの追加（翻訳ファイルは準備済み。View > Language > Japanese は現在「To be prepared later.」表示）
+17. ~~**多言語対応（日本語）フェーズ2 — メニュー・Help画面・主要タブ/ダイアログ**~~ **→ 2026-07-08 で完了**（View > Language > Japanese 実装済み。詳細は「多言語化ロードマップ」セクション参照。Web UI・タブ内部の一部は引き続き未着手）
 
 ### ハードウェア連携
 18. **追加リグの実機テスト** — TS-2000・FT-817ND 等でのドップラー制御動作確認（IC-9100・IC-9700 は v0.1.27 で確認済み）
@@ -1840,13 +1840,111 @@ _cmd_drain("U TONE 0")
 ## 多言語化ロードマップ
 
 ### 開発方針
-**フェーズ1（現在）**: 英語モードのみで全機能を完成させる。  
-**フェーズ2（英語完成後）**: 日本語モードを追加する。
+**フェーズ1（完了）**: 英語モードのみで全機能を完成させる。  
+**フェーズ2（2026-07-08 に着手・メニュー/Help/主要タブ/主要ダイアログ完了）**: 日本語モードを追加する。
 
 コード中のすべての UI 文字列は `_("...")` でラップ済みであること。
 新しい文字列を追加する際も必ず `_("English string")` で書くこと（日本語をハードコードしない）。
 
-### 日本語モード追加時の作業手順
+### フェーズ2 翻訳範囲（2026-07-08 時点）
+
+**翻訳済み**:
+- メニューバー全体（File/Satellite/Radio/Communications/Autotrack-Record/View/Help）
+- Help メニューの全ダイアログ（About・Satellite Color Legend・Auto Fetch Rules・SDR Device
+  Installation・Check for Updates・Hamlib Update・ft8lib/Direwolf/Q65/FT4拡張/CW Model/SatDump/
+  gr-satellites Installation）
+- Communications 全タブ（FT4・Q65・APRS・Telemetry・SSTV/SSDV・CW Decoder・METEOR/HRPT）
+- Radio Control タブ・SDR Control タブ・Dashboard ステータスバー
+- Target/Group パス予測パネル・Pass Chart タブ（タブ名以外）
+- 主要ダイアログ（General Settings 全5タブ・Set QTH・Rig Settings 全4タブ・Rotator Settings・
+  Autotrack/Record・ADIF エクスポート・Add/Edit Transmitter・Add Manual TLE）
+- 衛星リストの右クリックコンテキストメニュー・Satellite メニューの確認/ステータスメッセージ
+- 各種エラー・ステータスメッセージ（サウンドデバイスエラー・QRコード・Webサーバー等）
+
+**未着手（意図的）**:
+- Dashboard・World Map・Radar タブの内部表示、タブ名自体（Dashboard・Pass Chart・
+  Group Pass Chart 等）— 当面英語のまま
+- FT4 Waterfall ポップアップ（ユーザー判断により翻訳不要と確定）
+- Web UI（`src/web/static/`）— gettext 非対応、別途対応が必要
+
+### 用語・表記の方針（英語のまま残すもの）
+
+技術用語・プロトコル名・ハム無線の手続き語は無理に訳さず英語のまま統一する。
+
+| カテゴリ | 具体例 |
+|---|---|
+| リグ制御モード名 | Direct・NET・CTCSS・CAT・CI-V |
+| SDR/DSP 用語 | SDR・IQ・AGC・BW・RF・PPM・Bias-T・LNA |
+| 周波数・信号の略語 | DL・UL・RX・TX・AZ・EL・dBFS・N/A |
+| ハム無線の手続き語 | CQ・RST・R+RST・RR73・73・QSO・ADIF・DT |
+| リグ番号ラベル | Rig 1 / Rig 2（Radio Control・Rig Settings・FT4・Q65・パス予測パネルで統一） |
+| 日付範囲フィールド | From: / To:（ログエクスポート・パス予測パネル・APRS宛先で共有のため統一） |
+
+**「Range」訳語の使い分け**（同一英単語でも文脈により訳を変える例）:
+- Satellite Detail パネル・Dashboard ステータスバー（衛星までの距離）→ **「レンジ」**
+- Pass Chart タブ（時間範囲セレクター）→ 上記と msgid が競合するため **英語のまま**
+  （`src/ui/pass_chart.py` では `_()` でラップせず生文字列 `"Range:"` を使用）
+
+### i18n 実装上の落とし穴（重要）
+
+翻訳作業中に発覚した、`_()` の使い方次第で **翻訳が静かに効かなくなる** 2つのパターン。
+新しいコードを書く・既存コードを翻訳対応させる際は必ず確認すること。
+
+**1. f-string の `{}` 内に `_()` を書くと xgettext が検出できない**
+
+```python
+# NG: xgettext がこの _() 呼び出しを検出できず、.pot に一切現れない
+label.setText(f"{_('Range')}: {value}")
+
+# OK: 先に変数へ代入してから f-string で使う
+range_label = _("Range")
+label.setText(f"{range_label}: {value}")
+```
+実行時は問題なく動作する（Python はこの2つを区別しない）ため、**アプリを動かして気づくことはできない**。
+`xgettext` で再抽出した後、該当 msgid が `.pot` に含まれているか確認する以外に発見する方法がない。
+
+**2. モジュールレベルの定数として `_()` を呼ぶと、起動時の言語が固定されてしまう**
+
+```python
+# NG: モジュール import 時（= アプリ起動時の最初の import で）一度だけ評価される。
+#     main_window.py はこの手のモジュールを起動シーケンスの非常に早い段階
+#     （_load_saved_language() より前）で import することが多く、常に英語になる。
+_RANGE_OPTIONS = (
+    (_("Next 4 hours"), 4.0),
+    ...
+)
+
+# OK: 関数化して呼び出し時に評価する（対象ウィジェットの __init__ 内で呼ばれるため、
+#     _load_saved_language() 実行後になる）
+def _range_options() -> tuple[tuple[str, float], ...]:
+    return (
+        (_("Next 4 hours"), 4.0),
+        ...
+    )
+```
+`gr_satellites_dialog.py`・`pass_chart.py` で実際に発生したパターン。
+
+**3. 同一英語文字列を複数箇所で共有している場合の競合**
+
+gettext は msgid（英語原文）をキーに翻訳を引くため、同じ英語文字列を異なる文脈で
+使っていると訳語が競合する（例: 「Range」＝距離 vs 時間範囲、「To:」＝宛先 vs 日付範囲）。
+競合が発覚したら、**片方を英語のまま残す**（`_()` でラップしない生文字列に戻す）か、
+**元の英語文字列自体を文脈固有のものに変える**（例: `"Time Range:"` のように）かの
+どちらかで解消する。どちらが良いかはユーザーに確認すること（本ファイルの「最重要ルール」通り、
+表示文言の見た目に関わる判断は実装者が独断しない）。
+
+### 言語切り替えの永続化
+
+`View > Language > English / 日本語` はチェック可能な `QActionGroup`。選択すると
+`app_settings` テーブル（キー: `ui_language`、値: `"en"` / `"ja"`）に保存され、
+`MainWindow._load_saved_language()` が `_build_ui()` / `_build_menu()` より **前** に
+呼ばれてこの値を読み込み `i18n.set_language()` を適用する。
+
+**既存ウィジェットは動的に再翻訳されない**（gettext ベースの `_()` は呼び出された瞬間の
+翻訳カタログを使うだけで、Qt のようなレイアウト全体の再翻訳機構は持たない）ため、
+言語切替後は「再起動が必要です」ダイアログを表示するだけに留めている。
+
+### 日本語 `.po` 更新の作業手順
 
 #### 1. 翻訳対象文字列の抽出
 ```bash
@@ -1856,32 +1954,28 @@ xgettext --language=Python --keyword=_ --keyword=ngettext:1,2 \
     $(find src/ -name "*.py")
 ```
 
-#### 2. 日本語 .po ファイルの作成・更新
+#### 2. 既存 ja.po へのマージ（`ja.po` は既に存在するため msginit は不要）
 ```bash
-# 初回: テンプレートから ja.po を作成
-msginit --input=locale/fbsat59.pot \
-        --locale=ja --output=locale/ja/LC_MESSAGES/fbsat59.po
-
-# 2回目以降: 既存 .po に新しい文字列をマージ
-msgmerge --update \
+msgmerge --update --backup=off \
     locale/ja/LC_MESSAGES/fbsat59.po \
     locale/fbsat59.pot
 ```
+`msgmerge` は既存訳を保持しつつ新規文字列を追加するが、**msgid の文言がわずかでも変わると
+`#, fuzzy`（似た文字列からの誤った推測）が付くことがある**。マージ後は必ず
+`grep -c '#, fuzzy' locale/ja/LC_MESSAGES/fbsat59.po` で件数を確認し、1件ずつ内容を見て
+正しい訳に直してから `#, fuzzy` 行を削除すること（誤った推測をそのまま残すと実際に誤訳のまま
+配布されてしまう）。
 
 #### 3. .po ファイルの翻訳編集
-`locale/ja/LC_MESSAGES/fbsat59.po` を開き、
-`msgstr ""` の部分に日本語訳を記入する。
+`locale/ja/LC_MESSAGES/fbsat59.po` を開き、`msgstr ""` の部分に日本語訳を記入する。
 
 ```po
 # 例
-msgid "RIG: Off"
-msgstr "RIG: 切断"
+msgid "Ready"
+msgstr "準備完了"
 
-msgid "RIG: On"
-msgstr "RIG: 接続中"
-
-msgid "Satellite Position"
-msgstr "衛星位置"
+msgid "Range"
+msgstr "レンジ"
 ```
 
 #### 4. .mo ファイルのコンパイル
@@ -1889,16 +1983,26 @@ msgstr "衛星位置"
 msgfmt locale/ja/LC_MESSAGES/fbsat59.po \
        -o locale/ja/LC_MESSAGES/fbsat59.mo
 ```
+警告・エラーが出た場合はコミットしない（`msgfmt --statistics` で翻訳済み/未翻訳件数を確認する習慣が有用）。
 
 #### 5. 動作確認
 ```python
-# 起動時またはメニューから言語切り替え
-from i18n import set_language
+import sys
+sys.path.insert(0, "src")
+from i18n import _, set_language
 set_language("ja")
+print(_("Range"))  # 追加・変更した文字列が意図通り訳されているか確認
 ```
+GUIを実際に起動しての確認が難しい場合、上記のようなワンライナーで個々の msgid の翻訳結果を
+検証すれば十分。レイアウト崩れ（日本語訳が長くなり枠が窮屈になる等）は
+`QT_QPA_PLATFORM=offscreen` で該当ウィジェットをオフスクリーン生成し `sizeHint()` や
+`width()` を確認することで、実機を使わずに検出できる。
 
-#### 6. コミット対象
-`.po` と `.mo` の両方をコミットする（`.mo` はバイナリだが配布に必要）。
+#### 6. コミット前チェックリスト・コミット対象
+本ファイル冒頭の「コミット前チェックリスト」（`ruff format` → `ruff check` →
+`pytest tests/test_rig.py`）を通してから、`.po` と `.mo` の両方をコミットする
+（`.mo` はバイナリだが配布に必要）。`locale/fbsat59.pot` も併せてコミットしておくと
+次回のマージ作業がしやすい。
 
 ### 注意事項
 - `_("...")` の中身は**常に英語**で書く（gettext の msgid が英語前提）
