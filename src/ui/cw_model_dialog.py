@@ -191,8 +191,9 @@ class CwModelDialog(QDialog):
                 f"<b style='color:#27ae60'>&#x2714; {MODEL_FILE}</b> ({size_kb} KB)"
             )
         else:
+            not_found = _("not found")
             self._lbl_model.setText(
-                f"<b style='color:#e74c3c'>&#x2718; {MODEL_FILE}</b> — {_('not found')}"
+                f"<b style='color:#e74c3c'>&#x2718; {MODEL_FILE}</b> — {not_found}"
             )
 
     def _on_install(self) -> None:

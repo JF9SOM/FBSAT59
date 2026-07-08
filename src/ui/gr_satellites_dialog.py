@@ -65,65 +65,63 @@ def _detect_gr_satellites() -> tuple[bool, str]:
 # Platform-specific installation instructions
 # ---------------------------------------------------------------------------
 
-_LINUX_INSTRUCTIONS = """\
-<b>Ubuntu / Debian</b><br>
-gr-satellites requires GNU Radio 3.10 (available via Ubuntu 22.04+).<br><br>
-
-<pre>sudo apt install gnuradio python3-gnuradio
-pip install gr-satellites</pre>
-
-Or use the OOT module directly:
-<pre>git clone https://github.com/daniestevez/gr-satellites.git
-cd gr-satellites
-mkdir build && cd build
-cmake .. && make -j$(nproc)
-sudo make install
-sudo ldconfig</pre>
-
-After installation, verify with: <tt>gr_satellites --help</tt>
-"""
-
-_MACOS_INSTRUCTIONS = """\
-<b>macOS (Homebrew)</b><br><br>
-<pre>brew install gnuradio
-pip install gr-satellites</pre>
-
-If brew gnuradio is outdated, build from source:
-<pre>git clone https://github.com/daniestevez/gr-satellites.git
-cd gr-satellites
-mkdir build && cd build
-cmake .. && make -j$(sysctl -n hw.logicalcpu)
-sudo make install</pre>
-"""
-
-_WINDOWS_INSTRUCTIONS = """\
-<b>Windows</b><br><br>
-GNU Radio on Windows is available via the official installer:<br>
-<a href="https://www.gnuradio.org/blog/2020-06-29-windows-support/">
-gnuradio.org — Windows Support</a><br><br>
-
-After installing GNU Radio, install gr-satellites:<br>
-<pre>pip install gr-satellites</pre>
-
-Note: Windows support for gr-satellites may be limited.
-Using WSL2 with Ubuntu is the most reliable option.
-"""
-
-_GENERIC_INSTRUCTIONS = """\
-Install GNU Radio 3.10+ from your system package manager or
-<a href="https://www.gnuradio.org/">gnuradio.org</a>, then:<br>
-<pre>pip install gr-satellites</pre>
-"""
-
 
 def _get_instructions() -> str:
+    """Build platform-specific installation guidance.
+
+    Built lazily (not as module-level constants) so the narrative text
+    picks up the current UI language each time the dialog is opened.
+    """
     if sys.platform == "linux":
-        return _LINUX_INSTRUCTIONS
+        requires_note = _("gr-satellites requires GNU Radio 3.10 (available via Ubuntu 22.04+).")
+        oot_note = _("Or use the OOT module directly:")
+        verify_note = _("After installation, verify with: <tt>gr_satellites --help</tt>")
+        return (
+            f"<b>Ubuntu / Debian</b><br>\n{requires_note}<br><br>\n\n"
+            "<pre>sudo apt install gnuradio python3-gnuradio\n"
+            "pip install gr-satellites</pre>\n\n"
+            f"{oot_note}\n"
+            "<pre>git clone https://github.com/daniestevez/gr-satellites.git\n"
+            "cd gr-satellites\n"
+            "mkdir build && cd build\n"
+            "cmake .. && make -j$(nproc)\n"
+            "sudo make install\n"
+            "sudo ldconfig</pre>\n\n"
+            f"{verify_note}\n"
+        )
     if sys.platform == "darwin":
-        return _MACOS_INSTRUCTIONS
+        build_note = _("If brew gnuradio is outdated, build from source:")
+        return (
+            "<b>macOS (Homebrew)</b><br><br>\n"
+            "<pre>brew install gnuradio\n"
+            "pip install gr-satellites</pre>\n\n"
+            f"{build_note}\n"
+            "<pre>git clone https://github.com/daniestevez/gr-satellites.git\n"
+            "cd gr-satellites\n"
+            "mkdir build && cd build\n"
+            "cmake .. && make -j$(sysctl -n hw.logicalcpu)\n"
+            "sudo make install</pre>\n"
+        )
     if sys.platform == "win32":
-        return _WINDOWS_INSTRUCTIONS
-    return _GENERIC_INSTRUCTIONS
+        installer_note = _("GNU Radio on Windows is available via the official installer:")
+        after_note = _("After installing GNU Radio, install gr-satellites:")
+        wsl_note = _(
+            "Note: Windows support for gr-satellites may be limited.\n"
+            "Using WSL2 with Ubuntu is the most reliable option."
+        )
+        return (
+            f"<b>Windows</b><br><br>\n{installer_note}<br>\n"
+            '<a href="https://www.gnuradio.org/blog/2020-06-29-windows-support/">\n'
+            "gnuradio.org — Windows Support</a><br><br>\n\n"
+            f"{after_note}<br>\n"
+            "<pre>pip install gr-satellites</pre>\n\n"
+            f"{wsl_note}\n"
+        )
+    generic_note = _(
+        "Install GNU Radio 3.10+ from your system package manager or\n"
+        '<a href="https://www.gnuradio.org/">gnuradio.org</a>, then:'
+    )
+    return f"{generic_note}<br>\n<pre>pip install gr-satellites</pre>\n"
 
 
 # ---------------------------------------------------------------------------

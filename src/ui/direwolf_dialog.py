@@ -291,31 +291,29 @@ class DirewolfDialog(QDialog):
 
     def _populate_guide(self) -> None:
         """Fill the installation guidance for the current platform."""
+        download_note = _(
+            "Or use the <b>Download &amp; Install</b> button below to get the bundled version."
+        )
         if sys.platform == "linux":
             html = (
                 "<b>Ubuntu / Debian</b><br>"
                 "<code>sudo apt install direwolf</code><br><br>"
                 "<b>Fedora / RHEL</b><br>"
-                "<code>sudo dnf install direwolf</code><br><br>"
-                "Or use the <b>Download &amp; Install</b> button below "
-                "to get the bundled version."
+                "<code>sudo dnf install direwolf</code><br><br>" + download_note
             )
             cmd = "sudo apt install direwolf"
         elif sys.platform == "win32":
+            windows_note = _("Download the Windows installer from the Direwolf project:")
             html = (
-                "Download the Windows installer from the Direwolf project:<br>"
+                f"{windows_note}<br>"
                 "<a href='https://github.com/wb2osz/direwolf/releases'>"
-                "github.com/wb2osz/direwolf/releases</a><br><br>"
-                "Or use the <b>Download &amp; Install</b> button below "
-                "to get the bundled version."
+                "github.com/wb2osz/direwolf/releases</a><br><br>" + download_note
             )
             cmd = ""
         elif sys.platform == "darwin":
             html = (
                 "<b>macOS (Homebrew)</b><br>"
-                "<code>brew install direwolf</code><br><br>"
-                "Or use the <b>Download &amp; Install</b> button below "
-                "to get the bundled version."
+                "<code>brew install direwolf</code><br><br>" + download_note
             )
             cmd = "brew install direwolf"
         else:

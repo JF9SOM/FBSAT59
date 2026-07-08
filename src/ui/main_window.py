@@ -4359,13 +4359,13 @@ class MainWindow(QMainWindow):
 
     def _on_auto_fetch_rules(self) -> None:
         """Show a dialog explaining the automatic TLE and transponder fetch schedule."""
-        msg = (
-            "<h3>Auto Fetch Rules</h3>"
-            "<p>FBSAT59 automatically fetches and updates TLE orbital data "
+        intro = _(
+            "FBSAT59 automatically fetches and updates TLE orbital data "
             "and transponder information in the background. Manual updates are normally "
             "not required. Use manual sync only when you need the very latest data "
-            "immediately (e.g. right before a pass of a newly launched satellite).</p>"
-            "<h4>TLE Auto-Fetch Schedule</h4>"
+            "immediately (e.g. right before a pass of a newly launched satellite)."
+        )
+        schedule_table = _(
             "<table border='0' cellspacing='4'>"
             "<tr><td><b>Space Stations</b> (ISS, CSS…)</td><td>every <b>1 hour</b></td></tr>"
             "<tr><td><b>Amateur Satellites</b></td><td>every <b>2 hours</b></td></tr>"
@@ -4383,15 +4383,31 @@ class MainWindow(QMainWindow):
             "<tr><td><b>Transponder Database (SATNOGS)</b></td>"
             "<td>every <b>7 days</b></td></tr>"
             "</table>"
-            "<h4>Transponder Database (SATNOGS)</h4>"
-            "<p>Transponder data is fetched from SATNOGS automatically on first launch, "
+        )
+        xpdr_paragraph = _(
+            "Transponder data is fetched from SATNOGS automatically on first launch, "
             "then refreshed automatically every 7 days in the background. "
             "Use <b>Satellite → Sync SATNOGS</b> to refresh transponder "
             "frequencies and modes manually whenever you need the very latest data sooner "
-            "(e.g. right after a newly launched satellite registers its transmitter).</p>"
-            "<h4>At Startup</h4>"
-            "<p>On each launch the app syncs satellite names and statuses from SATNOGS, "
-            "and fetches any TLE sources whose cached data has expired.</p>"
+            "(e.g. right after a newly launched satellite registers its transmitter)."
+        )
+        startup_paragraph = _(
+            "On each launch the app syncs satellite names and statuses from SATNOGS, "
+            "and fetches any TLE sources whose cached data has expired."
+        )
+        heading_main = _("Auto Fetch Rules")
+        heading_schedule = _("TLE Auto-Fetch Schedule")
+        heading_xpdr = _("Transponder Database (SATNOGS)")
+        heading_startup = _("At Startup")
+        msg = (
+            f"<h3>{heading_main}</h3>"
+            f"<p>{intro}</p>"
+            f"<h4>{heading_schedule}</h4>"
+            f"{schedule_table}"
+            f"<h4>{heading_xpdr}</h4>"
+            f"<p>{xpdr_paragraph}</p>"
+            f"<h4>{heading_startup}</h4>"
+            f"<p>{startup_paragraph}</p>"
         )
         dlg = QMessageBox(self)
         dlg.setWindowTitle(_("Auto Fetch Rules"))
