@@ -49,6 +49,7 @@ from comms.ft4.codec import (
     Ft4Codec,
     Ft4Message,
 )
+from comms.ft4.decode_log import get_ft4_decode_logger
 from comms.ft4.qso import Ft4QsoManager, QsoState
 from comms.ft4.scheduler import Ft4Scheduler
 from i18n import _
@@ -184,10 +185,18 @@ class _RxDecodeWorker(QObject):
         self._my_call = my_call
 
     def run(self) -> None:
+        t0 = time.monotonic()
         try:
             messages = self._codec.decode_audio(self._audio, my_call=self._my_call)
         except Exception:
             messages = []
+        elapsed = time.monotonic() - t0
+        get_ft4_decode_logger().info(
+            "decode audio_len=%.2fs duration=%.2fs messages=%d",
+            len(self._audio) / SAMPLE_RATE,
+            elapsed,
+            len(messages),
+        )
         self.done.emit(messages, self._audio)
 
 
@@ -800,6 +809,10 @@ class Ft4Tab(QWidget):
             # bridge is not reentrant, so this period's decode is dropped
             # rather than risking an overlapping call — but the waterfall
             # still updates so the gap is visible instead of silently stale.
+            get_ft4_decode_logger().info(
+                "decode SKIPPED (previous decode still running) audio_len=%.2fs",
+                len(audio) / SAMPLE_RATE,
+            )
             self._update_waterfall_only(audio, [])
             return
         self._decode_busy = True

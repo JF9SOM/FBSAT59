@@ -1189,6 +1189,26 @@ i3-N300ではさらに長くなる可能性が高い）。この呼び出しは`
 少ない」という症状が出たら、デコード呼び出し自体がUIスレッド上でどれだけの時間専有している
 か、そしてそれが自分自身の時刻管理（スケジューラー）を巻き込んでいないかを疑うこと。
 
+**FT4専用デコードタイミングログ（2026-07-10 実装）**
+
+上記のスレッド化修正後、実測した0.4秒という所要時間は開発機での単体テスト値であり、実運用
+（衛星追尾・World Map/Radar/Dashboard描画・Autotrackポーリング等が同じCPUを奪い合っている
+状態）でも同程度かは別問題、という指摘があった。共有アプリケーションログ（`fbsat59.log`）は
+Qt/リグ/追尾関連のメッセージで埋もれて追いにくいため、FT4専用の別ログファイルを新設した。
+
+- `src/comms/ft4/decode_log.py`: `get_ft4_decode_logger()` — `fbsat59.log`と同じ
+  ディレクトリ（`platformdirs.user_log_dir("FBSAT59", "FBSAT59")`）に`ft4_decode.log`として
+  出力。`logger.propagate = False`で共有ログ・stderrには一切流れない
+- `_RxDecodeWorker.run()`（`src/ui/ft4_tab.py`）が`decode_audio()`の前後で`time.monotonic()`を
+  取り、1周期ごとに`decode audio_len=6.05s duration=0.42s messages=3`の形式で記録
+- `_decode_busy`により周期がスキップされた場合も
+  `decode SKIPPED (previous decode still running) audio_len=6.05s`として記録され、
+  実運用でどれだけの頻度で諦めが発生しているかが分かる
+- 実際の`duration`が6秒に対してどの程度の余裕があるか、`SKIPPED`の発生頻度がどの程度かを見て、
+  スレッド化だけで十分か、それともサブプロセス化（WSJT-Xの`jt9`ヘルパーと同等の別プロセス方式。
+  重複デコードが安全に同時実行できる利点があるが、フリーズドバンドル内での自己再起動・IPC・
+  プロセス管理が追加で必要になる）まで必要かを次回のパスで判断する
+
 **メニュー: Communications > Q65**（`src/ui/q65_tab.py`）
 - **Phase 1（RX）**: libq65 ctypes デコーダー
   - libq65 未インストール時はバナー表示・デコード無効化。インストール先: `~/.local/share/fbsat59/q65lib/`
