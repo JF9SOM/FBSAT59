@@ -2465,7 +2465,7 @@ msgstr ""
 
 #: src/ui/qth_dialog.py:110 src/ui/main_window.py:3358
 msgid "Set QTH"
-msgstr ""
+msgstr "QTH設定"
 
 #: src/ui/qth_dialog.py:139
 msgid "Latitude (°N):"
@@ -2485,19 +2485,19 @@ msgstr "標高 (m):"
 
 #: src/ui/qth_dialog.py:162
 msgid "Coordinates"
-msgstr ""
+msgstr "座標"
 
 #: src/ui/qth_dialog.py:171
 msgid "Grid Locator:"
-msgstr ""
+msgstr "グリッドロケーター:"
 
 #: src/ui/qth_dialog.py:180
 msgid "Decoded:"
-msgstr ""
+msgstr "変換結果:"
 
 #: src/ui/qth_dialog.py:187
 msgid "Grid Locator"
-msgstr ""
+msgstr "グリッドロケーター"
 
 #: src/ui/qth_dialog.py:192
 msgid "Station"
@@ -2505,7 +2505,7 @@ msgstr "局情報"
 
 #: src/ui/qth_dialog.py:197
 msgid "Callsign:"
-msgstr ""
+msgstr "コールサイン:"
 
 #: src/ui/qth_dialog.py:250
 msgid "Getting..."
@@ -2513,23 +2513,23 @@ msgstr "取得中..."
 
 #: src/ui/qth_dialog.py:258
 msgid "Unavailable"
-msgstr ""
+msgstr "利用不可"
 
 #: src/ui/qth_dialog.py:274
 msgid "Getting elevation..."
-msgstr ""
+msgstr "標高取得中..."
 
 #: src/ui/qth_dialog.py:281
 msgid "Elevation unavailable (offline?)"
-msgstr ""
+msgstr "標高取得不可（オフライン？）"
 
 #: src/ui/qth_dialog.py:303
 msgid "Invalid grid locator"
-msgstr ""
+msgstr "無効なグリッドロケーターです"
 
 #: src/ui/qth_dialog.py:324
 msgid "Please enter a grid locator."
-msgstr ""
+msgstr "グリッドロケーターを入力してください。"
 
 #: src/ui/manual_tle_dialog.py:43 src/ui/main_window.py:3674
 msgid "Add Manual TLE"
