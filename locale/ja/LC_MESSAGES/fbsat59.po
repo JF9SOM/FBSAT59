@@ -166,7 +166,7 @@ msgstr "全般設定"
 
 #: src/ui/settings_dialog.py:206 src/ui/settings_dialog.py:228
 msgid "TLE Sources"
-msgstr ""
+msgstr "TLEソース"
 
 #: src/ui/settings_dialog.py:207 src/ui/main_window.py:688
 msgid "World Map"
@@ -174,37 +174,37 @@ msgstr "世界地図"
 
 #: src/ui/settings_dialog.py:208
 msgid "Custom Groups"
-msgstr ""
+msgstr "カスタムグループ"
 
 #: src/ui/settings_dialog.py:209
 msgid "Notifications"
-msgstr ""
+msgstr "通知"
 
 #: src/ui/settings_dialog.py:210
 msgid "Logging"
-msgstr ""
+msgstr "ログ出力"
 
 #: src/ui/settings_dialog.py:226
 msgid "Select TLE sources to download:"
-msgstr ""
+msgstr "ダウンロードするTLEソースを選択:"
 
 #: src/ui/settings_dialog.py:249
 msgid ""
 "Select the background map for the World Map view.\n"
 "Maps are downloaded from the GPredict repository and stored locally."
-msgstr ""
+msgstr "World Map表示の背景地図を選択します。\n地図はGPredictリポジトリからダウンロードされ、ローカルに保存されます。"
 
 #: src/ui/settings_dialog.py:263
 msgid "Built-in polygon map"
-msgstr ""
+msgstr "内蔵ポリゴン地図"
 
 #: src/ui/settings_dialog.py:270 src/ui/settings_dialog.py:422
 msgid " ✓"
-msgstr ""
+msgstr " ✓"
 
 #: src/ui/settings_dialog.py:289
 msgid "(no preview)"
-msgstr ""
+msgstr "（プレビューなし）"
 
 #: src/ui/settings_dialog.py:302
 msgid "Download"
@@ -214,25 +214,25 @@ msgstr "ダウンロード"
 msgid ""
 "Built-in polygon map\n"
 "(no image file)"
-msgstr ""
+msgstr "内蔵ポリゴン地図\n（画像ファイルなし）"
 
 #: src/ui/settings_dialog.py:341
 msgid ""
 "The default map drawn with Natural Earth 110m land polygons.\n"
 "No download required."
-msgstr ""
+msgstr "Natural Earth 110mの陸地ポリゴンで描画されるデフォルト地図です。\nダウンロード不要です。"
 
 #: src/ui/settings_dialog.py:360 src/ui/settings_dialog.py:401
 msgid "Downloaded"
-msgstr ""
+msgstr "ダウンロード済み"
 
 #: src/ui/settings_dialog.py:363
 msgid "Not downloaded"
-msgstr ""
+msgstr "未ダウンロード"
 
 #: src/ui/settings_dialog.py:371
 msgid "(preview unavailable)"
-msgstr ""
+msgstr "（プレビュー利用不可）"
 
 #: src/ui/settings_dialog.py:391 src/ui/ft8lib_dialog.py:140
 #: src/ui/direwolf_dialog.py:140 src/ui/q65lib_dialog.py:132
@@ -251,85 +251,85 @@ msgstr "エラー: "
 msgid ""
 "Define favorite groups shown in the satellite filter.\n"
 "Each group can be assigned to satellites via right-click."
-msgstr ""
+msgstr "衛星フィルターに表示されるお気に入りグループを定義します。\n各グループは右クリックで衛星に割り当てられます。"
 
 #: src/ui/settings_dialog.py:443
 msgid "Double-click a group name to rename it"
-msgstr ""
+msgstr "グループ名をダブルクリックすると名前を変更できます"
 
 #: src/ui/settings_dialog.py:447
 msgid "Add Group"
-msgstr ""
+msgstr "グループを追加"
 
 #: src/ui/settings_dialog.py:449
 msgid "Remove Last Group"
-msgstr ""
+msgstr "最後のグループを削除"
 
 #: src/ui/settings_dialog.py:456
 msgid ""
 "Note: removing a group unassigns all satellites currently in that group."
-msgstr ""
+msgstr "注意: グループを削除すると、そのグループに現在割り当てられている全衛星の割り当てが解除されます。"
 
 #: src/ui/settings_dialog.py:500
 msgid "Remove Group"
-msgstr ""
+msgstr "グループを削除"
 
 #: src/ui/settings_dialog.py:501
 #, python-brace-format
 msgid "Remove group '{name}'? Satellites in this group will be unassigned."
-msgstr ""
+msgstr "グループ「{name}」を削除しますか？ このグループの衛星は割り当て解除されます。"
 
 #: src/ui/settings_dialog.py:547
 msgid "AOS Notifications"
-msgstr ""
+msgstr "AOS通知"
 
 #: src/ui/settings_dialog.py:550
 msgid "Enable AOS notifications"
-msgstr ""
+msgstr "AOS通知を有効化"
 
 #: src/ui/settings_dialog.py:557
 msgid " min before AOS"
-msgstr ""
+msgstr " 分前（AOS）"
 
 #: src/ui/settings_dialog.py:558 src/ui/settings_dialog.py:574
 msgid "Notify:"
-msgstr ""
+msgstr "通知:"
 
 #: src/ui/settings_dialog.py:563
 msgid "LOS Notifications"
-msgstr ""
+msgstr "LOS通知"
 
 #: src/ui/settings_dialog.py:566
 msgid "Enable LOS notifications"
-msgstr ""
+msgstr "LOS通知を有効化"
 
 #: src/ui/settings_dialog.py:573
 msgid " min before LOS"
-msgstr ""
+msgstr " 分前（LOS）"
 
 #: src/ui/settings_dialog.py:580
 msgid ""
 "Notifications are shown when a pass is imminent for the selected\n"
 "satellite (Target tab) or any satellite in the last Group search."
-msgstr ""
+msgstr "選択中の衛星（Targetタブ）またはGroup検索結果の衛星について、\nパスが近づくと通知が表示されます。"
 
 #: src/ui/settings_dialog.py:594
 msgid "UDP Log Broadcast"
-msgstr ""
+msgstr "UDPログブロードキャスト"
 
 #: src/ui/settings_dialog.py:597
 msgid "Broadcast logged QSOs via UDP (ADIF)"
-msgstr ""
+msgstr "記録したQSOをUDP経由でブロードキャスト（ADIF）"
 
 #: src/ui/settings_dialog.py:602 src/ui/rig_dialog.py:456
 #: src/ui/rotator_dialog.py:171
 msgid "Host:"
-msgstr ""
+msgstr "ホスト:"
 
 #: src/ui/settings_dialog.py:607 src/ui/rig_dialog.py:461
 #: src/ui/rotator_dialog.py:175
 msgid "Port:"
-msgstr ""
+msgstr "ポート:"
 
 #: src/ui/settings_dialog.py:613
 msgid ""
@@ -337,7 +337,7 @@ msgid ""
 "exchanges) to the given host/port. Compatible with lightweight\n"
 "log-relay tools such as wavelog-gate and JT-Linker. Host may be\n"
 "a LAN address, not just this machine (127.0.0.1)."
-msgstr ""
+msgstr "記録された各QSO（FT4・Q65・確認済みAPRS交信）ごとに、指定したホスト/ポートへ\nADIFレコードを1件送信します。wavelog-gate・JT-Linkerのような軽量な\nログ中継ツールと互換性があります。ホストはこのマシン（127.0.0.1）に限らず、\nLAN内の別アドレスも指定できます。"
 
 #: src/ui/log_export_dialog.py:68
 msgid "Export Log (ADIF)"
