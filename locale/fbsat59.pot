@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-08 18:57+0900\n"
+"POT-Creation-Date: 2026-07-08 19:02+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -412,7 +412,7 @@ msgstr ""
 msgid "Power (dBFS)"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:295 src/ui/q65_tab.py:195 src/ui/ft4_tab.py:332
+#: src/ui/sdr_control_widget.py:295 src/ui/q65_tab.py:195 src/ui/ft4_tab.py:335
 msgid "RX:"
 msgstr ""
 
@@ -516,8 +516,8 @@ msgstr ""
 msgid "SatDump Log"
 msgstr ""
 
-#: src/ui/meteor_tab.py:128 src/ui/q65_tab.py:337 src/ui/ft4_tab.py:461
-#: src/ui/ft4_tab.py:500 src/ui/cw_tab.py:157
+#: src/ui/meteor_tab.py:128 src/ui/q65_tab.py:337 src/ui/ft4_tab.py:462
+#: src/ui/ft4_tab.py:501 src/ui/cw_tab.py:157
 msgid "Clear"
 msgstr ""
 
@@ -1103,7 +1103,7 @@ msgstr ""
 msgid "Decoder started — listening for sync…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:339 src/ui/ft4_tab.py:712 src/ui/cw_tab.py:329
+#: src/ui/sstv_tab.py:339 src/ui/ft4_tab.py:713 src/ui/cw_tab.py:329
 msgid "sounddevice not installed — pip install sounddevice"
 msgstr ""
 
@@ -1289,40 +1289,40 @@ msgstr ""
 msgid "My Call:"
 msgstr ""
 
-#: src/ui/q65_tab.py:176 src/ui/ft4_tab.py:320
+#: src/ui/q65_tab.py:176 src/ui/ft4_tab.py:321
 msgid "Grid:"
 msgstr ""
 
-#: src/ui/q65_tab.py:189 src/ui/ft4_tab.py:409
+#: src/ui/q65_tab.py:189 src/ui/ft4_tab.py:410
 msgid "TX Slot:"
 msgstr ""
 
-#: src/ui/q65_tab.py:191 src/ui/ft4_tab.py:412
+#: src/ui/q65_tab.py:191 src/ui/ft4_tab.py:413
 msgid "Even"
 msgstr ""
 
-#: src/ui/q65_tab.py:192 src/ui/ft4_tab.py:413
+#: src/ui/q65_tab.py:192 src/ui/ft4_tab.py:414
 msgid "Odd"
 msgstr ""
 
-#: src/ui/q65_tab.py:197 src/ui/ft4_tab.py:334
+#: src/ui/q65_tab.py:197 src/ui/ft4_tab.py:337
 msgid "Rig Soundcard"
 msgstr ""
 
 #: src/ui/q65_tab.py:198 src/ui/q65_tab.py:488 src/ui/rig_dialog.py:391
-#: src/ui/ft4_tab.py:335 src/ui/cw_tab.py:142
+#: src/ui/ft4_tab.py:338 src/ui/cw_tab.py:142
 msgid "SDR"
 msgstr ""
 
-#: src/ui/q65_tab.py:217 src/ui/ft4_tab.py:381
+#: src/ui/q65_tab.py:217 src/ui/ft4_tab.py:382
 msgid "● RX"
 msgstr ""
 
-#: src/ui/q65_tab.py:221 src/ui/ft4_tab.py:385
+#: src/ui/q65_tab.py:221 src/ui/ft4_tab.py:386
 msgid "● TX"
 msgstr ""
 
-#: src/ui/q65_tab.py:228 src/ui/ft4_tab.py:392
+#: src/ui/q65_tab.py:228 src/ui/ft4_tab.py:393
 msgid "Transmit"
 msgstr ""
 
@@ -1358,15 +1358,15 @@ msgstr ""
 msgid "73"
 msgstr ""
 
-#: src/ui/q65_tab.py:259 src/ui/ft4_tab.py:430
+#: src/ui/q65_tab.py:259 src/ui/ft4_tab.py:431
 msgid "TX Enable"
 msgstr ""
 
-#: src/ui/q65_tab.py:267 src/ui/ft4_tab.py:438
+#: src/ui/q65_tab.py:267 src/ui/ft4_tab.py:439
 msgid "Halt TX"
 msgstr ""
 
-#: src/ui/q65_tab.py:276 src/ui/ft4_tab.py:447
+#: src/ui/q65_tab.py:276 src/ui/ft4_tab.py:448
 msgid "TX:"
 msgstr ""
 
@@ -1382,7 +1382,7 @@ msgstr ""
 msgid "Send the text above as a one-shot free message"
 msgstr ""
 
-#: src/ui/q65_tab.py:293 src/ui/ft4_tab.py:455 src/ui/ft4_tab.py:654
+#: src/ui/q65_tab.py:293 src/ui/ft4_tab.py:456 src/ui/ft4_tab.py:655
 msgid "State: IDLE"
 msgstr ""
 
@@ -1390,35 +1390,35 @@ msgstr ""
 msgid "DX: —"
 msgstr ""
 
-#: src/ui/q65_tab.py:302 src/ui/ft4_tab.py:465
+#: src/ui/q65_tab.py:302 src/ui/ft4_tab.py:466
 msgid "Log QSO"
 msgstr ""
 
-#: src/ui/q65_tab.py:307 src/ui/ft4_tab.py:470 src/ui/aprs_tab.py:297
+#: src/ui/q65_tab.py:307 src/ui/ft4_tab.py:471 src/ui/aprs_tab.py:297
 msgid "Export ADIF…"
 msgstr ""
 
-#: src/ui/q65_tab.py:320 src/ui/ft4_tab.py:483
+#: src/ui/q65_tab.py:320 src/ui/ft4_tab.py:484
 msgid "Decoded Messages"
 msgstr ""
 
-#: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:485
+#: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:486
 msgid "UTC"
 msgstr ""
 
-#: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:485
+#: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:486
 msgid "dB"
 msgstr ""
 
-#: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:485
+#: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:486
 msgid "DT"
 msgstr ""
 
-#: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:485
+#: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:486
 msgid "Hz"
 msgstr ""
 
-#: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:485
+#: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:486
 msgid "Message"
 msgstr ""
 
@@ -1426,7 +1426,7 @@ msgstr ""
 msgid "Waiting for period boundary…"
 msgstr ""
 
-#: src/ui/q65_tab.py:462 src/ui/ft4_tab.py:1110
+#: src/ui/q65_tab.py:462 src/ui/ft4_tab.py:1111
 msgid "Input: Rig connected"
 msgstr ""
 
@@ -1668,7 +1668,7 @@ msgstr ""
 msgid "PPM Correction:"
 msgstr ""
 
-#: src/ui/rig_dialog.py:973 src/ui/ft4_tab.py:411
+#: src/ui/rig_dialog.py:973 src/ui/ft4_tab.py:412
 msgid "Auto"
 msgstr ""
 
@@ -1730,12 +1730,12 @@ msgstr ""
 msgid "Input device:"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1310 src/ui/rig_dialog.py:1483 src/ui/ft4_tab.py:350
-#: src/ui/ft4_tab.py:735
+#: src/ui/rig_dialog.py:1310 src/ui/rig_dialog.py:1483 src/ui/ft4_tab.py:352
+#: src/ui/ft4_tab.py:736
 msgid "-- dBFS"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1313 src/ui/ft4_tab.py:342
+#: src/ui/rig_dialog.py:1313 src/ui/ft4_tab.py:345
 msgid "RX Level:"
 msgstr ""
 
@@ -1796,7 +1796,7 @@ msgstr ""
 msgid "Auto (follow PipeWire default)"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1502 src/ui/ft4_tab.py:759
+#: src/ui/rig_dialog.py:1502 src/ui/ft4_tab.py:760
 #, python-brace-format
 msgid "{db:.0f} dBFS"
 msgstr ""
@@ -2064,22 +2064,22 @@ msgstr ""
 msgid "PTT command failed — check Rig 1 connection"
 msgstr ""
 
-#: src/ui/ft4_tab.py:326
+#: src/ui/ft4_tab.py:328
 msgid "Audio Hz:"
 msgstr ""
 
-#: src/ui/ft4_tab.py:354
+#: src/ui/ft4_tab.py:355
 msgid "Waterfall"
 msgstr ""
 
-#: src/ui/ft4_tab.py:357
+#: src/ui/ft4_tab.py:358
 msgid ""
 "Open a popup showing the last RX period's audio as a spectrogram, to check "
 "whether real FT4 signals are visible in the passband even when nothing "
 "decodes."
 msgstr ""
 
-#: src/ui/ft4_tab.py:420
+#: src/ui/ft4_tab.py:421
 msgid ""
 "Which 6s slot to transmit in when calling CQ / enabling TX.\n"
 "Auto: whichever slot is current when you press CQ / TX Enable.\n"
@@ -2087,83 +2087,83 @@ msgid ""
 "slot regardless of this setting."
 msgstr ""
 
-#: src/ui/ft4_tab.py:449
+#: src/ui/ft4_tab.py:450
 msgid "FT4 message (auto-filled by state machine)"
 msgstr ""
 
-#: src/ui/ft4_tab.py:607
+#: src/ui/ft4_tab.py:608
 msgid ""
 "ft8lib is not installed — FT4 TX/RX is disabled.\n"
 "Build ft8_lib (github.com/kgoba/ft8_lib) and place the shared library in ~/."
 "local/share/fbsat59/ft8lib/"
 msgstr ""
 
-#: src/ui/ft4_tab.py:618
+#: src/ui/ft4_tab.py:619
 msgid ""
 "ft8lib found but decode API is unavailable — TX only.\n"
 "Update ft8_lib to ≥ v0.4 for RX decode support."
 msgstr ""
 
-#: src/ui/ft4_tab.py:627
+#: src/ui/ft4_tab.py:628
 msgid ""
 "Using lightweight FT4 decoder — may miss weak or overlapping stations in a "
 "crowded pass.\n"
 "Help > FT4 Enhanced Decoder Installation… for WSJT-X-grade decoding."
 msgstr ""
 
-#: src/ui/ft4_tab.py:645
+#: src/ui/ft4_tab.py:646
 msgid "Set My Call before operating"
 msgstr ""
 
-#: src/ui/ft4_tab.py:716 src/ui/cw_tab.py:333
+#: src/ui/ft4_tab.py:717 src/ui/cw_tab.py:333
 msgid "Sound Card not configured — open Rig Settings > Sound Card"
 msgstr ""
 
-#: src/ui/ft4_tab.py:863
+#: src/ui/ft4_tab.py:864
 msgid "Invalid FT4 message: "
 msgstr ""
 
-#: src/ui/ft4_tab.py:875
+#: src/ui/ft4_tab.py:876
 msgid "TX: "
 msgstr ""
 
-#: src/ui/ft4_tab.py:880
+#: src/ui/ft4_tab.py:881
 msgid "TX done — waiting for next period"
 msgstr ""
 
-#: src/ui/ft4_tab.py:885
+#: src/ui/ft4_tab.py:886
 msgid "TX error: "
 msgstr ""
 
-#: src/ui/ft4_tab.py:1067
+#: src/ui/ft4_tab.py:1068
 msgid "Set My Call before enabling TX"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1073
+#: src/ui/ft4_tab.py:1074
 msgid "TX enabled — waiting for next period"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1075
+#: src/ui/ft4_tab.py:1076
 msgid "TX disabled"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1081
+#: src/ui/ft4_tab.py:1082
 msgid "TX halted"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1090
+#: src/ui/ft4_tab.py:1091
 msgid "Rig connected — ready"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1100
+#: src/ui/ft4_tab.py:1101
 msgid "Rig disconnected"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1113
+#: src/ui/ft4_tab.py:1114
 msgid "Input: Rig not connected"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1133
+#: src/ui/ft4_tab.py:1134
 msgid "QSOs logged: "
 msgstr ""
 

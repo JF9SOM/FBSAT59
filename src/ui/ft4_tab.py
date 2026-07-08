@@ -313,18 +313,21 @@ class Ft4Tab(QWidget):
 
         cfg_lay.addWidget(QLabel(_("My Call:")))
         self._call_edit = QLineEdit(self._my_call)
+        self._call_edit.setMinimumWidth(70)
         self._call_edit.setMaximumWidth(100)
         self._call_edit.textChanged.connect(self._on_settings_changed)
         cfg_lay.addWidget(self._call_edit)
 
         cfg_lay.addWidget(QLabel(_("Grid:")))
         self._grid_edit = QLineEdit(self._my_grid)
+        self._grid_edit.setMinimumWidth(50)
         self._grid_edit.setMaximumWidth(70)
         self._grid_edit.textChanged.connect(self._on_settings_changed)
         cfg_lay.addWidget(self._grid_edit)
 
         cfg_lay.addWidget(QLabel(_("Audio Hz:")))
         self._audio_freq_edit = QLineEdit(str(int(self._audio_freq)))
+        self._audio_freq_edit.setMinimumWidth(50)
         self._audio_freq_edit.setMaximumWidth(60)
         self._audio_freq_edit.textChanged.connect(self._on_settings_changed)
         cfg_lay.addWidget(self._audio_freq_edit)
@@ -346,10 +349,8 @@ class Ft4Tab(QWidget):
         self._level_bar.setTextVisible(False)
         self._level_bar.setFixedHeight(14)
         self._level_bar.setFixedWidth(80)
+        self._level_bar.setToolTip(_("-- dBFS"))
         cfg_lay.addWidget(self._level_bar)
-        self._level_label = QLabel(_("-- dBFS"))
-        self._level_label.setMinimumWidth(65)
-        cfg_lay.addWidget(self._level_label)
 
         self._waterfall_btn = QPushButton(_("Waterfall"))
         self._waterfall_btn.setToolTip(
@@ -732,7 +733,7 @@ class Ft4Tab(QWidget):
             get_audio_device_manager().release_input(_AUDIO_OWNER, self._in_device)
             self._audio_active = False
             self._level_bar.setValue(0)
-            self._level_label.setText(_("-- dBFS"))
+            self._level_bar.setToolTip(_("-- dBFS"))
 
     def _audio_callback(self, chunk: NDArray[np.float32]) -> None:
         self._rx_buffer.append(chunk)
@@ -756,7 +757,7 @@ class Ft4Tab(QWidget):
         self._level_bar.setValue(int(pct))
         color = "#2ecc71" if dbfs < -12.0 else ("#f1c40f" if dbfs < -3.0 else "#e74c3c")
         self._level_bar.setStyleSheet(f"QProgressBar::chunk {{ background-color: {color}; }}")
-        self._level_label.setText(_("{db:.0f} dBFS").format(db=dbfs))
+        self._level_bar.setToolTip(_("{db:.0f} dBFS").format(db=dbfs))
 
     @Slot()
     def _on_show_waterfall(self) -> None:
