@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-08 21:46+0900\n"
+"POT-Creation-Date: 2026-07-08 21:57+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -158,7 +158,9 @@ msgstr "SatNOGSインポート"
 #: src/ui/transmitter_dialog.py:320
 #, python-brace-format
 msgid "Imported {n} transmitter(s) for NORAD {norad} from SatNOGS ID {src}."
-msgstr "NORAD {norad} 用に SatNOGS ID {src} から {n} 件のトランスポンダーをインポートしました。"
+msgstr ""
+"NORAD {norad} 用に SatNOGS ID {src} から {n} 件のトランスポンダーをインポート"
+"しました。"
 
 #: src/ui/settings_dialog.py:173 src/ui/main_window.py:760
 msgid "General Settings"
@@ -998,11 +1000,16 @@ msgstr "そのまま接続"
 msgid "Cancel"
 msgstr "キャンセル"
 
-#: src/ui/dashboard_view.py:305
+#: src/ui/dashboard_view.py:124 src/ui/dashboard_view.py:304
+#: src/ui/dashboard_view.py:351
+msgid "Range"
+msgstr "レンジ"
+
+#: src/ui/dashboard_view.py:307
 msgid "Visible ▲"
 msgstr ""
 
-#: src/ui/dashboard_view.py:308 src/ui/main_window.py:281
+#: src/ui/dashboard_view.py:310 src/ui/main_window.py:281
 msgid "Below horizon"
 msgstr "視界外"
 
@@ -2664,7 +2671,8 @@ msgstr "NORAD {n} のTLE取得に成功しました"
 
 #: src/ui/manual_tle_dialog.py:129
 msgid "Failed to fetch TLE. Check NORAD ID and network connection."
-msgstr "TLEの取得に失敗しました。NORAD IDとネットワーク接続を確認してください。"
+msgstr ""
+"TLEの取得に失敗しました。NORAD IDとネットワーク接続を確認してください。"
 
 #: src/ui/manual_tle_dialog.py:142
 msgid "No TLE"
@@ -3539,11 +3547,13 @@ msgid "Hide {name} (NORAD {n}) from the satellite list?"
 msgstr "{name}（NORAD {n}）を衛星リストから非表示にしますか？"
 
 #: src/ui/main_window.py:2823
+#, python-brace-format
 msgid "Name: {name}"
 msgstr "名前: {name}"
 
 # --- Satellite list columns ---
 #: src/ui/main_window.py:2824
+#, python-brace-format
 msgid "NORAD: {norad}"
 msgstr "NORAD: {norad}"
 
@@ -3553,6 +3563,7 @@ msgid "TLE Epoch: {epoch} UTC"
 msgstr "TLEエポック: {epoch} UTC"
 
 #: src/ui/main_window.py:2830
+#, python-brace-format
 msgid "TLE Quality: {quality}"
 msgstr "TLE品質: {quality}"
 
@@ -3571,6 +3582,7 @@ msgid "TLE: Not available"
 msgstr "TLE: 利用不可"
 
 #: src/ui/main_window.py:2837
+#, python-brace-format
 msgid "Satellite Info — {name}"
 msgstr "衛星情報 — {name}"
 

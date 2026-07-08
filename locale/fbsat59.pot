@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-08 21:46+0900\n"
+"POT-Creation-Date: 2026-07-08 21:57+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -947,11 +947,16 @@ msgstr ""
 msgid "Cancel"
 msgstr ""
 
-#: src/ui/dashboard_view.py:305
+#: src/ui/dashboard_view.py:124 src/ui/dashboard_view.py:304
+#: src/ui/dashboard_view.py:351
+msgid "Range"
+msgstr ""
+
+#: src/ui/dashboard_view.py:307
 msgid "Visible ▲"
 msgstr ""
 
-#: src/ui/dashboard_view.py:308 src/ui/main_window.py:281
+#: src/ui/dashboard_view.py:310 src/ui/main_window.py:281
 msgid "Below horizon"
 msgstr ""
 
