@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-08 19:02+0900\n"
+"POT-Creation-Date: 2026-07-08 21:29+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1135,6 +1135,36 @@ msgstr ""
 msgid "Saved: "
 msgstr ""
 
+#: src/ui/pass_chart.py:65
+msgid "Next 4 hours"
+msgstr ""
+
+#: src/ui/pass_chart.py:66
+msgid "Next 8 hours"
+msgstr ""
+
+#: src/ui/pass_chart.py:67
+msgid "Next 12 hours"
+msgstr ""
+
+#: src/ui/pass_chart.py:68
+msgid "Next 24 hours"
+msgstr ""
+
+#: src/ui/pass_chart.py:428 src/ui/pass_chart.py:747
+#: src/ui/telemetry_tab.py:179
+msgid "Time (UTC)"
+msgstr ""
+
+#: src/ui/pass_chart.py:428 src/ui/pass_chart.py:747
+msgid "Time (Local)"
+msgstr ""
+
+#: src/ui/pass_chart.py:460 src/ui/pass_chart.py:762
+#: src/ui/autotrack_record_dialog.py:381
+msgid "Now"
+msgstr ""
+
 #: src/ui/app_update_dialog.py:161
 msgid ""
 "Installer launched. FBSAT59 will close now so the installer can complete the "
@@ -1394,7 +1424,7 @@ msgstr ""
 msgid "Log QSO"
 msgstr ""
 
-#: src/ui/q65_tab.py:307 src/ui/ft4_tab.py:471 src/ui/aprs_tab.py:297
+#: src/ui/q65_tab.py:307 src/ui/ft4_tab.py:471 src/ui/aprs_tab.py:298
 msgid "Export ADIF…"
 msgstr ""
 
@@ -2299,41 +2329,41 @@ msgstr ""
 msgid "Optional free text"
 msgstr ""
 
-#: src/ui/aprs_tab.py:286
+#: src/ui/aprs_tab.py:287
 msgid "Send Now"
 msgstr ""
 
-#: src/ui/aprs_tab.py:290
+#: src/ui/aprs_tab.py:291
 msgid "QTH: —"
 msgstr ""
 
-#: src/ui/aprs_tab.py:395
+#: src/ui/aprs_tab.py:396
 msgid "Input: Sound Card + Direwolf  (send + receive)"
 msgstr ""
 
-#: src/ui/aprs_tab.py:400
+#: src/ui/aprs_tab.py:401
 #, python-brace-format
 msgid "Input: {dev}  (receive only — SDR)"
 msgstr ""
 
-#: src/ui/aprs_tab.py:405
+#: src/ui/aprs_tab.py:406
 msgid "Input: Sound Card + Direwolf  (receive only — Rig not connected)"
 msgstr ""
 
-#: src/ui/aprs_tab.py:411
+#: src/ui/aprs_tab.py:412
 msgid "Input: Sound Card not configured — open Rig Settings > Sound Card"
 msgstr ""
 
-#: src/ui/aprs_tab.py:417
+#: src/ui/aprs_tab.py:418
 msgid "Input: No audio source — connect Rig or SDR in Radio Control"
 msgstr ""
 
-#: src/ui/aprs_tab.py:708
+#: src/ui/aprs_tab.py:709
 #, python-brace-format
 msgid "QSOs logged: {n}"
 msgstr ""
 
-#: src/ui/aprs_tab.py:764 src/ui/aprs_tab.py:781
+#: src/ui/aprs_tab.py:765 src/ui/aprs_tab.py:782
 msgid "QTH: not set — configure in Settings"
 msgstr ""
 
@@ -2580,10 +2610,6 @@ msgid "Received Frames"
 msgstr ""
 
 #: src/ui/telemetry_tab.py:179
-msgid "Time (UTC)"
-msgstr ""
-
-#: src/ui/telemetry_tab.py:179
 msgid "Callsign"
 msgstr ""
 
@@ -2768,10 +2794,6 @@ msgstr ""
 
 #: src/ui/autotrack_record_dialog.py:367
 msgid "Autotrack Timer"
-msgstr ""
-
-#: src/ui/autotrack_record_dialog.py:381
-msgid "Now"
 msgstr ""
 
 #: src/ui/autotrack_record_dialog.py:383

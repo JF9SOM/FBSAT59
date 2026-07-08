@@ -38,6 +38,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from i18n import _
+
 if TYPE_CHECKING:
     from core.engine import PassInfo
     from ui.pass_panel import GroupPassResult
@@ -55,12 +57,16 @@ QUALITY_COLORS: dict[str, QColor] = {
 
 _ELEVATION_SAMPLE_POINTS = 20
 
-_RANGE_OPTIONS: tuple[tuple[str, float], ...] = (
-    ("Next 4 hours", 4.0),
-    ("Next 8 hours", 8.0),
-    ("Next 12 hours", 12.0),
-    ("Next 24 hours", 24.0),
-)
+
+def _range_options() -> tuple[tuple[str, float], ...]:
+    """Built lazily (not as a module-level constant) so labels pick up the
+    current UI language each time a chart view is constructed."""
+    return (
+        (_("Next 4 hours"), 4.0),
+        (_("Next 8 hours"), 8.0),
+        (_("Next 12 hours"), 12.0),
+        (_("Next 24 hours"), 24.0),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -193,9 +199,10 @@ class PassChartView(QWidget):
         h_layout.setContentsMargins(6, 2, 6, 2)
         h_layout.addWidget(QLabel("Range:"))
         self._range_combo = QComboBox()
-        for label, _ in _RANGE_OPTIONS:
+        range_options = _range_options()
+        for label, _hours in range_options:
             self._range_combo.addItem(label)
-        self._range_combo.setCurrentIndex(len(_RANGE_OPTIONS) - 1)  # default to "Next 24 hours"
+        self._range_combo.setCurrentIndex(len(range_options) - 1)  # default to "Next 24 hours"
         self._range_combo.currentIndexChanged.connect(self._on_range_changed)
         h_layout.addWidget(self._range_combo)
         h_layout.addStretch()
@@ -266,7 +273,7 @@ class PassChartView(QWidget):
 
     def _selected_hours(self) -> float:
         idx = self._range_combo.currentIndex()
-        return _RANGE_OPTIONS[idx][1]
+        return _range_options()[idx][1]
 
     def _rebuild(self) -> None:
         """Rebuild the chart using passes within the selected time range."""
@@ -418,7 +425,7 @@ class PassChartView(QWidget):
     def _make_time_axis(self) -> QDateTimeAxis:
         axis = QDateTimeAxis()
         axis.setFormat("HH:mm")
-        axis.setTitleText("Time (UTC)" if self._use_utc else "Time (Local)")
+        axis.setTitleText(_("Time (UTC)") if self._use_utc else _("Time (Local)"))
         axis.setTickCount(7)
         return axis
 
@@ -450,7 +457,7 @@ class PassChartView(QWidget):
     def _build_now_line(self, now: datetime) -> QLineSeries:
         now_ms = now.timestamp() * 1000.0
         series = QLineSeries()
-        series.setName("Now")
+        series.setName(_("Now"))
         pen = QPen(QColor("#e74c3c"))
         pen.setWidth(2)
         pen.setStyle(Qt.PenStyle.DashLine)
@@ -527,9 +534,10 @@ class GroupPassChartView(QWidget):
         h_layout.setContentsMargins(6, 2, 6, 2)
         h_layout.addWidget(QLabel("Range:"))
         self._range_combo = QComboBox()
-        for label, _ in _RANGE_OPTIONS:
+        range_options = _range_options()
+        for label, _hours in range_options:
             self._range_combo.addItem(label)
-        self._range_combo.setCurrentIndex(len(_RANGE_OPTIONS) - 1)
+        self._range_combo.setCurrentIndex(len(range_options) - 1)
         self._range_combo.currentIndexChanged.connect(self._rebuild)
         h_layout.addWidget(self._range_combo)
         h_layout.addStretch()
@@ -585,7 +593,7 @@ class GroupPassChartView(QWidget):
     # ------------------------------------------------------------------ #
 
     def _selected_hours(self) -> float:
-        return _RANGE_OPTIONS[self._range_combo.currentIndex()][1]
+        return _range_options()[self._range_combo.currentIndex()][1]
 
     def _rebuild(self) -> None:
         """Rebuild the chart from the current result list."""
@@ -736,7 +744,7 @@ class GroupPassChartView(QWidget):
     def _make_time_axis(self) -> QDateTimeAxis:
         axis = QDateTimeAxis()
         axis.setFormat("HH:mm")
-        axis.setTitleText("Time (UTC)" if self._use_utc else "Time (Local)")
+        axis.setTitleText(_("Time (UTC)") if self._use_utc else _("Time (Local)"))
         axis.setTickCount(7)
         return axis
 
@@ -751,7 +759,7 @@ class GroupPassChartView(QWidget):
     def _build_now_line(self, now: datetime) -> QLineSeries:
         now_ms = now.timestamp() * 1000.0
         series = QLineSeries()
-        series.setName("Now")
+        series.setName(_("Now"))
         pen = QPen(QColor("#e74c3c"))
         pen.setWidth(2)
         pen.setStyle(Qt.PenStyle.DashLine)

@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-08 19:02+0900\n"
+"POT-Creation-Date: 2026-07-08 21:29+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -607,11 +607,15 @@ msgstr "受信画像:"
 msgid ""
 "⚠  SatDump is not installed.  Go to Help > SatDump… for installation "
 "instructions."
-msgstr "⚠  SatDumpがインストールされていません。インストール手順はHelp > SatDump… を参照してください。"
+msgstr ""
+"⚠  SatDumpがインストールされていません。インストール手順はHelp > SatDump… を"
+"参照してください。"
 
 #: src/ui/meteor_tab.py:387
 msgid "⚠  No SDR configured.  Open Radio > Rig Settings > SDR Settings."
-msgstr "⚠  SDRが設定されていません。Radio > Rig Settings > SDR Settings を開いてください。"
+msgstr ""
+"⚠  SDRが設定されていません。Radio > Rig Settings > SDR Settings を開いてくだ"
+"さい。"
 
 #: src/ui/meteor_tab.py:394
 #, python-brace-format
@@ -640,7 +644,11 @@ msgid ""
 "\n"
 "Please refer to Help → SatDump… in the menu bar for\n"
 "installation instructions."
-msgstr "このタブで衛星画像を受信するにはSatDumpのインストールが必要です。\n\nインストール手順はメニューバーの Help → SatDump… を\n参照してください。"
+msgstr ""
+"このタブで衛星画像を受信するにはSatDumpのインストールが必要です。\n"
+"\n"
+"インストール手順はメニューバーの Help → SatDump… を\n"
+"参照してください。"
 
 #: src/ui/meteor_tab.py:520
 msgid "Reception finished."
@@ -1185,6 +1193,36 @@ msgstr "PNG画像 (*.png)"
 msgid "Saved: "
 msgstr "保存済み: "
 
+#: src/ui/pass_chart.py:65
+msgid "Next 4 hours"
+msgstr "次の4時間"
+
+#: src/ui/pass_chart.py:66
+msgid "Next 8 hours"
+msgstr "次の8時間"
+
+#: src/ui/pass_chart.py:67
+msgid "Next 12 hours"
+msgstr "次の12時間"
+
+#: src/ui/pass_chart.py:68
+msgid "Next 24 hours"
+msgstr "次の24時間"
+
+#: src/ui/pass_chart.py:428 src/ui/pass_chart.py:747
+#: src/ui/telemetry_tab.py:179
+msgid "Time (UTC)"
+msgstr "時刻 (UTC)"
+
+#: src/ui/pass_chart.py:428 src/ui/pass_chart.py:747
+msgid "Time (Local)"
+msgstr "時刻 (Local)"
+
+#: src/ui/pass_chart.py:460 src/ui/pass_chart.py:762
+#: src/ui/autotrack_record_dialog.py:381
+msgid "Now"
+msgstr "現在時刻"
+
 #: src/ui/app_update_dialog.py:161
 msgid ""
 "Installer launched. FBSAT59 will close now so the installer can complete the "
@@ -1461,7 +1499,7 @@ msgstr ""
 msgid "Log QSO"
 msgstr "QSOを記録"
 
-#: src/ui/q65_tab.py:307 src/ui/ft4_tab.py:471 src/ui/aprs_tab.py:297
+#: src/ui/q65_tab.py:307 src/ui/ft4_tab.py:471 src/ui/aprs_tab.py:298
 msgid "Export ADIF…"
 msgstr "ADIFエクスポート"
 
@@ -2475,41 +2513,43 @@ msgstr "コメント:"
 msgid "Optional free text"
 msgstr "任意の自由記述"
 
-#: src/ui/aprs_tab.py:286
+#: src/ui/aprs_tab.py:287
 msgid "Send Now"
 msgstr "今すぐ送信"
 
-#: src/ui/aprs_tab.py:290
+#: src/ui/aprs_tab.py:291
 msgid "QTH: —"
 msgstr "QTH: —"
 
-#: src/ui/aprs_tab.py:395
+#: src/ui/aprs_tab.py:396
 msgid "Input: Sound Card + Direwolf  (send + receive)"
 msgstr "入力: サウンドカード + Direwolf（送受信）"
 
-#: src/ui/aprs_tab.py:400
+#: src/ui/aprs_tab.py:401
 #, python-brace-format
 msgid "Input: {dev}  (receive only — SDR)"
 msgstr "入力: {dev}（受信のみ — SDR）"
 
-#: src/ui/aprs_tab.py:405
+#: src/ui/aprs_tab.py:406
 msgid "Input: Sound Card + Direwolf  (receive only — Rig not connected)"
 msgstr "入力: サウンドカード + Direwolf（受信のみ — 無線機未接続）"
 
-#: src/ui/aprs_tab.py:411
+#: src/ui/aprs_tab.py:412
 msgid "Input: Sound Card not configured — open Rig Settings > Sound Card"
-msgstr "入力: サウンドカード未設定 — Rig Settings > Sound Card を開いてください"
+msgstr ""
+"入力: サウンドカード未設定 — Rig Settings > Sound Card を開いてください"
 
-#: src/ui/aprs_tab.py:417
+#: src/ui/aprs_tab.py:418
 msgid "Input: No audio source — connect Rig or SDR in Radio Control"
-msgstr "入力: 音声ソースなし — 無線機コントロールで無線機またはSDRを接続してください"
+msgstr ""
+"入力: 音声ソースなし — 無線機コントロールで無線機またはSDRを接続してください"
 
-#: src/ui/aprs_tab.py:708
+#: src/ui/aprs_tab.py:709
 #, python-brace-format
 msgid "QSOs logged: {n}"
 msgstr "記録済みQSO数: {n}"
 
-#: src/ui/aprs_tab.py:764 src/ui/aprs_tab.py:781
+#: src/ui/aprs_tab.py:765 src/ui/aprs_tab.py:782
 msgid "QTH: not set — configure in Settings"
 msgstr "QTH: 未設定 — Settingsで設定してください"
 
@@ -2778,10 +2818,6 @@ msgid "Received Frames"
 msgstr "受信フレーム"
 
 #: src/ui/telemetry_tab.py:179
-msgid "Time (UTC)"
-msgstr "時刻 (UTC)"
-
-#: src/ui/telemetry_tab.py:179
 msgid "Callsign"
 msgstr "コールサイン"
 
@@ -2807,7 +2843,8 @@ msgstr "SDR接続中…"
 
 #: src/ui/telemetry_tab.py:421
 msgid "SDR connecting via Radio Control — press Start again once connected"
-msgstr "SDRはRadio Control経由で接続中です — 接続完了後、再度Startを押してください"
+msgstr ""
+"SDRはRadio Control経由で接続中です — 接続完了後、再度Startを押してください"
 
 #: src/ui/telemetry_tab.py:424
 msgid "⚠ No SDR configured in Rig Settings"
@@ -2815,11 +2852,13 @@ msgstr "⚠ Rig SettingsでSDRが設定されていません"
 
 #: src/ui/telemetry_tab.py:480
 msgid "⚠ Direwolf not found — use Help > Direwolf… to install"
-msgstr "⚠ Direwolfが見つかりません — Help > Direwolf… からインストールしてください"
+msgstr ""
+"⚠ Direwolfが見つかりません — Help > Direwolf… からインストールしてください"
 
 #: src/ui/telemetry_tab.py:484
 msgid "⚠ Sound Card not configured — open Rig Settings > Sound Card"
-msgstr "⚠ サウンドカードが未設定です — Rig Settings > Sound Card を開いてください"
+msgstr ""
+"⚠ サウンドカードが未設定です — Rig Settings > Sound Card を開いてください"
 
 #: src/ui/telemetry_tab.py:506
 msgid "⚠ Cannot determine SDR sample rate"
@@ -2971,10 +3010,6 @@ msgstr ""
 msgid "Autotrack Timer"
 msgstr "自動追尾タイマー"
 
-#: src/ui/autotrack_record_dialog.py:381
-msgid "Now"
-msgstr "現在"
-
 #: src/ui/autotrack_record_dialog.py:383
 msgid "Reset start time to current time"
 msgstr "開始時刻を現在時刻にリセット"
@@ -3121,15 +3156,20 @@ msgstr "デコードされたCWテキストがここに表示されます（約5
 
 #: src/ui/cw_tab.py:192
 msgid "onnxruntime not installed — use Help > CW Model Installation…"
-msgstr "onnxruntimeがインストールされていません — Help > CW Model Installation… を使用してください"
+msgstr ""
+"onnxruntimeがインストールされていません — Help > CW Model Installation… を使"
+"用してください"
 
 #: src/ui/cw_tab.py:197
 msgid "CW model not found — use Help > CW Model Installation…"
-msgstr "CWモデルが見つかりません — Help > CW Model Installation… を使用してください"
+msgstr ""
+"CWモデルが見つかりません — Help > CW Model Installation… を使用してください"
 
 #: src/ui/cw_tab.py:219
 msgid "Model not ready — use Help > CW Model Installation…"
-msgstr "モデルの準備ができていません — Help > CW Model Installation… を使用してください"
+msgstr ""
+"モデルの準備ができていません — Help > CW Model Installation… を使用してくださ"
+"い"
 
 #: src/ui/cw_tab.py:231
 msgid "SDR not connected — connect SDR first"
