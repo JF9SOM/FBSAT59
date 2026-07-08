@@ -54,7 +54,7 @@ msgstr "NORAD ID:"
 
 #: src/ui/transmitter_dialog.py:83
 msgid "(same as above)"
-msgstr ""
+msgstr "（上と同じ）"
 
 # --- Satellite list columns ---
 #: src/ui/transmitter_dialog.py:84
@@ -63,7 +63,7 @@ msgstr "SatNOGS NORAD ID:"
 
 #: src/ui/transmitter_dialog.py:86
 msgid "e.g. ISS FM downlink"
-msgstr ""
+msgstr "例: ISS FM downlink"
 
 #: src/ui/transmitter_dialog.py:87
 msgid "Description:"
@@ -80,11 +80,11 @@ msgstr "ダウンリンク (MHz):"
 #: src/ui/transmitter_dialog.py:105 src/ui/transmitter_dialog.py:112
 #: src/ui/transmitter_dialog.py:119 src/ui/transmitter_dialog.py:153
 msgid "(none)"
-msgstr ""
+msgstr "（なし）"
 
 #: src/ui/transmitter_dialog.py:106
 msgid "Downlink High (MHz):"
-msgstr ""
+msgstr "ダウンリンク上限 (MHz):"
 
 #: src/ui/transmitter_dialog.py:113
 msgid "Uplink (MHz):"
@@ -92,7 +92,7 @@ msgstr "アップリンク (MHz):"
 
 #: src/ui/transmitter_dialog.py:120
 msgid "Uplink High (MHz):"
-msgstr ""
+msgstr "アップリンク上限 (MHz):"
 
 #: src/ui/transmitter_dialog.py:125 src/ui/autotrack_record_dialog.py:283
 msgid "Mode"
@@ -100,7 +100,7 @@ msgstr "モード"
 
 #: src/ui/transmitter_dialog.py:130
 msgid "Type:"
-msgstr ""
+msgstr "種別:"
 
 #: src/ui/transmitter_dialog.py:134 src/ui/sdr_control_widget.py:395
 #: src/ui/radio_control_widget.py:218 src/ui/sstv_tab.py:113
@@ -114,27 +114,27 @@ msgstr "反転トランスポンダー"
 
 #: src/ui/transmitter_dialog.py:142
 msgid "CTCSS / DCS Tone"
-msgstr ""
+msgstr "CTCSS / DCS トーン"
 
 #: src/ui/transmitter_dialog.py:147
 msgid "Tone type:"
-msgstr ""
+msgstr "トーン種別:"
 
 #: src/ui/transmitter_dialog.py:154
 msgid "Tone (Hz):"
-msgstr ""
+msgstr "トーン (Hz):"
 
 #: src/ui/transmitter_dialog.py:161
 msgid "Optional notes"
-msgstr ""
+msgstr "任意のメモ"
 
 #: src/ui/transmitter_dialog.py:162
 msgid "Notes:"
-msgstr ""
+msgstr "メモ:"
 
 #: src/ui/transmitter_dialog.py:167
 msgid "Overwrite protection (prevent SATNOGS sync from overwriting)"
-msgstr ""
+msgstr "上書き保護（SATNOGS同期での上書きを防止）"
 
 #: src/ui/transmitter_dialog.py:248 src/ui/transmitter_dialog.py:253
 #: src/ui/transmitter_dialog.py:305 src/ui/transmitter_dialog.py:326
@@ -145,20 +145,20 @@ msgstr "エラー"
 
 #: src/ui/transmitter_dialog.py:248
 msgid "Description is required."
-msgstr ""
+msgstr "説明の入力が必要です。"
 
 #: src/ui/transmitter_dialog.py:253
 msgid "Downlink frequency is required."
-msgstr ""
+msgstr "ダウンリンク周波数の入力が必要です。"
 
 #: src/ui/transmitter_dialog.py:319
 msgid "SatNOGS Import"
-msgstr ""
+msgstr "SatNOGSインポート"
 
 #: src/ui/transmitter_dialog.py:320
 #, python-brace-format
 msgid "Imported {n} transmitter(s) for NORAD {norad} from SatNOGS ID {src}."
-msgstr ""
+msgstr "NORAD {norad} 用に SatNOGS ID {src} から {n} 件のトランスポンダーをインポートしました。"
 
 #: src/ui/settings_dialog.py:173 src/ui/main_window.py:760
 msgid "General Settings"
