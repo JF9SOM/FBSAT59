@@ -536,7 +536,7 @@ msgstr "ファイルマネージャーでIQ録音フォルダを開く"
 
 #: src/ui/meteor_tab.py:118
 msgid "SatDump Log"
-msgstr ""
+msgstr "SatDumpログ"
 
 #: src/ui/meteor_tab.py:128 src/ui/q65_tab.py:337 src/ui/ft4_tab.py:462
 #: src/ui/ft4_tab.py:501 src/ui/cw_tab.py:157
@@ -545,11 +545,11 @@ msgstr "クリア"
 
 #: src/ui/meteor_tab.py:212
 msgid "Reception Control"
-msgstr ""
+msgstr "受信コントロール"
 
 #: src/ui/meteor_tab.py:220
 msgid "Pipeline:"
-msgstr ""
+msgstr "パイプライン:"
 
 #: src/ui/meteor_tab.py:227
 msgid "SDR Connect"
@@ -557,43 +557,43 @@ msgstr "SDR接続"
 
 #: src/ui/meteor_tab.py:229
 msgid "Verify the SDR configured in Rig Settings > SDR Settings is reachable"
-msgstr ""
+msgstr "Rig Settings > SDR Settingsで設定したSDRに接続できるか確認します"
 
 #: src/ui/meteor_tab.py:234
 msgid "▶  Start"
-msgstr ""
+msgstr "▶  開始"
 
 #: src/ui/meteor_tab.py:238
 msgid "■  Stop"
-msgstr ""
+msgstr "■  停止"
 
 #: src/ui/meteor_tab.py:243
 msgid "📋 Log"
-msgstr ""
+msgstr "📋 ログ"
 
 #: src/ui/meteor_tab.py:244
 msgid "Show SatDump output log"
-msgstr ""
+msgstr "SatDumpの出力ログを表示"
 
 #: src/ui/meteor_tab.py:250
 msgid "About SatDump installation"
-msgstr ""
+msgstr "SatDumpのインストールについて"
 
 #: src/ui/meteor_tab.py:259 src/ui/meteor_tab.py:450 src/ui/meteor_tab.py:538
 msgid "Lock: —"
-msgstr ""
+msgstr "ロック: —"
 
 #: src/ui/meteor_tab.py:266
 msgid "Ready.  Select a pipeline and press Start."
-msgstr ""
+msgstr "準備完了。パイプラインを選択してStartを押してください。"
 
 #: src/ui/meteor_tab.py:281 src/ui/meteor_tab.py:623
 msgid "No image received yet."
-msgstr ""
+msgstr "まだ画像を受信していません。"
 
 #: src/ui/meteor_tab.py:289
 msgid "📁 Open Folder"
-msgstr ""
+msgstr "📁 フォルダを開く"
 
 #: src/ui/meteor_tab.py:291 src/ui/sstv_tab.py:200
 msgid "🗑 Clear"
@@ -607,32 +607,32 @@ msgstr "受信画像:"
 msgid ""
 "⚠  SatDump is not installed.  Go to Help > SatDump… for installation "
 "instructions."
-msgstr ""
+msgstr "⚠  SatDumpがインストールされていません。インストール手順はHelp > SatDump… を参照してください。"
 
 #: src/ui/meteor_tab.py:387
 msgid "⚠  No SDR configured.  Open Radio > Rig Settings > SDR Settings."
-msgstr ""
+msgstr "⚠  SDRが設定されていません。Radio > Rig Settings > SDR Settings を開いてください。"
 
 #: src/ui/meteor_tab.py:394
 #, python-brace-format
 msgid "SDR: {label}  gain {gain} dB — ready."
-msgstr ""
+msgstr "SDR: {label}  ゲイン {gain} dB — 準備完了。"
 
 #: src/ui/meteor_tab.py:412
 msgid "⚠  SDR not configured — attempting rtlsdr with gain 40 dB."
-msgstr ""
+msgstr "⚠  SDRが設定されていません — ゲイン40 dBでrtlsdrを試行中。"
 
 #: src/ui/meteor_tab.py:449
 msgid "Receiving…"
-msgstr ""
+msgstr "受信中…"
 
 #: src/ui/meteor_tab.py:457
 msgid "Stopping…"
-msgstr ""
+msgstr "停止中…"
 
 #: src/ui/meteor_tab.py:493
 msgid "SatDump Required"
-msgstr ""
+msgstr "SatDumpが必要です"
 
 #: src/ui/meteor_tab.py:495
 msgid ""
@@ -640,23 +640,23 @@ msgid ""
 "\n"
 "Please refer to Help → SatDump… in the menu bar for\n"
 "installation instructions."
-msgstr ""
+msgstr "このタブで衛星画像を受信するにはSatDumpのインストールが必要です。\n\nインストール手順はメニューバーの Help → SatDump… を\n参照してください。"
 
 #: src/ui/meteor_tab.py:520
 msgid "Reception finished."
-msgstr ""
+msgstr "受信が完了しました。"
 
 #: src/ui/meteor_tab.py:528
 msgid "[ERROR] "
-msgstr ""
+msgstr "[エラー] "
 
 #: src/ui/meteor_tab.py:560
 msgid "Autotrack: reception started at AOS."
-msgstr ""
+msgstr "自動追尾: AOSで受信を開始しました。"
 
 #: src/ui/meteor_tab.py:566
 msgid "Autotrack: reception stopped at LOS."
-msgstr ""
+msgstr "自動追尾: LOSで受信を停止しました。"
 
 #: src/ui/meteor_tab.py:587 src/ui/sstv_tab.py:447
 msgid "Image received: "
@@ -3105,53 +3105,53 @@ msgstr "CW デコーダー"
 
 #: src/ui/cw_tab.py:141 src/ui/main_window.py:233
 msgid "Input:"
-msgstr ""
+msgstr "入力:"
 
 #: src/ui/cw_tab.py:143
 msgid "Soundcard"
-msgstr ""
+msgstr "サウンドカード"
 
 #: src/ui/cw_tab.py:169
 msgid "Level:"
-msgstr ""
+msgstr "レベル:"
 
 #: src/ui/cw_tab.py:182
 msgid "Decoded CW text will appear here (requires ~5 s of audio)…"
-msgstr ""
+msgstr "デコードされたCWテキストがここに表示されます（約5秒の音声が必要）…"
 
 #: src/ui/cw_tab.py:192
 msgid "onnxruntime not installed — use Help > CW Model Installation…"
-msgstr ""
+msgstr "onnxruntimeがインストールされていません — Help > CW Model Installation… を使用してください"
 
 #: src/ui/cw_tab.py:197
 msgid "CW model not found — use Help > CW Model Installation…"
-msgstr ""
+msgstr "CWモデルが見つかりません — Help > CW Model Installation… を使用してください"
 
 #: src/ui/cw_tab.py:219
 msgid "Model not ready — use Help > CW Model Installation…"
-msgstr ""
+msgstr "モデルの準備ができていません — Help > CW Model Installation… を使用してください"
 
 #: src/ui/cw_tab.py:231
 msgid "SDR not connected — connect SDR first"
-msgstr ""
+msgstr "SDR未接続 — 先にSDRを接続してください"
 
 #: src/ui/cw_tab.py:239
 #, python-brace-format
 msgid "Listening… (decoding starts after {n} s)"
-msgstr ""
+msgstr "待受中…（{n}秒後にデコード開始）"
 
 #: src/ui/cw_tab.py:249
 msgid "Stopped"
-msgstr ""
+msgstr "停止しました"
 
 #: src/ui/cw_tab.py:387
 #, python-brace-format
 msgid "Buffering… {n:.0f} s remaining"
-msgstr ""
+msgstr "バッファリング中…（残り{n:.0f}秒）"
 
 #: src/ui/cw_tab.py:399 src/ui/cw_tab.py:404
 msgid "Listening…"
-msgstr ""
+msgstr "待受中…"
 
 #: src/ui/cw_tab.py:451
 msgid "SDR disconnected"
