@@ -544,6 +544,7 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
         self._set_app_icon()
         self._sync_progress.connect(self._on_sync_progress)
+        self._load_saved_language()
 
         self._build_ui()
         self._build_menu()
@@ -805,12 +806,20 @@ class MainWindow(QMainWindow):
         if view_menu:
             lang_menu = view_menu.addMenu(_("Language"))
             if lang_menu:
-                lang_menu.addAction("English", lambda: self._on_set_language("en"))
-                ja_action = lang_menu.addAction(
-                    "Japanese",
-                    lambda: QMessageBox.information(self, "Language", "To be prepared later."),
-                )
-                ja_action.setEnabled(True)
+                from i18n import get_language
+
+                lang_group = QActionGroup(self)
+                lang_group.setExclusive(True)
+                en_action = QAction("English", self, checkable=True)
+                ja_action = QAction("日本語", self, checkable=True)
+                lang_group.addAction(en_action)
+                lang_group.addAction(ja_action)
+                lang_menu.addAction(en_action)
+                lang_menu.addAction(ja_action)
+                en_action.setChecked(get_language() != "ja")
+                ja_action.setChecked(get_language() == "ja")
+                en_action.triggered.connect(lambda: self._on_set_language("en"))
+                ja_action.triggered.connect(lambda: self._on_set_language("ja"))
 
             tz_menu = view_menu.addMenu(_("Time Zone"))
             if tz_menu:
@@ -4241,9 +4250,27 @@ class MainWindow(QMainWindow):
         else:
             self._rot_label.setText(_("ROT: Off"))
 
+    def _load_saved_language(self) -> None:
+        """Apply the saved UI language before any widgets are built."""
+        from i18n import set_language
+
+        row = self._conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'ui_language'"
+        ).fetchone()
+        lang = row["value"] if row and row["value"] else "en"
+        set_language(lang)
+
     def _on_set_language(self, lang: str) -> None:
         from i18n import set_language
 
+        self._conn.execute(
+            """
+            INSERT OR REPLACE INTO app_settings (key, value, updated_at)
+            VALUES ('ui_language', ?, CURRENT_TIMESTAMP)
+            """,
+            (lang,),
+        )
+        self._conn.commit()
         set_language(lang)
         QMessageBox.information(
             self,
