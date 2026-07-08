@@ -2377,15 +2377,15 @@ msgstr "CSVをエクスポート"
 
 #: src/ui/pass_panel.py:539
 msgid "(Local)"
-msgstr "（ローカル時刻）"
+msgstr ""
 
 #: src/ui/pass_panel.py:544
 msgid "AOS (Local)"
-msgstr "AOS（ローカル時刻）"
+msgstr ""
 
 #: src/ui/pass_panel.py:545
 msgid "LOS (Local)"
-msgstr "LOS（ローカル時刻）"
+msgstr ""
 
 #: src/ui/pass_panel.py:674
 msgid "Group Search"
