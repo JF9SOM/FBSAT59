@@ -21,14 +21,14 @@ msgstr ""
 msgid ""
 "Input device #{device} no longer exists (device list now has {count} "
 "entries) — reopen Rig Settings > Sound Card and re-select the input device."
-msgstr ""
+msgstr "入力デバイス #{device} が見つかりません（現在のデバイス数: {count}）— Rig Settings > Sound Card を開き、入力デバイスを選び直してください。"
 
 #: src/comms/audio_device_manager.py:211
 #, python-brace-format
 msgid ""
 "Input device #{device} ({name}) has no input channels — reopen Rig Settings "
 "> Sound Card and re-select the input device."
-msgstr ""
+msgstr "入力デバイス #{device}（{name}）には入力チャンネルがありません — Rig Settings > Sound Card を開き、入力デバイスを選び直してください。"
 
 # --- Transmitter panel ---
 #: src/ui/transmitter_dialog.py:57 src/ui/main_window.py:3601
@@ -1015,7 +1015,7 @@ msgstr "視界外"
 
 #: src/ui/radar_view.py:532
 msgid "No visible passes from this location"
-msgstr ""
+msgstr "この場所から見えるパスがありません"
 
 #: src/ui/direwolf_dialog.py:55 src/ui/direwolf_dialog.py:57
 #: src/ui/satdump_dialog.py:37 src/ui/satdump_dialog.py:49
@@ -3265,7 +3265,7 @@ msgstr "可視状況:"
 
 #: src/ui/main_window.py:221
 msgid "Quick Comms Control"
-msgstr ""
+msgstr "クイック通信コントロール"
 
 #: src/ui/main_window.py:281
 msgid "Visible"
@@ -3482,16 +3482,16 @@ msgstr "GitHub"
 
 #: src/ui/main_window.py:896
 msgid "Show QR code for web access"
-msgstr ""
+msgstr "Webアクセス用QRコードを表示"
 
 #: src/ui/main_window.py:898 src/ui/main_window.py:4154
 msgid "RIG: Off"
-msgstr ""
+msgstr "RIG: オフ"
 
 #: src/ui/main_window.py:899 src/ui/main_window.py:4251
 #: src/ui/main_window.py:4255
 msgid "ROT: Off"
-msgstr ""
+msgstr "ROT: オフ"
 
 #: src/ui/main_window.py:1153
 msgid "Moon"
@@ -3499,15 +3499,15 @@ msgstr ""
 
 #: src/ui/main_window.py:1395
 msgid "Fetching group TLEs (first run)..."
-msgstr ""
+msgstr "グループのTLEを取得中（初回のみ）..."
 
 #: src/ui/main_window.py:1569
 msgid "Timer expired — Autotrack stopped"
-msgstr ""
+msgstr "タイマーが終了しました — 自動追尾を停止しました"
 
 #: src/ui/main_window.py:1666
 msgid "Run a pass search first"
-msgstr ""
+msgstr "先にパス検索を実行してください"
 
 #: src/ui/main_window.py:2602
 msgid "Favorite Groups"
@@ -3534,7 +3534,7 @@ msgstr "SatNOGSで開く"
 msgid ""
 "Could not reach db.satnogs.org — check your network connection.\n"
 "\n"
-msgstr ""
+msgstr "db.satnogs.orgに接続できませんでした — ネットワーク接続を確認してください。\n\n"
 
 #: src/ui/main_window.py:2802 src/ui/main_window.py:3601
 #: src/ui/main_window.py:3637
@@ -3588,7 +3588,7 @@ msgstr "衛星情報 — {name}"
 
 #: src/ui/main_window.py:3371
 msgid "Location manager not initialized."
-msgstr ""
+msgstr "位置情報マネージャーが初期化されていません。"
 
 #: src/ui/main_window.py:3592
 msgid "Transmitter added successfully."
@@ -3647,23 +3647,23 @@ msgstr ""
 
 #: src/ui/main_window.py:4148
 msgid "RIG: 1+2"
-msgstr ""
+msgstr "RIG: 1+2"
 
 #: src/ui/main_window.py:4150
 msgid "RIG: 1"
-msgstr ""
+msgstr "RIG: 1"
 
 #: src/ui/main_window.py:4152
 msgid "RIG: 2"
-msgstr ""
+msgstr "RIG: 2"
 
 #: src/ui/main_window.py:4253
 msgid "ROT: On"
-msgstr ""
+msgstr "ROT: オン"
 
 #: src/ui/main_window.py:4282
 msgid "Please restart the application to apply the language change."
-msgstr ""
+msgstr "言語設定を反映するには、アプリケーションを再起動してください。"
 
 # --- Application ---
 #: src/ui/main_window.py:4288
@@ -3825,11 +3825,11 @@ msgstr "QRコード"
 
 #: src/ui/main_window.py:4692
 msgid "Web server is not running."
-msgstr ""
+msgstr "Webサーバーが起動していません。"
 
 #: src/ui/main_window.py:4710
 msgid "Failed to generate QR code."
-msgstr ""
+msgstr "QRコードの生成に失敗しました。"
 
 #: src/ui/ft4wsjt_dialog.py:60
 msgid "Development"
