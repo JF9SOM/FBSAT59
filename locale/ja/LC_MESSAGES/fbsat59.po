@@ -375,7 +375,7 @@ msgstr ""
 
 #: src/ui/log_export_dialog.py:129 src/ui/rig_dialog.py:1014
 msgid "Browse…"
-msgstr ""
+msgstr "参照…"
 
 #: src/ui/log_export_dialog.py:140 src/ui/log_export_dialog.py:341
 msgid "Export"
@@ -1111,7 +1111,7 @@ msgstr ""
 
 #: src/ui/sstv_tab.py:269 src/ui/rig_dialog.py:1633
 msgid "Sound Card"
-msgstr ""
+msgstr "サウンドカード"
 
 #: src/ui/sstv_tab.py:272
 msgid "No audio source — connect Rig or SDR in Radio Control"
@@ -1350,7 +1350,7 @@ msgstr ""
 #: src/ui/q65_tab.py:198 src/ui/q65_tab.py:488 src/ui/rig_dialog.py:391
 #: src/ui/ft4_tab.py:335 src/ui/cw_tab.py:142
 msgid "SDR"
-msgstr ""
+msgstr "SDR"
 
 #: src/ui/q65_tab.py:217 src/ui/ft4_tab.py:380
 msgid "● RX"
@@ -1498,7 +1498,7 @@ msgstr ""
 
 #: src/ui/rig_dialog.py:366
 msgid "Enable Rig 2"
-msgstr ""
+msgstr "Rig 2を有効化"
 
 #: src/ui/rig_dialog.py:381 src/ui/rotator_dialog.py:123
 msgid "Connection Mode"
@@ -1506,27 +1506,27 @@ msgstr "接続方式"
 
 #: src/ui/rig_dialog.py:385 src/ui/rotator_dialog.py:125
 msgid "Direct (Hamlib built-in)"
-msgstr ""
+msgstr "Direct（Hamlib内蔵）"
 
 #: src/ui/rig_dialog.py:386
 msgid "NET (rigctld compatible)"
-msgstr ""
+msgstr "NET（rigctld互換）"
 
 #: src/ui/rig_dialog.py:401 src/ui/rotator_dialog.py:134
 msgid "Direct Connection Settings"
-msgstr ""
+msgstr "Direct接続設定"
 
 #: src/ui/rig_dialog.py:410 src/ui/rotator_dialog.py:143
 msgid "Scan"
-msgstr ""
+msgstr "スキャン"
 
 #: src/ui/rig_dialog.py:415 src/ui/rotator_dialog.py:148
 msgid "COM Port:"
-msgstr ""
+msgstr "COMポート:"
 
 #: src/ui/rig_dialog.py:424 src/ui/rig_dialog.py:707
 msgid "Test"
-msgstr ""
+msgstr "テスト"
 
 #: src/ui/rig_dialog.py:429 src/ui/rotator_dialog.py:154
 msgid "Baud Rate:"
@@ -1534,11 +1534,11 @@ msgstr "ボーレート:"
 
 #: src/ui/rig_dialog.py:432 src/ui/rotator_dialog.py:157
 msgid "Search by manufacturer or model name..."
-msgstr ""
+msgstr "メーカー名またはモデル名で検索..."
 
 #: src/ui/rig_dialog.py:434 src/ui/rotator_dialog.py:159
 msgid "Search:"
-msgstr ""
+msgstr "検索:"
 
 # --- Radio / Rig dialog ---
 #: src/ui/rig_dialog.py:440
@@ -1547,15 +1547,15 @@ msgstr "無線機モデル:"
 
 #: src/ui/rig_dialog.py:444 src/ui/rig_dialog.py:698
 msgid "e.g. 65  (hex as shown on rig menu, blank = default)"
-msgstr ""
+msgstr "例: 65（リグのメニューに表示される16進数。空欄でデフォルト）"
 
 #: src/ui/rig_dialog.py:448
 msgid "CI-V Address (Icom):"
-msgstr ""
+msgstr "CI-Vアドレス（Icom）:"
 
 #: src/ui/rig_dialog.py:453 src/ui/rotator_dialog.py:168
 msgid "NET Connection Settings"
-msgstr ""
+msgstr "NET接続設定"
 
 # --- Radio / Rig dialog ---
 #: src/ui/rig_dialog.py:468
@@ -1564,15 +1564,15 @@ msgstr "無線機種別"
 
 #: src/ui/rig_dialog.py:472
 msgid "Duplex — Main: Downlink (RX) / Sub: Uplink (TX)"
-msgstr ""
+msgstr "デュプレックス — Main: ダウンリンク（RX）/ Sub: アップリンク（TX）"
 
 #: src/ui/rig_dialog.py:474
 msgid "Simplex — Downlink (RX) only"
-msgstr ""
+msgstr "シンプレックス — ダウンリンク（RX）のみ"
 
 #: src/ui/rig_dialog.py:475
 msgid "Simplex — Uplink (TX) only"
-msgstr ""
+msgstr "シンプレックス — アップリンク（TX）のみ"
 
 # --- Radio / Rig dialog ---
 #: src/ui/rig_dialog.py:476
@@ -1581,122 +1581,122 @@ msgstr "無線機種別:"
 
 #: src/ui/rig_dialog.py:481
 msgid "Split Mode"
-msgstr ""
+msgstr "スプリットモード"
 
 #: src/ui/rig_dialog.py:485
 msgid "Rig 1: Downlink (RX only) / Rig 2: Uplink (TX only)"
-msgstr ""
+msgstr "Rig 1: ダウンリンク（RXのみ）/ Rig 2: アップリンク（TXのみ）"
 
 #: src/ui/rig_dialog.py:489
 msgid "Rig 1: Uplink (TX only) / Rig 2: Downlink (RX only)"
-msgstr ""
+msgstr "Rig 1: アップリンク（TXのみ）/ Rig 2: ダウンリンク（RXのみ）"
 
 #: src/ui/rig_dialog.py:492
 msgid "Split Mode:"
-msgstr ""
+msgstr "スプリットモード:"
 
 #: src/ui/rig_dialog.py:496
 msgid "CTCSS Tone Settings (NET Mode)"
-msgstr ""
+msgstr "CTCSSトーン設定（NETモード）"
 
 #: src/ui/rig_dialog.py:500
 msgid "Icom SAT mode rig (IC-9100/9700/910H/821H)"
-msgstr ""
+msgstr "Icom SATモードリグ（IC-9100/9700/910H/821H）"
 
 #: src/ui/rig_dialog.py:504
 msgid "Hamlib standard"
-msgstr ""
+msgstr "Hamlib標準"
 
 #: src/ui/rig_dialog.py:505
 msgid "FTX-1 (Custom CAT)"
-msgstr ""
+msgstr "FTX-1（カスタムCAT）"
 
 #: src/ui/rig_dialog.py:506
 msgid "FT-991 (Custom CAT)"
-msgstr ""
+msgstr "FT-991（カスタムCAT）"
 
 #: src/ui/rig_dialog.py:507
 msgid "Custom CAT command"
-msgstr ""
+msgstr "カスタムCATコマンド"
 
 #: src/ui/rig_dialog.py:509
 msgid "CTCSS Method:"
-msgstr ""
+msgstr "CTCSS方式:"
 
 #: src/ui/rig_dialog.py:511
 #, python-brace-format
 msgid "e.g. CN1{tone:03d};CT11;"
-msgstr ""
+msgstr "例: CN1{tone:03d};CT11;"
 
 #: src/ui/rig_dialog.py:512
 msgid "CAT ON command:"
-msgstr ""
+msgstr "CATオンコマンド:"
 
 #: src/ui/rig_dialog.py:514
 msgid "e.g. CT10;"
-msgstr ""
+msgstr "例: CT10;"
 
 #: src/ui/rig_dialog.py:515
 msgid "CAT OFF command:"
-msgstr ""
+msgstr "CATオフコマンド:"
 
 #: src/ui/rig_dialog.py:559 src/ui/rotator_dialog.py:266
 #, python-brace-format
 msgid "{n} port(s) found"
-msgstr ""
+msgstr "{n}個のポートが見つかりました"
 
 #: src/ui/rig_dialog.py:561 src/ui/rotator_dialog.py:268
 msgid "No serial ports found"
-msgstr ""
+msgstr "シリアルポートが見つかりません"
 
 #: src/ui/rig_dialog.py:599
 msgid "No port"
-msgstr ""
+msgstr "ポートなし"
 
 #: src/ui/rig_dialog.py:603
 msgid "Testing…"
-msgstr ""
+msgstr "テスト中…"
 
 #: src/ui/rig_dialog.py:694
 #, python-brace-format
 msgid "default: {addr}  (blank = use default)"
-msgstr ""
+msgstr "デフォルト: {addr}（空欄でデフォルト使用）"
 
 #: src/ui/rig_dialog.py:701
 msgid "N/A"
-msgstr ""
+msgstr "N/A"
 
 #: src/ui/rig_dialog.py:717
 #, python-brace-format
 msgid "{n} rig models available"
-msgstr ""
+msgstr "{n}機種が利用可能"
 
 #: src/ui/rig_dialog.py:729 src/ui/rotator_dialog.py:245
 #, python-brace-format
 msgid "Showing {n} / {total} models"
-msgstr ""
+msgstr "{n} / {total} 機種を表示中"
 
 #: src/ui/rig_dialog.py:925
 msgid ""
 "SoapySDR is not installed.\n"
 "Use Help > SDR Device Installation to set up your device."
-msgstr ""
+msgstr "SoapySDRがインストールされていません。\nHelp > SDR Device Installation でデバイスを設定してください。"
 
 #: src/ui/rig_dialog.py:936
 msgid "SDR Device"
-msgstr ""
+msgstr "SDRデバイス"
 
 #: src/ui/rig_dialog.py:942
 msgid "Enumerate"
-msgstr ""
+msgstr "列挙"
 
 #: src/ui/rig_dialog.py:946
 msgid "Device:"
-msgstr ""
+msgstr "デバイス:"
 
 #: src/ui/rig_dialog.py:949
 msgid "Driver:"
-msgstr ""
+msgstr "ドライバー:"
 
 #: src/ui/rig_dialog.py:952
 msgid "Serial:"
@@ -1704,15 +1704,15 @@ msgstr "シリアル:"
 
 #: src/ui/rig_dialog.py:964
 msgid "Sample Rate:"
-msgstr ""
+msgstr "サンプルレート:"
 
 #: src/ui/rig_dialog.py:970
 msgid "PPM Correction:"
-msgstr ""
+msgstr "PPM補正:"
 
 #: src/ui/rig_dialog.py:973 src/ui/ft4_tab.py:410
 msgid "Auto"
-msgstr ""
+msgstr "自動"
 
 #: src/ui/rig_dialog.py:974
 msgid "Manual"
@@ -1720,97 +1720,97 @@ msgstr "手動"
 
 #: src/ui/rig_dialog.py:985
 msgid "RF Gain:"
-msgstr ""
+msgstr "RFゲイン:"
 
 #: src/ui/rig_dialog.py:987
 msgid "Enable Bias-T (powers external LNA via antenna port)"
-msgstr ""
+msgstr "Bias-Tを有効化（アンテナポート経由で外部LNAに電源供給）"
 
 #: src/ui/rig_dialog.py:993
 msgid "Assign as"
-msgstr ""
+msgstr "割り当て先"
 
 #: src/ui/rig_dialog.py:995 src/ui/rig_dialog.py:1630 src/ui/main_window.py:250
 msgid "Rig 1"
-msgstr ""
+msgstr "Rig 1"
 
 #: src/ui/rig_dialog.py:996 src/ui/rig_dialog.py:1631 src/ui/main_window.py:252
 msgid "Rig 2"
-msgstr ""
+msgstr "Rig 2"
 
 #: src/ui/rig_dialog.py:997
 msgid "Not assigned"
-msgstr ""
+msgstr "未割り当て"
 
 #: src/ui/rig_dialog.py:1008
 msgid "IQ Recording"
-msgstr ""
+msgstr "IQ録音"
 
 #: src/ui/rig_dialog.py:1018
 msgid "Save directory:"
-msgstr ""
+msgstr "保存先ディレクトリ:"
 
 #: src/ui/rig_dialog.py:1078
 msgid "(no devices found)"
-msgstr ""
+msgstr "（デバイスが見つかりません）"
 
 #: src/ui/rig_dialog.py:1128
 msgid "Select IQ Recording Directory"
-msgstr ""
+msgstr "IQ録音ディレクトリを選択"
 
 #: src/ui/rig_dialog.py:1282
 msgid ""
 "sounddevice is not installed.\n"
 "Install it with:  pip install sounddevice"
-msgstr ""
+msgstr "sounddeviceがインストールされていません。\n次のコマンドでインストールしてください:  pip install sounddevice"
 
 #: src/ui/rig_dialog.py:1291
 msgid "Audio Devices"
-msgstr ""
+msgstr "オーディオデバイス"
 
 #: src/ui/rig_dialog.py:1299
 msgid "Input device:"
-msgstr ""
+msgstr "入力デバイス:"
 
 #: src/ui/rig_dialog.py:1310 src/ui/rig_dialog.py:1483 src/ui/ft4_tab.py:349
 #: src/ui/ft4_tab.py:733
 msgid "-- dBFS"
-msgstr ""
+msgstr "-- dBFS"
 
 #: src/ui/rig_dialog.py:1313 src/ui/ft4_tab.py:341
 msgid "RX Level:"
-msgstr ""
+msgstr "RXレベル:"
 
 #: src/ui/rig_dialog.py:1320
 msgid "Output device:"
-msgstr ""
+msgstr "出力デバイス:"
 
 #: src/ui/rig_dialog.py:1324
 msgid "Refresh Devices"
-msgstr ""
+msgstr "デバイスを更新"
 
 #: src/ui/rig_dialog.py:1327
 msgid "Test (loopback)"
-msgstr ""
+msgstr "テスト（ループバック）"
 
 #: src/ui/rig_dialog.py:1341
 msgid "Pin to Device (Linux)"
-msgstr ""
+msgstr "デバイスに固定（Linux）"
 
 #: src/ui/rig_dialog.py:1346
 msgid ""
 "The devices above follow PipeWire's current default, which can silently "
 "change when other USB audio devices are plugged in. Pick a specific device "
 "below to always route to it."
-msgstr ""
+msgstr "上記のデバイスはPipeWireの現在のデフォルトに従うため、他のUSBオーディオデバイスが接続されると気づかないうちに変わることがあります。常に特定のデバイスへ固定したい場合は、下で指定してください。"
 
 #: src/ui/rig_dialog.py:1357
 msgid "Pin input to:"
-msgstr ""
+msgstr "入力を固定:"
 
 #: src/ui/rig_dialog.py:1361
 msgid "Pin output to:"
-msgstr ""
+msgstr "出力を固定:"
 
 #: src/ui/rig_dialog.py:1366
 msgid "Sample Rate"
@@ -1818,39 +1818,39 @@ msgstr "サンプルレート"
 
 #: src/ui/rig_dialog.py:1368
 msgid "(fixed — required by Direwolf)"
-msgstr ""
+msgstr "（固定 — Direwolfの要件）"
 
 #: src/ui/rig_dialog.py:1370
 msgid "Rate:"
-msgstr ""
+msgstr "レート:"
 
 #: src/ui/rig_dialog.py:1395
 #, python-brace-format
 msgid "Failed to query devices: {e}"
-msgstr ""
+msgstr "デバイス取得に失敗しました: {e}"
 
 #: src/ui/rig_dialog.py:1421
 #, python-brace-format
 msgid "{n} devices found."
-msgstr ""
+msgstr "{n}個のデバイスが見つかりました。"
 
 #: src/ui/rig_dialog.py:1434
 msgid "Auto (follow PipeWire default)"
-msgstr ""
+msgstr "自動（PipeWireのデフォルトに従う）"
 
 #: src/ui/rig_dialog.py:1502 src/ui/ft4_tab.py:757
 #, python-brace-format
 msgid "{db:.0f} dBFS"
-msgstr ""
+msgstr "{db:.0f} dBFS"
 
 #: src/ui/rig_dialog.py:1527
 msgid "Playing 1 kHz test tone…"
-msgstr ""
+msgstr "1 kHzテストトーンを再生中…"
 
 #: src/ui/rig_dialog.py:1530
 #, python-brace-format
 msgid "Test failed: {e}"
-msgstr ""
+msgstr "テスト失敗: {e}"
 
 # --- Settings dialog ---
 #: src/ui/rig_dialog.py:1609
@@ -1865,7 +1865,7 @@ msgstr "SDR設定"
 #: src/ui/rig_dialog.py:1652
 #, python-brace-format
 msgid "{n} rig models available  |  Hamlib {ver}"
-msgstr ""
+msgstr "{n}機種が利用可能  |  Hamlib {ver}"
 
 #: src/ui/rig_dialog.py:1657 src/ui/rotator_dialog.py:187
 #: src/ui/main_window.py:836
