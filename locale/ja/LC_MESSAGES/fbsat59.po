@@ -71,7 +71,7 @@ msgstr "説明:"
 
 #: src/ui/transmitter_dialog.py:91 src/ui/radio_control_widget.py:157
 msgid "Frequency"
-msgstr ""
+msgstr "周波数"
 
 #: src/ui/transmitter_dialog.py:99
 msgid "Downlink (MHz):"
@@ -141,7 +141,7 @@ msgstr ""
 #: src/ui/radio_control_widget.py:564 src/ui/radio_control_widget.py:596
 #: src/ui/qth_dialog.py:324 src/ui/qth_dialog.py:333
 msgid "Error"
-msgstr ""
+msgstr "エラー"
 
 #: src/ui/transmitter_dialog.py:248
 msgid "Description is required."
@@ -789,7 +789,7 @@ msgstr ""
 
 #: src/ui/radio_control_widget.py:137
 msgid "Tune: reset downlink/uplink to center of transponder band"
-msgstr ""
+msgstr "Tune: ダウンリンク/アップリンクをトランスポンダー帯域の中心にリセット"
 
 #: src/ui/radio_control_widget.py:142
 msgid "L"
@@ -797,7 +797,7 @@ msgstr ""
 
 #: src/ui/radio_control_widget.py:144
 msgid "Lock: link uplink to downlink (inverting transponder aware)"
-msgstr ""
+msgstr "Lock: アップリンクをダウンリンクに連動（反転トランスポンダー対応）"
 
 #: src/ui/radio_control_widget.py:152 src/ui/autotrack_record_dialog.py:548
 msgid "Transponder:"
@@ -813,23 +813,23 @@ msgstr "アップリンク:"
 
 #: src/ui/radio_control_widget.py:199
 msgid "Toggle CW mode on both VFOs"
-msgstr ""
+msgstr "両VFOのCWモードを切り替え"
 
 #: src/ui/radio_control_widget.py:207
 msgid "Send current CTCSS tone to rig"
-msgstr ""
+msgstr "現在のCTCSSトーンを無線機に送信"
 
 #: src/ui/radio_control_widget.py:210
 msgid "74.4 Hz (Activation)"
-msgstr ""
+msgstr "74.4 Hz（起動）"
 
 #: src/ui/radio_control_widget.py:211
 msgid "SO-50: activate 10-minute timer with 74.4 Hz tone"
-msgstr ""
+msgstr "SO-50: 74.4 Hzトーンで10分タイマーを起動"
 
 #: src/ui/radio_control_widget.py:223 src/ui/main_window.py:258
 msgid "Rotator"
-msgstr ""
+msgstr "ローテーター"
 
 #: src/ui/radio_control_widget.py:238
 msgid "AZ:"
@@ -843,7 +843,7 @@ msgstr "状態"
 #: src/ui/radio_control_widget.py:248 src/ui/radio_control_widget.py:543
 #: src/ui/radio_control_widget.py:575 src/ui/radio_control_widget.py:606
 msgid "Not configured"
-msgstr ""
+msgstr "未設定"
 
 #: src/ui/radio_control_widget.py:253 src/ui/radio_control_widget.py:570
 msgid "Connect Rig 1"
@@ -867,38 +867,38 @@ msgstr "ローテーターに接続"
 
 #: src/ui/radio_control_widget.py:275
 msgid "South Init"
-msgstr ""
+msgstr "南向き初期化"
 
 #: src/ui/radio_control_widget.py:278
 msgid ""
 "Rotator starts facing south (180°). AZ is offset by 180° so the 0/360° wrap "
 "is avoided."
-msgstr ""
+msgstr "ローテーターは南（180°）を向いた状態で起動します。0/360°の折り返しを避けるため、AZに180°のオフセットが適用されます。"
 
 #: src/ui/radio_control_widget.py:287
 msgid "Rotator:"
-msgstr ""
+msgstr "ローテーター:"
 
 #: src/ui/radio_control_widget.py:297
 msgid "msec"
-msgstr ""
+msgstr "ミリ秒"
 
 #: src/ui/radio_control_widget.py:299
 msgid "Cycle:"
-msgstr ""
+msgstr "更新周期:"
 
 #: src/ui/radio_control_widget.py:304 src/ui/autotrack_record_dialog.py:509
 #: src/ui/autotrack_record_dialog.py:516 src/ui/autotrack_record_dialog.py:534
 msgid "Autotrack"
-msgstr ""
+msgstr "自動追尾"
 
 #: src/ui/radio_control_widget.py:307 src/ui/radio_control_widget.py:442
 msgid "OFF"
-msgstr ""
+msgstr "オフ"
 
 #: src/ui/radio_control_widget.py:439
 msgid "ON"
-msgstr ""
+msgstr "オン"
 
 #: src/ui/radio_control_widget.py:551 src/ui/radio_control_widget.py:583
 msgid "SDR: Connected"
@@ -915,7 +915,7 @@ msgstr "接続中..."
 
 #: src/ui/radio_control_widget.py:566 src/ui/radio_control_widget.py:598
 msgid "Retry"
-msgstr ""
+msgstr "再試行"
 
 #: src/ui/radio_control_widget.py:568 src/ui/radio_control_widget.py:600
 #: src/ui/radio_control_widget.py:616
@@ -936,7 +936,7 @@ msgstr "ローテーターを切断"
 
 #: src/ui/radio_control_widget.py:652
 msgid "rigctld is running"
-msgstr ""
+msgstr "rigctldが実行中です"
 
 #: src/ui/radio_control_widget.py:656
 msgid ""
@@ -948,11 +948,11 @@ msgid ""
 "Stop rigctld before connecting:\n"
 "  Normal launch:   pkill rigctld\n"
 "  systemd service: sudo systemctl stop <service-name>"
-msgstr ""
+msgstr "rigctldが実行中で、同じシリアルポートを共有しています。\n\nDirectモードとrigctldは同じポートを安全に共有できません — 周波数・モードの書き込みが破損する可能性があります。\n\n接続する前にrigctldを停止してください:\n  通常起動の場合:   pkill rigctld\n  systemdサービスの場合: sudo systemctl stop <service-name>"
 
 #: src/ui/radio_control_widget.py:664
 msgid "I stopped it, retry"
-msgstr ""
+msgstr "停止したので再試行"
 
 #: src/ui/radio_control_widget.py:665
 msgid "Connect anyway"
