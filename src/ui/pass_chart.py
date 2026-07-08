@@ -432,7 +432,7 @@ class PassChartView(QWidget):
     def _make_elevation_axis(self) -> QValueAxis:
         axis = QValueAxis()
         axis.setRange(0.0, 90.0)
-        axis.setTitleText("Elevation (°)")
+        axis.setTitleText(_("Elevation (°)"))
         axis.setTickCount(10)
         axis.setLabelFormat("%d")
         return axis
@@ -751,7 +751,7 @@ class GroupPassChartView(QWidget):
     def _make_elevation_axis(self) -> QValueAxis:
         axis = QValueAxis()
         axis.setRange(0.0, 90.0)
-        axis.setTitleText("Elevation (°)")
+        axis.setTitleText(_("Elevation (°)"))
         axis.setTickCount(10)
         axis.setLabelFormat("%d")
         return axis

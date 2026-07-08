@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-08 21:29+0900\n"
+"POT-Creation-Date: 2026-07-08 21:32+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -1217,6 +1217,10 @@ msgstr "時刻 (UTC)"
 #: src/ui/pass_chart.py:428 src/ui/pass_chart.py:747
 msgid "Time (Local)"
 msgstr "時刻 (Local)"
+
+#: src/ui/pass_chart.py:435 src/ui/pass_chart.py:754
+msgid "Elevation (°)"
+msgstr "仰角 (°)"
 
 #: src/ui/pass_chart.py:460 src/ui/pass_chart.py:762
 #: src/ui/autotrack_record_dialog.py:381
