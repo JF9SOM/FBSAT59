@@ -405,103 +405,103 @@ msgstr "SDR未接続"
 
 #: src/ui/sdr_control_widget.py:249
 msgid "Spectrum"
-msgstr ""
+msgstr "スペクトラム"
 
 #: src/ui/sdr_control_widget.py:268
 msgid "Frequency (MHz)"
-msgstr ""
+msgstr "周波数 (MHz)"
 
 #: src/ui/sdr_control_widget.py:274
 msgid "Power (dBFS)"
-msgstr ""
+msgstr "パワー (dBFS)"
 
 #: src/ui/sdr_control_widget.py:295 src/ui/q65_tab.py:195 src/ui/ft4_tab.py:332
 msgid "RX:"
-msgstr ""
+msgstr "RX:"
 
 #: src/ui/sdr_control_widget.py:316
 msgid "Passband Tune"
-msgstr ""
+msgstr "パスバンドチューン"
 
 #: src/ui/sdr_control_widget.py:321
 msgid "Step:"
-msgstr ""
+msgstr "ステップ:"
 
 #: src/ui/sdr_control_widget.py:334
 msgid "Tune down ×10 step"
-msgstr ""
+msgstr "×10ステップ下げる"
 
 #: src/ui/sdr_control_widget.py:341
 msgid "Tune down"
-msgstr ""
+msgstr "1ステップ下げる"
 
 #: src/ui/sdr_control_widget.py:356
 msgid "Tune up"
-msgstr ""
+msgstr "1ステップ上げる"
 
 #: src/ui/sdr_control_widget.py:363
 msgid "Tune up ×10 step"
-msgstr ""
+msgstr "×10ステップ上げる"
 
 #: src/ui/sdr_control_widget.py:370
 msgid "Reset"
-msgstr ""
+msgstr "リセット"
 
 #: src/ui/sdr_control_widget.py:372
 msgid "Return to Doppler-corrected centre frequency"
-msgstr ""
+msgstr "Doppler補正済みの中心周波数に戻す"
 
 #: src/ui/sdr_control_widget.py:390
 msgid "Demodulator"
-msgstr ""
+msgstr "復調器"
 
 #: src/ui/sdr_control_widget.py:407
 msgid "Volume:"
-msgstr ""
+msgstr "音量:"
 
 #: src/ui/sdr_control_widget.py:419
 msgid "AGC On"
-msgstr ""
+msgstr "AGC オン"
 
 #: src/ui/sdr_control_widget.py:421
 msgid "AGC Off"
-msgstr ""
+msgstr "AGC オフ"
 
 #: src/ui/sdr_control_widget.py:430
 msgid "▶ Start Audio"
-msgstr ""
+msgstr "▶ 音声開始"
 
 #: src/ui/sdr_control_widget.py:431
 msgid "■ Stop Audio"
-msgstr ""
+msgstr "■ 音声停止"
 
 #: src/ui/sdr_control_widget.py:439
 msgid "● REC Audio"
-msgstr ""
+msgstr "● 音声録音"
 
 #: src/ui/sdr_control_widget.py:443
 msgid "lameenc not installed — pip install lameenc"
-msgstr ""
+msgstr "lameencがインストールされていません — pip install lameenc"
 
 #: src/ui/sdr_control_widget.py:444 src/ui/sdr_control_widget.py:486
 msgid "■ STOP"
-msgstr ""
+msgstr "■ 停止"
 
 #: src/ui/sdr_control_widget.py:453 src/ui/sdr_control_widget.py:495
 msgid "📁"
-msgstr ""
+msgstr "📁"
 
 #: src/ui/sdr_control_widget.py:454
 msgid "Open audio recordings folder in file manager"
-msgstr ""
+msgstr "ファイルマネージャーで音声録音フォルダを開く"
 
 #: src/ui/sdr_control_widget.py:463
 msgid "IQ Recorder"
-msgstr ""
+msgstr "IQレコーダー"
 
 #: src/ui/sdr_control_widget.py:467
 msgid "Record BW:"
-msgstr ""
+msgstr "録音 BW:"
 
 # --- Menu: File ---
 #: src/ui/sdr_control_widget.py:477
@@ -510,11 +510,11 @@ msgstr "ファイル:"
 
 #: src/ui/sdr_control_widget.py:484
 msgid "● REC"
-msgstr ""
+msgstr "● 録音"
 
 #: src/ui/sdr_control_widget.py:496
 msgid "Open IQ recordings folder in file manager"
-msgstr ""
+msgstr "ファイルマネージャーでIQ録音フォルダを開く"
 
 #: src/ui/meteor_tab.py:118
 msgid "SatDump Log"
