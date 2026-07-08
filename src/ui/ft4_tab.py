@@ -150,6 +150,47 @@ class _TxWorker(QObject):
             mgr.release_output(_AUDIO_OWNER, self._out_device)
 
 
+class _RxDecodeWorker(QObject):
+    """Runs Ft4Codec.decode_audio() off the Qt main thread.
+
+    libft4wsjt's full 3-pass subtract+BP/OSD decode over a crowded band can
+    take a large fraction of a 6s period (measured ~0.4s on a fast desktop
+    for ~28 overlapping stations; a low-power field PC can take several
+    times longer). Calling it directly from the scheduler's QTimer-driven
+    slot blocked the Qt event loop for that whole time, which stalled the
+    scheduler's own timer and desynced RX period boundaries from real UTC
+    time for every period after the first slow decode — this is what let a
+    single strong station decode while WSJT-X, running as a separate
+    process, decoded many more from the same audio (2026-07-09).
+
+    libft4wsjt's C bridge keeps its state in Fortran module-level `save`
+    variables (see scripts/wsjtx_bridge/ft4wsjt_bridge.f90) and is not
+    reentrant, so Ft4Tab must never have two of these running at once — see
+    `_decode_busy` in `_on_rx_period_ended()`.
+    """
+
+    done: Signal = Signal(object, object)  # (messages: list[Ft4Message], audio: NDArray)
+
+    def __init__(
+        self,
+        codec: Ft4Codec,
+        audio: NDArray[np.float32],
+        my_call: str,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._codec = codec
+        self._audio = audio
+        self._my_call = my_call
+
+    def run(self) -> None:
+        try:
+            messages = self._codec.decode_audio(self._audio, my_call=self._my_call)
+        except Exception:
+            messages = []
+        self.done.emit(messages, self._audio)
+
+
 # ---------------------------------------------------------------------------
 # FT4 Tab
 # ---------------------------------------------------------------------------
@@ -190,6 +231,8 @@ class Ft4Tab(QWidget):
         self._tx_in_progress: bool = False
         self._last_level_emit: float = 0.0
         self._waterfall_dialog: Ft4WaterfallDialog | None = None
+        self._decode_busy: bool = False
+        self._decode_thread: threading.Thread | None = None
 
         self._my_call: str = ""
         self._my_grid: str = ""
@@ -738,21 +781,46 @@ class Ft4Tab(QWidget):
 
     @Slot()
     def _on_rx_period_ended(self) -> None:
-        """RX slot ended — decode the accumulated audio buffer."""
+        """RX slot ended — decode the accumulated audio buffer.
+
+        Decoding runs in a background thread (_RxDecodeWorker) — it can take
+        a large fraction of a 6s period, and running it directly on this
+        Qt-timer-driven slot used to stall the scheduler itself, desyncing
+        every subsequent period's RX window from real time (2026-07-09).
+        """
         if not self._rx_buffer:
             return
         audio = np.concatenate(self._rx_buffer)
         self._rx_buffer.clear()
-        messages: list[Ft4Message] = []
-        if self._codec.decode_available:
-            messages = self._codec.decode_audio(audio, my_call=self._my_call)
-            if messages:
-                self._display_decoded(messages)
-        # Waterfall is a visual diagnostic independent of decode capability —
-        # update it even when nothing decoded (or decode is unavailable) so
-        # it can answer "is real FT4 audio here at all?" on its own.
+        if not self._codec.decode_available:
+            self._update_waterfall_only(audio, [])
+            return
+        if self._decode_busy:
+            # Previous period's decode hasn't finished yet. libft4wsjt's C
+            # bridge is not reentrant, so this period's decode is dropped
+            # rather than risking an overlapping call — but the waterfall
+            # still updates so the gap is visible instead of silently stale.
+            self._update_waterfall_only(audio, [])
+            return
+        self._decode_busy = True
+        worker = _RxDecodeWorker(self._codec, audio, self._my_call)
+        worker.done.connect(self._on_decode_done)
+        thread = threading.Thread(target=worker.run, daemon=True)
+        self._decode_thread = thread
+        thread.start()
+
+    def _update_waterfall_only(
+        self, audio: NDArray[np.float32], messages: list[Ft4Message]
+    ) -> None:
         if self._waterfall_dialog is not None and self._waterfall_dialog.isVisible():
             self._waterfall_dialog.update_waterfall(audio, messages)
+
+    @Slot(object, object)
+    def _on_decode_done(self, messages: list[Ft4Message], audio: NDArray[np.float32]) -> None:
+        self._decode_busy = False
+        if messages:
+            self._display_decoded(messages)
+        self._update_waterfall_only(audio, messages)
 
     # ------------------------------------------------------------------ #
     # Transmit path                                                        #
