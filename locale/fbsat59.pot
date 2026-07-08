@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-08 21:57+0900\n"
+"POT-Creation-Date: 2026-07-08 22:20+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -3152,7 +3152,7 @@ msgid "Q65"
 msgstr ""
 
 #: src/ui/main_window.py:792 src/ui/main_window.py:1963
-#: src/ui/main_window.py:4670 src/ui/main_window.py:4682
+#: src/ui/main_window.py:4697 src/ui/main_window.py:4709
 msgid "METEOR / HRPT"
 msgstr ""
 
@@ -3188,8 +3188,8 @@ msgstr ""
 msgid "Satellite Color"
 msgstr ""
 
-#: src/ui/main_window.py:841 src/ui/main_window.py:4429
-#: src/ui/main_window.py:4444
+#: src/ui/main_window.py:841 src/ui/main_window.py:4456
+#: src/ui/main_window.py:4471
 msgid "Auto Fetch Rules"
 msgstr ""
 
@@ -3416,80 +3416,80 @@ msgid "ROT: On"
 msgstr ""
 
 #: src/ui/main_window.py:4282
-msgid "Please restart the application to apply the language change."
+msgid "FBSAT59 will restart now to apply the language change."
 msgstr ""
 
-#: src/ui/main_window.py:4288
+#: src/ui/main_window.py:4315
 msgid "Satellite Color Legend"
 msgstr ""
 
-#: src/ui/main_window.py:4298
+#: src/ui/main_window.py:4325
 msgid "Green (bold)"
 msgstr ""
 
-#: src/ui/main_window.py:4299
+#: src/ui/main_window.py:4326
 msgid "AMSAT status: Operational — confirmed working by AMSAT."
 msgstr ""
 
-#: src/ui/main_window.py:4304
+#: src/ui/main_window.py:4331
 msgid "Yellow"
 msgstr ""
 
-#: src/ui/main_window.py:4305
+#: src/ui/main_window.py:4332
 msgid "AMSAT status: Partially operational — degraded but active."
 msgstr ""
 
-#: src/ui/main_window.py:4310
+#: src/ui/main_window.py:4337
 msgid "Red"
 msgstr ""
 
-#: src/ui/main_window.py:4311
+#: src/ui/main_window.py:4338
 msgid "AMSAT status: Non-operational — confirmed failed by AMSAT."
 msgstr ""
 
-#: src/ui/main_window.py:4316
+#: src/ui/main_window.py:4343
 msgid "Orange"
 msgstr ""
 
-#: src/ui/main_window.py:4317
+#: src/ui/main_window.py:4344
 msgid "SATNOGS alive — reception reported, no AMSAT data available."
 msgstr ""
 
-#: src/ui/main_window.py:4322
+#: src/ui/main_window.py:4349
 msgid "Purple (italic)"
 msgstr ""
 
-#: src/ui/main_window.py:4324
+#: src/ui/main_window.py:4351
 msgid ""
 "TLE pending — alive satellite awaiting TLE assignment (provisional NORAD ≥ "
 "90000, within 30-day grace period). Position cannot be displayed yet."
 msgstr ""
 
-#: src/ui/main_window.py:4332
+#: src/ui/main_window.py:4359
 msgid "Gray"
 msgstr ""
 
-#: src/ui/main_window.py:4333
+#: src/ui/main_window.py:4360
 msgid "Status unknown — not confirmed operational by any source."
 msgstr ""
 
-#: src/ui/main_window.py:4338
+#: src/ui/main_window.py:4365
 msgid "Blue"
 msgstr ""
 
-#: src/ui/main_window.py:4339
+#: src/ui/main_window.py:4366
 msgid "Celestial Bodies (Moon etc.) — below the horizon."
 msgstr ""
 
-#: src/ui/main_window.py:4344
+#: src/ui/main_window.py:4371
 msgid "Blue (bold)"
 msgstr ""
 
-#: src/ui/main_window.py:4345
+#: src/ui/main_window.py:4372
 msgid "Celestial Bodies (Moon etc.) — above the horizon."
 msgstr ""
 
-#: src/ui/main_window.py:4394
+#: src/ui/main_window.py:4421
 msgid ""
 "FBSAT59 automatically fetches and updates TLE orbital data and transponder "
 "information in the background. Manual updates are normally not required. Use "
@@ -3497,7 +3497,7 @@ msgid ""
 "before a pass of a newly launched satellite)."
 msgstr ""
 
-#: src/ui/main_window.py:4400
+#: src/ui/main_window.py:4427
 msgid ""
 "<table border='0' cellspacing='4'><tr><td><b>Space Stations</b> (ISS, CSS…)</"
 "td><td>every <b>1 hour</b></td></tr><tr><td><b>Amateur Satellites</b></"
@@ -3513,7 +3513,7 @@ msgid ""
 "(SATNOGS)</b></td><td>every <b>7 days</b></td></tr></table>"
 msgstr ""
 
-#: src/ui/main_window.py:4419
+#: src/ui/main_window.py:4446
 msgid ""
 "Transponder data is fetched from SATNOGS automatically on first launch, then "
 "refreshed automatically every 7 days in the background. Use <b>Satellite → "
@@ -3522,41 +3522,41 @@ msgid ""
 "launched satellite registers its transmitter)."
 msgstr ""
 
-#: src/ui/main_window.py:4426
+#: src/ui/main_window.py:4453
 msgid ""
 "On each launch the app syncs satellite names and statuses from SATNOGS, and "
 "fetches any TLE sources whose cached data has expired."
 msgstr ""
 
-#: src/ui/main_window.py:4430
+#: src/ui/main_window.py:4457
 msgid "TLE Auto-Fetch Schedule"
 msgstr ""
 
-#: src/ui/main_window.py:4431
+#: src/ui/main_window.py:4458
 msgid "Transponder Database (SATNOGS)"
 msgstr ""
 
-#: src/ui/main_window.py:4432
+#: src/ui/main_window.py:4459
 msgid "At Startup"
 msgstr ""
 
-#: src/ui/main_window.py:4456
+#: src/ui/main_window.py:4483
 msgid "About FBSAT59"
 msgstr ""
 
-#: src/ui/main_window.py:4458
+#: src/ui/main_window.py:4485
 msgid "Modern satellite tracking software for amateur radio operators.\n"
 msgstr ""
 
-#: src/ui/main_window.py:4692 src/ui/main_window.py:4710
+#: src/ui/main_window.py:4719 src/ui/main_window.py:4737
 msgid "QR Code"
 msgstr ""
 
-#: src/ui/main_window.py:4692
+#: src/ui/main_window.py:4719
 msgid "Web server is not running."
 msgstr ""
 
-#: src/ui/main_window.py:4710
+#: src/ui/main_window.py:4737
 msgid "Failed to generate QR code."
 msgstr ""
 

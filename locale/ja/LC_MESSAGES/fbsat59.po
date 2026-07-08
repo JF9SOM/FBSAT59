@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-08 21:57+0900\n"
+"POT-Creation-Date: 2026-07-08 22:20+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -21,14 +21,18 @@ msgstr ""
 msgid ""
 "Input device #{device} no longer exists (device list now has {count} "
 "entries) — reopen Rig Settings > Sound Card and re-select the input device."
-msgstr "入力デバイス #{device} が見つかりません（現在のデバイス数: {count}）— Rig Settings > Sound Card を開き、入力デバイスを選び直してください。"
+msgstr ""
+"入力デバイス #{device} が見つかりません（現在のデバイス数: {count}）— Rig "
+"Settings > Sound Card を開き、入力デバイスを選び直してください。"
 
 #: src/comms/audio_device_manager.py:211
 #, python-brace-format
 msgid ""
 "Input device #{device} ({name}) has no input channels — reopen Rig Settings "
 "> Sound Card and re-select the input device."
-msgstr "入力デバイス #{device}（{name}）には入力チャンネルがありません — Rig Settings > Sound Card を開き、入力デバイスを選び直してください。"
+msgstr ""
+"入力デバイス #{device}（{name}）には入力チャンネルがありません — Rig "
+"Settings > Sound Card を開き、入力デバイスを選び直してください。"
 
 # --- Transmitter panel ---
 #: src/ui/transmitter_dialog.py:57 src/ui/main_window.py:3601
@@ -3393,7 +3397,7 @@ msgid "Q65"
 msgstr "Q65"
 
 #: src/ui/main_window.py:792 src/ui/main_window.py:1963
-#: src/ui/main_window.py:4670 src/ui/main_window.py:4682
+#: src/ui/main_window.py:4697 src/ui/main_window.py:4709
 msgid "METEOR / HRPT"
 msgstr "METEOR / HRPT"
 
@@ -3431,8 +3435,8 @@ msgstr "ヘルプ"
 msgid "Satellite Color"
 msgstr "衛星の色"
 
-#: src/ui/main_window.py:841 src/ui/main_window.py:4429
-#: src/ui/main_window.py:4444
+#: src/ui/main_window.py:841 src/ui/main_window.py:4456
+#: src/ui/main_window.py:4471
 msgid "Auto Fetch Rules"
 msgstr "自動取得ルール"
 
@@ -3534,7 +3538,9 @@ msgstr "SatNOGSで開く"
 msgid ""
 "Could not reach db.satnogs.org — check your network connection.\n"
 "\n"
-msgstr "db.satnogs.orgに接続できませんでした — ネットワーク接続を確認してください。\n\n"
+msgstr ""
+"db.satnogs.orgに接続できませんでした — ネットワーク接続を確認してください。\n"
+"\n"
 
 #: src/ui/main_window.py:2802 src/ui/main_window.py:3601
 #: src/ui/main_window.py:3637
@@ -3662,52 +3668,52 @@ msgid "ROT: On"
 msgstr "ROT: オン"
 
 #: src/ui/main_window.py:4282
-msgid "Please restart the application to apply the language change."
-msgstr "言語設定を反映するには、アプリケーションを再起動してください。"
+msgid "FBSAT59 will restart now to apply the language change."
+msgstr "言語設定を反映するため、FBSAT59を今すぐ再起動します。"
 
 # --- Application ---
-#: src/ui/main_window.py:4288
+#: src/ui/main_window.py:4315
 msgid "Satellite Color Legend"
 msgstr "衛星カラー凡例"
 
-#: src/ui/main_window.py:4298
+#: src/ui/main_window.py:4325
 msgid "Green (bold)"
 msgstr "緑（太字）"
 
-#: src/ui/main_window.py:4299
+#: src/ui/main_window.py:4326
 msgid "AMSAT status: Operational — confirmed working by AMSAT."
 msgstr "AMSATステータス: 稼働中 — AMSATにより動作確認済み。"
 
-#: src/ui/main_window.py:4304
+#: src/ui/main_window.py:4331
 msgid "Yellow"
 msgstr "黄"
 
-#: src/ui/main_window.py:4305
+#: src/ui/main_window.py:4332
 msgid "AMSAT status: Partially operational — degraded but active."
 msgstr "AMSATステータス: 一部稼働 — 性能低下しているが動作中。"
 
 # --- Status bar ---
-#: src/ui/main_window.py:4310
+#: src/ui/main_window.py:4337
 msgid "Red"
 msgstr "赤"
 
-#: src/ui/main_window.py:4311
+#: src/ui/main_window.py:4338
 msgid "AMSAT status: Non-operational — confirmed failed by AMSAT."
 msgstr "AMSATステータス: 稼働停止 — AMSATにより故障確認済み。"
 
-#: src/ui/main_window.py:4316
+#: src/ui/main_window.py:4343
 msgid "Orange"
 msgstr "オレンジ"
 
-#: src/ui/main_window.py:4317
+#: src/ui/main_window.py:4344
 msgid "SATNOGS alive — reception reported, no AMSAT data available."
 msgstr "SATNOGSでは稼働中 — 受信報告あり、AMSATデータなし。"
 
-#: src/ui/main_window.py:4322
+#: src/ui/main_window.py:4349
 msgid "Purple (italic)"
 msgstr "紫（斜体）"
 
-#: src/ui/main_window.py:4324
+#: src/ui/main_window.py:4351
 msgid ""
 "TLE pending — alive satellite awaiting TLE assignment (provisional NORAD ≥ "
 "90000, within 30-day grace period). Position cannot be displayed yet."
@@ -3715,31 +3721,31 @@ msgstr ""
 "TLE保留中 — 稼働中衛星がTLE割り当てを待っています（仮NORAD ID ≥ 90000、猶予期"
 "間30日以内）。まだ位置は表示できません。"
 
-#: src/ui/main_window.py:4332
+#: src/ui/main_window.py:4359
 msgid "Gray"
 msgstr "グレー"
 
-#: src/ui/main_window.py:4333
+#: src/ui/main_window.py:4360
 msgid "Status unknown — not confirmed operational by any source."
 msgstr "状態不明 — どのソースでも動作確認が取れていません。"
 
-#: src/ui/main_window.py:4338
+#: src/ui/main_window.py:4365
 msgid "Blue"
 msgstr "青"
 
-#: src/ui/main_window.py:4339
+#: src/ui/main_window.py:4366
 msgid "Celestial Bodies (Moon etc.) — below the horizon."
 msgstr "天体（月等） — 地平線以下。"
 
-#: src/ui/main_window.py:4344
+#: src/ui/main_window.py:4371
 msgid "Blue (bold)"
 msgstr "青（太字）"
 
-#: src/ui/main_window.py:4345
+#: src/ui/main_window.py:4372
 msgid "Celestial Bodies (Moon etc.) — above the horizon."
 msgstr "天体（月等） — 地平線以上。"
 
-#: src/ui/main_window.py:4394
+#: src/ui/main_window.py:4421
 msgid ""
 "FBSAT59 automatically fetches and updates TLE orbital data and transponder "
 "information in the background. Manual updates are normally not required. Use "
@@ -3750,7 +3756,7 @@ msgstr ""
 "得・更新します。通常、手動更新は不要です。今すぐ最新データが必要な場合（例: "
 "新規打ち上げ衛星のパス直前など）のみ手動同期を使用してください。"
 
-#: src/ui/main_window.py:4400
+#: src/ui/main_window.py:4427
 msgid ""
 "<table border='0' cellspacing='4'><tr><td><b>Space Stations</b> (ISS, CSS…)</"
 "td><td>every <b>1 hour</b></td></tr><tr><td><b>Amateur Satellites</b></"
@@ -3778,7 +3784,7 @@ msgstr ""
 "tr><tr><td><b>Transponder Database (SATNOGS)</b></td><td><b>7日</b>ごと</"
 "td></tr></table>"
 
-#: src/ui/main_window.py:4419
+#: src/ui/main_window.py:4446
 msgid ""
 "Transponder data is fetched from SATNOGS automatically on first launch, then "
 "refreshed automatically every 7 days in the background. Use <b>Satellite → "
@@ -3791,7 +3797,7 @@ msgstr ""
 "ち上げ衛星のトランスミッタ登録直後など）は、<b>Satellite → Sync SATNOGS</b> "
 "でトランスポンダーの周波数・モードを手動更新できます。"
 
-#: src/ui/main_window.py:4426
+#: src/ui/main_window.py:4453
 msgid ""
 "On each launch the app syncs satellite names and statuses from SATNOGS, and "
 "fetches any TLE sources whose cached data has expired."
@@ -3799,35 +3805,35 @@ msgstr ""
 "起動のたびに、アプリはSATNOGSから衛星名・ステータスを同期し、キャッシュデータ"
 "の期限が切れたTLEソースを取得します。"
 
-#: src/ui/main_window.py:4430
+#: src/ui/main_window.py:4457
 msgid "TLE Auto-Fetch Schedule"
 msgstr "TLE自動取得スケジュール"
 
-#: src/ui/main_window.py:4431
+#: src/ui/main_window.py:4458
 msgid "Transponder Database (SATNOGS)"
 msgstr "トランスポンダーデータベース（SATNOGS）"
 
-#: src/ui/main_window.py:4432
+#: src/ui/main_window.py:4459
 msgid "At Startup"
 msgstr "起動時"
 
-#: src/ui/main_window.py:4456
+#: src/ui/main_window.py:4483
 msgid "About FBSAT59"
 msgstr "FBSAT59について"
 
-#: src/ui/main_window.py:4458
+#: src/ui/main_window.py:4485
 msgid "Modern satellite tracking software for amateur radio operators.\n"
 msgstr "アマチュア無線家向けの現代的な衛星追尾ソフトウェア。\n"
 
-#: src/ui/main_window.py:4692 src/ui/main_window.py:4710
+#: src/ui/main_window.py:4719 src/ui/main_window.py:4737
 msgid "QR Code"
 msgstr "QRコード"
 
-#: src/ui/main_window.py:4692
+#: src/ui/main_window.py:4719
 msgid "Web server is not running."
 msgstr "Webサーバーが起動していません。"
 
-#: src/ui/main_window.py:4710
+#: src/ui/main_window.py:4737
 msgid "Failed to generate QR code."
 msgstr "QRコードの生成に失敗しました。"
 
