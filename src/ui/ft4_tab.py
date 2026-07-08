@@ -333,6 +333,7 @@ class Ft4Tab(QWidget):
         self._rx_src_combo = QComboBox()
         self._rx_src_combo.addItem(_("Rig Soundcard"), "soundcard")
         self._rx_src_combo.addItem(_("SDR"), "sdr")
+        self._rx_src_combo.setMaximumWidth(100)
         self._rx_src_combo.currentIndexChanged.connect(self._on_rx_source_changed)
         cfg_lay.addWidget(self._rx_src_combo)
 
@@ -350,7 +351,7 @@ class Ft4Tab(QWidget):
         self._level_label.setMinimumWidth(65)
         cfg_lay.addWidget(self._level_label)
 
-        self._waterfall_btn = QPushButton(_("Show Waterfall"))
+        self._waterfall_btn = QPushButton(_("Waterfall"))
         self._waterfall_btn.setToolTip(
             _(
                 "Open a popup showing the last RX period's audio as a "

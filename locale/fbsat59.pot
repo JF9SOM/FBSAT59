@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-08 16:03+0900\n"
+"POT-Creation-Date: 2026-07-08 18:57+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -31,18 +31,18 @@ msgid ""
 "> Sound Card and re-select the input device."
 msgstr ""
 
-#: src/ui/transmitter_dialog.py:57 src/ui/main_window.py:3588
-#: src/ui/main_window.py:3598 src/ui/main_window.py:3609
+#: src/ui/transmitter_dialog.py:57 src/ui/main_window.py:3597
+#: src/ui/main_window.py:3607 src/ui/main_window.py:3618
 msgid "Edit Transmitter"
 msgstr ""
 
-#: src/ui/transmitter_dialog.py:57 src/ui/main_window.py:3578
+#: src/ui/transmitter_dialog.py:57 src/ui/main_window.py:3587
 msgid "Add Transmitter"
 msgstr ""
 
 #: src/ui/transmitter_dialog.py:74 src/ui/radio_control_widget.py:109
 #: src/ui/telemetry_tab.py:179 src/ui/autotrack_record_dialog.py:283
-#: src/ui/main_window.py:764
+#: src/ui/main_window.py:765
 msgid "Satellite"
 msgstr ""
 
@@ -157,7 +157,7 @@ msgstr ""
 msgid "Imported {n} transmitter(s) for NORAD {norad} from SatNOGS ID {src}."
 msgstr ""
 
-#: src/ui/settings_dialog.py:173 src/ui/main_window.py:759
+#: src/ui/settings_dialog.py:173 src/ui/main_window.py:760
 msgid "General Settings"
 msgstr ""
 
@@ -165,7 +165,7 @@ msgstr ""
 msgid "TLE Sources"
 msgstr ""
 
-#: src/ui/settings_dialog.py:207 src/ui/main_window.py:688
+#: src/ui/settings_dialog.py:207 src/ui/main_window.py:689
 msgid "World Map"
 msgstr ""
 
@@ -516,8 +516,8 @@ msgstr ""
 msgid "SatDump Log"
 msgstr ""
 
-#: src/ui/meteor_tab.py:128 src/ui/q65_tab.py:337 src/ui/ft4_tab.py:460
-#: src/ui/ft4_tab.py:499 src/ui/cw_tab.py:157
+#: src/ui/meteor_tab.py:128 src/ui/q65_tab.py:337 src/ui/ft4_tab.py:461
+#: src/ui/ft4_tab.py:500 src/ui/cw_tab.py:157
 msgid "Clear"
 msgstr ""
 
@@ -1103,7 +1103,7 @@ msgstr ""
 msgid "Decoder started — listening for sync…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:339 src/ui/ft4_tab.py:711 src/ui/cw_tab.py:329
+#: src/ui/sstv_tab.py:339 src/ui/ft4_tab.py:712 src/ui/cw_tab.py:329
 msgid "sounddevice not installed — pip install sounddevice"
 msgstr ""
 
@@ -1293,15 +1293,15 @@ msgstr ""
 msgid "Grid:"
 msgstr ""
 
-#: src/ui/q65_tab.py:189 src/ui/ft4_tab.py:408
+#: src/ui/q65_tab.py:189 src/ui/ft4_tab.py:409
 msgid "TX Slot:"
 msgstr ""
 
-#: src/ui/q65_tab.py:191 src/ui/ft4_tab.py:411
+#: src/ui/q65_tab.py:191 src/ui/ft4_tab.py:412
 msgid "Even"
 msgstr ""
 
-#: src/ui/q65_tab.py:192 src/ui/ft4_tab.py:412
+#: src/ui/q65_tab.py:192 src/ui/ft4_tab.py:413
 msgid "Odd"
 msgstr ""
 
@@ -1314,15 +1314,15 @@ msgstr ""
 msgid "SDR"
 msgstr ""
 
-#: src/ui/q65_tab.py:217 src/ui/ft4_tab.py:380
+#: src/ui/q65_tab.py:217 src/ui/ft4_tab.py:381
 msgid "● RX"
 msgstr ""
 
-#: src/ui/q65_tab.py:221 src/ui/ft4_tab.py:384
+#: src/ui/q65_tab.py:221 src/ui/ft4_tab.py:385
 msgid "● TX"
 msgstr ""
 
-#: src/ui/q65_tab.py:228 src/ui/ft4_tab.py:391
+#: src/ui/q65_tab.py:228 src/ui/ft4_tab.py:392
 msgid "Transmit"
 msgstr ""
 
@@ -1358,15 +1358,15 @@ msgstr ""
 msgid "73"
 msgstr ""
 
-#: src/ui/q65_tab.py:259 src/ui/ft4_tab.py:429
+#: src/ui/q65_tab.py:259 src/ui/ft4_tab.py:430
 msgid "TX Enable"
 msgstr ""
 
-#: src/ui/q65_tab.py:267 src/ui/ft4_tab.py:437
+#: src/ui/q65_tab.py:267 src/ui/ft4_tab.py:438
 msgid "Halt TX"
 msgstr ""
 
-#: src/ui/q65_tab.py:276 src/ui/ft4_tab.py:446
+#: src/ui/q65_tab.py:276 src/ui/ft4_tab.py:447
 msgid "TX:"
 msgstr ""
 
@@ -1382,7 +1382,7 @@ msgstr ""
 msgid "Send the text above as a one-shot free message"
 msgstr ""
 
-#: src/ui/q65_tab.py:293 src/ui/ft4_tab.py:454 src/ui/ft4_tab.py:653
+#: src/ui/q65_tab.py:293 src/ui/ft4_tab.py:455 src/ui/ft4_tab.py:654
 msgid "State: IDLE"
 msgstr ""
 
@@ -1390,35 +1390,35 @@ msgstr ""
 msgid "DX: —"
 msgstr ""
 
-#: src/ui/q65_tab.py:302 src/ui/ft4_tab.py:464
+#: src/ui/q65_tab.py:302 src/ui/ft4_tab.py:465
 msgid "Log QSO"
 msgstr ""
 
-#: src/ui/q65_tab.py:307 src/ui/ft4_tab.py:469 src/ui/aprs_tab.py:297
+#: src/ui/q65_tab.py:307 src/ui/ft4_tab.py:470 src/ui/aprs_tab.py:297
 msgid "Export ADIF…"
 msgstr ""
 
-#: src/ui/q65_tab.py:320 src/ui/ft4_tab.py:482
+#: src/ui/q65_tab.py:320 src/ui/ft4_tab.py:483
 msgid "Decoded Messages"
 msgstr ""
 
-#: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:484
+#: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:485
 msgid "UTC"
 msgstr ""
 
-#: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:484
+#: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:485
 msgid "dB"
 msgstr ""
 
-#: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:484
+#: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:485
 msgid "DT"
 msgstr ""
 
-#: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:484
+#: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:485
 msgid "Hz"
 msgstr ""
 
-#: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:484
+#: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:485
 msgid "Message"
 msgstr ""
 
@@ -1426,7 +1426,7 @@ msgstr ""
 msgid "Waiting for period boundary…"
 msgstr ""
 
-#: src/ui/q65_tab.py:462 src/ui/ft4_tab.py:1108
+#: src/ui/q65_tab.py:462 src/ui/ft4_tab.py:1110
 msgid "Input: Rig connected"
 msgstr ""
 
@@ -1668,7 +1668,7 @@ msgstr ""
 msgid "PPM Correction:"
 msgstr ""
 
-#: src/ui/rig_dialog.py:973 src/ui/ft4_tab.py:410
+#: src/ui/rig_dialog.py:973 src/ui/ft4_tab.py:411
 msgid "Auto"
 msgstr ""
 
@@ -1730,12 +1730,12 @@ msgstr ""
 msgid "Input device:"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1310 src/ui/rig_dialog.py:1483 src/ui/ft4_tab.py:349
-#: src/ui/ft4_tab.py:733
+#: src/ui/rig_dialog.py:1310 src/ui/rig_dialog.py:1483 src/ui/ft4_tab.py:350
+#: src/ui/ft4_tab.py:735
 msgid "-- dBFS"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1313 src/ui/ft4_tab.py:341
+#: src/ui/rig_dialog.py:1313 src/ui/ft4_tab.py:342
 msgid "RX Level:"
 msgstr ""
 
@@ -1796,7 +1796,7 @@ msgstr ""
 msgid "Auto (follow PipeWire default)"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1502 src/ui/ft4_tab.py:757
+#: src/ui/rig_dialog.py:1502 src/ui/ft4_tab.py:759
 #, python-brace-format
 msgid "{db:.0f} dBFS"
 msgstr ""
@@ -1824,7 +1824,7 @@ msgid "{n} rig models available  |  Hamlib {ver}"
 msgstr ""
 
 #: src/ui/rig_dialog.py:1657 src/ui/rotator_dialog.py:187
-#: src/ui/main_window.py:836
+#: src/ui/main_window.py:845
 msgid "Hamlib Update…"
 msgstr ""
 
@@ -2068,18 +2068,18 @@ msgstr ""
 msgid "Audio Hz:"
 msgstr ""
 
-#: src/ui/ft4_tab.py:353
-msgid "Show Waterfall"
+#: src/ui/ft4_tab.py:354
+msgid "Waterfall"
 msgstr ""
 
-#: src/ui/ft4_tab.py:356
+#: src/ui/ft4_tab.py:357
 msgid ""
 "Open a popup showing the last RX period's audio as a spectrogram, to check "
 "whether real FT4 signals are visible in the passband even when nothing "
 "decodes."
 msgstr ""
 
-#: src/ui/ft4_tab.py:419
+#: src/ui/ft4_tab.py:420
 msgid ""
 "Which 6s slot to transmit in when calling CQ / enabling TX.\n"
 "Auto: whichever slot is current when you press CQ / TX Enable.\n"
@@ -2087,83 +2087,83 @@ msgid ""
 "slot regardless of this setting."
 msgstr ""
 
-#: src/ui/ft4_tab.py:448
+#: src/ui/ft4_tab.py:449
 msgid "FT4 message (auto-filled by state machine)"
 msgstr ""
 
-#: src/ui/ft4_tab.py:606
+#: src/ui/ft4_tab.py:607
 msgid ""
 "ft8lib is not installed — FT4 TX/RX is disabled.\n"
 "Build ft8_lib (github.com/kgoba/ft8_lib) and place the shared library in ~/."
 "local/share/fbsat59/ft8lib/"
 msgstr ""
 
-#: src/ui/ft4_tab.py:617
+#: src/ui/ft4_tab.py:618
 msgid ""
 "ft8lib found but decode API is unavailable — TX only.\n"
 "Update ft8_lib to ≥ v0.4 for RX decode support."
 msgstr ""
 
-#: src/ui/ft4_tab.py:626
+#: src/ui/ft4_tab.py:627
 msgid ""
 "Using lightweight FT4 decoder — may miss weak or overlapping stations in a "
 "crowded pass.\n"
 "Help > FT4 Enhanced Decoder Installation… for WSJT-X-grade decoding."
 msgstr ""
 
-#: src/ui/ft4_tab.py:644
+#: src/ui/ft4_tab.py:645
 msgid "Set My Call before operating"
 msgstr ""
 
-#: src/ui/ft4_tab.py:715 src/ui/cw_tab.py:333
+#: src/ui/ft4_tab.py:716 src/ui/cw_tab.py:333
 msgid "Sound Card not configured — open Rig Settings > Sound Card"
 msgstr ""
 
-#: src/ui/ft4_tab.py:861
+#: src/ui/ft4_tab.py:863
 msgid "Invalid FT4 message: "
 msgstr ""
 
-#: src/ui/ft4_tab.py:873
+#: src/ui/ft4_tab.py:875
 msgid "TX: "
 msgstr ""
 
-#: src/ui/ft4_tab.py:878
+#: src/ui/ft4_tab.py:880
 msgid "TX done — waiting for next period"
 msgstr ""
 
-#: src/ui/ft4_tab.py:883
+#: src/ui/ft4_tab.py:885
 msgid "TX error: "
 msgstr ""
 
-#: src/ui/ft4_tab.py:1065
+#: src/ui/ft4_tab.py:1067
 msgid "Set My Call before enabling TX"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1071
+#: src/ui/ft4_tab.py:1073
 msgid "TX enabled — waiting for next period"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1073
+#: src/ui/ft4_tab.py:1075
 msgid "TX disabled"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1079
+#: src/ui/ft4_tab.py:1081
 msgid "TX halted"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1088
+#: src/ui/ft4_tab.py:1090
 msgid "Rig connected — ready"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1098
+#: src/ui/ft4_tab.py:1100
 msgid "Rig disconnected"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1111
+#: src/ui/ft4_tab.py:1113
 msgid "Input: Rig not connected"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1131
+#: src/ui/ft4_tab.py:1133
 msgid "QSOs logged: "
 msgstr ""
 
@@ -2337,7 +2337,7 @@ msgstr ""
 msgid "QTH: not set — configure in Settings"
 msgstr ""
 
-#: src/ui/qth_dialog.py:110 src/ui/main_window.py:3358
+#: src/ui/qth_dialog.py:110 src/ui/main_window.py:3367
 msgid "Set QTH"
 msgstr ""
 
@@ -2405,7 +2405,7 @@ msgstr ""
 msgid "Please enter a grid locator."
 msgstr ""
 
-#: src/ui/manual_tle_dialog.py:43 src/ui/main_window.py:3674
+#: src/ui/manual_tle_dialog.py:43 src/ui/main_window.py:3683
 msgid "Add Manual TLE"
 msgstr ""
 
@@ -2889,7 +2889,7 @@ msgid ""
 "⚠️  Restart FBSAT59 to activate the new Hamlib version."
 msgstr ""
 
-#: src/ui/cw_tab.py:138 src/ui/main_window.py:789 src/ui/main_window.py:2015
+#: src/ui/cw_tab.py:138 src/ui/main_window.py:790 src/ui/main_window.py:2024
 msgid "CW Decoder"
 msgstr ""
 
@@ -3005,401 +3005,401 @@ msgstr ""
 msgid "Visible"
 msgstr ""
 
-#: src/ui/main_window.py:643
+#: src/ui/main_window.py:644
 msgid "Satellites"
 msgstr ""
 
-#: src/ui/main_window.py:663
+#: src/ui/main_window.py:664
 msgid "Search satellites..."
 msgstr ""
 
-#: src/ui/main_window.py:687
+#: src/ui/main_window.py:688
 msgid "Dashboard"
 msgstr ""
 
-#: src/ui/main_window.py:689
+#: src/ui/main_window.py:690
 msgid "Radar"
 msgstr ""
 
-#: src/ui/main_window.py:690
+#: src/ui/main_window.py:691
 msgid "Pass Chart"
 msgstr ""
 
-#: src/ui/main_window.py:693
+#: src/ui/main_window.py:694
 msgid "Group Pass Chart"
 msgstr ""
 
-#: src/ui/main_window.py:696
+#: src/ui/main_window.py:697
 msgid "Radio Control"
 msgstr ""
 
-#: src/ui/main_window.py:702
+#: src/ui/main_window.py:703
 msgid "SDR Control"
 msgstr ""
 
-#: src/ui/main_window.py:756
+#: src/ui/main_window.py:757
 msgid "File"
 msgstr ""
 
-#: src/ui/main_window.py:758
+#: src/ui/main_window.py:759
 msgid "Set QTH..."
 msgstr ""
 
-#: src/ui/main_window.py:761
+#: src/ui/main_window.py:762
 msgid "Exit"
 msgstr ""
 
-#: src/ui/main_window.py:766
+#: src/ui/main_window.py:767
 msgid "Add Transmitter..."
 msgstr ""
 
-#: src/ui/main_window.py:767
+#: src/ui/main_window.py:768
 msgid "Edit Transmitter..."
 msgstr ""
 
-#: src/ui/main_window.py:768
+#: src/ui/main_window.py:769
 msgid "Delete Transmitter..."
 msgstr ""
 
-#: src/ui/main_window.py:769 src/ui/main_window.py:2608
-#: src/ui/main_window.py:2793 src/ui/main_window.py:2799
+#: src/ui/main_window.py:770 src/ui/main_window.py:2617
+#: src/ui/main_window.py:2802 src/ui/main_window.py:2808
 msgid "Hide Satellite"
 msgstr ""
 
-#: src/ui/main_window.py:771
+#: src/ui/main_window.py:772
 msgid "Add Manual TLE..."
 msgstr ""
 
-#: src/ui/main_window.py:772 src/ui/main_window.py:3680
+#: src/ui/main_window.py:773 src/ui/main_window.py:3689
 msgid "Update TLE"
 msgstr ""
 
-#: src/ui/main_window.py:773
+#: src/ui/main_window.py:774
 msgid "Sync SATNOGS"
 msgstr ""
 
-#: src/ui/main_window.py:776
+#: src/ui/main_window.py:777
 msgid "Radio"
 msgstr ""
 
-#: src/ui/main_window.py:778
+#: src/ui/main_window.py:779
 msgid "Rig Settings..."
 msgstr ""
 
-#: src/ui/main_window.py:779
+#: src/ui/main_window.py:780
 msgid "Rotator Settings..."
 msgstr ""
 
-#: src/ui/main_window.py:782
+#: src/ui/main_window.py:783
 msgid "Communications"
 msgstr ""
 
-#: src/ui/main_window.py:784 src/ui/main_window.py:1764
-#: src/ui/main_window.py:1774
+#: src/ui/main_window.py:785 src/ui/main_window.py:1773
+#: src/ui/main_window.py:1783
 msgid "APRS"
 msgstr ""
 
-#: src/ui/main_window.py:785 src/ui/main_window.py:1748
-#: src/ui/main_window.py:1781 src/ui/main_window.py:1790
+#: src/ui/main_window.py:786 src/ui/main_window.py:1757
+#: src/ui/main_window.py:1790 src/ui/main_window.py:1799
 msgid "Telemetry"
 msgstr ""
 
-#: src/ui/main_window.py:786 src/ui/main_window.py:1866
+#: src/ui/main_window.py:787 src/ui/main_window.py:1875
 msgid "SSTV / SSDV"
 msgstr ""
 
-#: src/ui/main_window.py:787 src/ui/main_window.py:1890
+#: src/ui/main_window.py:788 src/ui/main_window.py:1899
 msgid "FT4"
 msgstr ""
 
-#: src/ui/main_window.py:788 src/ui/main_window.py:1933
+#: src/ui/main_window.py:789 src/ui/main_window.py:1942
 msgid "Q65"
 msgstr ""
 
-#: src/ui/main_window.py:791 src/ui/main_window.py:1954
-#: src/ui/main_window.py:4639 src/ui/main_window.py:4651
+#: src/ui/main_window.py:792 src/ui/main_window.py:1963
+#: src/ui/main_window.py:4666 src/ui/main_window.py:4678
 msgid "METEOR / HRPT"
 msgstr ""
 
-#: src/ui/main_window.py:797 src/ui/main_window.py:801
+#: src/ui/main_window.py:798 src/ui/main_window.py:802
 msgid "Autotrack/Record"
 msgstr ""
 
-#: src/ui/main_window.py:799
+#: src/ui/main_window.py:800
 msgid "Open Autotrack/Record..."
 msgstr ""
 
-#: src/ui/main_window.py:804
+#: src/ui/main_window.py:805
 msgid "View"
 msgstr ""
 
-#: src/ui/main_window.py:806 src/ui/main_window.py:4250
+#: src/ui/main_window.py:807 src/ui/main_window.py:4277
 msgid "Language"
 msgstr ""
 
-#: src/ui/main_window.py:815
+#: src/ui/main_window.py:824
 msgid "Time Zone"
 msgstr ""
 
-#: src/ui/main_window.py:820
+#: src/ui/main_window.py:829
 msgid "Local Time"
 msgstr ""
 
-#: src/ui/main_window.py:829
+#: src/ui/main_window.py:838
 msgid "Help"
 msgstr ""
 
-#: src/ui/main_window.py:831
+#: src/ui/main_window.py:840
 msgid "Satellite Color"
 msgstr ""
 
-#: src/ui/main_window.py:832 src/ui/main_window.py:4398
-#: src/ui/main_window.py:4413
+#: src/ui/main_window.py:841 src/ui/main_window.py:4425
+#: src/ui/main_window.py:4440
 msgid "Auto Fetch Rules"
 msgstr ""
 
-#: src/ui/main_window.py:834
+#: src/ui/main_window.py:843
 msgid "Check for Updates…"
 msgstr ""
 
-#: src/ui/main_window.py:835
+#: src/ui/main_window.py:844
 msgid "SDR Device Installation…"
 msgstr ""
 
-#: src/ui/main_window.py:837
+#: src/ui/main_window.py:846
 msgid "ft8lib Installation…"
 msgstr ""
 
-#: src/ui/main_window.py:838
+#: src/ui/main_window.py:847
 msgid "FT4 Enhanced Decoder Installation…"
 msgstr ""
 
-#: src/ui/main_window.py:839
+#: src/ui/main_window.py:848
 msgid "Q65 Library Installation…"
 msgstr ""
 
-#: src/ui/main_window.py:840
+#: src/ui/main_window.py:849
 msgid "Direwolf Installation…"
 msgstr ""
 
-#: src/ui/main_window.py:841
+#: src/ui/main_window.py:850
 msgid "SatDump…"
 msgstr ""
 
-#: src/ui/main_window.py:842
+#: src/ui/main_window.py:851
 msgid "gr-satellites Installation…"
 msgstr ""
 
-#: src/ui/main_window.py:843
+#: src/ui/main_window.py:852
 msgid "CW Model Installation…"
 msgstr ""
 
-#: src/ui/main_window.py:845
+#: src/ui/main_window.py:854
 msgid "About"
 msgstr ""
 
-#: src/ui/main_window.py:846
+#: src/ui/main_window.py:855
 msgid "GitHub"
 msgstr ""
 
-#: src/ui/main_window.py:887
+#: src/ui/main_window.py:896
 msgid "Show QR code for web access"
 msgstr ""
 
-#: src/ui/main_window.py:889 src/ui/main_window.py:4141
+#: src/ui/main_window.py:898 src/ui/main_window.py:4150
 msgid "RIG: Off"
 msgstr ""
 
-#: src/ui/main_window.py:890 src/ui/main_window.py:4238
-#: src/ui/main_window.py:4242
+#: src/ui/main_window.py:899 src/ui/main_window.py:4247
+#: src/ui/main_window.py:4251
 msgid "ROT: Off"
 msgstr ""
 
-#: src/ui/main_window.py:1144
+#: src/ui/main_window.py:1153
 msgid "Moon"
 msgstr ""
 
-#: src/ui/main_window.py:1386
+#: src/ui/main_window.py:1395
 msgid "Fetching group TLEs (first run)..."
 msgstr ""
 
-#: src/ui/main_window.py:1560
+#: src/ui/main_window.py:1569
 msgid "Timer expired — Autotrack stopped"
 msgstr ""
 
-#: src/ui/main_window.py:1657
+#: src/ui/main_window.py:1666
 msgid "Run a pass search first"
 msgstr ""
 
-#: src/ui/main_window.py:2608
+#: src/ui/main_window.py:2617
 msgid "Unhide Satellite"
 msgstr ""
 
-#: src/ui/main_window.py:2724
+#: src/ui/main_window.py:2733
 msgid ""
 "Could not reach db.satnogs.org — check your network connection.\n"
 "\n"
 msgstr ""
 
-#: src/ui/main_window.py:2793 src/ui/main_window.py:3588
-#: src/ui/main_window.py:3624
+#: src/ui/main_window.py:2802 src/ui/main_window.py:3597
+#: src/ui/main_window.py:3633
 msgid "No satellite selected."
 msgstr ""
 
-#: src/ui/main_window.py:2800
+#: src/ui/main_window.py:2809
 #, python-brace-format
 msgid "Hide {name} (NORAD {n}) from the satellite list?"
 msgstr ""
 
-#: src/ui/main_window.py:3358
+#: src/ui/main_window.py:3367
 msgid "Location manager not initialized."
 msgstr ""
 
-#: src/ui/main_window.py:3579
+#: src/ui/main_window.py:3588
 msgid "Transmitter added successfully."
 msgstr ""
 
-#: src/ui/main_window.py:3598 src/ui/main_window.py:3634
+#: src/ui/main_window.py:3607 src/ui/main_window.py:3643
 msgid "No transmitters found for this satellite."
 msgstr ""
 
-#: src/ui/main_window.py:3609
+#: src/ui/main_window.py:3618
 msgid "Select transmitter to edit:"
 msgstr ""
 
-#: src/ui/main_window.py:3624 src/ui/main_window.py:3634
-#: src/ui/main_window.py:3645 src/ui/main_window.py:3654
+#: src/ui/main_window.py:3633 src/ui/main_window.py:3643
+#: src/ui/main_window.py:3654 src/ui/main_window.py:3663
 msgid "Delete Transmitter"
 msgstr ""
 
-#: src/ui/main_window.py:3645
+#: src/ui/main_window.py:3654
 msgid "Select transmitter to delete:"
 msgstr ""
 
-#: src/ui/main_window.py:3655
+#: src/ui/main_window.py:3664
 #, python-brace-format
 msgid "Delete transmitter '{desc}'?"
 msgstr ""
 
-#: src/ui/main_window.py:3675
+#: src/ui/main_window.py:3684
 #, python-brace-format
 msgid "Satellite TLE added successfully (NORAD {n})."
 msgstr ""
 
-#: src/ui/main_window.py:3680
+#: src/ui/main_window.py:3689
 msgid "TLE update has been queued in the background."
 msgstr ""
 
-#: src/ui/main_window.py:3692
+#: src/ui/main_window.py:3701
 msgid "Syncing transmitter frequencies from SATNOGS..."
 msgstr ""
 
-#: src/ui/main_window.py:3726
+#: src/ui/main_window.py:3735
 #, python-brace-format
 msgid "SATNOGS sync: {ins} inserted, {upd} updated, {skp} skipped"
 msgstr ""
 
-#: src/ui/main_window.py:3733
+#: src/ui/main_window.py:3742
 #, python-brace-format
 msgid "SATNOGS sync failed: {err}"
 msgstr ""
 
-#: src/ui/main_window.py:4121
+#: src/ui/main_window.py:4130
 #, python-brace-format
 msgid "\\U0001f50a TX: {owner}"
 msgstr ""
 
-#: src/ui/main_window.py:4135
+#: src/ui/main_window.py:4144
 msgid "RIG: 1+2"
 msgstr ""
 
-#: src/ui/main_window.py:4137
+#: src/ui/main_window.py:4146
 msgid "RIG: 1"
 msgstr ""
 
-#: src/ui/main_window.py:4139
+#: src/ui/main_window.py:4148
 msgid "RIG: 2"
 msgstr ""
 
-#: src/ui/main_window.py:4240
+#: src/ui/main_window.py:4249
 msgid "ROT: On"
 msgstr ""
 
-#: src/ui/main_window.py:4251
+#: src/ui/main_window.py:4278
 msgid "Please restart the application to apply the language change."
 msgstr ""
 
-#: src/ui/main_window.py:4257
+#: src/ui/main_window.py:4284
 msgid "Satellite Color Legend"
 msgstr ""
 
-#: src/ui/main_window.py:4267
+#: src/ui/main_window.py:4294
 msgid "Green (bold)"
 msgstr ""
 
-#: src/ui/main_window.py:4268
+#: src/ui/main_window.py:4295
 msgid "AMSAT status: Operational — confirmed working by AMSAT."
 msgstr ""
 
-#: src/ui/main_window.py:4273
+#: src/ui/main_window.py:4300
 msgid "Yellow"
 msgstr ""
 
-#: src/ui/main_window.py:4274
+#: src/ui/main_window.py:4301
 msgid "AMSAT status: Partially operational — degraded but active."
 msgstr ""
 
-#: src/ui/main_window.py:4279
+#: src/ui/main_window.py:4306
 msgid "Red"
 msgstr ""
 
-#: src/ui/main_window.py:4280
+#: src/ui/main_window.py:4307
 msgid "AMSAT status: Non-operational — confirmed failed by AMSAT."
 msgstr ""
 
-#: src/ui/main_window.py:4285
+#: src/ui/main_window.py:4312
 msgid "Orange"
 msgstr ""
 
-#: src/ui/main_window.py:4286
+#: src/ui/main_window.py:4313
 msgid "SATNOGS alive — reception reported, no AMSAT data available."
 msgstr ""
 
-#: src/ui/main_window.py:4291
+#: src/ui/main_window.py:4318
 msgid "Purple (italic)"
 msgstr ""
 
-#: src/ui/main_window.py:4293
+#: src/ui/main_window.py:4320
 msgid ""
 "TLE pending — alive satellite awaiting TLE assignment (provisional NORAD ≥ "
 "90000, within 30-day grace period). Position cannot be displayed yet."
 msgstr ""
 
-#: src/ui/main_window.py:4301
+#: src/ui/main_window.py:4328
 msgid "Gray"
 msgstr ""
 
-#: src/ui/main_window.py:4302
+#: src/ui/main_window.py:4329
 msgid "Status unknown — not confirmed operational by any source."
 msgstr ""
 
-#: src/ui/main_window.py:4307
+#: src/ui/main_window.py:4334
 msgid "Blue"
 msgstr ""
 
-#: src/ui/main_window.py:4308
+#: src/ui/main_window.py:4335
 msgid "Celestial Bodies (Moon etc.) — below the horizon."
 msgstr ""
 
-#: src/ui/main_window.py:4313
+#: src/ui/main_window.py:4340
 msgid "Blue (bold)"
 msgstr ""
 
-#: src/ui/main_window.py:4314
+#: src/ui/main_window.py:4341
 msgid "Celestial Bodies (Moon etc.) — above the horizon."
 msgstr ""
 
-#: src/ui/main_window.py:4363
+#: src/ui/main_window.py:4390
 msgid ""
 "FBSAT59 automatically fetches and updates TLE orbital data and transponder "
 "information in the background. Manual updates are normally not required. Use "
@@ -3407,7 +3407,7 @@ msgid ""
 "before a pass of a newly launched satellite)."
 msgstr ""
 
-#: src/ui/main_window.py:4369
+#: src/ui/main_window.py:4396
 msgid ""
 "<table border='0' cellspacing='4'><tr><td><b>Space Stations</b> (ISS, CSS…)</"
 "td><td>every <b>1 hour</b></td></tr><tr><td><b>Amateur Satellites</b></"
@@ -3423,7 +3423,7 @@ msgid ""
 "(SATNOGS)</b></td><td>every <b>7 days</b></td></tr></table>"
 msgstr ""
 
-#: src/ui/main_window.py:4388
+#: src/ui/main_window.py:4415
 msgid ""
 "Transponder data is fetched from SATNOGS automatically on first launch, then "
 "refreshed automatically every 7 days in the background. Use <b>Satellite → "
@@ -3432,41 +3432,41 @@ msgid ""
 "launched satellite registers its transmitter)."
 msgstr ""
 
-#: src/ui/main_window.py:4395
+#: src/ui/main_window.py:4422
 msgid ""
 "On each launch the app syncs satellite names and statuses from SATNOGS, and "
 "fetches any TLE sources whose cached data has expired."
 msgstr ""
 
-#: src/ui/main_window.py:4399
+#: src/ui/main_window.py:4426
 msgid "TLE Auto-Fetch Schedule"
 msgstr ""
 
-#: src/ui/main_window.py:4400
+#: src/ui/main_window.py:4427
 msgid "Transponder Database (SATNOGS)"
 msgstr ""
 
-#: src/ui/main_window.py:4401
+#: src/ui/main_window.py:4428
 msgid "At Startup"
 msgstr ""
 
-#: src/ui/main_window.py:4425
+#: src/ui/main_window.py:4452
 msgid "About FBSAT59"
 msgstr ""
 
-#: src/ui/main_window.py:4427
+#: src/ui/main_window.py:4454
 msgid "Modern satellite tracking software for amateur radio operators.\n"
 msgstr ""
 
-#: src/ui/main_window.py:4661 src/ui/main_window.py:4679
+#: src/ui/main_window.py:4688 src/ui/main_window.py:4706
 msgid "QR Code"
 msgstr ""
 
-#: src/ui/main_window.py:4661
+#: src/ui/main_window.py:4688
 msgid "Web server is not running."
 msgstr ""
 
-#: src/ui/main_window.py:4679
+#: src/ui/main_window.py:4706
 msgid "Failed to generate QR code."
 msgstr ""
 
