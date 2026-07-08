@@ -3104,7 +3104,7 @@ msgstr "ローテーター設定"
 
 #: src/ui/rotator_dialog.py:126
 msgid "NET (rotctld compatible)"
-msgstr ""
+msgstr "NET（rotctld互換）"
 
 # --- Radio / Rig dialog ---
 #: src/ui/rotator_dialog.py:163
@@ -3114,12 +3114,12 @@ msgstr "ローテーターモデル:"
 #: src/ui/rotator_dialog.py:185
 #, python-brace-format
 msgid "Hamlib {ver}"
-msgstr ""
+msgstr "Hamlib {ver}"
 
 #: src/ui/rotator_dialog.py:212 src/ui/rotator_dialog.py:233
 #, python-brace-format
 msgid "{n} rotator models available"
-msgstr ""
+msgstr "{n}機種が利用可能"
 
 #: src/ui/main_window.py:199
 msgid "Satellite Detail"
