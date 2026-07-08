@@ -373,7 +373,7 @@ msgstr ""
 #: src/ui/log_export_dialog.py:98 src/ui/pass_panel.py:401
 #: src/ui/pass_panel.py:450 src/ui/aprs_tab.py:235
 msgid "To:"
-msgstr ""
+msgstr "宛先:"
 
 #: src/ui/log_export_dialog.py:103
 msgid "Include modes"
@@ -1113,7 +1113,7 @@ msgstr "SatDumpが見つかりました"
 
 #: src/ui/sstv_tab.py:121 src/ui/aprs_tab.py:199
 msgid "Input: —"
-msgstr ""
+msgstr "入力: —"
 
 #: src/ui/sstv_tab.py:142
 msgid "Auto-save PNG"
@@ -2409,59 +2409,59 @@ msgstr "局設定"
 
 #: src/ui/aprs_tab.py:193
 msgid "Via:"
-msgstr ""
+msgstr "Via:"
 
 #: src/ui/aprs_tab.py:224
 msgid "Received Packets"
-msgstr ""
+msgstr "受信パケット"
 
 #: src/ui/aprs_tab.py:233
 msgid "Send Message"
-msgstr ""
+msgstr "メッセージ送信"
 
 #: src/ui/aprs_tab.py:241
 msgid "Message:"
-msgstr ""
+msgstr "メッセージ:"
 
 #: src/ui/aprs_tab.py:243
 msgid "Text message (max 67 chars)"
-msgstr ""
+msgstr "テキストメッセージ（最大67文字）"
 
 #: src/ui/aprs_tab.py:246
 msgid "Send"
-msgstr ""
+msgstr "送信"
 
 #: src/ui/aprs_tab.py:253
 msgid "Send My Position"
-msgstr ""
+msgstr "自局位置を送信"
 
 #: src/ui/aprs_tab.py:255
 msgid "Auto-beacon every"
-msgstr ""
+msgstr "自動ビーコン"
 
 #: src/ui/aprs_tab.py:262
 msgid " min"
-msgstr ""
+msgstr " 分ごと"
 
 #: src/ui/aprs_tab.py:266
 msgid "Symbol:"
-msgstr ""
+msgstr "シンボル:"
 
 #: src/ui/aprs_tab.py:270
 msgid "Fixed Station  /-"
-msgstr ""
+msgstr "固定局  /-"
 
 #: src/ui/aprs_tab.py:271
 msgid "Mobile  />"
-msgstr ""
+msgstr "移動局  />"
 
 #: src/ui/aprs_tab.py:272
 msgid "Balloon  /O"
-msgstr ""
+msgstr "気球  /O"
 
 #: src/ui/aprs_tab.py:273
 msgid "Antenna  /Y"
-msgstr ""
+msgstr "アンテナ  /Y"
 
 #: src/ui/aprs_tab.py:274
 msgid "Satellite  /S"
@@ -2469,49 +2469,49 @@ msgstr "衛星  /S"
 
 #: src/ui/aprs_tab.py:281
 msgid "Comment:"
-msgstr ""
+msgstr "コメント:"
 
 #: src/ui/aprs_tab.py:283
 msgid "Optional free text"
-msgstr ""
+msgstr "任意の自由記述"
 
 #: src/ui/aprs_tab.py:286
 msgid "Send Now"
-msgstr ""
+msgstr "今すぐ送信"
 
 #: src/ui/aprs_tab.py:290
 msgid "QTH: —"
-msgstr ""
+msgstr "QTH: —"
 
 #: src/ui/aprs_tab.py:395
 msgid "Input: Sound Card + Direwolf  (send + receive)"
-msgstr ""
+msgstr "入力: サウンドカード + Direwolf（送受信）"
 
 #: src/ui/aprs_tab.py:400
 #, python-brace-format
 msgid "Input: {dev}  (receive only — SDR)"
-msgstr ""
+msgstr "入力: {dev}（受信のみ — SDR）"
 
 #: src/ui/aprs_tab.py:405
 msgid "Input: Sound Card + Direwolf  (receive only — Rig not connected)"
-msgstr ""
+msgstr "入力: サウンドカード + Direwolf（受信のみ — 無線機未接続）"
 
 #: src/ui/aprs_tab.py:411
 msgid "Input: Sound Card not configured — open Rig Settings > Sound Card"
-msgstr ""
+msgstr "入力: サウンドカード未設定 — Rig Settings > Sound Card を開いてください"
 
 #: src/ui/aprs_tab.py:417
 msgid "Input: No audio source — connect Rig or SDR in Radio Control"
-msgstr ""
+msgstr "入力: 音声ソースなし — Radio Controlで無線機またはSDRを接続してください"
 
 #: src/ui/aprs_tab.py:708
 #, python-brace-format
 msgid "QSOs logged: {n}"
-msgstr ""
+msgstr "記録済みQSO数: {n}"
 
 #: src/ui/aprs_tab.py:764 src/ui/aprs_tab.py:781
 msgid "QTH: not set — configure in Settings"
-msgstr ""
+msgstr "QTH: 未設定 — Settingsで設定してください"
 
 #: src/ui/qth_dialog.py:110 src/ui/main_window.py:3367
 msgid "Set QTH"

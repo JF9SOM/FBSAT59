@@ -275,13 +275,14 @@ class AprsTab(QWidget):
         ]
         for label, _code in self._pos_symbols:
             self._pos_symbol_combo.addItem(label)
-        self._pos_symbol_combo.setFixedWidth(160)
+        self._pos_symbol_combo.setFixedWidth(80)
         pos_layout.addWidget(self._pos_symbol_combo)
         pos_layout.addSpacing(12)
         pos_layout.addWidget(QLabel(_("Comment:")))
         self._pos_comment_edit = QLineEdit()
         self._pos_comment_edit.setPlaceholderText(_("Optional free text"))
         self._pos_comment_edit.setMaxLength(43)
+        self._pos_comment_edit.setMinimumWidth(200)
         pos_layout.addWidget(self._pos_comment_edit, stretch=1)
         self._pos_send_btn = QPushButton(_("Send Now"))
         self._pos_send_btn.setEnabled(False)
