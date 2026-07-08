@@ -373,7 +373,7 @@ msgstr ""
 #: src/ui/log_export_dialog.py:98 src/ui/pass_panel.py:401
 #: src/ui/pass_panel.py:450 src/ui/aprs_tab.py:235
 msgid "To:"
-msgstr "宛先:"
+msgstr ""
 
 #: src/ui/log_export_dialog.py:103
 msgid "Include modes"
@@ -2345,63 +2345,63 @@ msgstr "記録済みQSO数: "
 
 #: src/ui/pass_panel.py:130
 msgid "Current Time"
-msgstr ""
+msgstr "現在時刻"
 
 #: src/ui/pass_panel.py:131
 msgid "Set date and time to now"
-msgstr ""
+msgstr "日付と時刻を現在に設定"
 
 #: src/ui/pass_panel.py:303
 msgid "Set 'To' = 'From' + selected offset"
-msgstr ""
+msgstr "'To' を 'From' + 選択したオフセットに設定"
 
 #: src/ui/pass_panel.py:382
 msgid "Target"
-msgstr ""
+msgstr "対象衛星"
 
 #: src/ui/pass_panel.py:383
 msgid "Group"
-msgstr ""
+msgstr "グループ"
 
 #: src/ui/pass_panel.py:416 src/ui/pass_panel.py:471
 msgid "Search"
-msgstr ""
+msgstr "検索"
 
 #: src/ui/pass_panel.py:459
 msgid "Min El:"
-msgstr ""
+msgstr "最小仰角:"
 
 #: src/ui/pass_panel.py:495 src/ui/pass_panel.py:766 src/ui/pass_panel.py:768
 msgid "Export CSV"
-msgstr ""
+msgstr "CSVをエクスポート"
 
 #: src/ui/pass_panel.py:539
 msgid "(Local)"
-msgstr ""
+msgstr "（ローカル時刻）"
 
 #: src/ui/pass_panel.py:544
 msgid "AOS (Local)"
-msgstr ""
+msgstr "AOS（ローカル時刻）"
 
 #: src/ui/pass_panel.py:545
 msgid "LOS (Local)"
-msgstr ""
+msgstr "LOS（ローカル時刻）"
 
 #: src/ui/pass_panel.py:674
 msgid "Group Search"
-msgstr ""
+msgstr "グループ検索"
 
 #: src/ui/pass_panel.py:674
 msgid "No satellites or predictor available."
-msgstr ""
+msgstr "衛星またはパス予測機能が利用できません。"
 
 #: src/ui/pass_panel.py:766
 msgid "No results to export."
-msgstr ""
+msgstr "エクスポートする結果がありません。"
 
 #: src/ui/pass_panel.py:804
 msgid "Export Error"
-msgstr ""
+msgstr "エクスポートエラー"
 
 #: src/ui/aprs_tab.py:167
 msgid "Station Settings"
