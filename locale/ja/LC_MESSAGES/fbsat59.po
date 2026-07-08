@@ -523,7 +523,7 @@ msgstr ""
 #: src/ui/meteor_tab.py:128 src/ui/q65_tab.py:337 src/ui/ft4_tab.py:460
 #: src/ui/ft4_tab.py:499 src/ui/cw_tab.py:157
 msgid "Clear"
-msgstr ""
+msgstr "クリア"
 
 #: src/ui/meteor_tab.py:212
 msgid "Reception Control"
@@ -1127,7 +1127,7 @@ msgstr ""
 
 #: src/ui/sstv_tab.py:339 src/ui/ft4_tab.py:711 src/ui/cw_tab.py:329
 msgid "sounddevice not installed — pip install sounddevice"
-msgstr ""
+msgstr "sounddeviceがインストールされていません — pip install sounddevice"
 
 #: src/ui/sstv_tab.py:357
 msgid "Sound card error: "
@@ -1325,27 +1325,27 @@ msgstr "設定"
 
 #: src/ui/q65_tab.py:170 src/ui/ft4_tab.py:314 src/ui/aprs_tab.py:177
 msgid "My Call:"
-msgstr ""
+msgstr "コールサイン:"
 
 #: src/ui/q65_tab.py:176 src/ui/ft4_tab.py:320
 msgid "Grid:"
-msgstr ""
+msgstr "グリッド:"
 
 #: src/ui/q65_tab.py:189 src/ui/ft4_tab.py:408
 msgid "TX Slot:"
-msgstr ""
+msgstr "TX Slot:"
 
 #: src/ui/q65_tab.py:191 src/ui/ft4_tab.py:411
 msgid "Even"
-msgstr ""
+msgstr "偶数"
 
 #: src/ui/q65_tab.py:192 src/ui/ft4_tab.py:412
 msgid "Odd"
-msgstr ""
+msgstr "奇数"
 
 #: src/ui/q65_tab.py:197 src/ui/ft4_tab.py:334
 msgid "Rig Soundcard"
-msgstr ""
+msgstr "無線機サウンドカード"
 
 #: src/ui/q65_tab.py:198 src/ui/q65_tab.py:488 src/ui/rig_dialog.py:391
 #: src/ui/ft4_tab.py:335 src/ui/cw_tab.py:142
@@ -1354,11 +1354,11 @@ msgstr "SDR"
 
 #: src/ui/q65_tab.py:217 src/ui/ft4_tab.py:380
 msgid "● RX"
-msgstr ""
+msgstr "● RX"
 
 #: src/ui/q65_tab.py:221 src/ui/ft4_tab.py:384
 msgid "● TX"
-msgstr ""
+msgstr "● TX"
 
 # --- Transmitter panel ---
 #: src/ui/q65_tab.py:228 src/ui/ft4_tab.py:391
@@ -1399,15 +1399,15 @@ msgstr ""
 
 #: src/ui/q65_tab.py:259 src/ui/ft4_tab.py:429
 msgid "TX Enable"
-msgstr ""
+msgstr "TX有効化"
 
 #: src/ui/q65_tab.py:267 src/ui/ft4_tab.py:437
 msgid "Halt TX"
-msgstr ""
+msgstr "TX停止"
 
 #: src/ui/q65_tab.py:276 src/ui/ft4_tab.py:446
 msgid "TX:"
-msgstr ""
+msgstr "TX:"
 
 #: src/ui/q65_tab.py:279
 msgid "Message to transmit (auto-filled by state machine)"
@@ -1423,7 +1423,7 @@ msgstr ""
 
 #: src/ui/q65_tab.py:293 src/ui/ft4_tab.py:454 src/ui/ft4_tab.py:653
 msgid "State: IDLE"
-msgstr ""
+msgstr "状態: IDLE"
 
 #: src/ui/q65_tab.py:299
 msgid "DX: —"
@@ -1431,15 +1431,15 @@ msgstr ""
 
 #: src/ui/q65_tab.py:302 src/ui/ft4_tab.py:464
 msgid "Log QSO"
-msgstr ""
+msgstr "QSOを記録"
 
 #: src/ui/q65_tab.py:307 src/ui/ft4_tab.py:469 src/ui/aprs_tab.py:297
 msgid "Export ADIF…"
-msgstr ""
+msgstr "ADIFをエクスポート…"
 
 #: src/ui/q65_tab.py:320 src/ui/ft4_tab.py:482
 msgid "Decoded Messages"
-msgstr ""
+msgstr "デコードされたメッセージ"
 
 #: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:484
 msgid "UTC"
@@ -1447,19 +1447,19 @@ msgstr "UTC"
 
 #: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:484
 msgid "dB"
-msgstr ""
+msgstr "dB"
 
 #: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:484
 msgid "DT"
-msgstr ""
+msgstr "DT"
 
 #: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:484
 msgid "Hz"
-msgstr ""
+msgstr "Hz"
 
 #: src/ui/q65_tab.py:322 src/ui/ft4_tab.py:484
 msgid "Message"
-msgstr ""
+msgstr "メッセージ"
 
 #: src/ui/q65_tab.py:342
 msgid "Waiting for period boundary…"
@@ -1489,12 +1489,12 @@ msgstr ""
 
 #: src/ui/q65_tab.py:734 src/ui/ft4_tab.py:124
 msgid "another tab"
-msgstr ""
+msgstr "別のタブ"
 
 #: src/ui/q65_tab.py:736 src/ui/ft4_tab.py:125
 #, python-brace-format
 msgid "Sound card output is in use by {other}"
-msgstr ""
+msgstr "サウンドカード出力は{other}が使用中です"
 
 #: src/ui/rig_dialog.py:366
 msgid "Enable Rig 2"
@@ -2188,22 +2188,22 @@ msgstr "インストール先: "
 
 #: src/ui/ft4_tab.py:132
 msgid "PTT command failed — check Rig 1 connection"
-msgstr ""
+msgstr "PTTコマンドが失敗しました — Rig 1の接続を確認してください"
 
 #: src/ui/ft4_tab.py:326
 msgid "Audio Hz:"
-msgstr ""
+msgstr "オーディオ Hz:"
 
 #: src/ui/ft4_tab.py:353
 msgid "Show Waterfall"
-msgstr ""
+msgstr "ウォーターフォールを表示"
 
 #: src/ui/ft4_tab.py:356
 msgid ""
 "Open a popup showing the last RX period's audio as a spectrogram, to check "
 "whether real FT4 signals are visible in the passband even when nothing "
 "decodes."
-msgstr ""
+msgstr "直前のRX期間の音声をスペクトログラムとして表示するポップアップを開きます。\n何もデコードされない場合でも、実際のFT4信号が帯域内に見えるかを確認できます。"
 
 #: src/ui/ft4_tab.py:419
 msgid ""
@@ -2211,75 +2211,75 @@ msgid ""
 "Auto: whichever slot is current when you press CQ / TX Enable.\n"
 "Responding to a decoded CQ always uses the correct opposite\n"
 "slot regardless of this setting."
-msgstr ""
+msgstr "CQ送信/TX Enable時にどの6秒スロットで送信するかを指定します。\nAuto: CQ送信/TX Enableを押した時点のスロットを使用します。\nデコードされたCQへの応答は、この設定に関わらず\n常に正しい逆スロットを自動的に使用します。"
 
 #: src/ui/ft4_tab.py:448
 msgid "FT4 message (auto-filled by state machine)"
-msgstr ""
+msgstr "FT4メッセージ（ステートマシンが自動入力）"
 
 #: src/ui/ft4_tab.py:606
 msgid ""
 "ft8lib is not installed — FT4 TX/RX is disabled.\n"
 "Build ft8_lib (github.com/kgoba/ft8_lib) and place the shared library in ~/."
 "local/share/fbsat59/ft8lib/"
-msgstr ""
+msgstr "ft8libがインストールされていません — FT4の送受信は無効です。\nft8_lib（github.com/kgoba/ft8_lib）をビルドし、共有ライブラリを\n~/.local/share/fbsat59/ft8lib/ に配置してください"
 
 #: src/ui/ft4_tab.py:617
 msgid ""
 "ft8lib found but decode API is unavailable — TX only.\n"
 "Update ft8_lib to ≥ v0.4 for RX decode support."
-msgstr ""
+msgstr "ft8libは見つかりましたが、デコードAPIが利用できません — 送信のみ可能です。\n受信デコードに対応するには ft8_lib を v0.4 以降に更新してください。"
 
 #: src/ui/ft4_tab.py:626
 msgid ""
 "Using lightweight FT4 decoder — may miss weak or overlapping stations in a "
 "crowded pass.\n"
 "Help > FT4 Enhanced Decoder Installation… for WSJT-X-grade decoding."
-msgstr ""
+msgstr "軽量版FT4デコーダーを使用中 — 混雑したパスでは弱い信号や重なった局を\n見逃す可能性があります。WSJT-X相当のデコード精度にするには\nHelp > FT4 Enhanced Decoder Installation… を参照してください。"
 
 #: src/ui/ft4_tab.py:644
 msgid "Set My Call before operating"
-msgstr ""
+msgstr "運用前にコールサインを設定してください"
 
 #: src/ui/ft4_tab.py:715 src/ui/cw_tab.py:333
 msgid "Sound Card not configured — open Rig Settings > Sound Card"
-msgstr ""
+msgstr "サウンドカードが未設定です — Rig Settings > Sound Card を開いてください"
 
 #: src/ui/ft4_tab.py:861
 msgid "Invalid FT4 message: "
-msgstr ""
+msgstr "無効なFT4メッセージ: "
 
 #: src/ui/ft4_tab.py:873
 msgid "TX: "
-msgstr ""
+msgstr "TX: "
 
 #: src/ui/ft4_tab.py:878
 msgid "TX done — waiting for next period"
-msgstr ""
+msgstr "TX完了 — 次の周期を待機中"
 
 #: src/ui/ft4_tab.py:883
 msgid "TX error: "
-msgstr ""
+msgstr "TXエラー: "
 
 #: src/ui/ft4_tab.py:1065
 msgid "Set My Call before enabling TX"
-msgstr ""
+msgstr "TXを有効にする前にコールサインを設定してください"
 
 #: src/ui/ft4_tab.py:1071
 msgid "TX enabled — waiting for next period"
-msgstr ""
+msgstr "TXを有効化しました — 次の周期を待機中"
 
 #: src/ui/ft4_tab.py:1073
 msgid "TX disabled"
-msgstr ""
+msgstr "TXを無効化しました"
 
 #: src/ui/ft4_tab.py:1079
 msgid "TX halted"
-msgstr ""
+msgstr "TXを停止しました"
 
 #: src/ui/ft4_tab.py:1088
 msgid "Rig connected — ready"
-msgstr ""
+msgstr "無線機接続済み — 準備完了"
 
 #: src/ui/ft4_tab.py:1098
 msgid "Rig disconnected"
@@ -2291,7 +2291,7 @@ msgstr "入力: 無線機未接続"
 
 #: src/ui/ft4_tab.py:1131
 msgid "QSOs logged: "
-msgstr ""
+msgstr "記録済みQSO数: "
 
 #: src/ui/pass_panel.py:130
 msgid "Current Time"
