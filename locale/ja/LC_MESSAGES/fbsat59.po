@@ -2803,35 +2803,35 @@ msgstr "衛星を追加"
 
 #: src/ui/autotrack_record_dialog.py:64
 msgid "Search…"
-msgstr ""
+msgstr "検索…"
 
 #: src/ui/autotrack_record_dialog.py:167
 msgid "Autotrack / Record"
-msgstr ""
+msgstr "自動追尾 / 記録"
 
 #: src/ui/autotrack_record_dialog.py:222 src/ui/autotrack_record_dialog.py:386
 msgid "Start (UTC):"
-msgstr ""
+msgstr "開始 (UTC):"
 
 #: src/ui/autotrack_record_dialog.py:222
 msgid "Start (Local):"
-msgstr ""
+msgstr "開始 (ローカル):"
 
 #: src/ui/autotrack_record_dialog.py:254
 msgid "Autotrack Lists"
-msgstr ""
+msgstr "自動追尾リスト"
 
 #: src/ui/autotrack_record_dialog.py:259
 msgid "Lists:"
-msgstr ""
+msgstr "リスト:"
 
 #: src/ui/autotrack_record_dialog.py:266
 msgid "Add"
-msgstr ""
+msgstr "追加"
 
 #: src/ui/autotrack_record_dialog.py:268
 msgid "Rename"
-msgstr ""
+msgstr "名前変更"
 
 #: src/ui/autotrack_record_dialog.py:270
 msgid "Delete"
@@ -2839,7 +2839,7 @@ msgstr "削除"
 
 #: src/ui/autotrack_record_dialog.py:280
 msgid "Entries (satellite + transponder):"
-msgstr ""
+msgstr "エントリー（衛星＋トランスポンダー）:"
 
 #: src/ui/autotrack_record_dialog.py:283
 msgid "Transponder"
@@ -2847,11 +2847,11 @@ msgstr "トランスポンダ"
 
 #: src/ui/autotrack_record_dialog.py:283
 msgid "DL (MHz)"
-msgstr ""
+msgstr "DL (MHz)"
 
 #: src/ui/autotrack_record_dialog.py:283
 msgid "UL (MHz)"
-msgstr ""
+msgstr "UL (MHz)"
 
 #: src/ui/autotrack_record_dialog.py:292
 msgid "Add Satellite…"
@@ -2859,27 +2859,27 @@ msgstr "衛星を追加…"
 
 #: src/ui/autotrack_record_dialog.py:294
 msgid "Remove"
-msgstr ""
+msgstr "削除"
 
 #: src/ui/autotrack_record_dialog.py:296
 msgid "▲"
-msgstr ""
+msgstr "▲"
 
 #: src/ui/autotrack_record_dialog.py:299
 msgid "▼"
-msgstr ""
+msgstr "▼"
 
 #: src/ui/autotrack_record_dialog.py:313
 msgid "Autotrack Control"
-msgstr ""
+msgstr "自動追尾コントロール"
 
 #: src/ui/autotrack_record_dialog.py:320
 msgid "List:"
-msgstr ""
+msgstr "リスト:"
 
 #: src/ui/autotrack_record_dialog.py:323
 msgid "Enable Autotrack"
-msgstr ""
+msgstr "自動追尾を有効化"
 
 #: src/ui/autotrack_record_dialog.py:340
 msgid "Status:"
@@ -2887,74 +2887,74 @@ msgstr "状態:"
 
 #: src/ui/autotrack_record_dialog.py:345
 msgid "Recording (SDR)  — starts at AOS, stops at LOS"
-msgstr ""
+msgstr "記録（SDR） — AOSで開始・LOSで停止"
 
 #: src/ui/autotrack_record_dialog.py:347
 msgid "Audio Record (MP3)"
-msgstr ""
+msgstr "音声録音（MP3）"
 
 #: src/ui/autotrack_record_dialog.py:349
 msgid "IQ Record"
-msgstr ""
+msgstr "IQ録音"
 
 #: src/ui/autotrack_record_dialog.py:351
 msgid "METEOR / HRPT Reception"
-msgstr ""
+msgstr "METEOR / HRPT 受信"
 
 #: src/ui/autotrack_record_dialog.py:354
 msgid ""
 "When the tracked satellite supports LRPT or HRPT,\n"
 "automatically open the METEOR/HRPT tab and start\n"
 "SatDump reception at AOS.  Stops at LOS."
-msgstr ""
+msgstr "追尾中の衛星がLRPTまたはHRPTに対応している場合、\nAOSで自動的にMETEOR/HRPTタブを開きSatDump受信を開始します。\nLOSで停止します。"
 
 #: src/ui/autotrack_record_dialog.py:367
 msgid "Autotrack Timer"
-msgstr ""
+msgstr "自動追尾タイマー"
 
 #: src/ui/autotrack_record_dialog.py:381
 msgid "Now"
-msgstr ""
+msgstr "現在"
 
 #: src/ui/autotrack_record_dialog.py:383
 msgid "Reset start time to current time"
-msgstr ""
+msgstr "開始時刻を現在時刻にリセット"
 
 #: src/ui/autotrack_record_dialog.py:392
 msgid "3 hours"
-msgstr ""
+msgstr "3時間"
 
 #: src/ui/autotrack_record_dialog.py:393
 msgid "6 hours"
-msgstr ""
+msgstr "6時間"
 
 #: src/ui/autotrack_record_dialog.py:394
 msgid "12 hours"
-msgstr ""
+msgstr "12時間"
 
 #: src/ui/autotrack_record_dialog.py:395
 msgid "24 hours"
-msgstr ""
+msgstr "24時間"
 
 #: src/ui/autotrack_record_dialog.py:398
 msgid "Stop after:"
-msgstr ""
+msgstr "停止まで:"
 
 #: src/ui/autotrack_record_dialog.py:469
 msgid "New Autotrack List"
-msgstr ""
+msgstr "新しい自動追尾リスト"
 
 #: src/ui/autotrack_record_dialog.py:469
 msgid "List name:"
-msgstr ""
+msgstr "リスト名:"
 
 #: src/ui/autotrack_record_dialog.py:481
 msgid "Rename List"
-msgstr ""
+msgstr "リスト名を変更"
 
 #: src/ui/autotrack_record_dialog.py:481
 msgid "New name:"
-msgstr ""
+msgstr "新しい名前:"
 
 #: src/ui/autotrack_record_dialog.py:495
 msgid "Delete List"
@@ -2963,19 +2963,19 @@ msgstr "リストを削除"
 #: src/ui/autotrack_record_dialog.py:496
 #, python-brace-format
 msgid "Delete list '{name}' and all its entries?"
-msgstr ""
+msgstr "リスト「{name}」とその全エントリーを削除しますか？"
 
 #: src/ui/autotrack_record_dialog.py:509
 msgid "Please select a list first."
-msgstr ""
+msgstr "先にリストを選択してください。"
 
 #: src/ui/autotrack_record_dialog.py:516
 msgid "No satellites available."
-msgstr ""
+msgstr "利用可能な衛星がありません。"
 
 #: src/ui/autotrack_record_dialog.py:534
 msgid "No transponders found for this satellite."
-msgstr ""
+msgstr "この衛星のトランスポンダーが見つかりません。"
 
 #: src/ui/autotrack_record_dialog.py:548
 msgid "Select Transponder"
