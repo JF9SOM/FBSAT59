@@ -18,6 +18,7 @@ import sqlite3
 import subprocess
 import sys
 import threading
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Any, TypedDict
 
@@ -54,6 +55,7 @@ from PySide6.QtWidgets import (
 
 from comms import mode_detection
 from comms.audio_device_manager import get_audio_device_manager
+from comms.ft4.decode_log import get_ft4_decode_logger
 from core.autotrack import AutotrackManager
 from core.celestial_engine import MOON_ID, CelestialEngine
 from core.engine import DopplerCalculator, Observation, PassPredictor, SatelliteEngine
@@ -1423,7 +1425,16 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ #
 
     def _on_tick(self) -> None:
-        """Timer callback that updates satellite positions and the status bar."""
+        """Timer callback that updates satellite positions and the status bar.
+
+        Duration is logged to ft4_decode.log (same file as Ft4Scheduler's
+        boundary_lag log) — this timer runs on the same Qt main thread as
+        the FT4 scheduler, so a slow _on_tick() here is a direct candidate
+        for the FT4 RX buffer timing problems under investigation
+        (2026-07-10). Remove once that investigation is closed.
+        """
+        t0 = time.monotonic()
+        map_updated = False
         try:
             # World map position update is throttled to every MAP_UPDATE_INTERVAL ticks
             # (default 5 seconds) to reduce Skyfield SGP4 computation load.
@@ -1431,6 +1442,7 @@ class MainWindow(QMainWindow):
             if self._map_tick_counter >= self._MAP_UPDATE_INTERVAL:
                 self._map_tick_counter = 0
                 self._update_world_map()
+                map_updated = True
 
             self._update_selected_satellite()
             self._update_statusbar()
@@ -1440,6 +1452,12 @@ class MainWindow(QMainWindow):
             self._detail_panel.refresh_freq_mirror()
         except Exception:
             logger.exception("_on_tick error")
+        finally:
+            get_ft4_decode_logger().info(
+                "main_window tick duration=%.3fs map_updated=%s",
+                time.monotonic() - t0,
+                map_updated,
+            )
 
     def _update_rig_web_state(self) -> None:
         """Push current rig/rotator state to the shared RigWebState for the mobile web UI."""
