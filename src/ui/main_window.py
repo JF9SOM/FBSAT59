@@ -4273,14 +4273,29 @@ class MainWindow(QMainWindow):
             self._rot_label.setText(_("ROT: Off"))
 
     def _load_saved_language(self) -> None:
-        """Apply the saved UI language before any widgets are built."""
+        """Apply the saved UI language before any widgets are built.
+
+        Falls back to the OS locale on first launch (no saved preference
+        yet): Japanese if the system locale is Japanese, English otherwise.
+        Any explicit choice made via View > Language is always saved and
+        takes priority over this detection on subsequent launches.
+        """
         from i18n import set_language
 
         row = self._conn.execute(
             "SELECT value FROM app_settings WHERE key = 'ui_language'"
         ).fetchone()
-        lang = row["value"] if row and row["value"] else "en"
+        lang = row["value"] if row and row["value"] else self._detect_system_language()
         set_language(lang)
+
+    @staticmethod
+    def _detect_system_language() -> str:
+        """Return "ja" if the OS locale is Japanese, else "en"."""
+        from PySide6.QtCore import QLocale
+
+        if QLocale.system().name().startswith("ja"):
+            return "ja"
+        return "en"
 
     def _on_set_language(self, lang: str) -> None:
         from i18n import set_language
