@@ -3269,7 +3269,7 @@ msgstr "可視状況:"
 
 #: src/ui/main_window.py:221
 msgid "Quick Comms Control"
-msgstr "クイック通信コントロール"
+msgstr ""
 
 #: src/ui/main_window.py:281
 msgid "Visible"
