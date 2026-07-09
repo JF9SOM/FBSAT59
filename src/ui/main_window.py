@@ -4452,7 +4452,7 @@ class MainWindow(QMainWindow):
         """Show a dialog explaining the automatic TLE and transponder fetch schedule."""
         intro = _(
             "FBSAT59 automatically fetches and updates TLE orbital data "
-            "and transponder information in the background. Manual updates are normally "
+            "and transmitter information in the background. Manual updates are normally "
             "not required. Use manual sync only when you need the very latest data "
             "immediately (e.g. right before a pass of a newly launched satellite)."
         )
@@ -4471,14 +4471,14 @@ class MainWindow(QMainWindow):
             "<tr><td><b>AMSAT operational status</b></td><td>every <b>24 hours</b></td></tr>"
             "<tr><td><b>METEOR/HRPT satellites dropped from CelesTrak groups</b></td>"
             "<td>every <b>12 hours</b></td></tr>"
-            "<tr><td><b>Transponder Database (SATNOGS)</b></td>"
+            "<tr><td><b>Transmitter Database (SATNOGS)</b></td>"
             "<td>every <b>7 days</b></td></tr>"
             "</table>"
         )
         xpdr_paragraph = _(
-            "Transponder data is fetched from SATNOGS automatically on first launch, "
+            "Transmitter data is fetched from SATNOGS automatically on first launch, "
             "then refreshed automatically every 7 days in the background. "
-            "Use <b>Satellite → Sync SATNOGS</b> to refresh transponder "
+            "Use <b>Satellite → Sync SATNOGS</b> to refresh transmitter "
             "frequencies and modes manually whenever you need the very latest data sooner "
             "(e.g. right after a newly launched satellite registers its transmitter)."
         )
@@ -4488,7 +4488,7 @@ class MainWindow(QMainWindow):
         )
         heading_main = _("Auto Fetch Rules")
         heading_schedule = _("TLE Auto-Fetch Schedule")
-        heading_xpdr = _("Transponder Database (SATNOGS)")
+        heading_xpdr = _("Transmitter Database (SATNOGS)")
         heading_startup = _("At Startup")
         msg = (
             f"<h3>{heading_main}</h3>"

@@ -277,10 +277,10 @@ class AutotrackRecordDialog(QDialog):
 
         # Right: entries
         right = QVBoxLayout()
-        right.addWidget(QLabel(_("Entries (satellite + transponder):")))
+        right.addWidget(QLabel(_("Entries (satellite + transmitter):")))
         self._at_entry_tree = QTreeWidget()
         self._at_entry_tree.setHeaderLabels(
-            [_("Satellite"), _("Transponder"), _("DL (MHz)"), _("UL (MHz)"), _("Mode")]
+            [_("Satellite"), _("Transmitter"), _("DL (MHz)"), _("UL (MHz)"), _("Mode")]
         )
         self._at_entry_tree.setColumnWidth(0, 140)
         self._at_entry_tree.setColumnWidth(1, 180)
@@ -531,7 +531,7 @@ class AutotrackRecordDialog(QDialog):
         ).fetchall()
         if not xpdr_rows:
             QMessageBox.information(
-                self, _("Autotrack"), _("No transponders found for this satellite.")
+                self, _("Autotrack"), _("No transmitters found for this satellite.")
             )
             return
 
@@ -545,7 +545,7 @@ class AutotrackRecordDialog(QDialog):
 
         xpdr_labels = [_xpdr_label(r) for r in xpdr_rows]
         xpdr_label, ok = QInputDialog.getItem(
-            self, _("Select Transponder"), _("Transponder:"), xpdr_labels, 0, False
+            self, _("Select Transmitter"), _("Transmitter:"), xpdr_labels, 0, False
         )
         if not ok:
             return

@@ -134,7 +134,7 @@ class RadioControlWidget(QWidget):
         xpdr_tl_row.addWidget(self._xpdr_combo, stretch=1)
         self._tune_btn = QPushButton(_("T"))
         self._tune_btn.setFixedWidth(56)
-        self._tune_btn.setToolTip(_("Tune: reset downlink/uplink to center of transponder band"))
+        self._tune_btn.setToolTip(_("Tune: reset downlink/uplink to center of transmitter band"))
         self._tune_btn.setStyleSheet(
             "QPushButton:pressed { background-color: #e67e22; color: #fff; font-weight: bold; }"
         )
@@ -149,7 +149,7 @@ class RadioControlWidget(QWidget):
         self._lock_btn.toggled.connect(self.lock_changed.emit)
         xpdr_tl_row.addWidget(self._tune_btn)
         xpdr_tl_row.addWidget(self._lock_btn)
-        sat_form.addRow(_("Transponder:"), xpdr_tl_row)
+        sat_form.addRow(_("Transmitter:"), xpdr_tl_row)
 
         layout.addWidget(sat_group)
 
