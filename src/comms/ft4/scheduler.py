@@ -4,6 +4,16 @@ FT4 divides UTC time into interleaved 6-second slots:
   even slots: floor(t/6) % 2 == 0  (0–6 s, 12–18 s, …)
   odd  slots: floor(t/6) % 2 == 1  (6–12 s, 18–24 s, …)
 
+`tx_even` only decides which slot parity *this station* is allowed to
+transmit in when TX Enable is on — it says nothing about who else is on
+the air. Other stations may be calling CQ or exchanging on either parity
+depending on who initiated their own QSO, so a station that is idle or
+just monitoring must decode every single 6-second slot, not only the
+slots it considers "RX". (Originally `rx_period_ended` fired only for the
+non-TX-parity slot, silently discarding the other slot's audio every
+cycle — this is what caused only ~half of on-air FT4 activity to ever
+reach the decoder, see ui/ft4_tab.py, 2026-07-10.)
+
 One station transmits in even slots, the other in odd slots.  The caller
 decides which role to take via set_tx_even().
 """
@@ -23,14 +33,14 @@ class Ft4Scheduler(QObject):
             Fired ~10× per second.  is_tx reflects the current slot role.
         period_changed(is_tx):
             Fired once at each slot boundary (TX→RX or RX→TX).
-        rx_period_ended():
-            Fired at the end of an RX slot — the accumulation buffer is ready
-            to be decoded.
+        period_ended():
+            Fired at the end of *every* 6s slot, regardless of its TX/RX
+            role — the accumulation buffer is ready to be decoded.
     """
 
     period_tick: Signal = Signal(bool, float)  # (is_tx, seconds_remaining)
     period_changed: Signal = Signal(bool)  # (is_tx)
-    rx_period_ended: Signal = Signal()
+    period_ended: Signal = Signal()
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -83,15 +93,9 @@ class Ft4Scheduler(QObject):
         seconds_remaining = 6.0 - pos
 
         if self._prev_slot_num != slot_num and self._prev_slot_num >= 0:
-            # Slot boundary crossed
-            prev_is_even = self._prev_slot_num % 2 == 0
-            prev_is_tx = prev_is_even == self._tx_even
-            if prev_is_tx:
-                # We just ended a TX slot — nothing extra needed
-                pass
-            else:
-                # We just ended an RX slot — trigger decode
-                self.rx_period_ended.emit()
+            # Slot boundary crossed — decode every slot's audio regardless of
+            # its TX/RX role (see module docstring for why).
+            self.period_ended.emit()
             self.period_changed.emit(is_tx)
 
         self._prev_slot_num = slot_num

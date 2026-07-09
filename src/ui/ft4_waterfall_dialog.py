@@ -6,7 +6,7 @@ user can visually confirm whether real FT4 tone patterns are present in
 the passband, independent of whether the decoder actually recognized any
 of them. This is a diagnostic aid, not WSJT-X's own continuous waterfall —
 it only redraws once per completed ~6s RX period (see
-Ft4Tab._on_rx_period_ended) — but it does scroll across period boundaries
+Ft4Tab._on_period_ended) — but it does scroll across period boundaries
 like a real waterfall rather than replacing the whole image every period
 (that abrupt full-image swap every 6s was the original, confusing design;
 2026-07-06).

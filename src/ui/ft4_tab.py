@@ -167,7 +167,7 @@ class _RxDecodeWorker(QObject):
     libft4wsjt's C bridge keeps its state in Fortran module-level `save`
     variables (see scripts/wsjtx_bridge/ft4wsjt_bridge.f90) and is not
     reentrant, so Ft4Tab must never have two of these running at once — see
-    `_decode_busy` in `_on_rx_period_ended()`.
+    `_decode_busy` in `_on_period_ended()`.
     """
 
     done: Signal = Signal(object, object)  # (messages: list[Ft4Message], audio: NDArray)
@@ -263,7 +263,7 @@ class Ft4Tab(QWidget):
         # Scheduler signals
         self._scheduler.period_tick.connect(self._on_period_tick)
         self._scheduler.period_changed.connect(self._on_period_changed)
-        self._scheduler.rx_period_ended.connect(self._on_rx_period_ended)
+        self._scheduler.period_ended.connect(self._on_period_ended)
 
         # Start listening immediately — decoding is a receive-only operation
         # and must not require pressing CQ / TX Enable first. TX itself
@@ -783,22 +783,29 @@ class Ft4Tab(QWidget):
 
     @Slot(bool)
     def _on_period_changed(self, is_tx: bool) -> None:
+        # Always (re)start listening for the upcoming period, regardless of
+        # whether it's "our" TX-parity slot — other stations may be calling
+        # CQ or exchanging on either slot parity depending on who initiated
+        # their own QSO, so a station that isn't actively transmitting must
+        # capture every 6s slot, not just the ones it could transmit in
+        # (this used to silently discard half of all on-air FT4 activity,
+        # see Ft4Scheduler's module docstring, 2026-07-10).
+        self._rx_buffer.clear()
+        if self._rx_source != "sdr":
+            self._start_audio_capture()
         if is_tx and self._tx_enabled and not self._tx_in_progress:
             self._transmit_now()
-        elif not is_tx:
-            # Start accumulating RX audio
-            self._rx_buffer.clear()
-            if self._rx_source != "sdr":
-                self._start_audio_capture()
 
     @Slot()
-    def _on_rx_period_ended(self) -> None:
-        """RX slot ended — decode the accumulated audio buffer.
+    def _on_period_ended(self) -> None:
+        """A 6s slot ended — decode the accumulated audio buffer.
 
-        Decoding runs in a background thread (_RxDecodeWorker) — it can take
-        a large fraction of a 6s period, and running it directly on this
-        Qt-timer-driven slot used to stall the scheduler itself, desyncing
-        every subsequent period's RX window from real time (2026-07-09).
+        Fires for every slot (TX-parity and RX-parity alike, see
+        Ft4Scheduler) — decoding runs in a background thread
+        (_RxDecodeWorker) since it can take a large fraction of a 6s period,
+        and running it directly on this Qt-timer-driven slot used to stall
+        the scheduler itself, desyncing every subsequent period's RX window
+        from real time (2026-07-09).
         """
         if not self._rx_buffer:
             return
