@@ -1056,11 +1056,17 @@ class MainWindow(QMainWindow):
             # Visibility filter:
             #   is_hidden=1 (user-hidden)   -> shown only under the "Hidden" filter
             #   is_hidden=2 (system-hidden) -> hidden from all filters
-            if filter_text == "Hidden":
-                if d["is_hidden"] != 1:
+            # Exception: an active search query surfaces hidden satellites too
+            # (marked "(Hidden)" in gray) so a satellite stuck hidden by a stale
+            # system judgment (see NORAD 98293 "Marina", 2026-07-09) can still be
+            # found and dealt with. Without a search, normal visibility applies.
+            found_via_hidden_search = bool(search_query) and d["is_hidden"] != 0
+            if not found_via_hidden_search:
+                if filter_text == "Hidden":
+                    if d["is_hidden"] != 1:
+                        continue
+                elif d["is_hidden"] != 0:
                     continue
-            elif d["is_hidden"] != 0:
-                continue
             # Category filter — custom groups (e.g. "★ Favorite 1")
             if filter_text.startswith("★ "):
                 group_name = filter_text[2:]  # strip leading "★ "
@@ -1107,12 +1113,15 @@ class MainWindow(QMainWindow):
                     if oscar_str not in name_upper:
                         oscar_suffix = f" ({oscar_str})"
                         break
-            item = QListWidgetItem(prefix + d["name"] + oscar_suffix)
+            hidden_suffix = " " + _("(Hidden)") if found_via_hidden_search else ""
+            item = QListWidgetItem(prefix + d["name"] + oscar_suffix + hidden_suffix)
             item.setData(Qt.ItemDataRole.UserRole, d["norad"])
 
             amsat_status = d["amsat_status"]
 
-            if amsat_status == "operational":
+            if found_via_hidden_search:
+                item.setForeground(QColor("#7f8c8d"))
+            elif amsat_status == "operational":
                 item.setForeground(QColor("#2ecc71"))
                 font = item.font()
                 font.setBold(True)

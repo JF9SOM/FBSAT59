@@ -1102,6 +1102,53 @@ class TestHideSatellite:
         assert w._sat_list.count() == 1
         assert w._sat_list.item(0).data(Qt.ItemDataRole.UserRole) == 25544
 
+    def test_search_surfaces_system_hidden_satellite(self, qtbot, populated_db) -> None:
+        """is_hidden=2 の衛星も、検索クエリがあれば "(Hidden)" 付きで見つかる。"""
+        from PySide6.QtCore import Qt
+
+        tle_manager = TLEManager(populated_db)
+        populated_db.execute("UPDATE satellites SET is_hidden = 2 WHERE norad_cat_id = ?", (25544,))
+        populated_db.commit()
+        w = self._make_window(qtbot, populated_db, tle_manager)
+        w._filter_combo.setCurrentText("All Satellites")
+        w._search_box.setText("zarya")
+        w._apply_filter()
+        role = Qt.ItemDataRole.UserRole
+        norads = [w._sat_list.item(i).data(role) for i in range(w._sat_list.count())]
+        assert 25544 in norads
+        idx = norads.index(25544)
+        assert "(Hidden)" in w._sat_list.item(idx).text()
+
+    def test_search_surfaces_user_hidden_satellite(self, qtbot, populated_db) -> None:
+        """is_hidden=1 の衛星も、検索クエリがあれば見つかる。"""
+        from PySide6.QtCore import Qt
+
+        tle_manager = TLEManager(populated_db)
+        populated_db.execute("UPDATE satellites SET is_hidden = 1 WHERE norad_cat_id = ?", (25544,))
+        populated_db.commit()
+        w = self._make_window(qtbot, populated_db, tle_manager)
+        w._filter_combo.setCurrentText("All Satellites")
+        w._search_box.setText("zarya")
+        w._apply_filter()
+        role = Qt.ItemDataRole.UserRole
+        norads = [w._sat_list.item(i).data(role) for i in range(w._sat_list.count())]
+        assert 25544 in norads
+
+    def test_no_search_query_still_hides_system_hidden(self, qtbot, populated_db) -> None:
+        """検索クエリが空なら is_hidden=2 の衛星は従来通り表示されない。"""
+        from PySide6.QtCore import Qt
+
+        tle_manager = TLEManager(populated_db)
+        populated_db.execute("UPDATE satellites SET is_hidden = 2 WHERE norad_cat_id = ?", (25544,))
+        populated_db.commit()
+        w = self._make_window(qtbot, populated_db, tle_manager)
+        w._filter_combo.setCurrentText("All Satellites")
+        w._search_box.setText("")
+        w._apply_filter()
+        role = Qt.ItemDataRole.UserRole
+        norads = [w._sat_list.item(i).data(role) for i in range(w._sat_list.count())]
+        assert 25544 not in norads
+
     def test_hide_satellite_warns_when_no_selection(self, qtbot, db, tle_manager) -> None:
         """Hide Satellite: sat_list に選択がなければ警告を表示する。"""
         from unittest.mock import patch
