@@ -24,6 +24,8 @@ import time
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
+from comms.ft4.decode_log import get_ft4_decode_logger
+
 
 class Ft4Scheduler(QObject):
     """Drives FT4 timing with 100 ms resolution.
@@ -93,6 +95,23 @@ class Ft4Scheduler(QObject):
         seconds_remaining = 6.0 - pos
 
         if self._prev_slot_num != slot_num and self._prev_slot_num >= 0:
+            # `pos` is how far past the slot boundary we are at the moment
+            # this transition was actually detected — should stay well
+            # under 0.1s (the QTimer's own resolution) if nothing is
+            # stalling the Qt event loop. A large value, or slots_missed > 0
+            # (an entire 6s slot skipped over between two consecutive
+            # ticks), reveals main-thread contention delaying RX buffer
+            # timing independent of how long decode_audio() itself takes
+            # (added 2026-07-10 to test whether satellite
+            # tracking/Doppler/UI redraws on the main thread are a
+            # contributing factor, separate from decode duration itself).
+            slots_missed = slot_num - self._prev_slot_num - 1
+            get_ft4_decode_logger().info(
+                "scheduler boundary_lag=%.3fs slots_missed=%d slot=%d",
+                pos,
+                slots_missed,
+                slot_num,
+            )
             # Slot boundary crossed — decode every slot's audio regardless of
             # its TX/RX role (see module docstring for why).
             self.period_ended.emit()
