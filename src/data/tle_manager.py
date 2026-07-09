@@ -907,10 +907,13 @@ class TLEManager:
                     )
                     r.raise_for_status()
                     data = r.json()
-                except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RemoteProtocolError):
-                    # Silently skip on timeout/connection errors — these are
-                    # expected when the app is shutting down or the network
-                    # is momentarily unavailable.
+                except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RemoteProtocolError) as exc:
+                    # Expected when the app is shutting down or the network is
+                    # momentarily unavailable — logged at debug (not warning)
+                    # to avoid spamming, but still records the exception type
+                    # since these stringify to "" and give no clue otherwise.
+                    ename = type(exc).__name__
+                    logger.debug(f"provisional TLE fetch timeout for {fake_id}: {ename}")
                     stats["errors"] += 1
                     continue
                 except httpx.HTTPError as exc:

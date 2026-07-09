@@ -1334,7 +1334,7 @@ class MainWindow(QMainWindow):
             prov = asyncio.run(self._tle_manager.fetch_provisional_tles())
             logger.info("Provisional TLE fetch completed: %s", prov)
         except Exception as exc:
-            logger.warning("Provisional TLE fetch failed: %s", exc)
+            logger.warning("Provisional TLE fetch failed: %s: %s", type(exc).__name__, exc)
 
         if self._shutdown_flag.is_set():
             return
@@ -3761,8 +3761,8 @@ class MainWindow(QMainWindow):
             )
             logger.info("SATNOGS sync completed: %s", result)
         except Exception as exc:  # noqa: BLE001
-            msg = _("SATNOGS sync failed: {err}").format(err=exc)
-            logger.warning("SATNOGS sync failed: %s", exc)
+            msg = _("SATNOGS sync failed: {etype}: {err}").format(etype=type(exc).__name__, err=exc)
+            logger.warning("SATNOGS sync failed: %s: %s", type(exc).__name__, exc)
         self._satnogs_status.emit(msg)
 
     def _on_satnogs_status(self, msg: str) -> None:
