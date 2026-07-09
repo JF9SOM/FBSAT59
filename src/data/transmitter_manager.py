@@ -809,6 +809,19 @@ class TransmitterManager:
                                 " alt_names = ?, updated_at = ? WHERE norad_cat_id = ?",
                                 (name, status, alt_names_json, now, norad),
                             )
+                            # A satellite can be auto-hidden (is_hidden=2) if an
+                            # earlier fetch_provisional_tles() run saw it as
+                            # status='unknown'/'dead' with no TLE yet — a common
+                            # transient state right around launch. Once SATNOGS
+                            # reports it alive again, un-hide it so it isn't stuck
+                            # invisible forever. is_hidden=1 (user-hidden) is left
+                            # untouched — that's a deliberate user choice.
+                            if status == "alive":
+                                self._conn.execute(
+                                    "UPDATE satellites SET is_hidden = 0"
+                                    " WHERE norad_cat_id = ? AND is_hidden = 2",
+                                    (norad,),
+                                )
                         stats["updated"] += 1
                     else:
                         # Satellite not yet in DB (fresh install or new launch).
