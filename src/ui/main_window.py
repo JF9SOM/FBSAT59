@@ -61,6 +61,7 @@ from core.celestial_engine import MOON_ID, CelestialEngine
 from core.engine import DopplerCalculator, Observation, PassPredictor, SatelliteEngine
 from core.location import LocationManager
 from core.notifier import PassNotifier
+from core.ntp_check import check_system_clock
 from data.amsat_status import AMSATStatusFetcher
 from data.ctcss_db import get_ctcss
 from data.tle_manager import TLEManager
@@ -428,6 +429,9 @@ class MainWindow(QMainWindow):
     _map_downloaded: Signal = Signal()
     # Signal to update sync progress label from a background thread (empty string = hide).
     _sync_progress: Signal = Signal(str)
+    # Signal fired from the startup NTP check thread when the clock check fails
+    # or the drift exceeds the warning threshold, carrying the dialog message.
+    _ntp_check_failed: Signal = Signal(str)
 
     def __init__(
         self,
@@ -579,6 +583,7 @@ class MainWindow(QMainWindow):
             lambda: QMessageBox.information(self, "SatNOGS", _("SatNOGS page not found"))
         )
         self._satnogs_network_error.connect(self._on_satnogs_network_error)
+        self._ntp_check_failed.connect(self._on_ntp_check_failed)
         self._radio_control.transmitter_changed.connect(self._on_transmitter_changed)
         self._radio_control.cycle_changed.connect(self._on_cycle_changed)
         self._radio_control.tune_requested.connect(self._on_tune_requested)
@@ -1251,6 +1256,11 @@ class MainWindow(QMainWindow):
 
         # Load DE421 ephemeris for celestial body tracking (downloads ~17 MB on first run)
         threading.Thread(target=self._load_celestial_engine, daemon=True).start()
+
+        # Verify system clock accuracy at startup — FT4/Q65 decoding requires the
+        # clock to be synced to within about a second, and OS-level NTP daemons
+        # can silently fail to sync on flaky networks (see notes for 2026-07-09).
+        threading.Thread(target=self._check_ntp_sync_background, daemon=True).start()
 
     @staticmethod
     def _sort_sources_by_priority(sources: list[str]) -> list[str]:
@@ -2750,6 +2760,50 @@ class MainWindow(QMainWindow):
             "SatNOGS",
             _("Could not reach db.satnogs.org — check your network connection.\n\n") + error,
         )
+
+    # Warn if the local clock drifts from true time by more than this many
+    # seconds — FT4/Q65 rely on ~6-60s aligned periods and tolerate only a
+    # fraction of a second of error before decoding starts failing.
+    _NTP_DRIFT_WARN_THRESHOLD_S = 1.0
+
+    def _check_ntp_sync_background(self) -> None:
+        """Query an NTP server at startup and warn if the clock is inaccurate.
+
+        Runs in a background thread; emits _ntp_check_failed (never raises)
+        so the dialog is shown from the UI thread. Silent on success.
+        """
+        if self._shutdown_flag.is_set():
+            return
+        result = check_system_clock()
+        if self._shutdown_flag.is_set():
+            return
+
+        if not result.reachable:
+            logger.warning("NTP clock check: no server reachable: %s", result.error)
+            self._ntp_check_failed.emit(
+                _(
+                    "Could not verify system clock accuracy — none of the NTP "
+                    "time servers could be reached. If FT4/Q65 decoding fails, "
+                    "check your network connection and system clock settings."
+                )
+            )
+            return
+
+        offset = result.offset_s or 0.0
+        logger.info("NTP clock check: offset=%.3fs via %s", offset, result.server)
+        if abs(offset) > self._NTP_DRIFT_WARN_THRESHOLD_S:
+            self._ntp_check_failed.emit(
+                _(
+                    "System clock appears to be off by {offset:.2f} seconds "
+                    "(checked against {server}). FT4/Q65 decoding requires the "
+                    "clock to be accurate to within about a second — please "
+                    "check your system's time synchronization settings."
+                ).format(offset=offset, server=result.server)
+            )
+
+    def _on_ntp_check_failed(self, msg: str) -> None:
+        """Show the startup NTP check warning dialog (called on UI thread)."""
+        QMessageBox.warning(self, _("Clock Sync Check"), msg)
 
     def _toggle_favorite(self, norad: int, favorite: bool) -> None:
         """Save the favorite state to the DB and reload the satellite list (legacy)."""
