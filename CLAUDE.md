@@ -1296,6 +1296,62 @@ FT4スケジューラーと同じメインスレッドで動作）を特定し�
 - `scheduler boundary_lag=...`ログと突き合わせることで、「FT4の境界検出が遅れた瞬間に
   `_on_tick()`が実際に長く／頻繁に動いていたか」を直接相関確認できる
 
+**RX音声取り込み・周期区切りをQtメインスレッドから完全に独立させる
+（`Ft4RxCaptureWorker`、2026-07-10 実装）**
+
+上記の一連の調査（デコードのスレッド化・毎周期デコード化・`boundary_lag`ログ）を経てもなお、
+`MainWindow._on_tick()`（1秒周期・衛星追尾/ドップラー計算/5秒ごとの地図更新等）がFT4の
+`Ft4Scheduler`と同じQtメインスレッド（単一のイベントループ）を共有している限り、
+「`_on_tick()`が実行中の間はFT4側のQTimerも処理を待たされる」という構造的な問題は残る
+という指摘があった。調査の結果、根本的な解決には「RXバッファの区切り判定・クリア・読み取り」
+という一連の処理そのものをQtのイベントループから完全に切り離す必要があると判断した。
+
+**設計**: `src/comms/ft4/rx_capture.py`の`Ft4RxCaptureWorker`が、RX音声バッファの所有権を
+`Ft4Tab`から引き取り、`threading.Thread`上で`time.sleep()`ベースの精密な待機ループを
+独自に回す（QTimerの100msポーリングではなく、次のUTC 6秒境界まで直接スリープするため
+理論上ミリ秒未満の精度が出る）。
+
+- `push_audio(chunk)`: 音声コールバックスレッド（サウンドカード or SDR）から呼ぶ。
+  `threading.Lock`で保護された内部リストにチャンクを追加するだけ
+- `start()`/`stop()`: 専用スレッドを起動/停止。起動直後に次のUTC 6秒境界まで一度スリープ
+  してから本格的な蓄積を始めるため、最初の周期が中途半端なオフセットから始まらない
+- 6秒ごとに目覚めると、その場でバッファをスナップショット・クリアし、`on_period`コールバックを
+  **このスレッド自身から**呼び出す。Qtのウィジェットには一切触れない設計
+- 呼び出し元が処理落ちして`time.sleep()`が0以下になった場合（プロセスのサスペンド等）は、
+  過去分をまとめて発火させず現在時刻から再同期する（`slots_missed`の考え方をここでも踏襲）
+- 同じ`ft4_decode.log`に`capture boundary_lag=0.000s`の形式で毎周期記録し、
+  `Ft4Scheduler`側の`boundary_lag`と直接比較できるようにした
+
+**`Ft4Tab`側の変更**:
+- `_rx_buffer`（`Ft4Tab`が直接所有していたリスト）を廃止。`_audio_callback`/
+  `_on_sdr_audio_chunk`は`self._rx_capture.push_audio(chunk)`を呼ぶだけになった
+- `_on_capture_period(audio)`（新設） — `Ft4RxCaptureWorker`のスレッドから呼ばれる
+  （**Qtメインスレッドではない**）。デコード可否・`_decode_busy`の判定はスレッドセーフな
+  プレーンなPython操作のみなのでそのまま実行できるが、ウォーターフォール更新
+  （QPainter/QPixmap操作）は必ずメインスレッドで行う必要があるため、新設した
+  `period_skipped: Signal(object)`経由でメインスレッドの`_on_period_skipped()`に
+  委譲する（Qtのシグナル/スロットは送信元のスレッドに関わらず、受信側QObjectのスレッドへ
+  自動的にキュー配送されるため、これだけで安全）
+- `_on_period_changed(is_tx)`（`Ft4Scheduler`の`period_changed`シグナル、引き続きQTimer駆動）
+  は**自局の送信判定のみ**に役割を縮小。RXバッファのクリア・音声取り込み開始は完全に削除
+- `Ft4Scheduler.rx_period_ended`改め`period_ended`シグナルも、接続先がなくなったため削除
+  （`Ft4Scheduler`自体は引き続きTX判定・カウントダウン表示用にQTimerで動作し続ける。
+  `boundary_lag`ログ自体は比較用診断として残した）
+- `Ft4RxCaptureWorker`の起動/停止は`Ft4Scheduler`と1対1で連動させた
+  （`_start_scheduler()`内で`self._rx_capture.start()`も呼ぶ。`closeEvent`/
+  `_on_rig_disconnected`双方で`stop()`も対で呼ぶ）
+
+**残る主要スレッド構成**: 音声コールバックスレッド（PortAudio/SDR、既存）→
+`Ft4RxCaptureWorker`スレッド（新設、周期区切り判定）→ `_RxDecodeWorker`スレッド
+（既存、実際のデコード）→ Qtメインスレッド（テーブル・ウォーターフォール等の表示更新のみ）。
+Qtメインスレッドが関与するのは最後の表示更新だけであり、音声取り込み・周期区切り・
+デコードという時刻精度が重要な経路には一切関与しない。
+
+テスト: `tests/test_ft4_rx_capture.py`（実際に`threading.Thread`を動かし、`_PERIOD_S`を
+短縮した上で複数周期の発火・空周期でコールバックが呼ばれないこと・`stop()`後に発火が
+止まること・`start()`の冪等性・複数スレッドからの同時`push_audio()`が安全であることを検証。
+Qtイベントループ・実オーディオデバイス不要）。
+
 **メニュー: Communications > Q65**（`src/ui/q65_tab.py`）
 - **Phase 1（RX）**: libq65 ctypes デコーダー
   - libq65 未インストール時はバナー表示・デコード無効化。インストール先: `~/.local/share/fbsat59/q65lib/`

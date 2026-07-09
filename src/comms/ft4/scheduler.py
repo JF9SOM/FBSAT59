@@ -16,6 +16,15 @@ reach the decoder, see ui/ft4_tab.py, 2026-07-10.)
 
 One station transmits in even slots, the other in odd slots.  The caller
 decides which role to take via set_tx_even().
+
+This scheduler only drives the TX-turn decision and the countdown/TX-RX
+indicator display now — RX audio capture and decode triggering moved to
+comms.ft4.rx_capture.Ft4RxCaptureWorker, which runs its own
+time.sleep()-based thread instead of this QTimer, so it can never be
+delayed by whatever else is happening on the Qt main thread (see that
+module's docstring). This scheduler's own boundary-crossing lag is still
+logged here purely as a diagnostic, to compare against
+Ft4RxCaptureWorker's — see boundary_lag below.
 """
 
 from __future__ import annotations
@@ -34,15 +43,12 @@ class Ft4Scheduler(QObject):
         period_tick(is_tx, seconds_remaining):
             Fired ~10× per second.  is_tx reflects the current slot role.
         period_changed(is_tx):
-            Fired once at each slot boundary (TX→RX or RX→TX).
-        period_ended():
-            Fired at the end of *every* 6s slot, regardless of its TX/RX
-            role — the accumulation buffer is ready to be decoded.
+            Fired once at each slot boundary (TX→RX or RX→TX) — Ft4Tab uses
+            this only to decide whether to key up, not for RX audio timing.
     """
 
     period_tick: Signal = Signal(bool, float)  # (is_tx, seconds_remaining)
     period_changed: Signal = Signal(bool)  # (is_tx)
-    period_ended: Signal = Signal()
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -100,11 +106,10 @@ class Ft4Scheduler(QObject):
             # under 0.1s (the QTimer's own resolution) if nothing is
             # stalling the Qt event loop. A large value, or slots_missed > 0
             # (an entire 6s slot skipped over between two consecutive
-            # ticks), reveals main-thread contention delaying RX buffer
-            # timing independent of how long decode_audio() itself takes
-            # (added 2026-07-10 to test whether satellite
-            # tracking/Doppler/UI redraws on the main thread are a
-            # contributing factor, separate from decode duration itself).
+            # ticks), reveals main-thread contention. This no longer affects
+            # RX audio timing (see module docstring) but is kept as a
+            # diagnostic to compare against Ft4RxCaptureWorker's own
+            # boundary_lag in the same log (2026-07-10).
             slots_missed = slot_num - self._prev_slot_num - 1
             get_ft4_decode_logger().info(
                 "scheduler boundary_lag=%.3fs slots_missed=%d slot=%d",
@@ -112,9 +117,6 @@ class Ft4Scheduler(QObject):
                 slots_missed,
                 slot_num,
             )
-            # Slot boundary crossed — decode every slot's audio regardless of
-            # its TX/RX role (see module docstring for why).
-            self.period_ended.emit()
             self.period_changed.emit(is_tx)
 
         self._prev_slot_num = slot_num

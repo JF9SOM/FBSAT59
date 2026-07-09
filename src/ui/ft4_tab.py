@@ -51,6 +51,7 @@ from comms.ft4.codec import (
 )
 from comms.ft4.decode_log import get_ft4_decode_logger
 from comms.ft4.qso import Ft4QsoManager, QsoState
+from comms.ft4.rx_capture import Ft4RxCaptureWorker
 from comms.ft4.scheduler import Ft4Scheduler
 from i18n import _
 from ui.ft4_waterfall_dialog import Ft4WaterfallDialog
@@ -167,7 +168,7 @@ class _RxDecodeWorker(QObject):
     libft4wsjt's C bridge keeps its state in Fortran module-level `save`
     variables (see scripts/wsjtx_bridge/ft4wsjt_bridge.f90) and is not
     reentrant, so Ft4Tab must never have two of these running at once — see
-    `_decode_busy` in `_on_period_ended()`.
+    `_decode_busy` in `_on_capture_period()`.
     """
 
     done: Signal = Signal(object, object)  # (messages: list[Ft4Message], audio: NDArray)
@@ -218,6 +219,13 @@ class Ft4Tab(QWidget):
     #: this tab, independent of whether anything decodes.
     level_updated: Signal = Signal(float)
 
+    #: Emitted from Ft4RxCaptureWorker's own thread (see _on_capture_period)
+    #: when a period's audio was captured but decode was skipped (busy or
+    #: unavailable) — Qt auto-queues this to the UI thread so the waterfall
+    #: can still be updated safely (it does QPainter/QPixmap work, which
+    #: must run on the Qt main thread).
+    period_skipped: Signal = Signal(object)
+
     _LEVEL_MIN_INTERVAL_S = 0.05  # ~20fps UI update cap
 
     def __init__(
@@ -232,8 +240,8 @@ class Ft4Tab(QWidget):
 
         self._codec = Ft4Codec()
         self._scheduler = Ft4Scheduler(self)
+        self._rx_capture = Ft4RxCaptureWorker(self._on_capture_period)
         self._qso: Ft4QsoManager | None = None  # created when callsign is known
-        self._rx_buffer: list[NDArray[np.float32]] = []
         self._audio_active: bool = False  # soundcard RX subscribed via AudioDeviceManager
         self._tx_thread: threading.Thread | None = None
         self._tx_enabled: bool = False
@@ -256,19 +264,25 @@ class Ft4Tab(QWidget):
         self._ensure_table()
         self._setup_ui()
         self.level_updated.connect(self._on_level_updated)
+        self.period_skipped.connect(self._on_period_skipped)
         self._connect_rig_signals()
         self._connect_sdr_audio()
         self._refresh_codec_status()
 
-        # Scheduler signals
+        # Scheduler signals — Ft4Scheduler (QTimer-based) now only drives the
+        # TX-turn decision and the countdown/TX-RX indicator display. RX
+        # audio capture and decode triggering live entirely in
+        # Ft4RxCaptureWorker (see _on_capture_period), whose own thread is
+        # never blocked by whatever the Qt main thread is doing (2026-07-10).
         self._scheduler.period_tick.connect(self._on_period_tick)
         self._scheduler.period_changed.connect(self._on_period_changed)
-        self._scheduler.period_ended.connect(self._on_period_ended)
 
         # Start listening immediately — decoding is a receive-only operation
         # and must not require pressing CQ / TX Enable first. TX itself
         # stays gated behind _tx_enabled, so this cannot transmit anything.
         self._start_scheduler(tx_even=True)
+        if self._rx_source != "sdr":
+            self._start_audio_capture()
 
     # ------------------------------------------------------------------ #
     # Setup                                                                #
@@ -696,7 +710,7 @@ class Ft4Tab(QWidget):
         if self._rx_source != "sdr":
             return
         chunk = chunk.astype(np.float32)
-        self._rx_buffer.append(chunk)
+        self._rx_capture.push_audio(chunk)
         self._emit_level(chunk)
 
     # ------------------------------------------------------------------ #
@@ -717,7 +731,6 @@ class Ft4Tab(QWidget):
                 _("Sound Card not configured — open Rig Settings > Sound Card")
             )
             return
-        self._rx_buffer.clear()
         try:
             get_audio_device_manager().acquire_input(
                 _AUDIO_OWNER, self._in_device, SAMPLE_RATE, self._audio_callback
@@ -736,7 +749,7 @@ class Ft4Tab(QWidget):
             self._level_bar.setToolTip(_("-- dBFS"))
 
     def _audio_callback(self, chunk: NDArray[np.float32]) -> None:
-        self._rx_buffer.append(chunk)
+        self._rx_capture.push_audio(chunk)
         self._emit_level(chunk)
 
     def _emit_level(self, chunk: NDArray[np.float32]) -> None:
@@ -783,36 +796,25 @@ class Ft4Tab(QWidget):
 
     @Slot(bool)
     def _on_period_changed(self, is_tx: bool) -> None:
-        # Always (re)start listening for the upcoming period, regardless of
-        # whether it's "our" TX-parity slot — other stations may be calling
-        # CQ or exchanging on either slot parity depending on who initiated
-        # their own QSO, so a station that isn't actively transmitting must
-        # capture every 6s slot, not just the ones it could transmit in
-        # (this used to silently discard half of all on-air FT4 activity,
-        # see Ft4Scheduler's module docstring, 2026-07-10).
-        self._rx_buffer.clear()
-        if self._rx_source != "sdr":
-            self._start_audio_capture()
+        """Only drives the TX-turn decision now — RX audio capture and
+        decode triggering live entirely in Ft4RxCaptureWorker, which is not
+        tied to TX/RX slot parity at all (every slot is captured and
+        decoded regardless, see Ft4Scheduler's module docstring)."""
         if is_tx and self._tx_enabled and not self._tx_in_progress:
             self._transmit_now()
 
-    @Slot()
-    def _on_period_ended(self) -> None:
-        """A 6s slot ended — decode the accumulated audio buffer.
-
-        Fires for every slot (TX-parity and RX-parity alike, see
-        Ft4Scheduler) — decoding runs in a background thread
-        (_RxDecodeWorker) since it can take a large fraction of a 6s period,
-        and running it directly on this Qt-timer-driven slot used to stall
-        the scheduler itself, desyncing every subsequent period's RX window
-        from real time (2026-07-09).
+    def _on_capture_period(self, audio: NDArray[np.float32]) -> None:
+        """Called from Ft4RxCaptureWorker's own background thread — NOT the
+        Qt main thread — once per completed 6s period. Must not touch Qt
+        widgets directly; anything that does (the waterfall, in the skip
+        cases below) goes through a Signal so Qt marshals it onto the main
+        thread automatically. Decoding itself is further backgrounded onto
+        its own thread (_RxDecodeWorker) since it can take a large fraction
+        of a 6s period and this thread must stay free to keep waking up
+        exactly on time for the next period (2026-07-10).
         """
-        if not self._rx_buffer:
-            return
-        audio = np.concatenate(self._rx_buffer)
-        self._rx_buffer.clear()
         if not self._codec.decode_available:
-            self._update_waterfall_only(audio, [])
+            self.period_skipped.emit(audio)
             return
         if self._decode_busy:
             # Previous period's decode hasn't finished yet. libft4wsjt's C
@@ -823,7 +825,7 @@ class Ft4Tab(QWidget):
                 "decode SKIPPED (previous decode still running) audio_len=%.2fs",
                 len(audio) / SAMPLE_RATE,
             )
-            self._update_waterfall_only(audio, [])
+            self.period_skipped.emit(audio)
             return
         self._decode_busy = True
         worker = _RxDecodeWorker(self._codec, audio, self._my_call)
@@ -831,6 +833,10 @@ class Ft4Tab(QWidget):
         thread = threading.Thread(target=worker.run, daemon=True)
         self._decode_thread = thread
         thread.start()
+
+    @Slot(object)
+    def _on_period_skipped(self, audio: NDArray[np.float32]) -> None:
+        self._update_waterfall_only(audio, [])
 
     def _update_waterfall_only(
         self, audio: NDArray[np.float32], messages: list[Ft4Message]
@@ -1040,6 +1046,8 @@ class Ft4Tab(QWidget):
     @Slot(int)
     def _on_rx_source_changed(self, _idx: int) -> None:
         self._rx_source = self._rx_src_combo.currentData()
+        if self._rx_source != "sdr":
+            self._start_audio_capture()
         self._save_settings()
 
     @Slot(int)
@@ -1104,6 +1112,7 @@ class Ft4Tab(QWidget):
         self._on_halt()
         self._stop_audio_capture()
         self._scheduler.stop()
+        self._rx_capture.stop()
         self._refresh_input_source(connected=False)
         self._status_label.setText(_("Rig disconnected"))
 
@@ -1130,6 +1139,10 @@ class Ft4Tab(QWidget):
             self._scheduler.start(tx_even=tx_even)
         else:
             self._scheduler.set_tx_even(tx_even)
+        # RX capture's lifecycle is tied to the scheduler's — both should be
+        # running or stopped together (see _on_rig_disconnected/closeEvent).
+        # start() is a no-op if already running.
+        self._rx_capture.start()
 
     # ------------------------------------------------------------------ #
     # Log count / ADIF export                                              #
@@ -1155,6 +1168,7 @@ class Ft4Tab(QWidget):
         self._on_halt()
         self._stop_audio_capture()
         self._scheduler.stop()
+        self._rx_capture.stop()
         if self._waterfall_dialog is not None:
             self._waterfall_dialog.close()
         super().closeEvent(event)
