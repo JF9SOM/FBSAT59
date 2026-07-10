@@ -52,8 +52,11 @@ def _query_sntp(server: str, timeout: float = _QUERY_TIMEOUT_S) -> float:
     # each is a 4-byte seconds field followed by a 4-byte fraction field.
     recv_int, recv_frac = struct.unpack("!II", data[32:40])
     xmit_int, xmit_frac = struct.unpack("!II", data[40:48])
-    t2 = (recv_int - _NTP_EPOCH_OFFSET) + recv_frac / 2**32
-    t3 = (xmit_int - _NTP_EPOCH_OFFSET) + xmit_frac / 2**32
+    # struct.unpack()'s stub returns tuple[Any, ...], so without these casts
+    # t2/t3 (and thus this function's return value) infer as Any instead of
+    # float under mypy strict.
+    t2 = (int(recv_int) - _NTP_EPOCH_OFFSET) + int(recv_frac) / 2**32
+    t3 = (int(xmit_int) - _NTP_EPOCH_OFFSET) + int(xmit_frac) / 2**32
 
     # Standard SNTP clock offset formula (RFC 4330): positive means the local
     # clock is behind and should be advanced by this many seconds.
