@@ -46,6 +46,11 @@ _SSID_MAX = 15
 # Default via path for ISS digipeater
 _DEFAULT_VIA = "ARISS"
 
+# Owner tag for the shared AprsEngine singleton (see comms.aprs.engine).
+# The Telemetry tab's Bell 202 AFSK mode shares the same engine under its
+# own "telemetry" tag so closing one tab doesn't stop the other's reception.
+_ENGINE_OWNER = "aprs"
+
 
 class AprsTab(QWidget):
     """Non-resident tab opened from Communications > APRS.
@@ -93,10 +98,11 @@ class AprsTab(QWidget):
         self._pos_timer = QTimer(self)
         self._pos_timer.timeout.connect(self._on_send_position)
 
-        # APRS engine (Direwolf backend)
-        from comms.aprs.engine import AprsEngine
+        # APRS engine (Direwolf backend) — process-wide singleton, shared
+        # with the Telemetry tab's Bell 202 AFSK mode
+        from comms.aprs.engine import get_aprs_engine
 
-        self._engine = AprsEngine(conn, parent=self)
+        self._engine = get_aprs_engine(conn)
         self._engine.packet_received.connect(self._on_packet_received)
         self._engine.status_changed.connect(self._on_engine_status)
         self._engine.error_occurred.connect(self._on_engine_error)
@@ -348,11 +354,11 @@ class AprsTab(QWidget):
         if rig1 is not None and getattr(rig1, "is_sdr", False):
             self._sdr_connected = False
             self._sdr_label = ""
-            self._engine.stop()
+            self._engine.stop(_ENGINE_OWNER)
         else:
             self._rig_connected = False
             self._engine.set_rig(None)
-            self._engine.stop()
+            self._engine.stop(_ENGINE_OWNER)
         self._refresh_input_source()
 
     def _on_rig2_connected(self) -> None:
@@ -376,11 +382,11 @@ class AprsTab(QWidget):
         if rig2 is not None and getattr(rig2, "is_sdr", False):
             self._sdr_connected = False
             self._sdr_label = ""
-            self._engine.stop()
+            self._engine.stop(_ENGINE_OWNER)
         else:
             self._rig_connected = False
             self._engine.set_rig(None)
-            self._engine.stop()
+            self._engine.stop(_ENGINE_OWNER)
         self._refresh_input_source()
 
     # ------------------------------------------------------------------ #
@@ -444,7 +450,7 @@ class AprsTab(QWidget):
         ssid = self._ssid_spin.value()
         via = self._via_edit.text().strip()
         if cs:
-            self._engine.start_rig(cs, ssid, via)
+            self._engine.start_rig(_ENGINE_OWNER, cs, ssid, via)
 
     def _try_start_sdr(self, rig2: object) -> None:
         """Start Bell 202 AFSK demodulator on the SDR pipeline (receive only)."""
@@ -453,7 +459,7 @@ class AprsTab(QWidget):
         pipeline = getattr(rig2, "_pipeline", None)
         if pipeline is None:
             return
-        self._engine.start_sdr(pipeline)
+        self._engine.start_sdr(_ENGINE_OWNER, pipeline)
 
     # ------------------------------------------------------------------ #
     # Engine signal slots
@@ -597,7 +603,7 @@ class AprsTab(QWidget):
     def closeEvent(self, event: Any) -> None:
         """Stop engine, clear map pins, stop beacon timer, and save settings."""
         self._pos_timer.stop()
-        self._engine.stop()
+        self._engine.stop(_ENGINE_OWNER)
         self._aprs_stations.clear()
         self.aprs_stations_cleared.emit()
         self._save_settings()

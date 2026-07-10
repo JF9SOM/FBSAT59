@@ -4,6 +4,14 @@ Connects to RadioControlWidget signals to start/stop automatically when the
 rig or SDR connects or disconnects.  Emits ``packet_received`` for each
 decoded APRS packet so the UI tab can display it without coupling to the
 backend.
+
+This is a process-wide singleton (see ``get_aprs_engine()``): both the APRS
+tab and the Telemetry tab's Bell 202 AFSK mode need the same underlying
+Direwolf process / AfskDemodulator, since a second independent Direwolf
+instance would collide with the first over the hardcoded KISS TCP port and
+the shared audio output lock. ``start_rig()``/``start_sdr()``/``stop()``
+take an ``owner`` tag and are reference-counted so closing one tab never
+tears down the pipeline while another tab is still using it.
 """
 
 from __future__ import annotations
@@ -45,6 +53,9 @@ class AprsEngine(QObject):
     # How long to wait after audio ends before releasing PTT
     _PTT_TAIL_S: float = 0.10
 
+    _instance: AprsEngine | None = None
+    _instance_lock = threading.Lock()
+
     def __init__(self, conn: Any, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._conn = conn
@@ -54,6 +65,21 @@ class AprsEngine(QObject):
         self._rig: Any | None = None  # RigController for PTT
         self._ptt_active: bool = False
         self._running = False
+        self._owners: set[str] = set()
+
+    @classmethod
+    def instance(cls, conn: Any) -> AprsEngine:
+        """Return the process-wide singleton, constructing it on first call.
+
+        ``conn`` is only used the first time (there is a single DB
+        connection for the whole app); later calls ignore it and return the
+        existing instance. The singleton has no Qt parent — it must outlive
+        any single tab.
+        """
+        with cls._instance_lock:
+            if cls._instance is None:
+                cls._instance = cls(conn, parent=None)
+            return cls._instance
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -78,6 +104,7 @@ class AprsEngine(QObject):
 
     def start_rig(
         self,
+        owner: str,
         callsign: str,
         ssid: int,
         via: str,
@@ -85,8 +112,12 @@ class AprsEngine(QObject):
         """Start Direwolf using the configured Sound Card audio devices.
 
         Reads ``soundcard_settings`` from the DB to pick the right
-        input / output device indices.
+        input / output device indices. ``owner`` registers the caller's
+        interest in the pipeline (see ``stop()``); if another owner already
+        has it running, this just adds `owner` and returns success without
+        touching the running pipeline.
         """
+        self._owners.add(owner)
         if self._running:
             return True, ""
 
@@ -107,12 +138,14 @@ class AprsEngine(QObject):
         self.status_changed.emit("Connected (Rig + Direwolf)")
         return True, ""
 
-    def start_sdr(self, pipeline: Any) -> tuple[bool, str]:
+    def start_sdr(self, owner: str, pipeline: Any) -> tuple[bool, str]:
         """Start Bell 202 AFSK demodulation on an SDR pipeline (receive only).
 
         *pipeline* must be an SDRPipeline instance with ``subscribe()`` and
-        a ``_device.sample_rate`` attribute.
+        a ``_device.sample_rate`` attribute. ``owner`` registers the
+        caller's interest in the pipeline (see ``stop()``).
         """
+        self._owners.add(owner)
         if self._running:
             return True, ""
         try:
@@ -130,8 +163,17 @@ class AprsEngine(QObject):
         self.status_changed.emit("Connected (SDR — receive only)")
         return True, ""
 
-    def stop(self) -> None:
-        """Stop Direwolf / AFSK demodulator and all associated threads."""
+    def stop(self, owner: str) -> None:
+        """Release `owner`'s interest in the pipeline.
+
+        The underlying Direwolf process / AfskDemodulator only actually
+        stops once every owner has released it — otherwise closing one tab
+        (e.g. APRS) would silently kill AX.25 reception for another tab
+        that is still using it (e.g. Telemetry).
+        """
+        self._owners.discard(owner)
+        if self._owners:
+            return
         if self._sdr_pipeline is not None and self._demod is not None:
             self._sdr_pipeline.unsubscribe(self._demod.push_samples)
             self._demod.stop()
@@ -278,6 +320,11 @@ class AprsEngine(QObject):
             )
         except (json.JSONDecodeError, TypeError, ValueError):
             return None, None
+
+
+def get_aprs_engine(conn: Any) -> AprsEngine:
+    """Return the process-wide AprsEngine singleton (see AprsEngine.instance)."""
+    return AprsEngine.instance(conn)
 
 
 # ---------------------------------------------------------------------------

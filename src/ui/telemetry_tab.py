@@ -38,8 +38,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from comms.aprs.afsk_demod import AfskDemodulator
-from comms.aprs.direwolf import DirewolfManager, find_direwolf
+from comms.aprs.engine import get_aprs_engine
 from comms.aprs.parser import decode_ax25
 from comms.telemetry.decoder import TelemetryFrame, decode_telemetry, list_formats
 from comms.telemetry.gr_satellites_backend import (
@@ -52,6 +51,11 @@ from i18n import _
 
 _MODE_AFSK = "Bell 202 AFSK"
 _MODE_GR = "gr-satellites"
+
+# Owner tag for the shared AprsEngine singleton (see comms.aprs.engine).
+# The APRS tab shares the same engine under its own "aprs" tag so closing
+# one tab doesn't stop the other's reception.
+_ENGINE_OWNER = "telemetry"
 
 
 class TelemetryTab(QWidget):
@@ -70,9 +74,11 @@ class TelemetryTab(QWidget):
         self._conn = conn
         self._radio_control = radio_control
 
-        # AFSK backend state
-        self._mgr: DirewolfManager | None = None
-        self._demod: AfskDemodulator | None = None
+        # AFSK backend state — shared with the APRS tab via the AprsEngine
+        # singleton (see comms.aprs.engine) so the two tabs never spawn
+        # duplicate Direwolf processes / AfskDemodulator instances.
+        self._engine = get_aprs_engine(conn)
+        self._afsk_source: str | None = None  # "direwolf" | "sdr" | None
         self._sdr_pipeline: object | None = None
         self._rig_connected = False
         self._sdr_connected = False
@@ -269,7 +275,7 @@ class TelemetryTab(QWidget):
             self._on_stop()
         else:
             self._rig_connected = False
-            self._stop_direwolf()
+            self._stop_engine()
         self._refresh_input_combo()
         self._refresh_status()
 
@@ -292,7 +298,7 @@ class TelemetryTab(QWidget):
             self._on_stop()
         else:
             self._rig_connected = False
-            self._stop_direwolf()
+            self._stop_engine()
         self._refresh_input_combo()
         self._refresh_status()
 
@@ -361,8 +367,7 @@ class TelemetryTab(QWidget):
 
     def _on_stop(self) -> None:
         self._stop_gr_satellites()
-        self._stop_direwolf()
-        self._stop_sdr()
+        self._stop_engine()
         self._btn_start.setEnabled(True)
         self._btn_stop.setEnabled(False)
         self._refresh_status()
@@ -476,51 +481,39 @@ class TelemetryTab(QWidget):
                 self._btn_stop.setEnabled(False)
 
     def _try_start_direwolf(self) -> None:
-        if not find_direwolf():
-            self._set_error(_("⚠ Direwolf not found — use Help > Direwolf… to install"))
-            return
-        in_dev, out_dev = self._load_soundcard_devices()
-        if in_dev is None:
-            self._set_error(_("⚠ Sound Card not configured — open Rig Settings > Sound Card"))
-            return
-        self._mgr = DirewolfManager()
-        ok, err = self._mgr.start(callsign="N0CALL", ssid=0, in_device=in_dev, out_device=out_dev)
+        ok, err = self._engine.start_rig(_ENGINE_OWNER, "N0CALL", 0, "")
         if not ok:
             self._set_error(f"⚠ {err}")
             return
-        kiss = self._mgr.kiss_client
-        if kiss:
-            kiss.frame_received.connect(self._on_ax25_frame)
-            kiss.connection_lost.connect(self._on_kiss_lost)
+        self._engine.raw_frame_received.connect(self._on_ax25_frame)
+        self._engine.error_occurred.connect(self._set_error)
+        self._afsk_source = "direwolf"
         self._refresh_status()
-
-    def _stop_direwolf(self) -> None:
-        if self._mgr:
-            self._mgr.stop()
-            self._mgr = None
 
     def _try_start_sdr(self, pipeline: object) -> None:
-        try:
-            sr = int(pipeline._device.sample_rate)  # type: ignore[attr-defined]
-        except AttributeError:
-            self._set_error(_("⚠ Cannot determine SDR sample rate"))
+        ok, err = self._engine.start_sdr(_ENGINE_OWNER, pipeline)
+        if not ok:
+            self._set_error(f"⚠ {err}")
             return
         self._sdr_pipeline = pipeline
-        self._demod = AfskDemodulator(sample_rate=sr, parent=self)
-        self._demod.frame_received.connect(self._on_ax25_frame)
-        self._demod.start()
-        pipeline.subscribe(self._demod.push_samples)  # type: ignore[attr-defined]
+        self._engine.raw_frame_received.connect(self._on_ax25_frame)
+        self._afsk_source = "sdr"
         self._refresh_status()
 
-    def _stop_sdr(self) -> None:
-        if self._demod is not None and self._sdr_pipeline is not None:
-            with contextlib.suppress(AttributeError):
-                self._sdr_pipeline.unsubscribe(self._demod.push_samples)  # type: ignore[attr-defined]
-            self._demod.stop()
-            self._demod = None
+    def _stop_engine(self) -> None:
+        """Release this tab's interest in the shared AprsEngine.
 
-    def _on_kiss_lost(self) -> None:
-        self._set_error(_("⚠ Direwolf connection lost"))
+        Only actually stops Direwolf / the AfskDemodulator once no other
+        tab (e.g. APRS) still needs it — see AprsEngine.stop().
+        """
+        if self._afsk_source is None:
+            return
+        with contextlib.suppress(RuntimeError, TypeError):
+            self._engine.raw_frame_received.disconnect(self._on_ax25_frame)
+        with contextlib.suppress(RuntimeError, TypeError):
+            self._engine.error_occurred.disconnect(self._set_error)
+        self._engine.stop(_ENGINE_OWNER)
+        self._afsk_source = None
 
     # ------------------------------------------------------------------ #
     # AX.25 frame handler (Bell 202 path)
@@ -609,10 +602,10 @@ class TelemetryTab(QWidget):
     def _refresh_status(self) -> None:
         if self._gr_backend.is_running:
             return  # managed by _on_gr_status
-        if self._mgr and self._mgr.is_running:
+        if self._afsk_source == "direwolf" and self._engine.is_running:
             self._lbl_status.setText(_("Rig + Direwolf (receiving)"))
             self._lbl_status.setStyleSheet("color: #27ae60;")
-        elif self._demod is not None and self._sdr_connected:
+        elif self._afsk_source == "sdr" and self._engine.is_running:
             self._lbl_status.setText(_("SDR — Bell 202 AFSK (receive only)"))
             self._lbl_status.setStyleSheet("color: #4a9eff;")
         else:
