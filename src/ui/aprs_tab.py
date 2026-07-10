@@ -55,6 +55,10 @@ _DEFAULT_VIA = "ARISS"
 # is editable so a satellite-specific path can still be typed in.
 _VIA_PATH_CHOICES = ("ARISS", "APRSAT", "WIDE")
 
+# app_settings key for user-typed Via values, persisted so they remain
+# selectable in the dropdown across sessions (see _load_via_choices()).
+_VIA_CUSTOM_SETTING_KEY = "aprs_custom_via_paths"
+
 # Owner tag for the shared AprsEngine singleton (see comms.aprs.engine).
 # The Telemetry tab's Bell 202 AFSK mode shares the same engine under its
 # own "telemetry" tag so closing one tab doesn't stop the other's reception.
@@ -118,6 +122,7 @@ class AprsTab(QWidget):
 
         self._ensure_db_table()
         self._setup_ui()
+        self._load_via_choices()
         self._load_settings()
         self._load_baud_mode()
         self._connect_signals()
@@ -213,9 +218,16 @@ class AprsTab(QWidget):
                 "aliases most APRS-capable satellite digipeaters (ISS and\n"
                 "others) accept — any one of them works without\n"
                 "reconfiguring for a specific satellite. Type a different\n"
-                "value if a particular satellite needs its own path."
+                "value if a particular satellite needs its own path.\n"
+                "Typed values are remembered in the dropdown — right-click\n"
+                "one to remove it."
             )
         )
+        via_line_edit = self._via_edit.lineEdit()
+        assert via_line_edit is not None  # always present: setEditable(True) above
+        via_line_edit.editingFinished.connect(self._on_via_edited)
+        via_line_edit.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        via_line_edit.customContextMenuRequested.connect(self._on_via_context_menu)
         row1.addWidget(QLabel(_("Via:")))
         row1.addWidget(self._via_edit)
 
@@ -601,6 +613,76 @@ class AprsTab(QWidget):
             return bool(data.get("configured", False))
         except (json.JSONDecodeError, TypeError):
             return False
+
+    # ------------------------------------------------------------------ #
+    # Via path choices (built-in aliases + persisted custom entries)
+    # ------------------------------------------------------------------ #
+
+    def _load_via_choices(self) -> None:
+        """Add previously-typed custom Via values to the dropdown."""
+        if not hasattr(self._conn, "execute"):
+            return
+        row = self._conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?",
+            (_VIA_CUSTOM_SETTING_KEY,),
+        ).fetchone()
+        if not row or not row["value"]:
+            return
+        try:
+            custom = json.loads(row["value"])
+        except (json.JSONDecodeError, TypeError):
+            return
+        if not isinstance(custom, list):
+            return
+        for value in custom:
+            if isinstance(value, str) and value and self._via_edit.findText(value) < 0:
+                self._via_edit.addItem(value)
+
+    def _save_custom_via_choices(self) -> None:
+        """Persist every dropdown entry that isn't one of the built-in aliases."""
+        if not hasattr(self._conn, "execute"):
+            return
+        custom = [
+            self._via_edit.itemText(i)
+            for i in range(self._via_edit.count())
+            if self._via_edit.itemText(i) not in _VIA_PATH_CHOICES
+        ]
+        self._conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value, updated_at) "
+            "VALUES (?, ?, CURRENT_TIMESTAMP)",
+            (_VIA_CUSTOM_SETTING_KEY, json.dumps(custom)),
+        )
+        self._conn.commit()
+
+    def _on_via_edited(self) -> None:
+        """Remember a manually-typed Via value in the dropdown once committed
+        (Enter pressed, or focus leaves the field)."""
+        value = self._via_edit.currentText().strip()
+        if not value or self._via_edit.findText(value) >= 0:
+            return
+        self._via_edit.addItem(value)
+        self._save_custom_via_choices()
+
+    def _on_via_context_menu(self, pos: Any) -> None:
+        """Standard line-edit context menu, plus a "Remove" entry for the
+        currently-shown value if it's a user-added (non-built-in) one."""
+        line_edit = self._via_edit.lineEdit()
+        assert line_edit is not None  # always present: setEditable(True) in _setup_ui()
+        menu = line_edit.createStandardContextMenu()
+        current = self._via_edit.currentText().strip()
+        if current and current not in _VIA_PATH_CHOICES and self._via_edit.findText(current) >= 0:
+            menu.addSeparator()
+            action = menu.addAction(_('Remove "{value}" from list').format(value=current))
+            action.triggered.connect(lambda: self._remove_via_choice(current))
+        menu.exec(line_edit.mapToGlobal(pos))
+
+    def _remove_via_choice(self, value: str) -> None:
+        idx = self._via_edit.findText(value)
+        if idx >= 0:
+            self._via_edit.removeItem(idx)
+        self._save_custom_via_choices()
+        if self._via_edit.currentText().strip() == value:
+            self._via_edit.setCurrentText(_DEFAULT_VIA)
 
     # ------------------------------------------------------------------ #
     # Settings persistence
