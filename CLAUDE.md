@@ -1405,6 +1405,19 @@ FT4のRXタイミング独立化後の実測ログで、`main_window tick durati
 テスト: `tests/test_engine.py`に`observe_multi_with_subpoints()`のテストを2件追加
 （未知NORADが結果に含まれないこと・既存の`subpoint()`+`observe()`と完全一致すること）。
 
+**「All Satellites」フィルター時は地図更新間隔を60秒に延長（2026-07-10 追加）**
+
+`_is_map_tab_active()`によるスキップは「地図タブが見えているか」だけを見ており、
+Dashboard/World Map表示中に「All Satellites」フィルター（1671機程度）を選んでいる場合は
+引き続き5秒ごとに重い計算が走っていた。1000機超の点は地図上でどれがどれか判別できず、
+5秒間隔の意味がそもそも薄いという指摘を受け、`MainWindow._on_tick()`内で
+`self._filter_combo.currentText() == "All Satellites"`のときだけ更新間隔を
+`_MAP_UPDATE_INTERVAL_ALL_SATELLITES`（60）ティック＝60秒に切り替えるようにした
+（通常フィルター時は`_MAP_UPDATE_INTERVAL`＝5のまま）。`_map_tick_counter`は共通のまま
+比較先のしきい値だけ動的に切り替えているため、フィルターを途中で変更してもカウンター自体の
+リセットは不要（フィルターを狭める方向に変えた直後は、たまたま古いカウンター値が新しい
+小さいしきい値を超えていれば次のtickで即座に更新される）。
+
 **メニュー: Communications > Q65**（`src/ui/q65_tab.py`）
 - **Phase 1（RX）**: libq65 ctypes デコーダー
   - libq65 未インストール時はバナー表示・デコード無効化。インストール先: `~/.local/share/fbsat59/q65lib/`

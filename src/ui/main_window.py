@@ -468,10 +468,15 @@ class MainWindow(QMainWindow):
         self._current_passes: list[Any] = []
         # Satellite name cache — rebuilt in _load_satellites, used every tick
         self._sat_name_cache: dict[int, str] = {}
-        # World-map update throttle: only redraw every N ticks (default 5 s at 1 Hz)
+        # World-map update throttle: only redraw every N ticks (default 5 s at 1 Hz).
+        # With the "All Satellites" filter (typically 1000+ satellites) the
+        # map is too cluttered to read individual dots anyway, so it's
+        # throttled far more aggressively (60s) — this is on top of, not a
+        # replacement for, _is_map_tab_active()'s "skip entirely unless
+        # Dashboard/World Map is visible" gate (2026-07-10).
         self._map_tick_counter: int = 0
-        _MAP_UPDATE_INTERVAL: int = 5
-        self._MAP_UPDATE_INTERVAL = _MAP_UPDATE_INTERVAL
+        self._MAP_UPDATE_INTERVAL: int = 5
+        self._MAP_UPDATE_INTERVAL_ALL_SATELLITES: int = 60
         # Latest elevations computed in _update_world_map, reused by _check_autotrack
         self._last_elevations: dict[int, float] = {}
         self._current_transmitter: dict[str, Any] | None = None
@@ -1456,12 +1461,19 @@ class MainWindow(QMainWindow):
         map_updated = False
         try:
             # World map position update is throttled to every MAP_UPDATE_INTERVAL ticks
-            # (default 5 seconds) to reduce Skyfield SGP4 computation load.
+            # (default 5 seconds) to reduce Skyfield SGP4 computation load — or
+            # every 60s with the "All Satellites" filter, since 1000+ dots are
+            # too cluttered to usefully read at 5s resolution anyway.
             # _update_world_map() itself further skips the expensive part
             # unless Dashboard/World Map is the active tab, and reports back
             # here whether it actually ran that part.
+            map_interval = (
+                self._MAP_UPDATE_INTERVAL_ALL_SATELLITES
+                if self._filter_combo.currentText() == "All Satellites"
+                else self._MAP_UPDATE_INTERVAL
+            )
             self._map_tick_counter += 1
-            if self._map_tick_counter >= self._MAP_UPDATE_INTERVAL:
+            if self._map_tick_counter >= map_interval:
                 self._map_tick_counter = 0
                 map_updated = self._update_world_map()
 
