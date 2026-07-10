@@ -1418,6 +1418,62 @@ Dashboard/World Map表示中に「All Satellites」フィルター（1671機程�
 リセットは不要（フィルターを狭める方向に変えた直後は、たまたま古いカウンター値が新しい
 小さいしきい値を超えていれば次のtickで即座に更新される）。
 
+**ドップラー補正・リグ送信をQtメインスレッドから完全に独立させる
+（`DopplerWorker`、2026-07-10 実装）**
+
+地図関連の負荷軽減後も、「ドップラー補正の更新間隔自体をメインスレッドの混雑から独立させたい」
+という要望があった。コードを精査した結果、実は**リグへの実際のCAT送信（`set_vfo_frequencies()`）
+は既にバックグラウンドスレッド化済み**だった（`_rig_busy_lock`/`_rig2_busy_lock`で「前回の送信が
+終わっていなければスキップ」という、FT4のデコードと同じパターンが既に実装されていた）。残っていた
+本当の問題は、**「新しいドップラー補正サイクルを開始するトリガー」自体が`_on_tick()`（1秒ごとの
+QTimer）でしか発火せず、`_on_tick()`自体が他の処理（世界地図更新など）で不規則になる影響を
+引き続き受ける**、という点だった。
+
+**設計**: `src/core/doppler_worker.py`の`DopplerWorker`が、FT4の`Ft4RxCaptureWorker`と同じ
+`threading.Thread`＋`time.sleep()`ベースの精密な待機ループで、`MainWindow._doppler_cycle()`を
+一定間隔（デフォルト1秒、後述の「Cycle」設定で変更可）ごとに呼び出す。`Ft4RxCaptureWorker`と
+異なり音声バッファのような状態は持たず、単に「一定間隔でコールバックを呼ぶだけ」の汎用的な
+トリガーとして実装（`set_interval()`で実行中でも間隔変更可能）。
+
+**`MainWindow._doppler_cycle()`**（新設、`DopplerWorker`のスレッドから呼ばれる。Qtメインスレッド
+ではない）:
+- 衛星観測（`self._engine.observe()`、`SatelliteEngine`はスレッドセーフ設計）・ドップラー計算・
+  Tuneオーバーライドの消費・リグ1/2への送信トリガーを、旧`_update_selected_satellite()`から
+  ほぼそのまま移動
+- **Moon/EME（MOON_ID）は対象外**: `_update_moon()`が引き続き独自に同等のロジックを
+  `_on_tick()`から実行する（変更なし）。Moonパスは衛星パスほど時刻精度がシビアでないため、
+  2つの経路を統合するリスクを取らない判断（2026-07-10）
+- Qtウィジェットには一切触れない。表示に必要な計算結果（`DopplerDisplayUpdate`データクラス:
+  dl_nom/dl_corr/dl_shift/ul_nom/ul_corr/ul_shift/mode/ctcss_display）は`_doppler_computed`
+  シグナル経由でメインスレッドの`_on_doppler_computed()`に渡す
+- リグへの実送信（`_rig_send()`/`_rig2_send()`の`threading.Thread`起動）はそのまま維持。
+  `DopplerWorker`自身のループはCAT応答待ちで一切ブロックされない
+
+**Tuneオーバーライドの二重消費防止**: `_tune_dl_override`/`_tune_ul_override`は「一度使ったら
+Noneに戻す」一回限りの消費ロジックを持つ。`_doppler_cycle()`が衛星パスの**唯一の**消費者になり
+（`_update_moon()`は独立した別の読み取り箇所を持つ）、MOON_IDを除外しているため両者が同時に
+動くことはなく、二重消費のレースは発生しない。
+
+**`_update_selected_satellite()`側の変更**: ドップラー計算・リグ送信ブロックを丸ごと削除し、
+代わりに`self._latest_doppler`（ワーカーが最後に計算した結果、`_on_doppler_computed()`で
+更新）を読むだけにした。Dashboard更新は、トランスポンダー未選択時は位置のみ、選択時は
+`self._latest_doppler`があればその周波数情報を使う（まだ1周期も経っていない場合は位置のみに
+フォールバック）。`_on_transmitter_changed()`で`self._latest_doppler = None`にリセットし、
+前のトランスポンダーの周波数が新しい選択に対して一瞬だけ古いまま表示される事故を防止。
+
+**既存「Cycle」設定の転用**: `rig_cycle_ms`（Rig SettingsのCycleスピンボックス、10〜10000ms）は
+従来`self._timer`（表示更新用1秒タイマー）の間隔を変更していたが、`_doppler_worker.set_interval()`
+を呼ぶよう変更。`self._timer`自体は今後1秒固定（表示更新はもうタイミングクリティカルではないため
+ユーザー調整不要と判断）。
+
+**教訓（過去の議論から）**: CAT通信のラウンドトリップ時間（FTX-1Fで1コマンドあたり約150ms）が
+物理的な下限になるため、間隔をむやみに縮める（例: 0.1秒）意味は薄い。今回はあくまで「間隔の
+規則性を確保する」ことが目的で、間隔の数値自体はデフォルト1秒のまま変更していない。
+
+テスト: `tests/test_doppler_worker.py`（6件、実際に`threading.Thread`を動かし、精密な間隔での
+繰り返し発火・`stop()`後の停止・`start()`の冪等性・`set_interval()`の即時反映・コールバック内
+例外がループを止めないこと・負の間隔値のクランプを検証。Qtイベントループ・実リグ不要）。
+
 **メニュー: Communications > Q65**（`src/ui/q65_tab.py`）
 - **Phase 1（RX）**: libq65 ctypes デコーダー
   - libq65 未インストール時はバナー表示・デコード無効化。インストール先: `~/.local/share/fbsat59/q65lib/`

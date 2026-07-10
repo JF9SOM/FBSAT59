@@ -19,6 +19,7 @@ import subprocess
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, TypedDict
 
@@ -58,6 +59,7 @@ from comms.audio_device_manager import get_audio_device_manager
 from comms.ft4.decode_log import get_ft4_decode_logger
 from core.autotrack import AutotrackManager
 from core.celestial_engine import MOON_ID, CelestialEngine
+from core.doppler_worker import DopplerWorker
 from core.engine import DopplerCalculator, Observation, PassPredictor, SatelliteEngine
 from core.location import LocationManager
 from core.notifier import PassNotifier
@@ -393,6 +395,21 @@ class SatDetailPanel(QWidget):
             self._radio_control._connect_rot_btn.click()
 
 
+@dataclass(frozen=True)
+class DopplerDisplayUpdate:
+    """Result of one DopplerWorker cycle, carried to the UI thread via the
+    _doppler_computed signal — see MainWindow._doppler_cycle()."""
+
+    dl_nom: float | None
+    dl_corr: float | None
+    dl_shift: float | None
+    ul_nom: float | None
+    ul_corr: float | None
+    ul_shift: float | None
+    mode: str | None
+    ctcss_display: float | None
+
+
 # ---------------------------------------------------------------------------
 # MainWindow
 # ---------------------------------------------------------------------------
@@ -432,6 +449,9 @@ class MainWindow(QMainWindow):
     # Signal fired from the startup NTP check thread when the clock check fails
     # or the drift exceeds the warning threshold, carrying the dialog message.
     _ntp_check_failed: Signal = Signal(str)
+    # Signal used to pass a freshly computed Doppler result (DopplerDisplayUpdate)
+    # from DopplerWorker's own thread to the UI thread — see _doppler_cycle().
+    _doppler_computed: Signal = Signal(object)
 
     def __init__(
         self,
@@ -480,6 +500,10 @@ class MainWindow(QMainWindow):
         # Latest elevations computed in _update_world_map, reused by _check_autotrack
         self._last_elevations: dict[int, float] = {}
         self._current_transmitter: dict[str, Any] | None = None
+        # Latest Doppler result from DopplerWorker's own thread (see
+        # _doppler_cycle/_on_doppler_computed) — reset on transponder change
+        # so a stale value from the previous selection is never shown.
+        self._latest_doppler: DopplerDisplayUpdate | None = None
         # Maps a non-resident Communications tab widget -> its mode_detection
         # tab key (e.g. "ft4"), used by _on_tab_changed to drive the Comms
         # Quick Panel and to auto-resize the pass-prediction splitter.
@@ -581,6 +605,7 @@ class MainWindow(QMainWindow):
         # Connect signal that receives satellite list refresh requests from background threads
         self._satellite_list_refresh.connect(self._load_satellites)
         self._rig_error.connect(self._on_rig_error)
+        self._doppler_computed.connect(self._on_doppler_computed)
         self._satnogs_status.connect(self._on_satnogs_status)
         self._map_downloaded.connect(self._apply_world_map)
         self._satnogs_open_url.connect(self._open_url_app_mode)
@@ -631,9 +656,19 @@ class MainWindow(QMainWindow):
 
         self._start_scheduler()
 
+        # Fixed at 1s — only drives display refresh now (satellite detail
+        # panel, radar, status bar, world map throttle counter). No longer
+        # user-configurable, since it isn't the radio-critical path anymore.
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._on_tick)
         self._timer.start(1000)
+
+        # Doppler correction + rig CAT sends run on their own precise
+        # thread, independent of the Qt main thread's own business — see
+        # core/doppler_worker.py. The user-facing "Cycle" setting now
+        # controls this worker's interval instead of self._timer's.
+        self._doppler_worker = DopplerWorker(self._doppler_cycle)
+        self._doppler_worker.start()
         self._load_cycle_setting()
 
     # ------------------------------------------------------------------ #
@@ -2336,7 +2371,16 @@ class MainWindow(QMainWindow):
         self._send_to_rotator(obs)
 
     def _update_selected_satellite(self) -> None:
-        """Update the observation values and radar view for the currently selected satellite."""
+        """Update the observation values and radar view for the currently selected satellite.
+
+        Runs on the Qt main thread from _on_tick() (1s, fixed). Doppler
+        correction itself — computing corrected DL/UL and sending them to
+        the rig(s) — no longer happens here; it runs independently on
+        DopplerWorker's own precise schedule (see _doppler_cycle()). This
+        method only reads the worker's last result (self._latest_doppler,
+        updated via the _doppler_computed signal) for display, so the
+        display never blocks on or waits for a rig CAT round-trip.
+        """
         if self._selected_norad is None:
             return
 
@@ -2392,157 +2436,24 @@ class MainWindow(QMainWindow):
             self._radar_view.set_tracks([track])
             self._detail_panel.update_radar_track(track)
 
-            # Dashboard: update map+radar even without a transmitter
-            if self._current_transmitter is None:
-                swa = self._engine.subpoint_with_alt(self._selected_norad)
-                self._dashboard_view.update_observation(obs, subpoint=swa, track_data=track)
-
-        # Radio Control: update Doppler correction in real time.
-        # Always compute and transmit as long as TLE and frequency data are
-        # available, regardless of elevation.
-        if obs is not None and self._current_transmitter is not None:
-            # EME round-trip: Doppler is twice the one-way shift
-            rr = obs.range_rate_km_s * (2.0 if self._selected_norad == MOON_ID else 1.0)
-            dl_nom = self._current_transmitter.get("downlink_low")
-            ul_nom = self._current_transmitter.get("uplink_low")
-            invert = bool(self._current_transmitter.get("invert", False))
-            mode = self._current_transmitter.get("mode")
-            dl_corr, dl_shift = (
-                DopplerCalculator.correct_downlink(float(dl_nom), rr)
-                if dl_nom is not None
-                else (None, None)
-            )
-            if self._trsp_lock and dl_corr is not None:
-                # Lock ON: calculate uplink from the downlink offset.
-                ul_low = self._current_transmitter.get("uplink_low")
-                ul_high = self._current_transmitter.get("uplink_high")
-                dl_low_nom = self._current_transmitter.get("downlink_low")
-                if ul_low is not None and dl_low_nom is not None:
-                    delta = dl_corr - float(dl_low_nom)
-                    if invert and ul_high is not None:
-                        ul_calc = float(ul_high) - delta
-                    else:
-                        ul_calc = float(ul_low) + delta
-                    ul_corr, ul_shift = ul_calc, None
-                else:
-                    ul_corr, ul_shift = (None, None)
-            else:
-                ul_corr, ul_shift = (
-                    DopplerCalculator.correct_uplink(float(ul_nom), rr, invert=invert)
-                    if ul_nom is not None
-                    else (None, None)
-                )
-            # If the Tune button has set an override, use the centre frequency,
-            # then reset to None afterward (subsequent cycles return to Doppler-corrected values).
-            if self._tune_dl_override is not None:
-                dl_corr = self._tune_dl_override
-                dl_shift = None
-                self._tune_dl_override = None
-            if self._tune_ul_override is not None:
-                ul_corr = self._tune_ul_override
-                ul_shift = None
-                self._tune_ul_override = None
-
-            ctcss_display = (
-                self._current_ctcss_tone
-                if self._current_ctcss_tone is not None
-                else self._ctcss_tone_hz
-            )
-            self._radio_control.update_doppler(
-                dl_nom,
-                dl_corr,
-                dl_shift,
-                ul_nom,
-                ul_corr,
-                ul_shift,
-                mode,
-                ctcss_display,
-            )
-            # Update Dashboard status bar with Doppler frequencies
+            # Dashboard: position/track always; Doppler frequencies layered
+            # in from the worker's last result once a transmitter is
+            # selected and at least one cycle has completed.
             swa = self._engine.subpoint_with_alt(self._selected_norad)
-            sat_color = SAT_COLORS[0]
-            self._dashboard_view.update_observation(
-                obs,
-                subpoint=swa,
-                sat_color=sat_color,
-                dl_hz=dl_corr,
-                ul_hz=ul_corr,
-                dl_doppler=dl_shift,
-                ul_doppler=ul_shift,
-                track_data=track,
-            )
-            # Transmit Doppler-corrected frequencies to the connected rig (regardless of elevation).
-            # set_vfo_frequencies() involves TCP communication with recv(), so calling it on the
-            # UI thread directly would block and freeze the display.
-            # Use _rig_busy_lock: if the previous cycle has finished, transmit on a background
-            # thread; if the previous cycle is still running, skip this tick.
-            # Passband tune offset: apply to the SDR rig's DL, and when Lock is
-            # ON mirror it to the other rig's TX (sign inverted for inverted
-            # transponders).  Works regardless of whether SDR is Rig 1 or Rig 2.
-            tune = self._sdr_tune_offset
-            sdr_is_rig1 = (
-                self._rig_controller is not None
-                and getattr(self._rig_controller, "is_sdr", False)
-                and self._rig_controller.is_connected
-            )
-            sdr_is_rig2 = (
-                self._rig2_controller is not None
-                and getattr(self._rig2_controller, "is_sdr", False)
-                and self._rig2_controller.is_connected
-            )
-            # DL for Rig 1: add tune offset when SDR is Rig 1
-            dl_rig1 = (dl_corr + tune) if (dl_corr is not None and sdr_is_rig1) else dl_corr
-            # UL for Rig 1: mirror tune offset when SDR is Rig 2 and Lock is ON
-            ul_rig1 = ul_corr
-            if sdr_is_rig2 and self._trsp_lock and tune != 0.0 and ul_rig1 is not None:
-                ul_rig1 = ul_rig1 + (-tune if invert else tune)
-
-            if self._rig_controller is not None and self._rig_controller.is_connected:
-                if self._rig_busy_lock.acquire(blocking=False):
-                    rig = self._rig_controller
-                    dl = dl_rig1
-                    ul = ul_rig1
-
-                    def _rig_send() -> None:
-                        try:
-                            rig.set_vfo_frequencies(dl, ul)
-                        except RigControlError as exc:
-                            self._rig_error.emit(str(exc))
-                        except Exception as exc:
-                            logger.error("RigNet: unexpected error in send thread: %s", exc)
-                            self._rig_error.emit(str(exc))
-                        finally:
-                            self._rig_busy_lock.release()
-
-                    threading.Thread(target=_rig_send, daemon=True).start()
-                else:
-                    logger.debug("RigNet: previous cycle still running, skipping tick")
-
-            # Transmit Doppler-corrected frequencies to Rig 2 (same non-blocking pattern).
-            if self._rig2_controller is not None and self._rig2_controller.is_connected:
-                if self._rig2_busy_lock.acquire(blocking=False):
-                    rig2 = self._rig2_controller
-                    # DL for Rig 2: add tune offset when SDR is Rig 2
-                    dl2 = (dl_corr + tune) if (dl_corr is not None and sdr_is_rig2) else dl_corr
-                    # UL for Rig 2: mirror tune offset when SDR is Rig 1 and Lock is ON
-                    ul2 = ul_corr
-                    if sdr_is_rig1 and self._trsp_lock and tune != 0.0 and ul2 is not None:
-                        ul2 = ul2 + (-tune if invert else tune)
-
-                    def _rig2_send() -> None:
-                        try:
-                            rig2.set_vfo_frequencies(dl2, ul2)
-                        except RigControlError as exc:
-                            self._rig_error.emit(str(exc))
-                        except Exception as exc:
-                            logger.error("Rig2: unexpected error in send thread: %s", exc)
-                            self._rig_error.emit(str(exc))
-                        finally:
-                            self._rig2_busy_lock.release()
-
-                    threading.Thread(target=_rig2_send, daemon=True).start()
-                else:
-                    logger.debug("Rig2: previous cycle still running, skipping tick")
+            d = self._latest_doppler
+            if self._current_transmitter is not None and d is not None:
+                self._dashboard_view.update_observation(
+                    obs,
+                    subpoint=swa,
+                    sat_color=SAT_COLORS[0],
+                    dl_hz=d.dl_corr,
+                    ul_hz=d.ul_corr,
+                    dl_doppler=d.dl_shift,
+                    ul_doppler=d.ul_shift,
+                    track_data=track,
+                )
+            else:
+                self._dashboard_view.update_observation(obs, subpoint=swa, track_data=track)
 
         # Send AZ/EL to the rotator every tick (same non-blocking pattern as rig).
         self._send_to_rotator(obs)
@@ -2550,6 +2461,186 @@ class MainWindow(QMainWindow):
         self._radio_control.refresh_status()
         self._update_rig_label()
         self._update_rot_label()
+
+    def _doppler_cycle(self) -> None:
+        """Compute Doppler correction and send it to the rig(s).
+
+        Called from DopplerWorker's own background thread at a precise
+        interval (the "Cycle" setting), independent of _on_tick()/the Qt
+        main thread — see core/doppler_worker.py's module docstring for
+        why. Reads plain MainWindow attributes (safe cross-thread — none
+        of them are Qt widgets) and must not touch any Qt widget directly;
+        the one thing display-relevant here (the DopplerDisplayUpdate) is
+        delivered to the main thread via the _doppler_computed signal, and
+        the actual rig sends reuse the exact same busy-lock + background-
+        thread pattern this logic always used (so this thread's own loop
+        never blocks on a CAT round-trip either).
+
+        Excludes the Moon/EME case (MOON_ID) — _update_moon() still runs
+        its own equivalent logic from _on_tick(), unchanged; Moon passes
+        are far less time-sensitive than satellite passes and merging the
+        two paths was judged not worth the added risk here (2026-07-10).
+        """
+        if self._selected_norad is None or self._selected_norad == MOON_ID:
+            return
+        if self._engine is None or self._current_transmitter is None:
+            return
+
+        obs = self._engine.observe(self._selected_norad)
+        if obs is None:
+            return
+
+        rr = obs.range_rate_km_s
+        dl_nom = self._current_transmitter.get("downlink_low")
+        ul_nom = self._current_transmitter.get("uplink_low")
+        invert = bool(self._current_transmitter.get("invert", False))
+        mode = self._current_transmitter.get("mode")
+        dl_corr, dl_shift = (
+            DopplerCalculator.correct_downlink(float(dl_nom), rr)
+            if dl_nom is not None
+            else (None, None)
+        )
+        if self._trsp_lock and dl_corr is not None:
+            # Lock ON: calculate uplink from the downlink offset.
+            ul_low = self._current_transmitter.get("uplink_low")
+            ul_high = self._current_transmitter.get("uplink_high")
+            dl_low_nom = self._current_transmitter.get("downlink_low")
+            if ul_low is not None and dl_low_nom is not None:
+                delta = dl_corr - float(dl_low_nom)
+                if invert and ul_high is not None:
+                    ul_calc = float(ul_high) - delta
+                else:
+                    ul_calc = float(ul_low) + delta
+                ul_corr, ul_shift = ul_calc, None
+            else:
+                ul_corr, ul_shift = (None, None)
+        else:
+            ul_corr, ul_shift = (
+                DopplerCalculator.correct_uplink(float(ul_nom), rr, invert=invert)
+                if ul_nom is not None
+                else (None, None)
+            )
+        # If the Tune button has set an override, use the centre frequency,
+        # then reset to None afterward (subsequent cycles return to
+        # Doppler-corrected values). This worker is the only place that
+        # consumes _tune_dl_override/_tune_ul_override for the satellite
+        # path — _update_moon() has its own, independent pair of reads for
+        # the Moon/EME path, so there is no double-consumption risk between
+        # the two (only one is ever active, since MOON_ID is excluded above).
+        if self._tune_dl_override is not None:
+            dl_corr = self._tune_dl_override
+            dl_shift = None
+            self._tune_dl_override = None
+        if self._tune_ul_override is not None:
+            ul_corr = self._tune_ul_override
+            ul_shift = None
+            self._tune_ul_override = None
+
+        ctcss_display = (
+            self._current_ctcss_tone
+            if self._current_ctcss_tone is not None
+            else self._ctcss_tone_hz
+        )
+        self._doppler_computed.emit(
+            DopplerDisplayUpdate(
+                dl_nom=dl_nom,
+                dl_corr=dl_corr,
+                dl_shift=dl_shift,
+                ul_nom=ul_nom,
+                ul_corr=ul_corr,
+                ul_shift=ul_shift,
+                mode=mode,
+                ctcss_display=ctcss_display,
+            )
+        )
+
+        # Transmit Doppler-corrected frequencies to the connected rig (regardless of elevation).
+        # set_vfo_frequencies() involves TCP communication with recv(), so calling it directly
+        # here would block this worker's own precise wake-up loop.
+        # Use _rig_busy_lock: if the previous cycle has finished, transmit on a background
+        # thread; if the previous cycle is still running, skip this cycle.
+        # Passband tune offset: apply to the SDR rig's DL, and when Lock is
+        # ON mirror it to the other rig's TX (sign inverted for inverted
+        # transponders).  Works regardless of whether SDR is Rig 1 or Rig 2.
+        tune = self._sdr_tune_offset
+        sdr_is_rig1 = (
+            self._rig_controller is not None
+            and getattr(self._rig_controller, "is_sdr", False)
+            and self._rig_controller.is_connected
+        )
+        sdr_is_rig2 = (
+            self._rig2_controller is not None
+            and getattr(self._rig2_controller, "is_sdr", False)
+            and self._rig2_controller.is_connected
+        )
+        # DL for Rig 1: add tune offset when SDR is Rig 1
+        dl_rig1 = (dl_corr + tune) if (dl_corr is not None and sdr_is_rig1) else dl_corr
+        # UL for Rig 1: mirror tune offset when SDR is Rig 2 and Lock is ON
+        ul_rig1 = ul_corr
+        if sdr_is_rig2 and self._trsp_lock and tune != 0.0 and ul_rig1 is not None:
+            ul_rig1 = ul_rig1 + (-tune if invert else tune)
+
+        if self._rig_controller is not None and self._rig_controller.is_connected:
+            if self._rig_busy_lock.acquire(blocking=False):
+                rig = self._rig_controller
+                dl = dl_rig1
+                ul = ul_rig1
+
+                def _rig_send() -> None:
+                    try:
+                        rig.set_vfo_frequencies(dl, ul)
+                    except RigControlError as exc:
+                        self._rig_error.emit(str(exc))
+                    except Exception as exc:
+                        logger.error("RigNet: unexpected error in send thread: %s", exc)
+                        self._rig_error.emit(str(exc))
+                    finally:
+                        self._rig_busy_lock.release()
+
+                threading.Thread(target=_rig_send, daemon=True).start()
+            else:
+                logger.debug("RigNet: previous cycle still running, skipping tick")
+
+        # Transmit Doppler-corrected frequencies to Rig 2 (same non-blocking pattern).
+        if self._rig2_controller is not None and self._rig2_controller.is_connected:
+            if self._rig2_busy_lock.acquire(blocking=False):
+                rig2 = self._rig2_controller
+                # DL for Rig 2: add tune offset when SDR is Rig 2
+                dl2 = (dl_corr + tune) if (dl_corr is not None and sdr_is_rig2) else dl_corr
+                # UL for Rig 2: mirror tune offset when SDR is Rig 1 and Lock is ON
+                ul2 = ul_corr
+                if sdr_is_rig1 and self._trsp_lock and tune != 0.0 and ul2 is not None:
+                    ul2 = ul2 + (-tune if invert else tune)
+
+                def _rig2_send() -> None:
+                    try:
+                        rig2.set_vfo_frequencies(dl2, ul2)
+                    except RigControlError as exc:
+                        self._rig_error.emit(str(exc))
+                    except Exception as exc:
+                        logger.error("Rig2: unexpected error in send thread: %s", exc)
+                        self._rig_error.emit(str(exc))
+                    finally:
+                        self._rig2_busy_lock.release()
+
+                threading.Thread(target=_rig2_send, daemon=True).start()
+            else:
+                logger.debug("Rig2: previous cycle still running, skipping tick")
+
+    @Slot(object)
+    def _on_doppler_computed(self, result: DopplerDisplayUpdate) -> None:
+        """Main-thread slot for DopplerWorker's results — see _doppler_cycle()."""
+        self._latest_doppler = result
+        self._radio_control.update_doppler(
+            result.dl_nom,
+            result.dl_corr,
+            result.dl_shift,
+            result.ul_nom,
+            result.ul_corr,
+            result.ul_shift,
+            result.mode,
+            result.ctcss_display,
+        )
 
     def _on_rig_error(self, msg: str) -> None:
         """Display an error from the background rig thread in the status bar (UI thread)."""
@@ -3038,6 +3129,10 @@ class MainWindow(QMainWindow):
         """Update _current_transmitter and refresh the display on transponder selection change."""
         self._current_transmitter = xpdr if isinstance(xpdr, dict) else None
         self._current_ctcss_tone = None  # revert to transponder tone on selection change
+        # Drop the previous transmitter's cached Doppler result so
+        # _update_selected_satellite() doesn't briefly show stale
+        # frequencies for the new selection until DopplerWorker's next cycle.
+        self._latest_doppler = None
         self._dashboard_view.set_transmitter(self._current_transmitter)
         if self._current_transmitter:
             dl = self._current_transmitter.get("downlink_low")
@@ -4224,7 +4319,12 @@ class MainWindow(QMainWindow):
             self._tune_ul_override = float(ul_low)
 
     def _load_cycle_setting(self) -> None:
-        """Load rig_cycle_ms from the DB and apply it to the timer and UI."""
+        """Load rig_cycle_ms from the DB and apply it to DopplerWorker and the UI.
+
+        Controls DopplerWorker's cycle interval, not self._timer (the 1s
+        display-refresh timer is fixed and no longer user-configurable —
+        see __init__).
+        """
         try:
             row = self._conn.execute(
                 "SELECT value FROM app_settings WHERE key = 'rig_cycle_ms'"
@@ -4232,15 +4332,15 @@ class MainWindow(QMainWindow):
             if row is not None:
                 ms = int(row["value"])
                 ms = max(10, min(10000, ms))
-                self._timer.setInterval(ms)
+                self._doppler_worker.set_interval(ms / 1000.0)
                 self._radio_control.set_cycle(ms)
         except Exception as exc:
             logger.warning("Failed to load cycle setting: %s", exc)
 
     def _on_cycle_changed(self, ms: int) -> None:
-        """Update the timer interval and save to DB when the Cycle spinbox changes."""
+        """Update DopplerWorker's interval and save to DB when the Cycle spinbox changes."""
         ms = max(10, min(10000, ms))
-        self._timer.setInterval(ms)
+        self._doppler_worker.set_interval(ms / 1000.0)
         try:
             self._conn.execute(
                 "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('rig_cycle_ms', ?)",
@@ -5024,6 +5124,7 @@ class MainWindow(QMainWindow):
         # Signal background threads to exit before tearing down other resources.
         self._shutdown_flag.set()
         self._timer.stop()
+        self._doppler_worker.stop()
         if self._web_server is not None:
             with contextlib.suppress(Exception):
                 self._web_server.stop()
