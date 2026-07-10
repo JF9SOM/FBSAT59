@@ -246,11 +246,18 @@ class KissClient(QThread):
 
 
 class AudioBridge(QThread):
-    """Bridges sounddevice ↔ Direwolf stdin/stdout.
+    """Bridges an RX audio source ↔ Direwolf stdin/stdout.
 
-    Reads 48 kHz mono int16 PCM from the configured soundcard input device
-    and writes it to *proc.stdin*.  Reads from *proc.stdout* and plays the
-    TX audio through the configured output device.
+    RX source is either:
+      - the configured soundcard input device (shared with other
+        Communications tabs via AudioDeviceManager), or
+      - *sdr_pipeline*, if given: a G3ruhSdrDemod is run against the SDR's
+        raw I/Q (used for the SDR-fed 9600 baud G3RUH receive-only path —
+        see AprsEngine.start_sdr_direwolf()). Mutually exclusive with the
+        soundcard input; *in_device* is ignored when *sdr_pipeline* is set.
+
+    Either way, reads from *proc.stdout* and plays the TX audio through the
+    configured output device (None for the SDR-fed receive-only path).
     """
 
     def __init__(
@@ -258,12 +265,14 @@ class AudioBridge(QThread):
         proc: subprocess.Popen[bytes],
         in_device: int | None,
         out_device: int | None,
+        sdr_pipeline: Any = None,
         parent: Any = None,
     ) -> None:
         super().__init__(parent)
         self._proc = proc
         self._in_device = in_device
         self._out_device = out_device
+        self._sdr_pipeline = sdr_pipeline
         self._stop_event = threading.Event()
 
     _SAMPLE_RATE = 48000
@@ -278,7 +287,7 @@ class AudioBridge(QThread):
         except ImportError:
             return
 
-        # RX: soundcard → Direwolf stdin (shared with other Communications tabs)
+        # RX: audio source → Direwolf stdin
         def _rx_callback(chunk: Any) -> None:
             if self._stop_event.is_set():
                 return
@@ -290,7 +299,21 @@ class AudioBridge(QThread):
                 self._stop_event.set()
 
         mgr = get_audio_device_manager()
-        mgr.acquire_input(_AUDIO_OWNER, self._in_device, self._SAMPLE_RATE, _rx_callback)
+        sdr_demod: Any = None
+        if self._sdr_pipeline is not None:
+            from comms.aprs.g3ruh_demod import G3ruhSdrDemod
+
+            try:
+                sr = int(self._sdr_pipeline._device.sample_rate)
+            except AttributeError:
+                sr = 0
+            if sr > 0:
+                sdr_demod = G3ruhSdrDemod(sample_rate=sr, parent=self)
+                sdr_demod.audio_ready.connect(_rx_callback)
+                sdr_demod.start()
+                self._sdr_pipeline.subscribe(sdr_demod.push_samples)
+        else:
+            mgr.acquire_input(_AUDIO_OWNER, self._in_device, self._SAMPLE_RATE, _rx_callback)
 
         try:
             while not self._stop_event.is_set():
@@ -315,7 +338,11 @@ class AudioBridge(QThread):
         except Exception:  # noqa: BLE001
             pass
         finally:
-            mgr.release_input(_AUDIO_OWNER, self._in_device)
+            if sdr_demod is not None:
+                self._sdr_pipeline.unsubscribe(sdr_demod.push_samples)
+                sdr_demod.stop()
+            else:
+                mgr.release_input(_AUDIO_OWNER, self._in_device)
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -369,12 +396,18 @@ class DirewolfManager:
         in_device: int | None = None,
         out_device: int | None = None,
         modem: str = "1200",
+        sdr_pipeline: Any = None,
     ) -> tuple[bool, str]:
         """Start Direwolf and the audio / KISS threads.
 
         *modem* is the AX.25 baud rate Direwolf should decode/encode at —
         "1200" (Bell 202 AFSK) or "9600" (G3RUH). Falls back to "1200" for
         any other value.
+
+        *sdr_pipeline*, if given, feeds Direwolf's stdin from a
+        G3ruhSdrDemod running against this SDR pipeline's raw I/Q instead
+        of the soundcard input device — *in_device* is ignored in that
+        case. See AudioBridge.
 
         Returns (True, "") on success, (False, reason) on failure.
         """
@@ -406,8 +439,8 @@ class DirewolfManager:
         self._out_device = out_device
         self._conf_path = conf_path
 
-        # Audio bridge: soundcard ↔ Direwolf stdin/stdout
-        self._audio = AudioBridge(self._proc, in_device, out_device)
+        # Audio bridge: soundcard (or SDR) ↔ Direwolf stdin/stdout
+        self._audio = AudioBridge(self._proc, in_device, out_device, sdr_pipeline=sdr_pipeline)
         self._audio.start()
 
         # KISS client: connect after a brief delay for Direwolf to init

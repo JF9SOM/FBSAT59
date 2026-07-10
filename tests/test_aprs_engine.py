@@ -53,12 +53,34 @@ class _FakeDirewolfManager:
         in_device: int | None,
         out_device: int | None,
         modem: str = "1200",
+        sdr_pipeline: Any = None,
     ) -> tuple[bool, str]:
-        self.start_calls.append({"callsign": callsign, "ssid": ssid, "via": via, "modem": modem})
+        self.start_calls.append(
+            {
+                "callsign": callsign,
+                "ssid": ssid,
+                "via": via,
+                "modem": modem,
+                "sdr_pipeline": sdr_pipeline,
+            }
+        )
         return True, ""
 
     def stop(self) -> None:
         self.stop_calls += 1
+
+
+class _FakePipeline:
+    class _Device:
+        sample_rate = 2_400_000
+
+    _device = _Device()
+
+    def subscribe(self, _cb: Any) -> None:
+        pass
+
+    def unsubscribe(self, _cb: Any) -> None:
+        pass
 
 
 @pytest.fixture
@@ -174,19 +196,6 @@ def test_restart_if_modem_changed_noop_when_not_running(engine: AprsEngine) -> N
 
 def test_restart_if_modem_changed_noop_on_sdr_path(engine: AprsEngine) -> None:
     """The SDR/AFSK receive path has no MODEM concept — nothing to restart."""
-
-    class _FakePipeline:
-        class _Device:
-            sample_rate = 2_400_000
-
-        _device = _Device()
-
-        def subscribe(self, _cb: Any) -> None:
-            pass
-
-        def unsubscribe(self, _cb: Any) -> None:
-            pass
-
     ok, _err = engine.start_sdr("aprs", _FakePipeline())
     assert ok
     try:
@@ -215,3 +224,86 @@ def test_stop_only_tears_down_after_last_owner_releases(engine: AprsEngine) -> N
     assert fake_mgr.stop_calls == 1
     assert not engine.is_running
     assert engine.current_modem is None
+
+
+# ---------------------------------------------------------------------------
+# start_sdr_direwolf() / sync_sdr_baud() — SDR-fed 9600 G3RUH path
+# ---------------------------------------------------------------------------
+
+
+def test_start_sdr_direwolf_uses_modem_9600(engine: AprsEngine) -> None:
+    ok, err = engine.start_sdr_direwolf("aprs", _FakePipeline())
+    assert ok and err == ""
+    fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
+    assert fake_mgr.start_calls[-1]["modem"] == "9600"
+    assert fake_mgr.start_calls[-1]["sdr_pipeline"] is not None
+    assert engine.current_modem == "9600"
+    assert engine.is_running
+
+
+def test_sync_sdr_baud_switches_afsk_to_direwolf(engine: AprsEngine) -> None:
+    """1200 (AfskDemodulator) -> 9600 (SDR-fed Direwolf) is a full mechanism
+    switch, not just a MODEM restart — verify it happens and owners survive."""
+    pipeline = _FakePipeline()
+    ok, _err = engine.start_sdr("aprs", pipeline)
+    assert ok
+    try:
+        engine.add_owner("telemetry")
+        fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
+
+        engine.sync_sdr_baud(pipeline, "9600")
+
+        assert fake_mgr.stop_calls == 1
+        assert fake_mgr.start_calls[-1]["modem"] == "9600"
+        assert engine.current_modem == "9600"
+        assert engine.is_running
+        assert engine._owners == {"aprs", "telemetry"}
+    finally:
+        engine.stop("aprs")
+        engine.stop("telemetry")
+
+
+def test_sync_sdr_baud_switches_direwolf_to_afsk(engine: AprsEngine) -> None:
+    """9600 (SDR-fed Direwolf) -> 1200 (AfskDemodulator) is also a full switch."""
+    pipeline = _FakePipeline()
+    ok, _err = engine.start_sdr_direwolf("aprs", pipeline)
+    assert ok
+    fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
+    try:
+        engine.sync_sdr_baud(pipeline, "1200")
+        assert fake_mgr.stop_calls == 1
+        assert engine.current_modem is None
+        assert engine.is_running
+    finally:
+        # sync_sdr_baud() just started a real AfskDemodulator QThread.
+        engine.stop("aprs")
+
+
+def test_sync_sdr_baud_noop_when_already_correct(engine: AprsEngine) -> None:
+    pipeline = _FakePipeline()
+    ok, _err = engine.start_sdr_direwolf("aprs", pipeline)
+    assert ok
+    fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
+    engine.sync_sdr_baud(pipeline, "9600")
+    assert fake_mgr.stop_calls == 0
+    assert len(fake_mgr.start_calls) == 1
+
+
+def test_sync_sdr_baud_noop_when_rig_session_active(engine: AprsEngine) -> None:
+    """A Rig + Sound Card Direwolf session — even one at 9600 — is not
+    sync_sdr_baud()'s to touch; only restart_if_modem_changed() owns it."""
+    engine.start_rig("aprs", "JF9SOM", 0, "ARISS", modem="9600")
+    fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
+
+    engine.sync_sdr_baud(_FakePipeline(), "1200")
+
+    assert fake_mgr.stop_calls == 0
+    assert len(fake_mgr.start_calls) == 1
+    assert engine.current_modem == "9600"
+
+
+def test_sync_sdr_baud_noop_when_not_running(engine: AprsEngine) -> None:
+    engine.sync_sdr_baud(_FakePipeline(), "9600")
+    fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
+    assert fake_mgr.start_calls == []
+    assert fake_mgr.stop_calls == 0

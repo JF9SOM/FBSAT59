@@ -481,14 +481,35 @@ class AprsTab(QWidget):
             modem = resolve_ax25_modem(self._conn, self._radio_control)
             self._engine.start_rig(_ENGINE_OWNER, cs, ssid, via, modem=modem)
 
+    def _get_sdr_pipeline(self) -> Any | None:
+        """Return the connected SDR rig's pipeline (Rig 1 or Rig 2), if any."""
+        rc = self._radio_control
+        for attr in ("_rig1", "_rig2"):
+            rig = getattr(rc, attr, None)
+            if rig is not None and getattr(rig, "is_sdr", False):
+                return getattr(rig, "_pipeline", None)
+        return None
+
     def _try_start_sdr(self, rig2: object) -> None:
-        """Start Bell 202 AFSK demodulator on the SDR pipeline (receive only)."""
+        """Start AX.25 reception on the SDR pipeline (receive only).
+
+        Uses the lightweight AfskDemodulator (1200 baud Bell 202, no
+        Direwolf dependency) unless the resolved baud is 9600, in which
+        case Direwolf's built-in G3RUH decoder is used instead (fed by a
+        raw-discriminator demod of the SDR's I/Q — see
+        AprsEngine.start_sdr_direwolf()).
+        """
         if self._engine.is_running:
             return
         pipeline = getattr(rig2, "_pipeline", None)
         if pipeline is None:
             return
-        self._engine.start_sdr(_ENGINE_OWNER, pipeline)
+        from comms.aprs.engine import resolve_ax25_modem
+
+        if resolve_ax25_modem(self._conn, self._radio_control) == "9600":
+            self._engine.start_sdr_direwolf(_ENGINE_OWNER, pipeline)
+        else:
+            self._engine.start_sdr(_ENGINE_OWNER, pipeline)
 
     # ------------------------------------------------------------------ #
     # Engine signal slots
@@ -652,7 +673,7 @@ class AprsTab(QWidget):
 
     def _on_baud_mode_changed(self, _index: int) -> None:
         """Persist the Auto/1200/9600 selection and apply it immediately."""
-        from comms.aprs.engine import AX25_BAUD_SETTING_KEY, resolve_ax25_modem
+        from comms.aprs.engine import AX25_BAUD_SETTING_KEY
 
         mode = self._baud_combo.currentData()
         if hasattr(self._conn, "execute"):
@@ -662,13 +683,29 @@ class AprsTab(QWidget):
                 (AX25_BAUD_SETTING_KEY, mode),
             )
             self._conn.commit()
-        self._engine.restart_if_modem_changed(resolve_ax25_modem(self._conn, self._radio_control))
+        self._apply_baud_change()
 
     def _on_transmitter_changed(self, _xpdr: object) -> None:
-        """Restart Direwolf if the newly selected transponder's baud differs."""
+        """Restart the AX.25 pipeline if the newly selected transponder's baud differs."""
+        self._apply_baud_change()
+
+    def _apply_baud_change(self) -> None:
+        """Re-resolve the target baud and apply it to whichever source is active.
+
+        Rig + Sound Card (Direwolf) sessions are restarted in place via
+        restart_if_modem_changed(); SDR sessions may need a full mechanism
+        switch (AfskDemodulator <-> SDR-fed Direwolf) via sync_sdr_baud().
+        Both methods only act on the session type they own (checked via the
+        engine's internal state, not this tab's), so calling both
+        unconditionally is safe — whichever doesn't apply is a no-op.
+        """
         from comms.aprs.engine import resolve_ax25_modem
 
-        self._engine.restart_if_modem_changed(resolve_ax25_modem(self._conn, self._radio_control))
+        modem = resolve_ax25_modem(self._conn, self._radio_control)
+        self._engine.restart_if_modem_changed(modem)
+        pipeline = self._get_sdr_pipeline()
+        if pipeline is not None:
+            self._engine.sync_sdr_baud(pipeline, modem)
 
     def closeEvent(self, event: Any) -> None:
         """Stop engine, clear map pins, stop beacon timer, and save settings."""

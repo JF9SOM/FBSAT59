@@ -403,12 +403,28 @@ class TelemetryTab(QWidget):
                 (AX25_BAUD_SETTING_KEY, mode),
             )
             self._conn.commit()
-        self._engine.restart_if_modem_changed(resolve_ax25_modem(self._conn, self._radio_control))
-        self._refresh_status()
+        self._apply_baud_change()
 
     def _on_transmitter_changed(self, _xpdr: object) -> None:
-        """Restart Direwolf if the newly selected transponder's baud differs."""
-        self._engine.restart_if_modem_changed(resolve_ax25_modem(self._conn, self._radio_control))
+        """Restart the AX.25 pipeline if the newly selected transponder's baud differs."""
+        self._apply_baud_change()
+
+    def _apply_baud_change(self) -> None:
+        """Re-resolve the target baud and apply it to whichever source is active.
+
+        Rig + Sound Card (Direwolf) sessions are restarted in place via
+        restart_if_modem_changed(); SDR sessions may need a full mechanism
+        switch (AfskDemodulator <-> SDR-fed Direwolf) via sync_sdr_baud().
+        Both methods only act on the session type they own, so calling both
+        unconditionally is safe — whichever doesn't apply is a no-op.
+        """
+        modem = resolve_ax25_modem(self._conn, self._radio_control)
+        self._engine.restart_if_modem_changed(modem)
+        if self._sdr_pipeline is not None:
+            self._engine.sync_sdr_baud(self._sdr_pipeline, modem)
+            if self._afsk_source in ("sdr", "sdr_direwolf"):
+                self._afsk_source = "sdr_direwolf" if modem == "9600" else "sdr"
+        self._refresh_status()
         self._refresh_status()
 
     # ------------------------------------------------------------------ #
@@ -550,13 +566,24 @@ class TelemetryTab(QWidget):
         self._refresh_status()
 
     def _try_start_sdr(self, pipeline: object) -> None:
-        ok, err = self._engine.start_sdr(_ENGINE_OWNER, pipeline)
+        """Start AX.25 reception on the SDR pipeline (receive only).
+
+        Uses the lightweight AfskDemodulator (1200 baud Bell 202, no
+        Direwolf dependency) unless the resolved baud is 9600, in which
+        case Direwolf's built-in G3RUH decoder is used instead — see
+        AprsEngine.start_sdr_direwolf().
+        """
+        use_direwolf = resolve_ax25_modem(self._conn, self._radio_control) == "9600"
+        if use_direwolf:
+            ok, err = self._engine.start_sdr_direwolf(_ENGINE_OWNER, pipeline)
+        else:
+            ok, err = self._engine.start_sdr(_ENGINE_OWNER, pipeline)
         if not ok:
             self._set_error(f"⚠ {err}")
             return
         self._sdr_pipeline = pipeline
         self._engine.raw_frame_received.connect(self._on_ax25_frame)
-        self._afsk_source = "sdr"
+        self._afsk_source = "sdr_direwolf" if use_direwolf else "sdr"
         self._refresh_status()
 
     def _stop_engine(self) -> None:
@@ -668,6 +695,9 @@ class TelemetryTab(QWidget):
             self._lbl_status.setStyleSheet("color: #27ae60;")
         elif self._afsk_source == "sdr" and self._engine.is_running:
             self._lbl_status.setText(_("SDR — Bell 202 AFSK (receive only)"))
+            self._lbl_status.setStyleSheet("color: #4a9eff;")
+        elif self._afsk_source == "sdr_direwolf" and self._engine.is_running:
+            self._lbl_status.setText(_("SDR — Direwolf G3RUH 9600 baud (receive only)"))
             self._lbl_status.setStyleSheet("color: #4a9eff;")
         else:
             self._lbl_status.setText(_("—  (connect Rig or SDR, then click ▶ Start)"))
