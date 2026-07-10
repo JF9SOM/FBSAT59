@@ -368,8 +368,13 @@ class DirewolfManager:
         via: str = "ARISS",
         in_device: int | None = None,
         out_device: int | None = None,
+        modem: str = "1200",
     ) -> tuple[bool, str]:
         """Start Direwolf and the audio / KISS threads.
+
+        *modem* is the AX.25 baud rate Direwolf should decode/encode at —
+        "1200" (Bell 202 AFSK) or "9600" (G3RUH). Falls back to "1200" for
+        any other value.
 
         Returns (True, "") on success, (False, reason) on failure.
         """
@@ -385,7 +390,7 @@ class DirewolfManager:
             other = mgr.output_owner(out_device) or "another tab"
             return False, f"Sound card output is in use by {other}"
 
-        conf_path = self._write_config(callsign, ssid)
+        conf_path = self._write_config(callsign, ssid, modem)
         try:
             self._proc = subprocess.Popen(
                 [str(binary), "-c", conf_path, "-t", "0"],
@@ -444,15 +449,16 @@ class DirewolfManager:
     # Config file generation
     # ------------------------------------------------------------------ #
 
-    def _write_config(self, callsign: str, ssid: int) -> str:
+    def _write_config(self, callsign: str, ssid: int, modem: str = "1200") -> str:
         """Write a minimal direwolf.conf to a temp file and return its path."""
         station = f"{callsign}-{ssid}" if ssid else callsign
+        modem_baud = modem if modem in ("1200", "9600") else "1200"
         conf = (
             f"MYCALL {station}\n"
             "ADEVICE stdin stdout\n"
             "ACHANNELS 1\n"
             "CHANNEL 0\n"
-            "MODEM 1200\n"
+            f"MODEM {modem_baud}\n"
             "PTT NONE\n"
             f"KISSPORT 8001\n"
         )

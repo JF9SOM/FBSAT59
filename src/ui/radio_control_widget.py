@@ -337,6 +337,13 @@ class RadioControlWidget(QWidget):
         self._clear_frequency()
         self.update_ctcss(None, None)
 
+    def current_transmitter(self) -> dict[str, Any] | None:
+        """Return the currently selected transponder dict, or None if none selected."""
+        idx = self._xpdr_combo.currentIndex()
+        if 0 <= idx < len(self._transmitters):
+            return self._transmitters[idx]
+        return None
+
     def set_transmitters(
         self,
         transmitters: list[dict[str, Any]],

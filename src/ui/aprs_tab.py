@@ -110,6 +110,7 @@ class AprsTab(QWidget):
         self._ensure_db_table()
         self._setup_ui()
         self._load_settings()
+        self._load_baud_mode()
         self._connect_signals()
         self._refresh_input_source()
 
@@ -198,6 +199,24 @@ class AprsTab(QWidget):
         self._via_edit.setFixedWidth(120)
         row1.addWidget(QLabel(_("Via:")))
         row1.addWidget(self._via_edit)
+
+        row1.addSpacing(12)
+        self._baud_combo = QComboBox()
+        self._baud_combo.addItem(_("Auto"), "auto")
+        self._baud_combo.addItem("1200", "1200")
+        self._baud_combo.addItem("9600", "9600")
+        self._baud_combo.setToolTip(
+            _(
+                "AX.25 baud rate for Direwolf (Rig + Sound Card reception).\n"
+                "Auto reads the selected transponder's baud rate from SATNOGS\n"
+                "(defaults to 1200 if unknown). Only applies to Rig + Sound\n"
+                "Card reception — SDR-only reception is always 1200 baud AFSK."
+            )
+        )
+        self._baud_combo.currentIndexChanged.connect(self._on_baud_mode_changed)
+        row1.addWidget(QLabel(_("Baud:")))
+        row1.addWidget(self._baud_combo)
+
         row1.addStretch()
         settings_form.addRow(row1)
 
@@ -328,6 +347,8 @@ class AprsTab(QWidget):
             rc.rig2_connected.connect(self._on_rig2_connected)
         if hasattr(rc, "rig2_disconnected"):
             rc.rig2_disconnected.connect(self._on_rig2_disconnected)
+        if hasattr(rc, "transmitter_changed"):
+            rc.transmitter_changed.connect(self._on_transmitter_changed)
 
     # ------------------------------------------------------------------ #
     # Connection state slots
@@ -397,9 +418,14 @@ class AprsTab(QWidget):
         """Update the input-source label and send-button state."""
         sc_ok = self._is_soundcard_configured()
 
+        modem = self._engine.current_modem
+        baud_suffix = f"  [{modem} baud]" if modem else ""
+
         can_tx = self._rig_connected and sc_ok
         if can_tx:
-            self._input_label.setText(_("Input: Sound Card + Direwolf  (send + receive)"))
+            self._input_label.setText(
+                _("Input: Sound Card + Direwolf  (send + receive)") + baud_suffix
+            )
             self._input_label.setStyleSheet("color: #7bed9f;")
             self._send_btn.setEnabled(True)
         elif self._sdr_connected:
@@ -409,7 +435,7 @@ class AprsTab(QWidget):
             self._send_btn.setEnabled(False)
         elif sc_ok and self._engine.is_running:
             self._input_label.setText(
-                _("Input: Sound Card + Direwolf  (receive only — Rig not connected)")
+                _("Input: Sound Card + Direwolf  (receive only — Rig not connected)") + baud_suffix
             )
             self._input_label.setStyleSheet("color: #4a9eff;")
             self._send_btn.setEnabled(False)
@@ -450,7 +476,10 @@ class AprsTab(QWidget):
         ssid = self._ssid_spin.value()
         via = self._via_edit.text().strip()
         if cs:
-            self._engine.start_rig(_ENGINE_OWNER, cs, ssid, via)
+            from comms.aprs.engine import resolve_ax25_modem
+
+            modem = resolve_ax25_modem(self._conn, self._radio_control)
+            self._engine.start_rig(_ENGINE_OWNER, cs, ssid, via, modem=modem)
 
     def _try_start_sdr(self, rig2: object) -> None:
         """Start Bell 202 AFSK demodulator on the SDR pipeline (receive only)."""
@@ -599,6 +628,47 @@ class AprsTab(QWidget):
             (json.dumps(data),),
         )
         self._conn.commit()
+
+    # ------------------------------------------------------------------ #
+    # AX.25 baud mode (shared with the Telemetry tab's Bell 202 AFSK mode)
+    # ------------------------------------------------------------------ #
+
+    def _load_baud_mode(self) -> None:
+        """Restore the Auto/1200/9600 selection from app_settings."""
+        from comms.aprs.engine import AX25_BAUD_SETTING_KEY
+
+        mode = "auto"
+        if hasattr(self._conn, "execute"):
+            row = self._conn.execute(
+                "SELECT value FROM app_settings WHERE key = ?",
+                (AX25_BAUD_SETTING_KEY,),
+            ).fetchone()
+            if row and row["value"] in ("auto", "1200", "9600"):
+                mode = row["value"]
+        idx = self._baud_combo.findData(mode)
+        self._baud_combo.blockSignals(True)
+        self._baud_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self._baud_combo.blockSignals(False)
+
+    def _on_baud_mode_changed(self, _index: int) -> None:
+        """Persist the Auto/1200/9600 selection and apply it immediately."""
+        from comms.aprs.engine import AX25_BAUD_SETTING_KEY, resolve_ax25_modem
+
+        mode = self._baud_combo.currentData()
+        if hasattr(self._conn, "execute"):
+            self._conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value, updated_at) "
+                "VALUES (?, ?, CURRENT_TIMESTAMP)",
+                (AX25_BAUD_SETTING_KEY, mode),
+            )
+            self._conn.commit()
+        self._engine.restart_if_modem_changed(resolve_ax25_modem(self._conn, self._radio_control))
+
+    def _on_transmitter_changed(self, _xpdr: object) -> None:
+        """Restart Direwolf if the newly selected transponder's baud differs."""
+        from comms.aprs.engine import resolve_ax25_modem
+
+        self._engine.restart_if_modem_changed(resolve_ax25_modem(self._conn, self._radio_control))
 
     def closeEvent(self, event: Any) -> None:
         """Stop engine, clear map pins, stop beacon timer, and save settings."""

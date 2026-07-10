@@ -38,7 +38,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from comms.aprs.engine import get_aprs_engine
+from comms.aprs.engine import AX25_BAUD_SETTING_KEY, get_aprs_engine, resolve_ax25_modem
 from comms.aprs.parser import decode_ax25
 from comms.telemetry.decoder import TelemetryFrame, decode_telemetry, list_formats
 from comms.telemetry.gr_satellites_backend import (
@@ -97,6 +97,7 @@ class TelemetryTab(QWidget):
 
         self._ensure_db_table()
         self._setup_ui()
+        self._load_baud_mode()
         self._connect_signals()
         self._populate_afsk_combo()
         if detect_gr_satellites():
@@ -153,6 +154,25 @@ class TelemetryTab(QWidget):
         self._combo_gr_sat.setVisible(False)
         self._combo_gr_sat.currentIndexChanged.connect(self._on_gr_sat_changed)
         row1.addWidget(self._combo_gr_sat)
+
+        row1.addSpacing(12)
+        self._baud_combo = QComboBox()
+        self._baud_combo.addItem(_("Auto"), "auto")
+        self._baud_combo.addItem("1200", "1200")
+        self._baud_combo.addItem("9600", "9600")
+        self._baud_combo.setToolTip(
+            _(
+                "AX.25 baud rate for Bell 202 AFSK mode's Rig + Sound Card\n"
+                "(Direwolf) reception. Auto reads the selected transponder's\n"
+                "baud rate from SATNOGS (defaults to 1200 if unknown). Shared\n"
+                "with the APRS tab — has no effect on gr-satellites mode or\n"
+                "SDR-only reception, which is always 1200 baud AFSK."
+            )
+        )
+        self._baud_combo.currentIndexChanged.connect(self._on_baud_mode_changed)
+        row1.addWidget(QLabel(_("Baud:")))
+        row1.addWidget(self._baud_combo)
+
         row1.addStretch()
         self._lbl_sat = QLabel(_("Satellite: —"))
         self._lbl_sat.setStyleSheet("color: #aaa;")
@@ -253,6 +273,7 @@ class TelemetryTab(QWidget):
             self._radio_control.rig_disconnected.connect(self._on_rig_disconnected)  # type: ignore[attr-defined]
             self._radio_control.rig2_connected.connect(self._on_rig2_connected)  # type: ignore[attr-defined]
             self._radio_control.rig2_disconnected.connect(self._on_rig2_disconnected)  # type: ignore[attr-defined]
+            self._radio_control.transmitter_changed.connect(self._on_transmitter_changed)  # type: ignore[attr-defined]
         except AttributeError:
             pass
 
@@ -352,6 +373,43 @@ class TelemetryTab(QWidget):
 
     def _current_mode(self) -> str:
         return self._combo_mode.currentText()
+
+    # ------------------------------------------------------------------ #
+    # AX.25 baud mode (shared with the APRS tab)
+    # ------------------------------------------------------------------ #
+
+    def _load_baud_mode(self) -> None:
+        """Restore the Auto/1200/9600 selection from app_settings."""
+        mode = "auto"
+        if hasattr(self._conn, "execute"):
+            row = self._conn.execute(
+                "SELECT value FROM app_settings WHERE key = ?",
+                (AX25_BAUD_SETTING_KEY,),
+            ).fetchone()
+            if row and row["value"] in ("auto", "1200", "9600"):
+                mode = row["value"]
+        idx = self._baud_combo.findData(mode)
+        self._baud_combo.blockSignals(True)
+        self._baud_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self._baud_combo.blockSignals(False)
+
+    def _on_baud_mode_changed(self, _index: int) -> None:
+        """Persist the Auto/1200/9600 selection and apply it immediately."""
+        mode = self._baud_combo.currentData()
+        if hasattr(self._conn, "execute"):
+            self._conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value, updated_at) "
+                "VALUES (?, ?, CURRENT_TIMESTAMP)",
+                (AX25_BAUD_SETTING_KEY, mode),
+            )
+            self._conn.commit()
+        self._engine.restart_if_modem_changed(resolve_ax25_modem(self._conn, self._radio_control))
+        self._refresh_status()
+
+    def _on_transmitter_changed(self, _xpdr: object) -> None:
+        """Restart Direwolf if the newly selected transponder's baud differs."""
+        self._engine.restart_if_modem_changed(resolve_ax25_modem(self._conn, self._radio_control))
+        self._refresh_status()
 
     # ------------------------------------------------------------------ #
     # Start / Stop
@@ -481,7 +539,8 @@ class TelemetryTab(QWidget):
                 self._btn_stop.setEnabled(False)
 
     def _try_start_direwolf(self) -> None:
-        ok, err = self._engine.start_rig(_ENGINE_OWNER, "N0CALL", 0, "")
+        modem = resolve_ax25_modem(self._conn, self._radio_control)
+        ok, err = self._engine.start_rig(_ENGINE_OWNER, "N0CALL", 0, "", modem=modem)
         if not ok:
             self._set_error(f"⚠ {err}")
             return
@@ -603,7 +662,9 @@ class TelemetryTab(QWidget):
         if self._gr_backend.is_running:
             return  # managed by _on_gr_status
         if self._afsk_source == "direwolf" and self._engine.is_running:
-            self._lbl_status.setText(_("Rig + Direwolf (receiving)"))
+            modem = self._engine.current_modem
+            suffix = f"  [{modem} baud]" if modem else ""
+            self._lbl_status.setText(_("Rig + Direwolf (receiving)") + suffix)
             self._lbl_status.setStyleSheet("color: #27ae60;")
         elif self._afsk_source == "sdr" and self._engine.is_running:
             self._lbl_status.setText(_("SDR — Bell 202 AFSK (receive only)"))
