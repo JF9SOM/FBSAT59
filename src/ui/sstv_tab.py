@@ -42,6 +42,13 @@ from i18n import _
 _THUMB_W = 120
 _THUMB_H = 90
 
+# Owner tag for the shared AprsEngine singleton (see comms.aprs.engine).
+# SSDV mode only taps raw_frame_received off whatever the APRS/Telemetry
+# tabs already started (it never starts the pipeline itself), but must
+# still register as an owner so closing the APRS tab doesn't silently stop
+# reception here too.
+_ENGINE_OWNER = "sstv"
+
 
 class _ThumbnailItem(QListWidgetItem):
     """List item that stores a full-resolution QImage alongside its thumbnail."""
@@ -390,6 +397,7 @@ class SstvTab(QWidget):
             self._ssdv_decoder.error_occurred.connect(self._status_label.setText)
 
         if self._aprs_engine is not None:
+            self._aprs_engine.add_owner(_ENGINE_OWNER)
             self._aprs_engine.raw_frame_received.connect(self._on_ax25_frame)
             self._status_label.setText(_("SSDV: waiting for AX.25 frames…"))
         else:
@@ -400,6 +408,7 @@ class SstvTab(QWidget):
         if self._aprs_engine is not None:
             with contextlib.suppress(RuntimeError):
                 self._aprs_engine.raw_frame_received.disconnect(self._on_ax25_frame)
+            self._aprs_engine.stop(_ENGINE_OWNER)
         if self._ssdv_decoder is not None:
             self._ssdv_decoder.flush()
 

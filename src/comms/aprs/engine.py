@@ -102,6 +102,17 @@ class AprsEngine(QObject):
         """
         self._rig = rig
 
+    def add_owner(self, owner: str) -> None:
+        """Register `owner`'s interest in an already-running pipeline.
+
+        For passive consumers (e.g. SSTV/SSDV tapping raw_frame_received off
+        whatever the APRS/Telemetry tabs already started) that must keep the
+        pipeline alive while they're subscribed, but should never trigger a
+        start themselves — use start_rig()/start_sdr() for that. Release
+        with stop(owner), same as any other owner.
+        """
+        self._owners.add(owner)
+
     def start_rig(
         self,
         owner: str,
