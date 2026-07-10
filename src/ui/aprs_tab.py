@@ -46,6 +46,15 @@ _SSID_MAX = 15
 # Default via path for ISS digipeater
 _DEFAULT_VIA = "ARISS"
 
+# Generic digipeater path aliases accepted by APRS-capable satellite
+# digipeaters (ISS/ARISS, and historically PCSAT/PCSAT2/PSAT) — all three
+# are configured on the same digipeaters, so any one works without
+# reconfiguring per satellite. Source: aprs.org ISS/APRS FAQ
+# (https://www.aprs.org/ariss.html) — "All APRS satellites and the ISS use
+# any of the three generic paths of ARISS or APRSAT or WIDE." The combo box
+# is editable so a satellite-specific path can still be typed in.
+_VIA_PATH_CHOICES = ("ARISS", "APRSAT", "WIDE")
+
 # Owner tag for the shared AprsEngine singleton (see comms.aprs.engine).
 # The Telemetry tab's Bell 202 AFSK mode shares the same engine under its
 # own "telemetry" tag so closing one tab doesn't stop the other's reception.
@@ -193,10 +202,20 @@ class AprsTab(QWidget):
         row1.addWidget(self._ssid_spin)
 
         row1.addSpacing(12)
-        self._via_edit = QLineEdit()
-        self._via_edit.setPlaceholderText(_DEFAULT_VIA)
-        self._via_edit.setText(_DEFAULT_VIA)
+        self._via_edit = QComboBox()
+        self._via_edit.setEditable(True)
+        self._via_edit.addItems(_VIA_PATH_CHOICES)
+        self._via_edit.setCurrentText(_DEFAULT_VIA)
         self._via_edit.setFixedWidth(120)
+        self._via_edit.setToolTip(
+            _(
+                "Digipeater path. ARISS / APRSAT / WIDE are the generic\n"
+                "aliases most APRS-capable satellite digipeaters (ISS and\n"
+                "others) accept — any one of them works without\n"
+                "reconfiguring for a specific satellite. Type a different\n"
+                "value if a particular satellite needs its own path."
+            )
+        )
         row1.addWidget(QLabel(_("Via:")))
         row1.addWidget(self._via_edit)
 
@@ -220,26 +239,14 @@ class AprsTab(QWidget):
         row1.addStretch()
         settings_form.addRow(row1)
 
-        # Row 2: input source (read-only display) + satellite guide
+        # Row 2: input source (read-only display)
         self._input_label = QLabel(_("Input: —"))
         self._input_label.setStyleSheet("color: #aaa;")
-        _aprs_help = QLabel(" ? ")
-        _aprs_help.setStyleSheet(
-            "color:white;background:#2980b9;border-radius:8px;font-weight:bold;padding:2px 6px;"
-        )
-        _aprs_help.setToolTip(
-            "APRS is available via these satellites:\n"
-            "  • ISS (NORAD 25544)  145.825 MHz FM  via ARISS\n"
-            "  • (Other amateur satellites with APRS digipeaters may also be active)\n\n"
-            "Use callsign path ARISS or RS0ISS.\n"
-            "Select ISS in Radio Control to get started."
-        )
         _input_row_w = QWidget()
         _input_row_l = QHBoxLayout(_input_row_w)
         _input_row_l.setContentsMargins(0, 0, 0, 0)
         _input_row_l.setSpacing(6)
         _input_row_l.addWidget(self._input_label)
-        _input_row_l.addWidget(_aprs_help)
         _input_row_l.addStretch()
         settings_form.addRow(_input_row_w)
 
@@ -474,7 +481,7 @@ class AprsTab(QWidget):
             return
         cs = self._callsign_edit.text().strip().upper()
         ssid = self._ssid_spin.value()
-        via = self._via_edit.text().strip()
+        via = self._via_edit.currentText().strip()
         if cs:
             from comms.aprs.engine import resolve_ax25_modem
 
@@ -631,7 +638,7 @@ class AprsTab(QWidget):
             self._callsign_edit.setText(str(cs).upper())
         self._ssid_spin.setValue(int(data.get("ssid", 0)))
         if via := data.get("via"):
-            self._via_edit.setText(str(via))
+            self._via_edit.setCurrentText(str(via))
         self._load_log_from_db()
 
     def _save_settings(self) -> None:
@@ -641,7 +648,7 @@ class AprsTab(QWidget):
         data = {
             "callsign": self._callsign_edit.text().strip().upper(),
             "ssid": self._ssid_spin.value(),
-            "via": self._via_edit.text().strip(),
+            "via": self._via_edit.currentText().strip(),
         }
         self._conn.execute(
             "INSERT OR REPLACE INTO app_settings (key, value, updated_at) "
@@ -845,7 +852,7 @@ class AprsTab(QWidget):
         self._save_settings()
         my_call = self._callsign_edit.text().strip().upper()
         ssid = self._ssid_spin.value()
-        via = self._via_edit.text().strip()
+        via = self._via_edit.currentText().strip()
 
         if self._engine.is_running:
             self._engine.send_message(my_call, ssid, via, to_call, msg)
@@ -912,7 +919,7 @@ class AprsTab(QWidget):
 
         my_call = self._callsign_edit.text().strip().upper()
         ssid = self._ssid_spin.value()
-        via = self._via_edit.text().strip()
+        via = self._via_edit.currentText().strip()
         symbol = self._pos_symbols[self._pos_symbol_combo.currentIndex()][1]
         comment = self._pos_comment_edit.text().strip()
 
