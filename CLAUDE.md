@@ -2064,6 +2064,7 @@ _cmd_drain("U TONE 0")
 ### 継続中・優先度高
 0. ~~**RTL-SDR WinUSB Connect 失敗修正**~~ **→ v0.1.71 で解決済み（2026-06-25）**
 1. **ドップラー補正の実動作確認** — 各種リグ（TS-2000・FT-817ND 等）での実衛星通信テスト（FTX-1F・FT-991AM・IC-9100・IC-9700・RTL-SDR/HackRF は確認済み）
+1b. **AX.25 9600bps G3RUH のフィルタチューニング（実衛星パス待ち、2026-07-10 追加）** — SDR単体経由（`comms/aprs/g3ruh_demod.py`の`G3ruhDiscriminator`）・Rig+サウンドカード経由（Direwolf `MODEM 9600`）双方とも実装済みだが、実際の9600bps G3RUHデジピータ衛星での受信検証を一度も行っていない。特に`G3ruhDiscriminator`のIF帯域幅（`_IF_HALF_BW_HZ`）・偏移定数（`_DEVIATION_HZ`）はNFM音声復調のパラメータを流用した初回実装値であり、実信号でのチューニングが必要になる可能性が高い。詳細は「AX.25 9600bps G3RUH 対応」セクション参照。対象衛星のパスが来た時点で着手する
 2. **ローテーター設定ダイアログの改善** — 接続テストボタン・AZ/ELリミット設定
 3. **デバッグ用ログファイル出力の削除または設定化** — `src/main.py` の `_setup_logging()` にある frozen バンドル向けファイルログ出力（`platformdirs.user_log_dir`）は dmg デバッグ目的で追加したもの。Settings に「デバッグログを保存する」チェック（デフォルトOFF）を追加するか削除する。該当箇所: `src/main.py` 63〜75行目
 4. ~~**Autotrack/Record メニューの実装**~~ **→ v0.1.0 以降で完了**（AutotrackRecordDialog・Autotrack Timer・AOS/LOS 自動接続・録音自動制御）
@@ -2073,7 +2074,7 @@ _cmd_drain("U TONE 0")
 
 ### SDR・デジタルモード
 6. ~~**SDR機能の追加（フェーズ1: 初期実装）**~~ **→ v0.1.0 で完了**
-7. ~~**APRS 受信・送信・位置ビーコン実装**~~ **→ feature/communications（v0.2.0）で完了**（APRSEngine・Direwolf統合・Bell 202 AFSK復調・PTT CAT制御・Doppler凍結・地図ピン表示）
+7. ~~**APRS 受信・送信・位置ビーコン実装**~~ **→ feature/communications（v0.2.0）で完了**（APRSEngine・Direwolf統合・Bell 202 AFSK復調・PTT CAT制御・Doppler凍結・地図ピン表示）。**AX.25 9600bps G3RUH対応は2026-07-10で追加完了**（Rig+サウンドカード・SDR単体経由の両方、Auto/1200/9600プルダウン。詳細は「AX.25 9600bps G3RUH 対応」セクション参照。フィルタチューニングは1bで実衛星パス待ち）
 8. ~~**Telemetry タブ実装**~~ **→ feature/communications（v0.2.0）で完了**（AX.25受信・JSON定義デコード・12衛星フォーマット定義）
 8b. ~~**Telemetry タブ gr-satellites 統合**~~ **→ 2026-06-30 で完了**（gr-satellites サブプロセス・UDP IQ 転送・330機以上対応・衛星コンボ・SDR 自動接続・トランスポンダー自動選択・メインリスト連動）
 9. **テレメトリーフォーマット定義の追加・検証** — 実際に受信したパケットでオフセット・スケールの検証。未定義衛星のフォーマット調査
@@ -3531,6 +3532,37 @@ CREATE TABLE sstv_log (
 
 ---
 
+### AprsEngine 一本化・Communications タブのライフサイクル修正（2026-07-10）
+
+#### AprsEngine のプロセス全体シングルトン化（コミット `7ca2e68`）
+
+**発覚した問題**: `AprsTab`（`AprsEngine`経由）と`TelemetryTab`のBell 202 AFSKモードが、それぞれ独立に`DirewolfManager`/`AfskDemodulator`を1セットずつ持っていた。両者はコード上一切共有されておらず、CLAUDE.md旧版の「復調器は一つだけ起動しフレームを両方に配信する（pub/subパターン）」という設計メモは実装と食い違っていた。
+
+両タブが同時にRig+サウンドカードモードでDirewolfを起動すると、どちらも`KISSPORT 8001`固定のため2つ目のDirewolfプロセスがポートbindに失敗する可能性が高く、さらに`_AUDIO_OWNER = "APRS/Direwolf"`という文字列がモジュールレベルで両者共通だったため、`AudioDeviceManager`の排他ロックは「同一owner名なら再取得OK」の設計上、論理的に別プロセスなのに同じownerとして扱われてロック取得自体は素通りしていた。加えて`stop()`が参照カウントされておらず、片方のタブを閉じるともう片方がまだ使っていてもDirewolfごと道連れで停止していた。
+
+**修正**: `AprsEngine`（`src/comms/aprs/engine.py`）を`get_aprs_engine(conn)`経由で取得するプロセス全体のシングルトンに変更（`AudioDeviceManager`と同型のパターン）。`start_rig()`/`start_sdr()`/`stop()`/`add_owner()`が`owner`タグ引数を取るref-counting方式になり、`self._owners: set[str]`が空になった時だけ実際にDirewolf/AfskDemodulatorを停止する。`TelemetryTab`は自前の`DirewolfManager`/`AfskDemodulator`を完全に削除し、共有エンジンの`raw_frame_received`/`error_occurred`シグナルを購読するだけに変更。`SstvTab`（SSDVモード）は`raw_frame_received`を購読するだけでowner登録していなかったため、後日別途`add_owner()`経由での参加が必要と判明（後述）。
+
+#### タブ close() が呼ばれず、closeEvent 内の後始末が実行されない不具合（コミット `5fa268e`）
+
+**発覚した問題**: `main_window.py`の`_on_tab_close_requested()`（×ボタン押下時）は`removeTab()` + `widget.deleteLater()`のみを呼んでおり、`MainWindow.closeEvent()`（アプリ終了時）も開いているComms タブに対して`close()`を呼ぶ処理が一切なかった。Qtの`closeEvent()`は`close()`が呼ばれた時にしか発火しない（`deleteLater()`は削除を予約するだけ）ため、**×ボタンでタブを閉じてもアプリを終了しても、各タブの`closeEvent()`（Direwolf/SatDump/gr-satellitesサブプロセスの停止、共有サウンドカードロックの解放）が一度も実行されていなかった**。Communicationsタブは`QTabWidget`の子ウィジェットでありトップレベルウィンドウではないため、Qtがアプリ終了時に自動で`closeEvent()`を発火させる対象にも含まれない。
+
+**修正**: `_on_tab_close_requested()`は`widget.deleteLater()`の前に`widget.close()`を追加。`MainWindow.closeEvent()`は既存の後始末処理の前に、開いている全タブに対して`.close()`を呼ぶループを追加。この2箇所の修正だけで、全Communicationsタブ（APRS・Telemetry・FT4・Q65・SSTV/SSDV・CW Decoder・METEOR/HRPT）の既存`closeEvent()`実装が確実に動くようになった。
+
+#### closeEvent 監査で発覚した派生バグの修正（コミット `e13ed40` / `cc0dcd7` / `9731d05`）
+
+上記修正によって各タブの`closeEvent()`が実際に発火するようになったことで、`closeEvent()`の中身自体に存在した以下の問題も顕在化・修正した。
+
+| 深刻度 | タブ | 問題 | 修正 |
+|---|---|---|---|
+| クラッシュリスク | METEOR/HRPT | `SatDumpProcess.stop()`が`requestInterruption()`+`terminate()`を送るだけでスレッドの実終了を待たず、`closeEvent()`直後に`close()`+`deleteLater()`が連続実行されるとQThreadが実行中のまま破棄され`QThread: Destroyed while thread is still running`でアプリ全体がアボートしうる | `closeEvent()`が`self._process.wait(3000)`で実終了を待ち、タイムアウトしたら`stop(force=True)`（SIGKILL）で強制終了してから`_reenable_sdr_tab()`/ログウィンドウ破棄に進むよう変更（`satdump.py`に`stop(force: bool)`引数追加） |
+| 実害あり（回帰） | SSTV/SSDV | 上記のAprsEngine一本化で導入したref-countingに、SSDVモードが一切参加していなかった（`raw_frame_received`を購読するだけでowner登録なし）。APRSタブとSSTV/SSDVタブを両方開いた状態でAPRSタブだけを閉じると、`engine.stop("aprs")`が最後のownerとして扱われDirewolfが本当に止まり、SSTV/SSDVは開いたままエラー表示もなく受信が止まっていた | `AprsEngine.add_owner(owner)`を新設（開始はしないがpipelineを生かし続けたい受動的な参加者用）。`SstvTab`のSSDV開始/停止で`add_owner("sstv")`/`stop("sstv")`を呼ぶよう修正 |
+| 安全上のリスク | FT4 / Q65 | `_TxWorker.run()`/`_transmit_audio()`は`sd.wait()`（送信音声の再生完了、Q65は最大60秒）が返ってから初めてPTT OFFする設計。closeEvent側の待機がFT4は皆無・Q65は`join(timeout=2.0)`（実質意味がない短さ）だったため、送信中にタブ/アプリを閉じるとdaemonスレッドが生き残り、CPythonのインタプリタシャットダウン時にfinally節（PTT OFF）を実行し切る前にスレッドごと打ち切られ、無線機が送信状態のまま制御を失うリスクがあった | 両方の`closeEvent()`で`sd.stop()`により送信を即座に打ち切り（`sd.wait()`がすぐ返る）、短いjoin後もスレッドが終わっていなければ`rig.set_ptt(False)`を直接呼ぶ安全策を追加 |
+| 軽微（自己修復） | FT4 / Q65 / APRS | FT4・Q65は`closeEvent()`でSDRパイプラインの`audio_ready`シグナルを明示的にdisconnectしていなかった（CW Decoder/SSTVは切っている）。AprsTabもエンジンへの3本のシグナル接続を明示的に切っていなかった（AprsEngineがシングルトン化しタブより長生きするようになったため、Qtの自動切断＝受信側QObject破棄時に頼るのは望ましくない） | FT4・Q65に`_disconnect_sdr_audio()`を追加（`self._sdr_pipeline`を新規に保持するよう変更）。AprsTabの`closeEvent()`で3本のシグナルを明示的にdisconnect |
+
+**教訓**: `closeEvent()`が実装されていても、実際に呼ばれる経路（`close()`経由か、`deleteLater()`だけで済ませていないか）を確認しないと「後始末コードは書いたが一度も実行されていない」状態になりうる。特にPySide6/Qtでは`deleteLater()`は`closeEvent()`を発火させない。
+
+---
+
 ### APRS 機能設計（v0.2.0 目標）
 
 #### ディレクトリ構成
@@ -3722,6 +3754,47 @@ Sound Card タブが未設定の場合、Rig Connect 時も Direwolf を起動�
 
 **エクスポートボタン**: タブ下部に配置。保存済み QSO 件数を隣に表示。
 ファイル名は `aprs_log_YYYYMMDD.adi` で保存ダイアログを表示する。
+
+---
+
+### AX.25 9600bps G3RUH 対応（2026-07-10 実装）
+
+#### 背景
+
+DirewolfのMODEM設定が`MODEM 1200`（Bell 202 AFSK）に固定されていたため、9600bps G3RUHを使う衛星デジピータの受信・送信は、ハードウェア（無線機のDATA端子を叩く外付けサウンドカード等）を揃えても不可能だった。Direwolf自体は9600bps G3RUHのソフトウェアデコード機能を元々内蔵しているため、必要だったのはFBSAT59側からDirewolfへの設定伝達と、baudレート選択UIの追加のみだった。
+
+#### 経路1: Rig + サウンドカード経由（コミット `8aeb8ff`）
+
+- `direwolf.py`: `DirewolfManager.start()`/`_write_config()`が`modem`引数（`"1200"`/`"9600"`）を取るようになり、`MODEM 1200`固定を廃止
+- `engine.py`:
+  - `resolve_ax25_modem(conn, radio_control)` — `app_settings`の`ax25_baud_mode`キー（`"auto"`/`"1200"`/`"9600"`、デフォルト`auto`）を読み、autoの場合は選択中トランスポンダーの`transmitters.baud`列（`RadioControlWidget.current_transmitter()`、今回新設のgetter）を見て9600か判定。9600以外・未選択なら1200にフォールバック
+  - `restart_if_modem_changed(new_modem)` — DirewolfのMODEM設定は起動時に読み込む設定ファイルの値であり実行中に動的変更できないため、衛星切り替え等でbaudが変わった場合はDirewolf自体を裏で再起動する（owner参照カウントは変更しない）
+- `aprs_tab.py`（「Station Settings」枠）・`telemetry_tab.py`（「Input Source」枠）双方に Auto/1200/9600 のプルダウンを追加。同じ`ax25_baud_mode`キーを共有するため、片方のタブで変更すればもう片方にも引き継がれる
+- テスト: `tests/test_aprs_engine.py`（フェイクの`DirewolfManager`でowner維持・no-op判定等を検証、実Direwolfバイナリ不要）
+
+#### 経路2: SDR単体経由（コミット `fea993f`）
+
+SDR単体（Rig+サウンドカード無し）でも、Direwolfの内蔵G3RUHデコーダーをそのまま使えるようにする経路。**AX.25の復号自体をPythonで再実装するのではなく**、SDRのI/Qから「無線機のDATA端子相当の生の弁別器出力」をソフトウェアで合成し、それをDirewolfのstdinに流し込む方式を採用。
+
+- 新規 `src/comms/aprs/g3ruh_demod.py`:
+  - `G3ruhDiscriminator` — `sdr/demodulator.py`のNFM位相差判別器（`np.angle(x[n]*conj(x[n-1]))`）を流用しつつ、①デエンファシスを除去 ②IF帯域幅を広げた復調DSP。出力は48kHz float32 PCM（Direwolfが要求するレートと一致）
+  - `G3ruhSdrDemod`（QThread）— `afsk_demod.py`の`AfskDemodulator`と同じく、SDRパイプラインの生I/Qに`pipeline.subscribe()`で直接subscribe（SDR Controlタブの復調モードコンボとは独立）。**これにより他の復調モード（CW Decoder等）と同じSDRを同時に使える**
+- `direwolf.py`: `AudioBridge`が`sdr_pipeline`引数を取れるよう拡張。指定時は実サウンドカードの代わりに`G3ruhSdrDemod`をDirewolfのstdinへ接続する
+- `engine.py`:
+  - `start_sdr_direwolf(owner, pipeline)` — 常時9600bps・受信専用（SDRは送信不可のため）。MYCALLはダミー（`"N0CALL"`、送信しないため実害なし、Telemetryタブの既存Direwolf受信専用セッションと同じ慣習）
+  - `sync_sdr_baud(pipeline, target_modem)` — 実行中のSDRセッションを、1200（軽量`AfskDemodulator`、`start_sdr()`）⇄9600（SDR駆動Direwolf、`start_sdr_direwolf()`）の間で切り替える。**この2つはDirewolfのMODEM設定変更ではなく全く別の復号メカニズムの切り替え**であるため、`_last_rig_params is not None`（Rig+サウンドカードDirewolfセッション、9600でも対象外）を除外した上で完全な停止→再起動を行う。owner参照カウントは維持
+- `aprs_tab.py`/`telemetry_tab.py`: SDR接続時、`resolve_ax25_modem()`の結果が9600なら`start_sdr_direwolf()`、それ以外は既存の`start_sdr()`に自動分岐。トランスポンダー変更・baud設定変更のハンドラは`restart_if_modem_changed()`と`sync_sdr_baud()`を両方無条件に呼ぶ（各メソッドが自分が管理しているセッション種別だけに反応し、それ以外はno-opになるよう内部でガードしているため、呼び出し側で分岐する必要がない）
+- テスト: `tests/test_g3ruh_demod.py` — 合成信号（一定周波数オフセットのI/Q）を`G3ruhDiscriminator.process()`に通し、理論値（`delta_f / DEVIATION_HZ`）に収束することを検証。単に「クラッシュしない」だけでなく判別器の数値的な正しさを確認済み
+
+#### 未検証・今後必要な作業（実衛星パスでの確認待ち、2026-07-10 時点）
+
+`G3ruhDiscriminator`のフィルタチューニング（IF帯域幅`_IF_HALF_BW_HZ`・偏移定数`_DEVIATION_HZ`、共に`g3ruh_demod.py`冒頭で定義）は、既存のNFM復調パラメータを流用した初回実装であり、**実際の9600bps G3RUH衛星信号での検証を一度も行っていない**。合成信号（一定周波数オフセット）によるDSPロジック自体の正しさは`tests/test_g3ruh_demod.py`で確認済みだが、以下は実機・実パスでの確認が必要:
+
+- 実際の9600bps G3RUHデジピータ衛星のパス受信時に、SDR単体経由（`start_sdr_direwolf`）でDirewolfが実際にフレームをデコードできるか
+- できない/デコード数が少ない場合、`_IF_HALF_BW_HZ`（現在`_DEVIATION_HZ + 8_000.0`）・`_DEVIATION_HZ`（現在5000Hz、NFM音声用の値を流用）の再チューニングが必要になる可能性が高い
+- Rig + サウンドカード経由（外付けG3RUH-soundcard等の実ハードウェア）でのMODEM 9600自体の動作確認も、実衛星パスでは未実施
+
+対象となりうる9600bps衛星のパスが来た際に、実際にDirewolfのログ（`Help > Direwolf...`から確認できるバージョン情報とは別に、必要であれば`direwolf.conf`の`AGWPORT`/ログ出力レベルを一時的に上げる等）を見ながら復号数を確認し、上記2パラメータを調整すること。
 
 ---
 
