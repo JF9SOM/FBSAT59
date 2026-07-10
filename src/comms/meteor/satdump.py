@@ -244,11 +244,19 @@ class SatDumpProcess(QThread):
         else:
             self.finished_err.emit(f"satdump exited with code {rc}")
 
-    def stop(self) -> None:
-        """Request the satdump process to terminate."""
+    def stop(self, force: bool = False) -> None:
+        """Request the satdump process to terminate.
+
+        Pass ``force=True`` to send SIGKILL immediately instead of SIGTERM —
+        used as a last resort when a graceful stop() didn't let run() return
+        within a grace period (see MeteorTab.closeEvent()).
+        """
         self.requestInterruption()
         if self._proc is not None and self._proc.poll() is None:
-            self._proc.terminate()
+            if force:
+                self._proc.kill()
+            else:
+                self._proc.terminate()
 
     # ------------------------------------------------------------------
 

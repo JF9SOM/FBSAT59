@@ -628,6 +628,14 @@ class MeteorTab(QWidget):
 
     def closeEvent(self, event: Any) -> None:  # noqa: N802
         self._on_stop()
+        # Wait for satdump to actually exit before this widget (which
+        # parents the QThread) is torn down — Qt aborts the app if a
+        # QThread is destroyed while still running. Give it a grace period
+        # to flush files and release the SDR cleanly, then force-kill so
+        # shutdown is never blocked indefinitely.
+        if self._process is not None and self._process.isRunning() and not self._process.wait(3000):
+            self._process.stop(force=True)
+            self._process.wait(2000)
         self._reenable_sdr_tab()
         if self._log_window is not None:
             self._log_window.destroy()
