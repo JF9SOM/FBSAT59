@@ -1457,11 +1457,13 @@ class MainWindow(QMainWindow):
         try:
             # World map position update is throttled to every MAP_UPDATE_INTERVAL ticks
             # (default 5 seconds) to reduce Skyfield SGP4 computation load.
+            # _update_world_map() itself further skips the expensive part
+            # unless Dashboard/World Map is the active tab, and reports back
+            # here whether it actually ran that part.
             self._map_tick_counter += 1
             if self._map_tick_counter >= self._MAP_UPDATE_INTERVAL:
                 self._map_tick_counter = 0
-                self._update_world_map()
-                map_updated = True
+                map_updated = self._update_world_map()
 
             self._update_selected_satellite()
             self._update_statusbar()
@@ -2089,13 +2091,30 @@ class MainWindow(QMainWindow):
         dlg = SatDumpDialog(self)
         dlg.exec()
 
-    def _update_world_map(self) -> None:
+    def _is_map_tab_active(self) -> bool:
+        """True if the currently active tab actually displays the world map
+        (the flat World Map tab, or Dashboard's embedded zoom map) — the
+        only two consumers of the expensive per-satellite loop below."""
+        current = self._tab_widget.currentWidget()
+        return current is self._dashboard_view or current is self._world_map
+
+    def _update_world_map(self) -> bool:
         """Fetch satellite subpoints for visible satellites and update the world map.
 
         Only computes positions for the satellites currently shown in the list widget
         (_visible_norads) instead of all non-hidden satellites, reducing SGP4 load
         significantly when a filter is active.  Uses _sat_name_cache to avoid a DB
         round-trip every 5 seconds.
+
+        The per-satellite loop below is skipped entirely unless Dashboard or
+        World Map is the active tab — profiling showed it costing ~0.2-0.8s
+        with a broad ("All Satellites") filter, which was running every 5s
+        even while the user was looking at a completely unrelated tab (e.g.
+        FT4), needlessly competing with MainWindow._on_tick()'s other
+        duties — see ft4_decode.log's "main_window tick" entries and
+        comms/ft4/decode_log.py's investigation notes (2026-07-10). Returns
+        True iff that per-satellite pass actually ran, for _on_tick()'s own
+        diagnostic logging.
         """
         # Update the observer location star marker (regardless of whether the engine is set)
         if self._location_manager is not None and self._location_manager.current is not None:
@@ -2107,24 +2126,32 @@ class MainWindow(QMainWindow):
             )
 
         if self._engine is None or not self._visible_norads:
-            return
+            return False
+        if not self._is_map_tab_active():
+            return False
 
         # Use cached name map — rebuilt in _load_satellites, no DB hit here
         name_map = self._sat_name_cache
 
-        subpoints = self._engine.subpoints(self._visible_norads)
+        # One Skyfield propagation per satellite instead of two (subpoint()
+        # and observe() previously each called sat.at(t) independently) —
+        # roughly a 4x speedup for this loop (2026-07-10).
+        observed = self._engine.observe_multi_with_subpoints(self._visible_norads)
         sat_data: dict[int, tuple[str, float, float, QColor]] = {}
         new_elevations: dict[int, float] = {}
 
         for i, norad in enumerate(self._visible_norads):
-            if norad in subpoints:
-                lat, lon = subpoints[norad]
-                color = SAT_COLORS[i % len(SAT_COLORS)]
-                sat_data[norad] = (name_map.get(norad, str(norad)), lat, lon, color)
-            # Cache elevation for autotrack reuse (observe is cheap after subpoint)
-            obs = self._engine.observe(norad)
-            if obs is not None:
-                new_elevations[norad] = obs.elevation_deg
+            result = observed.get(norad)
+            if result is None:
+                continue
+            color = SAT_COLORS[i % len(SAT_COLORS)]
+            sat_data[norad] = (
+                name_map.get(norad, str(norad)),
+                result.subpoint_lat_deg,
+                result.subpoint_lon_deg,
+                color,
+            )
+            new_elevations[norad] = result.observation.elevation_deg
 
         self._last_elevations = new_elevations
         self._world_map.set_satellites(sat_data)
@@ -2139,6 +2166,7 @@ class MainWindow(QMainWindow):
                 self._world_map.clear_footprint()
         else:
             self._world_map.clear_footprint()
+        return True
 
     def _update_moon(self) -> None:
         """Update EL/AZ/Range, radar 24h arc, world map sub-point, and rotator for the Moon."""
@@ -2574,6 +2602,14 @@ class MainWindow(QMainWindow):
 
         widget = self._tab_widget.widget(index)
         is_resident = widget is None or widget in self._resident_tab_widgets
+
+        # _update_world_map()'s expensive per-satellite pass only runs while
+        # Dashboard/World Map is active (see _is_map_tab_active) — refresh
+        # immediately on switching to either so the map isn't showing a
+        # stale snapshot from whenever it was last visible, rather than
+        # waiting for the next 5s tick.
+        if widget is self._dashboard_view or widget is self._world_map:
+            self._update_world_map()
 
         if is_resident:
             if self._pass_panel_saved_sizes is not None:

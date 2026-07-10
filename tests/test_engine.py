@@ -141,6 +141,37 @@ class TestSatelliteEngine:
         assert _ISS_NORAD in result
         assert 99999 not in result
 
+    def test_observe_multi_with_subpoints_returns_dict(self, engine: SatelliteEngine) -> None:
+        at = datetime(2024, 1, 2, 0, 36, 57, tzinfo=UTC)
+        result = engine.observe_multi_with_subpoints([_ISS_NORAD, 99999], at=at)
+        assert _ISS_NORAD in result
+        assert 99999 not in result
+
+    def test_observe_multi_with_subpoints_matches_separate_calls(
+        self, engine: SatelliteEngine
+    ) -> None:
+        """The combined method computes each satellite's position once
+        instead of twice (see observe_multi_with_subpoints' docstring) — it
+        must return results identical to calling subpoint() and observe()
+        separately at the same instant, not just approximately close."""
+        at = datetime(2024, 1, 2, 0, 36, 57, tzinfo=UTC)
+
+        expected_subpoint = engine.subpoint(_ISS_NORAD, at=at)
+        expected_obs = engine.observe(_ISS_NORAD, at=at)
+        assert expected_subpoint is not None
+        assert expected_obs is not None
+
+        combined = engine.observe_multi_with_subpoints([_ISS_NORAD], at=at)
+        result = combined[_ISS_NORAD]
+
+        assert result.subpoint_lat_deg == expected_subpoint[0]
+        assert result.subpoint_lon_deg == expected_subpoint[1]
+        assert result.observation.elevation_deg == expected_obs.elevation_deg
+        assert result.observation.azimuth_deg == expected_obs.azimuth_deg
+        assert result.observation.range_km == expected_obs.range_km
+        assert result.observation.range_rate_km_s == expected_obs.range_rate_km_s
+        assert result.observation.is_above_horizon == expected_obs.is_above_horizon
+
     def test_cache_populated_after_first_observe(self, engine: SatelliteEngine) -> None:
         engine.observe(_ISS_NORAD, at=datetime(2024, 1, 2, 0, 36, 57, tzinfo=UTC))
         with engine._cache_lock:

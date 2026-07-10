@@ -1352,6 +1352,59 @@ Qtメインスレッドが関与するのは最後の表示更新だけであり
 止まること・`start()`の冪等性・複数スレッドからの同時`push_audio()`が安全であることを検証。
 Qtイベントループ・実オーディオデバイス不要）。
 
+**世界地図更新（`_update_world_map()`）の負荷軽減 — 二重計算の解消＋非表示中の停止
+（2026-07-10 実装）**
+
+FT4のRXタイミング独立化後の実測ログで、`main_window tick duration`が地図更新を含む回
+（5回に1回）だけ毎回1.0〜1.4秒かかっていることが判明した（前述「実測: main_windowティック
+計測ログ」セクション参照）。原因は衛星フィルターが「All Satellites」相当（`is_hidden=0`で
+1671機）になっているとき、`_update_world_map()`が毎回この全機について軌道計算をしていたこと。
+特にFT4タブのQuick Comm Controlで衛星を選ぶと、`_on_comms_satellite_requested()`が自動的に
+フィルターを「All Satellites」に切り替える仕様（前述「Comms Quick Panel 設計」参照）のため、
+通信タブ使用中もこの重い計算が動き続けていた。
+
+**根本原因1: 衛星ごとに位置計算を2回行っていた**
+
+`_update_world_map()`は衛星1機ごとに`subpoints()`（内部で`subpoint()`→緯度経度用）と
+`self._engine.observe()`（方位角・仰角用、オートトラックキャッシュ目的）を別々に呼んでおり、
+それぞれが独立に`sat.at(t)`（SGP4伝播）を実行していた。同一時刻の同一衛星の位置を2回計算する
+無駄が生じていた。
+
+**修正1**: `core/engine.py`に`SatelliteEngine.observe_multi_with_subpoints()`を新設。
+衛星ごとに`sat.at(t)`を1回だけ呼び、その`geocentric`から`wgs84.subpoint_of()`（緯度経度）と
+`geocentric - ground_station.at(t)`（地心位置の差分によるトポセントリック位置、`.altaz()`で
+方位角・仰角を導出）の両方を導出する。地上局自身の位置（`ground_station.at(t)`）もループの
+外で1回だけ計算するよう変更（衛星に依存しないため）。数値は既存の`subpoint()`+`observe()`の
+組み合わせと完全一致することを固定時刻での比較で確認済み（`tests/test_engine.py`の
+`test_observe_multi_with_subpoints_matches_separate_calls`）。実測で1671機のループが
+約0.84秒→約0.21秒（約4倍高速化）。
+
+**根本原因2: 地図が実際に表示されていなくても毎回計算していた**
+
+世界地図の内容を実際に描画しているのは「Dashboard」タブ（ズーム地図埋め込み）と
+「World Map」タブの2つだけだが、`_update_world_map()`は`_on_tick()`から5秒ごとに
+無条件で呼ばれており、Radar・Pass Chart・Radio Control・SDR Control・FT4含む通信タブが
+アクティブな間も同じ重い計算が走り続けていた。
+
+**修正2**: `_update_world_map()`を「軽い部分」（観測地点座標の`_pass_list`等への伝播、
+毎回実行）と「重い部分」（衛星ごとの位置計算＋地図描画、`_is_map_tab_active()`が
+`True`のときだけ実行）に分離。`_is_map_tab_active()`は`self._tab_widget.currentWidget()`
+が`self._dashboard_view`または`self._world_map`かどうかを判定するだけの単純なヘルパー。
+`_update_world_map()`は重い部分を実行したかどうかを`bool`で返すようにし、`_on_tick()`の
+`map_updated`診断ログにもこの実際の実行有無を反映する。
+
+`_on_tab_changed()`にも、Dashboard/World Mapへ切り替えた瞬間に`_update_world_map()`を
+即座に1回呼ぶ処理を追加。次の5秒tickを待たずに最新状態を表示するため（切り替え直後に
+古いスナップショットが一瞬表示されるのを防ぐ）。
+
+**効果**: 地図が実際に見られているときの計算コストは約4分の1（二重計算解消）、
+見られていないとき（FT4タブ使用中など）はほぼゼロになる。ドップラー補正
+（`_update_selected_satellite()`）は同じ`_on_tick()`内で地図更新の直後に呼ばれているため、
+これによりドップラー更新の間隔がより安定することも期待できる（引き続き検証中）。
+
+テスト: `tests/test_engine.py`に`observe_multi_with_subpoints()`のテストを2件追加
+（未知NORADが結果に含まれないこと・既存の`subpoint()`+`observe()`と完全一致すること）。
+
 **メニュー: Communications > Q65**（`src/ui/q65_tab.py`）
 - **Phase 1（RX）**: libq65 ctypes デコーダー
   - libq65 未インストール時はバナー表示・デコード無効化。インストール先: `~/.local/share/fbsat59/q65lib/`
