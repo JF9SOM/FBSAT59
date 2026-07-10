@@ -1809,12 +1809,19 @@ class MainWindow(QMainWindow):
         Guards against removing a resident tab even if its × button was
         somehow left visible (e.g. a future Qt style placing it on a side
         not cleared by _hide_close_buttons_on_resident_tabs).
+
+        Calls widget.close() before deleteLater() so the tab's closeEvent()
+        actually fires — that's what stops background subprocesses
+        (Direwolf, SatDump, gr-satellites) and releases shared audio device
+        locks. deleteLater() alone only schedules the widget for deletion
+        and never invokes closeEvent().
         """
         widget = self._tab_widget.widget(index)
         if widget is None or widget in self._resident_tab_widgets:
             return
         self._tab_widget.removeTab(index)
         self._comms_tab_keys.pop(widget, None)
+        widget.close()
         widget.deleteLater()
 
     def _notify_comms_tab_of_rig_state(self, tab: object) -> None:
@@ -5112,6 +5119,19 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         """Stop the timer, web server, and scheduler when the window is closed."""
+        # Communications tabs (APRS, Telemetry, FT4, Q65, SSTV, CW Decoder,
+        # METEOR/HRPT) are child widgets of the tab bar, not top-level
+        # windows, so Qt never auto-invokes their closeEvent() just because
+        # the main window is closing. Close them explicitly first so any
+        # background subprocess (Direwolf, SatDump, gr-satellites) is
+        # terminated and shared audio device locks are released instead of
+        # being orphaned when this process exits.
+        for i in range(self._tab_widget.count()):
+            tab_widget = self._tab_widget.widget(i)
+            if tab_widget is not None:
+                with contextlib.suppress(Exception):
+                    tab_widget.close()
+
         with contextlib.suppress(Exception):
             self._conn.execute(
                 "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('satellite_filter', ?)",
