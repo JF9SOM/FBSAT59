@@ -1653,7 +1653,12 @@ class TestCycleSetting:
         assert int(row["value"]) == 2000
 
     def test_cycle_loaded_from_db(self, qtbot, db) -> None:
-        """DB に rig_cycle_ms がある場合、起動時に QTimer と UI に反映される。"""
+        """DB に rig_cycle_ms がある場合、起動時に DopplerWorker と UI に反映される。
+
+        rig_cycle_ms は self._timer（表示更新用、常に1秒固定 — see
+        test_timer_interval_is_1000ms）ではなく self._doppler_worker の
+        間隔を制御する（2026-07-10、Doppler独立スレッド化）。
+        """
         from data.tle_manager import TLEManager
         from ui.main_window import MainWindow
 
@@ -1664,7 +1669,8 @@ class TestCycleSetting:
         tle_manager = TLEManager(db)
         w = MainWindow(conn=db, tle_manager=tle_manager)
         qtbot.addWidget(w)
-        assert w._timer.interval() == 500
+        assert w._doppler_worker._interval_s == 0.5
+        assert w._timer.interval() == 1000
         assert w._radio_control._cycle_spin.value() == 500
 
 
