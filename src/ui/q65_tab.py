@@ -11,6 +11,7 @@ Tab is non-resident: opened via Communications > Q65, closed with x.
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 import threading
 import time
@@ -100,6 +101,7 @@ class Q65Tab(QWidget):
         self._audio_buffer: list[NDArray[np.float32]] = []
         self._buffer_lock = threading.Lock()
         self._sdr_connected = False
+        self._sdr_pipeline: Any | None = None
         self._last_period_start: float = 0.0
 
         # TX state
@@ -479,9 +481,17 @@ class Q65Tab(QWidget):
             if pipeline is None:
                 return
             pipeline.audio_ready.connect(self._on_audio_chunk)
+            self._sdr_pipeline = pipeline
             self._sdr_connected = True
         except Exception:
             pass
+
+    def _disconnect_sdr_audio(self) -> None:
+        if self._sdr_pipeline is not None:
+            with contextlib.suppress(Exception):
+                self._sdr_pipeline.audio_ready.disconnect(self._on_audio_chunk)
+            self._sdr_pipeline = None
+        self._sdr_connected = False
 
     @Slot(object)
     def _on_audio_chunk(self, chunk: NDArray[np.float32]) -> None:
@@ -727,8 +737,6 @@ class Q65Tab(QWidget):
 
     def _transmit_audio(self, audio: NDArray[np.float32], msg: str) -> None:
         """Play audio via sounddevice with PTT control."""
-        import contextlib
-
         mgr = get_audio_device_manager()
         if not mgr.acquire_output(_AUDIO_OWNER, self._out_device):
             other = mgr.output_owner(self._out_device) or _("another tab")
@@ -778,6 +786,26 @@ class Q65Tab(QWidget):
         self._tick_timer.stop()
         self._decode_timer.stop()
         if self._tx_active and self._tx_thread:
+            # A Q65 TX period can run up to 60s (sd.wait() blocks the TX
+            # thread for the whole transmission) — waiting that out here
+            # would freeze tab/app close. sd.stop() ends the blocking
+            # sd.wait() almost immediately, so the TX thread's own finally
+            # block (PTT off + audio lock release) runs promptly instead of
+            # racing interpreter shutdown, which can kill a still-running
+            # daemon thread before its finally block executes and leave the
+            # rig keyed indefinitely.
+            with contextlib.suppress(Exception):
+                import sounddevice as sd
+
+                sd.stop()
             self._tx_thread.join(timeout=2.0)
+            if self._tx_active:
+                # Thread still didn't finish — force PTT off directly as a
+                # last-resort safety net so the rig can't stay keyed.
+                rig = self._get_rig()
+                if rig is not None:
+                    with contextlib.suppress(Exception):
+                        rig.set_ptt(False)
+        self._disconnect_sdr_audio()
         self._save_settings()
         super().closeEvent(event)

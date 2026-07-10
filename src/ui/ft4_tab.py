@@ -259,6 +259,7 @@ class Ft4Tab(QWidget):
         self._rx_source: str = "soundcard"  # "soundcard" or "sdr"
         self._tx_slot_mode: str = "auto"  # "auto", "even", or "odd"
         self._sdr_connected: bool = False
+        self._sdr_pipeline: Any | None = None
 
         self._load_settings()
         self._ensure_table()
@@ -701,9 +702,17 @@ class Ft4Tab(QWidget):
             if pipeline is None:
                 return
             pipeline.audio_ready.connect(self._on_sdr_audio_chunk)
+            self._sdr_pipeline = pipeline
             self._sdr_connected = True
         except Exception:
             pass
+
+    def _disconnect_sdr_audio(self) -> None:
+        if self._sdr_pipeline is not None:
+            with contextlib.suppress(Exception):
+                self._sdr_pipeline.audio_ready.disconnect(self._on_sdr_audio_chunk)
+            self._sdr_pipeline = None
+        self._sdr_connected = False
 
     @Slot(object)
     def _on_sdr_audio_chunk(self, chunk: NDArray[np.float32]) -> None:
@@ -1166,7 +1175,28 @@ class Ft4Tab(QWidget):
 
     def closeEvent(self, event: Any) -> None:
         self._on_halt()
+        if self._tx_in_progress and self._tx_thread is not None:
+            # _TxWorker.run() only releases PTT after sd.wait() returns,
+            # which can block for the whole ~5s FT4 audio duration.
+            # sd.stop() ends that wait almost immediately so the worker's
+            # own PTT-off / audio-lock-release code runs promptly instead
+            # of racing interpreter shutdown, which can kill a still-
+            # running daemon thread before it gets there and leave the rig
+            # keyed indefinitely.
+            with contextlib.suppress(Exception):
+                import sounddevice as sd
+
+                sd.stop()
+            self._tx_thread.join(timeout=2.0)
+            if self._tx_in_progress:
+                # Thread still didn't finish — force PTT off directly as a
+                # last-resort safety net so the rig can't stay keyed.
+                rig = self._rig1()
+                if rig is not None:
+                    with contextlib.suppress(Exception):
+                        rig.set_ptt(False)
         self._stop_audio_capture()
+        self._disconnect_sdr_audio()
         self._scheduler.stop()
         self._rx_capture.stop()
         if self._waterfall_dialog is not None:

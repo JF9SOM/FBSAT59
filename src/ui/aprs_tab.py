@@ -603,6 +603,17 @@ class AprsTab(QWidget):
     def closeEvent(self, event: Any) -> None:
         """Stop engine, clear map pins, stop beacon timer, and save settings."""
         self._pos_timer.stop()
+        # AprsEngine is a process-wide singleton (outlives this tab), so
+        # explicitly disconnect rather than relying on Qt's auto-disconnect
+        # on receiver destruction — otherwise a still-running engine could
+        # deliver a stray signal to this tab in the gap between close() and
+        # actual deletion.
+        with contextlib.suppress(RuntimeError, TypeError):
+            self._engine.packet_received.disconnect(self._on_packet_received)
+        with contextlib.suppress(RuntimeError, TypeError):
+            self._engine.status_changed.disconnect(self._on_engine_status)
+        with contextlib.suppress(RuntimeError, TypeError):
+            self._engine.error_occurred.disconnect(self._on_engine_error)
         self._engine.stop(_ENGINE_OWNER)
         self._aprs_stations.clear()
         self.aprs_stations_cleared.emit()
