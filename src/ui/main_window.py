@@ -1789,7 +1789,10 @@ class MainWindow(QMainWindow):
 
         Called once after the tab widget is fully populated.  Any tab added
         later by Communications menu items is a non-resident tab and will
-        keep its close button.
+        keep its close button.  The Group Pass Chart tab also keeps its
+        close button even though it is resident (see _on_tab_close_requested)
+        — it is a persistent widget updated in place by each group search,
+        but the tab itself should be dismissable without exiting the app.
 
         The close button's side (Left vs Right) is style-dependent: Qt's
         native macOS style places it on the LeftSide, while Linux styles
@@ -1800,6 +1803,8 @@ class MainWindow(QMainWindow):
 
         bar = self._tab_widget.tabBar()
         for i in range(self._tab_widget.count()):
+            if i == self._group_chart_tab_idx:
+                continue
             bar.setTabButton(i, QTabBar.ButtonPosition.LeftSide, None)
             bar.setTabButton(i, QTabBar.ButtonPosition.RightSide, None)
 
@@ -1815,8 +1820,18 @@ class MainWindow(QMainWindow):
         (Direwolf, SatDump, gr-satellites) and releases shared audio device
         locks. deleteLater() alone only schedules the widget for deletion
         and never invokes closeEvent().
+
+        The Group Pass Chart tab is a special case: it is a persistent
+        resident widget (updated in place by each group search via
+        set_results()), not a disposable Communications tab, so closing it
+        only hides it instead of removing/destroying it. The next group
+        search makes it visible again (_on_group_results_ready).
         """
         widget = self._tab_widget.widget(index)
+        if widget is self._group_pass_chart:
+            self._tab_widget.setTabVisible(self._group_chart_tab_idx, False)
+            self._tab_widget.setCurrentIndex(self._dashboard_tab_idx)
+            return
         if widget is None or widget in self._resident_tab_widgets:
             return
         self._tab_widget.removeTab(index)
