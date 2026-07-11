@@ -4706,7 +4706,7 @@ class MainWindow(QMainWindow):
                 f"</tr>"
             )
 
-        table_rows += _heading_row(_("Radio Control — Transponder Selection"))
+        table_rows += _heading_row(_("Radio Control — Transmitter Selection"))
         for color, label, desc in xpdr_rows_html:
             table_rows += (
                 f"<tr>"
