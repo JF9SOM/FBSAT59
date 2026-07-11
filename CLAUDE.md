@@ -156,9 +156,18 @@ CREATE TABLE transmitters (
     source          TEXT DEFAULT 'satnogs',  -- 'satnogs' or 'manual'
     manual_override BOOLEAN DEFAULT FALSE,   -- 手動データがSATNOGSより優先
     notes           TEXT,           -- ユーザーメモ
+    satnogs_status  TEXT,           -- 生のSATNOGS status: 'active'/'inactive'/'invalid'
+                                     -- (manual/community は NULL。2026-07-11 追加)
     updated_at      DATETIME
 );
 ```
+
+**`alive` と `satnogs_status` の関係（2026-07-11 確定）**: `alive` は
+`satnogs_status == 'active'` のブール値（SATNOGS APIの `alive` フィールドと同じ定義）。
+`get_transmitters()` のデフォルト（`include_dead=False`）・Edit Transmitterダイアログ・
+Autotrackリスト検索・Comms Quick Panelなど大半の画面は `alive=1` のみを表示し続ける。
+Radio Controlタブのトランスポンダーコンボだけが例外で、`satnogs_status` を使って
+inactive/invalidも表示する（詳細は後述「SATNOGSトランスミッター status の全件取得」参照）。
 
 ### tle_data テーブル
 ```sql
@@ -361,7 +370,9 @@ ngettext("%(n)d satellite", "%(n)d satellites", n)  # 複数形対応
 ### SATNOGS API
 - Base URL: `https://db.satnogs.org/api/`
 - 認証不要
-- `GET /transmitters/?satellite__norad_cat_id={norad}&status=active`
+- `GET /transmitters/?satellite__norad_cat_id={norad}`（`status`パラメータは付けない。
+  2026-07-11以降、active/inactive/invalid全件を取得する設計に変更済み。詳細は
+  「SATNOGSトランスミッター status の全件取得」セクション参照）
 - レート制限: 緩やか（日次更新で十分）
 
 ### CelesTrak
@@ -1664,6 +1675,74 @@ CREATE TABLE custom_groups (
 description文字列を見るため無関係）。`mode` 列だけ実際のリグCATモードを表す `USB-D`/`LSB-D` に
 変更している。詳細は後述の「モード文字列 → リグCATモード変換テーブル」参照。
 
+### SATNOGSトランスミッター status の全件取得（2026-07-11 実装）
+
+#### 背景
+
+`TransmitterManager.sync_from_satnogs()` は従来 `status=active` をAPIクエリに付けており、
+SATNOGSが `inactive`/`invalid` と分類したトランスミッターはDBに一切保存されなかった。
+実際に調査したところ（Ten-Koh 2 / NORAD 68261の事例）、SATNOGSの `status` は自動集計ではなく
+コミュニティのレビュアーが手動でキュレーションする値（`reviewed`/`approved`/`reviewer` フィールド
+を伴う）で、実運用と食い違うことがある（レビュー漏れにより、実際には動いていないトランスミッター
+が `active` のまま、逆に動いているはずのものが `inactive` のままになっているケースを実例で確認
+済み）。一方で**衛星レベルのdead/unknown判定（`satellites.status`・`is_hidden`）は不要な衛星を
+一覧から隠すために引き続き重要**であり、この2つは意味が異なるため区別して扱う。
+
+このため、**トランスミッター単位のSATNOGS `status` はDBへの取り込み可否には使わず**、
+active/inactive/invalidすべてを取得してDBに保存し、表示側で状態に応じて出し分ける設計に変更した。
+
+#### 実装
+
+- `sync_from_satnogs()`: APIクエリから `status` パラメータを削除（invalidも含め全件取得）
+- `transmitters.satnogs_status`列（新設）: SATNOGSの生の `status` 文字列をそのまま保存
+  （manual/community由来の行は`NULL`）。既存の `alive`（0/1、`status=='active'`と同義）は
+  従来通り維持
+- **デフォルトの表示は変更なし**: `get_transmitters()`（デフォルト`include_dead=False`）・
+  Edit Transmitterダイアログ・Autotrackリスト検索・Comms Quick Panelは引き続き`alive=1`
+  のみを対象にしており、この変更による見た目の影響はない
+- **Radio Controlタブのトランスポンダーコンボのみ例外**: `MainWindow._refresh_radio_control()`
+  の生SQLから`AND alive = 1`条件を外し、代わりに`ORDER BY`の先頭に
+  `CASE WHEN alive=1 THEN 0 WHEN satnogs_status='invalid' THEN 2 ELSE 1 END`を追加して
+  active優先ソートを維持（自動選択されるデフォルト項目が非activeにならないようにするため）。
+  プルダウンを開いたときのみ、非active項目に背景色を付けて注意喚起する
+  （`RadioControlWidget._xpdr_status_bg()` / `_XPDR_INACTIVE_BG`=`#b8860b`ダークゴールデンロッド
+  ／`_XPDR_INVALID_BG`=`#8b0000`ダークレッド。閉じた状態のコンボ表示にはQtの仕様上、
+  背景色は適用されない）。この2色は衛星リストの既存色（`#f1c40f`=AMSAT partial、
+  `#e74c3c`=AMSAT non-operational）や`Qt.GlobalColor.yellow`（FT4タブの自局宛メッセージ
+  ハイライト）と意図的に別トーンにしてある
+- **スマホWeb UI（Antennaタブ）**: 元々`GET /api/satellites/{norad}/transmitters`自体には
+  フィルタが無かったが、JS側（`index.html`）で`xpdrs.filter(x => x.alive)`により
+  非activeを隠していた。このフィルタを削除し、色分けはせず全件そのまま表示（ユーザー判断で
+  スマホ側は無色のまま）。APIのSQLに`ORDER BY alive DESC, description`を追加し、
+  自動選択される最初のカードが極力activeなものになるようにした
+- `_mobile_rig_connect()`・Autotrackの衛星切替（main_window.py）は`get_transmitters(...,
+  include_dead=True)`に変更。これらは既にUUIDが判明した状態でトランスポンダーを検索するため、
+  スマホ側が選択した非activeなuuidも正しく解決できる必要がある
+
+#### Qt Rich Textの落とし穴（色凡例ダイアログ実装時に発覚）
+
+Help > Satellite/Transmitter Colors ダイアログ（`MainWindow._on_satellite_color()`）に
+上記2色の凡例行を追加した際、QLabelのリッチテキスト（QTextDocument）は**空の`<span>`に対する
+`width`/`height`/`display:inline-block`を無視し、`background`（ショートハンド）も解釈しない**
+ことが判明した。既存の衛星リスト用スウォッチも実は同じ理由で描画されていなかったが、
+ラベル文字自体に`color`が付いていたため気づかれていなかった（新設したトランスミッター行は
+文字を黒のままにしてスウォッチだけに頼っていたため、色が全く出ないというかたちで発覚した）。
+
+**正しい実装**: `background-color`（ショートハンドではなく）を使い、`<span>`に`&nbsp;`等の
+実コンテンツを持たせる。
+
+```python
+# NG: Qtでは何も描画されない
+f'<span style="display:inline-block; width:14px; height:14px; background:{color};"></span>'
+
+# OK: 実コンテンツ + background-color なら塗りつぶし四角として描画される
+f'<span style="background-color:{color}; border:1px solid #555;">&nbsp;&nbsp;&nbsp;&nbsp;</span>'
+```
+
+`_on_satellite_color()`内の`_swatch()`ヘルパーをこの方式に修正済み（衛星リスト側のスウォッチも
+副次的に正しく描画されるようになった）。QLabel/QTextDocumentで色見本・バッジ的なUIを作る際は
+毎回この制約に注意すること。
+
 ### Dashboard タブ（src/ui/dashboard_view.py）
 
 左2/3にズームマップ、右1/3にレーダー、下部に36pxのステータスバーを配置した統合ビュー。
@@ -2149,9 +2228,9 @@ _cmd_drain("U TONE 0")
 
 **翻訳済み**:
 - メニューバー全体（File/Satellite/Radio/Communications/Autotrack-Record/View/Help）
-- Help メニューの全ダイアログ（About・Satellite Color Legend・Auto Fetch Rules・SDR Device
-  Installation・Check for Updates・Hamlib Update・ft8lib/Direwolf/Q65/FT4拡張/CW Model/SatDump/
-  gr-satellites Installation）
+- Help メニューの全ダイアログ（About・Satellite/Transmitter Color Legend・Auto Fetch Rules・
+  SDR Device Installation・Check for Updates・Hamlib Update・ft8lib/Direwolf/Q65/FT4拡張/
+  CW Model/SatDump/gr-satellites Installation）
 - Communications 全タブ（FT4・Q65・APRS・Telemetry・SSTV/SSDV・CW Decoder・METEOR/HRPT）
 - Radio Control タブ・SDR Control タブ・Dashboard ステータスバー
 - Target/Group パス予測パネル・Pass Chart タブ（タブ名以外）
