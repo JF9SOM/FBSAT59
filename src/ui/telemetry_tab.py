@@ -188,7 +188,6 @@ class TelemetryTab(QWidget):
 
         row1.addStretch()
         self._lbl_sat = QLabel(_("Satellite: —"))
-        self._lbl_sat.setStyleSheet("color: #aaa;")
         row1.addWidget(self._lbl_sat)
         input_layout.addLayout(row1)
 
@@ -249,7 +248,6 @@ class TelemetryTab(QWidget):
         self._selected_name = name
         if norad:
             self._lbl_sat.setText(f"{name} ({norad})")
-            self._lbl_sat.setStyleSheet("color: #ddd;")
             # Auto-select in the active mode's satellite combo if supported
             for combo in (self._combo_afsk_sat, self._combo_gr_sat):
                 for i in range(combo.count()):
@@ -260,7 +258,6 @@ class TelemetryTab(QWidget):
                         break
         else:
             self._lbl_sat.setText(_("Satellite: —"))
-            self._lbl_sat.setStyleSheet("color: #aaa;")
         self._refresh_input_combo()
 
     # ------------------------------------------------------------------ #
