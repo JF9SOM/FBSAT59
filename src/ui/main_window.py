@@ -4681,10 +4681,13 @@ class MainWindow(QMainWindow):
             )
 
         def _swatch(color: str) -> str:
+            # Qt's rich text engine (QTextDocument) doesn't apply width/height/
+            # display:inline-block to an empty <span>, and doesn't understand the
+            # 'background' shorthand — only 'background-color' on an element with
+            # actual content renders as a filled box.
             return (
-                f'<span style="display:inline-block; width:14px; height:14px;'
-                f" background:{color}; border:1px solid #555;"
-                f' vertical-align:middle; margin-right:6px;"></span>'
+                f'<span style="background-color:{color}; border:1px solid #555;">'
+                f"&nbsp;&nbsp;&nbsp;&nbsp;</span>&nbsp;"
             )
 
         table_rows = _heading_row(_("Satellite List"))
