@@ -44,6 +44,29 @@ def is_cw_transmitter(xpdr: dict[str, Any]) -> bool:
     return mode in ("CW", "CW-R")
 
 
+def is_ax25_telemetry_transmitter(xpdr: dict[str, Any]) -> bool:
+    """AX.25-framed transmitters the Telemetry tab's Direwolf (AX.25) mode
+    can decode: 1200 baud Bell 202 AFSK, or 4800/9600 baud G3RUH-style
+    scrambled FSK/GMSK (see comms.aprs.direwolf / comms.aprs.g3ruh_demod).
+
+    mode == "AFSK" is trusted on its own — same signal is_aprs_transmitter()
+    relies on — since SATNOGS uses it specifically for 1200 baud AX.25.
+    4800/9600 are NOT AFSK (a different modulation entirely: G3RUH
+    scrambled FSK or GMSK), so baud rate alone isn't a reliable signal at
+    those speeds either — some satellites run non-AX.25 protocols at the
+    same rates — this also requires an explicit "AX.25" marker in the
+    transmitter description (e.g. SATNOGS's own "GMSK4k8 - AX.25" for
+    ARICA-2).
+    """
+    mode = (xpdr.get("mode") or "").upper()
+    if mode == "AFSK":
+        return True
+    if xpdr.get("baud") not in (4800, 9600):
+        return False
+    desc = (xpdr.get("description") or "").upper()
+    return "AX.25" in desc or "AX25" in desc
+
+
 @dataclass(frozen=True)
 class CommsTabConfig:
     """Per-tab display configuration for the Comms Quick Panel (right-side panel).
@@ -83,7 +106,11 @@ COMMS_TAB_CONFIG: dict[str, CommsTabConfig] = {
     "cw": CommsTabConfig(show_input_source=False, freq_source="radio_control"),
     "q65": CommsTabConfig(show_input_source=False, freq_source=None),
     "meteor": CommsTabConfig(show_input_source=False, freq_source="satdump"),
-    "telemetry": CommsTabConfig(show_input_source=False, freq_source="radio_control"),
+    "telemetry": CommsTabConfig(
+        show_input_source=False,
+        freq_source="radio_control",
+        matcher=is_ax25_telemetry_transmitter,
+    ),
 }
 
 
@@ -97,13 +124,19 @@ def get_norads_for_tab(conn: sqlite3.Connection, tab_key: str) -> list[int]:
     the TLE cleanup / provisional-ID migration pipelines (e.g. a decayed
     object whose stale transmitter row is still marked alive=1) can never
     appear in the combo — the satellite list has nothing to select there anyway.
+
+    telemetry's show_input_source is False (its Quick Panel doesn't show a
+    satellite combo — the tab has its own), but its matcher is still set so
+    TelemetryTab._populate_afsk_combo() can call this function directly to
+    find AX.25-capable satellites beyond its 10 hand-written format
+    definitions, e.g. 4800/9600 baud ones without field-level decode.
     """
     config = COMMS_TAB_CONFIG.get(tab_key)
     if config is None or config.matcher is None:
         return []
     rows = conn.execute(
         """
-        SELECT DISTINCT t.norad_cat_id, t.description, t.mode
+        SELECT DISTINCT t.norad_cat_id, t.description, t.mode, t.baud
         FROM transmitters t
         JOIN satellites s ON s.norad_cat_id = t.norad_cat_id
         WHERE t.alive = 1 AND s.is_hidden = 0
@@ -112,7 +145,7 @@ def get_norads_for_tab(conn: sqlite3.Connection, tab_key: str) -> list[int]:
     matcher = config.matcher
     norads: set[int] = set()
     for row in rows:
-        xpdr = {"description": row["description"], "mode": row["mode"]}
+        xpdr = {"description": row["description"], "mode": row["mode"], "baud": row["baud"]}
         if matcher(xpdr):
             norads.add(int(row["norad_cat_id"]))
     return sorted(norads)

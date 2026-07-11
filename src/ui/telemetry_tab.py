@@ -338,14 +338,69 @@ class TelemetryTab(QWidget):
     # ------------------------------------------------------------------ #
 
     def _populate_afsk_combo(self) -> None:
-        """Fill the AFSK satellite combo with satellites that have format definitions."""
+        """Fill the AFSK/Direwolf satellite combo.
+
+        Two groups, merged:
+          1. The 10 hand-written telemetry_formats/*.json satellites (full
+             field-level decode) — but only if satellites.is_hidden says
+             they're still tracked. The JSON files never get cleaned up on
+             their own, so without this check a satellite that has since
+             decayed (e.g. an old BIRDS-program CubeSat like Maya-2) stays
+             listed here forever even after dropping out of the main
+             satellite list.
+          2. Any other satellite with an AX.25-capable transmitter this tab
+             can actually decode — 1200 (Bell 202 AFSK) or 4800/9600
+             (G3RUH-style scrambled FSK/GMSK) — via
+             mode_detection.is_ax25_telemetry_transmitter(), marked "raw
+             hex" since there's no field-level format for these. This is
+             what surfaces e.g. a 4800/9600 baud satellite that has never
+             had a hand-written format definition written for it.
+        Both groups already exclude hidden/decayed satellites via
+        mode_detection.get_norads_for_tab()'s join — see there for why
+        satellites.is_hidden is checked directly for group 1 instead of
+        reusing that same call (it has no transmitter-level matcher to
+        apply, just "is this satellite still tracked at all").
+        """
         self._combo_afsk_sat.blockSignals(True)
         self._combo_afsk_sat.clear()
-        for fmt in sorted(list_formats(), key=lambda f: str(f.get("name", "")).upper()):
+
+        entries: dict[int, str] = {}
+        for fmt in list_formats():
             norad = fmt.get("norad")
-            name = fmt.get("name") or str(norad)
             if norad:
-                self._combo_afsk_sat.addItem(f"{name}  ({norad})", userData=int(norad))
+                entries[int(norad)] = str(fmt.get("name") or norad)
+
+        if hasattr(self._conn, "execute"):
+            hidden: set[int] = set()
+            with contextlib.suppress(Exception):
+                hidden = {
+                    int(row["norad_cat_id"])
+                    for row in self._conn.execute(
+                        "SELECT norad_cat_id FROM satellites WHERE is_hidden != 0"
+                    ).fetchall()
+                }
+            for norad in list(entries):
+                if norad in hidden:
+                    del entries[norad]
+
+            with contextlib.suppress(Exception):
+                from comms.mode_detection import get_norads_for_tab
+
+                extra_norads = [
+                    n for n in get_norads_for_tab(self._conn, "telemetry") if n not in entries
+                ]
+                if extra_norads:
+                    placeholders = ",".join("?" * len(extra_norads))
+                    rows = self._conn.execute(
+                        f"SELECT norad_cat_id, name FROM satellites "
+                        f"WHERE norad_cat_id IN ({placeholders})",
+                        tuple(extra_norads),
+                    ).fetchall()
+                    for row in rows:
+                        entries[int(row["norad_cat_id"])] = f"{row['name']} [raw]"
+
+        for norad, name in sorted(entries.items(), key=lambda kv: kv[1].upper()):
+            self._combo_afsk_sat.addItem(f"{name}  ({norad})", userData=norad)
         self._combo_afsk_sat.blockSignals(False)
 
     def _populate_gr_combo(self) -> None:
