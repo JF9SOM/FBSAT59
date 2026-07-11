@@ -13,7 +13,8 @@ import sys
 import threading
 from typing import Any
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -42,6 +43,14 @@ from rig.controller import (
     RotatorController,
     RotatorState,
 )
+
+# Transponder combo box item background colors, shown only while the dropdown
+# is open (Qt does not apply BackgroundRole to the closed combo box face).
+# Chosen to be visually distinct from colors already used elsewhere in the app
+# for a different meaning (e.g. the satellite list's AMSAT-status yellow/red,
+# and the FT4 own-call highlight's plain Qt.GlobalColor.yellow).
+_XPDR_INACTIVE_BG = QColor("#b8860b")  # dark goldenrod — SATNOGS status=inactive
+_XPDR_INVALID_BG = QColor("#8b0000")  # dark red — SATNOGS status=invalid
 
 
 class RadioControlWidget(QWidget):
@@ -357,8 +366,11 @@ class RadioControlWidget(QWidget):
         self._transmitters = transmitters
         self._xpdr_combo.blockSignals(True)
         self._xpdr_combo.clear()
-        for xpdr in transmitters:
+        for i, xpdr in enumerate(transmitters):
             self._xpdr_combo.addItem(self._xpdr_label(xpdr))
+            bg = self._xpdr_status_bg(xpdr)
+            if bg is not None:
+                self._xpdr_combo.setItemData(i, bg, Qt.ItemDataRole.BackgroundRole)
         self._xpdr_combo.setEnabled(len(transmitters) > 0)
         if transmitters:
             idx = max(0, min(default_index, len(transmitters) - 1))
@@ -492,6 +504,16 @@ class RadioControlWidget(QWidget):
         xtype = xpdr.get("type", "")
         desc = xpdr.get("description", "?")
         return f"{desc}  [{dl_str}  {xtype}]"
+
+    @staticmethod
+    def _xpdr_status_bg(xpdr: dict[str, Any]) -> QColor | None:
+        """Return the combo item background color for a non-active SATNOGS
+        transmitter, or None for active/manual/community entries."""
+        if xpdr.get("satnogs_status") == "invalid":
+            return _XPDR_INVALID_BG
+        if not xpdr.get("alive", True):
+            return _XPDR_INACTIVE_BG
+        return None
 
     def update_ctcss(self, tone_hz: float | None, activation_hz: float | None) -> None:
         """Update CTCSS button state from the current transponder and satellite DB info."""

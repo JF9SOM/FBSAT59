@@ -884,7 +884,7 @@ class MainWindow(QMainWindow):
         # Help
         help_menu = mb.addMenu(_("Help"))
         if help_menu:
-            help_menu.addAction(_("Satellite Color"), self._on_satellite_color)
+            help_menu.addAction(_("Satellite/Transmitter Colors"), self._on_satellite_color)
             help_menu.addAction(_("Auto Fetch Rules"), self._on_auto_fetch_rules)
             help_menu.addSeparator()
             help_menu.addAction(_("Check for Updates…"), self._on_check_updates)
@@ -1612,8 +1612,10 @@ class MainWindow(QMainWindow):
         # 1. Select satellite in list widget (fires _on_sat_selected)
         self._select_satellite_by_norad(norad)
 
-        # 2. Select transponder by UUID
-        transmitters = self._transmitter_manager.get_transmitters(norad)
+        # 2. Select transponder by UUID (include_dead: the mobile UI's own
+        # transponder card list shows every transmitter regardless of status,
+        # so the uuid it sends back may not be alive=1)
+        transmitters = self._transmitter_manager.get_transmitters(norad, include_dead=True)
         try:
             idx = next(i for i, t in enumerate(transmitters) if t["uuid"] == xpdr_uuid)
         except StopIteration:
@@ -1707,7 +1709,7 @@ class MainWindow(QMainWindow):
             "SELECT * FROM transmitters WHERE uuid = ?", (xpdr_uuid,)
         ).fetchone()
         if xpdr_row:
-            transmitters = self._transmitter_manager.get_transmitters(next_norad)
+            transmitters = self._transmitter_manager.get_transmitters(next_norad, include_dead=True)
             try:
                 idx = next(i for i, t in enumerate(transmitters) if t["uuid"] == xpdr_uuid)
             except StopIteration:
@@ -3136,10 +3138,14 @@ class MainWindow(QMainWindow):
         rows = self._conn.execute(
             """
             SELECT uuid, description, type,
-                   downlink_low, uplink_low, mode, ctcss_tone, invert
+                   downlink_low, uplink_low, mode, ctcss_tone, invert,
+                   alive, satnogs_status
             FROM transmitters
-            WHERE norad_cat_id = ? AND alive = 1
+            WHERE norad_cat_id = ?
             ORDER BY
+                (CASE WHEN alive = 1 THEN 0
+                      WHEN satnogs_status = 'invalid' THEN 2
+                      ELSE 1 END) ASC,
                 (CASE WHEN type='Transponder' AND uplink_low IS NOT NULL
                            AND downlink_low < 1000000000 THEN 1 ELSE 0 END) DESC,
                 (CASE WHEN type='Transceiver'
@@ -4583,9 +4589,9 @@ class MainWindow(QMainWindow):
         QApplication.quit()
 
     def _on_satellite_color(self) -> None:
-        """Show the satellite list color legend dialog."""
+        """Show the satellite/transmitter color legend dialog."""
         dialog = QDialog(self)
-        dialog.setWindowTitle(_("Satellite Color Legend"))
+        dialog.setWindowTitle(_("Satellite/Transmitter Color Legend"))
         dialog.setMinimumWidth(480)
         layout = QVBoxLayout(dialog)
         layout.setSpacing(0)
@@ -4646,15 +4652,45 @@ class MainWindow(QMainWindow):
             ),
         ]
 
-        table_rows = ""
-        for color, style, label, desc in rows_html:
-            weight = "bold" if style == "bold" else "normal"
-            fstyle = "italic" if style == "italic" else "normal"
-            swatch = (
+        # Transponder combo box background colors (Radio Control tab). Shown only
+        # while the dropdown is open — see radio_control_widget.py's
+        # _XPDR_INACTIVE_BG / _XPDR_INVALID_BG.
+        xpdr_rows_html = [
+            (
+                "#b8860b",
+                _("Yellow background"),
+                _(
+                    "SATNOGS status: Inactive — this transmitter is no longer "
+                    "operating. Shown only while the transponder dropdown is open."
+                ),
+            ),
+            (
+                "#8b0000",
+                _("Red background"),
+                _(
+                    "SATNOGS status: Invalid — this transmitter's data is known "
+                    "to be incorrect. Shown only while the transponder dropdown is open."
+                ),
+            ),
+        ]
+
+        def _heading_row(text: str) -> str:
+            return (
+                "<tr><td colspan='2' style='padding:14px 8px 4px; "
+                f"font-weight:bold; color:#111;'>{text}</td></tr>"
+            )
+
+        def _swatch(color: str) -> str:
+            return (
                 f'<span style="display:inline-block; width:14px; height:14px;'
                 f" background:{color}; border:1px solid #555;"
                 f' vertical-align:middle; margin-right:6px;"></span>'
             )
+
+        table_rows = _heading_row(_("Satellite List"))
+        for color, style, label, desc in rows_html:
+            weight = "bold" if style == "bold" else "normal"
+            fstyle = "italic" if style == "italic" else "normal"
             label_html = (
                 f'<span style="color:{color}; font-weight:{weight};'
                 f' font-style:{fstyle};">{label}</span>'
@@ -4662,7 +4698,17 @@ class MainWindow(QMainWindow):
             table_rows += (
                 f"<tr>"
                 f"<td style='padding:6px 8px; white-space:nowrap;'>"
-                f"{swatch}{label_html}</td>"
+                f"{_swatch(color)}{label_html}</td>"
+                f"<td style='padding:6px 8px; color:#111;'>{desc}</td>"
+                f"</tr>"
+            )
+
+        table_rows += _heading_row(_("Radio Control — Transponder Selection"))
+        for color, label, desc in xpdr_rows_html:
+            table_rows += (
+                f"<tr>"
+                f"<td style='padding:6px 8px; white-space:nowrap;'>"
+                f"{_swatch(color)}{label}</td>"
                 f"<td style='padding:6px 8px; color:#111;'>{desc}</td>"
                 f"</tr>"
             )
