@@ -45,6 +45,18 @@ from comms.audio_device_manager import get_audio_device_manager
 
 _AUDIO_OWNER = "APRS/Direwolf"
 
+# direwolf.conf MODEM line per supported baud rate. Direwolf's default modem
+# type per speed is AFSK for 1200, 8PSK (V.27) for 4800, and G3RUH scrambled
+# FSK is only auto-selected above 7200 baud — so 4800 needs an explicit
+# "G3RUH" token (confirmed against direwolf's config.c parsing logic) or it
+# would silently decode as 8PSK, which is wrong for a G3RUH-compatible 4800
+# baud satellite beacon. 9600 already gets G3RUH automatically.
+_MODEM_LINES: dict[str, str] = {
+    "1200": "MODEM 1200",
+    "4800": "MODEM 4800 G3RUH",
+    "9600": "MODEM 9600",
+}
+
 # ---------------------------------------------------------------------------
 # KISS protocol constants
 # ---------------------------------------------------------------------------
@@ -401,8 +413,9 @@ class DirewolfManager:
         """Start Direwolf and the audio / KISS threads.
 
         *modem* is the AX.25 baud rate Direwolf should decode/encode at —
-        "1200" (Bell 202 AFSK) or "9600" (G3RUH). Falls back to "1200" for
-        any other value.
+        "1200" (Bell 202 AFSK), "4800" (G3RUH, explicitly forced since
+        Direwolf's default at this speed is 8PSK), or "9600" (G3RUH).
+        Falls back to "1200" for any other value.
 
         *sdr_pipeline*, if given, feeds Direwolf's stdin from a
         G3ruhSdrDemod running against this SDR pipeline's raw I/Q instead
@@ -485,13 +498,13 @@ class DirewolfManager:
     def _write_config(self, callsign: str, ssid: int, modem: str = "1200") -> str:
         """Write a minimal direwolf.conf to a temp file and return its path."""
         station = f"{callsign}-{ssid}" if ssid else callsign
-        modem_baud = modem if modem in ("1200", "9600") else "1200"
+        modem_line = _MODEM_LINES.get(modem, _MODEM_LINES["1200"])
         conf = (
             f"MYCALL {station}\n"
             "ADEVICE stdin stdout\n"
             "ACHANNELS 1\n"
             "CHANNEL 0\n"
-            f"MODEM {modem_baud}\n"
+            f"{modem_line}\n"
             "PTT NONE\n"
             f"KISSPORT 8001\n"
         )

@@ -235,6 +235,7 @@ class AprsTab(QWidget):
         self._baud_combo = QComboBox()
         self._baud_combo.addItem(_("Auto"), "auto")
         self._baud_combo.addItem("1200", "1200")
+        self._baud_combo.addItem("4800", "4800")
         self._baud_combo.addItem("9600", "9600")
         self._baud_combo.setToolTip(
             _(
@@ -513,9 +514,9 @@ class AprsTab(QWidget):
         """Start AX.25 reception on the SDR pipeline (receive only).
 
         Uses the lightweight AfskDemodulator (1200 baud Bell 202, no
-        Direwolf dependency) unless the resolved baud is 9600, in which
-        case Direwolf's built-in G3RUH decoder is used instead (fed by a
-        raw-discriminator demod of the SDR's I/Q — see
+        Direwolf dependency) unless the resolved baud is 4800/9600, in
+        which case Direwolf's built-in G3RUH decoder is used instead (fed
+        by a raw-discriminator demod of the SDR's I/Q — see
         AprsEngine.start_sdr_direwolf()).
         """
         if self._engine.is_running:
@@ -525,8 +526,9 @@ class AprsTab(QWidget):
             return
         from comms.aprs.engine import resolve_ax25_modem
 
-        if resolve_ax25_modem(self._conn, self._radio_control) == "9600":
-            self._engine.start_sdr_direwolf(_ENGINE_OWNER, pipeline)
+        modem = resolve_ax25_modem(self._conn, self._radio_control)
+        if modem in ("4800", "9600"):
+            self._engine.start_sdr_direwolf(_ENGINE_OWNER, pipeline, modem=modem)
         else:
             self._engine.start_sdr(_ENGINE_OWNER, pipeline)
 
@@ -744,8 +746,8 @@ class AprsTab(QWidget):
     # ------------------------------------------------------------------ #
 
     def _load_baud_mode(self) -> None:
-        """Restore the Auto/1200/9600 selection from app_settings."""
-        from comms.aprs.engine import AX25_BAUD_SETTING_KEY
+        """Restore the Auto/1200/4800/9600 selection from app_settings."""
+        from comms.aprs.engine import AX25_BAUD_MODE_CHOICES, AX25_BAUD_SETTING_KEY
 
         mode = "auto"
         if hasattr(self._conn, "execute"):
@@ -753,7 +755,7 @@ class AprsTab(QWidget):
                 "SELECT value FROM app_settings WHERE key = ?",
                 (AX25_BAUD_SETTING_KEY,),
             ).fetchone()
-            if row and row["value"] in ("auto", "1200", "9600"):
+            if row and row["value"] in AX25_BAUD_MODE_CHOICES:
                 mode = row["value"]
         idx = self._baud_combo.findData(mode)
         self._baud_combo.blockSignals(True)
@@ -761,7 +763,7 @@ class AprsTab(QWidget):
         self._baud_combo.blockSignals(False)
 
     def _on_baud_mode_changed(self, _index: int) -> None:
-        """Persist the Auto/1200/9600 selection and apply it immediately."""
+        """Persist the Auto/1200/4800/9600 selection and apply it immediately."""
         from comms.aprs.engine import AX25_BAUD_SETTING_KEY
 
         mode = self._baud_combo.currentData()

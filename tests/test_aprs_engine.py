@@ -108,10 +108,13 @@ def test_resolve_auto_reads_9600_from_transmitter_baud(conn: sqlite3.Connection)
     assert resolve_ax25_modem(conn, rc) == "9600"
 
 
-@pytest.mark.parametrize("baud", [1200, None, 4800])
-def test_resolve_auto_non_9600_baud_defaults_1200(
-    conn: sqlite3.Connection, baud: int | None
-) -> None:
+def test_resolve_auto_reads_4800_from_transmitter_baud(conn: sqlite3.Connection) -> None:
+    rc = _FakeRadioControl({"baud": 4800})
+    assert resolve_ax25_modem(conn, rc) == "4800"
+
+
+@pytest.mark.parametrize("baud", [1200, None, 2400])
+def test_resolve_auto_other_baud_defaults_1200(conn: sqlite3.Connection, baud: int | None) -> None:
     rc = _FakeRadioControl({"baud": baud})
     assert resolve_ax25_modem(conn, rc) == "1200"
 
@@ -239,6 +242,37 @@ def test_start_sdr_direwolf_uses_modem_9600(engine: AprsEngine) -> None:
     assert fake_mgr.start_calls[-1]["sdr_pipeline"] is not None
     assert engine.current_modem == "9600"
     assert engine.is_running
+
+
+def test_start_sdr_direwolf_accepts_modem_4800(engine: AprsEngine) -> None:
+    ok, err = engine.start_sdr_direwolf("aprs", _FakePipeline(), modem="4800")
+    assert ok and err == ""
+    fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
+    assert fake_mgr.start_calls[-1]["modem"] == "4800"
+    assert engine.current_modem == "4800"
+    assert engine.is_running
+
+
+def test_sync_sdr_baud_switches_modem_within_direwolf_mechanism(engine: AprsEngine) -> None:
+    """9600 <-> 4800 while already on the SDR-fed Direwolf mechanism is just
+    a modem change (both need a fresh Direwolf process), not a mechanism
+    switch — still handled by sync_sdr_baud(), owners must survive."""
+    pipeline = _FakePipeline()
+    ok, _err = engine.start_sdr_direwolf("aprs", pipeline, modem="9600")
+    assert ok
+    engine.add_owner("telemetry")
+    fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
+    try:
+        engine.sync_sdr_baud(pipeline, "4800")
+
+        assert fake_mgr.stop_calls == 1
+        assert fake_mgr.start_calls[-1]["modem"] == "4800"
+        assert engine.current_modem == "4800"
+        assert engine.is_running
+        assert engine._owners == {"aprs", "telemetry"}
+    finally:
+        engine.stop("aprs")
+        engine.stop("telemetry")
 
 
 def test_sync_sdr_baud_switches_afsk_to_direwolf(engine: AprsEngine) -> None:

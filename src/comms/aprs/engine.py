@@ -234,30 +234,35 @@ class AprsEngine(QObject):
         self.status_changed.emit("Connected (SDR — receive only)")
         return True, ""
 
-    def start_sdr_direwolf(self, owner: str, pipeline: Any) -> tuple[bool, str]:
+    def start_sdr_direwolf(
+        self, owner: str, pipeline: Any, modem: str = "9600"
+    ) -> tuple[bool, str]:
         """Start Direwolf fed by SDR-derived G3RUH-discriminator audio.
 
-        Always 9600 baud, receive-only (SDR can't transmit). Exists
-        because the lightweight start_sdr() AfskDemodulator only decodes
-        1200 baud Bell 202 — callers pick this instead once
-        resolve_ax25_modem() says 9600 is needed. Direwolf's own built-in
-        G3RUH decoder does the actual demod; see comms.aprs.g3ruh_demod
-        for the raw-discriminator audio it's fed. ``owner`` registers the
-        caller's interest in the pipeline (see ``stop()``).
+        *modem* is "4800" or "9600" — always receive-only (SDR can't
+        transmit). Exists because the lightweight start_sdr()
+        AfskDemodulator only decodes 1200 baud Bell 202 — callers pick this
+        instead once resolve_ax25_modem() says 4800/9600 is needed.
+        Direwolf's own built-in G3RUH decoder does the actual demod; see
+        comms.aprs.g3ruh_demod for the raw-discriminator audio it's fed
+        (the same filter is used regardless of *modem* — 4800 needs less
+        bandwidth than 9600, so the existing wideband filter admits it
+        without retuning). ``owner`` registers the caller's interest in
+        the pipeline (see ``stop()``).
         """
         self._owners.add(owner)
         if self._running:
             return True, ""
-        return self._start_sdr_direwolf_pipeline(pipeline)
+        return self._start_sdr_direwolf_pipeline(pipeline, modem)
 
-    def _start_sdr_direwolf_pipeline(self, pipeline: Any) -> tuple[bool, str]:
+    def _start_sdr_direwolf_pipeline(self, pipeline: Any, modem: str = "9600") -> tuple[bool, str]:
         ok, err = self._mgr.start(
             callsign="N0CALL",
             ssid=0,
             via="",
             in_device=None,
             out_device=None,
-            modem="9600",
+            modem=modem,
             sdr_pipeline=pipeline,
         )
         if not ok:
@@ -266,34 +271,39 @@ class AprsEngine(QObject):
 
         self._wire_kiss()
         self._running = True
-        self._current_modem = "9600"
+        self._current_modem = modem
         self._last_rig_params = None
         self._sdr_direwolf_active = True
-        self.status_changed.emit("Connected (SDR — G3RUH 9600 baud, receive only)")
+        self.status_changed.emit(f"Connected (SDR — G3RUH {modem} baud, receive only)")
         return True, ""
 
     def sync_sdr_baud(self, pipeline: Any, target_modem: str) -> None:
         """Switch the running SDR reception path to match target_modem.
 
         "1200" -> lightweight AfskDemodulator (start_sdr(), no Direwolf).
-        "9600" -> SDR-fed Direwolf using its built-in G3RUH decoder
-        (start_sdr_direwolf()). These are two entirely different decode
-        mechanisms (not just a Direwolf MODEM setting), so switching
-        between them tears down and restarts the pipeline in place — same
-        idea as restart_if_modem_changed() — without touching the owner
-        set. No-op if not currently running via an SDR path (including a
-        Rig + Sound Card Direwolf session, even one that also happens to
-        be at 9600 baud — not ours to touch), or already on the right
-        mechanism.
+        "4800"/"9600" -> SDR-fed Direwolf using its built-in G3RUH decoder
+        (start_sdr_direwolf()). AfskDemodulator vs SDR-fed Direwolf are two
+        entirely different decode mechanisms, so switching between them
+        tears down and restarts the pipeline in place; switching between
+        4800 and 9600 while already on the SDR-fed Direwolf mechanism is
+        just a modem change, handled the same way (tear down, restart with
+        the new modem) since either case needs a fresh Direwolf process —
+        same idea as restart_if_modem_changed() — without touching the
+        owner set. No-op if not currently running via an SDR path
+        (including a Rig + Sound Card Direwolf session — not ours to
+        touch), or already on the right mechanism/modem.
         """
         if not self._running or self._last_rig_params is not None:
             return
-        want_direwolf = target_modem == "9600"
-        if want_direwolf == self._sdr_direwolf_active:
+        want_direwolf = target_modem in ("4800", "9600")
+        already_correct = (
+            want_direwolf and self._sdr_direwolf_active and self._current_modem == target_modem
+        ) or (not want_direwolf and not self._sdr_direwolf_active)
+        if already_correct:
             return
         self._teardown_pipeline()
         if want_direwolf:
-            self._start_sdr_direwolf_pipeline(pipeline)
+            self._start_sdr_direwolf_pipeline(pipeline, target_modem)
         else:
             self._start_sdr_pipeline(pipeline)
 
@@ -475,17 +485,22 @@ def get_aprs_engine(conn: Any) -> AprsEngine:
 
 AX25_BAUD_SETTING_KEY = "ax25_baud_mode"
 
+# Valid ax25_baud_mode values ("auto" + every Direwolf-supported baud this
+# app exposes). Shared with aprs_tab.py/telemetry_tab.py so the Baud combo
+# and this module's own validation never drift apart.
+AX25_BAUD_MODE_CHOICES = ("auto", "1200", "4800", "9600")
+
 
 def resolve_ax25_modem(conn: Any, radio_control: Any) -> str:
-    """Return the Direwolf MODEM value ("1200" or "9600") to use right now.
+    """Return the Direwolf MODEM value ("1200"/"4800"/"9600") to use right now.
 
-    Reads the ``ax25_baud_mode`` app_settings value ("auto"/"1200"/"9600",
-    defaulting to "auto"). In "auto" mode, looks at the ``baud`` column of
-    the transponder currently selected in Radio Control
-    (RadioControlWidget.current_transmitter()) — 9600 -> "9600", anything
-    else (1200, NULL/unset, no transponder selected) -> "1200" as a safe
-    default. Manual mode ("1200"/"9600") is returned as-is regardless of
-    the selected transponder.
+    Reads the ``ax25_baud_mode`` app_settings value (one of
+    AX25_BAUD_MODE_CHOICES, defaulting to "auto"). In "auto" mode, looks at
+    the ``baud`` column of the transponder currently selected in Radio
+    Control (RadioControlWidget.current_transmitter()) — 9600 -> "9600",
+    4800 -> "4800", anything else (1200, NULL/unset, no transponder
+    selected) -> "1200" as a safe default. Manual mode ("1200"/"4800"/
+    "9600") is returned as-is regardless of the selected transponder.
     """
     mode = "auto"
     if hasattr(conn, "execute"):
@@ -493,14 +508,18 @@ def resolve_ax25_modem(conn: Any, radio_control: Any) -> str:
             "SELECT value FROM app_settings WHERE key = ?",
             (AX25_BAUD_SETTING_KEY,),
         ).fetchone()
-        if row and row["value"] in ("auto", "1200", "9600"):
+        if row and row["value"] in AX25_BAUD_MODE_CHOICES:
             mode = row["value"]
     if mode != "auto":
         return mode
     current_transmitter = getattr(radio_control, "current_transmitter", None)
     xpdr = current_transmitter() if callable(current_transmitter) else None
-    if xpdr is not None and xpdr.get("baud") == 9600:
-        return "9600"
+    if xpdr is not None:
+        baud = xpdr.get("baud")
+        if baud == 9600:
+            return "9600"
+        if baud == 4800:
+            return "4800"
     return "1200"
 
 

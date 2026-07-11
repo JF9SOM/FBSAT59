@@ -38,7 +38,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from comms.aprs.engine import AX25_BAUD_SETTING_KEY, get_aprs_engine, resolve_ax25_modem
+from comms.aprs.engine import (
+    AX25_BAUD_MODE_CHOICES,
+    AX25_BAUD_SETTING_KEY,
+    get_aprs_engine,
+    resolve_ax25_modem,
+)
 from comms.aprs.parser import decode_ax25
 from comms.telemetry.decoder import TelemetryFrame, decode_telemetry, list_formats
 from comms.telemetry.gr_satellites_backend import (
@@ -159,6 +164,7 @@ class TelemetryTab(QWidget):
         self._baud_combo = QComboBox()
         self._baud_combo.addItem(_("Auto"), "auto")
         self._baud_combo.addItem("1200", "1200")
+        self._baud_combo.addItem("4800", "4800")
         self._baud_combo.addItem("9600", "9600")
         self._baud_combo.setToolTip(
             _(
@@ -379,14 +385,14 @@ class TelemetryTab(QWidget):
     # ------------------------------------------------------------------ #
 
     def _load_baud_mode(self) -> None:
-        """Restore the Auto/1200/9600 selection from app_settings."""
+        """Restore the Auto/1200/4800/9600 selection from app_settings."""
         mode = "auto"
         if hasattr(self._conn, "execute"):
             row = self._conn.execute(
                 "SELECT value FROM app_settings WHERE key = ?",
                 (AX25_BAUD_SETTING_KEY,),
             ).fetchone()
-            if row and row["value"] in ("auto", "1200", "9600"):
+            if row and row["value"] in AX25_BAUD_MODE_CHOICES:
                 mode = row["value"]
         idx = self._baud_combo.findData(mode)
         self._baud_combo.blockSignals(True)
@@ -394,7 +400,7 @@ class TelemetryTab(QWidget):
         self._baud_combo.blockSignals(False)
 
     def _on_baud_mode_changed(self, _index: int) -> None:
-        """Persist the Auto/1200/9600 selection and apply it immediately."""
+        """Persist the Auto/1200/4800/9600 selection and apply it immediately."""
         mode = self._baud_combo.currentData()
         if hasattr(self._conn, "execute"):
             self._conn.execute(
@@ -423,7 +429,7 @@ class TelemetryTab(QWidget):
         if self._sdr_pipeline is not None:
             self._engine.sync_sdr_baud(self._sdr_pipeline, modem)
             if self._afsk_source in ("sdr", "sdr_direwolf"):
-                self._afsk_source = "sdr_direwolf" if modem == "9600" else "sdr"
+                self._afsk_source = "sdr_direwolf" if modem in ("4800", "9600") else "sdr"
         self._refresh_status()
         self._refresh_status()
 
@@ -569,13 +575,14 @@ class TelemetryTab(QWidget):
         """Start AX.25 reception on the SDR pipeline (receive only).
 
         Uses the lightweight AfskDemodulator (1200 baud Bell 202, no
-        Direwolf dependency) unless the resolved baud is 9600, in which
-        case Direwolf's built-in G3RUH decoder is used instead — see
+        Direwolf dependency) unless the resolved baud is 4800/9600, in
+        which case Direwolf's built-in G3RUH decoder is used instead — see
         AprsEngine.start_sdr_direwolf().
         """
-        use_direwolf = resolve_ax25_modem(self._conn, self._radio_control) == "9600"
+        modem = resolve_ax25_modem(self._conn, self._radio_control)
+        use_direwolf = modem in ("4800", "9600")
         if use_direwolf:
-            ok, err = self._engine.start_sdr_direwolf(_ENGINE_OWNER, pipeline)
+            ok, err = self._engine.start_sdr_direwolf(_ENGINE_OWNER, pipeline, modem=modem)
         else:
             ok, err = self._engine.start_sdr(_ENGINE_OWNER, pipeline)
         if not ok:
@@ -697,7 +704,9 @@ class TelemetryTab(QWidget):
             self._lbl_status.setText(_("SDR — Bell 202 AFSK (receive only)"))
             self._lbl_status.setStyleSheet("color: #4a9eff;")
         elif self._afsk_source == "sdr_direwolf" and self._engine.is_running:
-            self._lbl_status.setText(_("SDR — Direwolf G3RUH 9600 baud (receive only)"))
+            modem = self._engine.current_modem
+            suffix = f"  [{modem} baud]" if modem else ""
+            self._lbl_status.setText(_("SDR — Direwolf G3RUH (receive only)") + suffix)
             self._lbl_status.setStyleSheet("color: #4a9eff;")
         else:
             self._lbl_status.setText(_("—  (connect Rig or SDR, then click ▶ Start)"))

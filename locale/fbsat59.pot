@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-11 20:05+0900\n"
+"POT-Creation-Date: 2026-07-11 21:45+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -41,7 +41,7 @@ msgid "Add Transmitter"
 msgstr ""
 
 #: src/ui/transmitter_dialog.py:74 src/ui/radio_control_widget.py:118
-#: src/ui/telemetry_tab.py:205 src/ui/autotrack_record_dialog.py:283
+#: src/ui/telemetry_tab.py:211 src/ui/autotrack_record_dialog.py:283
 #: src/ui/main_window.py:812
 msgid "Satellite"
 msgstr ""
@@ -101,7 +101,7 @@ msgstr ""
 
 #: src/ui/transmitter_dialog.py:134 src/ui/sdr_control_widget.py:395
 #: src/ui/radio_control_widget.py:227 src/ui/sstv_tab.py:120
-#: src/ui/q65_tab.py:184 src/ui/telemetry_tab.py:142
+#: src/ui/q65_tab.py:184 src/ui/telemetry_tab.py:147
 msgid "Mode:"
 msgstr ""
 
@@ -350,7 +350,7 @@ msgid "From:"
 msgstr ""
 
 #: src/ui/log_export_dialog.py:98 src/ui/pass_panel.py:401
-#: src/ui/pass_panel.py:450 src/ui/aprs_tab.py:279
+#: src/ui/pass_panel.py:450 src/ui/aprs_tab.py:280
 msgid "To:"
 msgstr ""
 
@@ -1067,7 +1067,7 @@ msgstr ""
 msgid "SatDump found"
 msgstr ""
 
-#: src/ui/sstv_tab.py:128 src/ui/aprs_tab.py:255
+#: src/ui/sstv_tab.py:128 src/ui/aprs_tab.py:256
 msgid "Input: —"
 msgstr ""
 
@@ -1157,7 +1157,7 @@ msgid "Next 24 hours"
 msgstr ""
 
 #: src/ui/pass_chart.py:428 src/ui/pass_chart.py:747
-#: src/ui/telemetry_tab.py:205
+#: src/ui/telemetry_tab.py:211
 msgid "Time (UTC)"
 msgstr ""
 
@@ -1433,7 +1433,7 @@ msgstr ""
 msgid "Log QSO"
 msgstr ""
 
-#: src/ui/q65_tab.py:309 src/ui/ft4_tab.py:486 src/ui/aprs_tab.py:342
+#: src/ui/q65_tab.py:309 src/ui/ft4_tab.py:486 src/ui/aprs_tab.py:343
 msgid "Export ADIF…"
 msgstr ""
 
@@ -1708,7 +1708,7 @@ msgid "PPM Correction:"
 msgstr ""
 
 #: src/ui/rig_dialog.py:973 src/ui/ft4_tab.py:427 src/ui/aprs_tab.py:236
-#: src/ui/telemetry_tab.py:160
+#: src/ui/telemetry_tab.py:165
 msgid "Auto"
 msgstr ""
 
@@ -2286,7 +2286,7 @@ msgstr ""
 msgid "Via:"
 msgstr ""
 
-#: src/ui/aprs_tab.py:241
+#: src/ui/aprs_tab.py:242
 msgid ""
 "AX.25 baud rate for Direwolf (Rig + Sound Card reception).\n"
 "Auto reads the selected transponder's baud rate from SATNOGS\n"
@@ -2294,114 +2294,114 @@ msgid ""
 "Card reception — SDR-only reception is always 1200 baud AFSK."
 msgstr ""
 
-#: src/ui/aprs_tab.py:248 src/ui/telemetry_tab.py:173
+#: src/ui/aprs_tab.py:249 src/ui/telemetry_tab.py:179
 msgid "Baud:"
 msgstr ""
 
-#: src/ui/aprs_tab.py:268
+#: src/ui/aprs_tab.py:269
 msgid "Received Packets"
 msgstr ""
 
-#: src/ui/aprs_tab.py:277
+#: src/ui/aprs_tab.py:278
 msgid "Send Message"
 msgstr ""
 
-#: src/ui/aprs_tab.py:285
+#: src/ui/aprs_tab.py:286
 msgid "Message:"
 msgstr ""
 
-#: src/ui/aprs_tab.py:287
+#: src/ui/aprs_tab.py:288
 msgid "Text message (max 67 chars)"
 msgstr ""
 
-#: src/ui/aprs_tab.py:290
+#: src/ui/aprs_tab.py:291
 msgid "Send"
 msgstr ""
 
-#: src/ui/aprs_tab.py:297
+#: src/ui/aprs_tab.py:298
 msgid "Send My Position"
 msgstr ""
 
-#: src/ui/aprs_tab.py:299
+#: src/ui/aprs_tab.py:300
 msgid "Auto-beacon every"
 msgstr ""
 
-#: src/ui/aprs_tab.py:306
+#: src/ui/aprs_tab.py:307
 msgid " min"
 msgstr ""
 
-#: src/ui/aprs_tab.py:310
+#: src/ui/aprs_tab.py:311
 msgid "Symbol:"
 msgstr ""
 
-#: src/ui/aprs_tab.py:314
+#: src/ui/aprs_tab.py:315
 msgid "Fixed Station  /-"
 msgstr ""
 
-#: src/ui/aprs_tab.py:315
+#: src/ui/aprs_tab.py:316
 msgid "Mobile  />"
 msgstr ""
 
-#: src/ui/aprs_tab.py:316
+#: src/ui/aprs_tab.py:317
 msgid "Balloon  /O"
 msgstr ""
 
-#: src/ui/aprs_tab.py:317
+#: src/ui/aprs_tab.py:318
 msgid "Antenna  /Y"
 msgstr ""
 
-#: src/ui/aprs_tab.py:318
+#: src/ui/aprs_tab.py:319
 msgid "Satellite  /S"
 msgstr ""
 
-#: src/ui/aprs_tab.py:325
+#: src/ui/aprs_tab.py:326
 msgid "Comment:"
 msgstr ""
 
-#: src/ui/aprs_tab.py:327
+#: src/ui/aprs_tab.py:328
 msgid "Optional free text"
 msgstr ""
 
-#: src/ui/aprs_tab.py:331
+#: src/ui/aprs_tab.py:332
 msgid "Send Now"
 msgstr ""
 
-#: src/ui/aprs_tab.py:335
+#: src/ui/aprs_tab.py:336
 msgid "QTH: —"
 msgstr ""
 
-#: src/ui/aprs_tab.py:446
+#: src/ui/aprs_tab.py:447
 msgid "Input: Sound Card + Direwolf  (send + receive)"
 msgstr ""
 
-#: src/ui/aprs_tab.py:452
+#: src/ui/aprs_tab.py:453
 #, python-brace-format
 msgid "Input: {dev}  (receive only — SDR)"
 msgstr ""
 
-#: src/ui/aprs_tab.py:457
+#: src/ui/aprs_tab.py:458
 msgid "Input: Sound Card + Direwolf  (receive only — Rig not connected)"
 msgstr ""
 
-#: src/ui/aprs_tab.py:463
+#: src/ui/aprs_tab.py:464
 msgid "Input: Sound Card not configured — open Rig Settings > Sound Card"
 msgstr ""
 
-#: src/ui/aprs_tab.py:469
+#: src/ui/aprs_tab.py:470
 msgid "Input: No audio source — connect Rig or SDR in Radio Control"
 msgstr ""
 
-#: src/ui/aprs_tab.py:675
+#: src/ui/aprs_tab.py:677
 #, python-brace-format
 msgid "Remove \"{value}\" from list"
 msgstr ""
 
-#: src/ui/aprs_tab.py:922
+#: src/ui/aprs_tab.py:924
 #, python-brace-format
 msgid "QSOs logged: {n}"
 msgstr ""
 
-#: src/ui/aprs_tab.py:978 src/ui/aprs_tab.py:995
+#: src/ui/aprs_tab.py:980 src/ui/aprs_tab.py:997
 msgid "QTH: not set — configure in Settings"
 msgstr ""
 
@@ -2619,11 +2619,11 @@ msgid ""
 "Do NOT install GNU Radio via pip — use your OS package manager."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:138
+#: src/ui/telemetry_tab.py:143
 msgid "Input Source"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:165
+#: src/ui/telemetry_tab.py:171
 msgid ""
 "AX.25 baud rate for Bell 202 AFSK mode's Rig + Sound Card\n"
 "(Direwolf) reception. Auto reads the selected transponder's\n"
@@ -2632,87 +2632,87 @@ msgid ""
 "SDR-only reception, which is always 1200 baud AFSK."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:177 src/ui/telemetry_tab.py:249
+#: src/ui/telemetry_tab.py:183 src/ui/telemetry_tab.py:255
 msgid "Satellite: —"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:183 src/ui/cw_tab.py:151 src/ui/cw_tab.py:246
+#: src/ui/telemetry_tab.py:189 src/ui/cw_tab.py:151 src/ui/cw_tab.py:246
 msgid "▶ Start"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:185 src/ui/cw_tab.py:226
+#: src/ui/telemetry_tab.py:191 src/ui/cw_tab.py:226
 msgid "■ Stop"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:188
+#: src/ui/telemetry_tab.py:194
 msgid "—"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:194 src/ui/telemetry_tab.py:736
+#: src/ui/telemetry_tab.py:200 src/ui/telemetry_tab.py:745
 msgid "Frames: 0 received"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:201
+#: src/ui/telemetry_tab.py:207
 msgid "Received Frames"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:205
+#: src/ui/telemetry_tab.py:211
 msgid "Callsign"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:205
+#: src/ui/telemetry_tab.py:211
 msgid "Data"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:220
+#: src/ui/telemetry_tab.py:226
 msgid "Clear Log"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:222
+#: src/ui/telemetry_tab.py:228
 msgid "Export CSV…"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:456
+#: src/ui/telemetry_tab.py:462
 msgid "⚠ No satellite selected"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:493
+#: src/ui/telemetry_tab.py:499
 msgid "Connecting SDR…"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:500
+#: src/ui/telemetry_tab.py:506
 msgid "SDR connecting via Radio Control — press Start again once connected"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:503
+#: src/ui/telemetry_tab.py:509
 msgid "⚠ No SDR configured in Rig Settings"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:662
+#: src/ui/telemetry_tab.py:669
 msgid "Frames: "
 msgstr ""
 
-#: src/ui/telemetry_tab.py:662
+#: src/ui/telemetry_tab.py:669
 msgid " received"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:694
+#: src/ui/telemetry_tab.py:701
 msgid "Rig + Direwolf (receiving)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:697
+#: src/ui/telemetry_tab.py:704
 msgid "SDR — Bell 202 AFSK (receive only)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:700
-msgid "SDR — Direwolf G3RUH 9600 baud (receive only)"
+#: src/ui/telemetry_tab.py:709
+msgid "SDR — Direwolf G3RUH (receive only)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:703
+#: src/ui/telemetry_tab.py:712
 msgid "—  (connect Rig or SDR, then click ▶ Start)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:744
+#: src/ui/telemetry_tab.py:753
 msgid "Export Telemetry CSV"
 msgstr ""
 
