@@ -1474,6 +1474,39 @@ Noneに戻す」一回限りの消費ロジックを持つ。`_doppler_cycle()`�
 繰り返し発火・`stop()`後の停止・`start()`の冪等性・`set_interval()`の即時反映・コールバック内
 例外がループを止めないこと・負の間隔値のクランプを検証。Qtイベントループ・実リグ不要）。
 
+**【要削除】一時ログ `TEMP_DOPPLER_RATE_LOG`（2026-07-11 追加・検証後に削除予定）**
+
+RS-44の最大仰角78°パスで、パス前半（上りパスでTCAへ接近中）の約6分間だけFT4が全くデコード
+できず（`decode ... messages=0`が60周期連続）、後半（TCAを過ぎて下りパスに入ってから）は
+多数デコードできた、という実地報告があった。`ft4_decode.log`側の調査で`SKIPPED`・
+`slots_missed`・`main_window tick duration`の異常は一切見つからず（タイミング面は完全に
+正常）、ソフトウェアの不具合ではないと判定した。
+
+ユーザーからの仮説: FT-991Aの最小周波数分解能は10Hzで、TCA付近はドップラー変化率が
+最も速い区間のため、FT4の1送信区間（6秒）内でリグの周波数が10Hz刻みで複数回ジャンプし、
+Costas同期を妨げていたのではないか（下りパス側は変化率が緩むため問題にならなかった）。
+Cycle間隔（0.5秒）自体は前回の検証で正確に機能済みだが、**問題はソフトの更新頻度ではなく
+リグの10Hz量子化とTCA付近の変化率の組み合わせ**という、前回とは異なる切り分けが必要になる。
+
+これを次回のパスで実測検証するため、`_doppler_cycle()`内・`ul_corr`/`ul_shift`確定直後
+（Tuneオーバーライド適用前の、量子化前の生のDoppler計算値）に以下の1行を追加した:
+
+```python
+get_ft4_decode_logger().info(
+    "TEMP_DOPPLER_RATE_LOG t=%.3f dl_corr=%s dl_shift=%s rr=%.6f",
+    time.monotonic(), dl_corr, dl_shift, rr,
+)
+```
+
+`ft4_decode.log`に`decode`ログと同じファイル・同じタイムスタンプ精度で記録されるため、
+連続する`TEMP_DOPPLER_RATE_LOG`行の`dl_corr`の差分からHz/秒換算の実際の変化率を算出し、
+`decode ... messages=0`が連続する区間と付き合わせて相関を確認できる。
+
+**この一時ログは検証が終わり次第、`src/ui/main_window.py`の`_doppler_cycle()`から該当行を
+削除すること。** 前例（`main_window tick duration`ログ、上記参照）と同様、削除を忘れがちな
+一時的計測なので、次にこのファイルを触る際は必ずこの節ごと除去し、CLAUDE.mdからも本節を
+削除すること。
+
 **メニュー: Communications > Q65**（`src/ui/q65_tab.py`）
 - **Phase 1（RX）**: libq65 ctypes デコーダー
   - libq65 未インストール時はバナー表示・デコード無効化。インストール先: `~/.local/share/fbsat59/q65lib/`

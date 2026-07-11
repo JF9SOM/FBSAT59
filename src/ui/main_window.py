@@ -2542,6 +2542,13 @@ class MainWindow(QMainWindow):
                 if ul_nom is not None
                 else (None, None)
             )
+        get_ft4_decode_logger().info(
+            "TEMP_DOPPLER_RATE_LOG t=%.3f dl_corr=%s dl_shift=%s rr=%.6f",
+            time.monotonic(),
+            dl_corr,
+            dl_shift,
+            rr,
+        )
         # If the Tune button has set an override, use the centre frequency,
         # then reset to None afterward (subsequent cycles return to
         # Doppler-corrected values). This worker is the only place that
