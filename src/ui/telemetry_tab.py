@@ -54,7 +54,14 @@ from comms.telemetry.gr_satellites_backend import (
 )
 from i18n import _
 
-_MODE_AFSK = "Bell 202 AFSK"
+# Named after the backend software, matching _MODE_GR's convention — this
+# option actually covers three underlying mechanisms depending on
+# connection/baud (AfskDemodulator for SDR+1200, SDR-fed Direwolf for
+# SDR+4800/9600, Direwolf for Rig+Sound Card at any baud), so "Bell 202
+# AFSK" alone was no longer accurate once 4800/9600 G3RUH were added. The
+# pure-Python AfskDemodulator case not literally being "Direwolf" is an
+# accepted, minor inaccuracy (2026-07-11, user decision).
+_MODE_AFSK = "Direwolf (AX.25)"
 _MODE_GR = "gr-satellites"
 
 # Owner tag for the shared AprsEngine singleton (see comms.aprs.engine).
@@ -168,11 +175,11 @@ class TelemetryTab(QWidget):
         self._baud_combo.addItem("9600", "9600")
         self._baud_combo.setToolTip(
             _(
-                "AX.25 baud rate for Bell 202 AFSK mode's Rig + Sound Card\n"
-                "(Direwolf) reception. Auto reads the selected transponder's\n"
-                "baud rate from SATNOGS (defaults to 1200 if unknown). Shared\n"
-                "with the APRS tab — has no effect on gr-satellites mode or\n"
-                "SDR-only reception, which is always 1200 baud AFSK."
+                "AX.25 baud rate for Direwolf (AX.25) mode's Rig + Sound\n"
+                "Card (Direwolf) or SDR reception. Auto reads the selected\n"
+                "transponder's baud rate from SATNOGS (defaults to 1200 if\n"
+                "unknown). Shared with the APRS tab — has no effect on\n"
+                "gr-satellites mode."
             )
         )
         self._baud_combo.currentIndexChanged.connect(self._on_baud_mode_changed)

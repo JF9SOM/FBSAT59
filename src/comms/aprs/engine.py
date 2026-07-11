@@ -6,7 +6,7 @@ decoded APRS packet so the UI tab can display it without coupling to the
 backend.
 
 This is a process-wide singleton (see ``get_aprs_engine()``): both the APRS
-tab and the Telemetry tab's Bell 202 AFSK mode need the same underlying
+tab and the Telemetry tab's Direwolf (AX.25) mode need the same underlying
 Direwolf process / AfskDemodulator, since a second independent Direwolf
 instance would collide with the first over the hardcoded KISS TCP port and
 the shared audio output lock. ``start_rig()``/``start_sdr()``/``stop()``

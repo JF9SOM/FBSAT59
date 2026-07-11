@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-11 21:45+0900\n"
+"POT-Creation-Date: 2026-07-11 22:17+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -41,7 +41,7 @@ msgid "Add Transmitter"
 msgstr ""
 
 #: src/ui/transmitter_dialog.py:74 src/ui/radio_control_widget.py:118
-#: src/ui/telemetry_tab.py:211 src/ui/autotrack_record_dialog.py:283
+#: src/ui/telemetry_tab.py:218 src/ui/autotrack_record_dialog.py:283
 #: src/ui/main_window.py:812
 msgid "Satellite"
 msgstr ""
@@ -101,7 +101,7 @@ msgstr ""
 
 #: src/ui/transmitter_dialog.py:134 src/ui/sdr_control_widget.py:395
 #: src/ui/radio_control_widget.py:227 src/ui/sstv_tab.py:120
-#: src/ui/q65_tab.py:184 src/ui/telemetry_tab.py:147
+#: src/ui/q65_tab.py:184 src/ui/telemetry_tab.py:154
 msgid "Mode:"
 msgstr ""
 
@@ -1157,7 +1157,7 @@ msgid "Next 24 hours"
 msgstr ""
 
 #: src/ui/pass_chart.py:428 src/ui/pass_chart.py:747
-#: src/ui/telemetry_tab.py:211
+#: src/ui/telemetry_tab.py:218
 msgid "Time (UTC)"
 msgstr ""
 
@@ -1708,7 +1708,7 @@ msgid "PPM Correction:"
 msgstr ""
 
 #: src/ui/rig_dialog.py:973 src/ui/ft4_tab.py:427 src/ui/aprs_tab.py:236
-#: src/ui/telemetry_tab.py:165
+#: src/ui/telemetry_tab.py:172
 msgid "Auto"
 msgstr ""
 
@@ -2294,7 +2294,7 @@ msgid ""
 "Card reception — SDR-only reception is always 1200 baud AFSK."
 msgstr ""
 
-#: src/ui/aprs_tab.py:249 src/ui/telemetry_tab.py:179
+#: src/ui/aprs_tab.py:249 src/ui/telemetry_tab.py:186
 msgid "Baud:"
 msgstr ""
 
@@ -2619,100 +2619,100 @@ msgid ""
 "Do NOT install GNU Radio via pip — use your OS package manager."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:143
+#: src/ui/telemetry_tab.py:150
 msgid "Input Source"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:171
+#: src/ui/telemetry_tab.py:178
 msgid ""
-"AX.25 baud rate for Bell 202 AFSK mode's Rig + Sound Card\n"
-"(Direwolf) reception. Auto reads the selected transponder's\n"
-"baud rate from SATNOGS (defaults to 1200 if unknown). Shared\n"
-"with the APRS tab — has no effect on gr-satellites mode or\n"
-"SDR-only reception, which is always 1200 baud AFSK."
+"AX.25 baud rate for Direwolf (AX.25) mode's Rig + Sound\n"
+"Card (Direwolf) or SDR reception. Auto reads the selected\n"
+"transponder's baud rate from SATNOGS (defaults to 1200 if\n"
+"unknown). Shared with the APRS tab — has no effect on\n"
+"gr-satellites mode."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:183 src/ui/telemetry_tab.py:255
+#: src/ui/telemetry_tab.py:190 src/ui/telemetry_tab.py:262
 msgid "Satellite: —"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:189 src/ui/cw_tab.py:151 src/ui/cw_tab.py:246
+#: src/ui/telemetry_tab.py:196 src/ui/cw_tab.py:151 src/ui/cw_tab.py:246
 msgid "▶ Start"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:191 src/ui/cw_tab.py:226
+#: src/ui/telemetry_tab.py:198 src/ui/cw_tab.py:226
 msgid "■ Stop"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:194
+#: src/ui/telemetry_tab.py:201
 msgid "—"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:200 src/ui/telemetry_tab.py:745
+#: src/ui/telemetry_tab.py:207 src/ui/telemetry_tab.py:752
 msgid "Frames: 0 received"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:207
+#: src/ui/telemetry_tab.py:214
 msgid "Received Frames"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:211
+#: src/ui/telemetry_tab.py:218
 msgid "Callsign"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:211
+#: src/ui/telemetry_tab.py:218
 msgid "Data"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:226
+#: src/ui/telemetry_tab.py:233
 msgid "Clear Log"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:228
+#: src/ui/telemetry_tab.py:235
 msgid "Export CSV…"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:462
+#: src/ui/telemetry_tab.py:469
 msgid "⚠ No satellite selected"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:499
+#: src/ui/telemetry_tab.py:506
 msgid "Connecting SDR…"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:506
+#: src/ui/telemetry_tab.py:513
 msgid "SDR connecting via Radio Control — press Start again once connected"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:509
+#: src/ui/telemetry_tab.py:516
 msgid "⚠ No SDR configured in Rig Settings"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:669
+#: src/ui/telemetry_tab.py:676
 msgid "Frames: "
 msgstr ""
 
-#: src/ui/telemetry_tab.py:669
+#: src/ui/telemetry_tab.py:676
 msgid " received"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:701
+#: src/ui/telemetry_tab.py:708
 msgid "Rig + Direwolf (receiving)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:704
+#: src/ui/telemetry_tab.py:711
 msgid "SDR — Bell 202 AFSK (receive only)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:709
+#: src/ui/telemetry_tab.py:716
 msgid "SDR — Direwolf G3RUH (receive only)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:712
+#: src/ui/telemetry_tab.py:719
 msgid "—  (connect Rig or SDR, then click ▶ Start)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:753
+#: src/ui/telemetry_tab.py:760
 msgid "Export Telemetry CSV"
 msgstr ""
 

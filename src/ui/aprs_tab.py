@@ -60,7 +60,7 @@ _VIA_PATH_CHOICES = ("ARISS", "APRSAT", "WIDE")
 _VIA_CUSTOM_SETTING_KEY = "aprs_custom_via_paths"
 
 # Owner tag for the shared AprsEngine singleton (see comms.aprs.engine).
-# The Telemetry tab's Bell 202 AFSK mode shares the same engine under its
+# The Telemetry tab's Direwolf (AX.25) mode shares the same engine under its
 # own "telemetry" tag so closing one tab doesn't stop the other's reception.
 _ENGINE_OWNER = "aprs"
 
@@ -112,7 +112,7 @@ class AprsTab(QWidget):
         self._pos_timer.timeout.connect(self._on_send_position)
 
         # APRS engine (Direwolf backend) — process-wide singleton, shared
-        # with the Telemetry tab's Bell 202 AFSK mode
+        # with the Telemetry tab's Direwolf (AX.25) mode
         from comms.aprs.engine import get_aprs_engine
 
         self._engine = get_aprs_engine(conn)
@@ -742,7 +742,7 @@ class AprsTab(QWidget):
         self._conn.commit()
 
     # ------------------------------------------------------------------ #
-    # AX.25 baud mode (shared with the Telemetry tab's Bell 202 AFSK mode)
+    # AX.25 baud mode (shared with the Telemetry tab's Direwolf (AX.25) mode)
     # ------------------------------------------------------------------ #
 
     def _load_baud_mode(self) -> None:
