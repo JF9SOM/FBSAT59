@@ -530,7 +530,11 @@ class TransmitterManager:
         Returns:
             {"inserted": N, "updated": N, "skipped": N}
         """
-        params: dict[str, Any] = {"format": "json", "status": "active"}
+        # No 'status' filter: fetch active/inactive/invalid alike. Per-transmitter
+        # status is not a safe basis for hiding data (see satnogs_status handling
+        # below and the desktop combo box coloring in radio_control_widget.py) —
+        # unlike satellite-level dead/unknown status, which does drive is_hidden.
+        params: dict[str, Any] = {"format": "json"}
         if norad_cat_id:
             params["satellite__norad_cat_id"] = norad_cat_id
 
@@ -638,6 +642,7 @@ class TransmitterManager:
                 api_ctcss,
                 None,  # tone_type: not available in SATNOGS
                 int(bool(xpdr.get("alive", True))),
+                xpdr.get("status"),  # raw SATNOGS status: active/inactive/invalid
                 now,
             )
 
@@ -649,7 +654,7 @@ class TransmitterManager:
                         uplink_low=?, uplink_high=?,
                         downlink_low=?, downlink_high=?,
                         mode=?, invert=?, baud=?,
-                        ctcss_tone=?, ctcss_tone_type=?, alive=?, updated_at=?
+                        ctcss_tone=?, ctcss_tone_type=?, alive=?, satnogs_status=?, updated_at=?
                     WHERE uuid=?
                 """,
                     row[2:] + (xpdr_uuid,),
@@ -663,8 +668,8 @@ class TransmitterManager:
                         uplink_low, uplink_high, downlink_low, downlink_high,
                         mode, invert, baud,
                         ctcss_tone, ctcss_tone_type,
-                        alive, source, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'satnogs', ?)
+                        alive, satnogs_status, source, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'satnogs', ?)
                 """,
                     row,
                 )

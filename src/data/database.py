@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS transmitters (
                     CHECK(source IN ('satnogs','manual','community')),
     manual_override INTEGER DEFAULT 0,  -- If 1, will not be overwritten by SATNOGS sync
     notes           TEXT DEFAULT '',    -- User notes
+    satnogs_status  TEXT DEFAULT NULL,  -- raw SATNOGS status: 'active'/'inactive'/'invalid'
+                                         -- (NULL for manual/community entries)
     updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -157,6 +159,8 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         "ALTER TABLE satellites ADD COLUMN tle_no_result_since DATETIME DEFAULT NULL",
         # favorite_group: 0 = not in any favorite group, 1..N = group id
         "ALTER TABLE satellites ADD COLUMN favorite_group INTEGER DEFAULT 0",
+        # raw SATNOGS status ('active'/'inactive'/'invalid'); NULL for manual/community
+        "ALTER TABLE transmitters ADD COLUMN satnogs_status TEXT DEFAULT NULL",
     ]
     for stmt in migrations:
         with contextlib.suppress(Exception):
@@ -240,7 +244,7 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
             "uuid, norad_cat_id, description, type,"
             " uplink_low, uplink_high, downlink_low, downlink_high,"
             " mode, invert, baud, ctcss_tone, ctcss_tone_type,"
-            " alive, source, manual_override, notes, updated_at"
+            " alive, source, manual_override, notes, satnogs_status, updated_at"
         )
         conn.execute("DROP TABLE IF EXISTS _transmitters_backup")
         conn.execute("ALTER TABLE transmitters RENAME TO _transmitters_backup")
@@ -267,6 +271,7 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
                                 CHECK(source IN ('satnogs','manual','community')),
                 manual_override INTEGER DEFAULT 0,
                 notes           TEXT DEFAULT '',
+                satnogs_status  TEXT DEFAULT NULL,
                 updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
