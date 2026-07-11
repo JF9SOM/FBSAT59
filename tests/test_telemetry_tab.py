@@ -129,3 +129,45 @@ def test_combo_excludes_non_ax25_transmitter(app: QApplication, conn: sqlite3.Co
         assert 99999 not in norads
     finally:
         tab.close()
+
+
+def _gr_combo_items(tab: TelemetryTab) -> list[tuple[int, str]]:
+    combo = tab._combo_gr_sat
+    return [(combo.itemData(i), combo.itemText(i)) for i in range(combo.count())]
+
+
+def test_gr_combo_excludes_hidden_satellite(app: QApplication, conn: sqlite3.Connection) -> None:
+    """gr-satellites' own YAML catalog is independent of our satellites
+    table, so a NORAD id it lists (e.g. a decayed CubeSat we've since
+    auto-hidden) must still be dropped from the combo — the app's own
+    tracking is the authority on whether a satellite is still up there,
+    not gr-satellites' static list."""
+    conn.execute(
+        "INSERT INTO satellites (norad_cat_id, name, is_hidden) VALUES (47311, 'Maya-2', 2)"
+    )
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    try:
+        tab._gr_sat_list = [(47311, "Maya-2"), (25544, "ISS")]
+        tab._populate_gr_combo()
+        norads = {norad for norad, _name in _gr_combo_items(tab)}
+        assert 47311 not in norads
+        assert 25544 in norads
+    finally:
+        tab.close()
+
+
+def test_gr_combo_includes_satellite_absent_from_db(
+    app: QApplication, conn: sqlite3.Connection
+) -> None:
+    """A satellite gr-satellites knows about but our own satellites table
+    has never seen (no row at all — never synced from SATNOGS) must not be
+    excluded: absence isn't evidence it decayed, only an explicit
+    is_hidden != 0 row is."""
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    try:
+        tab._gr_sat_list = [(99000, "Some Unsynced Sat")]
+        tab._populate_gr_combo()
+        norads = {norad for norad, _name in _gr_combo_items(tab)}
+        assert 99000 in norads
+    finally:
+        tab.close()

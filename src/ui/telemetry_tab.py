@@ -371,14 +371,7 @@ class TelemetryTab(QWidget):
                 entries[int(norad)] = str(fmt.get("name") or norad)
 
         if hasattr(self._conn, "execute"):
-            hidden: set[int] = set()
-            with contextlib.suppress(Exception):
-                hidden = {
-                    int(row["norad_cat_id"])
-                    for row in self._conn.execute(
-                        "SELECT norad_cat_id FROM satellites WHERE is_hidden != 0"
-                    ).fetchall()
-                }
+            hidden = self._hidden_norads()
             for norad in list(entries):
                 if norad in hidden:
                     del entries[norad]
@@ -403,10 +396,46 @@ class TelemetryTab(QWidget):
             self._combo_afsk_sat.addItem(f"{name}  ({norad})", userData=norad)
         self._combo_afsk_sat.blockSignals(False)
 
+    def _hidden_norads(self) -> set[int]:
+        """NORAD ids satellites.is_hidden marks as no longer tracked.
+
+        Shared by _populate_afsk_combo() and _populate_gr_combo() so a
+        satellite this app's own SATNOGS/CelesTrak-driven tracking has
+        flagged as decayed/removed doesn't linger in either combo — both
+        ultimately draw from static catalogs (telemetry_formats/*.json,
+        gr-satellites' own bundled YAML files) that never get cleaned up
+        on their own. Fails open (empty set) if the query itself fails.
+        """
+        if not hasattr(self._conn, "execute"):
+            return set()
+        with contextlib.suppress(Exception):
+            return {
+                int(row["norad_cat_id"])
+                for row in self._conn.execute(
+                    "SELECT norad_cat_id FROM satellites WHERE is_hidden != 0"
+                ).fetchall()
+            }
+        return set()
+
     def _populate_gr_combo(self) -> None:
-        """Fill the gr-satellites satellite combo from the loaded list."""
+        """Fill the gr-satellites satellite combo from the loaded list.
+
+        Excludes satellites our own tracking has confirmed are no longer
+        valid (satellites.is_hidden != 0) — gr-satellites' own YAML
+        catalog is independent of our SATNOGS/CelesTrak-driven tracking
+        and never gets pruned as satellites decay, so without this a
+        satellite already flagged hidden elsewhere in the app could still
+        show up here. A satellite entirely absent from our satellites
+        table (no row at all — common, since gr-satellites' 300+ catalog
+        covers many satellites we've simply never synced) is NOT
+        excluded — absence isn't evidence it's decayed, just that our own
+        tracking hasn't created a row for it.
+        """
         self._combo_gr_sat.clear()
+        hidden = self._hidden_norads()
         for norad, name in self._gr_sat_list:
+            if norad in hidden:
+                continue
             self._combo_gr_sat.addItem(f"{name}  ({norad})", userData=norad)
 
     def _refresh_input_combo(self) -> None:
