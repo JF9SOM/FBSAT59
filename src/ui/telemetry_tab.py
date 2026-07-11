@@ -187,8 +187,6 @@ class TelemetryTab(QWidget):
         row1.addWidget(self._baud_combo)
 
         row1.addStretch()
-        self._lbl_sat = QLabel(_("Satellite: —"))
-        row1.addWidget(self._lbl_sat)
         input_layout.addLayout(row1)
 
         row2 = QHBoxLayout()
@@ -243,12 +241,16 @@ class TelemetryTab(QWidget):
     # ------------------------------------------------------------------ #
 
     def set_satellite(self, norad: int | None, name: str) -> None:
-        """Update the currently tracked satellite."""
+        """Update the currently tracked satellite.
+
+        The satellite name itself is already shown in the Satellite Detail
+        panel next to this tab, so this method's only visible effect is
+        auto-selecting the matching entry in the active mode's satellite
+        combo, if that satellite is supported by it.
+        """
         self._selected_norad = norad
         self._selected_name = name
         if norad:
-            self._lbl_sat.setText(f"{name} ({norad})")
-            # Auto-select in the active mode's satellite combo if supported
             for combo in (self._combo_afsk_sat, self._combo_gr_sat):
                 for i in range(combo.count()):
                     if combo.itemData(i) == norad:
@@ -256,8 +258,6 @@ class TelemetryTab(QWidget):
                         combo.setCurrentIndex(i)
                         combo.blockSignals(False)
                         break
-        else:
-            self._lbl_sat.setText(_("Satellite: —"))
         self._refresh_input_combo()
 
     # ------------------------------------------------------------------ #

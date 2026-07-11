@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-11 22:17+0900\n"
+"POT-Creation-Date: 2026-07-11 22:35+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -41,7 +41,7 @@ msgid "Add Transmitter"
 msgstr ""
 
 #: src/ui/transmitter_dialog.py:74 src/ui/radio_control_widget.py:118
-#: src/ui/telemetry_tab.py:218 src/ui/autotrack_record_dialog.py:283
+#: src/ui/telemetry_tab.py:215 src/ui/autotrack_record_dialog.py:283
 #: src/ui/main_window.py:812
 msgid "Satellite"
 msgstr ""
@@ -1157,7 +1157,7 @@ msgid "Next 24 hours"
 msgstr ""
 
 #: src/ui/pass_chart.py:428 src/ui/pass_chart.py:747
-#: src/ui/telemetry_tab.py:218
+#: src/ui/telemetry_tab.py:215
 msgid "Time (UTC)"
 msgstr ""
 
@@ -2632,87 +2632,83 @@ msgid ""
 "gr-satellites mode."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:190 src/ui/telemetry_tab.py:262
-msgid "Satellite: —"
-msgstr ""
-
-#: src/ui/telemetry_tab.py:196 src/ui/cw_tab.py:151 src/ui/cw_tab.py:246
+#: src/ui/telemetry_tab.py:193 src/ui/cw_tab.py:151 src/ui/cw_tab.py:246
 msgid "▶ Start"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:198 src/ui/cw_tab.py:226
+#: src/ui/telemetry_tab.py:195 src/ui/cw_tab.py:226
 msgid "■ Stop"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:201
+#: src/ui/telemetry_tab.py:198
 msgid "—"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:207 src/ui/telemetry_tab.py:752
+#: src/ui/telemetry_tab.py:204 src/ui/telemetry_tab.py:749
 msgid "Frames: 0 received"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:214
+#: src/ui/telemetry_tab.py:211
 msgid "Received Frames"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:218
+#: src/ui/telemetry_tab.py:215
 msgid "Callsign"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:218
+#: src/ui/telemetry_tab.py:215
 msgid "Data"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:233
+#: src/ui/telemetry_tab.py:230
 msgid "Clear Log"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:235
+#: src/ui/telemetry_tab.py:232
 msgid "Export CSV…"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:469
+#: src/ui/telemetry_tab.py:466
 msgid "⚠ No satellite selected"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:506
+#: src/ui/telemetry_tab.py:503
 msgid "Connecting SDR…"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:513
+#: src/ui/telemetry_tab.py:510
 msgid "SDR connecting via Radio Control — press Start again once connected"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:516
+#: src/ui/telemetry_tab.py:513
 msgid "⚠ No SDR configured in Rig Settings"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:676
+#: src/ui/telemetry_tab.py:673
 msgid "Frames: "
 msgstr ""
 
-#: src/ui/telemetry_tab.py:676
+#: src/ui/telemetry_tab.py:673
 msgid " received"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:708
+#: src/ui/telemetry_tab.py:705
 msgid "Rig + Direwolf (receiving)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:711
+#: src/ui/telemetry_tab.py:708
 msgid "SDR — Bell 202 AFSK (receive only)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:716
+#: src/ui/telemetry_tab.py:713
 msgid "SDR — Direwolf G3RUH (receive only)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:719
+#: src/ui/telemetry_tab.py:716
 msgid "—  (connect Rig or SDR, then click ▶ Start)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:760
+#: src/ui/telemetry_tab.py:757
 msgid "Export Telemetry CSV"
 msgstr ""
 
