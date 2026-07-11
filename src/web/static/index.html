@@ -1116,8 +1116,10 @@ async function loadAntennaXpdrs(norad) {
 
   try {
     const xpdrs = await fetch(`/api/satellites/${norad}/transmitters`).then(r => r.json());
-    // Filter to uplink+downlink transponders only (skip beacon-only)
-    antXpdrs = xpdrs.filter(x => x.alive);
+    // Show every transmitter regardless of SATNOGS status (active/inactive/invalid);
+    // the API already sorts alive-first so the auto-selected first card is active
+    // when one exists.
+    antXpdrs = xpdrs;
     if (antXpdrs.length === 0) return;
 
     antXpdrs.forEach((x, i) => {

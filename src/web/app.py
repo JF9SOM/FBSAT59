@@ -515,7 +515,7 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"Satellite {norad} not found")
 
         rows = db.execute(
-            "SELECT * FROM transmitters WHERE norad_cat_id = ? ORDER BY description",
+            "SELECT * FROM transmitters WHERE norad_cat_id = ? ORDER BY alive DESC, description",
             (norad,),
         ).fetchall()
         return [
