@@ -22,6 +22,7 @@ from PySide6.QtCore import Qt, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QColor, QDesktopServices, QPen
 from PySide6.QtWidgets import (
     QComboBox,
+    QDoubleSpinBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -136,6 +137,15 @@ class SdrControlWidget(QWidget):
             # pipeline in its default mode (USB) regardless of what the
             # combo box shows.
             self._on_mode_changed(self._mode_combo.currentIndex())
+            # Reflect whatever the device is already tuned to (e.g. the
+            # Doppler-corrected transponder frequency, or the device's
+            # power-on default) so the manual tune field doesn't silently
+            # retune the SDR the first time the user presses Tune.
+            device = getattr(pipeline, "_device", None)
+            if device is not None:
+                self._manual_freq_spin.blockSignals(True)
+                self._manual_freq_spin.setValue(device.center_freq / 1e6)
+                self._manual_freq_spin.blockSignals(False)
         else:
             self._status_label.setText(_("SDR Disconnected"))
             self._freq_overlay.setText("—")
@@ -224,7 +234,7 @@ class SdrControlWidget(QWidget):
         # Spectrum
         self._spectrum_panel = self._build_spectrum_panel()
         layout.addWidget(self._spectrum_panel)
-        # Passband tuning
+        # Passband tuning (also hosts the manual absolute-frequency field)
         self._tune_panel = self._build_tune_panel()
         layout.addWidget(self._tune_panel)
         # Demodulator
@@ -306,6 +316,15 @@ class SdrControlWidget(QWidget):
         v.addWidget(chart_view)
         return grp
 
+    def _on_manual_tune(self) -> None:
+        """Tune the SDR device directly to the frequency in the spin box."""
+        if self._pipeline is None:
+            return
+        device = getattr(self._pipeline, "_device", None)
+        if device is None:
+            return
+        device.set_center_freq(self._manual_freq_spin.value() * 1e6)
+
     def _build_tune_panel(self) -> QGroupBox:
         """Build the Passband Tune group box.
 
@@ -374,6 +393,31 @@ class SdrControlWidget(QWidget):
         row.addWidget(btn_rst)
 
         row.addStretch()
+
+        # Manual absolute frequency — tunes the SDR directly, independent of
+        # any satellite/transponder selection (e.g. to record a terrestrial
+        # reference signal such as a 9600bps G3RUH APRS digipeater for
+        # offline demodulator tuning). Only meaningful when no transponder
+        # is selected: once one is active, the Doppler correction loop
+        # overwrites the SDR centre frequency every cycle, so a manual tune
+        # here would be immediately reverted.
+        manual_hint = _("Absolute tune — only applied while no transponder is selected")
+        row.addWidget(QLabel(_("Freq:")))
+        self._manual_freq_spin = QDoubleSpinBox()
+        self._manual_freq_spin.setDecimals(6)
+        self._manual_freq_spin.setRange(0.1, 6000.0)
+        self._manual_freq_spin.setSingleStep(0.001)
+        self._manual_freq_spin.setSuffix(" MHz")
+        self._manual_freq_spin.setValue(435.0)
+        self._manual_freq_spin.setToolTip(manual_hint)
+        self._manual_freq_spin.editingFinished.connect(self._on_manual_tune)
+        row.addWidget(self._manual_freq_spin)
+
+        tune_btn = QPushButton(_("Tune"))
+        tune_btn.setToolTip(manual_hint)
+        tune_btn.clicked.connect(self._on_manual_tune)
+        row.addWidget(tune_btn)
+
         return grp
 
     def _apply_tune(self, multiplier: int) -> None:
