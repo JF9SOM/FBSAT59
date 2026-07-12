@@ -543,16 +543,25 @@ class TLEManager:
         self._conn.commit()
 
         # ── Phase 2: SATNOGS TLE API fallback for still-missing satellites ───
+        # Satellites migrated from a provisional (>=90000) ID retain
+        # satnogs_source_id pointing at the old ID. SATNOGS's TLE API can
+        # continue to serve the TLE keyed by that old ID for a long time
+        # after migration (observed for ARICA-2 / NORAD 68796, 2026-07-12),
+        # so query by satnogs_source_id when present and store the result
+        # under the real norad_cat_id — mirroring the routing already used
+        # for transmitter sync in sync_from_satnogs().
         still_missing = [
             (
                 int(r["norad_cat_id"]),
                 str(r["name"]),
                 str(r["status"] or "unknown"),
                 str(r["tle_no_result_since"]) if r["tle_no_result_since"] else None,
+                int(r["satnogs_source_id"]) if r["satnogs_source_id"] else None,
             )
             for r in self._conn.execute(
                 """
-                SELECT s.norad_cat_id, s.name, s.status, s.tle_no_result_since
+                SELECT s.norad_cat_id, s.name, s.status, s.tle_no_result_since,
+                       s.satnogs_source_id
                 FROM satellites s
                 LEFT JOIN tle_data t ON s.norad_cat_id = t.norad_cat_id
                 WHERE s.is_hidden = 0
@@ -566,14 +575,19 @@ class TLEManager:
             semaphore = _asyncio.Semaphore(20)  # max 20 concurrent requests
 
             async def _fetch_one(
-                norad: int, sat_name: str, sat_status: str, no_result_since: str | None
+                norad: int,
+                sat_name: str,
+                sat_status: str,
+                no_result_since: str | None,
+                source_id: int | None,
             ) -> None:
+                query_id = source_id if source_id is not None else norad
                 async with semaphore:
                     try:
                         async with httpx.AsyncClient(timeout=10.0) as c:
                             resp = await c.get(
                                 SATNOGS_TLE_URL,
-                                params={"norad_cat_id": norad, "format": "json"},
+                                params={"norad_cat_id": query_id, "format": "json"},
                             )
                             resp.raise_for_status()
                             data = resp.json()
@@ -646,8 +660,8 @@ class TLEManager:
 
             await _asyncio.gather(
                 *[
-                    _fetch_one(norad, name, status, nrs)
-                    for norad, name, status, nrs in still_missing
+                    _fetch_one(norad, name, status, nrs, source_id)
+                    for norad, name, status, nrs, source_id in still_missing
                 ]
             )
             self._conn.commit()
