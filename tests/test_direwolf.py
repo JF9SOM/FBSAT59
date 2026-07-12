@@ -19,6 +19,20 @@ def _modem_line(conf_path: str) -> str:
     raise AssertionError(f"No MODEM line found in {conf_path!r}:\n{text}")
 
 
+def test_write_config_always_declares_arate_48000() -> None:
+    """AudioBridge/G3ruhSdrDemod always feed stdin at 48kHz; without an
+    explicit ARATE, direwolf has no WAV header to infer it from over a raw
+    pipe. Confirmed via real-signal testing (ARICA-2 4800 G3RUH) that
+    omitting this line breaks decoding."""
+    mgr = DirewolfManager()
+    path = mgr._write_config("JF9SOM", 9, modem="4800")
+    try:
+        text = Path(path).read_text()
+        assert "ARATE 48000" in text.splitlines()
+    finally:
+        Path(path).unlink()
+
+
 def test_write_config_1200_default() -> None:
     mgr = DirewolfManager()
     path = mgr._write_config("JF9SOM", 9, modem="1200")

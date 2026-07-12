@@ -502,6 +502,11 @@ class DirewolfManager:
         conf = (
             f"MYCALL {station}\n"
             "ADEVICE stdin stdout\n"
+            # AudioBridge/G3ruhSdrDemod always feed stdin at 48kHz; without
+            # this, direwolf falls back to guessing the rate from a WAV
+            # header it never gets over a raw pipe, which broke 4800 G3RUH
+            # decoding in real-signal testing (ARICA-2, 2026-07-12).
+            "ARATE 48000\n"
             "ACHANNELS 1\n"
             "CHANNEL 0\n"
             f"{modem_line}\n"

@@ -3908,6 +3908,25 @@ SDR単体（Rig+サウンドカード無し）でも、Direwolfの内蔵G3RUHデ
 
 対象となりうる9600bps衛星のパスが来た際に、実際にDirewolfのログ（`Help > Direwolf...`から確認できるバージョン情報とは別に、必要であれば`direwolf.conf`の`AGWPORT`/ログ出力レベルを一時的に上げる等）を見ながら復号数を確認し、上記2パラメータを調整すること。
 
+#### `ARATE 48000` 明示が必須と判明（ARICA-2 4800bps G3RUH 実信号検証、2026-07-12）
+
+上記の未検証事項とは別に、4800bps G3RUH（ARICA-2）の実信号受信検証で、`direwolf.conf`に
+`ARATE 48000`を明示しないとデコードできないことが判明した。`_write_config()`
+（`src/comms/aprs/direwolf.py`）は元々`ADEVICE stdin stdout`のみで、実際に音声を供給する
+レート（`AudioBridge`・`G3ruhSdrDemod`とも常に48kHz固定）をDirewolfに伝えていなかった。
+`stdin`からの生PCMパイプにはWAVヘッダーが無いため、Direwolfはサンプルレートを自力で
+推測できず、宣言なしでは誤ったレート前提でデコードしていたと考えられる。
+
+**修正**: `_write_config()`に`ARATE 48000`を無条件で追加（1200/4800/9600すべての
+MODEM設定に対して常に出力）。`tests/test_direwolf.py`に
+`test_write_config_always_declares_arate_48000()`を追加して回帰を防止。
+
+**教訓**: `MODEM`行（変調方式・ボーレート）が正しくても、`ADEVICE stdin stdout`で
+生PCMパイプを使う構成では`ARATE`でサンプルレートを別途明示しないとデコードが成立しない。
+9600bps側（上記「未検証」セクション）のデコード数が伸びない場合も、まずこの`ARATE`宣言が
+実際に効いているかを疑うこと（今回の修正で解消済みのはずだが、実信号での9600bps確認は
+引き続き未実施）。
+
 ---
 
 ### Telemetry タブ設計（v0.2.0 目標・APRS と同時実装）
