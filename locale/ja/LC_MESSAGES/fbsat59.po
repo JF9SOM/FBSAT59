@@ -2951,7 +2951,7 @@ msgstr "SDR — Direwolf G3RUH（受信のみ）"
 
 #: src/ui/telemetry_tab.py:800
 msgid "—  (connect Rig or SDR, then click ▶ Start)"
-msgstr "—  （無線機またはSDRを接続後、▶ Startをクリック）"
+msgstr "—  （無線機またはSDRを接続後、▶ 開始をクリック）"
 
 #: src/ui/telemetry_tab.py:841
 msgid "Export Telemetry CSV"
