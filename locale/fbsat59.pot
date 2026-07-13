@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-11 22:35+0900\n"
+"POT-Creation-Date: 2026-07-13 15:02+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -99,7 +99,7 @@ msgstr ""
 msgid "Type:"
 msgstr ""
 
-#: src/ui/transmitter_dialog.py:134 src/ui/sdr_control_widget.py:395
+#: src/ui/transmitter_dialog.py:134 src/ui/sdr_control_widget.py:439
 #: src/ui/radio_control_widget.py:227 src/ui/sstv_tab.py:120
 #: src/ui/q65_tab.py:184 src/ui/telemetry_tab.py:154
 msgid "Mode:"
@@ -392,123 +392,135 @@ msgstr ""
 msgid "Exported {n} QSOs to {f}"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:133
+#: src/ui/sdr_control_widget.py:134
 msgid "SDR Connected"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:140 src/ui/sdr_control_widget.py:219
+#: src/ui/sdr_control_widget.py:150 src/ui/sdr_control_widget.py:229
 msgid "SDR Disconnected"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:249
+#: src/ui/sdr_control_widget.py:259
 msgid "Spectrum"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:268
+#: src/ui/sdr_control_widget.py:278
 msgid "Frequency (MHz)"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:274
+#: src/ui/sdr_control_widget.py:284
 msgid "Power (dBFS)"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:295 src/ui/q65_tab.py:197 src/ui/ft4_tab.py:350
+#: src/ui/sdr_control_widget.py:305 src/ui/q65_tab.py:197 src/ui/ft4_tab.py:350
 msgid "RX:"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:316
+#: src/ui/sdr_control_widget.py:335
 msgid "Passband Tune"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:321
+#: src/ui/sdr_control_widget.py:340
 msgid "Step:"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:334
+#: src/ui/sdr_control_widget.py:353
 msgid "Tune down ×10 step"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:341
+#: src/ui/sdr_control_widget.py:360
 msgid "Tune down"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:356
+#: src/ui/sdr_control_widget.py:375
 msgid "Tune up"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:363
+#: src/ui/sdr_control_widget.py:382
 msgid "Tune up ×10 step"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:370
+#: src/ui/sdr_control_widget.py:389
 msgid "Reset"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:372
+#: src/ui/sdr_control_widget.py:391
 msgid "Return to Doppler-corrected centre frequency"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:390
+#: src/ui/sdr_control_widget.py:404
+msgid "Absolute tune — only applied while no transponder is selected"
+msgstr ""
+
+#: src/ui/sdr_control_widget.py:405
+msgid "Freq:"
+msgstr ""
+
+#: src/ui/sdr_control_widget.py:416
+msgid "Tune"
+msgstr ""
+
+#: src/ui/sdr_control_widget.py:434
 msgid "Demodulator"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:407
+#: src/ui/sdr_control_widget.py:451
 msgid "Volume:"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:419
+#: src/ui/sdr_control_widget.py:463
 msgid "AGC On"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:421
+#: src/ui/sdr_control_widget.py:465
 msgid "AGC Off"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:430
+#: src/ui/sdr_control_widget.py:474
 msgid "▶ Start Audio"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:431
+#: src/ui/sdr_control_widget.py:475
 msgid "■ Stop Audio"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:439
+#: src/ui/sdr_control_widget.py:483
 msgid "● REC Audio"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:443
+#: src/ui/sdr_control_widget.py:487
 msgid "lameenc not installed — pip install lameenc"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:444 src/ui/sdr_control_widget.py:486
+#: src/ui/sdr_control_widget.py:488 src/ui/sdr_control_widget.py:530
 msgid "■ STOP"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:453 src/ui/sdr_control_widget.py:495
+#: src/ui/sdr_control_widget.py:497 src/ui/sdr_control_widget.py:539
 msgid "📁"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:454
+#: src/ui/sdr_control_widget.py:498
 msgid "Open audio recordings folder in file manager"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:463
+#: src/ui/sdr_control_widget.py:507
 msgid "IQ Recorder"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:467
+#: src/ui/sdr_control_widget.py:511
 msgid "Record BW:"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:477
+#: src/ui/sdr_control_widget.py:521
 msgid "File:"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:484
+#: src/ui/sdr_control_widget.py:528
 msgid "● REC"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:496
+#: src/ui/sdr_control_widget.py:540
 msgid "Open IQ recordings folder in file manager"
 msgstr ""
 
@@ -2644,7 +2656,7 @@ msgstr ""
 msgid "—"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:204 src/ui/telemetry_tab.py:749
+#: src/ui/telemetry_tab.py:204 src/ui/telemetry_tab.py:833
 msgid "Frames: 0 received"
 msgstr ""
 
@@ -2668,47 +2680,47 @@ msgstr ""
 msgid "Export CSV…"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:466
+#: src/ui/telemetry_tab.py:550
 msgid "⚠ No satellite selected"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:503
+#: src/ui/telemetry_tab.py:587
 msgid "Connecting SDR…"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:510
+#: src/ui/telemetry_tab.py:594
 msgid "SDR connecting via Radio Control — press Start again once connected"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:513
+#: src/ui/telemetry_tab.py:597
 msgid "⚠ No SDR configured in Rig Settings"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:673
+#: src/ui/telemetry_tab.py:757
 msgid "Frames: "
 msgstr ""
 
-#: src/ui/telemetry_tab.py:673
+#: src/ui/telemetry_tab.py:757
 msgid " received"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:705
+#: src/ui/telemetry_tab.py:789
 msgid "Rig + Direwolf (receiving)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:708
-msgid "SDR — Bell 202 AFSK (receive only)"
+#: src/ui/telemetry_tab.py:792
+msgid "SDR — Direwolf (AX.25) (receive only)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:713
+#: src/ui/telemetry_tab.py:797
 msgid "SDR — Direwolf G3RUH (receive only)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:716
+#: src/ui/telemetry_tab.py:800
 msgid "—  (connect Rig or SDR, then click ▶ Start)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:757
+#: src/ui/telemetry_tab.py:841
 msgid "Export Telemetry CSV"
 msgstr ""
 

@@ -789,7 +789,7 @@ class TelemetryTab(QWidget):
             self._lbl_status.setText(_("Rig + Direwolf (receiving)") + suffix)
             self._lbl_status.setStyleSheet("color: #27ae60;")
         elif self._afsk_source == "sdr" and self._engine.is_running:
-            self._lbl_status.setText(_("SDR — Bell 202 AFSK (receive only)"))
+            self._lbl_status.setText(_("SDR — Direwolf (AX.25) (receive only)"))
             self._lbl_status.setStyleSheet("color: #4a9eff;")
         elif self._afsk_source == "sdr_direwolf" and self._engine.is_running:
             modem = self._engine.current_modem

@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-11 22:35+0900\n"
+"POT-Creation-Date: 2026-07-13 15:02+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -106,7 +106,7 @@ msgstr "モード"
 msgid "Type:"
 msgstr "種別:"
 
-#: src/ui/transmitter_dialog.py:134 src/ui/sdr_control_widget.py:395
+#: src/ui/transmitter_dialog.py:134 src/ui/sdr_control_widget.py:439
 #: src/ui/radio_control_widget.py:227 src/ui/sstv_tab.py:120
 #: src/ui/q65_tab.py:184 src/ui/telemetry_tab.py:154
 msgid "Mode:"
@@ -419,124 +419,136 @@ msgstr "ADIFログを保存"
 msgid "Exported {n} QSOs to {f}"
 msgstr "{n}件のQSOを{f}にエクスポートしました"
 
-#: src/ui/sdr_control_widget.py:133
+#: src/ui/sdr_control_widget.py:134
 msgid "SDR Connected"
 msgstr "SDR接続済み"
 
-#: src/ui/sdr_control_widget.py:140 src/ui/sdr_control_widget.py:219
+#: src/ui/sdr_control_widget.py:150 src/ui/sdr_control_widget.py:229
 msgid "SDR Disconnected"
 msgstr "SDR未接続"
 
-#: src/ui/sdr_control_widget.py:249
+#: src/ui/sdr_control_widget.py:259
 msgid "Spectrum"
 msgstr "スペクトラム"
 
-#: src/ui/sdr_control_widget.py:268
+#: src/ui/sdr_control_widget.py:278
 msgid "Frequency (MHz)"
 msgstr "周波数 (MHz)"
 
-#: src/ui/sdr_control_widget.py:274
+#: src/ui/sdr_control_widget.py:284
 msgid "Power (dBFS)"
 msgstr "パワー (dBFS)"
 
-#: src/ui/sdr_control_widget.py:295 src/ui/q65_tab.py:197 src/ui/ft4_tab.py:350
+#: src/ui/sdr_control_widget.py:305 src/ui/q65_tab.py:197 src/ui/ft4_tab.py:350
 msgid "RX:"
 msgstr "RX:"
 
-#: src/ui/sdr_control_widget.py:316
+#: src/ui/sdr_control_widget.py:335
 msgid "Passband Tune"
 msgstr "パスバンドチューン"
 
-#: src/ui/sdr_control_widget.py:321
+#: src/ui/sdr_control_widget.py:340
 msgid "Step:"
 msgstr "ステップ:"
 
-#: src/ui/sdr_control_widget.py:334
+#: src/ui/sdr_control_widget.py:353
 msgid "Tune down ×10 step"
 msgstr "×10ステップ下げる"
 
-#: src/ui/sdr_control_widget.py:341
+#: src/ui/sdr_control_widget.py:360
 msgid "Tune down"
 msgstr "1ステップ下げる"
 
-#: src/ui/sdr_control_widget.py:356
+#: src/ui/sdr_control_widget.py:375
 msgid "Tune up"
 msgstr "1ステップ上げる"
 
-#: src/ui/sdr_control_widget.py:363
+#: src/ui/sdr_control_widget.py:382
 msgid "Tune up ×10 step"
 msgstr "×10ステップ上げる"
 
-#: src/ui/sdr_control_widget.py:370
+#: src/ui/sdr_control_widget.py:389
 msgid "Reset"
 msgstr "リセット"
 
-#: src/ui/sdr_control_widget.py:372
+#: src/ui/sdr_control_widget.py:391
 msgid "Return to Doppler-corrected centre frequency"
 msgstr "Doppler補正済みの中心周波数に戻す"
 
-#: src/ui/sdr_control_widget.py:390
+#: src/ui/sdr_control_widget.py:404
+msgid "Absolute tune — only applied while no transponder is selected"
+msgstr ""
+
+#: src/ui/sdr_control_widget.py:405
+msgid "Freq:"
+msgstr ""
+
+#: src/ui/sdr_control_widget.py:416
+msgid "Tune"
+msgstr "チューン"
+
+#: src/ui/sdr_control_widget.py:434
 msgid "Demodulator"
 msgstr "復調器"
 
-#: src/ui/sdr_control_widget.py:407
+#: src/ui/sdr_control_widget.py:451
 msgid "Volume:"
 msgstr "音量:"
 
-#: src/ui/sdr_control_widget.py:419
+#: src/ui/sdr_control_widget.py:463
 msgid "AGC On"
 msgstr "AGC オン"
 
-#: src/ui/sdr_control_widget.py:421
+#: src/ui/sdr_control_widget.py:465
 msgid "AGC Off"
 msgstr "AGC オフ"
 
-#: src/ui/sdr_control_widget.py:430
+#: src/ui/sdr_control_widget.py:474
 msgid "▶ Start Audio"
 msgstr "▶ 音声開始"
 
-#: src/ui/sdr_control_widget.py:431
+#: src/ui/sdr_control_widget.py:475
 msgid "■ Stop Audio"
 msgstr "■ 音声停止"
 
-#: src/ui/sdr_control_widget.py:439
+#: src/ui/sdr_control_widget.py:483
 msgid "● REC Audio"
 msgstr "● 音声録音"
 
-#: src/ui/sdr_control_widget.py:443
+#: src/ui/sdr_control_widget.py:487
 msgid "lameenc not installed — pip install lameenc"
 msgstr "lameencがインストールされていません — pip install lameenc"
 
-#: src/ui/sdr_control_widget.py:444 src/ui/sdr_control_widget.py:486
+#: src/ui/sdr_control_widget.py:488 src/ui/sdr_control_widget.py:530
 msgid "■ STOP"
 msgstr "■ 停止"
 
-#: src/ui/sdr_control_widget.py:453 src/ui/sdr_control_widget.py:495
+#: src/ui/sdr_control_widget.py:497 src/ui/sdr_control_widget.py:539
 msgid "📁"
 msgstr "📁"
 
-#: src/ui/sdr_control_widget.py:454
+#: src/ui/sdr_control_widget.py:498
 msgid "Open audio recordings folder in file manager"
 msgstr "ファイルマネージャーで音声録音フォルダを開く"
 
-#: src/ui/sdr_control_widget.py:463
+#: src/ui/sdr_control_widget.py:507
 msgid "IQ Recorder"
 msgstr "IQレコーダー"
 
-#: src/ui/sdr_control_widget.py:467
+#: src/ui/sdr_control_widget.py:511
 msgid "Record BW:"
 msgstr "録音 BW:"
 
 # --- Menu: File ---
-#: src/ui/sdr_control_widget.py:477
+#: src/ui/sdr_control_widget.py:521
 msgid "File:"
 msgstr "ファイル:"
 
-#: src/ui/sdr_control_widget.py:484
+#: src/ui/sdr_control_widget.py:528
 msgid "● REC"
 msgstr "● 録音"
 
-#: src/ui/sdr_control_widget.py:496
+#: src/ui/sdr_control_widget.py:540
 msgid "Open IQ recordings folder in file manager"
 msgstr "ファイルマネージャーでIQ録音フォルダを開く"
 
@@ -2876,7 +2888,7 @@ msgstr "■ 停止"
 msgid "—"
 msgstr "—"
 
-#: src/ui/telemetry_tab.py:204 src/ui/telemetry_tab.py:749
+#: src/ui/telemetry_tab.py:204 src/ui/telemetry_tab.py:833
 msgid "Frames: 0 received"
 msgstr "フレーム: 0件受信"
 
@@ -2900,48 +2912,48 @@ msgstr "ログをクリア"
 msgid "Export CSV…"
 msgstr "CSVエクスポート…"
 
-#: src/ui/telemetry_tab.py:466
+#: src/ui/telemetry_tab.py:550
 msgid "⚠ No satellite selected"
 msgstr "⚠ 衛星が選択されていません"
 
-#: src/ui/telemetry_tab.py:503
+#: src/ui/telemetry_tab.py:587
 msgid "Connecting SDR…"
 msgstr "SDR接続中…"
 
-#: src/ui/telemetry_tab.py:510
+#: src/ui/telemetry_tab.py:594
 msgid "SDR connecting via Radio Control — press Start again once connected"
 msgstr ""
 "SDRはRadio Control経由で接続中です — 接続完了後、再度Startを押してください"
 
-#: src/ui/telemetry_tab.py:513
+#: src/ui/telemetry_tab.py:597
 msgid "⚠ No SDR configured in Rig Settings"
 msgstr "⚠ Rig SettingsでSDRが設定されていません"
 
-#: src/ui/telemetry_tab.py:673
+#: src/ui/telemetry_tab.py:757
 msgid "Frames: "
 msgstr "フレーム: "
 
-#: src/ui/telemetry_tab.py:673
+#: src/ui/telemetry_tab.py:757
 msgid " received"
 msgstr "件受信"
 
-#: src/ui/telemetry_tab.py:705
+#: src/ui/telemetry_tab.py:789
 msgid "Rig + Direwolf (receiving)"
 msgstr "無線機 + Direwolf（受信中）"
 
-#: src/ui/telemetry_tab.py:708
-msgid "SDR — Bell 202 AFSK (receive only)"
-msgstr "SDR — Bell 202 AFSK（受信のみ）"
+#: src/ui/telemetry_tab.py:792
+msgid "SDR — Direwolf (AX.25) (receive only)"
+msgstr "SDR — Direwolf (AX.25)（受信のみ）"
 
-#: src/ui/telemetry_tab.py:713
+#: src/ui/telemetry_tab.py:797
 msgid "SDR — Direwolf G3RUH (receive only)"
 msgstr "SDR — Direwolf G3RUH（受信のみ）"
 
-#: src/ui/telemetry_tab.py:716
+#: src/ui/telemetry_tab.py:800
 msgid "—  (connect Rig or SDR, then click ▶ Start)"
 msgstr "—  （無線機またはSDRを接続後、▶ Startをクリック）"
 
-#: src/ui/telemetry_tab.py:757
+#: src/ui/telemetry_tab.py:841
 msgid "Export Telemetry CSV"
 msgstr "テレメトリーCSVエクスポート"
 
@@ -3981,6 +3993,9 @@ msgstr "libft4wsjtが見つかりません"
 #: src/ui/ft4wsjt_dialog.py:289
 msgid "libft4wsjt found"
 msgstr "libft4wsjtが見つかりました"
+
+#~ msgid "SDR — Bell 202 AFSK (receive only)"
+#~ msgstr "SDR — Bell 202 AFSK（受信のみ）"
 
 #~ msgid "Satellite: —"
 #~ msgstr "衛星: —"
