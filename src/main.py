@@ -116,6 +116,26 @@ if sys.platform == "linux":
         if _HAMLIB_SITE not in sys.path:
             sys.path.insert(0, _HAMLIB_SITE)
 
+# End-user Linux AppImage: expose the system's apt/zypper-installed Python
+# packages (SoapySDR, its device modules, etc.) to the frozen interpreter.
+# PyInstaller's bootloader only puts the bundled _MEIPASS libraries on
+# sys.path — it does not automatically see the host's dist-packages/
+# site-packages, so "apt install python3-soapysdr" alone is not enough
+# (GitHub issue #11). Append (not insert) so bundled modules still win if a
+# name collides; only import-misses fall through to these paths. This is
+# independent of the /opt/hamlib block above, which is a developer-machine-
+# only concern and never applies to a packaged AppImage.
+if sys.platform == "linux" and getattr(sys, "frozen", False):
+    _pyver = f"{sys.version_info.major}.{sys.version_info.minor}"
+    for _sys_site in (
+        "/usr/lib/python3/dist-packages",  # Debian/Ubuntu
+        f"/usr/lib/python{_pyver}/dist-packages",
+        "/usr/lib/python3/site-packages",  # openSUSE/Fedora
+        f"/usr/lib/python{_pyver}/site-packages",
+    ):
+        if os.path.isdir(_sys_site) and _sys_site not in sys.path:
+            sys.path.append(_sys_site)
+
 # On Linux the AppImage does not bundle IBus/fcitx Qt IM plugins, so those
 # input methods intercept keystrokes before Qt widgets receive them.  Falling
 # back to XIM (the basic X11 input protocol) requires no extra plugins and

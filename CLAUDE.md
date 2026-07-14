@@ -3219,6 +3219,36 @@ SoapyPlutoSDR は conda-forge に存在しないため CI で MSVC ソースビ�
 | Ubuntu | `sudo apt install python3-soapysdr soapysdr-module-rtlsdr soapysdr-module-hackrf soapysdr-module-airspy` |
 | macOS | `brew install soapysdr soapyrtlsdr soapyhackrf soapyairspy` |
 
+#### Linux AppImage が apt/zypper インストール済みの SoapySDR を見つけられないバグ（2026-07-14 修正・GitHub Issue #11）
+
+**症状**: Debian/openSUSE等でHelp > SDR Device Installationの案内通り
+`python3-soapysdr`・`soapysdr-module-rtlsdr`等をaptでインストール済み（ターミナルから
+`import SoapySDR`が正常動作することも確認済み）でも、AppImage実行時は常に
+「SoapySDR not installed」と表示される。ログには
+`SoapySDR import failed: ModuleNotFoundError: No module named 'SoapySDR'`。
+
+**原因**: `src/main.py`には`/opt/hamlib/4.7`が存在する場合のみ発動する開発機専用の
+sys.path操作ブロックはあったが、**一般ユーザーのAppImage実行環境向けに
+システムの`dist-packages`/`site-packages`をsys.pathへ追加する仕組みが存在しなかった**。
+PyInstallerでフリーズされたAppImageのデフォルトsys.pathはバンドル済みモジュール
+（`_MEIPASS`）のみで構成され、ホストの`/usr/lib/python3/dist-packages`等は
+自動的には含まれない。AppImageの起動スクリプト（`scripts/build-appimage.sh`が
+生成するAppRun）も`LD_LIBRARY_PATH`のみ設定しており、Python側のパスには一切関与しない。
+Linux/macOSでSoapySDR自体を意図的にCIバンドルしない設計（本セクション冒頭参照）は
+「システムパッケージ経由で見つかる」ことを前提にしていたが、その前提を実際に成立させる
+コードが欠けていた。
+
+**修正**: `src/main.py`に、`sys.platform == "linux" and getattr(sys, "frozen", False)`
+（AppImage実行時のみ・既存の`/opt/hamlib`ブロックとは完全に独立）で発動する新しいブロックを
+追加。以下を`sys.path`の**末尾に**追加する（バンドル済みモジュールを優先させ、importの
+失敗時のみシステム側にフォールバックさせるため`insert(0, ...)`ではなく`append(...)`）:
+- `/usr/lib/python3/dist-packages`・`/usr/lib/python{3.X}/dist-packages`（Debian/Ubuntu系）
+- `/usr/lib/python3/site-packages`・`/usr/lib/python{3.X}/site-packages`（openSUSE/Fedora系）
+
+**既知の限界**: この方式はAppImageが束ねるPythonバージョン（CI固定で3.11）とユーザーの
+システムPythonバージョンが一致している場合のみ有効（拡張モジュールはABI互換性が必要）。
+Debian 12・Ubuntu 22.04/24.04等は標準で3.11系のため通常問題にならない想定。
+
 ---
 
 #### PlutoSDR（ADALM-Pluto）Windows バンドル実装メモ（v0.1.5 で実装・CI 緑確認済み）
