@@ -73,6 +73,9 @@ packaging = [
     "scipy>=1.12",
     "sounddevice>=0.4",
     "lameenc>=1.7",
+    # CW Decoder ML runtime — bundled directly (see cw_model_dialog.py; frozen
+    # builds cannot pip-install at runtime, sys.executable points at the app itself)
+    "onnxruntime>=1.17",
 ]
 # Windows/macOS desktop notifications (optional; Linux uses notify-send)
 notifications = [

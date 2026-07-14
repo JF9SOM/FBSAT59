@@ -122,7 +122,7 @@ extra_datas: list[tuple[str, str]] = []
 extra_binaries: list[tuple[str, str]] = []
 extra_hidden: list[str] = []
 
-for _pkg in ("scipy", "sounddevice", "lameenc"):
+for _pkg in ("scipy", "sounddevice", "lameenc", "onnxruntime"):
     try:
         _d, _b, _h = collect_all(_pkg)
         extra_datas += _d

@@ -55,6 +55,18 @@ class _InstallWorker(QThread):
 
         # Step 1: install onnxruntime if missing
         if not is_onnxruntime_available():
+            if getattr(sys, "frozen", False):
+                # Packaged (PyInstaller) builds bundle onnxruntime directly;
+                # sys.executable here is FBSAT59 itself, not a Python
+                # interpreter, so "sys.executable -m pip install ..." would
+                # just relaunch the app instead of installing anything.
+                self.finished_err.emit(
+                    _(
+                        "onnxruntime is missing from this build. This should not "
+                        "happen — please reinstall or update FBSAT59."
+                    )
+                )
+                return
             self.status.emit(_("Installing onnxruntime…"))
             try:
                 import subprocess
