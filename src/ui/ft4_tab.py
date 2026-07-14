@@ -48,6 +48,7 @@ from comms.ft4.codec import (
     SAMPLE_RATE,
     Ft4Codec,
     Ft4Message,
+    get_user_ft8lib_dir,
 )
 from comms.ft4.decode_log import get_ft4_decode_logger
 from comms.ft4.qso import Ft4QsoManager, QsoState
@@ -618,12 +619,13 @@ class Ft4Tab(QWidget):
 
     def _refresh_codec_status(self) -> None:
         if not self._codec.is_available:
+            lib_dir = _(
+                "Use Help > ft8lib Installation… (Recommended), or build "
+                "ft8_lib (github.com/kgoba/ft8_lib) manually and place the "
+                "shared library in {dir}"
+            ).format(dir=get_user_ft8lib_dir())
             self._codec_banner.setText(
-                _(
-                    "ft8lib is not installed — FT4 TX/RX is disabled.\n"
-                    "Build ft8_lib (github.com/kgoba/ft8_lib) and place "
-                    "the shared library in ~/.local/share/fbsat59/ft8lib/"
-                )
+                _("ft8lib is not installed — FT4 TX/RX is disabled.\n") + lib_dir
             )
             self._codec_banner.setStyleSheet("background:#e74c3c;color:white;padding:4px;")
             self._codec_banner.setVisible(True)
