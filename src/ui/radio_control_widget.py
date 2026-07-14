@@ -53,17 +53,6 @@ from rig.controller import (
 _XPDR_INACTIVE_BG = QColor("#b8860b")  # dark goldenrod — SATNOGS status=inactive
 _XPDR_INVALID_BG = QColor("#8b0000")  # dark red — SATNOGS status=invalid
 
-# Rig Tune step options (label, Hz) — same values as SDR Control's Passband
-# Tune (ui/sdr_control_widget.py's _TUNE_STEPS) for a consistent feel between
-# the two tune controls.
-_RIG_TUNE_STEPS: list[tuple[str, int]] = [
-    ("100 Hz", 100),
-    ("500 Hz", 500),
-    ("1 kHz", 1_000),
-    ("5 kHz", 5_000),
-    ("10 kHz", 10_000),
-]
-
 logger = logging.getLogger(__name__)
 
 
@@ -82,10 +71,6 @@ class RadioControlWidget(QWidget):
     cycle_changed: Signal = Signal(int)  # ms
     tune_requested: Signal = Signal()
     lock_changed: Signal = Signal(bool)
-    # Emitted when the Tune control is used (GitHub issue #14). Value is the
-    # cumulative offset in Hz from the Doppler-corrected centre — same idea
-    # as SdrControlWidget.tune_offset_changed but for plain CAT rigs.
-    rig_tune_offset_changed: Signal = Signal(float)
     rig_connected: Signal = Signal()
     rig_disconnected: Signal = Signal()
     rig2_connected: Signal = Signal()
@@ -120,8 +105,6 @@ class RadioControlWidget(QWidget):
         self._orig_ul_mode: str = ""
         self._cw_dl_mode: str = ""
         self._cw_ul_mode: str = ""
-        # Rig Tune cumulative offset (GitHub issue #14)
-        self._rig_tune_offset_hz: float = 0.0
         self._setup_ui()
         self._rig1_connect_done.connect(self._finish_rig1_connect)
 
@@ -216,53 +199,6 @@ class RadioControlWidget(QWidget):
         ul_row.addWidget(self._uplink_doppler_label)
         ul_row.addStretch()
         freq_form.addRow(_("Uplink:"), ul_row)
-
-        # Rig Tune (GitHub issue #14): shifts DL/UL within the transponder
-        # passband for plain CAT rigs, the same way SDR Control's Passband
-        # Tune already does for SDR setups. Only takes effect (in
-        # MainWindow._doppler_cycle()) when no SDR is assigned to either rig
-        # slot — with an SDR assigned, use SDR Control's Passband Tune instead.
-        tune_row = QHBoxLayout()
-        tune_row.setSpacing(3)
-        self._tune_step_combo = QComboBox()
-        for label, _hz in _RIG_TUNE_STEPS:
-            self._tune_step_combo.addItem(label)
-        self._tune_step_combo.setCurrentIndex(2)  # 1 kHz default
-        self._tune_step_combo.setFixedWidth(70)
-        tune_row.addWidget(self._tune_step_combo)
-        btn_tune_dd = QPushButton("◀◀")
-        btn_tune_dd.setFixedWidth(32)
-        btn_tune_dd.setToolTip(_("Tune down ×10 step"))
-        btn_tune_dd.clicked.connect(lambda: self._apply_rig_tune(-10))
-        tune_row.addWidget(btn_tune_dd)
-        btn_tune_d = QPushButton("◀")
-        btn_tune_d.setFixedWidth(26)
-        btn_tune_d.setToolTip(_("Tune down"))
-        btn_tune_d.clicked.connect(lambda: self._apply_rig_tune(-1))
-        tune_row.addWidget(btn_tune_d)
-        self._rig_tune_offset_label = QLabel("0.000 kHz")
-        self._rig_tune_offset_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._rig_tune_offset_label.setStyleSheet(
-            "font-family: monospace; font-weight: bold; min-width: 80px;"
-        )
-        tune_row.addWidget(self._rig_tune_offset_label)
-        btn_tune_u = QPushButton("▶")
-        btn_tune_u.setFixedWidth(26)
-        btn_tune_u.setToolTip(_("Tune up"))
-        btn_tune_u.clicked.connect(lambda: self._apply_rig_tune(+1))
-        tune_row.addWidget(btn_tune_u)
-        btn_tune_uu = QPushButton("▶▶")
-        btn_tune_uu.setFixedWidth(32)
-        btn_tune_uu.setToolTip(_("Tune up ×10 step"))
-        btn_tune_uu.clicked.connect(lambda: self._apply_rig_tune(+10))
-        tune_row.addWidget(btn_tune_uu)
-        btn_tune_rst = QPushButton(_("Reset"))
-        btn_tune_rst.setFixedWidth(52)
-        btn_tune_rst.setToolTip(_("Return to Doppler-corrected centre frequency"))
-        btn_tune_rst.clicked.connect(self.reset_tune_offset)
-        tune_row.addWidget(btn_tune_rst)
-        tune_row.addStretch()
-        freq_form.addRow(_("Tune:"), tune_row)
 
         # Mode + CTCSS on one row
         mode_ctcss_row = QWidget()
@@ -539,23 +475,6 @@ class RadioControlWidget(QWidget):
         self._cycle_spin.blockSignals(True)
         self._cycle_spin.setValue(max(10, min(10000, ms)))
         self._cycle_spin.blockSignals(False)
-
-    def _apply_rig_tune(self, multiplier: int) -> None:
-        """Shift the Rig Tune offset by multiplier × current step size (issue #14)."""
-        idx = self._tune_step_combo.currentIndex()
-        step_hz = _RIG_TUNE_STEPS[idx][1] if 0 <= idx < len(_RIG_TUNE_STEPS) else 1_000
-        self._rig_tune_offset_hz += multiplier * step_hz
-        khz = self._rig_tune_offset_hz / 1000.0
-        sign = "+" if khz >= 0 else ""
-        self._rig_tune_offset_label.setText(f"{sign}{khz:.3f} kHz")
-        self.rig_tune_offset_changed.emit(self._rig_tune_offset_hz)
-
-    def reset_tune_offset(self) -> None:
-        """Reset the Rig Tune offset to zero (called on transponder change or Reset)."""
-        self._rig_tune_offset_hz = 0.0
-        if hasattr(self, "_rig_tune_offset_label"):
-            self._rig_tune_offset_label.setText("0.000 kHz")
-        self.rig_tune_offset_changed.emit(0.0)
 
     def refresh_status(self) -> None:
         """Update all connection status displays (called by timer)."""
