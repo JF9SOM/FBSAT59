@@ -8,6 +8,7 @@ connect/disconnect buttons and status rows.
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import sys
 import threading
@@ -51,6 +52,8 @@ from rig.controller import (
 # and the FT4 own-call highlight's plain Qt.GlobalColor.yellow).
 _XPDR_INACTIVE_BG = QColor("#b8860b")  # dark goldenrod — SATNOGS status=inactive
 _XPDR_INVALID_BG = QColor("#8b0000")  # dark red — SATNOGS status=invalid
+
+logger = logging.getLogger(__name__)
 
 
 class RadioControlWidget(QWidget):
@@ -701,14 +704,29 @@ class RadioControlWidget(QWidget):
         return True
 
     def _on_connect_rig1(self) -> None:
+        # TEMP diagnostic logging for GitHub issue #10 (RTL-SDR Blog V4 on
+        # Windows: Connect appears to do nothing, no [RTL-SDR direct] log
+        # ever appears). Remove once the root cause is confirmed from a
+        # user's log.
+        logger.info(
+            "[RigConnect diag] _on_connect_rig1 clicked: rig1=%s is_sdr=%s is_connected=%s",
+            type(self._rig1).__name__ if self._rig1 is not None else None,
+            getattr(self._rig1, "is_sdr", False),
+            self._rig1.is_connected if self._rig1 is not None else None,
+        )
         if self._rig1 is None:
+            logger.info("[RigConnect diag] _on_connect_rig1: rig1 is None, returning")
             return
         if self._rig1.is_connected:
+            logger.info("[RigConnect diag] _on_connect_rig1: already connected, disconnecting")
             self._rig1.disconnect()
             self.rig_disconnected.emit()
             self._update_rig1_status()
             return
         if not self._warn_rigctld_if_direct(self._rig1):
+            logger.info(
+                "[RigConnect diag] _on_connect_rig1: _warn_rigctld_if_direct blocked connect"
+            )
             return
         # Disable button immediately to prevent queued double-clicks during connect.
         # Direct-mode rigs (IC-9100 etc.) can block for several seconds on _port_lock
@@ -720,9 +738,17 @@ class RadioControlWidget(QWidget):
         rig = self._rig1
 
         def _do() -> None:
-            rig.connect()
+            logger.info("[RigConnect diag] connect thread started, calling rig.connect()")
+            try:
+                rig.connect()
+            except Exception:
+                logger.exception("[RigConnect diag] rig.connect() raised")
+            logger.info(
+                "[RigConnect diag] rig.connect() returned, is_connected=%s", rig.is_connected
+            )
             self._rig1_connect_done.emit(rig.is_connected)
 
+        logger.info("[RigConnect diag] starting connect thread")
         threading.Thread(target=_do, daemon=True).start()
 
     def _finish_rig1_connect(self, success: bool) -> None:

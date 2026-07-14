@@ -2115,6 +2115,35 @@ rr = obs.range_rate_km_s * (2.0 if self._selected_norad == MOON_ID else 1.0)
 
 ## 既知のバグ（未修正）
 
+### Windows — RTL-SDR Blog V4 でConnectを押してもrtlsdr_open()が呼ばれない（GitHub Issue #10・調査中）
+
+**症状**: Windows 11、RTL-SDR Blog V4。SDR Device Installation・SDR Settingsではデバイスが
+正しく検出される（`[RTL-SDR diag]`・`[RTL-SDR enum] rtlsdr_get_device_count() = 1`が
+ログに出る）。しかしRadio ControlでRig 1にSDRを割り当てConnectを押しても、SDR Controlは
+常にDisconnectedのままでスペクトラムも表示されない。
+
+**ログ調査で判明した事実（2026-07-14）**: 報告者から提出された`fbsat59.log`（複数セッション・
+5000行超）を精査した結果、`SdrRigAdapter.connect()`（[controller.py:3364](src/rig/controller.py:3364)）
+が実行されると必ず出るはずの`logger.info("SdrRigAdapter.connect: ...")`が**一度も出現しない**
+ことを確認した。つまりConnectボタンを押しても`SdrRigAdapter.connect()`自体が呼ばれていない。
+
+`_on_connect_rig1()`（[radio_control_widget.py](src/ui/radio_control_widget.py)）から
+`rig.connect()`までのコードを静的に読んだ限りでは論理的な欠陥は見当たらず（`self._rig1`の
+セット・ボタン有効化・`_warn_rigctld_if_direct()`のSDR除外判定はいずれも正しい）、
+「クリックハンドラ自体が呼ばれていない」のか「`self._rig1`が実は`None`だった」のか
+「バックグラウンドスレッド内で例外が発生し、コンソールなしのWindows GUIアプリでは
+標準エラー出力が失われて痕跡が残らなかった」のか、既存のログだけでは区別できなかった。
+
+**現状の対処（診断ログ追加のみ・根本修正はまだ）**: `_on_connect_rig1()`に一時的な診断ログ
+（`[RigConnect diag]`タグ）を追加済み。クリック受理時の`self._rig1`の型・`is_sdr`・
+`is_connected`状態、各早期returnパス、スレッド開始、`rig.connect()`呼び出し前後
+（例外が起きた場合は`logger.exception()`で必ず記録されるようtry/exceptで包んだ）を記録する。
+報告者から次のログを受け取り次第、どこで処理が止まっているかを特定し、根本修正を行う。
+
+**関連ファイル**: `src/ui/radio_control_widget.py`の`_on_connect_rig1()`（診断ログ、次回対応時に削除予定）
+
+---
+
 ### AppImage — テキストフィールドにキー入力ができない（Linux 非Ubuntu系）
 
 **症状**: Linux AppImage 版で、CI-Vアドレス・ポート名・テキスト入力フィールドにキーボードで文字が入力できない。マウス操作は正常。
