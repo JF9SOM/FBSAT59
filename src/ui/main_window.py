@@ -547,6 +547,13 @@ class MainWindow(QMainWindow):
         # Passband tune offset applied to SDR (Rig 2) DL, and mirrored to
         # Rig 1 UL when Lock is active (sign reversed for inverted transponders).
         self._sdr_tune_offset: float = 0.0
+        # Rig Tune offset (GitHub issue #14): same idea as _sdr_tune_offset, but
+        # for plain CAT rigs when no SDR is assigned to either slot — lets a
+        # single-rig, no-SDR setup shift DL/UL within the transponder passband
+        # instead of always being pinned to the Doppler-corrected centre.
+        # Applied directly to each connected non-SDR rig's own DL (and its own
+        # UL when Lock is active), independent of _sdr_tune_offset.
+        self._rig_tune_offset_hz: float = 0.0
         # L button: when True, uplink is slaved to downlink.
         self._trsp_lock: bool = False
         # Override for CTCSS label: set when a button is pressed, reset on transponder change.
@@ -618,6 +625,7 @@ class MainWindow(QMainWindow):
         self._radio_control.cycle_changed.connect(self._on_cycle_changed)
         self._radio_control.tune_requested.connect(self._on_tune_requested)
         self._radio_control.lock_changed.connect(self._on_lock_changed)
+        self._radio_control.rig_tune_offset_changed.connect(self._on_rig_tune_offset)
         self._rot_pos_updated.connect(self._on_rotator_pos_updated)
         self._radio_control.ctcss_send_requested.connect(self._on_ctcss_send)
         self._radio_control.ctcss_activate_requested.connect(self._on_ctcss_activate)
@@ -2604,12 +2612,36 @@ class MainWindow(QMainWindow):
             and getattr(self._rig2_controller, "is_sdr", False)
             and self._rig2_controller.is_connected
         )
-        # DL for Rig 1: add tune offset when SDR is Rig 1
-        dl_rig1 = (dl_corr + tune) if (dl_corr is not None and sdr_is_rig1) else dl_corr
-        # UL for Rig 1: mirror tune offset when SDR is Rig 2 and Lock is ON
+        any_sdr = sdr_is_rig1 or sdr_is_rig2
+        rig1_connected = self._rig_controller is not None and self._rig_controller.is_connected
+        rig2_connected = self._rig2_controller is not None and self._rig2_controller.is_connected
+        # Rig Tune offset (GitHub issue #14): when no SDR is assigned to
+        # either slot, the Radio Control tab's own Tune control lets a plain
+        # CAT-rig setup shift DL/UL within the transponder passband the same
+        # way Passband Tune already does for SDR setups. Independent of
+        # _sdr_tune_offset/tune above — the two never apply to the same rig
+        # in the same cycle, since any_sdr gates which one is active.
+        rig_tune = self._rig_tune_offset_hz
+
+        # DL for Rig 1: add tune offset when SDR is Rig 1; else add the Rig
+        # Tune offset when Rig 1 is a connected non-SDR rig and no SDR is
+        # assigned anywhere.
+        dl_rig1: float | None
+        if dl_corr is not None and sdr_is_rig1:
+            dl_rig1 = dl_corr + tune
+        elif dl_corr is not None and not any_sdr and rig1_connected:
+            dl_rig1 = dl_corr + rig_tune
+        else:
+            dl_rig1 = dl_corr
+        # UL for Rig 1: mirror tune offset when SDR is Rig 2 and Lock is ON;
+        # else mirror the Rig Tune offset within Rig 1 itself when no SDR is
+        # assigned anywhere and Lock is ON.
         ul_rig1 = ul_corr
-        if sdr_is_rig2 and self._trsp_lock and tune != 0.0 and ul_rig1 is not None:
-            ul_rig1 = ul_rig1 + (-tune if invert else tune)
+        if self._trsp_lock and ul_rig1 is not None:
+            if sdr_is_rig2 and tune != 0.0:
+                ul_rig1 = ul_rig1 + (-tune if invert else tune)
+            elif not any_sdr and rig1_connected and rig_tune != 0.0:
+                ul_rig1 = ul_rig1 + (-rig_tune if invert else rig_tune)
 
         if self._rig_controller is not None and self._rig_controller.is_connected:
             if self._rig_busy_lock.acquire(blocking=False):
@@ -2636,12 +2668,24 @@ class MainWindow(QMainWindow):
         if self._rig2_controller is not None and self._rig2_controller.is_connected:
             if self._rig2_busy_lock.acquire(blocking=False):
                 rig2 = self._rig2_controller
-                # DL for Rig 2: add tune offset when SDR is Rig 2
-                dl2 = (dl_corr + tune) if (dl_corr is not None and sdr_is_rig2) else dl_corr
-                # UL for Rig 2: mirror tune offset when SDR is Rig 1 and Lock is ON
+                # DL for Rig 2: add tune offset when SDR is Rig 2; else add the
+                # Rig Tune offset when Rig 2 is a connected non-SDR rig and no
+                # SDR is assigned anywhere (GitHub issue #14).
+                dl2: float | None
+                if dl_corr is not None and sdr_is_rig2:
+                    dl2 = dl_corr + tune
+                elif dl_corr is not None and not any_sdr and rig2_connected:
+                    dl2 = dl_corr + rig_tune
+                else:
+                    dl2 = dl_corr
+                # UL for Rig 2: mirror tune offset when SDR is Rig 1 and Lock is
+                # ON; else mirror the Rig Tune offset within Rig 2 itself.
                 ul2 = ul_corr
-                if sdr_is_rig1 and self._trsp_lock and tune != 0.0 and ul2 is not None:
-                    ul2 = ul2 + (-tune if invert else tune)
+                if self._trsp_lock and ul2 is not None:
+                    if sdr_is_rig1 and tune != 0.0:
+                        ul2 = ul2 + (-tune if invert else tune)
+                    elif not any_sdr and rig2_connected and rig_tune != 0.0:
+                        ul2 = ul2 + (-rig_tune if invert else rig_tune)
 
                 def _rig2_send() -> None:
                     try:
@@ -3200,6 +3244,8 @@ class MainWindow(QMainWindow):
             self._sdr_control.set_transponder_mode(satnogs_mode)
         self._sdr_tune_offset = 0.0
         self._sdr_control.reset_tune_offset()
+        self._rig_tune_offset_hz = 0.0
+        self._radio_control.reset_tune_offset()
 
     def _disconnect_rig(self) -> None:
         """Disconnect the rig and refresh the UI status."""
@@ -4223,6 +4269,11 @@ class MainWindow(QMainWindow):
     def _on_sdr_tune_offset(self, offset_hz: float) -> None:
         """Store the passband tune offset emitted by SdrControlWidget."""
         self._sdr_tune_offset = offset_hz
+
+    @Slot(float)
+    def _on_rig_tune_offset(self, offset_hz: float) -> None:
+        """Store the Rig Tune offset emitted by RadioControlWidget (issue #14)."""
+        self._rig_tune_offset_hz = offset_hz
 
     def _on_cw_mode_requested(self, dl_mode: str, ul_mode: str) -> None:
         """Apply CW (or original) mode to both VFOs in a background thread.
