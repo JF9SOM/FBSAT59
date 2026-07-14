@@ -254,6 +254,35 @@ class SdrInstallDialog(QDialog):
         pluto_v.addWidget(pluto_note)
         layout.addWidget(pluto_grp)
 
+        # -- Remote SDR (SoapyRemote) note --
+        remote_grp = QGroupBox(_("Note for Remote SDR Users"))
+        remote_v = QVBoxLayout(remote_grp)
+        remote_note = QLabel(
+            _(
+                "An SDR on another machine (e.g. a receiver in a separate location) can be "
+                "used via SoapyRemote. Windows already bundles the client module; Linux and "
+                "macOS users install it themselves like other SoapySDR modules.\n\n"
+                "On the machine the SDR is physically connected to:\n"
+                "  1. Install that SDR's own SoapySDR module as usual (e.g. "
+                "soapysdr-module-rtlsdr).\n"
+                "  2. Install and run the server:\n"
+                "       Linux: sudo apt install soapyremote-server && SoapySDRServer\n"
+                "       (see https://github.com/pothosware/SoapyRemote/wiki for other "
+                "platforms)\n\n"
+                "On this machine (the client):\n"
+                "  Linux: sudo apt install soapysdr-module-remote\n"
+                "  macOS: brew install soapyremote\n"
+                "  Windows: bundled — nothing to install\n\n"
+                "Devices on the same LAN as the server are often auto-discovered. If the "
+                "server is on a different network (e.g. reachable only via VPN), use "
+                "'Add Remote Host…' in Rig Settings > SDR Settings to enter its address "
+                "directly."
+            )
+        )
+        remote_note.setWordWrap(True)
+        remote_v.addWidget(remote_note)
+        layout.addWidget(remote_grp)
+
         # -- Rescan + close --
         btn_row = QHBoxLayout()
         self._rescan_btn = QPushButton(_("🔍 Rescan Devices"))

@@ -3524,6 +3524,98 @@ sdr = [
 # SoapySDR はシステムパッケージ経由のため pip dependencies に含めない
 ```
 
+### Remote SDR（SoapyRemote）対応（2026-07-14 実装・GitHub Issue #12）
+
+#### 背景
+
+ユーザーから「アンテナ設備は別棟（裏庭の小屋等）にあり、そこに置いたSDRをネットワーク経由で
+使いたい」という要望（[Issue #12](https://github.com/JF9SOM/FBSAT59/issues/12)）があった。
+SoapySDR公式の`SoapyRemote`モジュールがまさにこの用途向けに存在し、クライアント側は普通の
+SoapySDRモジュールとして振る舞うため、既存の`SdrDevice`アーキテクチャにそのまま乗せられる。
+
+#### なぜWindowsのRTL-SDR/HackRF ctypesバイパスと無関係なのか
+
+WindowsでRTL-SDR/HackRFだけ`SoapySDR::Device::make()`を経由せずctypes直接呼び出しに
+バイパスしている理由は、SoapySDRの列挙・オープン処理が`libusb_init()`等を複数回呼ぶことで
+**WinUSBの内部ハンドルキャッシュが破損する**という、ローカルUSBデバイスアクセス特有の問題
+（詳細は「SDR 機能（v0.1.0 時点で実装済み）」セクション参照）。
+
+SoapyRemoteのクライアント側はUSB/libusbを一切呼ばない純粋なTCP/IPネットワーククライアント
+（実際にUSBを触るのは物理的にSDRが繋がっているリモート側のマシンだけ）であり、この問題の
+対象外。`SdrDevice.open()`（[device.py](src/sdr/device.py)）は`driver=="rtlsdr"`/`"hackrf"`
+の場合だけ明示的にctypesバイパス分岐に入り、それ以外（Airspy・AirspyHF・そして`remote`も
+該当）は汎用の`SoapySDR.Device(args)`パスを通る。Airspy/AirspyHFはこの汎用パスでWindows実績
+があるため、`remote`も同じ土俵に乗ると考えられる（実機・実際のリモートSoapySDRServerでの
+動作確認は次回のパス待ち）。
+
+#### デバイス文字列の仕様（SoapyRemote公式wiki確認済み）
+
+```
+driver=remote, remote=<host>[:port], remote:driver=<実機ドライバ名 例:rtlsdr>
+```
+
+同一LAN内であればUDPブロードキャストで自動検出され`SoapySDR.Device.enumerate()`結果に
+`driver="remote"`として現れる。従来`_NON_SDR_DRIVERS`（[device.py](src/sdr/device.py)）が
+これを除外していたため、実際には動く状態でも一覧に出てこなかった。除外リストから`"remote"`
+を削除済み（`audio`/`null`/`mircsdr`は引き続き除外）。
+
+#### 手動ホスト指定（LANブロードキャストが届かない場合）
+
+VPN経由・ルーティングを跨ぐ構成等、自動検出が機能しない環境向けに、Rig Settings > SDR
+Settingsに **「Add Remote Host…」** ボタンを追加（[rig_dialog.py](src/ui/rig_dialog.py)の
+`_AddRemoteHostDialog`）。Host・Port（デフォルト55132）・任意のRemoteドライバー名ヒント・
+任意の表示名を入力すると、上記デバイス文字列を組み立てて`SdrDeviceInfo(driver="remote", ...)`
+としてデバイスコンボに追加する。
+
+**永続化**: 新規テーブルは作らず、既存の`sdr_settings`（`app_settings`テーブルの単一JSON
+キー）に`remote_hosts`フィールドを追加する形で保存する（`_SdrSettingsPanel.save()`/`load()`）。
+これにより`RigSettingsDialog`側の読み書きプラミング（`self._conn`経由のapp_settings
+読み書き）を一切変更せずに済んだ。
+
+**実際の接続時の扱い**: `MainWindow._build_sdr_rig_adapter()`（main_window.py）は元々
+`sdr_settings['device_args']`という生のSoapySDR argsディクショナリだけを見て
+`SdrDeviceInfo`を再構築しており、コンボのインデックスや列挙結果には一切依存していない。
+そのため「Add Remote Host…」で追加したエントリも、選択して保存すれば以降の起動時に
+再列挙・再検出なしでそのまま接続対象になる（手動追加データが自動検出に優先する、という
+本プロジェクト全体の設計方針——手動登録トランスミッタ・手動TLE等——と同型のパターン）。
+
+**Remove**: 選択中のデバイスが「Add Remote Host…」で追加した保存済みエントリの場合のみ
+「Remove」ボタンが有効になる（実ハードウェアやLANブロードキャストで自動検出された`remote`
+エントリでは無効のまま。ローカルの保存リストから消す対象ではないため）。
+
+#### パッケージ配布状況（全プラットフォーム調査済み）
+
+| OS | パッケージ | 対応方法 |
+|---|---|---|
+| Linux | `soapysdr-module-remote`（apt） | ユーザーが自分でシステムインストール（rtlsdr/hackrf等の既存モジュールと同じ扱い。CIバンドル対象外——LinuxのAppImageはSoapySDR自体をCIでバンドルしていない） |
+| macOS | `soapyremote`（Homebrew） | 同上（macOSもCIでSoapySDRをバンドルしていない） |
+| Windows | `soapysdr-module-remote`（conda-forge, win-64, v0.5.2） | **CIでバンドル**（Windowsのみ`scripts/extract_soapy_conda.py`経由でconda-forgeパッケージを抽出する既存方式を踏襲） |
+
+サーバー側（実際にSDRが繋がっているマシン）のセットアップはFBSAT59の管轄外（ユーザー自身が
+`SoapySDRServer`を起動する）。Help > SDR Device Installationダイアログに「Note for Remote
+SDR Users」として案内文を追加済み（[sdr_install_dialog.py](src/ui/sdr_install_dialog.py)）。
+
+#### Windows CIバンドルの詳細（依存関係調査済み・低リスク確認済み）
+
+`soapysdr-module-remote-0.5.2-h23704b7_2.tar.bz2`の`info/index.json`を実際にダウンロードして
+`depends`フィールドを確認したところ:
+```
+soapysdr >=0.8.0,<0.9.0a0
+vc >=14.1,<15.0a0
+vs2015_runtime >=14.16.27012
+```
+**Boostへの動的リンク依存なし**（静的リンク済みと推定）。`vc`/`vs2015_runtime`は他の
+conda-forgeパッケージ（既存のsoapysdr本体等）も要求する標準MSVC再頒布ランタイムで、
+GitHub Actions Windowsランナーには元々インストール済み。ビルドタグ`h23704b7`は既存の
+`soapysdr-module-hackrf-0.3.4-h23704b7_0`・`soapysdr-module-airspy-0.2.0-h23704b7_0`と同じで、
+現在ピン留めしているSoapySDR本体（`soapysdr-0.8.1-py311haef1a59_6.conda`）と同一ABI世代
+であることも確認済み。パッケージ内容は単一ファイル
+`Library/lib/SoapySDR/modules0.8/remoteSupport.dll`のみで、`extract_soapy_conda.py`の
+既存の汎用ロジック（`"modules" in name`のDLLを`soapy-win64/modules/`へ）がそのまま対応する
+（rtlsdrSupport.dllのような特別スキップ処理は不要）。以上の理由から、過去にPlutoSDR追加時に
+遭遇したようなCI不安定化のリスクは低いと判断したが、実際のビルド成否は`workflow_dispatch`
+での確認が必要。
+
 ---
 
 ## Communications 機能設計方針（2026-06-12 確定・v0.2.0 基本実装済み）

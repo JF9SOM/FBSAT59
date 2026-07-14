@@ -88,10 +88,15 @@ class SdrDeviceInfo:
         return self.label
 
 
-# SoapySDR drivers that expose non-hardware devices (audio cards, test sinks,
-# network proxies).  These are excluded from the Rig Settings SDR device list
-# so users only see real RF receivers (RTL-SDR, HackRF, AirSpy, etc.).
-_NON_SDR_DRIVERS: frozenset[str] = frozenset({"audio", "null", "remote", "mircsdr"})
+# SoapySDR drivers that expose non-hardware devices (audio cards, test sinks).
+# These are excluded from the Rig Settings SDR device list so users only see
+# real RF receivers (RTL-SDR, HackRF, AirSpy, etc.).
+#
+# "remote" (SoapyRemote) is intentionally NOT excluded: it proxies a real RF
+# receiver over the network (see "Add Remote Host..." in SDR Settings), and
+# devices auto-discovered via SoapyRemote's LAN broadcast should show up like
+# any other hardware device.
+_NON_SDR_DRIVERS: frozenset[str] = frozenset({"audio", "null", "mircsdr"})
 
 # Global lock: SoapySDR C++ layer is not re-entrant on Windows.
 # All enumerate() and Device() calls must be serialised to prevent segfaults

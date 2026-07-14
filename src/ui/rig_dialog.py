@@ -24,14 +24,10 @@ import shutil
 import subprocess
 import sys
 import time
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
-
-if TYPE_CHECKING:
-    from sdr.device import SdrDeviceInfo
-
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QColor, QHideEvent, QPalette, QShowEvent
 from PySide6.QtWidgets import (
@@ -57,6 +53,7 @@ from PySide6.QtWidgets import (
 from i18n import _
 from rig.controller import CTCSS_PRESET_TEMPLATES
 from sdr import SOAPY_AVAILABLE
+from sdr.device import SdrDeviceInfo
 
 # ---------------------------------------------------------------------------
 # Hamlib Python binding (imported lazily to avoid Qt TLS collision at startup)
@@ -878,6 +875,72 @@ class _RigPanel(QWidget):
         return s
 
 
+class _AddRemoteHostDialog(QDialog):
+    """Dialog for connecting to a SoapyRemote server ("Add Remote Host…").
+
+    Lets the user manually specify a SoapySDRServer host/port when LAN
+    broadcast auto-discovery doesn't reach it (e.g. a receiver on a separate
+    network segment or reachable only over VPN).
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(_("Add Remote Host"))
+        layout = QVBoxLayout(self)
+
+        form = QFormLayout()
+        self._host_edit = QLineEdit()
+        self._host_edit.setPlaceholderText(_("e.g. 192.168.1.50 or shed.local"))
+        form.addRow(_("Host:"), self._host_edit)
+
+        self._port_spin = QSpinBox()
+        self._port_spin.setRange(1, 65535)
+        self._port_spin.setValue(55132)  # SoapySDRServer default
+        form.addRow(_("Port:"), self._port_spin)
+
+        self._driver_edit = QLineEdit()
+        self._driver_edit.setPlaceholderText(_("optional, e.g. rtlsdr — auto-detect if blank"))
+        form.addRow(_("Remote driver:"), self._driver_edit)
+
+        self._label_edit = QLineEdit()
+        self._label_edit.setPlaceholderText(_("optional display name"))
+        form.addRow(_("Label:"), self._label_edit)
+
+        layout.addLayout(form)
+
+        info = QLabel(
+            _(
+                "The remote machine must be running SoapySDRServer (SoapyRemote)\n"
+                "with the SDR's own SoapySDR module installed."
+            )
+        )
+        info.setWordWrap(True)
+        info.setStyleSheet("color: gray;")
+        layout.addWidget(info)
+
+        bb = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        bb.accepted.connect(self._on_accept)
+        bb.rejected.connect(self.reject)
+        layout.addWidget(bb)
+
+    def _on_accept(self) -> None:
+        if not self._host_edit.text().strip():
+            self._host_edit.setFocus()
+            return
+        self.accept()
+
+    def result_entry(self) -> dict[str, str]:
+        """Return the entered host as a plain dict suitable for persistence."""
+        return {
+            "host": self._host_edit.text().strip(),
+            "port": str(self._port_spin.value()),
+            "driver_hint": self._driver_edit.text().strip(),
+            "label": self._label_edit.text().strip(),
+        }
+
+
 # ---------------------------------------------------------------------------
 # RigSettingsDialog
 # ---------------------------------------------------------------------------
@@ -911,7 +974,15 @@ class _SdrSettingsPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._devices: list[SdrDeviceInfo] = []
+        # Devices returned by SdrDevice.enumerate() (real hardware / LAN-
+        # broadcast-discovered SoapyRemote servers only). self._devices is
+        # rebuilt from this plus self._remote_hosts on every change.
+        self._hw_devices: list[SdrDeviceInfo] = []
         self._enum_running: bool = False
+        # Manually-added SoapyRemote hosts (see "Add Remote Host…"), persisted
+        # as part of sdr_settings so they survive restarts even when the
+        # remote server isn't reachable via LAN broadcast discovery.
+        self._remote_hosts: list[dict[str, str]] = []
         self._enumerate_done.connect(self._on_enumerate)
         self._setup_ui()
 
@@ -944,6 +1015,23 @@ class _SdrSettingsPanel(QWidget):
         dev_row.addWidget(self._dev_combo)
         dev_row.addWidget(self._enum_btn)
         dev_form.addRow(_("Device:"), dev_row)
+
+        remote_row = QHBoxLayout()
+        self._add_remote_btn = QPushButton(_("Add Remote Host…"))
+        self._add_remote_btn.setToolTip(
+            _(
+                "Connect to an SDR on another machine running SoapySDRServer\n"
+                "(SoapyRemote), e.g. a receiver in a separate location."
+            )
+        )
+        self._add_remote_btn.clicked.connect(self._on_add_remote_host)
+        self._remove_remote_btn = QPushButton(_("Remove"))
+        self._remove_remote_btn.setEnabled(False)
+        self._remove_remote_btn.clicked.connect(self._on_remove_remote_host)
+        remote_row.addWidget(self._add_remote_btn)
+        remote_row.addWidget(self._remove_remote_btn)
+        remote_row.addStretch()
+        dev_form.addRow("", remote_row)
 
         self._driver_label = QLabel("—")
         dev_form.addRow(_("Driver:"), self._driver_label)
@@ -1060,9 +1148,16 @@ class _SdrSettingsPanel(QWidget):
             self._enum_btn.setEnabled(True)
 
         if devices is not None:
-            self._devices = devices
+            self._hw_devices = devices
         if not SOAPY_AVAILABLE and devices is None:
             return
+        self._rebuild_combo()
+
+    def _rebuild_combo(self) -> None:
+        """Recompute self._devices (hardware + saved remote hosts) and repopulate the combo."""
+        self._devices = list(self._hw_devices) + [
+            self._remote_host_info(h) for h in self._remote_hosts
+        ]
 
         if not hasattr(self, "_dev_combo"):
             return
@@ -1078,6 +1173,8 @@ class _SdrSettingsPanel(QWidget):
             self._dev_combo.addItem(_("(no devices found)"))
             self._driver_label.setText("—")
             self._serial_label.setText("—")
+            if hasattr(self, "_remove_remote_btn"):
+                self._remove_remote_btn.setEnabled(False)
         else:
             for d in self._devices:
                 self._dev_combo.addItem(d.display_name)
@@ -1090,6 +1187,48 @@ class _SdrSettingsPanel(QWidget):
         d = self._devices[idx]
         self._driver_label.setText(d.driver or "—")
         self._serial_label.setText(d.serial or "—")
+        if hasattr(self, "_remove_remote_btn"):
+            is_saved_remote = any(
+                self._remote_host_info(h).args == d.args for h in self._remote_hosts
+            )
+            self._remove_remote_btn.setEnabled(is_saved_remote)
+
+    # ------------------------------------------------------------------ #
+    # SoapyRemote (remote SDR host) management
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _remote_host_info(entry: dict[str, str]) -> SdrDeviceInfo:
+        """Build an SdrDeviceInfo for a manually-saved SoapyRemote host entry."""
+        host = entry.get("host", "")
+        port = entry.get("port", "") or "55132"
+        driver_hint = entry.get("driver_hint", "")
+        label = entry.get("label") or _("Remote: {host}").format(host=host)
+        args: dict[str, str] = {"driver": "remote", "remote": f"{host}:{port}"}
+        if driver_hint:
+            args["remote:driver"] = driver_hint
+        return SdrDeviceInfo(driver="remote", label=label, serial="", hardware="", args=args)
+
+    def _on_add_remote_host(self) -> None:
+        dlg = _AddRemoteHostDialog(self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._remote_hosts.append(dlg.result_entry())
+        self._rebuild_combo()
+        if hasattr(self, "_dev_combo") and self._dev_combo.count() > 0:
+            self._dev_combo.setCurrentIndex(self._dev_combo.count() - 1)
+
+    def _on_remove_remote_host(self) -> None:
+        idx = self._dev_combo.currentIndex()
+        if not (0 <= idx < len(self._devices)):
+            return
+        d = self._devices[idx]
+        if d.driver != "remote":
+            return
+        self._remote_hosts = [
+            h for h in self._remote_hosts if self._remote_host_info(h).args != d.args
+        ]
+        self._rebuild_combo()
 
     def _on_assignment_changed(self, _checked: bool = False) -> None:
         """Emit assigned_rig_changed whenever the rig-slot radio buttons change."""
@@ -1168,6 +1307,7 @@ class _SdrSettingsPanel(QWidget):
             "gain_db": self._gain_spin.value() if hasattr(self, "_gain_spin") else 40,
             "bias_tee": self._bias_tee_chk.isChecked() if hasattr(self, "_bias_tee_chk") else False,
             "iq_save_dir": self._iq_dir_edit.text() if hasattr(self, "_iq_dir_edit") else "",
+            "remote_hosts": self._remote_hosts,
         }
 
     def load(self, data: dict[str, object]) -> None:
@@ -1199,6 +1339,11 @@ class _SdrSettingsPanel(QWidget):
         iq_dir = str(data.get("iq_save_dir", ""))
         if iq_dir:
             self._iq_dir_edit.setText(iq_dir)
+
+        raw_remote_hosts = data.get("remote_hosts") or []
+        if isinstance(raw_remote_hosts, list):
+            self._remote_hosts = [dict(h) for h in raw_remote_hosts if isinstance(h, dict)]
+            self._rebuild_combo()
 
 
 def _list_pactl_targets(kind: str) -> list[tuple[str, str]]:

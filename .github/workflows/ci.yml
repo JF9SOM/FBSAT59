@@ -436,7 +436,12 @@ jobs:
             "https://conda.anaconda.org/conda-forge/win-64/soapysdr-module-airspy-0.2.0-h23704b7_0.tar.bz2",
             # Airspy HF+
             "https://conda.anaconda.org/conda-forge/win-64/libairspyhf-1.6.8-h2466b09_1.conda",
-            "https://conda.anaconda.org/conda-forge/win-64/soapysdr-module-airspyhf-0.2.0-h23704b7_0.tar.bz2"
+            "https://conda.anaconda.org/conda-forge/win-64/soapysdr-module-airspyhf-0.2.0-h23704b7_0.tar.bz2",
+            # SoapyRemote (client module for connecting to a remote SoapySDRServer,
+            # e.g. an SDR in a separate location). Statically links Boost — no
+            # extra runtime DLL dependency beyond the standard VC++ redist already
+            # required by the other conda-forge packages above.
+            "https://conda.anaconda.org/conda-forge/win-64/soapysdr-module-remote-0.5.2-h23704b7_2.tar.bz2"
           )
 
           New-Item -ItemType Directory -Force -Path soapy-win64\bin     | Out-Null
