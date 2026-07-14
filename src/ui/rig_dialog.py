@@ -1010,6 +1010,13 @@ class _SdrSettingsPanel(QWidget):
         dev_row = QHBoxLayout()
         self._dev_combo = QComboBox()
         self._dev_combo.setMinimumWidth(260)
+        # Connected once, for the lifetime of the panel. _rebuild_combo() uses
+        # blockSignals() around clear()/repopulate instead of disconnecting and
+        # reconnecting this on every call — disconnecting a bound method is
+        # unreliable in PySide6 (silently fails, see _rebuild_combo), and
+        # repeated failed-disconnect + reconnect cycles pile up duplicate
+        # connections that can crash the interpreter at shutdown.
+        self._dev_combo.currentIndexChanged.connect(self._on_device_selected)
         self._enum_btn = QPushButton(_("Enumerate"))
         self._enum_btn.clicked.connect(lambda: self._start_enumerate(force=True))
         dev_row.addWidget(self._dev_combo)
@@ -1162,23 +1169,25 @@ class _SdrSettingsPanel(QWidget):
         if not hasattr(self, "_dev_combo"):
             return
 
-        # Disconnect before clearing to avoid spurious currentIndexChanged during clear()
-        import contextlib
-
-        with contextlib.suppress(RuntimeError):
-            self._dev_combo.currentIndexChanged.disconnect(self._on_device_selected)
-
+        # Block signals instead of disconnect/reconnect around clear()+repopulate:
+        # disconnecting a bound method is unreliable in PySide6 (see the
+        # currentIndexChanged.connect() call in _setup_ui()), and clear() would
+        # otherwise fire spurious currentIndexChanged events mid-rebuild.
+        self._dev_combo.blockSignals(True)
         self._dev_combo.clear()
         if not self._devices:
             self._dev_combo.addItem(_("(no devices found)"))
+        else:
+            for d in self._devices:
+                self._dev_combo.addItem(d.display_name)
+        self._dev_combo.blockSignals(False)
+
+        if not self._devices:
             self._driver_label.setText("—")
             self._serial_label.setText("—")
             if hasattr(self, "_remove_remote_btn"):
                 self._remove_remote_btn.setEnabled(False)
         else:
-            for d in self._devices:
-                self._dev_combo.addItem(d.display_name)
-            self._dev_combo.currentIndexChanged.connect(self._on_device_selected)
             self._on_device_selected(0)
 
     def _on_device_selected(self, idx: int) -> None:

@@ -553,6 +553,34 @@ python -m pytest tests/test_rig.py -q 2>&1 | tail -5
 
 `test_main_window.py` のテストは CI（GitHub Actions）で確認する。
 
+### QWidget/QDialogを構築するテストは必ず `qtbot.addWidget()` を使うこと（2026-07-14 発見）
+
+`tests/test_rig_dialog_sdr.py`（SoapyRemote機能のテスト、Issue #12対応）を新規作成した際、
+`QApplication` を手動管理し `widget.close()` で後始末する従来パターン（`app`フィクスチャ +
+`try/finally: obj.close()`）を使ったところ、**全アサーションが成功した直後、プロセス終了時に
+セグフォルト**するというCI障害が発生した（`gh run view --log-failed` で
+`QObject: shared QObject was deleted directly.` の警告 → `Segmentation fault (core dumped)`）。
+
+調査の結果、これは新規に書いたロジック（remote_hosts等）自体のバグではなく、
+**`_SdrSettingsPanel`/`_AddRemoteHostDialog`（`src/ui/rig_dialog.py`）を構築するテストが
+このプロジェクトで初めてだったために露呈した、既存ウィジェットコードに潜在していたQtオブジェクト
+ライフタイム問題**だった（多少の再現性のブレはあるが、`QApplication` 手動管理 + `close()`
+という後始末方式そのものが原因で、ウィジェット固有のロジックとは無関係と判明）。
+
+**解決策**: 後始末を手動`close()`ではなく、`pytest-qt`（`pyproject.toml`に
+`pytest-qt>=4.3`として既存）が提供する **`qtbot` フィクスチャ + `qtbot.addWidget(widget)`**
+に変更したところ、8回連続・フルスイート3回連続で完全に再現しなくなった。`qtbot.addWidget()`
+は単なるスタイルの好みではなく、`deleteLater()`とイベント処理を正しい順序で行うことで
+このクラスのクラッシュを実際に回避する。
+
+**教訓**: このプロジェクトの既存テスト（`test_telemetry_tab.py`等）は手動`app`フィクスチャ+
+`close()`パターンを使っており、これまでたまたま問題が起きていなかっただけの可能性がある。
+**新しくQWidget/QDialogを構築するテストを書く際は、既存パターンをコピーせず必ず
+`qtbot`（引数名`qtbot: QtBot`、`from pytestqt.qtbot import QtBot`）を使い、
+生成したウィジェットは`qtbot.addWidget(widget)`に登録すること。** 手動`close()`方式の
+既存テストを見つけても、動いているなら無理に書き換える必要はない（後述「バグを発見しても、
+依頼されていない修正は勝手に行わない」原則通り）が、新規テストでは踏襲しないこと。
+
 ### コミット前チェックリスト
 
 **必ずこの順番で実行すること。いずれかが失敗したらコミットしない。**

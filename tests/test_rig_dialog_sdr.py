@@ -5,32 +5,47 @@ that they survive re-enumeration of real hardware, and that the Remove
 button is only enabled for entries the user actually added (not for real
 hardware or for LAN-broadcast-discovered remote devices).
 
-Uses conftest.py's offscreen Qt platform — no real SoapySDR installation
-or network access required, since SdrDeviceInfo is a plain dataclass and
-SOAPY_AVAILABLE is monkeypatched to exercise the panel's full UI branch.
+Uses conftest.py's offscreen Qt platform and pytest-qt's ``qtbot`` fixture
+(rather than a manually-managed QApplication + explicit .close()) — no real
+SoapySDR installation or network access required, since SdrDeviceInfo is a
+plain dataclass and SOAPY_AVAILABLE is monkeypatched to exercise the panel's
+full UI branch.
+
+``qtbot.addWidget()`` matters here, not just style: constructing these
+widgets with a manually-managed QApplication and tearing them down via a
+bare ``.close()`` was found to segfault the interpreter at process exit
+(reproducible, if intermittently) — a pre-existing Qt object lifetime
+hazard in _SdrSettingsPanel/_AddRemoteHostDialog that had never been
+exercised by a test before this file existed. qtbot.addWidget() defers
+deletion correctly and avoids it; do not revert to manual app/close().
+
+_SdrSettingsPanel._start_enumerate() is stubbed out in the panel fixture:
+in real use it spawns a background thread that calls the (here, genuinely
+absent) SoapySDR and emits a cross-thread Qt signal back to the panel —
+safe under a running QApplication.exec() event loop, but these tests never
+enter one, so a signal delivered after a test function returns is another
+possible source of teardown-time races unrelated to what these tests are
+meant to exercise.
 """
 
 from __future__ import annotations
 
 import pytest
-from PySide6.QtWidgets import QApplication
+from pytestqt.qtbot import QtBot
 
 import ui.rig_dialog as rig_dialog
 from sdr.device import SdrDeviceInfo
 
 
 @pytest.fixture
-def app() -> QApplication:
-    existing = QApplication.instance()
-    return existing if isinstance(existing, QApplication) else QApplication([])
-
-
-@pytest.fixture
-def panel(app: QApplication, monkeypatch: pytest.MonkeyPatch) -> rig_dialog._SdrSettingsPanel:
+def panel(qtbot: QtBot, monkeypatch: pytest.MonkeyPatch) -> rig_dialog._SdrSettingsPanel:
     monkeypatch.setattr(rig_dialog, "SOAPY_AVAILABLE", True)
+    monkeypatch.setattr(
+        rig_dialog._SdrSettingsPanel, "_start_enumerate", lambda self, force=False: None
+    )
     p = rig_dialog._SdrSettingsPanel()
-    yield p
-    p.close()
+    qtbot.addWidget(p)
+    return p
 
 
 def test_load_restores_saved_remote_host(panel: rig_dialog._SdrSettingsPanel) -> None:
@@ -121,28 +136,24 @@ def test_remove_deletes_only_the_selected_remote_host(
     assert panel._remote_hosts[0]["label"] == "Garage"
 
 
-def test_add_remote_host_dialog_rejects_blank_host(app: QApplication) -> None:
+def test_add_remote_host_dialog_rejects_blank_host(qtbot: QtBot) -> None:
     dlg = rig_dialog._AddRemoteHostDialog()
-    try:
-        dlg._host_edit.setText("   ")
-        dlg._on_accept()
-        assert dlg.result() == 0  # still open / not accepted
-    finally:
-        dlg.close()
+    qtbot.addWidget(dlg)
+    dlg._host_edit.setText("   ")
+    dlg._on_accept()
+    assert dlg.result() == 0  # still open / not accepted
 
 
-def test_add_remote_host_dialog_result_entry(app: QApplication) -> None:
+def test_add_remote_host_dialog_result_entry(qtbot: QtBot) -> None:
     dlg = rig_dialog._AddRemoteHostDialog()
-    try:
-        dlg._host_edit.setText("shed.local")
-        dlg._port_spin.setValue(12345)
-        dlg._driver_edit.setText("hackrf")
-        dlg._label_edit.setText("Backyard Shed")
-        assert dlg.result_entry() == {
-            "host": "shed.local",
-            "port": "12345",
-            "driver_hint": "hackrf",
-            "label": "Backyard Shed",
-        }
-    finally:
-        dlg.close()
+    qtbot.addWidget(dlg)
+    dlg._host_edit.setText("shed.local")
+    dlg._port_spin.setValue(12345)
+    dlg._driver_edit.setText("hackrf")
+    dlg._label_edit.setText("Backyard Shed")
+    assert dlg.result_entry() == {
+        "host": "shed.local",
+        "port": "12345",
+        "driver_hint": "hackrf",
+        "label": "Backyard Shed",
+    }
