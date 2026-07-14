@@ -154,7 +154,7 @@ def _setup_logging() -> None:
     fmt = "%(asctime)s %(levelname)s %(name)s: %(message)s"
     from platformdirs import user_log_dir
 
-    log_dir = user_log_dir("FBSAT59", "FBSAT59")
+    log_dir = user_log_dir("fbsat59", "fbsat59")
     os.makedirs(log_dir, exist_ok=True)
     log_path = os.path.join(log_dir, "fbsat59.log")
     file_handler = logging.FileHandler(log_path, encoding="utf-8")

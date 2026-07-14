@@ -34,7 +34,7 @@ def get_ft4_decode_logger() -> logging.Logger:
 
     from platformdirs import user_log_dir
 
-    log_dir = user_log_dir("FBSAT59", "FBSAT59")
+    log_dir = user_log_dir("fbsat59", "fbsat59")
     os.makedirs(log_dir, exist_ok=True)
     log_path = os.path.join(log_dir, "ft4_decode.log")
 

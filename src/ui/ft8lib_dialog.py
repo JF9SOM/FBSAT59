@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ctypes
 import sys
+from contextlib import suppress
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
@@ -52,6 +53,20 @@ def _get_ft8lib_version(lib: ctypes.CDLL) -> str:
         except AttributeError:
             continue
     return _("(version symbol not available)")
+
+
+def _free_library(lib: ctypes.CDLL) -> None:
+    """Release a loaded library handle so its file is not left locked.
+
+    ctypes never automatically unloads a shared library — on Windows the
+    backing DLL file stays locked (can't be overwritten) for the lifetime of
+    the process unless FreeLibrary is called explicitly. Only Windows needs
+    this: POSIX filesystems allow replacing a file that a running process
+    still has mapped.
+    """
+    if sys.platform == "win32":
+        with suppress(OSError, AttributeError):
+            ctypes.windll.kernel32.FreeLibrary(lib._handle)  # type: ignore[attr-defined]
 
 
 def _detect_source(lib_path: str) -> str:
@@ -172,6 +187,15 @@ class _InstallWorker(QThread):
                 with zipfile.ZipFile(tmp_path) as zf:
                     zf.extractall(dest_dir)
             tmp_path.unlink(missing_ok=True)
+        except PermissionError as exc:
+            self.finished_err.emit(
+                _(
+                    "{error}\n"
+                    "The library file is in use — close the FT4 tab (if open) "
+                    "and restart FBSAT59, then try installing again."
+                ).format(error=exc)
+            )
+            return
         except Exception as exc:
             self.finished_err.emit(str(exc))
             return
@@ -313,6 +337,7 @@ class Ft8LibDialog(QDialog):
             self._lbl_version.setText(_("Version: ") + version)
             self._manual_box.setVisible(False)
             self._download_box.setVisible(True)
+            _free_library(lib)
 
     # ------------------------------------------------------------------ #
     # Slots
