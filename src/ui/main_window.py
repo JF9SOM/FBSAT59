@@ -2519,41 +2519,18 @@ class MainWindow(QMainWindow):
         ul_nom = self._current_transmitter.get("uplink_low")
         invert = bool(self._current_transmitter.get("invert", False))
         mode = self._current_transmitter.get("mode")
-        dl_low_nom = self._current_transmitter.get("downlink_low")
-        dl_high_nom = self._current_transmitter.get("downlink_high")
-        ul_low = self._current_transmitter.get("uplink_low")
-        ul_high = self._current_transmitter.get("uplink_high")
-        # Ratio of uplink to downlink transponder passband width, for scaling
-        # a downlink-side Hz delta (Doppler shift, Passband Tune, etc.) onto
-        # the correspondingly-scaled uplink-side delta (GitHub issue #14: a
-        # linear transponder's uplink and downlink passbands are not
-        # necessarily the same width — e.g. RS-44's V/U crossband — so
-        # mirroring a raw, unscaled Hz delta 1:1 is wrong whenever they
-        # differ; the correct mapping is proportional position within each
-        # band, which reduces to scaling the delta by ul_bandwidth /
-        # dl_bandwidth). Falls back to 1.0 (unscaled 1:1) when either band's
-        # upper edge is unknown, e.g. single-point community transmitter
-        # entries that only record downlink_low/uplink_low.
-        ul_dl_bw_ratio = 1.0
-        if (
-            dl_low_nom is not None
-            and dl_high_nom is not None
-            and ul_low is not None
-            and ul_high is not None
-        ):
-            dl_bw = float(dl_high_nom) - float(dl_low_nom)
-            if dl_bw > 0:
-                ul_dl_bw_ratio = (float(ul_high) - float(ul_low)) / dl_bw
         dl_corr, dl_shift = (
             DopplerCalculator.correct_downlink(float(dl_nom), rr)
             if dl_nom is not None
             else (None, None)
         )
         if self._trsp_lock and dl_corr is not None:
-            # Lock ON: calculate uplink from the downlink offset, scaled by
-            # ul_dl_bw_ratio (see above).
+            # Lock ON: calculate uplink from the downlink offset.
+            ul_low = self._current_transmitter.get("uplink_low")
+            ul_high = self._current_transmitter.get("uplink_high")
+            dl_low_nom = self._current_transmitter.get("downlink_low")
             if ul_low is not None and dl_low_nom is not None:
-                delta = (dl_corr - float(dl_low_nom)) * ul_dl_bw_ratio
+                delta = dl_corr - float(dl_low_nom)
                 if invert and ul_high is not None:
                     ul_calc = float(ul_high) - delta
                 else:
@@ -2632,8 +2609,7 @@ class MainWindow(QMainWindow):
         # UL for Rig 1: mirror tune offset when SDR is Rig 2 and Lock is ON
         ul_rig1 = ul_corr
         if sdr_is_rig2 and self._trsp_lock and tune != 0.0 and ul_rig1 is not None:
-            scaled_tune = tune * ul_dl_bw_ratio
-            ul_rig1 = ul_rig1 + (-scaled_tune if invert else scaled_tune)
+            ul_rig1 = ul_rig1 + (-tune if invert else tune)
 
         if self._rig_controller is not None and self._rig_controller.is_connected:
             if self._rig_busy_lock.acquire(blocking=False):
@@ -2665,8 +2641,7 @@ class MainWindow(QMainWindow):
                 # UL for Rig 2: mirror tune offset when SDR is Rig 1 and Lock is ON
                 ul2 = ul_corr
                 if sdr_is_rig1 and self._trsp_lock and tune != 0.0 and ul2 is not None:
-                    scaled_tune2 = tune * ul_dl_bw_ratio
-                    ul2 = ul2 + (-scaled_tune2 if invert else scaled_tune2)
+                    ul2 = ul2 + (-tune if invert else tune)
 
                 def _rig2_send() -> None:
                     try:
