@@ -1764,8 +1764,19 @@ class TestLockDialFeedback:
     before the slower poller ever read it, so the retune was never
     detected (confirmed live, 2026-07-15, FTX-1F). It was moved into
     _rig_send() itself so read-then-write happens on a single cadence, as
-    in GPredict -- see _lock_watch_cycle()'s and _rig_send()'s docstrings
-    in main_window.py for the full account.
+    in GPredict.
+
+    A second live-hardware finding (2026-07-15, same FTX-1F session):
+    even after that fix, deferring a newly detected delta to the *next*
+    _doppler_cycle() call (rather than folding it into the write already
+    in flight this cycle) caused the rig's display to visibly snap back
+    to the pre-retune frequency for one cycle before catching up -- this
+    read as "turning the dial makes it immediately jump back to the old
+    frequency". _rig_send() now folds a same-cycle delta directly into
+    the dl/ul it's about to write, eliminating that snap-back.
+
+    See _lock_watch_cycle()'s and _rig_send()'s docstrings in
+    main_window.py for the full account.
     """
 
     def _make_window(self, qtbot, db):
@@ -1959,14 +1970,15 @@ class TestLockDialFeedback:
             if self._target is not None:
                 self._target()
 
-    def test_rig_send_detects_manual_retune_same_cadence_as_write(self, qtbot, db) -> None:
-        """The connected-case read+detect step runs inside _rig_send(),
-        on the same cadence as this cycle's own F/I write -- confirming
-        the fix for the two-cadence race (see class docstring). One-cycle
-        lag by construction: this cycle's write still uses the
-        pre-detection dl/ul (computed before the read ran); the detected
-        offset takes effect starting from the *next* _doppler_cycle()
-        call."""
+    def test_rig_send_folds_manual_retune_into_same_cycle_write(self, qtbot, db) -> None:
+        """A retune detected inside _rig_send() is folded directly into
+        THIS cycle's write, not deferred to the next _doppler_cycle() call.
+
+        A one-cycle-lagged write (still writing the pre-detection value
+        this cycle) visibly snapped the rig's display back to the old
+        frequency for a moment before catching up on the next cycle --
+        confirmed live (2026-07-15, FTX-1F), reported as "turning the
+        dial makes it immediately jump back to the old frequency"."""
         from unittest.mock import patch
 
         w = self._make_window(qtbot, db)
@@ -2006,14 +2018,104 @@ class TestLockDialFeedback:
         with patch("ui.main_window.threading.Thread", self._SyncThread):
             w._doppler_cycle()
 
-        # This cycle's write used the pre-detection value (offset was 0.0
-        # when dl/ul were computed, before the read ran) -- the retune is
-        # NOT reflected in this cycle's write.
-        rig.set_vfo_frequencies.assert_called_once_with(145_800_000.0, 435_000_000.0)
-        # But the read did detect it, for the *next* cycle.
+        # The +80Hz delta detected by the read is folded into THIS
+        # cycle's write immediately -- no visible snap-back.
+        rig.set_vfo_frequencies.assert_called_once_with(145_800_080.0, 435_000_080.0)
         assert w._dial_feedback_offset_hz == 80.0
-        # Re-baselined to what was actually written this cycle (not the
-        # live reading) -- see _rig_send()'s comment for why.
+        # Re-baselined to what was actually written this cycle (the
+        # corrected value, not the raw live reading).
+        assert w._last_commanded_dl_rig1_hz == 145_800_080.0
+
+    def test_rig_send_folds_manual_retune_inverted_flips_sign(self, qtbot, db) -> None:
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        rig = self._make_yaesu_rig(connected=True)
+        rig.get_frequency = MagicMock(return_value=145_800_080.0)  # +80Hz manual retune
+        rig.get_split_frequency = MagicMock(return_value=435_150_000.0)
+        rig.set_vfo_frequencies = MagicMock(return_value=True)
+        w._rig_controller = rig
+        w._rig2_controller = None
+        w._trsp_lock = True
+        w._last_commanded_dl_rig1_hz = 145_800_000.0
+        w._dial_feedback_offset_hz = 0.0
+
+        class _FakeEngine:
+            def observe(self, norad: int) -> Observation:
+                return Observation(
+                    norad_cat_id=norad,
+                    timestamp=datetime.now(UTC),
+                    elevation_deg=45.0,
+                    azimuth_deg=180.0,
+                    range_km=1000.0,
+                    range_rate_km_s=0.0,
+                    is_above_horizon=True,
+                )
+
+        w._engine = _FakeEngine()
+        w._selected_norad = 99999
+        w._current_transmitter = {
+            "downlink_low": 145_800_000,
+            "downlink_high": 145_950_000,
+            "uplink_low": 435_000_000,
+            "uplink_high": 435_150_000,
+            "invert": True,
+            "mode": "USB",
+        }
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._doppler_cycle()
+
+        # Inverted: DL +80Hz -> UL -80Hz relative to its own baseline.
+        rig.set_vfo_frequencies.assert_called_once_with(145_800_080.0, 435_149_920.0)
+        assert w._dial_feedback_offset_hz == 80.0
+
+    def test_rig_send_first_observation_writes_unmodified_this_cycle(self, qtbot, db) -> None:
+        """The very first read after Lock is enabled only establishes a
+        baseline (no prior _last_commanded_dl_rig1_hz to compare against)
+        -- this cycle's write must be unmodified, not corrupted by a
+        spurious delta."""
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        rig = self._make_yaesu_rig(connected=True)
+        rig.get_frequency = MagicMock(return_value=145_800_000.0)
+        rig.get_split_frequency = MagicMock(return_value=435_000_000.0)
+        rig.set_vfo_frequencies = MagicMock(return_value=True)
+        w._rig_controller = rig
+        w._rig2_controller = None
+        w._trsp_lock = True
+        w._last_commanded_dl_rig1_hz = None  # no baseline yet
+        w._dial_feedback_offset_hz = 0.0
+
+        class _FakeEngine:
+            def observe(self, norad: int) -> Observation:
+                return Observation(
+                    norad_cat_id=norad,
+                    timestamp=datetime.now(UTC),
+                    elevation_deg=45.0,
+                    azimuth_deg=180.0,
+                    range_km=1000.0,
+                    range_rate_km_s=0.0,
+                    is_above_horizon=True,
+                )
+
+        w._engine = _FakeEngine()
+        w._selected_norad = 99999
+        w._current_transmitter = {
+            "downlink_low": 145_800_000,
+            "downlink_high": 145_950_000,
+            "uplink_low": 435_000_000,
+            "uplink_high": 435_150_000,
+            "invert": False,
+            "mode": "USB",
+        }
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._doppler_cycle()
+
+        rig.set_vfo_frequencies.assert_called_once_with(145_800_000.0, 435_000_000.0)
+        assert w._dial_feedback_offset_hz == 0.0
         assert w._last_commanded_dl_rig1_hz == 145_800_000.0
 
     def test_rig_send_skips_dial_feedback_when_lock_off(self, qtbot, db) -> None:

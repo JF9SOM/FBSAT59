@@ -2627,9 +2627,17 @@ class MainWindow(QMainWindow):
         *read* -- otherwise our own Doppler-corrected F writes would be
         misdetected as manual retuning every single cycle. This matches
         GPredict's own dial-feedback algorithm (raw Hz delta, sign-flipped
-        for inverting transponders -- see _doppler_cycle()'s Lock branch,
-        which is where the accumulated offset is actually folded into
-        dl_corr/ul_corr and written to the rig once connected).
+        for inverting transponders). Once connected, _rig_send() folds a
+        newly detected delta directly into that same cycle's write instead
+        of waiting for the next _doppler_cycle() call -- see its comment
+        for why (a one-cycle-lagged write visibly snapped the rig's
+        display back to the old frequency for a moment before catching
+        up, confirmed live 2026-07-15 FTX-1F, reported as "turning the
+        dial makes it immediately jump back to the old frequency"). The
+        accumulated offset is also folded into the *display* via
+        _doppler_cycle()'s Lock branch, which still lags by one cycle
+        after a fresh retune (the display for this cycle was already
+        emitted before _rig_send() ran) but catches up on the next tick.
         """
         if not self._trsp_lock:
             return
@@ -2794,6 +2802,7 @@ class MainWindow(QMainWindow):
                 do_dial_feedback = self._trsp_lock and self._is_dial_feedback_rig(rig)
 
                 def _rig_send() -> None:
+                    nonlocal dl, ul
                     try:
                         if do_dial_feedback:
                             # Read the rig's LIVE DL/UL and detect a manual
@@ -2809,17 +2818,27 @@ class MainWindow(QMainWindow):
                             # account and _process_dial_feedback_reading()
                             # for the shared validation logic.
                             #
-                            # One-cycle lag by construction: dl/ul above
-                            # were already computed (in _doppler_cycle(),
-                            # before this thread started) using whatever
-                            # self._dial_feedback_offset_hz was BEFORE this
-                            # read. A delta detected here updates the
-                            # offset for the *next* _doppler_cycle() call,
-                            # not this cycle's write.
+                            # If a retune IS detected, fold the newly found
+                            # delta directly into THIS cycle's dl/ul before
+                            # writing, instead of waiting for the next
+                            # _doppler_cycle() call to pick up the updated
+                            # offset. A one-cycle lag here means the write
+                            # below still uses the pre-retune value, which
+                            # visibly snaps the rig's display back to the
+                            # old frequency for one cycle before catching
+                            # up -- confirmed live (2026-07-15, FTX-1F) as
+                            # "turning the dial makes it immediately jump
+                            # back to the old frequency". dl/ul already
+                            # include whatever self._dial_feedback_offset_hz
+                            # was BEFORE this read; delta is exactly the
+                            # newly detected increment on top of that.
                             assert isinstance(rig, HamlibNetController)
                             live_dl = rig.get_frequency()
                             live_ul = rig.get_split_frequency()
-                            self._process_dial_feedback_reading(live_dl, live_ul)
+                            delta = self._process_dial_feedback_reading(live_dl, live_ul)
+                            if delta is not None and dl is not None and ul is not None:
+                                dl = dl + delta
+                                ul = ul + (-delta if invert else delta)
                         rig.set_vfo_frequencies(dl, ul)
                         if dl is not None:
                             # Baseline for the next cycle's manual-retune
