@@ -341,6 +341,20 @@ class RigControlError(Exception):
     """Transceiver control error (raised on rigctld command failure or communication error)."""
 
 
+def _check_rig_ok(hamlib_module: Any, ret: int, what: str) -> None:
+    """Raise RigControlError if a Hamlib call's return code indicates failure.
+
+    Hamlib's Python (SWIG) binding returns the raw C API status code
+    (RIG_OK=0, negative RIG_E* on failure) rather than raising an
+    exception -- every call site must check this explicitly, or a
+    rejected/timed-out CI-V command (COM-port reopened too soon, wrong
+    CI-V address, unsupported command on this backend, etc.) looks
+    identical to success and there is no way to surface it to the user.
+    """
+    if ret != hamlib_module.RIG_OK:
+        raise RigControlError(f"{what} failed (Hamlib error {ret})")
+
+
 # ---------------------------------------------------------------------------
 # Abstract base class — RigController
 # ---------------------------------------------------------------------------
@@ -590,6 +604,11 @@ class HamlibDirectController(RigController):
         # Stage-2 flag: after first UL write post-connect, re-send mode/CTCSS to
         # confirm correct VFO assignment once SAT mode band anchor is locked.
         self._pending_mode_ctcss: bool = False
+        # Specific reason the last _apply_mode_and_ctcss_hamlib() call failed
+        # (set on exception, read by apply_transponder_state() so the
+        # RigControlError it raises carries a useful message instead of a
+        # generic "apply failed").
+        self._last_hamlib_error: str | None = None
 
     # -- Connection management --
 
@@ -627,14 +646,29 @@ class HamlibDirectController(RigController):
                     # 1A 07 for IC-910H), then close and reopen.  On the second
                     # open Hamlib reads satmode=1 and sets cache->satmode=1,
                     # which allows set_freq(VFO_TX) for UL writes.
-                    rig.open()
-                    time.sleep(0.3)
-                    rig.set_func(_H.RIG_FUNC_SATMODE, 1)
-                    time.sleep(0.1)
+                    #
+                    # Delays here are deliberately more generous than the
+                    # ~0.1-0.3s that sufficed in Linux testing: reopening a
+                    # COM port too soon after closing it is a known source of
+                    # silent failures on Windows USB-serial drivers, and
+                    # unlike the per-second Doppler write loop this sequence
+                    # only runs once per Connect click, so extra settling
+                    # time is cheap. Each step's return code is also checked
+                    # now (raises RigControlError on failure) so a failure
+                    # here surfaces to the status bar instead of leaving the
+                    # rig silently un-configured.
+                    _check_rig_ok(_H, rig.open(), "RigDirect satmode entry: open()")
+                    time.sleep(0.5)
+                    _check_rig_ok(
+                        _H,
+                        rig.set_func(_H.RIG_FUNC_SATMODE, 1),
+                        "RigDirect satmode entry: set_func(SATMODE,1)",
+                    )
+                    time.sleep(0.2)
                     rig.close()
-                    time.sleep(0.1)
+                    time.sleep(0.3)
                 with self._port_lock:
-                    rig.open()
+                    _check_rig_ok(_H, rig.open(), "RigDirect: reopen after satmode entry")
                     # IC-9700 does not correctly read back satmode=1 during open(),
                     # leaving cache->satmode=0.  A second set_func call after open()
                     # forces cache->satmode=1 so that VFO_MAIN/VFO_SUB are routed
@@ -642,9 +676,13 @@ class HamlibDirectController(RigController):
                     # IC-9100/IC-910H/IC-821H must NOT receive this extra call —
                     # sending set_func(SATMODE,1) twice breaks those rigs (confirmed).
                     if self._satmode and self._model_id in _SATMODE_USE_VFO_SUB:
-                        time.sleep(0.1)
-                        rig.set_func(_H.RIG_FUNC_SATMODE, 1)
-                        time.sleep(0.1)
+                        time.sleep(0.2)
+                        _check_rig_ok(
+                            _H,
+                            rig.set_func(_H.RIG_FUNC_SATMODE, 1),
+                            "RigDirect: IC-9700 extra set_func(SATMODE,1)",
+                        )
+                        time.sleep(0.2)
                         logger.info("RigDirect: IC-9700 extra set_func(SATMODE,1) to fix cache")
                 self._rig = rig
             else:
@@ -1092,7 +1130,11 @@ class HamlibDirectController(RigController):
                             or (is_fm and elapsed_dl >= _DL_MAX_S)
                         ):
                             logger.info("RigDirect same-band DL: set_freq(VFOA, %d)", int(vfoa_hz))
-                            self._rig.set_freq(rx_vfo, int(vfoa_hz))
+                            _check_rig_ok(
+                                _H,
+                                self._rig.set_freq(rx_vfo, int(vfoa_hz)),
+                                "same-band DL set_freq(VFOA)",
+                            )
                             self._last_dl_hz = vfoa_hz
                             self._last_dl_update_time = now
                     if vfob_hz is not None:
@@ -1116,7 +1158,11 @@ class HamlibDirectController(RigController):
                             # ("freq set not needed") even when VFO-B on the rig still
                             # holds a stale value from a previous session.
                             logger.info("RigDirect same-band UL: set_freq(VFOB, %d)", int(vfob_hz))
-                            self._rig.set_freq(tx_vfo, int(vfob_hz))
+                            _check_rig_ok(
+                                _H,
+                                self._rig.set_freq(tx_vfo, int(vfob_hz)),
+                                "same-band UL set_freq(VFOB)",
+                            )
                             self._last_ul_hz = vfob_hz
                             self._last_ul_update_time = now
                             # Restore VFO-A as the displayed VFO so IC-9100 shows
@@ -1145,13 +1191,21 @@ class HamlibDirectController(RigController):
                             logger.info(
                                 "RigDirect satmode DL (band/init): set_freq(MAIN, %d)", int(vfoa_hz)
                             )
-                            self._rig.set_freq(main_vfo, int(vfoa_hz))
+                            _check_rig_ok(
+                                _H,
+                                self._rig.set_freq(main_vfo, int(vfoa_hz)),
+                                "satmode DL set_freq(MAIN)",
+                            )
                             self._last_dl_hz = vfoa_hz
                             self._last_ul_hz = None
                             self._last_ul_update_time = 0.0
                         elif abs(vfoa_hz - last_dl) >= 1.0:
                             logger.info("RigDirect satmode DL: set_freq(MAIN, %d)", int(vfoa_hz))
-                            self._rig.set_freq(main_vfo, int(vfoa_hz))
+                            _check_rig_ok(
+                                _H,
+                                self._rig.set_freq(main_vfo, int(vfoa_hz)),
+                                "satmode DL set_freq(MAIN)",
+                            )
                             self._last_dl_hz = vfoa_hz
 
                     if vfob_hz is None:
@@ -1176,16 +1230,25 @@ class HamlibDirectController(RigController):
                             logger.info(
                                 "RigDirect satmode UL: set_freq(%s, %d)", vfo_name, int(vfob_hz)
                             )
-                            try:
-                                was_first_ul = last_ul is None
-                                self._rig.set_freq(vfo_tx, int(vfob_hz))
-                                self._last_ul_hz = vfob_hz
-                                self._last_ul_update_time = now
-                                if was_first_ul and self._pending_mode_ctcss:
-                                    self._pending_mode_ctcss = False
-                                    self._resend_mode_ctcss_via_rig()
-                            except Exception as exc:
-                                logger.warning("RigDirect satmode UL %s: %s", vfo_name, exc)
+                            was_first_ul = last_ul is None
+                            # No local try/except here (there used to be one) --
+                            # a failure now propagates to the shared handler
+                            # below via RigControlError instead of being
+                            # silently logged and forgotten. This also means
+                            # _last_ul_hz is only cached on actual success, so
+                            # a persistently failing UL keeps retrying every
+                            # cycle instead of being (incorrectly) considered
+                            # "already applied" after the first failed attempt.
+                            _check_rig_ok(
+                                _H,
+                                self._rig.set_freq(vfo_tx, int(vfob_hz)),
+                                f"satmode UL set_freq({vfo_name})",
+                            )
+                            self._last_ul_hz = vfob_hz
+                            self._last_ul_update_time = now
+                            if was_first_ul and self._pending_mode_ctcss:
+                                self._pending_mode_ctcss = False
+                                self._resend_mode_ctcss_via_rig()
 
             else:
                 rx_vfo = self._vfo_str_to_const("VFOA")
@@ -1243,6 +1306,14 @@ class HamlibDirectController(RigController):
                             self._rig.set_vfo(rx_vfo)
                         self._last_ul_hz = vfob_hz
             return True
+        except RigControlError as exc:
+            # Explicit Hamlib-return-code failure from a _check_rig_ok() call
+            # above -- re-raise so it reaches HamlibDirectController's caller
+            # (main_window.py's _rig_send(), which already emits it to the
+            # status bar) instead of being silently logged and forgotten,
+            # unlike an unexpected/unclassified exception (below).
+            logger.error("RigDirect.set_vfo_frequencies: %s", exc)
+            raise
         except Exception as exc:
             logger.error("RigDirect.set_vfo_frequencies: %s", exc)
             return False
@@ -1342,6 +1413,7 @@ class HamlibDirectController(RigController):
         try:
             import Hamlib as _H  # noqa: PLC0415
         except ImportError:
+            self._last_hamlib_error = "Hamlib not available"
             logger.error("RigDirect._apply_mode_and_ctcss_hamlib: Hamlib not available")
             return False
 
@@ -1375,6 +1447,13 @@ class HamlibDirectController(RigController):
         rig2 = None
         try:
             with self._port_lock:
+                # Delays throughout this sequence are deliberately more
+                # generous than the ~0.1-0.3s that sufficed in Linux testing
+                # -- see the equivalent comment in connect() for why. Each
+                # write is also return-code-checked (raises RigControlError
+                # on failure) so a rejected/timed-out command surfaces
+                # instead of leaving part of the rig un-configured while
+                # everything else silently proceeds as if it succeeded.
                 if is_same_band:
                     # Same-band path (V/V or U/U): exit SAT mode, use normal split.
                     # CTCSS is intentionally skipped — same-band satellite transponders
@@ -1383,21 +1462,39 @@ class HamlibDirectController(RigController):
                     vfo_b = int(_H.RIG_VFO_B)
                     vfo_curr = int(_H.RIG_VFO_CURR)
                     rig2 = _make_rig()
-                    rig2.open()
-                    time.sleep(0.3)
-                    rig2.set_func(_H.RIG_FUNC_SATMODE, 0)
-                    time.sleep(0.4)  # wait for IC-9100 normal-mode memory restore
-                    rig2.set_split_vfo(vfo_curr, 1, vfo_b)
-                    time.sleep(0.1)
+                    _check_rig_ok(_H, rig2.open(), "same-band: open()")
+                    time.sleep(0.5)
+                    _check_rig_ok(
+                        _H, rig2.set_func(_H.RIG_FUNC_SATMODE, 0), "same-band: set_func(SATMODE,0)"
+                    )
+                    time.sleep(0.6)  # wait for IC-9100 normal-mode memory restore
+                    _check_rig_ok(
+                        _H,
+                        rig2.set_split_vfo(vfo_curr, 1, vfo_b),
+                        "same-band: set_split_vfo",
+                    )
+                    time.sleep(0.2)
                     # Write frequencies to anchor VFO-A/B band assignment
-                    rig2.set_freq(vfo_a, int(self._transponder_dl_hz))  # type: ignore[arg-type]
-                    time.sleep(0.1)
-                    rig2.set_freq(vfo_b, int(self._transponder_ul_hz))  # type: ignore[arg-type]
-                    time.sleep(0.1)
-                    rig2.set_mode(dl_hamlib, 0, vfo_a)
-                    time.sleep(0.1)
-                    rig2.set_mode(ul_hamlib, 0, vfo_b)
-                    time.sleep(0.1)
+                    _check_rig_ok(
+                        _H,
+                        rig2.set_freq(vfo_a, int(self._transponder_dl_hz)),  # type: ignore[arg-type]
+                        "same-band: set_freq(VFOA/DL)",
+                    )
+                    time.sleep(0.2)
+                    _check_rig_ok(
+                        _H,
+                        rig2.set_freq(vfo_b, int(self._transponder_ul_hz)),  # type: ignore[arg-type]
+                        "same-band: set_freq(VFOB/UL)",
+                    )
+                    time.sleep(0.2)
+                    _check_rig_ok(
+                        _H, rig2.set_mode(dl_hamlib, 0, vfo_a), "same-band: set_mode(VFOA/DL)"
+                    )
+                    time.sleep(0.2)
+                    _check_rig_ok(
+                        _H, rig2.set_mode(ul_hamlib, 0, vfo_b), "same-band: set_mode(VFOB/UL)"
+                    )
+                    time.sleep(0.2)
                     rig2.set_vfo(vfo_a)  # restore display to DL VFO
                     logger.info(
                         "RigDirect._apply_mode_and_ctcss_hamlib: same-band dl=%s ul=%s no-CTCSS OK",
@@ -1408,22 +1505,28 @@ class HamlibDirectController(RigController):
                     # Cross-band path: SAT mode sequence.
                     # Step 1: open → set_func(SATMODE, 1) → close
                     rig = _make_rig()
-                    rig.open()
-                    time.sleep(0.3)
-                    rig.set_func(_H.RIG_FUNC_SATMODE, 1)
-                    time.sleep(0.3)
+                    _check_rig_ok(_H, rig.open(), "cross-band: open() [step 1]")
+                    time.sleep(0.5)
+                    _check_rig_ok(
+                        _H, rig.set_func(_H.RIG_FUNC_SATMODE, 1), "cross-band: set_func(SATMODE,1)"
+                    )
+                    time.sleep(0.5)
                     rig.close()
                     rig = None
-                    time.sleep(0.3)
+                    time.sleep(0.5)
 
                     # Step 2: second open() reads satmode=1 → cache->satmode=1
                     rig2 = _make_rig()
-                    rig2.open()
-                    time.sleep(0.3)
+                    _check_rig_ok(_H, rig2.open(), "cross-band: open() [step 2]")
+                    time.sleep(0.5)
                     # IC-9700: force cache->satmode=1 with extra set_func after open().
                     if self._model_id in _SATMODE_USE_VFO_SUB:
-                        rig2.set_func(_H.RIG_FUNC_SATMODE, 1)
-                        time.sleep(0.1)
+                        _check_rig_ok(
+                            _H,
+                            rig2.set_func(_H.RIG_FUNC_SATMODE, 1),
+                            "cross-band: IC-9700 extra set_func(SATMODE,1)",
+                        )
+                        time.sleep(0.2)
                         logger.info(
                             "RigDirect._apply_mode_and_ctcss_hamlib: IC-9700 extra set_func"
                         )
@@ -1440,28 +1543,40 @@ class HamlibDirectController(RigController):
                             "RigDirect._apply_mode_and_ctcss_hamlib: freq preset DL=%.3fMHz",
                             self._transponder_dl_hz / 1e6,
                         )
-                        rig2.set_freq(vfo_main, int(self._transponder_dl_hz))
-                        time.sleep(0.1)
+                        _check_rig_ok(
+                            _H,
+                            rig2.set_freq(vfo_main, int(self._transponder_dl_hz)),
+                            "cross-band: freq preset DL",
+                        )
+                        time.sleep(0.2)
                         if self._transponder_ul_hz is not None:
                             logger.info(
                                 "RigDirect._apply_mode_and_ctcss_hamlib: freq preset UL=%.3fMHz",
                                 self._transponder_ul_hz / 1e6,
                             )
-                            rig2.set_freq(vfo_ul_preset, int(self._transponder_ul_hz))
-                            time.sleep(0.1)
+                            _check_rig_ok(
+                                _H,
+                                rig2.set_freq(vfo_ul_preset, int(self._transponder_ul_hz)),
+                                "cross-band: freq preset UL",
+                            )
+                            time.sleep(0.2)
 
                     # Mode: Main (DL) and Sub (UL)
-                    rig2.set_mode(dl_hamlib, 0, vfo_main)
-                    time.sleep(0.1)
-                    rig2.set_mode(ul_hamlib, 0, vfo_sub)
-                    time.sleep(0.1)
+                    _check_rig_ok(
+                        _H, rig2.set_mode(dl_hamlib, 0, vfo_main), "cross-band: set_mode(MAIN/DL)"
+                    )
+                    time.sleep(0.2)
+                    _check_rig_ok(
+                        _H, rig2.set_mode(ul_hamlib, 0, vfo_sub), "cross-band: set_mode(SUB/UL)"
+                    )
+                    time.sleep(0.2)
                     # CTCSS on Sub (TX/UL)
                     rig2.set_vfo(vfo_sub)
-                    time.sleep(0.1)
+                    time.sleep(0.2)
                     rig2.set_ctcss_tone(vfo_sub, tone_deci)
-                    time.sleep(0.1)
+                    time.sleep(0.2)
                     rig2.set_func(func_tone, 1 if enable else 0)
-                    time.sleep(0.1)
+                    time.sleep(0.2)
                     # Restore Main and clear any bleed-through
                     rig2.set_vfo(vfo_main)
                     time.sleep(0.1)
@@ -1472,8 +1587,10 @@ class HamlibDirectController(RigController):
                         ul_mode,
                         ctcss_hz,
                     )
+            self._last_hamlib_error = None
             return True
         except Exception as exc:
+            self._last_hamlib_error = str(exc)
             logger.error("RigDirect._apply_mode_and_ctcss_hamlib: %s", exc)
             return False
         finally:
@@ -1755,7 +1872,8 @@ class HamlibDirectController(RigController):
                 ctcss_hz,
             )
             if not self._apply_mode_and_ctcss_hamlib(dl_mode, ul_mode, ctcss_hz):
-                raise RigControlError("Mode/CTCSS Error: Hamlib apply failed for satmode rig")
+                detail = self._last_hamlib_error or "unknown error"
+                raise RigControlError(f"Mode/CTCSS Error: {detail}")
             # Stage 2: after connect() + first Doppler UL write, re-confirm mode/CTCSS.
             # Only for cross-band — same-band uses normal split and _satmode_exit()
             # re-applies modes at Doppler startup; Stage-2 VFO_MAIN/SUB would be wrong.

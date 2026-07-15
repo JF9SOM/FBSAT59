@@ -446,6 +446,103 @@ class TestHamlibDirectController:
 
 
 # ---------------------------------------------------------------------------
+# HamlibDirectController satmode (IC-9100/9700) — Hamlib return-code checks
+# ---------------------------------------------------------------------------
+
+
+class TestSatmodeHamlibReturnCodeChecks:
+    """_apply_mode_and_ctcss_hamlib() (IC-9100/9700 Direct-mode cross-band
+    path) must surface a real Hamlib failure (RIG_E* return code) instead of
+    reporting success -- Hamlib's Python binding returns the raw status code
+    rather than raising, so every call site must check it explicitly. See
+    _check_rig_ok()."""
+
+    def _make_ctrl(self) -> HamlibDirectController:
+        # model_id=3068 -> IC-9100, a satmode rig not in _SATMODE_USE_VFO_SUB
+        # (so the cross-band UL preset uses RIG_VFO_TX).
+        ctrl = HamlibDirectController(model_id=3068, port="/dev/null", baud_rate=19200)
+        # Cross-band transponder (different DL/UL bands) so
+        # _apply_mode_and_ctcss_hamlib takes the SAT-mode sequence branch
+        # rather than the same-band VFO-A/B fallback.
+        ctrl._transponder_dl_hz = 435612000.0  # UHF
+        ctrl._transponder_ul_hz = 145993000.0  # VHF
+        return ctrl
+
+    @staticmethod
+    def _mock_hamlib_ok(mock_rig_inst: MagicMock) -> MagicMock:
+        """Build a mock Hamlib module where every call reports RIG_OK (0)."""
+        mock_hamlib = MagicMock()
+        mock_hamlib.Rig.return_value = mock_rig_inst
+        mock_hamlib.RIG_OK = 0
+        mock_hamlib.RIG_MODE_FM = 32
+        mock_hamlib.RIG_MODE_USB = 4
+        mock_hamlib.RIG_MODE_LSB = 8
+        mock_hamlib.RIG_MODE_CW = 2
+        mock_hamlib.RIG_MODE_CWR = 128
+        mock_hamlib.RIG_MODE_AM = 1
+        mock_hamlib.RIG_MODE_PKTUSB = 2048
+        mock_hamlib.RIG_MODE_PKTLSB = 1024
+        mock_hamlib.RIG_VFO_MAIN = 4194304
+        mock_hamlib.RIG_VFO_SUB = 8388608
+        mock_hamlib.RIG_VFO_TX = 16777216
+        mock_hamlib.RIG_FUNC_SATMODE = 1
+        mock_hamlib.RIG_FUNC_TONE = 2
+        for name in ("open", "close", "set_func", "set_freq", "set_mode", "set_ctcss_tone"):
+            getattr(mock_rig_inst, name).return_value = 0
+        return mock_hamlib
+
+    def test_happy_path_returns_true_and_clears_last_error(self) -> None:
+        ctrl = self._make_ctrl()
+        mock_rig_inst = MagicMock()
+        mock_hamlib = self._mock_hamlib_ok(mock_rig_inst)
+        with (
+            patch("rig.controller.HAMLIB_AVAILABLE", True),
+            patch.dict("sys.modules", {"Hamlib": mock_hamlib}),
+            patch("rig.controller.time.sleep"),
+        ):
+            ok = ctrl._apply_mode_and_ctcss_hamlib("USB", "LSB", 0.0)
+        assert ok is True
+        assert ctrl._last_hamlib_error is None
+
+    def test_set_mode_failure_is_reported_not_swallowed(self) -> None:
+        """A rejected/timed-out set_mode() (e.g. a Windows COM-port timing
+        glitch) must make _apply_mode_and_ctcss_hamlib() return False with a
+        specific reason, not silently report success like before this
+        change (real symptom reported by a Windows 11 IC-9100 user: Connect
+        succeeds, but mode is never actually set on the rig)."""
+        ctrl = self._make_ctrl()
+        mock_rig_inst = MagicMock()
+        mock_hamlib = self._mock_hamlib_ok(mock_rig_inst)
+        mock_rig_inst.set_mode.return_value = -5  # RIG_ETIMEOUT
+        with (
+            patch("rig.controller.HAMLIB_AVAILABLE", True),
+            patch.dict("sys.modules", {"Hamlib": mock_hamlib}),
+            patch("rig.controller.time.sleep"),
+        ):
+            ok = ctrl._apply_mode_and_ctcss_hamlib("USB", "LSB", 0.0)
+        assert ok is False
+        assert ctrl._last_hamlib_error is not None
+        assert "set_mode" in ctrl._last_hamlib_error
+        assert "-5" in ctrl._last_hamlib_error
+
+    def test_apply_transponder_state_raises_with_specific_reason(self) -> None:
+        """apply_transponder_state() must propagate the specific failure
+        reason (not a generic "apply failed") so it reaches the status bar
+        via main_window.py's existing RigControlError handling."""
+        ctrl = self._make_ctrl()
+        mock_rig_inst = MagicMock()
+        mock_hamlib = self._mock_hamlib_ok(mock_rig_inst)
+        mock_rig_inst.set_freq.return_value = -9  # RIG_ERJCTED
+        with (
+            patch("rig.controller.HAMLIB_AVAILABLE", True),
+            patch.dict("sys.modules", {"Hamlib": mock_hamlib}),
+            patch("rig.controller.time.sleep"),
+            pytest.raises(RigControlError, match="freq preset"),
+        ):
+            ctrl.apply_transponder_state("USB", "LSB", 0.0)
+
+
+# ---------------------------------------------------------------------------
 # HamlibNetController — socket mocked
 # ---------------------------------------------------------------------------
 

@@ -2909,7 +2909,10 @@ class MainWindow(QMainWindow):
         logger.warning("RigControlError: %s", msg)
         sb = self.statusBar()
         if sb:
-            sb.showMessage(f"RIG: {msg}", 3000)
+            # 8s rather than the previous 3s: this is often the only visible
+            # sign of a rig-control failure for a user who cannot easily
+            # pull fbsat59.log (e.g. testing on someone else's PC).
+            sb.showMessage(f"RIG: {msg}", 8000)
 
     def _send_to_rotator(self, obs: Observation | None) -> None:
         """Send AZ/EL from obs to the rotator in a background thread (non-blocking)."""
@@ -3511,7 +3514,13 @@ class MainWindow(QMainWindow):
                 rig._transponder_ul_hz = ul_hz
 
             def _do_satmode() -> None:
-                rig.apply_transponder_state(dl_mode, ul_mode, ctcss_hz)
+                try:
+                    rig.apply_transponder_state(dl_mode, ul_mode, ctcss_hz)
+                except RigControlError as exc:
+                    self._rig_error.emit(str(exc))
+                except Exception as exc:
+                    logger.error("RigDirect satmode: unexpected error in send thread: %s", exc)
+                    self._rig_error.emit(str(exc))
 
             threading.Thread(target=_do_satmode, daemon=True).start()
         else:
@@ -3534,12 +3543,18 @@ class MainWindow(QMainWindow):
                 _direct_rig = rig  # narrowed type for closure
 
                 def _do_direct_cat(_gen: int = _gen) -> None:
-                    if self._nonsatmode_gen != _gen:
-                        return
-                    _direct_rig._send_freq_preset_direct(_dl_hz, _ul_hz)
-                    if self._nonsatmode_gen != _gen:
-                        return
-                    _direct_rig.apply_transponder_state(dl_mode, ul_mode, ctcss_hz)
+                    try:
+                        if self._nonsatmode_gen != _gen:
+                            return
+                        _direct_rig._send_freq_preset_direct(_dl_hz, _ul_hz)
+                        if self._nonsatmode_gen != _gen:
+                            return
+                        _direct_rig.apply_transponder_state(dl_mode, ul_mode, ctcss_hz)
+                    except RigControlError as exc:
+                        self._rig_error.emit(str(exc))
+                    except Exception as exc:
+                        logger.error("RigDirect raw CAT: unexpected error in send thread: %s", exc)
+                        self._rig_error.emit(str(exc))
 
                 threading.Thread(target=_do_direct_cat, daemon=True).start()
             else:
@@ -4497,7 +4512,10 @@ class MainWindow(QMainWindow):
             ctcss_hz = 0.0 if dl_mode in ("CW", "CW-R") else float(self._ctcss_tone_hz or 0.0)
 
             def _send_direct() -> None:
-                rig.apply_transponder_state(dl_mode, ul_mode, ctcss_hz)
+                try:
+                    rig.apply_transponder_state(dl_mode, ul_mode, ctcss_hz)
+                except Exception as exc:
+                    self._rig_error.emit(str(exc))
 
             threading.Thread(target=_send_direct, daemon=True).start()
         else:
