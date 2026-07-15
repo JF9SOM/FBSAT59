@@ -133,6 +133,12 @@ _MODE_INVERT: dict[str, str] = {
 # leaking in when a rig slot is reconfigured from NET to Direct).
 _RAW_CAT_MODEL_IDS: frozenset[int] = _FTX1_MODEL_IDS | _FT991_DIRECT_MODEL_IDS
 
+# Dial feedback (GitHub issue #14, GPredict-style Lock — see _apply_dial_feedback()).
+_DIAL_FEEDBACK_THRESHOLD_HZ = 1.0  # matches GPredict's dial-feedback threshold
+_DIAL_FEEDBACK_SANITY_HZ = (
+    50_000.0  # ignore implausible readbacks (comms glitch, not a manual retune)
+)
+
 
 def _is_generic_direct_rig(rig: RigController) -> bool:
     """True for a Direct-mode rig with no dedicated CTCSS path of its own."""
@@ -549,6 +555,17 @@ class MainWindow(QMainWindow):
         self._sdr_tune_offset: float = 0.0
         # L button: when True, uplink is slaved to downlink.
         self._trsp_lock: bool = False
+        # Dial feedback (GitHub issue #14): while Lock is on, each cycle reads
+        # the downlink back from the rig (NET mode only for now — see
+        # _doppler_cycle()) and compares it to what was just commanded. A
+        # mismatch beyond _DIAL_FEEDBACK_THRESHOLD_HZ means the user manually
+        # retuned the VFO; the difference accumulates here and is added to
+        # every subsequent dl_corr, so Doppler tracking continues from where
+        # the user left it instead of snapping back to the exact centre.
+        # Reset to 0.0 whenever Lock is toggled, the transponder changes, or
+        # the T button is pressed. Matches GPredict's track_downlink()/dial
+        # feedback design (verified against its actual source 2026-07-15).
+        self._dial_feedback_offset_hz: float = 0.0
         # Override for CTCSS label: set when a button is pressed, reset on transponder change.
         # None -> show the transmitter's ctcss_tone; float -> persist the last-sent tone.
         self._current_ctcss_tone: float | None = None
@@ -2486,6 +2503,46 @@ class MainWindow(QMainWindow):
         self._update_rig_label()
         self._update_rot_label()
 
+    def _apply_dial_feedback(self, rig: RigController, commanded_dl_hz: float | None) -> None:
+        """Read the downlink back and fold a manually-detected VFO change
+        into _dial_feedback_offset_hz (GitHub issue #14 — GPredict-style
+        Lock dial feedback, verified against its actual source 2026-07-15).
+
+        Called from the background _rig_send()/_rig2_send() threads, right
+        after a successful set_vfo_frequencies(), only while Lock is on.
+        NET mode only for now (isinstance gate below) — Direct mode has its
+        own timing characteristics per rig and needs separate verification
+        before this is extended to it.
+
+        Deliberately swallows all failures (bad readback, exception, timed-
+        out query) rather than raising: a failed read-back should never be
+        reported as a rig error (the frequency write itself already
+        succeeded), and should just skip this cycle's feedback silently.
+        """
+        if commanded_dl_hz is None:
+            return
+        if not isinstance(rig, HamlibNetController):
+            return
+        if getattr(rig, "is_sdr", False):
+            return
+        try:
+            readback = rig.get_frequency()
+        except Exception:
+            return
+        if readback < 0:
+            return  # get_frequency()'s failure sentinel
+        diff = readback - commanded_dl_hz
+        if abs(diff) < _DIAL_FEEDBACK_THRESHOLD_HZ:
+            return
+        if abs(diff) > _DIAL_FEEDBACK_SANITY_HZ:
+            logger.warning(
+                "Dial feedback: implausible readback %.0f vs commanded %.0f — ignoring",
+                readback,
+                commanded_dl_hz,
+            )
+            return
+        self._dial_feedback_offset_hz += diff
+
     def _doppler_cycle(self) -> None:
         """Compute Doppler correction and send it to the rig(s).
 
@@ -2524,6 +2581,13 @@ class MainWindow(QMainWindow):
             if dl_nom is not None
             else (None, None)
         )
+        # Dial feedback (GitHub issue #14): fold in any manually-detected VFO
+        # offset accumulated by a previous cycle's read-back (see the
+        # _rig_send()/_rig2_send() closures below). Gated on Lock, matching
+        # where the offset is populated — see _on_lock_changed().
+        if self._trsp_lock and dl_corr is not None and self._dial_feedback_offset_hz != 0.0:
+            dl_corr = dl_corr + self._dial_feedback_offset_hz
+            dl_shift = None
         if self._trsp_lock and dl_corr is not None:
             # Lock ON: calculate uplink from the downlink offset.
             ul_low = self._current_transmitter.get("uplink_low")
@@ -2620,6 +2684,8 @@ class MainWindow(QMainWindow):
                 def _rig_send() -> None:
                     try:
                         rig.set_vfo_frequencies(dl, ul)
+                        if self._trsp_lock:
+                            self._apply_dial_feedback(rig, dl)
                     except RigControlError as exc:
                         self._rig_error.emit(str(exc))
                     except Exception as exc:
@@ -2646,6 +2712,8 @@ class MainWindow(QMainWindow):
                 def _rig2_send() -> None:
                     try:
                         rig2.set_vfo_frequencies(dl2, ul2)
+                        if self._trsp_lock:
+                            self._apply_dial_feedback(rig2, dl2)
                     except RigControlError as exc:
                         self._rig_error.emit(str(exc))
                     except Exception as exc:
@@ -3200,6 +3268,7 @@ class MainWindow(QMainWindow):
             self._sdr_control.set_transponder_mode(satnogs_mode)
         self._sdr_tune_offset = 0.0
         self._sdr_control.reset_tune_offset()
+        self._dial_feedback_offset_hz = 0.0
 
     def _disconnect_rig(self) -> None:
         """Disconnect the rig and refresh the UI status."""
@@ -4216,8 +4285,14 @@ class MainWindow(QMainWindow):
         return adapter
 
     def _on_lock_changed(self, locked: bool) -> None:
-        """Update the _trsp_lock flag when the L button is toggled."""
+        """Update the _trsp_lock flag when the L button is toggled.
+
+        Always resets _dial_feedback_offset_hz to 0.0 (both on enable and
+        disable) so re-enabling Lock always starts dial feedback fresh
+        rather than resuming a possibly-stale accumulated offset.
+        """
         self._trsp_lock = locked
+        self._dial_feedback_offset_hz = 0.0
 
     @Slot(float)
     def _on_sdr_tune_offset(self, offset_hz: float) -> None:
@@ -4336,6 +4411,7 @@ class MainWindow(QMainWindow):
 
     def _on_tune_requested(self) -> None:
         """T button pressed: reset to the centre frequency of the current transponder band."""
+        self._dial_feedback_offset_hz = 0.0
         if self._current_transmitter is None:
             return
         dl_low = self._current_transmitter.get("downlink_low")
