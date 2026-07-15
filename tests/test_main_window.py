@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -1744,6 +1745,300 @@ class TestTuneLockButtons:
         assert w._trsp_lock is True
         w._on_lock_changed(False)
         assert w._trsp_lock is False
+
+
+class TestLockDialFeedback:
+    """Lock (L button) dial feedback: _lock_watch_cycle() and the
+    _doppler_cycle() offset-folding it feeds into.
+
+    Read mechanism and safety findings (V command corrupts the rig's
+    actual Main/Sub role assignment; bare "f"/"i" is the only verified-safe
+    read path; scoped to Yaesu-CAT NET-mode rigs only) were established via
+    live hardware testing against an FTX-1F on 2026-07-15 -- see
+    _lock_watch_cycle()'s docstring in main_window.py for the full account.
+    """
+
+    def _make_window(self, qtbot, db):
+        from data.tle_manager import TLEManager
+        from ui.main_window import MainWindow
+
+        tle_manager = TLEManager(db)
+        w = MainWindow(conn=db, tle_manager=tle_manager)
+        qtbot.addWidget(w)
+        return w
+
+    def _make_yaesu_rig(self, connected: bool):
+        from rig.controller import HamlibNetController, RigState
+
+        ctrl = HamlibNetController(host="localhost", port=4532, ctcss_method="ftx1")
+        if connected:
+            ctrl._sock = MagicMock()
+            with ctrl._lock:
+                ctrl._state = RigState.CONNECTED
+        return ctrl
+
+    def test_lock_watch_noop_when_not_locked(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        rig = self._make_yaesu_rig(connected=True)
+        rig.get_frequency = MagicMock(return_value=435_612_000.0)
+        w._rig_controller = rig
+        w._trsp_lock = False
+        w._lock_watch_cycle()
+        rig.get_frequency.assert_not_called()
+
+    def test_lock_watch_noop_for_non_net_controller(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._rig_controller = MagicMock()  # not a HamlibNetController instance
+        w._trsp_lock = True
+        w._lock_watch_cycle()  # must not raise
+
+    def test_lock_watch_noop_when_no_rig(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._rig_controller = None
+        w._trsp_lock = True
+        w._lock_watch_cycle()  # must not raise
+
+    def test_lock_watch_noop_for_non_yaesu_cat(self, qtbot, db) -> None:
+        """Scoped to ctcss_method 'ftx1'/'ft991' -- the only configuration
+        verified live to support V-free frequency readback. Other NET rigs
+        (satmode Icom, generic/IC-705) keep the existing Doppler-driven-
+        only Lock behaviour and must not be touched by this poller."""
+        from rig.controller import HamlibNetController
+
+        w = self._make_window(qtbot, db)
+        rig = HamlibNetController(host="localhost", port=4532, ctcss_method="icom_civ")
+        rig.get_frequency = MagicMock(return_value=435_612_000.0)
+        w._rig_controller = rig
+        w._trsp_lock = True
+        w._lock_watch_cycle()
+        rig.get_frequency.assert_not_called()
+
+    def test_lock_watch_first_observation_sets_baseline_only(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        rig = self._make_yaesu_rig(connected=True)
+        rig.get_frequency = MagicMock(return_value=435_612_000.0)
+        rig.get_split_frequency = MagicMock(return_value=145_993_000.0)
+        w._rig_controller = rig
+        w._trsp_lock = True
+        w._last_commanded_dl_rig1_hz = None
+        w._dial_feedback_offset_hz = 0.0
+        w._lock_watch_cycle()
+        assert w._last_commanded_dl_rig1_hz == 435_612_000.0
+        assert w._dial_feedback_offset_hz == 0.0
+
+    def test_lock_watch_discards_reading_close_to_ul_crosscheck(self, qtbot, db) -> None:
+        """Confirmed live (2026-07-15, FTX-1F): a broken DL reading right
+        after a fresh connection's first "I" write returns the UL value
+        instead of the live DL value -- this must be discarded, not
+        misread as a huge (implausible) manual retune."""
+        w = self._make_window(qtbot, db)
+        rig = self._make_yaesu_rig(connected=True)
+        rig.get_frequency = MagicMock(return_value=145_993_000.0)  # == UL, broken read
+        rig.get_split_frequency = MagicMock(return_value=145_993_000.0)
+        w._rig_controller = rig
+        w._trsp_lock = True
+        w._last_commanded_dl_rig1_hz = 435_612_000.0
+        w._dial_feedback_offset_hz = 0.0
+        w._lock_watch_cycle()
+        assert w._dial_feedback_offset_hz == 0.0
+        assert w._last_commanded_dl_rig1_hz == 435_612_000.0  # unchanged
+
+    def test_lock_watch_ignores_below_threshold_noise(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        rig = self._make_yaesu_rig(connected=True)
+        rig.get_frequency = MagicMock(return_value=435_612_000.4)  # 0.4 Hz drift
+        rig.get_split_frequency = MagicMock(return_value=145_993_000.0)
+        w._rig_controller = rig
+        w._trsp_lock = True
+        w._last_commanded_dl_rig1_hz = 435_612_000.0
+        w._dial_feedback_offset_hz = 0.0
+        w._lock_watch_cycle()
+        assert w._dial_feedback_offset_hz == 0.0
+
+    def test_lock_watch_ignores_implausible_jump(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        rig = self._make_yaesu_rig(connected=True)
+        rig.get_frequency = MagicMock(return_value=435_712_000.0)  # +100kHz, implausible
+        rig.get_split_frequency = MagicMock(return_value=145_993_000.0)
+        w._rig_controller = rig
+        w._trsp_lock = True
+        w._last_commanded_dl_rig1_hz = 435_612_000.0
+        w._dial_feedback_offset_hz = 0.0
+        w._lock_watch_cycle()
+        assert w._dial_feedback_offset_hz == 0.0
+        # Re-baselines to the (implausible) reading so one bad sample isn't
+        # compared against forever.
+        assert w._last_commanded_dl_rig1_hz == 435_712_000.0
+
+    def test_lock_watch_detects_manual_retune_connected(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        rig = self._make_yaesu_rig(connected=True)
+        rig.get_frequency = MagicMock(return_value=435_612_080.0)  # +80Hz manual retune
+        rig.get_split_frequency = MagicMock(return_value=145_993_000.0)
+        rig.write_ul_independent = MagicMock()
+        w._rig_controller = rig
+        w._trsp_lock = True
+        w._last_commanded_dl_rig1_hz = 435_612_000.0
+        w._dial_feedback_offset_hz = 0.0
+        w._lock_watch_cycle()
+        assert w._dial_feedback_offset_hz == 80.0
+        assert w._last_commanded_dl_rig1_hz == 435_612_080.0
+        # Connected -- the next _doppler_cycle() tick writes the
+        # correction via the normal rig-send path, not this method.
+        rig.write_ul_independent.assert_not_called()
+
+    def test_lock_watch_pre_connect_reads_and_writes_correction(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        rig = self._make_yaesu_rig(connected=False)
+        rig.read_dl_ul_independent = MagicMock(return_value=(435_612_080.0, 145_993_000.0))
+        rig.write_ul_independent = MagicMock()
+        w._rig_controller = rig
+        w._trsp_lock = True
+        w._current_transmitter = {"invert": False}
+        w._last_commanded_dl_rig1_hz = 435_612_000.0
+        w._dial_feedback_offset_hz = 0.0
+        w._lock_watch_cycle()
+        assert w._dial_feedback_offset_hz == 80.0
+        rig.write_ul_independent.assert_called_once_with(145_993_080.0)
+
+    def test_lock_watch_pre_connect_inverted_flips_sign(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        rig = self._make_yaesu_rig(connected=False)
+        rig.read_dl_ul_independent = MagicMock(return_value=(435_612_080.0, 145_993_000.0))
+        rig.write_ul_independent = MagicMock()
+        w._rig_controller = rig
+        w._trsp_lock = True
+        w._current_transmitter = {"invert": True}
+        w._last_commanded_dl_rig1_hz = 435_612_000.0
+        w._dial_feedback_offset_hz = 0.0
+        w._lock_watch_cycle()
+        assert w._dial_feedback_offset_hz == 80.0
+        rig.write_ul_independent.assert_called_once_with(145_992_920.0)
+
+    def test_lock_watch_pre_connect_none_reading_is_noop(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        rig = self._make_yaesu_rig(connected=False)
+        rig.read_dl_ul_independent = MagicMock(return_value=None)
+        w._rig_controller = rig
+        w._trsp_lock = True
+        w._last_commanded_dl_rig1_hz = 435_612_000.0
+        w._dial_feedback_offset_hz = 0.0
+        w._lock_watch_cycle()
+        assert w._dial_feedback_offset_hz == 0.0
+
+    def test_lock_toggle_resets_dial_feedback_state(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._dial_feedback_offset_hz = 123.0
+        w._last_commanded_dl_rig1_hz = 435_612_000.0
+        w._on_lock_changed(True)
+        assert w._dial_feedback_offset_hz == 0.0
+        assert w._last_commanded_dl_rig1_hz is None
+        w._dial_feedback_offset_hz = 456.0
+        w._last_commanded_dl_rig1_hz = 145_000_000.0
+        w._on_lock_changed(False)
+        assert w._dial_feedback_offset_hz == 0.0
+        assert w._last_commanded_dl_rig1_hz is None
+
+    def test_tune_button_resets_dial_feedback_state(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._current_transmitter = {
+            "downlink_low": 145_800_000,
+            "downlink_high": 145_950_000,
+            "uplink_low": 435_000_000,
+            "uplink_high": 435_150_000,
+            "invert": False,
+        }
+        w._dial_feedback_offset_hz = 123.0
+        w._last_commanded_dl_rig1_hz = 145_800_000.0
+        w._on_tune_requested()
+        assert w._dial_feedback_offset_hz == 0.0
+        assert w._last_commanded_dl_rig1_hz is None
+
+    def test_doppler_cycle_folds_in_dial_feedback_offset(self, qtbot, db) -> None:
+        """DL stays parked at "Doppler-corrected value plus the user's
+        manual offset" (not snapped back to the pure computed value), and
+        UL is derived from that offset-inclusive DL -- matching GPredict's
+        raw-delta algorithm (requirement 1: same Hz delta, sign-flipped for
+        inverting transponders -- see the companion inverted test below)."""
+        w = self._make_window(qtbot, db)
+
+        class _FakeEngine:
+            def observe(self, norad: int) -> Observation:
+                return Observation(
+                    norad_cat_id=norad,
+                    timestamp=datetime.now(UTC),
+                    elevation_deg=45.0,
+                    azimuth_deg=180.0,
+                    range_km=1000.0,
+                    range_rate_km_s=0.0,  # zero Doppler shift -> dl_corr == dl_nom
+                    is_above_horizon=True,
+                )
+
+        w._engine = _FakeEngine()
+        w._selected_norad = 99999
+        w._rig_controller = None
+        w._rig2_controller = None
+        w._current_transmitter = {
+            "downlink_low": 145_800_000,
+            "downlink_high": 145_950_000,
+            "uplink_low": 435_000_000,
+            "uplink_high": 435_150_000,
+            "invert": False,
+            "mode": "USB",
+        }
+        w._trsp_lock = True
+        w._dial_feedback_offset_hz = 500.0
+
+        received = []
+        w._doppler_computed.connect(received.append)
+        w._doppler_cycle()
+
+        assert len(received) == 1
+        result = received[0]
+        assert result.dl_corr == 145_800_500.0
+        assert result.ul_corr == 435_000_500.0
+        assert result.dl_shift is None
+
+    def test_doppler_cycle_folds_in_dial_feedback_offset_inverted(self, qtbot, db) -> None:
+        """Inverted transponder: DL +500Hz manual offset -> UL -500Hz
+        relative to its own baseline (ul_high)."""
+        w = self._make_window(qtbot, db)
+
+        class _FakeEngine:
+            def observe(self, norad: int) -> Observation:
+                return Observation(
+                    norad_cat_id=norad,
+                    timestamp=datetime.now(UTC),
+                    elevation_deg=45.0,
+                    azimuth_deg=180.0,
+                    range_km=1000.0,
+                    range_rate_km_s=0.0,
+                    is_above_horizon=True,
+                )
+
+        w._engine = _FakeEngine()
+        w._selected_norad = 99999
+        w._rig_controller = None
+        w._rig2_controller = None
+        w._current_transmitter = {
+            "downlink_low": 145_800_000,
+            "downlink_high": 145_950_000,
+            "uplink_low": 435_000_000,
+            "uplink_high": 435_150_000,
+            "invert": True,
+            "mode": "USB",
+        }
+        w._trsp_lock = True
+        w._dial_feedback_offset_hz = 500.0
+
+        received = []
+        w._doppler_computed.connect(received.append)
+        w._doppler_cycle()
+
+        assert len(received) == 1
+        result = received[0]
+        assert result.dl_corr == 145_800_500.0
+        assert result.ul_corr == 435_149_500.0
 
 
 class TestRadioType:

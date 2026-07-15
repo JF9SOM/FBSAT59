@@ -979,6 +979,84 @@ class TestHamlibNetController:
         assert b"I 435830000\n" in data
         assert b"V VFOA\n" not in data
 
+    # -- _cmd_raw: query commands (lowercase) must not wait for RPRT --
+    #
+    # Confirmed live (2026-07-15, FTX-1F): a successful query response (e.g.
+    # "f" -> "435612000\n") never includes an RPRT line -- RPRT only appears
+    # on the query's *error* path. The old unconditional "wait for RPRT"
+    # loop therefore blocked every query until the socket timeout, which
+    # was misdiagnosed for years as "get_freq doesn't work on this rig".
+
+    def test_get_frequency_query_response_without_rprt_returns_immediately(self) -> None:
+        ctrl = self._make_connected_ctrl()
+        ctrl._sock.recv.return_value = b"435612000\n"  # type: ignore[union-attr]
+        freq = ctrl.get_frequency()
+        assert freq == 435_612_000.0
+        # A single recv() call was enough -- the loop did not keep polling
+        # waiting for an RPRT line that was never coming.
+        ctrl._sock.recv.assert_called_once()  # type: ignore[union-attr]
+
+    def test_get_split_frequency_query_response_without_rprt(self) -> None:
+        ctrl = self._make_connected_ctrl()
+        ctrl._sock.recv.return_value = b"145993000\n"  # type: ignore[union-attr]
+        freq = ctrl.get_split_frequency()
+        assert freq == 145_993_000.0
+        ctrl._sock.sendall.assert_called_with(b"i\n")  # type: ignore[union-attr]
+
+    def test_cmd_raw_set_command_still_waits_for_rprt_across_fragments(self) -> None:
+        """Set commands (uppercase) are unaffected by the query fix -- they
+        still read until RPRT appears, even if the response arrives split
+        across multiple recv() calls."""
+        ctrl = self._make_connected_ctrl()
+        ctrl._sock.recv.side_effect = [b"RP", b"RT 0\n"]  # type: ignore[union-attr]
+        with ctrl._cmd_lock:
+            resp = ctrl._cmd_raw("F 145800000")
+        assert resp == "RPRT 0"
+        assert ctrl._sock.recv.call_count == 2  # type: ignore[union-attr]
+
+    # -- read_dl_ul_independent / write_ul_independent: Lock dial feedback --
+
+    def test_read_dl_ul_independent_yaesu_cat_reads_both(self) -> None:
+        ctrl = self._make_ctrl(ctcss_method="ftx1")
+        mock_sock = MagicMock(spec=socket.socket)
+        mock_sock.recv.side_effect = [b"RPRT 0\n", b"435612020\n", b"145993000\n"]
+        sent: list[bytes] = []
+        mock_sock.sendall.side_effect = lambda data: sent.append(data)
+        with patch("rig.controller.socket.socket", return_value=mock_sock):
+            result = ctrl.read_dl_ul_independent()
+        assert result == (435_612_020.0, 145_993_000.0)
+        data = b"".join(sent)
+        assert data == b"S 1 Main\nf\ni\n"
+
+    def test_read_dl_ul_independent_none_for_non_yaesu_cat(self) -> None:
+        """Only verified against Yaesu-CAT NET-mode rigs (2026-07-15) --
+        must not be used for satmode/generic rigs it was never tested on."""
+        ctrl = self._make_ctrl(ctcss_method="icom_civ")
+        with patch("rig.controller.socket.socket") as mock_cls:
+            result = ctrl.read_dl_ul_independent()
+        assert result is None
+        mock_cls.assert_not_called()
+
+    def test_read_dl_ul_independent_returns_none_on_connect_failure(self) -> None:
+        ctrl = self._make_ctrl(ctcss_method="ft991")
+        with patch("rig.controller.socket.socket") as mock_cls:
+            mock_sock = MagicMock()
+            mock_sock.connect.side_effect = ConnectionRefusedError("refused")
+            mock_cls.return_value = mock_sock
+            result = ctrl.read_dl_ul_independent()
+        assert result is None
+
+    def test_write_ul_independent_sends_i_command(self) -> None:
+        ctrl = self._make_ctrl(ctcss_method="ftx1")
+        sent: list[bytes] = []
+        mock_sock = MagicMock(spec=socket.socket)
+        mock_sock.recv.return_value = b"RPRT 0\n"
+        mock_sock.sendall.side_effect = lambda data: sent.append(data)
+        with patch("rig.controller.socket.socket", return_value=mock_sock):
+            ctrl.write_ul_independent(145_993_080.0)
+        assert b"".join(sent) == b"I 145993080\n"
+        assert ctrl._transponder_ul_hz == 145_993_080.0
+
     # -- set_vfo_frequencies: F/I only, no M --
 
     def test_set_vfo_frequencies_sends_no_mode_command(self) -> None:

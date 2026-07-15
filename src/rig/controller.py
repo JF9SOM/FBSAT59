@@ -2228,13 +2228,22 @@ class HamlibNetController(RigController):
     def _cmd_raw(self, command: str) -> str:
         """Send a command and return the response. Caller MUST hold _cmd_lock.
 
-        Reads until the RPRT line appears, which prevents response data from
-        read commands (f/i, etc.) from lingering in the buffer and being
-        misread as the next command's response.
-        On OSError, the socket is closed and the state transitions to DISCONNECTED.
+        Set commands (uppercase, e.g. "F", "I", "S") always reply with a
+        trailing "RPRT <code>" line, so we read until that appears.
+
+        Query commands (lowercase, e.g. "f", "i", "m") do NOT send an RPRT
+        line on success -- only the raw value terminated by a newline (RPRT
+        only appears on the query's *error* path). Waiting for RPRT on a
+        successful query blocks until the socket timeout, since it never
+        arrives. Confirmed live (2026-07-15, FTX-1F via rigctld) that this
+        was the actual cause of "get_freq never works on this rig", not a
+        genuine Hamlib/backend limitation as previously documented here.
+        For query commands we instead stop as soon as a complete line
+        (ending in "\\n") has been read.
         """
         if self._sock is None:
             return ""
+        is_query = command[:1].islower()
         try:
             self._sock.sendall((command + "\n").encode())
             data = b""
@@ -2243,7 +2252,10 @@ class HamlibNetController(RigController):
                 if not chunk:
                     break
                 data += chunk
-                if b"RPRT" in data:
+                if is_query:
+                    if data.endswith(b"\n"):
+                        break
+                elif b"RPRT" in data:
                     break
             return data.decode(errors="replace").strip()
         except OSError as exc:
@@ -2480,6 +2492,22 @@ class HamlibNetController(RigController):
 
     def get_frequency(self, vfo: str = "VFOA") -> float:
         resp = self._cmd("f")
+        try:
+            return float(resp.splitlines()[0])
+        except (ValueError, IndexError):
+            return -1.0
+
+    def get_split_frequency(self) -> float:
+        """Read back the split (TX/UL) frequency via rigctld's "i" command.
+
+        Mirrors the write side's "I" (set_split_freq) exactly -- like "I",
+        this does not depend on rigctld's "current VFO" tracking, and is
+        reliable regardless of read/write ordering (confirmed live,
+        2026-07-15, FTX-1F: unlike bare "f", "i" never returned a stale or
+        wrong value across 10+ consecutive cycles including immediately
+        after a fresh connection's first "I" write).
+        """
+        resp = self._cmd("i")
         try:
             return float(resp.splitlines()[0])
         except (ValueError, IndexError):
@@ -2872,6 +2900,92 @@ class HamlibNetController(RigController):
             logger.info("RigNet: freq preset done")
         except Exception as exc:
             logger.error("RigNet: freq preset failed: %s", exc)
+
+    def read_dl_ul_independent(self) -> tuple[float, float] | None:
+        """Read live DL/UL frequencies via a fresh, independent TCP socket.
+
+        For Lock (L button) dial feedback (see MainWindow._lock_watch_cycle())
+        before Connect has been pressed -- there is no persistent self._sock
+        to read from yet, so this opens a short-lived connection, sends
+        "S 1 Main" (idempotent -- matches the production connect sequence,
+        the only command besides plain F/I ever confirmed live not to
+        disturb the rig's Main/Sub role assignment) followed by read-only
+        "f"/"i", and closes.
+
+        Confirmed live (2026-07-15, FTX-1F): unlike a connection that has
+        already sent "F"/"I" writes, a read-only "S 1 Main" -> "f" -> "i"
+        sequence returns the correct DL/UL values from the very first read
+        -- no self-heal delay, no wrong-VFO reading.
+
+        Only meaningful for Yaesu-CAT NET-mode rigs (ctcss_method "ftx1" /
+        "ft991") -- the only configuration this read mechanism has been
+        verified against. Returns None for any other rig, or on any I/O
+        failure.
+        """
+        if self._ctcss_method not in ("ftx1", "ft991"):
+            return None
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(self._TIMEOUT)
+            sock.connect((self._host, self._port))
+            sock.settimeout(2.0)
+
+            def _send_recv(cmd: str, is_query: bool) -> str:
+                sock.sendall((cmd + "\n").encode())
+                buf = b""
+                with contextlib.suppress(OSError):
+                    while True:
+                        chunk = sock.recv(256)
+                        if not chunk:
+                            break
+                        buf += chunk
+                        if is_query:
+                            if buf.endswith(b"\n"):
+                                break
+                        elif b"RPRT" in buf:
+                            break
+                return buf.decode(errors="replace").strip()
+
+            _send_recv("S 1 Main", is_query=False)
+            f_resp = _send_recv("f", is_query=True)
+            i_resp = _send_recv("i", is_query=True)
+            sock.close()
+            dl = float(f_resp.splitlines()[0])
+            ul = float(i_resp.splitlines()[0])
+            return dl, ul
+        except (OSError, ValueError, IndexError) as exc:
+            logger.warning("RigNet: read_dl_ul_independent failed: %s", exc)
+            return None
+
+    def write_ul_independent(self, ul_hz: float) -> None:
+        """Write a corrected UL frequency via a fresh, independent TCP socket.
+
+        Used by Lock (L button) dial feedback to push a manual-DL-retune
+        correction to the rig before Connect has been pressed (there is no
+        persistent self._sock / running Doppler cycle to do this yet).
+        Mirrors _send_freq_preset_independent()'s "I" write exactly, and
+        also updates _transponder_ul_hz so a subsequent freq preset (e.g.
+        re-selecting the same transponder) stays consistent with the
+        corrected value.
+        """
+        self._transponder_ul_hz = ul_hz
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(self._TIMEOUT)
+            sock.connect((self._host, self._port))
+            sock.settimeout(2.0)
+            sock.sendall(f"I {int(ul_hz)}\n".encode())
+            buf = b""
+            with contextlib.suppress(OSError):
+                while b"RPRT" not in buf:
+                    chunk = sock.recv(256)
+                    if not chunk:
+                        break
+                    buf += chunk
+            sock.close()
+            logger.info("RigNet: dial-feedback UL correction sent, ul=%.3fMHz", ul_hz / 1e6)
+        except Exception as exc:
+            logger.error("RigNet: write_ul_independent failed: %s", exc)
 
     def _send_split_init_independent(self) -> None:
         """Send satmode/split init via a fresh TCP socket (mirrors Direct-mode set_func(SATMODE,1)).
