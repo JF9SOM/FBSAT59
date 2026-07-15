@@ -2624,12 +2624,23 @@ class HamlibNetController(RigController):
         as send_mode_only).  No pyserial required — works on Linux, macOS,
         and Windows regardless of port locking.
 
+        "L CTCSS_TONE {value}" (the LEVEL-set syntax) was used here
+        previously, but CTCSS_TONE is not a rigctld LEVEL — it has its own
+        command letter "C". rigctld rejects "L CTCSS_TONE" with RPRT -11
+        (ENAVAIL), so the tone frequency was never actually written; only
+        "U TONE" (the encoder on/off func, a separate command) succeeded,
+        which is why the TONE indicator lit up while the tone itself stayed
+        at whatever value was previously set on the rig. Confirmed live on
+        an IC-9100 (2026-07-15) — same failure mode as the IC-705 fix in
+        set_ctcss_tone() above. A tone_hz <= 0 skips "C" (rigctld rejects
+        tone 0 with RPRT -9) and only disables the encoder.
+
         Sequence (via rigctld extended commands):
-          V Sub             — select Sub VFO
-          L CTCSS_TONE <deci_hz>  — set tone frequency (deci-Hz integer)
-          U TONE 1          — enable CTCSS encoder (0 to disable)
-          V Main            — restore Main VFO
-          U TONE 0          — clear CTCSS on Main (prevent bleed-through)
+          V Sub          — select Sub VFO
+          C <deci_hz>     — set tone frequency (deci-Hz integer; skipped when disabling)
+          U TONE 1        — enable CTCSS encoder (0 to disable)
+          V Main          — restore Main VFO
+          U TONE 0        — clear CTCSS on Main (prevent bleed-through)
         """
         enable = tone_hz > 0
         tone_deci = int(round(abs(tone_hz) * 10)) if enable else 0
@@ -2653,7 +2664,8 @@ class HamlibNetController(RigController):
                         buf += chunk
 
             _cmd_drain("V Sub")
-            _cmd_drain(f"L CTCSS_TONE {tone_deci}")
+            if enable:
+                _cmd_drain(f"C {tone_deci}")
             _cmd_drain(f"U TONE {'1' if enable else '0'}")
             _cmd_drain("V Main")
             _cmd_drain("U TONE 0")

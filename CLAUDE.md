@@ -2189,45 +2189,6 @@ QT_LOGGING_RULES="qt.qpa.*=true" ./FBSAT59.AppImage 2>&1 | head -100
 
 ---
 
-### ICOM SATMODE機（IC-9100/9700等）NETモードCTCSS — `L CTCSS_TONE` が壊れている疑い（未検証・保留中、2026-07-07）
-
-**背景**: IC-705（汎用非satmodeリグ）のNETモードCTCSS調査で、`HamlibNetController.set_ctcss_tone()`が使っていた`L CTCSS_TONE {value}`コマンドは、rigctldのLEVEL設定構文であり、CTCSS_TONEはLEVELとして登録されていないため`RPRT -11`（ENAVAIL）で拒否されることが実機で確定した（`C {deci-Hz}`が正しい専用コマンド。詳細は「IC-705 (Hamlib model 3085)」セクション参照）。
-
-**懸念**: satmode NETモード（IC-9100/IC-9700等）のCTCSS自動適用実装 `_apply_ctcss_civ_direct()`（`src/rig/controller.py`）も、**全く同じ`L CTCSS_TONE`を使っている**：
-
-```python
-_cmd_drain("V Sub")
-_cmd_drain(f"L CTCSS_TONE {tone_deci}")   # ← IC-705と同じ理由でRPRT -11の可能性
-_cmd_drain(f"U TONE {'1' if enable else '0'}")  # ← これは正しいコマンドなので独立して成功する
-_cmd_drain("V Main")
-_cmd_drain("U TONE 0")
-```
-
-Hamlibソース（`src/misc.c`の`rig_parse_level()`・`rig_ext_lookup()`、`rigs/icom/ic9100.c`・`ic7300.c`のIC-9700定義）を確認したが、"CTCSS_TONE"という文字列はどのIcomモデルのLEVEL/extlevel/extfunc/extparmテーブルにも登録されていない。IC-9100/9700でも理論上は同じ`RPRT -11`が返るはずである。
-
-**なぜ「動いているように見える」可能性があるか**: `_cmd_drain()`は応答を検証せず握りつぶすため、`L CTCSS_TONE`が失敗しても後続の`U TONE 1`（エンコード有効化、これは正しいコマンドなので独立して成功する）は実行され、**TONEランプ自体は点灯する**。しかし周波数自体はリグに残っていた「以前の値」のままの可能性がある。ユーザーが実機で自動適用を「散々確認した」のは事実だが、テストした衛星の多くが67.0Hz系（ISS・AO-91等、AMSAT FM衛星で最も一般的な値）だった場合、たまたま以前の設定値と一致し続けて気づかなかった可能性を否定できない（本セッションでIC-705調査中に繰り返し遭遇した「残留状態のおかげでたまたま正しく見える」パターンと同型）。
-
-**保留の判断（2026-07-07、ユーザー判断）**: 実機（IC-9100/9700）での検証環境が整うまで、この修正は保留とする。**実装は行っていない**。
-
-**提案されている修正内容（未実装）**:
-```python
-_cmd_drain("V Sub")
-if enable:
-    _cmd_drain(f"C {tone_deci}")   # L CTCSS_TONE → C に変更
-_cmd_drain(f"U TONE {'1' if enable else '0'}")
-_cmd_drain("V Main")
-_cmd_drain("U TONE 0")
-```
-`tone_hz <= 0`（無効化）時は`C 0`を送らない（IC-705で`RPRT -9`拒否を確認済みのため、`C`コマンド自体をスキップし`U TONE 0`のみ送る）。
-
-**検証方法（次回対応時）**: 67.0Hz以外の値を要求する衛星（例: IO-86の88.5Hz、SO-50 Activation の74.4Hz）でトランスポンダーを自動選択し、実際にそのリグ設定（メニュー等でCTCSS周波数の現在値を確認できる機種であれば）が正しい値に切り替わるかを確認する。単に「Tランプが点くか」だけでは`U TONE`の成否しか分からず、周波数自体の正しさは検証できない。
-
-**関連ファイル**:
-- `src/rig/controller.py` — `HamlibNetController._apply_ctcss_civ_direct()`（約2557行目）
-- 同ファイル内 `set_ctcss_tone()`（汎用リグ用、今回修正済み — 同じ`L`→`C`の教訓が反映されている）
-
----
-
 ## 次回の作業候補（v0.1.0 以降）
 
 ### 継続中・優先度高
@@ -2711,7 +2672,7 @@ return self._satmode or self._ctcss_method == "icom_civ"
    - `_send_split_init_independent()` — **`S 1 Main`（または同バンド時は `S 1 VFOB`）を独立ソケットで先送り**してsatmodeを確立（Direct modeの `set_func(SATMODE,1)` に相当）
    - `_send_freq_preset_independent()` — **DL/UL周波数を先書き**して IC-9100/9700 SAT mode Main/Sub バンド割り当てをアンカー（後述 Stage 1）
    - `send_mode_only()` via independent socket (VFO branch by `_is_same_band`)
-   - `_apply_ctcss_civ_direct()` via rigctld TCP commands (`V Sub / L CTCSS_TONE / U TONE / V Main / U TONE 0`)
+   - `_apply_ctcss_civ_direct()` via rigctld TCP commands (`V Sub / C / U TONE / V Main / U TONE 0`)
 6. After connect() + first live Doppler `I` write: **Stage-2 resend** — `send_mode_only()` + `_apply_ctcss_civ_direct()` (see below)
 
 **順序の根拠**: satmode確立→周波数アンカー→mode設定→CTCSS設定 の順序。`S 1 Main` を先に送ることでsatmodeを確立し、続いて周波数を書いてIC-9100のSATモードメモリのバンド割り当てを新しい衛星に固定してからモード・CTCSSを送る。`connect()` の `_init_vfo()` が再度 `S 1 Main` を送っても、リグはすでにSATモードに入っているためCTCSS状態をリセットしない。
@@ -2729,9 +2690,13 @@ return self._satmode or self._ctcss_method == "icom_civ"
 >   - 同バンドDL更新も 2000 Hz / 60 秒で間引き（`_last_dl_update_time` 管理）
 >   - HF/VHF クロスバンド（AO-7: 29MHz DL / 145MHz UL）: SAT mode 正常動作確認済み
 >   - `satmode_warmup()`: 起動時に直接 `import Hamlib` することで正常動作（`self._hamlib is None` 問題を修正）
-> - **NET モード（IC-9100 + rigctld）**: 周波数・モード・CTCSSトーン（クロスバンド・同バンド両方）すべて動作確認済み
+> - **NET モード（IC-9100 + rigctld）**: 周波数・モード・CTCSSトーン（クロスバンド・同バンド両方）動作確認済み
 >   - トランスポンダー選択時の順序: `_send_split_init_independent()`（S 1 Main）→ `_send_freq_preset_independent()`（DL/UL周波数先書き）→ `send_mode_only()` → `_apply_ctcss_civ_direct()`
->   - CTCSS: `_apply_ctcss_civ_direct()` が rigctld TCP コマンド（`V Sub / L CTCSS_TONE / U TONE / V Main / U TONE 0`）を送信（pyserial 廃止・macOS でも動作）
+>   - CTCSS: `_apply_ctcss_civ_direct()` が rigctld TCP コマンド（`V Sub / C / U TONE / V Main / U TONE 0`）を送信（pyserial 廃止・macOS でも動作）。
+>     **訂正（2026-07-15）**: この時点（2026-06-20）では実際にはトーン周波数書き込みコマンドが
+>     `L CTCSS_TONE`（誤り）のままで、`RPRT -11`で拒否され続けていた。TONEエンコーダーのON/OFF
+>     （`U TONE`）だけが独立して成功するため一見動いているように見えていた。詳細・修正内容は
+>     後述の「`L CTCSS_TONE` → `C` 修正」セクション参照
 >   - HF/VHF クロスバンド（AO-7: 29MHz DL / 145MHz UL）: SAT mode 正常動作確認済み
 >
 > **衛星切り替え時の VFO 逆転バグ修正（2026-06-21, cf62d6d）**: 実機確認待ち
@@ -2786,11 +2751,21 @@ return self._satmode or self._ctcss_method == "icom_civ"
 pyserial を廃止し、独立した rigctld TCP ソケットでコマンドを送信（macOS でも動作）:
 ```
 V Sub                    # VFO Sub を選択
-L CTCSS_TONE <deci_hz>  # CTCSS 周波数設定（デシ Hz 整数）
+C <deci_hz>              # CTCSS 周波数設定（デシ Hz 整数。無効化時はスキップ）
 U TONE 1/0              # CTCSS エンコーダー ON/OFF
 V Main                   # VFO Main を復元
 U TONE 0                 # Main の CTCSS クリア（ブリード防止）
 ```
+
+**`L CTCSS_TONE` → `C` 修正（2026-07-15、IC-9100実機で確認・修正済み）**: 上記は元々
+`L CTCSS_TONE <deci_hz>`（rigctldのLEVEL設定構文）を使っていたが、CTCSS_TONEはLEVELとして
+登録されておらず`RPRT -11`（ENAVAIL）で拒否されるため、**トーン周波数自体は一度も書き込めて
+いなかった**。直後の`U TONE 1`（エンコーダー有効化、正しいコマンドなので独立して成功する）
+だけは実行されるため、TONEランプは点灯するが周波数はリグに残っていた以前の値のままになる、
+という発覚しにくい不具合だった（IC-705の`set_ctcss_tone()`で判明した`L`→`C`の教訓と同一原因。
+詳細は「IC-705 (Hamlib model 3085)」セクション参照）。IC-9100実機で`L CTCSS_TONE`が
+`RPRT -11`で拒否され`C`は`RPRT 0`で成功することを確認した上で、`_apply_ctcss_civ_direct()`
+を`C {deci_hz}`（`tone_hz <= 0`時はスキップ）に修正済み。
 
 #### 衛星切り替え時の VFO 割り当て逆転バグ修正（2-stage freq anchor, 2026-06-21）
 
@@ -2930,7 +2905,7 @@ is_yaesu_cat   = self._ctcss_method in ("ftx1", "ft991")  # CTCSS Method プル�
 どちらにも該当しない（デフォルトの"Hamlib standard"のまま）場合にのみ「汎用リグ」として扱われる、消去法の設計。IC-705を積極的に検出しているわけではないので、**この設定をユーザーが正しく選択している前提**であることに注意（FT-991Aを繋いだまま設定を"Hamlib standard"のままにすると汎用経路に落ちて誤動作する）。
 
 - `_init_vfo()`・`send_mode_only()`・`_send_split_init_independent()`が無条件に`S 1 Main`/`Main`/`Sub`命名を使っていたのは、FTX-1F/FT-991Aのrigctldバックエンド固有の癖（S 1 Main以外だと不定動作）を「非satmode リグ全般の仕様」と誤って一般化したもの。IC-705にはMain/Sub概念がなく、`"Main"`という文字列がバックエンドに誤解釈されRX/TXが入れ替わる（実機確認: ダウンリンクがVFOBに、アップリンクがVFOAに入った）。`is_yaesu_cat`で分岐し、汎用リグは素直な`VFOA`/`VFOB`命名（`S 1 VFOB`等）を使うよう修正
-- `HamlibNetController.set_ctcss_tone()`が`L CTCSS_TONE {value}`（rigctldの**LEVEL設定構文**）を使っていたが、CTCSS_TONEはLEVELではなく専用コマンド文字を持つため、rigctldは`RPRT -11`（ENAVAIL）で拒否する。正しくは`C {deci-Hz}`（専用コマンド）。**satmode NETモードのCTCSS実装（`_apply_ctcss_civ_direct()`）にも同一パターンの`L CTCSS_TONE`が存在する。詳細・検証方針は「既知のバグ（未修正）」内「ICOM SATMODE機（IC-9100/9700等）NETモードCTCSS — `L CTCSS_TONE` が壊れている疑い」セクション参照（2026-07-07、実機検証待ちで保留中）**
+- `HamlibNetController.set_ctcss_tone()`が`L CTCSS_TONE {value}`（rigctldの**LEVEL設定構文**）を使っていたが、CTCSS_TONEはLEVELではなく専用コマンド文字を持つため、rigctldは`RPRT -11`（ENAVAIL）で拒否する。正しくは`C {deci-Hz}`（専用コマンド）。**satmode NETモードのCTCSS実装（`_apply_ctcss_civ_direct()`）にも同一パターンの`L CTCSS_TONE`が存在していたが、2026-07-15にIC-9100実機で同一の`RPRT -11`拒否を確認の上`C`に修正済み。詳細は「ICOM SATMODE機（IC-9100/9700等）NETモードCTCSS — `L CTCSS_TONE` → `C` 修正」セクション参照**
 - CTCSSトーンはVFOごとに独立して保持される（実機確認: VFOAとVFOBに別々の値を書き込み・読み戻し可能）。`send_mode_only()`はVFOA（ダウンリンク）を選択した状態で終わるため、VFO切り替えなしで`C`を送るとダウンリンク側に誤って書き込まれる → `V VFOB`で明示的に切り替えてから`C`、その後`V VFOA`で表示を復元
 - `C {value}`は**トーン周波数のみ**を設定し、エンコードのON/OFF自体は別のfunc（`U TONE 1`/`U TONE 0`）で制御する。この分離に気づかず`C`だけ送っていたため、以前のDirectモードテストでたまたまエンコードがONのまま残っていた間は「動いているように見えていた」だけだった。`tone_hz <= 0`の場合は`C 0`がrigctldに`RPRT -9`で拒否されるため`C`自体をスキップし、`U TONE 0`のみ送る
 - `set_ctcss_tone()`は接続前（`self._sock is None`）は独立ソケットを新規に開いて送信する（`_send_freq_preset_independent()`と同じパターン）。`_on_ctcss_send()`（Activateボタン等の手動送信ハンドラ）に残っていた`if not rig.is_connected: return`という古いガードが、この独立ソケット経路に到達する前にブロックしていたため削除済み
@@ -2992,7 +2967,7 @@ IC-705のSplit ON/OFF生CI-Vフレーム（`0F 01`/`0F 00`）を`os.open()`ま�
   - `_FT991_DIRECT_MODEL_IDS = frozenset({1035, 1036})`。main_window.py では `_FTX1_MODEL_IDS | _FT991_DIRECT_MODEL_IDS` を一括判定
 - IC-9700 / IC-9100 / IC-910H / IC-821H (satmode rigs): both NET and Direct work (confirmed 2026-06-20, cross-band and same-band)
   - NET satmode detection: `ctcss_method == "icom_civ"` (user setting) — model name query removed
-  - NET mode + CTCSS: rigctld TCP commands (`V Sub / L CTCSS_TONE / U TONE / V Main`) — pyserial 廃止、macOS でも動作
+  - NET mode + CTCSS: rigctld TCP commands (`V Sub / C / U TONE / V Main`) — pyserial 廃止、macOS でも動作。tone write command fixed from `L CTCSS_TONE` to `C` 2026-07-15 (confirmed on real IC-9100; `L CTCSS_TONE` returns RPRT -11)
   - NET mode + same-band: `S 1 VFOB` instead of `S 1 Main`; UL throttled to reduce display flicker
   - **IC-910H / IC-821H**: Hamlib がモデル固有 CI-V を自動選択するため同一コードパスで動作するはず（実機未確認）
 - Detection: use `ctcss_method` setting value (`"ft991"`, `"icom_civ"`, `"hamlib"`) — **never** use `w ID;` or rigctld `_` command (causes 10 s timeout and socket race)
