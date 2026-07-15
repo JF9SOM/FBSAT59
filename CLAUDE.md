@@ -2547,67 +2547,48 @@ GitHub Issue #14「VFOダイヤルを手で回してもドップラー補正が�
 2. **Dial feedback（周波数読み戻し）は、Lボタン（Lock）が押されている場合のみ実行する分岐処理とする**
    （毎サイクル無条件に読み戻すと、Lock未使用時にも書き込みが遅くなるため）
 
-#### 読み戻しの順序に関する致命的なバグと修正（2026-07-15、実機テストで発覚）
+#### 実装（`src/ui/main_window.py`、NETモードのみ・Directモードは次回対応）
 
-初版の実装は`set_vfo_frequencies()`で**書き込んだ直後に**読み戻す順序だった。実機（FTX-1F）で
-テストしたところ「Lock ONでダウンリンクVFOを手で回してもアップリンクも表示周波数も一切変化
-しない」という報告があり、原因を検証した結果、**この順序では原理的に何も検知できない**ことが
-判明した:
-
-```
-サイクルN:   [書き込み: 今サイクルのドップラー計算値] → [直後に読み戻し]
-             → 読み戻し値は「自分がたった今書いた値」と一致するため、差分は常にゼロ
-サイクルN+1: [書き込み: 次のドップラー計算値で上書き] → [直後に読み戻し]
-             → ユーザーが2つの書き込みの間に手でVFOを回していても、その変更は
-               このサイクルの「書き込み」で即座に上書き・消去され、読み戻しの時点では
-               もう跡形もない
-```
-
-つまり「自分の書き込みの直後に読む」限り、ユーザーの手動操作は**常に自分自身の次の書き込みに
-よって、読み戻しが実行される前に上書きされてしまう**。GPredictの実際の設計（前掲の
-`get_freq_simplex()`呼び出し）はRXサイクルの中で**書き込みより前**に読み戻しており、これが
-唯一正しい順序だと判明した。
-
-**修正後の正しい順序**（`src/ui/main_window.py`）:
-1. `self._last_commanded_dl_rig1_hz` / `_last_commanded_dl_rig2_hz: float | None`
-   （リグごとに独立、`__init__`で`None`初期化）— 「前回このリグに実際に書き込んだDL周波数」を
-   保持する永続状態。GPredictの`ctrl->lastrxf`に相当
-2. `_apply_dial_feedback(rig, last_commanded_dl_hz)`: 引数は「今サイクルにこれから送る値」では
-   なく**「前回のサイクルで実際に送った値」**（＝`self._last_commanded_dl_rig1_hz`）。読み戻した
-   値とこれを比較し、閾値以上ずれていれば手動操作とみなして`self._dial_feedback_offset_hz`に
-   加算する（各種ガード条件は変更なし: NETモードのみ・SDR除外・失敗センチネル無視・
-   `_DIAL_FEEDBACK_SANITY_HZ`=50kHz超の乖離は通信グリッチとみなし無視）
-3. `_rig_send()`/`_rig2_send()`（バックグラウンドスレッド内）の**呼び出し順序を反転**:
-   `self._trsp_lock`が真なら**まず**`_apply_dial_feedback(rig, self._last_commanded_dl_rig1_hz)`
-   を呼び、**その後で**`rig.set_vfo_frequencies(dl, ul)`を実行し、成功したら
-   `self._last_commanded_dl_rig1_hz = dl`で状態を更新する
-- **1サイクル分の遅延というトレードオフ**: `dl`/`ul`は`_doppler_cycle()`の同期部分（メインの
-  DopplerWorkerスレッド）で、このサイクルの読み戻しが完了する**前に**すでに計算済みのローカル
-  変数としてクロージャに渡されている。そのため「このサイクルの読み戻しで検知した」新しい
-  オフセットは、**このサイクル自身の書き込みにはまだ反映されず**、次のサイクルの同期計算
-  （`_doppler_cycle()`冒頭の`dl_corr = dl_corr + self._dial_feedback_offset_hz`）で初めて反映
-  される。つまり「ユーザーが手で回す→1サイクル分だけ元の値に戻る→次のサイクルで検知した
-  オフセットが反映される」という約1サイクル（デフォルト設定で概ね1秒程度）の遅延が発生する。
-  これは、DopplerWorker自身のスレッドをCATラウンドトリップでブロックしないという既存の設計
-  原則（`core/doppler_worker.py`）を守るために許容したトレードオフであり、意図的な仕様
-- **リセット箇所**（`_dial_feedback_offset_hz = 0.0`に加え、`_last_commanded_dl_rig1_hz`/
-  `_last_commanded_dl_rig2_hz`も`None`に戻す。`None`の間は`_apply_dial_feedback()`が
-  即座にno-opするため、リセット直後の最初のサイクルで誤検知しない）:
-  - `_on_lock_changed()`: Lock ON/OFFどちらのトグルでも毎回リセット
+- `self._dial_feedback_offset_hz: float`（`__init__`で0.0初期化）— GPredictの`lastrxf`比較結果を
+  累積するオフセット。**one-shot**な`_tune_dl_override`（Tボタン）とは異なり**persistent**（複数
+  サイクルにわたって保持される）
+- `_apply_dial_feedback(rig, commanded_dl_hz)`（新設ヘルパー、`_doppler_cycle()`直前に定義）:
+  `rig.get_frequency()`で読み戻し、直前に送信した周波数（`commanded_dl_hz`、その場の`dl`/`dl2`
+  ローカル変数をそのまま渡す — GPredictの`lastrxf`相当の「別の永続状態」は不要）との差が
+  `_DIAL_FEEDBACK_THRESHOLD_HZ`（1.0 Hz、GPredictと同じ閾値）以上なら手動操作とみなし
+  `self._dial_feedback_offset_hz`に差分を加算する。以下は無視（何もしない）:
+  - `isinstance(rig, HamlibNetController)`でない場合（Directモード・SDRは対象外）
+  - `getattr(rig, "is_sdr", False)`が True の場合
+  - `commanded_dl_hz is None`の場合
+  - 読み戻し値が失敗センチネル（`get_frequency()`の`-1.0`）の場合
+  - 読み戻し値が`commanded_dl_hz`から`_DIAL_FEEDBACK_SANITY_HZ`（50kHz）以上乖離している場合
+    （通信グリッチであって手動操作ではないと判断し、誤ったオフセットで暴走しないための安全弁。
+    GPredict自体にはこの安全弁はないが、追加した）
+  - `get_frequency()`が例外を送出した場合（`get_frequency()`自体が内部で`ValueError`/`IndexError`
+    を`-1.0`に握りつぶす設計のため通常は到達しないが、念のため二重に保護）
+- `_doppler_cycle()`: `dl_corr`計算直後、`self._trsp_lock`かつオフセットが非ゼロなら
+  `dl_corr = dl_corr + self._dial_feedback_offset_hz`（`dl_shift`は`None`にして表示上も
+  「純粋なドップラーシフトではない」ことを示す）。これにより、Lock分岐のUL計算（生デルタ）にも
+  自動的にオフセットが反映される
+- `_rig_send()`/`_rig2_send()`（バックグラウンドスレッド内）: `set_vfo_frequencies()`成功後、
+  `self._trsp_lock`が真なら`self._apply_dial_feedback(rig, dl)`を呼ぶ（Rig 1/Rig 2それぞれ独立）。
+  読み戻し失敗は`_apply_dial_feedback()`内部で完全に握りつぶされ、`RigControlError`等の
+  例外処理には一切影響しない（周波数の書き込み自体は成功しているため、読み戻し失敗を
+  リグエラーとしてユーザーに通知するのは不適切という判断）
+- **リセット箇所**（すべて`self._dial_feedback_offset_hz = 0.0`）:
+  - `_on_lock_changed()`: Lock ON/OFFどちらのトグルでも毎回リセット（再度ONにしたときに
+    古いオフセットを引き継がないようにするため）
   - `_on_tune_requested()`（Tボタン）: RTZ相当の全リセット
   - トランスポンダー切り替え時（`self._sdr_tune_offset = 0.0`と同じ箇所）
 
 #### 実機検証（2026-07-15、FTX-1F・rigctld NETモード）
 
-修正後の「読み戻し→書き込み」順序を、3サイクル分手動でシミュレートして実機検証:
+`_apply_dial_feedback()`の検知ロジックを実機で直接検証:
 ```
-Cycle 1: wrote 435612000.0, last_commanded=435612000.0
-manual retune -> RPRT 0                                    （擬似的な手動操作）
-Cycle 2 pre-write readback: 435621000.0  (diff: 9000.0)     （検知成功）
-Detected dial_feedback_offset = 9000.0
-Cycle 2 wrote 435612000.0 (stale offset)                    （このサイクルはまだ古い値のまま）
-Cycle 3 wrote 435621000.0 (offset applied)                  （次サイクルで反映）
-Final rig readback: 435621000.0
+connect() -> True
+Set DL to 435612000.0, readback: 435612000.0
+Simulated manual retune to 435621000 -> b'RPRT 0\n'
+Readback after simulated retune: 435621000.0  (diff from commanded: 9000.0)
 ```
 （実際にVFOダイヤルを回す代わりに、別の独立したソケットから`F 435621000`を送って
 「外部から周波数が変わった」状態を再現。リグ自身はCATコマンドによる変更と手動ダイヤル操作を
@@ -2621,11 +2602,9 @@ Final rig readback: 435621000.0
 - **Rig1がSDR・Rig2がCATのような混在構成**は現状カバー外（`_apply_dial_feedback()`は
   `is_sdr`なリグを無条件除外するため、Lock ON時のSDR側DLは引き続き`_sdr_tune_offset`
   （Passband Tune）でのみ制御される。両者の同時使用は想定していない）
-- テスト: `tests/test_main_window.py`の`TestDialFeedback`（13件）。`_apply_dial_feedback()`単体の
-  検知ロジック9件・リセット箇所2件に加え、実`HamlibNetController`+スクリプト化フェイクソケット
-  で3サイクル分の`_doppler_cycle()`を通しで検証する統合テスト2件（オフセットの`dl_corr`への
-  反映1件・「読み戻し→書き込み」の正しい順序と1サイクル遅延を検証する回帰テスト1件。
-  後者は初版の「書き込み→読み戻し」順序バグが再発すれば確実に落ちる設計）
+- テスト: `tests/test_main_window.py`の`TestDialFeedback`（`_apply_dial_feedback()`単体の
+  検知ロジック9件・リセット箇所2件・`_doppler_cycle()`統合1件、実`HamlibNetController`を
+  モックソケットで検証）
 
 ### 実装上の重要事項
 - set_vfo_frequencies()はバックグラウンドスレッドで実行（UIブロック防止）

@@ -557,23 +557,15 @@ class MainWindow(QMainWindow):
         self._trsp_lock: bool = False
         # Dial feedback (GitHub issue #14): while Lock is on, each cycle reads
         # the downlink back from the rig (NET mode only for now — see
-        # _doppler_cycle()) BEFORE writing this cycle's new value, and
-        # compares it to what was commanded *last* cycle (_last_commanded_dl_
-        # rig1/2_hz below) — comparing against this cycle's own about-to-be-
-        # sent value would never show a difference, since nothing else has
-        # had a chance to touch the rig between our write and our read of
-        # that same write (confirmed on real hardware). A mismatch beyond
-        # _DIAL_FEEDBACK_THRESHOLD_HZ means the user manually retuned the
-        # VFO; the difference accumulates in _dial_feedback_offset_hz and is
-        # added to every subsequent dl_corr, so Doppler tracking continues
-        # from where the user left it instead of snapping back to the exact
-        # centre. Reset to 0.0 whenever Lock is toggled, the transponder
-        # changes, or the T button is pressed. Matches GPredict's
-        # track_downlink()/dial feedback design (verified against its actual
-        # source 2026-07-15).
+        # _doppler_cycle()) and compares it to what was just commanded. A
+        # mismatch beyond _DIAL_FEEDBACK_THRESHOLD_HZ means the user manually
+        # retuned the VFO; the difference accumulates here and is added to
+        # every subsequent dl_corr, so Doppler tracking continues from where
+        # the user left it instead of snapping back to the exact centre.
+        # Reset to 0.0 whenever Lock is toggled, the transponder changes, or
+        # the T button is pressed. Matches GPredict's track_downlink()/dial
+        # feedback design (verified against its actual source 2026-07-15).
         self._dial_feedback_offset_hz: float = 0.0
-        self._last_commanded_dl_rig1_hz: float | None = None
-        self._last_commanded_dl_rig2_hz: float | None = None
         # Override for CTCSS label: set when a button is pressed, reset on transponder change.
         # None -> show the transmitter's ctcss_tone; float -> persist the last-sent tone.
         self._current_ctcss_tone: float | None = None
@@ -2511,29 +2503,23 @@ class MainWindow(QMainWindow):
         self._update_rig_label()
         self._update_rot_label()
 
-    def _apply_dial_feedback(self, rig: RigController, last_commanded_dl_hz: float | None) -> None:
+    def _apply_dial_feedback(self, rig: RigController, commanded_dl_hz: float | None) -> None:
         """Read the downlink back and fold a manually-detected VFO change
         into _dial_feedback_offset_hz (GitHub issue #14 — GPredict-style
         Lock dial feedback, verified against its actual source 2026-07-15).
 
         Called from the background _rig_send()/_rig2_send() threads, right
-        BEFORE this cycle's set_vfo_frequencies() — not after — and only
-        while Lock is on. This ordering matters: calling it after the write
-        would just read back the value this same call had written moments
-        earlier, which can never differ (confirmed on real hardware — see
-        CLAUDE.md). Comparing against what was commanded *last* cycle is
-        what actually catches a manual retune that happened in between.
-
+        after a successful set_vfo_frequencies(), only while Lock is on.
         NET mode only for now (isinstance gate below) — Direct mode has its
         own timing characteristics per rig and needs separate verification
         before this is extended to it.
 
         Deliberately swallows all failures (bad readback, exception, timed-
         out query) rather than raising: a failed read-back should never be
-        reported as a rig error, and should just skip this cycle's feedback
-        silently.
+        reported as a rig error (the frequency write itself already
+        succeeded), and should just skip this cycle's feedback silently.
         """
-        if last_commanded_dl_hz is None:
+        if commanded_dl_hz is None:
             return
         if not isinstance(rig, HamlibNetController):
             return
@@ -2545,14 +2531,14 @@ class MainWindow(QMainWindow):
             return
         if readback < 0:
             return  # get_frequency()'s failure sentinel
-        diff = readback - last_commanded_dl_hz
+        diff = readback - commanded_dl_hz
         if abs(diff) < _DIAL_FEEDBACK_THRESHOLD_HZ:
             return
         if abs(diff) > _DIAL_FEEDBACK_SANITY_HZ:
             logger.warning(
-                "Dial feedback: implausible readback %.0f vs last commanded %.0f — ignoring",
+                "Dial feedback: implausible readback %.0f vs commanded %.0f — ignoring",
                 readback,
-                last_commanded_dl_hz,
+                commanded_dl_hz,
             )
             return
         self._dial_feedback_offset_hz += diff
@@ -2697,13 +2683,9 @@ class MainWindow(QMainWindow):
 
                 def _rig_send() -> None:
                     try:
-                        # Check for a manual retune BEFORE overwriting with
-                        # this cycle's value — see _apply_dial_feedback()'s
-                        # docstring for why the ordering matters.
-                        if self._trsp_lock:
-                            self._apply_dial_feedback(rig, self._last_commanded_dl_rig1_hz)
                         rig.set_vfo_frequencies(dl, ul)
-                        self._last_commanded_dl_rig1_hz = dl
+                        if self._trsp_lock:
+                            self._apply_dial_feedback(rig, dl)
                     except RigControlError as exc:
                         self._rig_error.emit(str(exc))
                     except Exception as exc:
@@ -2729,10 +2711,9 @@ class MainWindow(QMainWindow):
 
                 def _rig2_send() -> None:
                     try:
-                        if self._trsp_lock:
-                            self._apply_dial_feedback(rig2, self._last_commanded_dl_rig2_hz)
                         rig2.set_vfo_frequencies(dl2, ul2)
-                        self._last_commanded_dl_rig2_hz = dl2
+                        if self._trsp_lock:
+                            self._apply_dial_feedback(rig2, dl2)
                     except RigControlError as exc:
                         self._rig_error.emit(str(exc))
                     except Exception as exc:
@@ -3288,8 +3269,6 @@ class MainWindow(QMainWindow):
         self._sdr_tune_offset = 0.0
         self._sdr_control.reset_tune_offset()
         self._dial_feedback_offset_hz = 0.0
-        self._last_commanded_dl_rig1_hz = None
-        self._last_commanded_dl_rig2_hz = None
 
     def _disconnect_rig(self) -> None:
         """Disconnect the rig and refresh the UI status."""
@@ -4314,8 +4293,6 @@ class MainWindow(QMainWindow):
         """
         self._trsp_lock = locked
         self._dial_feedback_offset_hz = 0.0
-        self._last_commanded_dl_rig1_hz = None
-        self._last_commanded_dl_rig2_hz = None
 
     @Slot(float)
     def _on_sdr_tune_offset(self, offset_hz: float) -> None:
@@ -4435,8 +4412,6 @@ class MainWindow(QMainWindow):
     def _on_tune_requested(self) -> None:
         """T button pressed: reset to the centre frequency of the current transponder band."""
         self._dial_feedback_offset_hz = 0.0
-        self._last_commanded_dl_rig1_hz = None
-        self._last_commanded_dl_rig2_hz = None
         if self._current_transmitter is None:
             return
         dl_low = self._current_transmitter.get("downlink_low")
