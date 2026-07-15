@@ -218,6 +218,26 @@ _SATMODE_USE_VFO_SUB: frozenset[int] = frozenset(
     ]
 )
 
+
+def normalize_civ_addr(text: str) -> str:
+    """Normalise a user-entered CI-V address into a Hamlib-parseable "0xNN" string.
+
+    Accepts plain hex ("A2"), "0x"-prefixed hex ("0xA2"), and the trailing
+    "h"/"H" hex suffix shown on Icom rig CI-V Address menus (e.g. "A2h") --
+    users tend to copy what the rig itself displays rather than prepend
+    "0x". Without stripping the trailing h, "A2h" is not a valid input to
+    Hamlib's strtol()-based config parser or Python's int(x, 16), so the
+    address would silently fail to apply (or, worse, silently fall back to
+    the wrong default).
+    """
+    addr = text.strip()
+    if addr.lower().endswith("h"):
+        addr = addr[:-1].strip()
+    if addr and not addr.lower().startswith("0x"):
+        addr = "0x" + addr
+    return addr
+
+
 # NET mode: rigctld reports the connected rig name via the _ command.
 
 # ---------------------------------------------------------------------------
@@ -598,12 +618,7 @@ class HamlibDirectController(RigController):
                 rig.set_conf("data_bits", str(self._data_bits))
                 rig.set_conf("stop_bits", str(self._stop_bits))
                 if self._civ_addr:
-                    # Ensure hex prefix so Hamlib parses it correctly.
-                    # Users enter what the rig menu shows (e.g. "65"); without
-                    # "0x", strtol() would interpret it as decimal 65 (= 0x41).
-                    addr = self._civ_addr
-                    if not addr.lower().startswith("0x"):
-                        addr = "0x" + addr
+                    addr = normalize_civ_addr(self._civ_addr)
                     rig.set_conf("civaddr", addr)
                     logger.info("RigDirect: CI-V address set to %s", addr)
                 if self._satmode and hasattr(_H, "RIG_FUNC_SATMODE"):
@@ -808,10 +823,7 @@ class HamlibDirectController(RigController):
             rig.set_conf("rig_pathname", self._port)
             rig.set_conf("serial_speed", str(self._baud_rate))
             if self._civ_addr:
-                addr = self._civ_addr
-                if not addr.lower().startswith("0x"):
-                    addr = "0x" + addr
-                rig.set_conf("civaddr", addr)
+                rig.set_conf("civaddr", normalize_civ_addr(self._civ_addr))
             tone_int = int(round(abs(tone_hz) * 10))
             enable = tone_hz > 0
             with self._port_lock:
@@ -840,11 +852,8 @@ class HamlibDirectController(RigController):
     def _civ_addr_int(self) -> int:
         """Return the CI-V rig address as an integer (default 0x65 for IC-9100)."""
         if self._civ_addr:
-            addr = self._civ_addr
-            if not addr.lower().startswith("0x"):
-                addr = "0x" + addr
             try:
-                return int(addr, 16)
+                return int(normalize_civ_addr(self._civ_addr), 16)
             except ValueError:
                 pass
         return 0x65
@@ -1280,10 +1289,7 @@ class HamlibDirectController(RigController):
             rig.set_conf("rig_pathname", self._port)
             rig.set_conf("serial_speed", str(self._baud_rate))
             if self._civ_addr:
-                addr = self._civ_addr
-                if not addr.lower().startswith("0x"):
-                    addr = "0x" + addr
-                rig.set_conf("civaddr", addr)
+                rig.set_conf("civaddr", normalize_civ_addr(self._civ_addr))
             with self._port_lock:
                 rig.open()
                 if _use_satmode_vfo:
@@ -1353,10 +1359,7 @@ class HamlibDirectController(RigController):
             r.set_conf("rig_pathname", self._port)
             r.set_conf("serial_speed", str(self._baud_rate))
             if self._civ_addr:
-                addr = self._civ_addr
-                if not addr.lower().startswith("0x"):
-                    addr = "0x" + addr
-                r.set_conf("civaddr", addr)
+                r.set_conf("civaddr", normalize_civ_addr(self._civ_addr))
             return r
 
         # Detect same-band from stored transponder frequencies.
@@ -1682,7 +1685,11 @@ class HamlibDirectController(RigController):
                     # opened right after.
                     import serial as _serial
 
-                    civ = int(self._civ_addr, 16) if self._civ_addr else _IC705_DEFAULT_CIV_ADDR
+                    civ = (
+                        int(normalize_civ_addr(self._civ_addr), 16)
+                        if self._civ_addr
+                        else _IC705_DEFAULT_CIV_ADDR
+                    )
                     with _serial.Serial(self._port, self._baud_rate, timeout=1) as ser:
                         ser.write(bytes([0xFE, 0xFE, civ, 0xE0, 0x0F, 0x01, 0xFD]))
                         ser.read(32)
@@ -1959,7 +1966,11 @@ class HamlibDirectController(RigController):
                 # nothing is left for Hamlib to trip over.
                 import os as _os
 
-                civ = int(self._civ_addr, 16) if self._civ_addr else _IC705_DEFAULT_CIV_ADDR
+                civ = (
+                    int(normalize_civ_addr(self._civ_addr), 16)
+                    if self._civ_addr
+                    else _IC705_DEFAULT_CIV_ADDR
+                )
                 frame = bytes([0xFE, 0xFE, civ, 0xE0, 0x0F, 0x01, 0xFD])
                 _fd = _os.open(self._port, _os.O_RDWR | _os.O_NOCTTY | _os.O_NONBLOCK)
                 try:
@@ -2005,10 +2016,7 @@ class HamlibDirectController(RigController):
             rig.set_conf("rig_pathname", self._port)
             rig.set_conf("serial_speed", str(self._baud_rate))
             if self._civ_addr:
-                addr = self._civ_addr
-                if not addr.lower().startswith("0x"):
-                    addr = "0x" + addr
-                rig.set_conf("civaddr", addr)
+                rig.set_conf("civaddr", normalize_civ_addr(self._civ_addr))
             rig.open()
             time.sleep(0.3)
             rig.set_func(_H.RIG_FUNC_SATMODE, 1)

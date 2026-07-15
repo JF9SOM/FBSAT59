@@ -30,6 +30,7 @@ from rig.controller import (
     VersionInfo,
     _build_mode_map,
     _MockRig,
+    normalize_civ_addr,
 )
 
 # ---------------------------------------------------------------------------
@@ -80,6 +81,40 @@ class TestFt4DataModeMapping:
     def test_satnogs_to_rigctld_mode_has_data_modes(self) -> None:
         assert _SATNOGS_TO_RIGCTLD_MODE["USB-D"] == "PKTUSB"
         assert _SATNOGS_TO_RIGCTLD_MODE["LSB-D"] == "PKTLSB"
+
+
+# ---------------------------------------------------------------------------
+# CI-V address normalisation
+# ---------------------------------------------------------------------------
+
+
+class TestNormalizeCivAddr:
+    """Icom rig CI-V Address menus display e.g. "A2h" (trailing-h hex
+    convention); Hamlib's strtol()-based config parser and Python's
+    int(x, 16) both expect a leading "0x" instead, so a trailing "h" must
+    be stripped before either parser sees it."""
+
+    def test_plain_hex(self) -> None:
+        assert normalize_civ_addr("A2") == "0xA2"
+
+    def test_trailing_h(self) -> None:
+        assert normalize_civ_addr("A2h") == "0xA2"
+
+    def test_trailing_uppercase_h(self) -> None:
+        assert normalize_civ_addr("A2H") == "0xA2"
+
+    def test_already_prefixed(self) -> None:
+        assert normalize_civ_addr("0xA2") == "0xA2"
+
+    def test_strips_whitespace(self) -> None:
+        assert normalize_civ_addr("  a2  ") == "0xa2"
+
+    def test_empty_stays_empty(self) -> None:
+        assert normalize_civ_addr("") == ""
+
+    def test_result_parses_as_hex(self) -> None:
+        assert int(normalize_civ_addr("A2h"), 16) == 0xA2
+        assert int(normalize_civ_addr("65"), 16) == 0x65
 
 
 # ---------------------------------------------------------------------------

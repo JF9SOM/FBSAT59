@@ -81,6 +81,7 @@ from rig.controller import (
     RigControlError,
     RigController,
     RotatorController,
+    normalize_civ_addr,
 )
 from ui.dashboard_view import DashboardView
 from ui.pass_chart import GroupPassChartView, PassChartView
@@ -5401,7 +5402,11 @@ class MainWindow(QMainWindow):
                         import serial as _serial
 
                         addr_str = str(settings.get("civ_addr") or "").strip()
-                        civ = int(addr_str, 16) if addr_str else _IC705_DEFAULT_CIV_ADDR
+                        civ = (
+                            int(normalize_civ_addr(addr_str), 16)
+                            if addr_str
+                            else _IC705_DEFAULT_CIV_ADDR
+                        )
                         frame = bytes([0xFE, 0xFE, civ, 0xE0, 0x0F, 0x00, 0xFD])
                         with _serial.Serial(serial_port, baud_rate, timeout=1) as ser:
                             ser.write(frame)

@@ -51,7 +51,7 @@ from PySide6.QtWidgets import (
 )
 
 from i18n import _
-from rig.controller import CTCSS_PRESET_TEMPLATES
+from rig.controller import CTCSS_PRESET_TEMPLATES, normalize_civ_addr
 from sdr import SOAPY_AVAILABLE
 from sdr.device import SdrDeviceInfo
 
@@ -570,7 +570,13 @@ class _RigPanel(QWidget):
         model_id: int = self._model_combo.currentData() or 0
         test_type = _baud_test_type(model_id, self._all_models) or "if"
         # For CI-V, use address from the CI-V Address field (or 0x00 as broadcast fallback).
-        civ_addr = int(self._civ_addr_edit.text().strip() or "0", 16)
+        civ_text = self._civ_addr_edit.text().strip()
+        try:
+            civ_addr = int(normalize_civ_addr(civ_text), 16) if civ_text else 0
+        except ValueError:
+            self._baud_test_btn.setText(_("Bad address"))
+            self._baud_test_btn.setStyleSheet("color: orange;")
+            return
         self._run_baud_test(port, baud, self._baud_test_btn, test_type, civ_addr)
 
     def _run_baud_test(
