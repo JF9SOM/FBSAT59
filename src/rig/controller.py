@@ -2228,13 +2228,26 @@ class HamlibNetController(RigController):
     def _cmd_raw(self, command: str) -> str:
         """Send a command and return the response. Caller MUST hold _cmd_lock.
 
-        Reads until the RPRT line appears, which prevents response data from
-        read commands (f/i, etc.) from lingering in the buffer and being
-        misread as the next command's response.
+        rigctld's short-form protocol distinguishes set commands (uppercase
+        first letter, e.g. "F", "S 1 Main") from query commands (lowercase
+        first letter, e.g. "f", "i", "m"): a set command's response is always
+        a single "RPRT <code>" line, but a *successful* query response is
+        just the requested value(s) followed by a newline — RPRT only
+        appears on a query's *error* path. Waiting unconditionally for RPRT
+        (as this method used to) therefore blocks until the socket timeout
+        on every successful query, which is exactly what made get_freq()
+        look "broken" on the FTX-1F (2026-05-20 note in CLAUDE.md) — it
+        wasn't a rig/Hamlib limitation, it was this response-parsing bug
+        (confirmed 2026-07-14 with scripts/test_ftx1_getfreq_net.py against
+        real hardware: get_freq responds in ~1-100ms once this is fixed).
+        For a query command, a complete line (ending in "\n") with no RPRT
+        is treated as a successful response; RPRT still terminates reading
+        immediately either way (set-command success, or a query's error).
         On OSError, the socket is closed and the state transitions to DISCONNECTED.
         """
         if self._sock is None:
             return ""
+        is_query = command[:1].islower()
         try:
             self._sock.sendall((command + "\n").encode())
             data = b""
@@ -2244,6 +2257,8 @@ class HamlibNetController(RigController):
                     break
                 data += chunk
                 if b"RPRT" in data:
+                    break
+                if is_query and data.endswith(b"\n"):
                     break
             return data.decode(errors="replace").strip()
         except OSError as exc:

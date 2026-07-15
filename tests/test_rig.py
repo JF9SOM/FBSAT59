@@ -542,6 +542,33 @@ class TestHamlibNetController:
         assert result is True
         ctrl._sock.sendall.assert_called()  # type: ignore[union-attr]
 
+    def test_get_frequency_query_response_without_rprt_returns_immediately(self) -> None:
+        """rigctld's 'f' returns just the value (no RPRT) on success — waiting
+        for RPRT (the old, buggy behaviour) would block until the socket
+        times out on every successful query. Confirmed live against an
+        FTX-1F via scripts/test_ftx1_getfreq_net.py: get_freq responded in
+        1-51ms once this was fixed, having previously always timed out
+        (10s) — a client-side response-parsing bug, not a rig/Hamlib
+        limitation as CLAUDE.md had assumed until 2026-07-14."""
+        ctrl = self._make_connected_ctrl()
+        ctrl._sock.recv.return_value = b"435614000\n"  # type: ignore[union-attr]
+        freq = ctrl.get_frequency()
+        assert freq == 435_614_000.0
+        assert ctrl._sock.recv.call_count == 1  # type: ignore[union-attr]
+
+    def test_cmd_raw_set_command_still_waits_for_rprt_across_fragments(self) -> None:
+        """Regression check: uppercase/multi-word set commands are unaffected
+        by the query-response fix — a fragmented TCP read (RPRT split across
+        two recv() calls) must still be accumulated correctly. Calls _cmd()
+        directly (rather than set_frequency(), which sends two separate
+        commands — "V VFOA" then "F ...") to isolate a single command's
+        fragmented-read behaviour."""
+        ctrl = self._make_connected_ctrl()
+        ctrl._sock.recv.side_effect = [b"RP", b"RT 0\n"]  # type: ignore[union-attr]
+        resp = ctrl._cmd("F 145800000")
+        assert resp == "RPRT 0"
+        assert ctrl._sock.recv.call_count == 2  # type: ignore[union-attr]
+
     def test_get_frequency_parses_response(self) -> None:
         ctrl = self._make_connected_ctrl()
         ctrl._sock.recv.return_value = b"145800000\nRPRT 0\n"  # type: ignore[union-attr]
