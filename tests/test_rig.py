@@ -1146,7 +1146,7 @@ class TestHamlibNetController:
         assert resp == "RPRT 0"
         assert ctrl._sock.recv.call_count == 2  # type: ignore[union-attr]
 
-    # -- read_dl_ul_independent / write_ul_independent: Lock dial feedback --
+    # -- read_dl_ul_independent: Lock dial feedback --
 
     def test_read_dl_ul_independent_yaesu_cat_reads_both(self) -> None:
         ctrl = self._make_ctrl(ctcss_method="ftx1")
@@ -1177,17 +1177,6 @@ class TestHamlibNetController:
             mock_cls.return_value = mock_sock
             result = ctrl.read_dl_ul_independent()
         assert result is None
-
-    def test_write_ul_independent_sends_i_command(self) -> None:
-        ctrl = self._make_ctrl(ctcss_method="ftx1")
-        sent: list[bytes] = []
-        mock_sock = MagicMock(spec=socket.socket)
-        mock_sock.recv.return_value = b"RPRT 0\n"
-        mock_sock.sendall.side_effect = lambda data: sent.append(data)
-        with patch("rig.controller.socket.socket", return_value=mock_sock):
-            ctrl.write_ul_independent(145_993_080.0)
-        assert b"".join(sent) == b"I 145993080\n"
-        assert ctrl._transponder_ul_hz == 145_993_080.0
 
     # -- set_vfo_frequencies: F/I only, no M --
 

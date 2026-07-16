@@ -1892,12 +1892,15 @@ class TestLockDialFeedback:
         w._lock_watch_cycle()
         rig.read_dl_ul_independent.assert_not_called()
 
-    def test_lock_watch_computes_offset_directly_and_writes_ul(self, qtbot, db) -> None:
+    def test_lock_watch_computes_offset_directly_no_write(self, qtbot, db) -> None:
+        """Confirmed explicitly with the user (2026-07-16): Lock ON stops
+        ALL writes to the rig, not just DL -- this method only ever reads
+        and updates self._dial_feedback_offset_hz for later use once Lock
+        is released."""
         w = self._make_window(qtbot, db)
         rig = self._make_yaesu_rig(connected=False)
-        # rr=0.0 -> dl_baseline == downlink_low exactly, ul_baseline == uplink_low.
+        # rr=0.0 -> dl_baseline == downlink_low exactly.
         rig.read_dl_ul_independent = MagicMock(return_value=(145_800_080.0, 435_000_000.0))
-        rig.write_ul_independent = MagicMock()
         w._rig_controller = rig
         w._trsp_lock = True
         w._engine = self._fake_engine(rr=0.0)
@@ -1908,24 +1911,6 @@ class TestLockDialFeedback:
         w._lock_watch_cycle()
 
         assert w._dial_feedback_offset_hz == 80.0
-        rig.write_ul_independent.assert_called_once_with(435_000_080.0)
-
-    def test_lock_watch_inverted_flips_sign(self, qtbot, db) -> None:
-        w = self._make_window(qtbot, db)
-        rig = self._make_yaesu_rig(connected=False)
-        rig.read_dl_ul_independent = MagicMock(return_value=(145_800_080.0, 435_000_000.0))
-        rig.write_ul_independent = MagicMock()
-        w._rig_controller = rig
-        w._trsp_lock = True
-        w._engine = self._fake_engine(rr=0.0)
-        w._selected_norad = 99999
-        w._current_transmitter = dict(self._TRANSMITTER_INVERTED)
-        w._dial_feedback_offset_hz = 0.0
-
-        w._lock_watch_cycle()
-
-        assert w._dial_feedback_offset_hz == 80.0
-        rig.write_ul_independent.assert_called_once_with(434_999_920.0)
 
     def test_lock_watch_discards_reading_close_to_ul_crosscheck(self, qtbot, db) -> None:
         """Confirmed live (2026-07-15, FTX-1F): a stale/broken DL reading
@@ -1934,7 +1919,6 @@ class TestLockDialFeedback:
         w = self._make_window(qtbot, db)
         rig = self._make_yaesu_rig(connected=False)
         rig.read_dl_ul_independent = MagicMock(return_value=(435_000_000.0, 435_000_000.0))
-        rig.write_ul_independent = MagicMock()
         w._rig_controller = rig
         w._trsp_lock = True
         w._engine = self._fake_engine(rr=0.0)
@@ -1945,13 +1929,11 @@ class TestLockDialFeedback:
         w._lock_watch_cycle()
 
         assert w._dial_feedback_offset_hz == 12.3  # unchanged
-        rig.write_ul_independent.assert_not_called()
 
     def test_lock_watch_ignores_implausible_jump(self, qtbot, db) -> None:
         w = self._make_window(qtbot, db)
         rig = self._make_yaesu_rig(connected=False)
         rig.read_dl_ul_independent = MagicMock(return_value=(145_900_000.0, 435_000_000.0))
-        rig.write_ul_independent = MagicMock()
         w._rig_controller = rig
         w._trsp_lock = True
         w._engine = self._fake_engine(rr=0.0)
@@ -1962,13 +1944,11 @@ class TestLockDialFeedback:
         w._lock_watch_cycle()
 
         assert w._dial_feedback_offset_hz == 0.0
-        rig.write_ul_independent.assert_not_called()
 
     def test_lock_watch_none_reading_is_noop(self, qtbot, db) -> None:
         w = self._make_window(qtbot, db)
         rig = self._make_yaesu_rig(connected=False)
         rig.read_dl_ul_independent = MagicMock(return_value=None)
-        rig.write_ul_independent = MagicMock()
         w._rig_controller = rig
         w._trsp_lock = True
         w._engine = self._fake_engine(rr=0.0)
@@ -1979,7 +1959,6 @@ class TestLockDialFeedback:
         w._lock_watch_cycle()
 
         assert w._dial_feedback_offset_hz == 0.0
-        rig.write_ul_independent.assert_not_called()
 
     # -- _rig_send() (inside _doppler_cycle()): connected-case integration --
 
@@ -2011,7 +1990,10 @@ class TestLockDialFeedback:
             w._doppler_cycle()
         return received
 
-    def test_rig_send_never_writes_dl_while_locked(self, qtbot, db) -> None:
+    def test_rig_send_never_writes_dl_or_ul_while_locked(self, qtbot, db) -> None:
+        """Confirmed explicitly with the user (2026-07-16): Lock ON stops
+        ALL writes -- not just DL. set_vfo_frequencies() must not be
+        called at all; only the offset updates for later use."""
         w = self._make_window(qtbot, db)
         rig = self._make_yaesu_rig(connected=True)
         rig.get_frequency = MagicMock(return_value=145_800_080.0)  # +80Hz manual retune
@@ -2021,27 +2003,7 @@ class TestLockDialFeedback:
 
         self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
 
-        # dl=None -> set_vfo_frequencies() skips its own F write entirely.
-        called_dl, called_ul = rig.set_vfo_frequencies.call_args[0]
-        assert called_dl is None
-        assert called_ul == 435_000_080.0
-        assert w._dial_feedback_offset_hz == 80.0
-
-    def test_rig_send_inverted_flips_sign(self, qtbot, db) -> None:
-        w = self._make_window(qtbot, db)
-        rig = self._make_yaesu_rig(connected=True)
-        rig.get_frequency = MagicMock(return_value=145_800_080.0)
-        rig.get_split_frequency = MagicMock(return_value=435_000_000.0)
-        rig.set_vfo_frequencies = MagicMock(return_value=True)
-        w._dial_feedback_offset_hz = 0.0
-
-        self._run_doppler_cycle(
-            w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER_INVERTED), trsp_lock=True
-        )
-
-        called_dl, called_ul = rig.set_vfo_frequencies.call_args[0]
-        assert called_dl is None
-        assert called_ul == 434_999_920.0
+        rig.set_vfo_frequencies.assert_not_called()
         assert w._dial_feedback_offset_hz == 80.0
 
     def test_rig_send_no_retune_keeps_offset_unchanged(self, qtbot, db) -> None:
@@ -2054,6 +2016,7 @@ class TestLockDialFeedback:
 
         self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
 
+        rig.set_vfo_frequencies.assert_not_called()
         assert w._dial_feedback_offset_hz == 0.0
 
     def test_rig_send_discards_reading_close_to_ul_crosscheck(self, qtbot, db) -> None:
@@ -2067,11 +2030,7 @@ class TestLockDialFeedback:
         self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
 
         assert w._dial_feedback_offset_hz == 5.0  # unchanged
-        called_dl, called_ul = rig.set_vfo_frequencies.call_args[0]
-        assert called_dl is None
-        # UL still reflects the last-known (unchanged) offset, not a fresh
-        # miscomputation from the discarded reading.
-        assert called_ul == 435_000_005.0
+        rig.set_vfo_frequencies.assert_not_called()
 
     def test_rig_send_ignores_implausible_jump(self, qtbot, db) -> None:
         w = self._make_window(qtbot, db)
@@ -2084,6 +2043,7 @@ class TestLockDialFeedback:
         self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
 
         assert w._dial_feedback_offset_hz == 0.0
+        rig.set_vfo_frequencies.assert_not_called()
 
     def test_rig_send_writes_dl_normally_when_lock_off(self, qtbot, db) -> None:
         """With Lock off, do_dial_feedback is False -- no read happens, and

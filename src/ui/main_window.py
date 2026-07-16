@@ -2522,23 +2522,30 @@ class MainWindow(QMainWindow):
 
     def _lock_watch_cycle(self) -> None:
         """Pre-Connect only: read the operator's current manual DL position
-        via an independent short-lived connection and push the
-        corresponding UL correction immediately (requirement 3: works even
-        before Connect is pressed).
+        via an independent short-lived connection and update
+        self._dial_feedback_offset_hz accordingly (requirement 3: works
+        even before Connect is pressed).
 
         Called from _lock_watch_worker's own background thread at a fixed
         interval, only while Lock (L button) is enabled (the worker is
         started/stopped in _on_lock_changed()).
 
+        Confirmed explicitly with the user (2026-07-16): while Lock is on,
+        BOTH DL and UL stop being written to the rig entirely -- not just
+        DL. Only self._dial_feedback_offset_hz (and, once connected, the
+        software's own display via _doppler_cycle()) update; the rig's
+        actual UL stays exactly where it was before Lock was engaged.
+        Writing resumes for both DL and UL only once Lock is released,
+        using the final offset accumulated here. This method therefore
+        only ever reads and updates state -- it never calls
+        write_ul_independent() or any other write.
+
         Once connected, this method is a no-op (returns immediately) --
         the read step moves into _rig_send() instead, on the same cadence
-        as the Doppler cycle. See _rig_send()'s comment for the full
-        design rationale (DL is read-only while Lock is on; the operator
-        has sole control of it, and the offset is recomputed directly
-        from each fresh reading rather than accumulated incrementally).
-        This method mirrors that same direct-computation approach for the
-        pre-Connect case, computing its own Doppler baseline from
-        self._engine since _doppler_cycle() isn't driving anything yet.
+        as the Doppler cycle. This method mirrors that same direct-
+        computation approach for the pre-Connect case, computing its own
+        Doppler baseline from self._engine since _doppler_cycle() isn't
+        driving anything yet.
 
         Scope: Rig 1 only, and only for HamlibNetController instances with
         ctcss_method in ("ftx1", "ft991") -- the Yaesu-CAT NET-mode rigs.
@@ -2584,12 +2591,9 @@ class MainWindow(QMainWindow):
             return
         rr = obs.range_rate_km_s
         dl_nom = self._current_transmitter.get("downlink_low")
-        ul_nom = self._current_transmitter.get("uplink_low")
-        invert = bool(self._current_transmitter.get("invert", False))
-        if dl_nom is None or ul_nom is None:
+        if dl_nom is None:
             return
         dl_baseline, _ = DopplerCalculator.correct_downlink(float(dl_nom), rr)
-        ul_baseline, _ = DopplerCalculator.correct_uplink(float(ul_nom), rr, invert=invert)
 
         result = rig.read_dl_ul_independent()
         if result is None:
@@ -2612,8 +2616,6 @@ class MainWindow(QMainWindow):
             )
             return
         self._dial_feedback_offset_hz = new_offset
-        new_ul = ul_baseline + (-new_offset if invert else new_offset)
-        rig.write_ul_independent(new_ul)
 
     def _doppler_cycle(self) -> None:
         """Compute Doppler correction and send it to the rig(s).
@@ -2674,11 +2676,10 @@ class MainWindow(QMainWindow):
             if ul_nom is not None
             else (None, None)
         )
-        # dl_corr_base/ul_corr_base (pure Doppler, no manual offset) are
-        # needed by _rig_send() below to recompute the offset directly
-        # from a fresh DL reading each cycle while Lock is on.
+        # dl_corr_base (pure Doppler, no manual offset) is needed by
+        # _rig_send() below to recompute the offset directly from a fresh
+        # DL reading each cycle while Lock is on.
         dl_corr_base = dl_corr
-        ul_corr_base = ul_corr
         if self._dial_feedback_offset_hz != 0.0:
             # The manual dial-feedback offset (accumulated by Lock's
             # read-only DL tracking -- see _rig_send()) applies
@@ -2779,45 +2780,43 @@ class MainWindow(QMainWindow):
                 dl = dl_rig1
                 ul = ul_rig1
                 do_dial_feedback = self._trsp_lock and self._is_dial_feedback_rig(rig)
-                # Baseline (pure Doppler, no manual offset -- but including
-                # the same SDR passband-tune mirror as ul_rig1 above) for
+                # Baseline (pure Doppler, no manual offset) for
                 # _rig_send()'s direct offset recompute below.
                 dl_baseline = dl_corr_base
-                ul_baseline = ul_corr_base
-                if sdr_is_rig2 and self._trsp_lock and tune != 0.0 and ul_baseline is not None:
-                    ul_baseline = ul_baseline + (-tune if invert else tune)
 
                 def _rig_send() -> None:
-                    nonlocal dl, ul
                     try:
                         if do_dial_feedback:
-                            # Lock ON: DL is under the operator's sole
-                            # manual control -- read it (never write it)
-                            # each cycle to track their current position,
-                            # and derive UL directly from that reading.
+                            # Lock ON: BOTH DL and UL stop being written to
+                            # the rig entirely (confirmed explicitly with
+                            # the user, 2026-07-16) -- not just DL. DL is
+                            # under the operator's sole manual control; UL
+                            # simply stays wherever it was before Lock was
+                            # engaged. This method only reads DL/UL to keep
+                            # self._dial_feedback_offset_hz (and, via
+                            # _doppler_cycle()'s unconditional fold, the
+                            # software's own display) up to date. Writing
+                            # resumes for both DL and UL only once Lock is
+                            # released, using whatever offset was last
+                            # computed here.
                             #
-                            # This replaces an earlier design that kept
-                            # actively writing DL (with a detected delta
-                            # folded in) even while Lock was on. That
-                            # approach periodically reasserted an absolute
-                            # DL frequency computed from a read taken one
-                            # CAT round trip (~150-300ms) earlier, which
-                            # visibly fought the operator's real-time VFO
-                            # motion: any further turning between that read
-                            # and the following write got overwritten
-                            # mid-gesture -- confirmed live (2026-07-16,
-                            # FTX-1F) as "the frequency reverts even while
-                            # I'm still turning the dial, I can't even tell
-                            # how far I turned it". The only way to stop
-                            # competing with the operator for control of DL
-                            # is to stop writing it at all while Lock is on
-                            # (confirmed with the user this is the correct
-                            # behaviour: Lock ON keeps DL entirely manual;
-                            # turning Lock back OFF resumes Doppler
-                            # correction from wherever DL was left, via the
-                            # self._dial_feedback_offset_hz fold in
-                            # _doppler_cycle(), which is NOT reset just
-                            # because Lock was toggled).
+                            # An earlier design kept actively writing DL
+                            # (with a detected delta folded in) even while
+                            # Lock was on. That approach periodically
+                            # reasserted an absolute DL frequency computed
+                            # from a read taken one CAT round trip
+                            # (~150-300ms) earlier, which visibly fought
+                            # the operator's real-time VFO motion -- any
+                            # further turning between that read and the
+                            # following write got overwritten mid-gesture,
+                            # confirmed live (2026-07-16, FTX-1F) as "the
+                            # frequency reverts even while I'm still
+                            # turning the dial, I can't even tell how far
+                            # I turned it". The only way to stop competing
+                            # with the operator for control of DL is to
+                            # stop writing it (and, per the user's
+                            # clarification, UL too) at all while Lock is
+                            # on.
                             #
                             # The offset is recomputed fresh from the live
                             # reading each cycle (self._dial_feedback_offset_hz
@@ -2849,9 +2848,7 @@ class MainWindow(QMainWindow):
                                     )
                                 else:
                                     self._dial_feedback_offset_hz = new_offset
-                                    if ul_baseline is not None:
-                                        ul = ul_baseline + (-new_offset if invert else new_offset)
-                            dl = None  # never write DL while Lock is on
+                            return
                         rig.set_vfo_frequencies(dl, ul)
                     except RigControlError as exc:
                         self._rig_error.emit(str(exc))

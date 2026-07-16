@@ -3095,36 +3095,6 @@ class HamlibNetController(RigController):
             logger.warning("RigNet: read_dl_ul_independent failed: %s", exc)
             return None
 
-    def write_ul_independent(self, ul_hz: float) -> None:
-        """Write a corrected UL frequency via a fresh, independent TCP socket.
-
-        Used by Lock (L button) dial feedback to push a manual-DL-retune
-        correction to the rig before Connect has been pressed (there is no
-        persistent self._sock / running Doppler cycle to do this yet).
-        Mirrors _send_freq_preset_independent()'s "I" write exactly, and
-        also updates _transponder_ul_hz so a subsequent freq preset (e.g.
-        re-selecting the same transponder) stays consistent with the
-        corrected value.
-        """
-        self._transponder_ul_hz = ul_hz
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(self._TIMEOUT)
-            sock.connect((self._host, self._port))
-            sock.settimeout(2.0)
-            sock.sendall(f"I {int(ul_hz)}\n".encode())
-            buf = b""
-            with contextlib.suppress(OSError):
-                while b"RPRT" not in buf:
-                    chunk = sock.recv(256)
-                    if not chunk:
-                        break
-                    buf += chunk
-            sock.close()
-            logger.info("RigNet: dial-feedback UL correction sent, ul=%.3fMHz", ul_hz / 1e6)
-        except Exception as exc:
-            logger.error("RigNet: write_ul_independent failed: %s", exc)
-
     def _send_split_init_independent(self) -> None:
         """Send satmode/split init via a fresh TCP socket (mirrors Direct-mode set_func(SATMODE,1)).
 
