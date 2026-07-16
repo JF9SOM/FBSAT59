@@ -19,6 +19,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, TypedDict
@@ -3475,6 +3476,18 @@ class MainWindow(QMainWindow):
         # _apply_transponder_state_to_rig() above just pushed to the rig
         # via the freq preset (independent socket, pre-Connect) or what the
         # next Doppler cycle will write (post-Connect).
+        # TEMP diagnostic (remove once the mystery mid-session offset
+        # reset is root-caused): see _on_lock_changed()'s matching note.
+        # xpdr here identifies which transponder-selection call triggered
+        # this reset -- if this fires without the user actually picking a
+        # different transponder (e.g. a UI refresh re-selecting the same
+        # entry), that's the smoking gun for a silent reset.
+        logger.info(
+            "LockWatch DIAG: _on_transmitter_changed(xpdr=%r) fired, offset was %.1fHz\n%s",
+            xpdr,
+            self._dial_feedback_offset_hz,
+            "".join(traceback.format_stack()[-6:]),
+        )
         self._dial_feedback_offset_hz = 0.0
         dl_baseline = (
             self._current_transmitter.get("downlink_low") if self._current_transmitter else None
@@ -4514,6 +4527,16 @@ class MainWindow(QMainWindow):
         resets its tracking state on every toggle (both ON and OFF) so a
         stale offset from a previous Lock session never carries over.
         """
+        # TEMP diagnostic (remove once the mystery mid-session offset
+        # reset is root-caused): log every time this reset fires, with a
+        # stack trace, so an unexpected/spurious call (vs. a genuine user
+        # click) can be distinguished from the log alone.
+        logger.info(
+            "LockWatch DIAG: _on_lock_changed(%s) fired, offset was %.1fHz\n%s",
+            locked,
+            self._dial_feedback_offset_hz,
+            "".join(traceback.format_stack()[-6:]),
+        )
         self._trsp_lock = locked
         self._dial_feedback_offset_hz = 0.0
         self._last_commanded_dl_rig1_hz = None
@@ -4644,6 +4667,13 @@ class MainWindow(QMainWindow):
         """T button pressed: reset to the centre frequency of the current transponder band."""
         if self._current_transmitter is None:
             return
+        # TEMP diagnostic (remove once the mystery mid-session offset
+        # reset is root-caused): see _on_lock_changed()'s matching note.
+        logger.info(
+            "LockWatch DIAG: _on_tune_requested() fired, offset was %.1fHz\n%s",
+            self._dial_feedback_offset_hz,
+            "".join(traceback.format_stack()[-6:]),
+        )
         self._dial_feedback_offset_hz = 0.0
         self._last_commanded_dl_rig1_hz = None
         dl_low = self._current_transmitter.get("downlink_low")
