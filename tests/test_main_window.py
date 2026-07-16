@@ -2086,7 +2086,10 @@ class TestLockDialFeedback:
             w._doppler_cycle()
 
         # Inverted: DL +80Hz -> UL -80Hz relative to its own baseline.
-        rig.set_vfo_frequencies.assert_called_once_with(145_800_080.0, 435_149_920.0)
+        # Baseline is uplink_low (ul_nom), matching
+        # DopplerCalculator.correct_uplink()'s own convention -- not
+        # uplink_high as the old (pre-existing, buggy) Lock branch used.
+        rig.set_vfo_frequencies.assert_called_once_with(145_800_080.0, 434_999_920.0)
         assert w._dial_feedback_offset_hz == 80.0
 
     def test_rig_send_first_observation_writes_unmodified_this_cycle(self, qtbot, db) -> None:
