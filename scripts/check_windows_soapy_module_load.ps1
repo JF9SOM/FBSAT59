@@ -65,6 +65,16 @@ $modulesDir = Join-Path $internalDir 'soapy_modules'
 # ---------------------------------------------------------------------
 # Win32 LoadLibrary / FreeLibrary via P/Invoke - lets us test loading a
 # DLL directly, completely independent of SoapySDR's own module scanner.
+#
+# SetDllDirectory is required here: FBSAT59.exe's own main.py calls
+# os.add_dll_directory() on the "_internal" folder at startup precisely
+# so that soapy_modules\*.dll can resolve their dependency on
+# _internal\SoapySDR.dll (and sibling flat-bundled DLLs like
+# libhackrf/librtlsdr/libairspy*). A bare PowerShell process has no such
+# search-path addition, so without calling SetDllDirectory ourselves,
+# every module DLL would fail to resolve that same dependency and report
+# ERROR_MOD_NOT_FOUND (126) regardless of whether anything is actually
+# wrong - that would test our own script's search path, not FBSAT59's.
 # ---------------------------------------------------------------------
 Add-Type -TypeDefinition @"
 using System;
@@ -75,8 +85,19 @@ public static class NativeLib {
 
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool FreeLibrary(IntPtr hModule);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    public static extern bool SetDllDirectory(string lpPathName);
 }
 "@
+
+Add-Line '----- DLL search path setup -----'
+if ([NativeLib]::SetDllDirectory($internalDir)) {
+    Add-Line "SetDllDirectory succeeded: $internalDir added to this process's DLL search path, matching what FBSAT59.exe itself does at startup."
+} else {
+    Add-Line "WARNING: SetDllDirectory failed for $internalDir - results below may show spurious failures unrelated to FBSAT59's real behavior."
+}
+Add-Line ''
 
 function Test-DllLoad {
     param([string]$Path)
