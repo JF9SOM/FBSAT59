@@ -19,7 +19,6 @@ import subprocess
 import sys
 import threading
 import time
-import traceback
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, TypedDict
@@ -136,7 +135,6 @@ _MODE_INVERT: dict[str, str] = {
 _RAW_CAT_MODEL_IDS: frozenset[int] = _FTX1_MODEL_IDS | _FT991_DIRECT_MODEL_IDS
 
 # Lock (L button) dial feedback thresholds -- see MainWindow._lock_watch_cycle().
-_DIAL_FEEDBACK_THRESHOLD_HZ = 1.0  # ignore DL readback noise below this
 _DIAL_FEEDBACK_SANITY_HZ = 50_000.0  # ignore implausible single-cycle jumps above this
 # If a DL reading is this close to the same poll's UL reading, rigctld's
 # "current VFO" pointer is almost certainly stuck on Sub (confirmed live,
@@ -561,14 +559,15 @@ class MainWindow(QMainWindow):
         self._sdr_tune_offset: float = 0.0
         # L button: when True, uplink is slaved to downlink.
         self._trsp_lock: bool = False
-        # Lock dial feedback: accumulated manual-DL-retune offset (Hz, DL
-        # space) detected by _lock_watch_cycle(), folded into dl_corr/ul_corr
-        # in _doppler_cycle(). _last_commanded_dl_rig1_hz is the baseline
-        # _lock_watch_cycle() compares live DL readings against -- the last
-        # value WE told Rig 1's DL to be, never the last value we read (see
-        # _lock_watch_cycle()'s docstring for why).
+        # Lock dial feedback: manual-DL-retune offset (Hz, DL space),
+        # folded into dl_corr/ul_corr in _doppler_cycle(). While Lock is
+        # on, recomputed fresh each cycle from a live DL reading (DL is
+        # read-only while Lock is active -- see _rig_send()); with Lock
+        # off it persists unchanged, so Doppler correction resumes from
+        # the manually-adjusted frequency instead of snapping back. Reset
+        # to 0.0 only by selecting a different transponder or pressing the
+        # T (Tune) button -- never by toggling Lock itself.
         self._dial_feedback_offset_hz: float = 0.0
-        self._last_commanded_dl_rig1_hz: float | None = None
         # Override for CTCSS label: set when a button is pressed, reset on transponder change.
         # None -> show the transmitter's ctcss_tone; float -> persist the last-sent tone.
         self._current_ctcss_tone: float | None = None
@@ -2518,128 +2517,55 @@ class MainWindow(QMainWindow):
     def _is_dial_feedback_rig(self, rig: RigController | None) -> bool:
         """True for the only rig configuration dial feedback has been
         verified against: a HamlibNetController using a Yaesu-CAT NET-mode
-        ctcss_method (see _process_dial_feedback_reading()'s docstring)."""
+        ctcss_method (see _rig_send()'s comment in _doppler_cycle())."""
         return isinstance(rig, HamlibNetController) and rig._ctcss_method in ("ftx1", "ft991")
 
-    def _process_dial_feedback_reading(self, dl: float, ul: float) -> float | None:
-        """Validate one DL/UL reading and fold a genuine manual retune into
-        self._dial_feedback_offset_hz. Returns the detected delta (Hz), or
-        None if the reading was discarded or no retune was detected.
-
-        Shared by the connected path (_rig_send(), same cadence as the
-        Doppler cycle's own F/I writes -- see that method's comment for why
-        this must NOT run on a separate, slower timer) and the pre-Connect
-        path (_lock_watch_cycle()).
-
-        Read mechanism, cross-check rationale, comparison basis (compares
-        against the last value WE commanded, never the last value we read)
-        and full live-hardware verification notes: see
-        _lock_watch_cycle()'s docstring.
-        """
-        if dl < 0 or ul < 0:
-            return None
-        if abs(dl - ul) < _DIAL_FEEDBACK_CROSSCHECK_HZ:
-            logger.debug("LockWatch: DL reading %.1f too close to UL %.1f, discarding", dl, ul)
-            return None
-
-        last_dl = self._last_commanded_dl_rig1_hz
-        if last_dl is None:
-            # First observation since Lock was enabled / transponder
-            # selected -- establish the baseline, no delta to apply yet.
-            self._last_commanded_dl_rig1_hz = dl
-            return None
-
-        delta = dl - last_dl
-        if abs(delta) < _DIAL_FEEDBACK_THRESHOLD_HZ:
-            return None
-        if abs(delta) > _DIAL_FEEDBACK_SANITY_HZ:
-            logger.warning("LockWatch: implausible DL jump %.1f Hz, ignoring", delta)
-            self._last_commanded_dl_rig1_hz = dl
-            return None
-
-        self._dial_feedback_offset_hz += delta
-        self._last_commanded_dl_rig1_hz = dl
-        logger.info(
-            "LockWatch: manual DL retune detected, delta=%.1fHz cumulative_offset=%.1fHz",
-            delta,
-            self._dial_feedback_offset_hz,
-        )
-        return delta
-
     def _lock_watch_cycle(self) -> None:
-        """Pre-Connect only: detect manual DL VFO retuning via an
-        independent short-lived connection and push the UL correction
-        immediately (requirement 3: works even before Connect is pressed).
+        """Pre-Connect only: read the operator's current manual DL position
+        via an independent short-lived connection and push the
+        corresponding UL correction immediately (requirement 3: works even
+        before Connect is pressed).
 
         Called from _lock_watch_worker's own background thread at a fixed
         interval, only while Lock (L button) is enabled (the worker is
         started/stopped in _on_lock_changed()).
 
         Once connected, this method is a no-op (returns immediately) --
-        the read+detect step moves into _rig_send() instead, on the same
-        cadence as the Doppler cycle's own F/I writes. Originally this
-        method also handled the connected case on its own slower (2s)
-        timer, but that raced with the Doppler cycle's faster (~1s) F
-        writes: the Doppler cycle's own next write could silently
-        overwrite the user's manual retune on the rig before this poller
-        ever got a chance to read it, so the manual change was never
-        detected (confirmed live, 2026-07-15, FTX-1F -- reported as "the
-        DL VFO change never reaches the software, the Doppler-corrected
-        centre frequency just gets rewritten"). There must be exactly one
-        reader/writer cadence per rig once connected, matching GPredict's
-        own single-loop design.
+        the read step moves into _rig_send() instead, on the same cadence
+        as the Doppler cycle. See _rig_send()'s comment for the full
+        design rationale (DL is read-only while Lock is on; the operator
+        has sole control of it, and the offset is recomputed directly
+        from each fresh reading rather than accumulated incrementally).
+        This method mirrors that same direct-computation approach for the
+        pre-Connect case, computing its own Doppler baseline from
+        self._engine since _doppler_cycle() isn't driving anything yet.
 
-        Scope (2026-07-15): Rig 1 only, and only for HamlibNetController
-        instances with ctcss_method in ("ftx1", "ft991") -- the Yaesu-CAT
-        NET-mode rigs. This is the only configuration verified live
-        (FTX-1F) to support frequency readback without the "V" (VFO
-        switch) command. "V" was separately confirmed live to corrupt the
-        rig's actual Main/Sub role assignment from even a single use --
-        not merely a cosmetic TX-LED flicker as previously documented here
-        -- while software-side readbacks (f/i/get_vfo) continued to look
-        entirely self-consistent throughout. "V" must never be used here.
-        Other rig families (satmode Icom, generic/IC-705, Direct mode)
-        keep the existing Doppler-driven-only Lock behaviour unchanged;
-        this method is a no-op for them (self._dial_feedback_offset_hz
-        simply stays 0.0).
+        Scope: Rig 1 only, and only for HamlibNetController instances with
+        ctcss_method in ("ftx1", "ft991") -- the Yaesu-CAT NET-mode rigs.
+        This is the only configuration verified live (FTX-1F) to support
+        frequency readback without the "V" (VFO switch) command, which was
+        separately confirmed live to corrupt the rig's actual Main/Sub
+        role assignment from even a single use -- not merely a cosmetic
+        TX-LED flicker as previously documented here -- while software-
+        side readbacks (f/i/get_vfo) continued to look entirely self-
+        consistent throughout. "V" must never be used here. Other rig
+        families (satmode Icom, generic/IC-705, Direct mode) keep the
+        existing Doppler-driven-only Lock behaviour unchanged; this method
+        is a no-op for them (self._dial_feedback_offset_hz simply stays
+        whatever it last was).
 
-        Read mechanism: bare "f" (get_freq) / "i" (get_split_freq),
-        mirroring the existing "F"/"I" write-only Doppler-cycle protocol
-        exactly -- no VFO argument, no "V" command anywhere. Confirmed
-        live (FTX-1F, reproduced independently twice) that on a freshly
-        established rigctld connection, the first "f" read following an
-        "F"-then-"I" write sequence in that same connection returns the
-        split (UL) value instead of the live Main (DL) value (rigctld's
-        internal "current VFO" cache starts wrong); every read from the
-        second cycle onward on that same connection was correct, including
-        correctly reflecting live manual retunes. A read-only poll (no
-        F/I ever sent in that connection -- exactly what this method does)
-        does not have this problem at all: it reads correctly from the
-        very first cycle. Because a stale/wrong reading can still occur in
-        principle, every DL reading is cross-checked against the UL
-        reading from the same poll -- if they are suspiciously close
+        Read mechanism: bare "f"/"i" (get_freq/get_split_freq), mirroring
+        the existing "F"/"I" write-only Doppler-cycle protocol exactly --
+        no VFO argument, no "V" command anywhere. A read-only poll (no F/I
+        ever sent in this connection) reads correctly from the very first
+        cycle (confirmed live, FTX-1F) -- unlike the connected case's
+        persistent connection, which can briefly return a stale reading
+        right after its first post-connect write (see _rig_send()). Every
+        DL reading is still cross-checked against the UL reading from the
+        same poll as defence-in-depth -- if they are suspiciously close
         (_DIAL_FEEDBACK_CROSSCHECK_HZ), the DL value almost certainly came
         from "current VFO" being stuck on Sub, and the whole cycle is
-        discarded (no offset change, no write). See
-        _process_dial_feedback_reading() for this shared validation logic.
-
-        Comparison basis: the delta is computed against the last value we
-        ourselves *commanded* Rig 1's DL to be
-        (self._last_commanded_dl_rig1_hz), never against the last value we
-        *read* -- otherwise our own Doppler-corrected F writes would be
-        misdetected as manual retuning every single cycle. This matches
-        GPredict's own dial-feedback algorithm (raw Hz delta, sign-flipped
-        for inverting transponders). Once connected, _rig_send() folds a
-        newly detected delta directly into that same cycle's write instead
-        of waiting for the next _doppler_cycle() call -- see its comment
-        for why (a one-cycle-lagged write visibly snapped the rig's
-        display back to the old frequency for a moment before catching
-        up, confirmed live 2026-07-15 FTX-1F, reported as "turning the
-        dial makes it immediately jump back to the old frequency"). The
-        accumulated offset is also folded into the *display* via
-        _doppler_cycle()'s Lock branch, which still lags by one cycle
-        after a fresh retune (the display for this cycle was already
-        emitted before _rig_send() ran) but catches up on the next tick.
+        discarded.
         """
         if not self._trsp_lock:
             return
@@ -2649,17 +2575,45 @@ class MainWindow(QMainWindow):
         assert isinstance(rig, HamlibNetController)
         if rig.is_connected:
             return
+        if self._selected_norad is None or self._selected_norad == MOON_ID:
+            return
+        if self._engine is None or self._current_transmitter is None:
+            return
+        obs = self._engine.observe(self._selected_norad)
+        if obs is None:
+            return
+        rr = obs.range_rate_km_s
+        dl_nom = self._current_transmitter.get("downlink_low")
+        ul_nom = self._current_transmitter.get("uplink_low")
+        invert = bool(self._current_transmitter.get("invert", False))
+        if dl_nom is None or ul_nom is None:
+            return
+        dl_baseline, _ = DopplerCalculator.correct_downlink(float(dl_nom), rr)
+        ul_baseline, _ = DopplerCalculator.correct_uplink(float(ul_nom), rr, invert=invert)
 
         result = rig.read_dl_ul_independent()
         if result is None:
             return
-        dl, ul = result
+        live_dl, live_ul = result
+        if live_dl < 0 or live_ul < 0:
+            return
+        if abs(live_dl - live_ul) < _DIAL_FEEDBACK_CROSSCHECK_HZ:
+            logger.debug(
+                "LockWatch: DL reading %.1f too close to UL %.1f, discarding", live_dl, live_ul
+            )
+            return
 
-        delta = self._process_dial_feedback_reading(dl, ul)
-        if delta is not None:
-            invert = bool((self._current_transmitter or {}).get("invert", False))
-            new_ul = (ul - delta) if invert else (ul + delta)
-            rig.write_ul_independent(new_ul)
+        new_offset = live_dl - dl_baseline
+        if abs(new_offset) > _DIAL_FEEDBACK_SANITY_HZ:
+            logger.warning(
+                "LockWatch: implausible DL reading %.1f Hz (baseline %.1f), ignoring",
+                live_dl,
+                dl_baseline,
+            )
+            return
+        self._dial_feedback_offset_hz = new_offset
+        new_ul = ul_baseline + (-new_offset if invert else new_offset)
+        rig.write_ul_independent(new_ul)
 
     def _doppler_cycle(self) -> None:
         """Compute Doppler correction and send it to the rig(s).
@@ -2720,19 +2674,30 @@ class MainWindow(QMainWindow):
             if ul_nom is not None
             else (None, None)
         )
-        if self._trsp_lock and self._dial_feedback_offset_hz != 0.0:
-            # Lock ON: the ONLY thing Lock adds on top of the normal,
-            # correctly-scaled Doppler tracking above is the raw
-            # (unscaled) manual-retune offset detected by
-            # _lock_watch_cycle()/_rig_send() (dial feedback), sign-
-            # flipped for inverting transponders -- matching GPredict's
-            # own dial-feedback algorithm (a raw Hz delta, not scaled by
-            # transponder bandwidth ratio). The physical DL VFO stays
-            # parked at "Doppler-corrected value plus the user's manual
-            # offset" instead of snapping back to the pure computed value
-            # on the next write. dl_shift/ul_shift (pure Doppler-only
-            # shift) are no longer accurate figures once a manual offset
-            # is mixed in, so they are cleared for display.
+        # dl_corr_base/ul_corr_base (pure Doppler, no manual offset) are
+        # needed by _rig_send() below to recompute the offset directly
+        # from a fresh DL reading each cycle while Lock is on.
+        dl_corr_base = dl_corr
+        ul_corr_base = ul_corr
+        if self._dial_feedback_offset_hz != 0.0:
+            # The manual dial-feedback offset (accumulated by Lock's
+            # read-only DL tracking -- see _rig_send()) applies
+            # UNCONDITIONALLY, Lock on or off, not just while
+            # self._trsp_lock is True. This is deliberate (confirmed
+            # explicitly with the user, 2026-07-16): turning Lock off
+            # must resume Doppler correction from the manually-adjusted
+            # frequency, not snap back to the pure nominal-based
+            # trajectory. The offset's *value* only changes while Lock is
+            # on (_rig_send() only updates it when do_dial_feedback is
+            # true); with Lock off it simply rides along unchanged,
+            # continuing to shift both DL and UL by the same fixed amount
+            # every cycle. It resets to 0 only on an explicit "start
+            # over": selecting a different transponder, or pressing the T
+            # (Tune) button. Raw, unscaled Hz delta -- matching GPredict's
+            # own dial-feedback algorithm -- sign-flipped for inverting
+            # transponders. dl_shift/ul_shift (pure Doppler-only shift)
+            # are no longer accurate figures once a manual offset is
+            # mixed in, so they are cleared for display.
             if dl_corr is not None:
                 dl_corr = dl_corr + self._dial_feedback_offset_hz
                 dl_shift = None
@@ -2814,107 +2779,80 @@ class MainWindow(QMainWindow):
                 dl = dl_rig1
                 ul = ul_rig1
                 do_dial_feedback = self._trsp_lock and self._is_dial_feedback_rig(rig)
+                # Baseline (pure Doppler, no manual offset -- but including
+                # the same SDR passband-tune mirror as ul_rig1 above) for
+                # _rig_send()'s direct offset recompute below.
+                dl_baseline = dl_corr_base
+                ul_baseline = ul_corr_base
+                if sdr_is_rig2 and self._trsp_lock and tune != 0.0 and ul_baseline is not None:
+                    ul_baseline = ul_baseline + (-tune if invert else tune)
 
                 def _rig_send() -> None:
                     nonlocal dl, ul
                     try:
                         if do_dial_feedback:
-                            # Read the rig's LIVE DL/UL and detect a manual
-                            # retune BEFORE writing this cycle's dl/ul --
-                            # same cadence as the write (this thread runs
-                            # once per Doppler cycle), which is required:
-                            # a separate, slower poller previously raced
-                            # with this write and could never see a manual
-                            # retune before the next Doppler F write
-                            # silently overwrote it on the rig (confirmed
-                            # live, 2026-07-15, FTX-1F). See
-                            # _lock_watch_cycle()'s docstring for the full
-                            # account and _process_dial_feedback_reading()
-                            # for the shared validation logic.
+                            # Lock ON: DL is under the operator's sole
+                            # manual control -- read it (never write it)
+                            # each cycle to track their current position,
+                            # and derive UL directly from that reading.
                             #
-                            # If a retune IS detected, fold the newly found
-                            # delta directly into THIS cycle's dl/ul before
-                            # writing, instead of waiting for the next
-                            # _doppler_cycle() call to pick up the updated
-                            # offset. A one-cycle lag here means the write
-                            # below still uses the pre-retune value, which
-                            # visibly snaps the rig's display back to the
-                            # old frequency for one cycle before catching
-                            # up -- confirmed live (2026-07-15, FTX-1F) as
-                            # "turning the dial makes it immediately jump
-                            # back to the old frequency". dl/ul already
-                            # include whatever self._dial_feedback_offset_hz
-                            # was BEFORE this read; delta is exactly the
-                            # newly detected increment on top of that.
+                            # This replaces an earlier design that kept
+                            # actively writing DL (with a detected delta
+                            # folded in) even while Lock was on. That
+                            # approach periodically reasserted an absolute
+                            # DL frequency computed from a read taken one
+                            # CAT round trip (~150-300ms) earlier, which
+                            # visibly fought the operator's real-time VFO
+                            # motion: any further turning between that read
+                            # and the following write got overwritten
+                            # mid-gesture -- confirmed live (2026-07-16,
+                            # FTX-1F) as "the frequency reverts even while
+                            # I'm still turning the dial, I can't even tell
+                            # how far I turned it". The only way to stop
+                            # competing with the operator for control of DL
+                            # is to stop writing it at all while Lock is on
+                            # (confirmed with the user this is the correct
+                            # behaviour: Lock ON keeps DL entirely manual;
+                            # turning Lock back OFF resumes Doppler
+                            # correction from wherever DL was left, via the
+                            # self._dial_feedback_offset_hz fold in
+                            # _doppler_cycle(), which is NOT reset just
+                            # because Lock was toggled).
+                            #
+                            # The offset is recomputed fresh from the live
+                            # reading each cycle (self._dial_feedback_offset_hz
+                            # = live_dl - dl_baseline) rather than
+                            # accumulated incrementally against a "last
+                            # written" tracker -- simpler and safer now
+                            # that DL is never written, since there is no
+                            # longer a "did our own write actually land"
+                            # ambiguity to get out of sync over (that
+                            # ambiguity was the root cause of an earlier
+                            # bug where ordinary Doppler drift got
+                            # misdetected as manual retuning).
                             assert isinstance(rig, HamlibNetController)
-                            dl_before_fold = dl
-                            ul_before_fold = ul
-                            last_dl_before = rig._last_dl_hz
                             live_dl = rig.get_frequency()
                             live_ul = rig.get_split_frequency()
-                            delta = self._process_dial_feedback_reading(live_dl, live_ul)
-                            if delta is not None and dl is not None and ul is not None:
-                                dl = dl + delta
-                                ul = ul + (-delta if invert else delta)
-                            # TEMP diagnostic (remove once root-caused): every
-                            # single value in the read-detect-fold-write chain,
-                            # every cycle -- not just when a retune is
-                            # detected -- to see exactly what set_vfo_
-                            # frequencies() is being called with and why its
-                            # own <1Hz throttle does or doesn't fire.
-                            logger.info(
-                                "LockWatch DIAG2: last_dl_before=%s live_dl=%.3f live_ul=%.3f "
-                                "delta=%s dl_before_fold=%.3f dl_after_fold=%.3f "
-                                "ul_before_fold=%.3f ul_after_fold=%.3f offset=%.3f",
-                                last_dl_before,
-                                live_dl,
-                                live_ul,
-                                delta,
-                                dl_before_fold if dl_before_fold is not None else float("nan"),
-                                dl if dl is not None else float("nan"),
-                                ul_before_fold if ul_before_fold is not None else float("nan"),
-                                ul if ul is not None else float("nan"),
-                                self._dial_feedback_offset_hz,
-                            )
+                            if (
+                                live_dl >= 0
+                                and live_ul >= 0
+                                and abs(live_dl - live_ul) >= _DIAL_FEEDBACK_CROSSCHECK_HZ
+                                and dl_baseline is not None
+                            ):
+                                new_offset = live_dl - dl_baseline
+                                if abs(new_offset) > _DIAL_FEEDBACK_SANITY_HZ:
+                                    logger.warning(
+                                        "LockWatch: implausible DL reading %.1f Hz "
+                                        "(baseline %.1f), ignoring this cycle",
+                                        live_dl,
+                                        dl_baseline,
+                                    )
+                                else:
+                                    self._dial_feedback_offset_hz = new_offset
+                                    if ul_baseline is not None:
+                                        ul = ul_baseline + (-new_offset if invert else new_offset)
+                            dl = None  # never write DL while Lock is on
                         rig.set_vfo_frequencies(dl, ul)
-                        if do_dial_feedback:
-                            # Baseline for the next cycle's manual-retune
-                            # comparison. Deliberately read back from the
-                            # controller's OWN _last_dl_hz (the value it
-                            # actually wrote via F) rather than assuming
-                            # "dl" (this cycle's computed value) was
-                            # written -- set_vfo_frequencies() has its own,
-                            # independent throttle that silently skips the
-                            # F write when dl changes by less than 1 Hz
-                            # from what it last sent.
-                            #
-                            # Confirmed live (2026-07-16, FTX-1F): using
-                            # "dl" unconditionally here (as this used to)
-                            # let MainWindow's belief about the rig's DL
-                            # silently drift away from the rig's ACTUAL
-                            # (throttle-skipped, unchanged) DL by a small
-                            # amount every cycle, since ordinary Doppler
-                            # drift is often well under 1 Hz per cycle. The
-                            # accumulating gap eventually exceeded
-                            # _DIAL_FEEDBACK_THRESHOLD_HZ and was
-                            # misdetected as a manual retune every few
-                            # cycles -- fbsat59.log showed
-                            # "LockWatch: manual DL retune detected" firing
-                            # every ~1s with small, steady deltas even when
-                            # nothing was touched, drowning out (and
-                            # immediately overwriting) any real manual
-                            # retune with noise-driven corrections. Reading
-                            # the controller's own post-write state instead
-                            # keeps the two trackers permanently in sync by
-                            # construction: they can never diverge, because
-                            # there is only one authoritative record
-                            # instead of a separate shadow copy.
-                            assert isinstance(rig, HamlibNetController)
-                            self._last_commanded_dl_rig1_hz = rig._last_dl_hz
-                            logger.info(
-                                "LockWatch DIAG2: after write, rig._last_dl_hz=%s",
-                                rig._last_dl_hz,
-                            )
                     except RigControlError as exc:
                         self._rig_error.emit(str(exc))
                     except Exception as exc:
@@ -3498,28 +3436,11 @@ class MainWindow(QMainWindow):
             self._sdr_control.set_transponder_mode(satnogs_mode)
         self._sdr_tune_offset = 0.0
         self._sdr_control.reset_tune_offset()
-        # Lock dial feedback: reset for the new transponder. The baseline
-        # is the transponder's nominal DL, matching what
-        # _apply_transponder_state_to_rig() above just pushed to the rig
-        # via the freq preset (independent socket, pre-Connect) or what the
-        # next Doppler cycle will write (post-Connect).
-        # TEMP diagnostic (remove once the mystery mid-session offset
-        # reset is root-caused): see _on_lock_changed()'s matching note.
-        # xpdr here identifies which transponder-selection call triggered
-        # this reset -- if this fires without the user actually picking a
-        # different transponder (e.g. a UI refresh re-selecting the same
-        # entry), that's the smoking gun for a silent reset.
-        logger.info(
-            "LockWatch DIAG: _on_transmitter_changed(xpdr=%r) fired, offset was %.1fHz\n%s",
-            xpdr,
-            self._dial_feedback_offset_hz,
-            "".join(traceback.format_stack()[-6:]),
-        )
+        # Lock dial feedback: reset for the new transponder -- a different
+        # transponder means a different passband, so any accumulated
+        # manual-retune offset from the previous one is no longer
+        # meaningful.
         self._dial_feedback_offset_hz = 0.0
-        dl_baseline = (
-            self._current_transmitter.get("downlink_low") if self._current_transmitter else None
-        )
-        self._last_commanded_dl_rig1_hz = float(dl_baseline) if dl_baseline is not None else None
 
     def _disconnect_rig(self) -> None:
         """Disconnect the rig and refresh the UI status."""
@@ -4550,23 +4471,15 @@ class MainWindow(QMainWindow):
     def _on_lock_changed(self, locked: bool) -> None:
         """Update the _trsp_lock flag when the L button is toggled.
 
-        Starts/stops the dial-feedback poller (_lock_watch_cycle()) and
-        resets its tracking state on every toggle (both ON and OFF) so a
-        stale offset from a previous Lock session never carries over.
+        Starts/stops the dial-feedback poller (_lock_watch_cycle()).
+        Deliberately does NOT reset self._dial_feedback_offset_hz -- see
+        its declaration in __init__ for why: turning Lock off must
+        resume Doppler correction from wherever the operator left DL,
+        not snap back to the pure nominal-based trajectory. The offset
+        only resets on selecting a different transponder or pressing the
+        T (Tune) button.
         """
-        # TEMP diagnostic (remove once the mystery mid-session offset
-        # reset is root-caused): log every time this reset fires, with a
-        # stack trace, so an unexpected/spurious call (vs. a genuine user
-        # click) can be distinguished from the log alone.
-        logger.info(
-            "LockWatch DIAG: _on_lock_changed(%s) fired, offset was %.1fHz\n%s",
-            locked,
-            self._dial_feedback_offset_hz,
-            "".join(traceback.format_stack()[-6:]),
-        )
         self._trsp_lock = locked
-        self._dial_feedback_offset_hz = 0.0
-        self._last_commanded_dl_rig1_hz = None
         if locked:
             self._lock_watch_worker.start()
         else:
@@ -4694,15 +4607,9 @@ class MainWindow(QMainWindow):
         """T button pressed: reset to the centre frequency of the current transponder band."""
         if self._current_transmitter is None:
             return
-        # TEMP diagnostic (remove once the mystery mid-session offset
-        # reset is root-caused): see _on_lock_changed()'s matching note.
-        logger.info(
-            "LockWatch DIAG: _on_tune_requested() fired, offset was %.1fHz\n%s",
-            self._dial_feedback_offset_hz,
-            "".join(traceback.format_stack()[-6:]),
-        )
+        # Discards any accumulated Lock dial-feedback offset -- T means
+        # "go back to the exact centre", overriding any manual retuning.
         self._dial_feedback_offset_hz = 0.0
-        self._last_commanded_dl_rig1_hz = None
         dl_low = self._current_transmitter.get("downlink_low")
         dl_high = self._current_transmitter.get("downlink_high")
         ul_low = self._current_transmitter.get("uplink_low")
