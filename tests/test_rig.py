@@ -29,6 +29,7 @@ from rig.controller import (
     RotatorState,
     VersionInfo,
     _build_mode_map,
+    _check_rig_ok,
     _MockRig,
     normalize_civ_addr,
 )
@@ -450,12 +451,47 @@ class TestHamlibDirectController:
 # ---------------------------------------------------------------------------
 
 
+class TestCheckRigOk:
+    """_check_rig_ok() reads rig.error_status, NOT the Hamlib call's own
+    return value -- Hamlib's Python binding returns None from Rig methods
+    regardless of outcome (confirmed empirically, both on Linux and
+    reported live on Windows), so the return value can never be used."""
+
+    def test_passes_when_error_status_is_ok(self) -> None:
+        rig = MagicMock()
+        rig.error_status = 0
+        _check_rig_ok(rig, "some step")  # must not raise
+
+    def test_raises_with_step_name_and_code_on_failure(self) -> None:
+        rig = MagicMock()
+        rig.error_status = -6  # RIG_EIO
+        with pytest.raises(RigControlError, match="some step") as exc_info:
+            _check_rig_ok(rig, "some step")
+        assert "-6" in str(exc_info.value)
+
+    def test_ignores_the_calls_own_return_value(self) -> None:
+        """A call returning None (the real, always-happens case) must not
+        be mistaken for failure as long as error_status is 0."""
+        rig = MagicMock()
+        rig.open.return_value = None
+        rig.error_status = 0
+        rig.open()
+        _check_rig_ok(rig, "open()")  # must not raise despite None return
+
+
 class TestSatmodeHamlibReturnCodeChecks:
     """_apply_mode_and_ctcss_hamlib() (IC-9100/9700 Direct-mode cross-band
-    path) must surface a real Hamlib failure (RIG_E* return code) instead of
-    reporting success -- Hamlib's Python binding returns the raw status code
-    rather than raising, so every call site must check it explicitly. See
-    _check_rig_ok()."""
+    path) must surface a real Hamlib failure instead of reporting success.
+
+    IMPORTANT (discovered empirically against the bundled 4.7.1 build, both
+    on Linux and reported live on Windows): Rig methods (open/close/
+    set_freq/set_mode/set_func/set_split_vfo) all return None regardless of
+    outcome -- the real per-call result lives in `rig.error_status`
+    (RIG_OK=0, negative RIG_E* on failure) and must be read from there
+    instead. Every mock below therefore sets each method's return_value to
+    None (matching real Hamlib) and drives the check purely via
+    `error_status`, so this test suite cannot pass by accident if the
+    return-value-based mistake is ever reintroduced. See _check_rig_ok()."""
 
     def _make_ctrl(self) -> HamlibDirectController:
         # model_id=3068 -> IC-9100, a satmode rig not in _SATMODE_USE_VFO_SUB
@@ -469,11 +505,12 @@ class TestSatmodeHamlibReturnCodeChecks:
         return ctrl
 
     @staticmethod
-    def _mock_hamlib_ok(mock_rig_inst: MagicMock) -> MagicMock:
-        """Build a mock Hamlib module where every call reports RIG_OK (0)."""
+    def _mock_hamlib(mock_rig_inst: MagicMock, error_status: int = 0) -> MagicMock:
+        """Build a mock Hamlib module. Every Rig method returns None (real
+        Hamlib behaviour); `error_status` (constant here, since a static
+        mock cannot model it changing per-call) drives _check_rig_ok()."""
         mock_hamlib = MagicMock()
         mock_hamlib.Rig.return_value = mock_rig_inst
-        mock_hamlib.RIG_OK = 0
         mock_hamlib.RIG_MODE_FM = 32
         mock_hamlib.RIG_MODE_USB = 4
         mock_hamlib.RIG_MODE_LSB = 8
@@ -487,14 +524,25 @@ class TestSatmodeHamlibReturnCodeChecks:
         mock_hamlib.RIG_VFO_TX = 16777216
         mock_hamlib.RIG_FUNC_SATMODE = 1
         mock_hamlib.RIG_FUNC_TONE = 2
-        for name in ("open", "close", "set_func", "set_freq", "set_mode", "set_ctcss_tone"):
-            getattr(mock_rig_inst, name).return_value = 0
+        for name in (
+            "open",
+            "close",
+            "set_func",
+            "set_freq",
+            "set_mode",
+            "set_ctcss_tone",
+            "set_vfo",
+        ):
+            getattr(mock_rig_inst, name).return_value = None
+        mock_rig_inst.error_status = error_status
         return mock_hamlib
 
     def test_happy_path_returns_true_and_clears_last_error(self) -> None:
+        """error_status == 0 (RIG_OK) throughout -> success, despite every
+        Hamlib call itself returning None."""
         ctrl = self._make_ctrl()
         mock_rig_inst = MagicMock()
-        mock_hamlib = self._mock_hamlib_ok(mock_rig_inst)
+        mock_hamlib = self._mock_hamlib(mock_rig_inst, error_status=0)
         with (
             patch("rig.controller.HAMLIB_AVAILABLE", True),
             patch.dict("sys.modules", {"Hamlib": mock_hamlib}),
@@ -504,16 +552,16 @@ class TestSatmodeHamlibReturnCodeChecks:
         assert ok is True
         assert ctrl._last_hamlib_error is None
 
-    def test_set_mode_failure_is_reported_not_swallowed(self) -> None:
-        """A rejected/timed-out set_mode() (e.g. a Windows COM-port timing
-        glitch) must make _apply_mode_and_ctcss_hamlib() return False with a
-        specific reason, not silently report success like before this
-        change (real symptom reported by a Windows 11 IC-9100 user: Connect
-        succeeds, but mode is never actually set on the rig)."""
+    def test_error_status_failure_is_reported_not_swallowed(self) -> None:
+        """A non-zero rig.error_status (e.g. a Windows COM-port timing
+        glitch, or a rejected CI-V command) must make
+        _apply_mode_and_ctcss_hamlib() return False with a specific reason,
+        not silently report success like before this change (real symptom
+        reported by a Windows 11 IC-9100 user: Connect succeeds, but mode
+        is never actually set on the rig)."""
         ctrl = self._make_ctrl()
         mock_rig_inst = MagicMock()
-        mock_hamlib = self._mock_hamlib_ok(mock_rig_inst)
-        mock_rig_inst.set_mode.return_value = -5  # RIG_ETIMEOUT
+        mock_hamlib = self._mock_hamlib(mock_rig_inst, error_status=-5)  # RIG_ETIMEOUT
         with (
             patch("rig.controller.HAMLIB_AVAILABLE", True),
             patch.dict("sys.modules", {"Hamlib": mock_hamlib}),
@@ -522,7 +570,6 @@ class TestSatmodeHamlibReturnCodeChecks:
             ok = ctrl._apply_mode_and_ctcss_hamlib("USB", "LSB", 0.0)
         assert ok is False
         assert ctrl._last_hamlib_error is not None
-        assert "set_mode" in ctrl._last_hamlib_error
         assert "-5" in ctrl._last_hamlib_error
 
     def test_apply_transponder_state_raises_with_specific_reason(self) -> None:
@@ -531,13 +578,12 @@ class TestSatmodeHamlibReturnCodeChecks:
         via main_window.py's existing RigControlError handling."""
         ctrl = self._make_ctrl()
         mock_rig_inst = MagicMock()
-        mock_hamlib = self._mock_hamlib_ok(mock_rig_inst)
-        mock_rig_inst.set_freq.return_value = -9  # RIG_ERJCTED
+        mock_hamlib = self._mock_hamlib(mock_rig_inst, error_status=-9)  # RIG_ERJCTED
         with (
             patch("rig.controller.HAMLIB_AVAILABLE", True),
             patch.dict("sys.modules", {"Hamlib": mock_hamlib}),
             patch("rig.controller.time.sleep"),
-            pytest.raises(RigControlError, match="freq preset"),
+            pytest.raises(RigControlError, match="-9"),
         ):
             ctrl.apply_transponder_state("USB", "LSB", 0.0)
 
