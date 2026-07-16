@@ -2847,12 +2847,35 @@ class MainWindow(QMainWindow):
                             # was BEFORE this read; delta is exactly the
                             # newly detected increment on top of that.
                             assert isinstance(rig, HamlibNetController)
+                            dl_before_fold = dl
+                            ul_before_fold = ul
+                            last_dl_before = rig._last_dl_hz
                             live_dl = rig.get_frequency()
                             live_ul = rig.get_split_frequency()
                             delta = self._process_dial_feedback_reading(live_dl, live_ul)
                             if delta is not None and dl is not None and ul is not None:
                                 dl = dl + delta
                                 ul = ul + (-delta if invert else delta)
+                            # TEMP diagnostic (remove once root-caused): every
+                            # single value in the read-detect-fold-write chain,
+                            # every cycle -- not just when a retune is
+                            # detected -- to see exactly what set_vfo_
+                            # frequencies() is being called with and why its
+                            # own <1Hz throttle does or doesn't fire.
+                            logger.info(
+                                "LockWatch DIAG2: last_dl_before=%s live_dl=%.3f live_ul=%.3f "
+                                "delta=%s dl_before_fold=%.3f dl_after_fold=%.3f "
+                                "ul_before_fold=%.3f ul_after_fold=%.3f offset=%.3f",
+                                last_dl_before,
+                                live_dl,
+                                live_ul,
+                                delta,
+                                dl_before_fold if dl_before_fold is not None else float("nan"),
+                                dl if dl is not None else float("nan"),
+                                ul_before_fold if ul_before_fold is not None else float("nan"),
+                                ul if ul is not None else float("nan"),
+                                self._dial_feedback_offset_hz,
+                            )
                         rig.set_vfo_frequencies(dl, ul)
                         if do_dial_feedback:
                             # Baseline for the next cycle's manual-retune
@@ -2888,6 +2911,10 @@ class MainWindow(QMainWindow):
                             # instead of a separate shadow copy.
                             assert isinstance(rig, HamlibNetController)
                             self._last_commanded_dl_rig1_hz = rig._last_dl_hz
+                            logger.info(
+                                "LockWatch DIAG2: after write, rig._last_dl_hz=%s",
+                                rig._last_dl_hz,
+                            )
                     except RigControlError as exc:
                         self._rig_error.emit(str(exc))
                     except Exception as exc:
