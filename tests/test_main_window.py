@@ -1798,6 +1798,22 @@ class TestLockDialFeedback:
                 ctrl._state = RigState.CONNECTED
         return ctrl
 
+    def _mock_set_vfo_frequencies(self, rig) -> None:
+        """Replace rig.set_vfo_frequencies with a mock that mimics the real
+        implementation's own <1Hz-change throttle on rig._last_dl_hz (see
+        HamlibNetController.set_vfo_frequencies()), instead of the simpler
+        MagicMock(return_value=True) used elsewhere in this class, which
+        cannot exercise _rig_send()'s post-write sync against a realistic
+        controller state (see test_rig_send_no_false_positive_from_
+        throttled_write for why this distinction matters)."""
+
+        def _side_effect(dl: float | None, ul: float | None) -> bool:
+            if dl is not None and (rig._last_dl_hz is None or abs(dl - rig._last_dl_hz) >= 1.0):
+                rig._last_dl_hz = dl
+            return True
+
+        rig.set_vfo_frequencies = MagicMock(side_effect=_side_effect)
+
     # -- _process_dial_feedback_reading(): shared validation core --
 
     def test_process_reading_first_observation_sets_baseline_only(self, qtbot, db) -> None:
@@ -1985,7 +2001,8 @@ class TestLockDialFeedback:
         rig = self._make_yaesu_rig(connected=True)
         rig.get_frequency = MagicMock(return_value=145_800_080.0)  # +80Hz manual retune
         rig.get_split_frequency = MagicMock(return_value=435_000_000.0)
-        rig.set_vfo_frequencies = MagicMock(return_value=True)
+        self._mock_set_vfo_frequencies(rig)
+        rig._last_dl_hz = 145_800_000.0
         w._rig_controller = rig
         w._rig2_controller = None
         w._trsp_lock = True
@@ -2022,8 +2039,9 @@ class TestLockDialFeedback:
         # cycle's write immediately -- no visible snap-back.
         rig.set_vfo_frequencies.assert_called_once_with(145_800_080.0, 435_000_080.0)
         assert w._dial_feedback_offset_hz == 80.0
-        # Re-baselined to what was actually written this cycle (the
-        # corrected value, not the raw live reading).
+        # Re-baselined from the controller's own post-write state (which
+        # the mocked throttle updated, since 80Hz exceeds its 1Hz
+        # threshold), not the raw live reading.
         assert w._last_commanded_dl_rig1_hz == 145_800_080.0
 
     def test_rig_send_folds_manual_retune_inverted_flips_sign(self, qtbot, db) -> None:
@@ -2033,7 +2051,8 @@ class TestLockDialFeedback:
         rig = self._make_yaesu_rig(connected=True)
         rig.get_frequency = MagicMock(return_value=145_800_080.0)  # +80Hz manual retune
         rig.get_split_frequency = MagicMock(return_value=435_150_000.0)
-        rig.set_vfo_frequencies = MagicMock(return_value=True)
+        self._mock_set_vfo_frequencies(rig)
+        rig._last_dl_hz = 145_800_000.0
         w._rig_controller = rig
         w._rig2_controller = None
         w._trsp_lock = True
@@ -2081,7 +2100,8 @@ class TestLockDialFeedback:
         rig = self._make_yaesu_rig(connected=True)
         rig.get_frequency = MagicMock(return_value=145_800_000.0)
         rig.get_split_frequency = MagicMock(return_value=435_000_000.0)
-        rig.set_vfo_frequencies = MagicMock(return_value=True)
+        self._mock_set_vfo_frequencies(rig)
+        assert rig._last_dl_hz is None  # fresh controller, nothing sent yet
         w._rig_controller = rig
         w._rig2_controller = None
         w._trsp_lock = True
@@ -2116,6 +2136,87 @@ class TestLockDialFeedback:
 
         rig.set_vfo_frequencies.assert_called_once_with(145_800_000.0, 435_000_000.0)
         assert w._dial_feedback_offset_hz == 0.0
+        assert w._last_commanded_dl_rig1_hz == 145_800_000.0
+
+    def test_rig_send_no_false_positive_from_throttled_write(self, qtbot, db) -> None:
+        """Regression test (2026-07-16, FTX-1F, live): MainWindow's
+        baseline must track the controller's own throttle-aware
+        _last_dl_hz, not just "whatever dl we computed this cycle" --
+        otherwise small (<1Hz), routine Doppler drift that
+        set_vfo_frequencies()'s own throttle silently skips writing gets
+        misdetected as a manual retune once MainWindow's (wrongly
+        advancing) belief and the rig's real (unwritten, unchanged)
+        frequency drift apart by more than the 1Hz detection threshold.
+        fbsat59.log showed "LockWatch: manual DL retune detected" firing
+        every ~1s with small, steady deltas even though nothing was
+        touched -- this noise-driven "correction" then permanently
+        drowned out (and immediately overwrote) any real manual retune,
+        which read as "however much I turn the dial, it snaps straight
+        back"."""
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        rig = self._make_yaesu_rig(connected=True)
+        # Nothing was manually touched -- the rig's live DL is exactly
+        # what the controller last actually wrote.
+        rig.get_frequency = MagicMock(return_value=145_800_000.0)
+        rig.get_split_frequency = MagicMock(return_value=435_000_000.0)
+        self._mock_set_vfo_frequencies(rig)
+        rig._last_dl_hz = 145_800_000.0
+        w._rig_controller = rig
+        w._rig2_controller = None
+        w._trsp_lock = True
+        w._last_commanded_dl_rig1_hz = 145_800_000.0
+        w._dial_feedback_offset_hz = 0.0
+
+        # A tiny range-rate that produces well under 1Hz of downlink
+        # Doppler shift per cycle -- small enough that
+        # set_vfo_frequencies()'s own throttle will skip the F write.
+        from core.engine import DopplerCalculator
+
+        rr = -0.0008  # km/s
+        expected_dl_corr, _ = DopplerCalculator.correct_downlink(145_800_000.0, rr)
+        assert abs(expected_dl_corr - 145_800_000.0) < 1.0  # sanity: sub-threshold drift
+
+        class _FakeEngine:
+            def observe(self, norad: int) -> Observation:
+                return Observation(
+                    norad_cat_id=norad,
+                    timestamp=datetime.now(UTC),
+                    elevation_deg=45.0,
+                    azimuth_deg=180.0,
+                    range_km=1000.0,
+                    range_rate_km_s=rr,
+                    is_above_horizon=True,
+                )
+
+        w._engine = _FakeEngine()
+        w._selected_norad = 99999
+        w._current_transmitter = {
+            "downlink_low": 145_800_000,
+            "downlink_high": 145_950_000,
+            "uplink_low": 435_000_000,
+            "uplink_high": 435_150_000,
+            "invert": False,
+            "mode": "USB",
+        }
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._doppler_cycle()
+
+        # The computed dl differs from rig._last_dl_hz by less than 1Hz,
+        # so the (mocked, realistic) throttle skips the write -- the rig's
+        # real frequency, and thus rig._last_dl_hz, stays unchanged.
+        assert rig._last_dl_hz == 145_800_000.0
+        # No manual retune ever happened -- the offset must stay exactly
+        # 0, not accumulate the sub-threshold Doppler drift as if it were
+        # a detected retune.
+        assert w._dial_feedback_offset_hz == 0.0
+        # Crucially, MainWindow's baseline must reflect the rig's REAL
+        # (unwritten) state, not the newly-computed-but-never-sent dl --
+        # otherwise the next cycle's read (still 145_800_000.0, since
+        # nothing was actually written) would appear to be a retune AWAY
+        # from a baseline that silently drifted ahead of reality.
         assert w._last_commanded_dl_rig1_hz == 145_800_000.0
 
     def test_rig_send_skips_dial_feedback_when_lock_off(self, qtbot, db) -> None:

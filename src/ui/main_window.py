@@ -2853,16 +2853,40 @@ class MainWindow(QMainWindow):
                                 dl = dl + delta
                                 ul = ul + (-delta if invert else delta)
                         rig.set_vfo_frequencies(dl, ul)
-                        if dl is not None:
+                        if do_dial_feedback:
                             # Baseline for the next cycle's manual-retune
-                            # comparison -- the value WE just told Rig 1's
-                            # DL to be (offset-inclusive; see
-                            # _doppler_cycle()'s Lock branch), not a value
-                            # read back from the rig. Deliberately
-                            # overwrites whatever _process_dial_feedback_
-                            # reading() set above, since that's now stale
-                            # the instant this write lands.
-                            self._last_commanded_dl_rig1_hz = dl
+                            # comparison. Deliberately read back from the
+                            # controller's OWN _last_dl_hz (the value it
+                            # actually wrote via F) rather than assuming
+                            # "dl" (this cycle's computed value) was
+                            # written -- set_vfo_frequencies() has its own,
+                            # independent throttle that silently skips the
+                            # F write when dl changes by less than 1 Hz
+                            # from what it last sent.
+                            #
+                            # Confirmed live (2026-07-16, FTX-1F): using
+                            # "dl" unconditionally here (as this used to)
+                            # let MainWindow's belief about the rig's DL
+                            # silently drift away from the rig's ACTUAL
+                            # (throttle-skipped, unchanged) DL by a small
+                            # amount every cycle, since ordinary Doppler
+                            # drift is often well under 1 Hz per cycle. The
+                            # accumulating gap eventually exceeded
+                            # _DIAL_FEEDBACK_THRESHOLD_HZ and was
+                            # misdetected as a manual retune every few
+                            # cycles -- fbsat59.log showed
+                            # "LockWatch: manual DL retune detected" firing
+                            # every ~1s with small, steady deltas even when
+                            # nothing was touched, drowning out (and
+                            # immediately overwriting) any real manual
+                            # retune with noise-driven corrections. Reading
+                            # the controller's own post-write state instead
+                            # keeps the two trackers permanently in sync by
+                            # construction: they can never diverge, because
+                            # there is only one authoritative record
+                            # instead of a separate shadow copy.
+                            assert isinstance(rig, HamlibNetController)
+                            self._last_commanded_dl_rig1_hz = rig._last_dl_hz
                     except RigControlError as exc:
                         self._rig_error.emit(str(exc))
                     except Exception as exc:
