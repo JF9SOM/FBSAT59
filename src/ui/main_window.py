@@ -2698,36 +2698,48 @@ class MainWindow(QMainWindow):
             if dl_nom is not None
             else (None, None)
         )
-        if self._trsp_lock and dl_corr is not None:
-            # Lock ON: fold in any accumulated manual-retune offset detected
-            # by _lock_watch_cycle() (dial feedback) before deriving UL from
-            # it, so the physical DL VFO stays parked at "Doppler-corrected
-            # value plus the user's manual offset" instead of snapping back
-            # to the pure computed value on the next write. dl_shift (pure
-            # Doppler-only shift) is no longer an accurate figure once a
-            # manual offset is mixed in, so it is cleared for display.
-            if self._dial_feedback_offset_hz != 0.0:
+        # UL always uses its OWN independently-scaled Doppler correction,
+        # Lock or not -- carrier-frequency-proportional (e.g. a ~3:1 ratio
+        # for a 435MHz/145MHz V/U transponder like RS-44), matching
+        # DopplerCalculator's physics-based formula (shift = -nominal_hz *
+        # rr / c applied to ul_nom, not dl_nom). Lock must NOT replace this
+        # with a raw copy of DL's shift-from-nominal -- that discards the
+        # correct per-band scaling entirely. Confirmed live (2026-07-15):
+        # the previous Lock branch computed ul_corr as
+        # "ul_low + (dl_corr - dl_low_nom)", i.e. mirrored DL's ENTIRE
+        # absolute shift onto UL 1:1 regardless of band -- pressing Lock on
+        # a V/U transponder made UL move by the exact same absolute Hz as
+        # DL (should be ~1/3) and permanently blanked the UL Doppler-shift
+        # display (ul_shift was unconditionally set to None). This was a
+        # pre-existing flaw in the Lock feature itself, not something
+        # introduced by dial feedback -- dial feedback's offset was simply
+        # being fed into the same already-broken formula.
+        ul_corr, ul_shift = (
+            DopplerCalculator.correct_uplink(float(ul_nom), rr, invert=invert)
+            if ul_nom is not None
+            else (None, None)
+        )
+        if self._trsp_lock and self._dial_feedback_offset_hz != 0.0:
+            # Lock ON: the ONLY thing Lock adds on top of the normal,
+            # correctly-scaled Doppler tracking above is the raw
+            # (unscaled) manual-retune offset detected by
+            # _lock_watch_cycle()/_rig_send() (dial feedback), sign-
+            # flipped for inverting transponders -- matching GPredict's
+            # own dial-feedback algorithm (a raw Hz delta, not scaled by
+            # transponder bandwidth ratio). The physical DL VFO stays
+            # parked at "Doppler-corrected value plus the user's manual
+            # offset" instead of snapping back to the pure computed value
+            # on the next write. dl_shift/ul_shift (pure Doppler-only
+            # shift) are no longer accurate figures once a manual offset
+            # is mixed in, so they are cleared for display.
+            if dl_corr is not None:
                 dl_corr = dl_corr + self._dial_feedback_offset_hz
                 dl_shift = None
-            # Lock ON: calculate uplink from the downlink offset.
-            ul_low = self._current_transmitter.get("uplink_low")
-            ul_high = self._current_transmitter.get("uplink_high")
-            dl_low_nom = self._current_transmitter.get("downlink_low")
-            if ul_low is not None and dl_low_nom is not None:
-                delta = dl_corr - float(dl_low_nom)
-                if invert and ul_high is not None:
-                    ul_calc = float(ul_high) - delta
-                else:
-                    ul_calc = float(ul_low) + delta
-                ul_corr, ul_shift = ul_calc, None
-            else:
-                ul_corr, ul_shift = (None, None)
-        else:
-            ul_corr, ul_shift = (
-                DopplerCalculator.correct_uplink(float(ul_nom), rr, invert=invert)
-                if ul_nom is not None
-                else (None, None)
-            )
+            if ul_corr is not None:
+                ul_corr = ul_corr + (
+                    -self._dial_feedback_offset_hz if invert else self._dial_feedback_offset_hz
+                )
+                ul_shift = None
         get_ft4_decode_logger().info(
             "TEMP_DOPPLER_RATE_LOG t=%.3f dl_corr=%s dl_shift=%s rr=%.6f",
             time.monotonic(),

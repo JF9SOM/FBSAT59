@@ -2237,7 +2237,10 @@ class TestLockDialFeedback:
 
     def test_doppler_cycle_folds_in_dial_feedback_offset_inverted(self, qtbot, db) -> None:
         """Inverted transponder: DL +500Hz manual offset -> UL -500Hz
-        relative to its own baseline (ul_high)."""
+        relative to its own baseline. Baseline is uplink_low (ul_nom),
+        matching DopplerCalculator.correct_uplink()'s own convention --
+        the same reference point Lock-OFF tracking already uses -- not
+        uplink_high as the old (pre-existing, buggy) Lock branch used."""
         w = self._make_window(qtbot, db)
 
         class _FakeEngine:
@@ -2274,7 +2277,72 @@ class TestLockDialFeedback:
         assert len(received) == 1
         result = received[0]
         assert result.dl_corr == 145_800_500.0
-        assert result.ul_corr == 435_149_500.0
+        assert result.ul_corr == 434_999_500.0
+
+    def test_doppler_cycle_ul_uses_own_scaled_doppler_not_dl_mirror(self, qtbot, db) -> None:
+        """Regression test for the pre-existing Lock-branch flaw (found
+        live, 2026-07-15, RS-44): UL must use its own carrier-frequency-
+        scaled Doppler correction (DopplerCalculator.correct_uplink()),
+        never a raw 1:1 mirror of DL's absolute shift-from-nominal. A V/U
+        transponder like RS-44 (435MHz DL / 145MHz UL) needs roughly a 3:1
+        DL:UL Doppler-shift ratio; the old Lock-branch formula collapsed
+        this to 1:1 and also permanently blanked the UL Doppler-shift
+        display (ul_shift was unconditionally None whenever Lock was on)."""
+        from core.engine import DopplerCalculator
+
+        w = self._make_window(qtbot, db)
+
+        class _FakeEngine:
+            def observe(self, norad: int) -> Observation:
+                return Observation(
+                    norad_cat_id=norad,
+                    timestamp=datetime.now(UTC),
+                    elevation_deg=45.0,
+                    azimuth_deg=180.0,
+                    range_km=1000.0,
+                    range_rate_km_s=2.5,  # nonzero -- the whole point of this test
+                    is_above_horizon=True,
+                )
+
+        w._engine = _FakeEngine()
+        w._selected_norad = 99999
+        w._rig_controller = None
+        w._rig2_controller = None
+        dl_nom = 435_612_000.0
+        ul_nom = 145_993_000.0
+        w._current_transmitter = {
+            "downlink_low": dl_nom,
+            "downlink_high": dl_nom + 30_000,
+            "uplink_low": ul_nom,
+            "uplink_high": ul_nom + 10_000,
+            "invert": False,
+            "mode": "USB",
+        }
+        w._trsp_lock = True
+        # No manual offset -- isolates the Doppler-scaling behaviour itself.
+        w._dial_feedback_offset_hz = 0.0
+
+        expected_dl_corr, expected_dl_shift = DopplerCalculator.correct_downlink(dl_nom, 2.5)
+        expected_ul_corr, expected_ul_shift = DopplerCalculator.correct_uplink(
+            ul_nom, 2.5, invert=False
+        )
+        # Sanity: the two shifts must differ (roughly by the DL:UL
+        # frequency ratio, ~3:1 here) -- if they were equal, this test
+        # wouldn't actually distinguish the fix from the old formula.
+        assert abs(expected_dl_shift) != abs(expected_ul_shift)
+
+        received = []
+        w._doppler_computed.connect(received.append)
+        w._doppler_cycle()
+
+        assert len(received) == 1
+        result = received[0]
+        assert result.dl_corr == expected_dl_corr
+        assert result.ul_corr == expected_ul_corr
+        # Lock ON with no manual offset must still show the real
+        # Doppler-shift figure, not the permanently-blanked None the old
+        # formula produced.
+        assert result.ul_shift == expected_ul_shift
 
 
 class TestRadioType:
