@@ -648,6 +648,70 @@ jobs:
           if ($libusbDll) { Copy-Item $libusbDll.FullName "soapy-win64\bin\libusb-1.0.dll" -Force }
           Write-Host "RTL-SDR Osmocom source build installed into soapy-win64."
 
+      - name: Build SoapyRemote client from source (Windows)
+        shell: pwsh
+        run: |
+          # GitHub Issue #12: the conda-forge soapysdr-module-remote-0.5.2
+          # build produces a remoteSupport.dll that LoadLibrary()s cleanly
+          # (no ABI-check / duplicate-entry error logged) but never actually
+          # appears in SoapySDR's internal Registry — Device::make() then
+          # throws "no match" for driver=remote unconditionally, on a machine
+          # where the network path, firewall, and antivirus were all ruled
+          # out. SkyRoof (an independent OSS SoapySDR satellite app,
+          # https://github.com/VE3NEA/SkyRoof, GPLv3) bundles a self-built
+          # remoteSupport.dll from a newer pothosware/SoapyRemote commit than
+          # the 0.5.2 tag and works correctly there — the strongest lead so
+          # far. Build our own remoteSupport.dll directly from
+          # pothosware/SoapyRemote master instead of trusting the
+          # conda-forge binary.
+
+          git clone https://github.com/pothosware/SoapyRemote --depth 1
+
+          # server/CMakeLists.txt links against a bare "SoapySDR" cmake
+          # target, which our generated SoapySDRConfig.cmake
+          # (write_soapy_cmake_config.py, run in the SoapyRTLSDR step above)
+          # does not define — only the namespaced "SoapySDR::SoapySDR"
+          # import target exists. We only need the client plugin
+          # (remoteSupport.dll), not the server executable, so drop the
+          # server subdirectory before configuring.
+          python scripts/patch_soapyremote_client_only.py
+          if ($LASTEXITCODE -ne 0) { throw "SoapyRemote CMakeLists.txt patch failed" }
+
+          # Re-derive $CMAKE and the MSVC x64 environment: each CI step runs
+          # in a fresh pwsh process, so process-scoped env vars set in the
+          # SoapyRTLSDR step above do not carry over.
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * `
+                      -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+                      -property installationPath
+          $vcvarsall = "$vsPath\VC\Auxiliary\Build\vcvarsall.bat"
+          $vcEnv = cmd /c "`"$vcvarsall`" x64 && set" 2>&1
+          foreach ($line in $vcEnv) {
+            if ($line -match '^([^=]+)=(.*)$') {
+              [System.Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], 'Process')
+            }
+          }
+          $CMAKE = "C:\Program Files\CMake\bin\cmake.exe"
+
+          & $CMAKE -G Ninja -B soapyremote-build -S SoapyRemote `
+            -DCMAKE_BUILD_TYPE=Release `
+            "-DSoapySDR_DIR=$PWD\soapy-win64\sdk\lib\cmake\SoapySDR"
+          if ($LASTEXITCODE -ne 0) { throw "cmake configure SoapyRemote failed" }
+          & $CMAKE --build soapyremote-build --target remoteSupport
+          if ($LASTEXITCODE -ne 0) { throw "cmake build SoapyRemote failed" }
+
+          Write-Host "=== soapyremote-build contents ==="
+          Get-ChildItem soapyremote-build -Recurse -File | Select-Object FullName
+
+          $remoteDll = Get-ChildItem soapyremote-build -Recurse -Filter "remoteSupport.dll" |
+                       Select-Object -First 1
+          if (-not $remoteDll) { throw "remoteSupport.dll not found after build" }
+          Write-Host "remoteSupport.dll: $($remoteDll.FullName)"
+          # Overwrites the conda-forge 0.5.2 build extracted earlier by
+          # extract_soapy_conda.py in the "Bundle SoapySDR for Windows" step.
+          Copy-Item $remoteDll.FullName "soapy-win64\modules\remoteSupport.dll" -Force
+          Write-Host "Source-built SoapyRemote client module installed into soapy-win64."
+
       - name: Download Direwolf bundle
         shell: pwsh
         env:

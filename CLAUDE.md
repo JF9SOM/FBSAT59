@@ -3678,6 +3678,85 @@ GitHub Actions Windowsランナーには元々インストール済み。ビル�
 遭遇したようなCI不安定化のリスクは低いと判断したが、実際のビルド成否は`workflow_dispatch`
 での確認が必要。
 
+#### 実運用で発覚した「remoteSupport.dllは正常にロードされるがレジストリに登録されない」不具合と、ソースからの自前ビルドへの切り替え（2026-07-16 調査・対応）
+
+v0.2.15リリース後、Issue #12の報告者（Windows・PothosSDR併用環境）から「Add Remote Hostで
+リモートホストを追加し接続すると常に`SoapySDR::Device::make() no match`で失敗する」という
+報告を受け、複数ラウンドの診断（ログ収集・ファイアウォール診断・`LoadLibrary`直接テスト用の
+診断スクリプトを都度作成）で以下を順に否定した:
+
+1. **PothosSDR併用によるモジュール重複**（`duplicate entry for remote`ログ） — PothosSDR
+   完全アンインストール後も再現し否定
+2. **Windowsファイアウォールによるブロック** — FBSAT59に対する明示的Inbound Allowルールが
+   既に存在・Outboundは既定で許可・管理者権限実行でも再現し否定
+3. **アンチウイルスによる隔離** — 直近のWindows Defender検出履歴なしで否定
+4. **`soapy_modules`配下のDLLが一般的にロードできない問題** — 診断スクリプト第1版は
+   `SetDllDirectory`を呼ばずに素の`LoadLibrary()`でテストしていたため、`main.py`の
+   `os.add_dll_directory(_MEIPASS)`と同じ検索パスが再現できておらず、5モジュール全てが
+   `ERROR_MOD_NOT_FOUND(126)`という偽陽性を出していた（スクリプト自身のバグ、実アプリの
+   不具合ではない）。`SetDllDirectory`を追加した修正版で再テストすると
+   **`remoteSupport.dll`を含む全モジュールが`LoadLibrary`単体では正常に成功**することを確認
+
+上記4点を踏まえて`pothosware/SoapySDR`の`lib/Modules.in.cpp`・`lib/Factory.cpp`・
+`lib/Registry.cpp`・`client/Registration.cpp`（SoapyRemote側）のソースを直接精査した結果、
+以下が判明した:
+
+- `Modules.in.cpp`の`loadModules()`は**エラーがない場合は一切ログを出力しない**仕様
+  （`errorMsg`が空文字なら`SoapySDR::logf()`自体を呼ばない）。そのため実機ログで
+  `remoteSupport.dll`の`loadModule(...)`行が一度も出ないことは「スキップされている」
+  のではなく「エラーなくロード・登録に成功している」ことを示す可能性がある——という
+  解釈にいったん傾いたが、`Factory.cpp`の`Device::make()`を読むと「no match」は
+  `Registry::listMakeFunctions()`に指定した`driver`名（`remote`）のキーが
+  **一つも見つからない場合にのみ**発生する処理であることが確定した。ABI不一致・重複の
+  どちらのエラーであっても`Registry::Registry()`コンストラクタは`errorMsg`を設定し、
+  それは必ず`loadModules()`側でログに出る（`getLoaderResult()`経由）。エラーログが
+  一切ないのにレジストリにキーが存在しない、という組み合わせは、`LoadLibrary`自体は
+  成功しているのに`client/Registration.cpp`末尾の
+  `static SoapySDR::Registry registerRemote("remote", &findRemote, &makeRemote,
+  SOAPY_SDR_ABI_VERSION);`という**ファイルスコープの静的初期化子がDLLロード時
+  （DllMain相当）に正しく実行されていない**ことを強く示唆する
+
+- 独立した参考データとして、同じくSoapySDRベースの別のOSS衛星追尾ソフト
+  [SkyRoof](https://github.com/VE3NEA/SkyRoof)（GPLv3、C#からSoapySDRをP/Invoke経由で
+  直接呼び出す実装）のソースを確認したところ、`Vendor/SoapySDR/SDR/remoteSupport.dll`に
+  同梱されているバイナリのバージョン文字列は`0.6.0-c09b2f1`——pothosware/SoapyRemoteの
+  公式タグ`0.5.2`（2020-07-20リリース）より後、`c09b2f1`コミット（2020-11-05、
+  ref clock rate API追加）を含む非公式ビルドだった。FBSAT59がconda-forge経由で同梱していた
+  のは公式`0.5.2`タグそのもの。SkyRoof側は同じ「remote」ドライバで正常に動作している
+  （報告者もSkyRoofからは同じリモートSDRに問題なく接続できると証言）ことから、
+  **conda-forgeの0.5.2ビルド固有の問題**（ビルド設定・リンカー最適化等でこの静的
+  初期化子が欠落している可能性）を疑う根拠として扱った
+
+以上を受け、`rtlsdrSupport.dll`（WinUSB対応で既にOsmocomソースから自前ビルド済み、
+「Rig-Specific Implementation Notes」以前のセクション参照）と同じ方針で、
+**`remoteSupport.dll`もconda-forgeバイナリを信用せず`pothosware/SoapyRemote`の
+ソース（`master`、2026-07-16時点のHEAD。Changelog.txt上は0.5.2以降"0.6.0 (pending)"の
+まま停滞しており、SkyRoofが使ったコミットと機能的に同一）から自前ビルドする**方針に
+切り替えた（`.github/workflows/ci.yml`「Build SoapyRemote client from source (Windows)」
+ステップ、`write_soapy_cmake_config.py`が生成する`SoapySDRConfig.cmake`をRTLSDRビルドと
+共用）。
+
+**`server`サブディレクトリの除外が必須**: `SoapyRemote`の`CMakeLists.txt`は
+`add_subdirectory(client)`と`add_subdirectory(server)`を無条件で呼ぶが、
+`server/CMakeLists.txt`は`target_link_libraries(SoapySDRServer PRIVATE SoapySDR
+SoapySDRRemoteCommon)`という**名前空間なしの生の`SoapySDR`ターゲット**を参照する。
+`write_soapy_cmake_config.py`が生成する簡易`SoapySDRConfig.cmake`は
+`SoapySDR::SoapySDR`（名前空間付きIMPORTEDターゲット）しか定義しないため、
+`add_subdirectory(server)`を残したままではconfigure段階で
+「target "SoapySDR" not found」エラーになる。FBSAT59はSoapyRemoteの
+**クライアント側（`remoteSupport.dll`）のみ**必要（サーバー機能は使わない）なので、
+`scripts/patch_soapyremote_client_only.py`で`add_subdirectory(server)`の行を
+コメントアウトしてから configure する（`add_subdirectory(system)`はLinux限定の
+条件分岐が既についているため未対応のまま無害）。
+
+**検証状況（2026-07-16時点）**: CIビルド自体（`workflow_dispatch`）の成否確認は未実施。
+さらに重要な点として、**この自前ビルドが実際にIssue #12の症状を解消するかどうかも
+まだ実機で未検証**——「conda-forgeビルド固有の問題」という仮説はSkyRoofとのバージョン差
+という状況証拠に基づくもので、確定した原因究明ではない。次のリリースで報告者（および
+開発者自身が用意する検証環境）に実際にテストしてもらい、症状が解消するかで仮説の
+正否を判断する。解消しない場合はDllMain内の静的初期化子が実行されない別の原因
+（Windows特有のローダーロック絡みの問題等）を追う必要がある。
+
 ---
 
 ## Communications 機能設計方針（2026-06-12 確定・v0.2.0 基本実装済み）
