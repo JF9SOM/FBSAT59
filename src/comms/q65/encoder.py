@@ -269,23 +269,26 @@ def pack77(text: str) -> list[int]:
     try:
         import ctypes
 
-        from comms.ft4.codec import _find_ft8lib, _FtxMessage
+        from comms.ft4.codec import _find_ft8lib, _FtxMessage, free_ft8lib
 
         lib = _find_ft8lib()
         if lib is None:
             raise RuntimeError("ft8lib not installed — Q65 TX requires ft8lib")
 
-        msg = _FtxMessage()
-        rc = lib.ftx_message_encode(ctypes.byref(msg), None, text.upper().encode("ascii"))
-        if rc != 0:
-            raise RuntimeError(f"ftx_message_encode returned {rc} for: {text!r}")
+        try:
+            msg = _FtxMessage()
+            rc = lib.ftx_message_encode(ctypes.byref(msg), None, text.upper().encode("ascii"))
+            if rc != 0:
+                raise RuntimeError(f"ftx_message_encode returned {rc} for: {text!r}")
 
-        # Extract first 77 bits from the 10-byte big-endian payload
-        bits: list[int] = []
-        for byte in bytes(msg.payload):
-            for shift in range(7, -1, -1):
-                bits.append((byte >> shift) & 1)
-        return bits[:77]
+            # Extract first 77 bits from the 10-byte big-endian payload
+            bits: list[int] = []
+            for byte in bytes(msg.payload):
+                for shift in range(7, -1, -1):
+                    bits.append((byte >> shift) & 1)
+            return bits[:77]
+        finally:
+            free_ft8lib(lib)
 
     except ImportError as exc:
         raise RuntimeError("ft4.codec not available — cannot use ft8lib pack77") from exc

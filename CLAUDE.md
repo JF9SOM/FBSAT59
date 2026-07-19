@@ -2144,6 +2144,50 @@ rr = obs.range_rate_km_s * (2.0 if self._selected_norad == MOON_ID else 1.0)
 
 ---
 
+### Windows — ft8lib インストールが「100%でハング」→ 再起動後も再インストール失敗（GitHub Issue #13・調査中）
+
+**症状**: v0.2.14 で報告された `PermissionError: ft8.dll`（Help > ft8lib Installation の
+Download & Install が展開中にロックされたDLLを上書きできず失敗）に対し、`_free_library()`
+（DLLハンドル解放）とエラーメッセージ改善（v0.2.15、コミット `2cbbf2a`/`18f70d4`/`3f719e8`）を
+実施済みだったが、v0.2.17 でも再発報告があった（2026-07-19）。今回の報告では新たに
+「インストールが100%まで進んで**ハング**する」→ アプリ再起動 → 「未インストール」表示に戻る
+（AppDataフォルダにはファイルは展開済み）→ 再インストールを試すと同じ
+`PermissionError: ft8.dll`（「FT4タブを閉じて再起動してください」という改善済みメッセージ付き）
+が出る、という一連の流れが報告された。
+
+**静的解析で見つかり修正済みの確実なバグ（2026-07-19、根本原因かは未確認）**:
+- `src/comms/q65/encoder.py` の `pack77()` が呼び出すたびに `_find_ft8lib()` で
+  `ctypes.CDLL()` を新規ロードしていたが、**一度も `FreeLibrary` で解放していなかった**。
+  Windowsでは`LoadLibrary`のたびに参照カウントが増え、対応する`FreeLibrary`を呼ばない限り
+  アンロードされないため、Q65機能を一度でも使うと`ft8.dll`に余分な未解放参照が残り、
+  Help画面側の`_refresh_status()`が１回`_free_library()`を呼んでも完全にはアンロードされない
+  状態になり得る。`free_ft8lib()`という共有関数に切り出し（`src/comms/ft4/codec.py`）、
+  `pack77()`側もtry/finallyで確実に解放するよう修正
+- `PermissionError`のメッセージ表示（`ft8lib_dialog.py`の`_InstallWorker.run()`）が
+  `str(exc)`（内部で`repr()`によりバックスラッシュが`\\`にエスケープされる）を使っていたため、
+  Windowsパスの区切り文字が実際には1本なのに画面上は2本に見える、という別報告（ユーザーからの
+  「これは正しいのか？」という質問）にも繋がっていた。`exc.filename`（生の文字列）を使う表示に
+  修正済み
+
+**未解決点（「100%でハング」の直接原因）**: 上記2件はいずれも静的解析で見つかった確実な不具合だが、
+「進捗100%からダイアログが応答しなくなる」症状そのものを再現・確認できていない。ダウンロード後の
+展開処理（`zipfile.extractall`）自体、または展開成功直後に`finished_ok`シグナル経由で呼ばれる
+`_refresh_status()`（新しく展開したDLLをctypesでロードしてバージョン表示 → 解放、という一連の処理）
+のどこかで止まっている可能性を疑っている（例: Windows Defenderのリアルタイムスキャンが
+書き込み直後のDLLを排他的にロックし`ctypes.CDLL()`呼び出しが長時間ブロックされる、等）が、
+確証はない。
+
+**現状の対処（診断ログ追加のみ）**: `src/ui/ft8lib_dialog.py`に`[ft8lib install diag]`タグの
+診断ログを追加済み（ダウンロード開始/終了・展開開始/終了・`finished_ok`emit前後・
+`_on_install_ok`受信・`_refresh_status()`内の`_find_ft8lib()`/`_get_ft8lib_version()`/
+`free_ft8lib()`各呼び出し前後）。報告者から次のログ（`fbsat59.log`、ハング発生時を含むセッション）
+を受け取り次第、どの行の後で進行が止まっているかを特定し、根本修正を行う。
+
+**関連ファイル**: `src/ui/ft8lib_dialog.py`（診断ログ、次回対応時に削除予定）・
+`src/comms/ft4/codec.py`（`free_ft8lib()`共有関数）・`src/comms/q65/encoder.py`（`pack77()`修正）
+
+---
+
 ### AppImage — テキストフィールドにキー入力ができない（Linux 非Ubuntu系）
 
 **症状**: Linux AppImage 版で、CI-Vアドレス・ポート名・テキスト入力フィールドにキーボードで文字が入力できない。マウス操作は正常。

@@ -179,6 +179,20 @@ def _find_ft8lib() -> ctypes.CDLL | None:
     return None
 
 
+def free_ft8lib(lib: ctypes.CDLL) -> None:
+    """Release a library handle obtained from _find_ft8lib().
+
+    ctypes never automatically unloads a shared library — on Windows the
+    backing DLL file stays locked (can't be overwritten by a reinstall)
+    for the lifetime of the process unless FreeLibrary is called
+    explicitly. Only Windows needs this: POSIX filesystems allow replacing
+    a file that a running process still has mapped.
+    """
+    if sys.platform == "win32":
+        with contextlib.suppress(OSError, AttributeError):
+            ctypes.windll.kernel32.FreeLibrary(lib._handle)  # type: ignore[attr-defined]
+
+
 # ---------------------------------------------------------------------------
 # Bindings wrapper
 # ---------------------------------------------------------------------------

@@ -15,8 +15,8 @@ Detection priority (mirrors _find_ft8lib()):
 from __future__ import annotations
 
 import ctypes
+import logging
 import sys
-from contextlib import suppress
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
@@ -33,8 +33,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from comms.ft4.codec import _find_ft8lib, get_user_ft8lib_dir
+from comms.ft4.codec import _find_ft8lib, free_ft8lib, get_user_ft8lib_dir
 from i18n import _
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -53,20 +55,6 @@ def _get_ft8lib_version(lib: ctypes.CDLL) -> str:
         except AttributeError:
             continue
     return _("(version symbol not available)")
-
-
-def _free_library(lib: ctypes.CDLL) -> None:
-    """Release a loaded library handle so its file is not left locked.
-
-    ctypes never automatically unloads a shared library — on Windows the
-    backing DLL file stays locked (can't be overwritten) for the lifetime of
-    the process unless FreeLibrary is called explicitly. Only Windows needs
-    this: POSIX filesystems allow replacing a file that a running process
-    still has mapped.
-    """
-    if sys.platform == "win32":
-        with suppress(OSError, AttributeError):
-            ctypes.windll.kernel32.FreeLibrary(lib._handle)  # type: ignore[attr-defined]
 
 
 def _detect_source(lib_path: str) -> str:
@@ -153,6 +141,7 @@ class _InstallWorker(QThread):
             return
 
         self.status.emit(_("Downloading…"))
+        logger.info("[ft8lib install diag] download start url=%s", url)
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                 tmp_path = Path(tmp.name)
@@ -163,8 +152,10 @@ class _InstallWorker(QThread):
 
             urllib.request.urlretrieve(url, tmp_path, reporthook=_reporthook)
         except Exception as exc:
+            logger.exception("[ft8lib install diag] download failed")
             self.finished_err.emit(str(exc))
             return
+        logger.info("[ft8lib install diag] download done tmp_path=%s", tmp_path)
 
         self.progress.emit(95)
         self.status.emit(_("Installing…"))
@@ -173,6 +164,7 @@ class _InstallWorker(QThread):
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         try:
+            logger.info("[ft8lib install diag] extraction start dest_dir=%s", dest_dir)
             if suffix.endswith(".tar.gz"):
                 with tarfile.open(tmp_path) as tar:
                     # Strip the top-level "ft8lib-flat/" directory if present
@@ -187,21 +179,30 @@ class _InstallWorker(QThread):
                 with zipfile.ZipFile(tmp_path) as zf:
                     zf.extractall(dest_dir)
             tmp_path.unlink(missing_ok=True)
+            logger.info("[ft8lib install diag] extraction done")
         except PermissionError as exc:
+            # exc.filename is the raw OS path; str(exc)/format() would show it
+            # through repr() instead, which escapes backslashes as "\\\\" and
+            # makes Windows paths look like they contain doubled separators.
+            logger.exception("[ft8lib install diag] extraction PermissionError")
+            path_str = exc.filename or str(exc)
             self.finished_err.emit(
                 _(
-                    "{error}\n"
+                    "Permission denied: {path}\n"
                     "The library file is in use — close the FT4 tab (if open) "
                     "and restart FBSAT59, then try installing again."
-                ).format(error=exc)
+                ).format(path=path_str)
             )
             return
         except Exception as exc:
+            logger.exception("[ft8lib install diag] extraction failed")
             self.finished_err.emit(str(exc))
             return
 
         self.progress.emit(100)
+        logger.info("[ft8lib install diag] emitting finished_ok, about to return from run()")
         self.finished_ok.emit(str(dest_dir / lib_name))
+        logger.info("[ft8lib install diag] finished_ok emitted, run() returning")
 
 
 # ---------------------------------------------------------------------------
@@ -316,7 +317,9 @@ class Ft8LibDialog(QDialog):
     # ------------------------------------------------------------------ #
 
     def _refresh_status(self) -> None:
+        logger.info("[ft8lib install diag] _refresh_status: calling _find_ft8lib()")
         lib = _find_ft8lib()
+        logger.info("[ft8lib install diag] _refresh_status: _find_ft8lib() returned lib=%s", lib)
         if lib is None:
             self._lbl_status.setText(
                 "<b style='color:#e74c3c'>&#x2718; " + _("ft8lib not found") + "</b>"
@@ -329,7 +332,9 @@ class Ft8LibDialog(QDialog):
             # Try to determine where it was loaded from
             lib_path = getattr(lib, "_name", "") or _("unknown")
             source = _detect_source(lib_path)
+            logger.info("[ft8lib install diag] _refresh_status: calling _get_ft8lib_version()")
             version = _get_ft8lib_version(lib)
+            logger.info("[ft8lib install diag] _refresh_status: version=%s", version)
             self._lbl_status.setText(
                 "<b style='color:#27ae60'>&#x2714; " + _("ft8lib found") + f" ({source})</b>"
             )
@@ -337,7 +342,9 @@ class Ft8LibDialog(QDialog):
             self._lbl_version.setText(_("Version: ") + version)
             self._manual_box.setVisible(False)
             self._download_box.setVisible(True)
-            _free_library(lib)
+            logger.info("[ft8lib install diag] _refresh_status: calling free_ft8lib()")
+            free_ft8lib(lib)
+            logger.info("[ft8lib install diag] _refresh_status: free_ft8lib() returned")
 
     # ------------------------------------------------------------------ #
     # Slots
@@ -358,10 +365,12 @@ class Ft8LibDialog(QDialog):
         self._worker.start()
 
     def _on_install_ok(self, path: str) -> None:
+        logger.info("[ft8lib install diag] _on_install_ok received path=%s", path)
         self._progress.setValue(100)
         self._lbl_dl_status.setText(_("Installed: ") + path)
         self._btn_download.setEnabled(True)
         self._refresh_status()
+        logger.info("[ft8lib install diag] _on_install_ok: _refresh_status() returned")
 
     def _on_install_err(self, msg: str) -> None:
         self._lbl_dl_status.setText(_("Error: ") + msg)
