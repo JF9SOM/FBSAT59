@@ -1541,15 +1541,20 @@ class HamlibDirectController(RigController):
                     time.sleep(0.2)
                     # CTCSS on Sub (TX/UL)
                     rig2.set_vfo(vfo_sub)
+                    _check_rig_ok(rig2, "cross-band: set_vfo(SUB) for CTCSS")
                     time.sleep(0.2)
                     rig2.set_ctcss_tone(vfo_sub, tone_deci)
+                    _check_rig_ok(rig2, "cross-band: set_ctcss_tone(SUB)")
                     time.sleep(0.2)
                     rig2.set_func(func_tone, 1 if enable else 0)
+                    _check_rig_ok(rig2, "cross-band: set_func(TONE, SUB)")
                     time.sleep(0.2)
                     # Restore Main and clear any bleed-through
                     rig2.set_vfo(vfo_main)
+                    _check_rig_ok(rig2, "cross-band: set_vfo(MAIN) restore")
                     time.sleep(0.1)
                     rig2.set_func(func_tone, 0)
+                    _check_rig_ok(rig2, "cross-band: set_func(TONE off, MAIN)")
                     logger.info(
                         "RigDirect._apply_mode_and_ctcss_hamlib: dl=%s ul=%s ctcss=%.1fHz OK",
                         dl_mode,
@@ -1702,18 +1707,25 @@ class HamlibDirectController(RigController):
             enable = self._current_ctcss_hz > 0
             tone_deci = int(round(self._current_ctcss_hz * 10)) if enable else 0
             self._rig.set_mode(dl_hamlib, 0, vfo_main)
+            _check_rig_ok(self._rig, "stage2: set_mode(MAIN/DL)")
             time.sleep(0.05)
             self._rig.set_mode(ul_hamlib, 0, vfo_sub)
+            _check_rig_ok(self._rig, "stage2: set_mode(SUB/UL)")
             time.sleep(0.05)
             self._rig.set_vfo(vfo_sub)
+            _check_rig_ok(self._rig, "stage2: set_vfo(SUB) for CTCSS")
             time.sleep(0.05)
             self._rig.set_ctcss_tone(vfo_sub, tone_deci)
+            _check_rig_ok(self._rig, "stage2: set_ctcss_tone(SUB)")
             time.sleep(0.05)
             self._rig.set_func(func_tone, 1 if enable else 0)
+            _check_rig_ok(self._rig, "stage2: set_func(TONE, SUB)")
             time.sleep(0.05)
             self._rig.set_vfo(vfo_main)
+            _check_rig_ok(self._rig, "stage2: set_vfo(MAIN) restore")
             time.sleep(0.05)
             self._rig.set_func(func_tone, 0)
+            _check_rig_ok(self._rig, "stage2: set_func(TONE off, MAIN)")
             logger.info(
                 "RigDirect: Stage-2 mode/CTCSS resent dl=%s ul=%s ctcss=%.1fHz",
                 self._current_dl_mode,
