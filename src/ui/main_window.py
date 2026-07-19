@@ -4533,27 +4533,48 @@ class MainWindow(QMainWindow):
         """Send a CTCSS tone to the rig (background thread); errors shown in status bar."""
         self._current_ctcss_tone = tone_hz  # persist label until next transponder change
 
-        from rig.controller import HamlibDirectController
+        from rig.controller import HamlibDirectController, HamlibNetController
 
         if self._rig_controller is None:
             return
 
         rig = self._rig_controller
 
-        # Custom CAT methods bypass Hamlib CTCSS; route through send_ctcss_cat().
-        # Pass tone_hz explicitly so Activate (74.4 Hz) overrides the transmitter tone.
-        # Skip this for generic Direct-mode rigs (e.g. IC-705): ctcss_method is
-        # NET-mode-oriented and greyed out for Direct mode in Rig Settings, but
-        # a stale value from a previous NET-mode config could otherwise still
-        # route a Direct-mode rig through the wrong (irrelevant) CAT template.
-        if not _is_generic_direct_rig(rig) and self._ctcss_method in self._CAT_CTCSS_METHODS:
+        # Direct mode: CTCSS routing depends ONLY on the connected rig's model
+        # (satmode -> Hamlib, FTX-1F/FT-991 -> their own raw CAT sequence,
+        # other generic rigs -> Hamlib). The "CTCSS Method" dropdown in Rig
+        # Settings is a NET-mode-only setting (greyed out for Direct mode) and
+        # must never be consulted for a HamlibDirectController -- it can hold
+        # a stale value left over from a previous NET-mode configuration or a
+        # different rig model on the same slot, which would otherwise route
+        # the wrong (irrelevant) CAT template to the currently connected rig.
+        if isinstance(rig, HamlibDirectController) and rig._model_id in _RAW_CAT_MODEL_IDS:
+            mode = str((self._current_transmitter or {}).get("mode") or "")
+            invert = bool((self._current_transmitter or {}).get("invert", False))
+            dl_mode = mode
+            ul_mode = _MODE_INVERT.get(mode, mode) if invert else mode
+
+            def _send_raw_cat() -> None:
+                try:
+                    rig.apply_transponder_state(dl_mode, ul_mode, tone_hz)
+                except RigControlError as exc:
+                    self._rig_error.emit(str(exc))
+                except Exception as exc:
+                    self._rig_error.emit(str(exc))
+
+            threading.Thread(target=_send_raw_cat, daemon=True).start()
+            return
+
+        # NET mode: the CTCSS Method dropdown (ftx1/ft991/custom_cat templates)
+        # is meaningful here and selects the raw CAT template to send.
+        if isinstance(rig, HamlibNetController) and self._ctcss_method in self._CAT_CTCSS_METHODS:
             self._send_ctcss_cat_to_rig(tone_hz=tone_hz)
             return
 
         # Satmode Direct rigs (IC-9100 etc.): CTCSS must be set via CI-V while the
         # serial port is not held by Hamlib.  When connected, disconnect first, send
         # CI-V tone, then reconnect.  This path is NEVER reached for FT-991A / FTX-1F
-        # (they use _CAT_CTCSS_METHODS above) or NET rigs (not HamlibDirectController).
+        # (handled by the raw-CAT branch above) or NET rigs (not HamlibDirectController).
         if isinstance(rig, HamlibDirectController) and rig._satmode and rig.is_connected:
             self._disconnect_rig()  # release serial port on UI thread
 
