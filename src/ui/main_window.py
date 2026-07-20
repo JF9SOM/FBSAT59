@@ -2515,8 +2515,8 @@ class MainWindow(QMainWindow):
         self._update_rot_label()
 
     def _is_dial_feedback_rig(self, rig: RigController | None) -> bool:
-        """True for rig configurations dial feedback has been verified
-        against (see _rig_send()'s comment in _doppler_cycle()):
+        """True for rig configurations dial feedback works for (see
+        _rig_send()'s comment in _doppler_cycle()):
         - HamlibNetController using a Yaesu-CAT NET-mode ctcss_method
         - HamlibDirectController for FTX-1F (model 1051) or FT-991/FT-991A
           (models 1035/1036). Confirmed safe via Hamlib source
@@ -2530,14 +2530,41 @@ class MainWindow(QMainWindow):
           so the VFOA/VFOB cache-slot-sharing quirk documented for
           set_split_freq() (see the "Directモードへの展開" section in
           CLAUDE.md) does not apply to either -- read order between DL and
-          UL does not matter for either rig. Connected-only for now
-          (_lock_watch_cycle()'s pre-Connect path remains NET-mode-only).
+          UL does not matter for either rig.
+        - HamlibDirectController for IC-705 (model 3085), its own explicit
+          branch (deliberately kept separate from FTX-1F/FT-991 above and
+          from the generic fallback below, so a future IC-705-specific fix
+          cannot silently affect an unrelated rig the way IC-705's own
+          set_vfo(VFOA) display-restore once leaked into FTX-1F's shared
+          "generic" write branch -- see "Connect直後にTXがSubからMainへ
+          勝手に戻るバグと修正" in CLAUDE.md). Confirmed via Hamlib source
+          (rigs/icom/ic7300.c: .targetable_vfo includes RIG_TARGETABLE_FREQ;
+          rigs/icom/icom.c: icom_get_freq() uses CI-V command 0x25 to read
+          the requested VFO directly, no VFO swap, since IC-705 has no
+          Main/Sub+A/B combination that would force one) -- same safety
+          property as FTX-1F/FT-991.
+        - Any other HamlibDirectController that isn't satmode: a generic,
+          best-effort fallback for whichever Hamlib backend rigctld ends up
+          routing to. UNVERIFIED -- get_freq(VFOA)/get_freq(VFOB) safety
+          depends on that specific rig's own Hamlib backend declaring
+          RIG_TARGETABLE_FREQ the same way FTX-1F/FT-991/IC-705 do above;
+          a rig that doesn't could hit the same kind of live-only-
+          discoverable quirk FTX-1F's set_vfo(VFOA) restore turned out to
+          have. Treat any new rig landing in this bucket the same way as
+          FTX-1F/FT-991/IC-705 were treated: verify against Hamlib source
+          and real hardware before trusting it, and give it its own
+          explicit branch here once confirmed.
+
+        Connected-only for now in every case above (_lock_watch_cycle()'s
+        pre-Connect path remains NET-mode-only).
         """
         if isinstance(rig, HamlibNetController) and rig._ctcss_method in ("ftx1", "ft991"):
             return True
-        return isinstance(rig, HamlibDirectController) and rig._model_id in (
-            _FTX1_MODEL_IDS | _FT991_DIRECT_MODEL_IDS
-        )
+        if not isinstance(rig, HamlibDirectController):
+            return False
+        if rig._model_id in (_FTX1_MODEL_IDS | _FT991_DIRECT_MODEL_IDS | _IC705_MODEL_IDS):
+            return True
+        return not rig.is_satmode
 
     def _lock_watch_cycle(self) -> None:
         """Pre-Connect only: read the operator's current manual DL position
@@ -2581,19 +2608,19 @@ class MainWindow(QMainWindow):
         side readbacks (f/i/get_vfo) continued to look entirely self-
         consistent throughout. "V" must never be used here.
 
-        HamlibDirectController (FTX-1F, and FT-991/FT-991A since
-        2026-07-20) is also a dial-feedback rig per
-        _is_dial_feedback_rig(), but only for the *connected* case -- this
+        HamlibDirectController (FTX-1F and FT-991/FT-991A since
+        2026-07-20; IC-705 and any other non-satmode Direct-mode rig also
+        since 2026-07-20, see _is_dial_feedback_rig()) is also a
+        dial-feedback rig, but only for the *connected* case -- this
         pre-Connect poller stays NET-mode-only for now, since a Direct-mode
         pre-Connect read would need its own short-lived Hamlib session
         (same risk class as _apply_mode_and_ctcss_hamlib()'s/
         _apply_mode_and_ctcss_cat_ft991()'s existing pre-Connect CTCSS
         paths, both of which deliberately avoid Hamlib via raw CAT instead
-        -- see "FTX-1F 固有の制約"/"FT-991 / FT-991A" in CLAUDE.md). Other
-        rig families (satmode Icom, generic/IC-705) keep the existing
-        Doppler-driven-only Lock behaviour unchanged entirely; this method
-        is a no-op for all of them (self._dial_feedback_offset_hz simply
-        stays whatever it last was).
+        -- see "FTX-1F 固有の制約"/"FT-991 / FT-991A" in CLAUDE.md). Only
+        satmode Icom rigs keep the existing Doppler-driven-only Lock
+        behaviour unchanged entirely; this method is a no-op for them
+        (self._dial_feedback_offset_hz simply stays whatever it last was).
 
         Read mechanism: bare "f"/"i" (get_freq/get_split_freq), mirroring
         the existing "F"/"I" write-only Doppler-cycle protocol exactly --
@@ -2921,6 +2948,11 @@ class MainWindow(QMainWindow):
                             # get_split_freq() at all (FTX-1F: plain
                             # set_freq(VFOB); FT-991: raw CAT "FB;" bypassing
                             # Hamlib entirely).
+                            # IC-705 and the generic (unverified) fallback
+                            # rig also land here -- get_frequency() itself
+                            # is model-agnostic. See _is_dial_feedback_rig()
+                            # for the per-model safety verification (or
+                            # lack thereof, for the generic bucket).
                             if isinstance(rig, HamlibNetController):
                                 live_dl = rig.get_frequency()
                                 live_ul = rig.get_split_frequency()

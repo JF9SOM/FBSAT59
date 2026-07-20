@@ -1827,6 +1827,16 @@ class TestLockDialFeedback:
                 ctrl._state = RigState.CONNECTED
         return ctrl
 
+    def _make_ic705_direct_rig(self, connected: bool):
+        from rig.controller import HamlibDirectController, RigState
+
+        ctrl = HamlibDirectController(model_id=3085, port="/dev/null")  # IC-705
+        if connected:
+            ctrl._rig = MagicMock()
+            with ctrl._lock:
+                ctrl._state = RigState.CONNECTED
+        return ctrl
+
     def _fake_engine(self, rr: float):
         class _FakeEngine:
             def observe(self, norad: int) -> Observation:
@@ -2105,15 +2115,43 @@ class TestLockDialFeedback:
         rig = self._make_ftx1_direct_rig(connected=True)
         assert w._is_dial_feedback_rig(rig) is True
 
-    def test_is_dial_feedback_rig_false_for_other_direct_model(self, qtbot, db) -> None:
-        """Scoped to FTX-1F/FT-991/FT-991A only -- other Direct-mode rigs
-        (satmode Icom, generic/IC-705) keep the existing Doppler-driven-
-        only Lock behaviour, unverified for this feature."""
+    def test_is_dial_feedback_rig_false_for_satmode_direct(self, qtbot, db) -> None:
+        """Satmode Icom rigs (IC-9100/9700/etc.) are the only Direct-mode
+        family excluded -- their satmode split mechanism is a different
+        design entirely (see "Rig-Specific Implementation Notes" for
+        satmode rigs in CLAUDE.md), unverified for this feature."""
         from rig.controller import HamlibDirectController
 
         w = self._make_window(qtbot, db)
         rig = HamlibDirectController(model_id=3081, port="/dev/null")  # IC-9700 satmode
         assert w._is_dial_feedback_rig(rig) is False
+
+    def test_is_dial_feedback_rig_true_for_ic705_direct(self, qtbot, db) -> None:
+        """Confirmed via Hamlib source (rigs/icom/ic7300.c: .targetable_vfo
+        includes RIG_TARGETABLE_FREQ; rigs/icom/icom.c: icom_get_freq()
+        uses CI-V command 0x25 to read the requested VFO directly, no VFO
+        swap, since IC-705 has no Main/Sub+A/B combination that would force
+        one) -- same safety property as FTX-1F/FT-991, confirmed
+        2026-07-20. Deliberately its own explicit branch in
+        _is_dial_feedback_rig(), not merged into the generic fallback."""
+        from rig.controller import HamlibDirectController
+
+        w = self._make_window(qtbot, db)
+        rig = HamlibDirectController(model_id=3085, port="/dev/null")  # IC-705
+        assert w._is_dial_feedback_rig(rig) is True
+
+    def test_is_dial_feedback_rig_true_for_generic_non_satmode_direct(self, qtbot, db) -> None:
+        """Any other non-satmode Direct-mode rig also gets dial feedback
+        as a best-effort generic fallback (per explicit user decision
+        2026-07-20), even though get_freq(VFOA)/get_freq(VFOB) safety for
+        an arbitrary unverified rig's Hamlib backend has not been checked
+        the way FTX-1F/FT-991/IC-705 were -- see _is_dial_feedback_rig()'s
+        docstring."""
+        from rig.controller import HamlibDirectController
+
+        w = self._make_window(qtbot, db)
+        rig = HamlibDirectController(model_id=9999, port="/dev/null")  # arbitrary, unlisted
+        assert w._is_dial_feedback_rig(rig) is True
 
     def test_rig_send_direct_ftx1_never_writes_dl_but_keeps_writing_ul_while_locked(
         self, qtbot, db
@@ -2164,6 +2202,32 @@ class TestLockDialFeedback:
         does not matter here either."""
         w = self._make_window(qtbot, db)
         rig = self._make_ft991_direct_rig(connected=True)
+
+        def _fake_get_frequency(vfo: str = "VFOA") -> float:
+            return 145_800_080.0 if vfo == "VFOA" else 435_000_000.0
+
+        rig.get_frequency = MagicMock(side_effect=_fake_get_frequency)
+        rig.set_vfo_frequencies = MagicMock(return_value=True)
+        w._dial_feedback_offset_hz = 0.0
+
+        self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
+
+        rig.get_frequency.assert_any_call("VFOA")
+        rig.get_frequency.assert_any_call("VFOB")
+        rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_000.0)
+        assert w._dial_feedback_offset_hz == 80.0
+
+    # -- Direct mode (IC-705): same integration (2026-07-20) --
+
+    def test_rig_send_direct_ic705_never_writes_dl_but_keeps_writing_ul_while_locked(
+        self, qtbot, db
+    ) -> None:
+        """Same behaviour as the FTX-1F/FT-991 Direct-mode tests above.
+        IC-705's Direct-mode UL write also never calls set_split_freq()/
+        get_split_freq() (plain set_freq(VFOB), same as FTX-1F), so read
+        order does not matter here either."""
+        w = self._make_window(qtbot, db)
+        rig = self._make_ic705_direct_rig(connected=True)
 
         def _fake_get_frequency(vfo: str = "VFOA") -> float:
             return 145_800_080.0 if vfo == "VFOA" else 435_000_000.0

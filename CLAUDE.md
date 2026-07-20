@@ -2690,13 +2690,14 @@ if self._dial_feedback_offset_hz != 0.0:              # Lock状態に関わら�
 
 Rig 1 のみ。対象:
 - `HamlibNetController` + `ctcss_method in ("ftx1", "ft991")`（NET mode、接続前後とも対応）
-- `HamlibDirectController` + `model_id in (_FTX1_MODEL_IDS | _FT991_DIRECT_MODEL_IDS)`
-  （Direct mode FTX-1F・FT-991/FT-991A、**接続後のみ**。接続前の`_lock_watch_cycle()`は
-  引き続きNET mode専用。下記「Directモードへの展開」参照）
+- `HamlibDirectController` で **satmode（IC-9100/9700等）以外のすべて**（Direct mode、
+  **接続後のみ**。接続前の`_lock_watch_cycle()`は引き続きNET mode専用。下記
+  「Directモードへの展開」参照）。内訳:
+  - FTX-1F・FT-991/FT-991A・IC-705: Hamlibソースで個別に安全性を確認済み
+  - それ以外の非satmode機種（汎用Hamlibルート）: 未検証のベストエフォート（後述）
 
-他のNETモードリグ（satmode Icom機等）・Directモードの他機種（satmode Icom機・IC-705）・
-Rig 2は対象外（今後の課題）。対象外の組み合わせでは`self._dial_feedback_offset_hz`は常に0.0の
-ままで、Lockは何もしない（副作用なし）。
+satmode Icom機（IC-9100/9700等）・Rig 2は対象外（今後の課題）。対象外の組み合わせでは
+`self._dial_feedback_offset_hz`は常に0.0のままで、Lockは何もしない（副作用なし）。
 
 ### Directモードへの展開（FTX-1F、2026-07-20 実装）
 
@@ -2775,6 +2776,52 @@ CAT通信を発生させない）。FTX-1Fと同じ安全性が確認できた�
 （`get_frequency("VFOA")`/`get_frequency("VFOB")`）は既に機種非依存の実装だったため変更不要。
 `_lock_watch_cycle()`の接続前ガードも同様に機種非依存（`isinstance(rig, HamlibNetController)`
 判定のみ）のため変更不要だった。
+
+#### IC-705・および汎用Hamlibルートへの展開（2026-07-20 実装）
+
+FT-991対応の直後、ユーザーから「IC-705は専用の明示的分岐にして他機種の変更に巻き込まれない
+ようにし、それ以外の非satmode機（汎用Hamlibルート）にも一応Lock機能を入れておこう」という
+方針が示され、その通りに実装した。
+
+**IC-705の確認**: `rigs/icom/ic7300.c`（IC-705のcaps定義。IC-7300と同系列のバックエンドを
+流用）は`.targetable_vfo`に`RIG_TARGETABLE_FREQ`を含む。実装本体`icom_get_freq()`
+（`rigs/icom/icom.c`）は、この宣言があり`force_vfo_swap`条件（Main/Sub**と**A/Bを両方
+持つsatmode機のみ該当。IC-705はA/Bのみなので非該当）に当てはまらない場合、Icom公式CI-Vコマンド
+`0x25`（`icom_get_freq_x25()`）で指定VFOを直接読み取り、VFO切り替えを一切行わない。FTX-1F/
+FT-991と同じ安全性が確認できた（`0x25`はIcom公式のドキュメント化されたコマンドであり、
+FTX-1Fの`VS`/`FT`のような非公式流用よりむしろ安全性の根拠は強い）。
+
+IC-705 DirectモードのUL書き込みは、FTX-1Fと同じく素の`set_freq(VFOB)`（`set_split_freq()`を
+使わない）ため、読み取り順序も任意でよい。
+
+**IC-705を独立分岐にした理由**: 今回のFTX-1F TX巻き戻りバグ（本セクション前半「Connect直後に
+TXがSubからMainへ勝手に戻るバグと修正」参照）は、IC-705向けに追加された`set_vfo(VFOA)`表示
+復元が、共有コードパス経由でFTX-1Fにも意図せず適用されてしまったのが原因だった。この教訓を
+踏まえ、`_is_dial_feedback_rig()`ではIC-705を`_FTX1_MODEL_IDS | _FT991_DIRECT_MODEL_IDS`とは
+別の独立した`if`分岐として扱い、将来IC-705固有の変更が入っても他機種に影響しない構造にした。
+
+**汎用フォールバック（未検証・ベストエフォート）**: 上記いずれにも該当しない非satmode
+Direct-modeリグ（`not rig.is_satmode`）も、ユーザーの明示判断により一律でLock機能の対象とした。
+ただし**これは個別の安全性確認を経ていない**。FTX-1F/FT-991/IC-705はそれぞれHamlibソースの
+`targetable_vfo`宣言と実際の読み取り実装を確認した上で安全と判断したが、汎用バケットに該当する
+未知の機種が同じ安全性を持つ保証はない——今回のFTX-1Fの件のように、一見安全に見える操作が
+特定機種のファームウェアでは異なる副作用を持つ、という事態は実機でしか発覚しないことがある。
+**このバケットに該当する機種を実際に使う場合は、FTX-1F/FT-991/IC-705のときと同様にHamlib
+ソースと実機で個別に確認し、確認が取れた時点でこのバケットから外して専用の明示的分岐に
+昇格させること。**
+
+**実装**: `_is_dial_feedback_rig()`を以下の構造に変更（[main_window.py](src/ui/main_window.py)）:
+```python
+if isinstance(rig, HamlibNetController) and rig._ctcss_method in ("ftx1", "ft991"):
+    return True
+if not isinstance(rig, HamlibDirectController):
+    return False
+if rig._model_id in (_FTX1_MODEL_IDS | _FT991_DIRECT_MODEL_IDS | _IC705_MODEL_IDS):
+    return True
+return not rig.is_satmode
+```
+`_rig_send()`・`_lock_watch_cycle()`はどちらも既に機種非依存の実装だったため変更不要
+（FT-991のときと同じ）。
 
 ### 既知の制約
 
