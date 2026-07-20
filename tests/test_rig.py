@@ -450,6 +450,49 @@ class TestHamlibDirectController:
 
 
 # ---------------------------------------------------------------------------
+# HamlibDirectController generic (non-satmode, non-FT991) UL write path —
+# the set_vfo(VFOA) display-restore step, and why FTX-1F must not receive it
+# ---------------------------------------------------------------------------
+
+
+class TestGenericDirectUlWriteVfoRestore:
+    """set_vfo_frequencies()'s generic branch (model not satmode, not
+    FT-991) is shared by IC-705 and FTX-1F. The set_vfo(VFOA) restore after
+    the UL write was added (commit 6885275, 2026-07-06) specifically for
+    Icom CI-V's "CURR stuck on VFO-B" display quirk, confirmed on IC-705 --
+    but for FTX-1F, set_vfo(VFOA) sends raw CAT "VS0;", which (confirmed
+    live 2026-07-20) resets TX from Sub back to Main, undoing
+    _init_split()'s "FT1;" on every single UL update. FTX-1F must be
+    excluded from this restore."""
+
+    def _make_connected_ctrl(self, model_id: int) -> HamlibDirectController:
+        ctrl = HamlibDirectController(model_id=model_id, port="/dev/null")
+        ctrl._rig = MagicMock()
+        fake_hamlib = MagicMock()
+        fake_hamlib.RIG_VFO_A = 101
+        fake_hamlib.RIG_VFO_B = 102
+        fake_hamlib.RIG_VFO_MAIN = 103
+        fake_hamlib.RIG_VFO_SUB = 104
+        ctrl._hamlib = fake_hamlib
+        with ctrl._lock:
+            ctrl._state = RigState.CONNECTED
+        return ctrl
+
+    def test_ic705_still_restores_vfoa_after_ul_write(self) -> None:
+        ctrl = self._make_connected_ctrl(model_id=3085)  # IC-705
+        assert ctrl.set_vfo_frequencies(145_800_000.0, 435_000_000.0) is True
+        ctrl._rig.set_freq.assert_any_call(102, 435_000_000)  # RIG_VFO_B
+        ctrl._rig.set_vfo.assert_called_once_with(101)  # RIG_VFO_A
+
+    def test_ftx1_skips_vfoa_restore_after_ul_write(self) -> None:
+        ctrl = self._make_connected_ctrl(model_id=1051)  # FTX-1F
+        assert ctrl.set_vfo_frequencies(145_800_000.0, 435_000_000.0) is True
+        # The UL write itself must still happen -- only the restore is skipped.
+        ctrl._rig.set_freq.assert_any_call(102, 435_000_000)  # RIG_VFO_B
+        ctrl._rig.set_vfo.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # HamlibDirectController satmode (IC-9100/9700) — Hamlib return-code checks
 # ---------------------------------------------------------------------------
 

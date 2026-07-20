@@ -2796,6 +2796,51 @@ rigctldは全クライアントで単一の静的`RIG *my_rig`オブジェクト
   `_init_split()` と `_send_freq_preset_direct()` で `_FTX1_MODEL_IDS` を独立 `elif` ブランチで処理。
   アプリ終了時は `_release_rig_split_on_exit()`（main_window.py）が `FT0;` を pyserial で送信。
 
+#### Connect直後にTXがSubからMainへ勝手に戻るバグと修正（2026-07-20 発見・修正）
+
+**症状**: Connectボタンを押した直後（Lockボタンは無関係）、実機のTXがMain側に移ってしまう
+（`FT1;`でSubをTXに設定したはずなのに）。ユーザーからの「FTX-1は最初に実装したリグで、
+あとからFT-991やICOM（IC-705）を追加した際に、何かにつられて壊れたのでは」という指摘を受けて
+git履歴を遡って特定した。
+
+**原因**: `_set_vfo_frequencies_locked()`の非satmode「generic」分岐（IC-705とFTX-1Fが**共有**
+している経路）に、UL書き込み直後、以下の1行があった:
+```python
+self._rig.set_vfo(rx_vfo)   # rx_vfo = "VFOA"
+```
+これはコミット`6885275`「fix(rig): restore VFO-A display after generic-rig UL write」
+（**2026-07-06、IC-705対応の過程で追加**）で入ったもので、コミットメッセージにも
+「Icom CI-V backends (confirmed on IC-705) leave their internal CURR vfo pointer on
+VFO-B...」と明記されている通り、**IC-705専用に確認・意図された**表示復元コマンドだった。
+
+FTX-1F（2026-06-29に最初に実装・実機確認済み）はsatmodeでもFT-991でもないため、この
+generic分岐を**IC-705と意図せず共有**しており、この行がFTX-1Fにも巻き込まれて毎回
+（UL更新のたび）実行されていた。`ftx1_vfo.c`（Hamlib FTX-1Fバックエンド）のコメントに
+よれば`set_vfo(VFOA)`は生CAT`VS0;`（アクティブVFO選択）を送る。本来`VS`（アクティブVFO
+選択）と`FT`（TX VFO指定）は独立したコマンドのはずだが、FBSAT59は正式な`ST`（Split）
+コマンドを意図的に一度も送っていない（`ftx1_vfo.c`のコメントにも「Note: ST (Split)
+command NOT used」とある）ため、リグ側が正式なsplit状態を認識しておらず、`VS0;`が
+副作用としてTX側の指定まで巻き戻してしまう（Sub→Main）——`_init_split()`が接続時に
+送った`FT1;`を、直後の最初のDoppler書き込みサイクルで即座に上書きしてしまう、という
+挙動を実機で確認した。
+
+**修正**: `_model_id not in _FTX1_MODEL_IDS`の場合のみ`self._rig.set_vfo(rx_vfo)`を実行する
+よう変更（[controller.py](src/rig/controller.py)、`_set_vfo_frequencies_locked()`の
+generic分岐）。FTX-1Fは自前の`FT1;`/`FT0;`機構で既にTX VFOを管理しており、この
+IC-705専用の表示復元は不要かつ有害だったため、完全にスキップする。
+
+**教訓（ユーザーの指摘通り）**: 複数機種が同じ「generic」コードパスを共有する設計では、
+後から別機種（IC-705）のために追加した修正が、コミットメッセージで対象機種を明記していても、
+**共有分岐に置かれている限り既存の他機種（FTX-1F）にも黙って適用されてしまう**。
+「以前は動いていたのに、後から別の機能を追加したら壊れた」という報告を受けたら、
+対象コードが複数機種で共有されているブランチにないか、`git log -S`で該当行の追加コミットを
+遡り、そのコミットが本当に今問題の機種向けだったかを確認すること。
+
+**再発防止としては検討していない**: 現状はFTX-1Fを`if`で個別除外する対症療法。今後さらに
+機種が増えた場合、「このgeneric分岐がどの機種にどんな副作用を持つか」を機種ごとに
+明示的に検証してから合流させる方が安全だが、現時点ではリグの種類がまだ少ないため
+個別除外で対応している。
+
 ### FT-991 / FT-991A (Hamlib models 1035 / 1036)
 
 Hamlib 4.7.1 の公式モデルリスト: **1035 = FT-991**（FT-991A も同バックエンドを使用）。

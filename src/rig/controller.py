@@ -1342,7 +1342,23 @@ class HamlibDirectController(RigController):
                             # Same quirk as the satmode same-band fallback
                             # above — explicitly reselect VFO-A to restore
                             # the DL display.
-                            self._rig.set_vfo(rx_vfo)
+                            #
+                            # FTX-1F must NOT receive this: this branch is
+                            # shared with IC-705 (confirmed 2026-07-06, commit
+                            # 6885275, "Icom CI-V backends (confirmed on
+                            # IC-705)"), but for FTX-1F set_vfo(VFOA) sends
+                            # raw CAT "VS0;" (active-VFO select) -- a command
+                            # ftx1_vfo.c documents as independent from "FT"
+                            # (TX-VFO assignment). FBSAT59 deliberately never
+                            # sends FTX-1F's official split ("ST") command
+                            # (see _init_split()'s FT1;/FT0; raw-CAT bypass),
+                            # so the rig has no split state telling it these
+                            # two are unrelated -- confirmed live (2026-07-20)
+                            # that "VS0;" resets TX from Sub back to Main,
+                            # undoing _init_split()'s "FT1;" on every UL
+                            # write. Skip the restore entirely for FTX-1F.
+                            if self._model_id not in _FTX1_MODEL_IDS:
+                                self._rig.set_vfo(rx_vfo)
                         self._last_ul_hz = vfob_hz
             return True
         except RigControlError as exc:
