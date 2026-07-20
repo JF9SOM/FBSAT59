@@ -1990,10 +1990,12 @@ class TestLockDialFeedback:
             w._doppler_cycle()
         return received
 
-    def test_rig_send_never_writes_dl_or_ul_while_locked(self, qtbot, db) -> None:
+    def test_rig_send_never_writes_dl_but_keeps_writing_ul_while_locked(self, qtbot, db) -> None:
         """Confirmed explicitly with the user (2026-07-16): Lock ON stops
-        ALL writes -- not just DL. set_vfo_frequencies() must not be
-        called at all; only the offset updates for later use."""
+        DL writes only. UL has no competing physical control (the
+        operator only touches the DL VFO), so it keeps being written
+        every cycle -- using the same value already computed for the
+        display, one cycle behind this read (see _rig_send()'s comment)."""
         w = self._make_window(qtbot, db)
         rig = self._make_yaesu_rig(connected=True)
         rig.get_frequency = MagicMock(return_value=145_800_080.0)  # +80Hz manual retune
@@ -2003,7 +2005,10 @@ class TestLockDialFeedback:
 
         self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
 
-        rig.set_vfo_frequencies.assert_not_called()
+        # offset was still 0.0 when _doppler_cycle() computed this cycle's
+        # ul -- the +80Hz detected by this same cycle's read is not folded
+        # in until the *next* cycle (matches what the display shows).
+        rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_000.0)
         assert w._dial_feedback_offset_hz == 80.0
 
     def test_rig_send_no_retune_keeps_offset_unchanged(self, qtbot, db) -> None:
@@ -2016,7 +2021,7 @@ class TestLockDialFeedback:
 
         self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
 
-        rig.set_vfo_frequencies.assert_not_called()
+        rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_000.0)
         assert w._dial_feedback_offset_hz == 0.0
 
     def test_rig_send_discards_reading_close_to_ul_crosscheck(self, qtbot, db) -> None:
@@ -2030,7 +2035,9 @@ class TestLockDialFeedback:
         self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
 
         assert w._dial_feedback_offset_hz == 5.0  # unchanged
-        rig.set_vfo_frequencies.assert_not_called()
+        # UL write still happens (using the pre-existing offset), just the
+        # offset itself isn't updated from this discarded reading.
+        rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_005.0)
 
     def test_rig_send_ignores_implausible_jump(self, qtbot, db) -> None:
         w = self._make_window(qtbot, db)
@@ -2043,7 +2050,7 @@ class TestLockDialFeedback:
         self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
 
         assert w._dial_feedback_offset_hz == 0.0
-        rig.set_vfo_frequencies.assert_not_called()
+        rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_000.0)
 
     def test_rig_send_writes_dl_normally_when_lock_off(self, qtbot, db) -> None:
         """With Lock off, do_dial_feedback is False -- no read happens, and

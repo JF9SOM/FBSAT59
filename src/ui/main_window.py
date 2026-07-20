@@ -2530,15 +2530,20 @@ class MainWindow(QMainWindow):
         interval, only while Lock (L button) is enabled (the worker is
         started/stopped in _on_lock_changed()).
 
-        Confirmed explicitly with the user (2026-07-16): while Lock is on,
-        BOTH DL and UL stop being written to the rig entirely -- not just
-        DL. Only self._dial_feedback_offset_hz (and, once connected, the
-        software's own display via _doppler_cycle()) update; the rig's
-        actual UL stays exactly where it was before Lock was engaged.
-        Writing resumes for both DL and UL only once Lock is released,
-        using the final offset accumulated here. This method therefore
-        only ever reads and updates state -- it never calls
-        write_ul_independent() or any other write.
+        Confirmed explicitly with the user (2026-07-16): while Lock is on
+        and not yet connected, nothing is written to the rig at all --
+        this method only ever reads and updates
+        self._dial_feedback_offset_hz for later use. This is simpler than
+        the connected case (see _rig_send()): once Connect is pressed, UL
+        does resume being written every cycle (there is no operator hand
+        physically fighting for control of UL, only DL), but there is no
+        equivalent "keep writing UL" mechanism before Connect -- doing so
+        would require reintroducing an independent-connection write path
+        (removed once it had no caller) for a state (not yet connected,
+        not yet actively tracking) where it is unlikely to matter in
+        practice. If this turns out to matter, add a
+        write_ul_independent()-equivalent back and call it here the same
+        way _rig_send() calls set_vfo_frequencies(None, ul).
 
         Once connected, this method is a no-op (returns immediately) --
         the read step moves into _rig_send() instead, on the same cadence
@@ -2787,36 +2792,36 @@ class MainWindow(QMainWindow):
                 def _rig_send() -> None:
                     try:
                         if do_dial_feedback:
-                            # Lock ON: BOTH DL and UL stop being written to
-                            # the rig entirely (confirmed explicitly with
-                            # the user, 2026-07-16) -- not just DL. DL is
-                            # under the operator's sole manual control; UL
-                            # simply stays wherever it was before Lock was
-                            # engaged. This method only reads DL/UL to keep
+                            # Lock ON: DL stops being written to the rig
+                            # entirely -- it is under the operator's sole
+                            # manual control, and a periodic absolute-
+                            # frequency write would fight their real-time
+                            # VFO motion (confirmed live, 2026-07-16,
+                            # FTX-1F: "the frequency reverts even while
+                            # I'm still turning the dial, I can't even
+                            # tell how far I turned it"). Each cycle only
+                            # reads DL/UL to keep
                             # self._dial_feedback_offset_hz (and, via
-                            # _doppler_cycle()'s unconditional fold, the
-                            # software's own display) up to date. Writing
-                            # resumes for both DL and UL only once Lock is
-                            # released, using whatever offset was last
-                            # computed here.
+                            # _doppler_cycle()'s unconditional fold, both
+                            # the software's own display and "ul" below)
+                            # up to date.
                             #
-                            # An earlier design kept actively writing DL
-                            # (with a detected delta folded in) even while
-                            # Lock was on. That approach periodically
-                            # reasserted an absolute DL frequency computed
-                            # from a read taken one CAT round trip
-                            # (~150-300ms) earlier, which visibly fought
-                            # the operator's real-time VFO motion -- any
-                            # further turning between that read and the
-                            # following write got overwritten mid-gesture,
-                            # confirmed live (2026-07-16, FTX-1F) as "the
-                            # frequency reverts even while I'm still
-                            # turning the dial, I can't even tell how far
-                            # I turned it". The only way to stop competing
-                            # with the operator for control of DL is to
-                            # stop writing it (and, per the user's
-                            # clarification, UL too) at all while Lock is
-                            # on.
+                            # UL, unlike DL, has no competing physical
+                            # control to fight -- the operator only
+                            # touches the DL VFO -- so it keeps being
+                            # written every cycle even while Lock is on
+                            # (confirmed explicitly with the user,
+                            # 2026-07-16): the actual transmitted uplink
+                            # stays properly Doppler-compensated (plus the
+                            # operator's DL offset, sign-flipped for
+                            # inverting transponders) for the entire
+                            # duration Lock is engaged, instead of
+                            # freezing at whatever it was before Lock was
+                            # pressed. "ul" here is the same value
+                            # _doppler_cycle() already computed for the
+                            # display (one cycle behind this read, same as
+                            # the display itself), so the rig and the
+                            # on-screen UL figure never disagree.
                             #
                             # The offset is recomputed fresh from the live
                             # reading each cycle (self._dial_feedback_offset_hz
@@ -2848,6 +2853,7 @@ class MainWindow(QMainWindow):
                                     )
                                 else:
                                     self._dial_feedback_offset_hz = new_offset
+                            rig.set_vfo_frequencies(None, ul)
                             return
                         rig.set_vfo_frequencies(dl, ul)
                     except RigControlError as exc:
