@@ -795,18 +795,12 @@ class HamlibDirectController(RigController):
             return False
 
     def get_frequency(self, vfo: str = "VFOA") -> float:
-        """Return the current frequency in Hz.
-
-        Serialised through _rig_cmd_lock, the same lock set_vfo_frequencies()
-        holds, so a Lock (dial feedback) read never interleaves on the wire
-        with a concurrent write (e.g. a user-triggered mode/CTCSS change).
-        """
+        """Return the current frequency in Hz."""
         if not self.is_connected or self._rig is None:
             return -1.0
         try:
-            with self._rig_cmd_lock:
-                hamlib_vfo = self._vfo_str_to_const(vfo)
-                return float(self._rig.get_freq(hamlib_vfo))
+            hamlib_vfo = self._vfo_str_to_const(vfo)
+            return float(self._rig.get_freq(hamlib_vfo))
         except Exception as exc:
             logger.error("RigDirect.get_frequency: %s", exc)
             return -1.0

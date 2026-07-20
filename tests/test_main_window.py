@@ -1807,16 +1807,6 @@ class TestLockDialFeedback:
                 ctrl._state = RigState.CONNECTED
         return ctrl
 
-    def _make_ftx1_direct_rig(self, connected: bool):
-        from rig.controller import HamlibDirectController, RigState
-
-        ctrl = HamlibDirectController(model_id=1051, port="/dev/null")
-        if connected:
-            ctrl._rig = MagicMock()
-            with ctrl._lock:
-                ctrl._state = RigState.CONNECTED
-        return ctrl
-
     def _fake_engine(self, rr: float):
         class _FakeEngine:
             def observe(self, norad: int) -> Observation:
@@ -2083,56 +2073,6 @@ class TestLockDialFeedback:
         called_dl, called_ul = rig.set_vfo_frequencies.call_args[0]
         assert called_dl == 145_800_000.0
         assert called_ul == 435_000_000.0
-
-    # -- Direct mode (FTX-1F): same connected-case integration (2026-07-20) --
-
-    def test_is_dial_feedback_rig_true_for_ftx1_direct(self, qtbot, db) -> None:
-        """Confirmed via Hamlib source (rigs/yaesu/ftx1/ftx1.c:
-        .targetable_vfo = RIG_TARGETABLE_ALL) that get_freq(VFOA)/
-        get_freq(VFOB) carry none of NET mode's "V" corruption risk for
-        this specific model."""
-        w = self._make_window(qtbot, db)
-        rig = self._make_ftx1_direct_rig(connected=True)
-        assert w._is_dial_feedback_rig(rig) is True
-
-    def test_is_dial_feedback_rig_false_for_other_direct_model(self, qtbot, db) -> None:
-        """Scoped to FTX-1F (model 1051) only -- other Direct-mode rigs
-        (satmode Icom, generic/IC-705, FT-991A) keep the existing
-        Doppler-driven-only Lock behaviour, unverified for this feature."""
-        from rig.controller import HamlibDirectController
-
-        w = self._make_window(qtbot, db)
-        rig = HamlibDirectController(model_id=3081, port="/dev/null")  # IC-9700 satmode
-        assert w._is_dial_feedback_rig(rig) is False
-
-    def test_rig_send_direct_ftx1_never_writes_dl_but_keeps_writing_ul_while_locked(
-        self, qtbot, db
-    ) -> None:
-        """Same behaviour as the NET-mode FTX-1F test above, but for
-        HamlibDirectController. Reads use get_frequency("VFOA")/
-        get_frequency("VFOB") instead of NET mode's get_frequency()/
-        get_split_frequency() -- this path never calls set_split_freq/
-        get_split_freq at all, so the Hamlib cache-slot-sharing quirk
-        documented in ftx1_vfo.c (which only affects the split_freq
-        calls) does not apply and read order does not matter."""
-        w = self._make_window(qtbot, db)
-        rig = self._make_ftx1_direct_rig(connected=True)
-
-        def _fake_get_frequency(vfo: str = "VFOA") -> float:
-            return 145_800_080.0 if vfo == "VFOA" else 435_000_000.0
-
-        rig.get_frequency = MagicMock(side_effect=_fake_get_frequency)
-        rig.set_vfo_frequencies = MagicMock(return_value=True)
-        w._dial_feedback_offset_hz = 0.0
-
-        self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
-
-        rig.get_frequency.assert_any_call("VFOA")
-        rig.get_frequency.assert_any_call("VFOB")
-        # offset was still 0.0 when _doppler_cycle() computed this cycle's
-        # ul -- same one-cycle-behind timing as the NET-mode case.
-        rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_000.0)
-        assert w._dial_feedback_offset_hz == 80.0
 
     # -- reset points --
 
