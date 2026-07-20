@@ -2202,6 +2202,7 @@ class HamlibDirectController(RigController):
             "VFOB": self._hamlib.RIG_VFO_B,
             "Main": self._hamlib.RIG_VFO_MAIN,
             "Sub": self._hamlib.RIG_VFO_SUB,
+            "TX": self._hamlib.RIG_VFO_TX,
         }
         return int(vfo_map.get(vfo, self._hamlib.RIG_VFO_CURR))
 

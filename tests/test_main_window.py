@@ -1837,6 +1837,16 @@ class TestLockDialFeedback:
                 ctrl._state = RigState.CONNECTED
         return ctrl
 
+    def _make_satmode_direct_rig(self, connected: bool):
+        from rig.controller import HamlibDirectController, RigState
+
+        ctrl = HamlibDirectController(model_id=3081, port="/dev/null")  # IC-9700
+        if connected:
+            ctrl._rig = MagicMock()
+            with ctrl._lock:
+                ctrl._state = RigState.CONNECTED
+        return ctrl
+
     def _fake_engine(self, rr: float):
         class _FakeEngine:
             def observe(self, norad: int) -> Observation:
@@ -2228,16 +2238,18 @@ class TestLockDialFeedback:
         rig = self._make_ftx1_direct_rig(connected=True)
         assert w._is_dial_feedback_rig(rig) is True
 
-    def test_is_dial_feedback_rig_false_for_satmode_direct(self, qtbot, db) -> None:
-        """Satmode Icom rigs (IC-9100/9700/etc.) are the only Direct-mode
-        family excluded -- their satmode split mechanism is a different
-        design entirely (see "Rig-Specific Implementation Notes" for
-        satmode rigs in CLAUDE.md), unverified for this feature."""
+    def test_is_dial_feedback_rig_true_for_satmode_direct(self, qtbot, db) -> None:
+        """Satmode Direct-mode rigs (IC-9100/9700/etc., 2026-07-20) get
+        Lock too, for cross-band/linear-transponder use only -- same-band
+        FM/repeater use is out of scope by explicit user decision, so its
+        correctness there is untested and not a concern. See
+        _is_dial_feedback_rig()'s docstring for why RIG_VFO_MAIN/
+        RIG_VFO_TX reads (used by _rig_send() for this branch) are safe."""
         from rig.controller import HamlibDirectController
 
         w = self._make_window(qtbot, db)
         rig = HamlibDirectController(model_id=3081, port="/dev/null")  # IC-9700 satmode
-        assert w._is_dial_feedback_rig(rig) is False
+        assert w._is_dial_feedback_rig(rig) is True
 
     def test_is_dial_feedback_rig_true_for_ic705_direct(self, qtbot, db) -> None:
         """Confirmed via Hamlib source (rigs/icom/ic7300.c: .targetable_vfo
@@ -2353,6 +2365,33 @@ class TestLockDialFeedback:
 
         rig.get_frequency.assert_any_call("VFOA")
         rig.get_frequency.assert_any_call("VFOB")
+        rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_000.0)
+        assert w._dial_feedback_offset_hz == 80.0
+
+    # -- Direct mode (satmode, cross-band): same integration (2026-07-20) --
+
+    def test_rig_send_direct_satmode_uses_main_and_tx_not_vfoa_vfob(self, qtbot, db) -> None:
+        """Satmode Direct mode reads "Main"/"TX", not "VFOA"/"VFOB" --
+        RIG_VFO_MAIN is never subject to icom_get_freq()'s
+        VFO_HAS_MAIN_SUB_A_B_ONLY force_vfo_swap check, and RIG_VFO_TX has
+        its own dedicated swap-free read path (icom_get_tx_freq())."""
+        w = self._make_window(qtbot, db)
+        rig = self._make_satmode_direct_rig(connected=True)
+
+        def _fake_get_frequency(vfo: str = "VFOA") -> float:
+            return 145_800_080.0 if vfo == "Main" else 435_000_000.0
+
+        rig.get_frequency = MagicMock(side_effect=_fake_get_frequency)
+        rig.set_vfo_frequencies = MagicMock(return_value=True)
+        w._dial_feedback_offset_hz = 0.0
+
+        self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
+
+        rig.get_frequency.assert_any_call("Main")
+        rig.get_frequency.assert_any_call("TX")
+        called_vfos = {call.args[0] for call in rig.get_frequency.call_args_list}
+        assert "VFOA" not in called_vfos
+        assert "VFOB" not in called_vfos
         rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_000.0)
         assert w._dial_feedback_offset_hz == 80.0
 

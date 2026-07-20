@@ -2583,6 +2583,26 @@ class MainWindow(QMainWindow):
           the requested VFO directly, no VFO swap, since IC-705 has no
           Main/Sub+A/B combination that would force one) -- same safety
           property as FTX-1F/FT-991.
+        - HamlibDirectController satmode rigs (IC-9100/9700 etc.), its own
+          explicit branch (2026-07-20, cross-band use only -- Lock is a
+          linear-transponder feature; same-band FM/repeater use is out of
+          scope by the user's explicit call, so its correctness there is
+          untested and not a concern). Reads use "Main" (RIG_VFO_MAIN, DL)
+          and "TX" (RIG_VFO_TX, UL) rather than "VFOA"/"VFOB". Confirmed
+          via Hamlib source (rigs/icom/icom.c: icom_get_freq()) that Main
+          is never subject to the VFO_HAS_MAIN_SUB_A_B_ONLY force_vfo_swap
+          check (that check only tests for RIG_VFO_SUB/_A/_B), and that
+          RIG_VFO_TX has its own dedicated read path (icom_get_tx_freq(),
+          CI-V command S_RD_TX_FREQ) which either succeeds with no VFO
+          switch at all, or gracefully falls back to Hamlib's own internal
+          switch-then-restore (set_vfo_curr()) if that command isn't
+          supported on a given model/firmware (tracked via
+          priv->x1cx03cmdfails) -- unlike every other quirk found in this
+          feature, this fallback is official, symmetric Hamlib machinery,
+          not this project's own ad-hoc external VFO management, so it is
+          a fundamentally different (and presumably lower) risk class than
+          e.g. FTX-1F's set_vfo(VFOA) issue even though it still involves
+          a VFO switch. Still unverified live.
         - Any other HamlibDirectController that isn't satmode: a generic,
           best-effort fallback for whichever Hamlib backend rigctld ends up
           routing to. UNVERIFIED -- get_freq(VFOA)/get_freq(VFOB) safety
@@ -2609,11 +2629,13 @@ class MainWindow(QMainWindow):
             if rig.is_satmode:
                 return True
             return rig._ctcss_method == "hamlib"
-        if not isinstance(rig, HamlibDirectController):
-            return False
-        if rig._model_id in (_FTX1_MODEL_IDS | _FT991_DIRECT_MODEL_IDS | _IC705_MODEL_IDS):
-            return True
-        return not rig.is_satmode
+        # Every HamlibDirectController is now covered: FTX-1F/FT-991/IC-705
+        # explicitly verified above, satmode its own explicit branch (see
+        # docstring), and anything else the generic best-effort fallback.
+        # _rig_send() still branches on rig.is_satmode to pick the right
+        # VFO strings ("Main"/"TX" vs "VFOA"/"VFOB") -- that distinction
+        # belongs there, not in this eligibility gate.
+        return isinstance(rig, HamlibDirectController)
 
     def _lock_watch_cycle(self) -> None:
         """Pre-Connect only: read the operator's current manual DL position
@@ -3011,13 +3033,26 @@ class MainWindow(QMainWindow):
                             # is model-agnostic. See _is_dial_feedback_rig()
                             # for the per-model safety verification (or
                             # lack thereof, for the generic bucket).
+                            # Satmode (IC-9100/9700 etc., cross-band/linear-
+                            # transponder use only): "Main"/"TX" instead of
+                            # "VFOA"/"VFOB" -- RIG_VFO_MAIN never triggers
+                            # icom_get_freq()'s VFO_HAS_MAIN_SUB_A_B_ONLY
+                            # force_vfo_swap check (only RIG_VFO_SUB/_A/_B
+                            # do), and RIG_VFO_TX has its own dedicated
+                            # swap-free read path (icom_get_tx_freq(), CI-V
+                            # S_RD_TX_FREQ) that falls back to Hamlib's own
+                            # internal switch-and-restore if unsupported.
                             if isinstance(rig, HamlibNetController):
                                 live_dl = rig.get_frequency()
                                 live_ul = rig.get_split_frequency()
                             else:
                                 assert isinstance(rig, HamlibDirectController)
-                                live_dl = rig.get_frequency("VFOA")
-                                live_ul = rig.get_frequency("VFOB")
+                                if rig.is_satmode:
+                                    live_dl = rig.get_frequency("Main")
+                                    live_ul = rig.get_frequency("TX")
+                                else:
+                                    live_dl = rig.get_frequency("VFOA")
+                                    live_ul = rig.get_frequency("VFOB")
                             if live_dl < 0 or live_ul < 0:
                                 logger.info(
                                     "LockWatch: read failed (live_dl=%.1f live_ul=%.1f), "

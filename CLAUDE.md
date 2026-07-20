@@ -2696,14 +2696,15 @@ Rig 1 のみ。対象:
   - `ctcss_method == "hamlib"` かつ非satmode: **接続後のみ**、未検証のベストエフォート
     （IC-705 NET modeを含む汎用リグ全般。下記「NETモード汎用"hamlib"バケットへの展開」参照）
   - `ctcss_method == "custom_cat"`は対象外
-- `HamlibDirectController` で **satmode（IC-9100/9700等）以外のすべて**（Direct mode、
-  **接続後のみ**。接続前の`_lock_watch_cycle()`は引き続き上記NET modeの`ftx1`/`ft991`専用）。
-  内訳:
+- `HamlibDirectController`（Direct mode、**全機種対応・接続後のみ**。接続前の
+  `_lock_watch_cycle()`は引き続き上記NET modeの`ftx1`/`ft991`専用）。内訳:
   - FTX-1F・FT-991/FT-991A・IC-705: Hamlibソースで個別に安全性を確認済み
+  - satmode（IC-9100/9700等）: クロスバンド（リニアトランスポンダ）用途限定。
+    独自の読み取りVFO指定（"Main"/"TX"）を使用。下記「satmode機Directモードへの展開」参照
   - それ以外の非satmode機種（汎用Hamlibルート）: 未検証のベストエフォート
 
-Rig 2、およびsatmode機のDirectモードは対象外（今後の課題）。対象外の組み合わせでは
-`self._dial_feedback_offset_hz`は常に0.0のままで、Lockは何もしない（副作用なし）。
+Rig 2は対象外（今後の課題）。対象外の組み合わせでは`self._dial_feedback_offset_hz`は
+常に0.0のままで、Lockは何もしない（副作用なし）。
 
 ### Directモードへの展開（FTX-1F、2026-07-20 実装）
 
@@ -2911,6 +2912,55 @@ DLを書くかどうかとは無関係に動作）だったため、`_rig_send()
 連動トラッキング機能」の実在も未確認のまま。**GitHubで問題が報告された場合、
 まずこのVFO連動トラッキング機能の実在確認を優先し、実在するなら「ULの書き込みも
 停止する」設計への変更を検討すること。**
+
+#### satmode機Directモードへの展開（2026-07-20 実装）
+
+NET modeでのsatmode対応に続き、Directモード（IC-9100/9700等）にも展開した。
+
+**スコープの単純化（ユーザー判断）**: 当初、同バンド機（satmode解除してVFOA/VFOB通常splitに
+フォールバックするケース）への対応も含めてコントローラー内部に専用メソッドを新設する設計を
+提案したが、ユーザーから「Lock機能は本質的にリニアトランスポンダ（クロスバンド）専用の
+機能であり、同バンドFM機には不要」との指摘があり、同バンドケースは意図的に対象外とした。
+これにより実装が大幅に単純化された。
+
+**DL/ULの読み取りVFO指定**: `RIG_VFO_MAIN`/`RIG_VFO_SUB`/`RIG_VFO_TX`という専用のVFO文字列
+（`"VFOA"`/`"VFOB"`ではなく`"Main"`/`"TX"`）を使う。理由は`rigs/icom/icom.c`の`icom_get_freq()`
+を確認して判明した:
+- IC-9100/9700は`vfo_list`に`Main/Sub`と`A/B`の両方を含む機種（`VFO_HAS_MAIN_SUB_A_B_ONLY`が
+  真）で、この種の機種では`RIG_VFO_SUB`（またはSUB_A/SUB_B）の読み取りだけがVFO切り替え
+  （`set_vfo_curr()`）を強制される（コメント「Icom 0x25 command can only manipulate VFO A/B
+  *or* VFO Main/Sub frequencies」）。ただし**Main側はこの判定の対象外**（`RIG_VFO_SUB`系のみが
+  対象）なので、DLは`get_freq(RIG_VFO_MAIN)`で問題なく安全に読める
+- UL側は`RIG_VFO_TX`という専用の読み取り経路（`icom_get_tx_freq()`、CI-Vコマンド
+  `S_RD_TX_FREQ`＝送信周波数専用の直接読み取り）が用意されており、これが使えればVFO切り替え
+  無しで安全に読める。この専用コマンドが特定機種・ファームウェアで使えない場合は
+  （`priv->x1cx03cmdfails`で検知）、Hamlib自身の内部的なswap-then-restore（`set_vfo_curr()`）へ
+  自動的にフォールバックする——これは今回の一連の調査で見つかった他の不具合（FTX-1Fの
+  `set_vfo(VFOA)`副作用等）と違い、**Hamlib公式の、対称的で十分にテストされた内部機構**であり、
+  本プロジェクト独自の場当たり的な外部VFO管理とは根本的にリスクの質が異なる
+
+`HamlibDirectController._vfo_str_to_const()`に`"TX": self._hamlib.RIG_VFO_TX`のマッピングを
+1行追加しただけで、コントローラー側に新規メソッドは不要だった。
+
+**実装**: `_is_dial_feedback_rig()`のDirectモード判定を「`HamlibDirectController`なら無条件で
+真」に単純化（FTX-1F/FT-991/IC-705の明示列挙は変わらず残し、それ以外はsatmode・汎用問わず
+すべて対象——satmodeを除外する理由がもはや無くなったため）。satmode/非satmodeの区別は
+`_is_dial_feedback_rig()`（対象かどうかの判定）ではなく`_rig_send()`側に移し、
+`rig.is_satmode`で読み取りVFO文字列を`"Main"/"TX"`（satmode）か`"VFOA"/"VFOB"`
+（それ以外）かに振り分ける:
+```python
+if rig.is_satmode:
+    live_dl = rig.get_frequency("Main")
+    live_ul = rig.get_frequency("TX")
+else:
+    live_dl = rig.get_frequency("VFOA")
+    live_ul = rig.get_frequency("VFOB")
+```
+書き込み側（`set_vfo_frequencies(None, ul)`）は元々satmode/非satmode問わず
+`vfoa_hz is not None`判定でDLスキップに対応済みだったため変更不要。
+
+これでLock機能は、Rig 1・NET/Directモード問わず、事実上すべてのリグ構成に対応した
+（Rig 2のみ今後の課題として残る）。
 
 ### 既知の制約
 
