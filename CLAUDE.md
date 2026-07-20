@@ -2688,9 +2688,62 @@ if self._dial_feedback_offset_hz != 0.0:              # Lock状態に関わら�
 
 ### スコープ
 
-Rig 1 + `HamlibNetController` + `ctcss_method in ("ftx1", "ft991")` のみ。他のNETモード
-リグ（satmode Icom機等）・Directモード・Rig 2は対象外（今後の課題）。対象外の組み合わせでは
-`self._dial_feedback_offset_hz`は常に0.0のままで、Lockは何もしない（副作用なし）。
+Rig 1 のみ。対象:
+- `HamlibNetController` + `ctcss_method in ("ftx1", "ft991")`（NET mode、接続前後とも対応）
+- `HamlibDirectController` + `model_id in _FTX1_MODEL_IDS`（Direct mode FTX-1F、**接続後のみ**。
+  接続前の`_lock_watch_cycle()`は引き続きNET mode専用。下記「Directモードへの展開」参照）
+
+他のNETモードリグ（satmode Icom機等）・Directモードの他機種（satmode Icom機・IC-705・FT-991A）・
+Rig 2は対象外（今後の課題）。対象外の組み合わせでは`self._dial_feedback_offset_hz`は常に0.0の
+ままで、Lockは何もしない（副作用なし）。
+
+### Directモードへの展開（FTX-1F、2026-07-20 実装）
+
+NET modeでの実装・実機確認が完了した後、Directモードや他リグへの展開を開始した。手始めに
+FTX-1FのDirectモードから着手し、実機の前にHamlibソース自体（`/home/sadatoshi/Hamlib-4.7`に
+ローカル配置済みの、`/opt/hamlib/4.7`ビルド元と同一バージョンのソースツリー）を読んで設計上の
+リスクを洗い出した。
+
+**確認1: VFO切り替えリスクは無い**。FTX-1F専用バックエンド（`rigs/yaesu/ftx1/ftx1.c`）は
+`.targetable_vfo = RIG_TARGETABLE_ALL`を宣言しており、`ftx1_get_freq()`/`ftx1_set_freq()`
+（`rigs/yaesu/ftx1/ftx1_freq.c`）は指定VFOに応じて`FA;`（VFOA/Main）または`FB;`（VFOB/Sub）を
+**直接**CATで送るだけ。Hamlib本体の`rig_get_freq()`（`src/rig.c`）は`targetable_vfo &
+RIG_TARGETABLE_FREQ`が真の場合、アクティブVFOの切り替え（`set_vfo()`）を一切行わずに
+直接バックエンドの`get_freq`を呼ぶ分岐を通ることを確認済み。NET modeで実機破損の原因となった
+「V」コマンド相当の危険はDirectモードには存在しない。
+
+**調査中に見つかった別の罠（結果的に無関係と判明）**: `ftx1_vfo.c`の`ftx1_set_split_freq()`/
+`ftx1_get_split_freq()`には、UL書き込みがHamlibコアの内部キャッシュ機構のバグでDL(Main)側の
+キャッシュ枠まで巻き込んで壊してしまう（"VFOA and MAIN share freqMainA slot"）という既知の
+不具合への対処コードがあり、「UL読み取り→DL読み取り」の順で呼ばれることを前提に復元される
+（コメントに「GPredictはget_freqの前にget_split_freqを呼ぶ」と明記）。これを見て当初は
+Directモードでも読み取り順序をNET modeと逆にする必要があると判断したが、`src/cache.c`の
+`rig_set_cache_freq()`を実際に読んだところ、`RIG_VFO_B`書き込みは`cachep->freqMainB`という
+**MAIN(`freqMainA`)とは完全に独立したキャッシュ枠**に書き込むことが判明した。上記の不具合は
+`rig_set_split_freq()`（`set_split_freq`/`get_split_freq`API）経由の呼び出しに限定されており、
+FTX-1F Directモードの既存UL書き込み実装（`_set_vfo_frequencies_locked()`、非satmode分岐）は
+**元々plainな`set_freq(VFOB)`を使っており`set_split_freq`を一切呼んでいない**ため、この不具合
+はそもそも該当しないと結論した。したがって読み取り順序は任意でよい（実装は`get_frequency
+("VFOA")`→`get_frequency("VFOB")`の順のまま、NET modeと合わせている）。
+
+**実装**（[main_window.py](src/ui/main_window.py)・[controller.py](src/rig/controller.py)）:
+- `_is_dial_feedback_rig()`: `HamlibDirectController`かつ`model_id in _FTX1_MODEL_IDS`の場合も
+  真を返すよう拡張
+- `_rig_send()`（`_doppler_cycle()`内）: `isinstance(rig, HamlibNetController)`で分岐し、
+  Directモードは`rig.get_frequency("VFOA")`（DL）/`rig.get_frequency("VFOB")`（UL）を使用。
+  それ以外（オフセット計算・クロスチェック・サニティチェック・DLを書かずULだけ書く設計）は
+  NET modeと完全に共通のロジックをそのまま流用
+- `HamlibDirectController.get_frequency()`: 呼び出し元がなく未使用だった既存メソッドに、
+  `set_vfo_frequencies()`と同じ`_rig_cmd_lock`を追加。Lock機能からの読み取りが、同スレッド内で
+  直後に呼ばれる書き込み（`set_vfo_frequencies()`）や、他の同時実行し得るHamlib呼び出し
+  （モード/CTCSS変更等）と競合しないようにするため
+
+**未実装（今後の課題）**: 接続前（`_lock_watch_cycle()`）のDirectモード対応。NET modeの
+`read_dl_ul_independent()`に相当する「接続前に短命なHamlibセッションを開いて覗き見る」実装が
+必要になるが、FTX-1F Directモードはボーレート誤設定時のHamlibタイムアウトフリーズを避けるため
+モード/CTCSS設定を意図的にHamlib経由で行わず生CAT（`os.open()`）を使っている（本ファイル
+「FTX-1F 固有の制約」参照）。周波数読み取り専用の一時的なHamlibセッションであっても同種の
+リスクを抱える可能性があるため、今回は見送り、Directモードは接続後のみの対応とした。
 
 ### 既知の制約
 
