@@ -2689,15 +2689,19 @@ if self._dial_feedback_offset_hz != 0.0:              # Lock状態に関わら�
 ### スコープ
 
 Rig 1 のみ。対象:
-- `HamlibNetController` + `ctcss_method in ("ftx1", "ft991")`（NET mode、接続前後とも対応）
+- `HamlibNetController`（NET mode）:
+  - `ctcss_method in ("ftx1", "ft991")`: 接続前後とも対応（`_lock_watch_cycle()`含む）
+  - `ctcss_method == "hamlib"` かつ非satmode: **接続後のみ**、未検証のベストエフォート
+    （IC-705 NET modeを含む汎用リグ全般。下記「NETモード汎用"hamlib"バケットへの展開」参照）
+  - satmode（「Icom SAT mode rig」チェックボックスON）・`ctcss_method == "custom_cat"`は対象外
 - `HamlibDirectController` で **satmode（IC-9100/9700等）以外のすべて**（Direct mode、
-  **接続後のみ**。接続前の`_lock_watch_cycle()`は引き続きNET mode専用。下記
-  「Directモードへの展開」参照）。内訳:
+  **接続後のみ**。接続前の`_lock_watch_cycle()`は引き続き上記NET modeの`ftx1`/`ft991`専用）。
+  内訳:
   - FTX-1F・FT-991/FT-991A・IC-705: Hamlibソースで個別に安全性を確認済み
-  - それ以外の非satmode機種（汎用Hamlibルート）: 未検証のベストエフォート（後述）
+  - それ以外の非satmode機種（汎用Hamlibルート）: 未検証のベストエフォート
 
-satmode Icom機（IC-9100/9700等）・Rig 2は対象外（今後の課題）。対象外の組み合わせでは
-`self._dial_feedback_offset_hz`は常に0.0のままで、Lockは何もしない（副作用なし）。
+satmode Icom機（IC-9100/9700等、NET/Direct両方）・Rig 2は対象外（今後の課題）。対象外の
+組み合わせでは`self._dial_feedback_offset_hz`は常に0.0のままで、Lockは何もしない（副作用なし）。
 
 ### Directモードへの展開（FTX-1F、2026-07-20 実装）
 
@@ -2822,6 +2826,49 @@ return not rig.is_satmode
 ```
 `_rig_send()`・`_lock_watch_cycle()`はどちらも既に機種非依存の実装だったため変更不要
 （FT-991のときと同じ）。
+
+#### NETモード汎用"hamlib"バケットへの展開（2026-07-20 実装）
+
+Directモードへの展開が一段落した後、ユーザーから「NETモードのIC-705はどうなるのか」という
+質問があり、調査の結果、Directモードとは事情が異なることが判明した。
+
+**IC-705をNETモードで個別扱いできない理由**: Rig Settingsの`ctcss_method`プルダウン
+（[rig_dialog.py:500-504](src/ui/rig_dialog.py#L500-L504)）は`"hamlib"`（Hamlib standard・
+デフォルト）/`"ftx1"`/`"ft991"`/`"custom_cat"`の4値のみで、IC-705専用の値は存在しない。
+satmodeかどうかは別のチェックボックス（`is_satmode_rig`）で管理されている。つまりIC-705を
+NETモードで使う場合は`ctcss_method="hamlib"`＋satmodeチェックOFFになり、これは**他の
+汎用リグと設定上まったく区別がつかない**。Directモードの`model_id`（機種を一意に識別できる）
+とは根本的に粒度が異なり、「IC-705だけを独立分岐にする」ことが構造的にできない。
+
+**NETモードの読み取り機構は「今アクティブなVFO」を聞くだけ**: `get_frequency()`/
+`get_split_frequency()`はバレの`f`/`i`（`RIG_VFO_CURR`、VFO指定なし）を送る。「現在アクティブな
+VFOの周波数」を聞くことは、どのリグであっても定義上VFO切り替えを一切必要としない（既に
+アクティブなものを聞くだけのため）。この点はDirectモードの`targetable_vfo`確認と違い、
+リグの機種に依存せず常に安全と言える。
+
+ただし残る未検証点は、**rigctldの内部的な「現在アクティブなVFO」追跡が、`_init_vfo()`の
+split初期化後に確実にDL側を指し続けるか**という部分で、これはFTX-1Fで実機検証して初めて
+判明した話（「接続直後の最初の1サイクルだけ`f`が壊れて自己修復する」という癖、本ファイル
+「FTX-1F 固有の制約」参照）であり、Hamlibソースを読むだけでは他機種について確認しきれない。
+Directモードの汎用フォールバックより一段階、確認の難易度が高いことをユーザーと共有した上で、
+それでも「一応入れておこう」という判断で実装した。
+
+**実装**: `_is_dial_feedback_rig()`のNET mode判定を拡張:
+```python
+if isinstance(rig, HamlibNetController):
+    if rig._ctcss_method in ("ftx1", "ft991"):
+        return True
+    return rig._ctcss_method == "hamlib" and not rig.is_satmode
+```
+`get_frequency()`/`get_split_frequency()`/`set_vfo_frequencies()`はいずれも既に
+`ctcss_method`非依存の実装だったため、`_rig_send()`側の変更は不要。
+
+**接続前ポーリングは対象外のまま**: `_lock_watch_cycle()`内の`read_dl_ul_independent()`は
+引き続き`ctcss_method in ("ftx1", "ft991")`のみをサポートする内部ゲートを持つため、
+`"hamlib"`バケットは接続後のみで機能する。`_lock_watch_cycle()`自体にも、この汎用バケットが
+接続前に無意味な「read failed」ログを出し続けないよう、`ctcss_method not in ("ftx1",
+"ft991")`での早期returnを追加した（元々`isinstance(rig, HamlibNetController)`のチェックを
+通過してしまうため、追加のガードが必要だった）。
 
 ### 既知の制約
 

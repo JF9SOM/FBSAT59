@@ -1900,6 +1900,22 @@ class TestLockDialFeedback:
         w._lock_watch_cycle()
         rig.read_dl_ul_independent.assert_not_called()
 
+    def test_lock_watch_noop_for_generic_net_hamlib(self, qtbot, db) -> None:
+        """The generic NET "hamlib" bucket (2026-07-20) is connected-case
+        only -- read_dl_ul_independent() itself still only supports
+        "ftx1"/"ft991", so this pre-Connect poller must not even attempt
+        it for a generic NET rig (avoids a misleading "read failed" log
+        every cycle for a rig that was never eligible for this path)."""
+        from rig.controller import HamlibNetController
+
+        w = self._make_window(qtbot, db)
+        rig = HamlibNetController(host="localhost", port=4532, ctcss_method="hamlib")
+        rig.read_dl_ul_independent = MagicMock(return_value=(145_800_080.0, 435_000_000.0))
+        w._rig_controller = rig
+        w._trsp_lock = True
+        w._lock_watch_cycle()
+        rig.read_dl_ul_independent.assert_not_called()
+
     def test_lock_watch_noop_once_connected(self, qtbot, db) -> None:
         """The connected case is handled by _rig_send() on the Doppler
         cycle's own cadence -- this method must do nothing once connected,
@@ -2103,6 +2119,59 @@ class TestLockDialFeedback:
         called_dl, called_ul = rig.set_vfo_frequencies.call_args[0]
         assert called_dl == 145_800_000.0
         assert called_ul == 435_000_000.0
+
+    # -- NET mode generic "hamlib" bucket (2026-07-20) --
+
+    def test_is_dial_feedback_rig_true_for_generic_net_hamlib(self, qtbot, db) -> None:
+        """ctcss_method "hamlib" (the default) covers IC-705 NET mode and
+        any other generic NET rig indistinguishably -- Rig Settings has no
+        per-model ctcss_method value, unlike Direct mode's model_id."""
+        from rig.controller import HamlibNetController
+
+        w = self._make_window(qtbot, db)
+        rig = HamlibNetController(host="localhost", port=4532, ctcss_method="hamlib")
+        assert w._is_dial_feedback_rig(rig) is True
+
+    def test_is_dial_feedback_rig_false_for_satmode_net_hamlib(self, qtbot, db) -> None:
+        """A satmode Icom NET rig ("Icom SAT mode rig" checkbox checked)
+        must not fall into the generic "hamlib" bucket -- satmode NET rigs
+        keep the existing Doppler-driven-only Lock behaviour."""
+        from rig.controller import HamlibNetController
+
+        w = self._make_window(qtbot, db)
+        rig = HamlibNetController(
+            host="localhost", port=4532, ctcss_method="hamlib", is_satmode_rig=True
+        )
+        assert w._is_dial_feedback_rig(rig) is False
+
+    def test_is_dial_feedback_rig_false_for_custom_cat_net(self, qtbot, db) -> None:
+        """ctcss_method "custom_cat" is a distinct, unanalysed scheme --
+        not folded into the generic "hamlib" bucket."""
+        from rig.controller import HamlibNetController
+
+        w = self._make_window(qtbot, db)
+        rig = HamlibNetController(host="localhost", port=4532, ctcss_method="custom_cat")
+        assert w._is_dial_feedback_rig(rig) is False
+
+    def test_rig_send_generic_net_hamlib_never_writes_dl_but_keeps_writing_ul(
+        self, qtbot, db
+    ) -> None:
+        """Connected-case integration for the generic NET "hamlib" bucket
+        -- get_frequency()/get_split_frequency()/set_vfo_frequencies() are
+        all already ctcss_method-agnostic, so this works the same as the
+        "ftx1" NET-mode test above with no additional code path."""
+        w = self._make_window(qtbot, db)
+        rig = self._make_yaesu_rig(connected=True)
+        rig._ctcss_method = "hamlib"
+        rig.get_frequency = MagicMock(return_value=145_800_080.0)  # +80Hz manual retune
+        rig.get_split_frequency = MagicMock(return_value=435_000_000.0)
+        rig.set_vfo_frequencies = MagicMock(return_value=True)
+        w._dial_feedback_offset_hz = 0.0
+
+        self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
+
+        rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_000.0)
+        assert w._dial_feedback_offset_hz == 80.0
 
     # -- Direct mode (FTX-1F): same connected-case integration (2026-07-20) --
 

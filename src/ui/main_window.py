@@ -2518,6 +2518,25 @@ class MainWindow(QMainWindow):
         """True for rig configurations dial feedback works for (see
         _rig_send()'s comment in _doppler_cycle()):
         - HamlibNetController using a Yaesu-CAT NET-mode ctcss_method
+          ("ftx1"/"ft991"), or any other non-satmode HamlibNetController
+          with ctcss_method == "hamlib" (the "Hamlib standard" default --
+          covers IC-705 NET mode and any other generic NET rig, which
+          Rig Settings cannot distinguish from each other: ctcss_method
+          only has "hamlib"/"ftx1"/"ft991"/"custom_cat" as values, with no
+          per-model option, unlike Direct mode's model_id). UNVERIFIED for
+          this "hamlib" bucket beyond what's already true for any NET-mode
+          rig: get_frequency()/get_split_frequency() send bare "f"/"i"
+          (RIG_VFO_CURR, no VFO argument) which never needs an internal
+          VFO switch for ANY rig (asking "what is the current VFO's
+          frequency" is trivially safe -- there is nothing to switch to).
+          What is NOT verified for rigs other than FTX-1F is whether
+          rigctld's own current_vfo bookkeeping reliably stays pointed at
+          DL after _init_vfo()'s split-init sequence -- this can only be
+          confirmed live (see the "first cycle sometimes reads UL instead
+          of DL, self-heals" quirk documented for FTX-1F elsewhere in this
+          file). _lock_watch_cycle()'s pre-Connect path stays scoped to
+          "ftx1"/"ft991" only (read_dl_ul_independent() itself still gates
+          on that) -- the "hamlib" bucket only works once connected.
         - HamlibDirectController for FTX-1F (model 1051) or FT-991/FT-991A
           (models 1035/1036). Confirmed safe via Hamlib source
           (rigs/yaesu/ftx1/ftx1.c: .targetable_vfo = RIG_TARGETABLE_ALL;
@@ -2555,11 +2574,16 @@ class MainWindow(QMainWindow):
           and real hardware before trusting it, and give it its own
           explicit branch here once confirmed.
 
-        Connected-only for now in every case above (_lock_watch_cycle()'s
-        pre-Connect path remains NET-mode-only).
+        Connected-only for now for every Direct-mode case above and for
+        the generic NET "hamlib" bucket; "ftx1"/"ft991" NET mode remains
+        the only pre-Connect-capable configuration
+        (_lock_watch_cycle()'s own "ftx1"/"ft991" gate on
+        read_dl_ul_independent() is unchanged).
         """
-        if isinstance(rig, HamlibNetController) and rig._ctcss_method in ("ftx1", "ft991"):
-            return True
+        if isinstance(rig, HamlibNetController):
+            if rig._ctcss_method in ("ftx1", "ft991"):
+                return True
+            return rig._ctcss_method == "hamlib" and not rig.is_satmode
         if not isinstance(rig, HamlibDirectController):
             return False
         if rig._model_id in (_FTX1_MODEL_IDS | _FT991_DIRECT_MODEL_IDS | _IC705_MODEL_IDS):
@@ -2641,12 +2665,21 @@ class MainWindow(QMainWindow):
         if not self._is_dial_feedback_rig(rig):
             return
         if not isinstance(rig, HamlibNetController):
-            # Direct mode (FTX-1F) is also a dial-feedback rig per
-            # _is_dial_feedback_rig() (2026-07-20), but connected-case only
-            # -- this pre-Connect poller stays NET-mode-only (see docstring
-            # above). Without this check, a Direct-mode rig reaching this
-            # point (Lock left on from a previous test, rig switched to
-            # FTX-1F Direct in Rig Settings) would hit an assert below.
+            # Direct mode (FTX-1F, FT-991, IC-705, generic) is also a
+            # dial-feedback rig per _is_dial_feedback_rig(), but connected-
+            # case only -- this pre-Connect poller stays NET-mode-only (see
+            # docstring above). Without this check, a Direct-mode rig
+            # reaching this point (Lock left on from a previous test, rig
+            # switched to Direct mode in Rig Settings) would hit an assert
+            # below.
+            return
+        if rig._ctcss_method not in ("ftx1", "ft991"):
+            # The generic NET "hamlib" bucket (2026-07-20, see
+            # _is_dial_feedback_rig()) is connected-case only too --
+            # read_dl_ul_independent() itself still only supports "ftx1"/
+            # "ft991" and would silently return None here, which would
+            # otherwise log a misleading "read failed" every cycle for a
+            # rig that was never eligible for this pre-Connect path.
             return
         if rig.is_connected:
             return
