@@ -2701,6 +2701,53 @@ Rig 1 + `HamlibNetController` + `ctcss_method in ("ftx1", "ft991")` のみ。他
   （バグではなく設計上のラグ、実機確認済み・許容範囲と判断）
 - Connect前（`_lock_watch_cycle()`）はUL側も書き込まない非対称な挙動になっている
 
+### 実運用で発覚した別バグ — `live_dl`読み取りが不定時間フリーズする問題と、その原因（Hamlib `rig_set_uplink`）・修正（2026-07-20）
+
+上記の設計で実装・実機確認が完了した後、実運用で「最初はDLの変化を正しく読み取れていたが、
+何度かLock ON/OFFを繰り返すうちに読み取らなくなることがある」という新しい不具合が報告された。
+ユーザーに確認したところ、読み取りが固まっている最中（8秒・30秒・10秒以上など、毎回バラバラの
+長さ）も実際にDLのダイヤルを回し続けていたことが確認され、タイムアウトベースの現象ではないと
+判断した。
+
+**原因**: Hamlib本家`src/rig.c`の`rig_get_freq()`には、その名も`rig_set_uplink(rig, val)`
+という**GPredict向けに実装された既存機能**がある（doc comment: "For GPredict to avoid reading
+frequency on uplink VFO"）。`val=2`（Mainを無視）がセットされていると、`VFO_MAIN`に解決される
+すべての`get_freq()`呼び出しは実機に一切問い合わせず、キャッシュの値をそのまま返し続ける。
+これは時間経過で失効するキャッシュではなく、**明示的にリセットされるまで無期限に固定される**
+（`rig.c`内、`rs->uplink == 2 && vfo == RIG_VFO_MAIN`の分岐、キャッシュ参照後即座に
+`RETURNFUNC(RIG_OK)`で返し実機問い合わせを完全にスキップする）。8秒・30秒・10秒以上とバラバラの
+長さで固まっていた症状と正確に一致する。
+
+このフラグは以下の2経路でのみセットされる:
+1. rigctld起動時の`-x`/`--uplink=N`オプション（本プロジェクトの`rigctld-ftx1.service`
+   systemdユニットのExecStartには存在しないことを確認済み。この経路ではない）
+2. rigctl/rigctldの拡張プロトコルコマンド`\uplink <val>`を、**同じrigctld TCPポートに
+   接続した何らかのクライアントが送信した場合**
+
+rigctldは全クライアントで単一の静的`RIG *my_rig`オブジェクトを共有する実装（`tests/rigctld.c`）
+のため、過去に一度でも別のクライアント（GPredict自体を含む。まさにこのAPIの存在理由）が
+同じrigctldポート（本プロジェクトの環境では`-T 0.0.0.0`でLAN全体に公開されている）に接続して
+`\uplink`を送信していれば、それ以降ずっとFBSAT59側の読み取りも巻き込まれて固定されたままになる。
+ユーザー確認により、過去にGPredict含む複数のソフトからこのrigctldへのアクセス実績があることが
+判明し、原因として整合した。
+
+**修正**（`HamlibNetController._init_vfo()`、[controller.py](src/rig/controller.py)）:
+`ctcss_method in ("ftx1", "ft991")`の場合のみ、既存の`S 1 Main`/`S 1 VFOB`送信の直後に
+`\uplink 0`を無条件送信し、誰が・なぜフラグを立てていたかに関わらず接続の都度リセットする。
+`\uplink`はset系コマンドなので`RPRT 0`で応答し、既存の`_cmd()`/`_cmd_raw()`の仕組み
+（`command[:1].islower()`によるquery/set判定。`\`は非アルファベットなのでset扱いになり
+正しく動作する）にそのまま乗る。get_freq経由の読み取りは現状Lockのdial feedback機能
+（`get_frequency()`/`get_split_frequency()`、呼び出し元は`main_window.py`の`_rig_send()`
+のみ）でしか使っていないため、リセットもその対象条件（ftx1/ft991）だけに絞った。
+
+**教訓**: 「ログ上は毎サイクル正しく計算しているのに、入力値（`live_dl`）だけが一定時間
+固定される」という症状を見たら、自分のアプリのタイミング設計（同一サイクル内で読み書きしている
+か等）を疑う前に、まず**下位レイヤー（今回はHamlib自体）が、この用途向けに元々何らかの
+無効化・キャッシュ機構を持っていないか**を疑うこと。特に「GPredict向け」等、同種のアプリケーション
+のために既存の主要ライブラリが用意している特別なオプトイン/アウト機構は、複数のクライアントが
+同じデーモン（rigctld）を共有する構成では、自分が使っていなくても他のクライアントの操作で
+静かに有効化されうる。
+
 ---
 
 ## Rig-Specific Implementation Notes

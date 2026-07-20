@@ -1135,6 +1135,39 @@ class TestHamlibNetController:
         sent = b"".join(calls)
         assert b"S 1 Main\n" in sent
 
+    def test_init_vfo_yaesu_cat_resets_uplink(self) -> None:
+        r"""_init_vfo() sends "\uplink 0" after split init for ftx1/ft991.
+
+        rigctld shares one RIG object across all TCP clients, so a past
+        client on the same port (e.g. GPredict, which rig_set_uplink()'s own
+        doc comment says this API exists for) may have left rs->uplink set
+        to 1 or 2. Hamlib's rig_get_freq() then returns a frozen cached
+        value for the ignored VFO indefinitely (not on any timeout) until
+        reset -- this caused the Lock dial-feedback feature's live_dl read
+        to freeze for arbitrary durations (confirmed 2026-07-20). Reset
+        unconditionally on every connect.
+        """
+        ctrl = self._make_connected_ctrl(ctcss_method="ftx1")
+        calls: list[bytes] = []
+        ctrl._sock.sendall.side_effect = lambda data: calls.append(data)  # type: ignore[union-attr]
+        ctrl._init_vfo()
+        sent = b"".join(calls)
+        assert b"\\uplink 0\n" in sent
+
+    def test_init_vfo_generic_does_not_reset_uplink(self) -> None:
+        r"""Generic (non-Yaesu-CAT) rigs don't get the "\uplink 0" reset.
+
+        Only ftx1/ft991 NET mode ever calls get_frequency()/
+        get_split_frequency() via the Lock feature, so the reset is scoped
+        to that same condition rather than sent unconditionally.
+        """
+        ctrl = self._make_connected_ctrl()  # default ctcss_method="hamlib"
+        calls: list[bytes] = []
+        ctrl._sock.sendall.side_effect = lambda data: calls.append(data)  # type: ignore[union-attr]
+        ctrl._init_vfo()
+        sent = b"".join(calls)
+        assert b"\\uplink 0\n" not in sent
+
     # -- _send_split_init_independent: same generic-vs-Yaesu split as _init_vfo --
 
     def test_send_split_init_independent_generic_sends_s1vfob(self) -> None:

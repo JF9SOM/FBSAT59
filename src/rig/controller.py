@@ -2457,6 +2457,22 @@ class HamlibNetController(RigController):
         if "RPRT 0" not in resp:
             logger.warning("RigNet: split setup returned %r", resp)
 
+        if is_yaesu_cat:
+            # rigctld shares a single RIG object across every TCP client
+            # (tests/rigctld.c: static RIG *my_rig), so a past client on this
+            # same port (GPredict itself, per rig_set_uplink()'s own doc
+            # comment "For GPredict to avoid reading frequency on uplink
+            # VFO") may have sent "\uplink 1"/"\uplink 2". Hamlib's
+            # rig_get_freq() then returns a frozen cached value for the
+            # ignored VFO indefinitely -- not on any timeout -- until reset
+            # (src/rig.c). This is what caused the Lock dial-feedback
+            # feature's live_dl read to freeze for arbitrary, varying
+            # durations (confirmed 2026-07-20). Reset unconditionally on
+            # every connect; harmless if it was already 0.
+            uplink_resp = self._cmd(r"\uplink 0")
+            if "RPRT 0" not in uplink_resp:
+                logger.warning("RigNet: \\uplink 0 reset returned %r", uplink_resp)
+
     # -- Internal utilities --
 
     def _detect_vfo_mode(self) -> bool:
