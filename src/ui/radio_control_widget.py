@@ -153,7 +153,9 @@ class RadioControlWidget(QWidget):
         self._tune_btn.clicked.connect(self.tune_requested.emit)
         self._lock_btn = QPushButton(_("L"))
         self._lock_btn.setFixedWidth(56)
-        self._lock_btn.setToolTip(_("Lock: link uplink to downlink (inverting transponder aware)"))
+        self._lock_btn.setToolTip(
+            _("Lock: DL is yours to tune manually; UL follows (inverting transponder aware)")
+        )
         self._lock_btn.setCheckable(True)
         self._lock_btn.setStyleSheet(
             "QPushButton:checked { background-color: #f1c40f; color: #000; font-weight: bold; }"
