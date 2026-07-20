@@ -2601,7 +2601,14 @@ class MainWindow(QMainWindow):
         rig = self._rig_controller
         if not self._is_dial_feedback_rig(rig):
             return
-        assert isinstance(rig, HamlibNetController)
+        if not isinstance(rig, HamlibNetController):
+            # Direct mode (FTX-1F) is also a dial-feedback rig per
+            # _is_dial_feedback_rig() (2026-07-20), but connected-case only
+            # -- this pre-Connect poller stays NET-mode-only (see docstring
+            # above). Without this check, a Direct-mode rig reaching this
+            # point (Lock left on from a previous test, rig switched to
+            # FTX-1F Direct in Rig Settings) would hit an assert below.
+            return
         if rig.is_connected:
             return
         if self._selected_norad is None or self._selected_norad == MOON_ID:
