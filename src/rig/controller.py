@@ -2538,10 +2538,18 @@ class HamlibNetController(RigController):
     ) -> bool:
         """Set RX/TX frequencies in the per-second tracking loop.
 
-        Never sends f/i (get_freq/get_split_freq) commands.
-        On slow CAT backends such as the FTX-1, the f command can take more
-        than 10 s and trigger a timeout, leading to a per-cycle
-        disconnect → reconnect (including S 1 Main) loop.
+        Never sends f/i (get_freq/get_split_freq) commands itself -- this
+        method remains write-only. Those reads do happen elsewhere now
+        (get_frequency()/get_split_frequency(), called from
+        MainWindow._rig_send() for Lock dial feedback) and work reliably.
+        The original justification here ("f can take more than 10s and
+        trigger a timeout") was a client-side bug in _cmd_raw(), not a
+        genuine FTX-1F/backend limitation: it unconditionally waited for
+        an "RPRT" line, which query commands never send on success (only
+        on their error path) -- so a successful "f" blocked until the
+        socket timeout every time. Fixed 2026-07-15; see _cmd_raw()'s
+        docstring. This method itself is unchanged and still deliberately
+        write-only, simply because nothing here needs to read anything.
 
         Write-only protocol:
           [RX cycle]
