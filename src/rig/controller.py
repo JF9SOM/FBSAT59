@@ -363,6 +363,82 @@ def _check_rig_ok(rig: Any, what: str) -> None:
         raise RigControlError(f"{what} failed (Hamlib error {status})")
 
 
+_hamlib_trace_lock = threading.Lock()
+
+
+def _hamlib_trace_log_path() -> str | None:
+    """Path to a TEMPORARY Hamlib CI-V trace log, next to fbsat59.log.
+
+    Diagnostic for the still-unsolved Windows IC-9100 issue: rig.open()
+    times out (Hamlib error -5) on every attempt even with a
+    friend-verified-correct, matching-on-both-ends CI-V address (2026-07-20
+    controlled test: same failure with A2/A2 and with A3/A3), and even
+    with _open_rig_with_retry()'s 3 attempts -- so this is not the
+    transient Windows COM-port timing glitch that function's docstring
+    was written for; the real cause is still unknown. The bundled Hamlib
+    Python binding does not expose rig_set_debug_file() (only
+    rig_set_debug(level) -- confirmed by introspecting the actual bundled
+    module), so Hamlib's own trace-level debug output -- which would show
+    the raw CI-V bytes sent/received and settle this definitively -- has
+    nowhere to go in a frozen Windows GUI app with no console; it would
+    otherwise be silently lost on stderr. Captured instead by temporarily
+    redirecting the process's real stderr file descriptor (confirmed
+    working via os.dup2()) around each open() attempt.
+
+    Remove this function, _hamlib_trace_lock, and the with-block in
+    _open_rig_with_retry() once root-caused.
+    """
+    try:
+        from platformdirs import user_log_dir
+
+        log_dir = user_log_dir("fbsat59", "fbsat59")
+        os.makedirs(log_dir, exist_ok=True)
+        return os.path.join(log_dir, "hamlib_trace.log")
+    except Exception:
+        return None
+
+
+@contextlib.contextmanager
+def _hamlib_stderr_trace(label: str) -> Any:
+    """Redirect the process's real stderr fd to hamlib_trace.log for the
+    duration of the wrapped call. See _hamlib_trace_log_path() for why.
+    Best-effort: any failure here just means no trace is captured, never
+    breaks the caller.
+    """
+    trace_path = _hamlib_trace_log_path()
+    if trace_path is None:
+        yield
+        return
+    with _hamlib_trace_lock:
+        saved_fd: int | None = None
+        log_fd: int | None = None
+        try:
+            with contextlib.suppress(Exception):
+                import Hamlib as _H
+
+                _H.rig_set_debug(_H.RIG_DEBUG_TRACE)
+            sys.stderr.flush()
+            log_fd = os.open(trace_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+            saved_fd = os.dup(2)
+            os.dup2(log_fd, 2)
+            os.write(log_fd, f"\n=== {label} @ {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n".encode())
+        except Exception:
+            saved_fd = None
+        try:
+            yield
+        finally:
+            if saved_fd is not None:
+                with contextlib.suppress(Exception):
+                    sys.stderr.flush()
+                with contextlib.suppress(Exception):
+                    os.dup2(saved_fd, 2)
+                with contextlib.suppress(Exception):
+                    os.close(saved_fd)
+            if log_fd is not None:
+                with contextlib.suppress(Exception):
+                    os.close(log_fd)
+
+
 def _open_rig_with_retry(
     rig: Any,
     what: str,
@@ -371,11 +447,16 @@ def _open_rig_with_retry(
 ) -> None:
     """Open a freshly constructed Hamlib *rig* session, retrying on failure.
 
-    Works around a Windows-specific quirk confirmed both live (2026-07-20,
-    Windows 11 + IC-9100: rig.open() times out with Hamlib error -5 on
-    every attempt with a verified-correct CI-V address, while a
-    single-shot raw-serial probe of the exact same CI-V command succeeds)
-    and in Hamlib's own source:
+    Originally written for a Windows-specific timing quirk (see git log for
+    the full account), but a 2026-07-20 controlled test (same rig.open()
+    failure with a verified-matching CI-V address on both PC and rig, and
+    with either A2/A2 or A3/A3) shows the address is not the issue and the
+    retries alone do not resolve it either -- root cause still open. Kept
+    as a real improvement regardless (Hamlib itself has zero retry for
+    this specific failure -- see below), now paired with
+    _hamlib_stderr_trace() around each attempt to capture what Hamlib
+    actually sent/received on the wire.
+
       - For Icom rigs, rig.open() is not a bare port open -- it performs
         its own internal CI-V "echo status" probe (rigs/icom/icom.c
         icom_get_usb_echo_off(), sent as part of icom_rig_open()) and
@@ -387,15 +468,12 @@ def _open_rig_with_retry(
         extra CreateFile-based "is this port already in use" check
         immediately before the real open, so the real open is preceded by
         an extra open/close handle churn on the same port that a plain
-        pyserial-based probe never goes through -- plausibly why a
-        one-shot manual CI-V test can succeed while Hamlib's own open()
-        fails on the very first attempt.
-    Since Hamlib itself never retries this specific failure, this wrapper
-    does: close the (failed) session, wait, and try opening again.
+        pyserial-based probe never goes through.
     """
     last_status = 0
     for attempt in range(1, attempts + 1):
-        rig.open()
+        with _hamlib_stderr_trace(f"{what} attempt {attempt}/{attempts}"):
+            rig.open()
         last_status = rig.error_status
         if last_status == 0:
             return

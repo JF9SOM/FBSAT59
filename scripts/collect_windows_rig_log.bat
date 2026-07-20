@@ -12,6 +12,7 @@ REM files to your own Desktop for you to review and send yourself.
 setlocal EnableDelayedExpansion
 
 set "SRC=%LOCALAPPDATA%\fbsat59\fbsat59\Logs\fbsat59.log"
+set "TRACE_SRC=%LOCALAPPDATA%\fbsat59\fbsat59\Logs\hamlib_trace.log"
 set "DEST=%USERPROFILE%\Desktop"
 set "STAMP=%RANDOM%"
 
@@ -36,6 +37,7 @@ if not exist "%SRC%" (
 
 set "OUT_FULL=%DEST%\fbsat59_log_%STAMP%.txt"
 set "OUT_SUMMARY=%DEST%\fbsat59_rig_summary_%STAMP%.txt"
+set "OUT_TRACE=%DEST%\fbsat59_hamlib_trace_%STAMP%.txt"
 
 copy /y "%SRC%" "%OUT_FULL%" >nul
 if errorlevel 1 (
@@ -51,11 +53,22 @@ if errorlevel 1 (
 >> "%OUT_SUMMARY%" echo.
 findstr /I /C:"RigDirect" /C:"RigNet" /C:"RigConnect" /C:"Hamlib" /C:"CI-V" /C:"civaddr" /C:"satmode" /C:"SATMODE" /C:"Mode/CTCSS" /C:"RIG:" /C:"Rig1Settings" /C:"Rig2Settings" /C:"Error" /C:"Exception" /C:"Traceback" "%SRC%" >> "%OUT_SUMMARY%"
 
+if exist "%TRACE_SRC%" (
+    copy /y "%TRACE_SRC%" "%OUT_TRACE%" >nul
+)
+
 echo.
-echo Done! Two files were saved to your Desktop:
-echo   1) fbsat59_log_%STAMP%.txt          (the full log file)
-echo   2) fbsat59_rig_summary_%STAMP%.txt  (just the Rig / Hamlib lines - please send this one first)
+if exist "%OUT_TRACE%" (
+    echo Done! Three files were saved to your Desktop:
+    echo   1) fbsat59_log_%STAMP%.txt            ^(the full log file^)
+    echo   2) fbsat59_rig_summary_%STAMP%.txt    ^(just the Rig / Hamlib lines - please send this one first^)
+    echo   3) fbsat59_hamlib_trace_%STAMP%.txt   ^(low-level Hamlib CI-V trace - please send this one too^)
+) else (
+    echo Done! Two files were saved to your Desktop:
+    echo   1) fbsat59_log_%STAMP%.txt          ^(the full log file^)
+    echo   2) fbsat59_rig_summary_%STAMP%.txt  ^(just the Rig / Hamlib lines - please send this one first^)
+)
 echo.
-echo Please send BOTH files back so we can look at what happened.
+echo Please send the file^(s^) back so we can look at what happened.
 echo.
 pause
