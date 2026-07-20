@@ -275,6 +275,29 @@ def _soapy_rtlsdr_module_diagnostic(soapy_module: object) -> None:
         logger.warning("[RTL-SDR diag] SoapySDR module diagnostic failed: %s", exc)
 
 
+def _kwargs_to_string(args: dict[str, str]) -> str:
+    """Format a SoapySDR args dict as a comma-separated "key=val" string.
+
+    GitHub Issue #12: SoapySDR.Device(dict) marshals a Python dict into a
+    C++ Kwargs (std::map<string,string>) through SWIG's multi-step dict
+    typemap (calls .items(), converts to a sequence of std::pair, converts
+    each pair element). SoapySDR.Device(str) instead marshals a single
+    Python str through a plain std::string typemap and lets SoapySDR's own
+    C++ KwargsFromString() split it — a much simpler, different code path.
+    On the Windows conda-forge build of _SoapySDR.pyd, the dict path was
+    confirmed to silently drop the "remote" key's value (host lost, only
+    the port survived) while the exact same value round-tripped correctly
+    through the string path — reproduced independently on Linux where the
+    dict path works fine, isolating this to the Windows binding build.
+    SkyRoof (github.com/VE3NEA/SkyRoof), a separate SoapySDR-based Windows
+    app, enumerates remote SDRs via the equivalent string-args C API for
+    the same "remote=host:port,driver=remote" case, not a struct/dict.
+    Only used as an additional fallback attempt — SoapySDR.Device(dict) is
+    still the primary, officially documented Python usage.
+    """
+    return ",".join(f"{k}={v}" for k, v in args.items())
+
+
 # ---------------------------------------------------------------------------
 # RTL-SDR / HackRF ctypes direct devices — duck-type compatible with SoapySDR.Device
 #
@@ -1095,8 +1118,11 @@ class SdrDevice:
             for attempt in range(1, _MAX_ATTEMPTS + 1):
                 for args_label, args in [
                     ("full args", self._info.args),
+                    ("full args (string form)", _kwargs_to_string(self._info.args)),
                     ("minimal args", minimal_args),
+                    ("minimal args (string form)", _kwargs_to_string(minimal_args)),
                     ("driver-only args", driver_only_args),
+                    ("driver-only args (string form)", _kwargs_to_string(driver_only_args)),
                 ]:
                     if not args:
                         continue
