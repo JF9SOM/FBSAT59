@@ -2518,16 +2518,26 @@ class MainWindow(QMainWindow):
         """True for rig configurations dial feedback has been verified
         against (see _rig_send()'s comment in _doppler_cycle()):
         - HamlibNetController using a Yaesu-CAT NET-mode ctcss_method
-        - HamlibDirectController for FTX-1F (model 1051). Confirmed safe via
-          Hamlib source (rigs/yaesu/ftx1/ftx1.c: .targetable_vfo =
-          RIG_TARGETABLE_ALL) -- get_freq(VFOA)/get_freq(VFOB) query the CAT
+        - HamlibDirectController for FTX-1F (model 1051) or FT-991/FT-991A
+          (models 1035/1036). Confirmed safe via Hamlib source
+          (rigs/yaesu/ftx1/ftx1.c: .targetable_vfo = RIG_TARGETABLE_ALL;
+          rigs/yaesu/ft991.c: .targetable_vfo = RIG_TARGETABLE_FREQ) --
+          both backends' get_freq(VFOA)/get_freq(VFOB) query the CAT
           commands FA;/FB; directly with no internal VFO switch, unlike
-          NET mode's forbidden "V" command. Connected-only for now
+          NET mode's forbidden "V" command. Neither rig's Direct-mode UL
+          write goes through set_split_freq() (FTX-1F: plain
+          set_freq(VFOB); FT-991: raw CAT "FB;" bypassing Hamlib entirely),
+          so the VFOA/VFOB cache-slot-sharing quirk documented for
+          set_split_freq() (see the "Directモードへの展開" section in
+          CLAUDE.md) does not apply to either -- read order between DL and
+          UL does not matter for either rig. Connected-only for now
           (_lock_watch_cycle()'s pre-Connect path remains NET-mode-only).
         """
         if isinstance(rig, HamlibNetController) and rig._ctcss_method in ("ftx1", "ft991"):
             return True
-        return isinstance(rig, HamlibDirectController) and rig._model_id in _FTX1_MODEL_IDS
+        return isinstance(rig, HamlibDirectController) and rig._model_id in (
+            _FTX1_MODEL_IDS | _FT991_DIRECT_MODEL_IDS
+        )
 
     def _lock_watch_cycle(self) -> None:
         """Pre-Connect only: read the operator's current manual DL position
@@ -2571,13 +2581,15 @@ class MainWindow(QMainWindow):
         side readbacks (f/i/get_vfo) continued to look entirely self-
         consistent throughout. "V" must never be used here.
 
-        HamlibDirectController (FTX-1F) is also a dial-feedback rig per
-        _is_dial_feedback_rig() (2026-07-20), but only for the *connected*
-        case -- this pre-Connect poller stays NET-mode-only for now, since
-        a Direct-mode pre-Connect read would need its own short-lived
-        Hamlib session (same risk class as _apply_mode_and_ctcss_hamlib()'s
-        existing pre-Connect CTCSS path, which FTX-1F deliberately avoids
-        via raw CAT instead -- see "FTX-1F 固有の制約" in CLAUDE.md). Other
+        HamlibDirectController (FTX-1F, and FT-991/FT-991A since
+        2026-07-20) is also a dial-feedback rig per
+        _is_dial_feedback_rig(), but only for the *connected* case -- this
+        pre-Connect poller stays NET-mode-only for now, since a Direct-mode
+        pre-Connect read would need its own short-lived Hamlib session
+        (same risk class as _apply_mode_and_ctcss_hamlib()'s/
+        _apply_mode_and_ctcss_cat_ft991()'s existing pre-Connect CTCSS
+        paths, both of which deliberately avoid Hamlib via raw CAT instead
+        -- see "FTX-1F 固有の制約"/"FT-991 / FT-991A" in CLAUDE.md). Other
         rig families (satmode Icom, generic/IC-705) keep the existing
         Doppler-driven-only Lock behaviour unchanged entirely; this method
         is a no-op for all of them (self._dial_feedback_offset_hz simply
@@ -2890,20 +2902,25 @@ class MainWindow(QMainWindow):
                             # "F"/"I" exactly, since rigctld's "V" command was
                             # confirmed live to corrupt the rig's Main/Sub
                             # role assignment.
-                            # Direct mode (FTX-1F only): get_freq(VFOA)/
-                            # get_freq(VFOB) via Hamlib directly. Confirmed
-                            # via Hamlib source (ftx1.c: .targetable_vfo =
-                            # RIG_TARGETABLE_ALL, ftx1_freq.c: get_freq sends
-                            # FA;/FB; for the requested VFO with no VFO
-                            # switch) that this carries none of NET mode's
-                            # "V" corruption risk. VFOA/VFOB also use
-                            # separate Hamlib cache slots (freqMainA/
-                            # freqMainB, confirmed in Hamlib's cache.c) so,
-                            # unlike ftx1_set_split_freq()'s documented
-                            # Main-cache-corruption workaround, read order
-                            # between the two does not matter here -- this
-                            # implementation never calls set_split_freq/
-                            # get_split_freq at all.
+                            # Direct mode (FTX-1F, FT-991/FT-991A): get_freq
+                            # (VFOA)/get_freq(VFOB) via Hamlib directly.
+                            # Confirmed via Hamlib source (ftx1.c:
+                            # .targetable_vfo = RIG_TARGETABLE_ALL; ft991.c:
+                            # .targetable_vfo = RIG_TARGETABLE_FREQ; both
+                            # backends' get_freq sends FA;/FB; for the
+                            # requested VFO with no VFO switch) that this
+                            # carries none of NET mode's "V" corruption risk
+                            # for either rig. VFOA/VFOB also use separate
+                            # Hamlib cache slots (freqMainA/freqMainB,
+                            # confirmed in Hamlib's cache.c, generic across
+                            # all rigs) so, unlike set_split_freq()'s
+                            # documented Main-cache-corruption workaround
+                            # (ftx1_vfo.c), read order between the two does
+                            # not matter here -- neither rig's Direct-mode UL
+                            # write goes through set_split_freq()/
+                            # get_split_freq() at all (FTX-1F: plain
+                            # set_freq(VFOB); FT-991: raw CAT "FB;" bypassing
+                            # Hamlib entirely).
                             if isinstance(rig, HamlibNetController):
                                 live_dl = rig.get_frequency()
                                 live_ul = rig.get_split_frequency()

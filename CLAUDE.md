@@ -2690,10 +2690,11 @@ if self._dial_feedback_offset_hz != 0.0:              # Lock状態に関わら�
 
 Rig 1 のみ。対象:
 - `HamlibNetController` + `ctcss_method in ("ftx1", "ft991")`（NET mode、接続前後とも対応）
-- `HamlibDirectController` + `model_id in _FTX1_MODEL_IDS`（Direct mode FTX-1F、**接続後のみ**。
-  接続前の`_lock_watch_cycle()`は引き続きNET mode専用。下記「Directモードへの展開」参照）
+- `HamlibDirectController` + `model_id in (_FTX1_MODEL_IDS | _FT991_DIRECT_MODEL_IDS)`
+  （Direct mode FTX-1F・FT-991/FT-991A、**接続後のみ**。接続前の`_lock_watch_cycle()`は
+  引き続きNET mode専用。下記「Directモードへの展開」参照）
 
-他のNETモードリグ（satmode Icom機等）・Directモードの他機種（satmode Icom機・IC-705・FT-991A）・
+他のNETモードリグ（satmode Icom機等）・Directモードの他機種（satmode Icom機・IC-705）・
 Rig 2は対象外（今後の課題）。対象外の組み合わせでは`self._dial_feedback_offset_hz`は常に0.0の
 ままで、Lockは何もしない（副作用なし）。
 
@@ -2744,6 +2745,36 @@ FTX-1F Directモードの既存UL書き込み実装（`_set_vfo_frequencies_lock
 モード/CTCSS設定を意図的にHamlib経由で行わず生CAT（`os.open()`）を使っている（本ファイル
 「FTX-1F 固有の制約」参照）。周波数読み取り専用の一時的なHamlibセッションであっても同種の
 リスクを抱える可能性があるため、今回は見送り、Directモードは接続後のみの対応とした。
+
+**この調査の副産物として発見・修正した別バグ**: FTX-1F Directモードの実機確認中、Connect直後に
+TXがSub→Mainへ勝手に戻る不具合を発見した（IC-705対応時に追加された`set_vfo(VFOA)`表示復元が
+共有コードパス経由でFTX-1Fにも巻き込まれていた）。詳細は「Rig-Specific Implementation Notes」
+内「FTX-1F (Hamlib model 1051)」セクションの「Connect直後にTXがSubからMainへ勝手に戻るバグと
+修正」参照。この一件は今回のLock機能自体のバグではなく、Directモードの既存コードに以前から
+潜んでいた不具合だったが、Lock機能の実機確認作業がきっかけで発覚した。
+
+#### FT-991 / FT-991A への展開（2026-07-20 実装）
+
+FTX-1Fでの実装・実機確認完了後、同じDirectモードのLock機能をFT-991/FT-991A（Hamlib model
+1035/1036）にも展開した。FTX-1Fのとき同様、実機の前にHamlibソース
+（`/home/sadatoshi/Hamlib-4.7/rigs/yaesu/ft991.c`・`newcat.c`）を確認した。
+
+**確認**: `ft991.c`は`.targetable_vfo = RIG_TARGETABLE_FREQ`を宣言（FTX-1Fの`RIG_TARGETABLE_ALL`
+ほど広くはないが、周波数の直接読み取りに必要なビットは含まれる）。実装本体`newcat_get_freq()`
+（`newcat.c`、FT-991含む多くのYaesu機で共用）は、指定VFOに応じて`FA;`/`FB;`を直接送るだけで、
+内部で`set_vfo()`を一切呼ばない（`newcat_set_vfo_from_alias()`はVFO定数のローカルな解決のみで
+CAT通信を発生させない）。FTX-1Fと同じ安全性が確認できた。
+
+また、FT-991 DirectモードのUL書き込みは元々Hamlibを経由せず生CAT`FB;`を直接書き込む方式
+（`_FT991_DIRECT_MODEL_IDS`専用分岐）で、`set_split_freq()`を一切呼んでいない。DL/ULの
+キャッシュ枠分離（`freqMainA`/`freqMainB`）はHamlib**コア共通**の仕組みのため、FTX-1Fで確認した
+「読み取り順序は任意でよい」という結論もそのまま当てはまる。
+
+**実装**: `_is_dial_feedback_rig()`の対象を`_FTX1_MODEL_IDS`単体から
+`_FTX1_MODEL_IDS | _FT991_DIRECT_MODEL_IDS`に拡張しただけ。`_rig_send()`のDirectモード分岐
+（`get_frequency("VFOA")`/`get_frequency("VFOB")`）は既に機種非依存の実装だったため変更不要。
+`_lock_watch_cycle()`の接続前ガードも同様に機種非依存（`isinstance(rig, HamlibNetController)`
+判定のみ）のため変更不要だった。
 
 ### 既知の制約
 

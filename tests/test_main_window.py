@@ -1817,6 +1817,16 @@ class TestLockDialFeedback:
                 ctrl._state = RigState.CONNECTED
         return ctrl
 
+    def _make_ft991_direct_rig(self, connected: bool):
+        from rig.controller import HamlibDirectController, RigState
+
+        ctrl = HamlibDirectController(model_id=1035, port="/dev/null")  # FT-991
+        if connected:
+            ctrl._rig = MagicMock()
+            with ctrl._lock:
+                ctrl._state = RigState.CONNECTED
+        return ctrl
+
     def _fake_engine(self, rr: float):
         class _FakeEngine:
             def observe(self, norad: int) -> Observation:
@@ -2096,9 +2106,9 @@ class TestLockDialFeedback:
         assert w._is_dial_feedback_rig(rig) is True
 
     def test_is_dial_feedback_rig_false_for_other_direct_model(self, qtbot, db) -> None:
-        """Scoped to FTX-1F (model 1051) only -- other Direct-mode rigs
-        (satmode Icom, generic/IC-705, FT-991A) keep the existing
-        Doppler-driven-only Lock behaviour, unverified for this feature."""
+        """Scoped to FTX-1F/FT-991/FT-991A only -- other Direct-mode rigs
+        (satmode Icom, generic/IC-705) keep the existing Doppler-driven-
+        only Lock behaviour, unverified for this feature."""
         from rig.controller import HamlibDirectController
 
         w = self._make_window(qtbot, db)
@@ -2131,6 +2141,41 @@ class TestLockDialFeedback:
         rig.get_frequency.assert_any_call("VFOB")
         # offset was still 0.0 when _doppler_cycle() computed this cycle's
         # ul -- same one-cycle-behind timing as the NET-mode case.
+        rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_000.0)
+        assert w._dial_feedback_offset_hz == 80.0
+
+    # -- Direct mode (FT-991/FT-991A): same integration (2026-07-20) --
+
+    def test_is_dial_feedback_rig_true_for_ft991_direct(self, qtbot, db) -> None:
+        """Confirmed via Hamlib source (rigs/yaesu/ft991.c: .targetable_vfo
+        = RIG_TARGETABLE_FREQ; rigs/yaesu/newcat.c: newcat_get_freq() sends
+        FA;/FB; for the requested VFO with no VFO switch) -- same safety
+        property as FTX-1F, confirmed 2026-07-20."""
+        w = self._make_window(qtbot, db)
+        rig = self._make_ft991_direct_rig(connected=True)
+        assert w._is_dial_feedback_rig(rig) is True
+
+    def test_rig_send_direct_ft991_never_writes_dl_but_keeps_writing_ul_while_locked(
+        self, qtbot, db
+    ) -> None:
+        """Same behaviour as the FTX-1F Direct-mode test above. FT-991's
+        Direct-mode UL write never calls set_split_freq()/get_split_freq()
+        either (raw CAT "FB;" bypassing Hamlib entirely), so read order
+        does not matter here either."""
+        w = self._make_window(qtbot, db)
+        rig = self._make_ft991_direct_rig(connected=True)
+
+        def _fake_get_frequency(vfo: str = "VFOA") -> float:
+            return 145_800_080.0 if vfo == "VFOA" else 435_000_000.0
+
+        rig.get_frequency = MagicMock(side_effect=_fake_get_frequency)
+        rig.set_vfo_frequencies = MagicMock(return_value=True)
+        w._dial_feedback_offset_hz = 0.0
+
+        self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
+
+        rig.get_frequency.assert_any_call("VFOA")
+        rig.get_frequency.assert_any_call("VFOB")
         rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_000.0)
         assert w._dial_feedback_offset_hz == 80.0
 
