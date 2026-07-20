@@ -2602,24 +2602,51 @@ class MainWindow(QMainWindow):
 
         result = rig.read_dl_ul_independent()
         if result is None:
+            logger.info(
+                "LockWatch (pre-Connect): read_dl_ul_independent() failed, "
+                "offset unchanged at %.1fHz",
+                self._dial_feedback_offset_hz,
+            )
             return
         live_dl, live_ul = result
         if live_dl < 0 or live_ul < 0:
+            logger.info(
+                "LockWatch (pre-Connect): read failed (live_dl=%.1f live_ul=%.1f), "
+                "offset unchanged at %.1fHz",
+                live_dl,
+                live_ul,
+                self._dial_feedback_offset_hz,
+            )
             return
         if abs(live_dl - live_ul) < _DIAL_FEEDBACK_CROSSCHECK_HZ:
-            logger.debug(
-                "LockWatch: DL reading %.1f too close to UL %.1f, discarding", live_dl, live_ul
+            logger.info(
+                "LockWatch (pre-Connect): DL reading %.1f too close to UL %.1f, "
+                "discarding (current VFO likely stuck on Sub), offset unchanged at %.1fHz",
+                live_dl,
+                live_ul,
+                self._dial_feedback_offset_hz,
             )
             return
 
         new_offset = live_dl - dl_baseline
         if abs(new_offset) > _DIAL_FEEDBACK_SANITY_HZ:
             logger.warning(
-                "LockWatch: implausible DL reading %.1f Hz (baseline %.1f), ignoring",
+                "LockWatch (pre-Connect): implausible DL reading %.1f Hz "
+                "(baseline %.1f), ignoring, offset unchanged at %.1fHz",
+                live_dl,
+                dl_baseline,
+                self._dial_feedback_offset_hz,
+            )
+            return
+        if new_offset != self._dial_feedback_offset_hz:
+            logger.info(
+                "LockWatch (pre-Connect): offset updated %.1fHz -> %.1fHz "
+                "(live_dl=%.1f dl_baseline=%.1f)",
+                self._dial_feedback_offset_hz,
+                new_offset,
                 live_dl,
                 dl_baseline,
             )
-            return
         self._dial_feedback_offset_hz = new_offset
 
     def _doppler_cycle(self) -> None:
@@ -2837,21 +2864,43 @@ class MainWindow(QMainWindow):
                             assert isinstance(rig, HamlibNetController)
                             live_dl = rig.get_frequency()
                             live_ul = rig.get_split_frequency()
-                            if (
-                                live_dl >= 0
-                                and live_ul >= 0
-                                and abs(live_dl - live_ul) >= _DIAL_FEEDBACK_CROSSCHECK_HZ
-                                and dl_baseline is not None
-                            ):
+                            if live_dl < 0 or live_ul < 0:
+                                logger.info(
+                                    "LockWatch: read failed (live_dl=%.1f live_ul=%.1f), "
+                                    "offset unchanged at %.1fHz",
+                                    live_dl,
+                                    live_ul,
+                                    self._dial_feedback_offset_hz,
+                                )
+                            elif abs(live_dl - live_ul) < _DIAL_FEEDBACK_CROSSCHECK_HZ:
+                                logger.info(
+                                    "LockWatch: DL reading %.1f too close to UL %.1f, "
+                                    "discarding (current VFO likely stuck on Sub), "
+                                    "offset unchanged at %.1fHz",
+                                    live_dl,
+                                    live_ul,
+                                    self._dial_feedback_offset_hz,
+                                )
+                            elif dl_baseline is not None:
                                 new_offset = live_dl - dl_baseline
                                 if abs(new_offset) > _DIAL_FEEDBACK_SANITY_HZ:
                                     logger.warning(
                                         "LockWatch: implausible DL reading %.1f Hz "
-                                        "(baseline %.1f), ignoring this cycle",
+                                        "(baseline %.1f), ignoring this cycle, "
+                                        "offset unchanged at %.1fHz",
+                                        live_dl,
+                                        dl_baseline,
+                                        self._dial_feedback_offset_hz,
+                                    )
+                                elif new_offset != self._dial_feedback_offset_hz:
+                                    logger.info(
+                                        "LockWatch: offset updated %.1fHz -> %.1fHz "
+                                        "(live_dl=%.1f dl_baseline=%.1f)",
+                                        self._dial_feedback_offset_hz,
+                                        new_offset,
                                         live_dl,
                                         dl_baseline,
                                     )
-                                else:
                                     self._dial_feedback_offset_hz = new_offset
                             rig.set_vfo_frequencies(None, ul)
                             return
