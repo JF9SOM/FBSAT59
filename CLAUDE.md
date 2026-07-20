@@ -2691,17 +2691,19 @@ if self._dial_feedback_offset_hz != 0.0:              # Lock状態に関わら�
 Rig 1 のみ。対象:
 - `HamlibNetController`（NET mode）:
   - `ctcss_method in ("ftx1", "ft991")`: 接続前後とも対応（`_lock_watch_cycle()`含む）
+  - satmode（「Icom SAT mode rig」チェックボックスON）: `ctcss_method`非依存の独立分岐、
+    **接続後のみ**。下記「satmode機への展開」参照
   - `ctcss_method == "hamlib"` かつ非satmode: **接続後のみ**、未検証のベストエフォート
     （IC-705 NET modeを含む汎用リグ全般。下記「NETモード汎用"hamlib"バケットへの展開」参照）
-  - satmode（「Icom SAT mode rig」チェックボックスON）・`ctcss_method == "custom_cat"`は対象外
+  - `ctcss_method == "custom_cat"`は対象外
 - `HamlibDirectController` で **satmode（IC-9100/9700等）以外のすべて**（Direct mode、
   **接続後のみ**。接続前の`_lock_watch_cycle()`は引き続き上記NET modeの`ftx1`/`ft991`専用）。
   内訳:
   - FTX-1F・FT-991/FT-991A・IC-705: Hamlibソースで個別に安全性を確認済み
   - それ以外の非satmode機種（汎用Hamlibルート）: 未検証のベストエフォート
 
-satmode Icom機（IC-9100/9700等、NET/Direct両方）・Rig 2は対象外（今後の課題）。対象外の
-組み合わせでは`self._dial_feedback_offset_hz`は常に0.0のままで、Lockは何もしない（副作用なし）。
+Rig 2、およびsatmode機のDirectモードは対象外（今後の課題）。対象外の組み合わせでは
+`self._dial_feedback_offset_hz`は常に0.0のままで、Lockは何もしない（副作用なし）。
 
 ### Directモードへの展開（FTX-1F、2026-07-20 実装）
 
@@ -2869,6 +2871,46 @@ if isinstance(rig, HamlibNetController):
 接続前に無意味な「read failed」ログを出し続けないよう、`ctcss_method not in ("ftx1",
 "ft991")`での早期returnを追加した（元々`isinstance(rig, HamlibNetController)`のチェックを
 通過してしまうため、追加のガードが必要だった）。
+
+#### satmode機（IC-9100/9700等）NETモードへの展開（2026-07-20 実装・最も未検証）
+
+Directモード・NETモード汎用バケットへの展開に続き、最後の未対応領域だったsatmode機に着手した。
+ユーザーから「satmodeはVFOAを回すとVFOBも連動して動くのではないか。それならULの書き込みを
+やめてもいいのでは」という指摘があったが、**これはHamlibソースだけでは確認できなかった**
+（Hamlibは飽くまでCAT/CI-V制御プロトコルのライブラリであり、CATコマンドのやり取りなしに
+リグ内部のRF/DSPだけで完結するような挙動——もし実在するなら——はソースに一切現れない。
+`icom.c`を"SATMODE"で検索してもCI-Vによるsatmode ON/OFF制御しか見つからず、VFO連動
+トラッキングに関する記述はなかった）。
+
+この点は未検証のまま、ユーザーの判断で**保守的な設計**（これまでの全機種と同じ「DLは読むだけ・
+ULは書き込み続ける」）で進めることにした。判断理由: 現状Lock機能はsatmode機に対して
+一切動作しないため、この保守的な実装がたとえ不完全でも「今までと変わらない」だけで、
+悪化はしないという判断（ユーザー本人の言葉）。
+
+**実装**: `_is_dial_feedback_rig()`にsatmodeの独立分岐を追加（`ctcss_method`の値とは無関係、
+`is_satmode`プロパティのみで判定）:
+```python
+if isinstance(rig, HamlibNetController):
+    if rig._ctcss_method in ("ftx1", "ft991"):
+        return True
+    if rig.is_satmode:
+        return True
+    return rig._ctcss_method == "hamlib"
+```
+`get_frequency()`/`get_split_frequency()`/`set_vfo_frequencies()`はいずれも既に
+satmode非依存の実装（RXサイクルの`vfoa_hz is not None`判定・UL間引きロジックとも、
+DLを書くかどうかとは無関係に動作）だったため、`_rig_send()`側の変更は不要。接続前
+ポーリングも同様の理由で対象外のまま（satmode NETリグは通常`ctcss_method="hamlib"`のため、
+既存の`ctcss_method not in ("ftx1", "ft991")`ガードで自然に弾かれる）。
+
+**これまでで最も未検証な理由**: satmodeのクロスバンド時は`S 1 Main`送信によりHamlibが
+実際に**ハードウェアのSATMODEを起動**する（`set_func(RIG_FUNC_SATMODE, 1)`相当）。
+これは他の全リグ（ソフト/仮想的なsplit管理のみ）と質的に異なるステートフルな
+ハードウェア状態遷移であり、satmodeがアクティブな間、rigctldの「現在のVFO」追跡が
+継続的にMain（DL）を指し続けるかは一度も確認していない。加えて上記の「VFOA/VFOB
+連動トラッキング機能」の実在も未確認のまま。**GitHubで問題が報告された場合、
+まずこのVFO連動トラッキング機能の実在確認を優先し、実在するなら「ULの書き込みも
+停止する」設計への変更を検討すること。**
 
 ### 既知の制約
 

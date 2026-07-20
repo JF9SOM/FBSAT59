@@ -2537,6 +2537,27 @@ class MainWindow(QMainWindow):
           file). _lock_watch_cycle()'s pre-Connect path stays scoped to
           "ftx1"/"ft991" only (read_dl_ul_independent() itself still gates
           on that) -- the "hamlib" bucket only works once connected.
+        - HamlibNetController satmode rigs (IC-9100/9700 etc., "Icom SAT
+          mode rig" checkbox checked), its own explicit branch independent
+          of ctcss_method (2026-07-20, explicit user decision to try the
+          same conservative "read DL, keep writing UL" design here too --
+          Lock does not work at all for satmode today, so this cannot make
+          satmode's Lock support worse than it already is). The most
+          UNVERIFIED bucket so far: satmode's cross-band case makes Hamlib
+          toggle actual hardware SATMODE (set_func(RIG_FUNC_SATMODE, 1)),
+          a stateful hardware mode switch -- qualitatively different from
+          every other rig's purely software/virtual split above -- and
+          whether rigctld's current_vfo bookkeeping reliably stays on Main
+          throughout an active satmode session has never been checked, on
+          top of the same generic "hamlib" bucket caveat above. Separately,
+          it was raised (unverified, could not be confirmed via Hamlib
+          source -- Hamlib is a CAT/CI-V control library, so a purely
+          internal RF/DSP behaviour needing no CAT exchange would not
+          appear in it either way) whether IC-9100/9700 SAT mode has a
+          hardware Main/Sub dial-tracking feature that would make this
+          module's own periodic UL writes redundant, or even conflict with
+          it -- if a GitHub report surfaces this, revisit whether UL
+          should stop being written for satmode too.
         - HamlibDirectController for FTX-1F (model 1051) or FT-991/FT-991A
           (models 1035/1036). Confirmed safe via Hamlib source
           (rigs/yaesu/ftx1/ftx1.c: .targetable_vfo = RIG_TARGETABLE_ALL;
@@ -2575,15 +2596,19 @@ class MainWindow(QMainWindow):
           explicit branch here once confirmed.
 
         Connected-only for now for every Direct-mode case above and for
-        the generic NET "hamlib" bucket; "ftx1"/"ft991" NET mode remains
+        the generic/satmode NET buckets; "ftx1"/"ft991" NET mode remains
         the only pre-Connect-capable configuration
         (_lock_watch_cycle()'s own "ftx1"/"ft991" gate on
-        read_dl_ul_independent() is unchanged).
+        read_dl_ul_independent() is unchanged -- satmode NET rigs reaching
+        _lock_watch_cycle() before Connect are caught by the same
+        ctcss_method check and no-op there too).
         """
         if isinstance(rig, HamlibNetController):
             if rig._ctcss_method in ("ftx1", "ft991"):
                 return True
-            return rig._ctcss_method == "hamlib" and not rig.is_satmode
+            if rig.is_satmode:
+                return True
+            return rig._ctcss_method == "hamlib"
         if not isinstance(rig, HamlibDirectController):
             return False
         if rig._model_id in (_FTX1_MODEL_IDS | _FT991_DIRECT_MODEL_IDS | _IC705_MODEL_IDS):

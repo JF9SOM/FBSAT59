@@ -1916,6 +1916,21 @@ class TestLockDialFeedback:
         w._lock_watch_cycle()
         rig.read_dl_ul_independent.assert_not_called()
 
+    def test_lock_watch_noop_for_satmode_net(self, qtbot, db) -> None:
+        """Satmode NET (2026-07-20) is connected-case only too, for the
+        same reason as the generic "hamlib" bucket above."""
+        from rig.controller import HamlibNetController
+
+        w = self._make_window(qtbot, db)
+        rig = HamlibNetController(
+            host="localhost", port=4532, ctcss_method="hamlib", is_satmode_rig=True
+        )
+        rig.read_dl_ul_independent = MagicMock(return_value=(145_800_080.0, 435_000_000.0))
+        w._rig_controller = rig
+        w._trsp_lock = True
+        w._lock_watch_cycle()
+        rig.read_dl_ul_independent.assert_not_called()
+
     def test_lock_watch_noop_once_connected(self, qtbot, db) -> None:
         """The connected case is handled by _rig_send() on the Doppler
         cycle's own cadence -- this method must do nothing once connected,
@@ -2132,17 +2147,46 @@ class TestLockDialFeedback:
         rig = HamlibNetController(host="localhost", port=4532, ctcss_method="hamlib")
         assert w._is_dial_feedback_rig(rig) is True
 
-    def test_is_dial_feedback_rig_false_for_satmode_net_hamlib(self, qtbot, db) -> None:
-        """A satmode Icom NET rig ("Icom SAT mode rig" checkbox checked)
-        must not fall into the generic "hamlib" bucket -- satmode NET rigs
-        keep the existing Doppler-driven-only Lock behaviour."""
+    def test_is_dial_feedback_rig_true_for_satmode_net(self, qtbot, db) -> None:
+        """Satmode Icom NET rigs ("Icom SAT mode rig" checkbox checked) get
+        their own explicit branch, independent of ctcss_method (2026-07-20,
+        explicit user decision: try the same conservative "read DL, keep
+        writing UL" design here too, since Lock does not work at all for
+        satmode today -- this cannot make it worse). The most unverified
+        bucket so far; see _is_dial_feedback_rig()'s docstring."""
         from rig.controller import HamlibNetController
 
         w = self._make_window(qtbot, db)
         rig = HamlibNetController(
             host="localhost", port=4532, ctcss_method="hamlib", is_satmode_rig=True
         )
-        assert w._is_dial_feedback_rig(rig) is False
+        assert w._is_dial_feedback_rig(rig) is True
+
+    def test_rig_send_satmode_net_never_writes_dl_but_keeps_writing_ul(self, qtbot, db) -> None:
+        """Connected-case integration for satmode NET -- get_frequency()/
+        get_split_frequency()/set_vfo_frequencies() are all already
+        satmode-agnostic (the RX-cycle "if vfoa_hz is not None" check and
+        the UL throttle logic don't care whether DL is being written), so
+        this works the same as the other NET-mode tests with no additional
+        code path."""
+        from rig.controller import HamlibNetController, RigState
+
+        w = self._make_window(qtbot, db)
+        rig = HamlibNetController(
+            host="localhost", port=4532, ctcss_method="hamlib", is_satmode_rig=True
+        )
+        rig._sock = MagicMock()
+        with rig._lock:
+            rig._state = RigState.CONNECTED
+        rig.get_frequency = MagicMock(return_value=145_800_080.0)  # +80Hz manual retune
+        rig.get_split_frequency = MagicMock(return_value=435_000_000.0)
+        rig.set_vfo_frequencies = MagicMock(return_value=True)
+        w._dial_feedback_offset_hz = 0.0
+
+        self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
+
+        rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_000.0)
+        assert w._dial_feedback_offset_hz == 80.0
 
     def test_is_dial_feedback_rig_false_for_custom_cat_net(self, qtbot, db) -> None:
         """ctcss_method "custom_cat" is a distinct, unanalysed scheme --
