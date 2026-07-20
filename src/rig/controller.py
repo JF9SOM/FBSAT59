@@ -363,6 +363,57 @@ def _check_rig_ok(rig: Any, what: str) -> None:
         raise RigControlError(f"{what} failed (Hamlib error {status})")
 
 
+def _open_rig_with_retry(
+    rig: Any,
+    what: str,
+    attempts: int = 3,
+    retry_delay: float = 1.0,
+) -> None:
+    """Open a freshly constructed Hamlib *rig* session, retrying on failure.
+
+    Works around a Windows-specific quirk confirmed both live (2026-07-20,
+    Windows 11 + IC-9100: rig.open() times out with Hamlib error -5 on
+    every attempt with a verified-correct CI-V address, while a
+    single-shot raw-serial probe of the exact same CI-V command succeeds)
+    and in Hamlib's own source:
+      - For Icom rigs, rig.open() is not a bare port open -- it performs
+        its own internal CI-V "echo status" probe (rigs/icom/icom.c
+        icom_get_usb_echo_off(), sent as part of icom_rig_open()) and
+        fails the *entire* open() immediately if that first probe times
+        out, with NO retry inside Hamlib for this specific case (the one
+        retry Hamlib does have only covers a later step, a follow-up
+        get_freq call, not this initial echo probe).
+      - On Windows specifically, src/serial.c's serial_open() does an
+        extra CreateFile-based "is this port already in use" check
+        immediately before the real open, so the real open is preceded by
+        an extra open/close handle churn on the same port that a plain
+        pyserial-based probe never goes through -- plausibly why a
+        one-shot manual CI-V test can succeed while Hamlib's own open()
+        fails on the very first attempt.
+    Since Hamlib itself never retries this specific failure, this wrapper
+    does: close the (failed) session, wait, and try opening again.
+    """
+    last_status = 0
+    for attempt in range(1, attempts + 1):
+        rig.open()
+        last_status = rig.error_status
+        if last_status == 0:
+            return
+        logger.warning(
+            "%s: open() attempt %d/%d failed (Hamlib error %d)%s",
+            what,
+            attempt,
+            attempts,
+            last_status,
+            "" if attempt == attempts else ", retrying...",
+        )
+        if attempt < attempts:
+            with contextlib.suppress(Exception):
+                rig.close()
+            time.sleep(retry_delay)
+    raise RigControlError(f"{what} failed after {attempts} attempts (Hamlib error {last_status})")
+
+
 # ---------------------------------------------------------------------------
 # Abstract base class — RigController
 # ---------------------------------------------------------------------------
@@ -666,8 +717,7 @@ class HamlibDirectController(RigController):
                     # is also checked now (raises RigControlError on failure)
                     # so a failure here surfaces to the status bar instead of
                     # leaving the rig silently un-configured.
-                    rig.open()
-                    _check_rig_ok(rig, "RigDirect satmode entry: open()")
+                    _open_rig_with_retry(rig, "RigDirect satmode entry: open()")
                     time.sleep(0.5)
                     rig.set_func(_H.RIG_FUNC_SATMODE, 1)
                     _check_rig_ok(rig, "RigDirect satmode entry: set_func(SATMODE,1)")
@@ -675,8 +725,7 @@ class HamlibDirectController(RigController):
                     rig.close()
                     time.sleep(0.3)
                 with self._port_lock:
-                    rig.open()
-                    _check_rig_ok(rig, "RigDirect: reopen after satmode entry")
+                    _open_rig_with_retry(rig, "RigDirect: reopen after satmode entry")
                     # IC-9700 does not correctly read back satmode=1 during open(),
                     # leaving cache->satmode=0.  A second set_func call after open()
                     # forces cache->satmode=1 so that VFO_MAIN/VFO_SUB are routed
@@ -870,7 +919,7 @@ class HamlibDirectController(RigController):
             tone_int = int(round(abs(tone_hz) * 10))
             enable = tone_hz > 0
             with self._port_lock:
-                rig.open()
+                _open_rig_with_retry(rig, "CTCSS standalone: open()")
                 vfo_b = int(_H.RIG_VFO_B)
                 vfo_a = int(_H.RIG_VFO_A)
                 rig.set_vfo(vfo_b)
@@ -1352,7 +1401,7 @@ class HamlibDirectController(RigController):
             if self._civ_addr:
                 rig.set_conf("civaddr", normalize_civ_addr(self._civ_addr))
             with self._port_lock:
-                rig.open()
+                _open_rig_with_retry(rig, "RigDirect send_mode_only: open()")
                 if _use_satmode_vfo:
                     # Icom satmode rigs support set_mode(mode, 0, VFO_MAIN/SUB_A)
                     # directly — no VFO switch needed.
@@ -1452,8 +1501,7 @@ class HamlibDirectController(RigController):
                     vfo_b = int(_H.RIG_VFO_B)
                     vfo_curr = int(_H.RIG_VFO_CURR)
                     rig2 = _make_rig()
-                    rig2.open()
-                    _check_rig_ok(rig2, "same-band: open()")
+                    _open_rig_with_retry(rig2, "same-band: open()")
                     time.sleep(0.5)
                     rig2.set_func(_H.RIG_FUNC_SATMODE, 0)
                     _check_rig_ok(rig2, "same-band: set_func(SATMODE,0)")
@@ -1484,8 +1532,7 @@ class HamlibDirectController(RigController):
                     # Cross-band path: SAT mode sequence.
                     # Step 1: open → set_func(SATMODE, 1) → close
                     rig = _make_rig()
-                    rig.open()
-                    _check_rig_ok(rig, "cross-band: open() [step 1]")
+                    _open_rig_with_retry(rig, "cross-band: open() [step 1]")
                     time.sleep(0.5)
                     rig.set_func(_H.RIG_FUNC_SATMODE, 1)
                     _check_rig_ok(rig, "cross-band: set_func(SATMODE,1)")
@@ -1496,8 +1543,7 @@ class HamlibDirectController(RigController):
 
                     # Step 2: second open() reads satmode=1 → cache->satmode=1
                     rig2 = _make_rig()
-                    rig2.open()
-                    _check_rig_ok(rig2, "cross-band: open() [step 2]")
+                    _open_rig_with_retry(rig2, "cross-band: open() [step 2]")
                     time.sleep(0.5)
                     # IC-9700: force cache->satmode=1 with extra set_func after open().
                     if self._model_id in _SATMODE_USE_VFO_SUB:
@@ -2116,7 +2162,7 @@ class HamlibDirectController(RigController):
             rig.set_conf("serial_speed", str(self._baud_rate))
             if self._civ_addr:
                 rig.set_conf("civaddr", normalize_civ_addr(self._civ_addr))
-            rig.open()
+            _open_rig_with_retry(rig, "RigDirect satmode_warmup: open()")
             time.sleep(0.3)
             rig.set_func(_H.RIG_FUNC_SATMODE, 1)
             time.sleep(0.1)

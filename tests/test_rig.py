@@ -31,6 +31,7 @@ from rig.controller import (
     _build_mode_map,
     _check_rig_ok,
     _MockRig,
+    _open_rig_with_retry,
     normalize_civ_addr,
 )
 
@@ -477,6 +478,46 @@ class TestCheckRigOk:
         rig.error_status = 0
         rig.open()
         _check_rig_ok(rig, "open()")  # must not raise despite None return
+
+
+class TestOpenRigWithRetry:
+    """_open_rig_with_retry() works around a Windows-specific quirk where
+    Hamlib's own rig.open() (for Icom rigs, which runs an internal CI-V
+    echo-status probe as part of opening) can time out on the very first
+    attempt even with a verified-correct port/baud/CI-V address, with no
+    retry inside Hamlib itself for this specific failure. See its
+    docstring for the full account (confirmed live 2026-07-20, Windows 11
+    + IC-9100)."""
+
+    def test_succeeds_immediately_when_error_status_is_ok(self) -> None:
+        rig = MagicMock()
+        rig.error_status = 0
+        with patch("rig.controller.time.sleep"):
+            _open_rig_with_retry(rig, "some step")
+        rig.open.assert_called_once()
+        rig.close.assert_not_called()
+
+    def test_succeeds_on_a_later_attempt(self) -> None:
+        """A transient failure (e.g. the Windows COM-port timing quirk)
+        followed by success on retry must not raise."""
+        rig = MagicMock()
+        statuses = iter([-5, -5, 0])  # fails twice, then succeeds
+        type(rig).error_status = property(lambda self: next(statuses))
+        with patch("rig.controller.time.sleep"):
+            _open_rig_with_retry(rig, "some step", attempts=3, retry_delay=0.01)
+        assert rig.open.call_count == 3
+        assert rig.close.call_count == 2  # once between each failed attempt
+
+    def test_raises_after_exhausting_all_attempts(self) -> None:
+        rig = MagicMock()
+        rig.error_status = -5
+        with (
+            patch("rig.controller.time.sleep"),
+            pytest.raises(RigControlError, match="some step") as exc_info,
+        ):
+            _open_rig_with_retry(rig, "some step", attempts=3, retry_delay=0.01)
+        assert rig.open.call_count == 3
+        assert "-5" in str(exc_info.value)
 
 
 class TestSatmodeHamlibReturnCodeChecks:
