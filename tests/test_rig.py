@@ -397,6 +397,7 @@ class TestHamlibDirectController:
         """send_mode_only opens a fresh Rig and calls set_mode for DL and UL."""
         ctrl = self._make_ctrl()
         mock_rig_inst = MagicMock()
+        mock_rig_inst.error_status = 0
         mock_hamlib = MagicMock()
         mock_hamlib.Rig.return_value = mock_rig_inst
         mock_hamlib.RIG_MODE_FM = 32
@@ -424,6 +425,7 @@ class TestHamlibDirectController:
         """
         ctrl = self._make_ctrl()
         mock_rig_inst = MagicMock()
+        mock_rig_inst.error_status = 0
         mock_hamlib = MagicMock()
         mock_hamlib.Rig.return_value = mock_rig_inst
         mock_hamlib.RIG_MODE_FM = 32
