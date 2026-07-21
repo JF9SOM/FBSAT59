@@ -364,6 +364,7 @@ def _check_rig_ok(rig: Any, what: str) -> None:
 
 
 _hamlib_trace_lock = threading.Lock()
+_hamlib_file_trace_enabled = False
 
 
 def _hamlib_trace_log_path() -> str | None:
@@ -375,18 +376,10 @@ def _hamlib_trace_log_path() -> str | None:
     controlled test: same failure with A2/A2 and with A3/A3), and even
     with _open_rig_with_retry()'s 3 attempts -- so this is not the
     transient Windows COM-port timing glitch that function's docstring
-    was written for; the real cause is still unknown. The bundled Hamlib
-    Python binding does not expose rig_set_debug_file() (only
-    rig_set_debug(level) -- confirmed by introspecting the actual bundled
-    module), so Hamlib's own trace-level debug output -- which would show
-    the raw CI-V bytes sent/received and settle this definitively -- has
-    nowhere to go in a frozen Windows GUI app with no console; it would
-    otherwise be silently lost on stderr. Captured instead by temporarily
-    redirecting the process's real stderr file descriptor (confirmed
-    working via os.dup2()) around each open() attempt.
+    was written for; the real cause is still unknown.
 
-    Remove this function, _hamlib_trace_lock, and the with-block in
-    _open_rig_with_retry() once root-caused.
+    Remove this function, _hamlib_trace_lock, _hamlib_file_trace_enabled,
+    and _hamlib_ensure_file_trace() once root-caused.
     """
     try:
         from platformdirs import user_log_dir
@@ -398,58 +391,87 @@ def _hamlib_trace_log_path() -> str | None:
         return None
 
 
-@contextlib.contextmanager
-def _hamlib_stderr_trace(label: str) -> Any:
-    """Redirect the process's real stderr fd to hamlib_trace.log for the
-    duration of the wrapped call. See _hamlib_trace_log_path() for why.
-    Best-effort: any failure here just means no trace is captured, never
-    breaks the caller.
+def _hamlib_ensure_file_trace() -> None:
+    """Idempotently redirect Hamlib's own debug stream to
+    hamlib_trace.log for the rest of the process's lifetime.
+
+    First attempt (os.dup2() on the process's real stderr fd, around each
+    open() call) confirmed live (2026-07-21, real IC-9100 on the
+    developer's own Windows 11 PC) to create the file but capture zero
+    actual Hamlib output -- only the empty header lines this code used to
+    write. Root cause: the bundled Hamlib is built with MinGW GCC (see
+    CLAUDE.md's Hamlib bundling notes) while the frozen app's Python
+    interpreter uses MSVC's C runtime; on Windows each CRT keeps its own
+    separate stdio/fd table, so Python's os.dup2() on "fd 2" only affects
+    the MSVC CRT's own table and never reaches whatever the MinGW-built
+    Hamlib DLL's C library considers its own `stderr` FILE*.
+
+    Sidesteps this entirely via rig_set_debug_filename(const char*), a
+    real exported Hamlib C API function (src/debug.c, HAMLIB_API) that
+    Hamlib itself resolves with its own fopen() -- so the FILE* it uses
+    is guaranteed to belong to the same CRT as the rig_debug() calls that
+    write to it, no cross-CRT fd trickery needed. Not exposed by this
+    build's SWIG Python binding (only rig_set_debug(level),
+    rig_get_debug(), rig_set_debug_time_stamp(), add2debugmsgsave() are --
+    confirmed by introspecting the actual bundled module), so called here
+    via ctypes directly against the already-loaded Hamlib library instead.
+
+    rig_debug_stream is a single process-wide global in Hamlib's C code
+    (shared by every Rig object/thread), and rig_set_debug_filename()
+    opens its target in "w" (truncate) mode -- so this must be called at
+    most once per process, not once per open() attempt, or later calls
+    would each wipe out the previous attempts' trace.
     """
-    trace_path = _hamlib_trace_log_path()
-    if trace_path is None:
-        yield
+    global _hamlib_file_trace_enabled
+    if _hamlib_file_trace_enabled:
         return
     with _hamlib_trace_lock:
-        saved_fd: int | None = None
-        log_fd: int | None = None
+        if _hamlib_file_trace_enabled:  # re-check inside the lock
+            return
+        trace_path = _hamlib_trace_log_path()
+        if trace_path is None:
+            return
         try:
+            import ctypes
+
             with contextlib.suppress(Exception):
                 import Hamlib as _H
 
                 _H.rig_set_debug(_H.RIG_DEBUG_TRACE)
-            # sys.stderr is None in a PyInstaller --windowed build (no
-            # console) -- previously called unguarded *before* os.open()
-            # below, so an AttributeError here silently skipped file
-            # creation entirely. Confirmed live (2026-07-21): no
-            # hamlib_trace.log was ever created on a real Windows 11 +
-            # IC-9100 run. Guard it and, more importantly, create the file
-            # (and log a warning to fbsat59.log, which IS reliably
-            # captured) *before* touching fd 2, so a later dup2() failure
-            # still leaves a usable partial trace instead of nothing.
-            with contextlib.suppress(Exception):
-                if sys.stderr is not None:
-                    sys.stderr.flush()
-            log_fd = os.open(trace_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
-            os.write(log_fd, f"\n=== {label} @ {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n".encode())
-            saved_fd = os.dup(2)
-            os.dup2(log_fd, 2)
+
+            if sys.platform == "win32":
+                candidates = ["libhamlib-4.dll", "libhamlib.dll"]
+            elif sys.platform == "darwin":
+                candidates = ["libhamlib.4.dylib", "libhamlib.dylib"]
+            else:
+                candidates = ["libhamlib.so.4", "libhamlib.so"]
+
+            lib = None
+            for name in candidates:
+                with contextlib.suppress(OSError):
+                    lib = ctypes.CDLL(name)
+                    break
+            if lib is None:
+                # POSIX only: None searches every already-loaded global
+                # symbol table, a last-resort fallback if the exact
+                # sofile name above didn't match what's actually loaded.
+                with contextlib.suppress(OSError):
+                    lib = ctypes.CDLL(None)
+
+            if lib is None or not hasattr(lib, "rig_set_debug_filename"):
+                logger.warning(
+                    "RigDirect: rig_set_debug_filename not found in Hamlib library (tried %s)",
+                    candidates,
+                )
+                return
+
+            lib.rig_set_debug_filename.restype = ctypes.c_void_p
+            lib.rig_set_debug_filename.argtypes = [ctypes.c_char_p]
+            lib.rig_set_debug_filename(trace_path.encode("utf-8", "replace"))
+            _hamlib_file_trace_enabled = True
+            logger.info("RigDirect: Hamlib debug trace redirected to %s", trace_path)
         except Exception as exc:
-            logger.warning("RigDirect: _hamlib_stderr_trace setup failed: %s", exc)
-            saved_fd = None
-        try:
-            yield
-        finally:
-            if saved_fd is not None:
-                with contextlib.suppress(Exception):
-                    if sys.stderr is not None:
-                        sys.stderr.flush()
-                with contextlib.suppress(Exception):
-                    os.dup2(saved_fd, 2)
-                with contextlib.suppress(Exception):
-                    os.close(saved_fd)
-            if log_fd is not None:
-                with contextlib.suppress(Exception):
-                    os.close(log_fd)
+            logger.warning("RigDirect: _hamlib_ensure_file_trace failed: %s", exc)
 
 
 def _open_rig_with_retry(
@@ -466,9 +488,10 @@ def _open_rig_with_retry(
     with either A2/A2 or A3/A3) shows the address is not the issue and the
     retries alone do not resolve it either -- root cause still open. Kept
     as a real improvement regardless (Hamlib itself has zero retry for
-    this specific failure -- see below), now paired with
-    _hamlib_stderr_trace() around each attempt to capture what Hamlib
-    actually sent/received on the wire.
+    this specific failure -- see below). Also ensures Hamlib's own debug
+    trace is being captured to hamlib_trace.log (see
+    _hamlib_ensure_file_trace()) so a failure here can be diagnosed from
+    what Hamlib actually sent/received on the wire.
 
       - For Icom rigs, rig.open() is not a bare port open -- it performs
         its own internal CI-V "echo status" probe (rigs/icom/icom.c
@@ -483,10 +506,10 @@ def _open_rig_with_retry(
         an extra open/close handle churn on the same port that a plain
         pyserial-based probe never goes through.
     """
+    _hamlib_ensure_file_trace()
     last_status = 0
     for attempt in range(1, attempts + 1):
-        with _hamlib_stderr_trace(f"{what} attempt {attempt}/{attempts}"):
-            rig.open()
+        rig.open()
         last_status = rig.error_status
         if last_status == 0:
             return
