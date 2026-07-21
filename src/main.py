@@ -254,6 +254,18 @@ def _migrate_legacy_data() -> None:
     for src_sub in legacy_dir.iterdir():
         if src_sub.suffix in (".db", ".db-wal", ".db-shm"):
             continue  # already handled above
+        if src_sub.is_dir() and src_sub.name.lower() == "logs":
+            # platformdirs nests user_log_dir() under user_data_dir() on
+            # Windows (%LOCALAPPDATA%\<app>\<app>\Logs), so the legacy
+            # app's old log directory shows up here as an ordinary
+            # subdirectory of legacy_dir and was getting merged wholesale
+            # into the new Logs directory -- e.g. a stale
+            # gpredict-improved.log sitting right next to the current
+            # fbsat59.log with no way to tell it's inert (confirmed
+            # live, 2026-07-21). Old log files carry no functional value
+            # (unlike the DB, maps, ephemeris, etc. below), so skip this
+            # one directory entirely.
+            continue
         dst_sub = new_data_dir / src_sub.name
         try:
             if src_sub.is_dir():
