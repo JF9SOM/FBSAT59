@@ -566,9 +566,22 @@ class SdrControlWidget(QWidget):
 
     @Slot(float)
     def _on_center_freq(self, freq_hz: float) -> None:
-        """Update the centre-frequency overlay label."""
+        """Update the centre-frequency overlay label and the manual tune field.
+
+        Keeps _manual_freq_spin showing the SDR's actual live frequency
+        instead of whatever value it was last set to — it previously only
+        reflected the device's frequency at connect time and then went
+        stale, so a manual Tune press while a transponder was selected
+        looked like it "reverted" to a wrong frequency when it was really
+        just an outdated display never catching up with the Doppler
+        correction loop overwriting the real frequency underneath it
+        (GitHub Issue #12 follow-up).
+        """
         mhz = freq_hz / 1e6
         self._freq_overlay.setText(f"{mhz:.6f} MHz")
+        self._manual_freq_spin.blockSignals(True)
+        self._manual_freq_spin.setValue(mhz)
+        self._manual_freq_spin.blockSignals(False)
 
     @Slot(str)
     def _on_status(self, msg: str) -> None:
