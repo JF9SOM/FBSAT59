@@ -48,7 +48,18 @@ header h1 { font-size: 16px; font-weight: 600; color: #58a6ff; }
 }
 @media (max-width: 600px) {
   .main { flex-direction: column; }
-  .sidebar { width: 100%; height: 190px; border-right: none; border-bottom: 1px solid #30363d; }
+  .sidebar {
+    width: 100%;
+    height: 190px;
+    border-right: none;
+    border-bottom: 1px solid #30363d;
+    transition: height 0.2s ease;
+  }
+  .sidebar.collapsed {
+    height: 0;
+    border-bottom: none;
+    overflow: hidden;
+  }
 }
 .sidebar-filter {
   padding: 4px 6px;
@@ -1299,6 +1310,12 @@ async function init() {
     }
     window.addEventListener('resize', resizeRadar);
     setTimeout(resizeRadar, 100);
+  }
+
+  const contentEl = document.querySelector('.content');
+  const sidebarEl = document.querySelector('.sidebar');
+  if (contentEl && sidebarEl) {
+    contentEl.addEventListener('dblclick', () => sidebarEl.classList.toggle('collapsed'));
   }
 
   const [sats, amsat, favSats] = await Promise.all([
