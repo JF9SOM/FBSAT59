@@ -417,19 +417,32 @@ def _hamlib_stderr_trace(label: str) -> Any:
                 import Hamlib as _H
 
                 _H.rig_set_debug(_H.RIG_DEBUG_TRACE)
-            sys.stderr.flush()
+            # sys.stderr is None in a PyInstaller --windowed build (no
+            # console) -- previously called unguarded *before* os.open()
+            # below, so an AttributeError here silently skipped file
+            # creation entirely. Confirmed live (2026-07-21): no
+            # hamlib_trace.log was ever created on a real Windows 11 +
+            # IC-9100 run. Guard it and, more importantly, create the file
+            # (and log a warning to fbsat59.log, which IS reliably
+            # captured) *before* touching fd 2, so a later dup2() failure
+            # still leaves a usable partial trace instead of nothing.
+            with contextlib.suppress(Exception):
+                if sys.stderr is not None:
+                    sys.stderr.flush()
             log_fd = os.open(trace_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+            os.write(log_fd, f"\n=== {label} @ {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n".encode())
             saved_fd = os.dup(2)
             os.dup2(log_fd, 2)
-            os.write(log_fd, f"\n=== {label} @ {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n".encode())
-        except Exception:
+        except Exception as exc:
+            logger.warning("RigDirect: _hamlib_stderr_trace setup failed: %s", exc)
             saved_fd = None
         try:
             yield
         finally:
             if saved_fd is not None:
                 with contextlib.suppress(Exception):
-                    sys.stderr.flush()
+                    if sys.stderr is not None:
+                        sys.stderr.flush()
                 with contextlib.suppress(Exception):
                     os.dup2(saved_fd, 2)
                 with contextlib.suppress(Exception):
