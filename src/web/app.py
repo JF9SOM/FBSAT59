@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import sqlite3
 import sys
 from datetime import UTC, datetime, timedelta
@@ -264,20 +265,52 @@ def _get_amsat_map(db: sqlite3.Connection) -> dict[str, str]:
         return {}
 
 
-def _amsat_status(name: str, amsat_map: dict[str, str]) -> str | None:
-    """Return the operational status for a satellite from the AMSAT map (word-boundary matching)."""
-    lower = name.lower()
-    if lower in amsat_map:
-        return amsat_map[lower]
-    for key, status in amsat_map.items():
-        idx = lower.find(key)
-        if idx == -1:
-            continue
-        before_ok = idx == 0 or not lower[idx - 1].isalnum()
-        after_idx = idx + len(key)
-        after_ok = after_idx >= len(lower) or not lower[after_idx].isalnum()
-        if before_ok and after_ok:
+# Regular expression to extract AMSAT designators like AO-91, FO-29, CAS-4A.
+# Mirrors ui.main_window._DESIG_RE exactly so the web API's "Operational (AMSAT)"
+# filter matches the same satellites as the desktop app.
+_DESIG_RE = re.compile(r"\b([A-Za-z]{2,4})[-\s]?(\d{1,3}[A-Za-z]?)\b")
+
+
+def _extract_designators(name: str) -> set[str]:
+    """Extract and normalize AMSAT designators from a satellite name (e.g. 'AO-91' -> {'ao91'})."""
+    return {(m.group(1) + m.group(2)).lower() for m in _DESIG_RE.finditer(name)}
+
+
+def _amsat_key_in_sat_name(amsat_key: str, sat_name_lower: str) -> bool:
+    """Check whether an AMSAT key appears as a complete token within a satellite name."""
+    pattern = r"(?<![a-z0-9])" + re.escape(amsat_key) + r"(?![a-z0-9])"
+    return bool(re.search(pattern, sat_name_lower))
+
+
+def _build_amsat_lookup(amsat_map: dict[str, str]) -> tuple[dict[str, str], list[str]]:
+    """Precompute the designator lookup and length-sorted keys used by _amsat_status()."""
+    designator_status: dict[str, str] = {}
+    for amsat_name, status in amsat_map.items():
+        for desig in _extract_designators(amsat_name):
+            designator_status[desig] = status
+    amsat_keys_by_len = sorted(amsat_map.keys(), key=len, reverse=True)
+    return designator_status, amsat_keys_by_len
+
+
+def _amsat_status(
+    name: str,
+    alt_names: list[str],
+    amsat_map: dict[str, str],
+    designator_status: dict[str, str],
+    amsat_keys_by_len: list[str],
+) -> str | None:
+    """Return the operational status for a satellite, matching ui.main_window._load_satellites()."""
+    for candidate in [name, *alt_names]:
+        cand_lower = candidate.lower()
+        status = amsat_map.get(cand_lower)
+        if status is not None:
             return status
+        for desig in _extract_designators(candidate):
+            if desig in designator_status:
+                return designator_status[desig]
+        for amsat_key in amsat_keys_by_len:
+            if _amsat_key_in_sat_name(amsat_key, cand_lower):
+                return amsat_map[amsat_key]
     return None
 
 
@@ -406,21 +439,29 @@ def create_app(
         """Return the satellite list sorted by name. Filtered by group when specified."""
         if group == "operational":
             amsat_map = _get_amsat_map(db)
+            designator_status, amsat_keys_by_len = _build_amsat_lookup(amsat_map)
             rows = db.execute(
                 "SELECT norad_cat_id, name, alt_names, status, updated_at"
-                " FROM satellites ORDER BY name"
+                " FROM satellites WHERE is_hidden = 0 ORDER BY name"
             ).fetchall()
-            return [
-                SatelliteOut(
-                    norad_cat_id=row["norad_cat_id"],
-                    name=row["name"],
-                    alt_names=_parse_alt_names(row["alt_names"]),
-                    status=row["status"] or "unknown",
-                    updated_at=row["updated_at"],
+            result: list[SatelliteOut] = []
+            for row in rows:
+                alt_names = _parse_alt_names(row["alt_names"])
+                status = _amsat_status(
+                    str(row["name"]), alt_names, amsat_map, designator_status, amsat_keys_by_len
                 )
-                for row in rows
-                if _amsat_status(str(row["name"]), amsat_map) == "operational"
-            ]
+                if status != "operational":
+                    continue
+                result.append(
+                    SatelliteOut(
+                        norad_cat_id=row["norad_cat_id"],
+                        name=row["name"],
+                        alt_names=alt_names,
+                        status=row["status"] or "unknown",
+                        updated_at=row["updated_at"],
+                    )
+                )
+            return result
         if group == "favorites":
             rows = db.execute(
                 "SELECT norad_cat_id, name, alt_names, status, updated_at"
@@ -632,12 +673,23 @@ def create_app(
 
         if group == "operational":
             amsat_map = _get_amsat_map(db)
+            designator_status, amsat_keys_by_len = _build_amsat_lookup(amsat_map)
             all_sat_rows = db.execute(
-                "SELECT s.norad_cat_id, s.name FROM satellites s"
+                "SELECT s.norad_cat_id, s.name, s.alt_names FROM satellites s"
                 " JOIN tle_data t ON s.norad_cat_id = t.norad_cat_id"
+                " WHERE s.is_hidden = 0"
             ).fetchall()
             sat_rows = [
-                r for r in all_sat_rows if _amsat_status(str(r["name"]), amsat_map) == "operational"
+                r
+                for r in all_sat_rows
+                if _amsat_status(
+                    str(r["name"]),
+                    _parse_alt_names(r["alt_names"]),
+                    amsat_map,
+                    designator_status,
+                    amsat_keys_by_len,
+                )
+                == "operational"
             ]
         elif group == "all":
             sat_rows = db.execute(
