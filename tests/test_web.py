@@ -331,9 +331,9 @@ class TestRootPage:
         resp = client.get("/")
         assert "text/html" in resp.headers["content-type"]
 
-    def test_contains_gpredict(self, client: TestClient) -> None:
+    def test_contains_app_title(self, client: TestClient) -> None:
         resp = client.get("/")
-        assert "GPredict" in resp.text
+        assert "FBSAT59" in resp.text
 
 
 # ---------------------------------------------------------------------------
