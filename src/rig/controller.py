@@ -391,6 +391,57 @@ def _hamlib_trace_log_path() -> str | None:
         return None
 
 
+def _find_hamlib_library_path() -> str | None:
+    """Locate the actual bundled Hamlib shared library file on disk.
+
+    Used only by _hamlib_ensure_file_trace() to get a full path for
+    ctypes.CDLL(), instead of guessing a bare filename and relying on
+    the OS's DLL/shared-library search path to resolve it -- confirmed
+    live (2026-07-21) that neither "libhamlib-4.dll" nor "libhamlib.dll"
+    matched this project's actual Windows bundle. fbsat59.spec collects
+    every *.dll matched from the official Hamlib Windows release zip
+    (the CI build script itself only pattern-matches "*hamlib*.dll"
+    rather than hardcoding an exact name) into the PyInstaller bundle
+    root, which for this project's onedir build may be nested under
+    _internal/ next to the .exe (PyInstaller 6+ default) rather than
+    directly beside it.
+
+    Searches near wherever the already-imported Hamlib Python module
+    itself was loaded from first (most reliable: DLL dependencies are
+    normally co-located with the extension module that needs them, and
+    main.py's os.add_dll_directory() calls assume exactly this), then
+    falls back to a recursive search from the running executable's own
+    directory.
+    """
+    import glob
+
+    search_roots: list[str] = []
+    with contextlib.suppress(Exception):
+        import Hamlib as _H
+
+        mod_file = getattr(_H, "__file__", None)
+        if mod_file:
+            search_roots.append(os.path.dirname(os.path.abspath(mod_file)))
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        search_roots.append(meipass)
+    with contextlib.suppress(Exception):
+        search_roots.append(os.path.dirname(os.path.abspath(sys.executable)))
+
+    seen: set[str] = set()
+    patterns = ("*hamlib*.dll", "*hamlib*.dylib", "libhamlib*.so*")
+    for root in search_roots:
+        if not root or root in seen or not os.path.isdir(root):
+            continue
+        seen.add(root)
+        for pattern in patterns:
+            for path in glob.glob(os.path.join(root, pattern)):
+                return path
+            for path in glob.glob(os.path.join(root, "**", pattern), recursive=True):
+                return path
+    return None
+
+
 def _hamlib_ensure_file_trace() -> None:
     """Idempotently redirect Hamlib's own debug stream to
     hamlib_trace.log for the rest of the process's lifetime.
@@ -439,12 +490,26 @@ def _hamlib_ensure_file_trace() -> None:
 
                 _H.rig_set_debug(_H.RIG_DEBUG_TRACE)
 
+            # Bare guessed names ("libhamlib-4.dll", "libhamlib.dll")
+            # confirmed live (2026-07-21) to NOT match this project's
+            # actual Windows bundle -- fbsat59.spec places every
+            # *.dll matched from the official Hamlib Windows release zip
+            # (whatever its exact name turns out to be; the CI build
+            # script itself only pattern-matches "*hamlib*.dll" rather
+            # than hardcoding it) into the PyInstaller bundle root, which
+            # for this project's onedir build is not necessarily right
+            # next to the running .exe (PyInstaller 6+ defaults to a
+            # nested _internal/ subdirectory). Search the filesystem for
+            # the real file instead of guessing a bare name for ctypes'
+            # DLL-search-path resolution.
+            found_path = _find_hamlib_library_path()
+            candidates = [found_path] if found_path else []
             if sys.platform == "win32":
-                candidates = ["libhamlib-4.dll", "libhamlib.dll"]
+                candidates += ["libhamlib-4.dll", "libhamlib.dll"]
             elif sys.platform == "darwin":
-                candidates = ["libhamlib.4.dylib", "libhamlib.dylib"]
+                candidates += ["libhamlib.4.dylib", "libhamlib.dylib"]
             else:
-                candidates = ["libhamlib.so.4", "libhamlib.so"]
+                candidates += ["libhamlib.so.4", "libhamlib.so"]
 
             lib = None
             for name in candidates:
@@ -453,8 +518,8 @@ def _hamlib_ensure_file_trace() -> None:
                     break
             if lib is None:
                 # POSIX only: None searches every already-loaded global
-                # symbol table, a last-resort fallback if the exact
-                # sofile name above didn't match what's actually loaded.
+                # symbol table, a last-resort fallback if none of the
+                # names above matched what's actually loaded.
                 with contextlib.suppress(OSError):
                     lib = ctypes.CDLL(None)
 
