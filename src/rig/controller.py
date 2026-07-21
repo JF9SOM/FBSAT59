@@ -511,11 +511,30 @@ def _hamlib_ensure_file_trace() -> None:
             else:
                 candidates += ["libhamlib.so.4", "libhamlib.so"]
 
+            # Python 3.8+ on Windows no longer searches PATH/CWD for a
+            # loaded DLL's own dependencies unless the directory is
+            # explicitly registered first -- confirmed live (2026-07-21):
+            # _find_hamlib_library_path() correctly located the real file
+            # (...\_internal\libhamlib-4.dll) yet ctypes.CDLL() on that
+            # exact full path still failed, which "file not found" alone
+            # cannot explain; a missing MinGW-runtime/libusb dependency
+            # DLL sitting right next to it (in the same _internal/
+            # directory, so not itself a location problem) is the likely
+            # cause. main.py already does this for the normal `import
+            # Hamlib` path elsewhere in the app, but that doesn't cover
+            # this separate ctypes.CDLL() call.
+            if sys.platform == "win32" and found_path:
+                with contextlib.suppress(Exception):
+                    os.add_dll_directory(os.path.dirname(found_path))  # type: ignore[attr-defined]
+
             lib = None
+            last_load_error: Exception | None = None
             for name in candidates:
-                with contextlib.suppress(OSError):
+                try:
                     lib = ctypes.CDLL(name)
                     break
+                except OSError as exc:
+                    last_load_error = exc
             if lib is None:
                 # POSIX only: None searches every already-loaded global
                 # symbol table, a last-resort fallback if none of the
@@ -523,7 +542,15 @@ def _hamlib_ensure_file_trace() -> None:
                 with contextlib.suppress(OSError):
                     lib = ctypes.CDLL(None)
 
-            if lib is None or not hasattr(lib, "rig_set_debug_filename"):
+            if lib is None:
+                logger.warning(
+                    "RigDirect: could not load Hamlib library via ctypes "
+                    "(tried %s, last error: %s)",
+                    candidates,
+                    last_load_error,
+                )
+                return
+            if not hasattr(lib, "rig_set_debug_filename"):
                 logger.warning(
                     "RigDirect: rig_set_debug_filename not found in Hamlib library (tried %s)",
                     candidates,
