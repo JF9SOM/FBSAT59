@@ -579,9 +579,15 @@ class SdrControlWidget(QWidget):
         """
         mhz = freq_hz / 1e6
         self._freq_overlay.setText(f"{mhz:.6f} MHz")
-        self._manual_freq_spin.blockSignals(True)
-        self._manual_freq_spin.setValue(mhz)
-        self._manual_freq_spin.blockSignals(False)
+        # Skip while the user has the field focused (mid-edit): this fires at
+        # ~10fps, so overwriting it unconditionally clobbered every keystroke
+        # of a manual retune before editingFinished could ever see the typed
+        # value, making it impossible to enter a new frequency at all
+        # (regression found right after the fix above shipped, Issue #12).
+        if not self._manual_freq_spin.hasFocus():
+            self._manual_freq_spin.blockSignals(True)
+            self._manual_freq_spin.setValue(mhz)
+            self._manual_freq_spin.blockSignals(False)
 
     @Slot(str)
     def _on_status(self, msg: str) -> None:
