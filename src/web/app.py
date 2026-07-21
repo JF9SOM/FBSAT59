@@ -6,9 +6,9 @@ For tests it can be created with an in-memory DB and None engine.
 
 Endpoints:
     GET  /api/satellites                    — satellite list
-    GET  /api/favorites                     — favorite satellite list
-    POST /api/favorites/{norad}             — add to favorites
-    DEL  /api/favorites/{norad}             — remove from favorites
+    GET  /api/favorites                     — favorite satellite list (any custom group)
+    GET  /api/custom-groups                 — custom favorite groups (e.g. Favorite 1/2/3)
+    PUT  /api/satellites/{norad}/favorite-group — assign/clear a satellite's favorite group
     GET  /api/satellites/{norad}/transmitters — transmitter list
     GET  /api/satellites/{norad}/passes     — pass prediction
     GET  /api/tle/status                    — TLE quality list
@@ -77,6 +77,23 @@ class SatelliteOut(BaseModel):
     alt_names: list[str]
     status: str
     updated_at: str | None
+    amsat_status: str | None = None
+    favorite_group: int = 0
+    tle_no_result_since: str | None = None
+
+
+class CustomGroupOut(BaseModel):
+    """Custom favorite group (e.g. "Favorite 1")."""
+
+    id: int
+    name: str
+    sort_order: int
+
+
+class FavoriteGroupIn(BaseModel):
+    """Request body for PUT /api/satellites/{norad}/favorite-group."""
+
+    group_id: int
 
 
 class TransmitterOut(BaseModel):
@@ -131,6 +148,7 @@ class GroupPassOut(BaseModel):
     los_azimuth_deg: float
     duration_seconds: float
     quality: str
+    amsat_status: str | None = None
 
 
 class TLEStatusOut(BaseModel):
@@ -314,6 +332,32 @@ def _amsat_status(
     return None
 
 
+def _build_satellite_out(
+    row: sqlite3.Row,
+    amsat_map: dict[str, str],
+    designator_status: dict[str, str],
+    amsat_keys_by_len: list[str],
+) -> SatelliteOut:
+    """Build a SatelliteOut from a DB row, computing amsat_status the same way the
+    desktop app's satellite list does (name + alt_names + designator matching).
+    """
+    alt_names = _parse_alt_names(row["alt_names"])
+    name = str(row["name"])
+    keys = row.keys()
+    return SatelliteOut(
+        norad_cat_id=row["norad_cat_id"],
+        name=name,
+        alt_names=alt_names,
+        status=row["status"] or "unknown",
+        updated_at=row["updated_at"],
+        amsat_status=_amsat_status(
+            name, alt_names, amsat_map, designator_status, amsat_keys_by_len
+        ),
+        favorite_group=int(row["favorite_group"] or 0) if "favorite_group" in keys else 0,
+        tle_no_result_since=(row["tle_no_result_since"] if "tle_no_result_since" in keys else None),
+    )
+
+
 def _parse_dt_utc(s: str) -> datetime:
     """Convert an ISO 8601 string to a UTC-aware datetime. Naive strings are treated as UTC."""
     dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
@@ -431,64 +475,68 @@ def create_app(
         except (json.JSONDecodeError, TypeError, ValueError):
             return {}
 
+    _SAT_COLUMNS = (
+        "norad_cat_id, name, alt_names, status, updated_at, favorite_group, tle_no_result_since"
+    )
+
     @app.get("/api/satellites", response_model=list[SatelliteOut])
     async def list_satellites(
-        group: str | None = Query(default=None, description="tle_group filter"),
+        group: str | None = Query(
+            default=None,
+            description="tle_group filter, 'fav:<custom_group_id>', or 'operational'",
+        ),
         db: sqlite3.Connection = Depends(get_conn),
     ) -> list[SatelliteOut]:
-        """Return the satellite list sorted by name. Filtered by group when specified."""
-        if group == "operational":
-            amsat_map = _get_amsat_map(db)
-            designator_status, amsat_keys_by_len = _build_amsat_lookup(amsat_map)
+        """Return the satellite list sorted by name. Filtered by group when specified.
+
+        Mirrors ui.main_window._apply_filter(): every group except "all" excludes
+        is_hidden != 0 satellites, matching the desktop app's default visibility.
+        """
+        amsat_map = _get_amsat_map(db)
+        designator_status, amsat_keys_by_len = _build_amsat_lookup(amsat_map)
+
+        if group and group.startswith("fav:"):
+            try:
+                group_id = int(group[len("fav:") :])
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail="Invalid favorite group id") from exc
             rows = db.execute(
-                "SELECT norad_cat_id, name, alt_names, status, updated_at"
-                " FROM satellites WHERE is_hidden = 0 ORDER BY name"
+                f"SELECT {_SAT_COLUMNS} FROM satellites"
+                " WHERE is_hidden = 0 AND favorite_group = ? ORDER BY name",
+                (group_id,),
             ).fetchall()
-            result: list[SatelliteOut] = []
-            for row in rows:
-                alt_names = _parse_alt_names(row["alt_names"])
-                status = _amsat_status(
-                    str(row["name"]), alt_names, amsat_map, designator_status, amsat_keys_by_len
-                )
-                if status != "operational":
-                    continue
-                result.append(
-                    SatelliteOut(
-                        norad_cat_id=row["norad_cat_id"],
-                        name=row["name"],
-                        alt_names=alt_names,
-                        status=row["status"] or "unknown",
-                        updated_at=row["updated_at"],
-                    )
-                )
-            return result
-        if group == "favorites":
-            rows = db.execute(
-                "SELECT norad_cat_id, name, alt_names, status, updated_at"
-                " FROM satellites WHERE is_favorite = 1 ORDER BY name"
+        elif group == "operational":
+            all_rows = db.execute(
+                f"SELECT {_SAT_COLUMNS} FROM satellites WHERE is_hidden = 0 ORDER BY name"
             ).fetchall()
+            rows = [
+                r
+                for r in all_rows
+                if _amsat_status(
+                    str(r["name"]),
+                    _parse_alt_names(r["alt_names"]),
+                    amsat_map,
+                    designator_status,
+                    amsat_keys_by_len,
+                )
+                == "operational"
+            ]
         elif group and group != "all":
             rows = db.execute(
-                "SELECT s.norad_cat_id, s.name, s.alt_names, s.status, s.updated_at"
+                "SELECT s.norad_cat_id, s.name, s.alt_names, s.status, s.updated_at,"
+                " s.favorite_group, s.tle_no_result_since"
                 " FROM satellites s"
                 " JOIN tle_data t ON s.norad_cat_id = t.norad_cat_id"
-                " WHERE t.tle_group = ?"
+                " WHERE s.is_hidden = 0 AND t.tle_group = ?"
                 " ORDER BY s.name",
                 (group,),
             ).fetchall()
         else:
             rows = db.execute(
-                "SELECT norad_cat_id, name, alt_names, status, updated_at"
-                " FROM satellites ORDER BY name"
+                f"SELECT {_SAT_COLUMNS} FROM satellites WHERE is_hidden = 0 ORDER BY name"
             ).fetchall()
         return [
-            SatelliteOut(
-                norad_cat_id=row["norad_cat_id"],
-                name=row["name"],
-                alt_names=_parse_alt_names(row["alt_names"]),
-                status=row["status"] or "unknown",
-                updated_at=row["updated_at"],
-            )
+            _build_satellite_out(row, amsat_map, designator_status, amsat_keys_by_len)
             for row in rows
         ]
 
@@ -496,48 +544,50 @@ def create_app(
     async def list_favorites(
         db: sqlite3.Connection = Depends(get_conn),
     ) -> list[SatelliteOut]:
-        """Return the list of favorite satellites (is_favorite=1)."""
+        """Return every favorited satellite (favorite_group > 0), any custom group."""
+        amsat_map = _get_amsat_map(db)
+        designator_status, amsat_keys_by_len = _build_amsat_lookup(amsat_map)
         rows = db.execute(
-            "SELECT norad_cat_id, name, alt_names, status, updated_at"
-            " FROM satellites WHERE is_favorite = 1 ORDER BY name"
+            f"SELECT {_SAT_COLUMNS} FROM satellites WHERE favorite_group > 0 ORDER BY name"
         ).fetchall()
         return [
-            SatelliteOut(
-                norad_cat_id=row["norad_cat_id"],
-                name=row["name"],
-                alt_names=_parse_alt_names(row["alt_names"]),
-                status=row["status"] or "unknown",
-                updated_at=row["updated_at"],
-            )
+            _build_satellite_out(row, amsat_map, designator_status, amsat_keys_by_len)
             for row in rows
         ]
 
-    @app.post("/api/favorites/{norad}", status_code=204, response_model=None)
-    async def add_favorite(
-        norad: int,
+    @app.get("/api/custom-groups", response_model=list[CustomGroupOut])
+    async def list_custom_groups(
         db: sqlite3.Connection = Depends(get_conn),
-    ) -> None:
-        """Add the specified satellite to favorites (is_favorite=1). Returns 404 if not found."""
-        if (
-            db.execute("SELECT 1 FROM satellites WHERE norad_cat_id = ?", (norad,)).fetchone()
-            is None
-        ):
-            raise HTTPException(status_code=404, detail=f"Satellite {norad} not found")
-        db.execute("UPDATE satellites SET is_favorite = 1 WHERE norad_cat_id = ?", (norad,))
-        db.commit()
+    ) -> list[CustomGroupOut]:
+        """Return the custom favorite groups (e.g. Favorite 1/2/3), same order as desktop."""
+        rows = db.execute(
+            "SELECT id, name, sort_order FROM custom_groups ORDER BY sort_order, id"
+        ).fetchall()
+        return [
+            CustomGroupOut(id=row["id"], name=row["name"], sort_order=row["sort_order"])
+            for row in rows
+        ]
 
-    @app.delete("/api/favorites/{norad}", status_code=204, response_model=None)
-    async def remove_favorite(
+    @app.put("/api/satellites/{norad}/favorite-group", status_code=204, response_model=None)
+    async def set_favorite_group(
         norad: int,
+        body: FavoriteGroupIn,
         db: sqlite3.Connection = Depends(get_conn),
     ) -> None:
-        """Remove the satellite from favorites (is_favorite=0). Returns 404 when not found."""
+        """Assign (or clear, group_id=0) a satellite's custom favorite group.
+
+        Mirrors ui.main_window.MainWindow._set_favorite_group() exactly, including
+        keeping the legacy is_favorite flag in sync.
+        """
         if (
             db.execute("SELECT 1 FROM satellites WHERE norad_cat_id = ?", (norad,)).fetchone()
             is None
         ):
             raise HTTPException(status_code=404, detail=f"Satellite {norad} not found")
-        db.execute("UPDATE satellites SET is_favorite = 0 WHERE norad_cat_id = ?", (norad,))
+        db.execute(
+            "UPDATE satellites SET favorite_group = ?, is_favorite = ? WHERE norad_cat_id = ?",
+            (body.group_id, 1 if body.group_id > 0 else 0, norad),
+        )
         db.commit()
 
     @app.get(
@@ -671,9 +721,10 @@ def create_app(
         if pass_predictor is None:
             return []
 
+        amsat_map = _get_amsat_map(db)
+        designator_status, amsat_keys_by_len = _build_amsat_lookup(amsat_map)
+
         if group == "operational":
-            amsat_map = _get_amsat_map(db)
-            designator_status, amsat_keys_by_len = _build_amsat_lookup(amsat_map)
             all_sat_rows = db.execute(
                 "SELECT s.norad_cat_id, s.name, s.alt_names FROM satellites s"
                 " JOIN tle_data t ON s.norad_cat_id = t.norad_cat_id"
@@ -693,14 +744,15 @@ def create_app(
             ]
         elif group == "all":
             sat_rows = db.execute(
-                "SELECT s.norad_cat_id, s.name FROM satellites s"
+                "SELECT s.norad_cat_id, s.name, s.alt_names FROM satellites s"
                 " JOIN tle_data t ON s.norad_cat_id = t.norad_cat_id"
+                " WHERE s.is_hidden = 0"
             ).fetchall()
         else:
             sat_rows = db.execute(
-                "SELECT s.norad_cat_id, s.name FROM satellites s"
+                "SELECT s.norad_cat_id, s.name, s.alt_names FROM satellites s"
                 " JOIN tle_data t ON s.norad_cat_id = t.norad_cat_id"
-                " WHERE t.tle_group = ?",
+                " WHERE s.is_hidden = 0 AND t.tle_group = ?",
                 (group,),
             ).fetchall()
 
@@ -708,6 +760,13 @@ def create_app(
         for row in sat_rows:
             norad = int(row["norad_cat_id"])
             name = str(row["name"])
+            amsat_status = _amsat_status(
+                name,
+                _parse_alt_names(row["alt_names"]),
+                amsat_map,
+                designator_status,
+                amsat_keys_by_len,
+            )
             try:
                 passes = pass_predictor.get_passes(norad, start, end, min_elevation_deg=min_el)
             except Exception as exc:
@@ -726,6 +785,7 @@ def create_app(
                         los_azimuth_deg=p.los_azimuth_deg,
                         duration_seconds=p.duration_s,
                         quality=pass_quality(p.max_elevation_deg),
+                        amsat_status=amsat_status,
                     )
                 )
         results.sort(key=lambda x: x.aos)

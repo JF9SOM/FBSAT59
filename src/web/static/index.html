@@ -107,8 +107,39 @@ header h1 { font-size: 16px; font-weight: 600; color: #58a6ff; }
 }
 #sat-list li:hover { background: #21262d; }
 #sat-list li.selected { background: #1c2c3e; color: #58a6ff; }
-#sat-list li.operational { color: #2ecc71; }
-#sat-list li.non_operational { color: #7f8c8d; font-style: italic; }
+/* AMSAT status color cascade — mirrors ui.main_window._apply_filter() exactly */
+#sat-list li.amsat-operational { color: #2ecc71; font-weight: 600; }
+#sat-list li.amsat-partial { color: #f1c40f; }
+#sat-list li.amsat-non-operational { color: #e74c3c; }
+#sat-list li.tle-grace { color: #9b59b6; font-style: italic; }
+#sat-list li.status-alive { color: #e67e22; }
+#sat-list li.status-other { color: #7f8c8d; }
+td.operational { color: #2ecc71; font-weight: 600; }
+.fav-menu {
+  position: absolute;
+  z-index: 1000;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  overflow: hidden;
+}
+.fav-menu button {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #21262d;
+  color: #c9d1d9;
+  padding: 9px 14px;
+  text-align: left;
+  font-size: 13px;
+  cursor: pointer;
+}
+.fav-menu button:last-child { border-bottom: none; }
+.fav-menu button:hover, .fav-menu button:active { background: #21262d; }
+.fav-menu button.fav-menu-remove { color: #e74c3c; }
 .fav-btn {
   cursor: pointer;
   color: #555;
@@ -501,8 +532,8 @@ canvas#radar { background: transparent; }
   <aside class="sidebar">
     <div class="sidebar-filter">
       <select id="group-filter" onchange="onGroupChange()">
-        <option value="all">All Satellites</option>
-        <option value="favorites">&#9733; Favorites</option>
+        <option id="opt-all" value="all">All Satellites</option>
+        <!-- ★ custom favorite group options (e.g. Favorite 1/2/3) are inserted here at init() -->
         <option value="amateur">Amateur</option>
         <option value="cubesat">CubeSat</option>
         <option value="weather">Weather</option>
@@ -702,8 +733,8 @@ canvas#radar { background: transparent; }
 
 /* ── State ── */
 let allSats = [];
-let amsatMap = {};
-let favorites = new Set();
+let customGroups = [];       // [{id, name, sort_order}, ...] — mirrors desktop's ★ Favorite N filters
+let favMap = new Map();      // norad_cat_id -> favorite_group id (0/absent = not favorited)
 let selectedNorad = null;
 let ws = null;
 let radarView = null;
@@ -748,31 +779,71 @@ function switchTab(id, btn) {
   if (id === 'track') setTimeout(resizeRadar, 50);
 }
 
-/* ── AMSAT matching ── */
-function getAmsatStatus(satName) {
-  const lower = satName.toLowerCase();
-  if (amsatMap[lower] !== undefined) return amsatMap[lower];
-  for (const [key, status] of Object.entries(amsatMap)) {
-    const idx = lower.indexOf(key);
-    if (idx === -1) continue;
-    const before = idx === 0 || !/[a-z0-9]/.test(lower[idx - 1]);
-    const after = idx + key.length >= lower.length || !/[a-z0-9]/.test(lower[idx + key.length]);
-    if (before && after) return status;
-  }
-  return null;
+/* ── AMSAT status color cascade — mirrors ui.main_window._apply_filter() exactly.
+   sat.amsat_status / sat.status / sat.tle_no_result_since all come straight from the
+   server (web.app._build_satellite_out), so no client-side re-matching is needed. */
+function amsatColorClass(sat) {
+  if (sat.amsat_status === 'operational') return 'amsat-operational';
+  if (sat.amsat_status === 'partial') return 'amsat-partial';
+  if (sat.amsat_status === 'non_operational') return 'amsat-non-operational';
+  if (sat.tle_no_result_since) return 'tle-grace';
+  if (sat.status === 'alive') return 'status-alive';
+  return 'status-other';
 }
 
-/* ── Favorites ── */
-async function toggleFav(norad) {
-  const wasFav = favorites.has(norad);
-  const resp = await fetch(`/api/favorites/${norad}`, {
-    method: wasFav ? 'DELETE' : 'POST'
+/* ── Favorites (custom groups, e.g. ★ Favorite 1/2/3 — mirrors desktop exactly) ── */
+let favMenuEl = null;
+
+function closeFavMenu() {
+  if (favMenuEl) { favMenuEl.remove(); favMenuEl = null; }
+  document.removeEventListener('click', closeFavMenuOnOutsideClick, true);
+}
+
+function closeFavMenuOnOutsideClick(e) {
+  if (favMenuEl && !favMenuEl.contains(e.target)) closeFavMenu();
+}
+
+function openFavMenu(norad, anchorEl) {
+  closeFavMenu();
+  const menu = document.createElement('div');
+  menu.className = 'fav-menu';
+  const currentGroup = favMap.get(norad) || 0;
+  customGroups.forEach(g => {
+    const btn = document.createElement('button');
+    btn.textContent = (g.id === currentGroup ? '✓ ' : '') + g.name;
+    btn.addEventListener('click', () => setFavoriteGroup(norad, g.id));
+    menu.appendChild(btn);
+  });
+  if (currentGroup > 0) {
+    const rmBtn = document.createElement('button');
+    rmBtn.className = 'fav-menu-remove';
+    rmBtn.textContent = 'Remove from favorites';
+    rmBtn.addEventListener('click', () => setFavoriteGroup(norad, 0));
+    menu.appendChild(rmBtn);
+  }
+  document.body.appendChild(menu);
+  const rect = anchorEl.getBoundingClientRect();
+  menu.style.top = `${rect.bottom + window.scrollY + 4}px`;
+  menu.style.left = `${rect.left + window.scrollX}px`;
+  favMenuEl = menu;
+  setTimeout(() => document.addEventListener('click', closeFavMenuOnOutsideClick, true), 0);
+}
+
+async function setFavoriteGroup(norad, groupId) {
+  closeFavMenu();
+  const resp = await fetch(`/api/satellites/${norad}/favorite-group`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ group_id: groupId }),
   }).catch(() => null);
   if (!resp || !resp.ok) return;
-  if (wasFav) favorites.delete(norad);
-  else favorites.add(norad);
-  if (document.getElementById('group-filter').value === 'favorites') {
-    allSats = await fetch('/api/satellites?group=favorites').then(r => r.json()).catch(() => allSats);
+  if (groupId > 0) favMap.set(norad, groupId);
+  else favMap.delete(norad);
+  const currentFilter = document.getElementById('group-filter').value;
+  if (currentFilter.startsWith('fav:')) {
+    // Re-fetch so a satellite that no longer belongs to this group disappears immediately
+    allSats = await fetch(`/api/satellites?group=${encodeURIComponent(currentFilter)}`)
+      .then(r => r.json()).catch(() => allSats);
   }
   renderSatList();
 }
@@ -790,10 +861,8 @@ function renderSatList() {
   ul.innerHTML = '';
   allSats.forEach(sat => {
     const li = document.createElement('li');
-    const isFav = favorites.has(sat.norad_cat_id);
-    const status = getAmsatStatus(sat.name);
-    if (status === 'operational') li.classList.add('operational');
-    else if (status === 'non_operational') li.classList.add('non_operational');
+    const isFav = (favMap.get(sat.norad_cat_id) || 0) > 0;
+    li.classList.add(amsatColorClass(sat));
     if (sat.norad_cat_id === selectedNorad) li.classList.add('selected');
     li.dataset.name = sat.name.toLowerCase();
     li.dataset.norad = sat.norad_cat_id;
@@ -801,7 +870,7 @@ function renderSatList() {
     const favSpan = document.createElement('span');
     favSpan.className = 'fav-btn' + (isFav ? ' active' : '');
     favSpan.textContent = isFav ? '★' : '☆';
-    favSpan.addEventListener('click', e => { e.stopPropagation(); toggleFav(sat.norad_cat_id); });
+    favSpan.addEventListener('click', e => { e.stopPropagation(); openFavMenu(sat.norad_cat_id, favSpan); });
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'sat-name';
@@ -957,7 +1026,7 @@ function renderGroupPassPage() {
   const page = gpAllResults.slice(start, start + GP_PAGE_SIZE);
   tbody.innerHTML = page.map(p => {
     const q = p.quality;
-    const isOp = getAmsatStatus(p.sat_name) === 'operational';
+    const isOp = p.amsat_status === 'operational';
     return `<tr>
       <td${isOp ? ' class="operational"' : ''}>${escHtml(p.sat_name)}</td>
       <td>${fmtAOS(p.aos)}</td>
@@ -1318,15 +1387,28 @@ async function init() {
     contentEl.addEventListener('dblclick', () => sidebarEl.classList.toggle('collapsed'));
   }
 
-  const [sats, amsat, favSats] = await Promise.all([
+  const [sats, groups, favSats] = await Promise.all([
     fetch('/api/satellites').then(r => r.json()).catch(() => []),
-    fetch('/api/amsat').then(r => r.json()).catch(() => ({})),
+    fetch('/api/custom-groups').then(r => r.json()).catch(() => []),
     fetch('/api/favorites').then(r => r.json()).catch(() => []),
   ]);
 
   allSats = sats;
-  amsatMap = amsat;
-  favorites = new Set(favSats.map(s => s.norad_cat_id));
+  customGroups = groups;
+  favMap = new Map(favSats.map(s => [s.norad_cat_id, s.favorite_group]));
+
+  const optAll = document.getElementById('opt-all');
+  if (optAll) {
+    let afterEl = optAll;
+    customGroups.forEach(g => {
+      const opt = document.createElement('option');
+      opt.value = `fav:${g.id}`;
+      opt.textContent = `★ ${g.name}`;
+      afterEl.insertAdjacentElement('afterend', opt);
+      afterEl = opt;
+    });
+  }
+
   renderSatList();
 }
 
