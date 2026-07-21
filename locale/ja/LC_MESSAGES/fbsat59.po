@@ -3702,6 +3702,9 @@ msgid ""
 "be reached. If FT4/Q65 decoding fails, check your network connection and "
 "system clock settings."
 msgstr ""
+"システムクロックの精度を確認できませんでした — NTPタイムサーバーに一つも接続"
+"できませんでした。FT4/Q65のデコードに失敗する場合は、ネットワーク接続とシス"
+"テムのクロック設定を確認してください。"
 
 #: src/ui/main_window.py:3311
 #, python-brace-format
@@ -3710,10 +3713,13 @@ msgid ""
 "{server}). FT4/Q65 decoding requires the clock to be accurate to within "
 "about a second — please check your system's time synchronization settings."
 msgstr ""
+"システムクロックが約 {offset:.2f} 秒ずれている可能性があります（{server} と"
+"照合）。FT4/Q65のデコードにはクロックが1秒程度の精度で正確である必要があり"
+"ます — システムの時刻同期設定を確認してください。"
 
 #: src/ui/main_window.py:3320
 msgid "Clock Sync Check"
-msgstr ""
+msgstr "クロック同期チェック"
 
 #: src/ui/main_window.py:3388 src/ui/main_window.py:4212
 #: src/ui/main_window.py:4248
