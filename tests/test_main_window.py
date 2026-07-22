@@ -1880,6 +1880,11 @@ class TestLockDialFeedback:
             ctrl._rig = MagicMock()
             with ctrl._lock:
                 ctrl._state = RigState.CONNECTED
+        # Simulate the common steady state (last write was DL/Main) so these
+        # tests exercise the normal read path -- see
+        # test_rig_send_direct_satmode_skips_read_when_last_write_was_ul for
+        # the other side (last write was UL/Sub).
+        ctrl._last_written_vfo = "Main"
         return ctrl
 
     def _fake_engine(self, rr: float):
@@ -2483,6 +2488,25 @@ class TestLockDialFeedback:
         rig.get_frequency.assert_called_once_with("Main")
         rig.set_vfo_frequencies.assert_not_called()
         assert w._dial_feedback_offset_hz == 80.0
+
+    def test_rig_send_direct_satmode_skips_read_when_last_write_was_ul(self, qtbot, db) -> None:
+        """When our own last cross-band write left the rig on Sub (i.e. a UL
+        write just happened), the Lock read is skipped entirely -- no
+        get_frequency() call at all -- rather than risk the internal Hamlib
+        VFO switch that reproduced a hang live (2026-07-22). DL gets
+        rewritten almost every cycle, so this self-heals in ~1 cycle."""
+        w = self._make_window(qtbot, db)
+        rig = self._make_satmode_direct_rig(connected=True)
+        rig._last_written_vfo = "Sub"
+        rig.get_frequency = MagicMock(return_value=145_800_080.0)
+        rig.set_vfo_frequencies = MagicMock(return_value=True)
+        w._dial_feedback_offset_hz = 12.3
+
+        self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
+
+        rig.get_frequency.assert_not_called()
+        rig.set_vfo_frequencies.assert_not_called()
+        assert w._dial_feedback_offset_hz == 12.3
 
     def test_rig_send_direct_satmode_read_failure_leaves_offset_unchanged(self, qtbot, db) -> None:
         w = self._make_window(qtbot, db)

@@ -3119,6 +3119,22 @@ class MainWindow(QMainWindow):
                             # vfo_fixup() only remaps RIG_VFO_TX/_SUB/
                             # _SUB_A/_SUB_B, never RIG_VFO_MAIN.
                             if isinstance(rig, HamlibDirectController) and rig.is_satmode:
+                                # Skip this cycle's read entirely (no Hamlib
+                                # call at all) when our own last write left
+                                # the rig on Sub -- see
+                                # last_written_vfo_is_main()'s docstring for
+                                # the full rationale (2026-07-22, confirmed
+                                # live: this is exactly the moment a "Python
+                                # not responding" hang was reproduced). DL
+                                # gets rewritten almost every cycle, so this
+                                # self-heals within about one cycle.
+                                if not rig.last_written_vfo_is_main():
+                                    logger.info(
+                                        "LockWatch: skipping this cycle (last write was UL/Sub), "
+                                        "offset unchanged at %.1fHz",
+                                        self._dial_feedback_offset_hz,
+                                    )
+                                    return
                                 live_dl = rig.get_frequency("Main")
                                 if live_dl < 0:
                                     logger.info(

@@ -845,6 +845,11 @@ class HamlibDirectController(RigController):
         self._last_dl_update_time: float = 0.0
         self._last_ul_hz: float | None = None
         self._last_ul_update_time: float = 0.0
+        # Which VFO our own last cross-band satmode write attempt (DL or UL)
+        # left the rig's Hamlib-tracked "current VFO" on -- see
+        # last_written_vfo_is_main(). Not maintained for same-band/non-satmode
+        # writes (those don't feed the Lock read-skip logic).
+        self._last_written_vfo: str | None = None
         self._ptt_active: bool = False
         self._satmode: bool = model_id in _SATMODE_RIG_IDS
         # True while IC-9100/9700 satmode is actually active on the rig.
@@ -881,6 +886,27 @@ class HamlibDirectController(RigController):
     def is_satmode(self) -> bool:
         """True when this rig uses satmode (model_id in _SATMODE_RIG_IDS)."""
         return self._satmode
+
+    def last_written_vfo_is_main(self) -> bool:
+        """True if our own last cross-band satmode write (DL or UL) left the
+        rig's Hamlib-tracked "current VFO" on Main -- False if it was Sub, or
+        if nothing has been written yet (unknown, treated as unsafe).
+
+        Used by the Lock (dial feedback) read for satmode Direct mode to
+        decide whether it's safe to call get_frequency("Main") this cycle
+        without risking an internal Hamlib VFO switch: for a rig with
+        targetable_vfo == 0 (e.g. IC-9100), Hamlib's generic rig_get_freq()/
+        rig_set_freq() each independently fall back to switching the active
+        VFO whenever the requested VFO doesn't already match the current
+        one -- and the cross-band satmode write path never restores Main
+        after writing UL (confirmed live, 2026-07-22: this is exactly where
+        a "Python not responding" hang was reproduced). Skipping the read
+        for the one cycle right after a UL write avoids ever exercising that
+        switch from the Lock read side, without touching the write path at
+        all -- DL gets rewritten almost every cycle anyway, so this flips
+        back to Main within about one Doppler cycle.
+        """
+        return self._last_written_vfo == "Main"
 
     def connect(self) -> bool:
         """Connect to the serial port."""
@@ -952,6 +978,7 @@ class HamlibDirectController(RigController):
             self._last_dl_update_time = 0.0
             self._last_ul_hz = None
             self._last_ul_update_time = 0.0
+            self._last_written_vfo = None
             self._init_split()
 
             with self._lock:
@@ -981,6 +1008,7 @@ class HamlibDirectController(RigController):
             self._last_dl_hz = None
             self._last_dl_update_time = 0.0
             self._last_ul_hz = None
+            self._last_written_vfo = None
             with self._lock:
                 self._state = RigState.DISCONNECTED
 
@@ -1456,11 +1484,13 @@ class HamlibDirectController(RigController):
                             self._last_dl_hz = vfoa_hz
                             self._last_ul_hz = None
                             self._last_ul_update_time = 0.0
+                            self._last_written_vfo = "Main"
                         elif abs(vfoa_hz - last_dl) >= 1.0:
                             logger.info("RigDirect satmode DL: set_freq(MAIN, %d)", int(vfoa_hz))
                             self._rig.set_freq(main_vfo, int(vfoa_hz))
                             _check_rig_ok(self._rig, "satmode DL set_freq(MAIN)")
                             self._last_dl_hz = vfoa_hz
+                            self._last_written_vfo = "Main"
 
                     if vfob_hz is None:
                         logger.debug(
@@ -1497,6 +1527,7 @@ class HamlibDirectController(RigController):
                             _check_rig_ok(self._rig, f"satmode UL set_freq({vfo_name})")
                             self._last_ul_hz = vfob_hz
                             self._last_ul_update_time = now
+                            self._last_written_vfo = "Sub"
                             if was_first_ul and self._pending_mode_ctcss:
                                 self._pending_mode_ctcss = False
                                 self._resend_mode_ctcss_via_rig()

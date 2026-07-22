@@ -3156,6 +3156,73 @@ Lock ON中はDLもULも書き込まず、Directモードと同じくリグ自身
 本プロジェクト保有のIC-9100借用実機に加え、別ユーザー・別個体のIC-9700でも独立して
 Lock機能の正常動作が確認できたことになる。
 
+#### satmode Directモード — Ctrl+Lで「Python is not responding」を再現・原因特定・修正（2026-07-22）
+
+Ctrl+Lホットキー実装後、実機（IC-9100・Directモード）で試したところ、1回目のLock ONは
+問題なく動作した（DL書き込み停止・手動リチューン量を正しく読み取り）が、**2回目に押した
+（Lock OFF）ときに「Python is not responding」が再発**した。ユーザーからの指摘で
+「今日は時々この現象が起きていたが、satmode機へのドップラー書き込み方法自体は変える
+べきではない」という前提のもと、`fbsat59.log`・`hamlib_trace.log`を確認し、Hamlibソースを
+さらに深く調査した結果、これまで見落としていた事実が判明した。
+
+**新たな発見**: `icom_get_freq()`自体の内部ロジック（Mainは`force_vfo_swap`判定の対象外）
+とは**別に**、その手前の汎用`rig_get_freq()`/`rig_set_freq()`（`src/rig.c`）自体が、
+独立して`caps->targetable_vfo & RIG_TARGETABLE_FREQ`をチェックしている。IC-9100は
+`targetable_vfo = 0`のため、この汎用ラッパーのレベルで「要求されたVFOが現在のVFOと
+一致しない限り、内部で`caps->set_vfo()`を挟む」という分岐に入る——**これはMain読み取りも
+例外ではない**（`vfo == rs->current_vfo`が条件のため）。
+
+さらに`rig_set_freq()`（クロスバンドsatmodeのUL書き込み `set_freq(VFO_TX/SUB, ul_hz)`が
+内部で通る経路）を読むと、この非targetable経路では`rig_set_vfo(rig, vfo)`でSubへ切り替えた
+後、**Mainへの復帰処理が一切ない**（`rig_get_freq()`/`rig_get_split_freq()`にはある
+「try and revert」の復帰ロジックが、`rig_set_freq()`には存在しない）。一方、既存の
+コントローラー実装（`_set_vfo_frequencies_locked()`のクロスバンドsatmode分岐）も、
+UL書き込み後にMainへ戻す処理を持たない（同バンドフォールバック分岐にはある
+`self._rig.set_vfo(rx_vfo)`が、クロスバンド分岐には無い）。
+
+これらを組み合わせると、実際に起きていたことが説明できる: UL書き込み直後、Hamlib内部の
+「現在VFO」はSubに残ったまま。**その直後にLockをONにすると**、Lockの読み取り
+（`get_frequency("Main")`）が「現在VFOがMainでない」ため、汎用`rig_get_freq()`の
+非targetable経路（Subへ切替→読み→**元のSubへ復帰**）を毎サイクル発動させる。これは
+今回のLock機能が、このsatmodeブランチに初めて持ち込んだ新しいVFOアクセスパターンであり、
+UL書き込みの後始末の悪さ（Mainへの復帰なし）と組み合わさって、短時間に何度もVFO切替
+コマンドが送られることになり、リグ側の拒否（Hamlib error -9、`hamlib_trace.log`で確認済み）
+と、最終的な応答なしハング（トレースがCI-Vコマンド送信直後、応答ログなしで途切れる）を
+引き起こしていた。
+
+**ユーザーからの重要な指摘**: 「同バンド分岐にある`self._rig.set_vfo(rx_vfo)`をクロスバンド
+にも追加すればいいのでは」という対策案に対し、ユーザーから「同バンドはHamlib標準のsplit
+モードでありsatmodeとは別物。satmodeで明示的な`set_vfo()`を新設すれば、今回の調査全体が
+示した『satmodeでの明示的VFO切替は危険』という結論に反するのでは」という的確な指摘があった。
+その通りであり、この対策案は撤回した。
+
+**採用した修正（通常の書き込みロジックには一切手を加えない、Lock読み取り側だけに限定した
+対策）**: `HamlibDirectController`に`self._last_written_vfo: str | None`（"Main"/"Sub"/None）
+を新設し、クロスバンドsatmode分岐のDL書き込み成功時に`"Main"`、UL書き込み成功時に`"Sub"`を
+記録する（`connect()`/`disconnect()`で`None`にリセット）。公開メソッド
+`last_written_vfo_is_main() -> bool`を追加し、`_rig_send()`のsatmode Direct分岐は
+**このメソッドが`False`を返す場合（直前がUL書き込み、または不明）、`get_frequency("Main")`
+自体を一切呼ばず、そのサイクルはスキップ**（読み取り失敗時と同様、オフセットは前回値を維持）
+するよう変更した。DLはほぼ毎サイクル書き込まれるため、危険な瞬間は実質「UL書き込み直後の
+1サイクルだけ」に限定され、次のサイクルには自然にMainへ戻って通常通り読み取れる。
+
+この設計により:
+- 通常の書き込みロジック（DL/UL双方の`_set_vfo_frequencies_locked()`）は一切変更なし
+- 新設した`_last_written_vfo`フラグの更新も、書き込みが成功した後に追記するだけで、
+  書き込みのタイミング・順序・リトライロジックには影響しない
+- Lockの読み取り側だけが、危険な瞬間（UL書き込み直後）を検知して自ら1サイクル分だけ
+  沈黙する、という限定的な変更にとどまる
+
+テスト: `tests/test_main_window.py`の`TestLockDialFeedback`に
+`test_rig_send_direct_satmode_skips_read_when_last_write_was_ul`を追加
+（`rig._last_written_vfo = "Sub"`の状態で`get_frequency()`が一切呼ばれず、オフセットも
+変化しないことを検証）。既存の3件の satmode Direct テスト（読み取り成功・失敗・
+implausible jump）は`_make_satmode_direct_rig()`ヘルパーが`_last_written_vfo = "Main"`を
+デフォルト設定するよう変更し、通常の読み取り経路を引き続き検証する。
+
+**検証状況**: 静的解析（Hamlibソース）と論理的な整合性に基づく修正であり、実機での
+再発有無は次回のユーザーによる確認待ち。
+
 ### 既知の制約
 
 - **`_DIAL_FEEDBACK_SANITY_HZ`（1サイクルで許容する最大周波数変化）は`200_000.0`Hz**
