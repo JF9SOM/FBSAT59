@@ -5647,6 +5647,72 @@ Direwolf は実際に送信していない間も継続的に stdout へ PCM を�
   「共有中」であることを示す表示は無いため、この機能が正しく動作しているかは目視では
   確認できない。ユニットテストの正しさを信頼する運用とする（2026-07-01、ユーザー判断）
 
+### CW/FT4/Q65 タブ — SDR再接続でaudio_readyが二度と届かなくなるバグと修正（2026-07-22、GitHub Issue #12 派生）
+
+#### 背景
+
+Issue #12でSDR切断バグ（本ファイル「SDR専用のLock機能」節の直前、`_apply_transponder_state_to_rig()`
+のRig1強制切断バグ）を修正しv0.2.29をリリースした後、報告者からCW Decoderタブで
+「Input: SDR選択時、Levelメーターが常に『— dB』のまま」「Soundcardに切り替えると-98dBは
+表示されるがデコードされない」という新しい報告があった。
+
+#### 原因
+
+`CwTab._connect_sdr_audio()`（`src/ui/cw_tab.py`）は「Start」ボタンを押した瞬間に一度だけ
+`sdr_ctrl._pipeline`を取得し`pipeline.audio_ready`を購読するだけで、以降その参照を見直す
+仕組みが無かった。一方`MainWindow._on_rig_slot_connected()`はRig 1/2が（再）接続される
+たびに**新しい`SDRPipeline`インスタンスを毎回生成**する（`SdrControlWidget`自身は
+`set_pipeline()`経由で正しく追従する）。`SdrRigAdapter.disconnect()`は切断時に
+`pipeline.stop()`で実際にスレッドを止めるため、**CW Decoderの「Start」を押した後に
+SDRが一度でも再接続されると、それ以降`audio_ready`は永久に届かなくなる**——Levelメーター
+が「— dB」のまま固まっていたのはこれが原因だった。同一パターン（`__init__`時に一度だけ
+`pipeline.audio_ready`を購読し、以降見直さない）がFT4タブ・Q65タブにも存在していた。
+
+面白いことに`CwTab`には`notify_sdr_connected()`/`notify_sdr_disconnected()`という
+そのためと思われるメソッドが既に定義済みだったが、`grep`した限りMainWindow側から
+一度も呼ばれておらず、完全な死んだコードだった（誰かが対策しようとして配線を忘れたと見られる）。
+
+**SSTV・Telemetryタブは調査の結果、同じ問題を抱えていないと判明した**。両タブは
+`RadioControlWidget`の`rig_connected`/`rig2_connected`/`rig_disconnected`/
+`rig2_disconnected`シグナルに直接接続しており（`_on_rig_connected()`/
+`_on_rig_disconnected()`）、SDR再接続のたびに`getattr(rig, "_pipeline", None)`で
+**都度最新のpipelineを取得し直して**再購読している（SSTVの`_connect_audio_source()`は
+`_find_sdr_pipeline()`を毎回呼ぶ設計）。Telemetryタブに至っては、SDRが切断された時点で
+`_on_rig_disconnected()`が受信自体を完全に停止する（`_on_stop()`）ため、再接続後は
+ユーザーが改めてStartを押す必要はあるが、「見た目は動いているのに実は無音」という
+ミスリーディングな状態には陥らない。FT4・Q65にも`rig_connected`/`rig_disconnected`への
+接続自体は存在するが、これはRig 1（CAT、PTT用）の接続状態表示専用で、SDRパイプラインとは
+無関係だった。
+
+#### 修正
+
+- `CwTab.refresh_sdr_pipeline(pipeline)`（`notify_sdr_connected`/`notify_sdr_disconnected`を
+  置き換え）: 既存購読を解除し、`pipeline is None`（SDR切断）なら`Listening...`のまま
+  停止し「SDR disconnected」を表示、実行中かつSDR入力選択中なら新しいpipelineへ再購読する
+- `Ft4Tab.refresh_sdr_pipeline(pipeline)` / `Q65Tab.refresh_sdr_pipeline(pipeline)`:
+  どちらも`_disconnect_sdr_audio(); _connect_sdr_audio()`を呼ぶだけ（`_connect_sdr_audio()`が
+  `sdr_ctrl._pipeline`から常に最新値を取得し直す設計のため、これだけで十分）。入力ソースが
+  SDR以外でも安全に呼べる（`_on_sdr_audio_chunk`/`_on_audio_chunk`側で入力ソースを判定して
+  いるため、無関係な購読が残っても実害はない）
+- `MainWindow._notify_comms_tabs_sdr_pipeline(pipeline)`（新設）: `_on_rig_slot_connected()`
+  （新pipeline生成直後）・`_on_rig_slot_disconnected()`（`set_pipeline(None)`直後）の両方から
+  呼び出す。`self._comms_tab_keys`（開いているCommunicationsタブの辞書）を走査し、
+  `refresh_sdr_pipeline`を持つタブ（CW/FT4/Q65のみ、duck typing）にだけ通知する。
+  **SSTV/Telemetryは意図的に対象外**——両タブは既に自前の`rig_connected`/`rig_disconnected`
+  経由で正しく再購読しているため、ここから追加で呼ぶと同じpipelineに二重購読
+  （＝音声チャンクが二重処理される）してしまう
+
+#### 教訓
+
+「SDRを再接続するたびに新しい`SDRPipeline`インスタンスが生成される」という設計は
+`SdrControlWidget`自身は正しく追従するが、**それ以外の場所で`_pipeline`を一度だけ
+キャプチャして使い回す実装は全て同じ罠を踏む**。新しくSDR音声を消費するタブ/モジュールを
+書く際は、単に接続時に一度取得するのではなく、`refresh_sdr_pipeline()`のような明示的な
+再購読フックを最初から用意するか、SSTV/Telemetryのように`rig_connected`/`rig_disconnected`
+シグナルから都度取得し直す設計のどちらかを踏襲すること。またこの手のバグは「動いている
+ように見えるが実は無音」という形で発覚しにくいため、レベルメーター等の診断表示があっても
+「表示が動いていない＝データが来ていない」に気づくまで時間がかかることがある。
+
 ### ログソフト連携 — UDP ADIF ブロードキャスト設計（src/comms/log_broadcast.py・2026-07-05 実装済み）
 
 #### 概要

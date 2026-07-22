@@ -716,6 +716,21 @@ class Ft4Tab(QWidget):
             self._sdr_pipeline = None
         self._sdr_connected = False
 
+    def refresh_sdr_pipeline(self, pipeline: Any) -> None:
+        """Re-subscribe after MainWindow attaches a new SDR pipeline (reconnect).
+
+        See CwTab.refresh_sdr_pipeline() for the full rationale (GitHub
+        Issue #12 follow-up) — MainWindow creates a brand-new SDRPipeline
+        on every Rig 1/2 (re)connect, and this tab's own reference
+        (subscribed once at __init__) would otherwise silently stop
+        receiving audio_ready after any later SDR reconnect. Safe to call
+        unconditionally: _on_sdr_audio_chunk() already gates on
+        self._rx_source == "sdr", so re-subscribing while on Soundcard
+        input is harmless.
+        """
+        self._disconnect_sdr_audio()
+        self._connect_sdr_audio()
+
     @Slot(object)
     def _on_sdr_audio_chunk(self, chunk: NDArray[np.float32]) -> None:
         if self._rx_source != "sdr":

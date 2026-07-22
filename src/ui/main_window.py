@@ -5810,6 +5810,7 @@ class MainWindow(QMainWindow):
         rig.attach_pipeline(pipeline)
         self._sdr_control.set_pipeline(pipeline)
         pipeline.start()
+        self._notify_comms_tabs_sdr_pipeline(pipeline)
         self._update_rig_label()
 
     def _on_rig_slot_disconnected(self, slot: int) -> None:
@@ -5817,7 +5818,34 @@ class MainWindow(QMainWindow):
         rig = self._rig_controller if slot == 1 else self._rig2_controller
         if getattr(rig, "is_sdr", False):
             self._sdr_control.set_pipeline(None)
+            self._notify_comms_tabs_sdr_pipeline(None)
         self._update_rig_label()
+
+    def _notify_comms_tabs_sdr_pipeline(self, pipeline: Any) -> None:
+        """Tell any open Communications tab holding a stale SDR pipeline reference to refresh it.
+
+        MainWindow creates a brand-new SDRPipeline every time Rig 1/2
+        (re)connects as the SDR. SdrControlWidget itself always tracks the
+        current one correctly (via set_pipeline()), but CW/FT4/Q65 each
+        grab a one-shot pipeline reference the first time they subscribe
+        (Start press for CW, __init__ for FT4/Q65) and have no other way
+        to notice it was replaced — the Level meter (CW) or decode buffer
+        (FT4/Q65) would then silently stop receiving anything after any
+        later SDR reconnect, with no obvious indication anything had gone
+        wrong (GitHub Issue #12 follow-up). refresh_sdr_pipeline() is
+        duck-typed; only these three tabs define it.
+
+        SSTV and Telemetry are deliberately NOT covered here: both already
+        re-fetch the pipeline fresh from their own rig_connected/
+        rig_disconnected handlers (connected directly to
+        RadioControlWidget, independent of this method), so calling a
+        second refresh path on them would double-subscribe their audio
+        callback instead of fixing anything.
+        """
+        for tab in list(self._comms_tab_keys.keys()):
+            refresh = getattr(tab, "refresh_sdr_pipeline", None)
+            if refresh is not None:
+                refresh(pipeline)
 
     def _autotrack_on_aos(self, sat_name: str) -> None:
         """Called by Autotrack when a new satellite's AOS is detected.

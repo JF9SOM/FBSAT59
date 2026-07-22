@@ -440,15 +440,40 @@ class CwTab(QWidget):
     def notify_rig1_disconnected(self) -> None:
         """Called when Rig 1 disconnects (no-op for CW — RX only)."""
 
-    def notify_sdr_connected(self) -> None:
-        self._rb_sdr.setEnabled(True)
+    def refresh_sdr_pipeline(self, pipeline: Any) -> None:
+        """Re-subscribe to a newly (re)created SDR pipeline, or clear on disconnect.
 
-    def notify_sdr_disconnected(self) -> None:
-        self._rb_sdr.setEnabled(False)
-        if self._running and self._rb_sdr.isChecked():
-            self._stop()
-            self._start_btn.setChecked(False)
-            self._status_label.setText(_("SDR disconnected"))
+        MainWindow creates a brand-new SDRPipeline every time Rig 1/2
+        (re)connects as the SDR — this tab's own _sdr_pipeline reference,
+        grabbed once when "Start" was pressed, would otherwise go silently
+        stale and never receive audio_ready again after any later SDR
+        reconnect while this tab was already running (GitHub Issue #12
+        follow-up: the Level meter would stay stuck at "— dB" forever with
+        no indication anything had gone wrong). Called by MainWindow
+        whenever the SDR pipeline changes, whether or not this tab is open
+        or running, so no explicit stop/start is required from the user.
+        Supersedes the never-wired notify_sdr_connected()/
+        notify_sdr_disconnected() this replaced.
+        """
+        if self._sdr_pipeline is not None:
+            with contextlib.suppress(Exception):
+                self._sdr_pipeline.audio_ready.disconnect(self._on_sdr_audio_chunk)
+            self._sdr_pipeline = None
+        self._sdr_connected = False
+        self._rb_sdr.setEnabled(pipeline is not None)
+        if pipeline is None:
+            if self._running and self._rb_sdr.isChecked():
+                self._stop()
+                self._start_btn.setChecked(False)
+                self._status_label.setText(_("SDR disconnected"))
+            return
+        if not self._running or not self._rb_sdr.isChecked():
+            return
+        self._sdr_pipeline = pipeline
+        pipeline.audio_ready.connect(self._on_sdr_audio_chunk)
+        self._sdr_connected = True
+        self._rx_sample_rate = SAMPLE_RATE
+        self._rx_buffer.clear()
 
     # ------------------------------------------------------------------ #
     # Cleanup
