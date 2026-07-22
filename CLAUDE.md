@@ -3358,6 +3358,47 @@ self)`をMainWindow自身に対して生成し、デフォルトの`Qt.WindowSho
 **未実装（要望の残り）**: ミニキーボード/MIDI/HIDデバイスへの汎用マッピング機能は
 今回のスコープ外。将来必要になった場合は別途検討する。
 
+### SDR専用のLock機能（2026-07-22 実装、GitHub Issue #12 派生）
+
+上記のCAT機（Rig 1）向けLock機能とは**完全に独立した**、SDRがRig 1/Rig 2いずれかに
+割り当てられている場合専用のLock機能。SDR Controlタブの「Tune」ボタンの右隣に専用の
+「L」ボタンを新設した（Radio Controlタブの既存「L」ボタン・`_trsp_lock`とは別の状態
+`MainWindow._sdr_lock`で管理。CATのLockが必要とする「相手リグのTXへのミラー」等の
+役割は今回のSDR Lockと無関係のため、あえて既存の`_trsp_lock`を流用せず独立させた）。
+
+**背景**: Issue #12（Remote SDR対応）の解決後、報告者から「Passband TuneでSDRの周波数を
+変えても、選択中のトランスポンダー（ISSのFM V/Uリピーター等）の周波数にすぐ戻ってしまい、
+手動で別の周波数（440MHz帯のビーコン等）の信号強度を確認できない」という報告があった。
+調査の結果、これは「FMかリニアトランスポンダーか」の違いではなく、**トランスポンダーが
+選択されている限り、モードを問わずドップラー補正サイクルが毎秒SDRの中心周波数を上書き
+し続ける**という、Passband Tune機能全体（矢印ボタン・Freq+Tuneボックス共通）の設計上の
+制約だと判明した。
+
+**設計**: CATリグのdial-feedback Lockと発想は同じだが、SDRには「物理ダイヤルを読み取る際の
+曖昧さ」がそもそも存在しない（ソフトウェアが直接周波数を制御しているため、CATリグのように
+「read-backしたタイミングが自分の書き込みと重なって誤検出する」レースが起こり得ない）ため、
+CAT版よりも単純に実装できた。
+
+- **SDR Lock ON**: `_doppler_cycle()`が、SDRが割り当てられているRigスロットへの周波数書き込み
+  （`rig.set_vfo_frequencies()`）を完全に停止する。代わりに毎サイクル、SDRの**実際の現在周波数**
+  （`rig.get_frequency()`。ハードウェアラウンドトリップではなく単純な属性読み取りなので、CATの
+  ような読み取りタイミングの曖昧さがない）を読み、「生のドップラー補正値（`dl_corr`、
+  `_sdr_tune_offset`加算前）との差分」を毎回`_sdr_tune_offset`として再計算する。これにより、
+  Lock中にPassband Tuneの矢印ボタンやFreq+Tuneボックスでどこに動かしても、その動きが
+  自動的に`_sdr_tune_offset`に反映され続ける
+- **SDR Lock OFF**: 特別な遷移処理は一切不要。既存の通常書き込み式
+  `dl_rig1 = dl_corr + _sdr_tune_offset`が、Lock中に更新され続けていた`_sdr_tune_offset`を
+  そのまま使うため、Lockを解除した瞬間から、その周波数を起点にドップラー補正が自然に再開する
+- オフセット値はUIにも反映する（`SdrControlWidget.set_tune_offset_display()`。矢印ボタン以外の
+  経路——Lock中の自動再計算——でオフセットが変わったことをkHz表示ラベルに正しく反映するため、
+  既存の`tune_offset_changed`シグナル経路とは逆方向の、MainWindow→ウィジェットの新設シグナル
+  `_sdr_lock_offset_computed`（`_rig_send()`/`_rig2_send()`のバックグラウンドスレッドから
+  emitされるため、Qtウィジェット操作を伴う実処理は必ずメインスレッド側のスロットで行う。
+  `_doppler_computed`と同型のクロススレッドパターン）経由で伝える
+
+**スコープ**: Rig 1・Rig 2どちらがSDRでも対応（`sdr_is_rig1`/`sdr_is_rig2`をそれぞれ独立に
+判定するため、CAT側の「Rig 2は未対応」という制約は今回のSDR Lockには当てはまらない）。
+
 ---
 
 ## Rig-Specific Implementation Notes

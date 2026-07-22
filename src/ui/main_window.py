@@ -470,6 +470,11 @@ class MainWindow(QMainWindow):
     # Signal used to pass a freshly computed Doppler result (DopplerDisplayUpdate)
     # from DopplerWorker's own thread to the UI thread — see _doppler_cycle().
     _doppler_computed: Signal = Signal(object)
+    # Passes a freshly recomputed SDR Lock offset (Hz) from _rig_send()'s /
+    # _rig2_send()'s background thread to the UI thread, so
+    # SdrControlWidget's offset label can be updated safely — see
+    # _doppler_cycle()'s SDR Lock branch.
+    _sdr_lock_offset_computed: Signal = Signal(float)
 
     def __init__(
         self,
@@ -565,6 +570,14 @@ class MainWindow(QMainWindow):
         # Passband tune offset applied to SDR (Rig 2) DL, and mirrored to
         # Rig 1 UL when Lock is active (sign reversed for inverted transponders).
         self._sdr_tune_offset: float = 0.0
+        # SDR Control's own "L" button (SdrControlWidget.sdr_lock_changed) —
+        # independent of _trsp_lock below (CAT dial feedback / Rig1<->Rig2 TX
+        # mirroring). While True, _doppler_cycle() stops writing an absolute
+        # frequency to whichever rig slot is the SDR and instead recomputes
+        # _sdr_tune_offset fresh every cycle from the SDR's actual live
+        # frequency, so Passband Tune / Freq+Tune are free to move it and
+        # Doppler correction resumes from there once turned back off.
+        self._sdr_lock: bool = False
         # L button: when True, uplink is slaved to downlink.
         self._trsp_lock: bool = False
         # Lock dial feedback: manual-DL-retune offset (Hz, DL space),
@@ -633,6 +646,7 @@ class MainWindow(QMainWindow):
         self._satellite_list_refresh.connect(self._load_satellites)
         self._rig_error.connect(self._on_rig_error)
         self._doppler_computed.connect(self._on_doppler_computed)
+        self._sdr_lock_offset_computed.connect(self._on_sdr_lock_offset_computed)
         self._satnogs_status.connect(self._on_satnogs_status)
         self._map_downloaded.connect(self._apply_world_map)
         self._satnogs_open_url.connect(self._open_url_app_mode)
@@ -794,6 +808,7 @@ class MainWindow(QMainWindow):
         self._sdr_control = SdrControlWidget()
         self._sdr_control_tab_idx = self._tab_widget.addTab(self._sdr_control, _("SDR Control"))
         self._sdr_control.tune_offset_changed.connect(self._on_sdr_tune_offset)
+        self._sdr_control.sdr_lock_changed.connect(self._on_sdr_lock_changed)
 
         self._tab_widget.currentChanged.connect(self._on_tab_changed)
 
@@ -3002,6 +3017,15 @@ class MainWindow(QMainWindow):
                 # Baseline (pure Doppler, no manual offset) for
                 # _rig_send()'s direct offset recompute below.
                 dl_baseline = dl_corr_base
+                # SDR Lock (SdrControlWidget's own "L" button, independent
+                # of _trsp_lock above): baseline is dl_corr (post dial-
+                # feedback fold, pre _sdr_tune_offset) so that turning Lock
+                # back off and resuming the ordinary dl_rig1 = dl_corr +
+                # _sdr_tune_offset write below reproduces the exact
+                # frequency the SDR was left at -- see _rig_send()'s SDR
+                # Lock branch.
+                do_sdr_lock = sdr_is_rig1 and self._sdr_lock
+                dl_corr_for_sdr_lock = dl_corr
 
                 def _rig_send() -> None:
                     try:
@@ -3277,6 +3301,23 @@ class MainWindow(QMainWindow):
                                     self._dial_feedback_offset_hz = new_offset
                             rig.set_vfo_frequencies(None, ul)
                             return
+                        if do_sdr_lock:
+                            # Stop writing an absolute frequency to the SDR
+                            # entirely -- Passband Tune / Freq+Tune are free
+                            # to move it -- and instead recompute
+                            # _sdr_tune_offset fresh from the SDR's actual
+                            # live frequency every cycle, so turning Lock
+                            # back off resumes Doppler correction from
+                            # wherever it was left (dl_rig1 = dl_corr +
+                            # _sdr_tune_offset above already does this
+                            # automatically once do_sdr_lock is false again
+                            # -- no separate "on release" step needed).
+                            live_freq = rig.get_frequency()
+                            if live_freq > 0 and dl_corr_for_sdr_lock is not None:
+                                new_offset = live_freq - dl_corr_for_sdr_lock
+                                self._sdr_tune_offset = new_offset
+                                self._sdr_lock_offset_computed.emit(new_offset)
+                            return
                         rig.set_vfo_frequencies(dl, ul)
                     except RigControlError as exc:
                         self._rig_error.emit(str(exc))
@@ -3300,9 +3341,19 @@ class MainWindow(QMainWindow):
                 ul2 = ul_corr
                 if sdr_is_rig1 and self._trsp_lock and tune != 0.0 and ul2 is not None:
                     ul2 = ul2 + (-tune if invert else tune)
+                # SDR Lock for Rig 2 — same idea as the Rig 1 branch above.
+                do_sdr_lock2 = sdr_is_rig2 and self._sdr_lock
+                dl_corr_for_sdr_lock2 = dl_corr
 
                 def _rig2_send() -> None:
                     try:
+                        if do_sdr_lock2:
+                            live_freq = rig2.get_frequency()
+                            if live_freq > 0 and dl_corr_for_sdr_lock2 is not None:
+                                new_offset = live_freq - dl_corr_for_sdr_lock2
+                                self._sdr_tune_offset = new_offset
+                                self._sdr_lock_offset_computed.emit(new_offset)
+                            return
                         rig2.set_vfo_frequencies(dl2, ul2)
                     except RigControlError as exc:
                         self._rig_error.emit(str(exc))
@@ -4914,6 +4965,32 @@ class MainWindow(QMainWindow):
     def _on_sdr_tune_offset(self, offset_hz: float) -> None:
         """Store the passband tune offset emitted by SdrControlWidget."""
         self._sdr_tune_offset = offset_hz
+
+    @Slot(bool)
+    def _on_sdr_lock_changed(self, locked: bool) -> None:
+        """Store SDR Control's own Lock state.
+
+        No other transition logic is needed here (unlike Radio Control's
+        Lock / _lock_watch_worker): _doppler_cycle() recomputes
+        _sdr_tune_offset fresh every cycle straight from the SDR's actual
+        live frequency while this is True, so turning it back off just
+        resumes the normal dl_corr + _sdr_tune_offset write with whatever
+        offset was last computed -- there is no separate "on release"
+        step to perform, and no read-back ambiguity to guard against the
+        way there is for a physical rig's VFO (the software always knows
+        the SDR's exact current frequency).
+        """
+        self._sdr_lock = locked
+
+    @Slot(float)
+    def _on_sdr_lock_offset_computed(self, offset_hz: float) -> None:
+        """Main-thread slot: mirror an SDR-Lock-recomputed offset into the UI.
+
+        Emitted from _rig_send()/_rig2_send()'s background thread (see
+        _doppler_cycle()) since SdrControlWidget.set_tune_offset_display()
+        touches Qt widgets and must not be called off the main thread.
+        """
+        self._sdr_control.set_tune_offset_display(offset_hz)
 
     def _on_cw_mode_requested(self, dl_mode: str, ul_mode: str) -> None:
         """Apply CW (or original) mode to both VFOs in a background thread.

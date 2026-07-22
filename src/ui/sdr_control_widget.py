@@ -77,6 +77,12 @@ class SdrControlWidget(QWidget):
     # Value is the cumulative offset in Hz from the Doppler-corrected centre.
     tune_offset_changed: Signal = Signal(float)
 
+    # Emitted when the SDR Lock button is toggled. Independent of Radio
+    # Control's own Lock ("L") button/_trsp_lock, which is for CAT-rig dial
+    # feedback and Rig1<->Rig2 TX mirroring — this one only ever affects
+    # whichever rig slot is the SDR.
+    sdr_lock_changed: Signal = Signal(bool)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._pipeline: Any = None  # SDRPipeline | None
@@ -397,11 +403,14 @@ class SdrControlWidget(QWidget):
         # Manual absolute frequency — tunes the SDR directly, independent of
         # any satellite/transponder selection (e.g. to record a terrestrial
         # reference signal such as a 9600bps G3RUH APRS digipeater for
-        # offline demodulator tuning). Only meaningful when no transponder
-        # is selected: once one is active, the Doppler correction loop
-        # overwrites the SDR centre frequency every cycle, so a manual tune
-        # here would be immediately reverted.
-        manual_hint = _("Absolute tune — only applied while no transponder is selected")
+        # offline demodulator tuning). Meaningful either when no transponder
+        # is selected, or when SDR Lock (button to the right of Tune) is on:
+        # otherwise the Doppler correction loop overwrites the SDR centre
+        # frequency every cycle, so a manual tune here would be immediately
+        # reverted.
+        manual_hint = _(
+            "Absolute tune — applied when no transponder is selected, or while SDR Lock is on"
+        )
         row.addWidget(QLabel(_("Freq:")))
         self._manual_freq_spin = QDoubleSpinBox()
         self._manual_freq_spin.setDecimals(6)
@@ -418,7 +427,36 @@ class SdrControlWidget(QWidget):
         tune_btn.clicked.connect(self._on_manual_tune)
         row.addWidget(tune_btn)
 
+        self._sdr_lock_btn = QPushButton(_("L"))
+        self._sdr_lock_btn.setFixedWidth(32)
+        self._sdr_lock_btn.setToolTip(
+            _(
+                "SDR Lock: while on, Doppler correction stops retuning the SDR "
+                "so you can freely use Passband Tune / Freq+Tune above; Doppler "
+                "correction resumes from wherever you leave it once turned off"
+            )
+        )
+        self._sdr_lock_btn.setCheckable(True)
+        self._sdr_lock_btn.setStyleSheet(
+            "QPushButton:checked { background-color: #f1c40f; color: #000; font-weight: bold; }"
+        )
+        self._sdr_lock_btn.toggled.connect(self.sdr_lock_changed.emit)
+        row.addWidget(self._sdr_lock_btn)
+
         return grp
+
+    def set_tune_offset_display(self, offset_hz: float) -> None:
+        """Update the passband-tune offset readout without re-emitting tune_offset_changed.
+
+        Called by MainWindow while SDR Lock is on and it is recomputing the
+        offset every Doppler cycle from the SDR's actual live frequency, so
+        the kHz label stays honest even though the change came from the
+        Freq/Tune box (or hardware) rather than the ◀/▶ step buttons.
+        """
+        self._tune_offset_hz = offset_hz
+        khz = offset_hz / 1000.0
+        sign = "+" if khz >= 0 else ""
+        self._tune_offset_label.setText(f"{sign}{khz:.3f} kHz")
 
     def _apply_tune(self, multiplier: int) -> None:
         """Shift the passband offset by multiplier × current step size."""
