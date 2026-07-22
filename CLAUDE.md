@@ -3220,8 +3220,26 @@ UL書き込みの後始末の悪さ（Mainへの復帰なし）と組み合わ�
 implausible jump）は`_make_satmode_direct_rig()`ヘルパーが`_last_written_vfo = "Main"`を
 デフォルト設定するよう変更し、通常の読み取り経路を引き続き検証する。
 
-**検証状況**: 静的解析（Hamlibソース）と論理的な整合性に基づく修正であり、実機での
-再発有無は次回のユーザーによる確認待ち。
+**検証状況（2026-07-22 実機再検証済み）**: 修正後、実機（IC-9100・Directモード）でLock
+ON/OFFを何度も連続で繰り返す再現手順を試したところ、「Python is not responding」は
+再発せず、安定して動作することを確認した。
+
+**この不具合がDirectモード特有である理由（NETモードでは再現しない根拠）**: NETモードの
+UL書き込み（rigctldの`I`コマンド）は内部でHamlibの`rig_set_split_freq()`を呼んでおり、
+これは末尾に「try and revert even if we had an error above」という**復帰処理**
+（`caps->set_vfo(rig, curr_vfo)`で書き込み前の状態へ戻す）を持つ。一方、Directモードの
+コントローラーコード（`_set_vfo_frequencies_locked()`のクロスバンドsatmode分岐）は、この
+split対応APIを使わず、素の`set_freq(vfo_tx, ul_hz)`を直接呼んでいる。これは汎用
+`rig_set_freq()`を経由するが、その非targetable経路には復帰処理が一切ない（本セクション前半
+で確認済み）。つまり:
+- NETモード: UL書き込み → `rig_set_split_freq()` → Subへ切替→書き込み→**Mainへ復帰**
+  （Hamlib自身が行う）
+- Directモード: UL書き込み → `rig_set_freq()` → Subへ切替→書き込み→**復帰なし**（Subに
+  残ったまま）
+
+NETモードは書き込みのたびにMainへ戻る設計のAPIを使っているため、Lockの読み取りが割り込んでも
+「現在VFOがSubのまま」という危険な状態にほぼ陥らない。これが、今回の不具合がDirectモード
+限定で発生し、NETモードでは（同じIC-9100・同じsatmodeであっても）再現しなかった根本理由。
 
 ### 既知の制約
 
