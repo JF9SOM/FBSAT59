@@ -3539,6 +3539,18 @@ class MainWindow(QMainWindow):
         info_action = menu.addAction(_("Satellite Info..."))
         satnogs_action = menu.addAction(_("Open in SatNOGS"))
 
+        # Deselect Satellite — stops tracking whatever is currently selected
+        # (self._selected_norad), independent of which item was right-
+        # clicked. There was previously no explicit UI action for this: the
+        # satellite list keeps its current row selected even when a filter
+        # change empties the list (deliberate — see the list-rebuild
+        # blockSignals() comment elsewhere in this file), so a satellite
+        # kept being tracked/Doppler-corrected with no obvious way to stop
+        # it short of picking a different one.
+        menu.addSeparator()
+        deselect_action = menu.addAction(_("Deselect Satellite"))
+        deselect_action.setEnabled(self._selected_norad is not None)
+
         action = menu.exec(self._sat_list.mapToGlobal(pos))
         if action is not None and action in fav_actions.values():
             chosen_id = next(k for k, v in fav_actions.items() if v == action)
@@ -3552,6 +3564,8 @@ class MainWindow(QMainWindow):
             self._show_sat_info(norad, name)
         elif action == satnogs_action:
             self._open_in_satnogs(norad, name)
+        elif action == deselect_action:
+            self._sat_list.setCurrentRow(-1)
 
     def _open_in_satnogs(self, norad: int, name: str) -> None:
         """Open the SatNOGS satellite page. Uses DB cache; fetches UUID in background if needed."""
@@ -3810,6 +3824,15 @@ class MainWindow(QMainWindow):
             self._radio_control.clear_satellite()
             self._world_map.clear_footprint()
             self._world_map.clear_moon_position()
+            # Mirror _on_transmitter_changed(None)'s SDR-side reset: without
+            # this, SdrControlWidget still thinks a transponder is active
+            # (its "T" button stays enabled) even though _current_transmitter
+            # above was just cleared and _doppler_cycle() will no longer run
+            # to back it up.
+            self._sdr_control.set_transponder_active(False)
+            self._sdr_tune_offset = 0.0
+            self._sdr_control.reset_tune_offset()
+            self._dial_feedback_offset_hz = 0.0
             return
         item = self._sat_list.item(row)
         if item is None:
@@ -4039,7 +4062,18 @@ class MainWindow(QMainWindow):
                 # transponders.  Avoids the "ガチャガチャ" (jitter) caused by
                 # the Doppler loop and freq-preset independent socket interleaving
                 # inside rigctld when the rig stays connected.
-                if rig.is_connected:
+                #
+                # Skip entirely for the SDR (rig.is_sdr): this whole
+                # disconnect exists to avoid a VFO-command race between mode/
+                # CTCSS setup and the Doppler F/I cycle, which does not apply
+                # to SdrRigAdapter at all (set_mode/set_ctcss_tone/set_vfo are
+                # all no-ops there; only set_frequency does anything, and
+                # that is just a live SDR retune, not a CAT command
+                # sequence). Without this guard, simply selecting a different
+                # satellite/transponder — nothing to do with Autotrack — was
+                # silently closing and requiring a manual reconnect of the
+                # SDR every time (GitHub Issue #12 follow-up).
+                if rig.is_connected and not getattr(rig, "is_sdr", False):
                     self._disconnect_rig()  # must run on UI thread
 
                 # Increment generation so any in-flight thread can detect it is
