@@ -1340,6 +1340,13 @@ class MainWindow(QMainWindow):
                 id="meteor_tle_refresh",
                 misfire_grace_time=600,
             )
+            self._scheduler.add_job(
+                self._refresh_satellite_names_periodic,
+                "interval",
+                hours=6,
+                id="satellite_names_refresh",
+                misfire_grace_time=600,
+            )
             self._scheduler.start()
             logger.debug("APScheduler started")
         except Exception as exc:
@@ -1409,6 +1416,26 @@ class MainWindow(QMainWindow):
             self._satellite_list_refresh.emit()
         except Exception as exc:
             logger.warning("AMSAT status refresh failed: %s", exc)
+
+    def _refresh_satellite_names_periodic(self) -> None:
+        """APScheduler job: re-run sync_satellite_names() so a transient failure at
+        startup (e.g. SATNOGS temporarily unreachable) self-heals instead of leaving
+        satellites permanently missing from the DB until the app is restarted.
+
+        Only sync_satellite_names() is repeated here; fetch_provisional_tles() /
+        fetch_legacy_tles() / fetch_meteor_tles() already have their own dedicated
+        recurring jobs (provisional_tle_refresh, active_tle_refresh, meteor_tle_refresh)
+        so re-running the full _refresh_satellite_names_sync() chain would duplicate
+        that work.
+        """
+        try:
+            result = asyncio.run(self._transmitter_manager.sync_satellite_names())
+            logger.info("Periodic SATNOGS satellite names sync completed: %s", result)
+            self._satellite_list_refresh.emit()
+        except Exception as exc:
+            logger.warning(
+                "Periodic SATNOGS satellite names sync failed: %s: %s", type(exc).__name__, exc
+            )
 
     def _load_celestial_engine(self) -> None:
         """Load the DE421 ephemeris in a background thread."""
@@ -4575,8 +4602,6 @@ class MainWindow(QMainWindow):
 
     def _on_settings_accepted(self) -> None:
         """After Settings OK, sync the enabled TLE sources and redraw the satellite list."""
-        from ui.settings_dialog import SettingsDialog
-
         # Rebuild filter combo so any group additions/renames/removals are reflected
         self._rebuild_filter_combo()
 
@@ -4588,16 +4613,31 @@ class MainWindow(QMainWindow):
 
         self._apply_world_map()
 
+        self._fetch_all_tle_sources()
+
+    def _fetch_all_tle_sources(self) -> None:
+        """Fetch every enabled TLE source once from a background thread, then refresh
+        the satellite list.
+
+        Shared by Settings > OK (_on_settings_accepted) and Satellite > Update TLE
+        (_on_update_tle) so both entry points perform the same real fetch — Update TLE
+        used to be a no-op stub that only displayed a "queued" message without ever
+        actually fetching anything.
+        """
+        from ui.settings_dialog import SettingsDialog
+
         enabled = SettingsDialog.get_enabled_sources(self._conn)
 
         def _fetch_all() -> None:
             for source_name in enabled:
-                print(f"[TLE] Fetching {source_name}...")
+                logger.info("Manual TLE fetch: %s...", source_name)
                 try:
                     result = asyncio.run(self._tle_manager.fetch_and_update(source_name))
-                    print(f"[TLE] Result: {result}")
-                except Exception as exc:  # noqa: BLE001
-                    print(f"[TLE] Error fetching {source_name}: {exc}")
+                    logger.info("Manual TLE fetch result (%s): %s", source_name, result)
+                except Exception as exc:
+                    logger.warning(
+                        "Manual TLE fetch error (%s): %s: %s", source_name, type(exc).__name__, exc
+                    )
             # Signal emit is thread-safe; Qt automatically queues it to the main thread.
             self._satellite_list_refresh.emit()
 
@@ -4713,6 +4753,14 @@ class MainWindow(QMainWindow):
             )
 
     def _on_update_tle(self) -> None:
+        """Satellite > Update TLE handler.
+
+        Used to be a no-op stub that only displayed this message without ever
+        actually fetching anything (found while investigating a satellite missing
+        from the list on Windows, 2026-07-23). Now shares the same real fetch
+        used by Settings > OK.
+        """
+        self._fetch_all_tle_sources()
         QMessageBox.information(
             self, _("Update TLE"), _("TLE update has been queued in the background.")
         )
