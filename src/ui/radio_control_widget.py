@@ -669,6 +669,11 @@ class RadioControlWidget(QWidget):
                     capture_output=True,
                     text=True,
                     timeout=3,
+                    # Without this, launching tasklist.exe from this
+                    # windowed (console-less) PyInstaller build briefly
+                    # flashes a console window on screen every time Connect
+                    # is pressed in Direct mode.
+                    creationflags=subprocess.CREATE_NO_WINDOW,
                 )
                 return "rigctld" in result.stdout.lower()
             else:

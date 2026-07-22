@@ -304,6 +304,15 @@ def _civ_freq_to_bcd(freq_hz: int) -> bytes:
     return bytes(out)
 
 
+def _civ_bcd_to_freq(data: bytes) -> int:
+    """Inverse of _civ_freq_to_bcd() (Hamlib's from_bcd())."""
+    digits: list[str] = []
+    for b in data:
+        digits.append(str(b & 0x0F))
+        digits.append(str((b >> 4) & 0x0F))
+    return int("".join(reversed(digits)) or "0")
+
+
 def normalize_civ_addr(text: str) -> str:
     """Normalise a user-entered CI-V address into a Hamlib-parseable "0xNN" string.
 
@@ -1128,8 +1137,22 @@ class HamlibDirectController(RigController):
         Serialised through _rig_cmd_lock, the same lock set_vfo_frequencies()
         holds, so a Lock (dial feedback) read never interleaves on the wire
         with a concurrent write (e.g. a user-triggered mode/CTCSS change).
+
+        Windows raw-CI-V bypass (see _use_raw_civ_bypass()): only "Main" is
+        actually exercised by the Lock (dial feedback) feature for satmode
+        rigs -- see last_written_vfo_is_main()'s docstring for why "Sub"/
+        "TX" reads are deliberately never attempted there.
         """
-        if not self.is_connected or self._rig is None:
+        if not self.is_connected:
+            return -1.0
+        if self._raw_civ_serial is not None:
+            try:
+                with self._rig_cmd_lock:
+                    return self._civ_read_freq(self._raw_civ_serial, vfo)
+            except Exception as exc:
+                logger.error("RigDirect.get_frequency [raw CI-V]: %s", exc)
+                return -1.0
+        if self._rig is None:
             return -1.0
         try:
             with self._rig_cmd_lock:
@@ -2625,6 +2648,33 @@ class HamlibDirectController(RigController):
         """Set the frequency of whichever VFO is currently selected."""
         self._civ_transaction(ser, _CIV_C_SET_FREQ, data=_civ_freq_to_bcd(int(freq_hz)))
 
+    def _civ_read_freq(self, ser: Any, which: str) -> float:
+        """Select a VFO and read its frequency. Returns -1.0 on any failure.
+
+        The rig (confirmed live on this exact hardware/cable, per
+        scripts/test_ic9100_raw_civ.py) echoes back the request frame before
+        its own reply, so a single ser.read() can contain both. The two are
+        told apart by direction: our own request is addressed
+        [rig_addr, ctrl_id]; the rig's actual reply is addressed
+        [ctrl_id, rig_addr] (reversed) -- scan for that pattern rather than
+        assuming a fixed byte offset.
+        """
+        self._civ_select_vfo(ser, which)
+        reply = self._civ_transaction(ser, _CIV_C_RD_FREQ)
+        civ_addr = self._civ_addr_int()
+        i = 0
+        while i + 10 <= len(reply):
+            if (
+                reply[i] == 0xFE
+                and reply[i + 1] == 0xFE
+                and reply[i + 2] == _CIV_CTRL_ID
+                and reply[i + 3] == civ_addr
+                and reply[i + 4] == _CIV_C_RD_FREQ
+            ):
+                return float(_civ_bcd_to_freq(reply[i + 5 : i + 10]))
+            i += 1
+        return -1.0
+
     def _civ_write_mode(self, ser: Any, mode: str) -> None:
         """Set the mode of whichever VFO is currently selected.
 
@@ -2775,10 +2825,12 @@ class HamlibDirectController(RigController):
                         self._last_dl_hz = vfoa_hz
                         self._last_ul_hz = None
                         self._last_ul_update_time = 0.0
+                        self._last_written_vfo = "Main"
                     elif abs(vfoa_hz - last_dl) >= 1.0:
                         self._civ_select_vfo(ser, "Main")
                         self._civ_write_freq(ser, vfoa_hz)
                         self._last_dl_hz = vfoa_hz
+                        self._last_written_vfo = "Main"
 
                 if vfob_hz is not None:
                     last_ul = self._last_ul_hz
@@ -2796,6 +2848,7 @@ class HamlibDirectController(RigController):
                         self._civ_write_freq(ser, vfob_hz)
                         self._last_ul_hz = vfob_hz
                         self._last_ul_update_time = now
+                        self._last_written_vfo = "Sub"
             return True
         except Exception as exc:
             logger.error("RigDirect._set_vfo_frequencies_civ: %s", exc)
