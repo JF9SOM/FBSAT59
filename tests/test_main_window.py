@@ -2370,30 +2370,52 @@ class TestLockDialFeedback:
 
     # -- Direct mode (satmode, cross-band): same integration (2026-07-20) --
 
-    def test_rig_send_direct_satmode_uses_main_and_tx_not_vfoa_vfob(self, qtbot, db) -> None:
-        """Satmode Direct mode reads "Main"/"TX", not "VFOA"/"VFOB" --
-        RIG_VFO_MAIN is never subject to icom_get_freq()'s
-        VFO_HAS_MAIN_SUB_A_B_ONLY force_vfo_swap check, and RIG_VFO_TX has
-        its own dedicated swap-free read path (icom_get_tx_freq())."""
+    def test_rig_send_direct_satmode_reads_main_only_writes_nothing(self, qtbot, db) -> None:
+        """Satmode Direct mode reads DL only, via "Main" -- never reads or
+        writes UL/"TX" at all while Lock is on (2026-07-22, confirmed live
+        on IC-9100: reading "TX" gets silently remapped to RIG_VFO_SUB by
+        Hamlib's vfo_fixup() before icom_get_freq() ever runs, forcing a
+        real VFO switch every cycle that corrupted Hamlib's internal VFO
+        tracking badly enough to freeze DL reads and hang the serial link
+        when a write resumed after Lock was turned back off. Separately,
+        satmode rigs already move Sub/TX automatically in hardware
+        whenever Main/RX is retuned, confirmed live by the user, so there
+        is nothing useful for software to add by writing UL anyway)."""
         w = self._make_window(qtbot, db)
         rig = self._make_satmode_direct_rig(connected=True)
-
-        def _fake_get_frequency(vfo: str = "VFOA") -> float:
-            return 145_800_080.0 if vfo == "Main" else 435_000_000.0
-
-        rig.get_frequency = MagicMock(side_effect=_fake_get_frequency)
+        rig.get_frequency = MagicMock(return_value=145_800_080.0)  # +80Hz manual retune
         rig.set_vfo_frequencies = MagicMock(return_value=True)
         w._dial_feedback_offset_hz = 0.0
 
         self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
 
-        rig.get_frequency.assert_any_call("Main")
-        rig.get_frequency.assert_any_call("TX")
-        called_vfos = {call.args[0] for call in rig.get_frequency.call_args_list}
-        assert "VFOA" not in called_vfos
-        assert "VFOB" not in called_vfos
-        rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_000.0)
+        rig.get_frequency.assert_called_once_with("Main")
+        rig.set_vfo_frequencies.assert_not_called()
         assert w._dial_feedback_offset_hz == 80.0
+
+    def test_rig_send_direct_satmode_read_failure_leaves_offset_unchanged(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        rig = self._make_satmode_direct_rig(connected=True)
+        rig.get_frequency = MagicMock(return_value=-1.0)
+        rig.set_vfo_frequencies = MagicMock(return_value=True)
+        w._dial_feedback_offset_hz = 12.3
+
+        self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
+
+        rig.set_vfo_frequencies.assert_not_called()
+        assert w._dial_feedback_offset_hz == 12.3
+
+    def test_rig_send_direct_satmode_ignores_implausible_jump(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        rig = self._make_satmode_direct_rig(connected=True)
+        rig.get_frequency = MagicMock(return_value=145_900_000.0)  # +100kHz, implausible
+        rig.set_vfo_frequencies = MagicMock(return_value=True)
+        w._dial_feedback_offset_hz = 0.0
+
+        self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
+
+        rig.set_vfo_frequencies.assert_not_called()
+        assert w._dial_feedback_offset_hz == 0.0
 
     # -- reset points --
 

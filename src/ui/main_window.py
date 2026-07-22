@@ -2587,22 +2587,30 @@ class MainWindow(QMainWindow):
           explicit branch (2026-07-20, cross-band use only -- Lock is a
           linear-transponder feature; same-band FM/repeater use is out of
           scope by the user's explicit call, so its correctness there is
-          untested and not a concern). Reads use "Main" (RIG_VFO_MAIN, DL)
-          and "TX" (RIG_VFO_TX, UL) rather than "VFOA"/"VFOB". Confirmed
-          via Hamlib source (rigs/icom/icom.c: icom_get_freq()) that Main
-          is never subject to the VFO_HAS_MAIN_SUB_A_B_ONLY force_vfo_swap
-          check (that check only tests for RIG_VFO_SUB/_A/_B), and that
-          RIG_VFO_TX has its own dedicated read path (icom_get_tx_freq(),
-          CI-V command S_RD_TX_FREQ) which either succeeds with no VFO
-          switch at all, or gracefully falls back to Hamlib's own internal
-          switch-then-restore (set_vfo_curr()) if that command isn't
-          supported on a given model/firmware (tracked via
-          priv->x1cx03cmdfails) -- unlike every other quirk found in this
-          feature, this fallback is official, symmetric Hamlib machinery,
-          not this project's own ad-hoc external VFO management, so it is
-          a fundamentally different (and presumably lower) risk class than
-          e.g. FTX-1F's set_vfo(VFOA) issue even though it still involves
-          a VFO switch. Still unverified live.
+          untested and not a concern). Reads DL only, via "Main"
+          (RIG_VFO_MAIN) -- never reads or writes UL at all while Lock is
+          on (see _rig_send()'s satmode branch for the full rationale).
+          Originally this also read UL via "TX" (RIG_VFO_TX), on the
+          theory that RIG_VFO_TX had its own dedicated swap-free read path
+          (icom_get_tx_freq(), CI-V S_RD_TX_FREQ). That theory was wrong:
+          confirmed via Hamlib source (src/misc.c: vfo_fixup(), called
+          from the generic rig_get_freq() *before* icom_get_freq() ever
+          runs) that RIG_VFO_TX gets unconditionally remapped to
+          RIG_VFO_SUB for any VFO_HAS_MAIN_SUB_A_B_ONLY rig in satmode --
+          so icom_get_freq()'s dedicated TX-read branch was never actually
+          reached, and every "TX" read was silently forcing the
+          VFO_HAS_MAIN_SUB_A_B_ONLY force_vfo_swap path instead (an actual
+          VFO switch via set_vfo_curr()). Confirmed live (2026-07-22,
+          IC-9100) that this corrupted Hamlib's internal VFO tracking
+          badly enough to freeze DL reads and hang the serial link
+          entirely on the next write after Lock was turned back off (Qt
+          main thread blocked -> "Python is not responding"). Separately,
+          the user confirmed live that satmode rigs already move Sub (TX)
+          in hardware whenever Main (RX) is retuned, with no CAT command
+          involved -- so there was nothing useful for software to add by
+          writing UL here anyway. Reading Main is unaffected by any of
+          this (vfo_fixup() only remaps RIG_VFO_TX/_SUB/_SUB_A/_SUB_B,
+          never RIG_VFO_MAIN), so DL-only reading remains safe.
         - Any other HamlibDirectController that isn't satmode: a generic,
           best-effort fallback for whichever Hamlib backend rigctld ends up
           routing to. UNVERIFIED -- get_freq(VFOA)/get_freq(VFOB) safety
@@ -3033,26 +3041,82 @@ class MainWindow(QMainWindow):
                             # is model-agnostic. See _is_dial_feedback_rig()
                             # for the per-model safety verification (or
                             # lack thereof, for the generic bucket).
+                            #
                             # Satmode (IC-9100/9700 etc., cross-band/linear-
-                            # transponder use only): "Main"/"TX" instead of
-                            # "VFOA"/"VFOB" -- RIG_VFO_MAIN never triggers
-                            # icom_get_freq()'s VFO_HAS_MAIN_SUB_A_B_ONLY
-                            # force_vfo_swap check (only RIG_VFO_SUB/_A/_B
-                            # do), and RIG_VFO_TX has its own dedicated
-                            # swap-free read path (icom_get_tx_freq(), CI-V
-                            # S_RD_TX_FREQ) that falls back to Hamlib's own
-                            # internal switch-and-restore if unsupported.
+                            # transponder use only) is handled entirely
+                            # separately below -- read DL only, never read
+                            # or write UL at all while Lock is on. Two
+                            # independent reasons, confirmed live
+                            # (2026-07-22, IC-9100), converged on this:
+                            # (1) the rig itself already moves Sub (TX)
+                            # automatically whenever Main (RX) is retuned,
+                            # in hardware, with no CAT command involved --
+                            # the user confirmed this directly on real
+                            # hardware -- so there is nothing for software
+                            # to add by writing UL here.
+                            # (2) reading UL via "TX" does NOT dodge a VFO
+                            # switch the way it does for the write path or
+                            # for other rigs: Hamlib's generic vfo_fixup()
+                            # (src/misc.c), called from rig_get_freq()
+                            # *before* icom_get_freq() ever runs, remaps
+                            # RIG_VFO_TX -> RIG_VFO_SUB unconditionally for
+                            # any VFO_HAS_MAIN_SUB_A_B_ONLY rig in satmode
+                            # ("else if (VFO_HAS_MAIN_SUB_A_B_ONLY &&
+                            # satmode) { vfo = RIG_VFO_SUB; }") -- so
+                            # icom_get_freq()'s own dedicated swap-free TX
+                            # read (icom_get_tx_freq(), CI-V S_RD_TX_FREQ)
+                            # never gets a chance to run at all; every "TX"
+                            # read was actually forcing the
+                            # VFO_HAS_MAIN_SUB_A_B_ONLY force_vfo_swap path
+                            # (an explicit switch-away-and-back via
+                            # set_vfo_curr()) every single cycle. On real
+                            # IC-9100 hardware this corrupted Hamlib's
+                            # internal VFO tracking badly enough that DL
+                            # reads froze, and the very next write attempt
+                            # after Lock was turned back off hung the
+                            # serial link entirely (Qt main thread blocked
+                            # -> "Python is not responding" -> force quit).
+                            # Reading Main is unaffected by any of this --
+                            # vfo_fixup() only remaps RIG_VFO_TX/_SUB/
+                            # _SUB_A/_SUB_B, never RIG_VFO_MAIN.
+                            if isinstance(rig, HamlibDirectController) and rig.is_satmode:
+                                live_dl = rig.get_frequency("Main")
+                                if live_dl < 0:
+                                    logger.info(
+                                        "LockWatch: read failed (live_dl=%.1f), satmode -- "
+                                        "UL not read/written, offset unchanged at %.1fHz",
+                                        live_dl,
+                                        self._dial_feedback_offset_hz,
+                                    )
+                                elif dl_baseline is not None:
+                                    new_offset = live_dl - dl_baseline
+                                    if abs(new_offset) > _DIAL_FEEDBACK_SANITY_HZ:
+                                        logger.warning(
+                                            "LockWatch: implausible DL reading %.1f Hz "
+                                            "(baseline %.1f), ignoring this cycle, "
+                                            "offset unchanged at %.1fHz",
+                                            live_dl,
+                                            dl_baseline,
+                                            self._dial_feedback_offset_hz,
+                                        )
+                                    elif new_offset != self._dial_feedback_offset_hz:
+                                        logger.info(
+                                            "LockWatch: offset updated %.1fHz -> %.1fHz "
+                                            "(live_dl=%.1f dl_baseline=%.1f, satmode)",
+                                            self._dial_feedback_offset_hz,
+                                            new_offset,
+                                            live_dl,
+                                            dl_baseline,
+                                        )
+                                        self._dial_feedback_offset_hz = new_offset
+                                return
                             if isinstance(rig, HamlibNetController):
                                 live_dl = rig.get_frequency()
                                 live_ul = rig.get_split_frequency()
                             else:
                                 assert isinstance(rig, HamlibDirectController)
-                                if rig.is_satmode:
-                                    live_dl = rig.get_frequency("Main")
-                                    live_ul = rig.get_frequency("TX")
-                                else:
-                                    live_dl = rig.get_frequency("VFOA")
-                                    live_ul = rig.get_frequency("VFOB")
+                                live_dl = rig.get_frequency("VFOA")
+                                live_ul = rig.get_frequency("VFOB")
                             if live_dl < 0 or live_ul < 0:
                                 logger.info(
                                     "LockWatch: read failed (live_dl=%.1f live_ul=%.1f), "
