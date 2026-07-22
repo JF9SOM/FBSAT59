@@ -2004,7 +2004,9 @@ class TestLockDialFeedback:
     def test_lock_watch_ignores_implausible_jump(self, qtbot, db) -> None:
         w = self._make_window(qtbot, db)
         rig = self._make_yaesu_rig(connected=False)
-        rig.read_dl_ul_independent = MagicMock(return_value=(145_900_000.0, 435_000_000.0))
+        # +300kHz -- comfortably past _DIAL_FEEDBACK_SANITY_HZ (200kHz, raised
+        # 2026-07-22 to cover a full-passband sweep on wide transponders).
+        rig.read_dl_ul_independent = MagicMock(return_value=(146_100_000.0, 435_000_000.0))
         w._rig_controller = rig
         w._trsp_lock = True
         w._engine = self._fake_engine(rr=0.0)
@@ -2113,7 +2115,9 @@ class TestLockDialFeedback:
     def test_rig_send_ignores_implausible_jump(self, qtbot, db) -> None:
         w = self._make_window(qtbot, db)
         rig = self._make_yaesu_rig(connected=True)
-        rig.get_frequency = MagicMock(return_value=145_900_000.0)  # +100kHz, implausible
+        # +300kHz -- comfortably past _DIAL_FEEDBACK_SANITY_HZ (200kHz, raised
+        # 2026-07-22 to cover a full-passband sweep on wide transponders).
+        rig.get_frequency = MagicMock(return_value=146_100_000.0)
         rig.get_split_frequency = MagicMock(return_value=435_000_000.0)
         rig.set_vfo_frequencies = MagicMock(return_value=True)
         w._dial_feedback_offset_hz = 0.0
@@ -2408,7 +2412,9 @@ class TestLockDialFeedback:
     def test_rig_send_direct_satmode_ignores_implausible_jump(self, qtbot, db) -> None:
         w = self._make_window(qtbot, db)
         rig = self._make_satmode_direct_rig(connected=True)
-        rig.get_frequency = MagicMock(return_value=145_900_000.0)  # +100kHz, implausible
+        # +300kHz -- comfortably past _DIAL_FEEDBACK_SANITY_HZ (200kHz, raised
+        # 2026-07-22 to cover a full-passband sweep on wide transponders).
+        rig.get_frequency = MagicMock(return_value=146_100_000.0)
         rig.set_vfo_frequencies = MagicMock(return_value=True)
         w._dial_feedback_offset_hz = 0.0
 

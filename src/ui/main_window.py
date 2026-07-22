@@ -135,7 +135,13 @@ _MODE_INVERT: dict[str, str] = {
 _RAW_CAT_MODEL_IDS: frozenset[int] = _FTX1_MODEL_IDS | _FT991_DIRECT_MODEL_IDS
 
 # Lock (L button) dial feedback thresholds -- see MainWindow._lock_watch_cycle().
-_DIAL_FEEDBACK_SANITY_HZ = 50_000.0  # ignore implausible single-cycle jumps above this
+# Ignore implausible single-cycle jumps above this. Originally 50_000.0, but a
+# real linear-transponder pass (FO-29, ~100kHz-wide passband) showed a
+# deliberate, large manual retune across the passband getting rejected as
+# "implausible" -- raised to comfortably cover a full-passband sweep on any
+# known amateur transponder (widest are ~130kHz) while still catching a
+# genuinely wrong read (confirmed live, 2026-07-22).
+_DIAL_FEEDBACK_SANITY_HZ = 200_000.0
 # If a DL reading is this close to the same poll's UL reading, rigctld's
 # "current VFO" pointer is almost certainly stuck on Sub (confirmed live,
 # 2026-07-15, FTX-1F) -- discard the reading rather than act on it. DL and
