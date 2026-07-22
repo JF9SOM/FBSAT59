@@ -1746,6 +1746,41 @@ class TestTuneLockButtons:
         w._on_lock_changed(False)
         assert w._trsp_lock is False
 
+    def test_toggle_lock_flips_checked_state_and_emits(self, qtbot) -> None:
+        """RadioControlWidget.toggle_lock() (used by MainWindow's Ctrl+L
+        hotkey, GitHub Issue #14) flips _lock_btn the same way a real click
+        would, including emitting lock_changed."""
+        from ui.radio_control_widget import RadioControlWidget
+
+        w = RadioControlWidget()
+        qtbot.addWidget(w)
+        received = []
+        w.lock_changed.connect(received.append)
+
+        assert w._lock_btn.isChecked() is False
+        w.toggle_lock()
+        assert w._lock_btn.isChecked() is True
+        w.toggle_lock()
+        assert w._lock_btn.isChecked() is False
+        assert received == [True, False]
+
+    def test_ctrl_l_shortcut_toggles_lock(self, qtbot, db) -> None:
+        """MainWindow wires Ctrl+L to RadioControlWidget.toggle_lock()
+        (GitHub Issue #14: operator's hands are on the rig's VFO knob, not
+        the mouse, while manually retuning)."""
+        from data.tle_manager import TLEManager
+        from ui.main_window import MainWindow
+
+        tle_manager = TLEManager(db)
+        w = MainWindow(conn=db, tle_manager=tle_manager)
+        qtbot.addWidget(w)
+
+        assert w._trsp_lock is False
+        w._lock_shortcut.activated.emit()
+        assert w._trsp_lock is True
+        w._lock_shortcut.activated.emit()
+        assert w._trsp_lock is False
+
 
 class TestLockDialFeedback:
     """Lock (L button) dial feedback: _lock_watch_cycle() (pre-Connect) and

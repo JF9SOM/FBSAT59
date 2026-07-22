@@ -154,7 +154,10 @@ class RadioControlWidget(QWidget):
         self._lock_btn = QPushButton(_("L"))
         self._lock_btn.setFixedWidth(56)
         self._lock_btn.setToolTip(
-            _("Lock: DL is yours to tune manually; UL follows (inverting transponder aware)")
+            _(
+                "Lock (Ctrl+L): DL is yours to tune manually; UL follows "
+                "(inverting transponder aware)"
+            )
         )
         self._lock_btn.setCheckable(True)
         self._lock_btn.setStyleSheet(
@@ -465,6 +468,11 @@ class RadioControlWidget(QWidget):
         else:
             self._at_indicator.setText(_("OFF"))
             self._at_indicator.setStyleSheet("color: gray; font-weight: bold;")
+
+    def toggle_lock(self) -> None:
+        """Flip the Lock button's checked state, same as a real click (used
+        by MainWindow's Ctrl+L hotkey -- see GitHub Issue #14)."""
+        self._lock_btn.setChecked(not self._lock_btn.isChecked())
 
     def set_south_init(self, checked: bool) -> None:
         """Set the South Init checkbox without emitting south_init_changed."""

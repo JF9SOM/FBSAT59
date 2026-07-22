@@ -3234,6 +3234,45 @@ rigctldは全クライアントで単一の静的`RIG *my_rig`オブジェクト
 同じデーモン（rigctld）を共有する構成では、自分が使っていなくても他のクライアントの操作で
 静かに有効化されうる。
 
+### Ctrl+L ホットキー（2026-07-22 実装、GitHub Issue #14）
+
+Issue #14の報告者（ei4gnb）から、IC-9700実機でLock機能自体は期待通り動作したという確認と
+合わせて、「実際の運用ではユーザーの手はVFOダイヤルにあり、マウスでLockボタンを押しに
+行くのは実用上不便。ホットキー、あるいは将来的にはミニキーボード/MIDI/HIDデバイスへの
+マッピング機能が欲しい」という要望があった。今回はミニキーボード/MIDI/HID対応という
+大きな機能拡張ではなく、まず固定のキーボードショートカットのみを実装した。
+
+**キー割り当て**: `Ctrl+L`（ユーザー確認済み）。単独の`L`キーは却下した——コールサイン
+入力欄等のテキストフィールドにフォーカスがある間は文字として入力されてしまい、ホットキー
+として機能しないため。`Ctrl+L`ならテキスト入力と衝突しない。
+
+**有効範囲**: アプリ全体（ユーザー確認済み）。`QShortcut(QKeySequence("Ctrl+L"),
+self)`をMainWindow自身に対して生成し、デフォルトの`Qt.WindowShortcut`コンテキストのまま
+（Radio Controlタブが表示されていなくても、メインウィンドウ内のどこかにフォーカスが
+あれば発火する）。
+
+**実装**:
+- `RadioControlWidget.toggle_lock()`（`src/ui/radio_control_widget.py`）: `_lock_btn`の
+  チェック状態を反転させるだけの公開メソッド。`setChecked()`は実際にクリックした場合と
+  同じく`toggled`（→`lock_changed`）シグナルを発火するため、既存の`_on_lock_changed()`
+  以降の処理は一切変更不要
+- `MainWindow.__init__()`（`self._radio_control = RadioControlWidget()`の直後）:
+  `self._lock_shortcut = QShortcut(QKeySequence("Ctrl+L"), self)`を生成し
+  `.activated.connect(self._radio_control.toggle_lock)`
+- Lockボタンのツールチップも`"Lock (Ctrl+L): ..."`に更新し、日本語訳
+  （`Lock（Ctrl+L）: ...`）も追従（`.po`/`.mo`再コンパイル済み）
+
+テスト: `tests/test_main_window.py`の`TestTuneLockButtons`に2件追加
+（`test_toggle_lock_flips_checked_state_and_emits`: `RadioControlWidget`単体で
+`toggle_lock()`が状態反転と`lock_changed`発火の両方を行うことを検証／
+`test_ctrl_l_shortcut_toggles_lock`: `MainWindow`が`Ctrl+L`を実際に
+`toggle_lock()`へ配線していることを、`_lock_shortcut.activated.emit()`経由で検証。
+実キー入力のシミュレートは行わず、シグナル自体をemitして配線のみを確認する方式——
+オフスクリーン環境でのキーイベント配送の不確実性を避けるため）。
+
+**未実装（要望の残り）**: ミニキーボード/MIDI/HIDデバイスへの汎用マッピング機能は
+今回のスコープ外。将来必要になった場合は別途検討する。
+
 ---
 
 ## Rig-Specific Implementation Notes

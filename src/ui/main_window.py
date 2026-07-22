@@ -32,7 +32,9 @@ from PySide6.QtGui import (
     QColor,
     QDesktopServices,
     QIcon,
+    QKeySequence,
     QPixmap,
+    QShortcut,
 )
 from PySide6.QtWidgets import (
     QComboBox,
@@ -765,6 +767,15 @@ class MainWindow(QMainWindow):
         self._pass_chart = PassChartView()
         self._group_pass_chart = GroupPassChartView()
         self._radio_control = RadioControlWidget()
+        # Ctrl+L toggles Lock app-wide regardless of which tab is active --
+        # requested in GitHub Issue #14 (ei4gnb): the operator's hands are
+        # on the rig's VFO knob, not the mouse, while manually retuning.
+        # Default QShortcut context (WindowShortcut) fires whenever any
+        # widget inside this window has focus; a plain letter key was
+        # avoided so it doesn't get swallowed as text by a focused QLineEdit
+        # (e.g. an APRS/FT4 callsign field).
+        self._lock_shortcut = QShortcut(QKeySequence("Ctrl+L"), self)
+        self._lock_shortcut.activated.connect(self._radio_control.toggle_lock)
         self._pass_chart.range_changed.connect(self._on_chart_range_changed)
         self._dashboard_tab_idx = self._tab_widget.addTab(self._dashboard_view, _("Dashboard"))
         self._tab_widget.addTab(self._world_map, _("World Map"))
