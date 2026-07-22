@@ -422,13 +422,14 @@ class SdrControlWidget(QWidget):
         self._manual_freq_spin.editingFinished.connect(self._on_manual_tune)
         row.addWidget(self._manual_freq_spin)
 
-        tune_btn = QPushButton(_("Tune"))
+        tune_btn = QPushButton(_("T"))
+        tune_btn.setFixedWidth(56)
         tune_btn.setToolTip(manual_hint)
         tune_btn.clicked.connect(self._on_manual_tune)
         row.addWidget(tune_btn)
 
         self._sdr_lock_btn = QPushButton(_("L"))
-        self._sdr_lock_btn.setFixedWidth(32)
+        self._sdr_lock_btn.setFixedWidth(56)
         self._sdr_lock_btn.setToolTip(
             _(
                 "SDR Lock: while on, Doppler correction stops retuning the SDR "
