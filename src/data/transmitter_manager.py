@@ -715,6 +715,12 @@ class TransmitterManager:
         is fetched from SATNOGS and used to overwrite it.
         Satellites not in the DB (TLE not yet fetched) are skipped.
 
+        The satellite list is paginated (thousands of entries across many requests).
+        If a page request fails partway through (e.g. the SATNOGS host becomes
+        unreachable), earlier pages that were already processed are still committed
+        and returned instead of the whole sync silently discarding all progress and
+        raising all the way up to the caller.
+
         Returns:
             {"updated": N, "skipped": N}
         """
@@ -726,9 +732,19 @@ class TransmitterManager:
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             while next_url:
-                r = await client.get(next_url, params=params)
-                r.raise_for_status()
-                data = r.json()
+                try:
+                    r = await client.get(next_url, params=params)
+                    r.raise_for_status()
+                    data = r.json()
+                except httpx.HTTPError as exc:
+                    logger.warning(
+                        "sync_satellite_names: page fetch failed after %d satellite(s)"
+                        " processed (%s: %s) — keeping progress made so far",
+                        total_processed,
+                        type(exc).__name__,
+                        exc,
+                    )
+                    break
                 params = {}
 
                 if isinstance(data, dict):

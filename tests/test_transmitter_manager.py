@@ -9,6 +9,7 @@ import asyncio
 import sqlite3
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from data.database import SCHEMA_SQL
@@ -144,4 +145,60 @@ class TestSyncSatelliteNamesUnhide:
         )
 
         row = db.execute("SELECT is_hidden FROM satellites WHERE norad_cat_id = 98293").fetchone()
+        assert row["is_hidden"] == 0
+
+
+class TestSyncSatelliteNamesPageFailure:
+    """A page-fetch failure partway through pagination (e.g. SATNOGS becomes
+    unreachable, as diagnosed on Windows 2026-07-23 — ConnectError/ConnectTimeout)
+    must not discard satellites already processed from earlier pages, and must not
+    raise out of sync_satellite_names() (the caller only logs a warning either way,
+    but earlier behavior silently lost all progress made on prior pages too).
+    """
+
+    def test_first_page_failure_returns_without_raising(self, db: sqlite3.Connection) -> None:
+        mgr = TransmitterManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            side_effect=httpx.ConnectError("all connection attempts failed")
+        )
+        with patch("data.transmitter_manager.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            stats = asyncio.run(mgr.sync_satellite_names())
+
+        assert stats == {"updated": 0, "skipped": 0}
+
+    def test_later_page_failure_keeps_earlier_pages_committed(self, db: sqlite3.Connection) -> None:
+        mgr = TransmitterManager(db)
+        page1 = MagicMock()
+        page1.raise_for_status.return_value = None
+        page1.json.return_value = {
+            "results": [
+                {
+                    "norad_cat_id": 25544,
+                    "name": "ISS",
+                    "names": "ZARYA, RS0ISS",
+                    "status": "alive",
+                    "norad_follow_id": None,
+                }
+            ],
+            "next": "https://db.satnogs.org/api/satellites/?page=2",
+        }
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            side_effect=[page1, httpx.ConnectTimeout("timed out")],
+        )
+        with patch("data.transmitter_manager.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            stats = asyncio.run(mgr.sync_satellite_names())
+
+        assert stats == {"updated": 1, "skipped": 0}
+        row = db.execute(
+            "SELECT name, is_hidden FROM satellites WHERE norad_cat_id = 25544"
+        ).fetchone()
+        assert row is not None
+        assert row["name"] == "ISS"
         assert row["is_hidden"] == 0
