@@ -218,6 +218,91 @@ _SATMODE_USE_VFO_SUB: frozenset[int] = frozenset(
     ]
 )
 
+# ---------------------------------------------------------------------------
+# Windows raw-CI-V bypass for satmode rigs (IC-9100/9700/910H/821H) — Direct mode
+# ---------------------------------------------------------------------------
+# Hamlib's rig.open() times out (Hamlib error -5, RIG_ETIMEOUT) 100% of the
+# time on at least one confirmed real Windows 11 + IC-9100 setup (verified on
+# two different PCs, with a verified-matching CI-V address on both ends), while
+# a bare pyserial round-trip on the exact same hardware succeeds reliably --
+# a single read, 20x repeated reads (~1/sec, matching the Doppler loop), and
+# an open->close->reopen cycle all passed 100% (scripts/test_ic9100_raw_civ.py,
+# 2026-07-22). Root cause: lib/termios.c, Hamlib's own Windows serial layer
+# (vendored ~2001 from the rxtx Java library), uses overlapped Win32 I/O with
+# a source comment acknowledging past quirks with "USB to Serial devices".
+# Linux/macOS are unaffected (this file's existing satmode Direct-mode path
+# above is already confirmed working there), so this bypass is Windows-only --
+# mirrors the existing FTX-1F/FT-991 raw-CAT pattern for the same class of
+# platform-specific Hamlib reliability issue.
+#
+# CI-V byte values below are taken directly from Hamlib 4.7.1's own Icom
+# backend (rigs/icom/icom_defs.h, rigs/icom/icom.c, rigs/icom/frame.c,
+# src/misc.c's to_bcd()/to_bcd_be()) -- the same protocol Hamlib itself sends,
+# just constructed and sent here without going through Hamlib's serial code.
+_CIV_CTRL_ID = 0xE0
+_CIV_C_RD_FREQ = 0x03
+_CIV_C_SET_FREQ = 0x05
+_CIV_C_SET_MODE = 0x06
+_CIV_C_SET_VFO = 0x07
+_CIV_C_CTL_FUNC = 0x16
+_CIV_C_CTL_MEM = 0x1A
+_CIV_C_SET_TONE = 0x1B
+_CIV_C_CTL_PTT = 0x1C
+_CIV_S_VFOA = 0x00
+_CIV_S_VFOB = 0x01
+_CIV_S_MAIN = 0xD0
+_CIV_S_SUB = 0xD1
+_CIV_S_MEM_SATMODE = 0x5A  # under C_CTL_FUNC (0x16) — IC-9100/9700/821H
+_CIV_S_MEM_SATMODE910 = 0x07  # under C_CTL_MEM (0x1A) — IC-910H only
+_CIV_S_FUNC_TONE = 0x42  # repeater (uplink) CTCSS encoder enable
+_CIV_S_TONE_RPTR = 0x00  # under C_SET_TONE (0x1B) — repeater tone frequency
+_CIV_S_PTT = 0x00  # under C_CTL_PTT (0x1C) — TX ON/OFF
+
+# IC-910H toggles SAT mode via a different CI-V command than the other three
+# satmode rigs (C_CTL_MEM/S_MEM_SATMODE910 instead of C_CTL_FUNC/S_MEM_SATMODE)
+# -- see rigs/icom/icom.c's RIG_FUNC_SATMODE case, which special-cases RIG_IS_IC910.
+_SATMODE_910_MODEL_IDS: frozenset[int] = frozenset({3044})
+
+# SATNOGS mode string -> Icom raw CI-V mode byte (rigs/icom/frame.c's
+# rig2icom_mode()). Icom rigs don't have a separate "data mode" mode byte the
+# way Yaesu does (RIG_MODE_PKTUSB maps to the same S_USB byte as plain USB on
+# any non-IC7800 rig), so USB-D/LSB-D map to the same code as USB/LSB.
+_SATMODE_CIV_MODE_CODES: dict[str, int] = {
+    "LSB": 0x00,
+    "USB": 0x01,
+    "SSB": 0x01,
+    "AM": 0x02,
+    "CW": 0x03,
+    "RTTY": 0x04,
+    "FM": 0x05,
+    "DIGITALVOICE": 0x05,
+    "AFSK": 0x05,
+    "CW-R": 0x07,
+    "USB-D": 0x01,
+    "LSB-D": 0x00,
+}
+
+# Hamlib per-model factory-default CI-V address (rigs/icom/ic9100.c,
+# ic7300.c's IC9700_priv_caps, ic910.c, ic821h.c). Only used as a fallback
+# when the user has not entered a CI-V address override in Rig Settings.
+_SATMODE_DEFAULT_CIV_ADDR: dict[int, int] = {
+    3068: 0x7C,  # IC-9100
+    3081: 0xA2,  # IC-9700
+    3044: 0x60,  # IC-910H
+    3034: 0x4C,  # IC-821H
+}
+
+
+def _civ_freq_to_bcd(freq_hz: int) -> bytes:
+    """5-byte little-endian BCD frequency encoding (Hamlib's to_bcd(), 10 digits)."""
+    digits = f"{int(freq_hz):010d}"[::-1]
+    out = bytearray()
+    for i in range(0, 10, 2):
+        lo = int(digits[i])
+        hi = int(digits[i + 1]) if i + 1 < 10 else 0
+        out.append((hi << 4) | lo)
+    return bytes(out)
+
 
 def normalize_civ_addr(text: str) -> str:
     """Normalise a user-entered CI-V address into a Hamlib-parseable "0xNN" string.
@@ -841,6 +926,10 @@ class HamlibDirectController(RigController):
         self._civ_addr = civ_addr.strip()
         self._rig: Any = None  # Hamlib.Rig instance or _MockRig
         self._hamlib: Any = None  # Hamlib module, set lazily in connect()
+        # pyserial.Serial for the Windows raw-CI-V bypass (satmode rigs only,
+        # see _use_raw_civ_bypass()). None unless that bypass is active and
+        # connected. Guarded by _rig_cmd_lock, same as Hamlib-path writes.
+        self._raw_civ_serial: Any = None
         self._last_dl_hz: float | None = None
         self._last_dl_update_time: float = 0.0
         self._last_ul_hz: float | None = None
@@ -916,7 +1005,9 @@ class HamlibDirectController(RigController):
             self._state = RigState.CONNECTING
 
         try:
-            if HAMLIB_AVAILABLE:
+            if self._use_raw_civ_bypass():
+                self._connect_raw_civ()
+            elif HAMLIB_AVAILABLE:
                 import Hamlib as _H  # lazy — avoids Qt TLS collision at startup
 
                 self._hamlib = _H
@@ -998,13 +1089,16 @@ class HamlibDirectController(RigController):
             if self._state == RigState.DISCONNECTED:
                 return
         try:
-            if self._rig is not None:
+            if self._raw_civ_serial is not None:
+                self._disconnect_raw_civ()
+            elif self._rig is not None:
                 self._rig.close()
         except Exception as exc:
             logger.warning("RigDirect: disconnect error — %s", exc)
         finally:
             self._rig = None
             self._hamlib = None
+            self._raw_civ_serial = None
             self._last_dl_hz = None
             self._last_dl_update_time = 0.0
             self._last_ul_hz = None
@@ -1098,12 +1192,18 @@ class HamlibDirectController(RigController):
 
         if self._satmode:
             if not self.is_connected:
+                if self._use_raw_civ_bypass():
+                    return self._apply_mode_and_ctcss_civ(
+                        self._current_dl_mode, self._current_ul_mode, tone_hz
+                    )
                 # Port is free: apply via Hamlib (cross-platform).
                 return self._apply_mode_and_ctcss_hamlib(
                     self._current_dl_mode, self._current_ul_mode, tone_hz
                 )
-            # Port held by Hamlib; _satmode_enter will apply CTCSS after connect.
-            logger.info("RigDirect.set_ctcss_tone: connected — deferred to _satmode_enter")
+            # Port held by Hamlib (or the raw-CI-V bypass connection); the
+            # tone applied at transponder-selection time (before Connect)
+            # is already in effect, so there is nothing further to do here.
+            logger.info("RigDirect.set_ctcss_tone: connected — no action needed")
             return True
 
         # Non-satmode rig: use Hamlib binding on current VFO.
@@ -1182,13 +1282,18 @@ class HamlibDirectController(RigController):
                     rig.close()
 
     def _civ_addr_int(self) -> int:
-        """Return the CI-V rig address as an integer (default 0x65 for IC-9100)."""
+        """Return the CI-V rig address as an integer.
+
+        Falls back to Hamlib's own per-model factory default (see
+        _SATMODE_DEFAULT_CIV_ADDR) when the user has not entered an override
+        in Rig Settings, matching what a plain Hamlib session would use.
+        """
         if self._civ_addr:
             try:
                 return int(normalize_civ_addr(self._civ_addr), 16)
             except ValueError:
                 pass
-        return 0x65
+        return _SATMODE_DEFAULT_CIV_ADDR.get(self._model_id, 0x65)
 
     @staticmethod
     def _civ_bcd_tone(tone_hz: float) -> bytes:
@@ -1340,9 +1445,25 @@ class HamlibDirectController(RigController):
             return False
 
     def set_ptt(self, enabled: bool) -> bool:
-        """Key or un-key the transmitter via Hamlib direct binding."""
+        """Key or un-key the transmitter via Hamlib direct binding.
+
+        Windows raw-CI-V bypass (see _use_raw_civ_bypass()): sent via CI-V
+        command 1C 00 on the persistent raw-serial connection instead,
+        since self._rig (the Hamlib session) never exists for these
+        instances.
+        """
         super().set_ptt(enabled)  # updates _ptt_active
-        if not self.is_connected or self._rig is None:
+        if not self.is_connected:
+            return False
+        if self._raw_civ_serial is not None:
+            try:
+                with self._rig_cmd_lock:
+                    self._civ_write_ptt(self._raw_civ_serial, enabled)
+                return True
+            except Exception as exc:
+                logger.error("RigDirect.set_ptt(%s) [raw CI-V]: %s", enabled, exc)
+                return False
+        if self._rig is None:
             return False
         try:
             ptt_val = self._hamlib.RIG_PTT_ON if enabled else self._hamlib.RIG_PTT_OFF
@@ -1365,7 +1486,7 @@ class HamlibDirectController(RigController):
         Skips the command when the frequency has not changed by 1 Hz or more,
         or when the argument is None.
         """
-        if not self.is_connected or self._rig is None:
+        if not self.is_connected or (self._rig is None and self._raw_civ_serial is None):
             return False
         if self._ptt_active:
             return True
@@ -1378,6 +1499,8 @@ class HamlibDirectController(RigController):
         vfob_hz: float | None,
     ) -> bool:
         """Inner implementation of set_vfo_frequencies; caller must hold _rig_cmd_lock."""
+        if self._raw_civ_serial is not None:
+            return self._set_vfo_frequencies_civ(vfoa_hz, vfob_hz)
         try:
             if self._satmode:
                 # IC-9100/9700 satmode: satmode routes Main=RX(DL) and Sub=TX(UL).
@@ -1631,6 +1754,9 @@ class HamlibDirectController(RigController):
         self._current_dl_mode = dl_mode
         self._current_ul_mode = ul_mode
         logger.info("RigDirect: send_mode_only dl=%s ul=%s", dl_mode, ul_mode)
+        if self._use_raw_civ_bypass():
+            self._send_mode_only_civ(dl_mode, ul_mode)
+            return
         if not HAMLIB_AVAILABLE:
             return
         rig: Any = None
@@ -2157,6 +2283,15 @@ class HamlibDirectController(RigController):
                 ul_mode,
                 ctcss_hz,
             )
+            if self._use_raw_civ_bypass():
+                if not self._apply_mode_and_ctcss_civ(dl_mode, ul_mode, ctcss_hz):
+                    detail = self._last_hamlib_error or "unknown error"
+                    raise RigControlError(f"Mode/CTCSS Error: {detail}")
+                # No Stage-2 resend needed here: that workaround exists only
+                # for a Hamlib-internal cache-tracking bug (see
+                # _set_vfo_frequencies_civ()'s docstring) that does not apply
+                # to this always-explicit-VFO raw-CI-V path.
+                return
             if not self._apply_mode_and_ctcss_hamlib(dl_mode, ul_mode, ctcss_hz):
                 detail = self._last_hamlib_error or "unknown error"
                 raise RigControlError(f"Mode/CTCSS Error: {detail}")
@@ -2312,7 +2447,7 @@ class HamlibDirectController(RigController):
         which allows set_freq(VFO_TX) to write the UL frequency correctly.
         Generic rigs: conventional VFOA/VFOB split via set_split_vfo.
         """
-        if self._rig is None:
+        if self._rig is None and not self._use_raw_civ_bypass():
             return
         try:
             if self._satmode:
@@ -2408,6 +2543,14 @@ class HamlibDirectController(RigController):
         """
         if not self._satmode:
             return
+        if self._use_raw_civ_bypass():
+            # Nothing to pre-warm via Hamlib here: this instance never opens
+            # a Hamlib session at all (see _use_raw_civ_bypass()). SAT mode
+            # is entered fresh by _apply_mode_and_ctcss_civ() at transponder
+            # selection and by _connect_raw_civ() at Connect, so a separate
+            # warmup step would just waste time retrying the known-broken
+            # Hamlib open() path for no benefit.
+            return
         try:
             import Hamlib as _H
         except ImportError:
@@ -2429,6 +2572,345 @@ class HamlibDirectController(RigController):
             logger.info("RigDirect: satmode warmup complete (Hamlib set_func SATMODE)")
         except Exception as exc:
             logger.warning("RigDirect: satmode warmup failed — %s", exc)
+
+    # -- Windows raw CI-V bypass (satmode rigs only, see module-level comment
+    #    above _CIV_CTRL_ID) --
+
+    def _use_raw_civ_bypass(self) -> bool:
+        """True when Hamlib's serial layer should be bypassed entirely for
+        this instance: Windows + a satmode rig (IC-9100/9700/910H/821H).
+        """
+        return sys.platform == "win32" and self._satmode
+
+    def _civ_transaction(
+        self,
+        ser: Any,
+        cmd: int,
+        subcmd: int | None = None,
+        data: bytes = b"",
+        read_len: int = 32,
+    ) -> bytes:
+        """Build one CI-V frame, send it, and always read back the reply.
+
+        Always reading the response (even for commands that only need an
+        ACK) matters: an fd/session that writes without reading leaves bytes
+        in the OS's serial receive buffer -- shared across every fd opened
+        on the same device node, not per-fd -- for the *next* session to
+        misinterpret. Root-caused and fixed for IC-705's raw CI-V split
+        command (see _init_split()'s IC-705 branch); applied here from the
+        start rather than discovered the same way twice.
+        """
+        body = bytes([subcmd]) if subcmd is not None else b""
+        frame = (
+            bytes([0xFE, 0xFE, self._civ_addr_int(), _CIV_CTRL_ID, cmd])
+            + body
+            + data
+            + bytes([0xFD])
+        )
+        ser.reset_input_buffer()
+        ser.write(frame)
+        return bytes(ser.read(read_len))
+
+    def _civ_select_vfo(self, ser: Any, which: str) -> None:
+        """which: 'Main'/'Sub' (satmode/cross-band) or 'VFOA'/'VFOB' (same-band split)."""
+        subcmd = {
+            "Main": _CIV_S_MAIN,
+            "Sub": _CIV_S_SUB,
+            "VFOA": _CIV_S_VFOA,
+            "VFOB": _CIV_S_VFOB,
+        }[which]
+        self._civ_transaction(ser, _CIV_C_SET_VFO, subcmd)
+
+    def _civ_write_freq(self, ser: Any, freq_hz: float) -> None:
+        """Set the frequency of whichever VFO is currently selected."""
+        self._civ_transaction(ser, _CIV_C_SET_FREQ, data=_civ_freq_to_bcd(int(freq_hz)))
+
+    def _civ_write_mode(self, ser: Any, mode: str) -> None:
+        """Set the mode of whichever VFO is currently selected.
+
+        No filter/passband byte is sent (matches Hamlib's own IC-910H
+        behaviour, icmode_ext=-1 — "IC-910 don't support passband data"):
+        the rig keeps its own last-used filter width. Deliberately simpler
+        than the generic Hamlib width-to-filter mapping, since there is no
+        real hardware available to verify that mapping against on this path.
+        """
+        code = _SATMODE_CIV_MODE_CODES.get(mode, _SATMODE_CIV_MODE_CODES["FM"])
+        self._civ_transaction(ser, _CIV_C_SET_MODE, code)
+
+    def _civ_write_satmode(self, ser: Any, enabled: bool) -> None:
+        if self._model_id in _SATMODE_910_MODEL_IDS:
+            self._civ_transaction(
+                ser, _CIV_C_CTL_MEM, _CIV_S_MEM_SATMODE910, data=bytes([1 if enabled else 0])
+            )
+        else:
+            self._civ_transaction(
+                ser, _CIV_C_CTL_FUNC, _CIV_S_MEM_SATMODE, data=bytes([1 if enabled else 0])
+            )
+
+    def _civ_write_ctcss(self, ser: Any, tone_hz: float) -> None:
+        """Set + enable/disable repeater (uplink) CTCSS tone on the
+        currently-selected VFO. Caller is responsible for selecting the VFO.
+        """
+        enable = tone_hz > 0
+        tone_bcd = self._civ_bcd_tone(tone_hz) if enable else b"\x00\x00"
+        self._civ_transaction(ser, _CIV_C_SET_TONE, _CIV_S_TONE_RPTR, data=tone_bcd)
+        # Icom CI-V drops back-to-back frames with no gap (same reason
+        # _apply_ctcss_civ_via_send_raw() sleeps 0.15s between raw frames).
+        time.sleep(0.15)
+        self._civ_transaction(
+            ser, _CIV_C_CTL_FUNC, _CIV_S_FUNC_TONE, data=bytes([1 if enable else 0])
+        )
+
+    def _civ_write_ptt(self, ser: Any, enabled: bool) -> None:
+        self._civ_transaction(ser, _CIV_C_CTL_PTT, _CIV_S_PTT, data=bytes([1 if enabled else 0]))
+
+    def _connect_raw_civ(self) -> None:
+        """Open the serial port directly via pyserial and enable SAT mode,
+        entirely bypassing Hamlib's own open()/serial code — see
+        _use_raw_civ_bypass(). Raises on failure, same contract as the
+        Hamlib path in connect().
+        """
+        import serial as _serial
+
+        with self._port_lock:
+            ser = _serial.Serial(
+                self._port,
+                self._baud_rate,
+                bytesize=self._data_bits,
+                stopbits=self._stop_bits,
+                timeout=1.0,
+            )
+            try:
+                self._civ_write_satmode(ser, True)
+            except Exception:
+                with contextlib.suppress(Exception):
+                    ser.close()
+                raise
+        self._raw_civ_serial = ser
+        self._rig = None
+        self._hamlib = None
+        logger.info(
+            "RigDirect: connected via Windows raw-CI-V bypass (satmode), port=%s civ=0x%02X",
+            self._port,
+            self._civ_addr_int(),
+        )
+
+    def _disconnect_raw_civ(self) -> None:
+        """Best-effort SAT mode OFF, then close the raw serial port."""
+        ser = self._raw_civ_serial
+        self._raw_civ_serial = None
+        if ser is None:
+            return
+        with contextlib.suppress(Exception), self._port_lock:
+            self._civ_write_satmode(ser, False)
+        with contextlib.suppress(Exception):
+            ser.close()
+
+    def _set_vfo_frequencies_civ(
+        self,
+        vfoa_hz: float | None,
+        vfob_hz: float | None,
+    ) -> bool:
+        """Raw-CI-V equivalent of the Hamlib satmode branch in
+        _set_vfo_frequencies_locked(); caller must hold _rig_cmd_lock.
+
+        Mirrors that path's thresholds/behaviour as closely as practical.
+        Does not need its "Stage 2 resend" workaround — that exists
+        specifically to cover a Hamlib-internal cache-tracking bug
+        (cache->satmode not reliably read back on some models); this path
+        always addresses Main/Sub explicitly by CI-V byte, so no such
+        ambiguity exists here.
+        """
+        ser = self._raw_civ_serial
+        if ser is None:
+            return False
+        try:
+            _is_same_band = (
+                vfoa_hz is not None
+                and vfob_hz is not None
+                and self._freq_band(vfoa_hz) == self._freq_band(vfob_hz)
+            )
+            if _is_same_band:
+                if self._satmode_active:
+                    self._civ_write_satmode(ser, False)
+                    time.sleep(0.4)  # IC-9100 internal normal-mode memory restore
+                    self._satmode_active = False
+                is_fm = self._current_dl_mode in ("FM", "AFSK", "DIGITALVOICE")
+                now = time.monotonic()
+                if vfoa_hz is not None:
+                    last_dl = self._last_dl_hz
+                    elapsed_dl = now - self._last_dl_update_time
+                    dl_thresh = 2000.0 if is_fm else 1.0
+                    dl_max_s = 60.0 if is_fm else 0.0
+                    if (
+                        last_dl is None
+                        or abs(vfoa_hz - last_dl) >= dl_thresh
+                        or (is_fm and elapsed_dl >= dl_max_s)
+                    ):
+                        self._civ_select_vfo(ser, "VFOA")
+                        self._civ_write_freq(ser, vfoa_hz)
+                        self._last_dl_hz = vfoa_hz
+                        self._last_dl_update_time = now
+                if vfob_hz is not None:
+                    last_ul = self._last_ul_hz
+                    elapsed = now - self._last_ul_update_time
+                    ul_thresh = 2000.0 if is_fm else 20.0
+                    ul_max_s = 60.0 if is_fm else 15.0
+                    if (
+                        last_ul is None
+                        or abs(vfob_hz - last_ul) >= ul_thresh
+                        or elapsed >= ul_max_s
+                    ):
+                        self._civ_select_vfo(ser, "VFOB")
+                        self._civ_write_freq(ser, vfob_hz)
+                        self._last_ul_hz = vfob_hz
+                        self._last_ul_update_time = now
+                        self._civ_select_vfo(ser, "VFOA")  # restore DL display
+            else:
+                if vfoa_hz is not None:
+                    last_dl = self._last_dl_hz
+                    if last_dl is None or self._freq_band(vfoa_hz) != self._freq_band(last_dl):
+                        self._civ_select_vfo(ser, "Main")
+                        self._civ_write_freq(ser, vfoa_hz)
+                        self._last_dl_hz = vfoa_hz
+                        self._last_ul_hz = None
+                        self._last_ul_update_time = 0.0
+                    elif abs(vfoa_hz - last_dl) >= 1.0:
+                        self._civ_select_vfo(ser, "Main")
+                        self._civ_write_freq(ser, vfoa_hz)
+                        self._last_dl_hz = vfoa_hz
+
+                if vfob_hz is not None:
+                    last_ul = self._last_ul_hz
+                    now = time.monotonic()
+                    elapsed = now - self._last_ul_update_time
+                    is_fm = self._current_dl_mode in ("FM", "DIGITALVOICE")
+                    ul_thresh = 10.0 if is_fm else 20.0
+                    ul_max_s = 5.0 if is_fm else 15.0
+                    if (
+                        last_ul is None
+                        or abs(vfob_hz - last_ul) >= ul_thresh
+                        or elapsed >= ul_max_s
+                    ):
+                        self._civ_select_vfo(ser, "Sub")
+                        self._civ_write_freq(ser, vfob_hz)
+                        self._last_ul_hz = vfob_hz
+                        self._last_ul_update_time = now
+            return True
+        except Exception as exc:
+            logger.error("RigDirect._set_vfo_frequencies_civ: %s", exc)
+            return False
+
+    def _apply_mode_and_ctcss_civ(self, dl_mode: str, ul_mode: str, ctcss_hz: float) -> bool:
+        """Raw-CI-V equivalent of _apply_mode_and_ctcss_hamlib(), used at
+        transponder selection time (before Connect) and by set_ctcss_tone()
+        when not yet connected. Opens its own short-lived serial session.
+        """
+        import serial as _serial
+
+        is_same_band = (
+            self._transponder_dl_hz is not None
+            and self._transponder_ul_hz is not None
+            and self._freq_band(self._transponder_dl_hz) == self._freq_band(self._transponder_ul_hz)
+        )
+        try:
+            with self._port_lock:
+                ser = _serial.Serial(
+                    self._port,
+                    self._baud_rate,
+                    bytesize=self._data_bits,
+                    stopbits=self._stop_bits,
+                    timeout=1.0,
+                )
+                try:
+                    if is_same_band:
+                        # Same-band pairs: SAT mode OFF, plain VFOA/VFOB
+                        # split. CTCSS intentionally skipped, matching
+                        # _apply_mode_and_ctcss_hamlib()'s same-band branch
+                        # (same-band satellite transponders do not require
+                        # uplink access tones).
+                        self._civ_write_satmode(ser, False)
+                        time.sleep(0.4)
+                        if self._transponder_dl_hz is not None:
+                            self._civ_select_vfo(ser, "VFOA")
+                            self._civ_write_freq(ser, self._transponder_dl_hz)
+                        if self._transponder_ul_hz is not None:
+                            self._civ_select_vfo(ser, "VFOB")
+                            self._civ_write_freq(ser, self._transponder_ul_hz)
+                        self._civ_select_vfo(ser, "VFOB")
+                        self._civ_write_mode(ser, ul_mode)
+                        self._civ_select_vfo(ser, "VFOA")
+                        self._civ_write_mode(ser, dl_mode)
+                    else:
+                        self._civ_write_satmode(ser, True)
+                        time.sleep(0.3)
+                        if self._transponder_dl_hz is not None:
+                            self._civ_select_vfo(ser, "Main")
+                            self._civ_write_freq(ser, self._transponder_dl_hz)
+                        if self._transponder_ul_hz is not None:
+                            self._civ_select_vfo(ser, "Sub")
+                            self._civ_write_freq(ser, self._transponder_ul_hz)
+                        self._civ_select_vfo(ser, "Main")
+                        self._civ_write_mode(ser, dl_mode)
+                        self._civ_select_vfo(ser, "Sub")
+                        self._civ_write_mode(ser, ul_mode)
+                        self._civ_write_ctcss(ser, ctcss_hz)
+                        # Restore DL display and clear any tone bleed-through on Main.
+                        self._civ_select_vfo(ser, "Main")
+                        self._civ_transaction(
+                            ser, _CIV_C_CTL_FUNC, _CIV_S_FUNC_TONE, data=bytes([0])
+                        )
+                finally:
+                    with contextlib.suppress(Exception):
+                        ser.close()
+            logger.info(
+                "RigDirect: raw-CI-V mode/CTCSS applied dl=%s ul=%s ctcss=%.1fHz same_band=%s",
+                dl_mode,
+                ul_mode,
+                ctcss_hz,
+                is_same_band,
+            )
+            self._last_hamlib_error = None
+            return True
+        except Exception as exc:
+            self._last_hamlib_error = str(exc)
+            logger.error("RigDirect._apply_mode_and_ctcss_civ: %s", exc)
+            return False
+
+    def _send_mode_only_civ(self, dl_mode: str, ul_mode: str) -> None:
+        """Raw-CI-V equivalent of send_mode_only() for the Windows bypass.
+
+        Best-effort: errors are logged and swallowed, matching
+        send_mode_only()'s existing contract.
+        """
+        import serial as _serial
+
+        try:
+            with self._port_lock:
+                ser = _serial.Serial(
+                    self._port,
+                    self._baud_rate,
+                    bytesize=self._data_bits,
+                    stopbits=self._stop_bits,
+                    timeout=1.0,
+                )
+                try:
+                    if self._satmode_active:
+                        self._civ_select_vfo(ser, "Main")
+                        self._civ_write_mode(ser, dl_mode)
+                        self._civ_select_vfo(ser, "Sub")
+                        self._civ_write_mode(ser, ul_mode)
+                    else:
+                        self._civ_select_vfo(ser, "VFOB")
+                        self._civ_write_mode(ser, ul_mode)
+                        self._civ_select_vfo(ser, "VFOA")
+                        self._civ_write_mode(ser, dl_mode)
+                finally:
+                    with contextlib.suppress(Exception):
+                        ser.close()
+            logger.info("RigDirect: raw-CI-V send_mode_only done")
+        except Exception as exc:
+            logger.error("RigDirect._send_mode_only_civ: %s", exc)
 
     def _vfo_str_to_const(self, vfo: str) -> int:
         """Convert a VFO string to the corresponding Hamlib constant (or 0 in mock mode)."""
