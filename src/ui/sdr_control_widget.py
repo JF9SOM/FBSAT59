@@ -409,7 +409,8 @@ class SdrControlWidget(QWidget):
         # frequency every cycle, so a manual tune here would be immediately
         # reverted.
         manual_hint = _(
-            "Absolute tune — applied when no transponder is selected, or while SDR Lock is on"
+            "Tune: set the SDR to the frequency shown to the left. Only takes "
+            "effect when no transponder is selected, or while Lock (L) is on."
         )
         row.addWidget(QLabel(_("Freq:")))
         self._manual_freq_spin = QDoubleSpinBox()
