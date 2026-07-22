@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis
-from PySide6.QtCore import Qt, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import QPointF, Qt, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QColor, QDesktopServices, QPen
 from PySide6.QtWidgets import (
     QComboBox,
@@ -305,8 +305,24 @@ class SdrControlWidget(QWidget):
         pen.setWidth(1)
         self._spectrum_series.setPen(pen)
 
+        # Centre-frequency marker — a vertical dashed line at the SDR's
+        # actual tuned frequency, drawn on top of the trace. The FFT data
+        # (SDRPipeline._compute_fft()) is already centred on center_freq,
+        # so this mostly reinforces that visually, but it also gives an
+        # explicit "this is where you're tuned" reference point regardless
+        # of where a signal peak happens to fall — there was previously no
+        # visual indicator of the tuned frequency on the chart at all
+        # (GitHub Issue #12 follow-up: "Would be nice if this was centered
+        # or a mark that the tune is at").
+        self._center_marker_series = QLineSeries()
+        marker_pen = QPen(QColor("#ff3b30"))
+        marker_pen.setWidth(1)
+        marker_pen.setStyle(Qt.PenStyle.DashLine)
+        self._center_marker_series.setPen(marker_pen)
+
         self._spectrum_chart = QChart()
         self._spectrum_chart.addSeries(self._spectrum_series)
+        self._spectrum_chart.addSeries(self._center_marker_series)
         self._spectrum_chart.setBackgroundBrush(QColor("#1a1a2e"))
         self._spectrum_chart.legend().hide()
         self._spectrum_chart.setMargins(
@@ -330,6 +346,8 @@ class SdrControlWidget(QWidget):
         self._spectrum_chart.addAxis(self._pwr_axis, Qt.AlignmentFlag.AlignLeft)
         self._spectrum_series.attachAxis(self._freq_axis)
         self._spectrum_series.attachAxis(self._pwr_axis)
+        self._center_marker_series.attachAxis(self._freq_axis)
+        self._center_marker_series.attachAxis(self._pwr_axis)
 
         chart_view = QChartView(self._spectrum_chart)
         chart_view.setMinimumHeight(160)
@@ -673,8 +691,6 @@ class SdrControlWidget(QWidget):
         # Convert Hz to MHz for the axis
         pts = [(f / 1e6, p) for f, p in points]
         # Use replace() for efficiency when series already has data
-        from PySide6.QtCore import QPointF
-
         self._spectrum_series.replace([QPointF(f, p) for f, p in pts])
         freqs = [f for f, _ in pts]
         if freqs:
@@ -695,6 +711,9 @@ class SdrControlWidget(QWidget):
         """
         mhz = freq_hz / 1e6
         self._freq_overlay.setText(f"{mhz:.6f} MHz")
+        self._center_marker_series.replace(
+            [QPointF(mhz, _SPECTRUM_YMIN), QPointF(mhz, _SPECTRUM_YMAX)]
+        )
         # Skip while the user has the field focused (mid-edit): this fires at
         # ~10fps, so overwriting it unconditionally clobbered every keystroke
         # of a manual retune before editingFinished could ever see the typed
