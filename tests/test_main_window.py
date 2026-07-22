@@ -2163,11 +2163,14 @@ class TestLockDialFeedback:
 
     def test_is_dial_feedback_rig_true_for_satmode_net(self, qtbot, db) -> None:
         """Satmode Icom NET rigs ("Icom SAT mode rig" checkbox checked) get
-        their own explicit branch, independent of ctcss_method (2026-07-20,
-        explicit user decision: try the same conservative "read DL, keep
-        writing UL" design here too, since Lock does not work at all for
-        satmode today -- this cannot make it worse). The most unverified
-        bucket so far; see _is_dial_feedback_rig()'s docstring."""
+        their own explicit branch, independent of ctcss_method. Reads DL
+        only -- never reads or writes UL at all while Lock is on (2026-07-22,
+        confirmed live on IC-9100 NET mode: rigctld's "i" (get_split_freq)
+        command internally hits Hamlib's rig_get_split_freq() "Assisted
+        mode" VFO-swap-and-restore path for this rig, and the restore step
+        can silently fail, leaving rigctld's own current-VFO stuck on Sub --
+        observed live as "works on first Connect, unstable after
+        reconnecting"). See _is_dial_feedback_rig()'s docstring."""
         from rig.controller import HamlibNetController
 
         w = self._make_window(qtbot, db)
@@ -2176,13 +2179,17 @@ class TestLockDialFeedback:
         )
         assert w._is_dial_feedback_rig(rig) is True
 
-    def test_rig_send_satmode_net_never_writes_dl_but_keeps_writing_ul(self, qtbot, db) -> None:
-        """Connected-case integration for satmode NET -- get_frequency()/
-        get_split_frequency()/set_vfo_frequencies() are all already
-        satmode-agnostic (the RX-cycle "if vfoa_hz is not None" check and
-        the UL throttle logic don't care whether DL is being written), so
-        this works the same as the other NET-mode tests with no additional
-        code path."""
+    def test_rig_send_satmode_net_reads_dl_only_writes_nothing(self, qtbot, db) -> None:
+        """Satmode NET mode reads DL only, via the same bare get_frequency()
+        used by non-satmode NET rigs -- never calls get_split_frequency()
+        ("i") or writes UL at all while Lock is on (2026-07-22, confirmed
+        live on IC-9100 NET mode: the "i" command's Hamlib
+        rig_get_split_freq() Assisted-mode VFO-swap-and-restore silently
+        failed to restore Main on repeated calls, corrupting rigctld's own
+        current-VFO tracking -- exactly the "implausible DL reading
+        145840000.0 Hz" (a UL-band value) symptom seen live). Same fix and
+        same rationale as the Direct-mode satmode branch: rely on the rig's
+        own confirmed hardware Main->Sub auto-tracking instead."""
         from rig.controller import HamlibNetController, RigState
 
         w = self._make_window(qtbot, db)
@@ -2199,8 +2206,53 @@ class TestLockDialFeedback:
 
         self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
 
-        rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_000.0)
+        rig.get_frequency.assert_called_once_with()
+        rig.get_split_frequency.assert_not_called()
+        rig.set_vfo_frequencies.assert_not_called()
         assert w._dial_feedback_offset_hz == 80.0
+
+    def test_rig_send_satmode_net_read_failure_leaves_offset_unchanged(self, qtbot, db) -> None:
+        from rig.controller import HamlibNetController, RigState
+
+        w = self._make_window(qtbot, db)
+        rig = HamlibNetController(
+            host="localhost", port=4532, ctcss_method="hamlib", is_satmode_rig=True
+        )
+        rig._sock = MagicMock()
+        with rig._lock:
+            rig._state = RigState.CONNECTED
+        rig.get_frequency = MagicMock(return_value=-1.0)
+        rig.get_split_frequency = MagicMock(return_value=435_000_000.0)
+        rig.set_vfo_frequencies = MagicMock(return_value=True)
+        w._dial_feedback_offset_hz = 12.3
+
+        self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
+
+        rig.get_split_frequency.assert_not_called()
+        rig.set_vfo_frequencies.assert_not_called()
+        assert w._dial_feedback_offset_hz == 12.3
+
+    def test_rig_send_satmode_net_ignores_implausible_jump(self, qtbot, db) -> None:
+        from rig.controller import HamlibNetController, RigState
+
+        w = self._make_window(qtbot, db)
+        rig = HamlibNetController(
+            host="localhost", port=4532, ctcss_method="hamlib", is_satmode_rig=True
+        )
+        rig._sock = MagicMock()
+        with rig._lock:
+            rig._state = RigState.CONNECTED
+        # +300kHz -- comfortably past _DIAL_FEEDBACK_SANITY_HZ (200kHz).
+        rig.get_frequency = MagicMock(return_value=146_100_000.0)
+        rig.get_split_frequency = MagicMock(return_value=435_000_000.0)
+        rig.set_vfo_frequencies = MagicMock(return_value=True)
+        w._dial_feedback_offset_hz = 0.0
+
+        self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
+
+        rig.get_split_frequency.assert_not_called()
+        rig.set_vfo_frequencies.assert_not_called()
+        assert w._dial_feedback_offset_hz == 0.0
 
     def test_is_dial_feedback_rig_false_for_custom_cat_net(self, qtbot, db) -> None:
         """ctcss_method "custom_cat" is a distinct, unanalysed scheme --

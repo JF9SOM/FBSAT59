@@ -2545,25 +2545,44 @@ class MainWindow(QMainWindow):
           on that) -- the "hamlib" bucket only works once connected.
         - HamlibNetController satmode rigs (IC-9100/9700 etc., "Icom SAT
           mode rig" checkbox checked), its own explicit branch independent
-          of ctcss_method (2026-07-20, explicit user decision to try the
-          same conservative "read DL, keep writing UL" design here too --
-          Lock does not work at all for satmode today, so this cannot make
-          satmode's Lock support worse than it already is). The most
-          UNVERIFIED bucket so far: satmode's cross-band case makes Hamlib
-          toggle actual hardware SATMODE (set_func(RIG_FUNC_SATMODE, 1)),
-          a stateful hardware mode switch -- qualitatively different from
-          every other rig's purely software/virtual split above -- and
-          whether rigctld's current_vfo bookkeeping reliably stays on Main
-          throughout an active satmode session has never been checked, on
-          top of the same generic "hamlib" bucket caveat above. Separately,
-          it was raised (unverified, could not be confirmed via Hamlib
-          source -- Hamlib is a CAT/CI-V control library, so a purely
-          internal RF/DSP behaviour needing no CAT exchange would not
-          appear in it either way) whether IC-9100/9700 SAT mode has a
-          hardware Main/Sub dial-tracking feature that would make this
-          module's own periodic UL writes redundant, or even conflict with
-          it -- if a GitHub report surfaces this, revisit whether UL
-          should stop being written for satmode too.
+          of ctcss_method. Reads DL only, via the same bare "f"
+          (RIG_VFO_CURR) already used above -- never calls
+          get_split_frequency() ("i") or writes UL at all while Lock is on
+          (see _rig_send()'s satmode-NET branch for the full rationale).
+          Originally (2026-07-20) this read DL via "f" and UL via "i", on
+          the theory that "hardware Main/Sub auto-tracking would make the
+          UL write redundant, but the UL read (for the DL/UL cross-check)
+          was still safe since rigctld's own current-VFO bookkeeping was
+          untested but presumed OK." That was wrong: confirmed live
+          (2026-07-22, IC-9100 NET mode, manual rigctld testing) that
+          rigctld's "i" command internally calls Hamlib's
+          rig_get_split_freq() (src/rig.c), which for a rig with
+          targetable_vfo == 0 (IC-9100; IC-9700 is spared -- its
+          targetable_vfo includes RIG_TARGETABLE_FREQ and takes a
+          swap-free fast path instead) falls through to "Assisted mode":
+          it calls set_vfo(tx_vfo) to read Sub, then tries to restore
+          set_vfo(RIG_VFO_MAIN) afterward -- but that restore's return
+          code is effectively ignored ("try and revert even if we had an
+          error above"). When the restore silently fails on real hardware,
+          rigctld's own "current VFO" stays stuck on Sub, so every later
+          bare "f" keeps returning Sub's (UL/VHF-band) frequency instead
+          of Main's -- observed live as "Lock works perfectly on the first
+          Connect, then reads become unstable/implausible after
+          reconnecting" (repeated "implausible DL reading 145840000.0 Hz"
+          log lines -- a UL-band value where a UHF DL was expected). Same
+          fix as the Direct-mode satmode branch: never read or write UL at
+          all, relying on the same hardware Main->Sub auto-tracking
+          confirmed live on real IC-9100 hardware. Same caveat as the
+          "hamlib" bucket above still applies to the "f" read itself
+          (whether rigctld's current_vfo bookkeeping reliably stays on
+          Main is only checked empirically, not provable from Hamlib
+          source alone), and satmode's cross-band case additionally makes
+          Hamlib toggle actual hardware SATMODE
+          (set_func(RIG_FUNC_SATMODE, 1)) -- a stateful hardware mode
+          switch qualitatively different from every other rig's purely
+          software/virtual split -- but that risk is unchanged from
+          before this fix and orthogonal to the "i" command problem fixed
+          here.
         - HamlibDirectController for FTX-1F (model 1051) or FT-991/FT-991A
           (models 1035/1036). Confirmed safe via Hamlib source
           (rigs/yaesu/ftx1/ftx1.c: .targetable_vfo = RIG_TARGETABLE_ALL;
@@ -3018,11 +3037,14 @@ class MainWindow(QMainWindow):
                             # ambiguity was the root cause of an earlier
                             # bug where ordinary Doppler drift got
                             # misdetected as manual retuning).
-                            # NET mode: bare "f"/"i" (get_freq/get_split_freq,
+                            # NET mode (non-satmode: ftx1/ft991/generic
+                            # hamlib): bare "f"/"i" (get_freq/get_split_freq,
                             # no VFO argument) -- mirrors the write side's
                             # "F"/"I" exactly, since rigctld's "V" command was
                             # confirmed live to corrupt the rig's Main/Sub
-                            # role assignment.
+                            # role assignment. NET mode satmode is excluded
+                            # from this and handled by its own branch below
+                            # (bare "f" only, "i" never called).
                             # Direct mode (FTX-1F, FT-991/FT-991A): get_freq
                             # (VFOA)/get_freq(VFOB) via Hamlib directly.
                             # Confirmed via Hamlib source (ftx1.c:
@@ -3109,6 +3131,71 @@ class MainWindow(QMainWindow):
                                         logger.info(
                                             "LockWatch: offset updated %.1fHz -> %.1fHz "
                                             "(live_dl=%.1f dl_baseline=%.1f, satmode)",
+                                            self._dial_feedback_offset_hz,
+                                            new_offset,
+                                            live_dl,
+                                            dl_baseline,
+                                        )
+                                        self._dial_feedback_offset_hz = new_offset
+                                return
+                            if isinstance(rig, HamlibNetController) and rig.is_satmode:
+                                # Same root cause as the Direct-mode satmode
+                                # branch above, confirmed live via manual
+                                # rigctld testing (2026-07-22, IC-9100 NET
+                                # mode): the "i" (get_split_freq) command
+                                # rigctld sends internally calls Hamlib's
+                                # rig_get_split_freq() -- which, for a rig
+                                # with targetable_vfo == 0 (IC-9100; IC-9700
+                                # is spared since its targetable_vfo includes
+                                # RIG_TARGETABLE_FREQ and takes a swap-free
+                                # fast path instead), falls through to
+                                # "Assisted mode": it calls set_vfo(tx_vfo)
+                                # to read Sub, then tries to restore
+                                # set_vfo(RIG_VFO_MAIN) afterward -- but that
+                                # restore's return code is effectively
+                                # ignored ("try and revert even if we had an
+                                # error above", src/rig.c). When the restore
+                                # silently fails on real hardware, rigctld's
+                                # own "current VFO" stays stuck on Sub, so
+                                # every later bare "f" (current-VFO get_freq,
+                                # no VFO argument) keeps returning Sub's (UL/
+                                # VHF-band) frequency instead of Main's --
+                                # exactly the "implausible DL reading
+                                # 145840000.0 Hz" log lines seen live (a UL-
+                                # band value where a UHF DL was expected).
+                                # This explains "works perfectly on the
+                                # first Connect, unstable after reconnecting"
+                                # (whatever made the first restore succeed
+                                # doesn't reliably repeat). Same fix as
+                                # Direct mode: never call
+                                # get_split_frequency() ("i") at all here --
+                                # read DL only via the same bare "f" already
+                                # used for non-satmode NET rigs, and rely on
+                                # the rig's own confirmed hardware Main->Sub
+                                # auto-tracking instead of writing UL.
+                                live_dl = rig.get_frequency()
+                                if live_dl < 0:
+                                    logger.info(
+                                        "LockWatch: read failed (live_dl=%.1f), satmode NET -- "
+                                        "UL not read/written, offset unchanged at %.1fHz",
+                                        live_dl,
+                                        self._dial_feedback_offset_hz,
+                                    )
+                                elif dl_baseline is not None:
+                                    new_offset = live_dl - dl_baseline
+                                    if abs(new_offset) > _DIAL_FEEDBACK_SANITY_HZ:
+                                        logger.warning(
+                                            "LockWatch: implausible DL reading %.1f Hz "
+                                            "(baseline %.1f), ignoring this cycle, "
+                                            "offset unchanged at %.1fHz",
+                                            live_dl,
+                                            dl_baseline,
+                                            self._dial_feedback_offset_hz,
+                                        )
+                                    elif new_offset != self._dial_feedback_offset_hz:
+                                        logger.info(
+                                            "LockWatch: offset updated %.1fHz -> %.1fHz "
+                                            "(live_dl=%.1f dl_baseline=%.1f, satmode NET)",
                                             self._dial_feedback_offset_hz,
                                             new_offset,
                                             live_dl,

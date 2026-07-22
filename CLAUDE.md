@@ -2738,7 +2738,8 @@ Rig 1 のみ。対象:
 - `HamlibNetController`（NET mode）:
   - `ctcss_method in ("ftx1", "ft991")`: 接続前後とも対応（`_lock_watch_cycle()`含む）
   - satmode（「Icom SAT mode rig」チェックボックスON）: `ctcss_method`非依存の独立分岐、
-    **接続後のみ**。下記「satmode機への展開」参照
+    **接続後のみ**。DLのみ読み取り、ULは読み書きしない（2026-07-22修正、下記
+    「satmode NETモードにも同一クラスの不具合が実在した」参照）
   - `ctcss_method == "hamlib"` かつ非satmode: **接続後のみ**、未検証のベストエフォート
     （IC-705 NET modeを含む汎用リグ全般。下記「NETモード汎用"hamlib"バケットへの展開」参照）
   - `ctcss_method == "custom_cat"`は対象外
@@ -2746,7 +2747,8 @@ Rig 1 のみ。対象:
   `_lock_watch_cycle()`は引き続き上記NET modeの`ftx1`/`ft991`専用）。内訳:
   - FTX-1F・FT-991/FT-991A・IC-705: Hamlibソースで個別に安全性を確認済み
   - satmode（IC-9100/9700等）: クロスバンド（リニアトランスポンダ）用途限定。
-    独自の読み取りVFO指定（"Main"/"TX"）を使用。下記「satmode機Directモードへの展開」参照
+    DLのみ"Main"で読み取り、ULは読み書きしない（2026-07-22修正、下記「satmode
+    Directモード実機確認で判明した重大な誤り」参照）
   - それ以外の非satmode機種（汎用Hamlibルート）: 未検証のベストエフォート
 
 Rig 2は対象外（今後の課題、2026-07-20 ユーザーと確認済み）。`_doppler_cycle()`内の
@@ -3089,6 +3091,55 @@ Hamlibのソースを読んで安全性を判断する際は、呼び出し対�
 追う必要がある。今回はこの見落としに、実機での2つの独立した症状（DLフリーズ・Lockオフ時の
 ハング）が揃って初めて気づけた——ログ上の推測だけで「安全なはず」と判断せず、実機検証を
 最後まで待つことの重要性を改めて示す事例。
+
+#### satmode NETモードにも同一クラスの不具合が実在した — 実機確認と修正（2026-07-22）
+
+上記のDirectモード修正の直後、ユーザーから「NETモードのsatmodeは大丈夫なのか」と問われ、
+実装前にまずHamlibソースを読んで確認した。NETモードの`i`コマンド（`get_split_frequency()`）は
+rigctld内部で最終的に`rig_get_split_freq(rig, RIG_VFO_TX, ...)`（`tests/rigctl_parse.c`の
+`get_split_freq`ハンドラで確認）というAPIを呼んでおり、これは`get_frequency("TX")`と
+同じ危険（`vfo_fixup()`によるVFO強制切り替え）を抱えている可能性が高いと判断した。
+
+`rig_get_split_freq()`（`src/rig.c`）自体を読むと、`caps->targetable_vfo &
+RIG_TARGETABLE_FREQ`が真の機種だけは直接`caps->get_split_freq()`を呼ぶ「速いパス」を通り、
+それ以外は`vfo_fixup()`を経由する「Assisted mode」（`set_vfo(tx_vfo)`で一時的にSubへ切替
+→読む→`set_vfo(save_vfo)`でMainへ復帰を試みる）に落ちる。IC-9700は`targetable_vfo`に
+`RIG_TARGETABLE_FREQ`を含むため速いパス（安全）だが、**IC-9100は`targetable_vfo = 0`
+のため「Assisted mode」に落ちる**——Directモードで実害を確認したのと同じ危険な経路。
+
+この時点ではユーザーの了承を得た上でまず実機（IC-9100・NETモード、`rigctld`を手動起動して
+テスト）で試してもらったところ、以下が確認された:
+
+- **最初の接続では理想的に動作**（Lock ONでDL書き込み停止・ダイヤルを回した分だけ正しく
+  読み取り・ULへの書き込みは継続）
+- **2回目以降の接続で不安定化**。`fbsat59.log`を確認すると、DL読み取りのつもりの`f`が
+  UL帯（2m帯）の値（`live_dl=145840000.0`・`live_dl=144490000.0`）を繰り返し返しており、
+  `_DIAL_FEEDBACK_SANITY_HZ`のimplausible-jump判定で誤反映こそ防げていたが、根本的には
+  「現在アクティブなVFO」自体がSubに固定されてしまっていた
+
+**原因**: `rig_get_split_freq()`の「Assisted mode」の復帰ステップ
+（`caps->set_vfo(rig, save_vfo)`、`save_vfo = RIG_VFO_MAIN`）の戻り値は
+「try and revert even if we had an error above」という扱いで実質的に無視される。実機で
+この復帰が黙って失敗すると、rigctldの「現在VFO」はSubに固定されたまま残り、以降`f`
+（現在VFO取得、VFO引数なし）を送るたびにSubの周波数（UL帯）が返り続ける。1回目の接続では
+たまたま復帰に成功していた（または`S 1 Main`直後の状態と偶然一致していた）だけで、
+再接続を繰り返すうちに復帰が失敗する状態に陥った、と考えれば「最初だけ理想的・2回目以降
+不安定」という実機報告と正確に一致する。
+
+**修正**: Directモードと同じ設計に統一した。satmode NETモードは`i`（`get_split_frequency()`）
+を一切呼ばず、DLのみ既存の`f`（`get_frequency()`、VFO引数なし）で読む。ULのクロスチェック
+（`_DIAL_FEEDBACK_CROSSCHECK_HZ`との比較）も、比較対象のUL自体を読まなくなったため実施しない。
+Lock ON中はDLもULも書き込まず、Directモードと同じくリグ自身の確認済みハードウェアMain→Sub
+自動連動に任せる。`_rig_send()`内で`isinstance(rig, HamlibNetController) and rig.is_satmode`
+を独立した早期分岐として、既存の非satmode NET分岐（ftx1/ft991/generic hamlib、`f`/`i`両方を
+読みクロスチェックする経路）より手前に追加した。
+
+**教訓**: Direct/NET一方のリグ種別で見つかった「高レベルAPIの手前で引数が書き換えられる」
+という類のHamlib不具合は、同じ根本原因（`rig_get_freq()`/`rig_get_split_freq()`双方が
+共有する`vfo_fixup()`と`targetable_vfo`判定）を持つ他の経路にも実在しないか、実装済みの
+修正と対になる箇所（今回はDirectの"TX"読み取り修正に対するNETの"i"コマンド）を必ず
+洗い出して確認すること。ユーザーからの「NETモードは大丈夫なのか」という一言がなければ、
+この不具合はDirectモードの陰に隠れたまま次のGitHub報告まで発覚しなかった可能性が高い。
 
 ### 既知の制約
 
