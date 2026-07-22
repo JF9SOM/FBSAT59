@@ -2870,7 +2870,26 @@ class HamlibDirectController(RigController):
             time.sleep(0.3)
 
             ser = _open()
-            time.sleep(0.5)
+            try:
+                time.sleep(0.5)
+                # IC-9700 only: Hamlib resends SATMODE ON once more right
+                # after its own reopen (connect()'s "IC-9700 extra
+                # set_func(SATMODE,1) to fix cache" step). That specific
+                # reasoning (forcing Hamlib's own cache->satmode) doesn't
+                # apply here, but the resend itself is harmless for the
+                # 9700 (only 9100/910H/821H are documented to break when
+                # SATMODE ON is sent twice) and may plausibly help with
+                # band re-assignment beyond just Hamlib's cache, so it is
+                # kept, scoped to 9700 only, per the user's explicit
+                # direction (2026-07-22) to omit nothing that carries no
+                # proven downside.
+                if self._model_id in _SATMODE_USE_VFO_SUB:
+                    self._civ_write_satmode(ser, True)
+                    time.sleep(0.2)
+            except Exception:
+                with contextlib.suppress(Exception):
+                    ser.close()
+                raise
         self._raw_civ_serial = ser
         self._rig = None
         self._hamlib = None
@@ -3068,6 +3087,12 @@ class HamlibDirectController(RigController):
 
                     ser2 = _open()
                     time.sleep(0.5)
+                    # IC-9700 only: see _connect_raw_civ()'s matching comment
+                    # for why this resend is kept despite the Hamlib-cache
+                    # reasoning behind it not applying to this path.
+                    if self._model_id in _SATMODE_USE_VFO_SUB:
+                        self._civ_write_satmode(ser2, True)
+                        time.sleep(0.2)
 
                     # Stage 1: freq preset (anchors Main/Sub band assignment
                     # before mode/CTCSS -- see _apply_mode_and_ctcss_hamlib()'s
