@@ -809,6 +809,7 @@ class MainWindow(QMainWindow):
         self._sdr_control_tab_idx = self._tab_widget.addTab(self._sdr_control, _("SDR Control"))
         self._sdr_control.tune_offset_changed.connect(self._on_sdr_tune_offset)
         self._sdr_control.sdr_lock_changed.connect(self._on_sdr_lock_changed)
+        self._sdr_control.manual_freq_requested.connect(self._on_sdr_manual_freq_requested)
 
         self._tab_widget.currentChanged.connect(self._on_tab_changed)
 
@@ -3910,6 +3911,7 @@ class MainWindow(QMainWindow):
         if self._current_transmitter:
             satnogs_mode = self._current_transmitter.get("mode") or ""
             self._sdr_control.set_transponder_mode(satnogs_mode)
+        self._sdr_control.set_transponder_active(self._current_transmitter is not None)
         self._sdr_tune_offset = 0.0
         self._sdr_control.reset_tune_offset()
         # Lock dial feedback: reset for the new transponder -- a different
@@ -4987,10 +4989,31 @@ class MainWindow(QMainWindow):
         """Main-thread slot: mirror an SDR-Lock-recomputed offset into the UI.
 
         Emitted from _rig_send()/_rig2_send()'s background thread (see
-        _doppler_cycle()) since SdrControlWidget.set_tune_offset_display()
-        touches Qt widgets and must not be called off the main thread.
+        _doppler_cycle()) since SdrControlWidget.sync_tune_offset() touches
+        a Qt widget's state and must not be called off the main thread.
         """
-        self._sdr_control.set_tune_offset_display(offset_hz)
+        self._sdr_control.sync_tune_offset(offset_hz)
+
+    @Slot(float)
+    def _on_sdr_manual_freq_requested(self, freq_hz: float) -> None:
+        """Apply a manually typed absolute SDR frequency (Freq box, transponder selected).
+
+        Recomputes _sdr_tune_offset from the last Doppler-corrected
+        downlink centre (self._latest_doppler.dl_corr) so the requested
+        frequency persists through dl_rig1 = dl_corr + _sdr_tune_offset
+        regardless of SDR Lock state, exactly like the ◀◀/◀/▶/▶▶ buttons
+        — instead of writing to the SDR directly and letting the very
+        next Doppler cycle silently revert it (the root confusion behind
+        GitHub Issue #12). SdrControlWidget only emits this while a
+        transponder is selected (self._latest_doppler is reset to None on
+        every transponder change, so a stale reading from the previous
+        selection can never be used here).
+        """
+        if self._latest_doppler is None or self._latest_doppler.dl_corr is None:
+            return
+        new_offset = freq_hz - self._latest_doppler.dl_corr
+        self._sdr_tune_offset = new_offset
+        self._sdr_control.sync_tune_offset(new_offset)
 
     def _on_cw_mode_requested(self, dl_mode: str, ul_mode: str) -> None:
         """Apply CW (or original) mode to both VFOs in a background thread.

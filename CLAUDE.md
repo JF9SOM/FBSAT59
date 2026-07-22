@@ -3399,6 +3399,47 @@ CAT版よりも単純に実装できた。
 **スコープ**: Rig 1・Rig 2どちらがSDRでも対応（`sdr_is_rig1`/`sdr_is_rig2`をそれぞれ独立に
 判定するため、CAT側の「Rig 2は未対応」という制約は今回のSDR Lockには当てはまらない）。
 
+#### Passband Tune「Freq:」欄・「T」ボタンの再設計（2026-07-22 実装）
+
+上記SDR Lock実装後、ユーザー自身から「Passband Tune機能の設計自体がそもそもおかしい。
+だからIssue #12でコメントされたのだ」という指摘があった。経緯を確認したところ、Freq:欄
+（絶対周波数を手入力できる枠）は2026-07-11に**あとから追加**されたもので、当初トランス
+ミッタの周波数しか表示・操作できなかったPassband Tune機能に「任意の周波数を手動入力
+したい」という別のユースケース（衛星非選択時に地上局の基準信号を受信する等）を後付けした
+結果、「矢印ボタンによるオフセット方式（Lock状態に関わらず`dl_rig1 = dl_corr +
+_sdr_tune_offset`の式で常に維持される、Doppler-cycle経由の正しい経路）」と
+「Freq:欄による絶対周波数の直接書き込み方式（`device.set_center_freq()`を直接呼ぶだけの
+別経路で、次のDoppler-cycleサイクルの書き込みに即座に上書きされる）」という**2つの
+非互換な仕組みが同居**していたことが混乱の真因だったと判明した。
+
+**再設計方針（ユーザー確定、Radio ControlのT/Lボタンと機能を完全に一致させる）**:
+- **Resetボタンは廃止**。「トランスポンダー中心へ戻す」役割は「T」ボタンに統合
+- **「T」ボタン**: トランスポンダーのドップラー補正済み中心周波数へ戻す
+  （`reset_tune_offset()`、内部的には従来のReset同等）。**トランスポンダー未選択時は
+  押せない**（`SdrControlWidget.set_transponder_active()`で有効/無効を制御。戻る先の
+  「中心」自体が存在しないため）
+- **「Freq:」欄を1つに統一**: 別枠だった「+0.000 kHz」オフセット表示ラベルを廃止し、
+  常にSDRの実際の周波数を表示する「Freq:」欄1つに一本化した（この欄は元々
+  `center_freq_changed`経由でライブ同期済みだったため、追加の表示配線は不要だった）。
+  矢印ボタン・手入力とも、**トランスポンダー選択中はオフセット方式**（`_apply_tune()`が
+  従来通り`_sdr_tune_offset`を加算し`tune_offset_changed`をemit。手入力は新設の
+  `manual_freq_requested(freq_hz)`シグナルでMainWindowへ絶対周波数を渡し、
+  `MainWindow._on_sdr_manual_freq_requested()`が`self._latest_doppler.dl_corr`
+  （直近のドップラー補正済み中心。トランスポンダー変更のたびに`None`へリセットされるため
+  古い選択の値が紛れ込むことはない）との差分を`_sdr_tune_offset`として設定する——矢印と
+  全く同じ経路に合流させることで、Lock状態に関わらず確実に維持されるようにした）、
+  **トランスポンダー未選択中はSDRへ直接書き込み**（`_doppler_cycle()`自体が
+  トランスポンダー未選択時は即座にreturnしオフセットを一切消費しないため、オフセット方式
+  では何も起きない。矢印・手入力とも`device.set_center_freq()`を直接呼ぶ従来の即時方式を
+  維持し、2026-07-11に追加された「任意周波数を手動で聴く」というユースケースをそのまま
+  保持する）
+- **「L」ボタン（SDR Lock）は変更なし**——「ドップラー補正の書き込みを止めるボタン」という
+  ユーザー自身の説明どおり、既存のPhase実装（前項参照）が既にこの意味と一致していたため
+
+**内部API変更**: `SdrControlWidget.set_tune_offset_display()`は`sync_tune_offset()`へ
+改名（もはやkHzラベルを更新する役目がなく、`_tune_offset_hz`の内部同期のみを行うため）。
+`MainWindow._on_sdr_lock_offset_computed()`もこの新名称を呼ぶよう追従。
+
 ---
 
 ## Rig-Specific Implementation Notes
