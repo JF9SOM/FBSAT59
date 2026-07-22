@@ -1003,7 +1003,23 @@ class HamlibDirectController(RigController):
         switch from the Lock read side, without touching the write path at
         all -- DL gets rewritten almost every cycle anyway, so this flips
         back to Main within about one Doppler cycle.
+
+        That "flips back within one cycle" assumption breaks down for the
+        Windows raw-CI-V bypass's actual caller: while Lock is ON, writes
+        are suspended entirely (see _rig_send()'s do_dial_feedback branch in
+        main_window.py), so a stale "Sub" recorded right before Lock was
+        turned on never gets a chance to update -- confirmed live
+        (2026-07-22): turning Lock off then back on shortly after a UL
+        write left the read permanently skipped for the rest of that Lock
+        session. Always return True for the raw-CI-V bypass instead: the
+        underlying danger this guards against (Hamlib's own internal,
+        implicit VFO-switch-and-restore machinery) does not exist on that
+        path at all -- it builds an explicit CI-V 07 D0 (Main select) frame
+        directly, the same already-proven-safe operation category as the
+        07 D1 (Sub select) frame already sent routinely for every UL write.
         """
+        if self._use_raw_civ_bypass():
+            return True
         return self._last_written_vfo == "Main"
 
     def connect(self) -> bool:
