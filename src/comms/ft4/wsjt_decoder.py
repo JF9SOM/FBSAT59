@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import contextlib
 import ctypes
+import os
 import sys
 from pathlib import Path
 
@@ -71,6 +72,17 @@ def _find_libft4wsjt() -> Path | None:
 
     user_dir = get_user_ft4wsjt_dir()
     if sys.platform == "win32":
+        # Python 3.8+ no longer searches a loaded DLL's own directory for its
+        # dependencies unless that directory is explicitly registered first.
+        # ft4wsjt.dll (gfortran/MinGW-built, FFTW3 + Boost) depends on
+        # runtime/FFTW3 DLLs sitting right next to it in user_dir; without
+        # this, ctypes.CDLL() below can fail to resolve those dependencies
+        # even though ft4wsjt.dll itself is present and readable (same root
+        # cause fixed for Hamlib/ft8lib/libq65 — see main.py's
+        # os.add_dll_directory() calls and codec.py's _find_ft8lib()).
+        if user_dir.exists() and hasattr(os, "add_dll_directory"):
+            with contextlib.suppress(OSError):
+                os.add_dll_directory(str(user_dir))
         candidates.append(user_dir / "ft4wsjt.dll")
     elif sys.platform == "darwin":
         candidates.append(user_dir / "libft4wsjt.dylib")

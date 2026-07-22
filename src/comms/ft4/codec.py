@@ -16,6 +16,7 @@ from __future__ import annotations
 import contextlib
 import ctypes
 import ctypes.util
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -150,6 +151,17 @@ def _find_ft8lib() -> ctypes.CDLL | None:
     candidates: list[str] = []
 
     if sys.platform == "win32":
+        # Python 3.8+ no longer searches a loaded DLL's own directory for its
+        # dependencies unless that directory is explicitly registered first.
+        # ft8.dll (MinGW-built) depends on libgcc_s_seh-1.dll/libwinpthread-1.dll
+        # sitting right next to it in user_dir; without this, ctypes.CDLL()
+        # below fails with "module could not be found" even though ft8.dll
+        # itself is present and readable (confirmed root cause of the same
+        # class of failure for Hamlib — see main.py's os.add_dll_directory()
+        # calls for _hamlib_user_dir).
+        if user_dir.exists() and hasattr(os, "add_dll_directory"):
+            with contextlib.suppress(OSError):
+                os.add_dll_directory(str(user_dir))
         candidates.append(str(user_dir / "ft8.dll"))
         candidates.append("ft8.dll")
     elif sys.platform == "darwin":

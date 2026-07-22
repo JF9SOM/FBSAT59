@@ -2186,6 +2186,47 @@ Download & Install が展開中にロックされたDLLを上書きできず失�
 **関連ファイル**: `src/ui/ft8lib_dialog.py`（診断ログ、次回対応時に削除予定）・
 `src/comms/ft4/codec.py`（`free_ft8lib()`共有関数）・`src/comms/q65/encoder.py`（`pack77()`修正）
 
+**フォローアップ（v0.2.25、2026-07-22）— 根本原因を特定・修正**: 上記診断ログをリリースする前に
+報告者が独自に再現手順を絞り込んでくれた（ft8libフォルダを削除してからクリーンインストールを
+再試行）。結果、`PermissionError`（ロック）は再発せず展開も成功したが、**展開が成功し
+`Download & Install`が100%まで進んでもHelp画面・FT4タブの両方が「ft8lib未インストール」の
+ままになる**ことが判明した。これは「ロック」問題ではなく別の不具合だった。
+
+**根本原因**: `_find_ft8lib()`（[codec.py](src/comms/ft4/codec.py)）が
+`ctypes.CDLL(str(user_dir / "ft8.dll"))`でユーザーインストールディレクトリの`ft8.dll`を
+絶対パス指定でロードしていたが、**そのディレクトリをDLL検索パスに登録していなかった**。
+Python 3.8以降、Windows上の`ctypes.CDLL()`は「ロードするDLL自身のあるディレクトリ」を
+暗黙に依存関係の検索対象へ含めなくなっている（`os.add_dll_directory()`で明示登録しない限り）。
+`ft8.dll`はMinGWビルドのため`libgcc_s_seh-1.dll`・`libwinpthread-1.dll`という同じフォルダ内の
+依存DLLを必要とするが、そのフォルダが登録されていないため、`ft8.dll`自体はフルパス指定で
+開けても依存DLLの解決に失敗し（`OSError`／WinError 126相当）、既存の
+`except (OSError, AttributeError): continue`に静かに握りつぶされて`_find_ft8lib()`が`None`を
+返し続けていた——「ハングする」という報告は実際には（少なくともこの再現手順では）ハングでは
+なく、常に失敗していたことに気づかれなかっただけだった可能性が高い。
+
+これは本ファイルの**Hamlibユーザーインストール**で2026-07-21に確認・修正済みの不具合
+（`main.py`の`os.add_dll_directory(_hamlib_user_str)`）と全く同じ原因・同じクラスの不具合。
+`src/comms/ft4/codec.py`の`_find_ft8lib()`にはこの登録処理が一度も実装されていなかった。
+
+**修正**: `_find_ft8lib()`にHamlibと同じパターンで
+`os.add_dll_directory(str(user_dir))`（`hasattr(os, "add_dll_directory")`でPython 3.8+を
+ガード、`user_dir.exists()`でディレクトリ未作成時のエラーを回避）を追加。さらに、
+同一クラスの不具合が既に存在することを確認した以下2つのユーザーインストール型ネイティブ
+ライブラリにも同じ修正を横展開した（いずれもMinGW/gfortranビルドで同様の依存DLLを同一
+ディレクトリに持つため）:
+- `src/comms/q65/codec.py`の`_find_libq65()`（`q65.dll`）
+- `src/comms/ft4/wsjt_decoder.py`の`_find_libft4wsjt()`（`ft4wsjt.dll`、FFTW3/Boost依存）
+
+**教訓**: このプロジェクトでは「ユーザーインストールディレクトリに配置したネイティブDLLを
+ctypesで直接ロードする」という設計パターンが4箇所（Hamlib・ft8lib・libq65・libft4wsjt）に
+存在する。Hamlibで一度この不具合を修正した際、同じパターンを使う他の3箇所への横展開を
+その場で行わなかったため、翌日Issue #13で全く同じ不具合が別のライブラリ（ft8lib）として
+再発した。**この種のDLL検索パス修正は、直接影響を受けたライブラリだけでなく、同じ
+「ユーザーディレクトリ配置＋ctypes直接ロード」パターンを使う全箇所に横展開して確認すること。**
+
+**検証状況**: 静的解析・既存precedent（Hamlibでの確認済み修正）との一致に基づく修正であり、
+Windows実機での確認は次回のユーザーからの報告待ち。
+
 ---
 
 ### AppImage — テキストフィールドにキー入力ができない（Linux 非Ubuntu系）

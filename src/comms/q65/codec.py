@@ -19,7 +19,9 @@ Without libq65 the codec is unavailable — decoding is disabled.
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -99,6 +101,18 @@ def _find_libq65() -> Path | None:
     # 1. User-installed directory
     user_dir = Path(platformdirs.user_data_dir("fbsat59")) / "q65lib"
     if sys.platform == "win32":
+        # Python 3.8+ no longer searches a loaded DLL's own directory for its
+        # dependencies unless that directory is explicitly registered first.
+        # q65.dll (MinGW/gfortran-built) depends on runtime DLLs (libgfortran,
+        # libgcc_s_seh-1, libwinpthread-1, libquadmath, etc.) sitting right
+        # next to it in user_dir; without this, ctypes.CDLL() below can fail
+        # to resolve those dependencies even though q65.dll itself is present
+        # and readable (same root cause fixed for Hamlib/ft8lib — see
+        # main.py's os.add_dll_directory() calls and codec.py's
+        # _find_ft8lib()).
+        if user_dir.exists() and hasattr(os, "add_dll_directory"):
+            with contextlib.suppress(OSError):
+                os.add_dll_directory(str(user_dir))
         candidates.append(user_dir / "q65.dll")
     elif sys.platform == "darwin":
         candidates.append(user_dir / "libq65.dylib")
