@@ -954,7 +954,7 @@ sudo usermod -aG dialout $USER
     - アプリ終了時: `FT2;` でシンプレックスに復帰
     - モード: `SV/MD0` via pyserial（VFO-B は SV スワップ必須）
     - CTCSS: `CN0/CT0` via pyserial（SV スワップ不要・TX-VFO にグローバル適用）
-  - IC-9100（Hamlib 4.7.1 モデル3068、Direct モード）: クロスバンド・同バンド両方の周波数・モード・CTCSS 動作確認済み（v0.1.27・2026-06-25）— SAT モード ON/OFF・ドップラー補正・VFO 逆転バグ修正済み
+  - IC-9100（Hamlib 4.7.1 モデル3068、Direct モード）: クロスバンド・同バンド両方の周波数・モード・CTCSS 動作確認済み（v0.1.27・2026-06-25）— SAT モード ON/OFF・ドップラー補正・VFO 逆転バグ修正済み。**Windowsでは接続方法に注意**（USB-B端子＋ICOM純正ドライバー必須。詳細は「Windows Direct モード — USB接続方法の注意」セクション参照）
   - IC-9100（Hamlib 4.7.1 モデル3068、NET Control）: クロスバンド・同バンド両方の周波数・モード・CTCSS 動作確認済み（v0.1.27・2026-06-25）
   - IC-9700（Hamlib 4.7.1 モデル3081、Direct/NET モード）: Linux・Windows 両方で IC-9100 と同様に動作確認済み（v0.1.27・2026-06-25）— `_SATMODE_USE_VFO_SUB` 分岐（VFO_SUB for UL）使用
   - IC-705（Hamlib 4.7.1 モデル3085、Direct/NET モード両方、Linux・macOS）: 周波数・モード・CTCSS（トーン周波数＋エンコードON/OFF）・スプリット全て動作確認済み（2026-07-06〜07）— 汎用（非satmode）Icom CI-Vリグとして初の実地検証。Connect後にドップラー補正でMain表示が固定される不具合（生CI-V応答未読み取りによる通信デシンクが原因）を2026-07-07にLinux/macOS両方で確認・修正済み。詳細は「IC-705 (Hamlib model 3085) — 汎用（非satmode）Icom CI-Vリグの参照実装」セクション参照。Windows 未確認
@@ -3614,6 +3614,14 @@ rig_dialog.py のカスタムリストでは 1036 = FT-991A として登録。`_
 - Direct mode freq (cross-band): `set_freq(RIG_VFO_MAIN, dl_hz)` + `set_freq(RIG_VFO_TX, ul_hz)`
 - Direct mode mode + CTCSS: Hamlib `_apply_mode_and_ctcss_hamlib()` (before connect) or `_satmode_exit()` (same-band at connect time)
 - `HamlibDirectController._satmode` flag is set automatically when model_id ∈ `_SATMODE_RIG_IDS`
+
+#### Windows Direct モード — USB接続方法の注意（2026-07-22 確認）
+
+IC-9100等はPCへのUSB接続方法が複数存在する（リグ背面のUSB-B端子 / リモートジャック経由の汎用USBシリアル変換ケーブル 等）が、**Windows環境でDirectモードを使うには、リグ本体のUSB端子からPCへ接続し、ICOM純正のUSBドライバーをインストールする必要がある**。
+
+リモートジャック＋汎用USBシリアル変換ケーブル（FTDI FT232R等）の構成では、Windows上でHamlibの`rig.open()`が確実にタイムアウトする（Hamlib error -5, RIG_ETIMEOUT）不具合を実機（IC-9100）で確認した。同一のリグ・同一のPCで、USB-B端子＋ICOM純正ドライバーの構成に変更したところ、問題なく接続できることを確認済み（Linux環境では両方の接続方法とも問題なく動作していた）。
+
+原因はHamlib自体（Windows用シリアル層 `lib/termios.c`、rxtxライブラリから約2001年に移植されたコード）ではなく、汎用USBシリアル変換チップとWindows側のドライバーの組み合わせに起因すると推定される（Hamlib側の生CI-V直叩きによる回避も試みたが、Hamlibの調整済みシーケンスをpyserialで再現する過程で別の不具合を招くだけで根本解決には至らず、最終的にケーブル変更で解決したためこの方針は撤回した）。NETモード（rigctld経由）でこの問題が発生するかは未確認。
 
 #### Cross-band UL frequency write — VFO_TX approach (confirmed 2026-06-20)
 
