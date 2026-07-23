@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-23 23:24+0900\n"
+"POT-Creation-Date: 2026-07-23 23:39+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -31,28 +31,60 @@ msgid ""
 "> Sound Card and re-select the input device."
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:91 src/ui/q65_tab.py:764 src/ui/ft4_tab.py:126
+#: src/ui/ax100_digi_tab.py:94 src/ui/q65_tab.py:764 src/ui/ft4_tab.py:126
 msgid "another tab"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:92 src/ui/q65_tab.py:766 src/ui/ft4_tab.py:127
+#: src/ui/ax100_digi_tab.py:95 src/ui/q65_tab.py:766 src/ui/ft4_tab.py:127
 #, python-brace-format
 msgid "Sound card output is in use by {other}"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:98
+#: src/ui/ax100_digi_tab.py:101
 msgid "Rig 1 not connected — cannot key PTT"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:101 src/ui/ft4_tab.py:134
+#: src/ui/ax100_digi_tab.py:104 src/ui/ft4_tab.py:134
 msgid "PTT command failed — check Rig 1 connection"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:237
+#: src/ui/ax100_digi_tab.py:142
+msgid "CSP Address Settings"
+msgstr ""
+
+#: src/ui/ax100_digi_tab.py:147
+msgid ""
+"These identify the destination \"node\" and \"service\" on the satellite, "
+"similar to an IP address + port. Unconfirmed values may cause the satellite "
+"to silently ignore transmitted frames even if the signal itself decodes "
+"cleanly."
+msgstr ""
+
+#: src/ui/ax100_digi_tab.py:159
+msgid "Priority:"
+msgstr ""
+
+#: src/ui/ax100_digi_tab.py:164
+msgid "Source Address:"
+msgstr ""
+
+#: src/ui/ax100_digi_tab.py:169
+msgid "Destination Address:"
+msgstr ""
+
+#: src/ui/ax100_digi_tab.py:174
+msgid "Destination Port:"
+msgstr ""
+
+#: src/ui/ax100_digi_tab.py:179
+msgid "Source Port:"
+msgstr ""
+
+#: src/ui/ax100_digi_tab.py:325
 msgid "AX100 Digi (MARMOTSat) ℹ"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:240
+#: src/ui/ax100_digi_tab.py:328
 msgid ""
 "AX100 \"ASM+Golay\" digipeater — GMSK 1200 baud, Golay(24,12) + Reed-"
 "Solomon(255,223), CSP transport. Protocol-compatible with GreenCube "
@@ -60,155 +92,159 @@ msgid ""
 "is currently out of service. Set the rig to SSB mode on 145.875 MHz."
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:250
+#: src/ui/ax100_digi_tab.py:338
 msgid "Input/Output:"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:251 src/ui/q65_tab.py:199 src/ui/ft4_tab.py:353
+#: src/ui/ax100_digi_tab.py:339 src/ui/q65_tab.py:199 src/ui/ft4_tab.py:353
 msgid "Rig Soundcard"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:252 src/ui/sstv_tab.py:273
+#: src/ui/ax100_digi_tab.py:340 src/ui/sstv_tab.py:273
 msgid "SDR (receive only)"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:262
+#: src/ui/ax100_digi_tab.py:350
 msgid "Input: not connected"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:267 src/ui/pass_chart.py:428
+#: src/ui/ax100_digi_tab.py:355 src/ui/pass_chart.py:428
 #: src/ui/pass_chart.py:747 src/ui/telemetry_tab.py:215
 msgid "Time (UTC)"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:267
+#: src/ui/ax100_digi_tab.py:355
 msgid "Src"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:267
+#: src/ui/ax100_digi_tab.py:355
 msgid "Dst"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:267
+#: src/ui/ax100_digi_tab.py:355
 msgid "Sat"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:267 src/ui/q65_tab.py:324 src/ui/ft4_tab.py:502
+#: src/ui/ax100_digi_tab.py:355 src/ui/q65_tab.py:324 src/ui/ft4_tab.py:502
 msgid "Message"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:277 src/ui/aprs_tab.py:278
+#: src/ui/ax100_digi_tab.py:365 src/ui/aprs_tab.py:278
 msgid "Send Message"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:281 src/ui/log_export_dialog.py:98
+#: src/ui/ax100_digi_tab.py:369 src/ui/log_export_dialog.py:98
 #: src/ui/pass_panel.py:401 src/ui/pass_panel.py:450 src/ui/aprs_tab.py:280
 msgid "To:"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:286
+#: src/ui/ax100_digi_tab.py:374
 msgid "Satellite:"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:291
+#: src/ui/ax100_digi_tab.py:379
 msgid "STORE=:"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:294
+#: src/ui/ax100_digi_tab.py:382
 msgid " s"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:297
+#: src/ui/ax100_digi_tab.py:385
 msgid ""
 "0 = relay immediately; otherwise seconds to hold on board (max 172800 = 2 "
 "days)"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:307
+#: src/ui/ax100_digi_tab.py:397
 msgid "Message content"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:312
+#: src/ui/ax100_digi_tab.py:402
 msgid "Clear History"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:313
+#: src/ui/ax100_digi_tab.py:403
 msgid "Delete all remembered message content"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:317
+#: src/ui/ax100_digi_tab.py:407
 msgid "Content:"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:320 src/ui/aprs_tab.py:291
+#: src/ui/ax100_digi_tab.py:410 src/ui/aprs_tab.py:291
 msgid "Send"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:327
+#: src/ui/ax100_digi_tab.py:414
+msgid "CSP Settings..."
+msgstr ""
+
+#: src/ui/ax100_digi_tab.py:417
 msgid ""
 "CSP addressing used for outgoing frames is not yet confirmed against a real "
 "satellite — see comms/ax100digi/tx.py."
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:385 src/ui/ft4_tab.py:764 src/ui/cw_tab.py:340
+#: src/ui/ax100_digi_tab.py:476 src/ui/ft4_tab.py:764 src/ui/cw_tab.py:340
 msgid "Sound Card not configured — open Rig Settings > Sound Card"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:391 src/ui/sstv_tab.py:354 src/ui/ft4_tab.py:760
+#: src/ui/ax100_digi_tab.py:482 src/ui/sstv_tab.py:354 src/ui/ft4_tab.py:760
 #: src/ui/cw_tab.py:336
 msgid "sounddevice not installed — pip install sounddevice"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:401
+#: src/ui/ax100_digi_tab.py:492
 msgid "Input: Rig Soundcard connected"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:404
+#: src/ui/ax100_digi_tab.py:495
 #, python-brace-format
 msgid "Audio open error: {exc}"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:438
+#: src/ui/ax100_digi_tab.py:529
 msgid "Input: SDR not connected"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:442
+#: src/ui/ax100_digi_tab.py:533
 msgid "Input: cannot determine SDR sample rate"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:448
+#: src/ui/ax100_digi_tab.py:539
 msgid "Input: SDR connected (receive only)"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:469
+#: src/ui/ax100_digi_tab.py:560
 msgid "Input: SDR disconnected"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:492
+#: src/ui/ax100_digi_tab.py:583
 msgid "My Call not set — configure it in File > Set QTH"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:495
+#: src/ui/ax100_digi_tab.py:586
 msgid "To and Content are required"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:498
+#: src/ui/ax100_digi_tab.py:595
 msgid "Switch Input/Output to Rig Soundcard to send"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:503
+#: src/ui/ax100_digi_tab.py:600
 msgid "Rig 1 not connected"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:531 src/ui/ft4_tab.py:922
+#: src/ui/ax100_digi_tab.py:626 src/ui/ft4_tab.py:922
 msgid "TX: "
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:537
+#: src/ui/ax100_digi_tab.py:632
 msgid "TX done"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:543 src/ui/ft4_tab.py:932
+#: src/ui/ax100_digi_tab.py:638 src/ui/ft4_tab.py:932
 msgid "TX error: "
 msgstr ""
 

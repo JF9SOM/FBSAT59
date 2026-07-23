@@ -31,6 +31,8 @@ from numpy.typing import NDArray
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -48,6 +50,7 @@ from PySide6.QtWidgets import (
 
 from comms.audio_device_manager import get_audio_device_manager
 from comms.ax100digi.audio_bridge import RxAudioBridge
+from comms.ax100digi.csp import CspHeader
 from comms.ax100digi.engine import Ax100DigiReceiver, DecodedDigiFrame
 from comms.ax100digi.tx import DEFAULT_CSP_HEADER, build_tx_audio
 from i18n import _
@@ -123,6 +126,75 @@ class _TxWorker(QObject):
             mgr.release_output(_AUDIO_OWNER, self._out_device)
 
 
+class _CspSettingsDialog(QDialog):
+    """Priority/Source/Destination/Dest Port/Source Port for outgoing AX100
+    frames' CSP header.
+
+    Exposed in the UI because these values are unconfirmed placeholders
+    (see comms/ax100digi/tx.py's module docstring) — MARMOTSat's actual
+    CSP addressing isn't publicly documented, so a real transmission test
+    may need these adjusted once the correct values are known some other
+    way (e.g. from MARMOTSat operators or observed traffic).
+    """
+
+    def __init__(self, header: CspHeader, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(_("CSP Address Settings"))
+        form = QFormLayout(self)
+
+        info = QLabel(
+            _(
+                'These identify the destination "node" and "service" on the '
+                "satellite, similar to an IP address + port. Unconfirmed values "
+                "may cause the satellite to silently ignore transmitted frames "
+                "even if the signal itself decodes cleanly."
+            )
+        )
+        info.setWordWrap(True)
+        form.addRow(info)
+
+        self._priority_spin = QSpinBox()
+        self._priority_spin.setRange(0, 3)
+        self._priority_spin.setValue(header.priority)
+        form.addRow(_("Priority:"), self._priority_spin)
+
+        self._source_spin = QSpinBox()
+        self._source_spin.setRange(0, 31)
+        self._source_spin.setValue(header.source)
+        form.addRow(_("Source Address:"), self._source_spin)
+
+        self._dest_spin = QSpinBox()
+        self._dest_spin.setRange(0, 31)
+        self._dest_spin.setValue(header.destination)
+        form.addRow(_("Destination Address:"), self._dest_spin)
+
+        self._dest_port_spin = QSpinBox()
+        self._dest_port_spin.setRange(0, 63)
+        self._dest_port_spin.setValue(header.dest_port)
+        form.addRow(_("Destination Port:"), self._dest_port_spin)
+
+        self._source_port_spin = QSpinBox()
+        self._source_port_spin.setRange(0, 63)
+        self._source_port_spin.setValue(header.source_port)
+        form.addRow(_("Source Port:"), self._source_port_spin)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+    def result_header(self) -> CspHeader:
+        return CspHeader(
+            priority=self._priority_spin.value(),
+            source=self._source_spin.value(),
+            destination=self._dest_spin.value(),
+            dest_port=self._dest_port_spin.value(),
+            source_port=self._source_port_spin.value(),
+        )
+
+
 class Ax100DigiTab(QWidget):
     """Non-resident Communications > AX100 Digipeater tab."""
 
@@ -166,6 +238,8 @@ class Ax100DigiTab(QWidget):
         self._sat_name = data.get("sat_name", "MARMOTSat")
         self._rx_source = data.get("rx_source", "soundcard")
         self._content_history: list[str] = data.get("content_history", [])
+        csp = data.get("csp_header")
+        self._csp_header = CspHeader(**csp) if csp else DEFAULT_CSP_HEADER
 
         row2 = self._conn.execute(
             "SELECT value FROM app_settings WHERE key = 'soundcard_settings'"
@@ -184,6 +258,13 @@ class Ax100DigiTab(QWidget):
                 "sat_name": self._sat_edit.text().strip(),
                 "rx_source": "soundcard" if self._rb_soundcard.isChecked() else "sdr",
                 "content_history": self._content_history,
+                "csp_header": {
+                    "priority": self._csp_header.priority,
+                    "source": self._csp_header.source,
+                    "destination": self._csp_header.destination,
+                    "dest_port": self._csp_header.dest_port,
+                    "source_port": self._csp_header.source_port,
+                },
             }
         )
         self._conn.execute(
@@ -217,6 +298,13 @@ class Ax100DigiTab(QWidget):
         self._content_history = []
         self._save_settings()
         self._refresh_content_combo()
+
+    @Slot()
+    def _on_edit_csp_settings(self) -> None:
+        dialog = _CspSettingsDialog(self._csp_header, parent=self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._csp_header = dialog.result_header()
+            self._save_settings()
 
     def _get_my_call(self) -> str:
         """Read the operator's own callsign from File > Set QTH (the same
@@ -323,14 +411,15 @@ class Ax100DigiTab(QWidget):
         self._send_btn.clicked.connect(self._on_send)
         send_row.addWidget(self._send_btn)
 
-        csp_info = QLabel("ℹ")
-        csp_info.setToolTip(
+        csp_btn = QPushButton(_("CSP Settings..."))
+        csp_btn.setToolTip(
             _(
                 "CSP addressing used for outgoing frames is not yet confirmed "
                 "against a real satellite — see comms/ax100digi/tx.py."
             )
         )
-        send_row.addWidget(csp_info)
+        csp_btn.clicked.connect(self._on_edit_csp_settings)
+        send_row.addWidget(csp_btn)
 
         self._tx_status_label = QLabel("")
         send_row.addWidget(self._tx_status_label)
@@ -518,7 +607,7 @@ class Ax100DigiTab(QWidget):
                 sat_name,
                 content,
                 store_seconds=self._store_spin.value(),
-                csp_header=DEFAULT_CSP_HEADER,
+                csp_header=self._csp_header,
                 sample_rate=_SOUNDCARD_SAMPLE_RATE,
             )
         except ValueError as exc:
