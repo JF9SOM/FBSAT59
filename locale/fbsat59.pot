@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-23 21:51+0900\n"
+"POT-Creation-Date: 2026-07-23 23:05+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -48,11 +48,11 @@ msgstr ""
 msgid "PTT command failed — check Rig 1 connection"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:205
-msgid "AX100 Digipeater (MARMOTSat) ℹ"
+#: src/ui/ax100_digi_tab.py:206
+msgid "AX100 Digi (MARMOTSat) ℹ"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:208
+#: src/ui/ax100_digi_tab.py:209
 msgid ""
 "AX100 \"ASM+Golay\" digipeater — GMSK 1200 baud, Golay(24,12) + Reed-"
 "Solomon(255,223), CSP transport. Protocol-compatible with GreenCube "
@@ -60,15 +60,15 @@ msgid ""
 "is currently out of service. Set the rig to SSB mode on 145.875 MHz."
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:218
+#: src/ui/ax100_digi_tab.py:219
 msgid "Input/Output:"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:219 src/ui/q65_tab.py:199 src/ui/ft4_tab.py:353
+#: src/ui/ax100_digi_tab.py:220 src/ui/q65_tab.py:199 src/ui/ft4_tab.py:353
 msgid "Rig Soundcard"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:220 src/ui/sstv_tab.py:273
+#: src/ui/ax100_digi_tab.py:221 src/ui/sstv_tab.py:273
 msgid "SDR (receive only)"
 msgstr ""
 
@@ -135,7 +135,7 @@ msgstr ""
 msgid "Send"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:278
+#: src/ui/ax100_digi_tab.py:275
 msgid ""
 "CSP addressing used for outgoing frames is not yet confirmed against a real "
 "satellite — see comms/ax100digi/tx.py."

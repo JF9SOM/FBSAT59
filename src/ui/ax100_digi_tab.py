@@ -202,7 +202,8 @@ class Ax100DigiTab(QWidget):
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
 
-        info = QLabel(_("AX100 Digipeater (MARMOTSat) ℹ"))
+        top_row = QHBoxLayout()
+        info = QLabel(_("AX100 Digi (MARMOTSat) ℹ"))
         info.setToolTip(
             _(
                 'AX100 "ASM+Golay" digipeater — GMSK 1200 baud, Golay(24,12) + '
@@ -212,20 +213,19 @@ class Ax100DigiTab(QWidget):
                 "rig to SSB mode on 145.875 MHz."
             )
         )
-        layout.addWidget(info)
+        top_row.addWidget(info)
+        top_row.addStretch(1)
 
-        source_row = QHBoxLayout()
-        source_row.addWidget(QLabel(_("Input/Output:")))
+        top_row.addWidget(QLabel(_("Input/Output:")))
         self._rb_soundcard = QRadioButton(_("Rig Soundcard"))
         self._rb_sdr = QRadioButton(_("SDR (receive only)"))
         if self._rx_source == "sdr":
             self._rb_sdr.setChecked(True)
         else:
             self._rb_soundcard.setChecked(True)
-        source_row.addWidget(self._rb_soundcard)
-        source_row.addWidget(self._rb_sdr)
-        source_row.addStretch(1)
-        layout.addLayout(source_row)
+        top_row.addWidget(self._rb_soundcard)
+        top_row.addWidget(self._rb_sdr)
+        layout.addLayout(top_row)
         self._rb_soundcard.toggled.connect(self._on_source_changed)
 
         self._status_label = QLabel(_("Input: not connected"))
@@ -268,20 +268,20 @@ class Ax100DigiTab(QWidget):
         self._send_btn = QPushButton(_("Send"))
         self._send_btn.clicked.connect(self._on_send)
         send_row.addWidget(self._send_btn)
-        self._tx_status_label = QLabel("")
-        send_row.addWidget(self._tx_status_label)
-        send_row.addStretch(1)
-        form.addRow(send_row)
 
-        warning = QLabel(
+        csp_info = QLabel("ℹ")
+        csp_info.setToolTip(
             _(
                 "CSP addressing used for outgoing frames is not yet confirmed "
                 "against a real satellite — see comms/ax100digi/tx.py."
             )
         )
-        warning.setWordWrap(True)
-        warning.setStyleSheet("color: #b8860b;")
-        form.addRow(warning)
+        send_row.addWidget(csp_info)
+
+        self._tx_status_label = QLabel("")
+        send_row.addWidget(self._tx_status_label)
+        send_row.addStretch(1)
+        form.addRow(send_row)
 
         return group
 
