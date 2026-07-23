@@ -76,6 +76,8 @@ packaging = [
     # CW Decoder ML runtime — bundled directly (see cw_model_dialog.py; frozen
     # builds cannot pip-install at runtime, sys.executable points at the app itself)
     "onnxruntime>=1.17",
+    # AX100 "ASM+Golay" digipeater (GreenCube/MARMOTSat) RS(255,223) FEC — pure Python
+    "reed-solomon-ccsds>=1.0.3",
 ]
 # Windows/macOS desktop notifications (optional; Linux uses notify-send)
 notifications = [
@@ -88,6 +90,11 @@ sdr = [
     "scipy>=1.12",       # DSP filters and Hilbert transform for demodulators
     "sounddevice>=0.4",  # Audio output (PortAudio wrapper)
     "lameenc>=1.7",     # Pure-Python MP3 encoder for audio recording
+]
+# AX100 "ASM+Golay" digipeater (GreenCube/MARMOTSat-compatible) — RS(255,223) FEC.
+# Pure Python + numpy, no native build required.
+ax100digi = [
+    "reed-solomon-ccsds>=1.0.3",
 ]
 
 [project.scripts]

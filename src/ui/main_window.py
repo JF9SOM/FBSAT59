@@ -904,6 +904,7 @@ class MainWindow(QMainWindow):
             comm_menu.addAction(_("FT4"), self._on_open_ft4)
             comm_menu.addAction(_("Q65"), self._on_open_q65)
             comm_menu.addAction(_("CW Decoder"), self._on_open_cw)
+            comm_menu.addAction(_("AX100 Digipeater"), self._on_open_ax100_digi)
             comm_menu.addSeparator()
             comm_menu.addAction(_("METEOR / HRPT"), self._on_open_meteor)
 
@@ -2243,6 +2244,28 @@ class MainWindow(QMainWindow):
     def _on_cw_transponder_selected(self) -> None:
         """Radio Control selected a CW transponder — auto-open CW Decoder tab."""
         self._on_open_cw()
+
+    def _on_open_ax100_digi(self) -> None:
+        """Open the AX100 Digipeater tab (Communications > AX100 Digipeater).
+
+        GreenCube (IO-117) / MARMOTSat-compatible GMSK "ASM+Golay" receiver.
+        No transponder-selection auto-open wiring yet (MARMOTSat's VHF
+        digipeater is listed in SATNOGS with mode=AFSK and a description
+        containing "APRS", which would collide with is_aprs_transmitter()'s
+        matching — this tab must be opened from the menu until that's
+        resolved)."""
+        tab_label = _("AX100 Digipeater")
+        for i in range(self._tab_widget.count()):
+            if self._tab_widget.tabText(i) == tab_label:
+                self._tab_widget.setCurrentIndex(i)
+                return
+
+        from ui.ax100_digi_tab import Ax100DigiTab
+
+        tab = Ax100DigiTab(self._conn, self._radio_control, parent=self)
+        self._comms_tab_keys[tab] = "ax100digi"
+        idx = self._tab_widget.addTab(tab, tab_label)
+        self._tab_widget.setCurrentIndex(idx)
 
     def _on_cw_model_help(self) -> None:
         """Open the Help > CW Model Installation… dialog."""
