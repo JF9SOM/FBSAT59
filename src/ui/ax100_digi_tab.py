@@ -241,6 +241,11 @@ class Ax100DigiTab(QWidget):
         csp = data.get("csp_header")
         self._csp_header = CspHeader(**csp) if csp else DEFAULT_CSP_HEADER
 
+        tz_row = self._conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'time_zone_mode'"
+        ).fetchone()
+        self._use_utc = (tz_row["value"] if tz_row and tz_row["value"] else "utc") != "local"
+
         row2 = self._conn.execute(
             "SELECT value FROM app_settings WHERE key = 'soundcard_settings'"
         ).fetchone()
@@ -352,7 +357,7 @@ class Ax100DigiTab(QWidget):
 
         self._table = QTableWidget(0, 5, self)
         self._table.setHorizontalHeaderLabels(
-            [_("Time (UTC)"), _("Src"), _("Dst"), _("Sat"), _("Message")]
+            [self._time_column_label(), _("Src"), _("Dst"), _("Sat"), _("Message")]
         )
         header = self._table.horizontalHeader()
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
@@ -428,8 +433,25 @@ class Ax100DigiTab(QWidget):
 
         return group
 
+    def _time_column_label(self) -> str:
+        return _("Time (UTC)") if self._use_utc else _("Time (Local)")
+
+    def set_use_utc(self, use_utc: bool) -> None:
+        """Called by MainWindow when View > Time Zone changes while this
+        tab is open (see main_window._apply_time_zone()/
+        _on_time_zone_changed()'s duck-typed comms-tab broadcast loop)."""
+        if use_utc == self._use_utc:
+            return
+        self._use_utc = use_utc
+        header_item = self._table.horizontalHeaderItem(0)
+        if header_item is not None:
+            header_item.setText(self._time_column_label())
+
     def _append_row(self, decoded: DecodedDigiFrame) -> None:
-        now = datetime.datetime.now(datetime.UTC).strftime("%H:%M:%S")
+        now_dt = datetime.datetime.now(datetime.UTC)
+        if not self._use_utc:
+            now_dt = now_dt.astimezone()
+        now = now_dt.strftime("%H:%M:%S")
         if decoded.message is not None:
             src, dst, sat, text = (
                 decoded.message.source,

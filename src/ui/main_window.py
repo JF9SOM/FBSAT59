@@ -4558,6 +4558,7 @@ class MainWindow(QMainWindow):
         self._radar_view.set_use_utc(use_utc)
         self._dashboard_view._radar.set_use_utc(use_utc)
         self._at_dialog.set_use_utc(use_utc)
+        self._notify_comms_tabs_use_utc(use_utc)
 
     def _on_time_zone_changed(self, use_utc: bool) -> None:
         """Persist the time zone preference and propagate to all display widgets."""
@@ -4576,6 +4577,7 @@ class MainWindow(QMainWindow):
         self._radar_view.set_use_utc(use_utc)
         self._dashboard_view._radar.set_use_utc(use_utc)
         self._at_dialog.set_use_utc(use_utc)
+        self._notify_comms_tabs_use_utc(use_utc)
 
     def _open_url_app_mode(self, url: str) -> None:
         """Open *url* in Chrome/Chromium app mode (no browser chrome/tabs).
@@ -5894,6 +5896,20 @@ class MainWindow(QMainWindow):
             refresh = getattr(tab, "refresh_sdr_pipeline", None)
             if refresh is not None:
                 refresh(pipeline)
+
+    def _notify_comms_tabs_use_utc(self, use_utc: bool) -> None:
+        """Tell any open Communications tab that supports it to switch its
+        own timestamp display between UTC and Local (View > Time Zone).
+
+        Duck-typed like _notify_comms_tabs_sdr_pipeline() above; FT4/APRS/
+        Telemetry deliberately do not define set_use_utc() and always show
+        UTC (matches ADIF/ham-log convention for QSO timestamps) — only
+        tabs that opt in via defining the method are affected.
+        """
+        for tab in list(self._comms_tab_keys.keys()):
+            set_use_utc = getattr(tab, "set_use_utc", None)
+            if set_use_utc is not None:
+                set_use_utc(use_utc)
 
     def _autotrack_on_aos(self, sat_name: str) -> None:
         """Called by Autotrack when a new satellite's AOS is detected.
