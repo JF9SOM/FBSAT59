@@ -32,6 +32,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from comms.ft4.decode_log import get_ft4_decode_logger
+from core.clock_offset import corrected_time
 
 _PERIOD_S = 6.0
 
@@ -84,26 +85,26 @@ class Ft4RxCaptureWorker:
         logger = get_ft4_decode_logger()
         # Align to the next UTC 6s boundary before accumulating anything, so
         # the first period isn't a partial slice starting at a random offset.
-        now = time.time()
+        now = corrected_time()
         next_boundary = (int(now / _PERIOD_S) + 1) * _PERIOD_S
-        time.sleep(max(0.0, next_boundary - time.time()))
+        time.sleep(max(0.0, next_boundary - corrected_time()))
         with self._lock:
             self._chunks = []
 
         while self._running:
             next_boundary += _PERIOD_S
-            sleep_s = next_boundary - time.time()
+            sleep_s = next_boundary - corrected_time()
             if sleep_s > 0:
                 time.sleep(sleep_s)
             else:
                 # This thread itself fell behind (e.g. the process was
                 # suspended, or the OS starved it) — resync to "now" instead
                 # of firing a burst of catch-up callbacks for missed slots.
-                next_boundary = (int(time.time() / _PERIOD_S) + 1) * _PERIOD_S
+                next_boundary = (int(corrected_time() / _PERIOD_S) + 1) * _PERIOD_S
             if not self._running:
                 return
 
-            lag = time.time() % _PERIOD_S
+            lag = corrected_time() % _PERIOD_S
             logger.info("capture boundary_lag=%.3fs", lag)
 
             with self._lock:

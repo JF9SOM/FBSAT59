@@ -14,7 +14,6 @@ from __future__ import annotations
 import contextlib
 import sqlite3
 import threading
-import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -47,6 +46,7 @@ from comms.q65.codec import (
 )
 from comms.q65.qso import Q65QsoManager, Q65QsoState
 from comms.q65.scheduler import Q65Scheduler
+from core.clock_offset import corrected_time
 from i18n import _
 
 # ---------------------------------------------------------------------------
@@ -525,7 +525,7 @@ class Q65Tab(QWidget):
 
     @Slot()
     def _check_period_boundary(self) -> None:
-        now = time.time()
+        now = corrected_time()
         phase = self._scheduler.period_phase()
         period = self._scheduler.period_seconds
 

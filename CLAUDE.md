@@ -1546,6 +1546,51 @@ get_ft4_decode_logger().info(
 一時的計測なので、次にこのファイルを触る際は必ずこの節ごと除去し、CLAUDE.mdからも本節を
 削除すること。
 
+**起動時NTPチェック — OS時計を直接補正せず、内部オフセットでFT4/Q65タイミングだけを
+補償する設計（`src/core/clock_offset.py`、2026-07-23 実装）**
+
+`MainWindow._check_ntp_sync_background()`（起動時にバックグラウンドスレッドで1回実行、
+`core/ntp_check.py`が自前のSNTPラウンドトリップでOS時計とのズレを測定）は元々ズレを
+検出すると警告ダイアログを出すだけだった。Windowsでこのダイアログが頻繁に出るがOS側の
+時刻同期はコントロールパネルを開く必要があり面倒、という指摘を受け、**OS時計そのものを
+自動修正する方式ではなく、測定したオフセットをアプリ内部でFT4/Q65のタイミング計算にだけ
+適用する方式**を採用した。
+
+**OS時計自体を直接補正しなかった理由**: Windowsで実際の時刻を変更するには管理者権限
+（`SeSystemtimePrivilege`）が必要で、起動のたびにUAC昇格ダイアログが出るか、昇格なしで
+実行されている場合は黙って失敗する。一方、この警告が存在する本来の目的
+（`_NTP_DRIFT_WARN_THRESHOLD_S`のコメント参照）はFT4/Q65の6〜60秒周期境界検出の精度
+確保であり、OS時計そのものを直す必要はない——**アプリ内部で使う「今の時刻」だけを
+補正すれば同じ目的を達成でき、管理者権限もUAC昇格も不要**という判断（ユーザー確認済み）。
+
+**設計**: `core/clock_offset.py`が`set_clock_offset(offset_s)`/`get_clock_offset()`/
+`corrected_time()`（`time.time()+offset`）/`corrected_utcnow()`（`datetime.now(UTC)`相当）
+を提供するプロセス全体のグローバル状態（`threading.Lock`保護）。起動時のNTPチェックで
+`result.reachable`なら**ズレの大小に関わらず常に**`set_clock_offset(offset)`を呼ぶ。
+NTPサーバーに一切到達できなかった場合（オフセット自体が測定不能）のみ、従来通りの
+モーダル警告ダイアログ（`_ntp_check_failed`）を表示する。ズレを測定・補正できた場合は
+モーダルを出さず、`_ntp_offset_applied`（新設シグナル）経由でステータスバーに8秒間だけ
+表示する非モーダルな通知に変更した（補正済みなのでFT4/Q65のデコードには実害がなく、
+ユーザーの操作を止める必要がないため）。
+
+**タイミングクリティカルな箇所を`corrected_time()`/`corrected_utcnow()`に置き換え済み**:
+- `comms/ft4/scheduler.py`（`Ft4Scheduler.current_slot_info()`・`_tick()`）
+- `comms/ft4/rx_capture.py`（`Ft4RxCaptureWorker._run()`—境界計算に使う`time.time()`は
+  スリープ時間の算出にも使われるため、一部だけ補正すると基準がずれて逆にタイミングが
+  狂う。同一関数内の`time.time()`は例外なく全て`corrected_time()`に統一した）
+- `comms/q65/scheduler.py`（`Q65Scheduler`の`utc_now()`/`period_phase()`/`period_index()`/
+  `rx_start_time()`）
+- `ui/q65_tab.py`（`_check_period_boundary()`の`now`。`self._scheduler.period_phase()`が
+  既に補正済み時刻を使うため、比較対象の`now`だけ生の`time.time()`のままだと基準がずれる）
+
+**意図的に対象外にしたもの**: `comms/ft4/qso.py`・`comms/q65/qso.py`の`datetime.now(UTC)`
+（QSOログのタイムスタンプ記録用）・`ui/ft4_tab.py`の表示用UTC時計ラベルは、周期境界検出の
+精度には関係しないため今回は変更していない（将来ログの正確性を上げたい場合は追加検討）。
+
+テスト: 既存の`tests/test_ft4_rx_capture.py`（実スレッドを動かすテスト）で回帰がないことを
+確認済み。`core/clock_offset.py`自体に専用テストは無い（`time.time()+定数`という自明な
+関数のため、既存テストの実行結果が変わらないことをもって十分と判断）。
+
 **メニュー: Communications > Q65**（`src/ui/q65_tab.py`）
 - **Phase 1（RX）**: libq65 ctypes デコーダー
   - libq65 未インストール時はバナー表示・デコード無効化。インストール先: `~/.local/share/fbsat59/q65lib/`

@@ -61,6 +61,7 @@ from comms.audio_device_manager import get_audio_device_manager
 from comms.ft4.decode_log import get_ft4_decode_logger
 from core.autotrack import AutotrackManager
 from core.celestial_engine import MOON_ID, CelestialEngine
+from core.clock_offset import set_clock_offset
 from core.doppler_worker import DopplerWorker
 from core.engine import DopplerCalculator, Observation, PassPredictor, SatelliteEngine
 from core.location import LocationManager
@@ -464,9 +465,15 @@ class MainWindow(QMainWindow):
     _map_downloaded: Signal = Signal()
     # Signal to update sync progress label from a background thread (empty string = hide).
     _sync_progress: Signal = Signal(str)
-    # Signal fired from the startup NTP check thread when the clock check fails
-    # or the drift exceeds the warning threshold, carrying the dialog message.
+    # Signal fired from the startup NTP check thread when no NTP server could
+    # be reached at all (so the offset below could not be measured/applied),
+    # carrying the dialog message.
     _ntp_check_failed: Signal = Signal(str)
+    # Signal fired from the startup NTP check thread once an offset has been
+    # measured and applied via core.clock_offset, carrying a short status-bar
+    # message. Only emitted when the drift exceeds the warning threshold —
+    # informational only, since FT4/Q65 timing has already been compensated.
+    _ntp_offset_applied: Signal = Signal(str)
     # Signal used to pass a freshly computed Doppler result (DopplerDisplayUpdate)
     # from DopplerWorker's own thread to the UI thread — see _doppler_cycle().
     _doppler_computed: Signal = Signal(object)
@@ -655,6 +662,7 @@ class MainWindow(QMainWindow):
         )
         self._satnogs_network_error.connect(self._on_satnogs_network_error)
         self._ntp_check_failed.connect(self._on_ntp_check_failed)
+        self._ntp_offset_applied.connect(self._on_ntp_offset_applied)
         self._radio_control.transmitter_changed.connect(self._on_transmitter_changed)
         self._radio_control.cycle_changed.connect(self._on_cycle_changed)
         self._radio_control.tune_requested.connect(self._on_tune_requested)
@@ -3700,10 +3708,18 @@ class MainWindow(QMainWindow):
     _NTP_DRIFT_WARN_THRESHOLD_S = 1.0
 
     def _check_ntp_sync_background(self) -> None:
-        """Query an NTP server at startup and warn if the clock is inaccurate.
+        """Query an NTP server at startup and compensate for any clock drift.
 
-        Runs in a background thread; emits _ntp_check_failed (never raises)
-        so the dialog is shown from the UI thread. Silent on success.
+        Runs in a background thread; never raises. Rather than requiring the
+        OS clock itself to be corrected (which needs administrator privileges
+        on Windows and would be a disruptive UAC prompt on every launch), the
+        measured offset is applied via core.clock_offset so FT4/Q65 timing
+        (see comms.ft4.scheduler / comms.ft4.rx_capture / comms.q65.scheduler)
+        stays aligned regardless of how far off the OS clock is — no manual
+        NTP sync step required. Emits _ntp_check_failed only when no server
+        could be reached at all (offset unknown, so nothing to compensate),
+        and _ntp_offset_applied (informational, non-modal) when a correction
+        was actually applied.
         """
         if self._shutdown_flag.is_set():
             return
@@ -3723,20 +3739,29 @@ class MainWindow(QMainWindow):
             return
 
         offset = result.offset_s or 0.0
-        logger.info("NTP clock check: offset=%.3fs via %s", offset, result.server)
+        set_clock_offset(offset)
+        logger.info(
+            "NTP clock check: offset=%.3fs via %s (applied to FT4/Q65 timing)",
+            offset,
+            result.server,
+        )
         if abs(offset) > self._NTP_DRIFT_WARN_THRESHOLD_S:
-            self._ntp_check_failed.emit(
+            self._ntp_offset_applied.emit(
                 _(
-                    "System clock appears to be off by {offset:.2f} seconds "
-                    "(checked against {server}). FT4/Q65 decoding requires the "
-                    "clock to be accurate to within about a second — please "
-                    "check your system's time synchronization settings."
+                    "System clock is off by {offset:.2f}s (checked against {server}) "
+                    "— compensated automatically for FT4/Q65 timing."
                 ).format(offset=offset, server=result.server)
             )
 
     def _on_ntp_check_failed(self, msg: str) -> None:
         """Show the startup NTP check warning dialog (called on UI thread)."""
         QMessageBox.warning(self, _("Clock Sync Check"), msg)
+
+    def _on_ntp_offset_applied(self, msg: str) -> None:
+        """Show a brief, non-modal status-bar note about the applied clock offset."""
+        sb = self.statusBar()
+        if sb:
+            sb.showMessage(msg, 8000)
 
     def _toggle_favorite(self, norad: int, favorite: bool) -> None:
         """Save the favorite state to the DB and reload the satellite list (legacy)."""

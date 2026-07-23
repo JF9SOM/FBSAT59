@@ -9,8 +9,9 @@ EME standard: Q65-60A (60-second period, submode A).
 
 from __future__ import annotations
 
-import time
 from datetime import UTC, datetime
+
+from core.clock_offset import corrected_time, corrected_utcnow
 
 
 class Q65Scheduler:
@@ -35,11 +36,11 @@ class Q65Scheduler:
         return self._period
 
     def utc_now(self) -> datetime:
-        return datetime.now(UTC)
+        return corrected_utcnow()
 
     def period_phase(self) -> float:
         """Return seconds elapsed since the last period boundary (0.0 – period)."""
-        now = time.time()
+        now = corrected_time()
         return now % self._period
 
     def seconds_to_next_boundary(self) -> float:
@@ -49,12 +50,12 @@ class Q65Scheduler:
 
     def period_index(self) -> int:
         """Return the current period index within one UTC minute (0-based)."""
-        now = time.time()
+        now = corrected_time()
         return int(now % 60) // self._period
 
     def rx_start_time(self) -> datetime:
         """Return the UTC datetime of the last period boundary (RX window start)."""
-        now = time.time()
+        now = corrected_time()
         boundary = now - self.period_phase()
         return datetime.fromtimestamp(boundary, UTC)
 

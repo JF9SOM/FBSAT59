@@ -29,11 +29,10 @@ Ft4RxCaptureWorker's — see boundary_lag below.
 
 from __future__ import annotations
 
-import time
-
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from comms.ft4.decode_log import get_ft4_decode_logger
+from core.clock_offset import corrected_time
 
 
 class Ft4Scheduler(QObject):
@@ -82,7 +81,7 @@ class Ft4Scheduler(QObject):
     @staticmethod
     def current_slot_info() -> tuple[bool, float]:
         """Return (is_even_slot, position_in_slot) for the current moment."""
-        now = time.time()
+        now = corrected_time()
         slot_num = int(now / 6.0)
         is_even = slot_num % 2 == 0
         pos = now % 6.0
@@ -93,7 +92,7 @@ class Ft4Scheduler(QObject):
     def _tick(self) -> None:
         if not self._running:
             return
-        now = time.time()
+        now = corrected_time()
         slot_num = int(now / 6.0)
         is_even = slot_num % 2 == 0
         is_tx = is_even == self._tx_even
