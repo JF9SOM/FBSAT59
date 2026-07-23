@@ -165,6 +165,28 @@ def test_ax100_digi_matches_mode_v_wording_without_digipeater_text() -> None:
     assert is_ax100_digi_transmitter(xpdr)
 
 
+def test_ax100_digi_auto_select_picks_mode_v_not_first_by_frequency() -> None:
+    """Reproduces main_window._on_comms_satellite_requested()'s selection
+    logic (`next((i for i, t in enumerate(transmitters) if
+    matcher(t)), 0)`) against MARMOTSat's real 6 transmitters in the exact
+    downlink-ascending order Radio Control's combo lists them in (2026-07
+    screenshot bug report: this used to fall through to index 0 — the
+    29.410 MHz HF LFM Sounder — because _refresh_radio_control()'s SQL
+    query didn't select norad_cat_id at all, so every transmitter dict's
+    norad_cat_id was missing and the matcher rejected all of them)."""
+    transmitters = [
+        {"norad_cat_id": 98272, "description": "HF Ionospheric LFM Sounder"},
+        {"norad_cat_id": 98272, "description": "HF DVB-S2"},
+        {"norad_cat_id": 98272, "description": "HF CW Telemetry Beacon"},
+        {"norad_cat_id": 98272, "description": "Mode V - AFSK1k2 - APRS Digipeater"},
+        {"norad_cat_id": 98272, "description": "VHF CW TLM"},
+        {"norad_cat_id": 98272, "description": "Mode U - Transmitter"},
+    ]
+    best_idx = next((i for i, t in enumerate(transmitters) if is_ax100_digi_transmitter(t)), 0)
+    assert best_idx == 3
+    assert transmitters[best_idx]["description"] == "Mode V - AFSK1k2 - APRS Digipeater"
+
+
 def test_ax100_digi_excludes_marmotsats_other_transmitters() -> None:
     """MARMOTSat carries several transmitters under the same NORAD id (HF
     CW beacon/DVB-S2/LFM sounder at 29.410 MHz, VHF CW telemetry at
