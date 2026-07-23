@@ -156,6 +156,15 @@ def test_ax100_digi_matches_only_marmotsat_vhf_digipeater() -> None:
     assert not is_ax100_digi_transmitter({"norad_cat_id": None})
 
 
+def test_ax100_digi_matches_mode_v_wording_without_digipeater_text() -> None:
+    """User-confirmed live SATNOGS wording (2026-07): "Mode V" alone must
+    match even without the literal word "Digipeater" (SATNOGS descriptions
+    are community-edited and had since diverged from the "...APRS
+    Digipeater" wording this matcher originally assumed)."""
+    xpdr = {"norad_cat_id": 98272, "description": "Mode V - AFSK1k2"}
+    assert is_ax100_digi_transmitter(xpdr)
+
+
 def test_ax100_digi_excludes_marmotsats_other_transmitters() -> None:
     """MARMOTSat carries several transmitters under the same NORAD id (HF
     CW beacon/DVB-S2/LFM sounder at 29.410 MHz, VHF CW telemetry at

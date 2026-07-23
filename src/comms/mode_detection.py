@@ -53,19 +53,25 @@ def is_ax100_digi_transmitter(xpdr: dict[str, Any]) -> bool:
     Restricted by NORAD id (GreenCube (IO-117) uses the same AX100
     "ASM+Golay" GMSK framing and would otherwise also match, but its
     ground station is currently out of service, so it is intentionally
-    excluded — 2026-07 user request) *and* by "Digipeater" in the
-    description: MARMOTSat carries several other transmitters on the same
-    NORAD id (HF CW beacon, HF DVB-S2, HF LFM sounder, all at 29.410 MHz;
-    VHF CW telemetry at 145.875 MHz) that a norad-only check would also
-    match, and main_window._on_comms_satellite_requested() auto-selects
-    the *first* transponder this matcher accepts — without the
-    description check that was landing on one of the 29.410 MHz entries
-    instead of the 145.875 MHz digipeater.
+    excluded — 2026-07 user request) *and* by description text: MARMOTSat
+    carries several other transmitters on the same NORAD id (HF CW beacon,
+    HF DVB-S2, HF LFM sounder, all at 29.410 MHz; VHF CW telemetry at
+    145.875 MHz) that a norad-only check would also match, and
+    main_window._on_comms_satellite_requested() auto-selects the *first*
+    transponder this matcher accepts — a description check is needed to
+    land on the 145.875 MHz digipeater specifically instead of one of the
+    29.410 MHz entries.
+
+    "MODE V" is the confirmed live SATNOGS wording for this transmitter
+    (user-verified 2026-07); "DIGIPEATER" is also accepted since that
+    matched an earlier (possibly since-edited) SATNOGS description and is
+    otherwise harmless to keep — SATNOGS descriptions are community-edited
+    and can change wording over time.
     """
     if xpdr.get("norad_cat_id") != _MARMOTSAT_NORAD_ID:
         return False
     desc = (xpdr.get("description") or "").upper()
-    return "DIGIPEATER" in desc
+    return "MODE V" in desc or "DIGIPEATER" in desc
 
 
 def is_ax25_telemetry_transmitter(xpdr: dict[str, Any]) -> bool:
