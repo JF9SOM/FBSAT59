@@ -1148,17 +1148,17 @@ class HamlibDirectController(RigController):
         if not HAMLIB_AVAILABLE:
             return True
         rig: Any = None
-        try:
-            import Hamlib as _H
+        with self._port_lock:
+            try:
+                import Hamlib as _H
 
-            rig = _H.Rig(self._model_id)
-            rig.set_conf("rig_pathname", self._port)
-            rig.set_conf("serial_speed", str(self._baud_rate))
-            if self._civ_addr:
-                rig.set_conf("civaddr", normalize_civ_addr(self._civ_addr))
-            tone_int = int(round(abs(tone_hz) * 10))
-            enable = tone_hz > 0
-            with self._port_lock:
+                rig = _H.Rig(self._model_id)
+                rig.set_conf("rig_pathname", self._port)
+                rig.set_conf("serial_speed", str(self._baud_rate))
+                if self._civ_addr:
+                    rig.set_conf("civaddr", normalize_civ_addr(self._civ_addr))
+                tone_int = int(round(abs(tone_hz) * 10))
+                enable = tone_hz > 0
                 _open_rig_with_retry(rig, "CTCSS standalone: open()")
                 vfo_b = int(_H.RIG_VFO_B)
                 vfo_a = int(_H.RIG_VFO_A)
@@ -1171,15 +1171,15 @@ class HamlibDirectController(RigController):
                 rig.set_vfo(vfo_a)
                 time.sleep(0.15)
                 rig.set_func(vfo_a, _H.RIG_FUNC_TONE, 0)
-            logger.info("RigDirect: CTCSS standalone applied %.1fHz", tone_hz)
-            return True
-        except Exception as exc:
-            logger.error("RigDirect._apply_ctcss_hamlib_standalone: %s", exc)
-            return False
-        finally:
-            if rig is not None:
-                with contextlib.suppress(Exception):
-                    rig.close()
+                logger.info("RigDirect: CTCSS standalone applied %.1fHz", tone_hz)
+                return True
+            except Exception as exc:
+                logger.error("RigDirect._apply_ctcss_hamlib_standalone: %s", exc)
+                return False
+            finally:
+                if rig is not None:
+                    with contextlib.suppress(Exception):
+                        rig.close()
 
     def _civ_addr_int(self) -> int:
         """Return the CI-V rig address as an integer (default 0x65 for IC-9100)."""
@@ -1743,8 +1743,8 @@ class HamlibDirectController(RigController):
 
         rig = None
         rig2 = None
-        try:
-            with self._port_lock:
+        with self._port_lock:
+            try:
                 # Delays throughout this sequence are deliberately more
                 # generous than the ~0.1-0.3s that sufficed in Linux testing
                 # -- see the equivalent comment in connect() for why. Each
@@ -1866,19 +1866,19 @@ class HamlibDirectController(RigController):
                         ul_mode,
                         ctcss_hz,
                     )
-            self._last_hamlib_error = None
-            return True
-        except Exception as exc:
-            self._last_hamlib_error = str(exc)
-            logger.error("RigDirect._apply_mode_and_ctcss_hamlib: %s", exc)
-            return False
-        finally:
-            if rig is not None:
-                with contextlib.suppress(Exception):
-                    rig.close()
-            if rig2 is not None:
-                with contextlib.suppress(Exception):
-                    rig2.close()
+                self._last_hamlib_error = None
+                return True
+            except Exception as exc:
+                self._last_hamlib_error = str(exc)
+                logger.error("RigDirect._apply_mode_and_ctcss_hamlib: %s", exc)
+                return False
+            finally:
+                if rig is not None:
+                    with contextlib.suppress(Exception):
+                        rig.close()
+                if rig2 is not None:
+                    with contextlib.suppress(Exception):
+                        rig2.close()
 
     def _apply_mode_and_ctcss_cat_ftx1(self, dl_mode: str, ul_mode: str, ctcss_hz: float) -> None:
         """Set mode and CTCSS on FTX-1F via raw CAT commands (no Hamlib calls).
