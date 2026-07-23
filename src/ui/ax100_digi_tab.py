@@ -19,11 +19,13 @@ comms/ax100digi/tx.py's module docstring.
 from __future__ import annotations
 
 import contextlib
+import csv
 import datetime
 import json
 import sqlite3
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -33,12 +35,14 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QRadioButton,
     QSpinBox,
@@ -54,6 +58,7 @@ from comms.ax100digi.csp import CspHeader
 from comms.ax100digi.engine import Ax100DigiReceiver, DecodedDigiFrame
 from comms.ax100digi.tx import DEFAULT_CSP_HEADER, build_tx_audio
 from i18n import _
+from ui.adif_utils import adif_default_filename, adif_write_or_append, build_adif_record
 
 _POLL_INTERVAL_MS = 1_000
 _MAX_LOG_ROWS = 500
@@ -216,6 +221,7 @@ class Ax100DigiTab(QWidget):
         self._tx_in_progress = False
         self._tx_thread: threading.Thread | None = None
 
+        self._ensure_table()
         self._load_settings()
         self._build_ui()
 
@@ -224,6 +230,48 @@ class Ax100DigiTab(QWidget):
         self._timer.timeout.connect(self._poll_decode)
 
         self._apply_input_source()
+
+    # ------------------------------------------------------------------ #
+    # Persistence
+    # ------------------------------------------------------------------ #
+
+    def _ensure_table(self) -> None:
+        self._conn.execute(
+            """CREATE TABLE IF NOT EXISTS ax100_digi_log (
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                received_at        DATETIME NOT NULL,
+                source             TEXT,
+                dest               TEXT,
+                sat_name           TEXT,
+                store_seconds      INTEGER,
+                content            TEXT,
+                raw_hex            TEXT NOT NULL,
+                golay_bit_errors   INTEGER,
+                rs_bytes_corrected INTEGER
+            )"""
+        )
+        self._conn.commit()
+
+    def _persist_frame(self, decoded: DecodedDigiFrame, ts: datetime.datetime) -> None:
+        message = decoded.message
+        self._conn.execute(
+            """INSERT INTO ax100_digi_log
+               (received_at, source, dest, sat_name, store_seconds, content,
+                raw_hex, golay_bit_errors, rs_bytes_corrected)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                ts.isoformat(),
+                message.source if message else None,
+                message.dest if message else None,
+                message.sat_name if message else None,
+                message.store_seconds if message else None,
+                message.content if message else (decoded.raw_text or decoded.payload.hex()),
+                decoded.payload.hex(),
+                decoded.golay_bit_errors,
+                decoded.rs_bytes_corrected,
+            ),
+        )
+        self._conn.commit()
 
     # ------------------------------------------------------------------ #
     # Settings
@@ -352,8 +400,23 @@ class Ax100DigiTab(QWidget):
         layout.addLayout(top_row)
         self._rb_soundcard.toggled.connect(self._on_source_changed)
 
+        status_row = QHBoxLayout()
         self._status_label = QLabel(_("Input: not connected"))
-        layout.addWidget(self._status_label)
+        status_row.addWidget(self._status_label)
+        status_row.addStretch(1)
+
+        export_csv_btn = QPushButton(_("Export CSV…"))
+        export_csv_btn.clicked.connect(self._on_export_csv)
+        status_row.addWidget(export_csv_btn)
+
+        export_adif_btn = QPushButton(_("Export ADIF…"))
+        export_adif_btn.setToolTip(
+            _("Exports only messages addressed to your own callsign (confirmed exchanges)")
+        )
+        export_adif_btn.clicked.connect(self._on_export_adif)
+        status_row.addWidget(export_adif_btn)
+
+        layout.addLayout(status_row)
 
         self._table = QTableWidget(0, 5, self)
         self._table.setHorizontalHeaderLabels(
@@ -448,9 +511,10 @@ class Ax100DigiTab(QWidget):
             header_item.setText(self._time_column_label())
 
     def _append_row(self, decoded: DecodedDigiFrame) -> None:
-        now_dt = datetime.datetime.now(datetime.UTC)
-        if not self._use_utc:
-            now_dt = now_dt.astimezone()
+        now_dt_utc = datetime.datetime.now(datetime.UTC)
+        self._persist_frame(decoded, now_dt_utc)
+
+        now_dt = now_dt_utc if self._use_utc else now_dt_utc.astimezone()
         now = now_dt.strftime("%H:%M:%S")
         if decoded.message is not None:
             src, dst, sat, text = (
@@ -658,6 +722,88 @@ class Ax100DigiTab(QWidget):
         self._tx_in_progress = False
         self._send_btn.setEnabled(True)
         self._tx_status_label.setText(_("TX error: ") + msg)
+
+    # ------------------------------------------------------------------ #
+    # Export
+    # ------------------------------------------------------------------ #
+
+    @Slot()
+    def _on_export_csv(self) -> None:
+        default_name = (
+            "ax100_digi_" + datetime.datetime.now(datetime.UTC).strftime("%Y%m%d") + ".csv"
+        )
+        path, _filter = QFileDialog.getSaveFileName(
+            self,
+            _("Export AX100 Digi CSV"),
+            str(Path.home() / default_name),
+            "CSV (*.csv)",
+        )
+        if not path:
+            return
+        rows_count = self._table.rowCount()
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow([self._time_column_label(), _("Src"), _("Dst"), _("Sat"), _("Message")])
+            for r in range(rows_count):
+                writer.writerow(
+                    [(item.text() if (item := self._table.item(r, c)) else "") for c in range(5)]
+                )
+
+    @Slot()
+    def _on_export_adif(self) -> None:
+        """Export confirmed message exchanges (messages addressed to this
+        operator's own callsign) as ADIF, matching APRS's convention of
+        only logging real bidirectional traffic rather than every relayed
+        packet — see comms.aprs's _is_confirmed_reply()."""
+        my_call = self._get_my_call().upper()
+        if not my_call:
+            QMessageBox.warning(
+                self,
+                _("Export ADIF"),
+                _("My Call not set — configure it in File > Set QTH"),
+            )
+            return
+
+        rows = self._conn.execute(
+            """SELECT received_at, source, sat_name, content FROM ax100_digi_log
+               WHERE dest = ? AND source IS NOT NULL
+               ORDER BY received_at""",
+            (my_call,),
+        ).fetchall()
+        if not rows:
+            QMessageBox.information(
+                self,
+                _("Export ADIF"),
+                _("No confirmed messages addressed to {call} yet.").format(call=my_call),
+            )
+            return
+
+        path, _filter = QFileDialog.getSaveFileName(
+            self,
+            _("Export ADIF"),
+            str(Path.home() / adif_default_filename()),
+            "ADIF (*.adi)",
+        )
+        if not path:
+            return
+
+        records = []
+        for row in rows:
+            ts = datetime.datetime.fromisoformat(row["received_at"])
+            fields = {
+                "CALL": row["source"],
+                "QSO_DATE": ts.strftime("%Y%m%d"),
+                "TIME_ON": ts.strftime("%H%M%S"),
+                "MODE": "PKT",
+                "MY_CALL": my_call,
+                "COMMENT": row["content"] or "",
+                "SAT_NAME": row["sat_name"] or "",
+                "PROP_MODE": "SAT",
+                "RST_SENT": "599",
+                "RST_RCVD": "599",
+            }
+            records.append(build_adif_record(fields))
+        adif_write_or_append(path, "".join(records))
 
     # ------------------------------------------------------------------ #
     # Cleanup
