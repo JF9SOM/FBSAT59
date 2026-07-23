@@ -44,6 +44,21 @@ def is_cw_transmitter(xpdr: dict[str, Any]) -> bool:
     return mode in ("CW", "CW-R")
 
 
+_MARMOTSAT_NORAD_ID = 98272
+
+
+def is_ax100_digi_transmitter(xpdr: dict[str, Any]) -> bool:
+    """MARMOTSat's VHF digipeater (145.875 MHz) only.
+
+    Deliberately restricted to this single satellite by NORAD id rather
+    than a description/mode text match: GreenCube (IO-117) uses the same
+    AX100 "ASM+Golay" GMSK framing and would otherwise also match, but its
+    ground station is currently out of service, so it is intentionally
+    excluded here (2026-07 user request).
+    """
+    return xpdr.get("norad_cat_id") == _MARMOTSAT_NORAD_ID
+
+
 def is_ax25_telemetry_transmitter(xpdr: dict[str, Any]) -> bool:
     """AX.25-framed transmitters the Telemetry tab's Direwolf (AX.25) mode
     can decode: 1200 baud Bell 202 AFSK, or 4800/9600 baud G3RUH-style
@@ -111,6 +126,9 @@ COMMS_TAB_CONFIG: dict[str, CommsTabConfig] = {
         freq_source="radio_control",
         matcher=is_ax25_telemetry_transmitter,
     ),
+    "ax100digi": CommsTabConfig(
+        show_input_source=True, freq_source="radio_control", matcher=is_ax100_digi_transmitter
+    ),
 }
 
 
@@ -145,7 +163,12 @@ def get_norads_for_tab(conn: sqlite3.Connection, tab_key: str) -> list[int]:
     matcher = config.matcher
     norads: set[int] = set()
     for row in rows:
-        xpdr = {"description": row["description"], "mode": row["mode"], "baud": row["baud"]}
+        xpdr = {
+            "description": row["description"],
+            "mode": row["mode"],
+            "baud": row["baud"],
+            "norad_cat_id": row["norad_cat_id"],
+        }
         if matcher(xpdr):
             norads.add(int(row["norad_cat_id"]))
     return sorted(norads)

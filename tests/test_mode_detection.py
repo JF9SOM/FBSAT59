@@ -11,7 +11,11 @@ import sqlite3
 
 import pytest
 
-from comms.mode_detection import get_norads_for_tab, is_ax25_telemetry_transmitter
+from comms.mode_detection import (
+    get_norads_for_tab,
+    is_ax25_telemetry_transmitter,
+    is_ax100_digi_transmitter,
+)
 
 # ---------------------------------------------------------------------------
 # is_ax25_telemetry_transmitter()
@@ -132,3 +136,30 @@ def test_get_norads_excludes_non_matching_transmitter(conn: sqlite3.Connection) 
 def test_get_norads_empty_for_unconfigured_tab_key(conn: sqlite3.Connection) -> None:
     assert get_norads_for_tab(conn, "cw") == []
     assert get_norads_for_tab(conn, "no-such-tab") == []
+
+
+# ---------------------------------------------------------------------------
+# is_ax100_digi_transmitter() / get_norads_for_tab("ax100digi")
+# ---------------------------------------------------------------------------
+
+
+def test_ax100_digi_matches_only_marmotsat_norad() -> None:
+    assert is_ax100_digi_transmitter({"norad_cat_id": 98272})
+    assert not is_ax100_digi_transmitter({"norad_cat_id": 53106})  # GreenCube — excluded
+    assert not is_ax100_digi_transmitter({"norad_cat_id": None})
+
+
+def test_get_norads_ax100_digi_includes_marmotsat(conn: sqlite3.Connection) -> None:
+    _add_sat(conn, 98272, "MARMOTSat")
+    _add_xmit(
+        conn, "u1", 98272, mode="AFSK", baud=1200, description="Mode V - AFSK1k2 - APRS Digipeater"
+    )
+    assert get_norads_for_tab(conn, "ax100digi") == [98272]
+
+
+def test_get_norads_ax100_digi_excludes_greencube(conn: sqlite3.Connection) -> None:
+    """GreenCube (IO-117) uses the same AX100 framing but is out of service
+    and intentionally excluded (2026-07 user request)."""
+    _add_sat(conn, 53106, "GreenCube")
+    _add_xmit(conn, "u1", 53106, mode="GMSK", baud=1200, description="Digipeater")
+    assert get_norads_for_tab(conn, "ax100digi") == []

@@ -202,15 +202,16 @@ class Ax100DigiTab(QWidget):
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
 
-        info = QLabel(
+        info = QLabel(_("AX100 Digipeater (MARMOTSat) ℹ"))
+        info.setToolTip(
             _(
                 'AX100 "ASM+Golay" digipeater — GMSK 1200 baud, Golay(24,12) + '
-                "Reed-Solomon(255,223), CSP transport. Compatible with GreenCube "
-                "(IO-117) and MARMOTSat. Set the rig to SSB mode on the digipeater "
-                "frequency (145.875 MHz for MARMOTSat)."
+                "Reed-Solomon(255,223), CSP transport. Protocol-compatible with "
+                "GreenCube (IO-117), but this tab targets MARMOTSat only — "
+                "GreenCube's ground station is currently out of service. Set the "
+                "rig to SSB mode on 145.875 MHz."
             )
         )
-        info.setWordWrap(True)
         layout.addWidget(info)
 
         source_row = QHBoxLayout()
