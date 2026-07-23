@@ -496,6 +496,12 @@ class Ax100DigiTab(QWidget):
         if not dest_call or not content:
             self._tx_status_label.setText(_("To and Content are required"))
             return
+
+        # Remember the content as soon as the basic fields are valid, not
+        # gated on Rig 1 actually being connected — so message text typed
+        # while testing without a rig isn't lost.
+        self._remember_content(content)
+
         if not self._rb_soundcard.isChecked():
             self._tx_status_label.setText(_("Switch Input/Output to Rig Soundcard to send"))
             return
@@ -518,8 +524,6 @@ class Ax100DigiTab(QWidget):
         except ValueError as exc:
             self._tx_status_label.setText(str(exc))
             return
-
-        self._remember_content(content)
 
         worker = _TxWorker(result.audio, self._out_device, rig)
         worker.finished.connect(self._on_tx_finished)
