@@ -280,6 +280,11 @@ class CwTab(QWidget):
                 return
             self._sdr_pipeline = pipeline
             pipeline.audio_ready.connect(self._on_sdr_audio_chunk)
+            # Without this, the pipeline never actually demodulates/emits
+            # audio_ready unless the user separately presses "Start Audio"
+            # in SDR Control — an easy-to-miss, unrelated-looking button in
+            # a different tab (GitHub Issue #12 follow-up).
+            pipeline.request_audio(self._AUDIO_OWNER)
             self._sdr_connected = True
             self._rx_sample_rate = SAMPLE_RATE
         except Exception:
@@ -289,6 +294,8 @@ class CwTab(QWidget):
         if self._sdr_pipeline is not None:
             with contextlib.suppress(Exception):
                 self._sdr_pipeline.audio_ready.disconnect(self._on_sdr_audio_chunk)
+            with contextlib.suppress(Exception):
+                self._sdr_pipeline.release_audio(self._AUDIO_OWNER)
             self._sdr_pipeline = None
         self._sdr_connected = False
 
@@ -455,11 +462,7 @@ class CwTab(QWidget):
         Supersedes the never-wired notify_sdr_connected()/
         notify_sdr_disconnected() this replaced.
         """
-        if self._sdr_pipeline is not None:
-            with contextlib.suppress(Exception):
-                self._sdr_pipeline.audio_ready.disconnect(self._on_sdr_audio_chunk)
-            self._sdr_pipeline = None
-        self._sdr_connected = False
+        self._disconnect_sdr_audio()
         self._rb_sdr.setEnabled(pipeline is not None)
         if pipeline is None:
             if self._running and self._rb_sdr.isChecked():
@@ -469,11 +472,8 @@ class CwTab(QWidget):
             return
         if not self._running or not self._rb_sdr.isChecked():
             return
-        self._sdr_pipeline = pipeline
-        pipeline.audio_ready.connect(self._on_sdr_audio_chunk)
-        self._sdr_connected = True
-        self._rx_sample_rate = SAMPLE_RATE
         self._rx_buffer.clear()
+        self._connect_sdr_audio()
 
     # ------------------------------------------------------------------ #
     # Cleanup

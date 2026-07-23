@@ -78,6 +78,14 @@ class SDRPipeline(QThread):
         # PCM) and the main Qt thread (stop/disable) access the stream object.
         self._audio_lock = threading.Lock()
 
+        # Consumers that need demodulated audio_ready data (CW/FT4/Q65/SSTV
+        # decoders) but not necessarily speaker playback — see
+        # request_audio()/release_audio(). A plain set is fine without its
+        # own lock: it's only ever added-to/removed-from by name (atomic
+        # under the GIL) and read as a single `bool(...)` check in run(),
+        # the same threading assumption _audio_enabled itself already makes.
+        self._demod_requesters: set[str] = set()
+
         # FFT timing
         self._last_fft_time: float = 0.0
 
@@ -117,6 +125,30 @@ class SDRPipeline(QThread):
             # concurrent access with the pipeline thread's _play_audio().
             with self._audio_lock:
                 self._close_audio_stream_locked()
+
+    def request_audio(self, owner: str) -> None:
+        """Register `owner`'s interest in demodulated audio (audio_ready).
+
+        Decoder tabs (CW/FT4/Q65/SSTV) that subscribe to audio_ready need
+        run() to actually call the demodulator and emit the signal — but
+        that was previously gated entirely behind _audio_enabled, which
+        only SdrControlWidget's own "Start Audio" button (speaker
+        playback) ever set. Without pressing that *separate*, easy-to-miss
+        button in a different tab first, a decoder's own "Start" did
+        nothing at all: audio_ready simply never fired (GitHub Issue #12
+        follow-up — CW Decoder's Level meter stuck at "-- dB" even with a
+        strong signal visible on the spectrum). request_audio() lets a
+        decoder ask for the data it needs independent of whether the user
+        also wants to hear it out loud; reference-counted (by owner name,
+        same pattern as AudioDeviceManager/AprsEngine) so multiple
+        decoders — or a decoder plus SdrControlWidget's own toggle — never
+        step on each other.
+        """
+        self._demod_requesters.add(owner)
+
+    def release_audio(self, owner: str) -> None:
+        """Release `owner`'s interest registered via request_audio()."""
+        self._demod_requesters.discard(owner)
 
     # -- Recorder control --
 
@@ -159,13 +191,17 @@ class SDRPipeline(QThread):
             # IQ recorder
             self._recorder.put_samples(iq)
 
-            # Demodulate → audio
-            if self._audio_enabled:
+            # Demodulate → audio_ready (needed by any decoder tab that
+            # requested it, independent of whether the user also wants
+            # speaker playback) → speaker playback (only if the user
+            # actually turned that on via SdrControlWidget's Start Audio).
+            if self._audio_enabled or self._demod_requesters:
                 try:
                     pcm = self._demodulator.process(iq)
                     if len(pcm) > 0:
                         self.audio_ready.emit(pcm)
-                        self._play_audio(pcm)
+                        if self._audio_enabled:
+                            self._play_audio(pcm)
                 except Exception:
                     logger.exception("Demodulator error")
 

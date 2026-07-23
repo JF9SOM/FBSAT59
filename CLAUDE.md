@@ -5795,6 +5795,45 @@ SDRが一度でも再接続されると、それ以降`audio_ready`は永久に�
 ように見えるが実は無音」という形で発覚しにくいため、レベルメーター等の診断表示があっても
 「表示が動いていない＝データが来ていない」に気づくまで時間がかかることがある。
 
+#### フォローアップ — v0.2.30でも再現、真因は別にあった（`request_audio`/`release_audio`、2026-07-23）
+
+上記の再接続修正（v0.2.30）を投入した後も、報告者から「CW Decoderは相変わらず動かない。ただし
+スペクトラムの中心周波数マーカーは効いていた」との再報告があった。スクリーンショットでは
+SDR Control側のスペクトラムに強いCW信号がマーカー位置ぴったりに見えているのに、CW Decoder
+タブ側は`Level: — dB`のまま——再接続は絡んでいない単発の新規セッションでの再現だったため、
+上記の再購読バグとは別の、より根本的な原因があると判明した。
+
+**真因**: `SDRPipeline.run()`（`src/sdr/pipeline.py`）は`if self._audio_enabled:`の中で
+復調（`self._demodulator.process(iq)`）・`audio_ready`シグナルの発行・スピーカー再生
+（`_play_audio()`）の3つ全てをまとめて実行しており、`_audio_enabled`を`True`にする
+`set_audio_enabled()`は**`SdrControlWidget`自身の「▶ Start Audio」ボタンからしか
+呼ばれていなかった**。CW Decoder・FT4・Q65・SSTV（アナログSSTVパスのみ。SSDVは
+`AprsEngine`経由の別系統`pipeline.subscribe()`＝生IQ購読であり、この`_audio_enabled`
+ゲートと無関係なため対象外。Telemetryタブも同様にAFSK/gr-satellitesとも`subscribe()`系統
+のため対象外）は、どれも`pipeline.audio_ready`を購読するだけで、**自分から復調を有効化する
+呼び出しを一切行っていなかった**。つまり「CW Decoderの'Start'を押す」だけでは何も起きず、
+ユーザーが**別のSDR Controlタブに切り替えて『Start Audio』も押す**という、UI上まったく
+自明でない前提条件を満たさない限り、これらのタブは永遠に無音のままだった。
+
+**修正**: `SDRPipeline`に参照カウント式の`request_audio(owner)`/`release_audio(owner)`
+（`AudioDeviceManager`/`AprsEngine`と同じownerタグ方式）を新設。`run()`のゲート条件を
+`if self._audio_enabled or self._demod_requesters:`に変更し、復調と`audio_ready`発行は
+「SDR Control自身の再生ON、またはrequest中のタブが1つでもある」場合に実行するよう分離。
+**スピーカー再生（`_play_audio()`）だけは`self._audio_enabled`のみに限定**——CW Decoder等が
+`request_audio()`しただけでユーザーが望んでいないスピーカー出力まで勝手に始まることを防ぐ。
+CW/FT4/Q65/SSTV（アナログ）のSDR購読開始・終了処理（`_connect_sdr_audio()`/
+`_disconnect_sdr_audio()`または`_connect_audio_source()`/`_disconnect_audio_source()`）に
+それぞれ`request_audio()`/`release_audio()`の対を追加した。
+
+**教訓**: 「同じシグナル/フラグに複数の異なる目的（ユーザー向けスピーカー再生 vs.
+デコーダーが必要とする復調済みデータ）を1本にまとめて載せる」設計は、片方の目的（この場合
+SDR Controlの手動再生ボタン）を経由しない限りもう片方（デコーダー purposes）が機能しない、
+という気づきにくい依存関係を生む。「別タブの無関係に見えるボタンを押さないと動かない」系の
+不具合は、まず「このデータの発行が本当に自分の操作だけで有効化されているか、他の何かに
+暗黙に相乗りしていないか」を疑うこと。今回も直前の再接続バグ修正（見た目は近い症状）を
+先に見つけて満足しかけたが、実機での再検証（別セッション・再接続なしでも再現）がなければ
+この2つ目の、より根本的な原因を見逃すところだった。
+
 ### ログソフト連携 — UDP ADIF ブロードキャスト設計（src/comms/log_broadcast.py・2026-07-05 実装済み）
 
 #### 概要

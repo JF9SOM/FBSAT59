@@ -704,6 +704,11 @@ class Ft4Tab(QWidget):
             if pipeline is None:
                 return
             pipeline.audio_ready.connect(self._on_sdr_audio_chunk)
+            # Without this, the pipeline never actually demodulates/emits
+            # audio_ready unless the user separately presses "Start Audio"
+            # in SDR Control — an easy-to-miss, unrelated-looking button in
+            # a different tab (GitHub Issue #12 follow-up).
+            pipeline.request_audio(_AUDIO_OWNER)
             self._sdr_pipeline = pipeline
             self._sdr_connected = True
         except Exception:
@@ -711,6 +716,8 @@ class Ft4Tab(QWidget):
 
     def _disconnect_sdr_audio(self) -> None:
         if self._sdr_pipeline is not None:
+            with contextlib.suppress(Exception):
+                self._sdr_pipeline.release_audio(_AUDIO_OWNER)
             with contextlib.suppress(Exception):
                 self._sdr_pipeline.audio_ready.disconnect(self._on_sdr_audio_chunk)
             self._sdr_pipeline = None

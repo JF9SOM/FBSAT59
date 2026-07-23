@@ -313,6 +313,12 @@ class SstvTab(QWidget):
         if pipeline is not None:
             with contextlib.suppress(RuntimeError):
                 pipeline.audio_ready.connect(self._decoder.push_samples)
+            # Without this, the pipeline never actually demodulates/emits
+            # audio_ready unless the user separately presses "Start Audio"
+            # in SDR Control — an easy-to-miss, unrelated-looking button in
+            # a different tab (GitHub Issue #12 follow-up).
+            with contextlib.suppress(Exception):
+                pipeline.request_audio(self._AUDIO_OWNER)
         elif self._rig_connected:
             self._start_soundcard_capture()
 
@@ -322,6 +328,8 @@ class SstvTab(QWidget):
         if pipeline is not None and self._decoder is not None:
             with contextlib.suppress(RuntimeError):
                 pipeline.audio_ready.disconnect(self._decoder.push_samples)
+            with contextlib.suppress(Exception):
+                pipeline.release_audio(self._AUDIO_OWNER)
         self._stop_soundcard_capture()
 
     def _find_sdr_pipeline(self) -> Any | None:
