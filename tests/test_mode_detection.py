@@ -143,10 +143,32 @@ def test_get_norads_empty_for_unconfigured_tab_key(conn: sqlite3.Connection) -> 
 # ---------------------------------------------------------------------------
 
 
-def test_ax100_digi_matches_only_marmotsat_norad() -> None:
-    assert is_ax100_digi_transmitter({"norad_cat_id": 98272})
-    assert not is_ax100_digi_transmitter({"norad_cat_id": 53106})  # GreenCube — excluded
+def test_ax100_digi_matches_only_marmotsat_vhf_digipeater() -> None:
+    marmotsat_digi = {
+        "norad_cat_id": 98272,
+        "description": "Mode V - AFSK1k2 - APRS Digipeater",
+    }
+    assert is_ax100_digi_transmitter(marmotsat_digi)
+
+    greencube_digi = {"norad_cat_id": 53106, "description": "Digipeater"}
+    assert not is_ax100_digi_transmitter(greencube_digi)  # GreenCube — excluded
+
     assert not is_ax100_digi_transmitter({"norad_cat_id": None})
+
+
+def test_ax100_digi_excludes_marmotsats_other_transmitters() -> None:
+    """MARMOTSat carries several transmitters under the same NORAD id (HF
+    CW beacon/DVB-S2/LFM sounder at 29.410 MHz, VHF CW telemetry at
+    145.875 MHz) — only the VHF digipeater one should match, since
+    _on_comms_satellite_requested() auto-selects the first match."""
+    for description in (
+        "HF CW Telemetry Beacon",
+        "HF DVB-S2",
+        "HF Ionospheric LFM Sounder",
+        "VHF CW TLM",
+    ):
+        xpdr = {"norad_cat_id": 98272, "description": description}
+        assert not is_ax100_digi_transmitter(xpdr), description
 
 
 def test_get_norads_ax100_digi_includes_marmotsat(conn: sqlite3.Connection) -> None:
@@ -155,6 +177,15 @@ def test_get_norads_ax100_digi_includes_marmotsat(conn: sqlite3.Connection) -> N
         conn, "u1", 98272, mode="AFSK", baud=1200, description="Mode V - AFSK1k2 - APRS Digipeater"
     )
     assert get_norads_for_tab(conn, "ax100digi") == [98272]
+
+
+def test_get_norads_ax100_digi_excludes_marmotsats_hf_transmitters(
+    conn: sqlite3.Connection,
+) -> None:
+    _add_sat(conn, 98272, "MARMOTSat")
+    _add_xmit(conn, "u1", 98272, mode="CW", description="HF CW Telemetry Beacon")
+    _add_xmit(conn, "u2", 98272, mode="DVB-S2", baud=33000, description="HF DVB-S2")
+    assert get_norads_for_tab(conn, "ax100digi") == []
 
 
 def test_get_norads_ax100_digi_excludes_greencube(conn: sqlite3.Connection) -> None:

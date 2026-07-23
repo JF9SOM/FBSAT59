@@ -904,7 +904,7 @@ class MainWindow(QMainWindow):
             comm_menu.addAction(_("FT4"), self._on_open_ft4)
             comm_menu.addAction(_("Q65"), self._on_open_q65)
             comm_menu.addAction(_("CW Decoder"), self._on_open_cw)
-            comm_menu.addAction(_("AX100 Digipeater"), self._on_open_ax100_digi)
+            comm_menu.addAction(_("AX100 Digi"), self._on_open_ax100_digi)
             comm_menu.addSeparator()
             comm_menu.addAction(_("METEOR / HRPT"), self._on_open_meteor)
 
@@ -2254,7 +2254,7 @@ class MainWindow(QMainWindow):
         containing "APRS", which would collide with is_aprs_transmitter()'s
         matching — this tab must be opened from the menu until that's
         resolved)."""
-        tab_label = _("AX100 Digipeater")
+        tab_label = _("AX100 Digi")
         for i in range(self._tab_widget.count()):
             if self._tab_widget.tabText(i) == tab_label:
                 self._tab_widget.setCurrentIndex(i)

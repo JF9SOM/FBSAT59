@@ -50,13 +50,22 @@ _MARMOTSAT_NORAD_ID = 98272
 def is_ax100_digi_transmitter(xpdr: dict[str, Any]) -> bool:
     """MARMOTSat's VHF digipeater (145.875 MHz) only.
 
-    Deliberately restricted to this single satellite by NORAD id rather
-    than a description/mode text match: GreenCube (IO-117) uses the same
-    AX100 "ASM+Golay" GMSK framing and would otherwise also match, but its
+    Restricted by NORAD id (GreenCube (IO-117) uses the same AX100
+    "ASM+Golay" GMSK framing and would otherwise also match, but its
     ground station is currently out of service, so it is intentionally
-    excluded here (2026-07 user request).
+    excluded — 2026-07 user request) *and* by "Digipeater" in the
+    description: MARMOTSat carries several other transmitters on the same
+    NORAD id (HF CW beacon, HF DVB-S2, HF LFM sounder, all at 29.410 MHz;
+    VHF CW telemetry at 145.875 MHz) that a norad-only check would also
+    match, and main_window._on_comms_satellite_requested() auto-selects
+    the *first* transponder this matcher accepts — without the
+    description check that was landing on one of the 29.410 MHz entries
+    instead of the 145.875 MHz digipeater.
     """
-    return xpdr.get("norad_cat_id") == _MARMOTSAT_NORAD_ID
+    if xpdr.get("norad_cat_id") != _MARMOTSAT_NORAD_ID:
+        return False
+    desc = (xpdr.get("description") or "").upper()
+    return "DIGIPEATER" in desc
 
 
 def is_ax25_telemetry_transmitter(xpdr: dict[str, Any]) -> bool:

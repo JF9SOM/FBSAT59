@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-23 21:40+0900\n"
+"POT-Creation-Date: 2026-07-23 21:51+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -3396,7 +3396,7 @@ msgid "Q65"
 msgstr ""
 
 #: src/ui/main_window.py:907 src/ui/main_window.py:2257
-msgid "AX100 Digipeater"
+msgid "AX100 Digi"
 msgstr ""
 
 #: src/ui/main_window.py:909 src/ui/main_window.py:2170

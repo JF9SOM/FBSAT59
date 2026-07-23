@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-23 21:40+0900\n"
+"POT-Creation-Date: 2026-07-23 21:51+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -63,9 +63,9 @@ msgid ""
 "is currently out of service. Set the rig to SSB mode on 145.875 MHz."
 msgstr ""
 "AX100「ASM+Golay」デジピーター — GMSK 1200 baud、Golay(24,12) + Reed-"
-"Solomon(255,223)、CSPトランスポート。プロトコルはGreenCube (IO-117)と互換"
-"ですが、本タブはMARMOTSat専用です — GreenCubeの地上局は現在運用停止中で"
-"す。リグを145.875MHzでSSBモードに設定してください。"
+"Solomon(255,223)、CSPトランスポート。プロトコルはGreenCube (IO-117)と互換です"
+"が、本タブはMARMOTSat専用です — GreenCubeの地上局は現在運用停止中です。リグを"
+"145.875MHzでSSBモードに設定してください。"
 
 #: src/ui/ax100_digi_tab.py:218
 msgid "Input/Output:"
@@ -147,8 +147,8 @@ msgid ""
 "CSP addressing used for outgoing frames is not yet confirmed against a real "
 "satellite — see comms/ax100digi/tx.py."
 msgstr ""
-"送信フレームのCSPアドレス指定は実際の衛星での確認が取れていません — "
-"comms/ax100digi/tx.py を参照してください。"
+"送信フレームのCSPアドレス指定は実際の衛星での確認が取れていません — comms/"
+"ax100digi/tx.py を参照してください。"
 
 #: src/ui/ax100_digi_tab.py:333 src/ui/ft4_tab.py:764 src/ui/cw_tab.py:340
 msgid "Sound Card not configured — open Rig Settings > Sound Card"
@@ -3675,8 +3675,8 @@ msgid "Q65"
 msgstr "Q65"
 
 #: src/ui/main_window.py:907 src/ui/main_window.py:2257
-msgid "AX100 Digipeater"
-msgstr "AX100デジピーター"
+msgid "AX100 Digi"
+msgstr "AX100 Digi"
 
 #: src/ui/main_window.py:909 src/ui/main_window.py:2170
 #: src/ui/main_window.py:5995 src/ui/main_window.py:6007
