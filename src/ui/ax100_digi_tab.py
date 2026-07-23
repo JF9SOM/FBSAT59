@@ -247,16 +247,28 @@ class Ax100DigiTab(QWidget):
         group = QGroupBox(_("Send Message"))
         form = QFormLayout(group)
 
+        addr_row = QHBoxLayout()
+        addr_row.addWidget(QLabel(_("To:")))
         self._dest_edit = QLineEdit(self._dest_call)
-        form.addRow(_("To:"), self._dest_edit)
+        self._dest_edit.setMaximumWidth(90)
+        addr_row.addWidget(self._dest_edit)
 
+        addr_row.addWidget(QLabel(_("Satellite:")))
         self._sat_edit = QLineEdit(self._sat_name)
-        form.addRow(_("Satellite:"), self._sat_edit)
+        self._sat_edit.setMaximumWidth(110)
+        addr_row.addWidget(self._sat_edit)
 
+        addr_row.addWidget(QLabel(_("STORE=:")))
         self._store_spin = QSpinBox()
         self._store_spin.setRange(0, 172_800)  # GreenCube's 2-day max relay delay
-        self._store_spin.setSuffix(_(" s (0 = immediate)"))
-        form.addRow(_("STORE=:"), self._store_spin)
+        self._store_spin.setSuffix(_(" s"))
+        self._store_spin.setMaximumWidth(90)
+        self._store_spin.setToolTip(
+            _("0 = relay immediately; otherwise seconds to hold on board (max 172800 = 2 days)")
+        )
+        addr_row.addWidget(self._store_spin)
+        addr_row.addStretch(1)
+        form.addRow(addr_row)
 
         self._content_edit = QLineEdit()
         self._content_edit.setPlaceholderText(_("Message content"))
