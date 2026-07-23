@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-23 23:17+0900\n"
+"POT-Creation-Date: 2026-07-23 23:24+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -34,28 +34,28 @@ msgstr ""
 "入力デバイス #{device}（{name}）には入力チャンネルがありません — Rig "
 "Settings > Sound Card を開き、入力デバイスを選び直してください。"
 
-#: src/ui/ax100_digi_tab.py:89 src/ui/q65_tab.py:764 src/ui/ft4_tab.py:126
+#: src/ui/ax100_digi_tab.py:91 src/ui/q65_tab.py:764 src/ui/ft4_tab.py:126
 msgid "another tab"
 msgstr "別のタブ"
 
-#: src/ui/ax100_digi_tab.py:90 src/ui/q65_tab.py:766 src/ui/ft4_tab.py:127
+#: src/ui/ax100_digi_tab.py:92 src/ui/q65_tab.py:766 src/ui/ft4_tab.py:127
 #, python-brace-format
 msgid "Sound card output is in use by {other}"
 msgstr "サウンドカード出力は{other}が使用中です"
 
-#: src/ui/ax100_digi_tab.py:96
+#: src/ui/ax100_digi_tab.py:98
 msgid "Rig 1 not connected — cannot key PTT"
 msgstr "Rig 1未接続 — PTTを制御できません"
 
-#: src/ui/ax100_digi_tab.py:99 src/ui/ft4_tab.py:134
+#: src/ui/ax100_digi_tab.py:101 src/ui/ft4_tab.py:134
 msgid "PTT command failed — check Rig 1 connection"
 msgstr "PTTコマンドが失敗しました — Rig 1の接続を確認してください"
 
-#: src/ui/ax100_digi_tab.py:207
+#: src/ui/ax100_digi_tab.py:237
 msgid "AX100 Digi (MARMOTSat) ℹ"
 msgstr "AX100 Digi（MARMOTSat）ℹ"
 
-#: src/ui/ax100_digi_tab.py:210
+#: src/ui/ax100_digi_tab.py:240
 msgid ""
 "AX100 \"ASM+Golay\" digipeater — GMSK 1200 baud, Golay(24,12) + Reed-"
 "Solomon(255,223), CSP transport. Protocol-compatible with GreenCube "
@@ -67,83 +67,91 @@ msgstr ""
 "が、本タブはMARMOTSat専用です — GreenCubeの地上局は現在運用停止中です。リグを"
 "145.875MHzでSSBモードに設定してください。"
 
-#: src/ui/ax100_digi_tab.py:220
+#: src/ui/ax100_digi_tab.py:250
 msgid "Input/Output:"
 msgstr "入出力:"
 
-#: src/ui/ax100_digi_tab.py:221 src/ui/q65_tab.py:199 src/ui/ft4_tab.py:353
+#: src/ui/ax100_digi_tab.py:251 src/ui/q65_tab.py:199 src/ui/ft4_tab.py:353
 msgid "Rig Soundcard"
 msgstr "無線機サウンドカード"
 
-#: src/ui/ax100_digi_tab.py:222 src/ui/sstv_tab.py:273
+#: src/ui/ax100_digi_tab.py:252 src/ui/sstv_tab.py:273
 msgid "SDR (receive only)"
 msgstr "SDR（受信のみ）"
 
-#: src/ui/ax100_digi_tab.py:232
+#: src/ui/ax100_digi_tab.py:262
 msgid "Input: not connected"
 msgstr "入力: 未接続"
 
-#: src/ui/ax100_digi_tab.py:237 src/ui/pass_chart.py:428
+#: src/ui/ax100_digi_tab.py:267 src/ui/pass_chart.py:428
 #: src/ui/pass_chart.py:747 src/ui/telemetry_tab.py:215
 msgid "Time (UTC)"
 msgstr "時刻 (UTC)"
 
-#: src/ui/ax100_digi_tab.py:237
+#: src/ui/ax100_digi_tab.py:267
 msgid "Src"
 msgstr "送信元"
 
-#: src/ui/ax100_digi_tab.py:237
+#: src/ui/ax100_digi_tab.py:267
 msgid "Dst"
 msgstr "宛先"
 
-#: src/ui/ax100_digi_tab.py:237
+#: src/ui/ax100_digi_tab.py:267
 msgid "Sat"
 msgstr "衛星"
 
-#: src/ui/ax100_digi_tab.py:237 src/ui/q65_tab.py:324 src/ui/ft4_tab.py:502
+#: src/ui/ax100_digi_tab.py:267 src/ui/q65_tab.py:324 src/ui/ft4_tab.py:502
 msgid "Message"
 msgstr "メッセージ"
 
-#: src/ui/ax100_digi_tab.py:247 src/ui/aprs_tab.py:278
+#: src/ui/ax100_digi_tab.py:277 src/ui/aprs_tab.py:278
 msgid "Send Message"
 msgstr "メッセージ送信"
 
-#: src/ui/ax100_digi_tab.py:251 src/ui/log_export_dialog.py:98
+#: src/ui/ax100_digi_tab.py:281 src/ui/log_export_dialog.py:98
 #: src/ui/pass_panel.py:401 src/ui/pass_panel.py:450 src/ui/aprs_tab.py:280
 msgid "To:"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:256
+#: src/ui/ax100_digi_tab.py:286
 msgid "Satellite:"
 msgstr "衛星名:"
 
-#: src/ui/ax100_digi_tab.py:261
+#: src/ui/ax100_digi_tab.py:291
 msgid "STORE=:"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:264
+#: src/ui/ax100_digi_tab.py:294
 msgid " s"
 msgstr " 秒"
 
-#: src/ui/ax100_digi_tab.py:267
+#: src/ui/ax100_digi_tab.py:297
 msgid ""
 "0 = relay immediately; otherwise seconds to hold on board (max 172800 = 2 "
 "days)"
 msgstr "0=即時中継、それ以外は衛星上に保持する秒数（最大172800秒=2日間）"
 
-#: src/ui/ax100_digi_tab.py:274
+#: src/ui/ax100_digi_tab.py:307
 msgid "Message content"
 msgstr "メッセージ本文"
 
-#: src/ui/ax100_digi_tab.py:275
+#: src/ui/ax100_digi_tab.py:312
+msgid "Clear History"
+msgstr "履歴を消去"
+
+#: src/ui/ax100_digi_tab.py:313
+msgid "Delete all remembered message content"
+msgstr "記憶しているメッセージ本文をすべて削除します"
+
+#: src/ui/ax100_digi_tab.py:317
 msgid "Content:"
 msgstr "本文:"
 
-#: src/ui/ax100_digi_tab.py:278 src/ui/aprs_tab.py:291
+#: src/ui/ax100_digi_tab.py:320 src/ui/aprs_tab.py:291
 msgid "Send"
 msgstr "送信"
 
-#: src/ui/ax100_digi_tab.py:285
+#: src/ui/ax100_digi_tab.py:327
 msgid ""
 "CSP addressing used for outgoing frames is not yet confirmed against a real "
 "satellite — see comms/ax100digi/tx.py."
@@ -151,66 +159,66 @@ msgstr ""
 "送信フレームのCSPアドレス指定は実際の衛星での確認が取れていません — comms/"
 "ax100digi/tx.py を参照してください。"
 
-#: src/ui/ax100_digi_tab.py:343 src/ui/ft4_tab.py:764 src/ui/cw_tab.py:340
+#: src/ui/ax100_digi_tab.py:385 src/ui/ft4_tab.py:764 src/ui/cw_tab.py:340
 msgid "Sound Card not configured — open Rig Settings > Sound Card"
 msgstr ""
 "サウンドカードが未設定です — Rig Settings > Sound Card を開いてください"
 
-#: src/ui/ax100_digi_tab.py:349 src/ui/sstv_tab.py:354 src/ui/ft4_tab.py:760
+#: src/ui/ax100_digi_tab.py:391 src/ui/sstv_tab.py:354 src/ui/ft4_tab.py:760
 #: src/ui/cw_tab.py:336
 msgid "sounddevice not installed — pip install sounddevice"
 msgstr "sounddeviceがインストールされていません — pip install sounddevice"
 
-#: src/ui/ax100_digi_tab.py:359
+#: src/ui/ax100_digi_tab.py:401
 msgid "Input: Rig Soundcard connected"
 msgstr "入力: 無線機サウンドカード接続中"
 
-#: src/ui/ax100_digi_tab.py:362
+#: src/ui/ax100_digi_tab.py:404
 #, python-brace-format
 msgid "Audio open error: {exc}"
 msgstr "オーディオを開けません: {exc}"
 
-#: src/ui/ax100_digi_tab.py:396
+#: src/ui/ax100_digi_tab.py:438
 msgid "Input: SDR not connected"
 msgstr "入力: SDR未接続"
 
-#: src/ui/ax100_digi_tab.py:400
+#: src/ui/ax100_digi_tab.py:442
 msgid "Input: cannot determine SDR sample rate"
 msgstr "入力: SDRのサンプルレートを判定できません"
 
-#: src/ui/ax100_digi_tab.py:406
+#: src/ui/ax100_digi_tab.py:448
 msgid "Input: SDR connected (receive only)"
 msgstr "入力: SDR接続中（受信のみ）"
 
-#: src/ui/ax100_digi_tab.py:427
+#: src/ui/ax100_digi_tab.py:469
 msgid "Input: SDR disconnected"
 msgstr "入力: SDR切断"
 
-#: src/ui/ax100_digi_tab.py:450
+#: src/ui/ax100_digi_tab.py:492
 msgid "My Call not set — configure it in File > Set QTH"
 msgstr "コールサインが未設定です — ファイル > Set QTH で設定してください"
 
-#: src/ui/ax100_digi_tab.py:453
+#: src/ui/ax100_digi_tab.py:495
 msgid "To and Content are required"
 msgstr "宛先・本文は必須です"
 
-#: src/ui/ax100_digi_tab.py:456
+#: src/ui/ax100_digi_tab.py:498
 msgid "Switch Input/Output to Rig Soundcard to send"
 msgstr "送信するには入出力を無線機サウンドカードに切り替えてください"
 
-#: src/ui/ax100_digi_tab.py:461
+#: src/ui/ax100_digi_tab.py:503
 msgid "Rig 1 not connected"
 msgstr "Rig 1未接続"
 
-#: src/ui/ax100_digi_tab.py:489 src/ui/ft4_tab.py:922
+#: src/ui/ax100_digi_tab.py:531 src/ui/ft4_tab.py:922
 msgid "TX: "
 msgstr "TX: "
 
-#: src/ui/ax100_digi_tab.py:495
+#: src/ui/ax100_digi_tab.py:537
 msgid "TX done"
 msgstr "送信完了"
 
-#: src/ui/ax100_digi_tab.py:501 src/ui/ft4_tab.py:932
+#: src/ui/ax100_digi_tab.py:543 src/ui/ft4_tab.py:932
 msgid "TX error: "
 msgstr "TXエラー: "
 

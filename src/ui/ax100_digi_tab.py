@@ -30,6 +30,7 @@ import numpy as np
 from numpy.typing import NDArray
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
+    QComboBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -58,6 +59,7 @@ _AUDIO_OWNER = "AX100 Digipeater"
 _SETTINGS_KEY = "ax100digi_settings"
 _PTT_LEAD_S = 0.20  # GreenCube config.ini's KeyUpDelay default (200ms)
 _PTT_TAIL_S = 0.50  # GreenCube config.ini's KeyDownDelay default (500ms)
+_MAX_CONTENT_HISTORY = 20
 
 
 class _TxWorker(QObject):
@@ -163,6 +165,7 @@ class Ax100DigiTab(QWidget):
         self._dest_call = data.get("dest_call", "")
         self._sat_name = data.get("sat_name", "MARMOTSat")
         self._rx_source = data.get("rx_source", "soundcard")
+        self._content_history: list[str] = data.get("content_history", [])
 
         row2 = self._conn.execute(
             "SELECT value FROM app_settings WHERE key = 'soundcard_settings'"
@@ -180,6 +183,7 @@ class Ax100DigiTab(QWidget):
                 "dest_call": self._dest_edit.text().strip(),
                 "sat_name": self._sat_edit.text().strip(),
                 "rx_source": "soundcard" if self._rb_soundcard.isChecked() else "sdr",
+                "content_history": self._content_history,
             }
         )
         self._conn.execute(
@@ -187,6 +191,32 @@ class Ax100DigiTab(QWidget):
             (_SETTINGS_KEY, data),
         )
         self._conn.commit()
+
+    def _remember_content(self, text: str) -> None:
+        """Add `text` to the Content history combo (most-recent-first,
+        deduplicated, capped), and persist it."""
+        text = text.strip()
+        if not text:
+            return
+        if text in self._content_history:
+            self._content_history.remove(text)
+        self._content_history.insert(0, text)
+        del self._content_history[_MAX_CONTENT_HISTORY:]
+        self._save_settings()
+        self._refresh_content_combo(current_text=text)
+
+    def _refresh_content_combo(self, current_text: str = "") -> None:
+        self._content_combo.blockSignals(True)
+        self._content_combo.clear()
+        self._content_combo.addItems(self._content_history)
+        self._content_combo.setCurrentText(current_text)
+        self._content_combo.blockSignals(False)
+
+    @Slot()
+    def _on_clear_content_history(self) -> None:
+        self._content_history = []
+        self._save_settings()
+        self._refresh_content_combo()
 
     def _get_my_call(self) -> str:
         """Read the operator's own callsign from File > Set QTH (the same
@@ -270,9 +300,23 @@ class Ax100DigiTab(QWidget):
         addr_row.addStretch(1)
         form.addRow(addr_row)
 
-        self._content_edit = QLineEdit()
-        self._content_edit.setPlaceholderText(_("Message content"))
-        form.addRow(_("Content:"), self._content_edit)
+        content_row = QHBoxLayout()
+        self._content_combo = QComboBox()
+        self._content_combo.setEditable(True)
+        self._content_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        content_line_edit = self._content_combo.lineEdit()
+        if content_line_edit is not None:
+            content_line_edit.setPlaceholderText(_("Message content"))
+        self._content_combo.addItems(self._content_history)
+        self._content_combo.setCurrentText("")
+        content_row.addWidget(self._content_combo, stretch=1)
+
+        clear_history_btn = QPushButton(_("Clear History"))
+        clear_history_btn.setToolTip(_("Delete all remembered message content"))
+        clear_history_btn.clicked.connect(self._on_clear_content_history)
+        content_row.addWidget(clear_history_btn)
+
+        form.addRow(_("Content:"), content_row)
 
         send_row = QHBoxLayout()
         self._send_btn = QPushButton(_("Send"))
@@ -445,7 +489,7 @@ class Ax100DigiTab(QWidget):
         my_call = self._get_my_call()
         dest_call = self._dest_edit.text().strip()
         sat_name = self._sat_edit.text().strip()
-        content = self._content_edit.text().strip()
+        content = self._content_combo.currentText().strip()
         if not my_call:
             self._tx_status_label.setText(_("My Call not set — configure it in File > Set QTH"))
             return
@@ -475,7 +519,7 @@ class Ax100DigiTab(QWidget):
             self._tx_status_label.setText(str(exc))
             return
 
-        self._save_settings()
+        self._remember_content(content)
 
         worker = _TxWorker(result.audio, self._out_device, rig)
         worker.finished.connect(self._on_tx_finished)
