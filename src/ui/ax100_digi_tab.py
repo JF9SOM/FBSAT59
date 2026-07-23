@@ -160,12 +160,6 @@ class Ax100DigiTab(QWidget):
             "SELECT value FROM app_settings WHERE key = ?", (_SETTINGS_KEY,)
         ).fetchone()
         data: dict[str, Any] = json.loads(row[0]) if row else {}
-        self._my_call = data.get("my_call", "")
-        if not self._my_call:
-            r = self._conn.execute(
-                "SELECT value FROM app_settings WHERE key = 'callsign'"
-            ).fetchone()
-            self._my_call = str(r[0]) if r else ""
         self._dest_call = data.get("dest_call", "")
         self._sat_name = data.get("sat_name", "MARMOTSat")
         self._rx_source = data.get("rx_source", "soundcard")
@@ -183,7 +177,6 @@ class Ax100DigiTab(QWidget):
     def _save_settings(self) -> None:
         data = json.dumps(
             {
-                "my_call": self._call_edit.text().strip(),
                 "dest_call": self._dest_edit.text().strip(),
                 "sat_name": self._sat_edit.text().strip(),
                 "rx_source": "soundcard" if self._rb_soundcard.isChecked() else "sdr",
@@ -194,6 +187,14 @@ class Ax100DigiTab(QWidget):
             (_SETTINGS_KEY, data),
         )
         self._conn.commit()
+
+    def _get_my_call(self) -> str:
+        """Read the operator's own callsign from File > Set QTH (the same
+        `app_settings['callsign']` FT4/Q65/APRS fall back to). Read fresh
+        on every send rather than cached, so setting the callsign for the
+        first time after this tab is already open works without a restart."""
+        row = self._conn.execute("SELECT value FROM app_settings WHERE key = 'callsign'").fetchone()
+        return str(row[0]) if row else ""
 
     # ------------------------------------------------------------------ #
     # UI
@@ -245,9 +246,6 @@ class Ax100DigiTab(QWidget):
     def _build_tx_group(self) -> QGroupBox:
         group = QGroupBox(_("Send Message"))
         form = QFormLayout(group)
-
-        self._call_edit = QLineEdit(self._my_call)
-        form.addRow(_("My Call:"), self._call_edit)
 
         self._dest_edit = QLineEdit(self._dest_call)
         form.addRow(_("To:"), self._dest_edit)
@@ -432,12 +430,15 @@ class Ax100DigiTab(QWidget):
     def _on_send(self) -> None:
         if self._tx_in_progress:
             return
-        my_call = self._call_edit.text().strip()
+        my_call = self._get_my_call()
         dest_call = self._dest_edit.text().strip()
         sat_name = self._sat_edit.text().strip()
         content = self._content_edit.text().strip()
-        if not my_call or not dest_call or not content:
-            self._tx_status_label.setText(_("My Call, To, and Content are required"))
+        if not my_call:
+            self._tx_status_label.setText(_("My Call not set — configure it in File > Set QTH"))
+            return
+        if not dest_call or not content:
+            self._tx_status_label.setText(_("To and Content are required"))
             return
         if not self._rb_soundcard.isChecked():
             self._tx_status_label.setText(_("Switch Input/Output to Rig Soundcard to send"))
