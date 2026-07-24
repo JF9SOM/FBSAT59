@@ -147,6 +147,29 @@ COMMS_TAB_CONFIG: dict[str, CommsTabConfig] = {
 }
 
 
+def pick_preferred_transponder_index(
+    transmitters: list[dict[str, Any]], matcher: Callable[[dict[str, Any]], bool]
+) -> int | None:
+    """Return the index of the best transponder in *transmitters* matching
+    *matcher*, preferring a manually-curated source='community' entry over
+    any other matching source (typically SATNOGS).
+
+    Some satellites have both a corrected community entry and a stale/
+    incomplete SATNOGS one for the same protocol — e.g. MARMOTSat's SATNOGS
+    transmitter lists its AX100 digipeater as mode=AFSK with no uplink
+    (satellite too newly launched for SATNOGS to have it right yet), while
+    community_transmitters.json has the corrected SSB mode + up/down
+    frequencies. Both match is_ax100_digi_transmitter(), so a plain
+    first-match search would non-deterministically land on whichever sorts
+    first in the DB query. Returns None if nothing matches.
+    """
+    matches = [i for i, t in enumerate(transmitters) if matcher(t)]
+    if not matches:
+        return None
+    community_matches = [i for i in matches if transmitters[i].get("source") == "community"]
+    return community_matches[0] if community_matches else matches[0]
+
+
 def get_norads_for_tab(conn: sqlite3.Connection, tab_key: str) -> list[int]:
     """Return NORAD ids of satellites carrying a transmitter matching *tab_key*.
 

@@ -15,6 +15,7 @@ from comms.mode_detection import (
     get_norads_for_tab,
     is_ax25_telemetry_transmitter,
     is_ax100_digi_transmitter,
+    pick_preferred_transponder_index,
 )
 
 # ---------------------------------------------------------------------------
@@ -185,6 +186,56 @@ def test_ax100_digi_auto_select_picks_mode_v_not_first_by_frequency() -> None:
     best_idx = next((i for i, t in enumerate(transmitters) if is_ax100_digi_transmitter(t)), 0)
     assert best_idx == 3
     assert transmitters[best_idx]["description"] == "Mode V - AFSK1k2 - APRS Digipeater"
+
+
+# ---------------------------------------------------------------------------
+# pick_preferred_transponder_index()
+# ---------------------------------------------------------------------------
+
+
+def test_pick_preferred_transponder_index_prefers_community_over_satnogs() -> None:
+    """MARMOTSat has both a stale SATNOGS "Mode V" entry (mode=AFSK, no
+    uplink) and a corrected community_transmitters.json entry (source=
+    'community', USB, up=down=145.875 MHz). Both match
+    is_ax100_digi_transmitter() (norad + "Digipeater"/"Mode V" in
+    description), so the community one must win regardless of which one
+    the DB query happens to list first."""
+    transmitters_satnogs_first = [
+        {
+            "norad_cat_id": 98272,
+            "description": "Mode V - AFSK1k2 - APRS Digipeater",
+            "source": "satnogs",
+        },
+        {
+            "norad_cat_id": 98272,
+            "description": "AX100 Digipeater (GreenCube-compatible, SSB) — community",
+            "source": "community",
+        },
+    ]
+    idx = pick_preferred_transponder_index(transmitters_satnogs_first, is_ax100_digi_transmitter)
+    assert idx == 1
+
+    transmitters_community_first = list(reversed(transmitters_satnogs_first))
+    idx2 = pick_preferred_transponder_index(transmitters_community_first, is_ax100_digi_transmitter)
+    assert idx2 == 0
+
+
+def test_pick_preferred_transponder_index_falls_back_when_no_community_match() -> None:
+    transmitters = [
+        {"norad_cat_id": 98272, "description": "HF DVB-S2", "source": "satnogs"},
+        {
+            "norad_cat_id": 98272,
+            "description": "Mode V - AFSK1k2 - APRS Digipeater",
+            "source": "satnogs",
+        },
+    ]
+    idx = pick_preferred_transponder_index(transmitters, is_ax100_digi_transmitter)
+    assert idx == 1
+
+
+def test_pick_preferred_transponder_index_returns_none_when_nothing_matches() -> None:
+    transmitters = [{"norad_cat_id": 98272, "description": "HF DVB-S2", "source": "satnogs"}]
+    assert pick_preferred_transponder_index(transmitters, is_ax100_digi_transmitter) is None
 
 
 def test_ax100_digi_excludes_marmotsats_other_transmitters() -> None:

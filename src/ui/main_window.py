@@ -2145,10 +2145,9 @@ class MainWindow(QMainWindow):
         transmitters = self._radio_control._transmitters
         if not transmitters or config is None or config.matcher is None:
             return
-        best_idx = next(
-            (i for i, t in enumerate(transmitters) if config.matcher(t)),
-            0,
-        )
+        best_idx = mode_detection.pick_preferred_transponder_index(transmitters, config.matcher)
+        if best_idx is None:
+            return
         self._radio_control.set_transmitters(transmitters, default_index=best_idx)
 
     def _on_open_q65(self) -> None:
@@ -3957,7 +3956,7 @@ class MainWindow(QMainWindow):
             """
             SELECT uuid, description, type,
                    downlink_low, uplink_low, mode, ctcss_tone, invert,
-                   alive, satnogs_status, norad_cat_id
+                   alive, satnogs_status, norad_cat_id, source
             FROM transmitters
             WHERE norad_cat_id = ?
             ORDER BY

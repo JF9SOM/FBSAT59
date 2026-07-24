@@ -51,5 +51,21 @@
     "baud": null,
     "ctcss_tone": null,
     "notes": "Community FT4 calling frequency. Rx 435.812 / Tx 145.938. Not in SATNOGS. Ref: JH1NHK https://x.com/JH1NHK/status/1882598594924212321"
+  },
+  {
+    "uuid": "community-marmotsat-digi",
+    "norad_cat_id": 98272,
+    "satellite_name": "MARMOTSat",
+    "description": "AX100 Digipeater (GreenCube-compatible, SSB) — community",
+    "type": "Transceiver",
+    "uplink_low":   145875000,
+    "uplink_high":  null,
+    "downlink_low": 145875000,
+    "downlink_high": null,
+    "mode": "USB-D",
+    "invert": false,
+    "baud": null,
+    "ctcss_tone": null,
+    "notes": "GMSK ASM+Golay digipeater rides at a fixed audio offset inside an SSB passband (GreenCube's own approach), not a standard FM/AFSK transponder. SATNOGS lists this satellite's VHF transmitter as mode=AFSK with no uplink (satellite too newly launched for SATNOGS data to be corrected yet). Up=Down=145.875 MHz, USB. 2026-07."
   }
 ]
