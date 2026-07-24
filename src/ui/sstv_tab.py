@@ -244,19 +244,30 @@ class SstvTab(QWidget):
         self._status_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         bottom.addWidget(self._status_label)
 
+        # Fixed height + matching padding so these three differently-worded
+        # buttons don't end up with slightly different vertical sizes (Qt's
+        # default sizeHint varies a little with text/emoji glyph metrics).
+        _bottom_btn_style = "padding: 4px 10px;"
+
         self._save_btn = QPushButton(_("💾 Save PNG"))
         self._save_btn.setEnabled(False)
+        self._save_btn.setFixedHeight(30)
+        self._save_btn.setStyleSheet(_bottom_btn_style)
         self._save_btn.clicked.connect(self._on_save_png)
         bottom.addWidget(self._save_btn)
 
         self._decode_file_btn = QPushButton(_("📂 Decode Recording…"))
         self._decode_file_btn.setEnabled(SOUNDFILE_AVAILABLE)
+        self._decode_file_btn.setFixedHeight(30)
+        self._decode_file_btn.setStyleSheet(_bottom_btn_style)
         if not SOUNDFILE_AVAILABLE:
             self._decode_file_btn.setToolTip(_("soundfile not installed — pip install soundfile"))
         self._decode_file_btn.clicked.connect(self._on_decode_file)
         bottom.addWidget(self._decode_file_btn)
 
         self._clear_btn = QPushButton(_("🗑 Clear"))
+        self._clear_btn.setFixedHeight(30)
+        self._clear_btn.setStyleSheet(_bottom_btn_style)
         self._clear_btn.clicked.connect(self._on_clear)
         bottom.addWidget(self._clear_btn)
 
