@@ -82,13 +82,31 @@ def _bytes_to_bits(data: bytes) -> NDArray[np.uint8]:
 
 
 def find_frames(
-    bits: NDArray[np.uint8], *, sync_threshold: int = DEFAULT_SYNC_THRESHOLD
+    bits: NDArray[np.uint8],
+    *,
+    sync_threshold: int = DEFAULT_SYNC_THRESHOLD,
+    require_rs: bool = True,
 ) -> Iterator[Ax100Frame]:
     """Search an unpacked-bit array (values 0/1) for AX100 ASM+Golay frames.
 
     Yields frames in order of their sync-word position. Malformed
     candidates (bad Golay/RS, incomplete data) are silently skipped so the
     search can continue past false-positive sync matches.
+
+    require_rs=True (the default) rejects any candidate whose Golay-decoded
+    rs_flag is False. This closes a real false-positive hole found on pure
+    noise/silence input (2026-07 bug report): a random 24-bit Golay
+    codeword still "successfully" decodes to some nearby valid codeword
+    ~58% of the time (Golay(24,12) covers most of its 2^24 space with
+    radius-3 balls around only 4096 real codewords), and when the
+    (equally random) decoded rs_flag bit happens to be 0, the frame_len
+    random bytes that follow are accepted as a "payload" with *no*
+    further validation at all — RS(255,223) is a far stronger check
+    (astronomically unlikely to pass by chance), so requiring it rejects
+    essentially all noise-driven false positives. GreenCube/MARMOTSat's
+    documented stack always uses RS, so this doesn't reject any real
+    frame from this satellite family; pass require_rs=False only to
+    decode/test an RS-disabled configuration on purpose.
     """
     sync = _syncword_bits()
     n = len(bits)
@@ -97,7 +115,7 @@ def find_frames(
         window = bits[i : i + SYNCWORD_LEN]
         errors = int(np.count_nonzero(window != sync))
         if errors <= sync_threshold:
-            frame = _try_decode_at(bits, i)
+            frame = _try_decode_at(bits, i, require_rs=require_rs)
             if frame is not None:
                 yield frame
                 i += SYNCWORD_LEN + _GOLAY_FIELD_BITS + frame.frame_len * 8
@@ -105,7 +123,9 @@ def find_frames(
         i += 1
 
 
-def _try_decode_at(bits: NDArray[np.uint8], sync_start: int) -> Ax100Frame | None:
+def _try_decode_at(
+    bits: NDArray[np.uint8], sync_start: int, *, require_rs: bool = True
+) -> Ax100Frame | None:
     golay_start = sync_start + SYNCWORD_LEN
     if golay_start + _GOLAY_FIELD_BITS > len(bits):
         return None
@@ -129,6 +149,11 @@ def _try_decode_at(bits: NDArray[np.uint8], sync_start: int) -> Ax100Frame | Non
     if viterbi_flag:
         # Convolutional coding is not implemented (not used by GreenCube/
         # MARMOTSat's documented stack); report as undecodable.
+        return None
+
+    if require_rs and not rs_flag:
+        # See find_frames()'s docstring: without this, noise/silence
+        # regularly "decodes" to garbage payloads with zero validation.
         return None
 
     packet_start = golay_start + _GOLAY_FIELD_BITS

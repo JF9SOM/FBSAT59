@@ -30,7 +30,7 @@ from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
-from PySide6.QtCore import QObject, QTimer, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -45,6 +45,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QRadioButton,
+    QSlider,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -68,6 +69,23 @@ _SETTINGS_KEY = "ax100digi_settings"
 _PTT_LEAD_S = 0.20  # GreenCube config.ini's KeyUpDelay default (200ms)
 _PTT_TAIL_S = 0.50  # GreenCube config.ini's KeyDownDelay default (500ms)
 _MAX_CONTENT_HISTORY = 20
+_SQUELCH_MAX = 60  # slider range 0 (off) .. 60 -> threshold -60..0 dBFS
+_SQUELCH_MIN_DBFS = -60.0
+
+
+def _peak_dbfs(samples: NDArray[Any]) -> float:
+    """Peak level of a real audio or complex I/Q block, in dBFS.
+
+    Works for both input types since np.abs() gives magnitude either way.
+    Returns a very low value (effectively -inf) for empty/all-zero input
+    so an empty/silent chunk never accidentally passes a squelch check.
+    """
+    if len(samples) == 0:
+        return -999.0
+    peak = float(np.max(np.abs(samples)))
+    if peak <= 0.0:
+        return -999.0
+    return 20.0 * float(np.log10(peak))
 
 
 class _TxWorker(QObject):
@@ -288,6 +306,7 @@ class Ax100DigiTab(QWidget):
         self._content_history: list[str] = data.get("content_history", [])
         csp = data.get("csp_header")
         self._csp_header = CspHeader(**csp) if csp else DEFAULT_CSP_HEADER
+        self._squelch_value = int(data.get("squelch_value", 0))
 
         tz_row = self._conn.execute(
             "SELECT value FROM app_settings WHERE key = 'time_zone_mode'"
@@ -318,6 +337,7 @@ class Ax100DigiTab(QWidget):
                     "dest_port": self._csp_header.dest_port,
                     "source_port": self._csp_header.source_port,
                 },
+                "squelch_value": self._squelch_slider.value(),
             }
         )
         self._conn.execute(
@@ -368,6 +388,33 @@ class Ax100DigiTab(QWidget):
         return str(row[0]) if row else ""
 
     # ------------------------------------------------------------------ #
+    # Squelch
+    # ------------------------------------------------------------------ #
+
+    def _squelch_threshold_dbfs(self) -> float | None:
+        """None means disabled (slider at 0, the default — never rejects)."""
+        value = self._squelch_slider.value() if hasattr(self, "_squelch_slider") else 0
+        if value <= 0:
+            return None
+        return _SQUELCH_MIN_DBFS + value
+
+    def _squelch_display_text(self) -> str:
+        threshold = self._squelch_threshold_dbfs()
+        if threshold is None:
+            return _("Off")
+        return _("{db:.0f} dBFS").format(db=threshold)
+
+    def _passes_squelch(self, samples: NDArray[Any]) -> bool:
+        threshold = self._squelch_threshold_dbfs()
+        if threshold is None:
+            return True
+        return _peak_dbfs(samples) >= threshold
+
+    @Slot(int)
+    def _on_squelch_changed(self, _value: int) -> None:
+        self._squelch_label.setText(self._squelch_display_text())
+
+    # ------------------------------------------------------------------ #
     # UI
     # ------------------------------------------------------------------ #
 
@@ -404,6 +451,25 @@ class Ax100DigiTab(QWidget):
         self._status_label = QLabel(_("Input: not connected"))
         status_row.addWidget(self._status_label)
         status_row.addStretch(1)
+
+        status_row.addWidget(QLabel(_("Squelch:")))
+        self._squelch_slider = QSlider(Qt.Orientation.Horizontal)
+        self._squelch_slider.setRange(0, _SQUELCH_MAX)
+        self._squelch_slider.setValue(self._squelch_value)
+        self._squelch_slider.setFixedWidth(90)
+        self._squelch_slider.setToolTip(
+            _(
+                "Minimum input level required before a frame decode is attempted. "
+                "Left = off (process everything, the default — a real signal is "
+                "never rejected). Raise it only after watching the log fill with "
+                "garbage on an idle frequency, using that as a guide for the noise "
+                "floor; setting it too high can block a real, weak signal."
+            )
+        )
+        self._squelch_label = QLabel(self._squelch_display_text())
+        self._squelch_slider.valueChanged.connect(self._on_squelch_changed)
+        status_row.addWidget(self._squelch_slider)
+        status_row.addWidget(self._squelch_label)
 
         export_csv_btn = QPushButton(_("Export CSV…"))
         export_csv_btn.clicked.connect(self._on_export_csv)
@@ -593,6 +659,8 @@ class Ax100DigiTab(QWidget):
     def _on_soundcard_chunk(self, chunk: NDArray[np.float32]) -> None:
         if self._rx_audio_bridge is None or self._receiver is None:
             return
+        if not self._passes_squelch(chunk):
+            return
         iq = self._rx_audio_bridge.process(chunk)
         self._receiver.push_samples(iq)
 
@@ -621,7 +689,7 @@ class Ax100DigiTab(QWidget):
 
         self._sdr_pipeline = pipeline
         self._receiver = Ax100DigiReceiver(sample_rate=sample_rate)
-        pipeline.subscribe(self._receiver.push_samples)
+        pipeline.subscribe(self._on_sdr_iq_chunk)
         self._status_label.setText(_("Input: SDR connected (receive only)"))
         self._timer.start()
 
@@ -629,9 +697,16 @@ class Ax100DigiTab(QWidget):
         self._timer.stop()
         if self._sdr_pipeline is not None and self._receiver is not None:
             with contextlib.suppress(Exception):
-                self._sdr_pipeline.unsubscribe(self._receiver.push_samples)
+                self._sdr_pipeline.unsubscribe(self._on_sdr_iq_chunk)
         self._sdr_pipeline = None
         self._receiver = None
+
+    def _on_sdr_iq_chunk(self, iq: NDArray[np.complex64]) -> None:
+        if self._receiver is None:
+            return
+        if not self._passes_squelch(iq):
+            return
+        self._receiver.push_samples(iq)
 
     def refresh_sdr_pipeline(self, pipeline: Any) -> None:
         """MainWindow calls this whenever Rig 1/2's SDR (re)connects/

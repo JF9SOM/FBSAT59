@@ -54,7 +54,7 @@ def test_encode_decode_roundtrip_clean_channel() -> None:
 def test_encode_decode_roundtrip_without_scrambler_or_rs() -> None:
     payload = _make_csp_payload("raw beacon telemetry, no FEC")
     bits = frame.encode_frame(payload, scrambler=False, rs=False)
-    frames = list(frame.find_frames(bits))
+    frames = list(frame.find_frames(bits, require_rs=False))
 
     assert len(frames) == 1
     assert frames[0].payload == payload
@@ -102,6 +102,42 @@ def test_ignores_noise_with_no_valid_syncword() -> None:
     noise = rng.integers(0, 2, size=2000, dtype=np.uint8)
     frames = list(frame.find_frames(noise))
     assert frames == []
+
+
+def test_default_require_rs_rejects_rs_disabled_frame() -> None:
+    """The new default (require_rs=True) rejects any frame whose Golay-
+    decoded rs_flag is False — even a clean, error-free one — since
+    GreenCube/MARMOTSat's real stack always uses RS(255,223); see
+    find_frames()'s docstring for why an RS-disabled frame is far more
+    likely to be a noise-driven false positive than a genuine one from
+    this satellite family."""
+    payload = _make_csp_payload("rs disabled frame")
+    bits = frame.encode_frame(payload, scrambler=True, rs=False)
+
+    assert list(frame.find_frames(bits)) == []  # default require_rs=True
+    frames = list(frame.find_frames(bits, require_rs=False))
+    assert len(frames) == 1
+    assert frames[0].payload == payload
+
+
+def test_require_rs_suppresses_false_positives_that_require_rs_false_lets_through() -> None:
+    """Demonstrates the actual bug report's mechanism: a large noise buffer
+    can produce spurious Golay "successes" whose rs_flag happens to be 0
+    (accepting whatever random bytes follow with zero further validation)
+    when require_rs=False, but require_rs=True (the default) rejects all
+    of them since real Reed-Solomon protection essentially never passes
+    on random data."""
+    # Empirically confirmed (2026-07): with this seed/size, require_rs=False
+    # finds 4 spurious frames (all rs_used=False); 19 of 20 seeds tried at
+    # this size produced at least one. require_rs=True finds zero in every
+    # one of those 20 seeds.
+    rng = np.random.default_rng(0)
+    noise = rng.integers(0, 2, size=2_000_000, dtype=np.uint8)
+
+    assert list(frame.find_frames(noise)) == []  # default require_rs=True
+
+    lenient_frames = list(frame.find_frames(noise, require_rs=False))
+    assert any(not f.rs_used for f in lenient_frames)
 
 
 def test_rejects_oversized_payload_for_rs() -> None:
