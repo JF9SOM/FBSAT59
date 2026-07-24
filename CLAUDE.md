@@ -2383,6 +2383,13 @@ QT_LOGGING_RULES="qt.qpa.*=true" ./FBSAT59.AppImage 2>&1 | head -100
 11d. ~~**Q65 Phase 2（TX/QSO）実装**~~ **→ 2026-06-26 で完了**（純 Python encoder.py: GF(64)・CRC-12・65-FSK / Q65QsoManager: QSOステートマシン・q65_log DB・ADIF / q65_tab.py: TX UI・TX Enable・Halt TX・Log QSO・Export ADIF）
 11e. ~~**METEOR / HRPT 受信タブ実装**~~ **→ 2026-06-29 で完了**（SatDump サブプロセス管理・8衛星対応・Autotrack AOS/LOS 連携・SDR Connect・浮動ログウィンドウ・衛星検索ダイアログ）
 11f. ~~**CW Decoder タブ実装**~~ **→ 2026-06-30 で完了（v0.2.6）**（deepcw-engine ONNX / onnxruntime 自動 pip インストール / model.onnx 自動ダウンロード / CW-R トランスポンダー自動オープン）
+11g. **MARMOTSat DVB-S2 受信タブ実装（保留中、2026-07-24 追加）** — AX100 Digi実装（前述「AX100 Digi 機能設計」参照）に続き、MARMOTSatのHF DVB-S2画像ビーコン（29.410 MHz）受信を追加検討したが、**一次情報が入手できず保留**とした:
+    - 公表済みスペック（UVic Propagation Lab）: QPSK・roll-off 0.35・33 or 66 kbaud・FEC 1/2・ACM未使用（CCM固定MODCOD）・QO-100 DATV運用慣行準拠
+    - MARMOTSat公式サイトが案内するGNU Radio flowgraphのリンク先 `gitlab.orcasat.ca`（UVic CfARの自前GitLab、`/open-source-projects/dvb-s2-decoder` および `/open-source-projects/mcr`）は**ドメイン全体が接続不可**（`connect ECONNREFUSED`、Claude側サンドボックスだけでなくユーザー自身のネットワークからも確認済み。2026-07-24時点）
+    - SatNOGSデータベース上でもMARMOTSatの観測・デコード実績は過去30日間ゼロ、登録済みデコーダーも無し。Libre Space Communityフォーラムにも「受信に挑戦したい」という意欲表明のみで成功報告なし（打ち上げ2026-07-07から17日経過時点）
+    - 実装上の最大の未確定点: **パイロットシンボルON/OFF**。最有力候補の受信実装 `gr-dvbs2rx`（GNU Radio OOTモジュール）はパイロットON時のみ安定動作し、パイロットレス対応は上流でも未完成なため、この点の確認なしに実装を進めると動くかどうか賭けになる
+    - 再開の判断材料（次回セッションでまず確認すること）: (1) `gitlab.orcasat.ca` が復旧したか (2) SatNOGS/Libre Space Communityに新しい受信報告が出たか (3) ユーザーが実IQキャプチャを入手またはMARMOTSat/UVicチームに直接連絡が取れたか
+    - 再開時の想定実装方針（未承認）: GNU Radioをアプリに組み込まず、既存のSatDump/gr-satellites連携と同じ「外部ツールをサブプロセス起動してIQを渡す」パターンで `gr-dvbs2rx` の `dvbs2-rx` CLI または `leandvb` をラップする
 11b. **SDR フェーズ2（将来）— アマチュア衛星・デジタルモード** — HRPT/LRPT は 11e で完了、gr-satellites は 8b で完了、AI-CW は 11f で完了
 12. **SDR フェーズ2（将来）— 業務用衛星受信** — Inmarsat-C (STD-C)・Cospas-Sarsat L帯・Iridium L帯 ACARS・Orbcomm・みちびき（QZSS）データ放送（詳細は「業務用衛星受信」セクション参照）
 13. ~~**SDR Device Installation ダイアログ**~~ **→ v0.1.0 で実装済み**（src/ui/sdr_install_dialog.py — USB VID/PID スキャン・apt/brew/Zadig 誘導）
