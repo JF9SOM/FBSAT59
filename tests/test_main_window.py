@@ -975,13 +975,13 @@ class TestMainWindow:
         qtbot.addWidget(w)
         idx = w._filter_combo.findText("All Satellites")
         w._filter_combo.setCurrentIndex(idx)
-        assert w._sat_list.count() == 6  # 2 from populated_db + 3 community satellites + Moon
+        assert w._sat_list.count() == 7  # 2 from populated_db + 4 community satellites + Moon
 
     def test_empty_db_gives_empty_satellite_list(self, qtbot, db, tle_manager) -> None:
         w = self._make_window(qtbot, db, tle_manager)
         idx = w._filter_combo.findText("All Satellites")
         w._filter_combo.setCurrentIndex(idx)
-        assert w._sat_list.count() == 4  # 3 community satellites + Moon always loaded at startup
+        assert w._sat_list.count() == 5  # 4 community satellites + Moon always loaded at startup
 
     def test_no_crash_with_none_engine(self, qtbot, db, tle_manager) -> None:
         w = MainWindow(conn=db, tle_manager=tle_manager, engine=None)
@@ -1019,7 +1019,7 @@ class TestMainWindow:
         tm = TLEManager(populated_db)
         w = MainWindow(conn=populated_db, tle_manager=tm)
         qtbot.addWidget(w)
-        assert len(w._all_norads) == 5  # 2 from populated_db + 3 community satellites
+        assert len(w._all_norads) == 6  # 2 from populated_db + 4 community satellites
 
     def test_on_tick_no_crash_empty_db(self, qtbot, db, tle_manager) -> None:
         w = self._make_window(qtbot, db, tle_manager)
