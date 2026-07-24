@@ -901,6 +901,10 @@ sudo usermod -aG dialout $USER
     `satellites` 行ではなく固定の `METEOR_NORAD_IDS` から出発する点が異なる）。
     起動時に `_refresh_satellite_names_sync()` 内で一度実行され、以降は
     `meteor_tle_refresh` ジョブ（12時間ごと）が自動追従する。
+- **AX100 Digi タブ**（`src/comms/ax100digi/` + `src/ui/ax100_digi_tab.py`、2026-07 実装）—
+  MARMOTSat VHF デジピータ（145.875 MHz、GreenCube/IO-117 と同一の AX100 "ASM+Golay" GMSK
+  プロトコル）の受信・送信。Rig+サウンドカード（SSBモード）・SDR 両対応。詳細設計は
+  「AX100 Digi 機能設計」セクション参照
 - CI緑（mypy strict + pytest）
 
 ### SDR 機能（v0.1.0 時点で実装済み）
@@ -5990,3 +5994,172 @@ Host はLAN内の別マシンも指定可能なフリーテキスト（デフォ
 有効/無効時の送受信・設定の永続化（不正なJSONからのフォールバック含む）・
 シングルトン性を検証（ネットワーク・実ログソフト不要）。実機のwavelog-gate/JT-Linkerとの
 疎通確認は未実施。
+
+### AX100 Digi 機能設計（`src/comms/ax100digi/` + `src/ui/ax100_digi_tab.py`・2026-07 実装）
+
+#### 概要
+
+MARMOTSat の VHF デジピータ（145.875 MHz）は、GreenCube（IO-117・435.310 MHz）と**同一の
+AX100 "ASM+Golay" GMSK プロトコルスタック**を使う（MARMOTSat自身のドキュメントに
+"equipment requirements ... are the same as for Greencube" と明記）。GreenCube用の
+既存デコーダー資産（gr-satellites）は存在するが本アプリには組み込まれていなかったため、
+ゼロから自前実装した。**実際の衛星IQキャプチャによる検証はまだ行っておらず**、現状は
+自己符号化→自己復号のラウンドトリップテストで各プロトコル層の結線を検証した段階
+（Phase 0/1）。実運用は Rig+サウンドカード（SSBモード）・SDR 両対応。
+
+#### プロトコルスタック（gr-satellites のソースからビット精度で移植）
+
+```
+[32bit ASM同期語] [24bit Golay(24,12)長さフィールド] [frame_len バイト]
+                                                          └─ CCSDS descramble（任意）
+                                                             └─ RS(255,223) shortened（任意）
+                                                                └─ CSPパケット（payload）
+```
+
+| モジュール | 内容 | 移植元 |
+|---|---|---|
+| `golay.py` | Golay(24,12) 拡張符号 encode/decode（シンドローム法、最大3ビット誤り訂正） | gr-satellites `golay24.c` |
+| `randomizer.py` | CCSDS 擬似ランダム化（バイト単位 XOR シーケンス、8bit多項式LFSR） | gr-satellites `randomizer.c` |
+| `rs_ccsds.py` | RS(255,223) CCSDS dual-basis のラッパー | PyPI `reed-solomon-ccsds`（純Python+numpy、ネイティブビルド不要） |
+| `csp.py` | CSP (Cubesat Space Protocol) v1 ヘッダー（32bit：priority/source/destination/dest_port/source_port/flags） | CSPプロトコル仕様 |
+| `frame.py` | 上記を結線するフレームコーデック本体（`find_frames()`/`encode_frame()`） | gr-satellites `u482c_decode_impl.cc` |
+| `message.py` | GreenCube Digipeater Manual のアプリ層メッセージ形式 `$Src > $Dst, $SatName, STORE=$Time $Message` | GreenCube Digipeater Manual (Sapienza/S5Lab, Issue 1.1) |
+| `gmsk_demod.py` | GMSK復調（非コヒーレント位相差判別器＋固定位相総当たりでのビットスライス） | 自前設計（後述） |
+| `audio_bridge.py` | 実音声⇔複素ベースバンド変換（Hilbert FIR＋位相連続周波数シフタ） | 自前設計（後述） |
+| `tx.py` | メッセージ→CSP→フレーム→GMSK音声波形の送信エンコーダー | — |
+| `engine.py` | `Ax100DigiReceiver`（ローリングバッファ＋`push_samples()`/`decode_pending()`） | — |
+
+**`reed-solomon-ccsds` を意図的に `dev` extras に含めていない**（`pyproject.toml` の
+`ax100digi`/`packaging` extras のみに追加）。理由: Hamlib/ft8lib/libq65/libft4wsjt が
+背負ってきたネイティブライブラリのクロスプラットフォームビルドの負担を避けるため、
+純Python実装のパッケージをあえて選定した経緯があるが、それでも CI の
+`pip install -e ".[dev]"` には含めていない（配布バンドルには `packaging` extras 経由で
+同梱される）。この結果、`tests/test_ax100digi_*.py` は全て
+`pytestmark = pytest.mark.skipif(not rs_ccsds.is_available(), ...)` で**CI上は常にSKIP**
+される（これは意図した設計であり不具合ではない。詳細は「CIエラー調査で判明したこと」
+参照）。
+
+#### GMSK復調方式 — 固定位相総当たり方式（PLLなし、2026-07 確定）
+
+AX100フレームは短い（最大258バイト、1200baudで約1.7秒）ため、SDRのクロックドリフトが
+無視できるという前提のもと、継続的なPLL/クロックリカバリループではなく、**8候補位相の
+総当たり**（「フレームデコーダー自体がその位相の良し悪しの判定基準になる」方式）を採用。
+非コヒーレント位相差判別器で復調した後、8つの候補開始位相それぞれでビットスライスを
+試み、`frame.find_frames()` に通して実際にフレームが取れた位相を採用する。継続的な
+クロック追従が必要になるほど長時間の信号ではないため、この単純な方式で十分という判断。
+
+#### Rig+サウンドカード（SSBモード）音声ブリッジ
+
+GreenCube自身の運用方式（SSBパスバンド内に固定オーディオオフセットでGMSK信号を乗せる、
+`DEFAULT_SHIFT_HZ = 1600.0`）を踏襲。`audio_bridge.py` の `AnalyticSignalConverter`
+（Hilbert FIR変換器）で実音声を複素解析信号に変換し、`FrequencyShifter`（位相連続
+ミキサー）で1600Hzオフセットを除去/付加することで、SDRの複素I/Qパスと共通の
+`GmskDiscriminator`/フレームデコーダーを両入力方式で共用できる。
+
+#### タブUI（`src/ui/ax100_digi_tab.py`）— 段階的なUX改善の経緯
+
+以下は全てユーザーからの明示的な要望を受けて実装した機能（実装順）:
+
+| 機能 | 内容 |
+|---|---|
+| Input/Output選択 | Rig Soundcard / SDR のラジオボタン切り替え |
+| PTTシーケンス | `_TxWorker`（`ft4_tab.py`と同じ素の`threading.Thread`パターン）。lead 0.20s / tail 0.50s は GreenCube `config.ini` の `KeyUpDelay`/`KeyDownDelay` デフォルト値と一致させた |
+| 自局コールサイン | メッセージ送信枠での入力欄を廃止し `_get_my_call()` が `app_settings['callsign']`（File > Set QTH で設定）を毎回読み直す方式に変更（キャッシュしない＝設定後の再起動不要） |
+| To/Satellite/STORE= の1行化 | 3つの入力欄を1行にまとめてコンパクト化 |
+| メッセージ本文の履歴 | `_remember_content()` — 最大20件・重複排除・先頭移動、コンボから選択可。専用の消去ボタンあり |
+| CSPアドレス設定 | `_CspSettingsDialog`（Priority/Source/Destination/Dest Port/Source Portを編集可能）。`DEFAULT_CSP_HEADER = CspHeader(priority=1, source=1, destination=5, dest_port=10, source_port=20)` は**実際のMARMOTSat/GreenCube地上局に対して未確認のプレースホルダー**（GreenCube Digipeater Manualはアプリ層メッセージ形式は精密に文書化しているが、CSPアドレッシング自体は非公開）——このため設定を露出してユーザーが調整できるようにしてある |
+| 手動スケルチ | `_squelch_slider`（範囲0-60、デフォルト0=OFF）。`_peak_dbfs()`（実音声・複素IQ両対応、`np.abs()`ベース）で毎チャンクのピークdBFSを計算し `_passes_squelch()` で足切り。「Export CSV」ボタンの左に配置（ユーザー指定の位置） |
+| UTC/Local時刻表示 | `set_use_utc()`（duck-typed、`MainWindow._notify_comms_tabs_use_utc()`から呼ばれる） |
+| CSV/ADIFエクスポート | CSV: 全行ダンプ。ADIF: `dest = my_call` の行のみ（＝自局宛の確認済み交信のみ。APRSの`_is_confirmed_reply()`と同じ考え方） |
+| DB永続化 | `ax100_digi_log` テーブル（`_ensure_table()`）— 受信フレームは毎回`_persist_frame()`でINSERT |
+
+#### ノイズ/無音を誤ってデコードしてしまう不具合と修正（2026-07）
+
+**症状**: 無線機を接続していない（無音入力の）状態でも、何かのメッセージらしきものを
+デコードしてしまう、というユーザー報告。
+
+**原因**: Golay(24,12)は2^24の符号空間のうち有効な符号語は4096個しかないが、各符号語の
+半径3の誤り訂正球が空間の大部分（約58%）を覆っている。このため**ランダムな24ビットの
+Golayフィールドでも約58%の確率で「訂正成功」してしまい**、たまたま復号された `rs_flag`
+ビットが0（RS未使用）だった場合、続く `frame_len` 分のランダムバイト列が**一切の追加検証
+なしに**「ペイロード」として受理されてしまう。RS(255,223)はランダムデータに対して
+天文学的に低い確率でしか成功しないため、これをフィルタとして使うのが最も効果的。
+
+**修正1（`frame.py`）**: `find_frames()`/`_try_decode_at()` に `require_rs: bool = True`
+（デフォルトTrue）を追加。Golay復号結果の `rs_flag` が False の候補は無条件で棄却する。
+GreenCube/MARMOTSatの実運用スタックは常にRSを使うため、実フレームを誤って棄却することは
+ない。統計的検証（`np.random.default_rng(seed)`, 20シード・各200万ビットのノイズ）で、
+`require_rs=False` では19/20シードで疑似フレームが発生するのに対し、`require_rs=True`
+では全シードで0件を確認（`tests/test_ax100digi_frame.py`）。
+
+**修正2（手動スケルチ）**: 上記のRS必須化だけでは「強すぎるフィルタにすると逆に本物の
+弱信号もデコードできなくなるのでは」というユーザー懸念があったため、静的なフィルタ強化
+だけに頼らず、ユーザー自身が信号強度に応じて調整できる**手動スケルチスライダー**を追加
+（上表参照）。要求なしにスケルチ自体を実装するのではなく、まずRS必須化を提案・実装した後、
+「スケルチを強力にしすぎると信号がデコードできなくなるのでは」というユーザーの的確な
+懸念に応える形でスライダー方式に落ち着いた。
+
+#### Quick Comms Panel が常に29MHzのトランスポンダーを選んでしまうバグと根本原因（2026-07）
+
+**症状**: `is_ax100_digi_transmitter()`（NORAD 98272 かつ description に "MODE V" または
+"DIGIPEATER" を含む）のマッチャーを実装し `COMMS_TAB_CONFIG["ax100digi"]` に登録しても、
+Quick Comms Panel の Input Source コンボは常に145.875MHzのデジピータではなく29MHz帯の
+HF系トランスミッタ（MARMOTSatは同一NORAD IDに HF CW ビーコン・HF DVB-S2・HF LFM
+Sounderなど複数のトランスミッタを持つ）を選んでしまい、マッチャーの文字列条件を
+何度調整しても解消しなかった。
+
+**根本原因**: `MainWindow._refresh_radio_control()` のSQL SELECT文が**そもそも
+`norad_cat_id` 列を一切SELECTしていなかった**。このため各トランスポンダーdictには
+`norad_cat_id` キー自体が存在せず、`xpdr.get("norad_cat_id")` は常に `None` を返し、
+マッチャーは**すべての候補を無条件で拒否**していた。呼び出し元の
+`next(..., 0)` はマッチが一つも無い場合デフォルトのインデックス0（＝周波数最小のエントリ
+＝29.410MHz）に静かにフォールバックしていたため、「マッチャーが機能していない」ことが
+画面上は「間違ったトランスポンダーが選ばれる」としか見えず、原因特定に複数ラウンドの
+デバッグを要した。修正はSELECT句に `norad_cat_id`（後に `source` も）を追加するだけ
+だったが、実際の挙動再現には `_refresh_radio_control()` を通した完全なDB経由の
+エンドツーエンドテストが必要だった。
+
+#### SATNOGSデータ不備への対応 — コミュニティトランスポンダーエントリ（2026-07）
+
+MARMOTSatは打ち上げ直後で、SATNOGS側のこのVHFトランスミッタのデータが不完全（
+`mode=AFSK`・アップリンクなしのまま登録されている）。`src/data/community_transmitters.json`
+に `community-marmotsat-digi` エントリ（NORAD 98272、up=down=145.875MHz、`mode="USB-D"`
+[LSB-DではなくUSBをユーザーが選択]、`type="Transceiver"`）を追加し、正しい周波数・モードを
+提供する。SATNOGSの不正確なエントリと本エントリの両方が `is_ax100_digi_transmitter()`
+にマッチしてしまうため、`mode_detection.pick_preferred_transponder_index()` を新設し、
+**`source='community'` のマッチを常に優先**するようにした（単純な最初のマッチだと、
+DBクエリのソート順次第でどちらが選ばれるか非決定的になってしまうため）。
+
+#### CIエラー調査で判明したこと（2026-07-24）
+
+上記のコミュニティトランスポンダーエントリ追加（community衛星が3件→4件に増加）が原因で、
+`tests/test_main_window.py` にハードコードされていた衛星数のアサーション3箇所
+（`test_satellite_list_populates_from_db`・`test_empty_db_gives_empty_satellite_list`・
+`test_all_norads_populated`、いずれも「2 from populated_db + 3 community satellites」等の
+コメント付きで固定値を期待していた）が実数と1件ずれて全滅した。`gh run view <run-id>
+--log-failed` でCIログの `FAILED` 行を辿って特定（`assert 7 == 6` 等の形で表示される）。
+`community_transmitters.json` に新しい衛星を追加する際は、この種のハードコードされた
+件数アサーションが他にないか確認すること（`grep -n "community satellite" tests/`）。
+
+#### mypy とオプショナルインポートの落とし穴（`rs_ccsds.py`、通常パターンとの違い）
+
+本ファイル既出の「mypy とオプショナルインポートの注意点」で示した
+`try: from X import Y / except ImportError: Y = None` パターンは、CIの
+`ignore_missing_imports=true` によりパッケージが**インストールされていない**環境でのみ
+機能する。`reed-solomon-ccsds` はローカル開発環境に**実際にインストールした**ため、
+このパターンのままだと mypy が実在する型を推論し `None` への再代入と衝突して
+`Incompatible types in assignment` エラーになった。`rs_ccsds.py` では
+`import reed_solomon_ccsds as _rs`（モジュール全体を1つの名前でインポート）とし、
+`except ImportError: _rs = None` → 使用箇所で `if _rs is None: raise ...` という
+narrowing を行う方式に変更して解決。**この関連コードを修正する際は、必ずローカル環境で
+`pip uninstall reed-solomon-ccsds` / `pip install reed-solomon-ccsds` を切り替えながら
+両方の状態でmypyを実行して確認すること**（CIは常に未インストール状態のため、ローカルで
+インストール済み状態のみ確認すると見落とす）。
+
+#### 未検証・今後の課題
+
+- **実際の衛星IQキャプチャによる検証を一度も行っていない**（自己符号化→自己復号の
+  ラウンドトリップテストのみ）。GMSK復調パラメータ（判別器の帯域幅等）・TXのCSP
+  ヘッダーデフォルト値（`DEFAULT_CSP_HEADER`）は実運用で調整が必要になる可能性が高い
+- 手動スケルチスライダーの適正なデフォルト値・実際の弱信号でのRS要求フィルタとの
+  兼ね合いは実機・実パスでの検証待ち
