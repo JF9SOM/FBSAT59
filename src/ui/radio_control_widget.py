@@ -105,6 +105,9 @@ class RadioControlWidget(QWidget):
         self._orig_ul_mode: str = ""
         self._cw_dl_mode: str = ""
         self._cw_ul_mode: str = ""
+        # SdrControlWidget instance, set via set_sdr_control() once MainWindow
+        # constructs it — see that method's docstring for why this exists.
+        self._sdr_control: Any = None
         self._setup_ui()
         self._rig1_connect_done.connect(self._finish_rig1_connect)
 
@@ -452,6 +455,25 @@ class RadioControlWidget(QWidget):
         """Set the rotator controller."""
         self._rotator = rotator
         self._update_rot_status()
+
+    def set_sdr_control(self, sdr_control: Any) -> None:
+        """Attach the MainWindow-owned SdrControlWidget instance.
+
+        CW/FT4/Q65/AX100 Digi look up the live SDR pipeline via
+        getattr(self._radio_control, "_sdr_control", None) — this is what
+        makes that attribute actually exist. Without a call to this
+        setter, that lookup always silently returned None (RadioControlWidget
+        never declared or set _sdr_control itself), so those tabs' SDR
+        audio input never worked at all: _connect_sdr_audio() returned
+        immediately at its "sdr_ctrl is None" check, before ever reaching
+        pipeline.audio_ready.connect()/request_audio() (GitHub Issue #12
+        follow-up — this is the real reason CW Decoder never decoded
+        anything over SDR, independent of the two earlier, real but
+        secondary bugs already fixed in v0.2.30/v0.2.31: SDRPipeline
+        reference staleness across reconnects, and audio_ready being
+        gated behind SDR Control's own Start Audio toggle).
+        """
+        self._sdr_control = sdr_control
 
     # ------------------------------------------------------------------ #
     # Autotrack public API

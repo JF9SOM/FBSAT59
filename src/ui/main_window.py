@@ -815,6 +815,13 @@ class MainWindow(QMainWindow):
 
         self._sdr_control = SdrControlWidget()
         self._sdr_control_tab_idx = self._tab_widget.addTab(self._sdr_control, _("SDR Control"))
+        # CW/FT4/Q65/AX100 Digi look this up as
+        # self._radio_control._sdr_control — without this call that
+        # attribute never existed at all, so their SDR audio input never
+        # worked (GitHub Issue #12 follow-up; see
+        # RadioControlWidget.set_sdr_control()'s docstring for the full
+        # story).
+        self._radio_control.set_sdr_control(self._sdr_control)
         self._sdr_control.tune_offset_changed.connect(self._on_sdr_tune_offset)
         self._sdr_control.sdr_lock_changed.connect(self._on_sdr_lock_changed)
         self._sdr_control.manual_freq_requested.connect(self._on_sdr_manual_freq_requested)

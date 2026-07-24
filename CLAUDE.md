@@ -5834,6 +5834,58 @@ SDR Controlの手動再生ボタン）を経由しない限りもう片方（デ
 先に見つけて満足しかけたが、実機での再検証（別セッション・再接続なしでも再現）がなければ
 この2つ目の、より根本的な原因を見逃すところだった。
 
+#### 2度目のフォローアップ — v0.2.31でも改善なし、真因は`_sdr_control`参照が最初から存在しなかったこと（2026-07-23）
+
+`request_audio`/`release_audio`修正（v0.2.31）をリリースした後も、報告者から
+「Level: --dB のまま、デコードも一切なし。変化なし」との報告があった。ここまで2回連続で
+「見つけた原因を直しても症状が変わらない」という状況になったため、今度は`_connect_sdr_audio()`
+の**入口**から丁寧に追い直した。
+
+**真因**: `CwTab`/`Ft4Tab`/`Q65Tab`/`Ax100DigiTab`はいずれも
+`getattr(self._radio_control, "_sdr_control", None)`でSDRパイプラインの入手元
+（`SdrControlWidget`インスタンス）を探していた。しかし`RadioControlWidget`
+（`src/ui/radio_control_widget.py`）は**`_sdr_control`という属性を一度も定義・設定して
+いなかった**（`grep`で確認——クラス定義内に一切出現しない）。`MainWindow`は
+`self._sdr_control = SdrControlWidget()`を**自分自身の**属性として保持するだけで、
+`self._radio_control`（`RadioControlWidget`インスタンス）側にこれを渡す配線が
+存在しなかった。そのため`getattr(...)`は常に`None`を返し、`_connect_sdr_audio()`は
+`if sdr_ctrl is None: return`で毎回即座に抜けていた——**`pipeline.audio_ready.connect()`
+にも今回追加した`request_audio()`にも一度も到達していなかった**。
+
+これは今回の2回の修正（SDRPipeline参照の陳腐化対策・`_audio_enabled`分離）が
+**両方とも無意味だったわけではなく**、どちらも実在する正しいバグ修正だったが、
+その手前でそもそも`sdr_ctrl`自体を入手できていなかったため、一度も効果を発揮する
+機会がなかった、という状況だった。CW Decoder（および実機未検証だがFT4・Q65・
+AX100 Digiタブ）のSDR入力は、**実装されて以来一度も実際に動作したことがなかった**
+可能性が高い（Soundcard入力側は別経路のため無関係。SSTV/Telemetry/SSDVは
+`_find_sdr_pipeline()`で`self._radio_control._rig1`/`_rig2`を直接見に行く設計のため、
+この`_sdr_control`属性欠落バグとは無関係で影響を受けていなかった）。
+
+**修正**: `RadioControlWidget`に`self._sdr_control: Any = None`属性と
+`set_sdr_control(sdr_control: Any) -> None`セッターを新設。`MainWindow`が
+`self._sdr_control = SdrControlWidget()`を構築した直後に
+`self._radio_control.set_sdr_control(self._sdr_control)`を呼んで配線する。
+これにより`CwTab`/`Ft4Tab`/`Q65Tab`/`Ax100DigiTab`側の`getattr(...)`呼び出しは
+一切変更せずに（元々あった参照経路がついに実体を持つようになるだけで）修正が完了する。
+
+**なぜMeteorTabだけは無事だったか**: `MeteorTab`は`_on_open_meteor()`
+（`main_window.py`）で`sdr_widget=self._sdr_control`という**明示的なコンストラクタ引数**
+として直接渡されており、`getattr(radio_control, "_sdr_control", ...)`という間接参照に
+依存していなかった。この設計の違いが、同じ「SDRコントロールタブの参照を他タブに渡す」
+という目的に対して、なぜ一方は動き一方は完全に死んでいたかを分けた分岐点だった。
+
+**教訓**: `getattr(obj, "attr_name", None)`によるダックタイピング的な参照取得は、
+「そのobjが本当にattr_nameを持っているか」を型チェッカーが検証してくれない
+（`Any`型を経由するため`mypy --strict`でも検出不能）。実際には一度も存在しなかった
+属性への参照が、例外を投げず静かに`None`にフォールバックし続け、何年もの間気づかれずに
+残っていた。新しくタブ間でウィジェット参照を受け渡す設計をする際は、`MeteorTab`のように
+**コンストラクタの明示的な引数として渡す**か、今回のように**専用のセッターメソッドを
+用意して呼び出し漏れが型として分かる形にする**方が、`getattr`によるダックタイピングより
+事故を防ぎやすい。また、「原因を修正したのに症状が変わらない」が2回連続で起きたときは、
+その原因が本当に実行パス上にあるのか（今回のように、もっと手前で早期returnしていて
+一度もそこまで到達していない可能性）を疑い、修正箇所から遡ってエントリーポイントまで
+実際に辿り直すこと。
+
 ### ログソフト連携 — UDP ADIF ブロードキャスト設計（src/comms/log_broadcast.py・2026-07-05 実装済み）
 
 #### 概要
