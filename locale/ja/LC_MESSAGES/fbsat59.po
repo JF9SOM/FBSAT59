@@ -2068,9 +2068,8 @@ msgid "optional, e.g. rtlsdr — auto-detect if blank"
 msgstr ""
 
 #: src/ui/rig_dialog.py:909
-#, fuzzy
 msgid "Remote driver:"
-msgstr "削除"
+msgstr "リモートドライバー:"
 
 #: src/ui/rig_dialog.py:912
 msgid "optional display name"
@@ -2427,9 +2426,8 @@ msgstr ""
 "  4. 本ソフトを再起動 — PlutoSDRが自動的に検出されます。"
 
 #: src/ui/sdr_install_dialog.py:258
-#, fuzzy
 msgid "Note for Remote SDR Users"
-msgstr "SDRplayユーザーへの注意"
+msgstr "Remote SDR ユーザーへの注意"
 
 #: src/ui/sdr_install_dialog.py:262
 msgid ""
@@ -2689,18 +2687,17 @@ msgid "FT4 message (auto-filled by state machine)"
 msgstr "FT4メッセージ（ステートマシンが自動入力）"
 
 #: src/ui/ft4_tab.py:623
-#, fuzzy, python-brace-format
+#, python-brace-format
 msgid ""
 "Use Help > ft8lib Installation… (Recommended), or build ft8_lib (github.com/"
 "kgoba/ft8_lib) manually and place the shared library in {dir}"
 msgstr ""
-"ft8libがインストールされていません — FT4の送受信は無効です。\n"
-"ft8_lib（github.com/kgoba/ft8_lib）をビルドし、共有ライブラリを\n"
-"~/.local/share/fbsat59/ft8lib/ に配置してください"
+"Help > ft8lib Installation… を使う（推奨）か、ft8_lib（github.com/kgoba/"
+"ft8_lib）を手動でビルドして、共有ライブラリを {dir} に配置してください"
 
 #: src/ui/ft4_tab.py:628
 msgid "ft8lib is not installed — FT4 TX/RX is disabled.\n"
-msgstr ""
+msgstr "ft8libがインストールされていません — FT4の送受信は無効です。\n"
 
 #: src/ui/ft4_tab.py:636
 msgid ""
