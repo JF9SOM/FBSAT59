@@ -267,7 +267,12 @@ class SstvTab(QWidget):
 
         self._clear_btn = QPushButton(_("🗑 Clear"))
         self._clear_btn.setFixedHeight(30)
-        self._clear_btn.setStyleSheet(_bottom_btn_style)
+        # The 🗑 glyph itself renders with a taller bounding box than 💾/📂
+        # in most emoji fonts (extends further below the text baseline),
+        # which visually pushes the whole "🗑 Clear" label upward inside an
+        # otherwise identically-padded button — nudge it down slightly to
+        # compensate.
+        self._clear_btn.setStyleSheet("padding: 7px 10px 1px 10px;")
         self._clear_btn.clicked.connect(self._on_clear)
         bottom.addWidget(self._clear_btn)
 
