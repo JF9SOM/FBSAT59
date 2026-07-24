@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QStandardPaths, Qt
+from PySide6.QtCore import QStandardPaths, Qt, QThread, Signal
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QSizePolicy,
     QSplitter,
@@ -36,6 +37,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from comms.sstv.file_decoder import SOUNDFILE_AVAILABLE, load_audio_mono
 from i18n import _
 
 # Thumbnail size for history list
@@ -71,6 +73,44 @@ class _ThumbnailItem(QListWidgetItem):
         )
 
 
+class _FileDecodeWorker(QThread):
+    """Feeds a recorded audio file's PCM into a (throwaway) SstvDecoder.
+
+    Runs off the UI thread since loading/resampling a multi-minute recording
+    and running SstvDecoder's Hilbert-transform-based sync search over it can
+    take a couple of seconds. The decoder itself is constructed on the UI
+    thread by the caller (so its signals reach SstvTab's slots via Qt's
+    normal auto-queued cross-thread delivery) — this worker only calls into
+    it from a background thread, which SstvDecoder.push_samples() already
+    documents as being safe to do.
+    """
+
+    finished_ok: Signal = Signal()
+    failed: Signal = Signal(str)
+
+    def __init__(self, decoder: Any, path: str, target_rate: int) -> None:
+        super().__init__()
+        self._decoder = decoder
+        self._path = path
+        self._target_rate = target_rate
+
+    def run(self) -> None:
+        try:
+            audio = load_audio_mono(self._path, self._target_rate)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+            return
+        self._decoder.start()
+        # The whole file is available up front (unlike a live stream), so a
+        # single push_samples() call lets SstvDecoder search for sync pulses
+        # across the entire recording at once rather than being artificially
+        # chunked — chunking would make it re-start line 0 on every chunk
+        # boundary instead of finding the one continuous sync train.
+        self._decoder.push_samples(audio)
+        self._decoder.stop()
+        self.finished_ok.emit()
+
+
 class SstvTab(QWidget):
     """Non-resident tab opened from Communications > SSTV / SSDV.
 
@@ -99,6 +139,11 @@ class SstvTab(QWidget):
         self._current_image: QImage | None = None
         self._current_mode: str = "Robot36"
         self._sat_name: str = ""
+
+        # "Decode Recording…" — batch-decodes a saved MP3/WAV via a throwaway
+        # SstvDecoder, independent of any live decoder/audio source above.
+        self._file_decode_worker: _FileDecodeWorker | None = None
+        self._file_decode_sat_name: str = ""
 
         self._ensure_db_table()
         self._setup_ui()
@@ -203,6 +248,13 @@ class SstvTab(QWidget):
         self._save_btn.setEnabled(False)
         self._save_btn.clicked.connect(self._on_save_png)
         bottom.addWidget(self._save_btn)
+
+        self._decode_file_btn = QPushButton(_("📂 Decode Recording…"))
+        self._decode_file_btn.setEnabled(SOUNDFILE_AVAILABLE)
+        if not SOUNDFILE_AVAILABLE:
+            self._decode_file_btn.setToolTip(_("soundfile not installed — pip install soundfile"))
+        self._decode_file_btn.clicked.connect(self._on_decode_file)
+        bottom.addWidget(self._decode_file_btn)
 
         self._clear_btn = QPushButton(_("🗑 Clear"))
         self._clear_btn.clicked.connect(self._on_clear)
@@ -446,20 +498,35 @@ class SstvTab(QWidget):
         self._image_label.setPixmap(pix)
 
     def _on_image_complete(self, qimg: QImage, mode: str) -> None:
-        """Store completed image in history and optionally auto-save."""
+        """Store completed image in history and optionally auto-save (live decode)."""
+        self._record_completed_image(qimg, mode)
+
+    def _on_file_image_complete(self, qimg: QImage, mode: str) -> None:
+        """Same as _on_image_complete, but for a "Decode Recording…" result.
+
+        Labeled/saved under the source recording's filename stem instead of
+        self._sat_name — a file being decoded may well be from a different
+        satellite/pass than whatever is currently selected in Radio Control.
+        """
+        self._record_completed_image(qimg, mode, sat_name_override=self._file_decode_sat_name)
+
+    def _record_completed_image(
+        self, qimg: QImage, mode: str, sat_name_override: str | None = None
+    ) -> None:
         self._current_image = qimg
         self._save_btn.setEnabled(True)
         self._current_mode = mode
+        sat_name = sat_name_override if sat_name_override is not None else self._sat_name
 
         now = datetime.now(UTC)
-        label = f"{self._sat_name or 'SSTV'}\n{now.strftime('%H:%M UTC')}"
+        label = f"{sat_name or 'SSTV'}\n{now.strftime('%H:%M UTC')}"
         item = _ThumbnailItem(qimg, label)
         self._history_list.addItem(item)
 
-        self._persist_to_db(qimg, mode, now)
+        self._persist_to_db(qimg, mode, now, sat_name=sat_name)
 
         if self._auto_save_cb.isChecked():
-            self._auto_save_image(qimg, mode, now)
+            self._auto_save_image(qimg, mode, now, sat_name=sat_name)
 
         self._status_label.setText(_("Image received: ") + f"{mode} {now.strftime('%H:%M:%S UTC')}")
 
@@ -483,6 +550,54 @@ class SstvTab(QWidget):
             self._start_decoder()
         else:
             self._start_ssdv()
+
+    def _on_decode_file(self) -> None:
+        """Batch-decode an SSTV image from a previously recorded MP3/WAV file."""
+        if self._file_decode_worker is not None:
+            return
+        start_dir = str(Path.home() / "audio_recordings")
+        path, _filter = QFileDialog.getOpenFileName(
+            self,
+            _("Select Recorded Audio"),
+            start_dir,
+            _("Audio Files (*.mp3 *.wav)"),
+        )
+        if not path:
+            return
+        if not SOUNDFILE_AVAILABLE:
+            QMessageBox.warning(
+                self,
+                _("Decode Recording"),
+                _("soundfile not installed — pip install soundfile"),
+            )
+            return
+
+        from comms.sstv.decoder import SstvDecoder
+
+        self._file_decode_sat_name = Path(path).stem
+        decoder = SstvDecoder(sample_rate=44100, parent=self)
+        decoder.line_received.connect(self._on_line_received)
+        decoder.image_complete.connect(self._on_file_image_complete)
+        decoder.mode_detected.connect(self._on_mode_detected)
+        decoder.status_changed.connect(self._status_label.setText)
+
+        self._decode_file_btn.setEnabled(False)
+        self._status_label.setText(_("Decoding: ") + Path(path).name)
+
+        self._file_decode_worker = _FileDecodeWorker(decoder, path, 44100)
+        self._file_decode_worker.finished_ok.connect(self._on_file_decode_finished)
+        self._file_decode_worker.failed.connect(self._on_file_decode_failed)
+        self._file_decode_worker.start()
+
+    def _on_file_decode_finished(self) -> None:
+        self._decode_file_btn.setEnabled(SOUNDFILE_AVAILABLE)
+        self._file_decode_worker = None
+
+    def _on_file_decode_failed(self, message: str) -> None:
+        QMessageBox.warning(self, _("Decode Recording"), message)
+        self._status_label.setText(_("Decode failed"))
+        self._decode_file_btn.setEnabled(SOUNDFILE_AVAILABLE)
+        self._file_decode_worker = None
 
     def _on_history_clicked(self, item: QListWidgetItem) -> None:
         """Show clicked thumbnail at full size in the main view."""
@@ -543,25 +658,31 @@ class SstvTab(QWidget):
         )
         self._conn.commit()
 
-    def _persist_to_db(self, qimg: QImage, mode: str, ts: datetime) -> None:
+    def _persist_to_db(
+        self, qimg: QImage, mode: str, ts: datetime, sat_name: str | None = None
+    ) -> None:
         if not hasattr(self._conn, "execute"):
             return
-        file_path = self._auto_save_image(qimg, mode, ts) if True else None
+        name = sat_name if sat_name is not None else self._sat_name
+        file_path = self._auto_save_image(qimg, mode, ts, sat_name=name) if True else None
         self._conn.execute(
             """
             INSERT INTO sstv_log (received_at, mode, file_path, callsign)
             VALUES (?, ?, ?, ?)
             """,
-            (ts.isoformat(), mode, file_path, self._sat_name or None),
+            (ts.isoformat(), mode, file_path, name or None),
         )
         self._conn.commit()
 
-    def _auto_save_image(self, qimg: QImage, mode: str, ts: datetime) -> str | None:
+    def _auto_save_image(
+        self, qimg: QImage, mode: str, ts: datetime, sat_name: str | None = None
+    ) -> str | None:
         """Save image to the user Pictures directory. Returns saved path or None."""
+        name = sat_name if sat_name is not None else self._sat_name
         pics = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.PicturesLocation)
         save_dir = Path(pics) / "GPredict-SSTV"
         save_dir.mkdir(parents=True, exist_ok=True)
-        filename = f"SSTV_{self._sat_name or 'image'}_{ts.strftime('%Y%m%d_%H%M%S')}.png"
+        filename = f"SSTV_{name or 'image'}_{ts.strftime('%Y%m%d_%H%M%S')}.png"
         path = str(save_dir / filename)
         qimg.save(path)
         return path
@@ -573,4 +694,12 @@ class SstvTab(QWidget):
     def closeEvent(self, event: Any) -> None:
         self._stop_decoder()  # also calls _disconnect_audio_source -> _stop_soundcard_capture
         self._stop_ssdv()
+        if self._file_decode_worker is not None:
+            # Batch file-decode is a short, self-contained CPU job (no rig/
+            # subprocess/hardware to release) — just wait for it rather than
+            # tearing it down mid-run, same reasoning as METEOR/HRPT's
+            # SatDumpProcess.stop() waiting instead of destroying a running
+            # QThread out from under itself.
+            self._file_decode_worker.wait(5000)
+            self._file_decode_worker = None
         super().closeEvent(event)

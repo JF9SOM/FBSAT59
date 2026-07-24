@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-24 20:53+0900\n"
+"POT-Creation-Date: 2026-07-24 21:37+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -120,7 +120,7 @@ msgstr "入出力:"
 msgid "Rig Soundcard"
 msgstr "無線機サウンドカード"
 
-#: src/ui/ax100_digi_tab.py:440 src/ui/sstv_tab.py:273
+#: src/ui/ax100_digi_tab.py:440 src/ui/sstv_tab.py:325
 msgid "SDR (receive only)"
 msgstr "SDR（受信のみ）"
 
@@ -251,7 +251,7 @@ msgid "Sound Card not configured — open Rig Settings > Sound Card"
 msgstr ""
 "サウンドカードが未設定です — Rig Settings > Sound Card を開いてください"
 
-#: src/ui/ax100_digi_tab.py:634 src/ui/sstv_tab.py:354 src/ui/ft4_tab.py:760
+#: src/ui/ax100_digi_tab.py:634 src/ui/sstv_tab.py:406 src/ui/ft4_tab.py:760
 #: src/ui/cw_tab.py:336
 msgid "sounddevice not installed — pip install sounddevice"
 msgstr "sounddeviceがインストールされていません — pip install sounddevice"
@@ -396,7 +396,7 @@ msgid "Type:"
 msgstr "種別:"
 
 #: src/ui/transmitter_dialog.py:134 src/ui/sdr_control_widget.py:573
-#: src/ui/radio_control_widget.py:258 src/ui/sstv_tab.py:120
+#: src/ui/radio_control_widget.py:258 src/ui/sstv_tab.py:165
 #: src/ui/q65_tab.py:184 src/ui/telemetry_tab.py:154
 msgid "Mode:"
 msgstr "モード:"
@@ -921,11 +921,11 @@ msgstr "まだ画像を受信していません。"
 msgid "📁 Open Folder"
 msgstr "📁 フォルダを開く"
 
-#: src/ui/meteor_tab.py:291 src/ui/sstv_tab.py:207
+#: src/ui/meteor_tab.py:291 src/ui/sstv_tab.py:259
 msgid "🗑 Clear"
 msgstr "🗑 クリア"
 
-#: src/ui/meteor_tab.py:302 src/ui/sstv_tab.py:177
+#: src/ui/meteor_tab.py:302 src/ui/sstv_tab.py:222
 msgid "Received Images:"
 msgstr "受信画像:"
 
@@ -992,7 +992,7 @@ msgstr "自動追尾: AOSで受信を開始しました。"
 msgid "Autotrack: reception stopped at LOS."
 msgstr "自動追尾: LOSで受信を停止しました。"
 
-#: src/ui/meteor_tab.py:587 src/ui/sstv_tab.py:464
+#: src/ui/meteor_tab.py:587 src/ui/sstv_tab.py:531
 msgid "Image received: "
 msgstr "画像受信: "
 
@@ -1460,69 +1460,97 @@ msgstr "SatDumpが見つかりません"
 msgid "SatDump found"
 msgstr "SatDumpが見つかりました"
 
-#: src/ui/sstv_tab.py:128 src/ui/aprs_tab.py:256
+#: src/ui/sstv_tab.py:173 src/ui/aprs_tab.py:256
 msgid "Input: —"
 msgstr "入力: —"
 
-#: src/ui/sstv_tab.py:149
+#: src/ui/sstv_tab.py:194
 msgid "Auto-save PNG"
 msgstr "PNGを自動保存"
 
-#: src/ui/sstv_tab.py:168 src/ui/sstv_tab.py:520
+#: src/ui/sstv_tab.py:213 src/ui/sstv_tab.py:635
 msgid "Waiting for signal…"
 msgstr "信号待機中…"
 
 # --- Status bar ---
-#: src/ui/sstv_tab.py:198 src/ui/sstv_tab.py:523
+#: src/ui/sstv_tab.py:243 src/ui/sstv_tab.py:638
 #: src/ui/sdr_install_dialog.py:352 src/ui/cw_tab.py:166
 msgid "Ready"
 msgstr "準備完了"
 
-#: src/ui/sstv_tab.py:202
+#: src/ui/sstv_tab.py:247
 msgid "💾 Save PNG"
 msgstr "💾 PNGを保存"
 
-#: src/ui/sstv_tab.py:276 src/ui/rig_dialog.py:1793
+#: src/ui/sstv_tab.py:252
+msgid "📂 Decode Recording…"
+msgstr "📂 録音をデコード…"
+
+#: src/ui/sstv_tab.py:255 src/ui/sstv_tab.py:571
+msgid "soundfile not installed — pip install soundfile"
+msgstr "soundfileがインストールされていません — pip install soundfile"
+
+#: src/ui/sstv_tab.py:328 src/ui/rig_dialog.py:1793
 msgid "Sound Card"
 msgstr "サウンドカード"
 
-#: src/ui/sstv_tab.py:279
+#: src/ui/sstv_tab.py:331
 msgid "No audio source — connect Rig or SDR in Radio Control"
 msgstr "音声ソースなし — 無線機コントロールで無線機またはSDRを接続してください"
 
-#: src/ui/sstv_tab.py:281
+#: src/ui/sstv_tab.py:333
 msgid "Input: "
 msgstr "入力: "
 
-#: src/ui/sstv_tab.py:300
+#: src/ui/sstv_tab.py:352
 msgid "Decoder started — listening for sync…"
 msgstr "デコーダー起動 — 同期信号を待機中…"
 
-#: src/ui/sstv_tab.py:372
+#: src/ui/sstv_tab.py:424
 msgid "Sound card error: "
 msgstr "サウンドカードエラー: "
 
-#: src/ui/sstv_tab.py:410
+#: src/ui/sstv_tab.py:462
 msgid "SSDV: waiting for AX.25 frames…"
 msgstr "SSDV: AX.25フレームを待機中…"
 
-#: src/ui/sstv_tab.py:412
+#: src/ui/sstv_tab.py:464
 msgid "SSDV: open APRS tab first to enable AX.25 reception"
 msgstr "SSDV: AX.25受信を有効にするには先にAPRSタブを開いてください"
 
-#: src/ui/sstv_tab.py:467
+#: src/ui/sstv_tab.py:534
 msgid "Mode detected: "
 msgstr "検出モード: "
 
-#: src/ui/sstv_tab.py:509
+#: src/ui/sstv_tab.py:561
+msgid "Select Recorded Audio"
+msgstr "録音ファイルを選択"
+
+#: src/ui/sstv_tab.py:563
+msgid "Audio Files (*.mp3 *.wav)"
+msgstr "音声ファイル (*.mp3 *.wav)"
+
+#: src/ui/sstv_tab.py:570 src/ui/sstv_tab.py:597
+msgid "Decode Recording"
+msgstr "録音のデコード"
+
+#: src/ui/sstv_tab.py:585
+msgid "Decoding: "
+msgstr "デコード中: "
+
+#: src/ui/sstv_tab.py:598
+msgid "Decode failed"
+msgstr "デコードに失敗しました"
+
+#: src/ui/sstv_tab.py:624
 msgid "Save SSTV Image"
 msgstr "SSTV画像を保存"
 
-#: src/ui/sstv_tab.py:511
+#: src/ui/sstv_tab.py:626
 msgid "PNG Images (*.png)"
 msgstr "PNG画像 (*.png)"
 
-#: src/ui/sstv_tab.py:515
+#: src/ui/sstv_tab.py:630
 msgid "Saved: "
 msgstr "保存済み: "
 

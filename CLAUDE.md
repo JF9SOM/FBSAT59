@@ -4874,6 +4874,7 @@ src/
 │   ├── sstv/
 │   │   ├── __init__.py
 │   │   ├── decoder.py      # SstvDecoder — pySSTV ラッパー・音声チャンク受け付け
+│   │   ├── file_decoder.py # load_audio_mono() — 録音ファイル(MP3/WAV)→44100Hzモノラルへ変換（後述）
 │   │   └── ssdv.py         # SsdvDecoder — ssdv CLI サブプロセス管理・パケット再構成
 ```
 
@@ -4892,6 +4893,31 @@ if "APRS" in desc or xpdr.mode == "AFSK":
 - Communications メニューからの手動オープンも引き続き可能（機能の存在をユーザーに示す）
 - 既に開いている場合は重複して開かない（フォーカスを移動するだけ）
 
+#### 録音ファイルからの画像デコード（2026-07-24 実装、`📂 Decode Recording…`）
+
+Radio Control / SDR Control の音声REC機能（共に `~/audio_recordings` にMP3保存）で録れた
+音声から、ライブ受信を待たずにSSTV画像を再生成できる。**SSTVモード専用**（SSDVはAX.25パケット
+経由でデコードする設計のため、音声ファイル再生では対応不可）。
+
+- **MP3→PCM変換**: `soundfile`（libsndfile 1.1+同梱、`pip install soundfile`のみでffmpeg等の
+  外部ツール不要）を新規依存として追加（`pyproject.toml` の `packaging`/`sdr` extras）。
+  `file_decoder.load_audio_mono(path, target_rate)` がファイルを読み込み・モノラル化・
+  44100Hzへリサンプル（`scipy.signal.resample_poly`、AudioDeviceManagerの`_resample()`と
+  同じアンチエイリアシング手法を独立実装——モジュール間の密結合を避けるため意図的に別実装）
+- **実際の音声再生はしない**（無音・高速デコード）。ファイル全体を`SstvDecoder.push_samples()`に
+  **一度だけ**渡す。ライブ経路のように数秒ごとのチャンクに分けて渡すと、`SstvDecoder._process()`
+  が呼び出しのたびに新しい`image`配列・`line=0`から再スタートする実装のため、録音全体を
+  横断する1つの同期列を追えず画像が壊れる。ファイル全体が最初から揃っているオフライン処理
+  だからこそ、この一括投入が可能かつ最も正確
+  （**既知の制約**: 1回のデコードで検出できるのは録音内の最初の1画像分のみ。1つの録音に
+  複数のSSTV送信が含まれる場合、2枚目以降は無視される）
+- バックグラウンド`QThread`（`_FileDecodeWorker`、src/ui/sstv_tab.py）で実行し、UIをブロックしない。
+  デコーダー自体はUIスレッドで生成（信号がQtの自動キュー接続で安全にメインスレッドへ届くため）
+- 結果はライブ受信と同じ受信履歴サムネイル一覧・`sstv_log` DB・自動保存PNGに統合。ただし
+  ラベル・ファイル名は`self._sat_name`（現在選択中の衛星）ではなく**録音ファイル名（拡張子なし）**
+  を使う——録音時に選択されていた衛星と現在の選択が異なる場合の誤帰属を防ぐため
+  （`_record_completed_image(qimg, mode, sat_name_override=...)`に共通化）
+
 #### タブ UI 設計
 
 ```
@@ -4903,7 +4929,7 @@ if "APRS" in desc or xpdr.mode == "AFSK":
 │                                       │  （クリックで    │
 │                                       │   拡大表示）     │
 ├───────────────────────────────────────┴──────────────────┤
-│  [💾 Save PNG]  [🗑 Clear]   受信: 14:23 UTC / ISS        │
+│  [💾 Save PNG]  [🗑 Clear]  [📂 Decode Recording…]  受信: 14:23 UTC / ISS │
 └──────────────────────────────────────────────────────────┘
 ```
 
