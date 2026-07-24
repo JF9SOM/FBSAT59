@@ -789,6 +789,7 @@ class MainWindow(QMainWindow):
         self._pass_chart = PassChartView()
         self._group_pass_chart = GroupPassChartView()
         self._radio_control = RadioControlWidget()
+        self._radio_control.set_db_connection(self._conn)
         # Ctrl+L toggles Lock app-wide regardless of which tab is active --
         # requested in GitHub Issue #14 (ei4gnb): the operator's hands are
         # on the rig's VFO knob, not the mouse, while manually retuning.

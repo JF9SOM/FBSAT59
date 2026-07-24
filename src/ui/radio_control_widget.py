@@ -8,14 +8,18 @@ connect/disconnect buttons and status rows.
 
 from __future__ import annotations
 
+import contextlib
+import json
 import logging
+import sqlite3
 import subprocess
 import sys
 import threading
+from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -30,6 +34,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from comms.audio_device_manager import get_audio_device_manager
 from comms.mode_detection import (
     is_aprs_transmitter,
     is_cw_transmitter,
@@ -44,6 +49,7 @@ from rig.controller import (
     RotatorController,
     RotatorState,
 )
+from sdr import LAMEENC_AVAILABLE, AudioRecorder
 
 # Transponder combo box item background colors, shown only while the dropdown
 # is open (Qt does not apply BackgroundRole to the closed combo box face).
@@ -108,6 +114,20 @@ class RadioControlWidget(QWidget):
         # SdrControlWidget instance, set via set_sdr_control() once MainWindow
         # constructs it — see that method's docstring for why this exists.
         self._sdr_control: Any = None
+        # DB connection, set via set_db_connection() once MainWindow constructs
+        # it — needed to look up the Sound Card input device for rig-audio
+        # recording (see _start_audio_recording()).
+        self._db_conn: sqlite3.Connection | None = None
+        # Rig-audio (MP3) recording — shares the AudioRecorder used by SDR
+        # Control, but the PCM source here is the Sound Card input device
+        # (rig AF output) via AudioDeviceManager, not an SDR pipeline.
+        self._audio_save_dir: Path = Path.home() / "audio_recordings"
+        self._audio_recorder: AudioRecorder = AudioRecorder(self._audio_save_dir)
+        self._rec_in_device: int | None = None
+        self._rec_audio_active: bool = False
+        self._audio_rec_timer = QTimer(self)
+        self._audio_rec_timer.setInterval(1_000)
+        self._audio_rec_timer.timeout.connect(self._update_audio_rec_status)
         self._setup_ui()
         self._rig1_connect_done.connect(self._finish_rig1_connect)
 
@@ -240,23 +260,33 @@ class RadioControlWidget(QWidget):
         layout.addWidget(freq_group)
 
         # ── Rotator ────────────────────────────────────────────────────
+        # A single-row QHBoxLayout (not QFormLayout) so Qt vertically centers
+        # the AZ/EL row within the group box — QFormLayout instead anchors
+        # its (single) row to the top and pads leftover height underneath,
+        # which looked lopsided once Recording (below) forced this box to
+        # match its sibling's taller height.
         rot_group = QGroupBox(_("Rotator"))
-        rot_form = QFormLayout(rot_group)
-        rot_form.setContentsMargins(4, 2, 4, 2)
-        rot_form.setSpacing(3)
+        rot_layout = QHBoxLayout(rot_group)
+        rot_layout.setContentsMargins(4, 2, 4, 2)
+        rot_layout.setSpacing(4)
         self._rot_az_label = QLabel("—")
         self._rot_el_label = QLabel("—")
-        # AZ + EL on one row
-        az_el_row = QHBoxLayout()
-        az_el_row.setSpacing(4)
         self._rot_az_label.setMinimumWidth(60)
-        az_el_row.addWidget(self._rot_az_label)
-        az_el_row.addSpacing(20)
-        az_el_row.addWidget(QLabel("EL:"))
-        az_el_row.addWidget(self._rot_el_label)
-        az_el_row.addStretch()
-        rot_form.addRow(_("AZ:"), az_el_row)
-        layout.addWidget(rot_group)
+        rot_layout.addWidget(QLabel(_("AZ:")))
+        rot_layout.addWidget(self._rot_az_label)
+        rot_layout.addSpacing(20)
+        rot_layout.addWidget(QLabel("EL:"))
+        rot_layout.addWidget(self._rot_el_label)
+        rot_layout.addStretch()
+
+        # Recording group sits beside Rotator (half width each) — rig audio
+        # (FM/SSB voice from the Sound Card input) recorded to MP3.
+        rec_group = self._build_recording_group()
+        rot_rec_row = QHBoxLayout()
+        rot_rec_row.setSpacing(4)
+        rot_rec_row.addWidget(rot_group, 1)
+        rot_rec_row.addWidget(rec_group, 1)
+        layout.addLayout(rot_rec_row)
 
         # ── Status ─────────────────────────────────────────────────────
         status_group = QGroupBox(_("Status"))
@@ -335,6 +365,46 @@ class RadioControlWidget(QWidget):
         self._update_rig1_status()
         self._update_rig2_status()
         self._update_rot_status()
+
+    def _build_recording_group(self) -> QGroupBox:
+        """Build the rig-audio (MP3) recording panel shown beside Rotator.
+
+        Records whatever PCM the Sound Card input device delivers (the rig's
+        AF output — FM/SSB voice, SSTV tones, etc.), via the same shared
+        AudioDeviceManager RX path used by CW Decoder/FT4/SSTV, and the same
+        AudioRecorder (lameenc MP3) SDR Control uses for its own REC button.
+        """
+        grp = QGroupBox(_("Recording"))
+        rec_layout = QHBoxLayout(grp)
+        rec_layout.setContentsMargins(4, 2, 4, 2)
+        rec_layout.setSpacing(4)
+
+        self._audio_rec_btn = QPushButton(_("● REC"))
+        self._audio_rec_btn.setStyleSheet("color: red; font-weight: bold;")
+        self._audio_rec_btn.setEnabled(LAMEENC_AVAILABLE)
+        if not LAMEENC_AVAILABLE:
+            self._audio_rec_btn.setToolTip(_("lameenc not installed — pip install lameenc"))
+        self._audio_rec_btn.clicked.connect(self._start_audio_recording)
+
+        self._audio_stop_rec_btn = QPushButton(_("■ STOP"))
+        self._audio_stop_rec_btn.setEnabled(False)
+        self._audio_stop_rec_btn.clicked.connect(self._stop_audio_recording)
+
+        self._audio_rec_status_label = QLabel("")
+        self._audio_rec_status_label.setStyleSheet("color: gray; font-size: 10px;")
+        self._audio_rec_status_label.setMinimumWidth(40)
+
+        self._open_audio_folder_btn = QPushButton(_("📁"))
+        self._open_audio_folder_btn.setToolTip(_("Open audio recordings folder in file manager"))
+        self._open_audio_folder_btn.setFixedWidth(28)
+        self._open_audio_folder_btn.clicked.connect(self._open_audio_folder)
+
+        rec_layout.addWidget(self._audio_rec_btn)
+        rec_layout.addWidget(self._audio_stop_rec_btn)
+        rec_layout.addWidget(self._audio_rec_status_label)
+        rec_layout.addStretch()
+        rec_layout.addWidget(self._open_audio_folder_btn)
+        return grp
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -474,6 +544,15 @@ class RadioControlWidget(QWidget):
         gated behind SDR Control's own Start Audio toggle).
         """
         self._sdr_control = sdr_control
+
+    def set_db_connection(self, conn: sqlite3.Connection) -> None:
+        """Attach the MainWindow-owned DB connection.
+
+        Needed so the rig-audio REC button can look up the Sound Card input
+        device index (``soundcard_settings``) at record time — see
+        _start_audio_recording().
+        """
+        self._db_conn = conn
 
     # ------------------------------------------------------------------ #
     # Autotrack public API
@@ -882,3 +961,103 @@ class RadioControlWidget(QWidget):
             if self._rotator.connect():
                 self.rotator_connected.emit()
         self._update_rot_status()
+
+    # ------------------------------------------------------------------ #
+    # Rig audio recording (MP3, via Sound Card input)
+    # ------------------------------------------------------------------ #
+
+    _AUDIO_OWNER = "Radio Control"
+
+    def _load_sound_card_input_device(self) -> int | None:
+        """Read the configured Sound Card input device index, fresh from the DB.
+
+        Not cached — RadioControlWidget is a resident tab (built once at
+        startup), so re-reading on every REC press means a Sound Card change
+        made mid-session via Rig Settings takes effect on the next recording
+        without needing to reload anything.
+        """
+        if self._db_conn is None:
+            return None
+        with contextlib.suppress(Exception):
+            row = self._db_conn.execute(
+                "SELECT value FROM app_settings WHERE key = 'soundcard_settings'"
+            ).fetchone()
+            if row:
+                val = json.loads(row[0]).get("input_device_index")
+                if val is not None:
+                    return int(val)
+        return None
+
+    def _start_audio_recording(self) -> None:
+        """Start recording the rig's audio (Sound Card input) to MP3."""
+        if not LAMEENC_AVAILABLE or self._audio_recorder.is_active:
+            return
+        device = self._load_sound_card_input_device()
+        if device is None:
+            QMessageBox.warning(
+                self,
+                _("Recording"),
+                _("Sound Card not configured — open Rig Settings > Sound Card"),
+            )
+            return
+        try:
+            get_audio_device_manager().acquire_input(
+                self._AUDIO_OWNER, device, 48_000, self._audio_recorder.put_pcm
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, _("Recording"), _("Audio open error: {exc}").format(exc=exc))
+            return
+        self._rec_in_device = device
+        self._rec_audio_active = True
+
+        try:
+            norad = int(self._norad_label.text())
+        except ValueError:
+            norad = 0
+        sat_name = self._sat_name_label.text()
+        if sat_name in ("", "—"):
+            sat_name = "unknown"
+
+        file_path = self._audio_recorder.start(norad=norad, sat_name=sat_name)
+        self._audio_rec_btn.setEnabled(False)
+        self._audio_stop_rec_btn.setEnabled(True)
+        self._audio_rec_status_label.setText("00:00")
+        self._audio_rec_status_label.setToolTip(str(file_path))
+        self._audio_rec_timer.start()
+
+    def _stop_audio_recording(self) -> None:
+        """Stop MP3 recording and release the shared Sound Card input."""
+        if not self._audio_recorder.is_active:
+            return
+        if self._rec_audio_active:
+            with contextlib.suppress(Exception):
+                get_audio_device_manager().release_input(self._AUDIO_OWNER, self._rec_in_device)
+            self._rec_audio_active = False
+        self._audio_recorder.stop()
+        self._audio_rec_timer.stop()
+        self._audio_rec_btn.setEnabled(LAMEENC_AVAILABLE)
+        self._audio_stop_rec_btn.setEnabled(False)
+        self._audio_rec_status_label.setText("")
+        self._audio_rec_status_label.setToolTip("")
+
+    def _update_audio_rec_status(self) -> None:
+        """Update the elapsed-time label while recording (mm:ss)."""
+        if not self._audio_recorder.is_active:
+            return
+        elapsed = int(self._audio_recorder.elapsed_seconds)
+        self._audio_rec_status_label.setText(f"{elapsed // 60:02d}:{elapsed % 60:02d}")
+
+    def _open_audio_folder(self) -> None:
+        """Open the audio recordings save directory in the OS file manager."""
+        self._audio_save_dir.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._audio_save_dir)))
+
+    def closeEvent(self, event: Any) -> None:
+        """Stop recording and release the shared audio device on app exit.
+
+        MainWindow.closeEvent() calls .close() on every tab generically
+        (including resident ones like this), so this fires reliably even
+        though RadioControlWidget is never individually closed by the user.
+        """
+        self._stop_audio_recording()
+        super().closeEvent(event)
