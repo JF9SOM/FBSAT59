@@ -97,6 +97,7 @@ class _InstallWorker(QThread):
         import platform
         import tarfile
         import tempfile
+        import time
         import urllib.request
         import zipfile
 
@@ -163,8 +164,7 @@ class _InstallWorker(QThread):
         dest_dir = get_user_ft8lib_dir()
         dest_dir.mkdir(parents=True, exist_ok=True)
 
-        try:
-            logger.info("[ft8lib install diag] extraction start dest_dir=%s", dest_dir)
+        def _do_extract() -> None:
             if suffix.endswith(".tar.gz"):
                 with tarfile.open(tmp_path) as tar:
                     # Strip the top-level "ft8lib-flat/" directory if present
@@ -178,13 +178,53 @@ class _InstallWorker(QThread):
             else:
                 with zipfile.ZipFile(tmp_path) as zf:
                     zf.extractall(dest_dir)
+
+        # A freshly (re)created destination file can transiently fail to
+        # open for writing right after extraction starts — e.g. a real-time
+        # antivirus scan grabbing the newly-written .dll for a moment. Retry
+        # a few times with a short backoff before giving up, since this
+        # class of lock is normally released within a few hundred ms; a
+        # real, persistent lock (the FT4 tab still holding the DLL open)
+        # will still fail all retries and surface the same message as before.
+        _EXTRACT_RETRIES = 3
+        _EXTRACT_RETRY_DELAY_S = 0.3
+        last_exc: PermissionError | None = None
+        try:
+            logger.info("[ft8lib install diag] extraction start dest_dir=%s", dest_dir)
+            for attempt in range(1, _EXTRACT_RETRIES + 1):
+                try:
+                    _do_extract()
+                    if attempt > 1:
+                        logger.info(
+                            "[ft8lib install diag] extraction succeeded on retry attempt=%d",
+                            attempt,
+                        )
+                    last_exc = None
+                    break
+                except PermissionError as exc:
+                    last_exc = exc
+                    logger.info(
+                        "[ft8lib install diag] extraction attempt=%d/%d "
+                        "PermissionError: %r (winerror=%s)",
+                        attempt,
+                        _EXTRACT_RETRIES,
+                        exc,
+                        getattr(exc, "winerror", None),
+                    )
+                    if attempt < _EXTRACT_RETRIES:
+                        time.sleep(_EXTRACT_RETRY_DELAY_S)
+            if last_exc is not None:
+                raise last_exc
             tmp_path.unlink(missing_ok=True)
             logger.info("[ft8lib install diag] extraction done")
         except PermissionError as exc:
             # exc.filename is the raw OS path; str(exc)/format() would show it
             # through repr() instead, which escapes backslashes as "\\\\" and
             # makes Windows paths look like they contain doubled separators.
-            logger.exception("[ft8lib install diag] extraction PermissionError")
+            logger.exception(
+                "[ft8lib install diag] extraction PermissionError after %d attempts",
+                _EXTRACT_RETRIES,
+            )
             path_str = exc.filename or str(exc)
             self.finished_err.emit(
                 _(

@@ -16,6 +16,7 @@ from __future__ import annotations
 import contextlib
 import ctypes
 import ctypes.util
+import logging
 import os
 import sys
 from dataclasses import dataclass
@@ -27,6 +28,8 @@ from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from comms.ft4.wsjt_decoder import Ft4WsjtDecoder
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # FT4 physical-layer constants
@@ -159,9 +162,14 @@ def _find_ft8lib() -> ctypes.CDLL | None:
         # itself is present and readable (confirmed root cause of the same
         # class of failure for Hamlib — see main.py's os.add_dll_directory()
         # calls for _hamlib_user_dir).
-        if user_dir.exists() and hasattr(os, "add_dll_directory"):
-            with contextlib.suppress(OSError):
+        dir_exists = user_dir.exists()
+        logger.info("[ft8lib load diag] user_dir=%s exists=%s", user_dir, dir_exists)
+        if dir_exists and hasattr(os, "add_dll_directory"):
+            try:
                 os.add_dll_directory(str(user_dir))
+                logger.info("[ft8lib load diag] add_dll_directory(%s) ok", user_dir)
+            except OSError as exc:
+                logger.info("[ft8lib load diag] add_dll_directory(%s) failed: %r", user_dir, exc)
         candidates.append(str(user_dir / "ft8.dll"))
         candidates.append("ft8.dll")
     elif sys.platform == "darwin":
@@ -180,14 +188,37 @@ def _find_ft8lib() -> ctypes.CDLL | None:
             candidates.append(str(meipass / name))
 
     for path in candidates:
+        p = Path(path)
+        exists = p.is_absolute() and p.exists()
+        size = p.stat().st_size if exists else None
         try:
             lib = ctypes.CDLL(path)
+        except OSError as exc:
+            logger.info(
+                "[ft8lib load diag] candidate=%s exists=%s size=%s CDLL() failed: %r (winerror=%s)",
+                path,
+                exists,
+                size,
+                exc,
+                getattr(exc, "winerror", None),
+            )
+            continue
+        try:
             # Smoke test: essential encode symbols must exist
             _ = lib.ftx_message_encode
             _ = lib.ft4_encode
-            return lib
-        except (OSError, AttributeError):
+        except AttributeError as exc:
+            logger.info(
+                "[ft8lib load diag] candidate=%s exists=%s size=%s "
+                "loaded OK but missing expected symbol: %r",
+                path,
+                exists,
+                size,
+                exc,
+            )
             continue
+        logger.info("[ft8lib load diag] candidate=%s loaded successfully", path)
+        return lib
     return None
 
 
