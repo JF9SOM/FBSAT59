@@ -198,7 +198,10 @@ jobs:
             # sources have no such annotations (they target ELF/.so, which
             # exports all globals by default), so without this flag the
             # resulting DLL loads fine but exposes none of its functions.
-            & gcc -shared -Wl,--export-all-symbols -o "$FLAT\ft8.dll" @objs
+            # Quoted as one string: PowerShell treats a bare comma as an
+            # array separator, which breaks passing "-Wl,--export-all-symbols"
+            # as a single linker argument to gcc.
+            & gcc -shared "-Wl,--export-all-symbols" -o "$FLAT\ft8.dll" @objs
             Write-Host "ft8.dll built with $($objs.Count) objects"
           } else {
             Write-Error "No objects built"

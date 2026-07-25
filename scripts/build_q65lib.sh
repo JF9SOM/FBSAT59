@@ -206,13 +206,19 @@ case "$(uname -s)" in
     "$FC" -dynamiclib -undefined dynamic_lookup "${OBJS[@]}" \
       -L"$FFTW3_LIB_DIR" -o "$OUT_DIR/$LIB_NAME" -lfftw3f
     ;;
-  *)
+  MINGW*|MSYS*|CYGWIN*)
     # -Wl,--export-all-symbols: MinGW GCC/gfortran only export symbols
     # explicitly marked for export by default; this codebase has no such
     # annotations (Linux .so builds export all globals by default without
     # it), so a Windows build without this flag loads fine but exposes none
-    # of its functions. No-op on Linux (documented ld behavior).
+    # of its functions. This is a PE/COFF-target-only ld option -- passing
+    # it under Linux's plain ELF ld fails with "unrecognized option", so it
+    # must stay gated to the MinGW/MSYS/Cygwin case, not the generic one.
     "$FC" -shared -fPIC -Wl,--export-all-symbols "${OBJS[@]}" \
+      -L"$FFTW3_LIB_DIR" -o "$OUT_DIR/$LIB_NAME" -lfftw3f -lm
+    ;;
+  *)
+    "$FC" -shared -fPIC "${OBJS[@]}" \
       -L"$FFTW3_LIB_DIR" -o "$OUT_DIR/$LIB_NAME" -lfftw3f -lm
     ;;
 esac
