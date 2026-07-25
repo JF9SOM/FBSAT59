@@ -31,7 +31,6 @@ Usage
 
 from __future__ import annotations
 
-import contextlib
 import queue
 import threading
 from typing import Any
@@ -180,6 +179,11 @@ class AfskDemodulator(QThread):
         self._hdlc = _HdlcState()
         # Residual samples carried between consecutive push_samples() calls
         self._residual: np.ndarray = np.array([], dtype=np.complex64)
+        # Diagnostic-only (see sdr.diag_log): counts blocks dropped because
+        # this thread wasn't draining the queue fast enough. Logged on the
+        # first drop and every 50th thereafter so a sustained backlog is
+        # still visible without flooding the log.
+        self._diag_drop_count: int = 0
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -188,11 +192,21 @@ class AfskDemodulator(QThread):
     def push_samples(self, iq: np.ndarray) -> None:
         """Receive one I/Q block from SDRPipeline.subscribe().
 
-        Safe to call from any thread; blocks only when the internal queue is
-        full (i.e. the demodulator thread is not keeping up).
+        Safe to call from any thread; drops the block (does not block the
+        SDR pipeline's own thread) if the internal queue is full, i.e. this
+        demodulator thread is not keeping up.
         """
-        with contextlib.suppress(queue.Full):
+        try:
             self._q.put_nowait(iq.astype(np.complex64))
+        except queue.Full:
+            self._diag_drop_count += 1
+            if self._diag_drop_count == 1 or self._diag_drop_count % 50 == 0:
+                from sdr.diag_log import get_sdr_diag_logger
+
+                get_sdr_diag_logger().info(
+                    "afsk_demod queue full, dropped block (total drops=%d)",
+                    self._diag_drop_count,
+                )
 
     def stop(self) -> None:
         """Stop the demodulator thread."""

@@ -22,7 +22,6 @@ alongside another demod mode (e.g. CW Decoder) on the same SDR pipeline.
 
 from __future__ import annotations
 
-import contextlib
 import queue
 import threading
 from typing import Any
@@ -142,6 +141,11 @@ class G3ruhSdrDemod(QThread):
         self._discriminator = G3ruhDiscriminator(input_rate=sample_rate)
         self._q: queue.Queue[np.ndarray] = queue.Queue(maxsize=128)
         self._stop_event = threading.Event()
+        # Diagnostic-only (see sdr.diag_log): counts blocks dropped because
+        # this thread wasn't draining the queue fast enough. Logged on the
+        # first drop and every 50th thereafter so a sustained backlog is
+        # still visible without flooding the log.
+        self._diag_drop_count: int = 0
 
     def push_samples(self, iq: np.ndarray) -> None:
         """Receive one I/Q block from SDRPipeline.subscribe().
@@ -150,8 +154,17 @@ class G3ruhSdrDemod(QThread):
         is full (i.e. this thread is not keeping up) rather than blocking
         the SDR pipeline's own thread.
         """
-        with contextlib.suppress(queue.Full):
+        try:
             self._q.put_nowait(iq.astype(np.complex64))
+        except queue.Full:
+            self._diag_drop_count += 1
+            if self._diag_drop_count == 1 or self._diag_drop_count % 50 == 0:
+                from sdr.diag_log import get_sdr_diag_logger
+
+                get_sdr_diag_logger().info(
+                    "g3ruh_demod queue full, dropped block (total drops=%d)",
+                    self._diag_drop_count,
+                )
 
     def stop(self) -> None:
         self._stop_event.set()

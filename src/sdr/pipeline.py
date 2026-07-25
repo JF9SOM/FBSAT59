@@ -32,6 +32,7 @@ from PySide6.QtCore import QObject, QThread, Signal
 
 from sdr.demodulator import AUDIO_RATE, DemodMode, Demodulator
 from sdr.device import SdrDevice
+from sdr.diag_log import get_sdr_diag_logger
 from sdr.recorder import IQRecorder
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,17 @@ class SDRPipeline(QThread):
 
         # FFT timing
         self._last_fft_time: float = 0.0
+
+        # Diagnostic-only (see sdr.diag_log): duration of the most recent
+        # _play_audio() write() call, read by run()'s per-second summary.
+        # Written and read from the pipeline thread only — no lock needed.
+        self._diag_last_audio_write_dur: float = 0.0
+        # Diagnostic-only: the OutputStream's blocksize is fixed to
+        # whatever the first _play_audio() call's PCM length happened to
+        # be (see _play_audio()) — tracked here to log if a later call
+        # ever passes a differently-sized block, a plausible cause of
+        # audible stutter if the PortAudio backend doesn't tolerate it.
+        self._diag_audio_blocksize: int | None = None
 
     # ------------------------------------------------------------------
     # Public API (safe to call from any thread)
@@ -172,7 +184,21 @@ class SDRPipeline(QThread):
         self._stop_flag.clear()
         self._demodulator.set_input_rate(self._device.sample_rate)
 
+        # Diagnostic-only (see sdr.diag_log): one aggregated summary line
+        # per wall-clock second, so a run of several minutes doesn't
+        # produce tens of thousands of per-block lines. Added 2026-07-25
+        # to check whether this loop keeps up with real time when a
+        # second SDR consumer (e.g. Telemetry's AX.25 reception) is also
+        # active — see sdr/diag_log.py's module docstring.
+        diag_logger = get_sdr_diag_logger()
+        diag_window_start = time.monotonic()
+        diag_iters = 0
+        diag_partial = 0
+        diag_lag_sum = 0.0
+        diag_lag_max = 0.0
+
         while not self._stop_flag.is_set():
+            iter_start = time.monotonic()
             iq = self._device.read_samples(_BLOCK_SIZE)
             if iq is None or len(iq) == 0:
                 # Timeout or error — brief sleep to avoid spin-loop
@@ -215,6 +241,42 @@ class SDRPipeline(QThread):
                     self.center_freq_changed.emit(self._device.center_freq)
                 except Exception:
                     logger.exception("FFT error")
+
+            # Diagnostic aggregation (see comment above the loop). Positive
+            # lag means this iteration took longer than the real-time
+            # duration of the samples it processed — i.e. the loop is
+            # falling behind the SDR hardware. A rising partial-read count
+            # is the more direct symptom: read_samples() returning fewer
+            # than _BLOCK_SIZE samples means its 50ms timeout was hit
+            # because the driver's buffer hadn't filled, itself a sign
+            # this loop isn't draining it fast enough between reads.
+            sr = self._device.sample_rate
+            expected_s = (len(iq) / sr) if sr else 0.0
+            lag_s = (time.monotonic() - iter_start) - expected_s
+            diag_iters += 1
+            if len(iq) < _BLOCK_SIZE:
+                diag_partial += 1
+            diag_lag_sum += lag_s
+            diag_lag_max = max(diag_lag_max, lag_s)
+            diag_now = time.monotonic()
+            if diag_now - diag_window_start >= 1.0:
+                diag_logger.info(
+                    "pipeline iters=%d partial=%d avg_lag=%.4fs max_lag=%.4fs "
+                    "max_audio_write=%.4fs audio_enabled=%s demod_requesters=%d",
+                    diag_iters,
+                    diag_partial,
+                    diag_lag_sum / diag_iters if diag_iters else 0.0,
+                    diag_lag_max,
+                    self._diag_last_audio_write_dur,
+                    self._audio_enabled,
+                    len(self._demod_requesters),
+                )
+                diag_window_start = diag_now
+                diag_iters = 0
+                diag_partial = 0
+                diag_lag_sum = 0.0
+                diag_lag_max = 0.0
+                self._diag_last_audio_write_dur = 0.0
 
         self._device.stop_stream()
         with self._audio_lock:
@@ -259,7 +321,16 @@ class SDRPipeline(QThread):
                         blocksize=len(pcm),
                     )
                     self._sounddevice_stream.start()
+                    self._diag_audio_blocksize = len(pcm)
+                elif len(pcm) != self._diag_audio_blocksize:
+                    get_sdr_diag_logger().info(
+                        "pipeline audio_write blocksize_mismatch stream_blocksize=%d pcm_len=%d",
+                        self._diag_audio_blocksize,
+                        len(pcm),
+                    )
+                write_start = time.monotonic()
                 self._sounddevice_stream.write(pcm)
+                self._diag_last_audio_write_dur = time.monotonic() - write_start
             except Exception:
                 logger.exception("Audio output error")
                 self._sounddevice_stream = None

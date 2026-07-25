@@ -6000,6 +6000,50 @@ AX100 Digiタブ）のSDR入力は、**実装されて以来一度も実際に�
 一度もそこまで到達していない可能性）を疑い、修正箇所から遡ってエントリーポイントまで
 実際に辿り直すこと。
 
+#### SDRPipeline motorboating — 調査用の一時的診断ログ（`src/sdr/diag_log.py`・2026-07-25 追加）
+
+上記一連の修正でCW Decoder等のSDR音声受信が実際に動くようになった後、報告者から新たに
+「Telemetryタブ（SDR経由のAX.25受信）でStartを押すと、SDR Controlの音声再生がモーターボート
+のようにブツブツ途切れる」「ISSやCWビーコンの音質も悪い」という報告があった。
+
+コードを読んだ限りでは、TelemetryのSDR購読経路（`AfskDemodulator`/`G3ruhSdrDemod`、どちらも
+`pipeline.subscribe()`経由）は`push_samples()`自体が`queue.put_nowait()`だけの軽い処理で、
+重いDSP処理は自前の別`QThread`（`run()`）に逃がす設計に最初からなっており、
+`SDRPipeline.run()`のループ自体を直接ブロックする作りにはなっていなかった。そのため
+「購読者のコールバックがパイプラインスレッドをブロックしている」という当初の仮説は
+コード上は否定的だったが、確定的な原因は特定できなかった（実機でのタイミング測定なしに
+静的なコードリーディングだけでは判断できない領域）。
+
+**方針**: 憶測で修正を入れる前に、まず`SDRPipeline`のループが実時間に追いついているかを
+直接観測できる**一時的な診断ログ**を追加し、報告者に再現してもらってログを提出してもらう
+方式にした（過去のFT4タイミング調査 `ft4_decode.log` と同じアプローチ）。
+
+- `src/sdr/diag_log.py`: `get_sdr_diag_logger()` — `fbsat59.log`と同じディレクトリに
+  `sdr_pipeline_diag.log`として出力。`logger.propagate = False`で共有ログには流れない
+- `SDRPipeline.run()`: 1秒ごとに集計サマリーを1行出力
+  （`iters`＝そのウィンドウでのループ回数・`partial`＝`read_samples()`が`_BLOCK_SIZE`未満の
+  部分ブロックを返した回数・`avg_lag`/`max_lag`＝各イテレーションの所要時間から、処理した
+  サンプル数に相当する実時間分を差し引いた値（正＝実時間に追いついていない）・
+  `max_audio_write`＝`_play_audio()`の`write()`呼び出しにかかった最大時間・
+  `audio_enabled`/`demod_requesters`＝そのときの状態）。毎ブロックではなく1秒集計にしたのは、
+  ブロック長（`_BLOCK_SIZE=16384`）とサンプルレート次第では毎秒15〜140回のログになり
+  膨大になるため
+- `SDRPipeline._play_audio()`: `sounddevice.OutputStream`の`blocksize`は**最初の呼び出し時の
+  PCM長に固定**されている（既存コード）。もし後続の呼び出しで異なる長さのPCMが渡されたら
+  `blocksize_mismatch`として即座にログする——「部分読み取り時にPCM長が変わり、固定
+  blocksizeのストリームに書き込むと不安定になるのでは」という仮説を直接検証するため
+- `AfskDemodulator.push_samples()` / `G3ruhSdrDemod.push_samples()`: キュー満杯による
+  サンプル取りこぼし（`contextlib.suppress(queue.Full)`で従来サイレントに握りつぶしていた）
+  を、初回発生時と以降50回ごとにログするよう変更
+
+**配布**: `scripts/collect_sdr_diag_log.bat`（Windows）— `collect_windows_sdr_log.bat`と
+同じ「ダブルクリックでデスクトップにコピーするだけ」のパターン。GitHub上のraw URL経由で
+リンクを渡し、報告者にダウンロード・実行してもらう。
+
+**この診断ログは原因特定後に削除すること。** 過去の`TEMP_DOPPLER_RATE_LOG`と同様、
+削除を忘れがちな一時的計測なので、次にこの節を読む際は調査が完了しているか確認し、
+完了していればコード（`diag_log.py`本体・各所の呼び出し・このCLAUDE.md節）を削除すること。
+
 ### ログソフト連携 — UDP ADIF ブロードキャスト設計（src/comms/log_broadcast.py・2026-07-05 実装済み）
 
 #### 概要
