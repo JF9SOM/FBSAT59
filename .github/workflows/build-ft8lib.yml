@@ -198,7 +198,19 @@ jobs:
             New-Item -ItemType Directory -Force -Path ".build\$dir" | Out-Null
             foreach ($f in Get-ChildItem "$dir\*.c" -ErrorAction SilentlyContinue) {
               $obj = ".build\$dir\$($f.BaseName).o"
-              & gcc -O3 -DHAVE_STPCPY -I. -fPIC -c $f.FullName -o $obj
+              # -Dstpcpy=__builtin_stpcpy: ft8/message.c calls stpcpy() with
+              # no prototype in scope anywhere (it isn't declared by MinGW's
+              # headers here, and -DHAVE_STPCPY above doesn't actually gate
+              # anything in this codebase -- it's an unused leftover from
+              # upstream's own Makefile). Recent GCC treats a call to an
+              # undeclared function as a hard error rather than a warning,
+              # which is what silently dropped message.o from the build
+              # (caught only after adding the exit-code check above).
+              # Rewriting the call to GCC's own __builtin_stpcpy sidesteps
+              # the missing declaration entirely -- GCC knows this builtin's
+              # signature on every target, so no header or MinGW runtime
+              # symbol is required.
+              & gcc -O3 -DHAVE_STPCPY -Dstpcpy=__builtin_stpcpy -I. -fPIC -c $f.FullName -o $obj
               if ($LASTEXITCODE -ne 0) {
                 Write-Error "gcc failed to compile $($f.FullName) (exit code $LASTEXITCODE)"
                 exit 1
