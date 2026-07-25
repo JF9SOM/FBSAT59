@@ -207,7 +207,12 @@ case "$(uname -s)" in
       -L"$FFTW3_LIB_DIR" -o "$OUT_DIR/$LIB_NAME" -lfftw3f
     ;;
   *)
-    "$FC" -shared -fPIC "${OBJS[@]}" \
+    # -Wl,--export-all-symbols: MinGW GCC/gfortran only export symbols
+    # explicitly marked for export by default; this codebase has no such
+    # annotations (Linux .so builds export all globals by default without
+    # it), so a Windows build without this flag loads fine but exposes none
+    # of its functions. No-op on Linux (documented ld behavior).
+    "$FC" -shared -fPIC -Wl,--export-all-symbols "${OBJS[@]}" \
       -L"$FFTW3_LIB_DIR" -o "$OUT_DIR/$LIB_NAME" -lfftw3f -lm
     ;;
 esac

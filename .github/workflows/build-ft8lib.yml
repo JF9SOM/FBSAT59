@@ -193,7 +193,12 @@ jobs:
           }
 
           if ($objs.Count -gt 0) {
-            & gcc -shared -o "$FLAT\ft8.dll" @objs
+            # -Wl,--export-all-symbols: MinGW GCC only exports symbols
+            # explicitly marked __declspec(dllexport) by default; ft8_lib's
+            # sources have no such annotations (they target ELF/.so, which
+            # exports all globals by default), so without this flag the
+            # resulting DLL loads fine but exposes none of its functions.
+            & gcc -shared -Wl,--export-all-symbols -o "$FLAT\ft8.dll" @objs
             Write-Host "ft8.dll built with $($objs.Count) objects"
           } else {
             Write-Error "No objects built"
