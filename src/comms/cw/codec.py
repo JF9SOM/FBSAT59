@@ -126,27 +126,36 @@ def _compute_spectrogram(audio: NDArray[np.float32]) -> NDArray[np.float32] | No
 # ---------------------------------------------------------------------------
 
 
-def _ctc_decode(log_probs: NDArray[np.float32]) -> str:
-    """Greedy CTC decode of shape (1, time_steps, num_classes) → text.
+def _ctc_decode_with_offsets(log_probs: NDArray[np.float32]) -> list[tuple[str, float]]:
+    """Greedy CTC decode returning (char, seconds_from_window_start) pairs.
 
     Matches greedy_ctc_decode() in examples/python/decode_morse.py:
     blank resets previous label (no space output); repeated labels collapse.
+    The offset lets callers judge how close to the trailing edge of the
+    audio window (i.e. how little right-context the model had) a given
+    character is — useful for deciding whether a reading is stable enough
+    to treat as final.
     """
     best_path = log_probs[0].argmax(axis=-1)
-    decoded: list[str] = []
+    decoded: list[tuple[str, float]] = []
     previous: int | None = None
 
-    for idx in best_path:
+    for frame_idx, idx in enumerate(best_path):
         i = int(idx)
         if i == _BLANK_INDEX:
             previous = None
             continue
         if i != previous:
             ch = _VOCAB[i] if i < len(_VOCAB) else ""
-            decoded.append(ch)
+            decoded.append((ch, frame_idx * HOP_LENGTH / SAMPLE_RATE))
         previous = i
 
-    return "".join(decoded)
+    return decoded
+
+
+def _ctc_decode(log_probs: NDArray[np.float32]) -> str:
+    """Greedy CTC decode of shape (1, time_steps, num_classes) → text."""
+    return "".join(ch for ch, _t in _ctc_decode_with_offsets(log_probs))
 
 
 # ---------------------------------------------------------------------------
@@ -189,24 +198,44 @@ class CwDecoder:
         """Return True if the model is loaded and ready."""
         return self._session is not None
 
+    def decode_with_offsets(
+        self, audio: NDArray[np.float32], sample_rate: int
+    ) -> tuple[list[tuple[str, float]], float]:
+        """Decode *audio* and return (char, offset_seconds) pairs plus the
+        actual window duration (seconds) used for inference.
+
+        The offset for each character is measured from the start of the
+        resampled window (clipped to MAX_AUDIO_SECONDS), so
+        ``window_duration - offset`` is how much trailing audio followed
+        that character — how much right-context the model had when it
+        produced it. Returns ``([], 0.0)`` if the model isn't loaded or the
+        audio is shorter than MIN_AUDIO_SECONDS, matching decode()'s ""
+        behaviour.
+        """
+        if self._session is None:
+            return [], 0.0
+
+        resampled = _resample(audio, sample_rate)
+        spec = _compute_spectrogram(resampled)
+        if spec is None:
+            return [], 0.0
+
+        max_samples = int(MAX_AUDIO_SECONDS * SAMPLE_RATE)
+        window_duration = min(len(resampled), max_samples) / SAMPLE_RATE
+
+        input_name = "spectrogram"
+        output_name = "log_probs"
+        outputs = self._session.run([output_name], {input_name: spec})
+        return _ctc_decode_with_offsets(outputs[0]), window_duration
+
     def decode(self, audio: NDArray[np.float32], sample_rate: int) -> str:
         """Decode *audio* (float32, mono) and return the CW text.
 
         Returns an empty string if the model is not loaded or the audio
         is too short (< MIN_AUDIO_SECONDS after resampling).
         """
-        if self._session is None:
-            return ""
-
-        resampled = _resample(audio, sample_rate)
-        spec = _compute_spectrogram(resampled)
-        if spec is None:
-            return ""
-
-        input_name = "spectrogram"
-        output_name = "log_probs"
-        outputs = self._session.run([output_name], {input_name: spec})
-        return _ctc_decode(outputs[0])
+        offsets, _duration = self.decode_with_offsets(audio, sample_rate)
+        return "".join(ch for ch, _t in offsets)
 
     def reload(self) -> None:
         """Reload the model from disk (e.g. after installation)."""

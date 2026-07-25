@@ -20,7 +20,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 from PySide6.QtCore import Qt, QThread, QTimer, Signal, Slot
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QTextCursor
 from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
@@ -36,12 +36,18 @@ from PySide6.QtWidgets import (
 from comms.audio_device_manager import get_audio_device_manager
 from comms.cw.codec import MIN_AUDIO_SECONDS, SAMPLE_RATE, CwDecoder
 from comms.cw.model_info import is_onnxruntime_available, is_ready
+from comms.cw.transcript import reconcile_pending
 from i18n import _
 
 # Rolling audio buffer: keep last N seconds (model max is 20 s)
 _BUFFER_SECONDS = 20
 # Decode every 5 s, but only when >= MIN_AUDIO_SECONDS of audio is buffered
 _DECODE_INTERVAL_MS = 5_000
+# Characters within this many seconds of the window's trailing edge are
+# still-revisable "pending" text (see reconcile_pending()) — matched to the
+# decode interval so a reading gets at least one extra decode cycle's worth
+# of trailing context before it is treated as final.
+_PENDING_MARGIN_S = _DECODE_INTERVAL_MS / 1000.0
 
 
 # ---------------------------------------------------------------------------
@@ -50,9 +56,9 @@ _DECODE_INTERVAL_MS = 5_000
 
 
 class _DecodeWorker(QThread):
-    """Runs CwDecoder.decode() off the UI thread."""
+    """Runs CwDecoder.decode_with_offsets() off the UI thread."""
 
-    result_ready = Signal(str)
+    result_ready = Signal(object, float)
 
     def __init__(self, decoder: CwDecoder, audio: NDArray[np.float32], sample_rate: int) -> None:
         super().__init__()
@@ -61,8 +67,8 @@ class _DecodeWorker(QThread):
         self._sample_rate = sample_rate
 
     def run(self) -> None:
-        text = self._decoder.decode(self._audio, self._sample_rate)
-        self.result_ready.emit(text)
+        offsets, duration = self._decoder.decode_with_offsets(self._audio, self._sample_rate)
+        self.result_ready.emit(offsets, duration)
 
 
 # ---------------------------------------------------------------------------
@@ -99,8 +105,13 @@ class CwTab(QWidget):
         # Decode worker
         self._worker: _DecodeWorker | None = None
         self._decoding: bool = False
-        self._last_text: str = ""
         self._running: bool = False
+
+        # Incremental transcript state (see comms.cw.transcript.reconcile_pending)
+        self._confirmed_text: str = ""
+        self._pending_text: str = ""
+        self._confirmed_up_to_abs: float = 0.0
+        self._samples_dropped_total: int = 0
 
         self._setup_ui()
         self._load_sound_card_device()
@@ -222,7 +233,10 @@ class CwTab(QWidget):
 
         self._running = True
         self._rx_buffer.clear()
-        self._last_text = ""
+        self._confirmed_text = ""
+        self._pending_text = ""
+        self._confirmed_up_to_abs = 0.0
+        self._samples_dropped_total = 0
         self._start_btn.setText(_("■ Stop"))
 
         if self._rb_sdr.isChecked():
@@ -262,7 +276,10 @@ class CwTab(QWidget):
     @Slot()
     def _on_clear(self) -> None:
         self._text_edit.clear()
-        self._last_text = ""
+        self._confirmed_text = ""
+        self._pending_text = ""
+        self._confirmed_up_to_abs = 0.0
+        self._samples_dropped_total = 0
 
     # ------------------------------------------------------------------ #
     # SDR audio
@@ -369,6 +386,7 @@ class CwTab(QWidget):
         while total > max_samples and self._rx_buffer:
             removed = self._rx_buffer.popleft()
             total -= len(removed)
+            self._samples_dropped_total += len(removed)
 
     def _get_audio_snapshot(self) -> NDArray[np.float32] | None:
         if not self._rx_buffer:
@@ -400,14 +418,12 @@ class CwTab(QWidget):
         self._worker.finished.connect(self._on_worker_finished)
         self._worker.start()
 
-    @Slot(str)
-    def _on_decode_result(self, text: str) -> None:
-        if not text:
+    @Slot(object, float)
+    def _on_decode_result(self, offsets: list[tuple[str, float]], window_duration: float) -> None:
+        if not offsets:
             self._status_label.setText(_("Listening…"))
             return
-        if text != self._last_text:
-            self._last_text = text
-            self._append_text(text)
+        self._reconcile_decode(offsets, window_duration)
         self._status_label.setText(_("Listening…"))
 
     @Slot()
@@ -415,13 +431,72 @@ class CwTab(QWidget):
         self._decoding = False
         self._worker = None
 
-    def _append_text(self, text: str) -> None:
-        cleaned = re.sub(r" {2,}", " ", text).strip()
-        if cleaned:
-            self._text_edit.appendPlainText(cleaned)
-            sb = self._text_edit.verticalScrollBar()
-            if sb is not None:
-                sb.setValue(sb.maximum())
+    def _reconcile_decode(self, offsets: list[tuple[str, float]], window_duration: float) -> None:
+        """Merge a fresh decode into the confirmed/pending transcript.
+
+        Text near the trailing edge of the audio window is held back as
+        "pending" (see comms.cw.transcript.reconcile_pending) since the
+        model may still revise it once more trailing audio arrives; only
+        the on-screen pending tail is ever rewritten, so already-confirmed
+        text is never silently altered.
+        """
+        window_start_abs = self._samples_dropped_total / self._rx_sample_rate
+        delta, new_pending, self._confirmed_up_to_abs = reconcile_pending(
+            offsets,
+            window_duration,
+            window_start_abs,
+            self._confirmed_up_to_abs,
+            _PENDING_MARGIN_S,
+        )
+        delta = self._clean_join(self._confirmed_text, delta)
+        new_pending = self._clean_join(self._confirmed_text + delta, new_pending)
+
+        if not delta and new_pending == self._pending_text:
+            return
+
+        self._replace_tail(delta, new_pending)
+        self._confirmed_text += delta
+        self._pending_text = new_pending
+
+    @staticmethod
+    def _clean_join(prefix: str, addition: str) -> str:
+        """Collapse blank-separated double spaces and dedupe the seam."""
+        addition = re.sub(r" {2,}", " ", addition)
+        if prefix.endswith(" ") and addition.startswith(" "):
+            addition = addition[1:]
+        return addition
+
+    def _finalize_pending(self) -> None:
+        """Fold any still-tentative tail into the confirmed transcript and
+        reset the confirm/drop bookkeeping.
+
+        Called whenever the underlying audio buffer is discarded out from
+        under an active session (e.g. SDR reconnect) rather than via
+        Start/Clear — the pending tail will never get more trailing
+        context to be revised further, and the sample-drop counters would
+        otherwise keep counting from a stale baseline that no longer
+        matches the (now-empty) buffer's actual start.
+        """
+        self._confirmed_text += self._pending_text
+        self._pending_text = ""
+        self._confirmed_up_to_abs = 0.0
+        self._samples_dropped_total = 0
+
+    def _replace_tail(self, confirmed_delta: str, new_pending: str) -> None:
+        """Rewrite only the on-screen tentative tail, leaving confirmed text
+        (and any user text selection within it) untouched."""
+        cursor = self._text_edit.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        if self._pending_text:
+            cursor.movePosition(
+                QTextCursor.MoveOperation.Left,
+                QTextCursor.MoveMode.KeepAnchor,
+                len(self._pending_text),
+            )
+        cursor.insertText(confirmed_delta + new_pending)
+        sb = self._text_edit.verticalScrollBar()
+        if sb is not None:
+            sb.setValue(sb.maximum())
 
     # ------------------------------------------------------------------ #
     # Level meter
@@ -473,6 +548,7 @@ class CwTab(QWidget):
         if not self._running or not self._rb_sdr.isChecked():
             return
         self._rx_buffer.clear()
+        self._finalize_pending()
         self._connect_sdr_audio()
 
     # ------------------------------------------------------------------ #
