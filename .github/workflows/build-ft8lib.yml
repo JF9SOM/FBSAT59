@@ -181,6 +181,17 @@ jobs:
           Push-Location ft8lib-src
 
           # Compile with MinGW gcc
+          #
+          # Every gcc invocation's exit code is checked explicitly (PowerShell
+          # does not stop or fail the step on a nonzero exit from a native
+          # command by itself, unlike bash's `set -e`). Without this, a file
+          # that fails to compile is silently dropped from $objs and the
+          # final DLL links fine, just missing that file's exported
+          # functions -- exactly what happened to ft8/message.c (dropped
+          # silently, so ft8.dll built and "succeeded" with ftx_message_encode
+          # and friends simply absent; this surfaced only via ctypes at
+          # runtime, and only after the export-all-symbols fix above made it
+          # possible to see the export table at all).
           $objs = @()
           $srcDirs = @("ft8", "common", "fft")
           foreach ($dir in $srcDirs) {
@@ -188,7 +199,11 @@ jobs:
             foreach ($f in Get-ChildItem "$dir\*.c" -ErrorAction SilentlyContinue) {
               $obj = ".build\$dir\$($f.BaseName).o"
               & gcc -O3 -DHAVE_STPCPY -I. -fPIC -c $f.FullName -o $obj
-              if (Test-Path $obj) { $objs += $obj }
+              if ($LASTEXITCODE -ne 0) {
+                Write-Error "gcc failed to compile $($f.FullName) (exit code $LASTEXITCODE)"
+                exit 1
+              }
+              $objs += $obj
             }
           }
 
@@ -202,6 +217,10 @@ jobs:
             # array separator, which breaks passing "-Wl,--export-all-symbols"
             # as a single linker argument to gcc.
             & gcc -shared "-Wl,--export-all-symbols" -o "$FLAT\ft8.dll" @objs
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "gcc failed to link ft8.dll (exit code $LASTEXITCODE)"
+              exit 1
+            }
             Write-Host "ft8.dll built with $($objs.Count) objects"
           } else {
             Write-Error "No objects built"
