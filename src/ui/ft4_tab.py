@@ -910,6 +910,8 @@ class Ft4Tab(QWidget):
             self._status_label.setText(_("Invalid FT4 message: ") + msg)
             return
 
+        self._display_own_tx(msg, audio_freq)
+
         rig = self._rig1()
         worker = _TxWorker(audio, self._out_device, rig)
         worker.finished.connect(self._on_tx_finished)
@@ -934,6 +936,26 @@ class Ft4Tab(QWidget):
     # ------------------------------------------------------------------ #
     # Decoded messages display                                             #
     # ------------------------------------------------------------------ #
+
+    def _display_own_tx(self, msg: str, audio_freq: float) -> None:
+        """Append the just-started outgoing message to the Decoded Messages table.
+
+        dB/DT have no meaning for our own transmission (nothing was decoded),
+        so they show "N/A"; Freq shows the actual audio tone frequency used.
+        """
+        utc_str = datetime.now(UTC).strftime("%H%M")
+        row = self._table.rowCount()
+        self._table.insertRow(row)
+        self._table.setItem(row, _COL_UTC, QTableWidgetItem(utc_str))
+        self._table.setItem(row, _COL_DB, QTableWidgetItem("N/A"))
+        self._table.setItem(row, _COL_DT, QTableWidgetItem("N/A"))
+        self._table.setItem(row, _COL_FREQ, QTableWidgetItem(f"{audio_freq:.0f}"))
+        self._table.setItem(row, _COL_MSG, QTableWidgetItem(msg))
+        for c in range(_COL_COUNT):
+            item = self._table.item(row, c)
+            if item is not None:
+                item.setBackground(Qt.GlobalColor.yellow)
+        self._table.scrollToBottom()
 
     def _display_decoded(self, messages: list[Ft4Message]) -> None:
         utc_str = datetime.now(UTC).strftime("%H%M")
