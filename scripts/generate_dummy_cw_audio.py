@@ -3,14 +3,23 @@
 Communications > CW Decoder tab (src/ui/cw_tab.py) without waiting for a
 real satellite pass.
 
-The generated file renders a short mock QSO (--repeat times) with a mix of
-gap lengths: a short mid-message pause (should render as a plain space), a
-medium pause (still a space), and long pauses between exchanges/repeats
-(should render as a newline — see comms/cw/transcript.py's
-insert_gap_markers()).
+Two content profiles (--profile):
+  qso (default) — a short mock QSO with a mix of gap lengths: a short
+      mid-message pause (should render as a plain space), a medium pause
+      (still a space), and long pauses between exchanges/repeats (should
+      render as a newline — see comms/cw/transcript.py's
+      insert_gap_markers()). Also exercises the "K" -> newline and
+      "SK" -> "VA" prosign conventions.
+  beacon — a generic satellite CW telemetry beacon (callsign + numeric
+      telemetry values) looping continuously with only a short gap
+      between repeats, plus one deliberate longer fade partway through
+      (--repeat >= 4) simulating a brief signal dropout mid-pass. This is
+      a representative generic pattern, not a reproduction of any
+      specific real satellite's exact beacon format.
 
 Usage:
-    python scripts/generate_dummy_cw_audio.py [--wpm 20] [--repeat 1] [--out test_cw.wav]
+    python scripts/generate_dummy_cw_audio.py [--profile qso|beacon] [--wpm 20] \
+        [--repeat 1] [--out test_cw.wav]
 
 Playback (Linux, PipeWire/PulseAudio):
     1. In Rig Settings > Sound Card, set the Input Device to
@@ -175,6 +184,45 @@ def build_test_audio(
     return np.clip(audio, -1.0, 1.0)
 
 
+# Generic satellite CW telemetry beacon: callsign + numeric telemetry
+# channel values. Real beacons loop continuously with only the natural
+# word-gap between repeats — no "K"/"SK" turn-taking, since nothing is
+# waiting for a reply — so the loop gap here is short (space-level, not a
+# newline) by design.
+_BEACON_MESSAGE = "DE JQ1XYZ HL 073 145 088 210 261"
+_BEACON_LOOP_GAP_S = 1.8
+_BEACON_FADE_GAP_S = 15.0  # a brief signal dropout mid-pass -> newline
+
+
+def build_beacon_audio(
+    wpm: float,
+    sample_rate: int,
+    freq_hz: float,
+    noise: float,
+    repeat: int,
+) -> NDArray[np.float32]:
+    """Render _BEACON_MESSAGE looping *repeat* times. If repeat >= 4, one
+    repeat partway through is followed by a much longer pause instead of
+    the usual short loop gap, simulating a momentary signal fade — this
+    should still render as a newline despite the surrounding repeats only
+    ever getting spaces."""
+    parts: list[NDArray[np.float32]] = []
+    fade_at = repeat // 2 if repeat >= 4 else -1
+    for rep in range(repeat):
+        parts.append(synthesize_message(_BEACON_MESSAGE, wpm, sample_rate, freq_hz))
+        if rep == fade_at:
+            parts.append(_silence(_BEACON_FADE_GAP_S, sample_rate))
+        elif rep < repeat - 1:
+            parts.append(_silence(_BEACON_LOOP_GAP_S, sample_rate))
+    parts.append(_silence(6.0, sample_rate))  # let the final tail settle/confirm
+
+    audio = np.concatenate(parts)
+    if noise > 0.0:
+        rng = np.random.default_rng(0)
+        audio = audio + rng.normal(0.0, noise, size=audio.shape).astype(np.float32)
+    return np.clip(audio, -1.0, 1.0)
+
+
 def write_wav(path: Path, audio: NDArray[np.float32], sample_rate: int) -> None:
     pcm16 = (np.clip(audio, -1.0, 1.0) * 32767.0).astype(np.int16)
     with wave.open(str(path), "wb") as wf:
@@ -186,6 +234,12 @@ def write_wav(path: Path, audio: NDArray[np.float32], sample_rate: int) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--profile",
+        choices=["qso", "beacon"],
+        default="qso",
+        help="qso = mock QSO exchange; beacon = looping satellite telemetry beacon",
+    )
     parser.add_argument("--wpm", type=float, default=20.0, help="CW speed in words per minute")
     parser.add_argument("--freq", type=float, default=700.0, help="Tone frequency in Hz")
     parser.add_argument("--sample-rate", type=int, default=48_000)
@@ -193,16 +247,19 @@ def main() -> None:
         "--noise", type=float, default=0.02, help="Background noise amplitude (0 to disable)"
     )
     parser.add_argument(
-        "--repeat", type=int, default=1, help="Repeat the mock QSO this many times (longer file)"
+        "--repeat", type=int, default=1, help="Repeat the message this many times (longer file)"
     )
     parser.add_argument("--out", type=Path, default=Path("test_cw.wav"))
     args = parser.parse_args()
 
-    audio = build_test_audio(args.wpm, args.sample_rate, args.freq, args.noise, args.repeat)
+    if args.profile == "beacon":
+        audio = build_beacon_audio(args.wpm, args.sample_rate, args.freq, args.noise, args.repeat)
+    else:
+        audio = build_test_audio(args.wpm, args.sample_rate, args.freq, args.noise, args.repeat)
     write_wav(args.out, audio, args.sample_rate)
     duration_s = len(audio) / args.sample_rate
     print(
-        f"Wrote {args.out} ({duration_s:.1f}s, {args.wpm:.0f} WPM, "
+        f"Wrote {args.out} ({args.profile}, {duration_s:.1f}s, {args.wpm:.0f} WPM, "
         f"{args.freq:.0f} Hz, x{args.repeat} repeat)"
     )
 
