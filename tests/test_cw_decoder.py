@@ -323,3 +323,91 @@ def test_full_pipeline_bridges_a_real_pause_between_messages_with_newline() -> N
     combined = delta_1 + delta_n
     assert combined == "AR\nDE"
     assert pending_n == ""
+
+
+# ---------------------------------------------------------------------------
+# insert_gap_markers() with frame_energy verification
+#
+# Regression tests for the "JF9SOM" -> "JF 9SOM" false positive: greedy CTC
+# can report two characters of the *same* word far enough apart in time
+# (here modeled on a real ~1.2s gap observed between 'F' and '9' with no
+# real silence between them) to cross the space threshold on timing alone.
+# frame_energy lets insert_gap_markers tell a real gap from the model just
+# being slow to commit to a label.
+# ---------------------------------------------------------------------------
+
+_FRAME_DURATION_S = 0.015  # matches HOP_LENGTH/SAMPLE_RATE = 48/3200
+
+
+def _make_frame_energy(
+    total_frames: int, active_ranges: list[tuple[int, int]], base: float = 0.05, active: float = 5.0
+) -> np.ndarray:
+    energy = np.full(total_frames, base, dtype=np.float32)
+    for lo, hi in active_ranges:
+        energy[lo:hi] = active
+    return energy
+
+
+def test_energy_check_suppresses_false_positive_from_slow_recognition() -> None:
+    # 'F' reported at 7.755s, '9' at 8.955s (~1.2s apart) — matches the real
+    # observed case — but the audio actually has tone energy continuously
+    # present through that span (frames 560-580 out of the checked
+    # 519-596 range), meaning the model was just slow, not really silent.
+    frame_energy = _make_frame_energy(700, active_ranges=[(560, 580)])
+    offsets = [("F", 7.755), ("9", 8.955)]
+    expanded, _last_abs = insert_gap_markers(
+        offsets,
+        window_start_abs=0.0,
+        last_char_abs=None,
+        space_gap_s=1.0,
+        newline_gap_s=3.0,
+        frame_energy=frame_energy,
+        frame_duration_s=_FRAME_DURATION_S,
+    )
+    assert expanded == offsets  # no synthetic space inserted
+
+
+def test_energy_check_still_confirms_a_genuinely_silent_gap() -> None:
+    # Same reported gap, but this time the audio is quiet throughout —
+    # a real pause, so the space should still be inserted.
+    frame_energy = _make_frame_energy(700, active_ranges=[])
+    offsets = [("F", 7.755), ("9", 8.955)]
+    expanded, _last_abs = insert_gap_markers(
+        offsets,
+        window_start_abs=0.0,
+        last_char_abs=None,
+        space_gap_s=1.0,
+        newline_gap_s=3.0,
+        frame_energy=frame_energy,
+        frame_duration_s=_FRAME_DURATION_S,
+    )
+    assert expanded == [("F", 7.755), (" ", 8.955), ("9", 8.955)]
+
+
+def test_energy_check_skipped_when_gap_predates_the_window() -> None:
+    # last_char_abs is from a previous, already-evicted window (before
+    # window_start_abs) — there is no audio left to inspect for it, so the
+    # gap is trusted without a frame_energy check even if the (irrelevant)
+    # energy data for *this* window looks fully "active" throughout.
+    frame_energy = _make_frame_energy(700, active_ranges=[(0, 700)])
+    offsets = [("D", 0.0)]
+    expanded, _last_abs = insert_gap_markers(
+        offsets,
+        window_start_abs=300.0,
+        last_char_abs=100.0,
+        space_gap_s=1.0,
+        newline_gap_s=3.0,
+        frame_energy=frame_energy,
+        frame_duration_s=_FRAME_DURATION_S,
+    )
+    assert expanded == [("\n", 0.0), ("D", 0.0)]
+
+
+def test_no_frame_energy_supplied_keeps_prior_timing_only_behaviour() -> None:
+    # Backwards compatibility: omitting frame_energy falls back to pure
+    # timing-based detection (as used by the existing tests above).
+    offsets = [("F", 7.755), ("9", 8.955)]
+    expanded, _last_abs = insert_gap_markers(
+        offsets, window_start_abs=0.0, last_char_abs=None, space_gap_s=1.0, newline_gap_s=3.0
+    )
+    assert expanded == [("F", 7.755), (" ", 8.955), ("9", 8.955)]

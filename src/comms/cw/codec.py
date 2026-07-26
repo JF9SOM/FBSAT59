@@ -17,6 +17,7 @@ from the deepcw-engine repository.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -88,15 +89,23 @@ def _resample(audio: NDArray[np.float32], src_rate: int) -> NDArray[np.float32]:
 # ---------------------------------------------------------------------------
 
 
-def _compute_spectrogram(audio: NDArray[np.float32]) -> NDArray[np.float32] | None:
-    """Compute log1p magnitude spectrogram matching the deepcw-engine pipeline.
+def _compute_spectrogram_and_energy(
+    audio: NDArray[np.float32],
+) -> tuple[NDArray[np.float32], NDArray[np.float32]] | tuple[None, None]:
+    """Compute the log1p magnitude spectrogram matching the deepcw-engine
+    pipeline, plus each frame's raw (pre-log1p) peak magnitude in the CW
+    passband.
 
-    Returns float32 array of shape (1, 1, time_steps, _EXPECTED_BINS),
-    or None if the audio is outside the valid duration range.
+    The spectrogram is (1, 1, time_steps, _EXPECTED_BINS) float32, or
+    (None, None) if the audio is outside the valid duration range. The
+    per-frame peak magnitude is a cheap, model-independent proxy for "is
+    there real tone energy in this frame" — used to verify a suspected
+    silence gap between two decoded characters against the actual audio,
+    rather than trusting the CTC labels' own (sometimes uneven) timing.
     """
     duration = len(audio) / SAMPLE_RATE
     if duration < MIN_AUDIO_SECONDS:
-        return None
+        return None, None
     # Clip to maximum
     max_samples = int(MAX_AUDIO_SECONDS * SAMPLE_RATE)
     if len(audio) > max_samples:
@@ -107,18 +116,20 @@ def _compute_spectrogram(audio: NDArray[np.float32]) -> NDArray[np.float32] | No
     padded = np.pad(audio, (pad, pad), mode="reflect")
 
     n_frames = 1 + (len(padded) - FFT_LENGTH) // HOP_LENGTH
-    spectrogram = np.empty((n_frames, _EXPECTED_BINS), dtype=np.float32)
+    magnitude = np.empty((n_frames, _EXPECTED_BINS), dtype=np.float32)
 
     for i in range(n_frames):
         start = i * HOP_LENGTH
         frame = padded[start : start + FFT_LENGTH] * _HANN
         spectrum = np.abs(np.fft.rfft(frame, n=FFT_LENGTH))
-        spectrogram[i] = spectrum[_START_BIN:_STOP_BIN].astype(np.float32)
+        magnitude[i] = spectrum[_START_BIN:_STOP_BIN].astype(np.float32)
+
+    frame_energy = magnitude.max(axis=1)
 
     # log1p normalization
-    spectrogram = np.log1p(spectrogram, dtype=np.float32)
+    spectrogram = np.log1p(magnitude, dtype=np.float32)
 
-    return spectrogram[np.newaxis, np.newaxis, :, :].astype(np.float32)
+    return spectrogram[np.newaxis, np.newaxis, :, :].astype(np.float32), frame_energy
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +174,22 @@ def _ctc_decode(log_probs: NDArray[np.float32]) -> str:
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class DecodeResult:
+    """Result of CwDecoder.decode_with_offsets().
+
+    frame_energy is the raw (pre-log1p) per-frame peak magnitude from the
+    same spectrogram computation used for CTC inference, one value every
+    HOP_LENGTH/SAMPLE_RATE seconds from the window's start — ground truth
+    for "was there real signal here", independent of the CTC labels' own
+    (sometimes uneven) recognition timing.
+    """
+
+    offsets: list[tuple[str, float]]
+    window_duration: float
+    frame_energy: NDArray[np.float32]
+
+
 class CwDecoder:
     """Wraps the DeepCW ONNX model for inference.
 
@@ -198,27 +225,25 @@ class CwDecoder:
         """Return True if the model is loaded and ready."""
         return self._session is not None
 
-    def decode_with_offsets(
-        self, audio: NDArray[np.float32], sample_rate: int
-    ) -> tuple[list[tuple[str, float]], float]:
-        """Decode *audio* and return (char, offset_seconds) pairs plus the
-        actual window duration (seconds) used for inference.
+    def decode_with_offsets(self, audio: NDArray[np.float32], sample_rate: int) -> DecodeResult:
+        """Decode *audio* and return a DecodeResult (see its docstring).
 
         The offset for each character is measured from the start of the
         resampled window (clipped to MAX_AUDIO_SECONDS), so
         ``window_duration - offset`` is how much trailing audio followed
         that character — how much right-context the model had when it
-        produced it. Returns ``([], 0.0)`` if the model isn't loaded or the
-        audio is shorter than MIN_AUDIO_SECONDS, matching decode()'s ""
-        behaviour.
+        produced it. Returns an empty DecodeResult if the model isn't
+        loaded or the audio is shorter than MIN_AUDIO_SECONDS, matching
+        decode()'s "" behaviour.
         """
+        empty = DecodeResult([], 0.0, np.zeros(0, dtype=np.float32))
         if self._session is None:
-            return [], 0.0
+            return empty
 
         resampled = _resample(audio, sample_rate)
-        spec = _compute_spectrogram(resampled)
-        if spec is None:
-            return [], 0.0
+        spec, frame_energy = _compute_spectrogram_and_energy(resampled)
+        if spec is None or frame_energy is None:
+            return empty
 
         max_samples = int(MAX_AUDIO_SECONDS * SAMPLE_RATE)
         window_duration = min(len(resampled), max_samples) / SAMPLE_RATE
@@ -226,7 +251,7 @@ class CwDecoder:
         input_name = "spectrogram"
         output_name = "log_probs"
         outputs = self._session.run([output_name], {input_name: spec})
-        return _ctc_decode_with_offsets(outputs[0]), window_duration
+        return DecodeResult(_ctc_decode_with_offsets(outputs[0]), window_duration, frame_energy)
 
     def decode(self, audio: NDArray[np.float32], sample_rate: int) -> str:
         """Decode *audio* (float32, mono) and return the CW text.
@@ -234,8 +259,7 @@ class CwDecoder:
         Returns an empty string if the model is not loaded or the audio
         is too short (< MIN_AUDIO_SECONDS after resampling).
         """
-        offsets, _duration = self.decode_with_offsets(audio, sample_rate)
-        return "".join(ch for ch, _t in offsets)
+        return "".join(ch for ch, _t in self.decode_with_offsets(audio, sample_rate).offsets)
 
     def reload(self) -> None:
         """Reload the model from disk (e.g. after installation)."""

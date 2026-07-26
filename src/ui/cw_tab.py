@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from comms.audio_device_manager import get_audio_device_manager
-from comms.cw.codec import MIN_AUDIO_SECONDS, SAMPLE_RATE, CwDecoder
+from comms.cw.codec import HOP_LENGTH, MIN_AUDIO_SECONDS, SAMPLE_RATE, CwDecoder, DecodeResult
 from comms.cw.model_info import is_onnxruntime_available, is_ready
 from comms.cw.transcript import insert_gap_markers, reconcile_pending
 from i18n import _
@@ -53,6 +53,9 @@ _PENDING_MARGIN_S = _DECODE_INTERVAL_MS / 1000.0
 # separator instead of running unrelated messages together.
 _SPACE_GAP_S = 1.0
 _NEWLINE_GAP_S = 3.0
+# Seconds spanned by one spectrogram frame (see DecodeResult.frame_energy),
+# used to cross-check a candidate gap against real audio energy.
+_FRAME_DURATION_S = HOP_LENGTH / SAMPLE_RATE
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +66,7 @@ _NEWLINE_GAP_S = 3.0
 class _DecodeWorker(QThread):
     """Runs CwDecoder.decode_with_offsets() off the UI thread."""
 
-    result_ready = Signal(object, float)
+    result_ready = Signal(object)
 
     def __init__(self, decoder: CwDecoder, audio: NDArray[np.float32], sample_rate: int) -> None:
         super().__init__()
@@ -72,8 +75,8 @@ class _DecodeWorker(QThread):
         self._sample_rate = sample_rate
 
     def run(self) -> None:
-        offsets, duration = self._decoder.decode_with_offsets(self._audio, self._sample_rate)
-        self.result_ready.emit(offsets, duration)
+        result = self._decoder.decode_with_offsets(self._audio, self._sample_rate)
+        self.result_ready.emit(result)
 
 
 # ---------------------------------------------------------------------------
@@ -426,15 +429,15 @@ class CwTab(QWidget):
         self._worker.finished.connect(self._on_worker_finished)
         self._worker.start()
 
-    @Slot(object, float)
-    def _on_decode_result(self, offsets: list[tuple[str, float]], window_duration: float) -> None:
-        if window_duration <= 0.0:
+    @Slot(object)
+    def _on_decode_result(self, result: DecodeResult) -> None:
+        if result.window_duration <= 0.0:
             # Not a valid window at all (model unloaded or audio too short)
             # — as opposed to a valid, fully silent window, which is
             # handled inside _reconcile_decode() below.
             self._status_label.setText(_("Listening…"))
             return
-        self._reconcile_decode(offsets, window_duration)
+        self._reconcile_decode(result)
         self._status_label.setText(_("Listening…"))
 
     @Slot()
@@ -442,7 +445,7 @@ class CwTab(QWidget):
         self._decoding = False
         self._worker = None
 
-    def _reconcile_decode(self, offsets: list[tuple[str, float]], window_duration: float) -> None:
+    def _reconcile_decode(self, result: DecodeResult) -> None:
         """Merge a fresh decode into the confirmed/pending transcript.
 
         Text near the trailing edge of the audio window is held back as
@@ -451,12 +454,22 @@ class CwTab(QWidget):
         the on-screen pending tail is ever rewritten, so already-confirmed
         text is never silently altered. A real pause between characters —
         including one spanning several silent decode cycles — is bridged
-        with an explicit space/newline (comms.cw.transcript.insert_gap_markers)
-        instead of running unrelated messages together.
+        with an explicit space/newline (comms.cw.transcript.insert_gap_markers),
+        cross-checked against the decode's own frame_energy so the model's
+        uneven recognition timing isn't mistaken for real silence, instead
+        of running unrelated messages together.
         """
+        offsets = result.offsets
+        window_duration = result.window_duration
         window_start_abs = self._samples_dropped_total / self._rx_sample_rate
         offsets, self._last_char_abs_time = insert_gap_markers(
-            offsets, window_start_abs, self._last_char_abs_time, _SPACE_GAP_S, _NEWLINE_GAP_S
+            offsets,
+            window_start_abs,
+            self._last_char_abs_time,
+            _SPACE_GAP_S,
+            _NEWLINE_GAP_S,
+            result.frame_energy,
+            _FRAME_DURATION_S,
         )
 
         if not offsets:
