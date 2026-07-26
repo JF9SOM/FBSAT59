@@ -36,7 +36,7 @@ from PySide6.QtWidgets import (
 from comms.audio_device_manager import get_audio_device_manager
 from comms.cw.codec import MIN_AUDIO_SECONDS, SAMPLE_RATE, CwDecoder
 from comms.cw.model_info import is_onnxruntime_available, is_ready
-from comms.cw.transcript import reconcile_pending
+from comms.cw.transcript import insert_gap_markers, reconcile_pending
 from i18n import _
 
 # Rolling audio buffer: keep last N seconds (model max is 20 s)
@@ -48,6 +48,11 @@ _DECODE_INTERVAL_MS = 5_000
 # decode interval so a reading gets at least one extra decode cycle's worth
 # of trailing context before it is treated as final.
 _PENDING_MARGIN_S = _DECODE_INTERVAL_MS / 1000.0
+# A real pause between transmissions produces no decoded characters at all
+# (see comms.cw.transcript.insert_gap_markers) — bridge it with an explicit
+# separator instead of running unrelated messages together.
+_SPACE_GAP_S = 1.0
+_NEWLINE_GAP_S = 3.0
 
 
 # ---------------------------------------------------------------------------
@@ -112,6 +117,7 @@ class CwTab(QWidget):
         self._pending_text: str = ""
         self._confirmed_up_to_abs: float = 0.0
         self._samples_dropped_total: int = 0
+        self._last_char_abs_time: float | None = None
 
         self._setup_ui()
         self._load_sound_card_device()
@@ -237,6 +243,7 @@ class CwTab(QWidget):
         self._pending_text = ""
         self._confirmed_up_to_abs = 0.0
         self._samples_dropped_total = 0
+        self._last_char_abs_time = None
         self._start_btn.setText(_("■ Stop"))
 
         if self._rb_sdr.isChecked():
@@ -280,6 +287,7 @@ class CwTab(QWidget):
         self._pending_text = ""
         self._confirmed_up_to_abs = 0.0
         self._samples_dropped_total = 0
+        self._last_char_abs_time = None
 
     # ------------------------------------------------------------------ #
     # SDR audio
@@ -420,7 +428,10 @@ class CwTab(QWidget):
 
     @Slot(object, float)
     def _on_decode_result(self, offsets: list[tuple[str, float]], window_duration: float) -> None:
-        if not offsets:
+        if window_duration <= 0.0:
+            # Not a valid window at all (model unloaded or audio too short)
+            # — as opposed to a valid, fully silent window, which is
+            # handled inside _reconcile_decode() below.
             self._status_label.setText(_("Listening…"))
             return
         self._reconcile_decode(offsets, window_duration)
@@ -438,9 +449,27 @@ class CwTab(QWidget):
         "pending" (see comms.cw.transcript.reconcile_pending) since the
         model may still revise it once more trailing audio arrives; only
         the on-screen pending tail is ever rewritten, so already-confirmed
-        text is never silently altered.
+        text is never silently altered. A real pause between characters —
+        including one spanning several silent decode cycles — is bridged
+        with an explicit space/newline (comms.cw.transcript.insert_gap_markers)
+        instead of running unrelated messages together.
         """
         window_start_abs = self._samples_dropped_total / self._rx_sample_rate
+        offsets, self._last_char_abs_time = insert_gap_markers(
+            offsets, window_start_abs, self._last_char_abs_time, _SPACE_GAP_S, _NEWLINE_GAP_S
+        )
+
+        if not offsets:
+            # Fully silent window: nothing new to show, but anything still
+            # sitting in the pending tail has now gone unrevised for a
+            # whole window's worth of trailing silence, so treat it as
+            # final rather than letting it vanish when new_pending comes
+            # back empty next time something is decoded.
+            if self._pending_text:
+                self._confirmed_text += self._pending_text
+                self._pending_text = ""
+            return
+
         delta, new_pending, self._confirmed_up_to_abs = reconcile_pending(
             offsets,
             window_duration,
@@ -481,6 +510,7 @@ class CwTab(QWidget):
         self._pending_text = ""
         self._confirmed_up_to_abs = 0.0
         self._samples_dropped_total = 0
+        self._last_char_abs_time = None
 
     def _replace_tail(self, confirmed_delta: str, new_pending: str) -> None:
         """Rewrite only the on-screen tentative tail, leaving confirmed text

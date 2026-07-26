@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 
 from comms.cw.codec import HOP_LENGTH, SAMPLE_RATE, _ctc_decode, _ctc_decode_with_offsets
-from comms.cw.transcript import reconcile_pending
+from comms.cw.transcript import insert_gap_markers, reconcile_pending
 
 # ---------------------------------------------------------------------------
 # _ctc_decode_with_offsets() / _ctc_decode()
@@ -178,3 +178,148 @@ def test_correction_near_trailing_edge_never_gets_confirmed() -> None:
     assert "0" not in combined_confirmed
     assert combined_confirmed == "FROM LA"
     assert combined_confirmed + pending_2 == "FROM LASARSAT"
+
+
+# ---------------------------------------------------------------------------
+# insert_gap_markers()
+# ---------------------------------------------------------------------------
+
+_SPACE_GAP = 1.0
+_NEWLINE_GAP = 3.0
+
+
+def test_no_marker_before_the_very_first_character() -> None:
+    expanded, last_abs = insert_gap_markers(
+        [("A", 0.0)],
+        window_start_abs=0.0,
+        last_char_abs=None,
+        space_gap_s=_SPACE_GAP,
+        newline_gap_s=_NEWLINE_GAP,
+    )
+    assert expanded == [("A", 0.0)]
+    assert last_abs == 0.0
+
+
+def test_empty_offsets_leaves_anchor_unchanged() -> None:
+    expanded, last_abs = insert_gap_markers(
+        [],
+        window_start_abs=99.0,
+        last_char_abs=42.0,
+        space_gap_s=_SPACE_GAP,
+        newline_gap_s=_NEWLINE_GAP,
+    )
+    assert expanded == []
+    assert last_abs == 42.0
+
+
+def test_short_gap_within_one_window_inserts_space() -> None:
+    # A 1.5 s gap between two letters (unusually long for same-message
+    # spacing, but short of a real transmission boundary) gets a space.
+    expanded, last_abs = insert_gap_markers(
+        [("A", 0.0), ("B", 1.5)],
+        window_start_abs=0.0,
+        last_char_abs=None,
+        space_gap_s=_SPACE_GAP,
+        newline_gap_s=_NEWLINE_GAP,
+    )
+    assert expanded == [("A", 0.0), (" ", 1.5), ("B", 1.5)]
+    assert last_abs == 1.5
+
+
+def test_long_gap_within_one_window_inserts_newline() -> None:
+    expanded, _last_abs = insert_gap_markers(
+        [("A", 0.0), ("B", 5.0)],
+        window_start_abs=0.0,
+        last_char_abs=None,
+        space_gap_s=_SPACE_GAP,
+        newline_gap_s=_NEWLINE_GAP,
+    )
+    assert expanded == [("A", 0.0), ("\n", 5.0), ("B", 5.0)]
+
+
+def test_gap_spanning_several_silent_cycles_uses_carried_over_anchor() -> None:
+    # last_char_abs=100.0 came from a decode many cycles ago; the window
+    # has since moved on to abs time 150.0 with no characters in between.
+    expanded, last_abs = insert_gap_markers(
+        [("D", 0.0)],
+        window_start_abs=150.0,
+        last_char_abs=100.0,
+        space_gap_s=_SPACE_GAP,
+        newline_gap_s=_NEWLINE_GAP,
+    )
+    assert expanded == [("\n", 0.0), ("D", 0.0)]
+    assert last_abs == 150.0
+
+
+def test_model_own_space_within_gap_threshold_is_not_doubled() -> None:
+    # The model already emitted an explicit space at a 1.2 s gap — don't
+    # add a second one on top of it.
+    expanded, _last_abs = insert_gap_markers(
+        [("A", 0.0), (" ", 1.2)],
+        window_start_abs=0.0,
+        last_char_abs=None,
+        space_gap_s=_SPACE_GAP,
+        newline_gap_s=_NEWLINE_GAP,
+    )
+    assert expanded == [("A", 0.0), (" ", 1.2)]
+
+
+def test_normal_intra_word_timing_gets_no_extra_markers() -> None:
+    # Realistic same-word letter spacing (well under 1 s) must not trigger
+    # any synthetic separator.
+    offsets = [("C", 0.0), ("Q", 0.08), (" ", 0.20), ("D", 0.35), ("E", 0.42)]
+    expanded, _last_abs = insert_gap_markers(
+        offsets,
+        window_start_abs=0.0,
+        last_char_abs=None,
+        space_gap_s=_SPACE_GAP,
+        newline_gap_s=_NEWLINE_GAP,
+    )
+    assert expanded == offsets
+
+
+def test_full_pipeline_bridges_a_real_pause_between_messages_with_newline() -> None:
+    """End-to-end (still Qt-free) regression test for the "...AR" directly
+    followed by "DE..." symptom: a genuine multi-minute pause between two
+    transmissions must render as a newline in the assembled transcript,
+    not a bare concatenation."""
+    # Cycle 1: message 1 ("AR") decodes and fully confirms (both letters
+    # sit well before the pending margin in a 20s window; realistic
+    # same-word letter spacing, well under the 1 s space threshold).
+    offsets_1 = [("A", 1.0), ("R", 1.1)]
+    window_start_1 = 0.0
+    expanded_1, last_abs = insert_gap_markers(
+        offsets_1, window_start_1, None, _SPACE_GAP, _NEWLINE_GAP
+    )
+    delta_1, pending_1, confirmed_up_to = reconcile_pending(
+        expanded_1,
+        window_duration=20.0,
+        window_start_abs=window_start_1,
+        confirmed_up_to_abs=0.0,
+        pending_margin_s=_MARGIN,
+    )
+    assert delta_1 == "AR"
+    assert pending_1 == ""
+
+    # Many silent decode cycles pass in between (represented here simply
+    # by advancing window_start_abs and last_char_abs staying put, exactly
+    # as cw_tab.py's empty-offsets branch leaves it untouched).
+
+    # Cycle N: a new, unrelated message ("DE") begins after a multi-minute
+    # real pause.
+    offsets_n = [("D", 0.0), ("E", 0.1)]
+    window_start_n = 300.0
+    expanded_n, _last_abs = insert_gap_markers(
+        offsets_n, window_start_n, last_abs, _SPACE_GAP, _NEWLINE_GAP
+    )
+    delta_n, pending_n, _confirmed_up_to = reconcile_pending(
+        expanded_n,
+        window_duration=20.0,
+        window_start_abs=window_start_n,
+        confirmed_up_to_abs=confirmed_up_to,
+        pending_margin_s=_MARGIN,
+    )
+
+    combined = delta_1 + delta_n
+    assert combined == "AR\nDE"
+    assert pending_n == ""

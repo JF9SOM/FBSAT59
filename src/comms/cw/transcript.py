@@ -61,3 +61,50 @@ def reconcile_pending(
 
     pending = "".join(ch for ch, t in offsets if t > cutoff_rel)
     return delta, pending, confirmed_up_to_abs
+
+
+def insert_gap_markers(
+    offsets: Sequence[tuple[str, float]],
+    window_start_abs: float,
+    last_char_abs: float | None,
+    space_gap_s: float,
+    newline_gap_s: float,
+) -> tuple[list[tuple[str, float]], float | None]:
+    """Insert synthetic ' '/'\\n' entries wherever a real silence gap is
+    detected between consecutive decoded characters.
+
+    The CTC model only emits a label for frames where it recognises
+    something; a genuine multi-second (or multi-minute) pause between
+    transmissions produces *no* characters at all — not even the model's
+    own (much shorter) inter-word space — so naively concatenating decode
+    output runs unrelated messages together with nothing in between (e.g.
+    "...AR" immediately followed by "DE..."). Each character's absolute
+    time (window start + its offset) lets that real silence be detected
+    and marked explicitly.
+
+    `last_char_abs` is the absolute time of the last real character seen
+    across *previous* calls (None before anything has ever been decoded),
+    so a gap spanning several otherwise-empty decode cycles is still
+    caught the moment a new character finally appears.
+
+    Returns (expanded_offsets, new_last_char_abs); the latter is
+    `last_char_abs` unchanged when *offsets* is empty (nothing to update
+    the anchor with).
+    """
+    if not offsets:
+        return [], last_char_abs
+
+    expanded: list[tuple[str, float]] = []
+    prev_abs = last_char_abs
+    for ch, t in offsets:
+        abs_t = window_start_abs + t
+        if prev_abs is not None:
+            gap = abs_t - prev_abs
+            if gap >= newline_gap_s:
+                expanded.append(("\n", t))
+            elif gap >= space_gap_s and ch != " ":
+                expanded.append((" ", t))
+        expanded.append((ch, t))
+        prev_abs = abs_t
+
+    return expanded, prev_abs
