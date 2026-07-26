@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 
 import comms.audio_device_manager as adm
-from comms.audio_device_manager import AudioDeviceManager, _resample
+from comms.audio_device_manager import AudioDeviceManager, _resample, validate_output_device
 
 # ---------------------------------------------------------------------------
 # Fake sounddevice.InputStream
@@ -67,6 +67,28 @@ def _make_fake_sounddevice_with_devices(
     fake_module = types.SimpleNamespace(InputStream=_FakeInputStream, query_devices=lambda: devices)
     monkeypatch.setitem(sys.modules, "sounddevice", fake_module)
     return _FakeInputStream
+
+
+def _make_fake_sounddevice_for_output(
+    monkeypatch: pytest.MonkeyPatch,
+    devices: list[dict[str, Any]],
+    rejecting_devices: frozenset[int] = frozenset(),
+) -> None:
+    """Exposes `query_devices()` and `check_output_settings()` — needed to
+    exercise `validate_output_device()`. `rejecting_devices` names indices
+    whose `check_output_settings()` call raises, mimicking PortAudio's
+    "Invalid sample rate" for a device that has output channels but does not
+    support the requested samplerate/channel combination."""
+
+    def _check_output_settings(*, device: int, samplerate: int, channels: int) -> None:
+        if device in rejecting_devices:
+            raise RuntimeError("Invalid sample rate")
+
+    fake_module = types.SimpleNamespace(
+        query_devices=lambda: devices,
+        check_output_settings=_check_output_settings,
+    )
+    monkeypatch.setitem(sys.modules, "sounddevice", fake_module)
 
 
 class _FakeInputStreamBlockingStop(_FakeInputStream):
@@ -351,6 +373,62 @@ class TestInputDeviceValidation:
         mgr = AudioDeviceManager()
         mgr.acquire_input("ft4", 9, 48_000, lambda c: None)
         assert len(fake_sounddevice.instances) == 1
+
+
+# ---------------------------------------------------------------------------
+# Output device validation — a stale/invalid device index must raise a clear
+# error instead of PortAudio's opaque "Invalid sample rate" [-9997] (see
+# validate_output_device() in comms/audio_device_manager.py; this is what
+# let the FT4 tab's TX fail with that raw error after a device-list reorder
+# resolved the saved output index to an unrelated "surroundNN" device).
+# ---------------------------------------------------------------------------
+
+
+class TestOutputDeviceValidation:
+    def test_rejects_out_of_range_index(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _make_fake_sounddevice_for_output(
+            monkeypatch, [{"name": "default", "max_output_channels": 2}]
+        )
+        with pytest.raises(RuntimeError, match="no longer exists"):
+            validate_output_device(9, 12_000, channels=1)
+
+    def test_rejects_device_that_fails_samplerate_check(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _make_fake_sounddevice_for_output(
+            monkeypatch,
+            [
+                {"name": "default", "max_output_channels": 2},
+                {"name": "surround40", "max_output_channels": 2},
+            ],
+            rejecting_devices=frozenset({1}),
+        )
+        with pytest.raises(RuntimeError, match="cannot play audio at 12000 Hz"):
+            validate_output_device(1, 12_000, channels=1)
+
+    def test_accepts_device_that_passes_samplerate_check(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _make_fake_sounddevice_for_output(
+            monkeypatch, [{"name": "pipewire", "max_output_channels": 64}]
+        )
+        validate_output_device(0, 12_000, channels=1)  # must not raise
+
+    def test_none_device_skips_validation(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """device=None means "system default" and is always accepted,
+        regardless of what query_devices()/check_output_settings() report."""
+        _make_fake_sounddevice_for_output(monkeypatch, [], rejecting_devices=frozenset({0}))
+        validate_output_device(None, 12_000, channels=1)  # must not raise
+
+    def test_missing_check_output_settings_skips_validation(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Fakes (and any sounddevice build) without check_output_settings()
+        must not block playback — the real sd.play() call surfaces the
+        actual error instead."""
+        fake_module = types.SimpleNamespace(query_devices=lambda: [{"name": "default"}])
+        monkeypatch.setitem(sys.modules, "sounddevice", fake_module)
+        validate_output_device(0, 12_000, channels=1)  # must not raise
 
 
 # ---------------------------------------------------------------------------

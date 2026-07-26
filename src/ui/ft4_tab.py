@@ -43,7 +43,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from comms.audio_device_manager import get_audio_device_manager
+from comms.audio_device_manager import get_audio_device_manager, validate_output_device
 from comms.ft4.codec import (
     SAMPLE_RATE,
     Ft4Codec,
@@ -128,6 +128,8 @@ class _TxWorker(QObject):
             return
         try:
             import sounddevice as sd  # optional dep
+
+            validate_output_device(self._out_device, SAMPLE_RATE, channels=1)
 
             if self._rig is not None:
                 if not self._rig.set_ptt(True):

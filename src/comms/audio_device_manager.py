@@ -215,6 +215,62 @@ def _validate_input_device(device: int | None) -> None:
         )
 
 
+def validate_output_device(device: int | None, samplerate: int, channels: int = 1) -> None:
+    """Raise a clear, actionable error if `device` cannot play back audio at
+    the given samplerate/channels.
+
+    Mirrors :func:`_validate_input_device`, but a stale output device index
+    is not necessarily *channel-less* — it can still have output channels
+    while simply not supporting the specific samplerate a caller needs
+    (e.g. a PipeWire/ALSA index drift resolving to a "surroundNN" plugin
+    device instead of the generic "pipewire"/"default" node: it has output
+    channels, but rejects FT4's 12 kHz mono stream with PortAudio's opaque
+    "Invalid sample rate" [-9997]). So this checks the actual
+    samplerate/channels combination via ``sd.check_output_settings()``
+    rather than just a channel count, and only after that preflight check
+    passes does the real ``sd.play()``/``sd.OutputStream()`` get attempted.
+
+    No-ops for `device=None` (system default, always valid) and when
+    ``sounddevice`` doesn't expose ``query_devices``/``check_output_settings``
+    (e.g. the fakes used in tests) — in both cases the real playback call is
+    left to surface whatever error actually occurs.
+    """
+    if device is None:
+        return
+    import sounddevice as sd
+
+    query_devices = getattr(sd, "query_devices", None)
+    check_output_settings = getattr(sd, "check_output_settings", None)
+    if query_devices is None or check_output_settings is None:
+        return
+    try:
+        devices = query_devices()
+    except Exception:
+        return
+    if not (0 <= device < len(devices)):
+        raise RuntimeError(
+            _(
+                "Output device #{device} no longer exists (device list now "
+                "has {count} entries) — reopen Rig Settings > Sound Card "
+                "and re-select the output device."
+            ).format(device=device, count=len(devices))
+        )
+    try:
+        check_output_settings(device=device, samplerate=samplerate, channels=channels)
+    except Exception:
+        raise RuntimeError(
+            _(
+                "Output device #{device} ({name}) cannot play audio at "
+                "{rate} Hz — reopen Rig Settings > Sound Card and "
+                "re-select the output device."
+            ).format(
+                device=device,
+                name=devices[device].get("name", "?"),
+                rate=samplerate,
+            )
+        ) from None
+
+
 def snapshot_output_streams() -> set[str]:
     """Current pactl sink-input ids — for ad-hoc pinning outside the TX lock
     (e.g. the Rig Settings > Sound Card "Test" button)."""
