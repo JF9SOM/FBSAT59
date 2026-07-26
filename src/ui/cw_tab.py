@@ -36,7 +36,12 @@ from PySide6.QtWidgets import (
 from comms.audio_device_manager import get_audio_device_manager
 from comms.cw.codec import HOP_LENGTH, MIN_AUDIO_SECONDS, SAMPLE_RATE, CwDecoder, DecodeResult
 from comms.cw.model_info import is_onnxruntime_available, is_ready
-from comms.cw.transcript import insert_gap_markers, reconcile_pending
+from comms.cw.transcript import (
+    apply_prosign_conventions,
+    insert_gap_markers,
+    reconcile_pending,
+    should_defer_trailing_s,
+)
 from i18n import _
 
 # Rolling audio buffer: keep last N seconds (model max is 20 s)
@@ -500,6 +505,7 @@ class CwTab(QWidget):
         already_rel = self._confirmed_up_to_abs - window_start_abs
         newly_confirmed_ts = [t for _ch, t in offsets if already_rel < t <= cutoff_rel]
 
+        prior_confirmed_up_to_abs = self._confirmed_up_to_abs
         delta, new_pending, self._confirmed_up_to_abs = reconcile_pending(
             offsets,
             window_duration,
@@ -507,11 +513,28 @@ class CwTab(QWidget):
             self._confirmed_up_to_abs,
             _PENDING_MARGIN_S,
         )
+
+        # A trailing standalone "S" might be the start of an "SK" -> "VA"
+        # prosign whose "K" hasn't matured into delta yet — hold it back
+        # in pending for one more cycle rather than confirming a bare "S"
+        # that can never later become "V" (see should_defer_trailing_s()).
+        if should_defer_trailing_s(delta, self._confirmed_text[-1:]):
+            delta = delta[:-1]
+            new_pending = "S" + new_pending
+            if len(newly_confirmed_ts) >= 2:
+                newly_confirmed_ts = newly_confirmed_ts[:-1]
+                self._confirmed_up_to_abs = window_start_abs + newly_confirmed_ts[-1]
+            else:
+                newly_confirmed_ts = []
+                self._confirmed_up_to_abs = prior_confirmed_up_to_abs
+
         if newly_confirmed_ts:
             self._last_char_abs_time = window_start_abs + max(newly_confirmed_ts)
 
         delta = self._clean_join(self._confirmed_text, delta)
+        delta = apply_prosign_conventions(delta, self._confirmed_text[-1:])
         new_pending = self._clean_join(self._confirmed_text + delta, new_pending)
+        new_pending = apply_prosign_conventions(new_pending, (self._confirmed_text + delta)[-1:])
 
         if not delta and new_pending == self._pending_text:
             return

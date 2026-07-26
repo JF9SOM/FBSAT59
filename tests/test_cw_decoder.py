@@ -12,7 +12,12 @@ from __future__ import annotations
 import numpy as np
 
 from comms.cw.codec import HOP_LENGTH, SAMPLE_RATE, _ctc_decode, _ctc_decode_with_offsets
-from comms.cw.transcript import insert_gap_markers, reconcile_pending
+from comms.cw.transcript import (
+    apply_prosign_conventions,
+    insert_gap_markers,
+    reconcile_pending,
+    should_defer_trailing_s,
+)
 
 # ---------------------------------------------------------------------------
 # _ctc_decode_with_offsets() / _ctc_decode()
@@ -411,3 +416,76 @@ def test_no_frame_energy_supplied_keeps_prior_timing_only_behaviour() -> None:
         offsets, window_start_abs=0.0, last_char_abs=None, space_gap_s=1.0, newline_gap_s=3.0
     )
     assert expanded == [("F", 7.755), (" ", 8.955), ("9", 8.955)]
+
+
+# ---------------------------------------------------------------------------
+# apply_prosign_conventions()
+# ---------------------------------------------------------------------------
+
+
+def test_standalone_k_gets_a_newline_instead_of_its_trailing_space() -> None:
+    assert apply_prosign_conventions("CQ CQ K DE JA1XYZ", "") == "CQ CQ K\nDE JA1XYZ"
+
+
+def test_k_inside_a_longer_word_is_not_touched() -> None:
+    # "ASK BOB" — the K here belongs to "ASK", not a standalone prosign.
+    assert apply_prosign_conventions("ASK BOB", "") == "ASK BOB"
+
+
+def test_standalone_sk_becomes_va() -> None:
+    assert apply_prosign_conventions("73 SK", "") == "73 VA"
+
+
+def test_sk_inside_a_longer_word_is_not_touched() -> None:
+    assert apply_prosign_conventions("ASKING", "") == "ASKING"
+
+
+def test_standalone_k_at_the_very_end_of_delta_is_left_unconverted() -> None:
+    # No trailing space yet within this same delta -> can't confirm it's
+    # standalone, so it is left as a plain "K" (never revisited once this
+    # delta is written to confirmed_text).
+    assert apply_prosign_conventions("CQ CQ K", "") == "CQ CQ K"
+
+
+def test_seam_across_confirmed_and_delta_is_still_recognised() -> None:
+    # "K" is the first character of delta; confirmed_tail's last char
+    # (a space) provides the left-boundary context.
+    assert apply_prosign_conventions("K DE JA1XYZ", " ") == "K\nDE JA1XYZ"
+    # Conversely, a "K" that is actually glued onto the end of a word in
+    # confirmed_text (e.g. confirmed_text ends in "...WEA", delta starts
+    # with "K ") must not be converted.
+    assert apply_prosign_conventions("K BREAK", "A") == "K BREAK"
+
+
+def test_empty_delta_is_a_no_op() -> None:
+    assert apply_prosign_conventions("", "K") == ""
+
+
+# ---------------------------------------------------------------------------
+# should_defer_trailing_s()
+# ---------------------------------------------------------------------------
+
+
+def test_defers_standalone_trailing_s() -> None:
+    assert should_defer_trailing_s("73 S", "") is True
+
+
+def test_does_not_defer_s_that_is_part_of_a_longer_word() -> None:
+    assert should_defer_trailing_s("THIS", "") is False
+
+
+def test_does_not_defer_when_delta_does_not_end_in_s() -> None:
+    assert should_defer_trailing_s("73 SK", "") is False
+
+
+def test_does_not_defer_empty_delta() -> None:
+    assert should_defer_trailing_s("", "") is False
+
+
+def test_defers_trailing_s_using_confirmed_tail_for_boundary() -> None:
+    # delta is just "S" — its left-boundary context comes entirely from
+    # confirmed_tail (a space here, so it is standalone).
+    assert should_defer_trailing_s("S", " ") is True
+    # But if confirmed_text actually ends in a word character, this "S" is
+    # glued onto that word, not standalone.
+    assert should_defer_trailing_s("S", "A") is False

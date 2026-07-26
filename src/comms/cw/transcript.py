@@ -16,10 +16,19 @@ isolation.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
+from re import Match
 
 import numpy as np
 from numpy.typing import NDArray
+
+_WORD_CHAR_RE = re.compile(r"[A-Z0-9]")
+
+
+def _is_word_char(ch: str) -> bool:
+    return bool(ch) and bool(_WORD_CHAR_RE.match(ch))
+
 
 # A candidate gap is only trusted as real silence if at most this fraction
 # of the (edge-trimmed) frames spanning it show energy above the window's
@@ -189,3 +198,69 @@ def insert_gap_markers(
         prev_abs = abs_t
 
     return expanded, prev_abs
+
+
+def should_defer_trailing_s(delta: str, confirmed_tail: str) -> bool:
+    """True if *delta* ends with a standalone "S" that might be the first
+    half of an "SK" -> "VA" prosign (see apply_prosign_conventions) whose
+    "K" simply hasn't matured into a *delta* yet — i.e. is still sitting
+    in this decode's pending tail, one cycle away from confirming.
+
+    confirmed_text can never be retroactively changed once written (the
+    whole point of the confirmed/pending split), so a trailing "S" like
+    this must not be committed yet: if it were and the following "K"
+    matures next cycle, "S" would already be permanent and unable to
+    become "V". Callers should hold such an "S" back — move it into the
+    pending tail instead of confirmed_text — so the *next* cycle sees it
+    together with whatever follows and can convert it correctly.
+    """
+    if not delta or delta[-1] != "S":
+        return False
+    left = delta[-2] if len(delta) >= 2 else confirmed_tail[-1:]
+    return not _is_word_char(left)
+
+
+def apply_prosign_conventions(delta: str, confirmed_tail: str) -> str:
+    """Apply CW logging conventions to newly-confirmed *delta* text:
+
+    - a standalone "K" (the "over, go ahead" prosign) is followed by a
+      newline instead of a space, marking a turn boundary regardless of
+      how long the pause after it happens to be (unlike the timing-based
+      space/newline in insert_gap_markers, this is a content rule).
+    - a standalone "SK" (the classic end-of-contact prosign) is displayed
+      as "VA": sent as a fused prosign (no inter-letter gap), "SK"
+      (`...-.-`) and "VA" (`...-.-`) are morse-identical, and writing it
+      as "VA" is the conventional logging choice.
+
+    Only ever modifies *delta* — confirmed_tail (the single last character
+    already written to confirmed_text, or "" if nothing has been confirmed
+    yet) is used purely as lookbehind context so a standalone token
+    spanning the confirmed/delta seam is still recognised, without ever
+    touching already-confirmed text. A "K"/"SK" that isn't yet followed by
+    enough of *delta* to establish its right-hand boundary (e.g. "K" as
+    literally the last character with no character after it yet in this
+    same delta) is left unconverted; once written to confirmed_text it is
+    not revisited later. Callers should check should_defer_trailing_s()
+    on *delta* before it is ever committed to confirmed_text, so a
+    trailing "S" gets one more cycle to resolve into "SK" -> "VA" instead
+    of permanently locking in as a bare "S".
+    """
+    if not delta:
+        return delta
+
+    def sub_sk(m: Match[str]) -> str:
+        i, j = m.start(), m.end()
+        left = confirmed_tail[-1:] if i == 0 else delta[i - 1]
+        right = delta[j] if j < len(delta) else ""
+        if not _is_word_char(left) and not _is_word_char(right):
+            return "VA"
+        return m.group(0)
+
+    delta = re.sub(r"SK", sub_sk, delta)
+
+    def sub_k(m: Match[str]) -> str:
+        i = m.start()
+        left = confirmed_tail[-1:] if i == 0 else delta[i - 1]
+        return "K\n" if not _is_word_char(left) else m.group(0)
+
+    return re.sub(r"K ", sub_k, delta)

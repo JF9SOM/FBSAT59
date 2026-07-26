@@ -48,30 +48,33 @@ class TestGapMarkerAnchorStability:
 
         # 20s window, 5s pending margin -> cutoff_rel=15. Both characters
         # are past it (t > 15), so nothing should newly confirm this cycle.
+        # "A"/"B" (not "S"/"K") deliberately avoids apply_prosign_conventions'
+        # unrelated SK -> VA rule, which is not what this test is about.
         result = DecodeResult(
-            offsets=[("S", 16.0), ("K", 16.5)],
+            offsets=[("A", 16.0), ("B", 16.5)],
             window_duration=20.0,
             frame_energy=_EMPTY_ENERGY,
         )
         tab._reconcile_decode(result)
 
         assert tab._confirmed_text == ""
-        assert "SK" in tab._pending_text
+        assert "AB" in tab._pending_text
         assert tab._last_char_abs_time == 3.0  # untouched — not 16.5
 
     def test_anchor_advances_to_the_last_confirmed_character_only(self, qtbot: Any) -> None:
         tab = _make_tab(qtbot)
 
-        # "DE " confirms (t <= 15); "SK" stays pending (t > 15).
+        # "DE " confirms (t <= 15); "AB" stays pending (t > 15). "A"/"B"
+        # (not "S"/"K") deliberately avoids the unrelated SK -> VA rule.
         result = DecodeResult(
-            offsets=[("D", 8.0), ("E", 8.3), (" ", 8.4), ("S", 16.0), ("K", 16.5)],
+            offsets=[("D", 8.0), ("E", 8.3), (" ", 8.4), ("A", 16.0), ("B", 16.5)],
             window_duration=20.0,
             frame_energy=_EMPTY_ENERGY,
         )
         tab._reconcile_decode(result)
 
         assert "DE" in tab._confirmed_text
-        assert "SK" in tab._pending_text
+        assert "AB" in tab._pending_text
         assert tab._last_char_abs_time == 8.4  # last *confirmed* char, not 16.5
 
     def test_fully_silent_window_leaves_anchor_untouched(self, qtbot: Any) -> None:
@@ -87,3 +90,49 @@ class TestGapMarkerAnchorStability:
         assert tab._confirmed_text == "SK"
         assert tab._pending_text == ""
         assert tab._last_char_abs_time == 12.0
+
+
+class TestDeferredTrailingS:
+    """Regression coverage for the "SK" -> "VA" prosign display convention
+    when "S" and "K" mature into confirmed_text in *separate* decode
+    cycles (as opposed to landing in the same delta, already covered by
+    test_cw_decoder.py's apply_prosign_conventions tests)."""
+
+    def test_trailing_s_is_held_back_instead_of_confirmed_bare(self, qtbot: Any) -> None:
+        tab = _make_tab(qtbot)
+
+        # "73 S" all sit within the confirmable region (t <= 15 for a 20s
+        # window), but the trailing standalone "S" must be deferred.
+        result = DecodeResult(
+            offsets=[("7", 8.0), ("3", 8.3), (" ", 8.5), ("S", 9.0)],
+            window_duration=20.0,
+            frame_energy=_EMPTY_ENERGY,
+        )
+        tab._reconcile_decode(result)
+
+        assert tab._confirmed_text == "73 "
+        assert tab._pending_text == "S"
+
+    def test_deferred_s_resolves_to_va_once_k_arrives_next_cycle(self, qtbot: Any) -> None:
+        tab = _make_tab(qtbot)
+        tab._reconcile_decode(
+            DecodeResult(
+                offsets=[("7", 8.0), ("3", 8.3), (" ", 8.5), ("S", 9.0)],
+                window_duration=20.0,
+                frame_energy=_EMPTY_ENERGY,
+            )
+        )
+        tab._samples_dropped_total = int(5.0 * tab._rx_sample_rate)  # window advances 5s
+
+        # Fresh decode of the (now shifted) window re-recognises "S" and
+        # finally "K", both within the confirmable region.
+        tab._reconcile_decode(
+            DecodeResult(
+                offsets=[("S", 3.6), ("K", 4.1)],
+                window_duration=20.0,
+                frame_energy=_EMPTY_ENERGY,
+            )
+        )
+
+        assert tab._confirmed_text == "73 VA"
+        assert "S" not in tab._pending_text
