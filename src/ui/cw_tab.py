@@ -458,11 +458,24 @@ class CwTab(QWidget):
         cross-checked against the decode's own frame_energy so the model's
         uneven recognition timing isn't mistaken for real silence, instead
         of running unrelated messages together.
+
+        self._last_char_abs_time is deliberately only ever advanced to a
+        character that has just been *permanently confirmed* below, never
+        to one still sitting in the tentative pending tail. Greedy CTC's
+        per-character timing is not perfectly reproducible across
+        independent decode passes of overlapping windows — a still-pending
+        character's reported offset can shift (even go slightly backwards)
+        the next time the same audio is re-decoded, which would silently
+        "un-detect" an already-shown gap marker a cycle later (observed:
+        a correctly inserted newline vanished, leaving two unrelated
+        messages run together with no separator at all). Anchoring only
+        on confirmed content means the anchor never moves until a gap
+        decision is truly final.
         """
         offsets = result.offsets
         window_duration = result.window_duration
         window_start_abs = self._samples_dropped_total / self._rx_sample_rate
-        offsets, self._last_char_abs_time = insert_gap_markers(
+        offsets, _candidate_anchor = insert_gap_markers(
             offsets,
             window_start_abs,
             self._last_char_abs_time,
@@ -483,6 +496,10 @@ class CwTab(QWidget):
                 self._pending_text = ""
             return
 
+        cutoff_rel = window_duration - _PENDING_MARGIN_S
+        already_rel = self._confirmed_up_to_abs - window_start_abs
+        newly_confirmed_ts = [t for _ch, t in offsets if already_rel < t <= cutoff_rel]
+
         delta, new_pending, self._confirmed_up_to_abs = reconcile_pending(
             offsets,
             window_duration,
@@ -490,6 +507,9 @@ class CwTab(QWidget):
             self._confirmed_up_to_abs,
             _PENDING_MARGIN_S,
         )
+        if newly_confirmed_ts:
+            self._last_char_abs_time = window_start_abs + max(newly_confirmed_ts)
+
         delta = self._clean_join(self._confirmed_text, delta)
         new_pending = self._clean_join(self._confirmed_text + delta, new_pending)
 

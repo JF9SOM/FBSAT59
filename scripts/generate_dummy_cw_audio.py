@@ -3,14 +3,14 @@
 Communications > CW Decoder tab (src/ui/cw_tab.py) without waiting for a
 real satellite pass.
 
-The generated file contains two short, unrelated "transmissions" separated
-by a long silence (to exercise the newline-on-real-pause behaviour added in
-comms/cw/transcript.py's insert_gap_markers()), plus one deliberately
-long-but-not-that-long pause within the first transmission (to exercise the
-plain-space case).
+The generated file renders a short mock QSO (--repeat times) with a mix of
+gap lengths: a short mid-message pause (should render as a plain space), a
+medium pause (still a space), and long pauses between exchanges/repeats
+(should render as a newline — see comms/cw/transcript.py's
+insert_gap_markers()).
 
 Usage:
-    python scripts/generate_dummy_cw_audio.py [--wpm 20] [--out test_cw.wav]
+    python scripts/generate_dummy_cw_audio.py [--wpm 20] [--repeat 1] [--out test_cw.wav]
 
 Playback (Linux, PipeWire/PulseAudio):
     1. In Rig Settings > Sound Card, set the Input Device to
@@ -72,6 +72,9 @@ _MORSE: dict[str, str] = {
     "8": "---..",
     "9": "----.",
     "/": "-..-.",
+    "?": "..--..",
+    ".": ".-.-.-",
+    ",": "--..--",
 }
 
 
@@ -133,20 +136,36 @@ def synthesize_message(
     return np.concatenate(chunks)
 
 
+# One mock QSO exchange: (message, silence_after_s) pairs. Silences mix
+# short (<1s, no marker), medium (>=1s <3s -> space) and long (>=3s ->
+# newline) gaps to exercise all three cases in every repeat.
+_QSO_LINES: list[tuple[str, float]] = [
+    ("CQ CQ CQ DE JF9SOM JF9SOM K", 1.6),  # mid: plain space
+    ("DE JA1XYZ JA1XYZ K", 8.0),  # long: newline (end of exchange)
+    ("JA1XYZ DE JF9SOM UR 599 599 BT NAME IS TARO TARO BT QTH TOKYO TOKYO BT HW?", 0.3),
+    ("AR", 2.2),  # medium: plain space
+    ("JF9SOM DE JA1XYZ R R 599 599 TU 73 SK", 10.0),  # long: newline
+]
+
+
 def build_test_audio(
-    wpm: float, sample_rate: int, freq_hz: float, noise: float
+    wpm: float,
+    sample_rate: int,
+    freq_hz: float,
+    noise: float,
+    repeat: int = 1,
 ) -> NDArray[np.float32]:
-    """Two unrelated messages with a deliberate mid-message pause (should
-    render as a single space) and a long gap between messages (should
-    render as a newline)."""
-    parts: list[NDArray[np.float32]] = [
-        synthesize_message("CQ CQ", wpm, sample_rate, freq_hz),
-        _silence(1.6, sample_rate),  # >=1s, <3s -> expect a plain space
-        synthesize_message("DE JF9SOM K", wpm, sample_rate, freq_hz),
-        _silence(8.0, sample_rate),  # >=3s -> expect a newline
-        synthesize_message("TEST DE JF9SOM AR", wpm, sample_rate, freq_hz),
-        _silence(6.0, sample_rate),  # let the final tail settle/confirm
-    ]
+    """Render the mock QSO in _QSO_LINES *repeat* times, with an extra long
+    pause between repeats so each run is clearly its own transmission."""
+    parts: list[NDArray[np.float32]] = []
+    for rep in range(repeat):
+        for text, silence_after in _QSO_LINES:
+            parts.append(synthesize_message(text, wpm, sample_rate, freq_hz))
+            parts.append(_silence(silence_after, sample_rate))
+        if rep < repeat - 1:
+            parts.append(_silence(12.0, sample_rate))  # long: newline between repeats
+    parts.append(_silence(6.0, sample_rate))  # let the final tail settle/confirm
+
     audio = np.concatenate(parts)
 
     if noise > 0.0:
@@ -173,13 +192,19 @@ def main() -> None:
     parser.add_argument(
         "--noise", type=float, default=0.02, help="Background noise amplitude (0 to disable)"
     )
+    parser.add_argument(
+        "--repeat", type=int, default=1, help="Repeat the mock QSO this many times (longer file)"
+    )
     parser.add_argument("--out", type=Path, default=Path("test_cw.wav"))
     args = parser.parse_args()
 
-    audio = build_test_audio(args.wpm, args.sample_rate, args.freq, args.noise)
+    audio = build_test_audio(args.wpm, args.sample_rate, args.freq, args.noise, args.repeat)
     write_wav(args.out, audio, args.sample_rate)
     duration_s = len(audio) / args.sample_rate
-    print(f"Wrote {args.out} ({duration_s:.1f}s, {args.wpm:.0f} WPM, {args.freq:.0f} Hz)")
+    print(
+        f"Wrote {args.out} ({duration_s:.1f}s, {args.wpm:.0f} WPM, "
+        f"{args.freq:.0f} Hz, x{args.repeat} repeat)"
+    )
 
 
 if __name__ == "__main__":
