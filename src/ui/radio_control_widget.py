@@ -86,6 +86,7 @@ class RadioControlWidget(QWidget):
     ctcss_send_requested: Signal = Signal(float)
     ctcss_activate_requested: Signal = Signal()  # activation-tone button pressed
     cw_mode_requested: Signal = Signal(str, str)  # dl_cw_mode, ul_cw_mode
+    dmode_requested: Signal = Signal(str, str)  # dl_data_mode, ul_data_mode
     _rig1_connect_done: Signal = Signal(bool)  # internal: True = connected successfully
     # Emitted when a transponder whose description implies SSTV/SSDV or APRS
     # is selected — MainWindow uses these to auto-open the matching tab.
@@ -111,6 +112,12 @@ class RadioControlWidget(QWidget):
         self._orig_ul_mode: str = ""
         self._cw_dl_mode: str = ""
         self._cw_ul_mode: str = ""
+        # DATA (-D) toggle button state (GitHub Issue #16)
+        self._dmode_active: bool = False
+        self._dmode_orig_dl_mode: str = ""
+        self._dmode_orig_ul_mode: str = ""
+        self._dmode_dl_mode: str = ""
+        self._dmode_ul_mode: str = ""
         # SdrControlWidget instance, set via set_sdr_control() once MainWindow
         # constructs it — see that method's docstring for why this exists.
         self._sdr_control: Any = None
@@ -241,6 +248,19 @@ class RadioControlWidget(QWidget):
         self._cw_btn.setMaximumWidth(52)
         self._cw_btn.clicked.connect(self._on_cw_toggle)
         mode_ctcss_layout.addWidget(self._cw_btn)
+        self._dmode_btn = QPushButton()
+        self._dmode_btn.setToolTip(
+            _(
+                "Toggle Rig 1's TX VFO to DATA (-D) mode and back, without\n"
+                "disconnecting. Some radios (e.g. Icom) require a -D mode\n"
+                "(LSB-D/USB-D) to route computer audio to TX instead of the\n"
+                "mic for digital modes (FT4 etc.) over a linear (SSB) transponder."
+            )
+        )
+        self._dmode_btn.setVisible(False)
+        self._dmode_btn.setMaximumWidth(66)
+        self._dmode_btn.clicked.connect(self._on_dmode_toggle)
+        mode_ctcss_layout.addWidget(self._dmode_btn)
         mode_ctcss_layout.addSpacing(12)
         mode_ctcss_layout.addWidget(QLabel("CTCSS:"))
         self._ctcss_send_btn = QPushButton("—")
@@ -940,6 +960,50 @@ class RadioControlWidget(QWidget):
             cw_label = "CW-U" if self._cw_dl_mode == "CW" else "CW-L"
             self._cw_btn.setText(cw_label)
             self._cw_btn.setStyleSheet("")
+
+    def update_dmode_button(self, dl_mode: str, ul_mode: str) -> None:
+        """Show/configure the DATA (-D) toggle button when dl_mode is USB or LSB.
+
+        dl_mode / ul_mode are the already-computed transponder modes (invert
+        already applied by the caller), same convention as update_cw_button().
+        The button is hidden for FM, CW, and modes already ending in "-D".
+
+        Some radios (e.g. Icom) require a "-D" DATA mode (LSB-D/USB-D) to
+        route computer/USB audio to the TX output instead of the mic when
+        running a digital mode (FT4 etc.) over a linear SSB transponder
+        (GitHub Issue #16).
+        """
+        self._dmode_active = False
+        self._dmode_orig_dl_mode = dl_mode
+        self._dmode_orig_ul_mode = ul_mode
+
+        _D_MODE_MAP: dict[str, str] = {"USB": "USB-D", "SSB": "USB-D", "LSB": "LSB-D"}
+        d_dl = _D_MODE_MAP.get(dl_mode, "")
+        d_ul = _D_MODE_MAP.get(ul_mode, "")
+        if not d_dl:
+            self._dmode_btn.setVisible(False)
+            return
+
+        self._dmode_dl_mode = d_dl
+        self._dmode_ul_mode = d_ul if d_ul else d_dl
+        self._dmode_btn.setText(_("DATA"))
+        self._dmode_btn.setStyleSheet("")
+        self._dmode_btn.setVisible(True)
+
+    def _on_dmode_toggle(self) -> None:
+        """Toggle between DATA (-D) mode and the original transponder mode."""
+        if not self._dmode_active:
+            self.dmode_requested.emit(self._dmode_dl_mode, self._dmode_ul_mode)
+            self._dmode_active = True
+            # Show original mode name so user can revert with next click
+            revert_label = self._dmode_orig_dl_mode if self._dmode_orig_dl_mode else "SSB"
+            self._dmode_btn.setText(revert_label)
+            self._dmode_btn.setStyleSheet("font-weight: bold; color: #f39c12;")
+        else:
+            self.dmode_requested.emit(self._dmode_orig_dl_mode, self._dmode_orig_ul_mode)
+            self._dmode_active = False
+            self._dmode_btn.setText(_("DATA"))
+            self._dmode_btn.setStyleSheet("")
 
     def _on_ctcss_send(self) -> None:
         if self._current_ctcss_hz is not None:

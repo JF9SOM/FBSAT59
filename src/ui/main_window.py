@@ -683,7 +683,8 @@ class MainWindow(QMainWindow):
             self._on_meteor_transponder_selected
         )
         self._radio_control.cw_transponder_selected.connect(self._on_cw_transponder_selected)
-        self._radio_control.cw_mode_requested.connect(self._on_cw_mode_requested)
+        self._radio_control.cw_mode_requested.connect(self._apply_mode_toggle_to_rig)
+        self._radio_control.dmode_requested.connect(self._apply_mode_toggle_to_rig)
         self._restore_satellite_filter()
         # Load bundled community transmitters immediately (no network required).
         # This runs on the main thread so satellites are visible before any
@@ -4068,8 +4069,9 @@ class MainWindow(QMainWindow):
         ul_mode = _MODE_INVERT.get(mode, mode) if invert else mode
         ctcss_hz = float(self._ctcss_tone_hz or 0.0)
 
-        # Update CW toggle button visibility/label in Radio Control tab.
+        # Update CW / DATA toggle button visibility/label in Radio Control tab.
         self._radio_control.update_cw_button(dl_mode, ul_mode)
+        self._radio_control.update_dmode_button(dl_mode, ul_mode)
 
         # Notify NET rig of DL/UL frequencies (same-band detection) and
         # current mode (UL update throttle threshold).
@@ -5154,8 +5156,14 @@ class MainWindow(QMainWindow):
         self._sdr_tune_offset = new_offset
         self._sdr_control.sync_tune_offset(new_offset)
 
-    def _on_cw_mode_requested(self, dl_mode: str, ul_mode: str) -> None:
-        """Apply CW (or original) mode to both VFOs in a background thread.
+    def _apply_mode_toggle_to_rig(self, dl_mode: str, ul_mode: str) -> None:
+        """Apply an arbitrary DL/UL mode pair to Rig 1 in a background thread,
+        without disconnecting or re-selecting the transponder.
+
+        Shared by the Radio Control CW toggle button and the FT4 tab's DATA
+        (-D) mode toggle button — both need to flip a live SSB transponder to
+        a different mode pair and back without forcing a reconnect (satmode
+        rigs would otherwise disconnect via _apply_transponder_state_to_rig()).
 
         FTX-1F / FT-991 Direct mode use raw CAT commands (MD1/MD0 or SV swap)
         via apply_transponder_state() — the generic Hamlib send_mode_only() path
