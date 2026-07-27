@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QProgressBar,
     QPushButton,
+    QSlider,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -263,6 +264,7 @@ class Ft4Tab(QWidget):
         self._tx_slot_mode: str = "auto"  # "auto", "even", or "odd"
         self._sdr_connected: bool = False
         self._sdr_pipeline: Any | None = None
+        self._tx_level_pct: float = 100.0  # % of full-scale TX audio amplitude
 
         self._load_settings()
         self._ensure_table()
@@ -477,6 +479,25 @@ class Ft4Tab(QWidget):
 
         qso_row.addStretch()
 
+        qso_row.addWidget(QLabel(_("TX Level:")))
+        self._tx_level_slider = QSlider(Qt.Orientation.Horizontal)
+        self._tx_level_slider.setRange(1, 100)
+        self._tx_level_slider.setValue(int(self._tx_level_pct))
+        self._tx_level_slider.setFixedWidth(80)
+        self._tx_level_slider.setToolTip(
+            _(
+                "TX audio output level (% of full scale).\n"
+                "Lower this if the rig's ALC is triggered or the transmit\n"
+                "audio sounds distorted — FT4 audio is generated at full\n"
+                "scale and some rigs/sound cards need well under 100% here."
+            )
+        )
+        self._tx_level_label = QLabel(f"{int(self._tx_level_pct)}%")
+        self._tx_level_label.setFixedWidth(34)
+        self._tx_level_slider.valueChanged.connect(self._on_tx_level_changed)
+        qso_row.addWidget(self._tx_level_slider)
+        qso_row.addWidget(self._tx_level_label)
+
         self._clear_btn = QPushButton(_("Clear"))
         self._clear_btn.clicked.connect(self._on_clear_qso)
         qso_row.addWidget(self._clear_btn)
@@ -559,6 +580,7 @@ class Ft4Tab(QWidget):
             self._audio_freq = float(data.get("audio_freq_hz", _DEFAULT_AUDIO_FREQ))
             self._rx_source = data.get("rx_source", "soundcard")
             self._tx_slot_mode = data.get("tx_slot_mode", "auto")
+            self._tx_level_pct = float(data.get("tx_level_pct", 100.0))
         # Fall back to global callsign / grid from Set QTH if not yet set per-tab
         if not self._my_call:
             r = self._conn.execute(
@@ -589,6 +611,7 @@ class Ft4Tab(QWidget):
                 "audio_freq_hz": self._audio_freq,
                 "rx_source": self._rx_source,
                 "tx_slot_mode": self._tx_slot_mode,
+                "tx_level_pct": self._tx_level_pct,
             }
         )
         self._conn.execute(
@@ -912,6 +935,12 @@ class Ft4Tab(QWidget):
             self._status_label.setText(_("Invalid FT4 message: ") + msg)
             return
 
+        # TX audio is synthesized at full scale (±1.0); scale it down per the
+        # TX Level slider so operators can trim output level to avoid rig ALC
+        # action / distortion (GitHub Issue #16).
+        if self._tx_level_pct < 100.0:
+            audio = audio * np.float32(self._tx_level_pct / 100.0)
+
         self._display_own_tx(msg, audio_freq)
 
         rig = self._rig1()
@@ -1110,6 +1139,12 @@ class Ft4Tab(QWidget):
     @Slot(int)
     def _on_tx_slot_mode_changed(self, _idx: int) -> None:
         self._tx_slot_mode = self._tx_slot_combo.currentData()
+        self._save_settings()
+
+    @Slot(int)
+    def _on_tx_level_changed(self, value: int) -> None:
+        self._tx_level_pct = float(value)
+        self._tx_level_label.setText(f"{value}%")
         self._save_settings()
 
     def _resolve_tx_even(self, auto_is_even: bool) -> bool:

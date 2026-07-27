@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QSlider,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -109,6 +110,7 @@ class Q65Tab(QWidget):
         self._tx_slot: str = _TX_SLOT_EVEN
         self._tx_thread: threading.Thread | None = None
         self._out_device: int | None = None
+        self._tx_level_pct: float = 100.0  # % of full-scale TX audio amplitude
 
         # QSO manager (created after UI so callbacks can update labels)
         self._qso: Q65QsoManager | None = None
@@ -298,6 +300,25 @@ class Q65Tab(QWidget):
 
         qso_row.addStretch()
 
+        qso_row.addWidget(QLabel(_("TX Level:")))
+        self._tx_level_slider = QSlider(Qt.Orientation.Horizontal)
+        self._tx_level_slider.setRange(1, 100)
+        self._tx_level_slider.setValue(int(self._tx_level_pct))
+        self._tx_level_slider.setFixedWidth(80)
+        self._tx_level_slider.setToolTip(
+            _(
+                "TX audio output level (% of full scale).\n"
+                "Lower this if the rig's ALC is triggered or the transmit\n"
+                "audio sounds distorted — Q65 audio is generated at full\n"
+                "scale and some rigs/sound cards need well under 100% here."
+            )
+        )
+        self._tx_level_label = QLabel(f"{int(self._tx_level_pct)}%")
+        self._tx_level_label.setFixedWidth(34)
+        self._tx_level_slider.valueChanged.connect(self._on_tx_level_changed)
+        qso_row.addWidget(self._tx_level_slider)
+        qso_row.addWidget(self._tx_level_label)
+
         self._dx_call_label = QLabel(_("DX: —"))
         qso_row.addWidget(self._dx_call_label)
 
@@ -384,6 +405,9 @@ class Q65Tab(QWidget):
             idx = self._slot_combo.findText(d["tx_slot"])
             if idx >= 0:
                 self._slot_combo.setCurrentIndex(idx)
+        self._tx_level_pct = float(d.get("tx_level_pct", 100.0))
+        self._tx_level_slider.setValue(int(self._tx_level_pct))
+        self._tx_level_label.setText(f"{int(self._tx_level_pct)}%")
 
         # Load output device index from shared soundcard_settings
         row2 = self._conn.execute(
@@ -404,6 +428,7 @@ class Q65Tab(QWidget):
                 "mode": self._mode_combo.currentText(),
                 "rx_input": self._input_combo.currentText(),
                 "tx_slot": self._slot_combo.currentText(),
+                "tx_level_pct": self._tx_level_pct,
             }
         )
         self._conn.execute(
@@ -430,6 +455,11 @@ class Q65Tab(QWidget):
         self._last_period_start = 0.0
         with self._buffer_lock:
             self._audio_buffer.clear()
+
+    def _on_tx_level_changed(self, value: int) -> None:
+        self._tx_level_pct = float(value)
+        self._tx_level_label.setText(f"{value}%")
+        self._save_settings()
 
     # ------------------------------------------------------------------
     # Rig connection signals
@@ -759,6 +789,12 @@ class Q65Tab(QWidget):
 
     def _transmit_audio(self, audio: NDArray[np.float32], msg: str) -> None:
         """Play audio via sounddevice with PTT control."""
+        # TX audio is synthesized at full scale (±1.0); scale it down per the
+        # TX Level slider so operators can trim output level to avoid rig ALC
+        # action / distortion (GitHub Issue #16).
+        if self._tx_level_pct < 100.0:
+            audio = audio * np.float32(self._tx_level_pct / 100.0)
+
         mgr = get_audio_device_manager()
         if not mgr.acquire_output(_AUDIO_OWNER, self._out_device):
             other = mgr.output_owner(self._out_device) or _("another tab")
