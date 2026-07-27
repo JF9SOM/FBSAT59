@@ -35,22 +35,22 @@ msgstr ""
 "Settings > Sound Card を開き、入力デバイスを選び直してください。"
 
 #: src/comms/audio_device_manager.py:253
-#, fuzzy, python-brace-format
+#, python-brace-format
 msgid ""
 "Output device #{device} no longer exists (device list now has {count} "
 "entries) — reopen Rig Settings > Sound Card and re-select the output device."
 msgstr ""
-"入力デバイス #{device} が見つかりません（現在のデバイス数: {count}）— Rig "
-"Settings > Sound Card を開き、入力デバイスを選び直してください。"
+"出力デバイス #{device} が見つかりません（現在のデバイス数: {count}）— Rig "
+"Settings > Sound Card を開き、出力デバイスを選び直してください。"
 
 #: src/comms/audio_device_manager.py:263
-#, fuzzy, python-brace-format
+#, python-brace-format
 msgid ""
 "Output device #{device} ({name}) cannot play audio at {rate} Hz — reopen Rig "
 "Settings > Sound Card and re-select the output device."
 msgstr ""
-"入力デバイス #{device}（{name}）には入力チャンネルがありません — Rig "
-"Settings > Sound Card を開き、入力デバイスを選び直してください。"
+"出力デバイス #{device}（{name}）は {rate} Hz で再生できません — Rig "
+"Settings > Sound Card を開き、出力デバイスを選び直してください。"
 
 #: src/ui/ax100_digi_tab.py:117 src/ui/q65_tab.py:800 src/ui/ft4_tab.py:127
 msgid "another tab"
