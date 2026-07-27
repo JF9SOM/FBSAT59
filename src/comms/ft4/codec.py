@@ -230,10 +230,33 @@ def free_ft8lib(lib: ctypes.CDLL) -> None:
     for the lifetime of the process unless FreeLibrary is called
     explicitly. Only Windows needs this: POSIX filesystems allow replacing
     a file that a running process still has mapped.
+
+    Deliberately skipped when the resolved library lives inside the
+    PyInstaller bundle (_MEIPASS): a user's diagnostic log showed this
+    specific case (lib is a PyInstallerCDLL wrapping a bundled dependency)
+    never returning from FreeLibrary() at all -- PyInstaller's own loader
+    hook maintains internal bookkeeping for bundled dependencies, and a raw
+    FreeLibrary() behind its back appears to deadlock with that (classic
+    Windows DLL-loader-lock territory). There is also no reason to ever
+    unlock the bundled copy: nothing in this app ever tries to overwrite
+    it at runtime -- only the separate user-install-directory copy needs
+    to stay unlocked so a reinstall can replace it.
     """
-    if sys.platform == "win32":
-        with contextlib.suppress(OSError, AttributeError):
-            ctypes.windll.kernel32.FreeLibrary(lib._handle)  # type: ignore[attr-defined]
+    if sys.platform != "win32":
+        return
+    lib_path = getattr(lib, "_name", "") or ""
+    if getattr(sys, "frozen", False) and lib_path:
+        meipass = getattr(sys, "_MEIPASS", "")
+        with contextlib.suppress(OSError, ValueError):
+            if meipass and Path(lib_path).resolve().is_relative_to(Path(meipass).resolve()):
+                logger.info(
+                    "[ft8lib load diag] free_ft8lib: skipping FreeLibrary for "
+                    "bundled copy %s (see docstring)",
+                    lib_path,
+                )
+                return
+    with contextlib.suppress(OSError, AttributeError):
+        ctypes.windll.kernel32.FreeLibrary(lib._handle)
 
 
 # ---------------------------------------------------------------------------
