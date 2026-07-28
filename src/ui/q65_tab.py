@@ -60,6 +60,9 @@ _COL_FREQ = 3
 _COL_MSG = 4
 _COL_COUNT = 5
 _AUDIO_OWNER = "Q65"
+# ~20ms @ 12000 Hz — bounds the worst-case delay before a TX Level slider
+# change takes effect during an active transmission (GitHub Issue #16).
+_TX_BLOCK_SIZE = 240
 
 _Q65_SETTINGS_KEY = "q65_settings"
 
@@ -788,13 +791,16 @@ class Q65Tab(QWidget):
         self._tx_thread.start()
 
     def _transmit_audio(self, audio: NDArray[np.float32], msg: str) -> None:
-        """Play audio via sounddevice with PTT control."""
-        # TX audio is synthesized at full scale (±1.0); scale it down per the
-        # TX Level slider so operators can trim output level to avoid rig ALC
-        # action / distortion (GitHub Issue #16).
-        if self._tx_level_pct < 100.0:
-            audio = audio * np.float32(self._tx_level_pct / 100.0)
+        """Play audio via sounddevice with PTT control.
 
+        Streams via a sounddevice.OutputStream callback (rather than a
+        single sd.play() call) so the TX Level gain can be re-read every
+        block and take effect live during an active transmission, instead
+        of only on the next one (GitHub Issue #16). The gain is linearly
+        ramped across each block from the previous block's gain to the
+        freshly-read value, so a mid-transmission slider move never
+        produces an abrupt amplitude step (click) at a block boundary.
+        """
         mgr = get_audio_device_manager()
         if not mgr.acquire_output(_AUDIO_OWNER, self._out_device):
             other = mgr.output_owner(self._out_device) or _("another tab")
@@ -813,9 +819,40 @@ class Q65Tab(QWidget):
         try:
             import sounddevice as sd
 
-            sd.play(audio, samplerate=SAMPLE_RATE, device=self._out_device, blocking=False)
-            mgr.pin_active_output(_AUDIO_OWNER)
-            sd.wait()
+            n = len(audio)
+            idx = 0
+            last_gain = self._tx_level_pct / 100.0
+            done = threading.Event()
+
+            def _callback(
+                outdata: NDArray[np.float32], frames: int, _time: Any, _status: Any
+            ) -> None:
+                nonlocal idx, last_gain
+                remaining = n - idx
+                take = min(frames, remaining)
+                if take > 0:
+                    gain_now = self._tx_level_pct / 100.0
+                    ramp = np.linspace(last_gain, gain_now, take, dtype=np.float32)
+                    outdata[:take, 0] = audio[idx : idx + take] * ramp
+                    last_gain = gain_now
+                    idx += take
+                if take < frames:
+                    outdata[take:, 0] = 0.0
+                if remaining <= frames:
+                    raise sd.CallbackStop()
+
+            stream = sd.OutputStream(
+                samplerate=SAMPLE_RATE,
+                device=self._out_device,
+                channels=1,
+                dtype="float32",
+                blocksize=_TX_BLOCK_SIZE,
+                callback=_callback,
+                finished_callback=done.set,
+            )
+            with stream:
+                mgr.pin_active_output(_AUDIO_OWNER)
+                done.wait()
         except Exception as exc:
             self._status_label.setText(f"Audio error: {exc}")
         finally:

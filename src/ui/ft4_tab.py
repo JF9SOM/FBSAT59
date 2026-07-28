@@ -21,6 +21,7 @@ import re
 import sqlite3
 import threading
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -89,6 +90,9 @@ def _parse_cq_call_grid(words: list[str]) -> tuple[str, str]:
 _FT4_SETTINGS_KEY = "ft4_settings"
 _DEFAULT_AUDIO_FREQ = 1000.0  # Hz — base tone within SSB passband
 _AUDIO_OWNER = "FT4"
+# ~20ms @ 12000 Hz — bounds the worst-case delay before a TX Level slider
+# change takes effect during an active transmission (GitHub Issue #16).
+_TX_BLOCK_SIZE = 240
 
 
 # ---------------------------------------------------------------------------
@@ -99,8 +103,17 @@ _AUDIO_OWNER = "FT4"
 class _TxWorker(QObject):
     """Plays FT4 audio through sounddevice and controls PTT.
 
-    Lives in a plain Python thread (not QThread) because sounddevice.play()
-    is blocking and we do not need Qt event loop inside the worker.
+    Streams audio via a sounddevice.OutputStream callback (rather than a
+    single sd.play() call) so the TX Level gain can be re-read every block
+    and take effect live during an active transmission, instead of only on
+    the next transmission (GitHub Issue #16). The gain is linearly ramped
+    across each block from the previous block's gain to the freshly-read
+    value, so a mid-transmission slider move never produces an abrupt
+    amplitude step (click) at a block boundary.
+
+    Lives in a plain Python thread (not QThread) because we block on a
+    threading.Event waiting for the stream to finish and do not need a Qt
+    event loop inside the worker.
     """
 
     finished: Signal = Signal()
@@ -111,12 +124,14 @@ class _TxWorker(QObject):
         audio: NDArray[np.float32],
         out_device: int | None,
         rig: Any,
+        get_gain: Callable[[], float],
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self._audio = audio
         self._out_device = out_device
         self._rig = rig
+        self._get_gain = get_gain
 
     def run(self) -> None:
         """Emits exactly one of `error` or `finished` — never both, so a
@@ -138,9 +153,41 @@ class _TxWorker(QObject):
                     return
                 time.sleep(0.15)  # PTT lead time
 
-            sd.play(self._audio, samplerate=SAMPLE_RATE, device=self._out_device, blocking=False)
-            mgr.pin_active_output(_AUDIO_OWNER)
-            sd.wait()
+            audio = self._audio
+            n = len(audio)
+            idx = 0
+            last_gain = float(self._get_gain())
+            done = threading.Event()
+
+            def _callback(
+                outdata: NDArray[np.float32], frames: int, _time: Any, _status: Any
+            ) -> None:
+                nonlocal idx, last_gain
+                remaining = n - idx
+                take = min(frames, remaining)
+                if take > 0:
+                    gain_now = float(self._get_gain())
+                    ramp = np.linspace(last_gain, gain_now, take, dtype=np.float32)
+                    outdata[:take, 0] = audio[idx : idx + take] * ramp
+                    last_gain = gain_now
+                    idx += take
+                if take < frames:
+                    outdata[take:, 0] = 0.0
+                if remaining <= frames:
+                    raise sd.CallbackStop()
+
+            stream = sd.OutputStream(
+                samplerate=SAMPLE_RATE,
+                device=self._out_device,
+                channels=1,
+                dtype="float32",
+                blocksize=_TX_BLOCK_SIZE,
+                callback=_callback,
+                finished_callback=done.set,
+            )
+            with stream:
+                mgr.pin_active_output(_AUDIO_OWNER)
+                done.wait()
 
             if self._rig is not None:
                 time.sleep(0.10)  # PTT tail time
@@ -935,16 +982,16 @@ class Ft4Tab(QWidget):
             self._status_label.setText(_("Invalid FT4 message: ") + msg)
             return
 
-        # TX audio is synthesized at full scale (±1.0); scale it down per the
-        # TX Level slider so operators can trim output level to avoid rig ALC
-        # action / distortion (GitHub Issue #16).
-        if self._tx_level_pct < 100.0:
-            audio = audio * np.float32(self._tx_level_pct / 100.0)
-
         self._display_own_tx(msg, audio_freq)
 
+        # TX audio is synthesized at full scale (±1.0); _TxWorker applies the
+        # TX Level slider's gain live, block by block, so operators can trim
+        # output level (and hear the effect immediately) even while actively
+        # transmitting, to avoid rig ALC action / distortion (Issue #16).
         rig = self._rig1()
-        worker = _TxWorker(audio, self._out_device, rig)
+        worker = _TxWorker(
+            audio, self._out_device, rig, get_gain=lambda: self._tx_level_pct / 100.0
+        )
         worker.finished.connect(self._on_tx_finished)
         worker.error.connect(self._on_tx_error)
 
