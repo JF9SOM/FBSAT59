@@ -5160,15 +5160,26 @@ class MainWindow(QMainWindow):
         """Apply an arbitrary DL/UL mode pair to Rig 1 in a background thread,
         without disconnecting or re-selecting the transponder.
 
-        Shared by the Radio Control CW toggle button and the FT4 tab's DATA
-        (-D) mode toggle button — both need to flip a live SSB transponder to
-        a different mode pair and back without forcing a reconnect (satmode
+        Shared by the Radio Control CW toggle button and the DATA (-D) mode
+        toggle button — both need to flip a live SSB transponder to a
+        different mode pair and back without forcing a reconnect (satmode
         rigs would otherwise disconnect via _apply_transponder_state_to_rig()).
 
-        FTX-1F / FT-991 Direct mode use raw CAT commands (MD1/MD0 or SV swap)
-        via apply_transponder_state() — the generic Hamlib send_mode_only() path
-        (VFO-B set_vfo + set_mode) does not correctly set VFO-B mode on those
-        rigs.  All other rigs (NET, satmode) use send_mode_only().
+        All HamlibDirectController rigs (satmode IC-9100/9700 etc., FTX-1F,
+        FT-991, and generic Direct rigs alike) go through
+        apply_transponder_state() — the exact same method transponder
+        selection itself uses (main_window._apply_transponder_state_to_rig()
+        calls it via a background thread too), so this toggle can never
+        behave differently from a normal transponder selection for a given
+        rig. It already dispatches internally to the raw-CAT path for
+        FTX-1F/FT-991, to _apply_mode_and_ctcss_hamlib() for satmode rigs,
+        and to the generic Hamlib send_mode_only()+set_ctcss_tone() fallback
+        otherwise (GitHub Issue #16 — previously this went through
+        send_mode_only() directly for satmode Direct rigs, a much thinner
+        path with no VFO-restore step and no error surfacing).
+
+        NET-mode rigs (HamlibNetController) are unchanged: send_mode_only()
+        already works there per confirmed FTX-1 NET testing.
         """
         rig = self._rig_controller
         if rig is None:
@@ -5176,8 +5187,7 @@ class MainWindow(QMainWindow):
 
         from rig.controller import HamlibDirectController
 
-        if isinstance(rig, HamlibDirectController) and rig._model_id in _RAW_CAT_MODEL_IDS:
-            # Route through the same raw CAT path as transponder selection.
+        if isinstance(rig, HamlibDirectController):
             # Preserve the current CTCSS tone when reverting to the original
             # mode; suppress it when switching to CW (CW has no CTCSS).
             ctcss_hz = 0.0 if dl_mode in ("CW", "CW-R") else float(self._ctcss_tone_hz or 0.0)

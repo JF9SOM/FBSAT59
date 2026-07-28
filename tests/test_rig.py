@@ -620,6 +620,11 @@ class TestSatmodeHamlibReturnCodeChecks:
             "set_vfo",
         ):
             getattr(mock_rig_inst, name).return_value = None
+        # get_mode() is a real (mode, width) getter, unlike the setters above
+        # (see class docstring) — used by the DIAG mode read-back added for
+        # GitHub Issue #16.  The exact value doesn't matter to these tests
+        # (only that it unpacks like the real Python binding does).
+        mock_rig_inst.get_mode.return_value = (mock_hamlib.RIG_MODE_USB, 0)
         mock_rig_inst.error_status = error_status
         return mock_hamlib
 

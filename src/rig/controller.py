@@ -1724,6 +1724,21 @@ class HamlibDirectController(RigController):
         enable = ctcss_hz > 0
         tone_deci = int(round(abs(ctcss_hz) * 10)) if enable else 0
 
+        # TEMP_DATA_MODE_DIAG_LOG (GitHub Issue #16 — remove once root-caused):
+        # confirm the requested mode strings resolved to the Hamlib constants
+        # we expect (e.g. "-D" modes -> RIG_MODE_PKTUSB/PKTLSB) before any CI-V
+        # is sent. _open_rig_with_retry() below already activates Hamlib's own
+        # raw CI-V trace to hamlib_trace.log, so this app-level log line is
+        # only for correlating that trace with which call it belongs to.
+        logger.info(
+            "RigDirect._apply_mode_and_ctcss_hamlib: DIAG requested dl_mode=%s(hamlib=%d) "
+            "ul_mode=%s(hamlib=%d)",
+            dl_mode,
+            dl_hamlib,
+            ul_mode,
+            ul_hamlib,
+        )
+
         def _make_rig() -> Any:
             r = _H.Rig(self._model_id)
             r.set_conf("rig_pathname", self._port)
@@ -1778,9 +1793,25 @@ class HamlibDirectController(RigController):
                     rig2.set_mode(dl_hamlib, 0, vfo_a)
                     _check_rig_ok(rig2, "same-band: set_mode(VFOA/DL)")
                     time.sleep(0.2)
+                    rb_dl_mode, rb_dl_pb = rig2.get_mode(vfo_a)
+                    logger.info(
+                        "RigDirect._apply_mode_and_ctcss_hamlib: DIAG readback "
+                        "VFOA/DL mode=%d(requested %d) pb=%d",
+                        rb_dl_mode,
+                        dl_hamlib,
+                        rb_dl_pb,
+                    )
                     rig2.set_mode(ul_hamlib, 0, vfo_b)
                     _check_rig_ok(rig2, "same-band: set_mode(VFOB/UL)")
                     time.sleep(0.2)
+                    rb_ul_mode, rb_ul_pb = rig2.get_mode(vfo_b)
+                    logger.info(
+                        "RigDirect._apply_mode_and_ctcss_hamlib: DIAG readback "
+                        "VFOB/UL mode=%d(requested %d) pb=%d",
+                        rb_ul_mode,
+                        ul_hamlib,
+                        rb_ul_pb,
+                    )
                     rig2.set_vfo(vfo_a)  # restore display to DL VFO
                     logger.info(
                         "RigDirect._apply_mode_and_ctcss_hamlib: same-band dl=%s ul=%s no-CTCSS OK",
@@ -1841,9 +1872,25 @@ class HamlibDirectController(RigController):
                     rig2.set_mode(dl_hamlib, 0, vfo_main)
                     _check_rig_ok(rig2, "cross-band: set_mode(MAIN/DL)")
                     time.sleep(0.2)
+                    rb_dl_mode, rb_dl_pb = rig2.get_mode(vfo_main)
+                    logger.info(
+                        "RigDirect._apply_mode_and_ctcss_hamlib: DIAG readback "
+                        "MAIN/DL mode=%d(requested %d) pb=%d",
+                        rb_dl_mode,
+                        dl_hamlib,
+                        rb_dl_pb,
+                    )
                     rig2.set_mode(ul_hamlib, 0, vfo_sub)
                     _check_rig_ok(rig2, "cross-band: set_mode(SUB/UL)")
                     time.sleep(0.2)
+                    rb_ul_mode, rb_ul_pb = rig2.get_mode(vfo_sub)
+                    logger.info(
+                        "RigDirect._apply_mode_and_ctcss_hamlib: DIAG readback "
+                        "SUB/UL mode=%d(requested %d) pb=%d",
+                        rb_ul_mode,
+                        ul_hamlib,
+                        rb_ul_pb,
+                    )
                     # CTCSS on Sub (TX/UL)
                     rig2.set_vfo(vfo_sub)
                     _check_rig_ok(rig2, "cross-band: set_vfo(SUB) for CTCSS")
