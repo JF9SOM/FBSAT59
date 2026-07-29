@@ -1891,21 +1891,19 @@ class HamlibDirectController(RigController):
                         ul_hamlib,
                         rb_ul_pb,
                     )
-                    # DATA (-D) flag on Sub via raw CI-V (GitHub Issue #16):
-                    # confirmed live against an IC-9700 that Hamlib's own
-                    # set_mode() sets the base sideband correctly on Sub
-                    # (readback above matches) but the is_data_mode toggle
-                    # itself does not stick -- icom_set_mode() explicitly
-                    # forces -RIG_ENAVAIL for its fast (0x26) data-mode path
-                    # whenever force_vfo_swap is set (which it always is for
-                    # RIG_VFO_SUB on Main/Sub+A/B rigs; see icom.c), falling
-                    # back to a legacy C_CTL_MEM/S_MEM_DATA_MODE transaction
-                    # that this specific rig does not honor on Sub. Send that
-                    # same "1A 06" CI-V command directly instead, bypassing
-                    # Hamlib's own dispatch entirely. Main is unaffected
-                    # (not Sub-targeted, so never hits force_vfo_swap) and is
-                    # already confirmed correct by the MAIN/DL readback above.
-                    self._send_data_mode_civ(rig2, ul_mode.endswith("-D"))
+                    # NOTE (GitHub Issue #16): the is_data_mode flag on Sub
+                    # does not stick via Hamlib's set_mode() above (confirmed
+                    # live -- readback shows base sideband correct, DATA flag
+                    # not applied; root cause traced to icom_set_mode()
+                    # forcing -RIG_ENAVAIL for its fast data-mode path
+                    # whenever force_vfo_swap is set, which it always is for
+                    # RIG_VFO_SUB on Main/Sub+A/B rigs). A raw-CI-V workaround
+                    # via rig.send_raw() was tried here and reverted: it
+                    # crashed the process live (stack smashing in Hamlib's
+                    # Python SWIG binding -- the same class of risk this
+                    # project's CLAUDE.md already flagged send_raw() for).
+                    # Do not re-add a send_raw()-based fix without a safer
+                    # mechanism confirmed not to crash on real hardware.
                     # CTCSS on Sub (TX/UL)
                     rig2.set_vfo(vfo_sub)
                     _check_rig_ok(rig2, "cross-band: set_vfo(SUB) for CTCSS")
@@ -2338,47 +2336,6 @@ class HamlibDirectController(RigController):
             )
         except Exception as exc:
             logger.error("RigDirect._apply_ctcss_civ_via_send_raw: %s", exc)
-
-    def _send_data_mode_civ(self, rig: Any, enable: bool) -> None:
-        """Toggle the Sub receiver's DATA (-D) mode flag via raw CI-V.
-
-        Sends the Icom "1A 06" (C_CTL_MEM/S_MEM_DATA_MODE) command directly
-        via rig.send_raw() -- the same approach already proven for CTCSS on
-        Sub (_apply_ctcss_civ_via_send_raw()) -- because Hamlib's own
-        set_mode()-driven data-mode toggle does not stick on Sub for
-        Main/Sub+A/B rigs (confirmed live against an IC-9700 selecting
-        RS-44's inverting FT4 transponder: GitHub Issue #16). Takes `rig`
-        as a parameter (not self._rig) so it also works with the short-lived
-        rig2 session _apply_mode_and_ctcss_hamlib() opens for the freq
-        preset/mode/CTCSS sequence.
-
-        Only 1 data byte (the on/off flag) is sent, omitting the optional
-        filter byte some Icom models also accept in this command -- we only
-        want to flip the data-mode flag without touching filter selection,
-        and the 1-byte form is documented to do exactly that.
-        """
-        civ = self._civ_addr_int()
-        ctrl = 0xE0
-
-        def frame(*payload: int) -> bytes:
-            return bytes([0xFE, 0xFE, civ, ctrl, *payload, 0xFD])
-
-        data_byte = 0x01 if enable else 0x00
-        try:
-            import time as _time
-
-            rig.send_raw(frame(0x07, 0xD1))  # Select Sub
-            _time.sleep(0.15)
-            rig.send_raw(frame(0x1A, 0x06, data_byte))  # DATA mode ON/OFF
-            _time.sleep(0.15)
-            rig.send_raw(frame(0x07, 0xD0))  # Select Main
-            logger.info(
-                "RigDirect: send_raw DATA-mode enable=%s civ=0x%02X applied",
-                enable,
-                civ,
-            )
-        except Exception as exc:
-            logger.error("RigDirect._send_data_mode_civ: %s", exc)
 
     def _satmode_exit(self) -> None:
         """Disable satmode and enable normal VFO-A/B split (same-band duplex).
