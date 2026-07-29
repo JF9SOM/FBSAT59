@@ -1063,6 +1063,9 @@ msgid ""
 "The library file is in use — close the FT4 tab (if open) and restart "
 "FBSAT59, then try installing again."
 msgstr ""
+"アクセス拒否: {path}\n"
+"ライブラリファイルが使用中です — FT4タブを閉じ（開いている場合）、"
+"FBSAT59を再起動してから再度インストールをお試しください。"
 
 #: src/ui/ft8lib_dialog.py:265
 msgid "ft8lib Installation"
