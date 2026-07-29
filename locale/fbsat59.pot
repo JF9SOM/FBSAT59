@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-27 20:44+0900\n"
+"POT-Creation-Date: 2026-07-29 09:38+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -45,11 +45,11 @@ msgid ""
 "Settings > Sound Card and re-select the output device."
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:117 src/ui/q65_tab.py:800 src/ui/ft4_tab.py:127
+#: src/ui/ax100_digi_tab.py:117 src/ui/q65_tab.py:806 src/ui/ft4_tab.py:142
 msgid "another tab"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:118 src/ui/q65_tab.py:802 src/ui/ft4_tab.py:128
+#: src/ui/ax100_digi_tab.py:118 src/ui/q65_tab.py:808 src/ui/ft4_tab.py:143
 #, python-brace-format
 msgid "Sound card output is in use by {other}"
 msgstr ""
@@ -58,7 +58,7 @@ msgstr ""
 msgid "Rig 1 not connected — cannot key PTT"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:127 src/ui/ft4_tab.py:137
+#: src/ui/ax100_digi_tab.py:127 src/ui/ft4_tab.py:152
 msgid "PTT command failed — check Rig 1 connection"
 msgstr ""
 
@@ -98,7 +98,7 @@ msgstr ""
 msgid "Off"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:405 src/ui/rig_dialog.py:1662 src/ui/ft4_tab.py:831
+#: src/ui/ax100_digi_tab.py:405 src/ui/rig_dialog.py:1662 src/ui/ft4_tab.py:878
 #, python-brace-format
 msgid "{db:.0f} dBFS"
 msgstr ""
@@ -119,7 +119,7 @@ msgstr ""
 msgid "Input/Output:"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:439 src/ui/q65_tab.py:201 src/ui/ft4_tab.py:357
+#: src/ui/ax100_digi_tab.py:439 src/ui/q65_tab.py:204 src/ui/ft4_tab.py:404
 msgid "Rig Soundcard"
 msgstr ""
 
@@ -148,7 +148,7 @@ msgstr ""
 msgid "Export CSV…"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:478 src/ui/q65_tab.py:330 src/ui/ft4_tab.py:510
+#: src/ui/ax100_digi_tab.py:478 src/ui/q65_tab.py:333 src/ui/ft4_tab.py:557
 #: src/ui/aprs_tab.py:343
 msgid "Export ADIF…"
 msgstr ""
@@ -171,7 +171,7 @@ msgid "Sat"
 msgstr ""
 
 #: src/ui/ax100_digi_tab.py:489 src/ui/ax100_digi_tab.py:821
-#: src/ui/q65_tab.py:345 src/ui/ft4_tab.py:525
+#: src/ui/q65_tab.py:348 src/ui/ft4_tab.py:572
 msgid "Message"
 msgstr ""
 
@@ -243,11 +243,11 @@ msgid "Time (Local)"
 msgstr ""
 
 #: src/ui/ax100_digi_tab.py:628 src/ui/radio_control_widget.py:1064
-#: src/ui/ft4_tab.py:789 src/ui/cw_tab.py:373
+#: src/ui/ft4_tab.py:836 src/ui/cw_tab.py:373
 msgid "Sound Card not configured — open Rig Settings > Sound Card"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:634 src/ui/sstv_tab.py:422 src/ui/ft4_tab.py:785
+#: src/ui/ax100_digi_tab.py:634 src/ui/sstv_tab.py:422 src/ui/ft4_tab.py:832
 #: src/ui/cw_tab.py:369
 msgid "sounddevice not installed — pip install sounddevice"
 msgstr ""
@@ -293,7 +293,7 @@ msgstr ""
 msgid "Rig 1 not connected"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:787 src/ui/ft4_tab.py:955
+#: src/ui/ax100_digi_tab.py:787 src/ui/ft4_tab.py:1002
 msgid "TX: "
 msgstr ""
 
@@ -301,7 +301,7 @@ msgstr ""
 msgid "TX done"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:799 src/ui/ft4_tab.py:965
+#: src/ui/ax100_digi_tab.py:799 src/ui/ft4_tab.py:1012
 msgid "TX error: "
 msgstr ""
 
@@ -389,7 +389,7 @@ msgstr ""
 
 #: src/ui/transmitter_dialog.py:134 src/ui/sdr_control_widget.py:573
 #: src/ui/radio_control_widget.py:278 src/ui/sstv_tab.py:165
-#: src/ui/q65_tab.py:186 src/ui/telemetry_tab.py:154
+#: src/ui/q65_tab.py:189 src/ui/telemetry_tab.py:154
 msgid "Mode:"
 msgstr ""
 
@@ -519,16 +519,16 @@ msgstr ""
 msgid "(preview unavailable)"
 msgstr ""
 
-#: src/ui/settings_dialog.py:391 src/ui/ft8lib_dialog.py:144
+#: src/ui/settings_dialog.py:391 src/ui/ft8lib_dialog.py:151
 #: src/ui/direwolf_dialog.py:140 src/ui/q65lib_dialog.py:132
-#: src/ui/ft4wsjt_dialog.py:128
+#: src/ui/ft4wsjt_dialog.py:140
 msgid "Downloading…"
 msgstr ""
 
 #: src/ui/settings_dialog.py:408 src/ui/meteor_tab.py:526
-#: src/ui/ft8lib_dialog.py:416 src/ui/direwolf_dialog.py:362
+#: src/ui/ft8lib_dialog.py:442 src/ui/direwolf_dialog.py:362
 #: src/ui/q65lib_dialog.py:327 src/ui/cw_model_dialog.py:232
-#: src/ui/ft4wsjt_dialog.py:320
+#: src/ui/ft4wsjt_dialog.py:361
 msgid "Error: "
 msgstr ""
 
@@ -695,7 +695,7 @@ msgstr ""
 msgid "Power (dBFS)"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:363 src/ui/q65_tab.py:199 src/ui/ft4_tab.py:355
+#: src/ui/sdr_control_widget.py:363 src/ui/q65_tab.py:202 src/ui/ft4_tab.py:402
 msgid "RX:"
 msgstr ""
 
@@ -826,8 +826,8 @@ msgstr ""
 msgid "SatDump Log"
 msgstr ""
 
-#: src/ui/meteor_tab.py:128 src/ui/q65_tab.py:360 src/ui/ft4_tab.py:501
-#: src/ui/ft4_tab.py:540 src/ui/cw_tab.py:182
+#: src/ui/meteor_tab.py:128 src/ui/q65_tab.py:363 src/ui/ft4_tab.py:548
+#: src/ui/ft4_tab.py:587 src/ui/cw_tab.py:182
 msgid "Clear"
 msgstr ""
 
@@ -950,46 +950,46 @@ msgstr ""
 msgid "Image received: "
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:57
+#: src/ui/ft8lib_dialog.py:59
 msgid "(version symbol not available)"
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:66 src/ui/direwolf_dialog.py:65
-#: src/ui/q65lib_dialog.py:58 src/ui/ft4wsjt_dialog.py:51
+#: src/ui/ft8lib_dialog.py:74 src/ui/direwolf_dialog.py:65
+#: src/ui/q65lib_dialog.py:58 src/ui/ft4wsjt_dialog.py:64
 msgid "User-installed"
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:72 src/ui/direwolf_dialog.py:73
-#: src/ui/q65lib_dialog.py:64 src/ui/ft4wsjt_dialog.py:57
+#: src/ui/ft8lib_dialog.py:79 src/ui/direwolf_dialog.py:73
+#: src/ui/q65lib_dialog.py:64 src/ui/ft4wsjt_dialog.py:69
 msgid "Bundled"
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:75
+#: src/ui/ft8lib_dialog.py:82
 msgid "System"
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:104 src/ui/direwolf_dialog.py:102
-#: src/ui/q65lib_dialog.py:92 src/ui/ft4wsjt_dialog.py:88
+#: src/ui/ft8lib_dialog.py:111 src/ui/direwolf_dialog.py:102
+#: src/ui/q65lib_dialog.py:92 src/ui/ft4wsjt_dialog.py:100
 msgid "Checking latest release…"
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:128 src/ui/direwolf_dialog.py:124
-#: src/ui/q65lib_dialog.py:116 src/ui/ft4wsjt_dialog.py:112
+#: src/ui/ft8lib_dialog.py:135 src/ui/direwolf_dialog.py:124
+#: src/ui/q65lib_dialog.py:116 src/ui/ft4wsjt_dialog.py:124
 msgid "Unsupported platform"
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:138
+#: src/ui/ft8lib_dialog.py:145
 msgid ""
 "No ft8lib package found for this platform in the release.\n"
 "Please build ft8_lib manually — see the instructions above."
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:162 src/ui/direwolf_dialog.py:157
-#: src/ui/q65lib_dialog.py:147 src/ui/ft4wsjt_dialog.py:143
+#: src/ui/ft8lib_dialog.py:169 src/ui/direwolf_dialog.py:157
+#: src/ui/q65lib_dialog.py:147 src/ui/ft4wsjt_dialog.py:155
 msgid "Installing…"
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:231
+#: src/ui/ft8lib_dialog.py:238
 #, python-brace-format
 msgid ""
 "Permission denied: {path}\n"
@@ -997,28 +997,28 @@ msgid ""
 "FBSAT59, then try installing again."
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:258
+#: src/ui/ft8lib_dialog.py:265
 msgid "ft8lib Installation"
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:272 src/ui/direwolf_dialog.py:204
+#: src/ui/ft8lib_dialog.py:279 src/ui/direwolf_dialog.py:204
 #: src/ui/satdump_dialog.py:68 src/ui/q65lib_dialog.py:198
-#: src/ui/cw_model_dialog.py:135 src/ui/ft4wsjt_dialog.py:195
+#: src/ui/cw_model_dialog.py:135 src/ui/ft4wsjt_dialog.py:217
 msgid "Current Status"
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:274 src/ui/direwolf_dialog.py:206
+#: src/ui/ft8lib_dialog.py:281 src/ui/direwolf_dialog.py:206
 #: src/ui/satdump_dialog.py:70 src/ui/app_update_dialog.py:327
 #: src/ui/q65lib_dialog.py:200 src/ui/hamlib_update_dialog.py:271
-#: src/ui/ft4wsjt_dialog.py:197
+#: src/ui/ft4wsjt_dialog.py:219
 msgid "Checking…"
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:286
+#: src/ui/ft8lib_dialog.py:293
 msgid "About ft8lib"
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:290
+#: src/ui/ft8lib_dialog.py:297
 msgid ""
 "ft8lib (<a href='https://github.com/kgoba/ft8_lib'>kgoba/ft8_lib</a>) by "
 "Kārlis Goba YL3JG provides FT4/FT8 message encoding and decoding (GPL-2.0)."
@@ -1027,59 +1027,86 @@ msgid ""
 "grid into the 77-bit message payload"
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:304 src/ui/q65lib_dialog.py:229
-#: src/ui/ft4wsjt_dialog.py:227
+#: src/ui/ft8lib_dialog.py:311 src/ui/q65lib_dialog.py:229
+#: src/ui/ft4wsjt_dialog.py:249
 msgid "Manual Build (Linux / macOS)"
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:326 src/ui/q65lib_dialog.py:253
-#: src/ui/ft4wsjt_dialog.py:244
+#: src/ui/ft8lib_dialog.py:333 src/ui/q65lib_dialog.py:253
+#: src/ui/ft4wsjt_dialog.py:266
 msgid "Install from GitHub Releases (Recommended)"
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:331
+#: src/ui/ft8lib_dialog.py:338
 msgid ""
 "Downloads a pre-built ft8lib from this project's GitHub Releases\n"
 "and installs it to your user data directory."
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:343 src/ui/direwolf_dialog.py:253
-#: src/ui/q65lib_dialog.py:270 src/ui/ft4wsjt_dialog.py:261
+#: src/ui/ft8lib_dialog.py:350 src/ui/direwolf_dialog.py:253
+#: src/ui/q65lib_dialog.py:270 src/ui/ft4wsjt_dialog.py:283
 msgid "Download && Install"
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:365
+#: src/ui/ft8lib_dialog.py:359 src/ui/ft4wsjt_dialog.py:292
+msgid "Uninstall"
+msgstr ""
+
+#: src/ui/ft8lib_dialog.py:363
+msgid ""
+"Remove the user-installed ft8lib from your data directory.\n"
+"If FT4 or Q65 is currently in use, this may fail with a\n"
+"permission error — close those tabs first."
+msgstr ""
+
+#: src/ui/ft8lib_dialog.py:389
 msgid "ft8lib not found"
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:373
+#: src/ui/ft8lib_dialog.py:398
 msgid "unknown"
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:379
+#: src/ui/ft8lib_dialog.py:404
 msgid "ft8lib found"
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:381 src/ui/direwolf_dialog.py:285
+#: src/ui/ft8lib_dialog.py:406 src/ui/direwolf_dialog.py:285
 #: src/ui/satdump_dialog.py:112 src/ui/q65lib_dialog.py:299
-#: src/ui/ft4wsjt_dialog.py:291
+#: src/ui/ft4wsjt_dialog.py:331
 msgid "Path: "
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:382 src/ui/direwolf_dialog.py:286
+#: src/ui/ft8lib_dialog.py:407 src/ui/direwolf_dialog.py:286
 #: src/ui/satdump_dialog.py:113
 msgid "Version: "
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:398 src/ui/direwolf_dialog.py:346
+#: src/ui/ft8lib_dialog.py:424 src/ui/direwolf_dialog.py:346
 #: src/ui/q65lib_dialog.py:311 src/ui/cw_model_dialog.py:216
-#: src/ui/ft4wsjt_dialog.py:304
+#: src/ui/ft4wsjt_dialog.py:345
 msgid "Starting…"
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:410 src/ui/direwolf_dialog.py:357
-#: src/ui/q65lib_dialog.py:322 src/ui/ft4wsjt_dialog.py:315
+#: src/ui/ft8lib_dialog.py:436 src/ui/direwolf_dialog.py:357
+#: src/ui/q65lib_dialog.py:322 src/ui/ft4wsjt_dialog.py:356
 msgid "Installed: "
+msgstr ""
+
+#: src/ui/ft8lib_dialog.py:449
+msgid "Uninstall ft8lib"
+msgstr ""
+
+#: src/ui/ft8lib_dialog.py:451
+msgid ""
+"Remove the user-installed ft8lib from your data directory?\n"
+"\n"
+"If FT4 or Q65 is currently in use, this may fail — close those tabs (or "
+"restart FBSAT59) and try again."
+msgstr ""
+
+#: src/ui/ft8lib_dialog.py:466 src/ui/ft4wsjt_dialog.py:383
+msgid "Uninstall Failed"
 msgstr ""
 
 #: src/ui/radio_control_widget.py:167 src/ui/main_window.py:234
@@ -1650,122 +1677,122 @@ msgstr ""
 msgid "libq65 found"
 msgstr ""
 
-#: src/ui/q65_tab.py:153 src/ui/q65_tab.py:497
+#: src/ui/q65_tab.py:156 src/ui/q65_tab.py:500
 msgid "Input: No audio source — connect Rig in Radio Control"
 msgstr ""
 
-#: src/ui/q65_tab.py:161
+#: src/ui/q65_tab.py:164
 msgid ""
 "libq65 not installed — RX decoding disabled.\n"
 "TX encoding uses pure Python and works without libq65."
 msgstr ""
 
-#: src/ui/q65_tab.py:170 src/ui/rig_dialog.py:1058 src/ui/ft4_tab.py:330
+#: src/ui/q65_tab.py:173 src/ui/rig_dialog.py:1058 src/ui/ft4_tab.py:377
 msgid "Configuration"
 msgstr ""
 
-#: src/ui/q65_tab.py:174 src/ui/ft4_tab.py:334 src/ui/aprs_tab.py:198
+#: src/ui/q65_tab.py:177 src/ui/ft4_tab.py:381 src/ui/aprs_tab.py:198
 msgid "My Call:"
 msgstr ""
 
-#: src/ui/q65_tab.py:180 src/ui/ft4_tab.py:341
+#: src/ui/q65_tab.py:183 src/ui/ft4_tab.py:388
 msgid "Grid:"
 msgstr ""
 
-#: src/ui/q65_tab.py:193 src/ui/ft4_tab.py:430
+#: src/ui/q65_tab.py:196 src/ui/ft4_tab.py:477
 msgid "TX Slot:"
 msgstr ""
 
-#: src/ui/q65_tab.py:195 src/ui/ft4_tab.py:433
+#: src/ui/q65_tab.py:198 src/ui/ft4_tab.py:480
 msgid "Even"
 msgstr ""
 
-#: src/ui/q65_tab.py:196 src/ui/ft4_tab.py:434
+#: src/ui/q65_tab.py:199 src/ui/ft4_tab.py:481
 msgid "Odd"
 msgstr ""
 
-#: src/ui/q65_tab.py:202 src/ui/q65_tab.py:550 src/ui/rig_dialog.py:388
-#: src/ui/ft4_tab.py:358 src/ui/cw_tab.py:167
+#: src/ui/q65_tab.py:205 src/ui/q65_tab.py:553 src/ui/rig_dialog.py:388
+#: src/ui/ft4_tab.py:405 src/ui/cw_tab.py:167
 msgid "SDR"
 msgstr ""
 
-#: src/ui/q65_tab.py:221 src/ui/ft4_tab.py:402
+#: src/ui/q65_tab.py:224 src/ui/ft4_tab.py:449
 msgid "● RX"
 msgstr ""
 
-#: src/ui/q65_tab.py:225 src/ui/ft4_tab.py:406
+#: src/ui/q65_tab.py:228 src/ui/ft4_tab.py:453
 msgid "● TX"
 msgstr ""
 
-#: src/ui/q65_tab.py:232 src/ui/ft4_tab.py:413
+#: src/ui/q65_tab.py:235 src/ui/ft4_tab.py:460
 msgid "Transmit"
 msgstr ""
 
-#: src/ui/q65_tab.py:238
+#: src/ui/q65_tab.py:241
 msgid "CQ"
 msgstr ""
 
-#: src/ui/q65_tab.py:239
+#: src/ui/q65_tab.py:242
 msgid "Start calling CQ"
 msgstr ""
 
-#: src/ui/q65_tab.py:243
+#: src/ui/q65_tab.py:246
 msgid "RST"
 msgstr ""
 
-#: src/ui/q65_tab.py:244
+#: src/ui/q65_tab.py:247
 msgid "Send signal report"
 msgstr ""
 
-#: src/ui/q65_tab.py:248
+#: src/ui/q65_tab.py:251
 msgid "R+RST"
 msgstr ""
 
-#: src/ui/q65_tab.py:249
+#: src/ui/q65_tab.py:252
 msgid "Send R + signal report (confirm received)"
 msgstr ""
 
-#: src/ui/q65_tab.py:253
+#: src/ui/q65_tab.py:256
 msgid "RR73"
 msgstr ""
 
-#: src/ui/q65_tab.py:257
+#: src/ui/q65_tab.py:260
 msgid "73"
 msgstr ""
 
-#: src/ui/q65_tab.py:263 src/ui/ft4_tab.py:451
+#: src/ui/q65_tab.py:266 src/ui/ft4_tab.py:498
 msgid "TX Enable"
 msgstr ""
 
-#: src/ui/q65_tab.py:271 src/ui/ft4_tab.py:459
+#: src/ui/q65_tab.py:274 src/ui/ft4_tab.py:506
 msgid "Halt TX"
 msgstr ""
 
-#: src/ui/q65_tab.py:280 src/ui/ft4_tab.py:468
+#: src/ui/q65_tab.py:283 src/ui/ft4_tab.py:515
 msgid "TX:"
 msgstr ""
 
-#: src/ui/q65_tab.py:283
+#: src/ui/q65_tab.py:286
 msgid "Message to transmit (auto-filled by state machine)"
 msgstr ""
 
-#: src/ui/q65_tab.py:288
+#: src/ui/q65_tab.py:291
 msgid "Send Once"
 msgstr ""
 
-#: src/ui/q65_tab.py:289
+#: src/ui/q65_tab.py:292
 msgid "Send the text above as a one-shot free message"
 msgstr ""
 
-#: src/ui/q65_tab.py:297 src/ui/ft4_tab.py:476 src/ui/ft4_tab.py:697
+#: src/ui/q65_tab.py:300 src/ui/ft4_tab.py:523 src/ui/ft4_tab.py:744
 msgid "State: IDLE"
 msgstr ""
 
-#: src/ui/q65_tab.py:303 src/ui/ft4_tab.py:482
+#: src/ui/q65_tab.py:306 src/ui/ft4_tab.py:529
 msgid "TX Level:"
 msgstr ""
 
-#: src/ui/q65_tab.py:310
+#: src/ui/q65_tab.py:313
 #, python-format
 msgid ""
 "TX audio output level (% of full scale).\n"
@@ -1774,57 +1801,57 @@ msgid ""
 "scale and some rigs/sound cards need well under 100% here."
 msgstr ""
 
-#: src/ui/q65_tab.py:322
+#: src/ui/q65_tab.py:325
 msgid "DX: —"
 msgstr ""
 
-#: src/ui/q65_tab.py:325 src/ui/ft4_tab.py:505
+#: src/ui/q65_tab.py:328 src/ui/ft4_tab.py:552
 msgid "Log QSO"
 msgstr ""
 
-#: src/ui/q65_tab.py:343 src/ui/ft4_tab.py:523
+#: src/ui/q65_tab.py:346 src/ui/ft4_tab.py:570
 msgid "Decoded Messages"
 msgstr ""
 
-#: src/ui/q65_tab.py:345 src/ui/ft4_tab.py:525
+#: src/ui/q65_tab.py:348 src/ui/ft4_tab.py:572
 msgid "UTC"
 msgstr ""
 
-#: src/ui/q65_tab.py:345 src/ui/ft4_tab.py:525
+#: src/ui/q65_tab.py:348 src/ui/ft4_tab.py:572
 msgid "dB"
 msgstr ""
 
-#: src/ui/q65_tab.py:345 src/ui/ft4_tab.py:525
+#: src/ui/q65_tab.py:348 src/ui/ft4_tab.py:572
 msgid "DT"
 msgstr ""
 
-#: src/ui/q65_tab.py:345 src/ui/ft4_tab.py:525
+#: src/ui/q65_tab.py:348 src/ui/ft4_tab.py:572
 msgid "Hz"
 msgstr ""
 
-#: src/ui/q65_tab.py:365
+#: src/ui/q65_tab.py:368
 msgid "Waiting for period boundary…"
 msgstr ""
 
-#: src/ui/q65_tab.py:494 src/ui/ft4_tab.py:1219
+#: src/ui/q65_tab.py:497 src/ui/ft4_tab.py:1266
 msgid "Input: Rig connected"
 msgstr ""
 
-#: src/ui/q65_tab.py:598
+#: src/ui/q65_tab.py:601
 msgid "No audio in last period"
-msgstr ""
-
-#: src/ui/q65_tab.py:624
-#, python-brace-format
-msgid "Period {utc}: no decodes"
 msgstr ""
 
 #: src/ui/q65_tab.py:627
 #, python-brace-format
+msgid "Period {utc}: no decodes"
+msgstr ""
+
+#: src/ui/q65_tab.py:630
+#, python-brace-format
 msgid "Period {utc}: {n} decode(s)"
 msgstr ""
 
-#: src/ui/q65_tab.py:757
+#: src/ui/q65_tab.py:760
 msgid "QSO logged"
 msgstr ""
 
@@ -2087,7 +2114,7 @@ msgstr ""
 msgid "PPM Correction:"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1074 src/ui/ft4_tab.py:432 src/ui/aprs_tab.py:236
+#: src/ui/rig_dialog.py:1074 src/ui/ft4_tab.py:479 src/ui/aprs_tab.py:236
 #: src/ui/telemetry_tab.py:172
 msgid "Auto"
 msgstr ""
@@ -2157,12 +2184,12 @@ msgstr ""
 msgid "Input device:"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1470 src/ui/rig_dialog.py:1643 src/ui/ft4_tab.py:372
-#: src/ui/ft4_tab.py:807
+#: src/ui/rig_dialog.py:1470 src/ui/rig_dialog.py:1643 src/ui/ft4_tab.py:419
+#: src/ui/ft4_tab.py:854
 msgid "-- dBFS"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1473 src/ui/ft4_tab.py:365
+#: src/ui/rig_dialog.py:1473 src/ui/ft4_tab.py:412
 msgid "RX Level:"
 msgstr ""
 
@@ -2516,22 +2543,22 @@ msgstr ""
 msgid "Installed to: "
 msgstr ""
 
-#: src/ui/ft4_tab.py:348
+#: src/ui/ft4_tab.py:395
 msgid "Audio Hz:"
 msgstr ""
 
-#: src/ui/ft4_tab.py:375
+#: src/ui/ft4_tab.py:422
 msgid "Waterfall"
 msgstr ""
 
-#: src/ui/ft4_tab.py:378
+#: src/ui/ft4_tab.py:425
 msgid ""
 "Open a popup showing the last RX period's audio as a spectrogram, to check "
 "whether real FT4 signals are visible in the passband even when nothing "
 "decodes."
 msgstr ""
 
-#: src/ui/ft4_tab.py:441
+#: src/ui/ft4_tab.py:488
 msgid ""
 "Which 6s slot to transmit in when calling CQ / enabling TX.\n"
 "Auto: whichever slot is current when you press CQ / TX Enable.\n"
@@ -2539,11 +2566,11 @@ msgid ""
 "slot regardless of this setting."
 msgstr ""
 
-#: src/ui/ft4_tab.py:470
+#: src/ui/ft4_tab.py:517
 msgid "FT4 message (auto-filled by state machine)"
 msgstr ""
 
-#: src/ui/ft4_tab.py:489
+#: src/ui/ft4_tab.py:536
 #, python-format
 msgid ""
 "TX audio output level (% of full scale).\n"
@@ -2552,71 +2579,71 @@ msgid ""
 "scale and some rigs/sound cards need well under 100% here."
 msgstr ""
 
-#: src/ui/ft4_tab.py:648
+#: src/ui/ft4_tab.py:695
 #, python-brace-format
 msgid ""
 "Use Help > ft8lib Installation… (Recommended), or build ft8_lib (github.com/"
 "kgoba/ft8_lib) manually and place the shared library in {dir}"
 msgstr ""
 
-#: src/ui/ft4_tab.py:653
+#: src/ui/ft4_tab.py:700
 msgid "ft8lib is not installed — FT4 TX/RX is disabled.\n"
 msgstr ""
 
-#: src/ui/ft4_tab.py:661
+#: src/ui/ft4_tab.py:708
 msgid ""
 "ft8lib found but decode API is unavailable — TX only.\n"
 "Update ft8_lib to ≥ v0.4 for RX decode support."
 msgstr ""
 
-#: src/ui/ft4_tab.py:670
+#: src/ui/ft4_tab.py:717
 msgid ""
 "Using lightweight FT4 decoder — may miss weak or overlapping stations in a "
 "crowded pass.\n"
 "Help > FT4 Enhanced Decoder Installation… for WSJT-X-grade decoding."
 msgstr ""
 
-#: src/ui/ft4_tab.py:688
+#: src/ui/ft4_tab.py:735
 msgid "Set My Call before operating"
 msgstr ""
 
-#: src/ui/ft4_tab.py:935
+#: src/ui/ft4_tab.py:982
 msgid "Invalid FT4 message: "
 msgstr ""
 
-#: src/ui/ft4_tab.py:960
+#: src/ui/ft4_tab.py:1007
 msgid "TX done — waiting for next period"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1175
+#: src/ui/ft4_tab.py:1222
 msgid "Set My Call before enabling TX"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1181
+#: src/ui/ft4_tab.py:1228
 msgid "TX enabled — waiting for next period"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1183
+#: src/ui/ft4_tab.py:1230
 msgid "TX disabled"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1189
+#: src/ui/ft4_tab.py:1236
 msgid "TX halted"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1198
+#: src/ui/ft4_tab.py:1245
 msgid "Rig connected — ready"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1209
+#: src/ui/ft4_tab.py:1256
 msgid "Rig disconnected"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1222
+#: src/ui/ft4_tab.py:1269
 msgid "Input: Rig not connected"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1246
+#: src/ui/ft4_tab.py:1293
 msgid "QSOs logged: "
 msgstr ""
 
@@ -3576,7 +3603,7 @@ msgid "AX100 Digi"
 msgstr ""
 
 #: src/ui/main_window.py:918 src/ui/main_window.py:2178
-#: src/ui/main_window.py:6026 src/ui/main_window.py:6038
+#: src/ui/main_window.py:6036 src/ui/main_window.py:6048
 msgid "METEOR / HRPT"
 msgstr ""
 
@@ -3592,7 +3619,7 @@ msgstr ""
 msgid "View"
 msgstr ""
 
-#: src/ui/main_window.py:933 src/ui/main_window.py:5525
+#: src/ui/main_window.py:933 src/ui/main_window.py:5535
 msgid "Language"
 msgstr ""
 
@@ -3612,8 +3639,8 @@ msgstr ""
 msgid "Satellite/Transmitter Colors"
 msgstr ""
 
-#: src/ui/main_window.py:967 src/ui/main_window.py:5743
-#: src/ui/main_window.py:5758
+#: src/ui/main_window.py:967 src/ui/main_window.py:5753
+#: src/ui/main_window.py:5768
 msgid "Auto Fetch Rules"
 msgstr ""
 
@@ -3665,12 +3692,12 @@ msgstr ""
 msgid "Show QR code for web access"
 msgstr ""
 
-#: src/ui/main_window.py:1024 src/ui/main_window.py:5383
+#: src/ui/main_window.py:1024 src/ui/main_window.py:5393
 msgid "RIG: Off"
 msgstr ""
 
-#: src/ui/main_window.py:1025 src/ui/main_window.py:5480
-#: src/ui/main_window.py:5484
+#: src/ui/main_window.py:1025 src/ui/main_window.py:5490
+#: src/ui/main_window.py:5494
 msgid "ROT: Off"
 msgstr ""
 
@@ -3840,130 +3867,130 @@ msgstr ""
 msgid "SATNOGS sync failed: {etype}: {err}"
 msgstr ""
 
-#: src/ui/main_window.py:5363
+#: src/ui/main_window.py:5373
 #, python-brace-format
 msgid "\\U0001f50a TX: {owner}"
 msgstr ""
 
-#: src/ui/main_window.py:5377
+#: src/ui/main_window.py:5387
 msgid "RIG: 1+2"
 msgstr ""
 
-#: src/ui/main_window.py:5379
+#: src/ui/main_window.py:5389
 msgid "RIG: 1"
 msgstr ""
 
-#: src/ui/main_window.py:5381
+#: src/ui/main_window.py:5391
 msgid "RIG: 2"
 msgstr ""
 
-#: src/ui/main_window.py:5482
+#: src/ui/main_window.py:5492
 msgid "ROT: On"
 msgstr ""
 
-#: src/ui/main_window.py:5526
+#: src/ui/main_window.py:5536
 msgid "FBSAT59 will restart now to apply the language change."
 msgstr ""
 
-#: src/ui/main_window.py:5559
+#: src/ui/main_window.py:5569
 msgid "Satellite/Transmitter Color Legend"
 msgstr ""
 
-#: src/ui/main_window.py:5569
+#: src/ui/main_window.py:5579
 msgid "Green (bold)"
 msgstr ""
 
-#: src/ui/main_window.py:5570
+#: src/ui/main_window.py:5580
 msgid "AMSAT status: Operational — confirmed working by AMSAT."
 msgstr ""
 
-#: src/ui/main_window.py:5575
+#: src/ui/main_window.py:5585
 msgid "Yellow"
 msgstr ""
 
-#: src/ui/main_window.py:5576
+#: src/ui/main_window.py:5586
 msgid "AMSAT status: Partially operational — degraded but active."
 msgstr ""
 
-#: src/ui/main_window.py:5581
+#: src/ui/main_window.py:5591
 msgid "Red"
 msgstr ""
 
-#: src/ui/main_window.py:5582
+#: src/ui/main_window.py:5592
 msgid "AMSAT status: Non-operational — confirmed failed by AMSAT."
 msgstr ""
 
-#: src/ui/main_window.py:5587
+#: src/ui/main_window.py:5597
 msgid "Orange"
 msgstr ""
 
-#: src/ui/main_window.py:5588
+#: src/ui/main_window.py:5598
 msgid "SATNOGS alive — reception reported, no AMSAT data available."
 msgstr ""
 
-#: src/ui/main_window.py:5593
+#: src/ui/main_window.py:5603
 msgid "Purple (italic)"
 msgstr ""
 
-#: src/ui/main_window.py:5595
+#: src/ui/main_window.py:5605
 msgid ""
 "TLE pending — alive satellite awaiting TLE assignment (provisional NORAD ≥ "
 "90000, within 30-day grace period). Position cannot be displayed yet."
 msgstr ""
 
-#: src/ui/main_window.py:5603
+#: src/ui/main_window.py:5613
 msgid "Gray"
 msgstr ""
 
-#: src/ui/main_window.py:5604
+#: src/ui/main_window.py:5614
 msgid "Status unknown — not confirmed operational by any source."
 msgstr ""
 
-#: src/ui/main_window.py:5609
+#: src/ui/main_window.py:5619
 msgid "Blue"
 msgstr ""
 
-#: src/ui/main_window.py:5610
+#: src/ui/main_window.py:5620
 msgid "Celestial Bodies (Moon etc.) — below the horizon."
 msgstr ""
 
-#: src/ui/main_window.py:5615
+#: src/ui/main_window.py:5625
 msgid "Blue (bold)"
 msgstr ""
 
-#: src/ui/main_window.py:5616
+#: src/ui/main_window.py:5626
 msgid "Celestial Bodies (Moon etc.) — above the horizon."
 msgstr ""
 
-#: src/ui/main_window.py:5626
+#: src/ui/main_window.py:5636
 msgid "Yellow background"
 msgstr ""
 
-#: src/ui/main_window.py:5628
+#: src/ui/main_window.py:5638
 msgid ""
 "SATNOGS status: Inactive — this transmitter is no longer operating. Shown "
 "only while the transponder dropdown is open."
 msgstr ""
 
-#: src/ui/main_window.py:5634
+#: src/ui/main_window.py:5644
 msgid "Red background"
 msgstr ""
 
-#: src/ui/main_window.py:5636
+#: src/ui/main_window.py:5646
 msgid ""
 "SATNOGS status: Invalid — this transmitter's data is known to be incorrect. "
 "Shown only while the transponder dropdown is open."
 msgstr ""
 
-#: src/ui/main_window.py:5658
+#: src/ui/main_window.py:5668
 msgid "Satellite List"
 msgstr ""
 
-#: src/ui/main_window.py:5674
+#: src/ui/main_window.py:5684
 msgid "Radio Control — Transmitter Selection"
 msgstr ""
 
-#: src/ui/main_window.py:5708
+#: src/ui/main_window.py:5718
 msgid ""
 "FBSAT59 automatically fetches and updates TLE orbital data and transmitter "
 "information in the background. Manual updates are normally not required. Use "
@@ -3971,7 +3998,7 @@ msgid ""
 "before a pass of a newly launched satellite)."
 msgstr ""
 
-#: src/ui/main_window.py:5714
+#: src/ui/main_window.py:5724
 msgid ""
 "<table border='0' cellspacing='4'><tr><td><b>Space Stations</b> (ISS, CSS…)</"
 "td><td>every <b>1 hour</b></td></tr><tr><td><b>Amateur Satellites</b></"
@@ -3987,7 +4014,7 @@ msgid ""
 "(SATNOGS)</b></td><td>every <b>7 days</b></td></tr></table>"
 msgstr ""
 
-#: src/ui/main_window.py:5733
+#: src/ui/main_window.py:5743
 msgid ""
 "Transmitter data is fetched from SATNOGS automatically on first launch, then "
 "refreshed automatically every 7 days in the background. Use <b>Satellite → "
@@ -3996,63 +4023,63 @@ msgid ""
 "launched satellite registers its transmitter)."
 msgstr ""
 
-#: src/ui/main_window.py:5740
+#: src/ui/main_window.py:5750
 msgid ""
 "On each launch the app syncs satellite names and statuses from SATNOGS, and "
 "fetches any TLE sources whose cached data has expired."
 msgstr ""
 
-#: src/ui/main_window.py:5744
+#: src/ui/main_window.py:5754
 msgid "TLE Auto-Fetch Schedule"
 msgstr ""
 
-#: src/ui/main_window.py:5745
+#: src/ui/main_window.py:5755
 msgid "Transmitter Database (SATNOGS)"
 msgstr ""
 
-#: src/ui/main_window.py:5746
+#: src/ui/main_window.py:5756
 msgid "At Startup"
 msgstr ""
 
-#: src/ui/main_window.py:5770
+#: src/ui/main_window.py:5780
 msgid "About FBSAT59"
 msgstr ""
 
-#: src/ui/main_window.py:5772
+#: src/ui/main_window.py:5782
 msgid "Modern satellite tracking software for amateur radio operators.\n"
 msgstr ""
 
-#: src/ui/main_window.py:6048 src/ui/main_window.py:6066
+#: src/ui/main_window.py:6058 src/ui/main_window.py:6076
 msgid "QR Code"
 msgstr ""
 
-#: src/ui/main_window.py:6048
+#: src/ui/main_window.py:6058
 msgid "Web server is not running."
 msgstr ""
 
-#: src/ui/main_window.py:6066
+#: src/ui/main_window.py:6076
 msgid "Failed to generate QR code."
 msgstr ""
 
-#: src/ui/ft4wsjt_dialog.py:60
+#: src/ui/ft4wsjt_dialog.py:72
 msgid "Development"
 msgstr ""
 
-#: src/ui/ft4wsjt_dialog.py:122
+#: src/ui/ft4wsjt_dialog.py:134
 msgid ""
 "No libft4wsjt package found for this platform in the release.\n"
 "Please build it manually — see the instructions above."
 msgstr ""
 
-#: src/ui/ft4wsjt_dialog.py:181
+#: src/ui/ft4wsjt_dialog.py:203
 msgid "FT4 Enhanced Decoder Installation"
 msgstr ""
 
-#: src/ui/ft4wsjt_dialog.py:206
+#: src/ui/ft4wsjt_dialog.py:228
 msgid "About the Enhanced FT4 Decoder"
 msgstr ""
 
-#: src/ui/ft4wsjt_dialog.py:210
+#: src/ui/ft4wsjt_dialog.py:232
 msgid ""
 "libft4wsjt is built from <a href='https://github.com/wsjtx/wsjtx'>WSJT-X</"
 "a>'s own FT4 decode engine (GPL-3.0) via a small C bridge — the same 3-pass "
@@ -4063,16 +4090,35 @@ msgid ""
 "TX always uses ft8_lib regardless — this only affects RX."
 msgstr ""
 
-#: src/ui/ft4wsjt_dialog.py:249
+#: src/ui/ft4wsjt_dialog.py:271
 msgid ""
 "Downloads a pre-built libft4wsjt from this project's GitHub Releases\n"
 "and installs it to your user data directory."
 msgstr ""
 
-#: src/ui/ft4wsjt_dialog.py:281
+#: src/ui/ft4wsjt_dialog.py:296
+msgid ""
+"Remove the user-installed libft4wsjt from your data directory.\n"
+"If FT4 is currently in use, this may fail with a permission\n"
+"error — close that tab first."
+msgstr ""
+
+#: src/ui/ft4wsjt_dialog.py:320
 msgid "libft4wsjt not found"
 msgstr ""
 
-#: src/ui/ft4wsjt_dialog.py:289
+#: src/ui/ft4wsjt_dialog.py:329
 msgid "libft4wsjt found"
+msgstr ""
+
+#: src/ui/ft4wsjt_dialog.py:368
+msgid "Uninstall FT4 Enhanced Decoder"
+msgstr ""
+
+#: src/ui/ft4wsjt_dialog.py:370
+msgid ""
+"Remove the user-installed libft4wsjt from your data directory?\n"
+"\n"
+"If FT4 is currently in use, this may fail — close that tab (or restart "
+"FBSAT59) and try again."
 msgstr ""

@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-27 20:44+0900\n"
+"POT-Creation-Date: 2026-07-29 09:38+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -49,14 +49,14 @@ msgid ""
 "Output device #{device} ({name}) cannot play audio at {rate} Hz — reopen Rig "
 "Settings > Sound Card and re-select the output device."
 msgstr ""
-"出力デバイス #{device}（{name}）は {rate} Hz で再生できません — Rig "
-"Settings > Sound Card を開き、出力デバイスを選び直してください。"
+"出力デバイス #{device}（{name}）は {rate} Hz で再生できません — Rig Settings "
+"> Sound Card を開き、出力デバイスを選び直してください。"
 
-#: src/ui/ax100_digi_tab.py:117 src/ui/q65_tab.py:800 src/ui/ft4_tab.py:127
+#: src/ui/ax100_digi_tab.py:117 src/ui/q65_tab.py:806 src/ui/ft4_tab.py:142
 msgid "another tab"
 msgstr "別のタブ"
 
-#: src/ui/ax100_digi_tab.py:118 src/ui/q65_tab.py:802 src/ui/ft4_tab.py:128
+#: src/ui/ax100_digi_tab.py:118 src/ui/q65_tab.py:808 src/ui/ft4_tab.py:143
 #, python-brace-format
 msgid "Sound card output is in use by {other}"
 msgstr "サウンドカード出力は{other}が使用中です"
@@ -65,7 +65,7 @@ msgstr "サウンドカード出力は{other}が使用中です"
 msgid "Rig 1 not connected — cannot key PTT"
 msgstr "Rig 1未接続 — PTTを制御できません"
 
-#: src/ui/ax100_digi_tab.py:127 src/ui/ft4_tab.py:137
+#: src/ui/ax100_digi_tab.py:127 src/ui/ft4_tab.py:152
 msgid "PTT command failed — check Rig 1 connection"
 msgstr "PTTコマンドが失敗しました — Rig 1の接続を確認してください"
 
@@ -109,7 +109,7 @@ msgstr "送信元ポート:"
 msgid "Off"
 msgstr "オフ"
 
-#: src/ui/ax100_digi_tab.py:405 src/ui/rig_dialog.py:1662 src/ui/ft4_tab.py:831
+#: src/ui/ax100_digi_tab.py:405 src/ui/rig_dialog.py:1662 src/ui/ft4_tab.py:878
 #, python-brace-format
 msgid "{db:.0f} dBFS"
 msgstr "{db:.0f} dBFS"
@@ -134,7 +134,7 @@ msgstr ""
 msgid "Input/Output:"
 msgstr "入出力:"
 
-#: src/ui/ax100_digi_tab.py:439 src/ui/q65_tab.py:201 src/ui/ft4_tab.py:357
+#: src/ui/ax100_digi_tab.py:439 src/ui/q65_tab.py:204 src/ui/ft4_tab.py:404
 msgid "Rig Soundcard"
 msgstr "無線機サウンドカード"
 
@@ -167,7 +167,7 @@ msgstr ""
 msgid "Export CSV…"
 msgstr "CSVエクスポート…"
 
-#: src/ui/ax100_digi_tab.py:478 src/ui/q65_tab.py:330 src/ui/ft4_tab.py:510
+#: src/ui/ax100_digi_tab.py:478 src/ui/q65_tab.py:333 src/ui/ft4_tab.py:557
 #: src/ui/aprs_tab.py:343
 msgid "Export ADIF…"
 msgstr "ADIFエクスポート"
@@ -190,7 +190,7 @@ msgid "Sat"
 msgstr "衛星"
 
 #: src/ui/ax100_digi_tab.py:489 src/ui/ax100_digi_tab.py:821
-#: src/ui/q65_tab.py:345 src/ui/ft4_tab.py:525
+#: src/ui/q65_tab.py:348 src/ui/ft4_tab.py:572
 msgid "Message"
 msgstr "メッセージ"
 
@@ -264,12 +264,12 @@ msgid "Time (Local)"
 msgstr "時刻 (Local)"
 
 #: src/ui/ax100_digi_tab.py:628 src/ui/radio_control_widget.py:1064
-#: src/ui/ft4_tab.py:789 src/ui/cw_tab.py:373
+#: src/ui/ft4_tab.py:836 src/ui/cw_tab.py:373
 msgid "Sound Card not configured — open Rig Settings > Sound Card"
 msgstr ""
 "サウンドカードが未設定です — Rig Settings > Sound Card を開いてください"
 
-#: src/ui/ax100_digi_tab.py:634 src/ui/sstv_tab.py:422 src/ui/ft4_tab.py:785
+#: src/ui/ax100_digi_tab.py:634 src/ui/sstv_tab.py:422 src/ui/ft4_tab.py:832
 #: src/ui/cw_tab.py:369
 msgid "sounddevice not installed — pip install sounddevice"
 msgstr "sounddeviceがインストールされていません — pip install sounddevice"
@@ -315,7 +315,7 @@ msgstr "送信するには入出力を無線機サウンドカードに切り替
 msgid "Rig 1 not connected"
 msgstr "Rig 1未接続"
 
-#: src/ui/ax100_digi_tab.py:787 src/ui/ft4_tab.py:955
+#: src/ui/ax100_digi_tab.py:787 src/ui/ft4_tab.py:1002
 msgid "TX: "
 msgstr "TX: "
 
@@ -323,7 +323,7 @@ msgstr "TX: "
 msgid "TX done"
 msgstr "送信完了"
 
-#: src/ui/ax100_digi_tab.py:799 src/ui/ft4_tab.py:965
+#: src/ui/ax100_digi_tab.py:799 src/ui/ft4_tab.py:1012
 msgid "TX error: "
 msgstr "TXエラー: "
 
@@ -415,7 +415,7 @@ msgstr "種別:"
 
 #: src/ui/transmitter_dialog.py:134 src/ui/sdr_control_widget.py:573
 #: src/ui/radio_control_widget.py:278 src/ui/sstv_tab.py:165
-#: src/ui/q65_tab.py:186 src/ui/telemetry_tab.py:154
+#: src/ui/q65_tab.py:189 src/ui/telemetry_tab.py:154
 msgid "Mode:"
 msgstr "モード:"
 
@@ -553,16 +553,16 @@ msgstr "未ダウンロード"
 msgid "(preview unavailable)"
 msgstr "（プレビュー利用不可）"
 
-#: src/ui/settings_dialog.py:391 src/ui/ft8lib_dialog.py:144
+#: src/ui/settings_dialog.py:391 src/ui/ft8lib_dialog.py:151
 #: src/ui/direwolf_dialog.py:140 src/ui/q65lib_dialog.py:132
-#: src/ui/ft4wsjt_dialog.py:128
+#: src/ui/ft4wsjt_dialog.py:140
 msgid "Downloading…"
 msgstr "ダウンロード中…"
 
 #: src/ui/settings_dialog.py:408 src/ui/meteor_tab.py:526
-#: src/ui/ft8lib_dialog.py:416 src/ui/direwolf_dialog.py:362
+#: src/ui/ft8lib_dialog.py:442 src/ui/direwolf_dialog.py:362
 #: src/ui/q65lib_dialog.py:327 src/ui/cw_model_dialog.py:232
-#: src/ui/ft4wsjt_dialog.py:320
+#: src/ui/ft4wsjt_dialog.py:361
 msgid "Error: "
 msgstr "エラー: "
 
@@ -741,7 +741,7 @@ msgstr "周波数 (MHz)"
 msgid "Power (dBFS)"
 msgstr "パワー (dBFS)"
 
-#: src/ui/sdr_control_widget.py:363 src/ui/q65_tab.py:199 src/ui/ft4_tab.py:355
+#: src/ui/sdr_control_widget.py:363 src/ui/q65_tab.py:202 src/ui/ft4_tab.py:402
 msgid "RX:"
 msgstr "RX:"
 
@@ -882,8 +882,8 @@ msgstr "ファイルマネージャーでIQ録音フォルダを開く"
 msgid "SatDump Log"
 msgstr "SatDumpログ"
 
-#: src/ui/meteor_tab.py:128 src/ui/q65_tab.py:360 src/ui/ft4_tab.py:501
-#: src/ui/ft4_tab.py:540 src/ui/cw_tab.py:182
+#: src/ui/meteor_tab.py:128 src/ui/q65_tab.py:363 src/ui/ft4_tab.py:548
+#: src/ui/ft4_tab.py:587 src/ui/cw_tab.py:182
 msgid "Clear"
 msgstr "クリア"
 
@@ -1014,35 +1014,35 @@ msgstr "自動追尾: LOSで受信を停止しました。"
 msgid "Image received: "
 msgstr "画像受信: "
 
-#: src/ui/ft8lib_dialog.py:57
+#: src/ui/ft8lib_dialog.py:59
 msgid "(version symbol not available)"
 msgstr "(バージョン情報なし)"
 
-#: src/ui/ft8lib_dialog.py:66 src/ui/direwolf_dialog.py:65
-#: src/ui/q65lib_dialog.py:58 src/ui/ft4wsjt_dialog.py:51
+#: src/ui/ft8lib_dialog.py:74 src/ui/direwolf_dialog.py:65
+#: src/ui/q65lib_dialog.py:58 src/ui/ft4wsjt_dialog.py:64
 msgid "User-installed"
 msgstr "ユーザーインストール版"
 
-#: src/ui/ft8lib_dialog.py:72 src/ui/direwolf_dialog.py:73
-#: src/ui/q65lib_dialog.py:64 src/ui/ft4wsjt_dialog.py:57
+#: src/ui/ft8lib_dialog.py:79 src/ui/direwolf_dialog.py:73
+#: src/ui/q65lib_dialog.py:64 src/ui/ft4wsjt_dialog.py:69
 msgid "Bundled"
 msgstr "同梱版"
 
-#: src/ui/ft8lib_dialog.py:75
+#: src/ui/ft8lib_dialog.py:82
 msgid "System"
 msgstr "システム版"
 
-#: src/ui/ft8lib_dialog.py:104 src/ui/direwolf_dialog.py:102
-#: src/ui/q65lib_dialog.py:92 src/ui/ft4wsjt_dialog.py:88
+#: src/ui/ft8lib_dialog.py:111 src/ui/direwolf_dialog.py:102
+#: src/ui/q65lib_dialog.py:92 src/ui/ft4wsjt_dialog.py:100
 msgid "Checking latest release…"
 msgstr "最新リリースを確認中…"
 
-#: src/ui/ft8lib_dialog.py:128 src/ui/direwolf_dialog.py:124
-#: src/ui/q65lib_dialog.py:116 src/ui/ft4wsjt_dialog.py:112
+#: src/ui/ft8lib_dialog.py:135 src/ui/direwolf_dialog.py:124
+#: src/ui/q65lib_dialog.py:116 src/ui/ft4wsjt_dialog.py:124
 msgid "Unsupported platform"
 msgstr "非対応プラットフォーム"
 
-#: src/ui/ft8lib_dialog.py:138
+#: src/ui/ft8lib_dialog.py:145
 msgid ""
 "No ft8lib package found for this platform in the release.\n"
 "Please build ft8_lib manually — see the instructions above."
@@ -1051,12 +1051,12 @@ msgstr ""
 "た。\n"
 "上記の手順に従い、ft8_libを手動でビルドしてください。"
 
-#: src/ui/ft8lib_dialog.py:162 src/ui/direwolf_dialog.py:157
-#: src/ui/q65lib_dialog.py:147 src/ui/ft4wsjt_dialog.py:143
+#: src/ui/ft8lib_dialog.py:169 src/ui/direwolf_dialog.py:157
+#: src/ui/q65lib_dialog.py:147 src/ui/ft4wsjt_dialog.py:155
 msgid "Installing…"
 msgstr "インストール中…"
 
-#: src/ui/ft8lib_dialog.py:231
+#: src/ui/ft8lib_dialog.py:238
 #, python-brace-format
 msgid ""
 "Permission denied: {path}\n"
@@ -1064,28 +1064,28 @@ msgid ""
 "FBSAT59, then try installing again."
 msgstr ""
 
-#: src/ui/ft8lib_dialog.py:258
+#: src/ui/ft8lib_dialog.py:265
 msgid "ft8lib Installation"
 msgstr "ft8libのインストール"
 
-#: src/ui/ft8lib_dialog.py:272 src/ui/direwolf_dialog.py:204
+#: src/ui/ft8lib_dialog.py:279 src/ui/direwolf_dialog.py:204
 #: src/ui/satdump_dialog.py:68 src/ui/q65lib_dialog.py:198
-#: src/ui/cw_model_dialog.py:135 src/ui/ft4wsjt_dialog.py:195
+#: src/ui/cw_model_dialog.py:135 src/ui/ft4wsjt_dialog.py:217
 msgid "Current Status"
 msgstr "現在の状態"
 
-#: src/ui/ft8lib_dialog.py:274 src/ui/direwolf_dialog.py:206
+#: src/ui/ft8lib_dialog.py:281 src/ui/direwolf_dialog.py:206
 #: src/ui/satdump_dialog.py:70 src/ui/app_update_dialog.py:327
 #: src/ui/q65lib_dialog.py:200 src/ui/hamlib_update_dialog.py:271
-#: src/ui/ft4wsjt_dialog.py:197
+#: src/ui/ft4wsjt_dialog.py:219
 msgid "Checking…"
 msgstr "確認中…"
 
-#: src/ui/ft8lib_dialog.py:286
+#: src/ui/ft8lib_dialog.py:293
 msgid "About ft8lib"
 msgstr "ft8libについて"
 
-#: src/ui/ft8lib_dialog.py:290
+#: src/ui/ft8lib_dialog.py:297
 msgid ""
 "ft8lib (<a href='https://github.com/kgoba/ft8_lib'>kgoba/ft8_lib</a>) by "
 "Kārlis Goba YL3JG provides FT4/FT8 message encoding and decoding (GPL-2.0)."
@@ -1099,17 +1099,17 @@ msgstr ""
 "音声のエンコードと受信メッセージのデコード<br>  • <b>Q65 送信</b> — コールサ"
 "イン/グリッドを77ビットメッセージペイロードに格納"
 
-#: src/ui/ft8lib_dialog.py:304 src/ui/q65lib_dialog.py:229
-#: src/ui/ft4wsjt_dialog.py:227
+#: src/ui/ft8lib_dialog.py:311 src/ui/q65lib_dialog.py:229
+#: src/ui/ft4wsjt_dialog.py:249
 msgid "Manual Build (Linux / macOS)"
 msgstr "手動ビルド（Linux / macOS）"
 
-#: src/ui/ft8lib_dialog.py:326 src/ui/q65lib_dialog.py:253
-#: src/ui/ft4wsjt_dialog.py:244
+#: src/ui/ft8lib_dialog.py:333 src/ui/q65lib_dialog.py:253
+#: src/ui/ft4wsjt_dialog.py:266
 msgid "Install from GitHub Releases (Recommended)"
 msgstr "GitHub Releasesからインストール（推奨）"
 
-#: src/ui/ft8lib_dialog.py:331
+#: src/ui/ft8lib_dialog.py:338
 msgid ""
 "Downloads a pre-built ft8lib from this project's GitHub Releases\n"
 "and installs it to your user data directory."
@@ -1117,45 +1117,79 @@ msgstr ""
 "本プロジェクトのGitHub Releasesからビルド済みのft8libをダウンロードし、\n"
 "ユーザーデータディレクトリにインストールします。"
 
-#: src/ui/ft8lib_dialog.py:343 src/ui/direwolf_dialog.py:253
-#: src/ui/q65lib_dialog.py:270 src/ui/ft4wsjt_dialog.py:261
+#: src/ui/ft8lib_dialog.py:350 src/ui/direwolf_dialog.py:253
+#: src/ui/q65lib_dialog.py:270 src/ui/ft4wsjt_dialog.py:283
 msgid "Download && Install"
 msgstr "ダウンロードしてインストール"
 
-#: src/ui/ft8lib_dialog.py:365
+#: src/ui/ft8lib_dialog.py:359 src/ui/ft4wsjt_dialog.py:292
+msgid "Uninstall"
+msgstr "アンインストール"
+
+#: src/ui/ft8lib_dialog.py:363
+msgid ""
+"Remove the user-installed ft8lib from your data directory.\n"
+"If FT4 or Q65 is currently in use, this may fail with a\n"
+"permission error — close those tabs first."
+msgstr ""
+"ユーザーインストール済みのft8libをデータディレクトリから削除します。\n"
+"FT4またはQ65を使用中の場合、権限エラーで失敗することがあります —\n"
+"その場合は該当タブを先に閉じてください。"
+
+#: src/ui/ft8lib_dialog.py:389
 msgid "ft8lib not found"
 msgstr "ft8libが見つかりません"
 
-#: src/ui/ft8lib_dialog.py:373
+#: src/ui/ft8lib_dialog.py:398
 msgid "unknown"
 msgstr "不明"
 
-#: src/ui/ft8lib_dialog.py:379
+#: src/ui/ft8lib_dialog.py:404
 msgid "ft8lib found"
 msgstr "ft8libが見つかりました"
 
-#: src/ui/ft8lib_dialog.py:381 src/ui/direwolf_dialog.py:285
+#: src/ui/ft8lib_dialog.py:406 src/ui/direwolf_dialog.py:285
 #: src/ui/satdump_dialog.py:112 src/ui/q65lib_dialog.py:299
-#: src/ui/ft4wsjt_dialog.py:291
+#: src/ui/ft4wsjt_dialog.py:331
 msgid "Path: "
 msgstr "パス: "
 
-#: src/ui/ft8lib_dialog.py:382 src/ui/direwolf_dialog.py:286
+#: src/ui/ft8lib_dialog.py:407 src/ui/direwolf_dialog.py:286
 #: src/ui/satdump_dialog.py:113
 msgid "Version: "
 msgstr "バージョン: "
 
 # --- Settings dialog ---
-#: src/ui/ft8lib_dialog.py:398 src/ui/direwolf_dialog.py:346
+#: src/ui/ft8lib_dialog.py:424 src/ui/direwolf_dialog.py:346
 #: src/ui/q65lib_dialog.py:311 src/ui/cw_model_dialog.py:216
-#: src/ui/ft4wsjt_dialog.py:304
+#: src/ui/ft4wsjt_dialog.py:345
 msgid "Starting…"
 msgstr "起動中…"
 
-#: src/ui/ft8lib_dialog.py:410 src/ui/direwolf_dialog.py:357
-#: src/ui/q65lib_dialog.py:322 src/ui/ft4wsjt_dialog.py:315
+#: src/ui/ft8lib_dialog.py:436 src/ui/direwolf_dialog.py:357
+#: src/ui/q65lib_dialog.py:322 src/ui/ft4wsjt_dialog.py:356
 msgid "Installed: "
 msgstr "インストール済み: "
+
+#: src/ui/ft8lib_dialog.py:449
+msgid "Uninstall ft8lib"
+msgstr "ft8libをアンインストール"
+
+#: src/ui/ft8lib_dialog.py:451
+msgid ""
+"Remove the user-installed ft8lib from your data directory?\n"
+"\n"
+"If FT4 or Q65 is currently in use, this may fail — close those tabs (or "
+"restart FBSAT59) and try again."
+msgstr ""
+"ユーザーインストール済みのft8libをデータディレクトリから削除しますか？\n"
+"\n"
+"FT4またはQ65を使用中の場合、失敗することがあります — その場合は\n"
+"該当タブを閉じるか、FBSAT59を再起動してから再度お試しください。"
+
+#: src/ui/ft8lib_dialog.py:466 src/ui/ft4wsjt_dialog.py:383
+msgid "Uninstall Failed"
+msgstr "アンインストール失敗"
 
 #: src/ui/radio_control_widget.py:167 src/ui/main_window.py:234
 msgid "Name:"
@@ -1765,11 +1799,11 @@ msgstr "libq65が見つかりません"
 msgid "libq65 found"
 msgstr "libq65が見つかりました"
 
-#: src/ui/q65_tab.py:153 src/ui/q65_tab.py:497
+#: src/ui/q65_tab.py:156 src/ui/q65_tab.py:500
 msgid "Input: No audio source — connect Rig in Radio Control"
 msgstr "入力: 音声ソースなし — 無線機コントロールで無線機を接続してください"
 
-#: src/ui/q65_tab.py:161
+#: src/ui/q65_tab.py:164
 msgid ""
 "libq65 not installed — RX decoding disabled.\n"
 "TX encoding uses pure Python and works without libq65."
@@ -1777,113 +1811,113 @@ msgstr ""
 "libq65がインストールされていません — 受信デコードは無効です。\n"
 "送信エンコードは純Python実装のため、libq65がなくても動作します。"
 
-#: src/ui/q65_tab.py:170 src/ui/rig_dialog.py:1058 src/ui/ft4_tab.py:330
+#: src/ui/q65_tab.py:173 src/ui/rig_dialog.py:1058 src/ui/ft4_tab.py:377
 msgid "Configuration"
 msgstr "設定"
 
-#: src/ui/q65_tab.py:174 src/ui/ft4_tab.py:334 src/ui/aprs_tab.py:198
+#: src/ui/q65_tab.py:177 src/ui/ft4_tab.py:381 src/ui/aprs_tab.py:198
 msgid "My Call:"
 msgstr "コールサイン:"
 
-#: src/ui/q65_tab.py:180 src/ui/ft4_tab.py:341
+#: src/ui/q65_tab.py:183 src/ui/ft4_tab.py:388
 msgid "Grid:"
 msgstr "グリッド:"
 
-#: src/ui/q65_tab.py:193 src/ui/ft4_tab.py:430
+#: src/ui/q65_tab.py:196 src/ui/ft4_tab.py:477
 msgid "TX Slot:"
 msgstr "TX Slot:"
 
-#: src/ui/q65_tab.py:195 src/ui/ft4_tab.py:433
+#: src/ui/q65_tab.py:198 src/ui/ft4_tab.py:480
 msgid "Even"
 msgstr "偶数"
 
-#: src/ui/q65_tab.py:196 src/ui/ft4_tab.py:434
+#: src/ui/q65_tab.py:199 src/ui/ft4_tab.py:481
 msgid "Odd"
 msgstr "奇数"
 
-#: src/ui/q65_tab.py:202 src/ui/q65_tab.py:550 src/ui/rig_dialog.py:388
-#: src/ui/ft4_tab.py:358 src/ui/cw_tab.py:167
+#: src/ui/q65_tab.py:205 src/ui/q65_tab.py:553 src/ui/rig_dialog.py:388
+#: src/ui/ft4_tab.py:405 src/ui/cw_tab.py:167
 msgid "SDR"
 msgstr "SDR"
 
-#: src/ui/q65_tab.py:221 src/ui/ft4_tab.py:402
+#: src/ui/q65_tab.py:224 src/ui/ft4_tab.py:449
 msgid "● RX"
 msgstr "● RX"
 
-#: src/ui/q65_tab.py:225 src/ui/ft4_tab.py:406
+#: src/ui/q65_tab.py:228 src/ui/ft4_tab.py:453
 msgid "● TX"
 msgstr "● TX"
 
 # --- Transmitter panel ---
-#: src/ui/q65_tab.py:232 src/ui/ft4_tab.py:413
+#: src/ui/q65_tab.py:235 src/ui/ft4_tab.py:460
 msgid "Transmit"
 msgstr "送信"
 
-#: src/ui/q65_tab.py:238
+#: src/ui/q65_tab.py:241
 msgid "CQ"
 msgstr ""
 
-#: src/ui/q65_tab.py:239
+#: src/ui/q65_tab.py:242
 msgid "Start calling CQ"
 msgstr "CQ送信を開始"
 
-#: src/ui/q65_tab.py:243
+#: src/ui/q65_tab.py:246
 msgid "RST"
 msgstr ""
 
-#: src/ui/q65_tab.py:244
+#: src/ui/q65_tab.py:247
 msgid "Send signal report"
 msgstr "信号レポートを送信"
 
-#: src/ui/q65_tab.py:248
+#: src/ui/q65_tab.py:251
 msgid "R+RST"
 msgstr ""
 
-#: src/ui/q65_tab.py:249
+#: src/ui/q65_tab.py:252
 msgid "Send R + signal report (confirm received)"
 msgstr "R + 信号レポートを送信（受信確認）"
 
-#: src/ui/q65_tab.py:253
+#: src/ui/q65_tab.py:256
 msgid "RR73"
 msgstr ""
 
-#: src/ui/q65_tab.py:257
+#: src/ui/q65_tab.py:260
 msgid "73"
 msgstr ""
 
-#: src/ui/q65_tab.py:263 src/ui/ft4_tab.py:451
+#: src/ui/q65_tab.py:266 src/ui/ft4_tab.py:498
 msgid "TX Enable"
 msgstr "TX有効化"
 
-#: src/ui/q65_tab.py:271 src/ui/ft4_tab.py:459
+#: src/ui/q65_tab.py:274 src/ui/ft4_tab.py:506
 msgid "Halt TX"
 msgstr "TX停止"
 
-#: src/ui/q65_tab.py:280 src/ui/ft4_tab.py:468
+#: src/ui/q65_tab.py:283 src/ui/ft4_tab.py:515
 msgid "TX:"
 msgstr "TX:"
 
-#: src/ui/q65_tab.py:283
+#: src/ui/q65_tab.py:286
 msgid "Message to transmit (auto-filled by state machine)"
 msgstr "送信メッセージ（ステートマシンが自動入力）"
 
-#: src/ui/q65_tab.py:288
+#: src/ui/q65_tab.py:291
 msgid "Send Once"
 msgstr "1回送信"
 
-#: src/ui/q65_tab.py:289
+#: src/ui/q65_tab.py:292
 msgid "Send the text above as a one-shot free message"
 msgstr "上のテキストを1回限りの自由メッセージとして送信"
 
-#: src/ui/q65_tab.py:297 src/ui/ft4_tab.py:476 src/ui/ft4_tab.py:697
+#: src/ui/q65_tab.py:300 src/ui/ft4_tab.py:523 src/ui/ft4_tab.py:744
 msgid "State: IDLE"
 msgstr "状態: IDLE"
 
-#: src/ui/q65_tab.py:303 src/ui/ft4_tab.py:482
+#: src/ui/q65_tab.py:306 src/ui/ft4_tab.py:529
 msgid "TX Level:"
 msgstr "TXレベル:"
 
-#: src/ui/q65_tab.py:310
+#: src/ui/q65_tab.py:313
 #, python-format
 msgid ""
 "TX audio output level (% of full scale).\n"
@@ -1896,57 +1930,57 @@ msgstr ""
 "Q65音声はフルスケールで生成されるため、リグやサウンドカードに\n"
 "よっては100%よりかなり低い値が必要になることがあります。"
 
-#: src/ui/q65_tab.py:322
+#: src/ui/q65_tab.py:325
 msgid "DX: —"
 msgstr "DX: —"
 
-#: src/ui/q65_tab.py:325 src/ui/ft4_tab.py:505
+#: src/ui/q65_tab.py:328 src/ui/ft4_tab.py:552
 msgid "Log QSO"
 msgstr "QSOを記録"
 
-#: src/ui/q65_tab.py:343 src/ui/ft4_tab.py:523
+#: src/ui/q65_tab.py:346 src/ui/ft4_tab.py:570
 msgid "Decoded Messages"
 msgstr "デコードされたメッセージ"
 
-#: src/ui/q65_tab.py:345 src/ui/ft4_tab.py:525
+#: src/ui/q65_tab.py:348 src/ui/ft4_tab.py:572
 msgid "UTC"
 msgstr "UTC"
 
-#: src/ui/q65_tab.py:345 src/ui/ft4_tab.py:525
+#: src/ui/q65_tab.py:348 src/ui/ft4_tab.py:572
 msgid "dB"
 msgstr "dB"
 
-#: src/ui/q65_tab.py:345 src/ui/ft4_tab.py:525
+#: src/ui/q65_tab.py:348 src/ui/ft4_tab.py:572
 msgid "DT"
 msgstr "DT"
 
-#: src/ui/q65_tab.py:345 src/ui/ft4_tab.py:525
+#: src/ui/q65_tab.py:348 src/ui/ft4_tab.py:572
 msgid "Hz"
 msgstr "Hz"
 
-#: src/ui/q65_tab.py:365
+#: src/ui/q65_tab.py:368
 msgid "Waiting for period boundary…"
 msgstr "周期境界を待機中…"
 
-#: src/ui/q65_tab.py:494 src/ui/ft4_tab.py:1219
+#: src/ui/q65_tab.py:497 src/ui/ft4_tab.py:1266
 msgid "Input: Rig connected"
 msgstr "入力: 無線機接続中"
 
-#: src/ui/q65_tab.py:598
+#: src/ui/q65_tab.py:601
 msgid "No audio in last period"
 msgstr "直前の周期に音声がありません"
 
-#: src/ui/q65_tab.py:624
+#: src/ui/q65_tab.py:627
 #, python-brace-format
 msgid "Period {utc}: no decodes"
 msgstr "周期 {utc}: デコードなし"
 
-#: src/ui/q65_tab.py:627
+#: src/ui/q65_tab.py:630
 #, python-brace-format
 msgid "Period {utc}: {n} decode(s)"
 msgstr "周期 {utc}: {n}件デコード"
 
-#: src/ui/q65_tab.py:757
+#: src/ui/q65_tab.py:760
 msgid "QSO logged"
 msgstr "QSOを記録しました"
 
@@ -2214,7 +2248,7 @@ msgstr "サンプルレート:"
 msgid "PPM Correction:"
 msgstr "PPM補正:"
 
-#: src/ui/rig_dialog.py:1074 src/ui/ft4_tab.py:432 src/ui/aprs_tab.py:236
+#: src/ui/rig_dialog.py:1074 src/ui/ft4_tab.py:479 src/ui/aprs_tab.py:236
 #: src/ui/telemetry_tab.py:172
 msgid "Auto"
 msgstr "自動"
@@ -2286,12 +2320,12 @@ msgstr "オーディオデバイス"
 msgid "Input device:"
 msgstr "入力デバイス:"
 
-#: src/ui/rig_dialog.py:1470 src/ui/rig_dialog.py:1643 src/ui/ft4_tab.py:372
-#: src/ui/ft4_tab.py:807
+#: src/ui/rig_dialog.py:1470 src/ui/rig_dialog.py:1643 src/ui/ft4_tab.py:419
+#: src/ui/ft4_tab.py:854
 msgid "-- dBFS"
 msgstr "-- dBFS"
 
-#: src/ui/rig_dialog.py:1473 src/ui/ft4_tab.py:365
+#: src/ui/rig_dialog.py:1473 src/ui/ft4_tab.py:412
 msgid "RX Level:"
 msgstr "RXレベル:"
 
@@ -2732,15 +2766,15 @@ msgstr "見つかりません"
 msgid "Installed to: "
 msgstr "インストール先: "
 
-#: src/ui/ft4_tab.py:348
+#: src/ui/ft4_tab.py:395
 msgid "Audio Hz:"
 msgstr "オーディオ Hz:"
 
-#: src/ui/ft4_tab.py:375
+#: src/ui/ft4_tab.py:422
 msgid "Waterfall"
 msgstr ""
 
-#: src/ui/ft4_tab.py:378
+#: src/ui/ft4_tab.py:425
 msgid ""
 "Open a popup showing the last RX period's audio as a spectrogram, to check "
 "whether real FT4 signals are visible in the passband even when nothing "
@@ -2749,7 +2783,7 @@ msgstr ""
 "直前のRX期間の音声をスペクトログラムとして表示するポップアップを開きます。\n"
 "何もデコードされない場合でも、実際のFT4信号が帯域内に見えるかを確認できます。"
 
-#: src/ui/ft4_tab.py:441
+#: src/ui/ft4_tab.py:488
 msgid ""
 "Which 6s slot to transmit in when calling CQ / enabling TX.\n"
 "Auto: whichever slot is current when you press CQ / TX Enable.\n"
@@ -2761,11 +2795,11 @@ msgstr ""
 "デコードされたCQへの応答は、この設定に関わらず\n"
 "常に正しい逆スロットを自動的に使用します。"
 
-#: src/ui/ft4_tab.py:470
+#: src/ui/ft4_tab.py:517
 msgid "FT4 message (auto-filled by state machine)"
 msgstr "FT4メッセージ（ステートマシンが自動入力）"
 
-#: src/ui/ft4_tab.py:489
+#: src/ui/ft4_tab.py:536
 #, python-format
 msgid ""
 "TX audio output level (% of full scale).\n"
@@ -2778,7 +2812,7 @@ msgstr ""
 "FT4音声はフルスケールで生成されるため、リグやサウンドカードに\n"
 "よっては100%よりかなり低い値が必要になることがあります。"
 
-#: src/ui/ft4_tab.py:648
+#: src/ui/ft4_tab.py:695
 #, python-brace-format
 msgid ""
 "Use Help > ft8lib Installation… (Recommended), or build ft8_lib (github.com/"
@@ -2787,11 +2821,11 @@ msgstr ""
 "Help > ft8lib Installation… を使う（推奨）か、ft8_lib（github.com/kgoba/"
 "ft8_lib）を手動でビルドして、共有ライブラリを {dir} に配置してください"
 
-#: src/ui/ft4_tab.py:653
+#: src/ui/ft4_tab.py:700
 msgid "ft8lib is not installed — FT4 TX/RX is disabled.\n"
 msgstr "ft8libがインストールされていません — FT4の送受信は無効です。\n"
 
-#: src/ui/ft4_tab.py:661
+#: src/ui/ft4_tab.py:708
 msgid ""
 "ft8lib found but decode API is unavailable — TX only.\n"
 "Update ft8_lib to ≥ v0.4 for RX decode support."
@@ -2799,7 +2833,7 @@ msgstr ""
 "ft8libは見つかりましたが、デコードAPIが利用できません — 送信のみ可能です。\n"
 "受信デコードに対応するには ft8_lib を v0.4 以降に更新してください。"
 
-#: src/ui/ft4_tab.py:670
+#: src/ui/ft4_tab.py:717
 msgid ""
 "Using lightweight FT4 decoder — may miss weak or overlapping stations in a "
 "crowded pass.\n"
@@ -2809,47 +2843,47 @@ msgstr ""
 "見逃す可能性があります。WSJT-X相当のデコード精度にするには\n"
 "Help > FT4 Enhanced Decoder Installation… を参照してください。"
 
-#: src/ui/ft4_tab.py:688
+#: src/ui/ft4_tab.py:735
 msgid "Set My Call before operating"
 msgstr "運用前にコールサインを設定してください"
 
-#: src/ui/ft4_tab.py:935
+#: src/ui/ft4_tab.py:982
 msgid "Invalid FT4 message: "
 msgstr "無効なFT4メッセージ: "
 
-#: src/ui/ft4_tab.py:960
+#: src/ui/ft4_tab.py:1007
 msgid "TX done — waiting for next period"
 msgstr "TX完了 — 次の周期を待機中"
 
-#: src/ui/ft4_tab.py:1175
+#: src/ui/ft4_tab.py:1222
 msgid "Set My Call before enabling TX"
 msgstr "TXを有効にする前にコールサインを設定してください"
 
-#: src/ui/ft4_tab.py:1181
+#: src/ui/ft4_tab.py:1228
 msgid "TX enabled — waiting for next period"
 msgstr "TXを有効化しました — 次の周期を待機中"
 
-#: src/ui/ft4_tab.py:1183
+#: src/ui/ft4_tab.py:1230
 msgid "TX disabled"
 msgstr "TXを無効化しました"
 
-#: src/ui/ft4_tab.py:1189
+#: src/ui/ft4_tab.py:1236
 msgid "TX halted"
 msgstr "TXを停止しました"
 
-#: src/ui/ft4_tab.py:1198
+#: src/ui/ft4_tab.py:1245
 msgid "Rig connected — ready"
 msgstr "無線機接続済み — 準備完了"
 
-#: src/ui/ft4_tab.py:1209
+#: src/ui/ft4_tab.py:1256
 msgid "Rig disconnected"
 msgstr "無線機未接続"
 
-#: src/ui/ft4_tab.py:1222
+#: src/ui/ft4_tab.py:1269
 msgid "Input: Rig not connected"
 msgstr "入力: 無線機未接続"
 
-#: src/ui/ft4_tab.py:1246
+#: src/ui/ft4_tab.py:1293
 msgid "QSOs logged: "
 msgstr "記録済みQSO数: "
 
@@ -3876,7 +3910,7 @@ msgid "AX100 Digi"
 msgstr "AX100 Digi"
 
 #: src/ui/main_window.py:918 src/ui/main_window.py:2178
-#: src/ui/main_window.py:6026 src/ui/main_window.py:6038
+#: src/ui/main_window.py:6036 src/ui/main_window.py:6048
 msgid "METEOR / HRPT"
 msgstr "METEOR / HRPT"
 
@@ -3893,7 +3927,7 @@ msgstr "自動追尾/記録を開く..."
 msgid "View"
 msgstr "表示"
 
-#: src/ui/main_window.py:933 src/ui/main_window.py:5525
+#: src/ui/main_window.py:933 src/ui/main_window.py:5535
 msgid "Language"
 msgstr "言語"
 
@@ -3914,8 +3948,8 @@ msgstr "ヘルプ"
 msgid "Satellite/Transmitter Colors"
 msgstr "衛星等の色"
 
-#: src/ui/main_window.py:967 src/ui/main_window.py:5743
-#: src/ui/main_window.py:5758
+#: src/ui/main_window.py:967 src/ui/main_window.py:5753
+#: src/ui/main_window.py:5768
 msgid "Auto Fetch Rules"
 msgstr "自動取得ルール"
 
@@ -3967,12 +4001,12 @@ msgstr "GitHub"
 msgid "Show QR code for web access"
 msgstr "Webアクセス用QRコードを表示"
 
-#: src/ui/main_window.py:1024 src/ui/main_window.py:5383
+#: src/ui/main_window.py:1024 src/ui/main_window.py:5393
 msgid "RIG: Off"
 msgstr "RIG: オフ"
 
-#: src/ui/main_window.py:1025 src/ui/main_window.py:5480
-#: src/ui/main_window.py:5484
+#: src/ui/main_window.py:1025 src/ui/main_window.py:5490
+#: src/ui/main_window.py:5494
 msgid "ROT: Off"
 msgstr "ROT: オフ"
 
@@ -4152,74 +4186,74 @@ msgstr "SATNOGS同期: {ins}件追加、{upd}件更新、{skp}件スキップ"
 msgid "SATNOGS sync failed: {etype}: {err}"
 msgstr "SATNOGS同期に失敗しました: {etype}: {err}"
 
-#: src/ui/main_window.py:5363
+#: src/ui/main_window.py:5373
 #, python-brace-format
 msgid "\\U0001f50a TX: {owner}"
 msgstr ""
 
-#: src/ui/main_window.py:5377
+#: src/ui/main_window.py:5387
 msgid "RIG: 1+2"
 msgstr "RIG: 1+2"
 
-#: src/ui/main_window.py:5379
+#: src/ui/main_window.py:5389
 msgid "RIG: 1"
 msgstr "RIG: 1"
 
-#: src/ui/main_window.py:5381
+#: src/ui/main_window.py:5391
 msgid "RIG: 2"
 msgstr "RIG: 2"
 
-#: src/ui/main_window.py:5482
+#: src/ui/main_window.py:5492
 msgid "ROT: On"
 msgstr "ROT: オン"
 
-#: src/ui/main_window.py:5526
+#: src/ui/main_window.py:5536
 msgid "FBSAT59 will restart now to apply the language change."
 msgstr "言語設定を反映するため、FBSAT59を今すぐ再起動します。"
 
 # --- Application ---
-#: src/ui/main_window.py:5559
+#: src/ui/main_window.py:5569
 msgid "Satellite/Transmitter Color Legend"
 msgstr "衛星等カラー凡例"
 
-#: src/ui/main_window.py:5569
+#: src/ui/main_window.py:5579
 msgid "Green (bold)"
 msgstr "緑（太字）"
 
-#: src/ui/main_window.py:5570
+#: src/ui/main_window.py:5580
 msgid "AMSAT status: Operational — confirmed working by AMSAT."
 msgstr "AMSATステータス: 稼働中 — AMSATにより動作確認済み。"
 
-#: src/ui/main_window.py:5575
+#: src/ui/main_window.py:5585
 msgid "Yellow"
 msgstr "黄"
 
-#: src/ui/main_window.py:5576
+#: src/ui/main_window.py:5586
 msgid "AMSAT status: Partially operational — degraded but active."
 msgstr "AMSATステータス: 一部稼働 — 性能低下しているが動作中。"
 
 # --- Status bar ---
-#: src/ui/main_window.py:5581
+#: src/ui/main_window.py:5591
 msgid "Red"
 msgstr "赤"
 
-#: src/ui/main_window.py:5582
+#: src/ui/main_window.py:5592
 msgid "AMSAT status: Non-operational — confirmed failed by AMSAT."
 msgstr "AMSATステータス: 稼働停止 — AMSATにより故障確認済み。"
 
-#: src/ui/main_window.py:5587
+#: src/ui/main_window.py:5597
 msgid "Orange"
 msgstr "オレンジ"
 
-#: src/ui/main_window.py:5588
+#: src/ui/main_window.py:5598
 msgid "SATNOGS alive — reception reported, no AMSAT data available."
 msgstr "SATNOGSでは稼働中 — 受信報告あり、AMSATデータなし。"
 
-#: src/ui/main_window.py:5593
+#: src/ui/main_window.py:5603
 msgid "Purple (italic)"
 msgstr "紫（斜体）"
 
-#: src/ui/main_window.py:5595
+#: src/ui/main_window.py:5605
 msgid ""
 "TLE pending — alive satellite awaiting TLE assignment (provisional NORAD ≥ "
 "90000, within 30-day grace period). Position cannot be displayed yet."
@@ -4227,35 +4261,35 @@ msgstr ""
 "TLE保留中 — 稼働中衛星がTLE割り当てを待っています（仮NORAD ID ≥ 90000、猶予期"
 "間30日以内）。まだ位置は表示できません。"
 
-#: src/ui/main_window.py:5603
+#: src/ui/main_window.py:5613
 msgid "Gray"
 msgstr "グレー"
 
-#: src/ui/main_window.py:5604
+#: src/ui/main_window.py:5614
 msgid "Status unknown — not confirmed operational by any source."
 msgstr "状態不明 — どのソースでも動作確認が取れていません。"
 
-#: src/ui/main_window.py:5609
+#: src/ui/main_window.py:5619
 msgid "Blue"
 msgstr "青"
 
-#: src/ui/main_window.py:5610
+#: src/ui/main_window.py:5620
 msgid "Celestial Bodies (Moon etc.) — below the horizon."
 msgstr "天体（月等） — 地平線以下。"
 
-#: src/ui/main_window.py:5615
+#: src/ui/main_window.py:5625
 msgid "Blue (bold)"
 msgstr "青（太字）"
 
-#: src/ui/main_window.py:5616
+#: src/ui/main_window.py:5626
 msgid "Celestial Bodies (Moon etc.) — above the horizon."
 msgstr "天体（月等） — 地平線以上。"
 
-#: src/ui/main_window.py:5626
+#: src/ui/main_window.py:5636
 msgid "Yellow background"
 msgstr "黄色の背景"
 
-#: src/ui/main_window.py:5628
+#: src/ui/main_window.py:5638
 msgid ""
 "SATNOGS status: Inactive — this transmitter is no longer operating. Shown "
 "only while the transponder dropdown is open."
@@ -4263,11 +4297,11 @@ msgstr ""
 "SATNOGSステータス：Inactive — このトランスミッターは現在稼働していません。ト"
 "ランスポンダー選択のプルダウンを開いている間のみ表示されます。"
 
-#: src/ui/main_window.py:5634
+#: src/ui/main_window.py:5644
 msgid "Red background"
 msgstr "赤色の背景"
 
-#: src/ui/main_window.py:5636
+#: src/ui/main_window.py:5646
 msgid ""
 "SATNOGS status: Invalid — this transmitter's data is known to be incorrect. "
 "Shown only while the transponder dropdown is open."
@@ -4276,15 +4310,15 @@ msgstr ""
 "かっています。トランスポンダー選択のプルダウンを開いている間のみ表示されま"
 "す。"
 
-#: src/ui/main_window.py:5658
+#: src/ui/main_window.py:5668
 msgid "Satellite List"
 msgstr "衛星一覧"
 
-#: src/ui/main_window.py:5674
+#: src/ui/main_window.py:5684
 msgid "Radio Control — Transmitter Selection"
 msgstr "Radio Control — トランスミッター選択"
 
-#: src/ui/main_window.py:5708
+#: src/ui/main_window.py:5718
 msgid ""
 "FBSAT59 automatically fetches and updates TLE orbital data and transmitter "
 "information in the background. Manual updates are normally not required. Use "
@@ -4295,7 +4329,7 @@ msgstr ""
 "得・更新します。通常、手動更新は不要です。今すぐ最新データが必要な場合（例: "
 "新規打ち上げ衛星のパス直前など）のみ手動同期を使用してください。"
 
-#: src/ui/main_window.py:5714
+#: src/ui/main_window.py:5724
 msgid ""
 "<table border='0' cellspacing='4'><tr><td><b>Space Stations</b> (ISS, CSS…)</"
 "td><td>every <b>1 hour</b></td></tr><tr><td><b>Amateur Satellites</b></"
@@ -4323,7 +4357,7 @@ msgstr ""
 "tr><tr><td><b>Transmitter Database (SATNOGS)</b></td><td><b>7日</b>ごと</"
 "td></tr></table>"
 
-#: src/ui/main_window.py:5733
+#: src/ui/main_window.py:5743
 msgid ""
 "Transmitter data is fetched from SATNOGS automatically on first launch, then "
 "refreshed automatically every 7 days in the background. Use <b>Satellite → "
@@ -4336,7 +4370,7 @@ msgstr ""
 "ち上げ衛星のトランスミッタ登録直後など）は、<b>Satellite → Sync SATNOGS</b> "
 "でトランスミッターの周波数・モードを手動更新できます。"
 
-#: src/ui/main_window.py:5740
+#: src/ui/main_window.py:5750
 msgid ""
 "On each launch the app syncs satellite names and statuses from SATNOGS, and "
 "fetches any TLE sources whose cached data has expired."
@@ -4344,43 +4378,43 @@ msgstr ""
 "起動のたびに、アプリはSATNOGSから衛星名・ステータスを同期し、キャッシュデータ"
 "の期限が切れたTLEソースを取得します。"
 
-#: src/ui/main_window.py:5744
+#: src/ui/main_window.py:5754
 msgid "TLE Auto-Fetch Schedule"
 msgstr "TLE自動取得スケジュール"
 
-#: src/ui/main_window.py:5745
+#: src/ui/main_window.py:5755
 msgid "Transmitter Database (SATNOGS)"
 msgstr "トランスミッターデータベース（SATNOGS）"
 
-#: src/ui/main_window.py:5746
+#: src/ui/main_window.py:5756
 msgid "At Startup"
 msgstr "起動時"
 
-#: src/ui/main_window.py:5770
+#: src/ui/main_window.py:5780
 msgid "About FBSAT59"
 msgstr "FBSAT59について"
 
-#: src/ui/main_window.py:5772
+#: src/ui/main_window.py:5782
 msgid "Modern satellite tracking software for amateur radio operators.\n"
 msgstr "アマチュア無線家向けの現代的な衛星追尾ソフトウェア。\n"
 
-#: src/ui/main_window.py:6048 src/ui/main_window.py:6066
+#: src/ui/main_window.py:6058 src/ui/main_window.py:6076
 msgid "QR Code"
 msgstr "QRコード"
 
-#: src/ui/main_window.py:6048
+#: src/ui/main_window.py:6058
 msgid "Web server is not running."
 msgstr "Webサーバーが起動していません。"
 
-#: src/ui/main_window.py:6066
+#: src/ui/main_window.py:6076
 msgid "Failed to generate QR code."
 msgstr "QRコードの生成に失敗しました。"
 
-#: src/ui/ft4wsjt_dialog.py:60
+#: src/ui/ft4wsjt_dialog.py:72
 msgid "Development"
 msgstr "開発版"
 
-#: src/ui/ft4wsjt_dialog.py:122
+#: src/ui/ft4wsjt_dialog.py:134
 msgid ""
 "No libft4wsjt package found for this platform in the release.\n"
 "Please build it manually — see the instructions above."
@@ -4389,15 +4423,15 @@ msgstr ""
 "でした。\n"
 "上記の手順に従い、手動でビルドしてください。"
 
-#: src/ui/ft4wsjt_dialog.py:181
+#: src/ui/ft4wsjt_dialog.py:203
 msgid "FT4 Enhanced Decoder Installation"
 msgstr "FT4拡張デコーダーのインストール"
 
-#: src/ui/ft4wsjt_dialog.py:206
+#: src/ui/ft4wsjt_dialog.py:228
 msgid "About the Enhanced FT4 Decoder"
 msgstr "FT4拡張デコーダーについて"
 
-#: src/ui/ft4wsjt_dialog.py:210
+#: src/ui/ft4wsjt_dialog.py:232
 msgid ""
 "libft4wsjt is built from <a href='https://github.com/wsjtx/wsjtx'>WSJT-X</"
 "a>'s own FT4 decode engine (GPL-3.0) via a small C bridge — the same 3-pass "
@@ -4415,7 +4449,7 @@ msgstr ""
 "近接して重なり合う信号が見逃されやすくなります）。<br><br>FT4送信は常に"
 "ft8_libを使用するため、これは受信のみに影響します。"
 
-#: src/ui/ft4wsjt_dialog.py:249
+#: src/ui/ft4wsjt_dialog.py:271
 msgid ""
 "Downloads a pre-built libft4wsjt from this project's GitHub Releases\n"
 "and installs it to your user data directory."
@@ -4423,13 +4457,39 @@ msgstr ""
 "本プロジェクトのGitHub Releasesからビルド済みのlibft4wsjtをダウンロードし、\n"
 "ユーザーデータディレクトリにインストールします。"
 
-#: src/ui/ft4wsjt_dialog.py:281
+#: src/ui/ft4wsjt_dialog.py:296
+msgid ""
+"Remove the user-installed libft4wsjt from your data directory.\n"
+"If FT4 is currently in use, this may fail with a permission\n"
+"error — close that tab first."
+msgstr ""
+"ユーザーインストール済みのlibft4wsjtをデータディレクトリから削除します。\n"
+"FT4を使用中の場合、権限エラーで失敗することがあります —\n"
+"その場合はFT4タブを先に閉じてください。"
+
+#: src/ui/ft4wsjt_dialog.py:320
 msgid "libft4wsjt not found"
 msgstr "libft4wsjtが見つかりません"
 
-#: src/ui/ft4wsjt_dialog.py:289
+#: src/ui/ft4wsjt_dialog.py:329
 msgid "libft4wsjt found"
 msgstr "libft4wsjtが見つかりました"
+
+#: src/ui/ft4wsjt_dialog.py:368
+msgid "Uninstall FT4 Enhanced Decoder"
+msgstr "FT4拡張デコーダーをアンインストール"
+
+#: src/ui/ft4wsjt_dialog.py:370
+msgid ""
+"Remove the user-installed libft4wsjt from your data directory?\n"
+"\n"
+"If FT4 is currently in use, this may fail — close that tab (or restart "
+"FBSAT59) and try again."
+msgstr ""
+"ユーザーインストール済みのlibft4wsjtをデータディレクトリから削除しますか？\n"
+"\n"
+"FT4を使用中の場合、失敗することがあります — その場合は\n"
+"FT4タブを閉じるか、FBSAT59を再起動してから再度お試しください。"
 
 #, fuzzy, python-brace-format
 #~ msgid "Audio open error: {error}"
