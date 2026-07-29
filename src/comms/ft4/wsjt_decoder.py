@@ -146,6 +146,57 @@ def is_available() -> bool:
     return _lib is not None
 
 
+def free_libft4wsjt() -> None:
+    """Release the current libft4wsjt handle so a reinstall can overwrite it.
+
+    Unlike ft8_lib (codec.py's _find_ft8lib()/free_ft8lib()), which loads a
+    fresh handle per call and is freed right after, libft4wsjt is loaded
+    once into the module-level `_lib` global at import time and kept for
+    the rest of the process's life -- there was previously no way to
+    release it at all. On Windows, ctypes never auto-unloads a shared
+    library, so the DLL file stays locked for as long as any FT4 session
+    in this run has used it, and Help > FT4 Enhanced Decoder Installation's
+    "Download & Install" would fail with PermissionError trying to
+    overwrite it (GitHub Issue #16 -- confirmed live on Windows/IC-9700:
+    "[Errno 13] Permission denied: ...\\ft4wsjt\\").
+
+    Same PyInstaller-bundled-copy guard as codec.py's free_ft8lib(): a raw
+    FreeLibrary() on a _MEIPASS-resident DLL can deadlock against
+    PyInstaller's own loader hook, and nothing ever needs to overwrite the
+    bundled copy anyway -- only a user-installed copy is ever reinstalled.
+    POSIX doesn't need this at all (a running process can have a file
+    replaced out from under it).
+    """
+    global _lib
+    if _lib is None:
+        return
+    if sys.platform == "win32":
+        lib_path = getattr(_lib, "_name", "") or ""
+        skip = False
+        if getattr(sys, "frozen", False) and lib_path:
+            meipass = getattr(sys, "_MEIPASS", "")
+            with contextlib.suppress(OSError, ValueError):
+                if meipass and Path(lib_path).resolve().is_relative_to(Path(meipass).resolve()):
+                    skip = True
+        if not skip:
+            with contextlib.suppress(OSError, AttributeError):
+                ctypes.windll.kernel32.FreeLibrary(_lib._handle)
+    _lib = None
+
+
+def reload_libft4wsjt() -> bool:
+    """Free the current handle (if any) and reload from disk.
+
+    Called after a fresh install completes so the newly installed library
+    becomes usable immediately, without requiring an app restart. Returns
+    True if a library is available after reloading.
+    """
+    global _lib
+    free_libft4wsjt()
+    _lib = _load_libft4wsjt()
+    return _lib is not None
+
+
 class Ft4WsjtDecoder:
     """FT4 RX decoder backed by WSJT-X's own 3-pass subtract + BP/OSD engine.
 

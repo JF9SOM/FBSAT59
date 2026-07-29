@@ -34,7 +34,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from comms.ft4.wsjt_decoder import _find_libft4wsjt, get_user_ft4wsjt_dir
+from comms.ft4.wsjt_decoder import (
+    _find_libft4wsjt,
+    free_libft4wsjt,
+    get_user_ft4wsjt_dir,
+    reload_libft4wsjt,
+)
 from i18n import _
 
 # ---------------------------------------------------------------------------
@@ -145,6 +150,13 @@ class _InstallWorker(QThread):
         dest_dir = get_user_ft4wsjt_dir()
         dest_dir.mkdir(parents=True, exist_ok=True)
 
+        # A prior FT4 session in this run may already have loaded
+        # ft4wsjt.dll (kept open for the process's whole lifetime -- unlike
+        # ft8_lib, libft4wsjt was never designed to be freed/reloaded), which
+        # locks the file on Windows and makes overwriting it fail with
+        # PermissionError. Release it first (GitHub Issue #16).
+        free_libft4wsjt()
+
         try:
             if suffix.endswith(".tar.gz"):
                 with tarfile.open(tmp_path) as tar:
@@ -165,6 +177,9 @@ class _InstallWorker(QThread):
             return
 
         self.progress.emit(100)
+        # Pick up the newly installed library immediately -- no app restart
+        # needed for FT4 RX to start using it on its next decode call.
+        reload_libft4wsjt()
         self.finished_ok.emit(str(dest_dir / lib_name))
 
 
