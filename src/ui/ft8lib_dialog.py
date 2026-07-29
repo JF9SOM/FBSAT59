@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ctypes
 import logging
+import shutil
 import sys
 from pathlib import Path
 
@@ -26,6 +27,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QTextBrowser,
@@ -57,16 +59,21 @@ def _get_ft8lib_version(lib: ctypes.CDLL) -> str:
     return _("(version symbol not available)")
 
 
+def _is_user_installed(lib_path: str) -> bool:
+    """True if lib_path resolves inside the user install directory."""
+    try:
+        Path(lib_path).relative_to(get_user_ft8lib_dir())
+        return True
+    except ValueError:
+        return False
+
+
 def _detect_source(lib_path: str) -> str:
     """Return a human-readable source label for the resolved library path."""
-    user_dir = get_user_ft8lib_dir()
-    p = Path(lib_path)
-    try:
-        p.relative_to(user_dir)
+    if _is_user_installed(lib_path):
         return _("User-installed")
-    except ValueError:
-        pass
     if getattr(sys, "frozen", False):
+        p = Path(lib_path)
         try:
             p.relative_to(Path(getattr(sys, "_MEIPASS", "")))
             return _("Bundled")
@@ -347,6 +354,23 @@ class Ft8LibDialog(QDialog):
         dl.addLayout(btn_row)
         root.addWidget(self._download_box)
 
+        # --- Uninstall (only shown when a user-installed copy exists) ---
+        uninstall_row = QHBoxLayout()
+        self._btn_uninstall = QPushButton(_("Uninstall"))
+        self._btn_uninstall.setStyleSheet("QPushButton{color:#cc3300;}")
+        self._btn_uninstall.setToolTip(
+            _(
+                "Remove the user-installed ft8lib from your data directory.\n"
+                "If FT4 or Q65 is currently in use, this may fail with a\n"
+                "permission error — close those tabs first."
+            )
+        )
+        self._btn_uninstall.clicked.connect(self._on_uninstall)
+        self._btn_uninstall.setVisible(False)
+        uninstall_row.addStretch()
+        uninstall_row.addWidget(self._btn_uninstall)
+        root.addLayout(uninstall_row)
+
         # --- Buttons ---
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         bb.rejected.connect(self.reject)
@@ -368,6 +392,7 @@ class Ft8LibDialog(QDialog):
             self._lbl_version.setText("")
             self._manual_box.setVisible(True)
             self._download_box.setVisible(True)
+            self._btn_uninstall.setVisible(False)
         else:
             # Try to determine where it was loaded from
             lib_path = getattr(lib, "_name", "") or _("unknown")
@@ -382,6 +407,7 @@ class Ft8LibDialog(QDialog):
             self._lbl_version.setText(_("Version: ") + version)
             self._manual_box.setVisible(False)
             self._download_box.setVisible(True)
+            self._btn_uninstall.setVisible(_is_user_installed(lib_path))
             logger.info("[ft8lib install diag] _refresh_status: calling free_ft8lib()")
             free_ft8lib(lib)
             logger.info("[ft8lib install diag] _refresh_status: free_ft8lib() returned")
@@ -416,3 +442,27 @@ class Ft8LibDialog(QDialog):
         self._lbl_dl_status.setText(_("Error: ") + msg)
         self._btn_download.setEnabled(True)
         self._progress.setVisible(False)
+
+    def _on_uninstall(self) -> None:
+        reply = QMessageBox.question(
+            self,
+            _("Uninstall ft8lib"),
+            _(
+                "Remove the user-installed ft8lib from your data directory?\n\n"
+                "If FT4 or Q65 is currently in use, this may fail — close "
+                "those tabs (or restart FBSAT59) and try again."
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        lib = _find_ft8lib()
+        if lib is not None:
+            free_ft8lib(lib)
+        try:
+            shutil.rmtree(get_user_ft8lib_dir())
+        except Exception as exc:
+            QMessageBox.warning(self, _("Uninstall Failed"), str(exc))
+            return
+        self._refresh_status()

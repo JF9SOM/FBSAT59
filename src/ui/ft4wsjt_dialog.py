@@ -17,6 +17,7 @@ Detection priority (mirrors _find_libft4wsjt()):
 
 from __future__ import annotations
 
+import shutil
 import sys
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QTextBrowser,
@@ -47,16 +49,21 @@ from i18n import _
 # ---------------------------------------------------------------------------
 
 
+def _is_user_installed(lib_path: str) -> bool:
+    """True if lib_path resolves inside the user install directory."""
+    try:
+        Path(lib_path).relative_to(get_user_ft4wsjt_dir())
+        return True
+    except ValueError:
+        return False
+
+
 def _detect_source(lib_path: str) -> str:
     """Return a human-readable source label for the resolved library path."""
-    user_dir = get_user_ft4wsjt_dir()
-    p = Path(lib_path)
-    try:
-        p.relative_to(user_dir)
+    if _is_user_installed(lib_path):
         return _("User-installed")
-    except ValueError:
-        pass
     if getattr(sys, "frozen", False):
+        p = Path(lib_path)
         try:
             p.relative_to(Path(getattr(sys, "_MEIPASS", "")))
             return _("Bundled")
@@ -280,6 +287,23 @@ class Ft4WsjtDialog(QDialog):
         dl.addLayout(btn_row)
         root.addWidget(self._download_box)
 
+        # --- Uninstall (only shown when a user-installed copy exists) ---
+        uninstall_row = QHBoxLayout()
+        self._btn_uninstall = QPushButton(_("Uninstall"))
+        self._btn_uninstall.setStyleSheet("QPushButton{color:#cc3300;}")
+        self._btn_uninstall.setToolTip(
+            _(
+                "Remove the user-installed libft4wsjt from your data directory.\n"
+                "If FT4 is currently in use, this may fail with a permission\n"
+                "error — close that tab first."
+            )
+        )
+        self._btn_uninstall.clicked.connect(self._on_uninstall)
+        self._btn_uninstall.setVisible(False)
+        uninstall_row.addStretch()
+        uninstall_row.addWidget(self._btn_uninstall)
+        root.addLayout(uninstall_row)
+
         # --- Buttons ---
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         bb.rejected.connect(self.reject)
@@ -298,6 +322,7 @@ class Ft4WsjtDialog(QDialog):
             self._lbl_path.setText("")
             self._manual_box.setVisible(True)
             self._download_box.setVisible(True)
+            self._btn_uninstall.setVisible(False)
         else:
             source = _detect_source(str(path))
             self._lbl_status.setText(
@@ -306,6 +331,7 @@ class Ft4WsjtDialog(QDialog):
             self._lbl_path.setText(_("Path: ") + str(path))
             self._manual_box.setVisible(False)
             self._download_box.setVisible(True)
+            self._btn_uninstall.setVisible(_is_user_installed(str(path)))
 
     # ------------------------------------------------------------------ #
     # Slots
@@ -335,3 +361,25 @@ class Ft4WsjtDialog(QDialog):
         self._lbl_dl_status.setText(_("Error: ") + msg)
         self._btn_download.setEnabled(True)
         self._progress.setVisible(False)
+
+    def _on_uninstall(self) -> None:
+        reply = QMessageBox.question(
+            self,
+            _("Uninstall FT4 Enhanced Decoder"),
+            _(
+                "Remove the user-installed libft4wsjt from your data directory?\n\n"
+                "If FT4 is currently in use, this may fail — close that tab "
+                "(or restart FBSAT59) and try again."
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        free_libft4wsjt()
+        try:
+            shutil.rmtree(get_user_ft4wsjt_dir())
+        except Exception as exc:
+            QMessageBox.warning(self, _("Uninstall Failed"), str(exc))
+            return
+        self._refresh_status()
