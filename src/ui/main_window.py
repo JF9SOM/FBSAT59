@@ -5215,6 +5215,37 @@ class MainWindow(QMainWindow):
             # mode; suppress it when switching to CW (CW has no CTCSS).
             ctcss_hz = 0.0 if dl_mode in ("CW", "CW-R") else float(self._ctcss_tone_hz or 0.0)
 
+            # FTX-1F/FT-991 raw CAT (_RAW_CAT_MODEL_IDS) writes mode via
+            # os.open()/pyserial alongside an already-open Hamlib session —
+            # no port conflict, no disconnect needed (mirrors
+            # _apply_transponder_state_to_rig()'s dispatch for these rigs).
+            if rig.is_connected and rig._model_id not in _RAW_CAT_MODEL_IDS:
+                # Satmode and generic Direct rigs always open a FRESH
+                # Hamlib session for apply_transponder_state() (satmode:
+                # _apply_mode_and_ctcss_hamlib(); generic: send_mode_only()),
+                # which conflicts with the already-open persistent
+                # connection. Disconnect first, apply, then automatically
+                # reconnect — same pattern already used for the satmode
+                # CTCSS button (see _on_ctcss_send()'s satmode branch).
+                self._disconnect_rig()  # must run on UI thread
+
+                def _send_direct_reconnect() -> None:
+                    try:
+                        rig.apply_transponder_state(dl_mode, ul_mode, ctcss_hz)
+                    except Exception as exc:
+                        self._rig_error.emit(str(exc))
+                    try:
+                        rig.connect()
+                    except Exception as exc:
+                        self._rig_error.emit(f"reconnect after mode toggle: {exc}")
+                        return
+                    from PySide6.QtCore import QTimer
+
+                    QTimer.singleShot(0, self._on_satmode_rig_reconnected)
+
+                threading.Thread(target=_send_direct_reconnect, daemon=True).start()
+                return
+
             def _send_direct() -> None:
                 try:
                     rig.apply_transponder_state(dl_mode, ul_mode, ctcss_hz)
