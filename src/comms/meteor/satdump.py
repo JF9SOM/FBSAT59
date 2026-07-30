@@ -121,6 +121,13 @@ def find_satdump() -> Path | None:
     if found:
         return Path(found)
 
+    # 3. Standard macOS .app bundle install (SatDump.dmg -> drag to /Applications)
+    if sys.platform == "darwin":
+        for app_dir in (Path("/Applications"), Path.home() / "Applications"):
+            bundle_exe = app_dir / "SatDump.app" / "Contents" / "MacOS" / "satdump"
+            if bundle_exe.is_file():
+                return bundle_exe
+
     return None
 
 
