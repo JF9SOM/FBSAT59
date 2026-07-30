@@ -628,6 +628,48 @@ class TestSatmodeHamlibReturnCodeChecks:
         mock_rig_inst.error_status = error_status
         return mock_hamlib
 
+    @staticmethod
+    def _mock_serial_module() -> MagicMock:
+        """Build a fake `serial` module for _send_sub_mode_civ_pyserial()
+        (GitHub Issue #16 — the Sub DATA-mode flag is now written via raw
+        CI-V over pyserial instead of Hamlib's set_mode(), since Hamlib's
+        own legacy data-mode command does not stick on Sub for this rig
+        family). Needed so these tests don't depend on pyserial actually
+        being importable / a real serial port being present -- see this
+        class's docstring for why every Hamlib call is mocked the same way.
+
+        Replies just need to be shaped plausibly enough for
+        _send_sub_mode_civ_pyserial()'s own parsing (reply[4] etc.) to not
+        choke; the exact mode/filter values read back don't matter to
+        these tests (they only check _check_rig_ok()'s Hamlib-side
+        error-status handling, which this pyserial step is not part of).
+        """
+
+        class _FakeSerial:
+            def __init__(self, *args: object, **kwargs: object) -> None:
+                self._last_write = b""
+
+            def write(self, data: bytes) -> None:
+                self._last_write = bytes(data)
+
+            def flush(self) -> None:
+                pass
+
+            def read_until(self, _terminator: bytes = b"\xfd") -> bytes:
+                w = self._last_write
+                if len(w) >= 5 and w[4] == 0x04:
+                    return bytes([0xFE, 0xFE, 0xE0, 0xA2, 0x04, 0x00, 0x01, 0xFD])
+                if len(w) == 7 and w[4] == 0x1A and w[5] == 0x06:
+                    return bytes([0xFE, 0xFE, 0xE0, 0xA2, 0x1A, 0x06, 0x01, 0xFD])
+                return bytes([0xFE, 0xFE, 0xE0, 0xA2, 0xFB, 0xFD])
+
+            def close(self) -> None:
+                pass
+
+        mock_serial = MagicMock()
+        mock_serial.Serial.side_effect = _FakeSerial
+        return mock_serial
+
     def test_happy_path_returns_true_and_clears_last_error(self) -> None:
         """error_status == 0 (RIG_OK) throughout -> success, despite every
         Hamlib call itself returning None."""
@@ -636,7 +678,9 @@ class TestSatmodeHamlibReturnCodeChecks:
         mock_hamlib = self._mock_hamlib(mock_rig_inst, error_status=0)
         with (
             patch("rig.controller.HAMLIB_AVAILABLE", True),
-            patch.dict("sys.modules", {"Hamlib": mock_hamlib}),
+            patch.dict(
+                "sys.modules", {"Hamlib": mock_hamlib, "serial": self._mock_serial_module()}
+            ),
             patch("rig.controller.time.sleep"),
         ):
             ok = ctrl._apply_mode_and_ctcss_hamlib("USB", "LSB", 0.0)
@@ -655,7 +699,9 @@ class TestSatmodeHamlibReturnCodeChecks:
         mock_hamlib = self._mock_hamlib(mock_rig_inst, error_status=-5)  # RIG_ETIMEOUT
         with (
             patch("rig.controller.HAMLIB_AVAILABLE", True),
-            patch.dict("sys.modules", {"Hamlib": mock_hamlib}),
+            patch.dict(
+                "sys.modules", {"Hamlib": mock_hamlib, "serial": self._mock_serial_module()}
+            ),
             patch("rig.controller.time.sleep"),
         ):
             ok = ctrl._apply_mode_and_ctcss_hamlib("USB", "LSB", 0.0)
@@ -672,7 +718,9 @@ class TestSatmodeHamlibReturnCodeChecks:
         mock_hamlib = self._mock_hamlib(mock_rig_inst, error_status=-9)  # RIG_ERJCTED
         with (
             patch("rig.controller.HAMLIB_AVAILABLE", True),
-            patch.dict("sys.modules", {"Hamlib": mock_hamlib}),
+            patch.dict(
+                "sys.modules", {"Hamlib": mock_hamlib, "serial": self._mock_serial_module()}
+            ),
             patch("rig.controller.time.sleep"),
             pytest.raises(RigControlError, match="-9"),
         ):

@@ -273,6 +273,25 @@ _FTX1_MODE_CODES: dict[str, str] = {
     "LSB-D": "8",  # DATA-LSB
 }
 
+# Icom CI-V C_SET_MODE (0x06) mode bytes, and whether the mode implies the
+# separate DATA-mode flag (C_CTL_MEM/S_MEM_DATA_MODE, "1A 06") should be set.
+# Used by HamlibDirectController._send_sub_mode_civ_pyserial() (GitHub Issue
+# #16 — see that method's docstring).
+_ICOM_CIV_MODE_CODES: dict[str, tuple[int, bool]] = {
+    "FM": (0x05, False),
+    "DIGITALVOICE": (0x05, False),
+    "AFSK": (0x05, False),
+    "USB": (0x01, False),
+    "SSB": (0x01, False),
+    "BPSK": (0x01, False),
+    "LSB": (0x00, False),
+    "CW": (0x03, False),
+    "CW-R": (0x07, False),
+    "AM": (0x02, False),
+    "USB-D": (0x01, True),  # DATA-USB (data mode, e.g. FT4 calling freqs)
+    "LSB-D": (0x00, True),  # DATA-LSB
+}
+
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
@@ -1295,6 +1314,97 @@ class HamlibDirectController(RigController):
             logger.error("RigDirect._apply_ctcss_civ: %s", exc)
             return False
 
+    def _send_sub_mode_civ_pyserial(self, ul_mode: str) -> tuple[int, int]:
+        """Set the Sub (UL) VFO's mode + DATA flag via raw CI-V over pyserial,
+        bypassing Hamlib's set_mode() for this one step (GitHub Issue #16).
+
+        Hamlib's own icom_set_mode() cannot reliably apply the DATA-mode
+        flag to Sub on Main/Sub+A/B rigs like the IC-9700: it forces its
+        fast combined "0x26" command off whenever force_vfo_swap is set
+        (always true for RIG_VFO_SUB on this rig family) and falls back to
+        a legacy C_CTL_MEM/S_MEM_DATA_MODE ("1A 06") command that does not
+        stick on Sub for this specific rig (confirmed live — base sideband
+        lands correctly, DATA flag does not). This sends the identical
+        CI-V bytes directly, in case the failure is in Hamlib's own
+        client-side handling of that command rather than the rig's actual
+        support for it.
+
+        A prior attempt used Hamlib's rig.send_raw() and crashed the
+        process (stack smashing in the Python SWIG binding — see
+        CLAUDE.md). Plain pyserial has no such crash risk.
+
+        Caller must close the Hamlib session on self._port BEFORE calling
+        this (pyserial needs exclusive access), and must reopen a fresh
+        Hamlib session afterward to continue. Expected to run while
+        self._port_lock is already held by the caller.
+
+        Returns (mode_byte, data_flag) read back after the write for
+        diagnostic logging (mode_byte: 0x00=LSB/0x01=USB/etc.; data_flag:
+        0=DATA off, nonzero=DATA on). Raises RigControlError if the rig
+        never ACKs a command after 3 attempts.
+        """
+        import serial
+
+        civ = self._civ_addr_int()
+        ctrl = 0xE0
+
+        def frame(*payload: int) -> bytes:
+            return bytes([0xFE, 0xFE, civ, ctrl, *payload, 0xFD])
+
+        def send(ser: Any, f: bytes) -> bytes:
+            for attempt in range(3):
+                ser.write(f)
+                ser.flush()
+                resp = bytes(ser.read_until(b"\xfd"))
+                if resp.endswith(b"\xfd"):
+                    return resp
+                logger.warning(
+                    "RigDirect._send_sub_mode_civ_pyserial: no ACK (attempt %d/3): %s",
+                    attempt + 1,
+                    f.hex(),
+                )
+            raise RigControlError(f"CI-V no ACK after 3 attempts: {f.hex()}")
+
+        mode_byte, is_data = _ICOM_CIV_MODE_CODES.get(ul_mode, (0x05, False))
+
+        ser = serial.Serial(
+            self._port,
+            self._baud_rate,
+            bytesize=self._data_bits,
+            stopbits=self._stop_bits,
+            timeout=0.5,
+        )
+        try:
+            send(ser, frame(0x07, 0xD1))  # Select Sub
+
+            # Preserve the rig's current filter selection instead of
+            # hard-coding one -- read it back first. C_RD_MODE (0x04)
+            # reply layout: FE FE E0 <addr> 04 <mode_byte> <filter> FD.
+            rd = send(ser, frame(0x04))
+            filt = rd[6] if len(rd) >= 8 and rd[4] == 0x04 else 0x01
+
+            send(ser, frame(0x06, mode_byte, filt))  # base sideband
+            # Legacy DATA-mode flag (C_CTL_MEM/S_MEM_DATA_MODE): D0=1/0, D1=filter.
+            send(ser, frame(0x1A, 0x06, 0x01 if is_data else 0x00, filt))
+
+            rd_mode = send(ser, frame(0x04))
+            rb_mode_byte = rd_mode[5] if len(rd_mode) >= 8 and rd_mode[4] == 0x04 else -1
+
+            # Query form (no data bytes) reads back the current DATA-mode
+            # flag. Reply layout: FE FE E0 <addr> 1A 06 <flag> FD.
+            rd_flag = send(ser, frame(0x1A, 0x06))
+            rb_data_flag = (
+                rd_flag[6]
+                if len(rd_flag) >= 8 and rd_flag[4] == 0x1A and rd_flag[5] == 0x06
+                else -1
+            )
+
+            send(ser, frame(0x07, 0xD0))  # Select Main (restore)
+        finally:
+            ser.close()
+
+        return rb_mode_byte, rb_data_flag
+
     def set_dcs_code(self, code: int) -> bool:
         """Set the DCS code. Pass code=0 to disable."""
         if not self.is_connected or self._rig is None:
@@ -1880,30 +1990,42 @@ class HamlibDirectController(RigController):
                         dl_hamlib,
                         rb_dl_pb,
                     )
-                    rig2.set_mode(ul_hamlib, 0, vfo_sub)
-                    _check_rig_ok(rig2, "cross-band: set_mode(SUB/UL)")
-                    time.sleep(0.2)
-                    rb_ul_mode, rb_ul_pb = rig2.get_mode(vfo_sub)
+                    # Sub (UL): base sideband + DATA flag via raw CI-V over
+                    # pyserial instead of Hamlib's set_mode() (GitHub Issue
+                    # #16). Hamlib's own icom_set_mode() cannot reliably
+                    # apply the DATA-mode flag to Sub on Main/Sub+A/B rigs
+                    # like the IC-9700 (confirmed live -- base sideband
+                    # lands correctly but the DATA flag does not; traced to
+                    # icom_set_mode() forcing -RIG_ENAVAIL for its fast
+                    # combined "0x26" command whenever force_vfo_swap is
+                    # set, which it always is for RIG_VFO_SUB here, falling
+                    # back to a legacy "1A 06" command that does not stick
+                    # on Sub for this rig family). A previous attempt used
+                    # Hamlib's rig.send_raw() here and crashed the process
+                    # (stack smashing in the Python SWIG binding -- the same
+                    # class of risk this project's CLAUDE.md already flagged
+                    # send_raw() for). Plain pyserial has no such crash risk,
+                    # so this sends the identical CI-V bytes via pyserial
+                    # instead, closing Hamlib's session first (pyserial needs
+                    # exclusive access to the port) and reopening it
+                    # afterward to continue with CTCSS below.
+                    rig2.close()
+                    rig2 = None
+                    time.sleep(0.3)
+                    rb_ul_mode_byte, rb_ul_data_flag = self._send_sub_mode_civ_pyserial(ul_mode)
                     logger.info(
-                        "RigDirect._apply_mode_and_ctcss_hamlib: DIAG readback "
-                        "SUB/UL mode=%d(requested %d) pb=%d",
-                        rb_ul_mode,
-                        ul_hamlib,
-                        rb_ul_pb,
+                        "RigDirect._apply_mode_and_ctcss_hamlib: DIAG readback (pyserial) "
+                        "SUB/UL mode_byte=0x%02X data_flag=0x%02X (ul_mode=%s; "
+                        "0x00=LSB 0x01=USB; data_flag!=0 means DATA mode ON)",
+                        rb_ul_mode_byte,
+                        rb_ul_data_flag,
+                        ul_mode,
                     )
-                    # NOTE (GitHub Issue #16): the is_data_mode flag on Sub
-                    # does not stick via Hamlib's set_mode() above (confirmed
-                    # live -- readback shows base sideband correct, DATA flag
-                    # not applied; root cause traced to icom_set_mode()
-                    # forcing -RIG_ENAVAIL for its fast data-mode path
-                    # whenever force_vfo_swap is set, which it always is for
-                    # RIG_VFO_SUB on Main/Sub+A/B rigs). A raw-CI-V workaround
-                    # via rig.send_raw() was tried here and reverted: it
-                    # crashed the process live (stack smashing in Hamlib's
-                    # Python SWIG binding -- the same class of risk this
-                    # project's CLAUDE.md already flagged send_raw() for).
-                    # Do not re-add a send_raw()-based fix without a safer
-                    # mechanism confirmed not to crash on real hardware.
+                    time.sleep(0.3)
+                    rig2 = _make_rig()
+                    _open_rig_with_retry(rig2, "cross-band: reopen after Sub mode (pyserial)")
+                    time.sleep(0.3)
+
                     # CTCSS on Sub (TX/UL)
                     rig2.set_vfo(vfo_sub)
                     _check_rig_ok(rig2, "cross-band: set_vfo(SUB) for CTCSS")
