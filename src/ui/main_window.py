@@ -810,6 +810,9 @@ class MainWindow(QMainWindow):
             self._group_pass_chart, _("Group Pass Chart")
         )
         self._tab_widget.setTabVisible(self._group_chart_tab_idx, False)
+        # Resident, but dismissable without exiting the app (re-shown by the
+        # next group search) — unlike other resident tabs it does get a ×.
+        self._add_tab_close_button(self._group_pass_chart)
         self._tab_widget.addTab(self._radio_control, _("Radio Control"))
 
         # SDR Control tab — always visible; content greys out until SDR connects
@@ -842,9 +845,15 @@ class MainWindow(QMainWindow):
             self._radio_control,
             self._sdr_control,
         }
-        self._tab_widget.setTabsClosable(True)
-        self._tab_widget.tabCloseRequested.connect(self._on_tab_close_requested)
-        self._hide_close_buttons_on_resident_tabs()
+        # Note: QTabWidget.setTabsClosable(True) is intentionally NOT used
+        # here. On macOS, enabling it bakes a native close glyph into every
+        # tab's own paint routine (Cocoa style), and per-tab
+        # setTabButton(index, side, None) cannot fully suppress it on
+        # resident tabs — it leaves stray artifact pixels above the label
+        # of whichever tab is currently selected (reported 2026-07-30).
+        # Each Communications tab instead gets its own explicit × QToolButton
+        # via _add_tab_close_button(), which calls _on_tab_close_requested()
+        # directly — there is no native tabCloseRequested signal to connect.
 
         h_splitter.addWidget(self._tab_widget)
 
@@ -1892,36 +1901,42 @@ class MainWindow(QMainWindow):
     # Communications menu slots
     # ------------------------------------------------------------------ #
 
-    def _hide_close_buttons_on_resident_tabs(self) -> None:
-        """Remove the × button from all currently registered resident tabs.
+    def _add_tab_close_button(self, tab: QWidget) -> None:
+        """Attach an explicit × close button to a single tab.
 
-        Called once after the tab widget is fully populated.  Any tab added
-        later by Communications menu items is a non-resident tab and will
-        keep its close button.  The Group Pass Chart tab also keeps its
-        close button even though it is resident (see _on_tab_close_requested)
-        — it is a persistent widget updated in place by each group search,
-        but the tab itself should be dismissable without exiting the app.
-
-        The close button's side (Left vs Right) is style-dependent: Qt's
-        native macOS style places it on the LeftSide, while Linux styles
-        (Fusion, Breeze, etc.) place it on the RightSide. Both sides must
-        be cleared or the button survives on macOS.
+        Deliberately does NOT use QTabWidget.setTabsClosable(True). That
+        global switch makes macOS's native (Cocoa) style bake a close glyph
+        into the paint routine of every tab, and per-tab
+        setTabButton(index, side, None) cannot fully suppress it on tabs
+        that never had a real button widget — it left stray artifact pixels
+        above the label of whichever tab was selected (reported 2026-07-30).
+        Attaching a real QToolButton per tab avoids that native chrome
+        entirely, so resident tabs (which never call this) are unaffected.
         """
-        from PySide6.QtWidgets import QTabBar
+        from PySide6.QtWidgets import QTabBar, QToolButton
 
-        bar = self._tab_widget.tabBar()
-        for i in range(self._tab_widget.count()):
-            if i == self._group_chart_tab_idx:
-                continue
-            bar.setTabButton(i, QTabBar.ButtonPosition.LeftSide, None)
-            bar.setTabButton(i, QTabBar.ButtonPosition.RightSide, None)
+        btn = QToolButton()
+        btn.setText("×")
+        btn.setAutoRaise(True)
+        btn.setFixedSize(18, 18)
+        btn.setToolTip(_("Close"))
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        def _on_click() -> None:
+            idx = self._tab_widget.indexOf(tab)
+            if idx >= 0:
+                self._on_tab_close_requested(idx)
+
+        btn.clicked.connect(_on_click)
+        idx = self._tab_widget.indexOf(tab)
+        self._tab_widget.tabBar().setTabButton(idx, QTabBar.ButtonPosition.RightSide, btn)
 
     def _on_tab_close_requested(self, index: int) -> None:
         """Close a Communications tab and clean up its resources.
 
-        Guards against removing a resident tab even if its × button was
-        somehow left visible (e.g. a future Qt style placing it on a side
-        not cleared by _hide_close_buttons_on_resident_tabs).
+        Guards against removing a resident tab even if this were somehow
+        called with its index (defence in depth — resident tabs never get
+        a close button from _add_tab_close_button() in the first place).
 
         Calls widget.close() before deleteLater() so the tab's closeEvent()
         actually fires — that's what stops background subprocesses
@@ -1997,6 +2012,7 @@ class MainWindow(QMainWindow):
         tab.aprs_stations_updated.connect(self._world_map.set_aprs_stations)
         tab.aprs_stations_cleared.connect(self._world_map.clear_aprs_stations)
         idx = self._tab_widget.addTab(tab, _("APRS"))
+        self._add_tab_close_button(tab)
         self._tab_widget.setCurrentIndex(idx)
         self._notify_comms_tab_of_rig_state(tab)
 
@@ -2013,6 +2029,7 @@ class MainWindow(QMainWindow):
         tab.satellite_selected.connect(self._on_telemetry_satellite_requested)
         self._comms_tab_keys[tab] = "telemetry"
         idx = self._tab_widget.addTab(tab, _("Telemetry"))
+        self._add_tab_close_button(tab)
         self._tab_widget.setCurrentIndex(idx)
         self._notify_comms_tab_of_rig_state(tab)
         if self._selected_norad is not None:
@@ -2107,6 +2124,7 @@ class MainWindow(QMainWindow):
         tab = SstvTab(self._conn, self._radio_control, aprs_engine=aprs_engine, parent=self)
         self._comms_tab_keys[tab] = "sstv"
         idx = self._tab_widget.addTab(tab, tab_label)
+        self._add_tab_close_button(tab)
         self._tab_widget.setCurrentIndex(idx)
         self._notify_comms_tab_of_rig_state(tab)
 
@@ -2123,6 +2141,7 @@ class MainWindow(QMainWindow):
         tab = Ft4Tab(self._conn, self._radio_control, parent=self)
         self._comms_tab_keys[tab] = "ft4"
         idx = self._tab_widget.addTab(tab, tab_label)
+        self._add_tab_close_button(tab)
         self._tab_widget.setCurrentIndex(idx)
         self._notify_comms_tab_of_rig_state(tab)
 
@@ -2165,6 +2184,7 @@ class MainWindow(QMainWindow):
         tab = Q65Tab(self._conn, self._radio_control, parent=self)
         self._comms_tab_keys[tab] = "q65"
         idx = self._tab_widget.addTab(tab, tab_label)
+        self._add_tab_close_button(tab)
         self._tab_widget.setCurrentIndex(idx)
 
     def _on_open_meteor(self, norad: int = 0, downlink_hz: int = 0) -> None:
@@ -2196,6 +2216,7 @@ class MainWindow(QMainWindow):
         tab.satellite_selection_requested.connect(self._on_meteor_satellite_requested)
         self._comms_tab_keys[tab] = "meteor"
         idx = self._tab_widget.addTab(tab, tab_label)
+        self._add_tab_close_button(tab)
         self._tab_widget.setCurrentIndex(idx)
         if norad:
             tab.select_pipeline_by_norad_and_freq(norad, downlink_hz)
@@ -2247,6 +2268,7 @@ class MainWindow(QMainWindow):
         tab = CwTab(self._conn, self._radio_control, parent=self)
         self._comms_tab_keys[tab] = "cw"
         idx = self._tab_widget.addTab(tab, tab_label)
+        self._add_tab_close_button(tab)
         self._tab_widget.setCurrentIndex(idx)
 
     def _on_cw_transponder_selected(self) -> None:
@@ -2273,6 +2295,7 @@ class MainWindow(QMainWindow):
         tab = Ax100DigiTab(self._conn, self._radio_control, parent=self)
         self._comms_tab_keys[tab] = "ax100digi"
         idx = self._tab_widget.addTab(tab, tab_label)
+        self._add_tab_close_button(tab)
         self._tab_widget.setCurrentIndex(idx)
 
     def _on_cw_model_help(self) -> None:
