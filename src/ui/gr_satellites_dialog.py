@@ -186,7 +186,7 @@ class _InstallWorker(QThread):
         elif sys.platform == "linux":
             suffix = f"gr-satellites-linux-{machine}.tar.gz"
         elif sys.platform == "win32":
-            suffix = "gr-satellites-windows-x86_64.zip"
+            suffix = "gr-satellites-windows-x86_64.tar.gz"
         else:
             self.finished_err.emit(_("Unsupported platform"))
             return
@@ -239,12 +239,25 @@ class _InstallWorker(QThread):
             return
 
         self.status.emit(_("Fixing up environment paths (conda-unpack)…"))
-        unpack_script = dest_dir / "bin" / "conda-unpack"
-        python_bin = dest_dir / "bin" / "python"
-        if unpack_script.exists() and python_bin.exists():
+        # Windows conda envs place entry points as Scripts/<name>.exe
+        # launcher stubs (self-contained, run directly) with python.exe at
+        # the env root; macOS/Linux use bin/<name> shebang scripts that
+        # must be handed to bin/python explicitly (see
+        # gr_satellites_install.py's module docstring for why).
+        unpack_cmd: list[str] | None = None
+        if sys.platform == "win32":
+            unpack_exe = dest_dir / "Scripts" / "conda-unpack.exe"
+            if unpack_exe.exists():
+                unpack_cmd = [str(unpack_exe)]
+        else:
+            unpack_script = dest_dir / "bin" / "conda-unpack"
+            python_bin = dest_dir / "bin" / "python"
+            if unpack_script.exists() and python_bin.exists():
+                unpack_cmd = [str(python_bin), str(unpack_script)]
+        if unpack_cmd is not None:
             try:
                 subprocess.run(
-                    [str(python_bin), str(unpack_script)],
+                    unpack_cmd,
                     check=True,
                     capture_output=True,
                     text=True,

@@ -4909,14 +4909,37 @@ GNU Radioのような大規模パッケージでも機能することが実機�
 「`--version`に差し替えた後のフルパス実行が緑になるか」（次回`workflow_dispatch`で確認予定）
 のみ。
 
+**macOS: `workflow_dispatch`でグリーン確認済み（2026-07-31）**。`gr-satellites-bundle`
+プレリリースタグに`gr-satellites-macos-arm64.tar.gz`が公開済み。
+
+**Linux・Windowsジョブを追加（2026-07-31）**: macOS成功を受け、同一ワークフロー内に
+`build-linux`（`ubuntu-22.04`）・`build-windows`（`windows-latest`）ジョブを追加した。
+
+- **Linux**: macOSジョブとほぼ同一構成（`conda-pack`はmacOS特有のcodesigning等の癖を持たない
+  ため、緑になる可能性が高いと見ている）。診断ステップもmacOSと同じ内容
+- **Windows**: Windows conda環境はmacOS/Linuxと**根本的にレイアウトが異なる**
+  （`bin/<name>`のshebangスクリプトではなく`Scripts/<name>.exe`という自己完結型の
+  ランチャーstub、`python.exe`は`bin/`ではなく環境ルート直下）ため、macOS/Linuxで機能した
+  「`bundled_python bundled_script`」形式がそのまま通用するとは限らない。この点は
+  **本プロジェクトで一度も検証したことがなく未知数**なため、Windowsのスモークテストは
+  あえて「探索的な診断優先」（`set +e`でPython importチェックのみをSTATUSに反映し、
+  `Scripts/gr_satellites.exe`ランチャーの起動確認は参考情報として記録するのみで
+  合否判定に含めない）にしてある。実行結果を見てから
+  `gr_satellites_install.py`の`resolve_gr_satellites_command()`のWindows分岐を
+  調整する前提
+  - CI・アプリ側（`gr_satellites_dialog.py`）双方で、当初`python.exe conda-unpack.exe`
+    （`.exe`ランチャーの中身をPythonソースとして渡そうとする、明らかに不正な呼び出し）と
+    誤って実装していたバグを実装中に発見・修正済み（`Scripts/conda-unpack.exe`は
+    自己完結型ランチャーなので直接実行が正しい）
+  - 配布形式はWindowsも含め全プラットフォームで`.tar.gz`に統一（`zipfile`同様
+    `tarfile`もPython標準ライブラリでクロスプラットフォームに動作するため、
+    外部ツール依存を増やす`.zip`を使う理由がない）
+
 **残る未検証・既知の制約（2026-07-31時点）**:
-- `--version`修正後のフルパス実行（グリーン確認）はまだ未確認（次回`workflow_dispatch`で確認予定）
-- Windows・Linux向けCIジョブは未実装（ユーザーがmacOSユーザーのため、まずmacOSのみ実装。
-  macOSでの動作確認後に追加検討）
-- `gr_satellites_dialog.py`のWindows分岐（`Scripts/`ディレクトリ・`conda-unpack`呼び出し）は
-  パス組み立てのみ実装済みで、実際にWindows向けバンドルが存在しない現時点では到達しないコード
-- 「実際にダウンロードして展開・動作確認する」というエンドツーエンド検証は、次回
-  `workflow_dispatch`実行 → 実機でのHelp画面からのDownload & Install操作、の両方が必要
+- Linux・Windowsジョブとも`workflow_dispatch`での実行結果はまだ未確認
+- 「実際にダウンロードして展開・動作確認する」というエンドツーエンド検証（Help画面からの
+  Download & Install操作）は、CIが緑になったプラットフォームについてのみ次のステップとして
+  必要
 
 #### AI-CW デコーダーについて
 - 候補: **morse-decoder**（PyTorch CNN ベース）・**DeepMorse**・**cwdecoder**（RNN）など

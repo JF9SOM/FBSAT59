@@ -7,10 +7,14 @@ name: Build gr-satellites Bundle
 # uploaded to the dedicated "gr-satellites-bundle" pre-release tag, mirroring
 # the ft8lib/q65lib/ft4wsjt bundle workflows.
 #
-# macOS-only for now (Windows/Linux jobs to follow once this is verified to
-# actually work end-to-end — conda-pack relocation of a package as large as
-# GNU Radio has not been tried in this project before). Manual trigger only
-# (no schedule) until a successful run has been confirmed.
+# macOS (verified green 2026-07-31) + Linux + Windows. Linux mirrors the
+# macOS job closely (conda-pack has no macOS-specific codesigning/RPATH
+# quirks on Linux). Windows conda envs lay out entry points completely
+# differently (Scripts/<name>.exe launcher stubs instead of a bin/<name>
+# shebang script, python.exe at the env root instead of bin/) — untested in
+# this project, so its smoke-test step is deliberately diagnostic-first
+# rather than assuming any particular invocation works. Manual trigger only
+# (no schedule) until all three platforms are confirmed green.
 
 on:
   workflow_dispatch:
@@ -162,6 +166,237 @@ jobs:
           echo
           if [ "$STATUS" -eq 0 ]; then
             echo "Smoke test passed."
+          else
+            echo "Smoke test FAILED — see diagnostics above."
+          fi
+          exit $STATUS
+
+      - name: Upload to gr-satellites-bundle release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view gr-satellites-bundle \
+            --repo "${{ github.repository }}" 2>/dev/null || \
+          gh release create gr-satellites-bundle \
+            --repo "${{ github.repository }}" \
+            --title "gr-satellites Bundle" \
+            --notes "Pre-built, headless (no Qt/GUI) GNU Radio + gr-satellites conda-forge environment, packed with conda-pack." \
+            --prerelease
+          gh release upload gr-satellites-bundle \
+            --repo "${{ github.repository }}" \
+            --clobber \
+            "${{ env.PKG }}"
+
+  # ------------------------------------------------------------------ #
+  # Linux
+  # ------------------------------------------------------------------ #
+  build-linux:
+    name: Build gr-satellites env (Linux x86_64)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create headless gr-satellites conda-forge env
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: gr-satellites-env
+          create-args: >-
+            gnuradio-core
+            gnuradio-satellites
+            python=3.11
+          channels: conda-forge
+          init-shell: bash
+
+      - name: Pack environment with conda-pack
+        shell: bash -el {0}
+        run: |
+          pip install conda-pack
+          ENV_PREFIX="${MAMBA_ROOT_PREFIX}/envs/gr-satellites-env"
+          PKG_NAME="gr-satellites-linux-x86_64.tar.gz"
+          conda-pack -p "$ENV_PREFIX" -o "/tmp/${PKG_NAME}"
+          echo "PKG=/tmp/${PKG_NAME}" >> "$GITHUB_ENV"
+          echo "PKG_NAME=${PKG_NAME}" >> "$GITHUB_ENV"
+          ls -lh "/tmp/${PKG_NAME}"
+
+      # Same checks as the macOS job (see its comments for the two real
+      # bugs those diagnostics found: neither was Linux/macOS-specific, so
+      # this is expected to just work — but verifying rather than assuming).
+      - name: Smoke-test packed environment
+        run: |
+          set +e
+          STATUS=0
+          SP=/tmp/gr-sat-smoketest/lib/python3.11/site-packages
+
+          mkdir -p /tmp/gr-sat-smoketest
+          tar -xzf "${{ env.PKG }}" -C /tmp/gr-sat-smoketest
+
+          echo "=== bin/ python binaries/symlinks ==="
+          ls -la /tmp/gr-sat-smoketest/bin/ | grep -i python
+
+          echo
+          echo "=== site-packages/gnuradio + satellites BEFORE conda-unpack ==="
+          ls -la "$SP" 2>&1 | grep -iE "gnuradio|satellites" || echo "(not found)"
+
+          echo
+          echo "=== Running conda-unpack ==="
+          /tmp/gr-sat-smoketest/bin/python /tmp/gr-sat-smoketest/bin/conda-unpack
+          echo "conda-unpack exit code: $?"
+
+          echo
+          echo "=== site-packages/gnuradio + satellites AFTER conda-unpack ==="
+          ls -la "$SP" 2>&1 | grep -iE "gnuradio|satellites" || echo "(not found)"
+
+          echo
+          echo "=== Control: import numpy (non-gnuradio package, same site-packages) ==="
+          /tmp/gr-sat-smoketest/bin/python -c "import numpy; print('numpy OK:', numpy.__file__)"
+          if [ $? -ne 0 ]; then echo "numpy import FAILED"; STATUS=1; fi
+
+          echo
+          echo "=== Test: import gnuradio ==="
+          /tmp/gr-sat-smoketest/bin/python -c "import gnuradio; print('gnuradio OK, __path__:', list(gnuradio.__path__))"
+          if [ $? -ne 0 ]; then echo "gnuradio import FAILED"; STATUS=1; fi
+
+          echo
+          echo "=== Test: import satellites ==="
+          /tmp/gr-sat-smoketest/bin/python -c "import satellites; print('satellites OK, __path__:', list(satellites.__path__))"
+          if [ $? -ne 0 ]; then echo "satellites import FAILED"; STATUS=1; fi
+
+          echo
+          echo "=== Test: gr_satellites --version via explicit bundled python (real invocation) ==="
+          /tmp/gr-sat-smoketest/bin/python /tmp/gr-sat-smoketest/bin/gr_satellites --version
+          if [ $? -ne 0 ]; then echo "gr_satellites --version (explicit python) FAILED"; STATUS=1; fi
+
+          echo
+          if [ "$STATUS" -eq 0 ]; then
+            echo "Smoke test passed."
+          else
+            echo "Smoke test FAILED — see diagnostics above."
+          fi
+          exit $STATUS
+
+      - name: Upload to gr-satellites-bundle release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view gr-satellites-bundle \
+            --repo "${{ github.repository }}" 2>/dev/null || \
+          gh release create gr-satellites-bundle \
+            --repo "${{ github.repository }}" \
+            --title "gr-satellites Bundle" \
+            --notes "Pre-built, headless (no Qt/GUI) GNU Radio + gr-satellites conda-forge environment, packed with conda-pack." \
+            --prerelease
+          gh release upload gr-satellites-bundle \
+            --repo "${{ github.repository }}" \
+            --clobber \
+            "${{ env.PKG }}"
+
+  # ------------------------------------------------------------------ #
+  # Windows
+  # ------------------------------------------------------------------ #
+  build-windows:
+    name: Build gr-satellites env (Windows x86_64)
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create headless gr-satellites conda-forge env
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: gr-satellites-env
+          create-args: >-
+            gnuradio-core
+            gnuradio-satellites
+            python=3.11
+          channels: conda-forge
+          init-shell: bash
+
+      - name: Pack environment with conda-pack
+        shell: bash -el {0}
+        run: |
+          pip install conda-pack
+          ENV_PREFIX="${MAMBA_ROOT_PREFIX}/envs/gr-satellites-env"
+          PKG_NAME="gr-satellites-windows-x86_64.tar.gz"
+          conda-pack -p "$ENV_PREFIX" -o "$RUNNER_TEMP/${PKG_NAME}"
+          echo "PKG=$RUNNER_TEMP/${PKG_NAME}" >> "$GITHUB_ENV"
+          echo "PKG_NAME=${PKG_NAME}" >> "$GITHUB_ENV"
+          ls -lh "$RUNNER_TEMP/${PKG_NAME}"
+
+      # Windows conda envs are laid out completely differently from
+      # macOS/Linux: entry-point commands are Scripts/<name>.exe launcher
+      # stubs (compiled, not a text shebang script), and python.exe sits at
+      # the env root rather than in bin/. Whether "python.exe
+      # Scripts/gr_satellites.exe" is even a valid invocation (it may not
+      # be — a .exe launcher isn't Python source you can pass as a script
+      # argument) is unverified, so this step deliberately gathers facts
+      # (set +e, non-fatal launcher test) rather than assuming the same fix
+      # that worked for macOS/Linux (explicit python + script path) applies
+      # here unchanged. STATUS below only gates on the Python-level import
+      # checks; the launcher invocation is informational until we see real
+      # output and can adjust resolve_gr_satellites_command()'s Windows
+      # branch accordingly.
+      - name: Smoke-test packed environment
+        run: |
+          set +e
+          STATUS=0
+          EXTRACT_DIR="$RUNNER_TEMP/gr-sat-smoketest"
+          SP="$EXTRACT_DIR/Lib/site-packages"
+
+          mkdir -p "$EXTRACT_DIR"
+          tar -xzf "${{ env.PKG }}" -C "$EXTRACT_DIR"
+
+          echo "=== Extracted env root contents ==="
+          ls -la "$EXTRACT_DIR"
+
+          echo
+          echo "=== Scripts/ entries mentioning satellite/conda-unpack ==="
+          ls -la "$EXTRACT_DIR/Scripts" 2>&1 | grep -iE "satellite|conda-unpack" || echo "(not found under Scripts/)"
+
+          echo
+          echo "=== site-packages/gnuradio + satellites BEFORE conda-unpack ==="
+          ls -la "$SP" 2>&1 | grep -iE "gnuradio|satellites" || echo "(not found)"
+
+          echo
+          echo "=== Running conda-unpack ==="
+          # Scripts/conda-unpack.exe is a self-contained launcher stub
+          # (Windows console-script entry point), not text with a shebang
+          # like macOS/Linux's bin/conda-unpack — run it directly rather
+          # than handing it to python.exe as an argument (that would try to
+          # parse the .exe's binary content as Python source).
+          "$EXTRACT_DIR/Scripts/conda-unpack.exe"
+          echo "conda-unpack exit code: $?"
+
+          echo
+          echo "=== Control: import numpy (non-gnuradio package, same site-packages) ==="
+          "$EXTRACT_DIR/python.exe" -c "import numpy; print('numpy OK:', numpy.__file__)"
+          if [ $? -ne 0 ]; then echo "numpy import FAILED"; STATUS=1; fi
+
+          echo
+          echo "=== Test: import gnuradio ==="
+          "$EXTRACT_DIR/python.exe" -c "import gnuradio; print('gnuradio OK, __path__:', list(gnuradio.__path__))"
+          if [ $? -ne 0 ]; then echo "gnuradio import FAILED"; STATUS=1; fi
+
+          echo
+          echo "=== Test: import satellites ==="
+          "$EXTRACT_DIR/python.exe" -c "import satellites; print('satellites OK, __path__:', list(satellites.__path__))"
+          if [ $? -ne 0 ]; then echo "satellites import FAILED"; STATUS=1; fi
+
+          echo
+          echo "=== Informational: Scripts/gr_satellites.exe --version (own launcher, invocation form TBD) ==="
+          "$EXTRACT_DIR/Scripts/gr_satellites.exe" --version
+          echo "exit code: $? (informational — see step comment; not gated on STATUS yet)"
+
+          echo
+          if [ "$STATUS" -eq 0 ]; then
+            echo "Core Python-level checks passed (launcher invocation still informational — see above)."
           else
             echo "Smoke test FAILED — see diagnostics above."
           fi
