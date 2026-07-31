@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
 from i18n import _
 from sdr import SOAPY_AVAILABLE
 from sdr.device import SdrDeviceInfo
+from ui.copyable_text import CommandRow, make_selectable
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +180,14 @@ class SdrInstallDialog(QDialog):
 
         self._action_label = QLabel()
         self._action_label.setWordWrap(True)
+        make_selectable(self._action_label)
         action_v.addWidget(self._action_label)
+
+        # Holds only the exact runnable command (never the surrounding prose),
+        # so "Copy" always yields something safe to paste straight into a
+        # terminal. Hidden automatically when there is no single command to show.
+        self._cmd_row = CommandRow()
+        action_v.addWidget(self._cmd_row)
 
         self._install_btn = QPushButton(_("Install Selected Packages"))
         self._install_btn.clicked.connect(self._on_install)
@@ -203,7 +211,7 @@ class SdrInstallDialog(QDialog):
         # -- SDRplay note --
         sdrplay_grp = QGroupBox(_("Note for SDRplay Users"))
         sdrplay_v = QVBoxLayout(sdrplay_grp)
-        sdrplay_note = QLabel(
+        sdrplay_note = CommandRow(
             _(
                 "SDRplay devices (RSP1, RSP2, RSPdx, etc.) are not bundled on any platform "
                 "because SoapySDRPlay3 depends on the proprietary SDRplay API library, "
@@ -219,14 +227,13 @@ class SdrInstallDialog(QDialog):
                 "  3. Restart this software — your device will be detected automatically."
             )
         )
-        sdrplay_note.setWordWrap(True)
         sdrplay_v.addWidget(sdrplay_note)
         layout.addWidget(sdrplay_grp)
 
         # -- ADALM-Pluto note --
         pluto_grp = QGroupBox(_("Note for ADALM-Pluto Users"))
         pluto_v = QVBoxLayout(pluto_grp)
-        pluto_note = QLabel(
+        pluto_note = CommandRow(
             _(
                 "ADALM-Pluto (PlutoSDR) is not bundled on any platform and must be installed "
                 "manually. Linux and macOS users can use package managers; Windows users need "
@@ -250,14 +257,13 @@ class SdrInstallDialog(QDialog):
                 "  4. Restart this software — PlutoSDR will be detected automatically."
             )
         )
-        pluto_note.setWordWrap(True)
         pluto_v.addWidget(pluto_note)
         layout.addWidget(pluto_grp)
 
         # -- Remote SDR (SoapyRemote) note --
         remote_grp = QGroupBox(_("Note for Remote SDR Users"))
         remote_v = QVBoxLayout(remote_grp)
-        remote_note = QLabel(
+        remote_note = CommandRow(
             _(
                 "An SDR on another machine (e.g. a receiver in a separate location) can be "
                 "used via SoapyRemote. Windows already bundles the client module; Linux and "
@@ -279,7 +285,6 @@ class SdrInstallDialog(QDialog):
                 "directly."
             )
         )
-        remote_note.setWordWrap(True)
         remote_v.addWidget(remote_note)
         layout.addWidget(remote_grp)
 
@@ -397,6 +402,7 @@ class SdrInstallDialog(QDialog):
             self._action_label.setText(
                 "✅  " + _("All detected devices have drivers installed. No action needed.")
             )
+            self._cmd_row.setText("")
             self._install_btn.setVisible(False)
             return
 
@@ -413,6 +419,7 @@ class SdrInstallDialog(QDialog):
             self._action_label.setText(
                 _("The following packages will be installed:\n") + "  " + "  ".join(unique_pkgs)
             )
+            self._cmd_row.setText("sudo apt-get install -y " + " ".join(unique_pkgs))
             self._install_btn.setText(_("Install via apt-get (requires password)"))
 
         elif os_name == "Darwin":
@@ -429,20 +436,25 @@ class SdrInstallDialog(QDialog):
                     + "  "
                     + "  ".join(unique_pkgs)
                 )
+                self._cmd_row.setText("brew install " + " ".join(unique_pkgs))
                 self._install_btn.setText(_("Install via Homebrew"))
             else:
                 self._pending_cmd = []
                 self._action_label.setText(
                     _(
                         "Homebrew is not installed.\n"
-                        "Install Homebrew first by running the following in Terminal:\n\n"
-                        '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+                        "Install Homebrew first by running the following in Terminal:"
                     )
+                )
+                self._cmd_row.setText(
+                    '/bin/bash -c "$(curl -fsSL '
+                    'https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
                 )
                 self._install_btn.setVisible(False)
 
         elif os_name == "Windows":
             self._pending_cmd = []
+            self._cmd_row.setText("")
             self._action_label.setText(
                 _(
                     "Windows — Supported SDR Devices\n"
@@ -471,6 +483,7 @@ class SdrInstallDialog(QDialog):
             self._add_windows_buttons()
         else:
             self._pending_cmd = []
+            self._cmd_row.setText("")
             self._action_label.setText(
                 _(
                     "Automatic installation is not supported on this OS.\n"

@@ -43,6 +43,7 @@ from comms.ft4.wsjt_decoder import (
     reload_libft4wsjt,
 )
 from i18n import _
+from ui.copyable_text import make_copy_button
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -260,6 +261,7 @@ class Ft4WsjtDialog(QDialog):
             "</pre>"
         )
         ml.addWidget(manual_text)
+        ml.addWidget(make_copy_button(manual_text.toPlainText))
         root.addWidget(self._manual_box)
 
         # --- Bundle download ---

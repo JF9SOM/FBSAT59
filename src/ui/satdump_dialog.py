@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from comms.meteor.satdump import find_satdump
 from i18n import _
+from ui.copyable_text import CommandRow
 
 _DOWNLOAD_URL = "https://github.com/SatDump/SatDump/releases/latest"
 
@@ -87,6 +88,9 @@ class SatDumpDialog(QDialog):
         self._guide_text.setFixedHeight(160)
         gl.addWidget(self._guide_text)
 
+        self._cmd_row = CommandRow()
+        gl.addWidget(self._cmd_row)
+
         self._btn_open = QPushButton(_("Open Download Page"))
         self._btn_open.clicked.connect(self._on_open_download)
         gl.addWidget(self._btn_open)
@@ -115,10 +119,12 @@ class SatDumpDialog(QDialog):
         self._populate_guide()
 
     def _populate_guide(self) -> None:
+        cmd = ""
         if sys.platform == "linux":
+            cmd = "sudo apt install satdump"
             html = (
                 "<b>Ubuntu / Debian</b><br>"
-                "<code>sudo apt install satdump</code>"
+                f"<code>{cmd}</code>"
                 "&nbsp;&nbsp;(if available in your repo)<br><br>"
                 "<b>AppImage (recommended)</b><br>"
                 "Download the <code>.AppImage</code> from the releases page, "
@@ -135,9 +141,10 @@ class SatDumpDialog(QDialog):
                 "<code>%APPDATA%\\fbsat59\\satdump\\satdump.exe</code>"
             )
         elif sys.platform == "darwin":
+            cmd = "brew install satdump"
             html = (
                 "<b>macOS (Homebrew)</b><br>"
-                "<code>brew install satdump</code><br><br>"
+                f"<code>{cmd}</code><br><br>"
                 "Or download the <code>.dmg</code> from:<br>"
                 f"<a href='{_DOWNLOAD_URL}'>{_DOWNLOAD_URL}</a>"
             )
@@ -149,6 +156,7 @@ class SatDumpDialog(QDialog):
             )
 
         self._guide_text.setHtml(html)
+        self._cmd_row.setText(f"<code>{cmd}</code>" if cmd else "")
 
     def _on_open_download(self) -> None:
         QDesktopServices.openUrl(QUrl(_DOWNLOAD_URL))

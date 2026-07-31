@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 
 from comms.q65.codec import _find_libq65
 from i18n import _
+from ui.copyable_text import make_copy_button
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -247,6 +248,7 @@ class Q65LibDialog(QDialog):
             "</pre>"
         )
         ml.addWidget(manual_text)
+        ml.addWidget(make_copy_button(manual_text.toPlainText))
         root.addWidget(self._manual_box)
 
         # --- Bundle download ---

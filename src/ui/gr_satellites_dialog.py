@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from i18n import _
+from ui.copyable_text import make_copy_button, make_selectable
 
 # ---------------------------------------------------------------------------
 # Detection helper
@@ -198,11 +199,14 @@ class GrSatellitesDialog(QDialog):
         # -- Installation instructions --
         inst_grp = QGroupBox(_("Installation"))
         iv = QVBoxLayout(inst_grp)
-        inst_lbl = QLabel(_get_instructions())
+        instructions_text = _get_instructions()
+        inst_lbl = QLabel(instructions_text)
         inst_lbl.setWordWrap(True)
         inst_lbl.setOpenExternalLinks(True)
         inst_lbl.setTextFormat(__import__("PySide6.QtCore", fromlist=["Qt"]).Qt.TextFormat.RichText)
+        make_selectable(inst_lbl)
         iv.addWidget(inst_lbl)
+        iv.addWidget(make_copy_button(lambda: instructions_text))
         layout.addWidget(inst_grp)
 
         # -- Close button --

@@ -16,9 +16,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
-from PySide6.QtGui import QClipboard
 from PySide6.QtWidgets import (
-    QApplication,
     QDialog,
     QDialogButtonBox,
     QGroupBox,
@@ -33,6 +31,7 @@ from PySide6.QtWidgets import (
 
 from comms.aprs.direwolf import _user_direwolf_dir, find_direwolf
 from i18n import _
+from ui.copyable_text import CommandRow
 
 # ---------------------------------------------------------------------------
 # Version detection helper
@@ -222,14 +221,8 @@ class DirewolfDialog(QDialog):
         self._guide_text.setFixedHeight(140)
         gl.addWidget(self._guide_text)
 
-        cmd_row = QHBoxLayout()
-        self._cmd_label = QLabel()
-        self._cmd_label.setWordWrap(True)
-        self._btn_copy = QPushButton(_("Copy Command"))
-        self._btn_copy.clicked.connect(self._on_copy_command)
-        cmd_row.addWidget(self._cmd_label, 1)
-        cmd_row.addWidget(self._btn_copy)
-        gl.addLayout(cmd_row)
+        self._cmd_row = CommandRow()
+        gl.addWidget(self._cmd_row)
         root.addWidget(self._guide_box)
 
         # --- Bundle update ---
@@ -321,22 +314,11 @@ class DirewolfDialog(QDialog):
             cmd = ""
 
         self._guide_text.setHtml(html)
-        self._cmd_label.setText(f"<code>{cmd}</code>" if cmd else "")
-        self._btn_copy.setVisible(bool(cmd))
+        self._cmd_row.setText(f"<code>{cmd}</code>" if cmd else "")
 
     # ------------------------------------------------------------------ #
     # Slots
     # ------------------------------------------------------------------ #
-
-    def _on_copy_command(self) -> None:
-        cmd = self._cmd_label.text()
-        # strip HTML tags
-        import re
-
-        plain = re.sub(r"<[^>]+>", "", cmd).strip()
-        clipboard: QClipboard = QApplication.clipboard()
-        clipboard.setText(plain)
-        self._btn_copy.setText(_("Copied!"))
 
     def _on_download(self) -> None:
         self._btn_download.setEnabled(False)
