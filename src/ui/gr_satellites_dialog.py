@@ -133,11 +133,13 @@ def _get_instructions() -> tuple[str, str]:
     if sys.platform == "win32":
         html = (
             "<b>Windows</b><br><br>\n"
-            "The official docs recommend conda as the easiest way to install "
-            "GNU Radio + gr-satellites together on Windows:<br>\n"
-            "<pre>conda install -c conda-forge gnuradio gnuradio-satellites</pre>\n\n"
-            "Note: Windows support for gr-satellites may be limited.\n"
-            "Using WSL2 with Ubuntu is the most reliable option.\n"
+            "The bundled environment above (Install Bundled Environment) is "
+            "the recommended way to get gr-satellites on Windows — it is "
+            "built and verified by this project's own CI.<br><br>\n"
+            "If you'd rather manage GNU Radio yourself, the official docs "
+            "recommend conda as the easiest way to install GNU Radio + "
+            "gr-satellites together on Windows:<br>\n"
+            "<pre>conda install -c conda-forge gnuradio gnuradio-satellites</pre>\n"
         )
         return html, ""
     generic_note = _(

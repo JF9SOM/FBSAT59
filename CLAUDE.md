@@ -4971,10 +4971,22 @@ C/C++寄りのパッケージ）の実行ファイルは**`Library/bin/`**に配
 Windowsでもそのまま機能する。CIのWindowsスモークテストも、この正しいパスを使った
 `gr_satellites --version`をmacOS/Linuxと同じ「合否判定に使う本番相当のテスト」に格上げ済み。
 
-**残る未検証点（2026-07-31時点）**: 上記修正後のWindows実行結果（3プラットフォーム目の
-`gr_satellites --version`が実際に成功するか）はまだ未確認（次回`workflow_dispatch`で確認予定）。
-確認できれば、CI側の検証は完了——残るは「実際にダウンロードして展開・動作確認する」という
-エンドツーエンド検証（Help画面からのDownload & Install操作、Telemetryタブでの実際の受信）のみ。
+**3回目の`workflow_dispatch`実行で3プラットフォームとも完全グリーン、CI側の検証は完了
+（2026-07-31）**: `Library/bin/gr_satellites.py`への修正後の再実行で、macOS・Linux・Windows
+すべて`gr_satellites --version`が実際に`gr_satellites v5.9.0`のバージョン文字列を正しく出力し
+「Smoke test passed.」で終了することを確認した。これでCI側（ビルド・`conda-pack`・
+`conda-unpack`・実際のCLI起動）は3プラットフォームとも実証済み。
+
+**`gr_satellites_dialog.py`の追随修正**: 上記CI調査と並行してダイアログ側（`_InstallWorker`の
+ダウンロード拡張子・展開・`conda-unpack`呼び出し分岐）もすでに正しい実装になっていたため、
+追加の実装は不要だった。唯一、Windows向け手動インストール手順（バンドルを使わない代替経路）
+の案内文に残っていた「Windows対応は限定的、WSL2推奨」という古い注記だけを削除し、
+バンドル版が推奨経路であることを明記するよう更新した。
+
+**残る未検証点（2026-07-31時点）**: CI上のスモークテストでの動作確認までは完了したが、
+「実際にユーザーのマシンでHelp画面の『Download & Install』を押し、GitHub Releasesから
+実際にダウンロード・展開して、Telemetryタブで実際の衛星テレメトリーを受信できるか」という
+アプリ経由のエンドツーエンド検証はまだ行っていない。
 
 #### AI-CW デコーダーについて
 - 候補: **morse-decoder**（PyTorch CNN ベース）・**DeepMorse**・**cwdecoder**（RNN）など
