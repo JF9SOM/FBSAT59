@@ -62,6 +62,49 @@ class TestFindExecutable:
         assert gsi.is_bundle_installed() is True
 
 
+class TestResolveCommand:
+    """resolve_gr_satellites_command() — used for actually launching the
+    subprocess. Unlike find_gr_satellites_executable() (display only), the
+    bundled case must return [bundled_python, bundled_script], not the
+    script path alone — its shebang is "#!/usr/bin/env python" with no
+    absolute path, so invoking it directly would run whatever "python" is
+    first on the caller's PATH instead of the bundled interpreter (confirmed
+    via CI logs, 2026-07-31).
+    """
+
+    def test_none_when_nothing_installed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(gsi.shutil, "which", lambda name: None)
+        assert gsi.resolve_gr_satellites_command() is None
+
+    def test_bundled_returns_explicit_python_and_script(
+        self, _fake_bundle_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        bin_dir = "Scripts" if sys.platform == "win32" else "bin"
+        exe_name = "gr_satellites.exe" if sys.platform == "win32" else "gr_satellites"
+        script = _fake_bundle_dir / bin_dir / exe_name
+        _make_executable(script)
+        monkeypatch.setattr(gsi.shutil, "which", lambda name: "/usr/bin/gr_satellites")
+
+        result = gsi.resolve_gr_satellites_command()
+
+        assert result is not None
+        argv, is_bundled = result
+        assert is_bundled is True
+        expected_python = (
+            _fake_bundle_dir / "python.exe"
+            if sys.platform == "win32"
+            else _fake_bundle_dir / "bin" / "python"
+        )
+        assert argv == [str(expected_python), str(script)]
+
+    def test_system_returns_script_path_alone(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(gsi.shutil, "which", lambda name: "/usr/bin/gr_satellites")
+
+        result = gsi.resolve_gr_satellites_command()
+
+        assert result == (["/usr/bin/gr_satellites"], False)
+
+
 class TestSatyamlDir:
     def test_none_when_no_bundle(self) -> None:
         assert gsi.bundled_satyaml_dir() is None

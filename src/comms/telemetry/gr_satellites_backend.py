@@ -26,6 +26,7 @@ from PySide6.QtCore import QObject, Signal
 from comms.telemetry.gr_satellites_install import (
     bundled_satyaml_dir,
     find_gr_satellites_executable,
+    resolve_gr_satellites_command,
 )
 
 # Path that makes a *system* (apt) gr_satellites find system gnuradio + NumPy 1.x
@@ -191,10 +192,10 @@ class GrSatellitesBackend(QObject):
         if self.is_running:
             self.stop()
 
-        resolved = find_gr_satellites_executable()
+        resolved = resolve_gr_satellites_command()
         if resolved is None:
             return False, "gr_satellites not found — install via Help > gr-satellites…"
-        exe_path, is_bundled = resolved
+        argv_prefix, is_bundled = resolved
 
         env = os.environ.copy()
         if not is_bundled:
@@ -204,7 +205,7 @@ class GrSatellitesBackend(QObject):
             env["PYTHONPATH"] = _GR_PYTHONPATH + os.pathsep + env.get("PYTHONPATH", "")
 
         cmd = [
-            str(exe_path),
+            *argv_prefix,
             str(norad),
             "--udp",
             "--udp_port",

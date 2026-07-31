@@ -58,20 +58,23 @@ jobs:
       # for something as large as GNU Radio, which has not been tried in
       # this project before.
       #
-      # 2026-07-31: a first run got past packing/extraction/conda-unpack
-      # cleanly but "gr_satellites --help" failed with
-      # "ModuleNotFoundError: No module named 'gnuradio'" — even though the
-      # gnuradio-core package (confirmed by downloading and inspecting the
-      # actual .conda file) does contain gnuradio/gr, gnuradio/blocks,
-      # gnuradio/audio etc. under lib/python3.11/site-packages/. That rules
-      # out a missing-package explanation; the remaining candidates are a
-      # conda-unpack/relocation bug specific to this environment. Rather
-      # than guess further, this step now runs every diagnostic in one pass
-      # (not aborting on the first failure) so a single re-run gives a full
-      # picture: shebang before/after conda-unpack, whether gnuradio/ is
-      # physically present in site-packages, the relocated python's own
-      # sys.path, and a control import (numpy) to tell "nothing in
-      # site-packages resolves" apart from "something gnuradio-specific".
+      # 2026-07-31 investigation (resolved): a first run failed with
+      # "ModuleNotFoundError: No module named 'gnuradio'" from
+      # gr_satellites' own "from gnuradio import gr, blocks, audio" line.
+      # Detailed diagnostics from a second run showed the *relocated*
+      # python (invoked explicitly) correctly imports both "gnuradio" and,
+      # once corrected, "satellites" (gr-satellites installs as a top-level
+      # "satellites" package, not "gnuradio.satellites" — confirmed by
+      # downloading and inspecting the actual .conda file directly) — so
+      # site-packages resolution and conda-unpack both work fine. The
+      # actual bug: gr_satellites' shebang is "#!/usr/bin/env python", with
+      # no absolute path for conda-unpack to rewrite, so invoking the
+      # script directly picks up whatever "python" is first on the
+      # *caller's* PATH rather than the bundled interpreter. Fixed at the
+      # application level (gr_satellites_install.py's
+      # resolve_gr_satellites_command() always invokes the bundled python
+      # explicitly) and mirrored here so the smoke test matches how the
+      # app actually launches it.
       - name: Smoke-test packed environment
         run: |
           set +e
@@ -85,8 +88,8 @@ jobs:
           ls -la /tmp/gr-sat-smoketest/bin/ | grep -i python
 
           echo
-          echo "=== site-packages/gnuradio BEFORE conda-unpack ==="
-          ls -la "$SP" 2>&1 | grep -i gnuradio || echo "(not found)"
+          echo "=== site-packages/gnuradio + satellites BEFORE conda-unpack ==="
+          ls -la "$SP" 2>&1 | grep -iE "gnuradio|satellites" || echo "(not found)"
 
           echo
           echo "=== gr_satellites shebang BEFORE conda-unpack ==="
@@ -102,8 +105,8 @@ jobs:
           head -1 /tmp/gr-sat-smoketest/bin/gr_satellites
 
           echo
-          echo "=== site-packages/gnuradio AFTER conda-unpack ==="
-          ls -la "$SP" 2>&1 | grep -i gnuradio || echo "(not found)"
+          echo "=== site-packages/gnuradio + satellites AFTER conda-unpack ==="
+          ls -la "$SP" 2>&1 | grep -iE "gnuradio|satellites" || echo "(not found)"
 
           echo
           echo "=== Relocated python: executable / prefix / exec_prefix / sys.path ==="
@@ -119,15 +122,31 @@ jobs:
           /tmp/gr-sat-smoketest/bin/python -c "import gnuradio; print('gnuradio OK, __path__:', list(gnuradio.__path__))"
           if [ $? -ne 0 ]; then echo "gnuradio import FAILED"; STATUS=1; fi
 
+          # gr-satellites installs as a top-level "satellites" package (not
+          # gnuradio.satellites) — confirmed by downloading and inspecting
+          # the actual .conda package's file listing directly.
           echo
-          echo "=== Test: import gnuradio.satellites ==="
-          /tmp/gr-sat-smoketest/bin/python -c "import gnuradio.satellites; print('gnuradio.satellites OK')"
-          if [ $? -ne 0 ]; then echo "gnuradio.satellites import FAILED"; STATUS=1; fi
+          echo "=== Test: import satellites ==="
+          /tmp/gr-sat-smoketest/bin/python -c "import satellites; print('satellites OK, __path__:', list(satellites.__path__))"
+          if [ $? -ne 0 ]; then echo "satellites import FAILED"; STATUS=1; fi
+
+          # Informational only (does not affect STATUS): gr_satellites' own
+          # shebang is "#!/usr/bin/env python" — no absolute path for
+          # conda-unpack to rewrite — so invoking it directly depends on
+          # whatever "python" is first on *this shell's* PATH, not the
+          # bundled one. This is expected to differ from the explicit-python
+          # invocation below; both are shown so the gap stays visible over
+          # time rather than being "fixed" by accident (e.g. a runner image
+          # change) without anyone noticing.
+          echo
+          echo "=== Informational: gr_satellites --help via its own shebang ==="
+          /tmp/gr-sat-smoketest/bin/gr_satellites --help > /dev/null 2>&1
+          echo "exit code: $? (expected to fail — PATH-dependent shebang, not a real bug)"
 
           echo
-          echo "=== Test: gr_satellites --help (own shebang) ==="
-          /tmp/gr-sat-smoketest/bin/gr_satellites --help
-          if [ $? -ne 0 ]; then echo "gr_satellites --help FAILED"; STATUS=1; fi
+          echo "=== Test: gr_satellites --help via explicit bundled python (real invocation) ==="
+          /tmp/gr-sat-smoketest/bin/python /tmp/gr-sat-smoketest/bin/gr_satellites --help
+          if [ $? -ne 0 ]; then echo "gr_satellites --help (explicit python) FAILED"; STATUS=1; fi
 
           echo
           if [ "$STATUS" -eq 0 ]; then

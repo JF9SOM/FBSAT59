@@ -14,12 +14,16 @@ Detection priority:
   1. User-installed bundle   ~/.local/share/fbsat59/gr-satellites-env/
   2. System install          shutil.which("gr_satellites")  (apt/conda/etc.)
 
-Because the bundle is a full, independent Python environment (conda-pack's
-``conda-unpack`` fixes up its shebangs/prefixes after extraction), its
-``bin/gr_satellites`` entry-point script is run directly as a subprocess —
-no PYTHONPATH tricks are needed, unlike the system-install path (see
-gr_satellites_backend.py's _GR_PYTHONPATH, which exists only for Debian/
-Ubuntu apt installs that mix system NumPy 1.x with the OOT module).
+The bundle is a full, independent Python environment; conda-pack's
+``conda-unpack`` fixes up absolute paths baked into compiled files after
+extraction. It does *not* touch the ``bin/gr_satellites`` entry-point
+script's shebang, though — CI logs (2026-07-31) confirmed that script uses
+``#!/usr/bin/env python`` (no absolute path for conda-unpack to rewrite),
+so running it directly depends on whatever ``python`` happens to be first
+on the *caller's* PATH at that moment, which has nothing to do with the
+bundled environment. resolve_gr_satellites_command() below works around
+this by invoking the bundled python explicitly rather than relying on the
+script's own shebang.
 """
 
 from __future__ import annotations
@@ -43,18 +47,29 @@ def _bundled_executable_path() -> Path:
     return user_gr_satellites_dir() / bin_dir / exe
 
 
+def _bundled_python_path() -> Path:
+    """Path to the Python interpreter inside the bundled env."""
+    if sys.platform == "win32":
+        return user_gr_satellites_dir() / "python.exe"
+    return user_gr_satellites_dir() / "bin" / "python"
+
+
 def is_bundle_installed() -> bool:
     """True if a bundled gr-satellites environment is present."""
     return _bundled_executable_path().exists()
 
 
 def find_gr_satellites_executable() -> tuple[Path, bool] | None:
-    """Resolve the gr_satellites executable to run.
+    """Resolve the gr_satellites executable's path, for display purposes.
 
     Returns ``(path, is_bundled)``, or ``None`` if neither the bundled
     environment nor a system install can be found. The bundle is preferred
     when present, since it is self-contained (no NumPy version conflicts,
     guaranteed GNU Radio + gr-satellites versions).
+
+    To actually *run* gr_satellites, use resolve_gr_satellites_command()
+    instead — this path alone is not safe to exec directly for the bundled
+    case (see module docstring: its shebang can't be trusted).
     """
     bundled = _bundled_executable_path()
     if bundled.exists():
@@ -62,6 +77,25 @@ def find_gr_satellites_executable() -> tuple[Path, bool] | None:
     system = shutil.which("gr_satellites")
     if system:
         return Path(system), False
+    return None
+
+
+def resolve_gr_satellites_command() -> tuple[list[str], bool] | None:
+    """Resolve the argv prefix to invoke gr_satellites, and whether it's bundled.
+
+    For the bundled environment this returns
+    ``[bundled_python, bundled_gr_satellites_script]`` rather than the
+    script path alone, since its shebang cannot be relied on to select the
+    bundled interpreter (see module docstring). For a system install, the
+    script resolved from PATH is returned as-is — its shebang was written
+    by whatever installed it there (apt/conda/etc.) and is not our concern.
+    """
+    bundled = _bundled_executable_path()
+    if bundled.exists():
+        return [str(_bundled_python_path()), str(bundled)], True
+    system = shutil.which("gr_satellites")
+    if system:
+        return [system], False
     return None
 
 

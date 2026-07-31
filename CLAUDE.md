@@ -4837,14 +4837,49 @@ FBSAT59本体のPyInstaller用Pythonと一致させる必要がない。この�
 **サイズ見積もり（机上調査のみ、実測未確認）**: 約150〜400MB程度と推定（GitHub Releasesの
 1ファイル2GiB制限は問題にならない）。
 
+**実機（GitHub Actions macOS runner）での`workflow_dispatch`実行で発覚・解決したバグ
+（2026-07-31）**:
+
+1回目の実行はconda-forge環境作成（130パッケージ）・`conda-pack`（140MB、警告なし完走）・
+`conda-unpack`（exit code 0）まで問題なく進んだが、`gr_satellites --help`が
+`ModuleNotFoundError: No module named 'gnuradio'`で失敗した。`set +e`に変更し全診断を
+1回のログにまとめて出す2回目の実行で、以下が判明した:
+
+- 再配置後のPython（明示的に`bin/python`を指定して呼び出した場合）は`sys.path`が正しく
+  `site-packages`を含み、`import numpy`（対照実験）・`import gnuradio`はどちらも成功
+- 一方`import gnuradio.satellites`は失敗——ただしこれは**バンドルの不具合ではなく調査側の
+  誤り**だった。conda-forgeの`gnuradio-satellites`パッケージを直接ダウンロードして中身を
+  検証したところ、gr-satellitesは`gnuradio.satellites`ではなく**トップレベルの`satellites`
+  パッケージ**として`site-packages/satellites/`にインストールされる（870ファイル確認、
+  `gr_satellites`スクリプト自身も`import satellites.core`等と書かれている）。既存コード
+  （`_SATYAML_DIR = Path(...) / "satellites" / "satyaml"`）は元々正しく実装されていた
+- **実際のバグ**: `gr_satellites`エントリポイントスクリプトのshebangは`#!/usr/bin/env python`
+  で、絶対パスを含まない。つまり`conda-unpack`（絶対パスの書き換えツール）には書き換える
+  対象がそもそも無く、これは想定通りの「何もしない」だった。問題は、このスクリプトを
+  `/tmp/gr-sat-smoketest/bin/gr_satellites`のように**直接実行**すると、shebangの
+  `env python`解決がその時点の**呼び出し元シェルのPATH**に依存し、バンドル環境の
+  Pythonとは無関係になってしまうこと（CIでは無関係なpythonが解決され、実際のユーザー
+  環境でも同様——PATH上に何があるか次第で結果が変わる、再現性のないバグになる）
+
+**修正**: `gr_satellites_install.py`に`resolve_gr_satellites_command()`を新設。バンドル版は
+`[bundled_python_path, bundled_script_path]`という2要素のargvを返し、スクリプト自身の
+shebangに一切頼らず明示的にバンドル済みpythonへ渡すようにした（`find_gr_satellites_executable()`
+は表示専用として残し、実際の起動には使わない）。`gr_satellites_backend.py`の`start()`も
+これに合わせて更新。CIワークフローのスモークテストも同じ「shebang経由（参考情報のみ、
+失敗して当然）」と「明示的python経由（本番と同じ呼び出し方、これが実際のテスト対象）」の
+両方を記録するよう修正し、`import gnuradio.satellites`の誤りも`import satellites`に訂正済み。
+
+**教訓**: 「ログ上、明示的に呼び出したpythonでは動くのに、スクリプト単体を直接実行すると
+動かない」という食い違いが出たら、まずスクリプトのshebang行そのもの（絶対パスかPATH依存か）
+を疑うこと。`conda-unpack`は「絶対パスとして記録されているものを書き換える」ツールであり、
+そもそも絶対パスが書かれていない箇所（`#!/usr/bin/env python`のような可搬性重視の慣習的
+shebang）には無力——「ツールが仕事をしなかった」のではなく「そのツールの担当範囲外だった」
+と気づくまでに複数回の実機検証が必要だった。
+
 **未検証・既知の制約（2026-07-31時点）**:
-- **実際にWindows/macOS/Linuxで動作させたことは一度もない**。CI設計は`conda-pack`の公式挙動
-  ドキュメントに基づく机上設計であり、`workflow_dispatch`での実行結果待ち
-  （ユーザーが次回タグビルド時に試す予定）
+- 上記の2バグを修正した状態でのフルパス実行はまだ未確認（次回`workflow_dispatch`で確認予定）
 - Windows・Linux向けCIジョブは未実装（ユーザーがmacOSユーザーのため、まずmacOSのみ実装。
   macOSでの動作確認後に追加検討）
-- `conda-pack`はGNU Radioのような大規模パッケージでの実績が広く確認できておらず、相対パス化が
-  完全に機能するかは実際のCI実行結果を見るまで不明
 - `gr_satellites_dialog.py`のWindows分岐（`Scripts/`ディレクトリ・`conda-unpack`呼び出し）は
   パス組み立てのみ実装済みで、実際にWindows向けバンドルが存在しない現時点では到達しないコード
 - 「実際にダウンロードして展開・動作確認する」というエンドツーエンド検証は、次回

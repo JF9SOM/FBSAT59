@@ -37,17 +37,20 @@ class _FakeProc:
 class TestStartExecutableResolution:
     def test_returns_error_when_not_found(self) -> None:
         b = backend.GrSatellitesBackend()
-        with patch.object(backend, "find_gr_satellites_executable", return_value=None):
+        with patch.object(backend, "resolve_gr_satellites_command", return_value=None):
             ok, msg = b.start(25544, 48000, MagicMock())
         assert ok is False
         assert "not found" in msg
 
-    def test_bundled_executable_skips_pythonpath_hack(self) -> None:
+    def test_bundled_uses_explicit_python_and_skips_pythonpath_hack(self) -> None:
         b = backend.GrSatellitesBackend()
-        bundled_path = Path("/home/user/.local/share/fbsat59/gr-satellites-env/bin/gr_satellites")
+        bundled_python = "/home/user/.local/share/fbsat59/gr-satellites-env/bin/python"
+        bundled_script = "/home/user/.local/share/fbsat59/gr-satellites-env/bin/gr_satellites"
         with (
             patch.object(
-                backend, "find_gr_satellites_executable", return_value=(bundled_path, True)
+                backend,
+                "resolve_gr_satellites_command",
+                return_value=([bundled_python, bundled_script], True),
             ),
             patch.object(backend.subprocess, "Popen", return_value=_FakeProc()) as mock_popen,
         ):
@@ -55,7 +58,13 @@ class TestStartExecutableResolution:
 
         assert ok is True
         cmd, kwargs = mock_popen.call_args
-        assert cmd[0][0] == str(bundled_path)
+        # Must invoke via the bundled python explicitly, not the script's own
+        # shebang (confirmed via CI: gr_satellites uses
+        # "#!/usr/bin/env python", which has no absolute path for
+        # conda-unpack to rewrite and would otherwise pick up whichever
+        # "python" is first on the *caller's* PATH).
+        assert cmd[0][0] == bundled_python
+        assert cmd[0][1] == bundled_script
         # The bundled env is self-contained; the apt NumPy-1.x PYTHONPATH
         # hack must not be applied to it (checking the ambient PYTHONPATH,
         # if any, doesn't already contain it — rather than requiring the key
@@ -65,10 +74,10 @@ class TestStartExecutableResolution:
 
     def test_system_executable_applies_pythonpath_hack(self) -> None:
         b = backend.GrSatellitesBackend()
-        system_path = Path("/usr/bin/gr_satellites")
+        system_path = "/usr/bin/gr_satellites"
         with (
             patch.object(
-                backend, "find_gr_satellites_executable", return_value=(system_path, False)
+                backend, "resolve_gr_satellites_command", return_value=([system_path], False)
             ),
             patch.object(backend.subprocess, "Popen", return_value=_FakeProc()) as mock_popen,
         ):
@@ -76,7 +85,7 @@ class TestStartExecutableResolution:
 
         assert ok is True
         cmd, kwargs = mock_popen.call_args
-        assert cmd[0][0] == str(system_path)
+        assert cmd[0][0] == system_path
         assert backend._GR_PYTHONPATH in kwargs["env"]["PYTHONPATH"]
         b.stop()
 
@@ -85,8 +94,8 @@ class TestStartExecutableResolution:
         with (
             patch.object(
                 backend,
-                "find_gr_satellites_executable",
-                return_value=(Path("/usr/bin/gr_satellites"), False),
+                "resolve_gr_satellites_command",
+                return_value=(["/usr/bin/gr_satellites"], False),
             ),
             patch.object(backend.subprocess, "Popen", return_value=_FakeProc()) as mock_popen,
         ):
