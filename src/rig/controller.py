@@ -1356,6 +1356,16 @@ class HamlibDirectController(RigController):
                 ser.write(f)
                 ser.flush()
                 resp = bytes(ser.read_until(b"\xfd"))
+                if resp == f:
+                    # This CI-V interface echoes the transmitted frame back
+                    # before the rig's real reply arrives (confirmed live
+                    # on an IC-9700/COM9 setup — every write showed up as
+                    # <our own frame><real reply> concatenated). Without
+                    # this check, read_until() stops at the echo's own
+                    # trailing 0xFD and never sees the genuine ACK/data,
+                    # corrupting every readback and leaving the real reply
+                    # sitting unread for the next command to trip over.
+                    resp = bytes(ser.read_until(b"\xfd"))
                 if resp.endswith(b"\xfd"):
                     return resp
                 logger.warning(
@@ -2024,7 +2034,27 @@ class HamlibDirectController(RigController):
                     time.sleep(0.3)
                     rig2 = _make_rig()
                     _open_rig_with_retry(rig2, "cross-band: reopen after Sub mode (pyserial)")
-                    time.sleep(0.3)
+                    time.sleep(0.5)
+                    # IC-9700: re-force cache->satmode=1 with the same extra
+                    # set_func used after Step 2's open() above -- this
+                    # reopen is a THIRD open() on this same logical
+                    # operation, and without repeating this cache fix here
+                    # too, this fresh Hamlib session doesn't believe
+                    # satmode is active (even though the physical rig still
+                    # is -- our pyserial writes only changed VFO selection
+                    # and mode, never satmode itself), and the later
+                    # set_vfo(MAIN) restore below gets rejected by the rig
+                    # (Hamlib error -9, confirmed live).
+                    if self._model_id in _SATMODE_USE_VFO_SUB:
+                        rig2.set_func(_H.RIG_FUNC_SATMODE, 1)
+                        _check_rig_ok(
+                            rig2, "cross-band: IC-9700 extra set_func(SATMODE,1) after reopen"
+                        )
+                        time.sleep(0.2)
+                        logger.info(
+                            "RigDirect._apply_mode_and_ctcss_hamlib: IC-9700 extra set_func "
+                            "after Sub mode (pyserial) reopen"
+                        )
 
                     # CTCSS on Sub (TX/UL)
                     rig2.set_vfo(vfo_sub)
