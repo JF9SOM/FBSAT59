@@ -215,7 +215,14 @@ def build_frame(cmd: int, *data: int) -> bytes:
 def send_and_read(ser: serial.Serial, frame: bytes, read_len: int = 32) -> bytes:
     ser.reset_input_buffer()
     ser.write(frame)
-    return bytes(ser.read(read_len))
+    raw = bytes(ser.read(read_len))
+    if raw.startswith(frame):
+        # Some CI-V interfaces echo the transmitted frame back before the
+        # rig's real reply arrives (confirmed live on a COM9/IC-9700 setup --
+        # every read here showed up as <our own frame><real reply>
+        # concatenated). Strip it so callers only see the genuine reply.
+        raw = raw[len(frame) :]
+    return raw
 
 
 def describe_reply(reply: bytes) -> str:
