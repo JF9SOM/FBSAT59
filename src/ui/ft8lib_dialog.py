@@ -37,7 +37,7 @@ from PySide6.QtWidgets import (
 
 from comms.ft4.codec import _find_ft8lib, free_ft8lib, get_user_ft8lib_dir
 from i18n import _
-from ui.copyable_text import make_copy_button
+from ui.copyable_text import make_copy_button, make_run_button
 
 logger = logging.getLogger(__name__)
 
@@ -328,7 +328,11 @@ class Ft8LibDialog(QDialog):
             "</pre>"
         )
         ml.addWidget(manual_text)
-        ml.addWidget(make_copy_button(manual_text.toPlainText))
+        manual_btn_row = QHBoxLayout()
+        manual_btn_row.addWidget(make_copy_button(manual_text.toPlainText))
+        manual_btn_row.addWidget(make_run_button(manual_text.toPlainText))
+        manual_btn_row.addStretch()
+        ml.addLayout(manual_btn_row)
         root.addWidget(self._manual_box)
 
         # --- Bundle download ---

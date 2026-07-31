@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from i18n import _
-from ui.copyable_text import make_copy_button, make_selectable
+from ui.copyable_text import CommandRow, make_selectable
 
 # ---------------------------------------------------------------------------
 # Detection helper
@@ -67,17 +67,25 @@ def _detect_gr_satellites() -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 
-def _get_instructions() -> str:
+def _get_instructions() -> tuple[str, str]:
     """Build platform-specific installation guidance.
 
     Built lazily (not as module-level constants) so the narrative text
     picks up the current UI language each time the dialog is opened.
+
+    Returns ``(html, primary_command)``. ``primary_command`` is the single
+    recommended one-liner for this platform (empty if there isn't one, e.g.
+    Windows where the first step is a browser download) — it is what the
+    Copy/Run-in-Terminal buttons act on, not the whole HTML block, since the
+    HTML mixes prose and (for Linux/macOS) an alternative build-from-source
+    recipe that isn't meant to be run unconditionally.
     """
     if sys.platform == "linux":
         requires_note = _("gr-satellites requires GNU Radio 3.10 (available via Ubuntu 22.04+).")
         oot_note = _("Or use the OOT module directly:")
         verify_note = _("After installation, verify with: <tt>gr_satellites --help</tt>")
-        return (
+        primary_cmd = "sudo apt install gnuradio python3-gnuradio && pip install gr-satellites"
+        html = (
             f"<b>Ubuntu / Debian</b><br>\n{requires_note}<br><br>\n\n"
             "<pre>sudo apt install gnuradio python3-gnuradio\n"
             "pip install gr-satellites</pre>\n\n"
@@ -90,9 +98,11 @@ def _get_instructions() -> str:
             "sudo ldconfig</pre>\n\n"
             f"{verify_note}\n"
         )
+        return html, primary_cmd
     if sys.platform == "darwin":
         build_note = _("If brew gnuradio is outdated, build from source:")
-        return (
+        primary_cmd = "brew install gnuradio && pip install gr-satellites"
+        html = (
             "<b>macOS (Homebrew)</b><br><br>\n"
             "<pre>brew install gnuradio\n"
             "pip install gr-satellites</pre>\n\n"
@@ -103,6 +113,7 @@ def _get_instructions() -> str:
             "cmake .. && make -j$(sysctl -n hw.logicalcpu)\n"
             "sudo make install</pre>\n"
         )
+        return html, primary_cmd
     if sys.platform == "win32":
         installer_note = _("GNU Radio on Windows is available via the official installer:")
         after_note = _("After installing GNU Radio, install gr-satellites:")
@@ -110,7 +121,7 @@ def _get_instructions() -> str:
             "Note: Windows support for gr-satellites may be limited.\n"
             "Using WSL2 with Ubuntu is the most reliable option."
         )
-        return (
+        html = (
             f"<b>Windows</b><br><br>\n{installer_note}<br>\n"
             '<a href="https://www.gnuradio.org/blog/2020-06-29-windows-support/">\n'
             "gnuradio.org — Windows Support</a><br><br>\n\n"
@@ -118,11 +129,15 @@ def _get_instructions() -> str:
             "<pre>pip install gr-satellites</pre>\n\n"
             f"{wsl_note}\n"
         )
+        return html, "pip install gr-satellites"
     generic_note = _(
         "Install GNU Radio 3.10+ from your system package manager or\n"
         '<a href="https://www.gnuradio.org/">gnuradio.org</a>, then:'
     )
-    return f"{generic_note}<br>\n<pre>pip install gr-satellites</pre>\n"
+    return (
+        f"{generic_note}<br>\n<pre>pip install gr-satellites</pre>\n",
+        "pip install gr-satellites",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -199,14 +214,14 @@ class GrSatellitesDialog(QDialog):
         # -- Installation instructions --
         inst_grp = QGroupBox(_("Installation"))
         iv = QVBoxLayout(inst_grp)
-        instructions_text = _get_instructions()
-        inst_lbl = QLabel(instructions_text)
+        instructions_html, primary_cmd = _get_instructions()
+        inst_lbl = QLabel(instructions_html)
         inst_lbl.setWordWrap(True)
         inst_lbl.setOpenExternalLinks(True)
         inst_lbl.setTextFormat(__import__("PySide6.QtCore", fromlist=["Qt"]).Qt.TextFormat.RichText)
         make_selectable(inst_lbl)
         iv.addWidget(inst_lbl)
-        iv.addWidget(make_copy_button(lambda: instructions_text))
+        iv.addWidget(CommandRow(primary_cmd, allow_run=True))
         layout.addWidget(inst_grp)
 
         # -- Close button --

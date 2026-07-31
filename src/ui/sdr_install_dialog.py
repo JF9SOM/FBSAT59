@@ -186,7 +186,7 @@ class SdrInstallDialog(QDialog):
         # Holds only the exact runnable command (never the surrounding prose),
         # so "Copy" always yields something safe to paste straight into a
         # terminal. Hidden automatically when there is no single command to show.
-        self._cmd_row = CommandRow()
+        self._cmd_row = CommandRow(allow_run=True)
         action_v.addWidget(self._cmd_row)
 
         self._install_btn = QPushButton(_("Install Selected Packages"))

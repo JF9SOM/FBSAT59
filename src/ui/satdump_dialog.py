@@ -88,7 +88,7 @@ class SatDumpDialog(QDialog):
         self._guide_text.setFixedHeight(160)
         gl.addWidget(self._guide_text)
 
-        self._cmd_row = CommandRow()
+        self._cmd_row = CommandRow(allow_run=True)
         gl.addWidget(self._cmd_row)
 
         self._btn_open = QPushButton(_("Open Download Page"))

@@ -221,7 +221,7 @@ class DirewolfDialog(QDialog):
         self._guide_text.setFixedHeight(140)
         gl.addWidget(self._guide_text)
 
-        self._cmd_row = CommandRow()
+        self._cmd_row = CommandRow(allow_run=True)
         gl.addWidget(self._cmd_row)
         root.addWidget(self._guide_box)
 
