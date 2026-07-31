@@ -4935,8 +4935,23 @@ GNU Radioのような大規模パッケージでも機能することが実機�
     `tarfile`もPython標準ライブラリでクロスプラットフォームに動作するため、
     外部ツール依存を増やす`.zip`を使う理由がない）
 
+**1回目の`workflow_dispatch`実行結果（2026-07-31）**: Linux・macOSは両方とも
+Uploadステップまで到達しグリーン（`gr-satellites-bundle`に
+`gr-satellites-linux-x86_64.tar.gz`・`gr-satellites-macos-arm64.tar.gz`が公開済み）。
+**Windowsのみ失敗**——原因は`tar (child): Cannot connect to D: resolve failed`。
+`$RUNNER_TEMP`はネイティブWindowsパス（`D:\a\_temp`）で、これに素朴に`/file`を連結すると
+`D:\a\_temp/file`という**バックスラッシュとスラッシュが混在したパス**になり、Git Bash付属の
+`tar`（bsdtar）が先頭の`D:`を「ドライブレター」ではなく`ホスト名:ファイル`という
+リモートtar構文のホスト名と誤解釈していた。`conda-pack`自体（Pythonツール、Windows APIは
+`/`と`\`を区別なく受け付ける）や`ls`はこの混在パスでも問題なく動いていたため、
+`tar -xzf`だけがこの罠にはまっていた。
+
+**修正**: `cygpath -u "$RUNNER_TEMP"`でPOSIX形式のパス（例: `/d/a/_temp`）に一度変換し、
+以降すべてのステップでその変換済みパスを使うよう統一（`Pack`ステップで変換して
+`$GITHUB_ENV`経由で`Smoke-test`ステップに引き継ぐ設計）。
+
 **残る未検証・既知の制約（2026-07-31時点）**:
-- Linux・Windowsジョブとも`workflow_dispatch`での実行結果はまだ未確認
+- 上記修正後のWindows実行結果はまだ未確認（次回`workflow_dispatch`で確認予定）
 - 「実際にダウンロードして展開・動作確認する」というエンドツーエンド検証（Help画面からの
   Download & Install操作）は、CIが緑になったプラットフォームについてのみ次のステップとして
   必要

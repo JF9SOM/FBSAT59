@@ -319,16 +319,27 @@ jobs:
           channels: conda-forge
           init-shell: bash
 
+      # $RUNNER_TEMP is a native Windows path (e.g. "D:\a\_temp"). Naively
+      # concatenating "/something" onto it (as the macOS/Linux jobs do with
+      # their own /tmp-based paths) produces a *mixed*-separator path like
+      # "D:\a\_temp/file" that later broke "tar -xzf" (see the Smoke-test
+      # step's comment) — bsdtar's hostname:path remote-archive syntax
+      # treats the leading "D:" as a hostname, not a drive letter, once the
+      # rest of the path isn't a clean backslash form it recognizes.
+      # cygpath -u converts it to a POSIX-style path once here
+      # ("/d/a/_temp") and every subsequent step (including Smoke-test and
+      # Upload) inherits that same, unambiguous form via $PKG.
       - name: Pack environment with conda-pack
         shell: bash -el {0}
         run: |
           pip install conda-pack
           ENV_PREFIX="${MAMBA_ROOT_PREFIX}/envs/gr-satellites-env"
+          WIN_TMP="$(cygpath -u "$RUNNER_TEMP")"
           PKG_NAME="gr-satellites-windows-x86_64.tar.gz"
-          conda-pack -p "$ENV_PREFIX" -o "$RUNNER_TEMP/${PKG_NAME}"
-          echo "PKG=$RUNNER_TEMP/${PKG_NAME}" >> "$GITHUB_ENV"
+          conda-pack -p "$ENV_PREFIX" -o "$WIN_TMP/${PKG_NAME}"
+          echo "PKG=$WIN_TMP/${PKG_NAME}" >> "$GITHUB_ENV"
           echo "PKG_NAME=${PKG_NAME}" >> "$GITHUB_ENV"
-          ls -lh "$RUNNER_TEMP/${PKG_NAME}"
+          ls -lh "$WIN_TMP/${PKG_NAME}"
 
       # Windows conda envs are laid out completely differently from
       # macOS/Linux: entry-point commands are Scripts/<name>.exe launcher
@@ -347,7 +358,10 @@ jobs:
         run: |
           set +e
           STATUS=0
-          EXTRACT_DIR="$RUNNER_TEMP/gr-sat-smoketest"
+          # Same cygpath fix as the Pack step above — $RUNNER_TEMP is a
+          # native Windows path in this (separate) step's shell too, since
+          # plain bash variables don't carry over between steps.
+          EXTRACT_DIR="$(cygpath -u "$RUNNER_TEMP")/gr-sat-smoketest"
           SP="$EXTRACT_DIR/Lib/site-packages"
 
           mkdir -p "$EXTRACT_DIR"
