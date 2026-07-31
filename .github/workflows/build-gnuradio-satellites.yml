@@ -57,15 +57,85 @@ jobs:
       # actually proves the "download a portable env" approach is viable
       # for something as large as GNU Radio, which has not been tried in
       # this project before.
+      #
+      # 2026-07-31: a first run got past packing/extraction/conda-unpack
+      # cleanly but "gr_satellites --help" failed with
+      # "ModuleNotFoundError: No module named 'gnuradio'" — even though the
+      # gnuradio-core package (confirmed by downloading and inspecting the
+      # actual .conda file) does contain gnuradio/gr, gnuradio/blocks,
+      # gnuradio/audio etc. under lib/python3.11/site-packages/. That rules
+      # out a missing-package explanation; the remaining candidates are a
+      # conda-unpack/relocation bug specific to this environment. Rather
+      # than guess further, this step now runs every diagnostic in one pass
+      # (not aborting on the first failure) so a single re-run gives a full
+      # picture: shebang before/after conda-unpack, whether gnuradio/ is
+      # physically present in site-packages, the relocated python's own
+      # sys.path, and a control import (numpy) to tell "nothing in
+      # site-packages resolves" apart from "something gnuradio-specific".
       - name: Smoke-test packed environment
         run: |
-          set -e
+          set +e
+          STATUS=0
+          SP=/tmp/gr-sat-smoketest/lib/python3.11/site-packages
+
           mkdir -p /tmp/gr-sat-smoketest
           tar -xzf "${{ env.PKG }}" -C /tmp/gr-sat-smoketest
+
+          echo "=== bin/ python binaries/symlinks ==="
+          ls -la /tmp/gr-sat-smoketest/bin/ | grep -i python
+
+          echo
+          echo "=== site-packages/gnuradio BEFORE conda-unpack ==="
+          ls -la "$SP" 2>&1 | grep -i gnuradio || echo "(not found)"
+
+          echo
+          echo "=== gr_satellites shebang BEFORE conda-unpack ==="
+          head -1 /tmp/gr-sat-smoketest/bin/gr_satellites
+
+          echo
+          echo "=== Running conda-unpack ==="
           /tmp/gr-sat-smoketest/bin/python /tmp/gr-sat-smoketest/bin/conda-unpack
+          echo "conda-unpack exit code: $?"
+
+          echo
+          echo "=== gr_satellites shebang AFTER conda-unpack ==="
+          head -1 /tmp/gr-sat-smoketest/bin/gr_satellites
+
+          echo
+          echo "=== site-packages/gnuradio AFTER conda-unpack ==="
+          ls -la "$SP" 2>&1 | grep -i gnuradio || echo "(not found)"
+
+          echo
+          echo "=== Relocated python: executable / prefix / exec_prefix / sys.path ==="
+          /tmp/gr-sat-smoketest/bin/python -c "import sys; print('executable:', sys.executable); print('prefix:', sys.prefix); print('exec_prefix:', sys.exec_prefix); print('path:'); [print(' ', p) for p in sys.path]"
+
+          echo
+          echo "=== Control: import numpy (non-gnuradio package, same site-packages) ==="
+          /tmp/gr-sat-smoketest/bin/python -c "import numpy; print('numpy OK:', numpy.__file__)"
+          if [ $? -ne 0 ]; then echo "numpy import FAILED"; STATUS=1; fi
+
+          echo
+          echo "=== Test: import gnuradio ==="
+          /tmp/gr-sat-smoketest/bin/python -c "import gnuradio; print('gnuradio OK, __path__:', list(gnuradio.__path__))"
+          if [ $? -ne 0 ]; then echo "gnuradio import FAILED"; STATUS=1; fi
+
+          echo
+          echo "=== Test: import gnuradio.satellites ==="
+          /tmp/gr-sat-smoketest/bin/python -c "import gnuradio.satellites; print('gnuradio.satellites OK')"
+          if [ $? -ne 0 ]; then echo "gnuradio.satellites import FAILED"; STATUS=1; fi
+
+          echo
+          echo "=== Test: gr_satellites --help (own shebang) ==="
           /tmp/gr-sat-smoketest/bin/gr_satellites --help
-          /tmp/gr-sat-smoketest/bin/python -c "import gnuradio.satellites; print('gnuradio.satellites import OK')"
-          echo "Smoke test passed."
+          if [ $? -ne 0 ]; then echo "gr_satellites --help FAILED"; STATUS=1; fi
+
+          echo
+          if [ "$STATUS" -eq 0 ]; then
+            echo "Smoke test passed."
+          else
+            echo "Smoke test FAILED — see diagnostics above."
+          fi
+          exit $STATUS
 
       - name: Upload to gr-satellites-bundle release
         env:
