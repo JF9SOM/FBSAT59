@@ -4468,6 +4468,36 @@ Linux/macOSでSoapySDR自体を意図的にCIバンドルしない設計（本�
 システムPythonバージョンが一致している場合のみ有効（拡張モジュールはABI互換性が必要）。
 Debian 12・Ubuntu 22.04/24.04等は標準で3.11系のため通常問題にならない想定。
 
+#### macOS .app にも同一クラスのバグが存在していた（2026-07-31 発見・修正）
+
+**症状**: Homebrewで`brew install soapysdr soapyrtlsdr`（Help > SDR Device Installation
+経由）を実行しても、.appバンドル実行時にRTL-SDRが一切認識されない。
+
+**原因**: 上記Linux AppImageのバグと全く同じ根本原因が、**macOS向けには一度も修正されて
+いなかった**。`src/main.py`にはLinux向けの`sys.platform == "linux" and
+getattr(sys, "frozen", False)`ブロックは存在したが、対応する`darwin`向けブロックが
+欠けていたため、PyInstallerでフリーズされた.appは常にHomebrewの`site-packages`を
+見えないままだった。
+
+**修正**: Linux向けブロックと同じ設計・同じ場所（直後）に`sys.platform == "darwin" and
+getattr(sys, "frozen", False)`ブロックを追加。`sys.path`の**末尾に**（`append`、`insert(0,
+...)`ではない）以下を追加:
+- `/opt/homebrew/lib/python3.*/site-packages`（Apple Silicon）
+- `/usr/local/lib/python3.*/site-packages`（Intel）
+
+Homebrew自身のPythonバージョンは時期によって変わり続けるため（3.12・3.13等）、Linux版が
+`f"/usr/lib/python{_pyver}/dist-packages"`のように**自アプリのPythonバージョン**を使って
+パスを組み立てていたのとは異なり、macOS版は`glob.glob("*.../python3.*/site-packages")`で
+**実際に存在するディレクトリをそのまま探索**する方式にした（Homebrewのpythonバージョンは
+自アプリの束ねるPythonバージョンとは無関係な別物のため、決め打ちできない）。
+
+**既知の限界**: Linux版と同様、Homebrewのpython3バージョンとアプリが束ねるPythonバージョン
+（CI固定で3.11）が異なると、コンパイル済み拡張モジュール（`.so`）のABIが一致せず
+importに失敗する可能性がある。この場合は`brew install python@3.11`等でバージョンを
+合わせるか、根本的にはconda-forge抽出方式（本ファイル「gr-satellitesのバンドル配布」
+セクション参照）のような自前バンドルに切り替える必要がある。実機での動作確認は未実施
+（ユーザーが次回タグビルド前に確認予定）。
+
 ---
 
 #### PlutoSDR（ADALM-Pluto）Windows バンドル実装メモ（v0.1.5 で実装・CI 緑確認済み）
