@@ -4876,8 +4876,41 @@ shebangに一切頼らず明示的にバンドル済みpythonへ渡すように�
 shebang）には無力——「ツールが仕事をしなかった」のではなく「そのツールの担当範囲外だった」
 と気づくまでに複数回の実機検証が必要だった。
 
-**未検証・既知の制約（2026-07-31時点）**:
-- 上記の2バグを修正した状態でのフルパス実行はまだ未確認（次回`workflow_dispatch`で確認予定）
+**3回目の`workflow_dispatch`実行で判明: `--help`のexit 1は仕様通り、パッケージング・修正は
+成功（2026-07-31）**: 上記の修正（`resolve_gr_satellites_command()`）後の再実行で、
+`import gnuradio`・`import satellites`は明示的python経由で共に成功し、
+`gr_satellites --help`（explicit python invocation）もusageメッセージを正しく出力した。
+ただしexit codeが1だったため、スモークテストは依然「失敗」と判定していた。実際の
+`gr_satellites`スクリプト本体（conda-forgeパッケージから直接ダウンロードして中身を確認）を
+読んだところ、これは仕様通りの挙動と判明:
+
+```python
+def main():
+    parser = argument_parser()
+    if len(sys.argv) >= 2 and sys.argv[1] in ['--version', '--list_satellites']:
+        options = parser.parse_args()
+        sys.exit(0)
+    if len(sys.argv) <= 1 or sys.argv[1][0] == '-':
+        parser.print_usage(file=sys.stderr)
+        sys.exit(1)   # --help 単体はここに該当。意図的な exit 1
+```
+
+`gr_satellites`は「第1引数に衛星名/NORAD ID/YAMLパスを必須で取る」設計
+（`gr_satellites <satellite> [options]`）で、`--version`・`--list_satellites`だけが
+衛星名なしで動作する例外。`--help`単体はこのCLI自身の仕様上「不正な使い方」であり、
+exit 1は正しい。**アプリ本体（`gr_satellites_backend.py`）は元々
+`[python, script, str(norad), "--udp", ...]`という「NORAD IDを第1引数に渡す」正しい
+呼び出し方をしていたため、一連の調査を通じて実は一度も影響を受けていなかった**——
+問題があったのはCIのスモークテストが`--help`という誤った検証コマンドを使っていた点のみ。
+スモークテストは`--version`（衛星名なしでも正常終了する）に差し替え済み。
+
+**結論**: バンドル化アプローチ（conda-forge抽出 → `conda-pack` → `conda-unpack`）自体は
+GNU Radioのような大規模パッケージでも機能することが実機で確認できた。残る未検証点は
+「`--version`に差し替えた後のフルパス実行が緑になるか」（次回`workflow_dispatch`で確認予定）
+のみ。
+
+**残る未検証・既知の制約（2026-07-31時点）**:
+- `--version`修正後のフルパス実行（グリーン確認）はまだ未確認（次回`workflow_dispatch`で確認予定）
 - Windows・Linux向けCIジョブは未実装（ユーザーがmacOSユーザーのため、まずmacOSのみ実装。
   macOSでの動作確認後に追加検討）
 - `gr_satellites_dialog.py`のWindows分岐（`Scripts/`ディレクトリ・`conda-unpack`呼び出し）は

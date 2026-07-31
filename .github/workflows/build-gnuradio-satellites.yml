@@ -139,14 +139,25 @@ jobs:
           # time rather than being "fixed" by accident (e.g. a runner image
           # change) without anyone noticing.
           echo
-          echo "=== Informational: gr_satellites --help via its own shebang ==="
-          /tmp/gr-sat-smoketest/bin/gr_satellites --help > /dev/null 2>&1
+          echo "=== Informational: gr_satellites --version via its own shebang ==="
+          /tmp/gr-sat-smoketest/bin/gr_satellites --version > /dev/null 2>&1
           echo "exit code: $? (expected to fail — PATH-dependent shebang, not a real bug)"
 
+          # gr_satellites requires a satellite (NORAD ID/name/YAML path) as
+          # its first positional argument for everything except --version
+          # and --list_satellites (see its own main(): any other leading
+          # "-..." flag, including a bare --help, hits
+          # "sys.exit(1)" after printing just the usage line — that is
+          # correct, by-design behavior for this CLI, not a bug in the
+          # bundle. --version is the right "does this run at all" check
+          # since it needs no satellite argument. The real app
+          # (gr_satellites_backend.py) always calls this with the NORAD ID
+          # as sys.argv[1], i.e. the normal invocation form, so it was never
+          # affected by this either way.
           echo
-          echo "=== Test: gr_satellites --help via explicit bundled python (real invocation) ==="
-          /tmp/gr-sat-smoketest/bin/python /tmp/gr-sat-smoketest/bin/gr_satellites --help
-          if [ $? -ne 0 ]; then echo "gr_satellites --help (explicit python) FAILED"; STATUS=1; fi
+          echo "=== Test: gr_satellites --version via explicit bundled python (real invocation) ==="
+          /tmp/gr-sat-smoketest/bin/python /tmp/gr-sat-smoketest/bin/gr_satellites --version
+          if [ $? -ne 0 ]; then echo "gr_satellites --version (explicit python) FAILED"; STATUS=1; fi
 
           echo
           if [ "$STATUS" -eq 0 ]; then
