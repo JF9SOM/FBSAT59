@@ -4,16 +4,17 @@ Launches gr_satellites as a subprocess, forwards IQ samples from the SDR
 pipeline via UDP, and parses decoded telemetry text from stdout.
 
 Environment note:
-  gr-satellites (apt) requires NumPy 1.x (system).  The FBSAT59 venv has
-  NumPy 2.x, so we always pass PYTHONPATH=/usr/lib/python3/dist-packages
-  when launching the subprocess so it picks up the system NumPy first.
+  A *system* gr-satellites install (e.g. apt) requires NumPy 1.x, while the
+  FBSAT59 venv has NumPy 2.x, so a PYTHONPATH pointing at the system
+  site-packages is added when launching that variant. The *bundled*
+  conda-pack environment (see gr_satellites_install.py) is fully
+  self-contained and needs no such workaround — see start() below.
 """
 
 from __future__ import annotations
 
 import contextlib
 import os
-import shutil
 import socket
 import subprocess
 import threading
@@ -22,29 +23,43 @@ from pathlib import Path
 import numpy as np
 from PySide6.QtCore import QObject, Signal
 
-# Path that makes gr_satellites find system gnuradio + NumPy 1.x
+from comms.telemetry.gr_satellites_install import (
+    bundled_satyaml_dir,
+    find_gr_satellites_executable,
+)
+
+# Path that makes a *system* (apt) gr_satellites find system gnuradio + NumPy 1.x
 _GR_PYTHONPATH = "/usr/lib/python3/dist-packages"
-_SATYAML_DIR = Path(_GR_PYTHONPATH) / "satellites" / "satyaml"
+_SYSTEM_SATYAML_DIR = Path(_GR_PYTHONPATH) / "satellites" / "satyaml"
 
 # UDP port used to send IQ from the SDR pipeline to gr_satellites
 _UDP_PORT = 7356
 
 
 def detect_gr_satellites() -> bool:
-    """Return True if the gr_satellites CLI is on PATH."""
-    return shutil.which("gr_satellites") is not None
+    """Return True if gr_satellites (bundled or system) is available."""
+    return find_gr_satellites_executable() is not None
+
+
+def _satyaml_dir() -> Path | None:
+    """Return the satyaml definitions directory for whichever install is active."""
+    bundled = bundled_satyaml_dir()
+    if bundled is not None:
+        return bundled
+    return _SYSTEM_SATYAML_DIR if _SYSTEM_SATYAML_DIR.exists() else None
 
 
 def list_gr_satellites_norads() -> set[int]:
     """Return the set of NORAD IDs supported by the installed gr-satellites."""
-    if not _SATYAML_DIR.exists():
+    satyaml_dir = _satyaml_dir()
+    if satyaml_dir is None:
         return set()
     try:
         import yaml
     except ImportError:
         return set()
     norads: set[int] = set()
-    for yml in _SATYAML_DIR.glob("*.yml"):
+    for yml in satyaml_dir.glob("*.yml"):
         try:
             with open(yml) as fh:
                 data = yaml.safe_load(fh)
@@ -57,14 +72,15 @@ def list_gr_satellites_norads() -> set[int]:
 
 def list_gr_satellites_with_names() -> list[tuple[int, str]]:
     """Return sorted list of (norad, name) for all gr-satellites supported satellites."""
-    if not _SATYAML_DIR.exists():
+    satyaml_dir = _satyaml_dir()
+    if satyaml_dir is None:
         return []
     try:
         import yaml
     except ImportError:
         return []
     result: list[tuple[int, str]] = []
-    for yml in _SATYAML_DIR.glob("*.yml"):
+    for yml in satyaml_dir.glob("*.yml"):
         try:
             with open(yml) as fh:
                 data = yaml.safe_load(fh)
@@ -84,13 +100,14 @@ def get_satellite_info(norad: int) -> dict[str, object] | None:
     'frequencies' is a sorted list of unique downlink frequencies (Hz) found in the YAML.
     Returns None if the satellite is not found.
     """
-    if not _SATYAML_DIR.exists():
+    satyaml_dir = _satyaml_dir()
+    if satyaml_dir is None:
         return None
     try:
         import yaml
     except ImportError:
         return None
-    for yml in _SATYAML_DIR.glob("*.yml"):
+    for yml in satyaml_dir.glob("*.yml"):
         try:
             with open(yml) as fh:
                 data = yaml.safe_load(fh)
@@ -174,14 +191,20 @@ class GrSatellitesBackend(QObject):
         if self.is_running:
             self.stop()
 
-        if not detect_gr_satellites():
+        resolved = find_gr_satellites_executable()
+        if resolved is None:
             return False, "gr_satellites not found — install via Help > gr-satellites…"
+        exe_path, is_bundled = resolved
 
         env = os.environ.copy()
-        env["PYTHONPATH"] = _GR_PYTHONPATH + os.pathsep + env.get("PYTHONPATH", "")
+        if not is_bundled:
+            # System (e.g. apt) install: needs the NumPy 1.x PYTHONPATH hack.
+            # The bundled conda-pack environment is self-contained and needs
+            # no such workaround.
+            env["PYTHONPATH"] = _GR_PYTHONPATH + os.pathsep + env.get("PYTHONPATH", "")
 
         cmd = [
-            "gr_satellites",
+            str(exe_path),
             str(norad),
             "--udp",
             "--udp_port",

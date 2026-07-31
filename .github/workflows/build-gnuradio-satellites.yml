@@ -1,0 +1,84 @@
+name: Build gr-satellites Bundle
+
+# Packs a headless (no Qt/GUI) conda-forge environment containing
+# gnuradio-core + gnuradio-satellites with conda-pack, so users don't have
+# to install the full GNU Radio toolchain (and its ~59 Homebrew/apt
+# dependencies) themselves just to decode satellite telemetry. Artifacts are
+# uploaded to the dedicated "gr-satellites-bundle" pre-release tag, mirroring
+# the ft8lib/q65lib/ft4wsjt bundle workflows.
+#
+# macOS-only for now (Windows/Linux jobs to follow once this is verified to
+# actually work end-to-end — conda-pack relocation of a package as large as
+# GNU Radio has not been tried in this project before). Manual trigger only
+# (no schedule) until a successful run has been confirmed.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    name: Build gr-satellites env (macOS arm64)
+    runs-on: macos-14
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create headless gr-satellites conda-forge env
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: gr-satellites-env
+          create-args: >-
+            gnuradio-core
+            gnuradio-satellites
+            python=3.11
+          channels: conda-forge
+          init-shell: bash
+
+      # gnuradio-core alone has no Qt/PyQt dependency, and gnuradio-satellites
+      # depends only on gnuradio-core + gnuradio-pmt + gnuradio-zeromq (not
+      # gnuradio-qtgui) — confirmed via the conda-forge feedstock metadata.
+      # Not pinning any GUI package here is what keeps this small.
+      - name: Pack environment with conda-pack
+        shell: bash -el {0}
+        run: |
+          pip install conda-pack
+          ENV_PREFIX="${MAMBA_ROOT_PREFIX}/envs/gr-satellites-env"
+          PKG_NAME="gr-satellites-macos-arm64.tar.gz"
+          conda-pack -p "$ENV_PREFIX" -o "/tmp/${PKG_NAME}"
+          echo "PKG=/tmp/${PKG_NAME}" >> "$GITHUB_ENV"
+          echo "PKG_NAME=${PKG_NAME}" >> "$GITHUB_ENV"
+          ls -lh "/tmp/${PKG_NAME}"
+
+      # Extracts to a location different from where it was built (the whole
+      # point of conda-pack), runs conda-unpack to fix up prefixes, and
+      # verifies the CLI + Python import both work — this is the step that
+      # actually proves the "download a portable env" approach is viable
+      # for something as large as GNU Radio, which has not been tried in
+      # this project before.
+      - name: Smoke-test packed environment
+        run: |
+          set -e
+          mkdir -p /tmp/gr-sat-smoketest
+          tar -xzf "${{ env.PKG }}" -C /tmp/gr-sat-smoketest
+          /tmp/gr-sat-smoketest/bin/python /tmp/gr-sat-smoketest/bin/conda-unpack
+          /tmp/gr-sat-smoketest/bin/gr_satellites --help
+          /tmp/gr-sat-smoketest/bin/python -c "import gnuradio.satellites; print('gnuradio.satellites import OK')"
+          echo "Smoke test passed."
+
+      - name: Upload to gr-satellites-bundle release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view gr-satellites-bundle \
+            --repo "${{ github.repository }}" 2>/dev/null || \
+          gh release create gr-satellites-bundle \
+            --repo "${{ github.repository }}" \
+            --title "gr-satellites Bundle" \
+            --notes "Pre-built, headless (no Qt/GUI) GNU Radio + gr-satellites conda-forge environment, packed with conda-pack." \
+            --prerelease
+          gh release upload gr-satellites-bundle \
+            --repo "${{ github.repository }}" \
+            --clobber \
+            "${{ env.PKG }}"

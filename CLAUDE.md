@@ -2528,7 +2528,7 @@ QT_LOGGING_RULES="qt.qpa.*=true" ./FBSAT59.AppImage 2>&1 | head -100
 11b. **SDR フェーズ2（将来）— アマチュア衛星・デジタルモード** — HRPT/LRPT は 11e で完了、gr-satellites は 8b で完了、AI-CW は 11f で完了
 12. **SDR フェーズ2（将来）— 業務用衛星受信** — Inmarsat-C (STD-C)・Cospas-Sarsat L帯・Iridium L帯 ACARS・Orbcomm・みちびき（QZSS）データ放送（詳細は「業務用衛星受信」セクション参照）
 13. ~~**SDR Device Installation ダイアログ**~~ **→ v0.1.0 で実装済み**（src/ui/sdr_install_dialog.py — USB VID/PID スキャン・apt/brew/Zadig 誘導）
-14. ~~**Help > gr-satellites… ダイアログ**~~ **→ feature/communications で完了**（src/ui/gr_satellites_dialog.py — 検出ステータス・apt/brew/pip インストール案内）
+14. ~~**Help > gr-satellites… ダイアログ**~~ **→ feature/communications で完了**（src/ui/gr_satellites_dialog.py — 検出ステータス・バンドルのDownload & Install・conda-forge/PPA/ソースビルド案内。2026-07-31にpip案内の誤りとmacOS向けバンドル配布を追加、詳細は「gr-satellitesのバンドル配布」セクション参照）
 15. ~~**SSTV / SSDV 受信タブ**~~ **→ feature/communications で完了**（SstvDecoder・SsdvDecoder・SstvTab・SDR audio_ready 接続・AX.25 raw_frame_received タップ）
 
 ### 配布・ビルド
@@ -4770,8 +4770,85 @@ HackRF / RTL-SDR + 適切な LNA・フィルターで受信可能な業務用衛
 #### gr-satellites について
 - GNU Radio の OOT（Out-Of-Tree）モジュール。100 機種以上のアマチュア衛星テレメトリーフォーマットに対応
 - `gr_satellites` コマンド（CLI）を IQ ストリームに繋いでサブプロセス起動する方式が最も移植性が高い
-- インストール: Linux は `pip install gr-satellites`（GNU Radio 3.10 以上が前提）
-- SDR Device Installation ダイアログに gr-satellites のインストール状態確認・誘導を追加予定
+- **`pip install gr-satellites` は存在しない**（2026-07-31 判明・下記「gr-satellitesのバンドル配布」参照）。正しいインストール方法は conda-forge（`conda install -c conda-forge gnuradio-satellites`）・Ubuntu PPA・ソースビルドのいずれか
+- インストール状態確認・誘導は `Help > gr-satellites Installation…`（`src/ui/gr_satellites_dialog.py`）で実装済み（バンドルのダウンロード・手動インストール手順の両方を提示）
+
+#### gr-satellitesのバンドル配布（2026-07-31 実装・macOSのみ・実機未検証）
+
+**発端**: Help画面の「gr-satellites Installation」ダイアログが案内していた `pip install gr-satellites`
+を実際にmacOSユーザーが試したところ `ERROR: Could not find a version that satisfies the requirement
+gr-satellites (from versions: none)` で失敗。`curl -sI https://pypi.org/simple/gr-satellites/` が
+PyPIサーバー自身から404を返すことを確認し、**gr-satellitesはPyPIに一切公開されていない**ことが
+判明した（`pip config`・ネットワーク・radioconda環境はすべて正常だった）。公式ドキュメント
+（[gr-satellites readthedocs](https://gr-satellites.readthedocs.io/en/latest/installation.html)・
+[conda版](https://gr-satellites.readthedocs.io/en/latest/installation_conda.html)）を確認したところ、
+正しいインストール方法は次の3通り: (1) conda-forge `conda install -c conda-forge gnuradio-satellites`
+（公式が「Windowsでの推奨方法」と明記）、(2) Ubuntu PPA `ppa:daniestevez/gr-satellites`、
+(3) cmakeによるソースビルド。このバグ自体は本ファイルの過去の記述（旧「gr-satellitesについて」節）
+にも存在しており、実装当初から一度も正しく動作したことがなかったと考えられる。
+
+**方針転換の経緯**: 当初は誤った案内文をconda-forge/PPA/ソースビルドの正しい内容に修正するだけの
+予定だったが、ユーザーから「毎回ユーザーにビルドさせるのではなく、他のバンドル済みソフト
+（ft8lib/libq65/libft4wsjt）と同様にこちらでCIビルド・バンドルできないか」との要望があった。
+
+**ft8lib等との規模の違い**: ft8lib/libq65/libft4wsjtは依存の少ない小さなCライブラリ（FFTW・
+Boost程度）で、単一の.so/.dylib/.dllをCIでビルドするだけで済む。一方gr-satellitesはGNU Radio
+本体（Homebrewでフルインストールすると59個の依存関係・数百MB規模）に依存するPythonモジュールで、
+実行には巨大なC++共有ライブラリ群＋専用Python環境が必要——単純に同じ手法は使えない。
+
+**採用した方式（conda-forge抽出）**: 調査の結果、conda-forgeのGNU Radioは細かくパッケージ分割
+されており、gr-satellitesが実際に必要とするのはQt/PyQt/GTK等のGUI要素を一切含まない最小構成
+だと判明した:
+- `gnuradio-core`（約4.45MB、win-64）: fftw・gsl・boost・portaudio・volk等に依存。Qt/PyQt不要
+- `gnuradio-satellites`（約0.76MB）: `gnuradio-core`・`gnuradio-pmt`・`gnuradio-zeromq`・
+  construct・matplotlib-base・numpy・requests等に依存。**`gnuradio-qtgui`への依存なし**
+  （[conda-forge/gnuradio-satellites-feedstock](https://github.com/conda-forge/gnuradio-satellites-feedstock)
+  のメタデータで確認済み）
+
+`gr_satellites`はFBSAT59自身のPythonプロセスに読み込むのではなく**独立したサブプロセスとして
+起動**する既存アーキテクチャ（`GrSatellitesBackend`）のため、バンドルする環境のPythonバージョンは
+FBSAT59本体のPyInstaller用Pythonと一致させる必要がない。この前提のもと、CIで
+`conda create --prefix ... -c conda-forge gnuradio-core gnuradio-satellites python=3.11`により
+独立した環境を作成し、業界標準ツール`conda-pack`（環境を可搬なアーカイブ化し、展開後に
+`conda-unpack`で絶対パスを再配置する）でパッケージ化してGitHub Releasesで配布する方式を採用した。
+
+**実装済みコンポーネント**:
+- `.github/workflows/build-gnuradio-satellites.yml`（新規） — macOS（`macos-14`、Apple Silicon）
+  向けのみ実装。`workflow_dispatch`のみでトリガー（スケジュール実行は成功確認後に追加予定）。
+  conda-forge環境作成 → `conda-pack`でアーカイブ化 → 別ディレクトリへ展開して`conda-unpack`＋
+  `gr_satellites --help`＋`python -c "import gnuradio.satellites"`のスモークテスト →
+  `gr-satellites-bundle`プレリリースタグへ`gr-satellites-macos-arm64.tar.gz`としてアップロード
+  （既存のft8lib-bundle等と同じ命名パターン）
+- `src/comms/telemetry/gr_satellites_install.py`（新規） — バンドル環境のパス解決を集約。
+  `find_gr_satellites_executable() -> tuple[Path, bool] | None`（実行ファイルパス, バンドル済みか）・
+  `bundled_satyaml_dir()`（衛星定義YAMLディレクトリ、`lib/python*/site-packages/satellites/satyaml/`
+  をglobで探索）・`bundled_version()`（`conda-meta/gnuradio-satellites-*.json`のファイル名から
+  バージョン文字列を抽出、サブプロセス起動不要）・`uninstall_bundle()`
+- `src/comms/telemetry/gr_satellites_backend.py`（修正） — `detect_gr_satellites()`・
+  `list_gr_satellites_*()`・`get_satellite_info()`が`gr_satellites_install`経由でバンドルを
+  優先検出するよう変更。**PYTHONPATHのNumPy 1.x互換ハック（`_GR_PYTHONPATH`）は
+  システムインストール（apt等）検出時のみ適用**——バンドル環境は自己完結しているため不要
+  （`start()`内で`is_bundled`フラグにより分岐）
+- `src/ui/gr_satellites_dialog.py`（大幅改修） — 「Install Bundled Environment (Recommended)」
+  枠を新設し、ft8lib_dialog.pyと同じ`_InstallWorker`（QThread）パターンでダウンロード・展開・
+  `conda-unpack`実行・Uninstallボタンを実装。手動インストール手順（Manual Installation）は
+  正しい内容（conda-forge/PPA/ソースビルド）に修正した上でフォールバックとして残した
+
+**サイズ見積もり（机上調査のみ、実測未確認）**: 約150〜400MB程度と推定（GitHub Releasesの
+1ファイル2GiB制限は問題にならない）。
+
+**未検証・既知の制約（2026-07-31時点）**:
+- **実際にWindows/macOS/Linuxで動作させたことは一度もない**。CI設計は`conda-pack`の公式挙動
+  ドキュメントに基づく机上設計であり、`workflow_dispatch`での実行結果待ち
+  （ユーザーが次回タグビルド時に試す予定）
+- Windows・Linux向けCIジョブは未実装（ユーザーがmacOSユーザーのため、まずmacOSのみ実装。
+  macOSでの動作確認後に追加検討）
+- `conda-pack`はGNU Radioのような大規模パッケージでの実績が広く確認できておらず、相対パス化が
+  完全に機能するかは実際のCI実行結果を見るまで不明
+- `gr_satellites_dialog.py`のWindows分岐（`Scripts/`ディレクトリ・`conda-unpack`呼び出し）は
+  パス組み立てのみ実装済みで、実際にWindows向けバンドルが存在しない現時点では到達しないコード
+- 「実際にダウンロードして展開・動作確認する」というエンドツーエンド検証は、次回
+  `workflow_dispatch`実行 → 実機でのHelp画面からのDownload & Install操作、の両方が必要
 
 #### AI-CW デコーダーについて
 - 候補: **morse-decoder**（PyTorch CNN ベース）・**DeepMorse**・**cwdecoder**（RNN）など
@@ -5422,15 +5499,7 @@ APRS の復調パイプラインを流用する。
 | ✅ | JSON 定義ファイルによる独自バイナリ形式の解釈 |
 | ✅ | 定義なし衛星の生 hex 表示 |
 | ❌ | 9600 baud G3RUH FSK（後回し） |
-| ❌ | gr-satellites 連携（後回し） |
-
-#### gr-satellites 連携（将来）
-
-gr-satellites は GNU Radio が必須依存のためバンドル・自動インストールは行わない。
-将来的に以下を追加する:
-- システムへのインストール済みを自動検出（Direwolf と同じ方式）
-- `Help > gr-satellites...` でインストール案内（apt / Homebrew のコマンド表示のみ）
-- GNU Radio / gr-satellites が検出された場合のみ 9600 baud 衛星等の拡張デコードを有効化
+| ✅ | gr-satellites 連携（2026-06-30 完了、macOS向けバンドル配布は2026-07-31追加。詳細は「gr-satellites について」セクション参照） |
 
 #### タブ UI 設計
 
