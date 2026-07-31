@@ -7,14 +7,15 @@ name: Build gr-satellites Bundle
 # uploaded to the dedicated "gr-satellites-bundle" pre-release tag, mirroring
 # the ft8lib/q65lib/ft4wsjt bundle workflows.
 #
-# macOS (verified green 2026-07-31) + Linux + Windows. Linux mirrors the
-# macOS job closely (conda-pack has no macOS-specific codesigning/RPATH
-# quirks on Linux). Windows conda envs lay out entry points completely
-# differently (Scripts/<name>.exe launcher stubs instead of a bin/<name>
-# shebang script, python.exe at the env root instead of bin/) — untested in
-# this project, so its smoke-test step is deliberately diagnostic-first
-# rather than assuming any particular invocation works. Manual trigger only
-# (no schedule) until all three platforms are confirmed green.
+# macOS + Linux + Windows, all three verified green 2026-07-31. Windows
+# conda envs lay out gr_satellites very differently from macOS/Linux — it's
+# under Library/bin/ (the conda-forge convention for GNU Radio OOT modules,
+# not Scripts/, which is reserved for pure-Python console-script entry
+# points) as a plain gr_satellites.py script, invoked via the bundled
+# python.exe exactly like the macOS/Linux bin/gr_satellites case; see
+# gr_satellites_install.py's module docstring for the full story. Manual
+# trigger only (no schedule) — add one once this has been relied on for a
+# while without needing further fixes.
 
 on:
   workflow_dispatch:
@@ -341,19 +342,20 @@ jobs:
           echo "PKG_NAME=${PKG_NAME}" >> "$GITHUB_ENV"
           ls -lh "$WIN_TMP/${PKG_NAME}"
 
-      # Windows conda envs are laid out completely differently from
-      # macOS/Linux: entry-point commands are Scripts/<name>.exe launcher
-      # stubs (compiled, not a text shebang script), and python.exe sits at
-      # the env root rather than in bin/. Whether "python.exe
-      # Scripts/gr_satellites.exe" is even a valid invocation (it may not
-      # be — a .exe launcher isn't Python source you can pass as a script
-      # argument) is unverified, so this step deliberately gathers facts
-      # (set +e, non-fatal launcher test) rather than assuming the same fix
-      # that worked for macOS/Linux (explicit python + script path) applies
-      # here unchanged. STATUS below only gates on the Python-level import
-      # checks; the launcher invocation is informational until we see real
-      # output and can adjust resolve_gr_satellites_command()'s Windows
-      # branch accordingly.
+      # 2026-07-31 investigation (resolved): the first Windows run's
+      # informational launcher check ("Scripts/gr_satellites.exe --version")
+      # failed with "No such file or directory" — Scripts/ only contained
+      # conda-unpack, not gr_satellites at all. Downloading and inspecting
+      # the actual win-64 gnuradio-satellites .conda package directly
+      # explained why: unlike Scripts/ (pure-Python console-script entry
+      # points only), GNU Radio OOT modules are C/C++-oriented packages by
+      # conda-forge convention, and their executables live under
+      # Library/bin/ instead — Library/bin/gr_satellites.py (plain script,
+      # used below) alongside Library/bin/gr_satellites.exe (a launcher
+      # stub, deliberately not used, matching the macOS/Linux precedent of
+      # not trusting bundled launchers/shebangs). python.exe at the env
+      # root and Scripts/conda-unpack.exe were both already confirmed
+      # correct in that same run.
       - name: Smoke-test packed environment
         run: |
           set +e
@@ -363,16 +365,13 @@ jobs:
           # plain bash variables don't carry over between steps.
           EXTRACT_DIR="$(cygpath -u "$RUNNER_TEMP")/gr-sat-smoketest"
           SP="$EXTRACT_DIR/Lib/site-packages"
+          GR_SAT_SCRIPT="$EXTRACT_DIR/Library/bin/gr_satellites.py"
 
           mkdir -p "$EXTRACT_DIR"
           tar -xzf "${{ env.PKG }}" -C "$EXTRACT_DIR"
 
-          echo "=== Extracted env root contents ==="
-          ls -la "$EXTRACT_DIR"
-
-          echo
-          echo "=== Scripts/ entries mentioning satellite/conda-unpack ==="
-          ls -la "$EXTRACT_DIR/Scripts" 2>&1 | grep -iE "satellite|conda-unpack" || echo "(not found under Scripts/)"
+          echo "=== Library/bin/ entries mentioning satellite ==="
+          ls -la "$EXTRACT_DIR/Library/bin" 2>&1 | grep -i satellite || echo "(not found under Library/bin/)"
 
           echo
           echo "=== site-packages/gnuradio + satellites BEFORE conda-unpack ==="
@@ -404,13 +403,13 @@ jobs:
           if [ $? -ne 0 ]; then echo "satellites import FAILED"; STATUS=1; fi
 
           echo
-          echo "=== Informational: Scripts/gr_satellites.exe --version (own launcher, invocation form TBD) ==="
-          "$EXTRACT_DIR/Scripts/gr_satellites.exe" --version
-          echo "exit code: $? (informational — see step comment; not gated on STATUS yet)"
+          echo "=== Test: gr_satellites --version via explicit bundled python (real invocation) ==="
+          "$EXTRACT_DIR/python.exe" "$GR_SAT_SCRIPT" --version
+          if [ $? -ne 0 ]; then echo "gr_satellites --version (explicit python) FAILED"; STATUS=1; fi
 
           echo
           if [ "$STATUS" -eq 0 ]; then
-            echo "Core Python-level checks passed (launcher invocation still informational — see above)."
+            echo "Smoke test passed."
           else
             echo "Smoke test FAILED — see diagnostics above."
           fi

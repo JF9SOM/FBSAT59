@@ -41,10 +41,22 @@ def user_gr_satellites_dir() -> Path:
 
 
 def _bundled_executable_path() -> Path:
-    """Path to the gr_satellites entry-point script inside the bundled env."""
-    exe = "gr_satellites.exe" if sys.platform == "win32" else "gr_satellites"
-    bin_dir = "Scripts" if sys.platform == "win32" else "bin"
-    return user_gr_satellites_dir() / bin_dir / exe
+    """Path to the gr_satellites entry-point script inside the bundled env.
+
+    On Windows this is *not* under Scripts/ (that directory holds pure-
+    Python console-script entry points only). gnuradio-satellites is a GNU
+    Radio OOT module — a C/C++-oriented package by conda-forge convention —
+    and its executables live under Library/bin/ instead, alongside the
+    compiled gnuradio-satellites.dll. Confirmed by downloading and
+    inspecting the actual win-64 .conda package directly (2026-07-31):
+    Library/bin/gr_satellites.py (plain script, used here) and
+    Library/bin/gr_satellites.exe (a launcher stub, deliberately not used —
+    see resolve_gr_satellites_command()'s docstring for why bundled
+    launchers/shebangs can't be trusted without per-platform verification).
+    """
+    if sys.platform == "win32":
+        return user_gr_satellites_dir() / "Library" / "bin" / "gr_satellites.py"
+    return user_gr_satellites_dir() / "bin" / "gr_satellites"
 
 
 def _bundled_python_path() -> Path:

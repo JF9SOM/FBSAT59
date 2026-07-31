@@ -2,12 +2,17 @@
 
 No GNU Radio / conda / network required — these only exercise the pure
 filesystem-path logic, with user_gr_satellites_dir() monkeypatched to a
-tmp_path so nothing touches the real user data directory.
+tmp_path so nothing touches the real user data directory. Windows-specific
+paths are exercised by explicitly monkeypatching sys.platform rather than
+relying on the platform this test suite happens to run on (a prior version
+of this file computed its own "expected" Windows path with the same
+sys.platform-is-win32 check used by the source, which meant it always
+agreed with itself and never actually verified the win32 branch when run
+on Linux/macOS CI).
 """
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
@@ -27,6 +32,42 @@ def _make_executable(path: Path) -> None:
     path.write_text("#!/bin/sh\n")
 
 
+class TestBundledExecutablePath:
+    """gr_satellites' location differs by platform in a way that isn't just
+    an extension/dirname swap: on Windows it lives under Library/bin/ (the
+    conda-forge convention for GNU Radio OOT modules — C/C++-oriented
+    packages — not Scripts/, which is reserved for pure-Python
+    console-script entry points). Confirmed by downloading and inspecting
+    the actual win-64 gnuradio-satellites .conda package directly
+    (2026-07-31): Scripts/ only has conda-unpack, not gr_satellites.
+    """
+
+    def test_posix_path(self, _fake_bundle_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(gsi.sys, "platform", "linux")
+        assert gsi._bundled_executable_path() == _fake_bundle_dir / "bin" / "gr_satellites"
+
+    def test_windows_path_is_under_library_bin_not_scripts(
+        self, _fake_bundle_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(gsi.sys, "platform", "win32")
+        assert (
+            gsi._bundled_executable_path()
+            == _fake_bundle_dir / "Library" / "bin" / "gr_satellites.py"
+        )
+
+
+class TestBundledPythonPath:
+    def test_posix_path(self, _fake_bundle_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(gsi.sys, "platform", "linux")
+        assert gsi._bundled_python_path() == _fake_bundle_dir / "bin" / "python"
+
+    def test_windows_path_is_env_root(
+        self, _fake_bundle_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(gsi.sys, "platform", "win32")
+        assert gsi._bundled_python_path() == _fake_bundle_dir / "python.exe"
+
+
 class TestFindExecutable:
     def test_returns_none_when_nothing_installed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(gsi.shutil, "which", lambda name: None)
@@ -35,17 +76,13 @@ class TestFindExecutable:
     def test_prefers_bundle_over_system(
         self, _fake_bundle_dir: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        bin_dir = "Scripts" if sys.platform == "win32" else "bin"
-        exe_name = "gr_satellites.exe" if sys.platform == "win32" else "gr_satellites"
-        _make_executable(_fake_bundle_dir / bin_dir / exe_name)
+        script = _fake_bundle_dir / "bin" / "gr_satellites"
+        _make_executable(script)
         monkeypatch.setattr(gsi.shutil, "which", lambda name: "/usr/bin/gr_satellites")
 
         result = gsi.find_gr_satellites_executable()
 
-        assert result is not None
-        path, is_bundled = result
-        assert is_bundled is True
-        assert path == _fake_bundle_dir / bin_dir / exe_name
+        assert result == (script, True)
 
     def test_falls_back_to_system_when_no_bundle(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(gsi.shutil, "which", lambda name: "/usr/bin/gr_satellites")
@@ -56,9 +93,7 @@ class TestFindExecutable:
 
     def test_is_bundle_installed(self, _fake_bundle_dir: Path) -> None:
         assert gsi.is_bundle_installed() is False
-        bin_dir = "Scripts" if sys.platform == "win32" else "bin"
-        exe_name = "gr_satellites.exe" if sys.platform == "win32" else "gr_satellites"
-        _make_executable(_fake_bundle_dir / bin_dir / exe_name)
+        _make_executable(_fake_bundle_dir / "bin" / "gr_satellites")
         assert gsi.is_bundle_installed() is True
 
 
@@ -79,9 +114,7 @@ class TestResolveCommand:
     def test_bundled_returns_explicit_python_and_script(
         self, _fake_bundle_dir: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        bin_dir = "Scripts" if sys.platform == "win32" else "bin"
-        exe_name = "gr_satellites.exe" if sys.platform == "win32" else "gr_satellites"
-        script = _fake_bundle_dir / bin_dir / exe_name
+        script = _fake_bundle_dir / "bin" / "gr_satellites"
         _make_executable(script)
         monkeypatch.setattr(gsi.shutil, "which", lambda name: "/usr/bin/gr_satellites")
 
@@ -90,12 +123,18 @@ class TestResolveCommand:
         assert result is not None
         argv, is_bundled = result
         assert is_bundled is True
-        expected_python = (
-            _fake_bundle_dir / "python.exe"
-            if sys.platform == "win32"
-            else _fake_bundle_dir / "bin" / "python"
-        )
-        assert argv == [str(expected_python), str(script)]
+        assert argv == [str(_fake_bundle_dir / "bin" / "python"), str(script)]
+
+    def test_bundled_windows_returns_library_bin_script(
+        self, _fake_bundle_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(gsi.sys, "platform", "win32")
+        script = _fake_bundle_dir / "Library" / "bin" / "gr_satellites.py"
+        _make_executable(script)
+
+        result = gsi.resolve_gr_satellites_command()
+
+        assert result == ([str(_fake_bundle_dir / "python.exe"), str(script)], True)
 
     def test_system_returns_script_path_alone(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(gsi.shutil, "which", lambda name: "/usr/bin/gr_satellites")

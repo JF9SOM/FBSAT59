@@ -4950,11 +4950,31 @@ Uploadステップまで到達しグリーン（`gr-satellites-bundle`に
 以降すべてのステップでその変換済みパスを使うよう統一（`Pack`ステップで変換して
 `$GITHUB_ENV`経由で`Smoke-test`ステップに引き継ぐ設計）。
 
-**残る未検証・既知の制約（2026-07-31時点）**:
-- 上記修正後のWindows実行結果はまだ未確認（次回`workflow_dispatch`で確認予定）
-- 「実際にダウンロードして展開・動作確認する」というエンドツーエンド検証（Help画面からの
-  Download & Install操作）は、CIが緑になったプラットフォームについてのみ次のステップとして
-  必要
+**2回目の`workflow_dispatch`実行で3プラットフォームとも完全グリーン（2026-07-31）**:
+`cygpath`修正後の再実行で、macOS・Linux・Windowsすべて`Upload`ステップまで到達。ただし
+Windowsのスモークテストは`Scripts/gr_satellites.exe`を「参考情報のみ」（合否判定に含めない）
+にしていたため、この時点では**実際に`gr_satellites`を起動できることまでは確認できていなかった**。
+ログを精査したところ`Scripts/`には`conda-unpack`関連ファイルしかなく、`gr_satellites`が
+見当たらないことが判明した。
+
+**根本原因**: conda-forgeのWindowsパッケージ規約では、`Scripts/`は純粋なPythonの
+console-scriptエントリポイント専用で、GNU RadioのOOTモジュール（gnuradio-satellitesのような
+C/C++寄りのパッケージ）の実行ファイルは**`Library/bin/`**に配置される。実際にwin-64版
+`gnuradio-satellites` .condaパッケージを直接ダウンロードして中身を確認したところ、
+`Library/bin/gr_satellites.py`（素のPythonスクリプト、macOS/Linuxの`bin/gr_satellites`と
+同内容）と`Library/bin/gr_satellites.exe`（ランチャー、未使用）が存在することを確認した。
+
+**修正**: `gr_satellites_install.py`の`_bundled_executable_path()`のWindows分岐を
+`Scripts/gr_satellites.exe`から`Library/bin/gr_satellites.py`に変更。既存の
+`resolve_gr_satellites_command()`（`[bundled_python, bundled_script]`形式で明示的に
+呼び出す設計）はそのまま活用でき、macOS/Linuxで実証済みの安全な呼び出しパターンが
+Windowsでもそのまま機能する。CIのWindowsスモークテストも、この正しいパスを使った
+`gr_satellites --version`をmacOS/Linuxと同じ「合否判定に使う本番相当のテスト」に格上げ済み。
+
+**残る未検証点（2026-07-31時点）**: 上記修正後のWindows実行結果（3プラットフォーム目の
+`gr_satellites --version`が実際に成功するか）はまだ未確認（次回`workflow_dispatch`で確認予定）。
+確認できれば、CI側の検証は完了——残るは「実際にダウンロードして展開・動作確認する」という
+エンドツーエンド検証（Help画面からのDownload & Install操作、Telemetryタブでの実際の受信）のみ。
 
 #### AI-CW デコーダーについて
 - 候補: **morse-decoder**（PyTorch CNN ベース）・**DeepMorse**・**cwdecoder**（RNN）など
