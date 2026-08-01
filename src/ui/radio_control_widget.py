@@ -152,6 +152,7 @@ class RadioControlWidget(QWidget):
         sat_form = QFormLayout(sat_group)
         sat_form.setContentsMargins(4, 2, 4, 2)
         sat_form.setSpacing(3)
+        sat_form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
 
         # Name + NORAD on one row
         self._sat_name_label = QLabel("—")
@@ -205,6 +206,7 @@ class RadioControlWidget(QWidget):
         freq_form = QFormLayout(freq_group)
         freq_form.setContentsMargins(4, 2, 4, 2)
         freq_form.setSpacing(3)
+        freq_form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
 
         self._downlink_label = QLabel("—")
         self._downlink_doppler_label = QLabel("—")
@@ -313,6 +315,7 @@ class RadioControlWidget(QWidget):
         status_form = QFormLayout(status_group)
         status_form.setContentsMargins(4, 2, 4, 2)
         status_form.setSpacing(3)
+        status_form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self._rig1_status_label = QLabel(_("Not configured"))
         self._rig2_status_label = QLabel(_("Not configured"))
         self._rot_status_label = QLabel(_("Not configured"))
