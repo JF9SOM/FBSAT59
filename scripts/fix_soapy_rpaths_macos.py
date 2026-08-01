@@ -81,6 +81,30 @@ def fix_deps(
     changed = False
     for dep in otool_deps(path):
         base = os.path.basename(dep)
+        if base.startswith("libpython") and base.endswith(".dylib"):
+            # conda-forge's SoapySDR Python binding was built against
+            # conda-forge's own Python 3.11 and explicitly links its
+            # libpython3.11.dylib — but bundling a *second*, separate copy
+            # of libpython alongside PyInstaller's own bundled interpreter
+            # (the one actually running this process) would load two
+            # independent CPython runtime images into the same process,
+            # a well-known source of crashes/undefined behavior. There is
+            # only one correct target: whichever libpython PyInstaller
+            # itself already places at the app bundle root — which is not
+            # present at CI-bundling time (it's part of the *app's own*
+            # PyInstaller output, built separately, not something this
+            # SoapySDR-specific search-path knows about), so it can't be
+            # verified here. Rewrite unconditionally, trusting PyInstaller
+            # to provide a same-named sibling file at runtime, and don't
+            # try to copy/recurse into it.
+            new_ref = f"{own_install_path}/{base}"
+            if dep != new_ref:
+                subprocess.run(["install_name_tool", "-change", dep, new_ref, path], check=True)
+                print(
+                    f"  [fix]  {os.path.basename(path)}: {dep} -> {new_ref} (PyInstaller-provided)"
+                )
+                changed = True
+            continue
         if base not in search_files:
             continue  # not ours — a system library, leave it alone
         dest = os.path.join(dest_dir, base)
