@@ -1017,6 +1017,14 @@ jobs:
           # fallback for those in Help > SDR Device Installation.
           mkdir -p soapy-macos-dl
           cd soapy-macos-dl
+          # soapysdr-module-remote intentionally omitted for now: this
+          # project's own Windows SoapyRemote work (see CLAUDE.md) found the
+          # conda-forge-built remoteSupport.dll has a broken static
+          # initializer, and dylibbundler hanging indefinitely while
+          # processing this exact macOS module package is the leading
+          # suspect for the repeated CI hangs below (2026-08-01) — pending
+          # isolation test. Add back once the rest of the bundle is
+          # confirmed working.
           PACKAGES=(
             "https://conda.anaconda.org/conda-forge/osx-arm64/soapysdr-0.8.1-py311h2c37856_5.conda"
             "https://conda.anaconda.org/conda-forge/osx-arm64/soapysdr-module-rtlsdr-0.3.3-hdb668b8_3.conda"
@@ -1027,7 +1035,6 @@ jobs:
             "https://conda.anaconda.org/conda-forge/osx-arm64/libairspy-1.0.10-h5505292_1.conda"
             "https://conda.anaconda.org/conda-forge/osx-arm64/soapysdr-module-airspyhf-0.2.0-h4306ade_0.tar.bz2"
             "https://conda.anaconda.org/conda-forge/osx-arm64/libairspyhf-1.6.8-h5505292_1.conda"
-            "https://conda.anaconda.org/conda-forge/osx-arm64/soapysdr-module-remote-0.5.2-h4306ade_2.tar.bz2"
             "https://conda.anaconda.org/conda-forge/osx-arm64/libusb-1.0.29-hbc156a2_0.conda"
           )
           for url in "${PACKAGES[@]}"; do
@@ -1044,24 +1051,10 @@ jobs:
           cd ..
           mv soapy-macos-dl/soapy-macos .
 
-      - name: Fix up SoapySDR dylib rpaths for macOS bundle (dylibbundler)
-        timeout-minutes: 6
+      - name: Prepare SoapySDR bundle root + strip quarantine attrs
+        timeout-minutes: 2
         run: |
           set -ex
-          # `-x` traces every command to the log. Two workflow_dispatch runs
-          # (2026-08-01) sat "in progress" on the dylibbundler calls below
-          # for 30+ minutes with zero log output; --overwrite-files and
-          # dropping an unsupported --verbose flag (separately confirmed via
-          # a fast, clear failure once found) did not fix it either. Leading
-          # hypothesis, not yet proven: --search-path and --dest-dir were
-          # the SAME directory (soapy-macos/root), which was ALSO
-          # pre-populated with the exact files dylibbundler treats as
-          # dependencies-to-copy — plausibly causing it to keep
-          # rediscovering its own just-copied output as "new" work.
-          # Restructured below so --search-path (soapy-macos/lib, read-only,
-          # untouched by dylibbundler) and --dest-dir (soapy-macos/root,
-          # only ever written to) are never the same path.
-          #
           # PyInstaller places SoapySDR.py/_SoapySDR*.so and every *.dylib
           # flat at the app bundle root (soapy-macos/root/ -> "."), same
           # convention already used for Hamlib dylibs in this spec — the OS
@@ -1078,18 +1071,39 @@ jobs:
           xattr -l soapy-macos/lib/* soapy-macos/root/* soapy-macos/modules/* 2>&1 || true
           # Downloaded-via-curl files can carry a com.apple.quarantine
           # xattr; strip it so otool/install_name_tool (called internally by
-          # dylibbundler) can't trigger a Gatekeeper/notarization check that
-          # blocks on network I/O.
+          # dylibbundler, next steps) can't trigger a Gatekeeper/
+          # notarization check that blocks on network I/O.
           xattr -cr soapy-macos/lib soapy-macos/root soapy-macos/modules
 
-          # _SoapySDR*.so and its (transitive) deps -> flat root, referencing
-          # each other via plain @loader_path (siblings after installation).
-          # --overwrite-files (not just --overwrite-dir) is still needed:
-          # both dylibbundler calls below share --dest-dir soapy-macos/root,
-          # so the second call will find libSoapySDR.dylib etc. already
-          # copied in by the first. `</dev/null` guards against any prompt
-          # neither flag anticipates hanging forever on GitHub Actions'
-          # open-but-never-EOF step stdin.
+      # The dylibbundler rpath fixup is deliberately split into one step per
+      # binary rather than one step doing everything, and each step has its
+      # own short timeout-minutes. Two combined-into-one-step
+      # workflow_dispatch runs (2026-08-01) sat "in progress" for 30+
+      # minutes with zero log output on this rpath-fixing work, and neither
+      # `gh run view --log` nor the Actions API expose partial logs for a
+      # still-running job — with everything in one step there was no way to
+      # tell *which* dylibbundler invocation (of several) was actually
+      # stuck without waiting out a long timeout first. Tried and ruled out
+      # as the sole cause so far: missing --overwrite-files, an unsupported
+      # --verbose flag (this one just failed fast once found, not a real
+      # hang), --search-path == --dest-dir, and ad-hoc codesigning
+      # (--no-codesign added). This split trades a slightly more verbose
+      # job overview for being able to see exactly which single file is
+      # stuck from the step list alone (visible even while the job is still
+      # running), without needing full logs at all.
+      #
+      # --overwrite-files (not just --overwrite-dir) is needed because
+      # later steps share --dest-dir soapy-macos/root with earlier ones and
+      # will find shared dependencies (e.g. libSoapySDR.dylib) already
+      # copied in. `</dev/null` guards against any prompt neither flag
+      # anticipates hanging forever on GitHub Actions' open-but-never-EOF
+      # step stdin. --search-path soapy-macos/lib (never --dest-dir itself)
+      # avoids dylibbundler potentially rediscovering its own just-copied
+      # output as new work.
+      - name: Fix rpaths — _SoapySDR.so (dylibbundler)
+        timeout-minutes: 3
+        run: |
+          set -ex
           dylibbundler --bundle-deps --no-codesign \
             $(for f in soapy-macos/root/_SoapySDR*.so; do echo --fix-file "$f"; done) \
             --dest-dir soapy-macos/root \
@@ -1099,10 +1113,12 @@ jobs:
             --overwrite-files \
             </dev/null
 
-          # Device-driver plugin modules -> soapy_modules/, referencing the
-          # flat root (one level up once installed) via @loader_path/...
+      - name: Fix rpaths — librtlsdrSupport.so (dylibbundler)
+        timeout-minutes: 3
+        run: |
+          set -ex
           dylibbundler --bundle-deps --no-codesign \
-            $(for f in soapy-macos/modules/*.so; do echo --fix-file "$f"; done) \
+            --fix-file soapy-macos/modules/librtlsdrSupport.so \
             --dest-dir soapy-macos/root \
             --install-path @loader_path/.. \
             --search-path soapy-macos/lib \
@@ -1110,6 +1126,49 @@ jobs:
             --overwrite-files \
             </dev/null
 
+      - name: Fix rpaths — libHackRFSupport.so (dylibbundler)
+        timeout-minutes: 3
+        run: |
+          set -ex
+          dylibbundler --bundle-deps --no-codesign \
+            --fix-file soapy-macos/modules/libHackRFSupport.so \
+            --dest-dir soapy-macos/root \
+            --install-path @loader_path/.. \
+            --search-path soapy-macos/lib \
+            --overwrite-dir \
+            --overwrite-files \
+            </dev/null
+
+      - name: Fix rpaths — libairspySupport.so (dylibbundler)
+        timeout-minutes: 3
+        run: |
+          set -ex
+          dylibbundler --bundle-deps --no-codesign \
+            --fix-file soapy-macos/modules/libairspySupport.so \
+            --dest-dir soapy-macos/root \
+            --install-path @loader_path/.. \
+            --search-path soapy-macos/lib \
+            --overwrite-dir \
+            --overwrite-files \
+            </dev/null
+
+      - name: Fix rpaths — libairspyhfSupport.so (dylibbundler)
+        timeout-minutes: 3
+        run: |
+          set -ex
+          dylibbundler --bundle-deps --no-codesign \
+            --fix-file soapy-macos/modules/libairspyhfSupport.so \
+            --dest-dir soapy-macos/root \
+            --install-path @loader_path/.. \
+            --search-path soapy-macos/lib \
+            --overwrite-dir \
+            --overwrite-files \
+            </dev/null
+
+      - name: Verify bundled SoapySDR imports and enumerates
+        timeout-minutes: 2
+        run: |
+          set -ex
           echo "=== soapy-macos/root contents (post-rpath-fix) ==="
           find soapy-macos/root -type f
           echo "=== soapy-macos/modules contents (post-rpath-fix) ==="
