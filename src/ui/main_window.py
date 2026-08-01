@@ -2192,11 +2192,29 @@ class MainWindow(QMainWindow):
 
         from ui.q65_tab import Q65Tab
 
-        tab = Q65Tab(self._conn, self._radio_control, parent=self)
+        # Unlike the other _on_open_* handlers, Q65Tab pulls in a ctypes
+        # dylib/dll load (libq65) at import time — if that ever raises
+        # something other than the OSError it's guarded against (e.g. a
+        # corrupt or wrong-arch library left over from a previous install
+        # attempt), the exception used to propagate out of this Qt slot
+        # silently: no dialog, no tab, no visible error unless you were
+        # watching stderr. Catch and surface it instead of leaving the menu
+        # item looking like it does nothing.
+        try:
+            tab = Q65Tab(self._conn, self._radio_control, parent=self)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Failed to open Q65 tab")
+            QMessageBox.warning(
+                self,
+                tab_label,
+                _("Could not open the Q65 tab:\n{error}").format(error=exc),
+            )
+            return
         self._comms_tab_keys[tab] = "q65"
         idx = self._tab_widget.addTab(tab, tab_label)
         self._add_tab_close_button(tab)
         self._tab_widget.setCurrentIndex(idx)
+        self._notify_comms_tab_of_rig_state(tab)
 
     def _on_open_meteor(self, norad: int = 0, downlink_hz: int = 0) -> None:
         """Open the METEOR / HRPT tab (Communications > METEOR / HRPT).
