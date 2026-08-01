@@ -2190,17 +2190,20 @@ class MainWindow(QMainWindow):
                 self._tab_widget.setCurrentIndex(i)
                 return
 
-        from ui.q65_tab import Q65Tab
-
         # Unlike the other _on_open_* handlers, Q65Tab pulls in a ctypes
-        # dylib/dll load (libq65) at import time — if that ever raises
-        # something other than the OSError it's guarded against (e.g. a
-        # corrupt or wrong-arch library left over from a previous install
-        # attempt), the exception used to propagate out of this Qt slot
-        # silently: no dialog, no tab, no visible error unless you were
-        # watching stderr. Catch and surface it instead of leaving the menu
-        # item looking like it does nothing.
+        # dylib/dll load (libq65) at *import* time (comms.q65.codec's
+        # module-level _load_libq65() call) — if that ever raises something
+        # other than the OSError it's guarded against (e.g. a corrupt or
+        # wrong-arch library left over from a previous install attempt),
+        # the exception used to propagate out of this Qt slot silently: no
+        # dialog, no tab, no visible error unless you were watching stderr.
+        # The import itself must be inside the try — a version of this fix
+        # that left `from ui.q65_tab import Q65Tab` outside the try block
+        # only caught failures from the constructor, not from the import,
+        # and so still failed silently for an import-time crash.
         try:
+            from ui.q65_tab import Q65Tab
+
             tab = Q65Tab(self._conn, self._radio_control, parent=self)
         except Exception as exc:  # noqa: BLE001
             logger.exception("Failed to open Q65 tab")
