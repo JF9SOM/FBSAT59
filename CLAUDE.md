@@ -4592,13 +4592,35 @@ Pythonバインディングを持たない純C++プラグイン（`.so`、`dlope
 検証用の実機も手元にないため見送った。Homebrew経由の案内（Help > SDR Device
 Installation）は引き続きこの2機種向けに有効なまま残している。
 
-**検証状況（2026-08-01時点）**: CI（`workflow_dispatch`）でのビルド成否・実機
-（ユーザーのM2 MacBook Air、実際のRTL-SDR接続）での動作確認は共に未実施。
-dylibbundlerの`--overwrite-dir`を同一`--dest-dir`に対して2回連続で呼び出す設計
-（`_SoapySDR.so`用と各モジュール`.so`用でinstall-pathが異なるため呼び分けが必要）
-が、1回目で書き込んだ依存dylibを2回目の呼び出しで消してしまわないかは未確認
-（Hamlib向けの既存利用は常に単発呼び出しのため前例がない）。CI実行結果次第で
-この呼び出し方を調整する可能性がある。
+**初回`workflow_dispatch`で発覚・修正済みのCIハング（2026-08-01）**: 実装直後に
+`workflow_dispatch`（`platforms=macos`）で試したところ、「Bundle SoapySDR for macOS」
+ステップ（パッケージダウンロード・展開）は3秒で完了したにもかかわらず、直後の
+「Fix up SoapySDR dylib rpaths」ステップが**30分以上応答なしのまま停止**した
+（ユーザーからの「ビルドに時間がかかりすぎていないか」という指摘で発覚）。
+
+**原因**: `dylibbundler`には`--overwrite-dir`（出力ディレクトリが既存でも確認なしで
+使う）とは**別に**、個々のファイルを上書きする際の確認プロンプトが存在し、これは
+`--overwrite-files`という別フラグでしか抑制できない。今回の実装は`soapy-macos/root/`
+（`--dest-dir`）に**あらかじめ**`cp`で同名ファイル（`libSoapySDR.dylib`等）を
+配置してから`dylibbundler`を実行する設計だったため、`_SoapySDR.so`の依存関係として
+`libSoapySDR.dylib`を検出した`dylibbundler`が「すでに存在するこのファイルを
+上書きしてよいか」を確認しようとし、GitHub Actionsのステップには対話端末（TTY）が
+なく標準入力もEOFを返さない開いたパイプのままのため、応答を待ち続けて永久に
+ブロックしていた（`--overwrite-dir`だけでは足りず、CIがハングしたまま何のエラーも
+出さない、という気づきにくい形で発覚した）。
+
+**修正**: 両方の`dylibbundler`呼び出しに`--overwrite-files`を追加し、さらに
+`</dev/null`で標準入力を明示的にリダイレクト（`--overwrite-files`で想定していない
+別のプロンプトが将来出た場合でも、ハングではなく即座にEOFで失敗させるための
+二重の保険）。**HamlibのmacOSビルドで既に確立済みの`dylibbundler`呼び出し
+（本ファイル前方「Install Hamlib and Python dependencies」ステップ）がこの問題を
+一度も踏んでいなかった理由**は、`--dest-dir`に指定しているのが常に空の新規
+サブディレクトリ（`${PORTABLE_LIB}/deps`）であり、今回のように出力先へ
+あらかじめ同名ファイルを配置しておく設計になっていなかったため——構造的に
+ファイル名の衝突が起こり得なかった。
+
+**検証状況（2026-08-01時点）**: 上記修正後、CI（`workflow_dispatch`）での再実行・
+実機（ユーザーのM2 MacBook Air、実際のRTL-SDR接続）での動作確認はいずれも未実施。
 
 ---
 

@@ -1062,12 +1062,28 @@ jobs:
 
           # _SoapySDR*.so and its (transitive) deps -> flat root, referencing
           # each other via plain @loader_path (siblings after installation).
+          #
+          # --overwrite-files is required (not just --overwrite-dir): the
+          # root/ dir is pre-populated above with exactly the files
+          # dylibbundler will also try to (re-)copy in as dependencies (e.g.
+          # libSoapySDR.dylib is both a --fix-file's sibling AND its own
+          # detected dependency), and dylibbundler prompts to confirm each
+          # such per-file overwrite. GitHub Actions runners give steps an
+          # open-but-never-EOF stdin (not /dev/null), so an unanswered
+          # prompt blocks forever instead of failing fast — confirmed via a
+          # workflow_dispatch run that sat "in progress" on this exact step
+          # for 30+ minutes with no error (2026-08-01). `</dev/null` is kept
+          # as a second line of defense against any other prompt neither
+          # flag anticipates, so a bug here fails within seconds instead of
+          # hanging out the clock on CI minutes again.
           dylibbundler --bundle-deps \
             $(for f in soapy-macos/root/_SoapySDR*.so; do echo --fix-file "$f"; done) \
             --dest-dir soapy-macos/root \
             --install-path @loader_path \
             --search-path soapy-macos/root \
-            --overwrite-dir
+            --overwrite-dir \
+            --overwrite-files \
+            </dev/null
 
           # Device-driver plugin modules -> soapy_modules/, referencing the
           # flat root (one level up once installed) via @loader_path/...
@@ -1076,7 +1092,9 @@ jobs:
             --dest-dir soapy-macos/root \
             --install-path @loader_path/.. \
             --search-path soapy-macos/root \
-            --overwrite-dir
+            --overwrite-dir \
+            --overwrite-files \
+            </dev/null
 
           echo "=== soapy-macos/root contents (post-rpath-fix) ==="
           find soapy-macos/root -type f
