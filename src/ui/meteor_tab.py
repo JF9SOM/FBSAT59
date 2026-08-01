@@ -27,6 +27,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -187,6 +188,7 @@ class MeteorTab(QWidget):
         self._output_dir: Path | None = None
         self._suppress_sync: bool = False  # prevents feedback loop during Radio Control sync
         self._log_window: _LogWindow | None = None
+        self._log_buffer: deque[str] = deque(maxlen=2000)
         self._setup_ui()
         self._check_satdump()
 
@@ -481,6 +483,8 @@ class MeteorTab(QWidget):
     def _on_show_log(self) -> None:
         if self._log_window is None:
             self._log_window = _LogWindow(self)
+            for line in self._log_buffer:
+                self._log_window.append(line)
         if self._log_window.isVisible():
             self._log_window.raise_()
             self._log_window.activateWindow()
@@ -503,6 +507,7 @@ class MeteorTab(QWidget):
     # ------------------------------------------------------------------
 
     def _on_log_line(self, line: str) -> None:
+        self._log_buffer.append(line)
         if self._log_window is not None:
             self._log_window.append(line)
 
@@ -524,8 +529,10 @@ class MeteorTab(QWidget):
 
     def _on_finished_err(self, msg: str) -> None:
         self._lbl_status.setText(_("Error: ") + msg)
+        err_line = _("[ERROR] ") + msg
+        self._log_buffer.append(err_line)
         if self._log_window is not None:
-            self._log_window.append(_("[ERROR] ") + msg)
+            self._log_window.append(err_line)
         self._progress.setVisible(False)
         self._reset_controls()
         self._reenable_sdr_tab()
