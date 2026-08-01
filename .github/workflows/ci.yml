@@ -1017,14 +1017,11 @@ jobs:
           # fallback for those in Help > SDR Device Installation.
           mkdir -p soapy-macos-dl
           cd soapy-macos-dl
-          # soapysdr-module-remote intentionally omitted for now: this
-          # project's own Windows SoapyRemote work (see CLAUDE.md) found the
-          # conda-forge-built remoteSupport.dll has a broken static
-          # initializer, and dylibbundler hanging indefinitely while
-          # processing this exact macOS module package is the leading
-          # suspect for the repeated CI hangs below (2026-08-01) — pending
-          # isolation test. Add back once the rest of the bundle is
-          # confirmed working.
+          # soapysdr-module-remote was temporarily dropped (2026-08-01) while
+          # isolating the dylibbundler hang investigated below/in CLAUDE.md
+          # — it turned out to be dylibbundler itself, not this package (the
+          # from-source-built _SoapySDR.so + fix_soapy_rpaths_macos.py fix
+          # applies uniformly, no per-package special-casing), so it's back.
           PACKAGES=(
             "https://conda.anaconda.org/conda-forge/osx-arm64/soapysdr-0.8.1-py311h2c37856_5.conda"
             "https://conda.anaconda.org/conda-forge/osx-arm64/soapysdr-module-rtlsdr-0.3.3-hdb668b8_3.conda"
@@ -1035,6 +1032,7 @@ jobs:
             "https://conda.anaconda.org/conda-forge/osx-arm64/libairspy-1.0.10-h5505292_1.conda"
             "https://conda.anaconda.org/conda-forge/osx-arm64/soapysdr-module-airspyhf-0.2.0-h4306ade_0.tar.bz2"
             "https://conda.anaconda.org/conda-forge/osx-arm64/libairspyhf-1.6.8-h5505292_1.conda"
+            "https://conda.anaconda.org/conda-forge/osx-arm64/soapysdr-module-remote-0.5.2-h4306ade_2.tar.bz2"
             "https://conda.anaconda.org/conda-forge/osx-arm64/libusb-1.0.29-hbc156a2_0.conda"
           )
           for url in "${PACKAGES[@]}"; do
@@ -1208,6 +1206,16 @@ jobs:
           set -ex
           python3 "$GITHUB_WORKSPACE/scripts/fix_soapy_rpaths_macos.py" \
             --fix-file soapy-macos/modules/libairspyhfSupport.so \
+            --dest-dir soapy-macos/root \
+            --install-path @loader_path/.. \
+            --search-path soapy-macos/lib
+
+      - name: Fix rpaths — libremoteSupport.so
+        timeout-minutes: 2
+        run: |
+          set -ex
+          python3 "$GITHUB_WORKSPACE/scripts/fix_soapy_rpaths_macos.py" \
+            --fix-file soapy-macos/modules/libremoteSupport.so \
             --dest-dir soapy-macos/root \
             --install-path @loader_path/.. \
             --search-path soapy-macos/lib
