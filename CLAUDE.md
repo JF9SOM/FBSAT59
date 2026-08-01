@@ -4498,7 +4498,7 @@ importに失敗する可能性がある。この場合は`brew install python@3.
 セクション参照）のような自前バンドルに切り替える必要がある。実機での動作確認は未実施
 （ユーザーが次回タグビルド前に確認予定）。
 
-#### macOS SoapySDR conda-forge 同梱 — 上記「既知の限界」が実機で的中・Homebrew依存を撤廃（2026-08-01 実装・実機未検証）
+#### macOS SoapySDR conda-forge 同梱 — 上記「既知の限界」が実機で的中・Homebrew依存を撤廃（2026-08-01 実装・実機のRTL-SDRで動作確認済み）
 
 **発端**: 上記のsys.path修正をリリースしたユーザー実機（M2 MacBook Air、Homebrewで
 `soapysdr`/`soapyrtlsdr`インストール済み）で実際にRTL-SDRが認識されるか確認したところ、
@@ -4549,78 +4549,131 @@ conda-forgeのosx-arm64チャンネルを実際に調査した結果、`soapysdr
 Pythonバインディングを持たない純C++プラグイン（`.so`、`dlopen`でロードされるだけ）の
 ため、Pythonバージョンとは無関係にどれでも使える。
 
-**実装**:
-- `scripts/extract_soapy_conda_macos.py`（新規）— Windows版`extract_soapy_conda.py`と
-  同型だが、macOS conda-forgeパッケージ特有の点に対応: `lib/libSoapySDR.0.8.dylib`が
-  実ファイルではなく`libSoapySDR.0.8.1.dylib`への**tarシンボリックリンク**として
-  格納されている（`@rpath/libSoapySDR.0.8.dylib`という他バイナリからの参照名と、
-  ディスク上の実ファイル名が異なる）。シンボリックリンクはtar展開時にデータを
-  持たないため、CIアーティファクトとして再tar/アップロードする過程で消失しやすい
-  ——このスクリプトは全シンボリックリンクをその場で実体化（リンク先の実バイトを
-  リンク自身の名前でも書き出す）し、展開後のディレクトリにシンボリックリンクが
-  一切残らないようにしている
-- CI（`build-macos`ジョブ）に2ステップ追加:
-  1. 「Bundle SoapySDR for macOS (conda-forge pre-built)」— 上記パッケージ群を
-     ダウンロードし`extract_soapy_conda_macos.py`で`soapy-macos/{lib,python,modules}/`
-     に展開
-  2. 「Fix up SoapySDR dylib rpaths for macOS bundle (dylibbundler)」— Hamlibの
-     macOSビルドで既に使われている`dylibbundler`（同ジョブの最初のステップで
-     `brew install`済み）で、抽出直後のファイルに埋め込まれたrpath（元のconda
-     ビルド環境のプレフィックスを指しており、CI/ユーザー環境のどこにも存在しない
-     パス）を`@loader_path`ベースの相対参照に書き換える。`_SoapySDR*.so`と
-     Python 3.11バインディングの依存先dylibは`soapy-macos/root/`（PyInstaller
-     spec側で`"."`＝バンドルルートにマップ、Hamlib dylibと同じ「フラット配置」
-     方式）へ`--install-path @loader_path`で、デバイスモジュール`.so`は
-     `soapy-macos/modules/`（`"soapy_modules"`＝`SOAPY_SDR_PLUGIN_PATH`が指す
-     サブディレクトリ）へ`--install-path @loader_path/..`（モジュールから見て
-     1階層上がルート）で解決する。同ステップの最後に、Homebrewに一切頼らず
-     抽出・修正済みファイルだけで`import SoapySDR; SoapySDR.Device.enumerate()`
-     を実行し、rpath修正が実際に効いているかをCI上で検証する
+**実装（`scripts/extract_soapy_conda_macos.py`、新規）**: Windows版`extract_soapy_conda.py`
+と同型だが、macOS conda-forgeパッケージ特有の点に対応: `lib/libSoapySDR.0.8.dylib`が
+実ファイルではなく`libSoapySDR.0.8.1.dylib`への**tarシンボリックリンク**として
+格納されている（`@rpath/libSoapySDR.0.8.dylib`という他バイナリからの参照名と、
+ディスク上の実ファイル名が異なる）。シンボリックリンクはtar展開時にデータを
+持たないため、CIアーティファクトとして再tar/アップロードする過程で消失しやすい
+——このスクリプトは全シンボリックリンクをその場で実体化（リンク先の実バイトを
+リンク自身の名前でも書き出す）し、展開後のディレクトリにシンボリックリンクが
+一切残らないようにしている。`include/SoapySDR/*.h(pp)`ヘッダーも抽出する
+（後述のPythonバインディング自前ビルドで使用）。
+
+**dylibbundlerでのrpath修正は最終的に完全撤廃——3段階の失敗を経て判明（2026-08-01）**:
+
+当初はHamlibのmacOSビルドで既に使われている`dylibbundler`（同ジョブで`brew install`済み）
+を流用する設計だった。ところが`workflow_dispatch`で試したところ、以下の3段階すべてで
+つまずいた。
+
+1. **ハング**: `--overwrite-dir`だけでは足りず、`soapy-macos/root/`（`--dest-dir`）に
+   あらかじめ`cp`で同名ファイルを配置してから実行する設計だったため、`dylibbundler`が
+   「既存ファイルを上書きするか」の個別確認プロンプト（`--overwrite-files`という別フラグ
+   でしか抑制できない）で停止し、GitHub Actionsの対話端末なし・EOFを返さない標準入力
+   という環境で**30分以上応答なしのまま**固まった（ユーザーからの「時間がかかりすぎ」
+   という指摘で発覚）。`--overwrite-files`追加・`</dev/null`によるstdinリダイレクト・
+   `--search-path`と`--dest-dir`の分離・`--no-codesign`・1ファイル1ステップへの分割
+   （`timeout-minutes`で強制打ち切り）と、考えられる対策を順に試したが、**最小構成
+   （1ファイルのみ、ハードタイムアウト付き）でも17分以上ハングし、キルシグナルでも
+   終了しなかった**。同じジョブ内でHamlib向けの`dylibbundler`呼び出しは常に高速に
+   終わっており、原因はこのランナーやツール自体の一般的な不具合ではなく、conda-forge
+   がビルドしたSoapySDRバイナリに特有の何かだったと推測されるが、ハング中は一切ログが
+   出ないため、正確なメカニズムは最後まで特定できなかった
+2. **代替実装（`otool -L` + `install_name_tool`を直接呼ぶ自前スクリプト）**:
+   `dylibbundler`が実際に必要としているごく一部の機能（依存関係の列挙・不足分のコピー・
+   参照の書き換え）だけを`scripts/fix_soapy_rpaths_macos.py`として自前実装し、ハングは
+   完全に解消（Linux上でフェイクの`otool`/`install_name_tool`/`codesign`を使い、共有
+   依存関係の重複コピー防止を含む再帰ロジックをローカル検証済み）。CI実行でも
+   全ての「Fix rpaths」ステップは数秒で成功するようになった
+3. **`libpython3.11.dylib`への固定リンク**: ハング解消後に判明した別の問題として、
+   conda-forgeがビルドした`_SoapySDR.cpython-311-darwin.so`が**conda-forge自身の
+   Python 3.11に対して固定リンク**されていた（`@rpath/libpython3.11.dylib`）。
+   アプリが同梱するPyInstaller版Python 3.11とは別バイナリのため、参照を書き換える
+   必要があったが、「別のlibpythonを追加で同梱する」のはプロセス内に2つの独立した
+   CPythonランタイムが同時ロードされる危険な選択肢のため、「PyInstaller自身が同梱する
+   libpythonを指すよう書き換える」方針にしたところ、**CI検証用にコピーしたファイルの
+   コード署名が無効**というさらに別の問題に直面した（python.org公式Frameworkビルドの
+   署名が、コピー後の配置場所で無効化される現象。詳細な原因は未解明のまま棚上げ）
+
+3段階目でユーザーから「これ以上その場しのぎの対症療法を繰り返すのではなく、いったん
+立ち止まって再検討せよ」との明確な指示があり、GQRX（[gqrx-sdr/gqrx](https://github.com/gqrx-sdr/gqrx)、
+定評あるmacOS SDR OSS）のmacOSビルド方式を調査した。GQRXはC++/Qtアプリで
+SoapySDRのC++ APIを直接使っており、Pythonバインディング自体を持たないため
+この`libpython`問題自体が原理的に発生しない（`dylibbundler`も使っておらず、Qt公式の
+`macdeployqt6`でリンク依存関係を解決し、SoapySDRのプラグインモジュール自体はrpath
+修正なしでそのままコピーするという、より軽量な方式だった）。GQRXの知見は
+「conda-forgeを素材として使う設計自体は妥当」という傍証にはなったが、Pythonバインディング
+固有のこの問題への直接の答えにはならなかった。
+
+**最終的に採用した根本解決策——SoapySDRのPythonバインディングを自前でSWIGビルド**:
+SoapySDR本家のソース自体（`python/CMakeLists.txt`）を確認したところ、
+`if(APPLE) list(APPEND PYTHON_LIBRARIES "-undefined dynamic_lookup") endif()`と、
+まさにこの問題を回避する設計が**上流に最初から存在していた**ことが判明した
+（`-undefined dynamic_lookup`は特定のlibpythonに固定リンクせず、実行時に「今動いている
+インタプリタ自身」からPythonのC API シンボルを解決する手法——本プロジェクトが
+Hamlibの`_Hamlib.so`で既に使っているのと全く同じパターン）。conda-forgeのビルド
+レシピはこの分岐を取らず、独自にpython実行環境へ明示的にリンクしていたと見られる。
+
+conda-forgeビルドの`libSoapySDR.dylib`（C++コア）自体はそのまま使い、Pythonとの
+橋渡し層（`_SoapySDR.so`）だけを自前でビルドし直す方式にした:
+- SoapySDR公式ソース（`soapy-sdr-0.8.1`タグ）から`python/SoapySDR.in.i`
+  （SWIGインターフェース定義。単一ファイルで完結、`@SOAPY_SDR_ABI_VERSION@`という
+  唯一のCMakeテンプレート変数を持つ。値は同梱ヘッダーの`Version.h`から動的取得）を取得
+- `swig -c++ -python -threads -I<headers> -o SoapySDR_wrap.cxx SoapySDR.i`
+- `clang++ -shared -fPIC -O2 -std=c++11 -undefined dynamic_lookup -I<headers>
+  -I<python_include> SoapySDR_wrap.cxx -L<lib> -lSoapySDR -Wl,-rpath,@loader_path
+  -o _SoapySDR<EXT_SUFFIX>`
+- 生成された`_SoapySDR.so`はlibpythonへの依存を一切持たないため、CI検証ステップの
+  署名問題も含め、上記3つの問題がすべて同時に解消した
+
+この方式のSWIG生成段階（プレースホルダー置換・ヘッダー・生成コマンド）はLinux開発機
+でも事前検証済み（実際のmacOSコンパイルはCI runnerでしか確認できない）。
+
+**CI（`build-macos`ジョブ）への実装ステップ**（最終形）:
+1. 「Bundle SoapySDR for macOS (conda-forge pre-built)」— パッケージ群をダウンロードし
+   `extract_soapy_conda_macos.py`で`soapy-macos/{lib,python,modules,include}/`に展開
+2. 「Build SoapySDR Python binding from source (SWIG)」— 上記の自前ビルドで
+   `soapy-macos/python/_SoapySDR<EXT_SUFFIX>`・`SoapySDR.py`をconda-forge版から上書き
+3. 「Prepare SoapySDR bundle root + strip quarantine attrs」— `soapy-macos/root/`へ
+   python層をコピーし、`xattr -cr`でcurlダウンロード由来の`com.apple.quarantine`を除去
+4. 「Fix rpaths — （ファイル名ごとに5ステップ）」— `fix_soapy_rpaths_macos.py`で
+   `_SoapySDR.so`・各デバイスモジュール`.so`の`@rpath`参照を`@loader_path`ベースへ
+   書き換え。1ファイル1ステップ構成は当初dylibbundlerハング調査用の切り分け目的
+   だったが、そのまま残している（各ステップが数秒で終わるため実害なし、かつ
+   将来同種の問題が再発した場合の診断性を保てるため）
+5. 「Verify bundled SoapySDR imports and enumerates」— Homebrewに一切頼らず
+   抽出・修正済みファイルだけで`import SoapySDR; SoapySDR.Device.enumerate()`を実行
 - `scripts/fbsat59.spec`: darwin分岐に`soapy_binaries`ブロックを追加
   （`soapy-macos/root/*` → `"."`、`soapy-macos/modules/*.so` → `"soapy_modules"`）。
   Windows分岐の同名ブロックと対称的な構造
 - `src/main.py`: darwin frozen時に`SOAPY_SDR_PLUGIN_PATH`を`_MEIPASS/soapy_modules`
-  へ設定するブロックを新設（Windows分岐と同じパターン。`SoapySDR.py`/`_SoapySDR.so`
-  自体はPyInstallerが`_MEIPASS`を標準でsys.pathに含めるため追加のsys.path操作は
-  不要——Windows版も同様の理由でDLL探索パス設定以外の特別なsys.path操作をしていない）。
-  既存のHomebrew site-packages追記ブロック（2026-07-31実装）は、同梱ビルドが何らかの
-  理由で欠けていた場合の最終フォールバックとして残した（`append`のため優先度は
-  常に同梱版より低い——このフォールバック経路こそが今回のABI不一致の発生源だった
-  ため、意図的に最下位優先のまま維持している）
+  へ設定するブロックを新設（Windows分岐と同じパターン）。既存のHomebrew site-packages
+  追記ブロック（2026-07-31実装）は同梱ビルドが欠けていた場合の最終フォールバックとして
+  残した（`append`のため優先度は常に同梱版より低い）
 
 **今回のスコープ外（意図的）**: PlutoSDR・BladeRFは`libiio`等の追加依存が重く、
 検証用の実機も手元にないため見送った。Homebrew経由の案内（Help > SDR Device
-Installation）は引き続きこの2機種向けに有効なまま残している。
+Installation）は引き続きこの2機種向けに有効なまま残している。`soapysdr-module-remote`
+（Remote SDR）も、dylibbundlerハングの原因切り分け中に一時的にこのバッチから除外した
+まま（原因はdylibbundler自体だったと判明したため無実だった可能性が高い）。次回、
+再度バンドル対象に加えて動作確認すること。
 
-**初回`workflow_dispatch`で発覚・修正済みのCIハング（2026-08-01）**: 実装直後に
-`workflow_dispatch`（`platforms=macos`）で試したところ、「Bundle SoapySDR for macOS」
-ステップ（パッケージダウンロード・展開）は3秒で完了したにもかかわらず、直後の
-「Fix up SoapySDR dylib rpaths」ステップが**30分以上応答なしのまま停止**した
-（ユーザーからの「ビルドに時間がかかりすぎていないか」という指摘で発覚）。
+**検証状況（2026-08-01）**: `workflow_dispatch`でCI完全グリーン（SoapySDRのimport・
+`Device.enumerate()`・PyInstallerビルド・DMG作成まで全て成功）を確認した上で、
+**ユーザーの実機（M2 MacBook Air）でRTL-SDRが正常に認識されることを確認済み**。
+Homebrewのインストール状況に一切依存せず動作する。
 
-**原因**: `dylibbundler`には`--overwrite-dir`（出力ディレクトリが既存でも確認なしで
-使う）とは**別に**、個々のファイルを上書きする際の確認プロンプトが存在し、これは
-`--overwrite-files`という別フラグでしか抑制できない。今回の実装は`soapy-macos/root/`
-（`--dest-dir`）に**あらかじめ**`cp`で同名ファイル（`libSoapySDR.dylib`等）を
-配置してから`dylibbundler`を実行する設計だったため、`_SoapySDR.so`の依存関係として
-`libSoapySDR.dylib`を検出した`dylibbundler`が「すでに存在するこのファイルを
-上書きしてよいか」を確認しようとし、GitHub Actionsのステップには対話端末（TTY）が
-なく標準入力もEOFを返さない開いたパイプのままのため、応答を待ち続けて永久に
-ブロックしていた（`--overwrite-dir`だけでは足りず、CIがハングしたまま何のエラーも
-出さない、という気づきにくい形で発覚した）。
-
-**修正**: 両方の`dylibbundler`呼び出しに`--overwrite-files`を追加し、さらに
-`</dev/null`で標準入力を明示的にリダイレクト（`--overwrite-files`で想定していない
-別のプロンプトが将来出た場合でも、ハングではなく即座にEOFで失敗させるための
-二重の保険）。**HamlibのmacOSビルドで既に確立済みの`dylibbundler`呼び出し
-（本ファイル前方「Install Hamlib and Python dependencies」ステップ）がこの問題を
-一度も踏んでいなかった理由**は、`--dest-dir`に指定しているのが常に空の新規
-サブディレクトリ（`${PORTABLE_LIB}/deps`）であり、今回のように出力先へ
-あらかじめ同名ファイルを配置しておく設計になっていなかったため——構造的に
-ファイル名の衝突が起こり得なかった。
-
-**検証状況（2026-08-01時点）**: 上記修正後、CI（`workflow_dispatch`）での再実行・
-実機（ユーザーのM2 MacBook Air、実際のRTL-SDR接続）での動作確認はいずれも未実施。
+**教訓**: サードパーティのビルド済みバイナリに依存する際、そのビルドが「上流の
+標準的な回避策」をなぜか取っていないケースがある（今回のconda-forgeのlibpython
+固定リンクは、SoapySDR自身のCMakeがAppleでは`-undefined dynamic_lookup`を使う設計に
+なっていたにもかかわらず、パッケージング側の事情でそれをバイパスしていた）。対症療法
+（参照先の書き換え）を重ねる前に、まず**その部分だけでも自前でビルドし直せないか**を
+検討する価値がある——今回は結果的にビルド済みバイナリの数分の一の分量（Pythonバインディング
+のみ）を自前ビルドするだけで、複数の問題が同時に解消した。また、同種のツール
+（`dylibbundler`等）が「別の文脈では問題なく動いている」からといって、今回の対象
+バイナリに対しても安全とは限らない——原因不明のまま複数の対症療法を試すより、
+早い段階で「この特定の依存関係自体を作り直せないか」という別のレイヤーの解決策を
+検討すべきだったという反省点も残る。
 
 ---
 
