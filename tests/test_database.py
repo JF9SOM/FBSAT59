@@ -158,3 +158,87 @@ class TestAppSettings:
         db_conn.commit()
         row = db_conn.execute("SELECT value FROM app_settings WHERE key = 'last_sync'").fetchone()
         assert row["value"] == "2024-01-01T00:00:00"
+
+
+class TestSatnogsSourceIdRepair:
+    """_apply_migrations() self-heal for satnogs_source_id / placeholder names.
+
+    Regression coverage for the ISS (25544) / Coconut (98292) incident
+    (2026-08-01): a first-launch race let a stray satnogs_source_id get set
+    on ISS pointing at an unrelated, independently-visible satellite. The old
+    SQL-only name-repair migration then unconditionally overwrote ISS's real
+    name with that satellite's name on every startup, since it only checked
+    for a name *difference*, not whether ISS's own name actually needed
+    fixing.
+    """
+
+    def _reinit(self, tmp_path: Path) -> sqlite3.Connection:
+        """Re-run init_database() (and therefore _apply_migrations()) against
+        whatever rows were seeded into the DB file beforehand."""
+        return init_database(tmp_path / "test.db")
+
+    def test_real_name_is_not_clobbered_by_stray_source_id(self, tmp_path: Path) -> None:
+        """A satellite with a real (non-placeholder) name must never be
+        overwritten just because satnogs_source_id points at a differently
+        named, independently visible satellite (the ISS/Coconut bug)."""
+        conn = init_database(tmp_path / "test.db")
+        conn.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden, satnogs_source_id)"
+            " VALUES (25544, 'ISS', 'alive', 0, 98292)"
+        )
+        conn.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (98292, 'Coconut', 'alive', 0)"
+        )
+        conn.commit()
+        conn.close()
+
+        conn2 = self._reinit(tmp_path)
+        row = conn2.execute(
+            "SELECT name, satnogs_source_id FROM satellites WHERE norad_cat_id = 25544"
+        ).fetchone()
+        assert row["name"] == "ISS"
+        assert row["satnogs_source_id"] is None  # stray link cleared
+        conn2.close()
+
+    def test_placeholder_name_is_still_repaired_from_hidden_source(self, tmp_path: Path) -> None:
+        """The original, legitimate use case must keep working: a satellite
+        stuck with a placeholder name gets the real name copied over from
+        its (properly hidden) provisional-NORAD counterpart."""
+        conn = init_database(tmp_path / "test.db")
+        conn.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden, satnogs_source_id)"
+            " VALUES (68795, '#68795', 'alive', 0, 98325)"
+        )
+        conn.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (98325, 'ORIGAMISAT-2', 'alive', 2)"
+        )
+        conn.commit()
+        conn.close()
+
+        conn2 = self._reinit(tmp_path)
+        row = conn2.execute(
+            "SELECT name, satnogs_source_id FROM satellites WHERE norad_cat_id = 68795"
+        ).fetchone()
+        assert row["name"] == "ORIGAMISAT-2"
+        assert row["satnogs_source_id"] == 98325  # legitimate link preserved
+        conn2.close()
+
+    def test_dangling_source_id_is_cleared(self, tmp_path: Path) -> None:
+        """satnogs_source_id pointing at a satellite that no longer exists
+        should be cleared rather than left dangling forever."""
+        conn = init_database(tmp_path / "test.db")
+        conn.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden, satnogs_source_id)"
+            " VALUES (12345, 'SomeSat', 'alive', 0, 99999)"
+        )
+        conn.commit()
+        conn.close()
+
+        conn2 = self._reinit(tmp_path)
+        row = conn2.execute(
+            "SELECT satnogs_source_id FROM satellites WHERE norad_cat_id = 12345"
+        ).fetchone()
+        assert row["satnogs_source_id"] is None
+        conn2.close()

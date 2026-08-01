@@ -285,6 +285,32 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         )
         conn.commit()
 
+    # Data repair (2026-08-01): a race on first launch could let
+    # TransmitterManager._run_migration_pipeline() link an official
+    # satellite's satnogs_source_id to an unrelated provisional ID before the
+    # official satellite's own transmitters had been synced yet — its guard
+    # only refuses the link when the official satellite *already* has
+    # transmitters in the DB, which is briefly untrue right after a fresh
+    # install. Confirmed live: ISS (25544) ended up with
+    # satnogs_source_id=98292 (Coconut, a CubeSat deployed from ISS whose
+    # TLE briefly matches ISS's orbit right after deployment — the exact
+    # scenario the guard exists for). A legitimate link always leaves the
+    # fake_id side hidden (is_hidden=2, migration pipeline step 7); an
+    # erroneous one leaves both sides visible and independent. Clear the
+    # link in the latter case, before the name repair below can act on it.
+    conn.execute(
+        """
+        UPDATE satellites
+        SET satnogs_source_id = NULL, updated_at = CURRENT_TIMESTAMP
+        WHERE satnogs_source_id IS NOT NULL
+          AND NOT EXISTS (
+                SELECT 1 FROM satellites p
+                WHERE p.norad_cat_id = satellites.satnogs_source_id
+                  AND p.is_hidden = 2
+            )
+        """
+    )
+
     # Data repair: TransmitterManager.sync_from_satnogs() used to seed a new
     # satellite's placeholder name from the transmitter's own description
     # (e.g. "Mode U - CW") instead of a recognizable "#NNNNN" placeholder.
@@ -292,26 +318,36 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
     # real name is known, satellites created this way were stuck with a
     # garbage name forever even after the correct name became known on their
     # (now-hidden) provisional-NORAD counterpart. Repair by copying the name
-    # from satnogs_source_id's satellite row whenever they differ. Safe to
-    # run on every startup: a no-op once the names already match.
-    conn.execute(
+    # from satnogs_source_id's satellite row when the current name is still
+    # a placeholder.
+    #
+    # Only touch rows whose *own* name looks like a placeholder (checked in
+    # Python via the same _is_placeholder_name() used by the migration
+    # pipeline) — the previous plain-SQL-inequality version unconditionally
+    # overwrote a satellite's real name whenever satnogs_source_id pointed at
+    # a satellite with a different name. Combined with the stray link above
+    # (before it was cleared), this clobbered ISS's name with "Coconut" on
+    # every startup until the next SATNOGS sync happened to reach ISS's own
+    # record and correct it back — the actual cause of ISS intermittently
+    # vanishing from the satellite list/search on a fresh install.
+    from data.transmitter_manager import _is_placeholder_name
+
+    for row in conn.execute(
         """
-        UPDATE satellites
-        SET name = (
-                SELECT p.name FROM satellites p
-                WHERE p.norad_cat_id = satellites.satnogs_source_id
-            ),
-            updated_at = CURRENT_TIMESTAMP
-        WHERE satnogs_source_id IS NOT NULL
-          AND EXISTS (
-                SELECT 1 FROM satellites p WHERE p.norad_cat_id = satellites.satnogs_source_id
-            )
-          AND name != (
-                SELECT p.name FROM satellites p
-                WHERE p.norad_cat_id = satellites.satnogs_source_id
-            )
+        SELECT s.norad_cat_id, s.name, p.name AS source_name
+        FROM satellites s
+        JOIN satellites p ON p.norad_cat_id = s.satnogs_source_id
+        WHERE s.satnogs_source_id IS NOT NULL
+          AND s.name != p.name
         """
-    )
+    ).fetchall():
+        if _is_placeholder_name(str(row["name"])):
+            conn.execute(
+                "UPDATE satellites SET name = ?, updated_at = CURRENT_TIMESTAMP"
+                " WHERE norad_cat_id = ?",
+                (row["source_name"], row["norad_cat_id"]),
+            )
+
     conn.commit()
 
 

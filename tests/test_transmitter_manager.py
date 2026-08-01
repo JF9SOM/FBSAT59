@@ -202,3 +202,33 @@ class TestSyncSatelliteNamesPageFailure:
         assert row is not None
         assert row["name"] == "ISS"
         assert row["is_hidden"] == 0
+
+    def test_partial_failure_does_not_hide_unprocessed_satellite(
+        self, db: sqlite3.Connection
+    ) -> None:
+        """A satellite this run never got to (e.g. its row was just created by a
+        concurrent TLE fetch, still status='unknown' with no transmitters yet) must
+        not be treated as a confirmed orphan when the page fetch fails before this
+        run has walked the whole catalog — the auto-hide cleanup at the end of
+        sync_satellite_names() previously ran unconditionally even after a partial
+        fetch, hiding satellites the run simply hadn't reached yet (root cause of
+        ISS intermittently vanishing on a fresh macOS install, 2026-08-01).
+        """
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (25544, 'ISS', 'unknown', 0)"
+        )
+        db.commit()
+
+        mgr = TransmitterManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            side_effect=httpx.ConnectError("all connection attempts failed")
+        )
+        with patch("data.transmitter_manager.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            asyncio.run(mgr.sync_satellite_names())
+
+        row = db.execute("SELECT is_hidden FROM satellites WHERE norad_cat_id = 25544").fetchone()
+        assert row["is_hidden"] == 0

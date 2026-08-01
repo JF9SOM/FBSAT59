@@ -729,6 +729,7 @@ class TransmitterManager:
         params: dict[str, Any] = {"format": "json"}
         next_url: str | None = SATNOGS_SATELLITES_URL
         total_processed = 0
+        completed_fully = True
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             while next_url:
@@ -744,6 +745,7 @@ class TransmitterManager:
                         type(exc).__name__,
                         exc,
                     )
+                    completed_fully = False
                     break
                 params = {}
 
@@ -863,14 +865,22 @@ class TransmitterManager:
                         progress_callback(total_processed)
 
         # Auto-hide orphan satellites with 0 transmitters and status='unknown'.
-        self._conn.execute(
-            """
-            UPDATE satellites SET is_hidden = 2
-            WHERE norad_cat_id NOT IN (SELECT DISTINCT norad_cat_id FROM transmitters)
-            AND status = 'unknown'
-            AND is_hidden = 0
-            """
-        )
+        # Only when this run actually walked every page: a partial run (see
+        # completed_fully above) has necessarily not reached every satellite
+        # yet, so a satellite still sitting at status='unknown' here may just
+        # be one this run hasn't processed rather than a genuine orphan —
+        # running this cleanup against that incomplete state could hide a
+        # perfectly good satellite (e.g. one whose row was freshly created by
+        # a concurrent TLE fetch and hasn't had its real status set yet).
+        if completed_fully:
+            self._conn.execute(
+                """
+                UPDATE satellites SET is_hidden = 2
+                WHERE norad_cat_id NOT IN (SELECT DISTINCT norad_cat_id FROM transmitters)
+                AND status = 'unknown'
+                AND is_hidden = 0
+                """
+            )
 
         self._conn.commit()
         self._log_sync("satnogs_names", stats)
