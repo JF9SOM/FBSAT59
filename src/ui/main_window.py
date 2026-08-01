@@ -783,6 +783,17 @@ class MainWindow(QMainWindow):
 
         # Centre: tabs (Dashboard / World Map / Radar / Pass Chart / Group Pass Chart / Radio)
         self._tab_widget = QTabWidget()
+        # With this many tabs (2 resident + up to 7 Communications tabs at
+        # once), the default elide-to-fit behaviour shrinks every tab until
+        # long labels like "APRS" or "SDR Control" show only "AP…"/"SDR…"
+        # (reported on macOS, where the native tab bar favours keeping every
+        # tab visible over showing full labels). ElideNone keeps each tab at
+        # its natural full-text width and lets the bar overflow into scroll
+        # arrows instead of truncating — usesScrollButtons is normally the
+        # default, but is set explicitly here since it's what ElideNone
+        # relies on once the bar no longer fits.
+        self._tab_widget.setUsesScrollButtons(True)
+        self._tab_widget.tabBar().setElideMode(Qt.TextElideMode.ElideNone)
         self._dashboard_view = DashboardView()
         self._world_map = WorldMapView()
         self._world_map.sat_clicked.connect(self._select_satellite_by_norad)
