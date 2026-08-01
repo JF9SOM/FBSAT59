@@ -1051,6 +1051,78 @@ jobs:
           cd ..
           mv soapy-macos-dl/soapy-macos .
 
+      - name: Build SoapySDR Python binding from source (SWIG)
+        timeout-minutes: 3
+        run: |
+          set -ex
+          # conda-forge's own _SoapySDR.cpython-311-darwin.so hard-links
+          # against conda-forge's own libpython3.11.dylib (confirmed via a
+          # workflow_dispatch run, 2026-08-01) — pointing that reference at
+          # PyInstaller's bundled libpython instead (rather than bundling a
+          # second, separate copy, which would load two independent CPython
+          # runtimes into one process) hit a further codesign-validity
+          # snag on the copy used to stand in for it during CI verification,
+          # serious enough to warrant reconsidering the approach rather
+          # than patching around it again.
+          #
+          # SoapySDR's own upstream build already avoids this exact problem
+          # on macOS — its python/CMakeLists.txt does
+          # `if(APPLE) list(APPEND PYTHON_LIBRARIES "-undefined dynamic_lookup") endif()`,
+          # i.e. it deliberately never hard-links libpython, resolving
+          # Python C-API symbols from whatever interpreter loads it instead
+          # (exactly the pattern already used for this project's own
+          # Hamlib Python binding, built from source a few steps above).
+          # conda-forge's build evidently doesn't take that upstream branch
+          # (conda-forge recipes commonly override upstream's own
+          # more-portable choices in favor of explicitly linking the exact
+          # python in the build environment, for reproducibility). Since
+          # rebuilding conda-forge's actual recipe isn't practical, build
+          # just the Python glue layer (_SoapySDR.so + SoapySDR.py)
+          # ourselves via SWIG the same way, continuing to link the
+          # already-bundled prebuilt libSoapySDR.dylib (not rebuilding the
+          # C++ core itself).
+          curl -sL -o SoapySDR.in.i \
+            https://raw.githubusercontent.com/pothosware/SoapySDR/soapy-sdr-0.8.1/python/SoapySDR.in.i
+
+          # SoapySDR.in.i is a CMake configure_file(@ONLY) template with
+          # exactly one substitution: @SOAPY_SDR_ABI_VERSION@, a Python
+          # string constant checked against the loaded library's own
+          # getABIVersion() at import time (a deliberate upstream sanity
+          # check — a mismatch raises "Failed ABI check" rather than
+          # silently misbehaving). Extract the real value from the same
+          # conda-forge headers already bundled, instead of hardcoding
+          # "0.8", so this keeps working if the pinned conda-forge version
+          # in the step above is ever bumped.
+          ABI_VERSION=$(grep -o 'SOAPY_SDR_ABI_VERSION "[^"]*"' soapy-macos/include/SoapySDR/Version.h | cut -d'"' -f2)
+          echo "SoapySDR ABI version: $ABI_VERSION"
+          sed "s/@SOAPY_SDR_ABI_VERSION@/${ABI_VERSION}/" SoapySDR.in.i > SoapySDR.i
+
+          swig -c++ -python -threads -Isoapy-macos/include -o SoapySDR_wrap.cxx SoapySDR.i
+
+          PY_INC=$(python3 -c "import sysconfig; print(sysconfig.get_path('include'))")
+          EXT_SUFFIX=$(python3 -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))")
+          clang++ -shared -fPIC -O2 -std=c++11 \
+            -undefined dynamic_lookup \
+            -Isoapy-macos/include -I"${PY_INC}" \
+            SoapySDR_wrap.cxx \
+            -Lsoapy-macos/lib -lSoapySDR \
+            -Wl,-rpath,@loader_path \
+            -o "soapy-macos/python/_SoapySDR${EXT_SUFFIX}"
+
+          # The clang++ -o above already wrote directly into
+          # soapy-macos/python/, overwriting conda-forge's prebuilt
+          # _SoapySDR${EXT_SUFFIX} in place (both use the same filename —
+          # same Python 3.11/darwin/arm64 build). Overwrite the pure-Python
+          # shim the same way. Dylib rpath fixup in the next steps still
+          # applies to this freshly-built binary — it still needs its
+          # @rpath/libSoapySDR.dylib reference fixed, same as any other
+          # file here — it just no longer references libpython at all.
+          cp SoapySDR.py soapy-macos/python/SoapySDR.py
+
+          echo "=== soapy-macos/python contents (source-built) ==="
+          find soapy-macos/python -type f
+          otool -L "soapy-macos/python/_SoapySDR${EXT_SUFFIX}"
+
       - name: Prepare SoapySDR bundle root + strip quarantine attrs
         timeout-minutes: 2
         run: |
@@ -1153,19 +1225,13 @@ jobs:
           # devices using ONLY the files about to be shipped (no Homebrew
           # fallback anywhere in this check) — proves the rpath fixups above
           # actually resolved, not just that the fixup script ran without
-          # error.
+          # error. _SoapySDR.so is now built from source with
+          # -undefined dynamic_lookup (see "Build SoapySDR Python binding
+          # from source" step above), so unlike conda-forge's prebuilt
+          # version it has no libpython dependency at all to stand in for
+          # here.
           rm -rf /tmp/soapy_verify && mkdir -p /tmp/soapy_verify
           cp soapy-macos/root/* /tmp/soapy_verify/
-          # _SoapySDR.cpython-311-darwin.so's @loader_path/libpython3.11.dylib
-          # reference (rewritten by fix_soapy_rpaths_macos.py — see that
-          # script for why this can't be a bundled copy) is only real once
-          # PyInstaller has placed its own libpython3.11.dylib as a sibling
-          # in the actual app bundle, which hasn't been built yet at this
-          # point in CI. Stand in with this CI runner's own Python 3.11
-          # libpython — same purpose (satisfy the @loader_path reference so
-          # dlopen succeeds), not the real file the shipped app will use.
-          PY_LIB_DIR=$(python3 -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
-          cp "$PY_LIB_DIR"/libpython3.11.dylib /tmp/soapy_verify/
           SOAPY_SDR_PLUGIN_PATH="$PWD/soapy-macos/modules" python3 -c "
           import sys
           sys.path.insert(0, '/tmp/soapy_verify')
