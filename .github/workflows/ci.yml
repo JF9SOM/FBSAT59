@@ -1045,8 +1045,18 @@ jobs:
           mv soapy-macos-dl/soapy-macos .
 
       - name: Fix up SoapySDR dylib rpaths for macOS bundle (dylibbundler)
+        timeout-minutes: 8
         run: |
-          set -e
+          set -ex
+          # `-x` traces every command to the log, and the job-level
+          # timeout-minutes above guarantees this step fails loudly within
+          # 8 minutes instead of hanging silently — two workflow_dispatch
+          # runs (2026-08-01) sat "in progress" on this step for 30+ minutes
+          # with zero log output even after adding --overwrite-files below,
+          # and neither `gh run view --log` nor the Actions API expose
+          # partial logs for a still-running job, making it impossible to
+          # tell which command was actually stuck without the trace + bound.
+          #
           # PyInstaller places SoapySDR.py/_SoapySDR*.so and every *.dylib
           # flat at the app bundle root (soapy-macos/root/ -> "."), same
           # convention already used for Hamlib dylibs in this spec — the OS
@@ -1060,6 +1070,15 @@ jobs:
           cp soapy-macos/python/* soapy-macos/root/
           cp soapy-macos/lib/*.dylib soapy-macos/root/
 
+          echo "=== quarantine attrs on files about to be processed ==="
+          xattr -l soapy-macos/root/* soapy-macos/modules/* 2>&1 || true
+          # Downloaded-via-curl files can carry a com.apple.quarantine
+          # xattr; strip it so otool/install_name_tool (called internally by
+          # dylibbundler) can't trigger a Gatekeeper/notarization check that
+          # blocks on network I/O — a plausible explanation for a silent
+          # multi-minute hang with no CPU-bound loop to show in a trace.
+          xattr -cr soapy-macos/root soapy-macos/modules
+
           # _SoapySDR*.so and its (transitive) deps -> flat root, referencing
           # each other via plain @loader_path (siblings after installation).
           #
@@ -1070,13 +1089,11 @@ jobs:
           # detected dependency), and dylibbundler prompts to confirm each
           # such per-file overwrite. GitHub Actions runners give steps an
           # open-but-never-EOF stdin (not /dev/null), so an unanswered
-          # prompt blocks forever instead of failing fast — confirmed via a
-          # workflow_dispatch run that sat "in progress" on this exact step
-          # for 30+ minutes with no error (2026-08-01). `</dev/null` is kept
-          # as a second line of defense against any other prompt neither
-          # flag anticipates, so a bug here fails within seconds instead of
-          # hanging out the clock on CI minutes again.
-          dylibbundler --bundle-deps \
+          # prompt blocks forever instead of failing fast. `</dev/null` is a
+          # second line of defense against any other prompt neither flag
+          # anticipates. Neither fix alone stopped the hang above, hence the
+          # timeout-minutes + xattr belt-and-suspenders added here too.
+          dylibbundler --bundle-deps --verbose \
             $(for f in soapy-macos/root/_SoapySDR*.so; do echo --fix-file "$f"; done) \
             --dest-dir soapy-macos/root \
             --install-path @loader_path \
@@ -1087,7 +1104,7 @@ jobs:
 
           # Device-driver plugin modules -> soapy_modules/, referencing the
           # flat root (one level up once installed) via @loader_path/...
-          dylibbundler --bundle-deps \
+          dylibbundler --bundle-deps --verbose \
             $(for f in soapy-macos/modules/*.so; do echo --fix-file "$f"; done) \
             --dest-dir soapy-macos/root \
             --install-path @loader_path/.. \
