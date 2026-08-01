@@ -4498,6 +4498,108 @@ importに失敗する可能性がある。この場合は`brew install python@3.
 セクション参照）のような自前バンドルに切り替える必要がある。実機での動作確認は未実施
 （ユーザーが次回タグビルド前に確認予定）。
 
+#### macOS SoapySDR conda-forge 同梱 — 上記「既知の限界」が実機で的中・Homebrew依存を撤廃（2026-08-01 実装・実機未検証）
+
+**発端**: 上記のsys.path修正をリリースしたユーザー実機（M2 MacBook Air、Homebrewで
+`soapysdr`/`soapyrtlsdr`インストール済み）で実際にRTL-SDRが認識されるか確認したところ、
+`_SoapySDR.so`自体は発見・dlopenされるようになった（sys.path修正は正しく機能）ものの、
+その先で`Library not loaded: @rpath/libSoapySDR.0.8.dylib`という**別の**dlopenエラーが
+発生した。`DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib`を試したところこのエラー自体は
+解消し`SoapySDR`は「インストール済み」と認識されるようになったが、続いて
+`SoapySDR.Device.enumerate()`が`TypeError: in method 'SoapySDRKwargs___getitem__', argument
+1 of type 'std::map< std::string,std::string > *'`という、SWIGバインディングの型情報が
+壊れているような実行時エラーで失敗した。
+
+一方、Homebrew自身の`python3`（`"$(brew --prefix)"/bin/python3`）から同じ`import
+SoapySDR; SoapySDR.Device.enumerate()`を実行すると、RTL-SDRを正しく検出できた
+（`Found Rafael Micro R820T tuner`）。**同じファイルなのに、どのPythonプロセスから
+読み込むかで結果が変わる**という事実が決め手になった。
+
+**根本原因**: アプリがバンドルしているPythonは**CPython 3.11**
+（`.github/workflows/ci.yml`のmacOSビルドジョブで`actions/setup-python@v5
+python-version: "3.11"`固定）だが、ユーザーのHomebrewの`python3`は**3.14**。
+`_SoapySDR.so`はSWIGが生成したコンパイル済みC拡張で、特定のCPython ABI（マイナー
+バージョンごとに内部構造体レイアウトが異なりうる）に強く依存する。3.14向けにビルド
+された拡張を3.11のインタプリタプロセスに読み込むと、importやdlopen自体は成功して
+しまうことがある一方、実際にC++オブジェクト（`std::map`をラップした`SoapySDRKwargs`）
+を操作する段になって型情報の不整合が表面化する——今回の`TypeError`はまさにこのクラスの
+症状で、「既知の限界」パラグラフが予告していた通りの実機再現だった。
+
+**方針転換の経緯**: 当初「ctypesで`librtlsdr.dylib`を直接叩く」案（Windows版の
+`RtlSdrDirectDevice`と同型）を提案したところ、ユーザーから「それだと対応SDRが
+Windows版同様RTL-SDR限定になってしまうのでは」と的確な指摘があった。実際その通りで、
+Windows版がctypesバイパスに頼っているのはWinUSBハンドルキャッシュ破壊という
+**SoapySDR自体が原理的に使えない**問題への対処であり、Airspy・AirspyHF・PlutoSDRは
+代替手段がないため今もWindows非対応のまま。macOSの問題はPythonバージョン不一致という
+**より狭い**原因のため、ctypesバイパスは過剰（＆デバイスを限定してしまう）と判断した。
+
+**採用した方式**: Windows版が既に実践している「conda-forgeからSoapySDR本体・Python
+バインディング・各デバイスモジュールを抽出し、アプリに同梱する」パターンをmacOS向けに
+移植。ただし**この設計判断の根拠として「Windows版で実証済み」と最初に説明したのは不正確
+だった**とユーザーから訂正を受けた——Windows版は同梱の仕組み自体はあるが、その同梱
+SoapySDR経由のデバイスアクセスはWinUSB問題によりWindowsでは実際には機能しておらず
+（RTL-SDR/HackRFはctypesバイパスでしか動いていない）、「バンドルすれば動く」ことを
+証明した実例ではない。macOSにはWinUSBのようなハンドルキャッシュ破壊問題は存在しない
+ため機能する可能性は高いと判断したが、**これは未検証の新しい試みである**点を明記した
+上でユーザーの承認を得た。
+
+conda-forgeのosx-arm64チャンネルを実際に調査した結果、`soapysdr-0.8.1-py311h2c37856_5.conda`
+という**Python 3.11専用ビルド**（アプリの束ねるPythonと完全一致）が存在することを確認。
+デバイスモジュール（`soapysdr-module-{rtlsdr,hackrf,airspy,airspyhf,remote}`）自体は
+Pythonバインディングを持たない純C++プラグイン（`.so`、`dlopen`でロードされるだけ）の
+ため、Pythonバージョンとは無関係にどれでも使える。
+
+**実装**:
+- `scripts/extract_soapy_conda_macos.py`（新規）— Windows版`extract_soapy_conda.py`と
+  同型だが、macOS conda-forgeパッケージ特有の点に対応: `lib/libSoapySDR.0.8.dylib`が
+  実ファイルではなく`libSoapySDR.0.8.1.dylib`への**tarシンボリックリンク**として
+  格納されている（`@rpath/libSoapySDR.0.8.dylib`という他バイナリからの参照名と、
+  ディスク上の実ファイル名が異なる）。シンボリックリンクはtar展開時にデータを
+  持たないため、CIアーティファクトとして再tar/アップロードする過程で消失しやすい
+  ——このスクリプトは全シンボリックリンクをその場で実体化（リンク先の実バイトを
+  リンク自身の名前でも書き出す）し、展開後のディレクトリにシンボリックリンクが
+  一切残らないようにしている
+- CI（`build-macos`ジョブ）に2ステップ追加:
+  1. 「Bundle SoapySDR for macOS (conda-forge pre-built)」— 上記パッケージ群を
+     ダウンロードし`extract_soapy_conda_macos.py`で`soapy-macos/{lib,python,modules}/`
+     に展開
+  2. 「Fix up SoapySDR dylib rpaths for macOS bundle (dylibbundler)」— Hamlibの
+     macOSビルドで既に使われている`dylibbundler`（同ジョブの最初のステップで
+     `brew install`済み）で、抽出直後のファイルに埋め込まれたrpath（元のconda
+     ビルド環境のプレフィックスを指しており、CI/ユーザー環境のどこにも存在しない
+     パス）を`@loader_path`ベースの相対参照に書き換える。`_SoapySDR*.so`と
+     Python 3.11バインディングの依存先dylibは`soapy-macos/root/`（PyInstaller
+     spec側で`"."`＝バンドルルートにマップ、Hamlib dylibと同じ「フラット配置」
+     方式）へ`--install-path @loader_path`で、デバイスモジュール`.so`は
+     `soapy-macos/modules/`（`"soapy_modules"`＝`SOAPY_SDR_PLUGIN_PATH`が指す
+     サブディレクトリ）へ`--install-path @loader_path/..`（モジュールから見て
+     1階層上がルート）で解決する。同ステップの最後に、Homebrewに一切頼らず
+     抽出・修正済みファイルだけで`import SoapySDR; SoapySDR.Device.enumerate()`
+     を実行し、rpath修正が実際に効いているかをCI上で検証する
+- `scripts/fbsat59.spec`: darwin分岐に`soapy_binaries`ブロックを追加
+  （`soapy-macos/root/*` → `"."`、`soapy-macos/modules/*.so` → `"soapy_modules"`）。
+  Windows分岐の同名ブロックと対称的な構造
+- `src/main.py`: darwin frozen時に`SOAPY_SDR_PLUGIN_PATH`を`_MEIPASS/soapy_modules`
+  へ設定するブロックを新設（Windows分岐と同じパターン。`SoapySDR.py`/`_SoapySDR.so`
+  自体はPyInstallerが`_MEIPASS`を標準でsys.pathに含めるため追加のsys.path操作は
+  不要——Windows版も同様の理由でDLL探索パス設定以外の特別なsys.path操作をしていない）。
+  既存のHomebrew site-packages追記ブロック（2026-07-31実装）は、同梱ビルドが何らかの
+  理由で欠けていた場合の最終フォールバックとして残した（`append`のため優先度は
+  常に同梱版より低い——このフォールバック経路こそが今回のABI不一致の発生源だった
+  ため、意図的に最下位優先のまま維持している）
+
+**今回のスコープ外（意図的）**: PlutoSDR・BladeRFは`libiio`等の追加依存が重く、
+検証用の実機も手元にないため見送った。Homebrew経由の案内（Help > SDR Device
+Installation）は引き続きこの2機種向けに有効なまま残している。
+
+**検証状況（2026-08-01時点）**: CI（`workflow_dispatch`）でのビルド成否・実機
+（ユーザーのM2 MacBook Air、実際のRTL-SDR接続）での動作確認は共に未実施。
+dylibbundlerの`--overwrite-dir`を同一`--dest-dir`に対して2回連続で呼び出す設計
+（`_SoapySDR.so`用と各モジュール`.so`用でinstall-pathが異なるため呼び分けが必要）
+が、1回目で書き込んだ依存dylibを2回目の呼び出しで消してしまわないかは未確認
+（Hamlib向けの既存利用は常に単発呼び出しのため前例がない）。CI実行結果次第で
+この呼び出し方を調整する可能性がある。
+
 ---
 
 #### PlutoSDR（ADALM-Pluto）Windows バンドル実装メモ（v0.1.5 で実装・CI 緑確認済み）

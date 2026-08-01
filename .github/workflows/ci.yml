@@ -1006,6 +1006,99 @@ jobs:
 
           pip install -e ".[packaging]"
 
+      - name: Bundle SoapySDR for macOS (conda-forge pre-built)
+        run: |
+          set -e
+          # conda-forge package URLs (pinned, osx-arm64, matching the app's
+          # bundled Python 3.11 exactly — see CLAUDE.md "macOS SoapySDR
+          # conda-forge 同梱" for why this ABI match matters).
+          # PlutoSDR/BladeRF intentionally excluded (heavier deps, no
+          # hardware on hand to verify) — Homebrew instructions remain the
+          # fallback for those in Help > SDR Device Installation.
+          mkdir -p soapy-macos-dl
+          cd soapy-macos-dl
+          PACKAGES=(
+            "https://conda.anaconda.org/conda-forge/osx-arm64/soapysdr-0.8.1-py311h2c37856_5.conda"
+            "https://conda.anaconda.org/conda-forge/osx-arm64/soapysdr-module-rtlsdr-0.3.3-hdb668b8_3.conda"
+            "https://conda.anaconda.org/conda-forge/osx-arm64/rtl-sdr-2.0.2-h99b78c6_0.conda"
+            "https://conda.anaconda.org/conda-forge/osx-arm64/soapysdr-module-hackrf-0.3.4-h4306ade_0.tar.bz2"
+            "https://conda.anaconda.org/conda-forge/osx-arm64/libhackrf0-2026.01.3-h84a0fba_0.conda"
+            "https://conda.anaconda.org/conda-forge/osx-arm64/soapysdr-module-airspy-0.2.0-h4306ade_0.tar.bz2"
+            "https://conda.anaconda.org/conda-forge/osx-arm64/libairspy-1.0.10-h5505292_1.conda"
+            "https://conda.anaconda.org/conda-forge/osx-arm64/soapysdr-module-airspyhf-0.2.0-h4306ade_0.tar.bz2"
+            "https://conda.anaconda.org/conda-forge/osx-arm64/libairspyhf-1.6.8-h5505292_1.conda"
+            "https://conda.anaconda.org/conda-forge/osx-arm64/soapysdr-module-remote-0.5.2-h4306ade_2.tar.bz2"
+            "https://conda.anaconda.org/conda-forge/osx-arm64/libusb-1.0.29-hbc156a2_0.conda"
+          )
+          for url in "${PACKAGES[@]}"; do
+            echo "Downloading $(basename "$url") ..."
+            curl -sL -O "$url"
+          done
+
+          pip install --quiet zstandard
+          python3 "$GITHUB_WORKSPACE/scripts/extract_soapy_conda_macos.py"
+
+          echo "=== soapy-macos contents (pre-rpath-fix) ==="
+          find soapy-macos -type f
+
+          cd ..
+          mv soapy-macos-dl/soapy-macos .
+
+      - name: Fix up SoapySDR dylib rpaths for macOS bundle (dylibbundler)
+        run: |
+          set -e
+          # PyInstaller places SoapySDR.py/_SoapySDR*.so and every *.dylib
+          # flat at the app bundle root (soapy-macos/root/ -> "."), same
+          # convention already used for Hamlib dylibs in this spec — the OS
+          # loader finds siblings via @loader_path with no rpath subdirectory
+          # gymnastics needed. Only the device-driver plugin .so files go
+          # into a separate "soapy_modules" subdirectory (soapy-macos/modules/
+          # -> "soapy_modules"), since SoapySDR only auto-loads plugins from
+          # a directory named via SOAPY_SDR_PLUGIN_PATH, not from wherever
+          # the main executable happens to sit.
+          mkdir -p soapy-macos/root
+          cp soapy-macos/python/* soapy-macos/root/
+          cp soapy-macos/lib/*.dylib soapy-macos/root/
+
+          # _SoapySDR*.so and its (transitive) deps -> flat root, referencing
+          # each other via plain @loader_path (siblings after installation).
+          dylibbundler --bundle-deps \
+            $(for f in soapy-macos/root/_SoapySDR*.so; do echo --fix-file "$f"; done) \
+            --dest-dir soapy-macos/root \
+            --install-path @loader_path \
+            --search-path soapy-macos/root \
+            --overwrite-dir
+
+          # Device-driver plugin modules -> soapy_modules/, referencing the
+          # flat root (one level up once installed) via @loader_path/...
+          dylibbundler --bundle-deps \
+            $(for f in soapy-macos/modules/*.so; do echo --fix-file "$f"; done) \
+            --dest-dir soapy-macos/root \
+            --install-path @loader_path/.. \
+            --search-path soapy-macos/root \
+            --overwrite-dir
+
+          echo "=== soapy-macos/root contents (post-rpath-fix) ==="
+          find soapy-macos/root -type f
+          echo "=== soapy-macos/modules contents (post-rpath-fix) ==="
+          find soapy-macos/modules -type f
+
+          # Verify the bundled SoapySDR actually imports and enumerates
+          # devices using ONLY the files about to be shipped (no Homebrew
+          # fallback anywhere in this check) — proves the rpath fixups above
+          # actually resolved, not just that dylibbundler ran without error.
+          rm -rf /tmp/soapy_verify && mkdir -p /tmp/soapy_verify
+          cp soapy-macos/root/* /tmp/soapy_verify/
+          SOAPY_SDR_PLUGIN_PATH="$PWD/soapy-macos/modules" python3 -c "
+          import sys
+          sys.path.insert(0, '/tmp/soapy_verify')
+          import SoapySDR
+          print('SoapySDR version:', SoapySDR.getAPIVersion())
+          print('Modules:', SoapySDR.listModules())
+          devs = SoapySDR.Device.enumerate()
+          print('Detected devices:', len(devs))
+          "
+
       - name: Download Direwolf bundle
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

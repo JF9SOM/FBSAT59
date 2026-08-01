@@ -136,18 +136,37 @@ if sys.platform == "linux" and getattr(sys, "frozen", False):
         if os.path.isdir(_sys_site) and _sys_site not in sys.path:
             sys.path.append(_sys_site)
 
+# macOS frozen bundle: tell SoapySDR where to find device-module dylibs.
+# Must be set before any 'import SoapySDR' occurs. SoapySDR.py/_SoapySDR*.so
+# themselves need no sys.path change — PyInstaller already puts _MEIPASS
+# (where the spec's darwin soapy_binaries block places them, flat at ".")
+# on sys.path by default, same as the Windows block above. This bundle was
+# extracted from conda-forge pinned to Python 3.11 (matching this app's
+# bundled interpreter exactly) and rpath-fixed by dylibbundler in CI — see
+# extract_soapy_conda_macos.py. Unlike Homebrew's own SoapySDR (built
+# against whatever python3 Homebrew currently has, e.g. 3.14 — a different
+# CPython ABI that produced a corrupt-looking SWIG std::map TypeError when
+# loaded into this app's bundled 3.11 interpreter, diagnosed 2026-08-01),
+# this bundle's Python ABI is guaranteed to match at build time.
+if sys.platform == "darwin" and getattr(sys, "frozen", False):
+    _soapy_modules_macos = Path(getattr(sys, "_MEIPASS", "")) / "soapy_modules"
+    if _soapy_modules_macos.exists():
+        os.environ["SOAPY_SDR_PLUGIN_PATH"] = str(_soapy_modules_macos)
+
 # End-user macOS .app: expose Homebrew's Python site-packages (SoapySDR,
-# its device modules, etc.) to the frozen interpreter. Same root cause as
-# the Linux AppImage block above (GitHub issue #11) — PyInstaller's
-# bootloader only puts the bundled _MEIPASS libraries on sys.path, so
-# "brew install soapysdr soapyrtlsdr" alone is not enough; the .app's own
-# frozen Python never sees Homebrew's site-packages, so RTL-SDR (and every
-# other SoapySDR device) silently fails to enumerate. Append (not insert)
-# so bundled modules still win if a name collides. The Homebrew prefix
-# differs by architecture (/opt/homebrew on Apple Silicon, /usr/local on
-# Intel) and Homebrew's own python3 version changes over time — glob for
-# whatever "lib/pythonX.Y/site-packages" actually exists under either
-# prefix rather than hardcoding a specific version or architecture.
+# its device modules, etc.) to the frozen interpreter as a last-resort
+# fallback, in case the bundle above is missing (e.g. a build predating it,
+# or the CI bundling step failed for some device). Same root cause as the
+# Linux AppImage block above (GitHub issue #11) — PyInstaller's bootloader
+# only puts the bundled _MEIPASS libraries on sys.path by default. Append
+# (not insert) so the bundled SoapySDR above always wins if both are
+# present — this fallback path is exactly the one that produced the CPython
+# ABI mismatch noted above, so it is deliberately lowest priority, not a
+# preferred source. The Homebrew prefix differs by architecture
+# (/opt/homebrew on Apple Silicon, /usr/local on Intel) and Homebrew's own
+# python3 version changes over time — glob for whatever
+# "lib/pythonX.Y/site-packages" actually exists under either prefix rather
+# than hardcoding a specific version or architecture.
 if sys.platform == "darwin" and getattr(sys, "frozen", False):
     import glob as _glob
 

@@ -58,6 +58,20 @@ elif sys.platform == "darwin":
     for dylib in brew_lib.glob("libhamlib*.dylib"):
         hamlib_binaries.append((str(dylib), "."))
 
+    # SoapySDR: core dylibs + Python binding bundled flat in "." (same
+    # convention as the Hamlib dylibs above); device-module .so files in
+    # "soapy_modules" (SOAPY_SDR_PLUGIN_PATH target). Extracted from
+    # conda-forge (pinned to Python 3.11, matching this app's bundled
+    # interpreter) and rpath-fixed by dylibbundler in CI before this spec
+    # runs — see extract_soapy_conda_macos.py and the "Bundle SoapySDR for
+    # macOS" / "Fix up SoapySDR dylib rpaths" CI steps.
+    _soapy_macos_dir = ROOT / "soapy-macos"
+    if _soapy_macos_dir.exists():
+        for _f in (_soapy_macos_dir / "root").iterdir():
+            soapy_binaries.append((str(_f), "."))
+        for _so in (_soapy_macos_dir / "modules").glob("*.so"):
+            soapy_binaries.append((str(_so), "soapy_modules"))
+
 elif sys.platform == "linux":
     # When built in CI (or locally) with /opt/hamlib/4.7, collect the shared
     # libraries explicitly so they are bundled and not required on the end-user's system.
