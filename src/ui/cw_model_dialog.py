@@ -224,6 +224,7 @@ class CwModelDialog(QDialog):
 
     def _on_ok(self, path: str) -> None:
         self._progress.setValue(100)
+        self._progress.setVisible(False)
         self._lbl_dl.setText(_("Installed to: ") + path)
         self._btn_inst.setEnabled(True)
         self._refresh_status()

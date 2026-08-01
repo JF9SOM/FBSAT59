@@ -407,6 +407,7 @@ class GrSatellitesDialog(QDialog):
 
     def _on_install_ok(self, path: str) -> None:
         self._progress.setValue(100)
+        self._progress.setVisible(False)
         self._lbl_dl_status.setText(_("Installed: ") + path)
         self._btn_download.setEnabled(True)
         self._refresh_status()

@@ -439,6 +439,7 @@ class Ft8LibDialog(QDialog):
     def _on_install_ok(self, path: str) -> None:
         logger.info("[ft8lib install diag] _on_install_ok received path=%s", path)
         self._progress.setValue(100)
+        self._progress.setVisible(False)
         self._lbl_dl_status.setText(_("Installed: ") + path)
         self._btn_download.setEnabled(True)
         self._refresh_status()
