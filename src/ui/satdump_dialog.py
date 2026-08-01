@@ -7,6 +7,7 @@ themselves.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 
@@ -29,9 +30,18 @@ from ui.copyable_text import CommandRow
 
 _DOWNLOAD_URL = "https://github.com/SatDump/SatDump/releases/latest"
 
+# Matches ANSI escape/color sequences (e.g. "\x1b[31m") some SatDump builds
+# emit even when stdout isn't a tty.
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
 
 def _get_satdump_version(path: object) -> str:
-    """Run ``satdump --version`` and return the version string."""
+    """Run ``satdump --version`` and return the version string.
+
+    Some SatDump builds don't recognize ``--version`` and instead print a
+    (possibly ANSI-colored) usage/help message; that's not a real version
+    string, so it's reported as unknown rather than shown verbatim.
+    """
     from pathlib import Path
 
     if not isinstance(path, Path):
@@ -43,10 +53,15 @@ def _get_satdump_version(path: object) -> str:
             text=True,
             timeout=5,
         )
-        output = (result.stdout + result.stderr).strip()
+        output = _ANSI_ESCAPE_RE.sub("", result.stdout + result.stderr).strip()
+        if "usage" in output.lower():
+            # --version wasn't recognized by this build; it printed a
+            # usage/help message instead of an actual version string.
+            return _("Unknown version")
         for line in output.splitlines():
-            if line.strip():
-                return line.strip()[:80]
+            line = line.strip()
+            if line:
+                return line[:80]
         return _("Unknown version")
     except Exception:
         return _("Unknown version")
