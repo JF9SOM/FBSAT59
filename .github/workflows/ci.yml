@@ -1045,17 +1045,22 @@ jobs:
           mv soapy-macos-dl/soapy-macos .
 
       - name: Fix up SoapySDR dylib rpaths for macOS bundle (dylibbundler)
-        timeout-minutes: 8
+        timeout-minutes: 6
         run: |
           set -ex
-          # `-x` traces every command to the log, and the job-level
-          # timeout-minutes above guarantees this step fails loudly within
-          # 8 minutes instead of hanging silently — two workflow_dispatch
-          # runs (2026-08-01) sat "in progress" on this step for 30+ minutes
-          # with zero log output even after adding --overwrite-files below,
-          # and neither `gh run view --log` nor the Actions API expose
-          # partial logs for a still-running job, making it impossible to
-          # tell which command was actually stuck without the trace + bound.
+          # `-x` traces every command to the log. Two workflow_dispatch runs
+          # (2026-08-01) sat "in progress" on the dylibbundler calls below
+          # for 30+ minutes with zero log output; --overwrite-files and
+          # dropping an unsupported --verbose flag (separately confirmed via
+          # a fast, clear failure once found) did not fix it either. Leading
+          # hypothesis, not yet proven: --search-path and --dest-dir were
+          # the SAME directory (soapy-macos/root), which was ALSO
+          # pre-populated with the exact files dylibbundler treats as
+          # dependencies-to-copy — plausibly causing it to keep
+          # rediscovering its own just-copied output as "new" work.
+          # Restructured below so --search-path (soapy-macos/lib, read-only,
+          # untouched by dylibbundler) and --dest-dir (soapy-macos/root,
+          # only ever written to) are never the same path.
           #
           # PyInstaller places SoapySDR.py/_SoapySDR*.so and every *.dylib
           # flat at the app bundle root (soapy-macos/root/ -> "."), same
@@ -1068,47 +1073,39 @@ jobs:
           # the main executable happens to sit.
           mkdir -p soapy-macos/root
           cp soapy-macos/python/* soapy-macos/root/
-          cp soapy-macos/lib/*.dylib soapy-macos/root/
 
           echo "=== quarantine attrs on files about to be processed ==="
-          xattr -l soapy-macos/root/* soapy-macos/modules/* 2>&1 || true
+          xattr -l soapy-macos/lib/* soapy-macos/root/* soapy-macos/modules/* 2>&1 || true
           # Downloaded-via-curl files can carry a com.apple.quarantine
           # xattr; strip it so otool/install_name_tool (called internally by
           # dylibbundler) can't trigger a Gatekeeper/notarization check that
-          # blocks on network I/O — a plausible explanation for a silent
-          # multi-minute hang with no CPU-bound loop to show in a trace.
-          xattr -cr soapy-macos/root soapy-macos/modules
+          # blocks on network I/O.
+          xattr -cr soapy-macos/lib soapy-macos/root soapy-macos/modules
 
           # _SoapySDR*.so and its (transitive) deps -> flat root, referencing
           # each other via plain @loader_path (siblings after installation).
-          #
-          # --overwrite-files is required (not just --overwrite-dir): the
-          # root/ dir is pre-populated above with exactly the files
-          # dylibbundler will also try to (re-)copy in as dependencies (e.g.
-          # libSoapySDR.dylib is both a --fix-file's sibling AND its own
-          # detected dependency), and dylibbundler prompts to confirm each
-          # such per-file overwrite. GitHub Actions runners give steps an
-          # open-but-never-EOF stdin (not /dev/null), so an unanswered
-          # prompt blocks forever instead of failing fast. `</dev/null` is a
-          # second line of defense against any other prompt neither flag
-          # anticipates. Neither fix alone stopped the hang above, hence the
-          # timeout-minutes + xattr belt-and-suspenders added here too.
-          dylibbundler --bundle-deps \
+          # --overwrite-files (not just --overwrite-dir) is still needed:
+          # both dylibbundler calls below share --dest-dir soapy-macos/root,
+          # so the second call will find libSoapySDR.dylib etc. already
+          # copied in by the first. `</dev/null` guards against any prompt
+          # neither flag anticipates hanging forever on GitHub Actions'
+          # open-but-never-EOF step stdin.
+          dylibbundler --bundle-deps --no-codesign \
             $(for f in soapy-macos/root/_SoapySDR*.so; do echo --fix-file "$f"; done) \
             --dest-dir soapy-macos/root \
             --install-path @loader_path \
-            --search-path soapy-macos/root \
+            --search-path soapy-macos/lib \
             --overwrite-dir \
             --overwrite-files \
             </dev/null
 
           # Device-driver plugin modules -> soapy_modules/, referencing the
           # flat root (one level up once installed) via @loader_path/...
-          dylibbundler --bundle-deps \
+          dylibbundler --bundle-deps --no-codesign \
             $(for f in soapy-macos/modules/*.so; do echo --fix-file "$f"; done) \
             --dest-dir soapy-macos/root \
             --install-path @loader_path/.. \
-            --search-path soapy-macos/root \
+            --search-path soapy-macos/lib \
             --overwrite-dir \
             --overwrite-files \
             </dev/null
