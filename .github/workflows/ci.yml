@@ -1093,7 +1093,7 @@ jobs:
           # second line of defense against any other prompt neither flag
           # anticipates. Neither fix alone stopped the hang above, hence the
           # timeout-minutes + xattr belt-and-suspenders added here too.
-          dylibbundler --bundle-deps --verbose \
+          dylibbundler --bundle-deps \
             $(for f in soapy-macos/root/_SoapySDR*.so; do echo --fix-file "$f"; done) \
             --dest-dir soapy-macos/root \
             --install-path @loader_path \
@@ -1104,7 +1104,7 @@ jobs:
 
           # Device-driver plugin modules -> soapy_modules/, referencing the
           # flat root (one level up once installed) via @loader_path/...
-          dylibbundler --bundle-deps --verbose \
+          dylibbundler --bundle-deps \
             $(for f in soapy-macos/modules/*.so; do echo --fix-file "$f"; done) \
             --dest-dir soapy-macos/root \
             --install-path @loader_path/.. \
