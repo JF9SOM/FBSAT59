@@ -257,6 +257,17 @@ _FT991_DIRECT_MODEL_IDS: frozenset[int] = frozenset({1035})
 _IC705_MODEL_IDS: frozenset[int] = frozenset({3085})
 _IC705_DEFAULT_CIV_ADDR = 0xA4
 
+# IC-9700 factory-default CI-V address (Hamlib's own IC9700_priv_caps in
+# rigs/icom/ic7300.c hard-codes 0xA2 as "default address"). _civ_addr_int()'s
+# fallback (0x65) is documented as the IC-9100's default -- reusing it for an
+# unconfigured IC-9700 civ_addr makes _send_sub_mode_civ_pyserial() send raw
+# CI-V to the wrong address, which the rig never ACKs (confirmed live,
+# GitHub Issue #16: Hamlib itself still succeeded because it resolves its
+# own correct per-model default internally when civaddr is left unset, but
+# our raw pyserial code has no equivalent per-model table and blindly used
+# the shared IC-9100 fallback instead).
+_IC9700_DEFAULT_CIV_ADDR = 0xA2
+
 # FTX-1F CAT mode codes: MD P1 P2; where P1=0=MAIN, P1=1=SUB
 _FTX1_MODE_CODES: dict[str, str] = {
     "FM": "4",
@@ -1345,7 +1356,12 @@ class HamlibDirectController(RigController):
         """
         import serial
 
-        civ = self._civ_addr_int()
+        if self._civ_addr:
+            civ = int(normalize_civ_addr(self._civ_addr), 16)
+        elif self._model_id in _SATMODE_USE_VFO_SUB:
+            civ = _IC9700_DEFAULT_CIV_ADDR
+        else:
+            civ = self._civ_addr_int()
         ctrl = 0xE0
 
         def frame(*payload: int) -> bytes:
