@@ -464,7 +464,24 @@ class DirewolfManager:
         return True, ""
 
     def stop(self) -> None:
-        """Gracefully stop all threads and terminate Direwolf."""
+        """Gracefully stop all threads and terminate Direwolf.
+
+        Terminates the Direwolf process *before* joining KissClient/AudioBridge
+        (both QThreads) rather than after. AudioBridge's run() loop blocks on
+        ``proc.stdout.read()``, which only returns once Direwolf writes more
+        data or its end of the pipe closes — closing that pipe by killing the
+        process first is what makes the blocking read return (almost) instantly
+        instead of only after AudioBridge.stop()'s 3s wait() times out. A
+        timed-out wait() still leaves the thread's Python object dropped right
+        after (``self._audio = None``) while the native thread may still be
+        running — Qt aborts the whole process when a QThread is destroyed
+        while still running, the same class of crash already fixed for
+        SatDumpProcess (see MeteorTab.closeEvent()).
+        """
+        if self._proc is not None:
+            with contextlib.suppress(Exception):
+                self._proc.terminate()
+
         if self._kiss:
             self._kiss.stop()
             self._kiss = None
@@ -479,7 +496,6 @@ class DirewolfManager:
 
         if self._proc:
             try:
-                self._proc.terminate()
                 self._proc.wait(timeout=3)
             except Exception:  # noqa: BLE001
                 with contextlib.suppress(Exception):
