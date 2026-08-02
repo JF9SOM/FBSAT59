@@ -1162,22 +1162,6 @@ msgstr "パス: "
 msgid "Version: "
 msgstr "バージョン: "
 
-#: src/ui/satdump_dialog.py:179
-msgid "Install Self-Contained Build (Recommended for Linux)"
-msgstr "自己完結型ビルドをインストール（Linux推奨）"
-
-#: src/ui/satdump_dialog.py:182
-msgid ""
-"Downloads SatDump's own self-contained \"nightly\" AppImage\n"
-"(bundles its own librtlsdr etc., avoiding version conflicts\n"
-"with your distro's packages). This is a development build\n"
-"from the SatDump project, not a numbered release."
-msgstr ""
-"SatDump公式の自己完結型「nightly」AppImageをダウンロードします\n"
-"（librtlsdr等を内部に同梱しており、ディストリビューションの\n"
-"パッケージとのバージョン不整合を回避できます）。これはSatDump\n"
-"プロジェクトの開発版ビルドであり、番号付きの正式リリースではありません。"
-
 # --- Settings dialog ---
 #: src/ui/ft8lib_dialog.py:424 src/ui/direwolf_dialog.py:346
 #: src/ui/q65lib_dialog.py:311 src/ui/cw_model_dialog.py:216
@@ -1209,20 +1193,6 @@ msgstr ""
 #: src/ui/ft8lib_dialog.py:466 src/ui/ft4wsjt_dialog.py:383
 msgid "Uninstall Failed"
 msgstr "アンインストール失敗"
-
-#: src/ui/satdump_dialog.py:269
-msgid "Uninstall SatDump"
-msgstr "SatDumpをアンインストール"
-
-#: src/ui/satdump_dialog.py:271
-msgid ""
-"Remove the user-installed SatDump from your data directory?\n"
-"\n"
-"If the METEOR/HRPT tab is currently in use, close it first."
-msgstr ""
-"ユーザーインストール済みのSatDumpをデータディレクトリから削除しますか？\n"
-"\n"
-"METEOR/HRPTタブを使用中の場合は、先に閉じてください。"
 
 #: src/ui/radio_control_widget.py:167 src/ui/main_window.py:234
 msgid "Name:"
