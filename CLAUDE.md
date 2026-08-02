@@ -6858,3 +6858,180 @@ narrowing を行う方式に変更して解決。**この関連コードを修�
   ヘッダーデフォルト値（`DEFAULT_CSP_HEADER`）は実運用で調整が必要になる可能性が高い
 - 手動スケルチスライダーの適正なデフォルト値・実際の弱信号でのRS要求フィルタとの
   兼ね合いは実機・実パスでの検証待ち
+
+## SatDump 検出・起動・Linux librtlsdr不整合の一連の修正（2026-08-02、v0.2.44〜v0.2.5x）
+
+METEOR/HRPTタブがSatDumpを一度も正しく起動できていなかった（macOS・Linuxとも）ことが、
+ユーザーが実際にmacOS版でSatDumpをインストールして試したことをきっかけに一連の調査で
+判明した。4つの独立した不具合が積み重なっており、1つ直しては次の不具合が現れる形で
+段階的に発覚した。METEOR/HRPT機能は2026-06-29の実装完了以降、実機での起動確認が
+一度もされていなかったと考えられる（CLAUDE.md本体にも「実機で受信確認済み」の記述が
+一切なかった）。
+
+### 1. macOS `.app`バンドル未検出（`find_satdump()`）
+
+**症状**: `.dmg`をダウンロードして`SatDump.app`を`/Applications`にドラッグする、
+という最も標準的な方法でインストールしても、Help > SatDump Installationで
+「SatDumpが見つかりません」と表示され続けた。
+
+**原因**: [`find_satdump()`](src/comms/meteor/satdump.py)は「FBSAT59専用のユーザー
+ディレクトリ」と「システムPATH」の2箇所しか見ておらず、`.app`バンドルという第3の
+標準的インストール形態を一切考慮していなかった。Help画面自体は`.dmg`を選択肢として
+案内していたにもかかわらず、検出コードにそれに対応する分岐が存在しないという、
+案内文と実装の食い違いだった。
+
+**修正**: `sys.platform == "darwin"`のとき、`/Applications/SatDump.app/Contents/MacOS/satdump`
+（および`~/Applications`）も検索対象に追加。
+
+### 2. METEOR/HRPTタブのログウィンドウが実行中の内容を保持しない
+
+**症状**: SatDumpが起動〜約30秒後にエラー終了したが、「ログ」ボタンを押しても
+ウィンドウが空だった。
+
+**原因**: `_LogWindow`（[meteor_tab.py](src/ui/meteor_tab.py)）は「ログ」ボタンを
+**最初に**押した時点で初めて生成される設計で、それより前に`SatDumpProcess.log_line`
+シグナル経由で流れてきた行は一切バッファされず、ウィンドウが存在しない間は
+`_on_log_line()`が黙って読み捨てていた。実行→エラー→その後にログボタンを押す、
+という通常の操作順序では、SatDump自身が出した本当のエラーメッセージが永遠に
+失われる設計だった。
+
+**修正**: `MeteorTab`に`self._log_buffer: deque[str]`（上限2000件）を追加し、
+`_on_log_line()`・`_on_finished_err()`は常時バッファへ追記。「ログ」ボタンを押して
+ウィンドウを新規生成する際、バッファの内容を`_LogWindow.append()`で再生してから表示する。
+
+この修正により初めて、次項3・4の本当の原因（生のSatDump出力）が見えるようになった。
+
+### 3. バージョン表示のANSI文字化け
+
+**症状**: 「バージョン: ▤[31m▤[1m(E) Usage : ...」という文字化けが表示された。
+
+**原因**: [`_get_satdump_version()`](src/ui/satdump_dialog.py)は`satdump --version`
+の出力をそのまま最初の非空行として表示していたが、`--version`フラグを認識しない
+SatDumpビルドでは、ANSIカラーコード付きの使い方（Usage）メッセージが代わりに
+出力される。ANSIエスケープの除去も、Usageメッセージかどうかの判定も行っていなかった。
+
+**修正**: 正規表現でANSIエスケープを除去し、出力に`usage`という語が含まれる場合は
+「バージョン不明」と表示するよう変更。
+
+### 4. `satdump live`のCLI引数順序の誤り（`exited with code 1`の真因）
+
+**症状**: 上記2・3の修正でようやく見えた実際のログに
+`Error parsing arguments! [json.exception.type_error.302] type must be string, but is null`
+というエラーがあり、`exited with code 1`で失敗していた。
+
+**原因調査**: SatDump公式リポジトリのソース（GitHub CLI `gh api`で実際のタグ
+`1.2.2`——ユーザーの実機バージョンと完全一致——のソースを直接取得して確認）から、
+`live`サブコマンドの引数仕様が判明した:
+```
+satdump live <pipeline_id> <output_directory> [--flags...]
+```
+出力ディレクトリは**位置引数**（`argv[3]`、パイプラインIDの直後）であり、
+`--output`という名前のフラグは**そもそも存在しない**。しかし
+[`SatDumpProcess.run()`](src/comms/meteor/satdump.py)は
+`["live", pipeline, "--source", source, ..., "--output", str(output_dir), ...]`
+という順序でコマンドを組み立てていたため、`argv[3]`（本来は出力ディレクトリで
+あるべき場所）に文字列`"--source"`がそのまま入ってしまい、以降の全フラグ/値の
+対応がひとつずつズレる。結果として`source`パラメータが一切設定されず、SatDump内部で
+`parameters["source"]`（nlohmann::jsonの`operator[]`は存在しないキーをnull値で
+自動生成する）に対し`.get<std::string>()`を呼んで例外——`exited with code 1`——と
+なっていた。加えて`--finish_after_loss_of_lock`というフラグもSatDumpソース全体を
+検索した限り現行版には存在しないことを確認した（クラッシュの原因ではないが無効な
+フラグ）。
+
+**この不具合はOS非依存**（`SatDumpProcess.run()`は純粋なPythonコードで、macOS/
+Windows/Linuxすべてで同一のコマンドライン文字列を組み立てる）。つまりMETEOR/HRPT
+機能はどのプラットフォームでも実装完了以来一度も正しく起動できていなかったと
+考えられる。
+
+**修正**: 出力ディレクトリを`--output`フラグではなく正しい位置引数として渡すよう
+コマンド構築順序を修正。存在しない`--finish_after_loss_of_lock`フラグは削除。
+副作用として、ロック消失時の自動停止機能は失われた（Autotrack経由のLOS自動停止
+とは別ロジックのため無関係。手動起動時はパス終了後に手動で「■ 停止」を押す必要が
+ある。今回はスコープ外として現状維持）。
+
+### 5. Linux固有: `librtlsdr`のSONAME不整合と、nightly AppImageバンドル化の試みと撤回
+
+**症状**（項目4の修正後、Linux開発環境で再現）: 引数解析自体は成功し、プラグイン・
+TLE読み込みまで進むようになったが、最終的に
+```
+Error loading .../librtlsdr_sdr_support.so! Error : librtlsdr.so.0: cannot open shared object file
+...
+Could not find a handler for source type: rtlsdr!
+```
+で失敗した。
+
+**原因**: `ldconfig -p | grep rtlsdr`・`dpkg -l`で調査したところ、Ubuntu系の
+`librtlsdr2`パッケージが提供するSONAMEは`librtlsdr.so.2`だが、SatDumpの`.deb`は
+`librtlsdr.so.0`を要求してリンクされていた、というディストリビューション側の
+パッケージ間バージョン不整合と判明した。FBSAT59自身のSDR機能（SoapySDR経由）は
+現行の`librtlsdr.so.2`向けに正しくビルドされているため無関係に動作しており、
+「FBSAT59のSDR設定画面では認識できるのに、SatDump経由だけ失敗する」という
+一見矛盾した症状の理由でもあった。macOS（`.app`バンドルが`librtlsdr`を内部に
+同梱）・Windows（公式Portable版も同様に自己完結型と推定）はこの問題の対象外で、
+**Linuxの`.deb`配布形態に固有の問題**。
+
+**最初に試みて撤回した対策 — SatDump公式nightly AppImageの自動ダウンロード機能**:
+SatDump公式のGitHub Releasesに、依存ライブラリを内部に同梱した自己完結型の
+`SatDump.AppImage`が`nightly`タグ（安定版とは別のローリング開発版リリース）に
+存在することを発見し、Help > SatDump Installationに「Download & Install」
+ボタンを追加してこれを自動取得・配置する機能を実装した（自前のCIビルドや
+ファイルホスティングは一切不要という触れ込みだった）。しかし実機検証で
+以下の想定外の問題が次々に発覚し、**この機能は撤回した**（コミット`e0bae82`・
+`54b9a22`を`git revert`）:
+1. AppImage内部の`.desktop`ファイルに`Exec=satdump-ui`と指定されており、
+   AppImageをそのまま実行すると常に**GUI版**（`satdump-ui`）が起動する設計
+   だった。GUI版はGLFW/OpenGLウィンドウの初期化を試み、ディスプレイ・GPU
+   環境が制約された開発環境では`Could not init GLFW Window! Exiting`で
+   即座に失敗した
+2. AppImageを`--appimage-extract`で展開し、内部の真のCLIバイナリ
+   （`usr/bin/satdump`、GUI版`satdump-ui`とは別ファイル）を直接実行する
+   代替策も試したが、`LD_LIBRARY_PATH`（共有ライブラリ探索）・作業ディレクトリ
+   （設定ファイル`satdump_cfg.json`をCWD相対で探索する挙動）など、AppImageの
+   起動ラッパー（`AppRun`）が内部的に設定している複数の環境変数・前提条件を
+   自前で再現する必要があり、さらに`XDG_DATA_DIRS`だけでは解決しない・
+   プラグインディレクトリの探索が別途失敗する（`No valid plugin directory
+   found!`）等、ドキュメント化されていない挙動に何重にも依存していることが
+   判明した
+3. `nightly`タグの実体は`SatDump v2.0.0-alpha`（安定版v1.2.2とは世代が異なる
+   開発版）で、多くのデコーダーモジュールが読み込まれない状態だった
+   （`ax25_decoder`・`dvbs2_demod`等、"Module X is not loaded. Skipping
+   pipeline!"警告多数）
+
+**教訓**: 「公式が配布している自己完結型ビルド」であっても、実際に動かして
+検証する前に「バンドル済みだから安全」と判断してはいけない。特に元々GUIアプリ
+として設計されたソフトウェアのCLI実行パスは、パッケージング（今回はAppImage化）
+の過程で本来のCLI専用パスとは別の、GUI優先のエントリーポイントに再配線されて
+いることがある。
+
+**最終的に採用した対策 — 検出してコマンドを提示するだけに留める**: 自前でのビルド・
+バンドル配布は行わず、[`_find_rtlsdr_symlink_fix()`](src/ui/satdump_dialog.py)が
+既知のライブラリディレクトリ（`/usr/lib/x86_64-linux-gnu`等）を走査し、
+`librtlsdr.so.0`が存在せず`librtlsdr.so.N`（N≠0）が存在する場合にのみ、
+Help > SatDump… ダイアログに「Fix librtlsdr Version Mismatch」枠を表示する。
+既存の`CommandRow`（Copy / Run in Terminal、[copyable_text.py](src/ui/copyable_text.py)）
+パターンをそのまま流用し、
+```bash
+sudo ln -s <検出したlibrtlsdr.so.N> <librtlsdr.so.0の期待パス> && sudo ldconfig
+```
+を提示する。「Run in Terminal」は実際のターミナルウィンドウを開いてコマンドを
+実行するため、`sudo`のパスワード入力にもユーザーが対話的に応答できる
+（[terminal_launcher.py](src/core/terminal_launcher.py)、サイレントにpkexec等を
+自前で叩く実装は採用していない）。
+
+**検証済み（2026-08-02）**: 上記1〜4の修正とこのシンボリックリンク適用により、
+macOS（`.app`バンドル、実機確認済み）・Linux（開発環境、apt版`.deb`+シンボリック
+リンク、実機確認済み）の両方で、METEOR/HRPT受信が実際に「Lock」状態まで到達する
+ことを確認した。Windows版は未検証（公式Portable版は自己完結型と推定されるため
+実害は無いと考えられるが、実機確認は次回のユーザー報告待ち）。
+
+**総括的な教訓**:
+- 「見つかりました（found）」という検出結果は「起動できる」ことを一切保証しない。
+  検出ロジックとプロセス起動ロジックは完全に別物であり、両方を実際に動かして
+  初めて機能全体の動作確認になる
+- ログが失われる設計上の穴（今回の項目2）があると、その先の本当の不具合
+  （項目3・4）が何重にも隠れたまま気づかれない。診断用のログ・出力を
+  確実に保持する仕組みは、機能そのものと同じくらい優先度高く直すべき
+- サードパーティCLIツールの引数仕様は、README等の二次情報を推測で信じず、
+  実際に使っているバージョンの公式ソースコード（可能なら`gh api`等で当該タグを
+  直接取得）を確認すること。特に「よくあるCLIパターン」（`--output`のような
+  フラグ）を無条件に仮定しない
