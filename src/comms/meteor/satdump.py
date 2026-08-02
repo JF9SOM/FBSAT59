@@ -203,10 +203,16 @@ class SatDumpProcess(QThread):
 
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
+        # SatDump's `live` CLI takes the output directory as a *positional*
+        # argument (argv[3], right after the pipeline id) -- there is no
+        # --output flag. Passing it as a flag shifts every subsequent
+        # positional/flag pairing, so e.g. `parameters["source"]` ends up
+        # unset and SatDump aborts with a JSON type error.
         cmd = [
             str(satdump),
             "live",
             self._pipeline,
+            str(self._output_dir),
             "--source",
             self._source,
             "--samplerate",
@@ -215,9 +221,6 @@ class SatDumpProcess(QThread):
             str(self._frequency),
             "--gain",
             str(self._gain),
-            "--output",
-            str(self._output_dir),
-            "--finish_after_loss_of_lock",
         ]
 
         self.log_line.emit("$ " + " ".join(cmd))
