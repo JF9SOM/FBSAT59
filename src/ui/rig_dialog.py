@@ -1767,7 +1767,6 @@ class RigSettingsDialog(QDialog):
         super().__init__(parent)
         self._conn = conn
         self.setWindowTitle(_("Rig Settings"))
-        self.resize(560, 620)
 
         # Load models once; share between both panels to avoid double Hamlib scan
         self._all_models = _load_hamlib_models()
@@ -1778,6 +1777,20 @@ class RigSettingsDialog(QDialog):
 
         self._setup_ui()
         self._load_settings()
+
+        # Size from actual content instead of a stale fixed guess: a static
+        # resize() call here drifts out of date as translations/combo
+        # options grow (reported on macOS — the SDR-mode "Rig Type" combo's
+        # longest option and the SDR radio's own label were both clipped at
+        # an old fixed 560px width, with essentially zero margin once
+        # measured against this dialog's real sizeHint()). The margin added
+        # on top of sizeHint() covers native widget metrics (fonts, combo
+        # box chrome) varying enough across platforms that the bare
+        # sizeHint sometimes still clips by a few pixels on macOS
+        # specifically. The floor keeps the previous 560x620 as a lower
+        # bound so the dialog never gets smaller than before.
+        hint = self.sizeHint()
+        self.resize(max(hint.width() + 40, 560), max(hint.height() + 20, 620))
 
     # ------------------------------------------------------------------ #
     # UI construction
