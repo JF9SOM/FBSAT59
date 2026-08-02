@@ -4099,6 +4099,32 @@ Direct mode と同じ閾値を NET mode にも適用（`_last_ul_update_time` + 
 
 残る 2フラッシュ（約1分ごとのUL更新時）は IC-9100 ハードウェアの動作（VFOB 更新直後に一瞬 VFOB 表示 → VFOA 表示に戻る）であり、ソフトウェアバグではない。
 
+#### IC-9700 Sub VFO の DATA モード（-D サフィックス）対応 — GitHub Issue #16（2026-07〜08、v0.2.47 で解決）
+
+**症状**: RS-44/JO-97/MO-122 のFT4トランスポンダー（`USB-D`/`LSB-D`）選択時、Main（DL）は正しく`-D`表示になるが、**Sub（UL/TX側）だけは常にベースの側波帯（USB/LSB）のまま**で、CW/DATAトグルボタンでも同様だった。実機はIC-9700（Direct モード、Windows）。
+
+**根本原因の特定**: HamlibソースコードのIcomバックエンド（`icom.c`の`icom_set_mode()`）を精査した結果、IC-9700のようなMain/Sub+A/B型リグでは、Sub側へのDATAモードフラグ設定時に`force_vfo_swap`が常にtrueとなり、高速な結合コマンド（`0x26`）が`-RIG_ENAVAIL`で強制的に無効化され、古い方式のコマンド（`C_CTL_MEM`/`S_MEM_DATA_MODE`＝`1A 06`）にフォールバックすることが判明。この古い方式がSubに対して確実に反映されない、というのが真の原因だった。
+
+**解決までの経緯（複数の対策・複数のバグを経て収束）**:
+
+1. **生CIVを`rig.send_raw()`で送る初回の対策 → 却下**: `1A 06`が効かないなら生CI-Vで直接書けばよいと考え、既に開いているHamlibセッション上で`rig.send_raw()`を呼んだところ、**実機でプロセスがクラッシュ**した（"stack smashing detected"、Python SWIGバインディングの既知のリスク）。原因調査の過程で、標準の`pyserial`（Hamlibのsend_raw()を経由しない別経路）であれば同種の失敗条件下でも通常の例外（`SerialException`）で済み、プロセスをクラッシュさせないことを確認。この対策は完全に撤回し、`send_raw()`ベースの再導入は安全性確認なしに行わないこと、という注記をコードに残した。
+
+2. **pyserialへの切り替え（v0.2.45）で新たに発覚した2つのバグ**:
+   - **バグA: CI-Vのechoを考慮しておらず、読み取りロジックが常に破綻していた**。CI-Vは半二重の単線バスのため、送信したコマンド自体がまず自分に返ってくる（echo）。`ser.read_until(b"\xfd")`は最初に見つかった`\xFD`（＝echo自身の終端）で止まってしまい、リグからの本当の応答を一度も読めていなかった。この結果、診断ログは常に`mode_byte=0x-1 data_flag=0x-1`という無意味な値を表示していた。実機のログを手作業でデコードしたところ（echo部分を除去して本当の応答だけを取り出す）、**"1A 06"コマンド自体は実際にSubのDATAフラグをONにできており、読み戻しでも正しく確認できていた**ことが判明——つまりコマンド自体は機能していた。
+   - **修正**: `send()`ヘルパーで、読み取った応答が「自分が送信したフレームと完全一致」する場合はecho と判断し、もう一度`read_until()`を呼んで本当の応答を取得するようにした（`resp == f`での判定）。
+   - **バグB（実害あり・リグレッション）: pyserial区間の後にHamlibセッションを再openする際、IC-9700専用のsatmodeキャッシュ修正処理が抜けていた**。`connect()`の最初のsatmode確立シーケンスでは「2回目のopen直後にIC-9700だけ`set_func(SATMODE,1)`をもう一度送ってHamlib内部の`cache->satmode`を確立する」という既存の仕組み（`_SATMODE_USE_VFO_SUB`分岐）があるが、pyserial区間の**後**に新設した3回目の再open処理では、この措置を入れ忘れていた。このため再openしたHamlibセッションがsatmode状態を正しく認識できず、後続の`set_vfo(MAIN)`が`Hamlib error -9`で拒否され、**トランスポンダー選択のたびに毎回`RigControlError`で失敗する**という、以前より悪化した回帰バグになっていた。
+   - **修正**: pyserial区間後の再open処理にも、既存の"IC-9700 extra set_func(SATMODE,1)"と全く同じ措置を追加した。
+
+3. **v0.2.46でバグA・Bを修正後もなお失敗し発覚した3つ目のバグ（CI-Vアドレスの機種取り違え）**: `_civ_addr_int()`は、Rig SettingsのCI-Vアドレス欄が空欄の場合`0x65`（このヘルパー自身のdocstringに"IC-9100用のデフォルト"と明記されている値）にフォールバックする。新設したpyserialコード（`_send_sub_mode_civ_pyserial()`）はこの共通ヘルパーをそのまま流用していたため、**報告者のIC-9700（実際のCI-Vアドレスは0xA2）に対して誤って0x65へ送信**しており、応答が一切返らず`CI-V no ACK after 3 attempts`で失敗していた。HamlibのMain側の処理が今まで通り成功していたのは、Hamlib自身が機種ごとの正しいデフォルトアドレスを内部で自動解決しているためで、CI-Vアドレス欄が空欄でも影響を受けなかった。IC-705向けに既にあった同種の対策（`_IC705_DEFAULT_CIV_ADDR = 0xA4`という機種専用の定数）と同じパターンで、`_IC9700_DEFAULT_CIV_ADDR = 0xA2`を新設し、`_model_id in _SATMODE_USE_VFO_SUB`の場合はこちらを優先するよう修正（v0.2.47）。0xA2はHamlib自身のソース（`rigs/icom/ic7300.c`の`IC9700_priv_caps`構造体、`0xA2, /* default address */`）でも確認済みの正しい値。
+
+**最終確認（v0.2.47、実機ログで確認済み）**: LSB ⇔ LSB-D の切り替えで、Subの読み戻し値が`data_flag=0x00`⇔`data_flag=0x01`と正しく連動することを確認。報告者からも動作確認の報告あり。
+
+**教訓**:
+- 生CI-Vコマンドの安全性は「`send_raw()`経由か`pyserial`経由か」で全く異なる。前者はPython SWIGバインディングのクラッシュリスクを常に疑うこと。
+- 半二重・単線バスのCI-Vでは、USBシリアル変換アダプタによっては**自分の送信内容がechoとして先に返ってくる**ことがある（Hamlib自身も`IC9700_priv_caps`に`serial_USB_echo_check`というフラグを持っており、この特性を把握している）。`read_until()`等の「最初の終端文字で止まる」読み取り方式は、echoを本当の応答と誤認しやすいので要注意。
+- close/reopenを伴うHamlibセッション操作で、特定機種専用の初期化措置（今回のIC-9700 satmodeキャッシュ修正）がある場合、**その措置を必要とする箇所すべて**に同じ措置を横展開できているか確認すること。1箇所に追加して満足せず、同じ関数内で複数回close/reopenする設計に変えた場合は特に注意。
+- CI-Vアドレスなどの機種固有デフォルト値は、既存の共有ヘルパー（今回の`_civ_addr_int()`）が実は特定の一機種（IC-9100）専用の値を返すものだった、というケースがある。新しいコードから安易に共有ヘルパーを流用する前に、そのヘルパーが本当に汎用なのか、docstringも含めて確認すること。
+
 ### IC-705 (Hamlib model 3085) — 汎用（非satmode）Icom CI-Vリグの参照実装（2026-07-06〜07 確認済み）
 
 IC-9100/9700等と異なりMain/Sub概念を持たない、VFOA/VFOBのみの汎用Icom CI-Vリグ。実機での動作確認を通じて、**Hamlibの高レベルAPI（`set_split_vfo()`・`L CTCSS_TONE`・`set_func(FUNC_TONE)`）がこのモデルのバックエンドで複数箇所不安定/誤り**であることが判明し、生CAT/CI-Vへのバイパスで解決した。satmode機（`_SATMODE_RIG_IDS`）にもFTX-1F/FT-991A（`_FTX1_MODEL_IDS`/`_FT991_DIRECT_MODEL_IDS`）にも属さない、真に汎用的な非satmode NETモードリグとして初めて実地検証されたケース。
