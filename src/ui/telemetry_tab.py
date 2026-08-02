@@ -197,6 +197,11 @@ class TelemetryTab(QWidget):
         self._btn_stop.setEnabled(False)
         self._lbl_status = QLabel(_("—"))
         self._lbl_status.setStyleSheet("color: #aaa;")
+        # Without word wrap, a long error string (e.g. a sound-card or
+        # gr-satellites exception message) forces QLabel's
+        # minimumSizeHint to fit the whole line, widening the window and
+        # blocking shrinking it back.
+        self._lbl_status.setWordWrap(True)
         row2.addWidget(self._btn_start)
         row2.addWidget(self._btn_stop)
         row2.addWidget(self._lbl_status)

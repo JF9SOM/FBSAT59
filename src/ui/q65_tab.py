@@ -366,6 +366,10 @@ class Q65Tab(QWidget):
         bot.addWidget(clr)
         bot.addStretch()
         self._status_label = QLabel(_("Waiting for period boundary…"))
+        # Without word wrap, a long error string (e.g. a sound-card
+        # exception message) forces QLabel's minimumSizeHint to fit the
+        # whole line, widening the window and blocking shrinking it back.
+        self._status_label.setWordWrap(True)
         bot.addWidget(self._status_label)
         root.addLayout(bot)
 

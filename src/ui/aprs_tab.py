@@ -255,6 +255,10 @@ class AprsTab(QWidget):
         # Row 2: input source (read-only display)
         self._input_label = QLabel(_("Input: —"))
         self._input_label.setStyleSheet("color: #aaa;")
+        # Without word wrap, a long DirewolfManager error string forces
+        # QLabel's minimumSizeHint to fit the whole line, widening the
+        # window and blocking shrinking it back.
+        self._input_label.setWordWrap(True)
         _input_row_w = QWidget()
         _input_row_l = QHBoxLayout(_input_row_w)
         _input_row_l.setContentsMargins(0, 0, 0, 0)

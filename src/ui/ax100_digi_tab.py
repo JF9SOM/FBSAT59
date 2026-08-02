@@ -449,6 +449,12 @@ class Ax100DigiTab(QWidget):
 
         status_row = QHBoxLayout()
         self._status_label = QLabel(_("Input: not connected"))
+        # Without word wrap, QLabel's minimumSizeHint is wide enough to show
+        # its entire text on one line — fine for the short default text, but
+        # a long sound-card error (_validate_input_device()'s messages
+        # embed the device name/index) forces the whole window to that
+        # width and blocks shrinking it back down.
+        self._status_label.setWordWrap(True)
         status_row.addWidget(self._status_label)
         status_row.addStretch(1)
 
@@ -556,6 +562,7 @@ class Ax100DigiTab(QWidget):
         send_row.addWidget(csp_btn)
 
         self._tx_status_label = QLabel("")
+        self._tx_status_label.setWordWrap(True)
         send_row.addWidget(self._tx_status_label)
         send_row.addStretch(1)
         form.addRow(send_row)

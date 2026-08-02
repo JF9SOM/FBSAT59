@@ -592,6 +592,10 @@ class Ft4Tab(QWidget):
         bot_row.addWidget(self._log_count_label)
         bot_row.addStretch()
         self._status_label = QLabel("")
+        # Without word wrap, a long error string (e.g. a sound-card
+        # exception message) forces QLabel's minimumSizeHint to fit the
+        # whole line, widening the window and blocking shrinking it back.
+        self._status_label.setWordWrap(True)
         bot_row.addWidget(self._status_label)
         root.addLayout(bot_row)
 

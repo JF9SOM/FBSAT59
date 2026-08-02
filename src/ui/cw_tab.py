@@ -190,6 +190,10 @@ class CwTab(QWidget):
         stat_row = QHBoxLayout()
         self._status_label = QLabel(_("Ready"))
         self._status_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        # Without word wrap, a long error string (e.g. a sound-card
+        # exception message) forces QLabel's minimumSizeHint to fit the
+        # whole line, widening the window and blocking shrinking it back.
+        self._status_label.setWordWrap(True)
         stat_row.addWidget(self._status_label)
         stat_row.addWidget(QLabel(_("Level:")))
         self._level_label = QLabel("— dB")
