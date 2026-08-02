@@ -175,7 +175,19 @@ def _load_libq65() -> ctypes.CDLL | None:
             ctypes.c_void_p,  # user_data
         ]
         return lib
-    except OSError:
+    except (OSError, AttributeError):
+        # AttributeError is what ctypes raises on POSIX when dlsym() can't
+        # find q65wsjt_decode in an otherwise-loadable library — e.g. a
+        # stale libq65 left over from before the WSJT-X bridge rewrite
+        # (which is when this symbol was introduced) shadowing the correct
+        # bundled copy via _find_libq65()'s user-dir-first priority. This
+        # used to propagate all the way out of the module-level
+        # `_load_libq65()` call below, taking the whole comms.q65.codec
+        # import down with it — and since Q65Tab imports it, the entire
+        # Q65 tab silently failed to open instead of degrading to the
+        # documented "libq65 not installed" state (tab opens, RX decode
+        # disabled). Confirmed via a real dlsym failure dialog surfaced by
+        # main_window.py's _on_open_q65() error handling.
         return None
 
 
