@@ -1162,6 +1162,24 @@ msgstr "パス: "
 msgid "Version: "
 msgstr "バージョン: "
 
+#: src/ui/satdump_dialog.py:150
+msgid "Fix librtlsdr Version Mismatch"
+msgstr "librtlsdrのバージョン不整合を修正"
+
+#: src/ui/satdump_dialog.py:155
+msgid ""
+"SatDump's package expects librtlsdr.so.0, but this system\n"
+"only provides a differently-versioned librtlsdr. This is why\n"
+"SatDump reports \"Could not find a handler for source type:\n"
+"rtlsdr!\" even though rtlsdr itself is installed. Creating a\n"
+"compatibility symlink resolves it."
+msgstr ""
+"SatDumpのパッケージはlibrtlsdr.so.0を要求しますが、このシステムには\n"
+"バージョンの異なるlibrtlsdrしか入っていません。これが、rtlsdr自体は\n"
+"インストール済みなのに「Could not find a handler for source type:\n"
+"rtlsdr!」と表示される原因です。互換用のシンボリックリンクを\n"
+"作成すると解決します。"
+
 # --- Settings dialog ---
 #: src/ui/ft8lib_dialog.py:424 src/ui/direwolf_dialog.py:346
 #: src/ui/q65lib_dialog.py:311 src/ui/cw_model_dialog.py:216
