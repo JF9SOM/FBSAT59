@@ -196,7 +196,7 @@ python -m src.main
 |---|---|
 | **Windows** | ✅ RTL-SDR・HackRF One のみ（ctypes 直接接続 — Zadig で WinUSB ドライバー要） |
 | **Linux** | ✅ SoapySDR 対応デバイス全般（システムパッケージでインストール） |
-| **macOS** | ✅ SoapySDR 対応デバイス全般（Homebrew でインストール） |
+| **macOS** | ✅ RTL-SDR・HackRF One・Airspy・Airspy HF+・Remote SDR — 同梱済み、インストール不要 |
 
 **Windows** — Windows では SoapySDR が WinUSB ドライバーと根本的に非互換であり、
 デバイスを正常に開けません。RTL-SDR と HackRF は SoapySDR をバイパスして、
@@ -215,15 +215,18 @@ Airspy・Airspy HF+・ADALM-Pluto は **Windows では非対応** です。
 >
 > 詳細は **Help → SDR Device Installation** を参照してください。
 
+**macOS** — RTL-SDR・HackRF One・Airspy・Airspy HF+ はアプリに同梱済みで、インストール作業は
+不要です（実機のRTL-SDRで動作確認済み）。Remote SDR（`SoapyRemote` クライアント。ネットワーク上の
+別マシンにあるSDRへ接続する機能）も同梱されています。手元のHomebrew環境を使いたい場合も、
+フォールバックとして引き続き機能します：
+```bash
+brew install soapysdr soapyrtlsdr soapyhackrf soapyairspy
+```
+
 **Linux** — apt でインストール：
 ```bash
 sudo apt install python3-soapysdr soapysdr-module-rtlsdr soapysdr-module-hackrf \
                  soapysdr-module-airspy
-```
-
-**macOS** — Homebrew でインストール：
-```bash
-brew install soapysdr soapyrtlsdr soapyhackrf soapyairspy
 ```
 
 > LimeSDR など他の SoapySDR 対応デバイスは、Linux/macOS で対応モジュールを

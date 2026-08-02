@@ -200,7 +200,7 @@ python -m src.main
 |----------|-------------|
 | **Windows** | ✅ RTL-SDR, HackRF One (ctypes direct — WinUSB driver via Zadig required) |
 | **Linux** | ✅ All SoapySDR-compatible devices (system package install) |
-| **macOS** | ✅ All SoapySDR-compatible devices (Homebrew install) |
+| **macOS** | ✅ RTL-SDR, HackRF One, Airspy, Airspy HF+, Remote SDR — bundled, no install needed |
 
 **Windows** — On Windows, SoapySDR is fundamentally incompatible with WinUSB drivers
 and cannot open devices reliably. RTL-SDR and HackRF bypass SoapySDR entirely and
@@ -219,13 +219,11 @@ Airspy, Airspy HF+, and ADALM-Pluto are **not supported on Windows**.
 >
 > See also **Help → SDR Device Installation** for step-by-step guidance.
 
-**Linux** — install via apt:
-```bash
-sudo apt install python3-soapysdr soapysdr-module-rtlsdr soapysdr-module-hackrf \
-                 soapysdr-module-airspy
-```
-
-**macOS** — install via Homebrew:
+**macOS** — RTL-SDR, HackRF One, Airspy, and Airspy HF+ are bundled directly in the
+app — no installation needed (confirmed working with RTL-SDR on real hardware).
+Remote SDR (the `SoapyRemote` client, for connecting to an SDR on another machine on
+the network) is bundled as well. If you'd rather use your own Homebrew install, it
+still works as a fallback:
 ```bash
 brew install soapysdr soapyrtlsdr soapyhackrf soapyairspy
 ```
@@ -234,11 +232,6 @@ brew install soapysdr soapyrtlsdr soapyhackrf soapyairspy
 ```bash
 sudo apt install python3-soapysdr soapysdr-module-rtlsdr soapysdr-module-hackrf \
                  soapysdr-module-airspy
-```
-
-**macOS** — install via Homebrew:
-```bash
-brew install soapysdr soapyrtlsdr soapyhackrf soapyairspy
 ```
 
 > Other SoapySDR-compatible devices (LimeSDR, etc.) may work on Linux/macOS
