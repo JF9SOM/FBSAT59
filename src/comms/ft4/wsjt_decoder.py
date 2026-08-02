@@ -134,7 +134,16 @@ def _load_libft4wsjt() -> ctypes.CDLL | None:
         with contextlib.suppress(AttributeError):
             lib.ft4wsjt_expected_samples.restype = ctypes.c_int
         return lib
-    except OSError:
+    except (OSError, AttributeError):
+        # AttributeError is what ctypes raises on POSIX when dlsym() can't
+        # find ft4wsjt_decode in an otherwise-loadable library — same class
+        # of bug found and fixed for libq65's _load_libq65() (a stale or
+        # mismatched library shadowing the correct bundled copy). Left
+        # uncaught here, it would propagate out of the module-level
+        # `_load_libft4wsjt()` call below and take the whole
+        # comms.ft4.wsjt_decoder import down with it instead of degrading
+        # to the documented "libft4wsjt not installed" fallback (ft8_lib
+        # single-pass decode still works).
         return None
 
 
