@@ -2,33 +2,30 @@
 
 🌐 日本語 | [English](README.md)
 
-**GPredict の現代的後継** — アマチュア衛星追尾ソフトウェア
+**アマチュア無線家向け統合衛星通信ソフト**
 
 [![CI](https://github.com/JF9SOM/fbsat59/actions/workflows/ci.yml/badge.svg)](https://github.com/JF9SOM/fbsat59/actions)
 [![Release](https://img.shields.io/github/v/release/JF9SOM/fbsat59)](https://github.com/JF9SOM/fbsat59/releases/latest)
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://python.org)
 
-FBSAT59 は、長年アマチュア無線家に愛用されてきた
-[GPredict](https://github.com/csete/gpredict)（Alexandru Csete OZ9AEC 作）の設計を引き継ぎつつ、
-現代的な Python スタックで一から作り直したソフトウェアです。
+FBSAT59 は、衛星追尾・ドップラー補正に加え、FT4、APRS、画像受信（SSTV/SSDV・HRPT/LRPT）など、
+主要な通信機能を1つにまとめて搭載した、現代的な高機能衛星通信アプリケーションです。
 
 ---
 
-## 主な改善点
-
-| 機能 | GPredict | FBSAT59 |
-|------|----------|-------------------|
-| プラットフォーム | デスクトップのみ | デスクトップ + **同一LAN内のスマホ・タブレットからブラウザでアクセス** |
-| 無線機制御 | rigctld を別途起動 | **Hamlib 内蔵**（700機種以上）— GUIで無線機を選択するだけ |
-| SDR対応 | なし | **HackRF / RTL-SDR（SoapySDR経由）** — スペクトラム・復調・IQ録音 |
-| ドップラー補正 | 周波数のみ | **周波数 + モード + CTCSS/DCSトーン**を自動設定 |
-| デュアルリグ | 対応 | **Rig 1 + Rig 2** — SDRドングルをリグとして割り当て可能 |
-| 衛星周波数DB | SATNOGSのみ・テキスト編集 | SATNOGS自動同期 + **GUIから手動追加・編集** |
-| TLE更新 | 自動更新あり | **複数ソースから自動更新・品質スコアリング** |
-| パス予測表示 | リスト表示のみ | **グラフィカルパスチャート + スカイレーダー + 世界地図フットプリント** |
-| ローテーター制御 | 別途 rotctld | **Hamlib内蔵 — GUIでローテーターを選択するだけ。rotctld不要** |
-| 対応OS | Linux・Windows・macOS（GTK+）| **Linux・Windows・macOS・Raspberry Pi** |
+| 機能 | FBSAT59 |
+|------|-------------------|
+| プラットフォーム | デスクトップ + **同一LAN内のスマホ・タブレットからブラウザでアクセス** |
+| 無線機制御 | **Hamlib 内蔵**（700機種以上）— GUIで無線機を選択するだけ |
+| SDR対応 | **HackRF / RTL-SDR（SoapySDR経由）** — スペクトラム・復調・IQ録音 |
+| ドップラー補正 | **周波数 + モード + CTCSS/DCSトーン**を自動設定 |
+| デュアルリグ | **Rig 1 + Rig 2** — SDRドングルをリグとして割り当て可能 |
+| 衛星周波数DB | SATNOGS自動同期 + **GUIから手動追加・編集** |
+| TLE更新 | **複数ソースから自動更新・品質スコアリング** |
+| パス予測表示 | **グラフィカルパスチャート + スカイレーダー + 世界地図フットプリント** |
+| ローテーター制御 | **Hamlib内蔵 — GUIでローテーターを選択するだけ。rotctld不要** |
+| 対応OS | **Linux・Windows・macOS・Raspberry Pi** |
 
 ---
 

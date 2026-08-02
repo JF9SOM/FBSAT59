@@ -2,33 +2,32 @@
 
 🌐 [日本語](README.ja.md) | English
 
-**Modern successor to GPredict** — Amateur satellite tracking software
+**Integrated satellite communications software for radio amateurs**
 
 [![CI](https://github.com/JF9SOM/fbsat59/actions/workflows/ci.yml/badge.svg)](https://github.com/JF9SOM/fbsat59/actions)
 [![Release](https://img.shields.io/github/v/release/JF9SOM/fbsat59)](https://github.com/JF9SOM/fbsat59/releases/latest)
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://python.org)
 
-FBSAT59 is a ground-up rewrite of
-[GPredict](https://github.com/csete/gpredict) — the beloved amateur radio
-satellite tracker by Alexandru Csete OZ9AEC — built on a modern Python stack.
+FBSAT59 is a modern, feature-rich satellite communications application for
+amateur radio operators. Alongside satellite tracking and Doppler correction,
+it packs in major digital communication modes — FT4, APRS, image reception
+(SSTV/SSDV, HRPT/LRPT), and more — all in one application.
 
 ---
 
-## What's improved
-
-| Feature | GPredict | FBSAT59 |
-|---------|----------|-------------------|
-| Platform | Desktop only | Desktop + **browser access from phones/tablets on the same LAN** |
-| Radio control | Requires separate rigctld | **Built-in Hamlib** (700+ radios) — select your rig in the GUI |
-| SDR support | None | **HackRF / RTL-SDR via SoapySDR** — spectrum, demodulation, IQ recording |
-| Doppler correction | Frequency only | **Frequency + mode + CTCSS/DCS tone** set automatically |
-| Dual-rig | Supported | **Rig 1 + Rig 2** — SDR dongle can be assigned as a rig |
-| Satellite frequency DB | SATNOGS only, text-file editing | SATNOGS auto-sync + **add/edit entries from the GUI** |
-| TLE updates | Auto-update supported | **Multi-source auto-update with quality scoring** |
-| Pass prediction | List view | **Graphical pass chart + sky radar + footprint on world map** |
-| Rotator control | Separate rotctld | **Built-in Hamlib rotator — select from GUI, no rotctld needed** |
-| Supported OS | Linux, Windows, macOS (GTK+) | **Linux, Windows, macOS, Raspberry Pi** |
+| Feature | FBSAT59 |
+|---------|-------------------|
+| Platform | Desktop + **browser access from phones/tablets on the same LAN** |
+| Radio control | **Built-in Hamlib** (700+ radios) — select your rig in the GUI |
+| SDR support | **HackRF / RTL-SDR via SoapySDR** — spectrum, demodulation, IQ recording |
+| Doppler correction | **Frequency + mode + CTCSS/DCS tone** set automatically |
+| Dual-rig | **Rig 1 + Rig 2** — SDR dongle can be assigned as a rig |
+| Satellite frequency DB | SATNOGS auto-sync + **add/edit entries from the GUI** |
+| TLE updates | **Multi-source auto-update with quality scoring** |
+| Pass prediction | **Graphical pass chart + sky radar + footprint on world map** |
+| Rotator control | **Built-in Hamlib rotator — select from GUI, no rotctld needed** |
+| Supported OS | **Linux, Windows, macOS, Raspberry Pi** |
 
 ---
 
