@@ -156,9 +156,10 @@ class SatDumpDialog(QDialog):
         sl.addWidget(self._lbl_version)
         root.addWidget(status_box)
 
-        # Installation guidance
-        guide_box = QGroupBox(_("Installation"))
-        gl = QVBoxLayout(guide_box)
+        # Installation guidance (superseded on Linux by the self-contained
+        # AppImage download below, which needs no manual steps)
+        self._guide_box = QGroupBox(_("Installation"))
+        gl = QVBoxLayout(self._guide_box)
 
         self._guide_text = QTextBrowser()
         self._guide_text.setOpenExternalLinks(False)
@@ -171,7 +172,8 @@ class SatDumpDialog(QDialog):
         self._btn_open = QPushButton(_("Open Download Page"))
         self._btn_open.clicked.connect(self._on_open_download)
         gl.addWidget(self._btn_open)
-        root.addWidget(guide_box)
+        root.addWidget(self._guide_box)
+        self._guide_box.setVisible(sys.platform != "linux")
 
         # --- Linux-only: download SatDump's own self-contained nightly AppImage ---
         self._download_box = QGroupBox(_("Install Self-Contained Build (Recommended for Linux)"))
