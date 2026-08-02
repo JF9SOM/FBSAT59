@@ -24,17 +24,17 @@
     "uuid": "community-jo97-ft4",
     "norad_cat_id": 43803,
     "satellite_name": "JO-97 (JY1Sat)",
-    "description": "FT4 Calling — community standard (U/V transponder)",
+    "description": "FT4 Calling — community standard (U/V inverting transponder)",
     "type": "Transponder",
     "uplink_low":   435118000,
     "uplink_high":  null,
     "downlink_low": 145857000,
     "downlink_high": null,
     "mode": "USB-D",
-    "invert": false,
+    "invert": true,
     "baud": null,
     "ctcss_tone": null,
-    "notes": "Community FT4 calling frequency within the U/V transponder passband. Rx 145.857 / Tx 435.118. Not in SATNOGS. Ref: JH1NHK https://x.com/JH1NHK/status/1882598594924212321"
+    "notes": "Community FT4 calling frequency within the U/V inverting transponder passband. Rx 145.857 / Tx 435.118. Not in SATNOGS. Ref: JH1NHK https://x.com/JH1NHK/status/1882598594924212321. invert=true confirmed 2026-08-02 against SATNOGS' own 'U/V SSB Transponder' entry for this satellite (downlink mode=USB, uplink_mode=LSB) after a user report that FT4 mode selection set Sub (UL) to USB-D instead of LSB-D."
   },
   {
     "uuid": "community-mo122-ft4",
