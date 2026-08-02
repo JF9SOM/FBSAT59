@@ -110,7 +110,7 @@ METEOR_NORAD_IDS: frozenset[int] = frozenset(
 def find_satdump() -> Path | None:
     """Return the path to the ``satdump`` executable, or None if not found."""
     # 1. User-installed
-    user_dir = _user_satdump_dir()
+    user_dir = get_user_satdump_dir()
     exe_name = "satdump.exe" if sys.platform == "win32" else "satdump"
     user_exe = user_dir / exe_name
     if user_exe.is_file():
@@ -131,7 +131,7 @@ def find_satdump() -> Path | None:
     return None
 
 
-def _user_satdump_dir() -> Path:
+def get_user_satdump_dir() -> Path:
     """Return the user-specific directory used for user-installed SatDump."""
     if sys.platform == "win32":
         base = Path.home() / "AppData" / "Roaming" / "fbsat59" / "satdump"
