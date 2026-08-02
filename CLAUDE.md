@@ -1674,6 +1674,33 @@ NTPサーバーに一切到達できなかった場合（オフセット自体�
 **外部インターフェース（`Q65Codec(submode=..., nfa=..., nfb=..., nfqso=...).decode(samples, period_seconds=...)`）
 はそのまま維持**しており、唯一の呼び出し元`src/ui/q65_tab.py`への変更は不要だった。
 
+**ctypesの`dlsym`失敗が`AttributeError`であることを見落としていたバグ — Q65タブが無反応で
+開かなくなる不具合（2026-08-02 発見・修正）**
+
+macOS実機で「Communications > Q65」をクリックしても無反応（エラーも出ない）という報告があった。
+原因は`_load_libq65()`の`except OSError:`が、ctypesがPOSIXで`dlsym()`失敗時に送出する
+`AttributeError`（"dlsym(addr, symbol): symbol not found"）を捕捉していなかったこと。この例外は
+モジュールレベルの`_lib: ctypes.CDLL | None = _load_libq65()`呼び出しで発生するため
+`comms.q65.codec`のimport自体が丸ごと失敗し、`Q65Tab`・`main_window.py`の`_on_open_q65()`まで
+巻き込んで、本来の「libq65が使えない場合はデコード無効バナー付きでタブは開く」フォールバックが
+機能せず**タブが一切開かなかった**（`_on_open_q65()`自体にも`from ui.q65_tab import Q65Tab`が
+try/exceptの外にあるという別のミスがあり、これも合わせて修正）。
+
+`except`を`except (OSError, AttributeError):`に修正。実際の発生条件は、ユーザーが以前
+`Help > Q65 Library Installation…`でインストールした`libq65.dylib`が本節前述のWSJT-Xブリッジ
+実装より前の古いバージョンのまま残っており、`_find_libq65()`のユーザーインストール優先順位で
+正しいバンドル版より先に読み込まれ、`q65wsjt_decode`シンボルが存在しなかったため。再インストール
+（同ダイアログの「ダウンロードしてインストール」）で解決した。
+
+**同一クラスの不具合が`comms/ft4/wsjt_decoder.py`の`_load_libft4wsjt()`にも実在**（未報告だが
+`except OSError:`のみで同じ穴）したため横展開して修正済み。
+
+**教訓**: `ctypes.CDLL()`自体の失敗は`OSError`だが、ロード成功後の**シンボル参照
+（`lib.some_function`）の失敗はPOSIXでは`AttributeError`**。`ft4/codec.py`の`_find_ft8lib()`は
+既にこの2段構えで対処済みだったが、後から似た構造で書かれた`q65/codec.py`・
+`ft4/wsjt_decoder.py`には横展開されていなかった。ctypesで共有ライブラリをロードするコードは
+`CDLL()`の失敗とシンボル参照の失敗を両方catchできているか確認すること。
+
 - **Phase 2（TX/QSO）**: 純 Python エンコーダー（libq65 なしで TX 可能）
   - `encoder.py`: GF(64) 線形符号（生成行列 15×50）・CRC-12・65-FSK 音声合成（numpy）
     - WSJT-X `lib/qra/q65/q65_encoding_modules.f90` のアルゴリズムを Python に移植
@@ -5594,6 +5621,21 @@ CREATE TABLE sstv_log (
 | 軽微（自己修復） | FT4 / Q65 / APRS | FT4・Q65は`closeEvent()`でSDRパイプラインの`audio_ready`シグナルを明示的にdisconnectしていなかった（CW Decoder/SSTVは切っている）。AprsTabもエンジンへの3本のシグナル接続を明示的に切っていなかった（AprsEngineがシングルトン化しタブより長生きするようになったため、Qtの自動切断＝受信側QObject破棄時に頼るのは望ましくない） | FT4・Q65に`_disconnect_sdr_audio()`を追加（`self._sdr_pipeline`を新規に保持するよう変更）。AprsTabの`closeEvent()`で3本のシグナルを明示的にdisconnect |
 
 **教訓**: `closeEvent()`が実装されていても、実際に呼ばれる経路（`close()`経由か、`deleteLater()`だけで済ませていないか）を確認しないと「後始末コードは書いたが一度も実行されていない」状態になりうる。特にPySide6/Qtでは`deleteLater()`は`closeEvent()`を発火させない。
+
+#### AudioBridge にも同じ問題が実在した — macOS実機crashで発覚・修正（2026-08-02）
+
+APRSタブの×ボタンでアプリ全体がabort()でクラッシュする報告があった。クラッシュログの
+`Triggered by Thread: 8 AudioBridge`が手がかり。`DirewolfManager.stop()`（`comms/aprs/direwolf.py`）
+は`AudioBridge`（Direwolf stdin/stdout⇔音声デバイスのQThread）の`stop()`（`wait(3000)`）を、
+**Direwolfプロセスの`terminate()`より先に**呼んでいた。`AudioBridge.run()`は`proc.stdout.read()`
+でブロッキング読み込みしているため、プロセスがまだ生きていると読み込みがすぐ返らず、`wait(3000)`が
+タイムアウトしても構わず`self._audio = None`で参照を落とす→スレッドが実際にはまだ動いている状態で
+Python参照を失い、上記SatDumpProcessと同じ「QThread: Destroyed while thread is still running」で
+abort()。`stop()`内で`self._proc.terminate()`を最初に呼ぶよう順序を入れ替え解決（実機確認済み）。
+
+**教訓**: 同種の不具合は`closeEvent()`側だけでなく`stop()`実装内部の「待機」と「相手側の
+ブロッキングI/Oを解除する処理」の順序にも潜みうる。相手（今回はDirewolfプロセス）を先に
+終了させないと、待機自体がタイムアウトするまで無意味になる。
 
 ---
 
