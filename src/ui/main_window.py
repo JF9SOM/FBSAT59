@@ -18,7 +18,6 @@ import sqlite3
 import subprocess
 import sys
 import threading
-import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, TypedDict
@@ -58,7 +57,6 @@ from PySide6.QtWidgets import (
 
 from comms import mode_detection
 from comms.audio_device_manager import get_audio_device_manager
-from comms.ft4.decode_log import get_ft4_decode_logger
 from core.autotrack import AutotrackManager
 from core.celestial_engine import MOON_ID, CelestialEngine
 from core.clock_offset import set_clock_offset
@@ -1610,16 +1608,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ #
 
     def _on_tick(self) -> None:
-        """Timer callback that updates satellite positions and the status bar.
-
-        Duration is logged to ft4_decode.log (same file as Ft4Scheduler's
-        boundary_lag log) — this timer runs on the same Qt main thread as
-        the FT4 scheduler, so a slow _on_tick() here is a direct candidate
-        for the FT4 RX buffer timing problems under investigation
-        (2026-07-10). Remove once that investigation is closed.
-        """
-        t0 = time.monotonic()
-        map_updated = False
+        """Timer callback that updates satellite positions and the status bar."""
         try:
             # World map position update is throttled to every MAP_UPDATE_INTERVAL ticks
             # (default 5 seconds) to reduce Skyfield SGP4 computation load — or
@@ -1636,7 +1625,7 @@ class MainWindow(QMainWindow):
             self._map_tick_counter += 1
             if self._map_tick_counter >= map_interval:
                 self._map_tick_counter = 0
-                map_updated = self._update_world_map()
+                self._update_world_map()
 
             self._update_selected_satellite()
             self._update_statusbar()
@@ -1646,12 +1635,6 @@ class MainWindow(QMainWindow):
             self._detail_panel.refresh_freq_mirror()
         except Exception:
             logger.exception("_on_tick error")
-        finally:
-            get_ft4_decode_logger().info(
-                "main_window tick duration=%.3fs map_updated=%s",
-                time.monotonic() - t0,
-                map_updated,
-            )
 
     def _update_rig_web_state(self) -> None:
         """Push current rig/rotator state to the shared RigWebState for the mobile web UI."""
@@ -3063,13 +3046,6 @@ class MainWindow(QMainWindow):
                     -self._dial_feedback_offset_hz if invert else self._dial_feedback_offset_hz
                 )
                 ul_shift = None
-        get_ft4_decode_logger().info(
-            "TEMP_DOPPLER_RATE_LOG t=%.3f dl_corr=%s dl_shift=%s rr=%.6f",
-            time.monotonic(),
-            dl_corr,
-            dl_shift,
-            rr,
-        )
         # If the Tune button has set an override, use the centre frequency,
         # then reset to None afterward (subsequent cycles return to
         # Doppler-corrected values). This worker is the only place that
