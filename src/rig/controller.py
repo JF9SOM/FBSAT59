@@ -2232,6 +2232,19 @@ class HamlibDirectController(RigController):
         At that point IC-9100/9700 SAT mode Main/Sub band assignment is locked
         to the new satellite, so modes/CTCSS land on the correct VFOs.
         Called with _rig_cmd_lock held; self._rig is guaranteed non-None here.
+
+        GitHub Issue #16 follow-up: the Sub (UL) mode step used to go through
+        self._rig.set_mode() directly, which cannot reliably apply the
+        DATA-mode flag on Sub for this rig family (the same bug already
+        fixed in _apply_mode_and_ctcss_hamlib()) -- reverting a just-applied
+        LSB-D/USB-D back to plain LSB/USB right after Connect. This now uses
+        the same _send_sub_mode_civ_pyserial() fix, which requires closing
+        this live Hamlib session first (pyserial needs exclusive port
+        access) and reopening it afterward. This whole method runs
+        synchronously with _rig_cmd_lock already held by the caller (see
+        _set_vfo_frequencies_locked), so no other Doppler write can race
+        with the close/reopen -- the rig's actual tuned frequency/mode is
+        unaffected by the software session being closed and reopened.
         """
         if self._rig is None:
             return
@@ -2240,24 +2253,55 @@ class HamlibDirectController(RigController):
 
             hamlib_mode: dict[str, int] = _build_live_hamlib_mode_map(_H)
             dl_hamlib = hamlib_mode.get(self._current_dl_mode, _H.RIG_MODE_FM)
-            ul_hamlib = hamlib_mode.get(self._current_ul_mode, _H.RIG_MODE_FM)
             vfo_main = int(_H.RIG_VFO_MAIN)
             vfo_sub = int(_H.RIG_VFO_SUB)
             func_tone = _H.RIG_FUNC_TONE
             enable = self._current_ctcss_hz > 0
             tone_deci = int(round(self._current_ctcss_hz * 10)) if enable else 0
+
             self._rig.set_mode(dl_hamlib, 0, vfo_main)
             _check_rig_ok(self._rig, "stage2: set_mode(MAIN/DL)")
             time.sleep(0.05)
-            self._rig.set_mode(ul_hamlib, 0, vfo_sub)
-            _check_rig_ok(self._rig, "stage2: set_mode(SUB/UL)")
-            time.sleep(0.05)
+
+            self._rig.close()
+            self._rig = None
+            time.sleep(0.3)
+            try:
+                self._send_sub_mode_civ_pyserial(self._current_ul_mode)
+            except Exception as exc:
+                logger.warning(
+                    "RigDirect: stage2 Sub pyserial write failed, "
+                    "reopening anyway to keep Doppler tracking alive: %s",
+                    exc,
+                )
+            time.sleep(0.3)
+            new_rig = _H.Rig(self._model_id)
+            new_rig.set_conf("rig_pathname", self._port)
+            new_rig.set_conf("serial_speed", str(self._baud_rate))
+            if self._civ_addr:
+                new_rig.set_conf("civaddr", normalize_civ_addr(self._civ_addr))
+            _open_rig_with_retry(new_rig, "stage2: reopen after Sub mode (pyserial)")
+            time.sleep(0.5)
+            # IC-9700: re-force cache->satmode=1, same as the reopen in
+            # _apply_mode_and_ctcss_hamlib() (without it, set_vfo(MAIN)
+            # below gets rejected with Hamlib error -9).
+            if self._model_id in _SATMODE_USE_VFO_SUB:
+                new_rig.set_func(_H.RIG_FUNC_SATMODE, 1)
+                _check_rig_ok(new_rig, "stage2: IC-9700 extra set_func(SATMODE,1) after reopen")
+                time.sleep(0.2)
+            self._rig = new_rig
+
             self._rig.set_vfo(vfo_sub)
             _check_rig_ok(self._rig, "stage2: set_vfo(SUB) for CTCSS")
             time.sleep(0.05)
-            self._rig.set_ctcss_tone(vfo_sub, tone_deci)
-            _check_rig_ok(self._rig, "stage2: set_ctcss_tone(SUB)")
-            time.sleep(0.05)
+            if enable:
+                # Only send an actual tone value when enabling one -- tone_deci=0
+                # ("no tone") is rejected by the rig (Hamlib error -9), same
+                # known quirk already guarded against in
+                # _apply_mode_and_ctcss_hamlib().
+                self._rig.set_ctcss_tone(vfo_sub, tone_deci)
+                _check_rig_ok(self._rig, "stage2: set_ctcss_tone(SUB)")
+                time.sleep(0.05)
             self._rig.set_func(func_tone, 1 if enable else 0)
             _check_rig_ok(self._rig, "stage2: set_func(TONE, SUB)")
             time.sleep(0.05)
