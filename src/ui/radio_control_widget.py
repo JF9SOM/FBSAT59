@@ -187,7 +187,9 @@ class RadioControlWidget(QWidget):
         self._lock_btn.setToolTip(
             _(
                 "Lock (Ctrl+L): DL is yours to tune manually; UL follows "
-                "(inverting transponder aware)"
+                "(inverting transponder aware). After each manual retune, "
+                "allow a few seconds for it to register before relying on it — "
+                "the rig is only polled once per Doppler cycle."
             )
         )
         self._lock_btn.setCheckable(True)
