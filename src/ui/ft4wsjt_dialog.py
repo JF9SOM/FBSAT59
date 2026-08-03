@@ -17,6 +17,7 @@ Detection priority (mirrors _find_libft4wsjt()):
 
 from __future__ import annotations
 
+import logging
 import shutil
 import sys
 from pathlib import Path
@@ -44,6 +45,8 @@ from comms.ft4.wsjt_decoder import (
 )
 from i18n import _
 from ui.copyable_text import make_copy_button, make_run_button
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -139,6 +142,7 @@ class _InstallWorker(QThread):
             return
 
         self.status.emit(_("Downloading…"))
+        logger.info("[ft4wsjt install diag] download start url=%s", url)
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                 tmp_path = Path(tmp.name)
@@ -149,8 +153,10 @@ class _InstallWorker(QThread):
 
             urllib.request.urlretrieve(url, tmp_path, reporthook=_reporthook)
         except Exception as exc:
+            logger.exception("[ft4wsjt install diag] download failed")
             self.finished_err.emit(str(exc))
             return
+        logger.info("[ft4wsjt install diag] download done tmp_path=%s", tmp_path)
 
         self.progress.emit(95)
         self.status.emit(_("Installing…"))
@@ -163,7 +169,12 @@ class _InstallWorker(QThread):
         # ft8_lib, libft4wsjt was never designed to be freed/reloaded), which
         # locks the file on Windows and makes overwriting it fail with
         # PermissionError. Release it first (GitHub Issue #16).
+        logger.info("[ft4wsjt install diag] calling free_libft4wsjt() before extraction")
         free_libft4wsjt()
+        logger.info(
+            "[ft4wsjt install diag] free_libft4wsjt() returned, extraction start dest_dir=%s",
+            dest_dir,
+        )
 
         try:
             if suffix.endswith(".tar.gz"):
@@ -181,14 +192,20 @@ class _InstallWorker(QThread):
                     zf.extractall(dest_dir)
             tmp_path.unlink(missing_ok=True)
         except Exception as exc:
+            logger.exception("[ft4wsjt install diag] extraction failed")
             self.finished_err.emit(str(exc))
             return
+        logger.info("[ft4wsjt install diag] extraction done")
 
         self.progress.emit(100)
         # Pick up the newly installed library immediately -- no app restart
         # needed for FT4 RX to start using it on its next decode call.
-        reload_libft4wsjt()
+        logger.info("[ft4wsjt install diag] calling reload_libft4wsjt()")
+        reload_ok = reload_libft4wsjt()
+        logger.info("[ft4wsjt install diag] reload_libft4wsjt() returned %s", reload_ok)
+        logger.info("[ft4wsjt install diag] emitting finished_ok, about to return from run()")
         self.finished_ok.emit(str(dest_dir / lib_name))
+        logger.info("[ft4wsjt install diag] finished_ok emitted, run() returning")
 
 
 # ---------------------------------------------------------------------------
@@ -320,7 +337,11 @@ class Ft4WsjtDialog(QDialog):
     # ------------------------------------------------------------------ #
 
     def _refresh_status(self) -> None:
+        logger.info("[ft4wsjt install diag] _refresh_status: calling _find_libft4wsjt()")
         path = _find_libft4wsjt()
+        logger.info(
+            "[ft4wsjt install diag] _refresh_status: _find_libft4wsjt() returned path=%s", path
+        )
         if path is None:
             self._lbl_status.setText(
                 "<b style='color:#e74c3c'>&#x2718; " + _("libft4wsjt not found") + "</b>"
@@ -358,11 +379,13 @@ class Ft4WsjtDialog(QDialog):
         self._worker.start()
 
     def _on_install_ok(self, path: str) -> None:
+        logger.info("[ft4wsjt install diag] _on_install_ok received path=%s", path)
         self._progress.setValue(100)
         self._progress.setVisible(False)
         self._lbl_dl_status.setText(_("Installed: ") + path)
         self._btn_download.setEnabled(True)
         self._refresh_status()
+        logger.info("[ft4wsjt install diag] _on_install_ok: _refresh_status() returned")
 
     def _on_install_err(self, msg: str) -> None:
         self._lbl_dl_status.setText(_("Error: ") + msg)
@@ -383,10 +406,16 @@ class Ft4WsjtDialog(QDialog):
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
+        logger.info("[ft4wsjt install diag] _on_uninstall: calling free_libft4wsjt()")
         free_libft4wsjt()
+        logger.info("[ft4wsjt install diag] _on_uninstall: free_libft4wsjt() returned")
+        target_dir = get_user_ft4wsjt_dir()
+        logger.info("[ft4wsjt install diag] _on_uninstall: calling shutil.rmtree(%s)", target_dir)
         try:
-            shutil.rmtree(get_user_ft4wsjt_dir())
+            shutil.rmtree(target_dir)
         except Exception as exc:
+            logger.exception("[ft4wsjt install diag] _on_uninstall: shutil.rmtree failed")
             QMessageBox.warning(self, _("Uninstall Failed"), str(exc))
             return
+        logger.info("[ft4wsjt install diag] _on_uninstall: shutil.rmtree succeeded")
         self._refresh_status()
