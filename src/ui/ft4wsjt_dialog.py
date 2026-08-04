@@ -18,7 +18,6 @@ Detection priority (mirrors _find_libft4wsjt()):
 from __future__ import annotations
 
 import logging
-import shutil
 import sys
 from pathlib import Path
 
@@ -42,6 +41,7 @@ from comms.ft4.wsjt_decoder import (
     free_libft4wsjt,
     get_user_ft4wsjt_dir,
     reload_libft4wsjt,
+    rename_away_for_reinstall,
 )
 from i18n import _
 from ui.copyable_text import make_copy_button, make_run_button
@@ -162,19 +162,26 @@ class _InstallWorker(QThread):
         self.status.emit(_("Installing…"))
 
         dest_dir = get_user_ft4wsjt_dir()
-        dest_dir.mkdir(parents=True, exist_ok=True)
 
         # A prior FT4 session in this run may already have loaded
         # ft4wsjt.dll (kept open for the process's whole lifetime -- unlike
         # ft8_lib, libft4wsjt was never designed to be freed/reloaded), which
         # locks the file on Windows and makes overwriting it fail with
-        # PermissionError. Release it first (GitHub Issue #16).
+        # PermissionError. free_libft4wsjt() only drops this process's own
+        # reference now (calling Win32 FreeLibrary() on libft4wsjt was
+        # confirmed live to hang indefinitely — GitHub Issue #16), so the
+        # old directory is renamed out of the way instead of overwritten
+        # in place; a stale renamed copy gets swept up on a future restart
+        # once nothing has it open anymore.
         logger.info("[ft4wsjt install diag] calling free_libft4wsjt() before extraction")
         free_libft4wsjt()
+        logger.info("[ft4wsjt install diag] calling rename_away_for_reinstall(%s)", dest_dir)
+        renamed_ok = rename_away_for_reinstall(dest_dir)
         logger.info(
-            "[ft4wsjt install diag] free_libft4wsjt() returned, extraction start dest_dir=%s",
-            dest_dir,
+            "[ft4wsjt install diag] rename_away_for_reinstall() returned %s; extraction start",
+            renamed_ok,
         )
+        dest_dir.mkdir(parents=True, exist_ok=True)
 
         try:
             if suffix.endswith(".tar.gz"):
@@ -315,11 +322,7 @@ class Ft4WsjtDialog(QDialog):
         self._btn_uninstall = QPushButton(_("Uninstall"))
         self._btn_uninstall.setStyleSheet("QPushButton{color:#cc3300;}")
         self._btn_uninstall.setToolTip(
-            _(
-                "Remove the user-installed libft4wsjt from your data directory.\n"
-                "If FT4 is currently in use, this may fail with a permission\n"
-                "error — close that tab first."
-            )
+            _("Remove the user-installed libft4wsjt from your data directory.")
         )
         self._btn_uninstall.clicked.connect(self._on_uninstall)
         self._btn_uninstall.setVisible(False)
@@ -396,11 +399,7 @@ class Ft4WsjtDialog(QDialog):
         reply = QMessageBox.question(
             self,
             _("Uninstall FT4 Enhanced Decoder"),
-            _(
-                "Remove the user-installed libft4wsjt from your data directory?\n\n"
-                "If FT4 is currently in use, this may fail — close that tab "
-                "(or restart FBSAT59) and try again."
-            ),
+            _("Remove the user-installed libft4wsjt from your data directory?"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -410,12 +409,19 @@ class Ft4WsjtDialog(QDialog):
         free_libft4wsjt()
         logger.info("[ft4wsjt install diag] _on_uninstall: free_libft4wsjt() returned")
         target_dir = get_user_ft4wsjt_dir()
-        logger.info("[ft4wsjt install diag] _on_uninstall: calling shutil.rmtree(%s)", target_dir)
-        try:
-            shutil.rmtree(target_dir)
-        except Exception as exc:
-            logger.exception("[ft4wsjt install diag] _on_uninstall: shutil.rmtree failed")
-            QMessageBox.warning(self, _("Uninstall Failed"), str(exc))
+        logger.info(
+            "[ft4wsjt install diag] _on_uninstall: calling rename_away_for_reinstall(%s)",
+            target_dir,
+        )
+        ok = rename_away_for_reinstall(target_dir)
+        logger.info(
+            "[ft4wsjt install diag] _on_uninstall: rename_away_for_reinstall() returned %s", ok
+        )
+        if not ok:
+            QMessageBox.warning(
+                self,
+                _("Uninstall Failed"),
+                _("Could not remove or rename the install directory:\n") + str(target_dir),
+            )
             return
-        logger.info("[ft4wsjt install diag] _on_uninstall: shutil.rmtree succeeded")
         self._refresh_status()

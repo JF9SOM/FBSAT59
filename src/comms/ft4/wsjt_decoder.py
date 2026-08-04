@@ -28,7 +28,9 @@ from __future__ import annotations
 import contextlib
 import ctypes
 import os
+import shutil
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -147,6 +149,56 @@ def _load_libft4wsjt() -> ctypes.CDLL | None:
         return None
 
 
+def _cleanup_stale_backups() -> None:
+    """Remove leftover renamed-away install directories from a previous
+    session's uninstall/reinstall (see rename_away_for_reinstall()).
+
+    On Windows, this process never calls FreeLibrary() on libft4wsjt (see
+    free_libft4wsjt()), so an uninstall/reinstall while the library was
+    loaded could only rename the locked directory aside rather than
+    delete it outright. A freshly started process hasn't loaded that old
+    copy yet, so by now it should no longer be locked and can finally be
+    removed.
+    """
+    parent = get_user_ft4wsjt_dir().parent
+    if not parent.is_dir():
+        return
+    for entry in parent.glob("ft4wsjt.uninstalled-*"):
+        with contextlib.suppress(OSError):
+            shutil.rmtree(entry)
+
+
+def rename_away_for_reinstall(target_dir: Path) -> bool:
+    """Get target_dir out of the way so a fresh copy can be installed there.
+
+    Tries a plain delete first (works on POSIX always, and on Windows too
+    if nothing in this process has loaded the DLL inside it). Falls back
+    to renaming it aside if delete fails -- Windows allows renaming a
+    file that's still memory-mapped by a running process even though it
+    won't allow deleting or overwriting it. The renamed-aside copy is
+    swept up later by _cleanup_stale_backups() on a future run, once
+    nothing holds it open anymore.
+
+    Returns True if target_dir no longer exists at its original path
+    afterward (deleted outright, or renamed aside), False if neither
+    worked.
+    """
+    if not target_dir.exists():
+        return True
+    try:
+        shutil.rmtree(target_dir)
+        return True
+    except OSError:
+        pass
+    backup = target_dir.parent / f"{target_dir.name}.uninstalled-{int(time.time())}"
+    try:
+        target_dir.rename(backup)
+        return True
+    except OSError:
+        return False
+
+
+_cleanup_stale_backups()
 _lib: ctypes.CDLL | None = _load_libft4wsjt()
 
 
@@ -156,40 +208,29 @@ def is_available() -> bool:
 
 
 def free_libft4wsjt() -> None:
-    """Release the current libft4wsjt handle so a reinstall can overwrite it.
+    """Drop this process's reference to the current libft4wsjt handle.
 
     Unlike ft8_lib (codec.py's _find_ft8lib()/free_ft8lib()), which loads a
     fresh handle per call and is freed right after, libft4wsjt is loaded
     once into the module-level `_lib` global at import time and kept for
-    the rest of the process's life -- there was previously no way to
-    release it at all. On Windows, ctypes never auto-unloads a shared
-    library, so the DLL file stays locked for as long as any FT4 session
-    in this run has used it, and Help > FT4 Enhanced Decoder Installation's
-    "Download & Install" would fail with PermissionError trying to
-    overwrite it (GitHub Issue #16 -- confirmed live on Windows/IC-9700:
-    "[Errno 13] Permission denied: ...\\ft4wsjt\\").
+    the rest of the process's life.
 
-    Same PyInstaller-bundled-copy guard as codec.py's free_ft8lib(): a raw
-    FreeLibrary() on a _MEIPASS-resident DLL can deadlock against
-    PyInstaller's own loader hook, and nothing ever needs to overwrite the
-    bundled copy anyway -- only a user-installed copy is ever reinstalled.
-    POSIX doesn't need this at all (a running process can have a file
-    replaced out from under it).
+    This used to also call Win32 FreeLibrary() directly so a reinstall
+    could overwrite the DLL file in place. Confirmed live (GitHub Issue
+    #16) that this hangs indefinitely, even for a plain user-installed
+    copy (not just the PyInstaller-bundled case codec.py's free_ft8lib()
+    already knows to skip): unlike ft8_lib, libft4wsjt links FFTW3 +
+    Boost + a full Fortran runtime, and unloading a DLL with that much
+    registered runtime state is a well-known way to deadlock against
+    Windows' own DLL loader lock. There is no reliable way to tell from
+    the outside that nothing is still settling inside the library, so
+    this no longer tries to unload it at all -- install/uninstall instead
+    renames the locked file out of the way (see
+    rename_away_for_reinstall() / _cleanup_stale_backups()) rather than
+    trying to overwrite or delete it in place while it might still be in
+    use.
     """
     global _lib
-    if _lib is None:
-        return
-    if sys.platform == "win32":
-        lib_path = getattr(_lib, "_name", "") or ""
-        skip = False
-        if getattr(sys, "frozen", False) and lib_path:
-            meipass = getattr(sys, "_MEIPASS", "")
-            with contextlib.suppress(OSError, ValueError):
-                if meipass and Path(lib_path).resolve().is_relative_to(Path(meipass).resolve()):
-                    skip = True
-        if not skip:
-            with contextlib.suppress(OSError, AttributeError):
-                ctypes.windll.kernel32.FreeLibrary(_lib._handle)
     _lib = None
 
 
