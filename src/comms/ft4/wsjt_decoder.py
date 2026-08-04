@@ -302,14 +302,30 @@ class Ft4WsjtDecoder:
             qual: float,
             user_data: int | None,
         ) -> None:
-            del sync, nap, qual, user_data  # unused
+            del sync, qual, user_data  # unused
             if decoded is None:
                 return
             text = ctypes.string_at(decoded).decode("ascii", errors="replace").strip()
-            if text:
-                results.append(
-                    Ft4Message(text=text, freq_hz=float(freq), snr_db=float(snr), dt_sec=float(dt))
-                )
+            if not text:
+                return
+            # GitHub Issue #16: AP (a priori) decoding uses known context --
+            # normally the OTHER station's callsign in an already-established
+            # QSO -- as a hint to recover otherwise-undecodable weak signals.
+            # nap != 0 here means THIS message only decoded because of that
+            # hint, not on its own bits. A "CQ ..." message is by definition
+            # a first-contact broadcast with no established QSO to hint
+            # from, so an AP-decoded CQ is not a real protocol scenario --
+            # confirmed live as the source of corrupted messages like
+            # "CQ EI4GNB R-13" (a garbled hybrid of a genuine CQ's grid field
+            # and an unrelated exchange-message report field) when a
+            # station's own CQ came back via the satellite's own transponder
+            # at low SNR. Exchange-type AP decodes (RR73, R+RST, etc. in an
+            # ongoing QSO) are AP's actual intended use and are not filtered.
+            if nap != 0 and text.upper().startswith("CQ "):
+                return
+            results.append(
+                Ft4Message(text=text, freq_hz=float(freq), snr_db=float(snr), dt_sec=float(dt))
+            )
 
         cb = _CallbackT(_on_decode)
         try:
