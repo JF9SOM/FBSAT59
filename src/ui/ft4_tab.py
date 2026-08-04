@@ -47,6 +47,7 @@ from PySide6.QtWidgets import (
 
 from comms.audio_device_manager import get_audio_device_manager, validate_output_device
 from comms.ft4.codec import (
+    FT4_PERIOD,
     SAMPLE_RATE,
     Ft4Codec,
     Ft4Message,
@@ -207,7 +208,7 @@ class _RxDecodeWorker(QObject):
     """Runs Ft4Codec.decode_audio() off the Qt main thread.
 
     libft4wsjt's full 3-pass subtract+BP/OSD decode over a crowded band can
-    take a large fraction of a 6s period (measured ~0.4s on a fast desktop
+    take a large fraction of a period (measured ~0.4s on a fast desktop
     for ~28 overlapping stations; a low-power field PC can take several
     times longer). Calling it directly from the scheduler's QTimer-driven
     slot blocked the Qt event loop for that whole time, which stalled the
@@ -440,7 +441,7 @@ class Ft4Tab(QWidget):
         self._period_label.setStyleSheet("font-weight:bold;font-size:13px;")
         status_row.addWidget(self._period_label)
 
-        self._countdown_label = QLabel("6.0 s / 6")
+        self._countdown_label = QLabel(f"{FT4_PERIOD:.1f} s / {FT4_PERIOD:.1f}")
         self._countdown_label.setStyleSheet("font-size:13px;")
         status_row.addWidget(self._countdown_label)
 
@@ -485,7 +486,7 @@ class Ft4Tab(QWidget):
         self._tx_slot_combo.currentIndexChanged.connect(self._on_tx_slot_mode_changed)
         self._tx_slot_combo.setToolTip(
             _(
-                "Which 6s slot to transmit in when calling CQ / enabling TX.\n"
+                "Which slot to transmit in when calling CQ / enabling TX.\n"
                 "Auto: whichever slot is current when you press CQ / TX Enable.\n"
                 "Responding to a decoded CQ always uses the correct opposite\n"
                 "slot regardless of this setting."
@@ -895,7 +896,7 @@ class Ft4Tab(QWidget):
 
     @Slot(bool, float)
     def _on_period_tick(self, is_tx: bool, seconds_remaining: float) -> None:
-        self._countdown_label.setText(f"{seconds_remaining:.1f} s / 6")
+        self._countdown_label.setText(f"{seconds_remaining:.1f} s / {FT4_PERIOD:.1f}")
         if is_tx:
             self._rx_indicator.setStyleSheet("color:gray;font-weight:bold;")
             self._tx_indicator.setStyleSheet("color:#e74c3c;font-weight:bold;")
@@ -914,12 +915,12 @@ class Ft4Tab(QWidget):
 
     def _on_capture_period(self, audio: NDArray[np.float32]) -> None:
         """Called from Ft4RxCaptureWorker's own background thread — NOT the
-        Qt main thread — once per completed 6s period. Must not touch Qt
+        Qt main thread — once per completed period. Must not touch Qt
         widgets directly; anything that does (the waterfall, in the skip
         cases below) goes through a Signal so Qt marshals it onto the main
         thread automatically. Decoding itself is further backgrounded onto
         its own thread (_RxDecodeWorker) since it can take a large fraction
-        of a 6s period and this thread must stay free to keep waking up
+        of a period and this thread must stay free to keep waking up
         exactly on time for the next period (2026-07-10).
         """
         if not self._codec.decode_available:

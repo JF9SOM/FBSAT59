@@ -41,7 +41,17 @@ FT4_SAMPLES_PER_SYM: int = 576  # 12000 Hz / (500/24 baud) = exactly 576
 FT4_SYMBOL_RATE: float = SAMPLE_RATE / FT4_SAMPLES_PER_SYM  # ≈ 20.833 Hz
 FT4_TONE_SPACING: float = FT4_SYMBOL_RATE  # Hz between adjacent tones
 FT4_TONE_COUNT: int = 4
-FT4_PERIOD: float = 6.0  # period duration (s)
+# T/R period (s). WSJT-X 2.1.0-rc3 (Apr 2019) briefly used 6.0 s, but this was
+# changed (NOT backward compatible) to 7.5 s shortly after, in 2.1.0-rc5/GA,
+# and 7.5 s has been the actual FT4 spec ever since -- confirmed against
+# WSJT-X's own Release_Notes.txt and against the 20.8333 baud symbol rate
+# above (FT4_SAMPLES_PER_SYM=576 already matches the *current* spec; only
+# this period value was still the old, obsolete 6.0 s one). This constant is
+# the single source of truth for the period -- scheduler.py, rx_capture.py,
+# ui/ft4_tab.py and ui/ft4_waterfall_dialog.py all import it rather than
+# hard-coding their own copy, which is exactly how the previous wrong value
+# went unnoticed for so long (GitHub Issue #16).
+FT4_PERIOD: float = 7.5
 FT4_TX_OFFSET: float = 0.5  # TX starts 0.5 s into the period
 FT4_TX_DURATION: float = FT4_SYMBOL_COUNT * FT4_SAMPLES_PER_SYM / SAMPLE_RATE  # ≈ 5.04 s
 

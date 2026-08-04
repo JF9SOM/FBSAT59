@@ -5,11 +5,11 @@ Renders the audio from recent RX periods as a time/frequency image so the
 user can visually confirm whether real FT4 tone patterns are present in
 the passband, independent of whether the decoder actually recognized any
 of them. This is a diagnostic aid, not WSJT-X's own continuous waterfall —
-it only redraws once per completed ~6s RX period (see
-Ft4Tab._on_capture_period) — but it does scroll across period boundaries
-like a real waterfall rather than replacing the whole image every period
-(that abrupt full-image swap every 6s was the original, confusing design;
-2026-07-06).
+it only redraws once per completed RX period (comms.ft4.codec.FT4_PERIOD
+seconds; see Ft4Tab._on_capture_period) — but it does scroll across
+period boundaries like a real waterfall rather than replacing the whole
+image every period (that abrupt full-image swap every period was the
+original, confusing design; 2026-07-06).
 
 Axis convention matches WSJT-X's own waterfall: frequency runs
 horizontally (low on the left). Time runs vertically, newest at the top —
@@ -31,7 +31,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QHideEvent, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QDialog, QLabel, QVBoxLayout, QWidget
 
-from comms.ft4.codec import SAMPLE_RATE, Ft4Message
+from comms.ft4.codec import FT4_PERIOD, SAMPLE_RATE, Ft4Message
 from i18n import _
 
 # Display-only STFT parameters. Deliberately independent from
@@ -45,7 +45,7 @@ _NFFT = 1024
 _HOP = 256
 
 # How many completed RX periods to keep scrolling through before the oldest
-# falls off the bottom (5 periods x 6s = 30s of history).
+# falls off the bottom (5 periods x FT4_PERIOD(7.5)s = 37.5s of history).
 _HISTORY_PERIODS = 5
 
 # Plot area (the spectrogram image itself, excluding axis margins)
@@ -62,9 +62,9 @@ _CANVAS_WIDTH = _MARGIN_LEFT + _PLOT_WIDTH + _MARGIN_RIGHT
 _CANVAS_HEIGHT = _MARGIN_TOP + _PLOT_HEIGHT + _MARGIN_BOTTOM
 
 _FREQ_TICK_STEP_HZ = 500.0
-# One gridline per RX period boundary (6s, 12s, 18s, ...) rather than every
-# second — this is a multi-period scroll now, not a single 0-6s period.
-_TIME_TICK_STEP_S = 6.0
+# One gridline per RX period boundary (FT4_PERIOD, 2*FT4_PERIOD, ...) rather
+# than every second — this is a multi-period scroll now, not a single period.
+_TIME_TICK_STEP_S = FT4_PERIOD
 
 # Simple black -> blue -> green -> yellow -> red palette, similar in spirit
 # to WSJT-X's own waterfall coloring.

@@ -1,15 +1,15 @@
-"""FT4 6-second period scheduler.
+"""FT4 period scheduler (7.5-second periods — see comms.ft4.codec.FT4_PERIOD).
 
-FT4 divides UTC time into interleaved 6-second slots:
-  even slots: floor(t/6) % 2 == 0  (0–6 s, 12–18 s, …)
-  odd  slots: floor(t/6) % 2 == 1  (6–12 s, 18–24 s, …)
+FT4 divides UTC time into interleaved FT4_PERIOD-second slots:
+  even slots: floor(t/FT4_PERIOD) % 2 == 0
+  odd  slots: floor(t/FT4_PERIOD) % 2 == 1
 
 `tx_even` only decides which slot parity *this station* is allowed to
 transmit in when TX Enable is on — it says nothing about who else is on
 the air. Other stations may be calling CQ or exchanging on either parity
 depending on who initiated their own QSO, so a station that is idle or
-just monitoring must decode every single 6-second slot, not only the
-slots it considers "RX". (Originally `rx_period_ended` fired only for the
+just monitoring must decode every single slot, not only the slots it
+considers "RX". (Originally `rx_period_ended` fired only for the
 non-TX-parity slot, silently discarding the other slot's audio every
 cycle — this is what caused only ~half of on-air FT4 activity to ever
 reach the decoder, see ui/ft4_tab.py, 2026-07-10.)
@@ -31,6 +31,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
+from comms.ft4.codec import FT4_PERIOD
 from comms.ft4.decode_log import get_ft4_decode_logger
 from core.clock_offset import corrected_time
 
@@ -63,7 +64,7 @@ class Ft4Scheduler(QObject):
     # ------------------------------------------------------------------ #
 
     def start(self, tx_even: bool = True) -> None:
-        """Start the scheduler.  tx_even=True: transmit in even 6-second slots."""
+        """Start the scheduler.  tx_even=True: transmit in even-parity slots."""
         self._tx_even = tx_even
         self._running = True
         self._prev_slot_num = -1
@@ -82,9 +83,9 @@ class Ft4Scheduler(QObject):
     def current_slot_info() -> tuple[bool, float]:
         """Return (is_even_slot, position_in_slot) for the current moment."""
         now = corrected_time()
-        slot_num = int(now / 6.0)
+        slot_num = int(now / FT4_PERIOD)
         is_even = slot_num % 2 == 0
-        pos = now % 6.0
+        pos = now % FT4_PERIOD
         return is_even, pos
 
     # ------------------------------------------------------------------ #
@@ -93,20 +94,20 @@ class Ft4Scheduler(QObject):
         if not self._running:
             return
         now = corrected_time()
-        slot_num = int(now / 6.0)
+        slot_num = int(now / FT4_PERIOD)
         is_even = slot_num % 2 == 0
         is_tx = is_even == self._tx_even
-        pos = now % 6.0
-        seconds_remaining = 6.0 - pos
+        pos = now % FT4_PERIOD
+        seconds_remaining = FT4_PERIOD - pos
 
         if self._prev_slot_num != slot_num and self._prev_slot_num >= 0:
             # `pos` is how far past the slot boundary we are at the moment
             # this transition was actually detected — should stay well
             # under 0.1s (the QTimer's own resolution) if nothing is
             # stalling the Qt event loop. A large value, or slots_missed > 0
-            # (an entire 6s slot skipped over between two consecutive
-            # ticks), reveals main-thread contention. This no longer affects
-            # RX audio timing (see module docstring) but is kept as a
+            # (an entire slot skipped over between two consecutive ticks),
+            # reveals main-thread contention. This no longer affects RX
+            # audio timing (see module docstring) but is kept as a
             # diagnostic to compare against Ft4RxCaptureWorker's own
             # boundary_lag in the same log (2026-07-10).
             slots_missed = slot_num - self._prev_slot_num - 1
