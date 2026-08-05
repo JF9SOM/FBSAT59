@@ -138,6 +138,7 @@ class SdrInstallDialog(QDialog):
         self._worker: _InstallWorker | None = None
         self._enum_thread: QThread | None = None
         self._enum_worker: _EnumWorker | None = None
+        self._zadig_btn: QPushButton | None = None
         self._setup_ui()
         # Delay initial enumerate by 300 ms so the dialog renders first and
         # the USB driver (especially libusbK / RTL-SDR on Windows) has time to
@@ -398,7 +399,13 @@ class SdrInstallDialog(QDialog):
 
         # Collect needed packages
         needed_modules = {d.soapy_module for d in devices if d.driver is None and d.soapy_module}
-        if SOAPY_AVAILABLE and not needed_modules:
+        # Windows deliberately never takes the "no action needed" shortcut:
+        # an RTL-SDR enumerates (and so reports driver="rtlsdr") even with no
+        # WinUSB driver applied, yet then fails at Connect.  Reporting "all
+        # drivers installed" there actively told users Zadig was unnecessary
+        # and hid the WinUSB steps below — the likely reason GitHub Issue #10
+        # ("device detected but Connect does nothing") went unresolved.
+        if SOAPY_AVAILABLE and not needed_modules and os_name != "Windows":
             self._action_label.setText(
                 "✅  " + _("All detected devices have drivers installed. No action needed.")
             )
@@ -455,8 +462,33 @@ class SdrInstallDialog(QDialog):
         elif os_name == "Windows":
             self._pending_cmd = []
             self._cmd_row.setText("")
+            # Name the actual devices found so the WinUSB step reads as
+            # something to do now, not as generic background reading.
+            winusb_found = sorted(
+                {
+                    d.display_name
+                    for d in devices
+                    if (d.driver or "").lower() in ("rtlsdr", "hackrf")
+                    or (d.soapy_module or "") in ("SoapyRTLSDR", "SoapyHackRF")
+                }
+            )
+            banner = ""
+            if winusb_found:
+                banner = (
+                    "⚠️  "
+                    + _(
+                        "Detected: {devices}\n"
+                        "This device needs the WinUSB driver (Zadig) before it can be\n"
+                        "used — even though it already appears in the list above.\n"
+                        "Listing a device only reads its USB descriptor; opening it for\n"
+                        "streaming does not work until WinUSB is applied.\n"
+                        "See the one-time setup steps below."
+                    ).format(devices=", ".join(winusb_found))
+                    + "\n\n"
+                )
             self._action_label.setText(
-                _(
+                banner
+                + _(
                     "Windows — Supported SDR Devices\n"
                     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                     "✅  RTL-SDR      — Supported  (WinUSB driver required → Zadig)\n"
@@ -471,13 +503,17 @@ class SdrInstallDialog(QDialog):
                     "(Airspy, Airspy HF+, ADALM-Pluto) are therefore not supported.\n\n"
                     "WinUSB Driver Setup — required once for BOTH RTL-SDR and HackRF:\n"
                     "  1. Plug in your device.\n"
-                    "  2. Click 'Open Zadig Website' below, download and run Zadig.\n"
+                    "  2. Download and run Zadig (or use the button below):\n"
+                    "       {zadig_url}\n"
                     "  3. In Zadig: Options → List All Devices, select your device\n"
                     "     (RTL-SDR: Bulk-In Interface 0 / HackRF: Hackrf One)\n"
                     "     → set driver to WinUSB → click Install Driver.\n"
                     "  ⚠️  Do NOT select libusbK — it causes device detection failures.\n"
+                    "  ℹ️  An RTL-SDR may show up as two entries in Device Manager\n"
+                    "     (both with a yellow '?'). Apply WinUSB to the RTL-SDR ones;\n"
+                    "     leave unrelated devices alone.\n"
                     "  4. Restart FBSAT59."
-                )
+                ).format(zadig_url=_ZADIG_URL)
             )
             self._install_btn.setVisible(False)
             self._add_windows_buttons()
@@ -493,10 +529,18 @@ class SdrInstallDialog(QDialog):
             self._install_btn.setVisible(False)
 
     def _add_windows_buttons(self) -> None:
-        """Add Zadig website button for WinUSB driver installation (RTL-SDR and HackRF)."""
+        """Add the Zadig website button for WinUSB driver setup (RTL-SDR / HackRF).
+
+        Created once and reused: _build_install_section() runs on every
+        Rescan, so appending unconditionally would stack a fresh duplicate
+        button into the status group each time.
+        """
+        if getattr(self, "_zadig_btn", None) is not None:
+            return
         zadig_btn = QPushButton(_("Open Zadig Website (WinUSB driver for RTL-SDR / HackRF)"))
         zadig_btn.clicked.connect(lambda: self._open_url(_ZADIG_URL))
         self._status_layout.addWidget(zadig_btn)
+        self._zadig_btn = zadig_btn
 
     # ------------------------------------------------------------------
     # Installation
