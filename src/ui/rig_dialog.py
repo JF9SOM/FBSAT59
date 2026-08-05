@@ -1049,8 +1049,16 @@ class _SdrSettingsPanel(QWidget):
         self._driver_label = QLabel("—")
         dev_form.addRow(_("Driver:"), self._driver_label)
 
+        # Serial is omitted entirely on Windows.  RTL-SDR and HackRF bypass
+        # SoapySDR::Device::make() there and talk to the DLL via ctypes, and
+        # the patched findRTLSDR used for the WinUSB fix reports a bare
+        # device_index=0 entry without querying the dongle — so this field is
+        # always blank on Windows.  A permanent "Serial: —" reads as a fault
+        # and has prompted users to report it as one.  The label object is
+        # still created so _on_device_selected() needs no platform guard.
         self._serial_label = QLabel("—")
-        dev_form.addRow(_("Serial:"), self._serial_label)
+        if sys.platform != "win32":
+            dev_form.addRow(_("Serial:"), self._serial_label)
 
         layout.addWidget(dev_group)
 

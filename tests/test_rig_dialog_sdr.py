@@ -157,3 +157,49 @@ def test_add_remote_host_dialog_result_entry(qtbot: QtBot) -> None:
         "driver_hint": "hackrf",
         "label": "Backyard Shed",
     }
+
+
+def _serial_row_labels(panel: rig_dialog._SdrSettingsPanel) -> list[str]:
+    """Return the form-row label texts of the panel's SDR Device group."""
+    from PySide6.QtWidgets import QFormLayout
+
+    texts: list[str] = []
+    for form in panel.findChildren(QFormLayout):
+        for row in range(form.rowCount()):
+            item = form.itemAt(row, QFormLayout.ItemRole.LabelRole)
+            widget = item.widget() if item is not None else None
+            if widget is not None:
+                texts.append(widget.text())
+    return texts
+
+
+def test_serial_row_shown_off_windows(qtbot: QtBot, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(rig_dialog, "SOAPY_AVAILABLE", True)
+    monkeypatch.setattr(
+        rig_dialog._SdrSettingsPanel, "_start_enumerate", lambda self, force=False: None
+    )
+    monkeypatch.setattr(rig_dialog.sys, "platform", "linux")
+    panel = rig_dialog._SdrSettingsPanel()
+    qtbot.addWidget(panel)
+    assert "Serial:" in _serial_row_labels(panel)
+
+
+def test_serial_row_hidden_on_windows(qtbot: QtBot, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Windows never populates Serial (ctypes bypass), so the row is omitted.
+
+    A permanently blank "Serial: —" there looked like a malfunction and was
+    reported as one by users.
+    """
+    monkeypatch.setattr(rig_dialog, "SOAPY_AVAILABLE", True)
+    monkeypatch.setattr(
+        rig_dialog._SdrSettingsPanel, "_start_enumerate", lambda self, force=False: None
+    )
+    monkeypatch.setattr(rig_dialog.sys, "platform", "win32")
+    panel = rig_dialog._SdrSettingsPanel()
+    qtbot.addWidget(panel)
+    labels = _serial_row_labels(panel)
+    assert "Serial:" not in labels
+    # Driver: must still be there — only Serial goes away.
+    assert "Driver:" in labels
+    # The label object still exists so _on_device_selected() needs no guard.
+    panel._on_device_selected(0)
