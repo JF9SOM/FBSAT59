@@ -3518,11 +3518,13 @@ class MainWindow(QMainWindow):
                 logger.debug("Rotator: previous cycle still running, skipping tick")
         elif self._rotator_controller is None or not self._rotator_controller.is_connected:
             self._radar_view.set_rotator_position(None, None)
+            self._dashboard_view._radar.set_rotator_position(None, None)
 
     def _on_rotator_pos_updated(self, rot_az: float, rot_el: float) -> None:
         """Update the radar rotator marker with the actual rotator position (UI thread)."""
         display_az = (rot_az - 180.0) % 360.0 if self._rotator_south_init else rot_az
         self._radar_view.set_rotator_position(display_az, rot_el)
+        self._dashboard_view._radar.set_rotator_position(display_az, rot_el)
 
     def _update_statusbar(self) -> None:
         """Update the QTH text and TLE last-updated timestamp in the status bar."""
