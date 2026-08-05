@@ -159,47 +159,79 @@ def test_add_remote_host_dialog_result_entry(qtbot: QtBot) -> None:
     }
 
 
-def _serial_row_labels(panel: rig_dialog._SdrSettingsPanel) -> list[str]:
-    """Return the form-row label texts of the panel's SDR Device group."""
-    from PySide6.QtWidgets import QFormLayout
-
-    texts: list[str] = []
-    for form in panel.findChildren(QFormLayout):
-        for row in range(form.rowCount()):
-            item = form.itemAt(row, QFormLayout.ItemRole.LabelRole)
-            widget = item.widget() if item is not None else None
-            if widget is not None:
-                texts.append(widget.text())
-    return texts
-
-
-def test_serial_row_shown_off_windows(qtbot: QtBot, monkeypatch: pytest.MonkeyPatch) -> None:
+def _make_panel(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch, platform: str
+) -> rig_dialog._SdrSettingsPanel:
+    """Build an _SdrSettingsPanel as if running on the given sys.platform."""
     monkeypatch.setattr(rig_dialog, "SOAPY_AVAILABLE", True)
     monkeypatch.setattr(
         rig_dialog._SdrSettingsPanel, "_start_enumerate", lambda self, force=False: None
     )
-    monkeypatch.setattr(rig_dialog.sys, "platform", "linux")
+    monkeypatch.setattr(rig_dialog.sys, "platform", platform)
     panel = rig_dialog._SdrSettingsPanel()
     qtbot.addWidget(panel)
-    assert "Serial:" in _serial_row_labels(panel)
+    return panel
 
 
-def test_serial_row_hidden_on_windows(qtbot: QtBot, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Windows never populates Serial (ctypes bypass), so the row is omitted.
+def _serial_row_visible(panel: rig_dialog._SdrSettingsPanel) -> bool:
+    """Whether the Serial form row is currently set visible.
+
+    Reads the layout's own row-visibility flag rather than the widget's
+    isVisible(), which is always False for a panel that is never shown.
+    """
+    return bool(panel._dev_form.isRowVisible(panel._serial_label))
+
+
+def test_serial_row_always_shown_off_windows(qtbot: QtBot, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Non-Windows keeps the previous behaviour: the row is always present."""
+    panel = _make_panel(qtbot, monkeypatch, "linux")
+    assert _serial_row_visible(panel)
+
+    panel._devices = [SdrDeviceInfo(driver="rtlsdr", label="RTL", serial="", hardware="")]
+    panel._on_device_selected(0)
+    assert _serial_row_visible(panel)
+    assert panel._serial_label.text() == "—"
+
+
+def test_serial_row_hidden_on_windows_without_serial(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows RTL-SDR/HackRF report no serial (ctypes bypass) — hide the row.
 
     A permanently blank "Serial: —" there looked like a malfunction and was
     reported as one by users.
     """
-    monkeypatch.setattr(rig_dialog, "SOAPY_AVAILABLE", True)
-    monkeypatch.setattr(
-        rig_dialog._SdrSettingsPanel, "_start_enumerate", lambda self, force=False: None
-    )
-    monkeypatch.setattr(rig_dialog.sys, "platform", "win32")
-    panel = rig_dialog._SdrSettingsPanel()
-    qtbot.addWidget(panel)
-    labels = _serial_row_labels(panel)
-    assert "Serial:" not in labels
-    # Driver: must still be there — only Serial goes away.
-    assert "Driver:" in labels
-    # The label object still exists so _on_device_selected() needs no guard.
+    panel = _make_panel(qtbot, monkeypatch, "win32")
+    assert not _serial_row_visible(panel)
+
+    panel._devices = [SdrDeviceInfo(driver="rtlsdr", label="RTL", serial="", hardware="")]
     panel._on_device_selected(0)
+    assert not _serial_row_visible(panel)
+
+
+def test_serial_row_shown_on_windows_for_remote_device(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A SoapyRemote device forwards the server's serial, so show it."""
+    panel = _make_panel(qtbot, monkeypatch, "win32")
+    panel._devices = [
+        SdrDeviceInfo(driver="remote", label="Shed SDR", serial="00000001", hardware="")
+    ]
+    panel._on_device_selected(0)
+    assert _serial_row_visible(panel)
+    assert panel._serial_label.text() == "00000001"
+
+
+def test_serial_row_rehidden_on_windows_when_switching_devices(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Selecting a serial-less device after a remote one hides the row again."""
+    panel = _make_panel(qtbot, monkeypatch, "win32")
+    panel._devices = [
+        SdrDeviceInfo(driver="remote", label="Shed SDR", serial="00000001", hardware=""),
+        SdrDeviceInfo(driver="rtlsdr", label="RTL", serial="", hardware=""),
+    ]
+    panel._on_device_selected(0)
+    assert _serial_row_visible(panel)
+    panel._on_device_selected(1)
+    assert not _serial_row_visible(panel)

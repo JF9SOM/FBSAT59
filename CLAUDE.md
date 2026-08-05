@@ -927,15 +927,21 @@ sudo usermod -aG dialout $USER
   - **Bias-T ON/OFF チェックボックス**（ドライバ別キー自動選択: HackRF=`bias_tx`/`"true"`, RTL-SDR=`biastee`/`"1"`）
   - Rig 1 / Rig 2 割り当てラジオボタン（割り当てたスロットの Hamlib タブを自動グレーアウト）
   - Hamlib バージョン表示は Rig 1/2 タブのみ（SDR タブには非表示）
-  - **「Serial:」行は Windows では表示しない**（2026-08-05）— Windows の RTL-SDR/HackRF は
-    `SoapySDR::Device::make()` をバイパスして ctypes で DLL を直接叩くうえ、WinUSB 対応で
-    パッチした `findRTLSDR` は実機に問い合わせず `device_index=0` のエントリを返すだけなので
-    （`_win_filter_rtlsdr_by_count()` の docstring 参照）、この欄は常に空になる。
-    「Serial: —」が固定表示されるのを故障と誤解したユーザーからの問い合わせが実際にあったため、
-    `sys.platform == "win32"` では `dev_form.addRow()` 自体を行わない。`self._serial_label`
-    オブジェクト自体は生成しておき、`_on_device_selected()` 側にプラットフォーム分岐を
-    増やさずに済ませている。テストは `tests/test_rig_dialog_sdr.py`（`sys.platform` を
-    monkeypatch して両方の分岐を検証）
+  - **「Serial:」行は Windows では「実際にシリアルがある場合のみ」表示**（2026-08-05）—
+    Windows の RTL-SDR/HackRF は `SoapySDR::Device::make()` をバイパスして ctypes で DLL を
+    直接叩くうえ、WinUSB 対応でパッチした `findRTLSDR` は実機に問い合わせず `device_index=0`
+    のエントリを返すだけなので（`_win_filter_rtlsdr_by_count()` の docstring 参照）、この欄は
+    空になる。「Serial: —」が固定表示されるのを故障と誤解したユーザーからの問い合わせが
+    実際にあった。
+    一方、**SoapyRemote 経由のリモートSDRだけは例外**で、サーバー側から転送された実際の
+    シリアルが入る（この経路は ctypes バイパスを通らない）。そのため「Windowsなら一律非表示」
+    ではなく、`_update_serial_row(serial)` が `QFormLayout.setRowVisible()`（Qt 6.4+、
+    本プロジェクトは PySide6>=6.6 要件のため使用可）で**値が実際に入っているかどうか**を
+    基準に出し分ける。ドライバー名では判定していない。Windows 以外は従来通り常に表示（空なら
+    「—」）。テストは `tests/test_rig_dialog_sdr.py`（`sys.platform` を monkeypatch し、
+    Linux／Windows×シリアル有無／デバイス切替時の再非表示の4パターンを検証。ウィジェットの
+    `isVisible()` は表示していないパネルでは常に `False` を返すため、レイアウト側の
+    `isRowVisible()` で判定していることに注意）
 - **SDR Control タブ**（常時表示・SDR未接続時はパネルをグレーアウト）
   - スペクトラムアナライザ（QtCharts、10fps）— 中心周波数は赤い縦線マーカーで表示
     （`center_freq_changed` Signal）。**チャート上部にあった「RX:」周波数ラベルは

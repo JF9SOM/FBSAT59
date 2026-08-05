@@ -1011,7 +1011,7 @@ class _SdrSettingsPanel(QWidget):
 
         # -- Device selection row --
         dev_group = QGroupBox(_("SDR Device"))
-        dev_form = QFormLayout(dev_group)
+        dev_form = self._dev_form = QFormLayout(dev_group)
 
         dev_row = QHBoxLayout()
         self._dev_combo = QComboBox()
@@ -1049,16 +1049,11 @@ class _SdrSettingsPanel(QWidget):
         self._driver_label = QLabel("—")
         dev_form.addRow(_("Driver:"), self._driver_label)
 
-        # Serial is omitted entirely on Windows.  RTL-SDR and HackRF bypass
-        # SoapySDR::Device::make() there and talk to the DLL via ctypes, and
-        # the patched findRTLSDR used for the WinUSB fix reports a bare
-        # device_index=0 entry without querying the dongle — so this field is
-        # always blank on Windows.  A permanent "Serial: —" reads as a fault
-        # and has prompted users to report it as one.  The label object is
-        # still created so _on_device_selected() needs no platform guard.
         self._serial_label = QLabel("—")
-        if sys.platform != "win32":
-            dev_form.addRow(_("Serial:"), self._serial_label)
+        dev_form.addRow(_("Serial:"), self._serial_label)
+        # On Windows the row starts hidden and is revealed only for devices
+        # that actually report a serial — see _update_serial_row().
+        self._update_serial_row("")
 
         layout.addWidget(dev_group)
 
@@ -1199,10 +1194,29 @@ class _SdrSettingsPanel(QWidget):
         if not self._devices:
             self._driver_label.setText("—")
             self._serial_label.setText("—")
+            self._update_serial_row("")
             if hasattr(self, "_remove_remote_btn"):
                 self._remove_remote_btn.setEnabled(False)
         else:
             self._on_device_selected(0)
+
+    def _update_serial_row(self, serial: str) -> None:
+        """Show or hide the Serial row for the selected device (Windows only).
+
+        Windows RTL-SDR and HackRF bypass SoapySDR::Device::make() and drive
+        the DLL through ctypes, and the patched findRTLSDR behind the WinUSB
+        fix returns a bare device_index=0 entry without querying the dongle
+        (see SdrDevice._win_filter_rtlsdr_by_count), so no serial ever
+        reaches SdrDeviceInfo.  The resulting permanent "Serial: —" reads as
+        a malfunction and has been reported as one.  A SoapyRemote device
+        does carry the serial forwarded from the server, though, so key the
+        row on whether a value actually arrived rather than on the driver.
+
+        Other platforms always show the row, blank or not, as before.
+        """
+        if sys.platform != "win32":
+            return
+        self._dev_form.setRowVisible(self._serial_label, bool(serial))
 
     def _on_device_selected(self, idx: int) -> None:
         if not self._devices or idx < 0 or idx >= len(self._devices):
@@ -1210,6 +1224,7 @@ class _SdrSettingsPanel(QWidget):
         d = self._devices[idx]
         self._driver_label.setText(d.driver or "—")
         self._serial_label.setText(d.serial or "—")
+        self._update_serial_row(d.serial or "")
         if hasattr(self, "_remove_remote_btn"):
             is_saved_remote = any(
                 self._remote_host_info(h).args == d.args for h in self._remote_hosts
