@@ -28,7 +28,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 from PySide6.QtCore import QObject, Qt, Signal, Slot
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -69,6 +69,11 @@ _COL_DT = 2
 _COL_FREQ = 3
 _COL_MSG = 4
 _COL_COUNT = 5
+
+# Distinct from Qt.GlobalColor.yellow (used for decoded messages addressed to
+# us) so an operator can tell "this is what I sent" apart from "this is what
+# I was decoded to have received" at a glance (GitHub Issue #16).
+_OWN_TX_ROW_COLOR = QColor("#4fc3f7")
 
 _GRID_RE = re.compile(r"^[A-R]{2}[0-9]{2}$")
 
@@ -302,6 +307,18 @@ class Ft4Tab(QWidget):
         self._waterfall_dialog: Ft4WaterfallDialog | None = None
         self._decode_busy: bool = False
         self._decode_thread: threading.Thread | None = None
+        # Set (by _transmit_now(), on the Qt main thread) when we actually
+        # start transmitting in what will become "the current period" from
+        # Ft4RxCaptureWorker's point of view; consumed by _on_capture_period()
+        # (background thread) when that same period's audio arrives one
+        # period later. GitHub Issue #16: audio captured during our own TX
+        # window is unreliable regardless of the physical cause (soundcard
+        # TX/RX crosstalk, RF self-reception via the transponder, etc.) and
+        # was producing corrupted decodes like "CQ EI4GNB -16" -- skip
+        # decoding it rather than trying to explain away every possible
+        # contamination path.
+        self._tx_this_period_lock = threading.Lock()
+        self._tx_this_period: bool = False
 
         self._my_call: str = ""
         self._my_grid: str = ""
@@ -923,6 +940,23 @@ class Ft4Tab(QWidget):
         of a period and this thread must stay free to keep waking up
         exactly on time for the next period (2026-07-10).
         """
+        with self._tx_this_period_lock:
+            was_tx_period = self._tx_this_period
+            self._tx_this_period = False
+        if was_tx_period:
+            # GitHub Issue #16: this period's audio covers a window during
+            # which we ourselves were transmitting -- reporter evidence
+            # (a passive WSJT-X instance decoding nothing on the same Main
+            # VFO audio during our TX) argues against genuine transponder
+            # self-reception, pointing instead at TX/RX crosstalk somewhere
+            # in the local audio path. Either way this audio isn't a signal
+            # worth decoding, so skip it outright (waterfall still updates,
+            # same as the other skip cases below).
+            get_ft4_decode_logger().info(
+                "decode SKIPPED (own TX period) audio_len=%.2fs", len(audio) / SAMPLE_RATE
+            )
+            self.period_skipped.emit(audio)
+            return
         if not self._codec.decode_available:
             self.period_skipped.emit(audio)
             return
@@ -988,6 +1022,8 @@ class Ft4Tab(QWidget):
             return
 
         self._display_own_tx(msg, audio_freq)
+        with self._tx_this_period_lock:
+            self._tx_this_period = True
 
         # TX audio is synthesized at full scale (±1.0); _TxWorker applies the
         # TX Level slider's gain live, block by block, so operators can trim
@@ -1025,6 +1061,10 @@ class Ft4Tab(QWidget):
 
         dB/DT have no meaning for our own transmission (nothing was decoded),
         so they show "N/A"; Freq shows the actual audio tone frequency used.
+        This is the only row _on_capture_period() will add for this period —
+        it skips decoding this period's captured audio entirely (see the
+        "own TX period" branch there), so this row can't be duplicated or
+        contradicted by a (possibly corrupted) decode of our own TX window.
         """
         utc_str = datetime.now(UTC).strftime("%H%M")
         row = self._table.rowCount()
@@ -1037,7 +1077,7 @@ class Ft4Tab(QWidget):
         for c in range(_COL_COUNT):
             item = self._table.item(row, c)
             if item is not None:
-                item.setBackground(Qt.GlobalColor.yellow)
+                item.setBackground(_OWN_TX_ROW_COLOR)
         self._table.scrollToBottom()
 
     def _display_decoded(self, messages: list[Ft4Message]) -> None:
