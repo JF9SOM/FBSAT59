@@ -166,7 +166,6 @@ class SdrControlWidget(QWidget):
                 self._manual_freq_spin.blockSignals(False)
         else:
             self._status_label.setText(_("SDR Disconnected"))
-            self._freq_overlay.setText("—")
             self._stop_audio()
             self._stop_recording()
             self._stop_audio_recording()
@@ -356,21 +355,9 @@ class SdrControlWidget(QWidget):
             False,
         )
 
-        # Centre-frequency display row — shown above the chart with dark
-        # styling to blend visually with the spectrum background.
-        freq_row = QHBoxLayout()
-        freq_row.addStretch()
-        freq_lbl = QLabel(_("RX:"))
-        freq_lbl.setStyleSheet("color: #aaaaaa; font-size: 12px;")
-        self._freq_overlay = QLabel("—")
-        self._freq_overlay.setStyleSheet(
-            "color: black;font-size: 13px;font-weight: bold;font-family: monospace;"
-        )
-        freq_row.addWidget(freq_lbl)
-        freq_row.addWidget(self._freq_overlay)
-        freq_row.addStretch()
-        v.addLayout(freq_row)
-
+        # No centre-frequency label here: the Passband Tune "Freq:" field
+        # already shows the same live value (both were driven by the same
+        # _on_center_freq() tick), and the tab is short on vertical space.
         v.addWidget(chart_view)
         return grp
 
@@ -698,7 +685,7 @@ class SdrControlWidget(QWidget):
 
     @Slot(float)
     def _on_center_freq(self, freq_hz: float) -> None:
-        """Update the centre-frequency overlay label and the manual tune field.
+        """Update the spectrum centre marker and the manual tune field.
 
         Keeps _manual_freq_spin showing the SDR's actual live frequency
         instead of whatever value it was last set to — it previously only
@@ -710,7 +697,6 @@ class SdrControlWidget(QWidget):
         (GitHub Issue #12 follow-up).
         """
         mhz = freq_hz / 1e6
-        self._freq_overlay.setText(f"{mhz:.6f} MHz")
         self._center_marker_series.replace(
             [QPointF(mhz, _SPECTRUM_YMIN), QPointF(mhz, _SPECTRUM_YMAX)]
         )
