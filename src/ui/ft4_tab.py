@@ -551,10 +551,16 @@ class Ft4Tab(QWidget):
         self._tx_level_slider.setFixedWidth(80)
         self._tx_level_slider.setToolTip(
             _(
-                "TX audio output level (% of full scale).\n"
+                # "(percentage of" rather than "(% of", and no "100% here":
+                # xgettext reads "% o"/"% h" as printf directives and marks
+                # the whole string python-format, which then makes msgfmt
+                # --check reject any translation whose own "%" is followed by
+                # something that is not a conversion specifier. A "%" ending
+                # a sentence ("100%.") is not misread, so it can stay.
+                "TX audio output level (percentage of full scale).\n"
                 "Lower this if the rig's ALC is triggered or the transmit\n"
                 "audio sounds distorted — FT4 audio is generated at full\n"
-                "scale and some rigs/sound cards need well under 100% here."
+                "scale and some rigs/sound cards need well under 100%."
             )
         )
         self._tx_level_label = QLabel(f"{int(self._tx_level_pct)}%")

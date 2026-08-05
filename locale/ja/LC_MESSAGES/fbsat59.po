@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-05 20:41+0900\n"
+"POT-Creation-Date: 2026-08-05 20:56+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -22,8 +22,8 @@ msgid ""
 "Input device #{device} no longer exists (device list now has {count} "
 "entries) — reopen Rig Settings > Sound Card and re-select the input device."
 msgstr ""
-"入力デバイス #{device} が見つかりません（現在のデバイス数: {count}）— Rig Settings > Sound Card "
-"を開き、入力デバイスを選び直してください。"
+"入力デバイス #{device} が見つかりません（現在のデバイス数: {count}）— Rig "
+"Settings > Sound Card を開き、入力デバイスを選び直してください。"
 
 #: src/comms/audio_device_manager.py:211
 #, python-brace-format
@@ -31,8 +31,8 @@ msgid ""
 "Input device #{device} ({name}) has no input channels — reopen Rig Settings "
 "> Sound Card and re-select the input device."
 msgstr ""
-"入力デバイス #{device}（{name}）には入力チャンネルがありません — Rig Settings > Sound Card "
-"を開き、入力デバイスを選び直してください。"
+"入力デバイス #{device}（{name}）には入力チャンネルがありません — Rig "
+"Settings > Sound Card を開き、入力デバイスを選び直してください。"
 
 #: src/comms/audio_device_manager.py:253
 #, python-brace-format
@@ -40,23 +40,23 @@ msgid ""
 "Output device #{device} no longer exists (device list now has {count} "
 "entries) — reopen Rig Settings > Sound Card and re-select the output device."
 msgstr ""
-"出力デバイス #{device} が見つかりません（現在のデバイス数: {count}）— Rig Settings > Sound Card "
-"を開き、出力デバイスを選び直してください。"
+"出力デバイス #{device} が見つかりません（現在のデバイス数: {count}）— Rig "
+"Settings > Sound Card を開き、出力デバイスを選び直してください。"
 
 #: src/comms/audio_device_manager.py:263
 #, python-brace-format
 msgid ""
-"Output device #{device} ({name}) cannot play audio at {rate} Hz — reopen Rig"
-" Settings > Sound Card and re-select the output device."
+"Output device #{device} ({name}) cannot play audio at {rate} Hz — reopen Rig "
+"Settings > Sound Card and re-select the output device."
 msgstr ""
-"出力デバイス #{device}（{name}）は {rate} Hz で再生できません — Rig Settings > Sound Card "
-"を開き、出力デバイスを選び直してください。"
+"出力デバイス #{device}（{name}）は {rate} Hz で再生できません — Rig Settings "
+"> Sound Card を開き、出力デバイスを選び直してください。"
 
-#: src/ui/ax100_digi_tab.py:117 src/ui/q65_tab.py:810 src/ui/ft4_tab.py:148
+#: src/ui/ax100_digi_tab.py:117 src/ui/q65_tab.py:814 src/ui/ft4_tab.py:148
 msgid "another tab"
 msgstr "別のタブ"
 
-#: src/ui/ax100_digi_tab.py:118 src/ui/q65_tab.py:812 src/ui/ft4_tab.py:149
+#: src/ui/ax100_digi_tab.py:118 src/ui/q65_tab.py:816 src/ui/ft4_tab.py:149
 #, python-brace-format
 msgid "Sound card output is in use by {other}"
 msgstr "サウンドカード出力は{other}が使用中です"
@@ -81,7 +81,9 @@ msgid ""
 "to silently ignore transmitted frames even if the signal itself decodes "
 "cleanly."
 msgstr ""
-"これらは衛星上の宛先「ノード」と「サービス」を識別する値で、IPアドレス＋ポートに似た概念です。値が実際の衛星と一致していない場合、信号自体は正しく復号できても、衛星側が送信フレームを黙って無視することがあります。"
+"これらは衛星上の宛先「ノード」と「サービス」を識別する値で、IPアドレス＋ポー"
+"トに似た概念です。値が実際の衛星と一致していない場合、信号自体は正しく復号で"
+"きても、衛星側が送信フレームを黙って無視することがあります。"
 
 #: src/ui/ax100_digi_tab.py:182
 msgid "Priority:"
@@ -107,8 +109,7 @@ msgstr "送信元ポート:"
 msgid "Off"
 msgstr "オフ"
 
-#: src/ui/ax100_digi_tab.py:405 src/ui/rig_dialog.py:1662
-#: src/ui/ft4_tab.py:900
+#: src/ui/ax100_digi_tab.py:405 src/ui/rig_dialog.py:1662 src/ui/ft4_tab.py:906
 #, python-brace-format
 msgid "{db:.0f} dBFS"
 msgstr "{db:.0f} dBFS"
@@ -125,8 +126,9 @@ msgid ""
 "is currently out of service. Set the rig to SSB mode on 145.875 MHz."
 msgstr ""
 "AX100「ASM+Golay」デジピーター — GMSK 1200 baud、Golay(24,12) + Reed-"
-"Solomon(255,223)、CSPトランスポート。プロトコルはGreenCube (IO-117)と互換ですが、本タブはMARMOTSat専用です"
-" — GreenCubeの地上局は現在運用停止中です。リグを145.875MHzでSSBモードに設定してください。"
+"Solomon(255,223)、CSPトランスポート。プロトコルはGreenCube (IO-117)と互換です"
+"が、本タブはMARMOTSat専用です — GreenCubeの地上局は現在運用停止中です。リグを"
+"145.875MHzでSSBモードに設定してください。"
 
 #: src/ui/ax100_digi_tab.py:438
 msgid "Input/Output:"
@@ -152,18 +154,20 @@ msgstr "スケルチ:"
 msgid ""
 "Minimum input level required before a frame decode is attempted. Left = off "
 "(process everything, the default — a real signal is never rejected). Raise "
-"it only after watching the log fill with garbage on an idle frequency, using"
-" that as a guide for the noise floor; setting it too high can block a real, "
+"it only after watching the log fill with garbage on an idle frequency, using "
+"that as a guide for the noise floor; setting it too high can block a real, "
 "weak signal."
 msgstr ""
-"フレームデコードを試みるために必要な最小入力レベルです。左端＝オフ（全て処理する、デフォルト — "
-"実信号を誤って弾くことはありません）。何もない周波数でログにノイズが溜まるのを見てから、そのノイズフロアを目安に引き上げてください。高くしすぎると弱い実信号までブロックする可能性があります。"
+"フレームデコードを試みるために必要な最小入力レベルです。左端＝オフ（全て処理"
+"する、デフォルト — 実信号を誤って弾くことはありません）。何もない周波数でログ"
+"にノイズが溜まるのを見てから、そのノイズフロアを目安に引き上げてください。高"
+"くしすぎると弱い実信号までブロックする可能性があります。"
 
 #: src/ui/ax100_digi_tab.py:480 src/ui/telemetry_tab.py:237
 msgid "Export CSV…"
 msgstr "CSVエクスポート…"
 
-#: src/ui/ax100_digi_tab.py:484 src/ui/q65_tab.py:333 src/ui/ft4_tab.py:575
+#: src/ui/ax100_digi_tab.py:484 src/ui/q65_tab.py:337 src/ui/ft4_tab.py:581
 #: src/ui/aprs_tab.py:347
 msgid "Export ADIF…"
 msgstr "ADIFエクスポート"
@@ -186,7 +190,7 @@ msgid "Sat"
 msgstr "衛星"
 
 #: src/ui/ax100_digi_tab.py:495 src/ui/ax100_digi_tab.py:828
-#: src/ui/q65_tab.py:348 src/ui/ft4_tab.py:590
+#: src/ui/q65_tab.py:352 src/ui/ft4_tab.py:596
 msgid "Message"
 msgstr "メッセージ"
 
@@ -245,7 +249,9 @@ msgstr "CSP設定..."
 msgid ""
 "CSP addressing used for outgoing frames is not yet confirmed against a real "
 "satellite — see comms/ax100digi/tx.py."
-msgstr "送信フレームのCSPアドレス指定は実際の衛星での確認が取れていません — comms/ax100digi/tx.py を参照してください。"
+msgstr ""
+"送信フレームのCSPアドレス指定は実際の衛星での確認が取れていません — comms/"
+"ax100digi/tx.py を参照してください。"
 
 #: src/ui/ax100_digi_tab.py:573 src/ui/pass_chart.py:428
 #: src/ui/pass_chart.py:747 src/ui/telemetry_tab.py:220
@@ -258,11 +264,12 @@ msgid "Time (Local)"
 msgstr "時刻 (Local)"
 
 #: src/ui/ax100_digi_tab.py:635 src/ui/radio_control_widget.py:1069
-#: src/ui/ft4_tab.py:858 src/ui/cw_tab.py:377
+#: src/ui/ft4_tab.py:864 src/ui/cw_tab.py:377
 msgid "Sound Card not configured — open Rig Settings > Sound Card"
-msgstr "サウンドカードが未設定です — Rig Settings > Sound Card を開いてください"
+msgstr ""
+"サウンドカードが未設定です — Rig Settings > Sound Card を開いてください"
 
-#: src/ui/ax100_digi_tab.py:641 src/ui/sstv_tab.py:426 src/ui/ft4_tab.py:854
+#: src/ui/ax100_digi_tab.py:641 src/ui/sstv_tab.py:426 src/ui/ft4_tab.py:860
 #: src/ui/cw_tab.py:373
 msgid "sounddevice not installed — pip install sounddevice"
 msgstr "sounddeviceがインストールされていません — pip install sounddevice"
@@ -308,7 +315,7 @@ msgstr "送信するには入出力を無線機サウンドカードに切り替
 msgid "Rig 1 not connected"
 msgstr "Rig 1未接続"
 
-#: src/ui/ax100_digi_tab.py:794 src/ui/ft4_tab.py:1043
+#: src/ui/ax100_digi_tab.py:794 src/ui/ft4_tab.py:1049
 msgid "TX: "
 msgstr "TX: "
 
@@ -316,7 +323,7 @@ msgstr "TX: "
 msgid "TX done"
 msgstr "送信完了"
 
-#: src/ui/ax100_digi_tab.py:806 src/ui/ft4_tab.py:1053
+#: src/ui/ax100_digi_tab.py:806 src/ui/ft4_tab.py:1059
 msgid "TX error: "
 msgstr "TXエラー: "
 
@@ -462,7 +469,9 @@ msgstr "SatNOGSインポート"
 #: src/ui/transmitter_dialog.py:320
 #, python-brace-format
 msgid "Imported {n} transmitter(s) for NORAD {norad} from SatNOGS ID {src}."
-msgstr "NORAD {norad} 用に SatNOGS ID {src} から {n} 件のトランスミッターをインポートしました。"
+msgstr ""
+"NORAD {norad} 用に SatNOGS ID {src} から {n} 件のトランスミッターをインポート"
+"しました。"
 
 #: src/ui/settings_dialog.py:173 src/ui/main_window.py:903
 msgid "General Settings"
@@ -580,7 +589,9 @@ msgstr "最後のグループを削除"
 #: src/ui/settings_dialog.py:456
 msgid ""
 "Note: removing a group unassigns all satellites currently in that group."
-msgstr "注意: グループを削除すると、そのグループに現在割り当てられている全衛星の割り当てが解除されます。"
+msgstr ""
+"注意: グループを削除すると、そのグループに現在割り当てられている全衛星の割り"
+"当てが解除されます。"
 
 #: src/ui/settings_dialog.py:500
 msgid "Remove Group"
@@ -589,7 +600,8 @@ msgstr "グループを削除"
 #: src/ui/settings_dialog.py:501
 #, python-brace-format
 msgid "Remove group '{name}'? Satellites in this group will be unassigned."
-msgstr "グループ「{name}」を削除しますか？ このグループの衛星は割り当て解除されます。"
+msgstr ""
+"グループ「{name}」を削除しますか？ このグループの衛星は割り当て解除されます。"
 
 #: src/ui/settings_dialog.py:547
 msgid "AOS Notifications"
@@ -652,7 +664,8 @@ msgid ""
 "log-relay tools such as wavelog-gate and JT-Linker. Host may be\n"
 "a LAN address, not just this machine (127.0.0.1)."
 msgstr ""
-"記録された各QSO（FT4・Q65・確認済みAPRS交信）ごとに、指定したホスト/ポートへ\n"
+"記録された各QSO（FT4・Q65・確認済みAPRS交信）ごとに、指定したホスト/ポート"
+"へ\n"
 "ADIFレコードを1件送信します。wavelog-gate・JT-Linkerのような軽量な\n"
 "ログ中継ツールと互換性があります。ホストはこのマシン（127.0.0.1）に限らず、\n"
 "LAN内の別アドレスも指定できます。"
@@ -747,12 +760,14 @@ msgstr "1ステップ下げる"
 #: src/ui/sdr_control_widget.py:434
 msgid ""
 "Freq: while a transponder is selected, tracks its Doppler-corrected centre "
-"frequency — use the arrows or type a value to move within its passband (kept"
-" regardless of SDR Lock state). With no transponder selected, tune the SDR "
-"to any frequency directly."
+"frequency — use the arrows or type a value to move within its passband (kept "
+"regardless of SDR Lock state). With no transponder selected, tune the SDR to "
+"any frequency directly."
 msgstr ""
-"Freq: トランスポンダー選択中は、そのドップラー補正済み中心周波数を表示します — 矢印ボタンまたは直接入力でパスバンド内を移動できます（SDR "
-"Lockの状態に関わらず維持されます）。トランスポンダー未選択時は、SDRを任意の周波数に直接チューニングできます。"
+"Freq: トランスポンダー選択中は、そのドップラー補正済み中心周波数を表示します "
+"— 矢印ボタンまたは直接入力でパスバンド内を移動できます（SDR Lockの状態に関わ"
+"らず維持されます）。トランスポンダー未選択時は、SDRを任意の周波数に直接チュー"
+"ニングできます。"
 
 #: src/ui/sdr_control_widget.py:440
 msgid "Freq:"
@@ -774,7 +789,9 @@ msgstr ""
 msgid ""
 "T: reset to the transponder's Doppler-corrected centre frequency. Disabled "
 "when no transponder is selected."
-msgstr "T: トランスポンダーのドップラー補正済み中心周波数に戻します。トランスポンダー未選択時は押せません。"
+msgstr ""
+"T: トランスポンダーのドップラー補正済み中心周波数に戻します。トランスポンダー"
+"未選択時は押せません。"
 
 #: src/ui/sdr_control_widget.py:484 src/ui/radio_control_widget.py:185
 msgid "L"
@@ -786,8 +803,9 @@ msgid ""
 "freely use Passband Tune / Freq above; Doppler correction resumes from "
 "wherever you leave it once turned off"
 msgstr ""
-"SDR Lock: ONの間はドップラー補正によるSDRの再チューニングを停止するため、上のPassband "
-"Tune／Freqを自由に使えます。OFFにすると、その時点の周波数からドップラー補正を再開します。"
+"SDR Lock: ONの間はドップラー補正によるSDRの再チューニングを停止するため、上の"
+"Passband Tune／Freqを自由に使えます。OFFにすると、その時点の周波数からドップ"
+"ラー補正を再開します。"
 
 #: src/ui/sdr_control_widget.py:555
 msgid "Demodulator"
@@ -860,8 +878,8 @@ msgstr "ファイルマネージャーでIQ録音フォルダを開く"
 msgid "SatDump Log"
 msgstr "SatDumpログ"
 
-#: src/ui/meteor_tab.py:129 src/ui/q65_tab.py:363 src/ui/ft4_tab.py:566
-#: src/ui/ft4_tab.py:605 src/ui/cw_tab.py:182
+#: src/ui/meteor_tab.py:129 src/ui/q65_tab.py:367 src/ui/ft4_tab.py:572
+#: src/ui/ft4_tab.py:611 src/ui/cw_tab.py:182
 msgid "Clear"
 msgstr "クリア"
 
@@ -929,11 +947,15 @@ msgstr "受信画像:"
 msgid ""
 "⚠  SatDump is not installed.  Go to Help > SatDump… for installation "
 "instructions."
-msgstr "⚠  SatDumpがインストールされていません。インストール手順はHelp > SatDump… を参照してください。"
+msgstr ""
+"⚠  SatDumpがインストールされていません。インストール手順はHelp > SatDump… を"
+"参照してください。"
 
 #: src/ui/meteor_tab.py:389
 msgid "⚠  No SDR configured.  Open Radio > Rig Settings > SDR Settings."
-msgstr "⚠  SDRが設定されていません。Radio > Rig Settings > SDR Settings を開いてください。"
+msgstr ""
+"⚠  SDRが設定されていません。Radio > Rig Settings > SDR Settings を開いてくだ"
+"さい。"
 
 #: src/ui/meteor_tab.py:396
 #, python-brace-format
@@ -1023,7 +1045,8 @@ msgid ""
 "No ft8lib package found for this platform in the release.\n"
 "Please build ft8_lib manually — see the instructions above."
 msgstr ""
-"このリリースには本プラットフォーム向けのft8libパッケージが見つかりませんでした。\n"
+"このリリースには本プラットフォーム向けのft8libパッケージが見つかりませんでし"
+"た。\n"
 "上記の手順に従い、ft8_libを手動でビルドしてください。"
 
 #: src/ui/ft8lib_dialog.py:170 src/ui/direwolf_dialog.py:156
@@ -1035,10 +1058,12 @@ msgstr "インストール中…"
 #, python-brace-format
 msgid ""
 "Permission denied: {path}\n"
-"The library file is in use — close the FT4 tab (if open) and restart FBSAT59, then try installing again."
+"The library file is in use — close the FT4 tab (if open) and restart "
+"FBSAT59, then try installing again."
 msgstr ""
 "アクセス拒否: {path}\n"
-"ライブラリファイルが使用中です — FT4タブを閉じ（開いている場合）、FBSAT59を再起動してから再度インストールをお試しください。"
+"ライブラリファイルが使用中です — FT4タブを閉じ（開いている場合）、FBSAT59を再"
+"起動してから再度インストールをお試しください。"
 
 #: src/ui/ft8lib_dialog.py:266
 msgid "ft8lib Installation"
@@ -1064,16 +1089,16 @@ msgstr "ft8libについて"
 #: src/ui/ft8lib_dialog.py:298
 msgid ""
 "ft8lib (<a href='https://github.com/kgoba/ft8_lib'>kgoba/ft8_lib</a>) by "
-"Kārlis Goba YL3JG provides FT4/FT8 message encoding and decoding "
-"(GPL-2.0).<br><br>It is required for:<br>  • <b>FT4 TX/RX</b> — encoding "
-"transmit audio and decoding received messages<br>  • <b>Q65 TX</b> — packing"
-" callsign/grid into the 77-bit message payload"
+"Kārlis Goba YL3JG provides FT4/FT8 message encoding and decoding (GPL-2.0)."
+"<br><br>It is required for:<br>  • <b>FT4 TX/RX</b> — encoding transmit "
+"audio and decoding received messages<br>  • <b>Q65 TX</b> — packing callsign/"
+"grid into the 77-bit message payload"
 msgstr ""
-"ft8lib (<a href='https://github.com/kgoba/ft8_lib'>kgoba/ft8_lib</a>) "
-"はKārlis Goba "
-"YL3JG氏によるFT4/FT8メッセージのエンコード・デコードライブラリです（GPL-2.0）。<br><br>以下の機能に必要です:<br>  • "
-"<b>FT4 送受信</b> — 送信音声のエンコードと受信メッセージのデコード<br>  • <b>Q65 送信</b> — "
-"コールサイン/グリッドを77ビットメッセージペイロードに格納"
+"ft8lib (<a href='https://github.com/kgoba/ft8_lib'>kgoba/ft8_lib</a>) は"
+"Kārlis Goba YL3JG氏によるFT4/FT8メッセージのエンコード・デコードライブラリで"
+"す（GPL-2.0）。<br><br>以下の機能に必要です:<br>  • <b>FT4 送受信</b> — 送信"
+"音声のエンコードと受信メッセージのデコード<br>  • <b>Q65 送信</b> — コールサ"
+"イン/グリッドを77ビットメッセージペイロードに格納"
 
 #: src/ui/ft8lib_dialog.py:312 src/ui/q65lib_dialog.py:230
 #: src/ui/ft4wsjt_dialog.py:274
@@ -1158,7 +1183,8 @@ msgstr "ft8libをアンインストール"
 msgid ""
 "Remove the user-installed ft8lib from your data directory?\n"
 "\n"
-"If FT4 or Q65 is currently in use, this may fail — close those tabs (or restart FBSAT59) and try again."
+"If FT4 or Q65 is currently in use, this may fail — close those tabs (or "
+"restart FBSAT59) and try again."
 msgstr ""
 "ユーザーインストール済みのft8libをデータディレクトリから削除しますか？\n"
 "\n"
@@ -1185,8 +1211,9 @@ msgid ""
 "register before relying on it — the rig is only polled once per Doppler "
 "cycle."
 msgstr ""
-"Lock（Ctrl+L）: "
-"DLは手動チューニング専用、ULが追従（反転トランスポンダー対応）。手動でチューニングした後は、リグへの反映が確認できるまで数秒お待ちください（リグの読み取りはDopplerサイクルごとに1回だけです）。"
+"Lock（Ctrl+L）: DLは手動チューニング専用、ULが追従（反転トランスポンダー対"
+"応）。手動でチューニングした後は、リグへの反映が確認できるまで数秒お待ちくだ"
+"さい（リグの読み取りはDopplerサイクルごとに1回だけです）。"
 
 # --- Transmitter panel ---
 #: src/ui/radio_control_widget.py:202 src/ui/autotrack_record_dialog.py:548
@@ -1275,7 +1302,9 @@ msgstr "南向き初期化"
 msgid ""
 "Rotator starts facing south (180°). AZ is offset by 180° so the 0/360° wrap "
 "is avoided."
-msgstr "ローテーターは南（180°）を向いた状態で起動します。0/360°の折り返しを避けるため、AZに180°のオフセットが適用されます。"
+msgstr ""
+"ローテーターは南（180°）を向いた状態で起動します。0/360°の折り返しを避けるた"
+"め、AZに180°のオフセットが適用されます。"
 
 #: src/ui/radio_control_widget.py:362
 msgid "Rotator:"
@@ -1349,7 +1378,8 @@ msgstr "rigctldが実行中です"
 msgid ""
 "rigctld is running and sharing the same serial port.\n"
 "\n"
-"Direct mode and rigctld cannot share the port reliably — frequency and mode writes may be corrupted.\n"
+"Direct mode and rigctld cannot share the port reliably — frequency and mode "
+"writes may be corrupted.\n"
 "\n"
 "Stop rigctld before connecting:\n"
 "  Normal launch:   pkill rigctld\n"
@@ -1357,7 +1387,8 @@ msgid ""
 msgstr ""
 "rigctldが実行中で、同じシリアルポートを共有しています。\n"
 "\n"
-"Directモードとrigctldは同じポートを安全に共有できません — 周波数・モードの書き込みが破損する可能性があります。\n"
+"Directモードとrigctldは同じポートを安全に共有できません — 周波数・モードの書"
+"き込みが破損する可能性があります。\n"
 "\n"
 "接続する前にrigctldを停止してください:\n"
 "  通常起動の場合:   pkill rigctld\n"
@@ -1455,7 +1486,9 @@ msgstr "Direwolfプロジェクトから Windows用インストーラーをダ�
 
 #: src/ui/direwolf_dialog.py:313
 msgid "Please install Direwolf from your distribution's package manager."
-msgstr "ディストリビューションのパッケージマネージャーからDirewolfをインストールしてください。"
+msgstr ""
+"ディストリビューションのパッケージマネージャーからDirewolfをインストールして"
+"ください。"
 
 #: src/ui/ft4_waterfall_dialog.py:153
 msgid "FT4 Waterfall"
@@ -1633,9 +1666,11 @@ msgstr "現在時刻"
 
 #: src/ui/app_update_dialog.py:161
 msgid ""
-"Installer launched. FBSAT59 will close now so the installer can complete the"
-" update."
-msgstr "インストーラーを起動しました。更新を完了するため、まもなくFBSAT59が終了します。"
+"Installer launched. FBSAT59 will close now so the installer can complete the "
+"update."
+msgstr ""
+"インストーラーを起動しました。更新を完了するため、まもなくFBSAT59が終了しま"
+"す。"
 
 #: src/ui/app_update_dialog.py:184
 #, python-brace-format
@@ -1739,7 +1774,8 @@ msgid ""
 "No q65lib package found for this platform in the release.\n"
 "Please build libq65 manually — see the instructions above."
 msgstr ""
-"このリリースには本プラットフォーム向けのq65libパッケージが見つかりませんでした。\n"
+"このリリースには本プラットフォーム向けのq65libパッケージが見つかりませんでし"
+"た。\n"
 "上記の手順に従い、libq65を手動でビルドしてください。"
 
 #: src/ui/q65lib_dialog.py:185
@@ -1754,14 +1790,15 @@ msgstr "libq65について"
 msgid ""
 "libq65 is built from the <a href='https://wsjt.sourceforge.io/'>WSJT-X</a> "
 "source tree (<code>lib/qra/q65/</code>) by Joe Taylor K1JT and the WSJT-X "
-"Development Group (GPL-2.0).<br><br>It is required for:<br>  • <b>Q65 RX</b>"
-" — decoding received Q65 signals<br><br>Q65 TX (transmit) is implemented in "
+"Development Group (GPL-2.0).<br><br>It is required for:<br>  • <b>Q65 RX</b> "
+"— decoding received Q65 signals<br><br>Q65 TX (transmit) is implemented in "
 "pure Python and does <b>not</b> require libq65."
 msgstr ""
-"libq65は、Joe Taylor K1JT氏とWSJT-X開発グループによる<a "
-"href='https://wsjt.sourceforge.io/'>WSJT-X</a>ソースツリー（<code>lib/qra/q65/</code>）からビルドされています（GPL-2.0）。<br><br>以下の機能に必要です:<br>"
-"  • <b>Q65 受信</b> — "
-"受信したQ65信号のデコード<br><br>Q65送信は純Python実装のため、libq65は<b>不要</b>です。"
+"libq65は、Joe Taylor K1JT氏とWSJT-X開発グループによる<a href='https://wsjt."
+"sourceforge.io/'>WSJT-X</a>ソースツリー（<code>lib/qra/q65/</code>）からビル"
+"ドされています（GPL-2.0）。<br><br>以下の機能に必要です:<br>  • <b>Q65 受信</"
+"b> — 受信したQ65信号のデコード<br><br>Q65送信は純Python実装のため、libq65は"
+"<b>不要</b>です。"
 
 #: src/ui/q65lib_dialog.py:264
 msgid ""
@@ -1779,7 +1816,7 @@ msgstr "libq65が見つかりません"
 msgid "libq65 found"
 msgstr "libq65が見つかりました"
 
-#: src/ui/q65_tab.py:156 src/ui/q65_tab.py:504
+#: src/ui/q65_tab.py:156 src/ui/q65_tab.py:508
 msgid "Input: No audio source — connect Rig in Radio Control"
 msgstr "入力: 音声ソースなし — 無線機コントロールで無線機を接続してください"
 
@@ -1819,7 +1856,7 @@ msgstr "奇数"
 msgid "RX:"
 msgstr "RX:"
 
-#: src/ui/q65_tab.py:205 src/ui/q65_tab.py:557 src/ui/rig_dialog.py:388
+#: src/ui/q65_tab.py:205 src/ui/q65_tab.py:561 src/ui/rig_dialog.py:388
 #: src/ui/ft4_tab.py:423 src/ui/cw_tab.py:167
 msgid "SDR"
 msgstr "SDR"
@@ -1893,7 +1930,7 @@ msgstr "1回送信"
 msgid "Send the text above as a one-shot free message"
 msgstr "上のテキストを1回限りの自由メッセージとして送信"
 
-#: src/ui/q65_tab.py:300 src/ui/ft4_tab.py:541 src/ui/ft4_tab.py:766
+#: src/ui/q65_tab.py:300 src/ui/ft4_tab.py:541 src/ui/ft4_tab.py:772
 msgid "State: IDLE"
 msgstr "状態: IDLE"
 
@@ -1901,70 +1938,69 @@ msgstr "状態: IDLE"
 msgid "TX Level:"
 msgstr "TXレベル:"
 
-#: src/ui/q65_tab.py:313
-#, python-format
+#: src/ui/q65_tab.py:317
 msgid ""
-"TX audio output level (% of full scale).\n"
+"TX audio output level (percentage of full scale).\n"
 "Lower this if the rig's ALC is triggered or the transmit\n"
 "audio sounds distorted — Q65 audio is generated at full\n"
-"scale and some rigs/sound cards need well under 100% here."
+"scale and some rigs/sound cards need well under 100%."
 msgstr ""
-"TX音声の出力レベル（フルスケールに対する%）。\n"
+"TX音声の出力レベル（フルスケールに対する割合）。\n"
 "リグのALCが働いたり、送信音声が歪んだりする場合は下げてください —\n"
 "Q65音声はフルスケールで生成されるため、リグやサウンドカードに\n"
 "よっては100%よりかなり低い値が必要になることがあります。"
 
-#: src/ui/q65_tab.py:325
+#: src/ui/q65_tab.py:329
 msgid "DX: —"
 msgstr "DX: —"
 
-#: src/ui/q65_tab.py:328 src/ui/ft4_tab.py:570
+#: src/ui/q65_tab.py:332 src/ui/ft4_tab.py:576
 msgid "Log QSO"
 msgstr "QSOを記録"
 
-#: src/ui/q65_tab.py:346 src/ui/ft4_tab.py:588
+#: src/ui/q65_tab.py:350 src/ui/ft4_tab.py:594
 msgid "Decoded Messages"
 msgstr "デコードされたメッセージ"
 
-#: src/ui/q65_tab.py:348 src/ui/ft4_tab.py:590
+#: src/ui/q65_tab.py:352 src/ui/ft4_tab.py:596
 msgid "UTC"
 msgstr "UTC"
 
-#: src/ui/q65_tab.py:348 src/ui/ft4_tab.py:590
+#: src/ui/q65_tab.py:352 src/ui/ft4_tab.py:596
 msgid "dB"
 msgstr "dB"
 
-#: src/ui/q65_tab.py:348 src/ui/ft4_tab.py:590
+#: src/ui/q65_tab.py:352 src/ui/ft4_tab.py:596
 msgid "DT"
 msgstr "DT"
 
-#: src/ui/q65_tab.py:348 src/ui/ft4_tab.py:590
+#: src/ui/q65_tab.py:352 src/ui/ft4_tab.py:596
 msgid "Hz"
 msgstr "Hz"
 
-#: src/ui/q65_tab.py:368
+#: src/ui/q65_tab.py:372
 msgid "Waiting for period boundary…"
 msgstr "周期境界を待機中…"
 
-#: src/ui/q65_tab.py:501 src/ui/ft4_tab.py:1311
+#: src/ui/q65_tab.py:505 src/ui/ft4_tab.py:1317
 msgid "Input: Rig connected"
 msgstr "入力: 無線機接続中"
 
-#: src/ui/q65_tab.py:605
+#: src/ui/q65_tab.py:609
 msgid "No audio in last period"
 msgstr "直前の周期に音声がありません"
 
-#: src/ui/q65_tab.py:631
+#: src/ui/q65_tab.py:635
 #, python-brace-format
 msgid "Period {utc}: no decodes"
 msgstr "周期 {utc}: デコードなし"
 
-#: src/ui/q65_tab.py:634
+#: src/ui/q65_tab.py:638
 #, python-brace-format
 msgid "Period {utc}: {n} decode(s)"
 msgstr "周期 {utc}: {n}件デコード"
 
-#: src/ui/q65_tab.py:764
+#: src/ui/q65_tab.py:768
 msgid "QSO logged"
 msgstr "QSOを記録しました"
 
@@ -2309,7 +2345,7 @@ msgid "Input device:"
 msgstr "入力デバイス:"
 
 #: src/ui/rig_dialog.py:1470 src/ui/rig_dialog.py:1643 src/ui/ft4_tab.py:437
-#: src/ui/ft4_tab.py:876
+#: src/ui/ft4_tab.py:882
 msgid "-- dBFS"
 msgstr "-- dBFS"
 
@@ -2339,7 +2375,9 @@ msgid ""
 "change when other USB audio devices are plugged in. Pick a specific device "
 "below to always route to it."
 msgstr ""
-"上記のデバイスはPipeWireの現在のデフォルトに従うため、他のUSBオーディオデバイスが接続されると気づかないうちに変わることがあります。常に特定のデバイスへ固定したい場合は、下で指定してください。"
+"上記のデバイスはPipeWireの現在のデフォルトに従うため、他のUSBオーディオデバイ"
+"スが接続されると気づかないうちに変わることがあります。常に特定のデバイスへ固"
+"定したい場合は、下で指定してください。"
 
 #: src/ui/rig_dialog.py:1517
 msgid "Pin input to:"
@@ -2438,7 +2476,9 @@ msgstr "SDRplayユーザーへの注意"
 
 #: src/ui/sdr_install_dialog.py:217
 msgid ""
-"SDRplay devices (RSP1, RSP2, RSPdx, etc.) are not bundled on any platform because SoapySDRPlay3 depends on the proprietary SDRplay API library, which cannot be redistributed.\n"
+"SDRplay devices (RSP1, RSP2, RSPdx, etc.) are not bundled on any platform "
+"because SoapySDRPlay3 depends on the proprietary SDRplay API library, which "
+"cannot be redistributed.\n"
 "\n"
 "To use an SDRplay device (all platforms):\n"
 "  1. Install the SDRplay API from https://www.sdrplay.com/downloads/\n"
@@ -2450,7 +2490,9 @@ msgid ""
 "                or build from https://github.com/pothosware/SoapySDRPlay3\n"
 "  3. Restart this software — your device will be detected automatically."
 msgstr ""
-"SDRplayデバイス（RSP1・RSP2・RSPdx等）は、SoapySDRPlay3が再配布不可のSDRplay独自APIライブラリに依存しているため、どのプラットフォームにも同梱されていません。\n"
+"SDRplayデバイス（RSP1・RSP2・RSPdx等）は、SoapySDRPlay3が再配布不可のSDRplay"
+"独自APIライブラリに依存しているため、どのプラットフォームにも同梱されていませ"
+"ん。\n"
 "\n"
 "SDRplayデバイスを使用するには（全プラットフォーム共通）:\n"
 "  1. https://www.sdrplay.com/downloads/ からSDRplay APIをインストール\n"
@@ -2459,7 +2501,8 @@ msgstr ""
 "       Linux:   sudo apt install soapysdr-module-sdrplay3\n"
 "       macOS:   conda install -c conda-forge soapysdr-module-sdrplay3\n"
 "       Windows: conda install -c conda-forge soapysdr-module-sdrplay3\n"
-"                または https://github.com/pothosware/SoapySDRPlay3 からビルド\n"
+"                または https://github.com/pothosware/SoapySDRPlay3 からビル"
+"ド\n"
 "  3. 本ソフトを再起動 — デバイスが自動的に検出されます。"
 
 #: src/ui/sdr_install_dialog.py:235
@@ -2468,7 +2511,9 @@ msgstr "ADALM-Pluto ユーザーへの注意"
 
 #: src/ui/sdr_install_dialog.py:239
 msgid ""
-"ADALM-Pluto (PlutoSDR) is not bundled on any platform and must be installed manually. Linux and macOS users can use package managers; Windows users need conda or a source build.\n"
+"ADALM-Pluto (PlutoSDR) is not bundled on any platform and must be installed "
+"manually. Linux and macOS users can use package managers; Windows users need "
+"conda or a source build.\n"
 "\n"
 "How PlutoSDR networking works:\n"
 "  When connected via USB, PlutoSDR creates a virtual Ethernet adapter.\n"
@@ -2480,7 +2525,8 @@ msgid ""
 "  2. Install libiio:\n"
 "       Linux:   sudo apt install libiio-dev\n"
 "       macOS:   brew install libiio\n"
-"       Windows: installer from https://github.com/analogdevicesinc/libiio/releases\n"
+"       Windows: installer from https://github.com/analogdevicesinc/libiio/"
+"releases\n"
 "  3. Install SoapyPlutoSDR:\n"
 "       Linux:   sudo apt install soapysdr-module-plutosdr\n"
 "       macOS:   brew install soapyplutosdr\n"
@@ -2489,7 +2535,9 @@ msgid ""
 "                or build from https://github.com/pothosware/SoapyPlutoSDR\n"
 "  4. Restart this software — PlutoSDR will be detected automatically."
 msgstr ""
-"ADALM-Pluto (PlutoSDR) はどのプラットフォームにも同梱されておらず、手動でインストールする必要があります。Linux/macOSはパッケージマネージャーが使えますが、Windowsはcondaまたはソースビルドが必要です。\n"
+"ADALM-Pluto (PlutoSDR) はどのプラットフォームにも同梱されておらず、手動でイン"
+"ストールする必要があります。Linux/macOSはパッケージマネージャーが使えますが、"
+"Windowsはcondaまたはソースビルドが必要です。\n"
 "\n"
 "PlutoSDRのネットワーク接続の仕組み:\n"
 "  USB接続すると、PlutoSDRは仮想イーサネットアダプターを作成します。\n"
@@ -2497,17 +2545,21 @@ msgstr ""
 "  デバイスはIPアドレス 192.168.2.1 でアクセスできます。\n"
 "\n"
 "ADALM-Pluto を使用するには（全プラットフォーム共通）:\n"
-"  1. USBでPlutoSDRを接続（USBネットワークアダプターは自動インストールされます）。\n"
+"  1. USBでPlutoSDRを接続（USBネットワークアダプターは自動インストールされま"
+"す）。\n"
 "  2. libiioをインストール:\n"
 "       Linux:   sudo apt install libiio-dev\n"
 "       macOS:   brew install libiio\n"
-"       Windows: https://github.com/analogdevicesinc/libiio/releases のインストーラー\n"
+"       Windows: https://github.com/analogdevicesinc/libiio/releases のインス"
+"トーラー\n"
 "  3. SoapyPlutoSDRをインストール:\n"
 "       Linux:   sudo apt install soapysdr-module-plutosdr\n"
 "       macOS:   brew install soapyplutosdr\n"
-"                または conda install -c conda-forge soapysdr-module-plutosdr\n"
+"                または conda install -c conda-forge soapysdr-module-"
+"plutosdr\n"
 "       Windows: conda install -c conda-forge soapysdr-module-plutosdr\n"
-"                または https://github.com/pothosware/SoapyPlutoSDR からビルド\n"
+"                または https://github.com/pothosware/SoapyPlutoSDR からビル"
+"ド\n"
 "  4. 本ソフトを再起動 — PlutoSDRが自動的に検出されます。"
 
 #: src/ui/sdr_install_dialog.py:265
@@ -2516,36 +2568,48 @@ msgstr "Remote SDR ユーザーへの注意"
 
 #: src/ui/sdr_install_dialog.py:269
 msgid ""
-"An SDR on another machine (e.g. a receiver in a separate location) can be used via SoapyRemote. Windows already bundles the client module; Linux and macOS users install it themselves like other SoapySDR modules.\n"
+"An SDR on another machine (e.g. a receiver in a separate location) can be "
+"used via SoapyRemote. Windows already bundles the client module; Linux and "
+"macOS users install it themselves like other SoapySDR modules.\n"
 "\n"
 "On the machine the SDR is physically connected to:\n"
-"  1. Install that SDR's own SoapySDR module as usual (e.g. soapysdr-module-rtlsdr).\n"
+"  1. Install that SDR's own SoapySDR module as usual (e.g. soapysdr-module-"
+"rtlsdr).\n"
 "  2. Install and run the server:\n"
 "       Linux: sudo apt install soapyremote-server && SoapySDRServer\n"
-"       (see https://github.com/pothosware/SoapyRemote/wiki for other platforms)\n"
+"       (see https://github.com/pothosware/SoapyRemote/wiki for other "
+"platforms)\n"
 "\n"
 "On this machine (the client):\n"
 "  Linux: sudo apt install soapysdr-module-remote\n"
 "  macOS: brew install soapyremote\n"
 "  Windows: bundled — nothing to install\n"
 "\n"
-"Devices on the same LAN as the server are often auto-discovered. If the server is on a different network (e.g. reachable only via VPN), use 'Add Remote Host…' in Rig Settings > SDR Settings to enter its address directly."
+"Devices on the same LAN as the server are often auto-discovered. If the "
+"server is on a different network (e.g. reachable only via VPN), use 'Add "
+"Remote Host…' in Rig Settings > SDR Settings to enter its address directly."
 msgstr ""
-"別のマシンに接続されたSDR（例: 別の場所に設置した受信機）を、SoapyRemote経由で使用できます。Windowsではクライアントモジュールが同梱済みです。LinuxとmacOSでは、他のSoapySDRモジュールと同様にご自身でインストールしてください。\n"
+"別のマシンに接続されたSDR（例: 別の場所に設置した受信機）を、SoapyRemote経由"
+"で使用できます。Windowsではクライアントモジュールが同梱済みです。LinuxとmacOS"
+"では、他のSoapySDRモジュールと同様にご自身でインストールしてください。\n"
 "\n"
 "SDRを物理的に接続しているマシン側での作業:\n"
 "  1. そのSDR用のSoapySDRモジュールを通常どおりインストール\n"
 "     （例: soapysdr-module-rtlsdr）。\n"
 "  2. サーバーをインストールして起動:\n"
 "       Linux: sudo apt install soapyremote-server && SoapySDRServer\n"
-"       （他のプラットフォームは https://github.com/pothosware/SoapyRemote/wiki を参照）\n"
+"       （他のプラットフォームは https://github.com/pothosware/SoapyRemote/"
+"wiki を参照）\n"
 "\n"
 "このマシン側（クライアント）での作業:\n"
 "  Linux: sudo apt install soapysdr-module-remote\n"
 "  macOS: brew install soapyremote\n"
 "  Windows: 同梱済み — インストール不要\n"
 "\n"
-"サーバーと同一LAN上のデバイスは自動検出されることが多いです。サーバーが別のネットワーク上にある場合（例: VPN経由でのみ到達可能な場合）は、Rig Settings > SDR Settings の「リモートホストを追加…」からアドレスを直接入力してください。"
+"サーバーと同一LAN上のデバイスは自動検出されることが多いです。サーバーが別の"
+"ネットワーク上にある場合（例: VPN経由でのみ到達可能な場合）は、Rig Settings "
+"> SDR Settings の「リモートホストを追加…」からアドレスを直接入力してくださ"
+"い。"
 
 #: src/ui/sdr_install_dialog.py:294
 msgid "🔍 Rescan Devices"
@@ -2671,7 +2735,8 @@ msgstr ""
 "  3. Zadigで: Options → List All Devices を選び、対象デバイスを選択\n"
 "     （RTL-SDR: Bulk-In Interface 0 / HackRF: Hackrf One）\n"
 "     → ドライバーをWinUSBに設定 → Install Driverをクリック。\n"
-"  ⚠️  libusbK は絶対に選ばないでください — デバイス検出失敗の原因になります。\n"
+"  ⚠️  libusbK は絶対に選ばないでください — デバイス検出失敗の原因になりま"
+"す。\n"
 "  ℹ️  RTL-SDRはデバイスマネージャーに2つの項目として表示されることが\n"
 "     あります（どちらも黄色い「?」付き）。RTL-SDR側にWinUSBを適用し、\n"
 "     無関係なデバイスには触らないでください。\n"
@@ -2721,7 +2786,9 @@ msgstr "失敗しました — コピーをご利用ください"
 msgid ""
 "onnxruntime is missing from this build. This should not happen — please "
 "reinstall or update FBSAT59."
-msgstr "このビルドにonnxruntimeが含まれていません。通常は起こらない問題です — FBSAT59を再インストールまたは更新してください。"
+msgstr ""
+"このビルドにonnxruntimeが含まれていません。通常は起こらない問題です — FBSAT59"
+"を再インストールまたは更新してください。"
 
 #: src/ui/cw_model_dialog.py:70
 msgid "Installing onnxruntime…"
@@ -2746,15 +2813,16 @@ msgid ""
 "engine'>e04/deepcw-engine</a>.<br><br>It uses a CRNN + CTC architecture "
 "trained to decode CW (Morse code) from audio spectrograms with near-zero "
 "error at −4 dB S/N.<br><br><b>Clicking Install will automatically:</b><br>  "
-"1. Install <tt>onnxruntime</tt> (Python ML runtime) via pip<br>  2. Download"
-" <tt>model.onnx</tt> (~15 MB) from GitHub"
+"1. Install <tt>onnxruntime</tt> (Python ML runtime) via pip<br>  2. Download "
+"<tt>model.onnx</tt> (~15 MB) from GitHub"
 msgstr ""
 "DeepCWモデルは<a href='https://github.com/e04/deepcw-engine'>e04/deepcw-"
-"engine</a>により提供されています。<br><br>音声スペクトログラムからCW（モールス符号）をデコードするよう学習されたCRNN + "
-"CTCアーキテクチャを使用しており、S/N比 −4 "
-"dBでもほぼ無誤り率でデコードできます。<br><br><b>「Install」をクリックすると自動的に:</b><br>  1. pip経由で "
-"<tt>onnxruntime</tt>（Python ML実行環境）をインストール<br>  2. GitHubから "
-"<tt>model.onnx</tt>（約15MB）をダウンロード"
+"engine</a>により提供されています。<br><br>音声スペクトログラムからCW（モール"
+"ス符号）をデコードするよう学習されたCRNN + CTCアーキテクチャを使用しており、"
+"S/N比 −4 dBでもほぼ無誤り率でデコードできます。<br><br><b>「Install」をクリッ"
+"クすると自動的に:</b><br>  1. pip経由で <tt>onnxruntime</tt>（Python ML実行環"
+"境）をインストール<br>  2. GitHubから <tt>model.onnx</tt>（約15MB）をダウン"
+"ロード"
 
 #: src/ui/cw_model_dialog.py:165
 msgid "Install"
@@ -2817,33 +2885,32 @@ msgstr ""
 msgid "FT4 message (auto-filled by state machine)"
 msgstr "FT4メッセージ（ステートマシンが自動入力）"
 
-#: src/ui/ft4_tab.py:554
-#, python-format
+#: src/ui/ft4_tab.py:560
 msgid ""
-"TX audio output level (% of full scale).\n"
+"TX audio output level (percentage of full scale).\n"
 "Lower this if the rig's ALC is triggered or the transmit\n"
 "audio sounds distorted — FT4 audio is generated at full\n"
-"scale and some rigs/sound cards need well under 100% here."
+"scale and some rigs/sound cards need well under 100%."
 msgstr ""
-"TX音声の出力レベル（フルスケールに対する%）。\n"
+"TX音声の出力レベル（フルスケールに対する割合）。\n"
 "リグのALCが働いたり、送信音声が歪んだりする場合は下げてください —\n"
 "FT4音声はフルスケールで生成されるため、リグやサウンドカードに\n"
 "よっては100%よりかなり低い値が必要になることがあります。"
 
-#: src/ui/ft4_tab.py:717
+#: src/ui/ft4_tab.py:723
 #, python-brace-format
 msgid ""
-"Use Help > ft8lib Installation… (Recommended), or build ft8_lib "
-"(github.com/kgoba/ft8_lib) manually and place the shared library in {dir}"
+"Use Help > ft8lib Installation… (Recommended), or build ft8_lib (github.com/"
+"kgoba/ft8_lib) manually and place the shared library in {dir}"
 msgstr ""
-"Help > ft8lib Installation… "
-"を使う（推奨）か、ft8_lib（github.com/kgoba/ft8_lib）を手動でビルドして、共有ライブラリを {dir} に配置してください"
+"Help > ft8lib Installation… を使う（推奨）か、ft8_lib（github.com/kgoba/"
+"ft8_lib）を手動でビルドして、共有ライブラリを {dir} に配置してください"
 
-#: src/ui/ft4_tab.py:722
+#: src/ui/ft4_tab.py:728
 msgid "ft8lib is not installed — FT4 TX/RX is disabled.\n"
 msgstr "ft8libがインストールされていません — FT4の送受信は無効です。\n"
 
-#: src/ui/ft4_tab.py:730
+#: src/ui/ft4_tab.py:736
 msgid ""
 "ft8lib found but decode API is unavailable — TX only.\n"
 "Update ft8_lib to ≥ v0.4 for RX decode support."
@@ -2851,56 +2918,57 @@ msgstr ""
 "ft8libは見つかりましたが、デコードAPIが利用できません — 送信のみ可能です。\n"
 "受信デコードに対応するには ft8_lib を v0.4 以降に更新してください。"
 
-#: src/ui/ft4_tab.py:739
+#: src/ui/ft4_tab.py:745
 msgid ""
-"Using lightweight FT4 decoder — may miss weak or overlapping stations in a crowded pass.\n"
+"Using lightweight FT4 decoder — may miss weak or overlapping stations in a "
+"crowded pass.\n"
 "Help > FT4 Enhanced Decoder Installation… for WSJT-X-grade decoding."
 msgstr ""
 "軽量版FT4デコーダーを使用中 — 混雑したパスでは弱い信号や重なった局を\n"
 "見逃す可能性があります。WSJT-X相当のデコード精度にするには\n"
 "Help > FT4 Enhanced Decoder Installation… を参照してください。"
 
-#: src/ui/ft4_tab.py:757
+#: src/ui/ft4_tab.py:763
 msgid "Set My Call before operating"
 msgstr "運用前にコールサインを設定してください"
 
-#: src/ui/ft4_tab.py:1021
+#: src/ui/ft4_tab.py:1027
 msgid "Invalid FT4 message: "
 msgstr "無効なFT4メッセージ: "
 
-#: src/ui/ft4_tab.py:1048
+#: src/ui/ft4_tab.py:1054
 msgid "TX done — waiting for next period"
 msgstr "TX完了 — 次の周期を待機中"
 
-#: src/ui/ft4_tab.py:1267
+#: src/ui/ft4_tab.py:1273
 msgid "Set My Call before enabling TX"
 msgstr "TXを有効にする前にコールサインを設定してください"
 
-#: src/ui/ft4_tab.py:1273
+#: src/ui/ft4_tab.py:1279
 msgid "TX enabled — waiting for next period"
 msgstr "TXを有効化しました — 次の周期を待機中"
 
-#: src/ui/ft4_tab.py:1275
+#: src/ui/ft4_tab.py:1281
 msgid "TX disabled"
 msgstr "TXを無効化しました"
 
-#: src/ui/ft4_tab.py:1281
+#: src/ui/ft4_tab.py:1287
 msgid "TX halted"
 msgstr "TXを停止しました"
 
-#: src/ui/ft4_tab.py:1290
+#: src/ui/ft4_tab.py:1296
 msgid "Rig connected — ready"
 msgstr "無線機接続済み — 準備完了"
 
-#: src/ui/ft4_tab.py:1301
+#: src/ui/ft4_tab.py:1307
 msgid "Rig disconnected"
 msgstr "無線機未接続"
 
-#: src/ui/ft4_tab.py:1314
+#: src/ui/ft4_tab.py:1320
 msgid "Input: Rig not connected"
 msgstr "入力: 無線機未接続"
 
-#: src/ui/ft4_tab.py:1338
+#: src/ui/ft4_tab.py:1344
 msgid "QSOs logged: "
 msgstr "記録済みQSO数: "
 
@@ -3083,11 +3151,13 @@ msgstr "入力: サウンドカード + Direwolf（受信のみ — 無線機未
 
 #: src/ui/aprs_tab.py:468
 msgid "Input: Sound Card not configured — open Rig Settings > Sound Card"
-msgstr "入力: サウンドカード未設定 — Rig Settings > Sound Card を開いてください"
+msgstr ""
+"入力: サウンドカード未設定 — Rig Settings > Sound Card を開いてください"
 
 #: src/ui/aprs_tab.py:474
 msgid "Input: No audio source — connect Rig or SDR in Radio Control"
-msgstr "入力: 音声ソースなし — 無線機コントロールで無線機またはSDRを接続してください"
+msgstr ""
+"入力: 音声ソースなし — 無線機コントロールで無線機またはSDRを接続してください"
 
 #: src/ui/aprs_tab.py:681
 #, python-brace-format
@@ -3208,7 +3278,8 @@ msgstr "NORAD {n} のTLE取得に成功しました"
 
 #: src/ui/manual_tle_dialog.py:129
 msgid "Failed to fetch TLE. Check NORAD ID and network connection."
-msgstr "TLEの取得に失敗しました。NORAD IDとネットワーク接続を確認してください。"
+msgstr ""
+"TLEの取得に失敗しました。NORAD IDとネットワーク接続を確認してください。"
 
 #: src/ui/manual_tle_dialog.py:142
 msgid "No TLE"
@@ -3242,17 +3313,22 @@ msgstr "TLEの検証に失敗しました。形式を確認してください。
 #: src/ui/gr_satellites_dialog.py:146
 msgid ""
 "Install GNU Radio 3.10+ from your system package manager or\n"
-"<a href=\"https://www.gnuradio.org/\">gnuradio.org</a>, then install gr-satellites via conda-forge or from source:"
+"<a href=\"https://www.gnuradio.org/\">gnuradio.org</a>, then install gr-"
+"satellites via conda-forge or from source:"
 msgstr ""
 "システムのパッケージマネージャーまたは\n"
-"<a href=\"https://www.gnuradio.org/\">gnuradio.org</a> からGNU Radio 3.10以降をインストールし、続けてconda-forgeまたはソースからgr-satellitesをインストールしてください:"
+"<a href=\"https://www.gnuradio.org/\">gnuradio.org</a> からGNU Radio 3.10以降"
+"をインストールし、続けてconda-forgeまたはソースからgr-satellitesをインストー"
+"ルしてください:"
 
 #: src/ui/gr_satellites_dialog.py:200
 #, python-brace-format
 msgid ""
 "No pre-built bundle is available yet for this platform ({suffix}). Use the "
 "manual installation instructions above."
-msgstr "このプラットフォーム（{suffix}）向けのビルド済みバンドルはまだ提供されていません。上記の手動インストール手順をご利用ください。"
+msgstr ""
+"このプラットフォーム（{suffix}）向けのビルド済みバンドルはまだ提供されていま"
+"せん。上記の手動インストール手順をご利用ください。"
 
 #: src/ui/gr_satellites_dialog.py:206
 msgid "Downloading… (this is a large download, ~hundreds of MB)"
@@ -3286,13 +3362,19 @@ msgstr "gr-satellitesについて"
 
 #: src/ui/gr_satellites_dialog.py:309
 msgid ""
-"gr-satellites is an open-source GNU Radio out-of-tree (OOT) module that decodes telemetry from 100+ amateur satellites.\n"
+"gr-satellites is an open-source GNU Radio out-of-tree (OOT) module that "
+"decodes telemetry from 100+ amateur satellites.\n"
 "\n"
-"When installed, FBSAT59 can launch gr_satellites as a subprocess and display decoded telemetry in the Telemetry tab (9600 baud and other non-AFSK modes will become available)."
+"When installed, FBSAT59 can launch gr_satellites as a subprocess and display "
+"decoded telemetry in the Telemetry tab (9600 baud and other non-AFSK modes "
+"will become available)."
 msgstr ""
-"gr-satellitesは、100機以上のアマチュア衛星のテレメトリーをデコードするオープンソースのGNU Radio OOT（Out-Of-Tree）モジュールです。\n"
+"gr-satellitesは、100機以上のアマチュア衛星のテレメトリーをデコードするオープ"
+"ンソースのGNU Radio OOT（Out-Of-Tree）モジュールです。\n"
 "\n"
-"インストールすると、FBSAT59はgr_satellitesをサブプロセスとして起動し、デコードしたテレメトリーをTelemetryタブに表示できます（9600 baud等、AFSK以外のモードも利用可能になります）。"
+"インストールすると、FBSAT59はgr_satellitesをサブプロセスとして起動し、デコー"
+"ドしたテレメトリーをTelemetryタブに表示できます（9600 baud等、AFSK以外のモー"
+"ドも利用可能になります）。"
 
 #: src/ui/gr_satellites_dialog.py:321
 msgid "Install Bundled Environment (Recommended)"
@@ -3300,11 +3382,13 @@ msgstr "バンドル環境をインストール（推奨）"
 
 #: src/ui/gr_satellites_dialog.py:326
 msgid ""
-"Downloads a pre-built, headless GNU Radio + gr-satellites environment (no "
-"Qt/GUI components) from this project's GitHub Releases and installs it to "
-"your user data directory. This is a large download (hundreds of MB)."
+"Downloads a pre-built, headless GNU Radio + gr-satellites environment (no Qt/"
+"GUI components) from this project's GitHub Releases and installs it to your "
+"user data directory. This is a large download (hundreds of MB)."
 msgstr ""
-"本プロジェクトのGitHub Releasesから、ビルド済みのヘッドレスGNU Radio + gr-satellites環境（Qt/GUIコンポーネントを含まない）をダウンロードし、ユーザーデータディレクトリにインストールします。\n"
+"本プロジェクトのGitHub Releasesから、ビルド済みのヘッドレスGNU Radio + gr-"
+"satellites環境（Qt/GUIコンポーネントを含まない）をダウンロードし、ユーザー"
+"データディレクトリにインストールします。\n"
 "ダウンロードサイズは数百MBと大きめです。"
 
 #: src/ui/gr_satellites_dialog.py:353
@@ -3328,7 +3412,8 @@ msgstr "gr-satellitesをアンインストール"
 msgid ""
 "Remove the bundled gr-satellites environment from your data directory?\n"
 "\n"
-"If the Telemetry tab is currently using it, this may fail — close that tab first."
+"If the Telemetry tab is currently using it, this may fail — close that tab "
+"first."
 msgstr ""
 "バンドル版のgr-satellites環境をデータディレクトリから削除しますか？\n"
 "\n"
@@ -3395,7 +3480,8 @@ msgstr "SDR接続中…"
 
 #: src/ui/telemetry_tab.py:599
 msgid "SDR connecting via Radio Control — press Start again once connected"
-msgstr "SDRはRadio Control経由で接続中です — 接続完了後、再度Startを押してください"
+msgstr ""
+"SDRはRadio Control経由で接続中です — 接続完了後、再度Startを押してください"
 
 #: src/ui/telemetry_tab.py:602
 msgid "⚠ No SDR configured in Rig Settings"
@@ -3653,7 +3739,8 @@ msgid ""
 "Pre-built package not found for this platform / Python version.\n"
 "See {url} for manual installation."
 msgstr ""
-"このプラットフォーム・Pythonバージョン向けのビルド済みパッケージが見つかりませんでした。\n"
+"このプラットフォーム・Pythonバージョン向けのビルド済みパッケージが見つかりま"
+"せんでした。\n"
 "手動インストールについては {url} を参照してください。"
 
 #: src/ui/hamlib_update_dialog.py:301
@@ -3691,15 +3778,20 @@ msgstr "デコードされたCWテキストがここに表示されます（約5
 
 #: src/ui/cw_tab.py:221
 msgid "onnxruntime not installed — use Help > CW Model Installation…"
-msgstr "onnxruntimeがインストールされていません — Help > CW Model Installation… を使用してください"
+msgstr ""
+"onnxruntimeがインストールされていません — Help > CW Model Installation… を使"
+"用してください"
 
 #: src/ui/cw_tab.py:226
 msgid "CW model not found — use Help > CW Model Installation…"
-msgstr "CWモデルが見つかりません — Help > CW Model Installation… を使用してください"
+msgstr ""
+"CWモデルが見つかりません — Help > CW Model Installation… を使用してください"
 
 #: src/ui/cw_tab.py:248
 msgid "Model not ready — use Help > CW Model Installation…"
-msgstr "モデルの準備ができていません — Help > CW Model Installation… を使用してください"
+msgstr ""
+"モデルの準備ができていません — Help > CW Model Installation… を使用してくださ"
+"い"
 
 #: src/ui/cw_tab.py:264
 msgid "SDR not connected — connect SDR first"
@@ -4085,8 +4177,9 @@ msgid ""
 "be reached. If FT4/Q65 decoding fails, check your network connection and "
 "system clock settings."
 msgstr ""
-"システムクロックの精度を確認できませんでした — "
-"NTPタイムサーバーに一つも接続できませんでした。FT4/Q65のデコードに失敗する場合は、ネットワーク接続とシステムのクロック設定を確認してください。"
+"システムクロックの精度を確認できませんでした — NTPタイムサーバーに一つも接続"
+"できませんでした。FT4/Q65のデコードに失敗する場合は、ネットワーク接続とシステ"
+"ムのクロック設定を確認してください。"
 
 #: src/ui/main_window.py:3815
 #, python-brace-format
@@ -4094,7 +4187,8 @@ msgid ""
 "System clock is off by {offset:.2f}s (checked against {server}) — "
 "compensated automatically for FT4/Q65 timing."
 msgstr ""
-"システムクロックが約 {offset:.2f} 秒ずれています（{server} と照合）— FT4/Q65のタイミングは自動的に補正されました。"
+"システムクロックが約 {offset:.2f} 秒ずれています（{server} と照合）— FT4/Q65"
+"のタイミングは自動的に補正されました。"
 
 #: src/ui/main_window.py:3822
 msgid "Clock Sync Check"
@@ -4272,7 +4366,8 @@ msgid ""
 "TLE pending — alive satellite awaiting TLE assignment (provisional NORAD ≥ "
 "90000, within 30-day grace period). Position cannot be displayed yet."
 msgstr ""
-"TLE保留中 — 稼働中衛星がTLE割り当てを待っています（仮NORAD ID ≥ 90000、猶予期間30日以内）。まだ位置は表示できません。"
+"TLE保留中 — 稼働中衛星がTLE割り当てを待っています（仮NORAD ID ≥ 90000、猶予期"
+"間30日以内）。まだ位置は表示できません。"
 
 #: src/ui/main_window.py:5677
 msgid "Gray"
@@ -4307,8 +4402,8 @@ msgid ""
 "SATNOGS status: Inactive — this transmitter is no longer operating. Shown "
 "only while the transponder dropdown is open."
 msgstr ""
-"SATNOGSステータス：Inactive — "
-"このトランスミッターは現在稼働していません。トランスポンダー選択のプルダウンを開いている間のみ表示されます。"
+"SATNOGSステータス：Inactive — このトランスミッターは現在稼働していません。ト"
+"ランスポンダー選択のプルダウンを開いている間のみ表示されます。"
 
 #: src/ui/main_window.py:5708
 msgid "Red background"
@@ -4319,8 +4414,9 @@ msgid ""
 "SATNOGS status: Invalid — this transmitter's data is known to be incorrect. "
 "Shown only while the transponder dropdown is open."
 msgstr ""
-"SATNOGSステータス：Invalid — "
-"このトランスミッターのデータは誤りであることが分かっています。トランスポンダー選択のプルダウンを開いている間のみ表示されます。"
+"SATNOGSステータス：Invalid — このトランスミッターのデータは誤りであることが分"
+"かっています。トランスポンダー選択のプルダウンを開いている間のみ表示されま"
+"す。"
 
 #: src/ui/main_window.py:5732
 msgid "Satellite List"
@@ -4333,60 +4429,62 @@ msgstr "Radio Control — トランスミッター選択"
 #: src/ui/main_window.py:5782
 msgid ""
 "FBSAT59 automatically fetches and updates TLE orbital data and transmitter "
-"information in the background. Manual updates are normally not required. Use"
-" manual sync only when you need the very latest data immediately (e.g. right"
-" before a pass of a newly launched satellite)."
+"information in the background. Manual updates are normally not required. Use "
+"manual sync only when you need the very latest data immediately (e.g. right "
+"before a pass of a newly launched satellite)."
 msgstr ""
-"FBSAT59はバックグラウンドでTLE軌道データとトランスミッター情報を自動的に取得・更新します。通常、手動更新は不要です。今すぐ最新データが必要な場合（例:"
-" 新規打ち上げ衛星のパス直前など）のみ手動同期を使用してください。"
+"FBSAT59はバックグラウンドでTLE軌道データとトランスミッター情報を自動的に取"
+"得・更新します。通常、手動更新は不要です。今すぐ最新データが必要な場合（例: "
+"新規打ち上げ衛星のパス直前など）のみ手動同期を使用してください。"
 
 #: src/ui/main_window.py:5788
 msgid ""
-"<table border='0' cellspacing='4'><tr><td><b>Space Stations</b> (ISS, "
-"CSS…)</td><td>every <b>1 hour</b></td></tr><tr><td><b>Amateur "
-"Satellites</b></td><td>every <b>2 "
-"hours</b></td></tr><tr><td><b>CubeSats</b></td><td>every <b>4 "
-"hours</b></td></tr><tr><td><b>Weather Satellites</b></td><td>every <b>6 "
+"<table border='0' cellspacing='4'><tr><td><b>Space Stations</b> (ISS, CSS…)</"
+"td><td>every <b>1 hour</b></td></tr><tr><td><b>Amateur Satellites</b></"
+"td><td>every <b>2 hours</b></td></tr><tr><td><b>CubeSats</b></td><td>every "
+"<b>4 hours</b></td></tr><tr><td><b>Weather Satellites</b></td><td>every <b>6 "
 "hours</b></td></tr><tr><td><b>Earth Observation / Science</b></td><td>every "
-"<b>12 hours</b></td></tr><tr><td><b>Provisional TLEs</b> (NORAD ≥ "
-"90000)</td><td>every <b>12 hours</b></td></tr><tr><td><b>Active TLE "
-"fallback</b> (NORAD 10000–89999)</td><td>every <b>24 "
-"hours</b></td></tr><tr><td><b>AMSAT operational status</b></td><td>every "
-"<b>24 hours</b></td></tr><tr><td><b>METEOR/HRPT satellites dropped from "
-"CelesTrak groups</b></td><td>every <b>12 "
-"hours</b></td></tr><tr><td><b>Transmitter Database "
+"<b>12 hours</b></td></tr><tr><td><b>Provisional TLEs</b> (NORAD ≥ 90000)</"
+"td><td>every <b>12 hours</b></td></tr><tr><td><b>Active TLE fallback</b> "
+"(NORAD 10000–89999)</td><td>every <b>24 hours</b></td></tr><tr><td><b>AMSAT "
+"operational status</b></td><td>every <b>24 hours</b></td></"
+"tr><tr><td><b>METEOR/HRPT satellites dropped from CelesTrak groups</b></"
+"td><td>every <b>12 hours</b></td></tr><tr><td><b>Transmitter Database "
 "(SATNOGS)</b></td><td>every <b>7 days</b></td></tr></table>"
 msgstr ""
-"<table border='0' cellspacing='4'><tr><td><b>Space Stations</b> (ISS, "
-"CSS等)</td><td><b>1時間</b>ごと</td></tr><tr><td><b>Amateur "
-"Satellites</b></td><td><b>2時間</b>ごと</td></tr><tr><td><b>CubeSats</b></td><td><b>4時間</b>ごと</td></tr><tr><td><b>Weather"
-" Satellites</b></td><td><b>6時間</b>ごと</td></tr><tr><td><b>Earth Observation /"
-" Science</b></td><td><b>12時間</b>ごと</td></tr><tr><td><b>Provisional TLEs</b> "
-"(NORAD ≥ 90000)</td><td><b>12時間</b>ごと</td></tr><tr><td><b>Active TLE "
-"fallback</b> (NORAD "
-"10000–89999)</td><td><b>24時間</b>ごと</td></tr><tr><td><b>AMSAT operational "
-"status</b></td><td><b>24時間</b>ごと</td></tr><tr><td><b>METEOR/HRPT satellites "
-"dropped from CelesTrak "
-"groups</b></td><td><b>12時間</b>ごと</td></tr><tr><td><b>Transmitter Database "
-"(SATNOGS)</b></td><td><b>7日</b>ごと</td></tr></table>"
+"<table border='0' cellspacing='4'><tr><td><b>Space Stations</b> (ISS, CSS"
+"等)</td><td><b>1時間</b>ごと</td></tr><tr><td><b>Amateur Satellites</b></"
+"td><td><b>2時間</b>ごと</td></tr><tr><td><b>CubeSats</b></td><td><b>4時間</b>"
+"ごと</td></tr><tr><td><b>Weather Satellites</b></td><td><b>6時間</b>ごと</"
+"td></tr><tr><td><b>Earth Observation / Science</b></td><td><b>12時間</b>ごと"
+"</td></tr><tr><td><b>Provisional TLEs</b> (NORAD ≥ 90000)</td><td><b>12時間</"
+"b>ごと</td></tr><tr><td><b>Active TLE fallback</b> (NORAD 10000–89999)</"
+"td><td><b>24時間</b>ごと</td></tr><tr><td><b>AMSAT operational status</b></"
+"td><td><b>24時間</b>ごと</td></tr><tr><td><b>METEOR/HRPT satellites dropped "
+"from CelesTrak groups</b></td><td><b>12時間</b>ごと</td></"
+"tr><tr><td><b>Transmitter Database (SATNOGS)</b></td><td><b>7日</b>ごと</"
+"td></tr></table>"
 
 #: src/ui/main_window.py:5807
 msgid ""
-"Transmitter data is fetched from SATNOGS automatically on first launch, then"
-" refreshed automatically every 7 days in the background. Use <b>Satellite → "
+"Transmitter data is fetched from SATNOGS automatically on first launch, then "
+"refreshed automatically every 7 days in the background. Use <b>Satellite → "
 "Sync SATNOGS</b> to refresh transmitter frequencies and modes manually "
 "whenever you need the very latest data sooner (e.g. right after a newly "
 "launched satellite registers its transmitter)."
 msgstr ""
-"トランスミッターデータは初回起動時にSATNOGSから自動取得され、以降はバックグラウンドで7日ごとに自動更新されます。より早く最新データが必要な場合（例:"
-" 新規打ち上げ衛星のトランスミッタ登録直後など）は、<b>Satellite → Sync SATNOGS</b> "
+"トランスミッターデータは初回起動時にSATNOGSから自動取得され、以降はバックグラ"
+"ウンドで7日ごとに自動更新されます。より早く最新データが必要な場合（例: 新規打"
+"ち上げ衛星のトランスミッタ登録直後など）は、<b>Satellite → Sync SATNOGS</b> "
 "でトランスミッターの周波数・モードを手動更新できます。"
 
 #: src/ui/main_window.py:5814
 msgid ""
 "On each launch the app syncs satellite names and statuses from SATNOGS, and "
 "fetches any TLE sources whose cached data has expired."
-msgstr "起動のたびに、アプリはSATNOGSから衛星名・ステータスを同期し、キャッシュデータの期限が切れたTLEソースを取得します。"
+msgstr ""
+"起動のたびに、アプリはSATNOGSから衛星名・ステータスを同期し、キャッシュデータ"
+"の期限が切れたTLEソースを取得します。"
 
 #: src/ui/main_window.py:5818
 msgid "TLE Auto-Fetch Schedule"
@@ -4429,7 +4527,8 @@ msgid ""
 "No libft4wsjt package found for this platform in the release.\n"
 "Please build it manually — see the instructions above."
 msgstr ""
-"このリリースには本プラットフォーム向けのlibft4wsjtパッケージが見つかりませんでした。\n"
+"このリリースには本プラットフォーム向けのlibft4wsjtパッケージが見つかりません"
+"でした。\n"
 "上記の手順に従い、手動でビルドしてください。"
 
 #: src/ui/ft4wsjt_dialog.py:228
@@ -4442,18 +4541,21 @@ msgstr "FT4拡張デコーダーについて"
 
 #: src/ui/ft4wsjt_dialog.py:257
 msgid ""
-"libft4wsjt is built from <a "
-"href='https://github.com/wsjtx/wsjtx'>WSJT-X</a>'s own FT4 decode engine "
-"(GPL-3.0) via a small C bridge — the same 3-pass signal subtraction + BP/OSD"
-" hybrid decode used by WSJT-X itself.<br><br>Without it, FT4 RX falls back "
-"to the lightweight ft8_lib single-pass decoder, which recovers noticeably "
-"fewer stations in a crowded pass (weak or closely-spaced overlapping signals"
-" are more likely to be missed).<br><br>FT4 TX always uses ft8_lib regardless"
-" — this only affects RX."
+"libft4wsjt is built from <a href='https://github.com/wsjtx/wsjtx'>WSJT-X</"
+"a>'s own FT4 decode engine (GPL-3.0) via a small C bridge — the same 3-pass "
+"signal subtraction + BP/OSD hybrid decode used by WSJT-X itself."
+"<br><br>Without it, FT4 RX falls back to the lightweight ft8_lib single-pass "
+"decoder, which recovers noticeably fewer stations in a crowded pass (weak or "
+"closely-spaced overlapping signals are more likely to be missed).<br><br>FT4 "
+"TX always uses ft8_lib regardless — this only affects RX."
 msgstr ""
-"libft4wsjtは、小さなCブリッジを介して<a "
-"href='https://github.com/wsjtx/wsjtx'>WSJT-X</a>本体のFT4デコードエンジン（GPL-3.0）——WSJT-"
-"X自身が使用しているのと同じ3パス信号減算＋BP/OSDハイブリッド復号——からビルドされています。<br><br>これがない場合、FT4受信は軽量なft8_libの単一パスデコーダーにフォールバックし、混雑したパスでは復号できる局数が明らかに少なくなります（弱い信号や近接して重なり合う信号が見逃されやすくなります）。<br><br>FT4送信は常にft8_libを使用するため、これは受信のみに影響します。"
+"libft4wsjtは、小さなCブリッジを介して<a href='https://github.com/wsjtx/"
+"wsjtx'>WSJT-X</a>本体のFT4デコードエンジン（GPL-3.0）——WSJT-X自身が使用してい"
+"るのと同じ3パス信号減算＋BP/OSDハイブリッド復号——からビルドされています。"
+"<br><br>これがない場合、FT4受信は軽量なft8_libの単一パスデコーダーにフォール"
+"バックし、混雑したパスでは復号できる局数が明らかに少なくなります（弱い信号や"
+"近接して重なり合う信号が見逃されやすくなります）。<br><br>FT4送信は常に"
+"ft8_libを使用するため、これは受信のみに影響します。"
 
 #: src/ui/ft4wsjt_dialog.py:301
 msgid ""
@@ -4465,7 +4567,8 @@ msgstr ""
 
 #: src/ui/ft4wsjt_dialog.py:325
 msgid "Remove the user-installed libft4wsjt from your data directory."
-msgstr "ユーザーインストール済みのlibft4wsjtをデータディレクトリから削除します。"
+msgstr ""
+"ユーザーインストール済みのlibft4wsjtをデータディレクトリから削除します。"
 
 #: src/ui/ft4wsjt_dialog.py:350
 msgid "libft4wsjt not found"
@@ -4481,7 +4584,8 @@ msgstr "FT4拡張デコーダーをアンインストール"
 
 #: src/ui/ft4wsjt_dialog.py:402
 msgid "Remove the user-installed libft4wsjt from your data directory?"
-msgstr "ユーザーインストール済みのlibft4wsjtをデータディレクトリから削除しますか？"
+msgstr ""
+"ユーザーインストール済みのlibft4wsjtをデータディレクトリから削除しますか？"
 
 #: src/ui/ft4wsjt_dialog.py:424
 msgid "Could not remove or rename the install directory:\n"
@@ -4499,9 +4603,11 @@ msgstr "インストールディレクトリの削除・リネームに失敗し
 #~ msgid ""
 #~ "Remove the user-installed libft4wsjt from your data directory?\n"
 #~ "\n"
-#~ "If FT4 is currently in use, this may fail — close that tab (or restart FBSAT59) and try again."
+#~ "If FT4 is currently in use, this may fail — close that tab (or restart "
+#~ "FBSAT59) and try again."
 #~ msgstr ""
-#~ "ユーザーインストール済みのlibft4wsjtをデータディレクトリから削除しますか？\n"
+#~ "ユーザーインストール済みのlibft4wsjtをデータディレクトリから削除します"
+#~ "か？\n"
 #~ "\n"
 #~ "FT4を使用中の場合、失敗することがあります — その場合は\n"
 #~ "FT4タブを閉じるか、FBSAT59を再起動してから再度お試しください。"
@@ -4509,19 +4615,23 @@ msgstr "インストールディレクトリの削除・リネームに失敗し
 #~ msgid ""
 #~ "Lock (Ctrl+L): DL is yours to tune manually; UL follows (inverting "
 #~ "transponder aware)"
-#~ msgstr "Lock（Ctrl+L）: DLは手動チューニング専用、ULが追従（反転トランスポンダー対応）"
+#~ msgstr ""
+#~ "Lock（Ctrl+L）: DLは手動チューニング専用、ULが追従（反転トランスポンダー対"
+#~ "応）"
 
 #~ msgid "Copy Command"
 #~ msgstr "コマンドをコピー"
 
 #~ msgid "gr-satellites requires GNU Radio 3.10 (available via Ubuntu 22.04+)."
-#~ msgstr "gr-satellitesにはGNU Radio 3.10が必要です（Ubuntu 22.04以降で入手可能）。"
+#~ msgstr ""
+#~ "gr-satellitesにはGNU Radio 3.10が必要です（Ubuntu 22.04以降で入手可能）。"
 
 #~ msgid "Or use the OOT module directly:"
 #~ msgstr "または直接OOTモジュールを使用:"
 
 #~ msgid "After installation, verify with: <tt>gr_satellites --help</tt>"
-#~ msgstr "インストール後、以下で動作確認できます: <tt>gr_satellites --help</tt>"
+#~ msgstr ""
+#~ "インストール後、以下で動作確認できます: <tt>gr_satellites --help</tt>"
 
 #~ msgid "If brew gnuradio is outdated, build from source:"
 #~ msgstr "brewのgnuradioが古い場合は、ソースからビルドしてください:"
@@ -4555,7 +4665,8 @@ msgstr "インストールディレクトリの削除・リネームに失敗し
 #~ "• gr-satellites 5.x（pip install gr-satellites）\n"
 #~ "\n"
 #~ "GNU Radioは先にシステムレベルでインストールしておく必要があります。\n"
-#~ "GNU Radioをpipでインストールしないでください — OSのパッケージマネージャーを使用してください。"
+#~ "GNU Radioをpipでインストールしないでください — OSのパッケージマネージャー"
+#~ "を使用してください。"
 
 #~ msgid " s (0 = immediate)"
 #~ msgstr " 秒（0=即時中継）"
@@ -4567,7 +4678,8 @@ msgstr "インストールディレクトリの削除・リネームに失敗し
 #~ "about a second — please check your system's time synchronization settings."
 #~ msgstr ""
 #~ "システムクロックが約 {offset:.2f} 秒ずれている可能性があります（{server} "
-#~ "と照合）。FT4/Q65のデコードにはクロックが1秒程度の精度で正確である必要があります — システムの時刻同期設定を確認してください。"
+#~ "と照合）。FT4/Q65のデコードにはクロックが1秒程度の精度で正確である必要があ"
+#~ "ります — システムの時刻同期設定を確認してください。"
 
 #~ msgid "Reset"
 #~ msgstr "リセット"
@@ -4576,9 +4688,11 @@ msgstr "インストールディレクトリの削除・リネームに失敗し
 #~ msgstr "Doppler補正済みの中心周波数に戻す"
 
 #~ msgid ""
-#~ "Tune: set the SDR to the frequency shown to the left. Only takes effect when"
-#~ " no transponder is selected, or while Lock (L) is on."
-#~ msgstr "チューン: 左に表示されている周波数にSDRを合わせます。トランスポンダーが未選択のとき、またはLock（L）がONのときのみ有効です。"
+#~ "Tune: set the SDR to the frequency shown to the left. Only takes effect "
+#~ "when no transponder is selected, or while Lock (L) is on."
+#~ msgstr ""
+#~ "チューン: 左に表示されている周波数にSDRを合わせます。トランスポンダーが未"
+#~ "選択のとき、またはLock（L）がONのときのみ有効です。"
 
 #~ msgid "Tune"
 #~ msgstr "チューン"
@@ -4590,10 +4704,12 @@ msgstr "インストールディレクトリの削除・リネームに失敗し
 #~ msgstr "衛星: —"
 
 #~ msgid "⚠ Direwolf not found — use Help > Direwolf… to install"
-#~ msgstr "⚠ Direwolfが見つかりません — Help > Direwolf… からインストールしてください"
+#~ msgstr ""
+#~ "⚠ Direwolfが見つかりません — Help > Direwolf… からインストールしてください"
 
 #~ msgid "⚠ Sound Card not configured — open Rig Settings > Sound Card"
-#~ msgstr "⚠ サウンドカードが未設定です — Rig Settings > Sound Card を開いてください"
+#~ msgstr ""
+#~ "⚠ サウンドカードが未設定です — Rig Settings > Sound Card を開いてください"
 
 #~ msgid "⚠ Direwolf connection lost"
 #~ msgstr "⚠ Direwolf接続が切断されました"

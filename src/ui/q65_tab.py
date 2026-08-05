@@ -310,10 +310,14 @@ class Q65Tab(QWidget):
         self._tx_level_slider.setFixedWidth(80)
         self._tx_level_slider.setToolTip(
             _(
-                "TX audio output level (% of full scale).\n"
+                # See the matching tooltip in ft4_tab.py for why this avoids
+                # "(% of" and "100% here" — xgettext would otherwise treat the
+                # string as python-format and msgfmt --check would reject the
+                # Japanese translation's literal "%".
+                "TX audio output level (percentage of full scale).\n"
                 "Lower this if the rig's ALC is triggered or the transmit\n"
                 "audio sounds distorted — Q65 audio is generated at full\n"
-                "scale and some rigs/sound cards need well under 100% here."
+                "scale and some rigs/sound cards need well under 100%."
             )
         )
         self._tx_level_label = QLabel(f"{int(self._tx_level_pct)}%")
