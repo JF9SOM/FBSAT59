@@ -4209,6 +4209,25 @@ class HamlibRotatorController(RotatorController):
 # ---------------------------------------------------------------------------
 
 
+_SDR_RETUNE_DEADBAND_HZ: float = 200.0
+"""Minimum Doppler drift (Hz) that justifies retuning the SDR hardware.
+
+Every hardware retune re-locks the tuner PLL, which breaks phase continuity
+in the sample stream (and, on RTL-SDR, can drop a few samples).  The Doppler
+loop runs once per second, so without a deadband a ten-minute pass costs
+~600 retunes -- and a 1200 baud AX.25 frame takes ~1.7 s, so *every* frame
+was being cut by at least one of them.
+
+Holding still until the drift exceeds this much cuts that by roughly 6x
+(~100 retunes/pass at 435 MHz, ~34 at 145 MHz).  The residual offset is well
+inside what gr-satellites' FLL and SatDump's Costas loops absorb.
+
+Trade-off: while listening to SSB/CW audio through the SDR, up to this much
+residual offset is an audible pitch wobble.  It is inaudible on NFM and
+irrelevant to every digital decoder.  See set_retune_deadband() to change it.
+"""
+
+
 class SdrRigAdapter(RigController):
     """
     Adapter that presents an SDR device as a Rig 1 / Rig 2 controller.
@@ -4234,6 +4253,26 @@ class SdrRigAdapter(RigController):
         self._gain_auto: bool = True
         self._gain_db: float = 40.0
         self._bias_tee: bool = False
+        # Retune deadband state -- see _SDR_RETUNE_DEADBAND_HZ.
+        self._retune_deadband_hz: float = _SDR_RETUNE_DEADBAND_HZ
+        self._last_tuned_hz: float | None = None
+
+    def set_retune_deadband(self, deadband_hz: float) -> None:
+        """Override the retune deadband (0 restores per-cycle retuning)."""
+        self._retune_deadband_hz = max(0.0, deadband_hz)
+        self._last_tuned_hz = None
+
+    def invalidate_retune_cache(self) -> None:
+        """Force the next set_frequency() to write, bypassing the deadband.
+
+        Must be called whenever the target frequency moves for a reason
+        other than Doppler drift -- Passband Tune arrows (whose smallest
+        step, 100 Hz, is below the deadband and would otherwise be
+        swallowed), a manually typed frequency, a transponder change, or
+        releasing SDR Lock.  Without this the user's deliberate retune
+        would silently do nothing.
+        """
+        self._last_tuned_hz = None
 
     def set_device_info(self, info: SdrDeviceInfo) -> None:
         """Attach an SdrDeviceInfo before calling connect()."""
@@ -4286,6 +4325,9 @@ class SdrRigAdapter(RigController):
                     dev.set_gain_db(self._gain_db)
                 dev.set_bias_tee(self._bias_tee)
                 self._sdr_device = dev
+                # Fresh device: nothing has been tuned yet, so the first
+                # Doppler write must not be swallowed by the deadband.
+                self._last_tuned_hz = None
                 with self._lock:
                     self._state = RigState.CONNECTED
                 logger.info("SDR connected: %s", self._device_info.display_name)
@@ -4309,14 +4351,29 @@ class SdrRigAdapter(RigController):
             with contextlib.suppress(Exception):
                 self._sdr_device.close()
             self._sdr_device = None
+        self._last_tuned_hz = None
         with self._lock:
             self._state = RigState.DISCONNECTED
 
     def set_frequency(self, freq_hz: float, vfo: str = "VFOA") -> bool:
-        """Retune the SDR center frequency (used by Doppler correction loop)."""
-        if self._sdr_device is not None:
-            return self._sdr_device.set_center_freq(freq_hz)
-        return False
+        """Retune the SDR center frequency (used by Doppler correction loop).
+
+        Writes are suppressed while the requested frequency stays within
+        _SDR_RETUNE_DEADBAND_HZ of the last one actually written, so slow
+        Doppler drift does not re-lock the tuner PLL every single cycle.
+        Deliberate retunes must call invalidate_retune_cache() first.
+        """
+        if self._sdr_device is None:
+            return False
+        if (
+            self._last_tuned_hz is not None
+            and abs(freq_hz - self._last_tuned_hz) < self._retune_deadband_hz
+        ):
+            return True
+        if not self._sdr_device.set_center_freq(freq_hz):
+            return False
+        self._last_tuned_hz = freq_hz
+        return True
 
     def get_frequency(self, vfo: str = "VFOA") -> float:
         if self._sdr_device is not None:

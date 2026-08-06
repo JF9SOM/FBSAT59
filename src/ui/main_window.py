@@ -5137,10 +5137,27 @@ class MainWindow(QMainWindow):
         else:
             self._lock_watch_worker.stop()
 
+    def _invalidate_sdr_retune_cache(self) -> None:
+        """Let the next Doppler write retune the SDR unconditionally.
+
+        SdrRigAdapter suppresses retunes smaller than its deadband (see
+        _SDR_RETUNE_DEADBAND_HZ) so slow Doppler drift stops re-locking the
+        tuner PLL every cycle.  That deadband must not swallow a *deliberate*
+        move, though -- the smallest Passband Tune step is 100 Hz, well under
+        it -- so every place that changes the target frequency for a reason
+        other than Doppler calls this first.
+        """
+        for rig in (self._rig_controller, self._rig2_controller):
+            if rig is not None and getattr(rig, "is_sdr", False):
+                invalidate = getattr(rig, "invalidate_retune_cache", None)
+                if invalidate is not None:
+                    invalidate()
+
     @Slot(float)
     def _on_sdr_tune_offset(self, offset_hz: float) -> None:
         """Store the passband tune offset emitted by SdrControlWidget."""
         self._sdr_tune_offset = offset_hz
+        self._invalidate_sdr_retune_cache()
 
     @Slot(bool)
     def _on_sdr_lock_changed(self, locked: bool) -> None:
@@ -5157,6 +5174,13 @@ class MainWindow(QMainWindow):
         the SDR's exact current frequency).
         """
         self._sdr_lock = locked
+        if not locked:
+            # Nothing was written to the SDR while Lock was on, so the
+            # adapter's deadband reference is stale by however far the
+            # operator moved things.  Make the first write after release
+            # unconditional so Doppler tracking resumes from exactly where
+            # they left it.
+            self._invalidate_sdr_retune_cache()
 
     @Slot(float)
     def _on_sdr_lock_offset_computed(self, offset_hz: float) -> None:
@@ -5188,6 +5212,7 @@ class MainWindow(QMainWindow):
         new_offset = freq_hz - self._latest_doppler.dl_corr
         self._sdr_tune_offset = new_offset
         self._sdr_control.sync_tune_offset(new_offset)
+        self._invalidate_sdr_retune_cache()
 
     def _apply_mode_toggle_to_rig(self, dl_mode: str, ul_mode: str) -> None:
         """Apply an arbitrary DL/UL mode pair to Rig 1 in a background thread,

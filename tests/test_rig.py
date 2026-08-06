@@ -27,6 +27,7 @@ from rig.controller import (
     RigInfo,
     RigState,
     RotatorState,
+    SdrRigAdapter,
     VersionInfo,
     _build_mode_map,
     _check_rig_ok,
@@ -1907,3 +1908,114 @@ class TestHamlibVersionChecker:
 
         assert result.is_outdated is False
         assert result.warning_message == ""
+
+
+# ---------------------------------------------------------------------------
+# SdrRigAdapter retune deadband
+# ---------------------------------------------------------------------------
+
+
+class _FakeSdrDevice:
+    """Minimal stand-in recording every accepted set_center_freq() call."""
+
+    def __init__(self) -> None:
+        self.writes: list[float] = []
+        self.center_freq: float = 0.0
+        self.fail_next = False
+
+    def set_center_freq(self, freq_hz: float) -> bool:
+        if self.fail_next:
+            self.fail_next = False
+            return False
+        self.writes.append(freq_hz)
+        self.center_freq = freq_hz
+        return True
+
+
+class TestSdrRetuneDeadband:
+    """Slow Doppler drift must not re-lock the tuner PLL every cycle."""
+
+    def _adapter(self) -> tuple[SdrRigAdapter, _FakeSdrDevice]:
+        adapter = SdrRigAdapter()
+        dev = _FakeSdrDevice()
+        adapter._sdr_device = dev  # type: ignore[assignment]
+        return adapter, dev
+
+    def test_first_write_always_applied(self) -> None:
+        adapter, dev = self._adapter()
+        assert adapter.set_frequency(435_612_000.0) is True
+        assert dev.writes == [435_612_000.0]
+
+    def test_small_doppler_drift_suppressed(self) -> None:
+        adapter, dev = self._adapter()
+        adapter.set_frequency(435_612_000.0)
+        # 50 Hz per cycle: +50/+100/+150 all stay under the 200 Hz deadband.
+        for i in range(1, 4):
+            assert adapter.set_frequency(435_612_000.0 + 50.0 * i) is True
+        assert dev.writes == [435_612_000.0]
+
+    def test_drift_beyond_deadband_writes_once(self) -> None:
+        adapter, dev = self._adapter()
+        adapter.set_frequency(435_612_000.0)
+        adapter.set_frequency(435_612_150.0)  # inside
+        adapter.set_frequency(435_612_250.0)  # crosses -> written
+        adapter.set_frequency(435_612_300.0)  # inside again, new reference
+        assert dev.writes == [435_612_000.0, 435_612_250.0]
+
+    def test_deadband_is_measured_from_last_write_not_last_request(self) -> None:
+        """Suppressed requests must not creep the reference frequency.
+
+        Otherwise a long run of sub-deadband steps would never write at
+        all, and the SDR would drift arbitrarily far off frequency.
+        """
+        adapter, dev = self._adapter()
+        adapter.set_frequency(435_612_000.0)
+        for i in range(1, 9):
+            adapter.set_frequency(435_612_000.0 + 60.0 * i)
+        # +60/+120/+180 suppressed, +240 lands and becomes the new
+        # reference; +300/+360/+420 are then suppressed relative to it and
+        # +480 lands.  A reference that crept with every request would
+        # instead never write again after the first one.
+        assert dev.writes == [435_612_000.0, 435_612_240.0, 435_612_480.0]
+
+    def test_invalidate_forces_next_write(self) -> None:
+        adapter, dev = self._adapter()
+        adapter.set_frequency(435_612_000.0)
+        adapter.invalidate_retune_cache()
+        # 100 Hz -- the smallest Passband Tune step, well under the deadband.
+        assert adapter.set_frequency(435_612_100.0) is True
+        assert dev.writes == [435_612_000.0, 435_612_100.0]
+
+    def test_failed_write_is_not_cached(self) -> None:
+        """A rejected retune must not become the deadband reference."""
+        adapter, dev = self._adapter()
+        dev.fail_next = True
+        assert adapter.set_frequency(435_612_000.0) is False
+        assert dev.writes == []
+        assert adapter.set_frequency(435_612_010.0) is True
+        assert dev.writes == [435_612_010.0]
+
+    def test_zero_deadband_restores_per_cycle_retuning(self) -> None:
+        adapter, dev = self._adapter()
+        adapter.set_retune_deadband(0.0)
+        for hz in (435_612_000.0, 435_612_001.0, 435_612_002.0):
+            adapter.set_frequency(hz)
+        assert len(dev.writes) == 3
+
+    def test_disconnect_clears_reference(self) -> None:
+        adapter, dev = self._adapter()
+        adapter.set_frequency(435_612_000.0)
+        adapter.disconnect()
+        adapter._sdr_device = dev  # type: ignore[assignment]
+        assert adapter.set_frequency(435_612_010.0) is True
+        assert dev.writes == [435_612_000.0, 435_612_010.0]
+
+    def test_set_vfo_frequencies_ignores_uplink(self) -> None:
+        adapter, dev = self._adapter()
+        adapter.set_vfo_frequencies(435_612_000.0, 145_993_000.0)
+        adapter.set_vfo_frequencies(None, 145_994_000.0)
+        assert dev.writes == [435_612_000.0]
+
+    def test_no_device_returns_false(self) -> None:
+        adapter = SdrRigAdapter()
+        assert adapter.set_frequency(435_612_000.0) is False
