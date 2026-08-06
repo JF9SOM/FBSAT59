@@ -65,6 +65,32 @@ class TestGetHamlibVersionNumber:
         assert hamlib_info.get_hamlib_version_number() == "unknown"
 
 
+class TestIsUpdateAvailable:
+    def test_newer_release_is_an_update(self) -> None:
+        assert hamlib_info.is_update_available("4.7.2", "4.7.1")
+
+    def test_same_version_is_not_an_update(self) -> None:
+        assert not hamlib_info.is_update_available("4.7.2", "4.7.2")
+
+    def test_older_release_is_never_offered(self) -> None:
+        # Between tag pushes the bundled Hamlib outranks the bundle release
+        # (dev build has 4.7.2, release still holds 4.7.1). Offering that would
+        # downgrade the user.
+        assert not hamlib_info.is_update_available("4.7.1", "4.7.2")
+
+    def test_compares_numerically_not_lexically(self) -> None:
+        assert hamlib_info.is_update_available("4.7.10", "4.7.2")
+        assert not hamlib_info.is_update_available("4.7.2", "4.7.10")
+
+    def test_no_release_version_is_not_an_update(self) -> None:
+        assert not hamlib_info.is_update_available("", "4.7.2")
+
+    def test_unreadable_current_version_invites_an_install(self) -> None:
+        # get_hamlib_version_number() returns 'unknown' when Hamlib will not
+        # import at all; an install is exactly what that user needs.
+        assert hamlib_info.is_update_available("4.7.2", "unknown")
+
+
 class TestAssetNaming:
     def test_linux_name_round_trips(self, linux: None) -> None:
         name = hamlib_info.asset_name("4.7.2")

@@ -146,6 +146,22 @@ def parse_asset_version(name: str) -> str | None:
     return version or None
 
 
+def is_update_available(latest: str, current: str) -> bool:
+    """
+    Return True only when `latest` is strictly newer than `current`.
+
+    Equality means up to date, and an older release must never be offered:
+    between tag pushes the bundled Hamlib can outrank whatever sits in the
+    bundle release, and presenting that as an "update" would silently
+    downgrade the user. An unreadable current version (Hamlib failed to
+    import, so no digits to parse) sorts as 0 and therefore does invite an
+    install, which is the desired behaviour.
+    """
+    if not latest:
+        return False
+    return version_key(latest) > version_key(current)
+
+
 def select_newest_asset(assets: list[dict[str, object]]) -> tuple[str, str]:
     """
     Pick the highest-versioned bundle asset built for this platform from a

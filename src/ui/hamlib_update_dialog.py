@@ -44,6 +44,7 @@ from core.hamlib_info import (
     get_hamlib_version_number,
     get_user_hamlib_dir,
     get_user_hamlib_version,
+    is_update_available,
     select_newest_asset,
 )
 from i18n import _
@@ -270,11 +271,6 @@ class HamlibUpdateDialog(QDialog):
         if version:
             self._latest_label.setText(_("Latest: <b>{ver}</b>").format(ver=version))
 
-        if version and version == current:
-            self._log.append(_("Already up to date ({ver}).").format(ver=current))
-            self._install_btn.setVisible(False)
-            return
-
         if not url:
             self._latest_label.setText(_("Check failed."))
             self._log.append(
@@ -283,6 +279,11 @@ class HamlibUpdateDialog(QDialog):
                     "See {url} for manual installation."
                 ).format(url=HAMLIB_GITHUB_RELEASES)
             )
+            self._install_btn.setVisible(False)
+            return
+
+        if not is_update_available(version, current):
+            self._log.append(_("Already up to date ({ver}).").format(ver=current))
             self._install_btn.setVisible(False)
             return
 
