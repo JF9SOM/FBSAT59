@@ -1,16 +1,30 @@
 """FT4 QSO state machine for satellite operations.
 
-The QSO flow for a calling station is:
-  IDLE → CALLING → EXCHANGE → CONFIRM → LOGGED
+States are named for what we last SENT, so each one says exactly what we
+are waiting to hear next:
 
-For a responding station (clicking a decoded CQ):
-  IDLE → EXCHANGE → CONFIRM → LOGGED
+  Calling CQ:
+    IDLE -CQ-> CALLING -their grid-> EXCHANGE -their R+rpt-> CONFIRM
+      -their 73-> LOGGED
+    (if they skip the grid and answer with a report straight away,
+     CALLING goes to RREPORT_SENT instead)
+
+  Answering someone, grid first (the standard exchange, MyGrid button):
+    IDLE -my grid-> GRID_SENT -their rpt-> RREPORT_SENT -their RR73->
+      LOGGED
+
+  Answering someone, report first (RST button -- common on satellites,
+  where passes are short):
+    IDLE -my report-> EXCHANGE -their R+rpt-> CONFIRM -their 73-> LOGGED
 
 The manager generates TX messages at each step and tracks RST values.
+Signal reports are always the measured SNR of the message we are
+answering -- never a fixed placeholder (GitHub Issue #16).
 """
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -18,13 +32,28 @@ from enum import Enum, auto
 
 UTC = UTC
 
+# 4-character Maidenhead grid, as carried in a standard FT4 message.
+GRID_RE = re.compile(r"^[A-R]{2}[0-9]{2}$")
+# Signal report: "-12", "+03". R-prefixed variants are matched separately.
+_REPORT_RE = re.compile(r"^[+-][0-9]{1,2}$")
+_R_REPORT_RE = re.compile(r"^R[+-][0-9]{1,2}$")
+# Acknowledgements that end an exchange.
+_ROGER_WORDS = frozenset({"RR73", "RRR", "RR"})
+
+
+def format_report(snr_db: float) -> str:
+    """Format a measured SNR as an FT4 signal report ("-12", "+03")."""
+    return f"{int(round(snr_db)):+03d}"
+
 
 class QsoState(Enum):
-    """FT4 QSO state."""
+    """FT4 QSO state -- named for the message we last sent."""
 
     IDLE = auto()
-    CALLING = auto()  # sent CQ, waiting for response
-    EXCHANGE = auto()  # exchanging callsigns and signal reports
+    CALLING = auto()  # sent CQ, waiting for someone to answer
+    GRID_SENT = auto()  # answered with our grid, waiting for their report
+    EXCHANGE = auto()  # sent a plain report, waiting for their R-report
+    RREPORT_SENT = auto()  # sent an R-report, waiting for their RR73/73
     CONFIRM = auto()  # sent RR73, waiting for 73
     LOGGED = auto()  # QSO complete, awaiting user confirmation to log
 
@@ -37,6 +66,9 @@ class Ft4QsoSession:
     their_grid: str = ""
     rst_sent: str = ""
     rst_rcvd: str = ""
+    # SNR we measured on their signal, carried from the decode we answered
+    # so the report we send is the real thing rather than a placeholder.
+    their_snr_db: float | None = None
     qso_start: datetime = field(default_factory=lambda: datetime.now(UTC))
     freq_hz: int = 0
     norad_cat_id: int | None = None
@@ -92,70 +124,186 @@ class Ft4QsoManager:
         self._pending_tx = msg
         return msg
 
-    def respond_to(self, their_call: str, their_grid: str = "") -> str:
-        """Respond to a specific station — transitions to EXCHANGE.
+    def set_state(self, state: QsoState) -> None:
+        """Force the state, for the TX quick buttons.
 
-        Returns the TX message "<THEIR_CALL> <MY_CALL> -05" as a starting report.
+        Those let the operator jump straight to a message out of the normal
+        order; the state has to follow or the next decode would be judged
+        against a step we already skipped past.
         """
-        self._state = QsoState.EXCHANGE
+        self._state = state
+
+    def _begin_answer(self, their_call: str, their_grid: str, their_snr_db: float | None) -> None:
+        """Shared setup for both ways of answering a station."""
         self._session = Ft4QsoSession()
         self._session.their_call = their_call.upper().strip()
         self._session.their_grid = their_grid.upper().strip()
+        self._session.their_snr_db = their_snr_db
         self._session.qso_start = datetime.now(UTC)
-        msg = f"{self._session.their_call} {self._my_call} -05"
+
+    def respond_with_grid(
+        self, their_call: str, their_grid: str = "", their_snr_db: float | None = None
+    ) -> str:
+        """Answer a station with our grid — the standard opening exchange.
+
+        Transitions to GRID_SENT. Returns "<THEIR_CALL> <MY_CALL> <MY_GRID>".
+        """
+        self._begin_answer(their_call, their_grid, their_snr_db)
+        self._state = QsoState.GRID_SENT
+        msg = f"{self._session.their_call} {self._my_call} {self._my_grid}"
         self._pending_tx = msg
-        self._session.rst_sent = "-05"
+        return msg
+
+    def respond_with_report(
+        self, their_call: str, their_grid: str = "", their_snr_db: float | None = None
+    ) -> str:
+        """Answer a station with a signal report, skipping the grid step.
+
+        Common on satellites, where a pass leaves little time for the full
+        exchange. Transitions to EXCHANGE (we have sent a plain report and
+        are waiting for their R-report). Returns
+        "<THEIR_CALL> <MY_CALL> <REPORT>".
+        """
+        self._begin_answer(their_call, their_grid, their_snr_db)
+        self._state = QsoState.EXCHANGE
+        report = format_report(their_snr_db) if their_snr_db is not None else "-05"
+        msg = f"{self._session.their_call} {self._my_call} {report}"
+        self._pending_tx = msg
+        self._session.rst_sent = report
         return msg
 
     # ------------------------------------------------------------------ #
     # State machine                                                        #
     # ------------------------------------------------------------------ #
 
-    def advance(self, decoded_text: str, their_snr: float | None = None) -> str | None:
+    def advance(
+        self,
+        decoded_text: str,
+        their_snr: float | None = None,
+        *,
+        allow_auto_start: bool = False,
+    ) -> str | None:
         """Process a decoded message and advance state if it matches the QSO.
 
-        Returns the next TX message string if a transition occurred, else None.
+        Returns the next TX message string if a transition occurred, else
+        None. A None return means the message was not for us, or was not the
+        one this state is waiting for, and nothing changed.
+
+        Args:
+            decoded_text: One decoded FT4 message.
+            their_snr: SNR we measured on it, used for the report we send back.
+            allow_auto_start: Let an incoming call pull us out of IDLE into a
+                QSO. Off by default so monitoring never starts transmitting
+                by itself; the FT4 tab turns it on only when the operator has
+                selected auto-progress (GitHub Issue #16).
         """
+        # FT4 directed messages are "<TO> <FROM> <payload>"; anything shorter
+        # (a bare "73", a CQ) carries nothing this state machine acts on.
         words = decoded_text.upper().split()
-        if len(words) < 2:
+        if len(words) < 3:
+            # A bare acknowledgement still closes out a finished exchange.
+            closing = self._state in (QsoState.CONFIRM, QsoState.RREPORT_SENT)
+            if closing and ("73" in words or _ROGER_WORDS & set(words)):
+                return self._finish()
             return None
 
-        if self._state == QsoState.CALLING:
-            # Looking for: <THEIR_CALL> <MY_CALL> <RST>
-            if len(words) >= 3 and words[1] == self._my_call:
-                their_call = words[0]
-                self._session.their_call = their_call
-                self._session.rst_rcvd = words[2]
-                self._session.qso_start = datetime.now(UTC)
-                report = f"{their_snr:+.0f}" if their_snr is not None else "-05"
-                msg = f"{their_call} {self._my_call} R{report}"
-                self._pending_tx = msg
-                self._session.rst_sent = report
-                self._state = QsoState.EXCHANGE
-                return msg
+        to_call, from_call, payload = words[0], words[1], words[2]
+
+        if self._state in (QsoState.IDLE, QsoState.CALLING):
+            if self._state == QsoState.IDLE and not allow_auto_start:
+                return None
+            # Waiting for someone to come back to us: "<MY> <THEIR> <...>".
+            if to_call != self._my_call:
+                return None
+            return self._on_answer_to_our_call(from_call, payload, their_snr)
+
+        # Every remaining state is mid-QSO with one specific station, so the
+        # message must be from them and addressed to us.
+        target = self._session.their_call
+        if not target or to_call != self._my_call or from_call != target:
+            return None
+
+        if self._state == QsoState.GRID_SENT:
+            # We sent our grid; they should now report us.
+            if _REPORT_RE.match(payload):
+                self._session.rst_rcvd = payload
+                return self._send_r_report(target, their_snr)
+            if _R_REPORT_RE.match(payload):
+                # They jumped ahead to an R-report -- accept and confirm.
+                self._session.rst_rcvd = payload[1:]
+                return self._send_rr73(target)
+            if payload in _ROGER_WORDS or payload == "73":
+                return self._finish()
 
         elif self._state == QsoState.EXCHANGE:
-            # Looking for: <THEIR_CALL> <MY_CALL> R<RST>  (confirmation)
-            target = self._session.their_call
-            if (
-                target
-                and len(words) >= 3
-                and words[0] == target
-                and words[1] == self._my_call
-                and words[2].startswith("R")
-            ):
-                self._session.rst_rcvd = words[2][1:]  # strip leading R
-                msg = f"{target} {self._my_call} RR73"
+            # We sent a plain report; they should confirm with an R-report.
+            if _R_REPORT_RE.match(payload):
+                self._session.rst_rcvd = payload[1:]
+                return self._send_rr73(target)
+            if payload in _ROGER_WORDS or payload == "73":
+                return self._finish()
+
+        elif self._state == QsoState.RREPORT_SENT:
+            # We sent an R-report; their RR73 (or 73) ends it.
+            if payload in _ROGER_WORDS:
+                msg = f"{target} {self._my_call} 73"
                 self._pending_tx = msg
-                self._state = QsoState.CONFIRM
+                self._state = QsoState.LOGGED
                 return msg
+            if payload == "73":
+                return self._finish()
 
-        elif self._state == QsoState.CONFIRM and "73" in words:
-            # Looking for: 73  or  <THEIR_CALL> <MY_CALL> 73
-            self._state = QsoState.LOGGED
-            self._pending_tx = ""
-            return None
+        elif self._state == QsoState.CONFIRM:
+            if payload == "73" or payload in _ROGER_WORDS:
+                return self._finish()
 
+        return None
+
+    # -- advance() helpers --
+
+    def _on_answer_to_our_call(
+        self, from_call: str, payload: str, their_snr: float | None
+    ) -> str | None:
+        """Someone answered our CQ (or called us out of the blue)."""
+        if GRID_RE.match(payload):
+            self._begin_answer(from_call, payload, their_snr)
+            self._state = QsoState.EXCHANGE
+            report = format_report(their_snr) if their_snr is not None else "-05"
+            msg = f"{from_call} {self._my_call} {report}"
+            self._pending_tx = msg
+            self._session.rst_sent = report
+            return msg
+        if _REPORT_RE.match(payload):
+            # They skipped the grid and reported us straight away.
+            self._begin_answer(from_call, "", their_snr)
+            self._session.rst_rcvd = payload
+            return self._send_r_report(from_call, their_snr)
+        return None
+
+    def _send_r_report(self, target: str, their_snr: float | None) -> str:
+        report = format_report(their_snr) if their_snr is not None else self._session.rst_sent
+        if not report:
+            report = "-05"
+        self._session.rst_sent = report
+        msg = f"{target} {self._my_call} R{report}"
+        self._pending_tx = msg
+        self._state = QsoState.RREPORT_SENT
+        return msg
+
+    def _send_rr73(self, target: str) -> str:
+        msg = f"{target} {self._my_call} RR73"
+        self._pending_tx = msg
+        self._state = QsoState.CONFIRM
+        return msg
+
+    def _finish(self) -> str | None:
+        """Exchange complete -- nothing left to send.
+
+        Returns None like any other non-transition, but moves to LOGGED so
+        the tab can stop transmitting and offer the QSO for logging.
+        """
+        self._state = QsoState.LOGGED
+        self._pending_tx = ""
         return None
 
     def set_tx_override(self, message: str) -> None:

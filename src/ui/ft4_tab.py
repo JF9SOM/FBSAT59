@@ -54,7 +54,7 @@ from comms.ft4.codec import (
     get_user_ft8lib_dir,
 )
 from comms.ft4.decode_log import get_ft4_decode_logger
-from comms.ft4.qso import Ft4QsoManager, QsoState
+from comms.ft4.qso import Ft4QsoManager, QsoState, format_report
 from comms.ft4.rx_capture import Ft4RxCaptureWorker
 from comms.ft4.scheduler import Ft4Scheduler
 from i18n import _
@@ -331,6 +331,9 @@ class Ft4Tab(QWidget):
         self._in_device: int | None = None
         self._rx_source: str = "soundcard"  # "soundcard" or "sdr"
         self._tx_slot_mode: str = "auto"  # "auto", "even", or "odd"
+        # Start a QSO by ourselves when called while idle. Off by default:
+        # monitoring must never begin answering people on its own.
+        self._auto_progress: bool = False
         self._sdr_connected: bool = False
         self._sdr_pipeline: Any | None = None
         self._tx_level_pct: float = 100.0  # % of full-scale TX audio amplitude
@@ -485,14 +488,20 @@ class Ft4Tab(QWidget):
 
         # Quick buttons + TX Enable / Halt TX
         btn_row = QHBoxLayout()
-        for label, slot in [
-            ("CQ", self._on_btn_cq),
-            ("RST", self._on_btn_rst),
-            ("R+RST", self._on_btn_rrst),
-            ("RR73", self._on_btn_rr73),
-            ("73", self._on_btn_73),
+        for label, slot, tip in [
+            ("CQ", self._on_btn_cq, _("Call CQ")),
+            (
+                "MyGrid",
+                self._on_btn_mygrid,
+                _("Answer with our grid — the standard opening exchange"),
+            ),
+            ("RST", self._on_btn_rst, _("Answer with a signal report, skipping the grid")),
+            ("R+RST", self._on_btn_rrst, _("Acknowledge and report (R + report)")),
+            ("RR73", self._on_btn_rr73, _("Confirm the exchange")),
+            ("73", self._on_btn_73, _("Sign off")),
         ]:
             btn = QPushButton(label)
+            btn.setToolTip(tip)
             btn.clicked.connect(slot)
             btn_row.addWidget(btn)
 
@@ -586,6 +595,22 @@ class Ft4Tab(QWidget):
         self._adif_btn.clicked.connect(self._on_export_adif)
         qso_row.addWidget(self._adif_btn)
 
+        qso_row.addStretch()
+        qso_row.addWidget(QLabel(_("Auto-progress:")))
+        self._auto_progress_combo = QComboBox()
+        self._auto_progress_combo.addItem(_("No"), False)
+        self._auto_progress_combo.addItem(_("Yes"), True)
+        self._auto_progress_combo.setCurrentIndex(1 if self._auto_progress else 0)
+        self._auto_progress_combo.setToolTip(
+            _(
+                "When another station calls us while no QSO is running, start\n"
+                "one automatically and prepare the reply. First caller wins if\n"
+                "several answer at once. Transmitting still requires TX Enable."
+            )
+        )
+        self._auto_progress_combo.currentIndexChanged.connect(self._on_auto_progress_changed)
+        qso_row.addWidget(self._auto_progress_combo)
+
         tx_lay.addLayout(qso_row)
         root.addWidget(tx_grp)
 
@@ -659,6 +684,7 @@ class Ft4Tab(QWidget):
             self._audio_freq = float(data.get("audio_freq_hz", _DEFAULT_AUDIO_FREQ))
             self._rx_source = data.get("rx_source", "soundcard")
             self._tx_slot_mode = data.get("tx_slot_mode", "auto")
+            self._auto_progress = bool(data.get("auto_progress", False))
             self._tx_level_pct = float(data.get("tx_level_pct", 100.0))
         # Fall back to global callsign / grid from Set QTH if not yet set per-tab
         if not self._my_call:
@@ -690,6 +716,7 @@ class Ft4Tab(QWidget):
                 "audio_freq_hz": self._audio_freq,
                 "rx_source": self._rx_source,
                 "tx_slot_mode": self._tx_slot_mode,
+                "auto_progress": self._auto_progress,
                 "tx_level_pct": self._tx_level_pct,
             }
         )
@@ -1108,42 +1135,120 @@ class Ft4Tab(QWidget):
                         item.setBackground(Qt.GlobalColor.yellow)
             self._table.scrollToBottom()
 
-        # Auto-advance QSO state machine
+        self._auto_advance_qso(messages)
+
+    def _auto_advance_qso(self, messages: list[Ft4Message]) -> None:
+        """Feed decodes to the state machine and follow it.
+
+        Once a QSO is under way it always advances by itself. Starting one
+        from IDLE because somebody called us is opt-in (the Auto-progress
+        selector) so plain monitoring never answers on its own. If several
+        stations call in the same period the first decode wins -- the state
+        machine stops matching the rest as soon as it has a partner
+        (GitHub Issue #16).
+        """
         qso = self._qso
-        if qso is not None and qso.state not in (QsoState.IDLE, QsoState.LOGGED):
-            for msg in messages:
-                next_tx = qso.advance(msg.text, their_snr=msg.snr_db)
-                if next_tx is not None:
-                    self._tx_edit.setText(next_tx)
-                    self._update_qso_display()
-                    break
+        if qso is None:
+            return
+        # Snapshot the state: comparing qso.state directly would let mypy
+        # narrow the property and then reject the post-advance() re-read
+        # below, which is the whole point (advance() mutates it).
+        state_before = qso.state
+        if state_before == QsoState.LOGGED:
+            return
+        if state_before == QsoState.IDLE and not self._auto_progress:
+            return
+
+        was_idle = state_before == QsoState.IDLE
+        for msg in messages:
+            next_tx = qso.advance(
+                msg.text, their_snr=msg.snr_db, allow_auto_start=self._auto_progress
+            )
+            if next_tx is None:
+                continue
+            self._tx_edit.setText(next_tx)
+            self._update_qso_display()
+            if was_idle:
+                # They called us in the slot just gone, so we answer in the
+                # other one.
+                is_even, _pos = Ft4Scheduler.current_slot_info()
+                self._start_scheduler(tx_even=not is_even)
+                self._status_label.setText(
+                    _("Auto-answering {call}").format(call=qso.session.their_call)
+                )
+            break
+
+        if qso.state == QsoState.LOGGED:
+            self._on_qso_complete()
+
+    def _on_qso_complete(self) -> None:
+        """Stop transmitting once the exchange is over.
+
+        Without this the last message stays in the TX field and goes out
+        again every single TX slot until the operator notices and presses
+        Halt -- _transmit_now() reads that field, and nothing was clearing
+        it (GitHub Issue #16).
+        """
+        self._tx_edit.clear()
+        if self._tx_enabled:
+            self._tx_enabled = False
+            self._tx_enable_btn.setChecked(False)
+        self._update_qso_display()
+        call = self._qso.session.their_call if self._qso is not None else ""
+        self._status_label.setText(
+            _("QSO with {call} complete — TX stopped, press Log QSO to save").format(call=call)
+        )
+
+    def _row_snr_db(self, row: int) -> float | None:
+        """Measured SNR of a decoded row, or None for our own TX rows."""
+        item = self._table.item(row, _COL_DB)
+        if item is None:
+            return None
+        try:
+            return float(item.text())
+        except ValueError:
+            return None  # our own TX rows show "N/A"
 
     @Slot(int, int)
     def _on_message_double_clicked(self, row: int, _col: int) -> None:
+        """Pick up the other station from any decoded row and answer them.
+
+        Not just CQs: a station signing "73" with someone else is about to be
+        free, and is exactly who you want to call next on a short satellite
+        pass. FT4 directed messages are "<TO> <FROM> <payload>", so the
+        station to work is the sender -- unless we are the sender, in which
+        case it is the addressee (GitHub Issue #16).
+
+        The default answer is our grid, the standard opening exchange. Press
+        RST afterwards to switch to a report instead.
+        """
         item = self._table.item(row, _COL_MSG)
         if item is None:
             return
-        text = item.text()
-        words = text.upper().split()
+        words = item.text().upper().split()
+        if not words:
+            return
         qso = self._get_qso_manager()
         if qso is None:
             return
 
-        if words[0] == "CQ" and len(words) >= 2:
+        if words[0] == "CQ":
             their_call, their_grid = _parse_cq_call_grid(words[1:])
-            reply = qso.respond_to(their_call, their_grid)
-            self._tx_edit.setText(reply)
-            self._update_qso_display()
-            # Start scheduler with opposite slot (responding station takes the other half)
-            _is_even, _pos = Ft4Scheduler.current_slot_info()
-            # CQ station is in current slot → respond in opposite
-            self._start_scheduler(tx_even=not _is_even)
+        elif len(words) >= 2:
+            to_call, from_call = words[0], words[1]
+            their_call = to_call if from_call == self._my_call.upper() else from_call
+            their_grid = words[2] if len(words) >= 3 and _GRID_RE.match(words[2]) else ""
         else:
-            # Let the state machine interpret the message
-            next_tx = qso.advance(text)
-            if next_tx is not None:
-                self._tx_edit.setText(next_tx)
-                self._update_qso_display()
+            return
+        if not their_call or their_call == self._my_call.upper():
+            return
+
+        reply = qso.respond_with_grid(their_call, their_grid, self._row_snr_db(row))
+        self._tx_edit.setText(reply)
+        self._update_qso_display()
+        # They transmit in the current slot, so we answer in the other one.
+        is_even, _pos = Ft4Scheduler.current_slot_info()
+        self._start_scheduler(tx_even=not is_even)
 
     # ------------------------------------------------------------------ #
     # TX quick buttons                                                     #
@@ -1159,33 +1264,81 @@ class Ft4Tab(QWidget):
         is_even, _pos = Ft4Scheduler.current_slot_info()
         self._start_scheduler(tx_even=self._resolve_tx_even(is_even))
 
-    def _on_btn_rst(self) -> None:
-        call = self._my_call.strip().upper()
+    def _active_qso_for_button(self) -> Ft4QsoManager | None:
+        """QSO manager for the message buttons, or None with a reason shown.
+
+        These buttons all need a station to address. They used to read
+        self._qso directly and silently do nothing when it was None or had no
+        callsign yet, which looked exactly like a dead button (GitHub Issue
+        #16) -- say what is missing instead.
+        """
+        qso = self._get_qso_manager()  # also reports a missing My Call
+        if qso is None:
+            return None
+        if not qso.session.their_call:
+            self._status_label.setText(_("Double-click a decoded station first"))
+            return None
+        return qso
+
+    def _apply_button_message(self, msg: str, state: QsoState) -> None:
+        """Put a hand-picked message on the air and move the QSO to match.
+
+        The buttons used to write straight into the TX field, leaving the
+        state machine behind -- so the next decode would answer as if the
+        button had never been pressed.
+        """
         qso = self._qso
-        their = qso.session.their_call if qso else ""
-        if their:
-            self._tx_edit.setText(f"{their} {call} -05")
+        if qso is not None:
+            qso.pending_tx = msg
+            qso.set_state(state)
+        self._tx_edit.setText(msg)
+        self._update_qso_display()
+
+    def _on_btn_mygrid(self) -> None:
+        qso = self._active_qso_for_button()
+        if qso is None:
+            return
+        sess = qso.session
+        msg = qso.respond_with_grid(sess.their_call, sess.their_grid, sess.their_snr_db)
+        self._tx_edit.setText(msg)
+        self._update_qso_display()
+
+    def _on_btn_rst(self) -> None:
+        qso = self._active_qso_for_button()
+        if qso is None:
+            return
+        sess = qso.session
+        msg = qso.respond_with_report(sess.their_call, sess.their_grid, sess.their_snr_db)
+        self._tx_edit.setText(msg)
+        self._update_qso_display()
 
     def _on_btn_rrst(self) -> None:
-        call = self._my_call.strip().upper()
-        qso = self._qso
-        their = qso.session.their_call if qso else ""
-        if their:
-            self._tx_edit.setText(f"{their} {call} R-05")
+        qso = self._active_qso_for_button()
+        if qso is None:
+            return
+        sess = qso.session
+        report = format_report(sess.their_snr_db) if sess.their_snr_db is not None else "-05"
+        self._apply_button_message(
+            f"{sess.their_call} {self._my_call.upper()} R{report}", QsoState.RREPORT_SENT
+        )
 
     def _on_btn_rr73(self) -> None:
-        call = self._my_call.strip().upper()
-        qso = self._qso
-        their = qso.session.their_call if qso else ""
-        if their:
-            self._tx_edit.setText(f"{their} {call} RR73")
+        qso = self._active_qso_for_button()
+        if qso is None:
+            return
+        self._apply_button_message(
+            f"{qso.session.their_call} {self._my_call.upper()} RR73", QsoState.CONFIRM
+        )
 
     def _on_btn_73(self) -> None:
-        call = self._my_call.strip().upper()
-        qso = self._qso
-        their = qso.session.their_call if qso else ""
-        if their:
-            self._tx_edit.setText(f"{their} {call} 73")
+        qso = self._active_qso_for_button()
+        if qso is None:
+            return
+        # Deliberately not _on_qso_complete(): the operator still has to send
+        # this 73, so TX stays enabled and the message stays in the field.
+        self._apply_button_message(
+            f"{qso.session.their_call} {self._my_call.upper()} 73", QsoState.LOGGED
+        )
 
     # ------------------------------------------------------------------ #
     # QSO log / clear                                                      #
@@ -1241,6 +1394,11 @@ class Ft4Tab(QWidget):
     @Slot(int)
     def _on_tx_slot_mode_changed(self, _idx: int) -> None:
         self._tx_slot_mode = self._tx_slot_combo.currentData()
+        self._save_settings()
+
+    @Slot(int)
+    def _on_auto_progress_changed(self, _idx: int) -> None:
+        self._auto_progress = bool(self._auto_progress_combo.currentData())
         self._save_settings()
 
     @Slot(int)
