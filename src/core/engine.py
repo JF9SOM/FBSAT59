@@ -558,7 +558,8 @@ class DopplerCalculator:
     Doppler shift calculator.
 
     Computes frequency corrections from the satellite's line-of-sight velocity (range_rate_km_s).
-    For inverting transponders (invert=True), the uplink correction direction is reversed.
+    The uplink correction is always in the opposite direction to the downlink one, for
+    inverting and non-inverting transponders alike (see correct_uplink()).
 
     Physical model:
         f_received = f_nominal * (1 - range_rate / c)
@@ -594,33 +595,38 @@ class DopplerCalculator:
     def correct_uplink(
         uplink_hz: float,
         range_rate_km_s: float,
-        *,
-        invert: bool = False,
     ) -> tuple[float, float]:
         """
         Correct the uplink frequency.
 
         Physical model:
-          Non-inverting / simplex (invert=False):
-            Transmit lower when satellite approaches so the signal arrives at the
-            satellite at the nominal frequency.  UL correction is in the OPPOSITE
-            direction to the DL correction.
-          Inverting linear transponder (invert=True):
-            The transponder mirrors the passband, so both DL and UL corrections go
-            in the SAME direction.
+            Transmit higher when the satellite recedes (and lower when it
+            approaches) so the signal arrives at the satellite's receiver on
+            the nominal frequency.  The UL correction is therefore always in
+            the OPPOSITE direction to the DL correction.
+
+        This does NOT depend on whether the transponder inverts.  Uplink
+        Doppler pre-compensation is purely about what the satellite's
+        *receiver* hears; inversion only affects which downlink frequency
+        results and which sideband to use (the latter is handled separately
+        by _MODE_INVERT in ui/main_window.py).  There used to be an `invert`
+        argument here that flipped the sign to match the DL direction -- that
+        was physically wrong and left an operator's own signal drifting
+        across the passband by 2 x uplink_freq x (range_rate/c): about
+        +-5.8 kHz on a V/U bird and +-17.4 kHz on a U/V one over a pass.
+        SSB/CW operators never reported it because they retune by ear
+        continuously; it only became obvious with FT4, where nothing retunes
+        (GitHub Issue #16, confirmed against a reporter's IC-9700 log).
 
         Args:
             uplink_hz: Nominal uplink frequency (Hz)
             range_rate_km_s: Line-of-sight velocity (km/s, positive = receding)
-            invert: Whether this is an inverting transponder
 
         Returns:
             (corrected frequency Hz, shift amount Hz)
         """
-        shift = DopplerCalculator.shift_hz(uplink_hz, range_rate_km_s)
-        if not invert:
-            # Non-inverting: compensate in the opposite direction to DL.
-            shift = -shift
+        # Opposite direction to the DL correction -- see docstring.
+        shift = -DopplerCalculator.shift_hz(uplink_hz, range_rate_km_s)
         return uplink_hz + shift, shift
 
     @classmethod
@@ -629,17 +635,17 @@ class DopplerCalculator:
         downlink_hz: float,
         uplink_hz: float | None,
         range_rate_km_s: float,
-        *,
-        invert: bool = False,
     ) -> DopplerCorrection:
         """
         Simultaneously correct both the downlink and uplink frequencies of a transponder.
+
+        Takes no `invert` argument: Doppler correction is identical for
+        inverting and non-inverting transponders (see correct_uplink()).
 
         Args:
             downlink_hz: Nominal downlink frequency (Hz)
             uplink_hz: Nominal uplink frequency (Hz). None for receive-only.
             range_rate_km_s: Line-of-sight velocity (km/s)
-            invert: Whether this is an inverting transponder
 
         Returns:
             DopplerCorrection
@@ -649,7 +655,7 @@ class DopplerCalculator:
         ul_corrected: float | None = None
         ul_shift: float | None = None
         if uplink_hz is not None:
-            ul_corrected, ul_shift = cls.correct_uplink(uplink_hz, range_rate_km_s, invert=invert)
+            ul_corrected, ul_shift = cls.correct_uplink(uplink_hz, range_rate_km_s)
 
         return DopplerCorrection(
             downlink_hz=dl_corrected,

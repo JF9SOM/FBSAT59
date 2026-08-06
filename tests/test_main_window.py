@@ -2641,9 +2641,7 @@ class TestLockDialFeedback:
         w._dial_feedback_offset_hz = 0.0
 
         expected_dl_corr, expected_dl_shift = DopplerCalculator.correct_downlink(dl_nom, 2.5)
-        expected_ul_corr, expected_ul_shift = DopplerCalculator.correct_uplink(
-            ul_nom, 2.5, invert=False
-        )
+        expected_ul_corr, expected_ul_shift = DopplerCalculator.correct_uplink(ul_nom, 2.5)
         assert abs(expected_dl_shift) != abs(expected_ul_shift)
 
         received = self._run_doppler_cycle(

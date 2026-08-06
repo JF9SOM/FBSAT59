@@ -819,10 +819,12 @@ class Q65Tab(QWidget):
 
         rig = self._get_rig()
 
-        # PTT ON (Doppler freeze handled internally by RigController)
+        # PTT ON. freeze_doppler=False: a Q65 transmission runs 15-60 s, so
+        # holding the VFOs still for its duration would drag our signal right
+        # out of the passband. Keep correcting through TX (GitHub Issue #16).
         if rig is not None:
             with contextlib.suppress(Exception):
-                rig.set_ptt(True)
+                rig.set_ptt(True, freeze_doppler=False)
 
         try:
             import sounddevice as sd

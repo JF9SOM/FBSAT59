@@ -154,7 +154,11 @@ class _TxWorker(QObject):
             validate_output_device(self._out_device, SAMPLE_RATE, channels=1)
 
             if self._rig is not None:
-                if not self._rig.set_ptt(True):
+                # freeze_doppler=False: an FT4 transmission is ~5 s, far too
+                # long to hold the VFOs still -- doing so smears our signal
+                # across the passband. Keep correcting right through TX
+                # (GitHub Issue #16).
+                if not self._rig.set_ptt(True, freeze_doppler=False):
                     self.error.emit(_("PTT command failed — check Rig 1 connection"))
                     return
                 time.sleep(0.15)  # PTT lead time

@@ -3011,7 +3011,7 @@ class MainWindow(QMainWindow):
         # introduced by dial feedback -- dial feedback's offset was simply
         # being fed into the same already-broken formula.
         ul_corr, ul_shift = (
-            DopplerCalculator.correct_uplink(float(ul_nom), rr, invert=invert)
+            DopplerCalculator.correct_uplink(float(ul_nom), rr)
             if ul_nom is not None
             else (None, None)
         )

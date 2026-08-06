@@ -492,6 +492,127 @@ class TestGenericDirectUlWriteVfoRestore:
         ctrl._rig.set_vfo.assert_not_called()
 
 
+class TestPttDopplerFreeze:
+    """set_ptt(freeze_doppler=...) decides whether Doppler tracking continues
+    through the TX window. Packet bursts (APRS, AX100 Digi) keep the default
+    freeze so the carrier cannot jump mid-packet; tone modes (FT4 ~5 s, Q65 up
+    to 60 s) pass False, because freezing smears their signal across the
+    passband (GitHub Issue #16)."""
+
+    def _make_connected_ctrl(self) -> HamlibDirectController:
+        ctrl = HamlibDirectController(model_id=3085, port="/dev/null")  # IC-705
+        ctrl._rig = MagicMock()
+        fake_hamlib = MagicMock()
+        fake_hamlib.RIG_VFO_A = 101
+        fake_hamlib.RIG_VFO_B = 102
+        ctrl._hamlib = fake_hamlib
+        with ctrl._lock:
+            ctrl._state = RigState.CONNECTED
+        return ctrl
+
+    def test_default_freezes_doppler_during_tx(self) -> None:
+        ctrl = self._make_connected_ctrl()
+        ctrl.set_ptt(True)
+        assert ctrl._ptt_active is True
+        assert ctrl._doppler_frozen is True
+        ctrl._rig.set_freq.reset_mock()
+        # Frozen: the write is swallowed.
+        assert ctrl.set_vfo_frequencies(145_800_000.0, 435_000_000.0) is True
+        ctrl._rig.set_freq.assert_not_called()
+
+    def test_tone_mode_keeps_tracking_during_tx(self) -> None:
+        ctrl = self._make_connected_ctrl()
+        ctrl.set_ptt(True, freeze_doppler=False)
+        assert ctrl._ptt_active is True
+        assert ctrl._doppler_frozen is False
+        ctrl._rig.set_freq.reset_mock()
+        assert ctrl.set_vfo_frequencies(145_800_000.0, 435_000_000.0) is True
+        ctrl._rig.set_freq.assert_any_call(101, 145_800_000)  # DL still tracked
+        ctrl._rig.set_freq.assert_any_call(102, 435_000_000)  # UL still tracked
+
+    def test_unkeying_clears_both_flags(self) -> None:
+        ctrl = self._make_connected_ctrl()
+        ctrl.set_ptt(True, freeze_doppler=False)
+        ctrl.set_ptt(False)
+        assert ctrl._ptt_active is False
+        assert ctrl._doppler_frozen is False
+
+    def test_pending_frequencies_recorded_even_while_frozen(self) -> None:
+        """The values handed over while frozen must still be remembered, so
+        _flush_pending_frequencies() has something current to replay."""
+        ctrl = self._make_connected_ctrl()
+        ctrl.set_ptt(True)  # frozen
+        ctrl.set_vfo_frequencies(145_800_123.0, 435_000_456.0)
+        assert ctrl._pending_dl_hz == 145_800_123.0
+        assert ctrl._pending_ul_hz == 435_000_456.0
+
+
+class TestPreTxUplinkFlush:
+    """Satmode throttles UL writes (20 Hz for non-FM) to spare IC-9100's
+    display, which leaves Sub up to 20 Hz stale at any instant. Harmless
+    while receiving, but not at the moment a tone mode keys up: the first
+    in-TX correction is a whole Doppler cycle away, so the transmission
+    would start off-frequency and then step. set_ptt(freeze_doppler=False)
+    flushes the newest computed pair first (GitHub Issue #16)."""
+
+    def _make_satmode_ctrl(self) -> HamlibDirectController:
+        ctrl = HamlibDirectController(model_id=3081, port="/dev/null")  # IC-9700
+        ctrl._rig = MagicMock()
+        fake_hamlib = MagicMock()
+        fake_hamlib.RIG_VFO_MAIN = 4194304
+        fake_hamlib.RIG_VFO_SUB = 8388608
+        fake_hamlib.RIG_VFO_TX = 16777216
+        fake_hamlib.RIG_PTT_ON = 1
+        fake_hamlib.RIG_PTT_OFF = 0
+        ctrl._hamlib = fake_hamlib
+        ctrl._rig.error_status = 0
+        ctrl._current_dl_mode = "USB-D"  # non-FM -> 20 Hz UL throttle
+        with ctrl._lock:
+            ctrl._state = RigState.CONNECTED
+        return ctrl
+
+    def test_stale_uplink_is_flushed_before_keying(self) -> None:
+        ctrl = self._make_satmode_ctrl()
+        # First cycle establishes both VFOs (cross-band satmode).
+        ctrl.set_vfo_frequencies(435_612_000.0, 145_993_000.0)
+        ctrl._rig.set_freq.reset_mock()
+        # Next cycles drift the UL by less than the 20 Hz throttle, so the
+        # rig is never told -- Sub is now stale by 8 Hz.
+        ctrl.set_vfo_frequencies(435_611_950.0, 145_992_992.0)
+        assert ctrl._rig.set_freq.call_count == 1  # DL only
+        ctrl._rig.set_freq.reset_mock()
+
+        ctrl.set_ptt(True, freeze_doppler=False)
+
+        # Keying flushed the pending UL so the carrier comes up on frequency.
+        ctrl._rig.set_freq.assert_any_call(8388608, 145_992_992)  # RIG_VFO_SUB
+        ctrl._rig.set_ptt.assert_called_once()
+
+    def test_no_flush_when_freezing(self) -> None:
+        """Packet modes keep the default freeze and must not be given a
+        surprise frequency write on the way into TX."""
+        ctrl = self._make_satmode_ctrl()
+        ctrl.set_vfo_frequencies(435_612_000.0, 145_993_000.0)
+        ctrl.set_vfo_frequencies(435_611_950.0, 145_992_992.0)
+        ctrl._rig.set_freq.reset_mock()
+
+        ctrl.set_ptt(True)
+
+        ctrl._rig.set_freq.assert_not_called()
+
+    def test_uplink_tracked_at_1hz_while_transmitting(self) -> None:
+        """Once keyed with freeze_doppler=False, sub-20 Hz drift that would
+        normally be throttled away must reach the rig."""
+        ctrl = self._make_satmode_ctrl()
+        ctrl.set_vfo_frequencies(435_612_000.0, 145_993_000.0)
+        ctrl.set_ptt(True, freeze_doppler=False)
+        ctrl._rig.set_freq.reset_mock()
+
+        ctrl.set_vfo_frequencies(435_611_990.0, 145_992_997.0)  # UL moved 3 Hz
+
+        ctrl._rig.set_freq.assert_any_call(8388608, 145_992_997)  # RIG_VFO_SUB
+
+
 # ---------------------------------------------------------------------------
 # HamlibDirectController satmode (IC-9100/9700) — Hamlib return-code checks
 # ---------------------------------------------------------------------------

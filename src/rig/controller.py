@@ -667,7 +667,11 @@ class RigController(ABC):
         self._lock = threading.Lock()
         self._state = RigState.DISCONNECTED
         self._freq_state = FrequencyState()
-        self._ptt_active: bool = False  # set by set_ptt(); freezes Doppler updates
+        self._ptt_active: bool = False  # set by set_ptt(); True for the whole TX window
+        # Subset of _ptt_active: True only while a caller that asked for
+        # freeze_doppler=True (the default) is transmitting. Tone modes
+        # (FT4/Q65) pass False and keep tracking during TX -- see set_ptt().
+        self._doppler_frozen: bool = False
 
     # -- Connection management --
 
@@ -798,19 +802,40 @@ class RigController(ABC):
 
     # -- PTT --
 
-    def set_ptt(self, enabled: bool) -> bool:
+    def set_ptt(self, enabled: bool, *, freeze_doppler: bool = True) -> bool:
         """Key or un-key the transmitter via CAT.
 
         Returns True on success, False when not connected or not supported.
         Default implementation is a no-op that returns False.
         Subclasses that support CAT PTT must override this method.
 
-        The base class manages ``_ptt_active`` so that ``set_vfo_frequencies``
-        can skip Doppler updates during the TX window without each subclass
-        needing to handle it separately.
+        The base class manages ``_ptt_active`` / ``_doppler_frozen`` so that
+        ``set_vfo_frequencies`` can decide whether to keep tracking during the
+        TX window without each subclass needing to handle it separately.
+
+        Args:
+            enabled: True to key, False to un-key.
+            freeze_doppler: When True (default), Doppler updates are suspended
+                for the whole TX window. Right for short packet bursts (APRS,
+                AX100 Digi, <2 s) where a mid-packet carrier jump would corrupt
+                bits and the drift over the burst is negligible anyway.
+                Long tone modes (FT4 ~5 s, Q65 up to 60 s) must pass False:
+                their receivers track frequency, so continuous correction is
+                strictly better, and freezing leaves the transmission smeared
+                across hundreds of Hz near TCA (GitHub Issue #16).
         """
         self._ptt_active = enabled
+        self._doppler_frozen = enabled and freeze_doppler
         return False
+
+    def _tracking_through_tx(self) -> bool:
+        """True while we are transmitting *and* still Doppler-tracking.
+
+        Only tone modes (FT4/Q65) get here, via set_ptt(freeze_doppler=False).
+        Used to tighten the uplink write threshold for the duration of the
+        transmission, when the uplink is genuinely on the air.
+        """
+        return self._ptt_active and not self._doppler_frozen
 
     # -- Utilities --
 
@@ -880,7 +905,11 @@ class HamlibDirectController(RigController):
         # last_written_vfo_is_main(). Not maintained for same-band/non-satmode
         # writes (those don't feed the Lock read-skip logic).
         self._last_written_vfo: str | None = None
-        self._ptt_active: bool = False
+        # _ptt_active / _doppler_frozen are initialised by RigController.__init__().
+        # Newest DL/UL pair handed to set_vfo_frequencies(), written or not --
+        # replayed by _flush_pending_frequencies() just before a tone mode keys up.
+        self._pending_dl_hz: float | None = None
+        self._pending_ul_hz: float | None = None
         self._satmode: bool = model_id in _SATMODE_RIG_IDS
         # True while IC-9100/9700 satmode is actually active on the rig.
         # Dynamically toggled: same-band pairs (V/V, U/U) use normal split
@@ -1475,11 +1504,18 @@ class HamlibDirectController(RigController):
             logger.error("RigDirect.set_vfo: %s", exc)
             return False
 
-    def set_ptt(self, enabled: bool) -> bool:
+    def set_ptt(self, enabled: bool, *, freeze_doppler: bool = True) -> bool:
         """Key or un-key the transmitter via Hamlib direct binding."""
-        super().set_ptt(enabled)  # updates _ptt_active
+        super().set_ptt(enabled, freeze_doppler=freeze_doppler)
         if not self.is_connected or self._rig is None:
             return False
+        if enabled and not freeze_doppler:
+            # Tone modes keep tracking through TX, so the carrier must come up
+            # already on frequency: the UL write throttle below can leave Sub
+            # up to _UL_THRESH (20 Hz) stale, and the first in-TX correction is
+            # a whole Doppler cycle away. Flush the newest computed UL first so
+            # the transmission starts accurate instead of stepping mid-burst.
+            self._flush_pending_frequencies()
         try:
             ptt_val = self._hamlib.RIG_PTT_ON if enabled else self._hamlib.RIG_PTT_OFF
             self._rig.set_ptt(self._hamlib.RIG_VFO_CURR, ptt_val)
@@ -1487,6 +1523,36 @@ class HamlibDirectController(RigController):
         except Exception as exc:
             logger.error("RigDirect.set_ptt(%s): %s", enabled, exc)
             return False
+
+    def _flush_pending_frequencies(self) -> None:
+        """Re-apply the most recently *computed* DL/UL pair right now.
+
+        set_vfo_frequencies() records every pair it is handed, but the UL
+        write is throttled: it only reaches the rig once it has drifted past
+        _UL_THRESH. That throttle exists to keep IC-9100's display from
+        flickering (its targetable_vfo == 0, so every Sub write is an actual
+        VFO switch), and it is harmless while receiving -- the uplink is not
+        on the air. It is not harmless at the instant we key up.
+
+        Called from set_ptt(enabled=True, freeze_doppler=False) before the
+        carrier comes up, so the rig is still in RX and this is an ordinary
+        safe write. _ptt_active is already True and _doppler_frozen already
+        False by this point, so the in-TX 1 Hz threshold applies and the
+        pending UL actually gets written. Both frequencies are replayed
+        rather than the UL alone because _set_vfo_frequencies_locked() needs
+        both to tell same-band from cross-band; the DL write is skipped
+        internally when it has not moved.
+
+        Best-effort: failures are logged and swallowed rather than blocking
+        the PTT that is about to follow.
+        """
+        if self._pending_ul_hz is None or self._rig is None:
+            return
+        try:
+            with self._rig_cmd_lock:
+                self._set_vfo_frequencies_locked(self._pending_dl_hz, self._pending_ul_hz)
+        except Exception as exc:
+            logger.warning("RigDirect: pre-TX frequency flush failed: %s", exc)
 
     def set_vfo_frequencies(
         self,
@@ -1503,7 +1569,12 @@ class HamlibDirectController(RigController):
         """
         if not self.is_connected or self._rig is None:
             return False
-        if self._ptt_active:
+        # Remember what we were told even if we skip the write below, so
+        # _flush_pending_frequencies() can bring the rig fully up to date at
+        # the instant a tone mode keys up (GitHub Issue #16).
+        self._pending_dl_hz = vfoa_hz
+        self._pending_ul_hz = vfob_hz
+        if self._doppler_frozen:
             return True
         with self._rig_cmd_lock:
             return self._set_vfo_frequencies_locked(vfoa_hz, vfob_hz)
@@ -1637,8 +1708,20 @@ class HamlibDirectController(RigController):
                         now = time.monotonic()
                         elapsed = now - self._last_ul_update_time
                         is_fm = self._current_dl_mode in ("FM", "DIGITALVOICE")
-                        _UL_THRESH = 10.0 if is_fm else 20.0
                         _UL_MAX_S = 5.0 if is_fm else 15.0
+                        _UL_THRESH = 10.0 if is_fm else 20.0
+                        if self._tracking_through_tx():
+                            # Actually transmitting a tone mode: the uplink is
+                            # on the air right now, so track it as tightly as
+                            # the downlink (1 Hz) instead of letting it sit up
+                            # to 20 Hz stale. Any coarser and the correction
+                            # lands as a step part-way through the
+                            # transmission -- FT4's tone spacing is only
+                            # 20.83 Hz (GitHub Issue #16). The extra Sub writes
+                            # cost an actual VFO switch per cycle on IC-9100
+                            # (targetable_vfo == 0), but only for the few
+                            # seconds a transmission lasts.
+                            _UL_THRESH = 1.0
                         if (
                             last_ul is None
                             or abs(vfob_hz - last_ul) >= _UL_THRESH
@@ -3125,9 +3208,11 @@ class HamlibNetController(RigController):
         if not self.is_connected:
             return False
 
-        # Skip Doppler updates during CAT PTT TX window (~0.8 s) to avoid
-        # changing frequency while the rig is transmitting.
-        if self._ptt_active:
+        # Skip Doppler updates during a packet-mode CAT PTT TX window (~0.8 s)
+        # to avoid a mid-burst carrier jump. Tone modes (FT4/Q65) pass
+        # freeze_doppler=False to set_ptt() and keep tracking right through
+        # their much longer transmissions -- see set_ptt()'s docstring.
+        if self._doppler_frozen:
             return True
 
         send_rx = self._radio_type != "tx_only"
@@ -3325,9 +3410,9 @@ class HamlibNetController(RigController):
         resp = self._cmd(f"V {vfo}")
         return "RPRT 0" in resp
 
-    def set_ptt(self, enabled: bool) -> bool:
+    def set_ptt(self, enabled: bool, *, freeze_doppler: bool = True) -> bool:
         """Key (T 1) or un-key (T 0) via rigctld CAT PTT command."""
-        super().set_ptt(enabled)  # updates _ptt_active
+        super().set_ptt(enabled, freeze_doppler=freeze_doppler)
         if not self.is_connected:
             return False
         resp = self._cmd(f"T {'1' if enabled else '0'}")

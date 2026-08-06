@@ -324,23 +324,20 @@ class TestDopplerCalculator:
         assert freq < self._DL_HZ
         assert shift < 0.0
 
-    def test_correct_uplink_non_invert(self) -> None:
-        """Non-inverting: UL correction is OPPOSITE to DL (transmit lower when approaching)."""
+    def test_correct_uplink_is_opposite_to_downlink(self) -> None:
+        """UL correction is ALWAYS opposite to DL (transmit lower when approaching)."""
         _, dl_shift = DopplerCalculator.correct_downlink(self._DL_HZ, range_rate_km_s=-7.0)
-        _, ul_shift = DopplerCalculator.correct_uplink(
-            self._UL_HZ, range_rate_km_s=-7.0, invert=False
-        )
+        _, ul_shift = DopplerCalculator.correct_uplink(self._UL_HZ, range_rate_km_s=-7.0)
         # DL shift is positive (approaching); UL shift is negative (transmit lower).
         assert dl_shift > 0 and ul_shift < 0
 
-    def test_correct_uplink_invert(self) -> None:
-        """Inverting transponder: UL correction is in the SAME direction as DL."""
-        _, dl_shift = DopplerCalculator.correct_downlink(self._DL_HZ, range_rate_km_s=-7.0)
-        _, ul_shift = DopplerCalculator.correct_uplink(
-            self._UL_HZ, range_rate_km_s=-7.0, invert=True
-        )
-        # Both DL and UL shift positive when approaching (passband is mirrored).
-        assert dl_shift > 0 and ul_shift > 0
+    def test_correct_uplink_arrives_at_satellite_on_nominal(self) -> None:
+        """The whole point of the UL correction: whatever the range rate, the
+        signal must reach the satellite's receiver on the nominal frequency."""
+        for rr in (-7.0, -3.0, 0.0, 3.0, 7.0):
+            ul_corr, _ = DopplerCalculator.correct_uplink(self._UL_HZ, range_rate_km_s=rr)
+            at_satellite = ul_corr * (1.0 - rr / _C_KM_S)
+            assert at_satellite == pytest.approx(self._UL_HZ, rel=1e-9)
 
     def test_correct_transponder_returns_dataclass(self) -> None:
         result = DopplerCalculator.correct_transponder(
@@ -355,19 +352,33 @@ class TestDopplerCalculator:
         assert result.uplink_shift_hz is None
         assert result.downlink_hz != self._DL_HZ
 
-    def test_correct_transponder_invert_uplink_sign(self) -> None:
-        result_normal = DopplerCalculator.correct_transponder(
-            self._DL_HZ, self._UL_HZ, range_rate_km_s=-7.0, invert=False
-        )
-        result_invert = DopplerCalculator.correct_transponder(
-            self._DL_HZ, self._UL_HZ, range_rate_km_s=-7.0, invert=True
-        )
-        # ダウンリンクは同じ
-        assert result_normal.downlink_hz == pytest.approx(result_invert.downlink_hz)
-        # アップリンクシフトは逆符号
-        assert result_normal.uplink_shift_hz is not None
-        assert result_invert.uplink_shift_hz is not None
-        assert result_normal.uplink_shift_hz == pytest.approx(-result_invert.uplink_shift_hz)
+    def test_inverting_transponder_own_signal_stays_put(self) -> None:
+        """GitHub Issue #16 regression: through an INVERTING transponder, your
+        own signal must land on the same spot in your own receiver's passband
+        no matter what the range rate is.
+
+        correct_uplink() used to take an `invert` flag that flipped the UL
+        correction to match the DL direction. That was physically wrong: it
+        made an operator's own signal sweep across the passband by
+        2 x uplink_freq x (range_rate/c) -- about +-5.8 kHz over a pass on
+        RS-44 -- which is exactly what was observed on-air.
+        """
+        dl_nom, ul_nom = 435.612e6, 145.993e6  # RS-44 FT4 calling frequency
+        transponder_sum = dl_nom + ul_nom  # inverting: f_down_sat = sum - f_up_at_sat
+        audio_offset = 1500.0
+
+        positions = []
+        for rr in (-6.0, -3.0, 0.0, 3.0, 6.0):
+            corr = DopplerCalculator.correct_transponder(dl_nom, ul_nom, range_rate_km_s=rr)
+            assert corr.uplink_hz is not None
+            # Round trip: our TX -> uplink Doppler -> transponder -> downlink Doppler
+            at_satellite = (corr.uplink_hz + audio_offset) * (1.0 - rr / _C_KM_S)
+            sat_transmits = transponder_sum - at_satellite
+            received = sat_transmits * (1.0 - rr / _C_KM_S)
+            positions.append(received - corr.downlink_hz)
+
+        # Well under one FT4 tone spacing (20.83 Hz) of movement across the pass.
+        assert max(positions) - min(positions) < 1.0
 
     def test_iss_doppler_realistic(self, engine: SatelliteEngine) -> None:
         """ISSのTCA付近でドップラーシフトが ±10 kHz 以内か確認（145 MHz帯）"""
