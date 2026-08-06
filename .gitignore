@@ -48,3 +48,6 @@ Thumbs.db
 secrets.toml
 space_track_credentials.json
 q65lib-bundle/
+
+# setuptools-scm generated version file
+src/fbsat59/_version.py
