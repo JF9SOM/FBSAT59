@@ -3,10 +3,10 @@ Hamlib Update dialog.
 
 Opened from Help > Hamlib Update… or via the link in Rig / Rotator Settings.
 
-Checks GitHub Releases for the latest Hamlib version, downloads the
-pre-built package appropriate for the current platform, and installs it
-to the per-user data directory so the bundled version can be replaced
-without touching the (possibly read-only) AppImage.
+Checks this project's own 'hamlib-bundle' release for the newest pre-built
+package matching the current platform, architecture and Python version, then
+installs it to the per-user data directory so the bundled version can be
+replaced without touching the (possibly read-only) AppImage.
 
 Platforms:
   Linux   — downloads hamlib-linux-x86_64-pyXYZ-<ver>.tar.gz (custom CI asset)
@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import logging
-import platform
 import tarfile
 import urllib.request
 import zipfile
@@ -42,11 +41,10 @@ from core.hamlib_info import (
     HAMLIB_GITHUB_API,
     HAMLIB_GITHUB_RELEASES,
     get_hamlib_version,
+    get_hamlib_version_number,
     get_user_hamlib_dir,
     get_user_hamlib_version,
-    linux_asset_name,
-    macos_asset_name,
-    windows_asset_name,
+    select_newest_asset,
 )
 from i18n import _
 
@@ -54,7 +52,7 @@ logger = logging.getLogger(__name__)
 
 
 class _CheckWorker(QThread):
-    """Fetches the latest Hamlib version from the GitHub Releases API."""
+    """Fetches the newest bundled Hamlib build from the GitHub Releases API."""
 
     result = Signal(str, str)  # latest_version, download_url (empty if not found)
     error = Signal(str)
@@ -63,12 +61,14 @@ class _CheckWorker(QThread):
         try:
             req = urllib.request.Request(
                 HAMLIB_GITHUB_API,
-                headers={"User-Agent": "fbsat59/1.0"},
+                headers={
+                    "User-Agent": "fbsat59/1.0",
+                    "Accept": "application/vnd.github+json",
+                },
             )
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data: dict[str, object] = json.loads(resp.read())
 
-            tag: str = str(data.get("tag_name", "")).lstrip("v")
             raw_assets = data.get("assets")
             assets: list[dict[str, object]] = (
                 [a for a in raw_assets if isinstance(a, dict)]
@@ -76,26 +76,10 @@ class _CheckWorker(QThread):
                 else []
             )
 
-            url = self._find_asset_url(tag, assets)
-            self.result.emit(tag, url)
+            version, url = select_newest_asset(assets)
+            self.result.emit(version, url)
         except Exception as exc:
             self.error.emit(str(exc))
-
-    def _find_asset_url(self, version: str, assets: list[dict[str, object]]) -> str:
-        os_name = platform.system()
-        if os_name == "Linux":
-            target = linux_asset_name(version)
-        elif os_name == "Windows":
-            target = windows_asset_name(version)
-        elif os_name == "Darwin":
-            target = macos_asset_name(version)
-        else:
-            return ""
-
-        for asset in assets:
-            if str(asset.get("name", "")) == target:
-                return str(asset.get("browser_download_url", ""))
-        return ""
 
 
 class _DownloadWorker(QThread):
@@ -147,7 +131,7 @@ class _DownloadWorker(QThread):
     def _extract_tarball(self, path: Path, dest: Path) -> None:
         with tarfile.open(path, "r:gz") as tf:
             for member in tf.getmembers():
-                # Strip the top-level directory (e.g. hamlib-linux-x86_64-py311-4.7.1/)
+                # Strip the top-level directory (e.g. hamlib-linux-x86_64-py311-4.7.2/)
                 parts = Path(member.name).parts
                 if len(parts) < 2:
                     continue
@@ -280,15 +264,19 @@ class HamlibUpdateDialog(QDialog):
         self._latest_version = version
         self._download_url = url
 
-        current = get_hamlib_version()
-        self._latest_label.setText(_("Latest: <b>{ver}</b>").format(ver=version))
+        # A user-installed copy takes effect only after a restart, so trust its
+        # recorded version over the still-loaded one when deciding staleness.
+        current = get_user_hamlib_version() or get_hamlib_version_number()
+        if version:
+            self._latest_label.setText(_("Latest: <b>{ver}</b>").format(ver=version))
 
-        if version == current:
+        if version and version == current:
             self._log.append(_("Already up to date ({ver}).").format(ver=current))
             self._install_btn.setVisible(False)
             return
 
         if not url:
+            self._latest_label.setText(_("Check failed."))
             self._log.append(
                 _(
                     "Pre-built package not found for this platform / Python version.\n"

@@ -471,6 +471,55 @@ Windows: %APPDATA%/fbsat59/hamlib/
 
 `py311` の部分は Python バージョンに応じて変化（`hamlib_info.py` の `_PYVER_TAG` で決定）。
 
+**アップロード先は upstream ではなく本リポジトリの `hamlib-bundle` プレリリース**
+（ft8lib-bundle / q65lib-bundle / ft4wsjt-bundle と同じ方式）。upstream の
+`Hamlib/Hamlib` リリースにあるのはソース tarball と Windows インストーラーだけで、
+上表のアセットは一切存在しない。
+
+#### アップデーターが upstream を見ていて一度も機能していなかった不具合（2026-08-06 発見・修正）
+
+4.7.2 へのバンドル更新作業中に発覚。`src/core/hamlib_info.py` の `HAMLIB_GITHUB_API` が
+`https://api.github.com/repos/Hamlib/Hamlib/releases/latest`（**upstream**）を指しており、
+`_CheckWorker._find_asset_url()` がその upstream リリースのアセット一覧から
+`hamlib-linux-x86_64-py311-<ver>.tar.gz` を探していた。しかしこの命名のアセットは
+本リポジトリの `hamlib-bundle` リリースにしか存在しないため、**マッチは構造上必ず失敗**し、
+毎回「Pre-built package not found for this platform / Python version」に落ちていた。
+つまり **Help > Hamlib Update… の「Download & Install」ボタンは一度も表示されたことがなかった**
+可能性が高い（他の3つのバンドルインストーラーは最初から
+`https://api.github.com/repos/JF9SOM/fbsat59/releases/tags/{tag}` を見ており正しかった。
+Hamlib のアップデーターだけがこのパターンから外れていた）。
+
+副次的に `_on_check_result()` の `version == current` も、upstream のタグ由来の `"4.7.2"` と
+`get_hamlib_version()`（＝`Hamlib.hamlib_version`、実際の値は `"Hamlib 4.7.2"`）を
+直接比較しており、こちらも構造上必ず不一致になっていた。
+
+**修正**:
+- `HAMLIB_GITHUB_API` を `JF9SOM/fbsat59` の `hamlib-bundle` タグへ変更
+- **バージョンはリリースのタグではなくアセット名から取り出す**。`hamlib-bundle` は
+  ローリングのプレリリースでタグ自体が版数を持たない。さらに
+  `gh release upload --clobber` は同名ファイルしか置き換えないため、
+  4.7.2 を上げても 4.7.1 のアセットがリリースに残り続ける。したがって
+  「最初にマッチしたもの」ではなく **`version_key()` による数値比較で最大のものを選ぶ**
+  必要がある（`select_newest_asset()`）
+- `get_hamlib_version_number()` を新設し、表示用文字列から数値部分だけを取り出して比較する。
+  ユーザーインストール版は再起動するまでロードされないため、判定には
+  `get_user_hamlib_version()`（`version.txt`）を優先する
+- アセット選択ロジック自体は `hamlib_info.py` 側に置いた（ダイアログ内のメソッドのままだと
+  テストに PySide6 と QThread 構築が必要になるため）。`tests/test_hamlib_info.py` が
+  Qt 非依存でカバーする
+
+**教訓**: 同種の機能（バンドルの自動ダウンロード）が4つあるのに、そのうち1つだけが
+別の実装パターン（upstream API を見る）になっていた。しかも失敗時は例外ではなく
+「見つかりませんでした」という**もっともらしいメッセージ**に落ちるため、
+壊れていること自体が長期間気づかれなかった。同じ役割のコードが複数ある場合、
+新規追加時だけでなく既存分についても、参照先・命名規則が揃っているかを確認すること。
+
+**関連ソースファイル:**
+- `src/core/hamlib_info.py` — バージョン検出・ユーザーディレクトリ・アセット命名
+- `src/ui/hamlib_update_dialog.py` — ダウンロード・展開・インストール UI
+- `src/main.py` — ユーザーインストール版の優先ロード・Windows DLL パス登録
+- `.github/workflows/ci.yml` — 各プラットフォームのポータブルパッケージビルドと Release アップロード
+
 #### Linux 開発環境固有: sys.path surgery
 
 開発機（`/opt/hamlib/4.7` が存在する場合のみ）は `/usr/lib/python3/dist-packages` を `sys.path` から除去して 4.7.x を優先ロードする。
