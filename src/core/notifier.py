@@ -89,6 +89,10 @@ def _send_windows_notification(title: str, body: str) -> None:
                 ["powershell", "-Command", ps_script],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                # Without this, launching powershell.exe from this windowed
+                # (console-less) PyInstaller build briefly flashes a blue
+                # console window on screen every time this fallback fires.
+                creationflags=subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
             )
         except Exception:  # noqa: BLE001
             pass
