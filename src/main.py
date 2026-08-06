@@ -32,7 +32,7 @@ if getattr(sys, "frozen", False):
     except Exception:
         pass
 
-# On the developer's Linux machine, ensure only Hamlib 4.7.1 is loaded and not
+# On the developer's Linux machine, ensure only Hamlib 4.7.x is loaded and not
 # the older system package (4.5.5).  Loading both causes a "Hash collision"
 # fatal error in Hamlib's rig registry.  This block is a no-op when running
 # from a PyInstaller bundle or on Windows/macOS where /opt/hamlib does not exist.

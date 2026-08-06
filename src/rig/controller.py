@@ -36,18 +36,18 @@ import httpx
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Ensure only Hamlib 4.7.1 is loaded — loading 4.5.5 and 4.7.1 simultaneously
+# Ensure only Hamlib 4.7.x is loaded — loading 4.5.5 and 4.7.x simultaneously
 # causes a "Hash collision" fatal error in Hamlib's internal rig registry.
 # Remove the system dist-packages entry so Python cannot find the old _Hamlib.so,
-# then prepend the 4.7.1 path. LD_LIBRARY_PATH is not touched; _Hamlib.so's
+# then prepend the 4.7 path. LD_LIBRARY_PATH is not touched; _Hamlib.so's
 # RUNPATH already resolves libhamlib.so to /opt/hamlib/4.7/lib.
 # ---------------------------------------------------------------------------
-_HAMLIB_471_PY = "/opt/hamlib/4.7/lib/python3.12/site-packages"
+_HAMLIB_47_PY = "/opt/hamlib/4.7/lib/python3.12/site-packages"
 _HAMLIB_SYS_PY = "/usr/lib/python3/dist-packages"
 if _HAMLIB_SYS_PY in sys.path:
     sys.path.remove(_HAMLIB_SYS_PY)
-if os.path.exists(_HAMLIB_471_PY) and _HAMLIB_471_PY not in sys.path:
-    sys.path.insert(0, _HAMLIB_471_PY)
+if os.path.exists(_HAMLIB_47_PY) and _HAMLIB_47_PY not in sys.path:
+    sys.path.insert(0, _HAMLIB_47_PY)
 
 # ---------------------------------------------------------------------------
 # Hamlib availability check — import is deferred to connect() to avoid loading

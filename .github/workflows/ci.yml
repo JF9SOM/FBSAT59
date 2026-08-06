@@ -102,9 +102,9 @@ jobs:
             libgl1 libegl1 libfuse2 \
             binutils coreutils
 
-      - name: Build Hamlib 4.7.1 from source
+      - name: Build Hamlib 4.7.2 from source
         run: |
-          HAMLIB_VER="4.7.1"
+          HAMLIB_VER="4.7.2"
           PYVER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
           PYTAG=$(python3 -c "import sys; print(f'py{sys.version_info.major}{sys.version_info.minor}')")
 
@@ -313,10 +313,10 @@ jobs:
       - name: Install Python dependencies
         run: pip install -e ".[packaging]"
 
-      - name: Build Hamlib 4.7.1 Python binding (MinGW) and portable package
+      - name: Build Hamlib 4.7.2 Python binding (MinGW) and portable package
         shell: pwsh
         run: |
-          $HAMLIB_VER = "4.7.1"
+          $HAMLIB_VER = "4.7.2"
           $PYTAG = python -c "import sys; print(f'py{sys.version_info.major}{sys.version_info.minor}')"
           $PY_INC  = python -c "import sysconfig; print(sysconfig.get_path('include'))"
           $PY_EXT  = python -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))"
@@ -361,11 +361,11 @@ jobs:
             Write-Host "Creating stub $configH"
             $stub = "/* Minimal config.h stub for Windows MSVC */" + "`n" +
                     "#ifndef HAMLIB_CONFIG_H`n#define HAMLIB_CONFIG_H`n" +
-                    "#define PACKAGE_VERSION `"4.7.1`"`n" +
-                    "#define VERSION `"4.7.1`"`n" +
+                    "#define PACKAGE_VERSION `"4.7.2`"`n" +
+                    "#define VERSION `"4.7.2`"`n" +
                     "#define PACKAGE `"hamlib`"`n" +
                     "#define PACKAGE_NAME `"Hamlib`"`n" +
-                    "#define PACKAGE_STRING `"Hamlib 4.7.1`"`n" +
+                    "#define PACKAGE_STRING `"Hamlib 4.7.2`"`n" +
                     "#define PACKAGE_TARNAME `"hamlib`"`n" +
                     "#define PACKAGE_URL `"http://hamlib.org`"`n" +
                     "#endif`n"
@@ -904,7 +904,7 @@ jobs:
           # Install build tools via Homebrew (swig generates hamlib_wrap.c from .swg)
           brew install autoconf automake libtool pkg-config libusb dylibbundler swig
 
-          HAMLIB_VER="4.7.1"
+          HAMLIB_VER="4.7.2"
           PYVER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
           PYTAG=$(python3 -c "import sys; print(f'py{sys.version_info.major}{sys.version_info.minor}')")
           ARCH=$(uname -m)  # arm64 or x86_64

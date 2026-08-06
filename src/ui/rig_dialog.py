@@ -62,7 +62,7 @@ from sdr.device import SdrDeviceInfo
 # ---------------------------------------------------------------------------
 # Fallback model list (actual Hamlib 4.x model numbers)
 # ---------------------------------------------------------------------------
-# Model IDs verified against Hamlib 4.7.1 riglist.h (RIG_MAKE_MODEL(backend, n)).
+# Model IDs verified against Hamlib 4.7.2 riglist.h (RIG_MAKE_MODEL(backend, n)).
 # Hamlib 4.x removed riglist dict, so _load_from_hamlib_api() returns [] and
 # this list is always used as the fallback on 4.x installations.
 _FALLBACK_MODELS: list[tuple[int, str, str]] = [

@@ -414,16 +414,35 @@ MODE_MAP = {
 ### Hamlib バージョン管理・配布方針（2026-06-09 確定）
 
 #### 必須バージョン
-- **Hamlib 4.7.1 以上が必須**（FTX-1F モデル 1051 および SkyWatcher ローテーターは 4.7 以降でのみ動作）
-- 配布バンドル（AppImage / .exe / .dmg）には必ず 4.7.1 を同梱すること
+- **Hamlib 4.7 以上が必須**（FTX-1F モデル 1051 および SkyWatcher ローテーターは 4.7 以降でのみ動作）
+- **4.7.2 以上を強く推奨**（4.7.2 で rigctld のセキュリティ修正2件
+  — CVE-2026-54634 / GHSA-gpcq-c37x-pr4、GHSA-f72v-7gmh-m9mj — が入った。
+  `send_raw` のスタック境界外書き込み・`read_string_generic` のオーバーフロー・
+  rigctld の認証バイパス。NET モードで rigctld をネットワークに公開する構成では直接該当する）
+- 配布バンドル（AppImage / .exe / .dmg）には必ず 4.7.2 を同梱すること
 
 #### バンドル版 Hamlib のビルド
 
 | プラットフォーム | ビルド方法 | PyInstaller 収集元 |
 |---|---|---|
 | Linux | ソースから `/opt/hamlib/4.7` にビルド | `/opt/hamlib/4.7/lib/*.so` |
-| Windows | 公式 `hamlib-w32-4.7.1.zip` を展開 | `hamlib-win64\bin\*.dll` + Python bindings |
+| Windows | 公式 `hamlib-w64-4.7.2.zip` を展開 | `hamlib-win64\bin\*.dll` + Python bindings |
 | macOS | Homebrew `brew install hamlib` | `$(brew --prefix hamlib)/lib/` |
+
+#### バージョンアップ手順（4.7.1 → 4.7.2 で実施した手順、2026-08-06）
+
+1. upstream のリリースアセットとソース tarball の構造が変わっていないか実際にダウンロードして確認する
+   （`bindings/hamlib.swg` の有無・`hamlib_wrap.c` が含まれないこと・`include/hamlib/config.h`
+   が含まれないこと・w64 zip の `bin/`・`include/hamlib/` レイアウト）。ここが同じなら CI は
+   バージョン文字列の置換だけで済む
+2. `include/hamlib/riglist.h` を展開して、本プロジェクトが使うモデルID
+   （FTX-1=1051, FT991=1035, IC9100=3068, IC9700=3081, IC705=3085, IC910=3044）が
+   変わっていないことを確認する
+3. `.github/workflows/ci.yml` の `HAMLIB_VER` 3箇所（Linux / Windows / macOS）・ステップ名・
+   Windows の `config.h` スタブ内の版数を置換する
+4. **タグを push する**。hamlib バンドルのアップロードは
+   `if: startsWith(github.ref, 'refs/tags/v')` でガードされており、`workflow_dispatch` では
+   スキップされる。タグを打たない限り `hamlib-bundle` リリースのアセットは更新されない
 
 #### in-app Hamlib アップデーター（Help > Hamlib Update…）
 
@@ -446,21 +465,15 @@ Windows: %APPDATA%/fbsat59/hamlib/
 
 | プラットフォーム | ファイル名 | 内容 |
 |---|---|---|
-| Linux | `hamlib-linux-x86_64-py311-4.7.1.tar.gz` | `$ORIGIN` rpath付きポータブルビルド |
-| Windows | `hamlib-windows-x86_64-py311-4.7.1.zip` | フラットレイアウト（DLL + .pyd + Hamlib.py） |
-| macOS | `hamlib-macos-arm64-py311-4.7.1.tar.gz` | `@loader_path` rpath + dylibbundler で依存解決済み |
+| Linux | `hamlib-linux-x86_64-py311-4.7.2.tar.gz` | `$ORIGIN` rpath付きポータブルビルド |
+| Windows | `hamlib-windows-x86_64-py311-4.7.2.zip` | フラットレイアウト（DLL + .pyd + Hamlib.py） |
+| macOS | `hamlib-macos-arm64-py311-4.7.2.tar.gz` | `@loader_path` rpath + dylibbundler で依存解決済み |
 
 `py311` の部分は Python バージョンに応じて変化（`hamlib_info.py` の `_PYVER_TAG` で決定）。
 
-**関連ソースファイル:**
-- `src/core/hamlib_info.py` — バージョン検出・ユーザーディレクトリ・アセット命名
-- `src/ui/hamlib_update_dialog.py` — ダウンロード・展開・インストール UI
-- `src/main.py` — ユーザーインストール版の優先ロード・Windows DLL パス登録
-- `.github/workflows/ci.yml` — 各プラットフォームのポータブルパッケージビルドと Release アップロード
-
 #### Linux 開発環境固有: sys.path surgery
 
-開発機（`/opt/hamlib/4.7` が存在する場合のみ）は `/usr/lib/python3/dist-packages` を `sys.path` から除去して 4.7.1 を優先ロードする。
+開発機（`/opt/hamlib/4.7` が存在する場合のみ）は `/usr/lib/python3/dist-packages` を `sys.path` から除去して 4.7.x を優先ロードする。
 
 **重要**: このブロックは `os.path.exists(_HAMLIB_SITE)` でガードされており、`/opt/hamlib/4.7` が存在しない一般ユーザー環境では一切実行されない。
 
@@ -662,11 +675,13 @@ except ImportError:
 
 v0.1.0-beta.34 の CI 作業で判明した重要な知見。同様のエラーに遭遇したときのために記録する。
 
-### Hamlib 4.7.1 ソースビルド共通
+### Hamlib 4.7.x ソースビルド共通
+
+（4.7.2 でも同じ。バージョンアップのたびに tarball の構造を再確認すること）
 
 **問題**: `hamlib_wrap.c: No such file or directory`  
-**原因**: Hamlib 4.7.1 ソースtarballには SWIG が生成する `hamlib_wrap.c` が含まれない（`.swg` ファイルのみ）  
-**解決**: ビルド前に `swig -python -Iinclude -Ihamlib-4.7.1/include -o bindings/hamlib_wrap.c bindings/hamlib.i` を実行
+**原因**: Hamlib 4.7.x ソースtarballには SWIG が生成する `hamlib_wrap.c` が含まれない（`.swg` ファイルのみ）  
+**解決**: ビルド前に `swig -python -Iinclude -Ihamlib-4.7.2/include -o bindings/hamlib_wrap.c bindings/hamlib.i` を実行
 
 **問題**: `hamlib/config.h: No such file or directory`  
 **原因**: `config.h` は autotools が生成するファイル。tarball・zip には含まれない  
@@ -688,7 +703,7 @@ v0.1.0-beta.34 の CI 作業で判明した重要な知見。同様のエラー�
 
 **問題**: `ImportError: DLL load failed while importing _Hamlib`（ABI ミスマッチ）  
 **原因**: MSVC でコンパイルした `.pyd` と MinGW でビルドした `libhamlib-4.dll` は ABI が合わない  
-**解決**: Python binding のコンパイルも MinGW GCC に統一。`hamlib-w32-4.7.1.zip`（32bit）ではなく `hamlib-w64-4.7.1.zip`（64bit）を使用
+**解決**: Python binding のコンパイルも MinGW GCC に統一。`hamlib-w32-4.7.x.zip`（32bit）ではなく `hamlib-w64-4.7.x.zip`（64bit）を使用
 
 **問題**: Python 3.8+ で PATH 経由の DLL 探索が効かない  
 **解決**: `os.add_dll_directory()` を使用（`main.py` 起動ブロックに実装済み）
@@ -4192,7 +4207,7 @@ IC-705専用の表示復元は不要かつ有害だったため、完全にス�
 
 ### FT-991 / FT-991A (Hamlib models 1035 / 1036)
 
-Hamlib 4.7.1 の公式モデルリスト: **1035 = FT-991**（FT-991A も同バックエンドを使用）。
+Hamlib 4.7.2 の公式モデルリスト: **1035 = FT-991**（FT-991A も同バックエンドを使用）。
 rig_dialog.py のカスタムリストでは 1036 = FT-991A として登録。`_FT991_DIRECT_MODEL_IDS = frozenset({1035, 1036})` で両方を対象にする。
 
 #### NET モード（`ctcss_method == "ft991"` で識別）

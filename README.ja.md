@@ -91,7 +91,7 @@ Radio Control でLRPT/HRPTトランスポンダーを選択すると自動オー
 - **コンパス連動レーダー**（Android：デバイスの向きに連動して自動回転）
 
 ### 無線機・ローテーター制御
-- Hamlib 4.7.1 内蔵 — rigctld 別途起動不要
+- Hamlib 4.7.2 内蔵 — rigctld 別途起動不要
 - NET Controlモード（rigctld/rotctld互換）— 既存環境と併用可能
 - デュアルリグ：Rig 1 + Rig 2 独立制御（例：IC-9700 + HackRF）
 - 反転トランスポンダー対応、パスバンドチューニング

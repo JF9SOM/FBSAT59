@@ -93,7 +93,7 @@ Access from any smartphone or tablet on your local network — no app install ne
 - **Compass-linked radar** on Android (auto-rotates with device orientation)
 
 ### Radio / Rotator Control
-- Hamlib 4.7.1 built-in — no separate rigctld needed
+- Hamlib 4.7.2 built-in — no separate rigctld needed
 - NET Control mode (rigctld/rotctld compatible) for existing setups
 - Dual-rig: Rig 1 + Rig 2 independent control (e.g. IC-9700 + HackRF)
 - Inverted transponder support with passband tuning
