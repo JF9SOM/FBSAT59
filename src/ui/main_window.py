@@ -887,6 +887,10 @@ class MainWindow(QMainWindow):
         h_splitter.setStretchFactor(0, 0)
         h_splitter.setStretchFactor(1, 1)
         h_splitter.setStretchFactor(2, 0)
+        # Explicit (matches the QSplitter default) so the satellite list can
+        # be collapsed to zero width by View > Wide Tab while still being
+        # draggable back out via its splitter handle.
+        h_splitter.setCollapsible(0, True)
 
         # Apply initial visibility: Dashboard is the first tab so currentChanged
         # won't fire on startup — hide the detail panel explicitly here.
@@ -901,6 +905,10 @@ class MainWindow(QMainWindow):
         v_splitter.setStretchFactor(0, 3)
         v_splitter.setStretchFactor(1, 2)
         v_splitter.setSizes([600, 400])
+        # Explicit (matches the QSplitter default) so the pass-prediction
+        # panel can be collapsed to zero height by _on_tab_changed / View >
+        # Wide Tab while still being draggable back out via its handle.
+        v_splitter.setCollapsible(1, True)
 
     def _build_menu(self) -> None:
         """Build the menu bar."""
@@ -3576,7 +3584,7 @@ class MainWindow(QMainWindow):
         if widget is self._dashboard_view or widget is self._world_map:
             self._update_world_map()
 
-        self._update_pass_panel_size(shrink=self._wide_tab_enabled or not is_resident)
+        self._update_pass_panel_size(hide=self._wide_tab_enabled or not is_resident)
 
         if is_resident:
             self._detail_panel.deactivate_comms_panel()
@@ -3592,47 +3600,49 @@ class MainWindow(QMainWindow):
         else:
             self._detail_panel.deactivate_comms_panel()
 
-    def _update_pass_panel_size(self, shrink: bool) -> None:
-        """Shrink the pass-prediction (bottom) panel to its minimum height, or
-        restore the sizes saved before it was last shrunk. Shared by
-        _on_tab_changed's per-tab auto-shrink and View > Wide Tab's manual
-        override, so the two never fight over _pass_panel_saved_sizes."""
-        if shrink:
+    def _update_pass_panel_size(self, hide: bool) -> None:
+        """Collapse the pass-prediction (bottom) panel to zero height, or
+        restore the sizes saved before it was last collapsed. The splitter
+        handle stays visible and draggable (QSplitter.isCollapsible(1) is
+        True) so the user can still pull the panel back out with the mouse.
+        Shared by _on_tab_changed's per-tab auto-hide and View > Wide Tab's
+        manual override, so the two never fight over _pass_panel_saved_sizes."""
+        if hide:
             if self._pass_panel_saved_sizes is None:
                 self._pass_panel_saved_sizes = self._v_splitter.sizes()
             total = sum(self._v_splitter.sizes())
-            min_pass_height = self._pass_list.minimumHeight()
-            self._v_splitter.setSizes([max(0, total - min_pass_height), min_pass_height])
+            self._v_splitter.setSizes([total, 0])
         elif self._pass_panel_saved_sizes is not None:
             self._v_splitter.setSizes(self._pass_panel_saved_sizes)
             self._pass_panel_saved_sizes = None
 
-    def _update_sat_list_panel_size(self, shrink: bool) -> None:
-        """Shrink the satellite list (left) panel to its minimum width for
-        View > Wide Tab, or restore the h_splitter sizes saved beforehand."""
-        if shrink:
+    def _update_sat_list_panel_size(self, hide: bool) -> None:
+        """Collapse the satellite list (left) panel to zero width for View >
+        Wide Tab, or restore the h_splitter sizes saved beforehand. Like
+        _update_pass_panel_size, the splitter handle stays draggable while
+        collapsed (QSplitter.isCollapsible(0) is True)."""
+        if hide:
             if self._wide_tab_saved_h_sizes is None:
                 self._wide_tab_saved_h_sizes = self._h_splitter.sizes()
             sizes = self._h_splitter.sizes()
             total = sum(sizes)
-            left_min = self._sat_list_panel.minimumWidth()
             detail_width = sizes[2]
-            self._h_splitter.setSizes(
-                [left_min, max(0, total - left_min - detail_width), detail_width]
-            )
+            self._h_splitter.setSizes([0, max(0, total - detail_width), detail_width])
         elif self._wide_tab_saved_h_sizes is not None:
             self._h_splitter.setSizes(self._wide_tab_saved_h_sizes)
             self._wide_tab_saved_h_sizes = None
 
     def _on_wide_tab_toggled(self, checked: bool) -> None:
-        """View > Wide Tab: manually shrink (or restore) the satellite list
+        """View > Wide Tab: manually hide (or restore) the satellite list
         and pass-prediction panels so a Communications tab (FT4, SDR
-        Control, etc.) gets more screen space."""
+        Control, etc.) gets more screen space. Both panels stay reachable
+        by dragging their splitter handle back out (see
+        _update_pass_panel_size / _update_sat_list_panel_size)."""
         self._wide_tab_enabled = checked
         widget = self._tab_widget.currentWidget()
         is_resident = widget is None or widget in self._resident_tab_widgets
-        self._update_pass_panel_size(shrink=checked or not is_resident)
-        self._update_sat_list_panel_size(shrink=checked)
+        self._update_pass_panel_size(hide=checked or not is_resident)
+        self._update_sat_list_panel_size(hide=checked)
 
     def _on_filter_changed(self, text: str) -> None:
         """Redraw the satellite list when the filter combo changes."""
