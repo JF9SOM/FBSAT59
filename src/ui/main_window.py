@@ -539,6 +539,14 @@ class MainWindow(QMainWindow):
         # Pass-prediction splitter sizes saved just before shrinking it for a
         # Communications tab; restored when returning to a resident tab.
         self._pass_panel_saved_sizes: list[int] | None = None
+        # View > Wide Tab: manual override that shrinks the satellite list
+        # and pass-prediction panels regardless of which tab is active, for
+        # more room while operating a Communications tab (FT4, SDR Control,
+        # etc.). Not persisted across restarts — always starts OFF.
+        self._wide_tab_enabled: bool = False
+        # h_splitter sizes saved just before Wide Tab mode shrinks the
+        # satellite list panel; restored when Wide Tab is turned back off.
+        self._wide_tab_saved_h_sizes: list[int] | None = None
         self._web_server: Any | None = None
         self._web_server_url: str = ""
         # Celestial body tracking (Moon, etc.)
@@ -739,9 +747,11 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(v_splitter)
 
         h_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._h_splitter = h_splitter
 
         # Left: satellite list
         left = QWidget()
+        self._sat_list_panel = left
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(2, 2, 2, 2)
         left_layout.setSpacing(2)
@@ -977,6 +987,14 @@ class MainWindow(QMainWindow):
                 tz_menu.addAction(self._tz_local_action)
                 self._tz_utc_action.triggered.connect(lambda: self._on_time_zone_changed(True))
                 self._tz_local_action.triggered.connect(lambda: self._on_time_zone_changed(False))
+
+            view_menu.addSeparator()
+            self._wide_tab_action = QAction(_("Wide Tab"), self, checkable=True)
+            self._wide_tab_action.setToolTip(
+                _("Shrink the satellite list and pass-prediction panels for more tab space")
+            )
+            view_menu.addAction(self._wide_tab_action)
+            self._wide_tab_action.triggered.connect(self._on_wide_tab_toggled)
 
         # Help
         help_menu = mb.addMenu(_("Help"))
@@ -3542,7 +3560,8 @@ class MainWindow(QMainWindow):
     def _on_tab_changed(self, index: int) -> None:
         """Hide the Satellite Detail panel when Dashboard tab is active (more space
         for map); drive the Comms Quick Panel and auto-resize the pass-prediction
-        splitter when switching to/from a non-resident Communications tab."""
+        splitter when switching to/from a non-resident Communications tab, or
+        while View > Wide Tab is enabled."""
         is_dashboard = index == self._dashboard_tab_idx
         self._detail_panel.setVisible(not is_dashboard)
 
@@ -3557,22 +3576,11 @@ class MainWindow(QMainWindow):
         if widget is self._dashboard_view or widget is self._world_map:
             self._update_world_map()
 
+        self._update_pass_panel_size(shrink=self._wide_tab_enabled or not is_resident)
+
         if is_resident:
-            if self._pass_panel_saved_sizes is not None:
-                self._v_splitter.setSizes(self._pass_panel_saved_sizes)
-                self._pass_panel_saved_sizes = None
             self._detail_panel.deactivate_comms_panel()
             return
-
-        # Non-resident Communications tab (FT4, APRS, Telemetry, ...): shrink
-        # the pass-prediction panel to its minimum so the tab gets the space,
-        # and remember the previous sizes so returning to a resident tab
-        # restores exactly what the user had (which is the default on first use).
-        if self._pass_panel_saved_sizes is None:
-            self._pass_panel_saved_sizes = self._v_splitter.sizes()
-        total = sum(self._v_splitter.sizes())
-        min_pass_height = self._pass_list.minimumHeight()
-        self._v_splitter.setSizes([max(0, total - min_pass_height), min_pass_height])
 
         tab_key = self._comms_tab_keys.get(widget) if widget is not None else None
         if tab_key is not None:
@@ -3583,6 +3591,48 @@ class MainWindow(QMainWindow):
             self._detail_panel.set_active_comms_tab(tab_key, options, tab_widget=widget)
         else:
             self._detail_panel.deactivate_comms_panel()
+
+    def _update_pass_panel_size(self, shrink: bool) -> None:
+        """Shrink the pass-prediction (bottom) panel to its minimum height, or
+        restore the sizes saved before it was last shrunk. Shared by
+        _on_tab_changed's per-tab auto-shrink and View > Wide Tab's manual
+        override, so the two never fight over _pass_panel_saved_sizes."""
+        if shrink:
+            if self._pass_panel_saved_sizes is None:
+                self._pass_panel_saved_sizes = self._v_splitter.sizes()
+            total = sum(self._v_splitter.sizes())
+            min_pass_height = self._pass_list.minimumHeight()
+            self._v_splitter.setSizes([max(0, total - min_pass_height), min_pass_height])
+        elif self._pass_panel_saved_sizes is not None:
+            self._v_splitter.setSizes(self._pass_panel_saved_sizes)
+            self._pass_panel_saved_sizes = None
+
+    def _update_sat_list_panel_size(self, shrink: bool) -> None:
+        """Shrink the satellite list (left) panel to its minimum width for
+        View > Wide Tab, or restore the h_splitter sizes saved beforehand."""
+        if shrink:
+            if self._wide_tab_saved_h_sizes is None:
+                self._wide_tab_saved_h_sizes = self._h_splitter.sizes()
+            sizes = self._h_splitter.sizes()
+            total = sum(sizes)
+            left_min = self._sat_list_panel.minimumWidth()
+            detail_width = sizes[2]
+            self._h_splitter.setSizes(
+                [left_min, max(0, total - left_min - detail_width), detail_width]
+            )
+        elif self._wide_tab_saved_h_sizes is not None:
+            self._h_splitter.setSizes(self._wide_tab_saved_h_sizes)
+            self._wide_tab_saved_h_sizes = None
+
+    def _on_wide_tab_toggled(self, checked: bool) -> None:
+        """View > Wide Tab: manually shrink (or restore) the satellite list
+        and pass-prediction panels so a Communications tab (FT4, SDR
+        Control, etc.) gets more screen space."""
+        self._wide_tab_enabled = checked
+        widget = self._tab_widget.currentWidget()
+        is_resident = widget is None or widget in self._resident_tab_widgets
+        self._update_pass_panel_size(shrink=checked or not is_resident)
+        self._update_sat_list_panel_size(shrink=checked)
 
     def _on_filter_changed(self, text: str) -> None:
         """Redraw the satellite list when the filter combo changes."""
