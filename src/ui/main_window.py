@@ -891,6 +891,13 @@ class MainWindow(QMainWindow):
         # be collapsed to zero width by View > Wide Tab while still being
         # draggable back out via its splitter handle.
         h_splitter.setCollapsible(0, True)
+        # The satellite-detail / Quick Comms Panel (right pane) must never be
+        # squeezed below its own minimum width: unlike the collapsible=True
+        # default, this floor is enforced even when QSplitter recalculates
+        # the layout on its own (e.g. after collapsing pane 0 to zero), not
+        # just against direct user dragging. Wide Tab only ever collapses
+        # the satellite list — the right panel stays put.
+        h_splitter.setCollapsible(2, False)
 
         # Apply initial visibility: Dashboard is the first tab so currentChanged
         # won't fire on startup — hide the detail panel explicitly here.
