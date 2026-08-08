@@ -3,11 +3,12 @@ FBSAT59 application entry point.
 
 Startup sequence:
     1. Create QApplication
-    2. Initialize SQLite DB
-    3. Create TLEManager, LocationManager, SatelliteEngine, PassPredictor
-    4. Create FastAPI app
-    5. Show MainWindow (web server and scheduler start internally)
-    6. Run Qt event loop
+    2. Show splash screen (immediate feedback while the steps below run)
+    3. Initialize SQLite DB
+    4. Create TLEManager, LocationManager, SatelliteEngine, PassPredictor
+    5. Create FastAPI app
+    6. Show MainWindow (web server and scheduler start internally), close splash
+    7. Run Qt event loop
 """
 
 from __future__ import annotations
@@ -196,8 +197,9 @@ if sys.platform.startswith("linux"):
             os.environ.setdefault("XKB_CONFIG_ROOT", _xkb_path)
             break
 
-from PySide6.QtCore import QLockFile, QTimer
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtCore import QLockFile, Qt, QTimer
+from PySide6.QtGui import QPixmap
+from PySide6.QtWidgets import QApplication, QMessageBox, QSplashScreen
 
 from core.engine import PassPredictor, SatelliteEngine
 from core.location import LocationManager, LocationSource
@@ -403,6 +405,53 @@ def _get_version() -> str:
 APP_VERSION = _get_version()
 
 
+def _show_splash(app: QApplication) -> QSplashScreen | None:
+    """Show a splash screen immediately so the user gets feedback right away.
+
+    Startup (DB init, TLE fetch, IP geolocation, MainWindow construction) can
+    take several seconds — especially on Windows — during which the screen
+    would otherwise stay blank after the user clicks the launcher icon. This
+    is shown as the very first thing in main(), before any of that slow work
+    begins, and closed once the main window is ready.
+    """
+    if getattr(sys, "frozen", False):
+        icon_path = Path(getattr(sys, "_MEIPASS", "")) / "assets" / "icon_256.png"
+    else:
+        icon_path = Path(__file__).parent.parent / "assets" / "icon_256.png"
+
+    if not icon_path.exists():
+        return None
+
+    pixmap = QPixmap(str(icon_path))
+    if pixmap.isNull():
+        return None
+    pixmap = pixmap.scaled(
+        200, 200, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+    )
+
+    splash = QSplashScreen(pixmap, Qt.WindowType.WindowStaysOnTopHint)
+    splash.showMessage(
+        "Starting FBSAT59… / 起動中…",
+        Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
+        Qt.GlobalColor.white,
+    )
+    splash.show()
+    app.processEvents()
+    return splash
+
+
+def _splash_message(splash: QSplashScreen | None, text: str) -> None:
+    """Update the splash screen's status text and force it to repaint."""
+    if splash is None:
+        return
+    splash.showMessage(
+        text,
+        Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
+        Qt.GlobalColor.white,
+    )
+    QApplication.processEvents()
+
+
 def _acquire_single_instance_lock() -> QLockFile | None:
     """Ensure only one FBSAT59 instance runs at a time.
 
@@ -436,6 +485,10 @@ def main() -> int:
     app.setApplicationVersion(APP_VERSION)
     app.setOrganizationName("FBSAT59")
 
+    # Show a splash screen right away so the user gets immediate feedback
+    # instead of a blank screen while the slow startup work below runs.
+    splash = _show_splash(app)
+
     # Bail out immediately if another instance is already running or still
     # starting up, before any of the slow startup work below begins.  Keep
     # `instance_lock` referenced for the rest of main() — QLockFile releases
@@ -443,6 +496,8 @@ def main() -> int:
     instance_lock = _acquire_single_instance_lock()
     if instance_lock is None:
         logger.warning("Another FBSAT59 instance is already running or starting — exiting.")
+        if splash is not None:
+            splash.close()
         box = QMessageBox(
             QMessageBox.Icon.Information,
             "FBSAT59",
@@ -457,9 +512,11 @@ def main() -> int:
     _migrate_legacy_data()
 
     # Prefetch Natural Earth map data (downloads on first run, uses cache thereafter)
+    _splash_message(splash, "Loading map data… / 地図データ読み込み中…")
     prefetch_land_data()
 
     # Initialize SQLite DB
+    _splash_message(splash, "Initializing database… / データベース初期化中…")
     conn = init_database()
 
     # Create core components
@@ -473,6 +530,7 @@ def main() -> int:
         LocationSource.GPS,
     )
     if not _skip_ip:
+        _splash_message(splash, "Detecting location… / 位置情報取得中…")
         logger.info("No saved QTH (or IP-based) — trying IP geolocation...")
         try:
             ip_loc = asyncio.run(location_manager.from_ip())
@@ -527,6 +585,7 @@ def main() -> int:
     )
 
     # Show main window (web server and scheduler also start internally)
+    _splash_message(splash, "Building main window… / メイン画面構築中…")
     window = MainWindow(
         conn=conn,
         tle_manager=tle_manager,
@@ -537,6 +596,8 @@ def main() -> int:
         rig_state=rig_state,
     )
     window.show()
+    if splash is not None:
+        splash.finish(window)
 
     return app.exec()
 
