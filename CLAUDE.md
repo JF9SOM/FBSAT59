@@ -58,10 +58,17 @@ fbsat59/
 ```
 
 ### 起動時の動作
-1. Qt6メインウィンドウを起動
-2. バックグラウンドスレッドでFastAPI/uvicornをポート8080で起動
-3. DataSyncManagerがTLE・SATNOGSデータを自動取得（初回 or 期限切れ時）
-4. ステータスバーにLAN内アクセスURL + QRコードボタンを表示
+1. `QApplication` 生成直後にスプラッシュ画面（`QSplashScreen`）を表示。
+   DB初期化・地図データ読み込み・TLE取得・位置情報取得・MainWindow構築が
+   すべて `window.show()` 前に直列実行されるため、特にWindowsで数秒間
+   画面が空白になる問題への対策（2026-08-08 追加）。各段階でメッセージを
+   更新し、`MainWindow.show()` 直後に `splash.finish(window)` で閉じる。
+   多重起動検知で弾かれた場合は案内ダイアログの前に閉じる。
+   実装: `src/main.py` の `_show_splash()` / `_splash_message()`
+2. Qt6メインウィンドウを起動
+3. バックグラウンドスレッドでFastAPI/uvicornをポート8080で起動
+4. DataSyncManagerがTLE・SATNOGSデータを自動取得（初回 or 期限切れ時）
+5. ステータスバーにLAN内アクセスURL + QRコードボタンを表示
 
 ### データフロー
 ```
