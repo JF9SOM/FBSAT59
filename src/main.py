@@ -196,7 +196,8 @@ if sys.platform.startswith("linux"):
             os.environ.setdefault("XKB_CONFIG_ROOT", _xkb_path)
             break
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QLockFile, QTimer
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from core.engine import PassPredictor, SatelliteEngine
 from core.location import LocationManager, LocationSource
@@ -402,12 +403,54 @@ def _get_version() -> str:
 APP_VERSION = _get_version()
 
 
+def _acquire_single_instance_lock() -> QLockFile | None:
+    """Ensure only one FBSAT59 instance runs at a time.
+
+    Startup (DB init, TLE fetch, map data, MainWindow construction) can take
+    a while, so a user who double-clicks the launcher before the window
+    appears will otherwise end up with two running instances.  QLockFile
+    checks whether the process that holds the lock is still alive (not just
+    whether the lock file exists), so a crashed instance never blocks a new
+    launch.
+
+    Returns the held QLockFile on success — the caller must keep a
+    reference alive for the lifetime of the process, since the lock is
+    released when the object is destroyed.  Returns None if another
+    instance already holds the lock.
+    """
+    from platformdirs import user_data_dir
+
+    lock_dir = Path(user_data_dir("fbsat59", "fbsat59"))
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    lock = QLockFile(str(lock_dir / "fbsat59.lock"))
+    lock.setStaleLockTime(30000)
+    if lock.tryLock(200):
+        return lock
+    return None
+
+
 def main() -> int:
     """Application main entry point."""
     app = QApplication(sys.argv)
     app.setApplicationName("FBSAT59")
     app.setApplicationVersion(APP_VERSION)
     app.setOrganizationName("FBSAT59")
+
+    # Bail out immediately if another instance is already running or still
+    # starting up, before any of the slow startup work below begins.  Keep
+    # `instance_lock` referenced for the rest of main() — QLockFile releases
+    # the lock as soon as it is garbage-collected.
+    instance_lock = _acquire_single_instance_lock()
+    if instance_lock is None:
+        logger.warning("Another FBSAT59 instance is already running or starting — exiting.")
+        box = QMessageBox(
+            QMessageBox.Icon.Information,
+            "FBSAT59",
+            "FBSAT59 はすでに起動中です。\nFBSAT59 is already running or starting up.",
+        )
+        QTimer.singleShot(1500, box.close)
+        box.exec()
+        return 0
 
     # Migrate data from legacy GPredict-Improved directory (runs only once,
     # when the old directory exists and the new DB is empty/missing).
