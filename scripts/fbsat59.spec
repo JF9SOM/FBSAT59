@@ -311,6 +311,13 @@ coll = COLLECT(  # noqa: F821
 
 # macOS: also build an .app bundle
 if sys.platform == "darwin":
+    # version.txt is written by CI (`echo "$VERSION" > src/version.txt`)
+    # right before this spec runs, same file main.py reads at runtime via
+    # _get_version(). Falls back to "0.0.0-dev" for local/dev builds where
+    # that CI step never ran.
+    _version_file = SRC / "version.txt"
+    _bundle_version = _version_file.read_text().strip() if _version_file.exists() else "0.0.0-dev"
+
     app = BUNDLE(  # noqa: F821
         coll,
         name="FBSAT59.app",
@@ -319,6 +326,11 @@ if sys.platform == "darwin":
         info_plist={
             "NSPrincipalClass": "NSApplication",
             "NSHighResolutionCapable": True,
-            "CFBundleShortVersionString": "0.1.0",
+            "CFBundleShortVersionString": _bundle_version,
+            "NSMicrophoneUsageDescription": (
+                "FBSAT59 needs microphone access to receive audio from the "
+                "connected radio/SDR sound card (APRS, FT4, Q65, SSTV, CW, "
+                "telemetry decoding)."
+            ),
         },
     )
