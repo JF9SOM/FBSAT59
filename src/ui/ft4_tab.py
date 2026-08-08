@@ -75,6 +75,15 @@ _COL_COUNT = 5
 # I was decoded to have received" at a glance (GitHub Issue #16).
 _OWN_TX_ROW_COLOR = QColor("#4fc3f7")
 
+# Text colour for decoded rows, by which slot parity the *other station*
+# actually transmitted in (not the parity we'd reply in — see
+# _display_decoded). Requested on GitHub Issue #16 so an operator can tell
+# at a glance which slot a given decode came from, independent of the dB/DT/
+# Hz columns. Kept as foreground colour rather than background so it layers
+# cleanly under the "addressed to us" yellow highlight above.
+_EVEN_SLOT_TEXT_COLOR = QColor("#1565c0")
+_ODD_SLOT_TEXT_COLOR = QColor("#e65100")
+
 _GRID_RE = re.compile(r"^[A-R]{2}[0-9]{2}$")
 
 
@@ -253,12 +262,30 @@ class _RxDecodeWorker(QObject):
         except Exception:
             messages = []
         elapsed = time.monotonic() - t0
-        get_ft4_decode_logger().info(
+        logger = get_ft4_decode_logger()
+        logger.info(
             "decode audio_len=%.2fs duration=%.2fs messages=%d",
             len(self._audio) / SAMPLE_RATE,
             elapsed,
             len(messages),
         )
+        # Message content on its own lines (GitHub Issue #16: "include the
+        # FT4 activity in the ft4_decode.log — so, any decodes are logged").
+        # slot=EVEN/ODD is the parity the *sender* transmitted in -- the
+        # period that was just captured and decoded, i.e. the one right
+        # before "now" (see Ft4Tab._display_decoded for why "now" is
+        # instead the correct *reply* parity, one slot later).
+        reply_is_even, _pos = Ft4Scheduler.current_slot_info()
+        sender_slot = "ODD" if reply_is_even else "EVEN"
+        for msg in messages:
+            logger.info(
+                'decoded slot=%s snr=%+d dt=%+.1f freq=%.0f text="%s"',
+                sender_slot,
+                msg.snr_db,
+                msg.dt_sec,
+                msg.freq_hz,
+                msg.text,
+            )
         self.done.emit(messages, self._audio)
 
 
@@ -469,6 +496,15 @@ class Ft4Tab(QWidget):
         self._countdown_label.setStyleSheet("font-size:13px;")
         status_row.addWidget(self._countdown_label)
 
+        # Shows which parity we are actually set to transmit in right now.
+        # With TX Slot: Auto this only becomes known once a CQ is called or
+        # a station is answered, and until now there was no way to see what
+        # it resolved to (GitHub Issue #16: "unclear which period is being
+        # used for TX").
+        self._tx_slot_indicator = QLabel("")
+        self._tx_slot_indicator.setStyleSheet("font-size:12px;color:gray;")
+        status_row.addWidget(self._tx_slot_indicator)
+
         status_row.addStretch()
 
         self._rx_indicator = QLabel(_("● RX"))
@@ -620,7 +656,27 @@ class Ft4Tab(QWidget):
         root.addWidget(sep)
 
         # -- Decoded messages table (expands to fill space) --
-        root.addWidget(QLabel(_("Decoded Messages")))
+        decoded_header = QHBoxLayout()
+        decoded_header.addWidget(QLabel(_("Decoded Messages")))
+        even_word = _("even")
+        odd_word = _("odd")
+        even_color = _EVEN_SLOT_TEXT_COLOR.name()
+        odd_color = _ODD_SLOT_TEXT_COLOR.name()
+        slot_legend = QLabel(
+            f'(<span style="color:{even_color};">{even_word}</span> / '
+            f'<span style="color:{odd_color};">{odd_word}</span>)'
+        )
+        slot_legend.setStyleSheet("font-size:11px;font-style:italic;")
+        slot_legend.setToolTip(
+            _(
+                "Blue text: the other station transmitted in an even-parity "
+                "slot. Orange text: odd-parity slot. Our own TX rows keep "
+                "their fixed highlight colour instead."
+            )
+        )
+        decoded_header.addWidget(slot_legend)
+        decoded_header.addStretch()
+        root.addLayout(decoded_header)
         self._table = QTableWidget(0, _COL_COUNT)
         self._table.setHorizontalHeaderLabels([_("UTC"), _("dB"), _("DT"), _("Hz"), _("Message")])
         self._table.horizontalHeader().setStretchLastSection(True)
@@ -1058,6 +1114,14 @@ class Ft4Tab(QWidget):
             self._status_label.setText(_("Invalid FT4 message: ") + msg)
             return
 
+        # GitHub Issue #16: "include the FT4 activity in the ft4_decode.log
+        # — so ... all TX messages are logged, with a timestamp for each."
+        get_ft4_decode_logger().info(
+            'tx slot=%s freq=%.0f text="%s"',
+            "EVEN" if self._scheduler._tx_even else "ODD",
+            audio_freq,
+            msg,
+        )
         self._display_own_tx(msg, audio_freq)
         with self._tx_this_period_lock:
             self._tx_this_period = True
@@ -1140,6 +1204,14 @@ class Ft4Tab(QWidget):
             utc_item = self._table.item(row, _COL_UTC)
             if utc_item is not None:
                 utc_item.setData(Qt.ItemDataRole.UserRole, reply_is_even)
+            # Colour by the slot the *other station* transmitted in (the
+            # parity opposite our reply slot) so it is visible at a glance
+            # which period a decode came from (GitHub Issue #16).
+            sender_color = _ODD_SLOT_TEXT_COLOR if reply_is_even else _EVEN_SLOT_TEXT_COLOR
+            for c in range(_COL_COUNT):
+                item = self._table.item(row, c)
+                if item is not None:
+                    item.setForeground(sender_color)
             # Highlight if message addressed to us
             if self._my_call and self._my_call.upper() in msg.text.upper():
                 for c in range(_COL_COUNT):
@@ -1516,6 +1588,13 @@ class Ft4Tab(QWidget):
         # running or stopped together (see _on_rig_disconnected/closeEvent).
         # start() is a no-op if already running.
         self._rx_capture.start()
+        self._update_tx_slot_indicator(tx_even)
+
+    def _update_tx_slot_indicator(self, tx_even: bool) -> None:
+        text = _("TX: EVEN") if tx_even else _("TX: ODD")
+        color = _EVEN_SLOT_TEXT_COLOR.name() if tx_even else _ODD_SLOT_TEXT_COLOR.name()
+        self._tx_slot_indicator.setText(text)
+        self._tx_slot_indicator.setStyleSheet(f"font-size:12px;font-weight:bold;color:{color};")
 
     # ------------------------------------------------------------------ #
     # Log count / ADIF export                                              #
