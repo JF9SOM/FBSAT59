@@ -1,0 +1,99 @@
+name: Check Hamlib Version
+
+# Checks weekly for new Hamlib/Hamlib releases and opens a GitHub Issue when
+# the upstream version differs from the version currently bundled
+# (HAMLIB_VER in ci.yml). Unlike build-ft8lib.yml / build-q65lib.yml /
+# build-ft4wsjt.yml, this workflow does NOT rebuild anything automatically —
+# upgrading Hamlib requires manual verification (tarball layout, riglist.h
+# model IDs) per CLAUDE.md's "バージョンアップ手順". It only notifies.
+
+on:
+  schedule:
+    - cron: '0 12 * * 1'  # Every Monday 12:00 UTC (after the other lib checks)
+  workflow_dispatch: {}
+
+jobs:
+  check-and-notify:
+    name: Compare upstream vs bundled Hamlib version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compare versions and open issue if outdated
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          UPSTREAM=$(gh api repos/Hamlib/Hamlib/releases/latest --jq '.tag_name' 2>/dev/null || echo "")
+          if [ -z "$UPSTREAM" ]; then
+            UPSTREAM=$(gh api repos/Hamlib/Hamlib/tags --jq '.[0].name' 2>/dev/null || echo "")
+          fi
+          if [ -z "$UPSTREAM" ]; then
+            echo "Could not determine upstream Hamlib version. Skipping."
+            exit 0
+          fi
+          echo "Upstream Hamlib: $UPSTREAM"
+
+          CURRENT=$(grep -oP '(?<=HAMLIB_VER=")[^"]+' .github/workflows/ci.yml | head -1)
+          if [ -z "$CURRENT" ]; then
+            echo "Could not determine bundled HAMLIB_VER from ci.yml. Skipping."
+            exit 0
+          fi
+          echo "Bundled Hamlib: $CURRENT"
+
+          if [ "$UPSTREAM" = "$CURRENT" ]; then
+            echo "Already up to date. Nothing to do."
+            exit 0
+          fi
+
+          # Dedup: skip if an open issue for this exact upstream version already exists.
+          gh label create hamlib-update \
+            --color "1d76db" \
+            --description "Hamlib upstream released a new version" \
+            --repo "${{ github.repository }}" 2>/dev/null || true
+
+          EXISTING=$(gh issue list --repo "${{ github.repository }}" \
+            --state open --label hamlib-update --json title \
+            --jq '.[].title' | grep -F -- "$UPSTREAM" || true)
+          if [ -n "$EXISTING" ]; then
+            echo "An open issue for $UPSTREAM already exists. Skipping."
+            exit 0
+          fi
+
+          BODY=$(cat <<EOF
+          ## 概要
+          Hamlib/Hamlib の最新リリースが **${UPSTREAM}** になりました（現在バンドル中: \`${CURRENT}\`）。
+
+          - リリースノート: https://github.com/Hamlib/Hamlib/releases/tag/${UPSTREAM}
+          - 現在の同梱バージョン: \`${CURRENT}\`（\`.github/workflows/ci.yml\` の \`HAMLIB_VER\`）
+
+          このIssueは自動生成された通知です。実際にバンドルを更新するかは
+          CLAUDE.md の「Hamlib バージョン管理・配布方針」に従って判断してください
+          （セキュリティ修正を含むかどうか等）。
+
+          ## 更新する場合の手順（CLAUDE.md「バージョンアップ手順」より）
+          - [ ] upstream のリリースアセット・ソース tarball の構造が変わっていないか確認
+                （\`bindings/hamlib.swg\` の有無・\`hamlib_wrap.c\` が含まれないこと・
+                \`include/hamlib/config.h\` が含まれないこと・w64 zip の \`bin/\`・
+                \`include/hamlib/\` レイアウト）
+          - [ ] \`include/hamlib/riglist.h\` で本プロジェクトが使うモデルID
+                （FTX-1=1051, FT991=1035, IC9100=3068, IC9700=3081, IC705=3085, IC910=3044）
+                が変わっていないか確認
+          - [ ] \`.github/workflows/ci.yml\` の \`HAMLIB_VER\` 3箇所（Linux/Windows/macOS）・
+                ステップ名・Windows の \`config.h\` スタブ内の版数を置換
+          - [ ] タグを push（hamlib-bundle アセットの更新は \`refs/tags/v*\` でのみ実行される）
+
+          ---
+          🤖 このIssueは \`check-hamlib-version.yml\` により自動作成されました。
+          EOF
+          )
+
+          gh issue create --repo "${{ github.repository }}" \
+            --title "Hamlib ${UPSTREAM} がリリースされました — バンドル更新の要否確認" \
+            --label hamlib-update \
+            --body "$BODY"
