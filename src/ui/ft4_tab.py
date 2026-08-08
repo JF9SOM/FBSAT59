@@ -1118,6 +1118,16 @@ class Ft4Tab(QWidget):
         self._table.scrollToBottom()
 
     def _display_decoded(self, messages: list[Ft4Message]) -> None:
+        # The period we are in *right now* is already the one right after
+        # the sender's, i.e. the opposite parity -- decoding takes well
+        # under a second (ft4_decode.log: 0.05-0.2s), so we land here before
+        # the next period boundary. That makes this the correct slot to
+        # reply in, with no further flip. Stamped onto each row so a later
+        # double-click answers based on when the message actually arrived,
+        # not whatever period happens to be current when the operator gets
+        # around to clicking (GitHub Issue #16: replies were going out on
+        # the same slot as the calling station).
+        reply_is_even, _pos = Ft4Scheduler.current_slot_info()
         utc_str = datetime.now(UTC).strftime("%H%M")
         for msg in messages:
             row = self._table.rowCount()
@@ -1127,6 +1137,9 @@ class Ft4Tab(QWidget):
             self._table.setItem(row, _COL_DT, QTableWidgetItem(f"{msg.dt_sec:+.1f}"))
             self._table.setItem(row, _COL_FREQ, QTableWidgetItem(f"{msg.freq_hz:.0f}"))
             self._table.setItem(row, _COL_MSG, QTableWidgetItem(msg.text))
+            utc_item = self._table.item(row, _COL_UTC)
+            if utc_item is not None:
+                utc_item.setData(Qt.ItemDataRole.UserRole, reply_is_even)
             # Highlight if message addressed to us
             if self._my_call and self._my_call.upper() in msg.text.upper():
                 for c in range(_COL_COUNT):
@@ -1135,9 +1148,9 @@ class Ft4Tab(QWidget):
                         item.setBackground(Qt.GlobalColor.yellow)
             self._table.scrollToBottom()
 
-        self._auto_advance_qso(messages)
+        self._auto_advance_qso(messages, reply_is_even)
 
-    def _auto_advance_qso(self, messages: list[Ft4Message]) -> None:
+    def _auto_advance_qso(self, messages: list[Ft4Message], reply_is_even: bool) -> None:
         """Feed decodes to the state machine and follow it.
 
         Once a QSO is under way it always advances by itself. Starting one
@@ -1169,10 +1182,10 @@ class Ft4Tab(QWidget):
             self._tx_edit.setText(next_tx)
             self._update_qso_display()
             if was_idle:
-                # They called us in the slot just gone, so we answer in the
-                # other one.
-                is_even, _pos = Ft4Scheduler.current_slot_info()
-                self._start_scheduler(tx_even=not is_even)
+                # They called us in the period that just decoded; that
+                # period's parity (see _display_decoded) is already the
+                # correct one to answer in -- no flip.
+                self._start_scheduler(tx_even=reply_is_even)
                 self._status_label.setText(
                     _("Auto-answering {call}").format(call=qso.session.their_call)
                 )
@@ -1246,9 +1259,17 @@ class Ft4Tab(QWidget):
         reply = qso.respond_with_grid(their_call, their_grid, self._row_snr_db(row))
         self._tx_edit.setText(reply)
         self._update_qso_display()
-        # They transmit in the current slot, so we answer in the other one.
-        is_even, _pos = Ft4Scheduler.current_slot_info()
-        self._start_scheduler(tx_even=not is_even)
+        # Use the slot parity stamped on this row at decode time (see
+        # _display_decoded), not whatever period happens to be current now.
+        # The operator may click well after the message arrived, and by then
+        # the period may have flipped one or more times; the reply parity
+        # must stay fixed to when the call was actually heard, not to click
+        # timing (GitHub Issue #16).
+        utc_item = self._table.item(row, _COL_UTC)
+        stored_even = utc_item.data(Qt.ItemDataRole.UserRole) if utc_item is not None else None
+        if stored_even is None:
+            stored_even, _pos = Ft4Scheduler.current_slot_info()
+        self._start_scheduler(tx_even=bool(stored_even))
 
     # ------------------------------------------------------------------ #
     # TX quick buttons                                                     #
