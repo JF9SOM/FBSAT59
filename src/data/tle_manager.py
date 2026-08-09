@@ -86,6 +86,37 @@ _SOURCE_DB_VALUE: dict[str, str] = {
 SATNOGS_TLE_URL = "https://db.satnogs.org/api/tle/"
 
 
+async def _probe_satnogs_reachable(norad_cat_id: int) -> bool:
+    """Try a single SATNOGS TLE API request to check whether the host is
+    reachable right now.
+
+    Used as a fail-fast circuit breaker before looping over many individual
+    per-satellite SATNOGS fallback requests: if the very first one can't even
+    establish a connection, the host is almost certainly down for the whole
+    run, and trying the rest one by one would just mean waiting out each
+    one's own ~10s timeout in turn — up to 20+ minutes for the full
+    provisional-satellite population (confirmed via a "restarted the app but
+    nothing changed" report, 2026-08-09, while db.satnogs.org was
+    unreachable). Returns False only for a connection-level failure
+    (ConnectTimeout / ConnectError); any other outcome — including an HTTP
+    error status or a malformed response — still proves the host responded,
+    so it's treated as reachable and the caller proceeds normally (the real
+    per-satellite loop will surface that satellite's own error itself).
+    """
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            await client.get(
+                SATNOGS_TLE_URL,
+                params={"norad_cat_id": norad_cat_id, "format": "json"},
+                timeout=10.0,
+            )
+        return True
+    except (httpx.ConnectTimeout, httpx.ConnectError):
+        return False
+    except Exception:
+        return True
+
+
 def _to_db_source(source_name: str) -> str:
     """Convert a source name to a value that satisfies the DB CHECK constraint"""
     return _SOURCE_DB_VALUE.get(source_name, source_name)
@@ -689,6 +720,19 @@ class TLEManager:
             # ── Phase 2b: SATNOGS TLE API fallback for whatever Phase 2a
             # didn't resolve ───────────────────────────────────────────────
             if remaining:
+                probe_norad = next(iter(remaining))
+                probe_source_id = remaining[probe_norad][3]
+                probe_query_id = probe_source_id if probe_source_id is not None else probe_norad
+                if not await _probe_satnogs_reachable(probe_query_id):
+                    logger.warning(
+                        "SATNOGS TLE API unreachable — skipping %d individual "
+                        "fallback fetch(es) this run",
+                        len(remaining),
+                    )
+                    stats["errors"] += len(remaining)
+                    remaining = {}
+
+            if remaining:
                 semaphore = _asyncio.Semaphore(20)  # max 20 concurrent requests
 
                 async def _fetch_one(
@@ -1021,16 +1065,13 @@ class TLEManager:
         whether norad_follow_id is set publicly.  The TLE is stored under the provisional
         ID so the satellite's position can be shown on the map.
 
-        Requests run up to 20 at a time (matching fetch_active_tles()'s Phase 2b) rather
-        than one after another. With ~140+ visible provisional satellites, a fully
-        sequential loop could take over 20 minutes to finish when SATNOGS is unreachable
-        (each request waiting out its own 10s timeout before the next one starts) — and
-        since this method runs as one step in _refresh_satellite_names_sync()'s startup
-        chain, that would also delay every later step (including fetch_active_tles(),
-        which no longer even needs SATNOGS for most stragglers as of the CelesTrak CATNR
-        batch fallback — see fetch_active_tles() Phase 2a). Confirmed as the actual cause
-        of a "restarted but still nothing happened" report (2026-08-09): the app was still
-        working through this loop, not stuck or broken.
+        Before looping, probes SATNOGS reachability with a single request
+        (_probe_satnogs_reachable()). If that fails to even connect, the whole
+        run is skipped immediately rather than looping over every satellite —
+        see that function's docstring for why. Otherwise, requests run up to
+        20 at a time (matching fetch_active_tles()'s Phase 2b) rather than one
+        after another, so a run where SATNOGS *is* reachable but individual
+        satellites are slow still doesn't serialize unnecessarily.
 
         When the TLE line1 contains a *different* NORAD ID (i.e. SATNOGS internally knows
         the official ID), the migration pipeline is triggered automatically if the official
@@ -1055,6 +1096,18 @@ class TLEManager:
             "hidden_expired": 0,
             "errors": 0,
         }
+        if not rows:
+            return stats
+
+        if not await _probe_satnogs_reachable(int(rows[0]["norad_cat_id"])):
+            logger.warning(
+                "SATNOGS TLE API unreachable — skipping %d provisional TLE fetch(es) this run",
+                len(rows),
+            )
+            stats["errors"] = len(rows)
+            self._log_sync("satnogs-provisional", stats)
+            return stats
+
         now = datetime.now(UTC).isoformat()
         total = len(rows)
         done = 0

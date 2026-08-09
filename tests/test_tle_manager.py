@@ -47,6 +47,17 @@ def _satnogs_resp(tle1: str, tle2: str) -> MagicMock:
     return resp
 
 
+def _probe_ok_resp() -> MagicMock:
+    """A successful _probe_satnogs_reachable() response.
+
+    The probe only awaits the GET and never touches the response body, so a
+    bare MagicMock is enough — but it's a distinct helper because every
+    Phase 2b test needs one extra response for the probe, inserted right
+    before the real per-satellite SATNOGS call.
+    """
+    return MagicMock()
+
+
 @pytest.fixture()
 def db() -> sqlite3.Connection:
     conn = sqlite3.connect(":memory:", check_same_thread=False)
@@ -78,6 +89,7 @@ class TestFetchActiveTlesSatnogsSourceIdRouting:
         mock_client.get = AsyncMock(
             side_effect=[_bulk_resp()] * 5
             + [_catnr_resp("")]  # Phase 2a: no match
+            + [_probe_ok_resp()]  # Phase 2b: reachability probe
             + [_satnogs_resp(_LINE1, _LINE2)]  # Phase 2b: match
         )
 
@@ -112,6 +124,7 @@ class TestFetchActiveTlesSatnogsSourceIdRouting:
         mock_client.get = AsyncMock(
             side_effect=[_bulk_resp()] * 5
             + [_catnr_resp("")]  # Phase 2a: no match
+            + [_probe_ok_resp()]  # Phase 2b: reachability probe
             + [_satnogs_resp(_LINE1, _LINE2)]  # Phase 2b: match
         )
 
@@ -254,6 +267,7 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
         mock_client.get = AsyncMock(
             side_effect=[_bulk_resp()] * 5
             + [_catnr_resp("")]  # Phase 2a: CelesTrak doesn't have it
+            + [_probe_ok_resp()]  # Phase 2b: reachability probe
             + [_satnogs_resp(_LINE1_B, _LINE2_B)]  # Phase 2b: SATNOGS does
         )
 
@@ -265,7 +279,7 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
             mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
             stats = asyncio.run(mgr.fetch_active_tles())
 
-        assert mock_client.get.await_count == 7
+        assert mock_client.get.await_count == 8
         phase2b_call = mock_client.get.call_args_list[-1]
         assert phase2b_call.kwargs["params"]["norad_cat_id"] == 68795
 
@@ -276,6 +290,45 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
         assert row["tle_group"] == "cubesat"
         assert row["source"] == "satnogs"
         assert stats["updated"] == 1
+
+    def test_phase2b_skips_all_remaining_when_satnogs_probe_cannot_connect(
+        self, db: sqlite3.Connection
+    ) -> None:
+        """Same circuit breaker as fetch_provisional_tles(), applied to
+        fetch_active_tles()'s own SATNOGS fallback: if the first Phase 2b
+        probe can't connect, none of the other stragglers should be tried
+        individually either.
+        """
+        for norad in (68795, 68796):
+            db.execute(
+                "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+                " VALUES (?, 'Sat', 'alive', 0)",
+                (norad,),
+            )
+        db.commit()
+
+        import httpx
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            side_effect=[_bulk_resp()] * 5
+            + [_catnr_resp("")]  # Phase 2a: no match for either satellite
+            + [httpx.ConnectTimeout("boom")]  # Phase 2b: probe fails to connect
+        )
+
+        with (
+            patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
+            patch.object(mgr, "_log_sync"),
+        ):
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            stats = asyncio.run(mgr.fetch_active_tles())
+
+        # 5 bulk + 1 CATNR batch + 1 probe — no per-satellite SATNOGS calls.
+        assert mock_client.get.await_count == 7
+        assert stats["errors"] == 2
+        assert db.execute("SELECT COUNT(*) c FROM tle_data").fetchone()["c"] == 0
 
     def test_celestrak_sourced_tle_is_not_requeried_by_phase2(self, db: sqlite3.Connection) -> None:
         db.execute(
@@ -395,9 +448,14 @@ class TestFetchProvisionalTlesConcurrency:
             assert row["line1"] == line1
             assert row["line2"] == line2
 
-    def test_mixed_success_and_timeout_are_both_counted_correctly(
+    def test_one_satellites_read_timeout_does_not_abort_the_whole_run(
         self, db: sqlite3.Connection
     ) -> None:
+        """A ReadTimeout (connected fine, just slow to respond) on one
+        satellite is an individual failure, not evidence the whole host is
+        down — it must not trip the reachability probe (which only reacts to
+        ConnectTimeout/ConnectError) or stop the rest of the batch.
+        """
         db.execute(
             "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
             " VALUES (90001, 'Sat A', 'alive', 0)"
@@ -413,8 +471,8 @@ class TestFetchProvisionalTlesConcurrency:
         async def _fake_get(*_args: object, **kwargs: object) -> MagicMock:
             params = kwargs["params"]
             assert isinstance(params, dict)
-            if params["norad_cat_id"] == 90001:
-                raise httpx.ConnectTimeout("boom")
+            if params["norad_cat_id"] == 90002:
+                raise httpx.ReadTimeout("boom")
             resp = MagicMock()
             resp.raise_for_status.return_value = None
             resp.json.return_value = [{"tle1": _LINE1, "tle2": _LINE2}]
@@ -434,7 +492,70 @@ class TestFetchProvisionalTlesConcurrency:
 
         assert stats["errors"] == 1
         assert stats["inserted"] == 1
-        assert db.execute("SELECT 1 FROM tle_data WHERE norad_cat_id = 90001").fetchone() is None
         assert (
-            db.execute("SELECT 1 FROM tle_data WHERE norad_cat_id = 90002").fetchone() is not None
+            db.execute("SELECT 1 FROM tle_data WHERE norad_cat_id = 90001").fetchone() is not None
         )
+        assert db.execute("SELECT 1 FROM tle_data WHERE norad_cat_id = 90002").fetchone() is None
+
+
+class TestFetchProvisionalTlesCircuitBreaker:
+    """If SATNOGS can't even accept a connection for the first request, the
+    whole run should bail out immediately rather than waiting out every
+    remaining satellite's own timeout in turn (the actual cause of a
+    "restarted the app but nothing changed" report, 2026-08-09 — the app was
+    still working through ~140 sequential-ish timeouts, not stuck or broken).
+    """
+
+    def test_skips_entire_run_when_first_probe_cannot_connect(self, db: sqlite3.Connection) -> None:
+        for norad in (90001, 90002, 90003):
+            db.execute(
+                "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+                " VALUES (?, 'Sat', 'alive', 0)",
+                (norad,),
+            )
+        db.commit()
+
+        import httpx
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=httpx.ConnectTimeout("boom"))
+
+        with (
+            patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
+            patch.object(mgr, "_log_sync"),
+        ):
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            stats = asyncio.run(mgr.fetch_provisional_tles())
+
+        # Only the probe request was attempted — not one request per satellite.
+        assert mock_client.get.await_count == 1
+        assert stats["errors"] == 3
+        assert db.execute("SELECT COUNT(*) c FROM tle_data").fetchone()["c"] == 0
+
+    def test_proceeds_normally_when_probe_succeeds(self, db: sqlite3.Connection) -> None:
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (90001, 'Sat A', 'alive', 0)"
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        resp = MagicMock()
+        resp.raise_for_status.return_value = None
+        resp.json.return_value = [{"tle1": _LINE1, "tle2": _LINE2}]
+        mock_client.get = AsyncMock(return_value=resp)
+
+        with (
+            patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
+            patch.object(mgr, "_log_sync"),
+        ):
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            stats = asyncio.run(mgr.fetch_provisional_tles())
+
+        # Probe + the real per-satellite request.
+        assert mock_client.get.await_count == 2
+        assert stats["inserted"] == 1
