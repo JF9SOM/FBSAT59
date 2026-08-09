@@ -681,14 +681,18 @@ class Ft4Tab(QWidget):
         self._table = QTableWidget(0, _COL_COUNT)
         self._table.setHorizontalHeaderLabels([_("UTC"), _("dB"), _("DT"), _("Hz"), _("Message")])
         self._table.horizontalHeader().setStretchLastSection(True)
-        self._table.setColumnWidth(_COL_UTC, 70)
-        self._table.setColumnWidth(_COL_DB, 46)
-        self._table.setColumnWidth(_COL_DT, 46)
-        self._table.setColumnWidth(_COL_FREQ, 56)
+        # Column widths doubled alongside the font below (Courier is
+        # monospace, so character width scales ~linearly with point size) —
+        # the old 9pt/narrow-column pairing was reported as too small to
+        # read comfortably on a Mac (2026-08-09).
+        self._table.setColumnWidth(_COL_UTC, 140)
+        self._table.setColumnWidth(_COL_DB, 92)
+        self._table.setColumnWidth(_COL_DT, 92)
+        self._table.setColumnWidth(_COL_FREQ, 112)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setAlternatingRowColors(True)
-        self._table.setFont(QFont("Courier New", 9))
+        self._table.setFont(QFont("Courier New", 18))
         self._table.cellDoubleClicked.connect(self._on_message_double_clicked)
         root.addWidget(self._table, stretch=1)
 
