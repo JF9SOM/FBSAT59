@@ -693,6 +693,12 @@ class Ft4Tab(QWidget):
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setAlternatingRowColors(True)
         self._table.setFont(QFont("Courier New", 18))
+        # The native style's default item padding (most noticeable on
+        # macOS) left excess space above/below the text once the font grew
+        # to 18pt, wasting row height without adding readability. Trimming
+        # it here shrinks each row back down to roughly the font's own
+        # line height (2026-08-09).
+        self._table.setStyleSheet("QTableWidget::item { padding: 0px 4px; }")
         self._table.cellDoubleClicked.connect(self._on_message_double_clicked)
         root.addWidget(self._table, stretch=1)
 
