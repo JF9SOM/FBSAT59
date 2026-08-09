@@ -1021,6 +1021,17 @@ class TLEManager:
         whether norad_follow_id is set publicly.  The TLE is stored under the provisional
         ID so the satellite's position can be shown on the map.
 
+        Requests run up to 20 at a time (matching fetch_active_tles()'s Phase 2b) rather
+        than one after another. With ~140+ visible provisional satellites, a fully
+        sequential loop could take over 20 minutes to finish when SATNOGS is unreachable
+        (each request waiting out its own 10s timeout before the next one starts) — and
+        since this method runs as one step in _refresh_satellite_names_sync()'s startup
+        chain, that would also delay every later step (including fetch_active_tles(),
+        which no longer even needs SATNOGS for most stragglers as of the CelesTrak CATNR
+        batch fallback — see fetch_active_tles() Phase 2a). Confirmed as the actual cause
+        of a "restarted but still nothing happened" report (2026-08-09): the app was still
+        working through this loop, not stuck or broken.
+
         When the TLE line1 contains a *different* NORAD ID (i.e. SATNOGS internally knows
         the official ID), the migration pipeline is triggered automatically if the official
         satellite record already exists in our DB.
@@ -1029,6 +1040,8 @@ class TLEManager:
             {"inserted": N, "updated": N, "no_tle": N,
              "hidden_unknown": N, "hidden_expired": N, "errors": N}
         """
+        import asyncio as _asyncio  # noqa: PLC0415
+
         rows = self._conn.execute(
             "SELECT norad_cat_id, name, status, tle_no_result_since FROM satellites"
             " WHERE norad_cat_id >= 90000 AND is_hidden = 0"
@@ -1043,27 +1056,30 @@ class TLEManager:
             "errors": 0,
         }
         now = datetime.now(UTC).isoformat()
+        total = len(rows)
+        done = 0
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            for idx, row in enumerate(rows):
-                fake_id = int(row["norad_cat_id"])
-                sat_name = str(row["name"])
-                sat_status = str(row["status"] or "unknown")
-                no_result_since: str | None = (
-                    str(row["tle_no_result_since"]) if row["tle_no_result_since"] else None
-                )
+        semaphore = _asyncio.Semaphore(20)  # max 20 concurrent requests
 
-                if progress_callback:
-                    progress_callback(idx + 1, len(rows))
+        async def _fetch_one(row: sqlite3.Row) -> None:
+            nonlocal done
+            fake_id = int(row["norad_cat_id"])
+            sat_name = str(row["name"])
+            sat_status = str(row["status"] or "unknown")
+            no_result_since: str | None = (
+                str(row["tle_no_result_since"]) if row["tle_no_result_since"] else None
+            )
 
+            async with semaphore:
                 try:
-                    r = await client.get(
-                        SATNOGS_TLE_URL,
-                        params={"norad_cat_id": fake_id, "format": "json"},
-                        timeout=10.0,
-                    )
-                    r.raise_for_status()
-                    data = r.json()
+                    async with httpx.AsyncClient(timeout=15.0) as client:
+                        r = await client.get(
+                            SATNOGS_TLE_URL,
+                            params={"norad_cat_id": fake_id, "format": "json"},
+                            timeout=10.0,
+                        )
+                        r.raise_for_status()
+                        data = r.json()
                 except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RemoteProtocolError) as exc:
                     # Expected when the app is shutting down or the network is
                     # momentarily unavailable — logged at debug (not warning)
@@ -1072,116 +1088,122 @@ class TLEManager:
                     ename = type(exc).__name__
                     logger.debug(f"provisional TLE fetch timeout for {fake_id}: {ename}")
                     stats["errors"] += 1
-                    continue
+                    return
                 except httpx.HTTPError as exc:
                     ename = type(exc).__name__
                     logger.warning(f"provisional TLE fetch error for {fake_id}: {ename}: {exc}")
                     stats["errors"] += 1
-                    continue
+                    return
                 except Exception as exc:
                     ename = type(exc).__name__
                     logger.warning(f"prov TLE unexpected error for {fake_id}: {ename}: {exc}")
                     stats["errors"] += 1
-                    continue
+                    return
+                finally:
+                    done += 1
+                    if progress_callback:
+                        progress_callback(done, total)
 
-                # The SATNOGS TLE API returns a JSON list; take the first element.
-                if isinstance(data, list):
-                    data = data[0] if data else {}
-                if not isinstance(data, dict) or "tle1" not in data:
-                    # ---- No TLE available from SATNOGS ----
-                    # 'dead' treated same as 'unknown': hide immediately.
-                    if sat_status in ("unknown", "dead"):
-                        self._conn.execute(
-                            "UPDATE satellites SET is_hidden = 2, updated_at = ?"
-                            " WHERE norad_cat_id = ?",
-                            (now, fake_id),
-                        )
-                        stats["hidden_unknown"] += 1
-                    else:
-                        # status='alive': start / check the 30-day grace period.
-                        # Use tle_no_result_since as a latch: set once, never reset
-                        # unless a TLE is actually found.
-                        if no_result_since is None:
-                            # First time no TLE → record the start of the grace period
-                            self._conn.execute(
-                                "UPDATE satellites SET tle_no_result_since = ?, updated_at = ?"
-                                " WHERE norad_cat_id = ?",
-                                (now, now, fake_id),
-                            )
-                        else:
-                            # Already in grace period → check if 30 days have elapsed
-                            since_dt = datetime.fromisoformat(no_result_since)
-                            if since_dt.tzinfo is None:
-                                since_dt = since_dt.replace(tzinfo=UTC)
-                            if datetime.now(UTC) - since_dt > timedelta(days=30):
-                                self._conn.execute(
-                                    "UPDATE satellites SET is_hidden = 2, updated_at = ?"
-                                    " WHERE norad_cat_id = ?",
-                                    (now, fake_id),
-                                )
-                                stats["hidden_expired"] += 1
-                            # else: still within grace period → leave visible (yellow in UI)
-                    stats["no_tle"] += 1
-                    continue
-
-                line1: str = str(data["tle1"])
-                line2: str = str(data["tle2"])
-                # Prefer the name already stored in our DB over Space-Track object names
-                name = sat_name
-
-                try:
-                    sat_obj = EarthSatellite(line1, line2, name, self._ts)
-                    epoch_dt = sat_obj.epoch.utc_datetime()
-                    quality = _calc_quality(epoch_dt)
-                except Exception as exc:
-                    logger.warning(f"provisional TLE parse error for {fake_id}: {exc}")
-                    stats["errors"] += 1
-                    continue
-
-                # Check whether the TLE line1 encodes a different (official) NORAD ID
-                tle_norad = int(line1[2:7])
-                if tle_norad != fake_id:
-                    # SATNOGS internally resolved this provisional ID to an official one.
-                    # Trigger the migration pipeline if the official satellite is already
-                    # present in our DB (e.g. fetched earlier from CelesTrak).
-                    official_exists = self._conn.execute(
-                        "SELECT norad_cat_id FROM satellites WHERE norad_cat_id = ?",
-                        (tle_norad,),
-                    ).fetchone()
-                    if official_exists:
-                        # Import lazily to avoid a circular dependency at module level
-                        from data.transmitter_manager import TransmitterManager  # noqa: PLC0415
-
-                        TransmitterManager(self._conn)._run_migration_pipeline(fake_id, tle_norad)
-
-                # TLE found → clear the no-result grace-period latch if it was set
-                if no_result_since is not None:
+            # The SATNOGS TLE API returns a JSON list; take the first element.
+            if isinstance(data, list):
+                data = data[0] if data else {}
+            if not isinstance(data, dict) or "tle1" not in data:
+                # ---- No TLE available from SATNOGS ----
+                # 'dead' treated same as 'unknown': hide immediately.
+                if sat_status in ("unknown", "dead"):
                     self._conn.execute(
-                        "UPDATE satellites SET tle_no_result_since = NULL WHERE norad_cat_id = ?",
-                        (fake_id,),
+                        "UPDATE satellites SET is_hidden = 2, updated_at = ?"
+                        " WHERE norad_cat_id = ?",
+                        (now, fake_id),
                     )
-
-                # Never overwrite a manually entered TLE
-                existing = self._conn.execute(
-                    "SELECT source FROM tle_data WHERE norad_cat_id = ?",
-                    (fake_id,),
-                ).fetchone()
-                if existing and existing["source"] == "manual":
-                    continue
-
-                self._conn.execute(
-                    """
-                    INSERT OR REPLACE INTO tle_data
-                        (norad_cat_id, name, line1, line2, epoch,
-                         source, tle_group, fetched_at, quality_score)
-                    VALUES (?, ?, ?, ?, ?, 'satnogs', 'amateur', ?, ?)
-                    """,
-                    (fake_id, name, line1, line2, epoch_dt.isoformat(), now, quality),
-                )
-                if existing:
-                    stats["updated"] += 1
+                    stats["hidden_unknown"] += 1
                 else:
-                    stats["inserted"] += 1
+                    # status='alive': start / check the 30-day grace period.
+                    # Use tle_no_result_since as a latch: set once, never reset
+                    # unless a TLE is actually found.
+                    if no_result_since is None:
+                        # First time no TLE → record the start of the grace period
+                        self._conn.execute(
+                            "UPDATE satellites SET tle_no_result_since = ?, updated_at = ?"
+                            " WHERE norad_cat_id = ?",
+                            (now, now, fake_id),
+                        )
+                    else:
+                        # Already in grace period → check if 30 days have elapsed
+                        since_dt = datetime.fromisoformat(no_result_since)
+                        if since_dt.tzinfo is None:
+                            since_dt = since_dt.replace(tzinfo=UTC)
+                        if datetime.now(UTC) - since_dt > timedelta(days=30):
+                            self._conn.execute(
+                                "UPDATE satellites SET is_hidden = 2, updated_at = ?"
+                                " WHERE norad_cat_id = ?",
+                                (now, fake_id),
+                            )
+                            stats["hidden_expired"] += 1
+                        # else: still within grace period → leave visible (yellow in UI)
+                stats["no_tle"] += 1
+                return
+
+            line1: str = str(data["tle1"])
+            line2: str = str(data["tle2"])
+            # Prefer the name already stored in our DB over Space-Track object names
+            name = sat_name
+
+            try:
+                sat_obj = EarthSatellite(line1, line2, name, self._ts)
+                epoch_dt = sat_obj.epoch.utc_datetime()
+                quality = _calc_quality(epoch_dt)
+            except Exception as exc:
+                logger.warning(f"provisional TLE parse error for {fake_id}: {exc}")
+                stats["errors"] += 1
+                return
+
+            # Check whether the TLE line1 encodes a different (official) NORAD ID
+            tle_norad = int(line1[2:7])
+            if tle_norad != fake_id:
+                # SATNOGS internally resolved this provisional ID to an official one.
+                # Trigger the migration pipeline if the official satellite is already
+                # present in our DB (e.g. fetched earlier from CelesTrak).
+                official_exists = self._conn.execute(
+                    "SELECT norad_cat_id FROM satellites WHERE norad_cat_id = ?",
+                    (tle_norad,),
+                ).fetchone()
+                if official_exists:
+                    # Import lazily to avoid a circular dependency at module level
+                    from data.transmitter_manager import TransmitterManager  # noqa: PLC0415
+
+                    TransmitterManager(self._conn)._run_migration_pipeline(fake_id, tle_norad)
+
+            # TLE found → clear the no-result grace-period latch if it was set
+            if no_result_since is not None:
+                self._conn.execute(
+                    "UPDATE satellites SET tle_no_result_since = NULL WHERE norad_cat_id = ?",
+                    (fake_id,),
+                )
+
+            # Never overwrite a manually entered TLE
+            existing = self._conn.execute(
+                "SELECT source FROM tle_data WHERE norad_cat_id = ?",
+                (fake_id,),
+            ).fetchone()
+            if existing and existing["source"] == "manual":
+                return
+
+            self._conn.execute(
+                """
+                INSERT OR REPLACE INTO tle_data
+                    (norad_cat_id, name, line1, line2, epoch,
+                     source, tle_group, fetched_at, quality_score)
+                VALUES (?, ?, ?, ?, ?, 'satnogs', 'amateur', ?, ?)
+                """,
+                (fake_id, name, line1, line2, epoch_dt.isoformat(), now, quality),
+            )
+            if existing:
+                stats["updated"] += 1
+            else:
+                stats["inserted"] += 1
+
+        await _asyncio.gather(*[_fetch_one(row) for row in rows])
 
         self._conn.commit()
         self._log_sync("satnogs-provisional", stats)

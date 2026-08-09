@@ -1,4 +1,4 @@
-"""Tests for data.tle_manager.TLEManager.fetch_active_tles().
+"""Tests for data.tle_manager.TLEManager (fetch_active_tles(), fetch_provisional_tles()).
 
 Lightweight (no Qt import) so it is safe to run locally, unlike test_main_window.py.
 """
@@ -336,3 +336,105 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
             asyncio.run(mgr.fetch_active_tles())
 
         assert mock_client.get.await_count == 5
+
+
+class TestFetchProvisionalTlesConcurrency:
+    """fetch_provisional_tles() used to query SATNOGS one satellite at a time
+    with zero concurrency: ~140+ visible provisional satellites at up to 10s
+    each could take over 20 minutes when SATNOGS is unreachable, and since
+    this method runs as one step in the startup chain, that also delayed
+    every later step. Now runs up to 20 requests concurrently, matching the
+    pattern already used by fetch_active_tles()'s SATNOGS fallback. These
+    tests verify that concurrent execution still routes each response to the
+    correct satellite and keeps stats correct — not just that it's fast.
+    """
+
+    def test_resolves_multiple_satellites_concurrently_without_cross_contamination(
+        self, db: sqlite3.Connection
+    ) -> None:
+        targets = {
+            90001: ("Sat A", _LINE1, _LINE2),
+            90002: ("Sat B", _LINE1_B, _LINE2_B),
+        }
+        for norad, (name, _, _) in targets.items():
+            db.execute(
+                "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+                " VALUES (?, ?, 'alive', 0)",
+                (norad, name),
+            )
+        db.commit()
+
+        async def _fake_get(*_args: object, **kwargs: object) -> MagicMock:
+            params = kwargs["params"]
+            assert isinstance(params, dict)
+            norad = params["norad_cat_id"]
+            _, line1, line2 = targets[norad]
+            resp = MagicMock()
+            resp.raise_for_status.return_value = None
+            resp.json.return_value = [{"tle1": line1, "tle2": line2}]
+            return resp
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=_fake_get)
+
+        with (
+            patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
+            patch.object(mgr, "_log_sync"),
+        ):
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            stats = asyncio.run(mgr.fetch_provisional_tles())
+
+        assert stats["inserted"] == 2
+        for norad, (_, line1, line2) in targets.items():
+            row = db.execute(
+                "SELECT line1, line2 FROM tle_data WHERE norad_cat_id = ?", (norad,)
+            ).fetchone()
+            assert row is not None
+            assert row["line1"] == line1
+            assert row["line2"] == line2
+
+    def test_mixed_success_and_timeout_are_both_counted_correctly(
+        self, db: sqlite3.Connection
+    ) -> None:
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (90001, 'Sat A', 'alive', 0)"
+        )
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (90002, 'Sat B', 'alive', 0)"
+        )
+        db.commit()
+
+        import httpx
+
+        async def _fake_get(*_args: object, **kwargs: object) -> MagicMock:
+            params = kwargs["params"]
+            assert isinstance(params, dict)
+            if params["norad_cat_id"] == 90001:
+                raise httpx.ConnectTimeout("boom")
+            resp = MagicMock()
+            resp.raise_for_status.return_value = None
+            resp.json.return_value = [{"tle1": _LINE1, "tle2": _LINE2}]
+            return resp
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=_fake_get)
+
+        with (
+            patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
+            patch.object(mgr, "_log_sync"),
+        ):
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            stats = asyncio.run(mgr.fetch_provisional_tles())
+
+        assert stats["errors"] == 1
+        assert stats["inserted"] == 1
+        assert db.execute("SELECT 1 FROM tle_data WHERE norad_cat_id = 90001").fetchone() is None
+        assert (
+            db.execute("SELECT 1 FROM tle_data WHERE norad_cat_id = 90002").fetchone() is not None
+        )
