@@ -86,30 +86,26 @@ _SOURCE_DB_VALUE: dict[str, str] = {
 SATNOGS_TLE_URL = "https://db.satnogs.org/api/tle/"
 
 
-async def _probe_satnogs_reachable(norad_cat_id: int) -> bool:
-    """Try a single SATNOGS TLE API request to check whether the host is
-    reachable right now.
+async def _probe_reachable(url: str, params: dict[str, Any]) -> bool:
+    """Try a single GET request to check whether `url` is reachable right now.
 
     Used as a fail-fast circuit breaker before looping over many individual
-    per-satellite SATNOGS fallback requests: if the very first one can't even
-    establish a connection, the host is almost certainly down for the whole
-    run, and trying the rest one by one would just mean waiting out each
-    one's own ~10s timeout in turn — up to 20+ minutes for the full
-    provisional-satellite population (confirmed via a "restarted the app but
-    nothing changed" report, 2026-08-09, while db.satnogs.org was
-    unreachable). Returns False only for a connection-level failure
-    (ConnectTimeout / ConnectError); any other outcome — including an HTTP
-    error status or a malformed response — still proves the host responded,
-    so it's treated as reachable and the caller proceeds normally (the real
-    per-satellite loop will surface that satellite's own error itself).
+    per-satellite fallback requests (against either CelesTrak or SATNOGS):
+    if the very first one can't even establish a connection, the host is
+    almost certainly down for the whole run, and trying the rest one by one
+    would just mean waiting out each one's own ~10s timeout in turn — up to
+    20+ minutes for the full provisional-satellite population (confirmed via
+    a "restarted the app but nothing changed" report, 2026-08-09, while
+    db.satnogs.org was unreachable). Returns False only for a
+    connection-level failure (ConnectTimeout / ConnectError); any other
+    outcome — including an HTTP error status or a malformed response — still
+    proves the host responded, so it's treated as reachable and the caller
+    proceeds normally (the real per-satellite loop will surface that
+    satellite's own error itself).
     """
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            await client.get(
-                SATNOGS_TLE_URL,
-                params={"norad_cat_id": norad_cat_id, "format": "json"},
-                timeout=10.0,
-            )
+            await client.get(url, params=params, timeout=10.0)
         return True
     except (httpx.ConnectTimeout, httpx.ConnectError):
         return False
@@ -589,16 +585,21 @@ class TLEManager:
         # above, so re-querying them individually here would be redundant
         # load. source='manual' rows are never touched by any automated sync.
         #
-        # Two-stage fallback:
-        #   Phase 2a — CelesTrak CATNR batch query. CelesTrak's GP query API
-        #     accepts a comma-delimited list of catalog numbers in a single
-        #     request, so this can resolve hundreds of satellites in a
-        #     handful of requests rather than querying CelesTrak one
-        #     satellite at a time in a loop — which its usage guidance
-        #     discourages at this population size (compare
-        #     fetch_legacy_tles()/fetch_meteor_tles(), which do query
-        #     CelesTrak individually in a loop, but only for a small, bounded
-        #     count — max 21 and a fixed 9 respectively).
+        # Two-stage fallback, both concurrent (up to 20 at a time) with a
+        # fail-fast reachability probe first (_probe_reachable()):
+        #   Phase 2a — CelesTrak, individual CATNR query per satellite.
+        #     CelesTrak's gp.php CATNR parameter only accepts a single
+        #     catalog number per request — confirmed against CelesTrak's own
+        #     documentation and a live query, after an earlier version of
+        #     this method wrongly assumed a comma-delimited list was
+        #     supported (it returns HTTP 200 with an "Invalid query" body,
+        #     which silently resolved zero satellites without ever raising
+        #     an exception, 2026-08-09). Looping per-satellite here is the
+        #     same shape fetch_legacy_tles()/fetch_meteor_tles() already use,
+        #     just applied to a larger, uncapped population — the added
+        #     concurrency and circuit breaker keep that from being the
+        #     multi-minute serial hammering CelesTrak's usage guidance
+        #     discourages.
         #   Phase 2b — SATNOGS TLE API, individual per-satellite, for
         #     whatever Phase 2a didn't resolve. Kept as the last-resort
         #     fallback since SATNOGS aggregates from more sources (including
@@ -648,74 +649,91 @@ class TLEManager:
                 for norad, name, status, nrs, source_id, tle_group, had_tle in refresh_targets
             }
 
-            # ── Phase 2a: CelesTrak CATNR batch query ─────────────────────
-            _CATNR_BATCH_SIZE = 200
-            norads = list(remaining.keys())
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                for i in range(0, len(norads), _CATNR_BATCH_SIZE):
-                    batch = norads[i : i + _CATNR_BATCH_SIZE]
-                    try:
-                        r = await client.get(
-                            url_ct,
-                            params={"CATNR": ",".join(str(n) for n in batch), "FORMAT": "TLE"},
-                        )
-                        r.raise_for_status()
-                    except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RemoteProtocolError):
-                        # Leave this batch's satellites in `remaining` — Phase 2b
-                        # (SATNOGS) will attempt them individually below.
-                        continue
-                    except httpx.HTTPError as exc:
-                        logger.warning(f"CelesTrak CATNR batch fetch error: {exc}")
-                        continue
+            def _store_resolved(
+                norad: int, name_l: str, line1: str, line2: str, epoch_dt: datetime
+            ) -> bool:
+                """Parse+store a resolved TLE and pop it from `remaining`.
 
-                    lines = [ln.strip() for ln in r.text.splitlines() if ln.strip()]
-                    j = 0
-                    while j < len(lines) - 2:
-                        if not (lines[j + 1].startswith("1 ") and lines[j + 2].startswith("2 ")):
-                            j += 1
-                            continue
-                        name_l, line1, line2 = lines[j], lines[j + 1], lines[j + 2]
-                        j += 3
+                Returns False (and leaves `remaining` untouched) if the TLE
+                fails to parse or `norad` was already resolved by another
+                concurrent task — both callers must skip further processing
+                in that case.
+                """
+                if norad not in remaining:
+                    return False
+                try:
+                    EarthSatellite(line1, line2, name_l, self._ts)  # validates the elements
+                    quality = _calc_quality(epoch_dt)
+                except Exception:
+                    stats["errors"] += 1
+                    return False
+                _, _, _, _, tle_group, had_tle = remaining.pop(norad)
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO tle_data"
+                    " (norad_cat_id, name, line1, line2, epoch,"
+                    "  source, tle_group, fetched_at, quality_score)"
+                    " VALUES (?, ?, ?, ?, ?, 'satnogs', ?, ?, ?)",
+                    (norad, name_l, line1, line2, epoch_dt.isoformat(), tle_group, now, quality),
+                )
+                self._conn.execute(
+                    "UPDATE satellites SET tle_no_result_since = NULL WHERE norad_cat_id = ?",
+                    (norad,),
+                )
+                if had_tle:
+                    stats["updated"] += 1
+                else:
+                    stats["inserted"] += 1
+                return True
+
+            # ── Phase 2a: CelesTrak, individual CATNR query per satellite ──
+            probe_norad_2a = next(iter(remaining))
+            if await _probe_reachable(url_ct, {"CATNR": str(probe_norad_2a), "FORMAT": "TLE"}):
+                semaphore_2a = _asyncio.Semaphore(20)
+
+                async def _fetch_one_celestrak(norad: int) -> None:
+                    async with semaphore_2a:
                         try:
-                            norad = int(line1[2:7])
-                        except (ValueError, IndexError):
-                            continue
-                        if norad not in remaining:
-                            continue
+                            async with httpx.AsyncClient(timeout=15.0) as c:
+                                r = await c.get(
+                                    url_ct,
+                                    params={"CATNR": str(norad), "FORMAT": "TLE"},
+                                    timeout=10.0,
+                                )
+                                r.raise_for_status()
+                        except (
+                            httpx.ConnectTimeout,
+                            httpx.ConnectError,
+                            httpx.ReadTimeout,
+                            httpx.RemoteProtocolError,
+                        ):
+                            return
+                        except httpx.HTTPError as exc:
+                            logger.warning(f"CelesTrak CATNR fetch error for {norad}: {exc}")
+                            return
+
+                        lines = [ln.strip() for ln in r.text.splitlines() if ln.strip()]
+                        # Not found (empty body) or an "Invalid query" error body —
+                        # either way, not a valid 3-line TLE block.
+                        if len(lines) < 3 or not (
+                            lines[1].startswith("1 ") and lines[2].startswith("2 ")
+                        ):
+                            return
+                        name_l, line1, line2 = lines[0], lines[1], lines[2]
                         try:
                             sat_obj = EarthSatellite(line1, line2, name_l, self._ts)
                             epoch_dt = sat_obj.epoch.utc_datetime()
-                            quality = _calc_quality(epoch_dt)
                         except Exception:
                             stats["errors"] += 1
-                            continue
-                        _, _, _, _, tle_group, had_tle = remaining.pop(norad)
-                        self._conn.execute(
-                            "INSERT OR REPLACE INTO tle_data"
-                            " (norad_cat_id, name, line1, line2, epoch,"
-                            "  source, tle_group, fetched_at, quality_score)"
-                            " VALUES (?, ?, ?, ?, ?, 'satnogs', ?, ?, ?)",
-                            (
-                                norad,
-                                name_l,
-                                line1,
-                                line2,
-                                epoch_dt.isoformat(),
-                                tle_group,
-                                now,
-                                quality,
-                            ),
-                        )
-                        self._conn.execute(
-                            "UPDATE satellites SET tle_no_result_since = NULL"
-                            " WHERE norad_cat_id = ?",
-                            (norad,),
-                        )
-                        if had_tle:
-                            stats["updated"] += 1
-                        else:
-                            stats["inserted"] += 1
-            self._conn.commit()
+                            return
+                        _store_resolved(norad, name_l, line1, line2, epoch_dt)
+
+                await _asyncio.gather(*[_fetch_one_celestrak(n) for n in list(remaining.keys())])
+                self._conn.commit()
+            else:
+                logger.warning(
+                    "CelesTrak unreachable — skipping %d individual CATNR fetch(es) this run",
+                    len(remaining),
+                )
 
             # ── Phase 2b: SATNOGS TLE API fallback for whatever Phase 2a
             # didn't resolve ───────────────────────────────────────────────
@@ -723,7 +741,9 @@ class TLEManager:
                 probe_norad = next(iter(remaining))
                 probe_source_id = remaining[probe_norad][3]
                 probe_query_id = probe_source_id if probe_source_id is not None else probe_norad
-                if not await _probe_satnogs_reachable(probe_query_id):
+                if not await _probe_reachable(
+                    SATNOGS_TLE_URL, {"norad_cat_id": probe_query_id, "format": "json"}
+                ):
                     logger.warning(
                         "SATNOGS TLE API unreachable — skipping %d individual "
                         "fallback fetch(es) this run",
@@ -741,8 +761,6 @@ class TLEManager:
                     sat_status: str,
                     no_result_since: str | None,
                     source_id: int | None,
-                    tle_group: str,
-                    had_tle: bool,
                 ) -> None:
                     query_id = source_id if source_id is not None else norad
                     async with semaphore:
@@ -806,48 +824,23 @@ class TLEManager:
                         try:
                             sat_obj = EarthSatellite(line1, line2, sat_name, self._ts)
                             epoch_dt = sat_obj.epoch.utc_datetime()
-                            quality = _calc_quality(epoch_dt)
                         except Exception as exc:
                             logger.warning(f"SATNOGS TLE parse error {norad}: {exc}")
                             stats["errors"] += 1
                             return
 
-                        self._conn.execute(
-                            "INSERT OR REPLACE INTO tle_data"
-                            " (norad_cat_id, name, line1, line2, epoch,"
-                            "  source, tle_group, fetched_at, quality_score)"
-                            " VALUES (?, ?, ?, ?, ?, 'satnogs', ?, ?, ?)",
-                            (
-                                norad,
-                                sat_name,
-                                line1,
-                                line2,
-                                epoch_dt.isoformat(),
-                                tle_group,
-                                now,
-                                quality,
-                            ),
-                        )
-                        self._conn.execute(
-                            "UPDATE satellites SET tle_no_result_since = NULL"
-                            " WHERE norad_cat_id = ?",
-                            (norad,),
-                        )
-                        if had_tle:
-                            stats["updated"] += 1
-                        else:
-                            stats["inserted"] += 1
+                        _store_resolved(norad, sat_name, line1, line2, epoch_dt)
 
                 await _asyncio.gather(
                     *[
-                        _fetch_one(norad, name, status, nrs, source_id, tle_group, had_tle)
+                        _fetch_one(norad, name, status, nrs, source_id)
                         for norad, (
                             name,
                             status,
                             nrs,
                             source_id,
-                            tle_group,
-                            had_tle,
+                            _tle_group,
+                            _had_tle,
                         ) in remaining.items()
                     ]
                 )
@@ -1066,10 +1059,10 @@ class TLEManager:
         ID so the satellite's position can be shown on the map.
 
         Before looping, probes SATNOGS reachability with a single request
-        (_probe_satnogs_reachable()). If that fails to even connect, the whole
-        run is skipped immediately rather than looping over every satellite —
-        see that function's docstring for why. Otherwise, requests run up to
-        20 at a time (matching fetch_active_tles()'s Phase 2b) rather than one
+        (_probe_reachable()). If that fails to even connect, the whole run is
+        skipped immediately rather than looping over every satellite — see
+        that function's docstring for why. Otherwise, requests run up to 20
+        at a time (matching fetch_active_tles()'s Phase 2b) rather than one
         after another, so a run where SATNOGS *is* reachable but individual
         satellites are slow still doesn't serialize unnecessarily.
 
@@ -1099,7 +1092,9 @@ class TLEManager:
         if not rows:
             return stats
 
-        if not await _probe_satnogs_reachable(int(rows[0]["norad_cat_id"])):
+        if not await _probe_reachable(
+            SATNOGS_TLE_URL, {"norad_cat_id": int(rows[0]["norad_cat_id"]), "format": "json"}
+        ):
             logger.warning(
                 "SATNOGS TLE API unreachable — skipping %d provisional TLE fetch(es) this run",
                 len(rows),

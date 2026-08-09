@@ -17,8 +17,7 @@ from data.tle_manager import TLEManager
 _LINE1 = "1 68796U 26088E   26192.83685747  .00002724  00000+0  17770-3 0  9997"
 _LINE2 = "2 68796  97.5082 341.6669 0015331 359.2893   0.8311 15.08613790 12013"
 
-# A second synthetic element set, keyed to a different NORAD ID, for tests
-# that need two distinct satellites in the same CelesTrak CATNR batch.
+# A second synthetic element set, keyed to a different NORAD ID.
 _LINE1_B = "1 68795U 26088D   26192.91095598  .00012852  00000-0  81506-3 0  9999"
 _LINE2_B = "2 68795  97.5066 327.0920 0015527  49.6354 310.6228 15.08945428  9764"
 
@@ -31,10 +30,24 @@ def _bulk_resp() -> MagicMock:
     return resp
 
 
-def _catnr_resp(text: str) -> MagicMock:
-    """A Phase 2a CelesTrak CATNR batch response with the given TLE-format body."""
+def _catnr_found_resp(name: str, line1: str, line2: str) -> MagicMock:
+    """A Phase 2a CelesTrak CATNR response that resolves one satellite.
+
+    CATNR only ever accepts a single catalog number per request (confirmed
+    against CelesTrak's own documentation and a live query — a
+    comma-delimited list is rejected with an "Invalid query" body, 2026-08-09),
+    so this always represents exactly one satellite's 3-line TLE block.
+    """
     resp = MagicMock()
-    resp.text = text
+    resp.text = f"{name}\n{line1}\n{line2}\n"
+    resp.raise_for_status.return_value = None
+    return resp
+
+
+def _catnr_not_found_resp() -> MagicMock:
+    """A Phase 2a CelesTrak CATNR response for a satellite CelesTrak lacks."""
+    resp = MagicMock()
+    resp.text = ""
     resp.raise_for_status.return_value = None
     return resp
 
@@ -48,12 +61,12 @@ def _satnogs_resp(tle1: str, tle2: str) -> MagicMock:
 
 
 def _probe_ok_resp() -> MagicMock:
-    """A successful _probe_satnogs_reachable() response.
+    """A successful _probe_reachable() response.
 
     The probe only awaits the GET and never touches the response body, so a
     bare MagicMock is enough — but it's a distinct helper because every
-    Phase 2b test needs one extra response for the probe, inserted right
-    before the real per-satellite SATNOGS call.
+    Phase 2a/2b test needs one extra response for the probe, inserted right
+    before the real per-satellite call.
     """
     return MagicMock()
 
@@ -73,8 +86,9 @@ class TestFetchActiveTlesSatnogsSourceIdRouting:
     serving the TLE keyed by that old ID long after migration (observed for
     ARICA-2 / NORAD 68796, 2026-07-12), so Phase 2b of fetch_active_tles()
     must query by satnogs_source_id when present, not by the real NORAD ID.
-    These tests force a Phase 2a (CelesTrak CATNR batch) miss, so Phase 2b
-    is exercised.
+    These tests force a Phase 2a (CelesTrak) miss, so Phase 2b is exercised.
+    Sequence per test: 5 bulk + Phase 2a probe + Phase 2a miss + Phase 2b
+    probe + Phase 2b match.
     """
 
     def test_queries_by_satnogs_source_id_when_present(self, db: sqlite3.Connection) -> None:
@@ -88,7 +102,8 @@ class TestFetchActiveTlesSatnogsSourceIdRouting:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(
             side_effect=[_bulk_resp()] * 5
-            + [_catnr_resp("")]  # Phase 2a: no match
+            + [_probe_ok_resp()]  # Phase 2a: reachability probe
+            + [_catnr_not_found_resp()]  # Phase 2a: CelesTrak doesn't have it
             + [_probe_ok_resp()]  # Phase 2b: reachability probe
             + [_satnogs_resp(_LINE1, _LINE2)]  # Phase 2b: match
         )
@@ -123,7 +138,8 @@ class TestFetchActiveTlesSatnogsSourceIdRouting:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(
             side_effect=[_bulk_resp()] * 5
-            + [_catnr_resp("")]  # Phase 2a: no match
+            + [_probe_ok_resp()]  # Phase 2a: reachability probe
+            + [_catnr_not_found_resp()]  # Phase 2a: CelesTrak doesn't have it
             + [_probe_ok_resp()]  # Phase 2b: reachability probe
             + [_satnogs_resp(_LINE1, _LINE2)]  # Phase 2b: match
         )
@@ -149,10 +165,12 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
     (confirmed for ORIGAMISAT-2 / NORAD 68795, stuck 44 days, 2026-08-09).
     """
 
-    def test_phase2a_celestrak_catnr_batch_resolves_stale_satellite(
+    def test_phase2a_celestrak_individual_query_resolves_stale_satellite(
         self, db: sqlite3.Connection
     ) -> None:
-        """The CelesTrak CATNR batch (Phase 2a) alone must be able to refresh
+        """CelesTrak (Phase 2a), queried per satellite (CATNR takes only a
+        single catalog number — see _probe_reachable()'s docstring for how
+        an earlier version of this got that wrong), must be able to refresh
         a satellite Phase 1's bulk groups don't cover, without ever falling
         through to the SATNOGS fallback (Phase 2b) — this is the path that
         fixed ORIGAMISAT-2 when SATNOGS itself was unreachable but CelesTrak
@@ -172,11 +190,12 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
         )
         db.commit()
 
-        catnr_batch_text = f"OrigamiSat-2\n{_LINE1_B}\n{_LINE2_B}\n"
         mgr = TLEManager(db)
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(
-            side_effect=[_bulk_resp()] * 5 + [_catnr_resp(catnr_batch_text)]
+            side_effect=[_bulk_resp()] * 5
+            + [_probe_ok_resp()]  # Phase 2a: reachability probe
+            + [_catnr_found_resp("OrigamiSat-2", _LINE1_B, _LINE2_B)]  # Phase 2a: match
         )
 
         with (
@@ -188,7 +207,7 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
             stats = asyncio.run(mgr.fetch_active_tles())
 
         # Resolved entirely in Phase 2a — no Phase 2b (SATNOGS) call was needed.
-        assert mock_client.get.await_count == 6
+        assert mock_client.get.await_count == 7
         catnr_call = mock_client.get.call_args_list[-1]
         assert catnr_call.kwargs["params"]["CATNR"] == "68795"
 
@@ -201,11 +220,12 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
         assert stats["updated"] == 1
         assert stats["inserted"] == 0
 
-    def test_phase2a_batches_multiple_norad_ids_into_one_request(
+    def test_phase2a_resolves_multiple_satellites_via_separate_individual_queries(
         self, db: sqlite3.Connection
     ) -> None:
-        """Two satellites needing refresh must be resolved by a single
-        comma-delimited CATNR request, not one request per satellite.
+        """Two satellites needing refresh are each resolved by their own
+        CATNR request (concurrently, up to 20 at a time) — not one combined
+        request, since CelesTrak's CATNR only accepts a single value.
         """
         db.execute(
             "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
@@ -217,12 +237,20 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
         )
         db.commit()
 
-        catnr_batch_text = f"OrigamiSat-2\n{_LINE1_B}\n{_LINE2_B}\nARICA-2\n{_LINE1}\n{_LINE2}\n"
+        targets = {68795: ("OrigamiSat-2", _LINE1_B, _LINE2_B), 68796: ("ARICA-2", _LINE1, _LINE2)}
+
+        async def _fake_get(*_args: object, **kwargs: object) -> MagicMock:
+            params = kwargs["params"]
+            assert isinstance(params, dict)
+            if "GROUP" in params:
+                return _bulk_resp()
+            norad = int(params["CATNR"])
+            name, line1, line2 = targets[norad]
+            return _catnr_found_resp(name, line1, line2)
+
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            side_effect=[_bulk_resp()] * 5 + [_catnr_resp(catnr_batch_text)]
-        )
+        mock_client.get = AsyncMock(side_effect=_fake_get)
 
         with (
             patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
@@ -230,13 +258,11 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
         ):
             mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-            asyncio.run(mgr.fetch_active_tles())
+            stats = asyncio.run(mgr.fetch_active_tles())
 
-        # Exactly one Phase 2a request for both satellites, no Phase 2b calls.
-        assert mock_client.get.await_count == 6
-        catnr_call = mock_client.get.call_args_list[-1]
-        queried_ids = set(catnr_call.kwargs["params"]["CATNR"].split(","))
-        assert queried_ids == {"68795", "68796"}
+        # 5 bulk + 1 Phase 2a probe + 2 individual CATNR fetches. No Phase 2b calls.
+        assert mock_client.get.await_count == 8
+        assert stats["updated"] + stats["inserted"] == 2
 
         for norad in (68795, 68796):
             row = db.execute(
@@ -245,8 +271,8 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
             assert row is not None
 
     def test_phase2b_still_refreshes_what_phase2a_misses(self, db: sqlite3.Connection) -> None:
-        """When CelesTrak's CATNR batch doesn't have a satellite, Phase 2b
-        (SATNOGS, per-satellite) must still be attempted as a fallback.
+        """When CelesTrak doesn't have a satellite, Phase 2b (SATNOGS,
+        per-satellite) must still be attempted as a fallback.
         """
         db.execute(
             "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
@@ -266,7 +292,8 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(
             side_effect=[_bulk_resp()] * 5
-            + [_catnr_resp("")]  # Phase 2a: CelesTrak doesn't have it
+            + [_probe_ok_resp()]  # Phase 2a: reachability probe
+            + [_catnr_not_found_resp()]  # Phase 2a: CelesTrak doesn't have it
             + [_probe_ok_resp()]  # Phase 2b: reachability probe
             + [_satnogs_resp(_LINE1_B, _LINE2_B)]  # Phase 2b: SATNOGS does
         )
@@ -279,7 +306,7 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
             mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
             stats = asyncio.run(mgr.fetch_active_tles())
 
-        assert mock_client.get.await_count == 8
+        assert mock_client.get.await_count == 9
         phase2b_call = mock_client.get.call_args_list[-1]
         assert phase2b_call.kwargs["params"]["norad_cat_id"] == 68795
 
@@ -291,13 +318,12 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
         assert row["source"] == "satnogs"
         assert stats["updated"] == 1
 
-    def test_phase2b_skips_all_remaining_when_satnogs_probe_cannot_connect(
+    def test_skips_all_remaining_when_both_celestrak_and_satnogs_probes_fail(
         self, db: sqlite3.Connection
     ) -> None:
-        """Same circuit breaker as fetch_provisional_tles(), applied to
-        fetch_active_tles()'s own SATNOGS fallback: if the first Phase 2b
-        probe can't connect, none of the other stragglers should be tried
-        individually either.
+        """If neither host can even be connected to, both phases should bail
+        out on their first probe rather than trying each straggler
+        individually against a dead host (twice over).
         """
         for norad in (68795, 68796):
             db.execute(
@@ -313,7 +339,7 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(
             side_effect=[_bulk_resp()] * 5
-            + [_catnr_resp("")]  # Phase 2a: no match for either satellite
+            + [httpx.ConnectTimeout("boom")]  # Phase 2a: probe fails to connect
             + [httpx.ConnectTimeout("boom")]  # Phase 2b: probe fails to connect
         )
 
@@ -325,7 +351,7 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
             mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
             stats = asyncio.run(mgr.fetch_active_tles())
 
-        # 5 bulk + 1 CATNR batch + 1 probe — no per-satellite SATNOGS calls.
+        # 5 bulk + 1 Phase 2a probe + 1 Phase 2b probe — no per-satellite calls at all.
         assert mock_client.get.await_count == 7
         assert stats["errors"] == 2
         assert db.execute("SELECT COUNT(*) c FROM tle_data").fetchone()["c"] == 0
