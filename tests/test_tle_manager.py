@@ -101,3 +101,131 @@ class TestFetchActiveTlesSatnogsSourceIdRouting:
 
         phase2_call = mock_client.get.call_args_list[-1]
         assert phase2_call.kwargs["params"]["norad_cat_id"] == 43803
+
+
+class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
+    """Regression coverage for the "permanent staleness ratchet" bug: a
+    satellite not tracked by any Phase 1 bulk CelesTrak group used to get
+    exactly one TLE ever (whichever run first discovered it, via
+    source='satnogs'), then be silently excluded from every later run
+    merely for already having a tle_data row — no matter how stale
+    (confirmed for ORIGAMISAT-2 / NORAD 68795, stuck 44 days, 2026-08-09).
+    """
+
+    def test_stale_satnogs_tle_is_refreshed_and_tle_group_preserved(
+        self, db: sqlite3.Connection
+    ) -> None:
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (68795, 'OrigamiSat-2', 'alive', 0)"
+        )
+        # Pre-existing, stale TLE obtained via the same SATNOGS fallback in an
+        # earlier run. tle_group is 'cubesat' (not the default 'amateur') to
+        # verify Phase 2 no longer clobbers it back to 'amateur' on refresh.
+        db.execute(
+            "INSERT INTO tle_data"
+            " (norad_cat_id, name, line1, line2, epoch, source, tle_group, fetched_at,"
+            "  quality_score)"
+            " VALUES (68795, 'OrigamiSat-2', ?, ?, '2026-06-26T21:51:46+00:00', 'satnogs',"
+            "  'cubesat', '2026-06-27T07:34:09+00:00', 'poor')",
+            (_LINE1, _LINE2),
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        fresh_resp = MagicMock()
+        fresh_resp.json.return_value = [{"tle1": _LINE1, "tle2": _LINE2}]
+        fresh_resp.raise_for_status.return_value = None
+
+        bulk_resp = MagicMock()
+        bulk_resp.text = ""
+        bulk_resp.raise_for_status.return_value = None
+        mock_client.get = AsyncMock(side_effect=[bulk_resp] * 5 + [fresh_resp])
+
+        with (
+            patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
+            patch.object(mgr, "_log_sync"),
+        ):
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            stats = asyncio.run(mgr.fetch_active_tles())
+
+        # Phase 2 must have queried this satellite despite already having a TLE.
+        assert mock_client.get.await_count == 6
+        phase2_call = mock_client.get.call_args_list[-1]
+        assert phase2_call.kwargs["params"]["norad_cat_id"] == 68795
+
+        row = db.execute(
+            "SELECT fetched_at, tle_group, source FROM tle_data WHERE norad_cat_id = 68795"
+        ).fetchone()
+        assert row["fetched_at"] != "2026-06-27T07:34:09+00:00"
+        assert row["tle_group"] == "cubesat"  # preserved, not reset to 'amateur'
+        assert row["source"] == "satnogs"
+        assert stats["updated"] == 1
+        assert stats["inserted"] == 0
+
+    def test_celestrak_sourced_tle_is_not_requeried_by_phase2(self, db: sqlite3.Connection) -> None:
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (25544, 'ISS', 'alive', 0)"
+        )
+        db.execute(
+            "INSERT INTO tle_data"
+            " (norad_cat_id, name, line1, line2, epoch, source, tle_group, fetched_at,"
+            "  quality_score)"
+            " VALUES (25544, 'ISS', ?, ?, '2026-06-26T21:51:46+00:00', 'celestrak',"
+            "  'stations', '2026-06-27T07:34:09+00:00', 'poor')",
+            (_LINE1, _LINE2),
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        bulk_resp = MagicMock()
+        bulk_resp.text = ""
+        bulk_resp.raise_for_status.return_value = None
+        mock_client.get = AsyncMock(side_effect=[bulk_resp] * 5)
+
+        with (
+            patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
+            patch.object(mgr, "_log_sync"),
+        ):
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            asyncio.run(mgr.fetch_active_tles())
+
+        # Only the 5 Phase 1 bulk-group requests — no individual Phase 2 call.
+        assert mock_client.get.await_count == 5
+
+    def test_manual_tle_is_not_requeried_by_phase2(self, db: sqlite3.Connection) -> None:
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (68795, 'OrigamiSat-2', 'alive', 0)"
+        )
+        db.execute(
+            "INSERT INTO tle_data"
+            " (norad_cat_id, name, line1, line2, epoch, source, tle_group, fetched_at,"
+            "  quality_score)"
+            " VALUES (68795, 'OrigamiSat-2', ?, ?, '2026-06-26T21:51:46+00:00', 'manual',"
+            "  'amateur', '2026-06-27T07:34:09+00:00', 'poor')",
+            (_LINE1, _LINE2),
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        bulk_resp = MagicMock()
+        bulk_resp.text = ""
+        bulk_resp.raise_for_status.return_value = None
+        mock_client.get = AsyncMock(side_effect=[bulk_resp] * 5)
+
+        with (
+            patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
+            patch.object(mgr, "_log_sync"),
+        ):
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            asyncio.run(mgr.fetch_active_tles())
+
+        assert mock_client.get.await_count == 5

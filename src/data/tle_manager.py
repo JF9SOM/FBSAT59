@@ -542,7 +542,22 @@ class TLEManager:
 
         self._conn.commit()
 
-        # ── Phase 2: SATNOGS TLE API fallback for still-missing satellites ───
+        # ── Phase 2: SATNOGS TLE API fallback ─────────────────────────────
+        # Targets two groups: satellites with no TLE row at all, AND satellites
+        # whose current TLE was itself obtained via this same fallback
+        # (source='satnogs'). The latter is required — otherwise a satellite
+        # not tracked by any Phase 1 bulk CelesTrak group gets exactly one
+        # TLE ever (whichever run first discovers it) and is then silently
+        # excluded from every subsequent run merely for already having a
+        # tle_data row, no matter how stale it becomes. Confirmed stuck this
+        # way for 44 days for ORIGAMISAT-2 / NORAD 68795 (2026-08-09) before
+        # this fix, alongside ~700 other satellites across three earlier
+        # one-shot Phase 2 runs.
+        # source='celestrak' rows are left alone here: they're kept fresh by
+        # the periodic group-specific fetches (2h/4h/6h/12h) and by Phase 1
+        # above, so re-querying them individually here would be redundant
+        # load. source='manual' rows are never touched by any automated sync.
+        #
         # Satellites migrated from a provisional (>=90000) ID retain
         # satnogs_source_id pointing at the old ID. SATNOGS's TLE API can
         # continue to serve the TLE keyed by that old ID for a long time
@@ -550,28 +565,31 @@ class TLEManager:
         # so query by satnogs_source_id when present and store the result
         # under the real norad_cat_id — mirroring the routing already used
         # for transmitter sync in sync_from_satnogs().
-        still_missing = [
+        refresh_targets = [
             (
                 int(r["norad_cat_id"]),
                 str(r["name"]),
                 str(r["status"] or "unknown"),
                 str(r["tle_no_result_since"]) if r["tle_no_result_since"] else None,
                 int(r["satnogs_source_id"]) if r["satnogs_source_id"] else None,
+                str(r["tle_group"]) if r["tle_group"] else "amateur",
+                bool(r["had_tle"]),
             )
             for r in self._conn.execute(
                 """
                 SELECT s.norad_cat_id, s.name, s.status, s.tle_no_result_since,
-                       s.satnogs_source_id
+                       s.satnogs_source_id, t.tle_group,
+                       (t.norad_cat_id IS NOT NULL) AS had_tle
                 FROM satellites s
                 LEFT JOIN tle_data t ON s.norad_cat_id = t.norad_cat_id
                 WHERE s.is_hidden = 0
                   AND s.norad_cat_id BETWEEN 10000 AND 89999
-                  AND t.norad_cat_id IS NULL
+                  AND (t.norad_cat_id IS NULL OR t.source = 'satnogs')
                 """
             ).fetchall()
         ]
 
-        if still_missing:
+        if refresh_targets:
             semaphore = _asyncio.Semaphore(20)  # max 20 concurrent requests
 
             async def _fetch_one(
@@ -580,6 +598,8 @@ class TLEManager:
                 sat_status: str,
                 no_result_since: str | None,
                 source_id: int | None,
+                tle_group: str,
+                had_tle: bool,
             ) -> None:
                 query_id = source_id if source_id is not None else norad
                 async with semaphore:
@@ -649,19 +669,31 @@ class TLEManager:
                         "INSERT OR REPLACE INTO tle_data"
                         " (norad_cat_id, name, line1, line2, epoch,"
                         "  source, tle_group, fetched_at, quality_score)"
-                        " VALUES (?, ?, ?, ?, ?, 'satnogs', 'amateur', ?, ?)",
-                        (norad, sat_name, line1, line2, epoch_dt.isoformat(), now, quality),
+                        " VALUES (?, ?, ?, ?, ?, 'satnogs', ?, ?, ?)",
+                        (
+                            norad,
+                            sat_name,
+                            line1,
+                            line2,
+                            epoch_dt.isoformat(),
+                            tle_group,
+                            now,
+                            quality,
+                        ),
                     )
                     self._conn.execute(
                         "UPDATE satellites SET tle_no_result_since = NULL WHERE norad_cat_id = ?",
                         (norad,),
                     )
-                    stats["inserted"] += 1
+                    if had_tle:
+                        stats["updated"] += 1
+                    else:
+                        stats["inserted"] += 1
 
             await _asyncio.gather(
                 *[
-                    _fetch_one(norad, name, status, nrs, source_id)
-                    for norad, name, status, nrs, source_id in still_missing
+                    _fetch_one(norad, name, status, nrs, source_id, tle_group, had_tle)
+                    for norad, name, status, nrs, source_id, tle_group, had_tle in refresh_targets
                 ]
             )
             self._conn.commit()
