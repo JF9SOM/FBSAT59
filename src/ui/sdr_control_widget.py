@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 
 from i18n import _
 from sdr import LAMEENC_AVAILABLE, SOAPY_AVAILABLE, AudioRecorder
+from ui.sdr_waterfall_dialog import SdrWaterfallDialog
 
 if SOAPY_AVAILABLE:
     from sdr.demodulator import DemodMode
@@ -95,6 +96,7 @@ class SdrControlWidget(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._pipeline: Any = None  # SDRPipeline | None
+        self._waterfall_dialog: SdrWaterfallDialog | None = None
         self._recording = False
         self._tune_offset_hz: float = 0.0  # cumulative passband tune offset
         # Whether Radio Control currently has a transponder selected — see
@@ -117,6 +119,7 @@ class SdrControlWidget(QWidget):
         Instead, each child widget is enabled/disabled individually, skipping
         the two file-manager buttons which must remain accessible at all times.
         """
+        self._waterfall_btn.setEnabled(connected)
         _always_enabled = {self._open_folder_btn, self._open_audio_folder_btn}
         for panel in (
             self._spectrum_panel,
@@ -133,6 +136,8 @@ class SdrControlWidget(QWidget):
 
     def set_pipeline(self, pipeline: Any) -> None:  # SDRPipeline | None
         """Attach or detach the active SDRPipeline."""
+        if self._waterfall_dialog is not None:
+            self._waterfall_dialog.set_pipeline(pipeline)
         # Detach old pipeline
         if self._pipeline is not None:
             try:
@@ -264,11 +269,21 @@ class SdrControlWidget(QWidget):
         scroll.setWidget(inner)
         outer.addWidget(scroll)
 
-        # Status bar
+        # Status bar + Waterfall popup button (right side of the same row —
+        # keeping it out of the Spectrum group box below so that panel
+        # doesn't grow taller just to host it).
+        status_row = QHBoxLayout()
         self._status_label = QLabel(_("SDR Disconnected"))
         self._status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._status_label.setStyleSheet("color: gray; font-weight: bold;")
-        layout.addWidget(self._status_label)
+        status_row.addWidget(self._status_label, stretch=1)
+        self._waterfall_btn = QPushButton(_("🌊 Waterfall"))
+        self._waterfall_btn.setToolTip(
+            _("Open a scrolling spectrum + waterfall popup for this SDR")
+        )
+        self._waterfall_btn.clicked.connect(self._on_show_waterfall)
+        status_row.addWidget(self._waterfall_btn)
+        layout.addLayout(status_row)
 
         # Spectrum
         self._spectrum_panel = self._build_spectrum_panel()
@@ -668,6 +683,14 @@ class SdrControlWidget(QWidget):
     # ------------------------------------------------------------------
     # Slots
     # ------------------------------------------------------------------
+
+    def _on_show_waterfall(self) -> None:
+        if self._waterfall_dialog is None:
+            self._waterfall_dialog = SdrWaterfallDialog(self)
+            self._waterfall_dialog.set_pipeline(self._pipeline)
+        self._waterfall_dialog.show()
+        self._waterfall_dialog.raise_()
+        self._waterfall_dialog.activateWindow()
 
     @Slot(list)
     def _on_spectrum(self, points: list[tuple[float, float]]) -> None:
