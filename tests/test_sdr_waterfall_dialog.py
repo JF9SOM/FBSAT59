@@ -204,3 +204,26 @@ def test_manual_range_disables_only_when_auto_off(qtbot: QtBot) -> None:
     dlg._auto_chk.setChecked(True)
     assert dlg._low_spin.isEnabled() is False
     assert dlg._high_spin.isEnabled() is False
+
+
+def test_position_top_right_is_queued_once_on_first_show_only(qtbot: QtBot) -> None:
+    """Regression test for the popup opening centred instead of top-right:
+    positioning must actually be applied (not just computed) after the
+    window has been mapped, and only on the very first show() — a second
+    show()/raise_() (e.g. reopening after the user dragged it elsewhere)
+    must not re-snap it back to the corner."""
+    dlg = SdrWaterfallDialog()
+    qtbot.addWidget(dlg)
+    calls = []
+    dlg._position_top_right = lambda: calls.append(1)
+
+    assert dlg._positioned_once is False
+    dlg.show()
+    qtbot.wait(20)  # let the QTimer.singleShot(0, ...) fire
+    assert dlg._positioned_once is True
+    assert len(calls) == 1
+
+    dlg.hide()
+    dlg.show()
+    qtbot.wait(20)
+    assert len(calls) == 1  # not called again

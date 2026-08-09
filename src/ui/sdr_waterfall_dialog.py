@@ -26,7 +26,7 @@ from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
-from PySide6.QtCore import QPoint, QPointF, QRect, QSize, Qt
+from PySide6.QtCore import QPoint, QPointF, QRect, QSize, Qt, QTimer
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -37,6 +37,7 @@ from PySide6.QtGui import (
     QPen,
     QPixmap,
     QPolygonF,
+    QShowEvent,
 )
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -163,6 +164,7 @@ class SdrWaterfallDialog(QDialog):
         self.setMinimumSize(_CANVAS_WIDTH + 20, _CANVAS_HEIGHT + 70)
 
         self._pipeline: Any = None  # SDRPipeline | None
+        self._positioned_once = False
         self._history: deque[NDArray[np.float32]] = deque(maxlen=_WATERFALL_HEIGHT)
         self._latest_freqs: NDArray[np.float32] | None = None
         self._latest_powers: NDArray[np.float32] | None = None
@@ -198,20 +200,28 @@ class SdrWaterfallDialog(QDialog):
         self._image_label.setMinimumSize(_CANVAS_WIDTH, _CANVAS_HEIGHT)
         layout.addWidget(self._image_label, stretch=1)
 
-        self._position_top_right()
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        if not self._positioned_once:
+            self._positioned_once = True
+            # Moving here (rather than before show()) doesn't reliably win
+            # against window managers that impose their own "centre over
+            # parent" placement for transient dialogs on first map — the
+            # move can simply be overridden. Queuing it for the next event
+            # loop iteration, after the window has actually been mapped,
+            # makes it a distinct app-requested move that WMs generally
+            # do respect (a well-known Qt/X11 quirk, not specific to this
+            # dialog). Only ever fires once: a user who has since dragged
+            # the (non-modal, kept-alive) dialog elsewhere keeps that
+            # position across later show()/raise_() calls.
+            QTimer.singleShot(0, self._position_top_right)
 
     def _position_top_right(self) -> None:
-        """Open near the top-right of the screen rather than Qt's default
-        (centred over the parent) — this is a wide popup, so centring it
-        tends to sit right on top of the Radio Control window it was
-        opened from. Only called once, from __init__: after that, a user
-        who has dragged the (non-modal, kept-alive) dialog elsewhere keeps
-        that position across subsequent show()/raise_() calls.
-        """
+        """Move to near the top-right of the screen — see showEvent()."""
         screen = self.screen() or QGuiApplication.primaryScreen()
         if screen is None:
             return
-        point = top_right_position(screen.availableGeometry(), self.sizeHint())
+        point = top_right_position(screen.availableGeometry(), self.size())
         self.move(point)
 
     # ------------------------------------------------------------------
