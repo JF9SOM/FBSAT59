@@ -45,7 +45,7 @@ from comms.q65.codec import (
     Q65Message,
     is_available,
 )
-from comms.q65.qso import Q65QsoManager, Q65QsoState
+from comms.q65.qso import Q65QsoManager, Q65QsoState, format_report
 from comms.q65.scheduler import Q65Scheduler
 from core.clock_offset import corrected_time
 from i18n import _
@@ -245,12 +245,12 @@ class Q65Tab(QWidget):
 
         self._rst_btn = QPushButton(_("RST"))
         self._rst_btn.setToolTip(_("Send signal report"))
-        self._rst_btn.clicked.connect(lambda: self._on_quick_report("-05"))
+        self._rst_btn.clicked.connect(lambda: self._on_quick_report(r_prefix=False))
         btn_row1.addWidget(self._rst_btn)
 
         self._r_rst_btn = QPushButton(_("R+RST"))
         self._r_rst_btn.setToolTip(_("Send R + signal report (confirm received)"))
-        self._r_rst_btn.clicked.connect(lambda: self._on_quick_report("R-05"))
+        self._r_rst_btn.clicked.connect(lambda: self._on_quick_report(r_prefix=True))
         btn_row1.addWidget(self._r_rst_btn)
 
         self._rr73_btn = QPushButton(_("RR73"))
@@ -672,6 +672,16 @@ class Q65Tab(QWidget):
     # Table double-click — respond to decoded message
     # ------------------------------------------------------------------
 
+    def _row_snr_db(self, row: int) -> float | None:
+        """Measured SNR of a decoded row, or None if unavailable."""
+        item = self._table.item(row, _COL_DB)
+        if item is None:
+            return None
+        try:
+            return float(item.text())
+        except ValueError:
+            return None
+
     @Slot(int, int)
     def _on_table_double_click(self, row: int, col: int) -> None:
         msg_item = self._table.item(row, _COL_MSG)
@@ -687,7 +697,7 @@ class Q65Tab(QWidget):
             else:
                 dx_call = parts[0]
                 dx_grid = ""
-            self._qso.call_station(dx_call, dx_grid)
+            self._qso.call_station(dx_call, dx_grid, self._row_snr_db(row))
             self._tx_enable_btn.setChecked(True)
 
     # ------------------------------------------------------------------
@@ -699,23 +709,55 @@ class Q65Tab(QWidget):
             self._qso.start_cq()
         self._tx_enable_btn.setChecked(True)
 
-    def _on_quick_report(self, report: str) -> None:
-        if self._qso and self._qso.dx_call:
-            msg = f"{self._qso.dx_call} {self._qso.my_call} {report}"
-            self._qso.send_free(msg)
-            self._tx_msg_edit.setText(msg)
+    def _require_dx_call(self) -> bool:
+        """True if there is a station to address; otherwise says why not.
+
+        RST/R+RST/73 used to silently do nothing when dx_call was empty --
+        indistinguishable from a dead button (GitHub Issue #16, same class
+        of fix as the FT4 tab's _active_qso_for_button()).
+        """
+        if self._qso is None or not self._qso.dx_call:
+            self._status_label.setText(_("Double-click a decoded station first"))
+            return False
+        return True
+
+    def _current_report(self) -> str:
+        """Our measured SNR of dx_call as a report string.
+
+        Falls back to a placeholder only if nothing has been measured yet
+        -- GitHub Issue #16: this used to be a fixed "-05" always, even
+        when a real reading was available in the decoded table.
+        """
+        if self._qso is not None and self._qso.their_snr_db is not None:
+            return format_report(self._qso.their_snr_db)
+        return "-05"
+
+    def _on_quick_report(self, r_prefix: bool) -> None:
+        if not self._require_dx_call():
+            return
+        assert self._qso is not None
+        report = self._current_report()
+        if r_prefix:
+            report = f"R{report}"
+        msg = f"{self._qso.dx_call} {self._qso.my_call} {report}"
+        self._qso.send_free(msg)
+        self._tx_msg_edit.setText(msg)
 
     def _on_rr73(self) -> None:
-        if self._qso and self._qso.dx_call:
-            msg = f"{self._qso.dx_call} {self._qso.my_call} RR73"
-            self._qso.send_free(msg)
-            self._tx_msg_edit.setText(msg)
+        if not self._require_dx_call():
+            return
+        assert self._qso is not None
+        msg = f"{self._qso.dx_call} {self._qso.my_call} RR73"
+        self._qso.send_free(msg)
+        self._tx_msg_edit.setText(msg)
 
     def _on_73(self) -> None:
-        if self._qso and self._qso.dx_call:
-            msg = f"{self._qso.dx_call} {self._qso.my_call} 73"
-            self._qso.send_free(msg)
-            self._tx_msg_edit.setText(msg)
+        if not self._require_dx_call():
+            return
+        assert self._qso is not None
+        msg = f"{self._qso.dx_call} {self._qso.my_call} 73"
+        self._qso.send_free(msg)
+        self._tx_msg_edit.setText(msg)
 
     def _on_send_free(self) -> None:
         text = self._tx_msg_edit.text().strip()
@@ -765,6 +807,7 @@ class Q65Tab(QWidget):
         self._log_btn.setEnabled(can_log)
         if state == Q65QsoState.LOGGED:
             self._tx_enable_btn.setChecked(False)
+            self._tx_msg_edit.clear()
             self._status_label.setText(_("QSO logged"))
 
     # ------------------------------------------------------------------

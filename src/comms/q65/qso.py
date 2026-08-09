@@ -20,6 +20,11 @@ from datetime import UTC, datetime
 from enum import Enum, auto
 
 
+def format_report(snr_db: float) -> str:
+    """Format a measured SNR as a signal report ("-12", "+03")."""
+    return f"{int(round(snr_db)):+03d}"
+
+
 class Q65QsoState(Enum):
     """QSO progress states."""
 
@@ -74,11 +79,15 @@ class Q65QsoManager:
         self._on_tx_msg = on_tx_msg
         self._on_state = on_state
 
-        self.state = Q65QsoState.IDLE
+        self._state = Q65QsoState.IDLE
         self.dx_call: str = ""
         self.dx_grid: str = ""
         self.rst_sent: str = ""
         self.rst_rcvd: str = ""
+        # SNR we last measured on a message from dx_call, so quick-report
+        # buttons (RST/R+RST) send our real reading instead of a fixed
+        # placeholder (GitHub Issue #16 -- same fix as the FT4 tab's).
+        self.their_snr_db: float | None = None
         self._time_on: str = ""
         self._norad: int | None = None
         self._sat_name: str = ""
@@ -92,6 +101,10 @@ class Q65QsoManager:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    @property
+    def state(self) -> Q65QsoState:
+        return self._state
 
     def set_location(self, my_call: str, my_grid: str) -> None:
         """Update own callsign / grid (called when user edits the UI fields)."""
@@ -117,12 +130,22 @@ class Q65QsoManager:
         self.rst_rcvd = ""
         self._set_state(Q65QsoState.CALLING, f"CQ {self.my_call} {self.my_grid[:4]}")
 
-    def call_station(self, dx_call: str, dx_grid: str = "") -> None:
-        """Call a specific station (enters EXCHANGE state)."""
+    def call_station(
+        self, dx_call: str, dx_grid: str = "", their_snr_db: float | None = None
+    ) -> None:
+        """Call a specific station (enters EXCHANGE state).
+
+        their_snr_db is the SNR measured on the decoded row being answered
+        (if any) -- the report we send reflects that measurement rather
+        than a fixed placeholder (GitHub Issue #16).
+        """
         self.dx_call = dx_call.upper().strip()
         self.dx_grid = dx_grid.upper().strip()
+        self.their_snr_db = their_snr_db
         self._time_on = datetime.now(UTC).strftime("%H%M%S")
-        msg = f"{self.dx_call} {self.my_call} -05"
+        report = format_report(their_snr_db) if their_snr_db is not None else "-05"
+        self.rst_sent = report
+        msg = f"{self.dx_call} {self.my_call} {report}"
         self._set_state(Q65QsoState.EXCHANGE, msg)
 
     def halt(self) -> None:
@@ -147,30 +170,43 @@ class Q65QsoManager:
             return
 
         if self.state == Q65QsoState.CALLING:
-            # Look for "DX_CALL MY_CALL REPORT" or "DX_CALL MY_CALL GRID"
+            # Directed messages are "<TO> <FROM> <payload>" (same packer as
+            # FT4/FT8, see encoder.pack77()); someone answering our CQ
+            # addresses it to us, so MY_CALL comes first, not DX_CALL
+            # (GitHub Issue #16: this was backwards, so CALLING never
+            # advanced on a correctly-addressed reply).
             m = re.match(
-                r"^([A-Z0-9/]+)\s+" + re.escape(self.my_call) + r"\s+([-+]?\d+|[A-R]{2}\d{2})",
+                r"^" + re.escape(self.my_call) + r"\s+([A-Z0-9/]+)\s+([-+]?\d+|[A-R]{2}\d{2})",
                 text,
             )
             if m:
                 self.dx_call = m.group(1)
-                report = m.group(2)
-                if re.match(r"[A-R]{2}\d{2}", report):
-                    self.dx_grid = report
-                    report = "-05"
-                self.rst_rcvd = report
+                received = m.group(2)
+                # The report we send back always reflects our own measured
+                # SNR of their signal (`snr`) -- never an echo of whatever
+                # they sent us (GitHub Issue #16: this previously echoed
+                # their own report value back to them when they replied
+                # with a report instead of a grid).
+                report = format_report(snr)
+                if re.match(r"[A-R]{2}\d{2}", received):
+                    self.dx_grid = received
+                else:
+                    self.rst_rcvd = received
+                self.rst_sent = report
+                self.their_snr_db = snr
                 self._time_on = datetime.now(UTC).strftime("%H%M%S")
                 reply = f"{self.dx_call} {self.my_call} {report}"
                 self._set_state(Q65QsoState.EXCHANGE, reply)
                 return
 
         if self.state == Q65QsoState.EXCHANGE:
-            # Look for "DX_CALL MY_CALL R-XX" (confirmed report)
+            # "<TO=MY_CALL> <FROM=DX_CALL> R-XX" (confirmed report) --
+            # same TO/FROM order fix as the CALLING branch above.
             m = re.match(
                 r"^"
-                + re.escape(self.dx_call)
-                + r"\s+"
                 + re.escape(self.my_call)
+                + r"\s+"
+                + re.escape(self.dx_call)
                 + r"\s+R([-+]?\d+)",
                 text,
             )
@@ -180,14 +216,21 @@ class Q65QsoManager:
                 self._set_state(Q65QsoState.CONFIRM, reply)
                 return
 
-        if (
-            self.state == Q65QsoState.CONFIRM
-            and self.dx_call
-            and text.startswith(self.dx_call)
-            and "73" in text
-        ):
-            self._log_qso()
-            self._set_state(Q65QsoState.LOGGED, "")
+        if self.state == Q65QsoState.CONFIRM and self.dx_call:
+            # "<TO=MY_CALL> <FROM=DX_CALL> 73" -- was checking
+            # text.startswith(self.dx_call), i.e. the TO/FROM order bug
+            # again, and only a raw substring check for "73" (which a
+            # report like "-73" would also satisfy). Word-matched here
+            # instead of loosened further.
+            words = text.split()
+            if (
+                len(words) >= 2
+                and words[0] == self.my_call
+                and words[1] == self.dx_call
+                and "73" in words[2:]
+            ):
+                self._log_qso()
+                self._set_state(Q65QsoState.LOGGED, "")
 
     def consume_tx_message(self) -> str | None:
         """Return the pending TX message and clear it.
@@ -263,7 +306,7 @@ class Q65QsoManager:
     # ------------------------------------------------------------------
 
     def _set_state(self, new_state: Q65QsoState, tx_msg: str) -> None:
-        self.state = new_state
+        self._state = new_state
         self._pending_tx = tx_msg
         if self._on_state:
             self._on_state(new_state, tx_msg)
