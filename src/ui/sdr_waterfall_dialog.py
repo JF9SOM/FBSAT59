@@ -63,6 +63,19 @@ _CANVAS_HEIGHT = _MARGIN_TOP + _SPECTRUM_HEIGHT + _MARGIN_AXIS + _WATERFALL_HEIG
 _DEFAULT_LOW_DB = -90.0
 _DEFAULT_HIGH_DB = 0.0
 
+# Auto Range tracks the noise floor (a low percentile of the current
+# buffer) and applies a FIXED colour span above it, rather than stretching
+# between two percentiles of the same buffer. With pure noise, bin-to-bin
+# power already varies by a few dB on its own; stretching that alone
+# across the whole palette (the original approach) made noise flicker
+# with bright colours scrolling down even with no real signal present.
+# Anchoring only the low end and fixing the span means noise stays a
+# fairly uniform dark colour, and only signals that actually rise well
+# above the noise floor light up — matching how "Auto" behaves in
+# ordinary SDR software (e.g. GQRX, SDR#).
+_AUTO_FLOOR_PERCENTILE = 10.0
+_AUTO_SPAN_DB = 30.0
+
 # Same palette family as ft4_waterfall_dialog.py for visual consistency
 # across the app's waterfall popups.
 _PALETTE = [
@@ -223,11 +236,8 @@ class SdrWaterfallDialog(QDialog):
     def _current_range(self) -> tuple[float, float]:
         if self._auto_chk.isChecked() and self._history:
             arr = np.stack(list(self._history))
-            lo = float(np.percentile(arr, 5.0))
-            hi = float(np.percentile(arr, 99.5))
-            if hi - lo < 1.0:
-                hi = lo + 1.0
-            return lo, hi
+            lo = float(np.percentile(arr, _AUTO_FLOOR_PERCENTILE))
+            return lo, lo + _AUTO_SPAN_DB
         return self._low_spin.value(), self._high_spin.value()
 
     def _redraw(self) -> None:
