@@ -2726,6 +2726,29 @@ rr = obs.range_rate_km_s * (2.0 if self._selected_norad == MOON_ID else 1.0)
 
 ---
 
+## 既知の制約（プラットフォーム由来・修正不可）
+
+### GNOME（Wayland）ではポップアップウィンドウの初期表示位置を指定できない
+
+`SdrWaterfallDialog`（SDR Controlタブの🌊 Waterfallボタン）は`showEvent()`から
+`QTimer.singleShot(0, self._position_top_right)`で画面右上へ`move()`する実装になっているが
+（画面中央だと親ウィンドウの真上に重なるため）、**GNOME Shell / Mutter（Wayland）環境では
+効かず、常にGNOMEのデフォルト配置（センタリング）で開く**（2026-08-09、開発機のGNOME
+Waylandセッションで確認）。
+
+**原因**: Waylandはセキュリティ・UI一貫性の設計上、クライアント（アプリ）が自分のトップレベル
+ウィンドウの画面上の絶対位置を指定することを許可していない。位置決定はコンポジタ
+（GNOMEなら Mutter）の専権事項で、アプリからの`move()`要求は無視される。これはQt/GTKの
+実装の問題ではなく、Wayland自体の設計・GNOMEのポリシーによるもの。KDE（KWin）・Xfce
+（xfwm4）・Windows・macOSでは通常通り動作すると見込まれる（未確認）が、GNOME環境だけは
+アプリ側のコードで回避する標準的な方法が存在しない。
+
+**対応**: 修正不可と判断し、コードはそのまま維持（他環境では正しく機能するため）。
+`xdotool`/`wmctrl`等の外部ツールをサブプロセスで叩く回避策も検討したが、GNOME拡張機能の
+有無やバージョンに依存する不安定な手段のため見送った（ユーザー判断、2026-08-09）。
+
+---
+
 ## 既知のバグ（未修正）
 
 ### Windows — RTL-SDR Blog V4 でConnectを押してもrtlsdr_open()が呼ばれない（GitHub Issue #10・調査中）
