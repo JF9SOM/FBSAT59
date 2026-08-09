@@ -1011,6 +1011,7 @@ class Ft4Tab(QWidget):
     def _on_show_waterfall(self) -> None:
         if self._waterfall_dialog is None:
             self._waterfall_dialog = Ft4WaterfallDialog(self)
+        self._waterfall_dialog.set_tx_freq_hz(self._audio_freq)
         self._waterfall_dialog.show()
         self._waterfall_dialog.raise_()
         self._waterfall_dialog.activateWindow()
@@ -1489,6 +1490,8 @@ class Ft4Tab(QWidget):
         self._my_grid = self._grid_edit.text().upper().strip()
         with contextlib.suppress(ValueError):
             self._audio_freq = float(self._audio_freq_edit.text())
+            if self._waterfall_dialog is not None:
+                self._waterfall_dialog.set_tx_freq_hz(self._audio_freq)
         self._qso = None  # reset manager so it picks up new callsign
         self._save_settings()
 

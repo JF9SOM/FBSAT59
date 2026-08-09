@@ -161,12 +161,29 @@ class Ft4WaterfallDialog(QDialog):
         self._status_label = QLabel("")
         layout.addWidget(self._status_label)
         self._history: deque[_PeriodEntry] = deque(maxlen=_HISTORY_PERIODS)
+        self._freq_lo: float = 0.0
+        self._freq_hi: float = 0.0
+        # Our own TX audio tone frequency (Ft4Tab's "Audio Hz" field), or
+        # None to hide the marker. Requested on GitHub Issue #16 so an
+        # operator can see at a glance whether the chosen tone actually
+        # lands in a clean part of the passband.
+        self._tx_freq_hz: float | None = None
 
     def hideEvent(self, event: QHideEvent) -> None:
         super().hideEvent(event)
         self._history.clear()
         self._image_label.setPixmap(QPixmap())
         self._image_label.setText(_("Waiting for the next RX period…"))
+
+    def set_tx_freq_hz(self, freq_hz: float | None) -> None:
+        """Set (or clear, with None) the TX frequency marker and redraw.
+
+        Redrawing immediately (rather than waiting for the next RX period)
+        means adjusting Ft4Tab's Audio Hz field while this dialog is open
+        moves the marker right away.
+        """
+        self._tx_freq_hz = freq_hz
+        self._redraw()
 
     def update_waterfall(self, audio: NDArray[np.float32], decoded: list[Ft4Message]) -> None:
         """Append one period's audio to the scroll history and redraw."""
@@ -175,9 +192,23 @@ class Ft4WaterfallDialog(QDialog):
         if n_frames == 0:
             return
         self._history.append(_PeriodEntry(spec=spec, decoded=decoded))
+        self._freq_lo = min_bin * bin_hz
+        self._freq_hi = (min_bin + n_bins) * bin_hz
+        self._redraw()
 
-        freq_lo = min_bin * bin_hz
-        freq_hi = (min_bin + n_bins) * bin_hz
+        ts = datetime.now(UTC).strftime("%H:%M:%S")
+        self._status_label.setText(
+            _("Updated {ts} UTC — {n} message(s) decoded this period").format(ts=ts, n=len(decoded))
+        )
+
+    def _redraw(self) -> None:
+        """Rebuild the canvas from self._history and the current TX marker.
+
+        Split out from update_waterfall() so set_tx_freq_hz() can redraw
+        immediately without needing a new RX period's audio.
+        """
+        if not self._history:
+            return
 
         # Newest period first (top of the image). Each period's own rows are
         # reversed so age keeps increasing continuously going down even
@@ -185,7 +216,7 @@ class Ft4WaterfallDialog(QDialog):
         # "snap back" to 0 at the start of every new period.
         ordered = list(reversed(self._history))
         full = np.concatenate([np.flip(entry.spec, axis=0) for entry in ordered], axis=0)
-        total_frames = full.shape[0]
+        total_frames, n_bins = full.shape
         duration_total_s = total_frames * _HOP / SAMPLE_RATE
 
         # Percentile normalization over the whole visible history (like
@@ -206,15 +237,12 @@ class Ft4WaterfallDialog(QDialog):
         canvas.fill(QColor("#101010"))
         painter = QPainter(canvas)
         painter.drawPixmap(_MARGIN_LEFT, _MARGIN_TOP, plot_pix)
-        self._draw_axes(painter, freq_lo, freq_hi, duration_total_s)
-        self._draw_history_markers(painter, ordered, freq_lo, freq_hi, total_frames)
+        self._draw_axes(painter, self._freq_lo, self._freq_hi, duration_total_s)
+        self._draw_history_markers(painter, ordered, self._freq_lo, self._freq_hi, total_frames)
+        self._draw_tx_marker(painter, self._freq_lo, self._freq_hi)
         painter.end()
 
         self._image_label.setPixmap(canvas)
-        ts = datetime.now(UTC).strftime("%H:%M:%S")
-        self._status_label.setText(
-            _("Updated {ts} UTC — {n} message(s) decoded this period").format(ts=ts, n=len(decoded))
-        )
 
     def _draw_axes(
         self, painter: QPainter, freq_lo: float, freq_hi: float, duration_s: float
@@ -280,3 +308,22 @@ class Ft4WaterfallDialog(QDialog):
                 painter.drawLine(x, y_top, x, y_bottom)
                 painter.drawText(x + 2, y_top + 10, f"{int(msg.freq_hz)}")
             row_offset += n
+
+    def _draw_tx_marker(self, painter: QPainter, freq_lo: float, freq_hi: float) -> None:
+        """Draw a full-height dashed line at our own TX audio frequency.
+
+        Unlike _draw_history_markers' white per-period decode markers, this
+        is not a decode result -- it is a fixed reference line for
+        Ft4Tab's own "Audio Hz" setting, so an operator can see whether it
+        lands in a clean part of the passband (GitHub Issue #16).
+        """
+        if self._tx_freq_hz is None or freq_hi <= freq_lo:
+            return
+        if not (freq_lo <= self._tx_freq_hz <= freq_hi):
+            return
+        x = _MARGIN_LEFT + int((self._tx_freq_hz - freq_lo) / (freq_hi - freq_lo) * _PLOT_WIDTH)
+        tx_color = QColor("#4fc3f7")
+        painter.setPen(QPen(tx_color, 1, Qt.PenStyle.DashLine))
+        painter.drawLine(x, _MARGIN_TOP, x, _MARGIN_TOP + _PLOT_HEIGHT)
+        painter.setPen(QPen(tx_color))
+        painter.drawText(x + 3, _MARGIN_TOP + 12, _("TX"))
