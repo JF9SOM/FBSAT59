@@ -103,7 +103,11 @@ def _parse_cq_call_grid(words: list[str]) -> tuple[str, str]:
 
 
 _FT4_SETTINGS_KEY = "ft4_settings"
-_DEFAULT_AUDIO_FREQ = 1000.0  # Hz — base tone within SSB passband
+_DEFAULT_AUDIO_FREQ = 1500.0  # Hz — matches Q65's/WSJT-X's own default; see
+# GitHub Issue #16: 1000 Hz reports of "decodes fine but never heard on
+# PSKReporter" line up with narrow rig DATA/USB-D TX audio passbands that
+# don't extend that low, whereas 1500 Hz (and the ~2300 Hz that *was*
+# confirmed) sit comfortably inside them.
 _AUDIO_OWNER = "FT4"
 # ~20ms @ 12000 Hz — bounds the worst-case delay before a TX Level slider
 # change takes effect during an active transmission (GitHub Issue #16).
