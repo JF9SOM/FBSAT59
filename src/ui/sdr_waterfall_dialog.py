@@ -26,8 +26,18 @@ from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
-from PySide6.QtCore import QPointF, Qt
-from PySide6.QtGui import QColor, QFont, QHideEvent, QImage, QPainter, QPen, QPixmap, QPolygonF
+from PySide6.QtCore import QPoint, QPointF, QRect, QSize, Qt
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QGuiApplication,
+    QHideEvent,
+    QImage,
+    QPainter,
+    QPen,
+    QPixmap,
+    QPolygonF,
+)
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -122,6 +132,22 @@ def nice_axis_step(span_hz: float) -> float:
     return magnitude * 10.0
 
 
+_SCREEN_EDGE_MARGIN = 24
+
+
+def top_right_position(
+    available: QRect, window_size: QSize, margin: int = _SCREEN_EDGE_MARGIN
+) -> QPoint:
+    """Top-left corner to place window_size near the top-right of available.
+
+    Clamped so the window is never moved off the left/top edge of the
+    screen, even if window_size is wider/taller than available itself.
+    """
+    x = available.right() - window_size.width() - margin
+    y = available.top() + margin
+    return QPoint(max(available.left(), x), max(available.top(), y))
+
+
 class SdrWaterfallDialog(QDialog):
     """Non-modal popup: live spectrum trace + scrolling waterfall.
 
@@ -171,6 +197,22 @@ class SdrWaterfallDialog(QDialog):
         self._image_label.setStyleSheet("background:#101010; color:#888;")
         self._image_label.setMinimumSize(_CANVAS_WIDTH, _CANVAS_HEIGHT)
         layout.addWidget(self._image_label, stretch=1)
+
+        self._position_top_right()
+
+    def _position_top_right(self) -> None:
+        """Open near the top-right of the screen rather than Qt's default
+        (centred over the parent) — this is a wide popup, so centring it
+        tends to sit right on top of the Radio Control window it was
+        opened from. Only called once, from __init__: after that, a user
+        who has dragged the (non-modal, kept-alive) dialog elsewhere keeps
+        that position across subsequent show()/raise_() calls.
+        """
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+        point = top_right_position(screen.availableGeometry(), self.sizeHint())
+        self.move(point)
 
     # ------------------------------------------------------------------
     # Public API

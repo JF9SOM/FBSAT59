@@ -17,10 +17,15 @@ from __future__ import annotations
 import math
 
 import numpy as np
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QRect, QSize, Signal
 from pytestqt.qtbot import QtBot
 
-from ui.sdr_waterfall_dialog import SdrWaterfallDialog, color_map, nice_axis_step
+from ui.sdr_waterfall_dialog import (
+    SdrWaterfallDialog,
+    color_map,
+    nice_axis_step,
+    top_right_position,
+)
 
 
 class _FakePipeline(QObject):
@@ -64,6 +69,24 @@ def test_nice_axis_step_yields_round_numbers() -> None:
     assert leading_digit in (1.0, 2.0, 5.0)
     # roughly 4-6 ticks across the span
     assert 3 <= span / step <= 8
+
+
+def test_top_right_position_lands_in_the_right_half_of_a_realistic_screen() -> None:
+    avail = QRect(0, 0, 1920, 1080)
+    size = QSize(847, 498)
+    pt = top_right_position(avail, size)
+    # QRect.right() is x + width - 1 (Qt's classic off-by-one convention).
+    assert pt.x() == avail.right() - size.width() - 24
+    assert pt.y() == 24
+    assert pt.x() > avail.width() / 2
+
+
+def test_top_right_position_clamps_when_window_is_wider_than_the_screen() -> None:
+    avail = QRect(0, 0, 800, 800)
+    size = QSize(847, 498)  # wider than the available screen
+    pt = top_right_position(avail, size)
+    assert pt.x() == 0
+    assert pt.y() == 24
 
 
 def test_dialog_ignores_spectrum_while_hidden(qtbot: QtBot) -> None:
