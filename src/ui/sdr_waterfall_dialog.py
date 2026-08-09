@@ -40,16 +40,23 @@ from PySide6.QtWidgets import (
 
 from i18n import _
 
-# How many spectrum rows to keep scrolling through before the oldest falls
-# off the bottom. SDRPipeline emits spectrum_ready at ~10fps, so 300 rows
-# is roughly 30s of history.
-_HISTORY_ROWS = 300
-
 # Shared frequency-axis width for both the spectrum trace and the
 # waterfall image below it.
 _PLOT_WIDTH = 760
 _SPECTRUM_HEIGHT = 130
 _WATERFALL_HEIGHT = 280
+
+# One history row maps to exactly one pixel row (deque maxlen ==
+# _WATERFALL_HEIGHT), so the waterfall never needs to be vertically
+# rescaled. SDRPipeline emits spectrum_ready at ~10fps, so this is
+# roughly 28s of history once full. Rows not yet received (e.g. right
+# after opening the dialog) are left as plain background rather than
+# stretching what little history exists to fill the whole area — that
+# stretching used to make a signal that had just appeared look like it
+# filled (and thus "started at") the bottom of the waterfall, with the
+# effective time-per-pixel visibly shrinking as history filled up over
+# the following ~28s.
+_BACKGROUND_RGB = (16, 16, 16)  # matches the QLabel's "#101010" background
 
 _MARGIN_LEFT = 55
 _MARGIN_RIGHT = 10
@@ -130,7 +137,7 @@ class SdrWaterfallDialog(QDialog):
         self.setMinimumSize(_CANVAS_WIDTH + 20, _CANVAS_HEIGHT + 70)
 
         self._pipeline: Any = None  # SDRPipeline | None
-        self._history: deque[NDArray[np.float32]] = deque(maxlen=_HISTORY_ROWS)
+        self._history: deque[NDArray[np.float32]] = deque(maxlen=_WATERFALL_HEIGHT)
         self._latest_freqs: NDArray[np.float32] | None = None
         self._latest_powers: NDArray[np.float32] | None = None
         self._center_freq_hz: float | None = None
@@ -307,12 +314,29 @@ class SdrWaterfallDialog(QDialog):
             hz += step
 
     def _draw_waterfall(self, painter: QPainter, lo_db: float, hi_db: float) -> None:
-        arr = np.stack(list(reversed(self._history)))  # newest first (top row)
+        n_bins = len(self._history[-1])
+        ordered = list(reversed(self._history))  # newest first
+        n_rows = len(ordered)
+        arr = np.stack(ordered)
         norm = (arr - lo_db) / max(hi_db - lo_db, 1e-6)
-        rgb = np.ascontiguousarray(color_map(norm.astype(np.float32)))
-        n_rows, n_bins = arr.shape
-        qimg = QImage(rgb.data, n_bins, n_rows, n_bins * 3, QImage.Format.Format_RGB888)
+        rgb = color_map(norm.astype(np.float32))
+
+        # Fixed-height canvas (== _WATERFALL_HEIGHT, matching the deque's
+        # maxlen so one history row is always exactly one pixel row): rows
+        # not yet received stay background instead of the whole image
+        # being stretched to fill the area (see the module-level comment
+        # on _BACKGROUND_RGB for why that stretching was misleading).
+        canvas = np.empty((_WATERFALL_HEIGHT, n_bins, 3), dtype=np.uint8)
+        canvas[:, :] = _BACKGROUND_RGB
+        canvas[:n_rows] = rgb
+        canvas = np.ascontiguousarray(canvas)
+
+        qimg = QImage(
+            canvas.data, n_bins, _WATERFALL_HEIGHT, n_bins * 3, QImage.Format.Format_RGB888
+        )
         wf_top = _MARGIN_TOP + _SPECTRUM_HEIGHT + _MARGIN_AXIS
+        # Height already matches _WATERFALL_HEIGHT exactly, so this only
+        # ever rescales horizontally (n_bins -> _PLOT_WIDTH).
         pix = QPixmap.fromImage(qimg).scaled(
             _PLOT_WIDTH,
             _WATERFALL_HEIGHT,

@@ -89,6 +89,37 @@ def test_dialog_accumulates_history_while_visible(qtbot: QtBot) -> None:
     assert not pix.isNull()
 
 
+def test_partial_history_leaves_unfilled_rows_as_background(qtbot: QtBot) -> None:
+    """A fresh waterfall (few rows so far) must not stretch that sparse
+    history to fill the whole plot area — only the rows actually received
+    should show real data; the rest must stay background. Regression test
+    for the "waterfall looks compressed / first signal appears at the
+    bottom" bug caused by scaling a growing row count into a fixed
+    display height."""
+    from ui.sdr_waterfall_dialog import (
+        _BACKGROUND_RGB,
+        _MARGIN_AXIS,
+        _MARGIN_LEFT,
+        _MARGIN_TOP,
+        _SPECTRUM_HEIGHT,
+    )
+
+    dlg = SdrWaterfallDialog()
+    qtbot.addWidget(dlg)
+    dlg.show()
+    pipeline = _FakePipeline()
+    dlg.set_pipeline(pipeline)
+    _emit_spectrum(pipeline, 435.6e6)  # exactly one row of history so far
+    assert len(dlg._history) == 1
+
+    wf_top = _MARGIN_TOP + _SPECTRUM_HEIGHT + _MARGIN_AXIS
+    img = dlg._image_label.pixmap().toImage()
+    top_row_color = img.pixelColor(_MARGIN_LEFT + 5, wf_top)
+    next_row_color = img.pixelColor(_MARGIN_LEFT + 5, wf_top + 1)
+    assert (top_row_color.red(), top_row_color.green(), top_row_color.blue()) != _BACKGROUND_RGB
+    assert (next_row_color.red(), next_row_color.green(), next_row_color.blue()) == _BACKGROUND_RGB
+
+
 def test_hide_clears_history(qtbot: QtBot) -> None:
     dlg = SdrWaterfallDialog()
     qtbot.addWidget(dlg)
