@@ -1501,8 +1501,26 @@ class Ft4Tab(QWidget):
 
     @Slot(int)
     def _on_tx_slot_mode_changed(self, _idx: int) -> None:
+        """Apply a new TX Slot choice immediately, not just on the next CQ.
+
+        Previously this only recorded the setting; nothing re-read it until
+        the operator pressed CQ or toggled TX Enable again, so the dropdown
+        and the "TX: EVEN/ODD" indicator appeared to do nothing when
+        changed on their own -- reported as slot switching looking
+        "intermittent" (GitHub Issue #16). Skipped while actively replying
+        to a specific station (GRID_SENT/EXCHANGE/RREPORT_SENT/CONFIRM):
+        that slot is dictated by the protocol, not this setting, and must
+        not be disturbed mid-exchange.
+        """
         self._tx_slot_mode = self._tx_slot_combo.currentData()
         self._save_settings()
+        if self._qso is None or self._qso.state in (
+            QsoState.IDLE,
+            QsoState.CALLING,
+            QsoState.LOGGED,
+        ):
+            is_even, _pos = Ft4Scheduler.current_slot_info()
+            self._start_scheduler(tx_even=self._resolve_tx_even(is_even))
 
     @Slot(int)
     def _on_auto_progress_changed(self, _idx: int) -> None:
