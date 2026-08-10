@@ -554,6 +554,13 @@ class MainWindow(QMainWindow):
         # Cached 24-hour arc track for the Moon (updated every MAP_UPDATE_INTERVAL ticks)
         self._moon_arc_cache: list[tuple[float, float]] = []
         self._scheduler: Any | None = None
+        # Guards _fetch_all_tle_sources(): pressing Update TLE while a fetch
+        # is already running (nothing else visibly happens for the several
+        # seconds to minutes the initial 6-group bulk loop can take with no
+        # progress feedback of its own) used to start a second, fully
+        # independent _fetch_all() thread racing the first one over the same
+        # 6 sources -- confirmed via a real log, 2026-08-10.
+        self._tle_fetch_in_progress = False
         # Set to True in closeEvent so background threads stop gracefully
         self._shutdown_flag = threading.Event()
         self._amsat_fetcher = AMSATStatusFetcher(conn)
@@ -4849,7 +4856,23 @@ class MainWindow(QMainWindow):
         the passive background schedule). Without this, a user could press
         Update TLE indefinitely and the satellite would never update — which
         is exactly what happened (2026-08-10 report).
+
+        Guarded by _tle_fetch_in_progress against a second overlapping call
+        while one is still running -- see that flag's docstring. Also emits
+        an immediate status message before the (feedback-free) 6-group bulk
+        loop starts, so the status bar doesn't just sit blank for however
+        long that loop takes (each group can take 15-30s+ to time out on a
+        bad connection, with nothing shown until it does) -- previously the
+        only feedback at all was the one-time "queued" QMessageBox from
+        _on_update_tle(), which doesn't reflect anything past that instant.
         """
+        if self._tle_fetch_in_progress:
+            logger.info("Update TLE requested while a fetch was already running — ignored")
+            sb = self.statusBar()
+            if sb:
+                sb.showMessage(_("TLE update already in progress…"), 5000)
+            return
+
         from ui.settings_dialog import SettingsDialog
 
         enabled = SettingsDialog.get_enabled_sources(self._conn)
@@ -4858,34 +4881,44 @@ class MainWindow(QMainWindow):
             self._sync_progress.emit(f"🛰 {msg}")
 
         def _fetch_all() -> None:
-            for source_name in enabled:
-                logger.info("Manual TLE fetch: %s...", source_name)
-                try:
-                    result = asyncio.run(self._tle_manager.fetch_and_update(source_name))
-                    logger.info("Manual TLE fetch result (%s): %s", source_name, result)
-                except Exception as exc:
-                    logger.warning(
-                        "Manual TLE fetch error (%s): %s: %s", source_name, type(exc).__name__, exc
-                    )
-
-            blocked = False
+            self._tle_fetch_in_progress = True
             try:
-                active = asyncio.run(
-                    self._tle_manager.fetch_active_tles(progress_callback=_active_progress)
-                )
-                logger.info("Manual active TLE fetch result: %s", active)
-                blocked = bool(active.get("celestrak_blocked") or active.get("satnogs_blocked"))
-                self._schedule_active_tle_retry_if_blocked(active)
-            except Exception as exc:
-                logger.warning("Manual active TLE fetch error: %s: %s", type(exc).__name__, exc)
+                updating_msg = _("Updating TLEs…")
+                self._sync_progress.emit(f"🛰 {updating_msg}")
 
-            # Signal emit is thread-safe; Qt automatically queues it to the main thread.
-            self._satellite_list_refresh.emit()
-            # Leave the "Fetched X/Y: Resume in 3h" message _schedule_active_tle_retry_if_blocked()
-            # just showed in place instead of blanking it — otherwise the user
-            # never gets to read it.
-            if not blocked:
-                self._sync_progress.emit("")
+                for source_name in enabled:
+                    logger.info("Manual TLE fetch: %s...", source_name)
+                    try:
+                        result = asyncio.run(self._tle_manager.fetch_and_update(source_name))
+                        logger.info("Manual TLE fetch result (%s): %s", source_name, result)
+                    except Exception as exc:
+                        logger.warning(
+                            "Manual TLE fetch error (%s): %s: %s",
+                            source_name,
+                            type(exc).__name__,
+                            exc,
+                        )
+
+                blocked = False
+                try:
+                    active = asyncio.run(
+                        self._tle_manager.fetch_active_tles(progress_callback=_active_progress)
+                    )
+                    logger.info("Manual active TLE fetch result: %s", active)
+                    blocked = bool(active.get("celestrak_blocked") or active.get("satnogs_blocked"))
+                    self._schedule_active_tle_retry_if_blocked(active)
+                except Exception as exc:
+                    logger.warning("Manual active TLE fetch error: %s: %s", type(exc).__name__, exc)
+
+                # Signal emit is thread-safe; Qt automatically queues it to the main thread.
+                self._satellite_list_refresh.emit()
+                # Leave the "Fetched X/Y: Resume in 3h" message
+                # _schedule_active_tle_retry_if_blocked() just showed in place
+                # instead of blanking it — otherwise the user never gets to read it.
+                if not blocked:
+                    self._sync_progress.emit("")
+            finally:
+                self._tle_fetch_in_progress = False
 
         threading.Thread(target=_fetch_all, daemon=True).start()
 

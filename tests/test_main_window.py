@@ -2967,6 +2967,141 @@ class TestModeInvertDataModes:
         assert _MODE_INVERT["LSB-D"] == "USB-D"
 
 
+class TestFetchAllTleSourcesGuardAndFeedback:
+    """_fetch_all_tle_sources() (shared by Satellite > Update TLE and
+    Settings > OK) used to have no concurrency guard and no status feedback
+    until well after the initial 6-group bulk loop -- a real log
+    (2026-08-10) showed a user pressing Update TLE, seeing nothing happen
+    for the ~20s+ each group can take to time out on a bad connection, and
+    pressing it again, which started a second _fetch_all() thread racing
+    the first one over the same 6 sources.
+    """
+
+    class _SyncThread:
+        """Runs the target synchronously instead of spawning a real thread,
+        so the guard/message assertions below don't need to wait on one."""
+
+        def __init__(self, target=None, daemon=None, **kwargs) -> None:
+            self._target = target
+
+        def start(self) -> None:
+            if self._target is not None:
+                self._target()
+
+    def _make_window(self, qtbot, db: sqlite3.Connection, tle_manager: TLEManager) -> MainWindow:
+        w = MainWindow(conn=db, tle_manager=tle_manager)
+        qtbot.addWidget(w)
+        return w
+
+    def test_defaults_to_not_in_progress(self, qtbot, db, tle_manager) -> None:
+        w = self._make_window(qtbot, db, tle_manager)
+        assert w._tle_fetch_in_progress is False
+
+    def test_second_call_is_ignored_while_a_fetch_is_already_running(
+        self, qtbot, db, tle_manager
+    ) -> None:
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db, tle_manager)
+        w._tle_fetch_in_progress = True
+
+        with patch("ui.main_window.threading.Thread") as mock_thread_cls:
+            w._fetch_all_tle_sources()
+
+        mock_thread_cls.assert_not_called()
+
+    def test_shows_immediate_status_message_before_the_bulk_loop(
+        self, qtbot, db, tle_manager
+    ) -> None:
+        from unittest.mock import AsyncMock, patch
+
+        w = self._make_window(qtbot, db, tle_manager)
+        received: list[str] = []
+        w._sync_progress.connect(received.append)
+
+        w._tle_manager.fetch_and_update = AsyncMock(  # type: ignore[method-assign]
+            return_value={"inserted": 0, "updated": 0, "errors": 0}
+        )
+        w._tle_manager.fetch_active_tles = AsyncMock(  # type: ignore[method-assign]
+            return_value={
+                "inserted": 0,
+                "updated": 0,
+                "no_tle": 0,
+                "hidden_unknown": 0,
+                "hidden_expired": 0,
+                "errors": 0,
+                "celestrak_blocked": 0,
+                "satnogs_blocked": 0,
+                "phase2_total": 0,
+                "phase2_unresolved": 0,
+            }
+        )
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._fetch_all_tle_sources()
+
+        assert any("Updating TLEs" in m for m in received)
+
+    def test_in_progress_flag_is_reset_after_completion(self, qtbot, db, tle_manager) -> None:
+        from unittest.mock import AsyncMock, patch
+
+        w = self._make_window(qtbot, db, tle_manager)
+        w._tle_manager.fetch_and_update = AsyncMock(  # type: ignore[method-assign]
+            return_value={"inserted": 0, "updated": 0, "errors": 0}
+        )
+        w._tle_manager.fetch_active_tles = AsyncMock(  # type: ignore[method-assign]
+            return_value={
+                "inserted": 0,
+                "updated": 0,
+                "no_tle": 0,
+                "hidden_unknown": 0,
+                "hidden_expired": 0,
+                "errors": 0,
+                "celestrak_blocked": 0,
+                "satnogs_blocked": 0,
+                "phase2_total": 0,
+                "phase2_unresolved": 0,
+            }
+        )
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._fetch_all_tle_sources()
+
+        assert w._tle_fetch_in_progress is False
+
+    def test_in_progress_flag_is_reset_even_if_the_bulk_loop_raises(
+        self, qtbot, db, tle_manager
+    ) -> None:
+        """The finally: block must still clear the flag on an unexpected
+        exception, or one bad run would permanently lock out all further
+        Update TLE presses until the app is restarted."""
+        from unittest.mock import AsyncMock, patch
+
+        w = self._make_window(qtbot, db, tle_manager)
+        w._tle_manager.fetch_and_update = AsyncMock(  # type: ignore[method-assign]
+            side_effect=RuntimeError("boom")
+        )
+        w._tle_manager.fetch_active_tles = AsyncMock(  # type: ignore[method-assign]
+            return_value={
+                "inserted": 0,
+                "updated": 0,
+                "no_tle": 0,
+                "hidden_unknown": 0,
+                "hidden_expired": 0,
+                "errors": 0,
+                "celestrak_blocked": 0,
+                "satnogs_blocked": 0,
+                "phase2_total": 0,
+                "phase2_unresolved": 0,
+            }
+        )
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._fetch_all_tle_sources()
+
+        assert w._tle_fetch_in_progress is False
+
+
 class TestActiveTleRetryScheduling:
     """_schedule_active_tle_retry_if_blocked() queues a one-shot retry when
     TLEManager.fetch_active_tles() reports it had to cut a Phase 2 provider
