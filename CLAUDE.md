@@ -1034,6 +1034,14 @@ sudo usermod -aG dialout $USER
   - IQ レコーダー（帯域幅選択・REC/STOP・経過時間表示）
     - **📁ファイルマネージャーボタン**（IQ・Audio 両方）— SDR未接続時も常時クリック可能。巨大IQファイルの削除に使用
   - トランスポンダー選択に連動したモード自動切替（Connect 前でも反映）
+- **Help > Clear TLE Sync History…**（2026-08-10 追加）
+  - `sync_log` からTLE関連の全エントリ（`celestrak-active`・`satnogs-provisional`・
+    `legacy-tle-check`・`meteor-tle-check`・`celestrak-{stations,amateur,cubesat,weather,
+    earth-obs,science}`）を確認ダイアログ付きで削除
+  - 開発環境ではDBを直接SQLで触って`celestrak-active`の記録を消せるが、リリースビルドには
+    その手段がないため追加。次回の起動・定期ジョブ・Update TLEが「一度も取得したことがない」
+    扱いで全ソースを再取得する
+  - TLEデータ自体は消さない。あくまで「いつ最後に取得したか」の記録のみ削除
 - **Help > Hamlib Update…**（in-app Hamlib アップデーター）
   - GitHub Releases から最新 hamlib バンドルをダウンロード・展開・ユーザーディレクトリへインストール
   - Linux / Windows / macOS 対応

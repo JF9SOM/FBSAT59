@@ -1017,6 +1017,7 @@ class MainWindow(QMainWindow):
         if help_menu:
             help_menu.addAction(_("Satellite/Transmitter Colors"), self._on_satellite_color)
             help_menu.addAction(_("Auto Fetch Rules"), self._on_auto_fetch_rules)
+            help_menu.addAction(_("Clear TLE Sync History…"), self._on_clear_tle_sync_history)
             help_menu.addSeparator()
             help_menu.addAction(_("Check for Updates…"), self._on_check_updates)
             help_menu.addAction(_("SDR Device Installation…"), self._on_sdr_install)
@@ -6011,6 +6012,65 @@ class MainWindow(QMainWindow):
         dlg.setText(msg)
         dlg.setIcon(QMessageBox.Icon.Information)
         dlg.exec()
+
+    def _on_clear_tle_sync_history(self) -> None:
+        """Help > Clear TLE Sync History… handler.
+
+        Deletes every sync_log row tied to TLE fetching (all the auto-fetch
+        schedule entries listed in Auto Fetch Rules above, except the
+        transmitter/satellite-name syncs, which are unrelated to TLE
+        freshness). Every staleness gate that consults sync_log
+        (is_active_tle_stale(), is_source_stale(), is_group_empty()) then
+        treats those sources as never having run, so the next relevant
+        trigger — app startup, the periodic APScheduler jobs, or Satellite >
+        Update TLE — refetches everything from scratch instead of skipping
+        sources it thinks are still fresh.
+
+        Exists because on a release build there is no SQL console to delete
+        these rows directly (unlike a dev checkout, where deleting the
+        celestrak-active row was used repeatedly on 2026-08-09/10 to force a
+        fetch_active_tles() retry while chasing a stale ORIGAMISAT-2 TLE) —
+        see CLAUDE.md for that investigation. Note that Satellite > Update
+        TLE (as of 2026-08-10) already bypasses is_active_tle_stale() on its
+        own, so this is not required just to force a manual refresh — it's
+        for reproducing what a *fresh* startup/scheduled run would do.
+        """
+        from data.tle_manager import TLE_SOURCES
+
+        tle_sync_types = [str(s["name"]) for s in TLE_SOURCES] + [
+            "celestrak-active",
+            "satnogs-provisional",
+            "legacy-tle-check",
+            "meteor-tle-check",
+        ]
+
+        reply = QMessageBox.question(
+            self,
+            _("Clear TLE Sync History"),
+            _(
+                "This clears the record of when each TLE source was last fetched.\n\n"
+                "It does not delete any TLE data itself — only the timestamps used to "
+                "decide whether a source is due for a refresh. The next app startup, "
+                "scheduled background fetch, or Satellite → Update TLE will treat every "
+                "TLE source as never having been fetched and refresh all of them."
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        placeholders = ",".join("?" for _t in tle_sync_types)
+        cur = self._conn.execute(
+            f"DELETE FROM sync_log WHERE sync_type IN ({placeholders})",
+            tle_sync_types,
+        )
+        self._conn.commit()
+        QMessageBox.information(
+            self,
+            _("Clear TLE Sync History"),
+            _("Cleared {n} sync history record(s).").format(n=cur.rowcount),
+        )
 
     def _on_about(self) -> None:
         from PySide6.QtWidgets import QApplication
