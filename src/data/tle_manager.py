@@ -591,11 +591,19 @@ class TLEManager:
         Returns:
             {"inserted": N, "updated": N, "no_tle": N, "hidden_unknown": N,
              "hidden_expired": N, "errors": N, "celestrak_blocked": 0|1,
-             "satnogs_blocked": 0|1}. The two "_blocked" flags are 1 when
+             "satnogs_blocked": 0|1, "phase2_total": N,
+             "phase2_unresolved": N}. The two "_blocked" flags are 1 when
             that phase's _ErrorCountBreaker tripped and stopped early —
             callers can use this to schedule a later retry instead of
             assuming every unresolved satellite this run genuinely has no
-            TLE anywhere.
+            TLE anywhere. "phase2_total" is how many satellites needed the
+            Phase 2 per-satellite fallback this run (0 if Phase 1 covered
+            everything); "phase2_unresolved" is how many of those were
+            still unresolved when the run ended (via a tripped breaker, or
+            because neither provider has that satellite at all) — a caller
+            can show "Fetched {phase2_total - phase2_unresolved}/{phase2_total}"
+            alongside a "_blocked" flag to tell the user how far a paused
+            run got.
         """
         # CelesTrak groups accessible without authentication that provide good coverage
         # of SATNOGS-registered satellites (GROUP=active deliberately not used — see above).
@@ -615,6 +623,8 @@ class TLEManager:
             "errors": 0,
             "celestrak_blocked": 0,
             "satnogs_blocked": 0,
+            "phase2_total": 0,
+            "phase2_unresolved": 0,
         }
         now = datetime.now(UTC).isoformat()
 
@@ -792,6 +802,11 @@ class TLEManager:
                 norad: (name, status, nrs, source_id, tle_group, had_tle)
                 for norad, name, status, nrs, source_id, tle_group, had_tle in refresh_targets
             }
+            # Snapshotted once here (not recomputed later) so a "Fetched X/Y"
+            # style status message can be built from stats alone -- `remaining`
+            # itself shrinks as satellites resolve, so this is the only place
+            # the original target count is available.
+            phase2_total = len(remaining)
 
             def _store_resolved(
                 norad: int, name_l: str, line1: str, line2: str, epoch_dt: datetime
@@ -1030,6 +1045,9 @@ class TLEManager:
                         "be retried on the next scheduled run"
                     )
                 stats["satnogs_blocked"] = int(breaker_2b.tripped)
+
+            stats["phase2_total"] = phase2_total
+            stats["phase2_unresolved"] = len(remaining)
 
         self._log_sync("celestrak-active", stats)
         return stats

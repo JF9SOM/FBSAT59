@@ -4868,18 +4868,24 @@ class MainWindow(QMainWindow):
                         "Manual TLE fetch error (%s): %s: %s", source_name, type(exc).__name__, exc
                     )
 
+            blocked = False
             try:
                 active = asyncio.run(
                     self._tle_manager.fetch_active_tles(progress_callback=_active_progress)
                 )
                 logger.info("Manual active TLE fetch result: %s", active)
+                blocked = bool(active.get("celestrak_blocked") or active.get("satnogs_blocked"))
                 self._schedule_active_tle_retry_if_blocked(active)
             except Exception as exc:
                 logger.warning("Manual active TLE fetch error: %s: %s", type(exc).__name__, exc)
 
             # Signal emit is thread-safe; Qt automatically queues it to the main thread.
             self._satellite_list_refresh.emit()
-            self._sync_progress.emit("")
+            # Leave the "Fetched X/Y: Resume in 3h" message _schedule_active_tle_retry_if_blocked()
+            # just showed in place instead of blanking it — otherwise the user
+            # never gets to read it.
+            if not blocked:
+                self._sync_progress.emit("")
 
         threading.Thread(target=_fetch_all, daemon=True).start()
 
@@ -5066,6 +5072,23 @@ class MainWindow(QMainWindow):
                 replace_existing=True,
                 misfire_grace_time=1800,
             )
+
+        # "Fetched X/Y" (phase2_total/phase2_unresolved come from
+        # TLEManager.fetch_active_tles()'s Phase 2 -- see its docstring)
+        # tells the user how far this run got before pausing, instead of
+        # the status bar just going blank or getting stuck on the last
+        # "CelesTrak: N satellite(s)..." message with no indication that
+        # anything is wrong or when it'll pick back up (the exact "is this
+        # just taking time?" confusion reported 2026-08-10). Not cleared
+        # here -- callers that would otherwise blank the status label right
+        # after this (e.g. _fetch_all_tle_sources()) must skip that when
+        # `result` was blocked, so this message stays visible.
+        total = result.get("phase2_total", 0)
+        unresolved = result.get("phase2_unresolved", 0)
+        resolved = max(0, total - unresolved)
+        status_template = _("Fetched {resolved}/{total}: Resume in {hours}h")
+        self._sync_progress.emit(status_template.format(resolved=resolved, total=total, hours=3))
+
         logger.info(
             "Active TLE fetch was rate-limited by a provider; retry scheduled for %s",
             run_at.isoformat(),

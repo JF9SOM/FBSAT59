@@ -3030,6 +3030,27 @@ class TestActiveTleRetryScheduling:
         w._scheduler.add_job.assert_not_called()
         assert w._tle_manager.get_active_tle_retry_after() is None
 
+    def test_status_bar_shows_fetched_count_and_resume_time(self, qtbot, db, tle_manager) -> None:
+        """A blocked run must leave a clear, human-readable status message
+        behind -- not just go quiet or get stuck on a mid-fetch progress
+        line with no indication of what's happening or when it'll resume
+        (the exact "is this just taking time?" confusion reported
+        2026-08-10)."""
+        w = self._make_window(qtbot, db, tle_manager)
+        received: list[str] = []
+        w._sync_progress.connect(received.append)
+
+        w._schedule_active_tle_retry_if_blocked(
+            {
+                "celestrak_blocked": 1,
+                "satnogs_blocked": 0,
+                "phase2_total": 846,
+                "phase2_unresolved": 446,
+            }
+        )
+
+        assert received[-1] == "Fetched 400/846: Resume in 3h"
+
     def test_clean_result_clears_a_previously_persisted_marker(
         self, qtbot, db, tle_manager
     ) -> None:
