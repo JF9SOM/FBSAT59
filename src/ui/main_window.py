@@ -1572,6 +1572,7 @@ class MainWindow(QMainWindow):
                 )
                 logger.info("Active TLE fetch completed: %s", active)
                 self._satellite_list_refresh.emit()
+                self._schedule_active_tle_retry_if_blocked(active)
             except Exception as exc:
                 logger.warning("Active TLE fetch failed: %s", exc)
         else:
@@ -4866,6 +4867,7 @@ class MainWindow(QMainWindow):
                     self._tle_manager.fetch_active_tles(progress_callback=_active_progress)
                 )
                 logger.info("Manual active TLE fetch result: %s", active)
+                self._schedule_active_tle_retry_if_blocked(active)
             except Exception as exc:
                 logger.warning("Manual active TLE fetch error: %s: %s", type(exc).__name__, exc)
 
@@ -5008,9 +5010,47 @@ class MainWindow(QMainWindow):
         if sb:
             sb.showMessage(_("Syncing transmitter frequencies from SATNOGS..."), 5000)
 
+    def _schedule_active_tle_retry_if_blocked(self, result: dict[str, int]) -> None:
+        """Queue a one-shot retry if fetch_active_tles() had to cut a Phase 2
+        fallback short to avoid tripping CelesTrak's/SATNOGS's own abuse
+        protection (TLEManager._ErrorCountBreaker — see its docstring for
+        the incident this addresses: pressing Update TLE could previously
+        leave satellites like ORIGAMISAT-2 unresolved indefinitely if every
+        run got itself blocked partway through).
+
+        3 hours is comfortably longer than CelesTrak's documented 2-hour
+        error-count window (https://celestrak.org/usage-policy.php), so the
+        retry should never run into a still-active block from *this* run.
+        Uses a fixed job id with replace_existing=True so repeated trips
+        (this retry itself getting blocked again, e.g. from a manual Update
+        TLE press landing in between) simply push the one pending retry
+        further out rather than stacking up duplicate jobs. Silently a
+        no-op when the scheduler isn't running (e.g. in tests, where
+        _start_scheduler() is disabled).
+        """
+        if self._scheduler is None:
+            return
+        if not (result.get("celestrak_blocked") or result.get("satnogs_blocked")):
+            return
+        run_at = datetime.now(UTC) + timedelta(hours=3)
+        self._scheduler.add_job(
+            self._refresh_active_tle_sync,
+            "date",
+            run_date=run_at,
+            id="active_tle_retry",
+            replace_existing=True,
+            misfire_grace_time=1800,
+        )
+        logger.info(
+            "Active TLE fetch was rate-limited by a provider; retry scheduled for %s",
+            run_at.isoformat(),
+        )
+
     def _refresh_active_tle_sync(self) -> None:
-        """APScheduler job (interval hours=24): refresh regular (NORAD 10000-89999)
-        satellite TLEs via TLEManager.fetch_active_tles().
+        """APScheduler job (interval hours=24, and also the one-shot retry
+        scheduled by _schedule_active_tle_retry_if_blocked()): refresh
+        regular (NORAD 10000-89999) satellite TLEs via
+        TLEManager.fetch_active_tles().
 
         The startup path (_refresh_satellite_names_sync()) calls fetch_active_tles()
         directly instead of through this wrapper, since it also wires up a progress
@@ -5021,6 +5061,7 @@ class MainWindow(QMainWindow):
             result = asyncio.run(self._tle_manager.fetch_active_tles())
             logger.info("Active TLE fetch completed: %s", result)
             self._satellite_list_refresh.emit()
+            self._schedule_active_tle_retry_if_blocked(result)
         except Exception as exc:
             logger.warning("Active TLE fetch failed: %s", exc)
 

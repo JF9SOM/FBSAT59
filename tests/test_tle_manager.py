@@ -9,10 +9,11 @@ import asyncio
 import sqlite3
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from data.database import SCHEMA_SQL
-from data.tle_manager import TLEManager
+from data.tle_manager import TLEManager, _ErrorCountBreaker, _run_with_breaker
 
 _LINE1 = "1 68796U 26088E   26192.83685747  .00002724  00000+0  17770-3 0  9997"
 _LINE2 = "2 68796  97.5082 341.6669 0015331 359.2893   0.8311 15.08613790 12013"
@@ -57,6 +58,21 @@ def _satnogs_resp(tle1: str, tle2: str) -> MagicMock:
     resp = MagicMock()
     resp.json.return_value = [{"tle1": tle1, "tle2": tle2}]
     resp.raise_for_status.return_value = None
+    return resp
+
+
+def _error_resp(status_code: int) -> MagicMock:
+    """A Phase 2a/2b response representing a real HTTP error status (404,
+    403, 429, 500, ...) that raise_for_status() actually raises for --
+    unlike _catnr_not_found_resp(), which models a 200 OK with an empty
+    body. CelesTrak's own "not found" response can be either, and only the
+    real HTTPStatusError path is what the circuit breaker reacts to.
+    """
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+        f"{status_code} error", request=MagicMock(), response=resp
+    )
     return resp
 
 
@@ -625,3 +641,255 @@ class TestFetchActiveTlesProgressCallback:
         assert len(messages) == 6
         assert messages[-1] == "CelesTrak: 1 satellite(s)..."
         assert all("SATNOGS" not in m for m in messages)
+
+
+class TestErrorCountBreaker:
+    """Unit coverage for the low-level breaker used by both Phase 2a
+    (CelesTrak) and Phase 2b (SATNOGS) to stop a per-satellite fetch batch
+    before it can trip a provider's own abuse protection -- see
+    CLAUDE.md's "fetch_active_tles() の2フェーズ設計" for the incident
+    (a real run's log showed a clean mix of 200/404 responses for ~400
+    satellites, then 403 on every single remaining request for the rest
+    of an 846-satellite run) that motivated this.
+    """
+
+    def test_not_tripped_before_reaching_the_limit(self) -> None:
+        breaker = _ErrorCountBreaker(error_limit=3)
+        breaker.record_error()
+        breaker.record_error()
+        assert breaker.tripped is False
+
+    def test_trips_once_the_limit_is_reached(self) -> None:
+        breaker = _ErrorCountBreaker(error_limit=3)
+        breaker.record_error()
+        breaker.record_error()
+        breaker.record_error()
+        assert breaker.tripped is True
+
+    def test_blocked_trips_immediately_regardless_of_count(self) -> None:
+        """A single HTTP 403 (CelesTrak) / 429 (SATNOGS) is proof the block
+        has already begun -- no reason to spend more of the error budget
+        confirming it, even with a high numeric limit still far off."""
+        breaker = _ErrorCountBreaker(error_limit=50)
+        breaker.record_error(blocked=True)
+        assert breaker.tripped is True
+
+
+class TestRunWithBreaker:
+    """Unit coverage for the bounded worker-pool runner both Phase 2a and
+    Phase 2b use in place of the old plain `asyncio.gather` + `Semaphore`
+    pattern, which had no way to stop issuing new requests once a provider
+    started rejecting them.
+    """
+
+    def test_runs_every_task_when_breaker_never_trips(self) -> None:
+        breaker = _ErrorCountBreaker(error_limit=100)
+        completed: list[int] = []
+
+        async def _make_task(n: int) -> None:
+            completed.append(n)
+
+        async def _run() -> None:
+            import functools
+
+            await _run_with_breaker(
+                [functools.partial(_make_task, n) for n in range(10)],
+                breaker,
+                concurrency=4,
+            )
+
+        asyncio.run(_run())
+        assert sorted(completed) == list(range(10))
+
+    def test_stops_pulling_new_work_once_breaker_trips(self) -> None:
+        """20 tasks, concurrency capped at 5: the first 5 all start (and
+        error out, tripping the breaker) before any worker loops back for a
+        6th -- so at most 5 of the 20 should ever run.
+        """
+        breaker = _ErrorCountBreaker(error_limit=1)
+        completed: list[int] = []
+
+        async def _make_task(n: int) -> None:
+            completed.append(n)
+            breaker.record_error()
+
+        async def _run() -> None:
+            import functools
+
+            await _run_with_breaker(
+                [functools.partial(_make_task, n) for n in range(20)],
+                breaker,
+                concurrency=5,
+            )
+
+        asyncio.run(_run())
+        assert len(completed) <= 5
+        assert len(completed) >= 1
+
+
+class TestFetchActiveTlesCircuitBreaker:
+    """fetch_active_tles() must stop a Phase 2a/2b batch early rather than
+    hammer CelesTrak/SATNOGS into blocking this IP -- see
+    TestErrorCountBreaker's docstring for the incident that motivated this.
+    """
+
+    def test_phase2a_breaker_trips_on_repeated_404s_and_falls_back_to_phase2b(
+        self, db: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Both target satellites 404 at CelesTrak (a routine, expected
+        outcome for satellites CelesTrak simply doesn't carry) -- with the
+        error limit patched down to 1, the second 404 alone must be enough
+        to report celestrak_blocked, and Phase 2b must still be given every
+        satellite Phase 2a didn't resolve.
+        """
+        monkeypatch.setattr("data.tle_manager._CELESTRAK_CATNR_ERROR_LIMIT", 1)
+
+        for norad, name in ((68795, "OrigamiSat-2"), (68796, "ARICA-2")):
+            db.execute(
+                "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+                " VALUES (?, ?, 'alive', 0)",
+                (norad, name),
+            )
+        db.commit()
+
+        targets = {68795: (_LINE1_B, _LINE2_B), 68796: (_LINE1, _LINE2)}
+
+        async def _fake_get(*_args: object, **kwargs: object) -> MagicMock:
+            params = kwargs["params"]
+            assert isinstance(params, dict)
+            if "GROUP" in params:
+                return _bulk_resp()
+            if "CATNR" in params:
+                return _error_resp(404)
+            # Phase 2b (SATNOGS): resolve via the fallback.
+            norad = int(params["norad_cat_id"])
+            line1, line2 = targets[norad]
+            resp = MagicMock()
+            resp.raise_for_status.return_value = None
+            resp.json.return_value = [{"tle1": line1, "tle2": line2}]
+            return resp
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=_fake_get)
+
+        with (
+            patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
+            patch.object(mgr, "_log_sync"),
+        ):
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            stats = asyncio.run(mgr.fetch_active_tles())
+
+        assert stats["celestrak_blocked"] == 1
+        assert stats["satnogs_blocked"] == 0
+        # Both satellites still got resolved, via Phase 2b.
+        assert stats["updated"] + stats["inserted"] == 2
+        for norad in (68795, 68796):
+            row = db.execute(
+                "SELECT line1 FROM tle_data WHERE norad_cat_id = ?", (norad,)
+            ).fetchone()
+            assert row is not None
+
+    def test_phase2a_403_reports_blocked_even_under_the_default_error_limit(
+        self, db: sqlite3.Connection
+    ) -> None:
+        """A single 403 is CelesTrak's own signal that the block has already
+        started -- celestrak_blocked must be set even though the default
+        error limit (20) is nowhere near reached.
+        """
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (68795, 'OrigamiSat-2', 'alive', 0)"
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            side_effect=[_bulk_resp()] * 5
+            + [_probe_ok_resp()]  # Phase 2a: reachability probe
+            + [_error_resp(403)]  # Phase 2a: already blocked
+            + [_probe_ok_resp()]  # Phase 2b: reachability probe
+            + [_error_resp(500)]  # Phase 2b: give up on this one
+        )
+
+        with (
+            patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
+            patch.object(mgr, "_log_sync"),
+        ):
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            stats = asyncio.run(mgr.fetch_active_tles())
+
+        assert stats["celestrak_blocked"] == 1
+
+    def test_phase2b_breaker_trips_on_repeated_errors(
+        self, db: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """CelesTrak doesn't have either satellite (Phase 2a "not found",
+        the normal 200-OK-with-empty-body case), so both fall to Phase 2b —
+        which then fails for both. With the SATNOGS error limit patched
+        down to 1, satnogs_blocked must be set.
+        """
+        monkeypatch.setattr("data.tle_manager._SATNOGS_TLE_ERROR_LIMIT", 1)
+
+        for norad, name in ((68795, "OrigamiSat-2"), (68796, "ARICA-2")):
+            db.execute(
+                "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+                " VALUES (?, ?, 'alive', 0)",
+                (norad, name),
+            )
+        db.commit()
+
+        async def _fake_get(*_args: object, **kwargs: object) -> MagicMock:
+            params = kwargs["params"]
+            assert isinstance(params, dict)
+            if "GROUP" in params:
+                return _bulk_resp()
+            if "CATNR" in params:
+                return _catnr_not_found_resp()
+            return _error_resp(500)
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=_fake_get)
+
+        with (
+            patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
+            patch.object(mgr, "_log_sync"),
+        ):
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            stats = asyncio.run(mgr.fetch_active_tles())
+
+        assert stats["celestrak_blocked"] == 0
+        assert stats["satnogs_blocked"] == 1
+
+    def test_no_breaker_trips_on_a_clean_run(self, db: sqlite3.Connection) -> None:
+        """Regression guard: a normal, fully-successful run must not report
+        either provider as blocked."""
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (68795, 'OrigamiSat-2', 'alive', 0)"
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            side_effect=[_bulk_resp()] * 5
+            + [_probe_ok_resp()]
+            + [_catnr_found_resp("OrigamiSat-2", _LINE1_B, _LINE2_B)]
+        )
+
+        with (
+            patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
+            patch.object(mgr, "_log_sync"),
+        ):
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            stats = asyncio.run(mgr.fetch_active_tles())
+
+        assert stats["celestrak_blocked"] == 0
+        assert stats["satnogs_blocked"] == 0

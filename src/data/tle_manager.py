@@ -7,8 +7,10 @@ applies quality scoring, and saves them to SQLite.
 
 from __future__ import annotations
 
+import functools
 import logging
 import sqlite3
+from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -111,6 +113,85 @@ async def _probe_reachable(url: str, params: dict[str, Any]) -> bool:
         return False
     except Exception:
         return True
+
+
+# CelesTrak's documented usage policy: an IP is sent to the firewall after 50
+# HTTP errors (301/403/404) within a 2-hour window
+# (https://celestrak.org/usage-policy.php, confirmed 2026-08-11). Phase 2a
+# below can touch 800+ satellites in one run, and a meaningful fraction
+# genuinely have no CelesTrak entry at all (404 is the *expected*, not
+# exceptional, response for those) -- so without a cap, a single run can by
+# itself burn through the whole 2-hour error budget and get the IP blocked
+# (confirmed via a real run's log, 2026-08-10: a clean run of 200/404s up to
+# satellite #~400 of 846, then 403 on every single remaining request for the
+# rest of the run). Kept well under 50 to leave headroom for whatever else
+# shares this IP's 2-hour window (the periodic per-group jobs, other users on
+# the same network, etc.).
+#
+# SATNOGS documents no equivalent limit, but "undocumented" isn't the same as
+# "none" -- Phase 2b gets the same treatment out of caution.
+_CELESTRAK_CATNR_ERROR_LIMIT = 20
+_SATNOGS_TLE_ERROR_LIMIT = 20
+
+
+class _ErrorCountBreaker:
+    """Stops a batch of per-satellite provider queries before it can trip
+    the provider's own abuse protection.
+
+    Two ways to trip: `error_limit` errors accumulate (e.g. repeated 404s,
+    which are individually normal but still count against CelesTrak's
+    budget), or a single call reports `blocked=True` (e.g. an HTTP 403 --
+    proof the block has *already* started, so there's no point counting
+    further errors before giving up).
+
+    Once tripped, callers should stop starting new requests but may let
+    already-in-flight ones finish normally (see `_run_with_breaker`).
+    """
+
+    def __init__(self, error_limit: int) -> None:
+        self._error_limit = error_limit
+        self._error_count = 0
+        self.tripped = False
+
+    def record_error(self, *, blocked: bool = False) -> None:
+        if blocked:
+            self.tripped = True
+            return
+        self._error_count += 1
+        if self._error_count >= self._error_limit:
+            self.tripped = True
+
+
+async def _run_with_breaker(
+    tasks: list[Callable[[], Coroutine[Any, Any, None]]],
+    breaker: _ErrorCountBreaker,
+    concurrency: int = 20,
+) -> None:
+    """Runs each zero-arg async callable in `tasks` with up to `concurrency`
+    running at once (same effective concurrency as the plain
+    `asyncio.gather` + `Semaphore` pattern this replaces), but stops pulling
+    *new* work the moment `breaker.tripped` becomes True. Requests already
+    in flight when that happens are left to finish normally — only the
+    queue of not-yet-started work is abandoned, so a provider that's
+    already blocking us doesn't get hit with hundreds more requests it's
+    already refusing.
+    """
+    import asyncio  # noqa: PLC0415
+
+    queue: asyncio.Queue[Any] = asyncio.Queue()
+    for t in tasks:
+        queue.put_nowait(t)
+
+    async def _worker() -> None:
+        while not breaker.tripped:
+            try:
+                task = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return
+            await task()
+
+    worker_count = min(concurrency, len(tasks)) or 1
+    await asyncio.gather(*[_worker() for _ in range(worker_count)])
 
 
 def _to_db_source(source_name: str) -> str:
@@ -460,11 +541,14 @@ class TLEManager:
         Existing tle_group values are preserved on UPDATE.
 
         Returns:
-            {"inserted": N, "updated": N, "no_tle": N,
-             "hidden_unknown": N, "hidden_expired": N, "errors": N}
+            {"inserted": N, "updated": N, "no_tle": N, "hidden_unknown": N,
+             "hidden_expired": N, "errors": N, "celestrak_blocked": 0|1,
+             "satnogs_blocked": 0|1}. The two "_blocked" flags are 1 when
+            that phase's _ErrorCountBreaker tripped and stopped early —
+            callers can use this to schedule a later retry instead of
+            assuming every unresolved satellite this run genuinely has no
+            TLE anywhere.
         """
-        import asyncio as _asyncio  # noqa: PLC0415
-
         # CelesTrak groups accessible without authentication that provide good coverage
         # of SATNOGS-registered satellites (GROUP=active deliberately not used — see above).
         _BULK_GROUPS = [
@@ -481,6 +565,8 @@ class TLEManager:
             "hidden_unknown": 0,
             "hidden_expired": 0,
             "errors": 0,
+            "celestrak_blocked": 0,
+            "satnogs_blocked": 0,
         }
         now = datetime.now(UTC).isoformat()
 
@@ -699,48 +785,67 @@ class TLEManager:
             if progress_callback:
                 progress_callback(f"CelesTrak: {len(remaining)} satellite(s)...")
             probe_norad_2a = next(iter(remaining))
+            breaker_2a = _ErrorCountBreaker(_CELESTRAK_CATNR_ERROR_LIMIT)
             if await _probe_reachable(url_ct, {"CATNR": str(probe_norad_2a), "FORMAT": "TLE"}):
-                semaphore_2a = _asyncio.Semaphore(20)
 
                 async def _fetch_one_celestrak(norad: int) -> None:
-                    async with semaphore_2a:
-                        try:
-                            async with httpx.AsyncClient(timeout=15.0) as c:
-                                r = await c.get(
-                                    url_ct,
-                                    params={"CATNR": str(norad), "FORMAT": "TLE"},
-                                    timeout=10.0,
-                                )
-                                r.raise_for_status()
-                        except (
-                            httpx.ConnectTimeout,
-                            httpx.ConnectError,
-                            httpx.ReadTimeout,
-                            httpx.RemoteProtocolError,
-                        ):
-                            return
-                        except httpx.HTTPError as exc:
-                            logger.warning(f"CelesTrak CATNR fetch error for {norad}: {exc}")
-                            return
+                    try:
+                        async with httpx.AsyncClient(timeout=15.0) as c:
+                            r = await c.get(
+                                url_ct,
+                                params={"CATNR": str(norad), "FORMAT": "TLE"},
+                                timeout=10.0,
+                            )
+                            r.raise_for_status()
+                    except (
+                        httpx.ConnectTimeout,
+                        httpx.ConnectError,
+                        httpx.ReadTimeout,
+                        httpx.RemoteProtocolError,
+                    ):
+                        return
+                    except httpx.HTTPStatusError as exc:
+                        logger.warning(f"CelesTrak CATNR fetch error for {norad}: {exc}")
+                        # 403 is CelesTrak's own signal that this IP is already
+                        # on the firewall list for the current 2h window — no
+                        # point spending more of the error budget finding out
+                        # again. 404 (and any other 4xx/5xx) just counts
+                        # toward the budget like the usage policy describes.
+                        breaker_2a.record_error(blocked=exc.response.status_code == 403)
+                        return
+                    except httpx.HTTPError as exc:
+                        logger.warning(f"CelesTrak CATNR fetch error for {norad}: {exc}")
+                        return
 
-                        lines = [ln.strip() for ln in r.text.splitlines() if ln.strip()]
-                        # Not found (empty body) or an "Invalid query" error body —
-                        # either way, not a valid 3-line TLE block.
-                        if len(lines) < 3 or not (
-                            lines[1].startswith("1 ") and lines[2].startswith("2 ")
-                        ):
-                            return
-                        name_l, line1, line2 = lines[0], lines[1], lines[2]
-                        try:
-                            sat_obj = EarthSatellite(line1, line2, name_l, self._ts)
-                            epoch_dt = sat_obj.epoch.utc_datetime()
-                        except Exception:
-                            stats["errors"] += 1
-                            return
-                        _store_resolved(norad, name_l, line1, line2, epoch_dt)
+                    lines = [ln.strip() for ln in r.text.splitlines() if ln.strip()]
+                    # Not found (empty body) or an "Invalid query" error body —
+                    # either way, not a valid 3-line TLE block.
+                    if len(lines) < 3 or not (
+                        lines[1].startswith("1 ") and lines[2].startswith("2 ")
+                    ):
+                        return
+                    name_l, line1, line2 = lines[0], lines[1], lines[2]
+                    try:
+                        sat_obj = EarthSatellite(line1, line2, name_l, self._ts)
+                        epoch_dt = sat_obj.epoch.utc_datetime()
+                    except Exception:
+                        stats["errors"] += 1
+                        return
+                    _store_resolved(norad, name_l, line1, line2, epoch_dt)
 
-                await _asyncio.gather(*[_fetch_one_celestrak(n) for n in list(remaining.keys())])
+                await _run_with_breaker(
+                    [functools.partial(_fetch_one_celestrak, n) for n in list(remaining.keys())],
+                    breaker_2a,
+                )
                 self._conn.commit()
+                if breaker_2a.tripped:
+                    logger.warning(
+                        "CelesTrak CATNR circuit breaker tripped — stopped Phase 2a early "
+                        "(%d satellite(s) still unresolved) to avoid CelesTrak's own "
+                        "abuse-protection firewall; falling back to SATNOGS for the rest",
+                        len(remaining),
+                    )
+                stats["celestrak_blocked"] = int(breaker_2a.tripped)
             else:
                 logger.warning(
                     "CelesTrak unreachable — skipping %d individual CATNR fetch(es) this run",
@@ -767,7 +872,7 @@ class TLEManager:
                     remaining = {}
 
             if remaining:
-                semaphore = _asyncio.Semaphore(20)  # max 20 concurrent requests
+                breaker_2b = _ErrorCountBreaker(_SATNOGS_TLE_ERROR_LIMIT)
 
                 async def _fetch_one(
                     norad: int,
@@ -777,77 +882,87 @@ class TLEManager:
                     source_id: int | None,
                 ) -> None:
                     query_id = source_id if source_id is not None else norad
-                    async with semaphore:
-                        try:
-                            async with httpx.AsyncClient(timeout=10.0) as c:
-                                resp = await c.get(
-                                    SATNOGS_TLE_URL,
-                                    params={"norad_cat_id": query_id, "format": "json"},
-                                )
-                                resp.raise_for_status()
-                                data = resp.json()
-                        except (
-                            httpx.ConnectTimeout,
-                            httpx.ReadTimeout,
-                            httpx.RemoteProtocolError,
-                        ):
-                            stats["errors"] += 1
-                            return
-                        except Exception as exc:
-                            logger.warning(f"SATNOGS TLE fallback error {norad}: {exc}")
-                            stats["errors"] += 1
-                            return
+                    try:
+                        async with httpx.AsyncClient(timeout=10.0) as c:
+                            resp = await c.get(
+                                SATNOGS_TLE_URL,
+                                params={"norad_cat_id": query_id, "format": "json"},
+                            )
+                            resp.raise_for_status()
+                            data = resp.json()
+                    except (
+                        httpx.ConnectTimeout,
+                        httpx.ReadTimeout,
+                        httpx.RemoteProtocolError,
+                    ):
+                        stats["errors"] += 1
+                        return
+                    except httpx.HTTPStatusError as exc:
+                        logger.warning(f"SATNOGS TLE fallback error {norad}: {exc}")
+                        stats["errors"] += 1
+                        # SATNOGS documents no rate-limit policy, but HTTP 429
+                        # ("Too Many Requests") is the standard way a server
+                        # says so anyway -- treat it the same as CelesTrak's
+                        # 403: stop immediately rather than count toward the
+                        # generic error budget.
+                        breaker_2b.record_error(blocked=exc.response.status_code == 429)
+                        return
+                    except Exception as exc:
+                        logger.warning(f"SATNOGS TLE fallback error {norad}: {exc}")
+                        stats["errors"] += 1
+                        breaker_2b.record_error()
+                        return
 
-                        if isinstance(data, list):
-                            data = data[0] if data else {}
-                        if not isinstance(data, dict) or "tle1" not in data:
-                            # No TLE available — apply grace-period / hide logic.
-                            # 'dead' satellites are treated like 'unknown': hide immediately.
-                            if sat_status in ("unknown", "dead"):
+                    if isinstance(data, list):
+                        data = data[0] if data else {}
+                    if not isinstance(data, dict) or "tle1" not in data:
+                        # No TLE available — apply grace-period / hide logic.
+                        # 'dead' satellites are treated like 'unknown': hide immediately.
+                        if sat_status in ("unknown", "dead"):
+                            self._conn.execute(
+                                "UPDATE satellites SET is_hidden = 2, updated_at = ?"
+                                " WHERE norad_cat_id = ?",
+                                (now, norad),
+                            )
+                            stats["hidden_unknown"] += 1
+                        else:
+                            if no_result_since is None:
                                 self._conn.execute(
-                                    "UPDATE satellites SET is_hidden = 2, updated_at = ?"
+                                    "UPDATE satellites"
+                                    " SET tle_no_result_since = ?, updated_at = ?"
                                     " WHERE norad_cat_id = ?",
-                                    (now, norad),
+                                    (now, now, norad),
                                 )
-                                stats["hidden_unknown"] += 1
                             else:
-                                if no_result_since is None:
+                                since_dt = datetime.fromisoformat(no_result_since)
+                                if since_dt.tzinfo is None:
+                                    since_dt = since_dt.replace(tzinfo=UTC)
+                                if datetime.now(UTC) - since_dt > timedelta(days=30):
                                     self._conn.execute(
                                         "UPDATE satellites"
-                                        " SET tle_no_result_since = ?, updated_at = ?"
+                                        " SET is_hidden = 2, updated_at = ?"
                                         " WHERE norad_cat_id = ?",
-                                        (now, now, norad),
+                                        (now, norad),
                                     )
-                                else:
-                                    since_dt = datetime.fromisoformat(no_result_since)
-                                    if since_dt.tzinfo is None:
-                                        since_dt = since_dt.replace(tzinfo=UTC)
-                                    if datetime.now(UTC) - since_dt > timedelta(days=30):
-                                        self._conn.execute(
-                                            "UPDATE satellites"
-                                            " SET is_hidden = 2, updated_at = ?"
-                                            " WHERE norad_cat_id = ?",
-                                            (now, norad),
-                                        )
-                                        stats["hidden_expired"] += 1
-                            stats["no_tle"] += 1
-                            return
+                                    stats["hidden_expired"] += 1
+                        stats["no_tle"] += 1
+                        return
 
-                        line1: str = str(data["tle1"])
-                        line2: str = str(data["tle2"])
-                        try:
-                            sat_obj = EarthSatellite(line1, line2, sat_name, self._ts)
-                            epoch_dt = sat_obj.epoch.utc_datetime()
-                        except Exception as exc:
-                            logger.warning(f"SATNOGS TLE parse error {norad}: {exc}")
-                            stats["errors"] += 1
-                            return
+                    line1: str = str(data["tle1"])
+                    line2: str = str(data["tle2"])
+                    try:
+                        sat_obj = EarthSatellite(line1, line2, sat_name, self._ts)
+                        epoch_dt = sat_obj.epoch.utc_datetime()
+                    except Exception as exc:
+                        logger.warning(f"SATNOGS TLE parse error {norad}: {exc}")
+                        stats["errors"] += 1
+                        return
 
-                        _store_resolved(norad, sat_name, line1, line2, epoch_dt)
+                    _store_resolved(norad, sat_name, line1, line2, epoch_dt)
 
-                await _asyncio.gather(
-                    *[
-                        _fetch_one(norad, name, status, nrs, source_id)
+                await _run_with_breaker(
+                    [
+                        functools.partial(_fetch_one, norad, name, status, nrs, source_id)
                         for norad, (
                             name,
                             status,
@@ -856,9 +971,17 @@ class TLEManager:
                             _tle_group,
                             _had_tle,
                         ) in remaining.items()
-                    ]
+                    ],
+                    breaker_2b,
                 )
                 self._conn.commit()
+                if breaker_2b.tripped:
+                    logger.warning(
+                        "SATNOGS TLE circuit breaker tripped — stopped Phase 2b early "
+                        "to avoid overloading db.satnogs.org; remaining satellites will "
+                        "be retried on the next scheduled run"
+                    )
+                stats["satnogs_blocked"] = int(breaker_2b.tripped)
 
         self._log_sync("celestrak-active", stats)
         return stats

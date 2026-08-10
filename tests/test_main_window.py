@@ -2965,3 +2965,58 @@ class TestModeInvertDataModes:
 
     def test_lsb_d_inverts_to_usb_d(self) -> None:
         assert _MODE_INVERT["LSB-D"] == "USB-D"
+
+
+class TestActiveTleRetryScheduling:
+    """_schedule_active_tle_retry_if_blocked() queues a one-shot retry when
+    TLEManager.fetch_active_tles() reports it had to cut a Phase 2 provider
+    fallback short (TLEManager._ErrorCountBreaker) -- see that class's
+    docstring for the incident (Update TLE could otherwise leave a
+    satellite unresolved indefinitely once a run tripped a provider's own
+    abuse protection) this closes the loop on.
+    """
+
+    def _make_window(self, qtbot, db: sqlite3.Connection, tle_manager: TLEManager) -> MainWindow:
+        w = MainWindow(conn=db, tle_manager=tle_manager)
+        qtbot.addWidget(w)
+        return w
+
+    def test_no_op_when_scheduler_is_none(self, qtbot, db, tle_manager) -> None:
+        """_start_scheduler() is disabled for every test in this file (see
+        _no_background_sync), so self._scheduler is always None here --
+        this must not raise even when the result reports a block."""
+        w = self._make_window(qtbot, db, tle_manager)
+        assert w._scheduler is None
+        w._schedule_active_tle_retry_if_blocked({"celestrak_blocked": 1, "satnogs_blocked": 0})
+
+    def test_schedules_retry_when_celestrak_blocked(self, qtbot, db, tle_manager) -> None:
+        w = self._make_window(qtbot, db, tle_manager)
+        w._scheduler = MagicMock()
+
+        w._schedule_active_tle_retry_if_blocked({"celestrak_blocked": 1, "satnogs_blocked": 0})
+
+        w._scheduler.add_job.assert_called_once()
+        args, kwargs = w._scheduler.add_job.call_args
+        assert args[0] == w._refresh_active_tle_sync
+        assert args[1] == "date"
+        assert kwargs["id"] == "active_tle_retry"
+        assert kwargs["replace_existing"] is True
+        # ~3 hours out, comfortably past CelesTrak's documented 2h window.
+        delay = kwargs["run_date"] - datetime.now(UTC)
+        assert timedelta(hours=2, minutes=55) < delay < timedelta(hours=3, minutes=5)
+
+    def test_schedules_retry_when_satnogs_blocked(self, qtbot, db, tle_manager) -> None:
+        w = self._make_window(qtbot, db, tle_manager)
+        w._scheduler = MagicMock()
+
+        w._schedule_active_tle_retry_if_blocked({"celestrak_blocked": 0, "satnogs_blocked": 1})
+
+        w._scheduler.add_job.assert_called_once()
+
+    def test_no_retry_scheduled_on_a_clean_result(self, qtbot, db, tle_manager) -> None:
+        w = self._make_window(qtbot, db, tle_manager)
+        w._scheduler = MagicMock()
+
+        w._schedule_active_tle_retry_if_blocked({"celestrak_blocked": 0, "satnogs_blocked": 0})
+
+        w._scheduler.add_job.assert_not_called()
