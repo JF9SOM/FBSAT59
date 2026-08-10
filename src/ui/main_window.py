@@ -4829,10 +4829,25 @@ class MainWindow(QMainWindow):
         (_on_update_tle) so both entry points perform the same real fetch — Update TLE
         used to be a no-op stub that only displayed a "queued" message without ever
         actually fetching anything.
+
+        The enabled sources here are CelesTrak's curated GROUP lists (amateur,
+        cubesat, weather, ...). A satellite CelesTrak's own curation misses
+        entirely — e.g. ORIGAMISAT-2 / NORAD 68795, confirmed absent from
+        every one of these groups — can never be resolved by this loop no
+        matter how many times it runs. Only fetch_active_tles()'s Phase 2
+        per-satellite fallback covers that gap, so it's always run here too
+        (regardless of its own 24h is_active_tle_stale() gate, since pressing
+        Update TLE is an explicit request for a fresh attempt right now, not
+        the passive background schedule). Without this, a user could press
+        Update TLE indefinitely and the satellite would never update — which
+        is exactly what happened (2026-08-10 report).
         """
         from ui.settings_dialog import SettingsDialog
 
         enabled = SettingsDialog.get_enabled_sources(self._conn)
+
+        def _active_progress(msg: str) -> None:
+            self._sync_progress.emit(f"🛰 {msg}")
 
         def _fetch_all() -> None:
             for source_name in enabled:
@@ -4844,8 +4859,18 @@ class MainWindow(QMainWindow):
                     logger.warning(
                         "Manual TLE fetch error (%s): %s: %s", source_name, type(exc).__name__, exc
                     )
+
+            try:
+                active = asyncio.run(
+                    self._tle_manager.fetch_active_tles(progress_callback=_active_progress)
+                )
+                logger.info("Manual active TLE fetch result: %s", active)
+            except Exception as exc:
+                logger.warning("Manual active TLE fetch error: %s: %s", type(exc).__name__, exc)
+
             # Signal emit is thread-safe; Qt automatically queues it to the main thread.
             self._satellite_list_refresh.emit()
+            self._sync_progress.emit("")
 
         threading.Thread(target=_fetch_all, daemon=True).start()
 
