@@ -181,12 +181,13 @@ class RadioControlWidget(QWidget):
         self._offset_spin.setSuffix(_(" Hz"))
         self._offset_spin.setToolTip(
             _(
-                "Persistent per-transponder RX (downlink) correction, saved with this "
-                "transponder. Added to the nominal downlink before Doppler correction, "
-                "so it carries over to every future pass and survives Tune (T). "
-                "Positive shifts the corrected frequency higher. Use this for a "
-                "satellite's known, fixed frequency error (e.g. TCXO aging); use "
-                "Lock (L) for real-time manual retuning within a pass."
+                "Persistent per-transponder RX (downlink) offset, saved with this "
+                "transponder. If the satellite's actual frequency has drifted from "
+                "nominal (e.g. TCXO aging), this value is continuously applied as a "
+                "correction to this transponder's center frequency -- before Doppler "
+                "correction -- so it carries over to every future pass and survives "
+                "Tune (T). Positive shifts the corrected frequency higher. Use Lock "
+                "(L) instead for real-time manual retuning within a single pass."
             )
         )
         self._offset_spin.setEnabled(False)
