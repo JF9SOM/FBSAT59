@@ -173,7 +173,7 @@ class RadioControlWidget(QWidget):
         name_norad_row.addSpacing(20)
         name_norad_row.addWidget(QLabel("NORAD:"))
         name_norad_row.addWidget(self._norad_label)
-        name_norad_row.addSpacing(20)
+        name_norad_row.addStretch()
         name_norad_row.addWidget(QLabel(_("Offset:")))
         self._offset_spin = QSpinBox()
         self._offset_spin.setRange(-_RX_OFFSET_RANGE_HZ, _RX_OFFSET_RANGE_HZ)
@@ -192,7 +192,6 @@ class RadioControlWidget(QWidget):
         self._offset_spin.setEnabled(False)
         self._offset_spin.valueChanged.connect(self._on_offset_spin_changed)
         name_norad_row.addWidget(self._offset_spin)
-        name_norad_row.addStretch()
         sat_form.addRow(_("Name:"), name_norad_row)
 
         self._xpdr_combo = QComboBox()
