@@ -429,23 +429,31 @@ class TLEManager:
         ).fetchone()
         return (row["cnt"] if row else 0) < min_expected
 
-    async def fetch_active_tles(self) -> dict[str, int]:
+    async def fetch_active_tles(self, progress_callback: Any = None) -> dict[str, int]:
         """Fill TLE gaps for SATNOGS-registered satellites (NORAD 10000-89999).
 
-        Two-phase approach:
-          Phase 1 — CelesTrak bulk groups (single request per group, fast):
-            Downloads several CelesTrak groups that collectively cover most
-            SATNOGS-registered satellites not already handled by the targeted
-            group fetches (amateur, cubesat, etc.).
-            Note: CelesTrak GROUP=active currently returns 403, so we use the
-            available subsets instead.
+        Phase 1 — CelesTrak bulk groups (single request per group, fast):
+          Downloads several CelesTrak groups that collectively cover most
+          SATNOGS-registered satellites. GROUP=active would cover far more in
+          one request, but is deliberately not used — see CLAUDE.md's
+          "fetch_active_tles() の2フェーズ設計" for why (it succeeds only
+          once per CelesTrak's 2h update cycle, and downloads ~11x more data
+          than this app actually needs).
 
-          Phase 2 — SATNOGS TLE API fallback (individual requests, concurrent):
-            For each satellite in NORAD 10000-89999 that still has no TLE after
-            phase 1, queries the SATNOGS TLE API (/api/tle/?norad_cat_id=X).
-            Requests are issued concurrently (up to 20 at a time) to limit
-            total run time to a few minutes.
-            Same 30-day grace-period / auto-hide logic as fetch_provisional_tles().
+        Phase 2 — individual per-satellite queries (concurrent, up to 20 at a
+        time), for whatever Phase 1 didn't cover. Two stages, CelesTrak then
+        SATNOGS — see the inline "Phase 2a"/"Phase 2b" comments below for the
+        full rationale (both fail fast via _probe_reachable() if the host is
+        unreachable, rather than waiting out every straggler's own timeout).
+
+        `progress_callback`, if given, is called with a short human-readable
+        string at each phase/group transition (not per-satellite — Phase 2
+        can involve hundreds of concurrent requests) so a caller updating a
+        UI status label can show that this is still working, not stuck. This
+        matters because this method used to be silent for however long
+        Phase 2 took, which looked identical to a hang and led to at least
+        one user closing the app before it ever reached the satellite they
+        cared about (2026-08-10).
 
         New satellite records are never created; only existing satellites are updated.
         Manual TLEs are never overwritten.
@@ -458,7 +466,7 @@ class TLEManager:
         import asyncio as _asyncio  # noqa: PLC0415
 
         # CelesTrak groups accessible without authentication that provide good coverage
-        # of SATNOGS-registered satellites (GROUP=active returns 403).
+        # of SATNOGS-registered satellites (GROUP=active deliberately not used — see above).
         _BULK_GROUPS = [
             "satnogs",  # ~664 satellites tracked by SatNOGS network
             "last-30-days",  # recently launched satellites
@@ -557,6 +565,8 @@ class TLEManager:
         url_ct = "https://celestrak.org/NORAD/elements/gp.php"
         async with httpx.AsyncClient(timeout=60.0) as client:
             for group in _BULK_GROUPS:
+                if progress_callback:
+                    progress_callback(f"CelesTrak {group}...")
                 try:
                     r = await client.get(url_ct, params={"GROUP": group, "FORMAT": "TLE"})
                     r.raise_for_status()
@@ -686,6 +696,8 @@ class TLEManager:
                 return True
 
             # ── Phase 2a: CelesTrak, individual CATNR query per satellite ──
+            if progress_callback:
+                progress_callback(f"CelesTrak: {len(remaining)} satellite(s)...")
             probe_norad_2a = next(iter(remaining))
             if await _probe_reachable(url_ct, {"CATNR": str(probe_norad_2a), "FORMAT": "TLE"}):
                 semaphore_2a = _asyncio.Semaphore(20)
@@ -737,6 +749,8 @@ class TLEManager:
 
             # ── Phase 2b: SATNOGS TLE API fallback for whatever Phase 2a
             # didn't resolve ───────────────────────────────────────────────
+            if remaining and progress_callback:
+                progress_callback(f"SATNOGS: {len(remaining)} satellite(s)...")
             if remaining:
                 probe_norad = next(iter(remaining))
                 probe_source_id = remaining[probe_norad][3]

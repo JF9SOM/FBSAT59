@@ -5266,21 +5266,31 @@ Phase 2の対象条件が元々「TLE行が一つも無い衛星」のみだっ�
 Phase 2の`INSERT OR REPLACE`が毎回`tle_group`を`'amateur'`に強制リセットしていた副次バグ（分類の劣化）
 も、既存の`tle_group`を保持するよう修正済み。
 
-### 起動時の TLE 同期フロー
+### 起動時の TLE 同期フロー（2026-08-10 順序変更）
 
 ```
 アプリ起動
   │
   ├─ APScheduler 開始（2h/4h/6h/12h/24h の定期ジョブを登録）
   │
-  ├─ [バックグラウンド] _refresh_satellite_names_sync()
-  │     1. sync_satellite_names()    ← SATNOGS 衛星名・ステータス更新・移行パイプライン
-  │     2. fetch_provisional_tles()  ← NORAD ≥ 90000 衛星の TLE 取得
-  │     3. fetch_legacy_tles()       ← NORAD < 10000 衛星のクリーンアップ（初回のみ実質動作）
-  │
-  └─ [バックグラウンド・stale時のみ] _refresh_active_tle_sync()
-        fetch_active_tles()          ← NORAD 10000-89999 未収録衛星の TLE 補完（24h 経過時）
+  └─ [バックグラウンド] _refresh_satellite_names_sync()
+        1. sync_satellite_names()    ← SATNOGS 衛星名・ステータス更新・移行パイプライン
+        2. fetch_active_tles()       ← NORAD 10000-89999 衛星の TLE 補完（stale時のみ、最優先）
+        3. fetch_provisional_tles()  ← NORAD ≥ 90000 衛星の TLE 取得
+        4. fetch_legacy_tles()       ← NORAD < 10000 衛星のクリーンアップ（初回のみ実質動作）
+        5. fetch_meteor_tles()       ← METEOR/HRPT 衛星の TLE 補完
 ```
+
+**2番目のステップだった `fetch_active_tles()` を最優先に変更**（2026-08-10）:
+以前は「Phase 2のSATNOGSフォールバックが20〜30分かかりうるので他のステップを待たせない」という
+理由で最後に実行していたが、この理由はPhase 2にサーキットブレーカー・並列化・CelesTrakフォールバックを
+入れた今となっては古い（前述の各節参照）。一方で、この処理こそが通常のNORAD ID（例: ORIGAMISAT-2、
+NORAD 68795）のTLEを実際に最新化する、最も価値の高いステップである。ステップ間に進捗表示が一切なかった
+ため、ステップ1完了後にステータスバーの表示が更新されなくなると、ユーザーからは「フリーズした」ように
+見え、実際には正常に動作中の後続ステップの途中でアプリを閉じてしまう、という報告が複数回の再起動を
+経ても`fetch_active_tles()`に一度も到達できないという実害につながった（2026-08-10）。`fetch_active_tles()`
+に`progress_callback`引数を新設し、フェーズ（CelesTrakグループ名・Phase 2a/2bの対象数）ごとに
+ステータスバーへ進捗を表示するようにした上で、最優先の位置に移動した。
 
 ### DB マイグレーション注意事項（2026-05-29 バグ対応済み）
 

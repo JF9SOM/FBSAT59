@@ -1516,15 +1516,28 @@ class MainWindow(QMainWindow):
             logger.warning("CelestialEngine failed to load — Moon tracking unavailable")
 
     def _refresh_satellite_names_sync(self) -> None:
-        """Sync satellite names from SATNOGS, then fetch provisional and legacy TLEs.
+        """Sync satellite names from SATNOGS, then refresh TLEs.
 
         Execution order:
           1. sync_satellite_names() — updates names/status, runs migration pipelines
-          2. fetch_provisional_tles() — TLEs for visible NORAD >= 90000 satellites
-          3. fetch_legacy_tles() — one-time check for NORAD < 10000 satellites;
+          2. fetch_active_tles() — TLEs for regular NORAD 10000-89999 satellites
+          3. fetch_provisional_tles() — TLEs for visible NORAD >= 90000 satellites
+          4. fetch_legacy_tles() — one-time check for NORAD < 10000 satellites;
              hides those no longer tracked by CelesTrak (fast no-op after first run)
-          4. fetch_meteor_tles() — individual CATNR check for METEOR/HRPT satellites
+          5. fetch_meteor_tles() — individual CATNR check for METEOR/HRPT satellites
              CelesTrak has dropped from its curated group listings (e.g. NOAA 18/19)
+
+        Step 2 used to run last, on the reasoning that its SATNOGS fallback could
+        take 20-30 minutes so later steps shouldn't wait on it. Moved to run right
+        after step 1 (2026-08-10): step 2 is what actually refreshes an ordinary
+        already-known satellite's TLE (e.g. ORIGAMISAT-2, NORAD 68795), and with no
+        progress indicator between steps, a user watching a status label that
+        stops updating after step 1 has no way to tell steps 3-5 are still working
+        rather than frozen — closing the app partway through meant step 2 was
+        never reached at all across several restarts (2026-08-10 report). Now the
+        most valuable step runs first and reports its own progress (see
+        _active_progress below), so even an impatient restart has usually already
+        benefited from it.
         """
         from ui.settings_dialog import SettingsDialog  # local import to avoid circular dep
 
@@ -1546,9 +1559,34 @@ class MainWindow(QMainWindow):
         if self._shutdown_flag.is_set():
             return
 
+        # Refresh TLEs for regular (NORAD 10000-89999) satellites first — see the
+        # docstring above for why this moved ahead of provisional/legacy/meteor.
+        def _active_progress(msg: str) -> None:
+            self._sync_progress.emit(f"🛰 {msg}")
+
+        if self._tle_manager.is_active_tle_stale():
+            try:
+                active = asyncio.run(
+                    self._tle_manager.fetch_active_tles(progress_callback=_active_progress)
+                )
+                logger.info("Active TLE fetch completed: %s", active)
+                self._satellite_list_refresh.emit()
+            except Exception as exc:
+                logger.warning("Active TLE fetch failed: %s", exc)
+        else:
+            logger.info("Active TLE cache is fresh — skipping fetch.")
+
+        if self._shutdown_flag.is_set():
+            return
+
         # Fetch TLEs for remaining visible provisional satellites (NORAD >= 90000).
+        def _prov_progress(done: int, total: int) -> None:
+            self._sync_progress.emit(f"🛰 Fetching provisional TLEs... ({done}/{total})")
+
         try:
-            prov = asyncio.run(self._tle_manager.fetch_provisional_tles())
+            prov = asyncio.run(
+                self._tle_manager.fetch_provisional_tles(progress_callback=_prov_progress)
+            )
             logger.info("Provisional TLE fetch completed: %s", prov)
         except Exception as exc:
             logger.warning("Provisional TLE fetch failed: %s: %s", type(exc).__name__, exc)
@@ -1594,9 +1632,6 @@ class MainWindow(QMainWindow):
         # they are scheduled with interval hours=2/4/6/12.  Without this initial
         # fetch, every satellite ends up with tle_group='amateur' and CubeSat /
         # Weather / Science / Earth-Obs / Space-Stations groups appear empty.
-        # Run this BEFORE fetch_active_tles() (which can take 20-30 min on first
-        # run) so the user sees correct group counts as soon as the satellite list
-        # refreshes — without waiting for the long Phase 2 SATNOGS fallback.
         #
         # Also handles the upgrade case (e.g. Windows): a previous beta may have
         # left sync_log entries so is_source_stale() returns False, but without the
@@ -1625,17 +1660,6 @@ class MainWindow(QMainWindow):
         # Refresh the satellite list now that names and group TLEs are synced.
         self._satellite_list_refresh.emit()
         self._sync_progress.emit("")  # Hide sync label once satellite list is ready
-
-        if self._shutdown_flag.is_set():
-            return
-
-        # Fetch active TLEs last; Phase 2 SATNOGS fallback can take 20-30 min.
-        # The satellite list has already been refreshed above so the user sees
-        # correct group assignments without waiting for this to complete.
-        if self._tle_manager.is_active_tle_stale():
-            self._refresh_active_tle_sync()
-        else:
-            logger.info("Active TLE cache is fresh — skipping fetch.")
 
     # ------------------------------------------------------------------ #
     # Timer callback (every 1 second)
@@ -4959,13 +4983,20 @@ class MainWindow(QMainWindow):
             sb.showMessage(_("Syncing transmitter frequencies from SATNOGS..."), 5000)
 
     def _refresh_active_tle_sync(self) -> None:
-        """Fetch CelesTrak GROUP=active TLEs and fill gaps for SATNOGS satellites."""
+        """APScheduler job (interval hours=24): refresh regular (NORAD 10000-89999)
+        satellite TLEs via TLEManager.fetch_active_tles().
+
+        The startup path (_refresh_satellite_names_sync()) calls fetch_active_tles()
+        directly instead of through this wrapper, since it also wires up a progress
+        callback for the status bar — this method remains only as the periodic
+        APScheduler job's entry point, where no visible progress reporting is needed.
+        """
         try:
             result = asyncio.run(self._tle_manager.fetch_active_tles())
-            logger.info("CelesTrak active TLE fetch completed: %s", result)
+            logger.info("Active TLE fetch completed: %s", result)
             self._satellite_list_refresh.emit()
         except Exception as exc:
-            logger.warning("CelesTrak active TLE fetch failed: %s", exc)
+            logger.warning("Active TLE fetch failed: %s", exc)
 
     def _refresh_provisional_tle_sync(self) -> None:
         """Fetch TLEs for provisional (NORAD >= 90000) satellites from a background thread."""

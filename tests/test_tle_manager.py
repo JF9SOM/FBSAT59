@@ -585,3 +585,43 @@ class TestFetchProvisionalTlesCircuitBreaker:
         # Probe + the real per-satellite request.
         assert mock_client.get.await_count == 2
         assert stats["inserted"] == 1
+
+
+class TestFetchActiveTlesProgressCallback:
+    """fetch_active_tles() used to run silently for however long Phase 2 took,
+    which looked identical to a hang and led to a user closing the app before
+    it ever reached the satellite they cared about (2026-08-10). The
+    optional progress_callback must fire at each phase/group transition so a
+    caller can show that work is still happening.
+    """
+
+    def test_progress_callback_fires_for_each_phase(self, db: sqlite3.Connection) -> None:
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (68795, 'OrigamiSat-2', 'alive', 0)"
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            side_effect=[_bulk_resp()] * 5
+            + [_probe_ok_resp()]  # Phase 2a: reachability probe
+            + [_catnr_found_resp("OrigamiSat-2", _LINE1_B, _LINE2_B)]  # Phase 2a: match
+        )
+
+        messages: list[str] = []
+
+        with (
+            patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
+            patch.object(mgr, "_log_sync"),
+        ):
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            asyncio.run(mgr.fetch_active_tles(progress_callback=messages.append))
+
+        # One message per Phase 1 bulk group, plus one for Phase 2a starting.
+        # No Phase 2b message, since Phase 2a resolved the only target satellite.
+        assert len(messages) == 6
+        assert messages[-1] == "CelesTrak: 1 satellite(s)..."
+        assert all("SATNOGS" not in m for m in messages)
