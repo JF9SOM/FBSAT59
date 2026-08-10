@@ -166,6 +166,7 @@ async def _run_with_breaker(
     tasks: list[Callable[[], Coroutine[Any, Any, None]]],
     breaker: _ErrorCountBreaker,
     concurrency: int = 20,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> None:
     """Runs each zero-arg async callable in `tasks` with up to `concurrency`
     running at once (same effective concurrency as the plain
@@ -175,6 +176,16 @@ async def _run_with_breaker(
     queue of not-yet-started work is abandoned, so a provider that's
     already blocking us doesn't get hit with hundreds more requests it's
     already refusing.
+
+    `on_progress(completed, total)`, if given, is called after every task
+    finishes (success or failure alike). A slow provider (~1 req/s observed
+    against SATNOGS against a batch of hundreds, 2026-08-11) can take over
+    ten minutes to drain a large batch; without per-item feedback the caller
+    has only the one status message shown before this function starts,
+    which looks identical whether it's genuinely still working or has
+    silently died. `completed += 1` is safe without a lock here: asyncio is
+    single-threaded/cooperative, and nothing awaits between the increment
+    and the callback, so no other task can interleave mid-update.
     """
     import asyncio  # noqa: PLC0415
 
@@ -182,16 +193,43 @@ async def _run_with_breaker(
     for t in tasks:
         queue.put_nowait(t)
 
+    total = len(tasks)
+    completed = 0
+
     async def _worker() -> None:
+        nonlocal completed
         while not breaker.tripped:
             try:
                 task = queue.get_nowait()
             except asyncio.QueueEmpty:
                 return
             await task()
+            completed += 1
+            if on_progress is not None:
+                on_progress(completed, total)
 
     worker_count = min(concurrency, len(tasks)) or 1
     await asyncio.gather(*[_worker() for _ in range(worker_count)])
+
+
+def _throttled_phase_progress(
+    progress_callback: Any, label: str, every: int = 10
+) -> Callable[[int, int], None] | None:
+    """Builds an `on_progress` callback for `_run_with_breaker()` that only
+    forwards to `progress_callback` every `every` completions (plus always
+    on the last one), so a batch of hundreds doesn't flood the UI with one
+    status-bar update per satellite. Returns None if there's no
+    progress_callback to report to, so callers can pass the result straight
+    through without an extra `if progress_callback` check.
+    """
+    if progress_callback is None:
+        return None
+
+    def _on_progress(done: int, total: int) -> None:
+        if done % every == 0 or done == total:
+            progress_callback(f"{label}: {done}/{total} checked...")
+
+    return _on_progress
 
 
 def _to_db_source(source_name: str) -> str:
@@ -772,6 +810,17 @@ class TLEManager:
         # TLE keyed by that old ID for a long time after migration (observed
         # for ARICA-2 / NORAD 68796, 2026-07-12), mirroring the routing
         # already used for transmitter sync in sync_from_satnogs().
+        # ORDER BY prioritizes satellites with no TLE at all (t.fetched_at IS
+        # NULL, sorts first since SQLite treats NULL < any value and the
+        # boolean expression evaluates NULL as 0), then the ones with just a
+        # stale source='satnogs' TLE, oldest-fetched-first. With a slow
+        # provider and hundreds of targets, a single run rarely drains the
+        # whole list (~1 req/s observed against SATNOGS, 2026-08-11) --
+        # without this ordering, whichever satellites happen to land near
+        # the end of the (otherwise arbitrary) row order can go unresolved
+        # run after run purely because their turn never comes up (confirmed
+        # for ORIGAMISAT-2 / NORAD 68795: resolved once, then never reached
+        # again across a week of runs that each stopped partway through).
         refresh_targets = [
             (
                 int(r["norad_cat_id"]),
@@ -792,6 +841,7 @@ class TLEManager:
                 WHERE s.is_hidden = 0
                   AND s.norad_cat_id BETWEEN 10000 AND 89999
                   AND (t.norad_cat_id IS NULL OR t.source = 'satnogs')
+                ORDER BY t.fetched_at IS NOT NULL, t.fetched_at ASC
                 """
             ).fetchall()
         ]
@@ -899,6 +949,7 @@ class TLEManager:
                 await _run_with_breaker(
                     [functools.partial(_fetch_one_celestrak, n) for n in list(remaining.keys())],
                     breaker_2a,
+                    on_progress=_throttled_phase_progress(progress_callback, "CelesTrak"),
                 )
                 self._conn.commit()
                 if breaker_2a.tripped:
@@ -1064,6 +1115,7 @@ class TLEManager:
                         ) in remaining.items()
                     ],
                     breaker_2b,
+                    on_progress=_throttled_phase_progress(progress_callback, "SATNOGS"),
                 )
                 self._conn.commit()
                 if breaker_2b.tripped:

@@ -637,11 +637,128 @@ class TestFetchActiveTlesProgressCallback:
             mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
             asyncio.run(mgr.fetch_active_tles(progress_callback=messages.append))
 
-        # One message per Phase 1 bulk group, plus one for Phase 2a starting.
-        # No Phase 2b message, since Phase 2a resolved the only target satellite.
-        assert len(messages) == 6
-        assert messages[-1] == "CelesTrak: 1 satellite(s)..."
+        # One message per Phase 1 bulk group, one for Phase 2a starting, and
+        # one per-item progress update (batch of 1, so it fires once and is
+        # both the first and last completion). No Phase 2b message, since
+        # Phase 2a resolved the only target satellite.
+        assert len(messages) == 7
+        assert messages[-2] == "CelesTrak: 1 satellite(s)..."
+        assert messages[-1] == "CelesTrak: 1/1 checked..."
         assert all("SATNOGS" not in m for m in messages)
+
+    def test_progress_updates_periodically_for_a_larger_batch(self, db: sqlite3.Connection) -> None:
+        """A batch bigger than the every-10 throttle must produce more than
+        just the phase's starting message -- one "Fetching..." message with
+        no further updates for a slow batch of hundreds is exactly what
+        looked like a hang (2026-08-10).
+        """
+        for i in range(25):
+            db.execute(
+                "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+                " VALUES (?, ?, 'alive', 0)",
+                (10001 + i, f"Sat {i}"),
+            )
+        db.commit()
+
+        async def _fake_get(*_args: object, **kwargs: object) -> MagicMock:
+            params = kwargs["params"]
+            assert isinstance(params, dict)
+            if "GROUP" in params:
+                return _bulk_resp()
+            return _catnr_not_found_resp()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=_fake_get)
+
+        messages: list[str] = []
+
+        with (
+            patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
+            patch.object(mgr, "_log_sync"),
+        ):
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            asyncio.run(mgr.fetch_active_tles(progress_callback=messages.append))
+
+        celestrak_progress = [m for m in messages if m.startswith("CelesTrak:") and "checked" in m]
+        assert "CelesTrak: 10/25 checked..." in celestrak_progress
+        assert "CelesTrak: 20/25 checked..." in celestrak_progress
+        assert celestrak_progress[-1] == "CelesTrak: 25/25 checked..."
+
+
+class TestFetchActiveTlesPhase2Prioritization:
+    """Phase 2 must query satellites with no TLE at all first, then
+    satellites with only a stale source='satnogs' TLE ordered
+    oldest-fetched-first -- otherwise a slow provider handling hundreds of
+    targets per run can perpetually never reach whichever satellite happens
+    to sort last in arbitrary DB row order (confirmed for ORIGAMISAT-2 /
+    NORAD 68795, 2026-08-10: it had an old TLE that never got refreshed
+    across a week of runs that each stopped partway through Phase 2).
+    """
+
+    def test_no_tle_first_then_oldest_fetched(self, db: sqlite3.Connection) -> None:
+        # Inserted in the opposite order from the expected priority, so a
+        # passing assertion can't be an accident of row/insertion order.
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (10003, 'Sat C (newer TLE)', 'alive', 0)"
+        )
+        db.execute(
+            "INSERT INTO tle_data (norad_cat_id, name, line1, line2, source, fetched_at)"
+            " VALUES (10003, 'Sat C', ?, ?, 'satnogs', '2026-08-01T00:00:00+00:00')",
+            (_LINE1_B, _LINE2_B),
+        )
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (10002, 'Sat B (old TLE)', 'alive', 0)"
+        )
+        db.execute(
+            "INSERT INTO tle_data (norad_cat_id, name, line1, line2, source, fetched_at)"
+            " VALUES (10002, 'Sat B', ?, ?, 'satnogs', '2020-01-01T00:00:00+00:00')",
+            (_LINE1, _LINE2),
+        )
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (10001, 'Sat A (no TLE)', 'alive', 0)"
+        )
+        db.commit()
+
+        catnr_order: list[int] = []
+
+        async def _fake_get(*_args: object, **kwargs: object) -> MagicMock:
+            params = kwargs["params"]
+            assert isinstance(params, dict)
+            if "GROUP" in params:
+                return _bulk_resp()
+            if "CATNR" in params:
+                catnr_order.append(int(params["CATNR"]))
+                return _catnr_not_found_resp()
+            # SATNOGS probe/fetch (norad_cat_id key) -- not the focus of
+            # this test, just needs to resolve without raising.
+            resp = MagicMock()
+            resp.raise_for_status.return_value = None
+            resp.json.return_value = {}
+            return resp
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=_fake_get)
+
+        with (
+            patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
+            patch.object(mgr, "_log_sync"),
+        ):
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            asyncio.run(mgr.fetch_active_tles())
+
+        # First call is the reachability probe (uses whichever satellite
+        # sorts first), then the real per-satellite loop queries all three
+        # again in that same priority order: no-TLE first, then
+        # oldest-fetched-first among the rest.
+        assert catnr_order[0] == 10001
+        assert catnr_order[1:] == [10001, 10002, 10003]
 
 
 class TestErrorCountBreaker:
