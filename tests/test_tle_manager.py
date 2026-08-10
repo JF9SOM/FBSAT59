@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -893,3 +894,53 @@ class TestFetchActiveTlesCircuitBreaker:
 
         assert stats["celestrak_blocked"] == 0
         assert stats["satnogs_blocked"] == 0
+
+
+class TestActiveTleRetryAfterPersistence:
+    """The retry-due marker (app_settings key 'active_tle_retry_after')
+    must survive being read back by a *different* TLEManager instance on
+    the same DB connection -- standing in for the app being closed and a
+    fresh MainWindow/TLEManager being constructed on the next launch. An
+    in-memory-only marker (e.g. a plain instance attribute) would silently
+    lose a pending retry across a restart, which is exactly the gap this
+    closes (see MainWindow._schedule_active_tle_retry_if_blocked()'s
+    docstring, 2026-08-11).
+    """
+
+    def test_no_marker_by_default(self, db: sqlite3.Connection) -> None:
+        mgr = TLEManager(db)
+        assert mgr.get_active_tle_retry_after() is None
+        assert mgr.is_active_tle_retry_due() is False
+
+    def test_future_marker_is_not_yet_due(self, db: sqlite3.Connection) -> None:
+        mgr = TLEManager(db)
+        mgr.set_active_tle_retry_after(datetime.now(UTC) + timedelta(hours=3))
+        assert mgr.is_active_tle_retry_due() is False
+
+    def test_past_marker_is_due(self, db: sqlite3.Connection) -> None:
+        mgr = TLEManager(db)
+        mgr.set_active_tle_retry_after(datetime.now(UTC) - timedelta(minutes=1))
+        assert mgr.is_active_tle_retry_due() is True
+
+    def test_clearing_with_none_removes_the_marker(self, db: sqlite3.Connection) -> None:
+        mgr = TLEManager(db)
+        mgr.set_active_tle_retry_after(datetime.now(UTC) - timedelta(minutes=1))
+        assert mgr.is_active_tle_retry_due() is True
+        mgr.set_active_tle_retry_after(None)
+        assert mgr.get_active_tle_retry_after() is None
+        assert mgr.is_active_tle_retry_due() is False
+
+    def test_marker_survives_a_fresh_tle_manager_instance_on_the_same_db(
+        self, db: sqlite3.Connection
+    ) -> None:
+        """Simulates an app restart: a new TLEManager is constructed on the
+        same (persisted) DB connection and must still see the marker set by
+        the previous instance."""
+        due_at = datetime.now(UTC) - timedelta(minutes=1)
+        TLEManager(db).set_active_tle_retry_after(due_at)
+
+        restarted_mgr = TLEManager(db)
+        assert restarted_mgr.is_active_tle_retry_due() is True
+        retrieved = restarted_mgr.get_active_tle_retry_after()
+        assert retrieved is not None
+        assert abs((retrieved - due_at).total_seconds()) < 1

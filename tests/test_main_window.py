@@ -2984,10 +2984,14 @@ class TestActiveTleRetryScheduling:
     def test_no_op_when_scheduler_is_none(self, qtbot, db, tle_manager) -> None:
         """_start_scheduler() is disabled for every test in this file (see
         _no_background_sync), so self._scheduler is always None here --
-        this must not raise even when the result reports a block."""
+        this must not raise even when the result reports a block, and the
+        persisted marker (which doesn't depend on the scheduler at all)
+        must still be set."""
         w = self._make_window(qtbot, db, tle_manager)
         assert w._scheduler is None
         w._schedule_active_tle_retry_if_blocked({"celestrak_blocked": 1, "satnogs_blocked": 0})
+        assert w._tle_manager.is_active_tle_retry_due() is False  # ~3h out, not due yet
+        assert w._tle_manager.get_active_tle_retry_after() is not None
 
     def test_schedules_retry_when_celestrak_blocked(self, qtbot, db, tle_manager) -> None:
         w = self._make_window(qtbot, db, tle_manager)
@@ -3004,6 +3008,10 @@ class TestActiveTleRetryScheduling:
         # ~3 hours out, comfortably past CelesTrak's documented 2h window.
         delay = kwargs["run_date"] - datetime.now(UTC)
         assert timedelta(hours=2, minutes=55) < delay < timedelta(hours=3, minutes=5)
+        # The persisted marker must agree with the in-memory job's run_date.
+        persisted = w._tle_manager.get_active_tle_retry_after()
+        assert persisted is not None
+        assert abs((persisted - kwargs["run_date"]).total_seconds()) < 1
 
     def test_schedules_retry_when_satnogs_blocked(self, qtbot, db, tle_manager) -> None:
         w = self._make_window(qtbot, db, tle_manager)
@@ -3020,3 +3028,42 @@ class TestActiveTleRetryScheduling:
         w._schedule_active_tle_retry_if_blocked({"celestrak_blocked": 0, "satnogs_blocked": 0})
 
         w._scheduler.add_job.assert_not_called()
+        assert w._tle_manager.get_active_tle_retry_after() is None
+
+    def test_clean_result_clears_a_previously_persisted_marker(
+        self, qtbot, db, tle_manager
+    ) -> None:
+        """A later, successful run must clear a marker left behind by an
+        earlier blocked run -- otherwise a stale retry-due time could keep
+        forcing fetches long after everything was actually resolved."""
+        w = self._make_window(qtbot, db, tle_manager)
+        w._scheduler = MagicMock()
+        w._schedule_active_tle_retry_if_blocked({"celestrak_blocked": 1, "satnogs_blocked": 0})
+        assert w._tle_manager.get_active_tle_retry_after() is not None
+
+        w._schedule_active_tle_retry_if_blocked({"celestrak_blocked": 0, "satnogs_blocked": 0})
+
+        assert w._tle_manager.get_active_tle_retry_after() is None
+
+    def test_survives_reconstructing_main_window_on_the_same_db(
+        self, qtbot, db, tle_manager
+    ) -> None:
+        """Simulates the app being closed and reopened: a blocked run's
+        marker, persisted by one MainWindow instance, must still be visible
+        (and due) to a brand-new MainWindow built on the same DB -- this is
+        what lets the *next* launch's startup path pick up where a blocked
+        run left off, even though the in-memory APScheduler job from the
+        first instance is long gone (2026-08-11 fix)."""
+        w1 = self._make_window(qtbot, db, tle_manager)
+        w1._scheduler = None
+        w1._schedule_active_tle_retry_if_blocked({"celestrak_blocked": 1, "satnogs_blocked": 0})
+        # Back-date the marker so the "new launch" sees it as already due,
+        # without needing the test to actually wait 3 hours.
+        db.execute(
+            "UPDATE app_settings SET value = ? WHERE key = 'active_tle_retry_after'",
+            ((datetime.now(UTC) - timedelta(minutes=1)).isoformat(),),
+        )
+        db.commit()
+
+        w2 = self._make_window(qtbot, db, tle_manager)
+        assert w2._tle_manager.is_active_tle_retry_due() is True

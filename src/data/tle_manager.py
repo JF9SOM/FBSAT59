@@ -480,6 +480,54 @@ class TLEManager:
         ).fetchone()
         return row is None
 
+    # ── Persisted retry marker for a blocked fetch_active_tles() run ──────
+    #
+    # _log_sync() always records a 'success' sync_log entry once
+    # fetch_active_tles() finishes, even when a phase's _ErrorCountBreaker
+    # cut it short — so is_active_tle_stale() alone would treat a blocked
+    # run as "fresh for the next 24h" and never retry sooner. The 3-hour
+    # retry MainWindow schedules for a still-running app (an in-memory
+    # APScheduler one-shot job) doesn't survive the app being closed and
+    # reopened, either — so without this, closing the app before that
+    # retry fires and reopening it later (but still within 24h of the
+    # blocked run) would silently skip re-fetching, leaving whatever
+    # satellites were left unresolved stuck until the 24h mark (confirmed
+    # gap, 2026-08-11). Persisting the retry time to app_settings lets
+    # is_active_tle_retry_due() give the startup path an independent
+    # reason to fetch again, regardless of how much wall-clock time the
+    # app was actually running for.
+    def get_active_tle_retry_after(self) -> datetime | None:
+        row = self._conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'active_tle_retry_after'"
+        ).fetchone()
+        if not row or not row["value"]:
+            return None
+        try:
+            when = datetime.fromisoformat(str(row["value"]))
+        except ValueError:
+            return None
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=UTC)
+        return when
+
+    def set_active_tle_retry_after(self, when: datetime | None) -> None:
+        """Persist (or, with `when=None`, clear) the retry-due time."""
+        if when is None:
+            self._conn.execute("DELETE FROM app_settings WHERE key = 'active_tle_retry_after'")
+        else:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value) VALUES"
+                " ('active_tle_retry_after', ?)",
+                (when.isoformat(),),
+            )
+        self._conn.commit()
+
+    def is_active_tle_retry_due(self) -> bool:
+        """True if a previously-blocked run's retry time has arrived (or
+        passed) — independent of is_active_tle_stale()'s 24h cadence."""
+        retry_after = self.get_active_tle_retry_after()
+        return retry_after is not None and datetime.now(UTC) >= retry_after
+
     def is_group_empty(self, source_name: str) -> bool:
         """Return True if the tle_group associated with source_name is suspiciously sparse.
 

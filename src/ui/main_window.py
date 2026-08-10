@@ -1565,7 +1565,13 @@ class MainWindow(QMainWindow):
         def _active_progress(msg: str) -> None:
             self._sync_progress.emit(f"🛰 {msg}")
 
-        if self._tle_manager.is_active_tle_stale():
+        # is_active_tle_retry_due() catches the case where a previous run
+        # got blocked partway through and logged a 'success' sync_log entry
+        # anyway (see _schedule_active_tle_retry_if_blocked()'s docstring)
+        # — without it, is_active_tle_stale() alone would treat that run as
+        # "fresh for 24h" and this startup fetch would be skipped even
+        # though satellites were left unresolved.
+        if self._tle_manager.is_active_tle_stale() or self._tle_manager.is_active_tle_retry_due():
             try:
                 active = asyncio.run(
                     self._tle_manager.fetch_active_tles(progress_callback=_active_progress)
@@ -5021,26 +5027,45 @@ class MainWindow(QMainWindow):
         3 hours is comfortably longer than CelesTrak's documented 2-hour
         error-count window (https://celestrak.org/usage-policy.php), so the
         retry should never run into a still-active block from *this* run.
-        Uses a fixed job id with replace_existing=True so repeated trips
-        (this retry itself getting blocked again, e.g. from a manual Update
-        TLE press landing in between) simply push the one pending retry
-        further out rather than stacking up duplicate jobs. Silently a
-        no-op when the scheduler isn't running (e.g. in tests, where
-        _start_scheduler() is disabled).
+
+        Two independent mechanisms, because either one alone has a gap:
+          - An in-memory APScheduler one-shot job (fixed id,
+            replace_existing=True, so repeated trips just push the one
+            pending retry further out) — fires on its own if the app stays
+            running, without waiting for a restart. But it doesn't survive
+            the app being closed: closeEvent() shuts the scheduler down
+            with whatever's still pending simply discarded.
+          - A retry-due time persisted via TLEManager.set_active_tle_retry_after()
+            — survives a restart, and is checked at startup by
+            _refresh_satellite_names_sync() (is_active_tle_retry_due(),
+            alongside the normal 24h is_active_tle_stale() gate) — needed
+            because fetch_active_tles() always logs a 'success' sync_log
+            entry even when a phase's breaker tripped, so
+            is_active_tle_stale() alone would treat a blocked run as
+            "fresh for 24h" and never retry sooner (confirmed gap,
+            2026-08-11: closing the app before the in-memory retry fires
+            and reopening it later, but still within 24h, silently skipped
+            re-fetching).
+
+        On a clean (not blocked) result, clears any persisted marker from
+        an earlier blocked run so a stale retry time doesn't linger.
         """
-        if self._scheduler is None:
+        blocked = bool(result.get("celestrak_blocked") or result.get("satnogs_blocked"))
+        if not blocked:
+            self._tle_manager.set_active_tle_retry_after(None)
             return
-        if not (result.get("celestrak_blocked") or result.get("satnogs_blocked")):
-            return
+
         run_at = datetime.now(UTC) + timedelta(hours=3)
-        self._scheduler.add_job(
-            self._refresh_active_tle_sync,
-            "date",
-            run_date=run_at,
-            id="active_tle_retry",
-            replace_existing=True,
-            misfire_grace_time=1800,
-        )
+        self._tle_manager.set_active_tle_retry_after(run_at)
+        if self._scheduler is not None:
+            self._scheduler.add_job(
+                self._refresh_active_tle_sync,
+                "date",
+                run_date=run_at,
+                id="active_tle_retry",
+                replace_existing=True,
+                misfire_grace_time=1800,
+            )
         logger.info(
             "Active TLE fetch was rate-limited by a provider; retry scheduled for %s",
             run_at.isoformat(),
