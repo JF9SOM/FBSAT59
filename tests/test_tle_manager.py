@@ -895,6 +895,88 @@ class TestFetchActiveTlesCircuitBreaker:
         assert stats["celestrak_blocked"] == 0
         assert stats["satnogs_blocked"] == 0
 
+    def test_phase2a_unreachable_probe_reports_blocked_and_falls_back_to_phase2b(
+        self, db: sqlite3.Connection
+    ) -> None:
+        """A fully-unreachable CelesTrak (TCP connect itself times out --
+        confirmed 2026-08-10 against a real firewall-blocked IP) must still
+        set celestrak_blocked=1, not just log a warning. Without it,
+        _schedule_active_tle_retry_if_blocked() (main_window.py) never
+        triggers the 3h backoff, and the status bar is left stuck on the
+        "CelesTrak: N satellite(s)..." message with no error shown and no
+        indication anything will retry later.
+        """
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (68795, 'OrigamiSat-2', 'alive', 0)"
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            side_effect=[_bulk_resp()] * 5
+            + [httpx.ConnectTimeout("connect timed out")]  # Phase 2a probe
+            + [_probe_ok_resp()]  # Phase 2b probe
+            + [_satnogs_resp(_LINE1_B, _LINE2_B)]  # Phase 2b resolves it
+        )
+
+        progress_messages: list[str] = []
+
+        with (
+            patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
+            patch.object(mgr, "_log_sync"),
+        ):
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            stats = asyncio.run(mgr.fetch_active_tles(progress_callback=progress_messages.append))
+
+        assert stats["celestrak_blocked"] == 1
+        assert stats["satnogs_blocked"] == 0
+        assert stats["updated"] + stats["inserted"] == 1
+        assert any("unreachable" in m for m in progress_messages)
+
+    def test_phase2b_unreachable_probe_reports_blocked_and_preserves_unresolved_count(
+        self, db: sqlite3.Connection
+    ) -> None:
+        """Mirrors the Phase 2a case above for SATNOGS, and also guards
+        against a related bug: the unreachable branch used to reset
+        `remaining` to an empty dict to skip the fetch loop, which corrupted
+        phase2_unresolved to 0 -- making the "Fetched X/Y" status message
+        falsely claim every satellite resolved when in fact none did.
+        """
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (68795, 'OrigamiSat-2', 'alive', 0)"
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            side_effect=[_bulk_resp()] * 5
+            + [_probe_ok_resp()]  # Phase 2a probe
+            + [_catnr_not_found_resp()]  # Phase 2a: CelesTrak doesn't have it
+            + [httpx.ConnectTimeout("connect timed out")]  # Phase 2b probe
+        )
+
+        progress_messages: list[str] = []
+
+        with (
+            patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
+            patch.object(mgr, "_log_sync"),
+        ):
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            stats = asyncio.run(mgr.fetch_active_tles(progress_callback=progress_messages.append))
+
+        assert stats["celestrak_blocked"] == 0
+        assert stats["satnogs_blocked"] == 1
+        assert stats["phase2_total"] == 1
+        assert stats["phase2_unresolved"] == 1
+        assert stats["updated"] + stats["inserted"] == 0
+        assert any("unreachable" in m for m in progress_messages)
+
 
 class TestActiveTleRetryAfterPersistence:
     """The retry-due marker (app_settings key 'active_tle_retry_after')

@@ -914,27 +914,55 @@ class TLEManager:
                     "CelesTrak unreachable — skipping %d individual CATNR fetch(es) this run",
                     len(remaining),
                 )
+                # Treat a fully-unreachable host the same as an explicit 403
+                # block: without this, the caller's stats dict never gets
+                # celestrak_blocked=1 and _schedule_active_tle_retry_if_blocked()
+                # (main_window.py) has nothing to trigger on, so the status bar
+                # is left stuck on the "CelesTrak: N satellite(s)..." message
+                # from just above with no indication anything went wrong, and
+                # the next attempt happens on the normal 24h/2h schedule with
+                # no backoff -- silently repeating the same fast-fail forever
+                # instead of pausing and surfacing an error (2026-08-10,
+                # confirmed against a real firewall-blocked IP: TCP connect
+                # itself times out, never even reaching an HTTP response).
+                stats["celestrak_blocked"] = 1
+                if progress_callback:
+                    progress_callback(
+                        f"CelesTrak unreachable — {len(remaining)} satellite(s) deferred"
+                    )
 
             # ── Phase 2b: SATNOGS TLE API fallback for whatever Phase 2a
             # didn't resolve ───────────────────────────────────────────────
             if remaining and progress_callback:
                 progress_callback(f"SATNOGS: {len(remaining)} satellite(s)...")
+            # Tracked separately rather than emptying `remaining` on an
+            # unreachable probe: `remaining` also feeds phase2_unresolved
+            # below, and clearing it here used to make an unreachable SATNOGS
+            # look like "everything got resolved" in the "Fetched X/Y" status
+            # message (2026-08-10 fix, alongside the celestrak_blocked gap
+            # noted above).
+            satnogs_reachable = True
             if remaining:
                 probe_norad = next(iter(remaining))
                 probe_source_id = remaining[probe_norad][3]
                 probe_query_id = probe_source_id if probe_source_id is not None else probe_norad
-                if not await _probe_reachable(
+                satnogs_reachable = await _probe_reachable(
                     SATNOGS_TLE_URL, {"norad_cat_id": probe_query_id, "format": "json"}
-                ):
+                )
+                if not satnogs_reachable:
                     logger.warning(
                         "SATNOGS TLE API unreachable — skipping %d individual "
                         "fallback fetch(es) this run",
                         len(remaining),
                     )
                     stats["errors"] += len(remaining)
-                    remaining = {}
+                    stats["satnogs_blocked"] = 1
+                    if progress_callback:
+                        progress_callback(
+                            f"SATNOGS unreachable — {len(remaining)} satellite(s) deferred"
+                        )
 
-            if remaining:
+            if remaining and satnogs_reachable:
                 breaker_2b = _ErrorCountBreaker(_SATNOGS_TLE_ERROR_LIMIT)
 
                 async def _fetch_one(
