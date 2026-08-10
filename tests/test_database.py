@@ -96,6 +96,46 @@ class TestTransmitterCRUD:
         assert row["downlink_low"] == 145800000
         assert row["mode"] == "FM"
 
+    def test_rx_offset_hz_defaults_to_zero(self, db_conn: sqlite3.Connection) -> None:
+        """GitHub Issue #18: new transponder rows start with no persistent
+        RX offset until the operator explicitly sets one."""
+        db_conn.execute(
+            "INSERT INTO satellites (norad_cat_id, name) VALUES (?, ?)",
+            (44909, "RS-44"),
+        )
+        db_conn.execute(
+            """INSERT INTO transmitters
+               (uuid, norad_cat_id, description, downlink_low, mode, source)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            ("rx-offset-default", 44909, "RS-44 FT4", 435612000, "USB-D", "manual"),
+        )
+        db_conn.commit()
+        row = db_conn.execute(
+            "SELECT rx_offset_hz FROM transmitters WHERE uuid = 'rx-offset-default'"
+        ).fetchone()
+        assert row["rx_offset_hz"] == 0
+
+    def test_rx_offset_hz_update_persists(self, db_conn: sqlite3.Connection) -> None:
+        db_conn.execute(
+            "INSERT INTO satellites (norad_cat_id, name) VALUES (?, ?)",
+            (44909, "RS-44"),
+        )
+        db_conn.execute(
+            """INSERT INTO transmitters
+               (uuid, norad_cat_id, description, downlink_low, mode, source)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            ("rx-offset-update", 44909, "RS-44 FT4", 435612000, "USB-D", "manual"),
+        )
+        db_conn.execute(
+            "UPDATE transmitters SET rx_offset_hz = ? WHERE uuid = ?",
+            (-1240.0, "rx-offset-update"),
+        )
+        db_conn.commit()
+        row = db_conn.execute(
+            "SELECT rx_offset_hz FROM transmitters WHERE uuid = 'rx-offset-update'"
+        ).fetchone()
+        assert row["rx_offset_hz"] == -1240.0
+
     def test_cascade_delete(self, db_conn: sqlite3.Connection) -> None:
         db_conn.execute(
             "INSERT INTO satellites (norad_cat_id, name) VALUES (?, ?)",

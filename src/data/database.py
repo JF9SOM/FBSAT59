@@ -53,6 +53,8 @@ CREATE TABLE IF NOT EXISTS transmitters (
     notes           TEXT DEFAULT '',    -- User notes
     satnogs_status  TEXT DEFAULT NULL,  -- raw SATNOGS status: 'active'/'inactive'/'invalid'
                                          -- (NULL for manual/community entries)
+    rx_offset_hz    REAL DEFAULT 0,     -- Persistent per-transponder downlink correction (Hz),
+                                         -- added to downlink_low before Doppler correction
     updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -161,6 +163,8 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         "ALTER TABLE satellites ADD COLUMN favorite_group INTEGER DEFAULT 0",
         # raw SATNOGS status ('active'/'inactive'/'invalid'); NULL for manual/community
         "ALTER TABLE transmitters ADD COLUMN satnogs_status TEXT DEFAULT NULL",
+        # Persistent per-transponder downlink correction (Hz); see GitHub Issue #18
+        "ALTER TABLE transmitters ADD COLUMN rx_offset_hz REAL DEFAULT 0",
     ]
     for stmt in migrations:
         with contextlib.suppress(Exception):
@@ -244,7 +248,8 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
             "uuid, norad_cat_id, description, type,"
             " uplink_low, uplink_high, downlink_low, downlink_high,"
             " mode, invert, baud, ctcss_tone, ctcss_tone_type,"
-            " alive, source, manual_override, notes, satnogs_status, updated_at"
+            " alive, source, manual_override, notes, satnogs_status,"
+            " rx_offset_hz, updated_at"
         )
         conn.execute("DROP TABLE IF EXISTS _transmitters_backup")
         conn.execute("ALTER TABLE transmitters RENAME TO _transmitters_backup")
@@ -272,6 +277,7 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
                 manual_override INTEGER DEFAULT 0,
                 notes           TEXT DEFAULT '',
                 satnogs_status  TEXT DEFAULT NULL,
+                rx_offset_hz    REAL DEFAULT 0,
                 updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)

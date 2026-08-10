@@ -59,6 +59,12 @@ from sdr import LAMEENC_AVAILABLE, AudioRecorder
 _XPDR_INACTIVE_BG = QColor("#b8860b")  # dark goldenrod — SATNOGS status=inactive
 _XPDR_INVALID_BG = QColor("#8b0000")  # dark red — SATNOGS status=invalid
 
+# Persistent per-transponder RX offset (GitHub Issue #18). Range/step are
+# sized for TCXO-aging-style drift (typically sub-kHz to a few kHz), not for
+# recovering from picking the wrong transponder entirely.
+_RX_OFFSET_RANGE_HZ = 5000
+_RX_OFFSET_STEP_HZ = 10
+
 logger = logging.getLogger(__name__)
 
 
@@ -77,6 +83,9 @@ class RadioControlWidget(QWidget):
     cycle_changed: Signal = Signal(int)  # ms
     tune_requested: Signal = Signal()
     lock_changed: Signal = Signal(bool)
+    # Emitted when the user edits the persistent per-transponder RX offset
+    # spinbox (GitHub Issue #18) — not emitted for programmatic display updates.
+    rx_offset_changed: Signal = Signal(float)
     rig_connected: Signal = Signal()
     rig_disconnected: Signal = Signal()
     rig2_connected: Signal = Signal()
@@ -164,6 +173,25 @@ class RadioControlWidget(QWidget):
         name_norad_row.addSpacing(20)
         name_norad_row.addWidget(QLabel("NORAD:"))
         name_norad_row.addWidget(self._norad_label)
+        name_norad_row.addSpacing(20)
+        name_norad_row.addWidget(QLabel(_("Offset:")))
+        self._offset_spin = QSpinBox()
+        self._offset_spin.setRange(-_RX_OFFSET_RANGE_HZ, _RX_OFFSET_RANGE_HZ)
+        self._offset_spin.setSingleStep(_RX_OFFSET_STEP_HZ)
+        self._offset_spin.setSuffix(_(" Hz"))
+        self._offset_spin.setToolTip(
+            _(
+                "Persistent per-transponder RX (downlink) correction, saved with this "
+                "transponder. Added to the nominal downlink before Doppler correction, "
+                "so it carries over to every future pass and survives Tune (T). "
+                "Positive shifts the corrected frequency higher. Use this for a "
+                "satellite's known, fixed frequency error (e.g. TCXO aging); use "
+                "Lock (L) for real-time manual retuning within a pass."
+            )
+        )
+        self._offset_spin.setEnabled(False)
+        self._offset_spin.valueChanged.connect(self._on_offset_spin_changed)
+        name_norad_row.addWidget(self._offset_spin)
         name_norad_row.addStretch()
         sat_form.addRow(_("Name:"), name_norad_row)
 
@@ -451,6 +479,7 @@ class RadioControlWidget(QWidget):
         self._xpdr_combo.blockSignals(False)
         self._clear_frequency()
         self.update_ctcss(None, None)
+        self._sync_offset_display(None)
 
     def current_transmitter(self) -> dict[str, Any] | None:
         """Return the currently selected transponder dict, or None if none selected."""
@@ -483,6 +512,7 @@ class RadioControlWidget(QWidget):
             self._xpdr_combo.setCurrentIndex(idx)
         self._xpdr_combo.blockSignals(False)
         selected = transmitters[default_index] if transmitters else None
+        self._sync_offset_display(selected)
         self.transmitter_changed.emit(selected)
 
     def update_doppler(
@@ -674,8 +704,21 @@ class RadioControlWidget(QWidget):
     def _on_xpdr_changed(self, index: int) -> None:
         if 0 <= index < len(self._transmitters):
             xpdr = self._transmitters[index]
+            self._sync_offset_display(xpdr)
             self.transmitter_changed.emit(xpdr)
             self._check_comms_auto_open(xpdr)
+
+    def _sync_offset_display(self, xpdr: dict[str, Any] | None) -> None:
+        """Reflect *xpdr*'s saved rx_offset_hz in the Offset spinbox without
+        emitting rx_offset_changed (blockSignals) -- this is a display refresh
+        driven by satellite/transponder selection, not a user edit."""
+        self._offset_spin.blockSignals(True)
+        self._offset_spin.setValue(int(xpdr.get("rx_offset_hz") or 0) if xpdr else 0)
+        self._offset_spin.blockSignals(False)
+        self._offset_spin.setEnabled(xpdr is not None)
+
+    def _on_offset_spin_changed(self, value: int) -> None:
+        self.rx_offset_changed.emit(float(value))
 
     def _check_comms_auto_open(self, xpdr: Any) -> None:
         """Store the comms tab to open once the rig connects (not immediately).

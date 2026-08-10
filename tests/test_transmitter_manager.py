@@ -232,3 +232,58 @@ class TestSyncSatelliteNamesPageFailure:
 
         row = db.execute("SELECT is_hidden FROM satellites WHERE norad_cat_id = 25544").fetchone()
         assert row["is_hidden"] == 0
+
+
+class TestUpdateTransmitterRxOffset:
+    """update_transmitter(uuid, rx_offset_hz=...) -- GitHub Issue #18's
+    persistent per-transponder RX offset (Radio Control tab's Offset spinbox)."""
+
+    def test_rx_offset_hz_is_persisted(self, db: sqlite3.Connection) -> None:
+        mgr = TransmitterManager(db)
+        xpdr_uuid = mgr.add_manual_transmitter(
+            norad_cat_id=44909,
+            description="RS-44 FT4",
+            downlink_low=435612000,
+            mode="USB-D",
+        )
+
+        mgr.update_transmitter(xpdr_uuid, rx_offset_hz=-1240.0)
+
+        row = db.execute(
+            "SELECT rx_offset_hz FROM transmitters WHERE uuid = ?", (xpdr_uuid,)
+        ).fetchone()
+        assert row["rx_offset_hz"] == -1240.0
+
+        # get_transmitters() must surface it too (Radio Control reads the
+        # transponder dict returned from here, not raw SQL).
+        xpdrs = mgr.get_transmitters(44909)
+        assert xpdrs[0]["rx_offset_hz"] == -1240.0
+
+    def test_rx_offset_hz_survives_community_resync(self, db: sqlite3.Connection) -> None:
+        """A locally-set rx_offset_hz must not be wiped out by a later
+        community/SATNOGS transmitter resync -- update_transmitter() and the
+        sync UPDATE statements both use explicit column lists that never
+        touch rx_offset_hz."""
+        mgr = TransmitterManager(db)
+        xpdr_uuid = mgr.add_manual_transmitter(
+            norad_cat_id=44909,
+            description="RS-44 FT4",
+            downlink_low=435612000,
+            mode="USB-D",
+            manual_override=False,
+        )
+        mgr.update_transmitter(xpdr_uuid, rx_offset_hz=-1240.0)
+
+        # Simulate what a resync would do to every other column, using the
+        # exact explicit-column UPDATE style the sync methods use.
+        db.execute(
+            "UPDATE transmitters SET description = ?, downlink_low = ? WHERE uuid = ?",
+            ("RS-44 FT4 (resynced)", 435612500, xpdr_uuid),
+        )
+        db.commit()
+
+        row = db.execute(
+            "SELECT rx_offset_hz, description FROM transmitters WHERE uuid = ?", (xpdr_uuid,)
+        ).fetchone()
+        assert row["rx_offset_hz"] == -1240.0
+        assert row["description"] == "RS-44 FT4 (resynced)"

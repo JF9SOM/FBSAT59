@@ -4403,6 +4403,80 @@ _sdr_tune_offset`の式で常に維持される、Doppler-cycle経由の正し�
 
 ---
 
+## 永続的な per-transponder RX オフセット（GitHub Issue #18、2026-08-10 実装）
+
+### 背景
+
+Lock（dial feedback）はセッション内のみの手動補正で、衛星切り替え・Tune・アプリ再起動で
+毎回リセットされる。ユーザーから「衛星のTCXO経年劣化等による恒久的な周波数ズレを、
+パスのたびに手動で合わせ直さずに済むよう、トランスポンダーごとに保存できるオフセットが
+欲しい」との要望（Issue #18）があった。TCXOドリフト起因のズレは衛星ごとにほぼ一定で
+パスをまたいでも変わらないことが多いため、永続化が有効という判断（ユーザーとの事前検討で
+確定）。温度依存のパス内リアルタイムドリフトまでは吸収できず、その分は引き続きLockで
+運用者が追従する必要がある。
+
+### 設計（ユーザー確定の3点）
+
+1. **保存単位はトランスポンダー（`transmitters`行）ごと**（衛星＝NORAD IDごとではない）
+2. **Tune（T）ボタン押下時も保持する**（リセットしない）— T一発でオフセット込みの正しい
+   中心周波数へ戻れることが、Issue #18の目的（パス開始時の再チューニング省略）に直結するため
+3. **DLのみ（v1スコープ）**。ULは引き続きLock等で運用者が都度合わせる
+
+### UI（`src/ui/radio_control_widget.py`）
+
+`sat_group`内の`name_norad_row`（NORAD値表示の右横の空きスペース）に`QSpinBox`
+（`_offset_spin`、範囲±5000Hz・ステップ10Hz・サフィックス" Hz"）を配置。カスタムの▲▼
+ボタンではなくQt標準の`QSpinBox`を使うことで、「手動で直接タイプ入力」「内蔵の上下矢印で
+インクリメント」の両方を追加コードなしで満たす（Qtの既定レンダリングは値欄が左・矢印が
+右端の縦積みで、まさに要望通りの見た目になる）。
+
+- 選択中トランスポンダーが無い間は無効化・0表示（`_sync_offset_display(None)`）
+- トランスポンダー切り替え（`_on_xpdr_changed`）・初期選択（`set_transmitters`）のたびに
+  該当行の`rx_offset_hz`（無ければ0）を`blockSignals`で表示のみ同期（ユーザー編集と
+  区別するため、プログラム的な表示更新では`rx_offset_changed`シグナルを発火しない）
+- ユーザーが値を変更すると`rx_offset_changed: Signal(float)`を発火
+
+### データ（`src/data/database.py` / `src/data/transmitter_manager.py`）
+
+- `transmitters.rx_offset_hz REAL DEFAULT 0`（`manual_override`/`favorite_group`と同じ
+  `ALTER TABLE`マイグレーションパターン。CHECK制約変更に伴う旧テーブル再作成パス
+  （`needs_tx_migration`）にも列を追加済み、対象になった場合でも値が失われない）
+- SATNOGS/communityの同期はすべて列を明示指定した`UPDATE`文のため、この列は再同期で
+  上書きされない（追加の保護ロジック不要）
+- `TransmitterManager.update_transmitter()`の`allowed`集合に`"rx_offset_hz"`を追加した
+  だけで、既存の汎用アップデートAPIをそのまま再利用（専用セッター不要）
+
+### 適用ロジック（`src/ui/main_window.py`）
+
+- `_doppler_cycle()`: `dl_nom`を読んだ直後に`dl_nom += rx_offset_hz`として、以降の
+  `DopplerCalculator.correct_downlink()`・Tune上書き消費・表示・リグ送信すべてに単一の
+  注入点で反映させる。Lockの`_dial_feedback_offset_hz`（ドップラー計算**後**に加算し
+  `dl_shift`をNoneにする設計）とは異なり、こちらは計算**前**の"公称値"を動かすため、
+  `dl_shift`は「オフセット込みの正しい基準からの純粋なドップラーシフト」として意味を
+  保ったまま表示され続ける（Noneにしない）
+- `_on_tune_requested()`: `_tune_dl_override`の算出（バンド中心 or `downlink_low`）に
+  `rx_offset_hz`を加算。`_dial_feedback_offset_hz`は従来通り0にリセットするが、
+  `rx_offset_hz`はリセットしない
+- `_on_rx_offset_changed(value)`: `self._current_transmitter["rx_offset_hz"]`を直接書き換え
+  （次のDopplerWorkerサイクルが即座に新しい値を使えるようにするため、DB再読込を待たない）
+  つつ、`TransmitterManager.update_transmitter(uuid, rx_offset_hz=value)`でDBへ永続化
+- **Moon/EME（MOON_ID）は対象外**: `_doppler_cycle()`自体がMOON_IDを除外しており、
+  `_update_moon()`はこのフィールドを一切参照しない。EMEトランスミッタは
+  `eme_frequencies.json`由来でDB行を持たないため、Offsetスピンボックス自体は
+  （ウィジェットがMOON_IDを意識しない設計のため）表示・編集はできてしまうが、
+  `_on_rx_offset_changed()`の`UPDATE ... WHERE uuid=?`は該当行が無く無害な no-op に
+  なるだけで、Moonのドップラー計算には一切影響しない（Lock機能が既にMoonに対して同様に
+  機能的に無力なのと同じ、意図的な未対応）
+
+テスト: `tests/test_database.py`（`rx_offset_hz`のデフォルト値・永続化）・
+`tests/test_transmitter_manager.py`（`update_transmitter()`経由の永続化・community/SATNOGS
+再同期後も値が生き残ること）・`tests/test_main_window.py`
+（`TestTuneLockButtons`にOffsetスピンボックスのUI同期・シグナル発火テスト、
+`TestLockDialFeedback`に`_doppler_cycle()`でのオフセット折り込み・Lock offsetとの合成・
+`_on_tune_requested()`でのオフセット保持・`_on_rx_offset_changed()`の永続化テストを追加）。
+
+---
+
 ## Rig-Specific Implementation Notes
 
 ### FTX-1F (Hamlib model 1051)

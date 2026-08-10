@@ -1732,6 +1732,32 @@ class TestTuneLockButtons:
         assert w._tune_dl_override == (145_800_000 + 145_950_000) / 2
         assert w._tune_ul_override == (435_000_000 + 435_150_000) / 2
 
+    def test_tune_preserves_rx_offset_but_resets_dial_feedback(self, qtbot, db) -> None:
+        """GitHub Issue #18: T discards Lock's in-session dial-feedback
+        offset but keeps the saved per-transponder rx_offset_hz -- pressing
+        T is meant to land on the *corrected* band centre (this is what
+        lets T replace re-finding the frequency by ear/RIT at AOS), not the
+        raw catalog centre. UL is untouched (rx_offset_hz is DL-only, v1)."""
+        from data.tle_manager import TLEManager
+        from ui.main_window import MainWindow
+
+        tle_manager = TLEManager(db)
+        w = MainWindow(conn=db, tle_manager=tle_manager)
+        qtbot.addWidget(w)
+        w._dial_feedback_offset_hz = 999.0
+        w._current_transmitter = {
+            "downlink_low": 145_800_000,
+            "downlink_high": 145_950_000,
+            "uplink_low": 435_000_000,
+            "uplink_high": 435_150_000,
+            "invert": False,
+            "rx_offset_hz": 500.0,
+        }
+        w._on_tune_requested()
+        assert w._dial_feedback_offset_hz == 0.0
+        assert w._tune_dl_override == (145_800_000 + 145_950_000) / 2 + 500.0
+        assert w._tune_ul_override == (435_000_000 + 435_150_000) / 2
+
     def test_lock_flag_updated(self, qtbot, db) -> None:
         """Lock ボタントグルで _trsp_lock フラグが更新される。"""
         from data.tle_manager import TLEManager
@@ -1780,6 +1806,82 @@ class TestTuneLockButtons:
         assert w._trsp_lock is True
         w._lock_shortcut.activated.emit()
         assert w._trsp_lock is False
+
+    # -- Offset spinbox (GitHub Issue #18): RadioControlWidget-level behavior --
+
+    def test_offset_spin_exists_and_disabled_without_transponder(self, qtbot) -> None:
+        from ui.radio_control_widget import RadioControlWidget
+
+        w = RadioControlWidget()
+        qtbot.addWidget(w)
+        assert hasattr(w, "_offset_spin")
+        assert w._offset_spin.isEnabled() is False
+        assert w._offset_spin.value() == 0
+
+    def test_offset_spin_syncs_from_set_transmitters(self, qtbot) -> None:
+        from ui.radio_control_widget import RadioControlWidget
+
+        w = RadioControlWidget()
+        qtbot.addWidget(w)
+        w.set_transmitters([{"description": "Beacon", "rx_offset_hz": 250.0}])
+        assert w._offset_spin.isEnabled() is True
+        assert w._offset_spin.value() == 250
+
+    def test_offset_spin_syncs_on_xpdr_combo_change(self, qtbot) -> None:
+        """Switching transponders on the same satellite must show that
+        transponder's own saved offset, not the previous selection's."""
+        from ui.radio_control_widget import RadioControlWidget
+
+        w = RadioControlWidget()
+        qtbot.addWidget(w)
+        w.set_transmitters(
+            [
+                {"description": "Beacon", "rx_offset_hz": 250.0},
+                {"description": "Repeater", "rx_offset_hz": -75.0},
+            ]
+        )
+        assert w._offset_spin.value() == 250
+        w._xpdr_combo.setCurrentIndex(1)
+        assert w._offset_spin.value() == -75
+
+    def test_offset_spin_missing_key_defaults_to_zero(self, qtbot) -> None:
+        from ui.radio_control_widget import RadioControlWidget
+
+        w = RadioControlWidget()
+        qtbot.addWidget(w)
+        w.set_transmitters([{"description": "No offset column yet"}])
+        assert w._offset_spin.value() == 0
+
+    def test_offset_spin_programmatic_sync_does_not_emit(self, qtbot) -> None:
+        from ui.radio_control_widget import RadioControlWidget
+
+        w = RadioControlWidget()
+        qtbot.addWidget(w)
+        received: list[float] = []
+        w.rx_offset_changed.connect(received.append)
+        w.set_transmitters([{"description": "Beacon", "rx_offset_hz": 250.0}])
+        assert received == []
+
+    def test_offset_spin_user_edit_emits_signal(self, qtbot) -> None:
+        from ui.radio_control_widget import RadioControlWidget
+
+        w = RadioControlWidget()
+        qtbot.addWidget(w)
+        w.set_transmitters([{"description": "Beacon", "rx_offset_hz": 0.0}])
+        received: list[float] = []
+        w.rx_offset_changed.connect(received.append)
+        w._offset_spin.setValue(-1240)
+        assert received == [-1240.0]
+
+    def test_clear_satellite_resets_offset_spin(self, qtbot) -> None:
+        from ui.radio_control_widget import RadioControlWidget
+
+        w = RadioControlWidget()
+        qtbot.addWidget(w)
+        w.set_transmitters([{"description": "Beacon", "rx_offset_hz": 250.0}])
+        w.clear_satellite()
+        assert w._offset_spin.isEnabled() is False
+        assert w._offset_spin.value() == 0
 
 
 class TestLockDialFeedback:
@@ -2653,6 +2755,88 @@ class TestLockDialFeedback:
         assert result.dl_corr == expected_dl_corr
         assert result.ul_corr == expected_ul_corr
         assert result.ul_shift == expected_ul_shift
+
+    # -- _doppler_cycle(): persistent per-transponder rx_offset_hz (Issue #18) --
+
+    def test_doppler_cycle_folds_rx_offset_into_dl_only(self, qtbot, db) -> None:
+        """rx_offset_hz is folded into the nominal DL *before* Doppler
+        correction (unlike Lock's dial-feedback offset, which is added
+        after) -- so dl_shift stays a legitimate Doppler-only figure
+        relative to the offset-corrected baseline instead of being nulled.
+        DL-only scope (v1): UL is untouched."""
+        w = self._make_window(qtbot, db)
+        w._rig_controller = None
+        w._rig2_controller = None
+        w._dial_feedback_offset_hz = 0.0
+        transmitter = {**self._TRANSMITTER, "rx_offset_hz": 500.0}
+        received = self._run_doppler_cycle(
+            w, rig=None, rr=0.0, transmitter=transmitter, trsp_lock=False
+        )
+        assert len(received) == 1
+        result = received[0]
+        assert result.dl_corr == 145_800_500.0
+        assert result.dl_shift == 0.0
+        assert result.ul_corr == 435_000_000.0
+
+    def test_doppler_cycle_composes_with_lock_dial_feedback(self, qtbot, db) -> None:
+        """The persistent rx_offset_hz (folded pre-Doppler) and Lock's live
+        dial-feedback offset (added post-Doppler) are independent additive
+        layers and must both apply at once."""
+        w = self._make_window(qtbot, db)
+        w._rig_controller = None
+        w._rig2_controller = None
+        w._dial_feedback_offset_hz = 80.0
+        transmitter = {**self._TRANSMITTER, "rx_offset_hz": 500.0}
+        received = self._run_doppler_cycle(
+            w, rig=None, rr=0.0, transmitter=transmitter, trsp_lock=True
+        )
+        assert len(received) == 1
+        assert received[0].dl_corr == 145_800_580.0
+
+    def test_doppler_cycle_missing_rx_offset_key_defaults_to_zero(self, qtbot, db) -> None:
+        """Transponder dicts predating this feature (or EME entries loaded
+        from eme_frequencies.json, which never gained this key) simply lack
+        rx_offset_hz -- must not raise and must behave as if it were 0."""
+        w = self._make_window(qtbot, db)
+        w._rig_controller = None
+        w._rig2_controller = None
+        w._dial_feedback_offset_hz = 0.0
+        received = self._run_doppler_cycle(
+            w, rig=None, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=False
+        )
+        assert len(received) == 1
+        assert received[0].dl_corr == 145_800_000.0
+
+    # -- _on_rx_offset_changed(): Offset spinbox edit -> DB + in-memory --
+
+    def test_on_rx_offset_changed_persists_and_updates_in_memory(self, qtbot, db) -> None:
+        """Must both write to the DB (so it survives a restart/reselect)
+        and update the in-memory transponder dict immediately (so the very
+        next DopplerWorker cycle picks it up without a DB re-read)."""
+        from data.transmitter_manager import TransmitterManager
+
+        w = self._make_window(qtbot, db)
+        mgr = TransmitterManager(db)
+        xpdr_uuid = mgr.add_manual_transmitter(
+            norad_cat_id=44909,
+            description="RS-44 FT4",
+            downlink_low=435_612_000,
+            mode="USB-D",
+        )
+        w._current_transmitter = mgr.get_transmitters(44909)[0]
+
+        w._on_rx_offset_changed(-1240.0)
+
+        assert w._current_transmitter["rx_offset_hz"] == -1240.0
+        row = db.execute(
+            "SELECT rx_offset_hz FROM transmitters WHERE uuid = ?", (xpdr_uuid,)
+        ).fetchone()
+        assert row["rx_offset_hz"] == -1240.0
+
+    def test_on_rx_offset_changed_noop_without_current_transmitter(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._current_transmitter = None
+        w._on_rx_offset_changed(100.0)  # must not raise
 
 
 class TestRadioType:

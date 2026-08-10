@@ -673,6 +673,7 @@ class MainWindow(QMainWindow):
         self._radio_control.cycle_changed.connect(self._on_cycle_changed)
         self._radio_control.tune_requested.connect(self._on_tune_requested)
         self._radio_control.lock_changed.connect(self._on_lock_changed)
+        self._radio_control.rx_offset_changed.connect(self._on_rx_offset_changed)
         self._rot_pos_updated.connect(self._on_rotator_pos_updated)
         self._radio_control.ctcss_send_requested.connect(self._on_ctcss_send)
         self._radio_control.ctcss_activate_requested.connect(self._on_ctcss_activate)
@@ -3022,6 +3023,15 @@ class MainWindow(QMainWindow):
         ul_nom = self._current_transmitter.get("uplink_low")
         invert = bool(self._current_transmitter.get("invert", False))
         mode = self._current_transmitter.get("mode")
+        # Persistent per-transponder RX offset (GitHub Issue #18): a fixed,
+        # known correction (e.g. satellite TCXO aging) that the operator no
+        # longer has to rediscover every pass. Folded into the nominal DL
+        # *before* Doppler correction (rather than added to dl_corr after,
+        # like Lock's dial-feedback offset below) so it also carries through
+        # to _on_tune_requested()'s band-centre recompute automatically.
+        rx_offset_hz = float(self._current_transmitter.get("rx_offset_hz") or 0.0)
+        if dl_nom is not None and rx_offset_hz != 0.0:
+            dl_nom = float(dl_nom) + rx_offset_hz
         dl_corr, dl_shift = (
             DopplerCalculator.correct_downlink(float(dl_nom), rr)
             if dl_nom is not None
@@ -4125,6 +4135,19 @@ class MainWindow(QMainWindow):
         # manual-retune offset from the previous one is no longer
         # meaningful.
         self._dial_feedback_offset_hz = 0.0
+
+    def _on_rx_offset_changed(self, value: float) -> None:
+        """Persist the Offset spinbox's new value for the current transponder
+        (GitHub Issue #18). Updates the in-memory dict too so the next
+        DopplerWorker cycle picks it up immediately, without waiting for a
+        DB re-read."""
+        if self._current_transmitter is None:
+            return
+        xpdr_uuid = self._current_transmitter.get("uuid")
+        if not xpdr_uuid:
+            return
+        self._current_transmitter["rx_offset_hz"] = value
+        self._transmitter_manager.update_transmitter(xpdr_uuid, rx_offset_hz=value)
 
     def _disconnect_rig(self) -> None:
         """Disconnect the rig and refresh the UI status."""
@@ -5468,16 +5491,22 @@ class MainWindow(QMainWindow):
             return
         # Discards any accumulated Lock dial-feedback offset -- T means
         # "go back to the exact centre", overriding any manual retuning.
+        # The persistent per-transponder Offset (GitHub Issue #18) is
+        # deliberately NOT discarded here -- it is a saved, known correction
+        # for this transponder (not an in-session manual retune), so "centre"
+        # means the offset-corrected centre. This is what lets pressing T at
+        # the start of a pass replace re-finding the frequency by ear/RIT.
         self._dial_feedback_offset_hz = 0.0
+        rx_offset_hz = float(self._current_transmitter.get("rx_offset_hz") or 0.0)
         dl_low = self._current_transmitter.get("downlink_low")
         dl_high = self._current_transmitter.get("downlink_high")
         ul_low = self._current_transmitter.get("uplink_low")
         ul_high = self._current_transmitter.get("uplink_high")
 
         if dl_low is not None and dl_high is not None:
-            self._tune_dl_override = (float(dl_low) + float(dl_high)) / 2
+            self._tune_dl_override = (float(dl_low) + float(dl_high)) / 2 + rx_offset_hz
         elif dl_low is not None:
-            self._tune_dl_override = float(dl_low)
+            self._tune_dl_override = float(dl_low) + rx_offset_hz
 
         if ul_low is not None and ul_high is not None:
             self._tune_ul_override = (float(ul_low) + float(ul_high)) / 2
