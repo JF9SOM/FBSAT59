@@ -3166,6 +3166,67 @@ class TestFetchAllTleSourcesGuardAndFeedback:
 
         prov_mock.assert_awaited_once()
 
+    def test_blocked_status_message_survives_the_provisional_fetch_afterward(
+        self, qtbot, db, tle_manager
+    ) -> None:
+        """2026-08-11 regression: fetch_provisional_tles() runs *after*
+        fetch_active_tles() and reports its own progress through the same
+        status-bar signal. When fetch_active_tles() came back blocked, the
+        "blocked, retry in Nh" message must be shown *after*
+        fetch_provisional_tles() finishes, not right after
+        fetch_active_tles() -- otherwise provisional's own "Fetching
+        provisional TLEs... (N/N)" progress message clobbers it, and the
+        final blank-out is deliberately skipped while blocked (so the user
+        can read the message), leaving that stale progress line stuck on
+        screen forever. Reported live: the status bar stayed on "Fetching
+        provisional TLEs..." even though every fetch had already finished
+        successfully, so the user force-closed the app thinking it hung."""
+        from unittest.mock import AsyncMock, patch
+
+        w = self._make_window(qtbot, db, tle_manager)
+        self._stub_reachable(w)
+        w._tle_manager.fetch_and_update = AsyncMock(  # type: ignore[method-assign]
+            return_value={"inserted": 0, "updated": 0, "errors": 0}
+        )
+        w._tle_manager.fetch_active_tles = AsyncMock(  # type: ignore[method-assign]
+            return_value={
+                "inserted": 0,
+                "updated": 125,
+                "no_tle": 1,
+                "hidden_unknown": 0,
+                "hidden_expired": 0,
+                "errors": 1,
+                "celestrak_blocked": 1,
+                "satnogs_blocked": 0,
+                "phase2_total": 126,
+                "phase2_unresolved": 1,
+            }
+        )
+
+        async def _prov_side_effect(progress_callback=None, **kwargs):
+            if progress_callback is not None:
+                progress_callback(175, 175)
+            return {
+                "inserted": 3,
+                "updated": 138,
+                "no_tle": 34,
+                "hidden_unknown": 0,
+                "hidden_expired": 33,
+                "errors": 0,
+            }
+
+        w._tle_manager.fetch_provisional_tles = AsyncMock(  # type: ignore[method-assign]
+            side_effect=_prov_side_effect
+        )
+        received: list[str] = []
+        w._sync_progress.connect(received.append)
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._fetch_all_tle_sources()
+
+        assert "Fetching provisional TLEs" not in received[-1]
+        assert received[-1] == "⚠ CelesTrak blocked — retry in 3h (1 satellite(s) still unresolved)"
+
     def test_shows_error_and_stops_everything_when_celestrak_unreachable(
         self, qtbot, db, tle_manager
     ) -> None:
@@ -3296,12 +3357,19 @@ class TestActiveTleRetryScheduling:
         w._scheduler.add_job.assert_not_called()
         assert w._tle_manager.get_active_tle_retry_after() is None
 
-    def test_status_bar_shows_fetched_count_and_resume_time(self, qtbot, db, tle_manager) -> None:
+    def test_status_bar_shows_blocked_provider_and_resume_time(
+        self, qtbot, db, tle_manager
+    ) -> None:
         """A blocked run must leave a clear, human-readable status message
         behind -- not just go quiet or get stuck on a mid-fetch progress
         line with no indication of what's happening or when it'll resume
         (the exact "is this just taking time?" confusion reported
-        2026-08-10)."""
+        2026-08-10). 2026-08-11: no longer framed as "Fetched X/Y" using
+        phase2_total/phase2_unresolved -- those numbers describe Phase 2's
+        SATNOGS bulk dump, unrelated to *why* the run is pausing (Phase 1's
+        GROUP=active getting blocked), so the message now names the actual
+        blocked provider and only mentions the unresolved count separately.
+        """
         w = self._make_window(qtbot, db, tle_manager)
         received: list[str] = []
         w._sync_progress.connect(received.append)
@@ -3315,7 +3383,9 @@ class TestActiveTleRetryScheduling:
             }
         )
 
-        assert received[-1] == "Fetched 400/846: Resume in 3h"
+        assert (
+            received[-1] == "⚠ CelesTrak blocked — retry in 3h (446 satellite(s) still unresolved)"
+        )
 
     def test_clean_result_clears_a_previously_persisted_marker(
         self, qtbot, db, tle_manager
@@ -3563,7 +3633,7 @@ class TestRefreshSatelliteNamesSyncConnectivityCheck:
     discover an unreachable host on its own, one 10-30s timeout at a time,
     so a clear error didn't appear until several minutes and multiple
     silently-failed steps in -- and by then an unrelated step's normal
-    status message (e.g. "Fetched X/Y: Resume in 3h" from
+    status message (e.g. "CelesTrak blocked — retry in 3h" from
     fetch_active_tles()) had already overwritten it, making the error look
     like it arrived too late or never at all. Both hosts (CelesTrak and
     SATNOGS) are now checked exactly once, up front, before anything else

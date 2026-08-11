@@ -1115,6 +1115,24 @@ class TLEManager:
                         )
                     else:
                         logger.warning(f"active fetch error (GROUP=active): {exc}")
+                        if exc.response.status_code == 403:
+                            # Diagnostic only (2026-08-11): a 403 here *should*
+                            # usually be the cache-not-yet-updated response
+                            # above (GROUP=active only refreshes ~every 2h,
+                            # and a single request right after a success is
+                            # nowhere near the 50-errors/2h abuse threshold).
+                            # When the check above doesn't match, log the raw
+                            # body once so a real occurrence gives evidence
+                            # for whether CelesTrak changed the wording or
+                            # this genuinely is a block, instead of having to
+                            # guess after the fact with nothing to go on
+                            # (confirmed gap: a real 2026-08-11 run hit this
+                            # exact branch and the body was never captured).
+                            logger.warning(
+                                "GROUP=active 403 body did not match the "
+                                "cache-not-yet-updated check: %r",
+                                exc.response.text[:500],
+                            )
                         stats["errors"] += 1
                         self._celestrak_breaker.record_error(
                             blocked=exc.response.status_code == 403

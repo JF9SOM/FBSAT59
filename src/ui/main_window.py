@@ -5008,13 +5008,13 @@ class MainWindow(QMainWindow):
                         )
 
                 blocked = False
+                active: dict[str, int] = {}
                 try:
                     active = asyncio.run(
                         self._tle_manager.fetch_active_tles(progress_callback=_active_progress)
                     )
                     logger.info("Manual active TLE fetch result: %s", active)
                     blocked = bool(active.get("celestrak_blocked") or active.get("satnogs_blocked"))
-                    self._schedule_active_tle_retry_if_blocked(active)
                 except Exception as exc:
                     logger.warning("Manual active TLE fetch error: %s: %s", type(exc).__name__, exc)
 
@@ -5030,9 +5030,19 @@ class MainWindow(QMainWindow):
 
                 # Signal emit is thread-safe; Qt automatically queues it to the main thread.
                 self._satellite_list_refresh.emit()
-                # Leave the "Fetched X/Y: Resume in 3h" message
-                # _schedule_active_tle_retry_if_blocked() just showed in place
-                # instead of blanking it — otherwise the user never gets to read it.
+                # _schedule_active_tle_retry_if_blocked() (and the "blocked,
+                # retry in Nh" message it shows) must run *after* the
+                # provisional-TLE fetch above, not right after
+                # fetch_active_tles() -- fetch_provisional_tles()'s own
+                # progress_callback overwrites the status bar with its own
+                # "Fetching provisional TLEs... (N/N)" messages, which would
+                # otherwise silently clobber that message and then never get
+                # cleared, since the final blank-out below is skipped
+                # whenever `blocked` is True (2026-08-11: reported as the
+                # status bar getting stuck forever on "Fetching provisional
+                # TLEs..." even though every fetch had already finished).
+                if active:
+                    self._schedule_active_tle_retry_if_blocked(active)
                 if not blocked:
                     self._sync_progress.emit("")
             finally:
@@ -5224,21 +5234,42 @@ class MainWindow(QMainWindow):
                 misfire_grace_time=1800,
             )
 
-        # "Fetched X/Y" (phase2_total/phase2_unresolved come from
-        # TLEManager.fetch_active_tles()'s Phase 2 -- see its docstring)
-        # tells the user how far this run got before pausing, instead of
-        # the status bar just going blank or getting stuck on the last
-        # "CelesTrak: N satellite(s)..." message with no indication that
-        # anything is wrong or when it'll pick back up (the exact "is this
-        # just taking time?" confusion reported 2026-08-10). Not cleared
-        # here -- callers that would otherwise blank the status label right
-        # after this (e.g. _fetch_all_tle_sources()) must skip that when
-        # `result` was blocked, so this message stays visible.
-        total = result.get("phase2_total", 0)
+        # Tells the user *why* this run is pausing, instead of the status bar
+        # just going blank or getting stuck on a mid-fetch "CelesTrak: N
+        # satellite(s)..." message with no indication that anything is wrong
+        # or when it'll pick back up (the exact "is this just taking time?"
+        # confusion reported 2026-08-10).
+        #
+        # Deliberately does NOT frame this as "Fetched X/Y" using
+        # phase2_total/phase2_unresolved (as an earlier version did): those
+        # numbers describe how many satellites Phase 2's SATNOGS bulk dump
+        # resolved, which is unrelated to *why* this run is blocked (Phase
+        # 1's single GROUP=active request getting a 403/timeout). Wording it
+        # as "Fetched X/Y" made it look like Phase 2 itself got cut short,
+        # when in the common case it had already finished cleanly via one
+        # bulk request that has nothing to do with CelesTrak being blocked
+        # (2026-08-11 report). The unresolved count is still worth surfacing
+        # when nonzero, just not as the headline reason.
+        which_blocked = [
+            name
+            for name, flag in (
+                ("CelesTrak", result.get("celestrak_blocked")),
+                ("SATNOGS", result.get("satnogs_blocked")),
+            )
+            if flag
+        ]
+        provider = "/".join(which_blocked) if which_blocked else _("a provider")
         unresolved = result.get("phase2_unresolved", 0)
-        resolved = max(0, total - unresolved)
-        status_template = _("Fetched {resolved}/{total}: Resume in {hours}h")
-        self._sync_progress.emit(status_template.format(resolved=resolved, total=total, hours=3))
+        if unresolved:
+            status_template = _(
+                "{provider} blocked — retry in {hours}h"
+                " ({unresolved} satellite(s) still unresolved)"
+            )
+            msg = status_template.format(provider=provider, hours=3, unresolved=unresolved)
+        else:
+            status_template = _("{provider} blocked — retry in {hours}h")
+            msg = status_template.format(provider=provider, hours=3)
+        self._sync_progress.emit(f"⚠ {msg}")
 
         logger.info(
             "Active TLE fetch was rate-limited by a provider; retry scheduled for %s",
