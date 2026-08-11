@@ -331,6 +331,24 @@ class TLEManager:
             "https://celestrak.org/NORAD/elements/gp.php", {"GROUP": "STATIONS", "FORMAT": "TLE"}
         )
 
+    async def is_satnogs_reachable(self) -> bool:
+        """Single fail-fast reachability probe for db.satnogs.org, the host
+        sync_satellite_names()/sync_from_satnogs()/fetch_provisional_tles()/
+        fetch_active_tles() Phase 2b all depend on.
+
+        Paired with is_celestrak_bulk_group_reachable() so a caller can do
+        ONE combined connectivity check up front (2026-08-11 redesign): the
+        previous approach let each step discover unreachability on its own,
+        one 10-30s timeout at a time, so a clear error message didn't
+        appear until several minutes and multiple silently-failed steps in
+        -- by then a "Fetched X/Y: Resume in 3h" message from an unrelated
+        step had already overwritten it, making the error look like it
+        arrived too late or not at all (2026-08-11 report). Checking both
+        hosts once before starting the chain lets a caller show the error
+        immediately and skip every network-dependent step in one place.
+        """
+        return await _probe_reachable(SATNOGS_TLE_URL, {"norad_cat_id": 25544, "format": "json"})
+
     async def fetch_and_update(
         self,
         source_name: str = "celestrak-amateur",
