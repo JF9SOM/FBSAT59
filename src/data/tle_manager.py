@@ -159,18 +159,33 @@ async def _get_with_progress(
     docstring, 2026-08-10).
 
     The returned Response has its body fully read by the time this
-    function returns (httpx caches the content once a stream is consumed
-    to completion), so callers use `.raise_for_status()`/`.text`/`.json()`
+    function returns, so callers use `.raise_for_status()`/`.text`/`.json()`
     on it exactly like a response from `client.get()` -- including in an
     `except httpx.HTTPStatusError as exc:` handler, since `exc.response`
     is this same already-read object.
+
+    2026-08-11 bug fix: an earlier version of this function iterated
+    `response.aiter_bytes()` for the per-chunk progress count but discarded
+    the chunks, on the mistaken assumption that httpx caches `.content`
+    automatically once a streamed body is fully iterated. It does not --
+    only `.aread()` populates `response._content`; a bare `aiter_bytes()`
+    loop leaves the response looking "unread" to httpx. Confirmed via a
+    real run's log the same day: the download itself succeeded (200 OK /
+    403 with a body), but every downstream `.json()`/`.text` access on the
+    returned Response raised `httpx.ResponseNotRead`, silently discarding
+    an otherwise-successful fetch. Fixed by accumulating the chunks
+    ourselves and assigning `response._content` directly -- there is no
+    public "I already read it via aiter_bytes(), here it is" API; this is
+    what `.aread()` does internally.
     """
     async with client.stream("GET", url, params=params) as response:
         total_header = response.headers.get("content-length")
         total_bytes = int(total_header) if total_header and total_header.isdigit() else None
+        chunks: list[bytes] = []
         downloaded = 0
         last_pct = -1
         async for chunk in response.aiter_bytes():
+            chunks.append(chunk)
             downloaded += len(chunk)
             if progress_callback and total_bytes:
                 pct = int(downloaded * 100 / total_bytes)
@@ -179,6 +194,7 @@ async def _get_with_progress(
                     progress_callback(f"{label}: downloading... {pct}%")
         if progress_callback and total_bytes is None and downloaded > 0:
             progress_callback(f"{label}: downloading...")
+        response._content = b"".join(chunks)
         return response
 
 

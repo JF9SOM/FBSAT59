@@ -738,6 +738,88 @@ class TestGetWithProgressDownloadPercentage:
         assert stats["updated"] + stats["inserted"] == 1
 
 
+class TestGetWithProgressResponseIsReadable:
+    """Regression test for a real bug (2026-08-11): _get_with_progress()
+    iterated response.aiter_bytes() to count downloaded bytes but discarded
+    the chunks, on the mistaken assumption that httpx caches .content once a
+    streamed body is fully iterated -- it doesn't; only .aread() does that.
+    The other tests in this file mock httpx.AsyncClient with MagicMock,
+    whose .text/.json() are plain attributes that never raise, so they could
+    not have caught this: production hit it live (GROUP=active's 403 body
+    and the SATNOGS bulk dump's 200 OK body both raised
+    httpx.ResponseNotRead downstream, silently discarding two otherwise-
+    successful fetches). These tests instead round-trip through a real
+    httpx.AsyncClient backed by httpx.MockTransport -- a real Response
+    object with real stream-consumption semantics, still fully offline (no
+    socket is ever opened).
+
+    Important: the handler must give httpx.Response() its body as an
+    async-generator `content=`, not a plain `bytes` `content=`. Passing raw
+    bytes makes httpx populate `_content` immediately at construction time
+    (there is nothing to stream), which means the response looks "already
+    read" from the start regardless of whether _get_with_progress() sets
+    `_content` itself -- exactly the false negative that let a first draft
+    of this test pass against the unfixed function. An async-generator body
+    is what actually reproduces "the caller must consume the stream before
+    .text/.json() work", matching how a real HTTP response arrives.
+    """
+
+    def test_success_response_text_and_json_readable_after_return(self) -> None:
+        from data.tle_manager import _get_with_progress
+
+        body = b'{"ok": true}'
+
+        async def body_stream() -> Any:
+            yield body[:4]
+            yield body[4:]
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200, content=body_stream(), headers={"content-length": str(len(body))}
+            )
+
+        async def run() -> httpx.Response:
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                return await _get_with_progress(client, "https://example.invalid/x", {}, "T", None)
+
+        response = asyncio.run(run())
+
+        # Both would raise httpx.ResponseNotRead if _content were never set.
+        assert response.text == '{"ok": true}'
+        assert response.json() == {"ok": True}
+
+    def test_error_response_text_readable_via_raise_for_status_handler(self) -> None:
+        """Mirrors the exact production failure: a 403 with a body that
+        callers need to inspect (e.g. _is_active_cache_not_yet_updated())
+        inside an `except httpx.HTTPStatusError as exc:` handler.
+        """
+        from data.tle_manager import _get_with_progress
+
+        body = b"quota exceeded, try again later"
+
+        async def body_stream() -> Any:
+            yield body[:10]
+            yield body[10:]
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                403, content=body_stream(), headers={"content-length": str(len(body))}
+            )
+
+        async def run() -> str:
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                response = await _get_with_progress(
+                    client, "https://example.invalid/x", {}, "T", None
+                )
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    return exc.response.text  # raised ResponseNotRead before the fix
+                raise AssertionError("expected raise_for_status() to raise")
+
+        assert asyncio.run(run()) == "quota exceeded, try again later"
+
+
 class TestErrorCountBreaker:
     """Unit coverage for the low-level breaker shared across every fetch_*()
     method that touches CelesTrak/SATNOGS on a given TLEManager instance --
