@@ -1446,13 +1446,30 @@ class MainWindow(QMainWindow):
         satnogs_count = self._conn.execute(
             "SELECT COUNT(*) FROM transmitters WHERE source = 'satnogs'"
         ).fetchone()[0]
-        if satnogs_count == 0 or self._transmitter_manager.is_satnogs_transmitters_stale():
-            threading.Thread(target=self._refresh_satnogs_sync, daemon=True).start()
+        need_satnogs_sync = (
+            satnogs_count == 0 or self._transmitter_manager.is_satnogs_transmitters_stale()
+        )
 
-        # Always sync satellite names (inserts new satellites too) and then fetch TLEs.
-        # Active-TLE fetch runs inside _refresh_satellite_names_sync so it is guaranteed
-        # to start only after satellite rows are present in the DB.
-        threading.Thread(target=self._refresh_satellite_names_sync, daemon=True).start()
+        # Both of the below hit db.satnogs.org (the transmitter sync directly;
+        # sync_satellite_names()/Phase 2b/fetch_provisional_tles() inside
+        # _refresh_satellite_names_sync() indirectly). Run them one after the
+        # other in a single background thread rather than as two independent
+        # threads racing in parallel -- from SATNOGS's point of view, two
+        # separate connections opening at once and each firing off requests
+        # is harder to distinguish from abusive traffic than one steady
+        # stream, and every phase here already runs on its own staleness gate
+        # or circuit breaker, so the only real cost of serializing them is a
+        # few extra seconds before the second one starts (2026-08-11).
+        def _startup_data_sync() -> None:
+            if need_satnogs_sync:
+                self._refresh_satnogs_sync()
+            # Always sync satellite names (inserts new satellites too) and
+            # then fetch TLEs. Active-TLE fetch runs inside
+            # _refresh_satellite_names_sync so it is guaranteed to start only
+            # after satellite rows are present in the DB.
+            self._refresh_satellite_names_sync()
+
+        threading.Thread(target=_startup_data_sync, daemon=True).start()
 
         # Load DE421 ephemeris for celestial body tracking (downloads ~17 MB on first run)
         threading.Thread(target=self._load_celestial_engine, daemon=True).start()

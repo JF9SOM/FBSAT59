@@ -45,9 +45,10 @@ def tle_manager(db: sqlite3.Connection) -> TLEManager:
 
 @pytest.fixture(autouse=True)
 def _no_background_sync(monkeypatch: pytest.MonkeyPatch) -> None:
-    """MainWindow._start_scheduler() spawns 5 daemon threads on every
-    construction (AMSAT/SATNOGS/satellite-name+TLE/celestial-ephemeris/NTP
-    sync) that attempt real network I/O and have no join/stop mechanism
+    """MainWindow._start_scheduler() spawns 4 daemon threads on every
+    construction (AMSAT / a combined SATNOGS-transmitter+satellite-name+TLE
+    sync / celestial-ephemeris / NTP) that attempt real network I/O and have
+    no join/stop mechanism
     beyond a periodically-polled shutdown flag. With ~90 MainWindow()
     constructions in this file, leaving them enabled piles up hundreds of
     concurrent network-bound daemon threads that never fully die within

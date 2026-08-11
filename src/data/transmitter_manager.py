@@ -19,6 +19,8 @@ from typing import Any
 
 import httpx
 
+from data.http_client import DEFAULT_HEADERS
+
 logger = logging.getLogger(__name__)
 
 SATNOGS_API_BASE = "https://db.satnogs.org/api"
@@ -539,7 +541,7 @@ class TransmitterManager:
         if norad_cat_id:
             params["satellite__norad_cat_id"] = norad_cat_id
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=DEFAULT_HEADERS) as client:
             r = await client.get(SATNOGS_TRANSMITTERS_URL, params=params)
             r.raise_for_status()
             transmitters: list[dict[str, Any]] = r.json()
@@ -732,7 +734,7 @@ class TransmitterManager:
         total_processed = 0
         completed_fully = True
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=60.0, headers=DEFAULT_HEADERS) as client:
             while next_url:
                 try:
                     r = await client.get(next_url, params=params)

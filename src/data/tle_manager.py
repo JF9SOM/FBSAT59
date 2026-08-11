@@ -10,12 +10,20 @@ from __future__ import annotations
 import functools
 import logging
 import sqlite3
+from collections import deque
 from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
 from skyfield.api import EarthSatellite, load
+
+from data.http_client import (
+    DEFAULT_HEADERS,
+    PHASE2_CONCURRENCY,
+    PHASE2_MIN_INTERVAL_S,
+    RequestPacer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +114,7 @@ async def _probe_reachable(url: str, params: dict[str, Any]) -> bool:
     satellite's own error itself).
     """
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=15.0, headers=DEFAULT_HEADERS) as client:
             await client.get(url, params=params, timeout=10.0)
         return True
     except (httpx.ConnectTimeout, httpx.ConnectError):
@@ -133,49 +141,89 @@ async def _probe_reachable(url: str, params: dict[str, Any]) -> bool:
 _CELESTRAK_CATNR_ERROR_LIMIT = 20
 _SATNOGS_TLE_ERROR_LIMIT = 20
 
+# Matches CelesTrak's documented 2-hour error-count window, and is used for
+# SATNOGS too out of the same caution noted above. See _ErrorCountBreaker's
+# docstring for why this needs to be a rolling window, not a plain lifetime
+# count.
+_ERROR_WINDOW = timedelta(hours=2)
+
 
 class _ErrorCountBreaker:
     """Stops a batch of per-satellite provider queries before it can trip
     the provider's own abuse protection.
 
-    Two ways to trip: `error_limit` errors accumulate (e.g. repeated 404s,
-    which are individually normal but still count against CelesTrak's
-    budget), or a single call reports `blocked=True` (e.g. an HTTP 403 --
-    proof the block has *already* started, so there's no point counting
-    further errors before giving up).
+    Two ways to trip: `error_limit` errors accumulate within a rolling
+    `_ERROR_WINDOW` (e.g. repeated 404s, which are individually normal but
+    still count against CelesTrak's budget), or a single call reports
+    `blocked=True` (e.g. an HTTP 403 -- proof the block has *already*
+    started, so there's no point counting further errors before giving up).
+    A `blocked=True` report keeps `tripped` True for the rest of the window,
+    not just for the remainder of whatever loop reported it.
 
     Once tripped, callers should stop starting new requests but may let
     already-in-flight ones finish normally (see `_run_with_breaker`).
+
+    Instances are meant to be long-lived and shared across many independent
+    calls on the same TLEManager (see TLEManager._celestrak_breaker /
+    _satnogs_breaker below), not recreated fresh for every fetch_*() call.
+    Before 2026-08-11, Phase 2a (CelesTrak) and Phase 2b (SATNOGS) each
+    created their own breaker from scratch on every fetch_active_tles()
+    call, and fetch_legacy_tles()/fetch_meteor_tles() had no breaker at
+    all -- so a single startup sequence that runs several of these fetch
+    methods back-to-back could burn through several independent 20-error
+    allowances (up to 60+ actual errors against CelesTrak) before any one
+    of them individually noticed, even though the provider counts all of
+    them against the same IP-level budget. Sharing one instance per
+    provider across the whole TLEManager's lifetime fixes that.
     """
 
-    def __init__(self, error_limit: int) -> None:
+    def __init__(self, error_limit: int, window: timedelta = _ERROR_WINDOW) -> None:
         self._error_limit = error_limit
-        self._error_count = 0
-        self.tripped = False
+        self._window = window
+        self._error_times: deque[datetime] = deque()
+        self._blocked_until: datetime | None = None
+
+    def _prune(self, now: datetime) -> None:
+        cutoff = now - self._window
+        while self._error_times and self._error_times[0] < cutoff:
+            self._error_times.popleft()
+
+    @property
+    def tripped(self) -> bool:
+        now = datetime.now(UTC)
+        if self._blocked_until is not None:
+            if now < self._blocked_until:
+                return True
+            self._blocked_until = None
+        self._prune(now)
+        return len(self._error_times) >= self._error_limit
 
     def record_error(self, *, blocked: bool = False) -> None:
+        now = datetime.now(UTC)
         if blocked:
-            self.tripped = True
+            self._blocked_until = now + self._window
             return
-        self._error_count += 1
-        if self._error_count >= self._error_limit:
-            self.tripped = True
+        self._prune(now)
+        self._error_times.append(now)
 
 
 async def _run_with_breaker(
     tasks: list[Callable[[], Coroutine[Any, Any, None]]],
     breaker: _ErrorCountBreaker,
-    concurrency: int = 20,
+    concurrency: int = PHASE2_CONCURRENCY,
     on_progress: Callable[[int, int], None] | None = None,
 ) -> None:
     """Runs each zero-arg async callable in `tasks` with up to `concurrency`
-    running at once (same effective concurrency as the plain
-    `asyncio.gather` + `Semaphore` pattern this replaces), but stops pulling
-    *new* work the moment `breaker.tripped` becomes True. Requests already
-    in flight when that happens are left to finish normally — only the
-    queue of not-yet-started work is abandoned, so a provider that's
-    already blocking us doesn't get hit with hundreds more requests it's
-    already refusing.
+    running at once, but stops pulling *new* work the moment
+    `breaker.tripped` becomes True. Requests already in flight when that
+    happens are left to finish normally — only the queue of not-yet-started
+    work is abandoned, so a provider that's already blocking us doesn't get
+    hit with hundreds more requests it's already refusing.
+
+    `concurrency` defaults to PHASE2_CONCURRENCY (6, lowered from 20 on
+    2026-08-11) -- 20 concurrent requests landing on a provider at once,
+    each from a fresh connection with no identifying User-Agent, reads as a
+    burst scan regardless of how individually "polite" the requests are.
 
     `on_progress(completed, total)`, if given, is called after every task
     finishes (success or failure alike). A slow provider (~1 req/s observed
@@ -263,6 +311,11 @@ class TLEManager:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
         self._ts = load.timescale()
+        # Shared across every fetch_*() method that touches CelesTrak/SATNOGS
+        # for this TLEManager's lifetime -- see _ErrorCountBreaker's
+        # docstring for why these must NOT be recreated fresh per call.
+        self._celestrak_breaker = _ErrorCountBreaker(_CELESTRAK_CATNR_ERROR_LIMIT)
+        self._satnogs_breaker = _ErrorCountBreaker(_SATNOGS_TLE_ERROR_LIMIT)
 
     # ------------------------------------------------------------------ #
     # Retrieval
@@ -362,13 +415,27 @@ class TLEManager:
         tle_group = str(source.get("group", "amateur"))
         stats = {"inserted": 0, "updated": 0, "errors": 0}
 
+        if self._celestrak_breaker.tripped:
+            logger.warning(
+                "CelesTrak already blocked this session — skipping %s fetch", source_name
+            )
+            stats["errors"] = 1
+            self._log_sync(source_name, stats)
+            return stats
+
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=30.0, headers=DEFAULT_HEADERS) as client:
                 r = await client.get(source["url"], params=source.get("params", {}))
                 r.raise_for_status()
                 text = r.text
+        except httpx.HTTPStatusError as e:
+            logger.warning(f"fetch error from {source_name}: {e}")
+            self._celestrak_breaker.record_error(blocked=e.response.status_code == 403)
+            stats["errors"] = 1
+            return stats
         except httpx.HTTPError as e:
             logger.warning(f"fetch error from {source_name}: {e}")
+            self._celestrak_breaker.record_error()
             stats["errors"] = 1
             return stats
 
@@ -484,7 +551,7 @@ class TLEManager:
         url = "https://celestrak.org/NORAD/elements/gp.php"
         params = {"CATNR": str(norad_cat_id), "FORMAT": "TLE"}
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(timeout=15.0, headers=DEFAULT_HEADERS) as client:
                 r = await client.get(url, params=params)
                 r.raise_for_status()
                 lines = [ln.strip() for ln in r.text.splitlines() if ln.strip()]
@@ -832,8 +899,15 @@ class TLEManager:
                     i += 1
 
         url_ct = "https://celestrak.org/NORAD/elements/gp.php"
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=60.0, headers=DEFAULT_HEADERS) as client:
             for group in _BULK_GROUPS:
+                if self._celestrak_breaker.tripped:
+                    logger.warning(
+                        "CelesTrak already blocked this session — skipping remaining "
+                        "Phase 1 group(s)"
+                    )
+                    stats["celestrak_blocked"] = 1
+                    break
                 if progress_callback:
                     progress_callback(f"CelesTrak {group}...")
                 try:
@@ -842,9 +916,15 @@ class TLEManager:
                     _process_tle_text(r.text, f"celestrak-{group}")
                 except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RemoteProtocolError):
                     stats["errors"] += 1
+                    self._celestrak_breaker.record_error()
+                except httpx.HTTPStatusError as exc:
+                    logger.warning(f"active fetch error ({group}): {exc}")
+                    stats["errors"] += 1
+                    self._celestrak_breaker.record_error(blocked=exc.response.status_code == 403)
                 except httpx.HTTPError as exc:
                     logger.warning(f"active fetch error ({group}): {exc}")
                     stats["errors"] += 1
+                    self._celestrak_breaker.record_error()
 
         self._conn.commit()
 
@@ -985,18 +1065,29 @@ class TLEManager:
             if progress_callback:
                 progress_callback(f"CelesTrak: {len(remaining)} satellite(s)...")
             probe_norad_2a = next(iter(remaining))
-            breaker_2a = _ErrorCountBreaker(_CELESTRAK_CATNR_ERROR_LIMIT)
-            if await _probe_reachable(url_ct, {"CATNR": str(probe_norad_2a), "FORMAT": "TLE"}):
+            breaker_2a = self._celestrak_breaker
+            if breaker_2a.tripped:
+                # Already blocked from earlier in this session (a previous
+                # phase, or a previous call to this same method) — don't even
+                # spend the reachability probe's own request confirming it.
+                logger.warning(
+                    "CelesTrak already blocked this session — skipping %d Phase 2a "
+                    "fetch(es); falling back to SATNOGS for the rest",
+                    len(remaining),
+                )
+                stats["celestrak_blocked"] = 1
+            elif await _probe_reachable(url_ct, {"CATNR": str(probe_norad_2a), "FORMAT": "TLE"}):
+                pacer_2a = RequestPacer(PHASE2_MIN_INTERVAL_S)
 
-                async def _fetch_one_celestrak(norad: int) -> None:
+                async def _fetch_one_celestrak(client: httpx.AsyncClient, norad: int) -> None:
                     try:
-                        async with httpx.AsyncClient(timeout=15.0) as c:
-                            r = await c.get(
-                                url_ct,
-                                params={"CATNR": str(norad), "FORMAT": "TLE"},
-                                timeout=10.0,
-                            )
-                            r.raise_for_status()
+                        await pacer_2a.wait()
+                        r = await client.get(
+                            url_ct,
+                            params={"CATNR": str(norad), "FORMAT": "TLE"},
+                            timeout=10.0,
+                        )
+                        r.raise_for_status()
                     except (
                         httpx.ConnectTimeout,
                         httpx.ConnectError,
@@ -1033,11 +1124,25 @@ class TLEManager:
                         return
                     _store_resolved(norad, name_l, line1, line2, epoch_dt)
 
-                await _run_with_breaker(
-                    [functools.partial(_fetch_one_celestrak, n) for n in list(remaining.keys())],
-                    breaker_2a,
-                    on_progress=_throttled_phase_progress(progress_callback, "CelesTrak"),
-                )
+                # One shared, connection-pooled client for the whole batch
+                # instead of a brand-new TCP+TLS handshake per satellite (up
+                # to hundreds per run before 2026-08-11).
+                async with httpx.AsyncClient(
+                    timeout=15.0,
+                    headers=DEFAULT_HEADERS,
+                    limits=httpx.Limits(
+                        max_connections=PHASE2_CONCURRENCY,
+                        max_keepalive_connections=PHASE2_CONCURRENCY,
+                    ),
+                ) as client_2a:
+                    await _run_with_breaker(
+                        [
+                            functools.partial(_fetch_one_celestrak, client_2a, n)
+                            for n in list(remaining.keys())
+                        ],
+                        breaker_2a,
+                        on_progress=_throttled_phase_progress(progress_callback, "CelesTrak"),
+                    )
                 self._conn.commit()
                 if breaker_2a.tripped:
                     logger.warning(
@@ -1081,29 +1186,46 @@ class TLEManager:
             # noted above).
             satnogs_reachable = True
             if remaining:
-                probe_norad = next(iter(remaining))
-                probe_source_id = remaining[probe_norad][3]
-                probe_query_id = probe_source_id if probe_source_id is not None else probe_norad
-                satnogs_reachable = await _probe_reachable(
-                    SATNOGS_TLE_URL, {"norad_cat_id": probe_query_id, "format": "json"}
-                )
-                if not satnogs_reachable:
+                if self._satnogs_breaker.tripped:
+                    # Already blocked from earlier in this session — don't
+                    # spend the reachability probe's own request confirming it.
                     logger.warning(
-                        "SATNOGS TLE API unreachable — skipping %d individual "
-                        "fallback fetch(es) this run",
+                        "SATNOGS already blocked this session — skipping %d Phase 2b fetch(es)",
                         len(remaining),
                     )
                     stats["errors"] += len(remaining)
                     stats["satnogs_blocked"] = 1
+                    satnogs_reachable = False
                     if progress_callback:
                         progress_callback(
-                            f"SATNOGS unreachable — {len(remaining)} satellite(s) deferred"
+                            f"SATNOGS already blocked — {len(remaining)} satellite(s) deferred"
                         )
+                else:
+                    probe_norad = next(iter(remaining))
+                    probe_source_id = remaining[probe_norad][3]
+                    probe_query_id = probe_source_id if probe_source_id is not None else probe_norad
+                    satnogs_reachable = await _probe_reachable(
+                        SATNOGS_TLE_URL, {"norad_cat_id": probe_query_id, "format": "json"}
+                    )
+                    if not satnogs_reachable:
+                        logger.warning(
+                            "SATNOGS TLE API unreachable — skipping %d individual "
+                            "fallback fetch(es) this run",
+                            len(remaining),
+                        )
+                        stats["errors"] += len(remaining)
+                        stats["satnogs_blocked"] = 1
+                        if progress_callback:
+                            progress_callback(
+                                f"SATNOGS unreachable — {len(remaining)} satellite(s) deferred"
+                            )
 
             if remaining and satnogs_reachable:
-                breaker_2b = _ErrorCountBreaker(_SATNOGS_TLE_ERROR_LIMIT)
+                breaker_2b = self._satnogs_breaker
+                pacer_2b = RequestPacer(PHASE2_MIN_INTERVAL_S)
 
                 async def _fetch_one(
+                    client: httpx.AsyncClient,
                     norad: int,
                     sat_name: str,
                     sat_status: str,
@@ -1112,13 +1234,13 @@ class TLEManager:
                 ) -> None:
                     query_id = source_id if source_id is not None else norad
                     try:
-                        async with httpx.AsyncClient(timeout=10.0) as c:
-                            resp = await c.get(
-                                SATNOGS_TLE_URL,
-                                params={"norad_cat_id": query_id, "format": "json"},
-                            )
-                            resp.raise_for_status()
-                            data = resp.json()
+                        await pacer_2b.wait()
+                        resp = await client.get(
+                            SATNOGS_TLE_URL,
+                            params={"norad_cat_id": query_id, "format": "json"},
+                        )
+                        resp.raise_for_status()
+                        data = resp.json()
                     except (
                         httpx.ConnectTimeout,
                         httpx.ReadTimeout,
@@ -1189,21 +1311,31 @@ class TLEManager:
 
                     _store_resolved(norad, sat_name, line1, line2, epoch_dt)
 
-                await _run_with_breaker(
-                    [
-                        functools.partial(_fetch_one, norad, name, status, nrs, source_id)
-                        for norad, (
-                            name,
-                            status,
-                            nrs,
-                            source_id,
-                            _tle_group,
-                            _had_tle,
-                        ) in remaining.items()
-                    ],
-                    breaker_2b,
-                    on_progress=_throttled_phase_progress(progress_callback, "SATNOGS"),
-                )
+                async with httpx.AsyncClient(
+                    timeout=10.0,
+                    headers=DEFAULT_HEADERS,
+                    limits=httpx.Limits(
+                        max_connections=PHASE2_CONCURRENCY,
+                        max_keepalive_connections=PHASE2_CONCURRENCY,
+                    ),
+                ) as client_2b:
+                    await _run_with_breaker(
+                        [
+                            functools.partial(
+                                _fetch_one, client_2b, norad, name, status, nrs, source_id
+                            )
+                            for norad, (
+                                name,
+                                status,
+                                nrs,
+                                source_id,
+                                _tle_group,
+                                _had_tle,
+                            ) in remaining.items()
+                        ],
+                        breaker_2b,
+                        on_progress=_throttled_phase_progress(progress_callback, "SATNOGS"),
+                    )
                 self._conn.commit()
                 if breaker_2b.tripped:
                     logger.warning(
@@ -1257,8 +1389,16 @@ class TLEManager:
         now = datetime.now(UTC).isoformat()
         url = "https://celestrak.org/NORAD/elements/gp.php"
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=15.0, headers=DEFAULT_HEADERS) as client:
             for idx, row in enumerate(rows):
+                if self._celestrak_breaker.tripped:
+                    logger.warning(
+                        "CelesTrak already blocked this session — stopping legacy TLE "
+                        "check early (%d satellite(s) not checked)",
+                        len(rows) - idx,
+                    )
+                    stats["errors"] += len(rows) - idx
+                    break
                 norad = int(row["norad_cat_id"])
                 if progress_callback:
                     progress_callback(idx + 1, len(rows))
@@ -1299,21 +1439,29 @@ class TLEManager:
 
                 except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RemoteProtocolError):
                     stats["errors"] += 1
+                    self._celestrak_breaker.record_error()
                 except httpx.HTTPStatusError as exc:
                     if exc.response.status_code == 404:
-                        # 404 = CelesTrak no longer tracks this satellite → hide it
+                        # 404 = CelesTrak no longer tracks this satellite → hide it.
+                        # Still counts against CelesTrak's own error budget even
+                        # though it's an expected, non-exceptional outcome here.
                         self._conn.execute(
                             "UPDATE satellites SET is_hidden = 2, updated_at = ?"
                             " WHERE norad_cat_id = ?",
                             (now, norad),
                         )
                         stats["hidden"] += 1
+                        self._celestrak_breaker.record_error()
                     else:
                         logger.warning(f"legacy TLE fetch error for {norad}: {exc}")
                         stats["errors"] += 1
+                        self._celestrak_breaker.record_error(
+                            blocked=exc.response.status_code == 403
+                        )
                 except httpx.HTTPError as exc:
                     logger.warning(f"legacy TLE fetch error for {norad}: {exc}")
                     stats["errors"] += 1
+                    self._celestrak_breaker.record_error()
                 except Exception as exc:
                     logger.warning(f"legacy TLE parse error for {norad}: {exc}")
                     stats["errors"] += 1
@@ -1361,8 +1509,16 @@ class TLEManager:
         now = datetime.now(UTC).isoformat()
         url = "https://celestrak.org/NORAD/elements/gp.php"
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=15.0, headers=DEFAULT_HEADERS) as client:
             for idx, norad in enumerate(targets):
+                if self._celestrak_breaker.tripped:
+                    logger.warning(
+                        "CelesTrak already blocked this session — stopping METEOR TLE "
+                        "check early (%d satellite(s) not checked)",
+                        len(targets) - idx,
+                    )
+                    stats["errors"] += len(targets) - idx
+                    break
                 if progress_callback:
                     progress_callback(idx + 1, len(targets))
 
@@ -1400,15 +1556,21 @@ class TLEManager:
 
                 except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RemoteProtocolError):
                     stats["errors"] += 1
+                    self._celestrak_breaker.record_error()
                 except httpx.HTTPStatusError as exc:
                     if exc.response.status_code == 404:
                         stats["skipped"] += 1
+                        self._celestrak_breaker.record_error()
                     else:
                         logger.warning(f"meteor TLE fetch error for {norad}: {exc}")
                         stats["errors"] += 1
+                        self._celestrak_breaker.record_error(
+                            blocked=exc.response.status_code == 403
+                        )
                 except httpx.HTTPError as exc:
                     logger.warning(f"meteor TLE fetch error for {norad}: {exc}")
                     stats["errors"] += 1
+                    self._celestrak_breaker.record_error()
                 except Exception as exc:
                     logger.warning(f"meteor TLE parse error for {norad}: {exc}")
                     stats["errors"] += 1
@@ -1431,9 +1593,11 @@ class TLEManager:
         Before looping, probes SATNOGS reachability with a single request
         (_probe_reachable()). If that fails to even connect, the whole run is
         skipped immediately rather than looping over every satellite — see
-        that function's docstring for why. Otherwise, requests run up to 20
-        at a time (matching fetch_active_tles()'s Phase 2b) rather than one
-        after another, so a run where SATNOGS *is* reachable but individual
+        that function's docstring for why. Otherwise, requests run up to
+        PHASE2_CONCURRENCY at a time (matching fetch_active_tles()'s Phase
+        2b, and sharing the same TLEManager-wide SATNOGS circuit breaker so
+        an already-blocked session skips this too) rather than one after
+        another, so a run where SATNOGS *is* reachable but individual
         satellites are slow still doesn't serialize unnecessarily.
 
         When the TLE line1 contains a *different* NORAD ID (i.e. SATNOGS internally knows
@@ -1444,8 +1608,6 @@ class TLEManager:
             {"inserted": N, "updated": N, "no_tle": N,
              "hidden_unknown": N, "hidden_expired": N, "errors": N}
         """
-        import asyncio as _asyncio  # noqa: PLC0415
-
         rows = self._conn.execute(
             "SELECT norad_cat_id, name, status, tle_no_result_since FROM satellites"
             " WHERE norad_cat_id >= 90000 AND is_hidden = 0"
@@ -1462,6 +1624,16 @@ class TLEManager:
         if not rows:
             return stats
 
+        breaker = self._satnogs_breaker
+        if breaker.tripped:
+            logger.warning(
+                "SATNOGS already blocked this session — skipping %d provisional TLE fetch(es)",
+                len(rows),
+            )
+            stats["errors"] = len(rows)
+            self._log_sync("satnogs-provisional", stats)
+            return stats
+
         if not await _probe_reachable(
             SATNOGS_TLE_URL, {"norad_cat_id": int(rows[0]["norad_cat_id"]), "format": "json"}
         ):
@@ -1474,13 +1646,9 @@ class TLEManager:
             return stats
 
         now = datetime.now(UTC).isoformat()
-        total = len(rows)
-        done = 0
+        pacer = RequestPacer(PHASE2_MIN_INTERVAL_S)
 
-        semaphore = _asyncio.Semaphore(20)  # max 20 concurrent requests
-
-        async def _fetch_one(row: sqlite3.Row) -> None:
-            nonlocal done
+        async def _fetch_one(client: httpx.AsyncClient, row: sqlite3.Row) -> None:
             fake_id = int(row["norad_cat_id"])
             sat_name = str(row["name"])
             sat_status = str(row["status"] or "unknown")
@@ -1488,39 +1656,44 @@ class TLEManager:
                 str(row["tle_no_result_since"]) if row["tle_no_result_since"] else None
             )
 
-            async with semaphore:
-                try:
-                    async with httpx.AsyncClient(timeout=15.0) as client:
-                        r = await client.get(
-                            SATNOGS_TLE_URL,
-                            params={"norad_cat_id": fake_id, "format": "json"},
-                            timeout=10.0,
-                        )
-                        r.raise_for_status()
-                        data = r.json()
-                except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RemoteProtocolError) as exc:
-                    # Expected when the app is shutting down or the network is
-                    # momentarily unavailable — logged at debug (not warning)
-                    # to avoid spamming, but still records the exception type
-                    # since these stringify to "" and give no clue otherwise.
-                    ename = type(exc).__name__
-                    logger.debug(f"provisional TLE fetch timeout for {fake_id}: {ename}")
-                    stats["errors"] += 1
-                    return
-                except httpx.HTTPError as exc:
-                    ename = type(exc).__name__
-                    logger.warning(f"provisional TLE fetch error for {fake_id}: {ename}: {exc}")
-                    stats["errors"] += 1
-                    return
-                except Exception as exc:
-                    ename = type(exc).__name__
-                    logger.warning(f"prov TLE unexpected error for {fake_id}: {ename}: {exc}")
-                    stats["errors"] += 1
-                    return
-                finally:
-                    done += 1
-                    if progress_callback:
-                        progress_callback(done, total)
+            try:
+                await pacer.wait()
+                r = await client.get(
+                    SATNOGS_TLE_URL,
+                    params={"norad_cat_id": fake_id, "format": "json"},
+                    timeout=10.0,
+                )
+                r.raise_for_status()
+                data = r.json()
+            except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RemoteProtocolError) as exc:
+                # Expected when the app is shutting down or the network is
+                # momentarily unavailable — logged at debug (not warning)
+                # to avoid spamming, but still records the exception type
+                # since these stringify to "" and give no clue otherwise.
+                ename = type(exc).__name__
+                logger.debug(f"provisional TLE fetch timeout for {fake_id}: {ename}")
+                stats["errors"] += 1
+                return
+            except httpx.HTTPStatusError as exc:
+                ename = type(exc).__name__
+                logger.warning(f"provisional TLE fetch error for {fake_id}: {ename}: {exc}")
+                stats["errors"] += 1
+                # SATNOGS documents no rate-limit policy, but HTTP 429 ("Too
+                # Many Requests") is the standard way a server says so anyway
+                # -- treat it the same as CelesTrak's 403.
+                breaker.record_error(blocked=exc.response.status_code == 429)
+                return
+            except httpx.HTTPError as exc:
+                ename = type(exc).__name__
+                logger.warning(f"provisional TLE fetch error for {fake_id}: {ename}: {exc}")
+                stats["errors"] += 1
+                breaker.record_error()
+                return
+            except Exception as exc:
+                ename = type(exc).__name__
+                logger.warning(f"prov TLE unexpected error for {fake_id}: {ename}: {exc}")
+                stats["errors"] += 1
+                return
 
             # The SATNOGS TLE API returns a JSON list; take the first element.
             if isinstance(data, list):
@@ -1621,7 +1794,18 @@ class TLEManager:
             else:
                 stats["inserted"] += 1
 
-        await _asyncio.gather(*[_fetch_one(row) for row in rows])
+        async with httpx.AsyncClient(
+            timeout=15.0,
+            headers=DEFAULT_HEADERS,
+            limits=httpx.Limits(
+                max_connections=PHASE2_CONCURRENCY, max_keepalive_connections=PHASE2_CONCURRENCY
+            ),
+        ) as client:
+            await _run_with_breaker(
+                [functools.partial(_fetch_one, client, row) for row in rows],
+                breaker,
+                on_progress=progress_callback,
+            )
 
         self._conn.commit()
         self._log_sync("satnogs-provisional", stats)
