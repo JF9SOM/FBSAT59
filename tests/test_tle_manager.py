@@ -1095,6 +1095,56 @@ class TestFetchActiveTlesCircuitBreaker:
         assert any("unreachable" in m for m in progress_messages)
 
 
+class TestIsProvisionalTleStale:
+    """fetch_provisional_tles() used to be called unconditionally on every
+    app startup with no staleness check at all, unlike fetch_active_tles()
+    (is_active_tle_stale()) -- so closing and reopening the app in quick
+    succession re-ran it every single time regardless of CLAUDE.md's
+    documented 12h cadence (reported 2026-08-11). is_provisional_tle_stale()
+    mirrors is_active_tle_stale() exactly, keyed on the 'satnogs-provisional'
+    sync_log entries fetch_provisional_tles() already writes.
+    """
+
+    def test_true_when_never_fetched(self, db: sqlite3.Connection) -> None:
+        mgr = TLEManager(db)
+        assert mgr.is_provisional_tle_stale() is True
+
+    def test_false_when_recently_fetched(self, db: sqlite3.Connection) -> None:
+        mgr = TLEManager(db)
+        mgr._log_sync("satnogs-provisional", {"inserted": 1, "updated": 0})
+        assert mgr.is_provisional_tle_stale() is False
+
+    def test_true_once_older_than_the_default_12h(self, db: sqlite3.Connection) -> None:
+        mgr = TLEManager(db)
+        old = (datetime.now(UTC) - timedelta(hours=13)).isoformat()
+        db.execute(
+            "INSERT INTO sync_log (sync_type, started_at, finished_at, status,"
+            " records_updated) VALUES ('satnogs-provisional', ?, ?, 'success', 0)",
+            (old, old),
+        )
+        db.commit()
+        assert mgr.is_provisional_tle_stale() is True
+
+    def test_respects_a_custom_max_age_hours(self, db: sqlite3.Connection) -> None:
+        mgr = TLEManager(db)
+        two_hours_ago = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
+        db.execute(
+            "INSERT INTO sync_log (sync_type, started_at, finished_at, status,"
+            " records_updated) VALUES ('satnogs-provisional', ?, ?, 'success', 0)",
+            (two_hours_ago, two_hours_ago),
+        )
+        db.commit()
+        assert mgr.is_provisional_tle_stale(max_age_hours=1.0) is True
+        assert mgr.is_provisional_tle_stale(max_age_hours=4.0) is False
+
+    def test_unrelated_sync_types_are_ignored(self, db: sqlite3.Connection) -> None:
+        """A fresh celestrak-active entry must not make provisional TLEs
+        look fresh too -- each sync_type's staleness is independent."""
+        mgr = TLEManager(db)
+        mgr._log_sync("celestrak-active", {"inserted": 1, "updated": 0})
+        assert mgr.is_provisional_tle_stale() is True
+
+
 class TestActiveTleRetryAfterPersistence:
     """The retry-due marker (app_settings key 'active_tle_retry_after')
     must survive being read back by a *different* TLEManager instance on

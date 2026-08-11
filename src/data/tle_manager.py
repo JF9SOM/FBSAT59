@@ -505,6 +505,33 @@ class TLEManager:
             last = last.replace(tzinfo=UTC)
         return datetime.now(UTC) - last > timedelta(hours=max_age_hours)
 
+    def is_provisional_tle_stale(self, max_age_hours: float = 12.0) -> bool:
+        """Return True if the last satnogs-provisional TLE fetch is older than
+        max_age_hours (or never ran).
+
+        Mirrors is_active_tle_stale() exactly, for the same reason:
+        fetch_provisional_tles() used to be called unconditionally on every
+        app startup (as one step of _refresh_satellite_names_sync()), with
+        no staleness check at all -- unlike fetch_active_tles(), which
+        already had one. CLAUDE.md documents a 12h cadence for provisional
+        TLEs, but that only actually held while the app stayed running long
+        enough for the APScheduler interval job (provisional_tle_refresh)
+        to fire; closing and reopening the app in quick succession made the
+        startup call run every single time regardless of how recently it
+        last completed (reported 2026-08-11). The default here matches that
+        documented 12h interval.
+        """
+        row = self._conn.execute(
+            "SELECT finished_at FROM sync_log WHERE sync_type = 'satnogs-provisional'"
+            " ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if not row:
+            return True
+        last = datetime.fromisoformat(str(row["finished_at"]))
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=UTC)
+        return datetime.now(UTC) - last > timedelta(hours=max_age_hours)
+
     def is_source_stale(self, source_name: str) -> bool:
         """Return True if the given TLE source has never been fetched (no sync_log entry).
 

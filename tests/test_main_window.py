@@ -3101,6 +3101,54 @@ class TestFetchAllTleSourcesGuardAndFeedback:
 
         assert w._tle_fetch_in_progress is False
 
+    def test_calls_fetch_provisional_tles(self, qtbot, db, tle_manager) -> None:
+        """fetch_provisional_tles() (NORAD >= 90000) used to never be called
+        from here at all -- the exact same class of bug fetch_active_tles()
+        had before it was added above, just never fixed for provisional
+        satellites (2026-08-11 audit). Pressing Update TLE must now also
+        attempt to refresh them, unconditionally (bypassing its own
+        staleness gate, same rationale as fetch_active_tles() above)."""
+        from unittest.mock import AsyncMock, patch
+
+        w = self._make_window(qtbot, db, tle_manager)
+        w._tle_manager.fetch_and_update = AsyncMock(  # type: ignore[method-assign]
+            return_value={"inserted": 0, "updated": 0, "errors": 0}
+        )
+        w._tle_manager.fetch_active_tles = AsyncMock(  # type: ignore[method-assign]
+            return_value={
+                "inserted": 0,
+                "updated": 0,
+                "no_tle": 0,
+                "hidden_unknown": 0,
+                "hidden_expired": 0,
+                "errors": 0,
+                "celestrak_blocked": 0,
+                "satnogs_blocked": 0,
+                "phase2_total": 0,
+                "phase2_unresolved": 0,
+            }
+        )
+        prov_mock = AsyncMock(
+            return_value={
+                "inserted": 1,
+                "updated": 0,
+                "no_tle": 0,
+                "hidden_unknown": 0,
+                "hidden_expired": 0,
+                "errors": 0,
+            }
+        )
+        w._tle_manager.fetch_provisional_tles = prov_mock  # type: ignore[method-assign]
+        # is_provisional_tle_stale() itself must NOT gate this call -- pressing
+        # Update TLE is an explicit "now" request, so make the cache look
+        # freshly-fetched and confirm the call still happens anyway.
+        w._tle_manager.is_provisional_tle_stale = MagicMock(return_value=False)  # type: ignore[method-assign]
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._fetch_all_tle_sources()
+
+        prov_mock.assert_awaited_once()
+
 
 class TestActiveTleRetryScheduling:
     """_schedule_active_tle_retry_if_blocked() queues a one-shot retry when
@@ -3223,3 +3271,67 @@ class TestActiveTleRetryScheduling:
 
         w2 = self._make_window(qtbot, db, tle_manager)
         assert w2._tle_manager.is_active_tle_retry_due() is True
+
+
+class TestRefreshSatelliteNamesSyncGatesProvisionalFetch:
+    """_refresh_satellite_names_sync() (the startup TLE-sync chain) used to
+    call fetch_provisional_tles() unconditionally on every launch, with no
+    staleness check at all -- unlike fetch_active_tles() a few lines above
+    it, which already checks is_active_tle_stale(). Closing and reopening
+    the app in quick succession re-ran the provisional fetch every single
+    time regardless of CLAUDE.md's documented 12h cadence (reported
+    2026-08-11). is_provisional_tle_stale() now gates this the same way.
+    """
+
+    def _make_window(self, qtbot, db: sqlite3.Connection, tle_manager: TLEManager) -> MainWindow:
+        w = MainWindow(conn=db, tle_manager=tle_manager)
+        qtbot.addWidget(w)
+        return w
+
+    def _stub_everything_else(self, w: MainWindow) -> None:
+        """Mocks every other step of the chain so a test can isolate just
+        the provisional-fetch gating, without making real network calls or
+        depending on what SettingsDialog.get_enabled_sources() happens to
+        default to against a fresh empty DB."""
+        from unittest.mock import AsyncMock
+
+        w._transmitter_manager.sync_satellite_names = AsyncMock(  # type: ignore[method-assign]
+            return_value={"updated": 0, "skipped": 0}
+        )
+        w._tle_manager.is_active_tle_stale = MagicMock(return_value=False)  # type: ignore[method-assign]
+        w._tle_manager.is_active_tle_retry_due = MagicMock(return_value=False)  # type: ignore[method-assign]
+        w._tle_manager.fetch_legacy_tles = AsyncMock(  # type: ignore[method-assign]
+            return_value={"found": 0, "hidden": 0, "errors": 0}
+        )
+        w._tle_manager.fetch_meteor_tles = AsyncMock(  # type: ignore[method-assign]
+            return_value={"found": 0, "skipped": 0, "errors": 0}
+        )
+        w._tle_manager.fetch_and_update = AsyncMock(  # type: ignore[method-assign]
+            return_value={"inserted": 0, "updated": 0, "errors": 0}
+        )
+
+    def test_skips_fetch_when_cache_is_fresh(self, qtbot, db, tle_manager) -> None:
+        from unittest.mock import AsyncMock
+
+        w = self._make_window(qtbot, db, tle_manager)
+        self._stub_everything_else(w)
+        w._tle_manager.is_provisional_tle_stale = MagicMock(return_value=False)  # type: ignore[method-assign]
+        prov_mock = AsyncMock(return_value={"inserted": 0, "updated": 0, "errors": 0})
+        w._tle_manager.fetch_provisional_tles = prov_mock  # type: ignore[method-assign]
+
+        w._refresh_satellite_names_sync()
+
+        prov_mock.assert_not_awaited()
+
+    def test_fetches_when_cache_is_stale(self, qtbot, db, tle_manager) -> None:
+        from unittest.mock import AsyncMock
+
+        w = self._make_window(qtbot, db, tle_manager)
+        self._stub_everything_else(w)
+        w._tle_manager.is_provisional_tle_stale = MagicMock(return_value=True)  # type: ignore[method-assign]
+        prov_mock = AsyncMock(return_value={"inserted": 0, "updated": 0, "errors": 0})
+        w._tle_manager.fetch_provisional_tles = prov_mock  # type: ignore[method-assign]
+
+        w._refresh_satellite_names_sync()
+
+        prov_mock.assert_awaited_once()

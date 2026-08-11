@@ -1598,13 +1598,20 @@ class MainWindow(QMainWindow):
         def _prov_progress(done: int, total: int) -> None:
             self._sync_progress.emit(f"🛰 Fetching provisional TLEs... ({done}/{total})")
 
-        try:
-            prov = asyncio.run(
-                self._tle_manager.fetch_provisional_tles(progress_callback=_prov_progress)
-            )
-            logger.info("Provisional TLE fetch completed: %s", prov)
-        except Exception as exc:
-            logger.warning("Provisional TLE fetch failed: %s: %s", type(exc).__name__, exc)
+        # is_provisional_tle_stale() gate added 2026-08-11: this call used to run
+        # unconditionally on every startup regardless of CLAUDE.md's documented
+        # 12h cadence, which only actually held while the app stayed running long
+        # enough for the APScheduler interval job to fire.
+        if self._tle_manager.is_provisional_tle_stale():
+            try:
+                prov = asyncio.run(
+                    self._tle_manager.fetch_provisional_tles(progress_callback=_prov_progress)
+                )
+                logger.info("Provisional TLE fetch completed: %s", prov)
+            except Exception as exc:
+                logger.warning("Provisional TLE fetch failed: %s: %s", type(exc).__name__, exc)
+        else:
+            logger.info("Provisional TLE cache is fresh — skipping fetch.")
 
         if self._shutdown_flag.is_set():
             return
@@ -4857,6 +4864,14 @@ class MainWindow(QMainWindow):
         Update TLE indefinitely and the satellite would never update — which
         is exactly what happened (2026-08-10 report).
 
+        fetch_provisional_tles() (NORAD >= 90000) had the exact same gap —
+        never called from here at all, so pressing Update TLE could never
+        refresh a provisional satellite no matter how many times it was
+        pressed (2026-08-11 audit, prompted by a report about the startup
+        path's own missing staleness gate). Added alongside
+        fetch_active_tles() for the same reason, also bypassing its own
+        staleness gate for the same "explicit request now" rationale.
+
         Guarded by _tle_fetch_in_progress against a second overlapping call
         while one is still running -- see that flag's docstring. Also emits
         an immediate status message before the (feedback-free) 6-group bulk
@@ -4879,6 +4894,9 @@ class MainWindow(QMainWindow):
 
         def _active_progress(msg: str) -> None:
             self._sync_progress.emit(f"🛰 {msg}")
+
+        def _prov_progress(done: int, total: int) -> None:
+            self._sync_progress.emit(f"🛰 Fetching provisional TLEs... ({done}/{total})")
 
         def _fetch_all() -> None:
             self._tle_fetch_in_progress = True
@@ -4909,6 +4927,16 @@ class MainWindow(QMainWindow):
                     self._schedule_active_tle_retry_if_blocked(active)
                 except Exception as exc:
                     logger.warning("Manual active TLE fetch error: %s: %s", type(exc).__name__, exc)
+
+                try:
+                    prov = asyncio.run(
+                        self._tle_manager.fetch_provisional_tles(progress_callback=_prov_progress)
+                    )
+                    logger.info("Manual provisional TLE fetch result: %s", prov)
+                except Exception as exc:
+                    logger.warning(
+                        "Manual provisional TLE fetch error: %s: %s", type(exc).__name__, exc
+                    )
 
                 # Signal emit is thread-safe; Qt automatically queues it to the main thread.
                 self._satellite_list_refresh.emit()
