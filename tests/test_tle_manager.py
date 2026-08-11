@@ -87,11 +87,22 @@ def _group_active_resp(text: str = "") -> MagicMock:
 def _group_active_cache_stale_403() -> MagicMock:
     """GROUP=active's own ~2h server-side cache 403 -- not an abuse block,
     just "you already downloaded this within the last 2 hours".
+
+    Body captured verbatim from a real response (2026-08-11) rather than a
+    hand-written single-line string: it word-wraps with CRLF roughly every
+    ~55 characters, including right in the middle of the exact phrase
+    _is_active_cache_not_yet_updated() searches for. An earlier version of
+    this fixture used a single unbroken line and so never reproduced that
+    wrapping -- which meant this exact scenario had "passing" test coverage
+    the whole time despite the real check never once matching a real
+    response (every actual 403 was misclassified as a genuine block; see
+    _is_active_cache_not_yet_updated()'s docstring for the 2026-08-11 fix).
     """
     return _mk_response(
         text=(
-            "GP data has not updated since your last successful download "
-            "of GROUP=active at 2026-08-11T12:00:00Z"
+            "GP data has not updated since your last successful\r\n"
+            "download of GROUP=active at 2026-08-11 10:30:04 UTC.\r\n"
+            "Data is updated once every 2 hours."
         ),
         status_code=403,
     )
@@ -818,6 +829,48 @@ class TestGetWithProgressResponseIsReadable:
                 raise AssertionError("expected raise_for_status() to raise")
 
         assert asyncio.run(run()) == "quota exceeded, try again later"
+
+
+class TestIsActiveCacheNotYetUpdated:
+    """Regression coverage for a real bug (2026-08-11): the check never
+    matched a real GROUP=active 403 body, because that body word-wraps with
+    CRLF roughly every ~55 characters -- including right in the middle of
+    the exact phrase being searched for ("...your last successful\r\ndownload
+    of GROUP=active..."). A plain substring check can't match text split
+    across a line break, so every real cache-not-yet-updated 403 was
+    silently misclassified as a genuine block. Confirmed live: a real run's
+    diagnostic log captured the actual body and showed the mismatch
+    directly. Fixed by collapsing whitespace runs before matching.
+    """
+
+    def test_matches_the_real_word_wrapped_response_body(self) -> None:
+        from data.tle_manager import _is_active_cache_not_yet_updated
+
+        # Captured verbatim from a real 403 response, 2026-08-11.
+        body = (
+            "GP data has not updated since your last successful\r\n"
+            "download of GROUP=active at 2026-08-11 10:30:04 UTC.\r\n"
+            "Data is updated once every 2 hours."
+        )
+        assert _is_active_cache_not_yet_updated(body) is True
+
+    def test_matches_a_single_line_variant_too(self) -> None:
+        from data.tle_manager import _is_active_cache_not_yet_updated
+
+        body = "GP data has not updated since your last successful download of GROUP=active at ..."
+        assert _is_active_cache_not_yet_updated(body) is True
+
+    def test_matches_regardless_of_case(self) -> None:
+        from data.tle_manager import _is_active_cache_not_yet_updated
+
+        body = "gp data HAS NOT UPDATED since your last successful\r\ndownload of group=active..."
+        assert _is_active_cache_not_yet_updated(body) is True
+
+    def test_does_not_match_an_unrelated_403_body(self) -> None:
+        from data.tle_manager import _is_active_cache_not_yet_updated
+
+        assert _is_active_cache_not_yet_updated("Access denied.") is False
+        assert _is_active_cache_not_yet_updated("") is False
 
 
 class TestErrorCountBreaker:

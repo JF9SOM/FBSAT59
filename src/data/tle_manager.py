@@ -131,8 +131,25 @@ def _is_active_cache_not_yet_updated(response_text: str) -> bool:
     be misread as an abuse block (which would falsely trip the circuit
     breaker and show an alarming "blocked, retrying in 3h" status for a
     request that was never actually rejected for abuse).
+
+    2026-08-11 bug fix: this check never once matched a real response,
+    confirmed via the diagnostic logging added earlier the same day. The
+    actual body word-wraps with CRLF line breaks roughly every ~55
+    characters -- including right in the middle of the exact phrase this
+    function searches for ("...your last successful\r\ndownload of
+    GROUP=active..."). A plain substring check against response_text.lower()
+    can never match text split across a line break, so every real
+    cache-not-yet-updated 403 was silently misclassified as a genuine block:
+    the circuit breaker tripped, a needless 3h backoff got scheduled, and
+    the status bar showed an alarming "CelesTrak blocked" for a request that
+    was never actually rejected for abuse -- precisely the failure mode this
+    function was written to prevent (the invented single-line test fixture
+    used to cover this never reproduced the wrapping, so it never caught
+    it). Fixed by collapsing all whitespace runs (including the embedded
+    CRLF) to single spaces before matching.
     """
-    return "has not updated since your last successful download" in response_text.lower()
+    normalized = " ".join(response_text.lower().split())
+    return "has not updated since your last successful download" in normalized
 
 
 async def _get_with_progress(
