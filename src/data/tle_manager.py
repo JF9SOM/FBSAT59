@@ -135,6 +135,53 @@ def _is_active_cache_not_yet_updated(response_text: str) -> bool:
     return "has not updated since your last successful download" in response_text.lower()
 
 
+async def _get_with_progress(
+    client: httpx.AsyncClient,
+    url: str,
+    params: dict[str, Any],
+    label: str,
+    progress_callback: Any,
+) -> httpx.Response:
+    """Drop-in replacement for `await client.get(url, params=params)` that
+    additionally reports download progress via `progress_callback`, called
+    as `progress_callback(f"{label}: downloading... {pct}%")` (throttled to
+    whole-percent changes so a multi-MB download doesn't flood the UI with
+    one status-bar update per chunk) as the body streams in. Falls back to
+    a single `f"{label}: downloading..."` message with no percentage if the
+    server doesn't send a Content-Length header.
+
+    Used for CelesTrak's GROUP=active (Phase 1) and SATNOGS's bulk TLE dump
+    (Phase 2 / fetch_provisional_tles(), confirmed ~512KB unpaginated at
+    the time of testing, 2026-08-11) -- both single-request bulk downloads
+    large enough that "nothing happened for several seconds" would
+    otherwise look identical to a hang, the same concern that motivated
+    progress_callback in the first place (see fetch_active_tles()'s
+    docstring, 2026-08-10).
+
+    The returned Response has its body fully read by the time this
+    function returns (httpx caches the content once a stream is consumed
+    to completion), so callers use `.raise_for_status()`/`.text`/`.json()`
+    on it exactly like a response from `client.get()` -- including in an
+    `except httpx.HTTPStatusError as exc:` handler, since `exc.response`
+    is this same already-read object.
+    """
+    async with client.stream("GET", url, params=params) as response:
+        total_header = response.headers.get("content-length")
+        total_bytes = int(total_header) if total_header and total_header.isdigit() else None
+        downloaded = 0
+        last_pct = -1
+        async for chunk in response.aiter_bytes():
+            downloaded += len(chunk)
+            if progress_callback and total_bytes:
+                pct = int(downloaded * 100 / total_bytes)
+                if pct != last_pct:
+                    last_pct = pct
+                    progress_callback(f"{label}: downloading... {pct}%")
+        if progress_callback and total_bytes is None and downloaded > 0:
+            progress_callback(f"{label}: downloading...")
+        return response
+
+
 # CelesTrak's documented usage policy: an IP is sent to the firewall after 50
 # HTTP errors (301/403/404) within a 2-hour window
 # (https://celestrak.org/usage-policy.php, confirmed 2026-08-11). Phase 2a
@@ -348,9 +395,19 @@ class TLEManager:
         """
         return await _probe_reachable(SATNOGS_TLE_URL, {"norad_cat_id": 25544, "format": "json"})
 
-    async def _fetch_satnogs_bulk_tles(self) -> dict[int, dict[str, Any]] | None:
+    async def _fetch_satnogs_bulk_tles(
+        self, progress_callback: Any = None
+    ) -> dict[int, dict[str, Any]] | None:
         """Fetch every TLE SATNOGS knows about in one unpaginated request,
         returned as {norad_cat_id: record}.
+
+        `progress_callback`, if given, must accept a single string message
+        (matching fetch_active_tles()'s progress_callback shape) and is
+        forwarded to _get_with_progress() to report download percentage --
+        see that function's docstring. fetch_provisional_tles() does NOT
+        forward its own progress_callback here, since that one has a
+        different (done, total) shape used for a satellite count, not
+        download bytes.
 
         Replaces what used to be two separate per-satellite network loops --
         fetch_active_tles()'s old Phase 2a (CelesTrak individual CATNR) +
@@ -409,7 +466,9 @@ class TLEManager:
 
         try:
             async with httpx.AsyncClient(timeout=60.0, headers=DEFAULT_HEADERS) as client:
-                r = await client.get(SATNOGS_TLE_URL, params={"format": "json"})
+                r = await _get_with_progress(
+                    client, SATNOGS_TLE_URL, {"format": "json"}, "SATNOGS", progress_callback
+                )
                 r.raise_for_status()
                 data = r.json()
         except (httpx.ConnectTimeout, httpx.ConnectError) as exc:
@@ -1003,7 +1062,13 @@ class TLEManager:
                 if progress_callback:
                     progress_callback("CelesTrak active...")
                 try:
-                    r = await client.get(url_ct, params={"GROUP": "active", "FORMAT": "TLE"})
+                    r = await _get_with_progress(
+                        client,
+                        url_ct,
+                        {"GROUP": "active", "FORMAT": "TLE"},
+                        "CelesTrak",
+                        progress_callback,
+                    )
                     r.raise_for_status()
                     _process_tle_text(r.text, "celestrak-active")
                 except (httpx.ConnectTimeout, httpx.ConnectError):
@@ -1163,7 +1228,7 @@ class TLEManager:
             if progress_callback:
                 progress_callback(f"SATNOGS: {len(remaining)} satellite(s)...")
 
-            bulk = await self._fetch_satnogs_bulk_tles()
+            bulk = await self._fetch_satnogs_bulk_tles(progress_callback=progress_callback)
             if bulk is None:
                 logger.warning(
                     "SATNOGS bulk TLE fetch failed — %d satellite(s) unresolved this run",

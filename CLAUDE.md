@@ -5380,6 +5380,33 @@ Phase 2の対象条件が元々「TLE行が一つも無い衛星」のみだっ�
 Phase 2の`INSERT OR REPLACE`が毎回`tle_group`を`'amateur'`に強制リセットしていた副次バグ（分類の劣化）
 も、既存の`tle_group`を保持するよう修正済み。
 
+**ダウンロード進捗のパーセント表示（2026-08-11、`_get_with_progress()`）**: Phase 1・Phase 2とも
+1回のリクエストで完結する一括ダウンロードになったため、「今どのくらい進んでいるか」を`Content-Length`
+ヘッダーと実受信バイト数から計算してステータスバーに表示できないか検討し、実装した。SATNOGSの
+一括ダンプは実測で`Content-Length: 523906`が返ることを確認済み（本ファイル前述の一括エンドポイント
+検証時）。
+
+- `client.get(url, params=...)`（レスポンス全体を受け取ってから返る）を`client.stream("GET", url,
+  params=...)`によるストリーミング受信に置き換えた`_get_with_progress()`を新設。Phase 1
+  （`GROUP=active`）とPhase 2（SATNOGS一括ダンプ`_fetch_satnogs_bulk_tles()`）の両方が共通で使う
+- `response.aiter_bytes()`でチャンクを受信するたびに`Content-Length`との比率からパーセントを計算し、
+  1%刻みで変化があったときだけ`progress_callback(f"{label}: downloading... {pct}%")`を呼ぶ
+  （毎チャンクそのまま呼ぶとステータスバーの更新が多すぎるため）
+- **表示形式はパーセントのみ**（例: `SATNOGS: downloading... 45%`）。KB数の併記は情報過多と判断し
+  見送った（ユーザー判断、2026-08-11）
+- ストリーミングで受信し切ったレスポンスは、`async with client.stream(...) as response:`の
+  ブロックを抜けた後も`.text`/`.json()`/`.raise_for_status()`がそのまま使える（httpxはストリームを
+  最後まで読み切った時点で内容をキャッシュする仕様のため）。これにより呼び出し元の既存の
+  例外処理コード（`_is_active_cache_not_yet_updated(exc.response.text)`等）は無変更で動く
+- `Content-Length`ヘッダーが無い場合（chunked転送等）は、パーセント無しの`"{label}:
+  downloading..."`を1回だけ表示するフォールバックにした
+- **`fetch_provisional_tles()`には配線していない**。この関数の`progress_callback`は
+  `(done: int, total: int)`という「衛星件数」を表す別のシグネチャ（`_fetch_satnogs_bulk_tles()`が
+  使う文字列1個のシグネチャとは非互換）で、`main_window.py`側の`_prov_progress(done, total)`に
+  直接バイト数を渡すと衛星件数と誤解される表示になってしまうため。実運用では`fetch_active_tles()`
+  が先に呼ばれてキャッシュを温めるため、`fetch_provisional_tles()`が実際にバルクダウンロードを
+  行う機会自体まれ（本ファイル前述のキャッシュ機構参照）という判断もあった
+
 ### 起動時の TLE 同期フロー（2026-08-10 順序変更・2026-08-11 鮮度ゲート監査で更新）
 
 `MainWindow._start_scheduler()` が起動直後に以下を行う（`_no_background_sync` テストフィクスチャで

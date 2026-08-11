@@ -6,6 +6,7 @@ Lightweight (no Qt import) so it is safe to run locally, unlike test_main_window
 from __future__ import annotations
 
 import asyncio
+import json as _json
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -25,40 +26,82 @@ _LINE1_B = "1 68795U 26088D   26192.91095598  .00012852  00000-0  81506-3 0  999
 _LINE2_B = "2 68795  97.5066 327.0920 0015527  49.6354 310.6228 15.08945428  9764"
 
 
+def _mk_response(
+    *,
+    text: str | None = None,
+    json_data: Any = None,
+    status_code: int = 200,
+    has_content_length: bool = True,
+) -> MagicMock:
+    """A mock httpx.Response as returned by `async with client.stream(...) as r`
+    (both Phase 1's GROUP=active fetch and Phase 2's SATNOGS bulk fetch use
+    _get_with_progress(), which streams via client.stream() instead of
+    client.get() so it can report download percentage). `.aiter_bytes()`
+    yields the body in a few chunks so percentage-progress logic has
+    something to observe, matching how a real multi-KB/MB response arrives
+    over several TCP reads rather than all at once.
+    """
+    if text is not None:
+        body = text.encode()
+    elif json_data is not None:
+        body = _json.dumps(json_data).encode()
+    else:
+        body = b""
+
+    resp = MagicMock()
+    resp.status_code = status_code
+    headers: dict[str, str] = {}
+    if has_content_length:
+        headers["content-length"] = str(len(body))
+    resp.headers = headers
+
+    async def _aiter_bytes(chunk_size: int = 65536) -> Any:
+        if not body:
+            return
+        n = max(1, len(body) // 3)
+        for i in range(0, len(body), n):
+            yield body[i : i + n]
+
+    resp.aiter_bytes = _aiter_bytes
+    if text is not None:
+        resp.text = text
+    if json_data is not None:
+        resp.json = MagicMock(return_value=json_data)
+
+    if status_code >= 400:
+        resp.raise_for_status = MagicMock(
+            side_effect=httpx.HTTPStatusError(
+                f"{status_code} error", request=MagicMock(), response=resp
+            )
+        )
+    else:
+        resp.raise_for_status = MagicMock(return_value=None)
+    return resp
+
+
 def _group_active_resp(text: str = "") -> MagicMock:
     """A successful Phase 1 (CelesTrak GROUP=active) response."""
-    resp = MagicMock()
-    resp.text = text
-    resp.raise_for_status.return_value = None
-    return resp
+    return _mk_response(text=text)
 
 
 def _group_active_cache_stale_403() -> MagicMock:
     """GROUP=active's own ~2h server-side cache 403 -- not an abuse block,
     just "you already downloaded this within the last 2 hours".
     """
-    resp = MagicMock()
-    resp.status_code = 403
-    resp.text = (
-        "GP data has not updated since your last successful download "
-        "of GROUP=active at 2026-08-11T12:00:00Z"
+    return _mk_response(
+        text=(
+            "GP data has not updated since your last successful download "
+            "of GROUP=active at 2026-08-11T12:00:00Z"
+        ),
+        status_code=403,
     )
-    resp.raise_for_status.side_effect = httpx.HTTPStatusError(
-        "403 error", request=MagicMock(), response=resp
-    )
-    return resp
 
 
 def _error_resp(status_code: int) -> MagicMock:
     """A response representing a real HTTP error status (403, 429, 500, ...)
     that raise_for_status() actually raises for.
     """
-    resp = MagicMock()
-    resp.status_code = status_code
-    resp.raise_for_status.side_effect = httpx.HTTPStatusError(
-        f"{status_code} error", request=MagicMock(), response=resp
-    )
-    return resp
+    return _mk_response(text="", status_code=status_code)
 
 
 def _bulk_record(norad: int, line1: str, line2: str, name: str = "SAT") -> dict[str, Any]:
@@ -78,10 +121,29 @@ def _bulk_record(norad: int, line1: str, line2: str, name: str = "SAT") -> dict[
 
 def _satnogs_bulk_resp(records: list[dict[str, Any]]) -> MagicMock:
     """A successful SATNOGS bulk TLE dump response."""
-    resp = MagicMock()
-    resp.json.return_value = records
-    resp.raise_for_status.return_value = None
-    return resp
+    return _mk_response(json_data=records)
+
+
+def _stream_ctx(response: MagicMock) -> MagicMock:
+    """A mock for the async context manager `client.stream(...)` returns."""
+    ctx = MagicMock()
+    ctx.__aenter__ = AsyncMock(return_value=response)
+    ctx.__aexit__ = AsyncMock(return_value=None)
+    return ctx
+
+
+def _stream_items(*items: MagicMock | BaseException) -> list[Any]:
+    """Builds a `side_effect` list for `mock_client.stream`, one entry per
+    call to `client.stream(...)`. Each item is either a response (wrapped
+    into the context manager `client.stream()` really returns) or a raw
+    exception instance -- MagicMock raises exception items directly when
+    `.stream()` is *called*, which for our purposes is indistinguishable
+    from httpx raising the same exception while connecting (inside
+    `__aenter__`), since either way it propagates out of the same
+    `async with client.stream(...) as r:` statement in
+    _get_with_progress().
+    """
+    return [item if isinstance(item, BaseException) else _stream_ctx(item) for item in items]
 
 
 @pytest.fixture()
@@ -136,14 +198,14 @@ class TestFetchActiveTlesPhase1UsesGroupActive:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=_group_active_resp())
+        mock_client.stream = MagicMock(return_value=_stream_ctx(_group_active_resp()))
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
             _wire_mock_client(mock_cls, mock_client)
             asyncio.run(mgr.fetch_active_tles())
 
-        assert mock_client.get.await_count == 1
-        call = mock_client.get.call_args_list[0]
+        assert mock_client.stream.call_count == 1
+        call = mock_client.stream.call_args_list[0]
         assert call.kwargs["params"] == {"GROUP": "active", "FORMAT": "TLE"}
 
     def test_403_with_cache_not_updated_message_is_not_treated_as_blocked(
@@ -164,11 +226,11 @@ class TestFetchActiveTlesPhase1UsesGroupActive:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            side_effect=[
+        mock_client.stream = MagicMock(
+            side_effect=_stream_items(
                 _group_active_cache_stale_403(),
                 _satnogs_bulk_resp([_bulk_record(68795, _LINE1_B, _LINE2_B, "OrigamiSat-2")]),
-            ]
+            )
         )
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
@@ -197,11 +259,11 @@ class TestFetchActiveTlesPhase1UsesGroupActive:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            side_effect=[
+        mock_client.stream = MagicMock(
+            side_effect=_stream_items(
                 _error_resp(403),
                 _satnogs_bulk_resp([_bulk_record(68795, _LINE1_B, _LINE2_B, "OrigamiSat-2")]),
-            ]
+            )
         )
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
@@ -225,7 +287,7 @@ class TestFetchActiveTlesPhase1UsesGroupActive:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=httpx.ConnectTimeout("boom"))
+        mock_client.stream = MagicMock(side_effect=httpx.ConnectTimeout("boom"))
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
             _wire_mock_client(mock_cls, mock_client)
@@ -252,11 +314,11 @@ class TestFetchActiveTlesSatnogsSourceIdRouting:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            side_effect=[
+        mock_client.stream = MagicMock(
+            side_effect=_stream_items(
                 _group_active_resp(),
                 _satnogs_bulk_resp([_bulk_record(98329, _LINE1, _LINE2, "ARICA-2")]),
-            ]
+            )
         )
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
@@ -279,11 +341,11 @@ class TestFetchActiveTlesSatnogsSourceIdRouting:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            side_effect=[
+        mock_client.stream = MagicMock(
+            side_effect=_stream_items(
                 _group_active_resp(),
                 _satnogs_bulk_resp([_bulk_record(43803, _LINE1, _LINE2, "JO-97")]),
-            ]
+            )
         )
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
@@ -321,18 +383,18 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            side_effect=[
+        mock_client.stream = MagicMock(
+            side_effect=_stream_items(
                 _group_active_resp(),
                 _satnogs_bulk_resp([_bulk_record(68795, _LINE1_B, _LINE2_B, "OrigamiSat-2")]),
-            ]
+            )
         )
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
             _wire_mock_client(mock_cls, mock_client)
             stats = asyncio.run(mgr.fetch_active_tles())
 
-        assert mock_client.get.await_count == 2
+        assert mock_client.stream.call_count == 2
         row = db.execute(
             "SELECT fetched_at, tle_group, source FROM tle_data WHERE norad_cat_id = 68795"
         ).fetchone()
@@ -357,8 +419,8 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            side_effect=[
+        mock_client.stream = MagicMock(
+            side_effect=_stream_items(
                 _group_active_resp(),
                 _satnogs_bulk_resp(
                     [
@@ -366,7 +428,7 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
                         _bulk_record(68796, _LINE1, _LINE2, "ARICA-2"),
                     ]
                 ),
-            ]
+            )
         )
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
@@ -374,7 +436,7 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
             stats = asyncio.run(mgr.fetch_active_tles())
 
         # One bulk request resolves both -- not one request per satellite.
-        assert mock_client.get.await_count == 2
+        assert mock_client.stream.call_count == 2
         assert stats["updated"] + stats["inserted"] == 2
         for norad in (68795, 68796):
             row = db.execute(
@@ -393,7 +455,9 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=[_group_active_resp(), _satnogs_bulk_resp([])])
+        mock_client.stream = MagicMock(
+            side_effect=_stream_items(_group_active_resp(), _satnogs_bulk_resp([]))
+        )
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
             _wire_mock_client(mock_cls, mock_client)
@@ -422,7 +486,7 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=[_group_active_resp()])
+        mock_client.stream = MagicMock(side_effect=_stream_items(_group_active_resp()))
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
             _wire_mock_client(mock_cls, mock_client)
@@ -430,7 +494,7 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
 
         # Only the Phase 1 GROUP=active request -- no Phase 2 call at all,
         # since this satellite never enters refresh_targets.
-        assert mock_client.get.await_count == 1
+        assert mock_client.stream.call_count == 1
 
     def test_manual_tle_is_not_requeried_by_phase2(self, db: sqlite3.Connection) -> None:
         db.execute(
@@ -449,13 +513,13 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=[_group_active_resp()])
+        mock_client.stream = MagicMock(side_effect=_stream_items(_group_active_resp()))
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
             _wire_mock_client(mock_cls, mock_client)
             asyncio.run(mgr.fetch_active_tles())
 
-        assert mock_client.get.await_count == 1
+        assert mock_client.stream.call_count == 1
 
 
 class TestFetchActiveTlesPhase2TargetSelection:
@@ -495,8 +559,8 @@ class TestFetchActiveTlesPhase2TargetSelection:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            side_effect=[
+        mock_client.stream = MagicMock(
+            side_effect=_stream_items(
                 _group_active_resp(),
                 _satnogs_bulk_resp(
                     [
@@ -504,7 +568,7 @@ class TestFetchActiveTlesPhase2TargetSelection:
                         _bulk_record(10002, _LINE1_B, _LINE2_B, "Sat B"),
                     ]
                 ),
-            ]
+            )
         )
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
@@ -541,11 +605,11 @@ class TestFetchActiveTlesProgressCallback:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            side_effect=[
+        mock_client.stream = MagicMock(
+            side_effect=_stream_items(
                 _group_active_resp(),
                 _satnogs_bulk_resp([_bulk_record(68795, _LINE1_B, _LINE2_B, "OrigamiSat-2")]),
-            ]
+            )
         )
 
         messages: list[str] = []
@@ -554,7 +618,13 @@ class TestFetchActiveTlesProgressCallback:
             _wire_mock_client(mock_cls, mock_client)
             asyncio.run(mgr.fetch_active_tles(progress_callback=messages.append))
 
-        assert messages == ["CelesTrak active...", "SATNOGS: 1 satellite(s)..."]
+        assert messages == [
+            "CelesTrak active...",
+            "SATNOGS: 1 satellite(s)...",
+            "SATNOGS: downloading... 33%",
+            "SATNOGS: downloading... 66%",
+            "SATNOGS: downloading... 100%",
+        ]
 
     def test_no_phase2_message_when_phase1_covers_everything(self, db: sqlite3.Connection) -> None:
         db.execute(
@@ -573,7 +643,7 @@ class TestFetchActiveTlesProgressCallback:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=_group_active_resp())
+        mock_client.stream = MagicMock(return_value=_stream_ctx(_group_active_resp()))
 
         messages: list[str] = []
 
@@ -582,6 +652,90 @@ class TestFetchActiveTlesProgressCallback:
             asyncio.run(mgr.fetch_active_tles(progress_callback=messages.append))
 
         assert messages == ["CelesTrak active..."]
+
+
+class TestGetWithProgressDownloadPercentage:
+    """_get_with_progress() streams the response body (instead of a plain
+    client.get()) so it can report download percentage as a bulk fetch
+    (Phase 1's GROUP=active, Phase 2's SATNOGS bulk dump) arrives, rather
+    than showing nothing until the whole multi-KB/MB body has landed.
+    """
+
+    def test_reports_whole_percent_steps_from_content_length(self, db: sqlite3.Connection) -> None:
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (68795, 'OrigamiSat-2', 'alive', 0)"
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.stream = MagicMock(
+            side_effect=_stream_items(
+                _group_active_resp(),
+                _satnogs_bulk_resp([_bulk_record(68795, _LINE1_B, _LINE2_B, "OrigamiSat-2")]),
+            )
+        )
+
+        messages: list[str] = []
+
+        with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
+            _wire_mock_client(mock_cls, mock_client)
+            asyncio.run(mgr.fetch_active_tles(progress_callback=messages.append))
+
+        download_messages = [m for m in messages if "downloading..." in m and "%" in m]
+        assert download_messages == [
+            "SATNOGS: downloading... 33%",
+            "SATNOGS: downloading... 66%",
+            "SATNOGS: downloading... 100%",
+        ]
+
+    def test_no_content_length_falls_back_to_a_single_message(self, db: sqlite3.Connection) -> None:
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (68795, 'OrigamiSat-2', 'alive', 0)"
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        satnogs_resp = _satnogs_bulk_resp([_bulk_record(68795, _LINE1_B, _LINE2_B, "OrigamiSat-2")])
+        satnogs_resp.headers = {}  # no content-length header at all
+        mock_client.stream = MagicMock(
+            side_effect=_stream_items(_group_active_resp(), satnogs_resp)
+        )
+
+        messages: list[str] = []
+
+        with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
+            _wire_mock_client(mock_cls, mock_client)
+            asyncio.run(mgr.fetch_active_tles(progress_callback=messages.append))
+
+        download_messages = [m for m in messages if "downloading" in m]
+        # Exactly one fallback message, no percentage -- not one per chunk.
+        assert download_messages == ["SATNOGS: downloading..."]
+
+    def test_no_progress_callback_does_not_crash(self, db: sqlite3.Connection) -> None:
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (68795, 'OrigamiSat-2', 'alive', 0)"
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.stream = MagicMock(
+            side_effect=_stream_items(
+                _group_active_resp(),
+                _satnogs_bulk_resp([_bulk_record(68795, _LINE1_B, _LINE2_B, "OrigamiSat-2")]),
+            )
+        )
+
+        with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
+            _wire_mock_client(mock_cls, mock_client)
+            stats = asyncio.run(mgr.fetch_active_tles())  # no progress_callback
+
+        assert stats["updated"] + stats["inserted"] == 1
 
 
 class TestErrorCountBreaker:
@@ -655,11 +809,11 @@ class TestFetchActiveTlesCircuitBreaker:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            side_effect=[
+        mock_client.stream = MagicMock(
+            side_effect=_stream_items(
                 _error_resp(403),
                 _satnogs_bulk_resp([_bulk_record(68795, _LINE1_B, _LINE2_B, "OrigamiSat-2")]),
-            ]
+            )
         )
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
@@ -679,7 +833,9 @@ class TestFetchActiveTlesCircuitBreaker:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=[_group_active_resp(), _error_resp(429)])
+        mock_client.stream = MagicMock(
+            side_effect=_stream_items(_group_active_resp(), _error_resp(429))
+        )
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
             _wire_mock_client(mock_cls, mock_client)
@@ -701,11 +857,11 @@ class TestFetchActiveTlesCircuitBreaker:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            side_effect=[
+        mock_client.stream = MagicMock(
+            side_effect=_stream_items(
                 _group_active_resp(),
                 _satnogs_bulk_resp([_bulk_record(68795, _LINE1_B, _LINE2_B, "OrigamiSat-2")]),
-            ]
+            )
         )
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
@@ -729,7 +885,9 @@ class TestFetchActiveTlesCircuitBreaker:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=[_group_active_resp(), httpx.ReadTimeout("boom")])
+        mock_client.stream = MagicMock(
+            side_effect=_stream_items(_group_active_resp(), httpx.ReadTimeout("boom"))
+        )
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
             _wire_mock_client(mock_cls, mock_client)
@@ -748,8 +906,8 @@ class TestFetchActiveTlesCircuitBreaker:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            side_effect=[_group_active_resp(), httpx.ConnectTimeout("boom")]
+        mock_client.stream = MagicMock(
+            side_effect=_stream_items(_group_active_resp(), httpx.ConnectTimeout("boom"))
         )
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
@@ -771,14 +929,14 @@ class TestFetchActiveTlesCircuitBreaker:
         mgr = TLEManager(db)
         mgr._satnogs_breaker.record_error(blocked=True)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=_group_active_resp())
+        mock_client.stream = MagicMock(return_value=_stream_ctx(_group_active_resp()))
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
             _wire_mock_client(mock_cls, mock_client)
             stats = asyncio.run(mgr.fetch_active_tles())
 
         # Only Phase 1's request -- Phase 2 never touched the network.
-        assert mock_client.get.await_count == 1
+        assert mock_client.stream.call_count == 1
         assert stats["satnogs_blocked"] == 1
         assert stats["phase2_unresolved"] == 1
 
@@ -794,9 +952,9 @@ class TestFetchActiveTlesCircuitBreaker:
         mgr = TLEManager(db)
         mgr._celestrak_breaker.record_error(blocked=True)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            return_value=_satnogs_bulk_resp(
-                [_bulk_record(68795, _LINE1_B, _LINE2_B, "OrigamiSat-2")]
+        mock_client.stream = MagicMock(
+            return_value=_stream_ctx(
+                _satnogs_bulk_resp([_bulk_record(68795, _LINE1_B, _LINE2_B, "OrigamiSat-2")])
             )
         )
 
@@ -805,7 +963,7 @@ class TestFetchActiveTlesCircuitBreaker:
             stats = asyncio.run(mgr.fetch_active_tles())
 
         # Only Phase 2's bulk request -- Phase 1 was skipped entirely.
-        assert mock_client.get.await_count == 1
+        assert mock_client.stream.call_count == 1
         assert stats["celestrak_blocked"] == 1
         assert stats["updated"] + stats["inserted"] == 1
 
@@ -836,12 +994,14 @@ class TestFetchProvisionalTles:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            return_value=_satnogs_bulk_resp(
-                [
-                    _bulk_record(norad, line1, line2, name)
-                    for norad, (name, line1, line2) in targets.items()
-                ]
+        mock_client.stream = MagicMock(
+            return_value=_stream_ctx(
+                _satnogs_bulk_resp(
+                    [
+                        _bulk_record(norad, line1, line2, name)
+                        for norad, (name, line1, line2) in targets.items()
+                    ]
+                )
             )
         )
 
@@ -849,7 +1009,7 @@ class TestFetchProvisionalTles:
             _wire_mock_client(mock_cls, mock_client)
             stats = asyncio.run(mgr.fetch_provisional_tles())
 
-        assert mock_client.get.await_count == 1
+        assert mock_client.stream.call_count == 1
         assert stats["inserted"] == 2
         for norad, (_, line1, line2) in targets.items():
             row = db.execute(
@@ -874,8 +1034,10 @@ class TestFetchProvisionalTles:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            return_value=_satnogs_bulk_resp([_bulk_record(90001, _LINE1, _LINE2, "Sat A")])
+        mock_client.stream = MagicMock(
+            return_value=_stream_ctx(
+                _satnogs_bulk_resp([_bulk_record(90001, _LINE1, _LINE2, "Sat A")])
+            )
         )
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
@@ -894,13 +1056,13 @@ class TestFetchProvisionalTles:
     ) -> None:
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock()
+        mock_client.stream = MagicMock()
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
             _wire_mock_client(mock_cls, mock_client)
             stats = asyncio.run(mgr.fetch_provisional_tles())
 
-        mock_client.get.assert_not_awaited()
+        mock_client.stream.assert_not_called()
         assert stats == {
             "inserted": 0,
             "updated": 0,
@@ -930,14 +1092,14 @@ class TestFetchProvisionalTlesBulkFetchFailure:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=httpx.ConnectTimeout("boom"))
+        mock_client.stream = MagicMock(side_effect=httpx.ConnectTimeout("boom"))
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
             _wire_mock_client(mock_cls, mock_client)
             stats = asyncio.run(mgr.fetch_provisional_tles())
 
         # Exactly one attempt -- no per-satellite fallback loop.
-        assert mock_client.get.await_count == 1
+        assert mock_client.stream.call_count == 1
         assert stats["errors"] == 3
         assert db.execute("SELECT COUNT(*) c FROM tle_data").fetchone()["c"] == 0
 
@@ -951,13 +1113,13 @@ class TestFetchProvisionalTlesBulkFetchFailure:
         mgr = TLEManager(db)
         mgr._satnogs_breaker.record_error(blocked=True)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock()
+        mock_client.stream = MagicMock()
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
             _wire_mock_client(mock_cls, mock_client)
             stats = asyncio.run(mgr.fetch_provisional_tles())
 
-        mock_client.get.assert_not_awaited()
+        mock_client.stream.assert_not_called()
         assert stats["errors"] == 1
 
 
@@ -981,8 +1143,8 @@ class TestSatnogsBulkTleCache:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            side_effect=[
+        mock_client.stream = MagicMock(
+            side_effect=_stream_items(
                 _group_active_resp(),
                 _satnogs_bulk_resp(
                     [
@@ -990,7 +1152,7 @@ class TestSatnogsBulkTleCache:
                         _bulk_record(90001, _LINE1, _LINE2, "Provisional Sat"),
                     ]
                 ),
-            ]
+            )
         )
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
@@ -1000,7 +1162,7 @@ class TestSatnogsBulkTleCache:
 
         # 1 (Phase 1 GROUP=active) + 1 (bulk SATNOGS, shared) = 2 total --
         # NOT 3, which is what a second independent bulk fetch would cost.
-        assert mock_client.get.await_count == 2
+        assert mock_client.stream.call_count == 2
         assert active_stats["updated"] + active_stats["inserted"] == 1
         assert prov_stats["inserted"] == 1
 
@@ -1017,15 +1179,17 @@ class TestSatnogsBulkTleCache:
             {90001: _bulk_record(90001, _LINE1, _LINE2, "Sat A (stale cache)")},
         )
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            return_value=_satnogs_bulk_resp([_bulk_record(90001, _LINE1_B, _LINE2_B, "Sat A")])
+        mock_client.stream = MagicMock(
+            return_value=_stream_ctx(
+                _satnogs_bulk_resp([_bulk_record(90001, _LINE1_B, _LINE2_B, "Sat A")])
+            )
         )
 
         with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
             _wire_mock_client(mock_cls, mock_client)
             asyncio.run(mgr.fetch_provisional_tles())
 
-        mock_client.get.assert_awaited_once()
+        mock_client.stream.assert_called_once()
         row = db.execute("SELECT line1 FROM tle_data WHERE norad_cat_id = 90001").fetchone()
         assert row["line1"] == _LINE1_B
 
