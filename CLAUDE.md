@@ -253,6 +253,19 @@ SATNOGSトランスポンダーは**初回起動時に自動取得**。以降は
 （例: ISSから放出直後のCubeSat「Coconut」(98292)）がいつまでも空のトランスポンダーリストのままになり、
 ユーザーが気づきにくいという問題があった。手動同期に頼らず定期的に自己修復するよう7日間隔の自動ジョブを追加した。
 
+**起動時ゲートの欠陥修正（2026-08-11）**: 上記の「7日ごとに自動再同期」は、アプリを7日間連続で
+起動しっぱなしにした場合にのみ成立する話だった。旧実装の起動時チェックは
+`transmitters` テーブルに `source='satnogs'` の行が**1件もない場合のみ**同期を走らせる設計
+（真の初回起動の検出のみが目的）で、一度でも同期に成功した後は完全にAPSchedulerの168時間
+間隔ジョブに依存していた。ところがAPSchedulerの`interval`ジョブは**登録直後には発火せず、
+その時点から丸一区間（168時間）経過して初めて実行される**ため、7日間連続で起動しっぱなしに
+することが稀な通常のデスクトップ利用（毎回終了→再起動）では、このジョブは実質的に一度も
+発火せず、**初回同期以降トランスミッタDBが永久に更新されない**という状態になっていた
+（詳細は「起動時鮮度チェックの網羅的監査と修正」セクション参照）。
+`TransmitterManager.is_satnogs_transmitters_stale(max_age_hours=168.0)`
+（`TLEManager.is_active_tle_stale()`と同型）を新設し、起動時ゲートを
+「`source='satnogs'`の行が0件、**または**最終同期から168時間超過」に変更した。
+
 ### TransmitterManager (src/data/)
 - SATNOGS取得データと手動追加データを統合管理
 - 手動追加データはSATNOGSより優先（`manual_override`フラグ）
@@ -953,7 +966,7 @@ sudo usermod -aG dialout $USER
 - **World Map 衛星ドットクリック選択**（`sat_clicked(int)` シグナル → `_select_satellite_by_norad` 接続）
 - **フットプリント描画 QPainterPath スキャンライン方式**（polar cap・antimeridian・極境界弧の全ケース修正済み）
 - **MainWindow `_shutdown_flag`（threading.Event）**: `closeEvent()` 冒頭でセット。バックグラウンドスレッド（`_refresh_satellite_names_sync`）が各 `asyncio.run()` 呼び出しの間でフラグを確認し、インタプリタシャットダウン後の `futures` スケジュールを防ぐ
-- **`is_source_stale(source_name)` (TLEManager)**: `sync_log` を照会し、一度もフェッチされていないソース（`never-fetched`）を検出。初回起動時に cubesat/weather/science/earth-obs グループを即時フェッチするトリガーとして使用
+- **`is_source_stale(source_name)` (TLEManager)**: `sync_log` を照会し、一度もフェッチされていないソース、または各ソース自身の `TLE_SOURCES[...]["update_interval_hours"]` より古いソースを検出（2026-08-11、経過時間チェックを追加。詳細は「起動時鮮度チェックの網羅的監査と修正」セクション参照）。起動時に未フェッチ/期限切れの cubesat/weather/science/earth-obs 等グループを即時フェッチするトリガーとして使用
 - **`_sort_sources_by_priority()` (MainWindow)**: TLE_SOURCES の `priority` フィールドでソース名を昇順ソート。amateur より先に cubesat/weather 等を上書きしないよう順序を制御
 - **GitHub Actions: `make_latest: true`**（`prerelease: true` を廃止）。3プラットフォーム全ビルドジョブで設定済み。最新リリース: `v0.1.0`
 - **Open in SatNOGS（クロスプラットフォーム）**: 右クリックメニューから衛星の SatNOGS ページをアプリモードで開く。`_open_url_app_mode` に統一済み（Linux: `shutil.which` / macOS: `.app` 絶対パス / Windows: `Program Files` 絶対パス）。Chromium系が見つからない場合は `QDesktopServices.openUrl` にフォールバック。ネットワーク接続エラーと「本当に見つからない」を区別して表示（2026-07-04、`_satnogs_network_error` シグナル追加）
@@ -3227,6 +3240,7 @@ QT_LOGGING_RULES="qt.qpa.*=true" ./FBSAT59.AppImage 2>&1 | head -100
 0. ~~**RTL-SDR WinUSB Connect 失敗修正**~~ **→ v0.1.71 で解決済み（2026-06-25）**
 1. **ドップラー補正の実動作確認** — 各種リグ（TS-2000・FT-817ND 等）での実衛星通信テスト（FTX-1F・FT-991AM・IC-9100・IC-9700・RTL-SDR/HackRF は確認済み）
 1b. **AX.25 9600bps G3RUH のフィルタチューニング（実衛星パス待ち、2026-07-10 追加）** — SDR単体経由（`comms/aprs/g3ruh_demod.py`の`G3ruhDiscriminator`）・Rig+サウンドカード経由（Direwolf `MODEM 9600`）双方とも実装済みだが、実際の9600bps G3RUHデジピータ衛星での受信検証を一度も行っていない。特に`G3ruhDiscriminator`のIF帯域幅（`_IF_HALF_BW_HZ`）・偏移定数（`_DEVIATION_HZ`）はNFM音声復調のパラメータを流用した初回実装値であり、実信号でのチューニングが必要になる可能性が高い。詳細は「AX.25 9600bps G3RUH 対応」セクション参照。対象衛星のパスが来た時点で着手する
+1c. **Lock（Lボタン）ツールチップに反映遅延の説明を追加（急ぎではない、GitHub Issue #19、2026-08-10 予告）** — IC-9700（satmode・USB接続）ユーザーから、手動リチューンがLock機能に反映されるまで体感5秒程度かかるという報告があり、既知の設計上のラグ（`_doppler_cycle()`は約1秒周期でリグを1回だけポーリング→次周期で補正値へ折り込み→さらに次の`_on_tick()`で画面表示に反映、という3段階構成のため最悪ケースで約3秒・平均1.5〜2秒。詳細は「Lock（Lボタン）— dial feedback設計」セクションの「既知の制約」参照）に一致することを確認済み。Issueへの返信では「近日中にツールチップへ追記する」と予告済みのため、[radio_control_widget.py](src/ui/radio_control_widget.py)の`_lock_btn.setToolTip()`（現状「DL is yours to tune manually; UL follows (inverting transponder aware).」のみ）に、この遅延（数秒程度、CATのラウンドトリップに起因）に関する一文を追記すること。あわせて、satmode機（IC-9100/9700/910H/821H）ではLock中はUL側もソフトウェアが一切書き込まず、リグ自身のハードウェアSub自動追従に委ねる設計（DLのみ読み取り）であることも、ツールチップまたは近傍のUIテキストで触れるかどうか検討する（現状のツールチップは非satmode機の挙動のみを説明しており、satmode機ユーザーには誤解を招きうる）
 2. **ローテーター設定ダイアログの改善** — 接続テストボタン・AZ/ELリミット設定
 3. **デバッグ用ログファイル出力の削除または設定化** — `src/main.py` の `_setup_logging()` にある frozen バンドル向けファイルログ出力（`platformdirs.user_log_dir`）は dmg デバッグ目的で追加したもの。Settings に「デバッグログを保存する」チェック（デフォルトOFF）を追加するか削除する。該当箇所: `src/main.py` 63〜75行目
 4. ~~**Autotrack/Record メニューの実装**~~ **→ v0.1.0 以降で完了**（AutotrackRecordDialog・Autotrack Timer・AOS/LOS 自動接続・録音自動制御）
@@ -5212,7 +5226,7 @@ manual（最高優先）> celestrak > satnogs > なし
 - 既存 TLE が `celestrak` の場合、`satnogs` ソースの取得結果で上書きしない
   （`fetch_provisional_tles()` は `INSERT OR REPLACE` だが `source='manual'` チェックで防御）
 - `fetch_active_tles()` の UPDATE では `tle_group` を保持（分類を劣化させない）
-- **初回起動時の未フェッチソース自動検出**: `TLEManager.is_source_stale(source_name)` が `sync_log` 未記録のソースを `True` で返す → MainWindow が起動時に未フェッチグループを即時フェッチ
+- **起動時の未フェッチ/期限切れソース自動検出**: `TLEManager.is_source_stale(source_name)` が `sync_log` 未記録、または各ソース自身の `update_interval_hours` より古いソースを `True` で返す（2026-08-11 修正、旧実装は未記録のみ検出）→ MainWindow が起動時に対象グループを即時フェッチ
 - **フェッチ順序制御**: `MainWindow._sort_sources_by_priority()` が `TLE_SOURCES["priority"]` 昇順でソート。`amateur`（汎用）を先にフェッチし、`cubesat`/`weather` 等がその後に上書きするよう保証
 
 ### tle_group と UI フィルタの対応
@@ -5313,20 +5327,51 @@ Phase 2の対象条件が元々「TLE行が一つも無い衛星」のみだっ�
 Phase 2の`INSERT OR REPLACE`が毎回`tle_group`を`'amateur'`に強制リセットしていた副次バグ（分類の劣化）
 も、既存の`tle_group`を保持するよう修正済み。
 
-### 起動時の TLE 同期フロー（2026-08-10 順序変更）
+### 起動時の TLE 同期フロー（2026-08-10 順序変更・2026-08-11 鮮度ゲート監査で更新）
+
+`MainWindow._start_scheduler()` が起動直後に以下を行う（`_no_background_sync` テストフィクスチャで
+まるごと無効化される、CI上で毎回ネットワークを叩かないための唯一の入口）:
 
 ```
-アプリ起動
+アプリ起動 → _start_scheduler()
   │
-  ├─ APScheduler 開始（2h/4h/6h/12h/24h の定期ジョブを登録）
+  ├─ APScheduler 開始（下記7ジョブを "interval" trigger で登録。misfire_grace_time付き。
+  │   interval ジョブは登録直後には発火せず、登録時点から丸1区間経過して初めて実行される点に注意
+  │   ——このため、起動時に「区間経過チェック」を別途行わないと、7区間ぶんの継続起動をしない限り
+  │   一度も自己修復されない。2026-08-11 の監査でこの欠落を3件発見・修正した（後述）
   │
-  └─ [バックグラウンド] _refresh_satellite_names_sync()
-        1. sync_satellite_names()    ← SATNOGS 衛星名・ステータス更新・移行パイプライン
-        2. fetch_active_tles()       ← NORAD 10000-89999 衛星の TLE 補完（stale時のみ、最優先）
-        3. fetch_provisional_tles()  ← NORAD ≥ 90000 衛星の TLE 取得
-        4. fetch_legacy_tles()       ← NORAD < 10000 衛星のクリーンアップ（初回のみ実質動作）
-        5. fetch_meteor_tles()       ← METEOR/HRPT 衛星の TLE 補完
+  ├─ [即時] AMSAT運用状況: AmsatFetcher.is_stale(24h) が True ならバックグラウンドで再取得
+  │
+  ├─ [即時] SATNOGSトランスポンダーDB: `source='satnogs'`行が0件、または
+  │   TransmitterManager.is_satnogs_transmitters_stale(168h) が True ならバックグラウンドで再取得
+  │   （後者は2026-08-11追加。以前は0件チェックのみで、初回同期後は168hジョブの発火待ちのみだった）
+  │
+  ├─ [バックグラウンド] _refresh_satellite_names_sync()  ← 以下を直列に実行
+  │     1. sync_satellite_names()    ← SATNOGS 衛星名・ステータス更新・移行パイプライン（毎回無条件）
+  │     2. fetch_active_tles()       ← NORAD 10000-89999 衛星の TLE 補完
+  │          ゲート: is_active_tle_stale(24h) OR is_active_tle_retry_due()
+  │     3. fetch_provisional_tles()  ← NORAD ≥ 90000 衛星の TLE 取得
+  │          ゲート: is_provisional_tle_stale(12h)（2026-08-11追加。以前は無条件で毎回実行）
+  │     4. fetch_legacy_tles()       ← NORAD < 10000 衛星のクリーンアップ（対象0件ならno-op、毎回無条件）
+  │     5. fetch_meteor_tles()       ← METEOR/HRPT 衛星の TLE 補完（衛星ごとneeds_update(24h)、毎回無条件）
+  │     6. load_community_transmitters() ← ローカルJSON読み込み（ネットワーク不要、毎回無条件）
+  │     7. CelesTrak 6グループ一括フェッチ（stations/amateur/cubesat/weather/earth-obs/science）
+  │          ゲート: 各グループごとに is_source_stale(グループ自身のupdate_interval_hours) OR
+  │                  is_group_empty()（2026-08-11、is_source_stale側を修正。以前は
+  │                  「一度もフェッチしていないか」のみ判定し、経過時間を見ていなかった）
+  │
+  ├─ [バックグラウンド] DE421 天体暦ロード（Moon/EME追尾用、初回のみ約17MBダウンロード）
+  │
+  └─ [バックグラウンド] NTPクロック同期チェック
 ```
+
+**ゲートの意味（起動のたびに毎回実行 vs 鮮度チェック後にのみ実行）**: 上記のうち
+「毎回無条件」と書いたステップ（1・4・5・6）は、対象データ自体が自己制限的
+（空なら即return・衛星ごとの内部staleness判定を持つ・ネットワーク不要のローカル処理）なため、
+無条件に呼んでも実害がない設計。一方「ゲート: ...」と明記したステップ（2・3・7、および
+AMSAT・SATNOGSトランスポンダーDB）は、**もし鮮度チェックを誤ると「毎回ネットワークを叩きすぎる」
+（ブロックの原因になる）か「二度と更新されない」のどちらかに転ぶ**ため、専用の`is_*_stale()`系
+メソッドで経過時間を明示的に判定している。
 
 **2番目のステップだった `fetch_active_tles()` を最優先に変更**（2026-08-10）:
 以前は「Phase 2のSATNOGSフォールバックが20〜30分かかりうるので他のステップを待たせない」という
@@ -5367,6 +5412,96 @@ ORIGAMISAT-2を解決する処理）を一切呼んでいなかった**ことが
 また、ユーザーが提示した「TLE更新時刻は進んだのに対象衛星だけ変わらない」という一見矛盾した観察は、
 実際には「複数の独立した更新経路のうち一部だけが動いている」ことを示す精度の高い手がかりであり、
 額面通りに深掘りする価値があった。
+
+### 起動時鮮度チェックの網羅的監査と修正（2026-08-11）
+
+#### 発端
+
+4G Wifi経由でのTLEブロック検証（前述の各節参照）が一段落した後、ユーザーから
+「Provisional TLEのfetchはCLAUDE.md上12時間ごとのはずだが、同期→終了→即座に再起動、を
+繰り返しても毎回フェッチされる。なぜか」という指摘があった。調査したところ、
+`fetch_provisional_tles()`の起動時呼び出しには**鮮度チェックが一切存在しない**ことが判明。
+「他にも同じようなものがないか確認してから実装して」という指示を受け、`_start_scheduler()`が
+登録する7つのAPSchedulerジョブ全てについて、対応する起動時ゲートが正しく実装されているかを
+1つずつ監査した。結果、**3件の独立したバグ**が見つかった——2件は「毎回無条件でフェッチする」
+（過剰）、1件は「一度目以降ほぼ永久にフェッチしない」（欠落）という、正反対の方向の不具合だった。
+
+#### 根本原因（3件に共通）
+
+APSchedulerの`"interval"`トリガーは**ジョブ登録の瞬間には発火せず、登録時点から丸1区間
+経過して初めて実行される**。デスクトップアプリは毎回終了・再起動されるものであり、
+「7日間（あるいは1〜12時間）連続で起動しっぱなしにする」という前提はほとんどのユーザーの
+実利用パターンと一致しない。このため、**起動時に「前回の完了からどれだけ経過したか」を
+独立して判定するゲートを別途持たない限り、定期ジョブは実質的に一度も発火しないまま
+終わる**。`fetch_active_tles()`（`is_active_tle_stale()`）だけがこの原則を最初から
+正しく実装しており、他は次のいずれかの誤りを持っていた。
+
+#### 発見した3件のバグと修正
+
+| # | 対象 | 症状 | 原因 | 修正 |
+|---|---|---|---|---|
+| 1 | `fetch_provisional_tles()`（NORAD≥90000） | 起動のたびに**必ず**全件フェッチ（過剰） | 起動時呼び出しに鮮度チェックが一切無かった | `TLEManager.is_provisional_tle_stale(12h)`を新設しゲート |
+| 2 | `sync_from_satnogs()`（トランスミッタDB） | 初回同期後は**ほぼ永久に**再取得されない（欠落） | 起動時ゲートが`source='satnogs'`行0件（真の初回起動）のみを判定し、経過時間を見ていなかった | `TransmitterManager.is_satnogs_transmitters_stale(168h)`を新設し、0件チェックに`OR`で追加 |
+| 3 | CelesTrak 6グループ一括フェッチ（stations/amateur/cubesat/weather/earth-obs/science） | バグ2と同型（欠落） | `is_source_stale()`が「一度もフェッチしていないか」のみを判定し、経過時間を見ていなかった（ドキュメント自身に「APSchedulerの定期ジョブが後は面倒を見る」という誤った前提が明記されていた） | `is_source_stale()`自体を修正し、各ソース自身の`TLE_SOURCES[...]["update_interval_hours"]`（1〜12h）との比較を追加 |
+
+バグ1はユーザー自身の指摘、バグ2・3はその指摘をきっかけにした横展開監査で発見した
+（`is_provisional_tle_stale()`実装後、同じ設計原則を他の6ジョブに機械的に当てはめて確認）。
+
+いずれも`TLEManager.is_active_tle_stale()`と全く同じ形（`sync_log`の最新`finished_at`を
+読み、`datetime.now(UTC) - last > timedelta(hours=max_age_hours)`で判定）に統一してある。
+
+#### 「Update TLE」ボタン側にも同型のバグが1件見つかった
+
+上記の監査中、`_fetch_all_tle_sources()`（Satellite > Update TLE / Settings > OK 共有）が
+`fetch_provisional_tles()`を**一度も呼んでいない**ことが判明した。これは前述
+「`fetch_active_tles()`を一度も呼んでいなかった不具合（2026-08-10）」と全く同じクラスの
+バグで、Provisional衛星についてだけ同じ穴が残っていた。`fetch_active_tles()`と同じ扱い
+（自身の鮮度ゲートをバイパスし無条件で実行）で追加した。
+
+#### 起動時とUpdate TLEボタンの取得順序（最終形、2026-08-11時点）
+
+**起動時**（`_refresh_satellite_names_sync()`、上記フローチャート参照）:
+
+```
+1. sync_satellite_names()        無条件
+2. fetch_active_tles()           is_active_tle_stale(24h) OR is_active_tle_retry_due()
+3. fetch_provisional_tles()      is_provisional_tle_stale(12h)                    ← 2026-08-11
+4. fetch_legacy_tles()           無条件（自己制限的、実質no-op後は毎回一瞬で終わる）
+5. fetch_meteor_tles()           無条件（衛星ごとneeds_update(24h)で自己制限）
+6. load_community_transmitters() 無条件（ローカルJSON、ネットワーク不要）
+7. CelesTrak 6グループ一括       is_source_stale(グループ自身の interval) OR is_group_empty()  ← 2026-08-11
+```
+
+（別経路・`_start_scheduler()`内、`_refresh_satellite_names_sync()`とは並行）:
+```
+AMSAT運用状況         is_stale(24h)
+SATNOGSトランスミッタDB  satnogs_count==0 OR is_satnogs_transmitters_stale(168h)         ← 2026-08-11
+```
+
+**Satellite > Update TLE / Settings > OK**（`_fetch_all_tle_sources()`）:
+
+```
+1. CelesTrak 6グループ一括       無条件（鮮度ゲートをバイパス。「今すぐ更新」という明示要求のため）
+2. fetch_active_tles()           無条件（同上、2026-08-10 追加）
+3. fetch_provisional_tles()      無条件（同上、2026-08-11 追加）
+```
+
+Update TLEボタンは**上記3つのみ**を呼ぶ設計であり、`fetch_legacy_tles()`・`fetch_meteor_tles()`・
+`sync_from_satnogs()`・`sync_satellite_names()`・`load_community_transmitters()`は呼ばない
+（起動時のみ実行される）。前者3つは「ボタンを押した以上、鮮度キャッシュより即時実行を優先すべき」
+という設計判断（2026-08-10 に`fetch_active_tles()`で確定した方針をそのまま踏襲）で、
+起動時の`is_*_stale()`ゲートを意図的にバイパスしている点に注意。
+
+#### 監査で「問題なし」と確認したもの
+
+- `fetch_legacy_tles()`: SQL WHERE句自体が「TLE未解決の衛星」のみを対象にする自己制限的設計。
+  対象が0件になれば以降は毎回一瞬でno-op終了するため、鮮度ゲート不要
+- `fetch_meteor_tles()`: `needs_update(norad, max_age_hours=24.0)`による衛星ごとの内部判定を
+  既に持つ（対象は`METEOR_NORAD_IDS`の固定9機のみ）
+- `AmsatFetcher.is_stale()`: 実装当初から`app_settings`のタイムスタンプで正しく経過時間判定
+- `_refresh_satellite_names_periodic()`（衛星名の6時間ごと再同期）: `sync_satellite_names()`は
+  ページネーションされた一括APIコールで、衛星ごとの個別問い合わせではないため、無条件に
+  毎回実行しても実害が小さい設計として意図的にゲートなし
 
 ### DB マイグレーション注意事項（2026-05-29 バグ対応済み）
 
