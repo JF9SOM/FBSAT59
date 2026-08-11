@@ -3244,6 +3244,7 @@ QT_LOGGING_RULES="qt.qpa.*=true" ./FBSAT59.AppImage 2>&1 | head -100
 2. **ローテーター設定ダイアログの改善** — 接続テストボタン・AZ/ELリミット設定
 3. **デバッグ用ログファイル出力の削除または設定化** — `src/main.py` の `_setup_logging()` にある frozen バンドル向けファイルログ出力（`platformdirs.user_log_dir`）は dmg デバッグ目的で追加したもの。Settings に「デバッグログを保存する」チェック（デフォルトOFF）を追加するか削除する。該当箇所: `src/main.py` 63〜75行目
 4. ~~**Autotrack/Record メニューの実装**~~ **→ v0.1.0 以降で完了**（AutotrackRecordDialog・Autotrack Timer・AOS/LOS 自動接続・録音自動制御）
+1d. **CelesTrakのみ不通時にSATNOGS側の同期を止めないようにする（2026-08-13木曜以降着手予定）** — 現状`_refresh_satellite_names_sync()`（`src/ui/main_window.py:1583`）・`_fetch_all_tle_sources()`（同ファイル）の冒頭にある接続確認は`if not celestrak_ok or not satnogs_ok: return`というオールオアナッシング設計で、CelesTrakだけが不通でもSATNOGS側の同期（衛星名・トランスミッタDB・SATNOGS一括TLEダンプによる`fetch_active_tles()`のPhase2・`fetch_provisional_tles()`）まで丸ごとスキップされてしまう。SATNOGSの一括TLEダンプ（`GET /api/tle/?format=json`、約1670件）は実質的に主要衛星のフォールバックを広くカバーできるようになった（2026-08-11、Phase2a廃止・一括取得化）ため、CelesTrakが不通でもSATNOGS側だけは独立して動かせるようにしたい。方針: 各ホストの到達可否は引き続き最初に一括確認する（2026-08-11の「各ステップが個別タイムアウトで気づく」問題への対策はそのまま維持）が、`return`で全処理を中止するのではなく、不通側のホストに依存するステップだけをスキップし、到達可能な方の処理は続行するよう分岐する。ユーザーとの合意: 今すぐではなく、Claude使用量がリセットされる木曜以降に着手する
 
 ### モバイル・Web UI
 5. **スマホ・タブレット画面の継続確認** — Android 実機でのコンパス連動確認、各種ブラウザでの表示確認
