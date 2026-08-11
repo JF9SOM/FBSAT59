@@ -104,8 +104,8 @@ class TestFetchActiveTlesSatnogsSourceIdRouting:
     ARICA-2 / NORAD 68796, 2026-07-12), so Phase 2b of fetch_active_tles()
     must query by satnogs_source_id when present, not by the real NORAD ID.
     These tests force a Phase 2a (CelesTrak) miss, so Phase 2b is exercised.
-    Sequence per test: 5 bulk + Phase 2a probe + Phase 2a miss + Phase 2b
-    probe + Phase 2b match.
+    Sequence per test: 1 bulk (GROUP=active) + Phase 2a probe + Phase 2a
+    miss + Phase 2b probe + Phase 2b match.
     """
 
     def test_queries_by_satnogs_source_id_when_present(self, db: sqlite3.Connection) -> None:
@@ -118,7 +118,7 @@ class TestFetchActiveTlesSatnogsSourceIdRouting:
         mgr = TLEManager(db)
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(
-            side_effect=[_bulk_resp()] * 5
+            side_effect=[_bulk_resp()]
             + [_probe_ok_resp()]  # Phase 2a: reachability probe
             + [_catnr_not_found_resp()]  # Phase 2a: CelesTrak doesn't have it
             + [_probe_ok_resp()]  # Phase 2b: reachability probe
@@ -154,7 +154,7 @@ class TestFetchActiveTlesSatnogsSourceIdRouting:
         mgr = TLEManager(db)
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(
-            side_effect=[_bulk_resp()] * 5
+            side_effect=[_bulk_resp()]
             + [_probe_ok_resp()]  # Phase 2a: reachability probe
             + [_catnr_not_found_resp()]  # Phase 2a: CelesTrak doesn't have it
             + [_probe_ok_resp()]  # Phase 2b: reachability probe
@@ -210,7 +210,7 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
         mgr = TLEManager(db)
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(
-            side_effect=[_bulk_resp()] * 5
+            side_effect=[_bulk_resp()]
             + [_probe_ok_resp()]  # Phase 2a: reachability probe
             + [_catnr_found_resp("OrigamiSat-2", _LINE1_B, _LINE2_B)]  # Phase 2a: match
         )
@@ -224,7 +224,7 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
             stats = asyncio.run(mgr.fetch_active_tles())
 
         # Resolved entirely in Phase 2a — no Phase 2b (SATNOGS) call was needed.
-        assert mock_client.get.await_count == 7
+        assert mock_client.get.await_count == 3
         catnr_call = mock_client.get.call_args_list[-1]
         assert catnr_call.kwargs["params"]["CATNR"] == "68795"
 
@@ -277,8 +277,9 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
             mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
             stats = asyncio.run(mgr.fetch_active_tles())
 
-        # 5 bulk + 1 Phase 2a probe + 2 individual CATNR fetches. No Phase 2b calls.
-        assert mock_client.get.await_count == 8
+        # 1 bulk (GROUP=active) + 1 Phase 2a probe + 2 individual CATNR fetches.
+        # No Phase 2b calls.
+        assert mock_client.get.await_count == 4
         assert stats["updated"] + stats["inserted"] == 2
 
         for norad in (68795, 68796):
@@ -308,7 +309,7 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
         mgr = TLEManager(db)
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(
-            side_effect=[_bulk_resp()] * 5
+            side_effect=[_bulk_resp()]
             + [_probe_ok_resp()]  # Phase 2a: reachability probe
             + [_catnr_not_found_resp()]  # Phase 2a: CelesTrak doesn't have it
             + [_probe_ok_resp()]  # Phase 2b: reachability probe
@@ -323,7 +324,7 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
             mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
             stats = asyncio.run(mgr.fetch_active_tles())
 
-        assert mock_client.get.await_count == 9
+        assert mock_client.get.await_count == 5
         phase2b_call = mock_client.get.call_args_list[-1]
         assert phase2b_call.kwargs["params"]["norad_cat_id"] == 68795
 
@@ -355,7 +356,7 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
         mgr = TLEManager(db)
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(
-            side_effect=[_bulk_resp()] * 5
+            side_effect=[_bulk_resp()]
             + [httpx.ConnectTimeout("boom")]  # Phase 2a: probe fails to connect
             + [httpx.ConnectTimeout("boom")]  # Phase 2b: probe fails to connect
         )
@@ -368,8 +369,9 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
             mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
             stats = asyncio.run(mgr.fetch_active_tles())
 
-        # 5 bulk + 1 Phase 2a probe + 1 Phase 2b probe — no per-satellite calls at all.
-        assert mock_client.get.await_count == 7
+        # 1 bulk (GROUP=active) + 1 Phase 2a probe + 1 Phase 2b probe — no
+        # per-satellite calls at all.
+        assert mock_client.get.await_count == 3
         assert stats["errors"] == 2
         assert db.execute("SELECT COUNT(*) c FROM tle_data").fetchone()["c"] == 0
 
@@ -390,7 +392,7 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=[_bulk_resp()] * 5)
+        mock_client.get = AsyncMock(side_effect=[_bulk_resp()])
 
         with (
             patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
@@ -400,9 +402,9 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
             mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
             asyncio.run(mgr.fetch_active_tles())
 
-        # Only the 5 Phase 1 bulk-group requests — no Phase 2 (2a/2b) call at all,
-        # since this satellite never enters refresh_targets.
-        assert mock_client.get.await_count == 5
+        # Only the 1 Phase 1 GROUP=active request — no Phase 2 (2a/2b) call at
+        # all, since this satellite never enters refresh_targets.
+        assert mock_client.get.await_count == 1
 
     def test_manual_tle_is_not_requeried_by_phase2(self, db: sqlite3.Connection) -> None:
         db.execute(
@@ -421,7 +423,7 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
 
         mgr = TLEManager(db)
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=[_bulk_resp()] * 5)
+        mock_client.get = AsyncMock(side_effect=[_bulk_resp()])
 
         with (
             patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
@@ -431,7 +433,7 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
             mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
             asyncio.run(mgr.fetch_active_tles())
 
-        assert mock_client.get.await_count == 5
+        assert mock_client.get.await_count == 1
 
 
 class TestFetchProvisionalTlesConcurrency:
@@ -604,6 +606,138 @@ class TestFetchProvisionalTlesCircuitBreaker:
         assert stats["inserted"] == 1
 
 
+class TestFetchActiveTlesPhase1UsesGroupActive:
+    """2026-08-11: Phase 1 switched from 5 separate curated-group requests
+    to a single GROUP=active request -- what actually trips CelesTrak's
+    firewall is HTTP error count in a 2h window, and a single successful
+    request contributes zero errors regardless of how much data it returns
+    (unlike the old 5-group loop, which was still only 5 requests but grew
+    to hundreds more via Phase 2's per-satellite fallback whenever a
+    satellite fell outside all 5 curated groups -- something GROUP=active
+    itself now avoids for the vast majority of satellites).
+    """
+
+    def test_phase1_requests_group_active(self, db: sqlite3.Connection) -> None:
+        # A satellite with an existing celestrak-sourced TLE never enters
+        # refresh_targets, so Phase 2 makes no calls of its own -- this test
+        # only cares about Phase 1's own single request.
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (25544, 'ISS', 'alive', 0)"
+        )
+        db.execute(
+            "INSERT INTO tle_data"
+            " (norad_cat_id, name, line1, line2, epoch, source, tle_group, fetched_at,"
+            "  quality_score)"
+            " VALUES (25544, 'ISS', ?, ?, '2026-06-26T21:51:46+00:00', 'celestrak',"
+            "  'stations', '2026-06-27T07:34:09+00:00', 'poor')",
+            (_LINE1, _LINE2),
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=_bulk_resp())
+
+        with (
+            patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
+            patch.object(mgr, "_log_sync"),
+        ):
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            asyncio.run(mgr.fetch_active_tles())
+
+        assert mock_client.get.await_count == 1
+        call = mock_client.get.call_args_list[0]
+        assert call.kwargs["params"] == {"GROUP": "active", "FORMAT": "TLE"}
+
+    def test_403_with_cache_not_updated_message_is_not_treated_as_blocked(
+        self, db: sqlite3.Connection
+    ) -> None:
+        """GROUP=active's own ~2h server-side cache returns a 403 with a
+        specific explanatory body when re-requested too soon -- this must
+        NOT trip the circuit breaker or set celestrak_blocked, or pressing
+        "Update TLE" twice within 2h would falsely look like an abuse block.
+        Phase 2 must still run normally afterward (nothing was actually
+        wrong with the connection).
+        """
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (68795, 'OrigamiSat-2', 'alive', 0)"
+        )
+        db.commit()
+
+        cache_stale_resp = MagicMock()
+        cache_stale_resp.status_code = 403
+        cache_stale_resp.text = (
+            "GP data has not updated since your last successful download "
+            "of GROUP=active at 2026-08-11T12:00:00Z"
+        )
+        cache_stale_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "403 error", request=MagicMock(), response=cache_stale_resp
+        )
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            side_effect=[cache_stale_resp]
+            + [_probe_ok_resp()]  # Phase 2a: reachability probe
+            + [_catnr_found_resp("OrigamiSat-2", _LINE1_B, _LINE2_B)]  # Phase 2a: match
+        )
+
+        with (
+            patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
+            patch.object(mgr, "_log_sync"),
+        ):
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            stats = asyncio.run(mgr.fetch_active_tles())
+
+        assert stats["celestrak_blocked"] == 0
+        assert stats["errors"] == 0
+        assert stats["updated"] + stats["inserted"] == 1
+        assert not mgr._celestrak_breaker.tripped
+
+    def test_403_without_cache_message_is_still_treated_as_blocked(
+        self, db: sqlite3.Connection
+    ) -> None:
+        """A 403 that doesn't carry the specific "cache not updated" wording
+        is a real abuse-protection signal and must still trip the breaker,
+        exactly like Phase 2a's own 403 handling.
+        """
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (68795, 'OrigamiSat-2', 'alive', 0)"
+        )
+        db.commit()
+
+        blocked_resp = MagicMock()
+        blocked_resp.status_code = 403
+        blocked_resp.text = "Forbidden"
+        blocked_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "403 error", request=MagicMock(), response=blocked_resp
+        )
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            side_effect=[blocked_resp]
+            + [_probe_ok_resp()]  # Phase 2b: reachability probe (2a skipped, breaker tripped)
+            + [_satnogs_resp(_LINE1_B, _LINE2_B)]  # Phase 2b: resolves it
+        )
+
+        with (
+            patch("data.tle_manager.httpx.AsyncClient") as mock_cls,
+            patch.object(mgr, "_log_sync"),
+        ):
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            stats = asyncio.run(mgr.fetch_active_tles())
+
+        assert stats["celestrak_blocked"] == 1
+        assert mgr._celestrak_breaker.tripped
+
+
 class TestFetchActiveTlesProgressCallback:
     """fetch_active_tles() used to run silently for however long Phase 2 took,
     which looked identical to a hang and led to a user closing the app before
@@ -622,7 +756,7 @@ class TestFetchActiveTlesProgressCallback:
         mgr = TLEManager(db)
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(
-            side_effect=[_bulk_resp()] * 5
+            side_effect=[_bulk_resp()]
             + [_probe_ok_resp()]  # Phase 2a: reachability probe
             + [_catnr_found_resp("OrigamiSat-2", _LINE1_B, _LINE2_B)]  # Phase 2a: match
         )
@@ -637,11 +771,11 @@ class TestFetchActiveTlesProgressCallback:
             mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
             asyncio.run(mgr.fetch_active_tles(progress_callback=messages.append))
 
-        # One message per Phase 1 bulk group, one for Phase 2a starting, and
-        # one per-item progress update (batch of 1, so it fires once and is
-        # both the first and last completion). No Phase 2b message, since
-        # Phase 2a resolved the only target satellite.
-        assert len(messages) == 7
+        # One message for Phase 1's single GROUP=active request, one for
+        # Phase 2a starting, and one per-item progress update (batch of 1, so
+        # it fires once and is both the first and last completion). No Phase
+        # 2b message, since Phase 2a resolved the only target satellite.
+        assert len(messages) == 3
         assert messages[-2] == "CelesTrak: 1 satellite(s)..."
         assert messages[-1] == "CelesTrak: 1/1 checked..."
         assert all("SATNOGS" not in m for m in messages)
@@ -925,7 +1059,7 @@ class TestFetchActiveTlesCircuitBreaker:
         mgr = TLEManager(db)
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(
-            side_effect=[_bulk_resp()] * 5
+            side_effect=[_bulk_resp()]
             + [_probe_ok_resp()]  # Phase 2a: reachability probe
             + [_error_resp(403)]  # Phase 2a: already blocked
             + [_probe_ok_resp()]  # Phase 2b: reachability probe
@@ -996,7 +1130,7 @@ class TestFetchActiveTlesCircuitBreaker:
         mgr = TLEManager(db)
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(
-            side_effect=[_bulk_resp()] * 5
+            side_effect=[_bulk_resp()]
             + [_probe_ok_resp()]
             + [_catnr_found_resp("OrigamiSat-2", _LINE1_B, _LINE2_B)]
         )
@@ -1032,7 +1166,7 @@ class TestFetchActiveTlesCircuitBreaker:
         mgr = TLEManager(db)
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(
-            side_effect=[_bulk_resp()] * 5
+            side_effect=[_bulk_resp()]
             + [httpx.ConnectTimeout("connect timed out")]  # Phase 2a probe
             + [_probe_ok_resp()]  # Phase 2b probe
             + [_satnogs_resp(_LINE1_B, _LINE2_B)]  # Phase 2b resolves it
@@ -1071,7 +1205,7 @@ class TestFetchActiveTlesCircuitBreaker:
         mgr = TLEManager(db)
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(
-            side_effect=[_bulk_resp()] * 5
+            side_effect=[_bulk_resp()]
             + [_probe_ok_resp()]  # Phase 2a probe
             + [_catnr_not_found_resp()]  # Phase 2a: CelesTrak doesn't have it
             + [httpx.ConnectTimeout("connect timed out")]  # Phase 2b probe

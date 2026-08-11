@@ -5258,32 +5258,47 @@ TLE が取得できた場合:
     tle_no_result_since を NULL にリセット（紫解除）
 ```
 
-### fetch_active_tles() の2フェーズ設計（2026-08-09 改訂）
+### fetch_active_tles() の2フェーズ設計（2026-08-11 改訂）
 
-**Phase 1 — CelesTrak 複数グループ一括取得（高速）**
-アクセス可能なグループを順に取得し、DB にある衛星のみ保存：
-- `satnogs`（664機）・`last-30-days`（265機）・`argos`・`orbcomm`・`spire`
-- 約 470機分のマッチ → INSERT（`tle_group='amateur'`）または UPDATE（`tle_group` 保持）
-- 新規衛星レコードは作成しない
+**Phase 1 — CelesTrak `GROUP=active` 一括取得（単一リクエスト）**
 
-**`GROUP=active`（全15,000機超）はあえて使わない（2026-08-09 検証・見送り確定）**: 実際に問い合わせたところ、
-「403 Forbidden で恒久的に取得不可」というのは誤りだった。正しくは
-**「CelesTrakの更新サイクル（2時間ごと）内で、同一クライアントからの成功ダウンロードは1回だけ」**という制限で、
-2回目以降は本文に理由が明記された403が返る（`GP data has not updated since your last successful
-download of GROUP=active at ...`）。このアプリの`fetch_active_tles()`自体は最短でも24時間に1回しか
-実行されないため、この2時間サイクル制限には理屈の上ではほぼ毎回収まるはずで、Phase 1に追加すれば
-1リクエストでOrigamiSat-2を含むほぼ全ての対象衛星を解決できる可能性があった。
+2026-08-09時点では「`satnogs`・`last-30-days`・`argos`・`orbcomm`・`spire`の5グループを個別に
+取得する」設計だったが、2026-08-11に`GROUP=active`（全15,000機超を1リクエストで返す）へ切り替えた。
+アクセス可能なグループを順に取得し、DB にある衛星のみ保存する（新規衛星レコードは作成しない）点は変わらない。
 
-しかし実際に検討した結果、**採用は見送った**。このアプリが実際に必要とする衛星（NORAD 10000-89999、
-表示中）は1,482機なのに対し、`GROUP=active`は約16,000機（約2.7MB）を毎日丸ごとダウンロードすることになり、
-必要な分の約11倍のデータを取得する計算になる。CelesTrakが公式に問題視しているのは「1機ずつのループ
-問い合わせを大量に行うこと」であって、正当な一括ダウンロードのデータ量そのものではないため、
-「CelesTrakへの配慮」という観点では`GROUP=active`の方が望ましい面もあるが、**必要な分だけを取得する
-という原則を優先し、既存のPhase 2（個別問い合わせ）方式を維持する判断とした**（ユーザー判断、
-2026-08-09）。今後、Phase 1の一括グループだけでは救えない衛星の割合が大きく増えるなど状況が変われば、
-再検討の余地はある。
+**方針転換の経緯（2026-08-09 見送り → 2026-08-11 採用）**: 2026-08-09時点の検討では
+「`GROUP=active`は約16,000機（約2.7MB）を毎日丸ごとダウンロードすることになり、必要な分（1,482機）の
+約11倍のデータを取得する計算になる」という理由で見送っていた。しかしその後もこのアプリのIPが
+CelesTrak/SATNOGSに繰り返しブロックされる問題が実際に続いたため、「必要な分だけ取得する」という
+データ量優先の原則そのものを再検討した。CelesTrakが公式に問題視しているのは
+**HTTPエラー数（2時間で50件超えでファイアウォール）であって、正当にダウンロードしたバイト数ではない**。
+5グループの個別取得はリクエスト数自体は5件と少なかったが、その先のPhase 2（衛星ごとの個別CATNR/SATNOGS
+問い合わせ、1回のフルスキャンで800機超に達することもあった）が実質的なエラー源になっていた——
+`GROUP=active`は精選済みグループに載っていないだけの多数の衛星も一度に解決してしまうため、
+Phase 2に落ちる衛星の数を数百→ごく少数に減らせる。「1回で成功すればエラー0件」という単一リクエストの
+強みは、必要な分だけを細切れに取りに行く方式より実際のブロック回避には効く、という判断で採用した
+（ユーザー判断、2026-08-11）。
 
-**Phase 2 — 個別問い合わせフォールバック（Phase 1のグループに載らない衛星向け、2段構成）**
+**`GROUP=active`固有の注意点（2h キャッシュと403の誤判定回避）**: CelesTrak側は`GROUP=active`の
+レスポンスを約2時間ごとにしか更新しない。この間隔内に同一クライアントから2回目のリクエストを送ると、
+本文に理由が明記された403が返る（`GP data has not updated since your last successful download of
+GROUP=active at ...`）。これは不正アクセスとして弾かれたのではなく「前回と内容が変わっていない」
+という通知に近い。`fetch_active_tles()`自体は最短でも24時間に1回（または3時間バックオフ後の
+リトライ）しか自動実行されないため通常はこの2時間制約に触れないが、**「Satellite > Update TLE」
+ボタンとSettings > OKは`is_active_tle_stale()`の鮮度ゲートを意図的にバイパスして即時実行する**
+（本ファイル「起動時の TLE 同期フロー」参照）ため、これを2時間以内に連打すると発生しうる。
+`_is_active_cache_not_yet_updated(response_text)`（`tle_manager.py`）が403応答本文にこの特定の
+文言が含まれるかを判定し、含まれていれば**サーキットブレーカーに一切記録せず**（`celestrak_blocked`も
+立てない）静かにスキップする。この判定がないと、正当な「まだ更新されていません」応答を実際の
+ブロックと誤認し、3時間バックオフのリトライ予約と「ブロックされました」というユーザー向け表示を
+誤発生させてしまう。
+
+**Phase 2 — 個別問い合わせフォールバック（Phase 1で解決できなかった衛星向け、2段構成）**
+
+Phase 1が`GROUP=active`になったことで対象は大幅に減ったが、CelesTrak自身の「active」判定から
+外れているのに個別CATNR照会には今も応答する衛星（NOAA 18/19等、`fetch_meteor_tles()`のdocstring
+参照）向けのフォールバックとして、Phase 2a（CelesTrak個別CATNR）・Phase 2b（SATNOGS個別）は
+引き続き維持している。
 
 Phase 1後もTLEが無い、または既存TLEの`source`が`'satnogs'`（＝以前このPhase 2で取得したもの）の
 `10000-89999`衛星が対象。**`source='satnogs'`も対象に含めるのが重要**——そうしないと、Phase 1の
@@ -5296,18 +5311,43 @@ Phase 1後もTLEが無い、または既存TLEの`source`が`'satnogs'`（＝以
 そのフェーズ全体を即座に諦めて次へ進む。ホスト自体は生きていて特定の1機だけ遅い／エラーという
 ケースはこれに該当しない（`ReadTimeout`等は対象外）ため、巻き込まれない。
 
-- **Phase 2a — CelesTrak、衛星ごとに個別問い合わせ（最大20並列）**
+- **Phase 2a — CelesTrak、衛星ごとに個別問い合わせ（最大`PHASE2_CONCURRENCY`並列）**
   `GET https://celestrak.org/NORAD/elements/gp.php?CATNR={norad}&FORMAT=TLE`
   **`CATNR`パラメータはカタログ番号を1つしか受け付けない**（CelesTrak公式ドキュメント・実機問い合わせ双方で確認済み。
   カンマ区切りで複数指定すると`HTTP 200`のまま本文に`Invalid query`というエラーが返り、既存の
   パーサーはこれを「0件ヒット」として例外を出さずに黙って処理してしまう、という罠がある。当初これに
   気づかず「カンマ区切りで一括取得できる」という誤った前提でバッチ実装をリリースしてしまい、
   Phase 2aが実運用で一度も1件も解決できていなかった不具合が2026-08-09に発覚・修正済み）
-- **Phase 2b — SATNOGS TLE API、衛星ごとに個別問い合わせ（最大20並列）、Phase 2aが解決できなかった残りのみ**
+- **Phase 2b — SATNOGS TLE API、衛星ごとに個別問い合わせ（最大`PHASE2_CONCURRENCY`並列）、Phase 2aが解決できなかった残りのみ**
   `GET https://db.satnogs.org/api/tle/?norad_cat_id={norad}&format=json`
   （`satnogs_source_id`が設定されていればそちらを優先してクエリ。詳細は後述の「仮ID→実ID移行」参照）
   TLE あり → 保存（`source='satnogs'`、既存の`tle_group`を保持）
   TLE なし → 上記の自動非表示ルールを適用
+
+**リクエストの「行儀」自体の改善（2026-08-11、`src/data/http_client.py`新設）**: 頻繁なIPブロックの
+実害を受け、Phase 2a/2b・`fetch_provisional_tles()`のリクエストの出し方自体も見直した。
+- **並列数を20→`PHASE2_CONCURRENCY`（6）に削減**。20並列・毎回新規TCP+TLSハンドシェイク・
+  User-Agent無しという組み合わせは、個々のリクエストが「行儀よく」ても、提供元からは匿名の
+  バーストスキャンと区別が付かなかった
+- **バッチ全体で1つの`httpx.AsyncClient`を共有**（コネクションプール）。以前はリクエストごとに
+  新規クライアントを開いていた（最大800機超の1回のPhase 2実行で800回超のハンドシェイク）
+- **`RequestPacer`でワーカー間の発行間隔に最低`PHASE2_MIN_INTERVAL_S`（0.2秒）を強制**。並列数を
+  絞るだけでは、複数ワーカーが同時に完了するたびに一斉発行される瞬間は残るため
+- **識別可能なUser-Agent**（`FBSAT59/<version> (+https://github.com/JF9SOM/FBSAT59)`）を付与。
+  CelesTrak/SATNOGS双方の利用ポリシーが、大量アクセスする側に連絡先入りの識別子を推奨している
+- **`_ErrorCountBreaker`をプロセス内累積カウンタから「CelesTrakの実ポリシー通り2時間のローリング
+  ウィンドウ」に変更**し、かつ**`TLEManager`インスタンスの生存期間全体で共有**（`fetch_and_update()`の
+  グループ取得・Phase 1・Phase 2a/2b・`fetch_legacy_tles()`・`fetch_meteor_tles()`・
+  `fetch_provisional_tles()`すべてが同じ2個のブレーカーインスタンス——CelesTrak用・SATNOGS用——を
+  参照する）。以前は各呼び出しが毎回新規ブレーカーを生成しており、起動直後にこれらが連続実行される
+  と、それぞれ独立した20エラーの猶予（合計60件超）を使い切るまで誰も気づけない構造だった
+- **起動時、SATNOGSトランスミッタ同期と衛星名/TLE同期チェーンを別スレッドで並行実行するのをやめ、
+  1スレッドで順番に実行**するよう変更（`main_window.py`の`_start_scheduler()`）。どちらも
+  db.satnogs.orgにアクセスするため、同時に2本のコネクションから畳みかけるより1本の定常的な流れに
+  した方が不正アクセスと区別しやすい
+
+これらは`GROUP=active`への切り替え（リクエスト数そのものを減らす）とは独立した、補完的な対策。
+関連ファイル: `src/data/http_client.py`（User-Agent・並列数定数・`RequestPacer`・`build_async_client()`）。
 
 両フェーズとも保存時の`source`は`'satnogs'`固定（実際にCelesTrakが返した場合も含む）。これは
 `tle_data.source`のCHECK制約に`'celestrak-catnr'`のような専用値が無いためだけでなく、この列が
@@ -5472,11 +5512,12 @@ APSchedulerの`"interval"`トリガーは**ジョブ登録の瞬間には発火�
 7. CelesTrak 6グループ一括       is_source_stale(グループ自身の interval) OR is_group_empty()  ← 2026-08-11
 ```
 
-（別経路・`_start_scheduler()`内、`_refresh_satellite_names_sync()`とは並行）:
-```
-AMSAT運用状況         is_stale(24h)
-SATNOGSトランスミッタDB  satnogs_count==0 OR is_satnogs_transmitters_stale(168h)         ← 2026-08-11
-```
+AMSAT運用状況は`_start_scheduler()`内で上記とは別スレッド・独立に実行される
+（`is_stale(24h)`）。SATNOGSトランスミッタDB同期（`satnogs_count==0 OR
+is_satnogs_transmitters_stale(168h)`）は、以前は別スレッドで上記と**並行**実行していたが、
+2026-08-11にdb.satnogs.orgへの同時多発アクセスを避けるため`_refresh_satellite_names_sync()`と
+**同一スレッドで直列**（SATNOGSトランスミッタDB同期 → 上記1〜7の順）に変更した
+（本ファイル「fetch_active_tles() の2フェーズ設計」内「リクエストの『行儀』自体の改善」参照）。
 
 **Satellite > Update TLE / Settings > OK**（`_fetch_all_tle_sources()`）:
 

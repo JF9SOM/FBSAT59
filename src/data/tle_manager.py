@@ -123,6 +123,25 @@ async def _probe_reachable(url: str, params: dict[str, Any]) -> bool:
         return True
 
 
+def _is_active_cache_not_yet_updated(response_text: str) -> bool:
+    """True if a 403 from CelesTrak's GROUP=active endpoint is the documented
+    "cache hasn't refreshed yet" response, not evidence of an IP-level abuse
+    block.
+
+    GROUP=active only updates server-side roughly every 2 hours; a repeat
+    request inside that window returns HTTP 403 with an explanatory body
+    instead of new data (confirmed against a real response, 2026-08-09):
+    "GP data has not updated since your last successful download of
+    GROUP=active at ...". fetch_active_tles() itself only runs automatically
+    at most once per 24h, but the "Update TLE" button and Settings > OK
+    bypass that staleness gate -- pressing either twice within 2h must not
+    be misread as an abuse block (which would falsely trip the circuit
+    breaker and show an alarming "blocked, retrying in 3h" status for a
+    request that was never actually rejected for abuse).
+    """
+    return "has not updated since your last successful download" in response_text.lower()
+
+
 # CelesTrak's documented usage policy: an IP is sent to the firewall after 50
 # HTTP errors (301/403/404) within a 2-hour window
 # (https://celestrak.org/usage-policy.php, confirmed 2026-08-11). Phase 2a
@@ -753,19 +772,37 @@ class TLEManager:
     async def fetch_active_tles(self, progress_callback: Any = None) -> dict[str, int]:
         """Fill TLE gaps for SATNOGS-registered satellites (NORAD 10000-89999).
 
-        Phase 1 — CelesTrak bulk groups (single request per group, fast):
-          Downloads several CelesTrak groups that collectively cover most
-          SATNOGS-registered satellites. GROUP=active would cover far more in
-          one request, but is deliberately not used — see CLAUDE.md's
-          "fetch_active_tles() の2フェーズ設計" for why (it succeeds only
-          once per CelesTrak's 2h update cycle, and downloads ~11x more data
-          than this app actually needs).
+        Phase 1 — CelesTrak GROUP=active (single request, ~16,000 satellites):
+          Until 2026-08-11 this was 5 separate curated-group requests
+          (satnogs/last-30-days/argos/orbcomm/spire), on the reasoning that
+          GROUP=active's ~11x larger response wasn't worth downloading when
+          this app only needs ~1,482 of those satellites. That trade-off
+          prioritized bytes transferred over request count -- but this app's
+          actual, repeated real-world problem was getting its IP firewalled
+          by CelesTrak/SATNOGS, and what trips that firewall is HTTP *error*
+          count in a 2h window (CelesTrak's documented policy), not bytes
+          transferred. A single successful GROUP=active request contributes
+          ZERO errors and resolves virtually every satellite Phase 2's
+          per-satellite fallback loop used to have to chase down one at a
+          time (up to 800+ individual requests in one run before this
+          change) -- so switching cut this app's own contribution to that
+          error budget by roughly two orders of magnitude, at the cost of a
+          few extra megabytes on an endpoint this method only calls at most
+          once every 24h. See _is_active_cache_not_yet_updated()'s docstring
+          for the one caveat this introduces (GROUP=active's own ~2h
+          server-side cache).
 
-        Phase 2 — individual per-satellite queries (concurrent, up to 20 at a
-        time), for whatever Phase 1 didn't cover. Two stages, CelesTrak then
+        Phase 2 — individual per-satellite queries (concurrent, up to
+        PHASE2_CONCURRENCY at a time), for whatever GROUP=active didn't
+        cover (satellites CelesTrak's own "active" determination excludes
+        even though a direct CATNR lookup still finds current elements for
+        them — e.g. NOAA 18/19, see fetch_meteor_tles()'s docstring for a
+        documented case of exactly this). Two stages, CelesTrak then
         SATNOGS — see the inline "Phase 2a"/"Phase 2b" comments below for the
         full rationale (both fail fast via _probe_reachable() if the host is
         unreachable, rather than waiting out every straggler's own timeout).
+        With Phase 1 now resolving nearly everything, Phase 2 should
+        typically have very little left to do.
 
         `progress_callback`, if given, is called with a short human-readable
         string at each phase/group transition (not per-satellite — Phase 2
@@ -797,15 +834,6 @@ class TLEManager:
             alongside a "_blocked" flag to tell the user how far a paused
             run got.
         """
-        # CelesTrak groups accessible without authentication that provide good coverage
-        # of SATNOGS-registered satellites (GROUP=active deliberately not used — see above).
-        _BULK_GROUPS = [
-            "satnogs",  # ~664 satellites tracked by SatNOGS network
-            "last-30-days",  # recently launched satellites
-            "argos",  # data-collection / beacon satellites
-            "orbcomm",  # low-orbit messaging
-            "spire",  # commercial CubeSat constellation
-        ]
         stats: dict[str, int] = {
             "inserted": 0,
             "updated": 0,
@@ -900,29 +928,37 @@ class TLEManager:
 
         url_ct = "https://celestrak.org/NORAD/elements/gp.php"
         async with httpx.AsyncClient(timeout=60.0, headers=DEFAULT_HEADERS) as client:
-            for group in _BULK_GROUPS:
-                if self._celestrak_breaker.tripped:
-                    logger.warning(
-                        "CelesTrak already blocked this session — skipping remaining "
-                        "Phase 1 group(s)"
-                    )
-                    stats["celestrak_blocked"] = 1
-                    break
+            if self._celestrak_breaker.tripped:
+                logger.warning(
+                    "CelesTrak already blocked this session — skipping Phase 1 (GROUP=active)"
+                )
+                stats["celestrak_blocked"] = 1
+            else:
                 if progress_callback:
-                    progress_callback(f"CelesTrak {group}...")
+                    progress_callback("CelesTrak active...")
                 try:
-                    r = await client.get(url_ct, params={"GROUP": group, "FORMAT": "TLE"})
+                    r = await client.get(url_ct, params={"GROUP": "active", "FORMAT": "TLE"})
                     r.raise_for_status()
-                    _process_tle_text(r.text, f"celestrak-{group}")
+                    _process_tle_text(r.text, "celestrak-active")
                 except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RemoteProtocolError):
                     stats["errors"] += 1
                     self._celestrak_breaker.record_error()
                 except httpx.HTTPStatusError as exc:
-                    logger.warning(f"active fetch error ({group}): {exc}")
-                    stats["errors"] += 1
-                    self._celestrak_breaker.record_error(blocked=exc.response.status_code == 403)
+                    if exc.response.status_code == 403 and _is_active_cache_not_yet_updated(
+                        exc.response.text
+                    ):
+                        logger.info(
+                            "CelesTrak GROUP=active cache hasn't refreshed since our last "
+                            "download (< ~2h ago) — nothing new to fetch this run"
+                        )
+                    else:
+                        logger.warning(f"active fetch error (GROUP=active): {exc}")
+                        stats["errors"] += 1
+                        self._celestrak_breaker.record_error(
+                            blocked=exc.response.status_code == 403
+                        )
                 except httpx.HTTPError as exc:
-                    logger.warning(f"active fetch error ({group}): {exc}")
+                    logger.warning(f"active fetch error (GROUP=active): {exc}")
                     stats["errors"] += 1
                     self._celestrak_breaker.record_error()
 
