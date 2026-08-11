@@ -3335,3 +3335,107 @@ class TestRefreshSatelliteNamesSyncGatesProvisionalFetch:
         w._refresh_satellite_names_sync()
 
         prov_mock.assert_awaited_once()
+
+
+class TestRefreshSatelliteNamesSyncGroupTleMessages:
+    """The bulk CelesTrak group-fetch loop (stations/amateur/cubesat/weather/
+    earth-obs/science) used to show one static "Fetching group TLEs (first
+    run)..." message for the whole loop, with no indication of which group
+    was actually being fetched -- indistinguishable from a hang for a batch
+    of several groups (reported 2026-08-11, by analogy with the identical
+    complaint already addressed for fetch_active_tles()/fetch_provisional_tles()
+    Phase 2 progress). Now emits one message per group with its position
+    in the batch, and logs is_source_stale()/is_group_empty() separately
+    per source so a report of "this group keeps refetching right after a
+    full sync" can be diagnosed from the log (is_group_empty()'s fixed
+    minimum-count threshold vs is_source_stale()'s elapsed-time check).
+    """
+
+    def _make_window(self, qtbot, db: sqlite3.Connection, tle_manager: TLEManager) -> MainWindow:
+        w = MainWindow(conn=db, tle_manager=tle_manager)
+        qtbot.addWidget(w)
+        return w
+
+    def _stub_everything_except_the_group_loop(self, w: MainWindow) -> None:
+        from unittest.mock import AsyncMock
+
+        w._transmitter_manager.sync_satellite_names = AsyncMock(  # type: ignore[method-assign]
+            return_value={"updated": 0, "skipped": 0}
+        )
+        w._tle_manager.is_active_tle_stale = MagicMock(return_value=False)  # type: ignore[method-assign]
+        w._tle_manager.is_active_tle_retry_due = MagicMock(return_value=False)  # type: ignore[method-assign]
+        w._tle_manager.is_provisional_tle_stale = MagicMock(return_value=False)  # type: ignore[method-assign]
+        w._tle_manager.fetch_legacy_tles = AsyncMock(  # type: ignore[method-assign]
+            return_value={"found": 0, "hidden": 0, "errors": 0}
+        )
+        w._tle_manager.fetch_meteor_tles = AsyncMock(  # type: ignore[method-assign]
+            return_value={"found": 0, "skipped": 0, "errors": 0}
+        )
+
+    def _set_enabled_sources(self, db: sqlite3.Connection, sources: list[str]) -> None:
+        import json
+
+        db.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('tle_enabled_sources', ?)",
+            (json.dumps(sources),),
+        )
+        db.commit()
+
+    def test_emits_one_message_per_group_with_position_in_batch(
+        self, qtbot, db, tle_manager
+    ) -> None:
+        from unittest.mock import AsyncMock
+
+        w = self._make_window(qtbot, db, tle_manager)
+        self._stub_everything_except_the_group_loop(w)
+        self._set_enabled_sources(db, ["celestrak-amateur", "celestrak-cubesat"])
+        w._tle_manager.is_source_stale = MagicMock(return_value=True)  # type: ignore[method-assign]
+        w._tle_manager.is_group_empty = MagicMock(return_value=False)  # type: ignore[method-assign]
+        w._tle_manager.fetch_and_update = AsyncMock(  # type: ignore[method-assign]
+            return_value={"inserted": 0, "updated": 0, "errors": 0}
+        )
+        received: list[str] = []
+        w._sync_progress.connect(received.append)
+
+        w._refresh_satellite_names_sync()
+
+        group_messages = [m for m in received if "Fetching group TLEs" in m]
+        assert any("celestrak-amateur" in m and "(1/2)" in m for m in group_messages)
+        assert any("celestrak-cubesat" in m and "(2/2)" in m for m in group_messages)
+
+    def test_no_message_when_nothing_is_stale_or_empty(self, qtbot, db, tle_manager) -> None:
+        from unittest.mock import AsyncMock
+
+        w = self._make_window(qtbot, db, tle_manager)
+        self._stub_everything_except_the_group_loop(w)
+        self._set_enabled_sources(db, ["celestrak-amateur"])
+        w._tle_manager.is_source_stale = MagicMock(return_value=False)  # type: ignore[method-assign]
+        w._tle_manager.is_group_empty = MagicMock(return_value=False)  # type: ignore[method-assign]
+        fetch_mock = AsyncMock(return_value={"inserted": 0, "updated": 0, "errors": 0})
+        w._tle_manager.fetch_and_update = fetch_mock  # type: ignore[method-assign]
+        received: list[str] = []
+        w._sync_progress.connect(received.append)
+
+        w._refresh_satellite_names_sync()
+
+        assert not any("Fetching group TLEs" in m for m in received)
+        fetch_mock.assert_not_awaited()
+
+    def test_group_empty_alone_still_triggers_a_fetch(self, qtbot, db, tle_manager) -> None:
+        """A source that is_source_stale() considers fresh must still be
+        refetched if is_group_empty() flags it (the upgrade-case /
+        sparse-population detector) -- confirms the OR condition still
+        works after the loop was rewritten to track each reason."""
+        from unittest.mock import AsyncMock
+
+        w = self._make_window(qtbot, db, tle_manager)
+        self._stub_everything_except_the_group_loop(w)
+        self._set_enabled_sources(db, ["celestrak-science"])
+        w._tle_manager.is_source_stale = MagicMock(return_value=False)  # type: ignore[method-assign]
+        w._tle_manager.is_group_empty = MagicMock(return_value=True)  # type: ignore[method-assign]
+        fetch_mock = AsyncMock(return_value={"inserted": 0, "updated": 0, "errors": 0})
+        w._tle_manager.fetch_and_update = fetch_mock  # type: ignore[method-assign]
+
+        w._refresh_satellite_names_sync()
+
+        fetch_mock.assert_awaited_once_with("celestrak-science")

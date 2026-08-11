@@ -1654,34 +1654,55 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             logger.warning("Community transmitter load failed: %s", exc)
 
-        # On first launch (fresh install) the APScheduler group-specific jobs
-        # (celestrak-cubesat, celestrak-weather, etc.) haven't fired yet because
-        # they are scheduled with interval hours=2/4/6/12.  Without this initial
-        # fetch, every satellite ends up with tle_group='amateur' and CubeSat /
-        # Weather / Science / Earth-Obs / Space-Stations groups appear empty.
+        # Covers three cases, not just "first launch" (the name of this block is
+        # historical -- see is_source_stale()'s own docstring for the 2026-08-11
+        # fix that made it check real elapsed time, not just "ever fetched"):
+        #   1. Fresh install: the APScheduler group-specific jobs (celestrak-cubesat,
+        #      celestrak-weather, etc.) haven't fired yet because they are scheduled
+        #      with interval hours=1/2/4/6/12. Without this initial fetch, every
+        #      satellite ends up with tle_group='amateur' and CubeSat / Weather /
+        #      Science / Earth-Obs / Space-Stations groups appear empty.
+        #   2. Normal staleness: is_source_stale() now also catches a source whose
+        #      last successful fetch is older than its own update_interval_hours --
+        #      relevant every restart, not just the first one, since interval jobs
+        #      don't get a chance to fire on their own unless the app stays open for
+        #      a full interval.
+        #   3. Upgrade case (e.g. Windows): a previous beta may have left sync_log
+        #      entries so is_source_stale() returns False, but without the CASE WHEN
+        #      protection that beta introduced, all tle_group values were overwritten
+        #      back to 'amateur'. is_group_empty() detects this by checking whether
+        #      the expected tle_group has too few satellites in tle_data.
         #
-        # Also handles the upgrade case (e.g. Windows): a previous beta may have
-        # left sync_log entries so is_source_stale() returns False, but without the
-        # CASE WHEN protection that beta introduced, all tle_group values were
-        # overwritten back to 'amateur'.  We detect this by checking whether the
-        # expected tle_group has 0 satellites in tle_data and treat it as stale.
+        # Per-source reason logged (not just the source list) so a report like
+        # "this group keeps refetching even right after a full sync" can be
+        # diagnosed from the log alone: group_empty=True on every run for a
+        # source points at is_group_empty()'s fixed minimum-count threshold
+        # being too strict for that source's real (small) population, rather
+        # than at is_source_stale()'s elapsed-time check (2026-08-11 report).
         enabled = self._sort_sources_by_priority(SettingsDialog.get_enabled_sources(self._conn))
-        stale_sources = [
-            s
-            for s in enabled
-            if self._tle_manager.is_source_stale(s) or self._tle_manager.is_group_empty(s)
-        ]
+        stale_sources: list[str] = []
+        for s in enabled:
+            is_stale = self._tle_manager.is_source_stale(s)
+            is_empty = self._tle_manager.is_group_empty(s)
+            if is_stale or is_empty:
+                stale_sources.append(s)
+                logger.info(
+                    "Group TLE fetch queued: %s (stale=%s, group_empty=%s)", s, is_stale, is_empty
+                )
         if stale_sources:
-            logger.info("First-run group TLE fetch: %s", stale_sources)
-            self._sync_progress.emit(_("Fetching group TLEs (first run)..."))
-            for source_name in stale_sources:
+            total = len(stale_sources)
+            fetching_group_tles = _("Fetching group TLEs")
+            for idx, source_name in enumerate(stale_sources, start=1):
                 if self._shutdown_flag.is_set():
                     break
+                self._sync_progress.emit(
+                    f"🛰 {fetching_group_tles}: {source_name} ({idx}/{total})..."
+                )
                 try:
                     result = asyncio.run(self._tle_manager.fetch_and_update(source_name))
-                    logger.info("First-run TLE fetch done: %s -> %s", source_name, result)
+                    logger.info("Group TLE fetch done: %s -> %s", source_name, result)
                 except Exception as exc:
-                    logger.warning("First-run TLE fetch failed: %s - %s", source_name, exc)
+                    logger.warning("Group TLE fetch failed: %s - %s", source_name, exc)
             self._sync_progress.emit("")
 
         # Refresh the satellite list now that names and group TLEs are synced.
