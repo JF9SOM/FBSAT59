@@ -13,7 +13,7 @@ import re
 import sqlite3
 import sys
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -886,6 +886,37 @@ class TransmitterManager:
         self._conn.commit()
         self._log_sync("satnogs_names", stats)
         return stats
+
+    def is_satnogs_transmitters_stale(self, max_age_hours: float = 168.0) -> bool:
+        """Return True if the last full sync_from_satnogs() run is older than
+        max_age_hours (default 168h = 7 days, matching CLAUDE.md's documented
+        satnogs_transmitter_refresh cadence).
+
+        Mirrors TLEManager.is_active_tle_stale() exactly, for the same
+        reason: the startup path only auto-syncs SATNOGS transmitters when
+        the DB has zero source='satnogs' rows (i.e. a genuine first launch;
+        see MainWindow.__init__()'s `satnogs_count == 0` check) and
+        otherwise relies entirely on the 168h APScheduler interval job to
+        keep the DB fresh. APScheduler interval jobs don't fire immediately
+        on creation -- the first run only happens after a full interval has
+        elapsed from when the job was *added* (i.e. from that session's
+        startup, not from whenever the data last actually refreshed) -- so
+        a user who never keeps the app open for 7 continuous days would
+        never see this job fire even once after the initial sync, leaving
+        the transmitter DB stuck at whatever it looked like on first launch
+        indefinitely (reported 2026-08-11, by analogy with the identical
+        gap already found and fixed for fetch_provisional_tles()). This
+        lets the startup path independently catch that case too.
+        """
+        row = self._conn.execute(
+            "SELECT finished_at FROM sync_log WHERE sync_type = 'satnogs' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if not row:
+            return True
+        last = datetime.fromisoformat(str(row["finished_at"]))
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=UTC)
+        return datetime.now(UTC) - last > timedelta(hours=max_age_hours)
 
     def _log_sync(self, sync_type: str, stats: dict[str, int]) -> None:
         self._conn.execute(

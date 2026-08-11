@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -287,3 +288,66 @@ class TestUpdateTransmitterRxOffset:
         ).fetchone()
         assert row["rx_offset_hz"] == -1240.0
         assert row["description"] == "RS-44 FT4 (resynced)"
+
+
+class TestIsSatnogsTransmittersStale:
+    """The startup path only auto-syncs SATNOGS transmitters when the DB has
+    zero source='satnogs' rows (a genuine first launch), otherwise relying
+    entirely on the 168h (7-day) APScheduler interval job -- which only
+    fires after 7 continuous days of uptime, so a user who never leaves the
+    app open that long would never see the transmitter DB refresh again
+    after the initial sync (reported 2026-08-11).
+    is_satnogs_transmitters_stale() mirrors TLEManager.is_active_tle_stale()
+    exactly, keyed on the 'satnogs' sync_log entries sync_from_satnogs()
+    already writes via _log_sync().
+    """
+
+    def test_true_when_never_synced(self, db: sqlite3.Connection) -> None:
+        mgr = TransmitterManager(db)
+        assert mgr.is_satnogs_transmitters_stale() is True
+
+    def test_false_when_recently_synced(self, db: sqlite3.Connection) -> None:
+        mgr = TransmitterManager(db)
+        mgr._log_sync("satnogs", {"inserted": 1, "updated": 0})
+        assert mgr.is_satnogs_transmitters_stale() is False
+
+    def test_true_once_older_than_the_default_168h(self, db: sqlite3.Connection) -> None:
+        mgr = TransmitterManager(db)
+        old = (datetime.now(UTC) - timedelta(hours=169)).isoformat()
+        db.execute(
+            "INSERT INTO sync_log (sync_type, started_at, finished_at, status,"
+            " records_updated) VALUES ('satnogs', ?, ?, 'success', 0)",
+            (old, old),
+        )
+        db.commit()
+        assert mgr.is_satnogs_transmitters_stale() is True
+
+    def test_false_just_under_the_default_168h(self, db: sqlite3.Connection) -> None:
+        mgr = TransmitterManager(db)
+        recent = (datetime.now(UTC) - timedelta(hours=167)).isoformat()
+        db.execute(
+            "INSERT INTO sync_log (sync_type, started_at, finished_at, status,"
+            " records_updated) VALUES ('satnogs', ?, ?, 'success', 0)",
+            (recent, recent),
+        )
+        db.commit()
+        assert mgr.is_satnogs_transmitters_stale() is False
+
+    def test_respects_a_custom_max_age_hours(self, db: sqlite3.Connection) -> None:
+        mgr = TransmitterManager(db)
+        two_hours_ago = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
+        db.execute(
+            "INSERT INTO sync_log (sync_type, started_at, finished_at, status,"
+            " records_updated) VALUES ('satnogs', ?, ?, 'success', 0)",
+            (two_hours_ago, two_hours_ago),
+        )
+        db.commit()
+        assert mgr.is_satnogs_transmitters_stale(max_age_hours=1.0) is True
+        assert mgr.is_satnogs_transmitters_stale(max_age_hours=4.0) is False
+
+    def test_unrelated_sync_types_are_ignored(self, db: sqlite3.Connection) -> None:
+        """A fresh satnogs_names entry (sync_satellite_names(), a different
+        sync) must not make the transmitter sync look fresh too."""
+        mgr = TransmitterManager(db)
+        mgr._log_sync("satnogs_names", {"updated": 1, "skipped": 0})
+        assert mgr.is_satnogs_transmitters_stale() is True
