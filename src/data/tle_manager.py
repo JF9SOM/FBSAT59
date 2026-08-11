@@ -309,6 +309,28 @@ class TLEManager:
     # Update
     # ------------------------------------------------------------------ #
 
+    async def is_celestrak_bulk_group_reachable(self) -> bool:
+        """Single fail-fast reachability probe for the CelesTrak bulk
+        GROUP=... endpoint all 6 TLE_SOURCES bulk sources share (same host,
+        same base URL).
+
+        fetch_and_update() itself has no such probe -- a blocked/unreachable
+        host just makes each individual call time out on its own (10-30s),
+        so a caller looping it over several sources (the startup group-fetch
+        chain, or the Update TLE button) shows a "Fetching..." progress
+        message that never resolves into either a success or a visible
+        error, indistinguishable from a hang (reported 2026-08-11, by
+        analogy: fetch_active_tles()/fetch_provisional_tles() already probe
+        once before their own per-satellite loops for exactly this reason).
+        Callers should check this once before looping fetch_and_update()
+        over multiple sources, and show a clear error + skip the loop
+        entirely if it returns False, rather than silently absorbing N
+        individual timeouts.
+        """
+        return await _probe_reachable(
+            "https://celestrak.org/NORAD/elements/gp.php", {"GROUP": "STATIONS", "FORMAT": "TLE"}
+        )
+
     async def fetch_and_update(
         self,
         source_name: str = "celestrak-amateur",

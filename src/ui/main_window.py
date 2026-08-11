@@ -1689,25 +1689,42 @@ class MainWindow(QMainWindow):
                 logger.info(
                     "Group TLE fetch queued: %s (stale=%s, group_empty=%s)", s, is_stale, is_empty
                 )
+        group_fetch_blocked = False
         if stale_sources:
-            total = len(stale_sources)
-            fetching_group_tles = _("Fetching group TLEs")
-            for idx, source_name in enumerate(stale_sources, start=1):
-                if self._shutdown_flag.is_set():
-                    break
-                self._sync_progress.emit(
-                    f"🛰 {fetching_group_tles}: {source_name} ({idx}/{total})..."
+            # Fail fast rather than let each of up to 6 sources time out on its
+            # own (10-30s each) with only a "Fetching..." message that never
+            # resolves into success or a visible error -- see
+            # is_celestrak_bulk_group_reachable()'s docstring (2026-08-11 report:
+            # a still-blocked host showed this progress message with no
+            # indication anything had failed).
+            if not asyncio.run(self._tle_manager.is_celestrak_bulk_group_reachable()):
+                group_fetch_blocked = True
+                logger.warning(
+                    "CelesTrak unreachable — skipping %d group TLE fetch(es) this run",
+                    len(stale_sources),
                 )
-                try:
-                    result = asyncio.run(self._tle_manager.fetch_and_update(source_name))
-                    logger.info("Group TLE fetch done: %s -> %s", source_name, result)
-                except Exception as exc:
-                    logger.warning("Group TLE fetch failed: %s - %s", source_name, exc)
-            self._sync_progress.emit("")
+                cannot_connect_msg = _("Cannot connect to CelesTrak")
+                self._sync_progress.emit(f"❌ {cannot_connect_msg}")
+            else:
+                total = len(stale_sources)
+                fetching_group_tles = _("Fetching group TLEs")
+                for idx, source_name in enumerate(stale_sources, start=1):
+                    if self._shutdown_flag.is_set():
+                        break
+                    self._sync_progress.emit(
+                        f"🛰 {fetching_group_tles}: {source_name} ({idx}/{total})..."
+                    )
+                    try:
+                        result = asyncio.run(self._tle_manager.fetch_and_update(source_name))
+                        logger.info("Group TLE fetch done: %s -> %s", source_name, result)
+                    except Exception as exc:
+                        logger.warning("Group TLE fetch failed: %s - %s", source_name, exc)
+                self._sync_progress.emit("")
 
         # Refresh the satellite list now that names and group TLEs are synced.
         self._satellite_list_refresh.emit()
-        self._sync_progress.emit("")  # Hide sync label once satellite list is ready
+        if not group_fetch_blocked:
+            self._sync_progress.emit("")  # Hide sync label once satellite list is ready
 
     # ------------------------------------------------------------------ #
     # Timer callback (every 1 second)
@@ -4930,26 +4947,46 @@ class MainWindow(QMainWindow):
                 updating_msg = _("Updating TLEs…")
                 self._sync_progress.emit(f"🛰 {updating_msg}")
 
-                for source_name in enabled:
-                    logger.info("Manual TLE fetch: %s...", source_name)
-                    try:
-                        result = asyncio.run(self._tle_manager.fetch_and_update(source_name))
-                        logger.info("Manual TLE fetch result (%s): %s", source_name, result)
-                    except Exception as exc:
-                        logger.warning(
-                            "Manual TLE fetch error (%s): %s: %s",
-                            source_name,
-                            type(exc).__name__,
-                            exc,
-                        )
-
                 blocked = False
+                # Fail fast rather than let each of up to 6 sources time out on
+                # its own (10-30s each) with no visible indication of failure --
+                # see TLEManager.is_celestrak_bulk_group_reachable()'s docstring
+                # (2026-08-11 report: a blocked host showed "Updating TLEs..."
+                # with no error, indistinguishable from a hang). fetch_active_tles()
+                # / fetch_provisional_tles() below are unaffected -- they already
+                # probe for themselves.
+                if enabled and not asyncio.run(
+                    self._tle_manager.is_celestrak_bulk_group_reachable()
+                ):
+                    blocked = True
+                    logger.warning(
+                        "CelesTrak unreachable — skipping %d group TLE fetch(es) (Update TLE)",
+                        len(enabled),
+                    )
+                    cannot_connect_msg = _("Cannot connect to CelesTrak")
+                    self._sync_progress.emit(f"❌ {cannot_connect_msg}")
+                else:
+                    for source_name in enabled:
+                        logger.info("Manual TLE fetch: %s...", source_name)
+                        try:
+                            result = asyncio.run(self._tle_manager.fetch_and_update(source_name))
+                            logger.info("Manual TLE fetch result (%s): %s", source_name, result)
+                        except Exception as exc:
+                            logger.warning(
+                                "Manual TLE fetch error (%s): %s: %s",
+                                source_name,
+                                type(exc).__name__,
+                                exc,
+                            )
+
                 try:
                     active = asyncio.run(
                         self._tle_manager.fetch_active_tles(progress_callback=_active_progress)
                     )
                     logger.info("Manual active TLE fetch result: %s", active)
-                    blocked = bool(active.get("celestrak_blocked") or active.get("satnogs_blocked"))
+                    blocked = blocked or bool(
+                        active.get("celestrak_blocked") or active.get("satnogs_blocked")
+                    )
                     self._schedule_active_tle_retry_if_blocked(active)
                 except Exception as exc:
                     logger.warning("Manual active TLE fetch error: %s: %s", type(exc).__name__, exc)

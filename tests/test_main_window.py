@@ -3019,6 +3019,9 @@ class TestFetchAllTleSourcesGuardAndFeedback:
         received: list[str] = []
         w._sync_progress.connect(received.append)
 
+        w._tle_manager.is_celestrak_bulk_group_reachable = AsyncMock(  # type: ignore[method-assign]
+            return_value=True
+        )
         w._tle_manager.fetch_and_update = AsyncMock(  # type: ignore[method-assign]
             return_value={"inserted": 0, "updated": 0, "errors": 0}
         )
@@ -3046,6 +3049,9 @@ class TestFetchAllTleSourcesGuardAndFeedback:
         from unittest.mock import AsyncMock, patch
 
         w = self._make_window(qtbot, db, tle_manager)
+        w._tle_manager.is_celestrak_bulk_group_reachable = AsyncMock(  # type: ignore[method-assign]
+            return_value=True
+        )
         w._tle_manager.fetch_and_update = AsyncMock(  # type: ignore[method-assign]
             return_value={"inserted": 0, "updated": 0, "errors": 0}
         )
@@ -3078,6 +3084,9 @@ class TestFetchAllTleSourcesGuardAndFeedback:
         from unittest.mock import AsyncMock, patch
 
         w = self._make_window(qtbot, db, tle_manager)
+        w._tle_manager.is_celestrak_bulk_group_reachable = AsyncMock(  # type: ignore[method-assign]
+            return_value=True
+        )
         w._tle_manager.fetch_and_update = AsyncMock(  # type: ignore[method-assign]
             side_effect=RuntimeError("boom")
         )
@@ -3111,6 +3120,9 @@ class TestFetchAllTleSourcesGuardAndFeedback:
         from unittest.mock import AsyncMock, patch
 
         w = self._make_window(qtbot, db, tle_manager)
+        w._tle_manager.is_celestrak_bulk_group_reachable = AsyncMock(  # type: ignore[method-assign]
+            return_value=True
+        )
         w._tle_manager.fetch_and_update = AsyncMock(  # type: ignore[method-assign]
             return_value={"inserted": 0, "updated": 0, "errors": 0}
         )
@@ -3148,6 +3160,53 @@ class TestFetchAllTleSourcesGuardAndFeedback:
             w._fetch_all_tle_sources()
 
         prov_mock.assert_awaited_once()
+
+    def test_shows_error_and_skips_the_bulk_loop_when_celestrak_unreachable(
+        self, qtbot, db, tle_manager
+    ) -> None:
+        """Mirrors the same fix for the startup path (see
+        TestRefreshSatelliteNamesSyncGroupTleMessages): pressing Update TLE
+        against an unreachable CelesTrak must not silently absorb up to 6
+        individual fetch_and_update() timeouts behind an "Updating TLEs..."
+        message with no visible error. fetch_active_tles()/
+        fetch_provisional_tles() are unaffected -- they already probe for
+        themselves and are still awaited."""
+        from unittest.mock import AsyncMock, patch
+
+        w = self._make_window(qtbot, db, tle_manager)
+        w._tle_manager.is_celestrak_bulk_group_reachable = AsyncMock(  # type: ignore[method-assign]
+            return_value=False
+        )
+        fetch_and_update_mock = AsyncMock(return_value={"inserted": 0, "updated": 0, "errors": 0})
+        w._tle_manager.fetch_and_update = fetch_and_update_mock  # type: ignore[method-assign]
+        active_mock = AsyncMock(
+            return_value={
+                "inserted": 0,
+                "updated": 0,
+                "no_tle": 0,
+                "hidden_unknown": 0,
+                "hidden_expired": 0,
+                "errors": 0,
+                "celestrak_blocked": 0,
+                "satnogs_blocked": 0,
+                "phase2_total": 0,
+                "phase2_unresolved": 0,
+            }
+        )
+        w._tle_manager.fetch_active_tles = active_mock  # type: ignore[method-assign]
+        prov_mock = AsyncMock(return_value={"inserted": 0, "updated": 0, "errors": 0})
+        w._tle_manager.fetch_provisional_tles = prov_mock  # type: ignore[method-assign]
+        received: list[str] = []
+        w._sync_progress.connect(received.append)
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._fetch_all_tle_sources()
+
+        fetch_and_update_mock.assert_not_awaited()
+        active_mock.assert_awaited_once()
+        prov_mock.assert_awaited_once()
+        assert any("Cannot connect to CelesTrak" in m for m in received)
+        assert "Cannot connect to CelesTrak" in received[-1]
 
 
 class TestActiveTleRetryScheduling:
@@ -3371,6 +3430,11 @@ class TestRefreshSatelliteNamesSyncGroupTleMessages:
         w._tle_manager.fetch_meteor_tles = AsyncMock(  # type: ignore[method-assign]
             return_value={"found": 0, "skipped": 0, "errors": 0}
         )
+        # Default to reachable so existing tests exercise the actual fetch
+        # loop; tests for the unreachable path override this to False.
+        w._tle_manager.is_celestrak_bulk_group_reachable = AsyncMock(  # type: ignore[method-assign]
+            return_value=True
+        )
 
     def _set_enabled_sources(self, db: sqlite3.Connection, sources: list[str]) -> None:
         import json
@@ -3439,3 +3503,37 @@ class TestRefreshSatelliteNamesSyncGroupTleMessages:
         w._refresh_satellite_names_sync()
 
         fetch_mock.assert_awaited_once_with("celestrak-science")
+
+    def test_shows_error_and_skips_the_loop_when_celestrak_unreachable(
+        self, qtbot, db, tle_manager
+    ) -> None:
+        """An unreachable CelesTrak must not be absorbed as N individual
+        fetch_and_update() timeouts (10-30s each) behind a "Fetching group
+        TLEs..." message that never resolves into success or a visible
+        error -- reported 2026-08-11 ("メッセージは出たがブロックされたまま
+        だった"): the message alone doesn't confirm the fetch actually
+        succeeded. Must fail fast (single probe) and show a clear error
+        instead of attempting any of the queued sources."""
+        from unittest.mock import AsyncMock
+
+        w = self._make_window(qtbot, db, tle_manager)
+        self._stub_everything_except_the_group_loop(w)
+        self._set_enabled_sources(db, ["celestrak-amateur", "celestrak-cubesat"])
+        w._tle_manager.is_source_stale = MagicMock(return_value=True)  # type: ignore[method-assign]
+        w._tle_manager.is_group_empty = MagicMock(return_value=False)  # type: ignore[method-assign]
+        w._tle_manager.is_celestrak_bulk_group_reachable = AsyncMock(  # type: ignore[method-assign]
+            return_value=False
+        )
+        fetch_mock = AsyncMock(return_value={"inserted": 0, "updated": 0, "errors": 0})
+        w._tle_manager.fetch_and_update = fetch_mock  # type: ignore[method-assign]
+        received: list[str] = []
+        w._sync_progress.connect(received.append)
+
+        w._refresh_satellite_names_sync()
+
+        fetch_mock.assert_not_awaited()
+        assert not any("Fetching group TLEs" in m for m in received)
+        assert any("Cannot connect to CelesTrak" in m for m in received)
+        # The error must be the last thing shown -- not immediately blanked
+        # by the trailing "hide sync label" emit further down the method.
+        assert "Cannot connect to CelesTrak" in received[-1]
