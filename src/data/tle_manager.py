@@ -533,17 +533,37 @@ class TLEManager:
         return datetime.now(UTC) - last > timedelta(hours=max_age_hours)
 
     def is_source_stale(self, source_name: str) -> bool:
-        """Return True if the given TLE source has never been fetched (no sync_log entry).
+        """Return True if the given TLE source has never been fetched, or the
+        last fetch is older than its own documented update_interval_hours
+        (TLE_SOURCES).
 
-        Unlike is_active_tle_stale(), this only returns True when there is no record at all
-        (i.e. first run after a fresh install).  The APScheduler interval jobs handle
-        subsequent periodic refreshes, so we only need to detect the very first-run case.
+        This used to only return True when there was no record at all (i.e.
+        first run after a fresh install), on the assumption that "the
+        APScheduler interval jobs handle subsequent periodic refreshes" --
+        but interval jobs don't fire immediately on creation, only after a
+        full interval has elapsed *from that session's startup*. A user who
+        never keeps the app open that long (1-12h depending on the source)
+        would never see the interval job fire even once after the initial
+        sync, leaving these 6 CelesTrak groups stuck at whatever they
+        looked like on first launch (the same gap already found and fixed
+        for fetch_provisional_tles() and sync_from_satnogs(), reported
+        2026-08-11). Sources not found in TLE_SOURCES (there shouldn't be
+        any, but just in case) fall back to a conservative 24h.
         """
         row = self._conn.execute(
             "SELECT finished_at FROM sync_log WHERE sync_type = ? ORDER BY id DESC LIMIT 1",
             (source_name,),
         ).fetchone()
-        return row is None
+        if row is None:
+            return True
+        last = datetime.fromisoformat(str(row["finished_at"]))
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=UTC)
+        max_age_hours = next(
+            (float(s["update_interval_hours"]) for s in TLE_SOURCES if s["name"] == source_name),
+            24.0,
+        )
+        return datetime.now(UTC) - last > timedelta(hours=max_age_hours)
 
     # ── Persisted retry marker for a blocked fetch_active_tles() run ──────
     #

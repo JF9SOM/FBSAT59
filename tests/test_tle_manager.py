@@ -1095,6 +1095,82 @@ class TestFetchActiveTlesCircuitBreaker:
         assert any("unreachable" in m for m in progress_messages)
 
 
+class TestIsSourceStale:
+    """is_source_stale() (gating the 6 CelesTrak bulk group sources --
+    stations/amateur/cubesat/weather/earth-obs/science) used to only return
+    True when a source had literally never been fetched, on the assumption
+    that "the APScheduler interval jobs handle subsequent periodic
+    refreshes" -- the same flawed assumption already found and fixed for
+    fetch_provisional_tles() and sync_from_satnogs() (interval jobs don't
+    fire immediately; a user who never keeps the app open for a full
+    interval never sees them fire even once after the initial sync).
+    is_source_stale() now also checks the source's own
+    TLE_SOURCES[...]["update_interval_hours"].
+    """
+
+    def test_true_when_never_fetched(self, db: sqlite3.Connection) -> None:
+        mgr = TLEManager(db)
+        assert mgr.is_source_stale("celestrak-amateur") is True
+
+    def test_false_when_within_its_own_interval(self, db: sqlite3.Connection) -> None:
+        """celestrak-amateur's update_interval_hours is 2 -- a 1h-old fetch
+        must still count as fresh."""
+        mgr = TLEManager(db)
+        one_hour_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+        db.execute(
+            "INSERT INTO sync_log (sync_type, started_at, finished_at, status,"
+            " records_updated) VALUES ('celestrak-amateur', ?, ?, 'success', 0)",
+            (one_hour_ago, one_hour_ago),
+        )
+        db.commit()
+        assert mgr.is_source_stale("celestrak-amateur") is False
+
+    def test_true_once_older_than_its_own_interval(self, db: sqlite3.Connection) -> None:
+        """celestrak-stations's update_interval_hours is 1 -- a 2h-old fetch
+        must count as stale, even though that's fresher than most other
+        sources' own intervals (each source is judged against its own
+        documented cadence, not a single shared threshold)."""
+        mgr = TLEManager(db)
+        two_hours_ago = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
+        db.execute(
+            "INSERT INTO sync_log (sync_type, started_at, finished_at, status,"
+            " records_updated) VALUES ('celestrak-stations', ?, ?, 'success', 0)",
+            (two_hours_ago, two_hours_ago),
+        )
+        db.commit()
+        assert mgr.is_source_stale("celestrak-stations") is True
+        # The same age against a source with a longer interval (cubesat=4h)
+        # must still count as fresh -- confirming each source is judged
+        # against its own interval, not a shared one.
+        db.execute(
+            "INSERT INTO sync_log (sync_type, started_at, finished_at, status,"
+            " records_updated) VALUES ('celestrak-cubesat', ?, ?, 'success', 0)",
+            (two_hours_ago, two_hours_ago),
+        )
+        db.commit()
+        assert mgr.is_source_stale("celestrak-cubesat") is False
+
+    def test_unknown_source_name_falls_back_to_24h(self, db: sqlite3.Connection) -> None:
+        mgr = TLEManager(db)
+        old = (datetime.now(UTC) - timedelta(hours=25)).isoformat()
+        db.execute(
+            "INSERT INTO sync_log (sync_type, started_at, finished_at, status,"
+            " records_updated) VALUES ('not-a-real-source', ?, ?, 'success', 0)",
+            (old, old),
+        )
+        db.commit()
+        assert mgr.is_source_stale("not-a-real-source") is True
+
+        recent = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+        db.execute(
+            "UPDATE sync_log SET started_at = ?, finished_at = ?"
+            " WHERE sync_type = 'not-a-real-source'",
+            (recent, recent),
+        )
+        db.commit()
+        assert mgr.is_source_stale("not-a-real-source") is False
+
+
 class TestIsProvisionalTleStale:
     """fetch_provisional_tles() used to be called unconditionally on every
     app startup with no staleness check at all, unlike fetch_active_tles()
