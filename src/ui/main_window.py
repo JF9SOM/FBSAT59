@@ -4187,7 +4187,7 @@ class MainWindow(QMainWindow):
             """
             SELECT uuid, description, type,
                    downlink_low, uplink_low, mode, ctcss_tone, invert,
-                   alive, satnogs_status, norad_cat_id, source
+                   alive, satnogs_status, norad_cat_id, source, rx_offset_hz
             FROM transmitters
             WHERE norad_cat_id = ?
             ORDER BY

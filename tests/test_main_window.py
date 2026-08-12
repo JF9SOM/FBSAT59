@@ -2854,6 +2854,36 @@ class TestLockDialFeedback:
         w._current_transmitter = None
         w._on_rx_offset_changed(100.0)  # must not raise
 
+    def test_refresh_radio_control_surfaces_saved_rx_offset(self, qtbot, db) -> None:
+        """Regression test (GitHub Issue #18 follow-up): _refresh_radio_control()
+        -- the code path that actually runs when reselecting a satellite from the
+        main list, as opposed to get_transmitters() -- used an explicit SQL
+        column list that predated rx_offset_hz and never included it. Editing
+        the Offset spinbox persisted correctly to the DB and to the in-memory
+        dict for the *current* selection, but switching to another satellite and
+        back rebuilt _current_transmitter from this SELECT, silently dropping
+        back to 0 despite the DB still holding the saved value -- exactly the
+        "where did my RS-44 offset go" behavior reported live after v0.3.7."""
+        from data.transmitter_manager import TransmitterManager
+
+        w = self._make_window(qtbot, db)
+        mgr = TransmitterManager(db)
+        db.execute("INSERT INTO satellites (norad_cat_id, name) VALUES (?, ?)", (44909, "RS-44"))
+        db.commit()
+        xpdr_uuid = mgr.add_manual_transmitter(
+            norad_cat_id=44909,
+            description="RS-44 FT4",
+            downlink_low=435_612_000,
+            mode="USB-D",
+        )
+        mgr.update_transmitter(xpdr_uuid, rx_offset_hz=-1240.0)
+
+        w._refresh_radio_control(44909)
+
+        assert w._current_transmitter is not None
+        assert w._current_transmitter["rx_offset_hz"] == -1240.0
+        assert w._radio_control._offset_spin.value() == -1240
+
 
 class TestRadioType:
     """Radio Type 設定テスト。"""

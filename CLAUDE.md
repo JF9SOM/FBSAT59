@@ -4537,6 +4537,43 @@ Lock（dial feedback）はセッション内のみの手動補正で、衛星切
 `TestLockDialFeedback`に`_doppler_cycle()`でのオフセット折り込み・Lock offsetとの合成・
 `_on_tune_requested()`でのオフセット保持・`_on_rx_offset_changed()`の永続化テストを追加）。
 
+### バグ修正 — 衛星を切り替えて戻るとOffsetが消える（v0.3.7実運用で発覚・修正済み、2026-08-12）
+
+v0.3.7リリース後、Issue #18報告者（drmgcm69）から「RS-44でOffsetを設定した後、JO-97に
+切り替えてからRS-44に戻ると、スピンボックスに値が表示されない（消えた）」との報告があった。
+
+**原因**: 衛星選択時に実際に呼ばれるのは`TransmitterManager.get_transmitters()`
+（`SELECT *`のため新規列も自動的に含まれる）ではなく、`MainWindow._refresh_radio_control()`
+内の**別の生SQL**だった。こちらは列を明示指定したSELECT文で、`rx_offset_hz`追加時に
+この存在を見落としており、列リストに含まれていなかった：
+
+```sql
+SELECT uuid, description, type,
+       downlink_low, uplink_low, mode, ctcss_tone, invert,
+       alive, satnogs_status, norad_cat_id, source   -- rx_offset_hz が抜けていた
+FROM transmitters WHERE norad_cat_id = ? ORDER BY ...
+```
+
+`_on_rx_offset_changed()`によるDB永続化自体は正しく機能していた（DB上の値は消えていない）。
+しかし衛星を切り替えて戻ると、この生SQLで`_current_transmitter`が**丸ごと新しい辞書に
+再構築される**ため、`rx_offset_hz`キー自体が存在しない辞書になり、スピンボックスの表示が
+0（未設定）に戻っていた——**表示上だけの不具合**で、保存した値自体は毎回のパスで
+正しく`_doppler_cycle()`に適用され続けていた（実際の周波数補正は途切れていなかった）。
+
+**修正**: 上記SELECT文の列リストに`rx_offset_hz`を追加。
+
+**教訓**: `transmitters`テーブルへの新規列追加時、`TransmitterManager.get_transmitters()`
+（`SELECT *`）だけでなく、**同じ役割を果たす別経路の生SQL**（列を明示指定するSELECT文）が
+複数存在しないか確認すべきだった。本ファイル既出のHamlibアップデーターの教訓
+（「同じ役割の機能が複数ある場合、新規実装時だけでなく既存分についても参照先が揃っているか
+確認すること」）と同型の見落とし。`grep -n "FROM transmitters"`で関連箇所を横断的に洗い出す
+習慣が必要。
+
+テスト: `tests/test_main_window.py`の`TestLockDialFeedback`に
+`test_refresh_radio_control_surfaces_saved_rx_offset`を追加（`_refresh_radio_control()`を
+直接呼び、DBに保存済みの`rx_offset_hz`が`_current_transmitter`とOffsetスピンボックスの
+両方に正しく反映されることを検証）。
+
 ---
 
 ## Rig-Specific Implementation Notes
