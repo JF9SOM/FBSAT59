@@ -2863,22 +2863,37 @@ class TestLockDialFeedback:
         dict for the *current* selection, but switching to another satellite and
         back rebuilt _current_transmitter from this SELECT, silently dropping
         back to 0 despite the DB still holding the saved value -- exactly the
-        "where did my RS-44 offset go" behavior reported live after v0.3.7."""
+        "where did my RS-44 offset go" behavior reported live after v0.3.7.
+
+        Uses a fictitious NORAD ID (not e.g. RS-44/44909) for two reasons found
+        the hard way (this test broke CI twice before landing):
+        1. MainWindow.__init__() unconditionally, synchronously calls
+           load_community_transmitters() (main_window.py line ~707, deliberately
+           not gated by the _no_background_sync fixture -- bundled satellites
+           must be visible before any network sync completes). A plain
+           "INSERT INTO satellites" for a real bundled NORAD ID collides with
+           that (IntegrityError); add_manual_transmitter() below already does
+           its own INSERT OR IGNORE, so no manual insert is needed at all.
+        2. A real bundled NORAD ID (e.g. RS-44) already has its own community
+           transponder row from that same load. Adding a second, manually-added
+           transponder for the same NORAD ID makes which one becomes the
+           default (index 0) selection ambiguous/order-dependent, so the
+           assertions below would flakily read the *other* transponder's
+           (zero) offset instead of the one this test actually set.
+        """
         from data.transmitter_manager import TransmitterManager
 
-        w = self._make_window(qtbot, db)
         mgr = TransmitterManager(db)
-        db.execute("INSERT INTO satellites (norad_cat_id, name) VALUES (?, ?)", (44909, "RS-44"))
-        db.commit()
+        w = self._make_window(qtbot, db)
         xpdr_uuid = mgr.add_manual_transmitter(
-            norad_cat_id=44909,
-            description="RS-44 FT4",
+            norad_cat_id=900001,
+            description="Test-Sat FT4",
             downlink_low=435_612_000,
             mode="USB-D",
         )
         mgr.update_transmitter(xpdr_uuid, rx_offset_hz=-1240.0)
 
-        w._refresh_radio_control(44909)
+        w._refresh_radio_control(900001)
 
         assert w._current_transmitter is not None
         assert w._current_transmitter["rx_offset_hz"] == -1240.0
