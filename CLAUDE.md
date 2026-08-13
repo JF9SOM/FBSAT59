@@ -3275,9 +3275,6 @@ QT_LOGGING_RULES="qt.qpa.*=true" ./FBSAT59.AppImage 2>&1 | head -100
 14. ~~**Help > gr-satellites… ダイアログ**~~ **→ feature/communications で完了**（src/ui/gr_satellites_dialog.py — 検出ステータス・バンドルのDownload & Install・conda-forge/PPA/ソースビルド案内。2026-07-31にpip案内の誤りとmacOS向けバンドル配布を追加、詳細は「gr-satellitesのバンドル配布」セクション参照）
 15. ~~**SSTV / SSDV 受信タブ**~~ **→ feature/communications で完了**（SstvDecoder・SsdvDecoder・SstvTab・SDR audio_ready 接続・AX.25 raw_frame_received タップ）
 
-### 配布・ビルド
-15. **Windows・macOS v0.1.0 ビルドの動作確認** — CI ビルド成功後、実機での SDR 含む全機能検証
-
 ### データ・連携
 16. **観測ログ機能** — 実際に追尾・通信した衛星パスを記録・集計・エクスポートする機能
 17. ~~**多言語対応（日本語）フェーズ2 — メニュー・Help画面・主要タブ/ダイアログ**~~ **→ 2026-07-08 で完了**（View > Language > Japanese 実装済み。詳細は「多言語化ロードマップ」セクション参照。Web UI・タブ内部の一部は引き続き未着手）
