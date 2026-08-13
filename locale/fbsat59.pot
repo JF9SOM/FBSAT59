@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-13 13:15+0900\n"
+"POT-Creation-Date: 2026-08-13 13:38+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -320,12 +320,12 @@ msgstr ""
 msgid "No confirmed messages addressed to {call} yet."
 msgstr ""
 
-#: src/ui/transmitter_dialog.py:57 src/ui/main_window.py:5135
-#: src/ui/main_window.py:5145 src/ui/main_window.py:5156
+#: src/ui/transmitter_dialog.py:57 src/ui/main_window.py:5144
+#: src/ui/main_window.py:5154 src/ui/main_window.py:5165
 msgid "Edit Transmitter"
 msgstr ""
 
-#: src/ui/transmitter_dialog.py:57 src/ui/main_window.py:5125
+#: src/ui/transmitter_dialog.py:57 src/ui/main_window.py:5134
 msgid "Add Transmitter"
 msgstr ""
 
@@ -3082,7 +3082,7 @@ msgstr ""
 msgid "Please enter a grid locator."
 msgstr ""
 
-#: src/ui/manual_tle_dialog.py:43 src/ui/main_window.py:5221
+#: src/ui/manual_tle_dialog.py:43 src/ui/main_window.py:5230
 msgid "Add Manual TLE"
 msgstr ""
 
@@ -3492,8 +3492,8 @@ msgstr ""
 msgid "No satellites available."
 msgstr ""
 
-#: src/ui/autotrack_record_dialog.py:534 src/ui/main_window.py:5145
-#: src/ui/main_window.py:5181
+#: src/ui/autotrack_record_dialog.py:534 src/ui/main_window.py:5154
+#: src/ui/main_window.py:5190
 msgid "No transmitters found for this satellite."
 msgstr ""
 
@@ -3736,7 +3736,7 @@ msgstr ""
 msgid "Add Manual TLE..."
 msgstr ""
 
-#: src/ui/main_window.py:949 src/ui/main_window.py:5235
+#: src/ui/main_window.py:949 src/ui/main_window.py:5244
 msgid "Update TLE"
 msgstr ""
 
@@ -3791,7 +3791,7 @@ msgid "AX100 Digi"
 msgstr ""
 
 #: src/ui/main_window.py:970 src/ui/main_window.py:2406
-#: src/ui/main_window.py:6761 src/ui/main_window.py:6773
+#: src/ui/main_window.py:6820 src/ui/main_window.py:6832
 msgid "METEOR / HRPT"
 msgstr ""
 
@@ -3807,7 +3807,7 @@ msgstr ""
 msgid "View"
 msgstr ""
 
-#: src/ui/main_window.py:985 src/ui/main_window.py:6171
+#: src/ui/main_window.py:985 src/ui/main_window.py:6218
 msgid "Language"
 msgstr ""
 
@@ -3835,8 +3835,8 @@ msgstr ""
 msgid "Satellite/Transmitter Colors"
 msgstr ""
 
-#: src/ui/main_window.py:1027 src/ui/main_window.py:6401
-#: src/ui/main_window.py:6428
+#: src/ui/main_window.py:1027 src/ui/main_window.py:6457
+#: src/ui/main_window.py:6487
 msgid "Auto Fetch Rules"
 msgstr ""
 
@@ -3892,12 +3892,12 @@ msgstr ""
 msgid "Show QR code for web access"
 msgstr ""
 
-#: src/ui/main_window.py:1085 src/ui/main_window.py:6029
+#: src/ui/main_window.py:1085 src/ui/main_window.py:6076
 msgid "RIG: Off"
 msgstr ""
 
-#: src/ui/main_window.py:1086 src/ui/main_window.py:6126
-#: src/ui/main_window.py:6130
+#: src/ui/main_window.py:1086 src/ui/main_window.py:6173
+#: src/ui/main_window.py:6177
 msgid "ROT: Off"
 msgstr ""
 
@@ -3985,8 +3985,8 @@ msgstr ""
 msgid "Clock Sync Check"
 msgstr ""
 
-#: src/ui/main_window.py:4132 src/ui/main_window.py:5135
-#: src/ui/main_window.py:5171
+#: src/ui/main_window.py:4132 src/ui/main_window.py:5144
+#: src/ui/main_window.py:5180
 msgid "No satellite selected."
 msgstr ""
 
@@ -4046,209 +4046,205 @@ msgstr ""
 msgid "Updating TLEs…"
 msgstr ""
 
-#: src/ui/main_window.py:5126
+#: src/ui/main_window.py:5135
 msgid "Transmitter added successfully."
 msgstr ""
 
-#: src/ui/main_window.py:5156
+#: src/ui/main_window.py:5165
 msgid "Select transmitter to edit:"
 msgstr ""
 
-#: src/ui/main_window.py:5171 src/ui/main_window.py:5181
-#: src/ui/main_window.py:5192 src/ui/main_window.py:5201
+#: src/ui/main_window.py:5180 src/ui/main_window.py:5190
+#: src/ui/main_window.py:5201 src/ui/main_window.py:5210
 msgid "Delete Transmitter"
 msgstr ""
 
-#: src/ui/main_window.py:5192
+#: src/ui/main_window.py:5201
 msgid "Select transmitter to delete:"
 msgstr ""
 
-#: src/ui/main_window.py:5202
+#: src/ui/main_window.py:5211
 #, python-brace-format
 msgid "Delete transmitter '{desc}'?"
 msgstr ""
 
-#: src/ui/main_window.py:5222
+#: src/ui/main_window.py:5231
 #, python-brace-format
 msgid "Satellite TLE added successfully (NORAD {n})."
 msgstr ""
 
-#: src/ui/main_window.py:5235
+#: src/ui/main_window.py:5244
 msgid "TLE update has been queued in the background."
 msgstr ""
 
-#: src/ui/main_window.py:5247
+#: src/ui/main_window.py:5256
 msgid "Syncing transmitter frequencies from SATNOGS..."
 msgstr ""
 
-#: src/ui/main_window.py:5324
-msgid "a provider"
-msgstr ""
-
-#: src/ui/main_window.py:5328
+#: src/ui/main_window.py:5374
 #, python-brace-format
 msgid ""
 "{provider} blocked — retry in {hours}h ({unresolved} satellite(s) still "
 "unresolved)"
 msgstr ""
 
-#: src/ui/main_window.py:5333
+#: src/ui/main_window.py:5379
 #, python-brace-format
 msgid "{provider} blocked — retry in {hours}h"
 msgstr ""
 
-#: src/ui/main_window.py:5390 src/ui/main_window.py:5441
+#: src/ui/main_window.py:5437 src/ui/main_window.py:5488
 msgid "Cannot connect to SATNOGS"
 msgstr ""
 
-#: src/ui/main_window.py:5397
+#: src/ui/main_window.py:5444
 #, python-brace-format
 msgid "SATNOGS sync: {ins} inserted, {upd} updated, {skp} skipped"
 msgstr ""
 
-#: src/ui/main_window.py:5404
+#: src/ui/main_window.py:5451
 #, python-brace-format
 msgid "SATNOGS sync failed: {etype}: {err}"
 msgstr ""
 
-#: src/ui/main_window.py:5433
+#: src/ui/main_window.py:5480
 msgid "Syncing satellite names from SATNOGS..."
 msgstr ""
 
-#: src/ui/main_window.py:5448
+#: src/ui/main_window.py:5495
 #, python-brace-format
 msgid "Satellite names sync: {upd} updated, {skp} skipped"
 msgstr ""
 
-#: src/ui/main_window.py:5455
+#: src/ui/main_window.py:5502
 #, python-brace-format
 msgid "Satellite names sync failed: {etype}: {err}"
 msgstr ""
 
-#: src/ui/main_window.py:6009
+#: src/ui/main_window.py:6056
 #, python-brace-format
 msgid "\\U0001f50a TX: {owner}"
 msgstr ""
 
-#: src/ui/main_window.py:6023
+#: src/ui/main_window.py:6070
 msgid "RIG: 1+2"
 msgstr ""
 
-#: src/ui/main_window.py:6025
+#: src/ui/main_window.py:6072
 msgid "RIG: 1"
 msgstr ""
 
-#: src/ui/main_window.py:6027
+#: src/ui/main_window.py:6074
 msgid "RIG: 2"
 msgstr ""
 
-#: src/ui/main_window.py:6128
+#: src/ui/main_window.py:6175
 msgid "ROT: On"
 msgstr ""
 
-#: src/ui/main_window.py:6172
+#: src/ui/main_window.py:6219
 msgid "FBSAT59 will restart now to apply the language change."
 msgstr ""
 
-#: src/ui/main_window.py:6205
+#: src/ui/main_window.py:6252
 msgid "Satellite/Transmitter Color Legend"
 msgstr ""
 
-#: src/ui/main_window.py:6215
+#: src/ui/main_window.py:6262
 msgid "Green (bold)"
 msgstr ""
 
-#: src/ui/main_window.py:6216
+#: src/ui/main_window.py:6263
 msgid "AMSAT status: Operational — confirmed working by AMSAT."
 msgstr ""
 
-#: src/ui/main_window.py:6221
+#: src/ui/main_window.py:6268
 msgid "Yellow"
 msgstr ""
 
-#: src/ui/main_window.py:6222
+#: src/ui/main_window.py:6269
 msgid "AMSAT status: Partially operational — degraded but active."
 msgstr ""
 
-#: src/ui/main_window.py:6227
+#: src/ui/main_window.py:6274
 msgid "Red"
 msgstr ""
 
-#: src/ui/main_window.py:6228
+#: src/ui/main_window.py:6275
 msgid "AMSAT status: Non-operational — confirmed failed by AMSAT."
 msgstr ""
 
-#: src/ui/main_window.py:6233
+#: src/ui/main_window.py:6280
 msgid "Orange"
 msgstr ""
 
-#: src/ui/main_window.py:6234
+#: src/ui/main_window.py:6281
 msgid "SATNOGS alive — reception reported, no AMSAT data available."
 msgstr ""
 
-#: src/ui/main_window.py:6239
+#: src/ui/main_window.py:6286
 msgid "Purple (italic)"
 msgstr ""
 
-#: src/ui/main_window.py:6241
+#: src/ui/main_window.py:6288
 msgid ""
 "TLE pending — alive satellite awaiting TLE assignment (provisional NORAD ≥ "
 "90000, within 30-day grace period). Position cannot be displayed yet."
 msgstr ""
 
-#: src/ui/main_window.py:6249
+#: src/ui/main_window.py:6296
 msgid "Gray"
 msgstr ""
 
-#: src/ui/main_window.py:6250
+#: src/ui/main_window.py:6297
 msgid "Status unknown — not confirmed operational by any source."
 msgstr ""
 
-#: src/ui/main_window.py:6255
+#: src/ui/main_window.py:6302
 msgid "Blue"
 msgstr ""
 
-#: src/ui/main_window.py:6256
+#: src/ui/main_window.py:6303
 msgid "Celestial Bodies (Moon etc.) — below the horizon."
 msgstr ""
 
-#: src/ui/main_window.py:6261
+#: src/ui/main_window.py:6308
 msgid "Blue (bold)"
 msgstr ""
 
-#: src/ui/main_window.py:6262
+#: src/ui/main_window.py:6309
 msgid "Celestial Bodies (Moon etc.) — above the horizon."
 msgstr ""
 
-#: src/ui/main_window.py:6272
+#: src/ui/main_window.py:6319
 msgid "Yellow background"
 msgstr ""
 
-#: src/ui/main_window.py:6274
+#: src/ui/main_window.py:6321
 msgid ""
 "SATNOGS status: Inactive — this transmitter is no longer operating. Shown "
 "only while the transponder dropdown is open."
 msgstr ""
 
-#: src/ui/main_window.py:6280
+#: src/ui/main_window.py:6327
 msgid "Red background"
 msgstr ""
 
-#: src/ui/main_window.py:6282
+#: src/ui/main_window.py:6329
 msgid ""
 "SATNOGS status: Invalid — this transmitter's data is known to be incorrect. "
 "Shown only while the transponder dropdown is open."
 msgstr ""
 
-#: src/ui/main_window.py:6304
+#: src/ui/main_window.py:6351
 msgid "Satellite List"
 msgstr ""
 
-#: src/ui/main_window.py:6320
+#: src/ui/main_window.py:6367
 msgid "Radio Control — Transmitter Selection"
 msgstr ""
 
-#: src/ui/main_window.py:6354
+#: src/ui/main_window.py:6401
 msgid ""
 "FBSAT59 automatically fetches and updates TLE orbital data and transmitter "
 "information in the background. Manual updates are normally not required. Use "
@@ -4256,7 +4252,7 @@ msgid ""
 "before a pass of a newly launched satellite)."
 msgstr ""
 
-#: src/ui/main_window.py:6360
+#: src/ui/main_window.py:6407
 msgid ""
 "<table border='0' cellspacing='4'><tr><td><b>Space Stations</b> (ISS, CSS…)</"
 "td><td>every <b>1 hour</b></td></tr><tr><td><b>Amateur Satellites</b></"
@@ -4273,7 +4269,18 @@ msgid ""
 "(SATNOGS)</b></td><td>every <b>7 days</b></td></tr></table>"
 msgstr ""
 
-#: src/ui/main_window.py:6380
+#: src/ui/main_window.py:6427
+msgid ""
+"Most TLE data comes from CelesTrak's curated group listings above. Two "
+"additional steps fall back to SATNOGS's own TLE database instead: <b>Active "
+"TLE fallback</b> resolves satellites CelesTrak's curated listings don't "
+"cover (checked every 24 hours), and <b>Provisional TLEs</b> covers "
+"satellites with a temporary NORAD ID (≥ 90000) not yet in CelesTrak's "
+"catalog at all (checked every 12 hours). Use <b>Satellite → Update TLE</b> "
+"to refresh both immediately."
+msgstr ""
+
+#: src/ui/main_window.py:6436
 msgid ""
 "A satellite's name and operational status (alive / dead / unknown) are "
 "separate from its TLE orbital data — a TLE only describes where a satellite "
@@ -4285,7 +4292,7 @@ msgid ""
 "official designation)."
 msgstr ""
 
-#: src/ui/main_window.py:6390
+#: src/ui/main_window.py:6446
 msgid ""
 "Transmitter data is fetched from SATNOGS automatically on first launch, then "
 "refreshed automatically every 7 days in the background. Use <b>Satellite → "
@@ -4294,34 +4301,38 @@ msgid ""
 "newly launched satellite registers its transmitter)."
 msgstr ""
 
-#: src/ui/main_window.py:6397
+#: src/ui/main_window.py:6453
 msgid ""
 "On each launch the app fetches any TLE sources whose cached data has "
 "expired, and refreshes satellite names/status and the transmitter database "
 "if their own caches have expired too (see above)."
 msgstr ""
 
-#: src/ui/main_window.py:6402
+#: src/ui/main_window.py:6458
 msgid "Auto-Fetch Schedule"
 msgstr ""
 
-#: src/ui/main_window.py:6403
+#: src/ui/main_window.py:6459
+msgid "TLE Data from SATNOGS"
+msgstr ""
+
+#: src/ui/main_window.py:6460
 msgid "Satellite Names / Status"
 msgstr ""
 
-#: src/ui/main_window.py:6404
+#: src/ui/main_window.py:6461
 msgid "Transmitter Database (SATNOGS)"
 msgstr ""
 
-#: src/ui/main_window.py:6405
+#: src/ui/main_window.py:6462
 msgid "At Startup"
 msgstr ""
 
-#: src/ui/main_window.py:6473 src/ui/main_window.py:6495
+#: src/ui/main_window.py:6532 src/ui/main_window.py:6554
 msgid "Clear TLE Sync History"
 msgstr ""
 
-#: src/ui/main_window.py:6475
+#: src/ui/main_window.py:6534
 msgid ""
 "This clears the record of when each TLE source was last fetched.\n"
 "\n"
@@ -4331,28 +4342,28 @@ msgid ""
 "never having been fetched and refresh all of them."
 msgstr ""
 
-#: src/ui/main_window.py:6496
+#: src/ui/main_window.py:6555
 #, python-brace-format
 msgid "Cleared {n} sync history record(s)."
 msgstr ""
 
-#: src/ui/main_window.py:6505
+#: src/ui/main_window.py:6564
 msgid "About FBSAT59"
 msgstr ""
 
-#: src/ui/main_window.py:6507
+#: src/ui/main_window.py:6566
 msgid "Modern satellite tracking software for amateur radio operators.\n"
 msgstr ""
 
-#: src/ui/main_window.py:6783 src/ui/main_window.py:6801
+#: src/ui/main_window.py:6842 src/ui/main_window.py:6860
 msgid "QR Code"
 msgstr ""
 
-#: src/ui/main_window.py:6783
+#: src/ui/main_window.py:6842
 msgid "Web server is not running."
 msgstr ""
 
-#: src/ui/main_window.py:6801
+#: src/ui/main_window.py:6860
 msgid "Failed to generate QR code."
 msgstr ""
 

@@ -6423,6 +6423,15 @@ class MainWindow(QMainWindow):
             "<td>every <b>7 days</b></td></tr>"
             "</table>"
         )
+        satnogs_tle_paragraph = _(
+            "Most TLE data comes from CelesTrak's curated group listings above. Two "
+            "additional steps fall back to SATNOGS's own TLE database instead: "
+            "<b>Active TLE fallback</b> resolves satellites CelesTrak's curated listings "
+            "don't cover (checked every 24 hours), and <b>Provisional TLEs</b> covers "
+            "satellites with a temporary NORAD ID (≥ 90000) not yet in CelesTrak's "
+            "catalog at all (checked every 12 hours). Use <b>Satellite → Update TLE</b> "
+            "to refresh both immediately."
+        )
         sat_names_paragraph = _(
             "A satellite's name and operational status (alive / dead / unknown) are "
             "separate from its TLE orbital data — a TLE only describes where a satellite "
@@ -6447,6 +6456,7 @@ class MainWindow(QMainWindow):
         )
         heading_main = _("Auto Fetch Rules")
         heading_schedule = _("Auto-Fetch Schedule")
+        heading_satnogs_tle = _("TLE Data from SATNOGS")
         heading_sat_names = _("Satellite Names / Status")
         heading_xpdr = _("Transmitter Database (SATNOGS)")
         heading_startup = _("At Startup")
@@ -6455,6 +6465,8 @@ class MainWindow(QMainWindow):
             f"<p>{intro}</p>"
             f"<h4>{heading_schedule}</h4>"
             f"{schedule_table}"
+            f"<h4>{heading_satnogs_tle}</h4>"
+            f"<p>{satnogs_tle_paragraph}</p>"
             f"<h4>{heading_sat_names}</h4>"
             f"<p>{sat_names_paragraph}</p>"
             f"<h4>{heading_xpdr}</h4>"
