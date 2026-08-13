@@ -720,6 +720,11 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             logger.warning("Community transmitter load failed at startup: %s", exc)
         self._load_satellites()
+        # Match _on_filter_changed()'s behavior for the startup filter, whatever
+        # it restored to (default "Operational (AMSAT)", or a saved "★ Group").
+        # _restore_satellite_filter() sets the combo with signals blocked, so
+        # _on_filter_changed() itself never fires here — do it explicitly.
+        self._maybe_show_group_tab_for_filter(self._filter_combo.currentText())
         self._load_rig_settings()
         self._start_satmode_warmup()
         self._load_rotator_settings()
@@ -3867,6 +3872,17 @@ class MainWindow(QMainWindow):
         """Redraw the satellite list when the filter combo changes."""
         self._amsat_link.setVisible(text == "Operational (AMSAT)")
         self._apply_filter()
+        # Switch focus to the Group sub-tab right away when the filter itself
+        # changes to an auto-search filter. Kept separate from _apply_filter()
+        # (which also fires on every search-box keystroke) so typing a search
+        # query while browsing a satellite's Target tab doesn't yank focus
+        # back to Group.
+        self._maybe_show_group_tab_for_filter(text)
+
+    def _maybe_show_group_tab_for_filter(self, filter_text: str) -> None:
+        """Show the Group sub-tab if `filter_text` is an auto-search filter."""
+        if self._is_group_auto_search_filter(filter_text):
+            self._pass_list.show_group_tab()
 
     def _on_search_changed(self, _text: str) -> None:
         """Re-filter the satellite list when the search box text changes."""

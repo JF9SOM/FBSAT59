@@ -832,6 +832,10 @@ class PassPanel(QWidget):
         """Switch to the Target sub-tab (e.g. when a specific satellite is selected)."""
         self._tabs.setCurrentIndex(0)
 
+    def show_group_tab(self) -> None:
+        """Switch to the Group sub-tab (e.g. when an auto-search filter is selected)."""
+        self._tabs.setCurrentIndex(1)
+
     def auto_search(self, hours: float) -> None:
         """Run a Group search over [now, now + hours) without a manual Search click.
 
