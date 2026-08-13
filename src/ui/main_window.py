@@ -6368,12 +6368,23 @@ class MainWindow(QMainWindow):
             "<td>every <b>12 hours</b></td></tr>"
             "<tr><td><b>Active TLE fallback</b> (NORAD 10000–89999)</td>"
             "<td>every <b>24 hours</b></td></tr>"
+            "<tr><td><b>Satellite Names / Status</b></td><td>every <b>24 hours</b></td></tr>"
             "<tr><td><b>AMSAT operational status</b></td><td>every <b>24 hours</b></td></tr>"
             "<tr><td><b>METEOR/HRPT satellites dropped from CelesTrak groups</b></td>"
             "<td>every <b>12 hours</b></td></tr>"
             "<tr><td><b>Transmitter Database (SATNOGS)</b></td>"
             "<td>every <b>7 days</b></td></tr>"
             "</table>"
+        )
+        sat_names_paragraph = _(
+            "A satellite's name and operational status (alive / dead / unknown) are "
+            "separate from its TLE orbital data — a TLE only describes where a satellite "
+            "is, not its official name (CelesTrak sometimes shows placeholder names like "
+            '"OBJECT C") or whether it is actually functioning. This information is '
+            "synced from SATNOGS automatically at most once every 24 hours. Use "
+            "<b>Satellite → Sync Satellite Names</b> to refresh it manually whenever you "
+            "need it sooner (e.g. right after a newly launched satellite gets its "
+            "official designation)."
         )
         xpdr_paragraph = _(
             "Transmitter data is fetched from SATNOGS automatically on first launch, "
@@ -6383,11 +6394,13 @@ class MainWindow(QMainWindow):
             "(e.g. right after a newly launched satellite registers its transmitter)."
         )
         startup_paragraph = _(
-            "On each launch the app syncs satellite names and statuses from SATNOGS, "
-            "and fetches any TLE sources whose cached data has expired."
+            "On each launch the app fetches any TLE sources whose cached data has "
+            "expired, and refreshes satellite names/status and the transmitter database "
+            "if their own caches have expired too (see above)."
         )
         heading_main = _("Auto Fetch Rules")
         heading_schedule = _("TLE Auto-Fetch Schedule")
+        heading_sat_names = _("Satellite Names / Status")
         heading_xpdr = _("Transmitter Database (SATNOGS)")
         heading_startup = _("At Startup")
         msg = (
@@ -6395,6 +6408,8 @@ class MainWindow(QMainWindow):
             f"<p>{intro}</p>"
             f"<h4>{heading_schedule}</h4>"
             f"{schedule_table}"
+            f"<h4>{heading_sat_names}</h4>"
+            f"<p>{sat_names_paragraph}</p>"
             f"<h4>{heading_xpdr}</h4>"
             f"<p>{xpdr_paragraph}</p>"
             f"<h4>{heading_startup}</h4>"

@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-13 11:16+0900\n"
+"POT-Creation-Date: 2026-08-13 11:26+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -3791,7 +3791,7 @@ msgid "AX100 Digi"
 msgstr ""
 
 #: src/ui/main_window.py:970 src/ui/main_window.py:2406
-#: src/ui/main_window.py:6731 src/ui/main_window.py:6743
+#: src/ui/main_window.py:6746 src/ui/main_window.py:6758
 msgid "METEOR / HRPT"
 msgstr ""
 
@@ -3835,8 +3835,8 @@ msgstr ""
 msgid "Satellite/Transmitter Colors"
 msgstr ""
 
-#: src/ui/main_window.py:1027 src/ui/main_window.py:6389
-#: src/ui/main_window.py:6404
+#: src/ui/main_window.py:1027 src/ui/main_window.py:6401
+#: src/ui/main_window.py:6419
 msgid "Auto Fetch Rules"
 msgstr ""
 
@@ -4265,14 +4265,27 @@ msgid ""
 "hours</b></td></tr><tr><td><b>Earth Observation / Science</b></td><td>every "
 "<b>12 hours</b></td></tr><tr><td><b>Provisional TLEs</b> (NORAD ≥ 90000)</"
 "td><td>every <b>12 hours</b></td></tr><tr><td><b>Active TLE fallback</b> "
-"(NORAD 10000–89999)</td><td>every <b>24 hours</b></td></tr><tr><td><b>AMSAT "
-"operational status</b></td><td>every <b>24 hours</b></td></"
-"tr><tr><td><b>METEOR/HRPT satellites dropped from CelesTrak groups</b></"
-"td><td>every <b>12 hours</b></td></tr><tr><td><b>Transmitter Database "
+"(NORAD 10000–89999)</td><td>every <b>24 hours</b></td></"
+"tr><tr><td><b>Satellite Names / Status</b></td><td>every <b>24 hours</b></"
+"td></tr><tr><td><b>AMSAT operational status</b></td><td>every <b>24 hours</"
+"b></td></tr><tr><td><b>METEOR/HRPT satellites dropped from CelesTrak groups</"
+"b></td><td>every <b>12 hours</b></td></tr><tr><td><b>Transmitter Database "
 "(SATNOGS)</b></td><td>every <b>7 days</b></td></tr></table>"
 msgstr ""
 
-#: src/ui/main_window.py:6379
+#: src/ui/main_window.py:6380
+msgid ""
+"A satellite's name and operational status (alive / dead / unknown) are "
+"separate from its TLE orbital data — a TLE only describes where a satellite "
+"is, not its official name (CelesTrak sometimes shows placeholder names like "
+"\"OBJECT C\") or whether it is actually functioning. This information is "
+"synced from SATNOGS automatically at most once every 24 hours. Use "
+"<b>Satellite → Sync Satellite Names</b> to refresh it manually whenever you "
+"need it sooner (e.g. right after a newly launched satellite gets its "
+"official designation)."
+msgstr ""
+
+#: src/ui/main_window.py:6390
 msgid ""
 "Transmitter data is fetched from SATNOGS automatically on first launch, then "
 "refreshed automatically every 7 days in the background. Use <b>Satellite → "
@@ -4281,29 +4294,34 @@ msgid ""
 "launched satellite registers its transmitter)."
 msgstr ""
 
-#: src/ui/main_window.py:6386
+#: src/ui/main_window.py:6397
 msgid ""
-"On each launch the app syncs satellite names and statuses from SATNOGS, and "
-"fetches any TLE sources whose cached data has expired."
+"On each launch the app fetches any TLE sources whose cached data has "
+"expired, and refreshes satellite names/status and the transmitter database "
+"if their own caches have expired too (see above)."
 msgstr ""
 
-#: src/ui/main_window.py:6390
+#: src/ui/main_window.py:6402
 msgid "TLE Auto-Fetch Schedule"
 msgstr ""
 
-#: src/ui/main_window.py:6391
+#: src/ui/main_window.py:6403
+msgid "Satellite Names / Status"
+msgstr ""
+
+#: src/ui/main_window.py:6404
 msgid "Transmitter Database (SATNOGS)"
 msgstr ""
 
-#: src/ui/main_window.py:6392
+#: src/ui/main_window.py:6405
 msgid "At Startup"
 msgstr ""
 
-#: src/ui/main_window.py:6443 src/ui/main_window.py:6465
+#: src/ui/main_window.py:6458 src/ui/main_window.py:6480
 msgid "Clear TLE Sync History"
 msgstr ""
 
-#: src/ui/main_window.py:6445
+#: src/ui/main_window.py:6460
 msgid ""
 "This clears the record of when each TLE source was last fetched.\n"
 "\n"
@@ -4313,28 +4331,28 @@ msgid ""
 "never having been fetched and refresh all of them."
 msgstr ""
 
-#: src/ui/main_window.py:6466
+#: src/ui/main_window.py:6481
 #, python-brace-format
 msgid "Cleared {n} sync history record(s)."
 msgstr ""
 
-#: src/ui/main_window.py:6475
+#: src/ui/main_window.py:6490
 msgid "About FBSAT59"
 msgstr ""
 
-#: src/ui/main_window.py:6477
+#: src/ui/main_window.py:6492
 msgid "Modern satellite tracking software for amateur radio operators.\n"
 msgstr ""
 
-#: src/ui/main_window.py:6753 src/ui/main_window.py:6771
+#: src/ui/main_window.py:6768 src/ui/main_window.py:6786
 msgid "QR Code"
 msgstr ""
 
-#: src/ui/main_window.py:6753
+#: src/ui/main_window.py:6768
 msgid "Web server is not running."
 msgstr ""
 
-#: src/ui/main_window.py:6771
+#: src/ui/main_window.py:6786
 msgid "Failed to generate QR code."
 msgstr ""
 
