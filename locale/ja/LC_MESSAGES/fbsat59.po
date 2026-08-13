@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-13 13:00+0900\n"
+"POT-Creation-Date: 2026-08-13 13:15+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -4718,8 +4718,8 @@ msgstr ""
 "が期限切れであれば同様に更新します（上記参照）。"
 
 #: src/ui/main_window.py:6402
-msgid "TLE Auto-Fetch Schedule"
-msgstr "TLE自動取得スケジュール"
+msgid "Auto-Fetch Schedule"
+msgstr "自動取得スケジュール"
 
 #: src/ui/main_window.py:6403
 msgid "Satellite Names / Status"

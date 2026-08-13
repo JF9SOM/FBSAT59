@@ -6399,7 +6399,7 @@ class MainWindow(QMainWindow):
             "if their own caches have expired too (see above)."
         )
         heading_main = _("Auto Fetch Rules")
-        heading_schedule = _("TLE Auto-Fetch Schedule")
+        heading_schedule = _("Auto-Fetch Schedule")
         heading_sat_names = _("Satellite Names / Status")
         heading_xpdr = _("Transmitter Database (SATNOGS)")
         heading_startup = _("At Startup")
