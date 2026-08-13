@@ -5679,6 +5679,105 @@ ORIGAMISAT-2を解決する処理）を一切呼んでいなかった**ことが
 実際には「複数の独立した更新経路のうち一部だけが動いている」ことを示す精度の高い手がかりであり、
 額面通りに深掘りする価値があった。
 
+### TLE/衛星名/トランスミッターDB同期 — 進捗メッセージ全体フロー（2026-08-13）
+
+同期処理には4つの独立した起点（①起動時・②Update TLEボタン・③Sync Satellite Namesボタン・
+④Fetch Transmitter Databaseボタン）があり、それぞれ表示されるメッセージの種類・順序・
+表示方式（常時ラベル vs 自動消去する一時メッセージ）が異なる。「進捗メッセージ全般を
+『何をどこから取得しているか』が分かる文言に見直し（2026-08-13）」（前述）の作業に伴い、
+全体像を整理した。
+
+#### ① 起動時（`_refresh_satellite_names_sync()`）
+
+```
+[両ホスト到達可否チェック]
+  │
+  ├─ 両方到達可能 → 下記へそのまま進む
+  ├─ 片方だけ不通 → "❌ Cannot connect to {CelesTrak|SATNOGS}"（約3秒表示）→ 続行
+  └─ 両方不通    → "❌ Cannot connect to CelesTrak/SATNOGS"（約10秒表示）
+                    → community_transmitters読み込み（ログのみ）→ ""（クリア）→ 終了
+       ↓（片方到達可能 or 両方到達可能の場合のみ続く）
+[Step1: 衛星名同期]（SATNOGS到達可能 かつ is_satellite_names_stale(24h) の場合のみ）
+  "🛰 Syncing satellite names from SATNOGS..."
+  "🛰 Syncing satellite names... (n)"  ← n件処理ごとに更新
+       ↓
+[Step2: Active TLE補完]（is_active_tle_stale(24h) or is_active_tle_retry_due() の場合のみ）
+  "🛰 CelesTrak: fetching active TLEs..."
+  "🛰 CelesTrak: downloading TLE data... N%"
+  "🛰 SATNOGS: fetching TLE data for n satellite(s)..."   ← Phase1で解決しきれなかった分だけ
+  "🛰 SATNOGS: downloading TLE data... N%"
+  （ブロック発生時のみ）"⚠ {CelesTrak|SATNOGS} blocked — retry in 3h"
+       ↓
+[Step3: Provisional TLE取得]（SATNOGS到達可能 かつ is_provisional_tle_stale(12h) の場合のみ）
+  "🛰 Fetching provisional TLEs... (done/total)"
+       ↓
+[Step4: Legacy衛星クリーンアップ]（CelesTrak到達可能の場合のみ・表示メッセージなし、ログのみ）
+       ↓
+[Step5: METEOR/HRPT TLE確認]（CelesTrak到達可能の場合のみ・表示メッセージなし、ログのみ）
+       ↓
+[Step6: コミュニティ周波数読み込み]（表示メッセージなし、ログのみ）
+       ↓
+[Step7: CelesTrak 6グループ一括取得]（CelesTrak到達可能 かつ 鮮度切れグループがある場合のみ）
+  "🛰 Fetching group TLEs: Amateur Satellites (CelesTrak) (1/6)..."
+  ...（対象グループ数だけ繰り返し）
+  ""（クリア）
+       ↓
+""（最終クリア。衛星リスト再表示と同時）
+```
+
+#### ② Satellite → Update TLE（`_fetch_all_tle_sources()`）
+
+鮮度ゲートを全て無視して即時実行する点が①と異なる。
+
+```
+"🛰 Updating TLEs…"
+       ↓
+[両ホスト到達可否チェック]（①と同じ分岐・同じメッセージ）
+       ↓（片方到達可能 or 両方到達可能の場合のみ続く）
+[CelesTrak 6グループ一括取得]（CelesTrak到達可能なら常に、鮮度に関わらず実行）
+  "🛰 Fetching group TLEs: Space Stations (CelesTrak) (1/6)..." ...
+       ↓
+[Active TLE補完]（常に実行）
+  "🛰 CelesTrak: fetching active TLEs..." など、①のStep2と同じメッセージ群
+       ↓
+[Provisional TLE取得]（SATNOGS到達可能なら常に実行）
+  "🛰 Fetching provisional TLEs... (done/total)"
+       ↓
+（ブロック発生時のみ、かつ新規にブロックされた分のみ）"⚠ {provider} blocked — retry in 3h"
+       ↓
+""（最終クリア。ブロックが新規表示された場合はクリアされず、そのメッセージのまま残る）
+```
+
+#### ③ Satellite → Sync Satellite Names（手動・単独）
+
+```
+"Syncing satellite names from SATNOGS..."（ステータスバー、5秒表示の一時メッセージ）
+       ↓
+（SATNOGS不通の場合）"❌ Cannot connect to SATNOGS" → 終了
+（到達可能な場合）"Satellite names sync: {upd} updated, {skp} skipped"（8秒表示）
+```
+
+#### ④ Satellite → Fetch Transmitter Database（手動・単独）
+
+```
+"Syncing transmitter frequencies from SATNOGS..."（ステータスバー、5秒表示の一時メッセージ）
+       ↓
+（SATNOGS不通の場合）"❌ Cannot connect to SATNOGS" → 終了
+（到達可能な場合）"SATNOGS sync: {ins} inserted, {upd} updated, {skp} skipped"（8秒表示）
+```
+
+#### 表示方式の違い（①②と③④）
+
+- **①②**: `_sync_progress`シグナル経由。ステータスバー下部の常時ラベル（`_sync_label`）に
+  表示され、明示的に`emit("")`するまで残り続ける
+- **③④**: `_satnogs_status`シグナル経由。`QStatusBar.showMessage()`による一時メッセージ
+  （5〜8秒で自動消去）として表示される
+
+同じ「SATNOGSと通信する」処理でも、①②（TLE同期チェーンの一部）と③④（単独の手動ボタン）
+とで表示の仕組みそのものが異なる点に注意。新しい同期処理を追加する際は、常時ラベルが適切か
+（複数ステップにまたがる進行状況を示す場合）、一時メッセージが適切か（単発の完了通知）を
+判断すること。
+
 ### 起動時鮮度チェックの網羅的監査と修正（2026-08-11）
 
 #### 発端
