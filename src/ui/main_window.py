@@ -529,8 +529,10 @@ class MainWindow(QMainWindow):
         # (AMSAT-operational and user Favorite groups) — "All Satellites"/
         # "Amateur" etc. remain manual-search-only (too many satellites for
         # a search on every filter change). Debounced so rapid filter/search
-        # changes don't spawn a worker thread per keystroke.
-        self._GROUP_AUTO_SEARCH_HOURS: float = 4.0
+        # changes don't spawn a worker thread per keystroke. The search window
+        # itself is not a fixed constant — it follows whatever range is
+        # currently selected on the Group Pass Chart (defaults to 4h there,
+        # see GroupPassChartView._setup_ui()).
         self._GROUP_AUTO_SEARCH_DEBOUNCE_MS: int = 400
         # Latest elevations computed in _update_world_map, reused by _check_autotrack
         self._last_elevations: dict[int, float] = {}
@@ -1394,9 +1396,14 @@ class MainWindow(QMainWindow):
         Re-checks the current filter at fire time (rather than trusting the
         value captured when the timer was scheduled) so a filter change made
         while the debounce was pending can't trigger a stale/mismatched search.
+
+        Uses the Group Pass Chart's currently selected range (not a fixed 4h)
+        so that, e.g., switching from a Favorite group where the user had
+        widened the chart to 12h, over to Operational (AMSAT), keeps searching
+        12h instead of silently resetting to the 4h default.
         """
         if self._is_group_auto_search_filter(self._filter_combo.currentText()):
-            self._pass_list.auto_search(hours=self._GROUP_AUTO_SEARCH_HOURS)
+            self._pass_list.auto_search(hours=self._group_pass_chart.current_range_hours())
 
     # ------------------------------------------------------------------ #
     # Background processing

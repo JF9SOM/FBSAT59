@@ -583,6 +583,15 @@ class GroupPassChartView(QWidget):
         self._results = results
         self._rebuild()
 
+    def current_range_hours(self) -> float:
+        """Return the currently selected Range dropdown value, in hours.
+
+        Lets an auto-search triggered elsewhere (e.g. a filter change) reuse
+        whichever window the user last selected on this chart, instead of
+        always resetting to the 4h default.
+        """
+        return self._selected_hours()
+
     def set_use_utc(self, use_utc: bool) -> None:
         """Switch time axis between UTC and local time."""
         if use_utc == self._use_utc:
