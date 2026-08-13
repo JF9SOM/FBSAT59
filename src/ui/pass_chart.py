@@ -509,7 +509,17 @@ class GroupPassChartView(QWidget):
         chart = GroupPassChartView()
         chart.set_results(group_results)   # list[GroupPassResult]
         layout.addWidget(chart)
+
+    Signals:
+        range_changed(float): emits the selected number of hours when the range
+                               dropdown changes, so the owner can re-run the Group
+                               search for the new window (the chart itself only
+                               re-filters the results it already has — widening
+                               the range past what was last searched would
+                               otherwise show nothing new).
     """
+
+    range_changed: Signal = Signal(float)  # emit(hours)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -541,7 +551,7 @@ class GroupPassChartView(QWidget):
         # window is 4h, so the chart should show the same span by default.
         # (Unlike PassChartView's Target chart, which stays at 24h/last index.)
         self._range_combo.setCurrentIndex(0)
-        self._range_combo.currentIndexChanged.connect(self._rebuild)
+        self._range_combo.currentIndexChanged.connect(self._on_range_changed)
         h_layout.addWidget(self._range_combo)
         h_layout.addStretch()
         layout.addWidget(header)
@@ -597,6 +607,11 @@ class GroupPassChartView(QWidget):
 
     def _selected_hours(self) -> float:
         return _range_options()[self._range_combo.currentIndex()][1]
+
+    def _on_range_changed(self, _idx: int) -> None:
+        hours = self._selected_hours()
+        self.range_changed.emit(hours)
+        self._rebuild()
 
     def _rebuild(self) -> None:
         """Rebuild the chart from the current result list."""

@@ -845,6 +845,7 @@ class MainWindow(QMainWindow):
         self._lock_shortcut = QShortcut(QKeySequence("Ctrl+L"), self)
         self._lock_shortcut.activated.connect(self._radio_control.toggle_lock)
         self._pass_chart.range_changed.connect(self._on_chart_range_changed)
+        self._group_pass_chart.range_changed.connect(self._on_group_chart_range_changed)
         self._dashboard_tab_idx = self._tab_widget.addTab(self._dashboard_view, _("Dashboard"))
         self._tab_widget.addTab(self._world_map, _("World Map"))
         self._tab_widget.addTab(self._radar_view, _("Radar"))
@@ -4761,6 +4762,19 @@ class MainWindow(QMainWindow):
         self._current_passes = passes
         self._pass_list.set_passes(passes)
         self._pass_chart.set_passes(passes, sat_name=name)
+
+    def _on_group_chart_range_changed(self, hours: float) -> None:
+        """Re-run the Group search when the Group Pass Chart's own range changes.
+
+        The chart only re-filters the results it was last given — it never
+        fetches on its own. Without this, widening the range past whatever
+        window was last searched (e.g. the 4h auto-search default) would
+        silently show nothing, even if satellites do pass in the wider window.
+        Not restricted to the AMSAT/Favorite auto-search filters: changing
+        this control is a deliberate user action, same as the manual quick-range
+        buttons on the Group tab itself.
+        """
+        self._pass_list.auto_search(hours=hours)
 
     def _on_target_search_requested(self, start: Any, end: Any) -> None:
         """Called when the Search button on the Target tab is pressed."""
