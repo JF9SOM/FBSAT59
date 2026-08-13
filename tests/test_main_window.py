@@ -3586,6 +3586,64 @@ class TestActiveTleRetryScheduling:
         w2 = self._make_window(qtbot, db, tle_manager)
         assert w2._tle_manager.is_active_tle_retry_due() is True
 
+    def test_already_reported_provider_suppresses_the_message_but_still_schedules(
+        self, qtbot, db, tle_manager
+    ) -> None:
+        """2026-08-13 report: fetch_active_tles(celestrak_reachable=False)
+        (called when the caller's own upfront probe already found CelesTrak
+        unreachable and already showed "Cannot connect to CelesTrak")
+        records a breaker block exactly as if a fresh attempt had failed,
+        so celestrak_blocked=1 comes back even though no second connection
+        attempt was made. Passing that provider in already_reported must
+        suppress the "blocked, retry in Nh" message (it would misleadingly
+        imply a new attempt just failed) while still scheduling the retry
+        (that part is genuinely useful regardless of how the block was
+        determined)."""
+        w = self._make_window(qtbot, db, tle_manager)
+        w._scheduler = MagicMock()
+        received: list[str] = []
+        w._sync_progress.connect(received.append)
+
+        result = w._schedule_active_tle_retry_if_blocked(
+            {"celestrak_blocked": 1, "satnogs_blocked": 0},
+            already_reported={"CelesTrak"},
+        )
+
+        assert result is False
+        assert received == []
+        w._scheduler.add_job.assert_called_once()
+        assert w._tle_manager.get_active_tle_retry_after() is not None
+
+    def test_returns_true_and_shows_message_for_a_genuinely_new_block(
+        self, qtbot, db, tle_manager
+    ) -> None:
+        w = self._make_window(qtbot, db, tle_manager)
+        received: list[str] = []
+        w._sync_progress.connect(received.append)
+
+        result = w._schedule_active_tle_retry_if_blocked(
+            {"celestrak_blocked": 1, "satnogs_blocked": 0}
+        )
+
+        assert result is True
+        assert received[-1] == "⚠ CelesTrak blocked — retry in 3h"
+
+    def test_mixed_only_the_newly_blocked_provider_is_named(self, qtbot, db, tle_manager) -> None:
+        """CelesTrak was already reported earlier this run; SATNOGS getting
+        blocked here is new information the user hasn't seen yet, so it
+        alone should appear in the message."""
+        w = self._make_window(qtbot, db, tle_manager)
+        received: list[str] = []
+        w._sync_progress.connect(received.append)
+
+        result = w._schedule_active_tle_retry_if_blocked(
+            {"celestrak_blocked": 1, "satnogs_blocked": 1},
+            already_reported={"CelesTrak"},
+        )
+
+        assert result is True
+        assert received[-1] == "⚠ SATNOGS blocked — retry in 3h"
+
 
 class TestRefreshSatelliteNamesSyncGatesProvisionalFetch:
     """_refresh_satellite_names_sync() (the startup TLE-sync chain) used to

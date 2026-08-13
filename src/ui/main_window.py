@@ -1658,7 +1658,7 @@ class MainWindow(QMainWindow):
                 )
                 logger.info("Active TLE fetch completed: %s", active)
                 self._satellite_list_refresh.emit()
-                self._schedule_active_tle_retry_if_blocked(active)
+                self._schedule_active_tle_retry_if_blocked(active, already_reported=set(down))
             except Exception as exc:
                 logger.warning("Active TLE fetch failed: %s", exc)
         else:
@@ -5104,8 +5104,17 @@ class MainWindow(QMainWindow):
                 # whenever `blocked` is True (2026-08-11: reported as the
                 # status bar getting stuck forever on "Fetching provisional
                 # TLEs..." even though every fetch had already finished).
+                #
+                # `blocked` is reassigned to this call's return value
+                # (already_reported=set(down) excludes hosts the upfront
+                # probe above already told the user about) so a provider
+                # that was already reported unreachable doesn't leave this
+                # method's "blocked, retry in Nh" message stuck forever
+                # with nothing left to overwrite it (2026-08-13 report).
                 if active:
-                    self._schedule_active_tle_retry_if_blocked(active)
+                    blocked = self._schedule_active_tle_retry_if_blocked(
+                        active, already_reported=set(down)
+                    )
                 if not blocked:
                     self._sync_progress.emit("")
             finally:
@@ -5246,13 +5255,41 @@ class MainWindow(QMainWindow):
         if sb:
             sb.showMessage(_("Syncing transmitter frequencies from SATNOGS..."), 5000)
 
-    def _schedule_active_tle_retry_if_blocked(self, result: dict[str, int]) -> None:
+    def _schedule_active_tle_retry_if_blocked(
+        self, result: dict[str, int], already_reported: set[str] | None = None
+    ) -> bool:
         """Queue a one-shot retry if fetch_active_tles() had to cut a Phase 2
         fallback short to avoid tripping CelesTrak's/SATNOGS's own abuse
         protection (TLEManager._ErrorCountBreaker — see its docstring for
         the incident this addresses: pressing Update TLE could previously
         leave satellites like ORIGAMISAT-2 unresolved indefinitely if every
         run got itself blocked partway through).
+
+        `already_reported`, if given, names providers whose unreachability
+        the caller already showed to the user earlier in *this same run*
+        (the upfront "Cannot connect to X" probe message -- see
+        _fetch_all_tle_sources()/_refresh_satellite_names_sync()). Passing
+        celestrak_reachable=False/satnogs_reachable=False into
+        fetch_active_tles() for one of those providers makes it record a
+        breaker block exactly as if a fresh attempt had just failed (so
+        the retry-scheduling logic below still works), which otherwise
+        made this method show a second, differently-worded "blocked,
+        retry in Nh" message right after the first one -- misleadingly
+        implying a *new* attempt had just failed, when in fact
+        fetch_active_tles() deliberately skipped retrying that provider
+        because the caller already knew it was down (reported 2026-08-13).
+        Providers in `already_reported` are excluded from the displayed
+        message (but the retry is still scheduled for them, same as any
+        other blocked provider).
+
+        Returns True if a "blocked, retry in Nh" message was actually
+        shown (i.e. at least one provider is newly blocked, not just one
+        already reported) -- callers should use this instead of the raw
+        celestrak_blocked/satnogs_blocked flags to decide whether to clear
+        the status bar afterward, so an already-reported block doesn't
+        leave a stale "blocked" message stuck forever with nothing left to
+        overwrite it (the exact "already told me CelesTrak is unreachable,
+        why is this still showing" report from 2026-08-13).
 
         3 hours is comfortably longer than CelesTrak's documented 2-hour
         error-count window (https://celestrak.org/usage-policy.php), so the
@@ -5283,7 +5320,7 @@ class MainWindow(QMainWindow):
         blocked = bool(result.get("celestrak_blocked") or result.get("satnogs_blocked"))
         if not blocked:
             self._tle_manager.set_active_tle_retry_after(None)
-            return
+            return False
 
         run_at = datetime.now(UTC) + timedelta(hours=3)
         self._tle_manager.set_active_tle_retry_after(run_at)
@@ -5296,6 +5333,23 @@ class MainWindow(QMainWindow):
                 replace_existing=True,
                 misfire_grace_time=1800,
             )
+
+        which_blocked = [
+            name
+            for name, flag in (
+                ("CelesTrak", result.get("celestrak_blocked")),
+                ("SATNOGS", result.get("satnogs_blocked")),
+            )
+            if flag
+        ]
+        newly_blocked = [n for n in which_blocked if n not in (already_reported or set())]
+        if not newly_blocked:
+            logger.info(
+                "Active TLE retry scheduled for %s (already reported unreachable: %s)",
+                run_at.isoformat(),
+                which_blocked,
+            )
+            return False
 
         # Tells the user *why* this run is pausing, instead of the status bar
         # just going blank or getting stuck on a mid-fetch "CelesTrak: N
@@ -5313,15 +5367,7 @@ class MainWindow(QMainWindow):
         # bulk request that has nothing to do with CelesTrak being blocked
         # (2026-08-11 report). The unresolved count is still worth surfacing
         # when nonzero, just not as the headline reason.
-        which_blocked = [
-            name
-            for name, flag in (
-                ("CelesTrak", result.get("celestrak_blocked")),
-                ("SATNOGS", result.get("satnogs_blocked")),
-            )
-            if flag
-        ]
-        provider = "/".join(which_blocked) if which_blocked else _("a provider")
+        provider = "/".join(newly_blocked)
         unresolved = result.get("phase2_unresolved", 0)
         if unresolved:
             status_template = _(
@@ -5338,6 +5384,7 @@ class MainWindow(QMainWindow):
             "Active TLE fetch was rate-limited by a provider; retry scheduled for %s",
             run_at.isoformat(),
         )
+        return True
 
     def _refresh_active_tle_sync(self) -> None:
         """APScheduler job (interval hours=24, and also the one-shot retry
