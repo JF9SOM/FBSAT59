@@ -5463,7 +5463,11 @@ Phase 2の`INSERT OR REPLACE`が毎回`tle_group`を`'amateur'`に強制リセ�
   │   （後者は2026-08-11追加。以前は0件チェックのみで、初回同期後は168hジョブの発火待ちのみだった）
   │
   ├─ [バックグラウンド] _refresh_satellite_names_sync()  ← 以下を直列に実行
-  │     1. sync_satellite_names()    ← SATNOGS 衛星名・ステータス更新・移行パイプライン（毎回無条件）
+  │     1. sync_satellite_names()    ← SATNOGS 衛星名・ステータス更新・移行パイプライン
+  │          ゲート: TransmitterManager.is_satellite_names_stale(24h)（2026-08-13追加。
+  │          以前は無条件で毎回実行しており、約2700件のページネーション一括取得
+  │          （`/api/satellites/?format=json`、TLE一括ダンプ`/api/tle/?format=json`とは
+  │          別エンドポイント）を再起動のたびにフルで再実行していた）
   │     2. fetch_active_tles()       ← NORAD 10000-89999 衛星の TLE 補完
   │          ゲート: is_active_tle_stale(24h) OR is_active_tle_retry_due()
   │     3. fetch_provisional_tles()  ← NORAD ≥ 90000 衛星の TLE 取得
@@ -5482,12 +5486,48 @@ Phase 2の`INSERT OR REPLACE`が毎回`tle_group`を`'amateur'`に強制リセ�
 ```
 
 **ゲートの意味（起動のたびに毎回実行 vs 鮮度チェック後にのみ実行）**: 上記のうち
-「毎回無条件」と書いたステップ（1・4・5・6）は、対象データ自体が自己制限的
+「毎回無条件」と書いたステップ（4・5・6）は、対象データ自体が自己制限的
 （空なら即return・衛星ごとの内部staleness判定を持つ・ネットワーク不要のローカル処理）なため、
-無条件に呼んでも実害がない設計。一方「ゲート: ...」と明記したステップ（2・3・7、および
+無条件に呼んでも実害がない設計。一方「ゲート: ...」と明記したステップ（1・2・3・7、および
 AMSAT・SATNOGSトランスポンダーDB）は、**もし鮮度チェックを誤ると「毎回ネットワークを叩きすぎる」
 （ブロックの原因になる）か「二度と更新されない」のどちらかに転ぶ**ため、専用の`is_*_stale()`系
 メソッドで経過時間を明示的に判定している。
+
+**`sync_satellite_names()`（ステップ1）が唯一ゲートを持たず、再起動のたびにフル再実行されていた
+不具合（2026-08-13 発見・修正）**: 上記の項目6（CelesTrak不通時のSATNOGS巻き込まれ対策）を
+実装した直後、ユーザーが実機で「一度起動・動作確認・終了・再起動」を繰り返したところ、
+毎回SATNOGSからの取得（ログに`GET https://db.satnogs.org/api/satellites/?format=json`と
+`SATNOGS satellite names sync completed: {'updated': 2766, 'skipped': 1}`）が走っているように
+見える、という報告があった。実際にログを確認したところ、TLE本体の一括取得
+（`fetch_active_tles()`のPhase 2・`fetch_provisional_tles()`）は`Active TLE cache is fresh
+— skipping fetch.`/`Provisional TLE cache is fresh — skipping fetch.`と正しく鮮度キャッシュで
+スキップされていたが、**`sync_satellite_names()`だけは元々ゲート自体が存在せず**、SATNOGSに
+到達可能な限り毎回無条件でフルページネーション同期していたことが判明した（起動ごとに約10〜45秒、
+ネットワーク状況依存）。
+
+`sync_satellite_names()`は名前・ステータス（alive/dead/unknown）・エイリアス名を更新するだけで
+TLEにもトランスミッターDBにも触れないが、TLE取得だけでは代替できない役割を持つ（CelesTrakの
+仮名"OBJECT C"等を正式名称で上書き・死亡衛星の自動非表示判定・仮ID→実ID移行の検知起点）ため、
+省略はできない。ユーザーとの相談の結果、他の起動ステップと同じ24時間鮮度ゲートを追加することで
+合意した。
+
+**修正**: `TransmitterManager.is_satellite_names_stale(max_age_hours=24.0)`を新設
+（`is_satnogs_transmitters_stale()`と全く同型、`sync_log`の`sync_type='satnogs_names'`最新
+エントリを参照）。`_refresh_satellite_names_sync()`のステップ1をこのゲートで囲んだ
+（`_refresh_satellite_names_periodic()`——6時間ごとのAPSchedulerジョブ——は間隔自体がゲートの
+役割を果たすため対象外のまま）。
+
+**あわせて発覚した欠落: 手動同期メニューが存在しなかった**: 24時間ゲートを追加するにあたり、
+既存の`Satellite → Sync SATNOGS`（`_on_sync_satnogs()`）が実は**トランスミッターDB
+（`/api/transmitters/`）専用**で、`sync_satellite_names()`（`/api/satellites/`、別エンドポイント・
+別テーブル）を手動で即時実行する手段がそもそも存在しないことが分かった。既存ボタンに混ぜる案も
+検討したが、①データの性質が別物 ②`sync_satellite_names()`は約2700件のページネーションで
+10〜45秒かかるのに対し既存のトランスミッター同期は数秒で終わる——混ぜると「周波数だけ更新したい」
+操作が毎回巻き込まれて遅くなる ③失敗時にどちらが失敗したか切り分けにくくなる、という理由で
+**`Satellite → Sync Satellite Names`（`衛星名の同期`）を新規メニュー項目として追加**した
+（`_on_sync_satellite_names()` → `_refresh_satellite_names_manual_sync()`、`_on_sync_satnogs()`
+と同型・同じ`_satnogs_status`シグナルを共用）。明示的なボタン押下なので`is_satellite_names_stale()`
+は意図的にバイパスする（Update TLEボタンが`is_active_tle_stale()`等をバイパスするのと同じ設計）。
 
 **2番目のステップだった `fetch_active_tles()` を最優先に変更**（2026-08-10）:
 以前は「Phase 2のSATNOGSフォールバックが20〜30分かかりうるので他のステップを待たせない」という
