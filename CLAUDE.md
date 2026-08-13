@@ -3245,7 +3245,6 @@ QT_LOGGING_RULES="qt.qpa.*=true" ./FBSAT59.AppImage 2>&1 | head -100
 2. **ローテーター設定ダイアログの改善** — 接続テストボタン・AZ/ELリミット設定
 3. **デバッグ用ログファイル出力の削除または設定化** — `src/main.py` の `_setup_logging()` にある frozen バンドル向けファイルログ出力（`platformdirs.user_log_dir`）は dmg デバッグ目的で追加したもの。Settings に「デバッグログを保存する」チェック（デフォルトOFF）を追加するか削除する。該当箇所: `src/main.py` 63〜75行目
 4. ~~**Autotrack/Record メニューの実装**~~ **→ v0.1.0 以降で完了**（AutotrackRecordDialog・Autotrack Timer・AOS/LOS 自動接続・録音自動制御）
-1d. ~~**CelesTrakのみ不通時にSATNOGS側の同期を止めないようにする**~~ **→ 2026-08-13 実装完了** — `_refresh_satellite_names_sync()`・`_fetch_all_tle_sources()`の冒頭の到達可否チェックはそのままに、`return`による全処理中止をやめ、各ステップを依存ホスト（CelesTrak/SATNOGS）ごとにガードするよう変更。片方だけ不通の場合は`❌ Cannot connect to {host}`を3秒表示してから不通側に依存しないステップを続行、両方不通の場合は同メッセージを10秒表示してローカル処理（community transmitters読み込み）のみ行って終了する
 1e. ~~**Tuneボタンがバンド中心ではなく`downlink_low`（下限）に固定されている疑い**~~ **→ 2026-08-13 実装完了** — `_refresh_radio_control()`の生SQLに`downlink_high`・`uplink_high`を追加。原因は列の見落としで確定していた（`_current_transmitter`にキー自体が存在せず`_on_tune_requested()`が常にバンド下限側へフォールバックしていた）
 
 ### モバイル・Web UI
