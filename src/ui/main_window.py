@@ -4442,6 +4442,24 @@ class MainWindow(QMainWindow):
         dl_mode = mode
         ul_mode = _MODE_INVERT.get(mode, mode) if invert else mode
         ctcss_hz = float(self._ctcss_tone_hz or 0.0)
+        # Band centre (GitHub Issue #20 follow-up): the pre-Connect frequency
+        # preset must match _doppler_cycle()'s own nominal, or the rig would
+        # show the band's low edge until the first live Doppler cycle (or
+        # Connect, for rigs that disconnect below) corrects it to centre.
+        dl_hz = float(
+            _band_center_or_low(
+                self._current_transmitter.get("downlink_low"),
+                self._current_transmitter.get("downlink_high"),
+            )
+            or 0
+        )
+        ul_hz = float(
+            _band_center_or_low(
+                self._current_transmitter.get("uplink_low"),
+                self._current_transmitter.get("uplink_high"),
+            )
+            or dl_hz
+        )
 
         # Update CW / DATA toggle button visibility/label in Radio Control tab.
         self._radio_control.update_cw_button(dl_mode, ul_mode)
@@ -4450,8 +4468,6 @@ class MainWindow(QMainWindow):
         # Notify NET rig of DL/UL frequencies (same-band detection) and
         # current mode (UL update throttle threshold).
         if isinstance(rig, HamlibNetController):
-            dl_hz = float(self._current_transmitter.get("downlink_low") or 0)
-            ul_hz = float(self._current_transmitter.get("uplink_low") or dl_hz)
             rig.set_transponder_freqs(dl_hz, ul_hz)
             rig.set_current_modes(dl_mode, ul_mode)
 
@@ -4464,8 +4480,6 @@ class MainWindow(QMainWindow):
             # Pass transponder frequencies to Direct-mode satmode rigs so that
             # _apply_mode_and_ctcss_hamlib can write them first (Stage 1 freq anchor).
             if isinstance(rig, HamlibDirectController) and rig._satmode:
-                dl_hz = float(self._current_transmitter.get("downlink_low") or 0)
-                ul_hz = float(self._current_transmitter.get("uplink_low") or dl_hz)
                 rig._transponder_dl_hz = dl_hz
                 rig._transponder_ul_hz = ul_hz
 
@@ -4494,15 +4508,13 @@ class MainWindow(QMainWindow):
                 # time on serial port access.
                 self._nonsatmode_gen += 1
                 _gen = self._nonsatmode_gen
-                _dl_hz = float((self._current_transmitter or {}).get("downlink_low") or 0)
-                _ul_hz = float((self._current_transmitter or {}).get("uplink_low") or _dl_hz)
                 _direct_rig = rig  # narrowed type for closure
 
                 def _do_direct_cat(_gen: int = _gen) -> None:
                     try:
                         if self._nonsatmode_gen != _gen:
                             return
-                        _direct_rig._send_freq_preset_direct(_dl_hz, _ul_hz)
+                        _direct_rig._send_freq_preset_direct(dl_hz, ul_hz)
                         if self._nonsatmode_gen != _gen:
                             return
                         _direct_rig.apply_transponder_state(dl_mode, ul_mode, ctcss_hz)
@@ -4552,11 +4564,7 @@ class MainWindow(QMainWindow):
                         rig._send_split_init_independent()
                         rig._send_freq_preset_independent()
                     elif isinstance(rig, HamlibDirectController):
-                        _dl_hz = float((self._current_transmitter or {}).get("downlink_low") or 0)
-                        _ul_hz = float(
-                            (self._current_transmitter or {}).get("uplink_low") or _dl_hz
-                        )
-                        rig._send_freq_preset_direct(_dl_hz, _ul_hz)
+                        rig._send_freq_preset_direct(dl_hz, ul_hz)
                     if self._nonsatmode_gen != _gen:
                         return
                     rig.send_mode_only(dl_mode, ul_mode)

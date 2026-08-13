@@ -4605,10 +4605,6 @@ UX（説明不足）の話だと考えたが、実際にSATNOGS APIでFO-29の�
 
 ### 意図的に対象外にしたもの
 
-- `_apply_transponder_state_to_rig()`等の「トランスポンダー選択時にConnect前でも
-  リグへ周波数プリセットを書き込む」経路（`downlink_low`/`uplink_low`直読みのまま）。
-  トランスポンダー選択直後、最初のDopplerWorkerサイクル（既定1秒後）が来るまでの
-  一瞬だけ帯域下限が表示される可能性があるが、承認されたスコープ外のため未対応
 - `_update_rig_web_state()`（スマホWeb UIのWebSocket状態）・`_update_moon()`
   （Moon/EME、DL==ULのシンプレックスのため`downlink_high`は実質常にNone）も
   `downlink_low`直読みのまま。スマホWeb UIの表示がデスクトップと乖離する可能性は
@@ -4639,6 +4635,33 @@ UL読み取り値と一致するかだけを見る、または閾値（`_DIAL_FE
 （`dl_nom`）が別機能（Lockのdial-feedback基準）にも共用されていることがある。
 承認前にテストフィクスチャの実データ（`downlink_high`が設定されているか）まで
 確認していれば、この影響範囲はもっと早い段階で見積もれた。
+
+### 追加修正（同日）— Connect前の周波数プリセットも帯域中心に統一
+
+上記の初回修正では意図的にスコープ外としていた「トランスポンダー選択時、Connect前でも
+リグへ周波数を書き込むプリセット」経路（`_apply_transponder_state_to_rig()`）も、
+ユーザーからの追加指示（「スマホとEMEは今回対応不要だが、Connect前プリセットは直す
+必要がある」）を受けて同じ`_band_center_or_low()`で統一した。スマホWeb UI
+（`_update_rig_web_state()`）・Moon/EME（`_update_moon()`）は指示通り引き続き対象外。
+
+`_apply_transponder_state_to_rig()`内で`downlink_low`/`uplink_low`を直接読んでいた
+4箇所（NET modeの`set_transponder_freqs()`呼び出し・satmode Directの`_transponder_dl_hz`/
+`_transponder_ul_hz`アンカー・FTX-1F/FT-991 raw CATの`_send_freq_preset_direct()`・
+generic Direct（IC-705等）の同関数呼び出し）を、関数冒頭で一度だけ計算した共通の
+`dl_hz`/`ul_hz`（`_band_center_or_low()`経由）を参照する形に統一（`dl_mode`/`ul_mode`/
+`ctcss_hz`が既にこのパターンだったため、それに揃えた形）。NET modeの
+`_send_freq_preset_independent()`自体は`set_transponder_freqs()`が内部に保存した値を
+そのまま読むだけの設計のため、呼び出し元の`dl_hz`/`ul_hz`を直せば自動的に正しくなる
+（controller.py側は無変更）。
+
+このパスに対する既存テストは元々ゼロ件だったため（`grep`で確認済み）、既存テスト破壊の
+リスクは無かった。回帰防止のため`TestLockDialFeedback`に3件追加:
+NET mode・Direct mode（FTX-1F raw CAT）それぞれで帯域中心が渡ることを確認するテストと、
+単一周波数（`downlink_high=None`）のFM/FT4系は従来通りLowのみが使われることを確認する
+テスト。いずれも`_do_nonsatmode()`/`_do_direct_cat()`（`threading.Thread`で起動される
+バックグラウンドクロージャ）が`try/except`を持たない、または持っていてもモック漏れの
+メソッド呼び出しで例外を投げうるため、`TestLockDialFeedback._SyncThread`で同期実行しつつ
+経路上の全メソッドをモックして決定的に検証した。
 
 ---
 

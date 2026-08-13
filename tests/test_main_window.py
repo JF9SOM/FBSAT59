@@ -3029,6 +3029,86 @@ class TestLockDialFeedback:
         assert w._current_transmitter["rx_offset_hz"] == -1240.0
         assert w._radio_control._offset_spin.value() == -1240
 
+    # -- _apply_transponder_state_to_rig(): pre-Connect frequency preset
+    # (GitHub Issue #20 follow-up) --
+
+    def test_apply_transponder_state_net_preset_uses_band_centre(self, qtbot, db) -> None:
+        """The pre-Connect frequency preset (set_transponder_freqs(), later
+        consumed by _send_freq_preset_independent()) must match
+        _doppler_cycle()'s own band-centre nominal -- otherwise the rig
+        would show the band's low edge until Connect/the first live
+        Doppler cycle corrected it to centre."""
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        rig = self._make_yaesu_rig(connected=False)
+        rig.set_transponder_freqs = MagicMock()
+        rig.set_current_modes = MagicMock()
+        # _do_nonsatmode() (spawned via threading.Thread, run synchronously
+        # here by _SyncThread) has no try/except of its own -- mock every
+        # method it touches so the run completes cleanly and doesn't matter
+        # for this assertion, which only concerns the synchronous call above.
+        rig._send_split_init_independent = MagicMock()
+        rig._send_freq_preset_independent = MagicMock()
+        rig.send_mode_only = MagicMock()
+        rig.send_ctcss_cat = MagicMock()
+        rig.set_ctcss_tone = MagicMock()
+        w._rig_controller = rig
+        w._current_transmitter = dict(self._TRANSMITTER)
+        w._ctcss_tone_hz = None
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._apply_transponder_state_to_rig()
+
+        rig.set_transponder_freqs.assert_called_once_with(145_875_000.0, 435_075_000.0)
+
+    def test_apply_transponder_state_direct_ftx1_preset_uses_band_centre(self, qtbot, db) -> None:
+        """Same fix, Direct-mode raw-CAT path (_send_freq_preset_direct())."""
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        rig = self._make_ftx1_direct_rig(connected=False)
+        rig._send_freq_preset_direct = MagicMock()
+        rig.apply_transponder_state = MagicMock()
+        w._rig_controller = rig
+        w._current_transmitter = dict(self._TRANSMITTER)
+        w._ctcss_tone_hz = None
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._apply_transponder_state_to_rig()
+
+        rig._send_freq_preset_direct.assert_called_once_with(145_875_000.0, 435_075_000.0)
+
+    def test_apply_transponder_state_missing_downlink_high_uses_low(self, qtbot, db) -> None:
+        """Single-frequency transmitters (FM/FT4, downlink_high left None)
+        must be unaffected -- the preset still uses the low value as-is."""
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        rig = self._make_yaesu_rig(connected=False)
+        rig.set_transponder_freqs = MagicMock()
+        rig.set_current_modes = MagicMock()
+        rig._send_split_init_independent = MagicMock()
+        rig._send_freq_preset_independent = MagicMock()
+        rig.send_mode_only = MagicMock()
+        rig.send_ctcss_cat = MagicMock()
+        rig.set_ctcss_tone = MagicMock()
+        w._rig_controller = rig
+        w._current_transmitter = {
+            "downlink_low": 435_612_000,
+            "downlink_high": None,
+            "uplink_low": 145_993_000,
+            "uplink_high": None,
+            "invert": False,
+            "mode": "USB-D",
+        }
+        w._ctcss_tone_hz = None
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._apply_transponder_state_to_rig()
+
+        rig.set_transponder_freqs.assert_called_once_with(435_612_000.0, 145_993_000.0)
+
 
 class TestRadioType:
     """Radio Type 設定テスト。"""
