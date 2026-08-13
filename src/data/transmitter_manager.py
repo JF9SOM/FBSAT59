@@ -376,8 +376,9 @@ class TransmitterManager:
         Idempotent: safe to call multiple times on the same satellite pair.
 
         Refuses to run entirely if the official satellite already has its own
-        transmitters (see guard below) — a well-established satellite must
-        never be linked to an unrelated provisional ID.
+        transmitters *and* an already-confirmed (non-placeholder) name (see
+        guard below) — a well-established satellite must never be linked to
+        an unrelated provisional ID.
 
         Steps executed in order:
           1. Ensure the official satellite record exists in the DB.
@@ -407,19 +408,56 @@ class TransmitterManager:
         # freshly deployed CubeSat's TLE briefly matches its host satellite's
         # orbit right after deployment (e.g. Coconut/98292 vs. ISS/25544 on
         # 2026-07-02), which would otherwise hijack the host's satnogs_source_id.
+        #
+        # "Already has transmitters" alone is not enough, though: TransmitterManager.
+        # sync_from_satnogs() itself can legitimately create the official row and
+        # attach the real transmitters to it (routed via the transmitter payload's
+        # own norad_follow_id) *before* sync_satellite_names() ever gets a chance
+        # to run this pipeline for the same pair — sync_from_satnogs() runs first
+        # in the normal startup sequence. When that happens, real_tx_count > 0 is
+        # true for a satellite that is this exact remnant's own official ID, not
+        # an unrelated one, and the row it created is still under its "#NNNNN"
+        # placeholder name (INSERT OR IGNORE INTO satellites (norad_cat_id, name,
+        # updated_at) VALUES (storage_id, f"#{storage_id}", now) in that method).
+        # A satellite with an already-confirmed real name (e.g. "ISS", set long
+        # before any unrelated remnant could collide with it) is what actually
+        # distinguishes the Coconut/ISS hijack case from this one — so only skip
+        # when the name is no longer a placeholder. Confirmed stuck this way for
+        # ARICA-2 / NORAD 68796 <- 98329 on a fresh Windows install (2026-08-13):
+        # 68796 sat visible under the name "#68796" with its 3 transmitters
+        # correctly attached and even its own celestrak TLE, while 98329 (holding
+        # the real name "ARICA-2") stayed is_hidden=2 forever because this guard
+        # kept refusing to run steps 2/5/6/7 below.
         real_tx_count = self._conn.execute(
             "SELECT COUNT(*) FROM transmitters WHERE norad_cat_id = ?",
             (real_id,),
         ).fetchone()[0]
         if real_tx_count > 0:
-            logger.warning(
-                "Skipping migration pipeline %d -> %d: official satellite "
-                "already has %d transmitter(s) of its own",
+            real_name_row = self._conn.execute(
+                "SELECT name FROM satellites WHERE norad_cat_id = ?",
+                (real_id,),
+            ).fetchone()
+            real_name = str(real_name_row["name"]) if real_name_row else ""
+            if not _is_placeholder_name(real_name):
+                logger.warning(
+                    "Skipping migration pipeline %d -> %d: official satellite "
+                    "already has %d transmitter(s) of its own under a confirmed"
+                    " name (%r)",
+                    fake_id,
+                    real_id,
+                    real_tx_count,
+                    real_name,
+                )
+                return
+            logger.info(
+                "Migration pipeline %d -> %d: official satellite has %d"
+                " transmitter(s) but is still under its placeholder name (%r)"
+                " -- proceeding, not treating this as an unrelated satellite",
                 fake_id,
                 real_id,
                 real_tx_count,
+                real_name,
             )
-            return
 
         # Ensure the official satellite record exists
         self._conn.execute(

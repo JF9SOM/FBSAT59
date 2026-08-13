@@ -149,6 +149,118 @@ class TestSyncSatelliteNamesUnhide:
         assert row["is_hidden"] == 0
 
 
+class TestMigrationPipelinePlaceholderGuard:
+    """_run_migration_pipeline()'s "official satellite already has
+    transmitters" guard used to refuse to run at all in that case. But
+    TransmitterManager.sync_from_satnogs() runs before sync_satellite_names()
+    in the normal startup sequence and can itself legitimately create the
+    official satellite's row (still under a "#NNNNN" placeholder name) with
+    its real transmitters already attached, routed there via the transmitter
+    payload's own norad_follow_id -- before this pipeline ever gets a chance
+    to run for that same pair. The old guard treated that exactly like the
+    Coconut/ISS hijack case it was meant to prevent, permanently blocking the
+    rename/satnogs_source_id/hide steps. Confirmed for ARICA-2 / NORAD 68796
+    <- 98329 on a fresh Windows install (2026-08-13): 68796 sat forever under
+    the name "#68796" with its 3 transmitters correctly attached, while 98329
+    (holding the real name "ARICA-2") stayed is_hidden=2 forever.
+
+    The guard now also checks whether the official satellite's name is still
+    a placeholder -- only a *confirmed* (non-placeholder) name means it's a
+    genuinely unrelated, already-established satellite.
+    """
+
+    def test_migrates_when_official_side_has_transmitters_under_placeholder_name(
+        self, db: sqlite3.Connection
+    ) -> None:
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (98329, 'ARICA-2', 'alive', 0)"
+        )
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (68796, '#68796', 'alive', 0)"
+        )
+        for i in range(3):
+            db.execute(
+                "INSERT INTO transmitters (uuid, norad_cat_id, description, source)"
+                " VALUES (?, 68796, 'Xpdr', 'satnogs')",
+                (f"uuid-{i}",),
+            )
+        db.commit()
+
+        _run_sync(
+            db,
+            [
+                {
+                    "norad_cat_id": 98329,
+                    "name": "ARICA-2",
+                    "names": "JS1YSD",
+                    "status": "alive",
+                    "norad_follow_id": 68796,
+                }
+            ],
+        )
+
+        official = db.execute(
+            "SELECT name, satnogs_source_id FROM satellites WHERE norad_cat_id = 68796"
+        ).fetchone()
+        assert official["name"] == "ARICA-2"
+        assert official["satnogs_source_id"] == 98329
+        remnant = db.execute(
+            "SELECT is_hidden FROM satellites WHERE norad_cat_id = 98329"
+        ).fetchone()
+        assert remnant["is_hidden"] == 2
+        # The 3 already-correctly-routed transmitters must not be duplicated.
+        count = db.execute(
+            "SELECT COUNT(*) FROM transmitters WHERE norad_cat_id = 68796"
+        ).fetchone()[0]
+        assert count == 3
+
+    def test_does_not_migrate_when_official_side_has_a_confirmed_name(
+        self, db: sqlite3.Connection
+    ) -> None:
+        """Regression guard for the Coconut/ISS scenario the original check
+        existed for: an established satellite's own real name must still
+        block an unrelated provisional ID from being linked to it.
+        """
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (25544, 'ISS', 'alive', 0)"
+        )
+        db.execute(
+            "INSERT INTO transmitters (uuid, norad_cat_id, description, source)"
+            " VALUES ('iss-uuid', 25544, 'ISS Xpdr', 'satnogs')"
+        )
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (98292, 'Coconut', 'alive', 0)"
+        )
+        db.commit()
+
+        _run_sync(
+            db,
+            [
+                {
+                    "norad_cat_id": 98292,
+                    "name": "Coconut",
+                    "names": "",
+                    "status": "alive",
+                    "norad_follow_id": 25544,
+                }
+            ],
+        )
+
+        official = db.execute(
+            "SELECT name, satnogs_source_id FROM satellites WHERE norad_cat_id = 25544"
+        ).fetchone()
+        assert official["name"] == "ISS"
+        assert official["satnogs_source_id"] is None
+        count = db.execute(
+            "SELECT COUNT(*) FROM transmitters WHERE norad_cat_id = 25544"
+        ).fetchone()[0]
+        assert count == 1
+
+
 class TestSyncSatelliteNamesPageFailure:
     """A page-fetch failure partway through pagination (e.g. SATNOGS becomes
     unreachable, as diagnosed on Windows 2026-07-23 — ConnectError/ConnectTimeout)
