@@ -35,21 +35,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from data.tle_manager import TLE_SOURCES
+from data.tle_manager import TLE_SOURCE_DISPLAY_NAMES, TLE_SOURCES
 from i18n import _
 
 # ---------------------------------------------------------------------------
 # TLE source constants
 # ---------------------------------------------------------------------------
-
-_SOURCE_DISPLAY_NAMES: dict[str, str] = {
-    "celestrak-stations": "Space Stations (CelesTrak)",
-    "celestrak-amateur": "Amateur Satellites (CelesTrak)",
-    "celestrak-cubesat": "CubeSat (CelesTrak)",
-    "celestrak-weather": "Weather Satellites (CelesTrak)",
-    "celestrak-earth-obs": "Earth Observation (CelesTrak)",
-    "celestrak-science": "Science Satellites (CelesTrak)",
-}
 
 _DEFAULT_ENABLED = {
     "celestrak-stations",
@@ -230,7 +221,7 @@ class SettingsDialog(QDialog):
 
         for src in TLE_SOURCES:
             name = src["name"]
-            label = _SOURCE_DISPLAY_NAMES.get(name, name)
+            label = TLE_SOURCE_DISPLAY_NAMES.get(name, name)
             cb = QCheckBox(label)
             self._source_checks[name] = cb
             group_layout.addWidget(cb)

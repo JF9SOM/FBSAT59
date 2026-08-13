@@ -5607,6 +5607,38 @@ Satellite Names/Status・AMSAT・Transmitter Database）が混在しており、
 分類（Provisional TLEsと同じ「SATNOGSへフォールバックする処理」）と一貫性を取るため
 下側の表に分類することで合意した）。
 
+**進捗メッセージ全般を「何をどこから取得しているか」が分かる文言に見直し（2026-08-13）**:
+取得中にステータスバー下部へ表示される一連のメッセージを再点検した結果、複数箇所で
+「どこから何を取得しているか」が読み取れない文言になっていたことが判明した。
+
+- `sync_satellite_names()`の進捗（起動時）: `"Syncing satellites from SATNOGS..."` →
+  `"Syncing satellite names from SATNOGS..."`（手動同期メニューの文言と統一。「satellites」
+  だけだとTLE取得と紛らわしい）
+- `fetch_active_tles()`のPhase 1開始通知: `"CelesTrak active..."` →
+  `"CelesTrak: fetching active TLEs..."`（何のために接続しているか不明だった）
+- `_get_with_progress()`のダウンロード進捗（Phase 1・Phase 2共通）:
+  `"{label}: downloading... {pct}%"` → `"{label}: downloading TLE data... {pct}%"`
+- `fetch_active_tles()`のPhase 2開始通知: `"SATNOGS: {n} satellite(s)..."` →
+  `"SATNOGS: fetching TLE data for {n} satellite(s)..."`（名詞の羅列だけで動詞が無く、
+  進行中なのか完了なのかも分からなかった）
+- CelesTrak 6グループ一括フェッチの進捗（起動時・Update TLEボタン両方）:
+  内部ソース名（例: `"celestrak-amateur"`）をそのまま表示していたのを、Settings画面の
+  TLE Sourcesタブが既に持っていた表示名（例: `"Amateur Satellites (CelesTrak)"`）に
+  統一。この表示名辞書はこれまで`settings_dialog.py`内のプライベート定数
+  `_SOURCE_DISPLAY_NAMES`として重複しかねない形で存在していたため、
+  `data.tle_manager.TLE_SOURCE_DISPLAY_NAMES`として公開・一本化し、両画面で共有する
+  ようにした
+- **Update TLEボタン（`_fetch_all_tle_sources()`）のCelesTrak 6グループフェッチ中、
+  そもそも進捗メッセージが一切出ていなかった**ことも判明（起動時側の同種ループには
+  既にあったが、Update TLE側には元から実装されていなかった）。同じ形式の進捗表示を
+  追加した
+
+**教訓**: 「進捗メッセージがある」ことと「そのメッセージが実際に分かりやすい」ことは別。
+今回見つかった問題の多くは、メッセージ自体は存在するが、動詞が欠けている・データの種類
+（TLE）が省略されている・内部識別子をそのまま表示している、という**質**の問題だった。
+新しい進捗メッセージを追加する際は「これだけを見て、何がどこから取得されているか
+第三者が分かるか」を基準にすること。
+
 **2番目のステップだった `fetch_active_tles()` を最優先に変更**（2026-08-10）:
 以前は「Phase 2のSATNOGSフォールバックが20〜30分かかりうるので他のステップを待たせない」という
 理由で最後に実行していたが、この理由はPhase 2にサーキットブレーカー・並列化・CelesTrakフォールバックを

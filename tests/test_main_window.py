@@ -3867,9 +3867,12 @@ class TestRefreshSatelliteNamesSyncGroupTleMessages:
 
         w._refresh_satellite_names_sync()
 
+        # Human-readable display names (2026-08-13), not the raw internal
+        # source names -- "celestrak-amateur" was confusing about what was
+        # actually being fetched.
         group_messages = [m for m in received if "Fetching group TLEs" in m]
-        assert any("celestrak-amateur" in m and "(1/2)" in m for m in group_messages)
-        assert any("celestrak-cubesat" in m and "(2/2)" in m for m in group_messages)
+        assert any("Amateur Satellites (CelesTrak)" in m and "(1/2)" in m for m in group_messages)
+        assert any("CubeSat (CelesTrak)" in m and "(2/2)" in m for m in group_messages)
 
     def test_no_message_when_nothing_is_stale_or_empty(self, qtbot, db, tle_manager) -> None:
         from unittest.mock import AsyncMock

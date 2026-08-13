@@ -630,11 +630,11 @@ class TestFetchActiveTlesProgressCallback:
             asyncio.run(mgr.fetch_active_tles(progress_callback=messages.append))
 
         assert messages == [
-            "CelesTrak active...",
-            "SATNOGS: 1 satellite(s)...",
-            "SATNOGS: downloading... 33%",
-            "SATNOGS: downloading... 66%",
-            "SATNOGS: downloading... 100%",
+            "CelesTrak: fetching active TLEs...",
+            "SATNOGS: fetching TLE data for 1 satellite(s)...",
+            "SATNOGS: downloading TLE data... 33%",
+            "SATNOGS: downloading TLE data... 66%",
+            "SATNOGS: downloading TLE data... 100%",
         ]
 
     def test_no_phase2_message_when_phase1_covers_everything(self, db: sqlite3.Connection) -> None:
@@ -662,7 +662,7 @@ class TestFetchActiveTlesProgressCallback:
             _wire_mock_client(mock_cls, mock_client)
             asyncio.run(mgr.fetch_active_tles(progress_callback=messages.append))
 
-        assert messages == ["CelesTrak active..."]
+        assert messages == ["CelesTrak: fetching active TLEs..."]
 
 
 class TestGetWithProgressDownloadPercentage:
@@ -694,11 +694,11 @@ class TestGetWithProgressDownloadPercentage:
             _wire_mock_client(mock_cls, mock_client)
             asyncio.run(mgr.fetch_active_tles(progress_callback=messages.append))
 
-        download_messages = [m for m in messages if "downloading..." in m and "%" in m]
+        download_messages = [m for m in messages if "downloading TLE data..." in m and "%" in m]
         assert download_messages == [
-            "SATNOGS: downloading... 33%",
-            "SATNOGS: downloading... 66%",
-            "SATNOGS: downloading... 100%",
+            "SATNOGS: downloading TLE data... 33%",
+            "SATNOGS: downloading TLE data... 66%",
+            "SATNOGS: downloading TLE data... 100%",
         ]
 
     def test_no_content_length_falls_back_to_a_single_message(self, db: sqlite3.Connection) -> None:
@@ -724,7 +724,7 @@ class TestGetWithProgressDownloadPercentage:
 
         download_messages = [m for m in messages if "downloading" in m]
         # Exactly one fallback message, no percentage -- not one per chunk.
-        assert download_messages == ["SATNOGS: downloading..."]
+        assert download_messages == ["SATNOGS: downloading TLE data..."]
 
     def test_no_progress_callback_does_not_crash(self, db: sqlite3.Connection) -> None:
         db.execute(

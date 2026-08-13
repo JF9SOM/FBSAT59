@@ -73,6 +73,24 @@ TLE_SOURCES: list[dict[str, Any]] = [
     },
 ]
 
+# Human-readable labels for TLE_SOURCES["name"] values, shown in Settings'
+# enabled-sources checkboxes and in progress messages during the 6-group
+# bulk fetch loop (main_window.py's "Fetching group TLEs: X (i/n)..."). A
+# single source of truth so both places stay in sync -- this used to be a
+# private copy inside settings_dialog.py, which meant the status-bar
+# progress message showed the raw internal source name (e.g.
+# "celestrak-earth-obs") instead of a name matching what the user actually
+# sees elsewhere in the UI (2026-08-13 report: fetch progress messages
+# were too vague about what/where).
+TLE_SOURCE_DISPLAY_NAMES: dict[str, str] = {
+    "celestrak-stations": "Space Stations (CelesTrak)",
+    "celestrak-amateur": "Amateur Satellites (CelesTrak)",
+    "celestrak-cubesat": "CubeSat (CelesTrak)",
+    "celestrak-weather": "Weather Satellites (CelesTrak)",
+    "celestrak-earth-obs": "Earth Observation (CelesTrak)",
+    "celestrak-science": "Science Satellites (CelesTrak)",
+}
+
 
 _SOURCE_DB_VALUE: dict[str, str] = {
     "celestrak-stations": "celestrak",
@@ -161,11 +179,12 @@ async def _get_with_progress(
 ) -> httpx.Response:
     """Drop-in replacement for `await client.get(url, params=params)` that
     additionally reports download progress via `progress_callback`, called
-    as `progress_callback(f"{label}: downloading... {pct}%")` (throttled to
-    whole-percent changes so a multi-MB download doesn't flood the UI with
-    one status-bar update per chunk) as the body streams in. Falls back to
-    a single `f"{label}: downloading..."` message with no percentage if the
-    server doesn't send a Content-Length header.
+    as `progress_callback(f"{label}: downloading TLE data... {pct}%")`
+    (throttled to whole-percent changes so a multi-MB download doesn't
+    flood the UI with one status-bar update per chunk) as the body streams
+    in. Falls back to a single `f"{label}: downloading TLE data..."`
+    message with no percentage if the server doesn't send a Content-Length
+    header.
 
     Used for CelesTrak's GROUP=active (Phase 1) and SATNOGS's bulk TLE dump
     (Phase 2 / fetch_provisional_tles(), confirmed ~512KB unpaginated at
@@ -208,9 +227,9 @@ async def _get_with_progress(
                 pct = int(downloaded * 100 / total_bytes)
                 if pct != last_pct:
                     last_pct = pct
-                    progress_callback(f"{label}: downloading... {pct}%")
+                    progress_callback(f"{label}: downloading TLE data... {pct}%")
         if progress_callback and total_bytes is None and downloaded > 0:
-            progress_callback(f"{label}: downloading...")
+            progress_callback(f"{label}: downloading TLE data...")
         response._content = b"".join(chunks)
         return response
 
@@ -1136,7 +1155,7 @@ class TLEManager:
                 self._celestrak_breaker.record_error(blocked=True)
             else:
                 if progress_callback:
-                    progress_callback("CelesTrak active...")
+                    progress_callback("CelesTrak: fetching active TLEs...")
                 try:
                     r = await _get_with_progress(
                         client,
@@ -1320,7 +1339,9 @@ class TLEManager:
 
             # ── Phase 2: SATNOGS bulk TLE fallback ──────────────────────────
             if progress_callback:
-                progress_callback(f"SATNOGS: {len(remaining)} satellite(s)...")
+                progress_callback(
+                    f"SATNOGS: fetching TLE data for {len(remaining)} satellite(s)..."
+                )
 
             bulk = await self._fetch_satnogs_bulk_tles(
                 progress_callback=progress_callback, reachable=satnogs_reachable

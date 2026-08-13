@@ -67,7 +67,7 @@ from core.notifier import PassNotifier
 from core.ntp_check import check_system_clock
 from data.amsat_status import AMSATStatusFetcher
 from data.ctcss_db import get_ctcss
-from data.tle_manager import TLEManager
+from data.tle_manager import TLE_SOURCE_DISPLAY_NAMES, TLEManager
 from data.transmitter_manager import TransmitterManager
 from i18n import _
 from rig.controller import (
@@ -1616,10 +1616,10 @@ class MainWindow(QMainWindow):
         if not satnogs_ok:
             logger.info("SATNOGS unreachable — skipping satellite name sync")
         elif self._transmitter_manager.is_satellite_names_stale():
-            self._sync_progress.emit("🛰 Syncing satellites from SATNOGS...")
+            self._sync_progress.emit("🛰 Syncing satellite names from SATNOGS...")
 
             def _sat_progress(n: int) -> None:
-                self._sync_progress.emit(f"🛰 Syncing satellites... ({n:,})")
+                self._sync_progress.emit(f"🛰 Syncing satellite names... ({n:,})")
 
             try:
                 result = asyncio.run(
@@ -1782,8 +1782,14 @@ class MainWindow(QMainWindow):
                 for idx, source_name in enumerate(stale_sources, start=1):
                     if self._shutdown_flag.is_set():
                         break
+                    # Human-readable label (e.g. "Amateur Satellites
+                    # (CelesTrak)") instead of the raw internal source name
+                    # (e.g. "celestrak-amateur") -- the latter was confusing
+                    # about what was actually being fetched (2026-08-13
+                    # report).
+                    display_name = TLE_SOURCE_DISPLAY_NAMES.get(source_name, source_name)
                     self._sync_progress.emit(
-                        f"🛰 {fetching_group_tles}: {source_name} ({idx}/{total})..."
+                        f"🛰 {fetching_group_tles}: {display_name} ({idx}/{total})..."
                     )
                     try:
                         result = asyncio.run(self._tle_manager.fetch_and_update(source_name))
@@ -5046,7 +5052,18 @@ class MainWindow(QMainWindow):
                     _time.sleep(3.0)
 
                 if celestrak_ok:
-                    for source_name in enabled:
+                    # Per-source progress (2026-08-13): this loop previously
+                    # showed nothing at all between the initial "Updating
+                    # TLEs..." message and fetch_active_tles()'s own
+                    # progress starting -- indistinguishable from a hang for
+                    # however long the group fetches took.
+                    total = len(enabled)
+                    fetching_group_tles = _("Fetching group TLEs")
+                    for idx, source_name in enumerate(enabled, start=1):
+                        display_name = TLE_SOURCE_DISPLAY_NAMES.get(source_name, source_name)
+                        self._sync_progress.emit(
+                            f"🛰 {fetching_group_tles}: {display_name} ({idx}/{total})..."
+                        )
                         logger.info("Manual TLE fetch: %s...", source_name)
                         try:
                             result = asyncio.run(self._tle_manager.fetch_and_update(source_name))
