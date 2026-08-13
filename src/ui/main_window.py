@@ -160,6 +160,18 @@ def _is_generic_direct_rig(rig: RigController) -> bool:
     )
 
 
+def _band_center_or_low(low: float | None, high: float | None) -> float | None:
+    """Nominal tracking frequency for a transmitter: band centre if a High edge
+    is on record (e.g. a SATNOGS-synced linear transponder), else the Low value
+    (single-frequency transmitters, where High is never set). Mirrors the centre
+    computation _on_tune_requested() already used for the one-shot T button."""
+    if low is None:
+        return None
+    if high is None:
+        return float(low)
+    return (float(low) + float(high)) / 2
+
+
 # Oscar designator prefixes (e.g. AO-7, FO-29, IO-86, QO-100, RS-44, RS95S)
 # Hyphen is optional to handle SatNOGS alt_names stored without it (e.g. "RS95S").
 # Two capturing groups: (prefix, number+suffix) so the display can normalise to "RS-95S".
@@ -3151,7 +3163,10 @@ class MainWindow(QMainWindow):
         if obs is None:
             return
         rr = obs.range_rate_km_s
-        dl_nom = self._current_transmitter.get("downlink_low")
+        dl_nom = _band_center_or_low(
+            self._current_transmitter.get("downlink_low"),
+            self._current_transmitter.get("downlink_high"),
+        )
         if dl_nom is None:
             return
         dl_baseline, _ = DopplerCalculator.correct_downlink(float(dl_nom), rr)
@@ -3234,8 +3249,14 @@ class MainWindow(QMainWindow):
             return
 
         rr = obs.range_rate_km_s
-        dl_nom = self._current_transmitter.get("downlink_low")
-        ul_nom = self._current_transmitter.get("uplink_low")
+        dl_nom = _band_center_or_low(
+            self._current_transmitter.get("downlink_low"),
+            self._current_transmitter.get("downlink_high"),
+        )
+        ul_nom = _band_center_or_low(
+            self._current_transmitter.get("uplink_low"),
+            self._current_transmitter.get("uplink_high"),
+        )
         invert = bool(self._current_transmitter.get("invert", False))
         mode = self._current_transmitter.get("mode")
         # Persistent per-transponder RX offset (GitHub Issue #18): a fixed,

@@ -4574,6 +4574,74 @@ FROM transmitters WHERE norad_cat_id = ? ORDER BY ...
 
 ---
 
+## 帯域を持つトランスポンダーのDoppler追尾基準を帯域下限→帯域中心に修正（GitHub Issue #20、2026-08-13）
+
+### 発端
+
+「衛星周波数の編集フォームがLow/High形式で、centerを知っている場合どう入力すればいいか
+分からない」という報告（Issue #20、報告者はFO-29 V/Uトランスポンダーを例に
+"center up 145.950 / center dwn 435.850"と表現）。当初はAdd/Edit Transmitterダイアログの
+UX（説明不足）の話だと考えたが、実際にSATNOGS APIでFO-29のデータを確認したところ
+（`uplink_low=145.900/uplink_high=146.000`・`downlink_low=435.800/downlink_high=435.900`、
+平均が報告者の言うcenterと完全一致）、報告者は手動入力を一切行っておらず、**リグへ継続的に
+送られる周波数（Doppler追尾の基準）自体が帯域下限（`downlink_low`）になっており、
+帯域中心ではなかった**ことが判明した。開発者自身もこの挙動を把握しておらず、
+「知らなかった、直すべき」との判断で修正した。
+
+### 修正内容
+
+- `_band_center_or_low(low, high)`（新設、`src/ui/main_window.py`モジュールレベル）:
+  `high`が記録されていれば`(low+high)/2`（帯域中心）、無ければ`low`のみ（単一周波数の
+  FM/FT4衛星は元々`downlink_high=None`のためこちらにフォールバックし挙動は変わらない）
+- `_doppler_cycle()`（DopplerWorker駆動、リグへの継続書き込み・表示の実体）の
+  `dl_nom`/`ul_nom`を、`downlink_low`/`uplink_low`直読みから
+  `_band_center_or_low()`経由に変更
+- `_lock_watch_cycle()`（Connect前のLockポーラー）の`dl_nom`も同様に変更。この関数を
+  一貫させないと、Connect前後でLock機能の基準周波数が食い違う新たな不整合を生むと
+  判明したため、承認済みスコープを`_doppler_cycle()`単体からこちらにも広げた
+  （詳細は下記「影響範囲の見積もり違い」参照）
+- Tuneボタン（`_on_tune_requested()`）は元々`(low+high)/2`を計算していたため無変更。
+  一発限りの上書きに頼らず、常時この基準で追尾するようになった
+
+### 意図的に対象外にしたもの
+
+- `_apply_transponder_state_to_rig()`等の「トランスポンダー選択時にConnect前でも
+  リグへ周波数プリセットを書き込む」経路（`downlink_low`/`uplink_low`直読みのまま）。
+  トランスポンダー選択直後、最初のDopplerWorkerサイクル（既定1秒後）が来るまでの
+  一瞬だけ帯域下限が表示される可能性があるが、承認されたスコープ外のため未対応
+- `_update_rig_web_state()`（スマホWeb UIのWebSocket状態）・`_update_moon()`
+  （Moon/EME、DL==ULのシンプレックスのため`downlink_high`は実質常にNone）も
+  `downlink_low`直読みのまま。スマホWeb UIの表示がデスクトップと乖離する可能性は
+  残るが、実際にリグを駆動する経路ではないため今回は見送り
+
+### 影響範囲の見積もり違い — Lock（Lボタン）機能のテストへの波及
+
+`_doppler_cycle()`のみを対象とした狭い承認で実装を始めたところ、`dl_nom`/`ul_nom`が
+Lock（Lボタン）のdial-feedbackオフセット計算の基準値としても共用されていることが判明し、
+`TestLockDialFeedback`（`tests/test_main_window.py`）の帯域ありトランスポンダー
+（`_TRANSMITTER`フィクスチャ、DL 145.800-145.950MHz・UL 435.000-435.150MHz）を使う
+接続後テスト群、約20件が軒並み「基準＝帯域下限」を前提にハードコードされた期待値を
+持っており、そのままでは全滅することが判明した。ユーザーに報告の上、`_lock_watch_cycle()`
+も含めて一貫させ、影響を受けた全テストの期待値を新しい帯域中心基準
+（DL center=145,875,000 / UL center=435,075,000）に合わせて更新する方針で承認を得た。
+
+`_lock_watch_cycle()`のクロスチェック・implausible-jump系テストは、DL読み取り値が
+UL読み取り値と一致するかだけを見る、または閾値（`_DIAL_FEEDBACK_SANITY_HZ`=200kHz）を
+超えるかだけを見るため、基準そのものには依存せず無変更のものもあった
+（`test_lock_watch_discards_reading_close_to_ul_crosscheck`等）。一方
+「+80Hz手動リチューン」を模したモック値（旧: `downlink_low + 80`）は、新基準では
+「帯域中心 + 80」に、implausible-jumpのモック値も新基準からの相対値に、それぞれ
+書き換えが必要だった。単一周波数（FM/FT4、`downlink_high=None`）を使うテスト
+（`_on_rx_offset_changed()`系等）は`_band_center_or_low()`が`low`にフォールバックする
+ため無変更のまま。
+
+**教訓**: 「継続Doppler追尾の基準を直す」という一見単純な変更でも、同じ変数
+（`dl_nom`）が別機能（Lockのdial-feedback基準）にも共用されていることがある。
+承認前にテストフィクスチャの実データ（`downlink_high`が設定されているか）まで
+確認していれば、この影響範囲はもっと早い段階で見積もれた。
+
+---
+
 ## Rig-Specific Implementation Notes
 
 ### FTX-1F (Hamlib model 1051)

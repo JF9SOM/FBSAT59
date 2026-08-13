@@ -2225,8 +2225,10 @@ class TestLockDialFeedback:
         is released."""
         w = self._make_window(qtbot, db)
         rig = self._make_yaesu_rig(connected=False)
-        # rr=0.0 -> dl_baseline == downlink_low exactly.
-        rig.read_dl_ul_independent = MagicMock(return_value=(145_800_080.0, 435_000_000.0))
+        # rr=0.0 -> dl_baseline == band centre (145_875_000, GitHub Issue #20:
+        # the nominal is now (downlink_low + downlink_high) / 2 for band-having
+        # transponders, not the low edge).
+        rig.read_dl_ul_independent = MagicMock(return_value=(145_875_080.0, 435_000_000.0))
         w._rig_controller = rig
         w._trsp_lock = True
         w._engine = self._fake_engine(rr=0.0)
@@ -2259,9 +2261,10 @@ class TestLockDialFeedback:
     def test_lock_watch_ignores_implausible_jump(self, qtbot, db) -> None:
         w = self._make_window(qtbot, db)
         rig = self._make_yaesu_rig(connected=False)
-        # +300kHz -- comfortably past _DIAL_FEEDBACK_SANITY_HZ (200kHz, raised
-        # 2026-07-22 to cover a full-passband sweep on wide transponders).
-        rig.read_dl_ul_independent = MagicMock(return_value=(146_100_000.0, 435_000_000.0))
+        # Band centre (145_875_000) + 300kHz -- comfortably past
+        # _DIAL_FEEDBACK_SANITY_HZ (200kHz, raised 2026-07-22 to cover a
+        # full-passband sweep on wide transponders).
+        rig.read_dl_ul_independent = MagicMock(return_value=(146_175_000.0, 435_000_000.0))
         w._rig_controller = rig
         w._trsp_lock = True
         w._engine = self._fake_engine(rr=0.0)
@@ -2326,7 +2329,8 @@ class TestLockDialFeedback:
         display, one cycle behind this read (see _rig_send()'s comment)."""
         w = self._make_window(qtbot, db)
         rig = self._make_yaesu_rig(connected=True)
-        rig.get_frequency = MagicMock(return_value=145_800_080.0)  # +80Hz manual retune
+        # Band centre (145_875_000, GitHub Issue #20) + 80Hz manual retune.
+        rig.get_frequency = MagicMock(return_value=145_875_080.0)
         rig.get_split_frequency = MagicMock(return_value=435_000_000.0)
         rig.set_vfo_frequencies = MagicMock(return_value=True)
         w._dial_feedback_offset_hz = 0.0
@@ -2335,21 +2339,24 @@ class TestLockDialFeedback:
 
         # offset was still 0.0 when _doppler_cycle() computed this cycle's
         # ul -- the +80Hz detected by this same cycle's read is not folded
-        # in until the *next* cycle (matches what the display shows).
-        rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_000.0)
+        # in until the *next* cycle (matches what the display shows). UL
+        # itself is now the band centre (435_075_000) too.
+        rig.set_vfo_frequencies.assert_called_once_with(None, 435_075_000.0)
         assert w._dial_feedback_offset_hz == 80.0
 
     def test_rig_send_no_retune_keeps_offset_unchanged(self, qtbot, db) -> None:
         w = self._make_window(qtbot, db)
         rig = self._make_yaesu_rig(connected=True)
-        rig.get_frequency = MagicMock(return_value=145_800_000.0)  # matches baseline exactly
+        rig.get_frequency = MagicMock(
+            return_value=145_875_000.0
+        )  # matches band-centre baseline exactly
         rig.get_split_frequency = MagicMock(return_value=435_000_000.0)
         rig.set_vfo_frequencies = MagicMock(return_value=True)
         w._dial_feedback_offset_hz = 0.0
 
         self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
 
-        rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_000.0)
+        rig.set_vfo_frequencies.assert_called_once_with(None, 435_075_000.0)
         assert w._dial_feedback_offset_hz == 0.0
 
     def test_rig_send_discards_reading_close_to_ul_crosscheck(self, qtbot, db) -> None:
@@ -2364,15 +2371,17 @@ class TestLockDialFeedback:
 
         assert w._dial_feedback_offset_hz == 5.0  # unchanged
         # UL write still happens (using the pre-existing offset), just the
-        # offset itself isn't updated from this discarded reading.
-        rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_005.0)
+        # offset itself isn't updated from this discarded reading. UL
+        # baseline is now the band centre (435_075_000).
+        rig.set_vfo_frequencies.assert_called_once_with(None, 435_075_005.0)
 
     def test_rig_send_ignores_implausible_jump(self, qtbot, db) -> None:
         w = self._make_window(qtbot, db)
         rig = self._make_yaesu_rig(connected=True)
-        # +300kHz -- comfortably past _DIAL_FEEDBACK_SANITY_HZ (200kHz, raised
-        # 2026-07-22 to cover a full-passband sweep on wide transponders).
-        rig.get_frequency = MagicMock(return_value=146_100_000.0)
+        # Band centre (145_875_000) + 300kHz -- comfortably past
+        # _DIAL_FEEDBACK_SANITY_HZ (200kHz, raised 2026-07-22 to cover a
+        # full-passband sweep on wide transponders).
+        rig.get_frequency = MagicMock(return_value=146_175_000.0)
         rig.get_split_frequency = MagicMock(return_value=435_000_000.0)
         rig.set_vfo_frequencies = MagicMock(return_value=True)
         w._dial_feedback_offset_hz = 0.0
@@ -2380,7 +2389,7 @@ class TestLockDialFeedback:
         self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
 
         assert w._dial_feedback_offset_hz == 0.0
-        rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_000.0)
+        rig.set_vfo_frequencies.assert_called_once_with(None, 435_075_000.0)
 
     def test_rig_send_writes_dl_normally_when_lock_off(self, qtbot, db) -> None:
         """With Lock off, do_dial_feedback is False -- no read happens, and
@@ -2389,7 +2398,7 @@ class TestLockDialFeedback:
         separately below)."""
         w = self._make_window(qtbot, db)
         rig = self._make_yaesu_rig(connected=True)
-        rig.get_frequency = MagicMock(return_value=145_800_080.0)
+        rig.get_frequency = MagicMock(return_value=145_875_080.0)
         rig.get_split_frequency = MagicMock(return_value=435_000_000.0)
         rig.set_vfo_frequencies = MagicMock(return_value=True)
         w._dial_feedback_offset_hz = 0.0
@@ -2401,8 +2410,9 @@ class TestLockDialFeedback:
         rig.get_frequency.assert_not_called()
         rig.get_split_frequency.assert_not_called()
         called_dl, called_ul = rig.set_vfo_frequencies.call_args[0]
-        assert called_dl == 145_800_000.0
-        assert called_ul == 435_000_000.0
+        # Band centres (GitHub Issue #20): DL 145_875_000, UL 435_075_000.
+        assert called_dl == 145_875_000.0
+        assert called_ul == 435_075_000.0
 
     # -- NET mode generic "hamlib" bucket (2026-07-20) --
 
@@ -2454,7 +2464,9 @@ class TestLockDialFeedback:
         rig._sock = MagicMock()
         with rig._lock:
             rig._state = RigState.CONNECTED
-        rig.get_frequency = MagicMock(return_value=145_800_080.0)  # +80Hz manual retune
+        rig.get_frequency = MagicMock(
+            return_value=145_875_080.0
+        )  # band centre + 80Hz manual retune
         rig.get_split_frequency = MagicMock(return_value=435_000_000.0)
         rig.set_vfo_frequencies = MagicMock(return_value=True)
         w._dial_feedback_offset_hz = 0.0
@@ -2497,8 +2509,9 @@ class TestLockDialFeedback:
         rig._sock = MagicMock()
         with rig._lock:
             rig._state = RigState.CONNECTED
-        # +300kHz -- comfortably past _DIAL_FEEDBACK_SANITY_HZ (200kHz).
-        rig.get_frequency = MagicMock(return_value=146_100_000.0)
+        # Band centre (145_875_000) + 300kHz -- comfortably past
+        # _DIAL_FEEDBACK_SANITY_HZ (200kHz).
+        rig.get_frequency = MagicMock(return_value=146_175_000.0)
         rig.get_split_frequency = MagicMock(return_value=435_000_000.0)
         rig.set_vfo_frequencies = MagicMock(return_value=True)
         w._dial_feedback_offset_hz = 0.0
@@ -2528,14 +2541,16 @@ class TestLockDialFeedback:
         w = self._make_window(qtbot, db)
         rig = self._make_yaesu_rig(connected=True)
         rig._ctcss_method = "hamlib"
-        rig.get_frequency = MagicMock(return_value=145_800_080.0)  # +80Hz manual retune
+        rig.get_frequency = MagicMock(
+            return_value=145_875_080.0
+        )  # band centre + 80Hz manual retune
         rig.get_split_frequency = MagicMock(return_value=435_000_000.0)
         rig.set_vfo_frequencies = MagicMock(return_value=True)
         w._dial_feedback_offset_hz = 0.0
 
         self._run_doppler_cycle(w, rig, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=True)
 
-        rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_000.0)
+        rig.set_vfo_frequencies.assert_called_once_with(None, 435_075_000.0)
         assert w._dial_feedback_offset_hz == 80.0
 
     # -- Direct mode (FTX-1F): same connected-case integration (2026-07-20) --
@@ -2603,7 +2618,7 @@ class TestLockDialFeedback:
         rig = self._make_ftx1_direct_rig(connected=True)
 
         def _fake_get_frequency(vfo: str = "VFOA") -> float:
-            return 145_800_080.0 if vfo == "VFOA" else 435_000_000.0
+            return 145_875_080.0 if vfo == "VFOA" else 435_000_000.0
 
         rig.get_frequency = MagicMock(side_effect=_fake_get_frequency)
         rig.set_vfo_frequencies = MagicMock(return_value=True)
@@ -2614,8 +2629,9 @@ class TestLockDialFeedback:
         rig.get_frequency.assert_any_call("VFOA")
         rig.get_frequency.assert_any_call("VFOB")
         # offset was still 0.0 when _doppler_cycle() computed this cycle's
-        # ul -- same one-cycle-behind timing as the NET-mode case.
-        rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_000.0)
+        # ul -- same one-cycle-behind timing as the NET-mode case. UL
+        # itself is now the band centre (435_075_000, GitHub Issue #20).
+        rig.set_vfo_frequencies.assert_called_once_with(None, 435_075_000.0)
         assert w._dial_feedback_offset_hz == 80.0
 
     # -- Direct mode (FT-991/FT-991A): same integration (2026-07-20) --
@@ -2640,7 +2656,7 @@ class TestLockDialFeedback:
         rig = self._make_ft991_direct_rig(connected=True)
 
         def _fake_get_frequency(vfo: str = "VFOA") -> float:
-            return 145_800_080.0 if vfo == "VFOA" else 435_000_000.0
+            return 145_875_080.0 if vfo == "VFOA" else 435_000_000.0
 
         rig.get_frequency = MagicMock(side_effect=_fake_get_frequency)
         rig.set_vfo_frequencies = MagicMock(return_value=True)
@@ -2650,7 +2666,7 @@ class TestLockDialFeedback:
 
         rig.get_frequency.assert_any_call("VFOA")
         rig.get_frequency.assert_any_call("VFOB")
-        rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_000.0)
+        rig.set_vfo_frequencies.assert_called_once_with(None, 435_075_000.0)
         assert w._dial_feedback_offset_hz == 80.0
 
     # -- Direct mode (IC-705): same integration (2026-07-20) --
@@ -2666,7 +2682,7 @@ class TestLockDialFeedback:
         rig = self._make_ic705_direct_rig(connected=True)
 
         def _fake_get_frequency(vfo: str = "VFOA") -> float:
-            return 145_800_080.0 if vfo == "VFOA" else 435_000_000.0
+            return 145_875_080.0 if vfo == "VFOA" else 435_000_000.0
 
         rig.get_frequency = MagicMock(side_effect=_fake_get_frequency)
         rig.set_vfo_frequencies = MagicMock(return_value=True)
@@ -2676,7 +2692,7 @@ class TestLockDialFeedback:
 
         rig.get_frequency.assert_any_call("VFOA")
         rig.get_frequency.assert_any_call("VFOB")
-        rig.set_vfo_frequencies.assert_called_once_with(None, 435_000_000.0)
+        rig.set_vfo_frequencies.assert_called_once_with(None, 435_075_000.0)
         assert w._dial_feedback_offset_hz == 80.0
 
     # -- Direct mode (satmode, cross-band): same integration (2026-07-20) --
@@ -2694,7 +2710,9 @@ class TestLockDialFeedback:
         is nothing useful for software to add by writing UL anyway)."""
         w = self._make_window(qtbot, db)
         rig = self._make_satmode_direct_rig(connected=True)
-        rig.get_frequency = MagicMock(return_value=145_800_080.0)  # +80Hz manual retune
+        rig.get_frequency = MagicMock(
+            return_value=145_875_080.0
+        )  # band centre + 80Hz manual retune
         rig.set_vfo_frequencies = MagicMock(return_value=True)
         w._dial_feedback_offset_hz = 0.0
 
@@ -2738,9 +2756,10 @@ class TestLockDialFeedback:
     def test_rig_send_direct_satmode_ignores_implausible_jump(self, qtbot, db) -> None:
         w = self._make_window(qtbot, db)
         rig = self._make_satmode_direct_rig(connected=True)
-        # +300kHz -- comfortably past _DIAL_FEEDBACK_SANITY_HZ (200kHz, raised
-        # 2026-07-22 to cover a full-passband sweep on wide transponders).
-        rig.get_frequency = MagicMock(return_value=146_100_000.0)
+        # Band centre (145_875_000) + 300kHz -- comfortably past
+        # _DIAL_FEEDBACK_SANITY_HZ (200kHz, raised 2026-07-22 to cover a
+        # full-passband sweep on wide transponders).
+        rig.get_frequency = MagicMock(return_value=146_175_000.0)
         rig.set_vfo_frequencies = MagicMock(return_value=True)
         w._dial_feedback_offset_hz = 0.0
 
@@ -2785,8 +2804,9 @@ class TestLockDialFeedback:
         )
         assert len(received) == 1
         result = received[0]
-        assert result.dl_corr == 145_800_500.0
-        assert result.ul_corr == 435_000_500.0
+        # Band centres (GitHub Issue #20): DL 145_875_000, UL 435_075_000.
+        assert result.dl_corr == 145_875_500.0
+        assert result.ul_corr == 435_075_500.0
         assert result.dl_shift is None
 
     def test_doppler_cycle_folds_offset_when_unlocked(self, qtbot, db) -> None:
@@ -2806,8 +2826,8 @@ class TestLockDialFeedback:
         )
         assert len(received) == 1
         result = received[0]
-        assert result.dl_corr == 145_800_500.0
-        assert result.ul_corr == 435_000_500.0
+        assert result.dl_corr == 145_875_500.0
+        assert result.ul_corr == 435_075_500.0
 
     def test_doppler_cycle_folds_offset_inverted(self, qtbot, db) -> None:
         """Inverted transponder: DL +500Hz manual offset -> UL -500Hz
@@ -2826,8 +2846,10 @@ class TestLockDialFeedback:
         )
         assert len(received) == 1
         result = received[0]
-        assert result.dl_corr == 145_800_500.0
-        assert result.ul_corr == 434_999_500.0
+        # DL band centre is unaffected by invert (145_875_000); UL band
+        # centre (435_075_000) - 500Hz since invert flips the offset sign.
+        assert result.dl_corr == 145_875_500.0
+        assert result.ul_corr == 435_074_500.0
 
     def test_doppler_cycle_ul_uses_own_scaled_doppler_not_dl_mirror(self, qtbot, db) -> None:
         """Regression test for a pre-existing Lock-branch flaw (found
@@ -2843,20 +2865,26 @@ class TestLockDialFeedback:
         w = self._make_window(qtbot, db)
         w._rig_controller = None
         w._rig2_controller = None
-        dl_nom = 435_612_000.0
-        ul_nom = 145_993_000.0
+        dl_low = 435_612_000.0
+        dl_high = dl_low + 30_000
+        ul_low = 145_993_000.0
+        ul_high = ul_low + 10_000
+        # Band centres (GitHub Issue #20): _doppler_cycle() now Doppler-
+        # corrects around (low + high) / 2, not the low edge.
+        dl_center = (dl_low + dl_high) / 2
+        ul_center = (ul_low + ul_high) / 2
         transmitter = {
-            "downlink_low": dl_nom,
-            "downlink_high": dl_nom + 30_000,
-            "uplink_low": ul_nom,
-            "uplink_high": ul_nom + 10_000,
+            "downlink_low": dl_low,
+            "downlink_high": dl_high,
+            "uplink_low": ul_low,
+            "uplink_high": ul_high,
             "invert": False,
             "mode": "USB",
         }
         w._dial_feedback_offset_hz = 0.0
 
-        expected_dl_corr, expected_dl_shift = DopplerCalculator.correct_downlink(dl_nom, 2.5)
-        expected_ul_corr, expected_ul_shift = DopplerCalculator.correct_uplink(ul_nom, 2.5)
+        expected_dl_corr, expected_dl_shift = DopplerCalculator.correct_downlink(dl_center, 2.5)
+        expected_ul_corr, expected_ul_shift = DopplerCalculator.correct_uplink(ul_center, 2.5)
         assert abs(expected_dl_shift) != abs(expected_ul_shift)
 
         received = self._run_doppler_cycle(
@@ -2887,9 +2915,12 @@ class TestLockDialFeedback:
         )
         assert len(received) == 1
         result = received[0]
-        assert result.dl_corr == 145_800_500.0
+        # DL band centre (145_875_000, GitHub Issue #20) + rx_offset_hz
+        # (500) folded in before Doppler correction; UL is untouched (its
+        # own band centre, 435_075_000).
+        assert result.dl_corr == 145_875_500.0
         assert result.dl_shift == 0.0
-        assert result.ul_corr == 435_000_000.0
+        assert result.ul_corr == 435_075_000.0
 
     def test_doppler_cycle_composes_with_lock_dial_feedback(self, qtbot, db) -> None:
         """The persistent rx_offset_hz (folded pre-Doppler) and Lock's live
@@ -2904,7 +2935,9 @@ class TestLockDialFeedback:
             w, rig=None, rr=0.0, transmitter=transmitter, trsp_lock=True
         )
         assert len(received) == 1
-        assert received[0].dl_corr == 145_800_580.0
+        # DL band centre (145_875_000) + rx_offset_hz (500, pre-Doppler)
+        # + Lock's dial-feedback offset (80, post-Doppler) = 145_875_580.
+        assert received[0].dl_corr == 145_875_580.0
 
     def test_doppler_cycle_missing_rx_offset_key_defaults_to_zero(self, qtbot, db) -> None:
         """Transponder dicts predating this feature (or EME entries loaded
@@ -2918,7 +2951,7 @@ class TestLockDialFeedback:
             w, rig=None, rr=0.0, transmitter=dict(self._TRANSMITTER), trsp_lock=False
         )
         assert len(received) == 1
-        assert received[0].dl_corr == 145_800_000.0
+        assert received[0].dl_corr == 145_875_000.0  # band centre, GitHub Issue #20
 
     # -- _on_rx_offset_changed(): Offset spinbox edit -> DB + in-memory --
 
