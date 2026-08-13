@@ -6415,11 +6415,26 @@ class MainWindow(QMainWindow):
             f"<h4>{heading_startup}</h4>"
             f"<p>{startup_paragraph}</p>"
         )
-        dlg = QMessageBox(self)
+        # QMessageBox doesn't scroll -- as this dialog's content grew (most
+        # recently with the Satellite Names / Status section, 2026-08-13),
+        # the bottom of the text got cut off with no way to reach it
+        # (reported same day). Switched to a resizable QDialog + QTextBrowser,
+        # the same pattern _on_satellite_color()'s legend dialog and the
+        # Help > *Installation… dialogs (direwolf_dialog.py, ft8lib_dialog.py)
+        # already use for long rich-text content.
+        from PySide6.QtWidgets import QDialogButtonBox, QTextBrowser  # noqa: PLC0415
+
+        dlg = QDialog(self)
         dlg.setWindowTitle(_("Auto Fetch Rules"))
-        dlg.setTextFormat(Qt.TextFormat.RichText)
-        dlg.setText(msg)
-        dlg.setIcon(QMessageBox.Icon.Information)
+        dlg.resize(600, 560)
+        layout = QVBoxLayout(dlg)
+        browser = QTextBrowser()
+        browser.setOpenExternalLinks(True)
+        browser.setHtml(msg)
+        layout.addWidget(browser)
+        btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        btn_box.rejected.connect(dlg.reject)
+        layout.addWidget(btn_box)
         dlg.exec()
 
     def _on_clear_tle_sync_history(self) -> None:
