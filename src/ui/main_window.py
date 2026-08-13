@@ -947,7 +947,7 @@ class MainWindow(QMainWindow):
             sat_menu.addSeparator()
             sat_menu.addAction(_("Add Manual TLE..."), self._on_add_manual_tle)
             sat_menu.addAction(_("Update TLE"), self._on_update_tle)
-            sat_menu.addAction(_("Sync SATNOGS"), self._on_sync_satnogs)
+            sat_menu.addAction(_("Fetch Transmitter Database"), self._on_sync_satnogs)
             sat_menu.addAction(_("Sync Satellite Names"), self._on_sync_satellite_names)
 
         # Radio
@@ -5378,7 +5378,7 @@ class MainWindow(QMainWindow):
             logger.warning("METEOR satellite TLE refresh failed: %s", exc)
 
     def _refresh_satnogs_sync(self) -> None:
-        """Sync SATNOGS transponders from a background thread.
+        """Fetch SATNOGS transponders (transmitter DB) from a background thread.
 
         Checks reachability first (2026-08-11) instead of letting
         sync_from_satnogs() discover it via its own ConnectTimeout -- the
@@ -5419,7 +5419,7 @@ class MainWindow(QMainWindow):
         press means "do it now", the same rationale Satellite > Update TLE
         uses to bypass its own staleness gates.
 
-        Deliberately a separate menu action from Sync SATNOGS
+        Deliberately a separate menu action from Fetch Transmitter Database
         (sync_from_satnogs(), transmitter frequencies): different SATNOGS
         endpoint (/api/satellites/ vs /api/transmitters/), different DB
         table, and normally much slower (~2700 satellites paginated, vs a
@@ -5435,7 +5435,7 @@ class MainWindow(QMainWindow):
     def _refresh_satellite_names_manual_sync(self) -> None:
         """Sync satellite names/status from a background thread (manual — see
         _on_sync_satellite_names()). Reuses the _satnogs_status signal, the
-        same status-bar path Sync SATNOGS uses.
+        same status-bar path Fetch Transmitter Database uses.
         """
         if not asyncio.run(self._tle_manager.is_satnogs_reachable()):
             cannot_connect_satnogs_msg = _("Cannot connect to SATNOGS")
@@ -6389,7 +6389,7 @@ class MainWindow(QMainWindow):
         xpdr_paragraph = _(
             "Transmitter data is fetched from SATNOGS automatically on first launch, "
             "then refreshed automatically every 7 days in the background. "
-            "Use <b>Satellite → Sync SATNOGS</b> to refresh transmitter "
+            "Use <b>Satellite → Fetch Transmitter Database</b> to refresh transmitter "
             "frequencies and modes manually whenever you need the very latest data sooner "
             "(e.g. right after a newly launched satellite registers its transmitter)."
         )

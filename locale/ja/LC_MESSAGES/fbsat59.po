@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-13 11:26+0900\n"
+"POT-Creation-Date: 2026-08-13 13:00+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -4103,8 +4103,8 @@ msgid "Update TLE"
 msgstr "TLEを更新"
 
 #: src/ui/main_window.py:950
-msgid "Sync SATNOGS"
-msgstr "SATNOGSと同期"
+msgid "Fetch Transmitter Database"
+msgstr "トランスミッターDBを取得"
 
 #: src/ui/main_window.py:951
 msgid "Sync Satellite Names"
@@ -4154,7 +4154,7 @@ msgid "AX100 Digi"
 msgstr "AX100 Digi"
 
 #: src/ui/main_window.py:970 src/ui/main_window.py:2406
-#: src/ui/main_window.py:6746 src/ui/main_window.py:6758
+#: src/ui/main_window.py:6761 src/ui/main_window.py:6773
 msgid "METEOR / HRPT"
 msgstr "METEOR / HRPT"
 
@@ -4201,7 +4201,7 @@ msgid "Satellite/Transmitter Colors"
 msgstr "衛星等の色"
 
 #: src/ui/main_window.py:1027 src/ui/main_window.py:6401
-#: src/ui/main_window.py:6419
+#: src/ui/main_window.py:6428
 msgid "Auto Fetch Rules"
 msgstr "自動取得ルール"
 
@@ -4692,20 +4692,20 @@ msgstr ""
 "\"OBJECT C\"のような仮名が表示されることがあります）や実際に稼働しているかど"
 "うかは分かりません。この情報はSATNOGSから自動的に最大24時間に1回同期されま"
 "す。より早く反映したい場合（例: 新規打ち上げ衛星に正式な識別名が付与された直"
-"後など）は、<b>Satellite → Sync Satellite Names</b> で手動更新できます。"
+"後など）は、<b>衛星 → 衛星名の同期</b> で手動更新できます。"
 
 #: src/ui/main_window.py:6390
 msgid ""
 "Transmitter data is fetched from SATNOGS automatically on first launch, then "
 "refreshed automatically every 7 days in the background. Use <b>Satellite → "
-"Sync SATNOGS</b> to refresh transmitter frequencies and modes manually "
-"whenever you need the very latest data sooner (e.g. right after a newly "
-"launched satellite registers its transmitter)."
+"Fetch Transmitter Database</b> to refresh transmitter frequencies and modes "
+"manually whenever you need the very latest data sooner (e.g. right after a "
+"newly launched satellite registers its transmitter)."
 msgstr ""
 "トランスミッターデータは初回起動時にSATNOGSから自動取得され、以降はバックグラ"
 "ウンドで7日ごとに自動更新されます。より早く最新データが必要な場合（例: 新規打"
-"ち上げ衛星のトランスミッタ登録直後など）は、<b>Satellite → Sync SATNOGS</b> "
-"でトランスミッターの周波数・モードを手動更新できます。"
+"ち上げ衛星のトランスミッタ登録直後など）は、<b>衛星 → トランスミッターDBを取"
+"得</b> でトランスミッターの周波数・モードを手動更新できます。"
 
 #: src/ui/main_window.py:6397
 msgid ""
@@ -4713,9 +4713,9 @@ msgid ""
 "expired, and refreshes satellite names/status and the transmitter database "
 "if their own caches have expired too (see above)."
 msgstr ""
-"起動のたびに、キャッシュが期限切れになっているTLEソースを取得します。また、"
-"衛星名/ステータスとトランスミッターデータベースについても、それぞれのキャッ"
-"シュが期限切れであれば同様に更新します（上記参照）。"
+"起動のたびに、キャッシュが期限切れになっているTLEソースを取得します。また、衛"
+"星名/ステータスとトランスミッターデータベースについても、それぞれのキャッシュ"
+"が期限切れであれば同様に更新します（上記参照）。"
 
 #: src/ui/main_window.py:6402
 msgid "TLE Auto-Fetch Schedule"
@@ -4733,11 +4733,11 @@ msgstr "トランスミッターデータベース（SATNOGS）"
 msgid "At Startup"
 msgstr "起動時"
 
-#: src/ui/main_window.py:6458 src/ui/main_window.py:6480
+#: src/ui/main_window.py:6473 src/ui/main_window.py:6495
 msgid "Clear TLE Sync History"
 msgstr "TLE同期履歴を消去"
 
-#: src/ui/main_window.py:6460
+#: src/ui/main_window.py:6475
 msgid ""
 "This clears the record of when each TLE source was last fetched.\n"
 "\n"
@@ -4747,28 +4747,28 @@ msgid ""
 "never having been fetched and refresh all of them."
 msgstr ""
 
-#: src/ui/main_window.py:6481
+#: src/ui/main_window.py:6496
 #, python-brace-format
 msgid "Cleared {n} sync history record(s)."
 msgstr ""
 
-#: src/ui/main_window.py:6490
+#: src/ui/main_window.py:6505
 msgid "About FBSAT59"
 msgstr "FBSAT59について"
 
-#: src/ui/main_window.py:6492
+#: src/ui/main_window.py:6507
 msgid "Modern satellite tracking software for amateur radio operators.\n"
 msgstr "アマチュア無線家向けの現代的な衛星追尾ソフトウェア。\n"
 
-#: src/ui/main_window.py:6768 src/ui/main_window.py:6786
+#: src/ui/main_window.py:6783 src/ui/main_window.py:6801
 msgid "QR Code"
 msgstr "QRコード"
 
-#: src/ui/main_window.py:6768
+#: src/ui/main_window.py:6783
 msgid "Web server is not running."
 msgstr "Webサーバーが起動していません。"
 
-#: src/ui/main_window.py:6786
+#: src/ui/main_window.py:6801
 msgid "Failed to generate QR code."
 msgstr "QRコードの生成に失敗しました。"
 
@@ -4844,6 +4844,9 @@ msgstr ""
 #: src/ui/ft4wsjt_dialog.py:424
 msgid "Could not remove or rename the install directory:\n"
 msgstr "インストールディレクトリの削除・リネームに失敗しました:\n"
+
+#~ msgid "Sync SATNOGS"
+#~ msgstr "SATNOGSと同期"
 
 #~ msgid ""
 #~ "On each launch the app syncs satellite names and statuses from SATNOGS, "

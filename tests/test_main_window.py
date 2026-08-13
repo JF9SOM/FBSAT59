@@ -861,8 +861,10 @@ class TestSyncSatelliteNamesStatus:
 class TestManualSyncSatelliteNames:
     """Satellite > Sync Satellite Names (2026-08-13, added alongside
     TransmitterManager.is_satellite_names_stale()) is a separate menu
-    action from Sync SATNOGS (transmitter frequencies) -- different SATNOGS
-    endpoint, different DB table, and normally much slower. Its handler,
+    action from Fetch Transmitter Database (formerly "Sync SATNOGS", renamed
+    2026-08-13 for the same reason -- the two do different SATNOGS syncs)
+    -- different SATNOGS endpoint, different DB table, and normally much
+    slower. Its handler,
     _refresh_satellite_names_manual_sync(), must bypass
     is_satellite_names_stale() entirely: an explicit button press means
     "do it now", not "only if the 24h cache says it's due" -- the same
