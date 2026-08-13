@@ -1574,44 +1574,59 @@ class MainWindow(QMainWindow):
         if self._shutdown_flag.is_set():
             return
 
-        # 2026-08-11 全面刷新: 従来は各ステップが個別にタイムアウトで
-        # 「繋がらない」と気づく方式だったため、エラー表示が出るまでに
-        # 数分かかり、しかもその間に別のステップの正常なメッセージで
-        # 上書きされて見えなくなることがあった（ユーザー報告）。
-        # 最初に一度だけ両ホストへ接続確認を行い、どちらか一方でも
-        # 繋がらなければ直ちにエラー表示してネットワーク処理全体を中止する。
+        # 2026-08-11 全面刷新・2026-08-13 部分到達可否対応: 従来は各ステップが
+        # 個別にタイムアウトで「繋がらない」と気づく方式だったため、エラー表示
+        # が出るまでに数分かかり、しかもその間に別のステップの正常なメッセージ
+        # で上書きされて見えなくなることがあった（ユーザー報告）。最初に一度
+        # だけ両ホストへ接続確認を行うのは維持しつつ、片方だけ不通の場合は
+        # 「不通」エラーを一時的に表示してから、不通側のホストに依存しない
+        # ステップだけを続行する（以前は return で全処理を中止していたため、
+        # CelesTrakだけが不通でもSATNOGS側の同期まで丸ごとスキップされて
+        # いた）。
+        import time as _time
+
         celestrak_ok = asyncio.run(self._tle_manager.is_celestrak_bulk_group_reachable())
         satnogs_ok = asyncio.run(self._tle_manager.is_satnogs_reachable())
-        if not celestrak_ok or not satnogs_ok:
-            down = [
-                name
-                for name, ok in (("CelesTrak", celestrak_ok), ("SATNOGS", satnogs_ok))
-                if not ok
-            ]
+        down = [
+            name for name, ok in (("CelesTrak", celestrak_ok), ("SATNOGS", satnogs_ok)) if not ok
+        ]
+        if down:
             msg = _("Cannot connect to {hosts}").format(hosts="/".join(down))
-            logger.warning("Startup TLE sync aborted — unreachable: %s", down)
+            logger.warning("Startup TLE sync — unreachable: %s", down)
             self._sync_progress.emit(f"❌ {msg}")
-            # ネットワーク不要のローカル処理のみ続行する。
+            if len(down) == 2:
+                # Neither host reachable — nothing left to try but the
+                # network-free community-transmitters load.
+                _time.sleep(10.0)
+                try:
+                    comm = self._transmitter_manager.load_community_transmitters()
+                    if comm["inserted"] + comm["updated"] > 0:
+                        logger.info("Community transmitters loaded: %s", comm)
+                except Exception as exc:
+                    logger.warning("Community transmitter load failed: %s", exc)
+                self._sync_progress.emit("")
+                return
+            # One host is still reachable — show the error briefly, then let
+            # that host's own steps below overwrite it with real progress.
+            _time.sleep(3.0)
+
+        if satnogs_ok:
+            self._sync_progress.emit("🛰 Syncing satellites from SATNOGS...")
+
+            def _sat_progress(n: int) -> None:
+                self._sync_progress.emit(f"🛰 Syncing satellites... ({n:,})")
+
             try:
-                comm = self._transmitter_manager.load_community_transmitters()
-                if comm["inserted"] + comm["updated"] > 0:
-                    logger.info("Community transmitters loaded: %s", comm)
+                result = asyncio.run(
+                    self._transmitter_manager.sync_satellite_names(progress_callback=_sat_progress)
+                )
+                logger.info("SATNOGS satellite names sync completed: %s", result)
             except Exception as exc:
-                logger.warning("Community transmitter load failed: %s", exc)
-            return
-
-        self._sync_progress.emit("🛰 Syncing satellites from SATNOGS...")
-
-        def _sat_progress(n: int) -> None:
-            self._sync_progress.emit(f"🛰 Syncing satellites... ({n:,})")
-
-        try:
-            result = asyncio.run(
-                self._transmitter_manager.sync_satellite_names(progress_callback=_sat_progress)
-            )
-            logger.info("SATNOGS satellite names sync completed: %s", result)
-        except Exception as exc:
-            logger.warning("SATNOGS satellite names sync failed: %s: %s", type(exc).__name__, exc)
+                logger.warning(
+                    "SATNOGS satellite names sync failed: %s: %s", type(exc).__name__, exc
+                )
+        else:
+            logger.info("SATNOGS unreachable — skipping satellite name sync")
 
         if self._shutdown_flag.is_set():
             return
@@ -1651,7 +1666,9 @@ class MainWindow(QMainWindow):
         # unconditionally on every startup regardless of CLAUDE.md's documented
         # 12h cadence, which only actually held while the app stayed running long
         # enough for the APScheduler interval job to fire.
-        if self._tle_manager.is_provisional_tle_stale():
+        if not satnogs_ok:
+            logger.info("SATNOGS unreachable — skipping provisional TLE fetch")
+        elif self._tle_manager.is_provisional_tle_stale():
             try:
                 prov = asyncio.run(
                     self._tle_manager.fetch_provisional_tles(progress_callback=_prov_progress)
@@ -1667,12 +1684,15 @@ class MainWindow(QMainWindow):
 
         # One-time cleanup for very old satellites (NORAD < 10000).
         # Hides those no longer in CelesTrak; fast no-op once all are resolved.
-        try:
-            legacy = asyncio.run(self._tle_manager.fetch_legacy_tles())
-            if legacy.get("found", 0) + legacy.get("hidden", 0) > 0:
-                logger.info("Legacy satellite TLE check completed: %s", legacy)
-        except Exception as exc:
-            logger.warning("Legacy satellite TLE check failed: %s", exc)
+        if celestrak_ok:
+            try:
+                legacy = asyncio.run(self._tle_manager.fetch_legacy_tles())
+                if legacy.get("found", 0) + legacy.get("hidden", 0) > 0:
+                    logger.info("Legacy satellite TLE check completed: %s", legacy)
+            except Exception as exc:
+                logger.warning("Legacy satellite TLE check failed: %s", exc)
+        else:
+            logger.info("CelesTrak unreachable — skipping legacy TLE cleanup")
 
         if self._shutdown_flag.is_set():
             return
@@ -1680,12 +1700,15 @@ class MainWindow(QMainWindow):
         # Ensure METEOR/HRPT satellites (e.g. NOAA 18/19, retired from CelesTrak's
         # curated GROUP=WEATHER listing) have a satellites row + TLE so they appear
         # in the main list for AOS/LOS pass prediction.
-        try:
-            meteor = asyncio.run(self._tle_manager.fetch_meteor_tles())
-            if meteor.get("found", 0) > 0:
-                logger.info("METEOR satellite TLE check completed: %s", meteor)
-        except Exception as exc:
-            logger.warning("METEOR satellite TLE check failed: %s", exc)
+        if celestrak_ok:
+            try:
+                meteor = asyncio.run(self._tle_manager.fetch_meteor_tles())
+                if meteor.get("found", 0) > 0:
+                    logger.info("METEOR satellite TLE check completed: %s", meteor)
+            except Exception as exc:
+                logger.warning("METEOR satellite TLE check failed: %s", exc)
+        else:
+            logger.info("CelesTrak unreachable — skipping METEOR/HRPT TLE check")
 
         if self._shutdown_flag.is_set():
             return
@@ -1724,33 +1747,41 @@ class MainWindow(QMainWindow):
         # being too strict for that source's real (small) population, rather
         # than at is_source_stale()'s elapsed-time check (2026-08-11 report).
         enabled = self._sort_sources_by_priority(SettingsDialog.get_enabled_sources(self._conn))
-        stale_sources: list[str] = []
-        for s in enabled:
-            is_stale = self._tle_manager.is_source_stale(s)
-            is_empty = self._tle_manager.is_group_empty(s)
-            if is_stale or is_empty:
-                stale_sources.append(s)
-                logger.info(
-                    "Group TLE fetch queued: %s (stale=%s, group_empty=%s)", s, is_stale, is_empty
-                )
-        # celestrak_ok is already confirmed True by the upfront check above
-        # (this point is only reached when it is) -- no per-loop reachability
-        # probe needed here anymore (2026-08-11 simplification).
-        if stale_sources:
-            total = len(stale_sources)
-            fetching_group_tles = _("Fetching group TLEs")
-            for idx, source_name in enumerate(stale_sources, start=1):
-                if self._shutdown_flag.is_set():
-                    break
-                self._sync_progress.emit(
-                    f"🛰 {fetching_group_tles}: {source_name} ({idx}/{total})..."
-                )
-                try:
-                    result = asyncio.run(self._tle_manager.fetch_and_update(source_name))
-                    logger.info("Group TLE fetch done: %s -> %s", source_name, result)
-                except Exception as exc:
-                    logger.warning("Group TLE fetch failed: %s - %s", source_name, exc)
-            self._sync_progress.emit("")
+        # celestrak_ok can be False here now (2026-08-13: this step used to be
+        # reached only when it was True, since the upfront check above used to
+        # abort the whole method otherwise; that all-or-nothing return was
+        # removed so SATNOGS-only steps upstream can still run when CelesTrak
+        # alone is unreachable).
+        if not celestrak_ok:
+            logger.info("CelesTrak unreachable — skipping group TLE fetch")
+        else:
+            stale_sources: list[str] = []
+            for s in enabled:
+                is_stale = self._tle_manager.is_source_stale(s)
+                is_empty = self._tle_manager.is_group_empty(s)
+                if is_stale or is_empty:
+                    stale_sources.append(s)
+                    logger.info(
+                        "Group TLE fetch queued: %s (stale=%s, group_empty=%s)",
+                        s,
+                        is_stale,
+                        is_empty,
+                    )
+            if stale_sources:
+                total = len(stale_sources)
+                fetching_group_tles = _("Fetching group TLEs")
+                for idx, source_name in enumerate(stale_sources, start=1):
+                    if self._shutdown_flag.is_set():
+                        break
+                    self._sync_progress.emit(
+                        f"🛰 {fetching_group_tles}: {source_name} ({idx}/{total})..."
+                    )
+                    try:
+                        result = asyncio.run(self._tle_manager.fetch_and_update(source_name))
+                        logger.info("Group TLE fetch done: %s -> %s", source_name, result)
+                    except Exception as exc:
+                        logger.warning("Group TLE fetch failed: %s - %s", source_name, exc)
+                self._sync_progress.emit("")
 
         # Refresh the satellite list now that names and group TLEs are synced.
         self._satellite_list_refresh.emit()
@@ -4978,35 +5009,48 @@ class MainWindow(QMainWindow):
                 updating_msg = _("Updating TLEs…")
                 self._sync_progress.emit(f"🛰 {updating_msg}")
 
-                # 2026-08-11 全面刷新: 最初に一度だけ両ホストへ接続確認を行い、
-                # どちらか一方でも繋がらなければ直ちにエラー表示して中止する
+                # 2026-08-11 全面刷新・2026-08-13 部分到達可否対応: 最初に
+                # 一度だけ両ホストへ接続確認を行うのは維持しつつ、片方だけ
+                # 不通の場合は「不通」エラーを一時的に表示してから、不通側の
+                # ホストに依存しないステップだけを続行する
                 # （_refresh_satellite_names_sync() と同じ設計。理由はそちらの
                 # コメント参照）。
+                import time as _time
+
                 celestrak_ok = asyncio.run(self._tle_manager.is_celestrak_bulk_group_reachable())
                 satnogs_ok = asyncio.run(self._tle_manager.is_satnogs_reachable())
-                if not celestrak_ok or not satnogs_ok:
-                    down = [
-                        name
-                        for name, ok in (("CelesTrak", celestrak_ok), ("SATNOGS", satnogs_ok))
-                        if not ok
-                    ]
+                down = [
+                    name
+                    for name, ok in (("CelesTrak", celestrak_ok), ("SATNOGS", satnogs_ok))
+                    if not ok
+                ]
+                if down:
                     msg = _("Cannot connect to {hosts}").format(hosts="/".join(down))
-                    logger.warning("Manual TLE update aborted — unreachable: %s", down)
+                    logger.warning("Manual TLE update — unreachable: %s", down)
                     self._sync_progress.emit(f"❌ {msg}")
-                    return
+                    if len(down) == 2:
+                        _time.sleep(10.0)
+                        self._sync_progress.emit("")
+                        return
+                    # One host is still reachable — show the error briefly,
+                    # then let that host's own steps below overwrite it.
+                    _time.sleep(3.0)
 
-                for source_name in enabled:
-                    logger.info("Manual TLE fetch: %s...", source_name)
-                    try:
-                        result = asyncio.run(self._tle_manager.fetch_and_update(source_name))
-                        logger.info("Manual TLE fetch result (%s): %s", source_name, result)
-                    except Exception as exc:
-                        logger.warning(
-                            "Manual TLE fetch error (%s): %s: %s",
-                            source_name,
-                            type(exc).__name__,
-                            exc,
-                        )
+                if celestrak_ok:
+                    for source_name in enabled:
+                        logger.info("Manual TLE fetch: %s...", source_name)
+                        try:
+                            result = asyncio.run(self._tle_manager.fetch_and_update(source_name))
+                            logger.info("Manual TLE fetch result (%s): %s", source_name, result)
+                        except Exception as exc:
+                            logger.warning(
+                                "Manual TLE fetch error (%s): %s: %s",
+                                source_name,
+                                type(exc).__name__,
+                                exc,
+                            )
+                else:
+                    logger.info("CelesTrak unreachable — skipping group TLE fetch")
 
                 blocked = False
                 active: dict[str, int] = {}
@@ -5019,15 +5063,20 @@ class MainWindow(QMainWindow):
                 except Exception as exc:
                     logger.warning("Manual active TLE fetch error: %s: %s", type(exc).__name__, exc)
 
-                try:
-                    prov = asyncio.run(
-                        self._tle_manager.fetch_provisional_tles(progress_callback=_prov_progress)
-                    )
-                    logger.info("Manual provisional TLE fetch result: %s", prov)
-                except Exception as exc:
-                    logger.warning(
-                        "Manual provisional TLE fetch error: %s: %s", type(exc).__name__, exc
-                    )
+                if satnogs_ok:
+                    try:
+                        prov = asyncio.run(
+                            self._tle_manager.fetch_provisional_tles(
+                                progress_callback=_prov_progress
+                            )
+                        )
+                        logger.info("Manual provisional TLE fetch result: %s", prov)
+                    except Exception as exc:
+                        logger.warning(
+                            "Manual provisional TLE fetch error: %s: %s", type(exc).__name__, exc
+                        )
+                else:
+                    logger.info("SATNOGS unreachable — skipping provisional TLE fetch")
 
                 # Signal emit is thread-safe; Qt automatically queues it to the main thread.
                 self._satellite_list_refresh.emit()
