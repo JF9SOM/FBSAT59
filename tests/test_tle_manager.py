@@ -1102,6 +1102,70 @@ class TestFetchActiveTlesCircuitBreaker:
         assert stats["celestrak_blocked"] == 1
         assert stats["updated"] + stats["inserted"] == 1
 
+    def test_celestrak_reachable_false_skips_phase1_without_a_network_call(
+        self, db: sqlite3.Connection
+    ) -> None:
+        """A caller that already probed connectivity this run (e.g.
+        is_celestrak_bulk_group_reachable()) and found CelesTrak unreachable
+        should be able to tell Phase 1 not to try again on its own --
+        otherwise Phase 1 makes its own doomed connection attempt and emits
+        confusing "CelesTrak active..." progress right after the caller's
+        own "Cannot connect to CelesTrak" message (2026-08-13 report). This
+        differs from the already-tripped-breaker case above only in *how*
+        Phase 1 learns CelesTrak is down (an explicit caller-supplied flag,
+        not its own breaker history) -- the effect (skip, still record a
+        block) should be identical.
+        """
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (68795, 'OrigamiSat-2', 'alive', 0)"
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        assert not mgr._celestrak_breaker.tripped
+        mock_client = AsyncMock()
+        mock_client.stream = MagicMock(
+            return_value=_stream_ctx(
+                _satnogs_bulk_resp([_bulk_record(68795, _LINE1_B, _LINE2_B, "OrigamiSat-2")])
+            )
+        )
+
+        with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
+            _wire_mock_client(mock_cls, mock_client)
+            stats = asyncio.run(mgr.fetch_active_tles(celestrak_reachable=False))
+
+        # Only Phase 2's bulk request -- Phase 1 never touched the network.
+        assert mock_client.stream.call_count == 1
+        assert stats["celestrak_blocked"] == 1
+        assert stats["updated"] + stats["inserted"] == 1
+        assert mgr._celestrak_breaker.tripped
+
+    def test_satnogs_reachable_false_skips_phase2_without_a_network_call(
+        self, db: sqlite3.Connection
+    ) -> None:
+        """Mirror of the CelesTrak case above, for Phase 2 / SATNOGS."""
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (68795, 'OrigamiSat-2', 'alive', 0)"
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        assert not mgr._satnogs_breaker.tripped
+        mock_client = AsyncMock()
+        mock_client.stream = MagicMock(return_value=_stream_ctx(_group_active_resp()))
+
+        with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
+            _wire_mock_client(mock_cls, mock_client)
+            stats = asyncio.run(mgr.fetch_active_tles(satnogs_reachable=False))
+
+        # Only Phase 1's request -- Phase 2 never touched the network.
+        assert mock_client.stream.call_count == 1
+        assert stats["satnogs_blocked"] == 1
+        assert stats["phase2_unresolved"] == 1
+        assert mgr._satnogs_breaker.tripped
+
 
 class TestFetchProvisionalTles:
     """fetch_provisional_tles() used to query SATNOGS one satellite at a

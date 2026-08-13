@@ -1645,7 +1645,11 @@ class MainWindow(QMainWindow):
         if self._tle_manager.is_active_tle_stale() or self._tle_manager.is_active_tle_retry_due():
             try:
                 active = asyncio.run(
-                    self._tle_manager.fetch_active_tles(progress_callback=_active_progress)
+                    self._tle_manager.fetch_active_tles(
+                        progress_callback=_active_progress,
+                        celestrak_reachable=celestrak_ok,
+                        satnogs_reachable=satnogs_ok,
+                    )
                 )
                 logger.info("Active TLE fetch completed: %s", active)
                 self._satellite_list_refresh.emit()
@@ -5056,7 +5060,11 @@ class MainWindow(QMainWindow):
                 active: dict[str, int] = {}
                 try:
                     active = asyncio.run(
-                        self._tle_manager.fetch_active_tles(progress_callback=_active_progress)
+                        self._tle_manager.fetch_active_tles(
+                            progress_callback=_active_progress,
+                            celestrak_reachable=celestrak_ok,
+                            satnogs_reachable=satnogs_ok,
+                        )
                     )
                     logger.info("Manual active TLE fetch result: %s", active)
                     blocked = bool(active.get("celestrak_blocked") or active.get("satnogs_blocked"))

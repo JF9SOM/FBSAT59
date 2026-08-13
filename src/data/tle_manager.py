@@ -429,7 +429,7 @@ class TLEManager:
         return await _probe_reachable(SATNOGS_TLE_URL, {"norad_cat_id": 25544, "format": "json"})
 
     async def _fetch_satnogs_bulk_tles(
-        self, progress_callback: Any = None
+        self, progress_callback: Any = None, reachable: bool | None = None
     ) -> dict[int, dict[str, Any]] | None:
         """Fetch every TLE SATNOGS knows about in one unpaginated request,
         returned as {norad_cat_id: record}.
@@ -441,6 +441,14 @@ class TLEManager:
         forward its own progress_callback here, since that one has a
         different (done, total) shape used for a satellite count, not
         download bytes.
+
+        `reachable`, if given (not None), lets a caller that already probed
+        SATNOGS connectivity this run (is_satnogs_reachable()) skip this
+        attempt entirely instead of making a second, doomed connection --
+        see fetch_active_tles()'s matching parameter docstring for the full
+        rationale. False is handled exactly like the breaker-tripped case
+        below, except it also records a breaker block first (so the
+        "_blocked" stat and retry scheduling in the caller still see it).
 
         Replaces what used to be two separate per-satellite network loops --
         fetch_active_tles()'s old Phase 2a (CelesTrak individual CATNR) +
@@ -495,6 +503,13 @@ class TLEManager:
         breaker = self._satnogs_breaker
         if breaker.tripped:
             logger.warning("SATNOGS already blocked this session — skipping bulk TLE fetch")
+            return None
+        if reachable is False:
+            logger.warning(
+                "SATNOGS already confirmed unreachable this run — skipping bulk TLE fetch "
+                "without a second connection attempt"
+            )
+            breaker.record_error(blocked=True)
             return None
 
         try:
@@ -932,7 +947,12 @@ class TLEManager:
         ).fetchone()
         return (row["cnt"] if row else 0) < min_expected
 
-    async def fetch_active_tles(self, progress_callback: Any = None) -> dict[str, int]:
+    async def fetch_active_tles(
+        self,
+        progress_callback: Any = None,
+        celestrak_reachable: bool | None = None,
+        satnogs_reachable: bool | None = None,
+    ) -> dict[str, int]:
         """Fill TLE gaps for SATNOGS-registered satellites (NORAD 10000-89999).
 
         Phase 1 — CelesTrak GROUP=active (single request, ~16,000 satellites):
@@ -972,6 +992,23 @@ class TLEManager:
         `progress_callback`, if given, is called with a short human-readable
         string at each phase transition so a caller updating a UI status
         label can show that this is still working, not stuck.
+
+        `celestrak_reachable`/`satnogs_reachable`, if given (not None), let a
+        caller that has already probed connectivity this run (e.g. via
+        is_celestrak_bulk_group_reachable()/is_satnogs_reachable()) tell each
+        phase not to bother trying again. Without this, Phase 1/Phase 2 only
+        know to skip once their own breaker has tripped from an earlier
+        failure *this session* -- so on the very first call of a session,
+        each phase would still make its own doomed connection attempt to a
+        host a caller already just confirmed is unreachable, surfacing
+        confusing "CelesTrak active..."/"SATNOGS: downloading..." progress
+        messages moments after a "Cannot connect to X" message (2026-08-13
+        report). Passing False here makes that phase behave exactly as if
+        its own attempt had failed with a connection error (records a
+        breaker block, sets the corresponding "_blocked" stat) without
+        actually making a second network round trip. Leave at None (default)
+        for callers with no such probe (e.g. the periodic APScheduler job),
+        which keeps the existing breaker-only behaviour.
 
         New satellite records are never created; only existing satellites are updated.
         Manual TLEs are never overwritten.
@@ -1091,6 +1128,12 @@ class TLEManager:
                 logger.warning(
                     "CelesTrak already blocked this session — skipping Phase 1 (GROUP=active)"
                 )
+            elif celestrak_reachable is False:
+                logger.warning(
+                    "CelesTrak already confirmed unreachable this run — skipping Phase 1 "
+                    "(GROUP=active) without a second connection attempt"
+                )
+                self._celestrak_breaker.record_error(blocked=True)
             else:
                 if progress_callback:
                     progress_callback("CelesTrak active...")
@@ -1279,7 +1322,9 @@ class TLEManager:
             if progress_callback:
                 progress_callback(f"SATNOGS: {len(remaining)} satellite(s)...")
 
-            bulk = await self._fetch_satnogs_bulk_tles(progress_callback=progress_callback)
+            bulk = await self._fetch_satnogs_bulk_tles(
+                progress_callback=progress_callback, reachable=satnogs_reachable
+            )
             if bulk is None:
                 logger.warning(
                     "SATNOGS bulk TLE fetch failed — %d satellite(s) unresolved this run",
