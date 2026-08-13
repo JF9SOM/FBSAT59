@@ -828,6 +828,29 @@ class PassPanel(QWidget):
         self._cache_key = None
         self._cache_results = []
 
+    def show_target_tab(self) -> None:
+        """Switch to the Target sub-tab (e.g. when a specific satellite is selected)."""
+        self._tabs.setCurrentIndex(0)
+
+    def auto_search(self, hours: float) -> None:
+        """Run a Group search over [now, now + hours) without a manual Search click.
+
+        Sets the Group tab's From/To fields to the computed window and reuses
+        the existing search pipeline (background worker + cache), so this is
+        cheap to call repeatedly for an unchanged satellite list/window. Silently
+        does nothing if the predictor isn't ready yet or the satellite list is
+        empty (e.g. an empty Favorite group) — unlike a manual Search click,
+        an automatic trigger should never pop up a dialog.
+        """
+        if self._predictor is None or not self._sat_list:
+            return
+        now = datetime.now(UTC)
+        self._group_from.setDateTime(_utc_to_display_qdatetime(now, self._use_utc))
+        self._group_to.setDateTime(
+            _utc_to_display_qdatetime(now + timedelta(hours=hours), self._use_utc)
+        )
+        self._on_group_search()
+
     def set_celestial_engine(self, engine: CelestialEngine) -> None:
         """Provide the CelestialEngine so that MOON_ID entries can be searched."""
         self._celestial_engine = engine

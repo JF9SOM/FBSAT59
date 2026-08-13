@@ -537,7 +537,10 @@ class GroupPassChartView(QWidget):
         range_options = _range_options()
         for label, _hours in range_options:
             self._range_combo.addItem(label)
-        self._range_combo.setCurrentIndex(len(range_options) - 1)
+        # Default to "Next 4 hours" (index 0) — the Group tab's own auto-search
+        # window is 4h, so the chart should show the same span by default.
+        # (Unlike PassChartView's Target chart, which stays at 24h/last index.)
+        self._range_combo.setCurrentIndex(0)
         self._range_combo.currentIndexChanged.connect(self._rebuild)
         h_layout.addWidget(self._range_combo)
         h_layout.addStretch()

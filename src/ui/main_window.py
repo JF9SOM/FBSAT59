@@ -525,6 +525,13 @@ class MainWindow(QMainWindow):
         self._map_tick_counter: int = 0
         self._MAP_UPDATE_INTERVAL: int = 5
         self._MAP_UPDATE_INTERVAL_ALL_SATELLITES: int = 60
+        # Group tab auto-search: only for narrow, cheap-to-compute filters
+        # (AMSAT-operational and user Favorite groups) — "All Satellites"/
+        # "Amateur" etc. remain manual-search-only (too many satellites for
+        # a search on every filter change). Debounced so rapid filter/search
+        # changes don't spawn a worker thread per keystroke.
+        self._GROUP_AUTO_SEARCH_HOURS: float = 4.0
+        self._GROUP_AUTO_SEARCH_DEBOUNCE_MS: int = 400
         # Latest elevations computed in _update_world_map, reused by _check_autotrack
         self._last_elevations: dict[int, float] = {}
         self._current_transmitter: dict[str, Any] | None = None
@@ -662,6 +669,11 @@ class MainWindow(QMainWindow):
         self._pass_list.group_results_ready.connect(self._on_group_results_ready)
         self._pass_list.set_pass_predictor(self._pass_predictor)
         self._pass_list.set_celestial_engine(self._celestial_engine)
+        # Debounced trigger for Group-tab auto-search (see _apply_filter());
+        # must exist before the first _load_satellites()->_apply_filter() call below.
+        self._group_auto_search_timer = QTimer(self)
+        self._group_auto_search_timer.setSingleShot(True)
+        self._group_auto_search_timer.timeout.connect(self._run_group_auto_search)
         # Connect signal that receives satellite list refresh requests from background threads
         self._satellite_list_refresh.connect(self._load_satellites)
         self._rig_error.connect(self._on_rig_error)
@@ -1354,6 +1366,31 @@ class MainWindow(QMainWindow):
             self._pass_list.set_satellites(filtered_sats)
             self._visible_norads = [n for n, _ in filtered_sats]
             self._world_map.set_visible_norads(set(self._visible_norads))
+            if self._is_group_auto_search_filter(filter_text):
+                # Restart (not just start) the debounce so rapid filter/search
+                # changes only fire one auto-search after the user settles.
+                self._group_auto_search_timer.start(self._GROUP_AUTO_SEARCH_DEBOUNCE_MS)
+
+    @staticmethod
+    def _is_group_auto_search_filter(filter_text: str) -> bool:
+        """Whether the Group tab should auto-populate for this filter.
+
+        Limited to narrow, cheap-to-compute filters (AMSAT-operational and
+        individual Favorite/custom groups) — broad filters like "All Satellites"
+        or "Amateur" remain manual-search-only (too many satellites to search
+        on every filter change).
+        """
+        return filter_text == "Operational (AMSAT)" or filter_text.startswith("★ ")
+
+    def _run_group_auto_search(self) -> None:
+        """Fire the debounced Group-tab auto-search (see _apply_filter()).
+
+        Re-checks the current filter at fire time (rather than trusting the
+        value captured when the timer was scheduled) so a filter change made
+        while the debounce was pending can't trigger a stale/mismatched search.
+        """
+        if self._is_group_auto_search_filter(self._filter_combo.currentText()):
+            self._pass_list.auto_search(hours=self._GROUP_AUTO_SEARCH_HOURS)
 
     # ------------------------------------------------------------------ #
     # Background processing
@@ -4198,6 +4235,9 @@ class MainWindow(QMainWindow):
         norad = int(item.data(Qt.ItemDataRole.UserRole))
         self._selected_norad = norad
         name = item.text()
+        # Selecting a specific satellite always focuses the Target sub-tab,
+        # even if the Group tab was showing (auto-populated or manual).
+        self._pass_list.show_target_tab()
         self._detail_panel.set_satellite(norad, name)
         self._radio_control.set_satellite(norad, name)
         self._dashboard_view.set_satellite(norad, name)
@@ -4748,6 +4788,11 @@ class MainWindow(QMainWindow):
             if item is not None and int(item.data(Qt.ItemDataRole.UserRole)) == norad:
                 self._sat_list.setCurrentRow(i)
                 break
+        # setCurrentRow() above only emits currentRowChanged (and thus only
+        # triggers _on_sat_selected's show_target_tab() call) if the row
+        # actually changes. Call it here too so re-clicking the satellite
+        # that's already selected still switches to the Target sub-tab.
+        self._pass_list.show_target_tab()
 
     def _on_group_results_ready(self, results: object) -> None:
         """Populate the Group Pass Chart tab and make it visible on first group search."""
