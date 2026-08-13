@@ -1034,7 +1034,7 @@ class TLEManager:
         Existing tle_group values are preserved on UPDATE.
 
         Returns:
-            {"inserted": N, "updated": N, "no_tle": N, "hidden_unknown": N,
+            {"inserted": N, "updated": N, "revived": N, "no_tle": N, "hidden_unknown": N,
              "hidden_expired": N, "errors": N, "celestrak_blocked": 0|1,
              "satnogs_blocked": 0|1, "phase2_total": N,
              "phase2_unresolved": N}. The two "_blocked" flags are 1 when
@@ -1047,11 +1047,16 @@ class TLEManager:
             bulk dump didn't have an entry for — a caller can show
             "Fetched {phase2_total - phase2_unresolved}/{phase2_total}"
             alongside a "_blocked" flag to tell the user how far a paused
-            run got.
+            run got. "revived" counts satellites this run un-hid (is_hidden
+            2 -> 0) after a TLE resolved again for a satellite this method
+            itself had previously auto-hidden via the 30-day grace period —
+            see the Phase 2 candidate query's is_hidden IN (0, 2) and
+            _store_resolved()'s revive step.
         """
         stats: dict[str, int] = {
             "inserted": 0,
             "updated": 0,
+            "revived": 0,
             "no_tle": 0,
             "hidden_unknown": 0,
             "hidden_expired": 0,
@@ -1264,6 +1269,26 @@ class TLEManager:
         # run; with a single bulk fetch resolving everything locally in one
         # pass, the ordering is no longer load-bearing but is kept for the
         # "Fetched X/Y" status message to still make intuitive sense.
+        #
+        # is_hidden IN (0, 2) — not just 0 — so a satellite this method itself
+        # auto-hid via the 30-day no-TLE grace period (_apply_no_tle_hide_or_
+        # grace()) gets reconsidered every run instead of being excluded
+        # forever the moment it's hidden once. Before this, hiding was a
+        # one-way ratchet: ARICA-2 / NORAD 68796 sat hidden from mid-July
+        # 2026 onward even though SATNOGS's bulk TLE dump (keyed by its old
+        # provisional ID via satnogs_source_id, same routing as above) had a
+        # perfectly resolvable, freshly-updated TLE the whole time — nothing
+        # ever looked again once is_hidden=0 was required to even be a
+        # candidate (2026-08-13 user report; DB comparison against a
+        # longer-running dev install showed ~93 satellites stuck the same
+        # way). is_hidden=1 (user-hidden) is excluded by construction — it's
+        # not in (0, 2). Migration remnants (a norad_cat_id some other row's
+        # satnogs_source_id already points at, e.g. 68796's old provisional
+        # ID 98329) are excluded explicitly — those must stay hidden forever
+        # regardless of TLE availability, see _run_migration_pipeline() step
+        # 7. status='dead' is excluded too: a satellite SATNOGS has confirmed
+        # non-operational shouldn't reappear just because some catalog still
+        # has decay-era orbital elements for it.
         refresh_targets = [
             (
                 int(r["norad_cat_id"]),
@@ -1281,9 +1306,14 @@ class TLEManager:
                        (t.norad_cat_id IS NOT NULL) AS had_tle
                 FROM satellites s
                 LEFT JOIN tle_data t ON s.norad_cat_id = t.norad_cat_id
-                WHERE s.is_hidden = 0
+                WHERE s.is_hidden IN (0, 2)
+                  AND s.status != 'dead'
                   AND s.norad_cat_id BETWEEN 10000 AND 89999
                   AND (t.norad_cat_id IS NULL OR t.source = 'satnogs')
+                  AND s.norad_cat_id NOT IN (
+                      SELECT satnogs_source_id FROM satellites
+                      WHERE satnogs_source_id IS NOT NULL
+                  )
                 ORDER BY t.fetched_at IS NOT NULL, t.fetched_at ASC
                 """
             ).fetchall()
@@ -1327,10 +1357,23 @@ class TLEManager:
                     " VALUES (?, ?, ?, ?, ?, 'satnogs', ?, ?, ?)",
                     (norad, name_l, line1, line2, epoch_dt.isoformat(), tle_group, now, quality),
                 )
-                self._conn.execute(
-                    "UPDATE satellites SET tle_no_result_since = NULL WHERE norad_cat_id = ?",
+                # Un-hide a satellite that had been auto-hidden after 30 days
+                # of no TLE (see _apply_no_tle_hide_or_grace()) now that a TLE
+                # has resolved again. is_hidden=1 (user-hidden) is never a
+                # candidate here (see the WHERE clause above), so this only
+                # ever reverses this method's own earlier hide.
+                revive_cursor = self._conn.execute(
+                    "UPDATE satellites SET is_hidden = 0, tle_no_result_since = NULL"
+                    " WHERE norad_cat_id = ? AND is_hidden = 2",
                     (norad,),
                 )
+                if revive_cursor.rowcount > 0:
+                    stats["revived"] += 1
+                else:
+                    self._conn.execute(
+                        "UPDATE satellites SET tle_no_result_since = NULL WHERE norad_cat_id = ?",
+                        (norad,),
+                    )
                 if had_tle:
                     stats["updated"] += 1
                 else:
@@ -1620,10 +1663,16 @@ class TLEManager:
     ) -> dict[str, int]:
         """Fetch TLEs for provisional (NORAD >= 90000) satellites from SATNOGS's bulk TLE dump.
 
-        For each visible satellite with a provisional NORAD ID (>= 90000), looks it up in
-        _fetch_satnogs_bulk_tles()'s dump, which returns the best available TLE regardless of
-        whether norad_follow_id is set publicly. The TLE is stored under the provisional
-        ID so the satellite's position can be shown on the map.
+        For each provisional-NORAD (>= 90000) satellite that is either visible
+        (is_hidden=0) or auto-hidden by this app's own 30-day no-TLE grace
+        period (is_hidden=2; see _apply_no_tle_hide_or_grace()), looks it up
+        in _fetch_satnogs_bulk_tles()'s dump, which returns the best
+        available TLE regardless of whether norad_follow_id is set publicly.
+        The TLE is stored under the provisional ID so the satellite's
+        position can be shown on the map. Migration remnants (provisional
+        IDs another satellite's satnogs_source_id already points at) and
+        satellites with status='dead' are excluded — those stay hidden
+        regardless of TLE availability.
 
         Until 2026-08-11 this queried SATNOGS individually per satellite
         (up to ~140+ requests in one run). Confirmed by testing that
@@ -1638,17 +1687,26 @@ class TLEManager:
         satellite record already exists in our DB.
 
         Returns:
-            {"inserted": N, "updated": N, "no_tle": N,
+            {"inserted": N, "updated": N, "revived": N, "no_tle": N,
              "hidden_unknown": N, "hidden_expired": N, "errors": N}
         """
         rows = self._conn.execute(
-            "SELECT norad_cat_id, name, status, tle_no_result_since FROM satellites"
-            " WHERE norad_cat_id >= 90000 AND is_hidden = 0"
+            """
+            SELECT norad_cat_id, name, status, tle_no_result_since FROM satellites
+            WHERE norad_cat_id >= 90000
+              AND is_hidden IN (0, 2)
+              AND status != 'dead'
+              AND norad_cat_id NOT IN (
+                  SELECT satnogs_source_id FROM satellites
+                  WHERE satnogs_source_id IS NOT NULL
+              )
+            """
         ).fetchall()
 
         stats: dict[str, int] = {
             "inserted": 0,
             "updated": 0,
+            "revived": 0,
             "no_tle": 0,
             "hidden_unknown": 0,
             "hidden_expired": 0,
@@ -1701,6 +1759,7 @@ class TLEManager:
 
             # Check whether the TLE line1 encodes a different (official) NORAD ID
             tle_norad = int(line1[2:7])
+            migrated = False
             if tle_norad != fake_id:
                 # SATNOGS internally resolved this provisional ID to an official one.
                 # Trigger the migration pipeline if the official satellite is already
@@ -1714,6 +1773,7 @@ class TLEManager:
                     from data.transmitter_manager import TransmitterManager  # noqa: PLC0415
 
                     TransmitterManager(self._conn)._run_migration_pipeline(fake_id, tle_norad)
+                    migrated = True
 
             # TLE found → clear the no-result grace-period latch if it was set
             if no_result_since is not None:
@@ -1721,6 +1781,20 @@ class TLEManager:
                     "UPDATE satellites SET tle_no_result_since = NULL WHERE norad_cat_id = ?",
                     (fake_id,),
                 )
+
+            # Un-hide a satellite that had been auto-hidden after 30 days of no
+            # TLE (see _apply_no_tle_hide_or_grace()) now that a TLE resolved
+            # again. Skipped when this record just got migrated to an official
+            # NORAD ID above — _run_migration_pipeline() re-hides the
+            # provisional side (fake_id) as a deliberate remnant, and that
+            # decision must not be reversed here.
+            if not migrated:
+                revive_cursor = self._conn.execute(
+                    "UPDATE satellites SET is_hidden = 0 WHERE norad_cat_id = ? AND is_hidden = 2",
+                    (fake_id,),
+                )
+                if revive_cursor.rowcount > 0:
+                    stats["revived"] += 1
 
             # Never overwrite a manually entered TLE
             existing = self._conn.execute(

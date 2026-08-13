@@ -600,6 +600,120 @@ class TestFetchActiveTlesPhase2TargetSelection:
         assert row_c["line1"] == _LINE1_B
 
 
+class TestFetchActiveTlesRevivesAutoHiddenSatellites:
+    """Regression coverage for the "auto-hide is a one-way ratchet" bug:
+    once _apply_no_tle_hide_or_grace() set is_hidden=2 after 30 days of no
+    TLE, the satellite was excluded from every future refresh_targets query
+    (which required is_hidden=0) and could never be found again even after
+    a TLE became resolvable -- confirmed stuck this way for ARICA-2 / NORAD
+    68796 from mid-July 2026 onward (2026-08-13 user report), with ~93
+    satellites in the same state on that install. Phase 2's candidate query
+    now includes is_hidden=2 as well, excluding user-hidden (is_hidden=1),
+    migration remnants, and status='dead' satellites, which must stay
+    hidden regardless of TLE availability.
+    """
+
+    def test_revives_satellite_hidden_by_grace_period_expiry(self, db: sqlite3.Connection) -> None:
+        db.execute(
+            "INSERT INTO satellites"
+            " (norad_cat_id, name, status, is_hidden, tle_no_result_since)"
+            " VALUES (68796, 'ARICA-2', 'alive', 2, '2026-06-10T12:53:18+00:00')"
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.stream = MagicMock(
+            side_effect=_stream_items(
+                _group_active_resp(),
+                _satnogs_bulk_resp([_bulk_record(68796, _LINE1, _LINE2, "ARICA-2")]),
+            )
+        )
+
+        with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
+            _wire_mock_client(mock_cls, mock_client)
+            stats = asyncio.run(mgr.fetch_active_tles())
+
+        assert stats["revived"] == 1
+        row = db.execute(
+            "SELECT is_hidden, tle_no_result_since FROM satellites WHERE norad_cat_id = 68796"
+        ).fetchone()
+        assert row["is_hidden"] == 0
+        assert row["tle_no_result_since"] is None
+
+    def test_does_not_revive_migration_remnant(self, db: sqlite3.Connection) -> None:
+        # The official satellite already has its own celestrak-sourced TLE,
+        # so it never enters refresh_targets itself -- isolating this test to
+        # the remnant's own exclusion.
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden, satnogs_source_id)"
+            " VALUES (68796, 'ARICA-2', 'alive', 0, 98329)"
+        )
+        db.execute(
+            "INSERT INTO tle_data (norad_cat_id, name, line1, line2, source, fetched_at)"
+            " VALUES (68796, 'ARICA-2', ?, ?, 'celestrak', '2026-08-01T00:00:00+00:00')",
+            (_LINE1, _LINE2),
+        )
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (98329, 'ARICA-2', 'alive', 2)"
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.stream = MagicMock(side_effect=_stream_items(_group_active_resp()))
+
+        with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
+            _wire_mock_client(mock_cls, mock_client)
+            stats = asyncio.run(mgr.fetch_active_tles())
+
+        # Only Phase 1 ran -- the remnant was excluded before Phase 2's bulk
+        # fetch would even be attempted.
+        assert mock_client.stream.call_count == 1
+        assert stats["revived"] == 0
+        row = db.execute("SELECT is_hidden FROM satellites WHERE norad_cat_id = 98329").fetchone()
+        assert row["is_hidden"] == 2
+
+    def test_does_not_revive_dead_status_satellite(self, db: sqlite3.Connection) -> None:
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (68795, 'Decayed Sat', 'dead', 2)"
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.stream = MagicMock(side_effect=_stream_items(_group_active_resp()))
+
+        with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
+            _wire_mock_client(mock_cls, mock_client)
+            asyncio.run(mgr.fetch_active_tles())
+
+        assert mock_client.stream.call_count == 1
+        row = db.execute("SELECT is_hidden FROM satellites WHERE norad_cat_id = 68795").fetchone()
+        assert row["is_hidden"] == 2
+
+    def test_does_not_revive_user_hidden_satellite(self, db: sqlite3.Connection) -> None:
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (68795, 'User Hidden Sat', 'alive', 1)"
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.stream = MagicMock(side_effect=_stream_items(_group_active_resp()))
+
+        with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
+            _wire_mock_client(mock_cls, mock_client)
+            asyncio.run(mgr.fetch_active_tles())
+
+        assert mock_client.stream.call_count == 1
+        row = db.execute("SELECT is_hidden FROM satellites WHERE norad_cat_id = 68795").fetchone()
+        assert row["is_hidden"] == 1
+
+
 class TestFetchActiveTlesProgressCallback:
     """The optional progress_callback must fire at each phase transition so
     a caller can show that work is still happening (2026-08-10: this method
@@ -1265,11 +1379,116 @@ class TestFetchProvisionalTles:
         assert stats == {
             "inserted": 0,
             "updated": 0,
+            "revived": 0,
             "no_tle": 0,
             "hidden_unknown": 0,
             "hidden_expired": 0,
             "errors": 0,
         }
+
+
+class TestFetchProvisionalTlesRevivesAutoHiddenSatellites:
+    """Same "one-way ratchet" bug as fetch_active_tles() (see
+    TestFetchActiveTlesRevivesAutoHiddenSatellites), for the provisional
+    (>=90000) range: a satellite auto-hidden by _apply_no_tle_hide_or_grace()
+    used to be excluded from the candidate query forever. Migration
+    remnants, status='dead', and user-hidden (is_hidden=1) satellites must
+    stay excluded.
+    """
+
+    def test_revives_provisional_satellite_hidden_by_grace_period_expiry(
+        self, db: sqlite3.Connection
+    ) -> None:
+        db.execute(
+            "INSERT INTO satellites"
+            " (norad_cat_id, name, status, is_hidden, tle_no_result_since)"
+            " VALUES (98330, 'Provisional Sat', 'alive', 2, '2026-06-10T12:53:18+00:00')"
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.stream = MagicMock(
+            side_effect=_stream_items(
+                _satnogs_bulk_resp([_bulk_record(98330, _LINE1_B, _LINE2_B, "Provisional Sat")]),
+            )
+        )
+
+        with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
+            _wire_mock_client(mock_cls, mock_client)
+            stats = asyncio.run(mgr.fetch_provisional_tles())
+
+        assert stats["revived"] == 1
+        row = db.execute(
+            "SELECT is_hidden, tle_no_result_since FROM satellites WHERE norad_cat_id = 98330"
+        ).fetchone()
+        assert row["is_hidden"] == 0
+        assert row["tle_no_result_since"] is None
+
+    def test_does_not_revive_migration_remnant(self, db: sqlite3.Connection) -> None:
+        # Any other row's satnogs_source_id pointing at 98329 is enough to
+        # exclude it, regardless of that other row's own NORAD range.
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden, satnogs_source_id)"
+            " VALUES (68796, 'ARICA-2', 'alive', 0, 98329)"
+        )
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (98329, 'ARICA-2', 'alive', 2)"
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.stream = MagicMock()
+
+        with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
+            _wire_mock_client(mock_cls, mock_client)
+            stats = asyncio.run(mgr.fetch_provisional_tles())
+
+        # The remnant was excluded before any network call was even made.
+        mock_client.stream.assert_not_called()
+        assert stats["revived"] == 0
+        row = db.execute("SELECT is_hidden FROM satellites WHERE norad_cat_id = 98329").fetchone()
+        assert row["is_hidden"] == 2
+
+    def test_does_not_revive_dead_status_provisional(self, db: sqlite3.Connection) -> None:
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (98331, 'Decayed Provisional', 'dead', 2)"
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.stream = MagicMock()
+
+        with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
+            _wire_mock_client(mock_cls, mock_client)
+            asyncio.run(mgr.fetch_provisional_tles())
+
+        mock_client.stream.assert_not_called()
+        row = db.execute("SELECT is_hidden FROM satellites WHERE norad_cat_id = 98331").fetchone()
+        assert row["is_hidden"] == 2
+
+    def test_does_not_revive_user_hidden_provisional(self, db: sqlite3.Connection) -> None:
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (98332, 'User Hidden Provisional', 'alive', 1)"
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.stream = MagicMock()
+
+        with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
+            _wire_mock_client(mock_cls, mock_client)
+            asyncio.run(mgr.fetch_provisional_tles())
+
+        mock_client.stream.assert_not_called()
+        row = db.execute("SELECT is_hidden FROM satellites WHERE norad_cat_id = 98332").fetchone()
+        assert row["is_hidden"] == 1
 
 
 class TestFetchProvisionalTlesBulkFetchFailure:
