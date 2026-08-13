@@ -4186,7 +4186,8 @@ class MainWindow(QMainWindow):
         rows = self._conn.execute(
             """
             SELECT uuid, description, type,
-                   downlink_low, uplink_low, mode, ctcss_tone, invert,
+                   downlink_low, downlink_high, uplink_low, uplink_high,
+                   mode, ctcss_tone, invert,
                    alive, satnogs_status, norad_cat_id, source, rx_offset_hz
             FROM transmitters
             WHERE norad_cat_id = ?
