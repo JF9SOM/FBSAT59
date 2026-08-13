@@ -247,7 +247,8 @@ CREATE TABLE tle_history (
 
 SATNOGSトランスポンダーは**初回起動時に自動取得**。以降は7日ごとにバックグラウンドで自動再同期される
 （`satnogs_transmitter_refresh`）。より早く最新化したい場合（新規打ち上げ衛星のトランスミッタ登録直後など）は
-引き続き `Satellite → Sync SATNOGS` で手動更新できる。
+引き続き `Satellite → Fetch Transmitter Database`（旧称: Sync SATNOGS。2026-08-13改名、後述）で
+手動更新できる。
 
 **追加の経緯（2026-07-05）**: 初回起動時のみの自動取得だと、後から新たにトランスミッタが登録された衛星
 （例: ISSから放出直後のCubeSat「Coconut」(98292)）がいつまでも空のトランスポンダーリストのままになり、
@@ -5518,7 +5519,8 @@ TLEにもトランスミッターDBにも触れないが、TLE取得だけでは
 役割を果たすため対象外のまま）。
 
 **あわせて発覚した欠落: 手動同期メニューが存在しなかった**: 24時間ゲートを追加するにあたり、
-既存の`Satellite → Sync SATNOGS`（`_on_sync_satnogs()`）が実は**トランスミッターDB
+既存の`Satellite → Sync SATNOGS`（`_on_sync_satnogs()`、2026-08-13に`Fetch Transmitter Database`
+へ改名。後述参照）が実は**トランスミッターDB
 （`/api/transmitters/`）専用**で、`sync_satellite_names()`（`/api/satellites/`、別エンドポイント・
 別テーブル）を手動で即時実行する手段がそもそも存在しないことが分かった。既存ボタンに混ぜる案も
 検討したが、①データの性質が別物 ②`sync_satellite_names()`は約2700件のページネーションで
@@ -5528,6 +5530,27 @@ TLEにもトランスミッターDBにも触れないが、TLE取得だけでは
 （`_on_sync_satellite_names()` → `_refresh_satellite_names_manual_sync()`、`_on_sync_satnogs()`
 と同型・同じ`_satnogs_status`シグナルを共用）。明示的なボタン押下なので`is_satellite_names_stale()`
 は意図的にバイパスする（Update TLEボタンが`is_active_tle_stale()`等をバイパスするのと同じ設計）。
+
+**`Sync SATNOGS`を`Fetch Transmitter Database`へ改名（2026-08-13）**: 上記の`Sync Satellite
+Names`メニュー追加により、「SATNOGS」という語自体がトランスミッターDB・衛星名・TLE（`fetch_active_tles()`
+のPhase 2・`fetch_provisional_tles()`）という複数の別々の同期処理を指すようになり、
+「`Sync SATNOGS`」という名前だけでは**どのSATNOGS同期を指しているのか判別できない**という
+分かりにくさをユーザーが指摘した。英語ラベルも含めて改名するか確認した上で、
+`_("Sync SATNOGS")` → `_("Fetch Transmitter Database")`に変更（`_on_sync_satnogs()`自体・
+内部コメント・Auto Fetch Rulesダイアログの本文中の参照も含めて統一）。日本語訳は
+「SATNOGSと同期」→「トランスミッターDBを取得」。ハンドラ名`_on_sync_satnogs()`・
+`_refresh_satnogs_sync()`自体はSATNOGS APIのエンドポイント名（`/api/transmitters/`由来）との
+対応が分かりやすいため変更していない——ユーザーに見える文言（メニューラベル・ヘルプ本文）だけを
+改名の対象とした。
+
+**教訓（i18nと機能追加が絡む改名の手順）**: Auto Fetch Rulesダイアログの日本語訳には、
+`<b>Satellite → Sync SATNOGS</b>`のようにメニューパスを**英語のまま埋め込んだ**箇所が複数
+あった（実際のメニュー表示は日本語の「衛星」「トランスミッターDBを取得」等）。これは
+msgmergeが英語の`msgid`をそのまま流用して訳文を生成する性質上、翻訳者（Claude）が
+明示的に「メニューパス部分も日本語のメニュー名に置き換える」意識を持たない限り機械的に
+見過ごされやすい。この種のヘルプ本文にUIのメニューパスを埋め込む場合、**英語版の
+`msgid`はそのメニューの実際の英語ラベルと一致させ、日本語版の`msgstr`も対応する日本語
+メニューラベル（`_("...")`の実際の訳語）に置き換える**ことを徹底すること。
 
 **2番目のステップだった `fetch_active_tles()` を最優先に変更**（2026-08-10）:
 以前は「Phase 2のSATNOGSフォールバックが20〜30分かかりうるので他のステップを待たせない」という
