@@ -920,6 +920,37 @@ class TransmitterManager:
             last = last.replace(tzinfo=UTC)
         return datetime.now(UTC) - last > timedelta(hours=max_age_hours)
 
+    def is_satellite_names_stale(self, max_age_hours: float = 24.0) -> bool:
+        """Return True if the last full sync_satellite_names() run is older
+        than max_age_hours (default 24h, matching
+        TLEManager.is_active_tle_stale()'s cadence).
+
+        Mirrors is_satnogs_transmitters_stale() exactly, keyed on the
+        'satnogs_names' sync_log entries sync_satellite_names() already
+        writes via _log_sync(). Without this, the startup path
+        (_refresh_satellite_names_sync()) re-ran the full ~2700-satellite
+        paginated /api/satellites/ sync on every single restart regardless
+        of how recently it last succeeded -- unlike every other step in
+        that same startup chain, which already had its own staleness gate
+        (reported 2026-08-13: a user restarting the app repeatedly while
+        testing saw this run again and again, each taking anywhere from
+        ~10s to ~45s depending on network conditions). The periodic
+        6-hourly APScheduler job (_refresh_satellite_names_periodic()) is
+        deliberately left ungated -- its own fixed interval already serves
+        that purpose, and re-checking staleness inside a fixed-interval job
+        would be redundant.
+        """
+        row = self._conn.execute(
+            "SELECT finished_at FROM sync_log"
+            " WHERE sync_type = 'satnogs_names' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if not row:
+            return True
+        last = datetime.fromisoformat(str(row["finished_at"]))
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=UTC)
+        return datetime.now(UTC) - last > timedelta(hours=max_age_hours)
+
     def _log_sync(self, sync_type: str, stats: dict[str, int]) -> None:
         self._conn.execute(
             """

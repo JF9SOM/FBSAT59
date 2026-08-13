@@ -858,6 +858,101 @@ class TestSyncSatelliteNamesStatus:
         assert row["status"] == "unknown"
 
 
+class TestManualSyncSatelliteNames:
+    """Satellite > Sync Satellite Names (2026-08-13, added alongside
+    TransmitterManager.is_satellite_names_stale()) is a separate menu
+    action from Sync SATNOGS (transmitter frequencies) -- different SATNOGS
+    endpoint, different DB table, and normally much slower. Its handler,
+    _refresh_satellite_names_manual_sync(), must bypass
+    is_satellite_names_stale() entirely: an explicit button press means
+    "do it now", not "only if the 24h cache says it's due" -- the same
+    rationale Satellite > Update TLE uses for its own staleness gates.
+    """
+
+    def _make_window(self, qtbot, db: sqlite3.Connection, tle_manager: TLEManager) -> MainWindow:
+        w = MainWindow(conn=db, tle_manager=tle_manager)
+        qtbot.addWidget(w)
+        return w
+
+    def test_shows_error_when_satnogs_unreachable(self, qtbot, db, tle_manager) -> None:
+        from unittest.mock import AsyncMock
+
+        w = self._make_window(qtbot, db, tle_manager)
+        w._tle_manager.is_satnogs_reachable = AsyncMock(return_value=False)  # type: ignore[method-assign]
+        sync_names_mock = AsyncMock(return_value={"updated": 0, "skipped": 0})
+        w._transmitter_manager.sync_satellite_names = sync_names_mock  # type: ignore[method-assign]
+        received: list[str] = []
+        w._satnogs_status.connect(received.append)
+
+        w._refresh_satellite_names_manual_sync()
+
+        sync_names_mock.assert_not_awaited()
+        assert "Cannot connect to SATNOGS" in received[-1]
+
+    def test_bypasses_the_staleness_gate_and_syncs(self, qtbot, db, tle_manager) -> None:
+        from unittest.mock import AsyncMock
+
+        w = self._make_window(qtbot, db, tle_manager)
+        w._tle_manager.is_satnogs_reachable = AsyncMock(return_value=True)  # type: ignore[method-assign]
+        # A fresh cache would normally make the startup path skip its own
+        # sync -- the manual handler must not even consult this.
+        is_stale_mock = MagicMock(return_value=False)
+        w._transmitter_manager.is_satellite_names_stale = is_stale_mock  # type: ignore[method-assign]
+        sync_names_mock = AsyncMock(return_value={"updated": 5, "skipped": 1})
+        w._transmitter_manager.sync_satellite_names = sync_names_mock  # type: ignore[method-assign]
+        list_refresh_count = 0
+
+        def _on_list_refresh() -> None:
+            nonlocal list_refresh_count
+            list_refresh_count += 1
+
+        w._satellite_list_refresh.connect(_on_list_refresh)
+        received: list[str] = []
+        w._satnogs_status.connect(received.append)
+
+        w._refresh_satellite_names_manual_sync()
+
+        is_stale_mock.assert_not_called()
+        sync_names_mock.assert_awaited_once()
+        assert list_refresh_count == 1
+        assert "5" in received[-1] and "1" in received[-1]
+
+    def test_shows_failure_message_on_exception(self, qtbot, db, tle_manager) -> None:
+        from unittest.mock import AsyncMock
+
+        w = self._make_window(qtbot, db, tle_manager)
+        w._tle_manager.is_satnogs_reachable = AsyncMock(return_value=True)  # type: ignore[method-assign]
+        sync_names_mock = AsyncMock(side_effect=RuntimeError("boom"))
+        w._transmitter_manager.sync_satellite_names = sync_names_mock  # type: ignore[method-assign]
+        received: list[str] = []
+        w._satnogs_status.connect(received.append)
+
+        w._refresh_satellite_names_manual_sync()
+
+        assert "RuntimeError" in received[-1]
+
+    def test_menu_action_starts_the_background_sync(self, qtbot, db, tle_manager) -> None:
+        """_on_sync_satellite_names() (the menu click handler) must kick off
+        _refresh_satellite_names_manual_sync() in a background thread, not
+        run it (and its network calls) directly on the UI thread."""
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db, tle_manager)
+
+        with (
+            patch.object(w, "_refresh_satellite_names_manual_sync") as target_mock,
+            patch("ui.main_window.threading.Thread") as mock_thread_cls,
+        ):
+            mock_thread = mock_thread_cls.return_value
+            w._on_sync_satellite_names()
+
+        mock_thread_cls.assert_called_once()
+        _, kwargs = mock_thread_cls.call_args
+        assert kwargs["target"] == target_mock
+        assert kwargs["daemon"] is True
+        mock_thread.start.assert_called_once()
+
+
 # ---------------------------------------------------------------------------
 # MainWindow
 # ---------------------------------------------------------------------------
@@ -3556,6 +3651,91 @@ class TestRefreshSatelliteNamesSyncGatesProvisionalFetch:
         w._refresh_satellite_names_sync()
 
         prov_mock.assert_awaited_once()
+
+
+class TestRefreshSatelliteNamesSyncGatesSatelliteNamesSync:
+    """_refresh_satellite_names_sync() (the startup TLE-sync chain) used to
+    call sync_satellite_names() unconditionally on every launch, with no
+    staleness check at all -- unlike every other step in the same chain.
+    Closing and reopening the app in quick succession re-ran the full
+    ~2700-satellite paginated /api/satellites/ sync every single time,
+    taking anywhere from ~10s to ~45s depending on network conditions
+    (reported 2026-08-13). TransmitterManager.is_satellite_names_stale()
+    (default 24h) now gates this the same way the other steps are gated.
+    """
+
+    def _make_window(self, qtbot, db: sqlite3.Connection, tle_manager: TLEManager) -> MainWindow:
+        w = MainWindow(conn=db, tle_manager=tle_manager)
+        qtbot.addWidget(w)
+        return w
+
+    def _stub_everything_else(self, w: MainWindow) -> None:
+        """Mocks every other step of the chain so a test can isolate just
+        the satellite-names-sync gating, without making real network calls
+        or depending on what SettingsDialog.get_enabled_sources() happens
+        to default to against a fresh empty DB."""
+        from unittest.mock import AsyncMock
+
+        w._tle_manager.is_celestrak_bulk_group_reachable = AsyncMock(  # type: ignore[method-assign]
+            return_value=True
+        )
+        w._tle_manager.is_satnogs_reachable = AsyncMock(return_value=True)  # type: ignore[method-assign]
+        w._tle_manager.is_active_tle_stale = MagicMock(return_value=False)  # type: ignore[method-assign]
+        w._tle_manager.is_active_tle_retry_due = MagicMock(return_value=False)  # type: ignore[method-assign]
+        w._tle_manager.is_provisional_tle_stale = MagicMock(return_value=False)  # type: ignore[method-assign]
+        w._tle_manager.fetch_active_tles = AsyncMock(  # type: ignore[method-assign]
+            return_value={
+                "inserted": 0,
+                "updated": 0,
+                "no_tle": 0,
+                "hidden_unknown": 0,
+                "hidden_expired": 0,
+                "errors": 0,
+                "celestrak_blocked": 0,
+                "satnogs_blocked": 0,
+                "phase2_total": 0,
+                "phase2_unresolved": 0,
+            }
+        )
+        w._tle_manager.fetch_legacy_tles = AsyncMock(  # type: ignore[method-assign]
+            return_value={"found": 0, "hidden": 0, "errors": 0}
+        )
+        w._tle_manager.fetch_meteor_tles = AsyncMock(  # type: ignore[method-assign]
+            return_value={"found": 0, "skipped": 0, "errors": 0}
+        )
+        w._tle_manager.fetch_and_update = AsyncMock(  # type: ignore[method-assign]
+            return_value={"inserted": 0, "updated": 0, "errors": 0}
+        )
+
+    def test_skips_sync_when_cache_is_fresh(self, qtbot, db, tle_manager) -> None:
+        from unittest.mock import AsyncMock
+
+        w = self._make_window(qtbot, db, tle_manager)
+        self._stub_everything_else(w)
+        w._transmitter_manager.is_satellite_names_stale = MagicMock(  # type: ignore[method-assign]
+            return_value=False
+        )
+        sync_names_mock = AsyncMock(return_value={"updated": 0, "skipped": 0})
+        w._transmitter_manager.sync_satellite_names = sync_names_mock  # type: ignore[method-assign]
+
+        w._refresh_satellite_names_sync()
+
+        sync_names_mock.assert_not_awaited()
+
+    def test_syncs_when_cache_is_stale(self, qtbot, db, tle_manager) -> None:
+        from unittest.mock import AsyncMock
+
+        w = self._make_window(qtbot, db, tle_manager)
+        self._stub_everything_else(w)
+        w._transmitter_manager.is_satellite_names_stale = MagicMock(  # type: ignore[method-assign]
+            return_value=True
+        )
+        sync_names_mock = AsyncMock(return_value={"updated": 0, "skipped": 0})
+        w._transmitter_manager.sync_satellite_names = sync_names_mock  # type: ignore[method-assign]
+
+        w._refresh_satellite_names_sync()
+
+        sync_names_mock.assert_awaited_once()
 
 
 class TestRefreshSatelliteNamesSyncGroupTleMessages:

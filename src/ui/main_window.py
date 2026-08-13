@@ -948,6 +948,7 @@ class MainWindow(QMainWindow):
             sat_menu.addAction(_("Add Manual TLE..."), self._on_add_manual_tle)
             sat_menu.addAction(_("Update TLE"), self._on_update_tle)
             sat_menu.addAction(_("Sync SATNOGS"), self._on_sync_satnogs)
+            sat_menu.addAction(_("Sync Satellite Names"), self._on_sync_satellite_names)
 
         # Radio
         radio_menu = mb.addMenu(_("Radio"))
@@ -1550,6 +1551,8 @@ class MainWindow(QMainWindow):
 
         Execution order:
           1. sync_satellite_names() — updates names/status, runs migration pipelines
+             (gated by TransmitterManager.is_satellite_names_stale(), default 24h —
+             2026-08-13, see that method's docstring)
           2. fetch_active_tles() — TLEs for regular NORAD 10000-89999 satellites
           3. fetch_provisional_tles() — TLEs for visible NORAD >= 90000 satellites
           4. fetch_legacy_tles() — one-time check for NORAD < 10000 satellites;
@@ -1610,7 +1613,9 @@ class MainWindow(QMainWindow):
             # that host's own steps below overwrite it with real progress.
             _time.sleep(3.0)
 
-        if satnogs_ok:
+        if not satnogs_ok:
+            logger.info("SATNOGS unreachable — skipping satellite name sync")
+        elif self._transmitter_manager.is_satellite_names_stale():
             self._sync_progress.emit("🛰 Syncing satellites from SATNOGS...")
 
             def _sat_progress(n: int) -> None:
@@ -1626,7 +1631,7 @@ class MainWindow(QMainWindow):
                     "SATNOGS satellite names sync failed: %s: %s", type(exc).__name__, exc
                 )
         else:
-            logger.info("SATNOGS unreachable — skipping satellite name sync")
+            logger.info("Satellite name sync cache is fresh — skipping.")
 
         if self._shutdown_flag.is_set():
             return
@@ -5405,6 +5410,53 @@ class MainWindow(QMainWindow):
         sb = self.statusBar()
         if sb:
             sb.showMessage(msg, 8000)
+
+    def _on_sync_satellite_names(self) -> None:
+        """Satellite > Sync Satellite Names handler.
+
+        Runs sync_satellite_names() in a background thread, bypassing
+        TransmitterManager.is_satellite_names_stale() -- an explicit button
+        press means "do it now", the same rationale Satellite > Update TLE
+        uses to bypass its own staleness gates.
+
+        Deliberately a separate menu action from Sync SATNOGS
+        (sync_from_satnogs(), transmitter frequencies): different SATNOGS
+        endpoint (/api/satellites/ vs /api/transmitters/), different DB
+        table, and normally much slower (~2700 satellites paginated, vs a
+        few seconds for the transmitter sync) -- folding it into that
+        button would make a "just refresh my frequencies" press
+        unexpectedly slow (2026-08-13).
+        """
+        threading.Thread(target=self._refresh_satellite_names_manual_sync, daemon=True).start()
+        sb = self.statusBar()
+        if sb:
+            sb.showMessage(_("Syncing satellite names from SATNOGS..."), 5000)
+
+    def _refresh_satellite_names_manual_sync(self) -> None:
+        """Sync satellite names/status from a background thread (manual — see
+        _on_sync_satellite_names()). Reuses the _satnogs_status signal, the
+        same status-bar path Sync SATNOGS uses.
+        """
+        if not asyncio.run(self._tle_manager.is_satnogs_reachable()):
+            cannot_connect_satnogs_msg = _("Cannot connect to SATNOGS")
+            msg = f"❌ {cannot_connect_satnogs_msg}"
+            logger.warning("Manual satellite name sync aborted — SATNOGS unreachable")
+            self._satnogs_status.emit(msg)
+            return
+        try:
+            result = asyncio.run(self._transmitter_manager.sync_satellite_names())
+            msg = _("Satellite names sync: {upd} updated, {skp} skipped").format(
+                upd=result["updated"],
+                skp=result["skipped"],
+            )
+            logger.info("Manual satellite names sync completed: %s", result)
+            self._satellite_list_refresh.emit()
+        except Exception as exc:  # noqa: BLE001
+            msg = _("Satellite names sync failed: {etype}: {err}").format(
+                etype=type(exc).__name__, err=exc
+            )
+            logger.warning("Manual satellite names sync failed: %s: %s", type(exc).__name__, exc)
+        self._satnogs_status.emit(msg)
 
     def _on_rig_settings(self) -> None:
         from ui.rig_dialog import RigSettingsDialog

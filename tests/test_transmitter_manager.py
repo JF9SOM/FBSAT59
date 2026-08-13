@@ -351,3 +351,64 @@ class TestIsSatnogsTransmittersStale:
         mgr = TransmitterManager(db)
         mgr._log_sync("satnogs_names", {"updated": 1, "skipped": 0})
         assert mgr.is_satnogs_transmitters_stale() is True
+
+
+class TestIsSatelliteNamesStale:
+    """The startup path re-ran the full ~2700-satellite paginated
+    sync_satellite_names() on every single restart with no staleness gate
+    at all -- unlike every other step in the same startup chain, which
+    already had one (reported 2026-08-13). is_satellite_names_stale()
+    mirrors is_satnogs_transmitters_stale() exactly, keyed on the
+    'satnogs_names' sync_log entries sync_satellite_names() already writes
+    via _log_sync().
+    """
+
+    def test_true_when_never_synced(self, db: sqlite3.Connection) -> None:
+        mgr = TransmitterManager(db)
+        assert mgr.is_satellite_names_stale() is True
+
+    def test_false_when_recently_synced(self, db: sqlite3.Connection) -> None:
+        mgr = TransmitterManager(db)
+        mgr._log_sync("satnogs_names", {"updated": 1, "skipped": 0})
+        assert mgr.is_satellite_names_stale() is False
+
+    def test_true_once_older_than_the_default_24h(self, db: sqlite3.Connection) -> None:
+        mgr = TransmitterManager(db)
+        old = (datetime.now(UTC) - timedelta(hours=25)).isoformat()
+        db.execute(
+            "INSERT INTO sync_log (sync_type, started_at, finished_at, status,"
+            " records_updated) VALUES ('satnogs_names', ?, ?, 'success', 0)",
+            (old, old),
+        )
+        db.commit()
+        assert mgr.is_satellite_names_stale() is True
+
+    def test_false_just_under_the_default_24h(self, db: sqlite3.Connection) -> None:
+        mgr = TransmitterManager(db)
+        recent = (datetime.now(UTC) - timedelta(hours=23)).isoformat()
+        db.execute(
+            "INSERT INTO sync_log (sync_type, started_at, finished_at, status,"
+            " records_updated) VALUES ('satnogs_names', ?, ?, 'success', 0)",
+            (recent, recent),
+        )
+        db.commit()
+        assert mgr.is_satellite_names_stale() is False
+
+    def test_respects_a_custom_max_age_hours(self, db: sqlite3.Connection) -> None:
+        mgr = TransmitterManager(db)
+        two_hours_ago = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
+        db.execute(
+            "INSERT INTO sync_log (sync_type, started_at, finished_at, status,"
+            " records_updated) VALUES ('satnogs_names', ?, ?, 'success', 0)",
+            (two_hours_ago, two_hours_ago),
+        )
+        db.commit()
+        assert mgr.is_satellite_names_stale(max_age_hours=1.0) is True
+        assert mgr.is_satellite_names_stale(max_age_hours=4.0) is False
+
+    def test_unrelated_sync_types_are_ignored(self, db: sqlite3.Connection) -> None:
+        """A fresh satnogs (transmitter) entry must not make the satellite
+        names sync look fresh too."""
+        mgr = TransmitterManager(db)
+        mgr._log_sync("satnogs", {"inserted": 1, "updated": 0})
+        assert mgr.is_satellite_names_stale() is True
