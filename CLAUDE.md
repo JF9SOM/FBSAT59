@@ -5596,6 +5596,17 @@ msgmergeが英語の`msgid`をそのまま流用して訳文を生成する性�
 で「TLE Data from SATNOGS」セクションを追加し、`Satellite → Update TLE`で両方を即時更新
 できる旨も記載した。
 
+**自動取得スケジュール表を「CelesTrak TLE」/「CelesTrak TLE以外の取得」の2表に分割
+（2026-08-13）**: 単一の表に、CelesTrakの分類済みグループ一括取得（Space Stations・
+Amateur Satellites・CubeSats・Weather Satellites・Earth Observation/Science・
+METEOR/HRPT）と、それ以外の取得元（Active TLE fallback・Provisional TLEs・
+Satellite Names/Status・AMSAT・Transmitter Database）が混在しており、どの行がどこから
+取得しているのか分かりにくいという指摘を受けて分割した。`Active TLE fallback`は
+実際にはCelesTrakの`GROUP=active`一括取得が主でSATNOGSへのフォールバックは補完的
+（同一行内でユーザーとの相談の上、直前に追加した「TLE Data from SATNOGS」セクションの
+分類（Provisional TLEsと同じ「SATNOGSへフォールバックする処理」）と一貫性を取るため
+下側の表に分類することで合意した）。
+
 **2番目のステップだった `fetch_active_tles()` を最優先に変更**（2026-08-10）:
 以前は「Phase 2のSATNOGSフォールバックが20〜30分かかりうるので他のステップを待たせない」という
 理由で最後に実行していたが、この理由はPhase 2にサーキットブレーカー・並列化・CelesTrakフォールバックを

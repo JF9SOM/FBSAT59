@@ -6403,7 +6403,7 @@ class MainWindow(QMainWindow):
             "not required. Use manual sync only when you need the very latest data "
             "immediately (e.g. right before a pass of a newly launched satellite)."
         )
-        schedule_table = _(
+        schedule_table_celestrak = _(
             "<table border='0' cellspacing='4'>"
             "<tr><td><b>Space Stations</b> (ISS, CSS…)</td><td>every <b>1 hour</b></td></tr>"
             "<tr><td><b>Amateur Satellites</b></td><td>every <b>2 hours</b></td></tr>"
@@ -6411,14 +6411,18 @@ class MainWindow(QMainWindow):
             "<tr><td><b>Weather Satellites</b></td><td>every <b>6 hours</b></td></tr>"
             "<tr><td><b>Earth Observation / Science</b></td>"
             "<td>every <b>12 hours</b></td></tr>"
-            "<tr><td><b>Provisional TLEs</b> (NORAD ≥ 90000)</td>"
-            "<td>every <b>12 hours</b></td></tr>"
-            "<tr><td><b>Active TLE fallback</b> (NORAD 10000–89999)</td>"
-            "<td>every <b>24 hours</b></td></tr>"
-            "<tr><td><b>Satellite Names / Status</b></td><td>every <b>24 hours</b></td></tr>"
-            "<tr><td><b>AMSAT operational status</b></td><td>every <b>24 hours</b></td></tr>"
             "<tr><td><b>METEOR/HRPT satellites dropped from CelesTrak groups</b></td>"
             "<td>every <b>12 hours</b></td></tr>"
+            "</table>"
+        )
+        schedule_table_other = _(
+            "<table border='0' cellspacing='4'>"
+            "<tr><td><b>Active TLE fallback</b> (NORAD 10000–89999)</td>"
+            "<td>every <b>24 hours</b></td></tr>"
+            "<tr><td><b>Provisional TLEs</b> (NORAD ≥ 90000)</td>"
+            "<td>every <b>12 hours</b></td></tr>"
+            "<tr><td><b>Satellite Names / Status</b></td><td>every <b>24 hours</b></td></tr>"
+            "<tr><td><b>AMSAT operational status</b></td><td>every <b>24 hours</b></td></tr>"
             "<tr><td><b>Transmitter Database (SATNOGS)</b></td>"
             "<td>every <b>7 days</b></td></tr>"
             "</table>"
@@ -6455,7 +6459,8 @@ class MainWindow(QMainWindow):
             "if their own caches have expired too (see above)."
         )
         heading_main = _("Auto Fetch Rules")
-        heading_schedule = _("Auto-Fetch Schedule")
+        heading_schedule_celestrak = _("CelesTrak TLE")
+        heading_schedule_other = _("Other Than CelesTrak TLE")
         heading_satnogs_tle = _("TLE Data from SATNOGS")
         heading_sat_names = _("Satellite Names / Status")
         heading_xpdr = _("Transmitter Database (SATNOGS)")
@@ -6463,8 +6468,10 @@ class MainWindow(QMainWindow):
         msg = (
             f"<h3>{heading_main}</h3>"
             f"<p>{intro}</p>"
-            f"<h4>{heading_schedule}</h4>"
-            f"{schedule_table}"
+            f"<h4>{heading_schedule_celestrak}</h4>"
+            f"{schedule_table_celestrak}"
+            f"<h4>{heading_schedule_other}</h4>"
+            f"{schedule_table_other}"
             f"<h4>{heading_satnogs_tle}</h4>"
             f"<p>{satnogs_tle_paragraph}</p>"
             f"<h4>{heading_sat_names}</h4>"
