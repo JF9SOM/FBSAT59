@@ -746,6 +746,53 @@ class TransmitterManager:
         self._log_sync("satnogs", stats)
         return stats
 
+    async def fetch_satnogs_transmitter(self, xpdr_uuid: str) -> dict[str, Any] | None:
+        """Fetch one transmitter's current data directly from SatNOGS by UUID.
+
+        Used by TransmitterDialog's "Reset to SatNOGS Official Value" button
+        (GitHub Issue #20 follow-up): a single-row counterpart to the bulk
+        sync_from_satnogs(), for undoing a manual edit that turned out to be
+        wrong (e.g. picking an incompatible Mode) without waiting for/being
+        blocked by manual_override protection. Field mapping mirrors
+        sync_from_satnogs() exactly, minus the DB-only bits (norad routing,
+        satellite row creation, alive/satnogs_status) that a form-population
+        helper has no use for.
+
+        Returns None if SatNOGS no longer has this UUID (deleted/merged
+        upstream) rather than raising, so the caller can show a clear
+        "not found" message distinct from a connectivity failure. Network/
+        HTTP errors are allowed to propagate — the caller shows the same
+        "cannot connect to SatNOGS" messaging used elsewhere in the app.
+        """
+        async with httpx.AsyncClient(timeout=30.0, headers=DEFAULT_HEADERS) as client:
+            r = await client.get(
+                SATNOGS_TRANSMITTERS_URL, params={"uuid": xpdr_uuid, "format": "json"}
+            )
+            r.raise_for_status()
+            results: list[dict[str, Any]] = r.json()
+
+        if not results:
+            return None
+        xpdr = results[0]
+
+        api_ctcss = xpdr.get("ctcss_tone")
+        if api_ctcss is None:
+            m = _CTCSS_RE.search(xpdr.get("description", ""))
+            api_ctcss = float(m.group(1)) if m else None
+
+        return {
+            "description": xpdr.get("description", ""),
+            "type": xpdr.get("type") or "Transponder",
+            "uplink_low": xpdr.get("uplink_low"),
+            "uplink_high": xpdr.get("uplink_high"),
+            "downlink_low": xpdr.get("downlink_low"),
+            "downlink_high": xpdr.get("downlink_high"),
+            "mode": xpdr.get("mode"),
+            "invert": int(bool(xpdr.get("invert", False))),
+            "ctcss_tone": api_ctcss,
+            "ctcss_tone_type": None,  # not available from SATNOGS
+        }
+
     async def sync_satellite_names(
         self,
         progress_callback: Any = None,

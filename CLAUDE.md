@@ -4665,6 +4665,106 @@ NET mode・Direct mode（FTX-1F raw CAT）それぞれで帯域中心が渡る�
 
 ---
 
+## AO-73の反転トランスポンダーがUSB/USBになる不具合と「SatNOGS公式値へリセット」機能（GitHub Issue #20 続報、2026-08-14）
+
+### 発端
+
+v0.3.15リリース後、報告者（drmgcm69、IC-9700 satmode Direct）から「AO-73だけリニア衛星の中で
+唯一、アップリンク・ダウンリンク両方がUSBになる」との報告があった。報告者に依頼して取得した
+`fbsat59.log`（Help画面ではなく`scripts/collect_windows_rig_log.bat`で採取）を解析したところ、
+決定的な証拠が見つかった:
+
+```
+apply_transponder_state (satmode Hamlib) dl=SSB ul=SSB ctcss=0.0
+DIAG readback (pyserial) SUB/UL mode_byte=0x01 ... (ul_mode=SSB; 0x00=LSB 0x01=USB)
+```
+
+`mode`の値が**文字通り"SSB"という文字列**になっていた。周波数（DL 145.965/UL 435.150MHz）が
+SatNOGS公式データ（DL 145.950-145.970・UL 435.130-435.150、`invert=true`、`mode=USB`）とも
+コミュニティFT4エントリ（145.952/435.148）とも一致しないことから、報告者がAdd/Edit
+Transmitterダイアログで独自にこのAO-73行を編集し、周波数を好みの値に変更した際、
+Modeプルダウン（`transmitter_dialog.py`の`_MODES = ["FM", "SSB", "CW", "CW-R",
+"DIGITALVOICE", "BPSK", "AFSK", "Other"]`）から一見自然に見える"SSB"を選んでしまったものと
+判明した。
+
+### 根本原因
+
+`_build_live_hamlib_mode_map()`（[controller.py:107-126](src/rig/controller.py:107)）は
+`"SSB": _H.RIG_MODE_USB`という変換を持っており、ダウンリンク側は"SSB"でも問題なくUSBとして
+送信される。しかし`_MODE_INVERT`（[main_window.py:119](src/ui/main_window.py:119)）には
+**"SSB"というキー自体が存在しなかった**ため、`ul_mode = _MODE_INVERT.get(mode, mode) if
+invert else mode`が`invert=True`でも`"SSB"`のままフォールバックし、アップリンクが
+一切反転されずDL/UL両方がUSBになっていた。
+
+### 修正1: `_MODE_INVERT`に"SSB"→"LSB"を追加
+
+`_MODE_INVERT`辞書に`"SSB": "LSB"`を追加（[main_window.py:119-133](src/ui/main_window.py:119)）。
+"SSB"を選んだ既存行・将来の行のどちらでも、`invert=True`なら正しくLSBへ変換されるようになる。
+Modeプルダウンから"SSB"自体を削除する案も検討したが、今回はこの最小修正のみを実装（プルダウンの
+選択肢を変える判断は別途要検討として保留）。
+
+回帰テスト: `tests/test_main_window.py`の`TestModeInvertDataModes`に
+`test_ssb_inverts_to_lsb`を追加。
+
+### 修正2: 「Reset to SatNOGS Official Value」ボタン
+
+上記の根本原因調査で、「SatNOGS由来の行を手動編集して`manual_override=1`が立つと、以後の
+SatNOGS同期で永久に上書きされない」という既存の保護機構（`sync_from_satnogs()`、
+[transmitter_manager.py:598-608](src/data/transmitter_manager.py:598)、`uuid`一致かつ
+`manual_override`または`source in ('manual','community')`ならスキップ）が、今回のような
+「手動編集で壊れた行を元に戻す手段が無い」という副作用を生んでいることが判明した。ユーザーの
+提案により、Add/Edit Transmitterダイアログに手動で元に戻せるボタンを追加した。
+
+**設計判断の根拠**（実装前に調査確認済み）:
+- `update_transmitter()`の`allowed`列集合（[transmitter_manager.py:329-345](src/data/transmitter_manager.py:329)）
+  には`uuid`・`source`が含まれておらず、**編集では絶対に書き換わらない**。つまり
+  `source='satnogs'`は手動編集で`manual_override=1`が立った後も、「本物のSatNOGS UUIDへの
+  参照が生きている」ことを示す永続的で信頼できる目印として使える
+- SatNOGS APIは`?satellite__norad_cat_id=`と同じ要領で`?uuid={uuid}&format=json`という
+  単一UUID指定のフィルタも受け付ける（クエリパラメータ、`/api/transmitters/{uuid}/`という
+  パス形式ではない）。実際に`curl`で動作確認済み（結果はリスト形式、`satellite__norad_cat_id`
+  一括取得と同型）
+
+**実装**:
+- `TransmitterManager.fetch_satnogs_transmitter(uuid)`（新設、
+  [transmitter_manager.py](src/data/transmitter_manager.py)、`sync_from_satnogs()`直後に配置）
+  — 単一UUIDでSatNOGSへ問い合わせ、`sync_from_satnogs()`と全く同じフィールドマッピング
+  （CTCSSのdescription正規表現抽出フォールバック含む）で1件分の辞書を返す。SatNOGS側に
+  UUIDが見つからない場合は`None`（呼び出し元は「見つかりませんでした」と表示）、
+  接続エラー等は握りつぶさず**そのまま re-raise**（呼び出し元が既存の「SatNOGSに接続できません」
+  表示パターンを使えるように）
+- `TransmitterDialog`（[transmitter_dialog.py](src/ui/transmitter_dialog.py)）:
+  - `_prefill()`から、SatNOGSが実際にデータを持つフィールド（description・周波数4種・
+    type・mode・invert・CTCSS）の反映処理を`_apply_satnogs_fields()`として切り出し、
+    `_prefill()`（NORAD ID・Notes・Overwrite protectionチェックボックスの反映は別途担当）と
+    リセットボタンの両方から共有
+  - ボタン自体は`self._edit_mode and self._existing.get("source") == "satnogs"`のときのみ
+    `_build_ui()`内で生成・表示（新規追加行やmanual/community行では非表示）
+  - `_on_reset_to_satnogs()`: `asyncio.run(self._tm.fetch_satnogs_transmitter(uuid))`で
+    取得し、成功したら`_apply_satnogs_fields(rec)`でフォームへ反映**するのみ**（DBには一切
+    書き込まない。ユーザーがOKを押すまで確定しない、というユーザー確定済みの設計）。
+    あわせてOverwrite protectionチェックボックスを**オフ**にする（今後また自動同期で
+    保護されるよう、手動保護を解除する意図）。NORAD IDとNotes（どちらもSatNOGSのデータでは
+    ない）はリセットの対象外で、既存の値のまま維持される
+  - ネットワーク接続不可時は既存の`_do_satnogs_import()`と同じ
+    `except Exception as exc: QMessageBox.critical(self, _("Error"), str(exc))`パターンを
+    踏襲（ユーザー確認済み、新しいパターンは導入しない）
+
+**意図的にやらなかったこと**: UUIDが見つかった場合の自動DB書き込み（Save前確定方式のため）、
+SatNOGSに一切データが無い`source='manual'`/`'community'`行へのボタン表示、Modeプルダウンから
+"SSB"を削除すること（3点ともユーザーとの相談で対象外と確定、または保留）。
+
+テスト:
+- `tests/test_transmitter_manager.py`（Qt非依存、ローカル実行可）に`TestFetchSatnogsTransmitter`
+  （4件）— `sync_from_satnogs()`と同じフィールドマッピングになること・description正規表現
+  フォールバック・UUID未検出時`None`・接続エラーの re-raise を検証
+- `tests/test_main_window.py`の`TestTransmitterDialog`に8件追加（ボタンの表示/非表示条件
+  4パターン・リセット時のフォーム反映とDB書き込み無し・見つからない場合の警告・接続エラー
+  時のエラー表示）。`test_main_window.py`はCLAUDE.mdのルール通りローカル実行せず
+  `--collect-only`（237件収集成功）で確認、最終確認はCI待ち
+
+---
+
 ## Rig-Specific Implementation Notes
 
 ### FTX-1F (Hamlib model 1051)

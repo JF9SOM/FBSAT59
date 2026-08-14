@@ -123,6 +123,14 @@ _MODE_INVERT: dict[str, str] = {
     "CW-R": "CW",
     "USB-D": "LSB-D",
     "LSB-D": "USB-D",
+    # "SSB" is the Add/Edit Transmitter dialog's generic mode-combo entry
+    # (transmitter_dialog.py's _MODES); _build_live_hamlib_mode_map() in
+    # controller.py already treats it as equivalent to "USB" for the
+    # downlink, but until this entry it was missing here entirely, so
+    # invert=True left the uplink as the literal string "SSB" too instead
+    # of flipping it -- both sides silently ended up on USB (GitHub Issue
+    # #20 follow-up, AO-73 real-world report).
+    "SSB": "LSB",
 }
 
 # Direct-mode models with their own dedicated raw-CAT CTCSS path

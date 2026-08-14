@@ -524,3 +524,112 @@ class TestIsSatelliteNamesStale:
         mgr = TransmitterManager(db)
         mgr._log_sync("satnogs", {"inserted": 1, "updated": 0})
         assert mgr.is_satellite_names_stale() is True
+
+
+def _mock_uuid_response(results: list[dict]) -> MagicMock:
+    resp = MagicMock()
+    resp.json.return_value = results
+    resp.raise_for_status.return_value = None
+    return resp
+
+
+class TestFetchSatnogsTransmitter:
+    """fetch_satnogs_transmitter() -- single-UUID counterpart to
+    sync_from_satnogs(), used by TransmitterDialog's "Reset to SatNOGS
+    Official Value" button (GitHub Issue #20 follow-up: undoing a manual
+    edit that turned out wrong, e.g. an incompatible Mode, without being
+    blocked by manual_override protection)."""
+
+    def test_maps_fields_same_as_bulk_sync(self, db: sqlite3.Connection) -> None:
+        mgr = TransmitterManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            return_value=_mock_uuid_response(
+                [
+                    {
+                        "uuid": "kjb3TFADq77qj2AFSzxHCV",
+                        "description": "Mode U/V Linear",
+                        "type": "Transponder",
+                        "uplink_low": 435130000,
+                        "uplink_high": 435150000,
+                        "downlink_low": 145950000,
+                        "downlink_high": 145970000,
+                        "mode": "USB",
+                        "invert": True,
+                        "ctcss_tone": None,
+                    }
+                ]
+            )
+        )
+        with patch("data.transmitter_manager.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            rec = asyncio.run(mgr.fetch_satnogs_transmitter("kjb3TFADq77qj2AFSzxHCV"))
+
+        assert rec == {
+            "description": "Mode U/V Linear",
+            "type": "Transponder",
+            "uplink_low": 435130000,
+            "uplink_high": 435150000,
+            "downlink_low": 145950000,
+            "downlink_high": 145970000,
+            "mode": "USB",
+            "invert": 1,
+            "ctcss_tone": None,
+            "ctcss_tone_type": None,
+        }
+        # Passed uuid as a query param, not a path segment.
+        mock_client.get.assert_awaited_once()
+        _, kwargs = mock_client.get.call_args
+        assert kwargs["params"]["uuid"] == "kjb3TFADq77qj2AFSzxHCV"
+
+    def test_ctcss_extracted_from_description_when_api_field_missing(
+        self, db: sqlite3.Connection
+    ) -> None:
+        mgr = TransmitterManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            return_value=_mock_uuid_response(
+                [
+                    {
+                        "uuid": "abc",
+                        "description": "FM repeater, CTCSS 88.5Hz",
+                        "downlink_low": 145900000,
+                        "mode": "FM",
+                    }
+                ]
+            )
+        )
+        with patch("data.transmitter_manager.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            rec = asyncio.run(mgr.fetch_satnogs_transmitter("abc"))
+
+        assert rec is not None
+        assert rec["ctcss_tone"] == 88.5
+
+    def test_uuid_no_longer_in_satnogs_returns_none(self, db: sqlite3.Connection) -> None:
+        mgr = TransmitterManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=_mock_uuid_response([]))
+        with patch("data.transmitter_manager.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            rec = asyncio.run(mgr.fetch_satnogs_transmitter("gone-uuid"))
+
+        assert rec is None
+
+    def test_connection_failure_propagates(self, db: sqlite3.Connection) -> None:
+        """Unlike the "not found" case (returns None), a connectivity
+        failure must raise so the caller can show the same "cannot connect
+        to SatNOGS" messaging used elsewhere in the app."""
+        mgr = TransmitterManager(db)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            side_effect=httpx.ConnectError("all connection attempts failed")
+        )
+        with patch("data.transmitter_manager.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            with pytest.raises(httpx.ConnectError):
+                asyncio.run(mgr.fetch_satnogs_transmitter("abc"))

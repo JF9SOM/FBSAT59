@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QLineEdit,
     QMessageBox,
+    QPushButton,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -162,6 +163,17 @@ class TransmitterDialog(QDialog):
         notes_form.addRow(_("Notes:"), self._notes_edit)
         layout.addLayout(notes_form)
 
+        # Reset to SatNOGS official value: only meaningful when editing a row
+        # that originated from SatNOGS. source is never changed by editing
+        # (update_transmitter()'s allowed-columns set excludes uuid/source),
+        # so source == "satnogs" stays a reliable marker of "there is a real
+        # SatNOGS UUID to re-fetch" even after manual_override=1 protected a
+        # bad edit from ever being auto-corrected (GitHub Issue #20 follow-up).
+        if self._edit_mode and self._existing and self._existing.get("source") == "satnogs":
+            self._reset_satnogs_btn = QPushButton(_("Reset to SatNOGS Official Value"))
+            self._reset_satnogs_btn.clicked.connect(self._on_reset_to_satnogs)
+            layout.addWidget(self._reset_satnogs_btn)
+
         # Overwrite protection
         self._overwrite_check = QCheckBox(
             _("Overwrite protection (prevent SATNOGS sync from overwriting)")
@@ -199,6 +211,17 @@ class TransmitterDialog(QDialog):
         self._norad_spin.setValue(rec.get("norad_cat_id", 25544))
         self._norad_spin.setEnabled(False)
         self._satnogs_norad_spin.setEnabled(False)
+        self._apply_satnogs_fields(rec)
+        self._notes_edit.setText(rec.get("notes") or "")
+        self._overwrite_check.setChecked(bool(rec.get("manual_override", 1)))
+
+    def _apply_satnogs_fields(self, rec: dict[str, Any]) -> None:
+        """Populate only the fields SatNOGS actually has data for: description,
+        frequencies, type, mode, invert, CTCSS. Shared by _prefill() (edit
+        mode) and _on_reset_to_satnogs() (the "Reset to SatNOGS Official
+        Value" button) -- deliberately leaves NORAD ID, Notes, and the
+        Overwrite-protection checkbox untouched, since NORAD/Notes aren't
+        SatNOGS data and the checkbox is the caller's own responsibility."""
         self._desc_edit.setText(rec.get("description", ""))
         self._dl_spin.setValue(self._hz_to_mhz(rec.get("downlink_low")))
         self._dl_high_spin.setValue(self._hz_to_mhz(rec.get("downlink_high")))
@@ -210,8 +233,8 @@ class TransmitterDialog(QDialog):
         if idx >= 0:
             self._type_combo.setCurrentIndex(idx)
 
-        mode = rec.get("mode", "FM")
-        midx = self._mode_combo.findText(mode or "FM")
+        mode = rec.get("mode") or "FM"
+        midx = self._mode_combo.findText(mode)
         if midx >= 0:
             self._mode_combo.setCurrentIndex(midx)
 
@@ -224,10 +247,6 @@ class TransmitterDialog(QDialog):
 
         ctcss = rec.get("ctcss_tone")
         self._ctcss_spin.setValue(ctcss if ctcss and ctcss > 0 else 0.0)
-
-        self._notes_edit.setText(rec.get("notes") or "")
-
-        self._overwrite_check.setChecked(bool(rec.get("manual_override", 1)))
 
     # ------------------------------------------------------------------ #
     # Signal handlers
@@ -324,3 +343,26 @@ class TransmitterDialog(QDialog):
             self.accept()
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, _("Error"), str(exc))
+
+    def _on_reset_to_satnogs(self) -> None:
+        """Re-fetch this transmitter's current data directly from SatNOGS and
+        populate the form. Does NOT touch the DB until OK is pressed -- the
+        user reviews (and can still tweak) the fetched values before saving,
+        same as any other field. Also unchecks Overwrite protection, since
+        the whole point is to resume being kept in sync automatically."""
+        if self._existing is None:
+            return
+        try:
+            rec = asyncio.run(self._tm.fetch_satnogs_transmitter(self._existing["uuid"]))
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, _("Error"), str(exc))
+            return
+        if rec is None:
+            QMessageBox.warning(
+                self,
+                _("Reset to SatNOGS"),
+                _("This transmitter is no longer present in the SatNOGS database."),
+            )
+            return
+        self._apply_satnogs_fields(rec)
+        self._overwrite_check.setChecked(False)

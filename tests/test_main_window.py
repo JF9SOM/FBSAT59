@@ -544,6 +544,134 @@ class TestTransmitterDialog:
         assert abs(w._ctcss_spin.value() - 67.0) < 0.1
         assert w._notes_edit.text() == "test note"
 
+    # -- "Reset to SatNOGS Official Value" button (GitHub Issue #20 follow-up) --
+
+    _SATNOGS_EXISTING = {
+        "uuid": "kjb3TFADq77qj2AFSzxHCV",
+        "norad_cat_id": 39444,
+        "description": "Mode U/V Linear (broken)",
+        "type": "Transponder",
+        "downlink_low": 145_965_000,
+        "downlink_high": None,
+        "uplink_low": 435_150_000,
+        "uplink_high": None,
+        "mode": "SSB",
+        "invert": False,
+        "ctcss_tone": None,
+        "ctcss_tone_type": None,
+        "notes": "my note",
+        "source": "satnogs",
+        "manual_override": 1,
+    }
+
+    def test_reset_button_shown_for_satnogs_source(self, qtbot, db) -> None:
+        from ui.transmitter_dialog import TransmitterDialog
+
+        w = TransmitterDialog(self._mgr(db), existing=dict(self._SATNOGS_EXISTING))
+        qtbot.addWidget(w)
+        assert hasattr(w, "_reset_satnogs_btn")
+
+    def test_reset_button_hidden_for_manual_source(self, qtbot, db) -> None:
+        """Editing never changes `source` (see update_transmitter()'s allowed
+        columns), but a from-scratch manual/community row genuinely has
+        nothing on SatNOGS to reset to."""
+        from ui.transmitter_dialog import TransmitterDialog
+
+        existing = {**self._SATNOGS_EXISTING, "source": "manual"}
+        w = TransmitterDialog(self._mgr(db), existing=existing)
+        qtbot.addWidget(w)
+        assert not hasattr(w, "_reset_satnogs_btn")
+
+    def test_reset_button_hidden_when_source_missing(self, qtbot, db) -> None:
+        """Records fetched with an explicit column list that predates/omits
+        `source` must not crash and must not show the button (fail closed)."""
+        from ui.transmitter_dialog import TransmitterDialog
+
+        existing = {k: v for k, v in self._SATNOGS_EXISTING.items() if k != "source"}
+        w = TransmitterDialog(self._mgr(db), existing=existing)
+        qtbot.addWidget(w)
+        assert not hasattr(w, "_reset_satnogs_btn")
+
+    def test_reset_button_hidden_in_add_mode(self, qtbot, db) -> None:
+        from ui.transmitter_dialog import TransmitterDialog
+
+        w = TransmitterDialog(self._mgr(db), norad_cat_id=25544)
+        qtbot.addWidget(w)
+        assert not hasattr(w, "_reset_satnogs_btn")
+
+    def test_reset_populates_fields_without_writing_db(self, qtbot, db) -> None:
+        """Reset repopulates the form from a fresh SatNOGS fetch -- including
+        unchecking Overwrite protection -- but must NOT touch the DB until
+        OK/Save is pressed, and must leave NORAD ID / Notes (not SatNOGS
+        data) untouched."""
+        from unittest.mock import AsyncMock, patch
+
+        from ui.transmitter_dialog import TransmitterDialog
+
+        w = TransmitterDialog(self._mgr(db), existing=dict(self._SATNOGS_EXISTING))
+        qtbot.addWidget(w)
+
+        fresh = {
+            "description": "Mode U/V Linear",
+            "type": "Transponder",
+            "downlink_low": 145_950_000,
+            "downlink_high": 145_970_000,
+            "uplink_low": 435_130_000,
+            "uplink_high": 435_150_000,
+            "mode": "USB",
+            "invert": 1,
+            "ctcss_tone": None,
+            "ctcss_tone_type": None,
+        }
+        w._tm.fetch_satnogs_transmitter = AsyncMock(return_value=fresh)
+        with patch.object(w._tm, "update_transmitter") as mock_update:
+            w._on_reset_to_satnogs()
+            mock_update.assert_not_called()
+
+        assert w._desc_edit.text() == "Mode U/V Linear"
+        assert abs(w._dl_spin.value() - 145.950) < 0.001
+        assert abs(w._dl_high_spin.value() - 145.970) < 0.001
+        assert abs(w._ul_spin.value() - 435.130) < 0.001
+        assert abs(w._ul_high_spin.value() - 435.150) < 0.001
+        assert w._mode_combo.currentText() == "USB"
+        assert w._invert_check.isChecked() is True
+        assert w._overwrite_check.isChecked() is False
+        assert w._notes_edit.text() == "my note"
+        assert w._norad_spin.value() == 39444
+
+    def test_reset_not_found_shows_warning_and_leaves_form_unchanged(self, qtbot, db) -> None:
+        from unittest.mock import AsyncMock, patch
+
+        from ui.transmitter_dialog import TransmitterDialog
+
+        w = TransmitterDialog(self._mgr(db), existing=dict(self._SATNOGS_EXISTING))
+        qtbot.addWidget(w)
+        w._tm.fetch_satnogs_transmitter = AsyncMock(return_value=None)
+
+        with patch("ui.transmitter_dialog.QMessageBox.warning") as mock_warn:
+            w._on_reset_to_satnogs()
+            mock_warn.assert_called_once()
+
+        assert w._desc_edit.text() == "Mode U/V Linear (broken)"  # unchanged
+        assert w._overwrite_check.isChecked() is True  # unchanged
+
+    def test_reset_connection_failure_shows_error(self, qtbot, db) -> None:
+        from unittest.mock import AsyncMock, patch
+
+        from ui.transmitter_dialog import TransmitterDialog
+
+        w = TransmitterDialog(self._mgr(db), existing=dict(self._SATNOGS_EXISTING))
+        qtbot.addWidget(w)
+        w._tm.fetch_satnogs_transmitter = AsyncMock(
+            side_effect=RuntimeError("all connection attempts failed")
+        )
+
+        with patch("ui.transmitter_dialog.QMessageBox.critical") as mock_crit:
+            w._on_reset_to_satnogs()
+            mock_crit.assert_called_once()
+
+        assert w._desc_edit.text() == "Mode U/V Linear (broken)"  # unchanged
+
     def test_edit_mode_title(self, qtbot, db) -> None:
         from ui.transmitter_dialog import TransmitterDialog
 
@@ -3221,6 +3349,15 @@ class TestModeInvertDataModes:
 
     def test_lsb_d_inverts_to_usb_d(self) -> None:
         assert _MODE_INVERT["LSB-D"] == "USB-D"
+
+    def test_ssb_inverts_to_lsb(self) -> None:
+        """GitHub Issue #20 follow-up (AO-73, real-world report): the Add/Edit
+        Transmitter dialog's Mode combo offers the generic "SSB" option
+        (transmitter_dialog._MODES), which _build_live_hamlib_mode_map()
+        already treats as equivalent to "USB" for the downlink -- but "SSB"
+        was missing from this table entirely, so invert=True never flipped
+        the uplink, and both sides silently ended up on USB."""
+        assert _MODE_INVERT["SSB"] == "LSB"
 
 
 class TestFetchAllTleSourcesGuardAndFeedback:
