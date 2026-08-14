@@ -2510,6 +2510,20 @@ class MainWindow(QMainWindow):
         self._tab_widget.setCurrentIndex(idx)
         if norad:
             tab.select_pipeline_by_norad_and_freq(norad, downlink_hz)
+        else:
+            # No explicit target (opened from the Communications menu, not
+            # from Radio Control auto-open) — the pipeline combo is already
+            # showing its first entry (METEOR-M N2-3) at this point, but
+            # currentIndexChanged never fired for it (the signal connection
+            # above happens after MeteorTab.__init__() already populated
+            # the combo), so the left satellite list was never synced to
+            # it. Sync explicitly so the rotator has a satellite to track
+            # without the user needing to touch the combo first.
+            default = tab._combo_sat.currentData()
+            if default:
+                self._on_meteor_satellite_requested(
+                    int(default["norad"]), int(default["xpdr_freq"])
+                )
 
     def _on_meteor_transponder_selected(self, norad: int, downlink_hz: int) -> None:
         """Radio Control selected a METEOR LRPT/HRPT transponder — open/sync METEOR tab."""
