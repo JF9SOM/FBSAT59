@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-14 22:37+0900\n"
+"POT-Creation-Date: 2026-08-14 23:05+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -558,7 +558,7 @@ msgstr ""
 msgid "Downloading…"
 msgstr ""
 
-#: src/ui/settings_dialog.py:399 src/ui/meteor_tab.py:535
+#: src/ui/settings_dialog.py:399 src/ui/meteor_tab.py:541
 #: src/ui/ft8lib_dialog.py:449 src/ui/direwolf_dialog.py:345
 #: src/ui/q65lib_dialog.py:334 src/ui/cw_model_dialog.py:233
 #: src/ui/gr_satellites_dialog.py:416 src/ui/ft4wsjt_dialog.py:394
@@ -909,7 +909,7 @@ msgstr ""
 msgid "About SatDump installation"
 msgstr ""
 
-#: src/ui/meteor_tab.py:261 src/ui/meteor_tab.py:455 src/ui/meteor_tab.py:549
+#: src/ui/meteor_tab.py:261 src/ui/meteor_tab.py:461 src/ui/meteor_tab.py:555
 msgid "Lock: —"
 msgstr ""
 
@@ -917,7 +917,7 @@ msgstr ""
 msgid "Ready.  Select a pipeline and press Start."
 msgstr ""
 
-#: src/ui/meteor_tab.py:283 src/ui/meteor_tab.py:634
+#: src/ui/meteor_tab.py:283 src/ui/meteor_tab.py:640
 msgid "No image received yet."
 msgstr ""
 
@@ -943,28 +943,33 @@ msgstr ""
 msgid "⚠  No SDR configured.  Open Radio > Rig Settings > SDR Settings."
 msgstr ""
 
-#: src/ui/meteor_tab.py:396
+#: src/ui/meteor_tab.py:395
+#, python-brace-format
+msgid "SDR: {label}  gain Auto — ready."
+msgstr ""
+
+#: src/ui/meteor_tab.py:399
 #, python-brace-format
 msgid "SDR: {label}  gain {gain} dB — ready."
 msgstr ""
 
-#: src/ui/meteor_tab.py:416
+#: src/ui/meteor_tab.py:421
 msgid "⚠  SDR not configured — attempting rtlsdr with gain 40 dB."
 msgstr ""
 
-#: src/ui/meteor_tab.py:454
+#: src/ui/meteor_tab.py:460
 msgid "Receiving…"
 msgstr ""
 
-#: src/ui/meteor_tab.py:462
+#: src/ui/meteor_tab.py:468
 msgid "Stopping…"
 msgstr ""
 
-#: src/ui/meteor_tab.py:500
+#: src/ui/meteor_tab.py:506
 msgid "SatDump Required"
 msgstr ""
 
-#: src/ui/meteor_tab.py:502
+#: src/ui/meteor_tab.py:508
 msgid ""
 "To receive satellite images in this tab, SatDump must be installed.\n"
 "\n"
@@ -972,27 +977,27 @@ msgid ""
 "installation instructions."
 msgstr ""
 
-#: src/ui/meteor_tab.py:522
+#: src/ui/meteor_tab.py:528
 msgid "Lock!"
 msgstr ""
 
-#: src/ui/meteor_tab.py:529
+#: src/ui/meteor_tab.py:535
 msgid "Reception finished."
 msgstr ""
 
-#: src/ui/meteor_tab.py:536
+#: src/ui/meteor_tab.py:542
 msgid "[ERROR] "
 msgstr ""
 
-#: src/ui/meteor_tab.py:571
+#: src/ui/meteor_tab.py:577
 msgid "Autotrack: reception started at AOS."
 msgstr ""
 
-#: src/ui/meteor_tab.py:577
+#: src/ui/meteor_tab.py:583
 msgid "Autotrack: reception stopped at LOS."
 msgstr ""
 
-#: src/ui/meteor_tab.py:598 src/ui/sstv_tab.py:551
+#: src/ui/meteor_tab.py:604 src/ui/sstv_tab.py:551
 msgid "Image received: "
 msgstr ""
 

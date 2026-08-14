@@ -180,6 +180,7 @@ class SatDumpProcess(QThread):
         output_dir: Path,
         gain: int = 40,
         ppm: int = 0,
+        agc: bool = False,
         parent: object | None = None,
     ) -> None:
         super().__init__(parent)  # type: ignore[arg-type]
@@ -190,6 +191,7 @@ class SatDumpProcess(QThread):
         self._output_dir = output_dir
         self._gain = gain
         self._ppm = ppm
+        self._agc = agc
         self._proc: subprocess.Popen[str] | None = None
 
     # ------------------------------------------------------------------
@@ -222,9 +224,17 @@ class SatDumpProcess(QThread):
             str(self._samplerate),
             "--frequency",
             str(self._frequency),
-            "--gain",
-            str(self._gain),
         ]
+        if self._agc:
+            # rtlsdr_sdr.cpp reads "agc" as a plain bool switch (default
+            # false -- confirmed against a real run's "Set RTL-SDR AGC to 0"
+            # log line when this flag was never sent). When AGC is enabled
+            # the tuner's own hardware AGC drives gain, so a manual --gain
+            # value would just be ignored -- omit it entirely rather than
+            # send a number that has no effect.
+            cmd += ["--agc", "true"]
+        else:
+            cmd += ["--gain", str(self._gain)]
         if self._ppm:
             # Corrects RTL-SDR local-oscillator drift (commonly tens of ppm
             # on cheap dongles). At 137.9 MHz an uncorrected 50 ppm drift is

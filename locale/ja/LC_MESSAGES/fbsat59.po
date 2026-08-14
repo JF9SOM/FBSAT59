@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-14 22:37+0900\n"
+"POT-Creation-Date: 2026-08-14 23:05+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -592,7 +592,7 @@ msgstr "（プレビュー利用不可）"
 msgid "Downloading…"
 msgstr "ダウンロード中…"
 
-#: src/ui/settings_dialog.py:399 src/ui/meteor_tab.py:535
+#: src/ui/settings_dialog.py:399 src/ui/meteor_tab.py:541
 #: src/ui/ft8lib_dialog.py:449 src/ui/direwolf_dialog.py:345
 #: src/ui/q65lib_dialog.py:334 src/ui/cw_model_dialog.py:233
 #: src/ui/gr_satellites_dialog.py:416 src/ui/ft4wsjt_dialog.py:394
@@ -965,7 +965,7 @@ msgstr "SatDumpの出力ログを表示"
 msgid "About SatDump installation"
 msgstr "SatDumpのインストールについて"
 
-#: src/ui/meteor_tab.py:261 src/ui/meteor_tab.py:455 src/ui/meteor_tab.py:549
+#: src/ui/meteor_tab.py:261 src/ui/meteor_tab.py:461 src/ui/meteor_tab.py:555
 msgid "Lock: —"
 msgstr "ロック: —"
 
@@ -973,7 +973,7 @@ msgstr "ロック: —"
 msgid "Ready.  Select a pipeline and press Start."
 msgstr "準備完了。パイプラインを選択してStartを押してください。"
 
-#: src/ui/meteor_tab.py:283 src/ui/meteor_tab.py:634
+#: src/ui/meteor_tab.py:283 src/ui/meteor_tab.py:640
 msgid "No image received yet."
 msgstr "まだ画像を受信していません。"
 
@@ -1003,28 +1003,33 @@ msgstr ""
 "⚠  SDRが設定されていません。Radio > Rig Settings > SDR Settings を開いてくだ"
 "さい。"
 
-#: src/ui/meteor_tab.py:396
+#: src/ui/meteor_tab.py:395
+#, python-brace-format
+msgid "SDR: {label}  gain Auto — ready."
+msgstr "SDR: {label}  ゲイン Auto — 準備完了。"
+
+#: src/ui/meteor_tab.py:399
 #, python-brace-format
 msgid "SDR: {label}  gain {gain} dB — ready."
 msgstr "SDR: {label}  ゲイン {gain} dB — 準備完了。"
 
-#: src/ui/meteor_tab.py:416
+#: src/ui/meteor_tab.py:421
 msgid "⚠  SDR not configured — attempting rtlsdr with gain 40 dB."
 msgstr "⚠  SDRが設定されていません — ゲイン40 dBでrtlsdrを試行中。"
 
-#: src/ui/meteor_tab.py:454
+#: src/ui/meteor_tab.py:460
 msgid "Receiving…"
 msgstr "受信中…"
 
-#: src/ui/meteor_tab.py:462
+#: src/ui/meteor_tab.py:468
 msgid "Stopping…"
 msgstr "停止中…"
 
-#: src/ui/meteor_tab.py:500
+#: src/ui/meteor_tab.py:506
 msgid "SatDump Required"
 msgstr "SatDumpが必要です"
 
-#: src/ui/meteor_tab.py:502
+#: src/ui/meteor_tab.py:508
 msgid ""
 "To receive satellite images in this tab, SatDump must be installed.\n"
 "\n"
@@ -1036,27 +1041,27 @@ msgstr ""
 "インストール手順はメニューバーの Help → SatDump… を\n"
 "参照してください。"
 
-#: src/ui/meteor_tab.py:522
+#: src/ui/meteor_tab.py:528
 msgid "Lock!"
 msgstr "ロック！"
 
-#: src/ui/meteor_tab.py:529
+#: src/ui/meteor_tab.py:535
 msgid "Reception finished."
 msgstr "受信が完了しました。"
 
-#: src/ui/meteor_tab.py:536
+#: src/ui/meteor_tab.py:542
 msgid "[ERROR] "
 msgstr "[エラー] "
 
-#: src/ui/meteor_tab.py:571
+#: src/ui/meteor_tab.py:577
 msgid "Autotrack: reception started at AOS."
 msgstr "自動追尾: AOSで受信を開始しました。"
 
-#: src/ui/meteor_tab.py:577
+#: src/ui/meteor_tab.py:583
 msgid "Autotrack: reception stopped at LOS."
 msgstr "自動追尾: LOSで受信を停止しました。"
 
-#: src/ui/meteor_tab.py:598 src/ui/sstv_tab.py:551
+#: src/ui/meteor_tab.py:604 src/ui/sstv_tab.py:551
 msgid "Image received: "
 msgstr "画像受信: "
 
@@ -2364,9 +2369,9 @@ msgid ""
 "~35 seconds. No reference signal needed — same principle as the\n"
 "standard rtl_test -p tool, but built in and works for any device."
 msgstr ""
-"設定したサンプルレートと実際に受信したサンプル数を約35秒間比較し、デバイス"
-"のクロックのズレを自動測定します。基準信号は不要です — 標準ツール"
-"rtl_test -pと同じ原理を内蔵しており、どのデバイスでも使用できます。"
+"設定したサンプルレートと実際に受信したサンプル数を約35秒間比較し、デバイスの"
+"クロックのズレを自動測定します。基準信号は不要です — 標準ツールrtl_test -pと"
+"同じ原理を内蔵しており、どのデバイスでも使用できます。"
 
 #: src/ui/rig_dialog.py:1092
 msgid "PPM Correction:"

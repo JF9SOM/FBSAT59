@@ -390,11 +390,14 @@ class MeteorTab(QWidget):
             )
             return
         driver = _sdr_source_from_settings(sdr)
-        gain = int(sdr.get("gain_db") or 40)
         label: str = sdr.get("device_label") or driver
-        self._lbl_status.setText(
-            _("SDR: {label}  gain {gain} dB — ready.").format(label=label, gain=gain)
-        )
+        if bool(sdr.get("gain_auto", True)):
+            self._lbl_status.setText(_("SDR: {label}  gain Auto — ready.").format(label=label))
+        else:
+            gain = int(sdr.get("gain_db") or 40)
+            self._lbl_status.setText(
+                _("SDR: {label}  gain {gain} dB — ready.").format(label=label, gain=gain)
+            )
 
     # ------------------------------------------------------------------
     # Start / Stop
@@ -405,11 +408,13 @@ class MeteorTab(QWidget):
         sdr = _load_sdr_settings()
         if sdr and sdr.get("enabled"):
             source = _sdr_source_from_settings(sdr)
+            gain_auto = bool(sdr.get("gain_auto", True))
             gain = int(sdr.get("gain_db") or 40)
             ppm = int(sdr.get("ppm") or 0)
         else:
             # Fallback: try rtlsdr with default gain
             source = "rtlsdr"
+            gain_auto = False
             gain = 40
             ppm = 0
             self._lbl_status.setText(
@@ -431,6 +436,7 @@ class MeteorTab(QWidget):
             output_dir=self._output_dir,
             gain=gain,
             ppm=ppm,
+            agc=gain_auto,
             parent=self,
         )
         self._process.log_line.connect(self._on_log_line)
