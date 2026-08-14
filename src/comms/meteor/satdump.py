@@ -7,6 +7,7 @@ stdout/stderr are forwarded as Qt signals so the UI can display them.
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -157,7 +158,7 @@ class SatDumpProcess(QThread):
     progress(int)
         Estimated progress 0-100 parsed from satdump output (best-effort).
     lock_status(bool)
-        True when a frame-lock line is detected in the output.
+        True when the Deframer (or generic Lock field) reports SYNCED.
     finished_ok()
         Process exited with code 0 or was stopped cleanly.
     finished_err(str)
@@ -274,16 +275,20 @@ class SatDumpProcess(QThread):
         """Extract progress / lock information from a satdump output line."""
         lower = line.lower()
 
-        # Lock detection
-        if "lock" in lower:
-            locked = "locked" in lower or "lock!" in lower
-            self.lock_status.emit(locked)
+        # Lock detection: SatDump reports sync state as "Deframer : SYNCED"
+        # / "Deframer : NOSYNC" on the LRPT/HRPT pipelines used here, or a
+        # generic "Lock : SYNCED" / "Lock : NOSYNC" field on some other
+        # pipelines. Anchor on the field name followed by a colon so this
+        # never matches unrelated messages such as the RTL-SDR tuner's
+        # startup "[R82XX] PLL not locked!" warning, which contains "lock"
+        # but no "deframer:"/"lock:" field and is unrelated to signal sync.
+        m = re.search(r"deframer\s*:\s*(\w+)", lower) or re.search(r"\block\s*:\s*(\w+)", lower)
+        if m:
+            self.lock_status.emit(m.group(1) == "synced")
 
         # Progress: look for percentage patterns like "  45%"
-        import re
-
-        m = re.search(r"\b(\d{1,3})\s*%", line)
-        if m:
-            pct = int(m.group(1))
+        m2 = re.search(r"\b(\d{1,3})\s*%", line)
+        if m2:
+            pct = int(m2.group(1))
             if 0 <= pct <= 100:
                 self.progress.emit(pct)
