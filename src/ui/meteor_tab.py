@@ -406,10 +406,12 @@ class MeteorTab(QWidget):
         if sdr and sdr.get("enabled"):
             source = _sdr_source_from_settings(sdr)
             gain = int(sdr.get("gain_db") or 40)
+            ppm = int(sdr.get("ppm") or 0)
         else:
             # Fallback: try rtlsdr with default gain
             source = "rtlsdr"
             gain = 40
+            ppm = 0
             self._lbl_status.setText(
                 _("⚠  SDR not configured — attempting rtlsdr with gain 40 dB.")
             )
@@ -428,6 +430,7 @@ class MeteorTab(QWidget):
             samplerate=int(pipeline_data["samplerate"]),
             output_dir=self._output_dir,
             gain=gain,
+            ppm=ppm,
             parent=self,
         )
         self._process.log_line.connect(self._on_log_line)

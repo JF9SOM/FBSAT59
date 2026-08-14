@@ -179,6 +179,7 @@ class SatDumpProcess(QThread):
         samplerate: int,
         output_dir: Path,
         gain: int = 40,
+        ppm: int = 0,
         parent: object | None = None,
     ) -> None:
         super().__init__(parent)  # type: ignore[arg-type]
@@ -188,6 +189,7 @@ class SatDumpProcess(QThread):
         self._samplerate = samplerate
         self._output_dir = output_dir
         self._gain = gain
+        self._ppm = ppm
         self._proc: subprocess.Popen[str] | None = None
 
     # ------------------------------------------------------------------
@@ -223,6 +225,14 @@ class SatDumpProcess(QThread):
             "--gain",
             str(self._gain),
         ]
+        if self._ppm:
+            # Corrects RTL-SDR local-oscillator drift (commonly tens of ppm
+            # on cheap dongles). At 137.9 MHz an uncorrected 50 ppm drift is
+            # ~6.9 kHz off-frequency -- easily enough to push the LRPT
+            # carrier outside psk_demod's narrow PLL capture range
+            # (pll_bw: 0.002) even though the same drift is imperceptible
+            # for wideband FM broadcast reception.
+            cmd += ["--ppm_correction", str(self._ppm)]
 
         self.log_line.emit("$ " + " ".join(cmd))
 
