@@ -110,6 +110,14 @@ _SOAPY_GLOBAL_LOCK: threading.Lock = threading.Lock()
 # Pass force=True (only from the Enumerate button) to bypass the cache.
 _enumerate_cache: list[SdrDeviceInfo] | None = None
 
+# SoapySDR's stream-result error code for a dropped-sample overflow (the
+# driver's ring buffer filled before this process drained it).  Hardcoded
+# rather than imported from the SoapySDR module so SdrDevice.read_samples()'s
+# hot loop never pays a lazy-import cost -- this value (from SoapySDR's
+# Errors.h) has been stable across the project's entire supported version
+# range.
+_SOAPY_SDR_OVERFLOW: int = -4
+
 
 # ---------------------------------------------------------------------------
 # RTL-SDR ctypes helpers
@@ -777,6 +785,7 @@ class SdrDevice:
         self._gain_db: float = 40.0
         self._ppm: float = 0.0
         self._bias_tee: bool = False
+        self._overflow_count: int = 0
 
     # ------------------------------------------------------------------
     # Class methods
@@ -1036,6 +1045,18 @@ class SdrDevice:
         return self._sample_rate
 
     @property
+    def overflow_count(self) -> int:
+        """Number of SOAPY_SDR_OVERFLOW results seen by read_samples() so far.
+
+        An overflow means the driver's internal ring buffer filled up before
+        this process drained it and samples were silently dropped -- any
+        throughput-based measurement (e.g. ppm_measure.py) spanning a period
+        with overflows is unreliable and should be discarded, not just
+        treated as noisy data.
+        """
+        return self._overflow_count
+
+    @property
     def center_freq(self) -> float:
         return self._center_freq
 
@@ -1282,14 +1303,23 @@ class SdrDevice:
 
         Returns None on timeout or error.  Non-blocking: uses a 50 ms timeout
         so the pipeline thread can check a stop flag between reads.
-        """
 
+        On the real SoapySDR path, a SOAPY_SDR_OVERFLOW result increments
+        self._overflow_count (see the overflow_count property) so callers
+        that care about data integrity can detect dropped samples; this
+        method's own return value is unaffected (still None, same as any
+        other error) to avoid changing behavior for existing callers.  The
+        Windows RTL-SDR/HackRF ctypes bypass classes never report this
+        distinctly from a generic error, so overflow_count stays 0 there.
+        """
         if self._stream is None or self._dev is None:
             return None
         buf = np.zeros(num_samples, dtype=np.complex64)
         try:
             sr = self._dev.readStream(self._stream, [buf], num_samples, timeoutUs=50_000)
             if sr.ret < 0:
+                if sr.ret == _SOAPY_SDR_OVERFLOW:
+                    self._overflow_count += 1
                 return None
             if sr.ret < num_samples:
                 return buf[: sr.ret]

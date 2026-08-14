@@ -28,8 +28,15 @@ from sdr.device import SdrDevice, SdrDeviceInfo
 
 logger = logging.getLogger(__name__)
 
-_CHUNK = 65536
+# Larger than the pipeline's usual 16384-65536 chunk sizes on purpose: each
+# read_samples() call has fixed Python-side overhead (a fresh np.zeros()
+# allocation, a readStream() round-trip). At a high sample rate that
+# overhead, repeated often enough, can make this thread fall behind the
+# device's real throughput and trigger the very overflow this tool is
+# trying to measure past -- fewer, bigger reads reduce that risk.
+_CHUNK = 262144
 _WARMUP_S = 5.0  # discard the first few seconds -- clock is least stable right after open()
+_PROGRESS_INTERVAL_S = 0.15  # throttle progress emits; cross-thread Qt signals aren't free
 
 
 class PpmMeasureWorker(QThread):
@@ -77,6 +84,8 @@ class PpmMeasureWorker(QThread):
             total_duration = _WARMUP_S + self._duration
             t_start = time.monotonic()
             t_measure_start: float | None = None
+            overflow_at_measure_start = 0
+            last_progress_emit = 0.0
             while True:
                 now = time.monotonic()
                 t_since_start = now - t_start
@@ -89,16 +98,42 @@ class PpmMeasureWorker(QThread):
                 if t_since_start >= _WARMUP_S:
                     if t_measure_start is None:
                         t_measure_start = now
+                        overflow_at_measure_start = dev.overflow_count
                     if buf is not None:
                         total_samples += len(buf)
-                self.progress.emit(min(1.0, t_since_start / total_duration))
+                if now - last_progress_emit >= _PROGRESS_INTERVAL_S:
+                    last_progress_emit = now
+                    self.progress.emit(min(1.0, t_since_start / total_duration))
             if t_measure_start is not None:
                 elapsed = time.monotonic() - t_measure_start
+            overflows_during_measurement = dev.overflow_count - overflow_at_measure_start
         finally:
             dev.close()
 
         if elapsed <= 0 or total_samples == 0:
             self.finished_err.emit(_("No samples received during measurement."))
+            return
+
+        if overflows_during_measurement > 0:
+            # The driver dropped samples faster than we could read them, so
+            # total_samples/elapsed understates the device's real throughput
+            # -- the resulting "ppm" would be a measurement artifact, not the
+            # device's actual clock error, and can be off by hundreds of ppm
+            # or more. Discard rather than report a number that looks
+            # trustworthy but isn't.
+            logger.warning(
+                "PPM measurement discarded: %d buffer overflow(s) during the "
+                "measurement window (requested=%.0f)",
+                overflows_during_measurement,
+                self._sample_rate,
+            )
+            self.finished_err.emit(
+                _(
+                    "Buffer overflow during measurement — result discarded as "
+                    "unreliable. Try a lower sample rate or close other apps "
+                    "using the CPU, then measure again."
+                )
+            )
             return
 
         actual_rate = total_samples / elapsed

@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-14 23:05+0900\n"
+"POT-Creation-Date: 2026-08-14 23:42+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -4932,21 +4932,30 @@ msgstr ""
 msgid "Could not remove or rename the install directory:\n"
 msgstr "インストールディレクトリの削除・リネームに失敗しました:\n"
 
-#: src/sdr/ppm_measure.py:71
+#: src/sdr/ppm_measure.py:78
 msgid "Could not open the SDR device — is it in use elsewhere?"
 msgstr "SDRデバイスを開けませんでした。他の場所で使用中ではありませんか？"
 
-#: src/sdr/ppm_measure.py:74
+#: src/sdr/ppm_measure.py:81
 msgid "Could not start streaming from the SDR device."
 msgstr "SDRデバイスからのストリーミングを開始できませんでした。"
 
-#: src/sdr/ppm_measure.py:86
+#: src/sdr/ppm_measure.py:95
 msgid "Measurement cancelled."
 msgstr "測定をキャンセルしました。"
 
-#: src/sdr/ppm_measure.py:101
+#: src/sdr/ppm_measure.py:114
 msgid "No samples received during measurement."
 msgstr "測定中にサンプルを受信できませんでした。"
+
+#: src/sdr/ppm_measure.py:132
+msgid ""
+"Buffer overflow during measurement — result discarded as unreliable. Try a "
+"lower sample rate or close other apps using the CPU, then measure again."
+msgstr ""
+"測定中にバッファオーバーフローが発生したため、結果を信頼できないと判断して"
+"破棄しました。サンプルレートを下げるか、CPUを使用している他のアプリを閉じて"
+"から再度測定してください。"
 
 #~ msgid "Auto-Fetch Schedule"
 #~ msgstr "自動取得スケジュール"

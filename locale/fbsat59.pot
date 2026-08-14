@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-14 23:05+0900\n"
+"POT-Creation-Date: 2026-08-14 23:42+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -4492,18 +4492,24 @@ msgstr ""
 msgid "Could not remove or rename the install directory:\n"
 msgstr ""
 
-#: src/sdr/ppm_measure.py:71
+#: src/sdr/ppm_measure.py:78
 msgid "Could not open the SDR device — is it in use elsewhere?"
 msgstr ""
 
-#: src/sdr/ppm_measure.py:74
+#: src/sdr/ppm_measure.py:81
 msgid "Could not start streaming from the SDR device."
 msgstr ""
 
-#: src/sdr/ppm_measure.py:86
+#: src/sdr/ppm_measure.py:95
 msgid "Measurement cancelled."
 msgstr ""
 
-#: src/sdr/ppm_measure.py:101
+#: src/sdr/ppm_measure.py:114
 msgid "No samples received during measurement."
+msgstr ""
+
+#: src/sdr/ppm_measure.py:132
+msgid ""
+"Buffer overflow during measurement — result discarded as unreliable. Try a "
+"lower sample rate or close other apps using the CPU, then measure again."
 msgstr ""
