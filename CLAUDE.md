@@ -4801,6 +4801,19 @@ SatNOGSに一切データが無い`source='manual'`/`'community'`行へのボタ
 `grep`で確認済み。既存テストで`_MODES`に依存する箇所（`test_edit_mode_prefills_fields`の
 `mode="FM"`等）への影響もないことを確認した。
 
+### 追加修正（同日）— Offsetスピンボックスの可変範囲を±5000Hz→±10000Hzに拡大
+
+v0.3.16で修正版をDMさんに試してもらったところ、AO-73のUSB/LSB問題・Resetボタンとも実機で
+正常動作を確認できたとの報告があった。ただしAO-73自体のTCXOドリフトが他衛星より大きく
+（実測で約9500Hz程度、IC-9700のRITだけでは足りずフルパスを通して追いかけるのに苦労した
+とのこと）、Issue #18由来のOffsetスピンボックスの可変範囲（`radio_control_widget.py`の
+`_RX_OFFSET_RANGE_HZ = 5000`）ではAO-73の実測ドリフト量そのものに対して余裕が無いことが
+判明した。ユーザー判断で余裕を持たせて`10000`（±10kHz）に変更（定数1箇所のみ、DB側の
+`rx_offset_hz REAL`列に範囲制約は無いため他に影響なし）。
+
+テスト: `tests/test_main_window.py`の`TestTuneLockButtons`に
+`test_offset_spin_range_is_10000hz`を追加。
+
 ---
 
 ## Rig-Specific Implementation Notes

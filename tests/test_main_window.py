@@ -2059,6 +2059,17 @@ class TestTuneLockButtons:
         assert w._offset_spin.isEnabled() is False
         assert w._offset_spin.value() == 0
 
+    def test_offset_spin_range_is_10000hz(self, qtbot) -> None:
+        """GitHub Issue #20 follow-up: raised from the original 5000Hz --
+        AO-73's real-world TCXO drift alone was reported at ~9500Hz, leaving
+        no headroom under the old limit."""
+        from ui.radio_control_widget import RadioControlWidget
+
+        w = RadioControlWidget()
+        qtbot.addWidget(w)
+        assert w._offset_spin.minimum() == -10000
+        assert w._offset_spin.maximum() == 10000
+
     def test_offset_spin_syncs_from_set_transmitters(self, qtbot) -> None:
         from ui.radio_control_widget import RadioControlWidget
 

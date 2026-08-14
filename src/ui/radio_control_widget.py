@@ -61,8 +61,11 @@ _XPDR_INVALID_BG = QColor("#8b0000")  # dark red — SATNOGS status=invalid
 
 # Persistent per-transponder RX offset (GitHub Issue #18). Range/step are
 # sized for TCXO-aging-style drift (typically sub-kHz to a few kHz), not for
-# recovering from picking the wrong transponder entirely.
-_RX_OFFSET_RANGE_HZ = 5000
+# recovering from picking the wrong transponder entirely. Raised from 5000
+# to 10000 (GitHub Issue #20 follow-up): AO-73's drift alone was reported
+# at ~9500Hz, the worst of any satellite in real-world use, leaving no
+# headroom under the old limit even before accounting for other satellites.
+_RX_OFFSET_RANGE_HZ = 10000
 _RX_OFFSET_STEP_HZ = 10
 
 logger = logging.getLogger(__name__)
