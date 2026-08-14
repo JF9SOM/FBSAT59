@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-14 10:51+0900\n"
+"POT-Creation-Date: 2026-08-14 15:08+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -592,7 +592,7 @@ msgstr "（プレビュー利用不可）"
 msgid "Downloading…"
 msgstr "ダウンロード中…"
 
-#: src/ui/settings_dialog.py:399 src/ui/meteor_tab.py:531
+#: src/ui/settings_dialog.py:399 src/ui/meteor_tab.py:532
 #: src/ui/ft8lib_dialog.py:449 src/ui/direwolf_dialog.py:345
 #: src/ui/q65lib_dialog.py:334 src/ui/cw_model_dialog.py:233
 #: src/ui/gr_satellites_dialog.py:416 src/ui/ft4wsjt_dialog.py:394
@@ -965,7 +965,7 @@ msgstr "SatDumpの出力ログを表示"
 msgid "About SatDump installation"
 msgstr "SatDumpのインストールについて"
 
-#: src/ui/meteor_tab.py:261 src/ui/meteor_tab.py:452 src/ui/meteor_tab.py:545
+#: src/ui/meteor_tab.py:261 src/ui/meteor_tab.py:452 src/ui/meteor_tab.py:546
 msgid "Lock: —"
 msgstr "ロック: —"
 
@@ -973,7 +973,7 @@ msgstr "ロック: —"
 msgid "Ready.  Select a pipeline and press Start."
 msgstr "準備完了。パイプラインを選択してStartを押してください。"
 
-#: src/ui/meteor_tab.py:283 src/ui/meteor_tab.py:630
+#: src/ui/meteor_tab.py:283 src/ui/meteor_tab.py:631
 msgid "No image received yet."
 msgstr "まだ画像を受信していません。"
 
@@ -1036,23 +1036,27 @@ msgstr ""
 "インストール手順はメニューバーの Help → SatDump… を\n"
 "参照してください。"
 
-#: src/ui/meteor_tab.py:525
+#: src/ui/meteor_tab.py:519
+msgid "Lock!"
+msgstr "ロック！"
+
+#: src/ui/meteor_tab.py:526
 msgid "Reception finished."
 msgstr "受信が完了しました。"
 
-#: src/ui/meteor_tab.py:532
+#: src/ui/meteor_tab.py:533
 msgid "[ERROR] "
 msgstr "[エラー] "
 
-#: src/ui/meteor_tab.py:567
+#: src/ui/meteor_tab.py:568
 msgid "Autotrack: reception started at AOS."
 msgstr "自動追尾: AOSで受信を開始しました。"
 
-#: src/ui/meteor_tab.py:573
+#: src/ui/meteor_tab.py:574
 msgid "Autotrack: reception stopped at LOS."
 msgstr "自動追尾: LOSで受信を停止しました。"
 
-#: src/ui/meteor_tab.py:594 src/ui/sstv_tab.py:551
+#: src/ui/meteor_tab.py:595 src/ui/sstv_tab.py:551
 msgid "Image received: "
 msgstr "画像受信: "
 

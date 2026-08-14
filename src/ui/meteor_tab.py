@@ -516,7 +516,8 @@ class MeteorTab(QWidget):
 
     def _on_lock_status(self, locked: bool) -> None:
         if locked:
-            self._lbl_lock.setText("<b style='color:#2ecc71'>Lock: ✓</b>")
+            lock_label = _("Lock!")
+            self._lbl_lock.setText(f"<b style='color:#2ecc71'>{lock_label}</b>")
         else:
             self._lbl_lock.setText("<b style='color:#e74c3c'>Lock: ✗</b>")
         self._lbl_lock.setTextFormat(Qt.TextFormat.RichText)
