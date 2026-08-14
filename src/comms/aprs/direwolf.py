@@ -437,13 +437,26 @@ class DirewolfManager:
             return False, f"Sound card output is in use by {other}"
 
         conf_path = self._write_config(callsign, ssid, modem)
+        # direwolf.exe is a console-subsystem executable; launched from this
+        # windowed/console-less PyInstaller build it would otherwise pop up
+        # a visible console window (same issue fixed for satdump.exe in
+        # comms/meteor/satdump.py).
         try:
-            self._proc = subprocess.Popen(
-                [str(binary), "-c", conf_path, "-t", "0"],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-            )
+            if sys.platform == "win32":
+                self._proc = subprocess.Popen(
+                    [str(binary), "-c", conf_path, "-t", "0"],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
+                )
+            else:
+                self._proc = subprocess.Popen(
+                    [str(binary), "-c", conf_path, "-t", "0"],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                )
         except OSError as exc:
             if out_device is not None:
                 mgr.release_output(_AUDIO_OWNER, out_device)

@@ -17,6 +17,7 @@ import contextlib
 import os
 import socket
 import subprocess
+import sys
 import threading
 from pathlib import Path
 
@@ -215,14 +216,28 @@ class GrSatellitesBackend(QObject):
             str(samp_rate),
         ]
 
+        # On Windows this ultimately runs python.exe (a console-subsystem
+        # executable), which launched from this windowed/console-less
+        # PyInstaller build would otherwise pop up a visible console window
+        # (same issue fixed for satdump.exe in comms/meteor/satdump.py).
         try:
-            self._proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
-                env=env,
-            )
+            if sys.platform == "win32":
+                self._proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                    env=env,
+                    creationflags=subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
+                )
+            else:
+                self._proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                    env=env,
+                )
         except OSError as exc:
             return False, str(exc)
 
