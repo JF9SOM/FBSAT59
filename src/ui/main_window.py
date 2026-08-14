@@ -382,6 +382,10 @@ class SatDetailPanel(QWidget):
         self._quick_ul_label.setVisible(show_freq)
         self.refresh_freq_mirror()
 
+        show_rig_buttons = bool(config is None or config.show_rig_buttons)
+        self._quick_rig1_btn.setVisible(show_rig_buttons)
+        self._quick_rig2_btn.setVisible(show_rig_buttons)
+
     def deactivate_comms_panel(self) -> None:
         """Hide the Comms Quick Panel (called when a resident tab becomes active)."""
         self._active_comms_tab = None
@@ -2518,6 +2522,17 @@ class MainWindow(QMainWindow):
         then explicitly selects the closest-frequency LRPT transponder so Radio
         Control reflects the pipeline even when the satellite was already selected.
         """
+        # Switch to "All Satellites" first, same as _on_comms_satellite_requested()
+        # — otherwise a satellite not in the currently active filter (e.g. NOAA
+        # 18/19 or Metop-B/C while a Favorite group is shown) simply isn't in
+        # the list widget, and _select_satellite_by_norad() silently no-ops,
+        # leaving the rotator pointed at whatever was selected before.
+        all_text = "All Satellites"
+        if self._filter_combo.currentText() != all_text:
+            idx = self._filter_combo.findText(all_text)
+            if idx >= 0:
+                self._filter_combo.setCurrentIndex(idx)
+
         # Select satellite — fires _on_sat_selected → _refresh_radio_control if row changes
         self._select_satellite_by_norad(norad)
 

@@ -116,11 +116,18 @@ class CommsTabConfig:
         RadioControlWidget._check_comms_auto_open(). None for tabs that do
         not use a mode/description filter (their satellite list, if any, is
         built some other way).
+    show_rig_buttons: whether the Rig 1 / Rig 2 connect-proxy buttons are
+        shown. Off for METEOR: that tab's only SDR connection point is its
+        own in-tab "SDR接続" button (Rig 1/2 there would just connect an
+        unrelated Hamlib/SDR slot and confuse users into thinking it drives
+        SatDump). The Rotator button stays on regardless — antenna tracking
+        still goes through the normal Rig 1/2 rotator plumbing.
     """
 
     show_input_source: bool
     freq_source: str | None
     matcher: Callable[[dict[str, Any]], bool] | None = None
+    show_rig_buttons: bool = True
 
 
 COMMS_TAB_CONFIG: dict[str, CommsTabConfig] = {
@@ -135,7 +142,9 @@ COMMS_TAB_CONFIG: dict[str, CommsTabConfig] = {
     ),
     "cw": CommsTabConfig(show_input_source=False, freq_source="radio_control"),
     "q65": CommsTabConfig(show_input_source=False, freq_source=None),
-    "meteor": CommsTabConfig(show_input_source=False, freq_source="satdump"),
+    "meteor": CommsTabConfig(
+        show_input_source=False, freq_source="satdump", show_rig_buttons=False
+    ),
     "telemetry": CommsTabConfig(
         show_input_source=False,
         freq_source="radio_control",
