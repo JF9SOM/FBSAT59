@@ -226,14 +226,30 @@ class SatDumpProcess(QThread):
 
         self.log_line.emit("$ " + " ".join(cmd))
 
+        # satdump.exe is a console-subsystem executable; launched from this
+        # windowed/console-less PyInstaller build it would otherwise pop up
+        # a visible console window. Closing that window manually then kills
+        # the process with Windows' STATUS_CONTROL_C_EXIT code (3221225786
+        # / 0xC000013A), which is neither 0 nor -15 and so gets reported as
+        # an error below even though the process was just told to close.
         try:
-            self._proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-            )
+            if sys.platform == "win32":
+                self._proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    creationflags=subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
+                )
+            else:
+                self._proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                )
         except OSError as exc:
             self.finished_err.emit(f"Failed to start satdump: {exc}")
             return
