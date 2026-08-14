@@ -72,6 +72,21 @@ class PpmMeasureWorker(QThread):
         dev = SdrDevice(self._info)
         total_samples = 0
         elapsed = 0.0
+        overflows_during_measurement = 0
+        # Read until this many samples have actually been *received*, rather
+        # than reading for a fixed wall-clock duration. A time-based cutoff
+        # can end while data is still in flight inside the USB/driver
+        # buffer -- not lost, just not yet delivered to this process -- and
+        # silently excluding that not-yet-arrived data biases the result
+        # without ever touching read_samples()'s overflow path. Waiting for
+        # an exact sample count instead means the clock only stops once
+        # every counted sample has actually been observed.
+        target_samples = int(self._sample_rate * self._duration)
+        warmup_frac = _WARMUP_S / (_WARMUP_S + self._duration)
+        # Safety net in case the device stalls completely after warm-up --
+        # without this, a dead stream would hang the measurement forever
+        # since the sample-count target would never be reached.
+        max_wall_time = _WARMUP_S + self._duration * 4.0
         try:
             dev.set_sample_rate(self._sample_rate)
             if not dev.open():
@@ -81,31 +96,47 @@ class PpmMeasureWorker(QThread):
                 self.finished_err.emit(_("Could not start streaming from the SDR device."))
                 return
 
-            total_duration = _WARMUP_S + self._duration
             t_start = time.monotonic()
-            t_measure_start: float | None = None
-            overflow_at_measure_start = 0
             last_progress_emit = 0.0
+
+            # Warm-up: discard for a fixed wall-clock duration -- the clock
+            # is least stable right after open(), and this phase feeds no
+            # data into the ppm calculation, so a time-based cutoff is fine
+            # here (there's nothing downstream for in-flight data to bias).
             while True:
                 now = time.monotonic()
                 t_since_start = now - t_start
-                if t_since_start >= total_duration:
+                if t_since_start >= _WARMUP_S:
                     break
                 if self.isInterruptionRequested():
                     self.finished_err.emit(_("Measurement cancelled."))
                     return
-                buf = dev.read_samples(_CHUNK)
-                if t_since_start >= _WARMUP_S:
-                    if t_measure_start is None:
-                        t_measure_start = now
-                        overflow_at_measure_start = dev.overflow_count
-                    if buf is not None:
-                        total_samples += len(buf)
+                dev.read_samples(_CHUNK)
                 if now - last_progress_emit >= _PROGRESS_INTERVAL_S:
                     last_progress_emit = now
-                    self.progress.emit(min(1.0, t_since_start / total_duration))
-            if t_measure_start is not None:
-                elapsed = time.monotonic() - t_measure_start
+                    self.progress.emit(warmup_frac * min(1.0, t_since_start / _WARMUP_S))
+
+            # Measurement: read until target_samples have actually arrived.
+            overflow_at_measure_start = dev.overflow_count
+            t_measure_start = time.monotonic()
+            while total_samples < target_samples:
+                now = time.monotonic()
+                if now - t_start >= max_wall_time:
+                    self.finished_err.emit(_("Measurement timed out — no data from the device."))
+                    return
+                if self.isInterruptionRequested():
+                    self.finished_err.emit(_("Measurement cancelled."))
+                    return
+                buf = dev.read_samples(_CHUNK)
+                if buf is not None:
+                    total_samples += len(buf)
+                if now - last_progress_emit >= _PROGRESS_INTERVAL_S:
+                    last_progress_emit = now
+                    frac = warmup_frac + (1 - warmup_frac) * min(
+                        1.0, total_samples / target_samples
+                    )
+                    self.progress.emit(frac)
+            elapsed = time.monotonic() - t_measure_start
             overflows_during_measurement = dev.overflow_count - overflow_at_measure_start
         finally:
             dev.close()

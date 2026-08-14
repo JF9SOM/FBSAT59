@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-14 23:42+0900\n"
+"POT-Creation-Date: 2026-08-15 08:38+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -264,7 +264,7 @@ msgstr "時刻 (UTC)"
 msgid "Time (Local)"
 msgstr "時刻 (Local)"
 
-#: src/ui/ax100_digi_tab.py:635 src/ui/radio_control_widget.py:1112
+#: src/ui/ax100_digi_tab.py:635 src/ui/radio_control_widget.py:1115
 #: src/ui/ft4_tab.py:966 src/ui/cw_tab.py:377
 msgid "Sound Card not configured — open Rig Settings > Sound Card"
 msgstr ""
@@ -279,7 +279,7 @@ msgstr "sounddeviceがインストールされていません — pip install so
 msgid "Input: Rig Soundcard connected"
 msgstr "入力: 無線機サウンドカード接続中"
 
-#: src/ui/ax100_digi_tab.py:654 src/ui/radio_control_widget.py:1120
+#: src/ui/ax100_digi_tab.py:654 src/ui/radio_control_widget.py:1123
 #, python-brace-format
 msgid "Audio open error: {exc}"
 msgstr "オーディオを開けません: {exc}"
@@ -353,7 +353,7 @@ msgstr "トランスミッターを編集"
 msgid "Add Transmitter"
 msgstr "トランスミッターを追加"
 
-#: src/ui/transmitter_dialog.py:87 src/ui/radio_control_widget.py:160
+#: src/ui/transmitter_dialog.py:87 src/ui/radio_control_widget.py:163
 #: src/ui/telemetry_tab.py:220 src/ui/autotrack_record_dialog.py:283
 #: src/ui/main_window.py:987
 msgid "Satellite"
@@ -381,7 +381,7 @@ msgstr "例: ISS FM downlink"
 msgid "Description:"
 msgstr "説明:"
 
-#: src/ui/transmitter_dialog.py:104 src/ui/radio_control_widget.py:235
+#: src/ui/transmitter_dialog.py:104 src/ui/radio_control_widget.py:238
 msgid "Frequency"
 msgstr "周波数"
 
@@ -452,8 +452,8 @@ msgstr "上書き保護（SATNOGS同期での上書きを防止）"
 
 #: src/ui/transmitter_dialog.py:279 src/ui/transmitter_dialog.py:284
 #: src/ui/transmitter_dialog.py:336 src/ui/transmitter_dialog.py:357
-#: src/ui/transmitter_dialog.py:370 src/ui/radio_control_widget.py:775
-#: src/ui/radio_control_widget.py:807 src/ui/qth_dialog.py:324
+#: src/ui/transmitter_dialog.py:370 src/ui/radio_control_widget.py:778
+#: src/ui/radio_control_widget.py:810 src/ui/qth_dialog.py:324
 #: src/ui/qth_dialog.py:333
 msgid "Error"
 msgstr "エラー"
@@ -822,7 +822,7 @@ msgstr "1ステップ上げる"
 msgid "Tune up ×10 step"
 msgstr "×10ステップ上げる"
 
-#: src/ui/sdr_control_widget.py:487 src/ui/radio_control_widget.py:206
+#: src/ui/sdr_control_widget.py:487 src/ui/radio_control_widget.py:209
 msgid "T"
 msgstr ""
 
@@ -834,7 +834,7 @@ msgstr ""
 "T: トランスポンダーのドップラー補正済み中心周波数に戻します。トランスポンダー"
 "未選択時は押せません。"
 
-#: src/ui/sdr_control_widget.py:499 src/ui/radio_control_widget.py:213
+#: src/ui/sdr_control_widget.py:499 src/ui/radio_control_widget.py:216
 msgid "L"
 msgstr ""
 
@@ -852,7 +852,7 @@ msgstr ""
 msgid "Demodulator"
 msgstr "復調器"
 
-#: src/ui/sdr_control_widget.py:575 src/ui/radio_control_widget.py:310
+#: src/ui/sdr_control_widget.py:575 src/ui/radio_control_widget.py:313
 #: src/ui/sstv_tab.py:165 src/ui/q65_tab.py:189 src/ui/telemetry_tab.py:154
 msgid "Mode:"
 msgstr "モード:"
@@ -881,21 +881,21 @@ msgstr "■ 音声停止"
 msgid "● REC Audio"
 msgstr "● 音声録音"
 
-#: src/ui/sdr_control_widget.py:623 src/ui/radio_control_widget.py:439
+#: src/ui/sdr_control_widget.py:623 src/ui/radio_control_widget.py:442
 msgid "lameenc not installed — pip install lameenc"
 msgstr "lameencがインストールされていません — pip install lameenc"
 
 #: src/ui/sdr_control_widget.py:624 src/ui/sdr_control_widget.py:666
-#: src/ui/radio_control_widget.py:442
+#: src/ui/radio_control_widget.py:445
 msgid "■ STOP"
 msgstr "■ 停止"
 
 #: src/ui/sdr_control_widget.py:633 src/ui/sdr_control_widget.py:675
-#: src/ui/radio_control_widget.py:450
+#: src/ui/radio_control_widget.py:453
 msgid "📁"
 msgstr "📁"
 
-#: src/ui/sdr_control_widget.py:634 src/ui/radio_control_widget.py:451
+#: src/ui/sdr_control_widget.py:634 src/ui/radio_control_widget.py:454
 msgid "Open audio recordings folder in file manager"
 msgstr "ファイルマネージャーで音声録音フォルダを開く"
 
@@ -912,7 +912,7 @@ msgstr "録音 BW:"
 msgid "File:"
 msgstr "ファイル:"
 
-#: src/ui/sdr_control_widget.py:664 src/ui/radio_control_widget.py:435
+#: src/ui/sdr_control_widget.py:664 src/ui/radio_control_widget.py:438
 msgid "● REC"
 msgstr "● 録音"
 
@@ -1251,15 +1251,15 @@ msgstr ""
 msgid "Uninstall Failed"
 msgstr "アンインストール失敗"
 
-#: src/ui/radio_control_widget.py:177
+#: src/ui/radio_control_widget.py:180
 msgid "Offset:"
 msgstr "オフセット:"
 
-#: src/ui/radio_control_widget.py:181
+#: src/ui/radio_control_widget.py:184
 msgid " Hz"
 msgstr " Hz"
 
-#: src/ui/radio_control_widget.py:184
+#: src/ui/radio_control_widget.py:187
 msgid ""
 "Persistent per-transponder RX (downlink) offset, saved with this "
 "transponder. If the satellite's actual frequency has drifted from nominal (e."
@@ -1276,15 +1276,15 @@ msgstr ""
 "しても保持されます。正の値にすると補正後の周波数はより高い方向にシフトしま"
 "す。パス中のその場限りの手動微調整にはLock（L）を使用してください。"
 
-#: src/ui/radio_control_widget.py:196 src/ui/main_window.py:254
+#: src/ui/radio_control_widget.py:199 src/ui/main_window.py:254
 msgid "Name:"
 msgstr "衛星名:"
 
-#: src/ui/radio_control_widget.py:208
+#: src/ui/radio_control_widget.py:211
 msgid "Tune: reset downlink/uplink to center of transmitter band"
 msgstr "Tune: ダウンリンク/アップリンクをトランスミッター帯域の中心にリセット"
 
-#: src/ui/radio_control_widget.py:217
+#: src/ui/radio_control_widget.py:220
 msgid ""
 "Lock (Ctrl+L): DL is yours to tune manually; UL follows (inverting "
 "transponder aware). After each manual retune, allow a few seconds for it to "
@@ -1296,23 +1296,23 @@ msgstr ""
 "さい（リグの読み取りはDopplerサイクルごとに1回だけです）。"
 
 # --- Transmitter panel ---
-#: src/ui/radio_control_widget.py:230 src/ui/autotrack_record_dialog.py:548
+#: src/ui/radio_control_widget.py:233 src/ui/autotrack_record_dialog.py:548
 msgid "Transmitter:"
 msgstr "トランスミッター:"
 
-#: src/ui/radio_control_widget.py:257
+#: src/ui/radio_control_widget.py:260
 msgid "Downlink:"
 msgstr "ダウンリンク:"
 
-#: src/ui/radio_control_widget.py:268
+#: src/ui/radio_control_widget.py:271
 msgid "Uplink:"
 msgstr "アップリンク:"
 
-#: src/ui/radio_control_widget.py:278
+#: src/ui/radio_control_widget.py:281
 msgid "Toggle CW mode on both VFOs"
 msgstr "両VFOのCWモードを切り替え"
 
-#: src/ui/radio_control_widget.py:286
+#: src/ui/radio_control_widget.py:289
 msgid ""
 "Toggle Rig 1's TX VFO to DATA (-D) mode and back, without\n"
 "disconnecting. Some radios (e.g. Icom) require a -D mode\n"
@@ -1324,61 +1324,61 @@ msgstr ""
 "トランスポンダー上でFT4等のデジタルモードを送信する際、PC音声を\n"
 "マイクの代わりにTXへ送るために -D モード（LSB-D/USB-D）が必要です。"
 
-#: src/ui/radio_control_widget.py:299
+#: src/ui/radio_control_widget.py:302
 msgid "Send current CTCSS tone to rig"
 msgstr "現在のCTCSSトーンを無線機に送信"
 
-#: src/ui/radio_control_widget.py:302
+#: src/ui/radio_control_widget.py:305
 msgid "74.4 Hz (Activation)"
 msgstr "74.4 Hz（起動）"
 
-#: src/ui/radio_control_widget.py:303
+#: src/ui/radio_control_widget.py:306
 msgid "SO-50: activate 10-minute timer with 74.4 Hz tone"
 msgstr "SO-50: 74.4 Hzトーンで10分タイマーを起動"
 
-#: src/ui/radio_control_widget.py:320 src/ui/main_window.py:302
+#: src/ui/radio_control_widget.py:323 src/ui/main_window.py:302
 msgid "Rotator"
 msgstr "ローテーター"
 
-#: src/ui/radio_control_widget.py:327
+#: src/ui/radio_control_widget.py:330
 msgid "AZ:"
 msgstr ""
 
-#: src/ui/radio_control_widget.py:344
+#: src/ui/radio_control_widget.py:347
 msgid "Status"
 msgstr "状態"
 
-#: src/ui/radio_control_widget.py:349 src/ui/radio_control_widget.py:350
-#: src/ui/radio_control_widget.py:351 src/ui/radio_control_widget.py:754
-#: src/ui/radio_control_widget.py:786 src/ui/radio_control_widget.py:817
+#: src/ui/radio_control_widget.py:352 src/ui/radio_control_widget.py:353
+#: src/ui/radio_control_widget.py:354 src/ui/radio_control_widget.py:757
+#: src/ui/radio_control_widget.py:789 src/ui/radio_control_widget.py:820
 msgid "Not configured"
 msgstr "未設定"
 
-#: src/ui/radio_control_widget.py:356 src/ui/radio_control_widget.py:781
+#: src/ui/radio_control_widget.py:359 src/ui/radio_control_widget.py:784
 msgid "Connect Rig 1"
 msgstr "Rig 1 に接続"
 
-#: src/ui/radio_control_widget.py:361
+#: src/ui/radio_control_widget.py:364
 msgid "Rig 1:"
 msgstr ""
 
-#: src/ui/radio_control_widget.py:366 src/ui/radio_control_widget.py:813
+#: src/ui/radio_control_widget.py:369 src/ui/radio_control_widget.py:816
 msgid "Connect Rig 2"
 msgstr "Rig 2 に接続"
 
-#: src/ui/radio_control_widget.py:371
+#: src/ui/radio_control_widget.py:374
 msgid "Rig 2:"
 msgstr ""
 
-#: src/ui/radio_control_widget.py:376 src/ui/radio_control_widget.py:829
+#: src/ui/radio_control_widget.py:379 src/ui/radio_control_widget.py:832
 msgid "Connect Rotator"
 msgstr "ローテーターに接続"
 
-#: src/ui/radio_control_widget.py:378
+#: src/ui/radio_control_widget.py:381
 msgid "South Init"
 msgstr "南向き初期化"
 
-#: src/ui/radio_control_widget.py:381
+#: src/ui/radio_control_widget.py:384
 msgid ""
 "Rotator starts facing south (180°). AZ is offset by 180° so the 0/360° wrap "
 "is avoided."
@@ -1386,75 +1386,75 @@ msgstr ""
 "ローテーターは南（180°）を向いた状態で起動します。0/360°の折り返しを避けるた"
 "め、AZに180°のオフセットが適用されます。"
 
-#: src/ui/radio_control_widget.py:390
+#: src/ui/radio_control_widget.py:393
 msgid "Rotator:"
 msgstr "ローテーター:"
 
-#: src/ui/radio_control_widget.py:400
+#: src/ui/radio_control_widget.py:403
 msgid "msec"
 msgstr "ミリ秒"
 
-#: src/ui/radio_control_widget.py:402
+#: src/ui/radio_control_widget.py:405
 msgid "Cycle:"
 msgstr "更新周期:"
 
-#: src/ui/radio_control_widget.py:407 src/ui/autotrack_record_dialog.py:509
+#: src/ui/radio_control_widget.py:410 src/ui/autotrack_record_dialog.py:509
 #: src/ui/autotrack_record_dialog.py:516 src/ui/autotrack_record_dialog.py:534
 msgid "Autotrack"
 msgstr "自動追尾"
 
-#: src/ui/radio_control_widget.py:410 src/ui/radio_control_widget.py:625
+#: src/ui/radio_control_widget.py:413 src/ui/radio_control_widget.py:628
 msgid "OFF"
 msgstr "オフ"
 
-#: src/ui/radio_control_widget.py:430 src/ui/radio_control_widget.py:1111
-#: src/ui/radio_control_widget.py:1120
+#: src/ui/radio_control_widget.py:433 src/ui/radio_control_widget.py:1114
+#: src/ui/radio_control_widget.py:1123
 msgid "Recording"
 msgstr "録音"
 
-#: src/ui/radio_control_widget.py:622
+#: src/ui/radio_control_widget.py:625
 msgid "ON"
 msgstr "オン"
 
-#: src/ui/radio_control_widget.py:762 src/ui/radio_control_widget.py:794
+#: src/ui/radio_control_widget.py:765 src/ui/radio_control_widget.py:797
 msgid "SDR: Connected"
 msgstr "SDR: 接続中"
 
-#: src/ui/radio_control_widget.py:769 src/ui/radio_control_widget.py:773
+#: src/ui/radio_control_widget.py:772 src/ui/radio_control_widget.py:776
 msgid "Disconnect Rig 1"
 msgstr "Rig 1 を切断"
 
-#: src/ui/radio_control_widget.py:771 src/ui/radio_control_widget.py:803
-#: src/ui/radio_control_widget.py:919
+#: src/ui/radio_control_widget.py:774 src/ui/radio_control_widget.py:806
+#: src/ui/radio_control_widget.py:922
 msgid "Connecting..."
 msgstr "接続中..."
 
-#: src/ui/radio_control_widget.py:777 src/ui/radio_control_widget.py:809
+#: src/ui/radio_control_widget.py:780 src/ui/radio_control_widget.py:812
 msgid "Retry"
 msgstr "再試行"
 
-#: src/ui/radio_control_widget.py:779 src/ui/radio_control_widget.py:811
-#: src/ui/radio_control_widget.py:827
+#: src/ui/radio_control_widget.py:782 src/ui/radio_control_widget.py:814
+#: src/ui/radio_control_widget.py:830
 msgid "Disconnected"
 msgstr "切断"
 
-#: src/ui/radio_control_widget.py:801 src/ui/radio_control_widget.py:805
+#: src/ui/radio_control_widget.py:804 src/ui/radio_control_widget.py:808
 msgid "Disconnect Rig 2"
 msgstr "Rig 2 を切断"
 
-#: src/ui/radio_control_widget.py:823
+#: src/ui/radio_control_widget.py:826
 msgid "Connected"
 msgstr "接続"
 
-#: src/ui/radio_control_widget.py:825
+#: src/ui/radio_control_widget.py:828
 msgid "Disconnect Rotator"
 msgstr "ローテーターを切断"
 
-#: src/ui/radio_control_widget.py:868
+#: src/ui/radio_control_widget.py:871
 msgid "rigctld is running"
 msgstr "rigctldが実行中です"
 
-#: src/ui/radio_control_widget.py:872
+#: src/ui/radio_control_widget.py:875
 msgid ""
 "rigctld is running and sharing the same serial port.\n"
 "\n"
@@ -1474,20 +1474,20 @@ msgstr ""
 "  通常起動の場合:   pkill rigctld\n"
 "  systemdサービスの場合: sudo systemctl stop <service-name>"
 
-#: src/ui/radio_control_widget.py:880
+#: src/ui/radio_control_widget.py:883
 msgid "I stopped it, retry"
 msgstr "停止したので再試行"
 
-#: src/ui/radio_control_widget.py:881
+#: src/ui/radio_control_widget.py:884
 msgid "Connect anyway"
 msgstr "そのまま接続"
 
-#: src/ui/radio_control_widget.py:882 src/ui/rig_dialog.py:1338
+#: src/ui/radio_control_widget.py:885 src/ui/rig_dialog.py:1338
 #: src/ui/pass_panel.py:475
 msgid "Cancel"
 msgstr "キャンセル"
 
-#: src/ui/radio_control_widget.py:1037 src/ui/radio_control_widget.py:1053
+#: src/ui/radio_control_widget.py:1040 src/ui/radio_control_widget.py:1056
 msgid "DATA"
 msgstr "DATA"
 
@@ -4932,30 +4932,34 @@ msgstr ""
 msgid "Could not remove or rename the install directory:\n"
 msgstr "インストールディレクトリの削除・リネームに失敗しました:\n"
 
-#: src/sdr/ppm_measure.py:78
+#: src/sdr/ppm_measure.py:93
 msgid "Could not open the SDR device — is it in use elsewhere?"
 msgstr "SDRデバイスを開けませんでした。他の場所で使用中ではありませんか？"
 
-#: src/sdr/ppm_measure.py:81
+#: src/sdr/ppm_measure.py:96
 msgid "Could not start streaming from the SDR device."
 msgstr "SDRデバイスからのストリーミングを開始できませんでした。"
 
-#: src/sdr/ppm_measure.py:95
+#: src/sdr/ppm_measure.py:112 src/sdr/ppm_measure.py:128
 msgid "Measurement cancelled."
 msgstr "測定をキャンセルしました。"
 
-#: src/sdr/ppm_measure.py:114
+#: src/sdr/ppm_measure.py:125
+msgid "Measurement timed out — no data from the device."
+msgstr "測定がタイムアウトしました — デバイスからデータが届きません。"
+
+#: src/sdr/ppm_measure.py:145
 msgid "No samples received during measurement."
 msgstr "測定中にサンプルを受信できませんでした。"
 
-#: src/sdr/ppm_measure.py:132
+#: src/sdr/ppm_measure.py:163
 msgid ""
 "Buffer overflow during measurement — result discarded as unreliable. Try a "
 "lower sample rate or close other apps using the CPU, then measure again."
 msgstr ""
-"測定中にバッファオーバーフローが発生したため、結果を信頼できないと判断して"
-"破棄しました。サンプルレートを下げるか、CPUを使用している他のアプリを閉じて"
-"から再度測定してください。"
+"測定中にバッファオーバーフローが発生したため、結果を信頼できないと判断して破"
+"棄しました。サンプルレートを下げるか、CPUを使用している他のアプリを閉じてから"
+"再度測定してください。"
 
 #~ msgid "Auto-Fetch Schedule"
 #~ msgstr "自動取得スケジュール"
