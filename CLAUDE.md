@@ -4763,6 +4763,44 @@ SatNOGSに一切データが無い`source='manual'`/`'community'`行へのボタ
   時のエラー表示）。`test_main_window.py`はCLAUDE.mdのルール通りローカル実行せず
   `--collect-only`（237件収集成功）で確認、最終確認はCI待ち
 
+### 追加修正（同日）— `_MODES`に"USB"/"LSB"が一度も存在しなかった不具合をCIが検出
+
+上記のリセット機能をpushしたところ、CIが`test_reset_populates_fields_without_writing_db`で
+`assert w._mode_combo.currentText() == "USB"`失敗（実際は`'SSB'`のまま）で赤くなった。
+`gh run watch --exit-status; echo "EXIT: $?"`という監視コマンドの書き方自体に不具合があり
+（`echo`が常に0を返すため`watch`本体の非ゼロ終了コードを握りつぶしてしまう）、実際には失敗して
+いたのに一度見逃しかけた——バックグラウンド監視コマンドを組み立てる際は、パイプやセミコロンで
+後続コマンドを繋いで終了コードを上書きしていないか要注意。
+
+原因を追ったところ、`transmitter_dialog.py`の`_MODES`（Modeプルダウンの選択肢）が
+`["FM", "SSB", "CW", "CW-R", "DIGITALVOICE", "BPSK", "AFSK", "Other"]`で、**"USB"・"LSB"が
+最初から一度も選択肢に存在していなかった**ことが判明。ユーザー自身も並行して同じ問題に開発版で
+気づいており、以下の方針で確定した:
+
+- `_MODES`から`"SSB"`を削除し、`"USB"`・`"LSB"`・`"USB-D"`・`"LSB-D"`を追加
+  （`["FM", "USB", "LSB", "USB-D", "LSB-D", "CW", "CW-R", "DIGITALVOICE", "BPSK", "AFSK",
+  "Other"]`）。反転（Invert）チェックボックスON時のアップリンク変換は既存の`_MODE_INVERT`
+  （USB⇔LSB・USB-D⇔LSB-D）がそのまま適用されるため、この4つを選択肢に加えるだけで
+  正しく機能する
+- `_MODE_INVERT`の`"SSB": "LSB"`エントリ自体は削除せず維持（今回の`_MODES`変更前に
+  `mode="SSB"`のまま保存された既存行の後方互換用。新規行はもう"SSB"を選べないため
+  発生し得ないが、既存の壊れた行が実行時に落ちないようにするための安全策）
+- Modeの表示ラベルを`"Mode:"`から`"Mode (Downlink):"`に変更。この欄が設定するのは
+  **ダウンリンク側のモードのみ**（アップリンクはInvertチェックボックスの状態に応じて
+  `_MODE_INVERT`が自動導出する）ことを、ユーザーが編集画面を見ただけで分かるようにする
+  ためのラベル変更（今回の一連の調査で「Radio Controlパネルの"Mode:"表示もDL側のみ」
+  という設計を発見済みだったが、そちらは今回のスコープ外のまま変更していない）
+- 新規追加した「Reset to SatNOGS Official Value」ボタン・関連メッセージの日本語訳を追加
+  （`locale/ja/LC_MESSAGES/fbsat59.po`/`.mo`）。`msgmerge`後、"Mode (Downlink):"が
+  無関係な訳（"ダウンリンク:"のみ）に、"Reset to SatNOGS"が全く無関係な既存訳
+  （"Open in SatNOGS"の訳"SatNOGSで開く"）にfuzzy推測されていたため、内容を確認し
+  正しい訳に修正した上でfuzzyを解消（本ファイル既出の「`msgmerge`後の`#, fuzzy`は
+  機械が似ていると判断しただけの、内容を確認していない訳」という教訓通りの実例）
+
+`_MODES`はこのダイアログ内でのみ使われる定数（他モジュールからの参照なし）であることを
+`grep`で確認済み。既存テストで`_MODES`に依存する箇所（`test_edit_mode_prefills_fields`の
+`mode="FM"`等）への影響もないことを確認した。
+
 ---
 
 ## Rig-Specific Implementation Notes

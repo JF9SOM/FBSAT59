@@ -123,13 +123,15 @@ _MODE_INVERT: dict[str, str] = {
     "CW-R": "CW",
     "USB-D": "LSB-D",
     "LSB-D": "USB-D",
-    # "SSB" is the Add/Edit Transmitter dialog's generic mode-combo entry
-    # (transmitter_dialog.py's _MODES); _build_live_hamlib_mode_map() in
-    # controller.py already treats it as equivalent to "USB" for the
-    # downlink, but until this entry it was missing here entirely, so
-    # invert=True left the uplink as the literal string "SSB" too instead
-    # of flipping it -- both sides silently ended up on USB (GitHub Issue
-    # #20 follow-up, AO-73 real-world report).
+    # "SSB" was the Add/Edit Transmitter dialog's only sideband-ish Mode
+    # choice until it was replaced with explicit USB/LSB/USB-D/LSB-D
+    # (transmitter_dialog.py's _MODES, GitHub Issue #20 follow-up: AO-73
+    # real-world report -- _build_live_hamlib_mode_map() in controller.py
+    # already treats "SSB" as equivalent to "USB" for the downlink, but
+    # invert=True never flipped the uplink because this table had no "SSB"
+    # entry, so both sides silently ended up on USB). Kept here purely for
+    # backward compatibility with rows a user already saved as mode="SSB"
+    # before this fix -- new entries can no longer produce that value.
     "SSB": "LSB",
 }
 

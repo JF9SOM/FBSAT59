@@ -29,7 +29,19 @@ from PySide6.QtWidgets import (
 from data.transmitter_manager import TransmitterManager
 from i18n import _
 
-_MODES: list[str] = ["FM", "SSB", "CW", "CW-R", "DIGITALVOICE", "BPSK", "AFSK", "Other"]
+_MODES: list[str] = [
+    "FM",
+    "USB",
+    "LSB",
+    "USB-D",
+    "LSB-D",
+    "CW",
+    "CW-R",
+    "DIGITALVOICE",
+    "BPSK",
+    "AFSK",
+    "Other",
+]
 _TYPES: list[str] = ["Transmitter", "Transponder", "Transceiver", "Beacon"]
 _CTCSS_TYPES: list[str] = ["", "CTCSS", "DCS"]
 
@@ -132,7 +144,7 @@ class TransmitterDialog(QDialog):
 
         self._mode_combo = QComboBox()
         self._mode_combo.addItems(_MODES)
-        mode_form.addRow(_("Mode:"), self._mode_combo)
+        mode_form.addRow(_("Mode (Downlink):"), self._mode_combo)
 
         self._invert_check = QCheckBox(_("Inverting transponder"))
         mode_form.addRow("", self._invert_check)
