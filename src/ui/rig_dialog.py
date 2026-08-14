@@ -40,7 +40,9 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QProgressBar,
+    QProgressDialog,
     QPushButton,
     QRadioButton,
     QScrollArea,
@@ -54,6 +56,7 @@ from i18n import _
 from rig.controller import CTCSS_PRESET_TEMPLATES, normalize_civ_addr
 from sdr import SOAPY_AVAILABLE
 from sdr.device import SdrDeviceInfo
+from sdr.ppm_measure import PpmMeasureWorker
 
 # ---------------------------------------------------------------------------
 # Hamlib Python binding (imported lazily to avoid Qt TLS collision at startup)
@@ -990,6 +993,8 @@ class _SdrSettingsPanel(QWidget):
         # remote server isn't reachable via LAN broadcast discovery.
         self._remote_hosts: list[dict[str, str]] = []
         self._enumerate_done.connect(self._on_enumerate)
+        self._ppm_worker: PpmMeasureWorker | None = None
+        self._ppm_progress: QProgressDialog | None = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -1067,11 +1072,24 @@ class _SdrSettingsPanel(QWidget):
         self._rate_combo.setCurrentIndex(5)  # default 2.4 MHz
         cfg_form.addRow(_("Sample Rate:"), self._rate_combo)
 
+        ppm_row = QHBoxLayout()
         self._ppm_spin = QSpinBox()
         self._ppm_spin.setRange(-200, 200)
         self._ppm_spin.setValue(0)
         self._ppm_spin.setSuffix(" ppm")
-        cfg_form.addRow(_("PPM Correction:"), self._ppm_spin)
+        ppm_row.addWidget(self._ppm_spin)
+        self._ppm_measure_btn = QPushButton(_("Measure…"))
+        self._ppm_measure_btn.setToolTip(
+            _(
+                "Automatically estimate the device's clock drift by comparing\n"
+                "actual samples received against the configured sample rate over\n"
+                "~35 seconds. No reference signal needed — same principle as the\n"
+                "standard rtl_test -p tool, but built in and works for any device."
+            )
+        )
+        self._ppm_measure_btn.clicked.connect(self._on_measure_ppm)
+        ppm_row.addWidget(self._ppm_measure_btn)
+        cfg_form.addRow(_("PPM Correction:"), ppm_row)
 
         gain_row = QHBoxLayout()
         self._gain_auto_rb = QRadioButton(_("Auto"))
@@ -1297,6 +1315,72 @@ class _SdrSettingsPanel(QWidget):
             self._rig_none_rb.setChecked(True)
         for rb in (self._rig1_rb, self._rig2_rb, self._rig_none_rb):
             rb.blockSignals(False)
+
+    def _on_measure_ppm(self) -> None:
+        """Run PpmMeasureWorker against the currently selected device/rate."""
+        idx = self._dev_combo.currentIndex()
+        if not self._devices or not (0 <= idx < len(self._devices)):
+            QMessageBox.warning(self, _("Measure PPM"), _("Select an SDR device first."))
+            return
+
+        info = self._devices[idx]
+        rate_idx = self._rate_combo.currentIndex()
+        rate_hz = (
+            self._SAMPLE_RATES[rate_idx][1]
+            if 0 <= rate_idx < len(self._SAMPLE_RATES)
+            else 2_400_000
+        )
+
+        duration_s = 30.0
+        self._ppm_measure_btn.setEnabled(False)
+        progress = QProgressDialog(
+            _("Measuring clock drift ({sec:.0f}s)…").format(sec=duration_s),
+            _("Cancel"),
+            0,
+            100,
+            self,
+        )
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        progress.canceled.connect(self._on_cancel_measure_ppm)
+        self._ppm_progress = progress
+
+        worker = PpmMeasureWorker(info, rate_hz, duration_s=duration_s, parent=self)
+        worker.progress.connect(self._on_ppm_measure_progress)
+        worker.finished_ok.connect(self._on_ppm_measure_ok)
+        worker.finished_err.connect(self._on_ppm_measure_err)
+        self._ppm_worker = worker
+        worker.start()
+
+    def _on_cancel_measure_ppm(self) -> None:
+        if self._ppm_worker is not None:
+            self._ppm_worker.requestInterruption()
+
+    def _on_ppm_measure_progress(self, fraction: float) -> None:
+        if self._ppm_progress is not None:
+            self._ppm_progress.setValue(int(fraction * 100))
+
+    def _on_ppm_measure_ok(self, ppm: float) -> None:
+        self._ppm_measure_btn.setEnabled(True)
+        if self._ppm_progress is not None:
+            self._ppm_progress.close()
+            self._ppm_progress = None
+        self._ppm_spin.setValue(round(ppm))
+        QMessageBox.information(
+            self,
+            _("Measure PPM"),
+            _("Measured clock drift: {ppm:.1f} ppm (set to {rounded}).").format(
+                ppm=ppm, rounded=round(ppm)
+            ),
+        )
+
+    def _on_ppm_measure_err(self, message: str) -> None:
+        self._ppm_measure_btn.setEnabled(True)
+        if self._ppm_progress is not None:
+            self._ppm_progress.close()
+            self._ppm_progress = None
+        QMessageBox.warning(self, _("Measure PPM"), message)
 
     def _on_browse_iq_dir(self) -> None:
         from PySide6.QtWidgets import QFileDialog
