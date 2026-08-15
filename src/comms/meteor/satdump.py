@@ -31,9 +31,35 @@ METEOR_PIPELINES: list[dict[str, str | int]] = [
         "xpdr_keyword": "LRPT",
         "xpdr_freq": 137_900_000,
     },
+    # 80k variant: METEOR-M2-3/2-4 operators occasionally switch the LRPT
+    # symbol rate between 72k (default, entry above) and 80k without
+    # notice. A 72k pipeline against an 80k signal shows Viterbi SYNCED
+    # (with elevated but plausible-looking BER) while the Deframer never
+    # syncs, even on a strong, high-elevation pass -- so this is offered
+    # as a manual fallback to try, not a default. Same RF frequency as
+    # the 72k entry, so it doesn't need its own transponder auto-select
+    # affordance (see select_pipeline_by_norad_and_freq() in meteor_tab.py).
+    {
+        "label": "METEOR-M N2-3  LRPT  137.9 MHz (80k)",
+        "pipeline": "meteor_m2-x_lrpt_80k",
+        "frequency": 137_900_000,
+        "samplerate": 1_200_000,
+        "norad": 57166,
+        "xpdr_keyword": "LRPT",
+        "xpdr_freq": 137_900_000,
+    },
     {
         "label": "METEOR-M N2-4  LRPT  137.1 MHz",
         "pipeline": "meteor_m2-x_lrpt",
+        "frequency": 137_100_000,
+        "samplerate": 1_200_000,
+        "norad": 59051,
+        "xpdr_keyword": "LRPT",
+        "xpdr_freq": 137_100_000,
+    },
+    {
+        "label": "METEOR-M N2-4  LRPT  137.1 MHz (80k)",
+        "pipeline": "meteor_m2-x_lrpt_80k",
         "frequency": 137_100_000,
         "samplerate": 1_200_000,
         "norad": 59051,
