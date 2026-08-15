@@ -87,6 +87,17 @@ class PpmMeasureWorker(QThread):
         # without this, a dead stream would hang the measurement forever
         # since the sample-count target would never be reached.
         max_wall_time = _WARMUP_S + self._duration * 4.0
+
+        logger.info(
+            "PPM measure: starting. driver=%s requested_rate=%.0f duration=%.1fs "
+            "target_samples=%d chunk=%d",
+            self._info.driver,
+            self._sample_rate,
+            self._duration,
+            target_samples,
+            _CHUNK,
+        )
+
         try:
             dev.set_sample_rate(self._sample_rate)
             if not dev.open():
@@ -103,6 +114,9 @@ class PpmMeasureWorker(QThread):
             # is least stable right after open(), and this phase feeds no
             # data into the ppm calculation, so a time-based cutoff is fine
             # here (there's nothing downstream for in-flight data to bias).
+            warmup_calls = 0
+            warmup_samples_drained = 0
+            warmup_none_count = 0
             while True:
                 now = time.monotonic()
                 t_since_start = now - t_start
@@ -111,14 +125,35 @@ class PpmMeasureWorker(QThread):
                 if self.isInterruptionRequested():
                     self.finished_err.emit(_("Measurement cancelled."))
                     return
-                dev.read_samples(_CHUNK)
+                buf = dev.read_samples(_CHUNK)
+                warmup_calls += 1
+                if buf is None:
+                    warmup_none_count += 1
+                else:
+                    warmup_samples_drained += len(buf)
                 if now - last_progress_emit >= _PROGRESS_INTERVAL_S:
                     last_progress_emit = now
                     self.progress.emit(warmup_frac * min(1.0, t_since_start / _WARMUP_S))
 
+            logger.info(
+                "PPM measure: warm-up done. calls=%d none_returns=%d samples_drained=%d "
+                "(discarded, not counted below) overflow_count_so_far=%d",
+                warmup_calls,
+                warmup_none_count,
+                warmup_samples_drained,
+                dev.overflow_count,
+            )
+
             # Measurement: read until target_samples have actually arrived.
             overflow_at_measure_start = dev.overflow_count
             t_measure_start = time.monotonic()
+            measure_calls = 0
+            measure_none_count = 0
+            min_read = None
+            max_read = 0
+            first_read_len: int | None = None
+            first_read_dt: float | None = None
+            last_log = t_measure_start
             while total_samples < target_samples:
                 now = time.monotonic()
                 if now - t_start >= max_wall_time:
@@ -128,16 +163,55 @@ class PpmMeasureWorker(QThread):
                     self.finished_err.emit(_("Measurement cancelled."))
                     return
                 buf = dev.read_samples(_CHUNK)
-                if buf is not None:
-                    total_samples += len(buf)
+                measure_calls += 1
+                if buf is None:
+                    measure_none_count += 1
+                else:
+                    n = len(buf)
+                    total_samples += n
+                    if first_read_len is None:
+                        first_read_len = n
+                        first_read_dt = now - t_measure_start
+                    if min_read is None or n < min_read:
+                        min_read = n
+                    if n > max_read:
+                        max_read = n
                 if now - last_progress_emit >= _PROGRESS_INTERVAL_S:
                     last_progress_emit = now
                     frac = warmup_frac + (1 - warmup_frac) * min(
                         1.0, total_samples / target_samples
                     )
                     self.progress.emit(frac)
+                if now - last_log >= 2.0:
+                    last_log = now
+                    running_elapsed = now - t_measure_start
+                    running_rate = total_samples / running_elapsed if running_elapsed > 0 else 0.0
+                    logger.info(
+                        "PPM measure: progress calls=%d total_samples=%d/%d "
+                        "elapsed=%.2fs running_actual_rate=%.1f overflow_count=%d",
+                        measure_calls,
+                        total_samples,
+                        target_samples,
+                        running_elapsed,
+                        running_rate,
+                        dev.overflow_count,
+                    )
             elapsed = time.monotonic() - t_measure_start
             overflows_during_measurement = dev.overflow_count - overflow_at_measure_start
+            logger.info(
+                "PPM measure: measurement done. calls=%d none_returns=%d "
+                "min_read=%s max_read=%d first_read_len=%s first_read_dt=%s "
+                "total_samples=%d elapsed=%.4fs overflows_during_measurement=%d",
+                measure_calls,
+                measure_none_count,
+                min_read,
+                max_read,
+                first_read_len,
+                f"{first_read_dt:.4f}" if first_read_dt is not None else None,
+                total_samples,
+                elapsed,
+                overflows_during_measurement,
+            )
         finally:
             dev.close()
 
