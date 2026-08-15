@@ -1331,7 +1331,7 @@ class _SdrSettingsPanel(QWidget):
             else 2_400_000
         )
 
-        duration_s = 30.0
+        duration_s = 60.0
         self._ppm_measure_btn.setEnabled(False)
         progress = QProgressDialog(
             _("Measuring clock drift ({sec:.0f}s)…").format(sec=duration_s),

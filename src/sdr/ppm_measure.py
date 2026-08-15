@@ -98,7 +98,7 @@ class PpmMeasureWorker(QThread):
         self,
         info: SdrDeviceInfo,
         sample_rate_hz: float,
-        duration_s: float = 30.0,
+        duration_s: float = 60.0,
         parent: object | None = None,
     ) -> None:
         super().__init__(parent)  # type: ignore[arg-type]
