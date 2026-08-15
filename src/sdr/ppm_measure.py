@@ -144,6 +144,42 @@ class PpmMeasureWorker(QThread):
                 dev.overflow_count,
             )
 
+            # Drain any backlog sitting in the driver's internal queue right
+            # now, *before* starting the clock. Diagnostic logging from an
+            # earlier version of this worker showed the first post-warm-up
+            # read routinely returning a full MTU buffer in ~0.05s instead
+            # of the ~0.13s it should take to fill from empty at the
+            # requested rate -- i.e. that buffer had already been mostly or
+            # fully received by the driver *before* t_measure_start was
+            # recorded, but got credited entirely to the time *after* it.
+            # That systematically inflates the measured rate (all samples
+            # arrive "too fast" relative to the clock), producing a
+            # consistent positive ppm bias (~+1700ppm was observed on two
+            # different machines/drivers) rather than random noise. Reading
+            # until a read genuinely times out (no data immediately
+            # available) empties that backlog, so the next successful read
+            # is guaranteed to start accumulating only after this point.
+            drain_deadline = time.monotonic() + 3.0
+            drain_calls = 0
+            while True:
+                if self.isInterruptionRequested():
+                    self.finished_err.emit(_("Measurement cancelled."))
+                    return
+                if time.monotonic() >= drain_deadline:
+                    logger.warning(
+                        "PPM measure: backlog drain did not settle within 3.0s "
+                        "(%d buffer(s) drained) -- proceeding anyway.",
+                        drain_calls,
+                    )
+                    break
+                if dev.read_samples(_CHUNK) is None:
+                    break
+                drain_calls += 1
+            logger.info(
+                "PPM measure: backlog drained (%d buffer(s) discarded). Starting clock now.",
+                drain_calls,
+            )
+
             # Measurement: read until target_samples have actually arrived.
             overflow_at_measure_start = dev.overflow_count
             t_measure_start = time.monotonic()
