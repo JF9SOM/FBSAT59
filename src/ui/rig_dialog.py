@@ -1078,17 +1078,29 @@ class _SdrSettingsPanel(QWidget):
         self._ppm_spin.setValue(0)
         self._ppm_spin.setSuffix(" ppm")
         ppm_row.addWidget(self._ppm_spin)
-        self._ppm_measure_btn = QPushButton(_("Measure…"))
-        self._ppm_measure_btn.setToolTip(
-            _(
-                "Automatically estimate the device's clock drift by comparing\n"
-                "actual samples received against the configured sample rate over\n"
-                "~35 seconds. No reference signal needed — same principle as the\n"
-                "standard rtl_test -p tool, but built in and works for any device."
+        self._ppm_measure_btn: QPushButton | None = None
+        # Not offered on Windows: RtlSdrDirectDevice (the ctypes bypass used
+        # there instead of SoapySDR, see device.py) reads via the
+        # synchronous rtlsdr_read_sync() rather than an async callback
+        # queue, which measurably showed ~25ms of dead time per 262144-
+        # sample chunk between calls in testing -- producing a consistent
+        # ~-23000ppm "measurement" that isn't a real clock error (crystal
+        # oscillators don't deviate by 2%). Fixing that would mean
+        # rewriting RtlSdrDirectDevice's read path to use
+        # rtlsdr_read_async() (the way HackRfDirectDevice already does),
+        # which is out of scope for this feature.
+        if sys.platform != "win32":
+            self._ppm_measure_btn = QPushButton(_("Measure…"))
+            self._ppm_measure_btn.setToolTip(
+                _(
+                    "Automatically estimate the device's clock drift by comparing\n"
+                    "actual samples received against the configured sample rate over\n"
+                    "~65 seconds. No reference signal needed — same principle as the\n"
+                    "standard rtl_test -p tool, but built in and works for any device."
+                )
             )
-        )
-        self._ppm_measure_btn.clicked.connect(self._on_measure_ppm)
-        ppm_row.addWidget(self._ppm_measure_btn)
+            self._ppm_measure_btn.clicked.connect(self._on_measure_ppm)
+            ppm_row.addWidget(self._ppm_measure_btn)
         cfg_form.addRow(_("PPM Correction:"), ppm_row)
 
         gain_row = QHBoxLayout()
@@ -1332,7 +1344,8 @@ class _SdrSettingsPanel(QWidget):
         )
 
         duration_s = 60.0
-        self._ppm_measure_btn.setEnabled(False)
+        if self._ppm_measure_btn is not None:
+            self._ppm_measure_btn.setEnabled(False)
         progress = QProgressDialog(
             _("Measuring clock drift ({sec:.0f}s)…").format(sec=duration_s),
             _("Cancel"),
@@ -1362,7 +1375,8 @@ class _SdrSettingsPanel(QWidget):
             self._ppm_progress.setValue(int(fraction * 100))
 
     def _on_ppm_measure_ok(self, ppm: float) -> None:
-        self._ppm_measure_btn.setEnabled(True)
+        if self._ppm_measure_btn is not None:
+            self._ppm_measure_btn.setEnabled(True)
         if self._ppm_progress is not None:
             self._ppm_progress.close()
             self._ppm_progress = None
@@ -1376,7 +1390,8 @@ class _SdrSettingsPanel(QWidget):
         )
 
     def _on_ppm_measure_err(self, message: str) -> None:
-        self._ppm_measure_btn.setEnabled(True)
+        if self._ppm_measure_btn is not None:
+            self._ppm_measure_btn.setEnabled(True)
         if self._ppm_progress is not None:
             self._ppm_progress.close()
             self._ppm_progress = None

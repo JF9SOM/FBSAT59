@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-15 08:38+0900\n"
+"POT-Creation-Date: 2026-08-15 11:38+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -98,7 +98,7 @@ msgstr ""
 msgid "Off"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:405 src/ui/rig_dialog.py:1769
+#: src/ui/ax100_digi_tab.py:405 src/ui/rig_dialog.py:1784
 #: src/ui/ft4_tab.py:1008
 #, python-brace-format
 msgid "{db:.0f} dBFS"
@@ -686,7 +686,7 @@ msgstr ""
 msgid "Click Browse… to choose location"
 msgstr ""
 
-#: src/ui/log_export_dialog.py:129 src/ui/rig_dialog.py:1136
+#: src/ui/log_export_dialog.py:129 src/ui/rig_dialog.py:1148
 msgid "Browse…"
 msgstr ""
 
@@ -1373,7 +1373,7 @@ msgstr ""
 msgid "Connect anyway"
 msgstr ""
 
-#: src/ui/radio_control_widget.py:885 src/ui/rig_dialog.py:1338
+#: src/ui/radio_control_widget.py:885 src/ui/rig_dialog.py:1351
 #: src/ui/pass_panel.py:475
 msgid "Cancel"
 msgstr ""
@@ -1539,7 +1539,7 @@ msgstr ""
 msgid "soundfile not installed — pip install soundfile"
 msgstr ""
 
-#: src/ui/sstv_tab.py:348 src/ui/rig_dialog.py:1913
+#: src/ui/sstv_tab.py:348 src/ui/rig_dialog.py:1928
 msgid "Sound Card"
 msgstr ""
 
@@ -2205,200 +2205,200 @@ msgstr ""
 msgid "Sample Rate:"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1081
+#: src/ui/rig_dialog.py:1093
 msgid "Measure…"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1084
+#: src/ui/rig_dialog.py:1096
 msgid ""
 "Automatically estimate the device's clock drift by comparing\n"
 "actual samples received against the configured sample rate over\n"
-"~35 seconds. No reference signal needed — same principle as the\n"
+"~65 seconds. No reference signal needed — same principle as the\n"
 "standard rtl_test -p tool, but built in and works for any device."
 msgstr ""
 
-#: src/ui/rig_dialog.py:1092
+#: src/ui/rig_dialog.py:1104
 msgid "PPM Correction:"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1095 src/ui/ft4_tab.py:551 src/ui/aprs_tab.py:236
+#: src/ui/rig_dialog.py:1107 src/ui/ft4_tab.py:551 src/ui/aprs_tab.py:236
 #: src/ui/telemetry_tab.py:172
 msgid "Auto"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1096
+#: src/ui/rig_dialog.py:1108
 msgid "Manual"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1107
+#: src/ui/rig_dialog.py:1119
 msgid "RF Gain:"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1109
+#: src/ui/rig_dialog.py:1121
 msgid "Enable Bias-T (powers external LNA via antenna port)"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1115
+#: src/ui/rig_dialog.py:1127
 msgid "Assign as"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1117 src/ui/rig_dialog.py:1910
+#: src/ui/rig_dialog.py:1129 src/ui/rig_dialog.py:1925
 #: src/ui/main_window.py:294
 msgid "Rig 1"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1118 src/ui/rig_dialog.py:1911
+#: src/ui/rig_dialog.py:1130 src/ui/rig_dialog.py:1926
 #: src/ui/main_window.py:296
 msgid "Rig 2"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1119
+#: src/ui/rig_dialog.py:1131
 msgid "Not assigned"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1130
+#: src/ui/rig_dialog.py:1142
 msgid "IQ Recording"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1140
+#: src/ui/rig_dialog.py:1152
 msgid "Save directory:"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1206
+#: src/ui/rig_dialog.py:1218
 msgid "(no devices found)"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1262
+#: src/ui/rig_dialog.py:1274
 #, python-brace-format
 msgid "Remote: {host}"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1323 src/ui/rig_dialog.py:1372
-#: src/ui/rig_dialog.py:1383
+#: src/ui/rig_dialog.py:1335 src/ui/rig_dialog.py:1386
+#: src/ui/rig_dialog.py:1398
 msgid "Measure PPM"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1323
+#: src/ui/rig_dialog.py:1335
 msgid "Select an SDR device first."
 msgstr ""
 
-#: src/ui/rig_dialog.py:1337
+#: src/ui/rig_dialog.py:1350
 #, python-brace-format
 msgid "Measuring clock drift ({sec:.0f}s)…"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1373
+#: src/ui/rig_dialog.py:1387
 #, python-brace-format
 msgid "Measured clock drift: {ppm:.1f} ppm (set to {rounded})."
 msgstr ""
 
-#: src/ui/rig_dialog.py:1389
+#: src/ui/rig_dialog.py:1404
 msgid "Select IQ Recording Directory"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1549
+#: src/ui/rig_dialog.py:1564
 msgid ""
 "sounddevice is not installed.\n"
 "Install it with:  pip install sounddevice"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1558
+#: src/ui/rig_dialog.py:1573
 msgid "Audio Devices"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1566
+#: src/ui/rig_dialog.py:1581
 msgid "Input device:"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1577 src/ui/rig_dialog.py:1750 src/ui/ft4_tab.py:476
+#: src/ui/rig_dialog.py:1592 src/ui/rig_dialog.py:1765 src/ui/ft4_tab.py:476
 #: src/ui/ft4_tab.py:984
 msgid "-- dBFS"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1580 src/ui/ft4_tab.py:469
+#: src/ui/rig_dialog.py:1595 src/ui/ft4_tab.py:469
 msgid "RX Level:"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1587
+#: src/ui/rig_dialog.py:1602
 msgid "Output device:"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1591
+#: src/ui/rig_dialog.py:1606
 msgid "Refresh Devices"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1594
+#: src/ui/rig_dialog.py:1609
 msgid "Test (loopback)"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1608
+#: src/ui/rig_dialog.py:1623
 msgid "Pin to Device (Linux)"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1613
+#: src/ui/rig_dialog.py:1628
 msgid ""
 "The devices above follow PipeWire's current default, which can silently "
 "change when other USB audio devices are plugged in. Pick a specific device "
 "below to always route to it."
 msgstr ""
 
-#: src/ui/rig_dialog.py:1624
+#: src/ui/rig_dialog.py:1639
 msgid "Pin input to:"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1628
+#: src/ui/rig_dialog.py:1643
 msgid "Pin output to:"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1633
+#: src/ui/rig_dialog.py:1648
 msgid "Sample Rate"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1635
+#: src/ui/rig_dialog.py:1650
 msgid "(fixed — required by Direwolf)"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1637
+#: src/ui/rig_dialog.py:1652
 msgid "Rate:"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1662
+#: src/ui/rig_dialog.py:1677
 #, python-brace-format
 msgid "Failed to query devices: {e}"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1688
+#: src/ui/rig_dialog.py:1703
 #, python-brace-format
 msgid "{n} devices found."
 msgstr ""
 
-#: src/ui/rig_dialog.py:1701
+#: src/ui/rig_dialog.py:1716
 msgid "Auto (follow PipeWire default)"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1794
+#: src/ui/rig_dialog.py:1809
 msgid "Playing 1 kHz test tone…"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1797
+#: src/ui/rig_dialog.py:1812
 #, python-brace-format
 msgid "Test failed: {e}"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1876
+#: src/ui/rig_dialog.py:1891
 msgid "Rig Settings"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1912
+#: src/ui/rig_dialog.py:1927
 msgid "SDR Settings"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1932
+#: src/ui/rig_dialog.py:1947
 #, python-brace-format
 msgid "{n} rig models available  |  Hamlib {ver}"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1937 src/ui/rotator_dialog.py:187
+#: src/ui/rig_dialog.py:1952 src/ui/rotator_dialog.py:187
 #: src/ui/main_window.py:1078
 msgid "Hamlib Update…"
 msgstr ""
@@ -4492,28 +4492,24 @@ msgstr ""
 msgid "Could not remove or rename the install directory:\n"
 msgstr ""
 
-#: src/sdr/ppm_measure.py:93
+#: src/sdr/ppm_measure.py:129
 msgid "Could not open the SDR device — is it in use elsewhere?"
 msgstr ""
 
-#: src/sdr/ppm_measure.py:96
+#: src/sdr/ppm_measure.py:132
 msgid "Could not start streaming from the SDR device."
 msgstr ""
 
-#: src/sdr/ppm_measure.py:112 src/sdr/ppm_measure.py:128
+#: src/sdr/ppm_measure.py:150 src/sdr/ppm_measure.py:188
 msgid "Measurement cancelled."
 msgstr ""
 
-#: src/sdr/ppm_measure.py:125
-msgid "Measurement timed out — no data from the device."
-msgstr ""
-
-#: src/sdr/ppm_measure.py:145
-msgid "No samples received during measurement."
-msgstr ""
-
-#: src/sdr/ppm_measure.py:163
+#: src/sdr/ppm_measure.py:251
 msgid ""
 "Buffer overflow during measurement — result discarded as unreliable. Try a "
 "lower sample rate or close other apps using the CPU, then measure again."
+msgstr ""
+
+#: src/sdr/ppm_measure.py:265
+msgid "No samples received during measurement."
 msgstr ""
