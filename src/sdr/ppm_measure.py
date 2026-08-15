@@ -14,6 +14,40 @@ SatDump's --ppm_correction flag.
 Implemented in-app (rather than shelling out to rtl_test) so the same code
 path works for every device SdrDevice supports, not just RTL-SDR -- there
 is no HackRF/PlutoSDR equivalent of rtl_test to shell out to.
+
+Measurement method: least-squares fit over every buffer arrival, not a
+2-point (first/last) slope
+------------------------------------------------------------------------
+Two earlier versions of this worker computed ppm from just
+total_samples / elapsed_wall_time, using only the first and last buffer
+arrivals to define the measurement window. Diagnostic logging showed
+that approach swinging between +1700ppm and +3615ppm on back-to-back runs
+on the same hardware, regardless of whether the window boundaries were
+time-based or sample-count-based, or whether backlogged data was drained
+before starting the clock. The root cause: on RTL-SDR (and likely other
+cheap SDRs), SoapySDR's readStream() delivers data in fixed-size chunks
+(the driver's internal USB transfer buffer -- 131072 samples for RTL-SDR)
+that complete on the hardware's own clock, roughly every
+131072/sample_rate seconds, independent of when this thread happens to be
+polling. Software only ever *observes* a chunk once some read_samples()
+call happens to catch it already-complete -- so the very first and very
+last chunks of any given window carry up to one full chunk-period
+(~131ms at 1Msps) of essentially random phase error relative to the
+window's official start/end timestamps. Over a 30s measurement that is a
+worst case of roughly 131ms/30s * 1e6 =~ 4400ppm, which matches the
+magnitude of what was actually observed.
+
+The fix: don't rely on just the first and last arrivals. Record every
+successful chunk's arrival as an (elapsed_time, cumulative_sample_count)
+data point (a 30s run yields roughly 230 of them) and fit a straight line
+to all of them with least squares; the slope is the measured sample rate.
+Each individual point still carries the same up-to-one-chunk-period phase
+jitter as before, but that jitter is a roughly constant *offset* added to
+every point's timestamp (software sees each chunk within [0, one poll
+interval) after it's actually ready) -- a constant offset shifts a
+least-squares fit's intercept, not its slope. With ~230 points spanning
+the whole window, per-point jitter averages out far more effectively than
+the 2-point method's baked-in worst case.
 """
 
 from __future__ import annotations
@@ -21,6 +55,7 @@ from __future__ import annotations
 import logging
 import time
 
+import numpy as np
 from PySide6.QtCore import QThread, Signal
 
 from i18n import _
@@ -37,6 +72,9 @@ logger = logging.getLogger(__name__)
 _CHUNK = 262144
 _WARMUP_S = 5.0  # discard the first few seconds -- clock is least stable right after open()
 _PROGRESS_INTERVAL_S = 0.15  # throttle progress emits; cross-thread Qt signals aren't free
+# Below this many recorded buffer arrivals, a least-squares fit is not
+# meaningfully more robust than the 2-point method it replaces.
+_MIN_DATA_POINTS = 5
 
 
 class PpmMeasureWorker(QThread):
@@ -70,31 +108,18 @@ class PpmMeasureWorker(QThread):
 
     def run(self) -> None:
         dev = SdrDevice(self._info)
+        # (elapsed_s_since_measurement_start, cumulative_sample_count) for
+        # every successfully-received buffer during the measurement phase.
+        data_points: list[tuple[float, int]] = []
         total_samples = 0
-        elapsed = 0.0
         overflows_during_measurement = 0
-        # Read until this many samples have actually been *received*, rather
-        # than reading for a fixed wall-clock duration. A time-based cutoff
-        # can end while data is still in flight inside the USB/driver
-        # buffer -- not lost, just not yet delivered to this process -- and
-        # silently excluding that not-yet-arrived data biases the result
-        # without ever touching read_samples()'s overflow path. Waiting for
-        # an exact sample count instead means the clock only stops once
-        # every counted sample has actually been observed.
-        target_samples = int(self._sample_rate * self._duration)
         warmup_frac = _WARMUP_S / (_WARMUP_S + self._duration)
-        # Safety net in case the device stalls completely after warm-up --
-        # without this, a dead stream would hang the measurement forever
-        # since the sample-count target would never be reached.
-        max_wall_time = _WARMUP_S + self._duration * 4.0
 
         logger.info(
-            "PPM measure: starting. driver=%s requested_rate=%.0f duration=%.1fs "
-            "target_samples=%d chunk=%d",
+            "PPM measure: starting. driver=%s requested_rate=%.0f duration=%.1fs chunk=%d",
             self._info.driver,
             self._sample_rate,
             self._duration,
-            target_samples,
             _CHUNK,
         )
 
@@ -112,8 +137,7 @@ class PpmMeasureWorker(QThread):
 
             # Warm-up: discard for a fixed wall-clock duration -- the clock
             # is least stable right after open(), and this phase feeds no
-            # data into the ppm calculation, so a time-based cutoff is fine
-            # here (there's nothing downstream for in-flight data to bias).
+            # data into the ppm calculation.
             warmup_calls = 0
             warmup_samples_drained = 0
             warmup_none_count = 0
@@ -144,57 +168,22 @@ class PpmMeasureWorker(QThread):
                 dev.overflow_count,
             )
 
-            # Drain any backlog sitting in the driver's internal queue right
-            # now, *before* starting the clock. Diagnostic logging from an
-            # earlier version of this worker showed the first post-warm-up
-            # read routinely returning a full MTU buffer in ~0.05s instead
-            # of the ~0.13s it should take to fill from empty at the
-            # requested rate -- i.e. that buffer had already been mostly or
-            # fully received by the driver *before* t_measure_start was
-            # recorded, but got credited entirely to the time *after* it.
-            # That systematically inflates the measured rate (all samples
-            # arrive "too fast" relative to the clock), producing a
-            # consistent positive ppm bias (~+1700ppm was observed on two
-            # different machines/drivers) rather than random noise. Reading
-            # until a read genuinely times out (no data immediately
-            # available) empties that backlog, so the next successful read
-            # is guaranteed to start accumulating only after this point.
-            drain_deadline = time.monotonic() + 3.0
-            drain_calls = 0
-            while True:
-                if self.isInterruptionRequested():
-                    self.finished_err.emit(_("Measurement cancelled."))
-                    return
-                if time.monotonic() >= drain_deadline:
-                    logger.warning(
-                        "PPM measure: backlog drain did not settle within 3.0s "
-                        "(%d buffer(s) drained) -- proceeding anyway.",
-                        drain_calls,
-                    )
-                    break
-                if dev.read_samples(_CHUNK) is None:
-                    break
-                drain_calls += 1
-            logger.info(
-                "PPM measure: backlog drained (%d buffer(s) discarded). Starting clock now.",
-                drain_calls,
-            )
-
-            # Measurement: read until target_samples have actually arrived.
+            # Measurement: record every successful buffer arrival as a
+            # (time, cumulative_samples) point for the requested duration.
+            # See the module docstring for why this replaced a simple
+            # total_samples/elapsed 2-point calculation.
             overflow_at_measure_start = dev.overflow_count
             t_measure_start = time.monotonic()
             measure_calls = 0
             measure_none_count = 0
-            min_read = None
+            min_read: int | None = None
             max_read = 0
-            first_read_len: int | None = None
-            first_read_dt: float | None = None
             last_log = t_measure_start
-            while total_samples < target_samples:
+            while True:
                 now = time.monotonic()
-                if now - t_start >= max_wall_time:
-                    self.finished_err.emit(_("Measurement timed out — no data from the device."))
-                    return
+                elapsed_so_far = now - t_measure_start
+                if elapsed_so_far >= self._duration:
+                    break
                 if self.isInterruptionRequested():
                     self.finished_err.emit(_("Measurement cancelled."))
                     return
@@ -205,9 +194,7 @@ class PpmMeasureWorker(QThread):
                 else:
                     n = len(buf)
                     total_samples += n
-                    if first_read_len is None:
-                        first_read_len = n
-                        first_read_dt = now - t_measure_start
+                    data_points.append((time.monotonic() - t_measure_start, total_samples))
                     if min_read is None or n < min_read:
                         min_read = n
                     if n > max_read:
@@ -215,53 +202,44 @@ class PpmMeasureWorker(QThread):
                 if now - last_progress_emit >= _PROGRESS_INTERVAL_S:
                     last_progress_emit = now
                     frac = warmup_frac + (1 - warmup_frac) * min(
-                        1.0, total_samples / target_samples
+                        1.0, elapsed_so_far / self._duration
                     )
                     self.progress.emit(frac)
                 if now - last_log >= 2.0:
                     last_log = now
-                    running_elapsed = now - t_measure_start
-                    running_rate = total_samples / running_elapsed if running_elapsed > 0 else 0.0
+                    running_rate = total_samples / elapsed_so_far if elapsed_so_far > 0 else 0.0
                     logger.info(
-                        "PPM measure: progress calls=%d total_samples=%d/%d "
+                        "PPM measure: progress calls=%d total_samples=%d data_points=%d "
                         "elapsed=%.2fs running_actual_rate=%.1f overflow_count=%d",
                         measure_calls,
                         total_samples,
-                        target_samples,
-                        running_elapsed,
+                        len(data_points),
+                        elapsed_so_far,
                         running_rate,
                         dev.overflow_count,
                     )
-            elapsed = time.monotonic() - t_measure_start
             overflows_during_measurement = dev.overflow_count - overflow_at_measure_start
             logger.info(
-                "PPM measure: measurement done. calls=%d none_returns=%d "
-                "min_read=%s max_read=%d first_read_len=%s first_read_dt=%s "
-                "total_samples=%d elapsed=%.4fs overflows_during_measurement=%d",
+                "PPM measure: measurement done. calls=%d none_returns=%d data_points=%d "
+                "min_read=%s max_read=%d total_samples=%d overflows_during_measurement=%d",
                 measure_calls,
                 measure_none_count,
+                len(data_points),
                 min_read,
                 max_read,
-                first_read_len,
-                f"{first_read_dt:.4f}" if first_read_dt is not None else None,
                 total_samples,
-                elapsed,
                 overflows_during_measurement,
             )
         finally:
             dev.close()
 
-        if elapsed <= 0 or total_samples == 0:
-            self.finished_err.emit(_("No samples received during measurement."))
-            return
-
         if overflows_during_measurement > 0:
             # The driver dropped samples faster than we could read them, so
-            # total_samples/elapsed understates the device's real throughput
-            # -- the resulting "ppm" would be a measurement artifact, not the
-            # device's actual clock error, and can be off by hundreds of ppm
-            # or more. Discard rather than report a number that looks
-            # trustworthy but isn't.
+            # the recorded cumulative counts understate the device's real
+            # throughput -- the resulting "ppm" would be a measurement
+            # artifact, not the device's actual clock error, and can be off
+            # by hundreds of ppm or more. Discard rather than report a
+            # number that looks trustworthy but isn't.
             logger.warning(
                 "PPM measurement discarded: %d buffer overflow(s) during the "
                 "measurement window (requested=%.0f)",
@@ -277,14 +255,34 @@ class PpmMeasureWorker(QThread):
             )
             return
 
-        actual_rate = total_samples / elapsed
-        ppm = 1e6 * (actual_rate / self._sample_rate - 1.0)
+        if len(data_points) < _MIN_DATA_POINTS:
+            logger.warning(
+                "PPM measurement discarded: only %d data point(s) received "
+                "(need at least %d) -- device may be stalled or disconnected.",
+                len(data_points),
+                _MIN_DATA_POINTS,
+            )
+            self.finished_err.emit(_("No samples received during measurement."))
+            return
+
+        times = np.array([t for t, _n in data_points], dtype=np.float64)
+        counts = np.array([n for _t, n in data_points], dtype=np.float64)
+        slope, intercept = np.polyfit(times, counts, 1)
+        predicted = slope * times + intercept
+        rms_residual = float(np.sqrt(np.mean((counts - predicted) ** 2)))
+        naive_rate = total_samples / times[-1] if times[-1] > 0 else 0.0
+
+        ppm = 1e6 * (slope / self._sample_rate - 1.0)
         logger.info(
-            "PPM measurement: %d samples over %.2fs, requested=%.0f actual=%.1f -> %.2f ppm",
-            total_samples,
-            elapsed,
+            "PPM measurement: %d data points over %.2fs, requested=%.0f fitted_rate=%.2f "
+            "-> %.2f ppm (naive rate=%.2f -> %.2f ppm, fit rms_residual=%.1f samples)",
+            len(data_points),
+            times[-1],
             self._sample_rate,
-            actual_rate,
+            slope,
             ppm,
+            naive_rate,
+            1e6 * (naive_rate / self._sample_rate - 1.0),
+            rms_residual,
         )
         self.finished_ok.emit(ppm)
