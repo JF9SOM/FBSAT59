@@ -1461,7 +1461,17 @@ class _SdrSettingsPanel(QWidget):
         self._ppm_spin.setValue(int(data.get("ppm") or 0))  # type: ignore[call-overload]
 
         gain_auto = bool(data.get("gain_auto", True))
-        self._gain_auto_rb.setChecked(gain_auto)
+        # setChecked(True) on the button that should end up checked, not
+        # setChecked(False) on the other one -- Qt radio buttons in an
+        # (implicit) exclusive group silently ignore setChecked(False) on
+        # whichever one is currently the sole checked member, so calling
+        # self._gain_auto_rb.setChecked(gain_auto) with gain_auto=False left
+        # "Auto" checked (and the spin box disabled) even though gain_db
+        # was correctly restored underneath.
+        if gain_auto:
+            self._gain_auto_rb.setChecked(True)
+        else:
+            self._gain_manual_rb.setChecked(True)
         self._gain_spin.setValue(int(data.get("gain_db") or 40))  # type: ignore[call-overload]
         self._bias_tee_chk.setChecked(bool(data.get("bias_tee", False)))
 
