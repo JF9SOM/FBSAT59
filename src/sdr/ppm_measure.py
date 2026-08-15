@@ -115,14 +115,6 @@ class PpmMeasureWorker(QThread):
         overflows_during_measurement = 0
         warmup_frac = _WARMUP_S / (_WARMUP_S + self._duration)
 
-        logger.info(
-            "PPM measure: starting. driver=%s requested_rate=%.0f duration=%.1fs chunk=%d",
-            self._info.driver,
-            self._sample_rate,
-            self._duration,
-            _CHUNK,
-        )
-
         try:
             dev.set_sample_rate(self._sample_rate)
             if not dev.open():
@@ -138,9 +130,6 @@ class PpmMeasureWorker(QThread):
             # Warm-up: discard for a fixed wall-clock duration -- the clock
             # is least stable right after open(), and this phase feeds no
             # data into the ppm calculation.
-            warmup_calls = 0
-            warmup_samples_drained = 0
-            warmup_none_count = 0
             while True:
                 now = time.monotonic()
                 t_since_start = now - t_start
@@ -149,24 +138,10 @@ class PpmMeasureWorker(QThread):
                 if self.isInterruptionRequested():
                     self.finished_err.emit(_("Measurement cancelled."))
                     return
-                buf = dev.read_samples(_CHUNK)
-                warmup_calls += 1
-                if buf is None:
-                    warmup_none_count += 1
-                else:
-                    warmup_samples_drained += len(buf)
+                dev.read_samples(_CHUNK)
                 if now - last_progress_emit >= _PROGRESS_INTERVAL_S:
                     last_progress_emit = now
                     self.progress.emit(warmup_frac * min(1.0, t_since_start / _WARMUP_S))
-
-            logger.info(
-                "PPM measure: warm-up done. calls=%d none_returns=%d samples_drained=%d "
-                "(discarded, not counted below) overflow_count_so_far=%d",
-                warmup_calls,
-                warmup_none_count,
-                warmup_samples_drained,
-                dev.overflow_count,
-            )
 
             # Measurement: record every successful buffer arrival as a
             # (time, cumulative_samples) point for the requested duration.
@@ -174,11 +149,6 @@ class PpmMeasureWorker(QThread):
             # total_samples/elapsed 2-point calculation.
             overflow_at_measure_start = dev.overflow_count
             t_measure_start = time.monotonic()
-            measure_calls = 0
-            measure_none_count = 0
-            min_read: int | None = None
-            max_read = 0
-            last_log = t_measure_start
             while True:
                 now = time.monotonic()
                 elapsed_so_far = now - t_measure_start
@@ -188,48 +158,16 @@ class PpmMeasureWorker(QThread):
                     self.finished_err.emit(_("Measurement cancelled."))
                     return
                 buf = dev.read_samples(_CHUNK)
-                measure_calls += 1
-                if buf is None:
-                    measure_none_count += 1
-                else:
-                    n = len(buf)
-                    total_samples += n
+                if buf is not None:
+                    total_samples += len(buf)
                     data_points.append((time.monotonic() - t_measure_start, total_samples))
-                    if min_read is None or n < min_read:
-                        min_read = n
-                    if n > max_read:
-                        max_read = n
                 if now - last_progress_emit >= _PROGRESS_INTERVAL_S:
                     last_progress_emit = now
                     frac = warmup_frac + (1 - warmup_frac) * min(
                         1.0, elapsed_so_far / self._duration
                     )
                     self.progress.emit(frac)
-                if now - last_log >= 2.0:
-                    last_log = now
-                    running_rate = total_samples / elapsed_so_far if elapsed_so_far > 0 else 0.0
-                    logger.info(
-                        "PPM measure: progress calls=%d total_samples=%d data_points=%d "
-                        "elapsed=%.2fs running_actual_rate=%.1f overflow_count=%d",
-                        measure_calls,
-                        total_samples,
-                        len(data_points),
-                        elapsed_so_far,
-                        running_rate,
-                        dev.overflow_count,
-                    )
             overflows_during_measurement = dev.overflow_count - overflow_at_measure_start
-            logger.info(
-                "PPM measure: measurement done. calls=%d none_returns=%d data_points=%d "
-                "min_read=%s max_read=%d total_samples=%d overflows_during_measurement=%d",
-                measure_calls,
-                measure_none_count,
-                len(data_points),
-                min_read,
-                max_read,
-                total_samples,
-                overflows_during_measurement,
-            )
         finally:
             dev.close()
 
@@ -267,22 +205,12 @@ class PpmMeasureWorker(QThread):
 
         times = np.array([t for t, _n in data_points], dtype=np.float64)
         counts = np.array([n for _t, n in data_points], dtype=np.float64)
-        slope, intercept = np.polyfit(times, counts, 1)
-        predicted = slope * times + intercept
-        rms_residual = float(np.sqrt(np.mean((counts - predicted) ** 2)))
-        naive_rate = total_samples / times[-1] if times[-1] > 0 else 0.0
-
+        slope, _intercept = np.polyfit(times, counts, 1)
         ppm = 1e6 * (slope / self._sample_rate - 1.0)
         logger.info(
-            "PPM measurement: %d data points over %.2fs, requested=%.0f fitted_rate=%.2f "
-            "-> %.2f ppm (naive rate=%.2f -> %.2f ppm, fit rms_residual=%.1f samples)",
-            len(data_points),
-            times[-1],
+            "PPM measurement: requested=%.0f fitted_rate=%.2f -> %.2f ppm",
             self._sample_rate,
             slope,
             ppm,
-            naive_rate,
-            1e6 * (naive_rate / self._sample_rate - 1.0),
-            rms_residual,
         )
         self.finished_ok.emit(ppm)
