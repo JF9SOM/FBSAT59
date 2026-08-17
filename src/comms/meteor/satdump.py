@@ -22,6 +22,16 @@ from PySide6.QtCore import QThread, Signal
 
 METEOR_PIPELINES: list[dict[str, str | int]] = [
     # --- LRPT (137 MHz, RTL-SDR compatible) ---
+    #
+    # Neither the downlink frequency (137.1 vs 137.9 MHz) nor the symbol rate
+    # (72k vs 80k) is fixed per satellite: operators have repeatedly swapped
+    # both N2-3 and N2-4 between 137.1/137.9 MHz (see usradioguy.com/meteor-satellite/
+    # operational logs), and separately toggled the LRPT symbol rate between
+    # 72k (default) and 80k without notice (see the 80k note further down).
+    # A pipeline/frequency mismatch shows up as Viterbi SYNCED (plausible BER)
+    # with the Deframer stuck at NOSYNC -- so all four frequency x symbol-rate
+    # combinations are offered per satellite as manual choices to try, rather
+    # than guessing a single "current" configuration that can go stale.
     {
         "label": "METEOR-M N2-3  LRPT  137.9 MHz",
         "pipeline": "meteor_m2-x_lrpt",
@@ -31,14 +41,6 @@ METEOR_PIPELINES: list[dict[str, str | int]] = [
         "xpdr_keyword": "LRPT",
         "xpdr_freq": 137_900_000,
     },
-    # 80k variant: METEOR-M2-3/2-4 operators occasionally switch the LRPT
-    # symbol rate between 72k (default, entry above) and 80k without
-    # notice. A 72k pipeline against an 80k signal shows Viterbi SYNCED
-    # (with elevated but plausible-looking BER) while the Deframer never
-    # syncs, even on a strong, high-elevation pass -- so this is offered
-    # as a manual fallback to try, not a default. Same RF frequency as
-    # the 72k entry, so it doesn't need its own transponder auto-select
-    # affordance (see select_pipeline_by_norad_and_freq() in meteor_tab.py).
     {
         "label": "METEOR-M N2-3  LRPT  137.9 MHz (80k)",
         "pipeline": "meteor_m2-x_lrpt_80k",
@@ -47,6 +49,24 @@ METEOR_PIPELINES: list[dict[str, str | int]] = [
         "norad": 57166,
         "xpdr_keyword": "LRPT",
         "xpdr_freq": 137_900_000,
+    },
+    {
+        "label": "METEOR-M N2-3  LRPT  137.1 MHz",
+        "pipeline": "meteor_m2-x_lrpt",
+        "frequency": 137_100_000,
+        "samplerate": 1_200_000,
+        "norad": 57166,
+        "xpdr_keyword": "LRPT",
+        "xpdr_freq": 137_100_000,
+    },
+    {
+        "label": "METEOR-M N2-3  LRPT  137.1 MHz (80k)",
+        "pipeline": "meteor_m2-x_lrpt_80k",
+        "frequency": 137_100_000,
+        "samplerate": 1_200_000,
+        "norad": 57166,
+        "xpdr_keyword": "LRPT",
+        "xpdr_freq": 137_100_000,
     },
     {
         "label": "METEOR-M N2-4  LRPT  137.1 MHz",
@@ -65,6 +85,24 @@ METEOR_PIPELINES: list[dict[str, str | int]] = [
         "norad": 59051,
         "xpdr_keyword": "LRPT",
         "xpdr_freq": 137_100_000,
+    },
+    {
+        "label": "METEOR-M N2-4  LRPT  137.9 MHz",
+        "pipeline": "meteor_m2-x_lrpt",
+        "frequency": 137_900_000,
+        "samplerate": 1_200_000,
+        "norad": 59051,
+        "xpdr_keyword": "LRPT",
+        "xpdr_freq": 137_900_000,
+    },
+    {
+        "label": "METEOR-M N2-4  LRPT  137.9 MHz (80k)",
+        "pipeline": "meteor_m2-x_lrpt_80k",
+        "frequency": 137_900_000,
+        "samplerate": 1_200_000,
+        "norad": 59051,
+        "xpdr_keyword": "LRPT",
+        "xpdr_freq": 137_900_000,
     },
     # --- HRPT (1.7 GHz, dish + LNA required) ---
     {
