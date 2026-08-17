@@ -33,7 +33,7 @@ METEOR_PIPELINES: list[dict[str, str | int]] = [
     # combinations are offered per satellite as manual choices to try, rather
     # than guessing a single "current" configuration that can go stale.
     {
-        "label": "METEOR-M N2-3  LRPT  137.9 MHz",
+        "label": "METEOR-M N2-3  LRPT  137.9 MHz (72k)",
         "pipeline": "meteor_m2-x_lrpt",
         "frequency": 137_900_000,
         "samplerate": 1_200_000,
@@ -51,7 +51,7 @@ METEOR_PIPELINES: list[dict[str, str | int]] = [
         "xpdr_freq": 137_900_000,
     },
     {
-        "label": "METEOR-M N2-3  LRPT  137.1 MHz",
+        "label": "METEOR-M N2-3  LRPT  137.1 MHz (72k)",
         "pipeline": "meteor_m2-x_lrpt",
         "frequency": 137_100_000,
         "samplerate": 1_200_000,
@@ -69,7 +69,7 @@ METEOR_PIPELINES: list[dict[str, str | int]] = [
         "xpdr_freq": 137_100_000,
     },
     {
-        "label": "METEOR-M N2-4  LRPT  137.1 MHz",
+        "label": "METEOR-M N2-4  LRPT  137.1 MHz (72k)",
         "pipeline": "meteor_m2-x_lrpt",
         "frequency": 137_100_000,
         "samplerate": 1_200_000,
@@ -87,7 +87,7 @@ METEOR_PIPELINES: list[dict[str, str | int]] = [
         "xpdr_freq": 137_100_000,
     },
     {
-        "label": "METEOR-M N2-4  LRPT  137.9 MHz",
+        "label": "METEOR-M N2-4  LRPT  137.9 MHz (72k)",
         "pipeline": "meteor_m2-x_lrpt",
         "frequency": 137_900_000,
         "samplerate": 1_200_000,
