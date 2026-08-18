@@ -4381,6 +4381,7 @@ class MainWindow(QMainWindow):
 
     def _on_transmitter_changed(self, xpdr: Any) -> None:
         """Update _current_transmitter and refresh the display on transponder selection change."""
+        previous_transmitter = self._current_transmitter
         self._current_transmitter = xpdr if isinstance(xpdr, dict) else None
         self._current_ctcss_tone = None  # revert to transponder tone on selection change
         # Drop the previous transmitter's cached Doppler result so
@@ -4412,7 +4413,7 @@ class MainWindow(QMainWindow):
             self._ctcss_activation_hz = None
             self._radio_control.update_ctcss(None, None)
             self._radio_control.update_doppler(None, None, None, None, None, None)
-        self._apply_transponder_state_to_rig()
+        self._apply_transponder_state_to_rig(previous_transmitter)
         # Auto-select SDR demod mode from transponder; reset passband tune offset
         if self._current_transmitter:
             satnogs_mode = self._current_transmitter.get("mode") or ""
@@ -4449,7 +4450,9 @@ class MainWindow(QMainWindow):
         self._radio_control.refresh_status()
         self._update_rig_label()
 
-    def _apply_transponder_state_to_rig(self) -> None:
+    def _apply_transponder_state_to_rig(
+        self, previous_transmitter: dict[str, Any] | None = None
+    ) -> None:
         """Apply mode + CTCSS to the rig when a transponder is selected.
 
         All rig types use ONE background thread so mode and CTCSS are always
@@ -4461,6 +4464,18 @@ class MainWindow(QMainWindow):
             before pyserial opens the same port.
           NET mode: send_mode_only (TCP) then _apply_ctcss_civ_direct
             (pyserial) in the same thread.
+          Exception (GitHub Issues #21/#22): if the rig is already connected
+            and previous_transmitter shares the same DL/UL band pairing as
+            the newly selected one (e.g. a satellite's general SSB/CW
+            transponder -> its community FT4 calling frequency -- always the
+            same passband for RS-44/JO-97/MO-122/AO-73, never a genuine band
+            reassignment like AO-7's Mode A/B), no SAT mode re-anchor is
+            needed: only mode/CTCSS change live (Direct via
+            apply_mode_ctcss_live(), NET via apply_transponder_state() on the
+            still-open connection -- both already proven by the CW/DATA
+            toggle buttons), and the next Doppler cycle's ordinary per-second
+            write glides the frequency to the new value on its own. See
+            _apply_transponder_state_to_rig()'s band_pairing_unchanged below.
 
         Non-satmode rigs (FTX-1F, FT-991A etc.):
           FTX-1F: disconnects first (V commands cannot interleave with
@@ -4511,16 +4526,84 @@ class MainWindow(QMainWindow):
             rig.set_current_modes(dl_mode, ul_mode)
 
         if rig.is_satmode:
-            # Satmode rigs: always disconnect so the user must reconnect
-            # explicitly for the new satellite.
-            if rig.is_connected:
-                self._disconnect_rig()  # must run on UI thread
-
             # Pass transponder frequencies to Direct-mode satmode rigs so that
             # _apply_mode_and_ctcss_hamlib can write them first (Stage 1 freq anchor).
             if isinstance(rig, HamlibDirectController) and rig._satmode:
                 rig._transponder_dl_hz = dl_hz
                 rig._transponder_ul_hz = ul_hz
+
+            # GitHub Issues #21/#22: does the newly selected transmitter
+            # require a different SAT mode band anchor at all? True only when
+            # the *previous* selection was also cross-band and both DL and UL
+            # land in the same coarse band (HF/VHF/UHF/SHF) as before -- e.g.
+            # a satellite's general transponder -> its community FT4 calling
+            # frequency, always the same passband for RS-44/JO-97/MO-122/
+            # AO-73. A genuine band reassignment (AO-7's Mode A vs Mode B) or
+            # a switch away from same-band duplex still needs the full
+            # disconnect + re-anchor path below.
+            prev_dl_hz: float | None = None
+            prev_ul_hz: float | None = None
+            if previous_transmitter is not None:
+                prev_dl_hz = _band_center_or_low(
+                    previous_transmitter.get("downlink_low"),
+                    previous_transmitter.get("downlink_high"),
+                )
+                prev_ul_hz = _band_center_or_low(
+                    previous_transmitter.get("uplink_low"),
+                    previous_transmitter.get("uplink_high"),
+                )
+            band_pairing_unchanged = (
+                prev_dl_hz is not None
+                and prev_ul_hz is not None
+                and rig._freq_band(prev_dl_hz) != rig._freq_band(prev_ul_hz)  # was cross-band
+                and rig._freq_band(dl_hz) != rig._freq_band(ul_hz)  # still cross-band
+                and rig._freq_band(prev_dl_hz) == rig._freq_band(dl_hz)
+                and rig._freq_band(prev_ul_hz) == rig._freq_band(ul_hz)
+            )
+
+            if (
+                isinstance(rig, HamlibDirectController)
+                and rig.is_connected
+                and rig._satmode_active
+                and band_pairing_unchanged
+            ):
+                # Stay connected: mode/CTCSS only, same live path as the
+                # CW/DATA toggle buttons (apply_mode_ctcss_live()). The
+                # Doppler loop's own per-second write handles the (same-band)
+                # frequency retune on its own next cycle.
+                def _do_satmode_live_direct() -> None:
+                    try:
+                        rig.apply_mode_ctcss_live(dl_mode, ul_mode, ctcss_hz)
+                    except Exception as exc:
+                        self._rig_error.emit(str(exc))
+
+                threading.Thread(target=_do_satmode_live_direct, daemon=True).start()
+                return
+
+            if isinstance(rig, HamlibNetController) and rig.is_connected and band_pairing_unchanged:
+                # NET-mode apply_transponder_state() already operates entirely
+                # over independent sockets (Stage 1 freq preset + mode +
+                # CTCSS) and only pauses the Doppler F/I socket briefly via
+                # _cmd_lock -- it was always safe to call while connected;
+                # nothing here needed a disconnect even before this fix.
+                def _do_satmode_live_net() -> None:
+                    try:
+                        rig.apply_transponder_state(dl_mode, ul_mode, ctcss_hz)
+                    except RigControlError as exc:
+                        self._rig_error.emit(str(exc))
+                    except Exception as exc:
+                        logger.error(
+                            "RigNet satmode live: unexpected error in send thread: %s", exc
+                        )
+                        self._rig_error.emit(str(exc))
+
+                threading.Thread(target=_do_satmode_live_net, daemon=True).start()
+                return
+
+            # Satmode rigs: always disconnect so the user must reconnect
+            # explicitly for the new satellite (or a genuine band change).
+            if rig.is_connected:
+                self._disconnect_rig()  # must run on UI thread
 
             def _do_satmode() -> None:
                 try:

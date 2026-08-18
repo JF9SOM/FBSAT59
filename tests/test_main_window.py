@@ -3248,6 +3248,177 @@ class TestLockDialFeedback:
 
         rig.set_transponder_freqs.assert_called_once_with(435_612_000.0, 145_993_000.0)
 
+    # -- _apply_transponder_state_to_rig(): live mode-only update when the
+    # newly selected transmitter shares the same DL/UL band pairing as the
+    # previous one (GitHub Issues #21/#22) --
+
+    # Same band pairing as _TRANSMITTER (DL band VHF, UL band UHF) but a
+    # different exact frequency, mirroring a real community FT4 calling
+    # entry selected after a satellite's general transponder (e.g. JO-97).
+    _TRANSMITTER_FT4_SAME_BAND = {
+        "downlink_low": 145_857_000,
+        "downlink_high": None,
+        "uplink_low": 435_118_000,
+        "uplink_high": None,
+        "invert": True,
+        "mode": "USB-D",
+    }
+    # DL/UL bands swapped relative to _TRANSMITTER (DL band UHF, UL band VHF)
+    # -- a genuine band reassignment, like AO-7's Mode A vs Mode B.
+    _TRANSMITTER_BAND_SWAPPED = {
+        "downlink_low": 435_000_000,
+        "downlink_high": 435_150_000,
+        "uplink_low": 145_800_000,
+        "uplink_high": 145_950_000,
+        "invert": False,
+        "mode": "USB",
+    }
+
+    def test_apply_transponder_state_satmode_direct_stays_connected_same_band_pairing(
+        self, qtbot, db
+    ) -> None:
+        """Switching from a general transponder to a same-passband FT4 entry
+        must update mode/CTCSS live via apply_mode_ctcss_live() -- no
+        disconnect, no cold-start apply_transponder_state()."""
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        rig = self._make_satmode_direct_rig(connected=True)
+        rig._satmode_active = True
+        rig.apply_mode_ctcss_live = MagicMock()
+        rig.apply_transponder_state = MagicMock()
+        w._rig_controller = rig
+        w._current_transmitter = dict(self._TRANSMITTER_FT4_SAME_BAND)
+        w._ctcss_tone_hz = None
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._apply_transponder_state_to_rig(dict(self._TRANSMITTER))
+
+        rig.apply_mode_ctcss_live.assert_called_once_with("USB-D", "LSB-D", 0.0)
+        rig.apply_transponder_state.assert_not_called()
+        assert rig.is_connected  # never disconnected
+
+    def test_apply_transponder_state_satmode_direct_band_change_still_disconnects(
+        self, qtbot, db
+    ) -> None:
+        """A genuine band reassignment (DL/UL bands swapped, like AO-7's
+        Mode A vs Mode B) must fall back to the existing disconnect +
+        re-anchor path, not the live update."""
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        rig = self._make_satmode_direct_rig(connected=True)
+        rig._satmode_active = True
+        rig.apply_mode_ctcss_live = MagicMock()
+        rig.apply_transponder_state = MagicMock()
+        w._rig_controller = rig
+        w._current_transmitter = dict(self._TRANSMITTER_BAND_SWAPPED)
+        w._ctcss_tone_hz = None
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._apply_transponder_state_to_rig(dict(self._TRANSMITTER))
+
+        rig.apply_mode_ctcss_live.assert_not_called()
+        rig.apply_transponder_state.assert_called_once()
+        assert not rig.is_connected  # disconnected on the UI thread first
+
+    def test_apply_transponder_state_satmode_direct_no_previous_disconnects(
+        self, qtbot, db
+    ) -> None:
+        """First-ever transponder selection (no previous_transmitter) must
+        keep the existing disconnect + reconnect-required behaviour."""
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        rig = self._make_satmode_direct_rig(connected=True)
+        rig._satmode_active = True
+        rig.apply_mode_ctcss_live = MagicMock()
+        rig.apply_transponder_state = MagicMock()
+        w._rig_controller = rig
+        w._current_transmitter = dict(self._TRANSMITTER)
+        w._ctcss_tone_hz = None
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._apply_transponder_state_to_rig(None)
+
+        rig.apply_mode_ctcss_live.assert_not_called()
+        rig.apply_transponder_state.assert_called_once()
+        assert not rig.is_connected
+
+    def test_apply_transponder_state_satmode_direct_not_satmode_active_disconnects(
+        self, qtbot, db
+    ) -> None:
+        """Same band pairing, but the rig is not currently in cross-band SAT
+        mode (e.g. it's mid-transition, or same-band duplex) -- must not
+        take the live path even though the band comparison alone would
+        allow it."""
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        rig = self._make_satmode_direct_rig(connected=True)
+        rig._satmode_active = False
+        rig.apply_mode_ctcss_live = MagicMock()
+        rig.apply_transponder_state = MagicMock()
+        w._rig_controller = rig
+        w._current_transmitter = dict(self._TRANSMITTER_FT4_SAME_BAND)
+        w._ctcss_tone_hz = None
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._apply_transponder_state_to_rig(dict(self._TRANSMITTER))
+
+        rig.apply_mode_ctcss_live.assert_not_called()
+        rig.apply_transponder_state.assert_called_once()
+        assert not rig.is_connected
+
+    def _make_satmode_net_rig(self, connected: bool):
+        from rig.controller import HamlibNetController, RigState
+
+        ctrl = HamlibNetController(host="localhost", port=4532, is_satmode_rig=True)
+        if connected:
+            ctrl._sock = MagicMock()
+            with ctrl._lock:
+                ctrl._state = RigState.CONNECTED
+        return ctrl
+
+    def test_apply_transponder_state_satmode_net_stays_connected_same_band_pairing(
+        self, qtbot, db
+    ) -> None:
+        """NET-mode satmode: same live path, calling apply_transponder_state()
+        directly on the still-open connection (it was already safe to call
+        while connected -- see the docstring)."""
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        rig = self._make_satmode_net_rig(connected=True)
+        rig.apply_transponder_state = MagicMock()
+        w._rig_controller = rig
+        w._current_transmitter = dict(self._TRANSMITTER_FT4_SAME_BAND)
+        w._ctcss_tone_hz = None
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._apply_transponder_state_to_rig(dict(self._TRANSMITTER))
+
+        rig.apply_transponder_state.assert_called_once_with("USB-D", "LSB-D", 0.0)
+        assert rig.is_connected  # never disconnected
+
+    def test_apply_transponder_state_satmode_net_band_change_still_disconnects(
+        self, qtbot, db
+    ) -> None:
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        rig = self._make_satmode_net_rig(connected=True)
+        rig.apply_transponder_state = MagicMock()
+        w._rig_controller = rig
+        w._current_transmitter = dict(self._TRANSMITTER_BAND_SWAPPED)
+        w._ctcss_tone_hz = None
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._apply_transponder_state_to_rig(dict(self._TRANSMITTER))
+
+        assert not rig.is_connected  # disconnected on the UI thread first
+        rig.apply_transponder_state.assert_called_once()
+
 
 class TestRadioType:
     """Radio Type 設定テスト。"""
