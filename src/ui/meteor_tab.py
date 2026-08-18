@@ -37,6 +37,7 @@ from PySide6.QtGui import QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
+    QFileDialog,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -172,15 +173,37 @@ class _LogWindow(QDialog):
         self._view.setStyleSheet("font-family: monospace; font-size: 10px;")
         layout.addWidget(self._view)
         btn_row = QHBoxLayout()
+        btn_save = QPushButton(_("💾 Save…"))
+        btn_save.clicked.connect(self._on_save)
         btn_clear = QPushButton(_("Clear"))
         btn_clear.clicked.connect(self._view.clear)
         btn_row.addStretch()
+        btn_row.addWidget(btn_save)
         btn_row.addWidget(btn_clear)
         layout.addLayout(btn_row)
 
     def append(self, line: str) -> None:
         self._view.appendPlainText(line)
         self._view.ensureCursorVisible()
+
+    def _on_save(self) -> None:
+        from PySide6.QtCore import QStandardPaths
+
+        desktop = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DesktopLocation)
+        default_dir = desktop if desktop else str(Path.home())
+        default_name = f"satdump_log_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}.txt"
+        path, _filter = QFileDialog.getSaveFileName(
+            self,
+            _("Save Log"),
+            str(Path(default_dir) / default_name),
+            _("Text files (*.txt);;All files (*)"),
+        )
+        if not path:
+            return
+        try:
+            Path(path).write_text(self._view.toPlainText(), encoding="utf-8")
+        except OSError as exc:
+            QMessageBox.warning(self, _("Save Failed"), str(exc))
 
     def closeEvent(self, event: Any) -> None:  # noqa: N802
         # Hide rather than destroy so log content is preserved
