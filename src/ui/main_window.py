@@ -5993,6 +5993,18 @@ class MainWindow(QMainWindow):
         send_mode_only() directly for satmode Direct rigs, a much thinner
         path with no VFO-restore step and no error surfacing).
 
+        Cross-band satmode rigs that are already connected and tracking take
+        a lighter path instead (GitHub Issues #21/#22): apply_mode_ctcss_live()
+        updates mode/CTCSS on the live self._rig session (reusing the Stage-2
+        CI-V sequence), with no disconnect and no reconnect at all — a mode
+        toggle never changes the DL/UL band anchor, so the full
+        apply_transponder_state()/_apply_mode_and_ctcss_hamlib() cold-start
+        (which exists to re-anchor SAT mode for a *different* transponder or
+        satellite) is unnecessary overhead here. Same-band duplex (rare for
+        the CW/DATA buttons, since they only show for USB/LSB downlinks) and
+        not-yet-connected rigs fall through to the disconnect+reconnect path
+        below unchanged.
+
         NET-mode rigs (HamlibNetController) are unchanged: send_mode_only()
         already works there per confirmed FTX-1 NET testing.
         """
@@ -6006,6 +6018,17 @@ class MainWindow(QMainWindow):
             # Preserve the current CTCSS tone when reverting to the original
             # mode; suppress it when switching to CW (CW has no CTCSS).
             ctcss_hz = 0.0 if dl_mode in ("CW", "CW-R") else float(self._ctcss_tone_hz or 0.0)
+
+            if rig.is_satmode and rig.is_connected and rig._satmode_active:
+
+                def _send_live() -> None:
+                    try:
+                        rig.apply_mode_ctcss_live(dl_mode, ul_mode, ctcss_hz)
+                    except Exception as exc:
+                        self._rig_error.emit(str(exc))
+
+                threading.Thread(target=_send_live, daemon=True).start()
+                return
 
             # FTX-1F/FT-991 raw CAT (_RAW_CAT_MODEL_IDS) writes mode via
             # os.open()/pyserial alongside an already-open Hamlib session —

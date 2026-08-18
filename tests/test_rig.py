@@ -849,6 +849,134 @@ class TestSatmodeHamlibReturnCodeChecks:
             ctrl.apply_transponder_state("USB", "LSB", 0.0)
 
 
+class TestApplyModeCtcssLive:
+    """apply_mode_ctcss_live() (GitHub Issues #21/#22) must change mode/CTCSS
+    on an already-connected cross-band satmode rig without touching
+    connection state at all -- the CW/DATA toggle buttons rely on this to
+    avoid a disconnect+reconnect cycle on every mode change mid-pass."""
+
+    def _make_connected_ctrl(
+        self, mock_rig_inst: MagicMock, *, satmode_active: bool = True
+    ) -> HamlibDirectController:
+        """mock_rig_inst must be the same instance _mock_hamlib() configured
+        (mock_hamlib.Rig.return_value) so it starts out as the already-open
+        session -- error_status must be readable on it from the very first
+        _check_rig_ok() call, before _resend_mode_ctcss_via_rig() even
+        reopens a session of its own."""
+        ctrl = HamlibDirectController(model_id=3068, port="/dev/null", baud_rate=19200)
+        ctrl._state = RigState.CONNECTED
+        ctrl._satmode_active = satmode_active
+        ctrl._rig = mock_rig_inst
+        return ctrl
+
+    @staticmethod
+    def _mock_hamlib(mock_rig_inst: MagicMock, error_status: int = 0) -> MagicMock:
+        """Same shape as TestSatmodeHamlibReturnCodeChecks._mock_hamlib():
+        every Rig method returns None (real Hamlib behaviour) and
+        error_status drives _check_rig_ok()."""
+        mock_hamlib = MagicMock()
+        mock_hamlib.Rig.return_value = mock_rig_inst
+        mock_hamlib.RIG_MODE_FM = 32
+        mock_hamlib.RIG_MODE_USB = 4
+        mock_hamlib.RIG_MODE_LSB = 8
+        mock_hamlib.RIG_MODE_CW = 2
+        mock_hamlib.RIG_MODE_CWR = 128
+        mock_hamlib.RIG_VFO_MAIN = 4194304
+        mock_hamlib.RIG_VFO_SUB = 8388608
+        mock_hamlib.RIG_FUNC_TONE = 2
+        mock_hamlib.RIG_FUNC_SATMODE = 1
+        for name in (
+            "open",
+            "close",
+            "set_freq",
+            "set_mode",
+            "set_ctcss_tone",
+            "set_vfo",
+            "set_func",
+        ):
+            getattr(mock_rig_inst, name).return_value = None
+        mock_rig_inst.error_status = error_status
+        return mock_hamlib
+
+    @staticmethod
+    def _mock_serial_module() -> MagicMock:
+        """Same fake as TestSatmodeHamlibReturnCodeChecks._mock_serial_module()
+        for _send_sub_mode_civ_pyserial()'s CI-V exchange."""
+
+        class _FakeSerial:
+            def __init__(self, *args: object, **kwargs: object) -> None:
+                self._last_write = b""
+
+            def write(self, data: bytes) -> None:
+                self._last_write = bytes(data)
+
+            def flush(self) -> None:
+                pass
+
+            def read_until(self, _terminator: bytes = b"\xfd") -> bytes:
+                w = self._last_write
+                if len(w) >= 5 and w[4] == 0x04:
+                    return bytes([0xFE, 0xFE, 0xE0, 0xA2, 0x04, 0x00, 0x01, 0xFD])
+                if len(w) == 7 and w[4] == 0x1A and w[5] == 0x06:
+                    return bytes([0xFE, 0xFE, 0xE0, 0xA2, 0x1A, 0x06, 0x01, 0xFD])
+                return bytes([0xFE, 0xFE, 0xE0, 0xA2, 0xFB, 0xFD])
+
+            def close(self) -> None:
+                pass
+
+        mock_serial = MagicMock()
+        mock_serial.Serial.side_effect = _FakeSerial
+        return mock_serial
+
+    def test_success_updates_modes_and_stays_connected(self) -> None:
+        """A CW toggle (cross-band, satmode already active) must succeed
+        without ever leaving RigState.CONNECTED -- no disconnect."""
+        mock_rig_inst = MagicMock()
+        mock_hamlib = self._mock_hamlib(mock_rig_inst, error_status=0)
+        ctrl = self._make_connected_ctrl(mock_rig_inst)
+        with (
+            patch.dict(
+                "sys.modules", {"Hamlib": mock_hamlib, "serial": self._mock_serial_module()}
+            ),
+            patch("rig.controller.time.sleep"),
+        ):
+            ctrl.apply_mode_ctcss_live("CW", "CW", 0.0)
+        assert ctrl.is_connected
+        assert ctrl._current_dl_mode == "CW"
+        assert ctrl._current_ul_mode == "CW"
+        assert ctrl._last_hamlib_error is None
+
+    def test_raises_when_not_connected(self) -> None:
+        ctrl = HamlibDirectController(model_id=3068, port="/dev/null", baud_rate=19200)
+        with pytest.raises(RigControlError, match="not connected"):
+            ctrl.apply_mode_ctcss_live("CW", "CW", 0.0)
+
+    def test_raises_when_not_cross_band(self) -> None:
+        """Same-band duplex (satmode not active) is out of scope for this
+        method -- the caller must fall back to the existing
+        disconnect+reconnect path for that rare case."""
+        ctrl = self._make_connected_ctrl(MagicMock(), satmode_active=False)
+        with pytest.raises(RigControlError, match="cross-band"):
+            ctrl.apply_mode_ctcss_live("CW", "CW", 0.0)
+
+    def test_ci_v_failure_is_raised_not_swallowed(self) -> None:
+        """A rejected CI-V command must surface as RigControlError to the
+        caller (main_window._apply_mode_toggle_to_rig(), which shows it on
+        the status bar) instead of being silently logged only, unlike the
+        Stage-2-resend-on-connect caller which intentionally swallows it."""
+        mock_rig_inst = MagicMock()
+        mock_hamlib = self._mock_hamlib(mock_rig_inst, error_status=-5)
+        ctrl = self._make_connected_ctrl(mock_rig_inst)
+        with (
+            patch.dict(
+                "sys.modules", {"Hamlib": mock_hamlib, "serial": self._mock_serial_module()}
+            ),
+            patch("rig.controller.time.sleep"),
+            pytest.raises(RigControlError, match="-5"),
+        ):
+            ctrl.apply_mode_ctcss_live("CW", "CW", 0.0)
+
+
 # ---------------------------------------------------------------------------
 # HamlibNetController — socket mocked
 # ---------------------------------------------------------------------------

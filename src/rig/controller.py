@@ -2401,6 +2401,51 @@ class HamlibDirectController(RigController):
             )
         except Exception as exc:
             logger.warning("RigDirect._resend_mode_ctcss_via_rig: %s", exc)
+            # Recorded (not raised) so on-demand callers -- currently just
+            # apply_mode_ctcss_live() -- can surface the failure to the user.
+            # The Stage-2 caller (_set_vfo_frequencies_locked) does not check
+            # this field, so its existing swallow-and-log behaviour on connect
+            # is unchanged.
+            self._last_hamlib_error = str(exc)
+
+    def apply_mode_ctcss_live(self, dl_mode: str, ul_mode: str, ctcss_hz: float) -> None:
+        """Change mode/CTCSS on an already-connected cross-band satmode rig
+        without disconnecting (GitHub Issues #21/#22).
+
+        Used by the Radio Control CW and DATA toggle buttons so a mid-pass
+        mode change on IC-9100/9700 etc. (e.g. switching to CW to find the
+        signal, then back to SSB or to a DATA mode for FT4) no longer forces
+        a reconnect. Reuses the exact CI-V sequence already proven for
+        Stage-2 resend (_resend_mode_ctcss_via_rig()) -- self._rig stays
+        open throughout except for the brief pyserial-exclusive close/reopen
+        needed for the Sub DATA-flag write; no SAT mode OFF/ON re-entry.
+
+        Only valid while satmode is actively cross-band
+        (self._satmode_active) -- the DL/UL band anchor is assumed
+        unchanged (mode toggles never touch frequency). Same-band duplex
+        and not-yet-connected rigs are handled elsewhere by the caller.
+
+        Raises RigControlError if not connected/cross-band, or if the CI-V
+        sequence itself fails.
+        """
+        if self._rig is None or not self.is_connected:
+            raise RigControlError("Rig not connected")
+        if not self._satmode_active:
+            raise RigControlError("Not in cross-band SAT mode")
+        with self._rig_cmd_lock:
+            self._current_dl_mode = dl_mode
+            self._current_ul_mode = ul_mode
+            self._current_ctcss_hz = ctcss_hz
+            self._last_hamlib_error = None
+            self._resend_mode_ctcss_via_rig()
+            if self._last_hamlib_error:
+                raise RigControlError(self._last_hamlib_error)
+        logger.info(
+            "RigDirect: apply_mode_ctcss_live dl=%s ul=%s ctcss=%.1f (no disconnect)",
+            dl_mode,
+            ul_mode,
+            ctcss_hz,
+        )
 
     def _send_freq_preset_direct(self, dl_hz: float, ul_hz: float) -> None:
         """Briefly open the rig to write DL/UL frequencies at transponder selection.
