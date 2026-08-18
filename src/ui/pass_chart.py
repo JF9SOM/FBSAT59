@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QSizePolicy,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -62,6 +63,7 @@ def _range_options() -> tuple[tuple[str, float], ...]:
     """Built lazily (not as a module-level constant) so labels pick up the
     current UI language each time a chart view is constructed."""
     return (
+        (_("Next 1 hour"), 1.0),
         (_("Next 4 hours"), 4.0),
         (_("Next 8 hours"), 8.0),
         (_("Next 12 hours"), 12.0),
@@ -205,6 +207,11 @@ class PassChartView(QWidget):
         self._range_combo.setCurrentIndex(len(range_options) - 1)  # default to "Next 24 hours"
         self._range_combo.currentIndexChanged.connect(self._on_range_changed)
         h_layout.addWidget(self._range_combo)
+        self._refresh_btn = QToolButton()
+        self._refresh_btn.setText("\U0001f504")  # 🔄
+        self._refresh_btn.setToolTip(_("Refresh"))
+        self._refresh_btn.clicked.connect(self._on_refresh_clicked)
+        h_layout.addWidget(self._refresh_btn)
         h_layout.addStretch()
         layout.addWidget(header)
 
@@ -270,6 +277,11 @@ class PassChartView(QWidget):
         hours = self._selected_hours()
         self.range_changed.emit(hours)
         self._rebuild()
+
+    def _on_refresh_clicked(self) -> None:
+        """Re-fetch predictions for the currently selected range (same path as
+        changing the Range dropdown, without actually changing the selection)."""
+        self.range_changed.emit(self._selected_hours())
 
     def _selected_hours(self) -> float:
         idx = self._range_combo.currentIndex()
@@ -547,12 +559,20 @@ class GroupPassChartView(QWidget):
         range_options = _range_options()
         for label, _hours in range_options:
             self._range_combo.addItem(label)
-        # Default to "Next 4 hours" (index 0) — the Group tab's own auto-search
-        # window is 4h, so the chart should show the same span by default.
-        # (Unlike PassChartView's Target chart, which stays at 24h/last index.)
-        self._range_combo.setCurrentIndex(0)
+        # Default to "Next 4 hours" — the Group tab's own auto-search window is
+        # 4h, so the chart should show the same span by default. (Unlike
+        # PassChartView's Target chart, which stays at 24h/last index.) Found
+        # by value rather than a hardcoded index so inserting/reordering
+        # options in _range_options() can't silently change this default.
+        default_idx = next(i for i, (_label, hours) in enumerate(range_options) if hours == 4.0)
+        self._range_combo.setCurrentIndex(default_idx)
         self._range_combo.currentIndexChanged.connect(self._on_range_changed)
         h_layout.addWidget(self._range_combo)
+        self._refresh_btn = QToolButton()
+        self._refresh_btn.setText("\U0001f504")  # 🔄
+        self._refresh_btn.setToolTip(_("Refresh"))
+        self._refresh_btn.clicked.connect(self._on_refresh_clicked)
+        h_layout.addWidget(self._refresh_btn)
         h_layout.addStretch()
         layout.addWidget(header)
 
@@ -621,6 +641,11 @@ class GroupPassChartView(QWidget):
         hours = self._selected_hours()
         self.range_changed.emit(hours)
         self._rebuild()
+
+    def _on_refresh_clicked(self) -> None:
+        """Re-run the Group search for the currently selected range (same path
+        as changing the Range dropdown, without actually changing the selection)."""
+        self.range_changed.emit(self._selected_hours())
 
     def _rebuild(self) -> None:
         """Rebuild the chart from the current result list."""

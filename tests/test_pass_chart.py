@@ -398,3 +398,87 @@ class TestPassChartView:
         widget.set_passes(passes, sat_name="ISS")
         # "Next 24 hours" が選択されているので 5 件すべて内部 _passes に格納されている
         assert len(widget._passes) == 5
+
+    def test_range_combo_has_1_hour_option(self, qtbot: Any) -> None:
+        """Range コンボに "Next 1 hour" が先頭選択肢として追加されていることを確認する。"""
+        from ui.pass_chart import PassChartView
+
+        widget = PassChartView()
+        qtbot.addWidget(widget)
+        assert widget._range_combo.count() == 5
+        assert widget._range_combo.itemText(0) == "Next 1 hour"
+
+    def test_default_range_still_24_hours(self, qtbot: Any) -> None:
+        """1 時間の選択肢追加後もデフォルトは 24 時間のままであることを確認する。"""
+        from ui.pass_chart import PassChartView
+
+        widget = PassChartView()
+        qtbot.addWidget(widget)
+        assert widget._selected_hours() == 24.0
+
+    def test_refresh_button_emits_range_changed_with_current_hours(self, qtbot: Any) -> None:
+        """Refresh 押下で選択を変えずに range_changed が再発火することを確認する。"""
+        from ui.pass_chart import PassChartView
+
+        widget = PassChartView()
+        qtbot.addWidget(widget)
+        widget._range_combo.setCurrentIndex(1)  # "Next 4 hours"
+        received: list[float] = []
+        widget.range_changed.connect(received.append)
+
+        widget._refresh_btn.click()
+
+        assert received == [4.0]
+        assert widget._range_combo.currentIndex() == 1  # 選択自体は変わらない
+
+    def test_refresh_button_has_no_visible_label(self, qtbot: Any) -> None:
+        """Refresh ボタンにテキストラベルが無く、ツールチップのみであることを確認する。"""
+        from ui.pass_chart import PassChartView
+
+        widget = PassChartView()
+        qtbot.addWidget(widget)
+        assert widget._refresh_btn.toolTip() == "Refresh"
+
+
+class TestGroupPassChartView:
+    def test_create_widget(self, qtbot: Any) -> None:
+        from ui.pass_chart import GroupPassChartView
+
+        widget = GroupPassChartView()
+        qtbot.addWidget(widget)
+        assert widget is not None
+
+    def test_default_range_still_4_hours(self, qtbot: Any) -> None:
+        """1 時間の選択肢が先頭に挿入されても、デフォルトは 4 時間のまま
+        （インデックス決め打ちではなく値検索で選ばれている）ことを確認する。"""
+        from ui.pass_chart import GroupPassChartView
+
+        widget = GroupPassChartView()
+        qtbot.addWidget(widget)
+        assert widget._selected_hours() == 4.0
+
+    def test_range_combo_has_1_hour_option(self, qtbot: Any) -> None:
+        from ui.pass_chart import GroupPassChartView
+
+        widget = GroupPassChartView()
+        qtbot.addWidget(widget)
+        assert widget._range_combo.itemText(0) == "Next 1 hour"
+
+    def test_refresh_button_emits_range_changed_with_current_hours(self, qtbot: Any) -> None:
+        from ui.pass_chart import GroupPassChartView
+
+        widget = GroupPassChartView()
+        qtbot.addWidget(widget)
+        received: list[float] = []
+        widget.range_changed.connect(received.append)
+
+        widget._refresh_btn.click()
+
+        assert received == [4.0]  # デフォルト選択（4時間）のまま再emitされる
+
+    def test_refresh_button_has_no_visible_label(self, qtbot: Any) -> None:
+        from ui.pass_chart import GroupPassChartView
+
+        widget = GroupPassChartView()
+        qtbot.addWidget(widget)
+        assert widget._refresh_btn.toolTip() == "Refresh"
