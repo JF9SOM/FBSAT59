@@ -46,7 +46,9 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QRadioButton,
     QSizePolicy,
+    QSpinBox,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -91,6 +93,50 @@ def _load_sdr_settings() -> dict[str, Any]:
     except Exception:
         pass
     return {}
+
+
+def _load_meteor_settings() -> dict[str, Any]:
+    """Load METEOR-tab-local gain settings (independent of Rig Settings' SDR Settings).
+
+    Returns {} if the user has never touched the gain controls in this tab,
+    so the caller can fall back to seeding from the shared sdr_settings once.
+    """
+    try:
+        from data.database import get_db_path
+
+        db_path = get_db_path()
+        if not db_path.exists():
+            return {}
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'meteor_settings'"
+        ).fetchone()
+        conn.close()
+        if row and row["value"]:
+            return dict(json.loads(row["value"]))
+    except Exception:
+        pass
+    return {}
+
+
+def _save_meteor_settings(data: dict[str, Any]) -> None:
+    """Persist METEOR-tab-local gain settings, separate from sdr_settings."""
+    try:
+        from data.database import get_db_path
+
+        db_path = get_db_path()
+        if not db_path.exists():
+            return
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('meteor_settings', ?)",
+            (json.dumps(data),),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 
 def _sdr_source_from_settings(sdr: dict[str, Any]) -> str:
@@ -294,6 +340,26 @@ class MeteorTab(QWidget):
         self._btn_clear.clicked.connect(self._on_clear_history)
         btn_row2.addWidget(self._btn_open_folder)
         btn_row2.addWidget(self._btn_clear)
+
+        # METEOR-local RF gain override (independent of Rig Settings > SDR
+        # Settings' shared gain, which is tuned for other uses like FM/SDR
+        # Control listening and may not suit 137 MHz LRPT reception). See
+        # CLAUDE.md "METEOR受信専用のRF Gain設定" for the background.
+        btn_row2.addSpacing(12)
+        btn_row2.addWidget(QLabel(_("Gain:")))
+        self._gain_auto_rb = QRadioButton(_("Auto"))
+        self._gain_manual_rb = QRadioButton(_("Manual"))
+        self._gain_spin = QSpinBox()
+        self._gain_spin.setRange(0, 80)
+        self._gain_spin.setSuffix(" dB")
+        self._gain_auto_rb.toggled.connect(lambda on: self._gain_spin.setDisabled(on))
+        self._gain_auto_rb.toggled.connect(self._on_gain_setting_changed)
+        self._gain_spin.valueChanged.connect(self._on_gain_setting_changed)
+        btn_row2.addWidget(self._gain_auto_rb)
+        btn_row2.addWidget(self._gain_manual_rb)
+        btn_row2.addWidget(self._gain_spin)
+        self._load_gain_settings()
+
         btn_row2.addStretch()
         image_layout.addLayout(btn_row2)
         h_split.addWidget(image_widget)
@@ -311,6 +377,52 @@ class MeteorTab(QWidget):
 
         h_split.setSizes([680, 180])
         root.addWidget(h_split, 1)
+
+    # ------------------------------------------------------------------
+    # METEOR-local RF gain (independent of Rig Settings > SDR Settings)
+    # ------------------------------------------------------------------
+
+    def _load_gain_settings(self) -> None:
+        """Populate the gain widgets, seeding from sdr_settings on first use.
+
+        meteor_settings is only ever written once the user actually touches
+        these widgets (see _on_gain_setting_changed), so an empty result
+        here means "never customized" -- fall back to whatever Rig Settings
+        > SDR Settings currently has, purely as a starting point. Later
+        changes to that shared setting do not affect this tab once
+        meteor_settings exists.
+        """
+        meteor = _load_meteor_settings()
+        if meteor:
+            gain_auto = bool(meteor.get("gain_auto", True))
+            gain_db = int(meteor.get("gain_db") or 40)
+        else:
+            sdr = _load_sdr_settings()
+            gain_auto = bool(sdr.get("gain_auto", True))
+            gain_db = int(sdr.get("gain_db") or 40)
+        self._gain_spin.blockSignals(True)
+        self._gain_spin.setValue(gain_db)
+        self._gain_spin.blockSignals(False)
+        # Radio buttons are mutually exclusive by shared parent, so setting
+        # one to True is enough to clear the other. Block signals so this
+        # initial sync doesn't itself trigger a save.
+        self._gain_auto_rb.blockSignals(True)
+        self._gain_manual_rb.blockSignals(True)
+        if gain_auto:
+            self._gain_auto_rb.setChecked(True)
+        else:
+            self._gain_manual_rb.setChecked(True)
+        self._gain_auto_rb.blockSignals(False)
+        self._gain_manual_rb.blockSignals(False)
+        self._gain_spin.setDisabled(gain_auto)
+
+    def _on_gain_setting_changed(self) -> None:
+        _save_meteor_settings(
+            {
+                "gain_auto": self._gain_auto_rb.isChecked(),
+                "gain_db": self._gain_spin.value(),
+            }
+        )
 
     # ------------------------------------------------------------------
     # SatDump availability check
@@ -391,10 +503,10 @@ class MeteorTab(QWidget):
             return
         driver = _sdr_source_from_settings(sdr)
         label: str = sdr.get("device_label") or driver
-        if bool(sdr.get("gain_auto", True)):
+        if self._gain_auto_rb.isChecked():
             self._lbl_status.setText(_("SDR: {label}  gain Auto — ready.").format(label=label))
         else:
-            gain = int(sdr.get("gain_db") or 40)
+            gain = self._gain_spin.value()
             self._lbl_status.setText(
                 _("SDR: {label}  gain {gain} dB — ready.").format(label=label, gain=gain)
             )
@@ -404,22 +516,21 @@ class MeteorTab(QWidget):
     # ------------------------------------------------------------------
 
     def _on_start(self) -> None:
-        # Resolve SDR source and gain from saved settings
+        # Resolve SDR source/PPM from Rig Settings > SDR Settings, but gain
+        # comes from this tab's own controls (see "METEOR-local RF gain"
+        # above) -- 137 MHz LRPT reception can need a different gain than
+        # whatever the shared SDR setting is tuned for (e.g. FM listening).
         sdr = _load_sdr_settings()
+        gain_auto = self._gain_auto_rb.isChecked()
+        gain = self._gain_spin.value()
         if sdr and sdr.get("enabled"):
             source = _sdr_source_from_settings(sdr)
-            gain_auto = bool(sdr.get("gain_auto", True))
-            gain = int(sdr.get("gain_db") or 40)
             ppm = int(sdr.get("ppm") or 0)
         else:
-            # Fallback: try rtlsdr with default gain
+            # Fallback: try rtlsdr
             source = "rtlsdr"
-            gain_auto = False
-            gain = 40
             ppm = 0
-            self._lbl_status.setText(
-                _("⚠  SDR not configured — attempting rtlsdr with gain 40 dB.")
-            )
+            self._lbl_status.setText(_("⚠  SDR not configured — attempting rtlsdr."))
 
         # Disconnect SDR if active
         self._disconnect_sdr()

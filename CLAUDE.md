@@ -1167,6 +1167,20 @@ XXX.app/Contents/
     になる）。自動フォールバック機能（一定時間Deframerが同期しなければ自動で別の組み合わせへ
     再起動する等）は2026-08-17時点では未実装（検討したが、まずは手動切替のみで様子見という
     判断）。
+  - **METEOR受信専用のRF Gain設定（2026-08-18 追加）**: 従来、METEORタブが起動する
+    SatDumpのRFゲイン（`--agc`/`--gain`）はRig Settings > SDR SettingsのRF Gain欄
+    （`sdr_settings`、Rig 1/2としてのSDR・SDR Controlタブと共用）をそのまま流用していた。
+    しかしこの共用設定はFM受信等の別用途に合わせて調整されることが多く、137MHz帯の
+    LRPT受信に最適とは限らない（固定ゲインが高すぎるとVHF帯の近隣強信号でフロントエンドが
+    飽和し、SNR表示だけ高く出て実際には復調できない、という実機報告あり）。METEORタブ
+    自身（受信画像下の`📁 Open Folder`/`🗑 Clear`ボタンの並びに追加、行の増設なし）に
+    独立した`Gain: Auto/Manual [dB]`コントロール（Rig SettingsのRF Gain欄と同じ
+    QRadioButton×2+QSpinBoxの構成）を新設し、`meteor_settings`（`sdr_settings`とは
+    別の`app_settings`キー）に保存するようにした。初回（`meteor_settings`が空の間）は
+    その時点の`sdr_settings`の値を初期値として引き継ぐが、一度でもユーザーがこの
+    コントロールを操作すると以降は完全に独立し、Rig Settings側を後から変更しても
+    影響を受けない。`source`（デバイス選択）・`ppm`は引き続き`sdr_settings`を共用
+    （変更していない）。
   - **UI 構成**（コンパクト2行レイアウト）:
     - Row 1: `Pipeline:` コンボ + `[SDR Connect]` + `[▶ Start]` + `[■ Stop]` + `[📋 Log]`
     - Row 2: ロックインジケーター + プログレスバー + ステータスラベル
