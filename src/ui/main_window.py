@@ -7193,6 +7193,17 @@ class MainWindow(QMainWindow):
         # Send simplex command to each configured rig before tearing down.
         with contextlib.suppress(Exception):
             self._release_rig_split_on_exit()
+        # Disconnect Rig 1/Rig 2 (including any SDR pipeline) before the
+        # widget tree is torn down. An SDR's SDRPipeline QThread left
+        # running when the interpreter starts finalizing gets destroyed
+        # while still alive, which is a Qt fatal error (QThread destroyed
+        # while still running) and aborts the whole process.
+        with contextlib.suppress(Exception):
+            if self._rig_controller is not None and self._rig_controller.is_connected:
+                self._rig_controller.disconnect()
+        with contextlib.suppress(Exception):
+            if self._rig2_controller is not None and self._rig2_controller.is_connected:
+                self._rig2_controller.disconnect()
         # Signal background threads to exit before tearing down other resources.
         self._shutdown_flag.set()
         self._timer.stop()
