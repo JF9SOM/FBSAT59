@@ -222,6 +222,12 @@ class SatDetailPanel(QWidget):
     and Rig 1 / Rig 2 / Rotator connect proxy buttons. This section is hidden
     unless a Communications tab (FT4, APRS, ...) is active — see
     MainWindow._on_tab_changed() and comms.mode_detection.COMMS_TAB_CONFIG.
+
+    The Radio Control tab gets a reduced version of the same box (radar only,
+    via show_radar_only()) — it already has its own transponder selector,
+    D/U display, and Rig 1/Rig 2/Rotator buttons natively, so showing the
+    rest of the Quick Comms Panel there would just duplicate them
+    (GitHub Issue #24).
     """
 
     # Emitted when the user picks a satellite from the Quick Panel's Input
@@ -234,6 +240,7 @@ class SatDetailPanel(QWidget):
         self._active_comms_tab: str | None = None
         self._active_tab_widget: QWidget | None = None
         self._freq_source: str | None = None
+        self._radar_only: bool = False
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -366,6 +373,8 @@ class SatDetailPanel(QWidget):
         self._active_comms_tab = tab_key
         self._active_tab_widget = tab_widget
         self._freq_source = config.freq_source if config else None
+        self._radar_only = False
+        self._comms_group.setTitle(_("Quick Comms Control"))
         self._comms_group.setVisible(True)
 
         show_input = bool(config and config.show_input_source)
@@ -387,14 +396,37 @@ class SatDetailPanel(QWidget):
         self._quick_rig2_btn.setVisible(show_rig_buttons)
 
     def deactivate_comms_panel(self) -> None:
-        """Hide the Comms Quick Panel (called when a resident tab becomes active)."""
+        """Hide the Comms Quick Panel (called when a resident tab other than
+        Radio Control becomes active — see show_radar_only() for Radio
+        Control's own reduced version of this box)."""
         self._active_comms_tab = None
         self._active_tab_widget = None
+        self._radar_only = False
         self._comms_group.setVisible(False)
+
+    def show_radar_only(self) -> None:
+        """Show just the mini radar in the Quick Comms Panel box, with the
+        Input Source combo, D/U frequency mirror, and Rig 1/Rig 2/Rotator
+        buttons all hidden. Used for the Radio Control tab, which already
+        has its own transponder selector, frequency display, and Rig/Rotator
+        connect buttons — showing the rest of the box there would just
+        duplicate them (GitHub Issue #24)."""
+        self._active_comms_tab = None
+        self._active_tab_widget = None
+        self._freq_source = None
+        self._radar_only = True
+        self._comms_group.setTitle(_("Radar"))
+        self._comms_group.setVisible(True)
+        self._input_source_row.setVisible(False)
+        self._quick_dl_label.setVisible(False)
+        self._quick_ul_label.setVisible(False)
+        self._quick_rig1_btn.setVisible(False)
+        self._quick_rig2_btn.setVisible(False)
+        self._quick_rot_btn.setVisible(False)
 
     def update_radar_track(self, track: SatTrackData) -> None:
         """Forward the current satellite track to the mini radar (skipped while hidden)."""
-        if self._active_comms_tab is not None:
+        if self._active_comms_tab is not None or self._radar_only:
             self._mini_radar.set_tracks([track])
 
     def refresh_freq_mirror(self) -> None:
@@ -3861,7 +3893,9 @@ class MainWindow(QMainWindow):
         """Hide the Satellite Detail panel when Dashboard tab is active (more space
         for map); drive the Comms Quick Panel and auto-resize the pass-prediction
         splitter when switching to/from a non-resident Communications tab, or
-        while View > Wide Tab is enabled."""
+        while View > Wide Tab is enabled. Radio Control (also resident) gets a
+        radar-only version of the Comms Quick Panel box instead of it being
+        hidden entirely — see SatDetailPanel.show_radar_only()."""
         is_dashboard = index == self._dashboard_tab_idx
         self._detail_panel.setVisible(not is_dashboard)
 
@@ -3879,7 +3913,10 @@ class MainWindow(QMainWindow):
         self._update_pass_panel_size(hide=self._wide_tab_enabled or not is_resident)
 
         if is_resident:
-            self._detail_panel.deactivate_comms_panel()
+            if widget is self._radio_control:
+                self._detail_panel.show_radar_only()
+            else:
+                self._detail_panel.deactivate_comms_panel()
             return
 
         tab_key = self._comms_tab_keys.get(widget) if widget is not None else None
