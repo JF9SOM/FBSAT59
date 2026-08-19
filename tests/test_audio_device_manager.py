@@ -316,6 +316,88 @@ class TestInputSharing:
 
 
 # ---------------------------------------------------------------------------
+# pause_input()/resume_input() — GitHub Issue #26: briefly stopping the
+# shared RX stream around a same-device TX burst, without dropping
+# subscribers or losing the pub/sub interface they rely on.
+# ---------------------------------------------------------------------------
+
+
+class TestPauseResumeInput:
+    def test_pause_stops_the_stream_but_keeps_the_subscriber(
+        self, fake_sounddevice: type[_FakeInputStream]
+    ) -> None:
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("ft4", 5, 48_000, lambda c: None)
+        stream = fake_sounddevice.instances[0]
+
+        assert mgr.pause_input(5) is True
+        assert stream.started is False
+        assert stream.closed is True
+        # Subscriber survives the pause — resume() below relies on this.
+        assert "ft4" in mgr._inputs[5]._subscribers
+
+    def test_pause_on_device_with_no_rx_stream_is_a_noop(
+        self, fake_sounddevice: type[_FakeInputStream]
+    ) -> None:
+        mgr = AudioDeviceManager()
+        # No acquire_input() call at all -- mirrors RX/TX on different
+        # devices, or RX simply not running.
+        assert mgr.pause_input(5) is False
+
+    def test_double_pause_returns_false_second_time(
+        self, fake_sounddevice: type[_FakeInputStream]
+    ) -> None:
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("ft4", 5, 48_000, lambda c: None)
+        assert mgr.pause_input(5) is True
+        assert mgr.pause_input(5) is False  # nothing left to stop
+
+    def test_resume_reopens_and_audio_flows_again(
+        self, fake_sounddevice: type[_FakeInputStream]
+    ) -> None:
+        mgr = AudioDeviceManager()
+        received: list[np.ndarray] = []
+        mgr.acquire_input("ft4", 5, 48_000, received.append)
+        mgr.pause_input(5)
+        assert len(fake_sounddevice.instances) == 1
+
+        mgr.resume_input(5)
+        assert len(fake_sounddevice.instances) == 2  # paused stream + reopened one
+        new_stream = fake_sounddevice.instances[1]
+        assert new_stream.started is True
+
+        new_stream.push(np.arange(480, dtype=np.float32))
+        assert len(received) == 1
+
+    def test_resume_without_a_prior_pause_is_a_noop(
+        self, fake_sounddevice: type[_FakeInputStream]
+    ) -> None:
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("ft4", 5, 48_000, lambda c: None)
+        mgr.resume_input(5)  # stream is already open -- must not reopen
+        assert len(fake_sounddevice.instances) == 1
+
+    def test_resume_after_subscriber_left_during_pause_is_a_noop(
+        self, fake_sounddevice: type[_FakeInputStream]
+    ) -> None:
+        """If the only subscriber unsubscribed entirely while paused, the
+        manager already dropped the whole _SharedInputStream/dict entry —
+        resume_input() must not resurrect a stream nobody wants."""
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("ft4", 5, 48_000, lambda c: None)
+        mgr.pause_input(5)
+        mgr.release_input("ft4", 5)
+        assert 5 not in mgr._inputs
+
+        mgr.resume_input(5)  # no matching entry -- must not raise or reopen
+        assert 5 not in mgr._inputs
+
+    def test_resume_on_unknown_device_is_a_noop(self) -> None:
+        mgr = AudioDeviceManager()
+        mgr.resume_input(5)  # no exception
+
+
+# ---------------------------------------------------------------------------
 # Input device validation — a stale/invalid device index must raise a clear
 # error instead of either silently failing or opening the wrong hardware
 # (see _validate_input_device() in comms/audio_device_manager.py; this is

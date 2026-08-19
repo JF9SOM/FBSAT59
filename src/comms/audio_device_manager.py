@@ -304,6 +304,42 @@ class _SharedInputStream:
                     self._subscribers.pop(owner, None)
                     raise
 
+    def pause(self) -> bool:
+        """Stop the underlying hardware stream without dropping subscribers.
+
+        Used to avoid having this input stream open at the same moment a TX
+        worker opens an output stream on the same physical device — some
+        single-codec USB audio interfaces (e.g. a rig's built-in sound card)
+        have been observed to stall for several seconds when both directions
+        are opened concurrently (GitHub Issue #26). Subscribers are left
+        registered; call `resume()` afterwards to reopen.
+
+        Returns True if a running stream was actually stopped, False if
+        there was nothing to pause (already paused, or never opened).
+
+        Releases the lock before calling `stream.stop()`, same as
+        `remove_subscriber()` — that call blocks until the audio callback
+        thread returns, and that thread also needs this lock.
+        """
+        with self._lock:
+            stream, self._stream = self._stream, None
+        if stream is None:
+            return False
+        with contextlib.suppress(Exception):
+            stream.stop()
+            stream.close()
+        return True
+
+    def resume(self) -> None:
+        """Reopen the hardware stream after `pause()`, if subscribers are
+        still registered and it isn't already open (a subscriber may have
+        re-added itself in the meantime, opening a fresh stream already)."""
+        with self._lock:
+            if self._stream is not None or not self._subscribers:
+                return
+            with contextlib.suppress(Exception):
+                self._open(schedule_settle_reopen=False)
+
     def remove_subscriber(self, owner: str) -> bool:
         """Unsubscribe `owner`. Returns True once no subscribers remain.
 
@@ -449,6 +485,28 @@ class AudioDeviceManager(QObject):
                 return
             if stream.remove_subscriber(owner):
                 del self._inputs[key]
+
+    def pause_input(self, device: int | None) -> bool:
+        """Temporarily stop the shared RX stream on `device`, if one is
+        active, without dropping its subscribers — see
+        `_SharedInputStream.pause()`. Returns True if something was
+        actually paused (the caller must call `resume_input()` once done);
+        False if there is no RX stream on this device to pause (e.g. RX and
+        TX are on different devices, or nothing is subscribed to RX at all)."""
+        key = self._key(device)
+        with self._inputs_lock:
+            stream = self._inputs.get(key)
+        if stream is None:
+            return False
+        return stream.pause()
+
+    def resume_input(self, device: int | None) -> None:
+        """Reopen the shared RX stream on `device` after `pause_input()`."""
+        key = self._key(device)
+        with self._inputs_lock:
+            stream = self._inputs.get(key)
+        if stream is not None:
+            stream.resume()
 
     # ------------------------------------------------------------------ #
     # TX — exclusive output lock

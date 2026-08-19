@@ -161,6 +161,15 @@ class _TxWorker(QObject):
             other = mgr.output_owner(self._out_device) or _("another tab")
             self.error.emit(_("Sound card output is in use by {other}").format(other=other))
             return
+        # GitHub Issue #26: opening this TX output stream while the shared
+        # RX input stream is already open on the *same* physical device
+        # (e.g. a rig's single built-in USB audio codec, like the
+        # IC-9700's) has been observed to stall the whole audio pipeline
+        # for several seconds at a time on Windows. Briefly pausing RX for
+        # the span this TX stream is open avoids that concurrent-open
+        # condition. No-op when RX is on a different device or has no
+        # subscribers, in which case rx_paused stays False.
+        rx_paused = mgr.pause_input(self._out_device)
         try:
             import sounddevice as sd  # optional dep
 
@@ -223,6 +232,8 @@ class _TxWorker(QObject):
                     self._rig.set_ptt(False)
             self.error.emit(str(exc))
         finally:
+            if rx_paused:
+                mgr.resume_input(self._out_device)
             mgr.release_output(_AUDIO_OWNER, self._out_device)
 
 
