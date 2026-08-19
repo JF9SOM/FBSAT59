@@ -207,6 +207,45 @@ def _user_satdump_dir() -> Path:
     return base
 
 
+def _send_graceful_stop_windows(pid: int) -> bool:
+    """Send CTRL_BREAK_EVENT to *pid* via the console-attach workaround.
+
+    A windowed (console-less) PyInstaller build has no console of its own,
+    and Win32's GenerateConsoleCtrlEvent requires the calling process to be
+    attached to the *same* console session as the target -- so a plain
+    ``Popen.send_signal(signal.CTRL_BREAK_EVENT)`` silently fails here (a
+    known CPython limitation: https://github.com/python/cpython/issues/112190).
+
+    satdump.exe is started with CREATE_NO_WINDOW + CREATE_NEW_PROCESS_GROUP
+    (see SatDumpProcess.run()), which gives it its own hidden console and
+    process group. Attaching to that console just long enough to raise the
+    event, then detaching, lets SatDump's own ``signal(SIGINT, ...)``
+    handler -- which the Windows CRT wires up to both CTRL_C_EVENT and
+    CTRL_BREAK_EVENT -- run its normal graceful shutdown path (the
+    "Signal Received. Stopping." log line) instead of the process being
+    hard-killed via TerminateProcess before it can write out anything.
+
+    Returns True if the event was raised, False if any step failed (in
+    which case the caller should fall back to a hard kill).
+    """
+    import ctypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+    _CTRL_BREAK_EVENT = 1
+
+    kernel32.FreeConsole()  # detach from our own console, if we have one
+    if not kernel32.AttachConsole(pid):
+        return False
+    try:
+        # Ignore the event in this (briefly attached) process so it
+        # doesn't also try to shut *this* process down.
+        kernel32.SetConsoleCtrlHandler(None, True)
+        return bool(kernel32.GenerateConsoleCtrlEvent(_CTRL_BREAK_EVENT, 0))
+    finally:
+        kernel32.FreeConsole()
+        kernel32.SetConsoleCtrlHandler(None, False)
+
+
 # ---------------------------------------------------------------------------
 # Background worker
 # ---------------------------------------------------------------------------
@@ -307,6 +346,14 @@ class SatDumpProcess(QThread):
             # (pll_bw: 0.002) even though the same drift is imperceptible
             # for wideband FM broadcast reception.
             cmd += ["--ppm_correction", str(self._ppm)]
+        # Pipelines like meteor_m2-x_lrpt have a "products" work stage
+        # (e.g. meteor_msumr_lrpt) *after* the cadu-writing stage that
+        # actually turns decoded frames into the MSU-MR PNG(s) -- but SatDump
+        # only runs it on a graceful stop if --finish_processing is passed
+        # (default false). Without this flag, `live` happily records a
+        # perfectly locked, well-decoded .cadu file and then exits without
+        # ever producing an image, no matter how the process is stopped.
+        cmd += ["--finish_processing", "true"]
 
         self.log_line.emit("$ " + " ".join(cmd))
 
@@ -324,7 +371,13 @@ class SatDumpProcess(QThread):
                     stderr=subprocess.STDOUT,
                     text=True,
                     bufsize=1,
-                    creationflags=subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
+                    # CREATE_NEW_PROCESS_GROUP (combined with CREATE_NO_WINDOW,
+                    # which already gives this process its own hidden console)
+                    # lets stop() target it with CTRL_BREAK_EVENT instead of
+                    # only being able to hard-kill it -- see stop() below.
+                    creationflags=(  # type: ignore[attr-defined]
+                        subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+                    ),
                 )
             else:
                 self._proc = subprocess.Popen(
@@ -338,14 +391,19 @@ class SatDumpProcess(QThread):
             self.finished_err.emit(f"Failed to start satdump: {exc}")
             return
 
+        # Drain stdout until SatDump actually exits (the pipe closes), not
+        # just until stop() is called. With --finish_processing, a graceful
+        # stop keeps producing output (and can take real time) while the
+        # image products are written -- bailing out of this loop early on
+        # isInterruptionRequested() would both hide that output and, if
+        # SatDump keeps writing to a pipe nobody is reading, risk it
+        # blocking on its own stdout once the OS pipe buffer fills up.
         assert self._proc.stdout is not None
         stdout: IO[str] = self._proc.stdout
         for line in stdout:
             line = line.rstrip()
             self.log_line.emit(line)
             self._parse_line(line)
-            if self.isInterruptionRequested():
-                break
 
         self._proc.wait()
         rc = self._proc.returncode
@@ -358,16 +416,31 @@ class SatDumpProcess(QThread):
     def stop(self, force: bool = False) -> None:
         """Request the satdump process to terminate.
 
-        Pass ``force=True`` to send SIGKILL immediately instead of SIGTERM —
+        Pass ``force=True`` to send SIGKILL/TerminateProcess immediately —
         used as a last resort when a graceful stop() didn't let run() return
         within a grace period (see MeteorTab.closeEvent()).
+
+        A graceful (non-force) stop lets SatDump run its own shutdown path
+        (which, combined with --finish_processing, is what actually writes
+        the received image out) instead of being killed mid-write.
         """
         self.requestInterruption()
-        if self._proc is not None and self._proc.poll() is None:
-            if force:
-                self._proc.kill()
-            else:
+        if self._proc is None or self._proc.poll() is not None:
+            return
+        if force:
+            self._proc.kill()
+            return
+        if sys.platform == "win32":
+            # Popen.terminate() calls TerminateProcess() on Windows -- an
+            # unconditional hard kill, unlike the SIGTERM it sends on
+            # POSIX. That gives SatDump no chance to reach its own
+            # "Signal Received. Stopping." shutdown path, so
+            # --finish_processing's image write never happens either.
+            # Fall back to the hard kill only if the graceful path fails.
+            if not _send_graceful_stop_windows(self._proc.pid):
                 self._proc.terminate()
+        else:
+            self._proc.terminate()
 
     # ------------------------------------------------------------------
 

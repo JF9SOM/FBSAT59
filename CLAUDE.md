@@ -9177,3 +9177,82 @@ macOS（`.app`バンドル、実機確認済み）・Linux（開発環境、apt�
   実際に使っているバージョンの公式ソースコード（可能なら`gh api`等で当該タグを
   直接取得）を確認すること。特に「よくあるCLIパターン」（`--output`のような
   フラグ）を無条件に仮定しない
+
+### 6. 実際に良好にロックできても画像が一度も生成されない不具合と、Windows版`stop()`が強制終了になっていた不具合（2026-08-19 発見・修正）
+
+上記1〜5の修正でMETEOR/HRPT受信自体は「Lock」状態（Deframer: SYNCED）まで到達できる
+ようになっていたが、実際に仰角80度級のパスでSNR最大9.8dB・BER最良1.5%・Deframer
+SYNCEDが約2分半継続するという明確に良好な受信ができた際にも、**画像が一枚も
+生成されなかった**という報告があった。
+
+**原因調査**: 出力ディレクトリを直接確認したところ`meteor_m2-x_lrpt.cadu`
+（デコード済み生フレーム、約1.5MB）のみが存在し、`images/`フォルダもPNGも
+一切無かった。SatDump本家の`resources/pipelines/Meteor-M.json`を確認すると、
+`meteor_m2-x_lrpt`パイプラインは`soft`（psk_demod）→`cadu`
+（ccsds_conv_concat_decoder）→`products`（meteor_msumr_lrpt、CADUフレームから
+実際のMSU-MR画像を合成する段階）の3段構成だが、実際の受信ログには
+`Module psk_demod`・`Module ccsds_conv_concat_decoder`しか現れず、
+`Module meteor_msumr_lrpt`が一度も実行されていなかった。
+
+SatDump CLIのソース（`src-cli/legacy/live.cpp`）を確認すると、この`products`段階の
+後処理は、`--finish_processing true`という追加パラメータを明示的に渡さない限り、
+たとえ`Signal Received. Stopping.`という正常終了ログが出ていても**デフォルトで
+スキップされる**仕様だった（`parameters.contains("finish_processing") ? ... :
+false`）。`SatDumpProcess.run()`（`src/comms/meteor/satdump.py`）のコマンド
+組み立てにはこのフラグが一度も含まれていなかった。**つまりMETEORタブは
+2026-06-29の実装当初から、受信自体に成功していても画像を生成したことが
+一度もなかった**可能性が高い。
+
+**修正1（`--finish_processing true`追加）**: コマンド組み立てに無条件で追加。
+あわせて、この後処理は停止シグナルを受けてからプロセスが実際に終了するまでの
+間に実行され、その間もSatDumpは標準出力にログを出し続けるため、`run()`内の
+`for line in stdout: ... if self.isInterruptionRequested(): break`という
+早期離脱を削除し、**プロセスが本当に終了する（stdoutパイプが閉じる）まで
+読み切る**よう変更した。この早期離脱を残したままだと、後処理中の出力を
+表示し損なうだけでなく、誰も読まないパイプが埋まってSatDump自身の
+`write()`がブロックし、後処理そのものが止まってしまうリスクもあった。
+
+**修正2（Windows版`stop()`が実質強制終了だった問題）**: 上記調査と並行して、
+`SatDumpProcess.stop()`が呼んでいる`self._proc.terminate()`は、POSIX
+（macOS/Linux）ではSIGTERM（SatDump自身の`signal(SIGINT, sig_handler_live)`
+ハンドラが捕捉し正常終了処理に入れる）だが、**Windowsでは`TerminateProcess()`
+という無条件の強制終了**であり、SatDumpが正常終了処理に入る機会が一切ない
+ことが判明した。つまりWindows版でアプリの「■ 停止」ボタンを押した場合、
+修正1を入れても画像は生成されないままだったはずである。
+
+Windowsでプロセスに正常終了を促す標準的な方法は`CTRL_BREAK_EVENT`
+（`Popen.send_signal(signal.CTRL_BREAK_EVENT)`、対象を`CREATE_NEW_PROCESS_GROUP`
+で起動しておく必要がある）だが、**FBSAT59はウィンドウ表示のみでコンソールを
+持たないPyInstallerビルド**であるため、素の`send_signal()`は
+`GenerateConsoleCtrlEvent`が「呼び出し元プロセスが対象と同じコンソール
+セッションにアタッチされている必要がある」という制約に阻まれて失敗する
+（CPython本体の既知の制限、[python/cpython#112190](https://github.com/python/cpython/issues/112190)）。
+自プロセスがコンソールを持たないため、この制約を満たせない。
+
+**採用した回避策**: 停止する瞬間だけ`AttachConsole(satdump_pid)`で
+satdump.exe自身の（`CREATE_NO_WINDOW`で作られた非表示の）コンソールへ一時的に
+アタッチし、`GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, 0)`を発行してから
+`FreeConsole()`で切り離す、という手順をctypesで実装した
+（`_send_graceful_stop_windows()`）。MSVC CRTの`signal(SIGINT, ...)`は
+`CTRL_C_EVENT`・`CTRL_BREAK_EVENT`の両方をSIGINTとして扱うため、この
+イベントでSatDump自身の`sig_handler_live`が正しく起動することを、
+Microsoft公式ドキュメント・CPython issueの議論の双方から確認した上で実装した
+（実機Windowsでの動作確認は次回のユーザー報告待ち）。失敗した場合は
+従来通り`terminate()`（強制終了）にフォールバックするため、最悪の場合でも
+今までより状況が悪化することはない。
+
+**検証状況**: `--finish_processing`フラグの付与・stdout読み切りへの変更・
+Windows分岐のフォールバック制御フローは、フェイクの`Popen`/`sys.platform`を
+使ったユニットテストで確認済み（`ruff`/`mypy --strict`/既存`test_rig.py`も
+グリーン）。実際のWin32 API呼び出し（`AttachConsole`等）はmacOS開発機からは
+検証できないため、実機Windowsでの最終確認は次回のユーザー報告待ち。
+
+**教訓**: 「Deframer: SYNCED」というロック表示は、あくまで復調・フレーム同期が
+成功したことを示すだけで、**そのフレームから実際に画像を合成する後段の処理が
+別途必要**であり、かつSatDumpはその後段処理を明示的なフラグなしでは実行しない、
+という多段パイプラインの設計を見落としていた。「受信自体は成功しているように
+見えるのに最終成果物（画像）が出ない」という報告を受けたら、パイプライン定義
+そのものを確認し、ログに出ているモジュールと定義上あるはずのモジュールを
+突き合わせること。またWindowsのプロセス終了は「graceful」の意味がPOSIXと
+根本的に異なる（`terminate()`が両OSで同じ意味だと思い込まない）ことも、
+Hamlib・ft8lib等これまでの経緯と同様に繰り返し踏んだ落とし穴だった。
