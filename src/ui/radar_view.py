@@ -204,7 +204,17 @@ class RadarView(QWidget):
     # ------------------------------------------------------------------ #
 
     def sizeHint(self) -> QSize:
-        return QSize(400, 400)
+        # Compact mode (the Comms Quick Panel's mini radar) must return a
+        # small hint here, not the full Radar tab's 400x400: QSplitter uses
+        # sizeHint() -- not minimumSize() -- to redistribute pane widths the
+        # first time a previously-invisible widget becomes visible, and a
+        # 400px-wide hint made the Satellite Detail pane balloon toward its
+        # maximumWidth (pushing the tab area much narrower) the first time
+        # this box was ever shown in a session -- e.g. clicking Radio Control
+        # before any Communications tab had shown it once already, since
+        # that already "warmed up" the splitter's layout (GitHub Issue #24
+        # follow-up).
+        return QSize(120, 120) if self._compact else QSize(400, 400)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         """Emit sat_clicked when a click falls near a satellite dot."""

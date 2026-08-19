@@ -276,6 +276,7 @@ class SatDetailPanel(QWidget):
 
         self._mini_radar = RadarView(compact=True)
         self._mini_radar.setMaximumHeight(200)
+        self._mini_radar.setMaximumWidth(220)
         comms_lay.addWidget(self._mini_radar)
 
         self._input_source_row = QWidget()
@@ -3912,11 +3913,25 @@ class MainWindow(QMainWindow):
 
         self._update_pass_panel_size(hide=self._wide_tab_enabled or not is_resident)
 
+        # Toggling the Comms Quick Panel's visibility/content below can make
+        # Qt briefly recompute h_splitter's pane widths from the newly
+        # (in)visible widgets' sizeHint()s rather than their steady-state
+        # minimums — most visible the very first time the panel is shown in
+        # a session (e.g. Radio Control opened before any Communications tab
+        # ever has), where the detail pane would balloon toward its
+        # maximumWidth at the tab area's expense. Snapshotting and
+        # reapplying the pre-toggle sizes forces Qt straight back to
+        # whatever the user already had, sidestepping that recompute
+        # entirely instead of trying to out-guess it (GitHub Issue #24
+        # follow-up).
+        prev_sizes = self._h_splitter.sizes()
+
         if is_resident:
             if widget is self._radio_control:
                 self._detail_panel.show_radar_only()
             else:
                 self._detail_panel.deactivate_comms_panel()
+            self._h_splitter.setSizes(prev_sizes)
             return
 
         tab_key = self._comms_tab_keys.get(widget) if widget is not None else None
@@ -3928,6 +3943,7 @@ class MainWindow(QMainWindow):
             self._detail_panel.set_active_comms_tab(tab_key, options, tab_widget=widget)
         else:
             self._detail_panel.deactivate_comms_panel()
+        self._h_splitter.setSizes(prev_sizes)
 
     def _update_pass_panel_size(self, hide: bool) -> None:
         """Collapse the pass-prediction (bottom) panel to zero height, or
