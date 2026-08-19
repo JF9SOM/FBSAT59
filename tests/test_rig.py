@@ -493,6 +493,52 @@ class TestGenericDirectUlWriteVfoRestore:
         ctrl._rig.set_vfo.assert_not_called()
 
 
+class TestSatmodeCrossBandMainDisplayRestore:
+    """GitHub Issue #25: after the periodic satmode cross-band UL write
+    (Sub), IC-9700's own front-panel display/waterfall stays stuck on Sub
+    until restored to Main -- unlike the same-band and generic-rig
+    branches, which already call set_vfo() to restore the display. This
+    restore is intentionally restricted to IC-9700 (_SATMODE_USE_VFO_SUB)
+    only: the same explicit set_vfo() churn on this branch was found to
+    hang the app on IC-9100 (2026-07-22 investigation, see CLAUDE.md)."""
+
+    def _make_satmode_ctrl(self, model_id: int) -> HamlibDirectController:
+        ctrl = HamlibDirectController(model_id=model_id, port="/dev/null")
+        ctrl._rig = MagicMock()
+        fake_hamlib = MagicMock()
+        fake_hamlib.RIG_VFO_MAIN = 4194304
+        fake_hamlib.RIG_VFO_SUB = 8388608
+        fake_hamlib.RIG_VFO_TX = 16777216
+        ctrl._hamlib = fake_hamlib
+        ctrl._rig.error_status = 0
+        with ctrl._lock:
+            ctrl._state = RigState.CONNECTED
+        return ctrl
+
+    def test_ic9700_restores_main_display_after_ul_write(self) -> None:
+        ctrl = self._make_satmode_ctrl(model_id=3081)  # IC-9700
+        assert ctrl.set_vfo_frequencies(435_612_000.0, 145_993_000.0) is True
+        ctrl._rig.set_freq.assert_any_call(8388608, 145_993_000)  # RIG_VFO_SUB
+        ctrl._rig.set_vfo.assert_called_once_with(4194304)  # RIG_VFO_MAIN
+
+    def test_ic9100_does_not_restore_main_display_after_ul_write(self) -> None:
+        """IC-9100 is not in _SATMODE_USE_VFO_SUB -- must not gain the extra
+        set_vfo() call, which is what previously hung the app on this model."""
+        ctrl = self._make_satmode_ctrl(model_id=3068)  # IC-9100
+        assert ctrl.set_vfo_frequencies(435_612_000.0, 145_993_000.0) is True
+        ctrl._rig.set_freq.assert_any_call(16777216, 145_993_000)  # RIG_VFO_TX
+        ctrl._rig.set_vfo.assert_not_called()
+
+    def test_ic9700_restore_failure_does_not_break_doppler_tracking(self) -> None:
+        """The display restore is best-effort -- a failure must not make the
+        overall frequency update report failure or stop caching the UL value
+        that was already successfully written."""
+        ctrl = self._make_satmode_ctrl(model_id=3081)  # IC-9700
+        ctrl._rig.set_vfo.side_effect = RuntimeError("CI-V busy")
+        assert ctrl.set_vfo_frequencies(435_612_000.0, 145_993_000.0) is True
+        assert ctrl._last_ul_hz == 145_993_000.0
+
+
 class TestPttDopplerFreeze:
     """set_ptt(freeze_doppler=...) decides whether Doppler tracking continues
     through the TX window. Packet bursts (APRS, AX100 Digi) keep the default

@@ -1749,7 +1749,43 @@ class HamlibDirectController(RigController):
                             self._last_written_vfo = "Sub"
                             if was_first_ul and self._pending_mode_ctcss:
                                 self._pending_mode_ctcss = False
+                                # _resend_mode_ctcss_via_rig() already ends
+                                # with set_vfo(MAIN), so skip the restore
+                                # below to avoid a redundant CI-V call.
                                 self._resend_mode_ctcss_via_rig()
+                            elif self._model_id in _SATMODE_USE_VFO_SUB:
+                                # GitHub Issue #25: IC-9700's own front-panel
+                                # display/waterfall follows whichever VFO
+                                # Hamlib last explicitly selected. Left on
+                                # Sub after this write, the rig keeps
+                                # showing the Sub passband instead of Main
+                                # (where satellite signals actually are)
+                                # until the user flips it back by hand.
+                                # Restrict to IC-9700 only (_SATMODE_USE_VFO_SUB):
+                                # explicit set_vfo() churn on this same
+                                # satmode cross-band branch was found to hang
+                                # the app on IC-9100 (2026-07-22 investigation,
+                                # see CLAUDE.md "Ctrl+Lで「Python is not
+                                # responding」" section) because IC-9100's
+                                # non-targetable freq path forces repeated
+                                # internal VFO swaps that the rig rejected.
+                                # IC-9700 already uses set_vfo(MAIN) safely
+                                # elsewhere in this same satmode context
+                                # (Stage 1/2 above), so a single explicit
+                                # restore call here follows an established,
+                                # already-verified-safe pattern for this
+                                # model. Best-effort: a failure here must
+                                # not break Doppler frequency tracking, so
+                                # it is caught and logged rather than
+                                # propagated like the freq writes above.
+                                try:
+                                    self._rig.set_vfo(main_vfo)
+                                except Exception as exc:
+                                    logger.warning(
+                                        "RigDirect satmode UL: set_vfo(MAIN) "
+                                        "display restore failed: %s",
+                                        exc,
+                                    )
 
             else:
                 rx_vfo = self._vfo_str_to_const("VFOA")
