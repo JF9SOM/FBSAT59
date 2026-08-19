@@ -47,7 +47,6 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
-    QRadioButton,
     QSizePolicy,
     QSpinBox,
     QSplitter,
@@ -366,20 +365,17 @@ class MeteorTab(QWidget):
 
         # METEOR-local RF gain override (independent of Rig Settings > SDR
         # Settings' shared gain, which is tuned for other uses like FM/SDR
-        # Control listening and may not suit 137 MHz LRPT reception). See
-        # CLAUDE.md "METEOR受信専用のRF Gain設定" for the background.
+        # Control listening and may not suit 137 MHz LRPT reception). Manual
+        # only -- AGC has been confirmed to produce spurious Viterbi "sync"
+        # on pure noise for METEOR reception, so Auto is intentionally not
+        # offered here. See CLAUDE.md "METEOR受信専用のRF Gain設定" for the
+        # background.
         btn_row2.addSpacing(12)
         btn_row2.addWidget(QLabel(_("Gain:")))
-        self._gain_auto_rb = QRadioButton(_("Auto"))
-        self._gain_manual_rb = QRadioButton(_("Manual"))
         self._gain_spin = QSpinBox()
         self._gain_spin.setRange(0, 80)
         self._gain_spin.setSuffix(" dB")
-        self._gain_auto_rb.toggled.connect(lambda on: self._gain_spin.setDisabled(on))
-        self._gain_auto_rb.toggled.connect(self._on_gain_setting_changed)
         self._gain_spin.valueChanged.connect(self._on_gain_setting_changed)
-        btn_row2.addWidget(self._gain_auto_rb)
-        btn_row2.addWidget(self._gain_manual_rb)
         btn_row2.addWidget(self._gain_spin)
         self._load_gain_settings()
 
@@ -406,43 +402,31 @@ class MeteorTab(QWidget):
     # ------------------------------------------------------------------
 
     def _load_gain_settings(self) -> None:
-        """Populate the gain widgets, seeding from sdr_settings on first use.
+        """Populate the gain spinbox, seeding from sdr_settings on first use.
 
         meteor_settings is only ever written once the user actually touches
-        these widgets (see _on_gain_setting_changed), so an empty result
-        here means "never customized" -- fall back to whatever Rig Settings
-        > SDR Settings currently has, purely as a starting point. Later
-        changes to that shared setting do not affect this tab once
-        meteor_settings exists.
+        this widget (see _on_gain_setting_changed), so an empty result here
+        means "never customized" -- fall back to whatever Rig Settings > SDR
+        Settings currently has, purely as a starting point. Later changes to
+        that shared setting do not affect this tab once meteor_settings
+        exists. Gain here is always manual (see the comment where the
+        widget is built), so any leftover gain_auto flag from before that
+        change, or from the shared sdr_settings, is ignored.
         """
         meteor = _load_meteor_settings()
         if meteor:
-            gain_auto = bool(meteor.get("gain_auto", True))
             gain_db = int(meteor.get("gain_db") or 40)
         else:
             sdr = _load_sdr_settings()
-            gain_auto = bool(sdr.get("gain_auto", True))
             gain_db = int(sdr.get("gain_db") or 40)
         self._gain_spin.blockSignals(True)
         self._gain_spin.setValue(gain_db)
         self._gain_spin.blockSignals(False)
-        # Radio buttons are mutually exclusive by shared parent, so setting
-        # one to True is enough to clear the other. Block signals so this
-        # initial sync doesn't itself trigger a save.
-        self._gain_auto_rb.blockSignals(True)
-        self._gain_manual_rb.blockSignals(True)
-        if gain_auto:
-            self._gain_auto_rb.setChecked(True)
-        else:
-            self._gain_manual_rb.setChecked(True)
-        self._gain_auto_rb.blockSignals(False)
-        self._gain_manual_rb.blockSignals(False)
-        self._gain_spin.setDisabled(gain_auto)
 
     def _on_gain_setting_changed(self) -> None:
         _save_meteor_settings(
             {
-                "gain_auto": self._gain_auto_rb.isChecked(),
+                "gain_auto": False,
                 "gain_db": self._gain_spin.value(),
             }
         )
@@ -526,13 +510,10 @@ class MeteorTab(QWidget):
             return
         driver = _sdr_source_from_settings(sdr)
         label: str = sdr.get("device_label") or driver
-        if self._gain_auto_rb.isChecked():
-            self._lbl_status.setText(_("SDR: {label}  gain Auto — ready.").format(label=label))
-        else:
-            gain = self._gain_spin.value()
-            self._lbl_status.setText(
-                _("SDR: {label}  gain {gain} dB — ready.").format(label=label, gain=gain)
-            )
+        gain = self._gain_spin.value()
+        self._lbl_status.setText(
+            _("SDR: {label}  gain {gain} dB — ready.").format(label=label, gain=gain)
+        )
 
     # ------------------------------------------------------------------
     # Start / Stop
@@ -540,11 +521,12 @@ class MeteorTab(QWidget):
 
     def _on_start(self) -> None:
         # Resolve SDR source/PPM from Rig Settings > SDR Settings, but gain
-        # comes from this tab's own controls (see "METEOR-local RF gain"
+        # comes from this tab's own control (see "METEOR-local RF gain"
         # above) -- 137 MHz LRPT reception can need a different gain than
         # whatever the shared SDR setting is tuned for (e.g. FM listening).
+        # Always manual: AGC has been confirmed to produce spurious Viterbi
+        # "sync" on pure noise for METEOR reception.
         sdr = _load_sdr_settings()
-        gain_auto = self._gain_auto_rb.isChecked()
         gain = self._gain_spin.value()
         if sdr and sdr.get("enabled"):
             source = _sdr_source_from_settings(sdr)
@@ -570,7 +552,7 @@ class MeteorTab(QWidget):
             output_dir=self._output_dir,
             gain=gain,
             ppm=ppm,
-            agc=gain_auto,
+            agc=False,
             parent=self,
         )
         self._process.log_line.connect(self._on_log_line)

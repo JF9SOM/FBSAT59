@@ -1174,13 +1174,22 @@ XXX.app/Contents/
     LRPT受信に最適とは限らない（固定ゲインが高すぎるとVHF帯の近隣強信号でフロントエンドが
     飽和し、SNR表示だけ高く出て実際には復調できない、という実機報告あり）。METEORタブ
     自身（受信画像下の`📁 Open Folder`/`🗑 Clear`ボタンの並びに追加、行の増設なし）に
-    独立した`Gain: Auto/Manual [dB]`コントロール（Rig SettingsのRF Gain欄と同じ
-    QRadioButton×2+QSpinBoxの構成）を新設し、`meteor_settings`（`sdr_settings`とは
-    別の`app_settings`キー）に保存するようにした。初回（`meteor_settings`が空の間）は
-    その時点の`sdr_settings`の値を初期値として引き継ぐが、一度でもユーザーがこの
-    コントロールを操作すると以降は完全に独立し、Rig Settings側を後から変更しても
-    影響を受けない。`source`（デバイス選択）・`ppm`は引き続き`sdr_settings`を共用
-    （変更していない）。
+    独立した`Gain: [dB]`コントロール（QSpinBoxのみ）を新設し、`meteor_settings`
+    （`sdr_settings`とは別の`app_settings`キー）に保存するようにした。初回
+    （`meteor_settings`が空の間）はその時点の`sdr_settings`の値を初期値として
+    引き継ぐが、一度でもユーザーがこのコントロールを操作すると以降は完全に独立し、
+    Rig Settings側を後から変更しても影響を受けない。`source`（デバイス選択）・`ppm`は
+    引き続き`sdr_settings`を共用（変更していない）。
+    **AGC（Auto）は選択肢自体を廃止し常時手動固定（2026-08-20）**: 実機検証
+    （N2-3・N2-4、macOS/Windows双方）で、RTL-SDRのハードウェアAGCをONにすると、
+    実際の信号強度や衛星の可視性と無関係に、Viterbi側だけが約3.5dB・BER 0.11〜0.21
+    という再現性のある固定値で「SYNCED」を報告し続ける偽ロックが生じることが確認された
+    （アンテナを完全に外した状態でも同じ値が出続けた）。AGCオフ（固定ゲイン）にすると
+    同じ状況で正しくNOSYNC/SNR 0dBを示し、実際の衛星可視時間に一致してSNRが
+    0→最大値→0と滑らかに変化する健全な追尾パターンが再現された。このためAuto
+    ラジオボタンは廃止し、`Gain:`欄は常に手動指定のQSpinBoxのみとした（既定値40dB。
+    ただしこの既定値自体もこれまで一度も成功実績がなく、実際の最適値は今後の実運用で
+    調整が必要）。`SatDumpProcess`への`agc`引数は常に`False`で呼び出される。
   - **UI 構成**（コンパクト2行レイアウト）:
     - Row 1: `Pipeline:` コンボ + `[SDR Connect]` + `[▶ Start]` + `[■ Stop]` + `[📋 Log]`
     - Row 2: ロックインジケーター + プログレスバー + ステータスラベル
