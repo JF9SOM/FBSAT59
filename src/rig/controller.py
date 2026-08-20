@@ -1778,13 +1778,29 @@ class HamlibDirectController(RigController):
                                 # not break Doppler frequency tracking, so
                                 # it is caught and logged rather than
                                 # propagated like the freq writes above.
+                                #
+                                # _check_rig_ok() is required here, not just
+                                # a bare try/except: Hamlib's Python binding
+                                # returns None from set_vfo() regardless of
+                                # outcome (see _check_rig_ok()'s docstring),
+                                # so a CI-V rejection by the rig would
+                                # otherwise fail completely silently -- no
+                                # exception, no log -- leaving the display
+                                # stuck on Sub with no visibility into why.
                                 try:
                                     self._rig.set_vfo(main_vfo)
+                                    _check_rig_ok(
+                                        self._rig, "satmode UL: set_vfo(MAIN) display restore"
+                                    )
                                 except Exception as exc:
                                     logger.warning(
                                         "RigDirect satmode UL: set_vfo(MAIN) "
                                         "display restore failed: %s",
                                         exc,
+                                    )
+                                else:
+                                    logger.info(
+                                        "RigDirect satmode UL: set_vfo(MAIN) display restore OK"
                                     )
 
             else:

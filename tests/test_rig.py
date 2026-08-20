@@ -538,6 +538,26 @@ class TestSatmodeCrossBandMainDisplayRestore:
         assert ctrl.set_vfo_frequencies(435_612_000.0, 145_993_000.0) is True
         assert ctrl._last_ul_hz == 145_993_000.0
 
+    def test_ic9700_restore_rejected_by_rig_is_detected_not_silently_swallowed(self) -> None:
+        """A CI-V rejection by the rig does NOT raise a Python exception --
+        Hamlib's binding returns None from set_vfo() regardless of outcome
+        (see _check_rig_ok()'s docstring) and only sets rig.error_status.
+        A bare try/except around set_vfo() alone (the first version of this
+        fix) would silently believe the restore succeeded. This confirms
+        _check_rig_ok() is actually consulted: overall tracking must still
+        succeed (best-effort), but the rejection must be detectable."""
+        ctrl = self._make_satmode_ctrl(model_id=3081)  # IC-9700
+
+        def _reject_restore(_vfo: int) -> None:
+            ctrl._rig.error_status = -9  # RIG_EREJECTED, confirmed live on IC-9100
+
+        ctrl._rig.set_vfo.side_effect = _reject_restore
+        assert ctrl.set_vfo_frequencies(435_612_000.0, 145_993_000.0) is True
+        ctrl._rig.set_vfo.assert_called_once_with(4194304)  # RIG_VFO_MAIN attempted
+        # The UL frequency write itself (already committed before the
+        # restore attempt) must remain cached as successful.
+        assert ctrl._last_ul_hz == 145_993_000.0
+
 
 class TestPttDopplerFreeze:
     """set_ptt(freeze_doppler=...) decides whether Doppler tracking continues
