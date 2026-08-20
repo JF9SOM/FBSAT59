@@ -213,12 +213,8 @@ class RadarView(QWidget):
         # this box was ever shown in a session -- e.g. clicking Radio Control
         # before any Communications tab had shown it once already, since
         # that already "warmed up" the splitter's layout (GitHub Issue #24
-        # follow-up). The Comms Quick Panel's mini radar is additionally
-        # given a fixed size by its owner (SatDetailPanel), which takes
-        # priority over this hint once set -- kept in sync here mainly so
-        # this method stays internally consistent for any other compact
-        # instance that doesn't set one.
-        return QSize(130, 130) if self._compact else QSize(400, 400)
+        # follow-up).
+        return QSize(120, 120) if self._compact else QSize(400, 400)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         """Emit sat_clicked when a click falls near a satellite dot."""

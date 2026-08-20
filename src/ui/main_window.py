@@ -275,18 +275,8 @@ class SatDetailPanel(QWidget):
         comms_lay.setSpacing(4)
 
         self._mini_radar = RadarView(compact=True)
-        # Fixed, not just capped: with Expanding + a maximum only, its
-        # rendered width used to follow whatever else was in the box that
-        # tab (e.g. a long satellite name in the Input Source combo), so the
-        # same mini radar came out a different size on different
-        # Communications tabs, and differently again in Radio Control's
-        # radar-only box (GitHub Issue #24 follow-up). Fixing both
-        # dimensions makes the disc itself pixel-identical everywhere,
-        # regardless of what else is showing alongside it. 130px comfortably
-        # fits within the Satellite Detail pane's existing minimumWidth
-        # (160, see below) with margins to spare, so it never forces the
-        # pane wider than before.
-        self._mini_radar.setFixedSize(130, 130)
+        self._mini_radar.setMaximumHeight(200)
+        self._mini_radar.setMaximumWidth(220)
         comms_lay.addWidget(self._mini_radar)
 
         self._input_source_row = QWidget()
