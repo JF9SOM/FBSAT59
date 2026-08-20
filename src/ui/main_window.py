@@ -234,6 +234,20 @@ class SatDetailPanel(QWidget):
     # Source combo. Args: tab_key (e.g. "ft4"), norad_cat_id.
     comms_satellite_requested: Signal = Signal(str, int)
 
+    # Mini radar max height for the full Quick Comms Panel (Communications
+    # tabs) vs. Radio Control's radar-only box. In the full panel, the
+    # other rows below the radar (Input Source, D:/U:, Rig 1/Rig 2) already
+    # eat into the box's available height, leaving the radar visibly
+    # letterboxed. Radio Control's box has nothing else in it, so without
+    # its own (smaller) cap the radar would fill the full height instead
+    # and look inconsistent next to the Communications tabs' version
+    # (GitHub Issue #24 follow-up) — this only changes _mini_radar's cap
+    # while Radio Control's box is showing it; set_active_comms_tab()
+    # always restores _MINI_RADAR_MAX_HEIGHT_FULL first, so no
+    # Communications tab is affected.
+    _MINI_RADAR_MAX_HEIGHT_FULL: int = 200
+    _MINI_RADAR_MAX_HEIGHT_RADAR_ONLY: int = 160
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._radio_control: Any = None
@@ -275,7 +289,7 @@ class SatDetailPanel(QWidget):
         comms_lay.setSpacing(4)
 
         self._mini_radar = RadarView(compact=True)
-        self._mini_radar.setMaximumHeight(200)
+        self._mini_radar.setMaximumHeight(self._MINI_RADAR_MAX_HEIGHT_FULL)
         self._mini_radar.setMaximumWidth(220)
         comms_lay.addWidget(self._mini_radar)
 
@@ -377,6 +391,7 @@ class SatDetailPanel(QWidget):
         self._radar_only = False
         self._comms_group.setTitle(_("Quick Comms Control"))
         self._comms_group.setVisible(True)
+        self._mini_radar.setMaximumHeight(self._MINI_RADAR_MAX_HEIGHT_FULL)
 
         show_input = bool(config and config.show_input_source)
         self._input_source_row.setVisible(show_input)
@@ -418,6 +433,7 @@ class SatDetailPanel(QWidget):
         self._radar_only = True
         self._comms_group.setTitle(_("Radar"))
         self._comms_group.setVisible(True)
+        self._mini_radar.setMaximumHeight(self._MINI_RADAR_MAX_HEIGHT_RADAR_ONLY)
         self._input_source_row.setVisible(False)
         self._quick_dl_label.setVisible(False)
         self._quick_ul_label.setVisible(False)
