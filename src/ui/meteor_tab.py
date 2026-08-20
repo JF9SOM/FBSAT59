@@ -579,8 +579,11 @@ class MeteorTab(QWidget):
     def _on_stop(self) -> None:
         if self._process is not None:
             self._process.stop()
-        if self._watcher is not None:
-            self._watcher.stop()
+        # Do NOT stop self._watcher here: SatDump keeps writing PNGs for
+        # several more seconds after this point (--finish_processing runs
+        # its image-compositing pass on stop), so the watcher must keep
+        # polling until the process actually finishes -- see
+        # _on_finished_ok()/_on_finished_err().
         self._lbl_status.setText(_("Stopping…"))
         self._btn_stop.setEnabled(False)
 
@@ -650,6 +653,7 @@ class MeteorTab(QWidget):
     def _on_finished_ok(self) -> None:
         self._lbl_status.setText(_("Reception finished."))
         self._progress.setVisible(False)
+        self._stop_watcher_after_final_poll()
         self._reset_controls()
         self._reenable_sdr_tab()
 
@@ -660,8 +664,21 @@ class MeteorTab(QWidget):
         if self._log_window is not None:
             self._log_window.append(err_line)
         self._progress.setVisible(False)
+        self._stop_watcher_after_final_poll()
         self._reset_controls()
         self._reenable_sdr_tab()
+
+    def _stop_watcher_after_final_poll(self) -> None:
+        """Catch images written between the last timer tick and process exit.
+
+        SatDump's --finish_processing pass writes PNGs right up until the
+        process actually terminates, which can land in the gap between the
+        watcher's last scheduled poll and this finished signal. Poll once
+        more before stopping so nothing written in that window is missed.
+        """
+        if self._watcher is not None:
+            self._watcher.poll_now()
+            self._watcher.stop()
 
     def _reset_controls(self) -> None:
         self._btn_start.setEnabled(find_satdump() is not None)
