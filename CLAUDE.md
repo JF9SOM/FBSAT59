@@ -1196,8 +1196,11 @@ XXX.app/Contents/
   - **UI 構成**（コンパクト2行レイアウト）:
     - Row 1: `Pipeline:` コンボ + `[SDR Connect]` + `[▶ Start]` + `[■ Stop]` + `[📋 Log]`
     - Row 2: ロックインジケーター + プログレスバー + ステータスラベル
-    - 下部: 受信画像（左。`📁 Open Folder`/`📂 Open Past Reception…`/`🗑 Clear`ボタン
-      付き）＋ 受信履歴サムネイル（右）の水平スプリッター（`📂 Open Past
+    - 下部: 受信画像プレビュー（左。Image/Waterfallの2タブ構成——受信中は
+      SatDumpのFFT HTTP APIをポーリングしたライブWaterfallへ自動切替、完了で
+      Imageへ自動復帰。詳細は「METEORタブのライブWaterfall表示」参照。
+      `📁 Open Folder`/`📂 Open Past Reception…`/`🗑 Clear`ボタン付き）
+      ＋ 受信履歴サムネイル（右）の水平スプリッター（`📂 Open Past
       Reception…`の詳細は「過去の受信フォルダをタブ内で見返す機能」参照）
   - **[SDR Connect]**: Rig Settings > SDR Settings で設定済みの SDR に自動接続（`get_db_path()` でDBパスを正確に参照）
   - **[📋 Log]**: SatDump の stdout/stderr を表示する浮動ログウィンドウ（`_LogWindow`）を開く。× で閉じてもログ内容は保持
@@ -3493,7 +3496,7 @@ QT_LOGGING_RULES="qt.qpa.*=true" ./FBSAT59.AppImage 2>&1 | head -100
 11c. ~~**Q65 Phase 1（RX）実装**~~ **→ 2026-06-26 で完了**（Q65Codec/libq65 ctypes・build-q65lib.yml CI・Help > Q65 Library Installation ダイアログ）
 11d. ~~**Q65 Phase 2（TX/QSO）実装**~~ **→ 2026-06-26 で完了**（純 Python encoder.py: GF(64)・CRC-12・65-FSK / Q65QsoManager: QSOステートマシン・q65_log DB・ADIF / q65_tab.py: TX UI・TX Enable・Halt TX・Log QSO・Export ADIF）
 11e. ~~**METEOR / HRPT 受信タブ実装**~~ **→ 2026-06-29 で完了**（SatDump サブプロセス管理・8衛星対応・Autotrack AOS/LOS 連携・SDR Connect・浮動ログウィンドウ・衛星検索ダイアログ）
-11h. **METEORタブにウォーターフォール表示ボタンを追加（未着手・調査済み、2026-08-19）** — METEOR受信中はSatDumpがSDRを排他的に握るため、SDR Controlタブで電波の有無を目視確認できない（受信を止めないと確認できない）という不便さから提案。**実現方法を調査済みで、実装は可能と判断**: `satdump live`（v1.2.2で確認済み・対応済み）に`--fft_enable --fft_size N --fft_rate N --http_server 127.0.0.1:PORT`を追加すると、SatDump自身がローカルにHTTPサーバー（`GET /api`）を立て、FFTスペクトラム値（`fft_values`、dBスケール）を含むJSONを配信する仕組みが既に内蔵されている（`src-cli/live.cpp`・`webserver.cpp`、SDRの排他制御には影響しないsplitter経由の非侵襲的な実装）。METEORタブがこのオプション付きでSatDumpを起動し、`/api`エンドポイントを一定間隔でポーリングして`fft_values`を簡易ウォーターフォール/スペクトラムとして描画する、という設計で実装できる見込み。ログボタン付近にボタンを追加する想定（詳細レイアウトは未検討）。着手時はまずSatDumpのバージョンごとの対応状況（v1.2.2で存在確認済みだが、ユーザー環境のバージョン次第）を再確認すること。
+11h. ~~**METEORタブにウォーターフォール表示ボタンを追加**~~ **→ 2026-08-20 で完了・実機確認済み**（受信画像プレビュー欄をImage/Waterfallの2タブに分割。`satdump live`に`--fft_enable --fft_size N --fft_rate N --http_server 127.0.0.1:PORT`を追加しSatDump自身のHTTP API `fft_values`をポーリング。実機（METEOR-M N2-3、最大仰角約50°）でStart時のWaterfall自動表示・完了時のImage自動表示・電波受信の視覚的確認とも動作確認済み。詳細は「METEORタブのライブWaterfall表示」セクション参照）
 11f. ~~**CW Decoder タブ実装**~~ **→ 2026-06-30 で完了（v0.2.6）**（deepcw-engine ONNX / onnxruntime 自動 pip インストール / model.onnx 自動ダウンロード / CW-R トランスポンダー自動オープン）
 11g. **MARMOTSat DVB-S2 受信タブ実装（保留中、2026-07-24 追加）** — AX100 Digi実装（前述「AX100 Digi 機能設計」参照）に続き、MARMOTSatのHF DVB-S2画像ビーコン（29.410 MHz）受信を追加検討したが、**一次情報が入手できず保留**とした:
     - 公表済みスペック（UVic Propagation Lab）: QPSK・roll-off 0.35・33 or 66 kbaud・FEC 1/2・ACM未使用（CCM固定MODCOD）・QO-100 DATV運用慣行準拠
@@ -9387,3 +9390,99 @@ Hamlib・ft8lib等これまでの経緯と同様に繰り返し踏んだ落と�
 `best_item`として記録、最後に`self._history_list.setCurrentItem(best_item)`で
 選択する（`currentItemChanged`シグナル経由で既存の`_on_history_selection()`が
 呼ばれ、プレビュー表示自体は新規コードなしで実現できる）。
+
+### METEORタブのライブWaterfall表示（2026-08-20 実装・実機確認済み）
+
+#### 背景
+
+METEOR受信中はSatDumpがSDRを排他的に握るため、SDR Controlタブでは電波の有無を
+目視確認できない（受信を止めないと確認できない）という不便さがあった。加えて
+METEOR/HRPTは「少しずつ画像が出てくる」昔の気象FAX方式ではなく、
+`--finish_processing`（本ファイル前掲）による後処理が終わるまで画像が一切出ない
+仕組みのため、受信中（数分〜十数分間）ずっとプレビュー欄が真っ黒のままになり、
+「本当に電波を受信できているか」が受信完了まで分からないという不満があった。
+
+前掲11h（「次回の作業候補」）で調査済みだった`satdump live`の
+`--fft_enable --fft_size N --fft_rate N --http_server 127.0.0.1:PORT`
+（SatDump自身がローカルHTTPサーバー`GET /api`でFFTスペクトラム値`fft_values`を
+配信する、SDRの排他制御に影響しない内蔵機能。v1.2.2のバイナリに文字列として
+実在することを`strings`コマンドで実機確認した上で着手）を使い、受信画像プレビュー
+欄を**Image / Waterfallの2タブ**に分割する形で実装した。
+
+#### 設計（ユーザー確定）
+
+- **タブ切り替えは自動2回のみ**: ▶ Start押下時にWaterfallタブへ、受信完了時に
+  Imageタブへ、それぞれ自動切替する。受信中にユーザーが手動で別タブへ切り替えた
+  場合はそれ以降強制的に戻さない（自動切替が発生するのはこの2箇所のみ）
+- **アイドル時（Start前）はImageタブがデフォルト**: 前回受信した画像・履歴が
+  すぐ見られる状態を維持する
+- **周波数軸は較正しない**: SatDumpの生`fft_values`のビン並び順・スケールは
+  非公開のため、誤ったHz軸を表示するよりは軸なしの方が安全と判断。目的は
+  「電波が来ているかどうか」の定性的な確認のみで、周波数精度の診断ではない
+
+#### 実装
+
+- `src/comms/meteor/satdump.py`: `SatDumpProcess`に`fft_http_port`引数を追加。
+  指定時のみ上記4フラグをコマンドラインに付与する。FFTサイズ/レートは
+  `_FFT_SIZE=512`・`_FFT_RATE=2`固定（信号確認用途のため軽量値で十分、UI設定は
+  設けていない）
+- `src/comms/meteor/fft_waterfall.py`（新規）: `find_free_port()`（空きTCPポート
+  確保）と`SatDumpFftPoller`。`core.doppler_worker.DopplerWorker`・
+  `comms.ft4.rx_capture.Ft4RxCaptureWorker`と同じ設計方針——**素の
+  `threading.Thread`＋コールバック（`QThread`/`Signal`を継承しない）**——を踏襲し、
+  Qtのイベントループなしでテスト可能にした。`urllib.request`で`/api`をポーリング
+  （既存の`*_dialog.py`系ダウンロードワーカーと同じHTTPクライアント流儀）し、
+  接続失敗が`_MAX_CONSECUTIVE_FAILURES`（15回、約6秒）続いた場合のみ一度だけ
+  `on_unavailable`を報告する（SatDumpのHTTPサーバー起動には数秒かかることがある
+  ため、起動直後の失敗は黙ってリトライする）
+- `src/ui/meteor_waterfall.py`（新規）: `MeteorWaterfallWidget`。直近約2分間
+  （`_HISTORY_ROWS=240`行、ポーラーの約2.5Hzポーリングに対応）のローリング
+  ウィンドウを保持し、新しいFFTスナップショットが届くたびに5〜99.5パーセンタイル
+  で正規化して`ui.ft4_waterfall_dialog`と同じパレット（黒→青→緑→黄→赤）で
+  描画する。パレット・色マッピング関数は共有インポートにせず独立コピー
+  （`ft4_waterfall_dialog.py`自身の「無関係な機能を結合させない」という既存の
+  方針を踏襲）
+- `src/ui/meteor_tab.py`: 受信画像表示部を`QTabWidget`化（Image/Waterfallの2タブ）。
+  `SatDumpFftPoller`のコールバックはバックグラウンドスレッドから呼ばれるため、
+  `MeteorTab`自身が持つ非公開Signal（`_fft_frame_received`/`_fft_unavailable`）
+  経由でGUIスレッドへブリッジする（`Ft4Tab`の`period_skipped`と同型のパターン）。
+  ポーラーは`_on_stop()`では止めず、`_on_finished_ok()`/`_on_finished_err()`
+  （SatDumpの`--finish_processing`後処理が実際に終わった時点）まで動かし続ける
+  ——`ImageWatcher`が`_stop_watcher_after_final_poll()`で行っているのと同じ理由
+  （SatDump自身のHTTPサーバーもプロセスが本当に終了するまで生きているため）
+
+#### テスト
+
+`SatDumpFftPoller`はQt非依存のため`tests/test_meteor_fft_waterfall.py`で実際の
+`http.server.HTTPServer`スタブを使い検証（4件・Qt不要）。`MeteorWaterfallWidget`
+は新規QWidgetのため`tests/test_meteor_waterfall_widget.py`で`qtbot`使用（9件、
+本ファイル前掲の「QWidget/QDialogを構築するテストは必ず`qtbot.addWidget()`を
+使うこと」の教訓に従う）。
+
+#### 実機確認（2026-08-20、METEOR-M N2-3、最大仰角約50°のパス）
+
+- ▶ Start押下でWaterfallタブへの自動切替・受信完了でImageタブへの自動切替（12枚の
+  画像・サムネイル表示）とも、想定通り動作することを実機で確認
+- **色分けの見え方**: パーセンタイル正規化は本ウィジェット固有の仕様ではなく、
+  直近ウィンドウ全体を毎回再計算して塗り分けるため「絶対的な信号強度」ではなく
+  「その時点の直近2分間の中での相対順位」を表す。実際のパスでは、EL 13.5°
+  （Lock前）時点では帯全体が赤（＝その時点までの2分間では最強だった）で
+  表示され、EL 51.9°（Lock後）まで仰角が上がりSNRの実ダイナミックレンジが
+  広がると、同じ帯が相対的には中位（緑〜黄）に落ち着き、代わりに瞬間ピークの
+  細い縦線だけが新たに最上位（赤）として浮かび上がる、という遷移が確認できた。
+  この一見「弱い時は赤・強い時は緑」に見える挙動は、固定スケールではなく
+  適応的パーセンタイル正規化を採用したことによる自然な副作用であり、実装上の
+  不具合ではない（同じ設計を採用している既存の`ui.ft4_waterfall_dialog`と
+  挙動は同一）
+- 中央付近に時間軸方向でほぼ動かない細い赤の縦線が2本見えるケースを確認。
+  幅の広い帯（実際のLRPT信号と推定）とは見た目で区別でき、位置が一定な点から
+  RTL-SDR系でよくあるLO漏れ（"DCスパイク"/"birdie"）等、受信機自身が出す
+  固定周波数の妨害成分である可能性が高いと考えられる。周波数較正をしていない
+  ため、正確に中心1ビンにあるのか、それとも中心からずれた別の妨害波なのかは
+  この画面だけでは断定できない
+- **「電波が来ているか」を確認するという当初の目的は達成できていることを確認**
+  （実信号の帯と妨害波は幅・位置の安定性で見た目上区別できるため）。ユーザー
+  判断により、上記の細い赤線を除外する追加対応は行わず現状のまま据え置き
+  （実害が小さいため）
+- 受信完了後の画像自体がノイジーだった点は、最大仰角約50°という低めのパスに
+  よる信号強度不足が主因と考えられ、本機能（Waterfall）とは無関係
