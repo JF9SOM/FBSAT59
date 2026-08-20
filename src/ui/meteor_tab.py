@@ -68,25 +68,40 @@ _THUMB_H = 100
 
 
 def _image_priority(filename: str) -> int:
-    """Rank a SatDump output PNG by how "finished" it looks, higher is better.
+    """Rank a SatDump output PNG by how good an at-a-glance preview it makes.
 
     A single pass writes roughly a dozen PNGs (raw per-channel grayscale,
     several false-color composites with/without color correction, and --
-    only when enough of the swath was captured -- a map-overlaid or fully
-    reprojected/georeferenced version of one composite). Used to pick which
-    file becomes the main preview, both live (see _on_new_image) and when
-    loading a past reception's folder (see _load_images_from_folder), so the
-    choice is a deliberate "most complete image" rather than whatever the
-    filesystem happens to list last.
+    only when enough of the swath was captured -- a map-overlaid and/or
+    fully reprojected/georeferenced version of one composite). Used to pick
+    which file becomes the main preview, both live (see _on_new_image) and
+    when loading a past reception's folder (see _load_images_from_folder).
+
+    "*_map*" files keep the swath's native crop (same frame as the plain
+    composites) with a coastline overlay drawn directly on the received
+    data, so the whole preview area is filled with real imagery -- the
+    best quick look, more so when also color-corrected. "*projected*"
+    files are warped onto a whole-globe canvas so the satellite ends up
+    geographically correct, but only a narrow strip of that canvas
+    actually has data; the rest renders as a mostly-black world map, which
+    makes a poor default preview even though it is arguably the most
+    "complete" product. Confirmed by inspecting actual pixel dimensions:
+    *_map* files match the plain swath size (e.g. 1568x1376), while
+    *_projected* is a fixed whole-globe canvas (4096x2048) regardless of
+    how much of it has real data.
     """
     lower = filename.lower()
     if "projected" in lower:
+        return 0
+    has_map = "_map" in lower
+    has_corrected = "corrected" in lower
+    if has_map and has_corrected:
+        return 4
+    if has_map:
         return 3
-    if "_map" in lower:
+    if has_corrected:
         return 2
-    if "corrected" in lower:
-        return 1
-    return 0
+    return 1
 
 
 def _default_output_dir() -> Path:
