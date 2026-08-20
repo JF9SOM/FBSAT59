@@ -67,6 +67,28 @@ _THUMB_H = 100
 # ---------------------------------------------------------------------------
 
 
+def _image_priority(filename: str) -> int:
+    """Rank a SatDump output PNG by how "finished" it looks, higher is better.
+
+    A single pass writes roughly a dozen PNGs (raw per-channel grayscale,
+    several false-color composites with/without color correction, and --
+    only when enough of the swath was captured -- a map-overlaid or fully
+    reprojected/georeferenced version of one composite). Used to pick which
+    file becomes the main preview, both live (see _on_new_image) and when
+    loading a past reception's folder (see _load_images_from_folder), so the
+    choice is a deliberate "most complete image" rather than whatever the
+    filesystem happens to list last.
+    """
+    lower = filename.lower()
+    if "projected" in lower:
+        return 3
+    if "_map" in lower:
+        return 2
+    if "corrected" in lower:
+        return 1
+    return 0
+
+
 def _default_output_dir() -> Path:
     from PySide6.QtCore import QStandardPaths
 
@@ -254,6 +276,7 @@ class MeteorTab(QWidget):
         self._process: SatDumpProcess | None = None
         self._watcher: ImageWatcher | None = None
         self._output_dir: Path | None = None
+        self._preview_priority: int = -1  # see _image_priority()
         self._suppress_sync: bool = False  # prevents feedback loop during Radio Control sync
         self._log_window: _LogWindow | None = None
         self._log_buffer: deque[str] = deque(maxlen=2000)
@@ -358,9 +381,15 @@ class MeteorTab(QWidget):
         btn_row2 = QHBoxLayout()
         self._btn_open_folder = QPushButton(_("📁 Open Folder"))
         self._btn_open_folder.clicked.connect(self._on_open_folder)
+        self._btn_open_past = QPushButton(_("📂 Open Past Reception…"))
+        self._btn_open_past.setToolTip(
+            _("Load a previous reception's images into the preview and history below.")
+        )
+        self._btn_open_past.clicked.connect(self._on_open_past)
         self._btn_clear = QPushButton(_("🗑 Clear"))
         self._btn_clear.clicked.connect(self._on_clear_history)
         btn_row2.addWidget(self._btn_open_folder)
+        btn_row2.addWidget(self._btn_open_past)
         btn_row2.addWidget(self._btn_clear)
 
         # METEOR-local RF gain override (independent of Rig Settings > SDR
@@ -567,9 +596,11 @@ class MeteorTab(QWidget):
         self._watcher.new_image.connect(self._on_new_image)
         self._watcher.start()
 
+        self._preview_priority = -1
         self._btn_start.setEnabled(False)
         self._btn_stop.setEnabled(True)
         self._btn_sdr_connect.setEnabled(False)
+        self._btn_open_past.setEnabled(False)
         self._combo_sat.setEnabled(False)
         self._progress.setValue(0)
         self._progress.setVisible(True)
@@ -684,6 +715,7 @@ class MeteorTab(QWidget):
         self._btn_start.setEnabled(find_satdump() is not None)
         self._btn_stop.setEnabled(False)
         self._btn_sdr_connect.setEnabled(True)
+        self._btn_open_past.setEnabled(True)
         self._combo_sat.setEnabled(True)
         self._lbl_lock.setText(_("Lock: —"))
 
@@ -727,12 +759,21 @@ class MeteorTab(QWidget):
         if image.isNull():
             return
 
-        self._show_image(image)
-
         label = p.name
         item = _ThumbItem(image, label)
         self._history_list.addItem(item)
-        self._history_list.setCurrentItem(item)
+
+        # A single pass produces roughly a dozen PNGs of varying
+        # completeness (see _image_priority docstring). Only promote the
+        # main preview when this one is at least as "finished" as whatever
+        # is already shown, so e.g. a fully reprojected composite arriving
+        # after a plain per-channel image sticks, rather than the preview
+        # ending on whichever file the OS/SatDump happened to write last.
+        priority = _image_priority(label)
+        if priority >= self._preview_priority:
+            self._preview_priority = priority
+            self._show_image(image)
+            self._history_list.setCurrentItem(item)
 
         self._lbl_status.setText(_("Image received: ") + label)
 
@@ -767,7 +808,59 @@ class MeteorTab(QWidget):
         else:
             subprocess.Popen(["xdg-open", str(folder)])
 
+    def _on_open_past(self) -> None:
+        base_dir = _default_output_dir().parent  # ~/Pictures/fbsat59_meteor
+        base_dir.mkdir(parents=True, exist_ok=True)
+        chosen = QFileDialog.getExistingDirectory(
+            self,
+            _("Open Past Reception"),
+            str(base_dir),
+        )
+        if not chosen:
+            return
+        self._load_images_from_folder(Path(chosen))
+
+    def _load_images_from_folder(self, folder: Path) -> None:
+        """Replace the preview/history with every PNG found under *folder*.
+
+        Used to browse a previous pass's output (see _on_open_past) with
+        the same display the tab shows right after a live reception --
+        image and priority handling mirror _on_new_image().
+        """
+        pngs = sorted(folder.rglob("*.png"))
+        if not pngs:
+            QMessageBox.information(
+                self,
+                _("No Images Found"),
+                _("No PNG images were found in:\n{folder}").format(folder=folder),
+            )
+            return
+
+        self._history_list.clear()
+        self._preview_priority = -1
+        best_item: _ThumbItem | None = None
+        loaded = 0
+        for p in pngs:
+            image = QImage(str(p))
+            if image.isNull():
+                continue
+            loaded += 1
+            item = _ThumbItem(image, p.name)
+            self._history_list.addItem(item)
+            priority = _image_priority(p.name)
+            if priority >= self._preview_priority:
+                self._preview_priority = priority
+                best_item = item
+
+        if best_item is not None:
+            self._history_list.setCurrentItem(best_item)
+
+        self._lbl_status.setText(
+            _("Loaded {n} image(s) from {folder}").format(n=loaded, folder=folder.name)
+        )
+
     def _on_clear_history(self) -> None:
+        self._preview_priority = -1
         self._history_list.clear()
         self._image_label.clear()
         self._image_label.setText(_("No image received yet."))
