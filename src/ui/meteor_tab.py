@@ -50,13 +50,16 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSpinBox,
     QSplitter,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from comms.meteor.fft_waterfall import SatDumpFftPoller, find_free_port
 from comms.meteor.image_watcher import ImageWatcher
 from comms.meteor.satdump import METEOR_PIPELINES, SatDumpProcess, find_satdump
 from i18n import _
+from ui.meteor_waterfall import MeteorWaterfallWidget
 
 _THUMB_W = 160
 _THUMB_H = 100
@@ -279,6 +282,12 @@ class MeteorTab(QWidget):
     # sync the satellite list and Radio Control transponder selection.
     satellite_selection_requested: Signal = Signal(int, int)  # norad, downlink_hz
 
+    # Bridge SatDumpFftPoller's background-thread callbacks (see _on_start)
+    # into this QObject's own thread -- the poller itself is a plain
+    # threading.Thread and must not touch widgets directly.
+    _fft_frame_received: Signal = Signal(object)  # list[float]
+    _fft_unavailable: Signal = Signal(str)
+
     def __init__(
         self,
         sdr_control_tab: QWidget | None = None,
@@ -290,12 +299,15 @@ class MeteorTab(QWidget):
         self._sdr_widget = sdr_widget  # SdrControlWidget instance for disconnect
         self._process: SatDumpProcess | None = None
         self._watcher: ImageWatcher | None = None
+        self._fft_poller: SatDumpFftPoller | None = None
         self._output_dir: Path | None = None
         self._preview_priority: int = -1  # see _image_priority()
         self._suppress_sync: bool = False  # prevents feedback loop during Radio Control sync
         self._log_window: _LogWindow | None = None
         self._log_buffer: deque[str] = deque(maxlen=2000)
         self._setup_ui()
+        self._fft_frame_received.connect(self._waterfall_widget.add_frame)
+        self._fft_unavailable.connect(self._waterfall_widget.show_unavailable)
         self._check_satdump()
 
     # ------------------------------------------------------------------
@@ -386,12 +398,22 @@ class MeteorTab(QWidget):
         image_layout = QVBoxLayout(image_widget)
         image_layout.setContentsMargins(0, 0, 0, 0)
         image_layout.setSpacing(3)
+
+        # Image / Waterfall tabs share this area: SatDump only writes the
+        # decoded image once reception finishes (see satdump.py's
+        # --finish_processing note), so a live-updating waterfall fills
+        # the gap during the (often many-minutes-long) pass instead of
+        # leaving the preview area black the whole time.
+        self._preview_tabs = QTabWidget()
         self._image_label = QLabel(_("No image received yet."))
         self._image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._image_label.setMinimumSize(300, 200)
         self._image_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._image_label.setStyleSheet("border: 1px solid #555; background: #111;")
-        image_layout.addWidget(self._image_label, 1)
+        self._preview_tabs.addTab(self._image_label, _("Image"))
+        self._waterfall_widget = MeteorWaterfallWidget()
+        self._preview_tabs.addTab(self._waterfall_widget, _("Waterfall"))
+        image_layout.addWidget(self._preview_tabs, 1)
 
         btn_row2 = QHBoxLayout()
         self._btn_open_folder = QPushButton(_("📁 Open Folder"))
@@ -588,6 +610,7 @@ class MeteorTab(QWidget):
 
         self._output_dir = _default_output_dir()
 
+        fft_port = find_free_port()
         self._process = SatDumpProcess(
             pipeline=str(pipeline_data["pipeline"]),
             source=source,
@@ -597,6 +620,7 @@ class MeteorTab(QWidget):
             gain=gain,
             ppm=ppm,
             agc=False,
+            fft_http_port=fft_port,
             parent=self,
         )
         self._process.log_line.connect(self._on_log_line)
@@ -610,6 +634,20 @@ class MeteorTab(QWidget):
         self._watcher = ImageWatcher(self._output_dir, parent=self)
         self._watcher.new_image.connect(self._on_new_image)
         self._watcher.start()
+
+        # Start FFT waterfall poller and switch to it -- the Image tab
+        # would otherwise stay blank/stale for the whole pass (see
+        # _preview_tabs' construction comment). A later manual switch back
+        # to Image by the user is respected: this is the only place (other
+        # than completion, below) that changes the current tab.
+        self._waterfall_widget.reset()
+        self._fft_poller = SatDumpFftPoller(
+            fft_port,
+            on_frame=self._fft_frame_received.emit,
+            on_unavailable=self._fft_unavailable.emit,
+        )
+        self._fft_poller.start()
+        self._preview_tabs.setCurrentWidget(self._waterfall_widget)
 
         self._preview_priority = -1
         self._btn_start.setEnabled(False)
@@ -700,6 +738,8 @@ class MeteorTab(QWidget):
         self._lbl_status.setText(_("Reception finished."))
         self._progress.setVisible(False)
         self._stop_watcher_after_final_poll()
+        self._stop_fft_poller()
+        self._preview_tabs.setCurrentWidget(self._image_label)
         self._reset_controls()
         self._reenable_sdr_tab()
 
@@ -711,8 +751,22 @@ class MeteorTab(QWidget):
             self._log_window.append(err_line)
         self._progress.setVisible(False)
         self._stop_watcher_after_final_poll()
+        self._stop_fft_poller()
+        self._preview_tabs.setCurrentWidget(self._image_label)
         self._reset_controls()
         self._reenable_sdr_tab()
+
+    def _stop_fft_poller(self) -> None:
+        """Stop the FFT waterfall poller, if one is running.
+
+        Kept running through _on_stop() (SatDump's own HTTP API stays up
+        until the process actually exits, same reasoning as
+        _stop_watcher_after_final_poll() for the image watcher) and only
+        stopped here, once SatDump has genuinely finished.
+        """
+        if self._fft_poller is not None:
+            self._fft_poller.stop()
+            self._fft_poller = None
 
     def _stop_watcher_after_final_poll(self) -> None:
         """Catch images written between the last timer tick and process exit.
@@ -894,6 +948,7 @@ class MeteorTab(QWidget):
         if self._process is not None and self._process.isRunning() and not self._process.wait(3000):
             self._process.stop(force=True)
             self._process.wait(2000)
+        self._stop_fft_poller()
         self._reenable_sdr_tab()
         if self._log_window is not None:
             self._log_window.destroy()

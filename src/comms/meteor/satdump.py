@@ -109,6 +109,13 @@ METEOR_NORAD_IDS: frozenset[int] = frozenset(
     {35865, 40069, 44387, 57166, 59051, 28654, 33591, 38771, 43689}
 )
 
+# FFT size/rate for the optional --fft_enable waterfall feed (see
+# fft_http_port below). Only meant to answer "is a signal present" -- not
+# tuned for resolution, so kept small and cheap regardless of pipeline
+# sample rate.
+_FFT_SIZE = 512
+_FFT_RATE = 2
+
 
 # ---------------------------------------------------------------------------
 # SatDump discovery
@@ -227,6 +234,7 @@ class SatDumpProcess(QThread):
         gain: int = 40,
         ppm: int = 0,
         agc: bool = False,
+        fft_http_port: int | None = None,
         parent: object | None = None,
     ) -> None:
         super().__init__(parent)  # type: ignore[arg-type]
@@ -238,6 +246,7 @@ class SatDumpProcess(QThread):
         self._gain = gain
         self._ppm = ppm
         self._agc = agc
+        self._fft_http_port = fft_http_port
         self._proc: subprocess.Popen[str] | None = None
 
     # ------------------------------------------------------------------
@@ -297,6 +306,21 @@ class SatDumpProcess(QThread):
         # perfectly locked, well-decoded .cadu file and then exits without
         # ever producing an image, no matter how the process is stopped.
         cmd += ["--finish_processing", "true"]
+        if self._fft_http_port is not None:
+            # SatDump's own live-processing splitter can feed a local HTTP
+            # API with periodic FFT snapshots without disturbing its
+            # exclusive hold on the SDR -- see comms.meteor.fft_waterfall,
+            # which polls this to drive the METEOR tab's Waterfall view.
+            cmd += [
+                "--fft_enable",
+                "true",
+                "--fft_size",
+                str(_FFT_SIZE),
+                "--fft_rate",
+                str(_FFT_RATE),
+                "--http_server",
+                f"127.0.0.1:{self._fft_http_port}",
+            ]
 
         self.log_line.emit("$ " + " ".join(cmd))
 
