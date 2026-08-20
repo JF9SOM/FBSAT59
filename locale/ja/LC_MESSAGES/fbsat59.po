@@ -2706,7 +2706,7 @@ msgstr "📁 フォルダを開く"
 
 #: src/ui/meteor_tab.py:399
 msgid "📂 Open Past Reception…"
-msgstr "📂 過去の受信を開く…"
+msgstr "📂 過去の画像を開く…"
 
 #: src/ui/meteor_tab.py:401
 msgid "Load a previous reception's images into the preview and history below."
@@ -2797,7 +2797,7 @@ msgstr "画像受信: "
 
 #: src/ui/meteor_tab.py:831
 msgid "Open Past Reception"
-msgstr "過去の受信を開く"
+msgstr "過去の画像を開く"
 
 #: src/ui/meteor_tab.py:849
 msgid "No Images Found"
