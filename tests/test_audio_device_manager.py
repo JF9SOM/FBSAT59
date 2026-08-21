@@ -330,7 +330,7 @@ class TestPauseResumeInput:
         mgr.acquire_input("ft4", 5, 48_000, lambda c: None)
         stream = fake_sounddevice.instances[0]
 
-        assert mgr.pause_input(5) is True
+        assert mgr.pause_input(5) == 5
         assert stream.started is False
         assert stream.closed is True
         # Subscriber survives the pause — resume() below relies on this.
@@ -342,15 +342,15 @@ class TestPauseResumeInput:
         mgr = AudioDeviceManager()
         # No acquire_input() call at all -- mirrors RX/TX on different
         # devices, or RX simply not running.
-        assert mgr.pause_input(5) is False
+        assert mgr.pause_input(5) is None
 
-    def test_double_pause_returns_false_second_time(
+    def test_double_pause_returns_none_second_time(
         self, fake_sounddevice: type[_FakeInputStream]
     ) -> None:
         mgr = AudioDeviceManager()
         mgr.acquire_input("ft4", 5, 48_000, lambda c: None)
-        assert mgr.pause_input(5) is True
-        assert mgr.pause_input(5) is False  # nothing left to stop
+        assert mgr.pause_input(5) == 5
+        assert mgr.pause_input(5) is None  # nothing left to stop
 
     def test_resume_reopens_and_audio_flows_again(
         self, fake_sounddevice: type[_FakeInputStream]
@@ -395,6 +395,109 @@ class TestPauseResumeInput:
     def test_resume_on_unknown_device_is_a_noop(self) -> None:
         mgr = AudioDeviceManager()
         mgr.resume_input(5)  # no exception
+
+
+# ---------------------------------------------------------------------------
+# pause_input() same-physical-device fallback — GitHub Issue #26: on an
+# IC-9700, Windows lists the single built-in USB codec's playback and
+# capture directions as *separate* device indices ("Speakers (...)" at #4,
+# "Microphone (...)" at #1), truncated to 31 characters by the legacy MME
+# API. An exact-index match against the TX device therefore never finds the
+# RX stream, even though pausing it is exactly the point.
+# ---------------------------------------------------------------------------
+
+
+def _make_fake_sounddevice_named(
+    monkeypatch: pytest.MonkeyPatch, devices: dict[int, str]
+) -> type[_FakeInputStream]:
+    """Fake sounddevice module whose `query_devices()` mimics the real API
+    for both call forms: no argument returns the full list indexed by
+    device number (what `_validate_input_device()`, invoked by
+    `acquire_input()`, expects); called with an index it returns that one
+    device's info dict (what `_device_display_name()` expects). Every
+    registered device gets generous channel counts so device *validation*
+    never gets in the way of these device-name-matching tests. An index
+    past the end of the list (e.g. a device that's since been unplugged)
+    raises IndexError, same as real PortAudio raising for an unknown
+    index."""
+    _FakeInputStream.instances = []
+    max_index = max(devices) if devices else -1
+    device_list = [
+        {
+            "name": devices.get(i, f"unused #{i}"),
+            "max_input_channels": 2,
+            "max_output_channels": 2,
+        }
+        for i in range(max_index + 1)
+    ]
+
+    def _query_devices(device: int | None = None) -> Any:
+        if device is None:
+            return device_list
+        return device_list[device]
+
+    fake_module = types.SimpleNamespace(InputStream=_FakeInputStream, query_devices=_query_devices)
+    monkeypatch.setitem(sys.modules, "sounddevice", fake_module)
+    return _FakeInputStream
+
+
+class TestPauseInputSamePhysicalDeviceFallback:
+    def test_falls_back_to_matching_rx_stream_by_name(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The exact real-world Issue #26 case: RX on device #1
+        ("Microphone (2- USB Audio CODEC ", MME-truncated to 31 chars), TX
+        requested on device #4 ("Speakers (2- USB Audio CODEC )") — same
+        hardware, different indices."""
+        _make_fake_sounddevice_named(
+            monkeypatch,
+            {1: "Microphone (2- USB Audio CODEC ", 4: "Speakers (2- USB Audio CODEC )"},
+        )
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("ft4", 1, 48_000, lambda c: None)
+
+        paused = mgr.pause_input(4)
+        assert paused == 1  # the RX device, not the TX device passed in
+        assert mgr._inputs[1]._stream is None  # actually paused
+
+    def test_resume_with_the_returned_device_reopens_the_right_stream(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake = _make_fake_sounddevice_named(
+            monkeypatch,
+            {1: "Microphone (2- USB Audio CODEC ", 4: "Speakers (2- USB Audio CODEC )"},
+        )
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("ft4", 1, 48_000, lambda c: None)
+
+        paused = mgr.pause_input(4)
+        assert paused is not None
+        mgr.resume_input(paused)
+        assert mgr._inputs[1]._stream is not None
+        assert fake.instances[-1].started is True
+
+    def test_unrelated_device_names_do_not_match(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _make_fake_sounddevice_named(
+            monkeypatch,
+            {1: "Realtek USB Microphone", 4: "IC-9700 Speakers"},
+        )
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("ft4", 1, 48_000, lambda c: None)
+
+        assert mgr.pause_input(4) is None
+        assert mgr._inputs[1]._stream is not None  # left running, untouched
+
+    def test_failed_name_lookup_never_matches(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A device index missing from the fake's table mimics
+        query_devices() raising/failing for real hardware that's since been
+        unplugged — must not crash, and must not treat two failed lookups
+        (both normalizing to "") as a match."""
+        _make_fake_sounddevice_named(monkeypatch, {1: "Microphone (Some Device)"})
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("ft4", 1, 48_000, lambda c: None)
+
+        assert mgr.pause_input(99) is None  # device 99 has no entry -> name ""
+        assert mgr._inputs[1]._stream is not None
 
 
 # ---------------------------------------------------------------------------

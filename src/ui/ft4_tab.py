@@ -191,21 +191,24 @@ class _TxWorker(QObject):
         # IC-9700's) has been observed to stall the whole audio pipeline
         # for several seconds at a time on Windows. Briefly pausing RX for
         # the span this TX stream is open avoids that concurrent-open
-        # condition. No-op when RX is on a different device or has no
-        # subscribers, in which case rx_paused stays False.
+        # condition.
         #
-        # A reported-fixed run still saw TX "stick on"; nothing logs how
-        # long pause_input()/resume_input()/set_ptt() actually take, so
-        # there's no way to tell from a log alone whether the stall moved
-        # to the RX stream reopen (resume_input, likely on the same flaky
-        # single-codec device) or somewhere in the PTT CAT round-trip.
-        # These timings close that gap for the next report.
+        # An exact-index match against RX often fails even when RX and TX
+        # really are the same physical hardware -- Windows enumerates a
+        # single USB codec's playback/capture directions as *separate*
+        # device indices (confirmed via this device-name logging on an
+        # IC-9700: "Speakers (...)" vs "Microphone (...)"). pause_input()
+        # falls back to a same-hardware name match in that case, so
+        # `paused_device` is not necessarily `self._out_device` -- it must
+        # be passed back to resume_input() as-is. None means nothing was
+        # paused at all (RX genuinely on unrelated hardware, or not
+        # running).
         log = get_ft4_decode_logger()
         t0 = time.monotonic()
-        rx_paused = mgr.pause_input(self._out_device)
+        paused_device = mgr.pause_input(self._out_device)
         log.info(
             "tx pause_input rx_paused=%s duration=%.3fs out_device=%s in_device=%s",
-            rx_paused,
+            paused_device is not None,
             time.monotonic() - t0,
             _device_name(self._out_device),
             _device_name(self._in_device),
@@ -292,9 +295,9 @@ class _TxWorker(QObject):
                     self._rig.set_ptt(False)
             self.error.emit(str(exc))
         finally:
-            if rx_paused:
+            if paused_device is not None:
                 t0 = time.monotonic()
-                mgr.resume_input(self._out_device)
+                mgr.resume_input(paused_device)
                 log.info("tx resume_input duration=%.3fs", time.monotonic() - t0)
             mgr.release_output(_AUDIO_OWNER, self._out_device)
 
