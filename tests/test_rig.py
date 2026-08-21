@@ -493,70 +493,81 @@ class TestGenericDirectUlWriteVfoRestore:
         ctrl._rig.set_vfo.assert_not_called()
 
 
-class TestSatmodeCrossBandMainDisplayRestore:
-    """GitHub Issue #25: after the periodic satmode cross-band UL write
-    (Sub), IC-9700's own front-panel display/waterfall stays stuck on Sub
-    until restored to Main -- unlike the same-band and generic-rig
-    branches, which already call set_vfo() to restore the display. This
-    restore is intentionally restricted to IC-9700 (_SATMODE_USE_VFO_SUB)
-    only: the same explicit set_vfo() churn on this branch was found to
-    hang the app on IC-9100 (2026-07-22 investigation, see CLAUDE.md)."""
+class TestIc9700ScopeSelectRestore:
+    """GitHub Issue #25: IC-9700's front-panel spectrum scope/waterfall
+    tracks a separate, persistent CI-V setting (27 12, "Main/Sub scope
+    setting") that is entirely independent of VFO-select (07). An earlier
+    fix that called Hamlib's set_vfo(MAIN) on every periodic Doppler UL
+    write succeeded on every call (confirmed live: 114/114) yet never
+    moved the displayed scope, because 07 was simply the wrong command.
+    The real fix sends CI-V 27 12 00 once, piggybacked on the existing
+    pyserial window _send_sub_mode_civ_pyserial() already opens for the
+    Sub DATA-mode-flag fix (GitHub Issue #16) -- since this is a
+    persistent rig setting, not a transient display state, one send at
+    transponder selection (Stage 1) is enough; no per-cycle repeat is
+    needed. Restricted to IC-9700 (_SATMODE_USE_VFO_SUB) only, since this
+    command has not been verified on IC-9100/910H/821H."""
 
-    def _make_satmode_ctrl(self, model_id: int) -> HamlibDirectController:
-        ctrl = HamlibDirectController(model_id=model_id, port="/dev/null")
-        ctrl._rig = MagicMock()
-        fake_hamlib = MagicMock()
-        fake_hamlib.RIG_VFO_MAIN = 4194304
-        fake_hamlib.RIG_VFO_SUB = 8388608
-        fake_hamlib.RIG_VFO_TX = 16777216
-        ctrl._hamlib = fake_hamlib
-        ctrl._rig.error_status = 0
-        with ctrl._lock:
-            ctrl._state = RigState.CONNECTED
-        return ctrl
+    class _FakeSerial:
+        """Records every frame written, and ACKs each one immediately
+        (this suite only cares about which frames get sent, not their
+        reply payloads -- unlike the mode/DATA-flag tests elsewhere,
+        which parse the readback)."""
 
-    def test_ic9700_restores_main_display_after_ul_write(self) -> None:
-        ctrl = self._make_satmode_ctrl(model_id=3081)  # IC-9700
-        assert ctrl.set_vfo_frequencies(435_612_000.0, 145_993_000.0) is True
-        ctrl._rig.set_freq.assert_any_call(8388608, 145_993_000)  # RIG_VFO_SUB
-        ctrl._rig.set_vfo.assert_called_once_with(4194304)  # RIG_VFO_MAIN
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            self.written: list[bytes] = []
+            self._last_write = b""
 
-    def test_ic9100_does_not_restore_main_display_after_ul_write(self) -> None:
-        """IC-9100 is not in _SATMODE_USE_VFO_SUB -- must not gain the extra
-        set_vfo() call, which is what previously hung the app on this model."""
-        ctrl = self._make_satmode_ctrl(model_id=3068)  # IC-9100
-        assert ctrl.set_vfo_frequencies(435_612_000.0, 145_993_000.0) is True
-        ctrl._rig.set_freq.assert_any_call(16777216, 145_993_000)  # RIG_VFO_TX
-        ctrl._rig.set_vfo.assert_not_called()
+        def write(self, data: bytes) -> None:
+            self._last_write = bytes(data)
+            self.written.append(self._last_write)
 
-    def test_ic9700_restore_failure_does_not_break_doppler_tracking(self) -> None:
-        """The display restore is best-effort -- a failure must not make the
-        overall frequency update report failure or stop caching the UL value
-        that was already successfully written."""
-        ctrl = self._make_satmode_ctrl(model_id=3081)  # IC-9700
-        ctrl._rig.set_vfo.side_effect = RuntimeError("CI-V busy")
-        assert ctrl.set_vfo_frequencies(435_612_000.0, 145_993_000.0) is True
-        assert ctrl._last_ul_hz == 145_993_000.0
+        def flush(self) -> None:
+            pass
 
-    def test_ic9700_restore_rejected_by_rig_is_detected_not_silently_swallowed(self) -> None:
-        """A CI-V rejection by the rig does NOT raise a Python exception --
-        Hamlib's binding returns None from set_vfo() regardless of outcome
-        (see _check_rig_ok()'s docstring) and only sets rig.error_status.
-        A bare try/except around set_vfo() alone (the first version of this
-        fix) would silently believe the restore succeeded. This confirms
-        _check_rig_ok() is actually consulted: overall tracking must still
-        succeed (best-effort), but the rejection must be detectable."""
-        ctrl = self._make_satmode_ctrl(model_id=3081)  # IC-9700
+        def read_until(self, _terminator: bytes = b"\xfd") -> bytes:
+            # Every reply is a plausible-looking ACK/readback frame; the
+            # generic tail byte (0x06 for mode/data queries) is harmless
+            # for frames this suite doesn't inspect the contents of.
+            return bytes([0xFE, 0xFE, 0xE0, 0xA2, self._last_write[4], 0x00, 0xFD])
 
-        def _reject_restore(_vfo: int) -> None:
-            ctrl._rig.error_status = -9  # RIG_EREJECTED, confirmed live on IC-9100
+        def close(self) -> None:
+            pass
 
-        ctrl._rig.set_vfo.side_effect = _reject_restore
-        assert ctrl.set_vfo_frequencies(435_612_000.0, 145_993_000.0) is True
-        ctrl._rig.set_vfo.assert_called_once_with(4194304)  # RIG_VFO_MAIN attempted
-        # The UL frequency write itself (already committed before the
-        # restore attempt) must remain cached as successful.
-        assert ctrl._last_ul_hz == 145_993_000.0
+    def _make_ctrl(self, model_id: int) -> HamlibDirectController:
+        return HamlibDirectController(model_id=model_id, port="/dev/null", baud_rate=19200)
+
+    def _run_and_capture_frames(self, ctrl: HamlibDirectController) -> list[bytes]:
+        fake_serial_module = MagicMock()
+        instances: list[TestIc9700ScopeSelectRestore._FakeSerial] = []
+
+        def _make_fake(*args: object, **kwargs: object) -> TestIc9700ScopeSelectRestore._FakeSerial:
+            inst = TestIc9700ScopeSelectRestore._FakeSerial(*args, **kwargs)
+            instances.append(inst)
+            return inst
+
+        fake_serial_module.Serial.side_effect = _make_fake
+        with patch.dict("sys.modules", {"serial": fake_serial_module}):
+            ctrl._send_sub_mode_civ_pyserial("USB")
+        assert len(instances) == 1
+        return instances[0].written
+
+    def test_ic9700_sends_scope_select_main_once(self) -> None:
+        ctrl = self._make_ctrl(model_id=3081)  # IC-9700
+        frames = self._run_and_capture_frames(ctrl)
+        scope_frames = [f for f in frames if len(f) >= 6 and f[4] == 0x27 and f[5] == 0x12]
+        assert len(scope_frames) == 1
+        assert scope_frames[0] == bytes([0xFE, 0xFE, 0xA2, 0xE0, 0x27, 0x12, 0x00, 0xFD])
+        # Sent last, after the 07 D0 (Select Main) restore.
+        assert frames[-1] == scope_frames[0]
+
+    def test_ic9100_does_not_send_scope_select(self) -> None:
+        """IC-9100 is not in _SATMODE_USE_VFO_SUB -- this command has not
+        been verified against that rig, so it must not be sent."""
+        ctrl = self._make_ctrl(model_id=3068)  # IC-9100
+        frames = self._run_and_capture_frames(ctrl)
+        scope_frames = [f for f in frames if len(f) >= 6 and f[4] == 0x27 and f[5] == 0x12]
+        assert scope_frames == []
 
 
 class TestPttDopplerFreeze:

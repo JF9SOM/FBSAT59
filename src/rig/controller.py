@@ -1373,6 +1373,12 @@ class HamlibDirectController(RigController):
         process (stack smashing in the Python SWIG binding — see
         CLAUDE.md). Plain pyserial has no such crash risk.
 
+        For IC-9700 only (_SATMODE_USE_VFO_SUB), also sends CI-V 27 12
+        00 ("Scope select: Main") once at the end of this same pyserial
+        window — see GitHub Issue #25. This is a separate, persistent
+        rig setting for which VFO's spectrum scope/waterfall is shown,
+        independent of the 07 VFO-select commands used above/below.
+
         Caller must close the Hamlib session on self._port BEFORE calling
         this (pyserial needs exclusive access), and must reopen a fresh
         Hamlib session afterward to continue. Expected to run while
@@ -1455,6 +1461,26 @@ class HamlibDirectController(RigController):
             )
 
             send(ser, frame(0x07, 0xD0))  # Select Main (restore)
+
+            if self._model_id in _SATMODE_USE_VFO_SUB:
+                # GitHub Issue #25: IC-9700's front-panel spectrum
+                # scope/waterfall tracks a separate, persistent hardware
+                # setting -- CI-V command 27, sub-command 12 ("Send/read
+                # the Main or Sub scope setting", data 00=Main/01=Sub per
+                # the official IC-9700 CI-V Reference Guide) -- entirely
+                # independent of the VFO-select command (07) above, which
+                # only changes which VFO subsequent read/write commands
+                # address. An earlier fix that repeatedly called Hamlib's
+                # set_vfo(MAIN) on every periodic Doppler UL write
+                # succeeded on every single call (confirmed live: 114/114
+                # successes logged) yet never changed the displayed
+                # scope, because 07 was simply the wrong command for
+                # this. Sent once here at transponder selection (Stage 1)
+                # rather than every Doppler cycle: this is a persistent
+                # rig setting, not a transient display state that
+                # follows VFO select, so nothing else moves it back on
+                # its own.
+                send(ser, frame(0x27, 0x12, 0x00))  # Scope select: Main
         finally:
             ser.close()
 
@@ -1749,59 +1775,7 @@ class HamlibDirectController(RigController):
                             self._last_written_vfo = "Sub"
                             if was_first_ul and self._pending_mode_ctcss:
                                 self._pending_mode_ctcss = False
-                                # _resend_mode_ctcss_via_rig() already ends
-                                # with set_vfo(MAIN), so skip the restore
-                                # below to avoid a redundant CI-V call.
                                 self._resend_mode_ctcss_via_rig()
-                            elif self._model_id in _SATMODE_USE_VFO_SUB:
-                                # GitHub Issue #25: IC-9700's own front-panel
-                                # display/waterfall follows whichever VFO
-                                # Hamlib last explicitly selected. Left on
-                                # Sub after this write, the rig keeps
-                                # showing the Sub passband instead of Main
-                                # (where satellite signals actually are)
-                                # until the user flips it back by hand.
-                                # Restrict to IC-9700 only (_SATMODE_USE_VFO_SUB):
-                                # explicit set_vfo() churn on this same
-                                # satmode cross-band branch was found to hang
-                                # the app on IC-9100 (2026-07-22 investigation,
-                                # see CLAUDE.md "Ctrl+Lで「Python is not
-                                # responding」" section) because IC-9100's
-                                # non-targetable freq path forces repeated
-                                # internal VFO swaps that the rig rejected.
-                                # IC-9700 already uses set_vfo(MAIN) safely
-                                # elsewhere in this same satmode context
-                                # (Stage 1/2 above), so a single explicit
-                                # restore call here follows an established,
-                                # already-verified-safe pattern for this
-                                # model. Best-effort: a failure here must
-                                # not break Doppler frequency tracking, so
-                                # it is caught and logged rather than
-                                # propagated like the freq writes above.
-                                #
-                                # _check_rig_ok() is required here, not just
-                                # a bare try/except: Hamlib's Python binding
-                                # returns None from set_vfo() regardless of
-                                # outcome (see _check_rig_ok()'s docstring),
-                                # so a CI-V rejection by the rig would
-                                # otherwise fail completely silently -- no
-                                # exception, no log -- leaving the display
-                                # stuck on Sub with no visibility into why.
-                                try:
-                                    self._rig.set_vfo(main_vfo)
-                                    _check_rig_ok(
-                                        self._rig, "satmode UL: set_vfo(MAIN) display restore"
-                                    )
-                                except Exception as exc:
-                                    logger.warning(
-                                        "RigDirect satmode UL: set_vfo(MAIN) "
-                                        "display restore failed: %s",
-                                        exc,
-                                    )
-                                else:
-                                    logger.info(
-                                        "RigDirect satmode UL: set_vfo(MAIN) display restore OK"
-                                    )
 
             else:
                 rx_vfo = self._vfo_str_to_const("VFOA")
