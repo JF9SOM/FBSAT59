@@ -169,7 +169,17 @@ class _TxWorker(QObject):
         # the span this TX stream is open avoids that concurrent-open
         # condition. No-op when RX is on a different device or has no
         # subscribers, in which case rx_paused stays False.
+        #
+        # A reported-fixed run still saw TX "stick on"; nothing logs how
+        # long pause_input()/resume_input()/set_ptt() actually take, so
+        # there's no way to tell from a log alone whether the stall moved
+        # to the RX stream reopen (resume_input, likely on the same flaky
+        # single-codec device) or somewhere in the PTT CAT round-trip.
+        # These timings close that gap for the next report.
+        log = get_ft4_decode_logger()
+        t0 = time.monotonic()
         rx_paused = mgr.pause_input(self._out_device)
+        log.info("tx pause_input rx_paused=%s duration=%.3fs", rx_paused, time.monotonic() - t0)
         try:
             import sounddevice as sd  # optional dep
 
@@ -180,7 +190,10 @@ class _TxWorker(QObject):
                 # long to hold the VFOs still -- doing so smears our signal
                 # across the passband. Keep correcting right through TX
                 # (GitHub Issue #16).
-                if not self._rig.set_ptt(True, freeze_doppler=False):
+                t0 = time.monotonic()
+                ptt_ok = self._rig.set_ptt(True, freeze_doppler=False)
+                log.info("tx ptt_on ok=%s duration=%.3fs", ptt_ok, time.monotonic() - t0)
+                if not ptt_ok:
                     self.error.emit(_("PTT command failed — check Rig 1 connection"))
                     return
                 time.sleep(0.15)  # PTT lead time
@@ -223,7 +236,9 @@ class _TxWorker(QObject):
 
             if self._rig is not None:
                 time.sleep(0.10)  # PTT tail time
+                t0 = time.monotonic()
                 self._rig.set_ptt(False)
+                log.info("tx ptt_off duration=%.3fs", time.monotonic() - t0)
 
             self.finished.emit()
         except Exception as exc:
@@ -233,7 +248,9 @@ class _TxWorker(QObject):
             self.error.emit(str(exc))
         finally:
             if rx_paused:
+                t0 = time.monotonic()
                 mgr.resume_input(self._out_device)
+                log.info("tx resume_input duration=%.3fs", time.monotonic() - t0)
             mgr.release_output(_AUDIO_OWNER, self._out_device)
 
 
