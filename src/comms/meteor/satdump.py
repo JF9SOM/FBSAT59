@@ -175,25 +175,51 @@ def _send_graceful_stop_windows(pid: int) -> bool:
     "Signal Received. Stopping." log line) instead of the process being
     hard-killed via TerminateProcess before it can write out anything.
 
+    GenerateConsoleCtrlEvent broadcasts to *every* process sharing the
+    attached console, including this one once AttachConsole() joins it.
+    Per Microsoft's docs, CTRL+BREAK signals cannot be ignored --
+    SetConsoleCtrlHandler(NULL, TRUE) only suppresses CTRL_C_EVENT, never
+    CTRL_BREAK_EVENT -- so without a real handler that returns TRUE here,
+    the OS's default handler runs ExitProcess() on *this* process the
+    moment the event fires.
+
     Returns True if the event was raised, False if any step failed (in
     which case the caller should fall back to a hard kill).
     """
     import ctypes
+    import ctypes.wintypes
+    import time
 
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
     _CTRL_BREAK_EVENT = 1
+
+    handler_routine_t = ctypes.WINFUNCTYPE(  # type: ignore[attr-defined]
+        ctypes.wintypes.BOOL, ctypes.wintypes.DWORD
+    )
+
+    def _swallow_ctrl_event(_ctrl_type: int) -> bool:
+        return True  # mark handled so the default handler doesn't ExitProcess() us
+
+    # Keep a reference alive for the whole function -- CFUNCTYPE callback
+    # objects are garbage-collected like anything else, and Windows would
+    # be calling into freed memory if this one were.
+    handler = handler_routine_t(_swallow_ctrl_event)
 
     kernel32.FreeConsole()  # detach from our own console, if we have one
     if not kernel32.AttachConsole(pid):
         return False
     try:
-        # Ignore the event in this (briefly attached) process so it
-        # doesn't also try to shut *this* process down.
-        kernel32.SetConsoleCtrlHandler(None, True)
-        return bool(kernel32.GenerateConsoleCtrlEvent(_CTRL_BREAK_EVENT, 0))
+        if not kernel32.SetConsoleCtrlHandler(handler, True):
+            return False
+        ok = bool(kernel32.GenerateConsoleCtrlEvent(_CTRL_BREAK_EVENT, 0))
+        # Delivery happens asynchronously on a separate OS thread; give it
+        # a moment to reach our handler before unregistering below, or an
+        # event still in flight could fall through to the default one.
+        time.sleep(0.2)
+        return ok
     finally:
+        kernel32.SetConsoleCtrlHandler(handler, False)
         kernel32.FreeConsole()
-        kernel32.SetConsoleCtrlHandler(None, False)
 
 
 # ---------------------------------------------------------------------------
