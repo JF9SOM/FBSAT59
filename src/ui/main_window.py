@@ -2106,16 +2106,24 @@ class MainWindow(QMainWindow):
 
         if self._pass_predictor is None:
             return
+        # Deliberately not passing cached_elevations=self._last_elevations here:
+        # that cache is only refreshed while Dashboard/World Map is the active
+        # tab (see _update_world_map()'s _is_map_tab_active() guard), so it
+        # freezes at whatever elevation the tracked satellite had the moment
+        # the user switched to e.g. the METEOR/HRPT tab -- AutotrackManager
+        # would then keep trusting that stale "still above min_el" reading
+        # forever and never detect LOS. Autotrack lists are small (usually
+        # one satellite), so a live per-tick observe() here is cheap.
         result = self._autotrack.check(
             self._engine,
             self._pass_predictor,
-            cached_elevations=self._last_elevations,
         )
         if result is None:
             # No satellite to switch to — check if currently tracked one is still visible
             # to manage auto connect/disconnect and recording
             if self._autotrack_tracking_norad is not None:
-                el = self._last_elevations.get(self._autotrack_tracking_norad, -90.0)
+                obs = self._engine.observe(self._autotrack_tracking_norad)
+                el = obs.elevation_deg if obs is not None else -90.0
                 if el < 0:
                     self._autotrack_on_los()
 
