@@ -114,6 +114,21 @@ _AUDIO_OWNER = "FT4"
 _TX_BLOCK_SIZE = 240
 
 
+def _device_name(device: int | None) -> str:
+    """Best-effort "#index name" label for a sounddevice device index, for
+    diagnostic logging only (GitHub Issue #26) -- never raises, since a
+    logging helper must not be able to break the TX path it's observing."""
+    if device is None:
+        return "default"
+    try:
+        import sounddevice as sd
+
+        info = sd.query_devices(device)
+        return f"#{device} {info.get('name', '?')}"
+    except Exception:
+        return f"#{device} <unknown>"
+
+
 # ---------------------------------------------------------------------------
 # Worker: TX audio output (runs in daemon thread to avoid blocking the UI)
 # ---------------------------------------------------------------------------
@@ -144,11 +159,20 @@ class _TxWorker(QObject):
         out_device: int | None,
         rig: Any,
         get_gain: Callable[[], float],
+        in_device: int | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self._audio = audio
         self._out_device = out_device
+        # RX device, for diagnostic logging only (GitHub Issue #26) --
+        # pause_input(out_device) silently no-ops when RX and TX resolve to
+        # different device indices, which Windows does even for a single
+        # physical USB codec (separate "Microphone"/"Speakers" entries for
+        # the same hardware). Logging both device names next to each other
+        # is the only way to tell that apart from RX genuinely being on
+        # unrelated hardware.
+        self._in_device = in_device
         self._rig = rig
         self._get_gain = get_gain
 
@@ -179,7 +203,13 @@ class _TxWorker(QObject):
         log = get_ft4_decode_logger()
         t0 = time.monotonic()
         rx_paused = mgr.pause_input(self._out_device)
-        log.info("tx pause_input rx_paused=%s duration=%.3fs", rx_paused, time.monotonic() - t0)
+        log.info(
+            "tx pause_input rx_paused=%s duration=%.3fs out_device=%s in_device=%s",
+            rx_paused,
+            time.monotonic() - t0,
+            _device_name(self._out_device),
+            _device_name(self._in_device),
+        )
         try:
             import sounddevice as sd  # optional dep
 
@@ -221,6 +251,16 @@ class _TxWorker(QObject):
                 if remaining <= frames:
                     raise sd.CallbackStop()
 
+            # GitHub Issue #26: a report with pause_input()/set_ptt() both
+            # logging fine still ended in the whole app freezing solid right
+            # after "tx ptt_on" -- with a *different*, unrelated background
+            # thread (Doppler tracking) also going silent at the very same
+            # instant, which points to a GIL-blocking native call somewhere
+            # in opening/starting/playing this stream, not a lock deadlock
+            # between our own Python objects. These three checkpoints (spans
+            # not previously distinguished by any log line) narrow down
+            # which of open/start/playback it's actually stuck in.
+            t0 = time.monotonic()
             stream = sd.OutputStream(
                 samplerate=SAMPLE_RATE,
                 device=self._out_device,
@@ -230,9 +270,14 @@ class _TxWorker(QObject):
                 callback=_callback,
                 finished_callback=done.set,
             )
+            log.info("tx stream_open duration=%.3fs", time.monotonic() - t0)
+            t0 = time.monotonic()
             with stream:
+                log.info("tx stream_started duration=%.3fs", time.monotonic() - t0)
                 mgr.pin_active_output(_AUDIO_OWNER)
+                t0 = time.monotonic()
                 done.wait()
+                log.info("tx playback_done duration=%.3fs", time.monotonic() - t0)
 
             if self._rig is not None:
                 time.sleep(0.10)  # PTT tail time
@@ -1176,7 +1221,11 @@ class Ft4Tab(QWidget):
         # transmitting, to avoid rig ALC action / distortion (Issue #16).
         rig = self._rig1()
         worker = _TxWorker(
-            audio, self._out_device, rig, get_gain=lambda: self._tx_level_pct / 100.0
+            audio,
+            self._out_device,
+            rig,
+            get_gain=lambda: self._tx_level_pct / 100.0,
+            in_device=self._in_device,
         )
         worker.finished.connect(self._on_tx_finished)
         worker.error.connect(self._on_tx_error)
