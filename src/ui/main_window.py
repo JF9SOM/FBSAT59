@@ -23,7 +23,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, TypedDict
 
 import httpx
-from PySide6.QtCore import QPoint, Qt, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import QObject, QPoint, Qt, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -502,6 +502,45 @@ class DopplerDisplayUpdate:
     ctcss_display: float | None
 
 
+class _AutotrackWarmupWorker(QObject):
+    """One-shot background warm-up of pass predictions for an Autotrack List.
+
+    AutotrackManager.check() calls PassPredictor.get_passes() for each listed
+    satellite on every tick, but it refuses to run at all until
+    mark_searches_ready() has been called at least once (see
+    AutotrackManager.is_ready). That originally required the user to run a
+    separate manual Group-tab pass search first -- an undocumented
+    prerequisite that, when skipped, left Autotrack silently never firing
+    AOS/LOS (GitHub Issue #27). Since get_passes() itself is thread-safe and
+    doesn't depend on anything the Group tab computed, this worker calls it
+    once per satellite off the UI thread so MainWindow can call
+    mark_searches_ready() automatically as soon as it's confirmed to work,
+    instead of requiring that extra manual step.
+
+    Lives in a plain Python thread (not QThread) — same pattern as
+    ft4_tab._TxWorker — since run() just needs to make a few blocking calls
+    and return; no event loop is needed inside the worker.
+    """
+
+    done = Signal(bool, str)  # (ok, error_message)
+
+    def __init__(self, predictor: PassPredictor, norads: list[int]) -> None:
+        super().__init__()
+        self._predictor = predictor
+        self._norads = norads
+
+    def run(self) -> None:
+        now = datetime.now(UTC)
+        end = now + timedelta(hours=24)
+        try:
+            for norad in self._norads:
+                self._predictor.get_passes(norad, start=now, end=end)
+        except Exception as exc:  # noqa: BLE001
+            self.done.emit(False, str(exc))
+            return
+        self.done.emit(True, "")
+
+
 # ---------------------------------------------------------------------------
 # MainWindow
 # ---------------------------------------------------------------------------
@@ -715,6 +754,9 @@ class MainWindow(QMainWindow):
         self._autotrack_iq_record: bool = False
         self._autotrack_meteor_record: bool = False
         self._autotrack_tracking_norad: int | None = None  # NORAD of currently auto-tracked sat
+        # Background warm-up of pass predictions (see _start_autotrack_warmup)
+        self._autotrack_warmup_worker: _AutotrackWarmupWorker | None = None
+        self._autotrack_warmup_gen: int = 0
 
         from PySide6.QtWidgets import QApplication
 
@@ -2187,21 +2229,82 @@ class MainWindow(QMainWindow):
         self._autotrack_enabled = enabled
         self._radio_control.set_autotrack_indicator(enabled)
         if not enabled:
+            self._invalidate_autotrack_warmup()
             self._autotrack.reset()
             self._at_dialog.set_autotrack_status("—")
             self._autotrack_tracking_norad = None
         else:
-            if not self._autotrack.is_ready:
-                self._at_dialog.set_autotrack_status(_("Run a pass search first"), ok=False)
+            self._start_autotrack_warmup(silent_if_empty=False)
 
     def _on_autotrack_list_changed(self, list_id: object) -> None:
         """Called when the user selects a different Autotrack List."""
         lid = int(list_id) if isinstance(list_id, int) else None
+        self._invalidate_autotrack_warmup()
         self._autotrack.set_list(lid)
         self._autotrack_enabled = False
         self._at_dialog.set_autotrack_enabled(False)
         self._at_dialog.set_autotrack_status("—")
         self._radio_control.set_autotrack_indicator(False)
+        # Warm up in the background as soon as a list is picked, not just
+        # when Enable Autotrack is checked — this way the Autotrack Timer's
+        # own auto-enable path (_check_autotrack()'s `elif is_ready:` branch)
+        # also has a warmed-up predictor by the time its start time arrives,
+        # without the user needing to check the box manually first.
+        self._start_autotrack_warmup(silent_if_empty=True)
+
+    def _invalidate_autotrack_warmup(self) -> None:
+        """Bump the warm-up generation so any in-flight worker's result is ignored.
+
+        Called whenever the selected list changes or Autotrack is disabled,
+        so a stale _AutotrackWarmupWorker.done arriving afterwards can't call
+        mark_searches_ready() for a list the user has already moved away from.
+        """
+        self._autotrack_warmup_gen += 1
+        self._autotrack_warmup_worker = None
+
+    def _start_autotrack_warmup(self, *, silent_if_empty: bool) -> None:
+        """Warm up pass predictions for the selected Autotrack List's satellites.
+
+        Runs PassPredictor.get_passes() for each listed satellite on a
+        background thread and calls AutotrackManager.mark_searches_ready()
+        once that succeeds — see _AutotrackWarmupWorker for why this replaces
+        the old requirement that the user run a manual Group-tab pass search
+        before Autotrack would do anything (GitHub Issue #27).
+
+        No-ops if already warmed up, already in flight, or the list is empty
+        (in which case *silent_if_empty* controls whether the existing
+        "Run a pass search first" status message is shown — suppressed when
+        called just because the list selection changed, shown when the user
+        explicitly checked Enable Autotrack with nothing to track).
+        """
+        if self._autotrack.is_ready or self._autotrack_warmup_worker is not None:
+            return
+        entries = self._autotrack.entries()
+        if self._pass_predictor is None or not entries:
+            if not silent_if_empty:
+                self._at_dialog.set_autotrack_status(_("Run a pass search first"), ok=False)
+            return
+        self._at_dialog.set_autotrack_status(_("Preparing pass predictions…"), ok=True)
+        norads = [e.norad_cat_id for e in entries]
+        gen = self._autotrack_warmup_gen
+        worker = _AutotrackWarmupWorker(self._pass_predictor, norads)
+        worker.done.connect(lambda ok, err, gen=gen: self._on_autotrack_warmup_done(gen, ok, err))
+        self._autotrack_warmup_worker = worker
+        threading.Thread(target=worker.run, daemon=True).start()
+
+    def _on_autotrack_warmup_done(self, gen: int, ok: bool, err: str) -> None:
+        if gen != self._autotrack_warmup_gen:
+            return  # stale: list changed, or Autotrack was toggled off/on since
+        self._autotrack_warmup_worker = None
+        if not ok:
+            logger.warning("Autotrack pass-prediction warm-up failed: %s", err)
+            self._at_dialog.set_autotrack_status(
+                _("Pass prediction failed — check TLE data"), ok=False
+            )
+            return
+        self._autotrack.mark_searches_ready()
+        if self._autotrack_enabled:
+            self._at_dialog.set_autotrack_status(_("Autotrack ready"), ok=True)
 
     def _on_autotrack_audio_record_changed(self, enabled: bool) -> None:
         self._autotrack_audio_record = enabled

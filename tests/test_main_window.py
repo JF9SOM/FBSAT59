@@ -4532,3 +4532,220 @@ class TestRefreshSatelliteNamesSyncConnectivityCheck:
 
         sync_names_mock.assert_awaited_once()
         assert not any("Cannot connect to" in m for m in received)
+
+
+# ---------------------------------------------------------------------------
+# Autotrack pass-prediction warm-up (GitHub Issue #27)
+# ---------------------------------------------------------------------------
+
+
+class TestAutotrackWarmup:
+    """_start_autotrack_warmup() / _on_autotrack_warmup_done().
+
+    Before this, enabling Autotrack did nothing at all -- silently -- unless
+    the user had separately run a manual Group-tab pass search first, because
+    AutotrackManager.is_ready requires mark_searches_ready() to have been
+    called and nothing but that manual search ever called it. This warm-up
+    calls PassPredictor.get_passes() for the selected list's satellites on a
+    background thread and calls mark_searches_ready() automatically once
+    that's confirmed to work.
+    """
+
+    class _SyncThread:
+        """Runs the target synchronously instead of spawning a real thread,
+        matching the pattern in TestLockDialFeedback._SyncThread."""
+
+        def __init__(self, target=None, daemon=None, **kwargs) -> None:
+            self._target = target
+
+        def start(self) -> None:
+            if self._target is not None:
+                self._target()
+
+    def _make_window(self, qtbot, db):
+        from data.tle_manager import TLEManager
+        from ui.main_window import MainWindow
+
+        tle_manager = TLEManager(db)
+        w = MainWindow(conn=db, tle_manager=tle_manager)
+        qtbot.addWidget(w)
+        return w
+
+    def _add_list_with_entry(self, db, norad: int = 57166) -> int:
+        from core.autotrack import AutotrackManager
+
+        list_id = AutotrackManager.create_list(db, "Test List")
+        AutotrackManager.add_entry(db, list_id, norad, "test-xpdr-uuid")
+        return list_id
+
+    def _status_text(self, w) -> str:
+        return str(w._at_dialog._at_status_label.text())
+
+    def test_warmup_marks_ready_on_success(self, qtbot, db) -> None:
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        list_id = self._add_list_with_entry(db)
+        w._autotrack.set_list(list_id)
+        w._pass_predictor = MagicMock()
+        w._pass_predictor.get_passes.return_value = []
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._start_autotrack_warmup(silent_if_empty=False)
+
+        assert w._autotrack.is_ready
+        w._pass_predictor.get_passes.assert_called_once()
+        assert w._pass_predictor.get_passes.call_args.args[0] == 57166
+        assert w._autotrack_warmup_worker is None
+
+    def test_warmup_shows_ready_status_only_if_still_enabled(self, qtbot, db) -> None:
+        """_on_autotrack_warmup_done() only announces "Autotrack ready" if
+        the checkbox is still on when the background call returns -- the
+        user may have already unchecked it while the warm-up was in flight."""
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        list_id = self._add_list_with_entry(db)
+        w._autotrack.set_list(list_id)
+        w._pass_predictor = MagicMock()
+        w._pass_predictor.get_passes.return_value = []
+        w._autotrack_enabled = True
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._start_autotrack_warmup(silent_if_empty=False)
+
+        assert "ready" in self._status_text(w).lower()
+
+    def test_warmup_failure_reports_error_and_does_not_mark_ready(self, qtbot, db) -> None:
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        list_id = self._add_list_with_entry(db)
+        w._autotrack.set_list(list_id)
+        w._pass_predictor = MagicMock()
+        w._pass_predictor.get_passes.side_effect = RuntimeError("TLE engine not loaded")
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._start_autotrack_warmup(silent_if_empty=False)
+
+        assert not w._autotrack.is_ready
+        assert "TLE" in self._status_text(w)
+        assert w._autotrack_warmup_worker is None
+
+    def test_warmup_empty_list_shows_status_unless_silent(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._autotrack.set_list(None)  # no list selected -> empty entries
+        w._pass_predictor = MagicMock()
+
+        w._start_autotrack_warmup(silent_if_empty=False)
+        assert "search" in self._status_text(w).lower()
+
+    def test_warmup_empty_list_silent_when_requested(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._autotrack.set_list(None)
+        w._pass_predictor = MagicMock()
+
+        before = self._status_text(w)
+        w._start_autotrack_warmup(silent_if_empty=True)
+        assert self._status_text(w) == before  # unchanged -- no warning shown
+        w._pass_predictor.get_passes.assert_not_called()
+
+    def test_warmup_noop_if_already_ready(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        list_id = self._add_list_with_entry(db)
+        w._autotrack.set_list(list_id)
+        w._autotrack.mark_searches_ready()
+        w._pass_predictor = MagicMock()
+
+        w._start_autotrack_warmup(silent_if_empty=False)
+
+        w._pass_predictor.get_passes.assert_not_called()
+
+    def test_warmup_noop_if_already_in_flight(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        list_id = self._add_list_with_entry(db)
+        w._autotrack.set_list(list_id)
+        w._pass_predictor = MagicMock()
+        w._autotrack_warmup_worker = object()  # sentinel: "already running"
+
+        w._start_autotrack_warmup(silent_if_empty=False)
+
+        w._pass_predictor.get_passes.assert_not_called()
+
+    def test_stale_result_after_invalidate_is_ignored(self, qtbot, db) -> None:
+        """A _AutotrackWarmupWorker.done arriving for a generation that was
+        since invalidated (list changed / Autotrack toggled off) must not
+        call mark_searches_ready() for whatever list is now selected."""
+        w = self._make_window(qtbot, db)
+        list_id = self._add_list_with_entry(db)
+        w._autotrack.set_list(list_id)
+
+        stale_gen = w._autotrack_warmup_gen
+        w._invalidate_autotrack_warmup()  # simulate a list change / toggle-off
+
+        w._on_autotrack_warmup_done(stale_gen, True, "")
+
+        assert not w._autotrack.is_ready
+
+    def test_invalidate_clears_in_flight_marker(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._autotrack_warmup_worker = object()
+        gen_before = w._autotrack_warmup_gen
+
+        w._invalidate_autotrack_warmup()
+
+        assert w._autotrack_warmup_worker is None
+        assert w._autotrack_warmup_gen == gen_before + 1
+
+    def test_toggle_on_starts_warmup_when_not_ready(self, qtbot, db) -> None:
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        list_id = self._add_list_with_entry(db)
+        w._autotrack.set_list(list_id)
+        w._pass_predictor = MagicMock()
+        w._pass_predictor.get_passes.return_value = []
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._on_autotrack_toggled(True)
+
+        assert w._autotrack.is_ready
+
+    def test_toggle_off_invalidates_in_flight_warmup(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        list_id = self._add_list_with_entry(db)
+        w._autotrack.set_list(list_id)
+        gen_before = w._autotrack_warmup_gen
+        w._autotrack_warmup_worker = object()  # pretend one is in flight
+
+        w._on_autotrack_toggled(False)
+
+        assert w._autotrack_warmup_worker is None
+        assert w._autotrack_warmup_gen == gen_before + 1
+
+    def test_list_changed_starts_warmup_silently(self, qtbot, db) -> None:
+        """Selecting a list warms it up in the background without the user
+        needing to check Enable Autotrack first (so the Autotrack Timer's
+        own auto-enable path also finds is_ready True once its start time
+        arrives)."""
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        list_id = self._add_list_with_entry(db)
+        w._pass_predictor = MagicMock()
+        w._pass_predictor.get_passes.return_value = []
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._on_autotrack_list_changed(list_id)
+
+        assert w._autotrack.is_ready
+
+    def test_list_changed_to_none_shows_no_warning(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        list_id = self._add_list_with_entry(db)
+        w._autotrack.set_list(list_id)
+        w._pass_predictor = MagicMock()
+
+        w._on_autotrack_list_changed(None)
+
+        assert self._status_text(w) == "—"
