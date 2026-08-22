@@ -158,30 +158,42 @@ def _user_satdump_dir() -> Path:
 
 
 def _send_graceful_stop_windows(pid: int) -> bool:
-    """Send CTRL_BREAK_EVENT to *pid* via the console-attach workaround.
+    """Send CTRL_C_EVENT to *pid* via the console-attach workaround.
 
     A windowed (console-less) PyInstaller build has no console of its own,
     and Win32's GenerateConsoleCtrlEvent requires the calling process to be
     attached to the *same* console session as the target -- so a plain
-    ``Popen.send_signal(signal.CTRL_BREAK_EVENT)`` silently fails here (a
-    known CPython limitation: https://github.com/python/cpython/issues/112190).
+    ``Popen.send_signal(signal.CTRL_C_EVENT)`` silently fails here (a known
+    CPython limitation: https://github.com/python/cpython/issues/112190).
 
-    satdump.exe is started with CREATE_NO_WINDOW + CREATE_NEW_PROCESS_GROUP
-    (see SatDumpProcess.run()), which gives it its own hidden console and
-    process group. Attaching to that console just long enough to raise the
-    event, then detaching, lets SatDump's own ``signal(SIGINT, ...)``
-    handler -- which the Windows CRT wires up to both CTRL_C_EVENT and
-    CTRL_BREAK_EVENT -- run its normal graceful shutdown path (the
-    "Signal Received. Stopping." log line) instead of the process being
-    hard-killed via TerminateProcess before it can write out anything.
+    This used to send CTRL_BREAK_EVENT instead, on the assumption that the
+    Windows CRT wires ``signal(SIGINT, ...)`` up to both CTRL_C_EVENT and
+    CTRL_BREAK_EVENT. Checking SatDump's own source
+    (``src-cli/live.cpp``, upstream tag 1.2.2) shows it only ever registers
+    ``signal(SIGINT, sig_handler_live)`` / ``signal(SIGTERM, ...)`` -- there
+    is no CTRL_BREAK_EVENT (SIGBREAK) handler anywhere. Confirmed live on
+    Windows 11 (GitHub Issue #27 follow-up, 2026-08-22): a strong, well-
+    locked METEOR-M pass with Deframer SYNCED for several minutes still
+    produced only a ``.cadu`` file and no image after pressing Stop, with
+    the app reporting "satdump exited with code 3221225786" --
+    STATUS_CONTROL_C_EXIT (0xC000013A), Windows' default termination code
+    for a console-control event nobody handled. SatDump's own log had no
+    "Signal Received. Stopping." line at all, confirming the CTRL_BREAK
+    event never reached a handler and the OS just killed the process.
+
+    CTRL_C_EVENT does reach ``sig_handler_live`` (it maps to SIGINT), but
+    Microsoft's docs are explicit that CTRL+C signals are disabled for any
+    process started with CREATE_NEW_PROCESS_GROUP -- so SatDumpProcess.run()
+    no longer passes that flag on Windows (CREATE_NO_WINDOW alone still
+    gives satdump.exe its own hidden console for AttachConsole() to join
+    here).
 
     GenerateConsoleCtrlEvent broadcasts to *every* process sharing the
     attached console, including this one once AttachConsole() joins it.
-    Per Microsoft's docs, CTRL+BREAK signals cannot be ignored --
-    SetConsoleCtrlHandler(NULL, TRUE) only suppresses CTRL_C_EVENT, never
-    CTRL_BREAK_EVENT -- so without a real handler that returns TRUE here,
-    the OS's default handler runs ExitProcess() on *this* process the
-    moment the event fires.
+    Unlike CTRL_BREAK_EVENT, CTRL_C_EVENT *can* be suppressed for this
+    process via SetConsoleCtrlHandler -- registering a handler that returns
+    TRUE marks the event handled so the OS's default handler (which would
+    otherwise run ExitProcess() on *this* process too) never runs.
 
     Returns True if the event was raised, False if any step failed (in
     which case the caller should fall back to a hard kill).
@@ -191,7 +203,7 @@ def _send_graceful_stop_windows(pid: int) -> bool:
     import time
 
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
-    _CTRL_BREAK_EVENT = 1
+    _CTRL_C_EVENT = 0
 
     handler_routine_t = ctypes.WINFUNCTYPE(  # type: ignore[attr-defined]
         ctypes.wintypes.BOOL, ctypes.wintypes.DWORD
@@ -211,7 +223,7 @@ def _send_graceful_stop_windows(pid: int) -> bool:
     try:
         if not kernel32.SetConsoleCtrlHandler(handler, True):
             return False
-        ok = bool(kernel32.GenerateConsoleCtrlEvent(_CTRL_BREAK_EVENT, 0))
+        ok = bool(kernel32.GenerateConsoleCtrlEvent(_CTRL_C_EVENT, 0))
         # Delivery happens asynchronously on a separate OS thread; give it
         # a moment to reach our handler before unregistering below, or an
         # event still in flight could fall through to the default one.
@@ -364,13 +376,18 @@ class SatDumpProcess(QThread):
                     stderr=subprocess.STDOUT,
                     text=True,
                     bufsize=1,
-                    # CREATE_NEW_PROCESS_GROUP (combined with CREATE_NO_WINDOW,
-                    # which already gives this process its own hidden console)
-                    # lets stop() target it with CTRL_BREAK_EVENT instead of
-                    # only being able to hard-kill it -- see stop() below.
-                    creationflags=(  # type: ignore[attr-defined]
-                        subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
-                    ),
+                    # CREATE_NO_WINDOW still gives satdump.exe (a console
+                    # subsystem exe) its own hidden console, which stop()'s
+                    # _send_graceful_stop_windows() attaches to in order to
+                    # deliver CTRL_C_EVENT. Deliberately NOT combined with
+                    # CREATE_NEW_PROCESS_GROUP: Microsoft's docs state that
+                    # flag disables CTRL+C signals entirely for the new
+                    # process group, and SatDump's own SIGINT handler is the
+                    # only thing that triggers its graceful shutdown path
+                    # (--finish_processing's image write) -- confirmed via
+                    # SatDump's source (src-cli/live.cpp) and live on
+                    # Windows 11 (GitHub Issue #27 follow-up, 2026-08-22).
+                    creationflags=subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
                 )
             else:
                 self._proc = subprocess.Popen(

@@ -9318,6 +9318,75 @@ Hamlib・ft8lib等これまでの経緯と同様に繰り返し踏んだ落と�
 を変えた場合、それに依存する他のコンポーネント（今回は出力ディレクトリの
 監視タイマー）のライフサイクルも連動して見直す必要がある。
 
+### 8. Windows実機で`--finish_processing`が一度も走らなかった根本原因 — CTRL_BREAK_EVENTはSatDump側で一切ハンドリングされていなかった（GitHub Issue #27、2026-08-22 発見・修正）
+
+**症状**: Issue #27の修正一式（本ファイル前述、v0.3.31）をリリースした後、開発者自身が
+Windows 11実機（METEOR-M、最大仰角60°の良好なパス）で検証したところ、受信自体は
+SNR最大13dB前後・Deframer SYNCEDが5分半以上継続という好条件だったにもかかわらず、
+「■ 停止」を押すと`satdump exited with code 3221225786`というエラーが表示され、
+今回も画像が一枚も生成されなかった（CADUファイルのみ）。SatDump自身のログ
+（`satdump_log_*.txt`、`Help > SatDump…`の「ログ」ウィンドウから保存可能）を
+確認したところ、ログは受信中のプログレス行のまま唐突に途切れており、
+**「Signal Received. Stopping.」という、graceful shutdownに入った際に必ず出るはずの
+ログ行が一切存在しなかった**。
+
+**原因**: SatDump本家のソース（`src-cli/live.cpp`、タグ`1.2.2`。masterでは
+`src-cli/legacy/live.cpp`に移動済みだが1.2.2時点ではこちらのパス）を直接確認したところ、
+シグナルハンドラの登録は`signal(SIGINT, sig_handler_live)` /
+`signal(SIGTERM, sig_handler_live)`の2つのみで、**CTRL_BREAK_EVENT（Windows固有の
+`SIGBREAK`）に対応するハンドラは一切存在しなかった**。旧`_send_graceful_stop_windows()`
+は「Windows CRTの`signal(SIGINT, ...)`はCTRL_C_EVENT・CTRL_BREAK_EVENTの両方に
+配線される」という前提でCTRL_BREAK_EVENTを送信していたが、これは誤りだった——
+Windows CRTが`SIGINT`にマッピングするのは**CTRL_C_EVENTのみ**で、CTRL_BREAK_EVENTは
+別シグナル（SIGBREAK）に割り当てられる。SatDumpにSIGBREAKハンドラが無い以上、
+CTRL_BREAK_EVENTを送ってもプロセスは自身のgraceful shutdownパスに一切入らず、
+Windowsのデフォルト動作（即時終了）がそのまま発動する。この終了コードが
+`STATUS_CONTROL_C_EXIT`（`0xC000013A` = `3221225786`）——実機で報告されたエラー
+コードと完全に一致した。`AttachConsole`/`GenerateConsoleCtrlEvent`自体は成功していたが、
+送信していたシグナルの種類そのものが誤りだった、という結論になる。
+
+**修正**: CTRL_BREAK_EVENTからCTRL_C_EVENT（Win32定数`0`）への切り替え。ただし
+CTRL_C_EVENTには重要な制約があり、Microsoft公式ドキュメント（`CreateProcess`の
+`CREATE_NEW_PROCESS_GROUP`フラグの説明）に明記されている通り
+**「このフラグを付けて起動したプロセスは、CTRL+C信号が完全に無効化される」**。
+旧`SatDumpProcess.run()`のWindows起動コマンドは`CREATE_NO_WINDOW |
+CREATE_NEW_PROCESS_GROUP`（後者はCTRL_BREAK_EVENTを特定プロセスグループに絞って
+送るための仕組みだった）で起動していたため、これを`CREATE_NO_WINDOW`単体に変更
+（`CREATE_NO_WINDOW`だけでもsatdump.exe自身の非表示コンソールは作られるため、
+`AttachConsole()`でそのコンソールに参加する既存の仕組みはそのまま使える）。
+`_send_graceful_stop_windows()`側は`_CTRL_BREAK_EVENT = 1` →
+`_CTRL_C_EVENT = 0`に定数を変更するのみ（`SetConsoleCtrlHandler`による自プロセスへの
+巻き込まれ防止の仕組みは、CTRL_C_EVENTの方がむしろ素直に効く——Microsoftのドキュメント
+通り、CTRL_C_EVENTは`SetConsoleCtrlHandler`で完全に抑制可能だが、CTRL_BREAK_EVENTは
+本来抑制不能なイベントで、既存コードはハンドラが`TRUE`を返すことで「処理済み」と
+偽装する回避策に頼っていた）。
+
+テスト: `tests/test_meteor_satdump.py`（新規） —
+`TestWindowsCreationFlags::test_windows_popen_omits_new_process_group_flag`が
+Windows分岐の`subprocess.Popen`呼び出しに`CREATE_NEW_PROCESS_GROUP`が含まれないこと
+を検証（`sys.platform`と`subprocess.Popen`をモンキーパッチ）。
+`TestSendGracefulStopWindows`が、`ctypes.WinDLL`/`ctypes.WINFUNCTYPE`
+（非Windows環境には存在しない属性のため`monkeypatch.setattr(..., raising=False)`で
+追加）をフェイクのkernel32オブジェクトに差し替え、`GenerateConsoleCtrlEvent`へ実際に
+渡される値が`0`（CTRL_C_EVENT）であって`1`（CTRL_BREAK_EVENT）ではないことを直接
+検証する（`ctypes.wintypes.BOOL`/`DWORD`は非Windows環境でも存在するためモック不要、
+`ctypes.WinDLL`/`WINFUNCTYPE`のみがWindows専用）。macOS開発環境で実行・グリーン確認済み。
+
+**検証状況**: 静的なソース確認（SatDump本家のシグナルハンドラ登録箇所）とWindows API
+仕様（Microsoft公式ドキュメントの`CREATE_NEW_PROCESS_GROUP`の副作用）に基づく修正。
+実機Windowsでの動作確認は次回のユーザー（開発者自身）の再テスト待ち。
+
+**教訓**: 前回（項目6）の実装時に残していた「Windows CRTはSIGINTをCTRL_C_EVENT・
+CTRL_BREAK_EVENTの両方にマッピングする」という前提は、Microsoft公式ドキュメントを
+実際には確認せず、一般的な理解（誤解）に基づいて書かれたものだった。加えて、
+「送信先のプロセス（SatDump）が実際にそのシグナルをハンドリングしているか」を
+一次情報（SatDump自身のソースコード）で確認せずに実装していた。外部プロセスへの
+シグナル配送を実装する際は、①OS側の配送メカニズムの制約（今回は
+`CREATE_NEW_PROCESS_GROUP`がCTRL+Cを無効化する副作用）と、②受信側プロセスが実際に
+そのシグナルをハンドリングするコードを持っているか、の両方を実装前に一次情報で
+確認すべきだった。前者だけを検証して「配送は成功している」と考えても、後者が
+欠けていれば無意味である。
+
 ### 過去の受信フォルダをタブ内で見返す機能（`📂 Open Past Reception…`、2026-08-20 実装）
 
 #### 背景
