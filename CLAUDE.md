@@ -9387,6 +9387,70 @@ CTRL_BREAK_EVENTの両方にマッピングする」という前提は、Microso
 確認すべきだった。前者だけを検証して「配送は成功している」と考えても、後者が
 欠けていれば無意味である。
 
+### 9. Autotrack Recording チェックボックス（Audio/IQ/METEOR）が再起動のたびにリセットされていた不具合（GitHub Issue #27、2026-08-22 発見・修正）
+
+**症状**: v0.3.32でCADU→画像生成の不具合（項目8）を修正した後、報告者（on7ndr）が
+METEOR-M N2-4のより良好なパスで再テストしたところ、①衛星選択後にGroup Passタブで
+明示的に検索を実施、②Autotrack/RecordダイアログでリストのEnableチェックを入れ
+「Tracking: METEOR M2-4」というステータス表示まで正しく出た、にもかかわらず、
+**AOS到達時にMETEORウィンドウが自動起動しなかった**。手動でMETEORタブを開いて
+受信・停止したところ画像は正常に生成された（項目8の修正自体は機能している）。
+
+**原因**: `AutotrackRecordDialog`の「Audio Record (MP3)」「IQ Record」
+「METEOR / HRPT Reception」の3チェックボックスは、`MainWindow.__init__()`で
+```python
+self._autotrack_meteor_record: bool = False
+```
+のように**毎回無条件でFalse初期化**されるだけで、DBへの永続化が一切実装されて
+いなかった。つまり**アプリを再起動するたびに、これら3つのチェックボックスは
+必ずOFFに戻る**。報告者の説明文には、Autotrackリスト自体の選択・Enable操作への
+言及はあるが「METEOR / HRPT Reception」チェックボックスへの言及が一切なく、
+これは前回のセッションで一度でも有効にしていたとしても、その後アプリを再起動
+していれば気づかないうちにOFFへ戻っていた可能性が高いと判断した。
+`_autotrack_meteor_record`がFalseの場合、`_autotrack_on_aos()`は
+`_meteor_autotrack_aos()`を一切呼ばない設計（[main_window.py](src/ui/main_window.py)）
+のため、これは「Trackingは表示されるがMETEORウィンドウは開かない」という今回の
+症状と完全に一致する。
+
+**修正**: `AutotrackRecordDialog`に`app_settings`テーブルへの永続化を追加
+（キー`autotrack_recording_settings`、値は`{"audio_record": bool, "iq_record": bool,
+"meteor_record": bool}`のJSON——`log_broadcast_settings`と同じ「単一キーJSON blob」
+パターン）。3チェックボックスの`toggled`シグナルハンドラ（`_on_audio_rec_toggled`等）
+から`_save_recording_settings()`を呼び、`__init__()`（UI構築・`_reload_at_lists()`の
+直後）で`_load_recording_settings()`を呼んで復元する。復元時は`blockSignals()`で
+静かに反映するのみ（誤ってこの時点で`*_changed`シグナルを発火させても、
+`MainWindow`側はまだこれらのシグナルに接続していないため、単に聞き逃されるだけで
+意味がない）。
+
+`MainWindow.__init__()`側では、`self._at_dialog = AutotrackRecordDialog(...)`構築
+（＝ダイアログの`__init__()`内で復元が完了している）**の後、`*_changed`シグナルを
+接続した直後**に、`is_audio_record_enabled()`等のgetter経由で明示的に
+`self._autotrack_audio_record`等へ同期する処理を追加した。ダイアログの復元処理は
+シグナル接続より前（`AutotrackRecordDialog`のコンストラクタ内）に起きるため、
+「復元時にシグナルを発火させてMainWindow側に伝える」という設計では原理的に
+間に合わない——この時系列の問題を、getterによる明示的な同期で解決した。
+
+テスト: `tests/test_autotrack_record_dialog.py`（新規、6件）— 保存なしのデフォルトは
+全OFF・トグルでapp_settingsに保存される・新しいダイアログインスタンスが保存値を
+復元する・OFFへの変更も保存される・壊れたJSON値は例外を出さず無視される・復元時に
+`*_changed`シグナルが発火しないことを検証。`tests/test_main_window.py`に
+`TestAutotrackRecordingCheckboxSync`（2件）— `app_settings`に`meteor_record: true`を
+仕込んだ状態で`MainWindow`を構築すると`_autotrack_meteor_record`が`True`になること、
+保存値が無い場合は全て`False`のままであることを検証。
+
+**検証状況**: 静的なコード修正・ユニットテストに基づく。実機での確認は報告者の
+次回パス待ち（2026-08-22時点）。
+
+**教訓**: 「ステータス表示（Tracking: ...）が正しく出ている」ことは、そこから
+連鎖するはずの下流の自動化（今回はMETEORタブの自動オープン）が実際に実行されて
+いることを一切保証しない——両者の間に、UIの見た目からは分からない条件分岐
+（今回は`_autotrack_meteor_record`フラグ）が挟まっていることがある。またこのプロジェクトは
+既に`app_settings`への永続化パターン（`log_broadcast_settings`等）を複数箇所で
+確立しているにもかかわらず、Autotrack Recordingダイアログの3チェックボックスは
+実装時にこのパターンを踏襲し忘れていた——「設定を変更する UI コントロールを
+新設する際は、再起動をまたいで保持すべきかどうかを都度検討し、保持すべきなら
+既存の`app_settings`パターンを最初から使う」ことを徹底する必要がある。
+
 ### 過去の受信フォルダをタブ内で見返す機能（`📂 Open Past Reception…`、2026-08-20 実装）
 
 #### 背景

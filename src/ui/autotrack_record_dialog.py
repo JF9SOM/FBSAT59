@@ -8,6 +8,7 @@ Opened from the "Autotrack/Record" menu in the main menu bar.
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 from datetime import UTC, datetime, timedelta
@@ -42,6 +43,8 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+_RECORDING_SETTINGS_KEY = "autotrack_recording_settings"
 
 
 class _SatSearchDialog(QDialog):
@@ -172,6 +175,7 @@ class AutotrackRecordDialog(QDialog):
         self._use_utc: bool = True
         self._setup_ui()
         self._reload_at_lists()
+        self._load_recording_settings()
 
     # ------------------------------------------------------------------
     # Public API
@@ -345,9 +349,9 @@ class AutotrackRecordDialog(QDialog):
         rec_group = QGroupBox(_("Recording (SDR)  — starts at AOS, stops at LOS"))
         rec_layout = QHBoxLayout(rec_group)
         self._audio_rec_cb = QCheckBox(_("Audio Record (MP3)"))
-        self._audio_rec_cb.toggled.connect(self.audio_record_changed.emit)
+        self._audio_rec_cb.toggled.connect(self._on_audio_rec_toggled)
         self._iq_rec_cb = QCheckBox(_("IQ Record"))
-        self._iq_rec_cb.toggled.connect(self.iq_record_changed.emit)
+        self._iq_rec_cb.toggled.connect(self._on_iq_rec_toggled)
         self._meteor_rec_cb = QCheckBox(_("METEOR / HRPT Reception"))
         self._meteor_rec_cb.setToolTip(
             _(
@@ -356,7 +360,7 @@ class AutotrackRecordDialog(QDialog):
                 "SatDump reception at AOS.  Stops at LOS."
             )
         )
-        self._meteor_rec_cb.toggled.connect(self.meteor_record_changed.emit)
+        self._meteor_rec_cb.toggled.connect(self._on_meteor_rec_toggled)
         rec_layout.addWidget(self._audio_rec_cb)
         rec_layout.addWidget(self._iq_rec_cb)
         rec_layout.addWidget(self._meteor_rec_cb)
@@ -418,6 +422,68 @@ class AutotrackRecordDialog(QDialog):
 
     def _on_enable_toggled(self, checked: bool) -> None:
         self.autotrack_toggled.emit(checked)
+
+    # ------------------------------------------------------------------
+    # Slots — Recording checkboxes (persisted to app_settings)
+    # ------------------------------------------------------------------
+
+    def _on_audio_rec_toggled(self, checked: bool) -> None:
+        self.audio_record_changed.emit(checked)
+        self._save_recording_settings()
+
+    def _on_iq_rec_toggled(self, checked: bool) -> None:
+        self.iq_record_changed.emit(checked)
+        self._save_recording_settings()
+
+    def _on_meteor_rec_toggled(self, checked: bool) -> None:
+        self.meteor_record_changed.emit(checked)
+        self._save_recording_settings()
+
+    def _load_recording_settings(self) -> None:
+        """Restore the Audio/IQ/METEOR checkboxes from app_settings.
+
+        These checkboxes used to reset to unchecked on every app restart
+        (GitHub Issue #27 follow-up, 2026-08-22): a user had "METEOR / HRPT
+        Reception" enabled in one session, but after restarting the app for
+        a later pass the checkbox was silently back to off, so Autotrack's
+        AOS handler never opened the METEOR tab even though "Tracking: ..."
+        showed the satellite was being tracked correctly. Signals are
+        blocked here since this only restores UI state -- MainWindow syncs
+        its own copy of these flags from the getters below right after
+        connecting the *_changed signals (see MainWindow.__init__()), not
+        from a signal fired during this restore.
+        """
+        row = self._conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?",
+            (_RECORDING_SETTINGS_KEY,),
+        ).fetchone()
+        if not row or not row["value"]:
+            return
+        try:
+            settings = json.loads(str(row["value"]))
+        except (TypeError, ValueError):
+            return
+        for checkbox, key in (
+            (self._audio_rec_cb, "audio_record"),
+            (self._iq_rec_cb, "iq_record"),
+            (self._meteor_rec_cb, "meteor_record"),
+        ):
+            checkbox.blockSignals(True)
+            checkbox.setChecked(bool(settings.get(key, False)))
+            checkbox.blockSignals(False)
+
+    def _save_recording_settings(self) -> None:
+        settings = {
+            "audio_record": self._audio_rec_cb.isChecked(),
+            "iq_record": self._iq_rec_cb.isChecked(),
+            "meteor_record": self._meteor_rec_cb.isChecked(),
+        }
+        self._conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value, updated_at)"
+            " VALUES (?, ?, CURRENT_TIMESTAMP)",
+            (_RECORDING_SETTINGS_KEY, json.dumps(settings)),
+        )
+        self._conn.commit()
 
     # ------------------------------------------------------------------
     # Slots — List management

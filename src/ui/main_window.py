@@ -781,6 +781,13 @@ class MainWindow(QMainWindow):
         self._at_dialog.iq_record_changed.connect(self._on_autotrack_iq_record_changed)
         self._at_dialog.meteor_record_changed.connect(self._on_autotrack_meteor_record_changed)
         self._at_dialog.lists_modified.connect(self._on_autotrack_lists_modified)
+        # The dialog restores its Audio/IQ/METEOR checkboxes from app_settings
+        # in its own __init__() (before the *_changed signals above were
+        # connected), so pull its already-restored state now via the getters
+        # rather than relying on a signal that already fired unheard.
+        self._autotrack_audio_record = self._at_dialog.is_audio_record_enabled()
+        self._autotrack_iq_record = self._at_dialog.is_iq_record_enabled()
+        self._autotrack_meteor_record = self._at_dialog.is_meteor_record_enabled()
 
         # Connect PassPanel signals
         self._pass_list.target_search_requested.connect(self._on_target_search_requested)

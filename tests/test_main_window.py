@@ -4749,3 +4749,46 @@ class TestAutotrackWarmup:
         w._on_autotrack_list_changed(None)
 
         assert self._status_text(w) == "—"
+
+
+class TestAutotrackRecordingCheckboxSync:
+    """MainWindow must pick up the Audio/IQ/METEOR checkbox state that
+    AutotrackRecordDialog restored from app_settings in its own __init__()
+    (GitHub Issue #27 follow-up, 2026-08-22): a user had "METEOR / HRPT
+    Reception" checked in one session, but after an app restart the
+    checkbox (previously never persisted) silently reverted to unchecked,
+    so Autotrack tracked the satellite correctly but never opened the
+    METEOR tab at AOS. Restoring the checkbox alone is not enough --
+    MainWindow's own _autotrack_meteor_record copy (read by
+    _meteor_autotrack_aos()) must also reflect the restored value.
+    """
+
+    def _make_window(self, qtbot, db):
+        from data.tle_manager import TLEManager
+        from ui.main_window import MainWindow
+
+        tle_manager = TLEManager(db)
+        w = MainWindow(conn=db, tle_manager=tle_manager)
+        qtbot.addWidget(w)
+        return w
+
+    def test_restored_meteor_checkbox_is_reflected_in_mainwindow_flag(self, qtbot, db) -> None:
+        import json
+
+        db.execute(
+            "INSERT INTO app_settings (key, value) VALUES ('autotrack_recording_settings', ?)",
+            (json.dumps({"audio_record": False, "iq_record": False, "meteor_record": True}),),
+        )
+        db.commit()
+
+        w = self._make_window(qtbot, db)
+
+        assert w._autotrack_meteor_record is True
+        assert w._at_dialog.is_meteor_record_enabled() is True
+
+    def test_no_saved_settings_defaults_to_false(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+
+        assert w._autotrack_meteor_record is False
+        assert w._autotrack_audio_record is False
+        assert w._autotrack_iq_record is False
