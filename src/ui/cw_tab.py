@@ -205,7 +205,7 @@ class CwTab(QWidget):
         self._text_edit = QPlainTextEdit()
         self._text_edit.setReadOnly(True)
         font = QFont("Monospace")
-        font.setPointSize(12)
+        font.setPointSize(18)
         self._text_edit.setFont(font)
         self._text_edit.setPlaceholderText(
             _("Decoded CW text will appear here (requires ~5 s of audio)…")
