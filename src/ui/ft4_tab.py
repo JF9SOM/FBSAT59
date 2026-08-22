@@ -114,21 +114,6 @@ _AUDIO_OWNER = "FT4"
 _TX_BLOCK_SIZE = 240
 
 
-def _device_name(device: int | None) -> str:
-    """Best-effort "#index name" label for a sounddevice device index, for
-    diagnostic logging only (GitHub Issue #26) -- never raises, since a
-    logging helper must not be able to break the TX path it's observing."""
-    if device is None:
-        return "default"
-    try:
-        import sounddevice as sd
-
-        info = sd.query_devices(device)
-        return f"#{device} {info.get('name', '?')}"
-    except Exception:
-        return f"#{device} <unknown>"
-
-
 # ---------------------------------------------------------------------------
 # Worker: TX audio output (runs in daemon thread to avoid blocking the UI)
 # ---------------------------------------------------------------------------
@@ -159,20 +144,11 @@ class _TxWorker(QObject):
         out_device: int | None,
         rig: Any,
         get_gain: Callable[[], float],
-        in_device: int | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self._audio = audio
         self._out_device = out_device
-        # RX device, for diagnostic logging only (GitHub Issue #26) --
-        # pause_input(out_device) silently no-ops when RX and TX resolve to
-        # different device indices, which Windows does even for a single
-        # physical USB codec (separate "Microphone"/"Speakers" entries for
-        # the same hardware). Logging both device names next to each other
-        # is the only way to tell that apart from RX genuinely being on
-        # unrelated hardware.
-        self._in_device = in_device
         self._rig = rig
         self._get_gain = get_gain
 
@@ -185,34 +161,21 @@ class _TxWorker(QObject):
             other = mgr.output_owner(self._out_device) or _("another tab")
             self.error.emit(_("Sound card output is in use by {other}").format(other=other))
             return
-        # GitHub Issue #26: opening this TX output stream while the shared
-        # RX input stream is already open on the *same* physical device
-        # (e.g. a rig's single built-in USB audio codec, like the
-        # IC-9700's) has been observed to stall the whole audio pipeline
-        # for several seconds at a time on Windows. Briefly pausing RX for
-        # the span this TX stream is open avoids that concurrent-open
-        # condition.
-        #
-        # An exact-index match against RX often fails even when RX and TX
-        # really are the same physical hardware -- Windows enumerates a
-        # single USB codec's playback/capture directions as *separate*
-        # device indices (confirmed via this device-name logging on an
-        # IC-9700: "Speakers (...)" vs "Microphone (...)"). pause_input()
-        # falls back to a same-hardware name match in that case, so
-        # `paused_device` is not necessarily `self._out_device` -- it must
-        # be passed back to resume_input() as-is. None means nothing was
-        # paused at all (RX genuinely on unrelated hardware, or not
-        # running).
+        # GitHub Issue #26: pausing the shared RX input stream around each
+        # TX burst (to avoid opening a TX stream concurrently with RX on
+        # what turned out to be the same physical device, just enumerated
+        # under a different Windows index) was tried and confirmed to
+        # engage correctly, but made no difference to the freeze this was
+        # meant to fix -- ruling out RX/TX concurrent-open as its cause.
+        # Worse, that pause was a blocking real PortAudio stream.stop()
+        # call with no timeout, and on this same flaky hardware it can
+        # apparently hang indefinitely -- worse than the freeze it was
+        # trying to prevent, since a stuck stop() there also never
+        # released the TX lock, silently blocking every future
+        # transmission for the rest of the session. Removed entirely; see
+        # git history (this comment's commit) for the abandoned approach
+        # if this needs revisiting with an actual timeout.
         log = get_ft4_decode_logger()
-        t0 = time.monotonic()
-        paused_device = mgr.pause_input(self._out_device)
-        log.info(
-            "tx pause_input rx_paused=%s duration=%.3fs out_device=%s in_device=%s",
-            paused_device is not None,
-            time.monotonic() - t0,
-            _device_name(self._out_device),
-            _device_name(self._in_device),
-        )
         try:
             import sounddevice as sd  # optional dep
 
@@ -335,10 +298,6 @@ class _TxWorker(QObject):
                     self._rig.set_ptt(False)
             self.error.emit(str(exc))
         finally:
-            if paused_device is not None:
-                t0 = time.monotonic()
-                mgr.resume_input(paused_device)
-                log.info("tx resume_input duration=%.3fs", time.monotonic() - t0)
             mgr.release_output(_AUDIO_OWNER, self._out_device)
 
 
@@ -1264,11 +1223,7 @@ class Ft4Tab(QWidget):
         # transmitting, to avoid rig ALC action / distortion (Issue #16).
         rig = self._rig1()
         worker = _TxWorker(
-            audio,
-            self._out_device,
-            rig,
-            get_gain=lambda: self._tx_level_pct / 100.0,
-            in_device=self._in_device,
+            audio, self._out_device, rig, get_gain=lambda: self._tx_level_pct / 100.0
         )
         worker.finished.connect(self._on_tx_finished)
         worker.error.connect(self._on_tx_error)

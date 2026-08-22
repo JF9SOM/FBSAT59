@@ -283,51 +283,6 @@ def pin_output_stream(target: str, before: set[str]) -> None:
     _pin_new_stream("sink-inputs", "move-sink-input", target, before)
 
 
-def _device_display_name(device: int | None) -> str:
-    """Best-effort sounddevice name for `device`, or "" on any failure —
-    an empty string never matches another empty string in
-    `_same_physical_device()`, so a failed lookup can never produce a
-    false-positive match."""
-    if device is None:
-        return ""
-    try:
-        import sounddevice as sd
-
-        info = sd.query_devices(device)
-        name = info.get("name", "")
-        return str(name) if name else ""
-    except Exception:
-        return ""
-
-
-def _device_core_name(name: str) -> str:
-    """Strip a leading Windows I/O role label — "Speakers (", "Microphone
-    (", etc. — so both directions of one physical USB audio codec
-    normalize to the same string. Falls back to the whole name when there
-    is no "(" to split on."""
-    idx = name.find("(")
-    core = name[idx + 1 :] if idx != -1 else name
-    return core.rstrip(") ").strip().lower()
-
-
-def _same_physical_device(name_a: str, name_b: str) -> bool:
-    """True when two sounddevice names plausibly refer to the same
-    physical hardware (see `_device_core_name()`).
-
-    Windows' legacy MME host API also truncates device names to 31
-    characters, so a single physical device's "Speakers (...)" and
-    "Microphone (...)" entries can end up truncated to different lengths
-    even once the role label is stripped — compared by prefix rather than
-    exact equality to tolerate that. Empty input (a failed name lookup)
-    never matches, not even against itself.
-    """
-    a, b = _device_core_name(name_a), _device_core_name(name_b)
-    if not a or not b:
-        return False
-    shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
-    return longer.startswith(shorter)
-
-
 class _SharedInputStream:
     """A single real sounddevice.InputStream, fanned out to N subscribers."""
 
@@ -336,12 +291,6 @@ class _SharedInputStream:
         self._stream: Any = None
         self._subscribers: dict[str, tuple[int, AudioCallback]] = {}
         self._lock = threading.Lock()
-
-    @property
-    def device(self) -> int | None:
-        """The device value this stream was opened with (as originally
-        passed to `acquire_input()` — `None` for the system default)."""
-        return self._device
 
     def add_subscriber(self, owner: str, samplerate: int, callback: AudioCallback) -> None:
         with self._lock:
@@ -354,42 +303,6 @@ class _SharedInputStream:
                     # that never actually started.
                     self._subscribers.pop(owner, None)
                     raise
-
-    def pause(self) -> bool:
-        """Stop the underlying hardware stream without dropping subscribers.
-
-        Used to avoid having this input stream open at the same moment a TX
-        worker opens an output stream on the same physical device — some
-        single-codec USB audio interfaces (e.g. a rig's built-in sound card)
-        have been observed to stall for several seconds when both directions
-        are opened concurrently (GitHub Issue #26). Subscribers are left
-        registered; call `resume()` afterwards to reopen.
-
-        Returns True if a running stream was actually stopped, False if
-        there was nothing to pause (already paused, or never opened).
-
-        Releases the lock before calling `stream.stop()`, same as
-        `remove_subscriber()` — that call blocks until the audio callback
-        thread returns, and that thread also needs this lock.
-        """
-        with self._lock:
-            stream, self._stream = self._stream, None
-        if stream is None:
-            return False
-        with contextlib.suppress(Exception):
-            stream.stop()
-            stream.close()
-        return True
-
-    def resume(self) -> None:
-        """Reopen the hardware stream after `pause()`, if subscribers are
-        still registered and it isn't already open (a subscriber may have
-        re-added itself in the meantime, opening a fresh stream already)."""
-        with self._lock:
-            if self._stream is not None or not self._subscribers:
-                return
-            with contextlib.suppress(Exception):
-                self._open(schedule_settle_reopen=False)
 
     def remove_subscriber(self, owner: str) -> bool:
         """Unsubscribe `owner`. Returns True once no subscribers remain.
@@ -536,59 +449,6 @@ class AudioDeviceManager(QObject):
                 return
             if stream.remove_subscriber(owner):
                 del self._inputs[key]
-
-    def pause_input(self, device: int | None) -> int | None:
-        """Temporarily stop the shared RX stream physically colocated with
-        `device`, if one is active, without dropping its subscribers — see
-        `_SharedInputStream.pause()`.
-
-        Tries an exact device match first. GitHub Issue #26: Windows
-        enumerates a single physical USB audio codec's playback and
-        capture directions as *separate* device indices (confirmed on an
-        IC-9700's built-in codec: "Speakers (...)" vs "Microphone (...)"),
-        so an exact match on `device` (an output device) against RX
-        streams (opened on an input device) fails even when they are the
-        very same hardware this was meant to guard against concurrently
-        opening. When the exact match fails, falls back to scanning
-        currently-active RX streams for one whose device name looks like
-        the same physical hardware (`_same_physical_device()`) — a
-        heuristic, so it can occasionally miss or (rarely) mismatch, but
-        silently never pausing anything on this class of hardware is
-        worse.
-
-        Returns the device value to pass to `resume_input()` once done —
-        this is `device` itself for an exact match, but may differ for a
-        fallback match, so callers must use the returned value rather than
-        re-passing `device`. Returns None if nothing was paused (no RX
-        stream on this device or a plausibly-same one, or nothing is
-        subscribed to RX at all).
-        """
-        key = self._key(device)
-        with self._inputs_lock:
-            stream = self._inputs.get(key)
-            resolved_device = device
-            if stream is None:
-                out_name = _device_display_name(device)
-                for cand_device_key, cand_stream in self._inputs.items():
-                    if cand_device_key == key:
-                        continue
-                    if _same_physical_device(out_name, _device_display_name(cand_stream.device)):
-                        stream = cand_stream
-                        resolved_device = cand_stream.device
-                        break
-        if stream is None or not stream.pause():
-            return None
-        return resolved_device
-
-    def resume_input(self, device: int | None) -> None:
-        """Reopen the shared RX stream on `device` — pass exactly the value
-        `pause_input()` returned, not necessarily the value originally
-        passed to it (see `pause_input()`'s fallback-match docstring)."""
-        key = self._key(device)
-        with self._inputs_lock:
-            stream = self._inputs.get(key)
-        if stream is not None:
-            stream.resume()
 
     # ------------------------------------------------------------------ #
     # TX — exclusive output lock
