@@ -237,10 +237,37 @@ class _TxWorker(QObject):
             last_gain = float(self._get_gain())
             done = threading.Event()
 
+            # GitHub Issue #26: with pause_input()/resume_input() confirmed
+            # engaging (rx_paused=True) and both fast, "tx playback_done"
+            # still took 26-30s instead of the ~5s the audio itself is —
+            # ruling out RX/TX concurrent-open as the cause of *this* span.
+            # `status` (PortAudio's own under/overrun report for this
+            # callback) was being silently discarded; cb_stats also tracks
+            # how many times the callback actually ran and the longest gap
+            # between two calls, to tell "many calls arriving late" apart
+            # from "wrong call count" once the next freeze is logged.
+            cb_stats: dict[str, Any] = {
+                "n_calls": 0,
+                "first_time": None,
+                "max_gap": 0.0,
+                "status_flags": set(),
+            }
+
             def _callback(
-                outdata: NDArray[np.float32], frames: int, _time: Any, _status: Any
+                outdata: NDArray[np.float32], frames: int, _time: Any, status: Any
             ) -> None:
                 nonlocal idx, last_gain
+                now = time.monotonic()
+                cb_stats["n_calls"] += 1
+                if cb_stats["first_time"] is None:
+                    cb_stats["first_time"] = now
+                else:
+                    gap = now - cb_stats["prev_time"]
+                    if gap > cb_stats["max_gap"]:
+                        cb_stats["max_gap"] = gap
+                cb_stats["prev_time"] = now
+                if status:
+                    cb_stats["status_flags"].add(str(status))
                 remaining = n - idx
                 take = min(frames, remaining)
                 if take > 0:
@@ -276,11 +303,24 @@ class _TxWorker(QObject):
             log.info("tx stream_open duration=%.3fs", time.monotonic() - t0)
             t0 = time.monotonic()
             with stream:
-                log.info("tx stream_started duration=%.3fs", time.monotonic() - t0)
+                stream_started_at = time.monotonic()
+                log.info("tx stream_started duration=%.3fs", stream_started_at - t0)
                 mgr.pin_active_output(_AUDIO_OWNER)
                 t0 = time.monotonic()
                 done.wait()
                 log.info("tx playback_done duration=%.3fs", time.monotonic() - t0)
+                first_lag = (
+                    cb_stats["first_time"] - stream_started_at
+                    if cb_stats["first_time"] is not None
+                    else -1.0
+                )
+                log.info(
+                    "tx callback_stats n_calls=%d first_cb_lag=%.3fs max_gap=%.3fs status_flags=%s",
+                    cb_stats["n_calls"],
+                    first_lag,
+                    cb_stats["max_gap"],
+                    sorted(cb_stats["status_flags"]) or ["none"],
+                )
 
             if self._rig is not None:
                 time.sleep(0.10)  # PTT tail time
