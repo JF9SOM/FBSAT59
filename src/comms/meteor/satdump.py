@@ -344,6 +344,11 @@ class SatDumpProcess(QThread):
         # perfectly locked, well-decoded .cadu file and then exits without
         # ever producing an image, no matter how the process is stopped.
         cmd += ["--finish_processing", "true"]
+        # meteor_m2-x_lrpt's "products" stage can interpolate over black
+        # lines caused by interference/signal drop-outs (writes a separate
+        # "MSU-MR (Filled)" folder alongside the normal output). Defaults to
+        # false upstream; there's no reason not to always ask for it here.
+        cmd += ["--fill_missing", "true"]
         if self._fft_http_port is not None:
             # SatDump's own live-processing splitter can feed a local HTTP
             # API with periodic FFT snapshots without disturbing its
