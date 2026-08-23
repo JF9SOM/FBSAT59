@@ -36,6 +36,16 @@ def restart_application() -> None:
     old process's PID itself (which would require a platform-specific
     process wait and a separate launcher process, and isn't needed since
     the retry handles it from the new process's side instead).
+
+    The new process is deliberately detached from this one's session/
+    process group and stdio: on the dev launcher (Desktop .app -> Ghostty ->
+    run.command -> `python src/main.py`), plain Popen() leaves the child
+    in the same terminal session, so once this process exits and the shell
+    script/terminal session tears down, the child gets SIGHUP'd along with
+    it -- the app was observed to just quit instead of relaunching. Detaching
+    (start_new_session on POSIX, a new process group on Windows) and
+    redirecting stdio away from the parent's (about-to-vanish) handles
+    avoids that.
     """
     if getattr(sys, "frozen", False):
         # PyInstaller build: sys.executable is the frozen binary itself;
@@ -46,7 +56,21 @@ def restart_application() -> None:
 
     env = os.environ.copy()
     env[RESTART_ENV_VAR] = "1"
-    subprocess.Popen(args, env=env)
+
+    popen_kwargs: dict[str, object] = {
+        "env": env,
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
+    if sys.platform == "win32":
+        popen_kwargs["creationflags"] = (
+            subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS  # type: ignore[attr-defined]
+        )
+    else:
+        popen_kwargs["start_new_session"] = True
+
+    subprocess.Popen(args, **popen_kwargs)  # type: ignore[call-overload]
 
     app = QApplication.instance()
     if app is not None:

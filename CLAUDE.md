@@ -9922,13 +9922,57 @@ METEORタブのSatDump起動の競合、`_disconnect_sdr()`のバグ等）が別
   存在する場合は`quit()`が呼ばれること、存在しない場合（QApplication構築前に
   呼ばれた場合）は例外を出さず安全にスキップされることを検証
 
-**検証状況**: 静的なコード修正・ユニットテストに基づく。実機（Windows/macOS）での
-実際の自動再起動動作の確認は次回パス待ち（2026-08-23時点）。特に、frozenビルドでの
-`sys.executable`/`sys.argv`の実際の値、および多重起動ロックのリトライタイミング
-（8秒で十分か）は実機でしか最終確認できない。
+**追記（同日）— 「OKを押すとソフトが終了するだけで、再起動しない」不具合と修正**:
+上記実装をリリース直後、開発者自身が実機（macOS、Desktop `.app` → Ghostty →
+`run.command` → `python src/main.py`という開発機起動チェーン、本ファイル「デスクトップ
+起動用 .app ランチャー」セクション参照）で試したところ、警告OK後にアプリが終了する
+だけで、新プロセスが起動しなかった。
 
-**検証状況**: 静的なコード修正・ユニットテストに基づく。実機での確認は次回パス待ち
-（2026-08-23時点）。
+**原因**: `subprocess.Popen()`はデフォルトで子プロセスを**呼び出し元と同じセッション**
+（Unixのセッション/プロセスグループ）に属させたまま起動する。実際に`os.getsid()`で
+検証したところ、`start_new_session`を指定しない場合は子プロセスのセッションIDが親と
+完全に一致することを確認した。開発機の起動チェーンでは、`python src/main.py`
+（＝旧FBSAT59プロセス）自身がGhosttyのターミナルセッションのリーダーであり、
+`restart_application()`が起動する新しいFBSAT59プロセスも、デフォルトではこの同じ
+セッションに属してしまう。旧プロセスが`QApplication.quit()`で終了すると、
+`run.command`（シェルスクリプト）も終了し、Ghosttyのターミナルセッション自体が
+畳まれる際に、そのセッションに属する全プロセス（新しく起動したはずの子プロセスを
+含む）にSIGHUPが伝播し、新プロセスも一緒に終了してしまっていたと考えられる。
+
+**修正**: `subprocess.Popen()`に、POSIXでは`start_new_session=True`、Windowsでは
+`creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS`
+を追加し、新プロセスを親のセッション/プロセスグループから明示的に切り離した。
+あわせて、`stdin`/`stdout`/`stderr`もすべて`subprocess.DEVNULL`にリダイレクトした
+（親のターミナルfdは親プロセスの終了とともに無効になりうるため、そこへの依存自体を
+断ち切る狙い。frozenビルドはそもそもコンソールを持たない設計のため実害はなく、
+開発時のコンソール出力が見えなくなる代わりにログファイル出力で確認できる）。
+
+`os.getsid()`を使った独立検証スクリプトで、`start_new_session=True`により実際に
+子プロセスのセッションIDが親と分離されること（親と同じセッションID→独立したID
+に変わること）を確認した上でこの修正を確定させた。
+
+テスト: `tests/test_app_restart.py`に3件追加——`stdin`/`stdout`/`stderr`が
+`DEVNULL`に設定されること、POSIXでは`start_new_session=True`が渡され
+`creationflags`は渡されないこと、Windowsでは`creationflags`
+（`CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS`）が渡され`start_new_session`は
+渡されないことを検証（`sys.platform`を`monkeypatch`で切り替え、Windows専用の
+`subprocess.CREATE_NEW_PROCESS_GROUP`/`DETACHED_PROCESS`定数は`raising=False`で
+動的に追加してmacOS開発環境でもテスト可能にした）。
+
+**教訓**: `subprocess.Popen()`で起動した子プロセスは、明示的に切り離さない限り
+親のセッション/プロセスグループに属したままになる、という基本的な性質を見落として
+いた。特に「親プロセス自身がターミナルセッションのリーダーであり、かつ親が終了すると
+そのセッション自体が畳まれる」という開発機特有の起動構成（本ファイル「デスクトップ
+起動用 .app ランチャー」参照）では、子プロセスの分離を怠ると、たとえ`Popen()`の
+呼び出し自体が成功していても、後から静かに巻き添えで終了する。「プロセスは起動できて
+いるはずなのに、期待通り生き残らない」という症状を見たら、まずセッション/プロセス
+グループの分離を疑うこと。
+
+**検証状況**: `os.getsid()`によるセッション分離の直接検証・ユニットテストに基づく。
+実機（Windows/macOS、Ghostty経由の開発機起動・実際のfrozenビルド双方）での最終確認は
+次回パス待ち（2026-08-23時点）。特に、frozenビルドでの`sys.executable`/`sys.argv`の
+実際の値、および多重起動ロックのリトライタイミング（8秒で十分か）は実機でしか
+最終確認できない。
 
 ### 過去の受信フォルダをタブ内で見返す機能（`📂 Open Past Reception…`、2026-08-20 実装）
 

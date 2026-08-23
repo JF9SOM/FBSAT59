@@ -7,6 +7,7 @@ telling the user to do it by hand.
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -76,3 +77,46 @@ class TestRestartApplication:
         ):
             mock_cls.instance.return_value = None
             restart_application()  # must not raise
+
+    def test_stdio_is_detached_from_the_parent(self, _fake_qapp: MagicMock) -> None:
+        """Inheriting the parent's stdio handles would tie the new
+        process's lifetime to them; on the dev launcher (Desktop .app ->
+        Ghostty -> run.command -> python src/main.py) those handles vanish
+        once this process's terminal session tears down."""
+        with patch("core.app_restart.subprocess.Popen") as mock_popen:
+            restart_application()
+
+        _args, kwargs = mock_popen.call_args
+        assert kwargs["stdin"] is subprocess.DEVNULL
+        assert kwargs["stdout"] is subprocess.DEVNULL
+        assert kwargs["stderr"] is subprocess.DEVNULL
+
+    def test_posix_detaches_into_a_new_session(
+        self, _fake_qapp: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Without this, the child stays in this process's session and gets
+        SIGHUP'd along with it once the parent's shell/terminal session
+        (e.g. Ghostty) tears down -- observed as the app just quitting
+        instead of relaunching."""
+        monkeypatch.setattr(sys, "platform", "darwin")
+
+        with patch("core.app_restart.subprocess.Popen") as mock_popen:
+            restart_application()
+
+        _args, kwargs = mock_popen.call_args
+        assert kwargs["start_new_session"] is True
+        assert "creationflags" not in kwargs
+
+    def test_windows_uses_a_detached_new_process_group(
+        self, _fake_qapp: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(sys, "platform", "win32")
+        monkeypatch.setattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200, raising=False)
+        monkeypatch.setattr(subprocess, "DETACHED_PROCESS", 0x8, raising=False)
+
+        with patch("core.app_restart.subprocess.Popen") as mock_popen:
+            restart_application()
+
+        _args, kwargs = mock_popen.call_args
+        assert kwargs["creationflags"] == 0x200 | 0x8
+        assert "start_new_session" not in kwargs
