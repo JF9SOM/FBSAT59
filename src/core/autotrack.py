@@ -199,6 +199,24 @@ class AutotrackManager:
             if cur_el >= min_el:
                 self._state.pass_in_progress = True
                 return None
+            # Below min_el but still above the true horizon (0 deg): the
+            # pass is still in progress -- either just after AOS (hasn't
+            # climbed to min_el yet) or descending toward LOS. Don't hand
+            # off to another entry mid-pass (Rule 3), because
+            # _get_next_aos() below only considers *future* passes (its
+            # `p.aos >= now` filter skips one already under way) -- for the
+            # currently-tracked satellite that silently returns its *next*
+            # orbit's AOS instead of "now", which can be later than another
+            # entry's genuinely upcoming AOS and falsely look like the
+            # worse choice, causing a spurious switch away from a satellite
+            # that's still overhead (GitHub Issue #27 follow-up,
+            # 2026-08-23: two METEOR passes that never overlapped still hit
+            # this via the min_el-to-horizon gap, and the resulting rapid
+            # LOS/AOS handoff didn't give SatDump's own shutdown time to
+            # release the RTL-SDR before the next satellite's start tried
+            # to open it, causing an "already claimed" failure).
+            if cur_el >= 0.0:
+                return None
 
         # Rule 3: if a pass was in progress and now below min_el → LOS occurred.
         # Allow switch only now (don't interrupt mid-pass).

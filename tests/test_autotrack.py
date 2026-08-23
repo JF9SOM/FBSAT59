@@ -329,3 +329,65 @@ class TestNextSatelliteInfoExcludesOnlyVisibleCurrent:
         assert info is not None
         name, _aos = info
         assert name == str(_NORAD_B)
+
+
+class TestMidPassBelowMinElDoesNotSwitch:
+    """check()'s Rule 1 must not hand off to another entry while the
+    currently-tracked satellite is between 0 deg and min_el deg (just after
+    AOS, or descending toward LOS) -- _get_next_aos() only considers
+    *future* passes (its `p.aos >= now` filter skips one already under
+    way), so for `current` it silently returns the *next* orbit's AOS
+    instead of "now". That can look later than another entry's genuinely
+    upcoming AOS and falsely trigger Rule 2b's "switch to the earliest
+    AOS", abandoning a satellite that's still overhead (GitHub Issue #27
+    follow-up, 2026-08-23: two METEOR passes whose real windows never
+    overlapped still hit this via the min_el-to-horizon gap, and the
+    resulting rapid LOS/AOS handoff didn't give SatDump's own shutdown time
+    to release the RTL-SDR before the next satellite's reception tried to
+    open it, causing an "already claimed" failure)."""
+
+    def test_current_below_min_el_but_above_horizon_is_not_abandoned(self) -> None:
+        conn = _make_conn_with_two_entries()
+        mgr = AutotrackManager(conn)
+        mgr.set_list(1)
+        mgr.mark_searches_ready()
+
+        now = datetime.now(UTC)
+        predictor = _predictor_with_passes(
+            {_NORAD_B: [_make_pass_info(_NORAD_B, now + timedelta(minutes=1))]}
+        )
+        # _NORAD starts out fully visible -> Rule 2a picks it as `current`.
+        engine = _FakeEngine({_NORAD: 30.0})
+        result = mgr.check(_engine(engine), predictor)
+        assert result == (_NORAD, _XPDR_UUID)
+        assert mgr.current_norad == _NORAD
+
+        # Elevation drops below min_el (5.0) but is still above the true
+        # horizon -- the pass is still in progress. _NORAD_B's AOS is only
+        # a minute away, which would (incorrectly) look sooner than
+        # _NORAD's *next* orbit if Rule 2b were consulted here.
+        engine._elevations[_NORAD] = 2.0
+        result2 = mgr.check(_engine(engine), predictor)
+        assert result2 is None
+        assert mgr.current_norad == _NORAD
+
+    def test_current_below_true_horizon_allows_switch(self) -> None:
+        """Once elevation genuinely goes negative (true LOS), a switch to
+        another visible entry is allowed again."""
+        conn = _make_conn_with_two_entries()
+        mgr = AutotrackManager(conn)
+        mgr.set_list(1)
+        mgr.mark_searches_ready()
+
+        predictor = _predictor_with_passes({})
+        engine = _FakeEngine({_NORAD: 30.0})
+        result = mgr.check(_engine(engine), predictor)
+        assert result == (_NORAD, _XPDR_UUID)
+
+        # _NORAD has genuinely set (below the true horizon) and _NORAD_B is
+        # now visible -> Rule 2a should switch to it.
+        engine._elevations[_NORAD] = -3.0
+        engine._elevations[_NORAD_B] = 15.0
+        result2 = mgr.check(_engine(engine), predictor)
+        assert result2 == (_NORAD_B, _XPDR_UUID_B)
+        assert mgr.current_norad == _NORAD_B
