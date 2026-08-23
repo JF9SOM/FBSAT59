@@ -182,7 +182,30 @@ class AutotrackRecordDialog(QDialog):
     # ------------------------------------------------------------------
 
     def populate_list_combo(self, lists: list[dict[str, int | str]]) -> None:
-        """Refresh the list selector combo from external data."""
+        """Refresh the list selector combo from external data.
+
+        Preserves the current selection across a refresh where possible
+        (e.g. renaming some other list), and notifies autotrack_list_changed
+        if the effective selection actually changed as a result of this
+        call (e.g. the previously-selected list was just deleted, or this
+        is the first list ever created and the combo now auto-selects it).
+
+        This emit is necessary because the rebuild below is wrapped in
+        blockSignals() -- needed to suppress the spurious intermediate
+        currentIndexChanged events Qt fires during clear()/addItem() -- so
+        without it, whatever list the combo ends up on after a refresh
+        would never actually reach MainWindow (GitHub Issue #27 follow-up,
+        2026-08-23): a user created a single list, added a satellite entry,
+        and checked "Enable Autotrack" -- the combo clearly showed that
+        list selected, but MainWindow's AutotrackManager had never been
+        told, so entries() stayed empty and Autotrack silently did nothing
+        ("Run a pass search first", even though a pass search wasn't
+        actually the missing piece). It went unnoticed because a lone list
+        looks selected the moment it's created -- there's nothing prompting
+        the user to reselect it by hand, which is the only thing that fires
+        currentIndexChanged normally.
+        """
+        previous_id = self._at_sel_combo.currentData()
         self._at_sel_combo.blockSignals(True)
         self._at_sel_combo.clear()
         for lst in lists:
@@ -191,7 +214,19 @@ class AutotrackRecordDialog(QDialog):
         self._at_enable_cb.setEnabled(bool(lists))
         if not lists:
             self._at_enable_cb.setChecked(False)
+        if previous_id is not None:
+            idx = self._at_sel_combo.findData(previous_id)
+            if idx >= 0:
+                self._at_sel_combo.setCurrentIndex(idx)
+        new_id = self._at_sel_combo.currentData()
         self._at_sel_combo.blockSignals(False)
+        if new_id != previous_id:
+            self.autotrack_list_changed.emit(new_id)
+
+    def current_list_id(self) -> int | None:
+        """Return the Autotrack List currently selected in the combo, if any."""
+        list_id = self._at_sel_combo.currentData()
+        return int(list_id) if isinstance(list_id, int) else None
 
     def set_autotrack_enabled(self, enabled: bool) -> None:
         """Programmatically set the Enable Autotrack checkbox."""

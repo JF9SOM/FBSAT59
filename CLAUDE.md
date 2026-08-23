@@ -9451,6 +9451,76 @@ self._autotrack_meteor_record: bool = False
 新設する際は、再起動をまたいで保持すべきかどうかを都度検討し、保持すべきなら
 既存の`app_settings`パターンを最初から使う」ことを徹底する必要がある。
 
+### 10. Autotrack「リスト:」コンボの選択が`AutotrackManager`に一切伝わっていなかった不具合（GitHub Issue #27、2026-08-23 発見・修正）
+
+**症状**: 項目9（Recordingチェックボックス永続化）の修正後、開発者自身がAutotrack機能を
+初めて使ってみたところ、リスト"Met"を作成しMETEOR M2-3をエントリーとして追加、
+「METEOR / HRPT 受信」もチェック済みの状態で「自動追尾を有効化」をチェックしても、
+状態欄に**「先にパス検索を実行してください」**（項目2で自動化したはずのメッセージ）が
+表示された。Autotrack Controlの「リスト:」コンボには"Met"が正しく表示されており、
+一見して設定に不備は無いように見えた。
+
+**原因**: `AutotrackRecordDialog.populate_list_combo()`（リスト新規作成・削除・
+名前変更のたびに`_reload_at_lists()`から呼ばれる）は、`clear()`/`addItem()`の過程で
+Qtが発火する無関係な中間`currentIndexChanged`イベントを抑制するため、常に
+`blockSignals(True)`で全体をガードしていた。しかしこれには重大な副作用があり、
+**再構築後に実際にどのリストが選択された状態になっても、`autotrack_list_changed`
+シグナルが一度も発火しない**。リストを1つしか作らなかった場合、コンボには
+「唯一の選択肢」として自動的にそのリストが表示される（見た目上は選択済み）が、
+`MainWindow`側は一度もそのリストIDを教えられておらず、`AutotrackManager`の
+`_entries`は空のまま残る。`AutotrackManager.check()`は`if not self.is_ready or
+not self._entries: return None`で即座にreturnするため、項目2の自動ウォームアップ
+機能自体は正しく実装されていても、そもそも`entries()`が空なのでウォームアップの
+対象が無く、常に「Run a pass search first」表示に落ちていた。
+
+ユーザーがこの罠に気づけない理由: コンボに複数リストがあり、ユーザーが手動で
+ドロップダウンを開いて選び直す操作（＝本物の`currentIndexChanged`）をした場合は
+正しく動作する。Issue #27の最初の報告者（on7ndr）が2回目のテストでは動作したのは、
+2つのリストを作りその間で切り替え操作を行っていたためと推測される。一方、
+開発者自身のように**リストが1つだけ**で、コンボを操作し直す必要性を感じない
+（既に選択されて見えるため）ケースでは、この抜け穴に確実に落ちる。
+
+**修正**: `populate_list_combo()`を、再構築前後で「実際に選択されたリストID」を
+比較し、**変化した場合のみ**`autotrack_list_changed`をemitするよう変更
+（`current_list_id()`という公開getterも新設）。「変化した場合のみ」にした理由は、
+無条件にemitすると、既にEnable Autotrackで有効な追跡が動いている最中に
+（無関係な）別リストの名前変更等で`populate_list_combo()`が呼ばれるたびに
+`MainWindow._on_autotrack_list_changed()`が発火し、`_autotrack_enabled = False`で
+意図せず追跡を止めてしまう副作用があるため。
+
+さらに、この修正だけでは**アプリ起動直後**のケースがカバーできないことが判明した。
+`AutotrackRecordDialog.__init__()`内で`_reload_at_lists()`（初回のコンボ構築）が
+実行されるのは、`MainWindow.__init__()`が`self._at_dialog.autotrack_list_changed
+.connect(self._on_autotrack_list_changed)`を呼ぶ**より前**——つまり項目9の
+Recordingチェックボックス復元と全く同じ「コンストラクタ内の初期化はシグナル接続前に
+起きる」という時系列の罠に、今回も同じ形で引っかかる。`MainWindow.__init__()`側にも、
+シグナル接続の直後に`self._on_autotrack_list_changed(self._at_dialog
+.current_list_id())`を明示的に呼ぶ処理を追加し、起動時点で既に存在する唯一の
+（または最後に選択されていた）リストを確実に`AutotrackManager`へ伝えるようにした。
+
+テスト: `tests/test_autotrack_record_dialog.py`に`TestListComboSelectionSync`
+（4件）— 初めてのリスト作成でそのIDがemitされる・選択が変わらないリネームでは
+emitされない・リストが0件のとき`current_list_id()`が`None`・選択中のリストを
+削除すると新しい選択（`None`）がemitされることを検証。`TestMainWindowSyncsInitialListSelection`
+（2件）— `MainWindow`構築前にDBへリストとエントリーを直接INSERTしておき、構築後に
+`w._autotrack.entries()`が正しく非空になっていること、リストが無い場合は空のままで
+あることを検証（このクラスはQThread相当のMainWindowを直接構築するため、
+`test_main_window.py`と同じ`_no_background_sync`オートユースフィクスチャを
+このファイルにも追加する必要があった——追加を忘れた状態で一度実行したところ、
+実際にバックグラウンドスケジューラのスレッドが起動し「AMSAT status fetch failed:
+cannot schedule new futures after interpreter shutdown」等のエラーがテスト末尾に
+出力されることを確認して発覚した）。
+
+**教訓**: `blockSignals()`は「不要な中間シグナルを抑制する」という所期の目的は
+正しく果たすが、**最終的な状態変化そのものまで一緒に握りつぶしてしまう**という
+副作用を持つ。`blockSignals(True)`でガードされた再構築処理を書く際は、ガードを
+解除した直後に「その結果、実効的な状態が変わったかどうか」を明示的に比較し、
+変わっていればガードの外で改めて通知する、という2段構えを常に検討すること。
+今回は項目9（Recordingチェックボックス）と全く同じ「コンストラクタ内の初期化が
+シグナル接続より前に起きる」パターンの罠にも重ねて引っかかっており、
+`AutotrackRecordDialog`のようにコンストラクタ内で外部に通知すべき初期状態を
+持つダイアログを新設・変更する際は、毎回この時系列の罠を疑うこと。
+
 ### 過去の受信フォルダをタブ内で見返す機能（`📂 Open Past Reception…`、2026-08-20 実装）
 
 #### 背景

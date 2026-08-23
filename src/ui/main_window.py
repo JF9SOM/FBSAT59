@@ -788,6 +788,12 @@ class MainWindow(QMainWindow):
         self._autotrack_audio_record = self._at_dialog.is_audio_record_enabled()
         self._autotrack_iq_record = self._at_dialog.is_iq_record_enabled()
         self._autotrack_meteor_record = self._at_dialog.is_meteor_record_enabled()
+        # Likewise, the dialog's combo already selected a list in its own
+        # __init__() (if any lists exist) before autotrack_list_changed was
+        # connected above -- go through the same handler now so
+        # AutotrackManager.set_list() actually gets called for it, instead
+        # of silently leaving entries() empty (GitHub Issue #27 follow-up).
+        self._on_autotrack_list_changed(self._at_dialog.current_list_id())
 
         # Connect PassPanel signals
         self._pass_list.target_search_requested.connect(self._on_target_search_requested)
