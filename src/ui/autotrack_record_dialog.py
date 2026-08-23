@@ -472,6 +472,33 @@ class AutotrackRecordDialog(QDialog):
     def _on_enable_toggled(self, checked: bool) -> None:
         self.autotrack_toggled.emit(checked)
         self._save_autotrack_enabled_state(checked)
+        self._warn_restart_required()
+
+    def _warn_restart_required(self) -> None:
+        """Tell the user to restart the app after toggling Enable Autotrack.
+
+        A restart-after-toggle workflow was chosen (2026-08-23, GitHub
+        Issue #27) as the reliable way to run Autotrack's SDR-driven
+        METEOR/HRPT reception: a fresh process guarantees no rig/SDR handle
+        from a previous session or a previous toggle is still open when
+        Autotrack starts using the device, which intermittent
+        "device already claimed"/"no device" failures at AOS traced back
+        to. This is deliberately a blunt, always-shown warning rather than
+        detecting the specific unsafe states -- it's cheap for the user to
+        follow and doesn't depend on correctly enumerating every way a
+        stale handle could linger.
+        """
+        QMessageBox.warning(
+            self,
+            _("Restart Required"),
+            _(
+                "Please restart FBSAT59 now.\n\n"
+                "Changing Enable Autotrack can leave the rig/SDR connection "
+                "in a state that prevents Autotrack from reliably starting "
+                "or stopping METEOR/HRPT reception at AOS/LOS. Restarting "
+                "the app guarantees a clean state."
+            ),
+        )
 
     def _load_autotrack_enabled_state(self) -> None:
         """Restore the Enable Autotrack checkbox from app_settings.
