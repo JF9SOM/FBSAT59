@@ -9897,6 +9897,99 @@ USBハンドルを正常に解放する機会を与えられず、これがWindo
   検討すべきだった。個々の機構は単体では合理的でも、組み合わせると新たな障害
   モードを生むことがある
 
+### 16. Enable Autotrack有効化時点でAOSが誤って一度だけ発火し、本当のAOSでは二度と発火しない不具合（GitHub Issue #27、2026-08-24 発見・修正）
+
+**症状**: 項目9〜15の一連の修正後もなお、「自動追尾を有効化」がチェックされ
+「METEOR / HRPT Reception」チェックボックスもオンの状態でAOSを待っても、
+METEORタブの自動起動・SDR接続が一度も発生しない、という報告があった。
+Autotrack Controlのステータス欄には「Tracking: 衛星名」ではなく
+**「Next: 衛星名 in N min」がAOS予定時刻を過ぎても表示され続けている**ことを
+ユーザーに確認してもらい、これが決定的な手がかりになった。
+
+**根本原因**: `AutotrackManager.check()`のRule 2b（「誰も見えていない場合、
+最速AOSの衛星を選ぶ」、[autotrack.py](src/core/autotrack.py)）は、その衛星が
+**まだ地平線のはるか下にあっても**、リストの中で唯一の（または最速の）候補であれば
+即座に`_state.current_norad`として確定してしまう設計だった。一方
+`MainWindow._check_autotrack()`は、この`current`の変化（`is_new_sat`）を**その
+まま「AOSが発生した」と解釈**し、無条件で`_autotrack_on_aos()`（リグ/ローテーター
+接続・音声/IQ録音開始・METEORタブ自動起動をまとめて行う関数）を呼び出していた。
+
+実際にユニットテストで再現・確認済み: 90分後にAOSが来る衛星（現在の仰角-30°）に
+対し、Autotrack有効化直後の最初の`check()`呼び出しで`current_norad`が即座に
+その衛星へ確定することを確認した。
+
+```
+check() result on first tick (satellite still below horizon): (57166, 'test-xpdr-uuid')
+current_norad after this tick: 57166
+```
+
+つまり実際に起きていたのは:
+1. 「自動追尾を有効化」チェック直後（ウォームアップ完了後の最初の1秒tick）、衛星が
+   まだ地平線の何十分も下にあっても、`_autotrack_tracking_norad`が即座にその衛星の
+   NORADにセットされ、`_autotrack_on_aos()`が**一度だけ誤って発火**する。この時点
+   では信号が無いため、SatDumpの起動は無意味に終わる
+2. `_autotrack_tracking_norad`は既にその衛星のNORADで埋まってしまっているため、
+   **本当にAOSが到来しても`is_new_sat`は`False`のまま**——`_autotrack_on_aos()`は
+   二度と呼ばれない
+
+これはMETEORタブに限らず、リグ接続・ローテーター接続・音声/IQ録音の自動開始も
+すべて同じタイミングバグの影響を受ける（`_autotrack_on_aos()`が全部まとめて呼ぶため）。
+
+**さらに見落としていた第2の欠陥**: 「currentが変わった（`is_new_sat`）」タイミング
+にだけAOSトリガーのロジックを実装する初版の修正では、実は不十分だった。
+`check()`のRule 1（「currentがmin_el以上、またはmin_el未満でも真の地平線above
+（0度以上）ならまだ継続追跡中」）は、衛星の仰角が一度のtickで一気にmin_el
+（デフォルト5.0度）を超えてしまうケース（低頻度ポーリングや、テストで-30度→+10度と
+一足飛びに変化させたケース）で、**`is_new_sat`が真になるタイミングを経由せず、
+最初から`result is None`（Rule 1で「継続追跡中」）として処理されてしまう**ことが、
+実際にこの初版修正へのユニットテスト作成中に発覚した。つまりAOS発火のチェックは
+「`current`が切り替わった瞬間」だけでなく、**`check()`が`None`を返す（＝Rule 1で
+継続追跡と判定される）分岐でも、`_autotrack_tracking_norad`が設定されている限り
+毎tick行う必要がある**。
+
+**修正**:
+- `MainWindow`に`self._autotrack_aos_fired: bool`を新設。「`_autotrack_tracking_norad`が
+  次に追いかける予定になった」ことと「実際に地平線を超えた（真のAOS）」ことを分離する
+- 共通ヘルパー`_maybe_fire_autotrack_aos(norad, sat_name, el) -> bool`を新設し、
+  `_autotrack_aos_fired`がまだ`False`かつ`el >= 0.0`（真の地平線above）の場合にのみ
+  `_autotrack_on_aos()`を呼んで`True`を返す。このヘルパーを`_check_autotrack()`の
+  **`result`が`None`の分岐（Rule 1で継続追跡と判定されたケース）と、`result`が
+  非`None`の分岐（Rule 2a/2bで切り替えが起きたケース）の両方**から呼ぶことで、
+  上記の第2の欠陥（一足飛びの仰角変化）もカバーする
+- `_autotrack_on_los()`の冒頭に`if not self._autotrack_aos_fired: return`のガードを
+  追加。AOSが一度も発火していない対象（Rule 2bでまだ地平線下のまま予約されているだけの
+  衛星）に対して、Autotrack無効化・リスト切替・Timer失効等で誤ってLOS処理
+  （未接続のリグを切断しようとする等、実害はないが無駄な処理）が走るのを防ぐ。
+  呼び出し元（3箇所）は変更不要——ガードをこのメソッド自身に集約したことで、
+  呼び出し漏れのリスクも構造的に排除した
+- `_autotrack_on_aos()` → `_meteor_autotrack_aos()`の呼び出しにtry/exceptを追加
+  （既存の音声/IQ録音開始と同じパターンに統一。以前はここだけ無防備で、例外が
+  起きると`_check_autotrack()`全体が静かに中断されうる状態だった）
+- AOS発火の瞬間・METEOR/HRPT起動の各段階（`METEOR_NORAD_IDS`不一致でのスキップ・
+  タブ検出失敗）に診断ログ（`logger.info`/`logger.warning`）を追加。今後同種の
+  報告があった場合、`fbsat59.log`で「AOSは発火したがMETEORタブが見つからない」
+  のか「AOSそのものが発火していない」のかを即座に切り分けられるようにした
+
+**テスト**: `tests/test_main_window.py`に`TestAutotrackAosTiming`（4件）・
+`TestAutotrackOnLosGuard`（2件）を新設。地平線下ではAOSアクションが延期されること・
+実際に地平線を超えた瞬間に一度だけ発火すること・可視のまま継続する間は再発火しない
+こと・Rule 2a（既に可視）は初回tickから即座に発火すること・AOS未発火時の
+`_autotrack_on_los()`が実質no-opであることを検証。既存のAutotrack関連テスト23件・
+`tests/test_autotrack.py`10件・`test_rig.py`165件すべて回帰なしを確認済み。
+
+**教訓**: 「`current`（次の追跡対象）が確定した」ことと「実際にAOSが発生した」こと
+は、意味的には全く別の事象なのに、既存コードは同じ状態変化（`is_new_sat`）だけを
+シグナルとして両方を扱っていた。さらに、その状態変化自体も「値が変わった瞬間」だけ
+を見ていたため、値が一度のtickで閾値を飛び越えて変化するケース（Rule 1が「継続追跡」
+と判定してしまう）を取りこぼす、という二重の見落としがあった。「イベントAが起きたら
+アクションBを実行する」という設計では、Aの検出条件（今回は`current`の変化）が
+Bが本来必要とする条件（今回は実際の可視性）と完全に一致しているかを、境界ケース
+（一気に閾値を飛び越える、値が最初から条件を満たしている等）まで含めて確認すること。
+また、ユーザーへの「Tracking表示だったかNext表示だったか」という一言の確認が、
+2つの全く異なる仮説（早期発火 vs 内部同期ミス）を一つに絞り込む決め手になった——
+症状の見た目が同じでも、UIの正確な文言を確認するだけで原因調査の分岐点が変わる
+好例だった。
+
 ### 過去の受信フォルダをタブ内で見返す機能（`📂 Open Past Reception…`、2026-08-20 実装）
 
 #### 背景
