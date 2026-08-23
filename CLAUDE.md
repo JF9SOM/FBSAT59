@@ -9583,6 +9583,89 @@ DBスナップショット**を`self._entries`にキャッシュするだけの�
 折り返し位置が変わりうることを踏まえ、`setWordWrap(True)`を使うラベルには常に
 「実際に複数行になった場合の高さ」を明示的に確保しておくことが安全である。
 
+### 12. Next Pass表示の矛盾、およびAutotrack Timer自動開始が「有効化を手動で外した」設定を無視する不具合（GitHub Issue #27、2026-08-23 発見・修正）
+
+**症状1**: Autotrackリストに METEOR M2-3・M2-4 の2機を登録し、どちらもまだ地平線下という
+状況で「自動追尾を有効化」した際、実際にはM2-4の方が早いパスであるにもかかわらず、
+状態欄には常に「Next: METEOR M2-3 in N min」と表示された。
+
+**原因1**: `AutotrackManager`内部では実際にはM2-4を正しく次の追跡対象として選び
+`current_norad`にセットしていたが、UI表示ロジックとの間に矛盾があった。`check()`の
+Rule 2b（「誰も見えていないので最速AOSの衛星を選ぶ」）は、その最速候補が既に`current`と
+同じ場合（＝前回のtickで既に選択済みで変更なし）`None`を返す。一方、`_check_autotrack()`
+は`check()`が`None`を返した場合にのみ`next_satellite_info()`を呼んで「Next: ...」を
+表示するが、この`next_satellite_info()`は`current`を**常に**除外して次点を探す設計に
+なっていた。1回目のtickでM2-4が正しく選ばれ`current_norad`になった後、2回目以降の
+tickでは「currentと同じ最速候補」なので`check()`は`None`を返し、`next_satellite_info()`
+がcurrent（M2-4）を除外してしまうため、次点のM2-3が誤って表示され続けていた。
+
+**修正1**: `current`を除外すべきなのは「実際に可視状態（Rule 1でトラッキング継続中）」の
+場合のみで、「まだ見えていないが次の候補として選ばれているだけ」の場合は除外すべきではない。
+`elevations.get(current, -90.0) >= min_el`で`current`が実際に可視かどうかを判定し、
+可視の場合のみ除外する`current_is_visible`フラグを導入した。
+
+**症状2**: 「自動追尾を有効化」のチェックを外してダイアログをCloseしても、アプリを
+再起動すると自動追尾が有効な状態で立ち上がってしまう。
+
+**原因2**: `_check_autotrack()`のAutotrack Timer自動開始ロジックが、「現在時刻 ≥
+開始時刻」を無条件に「開始時刻に到達した」の合図として扱っていた:
+```python
+elif self._autotrack.is_ready:
+    now_utc = datetime.now(UTC)
+    start_utc = self._at_dialog.get_timer_start_utc()
+    if now_utc >= start_utc:
+        self._autotrack_enabled = True  # 無条件でオンにしてしまう
+```
+一方、Autotrack Timerの「開始 (ローカル):」欄のデフォルト値は、ダイアログが新規構築
+される（＝アプリ起動の）たびに必ず「今の時刻」にリセットされる
+（`self._timer_start_dt.setDateTime(QDateTime.currentDateTimeUtc()...)`）。つまり
+アプリを起動すると、1秒後の最初の`_check_autotrack()`呼び出しで「現在時刻 ≥ 開始時刻」が
+必ず真になり（1秒経過すれば必ず過ぎているため）、`is_ready`（entriesがあり準備完了）
+なら無条件で`self._autotrack_enabled = True`にされてしまっていた。加えて、Enable
+Autotrackのチェック状態自体もこれまで一切永続化されておらず、仮にチェック状態だけを
+保存・復元しても、復元直後の最初のtickでこのTimerロジックがすぐに`True`で上書きして
+しまう構造だった。
+
+**修正2（2段構え）**:
+1. **Enable Autotrackのチェック状態を永続化**（`AutotrackRecordDialog`、新規キー
+   `autotrack_enabled`、`"1"`/`"0"`の単純な文字列値。既存の`_RECORDING_SETTINGS_KEY`
+   と同じ`app_settings`パターン）。`MainWindow.__init__()`では、既存の「リスト選択の
+   復元」処理（`_on_autotrack_list_changed()`）が副作用として無条件に
+   `_autotrack_enabled = False`にリセットしてしまうため、**その処理を呼ぶ前に**
+   復元済みの状態を`restored_autotrack_enabled`として退避し、呼んだ**後**に再適用する
+   という順序にした
+2. **Timer自動開始ロジックを「遷移検出」方式に変更**: 「現在時刻 ≥ 開始時刻」が真である
+   ことだけでなく、**その前に一度「現在時刻 ＜ 開始時刻」を観測している**
+   （`self._autotrack_timer_armed = True`）ことも条件に加えた。これにより、起動直後に
+   デフォルト値（今の時刻）のせいでたまたま「もう過ぎている」状態になっていても、
+   `armed`が`False`のままなので発動しない。ユーザーが実際に未来の時刻を設定した場合は、
+   次のtickで`now < start_utc`が観測されて`armed = True`になり、その後実際に時刻が
+   経過した時点で正しく発動する。`_autotrack_timer_armed`は、Enable Autotrackを手動で
+   OFFにした場合（`_on_autotrack_toggled(False)`）とリストを切り替えた場合
+   （`_on_autotrack_list_changed`）にもリセットする——手動でオフにしたのに、Timerの
+   開始時刻がまだ未来のまま残っていて後で勝手に再度オンに戻る、という同種の症状の
+   再発を防ぐため。
+
+テスト: `tests/test_autotrack.py`に`TestNextSatelliteInfoExcludesOnlyVisibleCurrent`
+（2件）——`current`がまだ見えていない最速候補自身の場合はそれ自身が正しく"Next"として
+返ること、`current`が実際に可視（Rule 1でトラッキング中）の場合は正しく除外されて
+次点が返ることを検証（`PassInfo`を返すフェイクPredictorを新設）。
+`tests/test_autotrack_record_dialog.py`に`TestAutotrackEnabledPersistence`（4件）・
+`TestMainWindowRestoresAutotrackEnabled`（5件、うち1件は`_check_autotrack()`を
+`get_timer_start_utc()`をモックして未来→過去に切り替える形で実際にarmed→発火の遷移を
+検証、もう1件は手動OFF時に`armed`がリセットされることを検証）。
+
+**検証状況**: 静的なコード修正・ユニットテストに基づく。実機での確認は開発者自身の
+次回パス待ち（2026-08-23時点）。
+
+**教訓**: 「currentを除外する」「現在時刻が閾値を超えたら発火する」といった一見単純な
+条件分岐も、**その値がどうやってその状態になったか**（本当に可視なのか、単に前回の
+選択が持ち越されているだけなのか／ユーザーが意図的に設定したのか、単にUIのデフォルト値が
+たまたまそうなっているだけなのか）を区別しないと、意図と異なる場面で誤発動する。
+特に「UIウィジェットのデフォルト値が実行のたびに現在時刻にリセットされる」設計は、
+それを見る側のロジックが「一度でも異なる状態を経由したか」という遷移を意識しない限り、
+静かに壊れる典型例だった。
+
 ### 過去の受信フォルダをタブ内で見返す機能（`📂 Open Past Reception…`、2026-08-20 実装）
 
 #### 背景

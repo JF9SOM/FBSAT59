@@ -12,15 +12,19 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast
 
 from core.autotrack import AutotrackManager
+from core.engine import PassInfo
 
 if TYPE_CHECKING:
     from core.engine import PassPredictor, SatelliteEngine
 
 _NORAD = 57166  # METEOR-M N2-3
 _XPDR_UUID = "test-xpdr-uuid"
+_NORAD_B = 59051  # METEOR-M N2-4
+_XPDR_UUID_B = "test-xpdr-uuid-b"
 
 
 @dataclass
@@ -49,6 +53,33 @@ class _FakePredictor:
         return []
 
 
+class _FakePredictorWithPasses:
+    """Duck-typed PassPredictor stand-in returning scheduled passes per NORAD."""
+
+    def __init__(self, passes_by_norad: dict[int, list[PassInfo]]) -> None:
+        self._passes_by_norad = passes_by_norad
+
+    def get_passes(self, norad_cat_id: int, start: object, end: object) -> list[object]:
+        return list(self._passes_by_norad.get(norad_cat_id, []))
+
+
+def _make_pass_info(norad: int, aos: datetime) -> PassInfo:
+    return PassInfo(
+        norad_cat_id=norad,
+        aos=aos,
+        tca=aos + timedelta(minutes=5),
+        los=aos + timedelta(minutes=10),
+        max_elevation_deg=45.0,
+        aos_azimuth_deg=90.0,
+        los_azimuth_deg=270.0,
+        duration_s=600.0,
+    )
+
+
+def _predictor_with_passes(passes_by_norad: dict[int, list[PassInfo]]) -> PassPredictor:
+    return cast("PassPredictor", _FakePredictorWithPasses(passes_by_norad))
+
+
 def _engine(fake: _FakeEngine) -> SatelliteEngine:
     return cast("SatelliteEngine", fake)
 
@@ -72,6 +103,7 @@ def _make_conn_with_empty_list() -> sqlite3.Connection:
         )
         """
     )
+    conn.execute("CREATE TABLE satellites (norad_cat_id INTEGER PRIMARY KEY, name TEXT)")
     conn.execute("INSERT INTO autotrack_lists (id, name, sort_order) VALUES (1, 'Test', 0)")
     conn.commit()
     return conn
@@ -89,6 +121,13 @@ def _add_entry(conn: sqlite3.Connection, norad: int = _NORAD, uuid: str = _XPDR_
 def _make_conn_with_single_entry() -> sqlite3.Connection:
     conn = _make_conn_with_empty_list()
     _add_entry(conn)
+    return conn
+
+
+def _make_conn_with_two_entries() -> sqlite3.Connection:
+    conn = _make_conn_with_empty_list()
+    _add_entry(conn, norad=_NORAD, uuid=_XPDR_UUID)
+    _add_entry(conn, norad=_NORAD_B, uuid=_XPDR_UUID_B)
     return conn
 
 
@@ -173,7 +212,6 @@ class TestEntriesRefreshFromDb:
 
     def test_entry_added_after_set_list_is_picked_up_by_next_satellite_info(self) -> None:
         conn = _make_conn_with_empty_list()
-        conn.execute("CREATE TABLE satellites (norad_cat_id INTEGER PRIMARY KEY, name TEXT)")
         conn.execute(
             "INSERT INTO satellites (norad_cat_id, name) VALUES (?, 'METEOR-M N2-3')",
             (_NORAD,),
@@ -216,3 +254,78 @@ class TestEntriesRefreshFromDb:
         result2 = mgr.check(_engine(_FakeEngine({_NORAD: 30.0})), predictor)
         assert result2 is None
         assert mgr.current_norad == _NORAD
+
+
+class TestNextSatelliteInfoExcludesOnlyVisibleCurrent:
+    """next_satellite_info() must not exclude `current` from its search
+    unless it's genuinely visible right now -- if it's merely check()'s
+    Rule 2b earliest-AOS pick that hasn't risen yet, excluding it here
+    reports some other, later-rising entry as "Next" instead (GitHub Issue
+    #27 follow-up, 2026-08-23): with METEOR M2-3 and M2-4 both in a list
+    and M2-4 genuinely the sooner pass, the status label kept showing
+    "Next: METEOR M2-3" because M2-4 had already been silently picked as
+    `current` by check() and was then wrongly excluded here.
+    """
+
+    def test_current_still_shown_as_next_when_not_yet_visible(self) -> None:
+        conn = _make_conn_with_two_entries()
+        mgr = AutotrackManager(conn)
+        mgr.set_list(1)
+        mgr.mark_searches_ready()
+
+        now = datetime.now(UTC)
+        predictor = _predictor_with_passes(
+            {
+                _NORAD: [_make_pass_info(_NORAD, now + timedelta(minutes=10))],  # sooner
+                _NORAD_B: [_make_pass_info(_NORAD_B, now + timedelta(minutes=60))],
+            }
+        )
+        engine = _engine(_FakeEngine({}))  # neither satellite visible yet
+
+        # First tick: Rule 2b picks _NORAD (the sooner one) as `current`.
+        result = mgr.check(engine, predictor)
+        assert result == (_NORAD, _XPDR_UUID)
+        assert mgr.current_norad == _NORAD
+
+        # Second tick: `current` is still the same earliest pick, so
+        # check() returns None (no change) and the status label falls back
+        # to next_satellite_info(). It must still report _NORAD, not
+        # _NORAD_B, since _NORAD genuinely is the next one to rise.
+        result2 = mgr.check(engine, predictor)
+        assert result2 is None
+        info = mgr.next_satellite_info(engine, predictor)
+        assert info is not None
+        name, _aos = info
+        # No `satellites` row exists in this fixture, so the name falls
+        # back to the NORAD id itself.
+        assert name == str(_NORAD)
+
+    def test_current_excluded_from_next_when_genuinely_visible(self) -> None:
+        """Once `current` is actually above the horizon (Rule 1 keeps
+        tracking it), next_satellite_info() must exclude it and report the
+        other entry instead."""
+        conn = _make_conn_with_two_entries()
+        mgr = AutotrackManager(conn)
+        mgr.set_list(1)
+        mgr.mark_searches_ready()
+
+        now = datetime.now(UTC)
+        predictor = _predictor_with_passes(
+            {_NORAD_B: [_make_pass_info(_NORAD_B, now + timedelta(minutes=30))]}
+        )
+        # _NORAD is visible right now.
+        engine = _engine(_FakeEngine({_NORAD: 30.0}))
+
+        result = mgr.check(engine, predictor)
+        assert result == (_NORAD, _XPDR_UUID)
+        assert mgr.current_norad == _NORAD
+
+        # current is visible -> check() keeps tracking it (Rule 1), so the
+        # status label falls back to next_satellite_info(), which must
+        # exclude _NORAD (already being tracked) and report _NORAD_B.
+        result2 = mgr.check(engine, predictor)
+        assert result2 is None
+        info = mgr.next_satellite_info(engine, predictor)
+        assert info is not None
+        name, _aos = info
+        assert name == str(_NORAD_B)

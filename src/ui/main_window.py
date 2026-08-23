@@ -757,6 +757,8 @@ class MainWindow(QMainWindow):
         # Background warm-up of pass predictions (see _start_autotrack_warmup)
         self._autotrack_warmup_worker: _AutotrackWarmupWorker | None = None
         self._autotrack_warmup_gen: int = 0
+        # Autotrack Timer auto-start guard -- see _check_autotrack()
+        self._autotrack_timer_armed: bool = False
 
         from PySide6.QtWidgets import QApplication
 
@@ -793,7 +795,17 @@ class MainWindow(QMainWindow):
         # connected above -- go through the same handler now so
         # AutotrackManager.set_list() actually gets called for it, instead
         # of silently leaving entries() empty (GitHub Issue #27 follow-up).
+        # Capture the dialog's already-restored Enable Autotrack state
+        # first, since _on_autotrack_list_changed() below unconditionally
+        # clears it (via set_autotrack_enabled(False)) as part of syncing
+        # list selection -- it must be re-applied afterward, not before.
+        restored_autotrack_enabled = self._at_dialog.is_autotrack_enabled()
         self._on_autotrack_list_changed(self._at_dialog.current_list_id())
+        if restored_autotrack_enabled:
+            self._autotrack_enabled = True
+            self._at_dialog.set_autotrack_enabled(True)
+            self._radio_control.set_autotrack_indicator(True)
+            self._start_autotrack_warmup(silent_if_empty=True)
 
         # Connect PassPanel signals
         self._pass_list.target_search_requested.connect(self._on_target_search_requested)
@@ -2146,10 +2158,25 @@ class MainWindow(QMainWindow):
                 )
                 return
         elif self._autotrack.is_ready:
-            # Auto start when start time is reached and autotrack is not yet running
+            # Auto start when start time is reached and autotrack is not yet
+            # running -- but only on the transition from "not yet due" to
+            # "due", never merely because "now >= start_utc" happens to be
+            # true. The Autotrack Timer's start-time field always defaults
+            # to "now" whenever the dialog is (re)built (i.e. every app
+            # restart), so a plain ">=" check fired on the very first tick
+            # after every restart and silently re-enabled Autotrack even
+            # when the user had deliberately unchecked it before closing
+            # the app (GitHub Issue #27 follow-up, 2026-08-23). Requiring
+            # "seen not-yet-due, then due" means a start time left at its
+            # default (already in the past by the time this first runs)
+            # never triggers, while a start time the user actually set in
+            # the future still does once it's reached.
             now_utc = datetime.now(UTC)
             start_utc = self._at_dialog.get_timer_start_utc()
-            if now_utc >= start_utc:
+            if now_utc < start_utc:
+                self._autotrack_timer_armed = True
+            elif self._autotrack_timer_armed:
+                self._autotrack_timer_armed = False
                 self._autotrack_enabled = True
                 self._at_dialog.set_autotrack_enabled(True)
                 self._radio_control.set_autotrack_indicator(True)
@@ -2246,6 +2273,11 @@ class MainWindow(QMainWindow):
             self._autotrack.reset()
             self._at_dialog.set_autotrack_status("—")
             self._autotrack_tracking_norad = None
+            # A user who deliberately unchecks the box has opted out of the
+            # Timer's pending auto-start too -- otherwise, if the (still
+            # future) start time is later reached, _check_autotrack() would
+            # silently re-enable Autotrack right back on top of that choice.
+            self._autotrack_timer_armed = False
         else:
             self._start_autotrack_warmup(silent_if_empty=False)
 
@@ -2255,6 +2287,7 @@ class MainWindow(QMainWindow):
         self._invalidate_autotrack_warmup()
         self._autotrack.set_list(lid)
         self._autotrack_enabled = False
+        self._autotrack_timer_armed = False
         self._at_dialog.set_autotrack_enabled(False)
         self._at_dialog.set_autotrack_status("—")
         self._radio_control.set_autotrack_indicator(False)

@@ -251,13 +251,25 @@ class AutotrackManager:
         elevations = self._get_elevations(engine, norads)
 
         current = self._state.current_norad
+        # Only exclude `current` from the search if it's genuinely being
+        # tracked right now (visible above min_el, i.e. Rule 1 kept check()
+        # returning None) -- if `current` is merely Rule 2b's
+        # earliest-AOS pick that hasn't risen yet (check() also returns
+        # None in that case, since the pick didn't change), it *is* the
+        # next satellite and excluding it here would report some other,
+        # later-rising entry as "Next" instead (GitHub Issue #27 follow-up,
+        # 2026-08-23: with METEOR M2-3 and M2-4 both in a list and M2-4
+        # genuinely the sooner pass, the status kept showing "Next:
+        # METEOR M2-3" because M2-4 had already been silently picked as
+        # `current` by check() and was then excluded here).
+        current_is_visible = current is not None and elevations.get(current, -90.0) >= min_el
 
         # Look for the satellite that will come after the current one
         best_entry: AutotrackEntry | None = None
         best_aos: datetime | None = None
 
         for entry in self._entries:
-            if entry.norad_cat_id == current:
+            if current_is_visible and entry.norad_cat_id == current:
                 continue
             el = elevations.get(entry.norad_cat_id, -90.0)
             if el >= min_el:

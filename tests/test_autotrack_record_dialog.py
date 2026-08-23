@@ -253,3 +253,171 @@ class TestStatusLabelHeight:
 
         line_height = dlg._at_status_label.fontMetrics().height()
         assert dlg._at_status_label.minimumHeight() >= line_height * 2
+
+
+class TestAutotrackEnabledPersistence:
+    """Enable Autotrack must be saved and restored across restarts (GitHub
+    Issue #27 follow-up, 2026-08-23): a user unchecked it and closed the
+    dialog, but the next app launch showed it checked again anyway -- see
+    also TestMainWindowRestoresAutotrackEnabled below for the other half
+    of this fix (the Autotrack Timer's auto-start logic re-enabling it on
+    the very next tick if this alone were fixed)."""
+
+    def test_defaults_to_unchecked_when_nothing_saved(
+        self, qtbot: QtBot, db: sqlite3.Connection
+    ) -> None:
+        dlg = AutotrackRecordDialog(db)
+        qtbot.addWidget(dlg)
+
+        assert dlg.is_autotrack_enabled() is False
+
+    def test_checking_persists_to_app_settings(self, qtbot: QtBot, db: sqlite3.Connection) -> None:
+        from core.autotrack import AutotrackManager
+
+        AutotrackManager.create_list(db, "Met")
+        dlg = AutotrackRecordDialog(db)
+        qtbot.addWidget(dlg)
+
+        dlg._at_enable_cb.setChecked(True)
+
+        row = db.execute(
+            "SELECT value FROM app_settings WHERE key = 'autotrack_enabled'"
+        ).fetchone()
+        assert row is not None
+        assert row["value"] == "1"
+
+    def test_new_dialog_instance_restores_checked_state(
+        self, qtbot: QtBot, db: sqlite3.Connection
+    ) -> None:
+        from core.autotrack import AutotrackManager
+
+        AutotrackManager.create_list(db, "Met")
+        first = AutotrackRecordDialog(db)
+        qtbot.addWidget(first)
+        first._at_enable_cb.setChecked(True)
+
+        second = AutotrackRecordDialog(db)
+        qtbot.addWidget(second)
+
+        assert second.is_autotrack_enabled() is True
+
+    def test_unchecking_persists_too(self, qtbot: QtBot, db: sqlite3.Connection) -> None:
+        from core.autotrack import AutotrackManager
+
+        AutotrackManager.create_list(db, "Met")
+        first = AutotrackRecordDialog(db)
+        qtbot.addWidget(first)
+        first._at_enable_cb.setChecked(True)
+        first._at_enable_cb.setChecked(False)
+
+        second = AutotrackRecordDialog(db)
+        qtbot.addWidget(second)
+
+        assert second.is_autotrack_enabled() is False
+
+
+class TestMainWindowRestoresAutotrackEnabled:
+    """MainWindow must sync its own _autotrack_enabled flag from the
+    dialog's already-restored checkbox state, and the Autotrack Timer's
+    auto-start "armed" guard must not immediately re-trigger and clobber
+    a restored-as-unchecked state on the very first tick after restart."""
+
+    def _make_window(self, qtbot: QtBot, db: sqlite3.Connection) -> MainWindow:
+        from data.tle_manager import TLEManager
+
+        tle_manager = TLEManager(db)
+        w = MainWindow(conn=db, tle_manager=tle_manager)
+        qtbot.addWidget(w)
+        return w
+
+    def test_restored_enabled_state_is_reflected_in_mainwindow_flag(
+        self, qtbot: QtBot, db: sqlite3.Connection
+    ) -> None:
+        from core.autotrack import AutotrackManager
+
+        list_id = AutotrackManager.create_list(db, "Met")
+        AutotrackManager.add_entry(db, list_id, 57166, "test-xpdr-uuid")
+        db.execute("INSERT INTO app_settings (key, value) VALUES ('autotrack_enabled', '1')")
+        db.commit()
+
+        w = self._make_window(qtbot, db)
+
+        assert w._autotrack_enabled is True
+        assert w._at_dialog.is_autotrack_enabled() is True
+
+    def test_no_saved_state_defaults_to_disabled(
+        self, qtbot: QtBot, db: sqlite3.Connection
+    ) -> None:
+        w = self._make_window(qtbot, db)
+
+        assert w._autotrack_enabled is False
+
+    def test_timer_auto_start_does_not_fire_on_the_first_tick_after_restart(
+        self, qtbot: QtBot, db: sqlite3.Connection
+    ) -> None:
+        """The Autotrack Timer's start-time field defaults to "now" every
+        time the dialog is rebuilt, so a naive ">=" check on the very
+        first _check_autotrack() tick after a restart would immediately
+        re-enable Autotrack even though it was restored as unchecked
+        (GitHub Issue #27 follow-up, 2026-08-23)."""
+        from core.autotrack import AutotrackManager
+
+        list_id = AutotrackManager.create_list(db, "Met")
+        AutotrackManager.add_entry(db, list_id, 57166, "test-xpdr-uuid")
+
+        w = self._make_window(qtbot, db)
+        assert w._autotrack_enabled is False
+
+        w._check_autotrack()
+
+        assert w._autotrack_enabled is False
+
+    def test_timer_auto_start_fires_after_arming_then_crossing_start_time(
+        self, qtbot: QtBot, db: sqlite3.Connection
+    ) -> None:
+        """The positive case for the armed-guard above: a start time the
+        user actually sets in the future must still trigger auto-start
+        once it's genuinely reached, not just on a restart's default."""
+        from datetime import UTC, datetime, timedelta
+        from unittest.mock import patch
+
+        from core.autotrack import AutotrackManager
+
+        list_id = AutotrackManager.create_list(db, "Met")
+        AutotrackManager.add_entry(db, list_id, 57166, "test-xpdr-uuid")
+
+        w = self._make_window(qtbot, db)
+        w._autotrack.mark_searches_ready()  # bypass the async warmup race
+        assert w._autotrack_enabled is False
+
+        future = datetime.now(UTC) + timedelta(hours=1)
+        past = datetime.now(UTC) - timedelta(minutes=1)
+
+        with patch.object(w._at_dialog, "get_timer_start_utc", return_value=future):
+            w._check_autotrack()
+        assert w._autotrack_enabled is False
+        assert w._autotrack_timer_armed is True
+
+        with patch.object(w._at_dialog, "get_timer_start_utc", return_value=past):
+            w._check_autotrack()
+        assert w._autotrack_enabled is True
+        assert w._autotrack_timer_armed is False
+
+    def test_manually_disabling_disarms_the_timer(
+        self, qtbot: QtBot, db: sqlite3.Connection
+    ) -> None:
+        """Manually unchecking Enable Autotrack must not leave a still-armed
+        timer to silently re-enable it once its (still future) start time
+        is reached -- that would be the same "can't turn it off" symptom
+        this whole fix targets."""
+        from core.autotrack import AutotrackManager
+
+        list_id = AutotrackManager.create_list(db, "Met")
+        AutotrackManager.add_entry(db, list_id, 57166, "test-xpdr-uuid")
+
+        w = self._make_window(qtbot, db)
+        w._autotrack_timer_armed = True
+
+        w._on_autotrack_toggled(False)
+
+        assert w._autotrack_timer_armed is False

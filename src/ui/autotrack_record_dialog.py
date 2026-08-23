@@ -45,6 +45,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _RECORDING_SETTINGS_KEY = "autotrack_recording_settings"
+_AUTOTRACK_ENABLED_KEY = "autotrack_enabled"
 
 
 class _SatSearchDialog(QDialog):
@@ -176,6 +177,7 @@ class AutotrackRecordDialog(QDialog):
         self._setup_ui()
         self._reload_at_lists()
         self._load_recording_settings()
+        self._load_autotrack_enabled_state()
 
     # ------------------------------------------------------------------
     # Public API
@@ -233,6 +235,11 @@ class AutotrackRecordDialog(QDialog):
         self._at_enable_cb.blockSignals(True)
         self._at_enable_cb.setChecked(enabled)
         self._at_enable_cb.blockSignals(False)
+
+    def is_autotrack_enabled(self) -> bool:
+        """Return the Enable Autotrack checkbox's current (possibly
+        just-restored) state."""
+        return bool(self._at_enable_cb.isChecked())
 
     def set_autotrack_status(self, text: str, ok: bool = True) -> None:
         """Update the status label."""
@@ -464,6 +471,40 @@ class AutotrackRecordDialog(QDialog):
 
     def _on_enable_toggled(self, checked: bool) -> None:
         self.autotrack_toggled.emit(checked)
+        self._save_autotrack_enabled_state(checked)
+
+    def _load_autotrack_enabled_state(self) -> None:
+        """Restore the Enable Autotrack checkbox from app_settings.
+
+        Without this, "Enable Autotrack" always reset to unchecked on
+        every app restart -- but worse, the Autotrack Timer's own
+        auto-start logic (whose "start time" field always defaults to
+        "now" on every restart) would then immediately re-enable it
+        anyway on the very next tick, so a user who deliberately
+        unchecked it and closed the dialog would find it checked again
+        next time they opened the app (GitHub Issue #27 follow-up,
+        2026-08-23). See MainWindow._check_autotrack()'s
+        _autotrack_timer_armed guard for the other half of that fix.
+        Signals are blocked here for the same reason as
+        _load_recording_settings() -- MainWindow reads the restored value
+        via is_autotrack_enabled() itself, after wiring up its own signals.
+        """
+        row = self._conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?",
+            (_AUTOTRACK_ENABLED_KEY,),
+        ).fetchone()
+        enabled = bool(row and row["value"] == "1")
+        self._at_enable_cb.blockSignals(True)
+        self._at_enable_cb.setChecked(enabled)
+        self._at_enable_cb.blockSignals(False)
+
+    def _save_autotrack_enabled_state(self, enabled: bool) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value, updated_at)"
+            " VALUES (?, ?, CURRENT_TIMESTAMP)",
+            (_AUTOTRACK_ENABLED_KEY, "1" if enabled else "0"),
+        )
+        self._conn.commit()
 
     # ------------------------------------------------------------------
     # Slots — Recording checkboxes (persisted to app_settings)
