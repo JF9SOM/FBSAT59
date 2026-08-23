@@ -465,30 +465,17 @@ def _acquire_single_instance_lock() -> QLockFile | None:
     Returns the held QLockFile on success — the caller must keep a
     reference alive for the lifetime of the process, since the lock is
     released when the object is destroyed.  Returns None if another
-    instance already holds the lock (after retrying for a few seconds when
-    RESTART_ENV_VAR=1 is set — core.app_restart.restart_application()
-    launches the new process before the old one has necessarily finished
-    releasing the lock during its own shutdown).
+    instance already holds the lock.
     """
-    import time
-
     from platformdirs import user_data_dir
-
-    from core.app_restart import RESTART_ENV_VAR
 
     lock_dir = Path(user_data_dir("fbsat59", "fbsat59"))
     lock_dir.mkdir(parents=True, exist_ok=True)
     lock = QLockFile(str(lock_dir / "fbsat59.lock"))
     lock.setStaleLockTime(30000)
-
-    is_restart = os.environ.get(RESTART_ENV_VAR) == "1"
-    deadline = time.monotonic() + (8.0 if is_restart else 0.0)
-    while True:
-        if lock.tryLock(200):
-            return lock
-        if time.monotonic() >= deadline:
-            return None
-        time.sleep(0.2)
+    if lock.tryLock(200):
+        return lock
+    return None
 
 
 def main() -> int:
