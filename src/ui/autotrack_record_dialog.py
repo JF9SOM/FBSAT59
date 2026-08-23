@@ -607,6 +607,14 @@ class AutotrackRecordDialog(QDialog):
             item.setData(0, 0x0100, entry["id"])
             self._at_entry_tree.addTopLevelItem(item)
 
+        # Adding/removing/reordering entries changes what Autotrack has to
+        # track, so re-announce via the same signal used for list add/remove
+        # (main_window.py re-tries the pass-prediction warm-up on this —
+        # necessary when a list started out empty, warmed up as a no-op, and
+        # only later got its first satellite added; without this the Autotrack
+        # Timer's auto-start path never becomes ready, GitHub Issue #27).
+        self.lists_modified.emit()
+
     def _on_at_list_selected(self, row: int) -> None:
         item = self._at_list_widget.item(row)
         self._at_selected_list_id = int(item.data(0x0100)) if item else None

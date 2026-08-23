@@ -205,6 +205,51 @@ class TestListComboSelectionSync:
         assert dlg.current_list_id() is None
 
 
+class TestReloadAtEntriesSignalsListsModified:
+    """_reload_at_entries() must emit lists_modified whenever the selected
+    list's entries change (add/remove/reorder), not just when lists
+    themselves are added/removed/renamed -- main_window.py uses this signal
+    to retry the Autotrack pass-prediction warm-up, which is otherwise never
+    re-attempted once a list's first _start_autotrack_warmup() call ran as a
+    silent no-op against an empty list (GitHub Issue #27 follow-up,
+    2026-08-23)."""
+
+    def test_add_entry_emits_lists_modified(self, qtbot: QtBot, db: sqlite3.Connection) -> None:
+        from core.autotrack import AutotrackManager
+
+        list_id = AutotrackManager.create_list(db, "Met")
+        dlg = AutotrackRecordDialog(db)
+        qtbot.addWidget(dlg)
+        # current_list_id() (the combo, used by main_window.py) is
+        # auto-selected on construction, but the separate list *widget*
+        # (_at_selected_list_id, used by _reload_at_entries() itself) is
+        # not -- mirror the real click a user makes on the list widget.
+        dlg._at_list_widget.setCurrentRow(0)
+        received = 0
+
+        def _bump() -> None:
+            nonlocal received
+            received += 1
+
+        dlg.lists_modified.connect(_bump)
+
+        AutotrackManager.add_entry(db, list_id, 57166, "test-xpdr-uuid")
+        dlg._reload_at_entries()
+
+        assert received == 1
+
+    def test_reload_with_no_selected_list_does_not_crash(
+        self, qtbot: QtBot, db: sqlite3.Connection
+    ) -> None:
+        dlg = AutotrackRecordDialog(db)
+        qtbot.addWidget(dlg)
+        assert dlg.current_list_id() is None
+
+        # Should be a no-op (early return before the lists_modified emit),
+        # not an exception.
+        dlg._reload_at_entries()
+
+
 class TestMainWindowSyncsInitialListSelection:
     """MainWindow must sync AutotrackManager to whatever list the dialog's
     combo already selected in its own __init__(), since that happens before

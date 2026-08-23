@@ -25,6 +25,10 @@
 **対象OS**: Linux（主開発環境: Ubuntu）, Windows, macOS  
 **ライセンス**: GPL-2.0（GPredict互換）
 
+**Windows最低バージョン: Windows 8.1以降（Windows 10/11推奨）。無印のWindows 8は非対応**
+（詳細は「既知のバグ（未修正）」セクションの「Windows 8（8.1未満）でDLL不足エラーにより
+起動できない」参照）。
+
 ### FBSAT59が解決する課題
 - 現行GPredictはデスクトップ専用 → **同一LAN内のスマホ・タブレットからもブラウザでアクセス可能**にする
 - rigctld/rotctldを別途手動起動が必要 → **Hamlibを内蔵してGUIから無線機・ローテーターを直接設定**
@@ -3110,6 +3114,33 @@ Waylandセッションで確認）。
 ---
 
 ## 既知のバグ（未修正）
+
+### Windows 8（8.1未満）でDLL不足エラーにより起動できない（対応不可・仕様上の制約、2026-08-21 Facebook経由で報告）
+
+**症状**: Windows 8（8.1適用前）ユーザーから、インストール後の起動時に
+「DLLが見つからない」旨のエラーが出て起動できないとFacebook経由で報告があった。
+
+**原因**: `pyproject.toml`の`requires-python = ">=3.11"`・CI（`.github/workflows/ci.yml`）の
+ビルドとも **Python 3.11** を使用しているが、**CPythonは3.9以降、公式には
+Windows 8.1以降のみをサポート**しており、無印のWindows 8はこの最低要件を満たさない。
+Windows 8.1/10/11には組み込まれている **UCRT（Universal C Runtime、
+`api-ms-win-crt-*.dll`群）や一部のApiSetスタブ**が無印Windows 8には存在しないため、
+PyInstallerでバンドルされた`python311.dll`がこれらに依存する形で起動時にDLL不足
+エラーとなる。Visual C++ 再頒布可能パッケージ（`VCRUNTIME140.dll`等）未インストールの
+場合とは別の原因であることに注意（そちらは再頒布パッケージのインストールで解決するが、
+今回はOS自体がPython 3.11ランタイムの要件を満たしていない）。
+
+**対応方針（ユーザー判断、2026-08-21）**: **ソフト側での回避は基本的に困難**と判断し、
+修正は行わない。README（英語版・日本語版）・本ファイル冒頭の対象OS欄に
+「Windows 8.1以降が必要（Windows 10/11推奨）、無印Windows 8は非対応」と明記した。
+報告者にはWindows 8.1以降（できればWindows 10/11）へのアップグレードを案内する返信をした。
+
+**教訓**: `requires-python`やCIのPythonバージョンだけを見ていると気づきにくいが、
+**Pythonのバージョンそのものが対応OSの下限を規定する**ことがある（今回は3.9以降で
+Windows 7非対応→実質Windows 8.1が最低ライン）。同種の「DLLが見つからない」報告を
+将来受けた際は、まずVC++再頒布パッケージ未導入かOSバージョン自体の非対応かを
+エラーメッセージのDLL名（`VCRUNTIME140.dll`/`MSVCP140.dll`系か`api-ms-win-crt-*.dll`系か）
+で切り分けること。
 
 ### Windows — RTL-SDR Blog V4 でConnectを押してもrtlsdr_open()が呼ばれない（GitHub Issue #10・調査中）
 
@@ -9665,6 +9696,86 @@ Autotrackのチェック状態自体もこれまで一切永続化されてお�
 特に「UIウィジェットのデフォルト値が実行のたびに現在時刻にリセットされる」設計は、
 それを見る側のロジックが「一度でも異なる状態を経由したか」という遷移を意識しない限り、
 静かに壊れる典型例だった。
+
+### 13. リストへの衛星エントリー追加がパス予測ウォームアップを再トリガーしない不具合（GitHub Issue #27、2026-08-23 発見・修正）
+
+**症状**: 項目12の修正（Enable Autotrack永続化・Timer遷移検出）を適用した後、
+開発者自身が「自動追尾を有効化してから10分後のパス」でテストしたが、AOSになっても
+METEORタブ内での接続・受信開始状態にならなかった（アプリを再起動すると直後に
+正しく自動起動した）。
+
+**原因**: `_start_autotrack_warmup()`（項目1、Group Passタブでの手動パス検索省略
+自動化のために実装したウォームアップ機構）は、Autotrackリストが新規作成された
+**直後（まだ衛星エントリーが0件の時点）**に一度だけ試行され、その時点では
+`entries()`が空なので即座にno-opで終わる（`AutotrackManager.is_ready`は
+`False`のまま）。しかし、`AutotrackRecordDialog._on_at_add_entry()`
+（「衛星を追加...」ボタン）・`_on_at_remove_entry()`・`_on_at_move_up/down()`は
+いずれも`_reload_at_entries()`（ダイアログ内のツリー表示更新のみ）を呼ぶだけで、
+**ウォームアップを再度試みる仕組みが一切なかった**。つまり、「リストを作成→
+（空の状態で一度ウォームアップが空振りする）→衛星を追加」という、ごく普通の
+操作順序を踏むと、その後どれだけ経ってもリストにエントリーが後から追加されたことは
+`_start_autotrack_warmup()`に伝わらず、`AutotrackManager.is_ready`は
+**永遠に`False`のまま**になる。
+
+`_check_autotrack()`のTimer自動開始ロジック（項目12で実装）は
+`elif self._autotrack.is_ready:`という条件下でのみ動作するため、`is_ready`が
+`False`のままだとTimer機構は一度も発火しない——「Enable Autotrackを直接手動で
+チェックした場合」（`_on_autotrack_toggled(True)`が独立してウォームアップを
+再トリガーするため正しく動く）ではこの問題が表面化せず、**Autotrack Timer機能
+（時間が来たら自動的に有効化されることを期待する運用）でのみ**発生する、という
+発見しにくい組み合わせだった。
+
+**修正**: `AutotrackRecordDialog._reload_at_entries()`の末尾で、既存の
+`lists_modified`シグナル（元々はリスト自体の追加・削除・リネーム時のみemitされ、
+Radio Controlのリストコンボ更新に使われていた）を新たにemitするよう変更。
+`_on_at_add_entry`/`_on_at_remove_entry`/`_on_at_move_up`/`_on_at_move_down`は
+すべてこの`_reload_at_entries()`を経由するため、1箇所の変更で全ハンドラに効く。
+`MainWindow._on_autotrack_lists_modified()`（`lists_modified`の受信側）に
+`self._start_autotrack_warmup(silent_if_empty=True)`を追加。
+`_start_autotrack_warmup()`自体は既に`is_ready`なら即座にno-opになる設計
+（冪等）なので、この追加呼び出しは「まだ一度もウォームアップに成功していない
+リストに、初めて衛星が追加された」ケースにのみ意味を持ち、既にreadyなリストへの
+以後の追加・削除では単なる無害なno-opになる（＝一度成功した後は、後から追加した
+衛星のパス予測を個別に再計算する仕組みはない。項目1のウォームアップは
+「Autotrackを動かしてよい前提が整ったか」を示す一度きりのゲートであり、
+`check()`が呼ぶ`_get_next_aos()`等はキャッシュに依存せずその都度計算するため、
+これで実害はない）。
+
+テスト: `tests/test_autotrack_record_dialog.py`に
+`TestReloadAtEntriesSignalsListsModified`（2件）——`_reload_at_entries()`が
+`lists_modified`をemitすること、選択リストがない場合は例外なくno-opで済むことを
+検証。`tests/test_main_window.py`の`TestAutotrackWarmup`に2件追加——
+空リスト作成直後にウォームアップが空振りした後、衛星を追加すると
+`_reload_at_entries()`経由で`is_ready`が`True`になること、一度readyになった後の
+エントリー追加・削除では`get_passes()`が再実行されない（no-opのまま）ことを検証。
+
+**テスト作成中に発覚した別の設計上の注意点**: `AutotrackRecordDialog`は
+「Autotrack Lists」枠の`_at_list_widget`（リスト自体を選択、エントリー編集対象を
+決める）と、「Autotrack Control」枠の`_at_sel_combo`（`current_list_id()`、
+Enable Autotrackで実際に有効化する対象、MainWindowに伝わる）という、**見た目は
+似ているが独立した2つの選択状態**を持つ。新規リスト作成時は`_at_sel_combo`側は
+自動選択されるが（項目10で修正済み）、`_at_list_widget`側は自動選択されない
+（`QListWidget.addItem()`だけでは`currentRowChanged`が発火しない）。ユーザーが
+実際に左側のリスト一覧をクリックしてから「衛星を追加...」を押す通常の操作では
+問題にならない（`_at_selected_list_id`が`None`のままだと「先にリストを選択して
+ください」という明示的な警告が出るため、気づかれずに別のリストへ追加される、
+という誤操作は起きにくい）が、テストコードで`AutotrackRecordDialog`を直接構築して
+`_reload_at_entries()`等を呼ぶ場合は、`_at_list_widget.setCurrentRow(0)`を
+明示的に呼ばないと`_at_selected_list_id`が`None`のままになる点に注意
+（今回のテスト実装時に一度踏んだ）。
+
+**検証状況**: 静的なコード修正・ユニットテストに基づく。実機での確認は開発者自身の
+次回パス待ち（2026-08-23時点）。
+
+**教訓**: Issue #27を通じて繰り返し発覚しているパターンとして、「ある操作
+（今回は衛星エントリーの追加）が、別の独立した機構（ウォームアップ・エントリー
+再読み込み）を再トリガーする必要があるのに、両者をつなぐ配線が最初から存在
+しない」という抜け漏れが多い（項目11の`_refresh_entries()`、項目13の
+`lists_modified`再利用はいずれも同じ形のバグ）。新しい状態変更ハンドラ
+（追加・削除・並び替えボタン等）を実装する際は、「この変更を、他のどのコンポーネント
+（ウォームアップ・キャッシュ・UI表示）が知る必要があるか」を明示的に洗い出し、
+既存の類似ハンドラ（リスト自体の追加・削除等）が持つ通知経路を横展開できているか
+確認すること。
 
 ### 過去の受信フォルダをタブ内で見返す機能（`📂 Open Past Reception…`、2026-08-20 実装）
 

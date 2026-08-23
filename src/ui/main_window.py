@@ -2362,9 +2362,20 @@ class MainWindow(QMainWindow):
         self._autotrack_meteor_record = enabled
 
     def _on_autotrack_lists_modified(self) -> None:
-        """Called when lists are added/removed in the dialog — refresh radio control combo."""
+        """Called when lists (or a list's entries) are added/removed/reordered.
+
+        Refreshes the Radio Control list combo, and — since this also fires
+        when satellites are added to/removed from the currently selected
+        list — retries the pass-prediction warm-up. _start_autotrack_warmup()
+        is a no-op once already ready, so this only matters the first time a
+        list goes from empty to having an entry (otherwise the warm-up
+        silently skipped itself when the list was still empty, and nothing
+        else ever re-tried it — leaving AutotrackManager.is_ready permanently
+        False and the Autotrack Timer's auto-start unable to fire).
+        """
         lists = AutotrackManager.get_all_lists(self._conn)
         self._radio_control.populate_autotrack_lists(lists)
+        self._start_autotrack_warmup(silent_if_empty=True)
 
     def _on_open_autotrack_dialog(self) -> None:
         """Open the Autotrack/Record settings dialog."""

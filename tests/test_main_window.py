@@ -4750,6 +4750,75 @@ class TestAutotrackWarmup:
 
         assert self._status_text(w) == "—"
 
+    def test_adding_entry_to_previously_empty_list_retries_warmup(self, qtbot, db) -> None:
+        """A list created empty makes the initial warm-up a silent no-op
+        (nothing to warm up yet, is_ready stays False). Adding a satellite
+        entry afterward must re-trigger the warm-up via the dialog's
+        lists_modified signal -- otherwise is_ready stays permanently False
+        and the Autotrack Timer's auto-start path can never fire (GitHub
+        Issue #27 follow-up, 2026-08-23)."""
+        from unittest.mock import patch
+
+        from core.autotrack import AutotrackManager
+
+        list_id = AutotrackManager.create_list(db, "Test List")
+        w = self._make_window(qtbot, db)
+        # MainWindow.__init__() already synced the dialog's sole (empty) list
+        # selection to AutotrackManager and attempted the warm-up silently.
+        assert not w._autotrack.is_ready
+        # _reload_at_entries() only acts on the *list widget's* selection
+        # (_at_selected_list_id), which is separate from the combo used by
+        # current_list_id()/MainWindow and isn't auto-selected on construction.
+        w._at_dialog._at_list_widget.setCurrentRow(0)
+
+        AutotrackManager.add_entry(db, list_id, 57166, "test-xpdr-uuid")
+        w._pass_predictor = MagicMock()
+        w._pass_predictor.get_passes.return_value = []
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._at_dialog._reload_at_entries()
+
+        assert w._autotrack.is_ready
+        w._pass_predictor.get_passes.assert_called_once()
+        assert w._pass_predictor.get_passes.call_args.args[0] == 57166
+
+    def test_entry_changes_after_ready_do_not_repeat_warmup(self, qtbot, db) -> None:
+        """Once is_ready is True, _start_autotrack_warmup() being re-invoked
+        by lists_modified on every subsequent entry add/remove must stay a
+        no-op (it already is, by design) rather than re-running get_passes()
+        needlessly on every edit."""
+        from unittest.mock import patch
+
+        from core.autotrack import AutotrackManager
+
+        list_id = self._add_list_with_entry(db)
+        w = self._make_window(qtbot, db)
+        w._at_dialog._at_list_widget.setCurrentRow(0)
+        w._pass_predictor = MagicMock()
+        w._pass_predictor.get_passes.return_value = []
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._at_dialog._reload_at_entries()
+        assert w._autotrack.is_ready
+        w._pass_predictor.get_passes.reset_mock()
+
+        # Remove the only entry, then add a different satellite back.
+        entries = AutotrackManager.get_entries(db, list_id)
+        AutotrackManager.remove_entry(db, entries[0]["id"])
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._at_dialog._reload_at_entries()
+        # is_ready was already True from the first successful warm-up and
+        # _start_autotrack_warmup() is a no-op once ready, so this call
+        # should not have re-run get_passes().
+        w._pass_predictor.get_passes.assert_not_called()
+
+        AutotrackManager.add_entry(db, list_id, 40069, "test-xpdr-uuid-2")
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._at_dialog._reload_at_entries()
+
+        # Still a no-op: is_ready was never reset to False by any of this.
+        w._pass_predictor.get_passes.assert_not_called()
+        assert w._autotrack.is_ready
+
 
 class TestAutotrackRecordingCheckboxSync:
     """MainWindow must pick up the Audio/IQ/METEOR checkbox state that
