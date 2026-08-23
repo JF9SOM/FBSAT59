@@ -253,6 +253,18 @@ class _TxWorker(QObject):
             # between our own Python objects. These three checkpoints (spans
             # not previously distinguished by any log line) narrow down
             # which of open/start/playback it's actually stuck in.
+            # GitHub Issue #26: with the RX-pause dead end reverted,
+            # "tx callback_stats" finally logged real data — PortAudio was
+            # reporting output_underflow on every single transmission, with
+            # the callback's *count* exactly right (252, matching the
+            # audio length) but individual calls arriving up to ~300ms
+            # late instead of the expected ~20ms apart, stretching ~5s of
+            # audio out to 12-13s. `latency` (left unset, i.e. PortAudio's
+            # "low"/interactive default) controls how much buffer headroom
+            # PortAudio keeps ahead of the callback -- "high" trades a
+            # small amount of TX Level slider responsiveness (still well
+            # under what a human notices) for the underrun margin this
+            # specific device's driver evidently needs.
             t0 = time.monotonic()
             stream = sd.OutputStream(
                 samplerate=SAMPLE_RATE,
@@ -260,6 +272,7 @@ class _TxWorker(QObject):
                 channels=1,
                 dtype="float32",
                 blocksize=_TX_BLOCK_SIZE,
+                latency="high",
                 callback=_callback,
                 finished_callback=done.set,
             )
