@@ -238,3 +238,18 @@ class TestMainWindowSyncsInitialListSelection:
         w = self._make_window(qtbot, db)
 
         assert w._autotrack.entries() == []
+
+
+class TestStatusLabelHeight:
+    """The status label must reserve enough height for two wrapped lines --
+    "Next: METEOR M2-3 in 463 min" wraps to two lines under some fonts
+    (confirmed on macOS; the same text fits on one line on Windows) and the
+    second line was clipped by the row below it (GitHub Issue #27
+    follow-up, 2026-08-23)."""
+
+    def test_status_label_reserves_two_lines(self, qtbot: QtBot, db: sqlite3.Connection) -> None:
+        dlg = AutotrackRecordDialog(db)
+        qtbot.addWidget(dlg)
+
+        line_height = dlg._at_status_label.fontMetrics().height()
+        assert dlg._at_status_label.minimumHeight() >= line_height * 2

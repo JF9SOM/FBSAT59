@@ -57,7 +57,7 @@ def _predictor(fake: _FakePredictor) -> PassPredictor:
     return cast("PassPredictor", fake)
 
 
-def _make_conn_with_single_entry() -> sqlite3.Connection:
+def _make_conn_with_empty_list() -> sqlite3.Connection:
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     conn.execute(
@@ -73,12 +73,22 @@ def _make_conn_with_single_entry() -> sqlite3.Connection:
         """
     )
     conn.execute("INSERT INTO autotrack_lists (id, name, sort_order) VALUES (1, 'Test', 0)")
+    conn.commit()
+    return conn
+
+
+def _add_entry(conn: sqlite3.Connection, norad: int = _NORAD, uuid: str = _XPDR_UUID) -> None:
     conn.execute(
         "INSERT INTO autotrack_entries (list_id, norad_cat_id, xpdr_uuid, sort_order, notes)"
         " VALUES (1, ?, ?, 0, '')",
-        (_NORAD, _XPDR_UUID),
+        (norad, uuid),
     )
     conn.commit()
+
+
+def _make_conn_with_single_entry() -> sqlite3.Connection:
+    conn = _make_conn_with_empty_list()
+    _add_entry(conn)
     return conn
 
 
@@ -124,3 +134,85 @@ class TestCachedElevationsFreshness:
 
         assert live_engine.observe_calls == [_NORAD]
         assert result2 is None  # no other/next satellite to switch to
+
+
+class TestEntriesRefreshFromDb:
+    """Adding/removing entries in the currently-selected list must take
+    effect on the very next check()/next_satellite_info()/entries() call,
+    without needing set_list() to be called again (GitHub Issue #27
+    follow-up, 2026-08-23): a user selected a list, then added a satellite
+    entry to it -- but AutotrackManager kept using the empty snapshot taken
+    at selection time, so Autotrack silently never started tracking.
+    """
+
+    def test_entry_added_after_set_list_is_picked_up_by_check(self) -> None:
+        conn = _make_conn_with_empty_list()
+        mgr = AutotrackManager(conn)
+        mgr.set_list(1)
+        mgr.mark_searches_ready()
+        assert mgr.entries() == []
+
+        _add_entry(conn)
+
+        predictor = _predictor(_FakePredictor())
+        result = mgr.check(_engine(_FakeEngine({_NORAD: 30.0})), predictor)
+
+        assert result == (_NORAD, _XPDR_UUID)
+
+    def test_entry_added_after_set_list_is_picked_up_by_entries(self) -> None:
+        conn = _make_conn_with_empty_list()
+        mgr = AutotrackManager(conn)
+        mgr.set_list(1)
+        assert mgr.entries() == []
+
+        _add_entry(conn)
+
+        entries = mgr.entries()
+        assert len(entries) == 1
+        assert entries[0].norad_cat_id == _NORAD
+
+    def test_entry_added_after_set_list_is_picked_up_by_next_satellite_info(self) -> None:
+        conn = _make_conn_with_empty_list()
+        conn.execute("CREATE TABLE satellites (norad_cat_id INTEGER PRIMARY KEY, name TEXT)")
+        conn.execute(
+            "INSERT INTO satellites (norad_cat_id, name) VALUES (?, 'METEOR-M N2-3')",
+            (_NORAD,),
+        )
+        conn.commit()
+        mgr = AutotrackManager(conn)
+        mgr.set_list(1)
+        mgr.mark_searches_ready()
+        assert (
+            mgr.next_satellite_info(_engine(_FakeEngine({})), _predictor(_FakePredictor())) is None
+        )
+
+        _add_entry(conn)
+
+        info = mgr.next_satellite_info(
+            _engine(_FakeEngine({_NORAD: 30.0})), _predictor(_FakePredictor())
+        )
+        assert info is not None
+        name, aos = info
+        assert name == "METEOR-M N2-3"
+
+    def test_refreshing_entries_does_not_disturb_tracking_state(self) -> None:
+        """_refresh_entries() (called by check() every tick) must not reset
+        pass_in_progress/current_norad the way set_list() deliberately
+        does -- otherwise Rule 3 (never interrupt a pass in progress) would
+        break every single tick."""
+        conn = _make_conn_with_single_entry()
+        mgr = AutotrackManager(conn)
+        mgr.set_list(1)
+        mgr.mark_searches_ready()
+        predictor = _predictor(_FakePredictor())
+
+        result = mgr.check(_engine(_FakeEngine({_NORAD: 30.0})), predictor)
+        assert result == (_NORAD, _XPDR_UUID)
+        assert mgr.current_norad == _NORAD
+
+        # Second tick, satellite still up: Rule 1 should keep tracking
+        # (return None) rather than re-committing -- confirms _refresh_entries()
+        # itself didn't wipe out current_norad/pass_in_progress.
+        result2 = mgr.check(_engine(_FakeEngine({_NORAD: 30.0})), predictor)
+        assert result2 is None
+        assert mgr.current_norad == _NORAD

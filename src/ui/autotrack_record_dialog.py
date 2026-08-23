@@ -376,6 +376,13 @@ class AutotrackRecordDialog(QDialog):
 
         self._at_status_label = QLabel("—")
         self._at_status_label.setWordWrap(True)
+        # Status text like "Next: METEOR M2-3 in 463 min" wraps to two
+        # lines under some fonts (confirmed on macOS; the same text fits on
+        # one line on Windows) -- QFormLayout doesn't always reserve enough
+        # row height for a wrapped QLabel's second line on its own, so the
+        # second line was rendered but clipped by the row below it.
+        # Reserve two lines' worth of height explicitly instead.
+        self._at_status_label.setMinimumHeight(self._at_status_label.fontMetrics().height() * 2 + 4)
         ctrl_form.addRow(_("Status:"), self._at_status_label)
 
         outer.addWidget(ctrl_group)

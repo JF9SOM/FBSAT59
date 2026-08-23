@@ -9521,6 +9521,68 @@ cannot schedule new futures after interpreter shutdown」等のエラーがテ�
 `AutotrackRecordDialog`のようにコンストラクタ内で外部に通知すべき初期状態を
 持つダイアログを新設・変更する際は、毎回この時系列の罠を疑うこと。
 
+### 11. Autotrackのentriesがリスト選択後の追加・削除・並び替えに追従しない不具合と、ステータス欄の2行折り返し表示崩れ（GitHub Issue #27、2026-08-23 発見・修正）
+
+**症状**: 項目10の修正後、開発者自身がWindows実機で確認したところ「赤い文字が消え、
+緑色で『Next: METEOR M2-4 in 96 min』のような表示が出るようになった」（症状1がある程度
+改善したことを示す）一方、「アプリを起動したまま自動追尾画面で設定した直後は計算されて
+いないように見え、ソフトを再起動して初めて計算される」という新しい症状を報告した。
+加えてmacOS版では、同じステータステキストが2行に折り返され、2行目が下の枠に隠れて
+読めない、という表示崩れも発見された。
+
+**原因1（entries不追従）**: `AutotrackManager.set_list(list_id)`は、呼ばれた**その瞬間の
+DBスナップショット**を`self._entries`にキャッシュするだけの設計だった。項目10で
+「コンボの選択が変わった時に`set_list()`を呼ぶ」経路は直したが、**一度`set_list()`が
+呼ばれた後に、そのリストへ衛星（エントリー）を追加・削除・並び替えしても、その変更は
+`AutotrackManager`側のキャッシュに一切反映されない**という別の問題が残っていた。
+`AutotrackRecordDialog`の「衛星を追加...」「削除」「▲▼」ボタン
+（`_on_at_add_entry`等）はDBを更新して`_reload_at_entries()`（ダイアログ内のUIツリー
+表示のみ）を呼ぶだけで、`MainWindow`側の`AutotrackManager`インスタンスには一切通知
+していなかった。アプリ再起動時は`MainWindow.__init__()`が起動時に一度DBから最新状態を
+読み込むため正しく動くが、起動したまま設定を変更しても`set_list()`が再度呼ばれない限り
+古いスナップショットのまま、という症状と一致する。
+
+**修正1**: `AutotrackManager.set_list()`のDB読み込みロジックを`_refresh_entries()`
+として切り出し、`check()`・`next_satellite_info()`・`entries()`の**呼び出しのたびに**
+呼ぶよう変更（1秒ごとに呼ばれる`check()`でも、Autotrackリストは通常1〜数機程度の
+小規模なものなので、毎回DBを読み直すコストは無視できるという判断。本ファイル既出の
+「World-map elevationキャッシュを廃止してlive per-tick observe()にした」判断と同じ
+考え方）。`_refresh_entries()`は`self._state`（追跡状態、`current_norad`等）には一切
+触れない設計とし、`set_list()`（ユーザーが明示的に別のリストへ切り替えた場合のみ
+`self._state = AutotrackState()`で状態をリセットする）とは役割を分離した——これを
+怠ると、1秒ごとに呼ばれる`check()`のたびに追跡状態がリセットされ、Rule 3
+（パス途中は切り替えない）が機能しなくなってしまう。
+
+**原因2（ステータス欄2行崩れ）**: `AutotrackRecordDialog`の状態ラベル
+（`_at_status_label`）は`setWordWrap(True)`のみで、`QFormLayout`内の行の高さは
+ラベルの`sizeHint()`から自動計算される。「Next: METEOR M2-3 in 463 min」程度の
+長さの文字列でも、フォントメトリクスの違い（同じ文字列でもmacOSとWindowsでは
+折り返される幅が異なる）により、macOSでは2行に折り返されることがあり、
+`QFormLayout`が2行分の高さを確保していなかったため2行目が下の枠に隠れて見えなく
+なっていた。
+
+**修正2**: `_at_status_label.setMinimumHeight(self._at_status_label.fontMetrics()
+.height() * 2 + 4)`で、常に2行分の高さを明示的に確保する。フォントサイズに依存しない
+よう`fontMetrics().height()`から動的に計算する方式にした。
+
+テスト: `tests/test_autotrack.py`に`TestEntriesRefreshFromDb`（4件）——
+`set_list()`後に追加したエントリーが`check()`・`entries()`・`next_satellite_info()`の
+いずれからも即座に見えること、`_refresh_entries()`自体は追跡中の状態
+（`current_norad`等）を破壊しないことを検証。`tests/test_autotrack_record_dialog.py`に
+`TestStatusLabelHeight`（1件）——ステータスラベルの`minimumHeight()`が
+フォント1行分の高さの2倍以上であることを検証。
+
+**検証状況**: 静的なコード修正・ユニットテストに基づく。実機での確認は開発者自身の
+次回パス待ち（2026-08-23時点）。ステータス欄の表示崩れ修正はmacOS実機で目視確認予定。
+
+**教訓**: `set_list()`のような「選択操作」メソッドが、内部で状態のリセットとデータの
+読み込みという**2つの異なる責務**を同時に持っていると、「データだけを最新化したいが
+状態はリセットしたくない」というニーズ（今回のケース）に応えられない。責務を分離して
+おけば、`check()`のような高頻度で呼ばれる関数からも安全に「データの再読み込みだけ」を
+呼び出せる。またUI崩れの調査では、同じテキスト・同じレイアウトでもOS・フォントの違いで
+折り返し位置が変わりうることを踏まえ、`setWordWrap(True)`を使うラベルには常に
+「実際に複数行になった場合の高さ」を明示的に確保しておくことが安全である。
+
 ### 過去の受信フォルダをタブ内で見返す機能（`📂 Open Past Reception…`、2026-08-20 実装）
 
 #### 背景

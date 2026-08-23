@@ -72,15 +72,33 @@ class AutotrackManager:
     # ------------------------------------------------------------------ #
 
     def set_list(self, list_id: int | None) -> None:
-        """Load entries for the given Autotrack List id.
+        """Select the given Autotrack List id and load its entries.
 
         Call this when the user selects a list in the Radio Control panel.
-        Resets the current tracking state.
+        Resets the current tracking state (unlike _refresh_entries(), which
+        reloads the same list's entries without disturbing tracking state).
         """
         self._list_id = list_id
         self._state = AutotrackState()
+        self._refresh_entries()
+
+    def _refresh_entries(self) -> None:
+        """Re-read the currently selected list's entries from the DB.
+
+        Called on every set_list() (a genuine list switch) and also at the
+        start of check()/next_satellite_info()/entries() so that adding,
+        removing, or reordering entries in the list Autotrack is currently
+        using takes effect immediately -- previously this only happened
+        the next time set_list() itself was called (e.g. re-selecting the
+        list in the combo), so editing entries while a list was already
+        selected left AutotrackManager working from a stale snapshot
+        (GitHub Issue #27 follow-up, 2026-08-23: adding a satellite to a
+        list right after selecting it in the combo left Autotrack showing
+        "Run a pass search first" forever, because entries() -- read at
+        selection time -- was still empty).
+        """
         self._entries = []
-        if list_id is None:
+        if self._list_id is None:
             return
         rows = self._conn.execute(
             """
@@ -89,7 +107,7 @@ class AutotrackManager:
             WHERE ae.list_id = ?
             ORDER BY ae.sort_order ASC, ae.id ASC
             """,
-            (list_id,),
+            (self._list_id,),
         ).fetchall()
         self._entries = [
             AutotrackEntry(
@@ -130,7 +148,9 @@ class AutotrackManager:
         return self._state.current_xpdr_uuid
 
     def entries(self) -> list[AutotrackEntry]:
-        """Return the loaded entries (ordered by sort_order)."""
+        """Return the current list's entries (ordered by sort_order), freshly
+        re-read from the DB -- see _refresh_entries()."""
+        self._refresh_entries()
         return list(self._entries)
 
     def check(
@@ -155,6 +175,7 @@ class AutotrackManager:
         Returns:
             (norad_cat_id, xpdr_uuid) if a switch should happen, else None.
         """
+        self._refresh_entries()
         if not self.is_ready or not self._entries:
             return None
 
@@ -221,6 +242,7 @@ class AutotrackManager:
 
         Returns None if no next satellite can be determined.
         """
+        self._refresh_entries()
         if not self.is_ready or not self._entries:
             return None
 
