@@ -4820,6 +4820,159 @@ class TestAutotrackWarmup:
         assert w._autotrack.is_ready
 
 
+class TestAutotrackAosTiming:
+    """_check_autotrack() must not fire AOS actions until a satellite it's
+    tracking has *actually* cleared the horizon.
+
+    AutotrackManager.check()'s Rule 2b reserves the earliest-AOS satellite
+    as `current` the instant no satellite is visible -- including right
+    when Autotrack is first enabled, often tens of minutes before the real
+    AOS. Before this fix, _check_autotrack() treated that reservation as a
+    literal AOS and fired _autotrack_on_aos() (rig connect, recording,
+    opening METEOR/HRPT) immediately, then never again once the satellite
+    genuinely rose, because `_autotrack_tracking_norad` had already
+    settled on it (GitHub Issue #27 follow-up, 2026-08-23).
+    """
+
+    def _make_window(self, qtbot, db):
+        from data.tle_manager import TLEManager
+        from ui.main_window import MainWindow
+
+        tle_manager = TLEManager(db)
+        w = MainWindow(conn=db, tle_manager=tle_manager)
+        qtbot.addWidget(w)
+        return w
+
+    def _prepare(self, qtbot, db, norad: int = 57166, aos_minutes: float = 90.0):
+        from core.autotrack import AutotrackManager
+
+        list_id = AutotrackManager.create_list(db, "Test List")
+        AutotrackManager.add_entry(db, list_id, norad, "test-xpdr-uuid")
+
+        w = self._make_window(qtbot, db)
+        w._autotrack.set_list(list_id)
+        w._autotrack.mark_searches_ready()
+        w._autotrack_enabled = True
+
+        now = datetime.now(UTC)
+        pass_info = PassInfo(
+            norad_cat_id=norad,
+            aos=now + timedelta(minutes=aos_minutes),
+            tca=now + timedelta(minutes=aos_minutes + 5),
+            los=now + timedelta(minutes=aos_minutes + 10),
+            max_elevation_deg=45.0,
+            aos_azimuth_deg=90.0,
+            los_azimuth_deg=270.0,
+            duration_s=600.0,
+        )
+        w._pass_predictor = MagicMock()
+        w._pass_predictor.get_passes.return_value = [pass_info]
+
+        w._autotrack_on_aos = MagicMock()
+        w._autotrack_on_los = MagicMock()
+        return w, norad
+
+    def _set_elevation(self, w, norad: int, el: float) -> None:
+        w._engine = MagicMock()
+        w._engine.observe.return_value = _make_observation(norad=norad, el=el, visible=el >= 0)
+
+    def _status_text(self, w) -> str:
+        return str(w._at_dialog._at_status_label.text())
+
+    def test_aos_action_deferred_while_below_horizon(self, qtbot, db) -> None:
+        w, norad = self._prepare(qtbot, db)
+        self._set_elevation(w, norad, -30.0)
+
+        w._check_autotrack()
+
+        w._autotrack_on_aos.assert_not_called()
+        # Rule 2b has already reserved it as `current` internally, but the
+        # UI must not claim it's being tracked yet.
+        assert w._autotrack.current_norad == norad
+        assert not w._autotrack_aos_fired
+        assert "Next" in self._status_text(w)
+        assert "Tracking" not in self._status_text(w)
+
+    def test_aos_action_fires_once_satellite_rises(self, qtbot, db) -> None:
+        w, norad = self._prepare(qtbot, db)
+        self._set_elevation(w, norad, -30.0)
+        w._check_autotrack()
+        w._autotrack_on_aos.assert_not_called()
+
+        self._set_elevation(w, norad, 10.0)
+        w._check_autotrack()
+
+        w._autotrack_on_aos.assert_called_once_with(w._sat_name_cache.get(norad, str(norad)))
+        assert w._autotrack_aos_fired
+        assert "Tracking" in self._status_text(w)
+
+    def test_aos_action_not_repeated_while_still_visible(self, qtbot, db) -> None:
+        w, norad = self._prepare(qtbot, db)
+        self._set_elevation(w, norad, 10.0)
+        w._check_autotrack()
+        w._autotrack_on_aos.assert_called_once()
+
+        self._set_elevation(w, norad, 15.0)
+        w._check_autotrack()
+
+        w._autotrack_on_aos.assert_called_once()  # still just once
+
+    def test_aos_action_fires_immediately_when_already_visible(self, qtbot, db) -> None:
+        """Rule 2a (already-visible satellite) should still fire AOS on the
+        very first tick — the deferral only applies to Rule 2b's
+        not-yet-risen reservation."""
+        w, norad = self._prepare(qtbot, db)
+        self._set_elevation(w, norad, 20.0)
+
+        w._check_autotrack()
+
+        w._autotrack_on_aos.assert_called_once()
+        assert w._autotrack_aos_fired
+
+
+class TestAutotrackOnLosGuard:
+    """_autotrack_on_los() must no-op when the AOS actions for the current
+    tracking target never actually fired — otherwise it tears down
+    connections/recordings that were never started (e.g. Autotrack was
+    disabled, or the list was switched, while a Rule 2b reservation was
+    still waiting for its satellite to rise). See _autotrack_aos_fired
+    (GitHub Issue #27 follow-up, 2026-08-23)."""
+
+    def _make_window(self, qtbot, db):
+        from data.tle_manager import TLEManager
+        from ui.main_window import MainWindow
+
+        tle_manager = TLEManager(db)
+        w = MainWindow(conn=db, tle_manager=tle_manager)
+        qtbot.addWidget(w)
+        return w
+
+    def test_noop_when_aos_never_fired(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._autotrack_aos_fired = False
+        w._rig_controller = MagicMock()
+        w._rig_controller.is_connected = True
+        w._rig_controller.is_sdr = False
+
+        w._autotrack_on_los()
+
+        w._rig_controller.disconnect.assert_not_called()
+
+    def test_runs_and_resets_flag_when_aos_fired(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._autotrack_aos_fired = True
+        w._rig_controller = MagicMock()
+        w._rig_controller.is_connected = True
+        w._rig_controller.is_sdr = False
+        w._rig2_controller = None
+        w._rotator_controller = None
+
+        w._autotrack_on_los()
+
+        w._rig_controller.disconnect.assert_called_once()
+        assert not w._autotrack_aos_fired
+
+
 class TestAutotrackRecordingCheckboxSync:
     """MainWindow must pick up the Audio/IQ/METEOR checkbox state that
     AutotrackRecordDialog restored from app_settings in its own __init__()

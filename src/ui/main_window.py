@@ -754,6 +754,11 @@ class MainWindow(QMainWindow):
         self._autotrack_iq_record: bool = False
         self._autotrack_meteor_record: bool = False
         self._autotrack_tracking_norad: int | None = None  # NORAD of currently auto-tracked sat
+        # True once the AOS actions (rig connect, recording, METEOR/HRPT
+        # start) have actually fired for _autotrack_tracking_norad -- see
+        # _check_autotrack() for why this is separate from "the satellite
+        # became `current`" (GitHub Issue #27 follow-up, 2026-08-23).
+        self._autotrack_aos_fired: bool = False
         # Background warm-up of pass predictions (see _start_autotrack_warmup)
         self._autotrack_warmup_worker: _AutotrackWarmupWorker | None = None
         self._autotrack_warmup_gen: int = 0
@@ -2201,15 +2206,36 @@ class MainWindow(QMainWindow):
             self._pass_predictor,
         )
         if result is None:
-            # No satellite to switch to — check if currently tracked one is still visible
-            # to manage auto connect/disconnect and recording
+            # No satellite to switch to. This covers two very different
+            # situations that both return None from check(): Rule 1 already
+            # tracking the satellite above min_el (or in the below-min_el
+            # grey zone -- see AutotrackManager.check()'s Rule 1 docstring),
+            # or Rule 2b re-reserving the same not-yet-risen satellite tick
+            # after tick. Either way, _autotrack_tracking_norad may already
+            # be above the true horizon without _autotrack_aos_fired having
+            # been set yet -- e.g. the very first tick where its elevation
+            # jumped straight past min_el, which check() reports as "keep
+            # tracking" (Rule 1) rather than a fresh switch -- so the AOS
+            # check below must run here too, not just in the switch branch.
             if self._autotrack_tracking_norad is not None:
                 obs = self._engine.observe(self._autotrack_tracking_norad)
                 el = obs.elevation_deg if obs is not None else -90.0
                 if el < 0:
-                    self._autotrack_on_los()
+                    self._autotrack_on_los()  # no-op if AOS never fired
+                else:
+                    sat_name = self._sat_name_cache.get(
+                        self._autotrack_tracking_norad, str(self._autotrack_tracking_norad)
+                    )
+                    if self._maybe_fire_autotrack_aos(self._autotrack_tracking_norad, sat_name, el):
+                        return
+                    # Already above the horizon and already fired earlier —
+                    # currently tracking; leave the existing "Tracking:
+                    # ..." status label as-is rather than overwriting it
+                    # with a "Next: ..." countdown below.
+                    return
 
-            # Update status with next satellite info
+            # Not tracking anything right now (or LOS just occurred above)
+            # — show the next satellite's countdown.
             info = self._autotrack.next_satellite_info(self._engine, self._pass_predictor)
             if info is not None:
                 next_name, next_aos = info
@@ -2240,15 +2266,71 @@ class MainWindow(QMainWindow):
             self._radio_control.set_transmitters(transmitters, default_index=idx)
 
         sat_name = self._sat_name_cache.get(next_norad, str(next_norad))
-        self._at_dialog.set_autotrack_status(f"Tracking: {sat_name}", ok=True)
 
         if is_new_sat:
-            # Previous satellite's LOS — disconnect if it was being tracked
+            # Previous satellite's LOS — no-op if its AOS actions never
+            # actually fired (see _autotrack_on_los()'s own guard).
             if self._autotrack_tracking_norad is not None:
                 self._autotrack_on_los()
-            # New satellite's AOS — connect rig + rotator, start recording
             self._autotrack_tracking_norad = next_norad
-            self._autotrack_on_aos(sat_name)
+            self._autotrack_aos_fired = False
+
+        # check() hands us `result` for two different reasons: Rule 2a (the
+        # satellite is genuinely visible now) or Rule 2b (it's merely the
+        # earliest-AOS "reserved" pick, possibly still tens of minutes below
+        # the horizon -- see AutotrackManager.check()'s docstring). Only
+        # fire the AOS actions (rig connect, recording, opening METEOR/HRPT)
+        # once this satellite's *actual* elevation has cleared the true
+        # horizon, not merely because check() started reserving it.
+        # Previously this fired unconditionally the moment `next_norad`
+        # changed, so Rule 2b's reservation -- which happens the instant
+        # Autotrack is enabled, often tens of minutes before the real AOS --
+        # was treated as a literal AOS: the actions fired once at the wrong
+        # time and then never again once the genuine AOS arrived, because
+        # `_autotrack_tracking_norad` had already settled on that satellite
+        # (GitHub Issue #27 follow-up, 2026-08-23).
+        obs = self._engine.observe(next_norad)
+        el = obs.elevation_deg if obs is not None else -90.0
+        if self._maybe_fire_autotrack_aos(next_norad, sat_name, el):
+            return
+
+        if self._autotrack_aos_fired:
+            self._at_dialog.set_autotrack_status(f"Tracking: {sat_name}", ok=True)
+        else:
+            # Reserved but not yet risen — keep showing a countdown rather
+            # than falsely claiming "Tracking" for a satellite still below
+            # the horizon.
+            info = self._autotrack.next_satellite_info(self._engine, self._pass_predictor)
+            next_aos = info[1] if info is not None else None
+            if next_aos is not None:
+                now = datetime.now(UTC)
+                mins = int((next_aos - now).total_seconds() / 60)
+                self._at_dialog.set_autotrack_status(f"Next: {sat_name} in {mins} min", ok=True)
+            else:
+                self._at_dialog.set_autotrack_status(f"Next: {sat_name}", ok=True)
+
+    def _maybe_fire_autotrack_aos(self, norad: int, sat_name: str, el: float) -> bool:
+        """Fire the Autotrack AOS actions for *norad* if it has genuinely
+        cleared the true horizon and hasn't already triggered them this
+        pass. Returns True if the actions fired on this call (in which
+        case the caller should treat the status label as already set).
+        """
+        if self._autotrack_aos_fired or el < 0.0:
+            return False
+        self._autotrack_aos_fired = True
+        logger.info(
+            "Autotrack AOS fired: norad=%s name=%s el=%.1f"
+            " meteor_record=%s audio_record=%s iq_record=%s",
+            norad,
+            sat_name,
+            el,
+            self._autotrack_meteor_record,
+            self._autotrack_audio_record,
+            self._autotrack_iq_record,
+        )
+        self._at_dialog.set_autotrack_status(f"Tracking: {sat_name}", ok=True)
+        self._autotrack_on_aos(sat_name)
+        return True
 
     def _select_satellite_by_norad(self, norad: int) -> None:
         """Select a satellite in the list widget by NORAD id (autotrack helper)."""
@@ -7281,13 +7363,25 @@ class MainWindow(QMainWindow):
 
         # Open METEOR/HRPT tab and start reception if checkbox is enabled
         if self._autotrack_meteor_record:
-            self._meteor_autotrack_aos(norad)
+            try:
+                self._meteor_autotrack_aos(norad)
+            except Exception:
+                logger.exception("Autotrack METEOR/HRPT start failed (norad=%s)", norad)
 
     def _autotrack_on_los(self) -> None:
         """Called by Autotrack when the current satellite's LOS is detected.
 
-        Stops SDR recordings, then disconnects rig and rotator.
+        Stops SDR recordings, then disconnects rig and rotator. No-ops if
+        the AOS actions for the current tracking target never actually
+        fired (e.g. check() reserved a satellite via Rule 2b that never
+        rose above the horizon before Autotrack was disabled or the list
+        changed) — otherwise this would try to tear down connections and
+        recordings that were never started (GitHub Issue #27 follow-up,
+        2026-08-23). Callers don't need to check this themselves.
         """
+        if not self._autotrack_aos_fired:
+            return
+        self._autotrack_aos_fired = False
         # Stop recordings
         if self._autotrack_audio_record:
             try:
@@ -7321,7 +7415,10 @@ class MainWindow(QMainWindow):
 
         # Stop METEOR reception at LOS if checkbox is enabled
         if self._autotrack_meteor_record:
-            self._meteor_autotrack_los()
+            try:
+                self._meteor_autotrack_los()
+            except Exception:
+                logger.exception("Autotrack METEOR/HRPT stop failed")
 
     def _meteor_autotrack_aos(self, norad: int) -> None:
         """Open METEOR/HRPT tab (if needed) and start reception at AOS."""
@@ -7329,6 +7426,9 @@ class MainWindow(QMainWindow):
         from ui.meteor_tab import MeteorTab
 
         if norad not in METEOR_NORAD_IDS:
+            logger.info(
+                "Autotrack METEOR/HRPT start skipped: norad=%s not in METEOR_NORAD_IDS", norad
+            )
             return
 
         # Open the tab if not already open (reuses _on_open_meteor which also
@@ -7341,8 +7441,20 @@ class MainWindow(QMainWindow):
             if self._tab_widget.tabText(i) == tab_label:
                 w = self._tab_widget.widget(i)
                 if isinstance(w, MeteorTab):
+                    logger.info("Autotrack METEOR/HRPT autotrack_start(norad=%s) invoked", norad)
                     w.autotrack_start(norad)
+                else:
+                    logger.warning(
+                        "Autotrack METEOR/HRPT start: tab widget at index %s is not a"
+                        " MeteorTab (%s)",
+                        i,
+                        type(w),
+                    )
                 return
+        logger.warning(
+            "Autotrack METEOR/HRPT start: tab labeled %r not found after _on_open_meteor()",
+            tab_label,
+        )
 
     def _meteor_autotrack_los(self) -> None:
         """Stop METEOR reception at LOS."""
