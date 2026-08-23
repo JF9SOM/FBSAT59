@@ -151,6 +151,34 @@ class _TxWorker(QObject):
         self._out_device = out_device
         self._rig = rig
         self._get_gain = get_gain
+        # Guards _active_stream, which is written from run()'s thread and
+        # read from abort() (called from the Qt main thread by Halt TX /
+        # closeEvent) — see abort()'s docstring.
+        self._stream_lock = threading.Lock()
+        self._active_stream: Any | None = None
+
+    def abort(self) -> None:
+        """Cut an in-progress transmission short (Halt TX / tab close).
+
+        GitHub Issue #26: previously Halt TX only cleared the "keep
+        transmitting" flag — a burst already playing ran to completion no
+        matter what, which was barely noticeable back when a burst took its
+        normal ~5s, but became a real "the button doesn't do anything"
+        complaint once the still-unresolved underrun issue above started
+        stretching some transmissions past 30s. Calling the stream's own
+        abort() (rather than the module-level sd.stop(), which affects
+        every stream process-wide) stops just this transmission immediately
+        without waiting for its queued audio to drain. PortAudio still
+        invokes finished_callback when a stream is aborted, so run()'s
+        done.wait() unblocks and its normal PTT-off / lock-release cleanup
+        still runs, just now within a fraction of a second instead of
+        however long was left to play.
+        """
+        with self._stream_lock:
+            stream = self._active_stream
+        if stream is not None:
+            with contextlib.suppress(Exception):
+                stream.abort()
 
     def run(self) -> None:
         """Emits exactly one of `error` or `finished` — never both, so a
@@ -259,12 +287,19 @@ class _TxWorker(QObject):
             # the callback's *count* exactly right (252, matching the
             # audio length) but individual calls arriving up to ~300ms
             # late instead of the expected ~20ms apart, stretching ~5s of
-            # audio out to 12-13s. `latency` (left unset, i.e. PortAudio's
-            # "low"/interactive default) controls how much buffer headroom
-            # PortAudio keeps ahead of the callback -- "high" trades a
-            # small amount of TX Level slider responsiveness (still well
-            # under what a human notices) for the underrun margin this
-            # specific device's driver evidently needs.
+            # audio out to 12-13s. Requesting latency="high" was tried next
+            # to give this device's driver more buffer headroom, but the
+            # next log round showed it made things measurably *worse* and
+            # escalating within the same session (26.9s, then 32.1s, then
+            # Halt TX unable to stop a transmission still running past
+            # 34s) — this specific USB codec's driver apparently mishandles
+            # PortAudio's "high" latency request rather than benefiting
+            # from it. Reverted back to leaving `latency` unset (PortAudio's
+            # own default) rather than guessing at another value with no
+            # data to back it. The underlying underrun is still
+            # unresolved — Halt TX (see abort(), below) now actually cuts
+            # an in-progress burst short instead of only preventing future
+            # ones, as a safety net until the root cause is found.
             t0 = time.monotonic()
             stream = sd.OutputStream(
                 samplerate=SAMPLE_RATE,
@@ -272,10 +307,11 @@ class _TxWorker(QObject):
                 channels=1,
                 dtype="float32",
                 blocksize=_TX_BLOCK_SIZE,
-                latency="high",
                 callback=_callback,
                 finished_callback=done.set,
             )
+            with self._stream_lock:
+                self._active_stream = stream
             log.info("tx stream_open duration=%.3fs", time.monotonic() - t0)
             t0 = time.monotonic()
             with stream:
@@ -311,6 +347,8 @@ class _TxWorker(QObject):
                     self._rig.set_ptt(False)
             self.error.emit(str(exc))
         finally:
+            with self._stream_lock:
+                self._active_stream = None
             mgr.release_output(_AUDIO_OWNER, self._out_device)
 
 
@@ -424,6 +462,7 @@ class Ft4Tab(QWidget):
         self._qso: Ft4QsoManager | None = None  # created when callsign is known
         self._audio_active: bool = False  # soundcard RX subscribed via AudioDeviceManager
         self._tx_thread: threading.Thread | None = None
+        self._tx_worker: _TxWorker | None = None
         self._tx_enabled: bool = False
         self._tx_in_progress: bool = False
         self._last_level_emit: float = 0.0
@@ -1241,6 +1280,7 @@ class Ft4Tab(QWidget):
         worker.finished.connect(self._on_tx_finished)
         worker.error.connect(self._on_tx_error)
 
+        self._tx_worker = worker
         self._tx_in_progress = True
         t = threading.Thread(target=worker.run, daemon=True)
         self._tx_thread = t
@@ -1250,11 +1290,13 @@ class Ft4Tab(QWidget):
     @Slot()
     def _on_tx_finished(self) -> None:
         self._tx_in_progress = False
+        self._tx_worker = None
         self._status_label.setText(_("TX done — waiting for next period"))
 
     @Slot(str)
     def _on_tx_error(self, msg: str) -> None:
         self._tx_in_progress = False
+        self._tx_worker = None
         self._status_label.setText(_("TX error: ") + msg)
 
     # ------------------------------------------------------------------ #
@@ -1663,7 +1705,14 @@ class Ft4Tab(QWidget):
     def _on_halt(self) -> None:
         self._tx_enabled = False
         self._tx_enable_btn.setChecked(False)
-        self._status_label.setText(_("TX halted"))
+        if self._tx_in_progress and self._tx_worker is not None:
+            # GitHub Issue #26: this used to only stop *future* bursts —
+            # one already playing ran to completion regardless. See
+            # _TxWorker.abort()'s docstring.
+            self._tx_worker.abort()
+            self._status_label.setText(_("TX halted — stopping current transmission"))
+        else:
+            self._status_label.setText(_("TX halted"))
 
     # ------------------------------------------------------------------ #
     # Rig connected/disconnected                                           #
@@ -1741,19 +1790,12 @@ class Ft4Tab(QWidget):
     # ------------------------------------------------------------------ #
 
     def closeEvent(self, event: Any) -> None:
+        # _on_halt() already calls _tx_worker.abort() below if a
+        # transmission is in progress, so no separate stop-the-audio step
+        # is needed here — just wait for the worker thread to actually
+        # finish its PTT-off / lock-release cleanup afterward.
         self._on_halt()
         if self._tx_in_progress and self._tx_thread is not None:
-            # _TxWorker.run() only releases PTT after sd.wait() returns,
-            # which can block for the whole ~5s FT4 audio duration.
-            # sd.stop() ends that wait almost immediately so the worker's
-            # own PTT-off / audio-lock-release code runs promptly instead
-            # of racing interpreter shutdown, which can kill a still-
-            # running daemon thread before it gets there and leave the rig
-            # keyed indefinitely.
-            with contextlib.suppress(Exception):
-                import sounddevice as sd
-
-                sd.stop()
             self._tx_thread.join(timeout=2.0)
             if self._tx_in_progress:
                 # Thread still didn't finish — force PTT off directly as a
