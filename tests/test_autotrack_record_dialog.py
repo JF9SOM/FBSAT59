@@ -43,12 +43,17 @@ def _no_background_sync(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(autouse=True)
 def _no_restart_warning_popup(monkeypatch: pytest.MonkeyPatch) -> None:
     """Toggling Enable Autotrack shows a modal "restart required" warning
-    (GitHub Issue #27 follow-up, 2026-08-23) that would otherwise block
-    every test exercising _at_enable_cb.setChecked()/_on_enable_toggled()
-    on dlg.exec()."""
+    and then actually relaunches the process (GitHub Issue #27 follow-up,
+    2026-08-23). Block both: the warning would otherwise hang every test
+    exercising _at_enable_cb.setChecked()/_on_enable_toggled() on
+    dlg.exec(), and a real restart_application() would spawn a genuine
+    subprocess and tear down the test's own QApplication."""
     from PySide6.QtWidgets import QMessageBox
 
+    import core.app_restart
+
     monkeypatch.setattr(QMessageBox, "warning", lambda *args, **kwargs: None)
+    monkeypatch.setattr(core.app_restart, "restart_application", lambda: None)
 
 
 class TestRecordingSettingsPersistence:
@@ -374,15 +379,19 @@ class TestAutotrackEnabledPersistence:
 
 class TestRestartRequiredWarning:
     """Toggling Enable Autotrack by hand must always warn the user to
-    restart the app (2026-08-23, GitHub Issue #27): intermittent rig/SDR
+    restart the app, and then actually restart it once the warning is
+    acknowledged (2026-08-23, GitHub Issue #27): intermittent rig/SDR
     "device already claimed" failures at AOS traced back to a stale
     handle from a previous session or a previous toggle, and a clean
     restart after every toggle is the chosen mitigation while the
     underlying handle-lifecycle issue is tracked down. Programmatic
     updates (set_autotrack_enabled(), used to restore saved state or sync
-    from the Autotrack Timer) must NOT warn -- only a user's own click."""
+    from the Autotrack Timer) must NOT warn or restart -- only a user's
+    own click."""
 
-    def test_checking_by_hand_warns(self, qtbot: QtBot, db: sqlite3.Connection) -> None:
+    def test_checking_by_hand_warns_and_restarts(
+        self, qtbot: QtBot, db: sqlite3.Connection
+    ) -> None:
         from unittest.mock import patch
 
         from core.autotrack import AutotrackManager
@@ -391,12 +400,18 @@ class TestRestartRequiredWarning:
         dlg = AutotrackRecordDialog(db)
         qtbot.addWidget(dlg)
 
-        with patch("ui.autotrack_record_dialog.QMessageBox.warning") as mock_warn:
+        with (
+            patch("ui.autotrack_record_dialog.QMessageBox.warning") as mock_warn,
+            patch("core.app_restart.restart_application") as mock_restart,
+        ):
             dlg._at_enable_cb.setChecked(True)
 
         mock_warn.assert_called_once()
+        mock_restart.assert_called_once()
 
-    def test_unchecking_by_hand_warns(self, qtbot: QtBot, db: sqlite3.Connection) -> None:
+    def test_unchecking_by_hand_warns_and_restarts(
+        self, qtbot: QtBot, db: sqlite3.Connection
+    ) -> None:
         from unittest.mock import patch
 
         from core.autotrack import AutotrackManager
@@ -406,12 +421,18 @@ class TestRestartRequiredWarning:
         qtbot.addWidget(dlg)
         dlg._at_enable_cb.setChecked(True)
 
-        with patch("ui.autotrack_record_dialog.QMessageBox.warning") as mock_warn:
+        with (
+            patch("ui.autotrack_record_dialog.QMessageBox.warning") as mock_warn,
+            patch("core.app_restart.restart_application") as mock_restart,
+        ):
             dlg._at_enable_cb.setChecked(False)
 
         mock_warn.assert_called_once()
+        mock_restart.assert_called_once()
 
-    def test_programmatic_set_does_not_warn(self, qtbot: QtBot, db: sqlite3.Connection) -> None:
+    def test_programmatic_set_does_not_warn_or_restart(
+        self, qtbot: QtBot, db: sqlite3.Connection
+    ) -> None:
         from unittest.mock import patch
 
         from core.autotrack import AutotrackManager
@@ -420,11 +441,43 @@ class TestRestartRequiredWarning:
         dlg = AutotrackRecordDialog(db)
         qtbot.addWidget(dlg)
 
-        with patch("ui.autotrack_record_dialog.QMessageBox.warning") as mock_warn:
+        with (
+            patch("ui.autotrack_record_dialog.QMessageBox.warning") as mock_warn,
+            patch("core.app_restart.restart_application") as mock_restart,
+        ):
             dlg.set_autotrack_enabled(True)
             dlg.set_autotrack_enabled(False)
 
         mock_warn.assert_not_called()
+        mock_restart.assert_not_called()
+
+    def test_restart_happens_after_warning_is_acknowledged(
+        self, qtbot: QtBot, db: sqlite3.Connection
+    ) -> None:
+        """The warning must block until acknowledged before restarting --
+        not fire-and-forget both at once."""
+        from unittest.mock import patch
+
+        from core.autotrack import AutotrackManager
+
+        AutotrackManager.create_list(db, "Met")
+        dlg = AutotrackRecordDialog(db)
+        qtbot.addWidget(dlg)
+
+        call_order: list[str] = []
+        with (
+            patch(
+                "ui.autotrack_record_dialog.QMessageBox.warning",
+                side_effect=lambda *a, **k: call_order.append("warn"),
+            ),
+            patch(
+                "core.app_restart.restart_application",
+                side_effect=lambda: call_order.append("restart"),
+            ),
+        ):
+            dlg._at_enable_cb.setChecked(True)
+
+        assert call_order == ["warn", "restart"]
 
 
 class TestMainWindowRestoresAutotrackEnabled:

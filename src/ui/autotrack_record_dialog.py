@@ -475,7 +475,8 @@ class AutotrackRecordDialog(QDialog):
         self._warn_restart_required()
 
     def _warn_restart_required(self) -> None:
-        """Tell the user to restart the app after toggling Enable Autotrack.
+        """Restart the app after toggling Enable Autotrack, once the user
+        acknowledges a warning dialog.
 
         A restart-after-toggle workflow was chosen (2026-08-23, GitHub
         Issue #27) as the reliable way to run Autotrack's SDR-driven
@@ -486,19 +487,25 @@ class AutotrackRecordDialog(QDialog):
         to. This is deliberately a blunt, always-shown warning rather than
         detecting the specific unsafe states -- it's cheap for the user to
         follow and doesn't depend on correctly enumerating every way a
-        stale handle could linger.
+        stale handle could linger. QMessageBox.warning() blocks until OK is
+        clicked, so restart_application() (imported lazily to avoid pulling
+        in core.app_restart's PySide6 dependency for every dialog import)
+        only runs once the user has actually acknowledged it.
         """
+        from core.app_restart import restart_application
+
         QMessageBox.warning(
             self,
             _("Restart Required"),
             _(
-                "Please restart FBSAT59 now.\n\n"
+                "FBSAT59 will now restart.\n\n"
                 "Changing Enable Autotrack can leave the rig/SDR connection "
                 "in a state that prevents Autotrack from reliably starting "
                 "or stopping METEOR/HRPT reception at AOS/LOS. Restarting "
-                "the app guarantees a clean state."
+                "guarantees a clean state."
             ),
         )
+        restart_application()
 
     def _load_autotrack_enabled_state(self) -> None:
         """Restore the Enable Autotrack checkbox from app_settings.

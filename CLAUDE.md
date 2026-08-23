@@ -9855,31 +9855,77 @@ METEORタブを起動）との競合を提示したが、開発者（JF9SOM）�
 確認は不要。再起動を強制する方式に切り替えてほしい」との明確な判断があった
 （「何度も言っているように、再起動を強制化するようにしてくれ」）。
 
-**実装**: `AutotrackRecordDialog._on_enable_toggled()`（Enable Autotrackチェックボックス）
-に、チェックON/OFFいずれの操作でも`QMessageBox.warning()`で再起動を促す警告ダイアログを
-表示する処理を追加（`_warn_restart_required()`）。**プログラム的な状態同期
+**実装（初版）**: `AutotrackRecordDialog._on_enable_toggled()`（Enable Autotrackチェック
+ボックス）に、チェックON/OFFいずれの操作でも`QMessageBox.warning()`で再起動を促す警告
+ダイアログを表示する処理を追加（`_warn_restart_required()`）。**プログラム的な状態同期
 （`set_autotrack_enabled()`、起動時の復元・Autotrack Timerからの自動有効化で使用）は
 `blockSignals`で保護されているため`toggled`シグナル自体を発火させず、この警告は
 一切表示されない**——警告が出るのはユーザーが実際にチェックボックスをクリックした
-場合のみ。アプリを強制終了させる実装ではなく、警告を表示してユーザー自身の判断で
-再起動してもらう方式（アプリケーションの強制終了は破壊的操作のため見送った）。
+場合のみ。
+
+**追記（同日）— 「OKを押しても実際には再起動しない」との指摘を受け、自動再起動を実装**:
+初版は警告表示のみで、実際の再起動操作はユーザー自身に委ねる設計だったが、ユーザーから
+「OKを押したら自動的に再起動するようにしてくれ」との追加要望があり、実際にアプリ自身を
+終了・再起動する機能を実装した。
+
+- `src/core/app_restart.py`（新設）に`restart_application()`を配置。**`main.py`には
+  置かない**——`main.py`は多数のモジュールレベル副作用（プラットフォーム別`sys.path`
+  操作、frozen bundle向け環境変数設定等）を持つエントリーポイントスクリプトのため、
+  `autotrack_record_dialog.py`のようなUIコンポーネントから`import main`すると、
+  それらの副作用が意図せず再実行されてしまう
+- **単純に「新プロセスを起動→自分は`QApplication.quit()`」の順序だけでは不十分**:
+  このプロジェクトは`QLockFile`による多重起動検知（`main.py`の
+  `_acquire_single_instance_lock()`、ロック保持プロセスの生存確認付き）を持つため、
+  旧プロセスがまだ完全に終了しておらず（DB接続クローズ・Communicationsタブの
+  サブプロセス停止等の後始末中）ロックを保持したままの状態で新プロセスが
+  `tryLock()`すると、新プロセス側が「既に起動中です」と誤検知して即座に終了してしまう。
+  新プロセス起動時に環境変数`FBSAT59_RESTART=1`を設定し、`_acquire_single_instance_lock()`
+  側にこの環境変数が立っている場合のみ最大8秒間`tryLock()`をリトライするロジックを
+  追加することで解決した（新プロセス側からリトライする設計。旧プロセスのPIDを外部から
+  待つ専用ランチャープロセスを別途起動する方式も検討したが、プラットフォーム別の
+  プロセス待機実装が必要になり複雑化するため見送った）
+- frozen（PyInstaller）ビルドと開発環境（`python src/main.py`）を区別:
+  frozen時は`sys.executable`自体が実行バイナリを指すため`sys.argv[0]`を含めると
+  重複するので落とす。非frozen時は`sys.executable`（Pythonインタプリタ）+
+  `sys.argv`全体（`src/main.py`を含む）をそのまま使う
+- アプリを強制終了させる実装（`os.execv()`でプロセスイメージを即座に置き換える等）は
+  Qtのクリーンアップ処理（`closeEvent()`、DB接続・サブプロセスの後始末）を経由しない
+  危険な方法のため採用せず、`subprocess.Popen()`で新プロセスを独立起動した**後**に
+  `QApplication.quit()`を呼ぶことで、既存の`MainWindow.closeEvent()`等の後始末経路を
+  そのまま通す設計にした
+- `QMessageBox.warning()`はOK押下まで`exec()`がブロックするため、その呼び出しの直後に
+  `restart_application()`を呼ぶだけで「警告を確認してから再起動」という順序が自然に
+  実現される（明示的な「OK/Cancelどちらが押されたか」の分岐は不要、ボタンはOKのみ）
 
 **この修正の位置づけ（重要）**: これは根本原因（Rig/SDRハンドルが前回のセッション・
 前回のトグルから残留する具体的な経路）を特定・修正したものではなく、**「再起動すれば
-必ずクリーンな状態になる」という経験則に基づき、トグルのたびに再起動を促すことで
+必ずクリーンな状態になる」という経験則に基づき、トグルのたびに強制的に再起動させることで
 症状を運用面から回避する対症療法**である。ユーザーの明確な判断により、これ以上の
 原因調査より確実性を優先する形で採用された。将来、根本原因（Rig1/2としてのSDR接続と
 METEORタブのSatDump起動の競合、`_disconnect_sdr()`のバグ等）が別途特定・修正された
-場合、この警告ポップアップ自体は不要になる可能性が高い——その際は無条件に警告を
-出し続けるのではなく、実際に安全になったかどうかを再検証してから削除を検討すること。
+場合、この自動再起動自体は不要になる可能性が高い——その際は無条件に再起動させ続ける
+のではなく、実際に安全になったかどうかを再検証してから削除を検討すること。
 
-テスト: `tests/test_autotrack_record_dialog.py`に`TestRestartRequiredWarning`（3件）——
-手動でのON/OFF操作それぞれで警告が呼ばれること、`set_autotrack_enabled()`経由の
-プログラム的な変更では警告が呼ばれないことを検証。既存の`_no_background_sync`と同型の
-オートユースフィクスチャ`_no_restart_warning_popup`を新設し、`QMessageBox.warning`を
-モックすることで、他の全テスト（`_at_enable_cb.setChecked()`を経由するもの）が
-モーダルダイアログでハングしないようにした（実際に一度、フィクスチャなしでテストを
-実行し、`pytest`プロセスが応答なしのまま残り続けることを確認した上で追加した）。
+テスト:
+- `tests/test_autotrack_record_dialog.py`の`TestRestartRequiredWarning`（5件）——
+  手動でのON/OFF操作それぞれで警告表示・`restart_application()`呼び出しの両方が
+  行われること、`set_autotrack_enabled()`経由のプログラム的な変更ではどちらも
+  呼ばれないこと、警告への応答（`exec()`が返る）**より後**に再起動が呼ばれる順序
+  （fire-and-forgetで同時に発火するのではないこと）を検証。既存の
+  `_no_background_sync`と同型のオートユースフィクスチャ`_no_restart_warning_popup`
+  に、`QMessageBox.warning`だけでなく`core.app_restart.restart_application`も
+  モックする処理を追加した（追加しない状態で一度実行し、`pytest`プロセスが実際に
+  外部サブプロセスを起動したまま応答なしで残り続けることを確認した上で対処した）
+- `tests/test_app_restart.py`（新規、5件）——frozen/非frozenそれぞれで正しい引数
+  （実行ファイルパス・`sys.argv`の扱い）で`subprocess.Popen()`が呼ばれること、
+  環境変数`FBSAT59_RESTART=1`が設定されること、`QApplication.instance()`が
+  存在する場合は`quit()`が呼ばれること、存在しない場合（QApplication構築前に
+  呼ばれた場合）は例外を出さず安全にスキップされることを検証
+
+**検証状況**: 静的なコード修正・ユニットテストに基づく。実機（Windows/macOS）での
+実際の自動再起動動作の確認は次回パス待ち（2026-08-23時点）。特に、frozenビルドでの
+`sys.executable`/`sys.argv`の実際の値、および多重起動ロックのリトライタイミング
+（8秒で十分か）は実機でしか最終確認できない。
 
 **検証状況**: 静的なコード修正・ユニットテストに基づく。実機での確認は次回パス待ち
 （2026-08-23時点）。
