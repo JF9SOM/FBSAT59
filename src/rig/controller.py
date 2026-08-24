@@ -393,6 +393,31 @@ def _check_rig_ok(rig: Any, what: str) -> None:
         raise RigControlError(f"{what} failed (Hamlib error {status})")
 
 
+# GitHub Issue #26 diagnostic (temporary — remove once the FT4/Q65 TX
+# "stretched transmission" root cause is confirmed or ruled out). See the
+# comment on the satmode DL/UL set_freq() calls in
+# HamlibDirectController._set_vfo_frequencies_locked() for the full
+# rationale: the Hamlib Python (SWIG) binding is built without -threads,
+# so these calls hold the GIL for their whole blocking CAT round-trip.
+# Anything at or above this threshold is logged as a warning so a slow
+# call stands out at a glance against the surrounding INFO-level noise;
+# below it, INFO is enough to let the normal per-cycle cadence be seen.
+_CAT_CALL_SLOW_MS = 80.0
+
+
+def _log_cat_call_diag(duration_ms: float, msg: str, *args: object) -> None:
+    """logger.info()/warning() a CAT call's own measured duration.
+
+    `duration_ms` picks the log level only; the caller still passes it a
+    second time inside `args` (for the message's own `%.0fms` formatting)
+    exactly like a normal logger.info() call.
+    """
+    if duration_ms >= _CAT_CALL_SLOW_MS:
+        logger.warning(msg, *args)
+    else:
+        logger.info(msg, *args)
+
+
 _hamlib_trace_lock = threading.Lock()
 _hamlib_file_trace_enabled = False
 
@@ -1709,18 +1734,48 @@ class HamlibDirectController(RigController):
                         if last_dl is None or self._freq_band(vfoa_hz) != self._freq_band(last_dl):
                             # Band change or first tick: write DL and reset UL
                             # cache so VFO_TX fires on the very next iteration.
-                            logger.info(
-                                "RigDirect satmode DL (band/init): set_freq(MAIN, %d)", int(vfoa_hz)
-                            )
+                            #
+                            # GitHub Issue #26 diagnostic (temporary, remove once
+                            # root-caused): the Hamlib Python (SWIG) binding is
+                            # built without -threads (see .github/workflows/
+                            # ci.yml's `swig -python -Wall` for Hamlib vs.
+                            # `swig -c++ -python -threads` for SoapySDR), so this
+                            # call holds the GIL for its whole blocking CAT
+                            # round-trip. During FT4/Q65 TX, _tracking_through_tx()
+                            # (below) tightens the UL threshold to 1 Hz, which can
+                            # turn this into a near-continuous stream of calls —
+                            # suspected of starving _TxWorker's PortAudio callback
+                            # thread of the GIL and causing the "output underflow"
+                            # / stretched-transmission symptom reported there.
+                            # Timing each call directly here (rather than only
+                            # inferring it from the gap between log lines) lets a
+                            # reproduction be compared against ft4_decode.log's
+                            # "tx callback_stats" for the same session.
+                            _cat_t0 = time.monotonic()
                             self._rig.set_freq(main_vfo, int(vfoa_hz))
+                            _cat_dt_ms = (time.monotonic() - _cat_t0) * 1000.0
+                            _log_cat_call_diag(
+                                _cat_dt_ms,
+                                "RigDirect satmode DL (band/init): set_freq(MAIN, %d) took=%.0fms",
+                                int(vfoa_hz),
+                                _cat_dt_ms,
+                            )
                             _check_rig_ok(self._rig, "satmode DL set_freq(MAIN)")
                             self._last_dl_hz = vfoa_hz
                             self._last_ul_hz = None
                             self._last_ul_update_time = 0.0
                             self._last_written_vfo = "Main"
                         elif abs(vfoa_hz - last_dl) >= 1.0:
-                            logger.info("RigDirect satmode DL: set_freq(MAIN, %d)", int(vfoa_hz))
+                            # See the GitHub Issue #26 diagnostic comment above.
+                            _cat_t0 = time.monotonic()
                             self._rig.set_freq(main_vfo, int(vfoa_hz))
+                            _cat_dt_ms = (time.monotonic() - _cat_t0) * 1000.0
+                            _log_cat_call_diag(
+                                _cat_dt_ms,
+                                "RigDirect satmode DL: set_freq(MAIN, %d) took=%.0fms",
+                                int(vfoa_hz),
+                                _cat_dt_ms,
+                            )
                             _check_rig_ok(self._rig, "satmode DL set_freq(MAIN)")
                             self._last_dl_hz = vfoa_hz
                             self._last_written_vfo = "Main"
@@ -1756,9 +1811,6 @@ class HamlibDirectController(RigController):
                             vfo_name = (
                                 "VFO_SUB" if self._model_id in _SATMODE_USE_VFO_SUB else "VFO_TX"
                             )
-                            logger.info(
-                                "RigDirect satmode UL: set_freq(%s, %d)", vfo_name, int(vfob_hz)
-                            )
                             was_first_ul = last_ul is None
                             # No local try/except here (there used to be one) --
                             # a failure now propagates to the shared handler
@@ -1768,7 +1820,23 @@ class HamlibDirectController(RigController):
                             # a persistently failing UL keeps retrying every
                             # cycle instead of being (incorrectly) considered
                             # "already applied" after the first failed attempt.
+                            #
+                            # See the GitHub Issue #26 diagnostic comment on the
+                            # DL write above -- this UL write is the one
+                            # _tracking_through_tx() makes fire on (almost)
+                            # every cycle during FT4/Q65 TX, so it is the prime
+                            # suspect for holding the GIL long enough to starve
+                            # the TX audio callback.
+                            _cat_t0 = time.monotonic()
                             self._rig.set_freq(vfo_tx, int(vfob_hz))
+                            _cat_dt_ms = (time.monotonic() - _cat_t0) * 1000.0
+                            _log_cat_call_diag(
+                                _cat_dt_ms,
+                                "RigDirect satmode UL: set_freq(%s, %d) took=%.0fms",
+                                vfo_name,
+                                int(vfob_hz),
+                                _cat_dt_ms,
+                            )
                             _check_rig_ok(self._rig, f"satmode UL set_freq({vfo_name})")
                             self._last_ul_hz = vfob_hz
                             self._last_ul_update_time = now
