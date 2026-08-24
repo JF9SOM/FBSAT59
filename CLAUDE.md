@@ -9990,6 +9990,72 @@ Bが本来必要とする条件（今回は実際の可視性）と完全に一�
 症状の見た目が同じでも、UIの正確な文言を確認するだけで原因調査の分岐点が変わる
 好例だった。
 
+### 17. AOSタイミング修正（項目16）で初めて表面化した、Rig 1/2自動接続とMETEOR受信のSDR取り合い（GitHub Issue #27、2026-08-24 実機確認・修正）
+
+**症状**: 項目16の修正をリリースした直後、実際にMETEOR M2-3の実パスで検証した
+ユーザーから、「AOS発火・METEORタブ自動起動までは正しく動作するようになったが、
+SDR接続が`satdump exited with code 1`で失敗する」という報告があった。ローテーター
+未接続による`Connection refused`エラーも同時に出ていたが、これはユーザー自身が
+「想定内」と正確に認識していた。
+
+提供されたログ（`fbsat59.log`・SatDump側ログ）を突き合わせたところ、時系列が
+決定的な証拠になった:
+
+```
+08:52:10 Autotrack AOS fired: norad=57166 ...
+08:52:10 SdrRigAdapter.connect: sample_rate=1000000 ...     ← Rig 1/2としてRTL-SDRを接続
+08:52:12 SDR opened: Generic RTL2832U OEM ...                ← FBSAT59本体が先に掴む
+08:52:13 SDRPipeline started
+08:52:13 Rotator: connect failed — Connection refused        ← 無害（ローテーター未接続）
+08:52:13 Autotrack METEOR/HRPT autotrack_start invoked       ← ここでSatDumpを起動
+```
+SatDump側:
+```
+Kernel driver is active, or device is claimed by second instance of librtlsdr.
+usb_claim_interface error -3
+Could not open RTL-SDR device!
+```
+
+**根本原因**: `_autotrack_on_aos()`（[main_window.py](src/ui/main_window.py)）は
+「Rig 1/2自動接続 → 録音開始 → METEORタブ起動」という順序で処理する。ユーザーは
+このRTL-SDRをRig 1（またはRig 2）にも割り当てていたため、Autotrackが最初に
+Rig接続でこのデバイスを掴んでしまい、直後にMETEORタブが独自にSatDumpで同じ
+RTL-SDRを開こうとして「既に別インスタンスに掴まれている」と衝突していた。
+METEOR/HRPT受信は元々Rig 1/2の接続状態とは無関係にRig Settings > SDR Settingsを
+直接読んでSatDumpが自分でデバイスを開く設計（本ファイル「トランスポンダーと
+周波数の独立性」参照）のため、Rig側で先に掴む必要は本来ない。
+
+この競合自体はAutotrackの`_autotrack_on_aos()`に元から潜在していたバグだが、
+項目16の修正でAOSアクションが初めて正しいタイミングで実行されるようになった
+ことで、初めて実機で発現した——項目16修正前は、Enable Autotrack時点の誤発火に
+巻き込まれてMETEORタブが（信号のないタイミングで）誤って起動していたため、
+この種のデバイス競合が意味のある形で表面化する機会自体がなかったと考えられる。
+
+**修正**: `_autotrack_on_aos()`のRig 1/Rig 2自動接続それぞれに、「そのRigが
+`is_sdr`（`SdrRigAdapter`）であり、かつ`_autotrack_meteor_record`
+（METEOR / HRPT Receptionチェックボックス）が有効な場合は、そのRigの自動接続を
+スキップする」という条件を追加。Rig 1・Rig 2は独立に判定するため、
+「Rig 1=物理リグ（ドップラー追尾用）・Rig 2=このRTL-SDR」のような構成でも、
+Rig 1は従来通り自動接続され、Rig 2（SDR）だけがMETEORタブに道を譲る。
+「METEOR / HRPT Reception」がオフの場合は従来通りRig 1/2とも自動接続する
+（挙動は変更なし）。スキップした場合は診断用に`logger.info()`を出す。
+
+テスト: `tests/test_main_window.py`に`TestAutotrackOnAosSkipsSdrRig`（4件）を
+新設。SDR×METEOR有効→スキップ・非SDR×METEOR有効→接続（既存挙動維持）・
+SDR×METEOR無効→接続（既存挙動維持）・Rig 2側での対称性、を検証。既存の
+Autotrack関連テスト27件・`test_rig.py`165件すべて回帰なしを確認済み。
+
+**教訓**: SoapySDRデバイスは1プロセス専有という既知の制約（本ファイル冒頭
+「SDR フェーズ2」節等で既出）は、SDR Controlタブと外部ツール（SatDump・
+gr-satellites等）の間の競合としては認識されていたが、**同一アプリ内の
+「Rig 1/2としてのSDR接続」と「METEORタブが独自に起動するSatDump」という
+2つの独立した経路が同じ物理デバイスを取り合いうる**という組み合わせは、
+項目16のタイミング修正で初めて実際に発生する条件が揃うまで、誰も気づいて
+いなかった。ある不具合を直すと、それまで別の不具合（今回はデバイス競合）が
+発現する条件が揃っていなかっただけで実は隠れていた、というケースがある——
+1つの修正のリリース後も「直ったはず」で終わらせず、実機での追加検証を
+継続する価値がある好例だった。
+
 ### 過去の受信フォルダをタブ内で見返す機能（`📂 Open Past Reception…`、2026-08-20 実装）
 
 #### 背景
