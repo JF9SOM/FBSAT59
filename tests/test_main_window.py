@@ -4973,6 +4973,85 @@ class TestAutotrackOnLosGuard:
         assert not w._autotrack_aos_fired
 
 
+class TestAutotrackOnAosSkipsSdrRig:
+    """_autotrack_on_aos() must not auto-connect a Rig 1/2 slot that is
+    itself an SDR (SdrRigAdapter) while METEOR/HRPT reception is enabled.
+
+    The METEOR tab manages its own SDR connection independently (it reads
+    Rig Settings > SDR Settings directly and lets SatDump open the device
+    itself). Letting Rig 1/2 claim the same RTL-SDR/HackRF device first
+    made SatDump's own open() fail with "device claimed by second
+    instance of librtlsdr" as soon as the AOS-timing fix (item 16) made
+    AOS actions fire at the correct moment (GitHub Issue #27 follow-up,
+    2026-08-24) -- METEOR must win the device in that case.
+    """
+
+    def _make_window(self, qtbot, db):
+        from data.tle_manager import TLEManager
+        from ui.main_window import MainWindow
+
+        tle_manager = TLEManager(db)
+        w = MainWindow(conn=db, tle_manager=tle_manager)
+        qtbot.addWidget(w)
+        # Neutralize the rest of _autotrack_on_aos() so these tests focus
+        # purely on the Rig 1/2 connect decision.
+        w._autotrack_tracking_norad = 57166
+        w._autotrack_audio_record = False
+        w._autotrack_iq_record = False
+        w._autotrack_meteor_record = False
+        w._meteor_autotrack_aos = MagicMock()
+        w._rotator_controller = None
+        return w
+
+    def test_skips_rig1_connect_when_sdr_and_meteor_record_enabled(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._autotrack_meteor_record = True
+        w._rig_controller = MagicMock()
+        w._rig_controller.is_connected = False
+        w._rig_controller.is_sdr = True
+        w._rig2_controller = None
+
+        w._autotrack_on_aos("METEOR M2-3")
+
+        w._rig_controller.connect.assert_not_called()
+
+    def test_connects_rig1_when_not_sdr_even_if_meteor_record_enabled(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._autotrack_meteor_record = True
+        w._rig_controller = MagicMock()
+        w._rig_controller.is_connected = False
+        w._rig_controller.is_sdr = False
+        w._rig2_controller = None
+
+        w._autotrack_on_aos("METEOR M2-3")
+
+        w._rig_controller.connect.assert_called_once()
+
+    def test_connects_rig1_sdr_when_meteor_record_disabled(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._autotrack_meteor_record = False
+        w._rig_controller = MagicMock()
+        w._rig_controller.is_connected = False
+        w._rig_controller.is_sdr = True
+        w._rig2_controller = None
+
+        w._autotrack_on_aos("METEOR M2-3")
+
+        w._rig_controller.connect.assert_called_once()
+
+    def test_skips_rig2_connect_when_sdr_and_meteor_record_enabled(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._autotrack_meteor_record = True
+        w._rig_controller = None
+        w._rig2_controller = MagicMock()
+        w._rig2_controller.is_connected = False
+        w._rig2_controller.is_sdr = True
+
+        w._autotrack_on_aos("METEOR M2-3")
+
+        w._rig2_controller.connect.assert_not_called()
+
+
 class TestAutotrackRecordingCheckboxSync:
     """MainWindow must pick up the Audio/IQ/METEOR checkbox state that
     AutotrackRecordDialog restored from app_settings in its own __init__()

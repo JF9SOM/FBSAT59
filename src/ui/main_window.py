@@ -7327,22 +7327,42 @@ class MainWindow(QMainWindow):
         Connects rig and rotator if not already connected, then starts
         SDR recordings if the respective checkboxes are enabled.
         """
-        # Connect Rig 1
+        # Connect Rig 1 — but skip it if it's an SDR and METEOR/HRPT
+        # reception is enabled. The METEOR tab manages its own SDR
+        # connection independently of Rig 1/2 (it reads Rig Settings > SDR
+        # Settings directly and lets SatDump open the device itself — see
+        # _meteor_autotrack_aos()). Letting Rig 1 claim the same RTL-SDR/
+        # HackRF device first made SatDump's own open() fail with "device
+        # claimed by second instance of librtlsdr" the moment AOS actions
+        # started firing at the right time (GitHub Issue #27 follow-up,
+        # 2026-08-24) -- METEOR wins the device in that case.
+        rig1_is_sdr = getattr(self._rig_controller, "is_sdr", False)
         if self._rig_controller is not None and not self._rig_controller.is_connected:
-            self._rig_controller.connect()
-            if self._rig_controller.is_connected:
-                self._radio_control.refresh_status()
-                self._update_rig_label()
-                from ui.autotrack_record_dialog import AutotrackRecordDialog  # noqa: F401
+            if self._autotrack_meteor_record and rig1_is_sdr:
+                logger.info(
+                    "Autotrack: skipping Rig 1 SDR auto-connect (METEOR/HRPT reception enabled)"
+                )
+            else:
+                self._rig_controller.connect()
+                if self._rig_controller.is_connected:
+                    self._radio_control.refresh_status()
+                    self._update_rig_label()
+                    from ui.autotrack_record_dialog import AutotrackRecordDialog  # noqa: F401
 
-                self._on_rig_slot_connected(1)
-        # Connect Rig 2
+                    self._on_rig_slot_connected(1)
+        # Connect Rig 2 — same reasoning as Rig 1 above.
+        rig2_is_sdr = getattr(self._rig2_controller, "is_sdr", False)
         if self._rig2_controller is not None and not self._rig2_controller.is_connected:
-            self._rig2_controller.connect()
-            if self._rig2_controller.is_connected:
-                self._radio_control.refresh_status()
-                self._update_rig_label()
-                self._on_rig_slot_connected(2)
+            if self._autotrack_meteor_record and rig2_is_sdr:
+                logger.info(
+                    "Autotrack: skipping Rig 2 SDR auto-connect (METEOR/HRPT reception enabled)"
+                )
+            else:
+                self._rig2_controller.connect()
+                if self._rig2_controller.is_connected:
+                    self._radio_control.refresh_status()
+                    self._update_rig_label()
+                    self._on_rig_slot_connected(2)
         # Connect rotator
         if self._rotator_controller is not None and not self._rotator_controller.is_connected:
             self._rotator_controller.connect()
