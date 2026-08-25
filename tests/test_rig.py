@@ -8,6 +8,7 @@ No network connection required (httpx is mocked).
 from __future__ import annotations
 
 import socket
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -678,13 +679,34 @@ class TestPreTxUplinkFlush:
 
         ctrl._rig.set_freq.assert_not_called()
 
-    def test_uplink_tracked_at_1hz_while_transmitting(self) -> None:
-        """Once keyed with freeze_doppler=False, sub-20 Hz drift that would
-        normally be throttled away must reach the rig."""
+    def test_uplink_write_suppressed_within_1s_floor_while_transmitting(self) -> None:
+        """GitHub Issue #26: while transmitting, UL writes are governed by a
+        flat 1s floor (_TX_UL_MIN_INTERVAL_S) instead of a delta threshold --
+        a small in-TX drift must NOT reach the rig again less than a second
+        after the previous write, no matter how far it has moved."""
         ctrl = self._make_satmode_ctrl()
         ctrl.set_vfo_frequencies(435_612_000.0, 145_993_000.0)
-        ctrl.set_ptt(True, freeze_doppler=False)
+        ctrl.set_ptt(True, freeze_doppler=False)  # flushes UL, resets the floor
         ctrl._rig.set_freq.reset_mock()
+
+        # DL held fixed so only the UL write is under test here (DL uses its
+        # own always-1 Hz threshold, unaffected by this change, and would
+        # otherwise also fire and confuse the assertion below). 15 Hz would
+        # have crossed even the old 20 Hz *outside-TX* UL threshold, yet
+        # must still be suppressed here: less than 1s has elapsed since the
+        # flush's write.
+        ctrl.set_vfo_frequencies(435_612_000.0, 145_992_985.0)
+
+        ctrl._rig.set_freq.assert_not_called()
+
+    def test_uplink_written_once_1s_floor_elapses_while_transmitting(self) -> None:
+        """Once the 1s floor has elapsed, the next cycle's UL value reaches
+        the rig even if it only drifted by a few Hz."""
+        ctrl = self._make_satmode_ctrl()
+        ctrl.set_vfo_frequencies(435_612_000.0, 145_993_000.0)
+        ctrl.set_ptt(True, freeze_doppler=False)  # flushes UL, resets the floor
+        ctrl._rig.set_freq.reset_mock()
+        ctrl._last_ul_update_time = time.monotonic() - 2.0  # simulate 2s elapsed
 
         ctrl.set_vfo_frequencies(435_611_990.0, 145_992_997.0)  # UL moved 3 Hz
 

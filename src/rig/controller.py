@@ -245,6 +245,21 @@ def normalize_civ_addr(text: str) -> str:
 # ---------------------------------------------------------------------------
 _FTX1_MODEL_IDS: frozenset[int] = frozenset({1051})  # FTX-1F (Hamlib model 1051)
 
+# GitHub Issue #26: minimum time between satmode crossband UL (Sub VFO)
+# writes while _tracking_through_tx() is True. Replaces a tight 1 Hz
+# delta threshold, which on this rig class crossed almost every
+# DopplerWorker cycle (~3 writes/second measured on IC-9700) -- each one
+# taking ~200-260ms (Hamlib's SWIG binding lacks -threads, so the call
+# holds the GIL for that whole blocking CAT round-trip; this rig's Sub
+# VFO write is unusually expensive to begin with), which was starving
+# _TxWorker's audio callback thread badly enough to stretch a ~5s FT4/Q65
+# transmission out to 10-30+s. A flat 1s floor cuts that CAT traffic to
+# roughly a quarter of the transmission's duration. Confirmed with the
+# user this trades away in-burst tracking accuracy only right at TCA on
+# a fast high-elevation UHF pass (~170 Hz/s there vs. a few Hz/s
+# typically), which is an acceptable trade for not stalling the audio.
+_TX_UL_MIN_INTERVAL_S = 1.0
+
 # FT-991 / FT-991A / FT-991AM (Hamlib model 1035) Direct mode raw CAT path.
 _FT991_DIRECT_MODEL_IDS: frozenset[int] = frozenset({1035})
 
@@ -1588,11 +1603,20 @@ class HamlibDirectController(RigController):
         Called from set_ptt(enabled=True, freeze_doppler=False) before the
         carrier comes up, so the rig is still in RX and this is an ordinary
         safe write. _ptt_active is already True and _doppler_frozen already
-        False by this point, so the in-TX 1 Hz threshold applies and the
-        pending UL actually gets written. Both frequencies are replayed
-        rather than the UL alone because _set_vfo_frequencies_locked() needs
-        both to tell same-band from cross-band; the DL write is skipped
-        internally when it has not moved.
+        False by this point, so _set_vfo_frequencies_locked() sees
+        _tracking_through_tx() == True same as any other in-TX cycle would.
+        Both frequencies are replayed rather than the UL alone because
+        _set_vfo_frequencies_locked() needs both to tell same-band from
+        cross-band; the DL write is skipped internally when it has not moved.
+
+        The 1s floor that now governs in-TX UL writes (GitHub Issue #26;
+        see _TX_UL_MIN_INTERVAL_S) would otherwise also gate *this* write
+        whenever the previous UL write happened to be under a second ago --
+        defeating the whole point of flushing a possibly much staler value
+        right as the carrier is about to come up. Resetting
+        _last_ul_update_time to 0 first forces that floor to always be
+        satisfied here, independent of how recently the rig was last
+        written to.
 
         Best-effort: failures are logged and swallowed rather than blocking
         the PTT that is about to follow.
@@ -1601,6 +1625,7 @@ class HamlibDirectController(RigController):
             return
         try:
             with self._rig_cmd_lock:
+                self._last_ul_update_time = 0.0
                 self._set_vfo_frequencies_locked(self._pending_dl_hz, self._pending_ul_hz)
         except Exception as exc:
             logger.warning("RigDirect: pre-TX frequency flush failed: %s", exc)
@@ -1793,21 +1818,21 @@ class HamlibDirectController(RigController):
                         _UL_THRESH = 10.0 if is_fm else 20.0
                         if self._tracking_through_tx():
                             # Actually transmitting a tone mode: the uplink is
-                            # on the air right now, so track it as tightly as
-                            # the downlink (1 Hz) instead of letting it sit up
-                            # to 20 Hz stale. Any coarser and the correction
-                            # lands as a step part-way through the
-                            # transmission -- FT4's tone spacing is only
-                            # 20.83 Hz (GitHub Issue #16). The extra Sub writes
-                            # cost an actual VFO switch per cycle on IC-9100
-                            # (targetable_vfo == 0), but only for the few
-                            # seconds a transmission lasts.
-                            _UL_THRESH = 1.0
-                        if (
-                            last_ul is None
-                            or abs(vfob_hz - last_ul) >= _UL_THRESH
-                            or elapsed >= _UL_MAX_S
-                        ):
+                            # on the air right now, so keep tracking it rather
+                            # than letting it sit up to 20 Hz stale for the
+                            # whole burst -- but on a flat time floor instead
+                            # of a delta threshold (see _TX_UL_MIN_INTERVAL_S
+                            # above for why: the delta-based 1 Hz threshold
+                            # this replaced fired almost every DopplerWorker
+                            # cycle and stalled TX audio, GitHub Issue #26).
+                            should_write_ul = last_ul is None or elapsed >= _TX_UL_MIN_INTERVAL_S
+                        else:
+                            should_write_ul = (
+                                last_ul is None
+                                or abs(vfob_hz - last_ul) >= _UL_THRESH
+                                or elapsed >= _UL_MAX_S
+                            )
+                        if should_write_ul:
                             vfo_name = (
                                 "VFO_SUB" if self._model_id in _SATMODE_USE_VFO_SUB else "VFO_TX"
                             )
