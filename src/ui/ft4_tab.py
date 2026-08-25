@@ -109,9 +109,23 @@ _DEFAULT_AUDIO_FREQ = 1500.0  # Hz — matches Q65's/WSJT-X's own default; see
 # don't extend that low, whereas 1500 Hz (and the ~2300 Hz that *was*
 # confirmed) sit comfortably inside them.
 _AUDIO_OWNER = "FT4"
-# ~20ms @ 12000 Hz — bounds the worst-case delay before a TX Level slider
-# change takes effect during an active transmission (GitHub Issue #16).
-_TX_BLOCK_SIZE = 240
+# 500ms @ 12000 Hz. Originally 240 (~20ms), sized only to bound the delay
+# before a TX Level slider change takes effect mid-transmission (GitHub
+# Issue #16). Raised for GitHub Issue #26: on IC-9700 satmode Direct,
+# _tracking_through_tx()'s 1 Hz UL threshold makes controller.py's
+# set_freq() calls (which hold the GIL for their whole blocking CAT
+# round-trip -- Hamlib's Python binding is built without SWIG's -threads
+# option) fire almost back-to-back throughout TX, each one taking
+# ~200-400ms (measured; see "took=" lines added for this same issue).
+# At the old 20ms blocksize, PortAudio only ever had a sliver of audio
+# queued ahead of the hardware, so any single one of those stalls caused
+# an audible "output underflow" and stretched a ~5s transmission out to
+# 10-30+s. A much bigger block gives the hardware enough pre-queued
+# audio to ride out one such stall without running dry, at the cost of
+# the TX Level slider now taking up to ~500ms to visibly react instead
+# of ~20ms -- imperceptible for a slider used to trim gain, not a
+# real-time control.
+_TX_BLOCK_SIZE = 6000
 
 
 # ---------------------------------------------------------------------------
