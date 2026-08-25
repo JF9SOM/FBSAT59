@@ -126,6 +126,17 @@ _AUDIO_OWNER = "FT4"
 # of ~20ms -- imperceptible for a slider used to trim gain, not a
 # real-time control.
 _TX_BLOCK_SIZE = 6000
+# GitHub Issue #26: a hard ceiling on how long a single transmission is
+# allowed to hold PTT, independent of whatever _TxWorker's own audio
+# stream thinks is going on. done.wait() below normally unblocks once our
+# callback has pushed the last sample of the ~5.04s FT4 tone, but if the
+# audio pipeline stalls (the underlying CAT-traffic/GIL contention this
+# issue is about, or any other cause) that wait could in principle never
+# return on its own, leaving the rig keyed indefinitely. One FT4 T/R
+# period is FT4_PERIOD (7.5s); 7.0s gives it a full period's worth of
+# margin over a normal transmission while still guaranteeing PTT comes
+# back off before the *next* period would otherwise try to key up again.
+_TX_WATCHDOG_S = 7.0
 
 
 # ---------------------------------------------------------------------------
@@ -333,7 +344,22 @@ class _TxWorker(QObject):
                 log.info("tx stream_started duration=%.3fs", stream_started_at - t0)
                 mgr.pin_active_output(_AUDIO_OWNER)
                 t0 = time.monotonic()
-                done.wait()
+                finished_naturally = done.wait(timeout=_TX_WATCHDOG_S)
+                if not finished_naturally:
+                    # The audio thread never signalled completion within
+                    # the watchdog window -- cut it short exactly like an
+                    # operator pressing Halt TX would (see abort()'s
+                    # docstring: PortAudio still invokes finished_callback
+                    # after abort(), so nothing further needs to be done
+                    # here to unblock; the PTT-off below still runs
+                    # unconditionally).
+                    log.warning(
+                        "tx watchdog FIRED after %.1fs — forcing PTT off "
+                        "(audio pipeline did not signal completion)",
+                        _TX_WATCHDOG_S,
+                    )
+                    with contextlib.suppress(Exception):
+                        stream.abort()
                 log.info("tx playback_done duration=%.3fs", time.monotonic() - t0)
                 first_lag = (
                     cb_stats["first_time"] - stream_started_at
@@ -354,7 +380,18 @@ class _TxWorker(QObject):
                 self._rig.set_ptt(False)
                 log.info("tx ptt_off duration=%.3fs", time.monotonic() - t0)
 
-            self.finished.emit()
+            if finished_naturally:
+                self.finished.emit()
+            else:
+                # Surfaced as an error (rather than finished) so the
+                # operator sees clearly in the status bar / log that this
+                # transmission was cut short by the watchdog rather than
+                # completing normally -- PTT is already back off by now.
+                self.error.emit(
+                    _("TX watchdog: forced PTT off after {s:.0f}s (audio stalled)").format(
+                        s=_TX_WATCHDOG_S
+                    )
+                )
         except Exception as exc:
             if self._rig is not None:
                 with contextlib.suppress(Exception):
