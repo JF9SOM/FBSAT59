@@ -712,6 +712,39 @@ class TestPreTxUplinkFlush:
 
         ctrl._rig.set_freq.assert_any_call(8388608, 145_992_997)  # RIG_VFO_SUB
 
+    def test_downlink_write_suppressed_within_3s_floor_while_transmitting(self) -> None:
+        """GitHub Issue #26: DL is *also* throttled while transmitting (see
+        _TX_DL_MIN_INTERVAL_S) instead of using the normal 1 Hz delta
+        threshold -- our own TX audio for this period is never decoded, so
+        a stale DL has no functional effect until the next RX period, and
+        skipping the write further cuts CAT traffic competing with the TX
+        audio callback thread for the GIL."""
+        ctrl = self._make_satmode_ctrl()
+        ctrl.set_vfo_frequencies(435_612_000.0, 145_993_000.0)
+        ctrl.set_ptt(True, freeze_doppler=False)  # flushes, resets both floors
+        ctrl._rig.set_freq.reset_mock()
+
+        # UL held fixed so only the DL write is under test here. 10 Hz would
+        # have crossed even the old 1 Hz *outside-TX* DL threshold, yet must
+        # still be suppressed here: less than 3s have elapsed since the
+        # flush's write.
+        ctrl.set_vfo_frequencies(435_611_990.0, 145_993_000.0)
+
+        ctrl._rig.set_freq.assert_not_called()
+
+    def test_downlink_written_once_3s_floor_elapses_while_transmitting(self) -> None:
+        """Once the 3s floor has elapsed, the next cycle's DL value reaches
+        the rig even if it only drifted by a few Hz."""
+        ctrl = self._make_satmode_ctrl()
+        ctrl.set_vfo_frequencies(435_612_000.0, 145_993_000.0)
+        ctrl.set_ptt(True, freeze_doppler=False)  # flushes, resets both floors
+        ctrl._rig.set_freq.reset_mock()
+        ctrl._last_dl_update_time = time.monotonic() - 4.0  # simulate 4s elapsed
+
+        ctrl.set_vfo_frequencies(435_611_995.0, 145_993_000.0)  # DL moved 5 Hz
+
+        ctrl._rig.set_freq.assert_any_call(4194304, 435_611_995)  # RIG_VFO_MAIN
+
 
 # ---------------------------------------------------------------------------
 # HamlibDirectController satmode (IC-9100/9700) — Hamlib return-code checks

@@ -131,7 +131,20 @@ jobs:
 
           # Generate SWIG Python wrapper from .swg sources
           # Note: -I flags must NOT have spaces between -I and the path
-          swig -python -Wall \
+          # -threads (GitHub Issue #26): wraps every generated call in
+          # Py_BEGIN_ALLOW_THREADS/Py_END_ALLOW_THREADS, releasing the GIL
+          # for the duration of the underlying (blocking, serial-I/O-bound)
+          # Hamlib C call. Without it, a single CAT round-trip (~200-400ms
+          # measured on IC-9700 satmode) holds the GIL for that whole time
+          # and can starve unrelated Python threads -- e.g. FT4/Q65's
+          # PortAudio TX callback thread, which needs the GIL to run and
+          # was seen stalling badly enough to stretch a ~5s transmission
+          # out to 10-30+s. All CAT access in this codebase is already
+          # serialized through _rig_cmd_lock, so -threads only affects
+          # whether *other* threads can run while one is blocked inside a
+          # Hamlib call -- it does not change or require any change to how
+          # concurrent access to a single rig handle is handled.
+          swig -python -Wall -threads \
             -I/opt/hamlib/4.7/include \
             -Ihamlib-${HAMLIB_VER}/bindings \
             -o hamlib-${HAMLIB_VER}/bindings/hamlib_wrap.c \
@@ -343,8 +356,13 @@ jobs:
 
           # Generate SWIG Python wrapper from .swg sources
           # Use Windows zip headers (pre-compiled, includes rig.h etc.) for SWIG
+          # -threads (GitHub Issue #26): see the matching Linux build step
+          # for the full rationale -- releases the GIL for the duration of
+          # each blocking Hamlib CAT call instead of holding it, so other
+          # Python threads (e.g. FT4/Q65's PortAudio TX callback) are never
+          # starved by CAT traffic.
           $bindingsDir = "hamlib-$HAMLIB_VER\bindings"
-          & swig -python -Wall `
+          & swig -python -Wall -threads `
             "-I$incDir" `
             "-I$bindingsDir" `
             -o "$bindingsDir\hamlib_wrap.c" `
@@ -927,7 +945,12 @@ jobs:
 
           # Generate SWIG Python wrapper from .swg sources
           # Note: -I flags must NOT have spaces between -I and the path
-          swig -python -Wall \
+          # -threads (GitHub Issue #26): see the matching Linux build step
+          # for the full rationale -- releases the GIL for the duration of
+          # each blocking Hamlib CAT call instead of holding it, so other
+          # Python threads (e.g. FT4/Q65's PortAudio TX callback) are never
+          # starved by CAT traffic.
+          swig -python -Wall -threads \
             -I/usr/local/hamlib-bundle/include \
             -Ihamlib-${HAMLIB_VER}/bindings \
             -o hamlib-${HAMLIB_VER}/bindings/hamlib_wrap.c \

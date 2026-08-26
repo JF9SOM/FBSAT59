@@ -109,23 +109,35 @@ _DEFAULT_AUDIO_FREQ = 1500.0  # Hz — matches Q65's/WSJT-X's own default; see
 # don't extend that low, whereas 1500 Hz (and the ~2300 Hz that *was*
 # confirmed) sit comfortably inside them.
 _AUDIO_OWNER = "FT4"
-# 500ms @ 12000 Hz. Originally 240 (~20ms), sized only to bound the delay
+# 250ms @ 12000 Hz. Originally 240 (~20ms), sized only to bound the delay
 # before a TX Level slider change takes effect mid-transmission (GitHub
-# Issue #16). Raised for GitHub Issue #26: on IC-9700 satmode Direct,
-# _tracking_through_tx()'s 1 Hz UL threshold makes controller.py's
-# set_freq() calls (which hold the GIL for their whole blocking CAT
-# round-trip -- Hamlib's Python binding is built without SWIG's -threads
-# option) fire almost back-to-back throughout TX, each one taking
-# ~200-400ms (measured; see "took=" lines added for this same issue).
-# At the old 20ms blocksize, PortAudio only ever had a sliver of audio
-# queued ahead of the hardware, so any single one of those stalls caused
-# an audible "output underflow" and stretched a ~5s transmission out to
-# 10-30+s. A much bigger block gives the hardware enough pre-queued
-# audio to ride out one such stall without running dry, at the cost of
-# the TX Level slider now taking up to ~500ms to visibly react instead
-# of ~20ms -- imperceptible for a slider used to trim gain, not a
-# real-time control.
-_TX_BLOCK_SIZE = 6000
+# Issue #16). Raised to 6000 (500ms) for GitHub Issue #26: on IC-9700
+# satmode Direct, _tracking_through_tx()'s then-1-Hz UL threshold made
+# controller.py's set_freq() calls (which hold the GIL for their whole
+# blocking CAT round-trip -- Hamlib's Python binding is built without
+# SWIG's -threads option) fire almost back-to-back throughout TX, each
+# one taking ~200-400ms (measured; see "took=" lines added for this same
+# issue). At the old 20ms blocksize, PortAudio only ever had a sliver of
+# audio queued ahead of the hardware, so any single one of those stalls
+# caused an audible "output underflow" and stretched a ~5s transmission
+# out to 10-30+s.
+#
+# Once controller.py's UL write was throttled to a flat 1s floor (see
+# _TX_UL_MIN_INTERVAL_S there) the underflow was gone, but transmissions
+# still ran ~1.5s longer than the nominal ~5.04s and started with a
+# ~0.5-0.77s delay before the first audio callback -- confirmed via field
+# logs to be the 500ms block itself now costing its own scheduling
+# overhead per callback, no longer masked by the (much reduced) CAT
+# contention it was originally sized to survive. Lowered back down to
+# 3000 (250ms) now that DL is *also* throttled during TX (see
+# _TX_DL_MIN_INTERVAL_S in controller.py): 250ms still comfortably covers
+# one typical single CAT-call stall (~200-266ms measured in the field)
+# while roughly halving the added per-callback latency from the 500ms
+# block. Revisit (either direction) based on the next field test --
+# if underflow reappears, raise it back up; if the ~1.5s stretch
+# persists, it may need to come down further or the writes throttled
+# more aggressively still.
+_TX_BLOCK_SIZE = 3000
 # GitHub Issue #26: a hard ceiling on how long a single transmission is
 # allowed to hold PTT, independent of whatever _TxWorker's own audio
 # stream thinks is going on. done.wait() below normally unblocks once our

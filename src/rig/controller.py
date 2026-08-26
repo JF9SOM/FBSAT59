@@ -260,6 +260,18 @@ _FTX1_MODEL_IDS: frozenset[int] = frozenset({1051})  # FTX-1F (Hamlib model 1051
 # typically), which is an acceptable trade for not stalling the audio.
 _TX_UL_MIN_INTERVAL_S = 1.0
 
+# GitHub Issue #26: same idea as _TX_UL_MIN_INTERVAL_S but for the satmode
+# crossband DL (Main VFO) write while _tracking_through_tx() is True. DL's
+# own 1 Hz delta threshold is unthrottled during TX, and on a slow-Doppler
+# pass it can cross that threshold about once a second on its own -- roughly
+# doubling total CAT occupancy on top of the throttled UL writes. Unlike UL
+# (the live transmitted tone), DL corrections have no functional benefit
+# during our own TX: Ft4Tab already discards audio captured during its own
+# TX window instead of decoding it, so a several-second-stale DL only
+# affects RX accuracy in the *next* RX period, not anything happening right
+# now. A longer floor is fine here.
+_TX_DL_MIN_INTERVAL_S = 3.0
+
 # FT-991 / FT-991A / FT-991AM (Hamlib model 1035) Direct mode raw CAT path.
 _FT991_DIRECT_MODEL_IDS: frozenset[int] = frozenset({1035})
 
@@ -1609,14 +1621,14 @@ class HamlibDirectController(RigController):
         _set_vfo_frequencies_locked() needs both to tell same-band from
         cross-band; the DL write is skipped internally when it has not moved.
 
-        The 1s floor that now governs in-TX UL writes (GitHub Issue #26;
-        see _TX_UL_MIN_INTERVAL_S) would otherwise also gate *this* write
-        whenever the previous UL write happened to be under a second ago --
-        defeating the whole point of flushing a possibly much staler value
-        right as the carrier is about to come up. Resetting
-        _last_ul_update_time to 0 first forces that floor to always be
-        satisfied here, independent of how recently the rig was last
-        written to.
+        The time floors that now govern in-TX DL/UL writes (GitHub Issue
+        #26; see _TX_DL_MIN_INTERVAL_S / _TX_UL_MIN_INTERVAL_S) would
+        otherwise also gate *this* write whenever the previous DL/UL write
+        happened to be recent -- defeating the whole point of flushing a
+        possibly much staler value right as the carrier is about to come
+        up. Resetting both _last_dl_update_time and _last_ul_update_time to
+        0 first forces both floors to always be satisfied here, independent
+        of how recently the rig was last written to.
 
         Best-effort: failures are logged and swallowed rather than blocking
         the PTT that is about to follow.
@@ -1625,6 +1637,7 @@ class HamlibDirectController(RigController):
             return
         try:
             with self._rig_cmd_lock:
+                self._last_dl_update_time = 0.0
                 self._last_ul_update_time = 0.0
                 self._set_vfo_frequencies_locked(self._pending_dl_hz, self._pending_ul_hz)
         except Exception as exc:
@@ -1756,6 +1769,7 @@ class HamlibDirectController(RigController):
                         vfo_tx = int(_H.RIG_VFO_TX)
                     if vfoa_hz is not None:
                         last_dl = self._last_dl_hz
+                        now_dl = time.monotonic()
                         if last_dl is None or self._freq_band(vfoa_hz) != self._freq_band(last_dl):
                             # Band change or first tick: write DL and reset UL
                             # cache so VFO_TX fires on the very next iteration.
@@ -1767,14 +1781,15 @@ class HamlibDirectController(RigController):
                             # `swig -c++ -python -threads` for SoapySDR), so this
                             # call holds the GIL for its whole blocking CAT
                             # round-trip. During FT4/Q65 TX, _tracking_through_tx()
-                            # (below) tightens the UL threshold to 1 Hz, which can
-                            # turn this into a near-continuous stream of calls —
-                            # suspected of starving _TxWorker's PortAudio callback
-                            # thread of the GIL and causing the "output underflow"
-                            # / stretched-transmission symptom reported there.
-                            # Timing each call directly here (rather than only
-                            # inferring it from the gap between log lines) lets a
-                            # reproduction be compared against ft4_decode.log's
+                            # (below) throttles both DL and UL, which can still
+                            # turn this into a near-continuous stream of calls on
+                            # a slow-Doppler pass — suspected of starving
+                            # _TxWorker's PortAudio callback thread of the GIL and
+                            # causing the "output underflow" / stretched-
+                            # transmission symptom reported there. Timing each
+                            # call directly here (rather than only inferring it
+                            # from the gap between log lines) lets a reproduction
+                            # be compared against ft4_decode.log's
                             # "tx callback_stats" for the same session.
                             _cat_t0 = time.monotonic()
                             self._rig.set_freq(main_vfo, int(vfoa_hz))
@@ -1787,9 +1802,34 @@ class HamlibDirectController(RigController):
                             )
                             _check_rig_ok(self._rig, "satmode DL set_freq(MAIN)")
                             self._last_dl_hz = vfoa_hz
+                            self._last_dl_update_time = now_dl
                             self._last_ul_hz = None
                             self._last_ul_update_time = 0.0
                             self._last_written_vfo = "Main"
+                        elif self._tracking_through_tx():
+                            # See _TX_DL_MIN_INTERVAL_S above: while actually
+                            # transmitting, DL is throttled to a flat multi-
+                            # second floor instead of the normal 1 Hz delta
+                            # threshold, since it has no effect on the tone
+                            # being transmitted right now and this cuts GIL
+                            # contention with the TX audio callback thread
+                            # (same rationale as the UL floor below).
+                            elapsed_dl = now_dl - self._last_dl_update_time
+                            if elapsed_dl >= _TX_DL_MIN_INTERVAL_S:
+                                _cat_t0 = time.monotonic()
+                                self._rig.set_freq(main_vfo, int(vfoa_hz))
+                                _cat_dt_ms = (time.monotonic() - _cat_t0) * 1000.0
+                                _log_cat_call_diag(
+                                    _cat_dt_ms,
+                                    "RigDirect satmode DL (in-TX floor): "
+                                    "set_freq(MAIN, %d) took=%.0fms",
+                                    int(vfoa_hz),
+                                    _cat_dt_ms,
+                                )
+                                _check_rig_ok(self._rig, "satmode DL set_freq(MAIN)")
+                                self._last_dl_hz = vfoa_hz
+                                self._last_dl_update_time = now_dl
+                                self._last_written_vfo = "Main"
                         elif abs(vfoa_hz - last_dl) >= 1.0:
                             # See the GitHub Issue #26 diagnostic comment above.
                             _cat_t0 = time.monotonic()
@@ -1803,6 +1843,7 @@ class HamlibDirectController(RigController):
                             )
                             _check_rig_ok(self._rig, "satmode DL set_freq(MAIN)")
                             self._last_dl_hz = vfoa_hz
+                            self._last_dl_update_time = now_dl
                             self._last_written_vfo = "Main"
 
                     if vfob_hz is None:
