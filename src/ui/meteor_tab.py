@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QPoint, QSize, Qt, Signal
-from PySide6.QtGui import QIcon, QImage, QPixmap, QTransform
+from PySide6.QtGui import QAction, QActionGroup, QIcon, QImage, QPixmap, QTransform
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -471,44 +471,14 @@ class MeteorTab(QWidget):
 
         btn_row2.addStretch()
         image_layout.addLayout(btn_row2)
-
-        # Row 3: image display/processing controls, separate from the
-        # file-management row above so this doesn't get too crowded.
-        btn_row3 = QHBoxLayout()
-        btn_row3.setContentsMargins(0, 0, 0, 0)
-        self._btn_flip = QPushButton(_("🔃 Flip 180°"))
-        self._btn_flip.setCheckable(True)
-        self._btn_flip.setToolTip(
-            _("Rotate the displayed image 180° — useful when a pass is received upside down.")
-        )
-        self._btn_flip.toggled.connect(self._on_flip_toggled)
-        btn_row3.addWidget(self._btn_flip)
-
-        self._btn_fit_width = QPushButton(_("↔ Fit Width"))
-        self._btn_fit_width.setCheckable(True)
-        self._btn_fit_width.toggled.connect(self._on_fit_width_toggled)
-        btn_row3.addWidget(self._btn_fit_width)
-
-        self._btn_fit_height = QPushButton(_("↕ Fit Height"))
-        self._btn_fit_height.setCheckable(True)
-        self._btn_fit_height.toggled.connect(self._on_fit_height_toggled)
-        btn_row3.addWidget(self._btn_fit_height)
-
-        btn_row3.addSpacing(12)
-        self._btn_cities_overlay = QPushButton(_("🏙️ Add Cities Overlay"))
-        self._btn_cities_overlay.setToolTip(
-            _(
-                "Re-render the selected image with SatDump's own city-label "
-                "overlay (needs product.cbor from the same reception)."
-            )
-        )
-        self._btn_cities_overlay.clicked.connect(self._on_add_cities_overlay)
-        btn_row3.addWidget(self._btn_cities_overlay)
-
-        btn_row3.addStretch()
-        image_layout.addLayout(btn_row3)
         h_split.addWidget(image_widget)
 
+        # Flip 180° / Fit Width / Fit Height live in the image's right-click
+        # menu (_on_image_context_menu) rather than as buttons here -- a
+        # third button row didn't fit alongside the file-management row
+        # without either crowding a single row or eating into the preview's
+        # vertical space, and these are toggles most naturally reached from
+        # the image itself anyway.
         history_widget = QWidget()
         hl = QVBoxLayout(history_widget)
         hl.setContentsMargins(0, 0, 0, 0)
@@ -518,6 +488,20 @@ class MeteorTab(QWidget):
         self._history_list.setResizeMode(QListWidget.ResizeMode.Adjust)
         self._history_list.currentItemChanged.connect(self._on_history_selection)
         hl.addWidget(self._history_list)
+
+        # Placed under the history list (rather than under the image) so it
+        # doesn't compete with the preview for vertical space. Hidden once a
+        # cities-overlay image already exists for the selected reception —
+        # see _update_cities_overlay_button_visibility().
+        self._btn_cities_overlay = QPushButton(_("🏙️ Add Cities Overlay"))
+        self._btn_cities_overlay.setToolTip(
+            _(
+                "Re-render the selected image with SatDump's own city-label "
+                "overlay (needs product.cbor from the same reception)."
+            )
+        )
+        self._btn_cities_overlay.clicked.connect(self._on_add_cities_overlay)
+        hl.addWidget(self._btn_cities_overlay)
         h_split.addWidget(history_widget)
 
         h_split.setSizes([680, 180])
@@ -962,46 +946,92 @@ class MeteorTab(QWidget):
         self._rescale_and_display()
 
     def _on_history_selection(self, current: QListWidgetItem | None, _: Any) -> None:
+        self._update_cities_overlay_button_visibility(current)
         if current is None or not isinstance(current, _ThumbItem):
             return
         self._show_image(current.full_image)
 
     # ------------------------------------------------------------------
-    # Display controls: Flip 180° / Fit Width / Fit Height
+    # Right-click: save / Flip 180° / Fit Width / Fit Height
     # ------------------------------------------------------------------
-
-    def _on_flip_toggled(self, checked: bool) -> None:
-        self._image_rotated = checked
-        self._rescale_and_display()
-
-    def _on_fit_width_toggled(self, checked: bool) -> None:
-        if checked:
-            self._btn_fit_height.setChecked(False)
-            self._fit_mode = "width"
-        elif self._fit_mode == "width":
-            self._fit_mode = "fit"
-        self._rescale_and_display()
-
-    def _on_fit_height_toggled(self, checked: bool) -> None:
-        if checked:
-            self._btn_fit_width.setChecked(False)
-            self._fit_mode = "height"
-        elif self._fit_mode == "height":
-            self._fit_mode = "fit"
-        self._rescale_and_display()
-
-    # ------------------------------------------------------------------
-    # Right-click: save the displayed (rotated) image
-    # ------------------------------------------------------------------
+    #
+    # These live in the image's context menu rather than as buttons —
+    # a third button row alongside Open Folder/Open Past/Clear/Gain
+    # didn't fit in one row without crowding it, and eating a whole
+    # extra row of vertical space just for occasional display toggles
+    # wasn't worth it (see _setup_ui()'s comment where the row was
+    # removed).
 
     def _on_image_context_menu(self, pos: QPoint) -> None:
         if self._current_original_image is None:
             return
-        menu = QMenu(self)
-        act_save = menu.addAction(_("💾 Save Image As…"))
+        menu, actions = self._build_image_context_menu()
         chosen = menu.exec(self._image_label.mapToGlobal(pos))
-        if chosen == act_save:
+        self._handle_image_context_menu_choice(chosen, actions)
+
+    def _build_image_context_menu(self) -> tuple[QMenu, dict[str, QAction]]:
+        """Build the right-click menu and return it with its actions keyed
+        by role, so _handle_image_context_menu_choice() (and tests) can
+        dispatch on the dict without going through the modal menu.exec()
+        call itself -- see that method's docstring for why this is split
+        out this way.
+        """
+        menu = QMenu(self)
+        actions: dict[str, QAction] = {}
+        actions["save"] = menu.addAction(_("💾 Save Image As…"))
+        menu.addSeparator()
+        act_flip = menu.addAction(_("🔃 Flip 180°"))
+        act_flip.setCheckable(True)
+        act_flip.setChecked(self._image_rotated)
+        actions["flip"] = act_flip
+        menu.addSeparator()
+        fit_group = QActionGroup(menu)
+        fit_group.setExclusive(True)
+        act_fit_both = menu.addAction(_("Fit (Both)"))
+        act_fit_both.setCheckable(True)
+        act_fit_both.setChecked(self._fit_mode == "fit")
+        fit_group.addAction(act_fit_both)
+        actions["fit_both"] = act_fit_both
+        act_fit_width = menu.addAction(_("↔ Fit Width"))
+        act_fit_width.setCheckable(True)
+        act_fit_width.setChecked(self._fit_mode == "width")
+        fit_group.addAction(act_fit_width)
+        actions["fit_width"] = act_fit_width
+        act_fit_height = menu.addAction(_("↕ Fit Height"))
+        act_fit_height.setCheckable(True)
+        act_fit_height.setChecked(self._fit_mode == "height")
+        fit_group.addAction(act_fit_height)
+        actions["fit_height"] = act_fit_height
+        return menu, actions
+
+    def _handle_image_context_menu_choice(
+        self, chosen: QAction | None, actions: dict[str, QAction]
+    ) -> None:
+        """Dispatch on which context-menu action was picked.
+
+        Split out from _on_image_context_menu() (rather than inlined after
+        menu.exec()) so tests can call _build_image_context_menu() and
+        this method directly, without going through the modal exec() call
+        itself -- patching QMenu.exec is unreliable for a PySide6 C++-bound
+        method and was observed to hang a test run rather than actually
+        substituting the fake return value.
+        """
+        if chosen is None:
+            return
+        if chosen is actions["save"]:
             self._on_save_image_as()
+        elif chosen is actions["flip"]:
+            self._image_rotated = not self._image_rotated
+            self._rescale_and_display()
+        elif chosen is actions["fit_both"]:
+            self._fit_mode = "fit"
+            self._rescale_and_display()
+        elif chosen is actions["fit_width"]:
+            self._fit_mode = "width"
+            self._rescale_and_display()
+        elif chosen is actions["fit_height"]:
+            self._fit_mode = "height"
+            self._rescale_and_display()
 
     def _on_save_image_as(self) -> None:
         if self._current_original_image is None:
@@ -1069,6 +1099,21 @@ class MeteorTab(QWidget):
         self._btn_cities_overlay.setEnabled(True)
         self._lbl_status.setText(_("Cities overlay failed."))
         QMessageBox.warning(self, _("Cities Overlay Failed"), msg)
+
+    def _update_cities_overlay_button_visibility(self, current: QListWidgetItem | None) -> None:
+        """Hide the button once a cities-overlay image already exists for
+        the selected reception, or the selection *is* one — generating it
+        again would be redundant (and for the latter, would produce an
+        ever-growing "..._cities_cities.png" chain).
+        """
+        if not isinstance(current, _ThumbItem) or current.path is None:
+            self._btn_cities_overlay.setVisible(True)
+            return
+        if current.path.stem.endswith("_cities"):
+            self._btn_cities_overlay.setVisible(False)
+            return
+        output_path = current.path.parent / f"{current.path.stem}_cities.png"
+        self._btn_cities_overlay.setVisible(not output_path.exists())
 
     # ------------------------------------------------------------------
     # Misc slots
@@ -1142,6 +1187,7 @@ class MeteorTab(QWidget):
         self._history_list.clear()
         self._image_label.clear()
         self._image_label.setText(_("No image received yet."))
+        self._btn_cities_overlay.setVisible(True)
 
     # ------------------------------------------------------------------
     # Cleanup on tab close

@@ -40,19 +40,51 @@ def _make_tab(qtbot: QtBot) -> MeteorTab:
     return w
 
 
-class TestFlip180:
-    def test_default_is_not_rotated(self, qtbot: QtBot) -> None:
-        w = _make_tab(qtbot)
-        assert w._image_rotated is False
-        img = _make_image()
-        assert w._apply_rotation(img) is img
+def _trigger_context_menu_item(w: MeteorTab, role: str) -> None:
+    """Simulate right-clicking the image and picking the menu item for
+    *role* (one of "save"/"flip"/"fit_both"/"fit_width"/"fit_height" — see
+    _build_image_context_menu()'s actions dict) without going through the
+    modal menu.exec() call itself. Patching QMenu.exec is unreliable for a
+    PySide6 C++-bound method — it was observed to hang a test run rather
+    than actually substituting the fake return value — so
+    _on_image_context_menu() is deliberately split into a menu-building
+    half and a choice-handling half that this calls directly instead."""
+    assert w._current_original_image is not None, "no image shown to right-click"
+    _menu, actions = w._build_image_context_menu()
+    w._handle_image_context_menu_choice(actions[role], actions)
 
-    def test_toggle_rotates_the_displayed_image(self, qtbot: QtBot) -> None:
+
+class TestImageContextMenu:
+    """Flip 180° / Fit Width / Fit Height / Save Image As… were moved from
+    buttons into the image's right-click menu -- a third button row
+    alongside Open Folder/Open Past/Clear/Gain didn't fit in one row
+    without crowding it or eating into the preview's vertical space."""
+
+    def test_noop_with_no_image_shown(self, qtbot: QtBot) -> None:
+        w = _make_tab(qtbot)
+        with patch("ui.meteor_tab.QMenu") as mock_menu_cls:
+            w._on_image_context_menu(None)  # type: ignore[arg-type]
+        mock_menu_cls.assert_not_called()
+
+    def test_menu_actions_reflect_current_state(self, qtbot: QtBot) -> None:
+        w = _make_tab(qtbot)
+        w._show_image(_make_image())
+        w._image_rotated = True
+        w._fit_mode = "height"
+
+        _menu, actions = w._build_image_context_menu()
+
+        assert actions["flip"].isChecked() is True
+        assert actions["fit_height"].isChecked() is True
+        assert actions["fit_width"].isChecked() is False
+        assert actions["fit_both"].isChecked() is False
+
+    def test_flip_menu_item_toggles_rotation(self, qtbot: QtBot) -> None:
         w = _make_tab(qtbot)
         w._show_image(_make_image())
         assert w._image_rotated is False
 
-        w._btn_flip.setChecked(True)
+        _trigger_context_menu_item(w, "flip")
 
         assert w._image_rotated is True
         rotated = w._apply_rotation(w._current_original_image)
@@ -60,71 +92,78 @@ class TestFlip180:
             w._current_original_image.width() - 1, w._current_original_image.height() - 1
         )
 
-    def test_toggle_off_restores_original_orientation(self, qtbot: QtBot) -> None:
-        w = _make_tab(qtbot)
-        w._show_image(_make_image())
-        w._btn_flip.setChecked(True)
-        w._btn_flip.setChecked(False)
+        _trigger_context_menu_item(w, "flip")
         assert w._image_rotated is False
         assert w._apply_rotation(w._current_original_image) is w._current_original_image
 
-
-class TestFitModeExclusivity:
-    def test_fit_width_and_height_are_mutually_exclusive(self, qtbot: QtBot) -> None:
+    def test_fit_width_menu_item_matches_viewport_width(self, qtbot: QtBot) -> None:
         w = _make_tab(qtbot)
-        w._show_image(_make_image())
-
-        w._btn_fit_width.setChecked(True)
-        assert w._fit_mode == "width"
-        assert not w._btn_fit_height.isChecked()
-
-        w._btn_fit_height.setChecked(True)
-        assert w._fit_mode == "height"
-        assert not w._btn_fit_width.isChecked()
-
-        w._btn_fit_height.setChecked(False)
-        assert w._fit_mode == "fit"
-
-    def test_default_fit_mode_scales_to_fit_both_dimensions(self, qtbot: QtBot) -> None:
-        w = _make_tab(qtbot)
-        # A very wide image in a roughly-square viewport: "fit" (both) must
-        # not exceed the viewport in either dimension.
-        w._show_image(_make_image(w=2000, h=100))
-        viewport = w._image_scroll.viewport().size()
-        pixmap = w._image_label.pixmap()
-        assert not pixmap.isNull()
-        assert pixmap.width() <= viewport.width()
-        assert pixmap.height() <= viewport.height()
-
-    def test_fit_width_matches_viewport_width_and_may_overflow_height(self, qtbot: QtBot) -> None:
-        w = _make_tab(qtbot)
-        w._btn_fit_width.setChecked(True)
         # A tall, narrow image: fitting its width to a wide-ish viewport
         # should make the resulting height far exceed the viewport (which
         # is exactly why _image_scroll needs to allow scrolling).
         w._show_image(_make_image(w=100, h=3000))
+
+        _trigger_context_menu_item(w, "fit_width")
+
+        assert w._fit_mode == "width"
         viewport = w._image_scroll.viewport().size()
         pixmap = w._image_label.pixmap()
         assert not pixmap.isNull()
         assert pixmap.width() == viewport.width()
         assert pixmap.height() > viewport.height()
 
-    def test_fit_height_matches_viewport_height_and_may_overflow_width(self, qtbot: QtBot) -> None:
+    def test_fit_height_menu_item_matches_viewport_height(self, qtbot: QtBot) -> None:
         w = _make_tab(qtbot)
-        w._btn_fit_height.setChecked(True)
         w._show_image(_make_image(w=3000, h=100))
+
+        _trigger_context_menu_item(w, "fit_height")
+
+        assert w._fit_mode == "height"
         viewport = w._image_scroll.viewport().size()
         pixmap = w._image_label.pixmap()
         assert not pixmap.isNull()
         assert pixmap.height() == viewport.height()
         assert pixmap.width() > viewport.width()
 
+    def test_fit_both_menu_item_reverts_from_width(self, qtbot: QtBot) -> None:
+        w = _make_tab(qtbot)
+        w._show_image(_make_image(w=2000, h=100))
+        w._fit_mode = "width"
+
+        _trigger_context_menu_item(w, "fit_both")
+
+        assert w._fit_mode == "fit"
+        viewport = w._image_scroll.viewport().size()
+        pixmap = w._image_label.pixmap()
+        assert pixmap.width() <= viewport.width()
+        assert pixmap.height() <= viewport.height()
+
+    def test_save_menu_item_saves_the_rotated_image(self, qtbot: QtBot, tmp_path: Path) -> None:
+        w = _make_tab(qtbot)
+        w._show_image(_make_image())
+        w._image_rotated = True
+
+        out_path = tmp_path / "saved.png"
+        with patch(
+            "ui.meteor_tab.QFileDialog.getSaveFileName",
+            return_value=(str(out_path), "PNG (*.png)"),
+        ):
+            _trigger_context_menu_item(w, "save")
+
+        assert out_path.is_file()
+        saved = QImage(str(out_path))
+        expected = w._apply_rotation(w._current_original_image)
+        assert saved.pixelColor(0, 0) == expected.pixelColor(0, 0)
+
 
 class TestSaveImageAs:
+    """Direct tests of _on_save_image_as() itself (also reachable via the
+    context menu — see TestImageContextMenu.test_save_menu_item_*)."""
+
     def test_saves_the_rotated_image(self, qtbot: QtBot, tmp_path: Path) -> None:
         w = _make_tab(qtbot)
         w._show_image(_make_image())
-        w._btn_flip.setChecked(True)
+        w._image_rotated = True
 
         out_path = tmp_path / "saved.png"
         with patch(
@@ -204,3 +243,66 @@ class TestCitiesOverlayButton:
             w._on_cities_overlay_err("satdump exploded")
         assert w._btn_cities_overlay.isEnabled()
         mock_box.assert_called_once()
+
+
+class TestCitiesOverlayButtonVisibility:
+    """The button (now under the history list) hides itself once a
+    cities-overlay image already exists for the selected reception, or
+    the selection *is* one -- see _update_cities_overlay_button_visibility().
+    """
+
+    def test_visible_when_nothing_selected(self, qtbot: QtBot) -> None:
+        w = _make_tab(qtbot)
+        assert w._btn_cities_overlay.isVisible()
+
+    def test_visible_when_output_does_not_exist_yet(self, qtbot: QtBot, tmp_path: Path) -> None:
+        w = _make_tab(qtbot)
+        png_path = tmp_path / "msu_mr_rgb_AVHRR_221_False_Color.png"
+        png_path.write_bytes(b"\x89PNG\r\n")
+        item = _ThumbItem(_make_image(), png_path.name, path=png_path)
+        w._history_list.addItem(item)
+        w._history_list.setCurrentItem(item)
+        assert w._btn_cities_overlay.isVisible()
+
+    def test_hidden_when_output_already_exists(self, qtbot: QtBot, tmp_path: Path) -> None:
+        w = _make_tab(qtbot)
+        png_path = tmp_path / "msu_mr_rgb_AVHRR_221_False_Color.png"
+        png_path.write_bytes(b"\x89PNG\r\n")
+        (tmp_path / "msu_mr_rgb_AVHRR_221_False_Color_cities.png").write_bytes(b"\x89PNG\r\n")
+        item = _ThumbItem(_make_image(), png_path.name, path=png_path)
+        w._history_list.addItem(item)
+        w._history_list.setCurrentItem(item)
+        assert not w._btn_cities_overlay.isVisible()
+
+    def test_hidden_when_selection_is_itself_a_cities_image(
+        self, qtbot: QtBot, tmp_path: Path
+    ) -> None:
+        w = _make_tab(qtbot)
+        png_path = tmp_path / "msu_mr_rgb_AVHRR_221_False_Color_cities.png"
+        png_path.write_bytes(b"\x89PNG\r\n")
+        item = _ThumbItem(_make_image(), png_path.name, path=png_path)
+        w._history_list.addItem(item)
+        w._history_list.setCurrentItem(item)
+        assert not w._btn_cities_overlay.isVisible()
+
+    def test_hidden_after_overlay_generated(self, qtbot: QtBot, tmp_path: Path) -> None:
+        w = _make_tab(qtbot)
+        out_path = tmp_path / "result_cities.png"
+        _make_image().save(str(out_path))
+
+        w._on_cities_overlay_ok(str(out_path))
+
+        assert not w._btn_cities_overlay.isVisible()
+
+    def test_reappears_after_clear_history(self, qtbot: QtBot, tmp_path: Path) -> None:
+        w = _make_tab(qtbot)
+        png_path = tmp_path / "msu_mr_rgb_AVHRR_221_False_Color_cities.png"
+        png_path.write_bytes(b"\x89PNG\r\n")
+        item = _ThumbItem(_make_image(), png_path.name, path=png_path)
+        w._history_list.addItem(item)
+        w._history_list.setCurrentItem(item)
+        assert not w._btn_cities_overlay.isVisible()
+
+        w._on_clear_history()
+
+        assert w._btn_cities_overlay.isVisible()
