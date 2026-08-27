@@ -8,6 +8,7 @@ No network connection required (httpx is mocked).
 from __future__ import annotations
 
 import socket
+import threading
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -744,6 +745,86 @@ class TestPreTxUplinkFlush:
         ctrl.set_vfo_frequencies(435_611_995.0, 145_993_000.0)  # DL moved 5 Hz
 
         ctrl._rig.set_freq.assert_any_call(4194304, 435_611_995)  # RIG_VFO_MAIN
+
+
+class TestRigCmdLockReentrancy:
+    """GitHub Issue #26: once Hamlib's SWIG binding is built with -threads,
+    the GIL no longer accidentally serialises every Hamlib call across
+    threads, so _rig_cmd_lock now explicitly guards every public CAT-call
+    method on HamlibDirectController (set_frequency/set_mode/get_mode/
+    set_ctcss_tone/set_dcs_code/set_vfo/set_ptt), not just set_vfo_frequencies.
+    _rig_cmd_lock is an RLock rather than a plain Lock specifically because
+    some internal call chains re-enter it on the same thread (e.g.
+    _set_vfo_frequencies_locked() -> _satmode_exit() -> self.set_mode())."""
+
+    def _make_satmode_ctrl(self) -> HamlibDirectController:
+        ctrl = HamlibDirectController(model_id=3081, port="/dev/null")  # IC-9700
+        ctrl._rig = MagicMock()
+        fake_hamlib = MagicMock()
+        fake_hamlib.RIG_VFO_MAIN = 4194304
+        fake_hamlib.RIG_VFO_SUB = 8388608
+        fake_hamlib.RIG_VFO_TX = 16777216
+        fake_hamlib.RIG_PTT_ON = 1
+        fake_hamlib.RIG_PTT_OFF = 0
+        ctrl._hamlib = fake_hamlib
+        ctrl._rig.error_status = 0
+        ctrl._current_dl_mode = "FM"
+        with ctrl._lock:
+            ctrl._state = RigState.CONNECTED
+        return ctrl
+
+    def test_lock_is_reentrant_but_still_excludes_other_threads(self) -> None:
+        """Direct semantics check of the lock object itself: the owning
+        thread can re-acquire it without blocking, but a different thread
+        genuinely blocks until it is released."""
+        ctrl = self._make_satmode_ctrl()
+        lock = ctrl._rig_cmd_lock
+
+        # Same thread: re-entry must not block.
+        with lock, lock:
+            pass  # would deadlock here if this were a plain Lock
+
+        # Different thread: must actually block while held.
+        other_thread_acquired = threading.Event()
+        release_now = threading.Event()
+
+        def _holder() -> None:
+            with lock:
+                other_thread_acquired.set()
+                release_now.wait(timeout=5.0)
+
+        holder_thread = threading.Thread(target=_holder, daemon=True)
+        holder_thread.start()
+        assert other_thread_acquired.wait(timeout=5.0)
+
+        acquired_immediately = lock.acquire(timeout=0.05)
+        if acquired_immediately:
+            lock.release()
+        release_now.set()
+        holder_thread.join(timeout=5.0)
+        assert not acquired_immediately, "a second thread must not acquire a held RLock"
+
+    def test_satmode_exit_reentrant_set_mode_does_not_deadlock(self) -> None:
+        """_set_vfo_frequencies_locked() holds _rig_cmd_lock, then the
+        same-band fallback calls _satmode_exit(), which calls self.set_mode()
+        -- now also lock-guarded. Runs in a background thread with a
+        timeout so a regression to a plain Lock fails this test instead of
+        hanging the whole suite."""
+        ctrl = self._make_satmode_ctrl()
+        # First call establishes cross-band satmode (different bands).
+        ctrl.set_vfo_frequencies(435_612_000.0, 145_993_000.0)
+
+        result: dict[str, bool] = {}
+
+        def _trigger_same_band() -> None:
+            # Same VHF band on both DL and UL -> _is_same_band -> _satmode_exit().
+            result["ok"] = ctrl.set_vfo_frequencies(145_800_000.0, 145_825_000.0)
+
+        t = threading.Thread(target=_trigger_same_band, daemon=True)
+        t.start()
+        t.join(timeout=5.0)
+        assert not t.is_alive(), "deadlocked: _rig_cmd_lock is not reentrant"
+        assert result.get("ok") is True
 
 
 # ---------------------------------------------------------------------------

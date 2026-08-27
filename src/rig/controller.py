@@ -972,7 +972,19 @@ class HamlibDirectController(RigController):
         self._current_ctcss_hz: float = 0.0  # updated by apply_transponder_state
         # Serialises multi-step rig command sequences (VFO switch + CTCSS etc.)
         # so they never interleave with the Doppler cycle's set_vfo_frequencies.
-        self._rig_cmd_lock = threading.Lock()
+        #
+        # GitHub Issue #26: an RLock (not a plain Lock), because internal call
+        # chains re-enter it on the *same* thread -- e.g. _set_vfo_frequencies_
+        # locked() (lock held) -> _satmode_exit() -> self.set_mode(), and
+        # set_mode() now also takes this lock (see below). A plain Lock would
+        # deadlock there; RLock lets the owning thread re-acquire it while
+        # still fully excluding other threads, which is the property that
+        # actually matters once Hamlib's Python binding is built with SWIG's
+        # -threads (releases the GIL for the duration of a blocking CAT call,
+        # so two threads could otherwise race on the same rig handle/serial
+        # port -- see the public CAT-call methods below, all of which now
+        # take this lock for that reason).
+        self._rig_cmd_lock = threading.RLock()
         # Prevents _apply_ctcss_civ (pyserial) and connect() (Hamlib rig.open())
         # from opening the serial port simultaneously.
         self._port_lock = threading.Lock()
@@ -1130,8 +1142,13 @@ class HamlibDirectController(RigController):
         if not self.is_connected or self._rig is None:
             return False
         try:
-            hamlib_vfo = self._vfo_str_to_const(vfo)
-            self._rig.set_freq(hamlib_vfo, freq_hz)
+            # GitHub Issue #26: serialised through _rig_cmd_lock (an RLock)
+            # so this can never race with a concurrent Doppler-cycle write on
+            # the same rig handle now that Hamlib's SWIG binding releases the
+            # GIL during a blocking CAT call (-threads).
+            with self._rig_cmd_lock:
+                hamlib_vfo = self._vfo_str_to_const(vfo)
+                self._rig.set_freq(hamlib_vfo, freq_hz)
             with self._lock:
                 self._freq_state.freq_hz = freq_hz
             return True
@@ -1161,10 +1178,14 @@ class HamlibDirectController(RigController):
         if not self.is_connected or self._rig is None:
             return False
         try:
-            hamlib_mode = self._mode_to_hamlib(mode)
-            hamlib_vfo = self._vfo_str_to_const(vfo)
-            # Python Hamlib binding: set_mode(mode, passband[, vfo]) — vfo is last
-            self._rig.set_mode(hamlib_mode, passband_hz, hamlib_vfo)
+            # GitHub Issue #26: see set_frequency() above. _rig_cmd_lock is an
+            # RLock, so this is safe to call from _satmode_exit() while it is
+            # already held by the same thread (via _set_vfo_frequencies_locked).
+            with self._rig_cmd_lock:
+                hamlib_mode = self._mode_to_hamlib(mode)
+                hamlib_vfo = self._vfo_str_to_const(vfo)
+                # Python Hamlib binding: set_mode(mode, passband[, vfo]) — vfo is last
+                self._rig.set_mode(hamlib_mode, passband_hz, hamlib_vfo)
             with self._lock:
                 self._freq_state.mode = mode
                 self._freq_state.passband_hz = passband_hz
@@ -1178,8 +1199,10 @@ class HamlibDirectController(RigController):
         if not self.is_connected or self._rig is None:
             return "FM"
         try:
-            hamlib_vfo = self._vfo_str_to_const(vfo)
-            mode, _ = self._rig.get_mode(hamlib_vfo)
+            # GitHub Issue #26: see set_frequency() above.
+            with self._rig_cmd_lock:
+                hamlib_vfo = self._vfo_str_to_const(vfo)
+                mode, _ = self._rig.get_mode(hamlib_vfo)
             return self._hamlib_to_mode(mode)
         except Exception as exc:
             logger.error("RigDirect.get_mode: %s", exc)
@@ -1228,14 +1251,22 @@ class HamlibDirectController(RigController):
         try:
             _H = self._hamlib
             tone_int = int(round(abs(tone_hz) * 10))
+            # GitHub Issue #26: the whole tone-write + enable-write pair is
+            # held under _rig_cmd_lock as a single unit (see set_frequency()
+            # above for why) -- this also protects the required 0.15s gap
+            # between the two CAT transactions from being interleaved by a
+            # concurrent Doppler-cycle write once other Hamlib calls can run
+            # during it (-threads releases the GIL for that whole window).
+            #
             # Icom CI-V over USB-serial needs a short gap between back-to-back
             # transactions (same reason _apply_ctcss_civ_via_send_raw() sleeps
             # 0.15s between raw frames) — firing set_ctcss_tone and set_func
             # with no delay let the tone-frequency write land but silently
             # dropped the TONE-enable write on an IC-705 (confirmed live).
-            self._rig.set_ctcss_tone(_H.RIG_VFO_CURR, tone_int)
-            time.sleep(0.15)
-            self._rig.set_func(_H.RIG_VFO_CURR, _H.RIG_FUNC_TONE, 1 if tone_hz > 0 else 0)
+            with self._rig_cmd_lock:
+                self._rig.set_ctcss_tone(_H.RIG_VFO_CURR, tone_int)
+                time.sleep(0.15)
+                self._rig.set_func(_H.RIG_VFO_CURR, _H.RIG_FUNC_TONE, 1 if tone_hz > 0 else 0)
             return True
         except Exception as exc:
             logger.error("RigDirect.set_ctcss_tone (non-satmode): %s", exc)
@@ -1547,23 +1578,25 @@ class HamlibDirectController(RigController):
                 self._freq_state.dcs_code = code
             return True
         try:
-            if code > 0:
-                self._rig.set_func(
-                    self._hamlib.RIG_VFO_CURR,
-                    self._hamlib.RIG_FUNC_TSQL,
-                    1,
-                )
-                self._rig.set_level(
-                    self._hamlib.RIG_VFO_CURR,
-                    self._hamlib.RIG_LEVEL_CTCSS_SQL,
-                    code,
-                )
-            else:
-                self._rig.set_func(
-                    self._hamlib.RIG_VFO_CURR,
-                    self._hamlib.RIG_FUNC_TSQL,
-                    0,
-                )
+            # GitHub Issue #26: see set_frequency() above.
+            with self._rig_cmd_lock:
+                if code > 0:
+                    self._rig.set_func(
+                        self._hamlib.RIG_VFO_CURR,
+                        self._hamlib.RIG_FUNC_TSQL,
+                        1,
+                    )
+                    self._rig.set_level(
+                        self._hamlib.RIG_VFO_CURR,
+                        self._hamlib.RIG_LEVEL_CTCSS_SQL,
+                        code,
+                    )
+                else:
+                    self._rig.set_func(
+                        self._hamlib.RIG_VFO_CURR,
+                        self._hamlib.RIG_FUNC_TSQL,
+                        0,
+                    )
             with self._lock:
                 self._freq_state.dcs_code = code
             return True
@@ -1576,7 +1609,9 @@ class HamlibDirectController(RigController):
         if not self.is_connected or self._rig is None:
             return False
         try:
-            self._rig.set_vfo(self._vfo_str_to_const(vfo))
+            # GitHub Issue #26: see set_frequency() above.
+            with self._rig_cmd_lock:
+                self._rig.set_vfo(self._vfo_str_to_const(vfo))
             return True
         except Exception as exc:
             logger.error("RigDirect.set_vfo: %s", exc)
@@ -1595,8 +1630,21 @@ class HamlibDirectController(RigController):
             # the transmission starts accurate instead of stepping mid-burst.
             self._flush_pending_frequencies()
         try:
-            ptt_val = self._hamlib.RIG_PTT_ON if enabled else self._hamlib.RIG_PTT_OFF
-            self._rig.set_ptt(self._hamlib.RIG_VFO_CURR, ptt_val)
+            # GitHub Issue #26: this is the highest-risk unlocked call --
+            # _TxWorker (FT4/Q65) fires it from its own thread right at TX
+            # key-up/key-down, exactly when DopplerWorker's thread is most
+            # likely to be mid-CAT-call. Without -threads, the GIL being held
+            # for that whole call accidentally serialised this against
+            # DopplerWorker; -threads removes that accident, so it must now
+            # be serialised explicitly. Worst case this blocks briefly (up to
+            # one CAT round-trip, ~200-266ms measured) waiting for
+            # DopplerWorker's in-flight write to finish -- unlike the
+            # underflow bug, this only delays _TxWorker's own thread, not the
+            # unrelated PortAudio callback thread, so it does not reintroduce
+            # the stretched-TX symptom this issue is about.
+            with self._rig_cmd_lock:
+                ptt_val = self._hamlib.RIG_PTT_ON if enabled else self._hamlib.RIG_PTT_OFF
+                self._rig.set_ptt(self._hamlib.RIG_VFO_CURR, ptt_val)
             return True
         except Exception as exc:
             logger.error("RigDirect.set_ptt(%s): %s", enabled, exc)
