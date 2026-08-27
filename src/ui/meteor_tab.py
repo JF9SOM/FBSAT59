@@ -409,7 +409,7 @@ class MeteorTab(QWidget):
         image_widget = QWidget()
         image_layout = QVBoxLayout(image_widget)
         image_layout.setContentsMargins(0, 0, 0, 0)
-        image_layout.setSpacing(3)
+        image_layout.setSpacing(2)
 
         # Image / Waterfall tabs share this area: SatDump only writes the
         # decoded image once reception finishes (see satdump.py's
@@ -439,6 +439,7 @@ class MeteorTab(QWidget):
         image_layout.addWidget(self._preview_tabs, 1)
 
         btn_row2 = QHBoxLayout()
+        btn_row2.setContentsMargins(0, 0, 0, 0)
         self._btn_open_folder = QPushButton(_("📁 Open Folder"))
         self._btn_open_folder.clicked.connect(self._on_open_folder)
         self._btn_open_past = QPushButton(_("📂 Open Past Reception…"))
@@ -474,6 +475,7 @@ class MeteorTab(QWidget):
         # Row 3: image display/processing controls, separate from the
         # file-management row above so this doesn't get too crowded.
         btn_row3 = QHBoxLayout()
+        btn_row3.setContentsMargins(0, 0, 0, 0)
         self._btn_flip = QPushButton(_("🔃 Flip 180°"))
         self._btn_flip.setCheckable(True)
         self._btn_flip.setToolTip(
