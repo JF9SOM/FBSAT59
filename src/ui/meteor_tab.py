@@ -32,8 +32,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QIcon, QImage, QPixmap
+from PySide6.QtCore import QPoint, QSize, Qt, Signal
+from PySide6.QtGui import QIcon, QImage, QPixmap, QTransform
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -43,11 +43,12 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
-    QSizePolicy,
+    QScrollArea,
     QSpinBox,
     QSplitter,
     QTabWidget,
@@ -55,6 +56,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from comms.meteor.cities_overlay import CitiesOverlayProcess, find_product_cbor
 from comms.meteor.fft_waterfall import SatDumpFftPoller, find_free_port
 from comms.meteor.image_watcher import ImageWatcher
 from comms.meteor.satdump import METEOR_PIPELINES, SatDumpProcess, find_satdump
@@ -256,9 +258,10 @@ class _LogWindow(QDialog):
 
 
 class _ThumbItem(QListWidgetItem):
-    def __init__(self, image: QImage, label: str) -> None:
+    def __init__(self, image: QImage, label: str, path: Path | None = None) -> None:
         super().__init__()
         self.full_image = image.copy()
+        self.path = path  # source PNG path, if known — used to locate product.cbor
         thumb = image.scaled(
             _THUMB_W,
             _THUMB_H,
@@ -305,6 +308,15 @@ class MeteorTab(QWidget):
         self._suppress_sync: bool = False  # prevents feedback loop during Radio Control sync
         self._log_window: _LogWindow | None = None
         self._log_buffer: deque[str] = deque(maxlen=2000)
+        # Display state for the current preview image (see _show_image /
+        # _rescale_and_display). _current_original_image is always the
+        # unrotated source -- rotation is applied fresh on every
+        # display/save so toggling Flip 180° doesn't need to "undo" a
+        # previous rotation.
+        self._current_original_image: QImage | None = None
+        self._image_rotated: bool = False
+        self._fit_mode: str = "fit"  # "fit" (both, default) | "width" | "height"
+        self._cities_overlay_process: CitiesOverlayProcess | None = None
         self._setup_ui()
         self._fft_frame_received.connect(self._waterfall_widget.add_frame)
         self._fft_unavailable.connect(self._waterfall_widget.show_unavailable)
@@ -408,9 +420,20 @@ class MeteorTab(QWidget):
         self._image_label = QLabel(_("No image received yet."))
         self._image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._image_label.setMinimumSize(300, 200)
-        self._image_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self._image_label.setStyleSheet("border: 1px solid #555; background: #111;")
-        self._preview_tabs.addTab(self._image_label, _("Image"))
+        self._image_label.setStyleSheet("background: #111;")
+        self._image_label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._image_label.customContextMenuRequested.connect(self._on_image_context_menu)
+        # Wrapped in a QScrollArea (rather than relying on the label's own
+        # sizeHint) so "Fit Width"/"Fit Height" can deliberately let the
+        # image overflow the viewport in one direction and be scrolled to,
+        # instead of always being squeezed to fit both dimensions like the
+        # previous plain-QLabel display did.
+        self._image_scroll = QScrollArea()
+        self._image_scroll.setWidgetResizable(False)
+        self._image_scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._image_scroll.setWidget(self._image_label)
+        self._image_scroll.setStyleSheet("QScrollArea { border: 1px solid #555; }")
+        self._preview_tabs.addTab(self._image_scroll, _("Image"))
         self._waterfall_widget = MeteorWaterfallWidget()
         self._preview_tabs.addTab(self._waterfall_widget, _("Waterfall"))
         image_layout.addWidget(self._preview_tabs, 1)
@@ -447,6 +470,41 @@ class MeteorTab(QWidget):
 
         btn_row2.addStretch()
         image_layout.addLayout(btn_row2)
+
+        # Row 3: image display/processing controls, separate from the
+        # file-management row above so this doesn't get too crowded.
+        btn_row3 = QHBoxLayout()
+        self._btn_flip = QPushButton(_("🔃 Flip 180°"))
+        self._btn_flip.setCheckable(True)
+        self._btn_flip.setToolTip(
+            _("Rotate the displayed image 180° — useful when a pass is received upside down.")
+        )
+        self._btn_flip.toggled.connect(self._on_flip_toggled)
+        btn_row3.addWidget(self._btn_flip)
+
+        self._btn_fit_width = QPushButton(_("↔ Fit Width"))
+        self._btn_fit_width.setCheckable(True)
+        self._btn_fit_width.toggled.connect(self._on_fit_width_toggled)
+        btn_row3.addWidget(self._btn_fit_width)
+
+        self._btn_fit_height = QPushButton(_("↕ Fit Height"))
+        self._btn_fit_height.setCheckable(True)
+        self._btn_fit_height.toggled.connect(self._on_fit_height_toggled)
+        btn_row3.addWidget(self._btn_fit_height)
+
+        btn_row3.addSpacing(12)
+        self._btn_cities_overlay = QPushButton(_("🏙️ Add Cities Overlay"))
+        self._btn_cities_overlay.setToolTip(
+            _(
+                "Re-render the selected image with SatDump's own city-label "
+                "overlay (needs product.cbor from the same reception)."
+            )
+        )
+        self._btn_cities_overlay.clicked.connect(self._on_add_cities_overlay)
+        btn_row3.addWidget(self._btn_cities_overlay)
+
+        btn_row3.addStretch()
+        image_layout.addLayout(btn_row3)
         h_split.addWidget(image_widget)
 
         history_widget = QWidget()
@@ -829,7 +887,7 @@ class MeteorTab(QWidget):
             return
 
         label = p.name
-        item = _ThumbItem(image, label)
+        item = _ThumbItem(image, label, path=p)
         self._history_list.addItem(item)
 
         # A single pass produces roughly a dozen PNGs of varying
@@ -847,20 +905,168 @@ class MeteorTab(QWidget):
         self._lbl_status.setText(_("Image received: ") + label)
 
     def _show_image(self, image: QImage) -> None:
-        w = self._image_label.width()
-        h = self._image_label.height()
+        """Set *image* as the current preview source and (re)display it.
+
+        *image* is always stored unrotated — Flip 180° is applied fresh in
+        _rescale_and_display() every time, rather than mutating the stored
+        copy, so toggling the button doesn't need to "undo" a previous
+        rotation.
+        """
+        self._current_original_image = image
+        self._rescale_and_display()
+
+    def _apply_rotation(self, image: QImage) -> QImage:
+        if not self._image_rotated:
+            return image
+        return image.transformed(QTransform().rotate(180))
+
+    def _rescale_and_display(self) -> None:
+        """Recompute the displayed pixmap from _current_original_image.
+
+        Called whenever the source image, the Flip 180° state, the fit
+        mode, or the viewport size changes (see resizeEvent). Fit Width/
+        Fit Height deliberately let the image overflow the *other*
+        dimension so the surrounding QScrollArea can scroll to it, instead
+        of always squeezing both dimensions to fit like the plain "Fit"
+        default.
+        """
+        if self._current_original_image is None:
+            return
+        image = self._apply_rotation(self._current_original_image)
+        iw, ih = image.width(), image.height()
+        if iw <= 0 or ih <= 0:
+            return
+        viewport = self._image_scroll.viewport().size()
+        vw, vh = viewport.width(), viewport.height()
+        if vw <= 0 or vh <= 0:
+            return
+        if self._fit_mode == "width":
+            target_w, target_h = vw, max(1, round(ih * vw / iw))
+        elif self._fit_mode == "height":
+            target_w, target_h = max(1, round(iw * vh / ih)), vh
+        else:
+            target_w, target_h = vw, vh
         pixmap = QPixmap.fromImage(image).scaled(
-            w,
-            h,
+            target_w,
+            target_h,
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
         self._image_label.setPixmap(pixmap)
+        self._image_label.resize(pixmap.size())
+
+    def resizeEvent(self, event: Any) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._rescale_and_display()
 
     def _on_history_selection(self, current: QListWidgetItem | None, _: Any) -> None:
         if current is None or not isinstance(current, _ThumbItem):
             return
         self._show_image(current.full_image)
+
+    # ------------------------------------------------------------------
+    # Display controls: Flip 180° / Fit Width / Fit Height
+    # ------------------------------------------------------------------
+
+    def _on_flip_toggled(self, checked: bool) -> None:
+        self._image_rotated = checked
+        self._rescale_and_display()
+
+    def _on_fit_width_toggled(self, checked: bool) -> None:
+        if checked:
+            self._btn_fit_height.setChecked(False)
+            self._fit_mode = "width"
+        elif self._fit_mode == "width":
+            self._fit_mode = "fit"
+        self._rescale_and_display()
+
+    def _on_fit_height_toggled(self, checked: bool) -> None:
+        if checked:
+            self._btn_fit_width.setChecked(False)
+            self._fit_mode = "height"
+        elif self._fit_mode == "height":
+            self._fit_mode = "fit"
+        self._rescale_and_display()
+
+    # ------------------------------------------------------------------
+    # Right-click: save the displayed (rotated) image
+    # ------------------------------------------------------------------
+
+    def _on_image_context_menu(self, pos: QPoint) -> None:
+        if self._current_original_image is None:
+            return
+        menu = QMenu(self)
+        act_save = menu.addAction(_("💾 Save Image As…"))
+        chosen = menu.exec(self._image_label.mapToGlobal(pos))
+        if chosen == act_save:
+            self._on_save_image_as()
+
+    def _on_save_image_as(self) -> None:
+        if self._current_original_image is None:
+            return
+        image = self._apply_rotation(self._current_original_image)
+        current = self._history_list.currentItem()
+        default_name = current.text() if isinstance(current, _ThumbItem) else "meteor_image.png"
+        default_path = str(Path.home() / "Desktop" / default_name)
+        path, _filter = QFileDialog.getSaveFileName(
+            self, _("Save Image"), default_path, "PNG (*.png)"
+        )
+        if not path:
+            return
+        if not image.save(path):
+            QMessageBox.warning(self, _("Save Failed"), _("Could not save the image."))
+
+    # ------------------------------------------------------------------
+    # Cities overlay (via SatDump's own "project" CLI tool)
+    # ------------------------------------------------------------------
+
+    def _on_add_cities_overlay(self) -> None:
+        current = self._history_list.currentItem()
+        if not isinstance(current, _ThumbItem) or current.path is None:
+            QMessageBox.information(
+                self,
+                _("Cities Overlay"),
+                _("Select a received image from the history list first."),
+            )
+            return
+        product_cbor = find_product_cbor(current.path.parent)
+        if product_cbor is None:
+            QMessageBox.warning(
+                self,
+                _("Cities Overlay"),
+                _(
+                    "Could not find product.cbor for this reception "
+                    "— the cities overlay needs it to know where the pass was."
+                ),
+            )
+            return
+        if self._cities_overlay_process is not None and self._cities_overlay_process.isRunning():
+            return
+        output_path = current.path.parent / f"{current.path.stem}_cities.png"
+        self._btn_cities_overlay.setEnabled(False)
+        self._lbl_status.setText(_("Generating cities overlay…"))
+        self._cities_overlay_process = CitiesOverlayProcess(product_cbor, output_path, parent=self)
+        self._cities_overlay_process.finished_ok.connect(self._on_cities_overlay_ok)
+        self._cities_overlay_process.finished_err.connect(self._on_cities_overlay_err)
+        self._cities_overlay_process.start()
+
+    def _on_cities_overlay_ok(self, path: str) -> None:
+        self._btn_cities_overlay.setEnabled(True)
+        p = Path(path)
+        image = QImage(str(p))
+        if image.isNull():
+            self._lbl_status.setText(_("Cities overlay generated, but the image failed to load."))
+            return
+        item = _ThumbItem(image, p.name, path=p)
+        self._history_list.addItem(item)
+        self._history_list.setCurrentItem(item)
+        self._show_image(image)
+        self._lbl_status.setText(_("Cities overlay generated: ") + p.name)
+
+    def _on_cities_overlay_err(self, msg: str) -> None:
+        self._btn_cities_overlay.setEnabled(True)
+        self._lbl_status.setText(_("Cities overlay failed."))
+        QMessageBox.warning(self, _("Cities Overlay Failed"), msg)
 
     # ------------------------------------------------------------------
     # Misc slots
@@ -914,7 +1120,7 @@ class MeteorTab(QWidget):
             if image.isNull():
                 continue
             loaded += 1
-            item = _ThumbItem(image, p.name)
+            item = _ThumbItem(image, p.name, path=p)
             self._history_list.addItem(item)
             priority = _image_priority(p.name)
             if priority >= self._preview_priority:
@@ -930,6 +1136,7 @@ class MeteorTab(QWidget):
 
     def _on_clear_history(self) -> None:
         self._preview_priority = -1
+        self._current_original_image = None
         self._history_list.clear()
         self._image_label.clear()
         self._image_label.setText(_("No image received yet."))
@@ -948,6 +1155,12 @@ class MeteorTab(QWidget):
         if self._process is not None and self._process.isRunning() and not self._process.wait(3000):
             self._process.stop(force=True)
             self._process.wait(2000)
+        # CitiesOverlayProcess is a short one-shot subprocess.run() call
+        # (see cities_overlay.py) with no cooperative stop() of its own --
+        # just wait for it, same QThread-destroyed-while-running hazard as
+        # above but with no force-kill path since there's nothing to signal.
+        if self._cities_overlay_process is not None and self._cities_overlay_process.isRunning():
+            self._cities_overlay_process.wait(5000)
         self._stop_fft_poller()
         self._reenable_sdr_tab()
         if self._log_window is not None:
