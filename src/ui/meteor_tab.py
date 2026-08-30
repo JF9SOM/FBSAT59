@@ -32,8 +32,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QPoint, QSize, Qt, Signal
-from PySide6.QtGui import QAction, QActionGroup, QIcon, QImage, QPixmap, QTransform
+from PySide6.QtCore import QEvent, QObject, QPoint, QSize, Qt, Signal
+from PySide6.QtGui import (
+    QAction,
+    QActionGroup,
+    QIcon,
+    QImage,
+    QPixmap,
+    QTransform,
+    QWheelEvent,
+)
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -316,6 +324,10 @@ class MeteorTab(QWidget):
         self._current_original_image: QImage | None = None
         self._image_rotated: bool = False
         self._fit_mode: str = "fit"  # "fit" (both, default) | "width" | "height"
+        # None = follow _fit_mode; a float = an explicit mouse-wheel zoom
+        # level that overrides it until a Fit menu item is picked again or
+        # a different image is shown (see _on_image_wheel()).
+        self._zoom_factor: float | None = None
         self._cities_overlay_process: CitiesOverlayProcess | None = None
         self._setup_ui()
         self._fft_frame_received.connect(self._waterfall_widget.add_frame)
@@ -423,6 +435,10 @@ class MeteorTab(QWidget):
         self._image_label.setStyleSheet("background: #111;")
         self._image_label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._image_label.customContextMenuRequested.connect(self._on_image_context_menu)
+        # Mouse-wheel zoom (see eventFilter/_on_image_wheel) — installed on
+        # the label itself, inside the QScrollArea, so it's caught before
+        # the scroll area's own default wheel-scroll behavior.
+        self._image_label.installEventFilter(self)
         # Wrapped in a QScrollArea (rather than relying on the label's own
         # sizeHint) so "Fit Width"/"Fit Height" can deliberately let the
         # image overflow the viewport in one direction and be scrolled to,
@@ -896,9 +912,12 @@ class MeteorTab(QWidget):
         *image* is always stored unrotated — Flip 180° is applied fresh in
         _rescale_and_display() every time, rather than mutating the stored
         copy, so toggling the button doesn't need to "undo" a previous
-        rotation.
+        rotation. Any mouse-wheel zoom from a previously-shown image is
+        reset -- an extreme zoom level carrying over to an unrelated newly
+        selected image would be confusing.
         """
         self._current_original_image = image
+        self._zoom_factor = None
         self._rescale_and_display()
 
     def _apply_rotation(self, image: QImage) -> QImage:
@@ -910,11 +929,13 @@ class MeteorTab(QWidget):
         """Recompute the displayed pixmap from _current_original_image.
 
         Called whenever the source image, the Flip 180° state, the fit
-        mode, or the viewport size changes (see resizeEvent). Fit Width/
-        Fit Height deliberately let the image overflow the *other*
-        dimension so the surrounding QScrollArea can scroll to it, instead
-        of always squeezing both dimensions to fit like the plain "Fit"
-        default.
+        mode, the wheel-zoom level, or the viewport size changes (see
+        resizeEvent). Fit Width/Fit Height deliberately let the image
+        overflow the *other* dimension so the surrounding QScrollArea can
+        scroll to it, instead of always squeezing both dimensions to fit
+        like the plain "Fit" default. An explicit _zoom_factor (see
+        _on_image_wheel) overrides the fit mode entirely until a Fit menu
+        item is picked again.
         """
         if self._current_original_image is None:
             return
@@ -922,16 +943,20 @@ class MeteorTab(QWidget):
         iw, ih = image.width(), image.height()
         if iw <= 0 or ih <= 0:
             return
-        viewport = self._image_scroll.viewport().size()
-        vw, vh = viewport.width(), viewport.height()
-        if vw <= 0 or vh <= 0:
-            return
-        if self._fit_mode == "width":
-            target_w, target_h = vw, max(1, round(ih * vw / iw))
-        elif self._fit_mode == "height":
-            target_w, target_h = max(1, round(iw * vh / ih)), vh
+        if self._zoom_factor is not None:
+            target_w = max(1, round(iw * self._zoom_factor))
+            target_h = max(1, round(ih * self._zoom_factor))
         else:
-            target_w, target_h = vw, vh
+            viewport = self._image_scroll.viewport().size()
+            vw, vh = viewport.width(), viewport.height()
+            if vw <= 0 or vh <= 0:
+                return
+            if self._fit_mode == "width":
+                target_w, target_h = vw, max(1, round(ih * vw / iw))
+            elif self._fit_mode == "height":
+                target_w, target_h = max(1, round(iw * vh / ih)), vh
+            else:
+                target_w, target_h = vw, vh
         pixmap = QPixmap.fromImage(image).scaled(
             target_w,
             target_h,
@@ -943,6 +968,45 @@ class MeteorTab(QWidget):
 
     def resizeEvent(self, event: Any) -> None:  # noqa: N802
         super().resizeEvent(event)
+        # Only re-fit on resize while following the fit mode -- an explicit
+        # wheel zoom level is a deliberate user choice that a window resize
+        # (or the fit-mode branch's own resize() call above) shouldn't
+        # silently discard.
+        if self._zoom_factor is None:
+            self._rescale_and_display()
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if watched is self._image_label and event.type() == QEvent.Type.Wheel:
+            self._on_image_wheel(event)  # type: ignore[arg-type]
+            return True
+        return super().eventFilter(watched, event)
+
+    def _on_image_wheel(self, event: QWheelEvent) -> None:
+        """Mouse-wheel zoom in/out around the currently displayed size.
+
+        Requested by a user (GitHub Issue #27) after trying Flip 180°/Fit
+        Width/Fit Height. Consumes the event (see eventFilter) so
+        _image_scroll's own default wheel-scroll behavior doesn't also
+        fire -- scrolling to see the rest of an overflowing Fit Width/
+        Height image still works via its scrollbars.
+        """
+        if self._current_original_image is None:
+            return
+        delta = event.angleDelta().y()
+        if delta == 0:
+            return
+        if self._zoom_factor is None:
+            # Establish a baseline from whatever is currently on screen
+            # rather than jumping to 100%, so the very first wheel tick
+            # zooms smoothly from the current Fit view instead of snapping.
+            image = self._apply_rotation(self._current_original_image)
+            pixmap = self._image_label.pixmap()
+            if not pixmap.isNull() and image.width() > 0:
+                self._zoom_factor = pixmap.width() / image.width()
+            else:
+                self._zoom_factor = 1.0
+        step = 1.1 if delta > 0 else 1 / 1.1
+        self._zoom_factor = max(0.05, min(10.0, self._zoom_factor * step))
         self._rescale_and_display()
 
     def _on_history_selection(self, current: QListWidgetItem | None, _: Any) -> None:
@@ -1025,12 +1089,15 @@ class MeteorTab(QWidget):
             self._rescale_and_display()
         elif chosen is actions["fit_both"]:
             self._fit_mode = "fit"
+            self._zoom_factor = None
             self._rescale_and_display()
         elif chosen is actions["fit_width"]:
             self._fit_mode = "width"
+            self._zoom_factor = None
             self._rescale_and_display()
         elif chosen is actions["fit_height"]:
             self._fit_mode = "height"
+            self._zoom_factor = None
             self._rescale_and_display()
 
     def _on_save_image_as(self) -> None:
@@ -1039,7 +1106,16 @@ class MeteorTab(QWidget):
         image = self._apply_rotation(self._current_original_image)
         current = self._history_list.currentItem()
         default_name = current.text() if isinstance(current, _ThumbItem) else "meteor_image.png"
-        default_path = str(Path.home() / "Desktop" / default_name)
+        # Default to the reception's own folder (e.g.
+        # ~/Pictures/fbsat59_meteor/{timestamp}/MSU-MR/) rather than the
+        # Desktop, so it lands alongside the rest of that pass's images —
+        # requested on GitHub Issue #27 (a saved image on the Desktop was
+        # unexpected when everything else SatDump writes goes to Pictures).
+        if isinstance(current, _ThumbItem) and current.path is not None:
+            default_dir = current.path.parent
+        else:
+            default_dir = _default_output_dir().parent  # ~/Pictures/fbsat59_meteor
+        default_path = str(default_dir / default_name)
         path, _filter = QFileDialog.getSaveFileName(
             self, _("Save Image"), default_path, "PNG (*.png)"
         )

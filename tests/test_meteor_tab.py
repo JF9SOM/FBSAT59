@@ -12,7 +12,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from PySide6.QtGui import QImage
+from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtGui import QImage, QWheelEvent
 from pytestqt.qtbot import QtBot
 
 from ui.meteor_tab import MeteorTab, _ThumbItem
@@ -22,6 +23,19 @@ def _make_image(w: int = 40, h: int = 20, fill: int = 0xFFFFFFFF) -> QImage:
     img = QImage(w, h, QImage.Format.Format_RGB32)
     img.fill(fill)
     return img
+
+
+def _make_wheel_event(angle_delta_y: int) -> QWheelEvent:
+    return QWheelEvent(
+        QPointF(10, 10),
+        QPointF(10, 10),
+        QPoint(0, 0),
+        QPoint(0, angle_delta_y),
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+        Qt.ScrollPhase.NoScrollPhase,
+        False,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -306,3 +320,116 @@ class TestCitiesOverlayButtonVisibility:
         w._on_clear_history()
 
         assert w._btn_cities_overlay.isVisible()
+
+
+class TestMouseWheelZoom:
+    """Mouse-wheel zoom on the image preview — requested on GitHub Issue #27
+    after Flip 180°/Fit Width/Fit Height. Installed as an eventFilter on
+    _image_label (see _setup_ui()) rather than overriding QScrollArea's own
+    wheelEvent, so the scroll area's default wheel-scroll behavior for an
+    overflowing Fit Width/Height image is bypassed only for this widget."""
+
+    def test_wheel_up_zooms_in(self, qtbot: QtBot) -> None:
+        w = _make_tab(qtbot)
+        w._show_image(_make_image(w=100, h=100))
+        before = w._image_label.pixmap().width()
+
+        handled = w.eventFilter(w._image_label, _make_wheel_event(120))
+
+        assert handled is True
+        assert w._zoom_factor is not None
+        assert w._image_label.pixmap().width() > before
+
+    def test_wheel_down_zooms_out(self, qtbot: QtBot) -> None:
+        w = _make_tab(qtbot)
+        w._show_image(_make_image(w=100, h=100))
+        before = w._image_label.pixmap().width()
+
+        w.eventFilter(w._image_label, _make_wheel_event(-120))
+
+        assert w._image_label.pixmap().width() < before
+
+    def test_zoom_factor_is_clamped(self, qtbot: QtBot) -> None:
+        w = _make_tab(qtbot)
+        w._show_image(_make_image(w=100, h=100))
+
+        for _ in range(200):
+            w.eventFilter(w._image_label, _make_wheel_event(120))
+        assert w._zoom_factor is not None
+        assert w._zoom_factor <= 10.0
+
+        for _ in range(200):
+            w.eventFilter(w._image_label, _make_wheel_event(-120))
+        assert w._zoom_factor >= 0.05
+
+    def test_zoom_does_not_affect_events_for_other_widgets(self, qtbot: QtBot) -> None:
+        w = _make_tab(qtbot)
+        w._show_image(_make_image())
+        handled = w.eventFilter(w._history_list, _make_wheel_event(120))
+        assert handled is False
+        assert w._zoom_factor is None
+
+    def test_noop_with_no_image_shown(self, qtbot: QtBot) -> None:
+        w = _make_tab(qtbot)
+        w.eventFilter(w._image_label, _make_wheel_event(120))
+        assert w._zoom_factor is None
+
+    def test_showing_a_new_image_resets_zoom(self, qtbot: QtBot) -> None:
+        w = _make_tab(qtbot)
+        w._show_image(_make_image(w=100, h=100))
+        w.eventFilter(w._image_label, _make_wheel_event(120))
+        assert w._zoom_factor is not None
+
+        w._show_image(_make_image(w=50, h=50))
+
+        assert w._zoom_factor is None
+
+    def test_picking_a_fit_menu_item_resets_zoom(self, qtbot: QtBot) -> None:
+        w = _make_tab(qtbot)
+        w._show_image(_make_image(w=100, h=100))
+        w.eventFilter(w._image_label, _make_wheel_event(120))
+        assert w._zoom_factor is not None
+
+        _trigger_context_menu_item(w, "fit_both")
+
+        assert w._zoom_factor is None
+
+
+class TestSaveImageAsDefaultPath:
+    """Default save location — moved from the Desktop to the reception's
+    own folder under ~/Pictures/fbsat59_meteor/ (GitHub Issue #27: a saved
+    image landing on the Desktop was unexpected when everything else
+    SatDump writes goes to Pictures)."""
+
+    def test_defaults_to_the_selected_image_s_own_folder(
+        self, qtbot: QtBot, tmp_path: Path
+    ) -> None:
+        w = _make_tab(qtbot)
+        reception_dir = tmp_path / "20260829_120000" / "MSU-MR"
+        reception_dir.mkdir(parents=True)
+        png_path = reception_dir / "msu_mr_rgb_AVHRR_221_False_Color.png"
+        png_path.write_bytes(b"\x89PNG\r\n")
+        item = _ThumbItem(_make_image(), png_path.name, path=png_path)
+        w._history_list.addItem(item)
+        w._history_list.setCurrentItem(item)
+        w._show_image(_make_image())
+
+        with patch("ui.meteor_tab.QFileDialog.getSaveFileName") as mock_dialog:
+            mock_dialog.return_value = ("", "")
+            w._on_save_image_as()
+
+        default_path = mock_dialog.call_args.args[2]
+        assert Path(default_path).parent == reception_dir
+        assert "Desktop" not in default_path
+
+    def test_falls_back_to_pictures_folder_without_a_known_path(self, qtbot: QtBot) -> None:
+        w = _make_tab(qtbot)
+        w._show_image(_make_image())
+
+        with patch("ui.meteor_tab.QFileDialog.getSaveFileName") as mock_dialog:
+            mock_dialog.return_value = ("", "")
+            w._on_save_image_as()
+
+        default_path = mock_dialog.call_args.args[2]
+        assert "fbsat59_meteor" in default_path
+        assert "Desktop" not in default_path
