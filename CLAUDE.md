@@ -1493,27 +1493,24 @@ SkyRoof（VE3NEA、GPL-3.0）の `SkyRoof/DSP/SatnogsUploader.cs` を参照実�
 #### Phase 2 の作業予定（gr-satellites 経路対応 — 未着手）
 
 gr-satellites 経路は `_on_gr_telemetry(text: str)` が **stdout のパース済みテキストしか受け取らず、
-生フレームバイト列がパイプラインのどこにも存在しない**ため、Phase 1 では対象外にした。難所:
+生フレームバイト列がパイプラインのどこにも存在しない**ため、Phase 1 では対象外にした。
 
-1. **生バイトの取り出し**: `gr_satellites` の起動 argv に `--hexdump` を追加し、
-   `pdu vector contents =` 形式の hex ダンプ（`0000: 9c 86 aa 8e ...`）をパースして
-   `bytes.fromhex()` に戻す。ただしこの出力レイアウトは gr_satellites 3.x/4.x/5.x で変わって
-   きたため、版差に寛容なパーサーが必要
-2. **`--hexdump` はパース済み表示を潰す**（hex かフィールド表示かの二者択一に近い）。今テーブルに
-   出している読める形のテレメトリーが失われる。両立させるならデコーダー二重起動か、
-   `--kiss_out <file>` / `--kiss_server <port>`（新しめの版のみ）でクリーンな KISS フレームを
-   横取り（FBSAT59 は既に KISS TCP クライアント `comms/aprs/direwolf.py` を持つので流用可）
-3. **NORAD**: サブプロセスは 1 衛星向けに起動されるので、フレームの NORAD は起動時の
-   `self._selected_norad` を使えばよい（AFSK 経路の `_callsign_to_norad` per-frame 解決より簡単）
-4. **gr_satellites 自身の `submit_tlm` には任せない方針**: `~/.gr_satellites/config.ini` の
-   `[Groundstation]` にトークン欄が無く API キー必須化後の匿名 SiDS は 401 の可能性が高い／
-   設定が別ファイルに分散し今回のトグルと不整合／投稿結果が FBSAT59 のログに出ない／
-   トグルと無関係に全衛星を投稿してしまう、等の理由で FBSAT59 側で自前投稿する
-5. **テスト**: AFSK 経路のような「生バイトをスロットに渡すだけ」の軽い単体テストが書けず、
-   実 gr_satellites インストールと実 IQ（または録音）が要る。ダンプパーサー単体はテスト可能
+**採用方針（2026-08-31 確定）**: `gr_satellites` の起動 argv に `--kiss_server <port>` を追加し、
+FBSAT59 側から KISS TCP クライアントで接続してデータフレームごとに生バイト列を取り出す。
+**stdout のテレメトリーパース表示（テーブル）は変更しない**（`--kiss_server` は追加の frame 出力
+シンクであり、`--hexdump` と違って stdout パースを潰さない — gr_satellites v5.9.0 で確認済み）。
+`--hexdump` パース案は「パース済み表示を潰す」「テキストレイアウトが版差に弱い」ため却下。
 
-Phase 2 着手時は「`--hexdump` パース」か「KISS 横流し」のどちらを採るかを先に決める。
-`--hexdump` パーサーを採る場合、gr_satellites の複数版で実際の出力を確認してから実装すること。
+要点だけ:
+- **NORAD**: サブプロセスは 1 衛星向け起動なので `_started_norad` を使う（per-frame 解決不要）
+- **gr_satellites 自身の `submit_tlm` には任せない**: `~/.gr_satellites/config.ini` の
+  `[Groundstation]` にトークン欄が無く API キー必須化後の匿名 SiDS は 401 の可能性が高い／
+  設定が別ファイルに分散しトグルと不整合／投稿結果が FBSAT59 のログに出ない／
+  トグルと無関係に全衛星を投稿してしまう、等
+- **テスト**: KISS デフレーマ・reader は単体テスト可能。実 gr_satellites + 実 IQ の E2E は
+  CI 非対象（手動検証）
+
+**詳細な実装計画は下記「【別添】Phase 2 実装計画詳細（gr-satellites 経路）」を参照。**
 
 #### 未実装（任意・将来）— 1フレームごとの投稿ステータス記録
 
@@ -1524,6 +1521,144 @@ Phase 2 着手時は「`--hexdump` パース」か「KISS 横流し」のどち�
 その場合バックグラウンドスレッドからの DB 書き込み（専用コネクション or シグナルで GUI
 スレッドへ marshal）が新たに必要になる。`LogBroadcaster` が UDP のみで DB を触らないことで
 避けている複雑さなので、要望が出てから追加する。
+
+#### 【別添】Phase 2 実装計画詳細（gr-satellites 経路）
+
+**ステータス**: 未着手。方針のみ確定（2026-08-31）。着手前にこの節を読み直すこと。
+
+##### 1. 方針: `--kiss_server` サイドチャネル
+
+`gr_satellites` の起動 argv に `--kiss_server <port>` を追加し、FBSAT59 側から KISS TCP
+クライアントで接続。KISS データフレームごとに生バイト列を取り出して
+`SatnogsUploader.submit()` に渡す。**stdout のパース済みテキスト表示（テーブル）は一切
+変更しない**。
+
+ローカルの gr_satellites v5.9.0（バンドル版と同一）で確認済みのフラグ:
+- `--kiss_server [PORT]` — PORT はフラグの任意位置引数（`--kiss_server 8200`）。別途
+  `--kiss_server_port` は無い
+- `--kiss_server_address KISS_SERVER_ADDRESS` — バインドアドレス（デフォルト `127.0.0.1`）
+- `--kiss_server` は**追加の frame 出力シンク**であり、`--hexdump` と違って stdout の
+  テレメトリーパースを潰さない（両立する）
+
+**却下した代替案**:
+| 案 | 却下理由 |
+|---|---|
+| `--hexdump` パース | stdout のパース表示を潰す（テーブルの中身が失われる）。`pdu vector contents =` のテキストレイアウトが gr_satellites 3.x/4.x/5.x で変わり版差に弱い |
+| `--kiss_out <file>` + `--kiss_append` | ファイル tail・ローテーション・「BE u64 ms タイムスタンプ前置き KISS 変種」の扱い・後始末が必要 |
+| `--zmq_pub` | pyzmq 依存が自 venv 側に増える。KISS は新規依存ゼロ |
+
+##### 2. 変更コンポーネント
+
+**`src/comms/telemetry/gr_satellites_backend.py`**:
+- 新シグナル `raw_frame_received = Signal(bytes)`
+- `start()`:
+  - 空き TCP ポートを動的確保（`comms/meteor/fft_waterfall.py::find_free_port()` と同じ要領）し
+    `cmd` に `--kiss_server <port> --kiss_server_address 127.0.0.1` を追加
+  - Popen 後、`_KissFrameReader`（**素の `threading.Thread`**。この backend は既に `_read_stdout`
+    を素スレッドで回しているので合わせる）を起動。`127.0.0.1:<port>` へ接続リトライ
+    （200ms 間隔・約3秒。gr_satellites 側のサーバー起動待ち）→ ストリームを読み、
+    **`comms.aprs.direwolf._kiss_decode_frames()` を再利用**して KISS デフレーム →
+    データフレーム（type nibble == 0）ごとに `raw_frame_received.emit(bytes)`
+  - **接続前にデコードされた最初の数秒分のフレームは失われる**（gr_satellites の KISS サーバーは
+    未接続クライアント向けにバッファしない）。Phase 1 と同じく「Start 後のみ」なので許容
+- `stop()`: **KISS ソケット close → プロセス terminate → 両スレッド（stdout / kiss reader）を
+  join** の順。`AudioBridge`/Direwolf で学んだ「先に producer を止めないとブロッキング read が
+  返らない」教訓（本ファイル該当セクション参照）
+- `_started_norad: int | None` を保持（フレームの NORAD 帰属に使う。サブプロセスは 1 衛星向け
+  起動なので per-frame 解決は不要）
+
+**`src/ui/telemetry_tab.py`**:
+- gr 起動パスで `self._gr_backend.raw_frame_received` → `_on_gr_raw_frame` を接続
+- `_on_gr_raw_frame(raw: bytes)`:
+  ```python
+  norad = self._gr_backend.started_norad
+  if norad is not None:
+      get_satnogs_uploader().submit(self._conn, raw, norad,
+                                   datetime.datetime.now(datetime.UTC))
+  ```
+- **commit `f95bd3b` の「gr-satellites モードで SatNOGS 3ボタンを `setVisible(False)`」を revert**
+  （`_on_mode_changed` の可視性ループ + テスト `test_satnogs_controls_hidden_in_gr_satellites_mode`）。
+  Phase 2 では gr モードでも SatNOGS 投稿が有効になるため
+- `_active_norad()` は既に gr モードで `_combo_gr_sat` を見る実装済み。SatNOGS ↗ リンクも
+  そのまま gr 衛星で機能する
+
+**（任意）`telemetry_log` への gr フレーム永続化**: 現状 gr 経路は `telemetry_log` に一切
+INSERT していない（`_on_gr_telemetry` は `_append_row` のみ）。生バイトが手に入るので
+`_on_gr_raw_frame` で `raw_hex` = フレーム全体として INSERT を追加してもよいが、
+**スコープを絞るなら Phase 2 コア（投稿）に含めず別途**。
+
+##### 3. フレームの中身・タイムスタンプ
+
+- **`frame` の中身**: KISS ペイロード = gr_satellites のデフレーマ出力そのまま（AX.25 衛星なら
+  AX.25 ヘッダ込み、非 AX.25 なら deframe 後のパケット）。これは gr_satellites 自身の
+  `submit_tlm` が SiDS で送るのと同じ内容 → SatNOGS の期待と一致
+- **`timestamp`**: `--kiss_server`（プレーン KISS）は RX タイムスタンプを埋めない。
+  `received_at` = FBSAT59 の reader がフレームを受け取った壁時計。IQ バッファ + デコードの
+  パイプライン遅延（通常 1 秒未満）が乗るが、SkyRoof も submit 時刻（`DateTime.UtcNow`）を
+  使っており SatNOGS の許容も緩いので問題なし。より正確にしたければ
+  `core.clock_offset.corrected_utcnow()`（FT4/Q65 が使う NTP 補正時計）に **AFSK 経路含め
+  両方**そろえる、というのも選択肢（別判断）
+
+##### 4. gr_satellites 版・フラグ可用性
+
+- `--kiss_server` は gr-satellites 3.x から存在。`--kiss_server_address` は 4.x+。バンドル版
+  （5.9.0）は全対応
+- システム（apt）インストールが古い 3.x の可能性 → `--kiss_server_address` を省略
+  （デフォルト `127.0.0.1`）してフォールバック
+- backend 初期化時に `gr_satellites --help` の usage 文字列をキャッシュし `--kiss_server` の
+  有無を判定（`detect_gr_satellites()` と同じゲート思想）。無ければ Phase 2 配線をスキップし、
+  gr モードで「この gr_satellites 版は KISS サーバー非対応のため SatNOGS 投稿不可」を一言表示
+
+##### 5. テスト
+
+| 対象 | 方法 |
+|---|---|
+| KISS デフレーマ | `comms.aprs.direwolf._kiss_decode_frames()` は既存。gr 由来の型/ポートバイト除去の薄いラッパーを足すならそこを単体テスト（空・エスケープ `DB DC`/`DB DD`・read またぎの部分フレーム・連続フレーム・非データ型の無視） |
+| `_KissFrameReader` | `socket` で 127.0.0.1:0 に実サーバーを立て、テスト側から KISS バイト列を書き込み、`raw_frame_received` が正しいバイト列で発火することを検証（`tests/test_log_broadcast.py` の実ソケット方式と同型。Qt 非依存に寄せる） |
+| `telemetry_tab._on_gr_raw_frame` | `get_satnogs_uploader` を monkeypatch（Phase 1 テストと同じ）し、起動 NORAD で `submit()` が呼ばれることを検証 |
+| エンドツーエンド（実 gr_satellites + 実 IQ） | **CI 非対象**（インストール + サンプル必要）。AX.25 衛星1機 + 非 AX.25 衛星1機の録音 IQ を fixture 化し、手動検証手順として文書化。「KISS ペイロード = 全フレーム（info のみでない）」をここで確認 |
+
+##### 6. スコープ境界
+
+**やる**: gr-satellites 経路の生フレーム → KISS server 経由 SatNOGS 投稿 / gr モード非表示の
+revert / デフレーマ + reader のテスト
+
+**やらない（Phase 2 では）**:
+- CW テレメトリー → バイト列化（衛星ごとの符号→バイト マッピングが必要、機種依存で重い。
+  SkyRoof も CW は投稿しない）
+- SSTV / SSDV / FM 音声の投稿（SkyRoof も対象外）
+- `telemetry_log` スキーマ変更 / per-frame 投稿ステータス列（引き続き先送り）
+- `--kiss_out` ファイルリプレイ
+
+##### 7. リスクと緩和
+
+| リスク | 緩和 |
+|---|---|
+| KISS サーバーのポート衝突 | 空きポート動的確保。`--kiss_server_address 127.0.0.1` でローカル限定 |
+| reader スレッドと stdout スレッドの 2 本化でシャットダウン競合 | `stop()` で「socket close → proc terminate → join ×2」の順を厳守。テストで stop の冪等性・ブロッキング read 解放を確認 |
+| 接続前フレームの取りこぼし | 仕様（Phase 1 と同じ「Start 後のみ」）として許容。リトライ接続で起動レースは吸収 |
+| バンドル conda-pack 版で KISS サーバーが動くか | 5.9.0 は対応。念のため E2E 手動検証で 1 回確認 |
+| 非 AX.25 衛星で KISS ペイロードが info のみだった場合 | E2E 手動検証で「全フレームか」を確認。gr_satellites の submitter と同内容なので基本問題なし |
+
+##### 8. 作業順序
+
+1. `gr_satellites --help` で `--kiss_server [PORT]` / `--kiss_server_address` をバンドル版・
+   システム版それぞれで最終確認
+2. `_kiss_decode_frames()` の再利用可否確認（型バイト除去の薄いラッパー要否）
+3. `GrSatellitesBackend`: `raw_frame_received` シグナル + `_KissFrameReader` + `start()`/`stop()`
+   改修 + `_started_norad`
+4. デフレーマ / reader の単体テスト
+5. `telemetry_tab`: `_on_gr_raw_frame` 配線 + gr モード非表示 revert + テスト
+6. `--kiss_server` 非対応版のフォールバック（ゲート + 一言表示）
+7. E2E 手動検証（録音 IQ、AX.25 + 非 AX.25 各 1 機）→ 手順を本ファイルに追記
+8. 本節を「実装済み」に更新（採用方針・stdout パース維持・非表示 revert を明記）
+9. コミット前チェックリスト（`ruff` / `mypy` / `test_rig.py`）→ コミット
+
+##### 9. 規模感
+
+コア（手順 3〜6）は Phase 1 と同程度（新規 reader スレッド + デフレーマラッパー + 配線 +
+テスト）。E2E 手動検証（手順 7）に実機の gr_satellites と録音 IQ の準備時間が別途かかる、
+というのが Phase 1 との主な違い。
 
 **メニュー: Communications > SSTV / SSDV**（`src/ui/sstv_tab.py`）
 - SSTV 受信: pySSTV（Robot36/PD120/Martin/Scottie）、SDR audio_ready または sounddevice 入力
