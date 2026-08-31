@@ -535,6 +535,14 @@ class TelemetryTab(QWidget):
         is_gr = self._current_mode() == _MODE_GR
         self._combo_afsk_sat.setVisible(not is_gr)
         self._combo_gr_sat.setVisible(is_gr)
+        # The SatNOGS-upload cluster only handles the AFSK / Direwolf path
+        # (Phase 1); hide it entirely in gr-satellites mode.
+        for w in (
+            self._btn_satnogs_toggle,
+            self._btn_satnogs_api,
+            self._btn_satnogs_link,
+        ):
+            w.setVisible(not is_gr)
         self._refresh_status()
 
     def _on_afsk_sat_changed(self, _index: int) -> None:

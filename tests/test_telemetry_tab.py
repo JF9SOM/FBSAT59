@@ -220,6 +220,29 @@ def test_satnogs_toggle_reflects_saved_state_on_open(
         tab.close()
 
 
+def test_satnogs_controls_hidden_in_gr_satellites_mode(
+    app: QApplication, conn: sqlite3.Connection
+) -> None:
+    """The SatNOGS-upload cluster only covers the AFSK / Direwolf path, so
+    it disappears entirely when Mode is switched to gr-satellites."""
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    try:
+        widgets = (
+            tab._btn_satnogs_toggle,
+            tab._btn_satnogs_api,
+            tab._btn_satnogs_link,
+        )
+        assert all(not w.isHidden() for w in widgets)  # AFSK mode by default
+
+        tab._combo_mode.setCurrentText("gr-satellites")
+        assert all(w.isHidden() for w in widgets)
+
+        tab._combo_mode.setCurrentText("Direwolf (AX.25)")
+        assert all(not w.isHidden() for w in widgets)
+    finally:
+        tab.close()
+
+
 def test_satnogs_link_disabled_without_any_target(
     app: QApplication, conn: sqlite3.Connection
 ) -> None:
