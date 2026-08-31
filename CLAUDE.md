@@ -1433,6 +1433,98 @@ src/
   - `GrSatellitesBackend(QObject)` — サブプロセス管理・IQ UDP 転送・stdout パース
   - `_UdpIqForwarder` — SDR パイプラインから UDP でサンプルを送信
 
+#### SatNOGS DB へのテレメトリー自動アップロード（Phase 1 実装済み、2026-08-31）
+
+受信したテレメトリーフレームを SatNOGS DB（`db.satnogs.org`）へ自動投稿する機能。
+SkyRoof（VE3NEA、GPL-3.0）の `SkyRoof/DSP/SatnogsUploader.cs` を参照実装として移植した。
+
+**プロトコル（SiDS = Simple Downlink Sharing Convention）**:
+- `POST https://db.satnogs.org/api/telemetry/`（本番固定。db-dev はプラットフォーム開発用のため使わない）
+- `Content-Type: application/x-www-form-urlencoded`、1 フレーム 1 POST、タイムアウト 15 秒、**リトライなし**
+- 認証: `Authorization: Token <APIキー>`。**SatNOGS DB は仕様変更で匿名投稿を廃止し API キー必須**
+  （未認証だと HTTP 401）。キーは SatNOGS DB アカウントの Settings → API Key で取得する恒久キー
+- フォームフィールド（SkyRoof と同一書式）:
+  | フィールド | 値 |
+  |---|---|
+  | `noradID` | NORAD 番号 |
+  | `source` | 自局コールサイン（trim + 大文字） |
+  | `locator` | 固定文字列 `longLat` |
+  | `longitude` | `abs(経度)` 小数4桁 + `E`/`W`（例 `139.6917E`） |
+  | `latitude` | `abs(緯度)` 小数4桁 + `N`/`S`（例 `35.6895N`） |
+  | `timestamp` | `%Y-%m-%dT%H:%M:%S.fffZ`（UTC・ミリ秒・末尾リテラル `Z`） |
+  | `frame` | 生フレームの hex（**FCS 抜きの全 AX.25 フレーム**。KISS / AfskDemodulator が受信した `raw` バイト列そのまま） |
+  | `version` | `FBSAT59 <version>` |
+
+**実装（`src/comms/telemetry/satnogs_uploader.py`）**:
+- `SatnogsUploader` — `get_satnogs_uploader()` でプロセス全体シングルトン（`comms.log_broadcast` と同じパターン）
+- `queue.Queue` + 単一 `threading.Thread` ワーカー（`DopplerWorker` / `Ft4RxCaptureWorker` と同じ「素の Thread」流儀。QThread 非依存＝テストしやすい）
+- **SiDS フィールドは GUI スレッド側（`submit()` → `build_submission()`）で全解決**し、ワーカーには
+  `(api_key, form_fields)` の完成品だけを渡す。ワーカーは `httpx.post` のみで **SQLite ハンドルを
+  スレッドまたぎで一切触らない**（SkyRoof の `Submit` がデコードスレッドで dict を組んでキューへ
+  積むのと同じ設計）
+- 失敗（401・接続エラー等）はレスポンスボディを `fbsat59.log` に記録するのみ。QSO ログを止めない
+  fire-and-forget 原則（`LogBroadcaster` と同じ）
+- 設定は `app_settings` の単一 JSON キー `satnogs_upload_settings`（`{"enabled": bool, "api_key": str}`）。
+  `load_/save_satnogs_upload_settings(conn)` ヘルパー
+- コールサイン・座標は `app_settings`（`callsign` / `observer_location`）から**毎 submit 読み直し**
+  （キャッシュしない＝設定変更後の再起動不要）
+- 送信ゲート（この全部を満たしたときだけ投稿）: `enabled` / API キー非空 / コールサイン非空 /
+  座標取得済み / `norad` が None でない。**CRC ゲートは実装していない** — FBSAT59 が UI に出す
+  フレームは AFSK（HDLC CRC-16/CCITT）・Direwolf・gr-satellites（FEC/CRC）いずれも検証済みのため
+  （SkyRoof は自前デコーダーが CRC-unknown を出しうるので明示ゲートが要るが、FBSAT59 は
+  「受信できた＝検証済み」）
+
+**UI（`src/ui/telemetry_tab.py`、フッター1行）**:
+- `[SatNOGS Upload: ON/OFF]`（`QPushButton` + `setCheckable`。ON=緑 `#27ae60` / OFF=グレー
+  `#7f8c8d`、白文字。赤は「エラー」色なので単に無効なだけの状態には使わない、ユーザー判断）
+- `[API]` — `_SatnogsApiKeyDialog`（案内文 + 平文 `QLineEdit` + OK/Cancel）
+- `[SatNOGS ↗]` — `open_satnogs_requested(norad, name)` を emit → `MainWindow._open_in_satnogs`
+  （既存の `satnogs_uuid` キャッシュ / バックグラウンド取得を再利用）。`_active_norad()` は
+  アクティブなモードのコンボの選択衛星、無ければメインリストの選択にフォールバック
+- `Clear Log` を `Export CSV…` の左へ移動（フッターの行数は増やさない、ユーザー要望）
+- **gr-satellites モードのときは上記3ボタンを `setVisible(False)` で完全非表示**（`_on_mode_changed()`）。
+  Phase 1 は AFSK 経路のみ対応のため
+- ON にした時に API キー / コールサイン / 位置が未設定なら `_lbl_status` にヒント表示（送信自体は
+  サイレントにスキップ）
+
+**テスト**: `tests/test_satnogs_uploader.py`（Qt 非依存・実ネットワーク不要、fake post_fn）＋
+`tests/test_telemetry_tab.py` にフッター UI テストを追加。
+
+#### Phase 2 の作業予定（gr-satellites 経路対応 — 未着手）
+
+gr-satellites 経路は `_on_gr_telemetry(text: str)` が **stdout のパース済みテキストしか受け取らず、
+生フレームバイト列がパイプラインのどこにも存在しない**ため、Phase 1 では対象外にした。難所:
+
+1. **生バイトの取り出し**: `gr_satellites` の起動 argv に `--hexdump` を追加し、
+   `pdu vector contents =` 形式の hex ダンプ（`0000: 9c 86 aa 8e ...`）をパースして
+   `bytes.fromhex()` に戻す。ただしこの出力レイアウトは gr_satellites 3.x/4.x/5.x で変わって
+   きたため、版差に寛容なパーサーが必要
+2. **`--hexdump` はパース済み表示を潰す**（hex かフィールド表示かの二者択一に近い）。今テーブルに
+   出している読める形のテレメトリーが失われる。両立させるならデコーダー二重起動か、
+   `--kiss_out <file>` / `--kiss_server <port>`（新しめの版のみ）でクリーンな KISS フレームを
+   横取り（FBSAT59 は既に KISS TCP クライアント `comms/aprs/direwolf.py` を持つので流用可）
+3. **NORAD**: サブプロセスは 1 衛星向けに起動されるので、フレームの NORAD は起動時の
+   `self._selected_norad` を使えばよい（AFSK 経路の `_callsign_to_norad` per-frame 解決より簡単）
+4. **gr_satellites 自身の `submit_tlm` には任せない方針**: `~/.gr_satellites/config.ini` の
+   `[Groundstation]` にトークン欄が無く API キー必須化後の匿名 SiDS は 401 の可能性が高い／
+   設定が別ファイルに分散し今回のトグルと不整合／投稿結果が FBSAT59 のログに出ない／
+   トグルと無関係に全衛星を投稿してしまう、等の理由で FBSAT59 側で自前投稿する
+5. **テスト**: AFSK 経路のような「生バイトをスロットに渡すだけ」の軽い単体テストが書けず、
+   実 gr_satellites インストールと実 IQ（または録音）が要る。ダンプパーサー単体はテスト可能
+
+Phase 2 着手時は「`--hexdump` パース」か「KISS 横流し」のどちらを採るかを先に決める。
+`--hexdump` パーサーを採る場合、gr_satellites の複数版で実際の出力を確認してから実装すること。
+
+#### 未実装（任意・将来）— 1フレームごとの投稿ステータス記録
+
+現状は投稿の成否を `fbsat59.log` に書くだけで、`telemetry_log` テーブルには記録しない
+（Phase 1 では「選択肢A」を採用、ユーザー判断）。UI に「✓ 投稿済み」列を出したい場合は
+`telemetry_log` に `satnogs_submitted INTEGER DEFAULT 0` を追加（`rx_offset_hz` と同じ
+`ALTER TABLE` パターン）し、ワーカースレッドから成功時に `UPDATE` する必要があるが、
+その場合バックグラウンドスレッドからの DB 書き込み（専用コネクション or シグナルで GUI
+スレッドへ marshal）が新たに必要になる。`LogBroadcaster` が UDP のみで DB を触らないことで
+避けている複雑さなので、要望が出てから追加する。
+
 **メニュー: Communications > SSTV / SSDV**（`src/ui/sstv_tab.py`）
 - SSTV 受信: pySSTV（Robot36/PD120/Martin/Scottie）、SDR audio_ready または sounddevice 入力
 - SSDV 受信: AX.25 `raw_frame_received` Signal をタップ → ssdv CLI でデコード
@@ -3703,6 +3795,7 @@ QT_LOGGING_RULES="qt.qpa.*=true" ./FBSAT59.AppImage 2>&1 | head -100
 8. ~~**Telemetry タブ実装**~~ **→ feature/communications（v0.2.0）で完了**（AX.25受信・JSON定義デコード・12衛星フォーマット定義）
 8b. ~~**Telemetry タブ gr-satellites 統合**~~ **→ 2026-06-30 で完了**（gr-satellites サブプロセス・UDP IQ 転送・330機以上対応・衛星コンボ・SDR 自動接続・トランスポンダー自動選択・メインリスト連動）
 9. **テレメトリーフォーマット定義の追加・検証** — 実際に受信したパケットでオフセット・スケールの検証。未定義衛星のフォーマット調査
+9b. **SatNOGS DB テレメトリー投稿 Phase 2（gr-satellites 経路）— 未着手（2026-08-31 追加）** — Phase 1（AFSK/Direwolf 経路）は実装済み（`src/comms/telemetry/satnogs_uploader.py` + Telemetry タブフッターの ON/OFF トグル・API キー入力・SatNOGS ページリンク。詳細は「SatNOGS DB へのテレメトリー自動アップロード」セクション参照）。gr-satellites 経路は生フレームバイト列がパイプラインに存在しないため未対応。着手時はまず「`gr_satellites --hexdump` の hex ダンプをパース」か「`--kiss_out`/`--kiss_server` でクリーンな KISS フレームを横取り」のどちらを採るか決めること。`--hexdump` を採る場合、出力レイアウトが gr_satellites 3.x/4.x/5.x で異なるため複数版で実出力を確認してから実装する。同セクション「Phase 2 の作業予定」参照。あわせて任意項目として `telemetry_log.satnogs_submitted` 列（投稿ステータス記録）も同セクション末尾に記載
 10. ~~**CI: Direwolf バンドルビルド**~~ **→ feature/communications で完了**（Linux/Windows/macOS 3ジョブ、タグ push 時に direwolf-{platform}-{arch}.{tar.gz|zip} を Releases にアップロード）
 11. ~~**FT4 タブ実装**~~ **→ feature/communications（v0.2.0）で完了**（Ft4Codec/ctypes + ft8_lib・Ft4Scheduler・Ft4QsoManager・Ft4Tab UI・ADIF エクスポート。ft8_lib CI バンドルビルドは v0.2.0 タグ時に Direwolf と同時実施）
 11c. ~~**Q65 Phase 1（RX）実装**~~ **→ 2026-06-26 で完了**（Q65Codec/libq65 ctypes・build-q65lib.yml CI・Help > Q65 Library Installation ダイアログ）
