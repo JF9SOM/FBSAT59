@@ -2595,6 +2595,7 @@ class MainWindow(QMainWindow):
 
         tab = TelemetryTab(self._conn, self._radio_control, parent=self)
         tab.satellite_selected.connect(self._on_telemetry_satellite_requested)
+        tab.open_satnogs_requested.connect(self._open_in_satnogs)
         self._comms_tab_keys[tab] = "telemetry"
         idx = self._tab_widget.addTab(tab, _("Telemetry"))
         self._add_tab_close_button(tab)

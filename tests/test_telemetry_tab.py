@@ -10,11 +10,17 @@ offscreen) or a direwolf/gr-satellites installation.
 from __future__ import annotations
 
 import sqlite3
+import types
 
 import pytest
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QApplication, QWidget
 
+import ui.telemetry_tab as telemetry_tab_mod
+from comms.telemetry.satnogs_uploader import (
+    load_satnogs_upload_settings,
+    save_satnogs_upload_settings,
+)
 from ui.telemetry_tab import TelemetryTab
 
 
@@ -169,5 +175,103 @@ def test_gr_combo_includes_satellite_absent_from_db(
         tab._populate_gr_combo()
         norads = {norad for norad, _name in _gr_combo_items(tab)}
         assert 99000 in norads
+    finally:
+        tab.close()
+
+
+# ---------------------------------------------------------------------------
+# SatNOGS DB upload footer controls
+# ---------------------------------------------------------------------------
+
+
+class _RecordingUploader:
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
+
+    def submit(self, conn, raw, norad, received_at) -> bool:  # noqa: ANN001
+        self.calls.append((conn, raw, norad, received_at))
+        return True
+
+
+def test_satnogs_toggle_persists_to_app_settings(
+    app: QApplication, conn: sqlite3.Connection
+) -> None:
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    try:
+        assert tab._btn_satnogs_toggle.text() == "SatNOGS Upload: OFF"
+        tab._btn_satnogs_toggle.setChecked(True)
+        assert load_satnogs_upload_settings(conn)["enabled"] is True
+        assert tab._btn_satnogs_toggle.text() == "SatNOGS Upload: ON"
+        tab._btn_satnogs_toggle.setChecked(False)
+        assert load_satnogs_upload_settings(conn)["enabled"] is False
+    finally:
+        tab.close()
+
+
+def test_satnogs_toggle_reflects_saved_state_on_open(
+    app: QApplication, conn: sqlite3.Connection
+) -> None:
+    save_satnogs_upload_settings(conn, {"enabled": True, "api_key": "k"})
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    try:
+        assert tab._btn_satnogs_toggle.isChecked() is True
+        assert tab._btn_satnogs_toggle.text() == "SatNOGS Upload: ON"
+    finally:
+        tab.close()
+
+
+def test_satnogs_link_disabled_without_any_target(
+    app: QApplication, conn: sqlite3.Connection
+) -> None:
+    """With both mode combos empty and nothing selected in the main list,
+    the link has nothing to point at and is disabled."""
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    try:
+        tab._combo_afsk_sat.clear()
+        tab._combo_gr_sat.clear()
+        tab._selected_norad = None
+        tab._update_satnogs_link_enabled()
+        assert tab._btn_satnogs_link.isEnabled() is False
+        tab.set_satellite(25544, "ISS")
+        assert tab._btn_satnogs_link.isEnabled() is True
+    finally:
+        tab.close()
+
+
+def test_satnogs_link_emits_open_request_for_active_satellite(
+    app: QApplication, conn: sqlite3.Connection
+) -> None:
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    try:
+        got: list[tuple[int, str]] = []
+        tab.open_satnogs_requested.connect(lambda n, name: got.append((n, name)))
+        tab.set_satellite(43803, "JO-97")  # 43803 has a format definition
+        assert tab._btn_satnogs_link.isEnabled() is True
+        tab._btn_satnogs_link.click()
+        assert got == [(43803, "JO-97")]
+    finally:
+        tab.close()
+
+
+def test_ax25_frame_forwards_raw_to_satnogs_uploader(
+    app: QApplication, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rec = _RecordingUploader()
+    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: rec)
+    monkeypatch.setattr(
+        telemetry_tab_mod,
+        "decode_ax25",
+        lambda raw: types.SimpleNamespace(src="JY1SAT", payload=b"\x00\x11\x22"),
+    )
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    try:
+        monkeypatch.setattr(tab, "_callsign_to_norad", lambda src: 43803)
+        raw = bytes.fromhex("9c86aa8ea662e0a08a82a49886e103f000112233")
+        tab._on_ax25_frame(raw)
+        assert len(rec.calls) == 1
+        c_conn, c_raw, c_norad, _c_ts = rec.calls[0]
+        assert c_conn is conn
+        assert c_raw == raw  # full AX.25 frame, not just the payload
+        assert c_norad == 43803
     finally:
         tab.close()

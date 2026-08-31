@@ -26,11 +26,14 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QStandardItemModel
 from PySide6.QtWidgets import (
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -52,6 +55,13 @@ from comms.telemetry.gr_satellites_backend import (
     get_satellite_info,
     list_gr_satellites_with_names,
 )
+from comms.telemetry.satnogs_uploader import (
+    get_satnogs_uploader,
+    get_station_callsign,
+    get_station_latlon,
+    load_satnogs_upload_settings,
+    save_satnogs_upload_settings,
+)
 from i18n import _
 
 # Named after the backend software, matching _MODE_GR's convention — this
@@ -70,11 +80,47 @@ _MODE_GR = "gr-satellites"
 _ENGINE_OWNER = "telemetry"
 
 
+class _SatnogsApiKeyDialog(QDialog):
+    """Small popup for entering the SatNOGS DB API key (plain text)."""
+
+    def __init__(self, current: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(_("SatNOGS DB API Key"))
+        layout = QVBoxLayout(self)
+
+        info = QLabel(
+            _(
+                "Log in at db.satnogs.org, open your account Settings, and copy "
+                "the API Key shown there. It is required to upload telemetry "
+                "frames to the SatNOGS database."
+            )
+        )
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        self._edit = QLineEdit(current)
+        self._edit.setPlaceholderText(_("Paste your SatNOGS DB API key"))
+        self._edit.setMinimumWidth(360)
+        layout.addWidget(self._edit)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def api_key(self) -> str:
+        return self._edit.text().strip()
+
+
 class TelemetryTab(QWidget):
     """Non-resident tab opened from Communications > Telemetry."""
 
     # emitted when user picks a satellite in either combo: (norad, mode_str)
     satellite_selected = Signal(int, str)
+    # emitted when the "SatNOGS ↗" footer button is clicked: (norad, name)
+    open_satnogs_requested = Signal(int, str)
 
     def __init__(
         self,
@@ -231,15 +277,45 @@ class TelemetryTab(QWidget):
         root.addWidget(log_box, 1)
 
         # --- Footer ---
+        # Left cluster: SatNOGS DB upload toggle + API-key popup + a link to
+        # the selected satellite's SatNOGS page. Right cluster: Clear / Export.
+        # Kept to a single row (no extra height) at the user's request.
         footer = QHBoxLayout()
+
+        self._btn_satnogs_toggle = QPushButton()
+        self._btn_satnogs_toggle.setCheckable(True)
+        self._btn_satnogs_toggle.setToolTip(
+            _(
+                "Upload every decoded frame to the SatNOGS DB (SiDS).\n"
+                "Needs a SatNOGS DB API key (API button) plus your callsign\n"
+                "and station location (File → Set QTH)."
+            )
+        )
+        self._btn_satnogs_toggle.toggled.connect(self._on_satnogs_toggled)
+        footer.addWidget(self._btn_satnogs_toggle)
+
+        self._btn_satnogs_api = QPushButton(_("API"))
+        self._btn_satnogs_api.setToolTip(_("Enter your SatNOGS DB API key"))
+        self._btn_satnogs_api.clicked.connect(self._on_satnogs_api)
+        footer.addWidget(self._btn_satnogs_api)
+
+        self._btn_satnogs_link = QPushButton(_("SatNOGS ↗"))
+        self._btn_satnogs_link.setToolTip(_("Open the selected satellite's page on db.satnogs.org"))
+        self._btn_satnogs_link.clicked.connect(self._on_open_satnogs)
+        footer.addWidget(self._btn_satnogs_link)
+
+        footer.addStretch()
+
         self._btn_clear = QPushButton(_("Clear Log"))
         self._btn_clear.clicked.connect(self._on_clear)
+        footer.addWidget(self._btn_clear)
         self._btn_export = QPushButton(_("Export CSV…"))
         self._btn_export.clicked.connect(self._on_export_csv)
-        footer.addWidget(self._btn_clear)
-        footer.addStretch()
         footer.addWidget(self._btn_export)
         root.addLayout(footer)
+
+        self._refresh_satnogs_toggle()
+        self._update_satnogs_link_enabled()
 
     # ------------------------------------------------------------------ #
     # Public API — called by main_window when satellite selection changes
@@ -264,6 +340,7 @@ class TelemetryTab(QWidget):
                         combo.blockSignals(False)
                         break
         self._refresh_input_combo()
+        self._update_satnogs_link_enabled()
 
     # ------------------------------------------------------------------ #
     # Signals from RadioControlWidget
@@ -462,6 +539,7 @@ class TelemetryTab(QWidget):
 
     def _on_afsk_sat_changed(self, _index: int) -> None:
         norad = self._combo_afsk_sat.currentData()
+        self._update_satnogs_link_enabled()
         if norad is not None:
             self.satellite_selected.emit(int(norad), "afsk")
 
@@ -711,6 +789,7 @@ class TelemetryTab(QWidget):
             return
         norad = self._callsign_to_norad(frame.src)
         tf = decode_telemetry(frame.src, frame.payload, norad)
+        now = datetime.datetime.now(datetime.UTC)
         self._append_row(
             callsign=tf.callsign,
             sat_name=tf.satellite_name,
@@ -718,7 +797,11 @@ class TelemetryTab(QWidget):
             norad=tf.norad,
             gray=not tf.has_fields,
         )
-        self._persist_frame(tf, datetime.datetime.now(datetime.UTC))
+        self._persist_frame(tf, now)
+        # Forward the raw frame (full AX.25 frame, FCS already stripped by the
+        # demodulator / KISS) to the SatNOGS DB. No-op unless the footer
+        # toggle is on and callsign / location / API key are all set.
+        get_satnogs_uploader().submit(self._conn, raw, norad, now)
 
     def _callsign_to_norad(self, callsign: str) -> int | None:
         call_upper = callsign.upper().split("-")[0]
@@ -857,6 +940,78 @@ class TelemetryTab(QWidget):
                 writer.writerow(
                     [(item.text() if (item := self._table.item(r, c)) else "") for c in range(4)]
                 )
+
+    # ------------------------------------------------------------------ #
+    # SatNOGS DB upload (footer controls)
+    # ------------------------------------------------------------------ #
+
+    def _refresh_satnogs_toggle(self) -> None:
+        """Sync the toggle button's checked state / label / colour from the
+        saved ``satnogs_upload_settings``."""
+        on = bool(load_satnogs_upload_settings(self._conn).get("enabled"))
+        self._btn_satnogs_toggle.blockSignals(True)
+        self._btn_satnogs_toggle.setChecked(on)
+        self._btn_satnogs_toggle.blockSignals(False)
+        self._btn_satnogs_toggle.setText(
+            _("SatNOGS Upload: ON") if on else _("SatNOGS Upload: OFF")
+        )
+        # Green when on; neutral grey when off (grey rather than red so an
+        # idle-but-not-broken state does not read as an error).
+        colour = "#27ae60" if on else "#7f8c8d"
+        self._btn_satnogs_toggle.setStyleSheet(
+            f"QPushButton {{ background-color: {colour}; color: white; padding: 3px 10px; }}"
+        )
+
+    def _on_satnogs_toggled(self, checked: bool) -> None:
+        settings = load_satnogs_upload_settings(self._conn)
+        settings["enabled"] = checked
+        save_satnogs_upload_settings(self._conn, settings)
+        self._refresh_satnogs_toggle()
+        if checked:
+            self._warn_if_satnogs_unconfigured()
+
+    def _on_satnogs_api(self) -> None:
+        settings = load_satnogs_upload_settings(self._conn)
+        dlg = _SatnogsApiKeyDialog(str(settings.get("api_key", "")), self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            settings["api_key"] = dlg.api_key()
+            save_satnogs_upload_settings(self._conn, settings)
+            if bool(settings.get("enabled")):
+                self._warn_if_satnogs_unconfigured()
+
+    def _warn_if_satnogs_unconfigured(self) -> None:
+        """If upload is on but a prerequisite is missing, say so in the status
+        label — uploads are otherwise silently skipped."""
+        settings = load_satnogs_upload_settings(self._conn)
+        missing: list[str] = []
+        if not str(settings.get("api_key", "")).strip():
+            missing.append(_("API key"))
+        if not get_station_callsign(self._conn):
+            missing.append(_("callsign"))
+        if get_station_latlon(self._conn) is None:
+            missing.append(_("station location"))
+        if missing:
+            self._set_error(
+                _("SatNOGS Upload is on but not sending — missing: ") + ", ".join(missing)
+            )
+
+    def _active_norad(self) -> int | None:
+        """NORAD of the satellite the SatNOGS link should point at: the one
+        selected in the active mode's combo, else the main-list selection."""
+        combo = self._combo_gr_sat if self._current_mode() == _MODE_GR else self._combo_afsk_sat
+        data = combo.currentData()
+        if isinstance(data, int):
+            return data
+        return self._selected_norad
+
+    def _update_satnogs_link_enabled(self) -> None:
+        self._btn_satnogs_link.setEnabled(self._active_norad() is not None)
+
+    def _on_open_satnogs(self) -> None:
+        norad = self._active_norad()
+        if norad is None:
+            return
+        self.open_satnogs_requested.emit(norad, self._selected_name or "")
 
     # ------------------------------------------------------------------ #
     # Cleanup
