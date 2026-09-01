@@ -574,6 +574,26 @@ class SettingsDialog(QDialog):
         )
         note.setWordWrap(True)
         layout.addWidget(note)
+
+        # --- Application updates ---
+        upd_group = QGroupBox(_("Application Updates"))
+        upd_form = QVBoxLayout(upd_group)
+
+        self._update_check_cb = QCheckBox(_("Check for updates on startup"))
+        self._update_check_cb.setChecked(True)
+        upd_form.addWidget(self._update_check_cb)
+
+        upd_note = QLabel(
+            _(
+                "When enabled, FBSAT59 checks GitHub for a newer release at startup\n"
+                "and shows a notice if one is available. Critical updates are always\n"
+                "announced regardless of this setting."
+            )
+        )
+        upd_note.setWordWrap(True)
+        upd_form.addWidget(upd_note)
+
+        layout.addWidget(upd_group)
         layout.addStretch()
         return tab
 
@@ -644,6 +664,7 @@ class SettingsDialog(QDialog):
         self._notif_warn_spin.setValue(int(s["warn_minutes"]))
         self._notif_los_cb.setChecked(bool(s["los_enabled"]))
         self._notif_los_spin.setValue(int(s["los_warn_minutes"]))
+        self._update_check_cb.setChecked(self.get_update_check_on_startup(self._conn))
 
     def _save_notification_settings(self) -> None:
         """Persist notification preferences from the tab widgets to the DB."""
@@ -658,6 +679,24 @@ class SettingsDialog(QDialog):
                 "los_warn_minutes": self._notif_los_spin.value(),
             },
         )
+        self._conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value, updated_at)"
+            " VALUES ('update_check_on_startup', ?, CURRENT_TIMESTAMP)",
+            ("1" if self._update_check_cb.isChecked() else "0",),
+        )
+        self._conn.commit()
+
+    @staticmethod
+    def get_update_check_on_startup(conn: sqlite3.Connection) -> bool:
+        """Return whether the routine startup update check is enabled (default True).
+
+        Critical advisories are surfaced regardless of this value -- see
+        MainWindow._on_update_manifest().
+        """
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'update_check_on_startup'"
+        ).fetchone()
+        return row is None or str(row["value"]) != "0"
 
     # ------------------------------------------------------------------ #
     # Settings persistence

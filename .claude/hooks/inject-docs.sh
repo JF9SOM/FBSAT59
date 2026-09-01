@@ -57,6 +57,10 @@ case "$rel" in
     key="autotrack"
     docs=(docs/ui-components.md docs/meteor-satdump.md)
     ;;
+  src/core/update_check.py)
+    key="update-check"
+    docs=(docs/app-update.md)
+    ;;
   src/core/*)
     key="core"
     docs=(docs/doppler-tuning.md)

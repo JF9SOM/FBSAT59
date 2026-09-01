@@ -1,0 +1,8 @@
+{
+  "latest_version": "0.3.49",
+  "minimum_supported_version": "0.3.49",
+  "critical": true,
+  "message_ja": "重要なアップデートがあります。SATNOGS のデータベース仕様変更により、v0.3.49 より前のバージョンでは衛星の状態表示（色分け）が正しくなくなります。最新バージョンにアップデートしてください。",
+  "message_en": "A critical update is available. A change to the SATNOGS database means versions before v0.3.49 show incorrect satellite status colours. Please update to the latest version.",
+  "_comment": "Bump latest_version on every release. Raise minimum_supported_version and set critical=true only when older versions genuinely misbehave and every user must update; otherwise keep critical=false. See docs/app-update.md."
+}

@@ -36,6 +36,7 @@ CLAUDE.md 本体はコア（規約・ルール・アーキテクチャ）のみ�
 | `src/data/**` | tle.md |
 | `src/core/celestial_engine.py` | moon-eme.md |
 | `src/core/autotrack.py` | ui-components.md, meteor-satdump.md |
+| `src/core/update_check.py` | app-update.md |
 | `src/core/**`（他） | doppler-tuning.md |
 | `src/ui/main_window.py` | lock-dial-feedback.md, doppler-tuning.md, ui-components.md |
 | `src/ui/**`（他） | ui-components.md |
@@ -51,6 +52,7 @@ CLAUDE.md 本体はコア（規約・ルール・アーキテクチャ）のみ�
 | METEOR/HRPT・SatDump・`src/comms/meteor/`・Autotrack 連携 | [docs/meteor-satdump.md](docs/meteor-satdump.md) |
 | Dashboard/Pass Chart/レーダー/Autotrack/Favorite グループ/スマホ Web UI | [docs/ui-components.md](docs/ui-components.md) |
 | Moon/EME 追尾 | [docs/moon-eme.md](docs/moon-eme.md) |
+| アプリ更新通知・起動時チェック・`update_manifest.json`・重要アップデート告知 | [docs/app-update.md](docs/app-update.md) |
 | i18n・翻訳・`.po`/`.mo` 更新 | [docs/i18n.md](docs/i18n.md) |
 | CI/CD・ネイティブライブラリのビルド（Hamlib/ft8lib/libq65/libft4wsjt） | [docs/ci-cd.md](docs/ci-cd.md) |
 | 「既知のバグ」「既知の制約（修正不可）」を確認したいとき | [docs/known-issues.md](docs/known-issues.md) |
@@ -660,6 +662,15 @@ except ImportError:
 - **macOS**: PyInstaller → `.dmg`
 - **GitHub Actions**: タグpushで3プラットフォーム自動ビルド → GitHub Releases
 
+### リリース時は `update_manifest.json` も更新する（2026-09-01 追加）
+
+タグを打つ前に、`main` の `update_manifest.json` の `latest_version` を新バージョンへ
+更新してプッシュする（アプリは `raw.githubusercontent.com/.../main/update_manifest.json` を
+起動時に見て、旧バージョンのユーザーへ更新を促す）。旧バージョンが実害を出すリリース
+（例: 2026-09 の SATNOGS status 語彙変更）のときだけ `minimum_supported_version` を
+引き上げて `critical: true` にする。通常リリースでは `critical: false` に戻すこと。
+詳細は [docs/app-update.md](docs/app-update.md)。
+
 ### タグを打たずに手動テストビルドする（2026-07-07 追加）
 
 `.github/workflows/ci.yml` に `workflow_dispatch`（`platforms` 入力: `macos`/`windows`/`linux`/`all`、デフォルト `macos`）を追加済み。GitHub の Actions タブ →
@@ -934,6 +945,7 @@ sudo usermod -aG dialout $USER
 | [docs/meteor-satdump.md](docs/meteor-satdump.md) | SatDump 検出・起動の一連の修正、METEOR/HRPT タブ、ライブ Waterfall、過去受信フォルダ、Autotrack 連携の不具合群（Issue #27） |
 | [docs/ui-components.md](docs/ui-components.md) | Dashboard タブ、Group Pass Chart、Autotrack 設計、カスタム Favorite グループ、スマホ Web UI |
 | [docs/moon-eme.md](docs/moon-eme.md) | Moon/EME 追尾設計（DE421 / CelestialEngine / EME ドップラー往復補正 / EME 周波数） |
+| [docs/app-update.md](docs/app-update.md) | 起動時アップデートチェック、`update_manifest.json`、重要アップデートの強制告知、リリース時の manifest 更新手順 |
 | [docs/i18n.md](docs/i18n.md) | 多言語化ロードマップ、翻訳範囲、i18n 実装上の落とし穴、日本語 .po 更新手順 |
 | [docs/known-issues.md](docs/known-issues.md) | 既知の制約（プラットフォーム由来・修正不可）、既知のバグ（未修正） |
 | [docs/ci-cd.md](docs/ci-cd.md) | CI/CD トラブルシューティング履歴（Hamlib / macOS / Windows / ft4wsjt ビルド固有） |

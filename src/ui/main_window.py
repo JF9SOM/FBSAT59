@@ -910,6 +910,14 @@ class MainWindow(QMainWindow):
         # at least a second or two.
         self._lock_watch_worker = DopplerWorker(self._lock_watch_cycle, interval_s=2.0)
 
+        # Automatic startup update check (see core/update_check.py). Delayed
+        # so the splash/first paint is done first; runs off-thread and is
+        # silent on any failure. A *critical* advisory is shown even when
+        # the routine check is switched off.
+        self._update_check_worker: object | None = None
+        self._update_check_shown = False
+        QTimer.singleShot(5000, self._start_update_check)
+
     # ------------------------------------------------------------------ #
     # UI construction
     # ------------------------------------------------------------------ #
@@ -7189,6 +7197,101 @@ class MainWindow(QMainWindow):
         dlg = AppUpdateDialog(self)
         dlg.quit_requested.connect(QApplication.quit)
         dlg.exec()
+
+    # ------------------------------------------------------------------ #
+    # Automatic startup update check (see core/update_check.py)
+    # ------------------------------------------------------------------ #
+
+    def _start_update_check(self) -> None:
+        """Kick off the background manifest fetch, if this build qualifies.
+
+        Skipped for dev builds and the 0.0.0 CI placeholder -- those are
+        already ahead of the last tag and must not be told to "update".
+        The fetch itself always runs (even with the routine check turned
+        off) so a *critical* advisory is never missed; the preference only
+        gates the non-critical "new version available" notice.
+        """
+        from PySide6.QtWidgets import QApplication
+
+        from core.update_check import UpdateCheckWorker, is_release_version
+
+        ver = QApplication.applicationVersion() or ""
+        if not is_release_version(ver):
+            return
+        worker = UpdateCheckWorker(self)
+        worker.checked.connect(self._on_update_manifest)
+        worker.start()
+        self._update_check_worker = worker
+
+    @Slot(object)
+    def _on_update_manifest(self, manifest: object) -> None:
+        from PySide6.QtWidgets import QApplication
+
+        from core.update_check import UpdateLevel, evaluate
+        from i18n import get_language
+
+        if self._update_check_shown:
+            return
+
+        row = self._conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'update_notify_skipped_version'"
+        ).fetchone()
+        skipped = str(row["value"]) if row and row["value"] else None
+
+        result = evaluate(
+            QApplication.applicationVersion() or "",
+            manifest,  # type: ignore[arg-type]
+            skipped_version=skipped,
+            lang=get_language(),
+        )
+
+        if result.level is UpdateLevel.CRITICAL:
+            self._update_check_shown = True
+            self._show_critical_update_dialog(result.latest_version, result.message)
+        elif result.level is UpdateLevel.NEW_VERSION and self._update_check_on_startup_enabled():
+            self._update_check_shown = True
+            self._show_new_version_notice(result.latest_version)
+
+    def _update_check_on_startup_enabled(self) -> bool:
+        from ui.settings_dialog import SettingsDialog
+
+        return SettingsDialog.get_update_check_on_startup(self._conn)
+
+    def _show_critical_update_dialog(self, latest: str, message: str) -> None:
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle(_("Important Update"))
+        box.setText(
+            message or _("An important update is available. Please update to the latest version.")
+        )
+        box.setInformativeText(_("Latest version: {ver}").format(ver=latest))
+        update_btn = box.addButton(_("Update Now"), QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(_("Later"), QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(update_btn)
+        box.exec()
+        if box.clickedButton() is update_btn:
+            self._on_check_updates()
+
+    def _show_new_version_notice(self, latest: str) -> None:
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle(_("Update Available"))
+        box.setText(_("A new version ({ver}) is available.").format(ver=latest))
+        update_btn = box.addButton(_("Update"), QMessageBox.ButtonRole.AcceptRole)
+        skip_btn = box.addButton(_("Skip This Version"), QMessageBox.ButtonRole.ActionRole)
+        box.addButton(_("Later"), QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(update_btn)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is update_btn:
+            self._on_check_updates()
+        elif clicked is skip_btn:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value, updated_at)"
+                " VALUES ('update_notify_skipped_version', ?, CURRENT_TIMESTAMP)",
+                (latest,),
+            )
+            self._conn.commit()
 
     def _on_hamlib_update(self) -> None:
         from ui.hamlib_update_dialog import HamlibUpdateDialog
