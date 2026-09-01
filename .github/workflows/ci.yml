@@ -64,6 +64,60 @@ jobs:
           QT_QPA_PLATFORM: "offscreen"
 
   # ------------------------------------------------------------------ #
+  # update_manifest.json の latest_version をタグに追従させる            #
+  # (docs/app-update.md)。アプリは main ブランチの raw ファイルを        #
+  # 起動時に読むので、タグを打つたびにここで自動更新する。               #
+  # critical / minimum_supported_version は手動運用のまま変更しない。    #
+  # ------------------------------------------------------------------ #
+  bump-manifest:
+    name: Bump update_manifest.json
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    concurrency:
+      group: bump-manifest
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set latest_version to the tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          python - "$VERSION" <<'PY'
+          import json, pathlib, sys
+
+          version = sys.argv[1]
+          path = pathlib.Path("update_manifest.json")
+          data = json.loads(path.read_text(encoding="utf-8"))
+          data["latest_version"] = version
+          path.write_text(
+              json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Commit and push if changed
+        run: |
+          if git diff --quiet -- update_manifest.json; then
+            echo "update_manifest.json already at ${GITHUB_REF_NAME#v} — nothing to do."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add update_manifest.json
+          git commit -m "chore: bump update_manifest to ${GITHUB_REF_NAME#v} [skip ci]"
+          for attempt in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            echo "push attempt $attempt failed, retrying…"
+            sleep 5
+          done
+          echo "::error::could not push update_manifest.json bump to main"
+          exit 1
+
+  # ------------------------------------------------------------------ #
   # ビルド（タグpush時のみ）
   # ------------------------------------------------------------------ #
   build-linux:

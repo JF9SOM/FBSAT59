@@ -662,14 +662,14 @@ except ImportError:
 - **macOS**: PyInstaller → `.dmg`
 - **GitHub Actions**: タグpushで3プラットフォーム自動ビルド → GitHub Releases
 
-### リリース時は `update_manifest.json` も更新する（2026-09-01 追加）
+### リリース時の `update_manifest.json`（2026-09-01 追加）
 
-タグを打つ前に、`main` の `update_manifest.json` の `latest_version` を新バージョンへ
-更新してプッシュする（アプリは `raw.githubusercontent.com/.../main/update_manifest.json` を
-起動時に見て、旧バージョンのユーザーへ更新を促す）。旧バージョンが実害を出すリリース
-（例: 2026-09 の SATNOGS status 語彙変更）のときだけ `minimum_supported_version` を
-引き上げて `critical: true` にする。通常リリースでは `critical: false` に戻すこと。
-詳細は [docs/app-update.md](docs/app-update.md)。
+アプリは `raw.githubusercontent.com/.../main/update_manifest.json` を起動時に見て、
+旧バージョンのユーザーへ更新を促す。`latest_version` は**タグ push 時に CI の
+`bump-manifest` ジョブが自動で `main` に反映**するので手動更新は不要。
+`critical` / `minimum_supported_version` だけ手動運用で、旧バージョンが実害を出す
+リリース（例: 2026-09 の SATNOGS status 語彙変更）のときだけ引き上げ・`true` にし、
+通常リリースでは `critical: false` に戻す。詳細は [docs/app-update.md](docs/app-update.md)。
 
 ### タグを打たずに手動テストビルドする（2026-07-07 追加）
 

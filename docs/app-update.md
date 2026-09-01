@@ -48,12 +48,19 @@ FBSAT59 には以前から**手動**の更新機能がある（`Help > Check for
 
 ### リリース時の運用（重要）
 
-- **毎リリース**: `latest_version` を新バージョンへ更新する
-- **旧バージョンが実害を出すリリースのときだけ**: `minimum_supported_version` を
-  その新バージョンへ引き上げ、`critical` を `true` にする
-- 通常リリースでは `critical` は `false` に戻す（さもないと全員に強制ポップアップが出続ける）
-- `update_manifest.json` は `main` ブランチのファイルなので、**タグを打つ前に**
-  main へマージ/プッシュしておくこと（タグの中身ではなく `main` の HEAD が参照される）
+- **`latest_version` はタグ push 時に CI が自動更新する**（`.github/workflows/ci.yml` の
+  `bump-manifest` ジョブ。`v*` タグで発火し、`main` の `update_manifest.json` の
+  `latest_version` をタグ名へ書き換えて `main` へコミット・push する。コミットメッセージに
+  `[skip ci]` を付けるので無限ループしない）。手で更新する必要はない
+- **`critical` / `minimum_supported_version` は手動運用**。旧バージョンが実害を出す
+  リリースのときだけ `minimum_supported_version` をその新バージョンへ引き上げ、
+  `critical` を `true` にする。通常リリースでは `critical` を `false` に戻す
+  （さもないと minimum 未満の全員に強制ポップアップが出続ける）。この2フィールドを
+  変更する場合はタグを打つ前に `main` へ push しておくこと
+- アプリが読むのは常に `main` ブランチの raw ファイル（タグの中身ではない）
+- `bump-manifest` ジョブは `permissions: contents: write` が必要。リポジトリの
+  Actions のデフォルトトークン権限が read の場合でも、ジョブ単位で昇格しているので動く。
+  `main` にブランチ保護を掛ける場合は bot push を許可すること
 
 ---
 
