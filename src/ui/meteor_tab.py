@@ -38,6 +38,7 @@ from PySide6.QtGui import (
     QActionGroup,
     QIcon,
     QImage,
+    QMouseEvent,
     QPixmap,
     QTransform,
     QWheelEvent,
@@ -328,6 +329,11 @@ class MeteorTab(QWidget):
         # level that overrides it until a Fit menu item is picked again or
         # a different image is shown (see _on_image_wheel()).
         self._zoom_factor: float | None = None
+        # Left-button drag-to-pan state (see eventFilter / _on_image_pan_*).
+        # _pan_last is kept in global (screen) coordinates so the delta stays
+        # stable even as the label itself moves under the cursor while panning.
+        self._panning: bool = False
+        self._pan_last: QPoint = QPoint()
         self._cities_overlay_process: CitiesOverlayProcess | None = None
         self._setup_ui()
         self._fft_frame_received.connect(self._waterfall_widget.add_frame)
@@ -925,6 +931,9 @@ class MeteorTab(QWidget):
         """
         self._current_original_image = image
         self._zoom_factor = None
+        # Resting cursor advertises the drag-to-pan affordance (see
+        # _on_image_pan_*); it flips to a closed hand while dragging.
+        self._image_label.setCursor(Qt.CursorShape.OpenHandCursor)
         self._rescale_and_display()
 
     def _apply_rotation(self, image: QImage) -> QImage:
@@ -983,10 +992,60 @@ class MeteorTab(QWidget):
             self._rescale_and_display()
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        if watched is self._image_label and event.type() == QEvent.Type.Wheel:
-            self._on_image_wheel(event)  # type: ignore[arg-type]
-            return True
+        if watched is self._image_label:
+            etype = event.type()
+            if etype == QEvent.Type.Wheel:
+                self._on_image_wheel(event)  # type: ignore[arg-type]
+                return True
+            if etype == QEvent.Type.MouseButtonPress:
+                return self._on_image_pan_press(event)  # type: ignore[arg-type]
+            if etype == QEvent.Type.MouseMove:
+                return self._on_image_pan_move(event)  # type: ignore[arg-type]
+            if etype == QEvent.Type.MouseButtonRelease:
+                return self._on_image_pan_release(event)  # type: ignore[arg-type]
         return super().eventFilter(watched, event)
+
+    # ------------------------------------------------------------------
+    # Left-button drag-to-pan
+    # ------------------------------------------------------------------
+    #
+    # Hold the left button on the image and drag to move it inside the
+    # QScrollArea's viewport -- the "hand tool" of an image viewer. Works
+    # together with mouse-wheel zoom: zoom in past the viewport, then drag
+    # to reach any part of the image without hunting for the scrollbars.
+    # Right-click still opens the context menu (CustomContextMenu handles
+    # that separately); only the left button pans.
+
+    def _on_image_pan_press(self, event: QMouseEvent) -> bool:
+        if event.button() != Qt.MouseButton.LeftButton:
+            return False
+        self._panning = True
+        self._pan_last = event.globalPosition().toPoint()
+        self._image_label.setCursor(Qt.CursorShape.ClosedHandCursor)
+        return True
+
+    def _on_image_pan_move(self, event: QMouseEvent) -> bool:
+        if not self._panning:
+            return False
+        pos = event.globalPosition().toPoint()
+        delta = pos - self._pan_last
+        self._pan_last = pos
+        hbar = self._image_scroll.horizontalScrollBar()
+        vbar = self._image_scroll.verticalScrollBar()
+        hbar.setValue(hbar.value() - delta.x())
+        vbar.setValue(vbar.value() - delta.y())
+        return True
+
+    def _on_image_pan_release(self, event: QMouseEvent) -> bool:
+        if event.button() != Qt.MouseButton.LeftButton or not self._panning:
+            return False
+        self._panning = False
+        self._image_label.setCursor(
+            Qt.CursorShape.OpenHandCursor
+            if self._current_original_image is not None
+            else Qt.CursorShape.ArrowCursor
+        )
+        return True
 
     def _on_image_wheel(self, event: QWheelEvent) -> None:
         """Mouse-wheel zoom in/out around the currently displayed size.
@@ -1267,6 +1326,8 @@ class MeteorTab(QWidget):
     def _on_clear_history(self) -> None:
         self._preview_priority = -1
         self._current_original_image = None
+        self._panning = False
+        self._image_label.setCursor(Qt.CursorShape.ArrowCursor)
         self._history_list.clear()
         self._image_label.clear()
         self._image_label.setText(_("No image received yet."))
