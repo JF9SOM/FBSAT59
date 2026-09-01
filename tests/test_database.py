@@ -282,3 +282,108 @@ class TestSatnogsSourceIdRepair:
         ).fetchone()
         assert row["satnogs_source_id"] is None
         conn2.close()
+
+
+class TestSatnogsInOrbitStatusRepair:
+    """_apply_migrations() one-time repair for the 2026-09 SatNOGS 'status'
+    vocabulary change ('alive' -> 'in orbit'), which flipped ~1700 orbiting
+    satellites to a grey 'unknown' on the first sync afterwards.
+    """
+
+    def _seed(self, tmp_path: Path) -> Path:
+        db_path = tmp_path / "test.db"
+        conn = init_database(db_path)
+        # init_database() already ran the repair once (no-op on an empty DB) and
+        # stamped the marker. Clear it so the corruption seeded below stands in
+        # for a DB upgraded from a pre-repair build that never self-healed.
+        conn.execute("DELETE FROM app_settings WHERE key = 'db_repair_satnogs_in_orbit_v1'")
+        # Corrupted: real catalogue NORAD, has a TLE, non-placeholder name,
+        # wrongly auto-hidden.
+        conn.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (57166, 'METEOR M2-3', 'unknown', 2)"
+        )
+        conn.execute("INSERT INTO tle_data (norad_cat_id, line1, line2) VALUES (57166, 'l1', 'l2')")
+        # Genuinely unknown: no TLE on file -> must be left alone.
+        conn.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (12345, 'FutureSat', 'unknown', 0)"
+        )
+        # Provisional placeholder NORAD -> must be left alone even with a TLE.
+        conn.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (90001, '#90001', 'unknown', 0)"
+        )
+        conn.execute("INSERT INTO tle_data (norad_cat_id, line1, line2) VALUES (90001, 'l1', 'l2')")
+        # User-hidden (is_hidden=1) corrupted row -> status repaired, stays hidden.
+        conn.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (33591, 'NOAA 19', 'unknown', 1)"
+        )
+        conn.execute("INSERT INTO tle_data (norad_cat_id, line1, line2) VALUES (33591, 'l1', 'l2')")
+        conn.execute("INSERT INTO sync_log (sync_type, status) VALUES ('satnogs_names', 'success')")
+        conn.execute("INSERT INTO sync_log (sync_type, status) VALUES ('celestrak', 'success')")
+        conn.commit()
+        conn.close()
+        return db_path
+
+    def test_repair_restores_status_and_unhides(self, tmp_path: Path) -> None:
+        db_path = self._seed(tmp_path)
+        conn = init_database(db_path)
+
+        rows = {
+            r["norad_cat_id"]: r
+            for r in conn.execute("SELECT norad_cat_id, status, is_hidden FROM satellites")
+        }
+        assert rows[57166]["status"] == "alive"
+        assert rows[57166]["is_hidden"] == 0  # auto-hide (2) cleared
+        assert rows[33591]["status"] == "alive"
+        assert rows[33591]["is_hidden"] == 1  # user-hide (1) preserved
+        assert rows[12345]["status"] == "unknown"  # no TLE -> untouched
+        assert rows[90001]["status"] == "unknown"  # provisional -> untouched
+
+        # Forces one authoritative re-sync; unrelated sync_log rows kept.
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM sync_log WHERE sync_type = 'satnogs_names'"
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            conn.execute("SELECT COUNT(*) FROM sync_log WHERE sync_type = 'celestrak'").fetchone()[
+                0
+            ]
+            == 1
+        )
+        assert (
+            conn.execute(
+                "SELECT value FROM app_settings WHERE key = 'db_repair_satnogs_in_orbit_v1'"
+            ).fetchone()["value"]
+            == "2"
+        )
+        conn.close()
+
+    def test_repair_runs_only_once(self, tmp_path: Path) -> None:
+        db_path = self._seed(tmp_path)
+        conn = init_database(db_path)
+        # Simulate a later legitimate sync marking 57166 unknown again.
+        conn.execute("UPDATE satellites SET status = 'unknown' WHERE norad_cat_id = 57166")
+        conn.execute("INSERT INTO sync_log (sync_type, status) VALUES ('satnogs_names', 'success')")
+        conn.commit()
+        conn.close()
+
+        conn2 = init_database(db_path)
+        # Marker already set -> repair does not run again, does not re-flip.
+        assert (
+            conn2.execute("SELECT status FROM satellites WHERE norad_cat_id = 57166").fetchone()[
+                "status"
+            ]
+            == "unknown"
+        )
+        assert (
+            conn2.execute(
+                "SELECT COUNT(*) FROM sync_log WHERE sync_type = 'satnogs_names'"
+            ).fetchone()[0]
+            == 1
+        )
+        conn2.close()

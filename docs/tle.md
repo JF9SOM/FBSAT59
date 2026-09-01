@@ -832,6 +832,46 @@ f'<span style="background-color:{color}; border:1px solid #555;">&nbsp;&nbsp;&nb
 副次的に正しく描画されるようになった）。QLabel/QTextDocumentで色見本・バッジ的なUIを作る際は
 毎回この制約に注意すること。
 
+### SATNOGS衛星 `status` 語彙の変更（`alive` → `in orbit`）と大量 `unknown` 化バグ（2026-09-01 修正）
+
+#### 症状
+
+衛星リストで大量の衛星（METEOR / NOAA / Metop を含む軌道上の衛星ほぼ全て、実測 ~1700 件）が
+突然グレー（`status='unknown'`）表示になった。AMSAT 運用状況を持つアマチュア衛星は
+`amsat_status` 由来の緑/黄/赤が優先されるため目立たないが、AMSAT 非掲載の気象衛星などは
+色の根拠が `satellites.status` しか無いため一斉にグレー落ちする。
+
+#### 原因
+
+SATNOGS が `/api/satellites/` の `status` フィールドの語彙を刷新した。運用判断を持たなくなり、
+`alive` は `in orbit` に改名、`dead` は廃止（軌道上にある限り `in orbit`。減衰予測日は別途
+`decayed` 日付フィールド、受信実績は `reception_status` が担う）。現在の値は
+`in orbit` / `re-entered` / `future` の3種類のみ。
+
+`_SATNOGS_STATUS_MAP`（`src/data/transmitter_manager.py`、2026-05-21 実装）は
+`alive`/`dead`/`re-entered`/`future` しか知らず、`sync_satellite_names()` の
+`_SATNOGS_STATUS_MAP.get(raw, "unknown")` フォールバックにより **未知の `in orbit` が
+すべて `unknown` に変換され**、8/30 前後の名前同期で軌道上の全衛星の `satellites.status` が
+`unknown` に上書きされた。グレー表示に加え、[TLE なし衛星の自動非表示ルール](#tle-なし衛星の自動非表示ルール)
+の「`status='unknown'` → 即時 `is_hidden=2`」経路にも乗ってしまう危険があった。
+
+#### 修正（`fix(data): map SATNOGS 'in orbit' status + repair corrupted DB`）
+
+1. `_SATNOGS_STATUS_MAP` に `"in orbit": "alive"` を追加。`in orbit` は厳密には運用中を
+   意味しないが、旧 `alive` も同程度に緩く、実運用判断は `amsat_status` が担うため従来挙動に戻す。
+2. `sync_satellite_names()` のフォールバック堅牢化: **未知の raw status を受け取ったとき、
+   既存行が `alive`/`dead` なら上書きせず維持**（`logger.warning` を出す）。将来 SATNOGS が
+   再び語彙を変えても大量破損しない。
+3. `database.py _apply_migrations()` に**一度だけ実行される DB 修復** `_repair_satnogs_in_orbit_status()`
+   を追加（`app_settings` の `db_repair_satnogs_in_orbit_v1` マーカーで冪等化）。
+   - 対象: `status='unknown'` かつ `norad_cat_id < 90000` かつ `tle_data` に行あり かつ
+     名前がプレースホルダでない（`future` 衛星・仮ID・正体不明物体を除外するヒューリスティック）
+   - 処理: `status='alive'` に戻し、その行が `is_hidden=2`（自動非表示）なら `is_hidden=0` に戻す
+     （`is_hidden=1` のユーザー手動非表示は触らない ← `sync_satellite_names()` の既存 un-hide ロジックと同じ）
+   - 併せて `sync_log` の `satnogs_names` 行を削除し、次回起動で `is_satellite_names_stale()` を
+     True にして権威的な名前再同期を1回強制（ヒューリスティックの取りこぼし・誤判定を SATNOGS の
+     値で最終補正）。ネットワーク不要で起動直後に効き、オフラインでも修復される。
+
 ### SATNOGS・CelesTrakに接続できない時はまず「自分のIPがファイアウォールでブロックされていないか」を疑うこと（2026-08-10 確定）
 
 過去に「SATNOGSに繋がらない」「TLE更新を押しても何も起きない」という症状を複数回、

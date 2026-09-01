@@ -149,6 +149,101 @@ class TestSyncSatelliteNamesUnhide:
         assert row["is_hidden"] == 0
 
 
+class TestSyncSatelliteNamesStatusVocabulary:
+    """SatNOGS reworked the /api/satellites/ 'status' vocabulary in 2026-09:
+    'alive' became 'in orbit', 'dead' was dropped. The old map's
+    ``.get(raw, "unknown")`` fallback then flipped every orbiting satellite to
+    'unknown'. 'in orbit' must map to 'alive', and an unrecognized value must
+    not clobber a known-good status.
+    """
+
+    def test_in_orbit_maps_to_alive(self, db: sqlite3.Connection) -> None:
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (57166, 'METEOR M2-3', 'unknown', 0)"
+        )
+        db.commit()
+
+        _run_sync(
+            db,
+            [
+                {
+                    "norad_cat_id": 57166,
+                    "name": "METEOR M2-3",
+                    "names": "METEOR-M N2-3",
+                    "status": "in orbit",
+                    "norad_follow_id": None,
+                }
+            ],
+        )
+
+        row = db.execute("SELECT status FROM satellites WHERE norad_cat_id = 57166").fetchone()
+        assert row["status"] == "alive"
+
+    def test_unrecognized_status_keeps_existing_known_status(self, db: sqlite3.Connection) -> None:
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (25544, 'ISS', 'alive', 0)"
+        )
+        db.commit()
+
+        _run_sync(
+            db,
+            [
+                {
+                    "norad_cat_id": 25544,
+                    "name": "ISS",
+                    "names": "",
+                    "status": "some-future-vocab",
+                    "norad_follow_id": None,
+                }
+            ],
+        )
+
+        row = db.execute("SELECT status FROM satellites WHERE norad_cat_id = 25544").fetchone()
+        assert row["status"] == "alive"
+
+    def test_unrecognized_status_on_new_satellite_is_unknown(self, db: sqlite3.Connection) -> None:
+        _run_sync(
+            db,
+            [
+                {
+                    "norad_cat_id": 99999,
+                    "name": "Mystery",
+                    "names": "",
+                    "status": "some-future-vocab",
+                    "norad_follow_id": None,
+                }
+            ],
+        )
+
+        row = db.execute("SELECT status FROM satellites WHERE norad_cat_id = 99999").fetchone()
+        assert row["status"] == "unknown"
+
+    def test_re_entered_still_maps_to_dead(self, db: sqlite3.Connection) -> None:
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (30776, 'FALCONSAT 3', 'alive', 0)"
+        )
+        db.commit()
+
+        _run_sync(
+            db,
+            [
+                {
+                    "norad_cat_id": 30776,
+                    "name": "FALCONSAT 3",
+                    "names": "",
+                    "status": "re-entered",
+                    "norad_follow_id": None,
+                }
+            ],
+        )
+
+        row = db.execute("SELECT status FROM satellites WHERE norad_cat_id = 30776").fetchone()
+        assert row["status"] == "dead"
+
+
 class TestMigrationPipelinePlaceholderGuard:
     """_run_migration_pipeline()'s "official satellite already has
     transmitters" guard used to refuse to run at all in that case. But

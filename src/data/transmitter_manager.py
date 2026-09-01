@@ -63,8 +63,19 @@ def _is_placeholder_name(name: str) -> bool:
 
 # SatNOGS status → DB status normalization map
 # 'future'/'re-entered' are converted to match the CHECK constraint ('alive','dead','unknown')
+#
+# 2026-09-01: SatNOGS reworked the /api/satellites/ 'status' vocabulary. It no
+# longer carries an operational judgement: 'alive'/'dead' were dropped and every
+# orbiting object is now reported as 'in orbit' (a separate 'decayed' date field
+# and 'reception_status' now carry the finer detail). 'in orbit' is mapped to
+# 'alive' to preserve the previous colour-coding behaviour; the real operational
+# signal in this app comes from amsat_status anyway. Without this entry an
+# unrecognised value fell through to 'unknown', which silently flipped ~1700
+# in-orbit satellites (METEOR/NOAA/Metop included) to grey "status unknown" on
+# the first sync after the SatNOGS change (see database.py's one-time repair).
 _SATNOGS_STATUS_MAP: dict[str, str] = {
     "alive": "alive",
+    "in orbit": "alive",
     "dead": "dead",
     "re-entered": "dead",
     "future": "unknown",
@@ -854,7 +865,7 @@ class TransmitterManager:
 
                     norad = int(norad_raw)
                     raw_status = str(sat.get("status", "unknown")).lower()
-                    status = _SATNOGS_STATUS_MAP.get(raw_status, "unknown")
+                    mapped_status = _SATNOGS_STATUS_MAP.get(raw_status)
 
                     # Parse alias names (e.g. "ORARI, IO-86, YB0X") into a JSON list
                     names_raw = str(sat.get("names", "") or "").strip()
@@ -870,9 +881,29 @@ class TransmitterManager:
                     is_remnant = bool(norad_follow and norad_follow != norad)
 
                     existing = self._conn.execute(
-                        "SELECT norad_cat_id FROM satellites WHERE norad_cat_id = ?",
+                        "SELECT status FROM satellites WHERE norad_cat_id = ?",
                         (norad,),
                     ).fetchone()
+
+                    if mapped_status is not None:
+                        status = mapped_status
+                    elif existing is not None and str(existing["status"]) in (
+                        "alive",
+                        "dead",
+                    ):
+                        # Unrecognized SatNOGS status vocabulary (e.g. a future
+                        # rename like the 2026-09 'alive' -> 'in orbit' change).
+                        # Keep the known-good status rather than clobbering a
+                        # whole catalogue to 'unknown'.
+                        status = str(existing["status"])
+                        logger.warning(
+                            "Unrecognized SatNOGS status %r for %d; keeping existing %r",
+                            raw_status,
+                            norad,
+                            status,
+                        )
+                    else:
+                        status = "unknown"
 
                     if existing:
                         if is_remnant:

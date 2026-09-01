@@ -439,6 +439,13 @@ ngettext("%(n)d satellite", "%(n)d satellites", n)  # 複数形対応
 - `GET /transmitters/?satellite__norad_cat_id={norad}`（`status`パラメータは付けない。
   2026-07-11以降、active/inactive/invalid全件を取得する設計に変更済み。詳細は
   「SATNOGSトランスミッター status の全件取得」セクション参照）
+- `GET /satellites/` の `status` フィールドは 2026-09 に語彙が変わり、現在は
+  `in orbit` / `re-entered` / `future` の3種類のみ（旧 `alive`/`dead` は廃止。運用判断は
+  持たず、減衰予測は別途 `decayed` 日付フィールド、受信実績は `reception_status`）。
+  `_SATNOGS_STATUS_MAP` は `in orbit`→`alive` にマップする。旧マップは `in orbit` を
+  知らず全軌道上衛星を `unknown` に落とすバグがあり、`database.py` に一度きりの DB 修復
+  （`db_repair_satnogs_in_orbit_v1`）を入れた。詳細は [docs/tle.md](docs/tle.md) の
+  「SATNOGS衛星 `status` 語彙の変更」セクション参照
 - レート制限: 緩やか（日次更新で十分）
 
 ### CelesTrak

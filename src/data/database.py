@@ -356,6 +356,75 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
 
     conn.commit()
 
+    _repair_satnogs_in_orbit_status(conn)
+
+
+def _repair_satnogs_in_orbit_status(conn: sqlite3.Connection) -> None:
+    """One-time repair for the 2026-09 SatNOGS 'status' vocabulary change.
+
+    SatNOGS renamed the /api/satellites/ 'status' value 'alive' to 'in orbit'
+    (and dropped 'dead'). The old _SATNOGS_STATUS_MAP had no entry for 'in
+    orbit', so the first sync_satellite_names() run after the change mapped
+    every orbiting object to 'unknown' via the ``.get(raw, "unknown")``
+    fallback -- flipping ~1700 satellites (METEOR / NOAA / Metop included) to a
+    grey "status unknown" in the list, and making them eligible for the
+    immediate-hide path in TLEManager on any transient TLE miss.
+
+    transmitter_manager._SATNOGS_STATUS_MAP now maps 'in orbit' -> 'alive', so
+    a future online sync would eventually heal this on its own. This repair
+    restores the state immediately and offline, then forces one authoritative
+    re-sync so SatNOGS gets the final say (it also corrects anything this
+    heuristic over-reached on).
+
+    Heuristic for "wrongly flipped": status='unknown', a real catalogue NORAD
+    (< 90000, so provisional placeholders are excluded), a TLE on file (a
+    genuine 'future'/unlaunched object has none), and a non-placeholder name.
+    Rows it repairs to 'alive' also get un-hidden if they were auto-hidden
+    (is_hidden=2); user-hidden rows (is_hidden=1) are left untouched, matching
+    sync_satellite_names()'s own un-hide-on-alive logic.
+    """
+    _MARKER = "db_repair_satnogs_in_orbit_v1"
+    done = conn.execute("SELECT 1 FROM app_settings WHERE key = ?", (_MARKER,)).fetchone()
+    if done is not None:
+        return
+
+    from data.transmitter_manager import _is_placeholder_name
+
+    candidates = conn.execute(
+        """
+        SELECT s.norad_cat_id, s.name
+        FROM satellites s
+        WHERE s.status = 'unknown'
+          AND s.norad_cat_id < 90000
+          AND EXISTS (SELECT 1 FROM tle_data t WHERE t.norad_cat_id = s.norad_cat_id)
+        """
+    ).fetchall()
+
+    repaired = 0
+    for row in candidates:
+        if _is_placeholder_name(str(row["name"])):
+            continue
+        conn.execute(
+            "UPDATE satellites SET status = 'alive',"
+            " is_hidden = CASE WHEN is_hidden = 2 THEN 0 ELSE is_hidden END,"
+            " updated_at = CURRENT_TIMESTAMP"
+            " WHERE norad_cat_id = ?",
+            (row["norad_cat_id"],),
+        )
+        repaired += 1
+
+    # Force one authoritative re-run of sync_satellite_names() on next launch:
+    # is_satellite_names_stale() keys off the newest 'satnogs_names' sync_log
+    # row, so dropping them makes it return True regardless of recency.
+    conn.execute("DELETE FROM sync_log WHERE sync_type = 'satnogs_names'")
+
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value, updated_at)"
+        " VALUES (?, ?, CURRENT_TIMESTAMP)",
+        (_MARKER, str(repaired)),
+    )
+    conn.commit()
+
 
 def init_database(db_path: Path | None = None) -> sqlite3.Connection:
     """
