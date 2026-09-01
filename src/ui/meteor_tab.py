@@ -449,6 +449,13 @@ class MeteorTab(QWidget):
         self._image_scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._image_scroll.setWidget(self._image_label)
         self._image_scroll.setStyleSheet("QScrollArea { border: 1px solid #555; }")
+        # Paint the viewport dark too, not just the label: with
+        # setWidgetResizable(False) the label keeps its pixmap size (300x200
+        # while empty), so without this only that centered rectangle was dark
+        # and the rest of the frame showed the light default background. Now
+        # the whole Image tab is #111 -- empty state, and the letterbox around
+        # a zoomed-out image alike.
+        self._image_scroll.viewport().setStyleSheet("background: #111;")
         self._preview_tabs.addTab(self._image_scroll, _("Image"))
         self._waterfall_widget = MeteorWaterfallWidget()
         self._preview_tabs.addTab(self._waterfall_widget, _("Waterfall"))
