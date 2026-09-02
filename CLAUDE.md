@@ -671,6 +671,25 @@ except ImportError:
 リリース（例: 2026-09 の SATNOGS status 語彙変更）のときだけ引き上げ・`true` にし、
 通常リリースでは `critical: false` に戻す。詳細は [docs/app-update.md](docs/app-update.md)。
 
+### リリース（タグ push）時に Claude が必ず確認すること（2026-09-02 追加）
+
+ユーザーから「タグを打って」「リリースして」「`vX.Y.Z` を出して」等の依頼を受けたら、
+**タグを push する前に**次の2点をユーザーに質問すること（勝手に判断しない）:
+
+1. **「今回のリリースは *critical* ですか？ アップデートを強制するためのフラグ
+   （`update_manifest.json` の `critical`）をオンにしますか？」**
+   - ユーザーが「はい（critical）」と答えた場合のみ、タグを打つ前に `main` の
+     `update_manifest.json` を `critical: true` にし、`minimum_supported_version` を
+     その新バージョンへ引き上げ、`message_ja` / `message_en` を今回の内容に更新して
+     push する（アプリが読むのは常に `main` の raw ファイル。タグの中身ではない）。
+   - ユーザーが「いいえ（通常リリース）」なら `critical` は `false` のまま。**直前の
+     critical リリースから `true` のまま残っていないかも確認**し、残っていれば
+     `false` に戻す commit を先に push する。
+2. コミット漏れ（`git status` にリリースに含めるべき未コミット変更がないか）と、
+   `main` の CI が緑であること。
+
+`latest_version` は CI が自動更新するので触らない。この質問を省略してタグを打たない。
+
 ### タグを打たずに手動テストビルドする（2026-07-07 追加）
 
 `.github/workflows/ci.yml` に `workflow_dispatch`（`platforms` 入力: `macos`/`windows`/`linux`/`all`、デフォルト `macos`）を追加済み。GitHub の Actions タブ →
