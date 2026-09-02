@@ -639,6 +639,14 @@ class MainWindow(QMainWindow):
         self._map_tick_counter: int = 0
         self._MAP_UPDATE_INTERVAL: int = 5
         self._MAP_UPDATE_INTERVAL_ALL_SATELLITES: int = 60
+        # World Map ground track of the selected satellite. _show_ground_track
+        # follows View > Show Ground Track; the cache holds the last computed
+        # path as (norad, computed_at_utc, points, now_index) and is refreshed
+        # on selection change or when it ages past _GROUND_TRACK_MAX_AGE_S
+        # (the path is anchored to "now", so it slowly drifts otherwise).
+        self._show_ground_track: bool = True
+        self._ground_track_cache: tuple[int, datetime, list[tuple[float, float]], int] | None = None
+        self._GROUND_TRACK_MAX_AGE_S: float = 30.0
         # Group tab auto-search: only for narrow, cheap-to-compute filters
         # (AMSAT-operational and user Favorite groups) — "All Satellites"/
         # "Amateur" etc. remain manual-search-only (too many satellites for
@@ -1194,6 +1202,15 @@ class MainWindow(QMainWindow):
             )
             view_menu.addAction(self._wide_tab_action)
             self._wide_tab_action.triggered.connect(self._on_wide_tab_toggled)
+
+            self._ground_track_action = QAction(_("Show Ground Track"), self, checkable=True)
+            self._ground_track_action.setToolTip(
+                _("Draw the selected satellite's orbit ground track on the World Map")
+            )
+            self._show_ground_track = self._load_show_ground_track()
+            self._ground_track_action.setChecked(self._show_ground_track)
+            view_menu.addAction(self._ground_track_action)
+            self._ground_track_action.triggered.connect(self._on_ground_track_toggled)
 
         # Help
         help_menu = mb.addMenu(_("Help"))
@@ -3010,7 +3027,58 @@ class MainWindow(QMainWindow):
                 self._world_map.clear_footprint()
         else:
             self._world_map.clear_footprint()
+
+        self._refresh_ground_track()
         return True
+
+    def _refresh_ground_track(self) -> None:
+        """Recompute and push the selected satellite's ground track to the map.
+
+        The path spans one orbital period (a quarter in the past, three
+        quarters ahead) sampled roughly every 45 s, and is cached so the
+        Skyfield propagation only runs on selection change or once the cached
+        path ages past _GROUND_TRACK_MAX_AGE_S.
+        """
+        if (
+            not self._show_ground_track
+            or self._engine is None
+            or self._selected_norad is None
+            or self._selected_norad == MOON_ID
+        ):
+            self._world_map.clear_ground_track()
+            self._ground_track_cache = None
+            return
+
+        norad = self._selected_norad
+        now = datetime.now(UTC)
+        entry = self._ground_track_cache
+        if (
+            entry is None
+            or entry[0] != norad
+            or (now - entry[1]).total_seconds() > self._GROUND_TRACK_MAX_AGE_S
+        ):
+            period_min = self._engine.orbital_period_minutes(norad) or 95.0
+            # Clamp so geostationary / deep-space objects don't ask for a
+            # multi-day propagation, and very low objects still get a usable line.
+            period_min = max(20.0, min(period_min, 24 * 60.0))
+            span = timedelta(minutes=period_min)
+            start = now - span * 0.25
+            end = now + span * 0.75
+            # ~45 s for a typical LEO; widen the step for long-period orbits so
+            # the sample count stays bounded (~240 points max).
+            step_s = max(45.0, span.total_seconds() / 240.0)
+            points = self._engine.ground_track(norad, start, end, step_s=step_s)
+            if len(points) < 2:
+                self._world_map.clear_ground_track()
+                self._ground_track_cache = None
+                return
+            # Sample i sits at start + i*step_s; the one nearest "now" is at
+            # (now - start) = span * 0.25.
+            now_index = min(len(points) - 1, round(span.total_seconds() * 0.25 / step_s))
+            entry = (norad, now, points, now_index)
+            self._ground_track_cache = entry
+
+        self._world_map.set_ground_track(norad, entry[2], entry[3])
 
     def _update_moon(self) -> None:
         """Update EL/AZ/Range, radar 24h arc, world map sub-point, and rotator for the Moon."""
@@ -4630,6 +4698,8 @@ class MainWindow(QMainWindow):
             self._detail_panel.clear()
             self._radio_control.clear_satellite()
             self._world_map.clear_footprint()
+            self._world_map.clear_ground_track()
+            self._ground_track_cache = None
             self._world_map.clear_moon_position()
             # Mirror _on_transmitter_changed(None)'s SDR-side reset: without
             # this, SdrControlWidget still thinks a transponder is active
@@ -5439,6 +5509,32 @@ class MainWindow(QMainWindow):
         self._at_dialog.set_use_utc(use_utc)
         self._detail_panel._mini_radar.set_use_utc(use_utc)
         self._notify_comms_tabs_use_utc(use_utc)
+
+    def _load_show_ground_track(self) -> bool:
+        """Return the saved 'Show Ground Track' preference (default: enabled)."""
+        row = self._conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'show_ground_track'"
+        ).fetchone()
+        if row is None or row["value"] is None:
+            return True
+        return str(row["value"]) != "0"
+
+    def _on_ground_track_toggled(self, checked: bool) -> None:
+        """Persist the 'Show Ground Track' preference and refresh the map."""
+        self._show_ground_track = checked
+        self._conn.execute(
+            """
+            INSERT OR REPLACE INTO app_settings (key, value, updated_at)
+            VALUES ('show_ground_track', ?, CURRENT_TIMESTAMP)
+            """,
+            ("1" if checked else "0",),
+        )
+        self._conn.commit()
+        self._ground_track_cache = None
+        if not checked:
+            self._world_map.clear_ground_track()
+        else:
+            self._update_world_map()
 
     def _open_url_app_mode(self, url: str) -> None:
         """Open *url* in Chrome/Chromium app mode (no browser chrome/tabs).

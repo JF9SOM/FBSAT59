@@ -292,6 +292,75 @@ class SatelliteEngine:
             )
         return result
 
+    def orbital_period_minutes(self, norad_cat_id: int) -> float | None:
+        """Return the satellite's orbital period in minutes.
+
+        Derived from the SGP4 mean motion (``no_kozai``, radians/minute).
+
+        Args:
+            norad_cat_id: NORAD satellite number
+
+        Returns:
+            Period in minutes, or None if the TLE does not exist or the mean
+            motion is not usable (e.g. a decayed element set).
+        """
+        sat = self._get_satellite(norad_cat_id)
+        if sat is None:
+            return None
+        no_kozai = float(getattr(sat.model, "no_kozai", 0.0))
+        if no_kozai <= 0.0:
+            return None
+        return float(2.0 * np.pi / no_kozai)
+
+    def ground_track(
+        self,
+        norad_cat_id: int,
+        start: datetime,
+        end: datetime,
+        step_s: float = 60.0,
+    ) -> list[tuple[float, float]]:
+        """Return the sub-satellite point path between two times.
+
+        Used by the World Map to draw the selected satellite's ground track.
+        The whole path is propagated in a single vectorised Skyfield call.
+
+        Args:
+            norad_cat_id: NORAD satellite number
+            start: Path start time (UTC; naive datetimes are treated as UTC)
+            end:   Path end time (UTC); must be later than start
+            step_s: Sampling interval in seconds (default 60)
+
+        Returns:
+            List of (latitude_deg, longitude_deg) samples ordered from start
+            to end, or an empty list if the TLE does not exist or the
+            arguments are invalid.
+        """
+        sat = self._get_satellite(norad_cat_id)
+        if sat is None:
+            return []
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=UTC)
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=UTC)
+        total_s = (end - start).total_seconds()
+        if total_s <= 0.0 or step_s <= 0.0:
+            return []
+        n_steps = int(total_s / step_s)
+        sample_times = [start + timedelta(seconds=i * step_s) for i in range(n_steps + 1)]
+        try:
+            t = self._ts.from_datetimes(sample_times)
+            sp = wgs84.subpoint_of(sat.at(t))
+            lats = [float(v) for v in np.atleast_1d(sp.latitude.degrees)]
+            lons = [float(v) for v in np.atleast_1d(sp.longitude.degrees)]
+        except Exception:
+            import logging as _logging
+
+            _logging.getLogger(__name__).exception(
+                "Skyfield ground_track() failed for NORAD %s", norad_cat_id
+            )
+            return []
+        return list(zip(lats, lons, strict=True))
+
     def invalidate_cache(self, norad_cat_id: int | None = None) -> None:
         """Clear the cache after a TLE update. Pass None to clear all entries."""
         with self._cache_lock:

@@ -803,6 +803,14 @@ msgstr "ワイドタブ"
 msgid "Shrink the satellite list and pass-prediction panels for more tab space"
 msgstr "衛星リストとパス予測パネルを縮小してタブの表示領域を広げます"
 
+#: src/ui/main_window.py:1206
+msgid "Show Ground Track"
+msgstr "地上軌跡を表示"
+
+#: src/ui/main_window.py:1208
+msgid "Draw the selected satellite's orbit ground track on the World Map"
+msgstr "選択中の衛星の軌道地上軌跡を世界地図に表示します"
+
 # --- Menu: Help ---
 #: src/ui/main_window.py:1199
 msgid "Help"

@@ -404,6 +404,9 @@ class WorldMapView(QWidget):
         self._hit_radius: float = 12.0
         # Selected satellite footprint: (norad, lat_deg, lon_deg, alt_km)
         self._footprint: tuple[int, float, float, float] | None = None
+        # Selected satellite ground track: (norad, [(lat_deg, lon_deg), ...], now_index).
+        # now_index splits the path into past (<=) and future (>=) halves.
+        self._ground_track: tuple[int, list[tuple[float, float]], int] | None = None
         # Sub-lunar point (lat_deg, lon_deg) or None when Moon is not selected
         self._moon_latlon: tuple[float, float] | None = None
         # Filter: None = show all, set = show only specified NORADs
@@ -498,6 +501,37 @@ class WorldMapView(QWidget):
         """Clear the footprint display."""
         if self._footprint is not None:
             self._footprint = None
+            self.update()
+
+    def set_ground_track(
+        self,
+        norad: int,
+        points: list[tuple[float, float]],
+        now_index: int | None = None,
+    ) -> None:
+        """Set the selected satellite's ground track (sub-satellite point path).
+
+        Drawn as a polyline in the next paintEvent, split at antimeridian
+        crossings.  Passing fewer than two points clears the track.
+
+        Args:
+            norad:     NORAD catalog number of the selected satellite
+            points:    Ordered (lat_deg, lon_deg) samples from past to future
+            now_index: Index of the sample closest to "now"; the path is drawn
+                       translucent before it and solid after it.  Defaults to
+                       the midpoint.
+        """
+        if len(points) < 2:
+            self.clear_ground_track()
+            return
+        idx = len(points) // 2 if now_index is None else max(0, min(now_index, len(points) - 1))
+        self._ground_track = (norad, list(points), idx)
+        self.update()
+
+    def clear_ground_track(self) -> None:
+        """Clear the ground track display."""
+        if self._ground_track is not None:
+            self._ground_track = None
             self.update()
 
     def set_map_image(self, path: str | None) -> None:
@@ -680,6 +714,9 @@ class WorldMapView(QWidget):
         # Footprint (drawn before satellite dots so dots render on top)
         self._draw_footprint(p, w, h)
 
+        # Ground track of the selected satellite (below dots, above footprint)
+        self._draw_ground_track(p, w, h)
+
         # Sub-lunar point (Moon icon)
         if self._moon_latlon is not None:
             mx, my = self.latlon_to_xy(self._moon_latlon[0], self._moon_latlon[1], w, h)
@@ -723,6 +760,57 @@ class WorldMapView(QWidget):
             p.drawText(int(sx) + sel_r + 2, int(sy) + 4, sel_info[0])
 
         self._draw_aprs_stations(p, w, h)
+
+    def _latlon_polyline_segments(
+        self, points: list[tuple[float, float]], w: float, h: float
+    ) -> list[QPolygonF]:
+        """Project a lat/lon path to screen space, breaking it into separate
+        polylines wherever consecutive samples jump more than 180 degrees in
+        longitude (an antimeridian crossing) so the line is not smeared
+        straight across the map — the same problem the footprint scanline
+        code handles.
+        """
+        segments: list[list[QPointF]] = [[]]
+        prev_lon: float | None = None
+        for lat, lon in points:
+            if prev_lon is not None and abs(lon - prev_lon) > 180.0:
+                segments.append([])
+            x, y = self.latlon_to_xy(lat, lon, w, h)
+            if not (math.isnan(x) or math.isnan(y)):
+                segments[-1].append(QPointF(x, y))
+            prev_lon = lon
+        return [QPolygonF(seg) for seg in segments if len(seg) >= 2]
+
+    def _draw_ground_track(self, p: QPainter, w: float, h: float) -> None:
+        """Draw the selected satellite's ground track as a polyline.
+
+        The past half (up to and including now_index) is drawn translucent
+        and the future half solid, both in the selected satellite's dot
+        colour.  The current position itself is already marked by the larger
+        yellow-outlined dot drawn elsewhere.
+        """
+        if self._ground_track is None:
+            return
+        norad, pts, now_idx = self._ground_track
+        if len(pts) < 2:
+            return
+
+        color = QColor("#FFD54F")
+        if norad in self._satellites:
+            color = QColor(self._satellites[norad][3])
+
+        past_color = QColor(color)
+        past_color.setAlpha(90)
+        past_pen = QPen(past_color, 2)
+        future_pen = QPen(color, 2)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+
+        for poly in self._latlon_polyline_segments(pts[: now_idx + 1], w, h):
+            p.setPen(past_pen)
+            p.drawPolyline(poly)
+        for poly in self._latlon_polyline_segments(pts[now_idx:], w, h):
+            p.setPen(future_pen)
+            p.drawPolyline(poly)
 
     def _draw_aprs_stations(self, p: QPainter, w: float, h: float) -> None:
         """Draw APRS ground-station pins as cyan triangles with callsign labels."""

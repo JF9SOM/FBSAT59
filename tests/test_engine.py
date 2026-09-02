@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -171,6 +171,72 @@ class TestSatelliteEngine:
         assert result.observation.range_km == expected_obs.range_km
         assert result.observation.range_rate_km_s == expected_obs.range_rate_km_s
         assert result.observation.is_above_horizon == expected_obs.is_above_horizon
+
+    def test_orbital_period_minutes_iss_is_about_92(self, engine: SatelliteEngine) -> None:
+        """ISS orbital period is ~92 min (mean motion ~15.5 rev/day)."""
+        period = engine.orbital_period_minutes(_ISS_NORAD)
+        assert period is not None
+        assert 88.0 < period < 96.0
+
+    def test_orbital_period_minutes_unknown_norad_returns_none(
+        self, engine: SatelliteEngine
+    ) -> None:
+        assert engine.orbital_period_minutes(99999) is None
+
+    def test_ground_track_returns_expected_sample_count(self, engine: SatelliteEngine) -> None:
+        start = datetime(2024, 1, 2, 0, 0, 0, tzinfo=UTC)
+        end = datetime(2024, 1, 2, 1, 0, 0, tzinfo=UTC)
+        track = engine.ground_track(_ISS_NORAD, start, end, step_s=60.0)
+        # 3600 s / 60 s + 1 endpoint = 61 samples
+        assert len(track) == 61
+        for lat, lon in track:
+            assert -90.0 <= lat <= 90.0
+            assert -180.0 <= lon <= 180.0
+
+    def test_ground_track_first_sample_matches_subpoint(self, engine: SatelliteEngine) -> None:
+        start = datetime(2024, 1, 2, 0, 0, 0, tzinfo=UTC)
+        end = datetime(2024, 1, 2, 0, 30, 0, tzinfo=UTC)
+        track = engine.ground_track(_ISS_NORAD, start, end, step_s=60.0)
+        sp = engine.subpoint(_ISS_NORAD, at=start)
+        assert sp is not None
+        assert track[0][0] == pytest.approx(sp[0], abs=1e-6)
+        assert track[0][1] == pytest.approx(sp[1], abs=1e-6)
+
+    def test_ground_track_moves_over_time(self, engine: SatelliteEngine) -> None:
+        start = datetime(2024, 1, 2, 0, 0, 0, tzinfo=UTC)
+        end = datetime(2024, 1, 2, 0, 10, 0, tzinfo=UTC)
+        track = engine.ground_track(_ISS_NORAD, start, end, step_s=60.0)
+        assert track[0] != track[-1]
+
+    def test_ground_track_naive_datetime_treated_as_utc(self, engine: SatelliteEngine) -> None:
+        aware = engine.ground_track(
+            _ISS_NORAD,
+            datetime(2024, 1, 2, 0, 0, 0, tzinfo=UTC),
+            datetime(2024, 1, 2, 0, 10, 0, tzinfo=UTC),
+            step_s=60.0,
+        )
+        naive = engine.ground_track(
+            _ISS_NORAD,
+            datetime(2024, 1, 2, 0, 0, 0),  # noqa: DTZ001
+            datetime(2024, 1, 2, 0, 10, 0),  # noqa: DTZ001
+            step_s=60.0,
+        )
+        assert aware == naive
+
+    def test_ground_track_unknown_norad_returns_empty(self, engine: SatelliteEngine) -> None:
+        assert (
+            engine.ground_track(
+                99999,
+                datetime(2024, 1, 2, 0, 0, 0, tzinfo=UTC),
+                datetime(2024, 1, 2, 1, 0, 0, tzinfo=UTC),
+            )
+            == []
+        )
+
+    def test_ground_track_non_positive_window_returns_empty(self, engine: SatelliteEngine) -> None:
+        t = datetime(2024, 1, 2, 0, 0, 0, tzinfo=UTC)
+        assert engine.ground_track(_ISS_NORAD, t, t) == []
+        assert engine.ground_track(_ISS_NORAD, t, t - timedelta(minutes=5)) == []
 
     def test_cache_populated_after_first_observe(self, engine: SatelliteEngine) -> None:
         engine.observe(_ISS_NORAD, at=datetime(2024, 1, 2, 0, 36, 57, tzinfo=UTC))
