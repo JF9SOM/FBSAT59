@@ -410,6 +410,13 @@ class SatDetailPanel(QWidget):
         show_rig_buttons = bool(config is None or config.show_rig_buttons)
         self._quick_rig1_btn.setVisible(show_rig_buttons)
         self._quick_rig2_btn.setVisible(show_rig_buttons)
+        # Always restore the Rotator button: show_radar_only() (Radio Control
+        # tab) hides it and nothing else ever re-shows it, so once the user
+        # had visited Radio Control the button stayed gone from every
+        # Communications tab's Quick Comms Control for the rest of the
+        # session. Antenna tracking is wanted on every comms tab, METEOR
+        # included, so this is unconditional (unlike the Rig 1/2 buttons).
+        self._quick_rot_btn.setVisible(True)
 
     def deactivate_comms_panel(self) -> None:
         """Hide the Comms Quick Panel (called when a resident tab other than
