@@ -18,6 +18,7 @@ import sqlite3
 import subprocess
 import sys
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, TypedDict
@@ -720,6 +721,11 @@ class MainWindow(QMainWindow):
         self._rot_busy_lock = threading.Lock()
         # When True, AZ sent to the rotator is offset by 180° (south-initialized rotator).
         self._rotator_south_init: bool = False
+        # When True, the operator is manually pointing the rotator (Radio
+        # Control > Manual > Go/Park). Satellite tracking is suspended until
+        # Resume Tracking, a satellite change, or Autotrack AOS (GitHub
+        # discussion #9).
+        self._rotator_manual_hold: bool = False
         # Cache for forced frequency transmission when the Tune button resets to centre frequency.
         # None -> use the Doppler-corrected value as-is.
         # A value -> transmit it once then reset to None.
@@ -862,6 +868,10 @@ class MainWindow(QMainWindow):
         self._radio_control.ctcss_activate_requested.connect(self._on_ctcss_activate)
         self._radio_control.rotator_connected.connect(self._on_rotator_connected)
         self._radio_control.south_init_changed.connect(self._on_south_init_changed)
+        self._radio_control.rotator_manual_goto.connect(self._on_rotator_manual_goto)
+        self._radio_control.rotator_manual_stop.connect(self._on_rotator_manual_stop)
+        self._radio_control.rotator_manual_park.connect(self._on_rotator_manual_park)
+        self._radio_control.rotator_resume_tracking.connect(self._on_rotator_resume_tracking)
         self._radio_control.rig_connected.connect(lambda: self._on_rig_slot_connected(1))
         self._radio_control.rig2_connected.connect(lambda: self._on_rig_slot_connected(2))
         self._radio_control.rig_disconnected.connect(lambda: self._on_rig_slot_disconnected(1))
@@ -4194,6 +4204,29 @@ class MainWindow(QMainWindow):
     def _send_to_rotator(self, obs: Observation | None) -> None:
         """Send AZ/EL from obs to the rotator in a background thread (non-blocking)."""
         if (
+            self._rotator_manual_hold
+            and self._rotator_controller is not None
+            and self._rotator_controller.is_connected
+        ):
+            # Operator is pointing the rotator by hand — do not fight them
+            # with satellite AZ/EL. Still poll the position so the radar
+            # marker and the manual spin-box prefill stay live.
+            if self._rot_busy_lock.acquire(blocking=False):
+                rot = self._rotator_controller
+
+                def _rot_poll() -> None:
+                    try:
+                        pos = rot.get_position()
+                        self._rot_pos_updated.emit(pos.azimuth_deg, pos.elevation_deg)
+                    except Exception as exc:
+                        logger.error("Rotator: manual-hold poll error: %s", exc)
+                    finally:
+                        self._rot_busy_lock.release()
+
+                threading.Thread(target=_rot_poll, daemon=True).start()
+            return
+
+        if (
             obs is not None
             and self._rotator_controller is not None
             and self._rotator_controller.is_connected
@@ -4226,6 +4259,9 @@ class MainWindow(QMainWindow):
         display_az = (rot_az - 180.0) % 360.0 if self._rotator_south_init else rot_az
         self._radar_view.set_rotator_position(display_az, rot_el)
         self._dashboard_view._radar.set_rotator_position(display_az, rot_el)
+        # Feed the real-world bearing to the manual AZ/EL spin boxes so they
+        # follow the rotator until the operator takes manual control.
+        self._radio_control.set_manual_prefill(display_az, rot_el)
 
     def _update_statusbar(self) -> None:
         """Update the QTH text and TLE last-updated timestamp in the status bar."""
@@ -4699,6 +4735,9 @@ class MainWindow(QMainWindow):
 
     def _on_sat_selected(self, row: int) -> None:
         """Callback invoked when the satellite list selection changes."""
+        # Changing (or clearing) the target ends any manual rotator hold —
+        # the operator has moved on to a different satellite.
+        self._clear_rotator_manual_hold()
         if row < 0:
             self._selected_norad = None
             self._current_transmitter = None
@@ -6829,10 +6868,66 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             logger.warning("Failed to load rotator_south_init: %s", exc)
 
+    def _run_rotator_op(self, fn: Callable[[RotatorController], object]) -> None:
+        """Run a one-shot rotator command in a background thread, guarded by
+        the same busy-lock as _send_to_rotator so it never races the
+        tracking cycle on the rotctld socket. Polls the position afterwards
+        so the radar marker / manual prefill refresh right away."""
+        rot = self._rotator_controller
+        if rot is None or not rot.is_connected:
+            return
+        if not self._rot_busy_lock.acquire(blocking=False):
+            return
+
+        def _worker() -> None:
+            try:
+                fn(rot)
+                pos = rot.get_position()
+                self._rot_pos_updated.emit(pos.azimuth_deg, pos.elevation_deg)
+            except Exception as exc:
+                logger.error("Rotator manual op error: %s", exc)
+            finally:
+                self._rot_busy_lock.release()
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_rotator_manual_goto(self, az_deg: float, el_deg: float) -> None:
+        """Manual rotator move to an operator-chosen real-world bearing."""
+        self._rotator_manual_hold = True
+        send_az = self._apply_south_offset(az_deg)
+        self._run_rotator_op(lambda rot: rot.goto(send_az, el_deg))
+        self._update_rot_label()
+
+    def _on_rotator_manual_stop(self) -> None:
+        """Halt rotator motion; stay in manual hold."""
+        self._run_rotator_op(lambda rot: rot.stop())
+
+    def _on_rotator_manual_park(self) -> None:
+        """Send the rotator to its park position; enter manual hold."""
+        self._rotator_manual_hold = True
+        self._run_rotator_op(lambda rot: rot.park())
+        self._update_rot_label()
+
+    def _on_rotator_resume_tracking(self) -> None:
+        """Leave manual hold; the next tick resumes satellite tracking
+        (goto() already reset the controller's catch-up state)."""
+        self._rotator_manual_hold = False
+        self._radio_control.set_rotator_manual_hold(False)
+        self._update_rot_label()
+
+    def _clear_rotator_manual_hold(self) -> None:
+        """Drop manual hold and sync the Radio Control panel (called on
+        satellite change, Autotrack AOS, and fresh rotator connect)."""
+        if self._rotator_manual_hold:
+            self._rotator_manual_hold = False
+        self._radio_control.set_rotator_manual_hold(False)
+
     def _on_rotator_connected(self) -> None:
         """Send the current satellite position to the rotator immediately after connect."""
         if self._rotator_controller is None or not self._rotator_controller.is_connected:
             return
+
+        self._clear_rotator_manual_hold()
 
         # Fetch actual rotator position and show on radar; fall back to (0, 0)
         # if get_position() returns the default RotatorState.
@@ -7534,6 +7629,9 @@ class MainWindow(QMainWindow):
         Connects rig and rotator if not already connected, then starts
         SDR recordings if the respective checkboxes are enabled.
         """
+        # Autotrack is an explicit automation the operator armed — it wins
+        # over any manual rotator hold left over from before AOS.
+        self._clear_rotator_manual_hold()
         # Connect Rig 1 — but skip it if it's an SDR and METEOR/HRPT
         # reception is enabled. The METEOR tab manages its own SDR
         # connection independently of Rig 1/2 (it reads Rig Settings > SDR

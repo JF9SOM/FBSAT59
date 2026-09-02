@@ -2151,6 +2151,48 @@ class TestHamlibRotatorController:
         assert ctrl.park()
         ctrl._sock.sendall.assert_called_with(b"K\n")  # type: ignore[union-attr]
 
+    def test_goto_disconnected_returns_false(self) -> None:
+        ctrl = self._make_ctrl()
+        assert ctrl.goto(120.0, 20.0) is False
+
+    def test_net_goto_sends_p_and_resets_catchup(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        # Pretend a tracking cycle had left the controller mid-catch-up.
+        ctrl._last_az = 200.0
+        ctrl._catching_up = True
+        ctrl._catch_up_start_time = 123.0
+
+        assert ctrl.goto(90.0, 15.0)
+
+        sent = ctrl._sock.sendall.call_args[0][0]  # type: ignore[union-attr]
+        assert sent == b"P 90.0 15.0\n"
+        # Catch-up state cleared so the next set_position() re-enters the
+        # initial-jump phase from wherever the manual move ended.
+        assert ctrl._last_az is None
+        assert ctrl._catching_up is False
+        assert ctrl._catch_up_start_time is None
+
+    def test_net_goto_clamps_elevation(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        assert ctrl.goto(45.0, 120.0)
+        sent = ctrl._sock.sendall.call_args[0][0]  # type: ignore[union-attr]
+        assert sent == b"P 45.0 90.0\n"
+
+    @pytest.mark.skipif(HAMLIB_AVAILABLE, reason="mock-only test")
+    def test_goto_then_set_position_reenters_initial_jump(self) -> None:
+        ctrl = self._make_ctrl()
+        assert ctrl.connect()
+        assert ctrl.set_position(180.0, 45.0)  # initial jump -> catch-up
+        assert ctrl._catching_up
+        assert ctrl.goto(10.0, 5.0)
+        assert ctrl._last_az is None
+        assert not ctrl._catching_up
+        # Resumed tracking: first set_position() after goto is a fresh initial jump.
+        assert ctrl.set_position(200.0, 30.0)
+        assert ctrl._catching_up
+        assert ctrl._last_az == pytest.approx(200.0)
+        ctrl.disconnect()
+
 
 # ---------------------------------------------------------------------------
 # HamlibVersionChecker

@@ -4208,6 +4208,16 @@ class RotatorController(ABC):
     def park(self) -> bool:
         """Return to the home position."""
 
+    @abstractmethod
+    def goto(self, azimuth_deg: float, elevation_deg: float) -> bool:
+        """Move once to an operator-chosen azimuth/elevation (manual control).
+
+        Unlike set_position(), which is the per-cycle satellite-tracking
+        path with its catch-up state machine, this sends a single position
+        command and leaves the controller ready to re-enter catch-up on the
+        next set_position() call (i.e. when the operator resumes tracking).
+        """
+
 
 # ---------------------------------------------------------------------------
 # HamlibRotatorController
@@ -4389,6 +4399,27 @@ class HamlibRotatorController(RotatorController):
             return True
         except Exception as exc:
             logger.error("Rotator.set_position: %s", exc)
+            return False
+
+    def goto(self, azimuth_deg: float, elevation_deg: float) -> bool:
+        """Send a single manual position command (operator, not tracking).
+
+        Resets the catch-up state so the next set_position() call (resumed
+        satellite tracking) starts a fresh initial-jump / catch-up cycle
+        from wherever the manual move left the rotator.
+        """
+        if not self.is_connected:
+            return False
+        try:
+            el_cmd = max(0.0, min(90.0, elevation_deg))
+            self._send_p(azimuth_deg, el_cmd)
+            self._last_az = None
+            self._catching_up = False
+            self._catch_up_start_time = None
+            logger.info("Rotator: manual goto az=%.1f el=%.1f", azimuth_deg, el_cmd)
+            return True
+        except Exception as exc:
+            logger.error("Rotator.goto: %s", exc)
             return False
 
     def get_position(self) -> RotatorState:

@@ -4057,6 +4057,38 @@ msgstr "ミリ秒"
 msgid "Cycle:"
 msgstr "更新周期:"
 
+#: src/ui/radio_control_widget.py:346
+msgid "Manual:"
+msgstr "手動:"
+
+#: src/ui/radio_control_widget.py:346
+msgid "Go"
+msgstr "移動"
+
+#: src/ui/radio_control_widget.py:346
+msgid "Stop"
+msgstr "停止"
+
+#: src/ui/radio_control_widget.py:346
+msgid "Park"
+msgstr "格納"
+
+#: src/ui/radio_control_widget.py:346
+msgid "Resume Tracking"
+msgstr "追尾に戻す"
+
+#: src/ui/radio_control_widget.py:940
+msgid "MANUAL"
+msgstr "手動"
+
+#: src/ui/radio_control_widget.py:405
+msgid " ms"
+msgstr " ミリ秒"
+
+#: src/ui/radio_control_widget.py:405
+msgid "Rig CAT / Doppler update interval"
+msgstr "無線機CAT／ドップラー補正の更新間隔"
+
 #: src/ui/radio_control_widget.py:413 src/ui/radio_control_widget.py:628
 msgid "OFF"
 msgstr "オフ"

@@ -23,7 +23,9 @@ from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFormLayout,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -95,6 +97,13 @@ class RadioControlWidget(QWidget):
     rig2_disconnected: Signal = Signal()
     rotator_connected: Signal = Signal()
     south_init_changed: Signal = Signal(bool)
+    # Manual rotator control (GitHub discussion #9): drive the rotator to an
+    # operator-chosen AZ/EL without satellite tracking. goto/park put the
+    # panel into "manual hold"; resume returns to tracking the selected sat.
+    rotator_manual_goto: Signal = Signal(float, float)  # az_deg, el_deg
+    rotator_manual_stop: Signal = Signal()
+    rotator_manual_park: Signal = Signal()
+    rotator_resume_tracking: Signal = Signal()
     ctcss_send_requested: Signal = Signal(float)
     ctcss_activate_requested: Signal = Signal()  # activation-tone button pressed
     cw_mode_requested: Signal = Signal(str, str)  # dl_cw_mode, ul_cw_mode
@@ -113,6 +122,9 @@ class RadioControlWidget(QWidget):
         self._rig1: RigController | None = None
         self._rig2: RigController | None = None
         self._rotator: RotatorController | None = None
+        # True while the operator is manually pointing the rotator (Go/Park);
+        # MainWindow then suspends satellite tracking until Resume.
+        self._rot_manual_hold: bool = False
         self._transmitters: list[dict[str, Any]] = []
         self._current_ctcss_hz: float | None = None
         self._ctcss_activation_hz: float | None = None
@@ -343,39 +355,100 @@ class RadioControlWidget(QWidget):
         rot_rec_row.addWidget(rec_group, 1)
         layout.addLayout(rot_rec_row)
 
+        # ── Manual rotator control (GitHub discussion #9) ──────────────
+        # Point the rotator at an operator-chosen bearing without satellite
+        # tracking (GPredict's "engage without track"). AZ/EL here are
+        # real-world bearings, same frame as the radar view — MainWindow
+        # applies the South-Init offset before sending. Go/Park put the
+        # panel into "manual hold"; MainWindow then suspends tracking until
+        # Resume Tracking. Disabled until the rotator is connected. Kept as
+        # a bare row (no group box) so it costs exactly the one row freed
+        # by folding Cycle into the Rig rows below.
+        self._manual_az_spin = QDoubleSpinBox()
+        self._manual_az_spin.setRange(0.0, 360.0)
+        self._manual_az_spin.setSingleStep(1.0)
+        self._manual_az_spin.setDecimals(1)
+        self._manual_az_spin.setSuffix("°")
+        self._manual_el_spin = QDoubleSpinBox()
+        self._manual_el_spin.setRange(0.0, 90.0)
+        self._manual_el_spin.setSingleStep(1.0)
+        self._manual_el_spin.setDecimals(1)
+        self._manual_el_spin.setSuffix("°")
+        self._manual_go_btn = QPushButton(_("Go"))
+        self._manual_go_btn.clicked.connect(self._on_manual_go)
+        self._manual_stop_btn = QPushButton(_("Stop"))
+        self._manual_stop_btn.clicked.connect(self.rotator_manual_stop.emit)
+        self._manual_park_btn = QPushButton(_("Park"))
+        self._manual_park_btn.clicked.connect(self._on_manual_park)
+        self._manual_resume_btn = QPushButton(_("Resume Tracking"))
+        self._manual_resume_btn.clicked.connect(self._on_manual_resume)
+        manual_rot_row = QHBoxLayout()
+        manual_rot_row.setSpacing(4)
+        manual_rot_row.addWidget(QLabel(_("Manual:")))
+        manual_rot_row.addWidget(QLabel(_("AZ:")))
+        manual_rot_row.addWidget(self._manual_az_spin)
+        manual_rot_row.addWidget(QLabel("EL:"))
+        manual_rot_row.addWidget(self._manual_el_spin)
+        manual_rot_row.addWidget(self._manual_go_btn)
+        manual_rot_row.addWidget(self._manual_stop_btn)
+        manual_rot_row.addWidget(self._manual_park_btn)
+        manual_rot_row.addWidget(self._manual_resume_btn)
+        manual_rot_row.addStretch()
+        layout.addLayout(manual_rot_row)
+
         # ── Status ─────────────────────────────────────────────────────
+        # QGridLayout (not QFormLayout) so the Cycle control can span the
+        # two Rig rows, vertically centred on the right — this keeps it off
+        # a row of its own. Cycle is the rig CAT / Doppler update interval
+        # (rig_cycle_ms), NOT a rotator setting, despite sitting next to the
+        # rig connect buttons.
         status_group = QGroupBox(_("Status"))
-        status_form = QFormLayout(status_group)
-        status_form.setContentsMargins(4, 2, 4, 2)
-        status_form.setSpacing(3)
-        status_form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        status_grid = QGridLayout(status_group)
+        status_grid.setContentsMargins(4, 2, 4, 2)
+        status_grid.setHorizontalSpacing(6)
+        status_grid.setVerticalSpacing(3)
+        status_grid.setColumnStretch(1, 1)
         self._rig1_status_label = QLabel(_("Not configured"))
         self._rig2_status_label = QLabel(_("Not configured"))
         self._rot_status_label = QLabel(_("Not configured"))
 
-        # Rig 1 status + Connect Rig 1 on same row
-        rig1_row = QHBoxLayout()
-        rig1_row.setSpacing(6)
+        # Row 0 — Rig 1
         self._connect_rig1_btn = QPushButton(_("Connect Rig 1"))
         self._connect_rig1_btn.clicked.connect(self._on_connect_rig1)
+        rig1_row = QHBoxLayout()
+        rig1_row.setSpacing(6)
         rig1_row.addWidget(self._rig1_status_label)
         rig1_row.addStretch()
         rig1_row.addWidget(self._connect_rig1_btn)
-        status_form.addRow(_("Rig 1:"), rig1_row)
+        status_grid.addWidget(QLabel(_("Rig 1:")), 0, 0)
+        status_grid.addLayout(rig1_row, 0, 1)
 
-        # Rig 2 status + Connect Rig 2 on same row
-        rig2_row = QHBoxLayout()
-        rig2_row.setSpacing(6)
+        # Row 1 — Rig 2
         self._connect_rig2_btn = QPushButton(_("Connect Rig 2"))
         self._connect_rig2_btn.clicked.connect(self._on_connect_rig2)
+        rig2_row = QHBoxLayout()
+        rig2_row.setSpacing(6)
         rig2_row.addWidget(self._rig2_status_label)
         rig2_row.addStretch()
         rig2_row.addWidget(self._connect_rig2_btn)
-        status_form.addRow(_("Rig 2:"), rig2_row)
+        status_grid.addWidget(QLabel(_("Rig 2:")), 1, 0)
+        status_grid.addLayout(rig2_row, 1, 1)
 
-        # Rotator status + Connect Rotator + South Init on same row
-        rot_ctrl_row = QHBoxLayout()
-        rot_ctrl_row.setSpacing(6)
+        # Cycle — spans the two Rig rows, vertically centred
+        self._cycle_spin = QSpinBox()
+        self._cycle_spin.setRange(10, 10000)
+        self._cycle_spin.setSingleStep(10)
+        self._cycle_spin.setValue(1000)
+        self._cycle_spin.setSuffix(_(" ms"))
+        self._cycle_spin.setToolTip(_("Rig CAT / Doppler update interval"))
+        self._cycle_spin.valueChanged.connect(lambda v: self.cycle_changed.emit(v))
+        cycle_box = QHBoxLayout()
+        cycle_box.setSpacing(4)
+        cycle_box.addWidget(QLabel(_("Cycle:")))
+        cycle_box.addWidget(self._cycle_spin)
+        status_grid.addLayout(cycle_box, 0, 2, 2, 1, Qt.AlignmentFlag.AlignVCenter)
+
+        # Row 2 — Rotator status + Connect Rotator + South Init
         self._connect_rot_btn = QPushButton(_("Connect Rotator"))
         self._connect_rot_btn.clicked.connect(self._on_connect_rotator)
         self._south_init_cb = QCheckBox(_("South Init"))
@@ -386,25 +459,18 @@ class RadioControlWidget(QWidget):
             )
         )
         self._south_init_cb.toggled.connect(self.south_init_changed.emit)
+        rot_ctrl_row = QHBoxLayout()
+        rot_ctrl_row.setSpacing(6)
         rot_ctrl_row.addWidget(self._rot_status_label)
         rot_ctrl_row.addStretch()
         rot_ctrl_row.addWidget(self._connect_rot_btn)
         rot_ctrl_row.addWidget(self._south_init_cb)
-        status_form.addRow(_("Rotator:"), rot_ctrl_row)
-
-        # Cycle
-        cycle_row = QHBoxLayout()
-        self._cycle_spin = QSpinBox()
-        self._cycle_spin.setRange(10, 10000)
-        self._cycle_spin.setSingleStep(10)
-        self._cycle_spin.setValue(1000)
-        self._cycle_spin.valueChanged.connect(lambda v: self.cycle_changed.emit(v))
-        cycle_row.addWidget(self._cycle_spin)
-        cycle_row.addWidget(QLabel(_("msec")))
-        cycle_row.addStretch()
-        status_form.addRow(_("Cycle:"), cycle_row)
+        status_grid.addWidget(QLabel(_("Rotator:")), 2, 0)
+        status_grid.addLayout(rot_ctrl_row, 2, 1, 1, 2)
 
         layout.addWidget(status_group)
+
+        self._update_manual_rot_enabled()
 
         # ── Autotrack indicator (compact) ─────────────────────────────
         at_group = QGroupBox(_("Autotrack"))
@@ -557,13 +623,69 @@ class RadioControlWidget(QWidget):
         self._ctcss_label.setText(f"{display_hz:.1f} Hz" if display_hz else "—")
 
     def update_rotator(self, state: RotatorState | None) -> None:
-        """Update the current rotator position."""
+        """Update the current rotator position (raw rotor degrees)."""
         if state is None:
             self._rot_az_label.setText("—")
             self._rot_el_label.setText("—")
         else:
             self._rot_az_label.setText(f"{state.azimuth_deg:.1f}°")
             self._rot_el_label.setText(f"{state.elevation_deg:.1f}°")
+
+    def set_manual_prefill(self, az_deg: float, el_deg: float) -> None:
+        """Keep the manual AZ/EL spin boxes tracking the live rotator bearing.
+
+        Called by MainWindow with real-world (South-Init-corrected) bearings.
+        Skipped while the operator holds manual control or is editing a
+        field, so it never fights user input.
+        """
+        if self._rot_manual_hold:
+            return
+        if self._manual_az_spin.hasFocus() or self._manual_el_spin.hasFocus():
+            return
+        for spin, value in (
+            (self._manual_az_spin, az_deg % 360.0),
+            (self._manual_el_spin, max(0.0, min(90.0, el_deg))),
+        ):
+            spin.blockSignals(True)
+            spin.setValue(value)
+            spin.blockSignals(False)
+
+    def set_rotator_manual_hold(self, held: bool) -> None:
+        """Set the manual-hold state from MainWindow (auto-clear on satellite
+        change, Autotrack AOS, or disconnect). Does not emit any signal."""
+        if self._rot_manual_hold == held:
+            return
+        self._rot_manual_hold = held
+        self._update_rot_status()
+
+    def _on_manual_go(self) -> None:
+        self._rot_manual_hold = True
+        self._update_rot_status()
+        self.rotator_manual_goto.emit(self._manual_az_spin.value(), self._manual_el_spin.value())
+
+    def _on_manual_park(self) -> None:
+        self._rot_manual_hold = True
+        self._update_rot_status()
+        self.rotator_manual_park.emit()
+
+    def _on_manual_resume(self) -> None:
+        self._rot_manual_hold = False
+        self._update_rot_status()
+        self.rotator_resume_tracking.emit()
+
+    def _update_manual_rot_enabled(self) -> None:
+        """Enable the manual row only while the rotator is connected; the
+        Resume Tracking button only while manual hold is active."""
+        connected = self._rotator is not None and self._rotator.is_connected
+        for w in (
+            self._manual_az_spin,
+            self._manual_el_spin,
+            self._manual_go_btn,
+            self._manual_stop_btn,
+            self._manual_park_btn,
+        ):
+            w.setEnabled(connected)
+        self._manual_resume_btn.setEnabled(connected and self._rot_manual_hold)
 
     def set_rig(self, rig: RigController | None) -> None:
         """Set the Rig 1 controller (kept for backward compatibility)."""
@@ -820,16 +942,24 @@ class RadioControlWidget(QWidget):
             self._rot_status_label.setText(_("Not configured"))
             self._rot_status_label.setStyleSheet("color: gray;")
             self._connect_rot_btn.setEnabled(False)
+            self._rot_manual_hold = False
+            self._update_manual_rot_enabled()
             return
         self._connect_rot_btn.setEnabled(True)
         if self._rotator.is_connected:
-            self._rot_status_label.setText(_("Connected"))
-            self._rot_status_label.setStyleSheet("color: green;")
+            if self._rot_manual_hold:
+                self._rot_status_label.setText(_("MANUAL"))
+                self._rot_status_label.setStyleSheet("color: #e67e22; font-weight: bold;")
+            else:
+                self._rot_status_label.setText(_("Connected"))
+                self._rot_status_label.setStyleSheet("color: green;")
             self._connect_rot_btn.setText(_("Disconnect Rotator"))
         else:
             self._rot_status_label.setText(_("Disconnected"))
             self._rot_status_label.setStyleSheet("color: gray;")
             self._connect_rot_btn.setText(_("Connect Rotator"))
+            self._rot_manual_hold = False
+        self._update_manual_rot_enabled()
 
     @staticmethod
     def _rigctld_running() -> bool:
