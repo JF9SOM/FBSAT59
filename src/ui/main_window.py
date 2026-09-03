@@ -33,10 +33,12 @@ from PySide6.QtGui import (
     QDesktopServices,
     QIcon,
     QKeySequence,
+    QPalette,
     QPixmap,
     QShortcut,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDialog,
     QFormLayout,
@@ -1226,6 +1228,12 @@ class MainWindow(QMainWindow):
                 saved_appearance = self._load_appearance_mode()
                 self._appearance_actions[saved_appearance].setChecked(True)
                 self._apply_appearance_mode(saved_appearance)
+                # Re-apply the Fusion inactive-palette fix whenever the OS
+                # colour scheme changes (e.g. user toggles macOS dark mode
+                # while the app is running in "Follow System" mode).
+                QApplication.styleHints().colorSchemeChanged.connect(
+                    lambda _scheme: self._fix_fusion_inactive_text_palette()
+                )
 
             view_menu.addSeparator()
             self._wide_tab_action = QAction(_("Wide Tab"), self, checkable=True)
@@ -5586,14 +5594,39 @@ class MainWindow(QMainWindow):
         following the OS setting.  Works with the Fusion style (macOS) and
         the native Windows / Linux styles alike.
         """
-        from PySide6.QtWidgets import QApplication  # noqa: PLC0415
-
         scheme = {
             "light": Qt.ColorScheme.Light,
             "dark": Qt.ColorScheme.Dark,
             "system": Qt.ColorScheme.Unknown,
         }.get(mode, Qt.ColorScheme.Unknown)
         QApplication.styleHints().setColorScheme(scheme)
+        self._fix_fusion_inactive_text_palette()
+
+    def _fix_fusion_inactive_text_palette(self) -> None:
+        """Work around a Qt Fusion palette bug.
+
+        Fusion does not derive the Inactive colour group's ButtonText /
+        Text / WindowText for the active colour scheme, so a non-editable
+        combo box (e.g. the satellite filter) renders black text in dark
+        mode — and white text in light mode — whenever the window loses
+        focus.  Copy the Active group's values into the Inactive group.
+        No-op unless the Fusion style is active (Windows / Linux native
+        styles are left untouched).
+        """
+        if QApplication.style().objectName() != "fusion":
+            return
+        pal = QApplication.palette()
+        for role in (
+            QPalette.ColorRole.ButtonText,
+            QPalette.ColorRole.Text,
+            QPalette.ColorRole.WindowText,
+        ):
+            pal.setColor(
+                QPalette.ColorGroup.Inactive,
+                role,
+                pal.color(QPalette.ColorGroup.Active, role),
+            )
+        QApplication.setPalette(pal)
 
     def _on_appearance_changed(self, mode: str) -> None:
         """Persist and apply the chosen appearance mode."""
