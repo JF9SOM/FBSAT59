@@ -104,9 +104,12 @@ if sys.platform == "win32" and len(sys.argv) >= 2 and sys.argv[1] == "--_gpredic
     import contextlib
     import json as _json
 
-    _mei = Path(getattr(sys, "_MEIPASS", ""))
-    if _mei.exists() and hasattr(os, "add_dll_directory"):
-        os.add_dll_directory(str(_mei))
+    # Frozen bundle only: _MEIPASS is unset when this worker runs from a source
+    # checkout, and Path("") resolves to "." — os.add_dll_directory(".") raises
+    # OSError, so guard on the string being non-empty.
+    _mei_str = getattr(sys, "_MEIPASS", "")
+    if _mei_str and Path(_mei_str).exists() and hasattr(os, "add_dll_directory"):
+        os.add_dll_directory(_mei_str)
     try:
         import SoapySDR as _s_enum
 
