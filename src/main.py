@@ -14,6 +14,7 @@ Startup sequence:
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import logging
 import os
 import sys
@@ -69,6 +70,31 @@ if sys.platform == "win32" and getattr(sys, "frozen", False):
     _mei = Path(getattr(sys, "_MEIPASS", ""))
     if _mei.exists() and hasattr(os, "add_dll_directory"):
         os.add_dll_directory(str(_mei))
+
+# Windows source checkout (NOT frozen): SoapySDR is not a pip package on
+# Windows, so `import SoapySDR` normally fails when running from source and the
+# whole SDR subsystem (device enumeration included) stays disabled.  If an
+# installed FBSAT59 build is present, borrow its already-assembled SoapySDR
+# bundle (core .pyd/.dll + soapy_modules/ + rtlsdr.dll/hackrf.dll), which is
+# built for this same CPython 3.11 x86-64 ABI.  This block is the non-frozen
+# counterpart of the frozen one above and never runs inside the shipped .exe
+# (getattr(sys, "frozen", False) is True there) nor when SoapySDR is already
+# importable (e.g. a dev venv that installed it by hand).
+if (
+    sys.platform == "win32"
+    and not getattr(sys, "frozen", False)
+    and importlib.util.find_spec("SoapySDR") is None
+):
+    _program_files = os.environ.get("PROGRAMFILES", r"C:\Program Files")
+    _installed_internal = Path(_program_files) / "FBSAT59" / "_internal"
+    if (_installed_internal / "SoapySDR.py").exists():
+        if str(_installed_internal) not in sys.path:
+            sys.path.append(str(_installed_internal))  # append: never shadow venv packages
+        if hasattr(os, "add_dll_directory"):
+            os.add_dll_directory(str(_installed_internal))
+        _borrowed_modules = _installed_internal / "soapy_modules"
+        if _borrowed_modules.exists():
+            os.environ.setdefault("SOAPY_SDR_PLUGIN_PATH", str(_borrowed_modules))
 
 # Windows subprocess enumerate worker.
 # SdrDevice.enumerate() on Windows spawns this process with --_gpredict_soapy_enum
