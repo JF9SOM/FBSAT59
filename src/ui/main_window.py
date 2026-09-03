@@ -964,7 +964,12 @@ class MainWindow(QMainWindow):
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(2, 2, 2, 2)
         left_layout.setSpacing(2)
-        left_layout.addWidget(QLabel(_("Satellites")))
+        sat_header = QLabel(_("Satellites"))
+        # Indent the text to line up with the filter combo below (Fusion
+        # insets combo text by a few px) and the menu-bar items above,
+        # instead of hugging the panel's left edge.
+        sat_header.setContentsMargins(6, 0, 0, 0)
+        left_layout.addWidget(sat_header)
 
         self._filter_combo = QComboBox()
         self._rebuild_filter_combo()
