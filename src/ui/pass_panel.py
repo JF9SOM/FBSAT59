@@ -463,7 +463,11 @@ class PassPanel(QWidget):
         self._group_min_el.setRange(0, 90)
         self._group_min_el.setValue(5)
         self._group_min_el.setSuffix("°")
-        self._group_min_el.setFixedWidth(56)
+        # A minimum (not fixed) width: the Windows native spin box needs more
+        # room for its up/down buttons than Fusion does, and a fixed 56px hid
+        # the value entirely there. Let the style's own sizeHint win when it
+        # is larger.
+        self._group_min_el.setMinimumWidth(64)
         row.addWidget(self._group_min_el)
 
         self._group_quick_combo = _make_quick_combo()
