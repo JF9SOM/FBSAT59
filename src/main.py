@@ -480,10 +480,21 @@ def _acquire_single_instance_lock() -> QLockFile | None:
 
 def main() -> int:
     """Application main entry point."""
+    # On macOS, use Qt's cross-platform "Fusion" style instead of the native
+    # Cocoa style and keep the menu bar inside the window, so the UI matches
+    # the Windows / Linux builds (native macOS metrics force wide pill buttons,
+    # extra padding, and migrate the menu bar to the system-wide top bar).
+    # Windows and Linux are left on their existing styles.
+    if sys.platform == "darwin":
+        QApplication.setAttribute(Qt.ApplicationAttribute.AA_DontUseNativeMenuBar, True)
+
     app = QApplication(sys.argv)
     app.setApplicationName("FBSAT59")
     app.setApplicationVersion(APP_VERSION)
     app.setOrganizationName("FBSAT59")
+
+    if sys.platform == "darwin":
+        app.setStyle("Fusion")
 
     # Show a splash screen right away so the user gets immediate feedback
     # instead of a blank screen while the slow startup work below runs.

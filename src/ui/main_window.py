@@ -1170,14 +1170,10 @@ class MainWindow(QMainWindow):
             comm_menu.addAction(_("METEOR / HRPT"), self._on_open_meteor)
 
         # Autotrack / Record
-        # macOS Cocoa ignores QMenuBar.addAction() — wrap in a single-item menu.
-        # Linux / Windows render direct menubar actions correctly.
-        if sys.platform == "darwin":
-            at_menu = mb.addMenu(_("Autotrack/Record"))
-            if at_menu:
-                at_menu.addAction(_("Open Autotrack/Record..."), self._on_open_autotrack_dialog)
-        else:
-            mb.addAction(_("Autotrack/Record"), self._on_open_autotrack_dialog)
+        # The non-native (Qt-drawn) menu bar is used on every platform now
+        # (macOS sets AA_DontUseNativeMenuBar in main.py), so a direct
+        # menubar action renders correctly everywhere.
+        mb.addAction(_("Autotrack/Record"), self._on_open_autotrack_dialog)
 
         # View
         view_menu = mb.addMenu(_("View"))
