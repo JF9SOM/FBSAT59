@@ -7092,6 +7092,7 @@ class MainWindow(QMainWindow):
         return "en"
 
     def _on_set_language(self, lang: str) -> None:
+        from core.app_restart import restart_application
         from i18n import set_language
 
         self._conn.execute(
@@ -7108,33 +7109,7 @@ class MainWindow(QMainWindow):
             _("Language"),
             _("FBSAT59 will restart now to apply the language change."),
         )
-        self._restart_application()
-
-    def _restart_application(self) -> None:
-        """Spawn a fresh FBSAT59 process and quit this one (used after a language change).
-
-        Works for both a source checkout (``python src/main.py``) and a frozen
-        PyInstaller bundle (AppImage/.exe/.dmg), since sys.executable/sys.argv
-        resolve correctly in both cases (see app_update_dialog.py's Linux
-        installer, which relies on the same assumption).
-        """
-        if getattr(sys, "frozen", False):
-            args = [sys.executable, *sys.argv[1:]]
-        else:
-            args = [sys.executable, *sys.argv]
-
-        from PySide6.QtWidgets import QApplication
-
-        def _spawn() -> None:
-            try:
-                subprocess.Popen(args)
-            except Exception:
-                logger.exception("Failed to spawn a new FBSAT59 process for restart")
-
-        app = QApplication.instance()
-        if app is not None:
-            app.aboutToQuit.connect(_spawn)
-        QApplication.quit()
+        restart_application()
 
     def _on_satellite_color(self) -> None:
         """Show the satellite/transmitter color legend dialog."""
