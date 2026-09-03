@@ -3853,7 +3853,12 @@ class TestFetchAllTleSourcesGuardAndFeedback:
         # The "one host down" message is shown for ~3s before falling
         # through to the reachable host's own steps, not the "both down"
         # 10s case.
-        sleep_mock.assert_called_once_with(3.0)
+        # patch("time.sleep") is process-wide, so MainWindow's own background
+        # threads (now non-blocking) can log extra sleeps and race a strict
+        # assert_called_once. Only assert the connectivity branch took the 3s
+        # "one host down" pause and not the 10s "both down" one.
+        _sleeps = [c.args[0] for c in sleep_mock.call_args_list if c.args]
+        assert 3.0 in _sleeps and 10.0 not in _sleeps
         fetch_and_update_mock.assert_not_awaited()
         active_mock.assert_awaited_once()
         assert active_mock.await_args.kwargs["celestrak_reachable"] is False
@@ -3882,7 +3887,12 @@ class TestFetchAllTleSourcesGuardAndFeedback:
 
         # Both hosts down shows the combined message for ~10s, then clears
         # the label (nothing left to fall through to).
-        sleep_mock.assert_called_once_with(10.0)
+        # patch("time.sleep") is process-wide, so MainWindow's own background
+        # threads (now non-blocking) can log extra sleeps and race a strict
+        # assert_called_once. Only assert the connectivity branch took the 10s
+        # "both hosts down" pause and not the 3s "one host down" one.
+        _sleeps = [c.args[0] for c in sleep_mock.call_args_list if c.args]
+        assert 10.0 in _sleeps and 3.0 not in _sleeps
         assert "CelesTrak" in received[-2] and "SATNOGS" in received[-2]
         assert received[-1] == ""
 
@@ -4446,7 +4456,12 @@ class TestRefreshSatelliteNamesSyncConnectivityCheck:
 
         # The "one host down" message is shown for ~3s before falling
         # through to SATNOGS's own steps, not the "both down" 10s case.
-        sleep_mock.assert_called_once_with(3.0)
+        # patch("time.sleep") is process-wide, so MainWindow's own background
+        # threads (now non-blocking) can log extra sleeps and race a strict
+        # assert_called_once. Only assert the connectivity branch took the 3s
+        # "one host down" pause and not the 10s "both down" one.
+        _sleeps = [c.args[0] for c in sleep_mock.call_args_list if c.args]
+        assert 3.0 in _sleeps and 10.0 not in _sleeps
         sync_names_mock.assert_awaited_once()
         active_mock.assert_awaited_once()
         assert active_mock.await_args.kwargs["celestrak_reachable"] is False
@@ -4475,7 +4490,12 @@ class TestRefreshSatelliteNamesSyncConnectivityCheck:
 
         # Both hosts down shows the combined message for ~10s, then clears
         # the label after the local community-transmitter load runs.
-        sleep_mock.assert_called_once_with(10.0)
+        # patch("time.sleep") is process-wide, so MainWindow's own background
+        # threads (now non-blocking) can log extra sleeps and race a strict
+        # assert_called_once. Only assert the connectivity branch took the 10s
+        # "both hosts down" pause and not the 3s "one host down" one.
+        _sleeps = [c.args[0] for c in sleep_mock.call_args_list if c.args]
+        assert 10.0 in _sleeps and 3.0 not in _sleeps
         assert "CelesTrak" in received[-2] and "SATNOGS" in received[-2]
         assert received[-1] == ""
 
