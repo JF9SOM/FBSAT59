@@ -15,7 +15,7 @@ the app can still start offline with whatever is already installed.
 
 Components: ``hamlib`` (rig control), ``ft8lib`` (FT8/FT4 decode), ``q65lib``
 (Q65), ``ft4wsjt`` (WSJT-X FT4 engine), ``direwolf`` (APRS), ``cwmodel`` (CW
-decoder ONNX model + ``onnxruntime``).
+decoder ONNX model + ``onnxruntime``), ``lameenc`` (MP3 recording, pip only).
 
 Usage:
     bootstrap_natives.py [--force] [--only a,b] [--skip a,b] [--quiet]
@@ -27,6 +27,7 @@ This file is intentionally dependency-light (standard library + ``platformdirs``
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import subprocess
@@ -36,7 +37,7 @@ import tempfile
 import urllib.error
 import urllib.request
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -66,15 +67,22 @@ def _data_root() -> Path:
 
 @dataclass(frozen=True)
 class Component:
-    """One downloadable native component."""
+    """One installable component.
+
+    A component is either a GitHub release archive (``asset_name`` /
+    ``release_tag`` set, extracted into ``install_dir()``) or a plain pip
+    package (``pip_package`` set, considered installed when ``import_name``
+    resolves).  ``cwmodel`` is a hybrid handled by its own function.
+    """
 
     name: str
-    subdir: str
-    key_file: str  # relative to the install dir; its presence means "installed"
+    subdir: str = ""
+    key_file: str = ""  # relative to install_dir(); its presence means "installed"
     release_tag: str | None = None  # None -> use the /releases/latest endpoint
     asset_name: str | None = None  # exact Windows asset file name
     repo: str = _DEFAULT_REPO
-    extra_env_keys: tuple[str, ...] = field(default=())
+    pip_package: str | None = None  # PyPI name, for pip-only components
+    import_name: str = ""  # module checked to decide a pip component is present
 
     def install_dir(self) -> Path:
         return _data_root() / self.subdir
@@ -124,6 +132,12 @@ _COMPONENTS: tuple[Component, ...] = (
         name="cwmodel",
         subdir="cwmodel",
         key_file="model.onnx",
+    ),
+    # Pure pip package: MP3 encoder for rig-audio / IQ recording.
+    Component(
+        name="lameenc",
+        pip_package="lameenc",
+        import_name="lameenc",
     ),
 )
 
@@ -259,28 +273,38 @@ def _install_release_component(comp: Component, *, force: bool, quiet: bool) -> 
     return f"installed {version or asset_name}"
 
 
+def _pip_install(package: str, *, quiet: bool) -> None:
+    """``pip install`` *package* into the running interpreter's environment."""
+    _log(f"installing {package} via pip", quiet=quiet)
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--quiet", package],
+        capture_output=True,
+        text=True,
+        timeout=600,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise BootstrapError(f"pip install {package} failed:\n{result.stderr[-500:]}")
+
+
+def _install_pip_component(comp: Component, *, force: bool, quiet: bool) -> str:
+    """Ensure a pure pip package is importable."""
+    assert comp.pip_package is not None
+    check = comp.import_name or comp.pip_package
+    present = importlib.util.find_spec(check) is not None
+    if present and not force:
+        return f"present ({comp.pip_package})"
+    _pip_install(comp.pip_package, quiet=quiet)
+    return f"installed {comp.pip_package}"
+
+
 def _install_cwmodel(comp: Component, *, force: bool, quiet: bool) -> str:
     install_dir = comp.install_dir()
     model = install_dir / comp.key_file
 
     # onnxruntime is a plain pip package; install it into the running venv.
-    try:
-        import onnxruntime  # noqa: F401
-
-        have_ort = True
-    except ImportError:
-        have_ort = False
-    if not have_ort:
-        _log("installing onnxruntime via pip", quiet=quiet)
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--quiet", "onnxruntime"],
-            capture_output=True,
-            text=True,
-            timeout=600,
-            check=False,
-        )
-        if result.returncode != 0:
-            raise BootstrapError("pip install onnxruntime failed:\n" + result.stderr[-500:])
+    if importlib.util.find_spec("onnxruntime") is None:
+        _pip_install("onnxruntime", quiet=quiet)
 
     if model.exists() and not force:
         return "present (onnxruntime ok)"
@@ -329,6 +353,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             if comp.name == "cwmodel":
                 detail = _install_cwmodel(comp, force=args.force, quiet=args.quiet)
+            elif comp.pip_package is not None:
+                detail = _install_pip_component(comp, force=args.force, quiet=args.quiet)
             else:
                 detail = _install_release_component(comp, force=args.force, quiet=args.quiet)
             status = "OK" if detail.startswith("installed") else "SKIP"
