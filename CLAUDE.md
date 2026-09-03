@@ -55,6 +55,7 @@ CLAUDE.md 本体はコア（規約・ルール・アーキテクチャ）のみ�
 | アプリ更新通知・起動時チェック・`update_manifest.json`・重要アップデート告知 | [docs/app-update.md](docs/app-update.md) |
 | i18n・翻訳・`.po`/`.mo` 更新 | [docs/i18n.md](docs/i18n.md) |
 | CI/CD・ネイティブライブラリのビルド（Hamlib/ft8lib/libq65/libft4wsjt） | [docs/ci-cd.md](docs/ci-cd.md) |
+| Windows 実機の動作確認・ログ収集・SSH 接続・`ssh windev`・`scripts/win_launch.bat`・`scripts/bootstrap_natives.py` | [docs/windows-dev-ssh.md](docs/windows-dev-ssh.md) |
 | 「既知のバグ」「既知の制約（修正不可）」を確認したいとき | [docs/known-issues.md](docs/known-issues.md) |
 
 ---
@@ -737,6 +738,12 @@ sudo usermod -aG dialout $USER
 ---
 
 > 開発環境移行 Ubuntu → macOS（2026-08-15）の記録は [docs/dev-environment-migration.md](docs/dev-environment-migration.md) へ移動しました。
+>
+> **Windows 実機への SSH アクセス**（`ssh windev` で Mac から接続し、ログ確認・pytest・
+> ソース更新を直接行う環境。ワンクリック起動 `scripts/win_launch.bat` とネイティブ依存の
+> 自動取得 `scripts/bootstrap_natives.py` を含む）は [docs/windows-dev-ssh.md](docs/windows-dev-ssh.md) を参照。
+> ユーザーから「Windows 版のログを見て」「Windows で再現するか確認して」等を依頼されたら、
+> まずこのファイルの「いちばん使うコマンド」を実行する。
 
 ---
 
@@ -969,4 +976,5 @@ sudo usermod -aG dialout $USER
 | [docs/known-issues.md](docs/known-issues.md) | 既知の制約（プラットフォーム由来・修正不可）、既知のバグ（未修正） |
 | [docs/ci-cd.md](docs/ci-cd.md) | CI/CD トラブルシューティング履歴（Hamlib / macOS / Windows / ft4wsjt ビルド固有） |
 | [docs/dev-environment-migration.md](docs/dev-environment-migration.md) | 開発環境移行 Ubuntu → macOS（2026-08-15）の記録 |
+| [docs/windows-dev-ssh.md](docs/windows-dev-ssh.md) | Windows 実機への SSH アクセス（`ssh windev`）、ワンクリック起動ランチャー、ネイティブ依存の自動取得、ソース実行時の SDR 対応、再構築手順 |
 | [docs/roadmap.md](docs/roadmap.md) | 次回の作業候補 |
