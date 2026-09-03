@@ -29,6 +29,12 @@ it packs in major digital communication modes — FT4, APRS, image reception
 | Rotator control | **Built-in Hamlib rotator — select from GUI, no rotctld needed** |
 | Supported OS | **Linux, Windows, macOS, Raspberry Pi** |
 
+> ⚠️ **Windows minimum version: Windows 8.1 or later (Windows 10/11 recommended).**
+> Plain Windows 8 (without the 8.1 update) is **not supported** and will fail to start
+> with a missing DLL error — the bundled Python 3.11 runtime requires Universal C Runtime
+> components that are only present on Windows 8.1 and later. There is no workaround on the
+> software side; please upgrade Windows to 8.1 or newer.
+
 ---
 
 ## Key Features
@@ -138,6 +144,9 @@ A summary is also available in the app under **Help → Auto Fetch Rules**.
 ## Installation
 
 ### Windows
+
+Requires **Windows 8.1 or later** (Windows 10/11 recommended). Plain Windows 8 is not
+supported and will fail to launch with a missing DLL error (see note above).
 
 Download `FBSAT59-Setup.exe` from the
 [Releases](https://github.com/JF9SOM/fbsat59/releases/latest) page

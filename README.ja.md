@@ -27,6 +27,12 @@ FBSAT59 は、衛星追尾・ドップラー補正に加え、FT4、APRS、画�
 | ローテーター制御 | **Hamlib内蔵 — GUIでローテーターを選択するだけ。rotctld不要** |
 | 対応OS | **Linux・Windows・macOS・Raspberry Pi** |
 
+> ⚠️ **Windows最低バージョン: Windows 8.1以降（Windows 10/11推奨）。**
+> 無印のWindows 8（8.1未適用）は**非対応**で、起動時にDLL不足エラーが発生します——
+> 同梱しているPython 3.11ランタイムが要求するUniversal C Runtimeコンポーネントは
+> Windows 8.1以降にのみ搭載されているためです。ソフト側での回避策はないため、
+> Windowsを8.1以降にアップデートしてください。
+
 ---
 
 ## 主な機能
@@ -136,6 +142,9 @@ SATNOGSトランスポンダーデータは初回起動時に自動取得され�
 ## インストール
 
 ### Windows
+
+**Windows 8.1以降**が必要です（Windows 10/11推奨）。無印のWindows 8は非対応で、
+DLL不足エラーで起動に失敗します（上記の注記参照）。
 
 [Releases](https://github.com/JF9SOM/fbsat59/releases/latest) ページから
 `FBSAT59-Setup.exe` をダウンロードして実行してください。
