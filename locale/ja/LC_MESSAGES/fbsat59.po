@@ -811,6 +811,22 @@ msgstr "地上軌跡を表示"
 msgid "Draw the selected satellite's orbit ground track on the World Map"
 msgstr "選択中の衛星の軌道地上軌跡を世界地図に表示します"
 
+#: src/ui/main_window.py:1212
+msgid "Appearance"
+msgstr "外観"
+
+#: src/ui/main_window.py:1219
+msgid "Follow System"
+msgstr "システムに合わせる"
+
+#: src/ui/main_window.py:1219
+msgid "Light"
+msgstr "ライト"
+
+#: src/ui/main_window.py:1219
+msgid "Dark"
+msgstr "ダーク"
+
 # --- Menu: Help ---
 #: src/ui/main_window.py:1199
 msgid "Help"

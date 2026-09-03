@@ -377,7 +377,9 @@ class PassPanel(QWidget):
         layout.setSpacing(0)
         self._tabs = QTabWidget()
         title = QLabel("  Upcoming Passes  ")
-        title.setStyleSheet("font-weight: bold; color: black;")
+        # No explicit colour: inherit the palette text colour so the label
+        # stays readable in both light and dark themes.
+        title.setStyleSheet("font-weight: bold;")
         self._tabs.setCornerWidget(title, Qt.Corner.TopRightCorner)
         self._tabs.addTab(self._build_target_tab(), _("Target"))
         self._tabs.addTab(self._build_group_tab(), _("Group"))

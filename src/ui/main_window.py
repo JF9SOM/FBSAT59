@@ -1208,6 +1208,25 @@ class MainWindow(QMainWindow):
                 self._tz_utc_action.triggered.connect(lambda: self._on_time_zone_changed(True))
                 self._tz_local_action.triggered.connect(lambda: self._on_time_zone_changed(False))
 
+            appearance_menu = view_menu.addMenu(_("Appearance"))
+            if appearance_menu:
+                appearance_group = QActionGroup(self)
+                appearance_group.setExclusive(True)
+                self._appearance_actions: dict[str, QAction] = {
+                    "system": QAction(_("Follow System"), self, checkable=True),
+                    "light": QAction(_("Light"), self, checkable=True),
+                    "dark": QAction(_("Dark"), self, checkable=True),
+                }
+                for mode, action in self._appearance_actions.items():
+                    appearance_group.addAction(action)
+                    appearance_menu.addAction(action)
+                    action.triggered.connect(
+                        lambda _checked=False, m=mode: self._on_appearance_changed(m)
+                    )
+                saved_appearance = self._load_appearance_mode()
+                self._appearance_actions[saved_appearance].setChecked(True)
+                self._apply_appearance_mode(saved_appearance)
+
             view_menu.addSeparator()
             self._wide_tab_action = QAction(_("Wide Tab"), self, checkable=True)
             self._wide_tab_action.setToolTip(
@@ -5552,6 +5571,42 @@ class MainWindow(QMainWindow):
         self._detail_panel._mini_radar.set_use_utc(use_utc)
         self._notify_comms_tabs_use_utc(use_utc)
 
+    def _load_appearance_mode(self) -> str:
+        """Return the saved appearance mode: 'system' (default), 'light', or 'dark'."""
+        row = self._conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'appearance_mode'"
+        ).fetchone()
+        val = str(row["value"]) if row and row["value"] else "system"
+        return val if val in ("system", "light", "dark") else "system"
+
+    def _apply_appearance_mode(self, mode: str) -> None:
+        """Apply a light/dark/system appearance to the running application.
+
+        Uses QStyleHints.setColorScheme (Qt 6.8+). 'system' resets to
+        following the OS setting.  Works with the Fusion style (macOS) and
+        the native Windows / Linux styles alike.
+        """
+        from PySide6.QtWidgets import QApplication  # noqa: PLC0415
+
+        scheme = {
+            "light": Qt.ColorScheme.Light,
+            "dark": Qt.ColorScheme.Dark,
+            "system": Qt.ColorScheme.Unknown,
+        }.get(mode, Qt.ColorScheme.Unknown)
+        QApplication.styleHints().setColorScheme(scheme)
+
+    def _on_appearance_changed(self, mode: str) -> None:
+        """Persist and apply the chosen appearance mode."""
+        self._conn.execute(
+            """
+            INSERT OR REPLACE INTO app_settings (key, value, updated_at)
+            VALUES ('appearance_mode', ?, CURRENT_TIMESTAMP)
+            """,
+            (mode,),
+        )
+        self._conn.commit()
+        self._apply_appearance_mode(mode)
+
     def _load_show_ground_track(self) -> bool:
         """Return the saved 'Show Ground Track' preference (default: enabled)."""
         row = self._conn.execute(
@@ -7130,9 +7185,11 @@ class MainWindow(QMainWindow):
         ]
 
         def _heading_row(text: str) -> str:
+            # No explicit text colour: inherit the palette so headings and
+            # descriptions stay readable in both light and dark themes.
             return (
                 "<tr><td colspan='2' style='padding:14px 8px 4px; "
-                f"font-weight:bold; color:#111;'>{text}</td></tr>"
+                f"font-weight:bold;'>{text}</td></tr>"
             )
 
         def _swatch(color: str) -> str:
@@ -7157,7 +7214,7 @@ class MainWindow(QMainWindow):
                 f"<tr>"
                 f"<td style='padding:6px 8px; white-space:nowrap;'>"
                 f"{_swatch(color)}{label_html}</td>"
-                f"<td style='padding:6px 8px; color:#111;'>{desc}</td>"
+                f"<td style='padding:6px 8px;'>{desc}</td>"
                 f"</tr>"
             )
 
@@ -7167,12 +7224,12 @@ class MainWindow(QMainWindow):
                 f"<tr>"
                 f"<td style='padding:6px 8px; white-space:nowrap;'>"
                 f"{_swatch(color)}{label}</td>"
-                f"<td style='padding:6px 8px; color:#111;'>{desc}</td>"
+                f"<td style='padding:6px 8px;'>{desc}</td>"
                 f"</tr>"
             )
 
         html = (
-            "<html><body style='color:#111;'>"
+            "<html><body>"
             "<table cellspacing='0' cellpadding='0' style='border-collapse:collapse;'>"
             + table_rows
             + "</table></body></html>"
