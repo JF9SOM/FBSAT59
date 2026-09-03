@@ -1,9 +1,14 @@
 # Windows 実機への SSH アクセスと開発環境
 
-Mac（主開発機）から Windows 実機へ SSH で入り、ソースを最新化してログ確認・pytest・
-Python レベルのデバッグを直接行うための環境。従来の「タグを打つ → CI ビルド →
-ダウンロード → インストール」を毎回回さずに、Windows 固有の挙動を短サイクルで
-確認できる。**2026-09-03 構築。**
+Mac（主開発機）から Windows 実機へ SSH で入り、**任意のコマンドを実行できる**汎用の
+開発アクセス。ログ確認・pytest・Python レベルのデバッグ・パッケージ状態の確認・
+ソースの最新化・スクリプトの試走など、Linux 機（`ssh GPD-MicroPC`）と同じ感覚で使える。
+従来の「タグを打つ → CI ビルド → ダウンロード → インストール」を毎回回さずに、
+Windows 固有の挙動を短サイクルで確認できる。**2026-09-03 構築。**
+
+> ユーザーが「Windows に SSH で入って」「Windows 実機で〜を確認して」と言ったら、
+> 用件がログ取得とは限らない。まずこのファイル全体（特に次の 2 セクション）を読み、
+> `ssh windev` で目的のコマンドを組み立てて実行する。
 
 ---
 
@@ -33,6 +38,46 @@ ssh windev "cd %USERPROFILE%\FBSAT59 & .venv\Scripts\python.exe scripts\bootstra
 - パスワードは不要。パスプロンプトで固まらない。
 - 日本語のエラーメッセージは cmd の CP932 で**文字化けする**が、`git` / `python` /
   `pytest` の出力は ASCII なので問題ない。
+
+---
+
+## 任意のコマンドを実行する（汎用）
+
+デフォルトシェルは **cmd.exe**。基本形：
+
+```bash
+ssh windev "<cmdの1コマンド>"
+ssh windev "cd %USERPROFILE%\FBSAT59 & <cmd1> & <cmd2>"      # & で連結（&& でも可）
+```
+
+シェル差の対応表（Linux 機の癖で書かないこと）：
+
+| やりたいこと | Linux/mac | Windows(cmd) |
+|---|---|---|
+| ファイル表示 | `cat f` | `type f` |
+| 一覧 | `ls` | `dir` / `dir /b` / `dir /s /b` |
+| 環境変数展開 | `$VAR` | `%VAR%`（例 `%USERPROFILE%` `%LOCALAPPDATA%` `%PROGRAMFILES%`） |
+| 検索 | `grep` | `findstr /I /C:"pat" file` |
+| 複数行の一部 | `head`/`tail` | Mac 側でパイプして `| tail -200`（cmd に head/tail は無い） |
+
+**クォートの入れ子**（`python -c` などを渡すとき）— cmd はバックスラッシュでの
+クォートエスケープをしない。外側 `ssh windev "..."` の中の cmd レベルのクォートは
+`\"` でエスケープし、Python コードの中は**シングルクォート**を使う：
+
+```bash
+ssh windev "cd %USERPROFILE%\FBSAT59 & .venv\Scripts\python.exe -c \"import sys; print(sys.version)\""
+```
+
+**PowerShell を使いたいとき**は bash 側をシングルクォートで囲む：
+
+```bash
+ssh windev 'powershell -NoProfile -Command "Get-Service sshd | Format-List Status,StartType"'
+```
+
+**長時間動くもの・GUI**：`python -m src.main`（GUI）は SSH 越しには画面が出ない。
+インポート確認だけなら `set QT_QPA_PLATFORM=offscreen &` を前置。
+mac には `timeout` コマンドが無いので、止め時間を制御したいときは Bash ツールの
+`timeout` 引数か、バックグラウンド実行＋後で kill を使う。
 
 ---
 

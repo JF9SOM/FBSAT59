@@ -739,11 +739,14 @@ sudo usermod -aG dialout $USER
 
 > 開発環境移行 Ubuntu → macOS（2026-08-15）の記録は [docs/dev-environment-migration.md](docs/dev-environment-migration.md) へ移動しました。
 >
-> **Windows 実機への SSH アクセス**（`ssh windev` で Mac から接続し、ログ確認・pytest・
-> ソース更新を直接行う環境。ワンクリック起動 `scripts/win_launch.bat` とネイティブ依存の
-> 自動取得 `scripts/bootstrap_natives.py` を含む）は [docs/windows-dev-ssh.md](docs/windows-dev-ssh.md) を参照。
-> ユーザーから「Windows 版のログを見て」「Windows で再現するか確認して」等を依頼されたら、
-> まずこのファイルの「いちばん使うコマンド」を実行する。
+> **Windows 実機への SSH アクセス**（`ssh windev` で Mac から接続し、**任意のコマンドを
+> 実行できる**汎用の開発アクセス。ログ確認・pytest・デバッグ・パッケージ状態確認・
+> ソース更新など。ワンクリック起動 `scripts/win_launch.bat` とネイティブ依存の自動取得
+> `scripts/bootstrap_natives.py` を含む）は [docs/windows-dev-ssh.md](docs/windows-dev-ssh.md) を参照。
+> ユーザーが「**Windows に SSH で入って**」「Windows 版の〜を確認して／試して」等と言ったら
+> （用件はログ取得に限らない）、まず [docs/windows-dev-ssh.md](docs/windows-dev-ssh.md) を読み、
+> 「任意のコマンドを実行する（汎用）」のクォート／シェル差の注意に従って `ssh windev` で実行する。
+> なお Windows のファイルは直接編集しない（編集は Mac で → commit → push → Windows は `git pull` のみ）。
 
 ---
 
