@@ -116,7 +116,7 @@ _COMPONENTS: tuple[Component, ...] = (
         name="direwolf",
         subdir="direwolf",
         key_file="direwolf.exe",
-        release_tag=None,  # latest published release
+        release_tag="direwolf-bundle",  # dedicated pre-release tag (CI: build-direwolf.yml)
         asset_name="direwolf-windows-x86_64.zip",
     ),
     # cwmodel is handled specially (pip + raw download); listed for --only/--skip.
