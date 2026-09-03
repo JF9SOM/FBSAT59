@@ -458,6 +458,9 @@ class PassPanel(QWidget):
         self._tz_label_group = QLabel("(UTC)")
         row.addWidget(self._tz_label_group)
 
+        # Extra gap (~1 char) before "Min El:" so it does not crowd the
+        # timezone label; also nudges everything to its right further right.
+        row.addSpacing(12)
         row.addWidget(QLabel(_("Min El:")))
         self._group_min_el = QSpinBox()
         self._group_min_el.setRange(0, 90)
