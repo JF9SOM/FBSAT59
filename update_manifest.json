@@ -1,5 +1,5 @@
 {
-  "latest_version": "0.3.52",
+  "latest_version": "0.3.53",
   "minimum_supported_version": "0.3.49",
   "critical": false,
   "message_ja": "重要なアップデートがあります。SATNOGS のデータベース仕様変更により、v0.3.49 より前のバージョンでは衛星の状態表示（色分け）が正しくなくなります。最新バージョンにアップデートしてください。",
