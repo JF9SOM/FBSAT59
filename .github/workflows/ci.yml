@@ -165,6 +165,20 @@ jobs:
           wget -q https://github.com/Hamlib/Hamlib/releases/download/${HAMLIB_VER}/hamlib-${HAMLIB_VER}.tar.gz
           tar -xzf hamlib-${HAMLIB_VER}.tar.gz
 
+          # Hamlib 4.7.2's own bindings/hamlib.swg hardcodes the Python 2
+          # API PyInt_FromLong() (no #if PY_MAJOR_VERSION guard) in its
+          # "int [ANY]" typemaps, used whenever a wrapped function returns a
+          # fixed-size int array. PyInt_FromLong doesn't exist in Python 3 at
+          # all, so this has always been a latent runtime crash risk on any
+          # such call; it only became a hard *compile* error on 2026-09-04
+          # when the macOS Actions runner image bumped its default clang to
+          # one that errors (not just warns) on implicit function
+          # declarations. Patch the upstream typemap to the correct Python 3
+          # API before SWIG ever sees it -- fixes the macOS compile error and
+          # removes the same landmine on Linux/Windows too.
+          sed -i.bak 's/PyInt_FromLong/PyLong_FromLong/g' \
+            hamlib-${HAMLIB_VER}/bindings/hamlib.swg
+
           # Hamlib 4.x autotools removed --enable-python; AX_PYTHON_DEVEL
           # detection fails on CI (setup-python prefix mismatch).
           # Strategy: build the C library via autotools, then use SWIG to
@@ -397,6 +411,22 @@ jobs:
           # Download Hamlib source (for .swg binding sources) and Windows DLLs
           Invoke-WebRequest "https://github.com/Hamlib/Hamlib/releases/download/$HAMLIB_VER/hamlib-$HAMLIB_VER.tar.gz" -OutFile hamlib.tar.gz
           tar -xzf hamlib.tar.gz
+
+          # Hamlib 4.7.2's own bindings/hamlib.swg hardcodes the Python 2 API
+          # PyInt_FromLong() (no #if PY_MAJOR_VERSION guard) in its
+          # "int [ANY]" typemaps, used whenever a wrapped function returns a
+          # fixed-size int array. PyInt_FromLong doesn't exist in Python 3 at
+          # all -- a latent runtime crash risk on any such call on every
+          # platform (only the macOS build step turns it into a hard
+          # *compile* error, since 2026-09-04's runner image bumped its
+          # default clang to one that errors, not just warns, on implicit
+          # function declarations). Patch the upstream typemap to the
+          # correct Python 3 API before SWIG ever sees it (same fix as the
+          # Linux/macOS build steps).
+          (Get-Content "hamlib-$HAMLIB_VER\bindings\hamlib.swg") `
+            -replace 'PyInt_FromLong', 'PyLong_FromLong' |
+            Set-Content "hamlib-$HAMLIB_VER\bindings\hamlib.swg"
+
           Invoke-WebRequest "https://github.com/Hamlib/Hamlib/releases/download/$HAMLIB_VER/hamlib-w64-$HAMLIB_VER.zip" -OutFile hamlib-win.zip
           Expand-Archive -Path hamlib-win.zip -DestinationPath hamlib-extracted
           $extracted = Get-ChildItem -Path hamlib-extracted -Directory | Select-Object -First 1
@@ -987,6 +1017,19 @@ jobs:
           # Download Hamlib source
           wget -q https://github.com/Hamlib/Hamlib/releases/download/${HAMLIB_VER}/hamlib-${HAMLIB_VER}.tar.gz
           tar -xzf hamlib-${HAMLIB_VER}.tar.gz
+
+          # Hamlib 4.7.2's own bindings/hamlib.swg hardcodes the Python 2
+          # API PyInt_FromLong() (no #if PY_MAJOR_VERSION guard) in its
+          # "int [ANY]" typemaps, used whenever a wrapped function returns a
+          # fixed-size int array. PyInt_FromLong doesn't exist in Python 3 at
+          # all, so this has always been a latent runtime crash risk on any
+          # such call; it only became a hard *compile* error on 2026-09-04
+          # when the macOS Actions runner image bumped its default clang to
+          # one that errors (not just warns) on implicit function
+          # declarations. Patch the upstream typemap to the correct Python 3
+          # API before SWIG ever sees it (same fix as the Linux build step).
+          sed -i.bak 's/PyInt_FromLong/PyLong_FromLong/g' \
+            hamlib-${HAMLIB_VER}/bindings/hamlib.swg
 
           echo "=== bindings/ ===" && ls hamlib-${HAMLIB_VER}/bindings/
 
