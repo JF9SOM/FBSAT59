@@ -220,11 +220,13 @@ def test_satnogs_toggle_reflects_saved_state_on_open(
         tab.close()
 
 
-def test_satnogs_controls_hidden_in_gr_satellites_mode(
+def test_satnogs_controls_stay_visible_in_gr_satellites_mode(
     app: QApplication, conn: sqlite3.Connection
 ) -> None:
-    """The SatNOGS-upload cluster only covers the AFSK / Direwolf path, so
-    it disappears entirely when Mode is switched to gr-satellites."""
+    """Phase 2 added the gr-satellites --kiss_server raw-frame route (see
+    _on_gr_raw_frame()), so the SatNOGS-upload cluster covers both paths now
+    and must stay visible when Mode is switched to gr-satellites (Phase 1
+    used to hide it here; that behaviour was reverted)."""
     tab = TelemetryTab(conn, _FakeRadioControl())
     try:
         widgets = (
@@ -235,7 +237,7 @@ def test_satnogs_controls_hidden_in_gr_satellites_mode(
         assert all(not w.isHidden() for w in widgets)  # AFSK mode by default
 
         tab._combo_mode.setCurrentText("gr-satellites")
-        assert all(w.isHidden() for w in widgets)
+        assert all(not w.isHidden() for w in widgets)
 
         tab._combo_mode.setCurrentText("Direwolf (AX.25)")
         assert all(not w.isHidden() for w in widgets)
@@ -296,5 +298,43 @@ def test_ax25_frame_forwards_raw_to_satnogs_uploader(
         assert c_conn is conn
         assert c_raw == raw  # full AX.25 frame, not just the payload
         assert c_norad == 43803
+    finally:
+        tab.close()
+
+
+def test_gr_raw_frame_forwards_to_satnogs_uploader_with_started_norad(
+    app: QApplication, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """_on_gr_raw_frame() (Phase 2, --kiss_server route) must attribute the
+    frame to the subprocess's started_norad — gr_satellites targets exactly
+    one satellite per run, so there is no per-frame NORAD to resolve."""
+    rec = _RecordingUploader()
+    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: rec)
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    try:
+        monkeypatch.setattr(type(tab._gr_backend), "started_norad", property(lambda self: 25544))
+        raw = b"\x9c\x86\xaa\x8e\xa6\x62\xe0\xa0\x8a\x82\xa4\x98\x86\xe1\x03\xf0\x00\x11\x22\x33"
+        tab._on_gr_raw_frame(raw)
+        assert len(rec.calls) == 1
+        c_conn, c_raw, c_norad, _c_ts = rec.calls[0]
+        assert c_conn is conn
+        assert c_raw == raw
+        assert c_norad == 25544
+    finally:
+        tab.close()
+
+
+def test_gr_raw_frame_noop_without_started_norad(
+    app: QApplication, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Before Start (or if the subprocess never actually launched),
+    started_norad is None — must not call the uploader at all."""
+    rec = _RecordingUploader()
+    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: rec)
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    try:
+        assert tab._gr_backend.started_norad is None
+        tab._on_gr_raw_frame(b"\x00\x11")
+        assert rec.calls == []
     finally:
         tab.close()

@@ -10,6 +10,9 @@ subprocess.Popen is monkeypatched.
 
 from __future__ import annotations
 
+import socket
+import subprocess
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -52,6 +55,7 @@ class TestStartExecutableResolution:
                 "resolve_gr_satellites_command",
                 return_value=([bundled_python, bundled_script], True),
             ),
+            patch.object(backend, "_supports_kiss_server", return_value=False),
             patch.object(backend.subprocess, "Popen", return_value=_FakeProc()) as mock_popen,
         ):
             ok, _msg = b.start(25544, 48000, MagicMock())
@@ -79,6 +83,7 @@ class TestStartExecutableResolution:
             patch.object(
                 backend, "resolve_gr_satellites_command", return_value=([system_path], False)
             ),
+            patch.object(backend, "_supports_kiss_server", return_value=False),
             patch.object(backend.subprocess, "Popen", return_value=_FakeProc()) as mock_popen,
         ):
             ok, _msg = b.start(25544, 48000, MagicMock())
@@ -97,6 +102,7 @@ class TestStartExecutableResolution:
                 "resolve_gr_satellites_command",
                 return_value=(["/usr/bin/gr_satellites"], False),
             ),
+            patch.object(backend, "_supports_kiss_server", return_value=False),
             patch.object(backend.subprocess, "Popen", return_value=_FakeProc()) as mock_popen,
         ):
             b.start(43803, 250000, MagicMock())
@@ -170,3 +176,170 @@ class TestListSatellitesUsesResolvedDir:
         assert info is not None
         assert info["name"] == "JO-97"
         assert info["frequencies"] == [145857000]
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: SatNOGS DB upload via --kiss_server
+# ---------------------------------------------------------------------------
+
+
+class TestSupportsKissServer:
+    def setup_method(self) -> None:
+        backend._kiss_server_supported_cache.clear()
+
+    def test_detects_flag_in_help_output(self) -> None:
+        completed = subprocess.CompletedProcess(
+            args=["gr_satellites", "--help"],
+            returncode=1,
+            stdout="",
+            stderr="usage: ... [--kiss_server [PORT]] [--kiss_server_address ADDR] ...",
+        )
+        with patch.object(backend.subprocess, "run", return_value=completed) as mock_run:
+            assert backend._supports_kiss_server(["gr_satellites"], {}) is True
+            # Second call for the same argv_prefix must hit the cache rather
+            # than re-running the ~0.3s --help probe.
+            assert backend._supports_kiss_server(["gr_satellites"], {}) is True
+        assert mock_run.call_count == 1
+
+    def test_false_when_flag_absent(self) -> None:
+        completed = subprocess.CompletedProcess(
+            args=["gr_satellites", "--help"],
+            returncode=1,
+            stdout="",
+            stderr="usage: ... (older gr_satellites build, no kiss server flags) ...",
+        )
+        with patch.object(backend.subprocess, "run", return_value=completed):
+            assert backend._supports_kiss_server(["old-gr-satellites"], {}) is False
+
+    def test_false_on_oserror(self) -> None:
+        with patch.object(backend.subprocess, "run", side_effect=OSError("not found")):
+            assert backend._supports_kiss_server(["missing-binary"], {}) is False
+
+    def test_false_on_timeout(self) -> None:
+        with patch.object(
+            backend.subprocess,
+            "run",
+            side_effect=subprocess.TimeoutExpired(cmd="x", timeout=10),
+        ):
+            assert backend._supports_kiss_server(["slow-binary"], {}) is False
+
+    def test_cache_is_keyed_by_argv_prefix(self) -> None:
+        """A different resolved command (e.g. bundled vs. system) must be
+        probed independently rather than sharing the first result."""
+        with patch.object(
+            backend.subprocess,
+            "run",
+            side_effect=[
+                subprocess.CompletedProcess([], 1, "", "--kiss_server"),
+                subprocess.CompletedProcess([], 1, "", "no such flag here"),
+            ],
+        ) as mock_run:
+            assert backend._supports_kiss_server(["binary-a"], {}) is True
+            assert backend._supports_kiss_server(["binary-b"], {}) is False
+        assert mock_run.call_count == 2
+
+
+class TestStartKissServerWiring:
+    def test_adds_kiss_flags_and_starts_reader_when_supported(self) -> None:
+        b = backend.GrSatellitesBackend()
+        with (
+            patch.object(
+                backend,
+                "resolve_gr_satellites_command",
+                return_value=(["/usr/bin/gr_satellites"], False),
+            ),
+            patch.object(backend, "_supports_kiss_server", return_value=True),
+            patch.object(backend, "find_free_port", return_value=54321),
+            patch.object(backend.subprocess, "Popen", return_value=_FakeProc()) as mock_popen,
+            patch.object(backend, "_KissFrameReader") as mock_reader_cls,
+        ):
+            ok, _msg = b.start(25544, 48000, MagicMock())
+
+        assert ok is True
+        cmd = mock_popen.call_args[0][0]
+        assert "--kiss_server" in cmd
+        assert "54321" in cmd
+        assert "--kiss_server_address" in cmd
+        assert "127.0.0.1" in cmd
+        assert b.started_norad == 25544
+        assert b.kiss_supported is True
+        mock_reader_cls.assert_called_once_with(54321, b.raw_frame_received.emit)
+        mock_reader_cls.return_value.start.assert_called_once()
+        b.stop()
+        mock_reader_cls.return_value.close.assert_called_once()
+
+    def test_skips_kiss_flags_when_unsupported(self) -> None:
+        b = backend.GrSatellitesBackend()
+        with (
+            patch.object(
+                backend,
+                "resolve_gr_satellites_command",
+                return_value=(["/usr/bin/gr_satellites"], False),
+            ),
+            patch.object(backend, "_supports_kiss_server", return_value=False),
+            patch.object(backend.subprocess, "Popen", return_value=_FakeProc()) as mock_popen,
+        ):
+            ok, _msg = b.start(25544, 48000, MagicMock())
+
+        assert ok is True
+        cmd = mock_popen.call_args[0][0]
+        assert "--kiss_server" not in cmd
+        assert b.kiss_supported is False
+        b.stop()
+
+    def test_status_mentions_unavailable_when_unsupported(self) -> None:
+        b = backend.GrSatellitesBackend()
+        statuses: list[str] = []
+        b.status_changed.connect(statuses.append)
+        with (
+            patch.object(
+                backend,
+                "resolve_gr_satellites_command",
+                return_value=(["/usr/bin/gr_satellites"], False),
+            ),
+            patch.object(backend, "_supports_kiss_server", return_value=False),
+            patch.object(backend.subprocess, "Popen", return_value=_FakeProc()),
+        ):
+            b.start(25544, 48000, MagicMock())
+        assert any("SatNOGS upload unavailable" in s for s in statuses)
+        b.stop()
+
+
+class TestKissFrameReader:
+    def test_emits_decoded_frames_from_real_socket(self) -> None:
+        """Binds a real TCP server, has the reader connect to it, then feeds
+        raw KISS bytes (mirroring gr_satellites' --kiss_server output) and
+        checks the deframed payload comes back via the callback."""
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        port = server.getsockname()[1]
+
+        received: list[bytes] = []
+        reader = backend._KissFrameReader(port, received.append)
+        reader.start()
+        try:
+            conn, _addr = server.accept()
+            try:
+                # FEND, cmd=0x00 (data frame, port 0), payload, FEND
+                conn.sendall(b"\xc0\x00hello\xc0")
+                deadline = time.monotonic() + 3
+                while not received and time.monotonic() < deadline:
+                    time.sleep(0.05)
+            finally:
+                conn.close()
+            assert received == [b"hello"]
+        finally:
+            reader.close()
+            reader.join(timeout=3)
+            server.close()
+
+    def test_close_before_any_connection_stops_the_thread(self) -> None:
+        """close() called immediately (server never listening / never
+        connects) must still let run() return instead of hanging in the
+        connect-retry loop for the full ~3s."""
+        reader = backend._KissFrameReader(1, lambda _f: None)  # port 1: nothing listens there
+        reader.start()
+        reader.close()
+        reader.join(timeout=3)
+        assert not reader.is_alive()

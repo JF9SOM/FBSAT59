@@ -145,6 +145,7 @@ class TelemetryTab(QWidget):
         self._gr_backend = GrSatellitesBackend(self)
         self._gr_backend.telemetry_received.connect(self._on_gr_telemetry)
         self._gr_backend.status_changed.connect(self._on_gr_status)
+        self._gr_backend.raw_frame_received.connect(self._on_gr_raw_frame)
         self._gr_sat_list: list[tuple[int, str]] = []  # (norad, name) sorted by name
 
         # Selected satellite from main satellite list (set_satellite from main_window)
@@ -535,14 +536,10 @@ class TelemetryTab(QWidget):
         is_gr = self._current_mode() == _MODE_GR
         self._combo_afsk_sat.setVisible(not is_gr)
         self._combo_gr_sat.setVisible(is_gr)
-        # The SatNOGS-upload cluster only handles the AFSK / Direwolf path
-        # (Phase 1); hide it entirely in gr-satellites mode.
-        for w in (
-            self._btn_satnogs_toggle,
-            self._btn_satnogs_api,
-            self._btn_satnogs_link,
-        ):
-            w.setVisible(not is_gr)
+        # SatNOGS DB upload now covers both paths (Phase 2 added the
+        # gr-satellites --kiss_server raw-frame route; see
+        # _on_gr_raw_frame()), so the upload cluster stays visible in
+        # gr-satellites mode too.
         self._refresh_status()
 
     def _on_afsk_sat_changed(self, _index: int) -> None:
@@ -720,6 +717,21 @@ class TelemetryTab(QWidget):
             data=data_text,
             norad=self._selected_norad,
         )
+
+    def _on_gr_raw_frame(self, raw: bytes) -> None:
+        """Forward a gr-satellites --kiss_server data frame to SatNOGS DB.
+
+        No-op unless the footer toggle is on and callsign / location / API
+        key are all set (see SatnogsUploader.submit()). The subprocess
+        targets exactly one satellite per run, so its NORAD is
+        ``started_norad`` rather than something resolved per-frame — mirrors
+        _on_ax25_frame()'s forwarding for the AFSK/Direwolf path.
+        """
+        norad = self._gr_backend.started_norad
+        if norad is None:
+            return
+        now = datetime.datetime.now(datetime.UTC)
+        get_satnogs_uploader().submit(self._conn, raw, norad, now)
 
     # ------------------------------------------------------------------ #
     # AFSK lifecycle (Bell 202)

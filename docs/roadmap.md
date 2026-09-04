@@ -26,7 +26,7 @@
 8. ~~**Telemetry タブ実装**~~ **→ feature/communications（v0.2.0）で完了**（AX.25受信・JSON定義デコード・12衛星フォーマット定義）
 8b. ~~**Telemetry タブ gr-satellites 統合**~~ **→ 2026-06-30 で完了**（gr-satellites サブプロセス・UDP IQ 転送・330機以上対応・衛星コンボ・SDR 自動接続・トランスポンダー自動選択・メインリスト連動）
 9. **テレメトリーフォーマット定義の追加・検証** — 実際に受信したパケットでオフセット・スケールの検証。未定義衛星のフォーマット調査
-9b. **SatNOGS DB テレメトリー投稿 Phase 2（gr-satellites 経路）— 未着手（2026-08-31 追加）** — Phase 1（AFSK/Direwolf 経路）は実装済み（`src/comms/telemetry/satnogs_uploader.py` + Telemetry タブフッターの ON/OFF トグル・API キー入力・SatNOGS ページリンク。詳細は「SatNOGS DB へのテレメトリー自動アップロード」セクション参照）。gr-satellites 経路は生フレームバイト列がパイプラインに存在しないため未対応。着手時はまず「`gr_satellites --hexdump` の hex ダンプをパース」か「`--kiss_out`/`--kiss_server` でクリーンな KISS フレームを横取り」のどちらを採るか決めること。`--hexdump` を採る場合、出力レイアウトが gr_satellites 3.x/4.x/5.x で異なるため複数版で実出力を確認してから実装する。同セクション「Phase 2 の作業予定」参照。あわせて任意項目として `telemetry_log.satnogs_submitted` 列（投稿ステータス記録）も同セクション末尾に記載
+9b. ~~**SatNOGS DB テレメトリー投稿 Phase 2（gr-satellites 経路）**~~ **→ 2026-09-04 で完了**（`--kiss_server` サイドチャネル + `_KissFrameReader` + `_on_gr_raw_frame` 配線・gr モードでの SatNOGS ボタン非表示 revert。詳細は「SatNOGS DB へのテレメトリー自動アップロード」セクション参照。**実信号での完全 E2E（録音 IQ + 実 gr_satellites）のみ手動検証待ち**）。あわせて任意項目として `telemetry_log.satnogs_submitted` 列（投稿ステータス記録）も同セクション末尾に記載（引き続き未着手）
 10. ~~**CI: Direwolf バンドルビルド**~~ **→ feature/communications で完了**（Linux/Windows/macOS 3ジョブ、タグ push 時に direwolf-{platform}-{arch}.{tar.gz|zip} を Releases にアップロード）
 11. ~~**FT4 タブ実装**~~ **→ feature/communications（v0.2.0）で完了**（Ft4Codec/ctypes + ft8_lib・Ft4Scheduler・Ft4QsoManager・Ft4Tab UI・ADIF エクスポート。ft8_lib CI バンドルビルドは v0.2.0 タグ時に Direwolf と同時実施）
 11c. ~~**Q65 Phase 1（RX）実装**~~ **→ 2026-06-26 で完了**（Q65Codec/libq65 ctypes・build-q65lib.yml CI・Help > Q65 Library Installation ダイアログ）

@@ -127,27 +127,60 @@ SkyRoof（VE3NEA、GPL-3.0）の `SkyRoof/DSP/SatnogsUploader.cs` を参照実�
 **テスト**: `tests/test_satnogs_uploader.py`（Qt 非依存・実ネットワーク不要、fake post_fn）＋
 `tests/test_telemetry_tab.py` にフッター UI テストを追加。
 
-#### Phase 2 の作業予定（gr-satellites 経路対応 — 未着手）
+#### Phase 2（gr-satellites 経路対応 — 2026-09-04 実装済み）
 
 gr-satellites 経路は `_on_gr_telemetry(text: str)` が **stdout のパース済みテキストしか受け取らず、
-生フレームバイト列がパイプラインのどこにも存在しない**ため、Phase 1 では対象外にした。
+生フレームバイト列がパイプラインのどこにも存在しない**ため、Phase 1 では対象外にしていた。
 
-**採用方針（2026-08-31 確定）**: `gr_satellites` の起動 argv に `--kiss_server <port>` を追加し、
-FBSAT59 側から KISS TCP クライアントで接続してデータフレームごとに生バイト列を取り出す。
-**stdout のテレメトリーパース表示（テーブル）は変更しない**（`--kiss_server` は追加の frame 出力
-シンクであり、`--hexdump` と違って stdout パースを潰さない — gr_satellites v5.9.0 で確認済み）。
-`--hexdump` パース案は「パース済み表示を潰す」「テキストレイアウトが版差に弱い」ため却下。
+**採用方針**: `gr_satellites` の起動 argv に `--kiss_server <port> --kiss_server_address 127.0.0.1`
+を追加し、FBSAT59 側から KISS TCP クライアントで接続してデータフレームごとに生バイト列を取り出す。
+**stdout のテレメトリーパース表示（テーブル）は変更していない**（`--kiss_server` は追加の frame
+出力シンクであり、`--hexdump` と違って stdout パースを潰さない）。`--hexdump` パース案は
+「パース済み表示を潰す」「テキストレイアウトが版差に弱い」ため却下。
 
-要点だけ:
-- **NORAD**: サブプロセスは 1 衛星向け起動なので `_started_norad` を使う（per-frame 解決不要）
-- **gr_satellites 自身の `submit_tlm` には任せない**: `~/.gr_satellites/config.ini` の
-  `[Groundstation]` にトークン欄が無く API キー必須化後の匿名 SiDS は 401 の可能性が高い／
-  設定が別ファイルに分散しトグルと不整合／投稿結果が FBSAT59 のログに出ない／
-  トグルと無関係に全衛星を投稿してしまう、等
-- **テスト**: KISS デフレーマ・reader は単体テスト可能。実 gr_satellites + 実 IQ の E2E は
-  CI 非対象（手動検証）
+**実装**（`src/comms/telemetry/gr_satellites_backend.py`）:
+- `_supports_kiss_server(argv_prefix, env)` — `<argv> --help` の出力に `--kiss_server` 文字列が
+  含まれるかで判定。結果は argv_prefix ごとにプロセス内キャッシュ（`_kiss_server_supported_cache`）
+  し、`start()` のたびに約0.3秒かかる `--help` 起動を毎回走らせない。gr_satellites 3.x（`--kiss_server`
+  はあるが `--kiss_server_address` が無い版）等の古いシステムインストールでは `False` になり、
+  この場合は `--kiss_server` 系フラグを一切 argv に追加しない（フォールバック。ゲート＋
+  `status_changed` に「SatNOGS upload unavailable (gr_satellites too old for --kiss_server)」を
+  一言追加するのみで、gr-satellites 自体の動作は妨げない）
+- `_KissFrameReader`（素の `threading.Thread`。既存の `_read_stdout` と同じ流儀）— 空きポート
+  （`comms.meteor.fft_waterfall.find_free_port()` を再利用）へ 200ms 間隔・約3秒のリトライで接続し、
+  `comms.aprs.direwolf._kiss_decode_frames()` をそのまま再利用してデフレーム（型バイト除去の
+  薄いラッパーは不要と判明——同関数がすでにデータフレーム判定・アンエスケープ・コマンドバイト
+  除去まで行う）。データフレームごとに新シグナル `raw_frame_received: Signal(bytes)` を emit
+- `started_norad` プロパティ — サブプロセスは 1 衛星向け起動なので per-frame の NORAD 解決は不要
+- `stop()` の順序: **KISS ソケット close → プロセス terminate/wait → stdout reader・KISS reader
+  の両スレッド join**（`AudioBridge`/Direwolf と同じ「producer を先に止めないとブロッキング read
+  が返らない」教訓）
 
-**詳細な実装計画は下記「【別添】Phase 2 実装計画詳細（gr-satellites 経路）」を参照。**
+**`src/ui/telemetry_tab.py`**:
+- `_gr_backend.raw_frame_received` → `_on_gr_raw_frame(raw)` を接続。`started_norad` が None
+  でなければ `get_satnogs_uploader().submit(self._conn, raw, norad, now)` を呼ぶだけ
+  （`_on_ax25_frame()` の AFSK 経路と同型）
+- **gr-satellites モードで SatNOGS 3ボタンを隠していた `_on_mode_changed()` の
+  `setVisible(False)` を revert**——Phase 2 では gr モードでも投稿対象になるため常時表示
+
+**gr_satellites 自身の `submit_tlm` には任せなかった理由**: `~/.gr_satellites/config.ini` の
+`[Groundstation]` にトークン欄が無く API キー必須化後の匿名 SiDS は 401 の可能性が高い／設定が
+別ファイルに分散しトグルと不整合／投稿結果が FBSAT59 のログに出ない／トグルと無関係に全衛星を
+投稿してしまう、等。
+
+**テスト**: `tests/test_gr_satellites_backend.py`（`_supports_kiss_server` のキャッシュ・フラグ検出・
+`start()` への配線・`_KissFrameReader` を実ソケットで検証）、`tests/test_telemetry_tab.py`
+（`_on_gr_raw_frame` の転送・gr モードでの表示維持）。
+
+**バンドル版（v5.9.0）でのスモークテスト（2026-09-04、手動）**: `gr_satellites 43803 --udp
+--udp_port <port> --iq --samp_rate 48000 --kiss_server <port2> --kiss_server_address 127.0.0.1`
+を実行し、KISS TCP ポートへの接続に成功、stdout の起動ログ（`socket_pdu` 警告・
+`udp_source: Listening...`）も従来通り出力されることを確認済み。**ただし実信号を復号して
+SatNOGS へ実際に POST するところまでの完全な E2E（録音 IQ + 実 gr_satellites）は未実施** —
+CI 非対象・手動検証が必要な項目として残っている（AX.25 衛星1機・非 AX.25 衛星1機の録音 IQ で
+「KISS ペイロード = 全フレームか」を確認すること）。
+
+**詳細な実装計画は下記「【別添】Phase 2 実装計画詳細（gr-satellites 経路）」を参照（実装済み後の記録として残す）。**
 
 #### 未実装（任意・将来）— 1フレームごとの投稿ステータス記録
 
@@ -161,7 +194,9 @@ FBSAT59 側から KISS TCP クライアントで接続してデータフレー�
 
 #### 【別添】Phase 2 実装計画詳細（gr-satellites 経路）
 
-**ステータス**: 未着手。方針のみ確定（2026-08-31）。着手前にこの節を読み直すこと。
+**ステータス**: 2026-09-04 実装済み（手順1〜6・8完了、手順7の完全E2Eのみ手動検証待ち。
+上の「Phase 2（gr-satellites 経路対応 — 2026-09-04 実装済み）」参照）。以下は着手時に
+書いた計画の原文（実装後もどのような代替案を却下したかの記録として残す）。
 
 ##### 1. 方針: `--kiss_server` サイドチャネル
 
