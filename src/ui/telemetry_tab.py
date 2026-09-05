@@ -433,59 +433,46 @@ class TelemetryTab(QWidget):
     # ------------------------------------------------------------------ #
 
     def _populate_afsk_combo(self) -> None:
-        """Fill the AFSK/Direwolf satellite combo.
+        """Fill the AFSK/Direwolf satellite combo from this app's own DB.
 
-        Two groups, merged:
-          1. The 10 hand-written telemetry_formats/*.json satellites (full
-             field-level decode) — but only if satellites.is_hidden says
-             they're still tracked. The JSON files never get cleaned up on
-             their own, so without this check a satellite that has since
-             decayed (e.g. an old BIRDS-program CubeSat like Maya-2) stays
-             listed here forever even after dropping out of the main
-             satellite list.
-          2. Any other satellite with an AX.25-capable transmitter this tab
-             can actually decode — 1200 (Bell 202 AFSK) or 4800/9600
-             (G3RUH-style scrambled FSK/GMSK) — via
-             mode_detection.is_ax25_telemetry_transmitter(), marked "raw
-             hex" since there's no field-level format for these. This is
-             what surfaces e.g. a 4800/9600 baud satellite that has never
-             had a hand-written format definition written for it.
-        Both groups already exclude hidden/decayed satellites via
-        mode_detection.get_norads_for_tab()'s join — see there for why
-        satellites.is_hidden is checked directly for group 1 instead of
-        reusing that same call (it has no transmitter-level matcher to
-        apply, just "is this satellite still tracked at all").
+        Lists every satellite carrying a live transmitter this tab can
+        actually decode — 1200 baud (Bell 202 AFSK) or 4800/9600 baud
+        (G3RUH-style scrambled FSK/GMSK) — via
+        mode_detection.is_ax25_telemetry_transmitter(), whose DB join
+        already excludes hidden/decayed satellites and dead transmitters.
+        A received frame is still decoded with named fields when a
+        matching src/data/telemetry_formats/{norad}.json happens to exist
+        (see comms.telemetry.decoder.decode_telemetry()) — that's
+        unaffected by this method, which only decides what's offered here.
+
+        Previously this also merged in every telemetry_formats/*.json
+        satellite unconditionally, even ones with no satellites/
+        transmitters DB row at all — e.g. GOLF-TEE (AO-109, 47783.json)
+        has no SATNOGS transmitter registration and no TLE anywhere, so
+        picking it silently did nothing (no satellite to select, no
+        transmitters to show). Cross-checking confirmed only 1 of those 6
+        hand-written definitions (LilacSat-2, 40908) had a matching live
+        transmitter here anyway, so the two-source merge wasn't worth the
+        selectable-but-broken entries it produced (2026-09-05 decision).
         """
         self._combo_afsk_sat.blockSignals(True)
         self._combo_afsk_sat.clear()
 
         entries: dict[int, str] = {}
-        for fmt in list_formats():
-            norad = fmt.get("norad")
-            if norad:
-                entries[int(norad)] = str(fmt.get("name") or norad)
-
         if hasattr(self._conn, "execute"):
-            hidden = self._hidden_norads()
-            for norad in list(entries):
-                if norad in hidden:
-                    del entries[norad]
-
             with contextlib.suppress(Exception):
                 from comms.mode_detection import get_norads_for_tab
 
-                extra_norads = [
-                    n for n in get_norads_for_tab(self._conn, "telemetry") if n not in entries
-                ]
-                if extra_norads:
-                    placeholders = ",".join("?" * len(extra_norads))
+                norads = get_norads_for_tab(self._conn, "telemetry")
+                if norads:
+                    placeholders = ",".join("?" * len(norads))
                     rows = self._conn.execute(
                         f"SELECT norad_cat_id, name FROM satellites "
                         f"WHERE norad_cat_id IN ({placeholders})",
-                        tuple(extra_norads),
+                        tuple(norads),
                     ).fetchall()
                     for row in rows:
-                        entries[int(row["norad_cat_id"])] = f"{row['name']} [raw]"
+                        entries[int(row["norad_cat_id"])] = str(row["name"])
 
         for norad, name in sorted(entries.items(), key=lambda kv: kv[1].upper()):
             self._combo_afsk_sat.addItem(f"{name}  ({norad})", userData=norad)
@@ -494,12 +481,13 @@ class TelemetryTab(QWidget):
     def _hidden_norads(self) -> set[int]:
         """NORAD ids satellites.is_hidden marks as no longer tracked.
 
-        Shared by _populate_afsk_combo() and _populate_gr_combo() so a
-        satellite this app's own SATNOGS/CelesTrak-driven tracking has
-        flagged as decayed/removed doesn't linger in either combo — both
-        ultimately draw from static catalogs (telemetry_formats/*.json,
-        gr-satellites' own bundled YAML files) that never get cleaned up
-        on their own. Fails open (empty set) if the query itself fails.
+        Used by _populate_gr_combo() so a satellite this app's own
+        SATNOGS/CelesTrak-driven tracking has flagged as decayed/removed
+        doesn't linger there — gr-satellites' own bundled YAML catalog is
+        static and never gets cleaned up on its own. (_populate_afsk_combo()
+        no longer needs this: it now draws directly from this app's DB via
+        mode_detection.get_norads_for_tab(), whose join already excludes
+        hidden satellites.) Fails open (empty set) if the query itself fails.
         """
         if not hasattr(self._conn, "execute"):
             return set()
