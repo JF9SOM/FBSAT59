@@ -63,6 +63,7 @@ from comms.telemetry.satnogs_uploader import (
     save_satnogs_upload_settings,
 )
 from i18n import _
+from ui.sat_search_dialog import SatSearchDialog
 
 # Named after the backend software, matching _MODE_GR's convention — this
 # option actually covers three underlying mechanisms depending on
@@ -208,11 +209,22 @@ class TelemetryTab(QWidget):
         self._combo_afsk_sat.setMinimumWidth(280)
         self._combo_afsk_sat.currentIndexChanged.connect(self._on_afsk_sat_changed)
         row1.addWidget(self._combo_afsk_sat)
+        self._btn_afsk_sat_search = QPushButton("🔍")
+        self._btn_afsk_sat_search.setToolTip(_("Search satellites…"))
+        self._btn_afsk_sat_search.setFixedWidth(28)
+        self._btn_afsk_sat_search.clicked.connect(self._on_afsk_sat_search_clicked)
+        row1.addWidget(self._btn_afsk_sat_search)
         self._combo_gr_sat = QComboBox()
         self._combo_gr_sat.setMinimumWidth(280)
         self._combo_gr_sat.setVisible(False)
         self._combo_gr_sat.currentIndexChanged.connect(self._on_gr_sat_changed)
         row1.addWidget(self._combo_gr_sat)
+        self._btn_gr_sat_search = QPushButton("🔍")
+        self._btn_gr_sat_search.setToolTip(_("Search satellites…"))
+        self._btn_gr_sat_search.setFixedWidth(28)
+        self._btn_gr_sat_search.setVisible(False)
+        self._btn_gr_sat_search.clicked.connect(self._on_gr_sat_search_clicked)
+        row1.addWidget(self._btn_gr_sat_search)
 
         row1.addSpacing(12)
         self._baud_combo = QComboBox()
@@ -535,7 +547,9 @@ class TelemetryTab(QWidget):
     def _on_mode_changed(self, _index: int) -> None:
         is_gr = self._current_mode() == _MODE_GR
         self._combo_afsk_sat.setVisible(not is_gr)
+        self._btn_afsk_sat_search.setVisible(not is_gr)
         self._combo_gr_sat.setVisible(is_gr)
+        self._btn_gr_sat_search.setVisible(is_gr)
         # SatNOGS DB upload now covers both paths (Phase 2 added the
         # gr-satellites --kiss_server raw-frame route; see
         # _on_gr_raw_frame()), so the upload cluster stays visible in
@@ -552,6 +566,36 @@ class TelemetryTab(QWidget):
         norad = self._combo_gr_sat.currentData()
         if norad is not None:
             self.satellite_selected.emit(int(norad), "gr")
+
+    def _on_afsk_sat_search_clicked(self) -> None:
+        self._open_sat_search(self._combo_afsk_sat)
+
+    def _on_gr_sat_search_clicked(self) -> None:
+        self._open_sat_search(self._combo_gr_sat)
+
+    def _open_sat_search(self, combo: QComboBox) -> None:
+        """Open the search dialog for `combo`'s satellite list and apply the pick.
+
+        Reads (norad, name) pairs back out of the already-populated combo
+        instead of re-querying, so the search dialog always matches
+        exactly what the combo currently offers.
+        """
+        entries = []
+        for i in range(combo.count()):
+            norad = int(combo.itemData(i))
+            # Item text is "{name}  ({norad})" (see _populate_afsk_combo /
+            # _populate_gr_combo); strip that exact suffix so
+            # SatSearchDialog's own "(norad)" formatting doesn't double up.
+            name = combo.itemText(i).rsplit(f"({norad})", 1)[0].strip()
+            entries.append((norad, name))
+        if not entries:
+            return
+        dlg = SatSearchDialog(entries, parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted or dlg.selected_norad is None:
+            return
+        idx = combo.findData(dlg.selected_norad)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
 
     def _current_mode(self) -> str:
         return self._combo_mode.currentText()
