@@ -69,6 +69,7 @@ from core.location import LocationManager
 from core.notifier import PassNotifier
 from core.ntp_check import check_system_clock
 from data.amsat_status import AMSATStatusFetcher
+from data.amsat_upcoming import AMSATUpcomingFetcher
 from data.ctcss_db import get_ctcss
 from data.tle_manager import TLE_SOURCE_DISPLAY_NAMES, TLEManager
 from data.transmitter_manager import TransmitterManager
@@ -108,6 +109,7 @@ class _SatData(TypedDict):
     status: str
     tle_group: str
     amsat_status: str | None
+    amsat_upcoming: bool  # True if listed in AMSAT's "In Testing" upcoming-satellite list
     tle_no_result_since: str | None  # set when no TLE found; shown yellow in list
     favorite_group: int  # 0 = not in any group, 1..N = custom group id
 
@@ -705,6 +707,7 @@ class MainWindow(QMainWindow):
         # Set to True in closeEvent so background threads stop gracefully
         self._shutdown_flag = threading.Event()
         self._amsat_fetcher = AMSATStatusFetcher(conn)
+        self._amsat_upcoming_fetcher = AMSATUpcomingFetcher(conn)
         self._transmitter_manager = TransmitterManager(conn)
         self._rig_controller: RigController | None = None
         self._rig2_controller: RigController | None = None
@@ -987,6 +990,19 @@ class MainWindow(QMainWindow):
         self._amsat_link.setAlignment(Qt.AlignmentFlag.AlignRight)
         self._amsat_link.setVisible(False)
         left_layout.addWidget(self._amsat_link)
+
+        # Link to the AMSAT Upcoming Satellites page — visible only for the
+        # "In Testing (AMSAT)" filter (same pattern as _amsat_link above).
+        self._amsat_upcoming_link = QLabel(
+            '<a href="https://www.amsat.org/upcoming-satellites/"'
+            ' style="color:#2980b9; font-size:10px;">'
+            "↗ AMSAT Upcoming Page</a>"
+        )
+        self._amsat_upcoming_link.setOpenExternalLinks(False)
+        self._amsat_upcoming_link.linkActivated.connect(self._open_url_app_mode)
+        self._amsat_upcoming_link.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self._amsat_upcoming_link.setVisible(False)
+        left_layout.addWidget(self._amsat_upcoming_link)
 
         self._search_box = QLineEdit()
         self._search_box.setPlaceholderText(_("Search satellites..."))
@@ -1354,6 +1370,7 @@ class MainWindow(QMainWindow):
                 self._filter_combo.setCurrentIndex(idx)
                 self._filter_combo.blockSignals(False)
                 self._amsat_link.setVisible(saved == "Operational (AMSAT)")
+                self._amsat_upcoming_link.setVisible(saved == "In Testing (AMSAT)")
         except Exception:
             pass
 
@@ -1367,6 +1384,18 @@ class MainWindow(QMainWindow):
                 designator_status[desig] = status
 
         amsat_keys_by_len = sorted(amsat_map.keys(), key=len, reverse=True)
+
+        # AMSAT "In Testing" upcoming-satellite list — same designator/substring
+        # matching as amsat_map above, but a plain name set (no per-satellite
+        # status to track, just list membership).
+        amsat_upcoming_names: list[str] = self._amsat_upcoming_fetcher.load_cached() or []
+        amsat_upcoming_set: set[str] = {n.lower() for n in amsat_upcoming_names}
+
+        upcoming_designators: set[str] = set()
+        for upcoming_name in amsat_upcoming_names:
+            upcoming_designators |= _extract_designators(upcoming_name)
+
+        amsat_upcoming_keys_by_len = sorted(amsat_upcoming_set, key=len, reverse=True)
 
         rows = self._conn.execute(
             """
@@ -1416,6 +1445,22 @@ class MainWindow(QMainWindow):
                 if amsat_status is not None:
                     break
 
+            # Match the AMSAT "In Testing" list the same way as amsat_status above.
+            amsat_upcoming = False
+            for candidate in [name, *alt_list]:
+                cand_lower = candidate.lower()
+                if cand_lower in amsat_upcoming_set:
+                    amsat_upcoming = True
+                    break
+                if any(desig in upcoming_designators for desig in _extract_designators(candidate)):
+                    amsat_upcoming = True
+                    break
+                if any(
+                    _amsat_key_in_sat_name(key, cand_lower) for key in amsat_upcoming_keys_by_len
+                ):
+                    amsat_upcoming = True
+                    break
+
             self._all_sat_data.append(
                 _SatData(
                     norad=norad,
@@ -1426,6 +1471,7 @@ class MainWindow(QMainWindow):
                     status=str(row["status"] or "unknown"),
                     tle_group=str(row["tle_group"]),
                     amsat_status=amsat_status,
+                    amsat_upcoming=amsat_upcoming,
                     tle_no_result_since=(
                         str(row["tle_no_result_since"]) if row["tle_no_result_since"] else None
                     ),
@@ -1505,6 +1551,8 @@ class MainWindow(QMainWindow):
             if filter_text == "Space Stations" and d["tle_group"] != "stations":
                 continue
             if filter_text == "Operational (AMSAT)" and d["amsat_status"] != "operational":
+                continue
+            if filter_text == "In Testing (AMSAT)" and not d["amsat_upcoming"]:
                 continue
             # Search filter (case-insensitive substring match on name and alt_names)
             if search_query and search_query not in d["name"].lower():
@@ -1605,7 +1653,10 @@ class MainWindow(QMainWindow):
         or "Amateur" remain manual-search-only (too many satellites to search
         on every filter change).
         """
-        return filter_text == "Operational (AMSAT)" or filter_text.startswith("★ ")
+        return filter_text in (
+            "Operational (AMSAT)",
+            "In Testing (AMSAT)",
+        ) or filter_text.startswith("★ ")
 
     def _run_group_auto_search(self) -> None:
         """Fire the debounced Group-tab auto-search (see _apply_filter()).
@@ -1659,6 +1710,13 @@ class MainWindow(QMainWindow):
                 misfire_grace_time=600,
             )
             self._scheduler.add_job(
+                self._refresh_amsat_upcoming_sync,
+                "interval",
+                hours=24,
+                id="amsat_upcoming_refresh",
+                misfire_grace_time=600,
+            )
+            self._scheduler.add_job(
                 self._refresh_provisional_tle_sync,
                 "interval",
                 hours=12,
@@ -1702,6 +1760,10 @@ class MainWindow(QMainWindow):
         # On startup, refresh AMSAT status in the background if stale
         if self._amsat_fetcher.is_stale():
             threading.Thread(target=self._refresh_amsat_sync, daemon=True).start()
+
+        # On startup, refresh AMSAT's "In Testing" upcoming-satellite list if stale
+        if self._amsat_upcoming_fetcher.is_stale():
+            threading.Thread(target=self._refresh_amsat_upcoming_sync, daemon=True).start()
 
         # On startup, auto-sync SATNOGS transmitters if none have been fetched from SATNOGS yet,
         # or if the last full sync is older than the documented 7-day cadence -- the
@@ -1784,6 +1846,15 @@ class MainWindow(QMainWindow):
             self._satellite_list_refresh.emit()
         except Exception as exc:
             logger.warning("AMSAT status refresh failed: %s", exc)
+
+    def _refresh_amsat_upcoming_sync(self) -> None:
+        """Update AMSAT's "In Testing" upcoming-satellite list from a background thread."""
+        try:
+            asyncio.run(self._amsat_upcoming_fetcher.fetch_and_update())
+            logger.info("AMSAT upcoming (In Testing) list refresh completed")
+            self._satellite_list_refresh.emit()
+        except Exception as exc:
+            logger.warning("AMSAT upcoming (In Testing) list refresh failed: %s", exc)
 
     def _refresh_satellite_names_periodic(self) -> None:
         """APScheduler job: re-run sync_satellite_names() so a transient failure at
@@ -4406,6 +4477,7 @@ class MainWindow(QMainWindow):
     def _on_filter_changed(self, text: str) -> None:
         """Redraw the satellite list when the filter combo changes."""
         self._amsat_link.setVisible(text == "Operational (AMSAT)")
+        self._amsat_upcoming_link.setVisible(text == "In Testing (AMSAT)")
         self._apply_filter()
         # Switch focus to the Group sub-tab right away when the filter itself
         # changes to an auto-search filter. Kept separate from _apply_filter()
@@ -4699,6 +4771,7 @@ class MainWindow(QMainWindow):
             "Science",
             "Space Stations",
             "Operational (AMSAT)",
+            "In Testing (AMSAT)",
             "Celestial Bodies",
             "Hidden",
         ]
@@ -7300,6 +7373,8 @@ class MainWindow(QMainWindow):
             "<td>every <b>12 hours</b></td></tr>"
             "<tr><td><b>Satellite Names / Status</b></td><td>every <b>24 hours</b></td></tr>"
             "<tr><td><b>AMSAT operational status</b></td><td>every <b>24 hours</b></td></tr>"
+            "<tr><td><b>AMSAT upcoming satellites (In Testing)</b></td>"
+            "<td>every <b>24 hours</b></td></tr>"
             "<tr><td><b>Transmitter Database (SATNOGS)</b></td>"
             "<td>every <b>7 days</b></td></tr>"
             "</table>"

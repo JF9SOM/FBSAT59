@@ -290,6 +290,7 @@ CREATE TABLE tle_history (
 | Provisional TLEs（NORAD ≥ 90000） | 12時間ごと | `provisional_tle_refresh` |
 | Active TLE fallback（NORAD 10000–89999） | 24時間ごと | `active_tle_refresh` |
 | AMSAT運用状況 | 24時間ごと | `amsat_refresh` |
+| AMSAT Upcoming Satellites「In Testing」リスト | 24時間ごと | `amsat_upcoming_refresh`（2026-09-05 追加） |
 | METEOR/HRPT衛星（CelesTrakの群リストから除外された運用終了気象衛星の個別照会） | 12時間ごと | `meteor_tle_refresh`（2026-07-07 追加） |
 | SATNOGSトランスポンダーDB | 7日ごと | `satnogs_transmitter_refresh`（2026-07-05 追加） |
 
@@ -781,6 +782,7 @@ sudo usermod -aG dialout $USER
 - **SATNOGS仮ID（90000番台）衛星のTLE自動取得・仮ID→実ID移行パイプライン**
 - **超古い衛星（NORAD < 10000）の一括チェック：CelesTrak 未収録なら自動非表示**
 - AMSAT運用状況スクレイピング・色分け表示
+- **「In Testing (AMSAT)」フィルタ**（2026-09-05 追加）— [amsat.org/upcoming-satellites/](https://www.amsat.org/upcoming-satellites/) の「In Testing:」表を`AMSATUpcomingFetcher`（`src/data/amsat_upcoming.py`）がスクレイピングし、既存の「Operational (AMSAT)」と同じ名前・designatorマッチングでフィルタリストとして表示。フィルタ選択時のみ「↗ AMSAT Upcoming Page」リンクを表示（アプリモードで開く）。新規打ち上げ直後でTLE/NORAD IDが未確定な衛星は、DB(`satellites`テーブル)に既にある衛星との名前マッチのみで判定するため、TLE取得前はリストに現れない
 - **カスタムFavoriteグループ**（Favorite 1/2/3 デフォルト、Settings > Custom Groups で追加/削除/改名可能）
 - **フットプリント表示**（スキャンライン方式・極地域対応・ズーム地図との座標整合済み）
 - Upcoming Passes（Target/Groupタブ・カレンダー選択・CSV出力）
