@@ -500,24 +500,55 @@ class TelemetryTab(QWidget):
             }
         return set()
 
+    def _norads_with_live_transmitter(self) -> set[int]:
+        """NORAD ids carrying at least one alive transmitter in this app's own DB.
+
+        Used by _populate_gr_combo() to filter out gr-satellites catalog
+        entries this app has no actual frequency data for — its 400+
+        satellite YAML bundle includes many satellites we've simply never
+        synced (no satellites/transmitters row at all) or that currently
+        have zero live SATNOGS transmitter registrations. Picking one of
+        those previously did nothing: _on_telemetry_satellite_requested()'s
+        gr-mode branch finds RadioControlWidget's transmitter list empty
+        and returns before touching anything (same "ghost entry" class of
+        bug as _populate_afsk_combo(), 2026-09-05). Checked against this
+        app's live `transmitters` table every time this tab is opened (a
+        non-resident tab, rebuilt from scratch on each open), so it
+        self-corrects as the existing 7-day SATNOGS transmitter sync job
+        runs — no separate scheduled job needed here. Fails open (empty
+        set) if the query itself fails.
+        """
+        if not hasattr(self._conn, "execute"):
+            return set()
+        with contextlib.suppress(Exception):
+            return {
+                int(row["norad_cat_id"])
+                for row in self._conn.execute(
+                    "SELECT DISTINCT norad_cat_id FROM transmitters WHERE alive = 1"
+                ).fetchall()
+            }
+        return set()
+
     def _populate_gr_combo(self) -> None:
         """Fill the gr-satellites satellite combo from the loaded list.
 
-        Excludes satellites our own tracking has confirmed are no longer
-        valid (satellites.is_hidden != 0) — gr-satellites' own YAML
-        catalog is independent of our SATNOGS/CelesTrak-driven tracking
-        and never gets pruned as satellites decay, so without this a
-        satellite already flagged hidden elsewhere in the app could still
-        show up here. A satellite entirely absent from our satellites
-        table (no row at all — common, since gr-satellites' 300+ catalog
-        covers many satellites we've simply never synced) is NOT
-        excluded — absence isn't evidence it's decayed, just that our own
-        tracking hasn't created a row for it.
+        Excludes:
+          - Satellites our own tracking has confirmed are no longer valid
+            (satellites.is_hidden != 0) — gr-satellites' own YAML catalog
+            is independent of our SATNOGS/CelesTrak-driven tracking and
+            never gets pruned as satellites decay, so without this a
+            satellite already flagged hidden elsewhere in the app could
+            still show up here.
+          - Satellites with no live transmitter in this app's own DB (see
+            _norads_with_live_transmitter()) — selecting one would be a
+            silent no-op, same as the telemetry_formats-only "ghost"
+            entries _populate_afsk_combo() used to show.
         """
         self._combo_gr_sat.clear()
         hidden = self._hidden_norads()
+        tracked = self._norads_with_live_transmitter()
         for norad, name in self._gr_sat_list:
-            if norad in hidden:
+            if norad in hidden or norad not in tracked:
                 continue
             self._combo_gr_sat.addItem(f"{name}  ({norad})", userData=norad)
 

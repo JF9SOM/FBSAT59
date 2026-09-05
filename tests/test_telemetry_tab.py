@@ -1,13 +1,17 @@
-"""Unit tests for ui/telemetry_tab.py — _populate_afsk_combo() DB lookup.
+"""Unit tests for ui/telemetry_tab.py — satellite combo DB lookups.
 
-Verifies the combo lists exactly the AX.25-capable satellites this app's
-own DB knows about (mode_detection.is_ax25_telemetry_transmitter(), joined
-against satellites.is_hidden) — it no longer merges in the static
+Verifies both mode combos list exactly the satellites this app's own DB
+has actual data for. The AFSK/Direwolf combo lists AX.25-capable
+satellites (mode_detection.is_ax25_telemetry_transmitter(), joined against
+satellites.is_hidden) — it no longer merges in the static
 telemetry_formats/*.json catalog unconditionally (2026-09-05: that let
 satellites with no satellites/transmitters DB row at all, e.g. GOLF-TEE
-AO-109, appear as selectable-but-broken "ghost" entries). Runs without
-needing a real Qt display (conftest.py forces QT_QPA_PLATFORM offscreen)
-or a direwolf/gr-satellites installation.
+AO-109, appear as selectable-but-broken "ghost" entries). The
+gr-satellites combo got the same DB-presence filter the same day (its
+400+ satellite YAML bundle has the identical class of ghost entries — see
+_norads_with_live_transmitter()). Runs without needing a real Qt display
+(conftest.py forces QT_QPA_PLATFORM offscreen) or a direwolf/gr-satellites
+installation.
 """
 
 from __future__ import annotations
@@ -152,10 +156,17 @@ def test_gr_combo_excludes_hidden_satellite(app: QApplication, conn: sqlite3.Con
     table, so a NORAD id it lists (e.g. a decayed CubeSat we've since
     auto-hidden) must still be dropped from the combo — the app's own
     tracking is the authority on whether a satellite is still up there,
-    not gr-satellites' static list."""
+    not gr-satellites' static list. Both satellites carry a live
+    transmitter here so is_hidden is isolated as the only variable."""
     conn.execute(
         "INSERT INTO satellites (norad_cat_id, name, is_hidden) VALUES (47311, 'Maya-2', 2)"
     )
+    conn.execute("INSERT INTO satellites (norad_cat_id, name, is_hidden) VALUES (25544, 'ISS', 0)")
+    for norad in (47311, 25544):
+        conn.execute(
+            "INSERT INTO transmitters (uuid, norad_cat_id, description, mode, baud, alive) "
+            f"VALUES ('u{norad}', {norad}, 'TLM', 'AFSK', 1200, 1)"
+        )
     tab = TelemetryTab(conn, _FakeRadioControl())
     try:
         tab._gr_sat_list = [(47311, "Maya-2"), (25544, "ISS")]
@@ -167,19 +178,64 @@ def test_gr_combo_excludes_hidden_satellite(app: QApplication, conn: sqlite3.Con
         tab.close()
 
 
-def test_gr_combo_includes_satellite_absent_from_db(
+def test_gr_combo_excludes_satellite_absent_from_db(
     app: QApplication, conn: sqlite3.Connection
 ) -> None:
-    """A satellite gr-satellites knows about but our own satellites table
-    has never seen (no row at all — never synced from SATNOGS) must not be
-    excluded: absence isn't evidence it decayed, only an explicit
-    is_hidden != 0 row is."""
+    """A satellite gr-satellites knows about but our own DB has never
+    seen (no satellites/transmitters row at all — never synced from
+    SATNOGS) must be excluded: picking it would be a silent no-op, since
+    _on_telemetry_satellite_requested()'s gr-mode branch finds no
+    transmitters and returns before updating anything (2026-09-05 —
+    previously this case was deliberately left in, "absence isn't
+    evidence it decayed", but that reasoning missed that absence also
+    means there's nothing to actually receive)."""
     tab = TelemetryTab(conn, _FakeRadioControl())
     try:
         tab._gr_sat_list = [(99000, "Some Unsynced Sat")]
         tab._populate_gr_combo()
         norads = {norad for norad, _name in _gr_combo_items(tab)}
-        assert 99000 in norads
+        assert 99000 not in norads
+    finally:
+        tab.close()
+
+
+def test_gr_combo_excludes_satellite_with_no_alive_transmitter(
+    app: QApplication, conn: sqlite3.Connection
+) -> None:
+    """A satellite with a satellites row but zero alive transmitters (all
+    dead/decayed, or never actually registered on SATNOGS) must also be
+    excluded — same silent no-op as the fully-absent case above, just
+    with the satellite list highlight working while the transponder list
+    stays empty."""
+    conn.execute(
+        "INSERT INTO satellites (norad_cat_id, name, is_hidden) VALUES (39090, 'STRAND-1', 0)"
+    )
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    try:
+        tab._gr_sat_list = [(39090, "STRAND-1")]
+        tab._populate_gr_combo()
+        norads = {norad for norad, _name in _gr_combo_items(tab)}
+        assert 39090 not in norads
+    finally:
+        tab.close()
+
+
+def test_gr_combo_includes_satellite_with_live_transmitter(
+    app: QApplication, conn: sqlite3.Connection
+) -> None:
+    """A satellite gr-satellites knows about that also has a live
+    transmitter in our own DB must be offered — the normal case."""
+    conn.execute("INSERT INTO satellites (norad_cat_id, name, is_hidden) VALUES (25544, 'ISS', 0)")
+    conn.execute(
+        "INSERT INTO transmitters (uuid, norad_cat_id, description, mode, baud, alive) "
+        "VALUES ('u1', 25544, 'Mode V APRS', 'AFSK', 1200, 1)"
+    )
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    try:
+        tab._gr_sat_list = [(25544, "ISS")]
+        tab._populate_gr_combo()
+        norads = {norad for norad, _name in _gr_combo_items(tab)}
+        assert 25544 in norads
     finally:
         tab.close()
 
