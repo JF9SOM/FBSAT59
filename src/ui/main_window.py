@@ -60,6 +60,7 @@ from PySide6.QtWidgets import (
 
 from comms import mode_detection
 from comms.audio_device_manager import get_audio_device_manager
+from comms.telemetry.decoder import load_format
 from core.autotrack import AutotrackManager
 from core.celestial_engine import MOON_ID, CelestialEngine
 from core.clock_offset import set_clock_offset
@@ -117,6 +118,32 @@ class _SatData(TypedDict):
 # Regular expression to extract AMSAT designators like AO-91, FO-29, CAS-4A
 # 2-4 character prefix + optional separator + 1-3 digit number + optional trailing character
 _DESIG_RE = re.compile(r"\b([A-Za-z]{2,4})[-\s]?(\d{1,3}[A-Za-z]?)\b")
+
+# SATNOGS transmitter `mode` values that are analog or otherwise not an
+# AX.25/packet signal Direwolf can demodulate. Used by
+# _on_telemetry_satellite_requested() so a transmitter whose description
+# merely happens to contain "TLM"/"TELEMETRY" (e.g. an FM-modulated Soyuz
+# engineering telemetry downlink docked to the ISS) doesn't outrank an
+# actual AX.25 packet transmitter just because of that keyword.
+_TELEMETRY_ANALOG_MODES = frozenset(
+    {
+        "FM",
+        "FMN",
+        "AM",
+        "CW",
+        "CW-R",
+        "SSB",
+        "USB",
+        "LSB",
+        "SSTV",
+        "DVB-S",
+        "DVB-S2",
+        "ATV",
+        "APT",
+        "LRPT",
+        "HRPT",
+    }
+)
 
 # Mode inversion table for inverting transponders (invert=True).
 # Downlink and uplink use opposite sidebands so that when the operator
@@ -2754,8 +2781,9 @@ class MainWindow(QMainWindow):
     def _on_telemetry_satellite_requested(self, norad: int, mode: str = "afsk") -> None:
         """Telemetry tab combo changed — switch filter to All, select satellite, pick transponder.
 
-        For AFSK mode: prefer AX.25/TLM-described or digital-mode transmitters,
-        avoiding CW-only ones Direwolf can never decode (see scoring below).
+        For AFSK mode: prefer this satellite's declared telemetry modulation,
+        then AX.25/APRS/TLM-described digital-mode transmitters, avoiding
+        analog/CW ones Direwolf can never decode (see scoring below).
         For gr-satellites mode: pick the transmitter whose downlink_low is closest to
         the first frequency listed in the gr-satellites YAML definition.
         """
@@ -2772,29 +2800,47 @@ class MainWindow(QMainWindow):
 
         best_idx = 0
         if mode == "afsk":
-            # Priority: description contains TLM/Telemetry/AX.25 > type=Beacon
-            # (non-CW) > mode=AFSK > any other named digital mode > unknown
-            # mode > mode=CW. CW is deliberately last: Direwolf can never
-            # decode a CW beacon, so a transmitter SATNOGS just doesn't
-            # label clearly (e.g. mode="GMSK" for a 9k6 AX.25 downlink,
-            # which used to fall through to the same "unmatched" bucket as
-            # CW and could lose to it) must still outrank CW.
+            # This app's own telemetry_formats/{norad}.json (when it exists)
+            # declares the actual modulation this satellite's AX.25 downlink
+            # uses (e.g. ISS's 25544.json says "AFSK1200"), which is a far
+            # more reliable signal than guessing from transmitter text — use
+            # its leading letters ("AFSK1200" -> "AFSK") as the mode to
+            # prefer above everything else.
+            fmt = load_format(norad)
+            modulation = str(fmt.get("modulation") or "").upper() if fmt else ""
+            preferred_mode_match = re.match(r"[A-Z]+", modulation)
+            preferred_mode = preferred_mode_match.group(0) if preferred_mode_match else ""
+
+            # Priority: modulation declared by our own format definition >
+            # description says AX.25/APRS (non-analog mode) > mode=AFSK >
+            # description says TLM/Telemetry (non-analog mode) > any other
+            # named digital mode > unknown mode > analog/CW mode. Analog
+            # modes (_TELEMETRY_ANALOG_MODES, e.g. FM, CW, SSTV) are excluded
+            # from the description-keyword tiers because "TLM"/"TELEMETRY"
+            # in a transmitter's name doesn't mean it's an AX.25 packet
+            # signal — e.g. ISS's 166 MHz "Soyuz-TM and Progress M-1 TLM" is
+            # an FM analog telemetry downlink from the docked Soyuz/Progress
+            # craft, not something Direwolf can ever decode, but it used to
+            # win outright on the "TLM" substring alone.
             best_score = 999
             for i, t in enumerate(transmitters):
                 desc = (t.get("description") or "").upper()
                 xmit_mode = (t.get("mode") or "").upper()
-                if "TLM" in desc or "TELEMETRY" in desc or "AX.25" in desc:
+                is_analog = xmit_mode in _TELEMETRY_ANALOG_MODES
+                if preferred_mode and xmit_mode == preferred_mode:
                     score = 0
-                elif t.get("type") == "Beacon" and xmit_mode != "CW":
+                elif not is_analog and ("AX.25" in desc or "APRS" in desc):
                     score = 1
                 elif xmit_mode == "AFSK":
                     score = 2
-                elif xmit_mode and xmit_mode != "CW":
+                elif not is_analog and ("TLM" in desc or "TELEMETRY" in desc):
                     score = 3
-                elif not xmit_mode:
+                elif xmit_mode and not is_analog:
                     score = 4
-                else:  # mode == "CW"
+                elif not xmit_mode:
                     score = 5
+                else:  # analog mode (FM/FMN/AM/CW/SSTV/... ) — last resort
+                    score = 6
                 if score < best_score:
                     best_score = score
                     best_idx = i
