@@ -32,6 +32,9 @@ _STATUS_MAP: dict[str, str] = {
 
 # bgcolor values that indicate an active/operational satellite
 _OPERATIONAL_BG = {"#648fff", "#785ef0"}
+# bgcolor value for "TLM/Beacon only" (confirmed via the page's own on-page legend,
+# 2026-09-05: telemetry/beacon heard but the satellite's primary mode is not)
+_TLM_BEACON_BG = {"#ffb000"}
 # bgcolor values that mean "no report submitted" (treated as no data)
 _EMPTY_BG = {"c0c0c0", "", "white"}
 
@@ -126,14 +129,23 @@ class AMSATStatusFetcher:
         """
         Extract satellite status from table-format HTML.
 
-        Page structure:
+        Page structure (the page itself carries an on-page legend confirming this,
+        checked live 2026-09-05):
           - Each satellite has multiple frequency rows (e.g. AO-7_[U/v], AO-7_[V/a])
           - Cells from index 1 onward contain time-series status entries, left=most recent
-          - bgcolor #648fff (blue) = Satellite Active, #785ef0 (purple) = ISS Active
+          - bgcolor #648fff (blue) = "Sat/Mode Active", #785ef0 (purple) = ISS Active
+          - bgcolor #ffb000 (gold) = "TLM/Beacon only" (telemetry/beacon heard, primary
+            mode not)
+          - bgcolor #dc267f (magenta) = "Not Heard", #fe6100 (orange) = "Conflicting
+            reports" -- both folded into "non_operational" below, same as no report at all
           - bgcolor C0C0C0 or empty = no report submitted (skip)
 
-        Determination: check the most recent (leftmost) non-empty status for each frequency;
-        if at least one is blue (Operational), the satellite is classified as "operational".
+        Determination: check the most recent (leftmost) non-empty status for each
+        frequency. A satellite is "operational" if at least one frequency is blue;
+        else "partial" (used here for "TLM/Beacon only") if at least one is gold;
+        else "non_operational". Blue takes priority over gold on the same satellite,
+        so a satellite with one active mode and one beacon-only mode is counted as
+        fully operational, not also listed as TLM/Beacon only.
         """
         result: dict[str, str] = {}
 
@@ -149,7 +161,7 @@ class AMSATStatusFetcher:
             if header_cells[0].get_text(strip=True).lower() != "name":
                 continue
 
-            # sat_name → [operational_count, total_freq_count]
+            # sat_name → [active_count, tlm_beacon_count, total_freq_count]
             sat_freq: dict[str, list[int]] = {}
 
             for row in rows[1:]:
@@ -167,8 +179,8 @@ class AMSATStatusFetcher:
                     continue
 
                 if sat_name not in sat_freq:
-                    sat_freq[sat_name] = [0, 0]
-                sat_freq[sat_name][1] += 1
+                    sat_freq[sat_name] = [0, 0, 0]
+                sat_freq[sat_name][2] += 1
 
                 # Find the bgcolor of the first non-empty cell from the left
                 most_recent_bg: str | None = None
@@ -180,13 +192,21 @@ class AMSATStatusFetcher:
 
                 if most_recent_bg in {c.lower() for c in _OPERATIONAL_BG}:
                     sat_freq[sat_name][0] += 1
+                elif most_recent_bg in {c.lower() for c in _TLM_BEACON_BG}:
+                    sat_freq[sat_name][1] += 1
 
-            for sat_name, (op_count, total_count) in sat_freq.items():
-                if op_count > 0:
+            for sat_name, (active_count, tlm_count, total_count) in sat_freq.items():
+                if active_count > 0:
                     status = "operational"
                     print(
                         f"[AMSAT] {sat_name}: operational"
-                        f" ({op_count}/{total_count} frequencies active)"
+                        f" ({active_count}/{total_count} frequencies active)"
+                    )
+                elif tlm_count > 0:
+                    status = "partial"
+                    print(
+                        f"[AMSAT] {sat_name}: TLM/Beacon only"
+                        f" ({tlm_count}/{total_count} frequencies)"
                     )
                 else:
                     status = "non_operational"

@@ -1369,7 +1369,9 @@ class MainWindow(QMainWindow):
                 self._filter_combo.blockSignals(True)
                 self._filter_combo.setCurrentIndex(idx)
                 self._filter_combo.blockSignals(False)
-                self._amsat_link.setVisible(saved == "Operational (AMSAT)")
+                self._amsat_link.setVisible(
+                    saved in ("Operational (AMSAT)", "TLM/Beacon only (AMSAT)")
+                )
                 self._amsat_upcoming_link.setVisible(saved == "In Testing (AMSAT)")
         except Exception:
             pass
@@ -1552,6 +1554,8 @@ class MainWindow(QMainWindow):
                 continue
             if filter_text == "Operational (AMSAT)" and d["amsat_status"] != "operational":
                 continue
+            if filter_text == "TLM/Beacon only (AMSAT)" and d["amsat_status"] != "partial":
+                continue
             if filter_text == "In Testing (AMSAT)" and not d["amsat_upcoming"]:
                 continue
             # Search filter (case-insensitive substring match on name and alt_names)
@@ -1656,6 +1660,7 @@ class MainWindow(QMainWindow):
         return filter_text in (
             "Operational (AMSAT)",
             "In Testing (AMSAT)",
+            "TLM/Beacon only (AMSAT)",
         ) or filter_text.startswith("★ ")
 
     def _run_group_auto_search(self) -> None:
@@ -4476,7 +4481,7 @@ class MainWindow(QMainWindow):
 
     def _on_filter_changed(self, text: str) -> None:
         """Redraw the satellite list when the filter combo changes."""
-        self._amsat_link.setVisible(text == "Operational (AMSAT)")
+        self._amsat_link.setVisible(text in ("Operational (AMSAT)", "TLM/Beacon only (AMSAT)"))
         self._amsat_upcoming_link.setVisible(text == "In Testing (AMSAT)")
         self._apply_filter()
         # Switch focus to the Group sub-tab right away when the filter itself
@@ -4771,6 +4776,7 @@ class MainWindow(QMainWindow):
             "Science",
             "Space Stations",
             "Operational (AMSAT)",
+            "TLM/Beacon only (AMSAT)",
             "In Testing (AMSAT)",
             "Celestial Bodies",
             "Hidden",
@@ -7214,7 +7220,7 @@ class MainWindow(QMainWindow):
                 "#f1c40f",
                 "normal",
                 _("Yellow"),
-                _("AMSAT status: Partially operational — degraded but active."),
+                _("AMSAT status: TLM/Beacon only — telemetry or beacon heard, primary mode not."),
             ),
             (
                 "#e74c3c",
