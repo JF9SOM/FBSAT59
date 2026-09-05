@@ -4801,6 +4801,9 @@ class MainWindow(QMainWindow):
 
         if norad == MOON_ID:
             self._world_map.clear_footprint()
+            self._world_map.clear_ground_track()
+            self._ground_track_cache = None
+            self._dashboard_view.clear_footprint()
             self._refresh_passes()
             self._refresh_radio_control(norad)
             return

@@ -162,6 +162,11 @@ class DashboardView(QWidget):
         """Update the active transponder (for frequency display in status bar)."""
         self._current_transmitter = xpdr
 
+    def clear_footprint(self) -> None:
+        """Clear the zoomed map's footprint (e.g. when switching to the Moon,
+        which has no footprint of its own)."""
+        self._local_map.clear_footprint()
+
     def set_map_image(self, path: str | None) -> None:
         """Apply the same background map image that the main WorldMapView uses."""
         self._local_map.set_map_image(path)
