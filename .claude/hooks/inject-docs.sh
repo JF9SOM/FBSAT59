@@ -33,6 +33,10 @@ case "$rel" in
     key="meteor"
     docs=(docs/meteor-satdump.md)
     ;;
+  src/comms/telemetry/*)
+    key="telemetry"
+    docs=(docs/telemetry.md)
+    ;;
   src/comms/*)
     key="comms"
     docs=(docs/communications.md)
@@ -71,6 +75,10 @@ case "$rel" in
     # just the generic UI doc.
     key="main-window"
     docs=(docs/lock-dial-feedback.md docs/doppler-tuning.md docs/ui-components.md)
+    ;;
+  src/ui/telemetry_tab.py)
+    key="telemetry-tab"
+    docs=(docs/telemetry.md)
     ;;
   src/ui/*)
     key="ui"

@@ -30,7 +30,8 @@ CLAUDE.md 本体はコア（規約・ルール・アーキテクチャ）のみ�
 | Edit/Write 対象 | 自動注入される docs |
 |---|---|
 | `src/comms/meteor/**` | meteor-satdump.md |
-| `src/comms/**`（meteor 以外） | communications.md |
+| `src/comms/telemetry/**` | telemetry.md |
+| `src/comms/**`（meteor・telemetry 以外） | communications.md |
 | `src/rig/**` | hamlib.md, rig-specific-notes.md |
 | `src/sdr/**` | sdr.md |
 | `src/data/**` | tle.md |
@@ -39,6 +40,7 @@ CLAUDE.md 本体はコア（規約・ルール・アーキテクチャ）のみ�
 | `src/core/update_check.py` | app-update.md |
 | `src/core/**`（他） | doppler-tuning.md |
 | `src/ui/main_window.py` | lock-dial-feedback.md, doppler-tuning.md, ui-components.md |
+| `src/ui/telemetry_tab.py` | telemetry.md |
 | `src/ui/**`（他） | ui-components.md |
 | `src/i18n/**` | i18n.md |
 
@@ -48,7 +50,8 @@ CLAUDE.md 本体はコア（規約・ルール・アーキテクチャ）のみ�
 | ドップラー補正・Lock（L ボタン）・Tune・per-transponder RX オフセット | [docs/lock-dial-feedback.md](docs/lock-dial-feedback.md), [docs/doppler-tuning.md](docs/doppler-tuning.md) |
 | `src/data/` の TLE・SATNOGS 同期・仮 NORAD ID・トランスミッター DB・DB マイグレーション | [docs/tle.md](docs/tle.md) |
 | `src/sdr/` 全般・SoapySDR・デバイス列挙・IQ パイプライン・Remote SDR | [docs/sdr.md](docs/sdr.md) |
-| `src/comms/`（APRS/Telemetry/SSTV/FT4/Q65/CW/AX100）・Direwolf・共有サウンドカード | [docs/communications.md](docs/communications.md) |
+| `src/comms/`（APRS/SSTV/FT4/Q65/CW/AX100）・Direwolf・共有サウンドカード | [docs/communications.md](docs/communications.md) |
+| Telemetryタブ・`src/comms/telemetry/`（Direwolf/AX.25・gr-satellites・衛星選択コンボの構築方式・SATNOGS `status` の意味論） | [docs/telemetry.md](docs/telemetry.md) |
 | METEOR/HRPT・SatDump・`src/comms/meteor/`・Autotrack 連携 | [docs/meteor-satdump.md](docs/meteor-satdump.md) |
 | Dashboard/Pass Chart/レーダー/Autotrack/Favorite グループ/スマホ Web UI | [docs/ui-components.md](docs/ui-components.md) |
 | Moon/EME 追尾 | [docs/moon-eme.md](docs/moon-eme.md) |
@@ -985,7 +988,8 @@ sudo usermod -aG dialout $USER
 | [docs/doppler-tuning.md](docs/doppler-tuning.md) | 永続 per-transponder RX オフセット、帯域中心 Doppler 追尾、AO-73 反転トランスポンダー修正・SatNOGS 公式値リセット |
 | [docs/tle.md](docs/tle.md) | TLE 取り込みルール全体設計、仮 NORAD ID（90000 番台）衛星管理、SATNOGS status 全件取得、CelesTrak/SATNOGS ブロック切り分け |
 | [docs/sdr.md](docs/sdr.md) | SDR 機能設計方針（SoapySDR / Windows ctypes バイパス / PlutoSDR / Remote SDR / Doppler 補正）、実装済み SDR 機能一覧 |
-| [docs/communications.md](docs/communications.md) | APRS / Telemetry / SSTV・SSDV / FT4 / Q65 / CW / AX100 Digi / gr-satellites / SatNOGS アップロード、Comms Quick Panel、共有サウンドカード、ログ UDP ブロードキャスト、コミュニティ周波数 |
+| [docs/communications.md](docs/communications.md) | APRS / SSTV・SSDV / FT4 / Q65 / CW / AX100 Digi / gr-satellites / SatNOGS アップロード、Comms Quick Panel、共有サウンドカード、ログ UDP ブロードキャスト、コミュニティ周波数 |
+| [docs/telemetry.md](docs/telemetry.md) | Telemetry タブ（Direwolf/AX.25・gr-satellites）の衛星選択コンボ構築方式、AFSK自動トランスポンダー選択スコアリング、SATNOGS `alive`/`status` の意味論、gr-satellites 衛星カタログソース、ゴーストエントリ問題の実例と修正 |
 | [docs/meteor-satdump.md](docs/meteor-satdump.md) | SatDump 検出・起動の一連の修正、METEOR/HRPT タブ、ライブ Waterfall、過去受信フォルダ、Autotrack 連携の不具合群（Issue #27） |
 | [docs/ui-components.md](docs/ui-components.md) | Dashboard タブ、Group Pass Chart、Autotrack 設計、カスタム Favorite グループ、スマホ Web UI |
 | [docs/moon-eme.md](docs/moon-eme.md) | Moon/EME 追尾設計（DE421 / CelestialEngine / EME ドップラー往復補正 / EME 周波数） |
