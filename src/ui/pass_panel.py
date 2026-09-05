@@ -49,6 +49,20 @@ _QUICK_RANGES: tuple[tuple[str, int], ...] = (
 )
 
 
+def _closest_quick_range_index(hours: float) -> int:
+    """Return the _QUICK_RANGES index whose offset is closest to `hours`.
+
+    Used to keep a quick-range combo's displayed selection in sync whenever
+    its From/To fields are set programmatically (auto-search, reset) rather
+    than via the combo's own handler — otherwise the combo keeps showing an
+    offset left over from a previous satellite group or manual search while
+    the fields underneath have moved on, and Search then appears to do
+    nothing because it silently reuses the (correct, but not what the combo
+    implies) cached result for the fields' real span.
+    """
+    return min(range(len(_QUICK_RANGES)), key=lambda i: abs(_QUICK_RANGES[i][1] - hours))
+
+
 # ---------------------------------------------------------------------------
 # Timezone-aware helpers
 # ---------------------------------------------------------------------------
@@ -588,6 +602,7 @@ class PassPanel(QWidget):
         self._group_to.setDateTime(
             _utc_to_display_qdatetime(now + timedelta(hours=24), self._use_utc)
         )
+        self._sync_group_quick_combo(24)
 
     def _populate_target_table(self, passes: list[PassInfo]) -> None:
         self._target_table.setRowCount(0)
@@ -676,6 +691,20 @@ class PassPanel(QWidget):
         self._group_to.setDateTime(
             _utc_to_display_qdatetime(start + timedelta(hours=hours), self._use_utc)
         )
+
+    def _sync_group_quick_combo(self, hours: float) -> None:
+        """Update the quick-range combo's display to match the current span.
+
+        Call this whenever the Group tab's From/To fields are set
+        programmatically (auto-search, reset) instead of via the combo's own
+        handler, so the combo never keeps showing an offset left over from a
+        different satellite group. Uses setCurrentIndex (not the combo's
+        `activated` path), so it never mutates the fields it is only meant to
+        reflect.
+        """
+        self._group_quick_combo.blockSignals(True)
+        self._group_quick_combo.setCurrentIndex(_closest_quick_range_index(hours))
+        self._group_quick_combo.blockSignals(False)
 
     def _on_group_search(self) -> None:
         if self._predictor is None or not self._sat_list:
@@ -862,6 +891,7 @@ class PassPanel(QWidget):
         self._group_to.setDateTime(
             _utc_to_display_qdatetime(now + timedelta(hours=hours), self._use_utc)
         )
+        self._sync_group_quick_combo(hours)
         self._on_group_search()
 
     def set_celestial_engine(self, engine: CelestialEngine) -> None:
