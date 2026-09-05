@@ -968,7 +968,12 @@ class TelemetryTab(QWidget):
             self._lbl_status.setText(_("SDR — Direwolf G3RUH (receive only)") + suffix)
             self._lbl_status.setStyleSheet("color: #4a9eff;")
         else:
-            self._lbl_status.setText(_("—  (connect Rig or SDR, then click ▶ Start)"))
+            # gr-satellites is SDR-only (no Rig + Sound Card path, unlike
+            # Direwolf mode above), so its idle hint must not mention Rig.
+            if self._current_mode() == _MODE_GR:
+                self._lbl_status.setText(_("—  (connect SDR, then click ▶ Start)"))
+            else:
+                self._lbl_status.setText(_("—  (connect Rig or SDR, then click ▶ Start)"))
             self._lbl_status.setStyleSheet("color: #aaa;")
 
     # ------------------------------------------------------------------ #
