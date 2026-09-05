@@ -2754,7 +2754,8 @@ class MainWindow(QMainWindow):
     def _on_telemetry_satellite_requested(self, norad: int, mode: str = "afsk") -> None:
         """Telemetry tab combo changed — switch filter to All, select satellite, pick transponder.
 
-        For AFSK mode: prefer Beacon / AFSK type transmitters.
+        For AFSK mode: prefer AX.25/TLM-described or digital-mode transmitters,
+        avoiding CW-only ones Direwolf can never decode (see scoring below).
         For gr-satellites mode: pick the transmitter whose downlink_low is closest to
         the first frequency listed in the gr-satellites YAML definition.
         """
@@ -2771,20 +2772,29 @@ class MainWindow(QMainWindow):
 
         best_idx = 0
         if mode == "afsk":
-            # Priority: description contains TLM/Telemetry > type=Beacon > mode=AFSK > mode=CW
+            # Priority: description contains TLM/Telemetry/AX.25 > type=Beacon
+            # (non-CW) > mode=AFSK > any other named digital mode > unknown
+            # mode > mode=CW. CW is deliberately last: Direwolf can never
+            # decode a CW beacon, so a transmitter SATNOGS just doesn't
+            # label clearly (e.g. mode="GMSK" for a 9k6 AX.25 downlink,
+            # which used to fall through to the same "unmatched" bucket as
+            # CW and could lose to it) must still outrank CW.
             best_score = 999
             for i, t in enumerate(transmitters):
                 desc = (t.get("description") or "").upper()
-                if "TLM" in desc or "TELEMETRY" in desc:
+                xmit_mode = (t.get("mode") or "").upper()
+                if "TLM" in desc or "TELEMETRY" in desc or "AX.25" in desc:
                     score = 0
-                elif t.get("type") == "Beacon":
+                elif t.get("type") == "Beacon" and xmit_mode != "CW":
                     score = 1
-                elif (t.get("mode") or "").upper() == "AFSK":
+                elif xmit_mode == "AFSK":
                     score = 2
-                elif (t.get("mode") or "").upper() == "CW":
+                elif xmit_mode and xmit_mode != "CW":
                     score = 3
-                else:
-                    score = 999
+                elif not xmit_mode:
+                    score = 4
+                else:  # mode == "CW"
+                    score = 5
                 if score < best_score:
                     best_score = score
                     best_idx = i
