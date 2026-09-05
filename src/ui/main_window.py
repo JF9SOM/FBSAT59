@@ -2824,6 +2824,14 @@ class MainWindow(QMainWindow):
             # win outright on the "TLM" substring alone.
             best_score = 999
             for i, t in enumerate(transmitters):
+                # An uplink-only entry (no downlink_low at all) has nothing
+                # to receive/decode regardless of how "digital" its mode
+                # looks — e.g. CHUBUSAT-3's "Message Exchange Service
+                # Uplink" is a Transceiver row with mode=AFSK but
+                # downlink_low=None, which used to win outright over its
+                # satellite's real 9k6 GMSK TLM downlink on mode alone.
+                if not t.get("downlink_low"):
+                    continue
                 desc = (t.get("description") or "").upper()
                 xmit_mode = (t.get("mode") or "").upper()
                 is_analog = xmit_mode in _TELEMETRY_ANALOG_MODES
