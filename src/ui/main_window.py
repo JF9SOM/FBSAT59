@@ -5319,6 +5319,10 @@ class MainWindow(QMainWindow):
         now = datetime.now(UTC)
         item = self._sat_list.currentItem()
         name = item.text() if item else ""
+        # Fixed 24h window below — keep the Target tab's From/To fields and
+        # quick combo in sync so they never keep showing a stale range from a
+        # previous manual search while the passes on screen are for this one.
+        self._pass_list.set_target_window(24)
 
         if self._selected_norad == MOON_ID:
             if not self._celestial_engine.is_loaded:
@@ -5366,6 +5370,9 @@ class MainWindow(QMainWindow):
         now = datetime.now(UTC)
         item = self._sat_list.currentItem()
         name = item.text() if item else ""
+        # The chart's own Range control just changed — keep the Target tab's
+        # From/To fields and quick combo in sync with it too (see _refresh_passes).
+        self._pass_list.set_target_window(hours)
 
         if self._selected_norad == MOON_ID:
             if not self._celestial_engine.is_loaded:

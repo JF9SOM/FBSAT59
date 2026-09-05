@@ -590,11 +590,7 @@ class PassPanel(QWidget):
     # ------------------------------------------------------------------ #
 
     def _reset_target_datetimes(self) -> None:
-        now = datetime.now(UTC)
-        self._target_from.setDateTime(_utc_to_display_qdatetime(now, self._use_utc))
-        self._target_to.setDateTime(
-            _utc_to_display_qdatetime(now + timedelta(hours=24), self._use_utc)
-        )
+        self.set_target_window(24)
 
     def _reset_group_datetimes(self) -> None:
         now = datetime.now(UTC)
@@ -849,6 +845,26 @@ class PassPanel(QWidget):
         """Set the pass list on the Target tab (called directly from outside)."""
         self._passes = passes
         self._populate_target_table(passes)
+
+    def set_target_window(self, hours: float) -> None:
+        """Set the Target tab's From/To fields (and quick combo) to [now, now+hours].
+
+        Call this whenever the Target pass list/chart is refreshed with a
+        window that isn't the result of the user's own quick-combo pick or
+        manual Search click — e.g. on satellite selection change, or when the
+        Target Pass Chart's own Range control changes — so the fields/combo
+        never keep showing a stale range left over from a previous manual
+        search while the passes actually on screen reflect a different one
+        (mirrors _sync_group_quick_combo()'s role for the Group tab).
+        """
+        now = datetime.now(UTC)
+        self._target_from.setDateTime(_utc_to_display_qdatetime(now, self._use_utc))
+        self._target_to.setDateTime(
+            _utc_to_display_qdatetime(now + timedelta(hours=hours), self._use_utc)
+        )
+        self._target_quick_combo.blockSignals(True)
+        self._target_quick_combo.setCurrentIndex(_closest_quick_range_index(hours))
+        self._target_quick_combo.blockSignals(False)
 
     def clear(self) -> None:
         """Clear the pass list on the Target tab."""
