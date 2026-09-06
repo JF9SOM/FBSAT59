@@ -113,6 +113,7 @@ class _SatData(TypedDict):
     amsat_upcoming: bool  # True if listed in AMSAT's "In Testing" upcoming-satellite list
     tle_no_result_since: str | None  # set when no TLE found; shown yellow in list
     favorite_group: int  # 0 = not in any group, 1..N = custom group id
+    has_transmitter: bool  # False when no alive transmitter row exists; shown "(no TX)" in list
 
 
 # Regular expression to extract AMSAT designators like AO-91, FO-29, CAS-4A
@@ -1431,7 +1432,11 @@ class MainWindow(QMainWindow):
             SELECT s.norad_cat_id, s.name, s.alt_names, s.is_favorite, s.is_hidden, s.status,
                    COALESCE(t.tle_group, 'amateur') AS tle_group,
                    s.tle_no_result_since,
-                   COALESCE(s.favorite_group, 0) AS favorite_group
+                   COALESCE(s.favorite_group, 0) AS favorite_group,
+                   EXISTS (
+                       SELECT 1 FROM transmitters x
+                       WHERE x.norad_cat_id = s.norad_cat_id AND x.alive = 1
+                   ) AS has_transmitter
             FROM satellites s
             LEFT JOIN tle_data t ON s.norad_cat_id = t.norad_cat_id
             ORDER BY s.name
@@ -1505,6 +1510,7 @@ class MainWindow(QMainWindow):
                         str(row["tle_no_result_since"]) if row["tle_no_result_since"] else None
                     ),
                     favorite_group=int(row["favorite_group"] or 0),
+                    has_transmitter=bool(row["has_transmitter"]),
                 )
             )
             self._all_norads.append(norad)
@@ -1609,8 +1615,15 @@ class MainWindow(QMainWindow):
                     if oscar_str not in name_upper:
                         oscar_suffix = f" ({oscar_str})"
                         break
+            # Mark satellites that have no alive transmitter in the DB (e.g. many
+            # non-amateur weather birds pulled in from CelesTrak's WEATHER group,
+            # such as HIMAWARI-8/9). Since the 2026-09 SatNOGS status vocabulary
+            # change these are reported "in orbit" -> 'alive', so the orphan
+            # auto-hide (status='unknown' only) no longer catches them and they
+            # stay visible; this suffix makes their empty transmitter list obvious.
+            notx_suffix = "" if d["has_transmitter"] else " " + _("(no TX)")
             hidden_suffix = " " + _("(Hidden)") if found_via_hidden_search else ""
-            item = QListWidgetItem(prefix + d["name"] + oscar_suffix + hidden_suffix)
+            item = QListWidgetItem(prefix + d["name"] + oscar_suffix + notx_suffix + hidden_suffix)
             item.setData(Qt.ItemDataRole.UserRole, d["norad"])
 
             amsat_status = d["amsat_status"]
