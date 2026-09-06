@@ -101,7 +101,7 @@ mac には `timeout` コマンドが無いので、止め時間を制御した�
 | Python | 3.11.x（winget `Python.Python.3.11`。Mac の 3.11 に合わせている） |
 | Git | Git for Windows（winget `Git.Git`。`core.autocrlf=input`） |
 | リポジトリ | `C:\Users\pc\FBSAT59`（`git clone https://github.com/JF9SOM/FBSAT59.git`） |
-| 仮想環境 | `C:\Users\pc\FBSAT59\.venv`（`pip install -e .[dev]` 済み） |
+| 仮想環境 | `C:\Users\pc\FBSAT59\.venv`（`pip install -e .[dev,sdr,notifications,ax100digi]` 済み） |
 | ログ | `%LOCALAPPDATA%\fbsat59\fbsat59\Logs\fbsat59.log` / `hamlib_trace.log` |
 | インストール版 | `C:\Program Files\FBSAT59\`（通常配布の .exe。SDR 用に流用、後述） |
 
@@ -122,12 +122,21 @@ mac には `timeout` コマンドが無いので、止め時間を制御した�
 
 冪等（導入済みならスキップ）・オフラインでも起動を止めない・ランチャーを失敗させない設計。
 
+**音声・DSP 系の pip 依存（`sounddevice` / `scipy` / `pyusb` / `soundfile` / `plyer` /
+`reed-solomon-ccsds`）は `bootstrap_natives.py` では入れない。** これらは
+`pyproject.toml` の `[sdr]` / `[notifications]` / `[ax100digi]` エクストラに属し、
+venv セットアップ（および `win_launch.bat` の再インストール）で
+`pip install -e .[dev,sdr,notifications,ax100digi]` として入れる。`[dev]` だけで
+venv を作ると SDR Control の音声再生が `ModuleNotFoundError: sounddevice` で無音になり、
+FT4 タブのレベルメータも「sounddevice not installed」表示のまま振れず、
+テレメトリー/APRS の SDR 復調も `scipy` 欠落で動かない（2026-09-06 に実機で発生）。
+
 ---
 
 ## ワンクリック起動（デスクトップ）
 
 - **`scripts/win_launch.bat`**（コミット済み）: `git pull --ff-only` →
-  `pyproject.toml` に差分があった時だけ `pip install -e .[dev]` →
+  `pyproject.toml` に差分があった時だけ `pip install -e .[dev,sdr,notifications,ax100digi]` →
   `bootstrap_natives.py` → `python -m src.main`。
   末尾に `pause` を置いていないので、**アプリ終了と同時にコンソールも閉じる**。
   実行中はログがコンソールに流れる。
@@ -176,6 +185,7 @@ TCP Remote SDR（SoapyRemote）は当面対象外。
 | 症状 | 対処 |
 |---|---|
 | `ssh windev` がタイムアウト | Windows で `Get-Service sshd`。停止なら `Start-Service sshd`。ファイアウォール規則 `OpenSSH SSH Server Preview (sshd)` の `Profile` が `Any` か確認（`Set-NetFirewallRule -DisplayName "OpenSSH SSH Server Preview (sshd)" -Profile Any`） |
+| `Get-Service sshd` が「サービスが見つかりません」（2026-09-06 実際に発生。Windows Update で Preview パッケージが外れたと思われる） | OpenSSH Server 自体が消えている。管理者 PowerShell で `Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0` → それでも `sshd` サービスが登録されない場合（`install-sshd.ps1` が同梱されない版がある）は手動で: `& 'C:\Windows\System32\OpenSSH\ssh-keygen.exe' -A`（ホスト鍵＋`C:\ProgramData\ssh` 生成）→ `Copy-Item C:\Windows\System32\OpenSSH\sshd_config_default C:\ProgramData\ssh\sshd_config` → `New-Service -Name sshd -BinaryPathName '"C:\Windows\System32\OpenSSH\sshd.exe"' -DisplayName "OpenSSH SSH Server" -StartupType Automatic` → `sc.exe config sshd obj= LocalSystem` → `Start-Service sshd`。続けて FW 規則 `New-NetFirewallRule -Name sshd -DisplayName "OpenSSH SSH Server (sshd)" -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 -Profile Any` と、鍵を `C:\ProgramData\ssh\administrators_authorized_keys` へ再登録（`icacls <file> /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F"`） |
 | `FUJITSU.local` が引けない | 同一 LAN か確認。mDNS が通らない環境ならルーターの DHCP 予約＋ホスト名解決、または Tailscale |
 | `git pull` が ff で通らない | Windows 側にローカル変更が入っている。運用ルール違反。`git -C %USERPROFILE%\FBSAT59 status` を確認し、余計な変更は捨てる |
 | SDR が認識されない | インストール版 `C:\Program Files\FBSAT59\` があるか（`_internal\SoapySDR.py`）。無ければ最新 .exe をインストール。RTL-SDR は Zadig で WinUSB 化 |
@@ -195,7 +205,8 @@ TCP Remote SDR（SoapyRemote）は当面対象外。
 3. Mac の `~/.ssh/config` に `Host windev` エントリ（`HostName <host>.local` / `User <user>` / `IdentityFile ~/.ssh/id_ed25519`）。
 4. Windows: `winget install Python.Python.3.11` / `winget install Git.Git`。
 5. `git clone https://github.com/JF9SOM/FBSAT59.git`（`%USERPROFILE%` 直下）→
-   `py -3.11 -m venv .venv` → `.venv\Scripts\python.exe -m pip install -e .[dev]`。
+   `py -3.11 -m venv .venv` →
+   `.venv\Scripts\python.exe -m pip install -e .[dev,sdr,notifications,ax100digi]`。
 6. `.venv\Scripts\python.exe scripts\bootstrap_natives.py` でネイティブ依存を取得。
 7. `WScript.Shell` でデスクトップに `FBSAT59.lnk`（ターゲット = `scripts\win_launch.bat`、
    作業フォルダ = リポジトリルート、アイコン = `assets\icon.ico`）を作成。

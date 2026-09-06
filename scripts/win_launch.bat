@@ -4,7 +4,8 @@ REM FBSAT59 - Windows one-click launcher (run from a source checkout)
 REM
 REM Double-click the desktop shortcut that points here.  On each start it:
 REM   1. git pull --ff-only            (offline / local edits -> skipped)
-REM   2. pip install -e .[dev]         (only when pyproject.toml changed)
+REM   2. pip install -e .[dev,sdr,notifications,ax100digi]
+REM                                   (only when pyproject.toml changed)
 REM   3. bootstrap_natives.py          (download Hamlib/ft8lib/q65lib/
 REM                                     ft4wsjt/direwolf/CW model if missing)
 REM   4. python -m src.main
@@ -46,8 +47,8 @@ endlocal & exit /b %RC%
 :maybe_reinstall
 git diff --name-only "%HEAD_BEFORE%" "%HEAD_AFTER%" 2>nul | findstr /I /C:"pyproject.toml" >nul
 if errorlevel 1 goto :eof
-echo [FBSAT59] Dependencies changed - running pip install -e .[dev]...
-"%PY%" -m pip install -e .[dev] -q
+echo [FBSAT59] Dependencies changed - running pip install -e .[dev,sdr,notifications,ax100digi]...
+"%PY%" -m pip install -e .[dev,sdr,notifications,ax100digi] -q
 goto :eof
 
 :no_venv
@@ -57,7 +58,7 @@ echo     %CD%\%PY%
 echo.
 echo [FBSAT59] Create it once, then start this launcher again:
 echo     py -3.11 -m venv .venv
-echo     .venv\Scripts\python.exe -m pip install -e .[dev]
+echo     .venv\Scripts\python.exe -m pip install -e .[dev,sdr,notifications,ax100digi]
 echo.
 pause
 endlocal & exit /b 1
