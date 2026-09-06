@@ -68,8 +68,24 @@ _HW_SAMPLE_RATE = 48_000
 # Some USB audio interfaces (rig soundcards in particular) and/or PipeWire's
 # routing only settle into the real input level/target a moment after a
 # stream first opens -- closing and reopening once, a short while later,
-# has been observed to fix this reliably. See _SharedInputStream._open().
+# has been observed to fix this reliably on Linux/PipeWire. See
+# _SharedInputStream._open() and _settle_reopen_supported().
 _REOPEN_SETTLE_DELAY_S = 1.5
+
+
+def _settle_reopen_supported() -> bool:
+    """True on platforms where the post-open settle-reopen self-heal applies.
+
+    The quiet/misrouted first-open problem it works around is a
+    Linux/PipeWire phenomenon (see docs/communications.md). On macOS
+    CoreAudio the same close-then-immediately-reopen does the opposite:
+    the reopened stream on a generic "USB Audio CODEC" delivers pure
+    silence (observed as a permanent -200 dB level in the CW Decoder,
+    while the Rig Settings meter -- which opens its own stream and never
+    reopens -- reads the signal fine). So the self-heal is confined to
+    Linux.
+    """
+    return sys.platform == "linux"
 
 
 def _pactl_available() -> bool:
@@ -346,7 +362,7 @@ class _SharedInputStream:
         if in_target and before is not None:
             _pin_new_stream("source-outputs", "move-source-output", in_target, before)
 
-        if schedule_settle_reopen:
+        if schedule_settle_reopen and _settle_reopen_supported():
             timer = threading.Timer(_REOPEN_SETTLE_DELAY_S, self._reopen_once, args=(stream,))
             timer.daemon = True
             timer.start()
@@ -355,6 +371,10 @@ class _SharedInputStream:
         """Transparently close and reopen the hardware stream once, so a
         quiet/misrouted first open self-heals without subscribers noticing
         (they only ever see the pub/sub interface, never the raw stream).
+
+        Only ever scheduled on Linux (see _settle_reopen_supported()) — on
+        macOS the reopen leaves the replacement stream silent instead of
+        healing it.
 
         No-ops if `opened_stream` is no longer the live stream — it was
         already replaced (subscribers all left and came back, or this is a

@@ -434,7 +434,9 @@ class TestOutputDeviceValidation:
 # ---------------------------------------------------------------------------
 # Settle-reopen: closing and reopening the stream once shortly after it
 # first opens, to self-heal a quiet/misrouted PipeWire source (see
-# _REOPEN_SETTLE_DELAY_S in comms/audio_device_manager.py)
+# _REOPEN_SETTLE_DELAY_S in comms/audio_device_manager.py). Only scheduled
+# on Linux (_settle_reopen_supported()) — the tests that exercise the
+# reopen force that True so they run the same on every CI platform.
 # ---------------------------------------------------------------------------
 
 
@@ -452,6 +454,7 @@ class TestSettleReopen:
         self, fake_sounddevice: type[_FakeInputStream], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(adm, "_REOPEN_SETTLE_DELAY_S", 0.05)
+        monkeypatch.setattr(adm, "_settle_reopen_supported", lambda: True)
         mgr = AudioDeviceManager()
         received: list[np.ndarray] = []
         mgr.acquire_input("cw", 5, 48_000, received.append)
@@ -471,6 +474,7 @@ class TestSettleReopen:
         self, fake_sounddevice: type[_FakeInputStream], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(adm, "_REOPEN_SETTLE_DELAY_S", 0.05)
+        monkeypatch.setattr(adm, "_settle_reopen_supported", lambda: True)
         mgr = AudioDeviceManager()
         mgr.acquire_input("cw", 5, 48_000, lambda c: None)
         mgr.release_input("cw", 5)
@@ -483,12 +487,28 @@ class TestSettleReopen:
         self, fake_sounddevice: type[_FakeInputStream], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(adm, "_REOPEN_SETTLE_DELAY_S", 0.05)
+        monkeypatch.setattr(adm, "_settle_reopen_supported", lambda: True)
         mgr = AudioDeviceManager()
         mgr.acquire_input("cw", 5, 48_000, lambda c: None)
 
         assert self._wait_for(lambda: len(fake_sounddevice.instances) == 2)
         time.sleep(0.2)  # long enough for a second, unwanted reopen to fire
         assert len(fake_sounddevice.instances) == 2
+
+    def test_no_reopen_when_platform_unsupported(
+        self, fake_sounddevice: type[_FakeInputStream], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """On non-Linux platforms the settle-reopen is never scheduled — the
+        close-then-reopen was observed to leave a macOS "USB Audio CODEC"
+        stream silent instead of healing it."""
+        monkeypatch.setattr(adm, "_REOPEN_SETTLE_DELAY_S", 0.05)
+        monkeypatch.setattr(adm, "_settle_reopen_supported", lambda: False)
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("cw", 5, 48_000, lambda c: None)
+
+        time.sleep(0.2)  # long enough for a reopen to fire if one were scheduled
+        assert len(fake_sounddevice.instances) == 1
+        assert fake_sounddevice.instances[0].closed is False
 
 
 # ---------------------------------------------------------------------------

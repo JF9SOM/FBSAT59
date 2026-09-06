@@ -1902,6 +1902,22 @@ FT4 タブを開いて自動RX開始するだけで恩恵を受けられる。
 - 開き直し後の `_open(schedule_settle_reopen=False)` は再度タイマーを仕込まない
   （無限に開閉を繰り返さないためのガード）
 
+**Linux 限定にガード（2026-09-06 確定）**: この settle-reopen は当初プラットフォーム
+分岐なしで全 OS で実行していたが、macOS + 汎用「USB Audio CODEC」（安価なリグ I/F
+チップ）環境で、**close → 即 reopen した側のストリームが完全な無音（全サンプル 0.0）を
+返し続ける**という逆効果が実機で確認された（CW デコーダーのレベルが永続的に
+`-200.0 dB`＝ビット単位の無音。一方 Rig Settings のレベルメーターは
+`_SharedInputStream` を通さず独自に `sd.InputStream` を開くため reopen されず
+`-33 dBFS` と正常に振れており、この非対称性が切り分けの決め手になった）。
+元々この現象自体が Linux/PipeWire 固有（PipeWire のルーティング安定化待ちが有力な
+仮説）で、macOS/CoreAudio には対応する必要がないため、`_settle_reopen_supported()`
+（`sys.platform == "linux"` を返す）を新設し、`_open()` のタイマー起動を
+`if schedule_settle_reopen and _settle_reopen_supported():` にガードした。
+テスト（`TestSettleReopen`）は reopen 挙動を検証する3ケースで
+`_settle_reopen_supported` を `True` に monkeypatch し全 CI プラットフォームで
+同じ結果になるようにし、非対応プラットフォームで reopen が仕込まれないことを
+確認する `test_no_reopen_when_platform_unsupported` を追加した。
+
 #### API（`AudioDeviceManager` / `get_audio_device_manager()`）
 
 ```python
