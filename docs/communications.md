@@ -932,6 +932,23 @@ FT4（6秒周期）とFT8（15秒周期）はプロトコルが異なり、ア�
 "FT8" とだけ書かれたトランスポンダー（例: Ariane 6 上段の GENESIS-A ペイロード）を拾うと、
 実際には絶対に復号できないタブが開いてしまう。
 
+**`is_aprs_transmitter()` の判定基準（2026-09-06 変更、C2 ルール）**:
+`"APRS" in desc` **または** `("DIGIPEATER" in desc かつ mode == "AFSK")`。
+以前は `"APRS" in desc or mode == "AFSK"` で、**mode=AFSK 単独で一致**していた。
+これだと KOSEN-2R「Mode U - AFSK1k2 - AX.25」のような **AFSK1k2 の AX.25
+テレメトリービーコン**（本来 Telemetry タブの担当）まで APRS 扱いになり、
+(a) そのトランスポンダーを選ぶと Rig 1 接続時に APRS タブが自動オープンする
+（`_check_comms_auto_open` が `_pending_comms_tab="aprs"` をラッチ →
+`_finish_rig1_connect` が `aprs_transponder_selected` を emit）、
+(b) APRS の Quick Panel 衛星フィルタに AFSK テレメトリー衛星が数十件並ぶ、
+という2つの実害があった（実機報告 2026-09-06）。`mode=="AFSK"` 単独を落とし、
+"DIGIPEATER" 表記かつ AFSK のものだけ追加で拾うことで、"APRS" 表記の無い実在の
+AFSK1k2 パケットデジピーター（CSS Tianhe / KOYO / SCION-X / UiTMSAT-2 / PARUS-T1、
+いずれも mode=AFSK）は維持しつつ、Direwolf で復調できない GMSK / FSK-AX.100
+デジピーター（MARMOTSat・BEESAT 等）と AX.25 テレメトリー機は除外する。
+Telemetry タブのマッチャー `is_ax25_telemetry_transmitter()` は従来どおり
+mode=AFSK 単独で全 AFSK1k2 機を拾う（こちらはそれが正しい）。
+
 `get_norads_for_tab(conn, tab_key)` は `matcher` を使い、`transmitters` テーブルを
 `satellites.is_hidden = 0` で JOIN した上で対象衛星の NORAD 一覧を返す。この JOIN がないと、
 TLE自動クリーンアップや仮ID移行で `is_hidden=2` になった衛星の残存トランスミッタ行が

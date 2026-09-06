@@ -29,9 +29,26 @@ def is_ft4_transmitter(xpdr: dict[str, Any]) -> bool:
 
 
 def is_aprs_transmitter(xpdr: dict[str, Any]) -> bool:
+    """Match APRS / AFSK1k2 packet-digipeater downlinks the APRS tab
+    (Direwolf, Bell 202) can actually decode.
+
+    "APRS" in the description is the reliable signal. A bare
+    ``mode == "AFSK"`` is deliberately NOT enough on its own: every
+    AFSK1k2 AX.25 *telemetry* beacon carries that same tag (e.g. KOSEN-2R
+    "Mode U - AFSK1k2 - AX.25"), and those belong to the Telemetry tab.
+    Matching them here made selecting such a transmitter auto-open the
+    APRS tab and dumped dozens of telemetry-only satellites into the APRS
+    satellite filter.
+
+    A "digipeater" description is accepted only in combination with
+    ``mode == "AFSK"`` — this keeps real AFSK1k2 packet digipeaters whose
+    description omits the literal "APRS" (CSS Tianhe, KOYO, SCION-X,
+    UiTMSAT-2, PARUS-T1) while still excluding GMSK / FSK-AX.100
+    digipeaters (MARMOTSat, BEESAT, ...) Direwolf cannot demodulate.
+    """
     desc = (xpdr.get("description") or "").upper()
     mode = (xpdr.get("mode") or "").upper()
-    return "APRS" in desc or mode == "AFSK"
+    return "APRS" in desc or ("DIGIPEATER" in desc and mode == "AFSK")
 
 
 def is_sstv_transmitter(xpdr: dict[str, Any]) -> bool:
@@ -79,8 +96,9 @@ def is_ax25_telemetry_transmitter(xpdr: dict[str, Any]) -> bool:
     can decode: 1200 baud Bell 202 AFSK, or 4800/9600 baud G3RUH-style
     scrambled FSK/GMSK (see comms.aprs.direwolf / comms.aprs.g3ruh_demod).
 
-    mode == "AFSK" is trusted on its own — same signal is_aprs_transmitter()
-    relies on — since SATNOGS uses it specifically for 1200 baud AX.25.
+    mode == "AFSK" is trusted on its own here — SATNOGS uses it
+    specifically for 1200 baud AX.25, and unlike is_aprs_transmitter()
+    this matcher *wants* every AFSK1k2 telemetry beacon.
     4800/9600 are NOT AFSK (a different modulation entirely: G3RUH
     scrambled FSK or GMSK), so baud rate alone isn't a reliable signal at
     those speeds either — some satellites run non-AX.25 protocols at the

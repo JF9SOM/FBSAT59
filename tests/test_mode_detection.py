@@ -13,6 +13,7 @@ import pytest
 
 from comms.mode_detection import (
     get_norads_for_tab,
+    is_aprs_transmitter,
     is_ax25_telemetry_transmitter,
     is_ax100_digi_transmitter,
     pick_preferred_transponder_index,
@@ -54,6 +55,54 @@ def test_1200_baud_without_afsk_mode_does_not_match() -> None:
 def test_unrelated_transmitter_does_not_match() -> None:
     xpdr = {"mode": "USB", "baud": None, "description": "Linear transponder"}
     assert not is_ax25_telemetry_transmitter(xpdr)
+
+
+# ---------------------------------------------------------------------------
+# is_aprs_transmitter()
+# ---------------------------------------------------------------------------
+
+
+def test_aprs_matches_description_keyword() -> None:
+    assert is_aprs_transmitter({"description": "Mode V APRS", "mode": "AFSK"})
+    assert is_aprs_transmitter({"description": "U/V APRS Digipeater", "mode": "AFSK"})
+    # "APRS" in the description is enough on its own even without mode=AFSK
+    # (e.g. SATNOGS "APRS,BBS 9K6 FSK").
+    assert is_aprs_transmitter({"description": "Mode V/U APRS 9K6 FSK", "mode": "FSK"})
+
+
+def test_aprs_matches_afsk_digipeater_without_literal_aprs() -> None:
+    """Real AFSK1k2 packet digipeaters whose SATNOGS description omits the
+    word "APRS" (CSS Tianhe, KOYO, SCION-X, UiTMSAT-2, PARUS-T1)."""
+    assert is_aprs_transmitter({"description": "3A V/V digipeater AFSK-FM 1200", "mode": "AFSK"})
+    assert is_aprs_transmitter(
+        {"description": "Mode V/V - AFSK1k2 - Digipeater - AX.25", "mode": "AFSK"}
+    )
+
+
+def test_aprs_excludes_afsk_ax25_telemetry_beacon() -> None:
+    """A bare mode=AFSK AX.25 telemetry downlink (KOSEN-2R) must NOT count
+    as APRS — it belongs to the Telemetry tab. This is the regression the
+    C2 rule fixes: it previously auto-opened the APRS tab."""
+    kosen_2r = {"description": "Mode U - AFSK1k2 - AX.25", "mode": "AFSK"}
+    assert not is_aprs_transmitter(kosen_2r)
+    # ...but the Telemetry matcher still wants it.
+    assert is_ax25_telemetry_transmitter({**kosen_2r, "baud": 1200})
+
+
+def test_aprs_excludes_non_afsk_digipeater() -> None:
+    """ "Digipeater" only counts together with mode=AFSK, so GMSK / FSK-AX.100
+    digipeaters Direwolf cannot demodulate stay out (MARMOTSat, BEESAT)."""
+    assert not is_aprs_transmitter(
+        {"description": "Mode V/V Digipeater", "mode": "FSK AX.100 Mode 5"}
+    )
+    assert not is_aprs_transmitter(
+        {"description": "Digipeater (Mobitex, idle mode)", "mode": "GMSK"}
+    )
+
+
+def test_aprs_handles_missing_fields() -> None:
+    assert not is_aprs_transmitter({})
+    assert not is_aprs_transmitter({"description": None, "mode": None})
 
 
 # ---------------------------------------------------------------------------
