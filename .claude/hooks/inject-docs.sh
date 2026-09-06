@@ -37,6 +37,12 @@ case "$rel" in
     key="telemetry"
     docs=(docs/telemetry.md)
     ;;
+  src/comms/ax100digi/*)
+    # MARMOTSat AX100 digipeater: marmotsat.md carries the CSP-header status /
+    # research trail, communications.md the protocol-stack implementation.
+    key="ax100digi"
+    docs=(docs/marmotsat.md docs/communications.md)
+    ;;
   src/comms/*)
     key="comms"
     docs=(docs/communications.md)

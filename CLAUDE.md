@@ -31,7 +31,8 @@ CLAUDE.md 本体はコア（規約・ルール・アーキテクチャ）のみ�
 |---|---|
 | `src/comms/meteor/**` | meteor-satdump.md |
 | `src/comms/telemetry/**` | telemetry.md |
-| `src/comms/**`（meteor・telemetry 以外） | communications.md |
+| `src/comms/ax100digi/**` | marmotsat.md, communications.md |
+| `src/comms/**`（meteor・telemetry・ax100digi 以外） | communications.md |
 | `src/rig/**` | hamlib.md, rig-specific-notes.md |
 | `src/sdr/**` | sdr.md |
 | `src/data/**` | tle.md |
