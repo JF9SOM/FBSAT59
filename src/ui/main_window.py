@@ -3117,11 +3117,11 @@ class MainWindow(QMainWindow):
         """Open the AX100 Digipeater tab (Communications > AX100 Digipeater).
 
         GreenCube (IO-117) / MARMOTSat-compatible GMSK "ASM+Golay" receiver.
-        No transponder-selection auto-open wiring yet (MARMOTSat's VHF
-        digipeater is listed in SATNOGS with mode=AFSK and a description
-        containing "APRS", which would collide with is_aprs_transmitter()'s
-        matching — this tab must be opened from the menu until that's
-        resolved)."""
+        No transponder-selection auto-open wiring yet — this tab is opened
+        from the menu. is_ax100_digi_transmitter() (norad 69912 / 98272 +
+        "Mode V"/"Digipeater") identifies MARMOTSat's digipeater for the
+        Comms Quick Panel filter, but nothing emits an open-tab signal for
+        it the way ...transponder_selected does for APRS/FT4/SSTV."""
         tab_label = _("AX100 Digi")
         for i in range(self._tab_widget.count()):
             if self._tab_widget.tabText(i) == tab_label:

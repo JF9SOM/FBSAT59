@@ -215,6 +215,29 @@ def test_ax100_digi_matches_mode_v_wording_without_digipeater_text() -> None:
     assert is_ax100_digi_transmitter(xpdr)
 
 
+def test_ax100_digi_matches_real_norad_69912() -> None:
+    """MARMOTSat's real catalogued id (69912) carries the SATNOGS
+    "Mode V/V Digipeater" row; the provisional id 98272 it launched under
+    is now hidden but still keys the community SSB override, so both ids
+    must classify (2026-09-06)."""
+    assert is_ax100_digi_transmitter({"norad_cat_id": 69912, "description": "Mode V/V Digipeater"})
+    assert is_ax100_digi_transmitter(
+        {
+            "norad_cat_id": 69912,
+            "description": "AX100 Digipeater (GreenCube-compatible, SSB) — community",
+        }
+    )
+    # 69912's non-digipeater transmitters still don't match.
+    for description in ("Mode U - Transmitter", "HF DVB-S2", "VHF CW TLM"):
+        assert not is_ax100_digi_transmitter({"norad_cat_id": 69912, "description": description}), (
+            description
+        )
+
+
+def test_ax100_digi_rejects_unrelated_norad() -> None:
+    assert not is_ax100_digi_transmitter({"norad_cat_id": 12345, "description": "Digipeater"})
+
+
 def test_ax100_digi_auto_select_picks_mode_v_not_first_by_frequency() -> None:
     """Reproduces main_window._on_comms_satellite_requested()'s selection
     logic (`next((i for i, t in enumerate(transmitters) if
@@ -308,6 +331,18 @@ def test_get_norads_ax100_digi_includes_marmotsat(conn: sqlite3.Connection) -> N
         conn, "u1", 98272, mode="AFSK", baud=1200, description="Mode V - AFSK1k2 - APRS Digipeater"
     )
     assert get_norads_for_tab(conn, "ax100digi") == [98272]
+
+
+def test_get_norads_ax100_digi_includes_marmotsat_real_id(conn: sqlite3.Connection) -> None:
+    """After the provisional-id migration MARMOTSat's digipeater lives on
+    the real id 69912 as "Mode V/V Digipeater" (mode "FSK AX.100 Mode 5");
+    the old check hardcoded 98272 (now hidden) and returned []."""
+    _add_sat(conn, 69912, "MARMOTSat")
+    _add_xmit(
+        conn, "u1", 69912, mode="FSK AX.100 Mode 5", baud=1200, description="Mode V/V Digipeater"
+    )
+    _add_xmit(conn, "u2", 69912, mode="CW", description="VHF CW TLM")
+    assert get_norads_for_tab(conn, "ax100digi") == [69912]
 
 
 def test_get_norads_ax100_digi_excludes_marmotsats_hf_transmitters(

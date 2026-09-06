@@ -61,7 +61,12 @@ def is_cw_transmitter(xpdr: dict[str, Any]) -> bool:
     return mode in ("CW", "CW-R")
 
 
-_MARMOTSAT_NORAD_ID = 98272
+# MARMOTSat appears under two NORAD ids: 69912 is the real catalogued id
+# (visible, carries the SATNOGS "Mode V/V Digipeater" row), and 98272 is the
+# provisional 9xxxx id it launched under. The provisional satellites row is
+# now is_hidden=2, but community_transmitters.json's corrected SSB digipeater
+# override is still keyed to it, so both ids must classify.
+_MARMOTSAT_NORAD_IDS = frozenset({69912, 98272})
 
 
 def is_ax100_digi_transmitter(xpdr: dict[str, Any]) -> bool:
@@ -83,9 +88,10 @@ def is_ax100_digi_transmitter(xpdr: dict[str, Any]) -> bool:
     (user-verified 2026-07); "DIGIPEATER" is also accepted since that
     matched an earlier (possibly since-edited) SATNOGS description and is
     otherwise harmless to keep — SATNOGS descriptions are community-edited
-    and can change wording over time.
+    and can change wording over time. The real 69912 row reads
+    "Mode V/V Digipeater", which satisfies both keywords.
     """
-    if xpdr.get("norad_cat_id") != _MARMOTSAT_NORAD_ID:
+    if xpdr.get("norad_cat_id") not in _MARMOTSAT_NORAD_IDS:
         return False
     desc = (xpdr.get("description") or "").upper()
     return "MODE V" in desc or "DIGIPEATER" in desc

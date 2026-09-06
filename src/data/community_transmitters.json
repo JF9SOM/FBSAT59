@@ -70,7 +70,7 @@
   },
   {
     "uuid": "community-marmotsat-digi",
-    "norad_cat_id": 98272,
+    "norad_cat_id": 69912,
     "satellite_name": "MARMOTSat",
     "description": "AX100 Digipeater (GreenCube-compatible, SSB) — community",
     "type": "Transceiver",
@@ -82,6 +82,6 @@
     "invert": false,
     "baud": null,
     "ctcss_tone": null,
-    "notes": "GMSK ASM+Golay digipeater rides at a fixed audio offset inside an SSB passband (GreenCube's own approach), not a standard FM/AFSK transponder. SATNOGS lists this satellite's VHF transmitter as mode=AFSK with no uplink (satellite too newly launched for SATNOGS data to be corrected yet). Up=Down=145.875 MHz, USB. 2026-07."
+    "notes": "GMSK ASM+Golay digipeater rides at a fixed audio offset inside an SSB passband (GreenCube's own approach), not a standard FM/AFSK transponder. SATNOGS now lists the real NORAD 69912 row as 'Mode V/V Digipeater' (mode 'FSK AX.100 Mode 5'); this override corrects it to USB, Up=Down=145.875 MHz. Re-pointed from the provisional id 98272 to 69912 on 2026-09-06 (load_community_transmitters keys on uuid and updates norad_cat_id in place). 2026-07."
   }
 ]

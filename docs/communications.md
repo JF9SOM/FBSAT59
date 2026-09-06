@@ -2417,6 +2417,22 @@ MARMOTSatは打ち上げ直後で、SATNOGS側のこのVHFトランスミッタ�
 **`source='community'` のマッチを常に優先**するようにした（単純な最初のマッチだと、
 DBクエリのソート順次第でどちらが選ばれるか非決定的になってしまうため）。
 
+**仮ID 98272 → 実ID 69912 への追随（2026-09-06）**: その後 MARMOTSat は実 NORAD ID
+**69912** に移行し（仮ID→実ID移行パイプライン、[docs/tle.md](tle.md) 参照）、仮ID
+98272 の `satellites` 行は `is_hidden=2` になった。SATNOGS は実ID 69912 側に
+「Mode V/V Digipeater」（`mode="FSK AX.100 Mode 5"`）を登録済み。ところが
+`is_ax100_digi_transmitter()` は `_MARMOTSAT_NORAD_ID = 98272` をハードコードしたまま
+だったため、(1) 実ID 69912 のデジピータ行にマッチせず、(2) 98272 の community 行は
+`get_norads_for_tab()` の `is_hidden=0` 結合で除外され、結果
+`get_norads_for_tab(conn, "ax100digi")` が**空リストを返し AX100 Digi の Quick Panel
+衛星フィルタに MARMOTSat が出てこなくなっていた**。対応:
+- `mode_detection._MARMOTSAT_NORAD_IDS = frozenset({69912, 98272})` に変更し両IDを許容
+  （98272 は community override が当面キーにしているため残す）
+- `community_transmitters.json` の `community-marmotsat-digi` の `norad_cat_id` を
+  98272 → 69912 に付け替え。`load_community_transmitters()` は uuid をキーに
+  `norad_cat_id` を in-place UPDATE するため、次回起動で実ID側へ移動し、SATNOGS の
+  69912 デジピータ行と共存する（`pick_preferred_transponder_index` が community を優先）
+
 #### CIエラー調査で判明したこと（2026-07-24）
 
 上記のコミュニティトランスポンダーエントリ追加（community衛星が3件→4件に増加）が原因で、
