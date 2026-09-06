@@ -133,6 +133,33 @@ FT4 タブのレベルメータも「sounddevice not installed」表示のまま
 
 ---
 
+## sshd の自己復旧（ガーディアン）— 2026-09-06 追加
+
+2026-09-06、`Get-Service sshd` が「サービスが見つかりません」になり Mac から入れなく
+なった（機能更新で `Microsoft.OpenSSH.Preview` が外れたと思われる。上のトラブル
+シューティング表に手動復旧手順あり）。再発しても自動で戻るよう、Windows 側に常駐の
+復旧タスクを入れてある。**リポジトリ外**（`git pull` の邪魔をしないため）に置く。
+
+| 部品 | 場所 |
+|---|---|
+| ガーディアンスクリプト | 原本 `scripts/sshd_guardian.ps1`（コミット済み）→ 実機では `C:\ProgramData\fbsat59-sshd-guardian.ps1` へコピーして使う（リポジトリ外に置くので `git pull` に影響しない） |
+| 実行ログ | `C:\ProgramData\fbsat59-sshd-guardian.log`（512KB で末尾400行に自動トリム） |
+| スケジュールドタスク | `FBSAT59 sshd guardian` — 起動時＋1時間ごと、`SYSTEM` / RunLevel Highest |
+| sshd 障害時アクション | `sc.exe failure sshd reset= 86400 actions= restart/5000/restart/10000/restart/60000`（スクリプトが毎回再適用） |
+
+スクリプトが毎回やること（すべて冪等）:
+1. `%WINDIR%\System32\OpenSSH\sshd.exe` が無ければ `Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0`
+2. ホスト鍵が無ければ `ssh-keygen -A`、`sshd_config` が無ければ `sshd_config_default` からコピー
+3. `administrators_authorized_keys` に Mac の公開鍵が無ければ書き戻し＋`icacls`（SYSTEM+Administrators のみ）
+4. `sshd` サービスが無ければ `New-Service` で再登録＋`sc config obj= LocalSystem`＋障害時アクション
+5. ファイアウォール規則 `sshd`（TCP22 / Profile Any）が無ければ再作成
+6. スタートアップ種別を Automatic に、停止していれば `Start-Service`
+
+新しい Windows 機で再構築するときは「新しい Windows 機で再構築する場合」の手順9を参照。
+最終手段（OpenSSH 本体ごと復旧不能）は Chrome Remote Desktop で GUI から手動対応。
+
+---
+
 ## ワンクリック起動（デスクトップ）
 
 - **`scripts/win_launch.bat`**（コミット済み）: `git pull --ff-only` →
@@ -211,3 +238,9 @@ TCP Remote SDR（SoapyRemote）は当面対象外。
 7. `WScript.Shell` でデスクトップに `FBSAT59.lnk`（ターゲット = `scripts\win_launch.bat`、
    作業フォルダ = リポジトリルート、アイコン = `assets\icon.ico`）を作成。
 8. SDR を使うならインストール版 .exe も入れておく（`_internal` の SoapySDR 一式を流用するため）。
+9. sshd 自己復旧を仕込む（上の「sshd の自己復旧（ガーディアン）」）:
+   `scripts/sshd_guardian.ps1` を `C:\ProgramData\fbsat59-sshd-guardian.ps1` へコピー →
+   管理者 PowerShell で一度実行（障害時アクションもこれで入る）→
+   `Register-ScheduledTask -TaskName 'FBSAT59 sshd guardian'`
+   （`-Trigger` は `-AtStartup` と1時間ごとの `-Once/-RepetitionInterval`、
+   `-Principal` は `-UserId SYSTEM -LogonType ServiceAccount -RunLevel Highest`）。
