@@ -288,14 +288,24 @@ class TelemetryTab(QWidget):
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         # Enlarge the frame-log font ~1.5x to match the APRS Received Packets
         # list; the decoded data column is dense and hard to read at the
-        # default size.
-        _log_font = self._table.font()
-        _log_pt = _log_font.pointSizeF()
-        if _log_pt > 0:
-            _log_font.setPointSizeF(_log_pt * 1.5)
+        # default size. setFont() on the table also propagates to the header
+        # views, so pin them back to the base size explicitly -- only the data
+        # rows should grow, not the column titles or row numbers. (Re-applying
+        # an unmodified copy of the base font would not work: with an empty
+        # resolve mask the header keeps inheriting the scaled table font.)
+        _base_pt = self._table.font().pointSizeF()
+        _base_px = self._table.font().pixelSize()
+        _big_font = self._table.font()
+        _header_font = self._table.font()
+        if _base_pt > 0:
+            _big_font.setPointSizeF(_base_pt * 1.5)
+            _header_font.setPointSizeF(_base_pt)
         else:
-            _log_font.setPixelSize(max(1, round(_log_font.pixelSize() * 1.5)))
-        self._table.setFont(_log_font)
+            _big_font.setPixelSize(max(1, round(_base_px * 1.5)))
+            _header_font.setPixelSize(max(1, _base_px))
+        self._table.setFont(_big_font)
+        self._table.horizontalHeader().setFont(_header_font)
+        self._table.verticalHeader().setFont(_header_font)
         log_layout.addWidget(self._table)
         root.addWidget(log_box, 1)
 
