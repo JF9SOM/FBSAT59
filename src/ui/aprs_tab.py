@@ -275,6 +275,15 @@ class AprsTab(QWidget):
         self._log_list = QListWidget()
         self._log_list.setAlternatingRowColors(True)
         self._log_list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        # Enlarge the packet-log font ~1.5x; the raw AX.25 info field is dense
+        # and the default size is hard to read.
+        _log_font = self._log_list.font()
+        _log_pt = _log_font.pointSizeF()
+        if _log_pt > 0:
+            _log_font.setPointSizeF(_log_pt * 1.5)
+        else:
+            _log_font.setPixelSize(max(1, round(_log_font.pixelSize() * 1.5)))
+        self._log_list.setFont(_log_font)
         log_layout.addWidget(self._log_list)
         root.addWidget(log_group, stretch=1)
 
