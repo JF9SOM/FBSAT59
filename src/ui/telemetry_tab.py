@@ -286,6 +286,16 @@ class TelemetryTab(QWidget):
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setAlternatingRowColors(True)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        # Enlarge the frame-log font ~1.5x to match the APRS Received Packets
+        # list; the decoded data column is dense and hard to read at the
+        # default size.
+        _log_font = self._table.font()
+        _log_pt = _log_font.pointSizeF()
+        if _log_pt > 0:
+            _log_font.setPointSizeF(_log_pt * 1.5)
+        else:
+            _log_font.setPixelSize(max(1, round(_log_font.pixelSize() * 1.5)))
+        self._table.setFont(_log_font)
         log_layout.addWidget(self._table)
         root.addWidget(log_box, 1)
 
