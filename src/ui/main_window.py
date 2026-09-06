@@ -6515,7 +6515,8 @@ class MainWindow(QMainWindow):
             logger.warning("Failed to load SDR settings: %s", exc)
 
         # ---------- Rig 1 ----------
-        was_rig1_connected = self._rig_controller is not None and self._rig_controller.is_connected
+        old_rig1 = self._rig_controller
+        was_rig1_connected = old_rig1 is not None and old_rig1.is_connected
         try:
             # If SDR is assigned to slot 1, build an SdrRigAdapter
             if sdr_cfg.get("assigned_rig") == 1 and sdr_cfg.get("enabled", False):
@@ -6557,6 +6558,21 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             logger.warning("Failed to load Rig 1 settings: %s", exc)
 
+        # A superseded SdrRigAdapter still holds the SDR's exclusive USB handle
+        # (the Windows ctypes bypass has no finaliser), so the freshly built
+        # adapter's connect() would fail with "device busy" (rtlsdr_open -3).
+        # Release it explicitly. Hamlib controllers are intentionally left
+        # alone (see CLAUDE.md "Rig Settings ダイアログを閉じても接続は維持").
+        if (
+            old_rig1 is not None
+            and old_rig1 is not self._rig_controller
+            and getattr(old_rig1, "is_sdr", False)
+            and old_rig1.is_connected
+        ):
+            logger.info("Rig1: releasing superseded SDR device before reconnect")
+            with contextlib.suppress(Exception):
+                old_rig1.disconnect()
+
         if (
             was_rig1_connected
             and self._rig_controller is not None
@@ -6566,9 +6582,8 @@ class MainWindow(QMainWindow):
             self._radio_control._on_connect_rig1()
 
         # ---------- Rig 2 ----------
-        was_rig2_connected = (
-            self._rig2_controller is not None and self._rig2_controller.is_connected
-        )
+        old_rig2 = self._rig2_controller
+        was_rig2_connected = old_rig2 is not None and old_rig2.is_connected
         try:
             # If SDR is assigned to slot 2, build an SdrRigAdapter
             if sdr_cfg.get("assigned_rig") == 2 and sdr_cfg.get("enabled", False):
@@ -6589,6 +6604,16 @@ class MainWindow(QMainWindow):
                     self._radio_control.set_rig2(self._rig2_controller)
         except Exception as exc:
             logger.warning("Failed to load Rig 2 settings: %s", exc)
+
+        if (
+            old_rig2 is not None
+            and old_rig2 is not self._rig2_controller
+            and getattr(old_rig2, "is_sdr", False)
+            and old_rig2.is_connected
+        ):
+            logger.info("Rig2: releasing superseded SDR device before reconnect")
+            with contextlib.suppress(Exception):
+                old_rig2.disconnect()
 
         if (
             was_rig2_connected
