@@ -89,12 +89,17 @@ class _InstallWorker(QThread):
     finished_err = Signal(str)
 
     _REPO = "JF9SOM/fbsat59"
-    _API = f"https://api.github.com/repos/{_REPO}/releases/latest"
+    # The pre-built Direwolf binaries live on the dedicated "direwolf-bundle"
+    # release tag (see .github/workflows/build-direwolf.yml), NOT on the app's
+    # latest release, whose assets are only the .dmg / .exe / .AppImage.
+    _API = f"https://api.github.com/repos/{_REPO}/releases/tags/direwolf-bundle"
 
     def run(self) -> None:
         import json
         import platform
+        import shutil
         import tarfile
+        import tempfile
         import urllib.request
         import zipfile
 
@@ -138,8 +143,6 @@ class _InstallWorker(QThread):
 
         self.status.emit(_("Downloading…"))
         try:
-            import tempfile
-
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                 tmp_path = Path(tmp.name)
 
@@ -159,12 +162,34 @@ class _InstallWorker(QThread):
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            if suffix.endswith(".tar.gz"):
-                with tarfile.open(tmp_path) as tar:
-                    tar.extractall(dest_dir)
-            else:
-                with zipfile.ZipFile(tmp_path) as zf:
-                    zf.extractall(dest_dir)
+            with tempfile.TemporaryDirectory() as staging:
+                staging_dir = Path(staging)
+                if suffix.endswith(".tar.gz"):
+                    with tarfile.open(tmp_path) as tar:
+                        try:
+                            tar.extractall(staging_dir, filter="data")
+                        except TypeError:
+                            # Python < 3.12 has no extraction filter argument.
+                            tar.extractall(staging_dir)
+                else:
+                    with zipfile.ZipFile(tmp_path) as zf:
+                        zf.extractall(staging_dir)
+
+                # The macOS/Linux tarballs wrap everything in a single
+                # "direwolf-flat/" directory (see build-direwolf.yml); the
+                # Windows zip stores its files at the archive root. Flatten so
+                # the binary lands directly in dest_dir, where find_direwolf()
+                # looks for it.
+                entries = list(staging_dir.iterdir())
+                src_root = entries[0] if len(entries) == 1 and entries[0].is_dir() else staging_dir
+                for item in src_root.iterdir():
+                    target = dest_dir / item.name
+                    if target.is_dir() and not target.is_symlink():
+                        shutil.rmtree(target)
+                    elif target.exists() or target.is_symlink():
+                        target.unlink()
+                    shutil.move(str(item), str(target))
+
             tmp_path.unlink(missing_ok=True)
         except Exception as exc:
             self.finished_err.emit(str(exc))
@@ -173,6 +198,10 @@ class _InstallWorker(QThread):
         self.progress.emit(100)
         exe = "direwolf.exe" if sys.platform == "win32" else "direwolf"
         installed = dest_dir / exe
+        if installed.exists() and sys.platform != "win32":
+            # tar preserves the mode bits, but be defensive in case the archive
+            # was ever repacked without them.
+            installed.chmod(installed.stat().st_mode | 0o755)
         self.finished_ok.emit(str(installed))
 
 

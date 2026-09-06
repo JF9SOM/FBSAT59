@@ -34,6 +34,30 @@ if getattr(sys, "frozen", False):
     except Exception:
         pass
 
+# macOS: apps launched from Finder or a .app wrapper (as opposed to an
+# interactive login shell) inherit a minimal PATH that omits Homebrew and
+# MacPorts bin directories.  Any external tool the app shells out to --
+# direwolf, rigctld, satdump -- then appears "not installed" even when it is
+# on the PATH the user sees in their terminal.  Prepend the standard package-
+# manager bin directories that actually exist so subprocess lookups
+# (shutil.which) match the user's interactive shell.  Runs for both frozen and
+# source launches since either can be started with a stripped-down PATH.
+if sys.platform == "darwin":
+    _pkg_mgr_bin_dirs = (
+        "/opt/homebrew/bin",
+        "/opt/homebrew/sbin",
+        "/usr/local/bin",
+        "/usr/local/sbin",
+        "/opt/local/bin",
+        "/opt/local/sbin",
+    )
+    _cur_path_dirs = os.environ.get("PATH", "").split(os.pathsep)
+    _missing_path_dirs = [
+        d for d in _pkg_mgr_bin_dirs if os.path.isdir(d) and d not in _cur_path_dirs
+    ]
+    if _missing_path_dirs:
+        os.environ["PATH"] = os.pathsep.join(_missing_path_dirs + _cur_path_dirs)
+
 # On the developer's Linux machine, ensure only Hamlib 4.7.x is loaded and not
 # the older system package (4.5.5).  Loading both causes a "Hash collision"
 # fatal error in Hamlib's rig registry.  This block is a no-op when running

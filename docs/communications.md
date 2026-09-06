@@ -1238,6 +1238,31 @@ Direwolf は `ADEVICE stdin stdout` モードで起動するため、ALSA / Port
   - macOS: `brew install direwolf` をターミナルで実行
 - 常時: バンドル版を最新版に更新するボタン
 
+**`Download & Install` ボタンの参照先と展開（2026-09-06 修正）**: `_InstallWorker`
+（`src/ui/direwolf_dialog.py`）は当初アプリ本体リリース（`releases/latest`）の
+アセットから `direwolf-<os>-<arch>.tar.gz` を探していたが、事前ビルド済みバイナリは
+専用タグ **`direwolf-bundle`** リリースにしか無い（本体リリースの添付は
+`.dmg`/`.exe`/`.AppImage` のみ。`build-direwolf.yml` 参照）ため、macOS/Linux では
+必ず "No bundled Direwolf package found" で失敗していた。参照先を
+`releases/tags/direwolf-bundle` に変更。加えて macOS/Linux の tarball は全体が
+単一の `direwolf-flat/` ディレクトリで包まれている（`tar -C /tmp direwolf-flat`）
+のに対し `tar.extractall(dest_dir)` はそれを剥がさないため、バイナリが
+`<user_dir>/direwolf/direwolf-flat/direwolf` に置かれ `find_direwolf()`
+（`<user_dir>/direwolf/direwolf` を見る）が検出できなかった。staging ディレクトリへ
+展開してから「単一トップレベルディレクトリならその中身を、そうでなければ全体を」
+`dest_dir` へフラット移動する方式に変更（Windows zip はトップレベルディレクトリ無し
+なので後者の分岐でそのまま通る）。
+
+**macOS: GUI 起動時の PATH に Homebrew/MacPorts が入らない問題（2026-09-06 修正）**:
+Finder や `.app` ラッパー（`run.command` のような非ログインシェル経由を含む）から
+起動されたアプリは、`/opt/homebrew/bin` 等を欠いた最小 PATH を継承する。この状態では
+`brew install direwolf` 済みでも `find_direwolf()` の `shutil.which("direwolf")` が
+None を返し「未インストール」と表示される（rigctld・satdump など他の外部コマンドも
+同様）。`src/main.py` の起動処理冒頭で、macOS では実在する
+`/opt/homebrew/{bin,sbin}` `/usr/local/{bin,sbin}` `/opt/local/{bin,sbin}` を
+`os.environ["PATH"]` の先頭に追加する（frozen/ソース両方で実行。対話シェルの
+PATH 優先順位に合わせて prepend）。
+
 #### PTT 制御（Direwolf 使用時）
 
 Direwolf の PTT は `NONE` に設定し、アプリ側が Hamlib CAT 経由で制御する。
