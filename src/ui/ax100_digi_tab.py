@@ -497,6 +497,23 @@ class Ax100DigiTab(QWidget):
         header = self._table.horizontalHeader()
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        # Enlarge the frame-log font ~1.5x to match the APRS Received Packets
+        # list and the Telemetry Received Frames table; the decoded message
+        # column is dense. setFont() on the table propagates to the header
+        # views, so pin them back to the base size -- only the data rows grow.
+        _base_pt = self._table.font().pointSizeF()
+        _base_px = self._table.font().pixelSize()
+        _big_font = self._table.font()
+        _header_font = self._table.font()
+        if _base_pt > 0:
+            _big_font.setPointSizeF(_base_pt * 1.5)
+            _header_font.setPointSizeF(_base_pt)
+        else:
+            _big_font.setPixelSize(max(1, round(_base_px * 1.5)))
+            _header_font.setPixelSize(max(1, _base_px))
+        self._table.setFont(_big_font)
+        self._table.horizontalHeader().setFont(_header_font)
+        self._table.verticalHeader().setFont(_header_font)
         layout.addWidget(self._table)
 
         layout.addWidget(self._build_tx_group())
