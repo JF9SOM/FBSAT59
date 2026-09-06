@@ -2284,6 +2284,10 @@ Host はLAN内の別マシンも指定可能なフリーテキスト（デフォ
 
 ### AX100 Digi 機能設計（`src/comms/ax100digi/` + `src/ui/ax100_digi_tab.py`・2026-07 実装）
 
+> MARMOTSat の衛星同定（NORAD 69912/98272）・CSP ヘッダー未確定問題の調査履歴と
+> 有効化時の確定手順・HF DVB-S2 の保留状況・監視先は [docs/marmotsat.md](marmotsat.md)
+> に集約。この節はプロトコルスタックと復調の実装詳細に限る。
+
 #### 概要
 
 MARMOTSat の VHF デジピータ（145.875 MHz）は、GreenCube（IO-117・435.310 MHz）と**同一の

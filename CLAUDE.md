@@ -51,6 +51,7 @@ CLAUDE.md 本体はコア（規約・ルール・アーキテクチャ）のみ�
 | `src/data/` の TLE・SATNOGS 同期・仮 NORAD ID・トランスミッター DB・DB マイグレーション | [docs/tle.md](docs/tle.md) |
 | `src/sdr/` 全般・SoapySDR・デバイス列挙・IQ パイプライン・Remote SDR | [docs/sdr.md](docs/sdr.md) |
 | `src/comms/`（APRS/SSTV/FT4/Q65/CW/AX100）・Direwolf・共有サウンドカード | [docs/communications.md](docs/communications.md) |
+| MARMOTSat（`src/comms/ax100digi/`・AX100 VHF デジピーターの CSP ヘッダー・将来の HF DVB-S2 受信・NORAD 69912/98272） | [docs/marmotsat.md](docs/marmotsat.md)（＋ [docs/communications.md](docs/communications.md) の AX100 セクション） |
 | Telemetryタブ・`src/comms/telemetry/`（Direwolf/AX.25・gr-satellites・衛星選択コンボの構築方式・SATNOGS `status` の意味論） | [docs/telemetry.md](docs/telemetry.md) |
 | METEOR/HRPT・SatDump・`src/comms/meteor/`・Autotrack 連携 | [docs/meteor-satdump.md](docs/meteor-satdump.md) |
 | Dashboard/Pass Chart/レーダー/Autotrack/Favorite グループ/スマホ Web UI | [docs/ui-components.md](docs/ui-components.md) |
@@ -991,6 +992,7 @@ sudo usermod -aG dialout $USER
 | [docs/communications.md](docs/communications.md) | APRS / SSTV・SSDV / FT4 / Q65 / CW / AX100 Digi / gr-satellites / SatNOGS アップロード、Comms Quick Panel、共有サウンドカード、ログ UDP ブロードキャスト、コミュニティ周波数 |
 | [docs/telemetry.md](docs/telemetry.md) | Telemetry タブ（Direwolf/AX.25・gr-satellites）の衛星選択コンボ構築方式、AFSK自動トランスポンダー選択スコアリング、SATNOGS `alive`/`status` の意味論、gr-satellites 衛星カタログソース、ゴーストエントリ問題の実例と修正 |
 | [docs/meteor-satdump.md](docs/meteor-satdump.md) | SatDump 検出・起動の一連の修正、METEOR/HRPT タブ、ライブ Waterfall、過去受信フォルダ、Autotrack 連携の不具合群（Issue #27） |
+| [docs/marmotsat.md](docs/marmotsat.md) | MARMOTSat の現状と方針（NORAD 69912/98272、AX100 VHF デジピーターの CSP ヘッダー未確定問題と調査履歴、HF DVB-S2 保留の経緯、監視先・再開トリガー） |
 | [docs/ui-components.md](docs/ui-components.md) | Dashboard タブ、Group Pass Chart、Autotrack 設計、カスタム Favorite グループ、スマホ Web UI |
 | [docs/moon-eme.md](docs/moon-eme.md) | Moon/EME 追尾設計（DE421 / CelestialEngine / EME ドップラー往復補正 / EME 周波数） |
 | [docs/app-update.md](docs/app-update.md) | 起動時アップデートチェック、`update_manifest.json`、重要アップデートの強制告知、リリース時の manifest 更新手順 |
