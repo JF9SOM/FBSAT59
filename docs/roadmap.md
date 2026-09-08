@@ -23,6 +23,7 @@
 ### SDR・デジタルモード
 6. ~~**SDR機能の追加（フェーズ1: 初期実装）**~~ **→ v0.1.0 で完了**
 7. ~~**APRS 受信・送信・位置ビーコン実装**~~ **→ feature/communications（v0.2.0）で完了**（APRSEngine・Direwolf統合・Bell 202 AFSK復調・PTT CAT制御・Doppler凍結・地図ピン表示）。**AX.25 9600bps G3RUH対応は2026-07-10で追加完了**（Rig+サウンドカード・SDR単体経由の両方、Auto/1200/9600プルダウン。詳細は「AX.25 9600bps G3RUH 対応」セクション参照。フィルタチューニングは1bで実衛星パス待ち）
+7c. **APRS 受信ログ 平文/生パケット表示の続き（2026-09-08 実装、後続あり）** — 右クリック Google Map・「Show: 平文/生」トグル・`humanize.py`（aprslib）・最寄り都市（同梱 GeoNames）は実装済み。**v2「両方」表示モード・Telemetry タブへの横展開・humanize カバレッジ拡張・右クリック「aprs.fi で開く」追加**などの計画は [docs/aprs-plain-view.md](aprs-plain-view.md) §5 参照
 8. ~~**Telemetry タブ実装**~~ **→ feature/communications（v0.2.0）で完了**（AX.25受信・JSON定義デコード・12衛星フォーマット定義）
 8b. ~~**Telemetry タブ gr-satellites 統合**~~ **→ 2026-06-30 で完了**（gr-satellites サブプロセス・UDP IQ 転送・330機以上対応・衛星コンボ・SDR 自動接続・トランスポンダー自動選択・メインリスト連動）
 9. **テレメトリーフォーマット定義の追加・検証** — 実際に受信したパケットでオフセット・スケールの検証。未定義衛星のフォーマット調査
