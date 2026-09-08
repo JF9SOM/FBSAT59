@@ -51,6 +51,7 @@ dependencies = [
     "beautifulsoup4>=4.12",     # AMSAT運用状況スクレイピング
     "certifi>=2024.2",          # CA bundle used by httpx in PyInstaller bundles
     "pyserial>=3.5",            # CI-V serial communication for Icom satmode rigs
+    "aprslib>=0.7.2",          # APRS packet parsing (MIC-E / compressed / message) for the APRS tab's Plain-text view
 ]
 
 [project.optional-dependencies]

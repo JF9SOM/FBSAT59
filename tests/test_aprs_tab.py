@@ -128,3 +128,47 @@ def test_open_item_on_map_noop_for_positionless_item(
     tab.open_map_url.connect(triggered.append)
     tab._open_item_on_map(item)
     assert triggered == []
+
+
+# --------------------------------------------------------------------------- #
+# Show: Plain / Raw toggle
+# --------------------------------------------------------------------------- #
+
+
+def test_display_toggle_switches_between_plain_and_raw(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _make_tab(qtbot, conn)
+    assert tab._display_mode == "plain"  # default
+
+    tab.append_packet(
+        callsign="JA4GWS-9",
+        via="ARISS",
+        comment="Pos 35.48,139.72",
+        raw_frame="!3540.00N/13945.00E-shack",
+        plain="house · 35.4800°N 139.7200°E",
+    )
+    item = tab._log_list.item(tab._log_list.count() - 1)
+    assert item.text().endswith("house · 35.4800°N 139.7200°E")
+
+    # Switch to Raw — the existing row must re-render to the on-air info field.
+    tab._display_combo.setCurrentIndex(tab._display_combo.findData("raw"))
+    assert tab._display_mode == "raw"
+    assert item.text().endswith("!3540.00N/13945.00E-shack")
+
+    # And back to Plain.
+    tab._display_combo.setCurrentIndex(tab._display_combo.findData("plain"))
+    assert item.text().endswith("house · 35.4800°N 139.7200°E")
+
+
+def test_display_mode_persists_to_app_settings(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    tab = _make_tab(qtbot, conn)
+    tab._display_combo.setCurrentIndex(tab._display_combo.findData("raw"))
+
+    row = conn.execute("SELECT value FROM app_settings WHERE key = 'aprs_display_mode'").fetchone()
+    assert row is not None and row["value"] == "raw"
+
+    # A fresh tab on the same DB restores the saved mode.
+    tab2 = AprsTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab2)
+    assert tab2._display_mode == "raw"

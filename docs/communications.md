@@ -39,6 +39,19 @@ src/
 
 **メニュー: Communications > APRS**（`src/ui/aprs_tab.py`）
 - 受信ログ（タイムスタンプ / コールサイン / Via / 内容）
+- **Show トグル（平文 ⇔ 生パケット、2026-09-08 実装）**: 局設定行の Baud の右。
+  - **平文**（既定）: `src/comms/aprs/humanize.py`（`aprslib` ベース）が MIC-E・圧縮位置・
+    メッセージ/ack・オブジェクト・気象・サードパーティ展開・`T#` テレメトリを1行の
+    人間可読文にする。シンボル→ラベル・8方位・MIC-E ステータス・ISS 経由注記付き。
+    解釈できない型は生の情報フィールドにフォールバック（空行にしない）
+  - **生パケット**: オンエアの APRS 情報フィールドをそのまま表示（サードパーティは
+    外側のまま＝現状維持）
+  - `AprsPacket.plain` を `parse_aprs()` が populate（humanize は遅延 import。
+    docs/i18n.md ピットフォール#2 対策で `_N` マーカー＋lookup 時 `_()`）。
+    各 `QListWidgetItem` に平文・生の両テキストを `UserRole+1/+2` で保持し、
+    トグル切替で既存行も即再描画。選択は `app_settings` の `aprs_display_mode`
+  - 回帰テスト: `tests/test_aprs_humanize.py`（実パケット→期待平文を英語で固定。
+    座標は aprslib、文面はこのモジュールの設計）
 - 入力ソース自動切替: SDR → Bell 202 AFSK 受信専用 / Rig+サウンドカード → Direwolf TX/RX
 - **メッセージ送信**: To / Message フォーム + Send ボタン（Rig+Direwolf 接続時のみ有効）
 - **自局位置送信**（"Send My Position" グループ）:

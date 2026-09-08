@@ -51,7 +51,8 @@ class AprsPacket:
     via: str  # digipeater path (e.g. "ARISS*")
     data_type: str  # single-char APRS data-type identifier
     raw_info: str  # raw information field (UTF-8 best-effort)
-    comment: str  # human-readable summary
+    comment: str  # short summary (legacy: half-decoded, used for DB / ADIF / TX echo)
+    plain: str = ""  # full plain-language line for the APRS tab's "Plain" view
     latitude: float | None = None
     longitude: float | None = None
     message_addressee: str | None = None
@@ -147,13 +148,15 @@ def parse_aprs(frame: Ax25Frame) -> AprsPacket:
         info = frame.payload.hex()
 
     if not info:
+        raw_hex = f"[raw] {frame.payload.hex()}"
         return AprsPacket(
             callsign=frame.src,
             dest=frame.dest,
             via=via_str,
             data_type="?",
             raw_info=info,
-            comment=f"[raw] {frame.payload.hex()}",
+            comment=raw_hex,
+            plain=raw_hex,
         )
 
     data_type = info[0]
@@ -193,6 +196,21 @@ def parse_aprs(frame: Ax25Frame) -> AprsPacket:
     else:
         comment = f"[{data_type}] {info[1:]}"
 
+    # Full plain-language rendering for the APRS tab's "Plain" view. Imported
+    # lazily (and only here, never at module load) so the _() calls in
+    # humanize's label tables bind to the language set at startup, not to
+    # whatever was active when this module first imported (see docs/i18n.md
+    # pitfall #2). Falls back to the raw info field when it can't help.
+    plain = info
+    try:
+        from comms.aprs.humanize import humanize_frame
+
+        rendered = humanize_frame(frame)
+        if rendered:
+            plain = rendered
+    except Exception:
+        pass
+
     return AprsPacket(
         callsign=frame.src,
         dest=frame.dest,
@@ -200,6 +218,7 @@ def parse_aprs(frame: Ax25Frame) -> AprsPacket:
         data_type=data_type,
         raw_info=info,
         comment=comment,
+        plain=plain,
         latitude=lat,
         longitude=lon,
         message_addressee=msg_addr,

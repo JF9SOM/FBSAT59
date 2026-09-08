@@ -43,6 +43,15 @@ from i18n import _
 _SSID_MIN = 0
 _SSID_MAX = 15
 
+# Receive-log item roles: (lat, lon) tuple, plus the Plain / Raw text variants
+# so the display toggle can re-render existing rows without re-parsing.
+_ROLE_COORDS = int(Qt.ItemDataRole.UserRole)
+_ROLE_PLAIN = int(Qt.ItemDataRole.UserRole) + 1
+_ROLE_RAW = int(Qt.ItemDataRole.UserRole) + 2
+
+# app_settings key for the receive-log display toggle ("plain" | "raw").
+_DISPLAY_MODE_KEY = "aprs_display_mode"
+
 # Default via path for ISS digipeater
 _DEFAULT_VIA = "ARISS"
 
@@ -102,6 +111,9 @@ class AprsTab(QWidget):
         # A QSO is logged only when the remote station replies with a real message.
         self._pending_qso: set[str] = set()
 
+        # Receive-log display mode ("plain" | "raw"); restored in _load_display_mode().
+        self._display_mode = "plain"
+
         # Auto-beacon timer for position transmission
         self._pos_timer = QTimer(self)
         self._pos_timer.timeout.connect(self._on_send_position)
@@ -118,6 +130,7 @@ class AprsTab(QWidget):
         self._ensure_db_table()
         self._setup_ui()
         self._load_via_choices()
+        self._load_display_mode()
         self._load_settings()
         self._load_baud_mode()
         self._connect_signals()
@@ -165,11 +178,13 @@ class AprsTab(QWidget):
             "FROM aprs_log ORDER BY id DESC LIMIT 200"
         ).fetchall()
         for row in reversed(rows):
+            body = row["comment"] or row["raw_frame"] or ""
             self._append_log_item(
                 ts=row["received_at"],
                 callsign=row["callsign"],
                 via=row["via"] or "",
-                comment=row["comment"] or row["raw_frame"] or "",
+                plain=body,
+                raw=row["raw_frame"] or body,
                 lat=row["latitude_deg"],
                 lon=row["longitude_deg"],
             )
@@ -246,6 +261,23 @@ class AprsTab(QWidget):
         self._baud_combo.currentIndexChanged.connect(self._on_baud_mode_changed)
         row1.addWidget(QLabel(_("Baud:")))
         row1.addWidget(self._baud_combo)
+
+        # Receive-log display toggle: Plain (humanised sentence) vs Raw (the
+        # on-air APRS information field verbatim).
+        row1.addSpacing(18)
+        self._display_combo = QComboBox()
+        self._display_combo.addItem(_("Plain"), "plain")
+        self._display_combo.addItem(_("Raw packet"), "raw")
+        self._display_combo.setToolTip(
+            _(
+                "Plain: a human-readable summary of each packet (position,\n"
+                "message, status…). Raw packet: the APRS information field\n"
+                "exactly as received on the air."
+            )
+        )
+        self._display_combo.currentIndexChanged.connect(self._on_display_mode_changed)
+        row1.addWidget(QLabel(_("Show:")))
+        row1.addWidget(self._display_combo)
 
         row1.addStretch()
         settings_form.addRow(row1)
@@ -570,6 +602,7 @@ class AprsTab(QWidget):
             lat=packet.latitude,
             lon=packet.longitude,
             log=log_to_db,
+            plain=packet.plain or packet.comment,
         )
 
     def _is_confirmed_reply(self, packet: object) -> bool:
@@ -840,13 +873,26 @@ class AprsTab(QWidget):
         lon: float | None = None,
         norad: int | None = None,
         log: bool = False,
+        plain: str | None = None,
     ) -> None:
         """Add a decoded APRS packet to the receive log widget.
 
-        Persists to the DB only when *log* is True (bidirectional QSO confirmed).
+        *comment* is the legacy short summary (still what gets persisted /
+        exported). The receive log itself shows either *plain* (a full
+        human-readable line; falls back to *comment*) or *raw_frame* (the
+        on-air information field; falls back to *comment*), per the Show
+        toggle. Persists to the DB only when *log* is True.
         """
         ts = datetime.now(tz=UTC).strftime("%H:%M:%S")
-        self._append_log_item(ts, callsign, via, comment, lat, lon)
+        self._append_log_item(
+            ts,
+            callsign,
+            via,
+            plain=plain if plain is not None else comment,
+            raw=raw_frame or comment,
+            lat=lat,
+            lon=lon,
+        )
 
         if log and hasattr(self._conn, "execute"):
             self._conn.execute(
@@ -921,19 +967,60 @@ class AprsTab(QWidget):
         ts: str,
         callsign: str,
         via: str,
-        comment: str,
+        *,
+        plain: str,
+        raw: str,
         lat: float | None = None,
         lon: float | None = None,
     ) -> None:
         via_str = f",{via}" if via else ""
-        text = f"{ts}  {callsign}{via_str}: {comment}"
-        item = QListWidgetItem(text)
+        prefix = f"{ts}  {callsign}{via_str}: "
+        item = QListWidgetItem(prefix + (plain if self._display_mode == "plain" else raw))
         item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        item.setData(_ROLE_PLAIN, prefix + plain)
+        item.setData(_ROLE_RAW, prefix + raw)
         # Stash the position (if any) so the right-click menu can offer a map link.
         if lat is not None and lon is not None:
-            item.setData(Qt.ItemDataRole.UserRole, (float(lat), float(lon)))
+            item.setData(_ROLE_COORDS, (float(lat), float(lon)))
         self._log_list.addItem(item)
         self._log_list.scrollToBottom()
+
+    # ------------------------------------------------------------------ #
+    # Receive-log display toggle (Plain / Raw)
+    # ------------------------------------------------------------------ #
+
+    def _load_display_mode(self) -> None:
+        """Restore the Plain/Raw selection from app_settings."""
+        mode = "plain"
+        if hasattr(self._conn, "execute"):
+            row = self._conn.execute(
+                "SELECT value FROM app_settings WHERE key = ?", (_DISPLAY_MODE_KEY,)
+            ).fetchone()
+            if row and row["value"] in ("plain", "raw"):
+                mode = row["value"]
+        self._display_mode = mode
+        idx = self._display_combo.findData(mode)
+        self._display_combo.blockSignals(True)
+        self._display_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self._display_combo.blockSignals(False)
+
+    def _on_display_mode_changed(self, _index: int) -> None:
+        """Persist the Plain/Raw selection and re-render the existing rows."""
+        mode = self._display_combo.currentData() or "plain"
+        self._display_mode = mode
+        if hasattr(self._conn, "execute"):
+            self._conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value, updated_at) "
+                "VALUES (?, ?, CURRENT_TIMESTAMP)",
+                (_DISPLAY_MODE_KEY, mode),
+            )
+            self._conn.commit()
+        role = _ROLE_PLAIN if mode == "plain" else _ROLE_RAW
+        for i in range(self._log_list.count()):
+            it = self._log_list.item(i)
+            text = it.data(role)
+            if isinstance(text, str):
+                it.setText(text)
 
     def _on_log_context_menu(self, pos: Any) -> None:
         """Show "Open in Google Maps" for a received packet that carries a position."""
@@ -952,7 +1039,7 @@ class AprsTab(QWidget):
         """Return the (lat, lon) stashed on *item*, or None when it has no position."""
         if item is None:
             return None
-        coords = item.data(Qt.ItemDataRole.UserRole)
+        coords = item.data(_ROLE_COORDS)
         if isinstance(coords, tuple) and len(coords) == 2:
             return float(coords[0]), float(coords[1])
         return None
