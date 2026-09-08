@@ -74,15 +74,13 @@ class AprsTab(QWidget):
 
     Signals
     -------
-    aprs_stations_updated(dict)
-        Emitted whenever the set of positioned APRS stations changes.
-        Payload: {callsign: (lat_deg, lon_deg)}.
-    aprs_stations_cleared()
-        Emitted when the tab closes so callers can clear map pins.
+    open_map_url(str)
+        Emitted when the user picks "Open in Google Maps" from a received
+        packet's context menu. Payload: the Google Maps URL to open in an
+        app-mode browser window (MainWindow wires this to _open_url_app_mode).
     """
 
-    aprs_stations_updated: Signal = Signal(dict)
-    aprs_stations_cleared: Signal = Signal()
+    open_map_url: Signal = Signal(str)
 
     def __init__(
         self,
@@ -99,9 +97,6 @@ class AprsTab(QWidget):
         self._sdr_connected = False
         self._rig_label = ""
         self._sdr_label = ""
-
-        # Positioned APRS stations received this session: {callsign: (lat, lon)}
-        self._aprs_stations: dict[str, tuple[float, float]] = {}
 
         # Callsigns we have sent a message to this session (base call, no SSID).
         # A QSO is logged only when the remote station replies with a real message.
@@ -165,7 +160,8 @@ class AprsTab(QWidget):
             return
         self._log_list.clear()
         rows = self._conn.execute(
-            "SELECT received_at, callsign, via, comment, raw_frame "
+            "SELECT received_at, callsign, via, comment, raw_frame, "
+            "latitude_deg, longitude_deg "
             "FROM aprs_log ORDER BY id DESC LIMIT 200"
         ).fetchall()
         for row in reversed(rows):
@@ -174,6 +170,8 @@ class AprsTab(QWidget):
                 callsign=row["callsign"],
                 via=row["via"] or "",
                 comment=row["comment"] or row["raw_frame"] or "",
+                lat=row["latitude_deg"],
+                lon=row["longitude_deg"],
             )
 
     # ------------------------------------------------------------------ #
@@ -284,6 +282,9 @@ class AprsTab(QWidget):
         else:
             _log_font.setPixelSize(max(1, round(_log_font.pixelSize() * 1.5)))
         self._log_list.setFont(_log_font)
+        # Right-click a packet that carries a position → "Open in Google Maps"
+        self._log_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._log_list.customContextMenuRequested.connect(self._on_log_context_menu)
         log_layout.addWidget(self._log_list)
         root.addWidget(log_group, stretch=1)
 
@@ -570,10 +571,6 @@ class AprsTab(QWidget):
             lon=packet.longitude,
             log=log_to_db,
         )
-        # Update map pin when the packet carries a position
-        if packet.latitude is not None and packet.longitude is not None:
-            self._aprs_stations[packet.callsign] = (packet.latitude, packet.longitude)
-            self.aprs_stations_updated.emit(dict(self._aprs_stations))
 
     def _is_confirmed_reply(self, packet: object) -> bool:
         """Return True when *packet* completes a bidirectional QSO.
@@ -826,8 +823,6 @@ class AprsTab(QWidget):
         with contextlib.suppress(RuntimeError, TypeError):
             self._engine.error_occurred.disconnect(self._on_engine_error)
         self._engine.stop(_ENGINE_OWNER)
-        self._aprs_stations.clear()
-        self.aprs_stations_cleared.emit()
         self._save_settings()
         super().closeEvent(event)
 
@@ -851,7 +846,7 @@ class AprsTab(QWidget):
         Persists to the DB only when *log* is True (bidirectional QSO confirmed).
         """
         ts = datetime.now(tz=UTC).strftime("%H:%M:%S")
-        self._append_log_item(ts, callsign, via, comment)
+        self._append_log_item(ts, callsign, via, comment, lat, lon)
 
         if log and hasattr(self._conn, "execute"):
             self._conn.execute(
@@ -921,13 +916,52 @@ class AprsTab(QWidget):
         broadcaster.reload_settings(self._conn)
         broadcaster.send_adif_record(build_adif_record(fields))
 
-    def _append_log_item(self, ts: str, callsign: str, via: str, comment: str) -> None:
+    def _append_log_item(
+        self,
+        ts: str,
+        callsign: str,
+        via: str,
+        comment: str,
+        lat: float | None = None,
+        lon: float | None = None,
+    ) -> None:
         via_str = f",{via}" if via else ""
         text = f"{ts}  {callsign}{via_str}: {comment}"
         item = QListWidgetItem(text)
         item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        # Stash the position (if any) so the right-click menu can offer a map link.
+        if lat is not None and lon is not None:
+            item.setData(Qt.ItemDataRole.UserRole, (float(lat), float(lon)))
         self._log_list.addItem(item)
         self._log_list.scrollToBottom()
+
+    def _on_log_context_menu(self, pos: Any) -> None:
+        """Show "Open in Google Maps" for a received packet that carries a position."""
+        from PySide6.QtWidgets import QMenu
+
+        item = self._log_list.itemAt(pos)
+        if self._item_coords(item) is None:
+            return
+        menu = QMenu(self._log_list)
+        action = menu.addAction(_("Open in Google Maps"))
+        if menu.exec(self._log_list.mapToGlobal(pos)) is action:
+            self._open_item_on_map(item)
+
+    @staticmethod
+    def _item_coords(item: QListWidgetItem | None) -> tuple[float, float] | None:
+        """Return the (lat, lon) stashed on *item*, or None when it has no position."""
+        if item is None:
+            return None
+        coords = item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(coords, tuple) and len(coords) == 2:
+            return float(coords[0]), float(coords[1])
+        return None
+
+    def _open_item_on_map(self, item: QListWidgetItem | None) -> None:
+        """Emit open_map_url with a Google Maps link for *item*'s position."""
+        coords = self._item_coords(item)
+        if coords is not None:
+            self.open_map_url.emit(_google_maps_url(coords[0], coords[1]))
 
     def _refresh_qso_count(self) -> None:
         if not hasattr(self._conn, "execute"):
@@ -1051,6 +1085,16 @@ class AprsTab(QWidget):
 # ---------------------------------------------------------------------------
 # Maidenhead grid helper (lat/lon → 4-char grid square)
 # ---------------------------------------------------------------------------
+
+
+def _google_maps_url(lat: float, lon: float) -> str:
+    """Build a Google Maps URL that drops a pin at (lat, lon) and sets a zoom.
+
+    The ``?q=<lat>,<lon>&z=<n>`` form is undocumented but works across
+    desktop and mobile; the documented ``search/?api=1&query=`` form drops a
+    pin but ignores zoom, which is too wide for a precise APRS fix.
+    """
+    return f"https://www.google.com/maps?q={float(lat):.6f},{float(lon):.6f}&z=15"
 
 
 def _latlon_to_grid(lat: float, lon: float) -> str:

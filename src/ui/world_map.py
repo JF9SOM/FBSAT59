@@ -417,8 +417,6 @@ class WorldMapView(QWidget):
         self._zoom_region: tuple[float, float, float] | None = None
         # When False, lat/lon grid lines and equator line are not drawn
         self._show_grid: bool = True
-        # APRS ground-station pins: {callsign: (lat_deg, lon_deg)}
-        self._aprs_stations: dict[str, tuple[float, float]] = {}
 
     def sizeHint(self) -> QSize:
         return QSize(800, 400)
@@ -443,21 +441,6 @@ class WorldMapView(QWidget):
         """Enable or disable lat/lon grid lines and the equator line."""
         if self._show_grid != show:
             self._show_grid = show
-            self.update()
-
-    def set_aprs_stations(self, stations: dict[str, tuple[float, float]]) -> None:
-        """Update APRS ground-station pins and repaint.
-
-        Args:
-            stations: {callsign: (lat_deg, lon_deg)}
-        """
-        self._aprs_stations = dict(stations)
-        self.update()
-
-    def clear_aprs_stations(self) -> None:
-        """Remove all APRS ground-station pins."""
-        if self._aprs_stations:
-            self._aprs_stations.clear()
             self.update()
 
     def set_satellites(
@@ -759,8 +742,6 @@ class WorldMapView(QWidget):
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawText(int(sx) + sel_r + 2, int(sy) + 4, sel_info[0])
 
-        self._draw_aprs_stations(p, w, h)
-
     def _latlon_polyline_segments(
         self, points: list[tuple[float, float]], w: float, h: float
     ) -> list[QPolygonF]:
@@ -811,36 +792,6 @@ class WorldMapView(QWidget):
         for poly in self._latlon_polyline_segments(pts[now_idx:], w, h):
             p.setPen(future_pen)
             p.drawPolyline(poly)
-
-    def _draw_aprs_stations(self, p: QPainter, w: float, h: float) -> None:
-        """Draw APRS ground-station pins as cyan triangles with callsign labels."""
-        if not self._aprs_stations:
-            return
-        label_font = QFont()
-        label_font.setPointSize(8)
-        p.setFont(label_font)
-        pin_color = QColor("#00E5FF")  # cyan, distinct from satellite dots
-        outline_color = QColor(0, 0, 0, 160)
-        half = 7
-        for callsign, (lat, lon) in self._aprs_stations.items():
-            cx, cy = self.latlon_to_xy(lat, lon, w, h)
-            if math.isnan(cx) or math.isnan(cy):
-                continue
-            # Upward triangle ▲
-            pts = QPolygonF(
-                [
-                    QPointF(cx, cy - half),
-                    QPointF(cx - half, cy + half),
-                    QPointF(cx + half, cy + half),
-                ]
-            )
-            p.setPen(QPen(outline_color, 1))
-            p.setBrush(pin_color)
-            p.drawPolygon(pts)
-            # Label to the right of the pin
-            p.setPen(pin_color)
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawText(int(cx) + half + 3, int(cy) + 4, callsign)
 
     def _draw_footprint(self, p: QPainter, w: float, h: float) -> None:
         """Draw the footprint (visibility circle) on the equirectangular map.

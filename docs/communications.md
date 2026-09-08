@@ -47,9 +47,15 @@ src/
   - Comment テキスト（最大43文字）
   - Send Now ボタン
   - QTH座標を `LocationManager.load_saved()` から自動取得・表示
-- **APRS位置パケット → Dashboardマップピン表示**（シアン▲マーカー + コールサインラベル）
-  - `aprs_stations_updated(dict)` シグナル → `WorldMapView.set_aprs_stations()`
-  - タブクローズ時 `aprs_stations_cleared()` → `WorldMapView.clear_aprs_stations()`
+- **位置付きパケット → 受信ログ行を右クリック「Open in Google Maps」**（2026-09-08 実装）
+  - 位置を持つ受信行は `QListWidgetItem` の `UserRole` に `(lat, lon)` を格納
+    （`_append_log_item()`）。右クリックメニューが `open_map_url(str)` シグナルで
+    `https://www.google.com/maps?q=<lat>,<lon>&z=15` を emit → `MainWindow._open_url_app_mode`
+    がアプリモードブラウザの別ウィンドウで開く
+  - **旧仕様（世界地図タブへシアン▲でピン表示）は撤去**。地上系APRSは全局が数百km圏に
+    密集し「日本の上にポツンと三角」以上の判別ができず実用性が低かったため
+    （`WorldMapView.set_aprs_stations()` / `clear_aprs_stations()` / `_draw_aprs_stations()` と
+    `AprsTab.aprs_stations_updated` / `aprs_stations_cleared` を削除）
 - ADIF エクスポート（.adi ファイル）
 - SQLite `aprs_log` テーブルへ自動永続化
 
@@ -1340,13 +1346,17 @@ AX.25 テレメトリーを送る衛星（FUNcube 等）も同じパイプライ
 
 **設定の保存:** コールサイン・SSID・Via パスは `app_settings` に保存（再起動後も維持）。
 
-#### Dashboard 地図への位置表示
+#### 位置付きパケットの地図表示（右クリック → Google Maps）
 
-位置情報を含む APRS パケットを受信した場合、Dashboard のズームマップに局ピンを表示する。
+位置情報を含む APRS パケットを受信ログで右クリックすると「Open in Google Maps」が出る。
+選ぶと `open_map_url(str)` シグナル経由で `MainWindow._open_url_app_mode()` が
+アプリモードブラウザの別ウィンドウで Google Maps を開く（ピン + ズーム15）。
 
-- ピンにコールサイン ラベルを付ける
-- 衛星ドットとは異なる色・形状（例: ▲マーカー）で区別する
-- タブクローズ時にピンをクリア
+- **世界地図タブへの局ピン表示は 2026-09-08 に撤去**（上の「メニュー: Communications > APRS」
+  セクション参照）。地上系トラフィックでは全局が近接し判別できないため
+- 受信行は `QListWidgetItem.setData(UserRole, (lat, lon))` で座標を保持。DB に永続化される
+  のは双方向 QSO 確定行のみ（`log=True`）なので、起動時に読み戻す履歴行は大半が座標なし＝
+  メニューに項目が出ない（想定内）
 
 #### データ永続化
 
