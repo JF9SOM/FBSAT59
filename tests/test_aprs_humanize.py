@@ -87,9 +87,15 @@ CASES: list[tuple[str, str | None]] = [
 
 
 @pytest.fixture(autouse=True)
-def _english() -> None:
+def _english_no_city(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin English and disable the bundled-GeoNames "· near <city>" suffix so
+    these expectations stay about the core sentence, independent of the data
+    file. The city lookup has its own tests in test_aprs_citylookup.py."""
+    import comms.aprs.humanize as hz
+
     prev = get_language()
     set_language("en")
+    monkeypatch.setattr(hz, "_city_note", lambda _lat, _lon: "")
     yield
     set_language(prev)
 

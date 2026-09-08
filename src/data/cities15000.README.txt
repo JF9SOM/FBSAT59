@@ -1,0 +1,22 @@
+cities15000.tsv.gz
+==================
+
+An extract of the GeoNames "cities15000" dataset (populated places with a
+population of 15,000 or more), reduced to the columns FBSAT59 needs:
+
+    name <TAB> latitude <TAB> longitude <TAB> country <TAB> population
+
+Rows are sorted by descending population. Two leading "#" comment lines.
+
+Used by src/comms/aprs/citylookup.py to append "near <city>" to positions
+in the APRS tab's Plain view, fully offline.
+
+Source : https://download.geonames.org/export/dump/  (cities15000.zip)
+License : Creative Commons Attribution 4.0 (CC BY 4.0)
+          https://creativecommons.org/licenses/by/4.0/
+          "This work is licensed under a Creative Commons Attribution 4.0
+           License. The Data is provided 'as is' without warranty or any
+           representation of accuracy, timeliness or completeness."
+
+To refresh: download cities15000.zip, unzip, then regenerate keeping
+columns 2,5,6,9,15 (1-indexed) as name/lat/lon/country/population.

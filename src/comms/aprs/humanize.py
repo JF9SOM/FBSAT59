@@ -181,6 +181,20 @@ def _comment_note(text: str) -> str:
     return _(" · “{text}”").format(text=text) if text else ""
 
 
+def _city_note(lat: float, lon: float) -> str:
+    """`` · near <city>`` from the bundled offline GeoNames extract, if close."""
+    try:
+        from comms.aprs.citylookup import nearest_city
+
+        hit = nearest_city(lat, lon)
+    except Exception:
+        return ""
+    if hit is None:
+        return ""
+    name, _country, _dist = hit
+    return _(" · near {city}").format(city=name)
+
+
 def _render_position(parsed: dict[str, Any]) -> str | None:
     lat = parsed.get("latitude")
     lon = parsed.get("longitude")
@@ -198,7 +212,12 @@ def _render_position(parsed: dict[str, Any]) -> str | None:
     if weather:
         return _("Weather · {coords}{wx}").format(coords=coords, wx=_weather_note(weather))
 
-    tail = _altitude_note(parsed) + _comment_note(cmt) + _sat_note(parsed)
+    tail = (
+        _city_note(float(lat), float(lon))
+        + _altitude_note(parsed)
+        + _comment_note(cmt)
+        + _sat_note(parsed)
+    )
 
     if isinstance(speed, int | float) and speed >= 1.0:
         dir_txt = _compass(float(course)) if isinstance(course, int | float) else "?"

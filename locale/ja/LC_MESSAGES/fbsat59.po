@@ -5629,6 +5629,11 @@ msgstr "（ビット {bits}）"
 msgid "Status: “{text}”"
 msgstr "ステータス: 「{text}」"
 
+#: src/comms/aprs/humanize.py:196
+#, python-brace-format
+msgid " · near {city}"
+msgstr " · {city}付近"
+
 #~ msgid "AMSAT status: Partially operational — degraded but active."
 #~ msgstr "AMSATステータス: 一部稼働 — 性能低下しているが動作中。"
 

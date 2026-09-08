@@ -7,6 +7,7 @@ Bundles:
   - src/web/static/  (FastAPI static files)
   - locale/          (i18n .mo files)
   - src/data/community_transmitters.json
+  - src/data/cities15000.tsv.gz  (offline GeoNames extract, CC BY 4.0)
 
 Hamlib note:
   Linux  : collected from /opt/hamlib/4.7 or system path.
@@ -155,6 +156,8 @@ datas = [
     (str(ROOT / "locale"), "locale"),
     # Community frequency database
     (str(SRC / "data" / "community_transmitters.json"), "data"),
+    # Offline GeoNames city extract for the APRS Plain view's "near <city>"
+    (str(SRC / "data" / "cities15000.tsv.gz"), "data"),
     # App icon PNGs (used by Qt window icon at runtime on all platforms)
     (str(ROOT / "assets"), "assets"),
     # Version file written by CI before pyinstaller runs (used by _get_version())
