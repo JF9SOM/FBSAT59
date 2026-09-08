@@ -5634,6 +5634,22 @@ msgstr "ステータス: 「{text}」"
 msgid " · near {city}"
 msgstr " · {city}付近"
 
+#: src/ui/aprs_tab.py
+msgid "Show:"
+msgstr "表示:"
+
+#: src/ui/aprs_tab.py
+msgid "Plain"
+msgstr "平文"
+
+#: src/ui/aprs_tab.py
+msgid "Raw packet"
+msgstr "生パケット"
+
+#: src/ui/aprs_tab.py
+msgid "Plain: a human-readable summary of each packet (position,\nmessage, status…). Raw packet: the APRS information field\nexactly as received on the air."
+msgstr "平文: 各パケットを人間可読の要約で表示（位置・メッセージ・\nステータス等）。生パケット: オンエアで受信した APRS 情報\nフィールドをそのまま表示。"
+
 #~ msgid "AMSAT status: Partially operational — degraded but active."
 #~ msgstr "AMSATステータス: 一部稼働 — 性能低下しているが動作中。"
 

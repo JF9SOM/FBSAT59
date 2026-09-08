@@ -5175,3 +5175,18 @@ msgstr ""
 msgid " · near {city}"
 msgstr ""
 
+#: src/ui/aprs_tab.py
+msgid "Show:"
+msgstr ""
+
+#: src/ui/aprs_tab.py
+msgid "Plain"
+msgstr ""
+
+#: src/ui/aprs_tab.py
+msgid "Raw packet"
+msgstr ""
+
+#: src/ui/aprs_tab.py
+msgid "Plain: a human-readable summary of each packet (position,\nmessage, status…). Raw packet: the APRS information field\nexactly as received on the air."
+msgstr ""
