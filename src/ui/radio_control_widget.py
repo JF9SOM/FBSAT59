@@ -109,6 +109,7 @@ class RadioControlWidget(QWidget):
     cw_mode_requested: Signal = Signal(str, str)  # dl_cw_mode, ul_cw_mode
     dmode_requested: Signal = Signal(str, str)  # dl_data_mode, ul_data_mode
     _rig1_connect_done: Signal = Signal(bool)  # internal: True = connected successfully
+    _rotator_connect_done: Signal = Signal(bool)  # internal: True = rotator connected
     # Emitted when a transponder whose description implies SSTV/SSDV or APRS
     # is selected — MainWindow uses these to auto-open the matching tab.
     sstv_transponder_selected: Signal = Signal()
@@ -161,6 +162,7 @@ class RadioControlWidget(QWidget):
         self._audio_rec_timer.timeout.connect(self._update_audio_rec_status)
         self._setup_ui()
         self._rig1_connect_done.connect(self._finish_rig1_connect)
+        self._rotator_connect_done.connect(self._finish_connect_rotator)
 
     # ------------------------------------------------------------------ #
     # UI construction
@@ -1202,9 +1204,31 @@ class RadioControlWidget(QWidget):
             return
         if self._rotator.is_connected:
             self._rotator.disconnect()
-        else:
-            if self._rotator.connect():
-                self.rotator_connected.emit()
+            self._update_rot_status()
+            return
+        # Run connect() on a background thread. A Direct-mode rotator's
+        # Hamlib rot.open() can block for seconds (or hang on a wedged serial
+        # exchange), and doing it on the UI thread freezes the whole app.
+        # Mirrors the Rig 1 Connect pattern.
+        self._connect_rot_btn.setEnabled(False)
+        self._rot_status_label.setText(_("Connecting..."))
+        self._rot_status_label.setStyleSheet("color: orange;")
+        rot = self._rotator
+
+        def _do() -> None:
+            try:
+                rot.connect()
+            except Exception:
+                logger.exception("Rotator connect() raised")
+            self._rotator_connect_done.emit(rot.is_connected)
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    def _finish_connect_rotator(self, success: bool) -> None:
+        """Called on the UI thread when the background rotator connect() finishes."""
+        self._connect_rot_btn.setEnabled(True)
+        if success:
+            self.rotator_connected.emit()
         self._update_rot_status()
 
     # ------------------------------------------------------------------ #

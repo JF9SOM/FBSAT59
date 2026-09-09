@@ -7150,8 +7150,9 @@ class MainWindow(QMainWindow):
     def _run_rotator_op(self, fn: Callable[[RotatorController], object]) -> None:
         """Run a one-shot rotator command in a background thread, guarded by
         the same busy-lock as _send_to_rotator so it never races the
-        tracking cycle on the rotctld socket. Polls the position afterwards
-        so the radar marker / manual prefill refresh right away."""
+        tracking cycle on the serial port / rotctld socket. Polls the position
+        afterwards so the radar marker / manual prefill refresh right away.
+        Used for manual moves and for the initial jump after Connect."""
         rot = self._rotator_controller
         if rot is None or not rot.is_connected:
             return
@@ -7164,7 +7165,7 @@ class MainWindow(QMainWindow):
                 pos = rot.get_position()
                 self._rot_pos_updated.emit(pos.azimuth_deg, pos.elevation_deg)
             except Exception as exc:
-                logger.error("Rotator manual op error: %s", exc)
+                logger.error("Rotator op error: %s", exc)
             finally:
                 self._rot_busy_lock.release()
 
@@ -7208,25 +7209,25 @@ class MainWindow(QMainWindow):
 
         self._clear_rotator_manual_hold()
 
-        # Fetch actual rotator position and show on radar; fall back to (0, 0)
-        # if get_position() returns the default RotatorState.
-        rot_ctrl = self._rotator_controller
+        # Route the initial position fetch and first set_position through
+        # _run_rotator_op so they take _rot_busy_lock. This method used to
+        # spawn two lock-free daemon threads that raced the tracking-tick
+        # _rot_send thread on the same serial port; two interleaved Hamlib
+        # set_position() exchanges could deadlock a Direct-mode rotator and
+        # freeze the whole UI on Windows (see docs/hamlib.md).
+        obs = None
+        if self._selected_norad is not None and self._engine is not None:
+            obs = self._engine.observe(self._selected_norad)
 
-        def _fetch_init_pos() -> None:
-            pos = rot_ctrl.get_position()
-            self._rot_pos_updated.emit(pos.azimuth_deg, pos.elevation_deg)
+        if obs is not None:
+            az = self._apply_south_offset(obs.azimuth_deg)
+            el = obs.elevation_deg
+            self._run_rotator_op(lambda rot: rot.set_position(az, el))
+        else:
+            # No satellite selected yet: just refresh the radar marker with the
+            # rotator's real position (_run_rotator_op polls get_position after fn).
+            self._run_rotator_op(lambda rot: None)
 
-        threading.Thread(target=_fetch_init_pos, daemon=True).start()
-
-        if self._selected_norad is None or self._engine is None:
-            return
-        obs = self._engine.observe(self._selected_norad)
-        if obs is None:
-            return
-        rot = self._rotator_controller
-        az = self._apply_south_offset(obs.azimuth_deg)
-        el = obs.elevation_deg
-        threading.Thread(target=lambda: rot.set_position(az, el), daemon=True).start()
         self._update_rot_label()
 
     def _apply_south_offset(self, az: float) -> float:

@@ -4258,6 +4258,14 @@ class HamlibRotatorController(RotatorController):
         self._last_az: float | None = None  # last commanded AZ for shortest-path calc
         self._catching_up: bool = False  # True while rotator is moving to initial position
         self._catch_up_start_time: float | None = None  # monotonic time when catch-up started
+        # Serialises every rotator I/O exchange (open/close/set_position/
+        # get_position/stop/park) across all caller threads.  Re-entrant so
+        # set_position() can call _send_p() and get_position() within one
+        # thread.  Without this, two concurrent set_position() calls (e.g. the
+        # tracking tick racing the connect-time initial jump) interleave two
+        # multi-transaction Hamlib serial exchanges on the same port and
+        # deadlock a Direct-mode rotator on Windows.
+        self._io_lock = threading.RLock()
 
     def connect(self) -> bool:
         """Connect to the rotator."""
@@ -4267,35 +4275,36 @@ class HamlibRotatorController(RotatorController):
             self._state = RigState.CONNECTING
 
         try:
-            if self._net_mode:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(5.0)
-                sock.connect((self._net_host, self._net_port))
-                self._sock = sock
-            elif HAMLIB_AVAILABLE:
-                import Hamlib as _H  # lazy — avoids Qt TLS collision at startup
+            with self._io_lock:
+                if self._net_mode:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(5.0)
+                    sock.connect((self._net_host, self._net_port))
+                    self._sock = sock
+                elif HAMLIB_AVAILABLE:
+                    import Hamlib as _H  # lazy — avoids Qt TLS collision at startup
 
-                self._hamlib = _H
-                rot = _H.Rot(self._model_id)
-                logger.info(
-                    "Rotator: creating controller port=%s model=%s",
-                    self._port,
-                    self._model_id,
-                )
-                rot.set_conf("rot_pathname", self._port)
-                rot.set_conf("serial_speed", str(self._baud_rate))
-                rot.open()
-                self._rot = rot
-            else:
-                self._rot = _MockRotator()
+                    self._hamlib = _H
+                    rot = _H.Rot(self._model_id)
+                    logger.info(
+                        "Rotator: creating controller port=%s model=%s",
+                        self._port,
+                        self._model_id,
+                    )
+                    rot.set_conf("rot_pathname", self._port)
+                    rot.set_conf("serial_speed", str(self._baud_rate))
+                    rot.open()
+                    self._rot = rot
+                else:
+                    self._rot = _MockRotator()
 
-            with self._lock:
-                self._state = RigState.CONNECTED
-            self._last_az = None
-            self._catching_up = False
-            self._catch_up_start_time = None
-            logger.info("Rotator: connected")
-            return True
+                with self._lock:
+                    self._state = RigState.CONNECTED
+                self._last_az = None
+                self._catching_up = False
+                self._catch_up_start_time = None
+                logger.info("Rotator: connected")
+                return True
         except Exception as exc:
             with self._lock:
                 self._state = RigState.ERROR
@@ -4304,31 +4313,33 @@ class HamlibRotatorController(RotatorController):
 
     def disconnect(self) -> None:
         """Disconnect the rotator."""
-        try:
-            if self._net_mode and self._sock:
-                self._sock.close()
-            elif self._rot is not None and self._hamlib is not None:
-                self._rot.close()
-        except Exception:
-            pass
-        finally:
-            self._rot = None
-            self._sock = None
-            with self._lock:
-                self._state = RigState.DISCONNECTED
+        with self._io_lock:
+            try:
+                if self._net_mode and self._sock:
+                    self._sock.close()
+                elif self._rot is not None and self._hamlib is not None:
+                    self._rot.close()
+            except Exception:
+                pass
+            finally:
+                self._rot = None
+                self._sock = None
+                with self._lock:
+                    self._state = RigState.DISCONNECTED
 
     def _send_p(self, az: float, el: float) -> None:
         """Send the P command and discard the RPRT response to keep the socket buffer clean."""
-        if self._net_mode and self._sock:
-            self._sock.sendall(f"P {az:.1f} {el:.1f}\n".encode())
-            with contextlib.suppress(Exception):
-                self._sock.recv(256)  # discard RPRT 0
-        elif self._rot is not None:
-            self._rot.set_position(az, el)
-        with self._lock:
-            self._rotor_state.azimuth_deg = az
-            self._rotor_state.elevation_deg = el
-            self._rotor_state.is_moving = True
+        with self._io_lock:
+            if self._net_mode and self._sock:
+                self._sock.sendall(f"P {az:.1f} {el:.1f}\n".encode())
+                with contextlib.suppress(Exception):
+                    self._sock.recv(256)  # discard RPRT 0
+            elif self._rot is not None:
+                self._rot.set_position(az, el)
+            with self._lock:
+                self._rotor_state.azimuth_deg = az
+                self._rotor_state.elevation_deg = el
+                self._rotor_state.is_moving = True
 
     def set_position(self, azimuth_deg: float, elevation_deg: float) -> bool:
         """Rotate to the specified azimuth and elevation.
@@ -4346,57 +4357,66 @@ class HamlibRotatorController(RotatorController):
         if not self.is_connected:
             return False
         try:
-            el_cmd = max(0.0, min(90.0, elevation_deg))
+            # Hold _io_lock for the whole state-machine step so the catch-up
+            # flags and _last_az cannot be mutated by a concurrent caller and
+            # so the serial exchanges never interleave with another thread's.
+            with self._io_lock:
+                el_cmd = max(0.0, min(90.0, elevation_deg))
 
-            if self._last_az is None:
-                self._send_p(azimuth_deg, el_cmd)
-                self._catching_up = True
-                self._catch_up_start_time = time.monotonic()
-                self._last_az = azimuth_deg
-                logger.info("Rotator: initial jump to az=%.1f el=%.1f", azimuth_deg, el_cmd)
-                return True
-
-            if self._catching_up:
-                current = self.get_position()
-                rot_az = current.azimuth_deg
-                sat_az = azimuth_deg
-
-                az_diff = abs(rot_az - sat_az)
-                if az_diff > 180:
-                    az_diff = 360.0 - az_diff
-
-                if az_diff <= self._CATCH_UP_THRESHOLD:
-                    self._catching_up = False
-                    self._catch_up_start_time = None
-                    logger.info("Rotator: caught up at rot=%.1f sat=%.1f", rot_az, sat_az)
-                    # Fall through to normal tracking below
-                elif time.monotonic() - (self._catch_up_start_time or 0.0) > self._CATCH_UP_TIMEOUT:
+                if self._last_az is None:
                     self._send_p(azimuth_deg, el_cmd)
+                    self._catching_up = True
                     self._catch_up_start_time = time.monotonic()
                     self._last_az = azimuth_deg
-                    logger.info("Rotator: catch-up timeout, retrying az=%.1f", azimuth_deg)
+                    logger.info("Rotator: initial jump to az=%.1f el=%.1f", azimuth_deg, el_cmd)
                     return True
-                else:
-                    return True  # Still waiting for rotator to reach target
 
-            last = self._last_az
-            crossed_zero = (last > 270 and azimuth_deg < 90) or (last < 90 and azimuth_deg > 270)
+                if self._catching_up:
+                    current = self.get_position()
+                    rot_az = current.azimuth_deg
+                    sat_az = azimuth_deg
 
-            if crossed_zero:
-                self._catching_up = True
-                self._catch_up_start_time = time.monotonic()
+                    az_diff = abs(rot_az - sat_az)
+                    if az_diff > 180:
+                        az_diff = 360.0 - az_diff
+
+                    if az_diff <= self._CATCH_UP_THRESHOLD:
+                        self._catching_up = False
+                        self._catch_up_start_time = None
+                        logger.info("Rotator: caught up at rot=%.1f sat=%.1f", rot_az, sat_az)
+                        # Fall through to normal tracking below
+                    elif (
+                        time.monotonic() - (self._catch_up_start_time or 0.0)
+                        > self._CATCH_UP_TIMEOUT
+                    ):
+                        self._send_p(azimuth_deg, el_cmd)
+                        self._catch_up_start_time = time.monotonic()
+                        self._last_az = azimuth_deg
+                        logger.info("Rotator: catch-up timeout, retrying az=%.1f", azimuth_deg)
+                        return True
+                    else:
+                        return True  # Still waiting for rotator to reach target
+
+                last = self._last_az
+                crossed_zero = (last > 270 and azimuth_deg < 90) or (
+                    last < 90 and azimuth_deg > 270
+                )
+
+                if crossed_zero:
+                    self._catching_up = True
+                    self._catch_up_start_time = time.monotonic()
+                    self._last_az = azimuth_deg
+                    self._send_p(azimuth_deg, el_cmd)
+                    logger.info(
+                        "Rotator: 0-degree wrap %.1f->%.1f, re-entering catch-up",
+                        last,
+                        azimuth_deg,
+                    )
+                    return True
+
                 self._last_az = azimuth_deg
                 self._send_p(azimuth_deg, el_cmd)
-                logger.info(
-                    "Rotator: 0-degree wrap %.1f->%.1f, re-entering catch-up",
-                    last,
-                    azimuth_deg,
-                )
                 return True
-
-            self._last_az = azimuth_deg
-            self._send_p(azimuth_deg, el_cmd)
-            return True
         except Exception as exc:
             logger.error("Rotator.set_position: %s", exc)
             return False
@@ -4411,13 +4431,14 @@ class HamlibRotatorController(RotatorController):
         if not self.is_connected:
             return False
         try:
-            el_cmd = max(0.0, min(90.0, elevation_deg))
-            self._send_p(azimuth_deg, el_cmd)
-            self._last_az = None
-            self._catching_up = False
-            self._catch_up_start_time = None
-            logger.info("Rotator: manual goto az=%.1f el=%.1f", azimuth_deg, el_cmd)
-            return True
+            with self._io_lock:
+                el_cmd = max(0.0, min(90.0, elevation_deg))
+                self._send_p(azimuth_deg, el_cmd)
+                self._last_az = None
+                self._catching_up = False
+                self._catch_up_start_time = None
+                logger.info("Rotator: manual goto az=%.1f el=%.1f", azimuth_deg, el_cmd)
+                return True
         except Exception as exc:
             logger.error("Rotator.goto: %s", exc)
             return False
@@ -4426,47 +4447,49 @@ class HamlibRotatorController(RotatorController):
         """Return the current azimuth and elevation."""
         if not self.is_connected:
             return RotatorState()
-        try:
-            if self._net_mode and self._sock:
-                self._sock.sendall(b"p\n")
-                data = self._sock.recv(512).decode(errors="replace")
-                values: list[float] = []
-                for line in data.split("\n"):
-                    line = line.strip()
-                    if line and not line.startswith("RPRT"):
-                        with contextlib.suppress(ValueError):
-                            values.append(float(line))
-                if len(values) >= 2:
+        with self._io_lock:
+            try:
+                if self._net_mode and self._sock:
+                    self._sock.sendall(b"p\n")
+                    data = self._sock.recv(512).decode(errors="replace")
+                    values: list[float] = []
+                    for line in data.split("\n"):
+                        line = line.strip()
+                        if line and not line.startswith("RPRT"):
+                            with contextlib.suppress(ValueError):
+                                values.append(float(line))
+                    if len(values) >= 2:
+                        with self._lock:
+                            self._rotor_state.azimuth_deg = values[0]
+                            self._rotor_state.elevation_deg = values[1]
+                elif self._rot is not None:
+                    az, el = self._rot.get_position()
                     with self._lock:
-                        self._rotor_state.azimuth_deg = values[0]
-                        self._rotor_state.elevation_deg = values[1]
-            elif self._rot is not None:
-                az, el = self._rot.get_position()
-                with self._lock:
-                    self._rotor_state.azimuth_deg = float(az)
-                    self._rotor_state.elevation_deg = float(el)
-        except Exception as exc:
-            logger.error("Rotator.get_position: %s", exc)
+                        self._rotor_state.azimuth_deg = float(az)
+                        self._rotor_state.elevation_deg = float(el)
+            except Exception as exc:
+                logger.error("Rotator.get_position: %s", exc)
 
-        with self._lock:
-            return RotatorState(
-                azimuth_deg=self._rotor_state.azimuth_deg,
-                elevation_deg=self._rotor_state.elevation_deg,
-                is_moving=self._rotor_state.is_moving,
-            )
+            with self._lock:
+                return RotatorState(
+                    azimuth_deg=self._rotor_state.azimuth_deg,
+                    elevation_deg=self._rotor_state.elevation_deg,
+                    is_moving=self._rotor_state.is_moving,
+                )
 
     def stop(self) -> bool:
         """Stop rotation."""
         if not self.is_connected:
             return False
         try:
-            if self._net_mode and self._sock:
-                self._sock.sendall(b"S\n")
-            elif self._rot is not None:
-                self._rot.stop()
-            with self._lock:
-                self._rotor_state.is_moving = False
-            return True
+            with self._io_lock:
+                if self._net_mode and self._sock:
+                    self._sock.sendall(b"S\n")
+                elif self._rot is not None:
+                    self._rot.stop()
+                with self._lock:
+                    self._rotor_state.is_moving = False
+                return True
         except Exception as exc:
             logger.error("Rotator.stop: %s", exc)
             return False
@@ -4476,11 +4499,12 @@ class HamlibRotatorController(RotatorController):
         if not self.is_connected:
             return False
         try:
-            if self._net_mode and self._sock:
-                self._sock.sendall(b"K\n")
-            elif self._rot is not None:
-                self._rot.park()
-            return True
+            with self._io_lock:
+                if self._net_mode and self._sock:
+                    self._sock.sendall(b"K\n")
+                elif self._rot is not None:
+                    self._rot.park()
+                return True
         except Exception as exc:
             logger.error("Rotator.park: %s", exc)
             return False
