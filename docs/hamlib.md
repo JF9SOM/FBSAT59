@@ -154,6 +154,92 @@ SoapySDR も同じ `dist-packages` に存在するため、パス除去前に `i
 
 ---
 
+## Direct モードのローテーターが Connect 直後にハングしてアプリごと落ちるバグ — 原因は接続時の複数スレッド競合（2026-09-09 実機確認・修正済み）
+
+### 症状
+
+SkyWatcher ローテーター（Hamlib rot model **2801** = "Sky-Watcher"）を **Direct モード**
+（`rotator_settings.mode == "direct"` / COM7 / 9600）で Connect すると、数秒〜25 秒ほど
+（数サイクルの `set_position` が通ることもある）でアプリが「応答なし」になり、そのまま
+Windows に強制終了される。ログは `Rotator: connected` の直後（または数行の
+`Rotator: set position` の後）で**トレースバックも正常終了行も残さず**途切れる。
+**NET モード（ctld-launcher の rotctld 経由）では全く問題なし。** ユーザーの以前の
+Ubuntu 環境では Direct モードでも動いていた。
+
+### 切り分け（やったこと）
+
+1. **Hamlib 単体のヘッドレステスト**（Qt なし・アプリ同梱の `libhamlib-4.dll` 4.7.2 を
+   ロードして COM7 @ 9600 で `Rot(2801)` を直接叩く）→ `open` 0.28s、`set_position`
+   ×10 各 50〜140ms、`get_position` ×10 各 30ms、`close` まで**完走**。シリアルトレース上も
+   `read_string_generic` の待ちゼロ。→ **Hamlib の Windows シリアル層のバグでも、
+   ハードでも、ボーレートでもない**（`caps.serial_rate_min == max == 9600` なので 9600 は正しい）。
+2. **実アプリのプロセス確認** → ハング後に `python.exe -m src.main` が**存在しない**
+   （＝ハードキルされている。Python レベルのデッドロックなら残る）。
+3. **クラッシュ直前のログ**に `Rotator: initial jump` が **az 違いで 2ms 差の 2 行**。
+   → `HamlibRotatorController.set_position()` の `_last_az is None` 分岐に**2 スレッドが
+   同時に入っている**証拠。
+
+### 真の原因
+
+`MainWindow._on_rotator_connected()`（`rotator_connected` シグナルのスロット）が、接続直後に
+**`_rot_busy_lock` を取らないデーモンスレッドを 2 本**起動していた:
+
+- `_fetch_init_pos` → `rot.get_position()`
+- `threading.Thread(target=lambda: rot.set_position(az, el))`
+
+同時に追尾ティック（`_send_to_rotator` → `_rot_send`、こちらは `_rot_busy_lock` を取る）も
+走る。結果、`connected` 直後に**最大 3 スレッドが同一 `Rot` オブジェクト＝同一 COM ハンドルに
+同時アクセス**する。`_rot_busy_lock` は `_on_rotator_connected` の 2 本には効かないため無意味。
+
+Sky-Watcher バックエンドは 1 回の `set_position` で `:K1 :K2 :f1 :f2 :G100 :S… :J1` と
+**約 10 往復のシリアルトランザクション**を行う（write + `read_string_generic`）。これが
+2 スレッド分インターリーブすると、片方の `ReadFile` がもう片方の期待するバイトを消費してしまい、
+飢えた側の `read_string_generic` が `expected_len` を満たせず**無限ブロック**。SWIG 版 Hamlib は
+GIL を離さないので UI スレッドごと凍結 → Windows が強制終了（トレースバックも正常終了もなし）。
+
+**Ubuntu で動いていた理由**: 同じ競合は Linux にもあるが、Hamlib の本物の termios +
+`select()`（VMIN/VTIME）では飢えた read がタイムアウトで空を返し、次サイクルで復旧する
+（`Protocol error` ログが出る程度）。Windows の `lib/termios.c` エミュレーションは
+`ReadFile` の部分読み取り時にタイムアウトが効かず、真のデッドロックになる。
+**NET モードが無事な理由**: TCP ソケット（`settimeout(5.0)` + `recv` を握り潰し）で、
+rotctld がサーバー側でコマンドを直列化するため。
+
+### 修正（コミット `6ef5276`）
+
+1. **`HamlibRotatorController._io_lock`（`threading.RLock`）を新設**し、`connect` / `disconnect` /
+   `_send_p` / `set_position` / `goto` / `get_position` / `stop` / `park` の各シリアル交信を
+   すべてこのロックで囲む。呼び出し元が何であれポート単位で直列化され、インターリーブが
+   構造的に起こり得なくなる。再入可能ロックなので `set_position` が内部で `_send_p` /
+   `get_position`（catch-up 判定）を呼んでも問題ない。
+2. **`_on_rotator_connected()`** — 無ロックのデーモンスレッド 2 本をやめ、初期位置取得＋初回
+   `set_position` を `_run_rotator_op()`（`_rot_busy_lock` を尊重する既存の仕組み）経由にする。
+3. **`RadioControlWidget._on_connect_rotator()`** — `rot.connect()` をバックグラウンドスレッドで
+   実行（Rig 1 Connect ボタンと同じ `Signal(bool)` + `_finish_connect_rotator` パターン）。
+   Direct モードの `rot.open()` が遅延・ハングしても UI を固めない。
+
+### 実機検証
+
+実 SkyWatcher（Windows / COM7）に対し、**UI 側 busy-lock を一切かけず** 4 スレッド × 15 周で
+`set_position`/`get_position` を同時に叩くストレステスト（実アプリの競合より過酷）→
+全 120 呼び出しが 100〜500ms（他スレッド待ちの直列化）で完了、デッドロックなし、
+`disconnect` までクリーン。修正前は同じパターンで確実にハングしていた。GUI 実機でも
+Direct モードの Connect → 追尾がハングなしで動作することをユーザーが確認。
+
+### 教訓
+
+- **UI 側の `_rot_busy_lock` は「ローテーターアクセスは直列化されている」という誤った
+  安心感を与えていた**。実際には `_on_rotator_connected` という別経路がそのロックを
+  バイパスしており、`_rot_busy_lock` だけでは守れていなかった。ハードウェア I/O の
+  排他はコントローラー内部（今回の `_io_lock`）で保証するのが正しい。
+- 「Ubuntu では動いていたのに Windows で落ちる」は Hamlib の Windows シリアル層を疑う前に、
+  まず**アプリ側のスレッド競合**を疑う。Windows の `ReadFile` タイムアウトの緩さは
+  「元からあった競合バグを顕在化させただけ」で原因ではないことがある。
+- Python レベルのトレースバックも正常終了も残さずプロセスが消える＝**ネイティブ
+  デッドロック（GIL 保持のブロッキング I/O）または C クラッシュ**。py-spy の
+  `dump --native` でスタックを取るのが有効（今回はログの状況証拠で確定できたため未使用）。
+
+---
+
 ## HamlibNetController 実装メモ（2026-05-20 確認済み）
 
 ### rigctld 標準プロトコルと VFO 割り当て（全機種共通）
