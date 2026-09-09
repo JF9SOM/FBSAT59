@@ -7,6 +7,7 @@ Supports Hamlib direct connection and NET (rotctld) connection.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import threading
@@ -39,6 +40,39 @@ logger = logging.getLogger(__name__)
 # Pseudo rotator models with no real serial link — the connection Test button
 # is meaningless (Dummy always "succeeds"; NET rotctl is not a serial device).
 _NON_TESTABLE_ROT_MODELS: frozenset[int] = frozenset({1, 2})
+
+
+def _probe_rotator(model_id: int, port: str, baud: int) -> bool:
+    """Open the rotator via Hamlib at *baud* and return True iff it responds.
+
+    Talks to Hamlib directly rather than via HamlibRotatorController because
+    we need ``rot.error_status``: on a wrong baud the SkyWatcher (and other
+    fixed-rate backends) still return ``None`` from ``rot.open()`` but set
+    ``error_status`` to ``-RIG_ETIMEOUT`` after the handshake read times out,
+    so ``connect()``'s boolean cannot tell a live link from a dead one.
+    A matching baud leaves ``error_status == 0``.
+
+    Runs on a background thread — Hamlib rotator I/O must never touch the
+    UI thread.
+    """
+    try:
+        import Hamlib  # bundled; resolved lazily on the worker thread
+    except Exception:
+        return False
+    rot = Hamlib.Rot(model_id)
+    rot.set_conf("rot_pathname", port)
+    rot.set_conf("serial_speed", str(baud))
+    try:
+        rot.open()
+        ok = bool(rot.error_status == 0)
+    except Exception:
+        logger.exception("Rotator probe: rot.open() raised")
+        ok = False
+    finally:
+        with contextlib.suppress(Exception):
+            rot.close()
+    return ok
+
 
 # ---------------------------------------------------------------------------
 # Fallback rotator model list.
@@ -309,12 +343,12 @@ class RotatorSettingsDialog(QDialog):
         self._baud_test_btn.setVisible(visible)
 
     def _on_baud_test(self) -> None:
-        """Open the rotator via Hamlib at the chosen baud and report success/failure.
+        """Probe the rotator at the chosen baud and colour the button by the result.
 
-        A successful Hamlib rot.open() performs the model's serial handshake
-        with the unit (e.g. SkyWatcher :F1/:F2), so it is the rotator analogue
-        of the rig dialog's "did the radio answer" baud test. Runs on a
-        background thread — Hamlib rotator I/O must never touch the UI thread.
+        The probe (``_probe_rotator``) opens the rotator via Hamlib and checks
+        ``rot.error_status``: a matching baud completes the model's serial
+        handshake (e.g. SkyWatcher :F1/:F2) and leaves it 0; a wrong baud
+        times out with -RIG_ETIMEOUT. Runs on a background thread.
         """
         port = self._port_combo.currentText().strip()
         baud = int(self._baud_combo.currentText())
@@ -351,16 +385,9 @@ class RotatorSettingsDialog(QDialog):
         def _test() -> None:
             ok = False
             try:
-                from rig.controller import HamlibRotatorController
-
-                ctrl = HamlibRotatorController(model_id=model_id, port=port, baud_rate=baud)
-                try:
-                    ok = bool(ctrl.connect())
-                finally:
-                    ctrl.disconnect()
+                ok = _probe_rotator(model_id, port, baud)
             except Exception:
                 logger.exception("Rotator baud test failed")
-                ok = False
             self._baud_notifier.done.emit(ok)
 
         threading.Thread(target=_test, daemon=True).start()

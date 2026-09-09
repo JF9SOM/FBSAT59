@@ -1,8 +1,8 @@
 """Unit tests for ui/rotator_dialog.py — Direct-mode connection Test button.
 
 Verifies the Baud Rate row's "Test" button: when it is shown/hidden, that
-port/baud/model changes reset it, and that a mocked HamlibRotatorController
-connect() drives it green (success) or red (failure).
+port/baud/model changes reset it, that _probe_rotator() keys off
+rot.error_status, and that its result drives the button green/red.
 
 Uses conftest.py's offscreen Qt platform and pytest-qt's ``qtbot`` fixture
 with ``qtbot.addWidget()`` (not a manual QApplication + .close()) — see
@@ -12,12 +12,14 @@ these dialog widgets.
 
 from __future__ import annotations
 
+import sys
+import types
+
 import pytest
 from pytestqt.qtbot import QtBot
 
-import rig.controller as rig_controller
 import ui.rotator_dialog as rotator_dialog
-from ui.rotator_dialog import RotatorSettingsDialog
+from ui.rotator_dialog import RotatorSettingsDialog, _probe_rotator
 
 _GS232A = 601  # a real serial rotator model — testable
 _GS232_GENERIC = 602  # another real serial rotator model
@@ -109,18 +111,6 @@ def test_empty_port_shows_no_port(qtbot: QtBot) -> None:
     assert "orange" in dlg._baud_test_btn.styleSheet()
 
 
-class _FakeRotator:
-    def __init__(self, *, ok: bool) -> None:
-        self._ok = ok
-        self.disconnected = False
-
-    def connect(self) -> bool:
-        return self._ok
-
-    def disconnect(self) -> None:
-        self.disconnected = True
-
-
 @pytest.mark.parametrize(
     ("ok", "expected_text", "expected_color"),
     [(True, "✓ OK", "#27ae60"), (False, "✗ Failed", "#c0392b")],
@@ -136,20 +126,71 @@ def test_baud_test_result_drives_button(
     _select_model(dlg, _GS232A)
     dlg._port_combo.setEditText("COM7")
 
-    created: list[_FakeRotator] = []
+    seen: list[tuple[int, str, int]] = []
 
-    def _factory(*, model_id: int, port: str, baud_rate: int) -> _FakeRotator:
-        assert (model_id, port, baud_rate) == (_GS232A, "COM7", 9600)
-        r = _FakeRotator(ok=ok)
-        created.append(r)
-        return r
+    def _fake_probe(model_id: int, port: str, baud: int) -> bool:
+        seen.append((model_id, port, baud))
+        return ok
 
-    # _on_baud_test() does `from rig.controller import HamlibRotatorController`
-    # inside its worker, so patch it on the source module.
-    monkeypatch.setattr(rig_controller, "HamlibRotatorController", _factory)
+    monkeypatch.setattr(rotator_dialog, "_probe_rotator", _fake_probe)
 
     dlg._on_baud_test()
     qtbot.waitUntil(lambda: dlg._baud_test_btn.text() == expected_text, timeout=3000)
     assert expected_color in dlg._baud_test_btn.styleSheet()
     assert dlg._baud_test_btn.isEnabled()
-    assert created and created[0].disconnected
+    assert seen == [(_GS232A, "COM7", 9600)]
+
+
+class _FakeRot:
+    """Minimal stand-in for a Hamlib.Rot object."""
+
+    def __init__(self, model_id: int, *, err_after_open: int) -> None:
+        self.model_id = model_id
+        self._err_after_open = err_after_open
+        self.error_status = 0
+        self.conf: dict[str, str] = {}
+        self.closed = False
+
+    def set_conf(self, key: str, value: str) -> None:
+        self.conf[key] = value
+
+    def open(self) -> None:
+        self.error_status = self._err_after_open
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _install_fake_hamlib(monkeypatch: pytest.MonkeyPatch, *, err_after_open: int) -> list[_FakeRot]:
+    created: list[_FakeRot] = []
+
+    def _rot(model_id: int) -> _FakeRot:
+        r = _FakeRot(model_id, err_after_open=err_after_open)
+        created.append(r)
+        return r
+
+    fake = types.ModuleType("Hamlib")
+    fake.Rot = _rot  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "Hamlib", fake)
+    return created
+
+
+def test_probe_rotator_true_when_error_status_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = _install_fake_hamlib(monkeypatch, err_after_open=0)
+    assert _probe_rotator(_GS232A, "COM7", 9600) is True
+    assert created[0].conf == {"rot_pathname": "COM7", "serial_speed": "9600"}
+    assert created[0].closed
+
+
+def test_probe_rotator_false_on_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    # -5 == -RIG_ETIMEOUT: what a wrong baud produces on the SkyWatcher.
+    created = _install_fake_hamlib(monkeypatch, err_after_open=-5)
+    assert _probe_rotator(_GS232A, "COM7", 4800) is False
+    assert created[0].closed
+
+
+def test_probe_rotator_false_when_hamlib_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(sys.modules, "Hamlib", None)
+    assert _probe_rotator(_GS232A, "COM7", 9600) is False
