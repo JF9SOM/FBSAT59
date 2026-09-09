@@ -1,8 +1,8 @@
 {
   "latest_version": "0.3.54",
-  "minimum_supported_version": "0.3.49",
-  "critical": false,
-  "message_ja": "重要なアップデートがあります。SATNOGS のデータベース仕様変更により、v0.3.49 より前のバージョンでは衛星の状態表示（色分け）が正しくなくなります。最新バージョンにアップデートしてください。",
-  "message_en": "A critical update is available. A change to the SATNOGS database means versions before v0.3.49 show incorrect satellite status colours. Please update to the latest version.",
+  "minimum_supported_version": "0.3.55",
+  "critical": true,
+  "message_ja": "重要なアップデートがあります。ローテーターを Direct モードで接続するとアプリがハング・強制終了する不具合を v0.3.55 で修正しました。最新バージョンにアップデートしてください。",
+  "message_en": "An important update is available. Version 0.3.55 fixes a bug where connecting a rotator in Direct mode could hang and force-quit the app. Please update to the latest version.",
   "_comment": "Bump latest_version on every release. Raise minimum_supported_version and set critical=true only when older versions genuinely misbehave and every user must update; otherwise keep critical=false. See docs/app-update.md."
 }
