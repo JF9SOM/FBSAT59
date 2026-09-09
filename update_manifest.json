@@ -1,5 +1,5 @@
 {
-  "latest_version": "0.3.54",
+  "latest_version": "0.3.55",
   "minimum_supported_version": "0.3.55",
   "critical": true,
   "message_ja": "重要なアップデートがあります。ローテーターを Direct モードで接続するとアプリがハング・強制終了する不具合を v0.3.55 で修正しました。最新バージョンにアップデートしてください。",
