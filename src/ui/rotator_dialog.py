@@ -8,6 +8,8 @@ Supports Hamlib direct connection and NET (rotctld) connection.
 from __future__ import annotations
 
 import json
+import logging
+import threading
 from typing import Any
 
 from PySide6.QtCore import Qt
@@ -29,7 +31,14 @@ from PySide6.QtWidgets import (
 
 from core.hamlib_info import get_hamlib_version
 from i18n import _
-from ui.rig_dialog import _scan_serial_ports  # reuse port scanner
+from rig.controller import HAMLIB_AVAILABLE
+from ui.rig_dialog import _BaudTestNotifier, _scan_serial_ports  # reuse test infra
+
+logger = logging.getLogger(__name__)
+
+# Pseudo rotator models with no real serial link — the connection Test button
+# is meaningless (Dummy always "succeeds"; NET rotctl is not a serial device).
+_NON_TESTABLE_ROT_MODELS: frozenset[int] = frozenset({1, 2})
 
 # ---------------------------------------------------------------------------
 # Fallback rotator model list.
@@ -111,6 +120,7 @@ class RotatorSettingsDialog(QDialog):
         self._load_models()
         self._load_settings()
         self._on_scan_ports()
+        self._update_baud_test_visibility()
 
     # ------------------------------------------------------------------ #
     # UI construction
@@ -140,6 +150,7 @@ class RotatorSettingsDialog(QDialog):
         self._port_combo = QComboBox()
         self._port_combo.setEditable(True)
         self._port_combo.setMinimumWidth(160)
+        self._port_combo.currentTextChanged.connect(self._reset_baud_test_btn)
         self._scan_btn = QPushButton(_("Scan"))
         self._scan_btn.setMaximumWidth(80)
         self._scan_btn.clicked.connect(self._on_scan_ports)
@@ -147,11 +158,20 @@ class RotatorSettingsDialog(QDialog):
         port_layout.addWidget(self._scan_btn)
         direct_form.addRow(_("COM Port:"), port_row)
 
+        baud_row = QWidget()
+        baud_layout = QHBoxLayout(baud_row)
+        baud_layout.setContentsMargins(0, 0, 0, 0)
         self._baud_combo = QComboBox()
         for b in ["4800", "9600", "19200", "38400"]:
             self._baud_combo.addItem(b)
         self._baud_combo.setCurrentText("9600")
-        direct_form.addRow(_("Baud Rate:"), self._baud_combo)
+        self._baud_combo.currentTextChanged.connect(self._reset_baud_test_btn)
+        self._baud_test_btn = QPushButton(_("Test"))
+        self._baud_test_btn.setMaximumWidth(80)
+        self._baud_test_btn.clicked.connect(self._on_baud_test)
+        baud_layout.addWidget(self._baud_combo)
+        baud_layout.addWidget(self._baud_test_btn)
+        direct_form.addRow(_("Baud Rate:"), baud_row)
 
         self._model_search = QLineEdit()
         self._model_search.setPlaceholderText(_("Search by manufacturer or model name..."))
@@ -160,6 +180,7 @@ class RotatorSettingsDialog(QDialog):
 
         self._model_combo = QComboBox()
         self._model_combo.setMinimumWidth(280)
+        self._model_combo.currentIndexChanged.connect(self._on_model_changed)
         direct_form.addRow(_("Rot Model:"), self._model_combo)
 
         layout.addWidget(self._direct_group)
@@ -255,6 +276,94 @@ class RotatorSettingsDialog(QDialog):
         is_direct = self._radio_direct.isChecked()
         self._direct_group.setVisible(is_direct)
         self._net_group.setVisible(not is_direct)
+        self._update_baud_test_visibility()
+
+    # ------------------------------------------------------------------ #
+    # Direct-mode connection test (Baud Rate row)
+    # ------------------------------------------------------------------ #
+
+    def _on_model_changed(self, *_args: object) -> None:
+        """Reset the Test button and refresh its visibility when the model changes."""
+        self._reset_baud_test_btn()
+        self._update_baud_test_visibility()
+
+    def _reset_baud_test_btn(self, *_args: object) -> None:
+        """Return the Test button to its neutral state (port/baud/model changed)."""
+        if not hasattr(self, "_baud_test_btn"):
+            return  # signal fired during _setup_ui before the button exists
+        self._baud_test_btn.setText(_("Test"))
+        self._baud_test_btn.setStyleSheet("")
+        self._baud_test_btn.setEnabled(True)
+
+    def _update_baud_test_visibility(self) -> None:
+        """Show the Test button only when a real serial rotator can actually be probed."""
+        if not hasattr(self, "_baud_test_btn"):
+            return
+        model_id = self._model_combo.currentData()
+        visible = (
+            HAMLIB_AVAILABLE
+            and self._radio_direct.isChecked()
+            and isinstance(model_id, int)
+            and model_id not in _NON_TESTABLE_ROT_MODELS
+        )
+        self._baud_test_btn.setVisible(visible)
+
+    def _on_baud_test(self) -> None:
+        """Open the rotator via Hamlib at the chosen baud and report success/failure.
+
+        A successful Hamlib rot.open() performs the model's serial handshake
+        with the unit (e.g. SkyWatcher :F1/:F2), so it is the rotator analogue
+        of the rig dialog's "did the radio answer" baud test. Runs on a
+        background thread — Hamlib rotator I/O must never touch the UI thread.
+        """
+        port = self._port_combo.currentText().strip()
+        baud = int(self._baud_combo.currentText())
+        model_id = self._model_combo.currentData()
+        if not isinstance(model_id, int):
+            return
+        if not port:
+            self._baud_test_btn.setText(_("No port"))
+            self._baud_test_btn.setStyleSheet("color: orange;")
+            return
+
+        self._baud_test_btn.setText(_("Testing…"))
+        self._baud_test_btn.setEnabled(False)
+        self._baud_test_btn.setStyleSheet("")
+
+        # Keep the notifier on self so it survives until the worker fires it.
+        self._baud_notifier = _BaudTestNotifier()
+
+        def _apply(ok: bool) -> None:
+            self._baud_test_btn.setEnabled(True)
+            if ok:
+                self._baud_test_btn.setText("✓ OK")
+                self._baud_test_btn.setStyleSheet(
+                    "background-color: #27ae60; color: white; font-weight: bold;"
+                )
+            else:
+                self._baud_test_btn.setText("✗ Failed")
+                self._baud_test_btn.setStyleSheet(
+                    "background-color: #c0392b; color: white; font-weight: bold;"
+                )
+
+        self._baud_notifier.done.connect(_apply)
+
+        def _test() -> None:
+            ok = False
+            try:
+                from rig.controller import HamlibRotatorController
+
+                ctrl = HamlibRotatorController(model_id=model_id, port=port, baud_rate=baud)
+                try:
+                    ok = bool(ctrl.connect())
+                finally:
+                    ctrl.disconnect()
+            except Exception:
+                logger.exception("Rotator baud test failed")
+                ok = False
+            self._baud_notifier.done.emit(ok)
+
+        threading.Thread(target=_test, daemon=True).start()
 
     def _on_scan_ports(self) -> None:
         """Scan serial ports and update the combo box."""
