@@ -816,30 +816,64 @@ class SdrDevice:
             _enumerate_cache = results
             return list(results)
 
+    # Local (USB) hardware drivers probed one at a time by _enumerate_direct().
+    # We deliberately never call the unfiltered SoapySDR.Device.enumerate():
+    # that invokes the SoapyRemote module's findRemote(), which fires an SSDP
+    # multicast discovery on every network interface.  On a host with many
+    # virtual interfaces (VM bridges, AirDrop awdl0, VPN / iCloud-Private-Relay
+    # utun*) that scan stalls for tens of seconds to minutes, and a process
+    # killed mid-scan leaks the multicast sockets so every later run is slower
+    # still — until only a reboot clears it.  A per-driver enumerate loads only
+    # the named driver's module and never touches the network.
+    #
+    # Trade-off: LAN auto-discovery of SoapyRemote servers is given up.  Remote
+    # SDRs are reached exclusively through "Add Remote Host…" (an explicit
+    # host:port that SoapyRemote connects to directly, no SSDP).  Network-
+    # discovery drivers (uhd, netsdr, rfspace) are also omitted on purpose.
+    _LOCAL_SDR_DRIVERS: tuple[str, ...] = (
+        "rtlsdr", "hackrf", "airspy", "airspyhf", "sdrplay",
+        "bladerf", "lime", "miri", "plutosdr",
+    )
+
     @classmethod
     def _enumerate_direct(cls) -> list[SdrDeviceInfo]:
-        """Enumerate SoapySDR devices in-process (Linux / macOS)."""
+        """Enumerate local SoapySDR hardware in-process (Linux / macOS).
+
+        Probes each known USB driver individually — see _LOCAL_SDR_DRIVERS for
+        why the unfiltered SoapySDR.Device.enumerate() must not be used.
+        """
         try:
             import SoapySDR
 
             results: list[SdrDeviceInfo] = []
-            for kw in SoapySDR.Device.enumerate():
-                d = dict(kw)
-                driver = str(d.get("driver") or "")
-                if driver.lower() in _NON_SDR_DRIVERS:
+            seen: set[tuple[str, str]] = set()
+            for probe_driver in cls._LOCAL_SDR_DRIVERS:
+                try:
+                    found = SoapySDR.Device.enumerate({"driver": probe_driver})
+                except Exception:
+                    logger.debug("enumerate(driver=%s) failed", probe_driver, exc_info=True)
                     continue
-                label = str(d.get("label") or d.get("device") or driver)
-                serial = str(d.get("serial") or "")
-                hardware = str(d.get("hardware") or "")
-                results.append(
-                    SdrDeviceInfo(
-                        driver=driver,
-                        label=label,
-                        serial=serial,
-                        hardware=hardware,
-                        args=d,
+                for kw in found:
+                    d = dict(kw)
+                    driver = str(d.get("driver") or probe_driver)
+                    if driver.lower() in _NON_SDR_DRIVERS:
+                        continue
+                    label = str(d.get("label") or d.get("device") or driver)
+                    serial = str(d.get("serial") or "")
+                    hardware = str(d.get("hardware") or "")
+                    key = (driver.lower(), serial or label)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    results.append(
+                        SdrDeviceInfo(
+                            driver=driver,
+                            label=label,
+                            serial=serial,
+                            hardware=hardware,
+                            args=d,
+                        )
                     )
-                )
             return results
         except Exception:
             logger.exception("SoapySDR enumerate failed")
