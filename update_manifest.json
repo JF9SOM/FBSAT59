@@ -1,5 +1,5 @@
 {
-  "latest_version": "0.3.55",
+  "latest_version": "0.3.56",
   "minimum_supported_version": "0.3.55",
   "critical": false,
   "message_ja": "v0.3.56 は SoapyRemote（別マシンに挿した RTL-SDR / HackRF を LAN 経由で使用）まわりの改善です。リモートホスト接続時のハング修正、「Add Remote Host」でのシリアル番号表示、Windows での DLL 読み込み不具合の修正を含みます。",
