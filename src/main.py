@@ -34,6 +34,33 @@ if getattr(sys, "frozen", False):
     except Exception:
         pass
 
+# Windows: keep a failed dependent-DLL load from popping a modal "entry point
+# not found" / "DLL missing" dialog that blocks the whole UI.  SoapySDR's
+# module loader LoadLibrary()s every *.dll in soapy_modules/ during device
+# enumeration; if another SDR app on PATH (SatDump, SDR#, GNU Radio, …) shadows
+# one of the bundled dependency DLLs with a build linked against a newer libusb
+# / airspy lib, the loader raises a hard error.  SEM_FAILCRITICALERRORS routes
+# that failure back to the caller instead — SoapySDR then just logs "failed to
+# load module" and moves on with the modules that do load (rtlsdr, hackrf,
+# remote).  Set as early as possible and OR-ed onto the current mode so it also
+# covers the --_gpredict_soapy_enum subprocess (which re-executes this file).
+if sys.platform == "win32":
+    try:
+        import ctypes
+
+        _k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        _SEM_FAILCRITICALERRORS = 0x0001
+        _SEM_NOOPENFILEERRORBOX = 0x8000
+        try:
+            _cur_err_mode = _k32.GetErrorMode()
+        except AttributeError:  # pre-Windows-7; GetErrorMode unavailable
+            _cur_err_mode = 0
+        _k32.SetErrorMode(
+            _cur_err_mode | _SEM_FAILCRITICALERRORS | _SEM_NOOPENFILEERRORBOX
+        )
+    except Exception:
+        pass
+
 # macOS: apps launched from Finder or a .app wrapper (as opposed to an
 # interactive login shell) inherit a minimal PATH that omits Homebrew and
 # MacPorts bin directories.  Any external tool the app shells out to --
