@@ -992,6 +992,9 @@ class _SdrSettingsPanel(QWidget):
         # as part of sdr_settings so they survive restarts even when the
         # remote server isn't reachable via LAN broadcast discovery.
         self._remote_hosts: list[dict[str, str]] = []
+        # host:port -> SdrDeviceInfo list, filled by the enumerate worker from a
+        # direct query to each saved remote host (carries the real serial).
+        self._remote_query_results: dict[str, list[SdrDeviceInfo]] = {}
         self._enumerate_done.connect(self._on_enumerate)
         self._ppm_worker: PpmMeasureWorker | None = None
         self._ppm_progress: QProgressDialog | None = None
@@ -1182,6 +1185,22 @@ class _SdrSettingsPanel(QWidget):
                 devices = SdrDevice.enumerate(force=force)
             except Exception:
                 devices = []
+            # Query each manually-added remote host directly (one targeted
+            # request per host, no SSDP) so its real serial / hardware come
+            # back instead of a blank placeholder.
+            rq: dict[str, list[SdrDeviceInfo]] = {}
+            for h in list(self._remote_hosts):
+                try:
+                    from sdr.device import SdrDevice as _SD
+
+                    rq[self._remote_key(h)] = _SD.query_remote_host(
+                        h.get("host", ""),
+                        h.get("port", "") or "55132",
+                        h.get("driver_hint", ""),
+                    )
+                except Exception:
+                    rq[self._remote_key(h)] = []
+            self._remote_query_results = rq
             # Signal delivers result back to the UI thread via Qt event loop
             self._enumerate_done.emit(devices)
 
@@ -1201,12 +1220,31 @@ class _SdrSettingsPanel(QWidget):
 
     def _rebuild_combo(self) -> None:
         """Recompute self._devices (hardware + saved remote hosts) and repopulate the combo."""
-        self._devices = list(self._hw_devices) + [
-            self._remote_host_info(h) for h in self._remote_hosts
-        ]
+        # Remember the current selection before the list is replaced, so it can
+        # be restored even when a remote host's label changes (placeholder ->
+        # real device name after query_remote_host).
+        _prev_idx = self._dev_combo.currentIndex() if hasattr(self, "_dev_combo") else -1
+        _prev_dev = (
+            self._devices[_prev_idx] if 0 <= _prev_idx < len(self._devices) else None
+        )
+
+        remote_infos: list[SdrDeviceInfo] = []
+        for h in self._remote_hosts:
+            queried = self._remote_query_results.get(self._remote_key(h)) or []
+            # Fall back to the static placeholder when the host has not been
+            # queried yet or was unreachable, so it can still be selected.
+            remote_infos.extend(queried if queried else [self._remote_host_info(h)])
+        self._devices = list(self._hw_devices) + remote_infos
 
         if not hasattr(self, "_dev_combo"):
             return
+
+        def _same_device(a: SdrDeviceInfo, b: SdrDeviceInfo) -> bool:
+            if a.display_name == b.display_name:
+                return True
+            ra = str(a.args.get("remote", "")).replace("tcp://", "")
+            rb = str(b.args.get("remote", "")).replace("tcp://", "")
+            return bool(ra) and ra == rb
 
         # Block signals instead of disconnect/reconnect around clear()+repopulate:
         # disconnecting a bound method is unreliable in PySide6 (see the
@@ -1228,7 +1266,17 @@ class _SdrSettingsPanel(QWidget):
             if hasattr(self, "_remove_remote_btn"):
                 self._remove_remote_btn.setEnabled(False)
         else:
-            self._on_device_selected(0)
+            restored = 0
+            if _prev_dev is not None:
+                restored = next(
+                    (i for i, d in enumerate(self._devices) if _same_device(d, _prev_dev)),
+                    0,
+                )
+            if restored != self._dev_combo.currentIndex():
+                self._dev_combo.blockSignals(True)
+                self._dev_combo.setCurrentIndex(restored)
+                self._dev_combo.blockSignals(False)
+            self._on_device_selected(restored)
 
     def _update_serial_row(self, serial: str) -> None:
         """Show or hide the Serial row for the selected device (Windows only).
@@ -1257,7 +1305,7 @@ class _SdrSettingsPanel(QWidget):
         self._update_serial_row(d.serial or "")
         if hasattr(self, "_remove_remote_btn"):
             is_saved_remote = any(
-                self._remote_host_info(h).args == d.args for h in self._remote_hosts
+                self._device_belongs_to_host(d, h) for h in self._remote_hosts
             )
             self._remove_remote_btn.setEnabled(is_saved_remote)
 
@@ -1266,8 +1314,32 @@ class _SdrSettingsPanel(QWidget):
     # ------------------------------------------------------------------ #
 
     @staticmethod
+    def _remote_key(entry: dict[str, str]) -> str:
+        """`host:port` identity of a saved remote-host entry."""
+        return f"{entry.get('host', '')}:{entry.get('port', '') or '55132'}"
+
+    @classmethod
+    def _device_belongs_to_host(
+        cls, dev: SdrDeviceInfo, entry: dict[str, str]
+    ) -> bool:
+        """True if `dev` was produced by (or is the placeholder for) `entry`.
+
+        Matched on the remote address rather than an exact args comparison,
+        because a queried device carries extra keys (serial, hardware, …) the
+        static placeholder does not.
+        """
+        if (dev.driver or "").lower() != "remote":
+            return False
+        rem = str(dev.args.get("remote", "")).replace("tcp://", "")
+        return rem == cls._remote_key(entry)
+
+    @staticmethod
     def _remote_host_info(entry: dict[str, str]) -> SdrDeviceInfo:
-        """Build an SdrDeviceInfo for a manually-saved SoapyRemote host entry."""
+        """Build a placeholder SdrDeviceInfo for a saved SoapyRemote host entry.
+
+        Used before the host has been queried (or when it is unreachable); a
+        successful query_remote_host() replaces it with the real device(s).
+        """
         host = entry.get("host", "")
         port = entry.get("port", "") or "55132"
         driver_hint = entry.get("driver_hint", "")
@@ -1285,6 +1357,8 @@ class _SdrSettingsPanel(QWidget):
         self._rebuild_combo()
         if hasattr(self, "_dev_combo") and self._dev_combo.count() > 0:
             self._dev_combo.setCurrentIndex(self._dev_combo.count() - 1)
+        # Query the new host directly so its serial / hardware fill in.
+        self._start_enumerate(force=True)
 
     def _on_remove_remote_host(self) -> None:
         idx = self._dev_combo.currentIndex()
@@ -1293,9 +1367,12 @@ class _SdrSettingsPanel(QWidget):
         d = self._devices[idx]
         if d.driver != "remote":
             return
+        removed = [h for h in self._remote_hosts if self._device_belongs_to_host(d, h)]
         self._remote_hosts = [
-            h for h in self._remote_hosts if self._remote_host_info(h).args != d.args
+            h for h in self._remote_hosts if not self._device_belongs_to_host(d, h)
         ]
+        for h in removed:
+            self._remote_query_results.pop(self._remote_key(h), None)
         self._rebuild_combo()
 
     def _on_assignment_changed(self, _checked: bool = False) -> None:

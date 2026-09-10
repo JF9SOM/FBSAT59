@@ -880,6 +880,68 @@ class SdrDevice:
             return []
 
     @classmethod
+    def query_remote_host(
+        cls, host: str, port: str | int = 55132, driver_hint: str = ""
+    ) -> list[SdrDeviceInfo]:
+        """Enumerate the SDRs on ONE SoapyRemote server, by explicit address.
+
+        Sends a single direct request to ``host:port`` — no SSDP, no LAN-wide
+        scan — and returns one SdrDeviceInfo per device the server exposes,
+        carrying the real serial / hardware / label forwarded from the remote
+        machine.  Returns [] when SoapySDR is unavailable or the host cannot be
+        reached.  Used to flesh out a manually added "Add Remote Host…" entry
+        so it shows the dongle's serial instead of a blank placeholder.
+        """
+        if not SOAPY_AVAILABLE or not host:
+            return []
+        try:
+            import SoapySDR
+        except Exception:
+            return []
+
+        addr = f"{host}:{port}" if str(port) else str(host)
+        # String form only: the SWIG dict typemap mangles "remote=host:port"
+        # on the macOS conda-forge / Windows builds (GitHub Issue #12).
+        query = f"driver=remote,remote={addr}"
+        if driver_hint:
+            query += f",remote:driver={driver_hint}"
+        try:
+            with _SOAPY_GLOBAL_LOCK:
+                found = list(SoapySDR.Device.enumerate(query))
+        except Exception:
+            logger.warning("query_remote_host(%s) failed", addr, exc_info=True)
+            return []
+
+        results: list[SdrDeviceInfo] = []
+        for kw in found:
+            d = dict(kw)
+            rdrv = str(d.get("remote:driver") or driver_hint or "")
+            serial = str(d.get("serial") or "")
+            hardware = str(d.get("hardware") or "")
+            label = str(d.get("label") or d.get("device") or "").strip()
+
+            # Args we actually open with: the compact "host:port" form (never
+            # the server's "tcp://…" echo) plus a driver hint.  A serial is
+            # added only when the server exposes more than one device, so the
+            # proven single-dongle path keeps its exact 3-key arg set.
+            args: dict[str, str] = {"driver": "remote", "remote": addr}
+            if rdrv:
+                args["remote:driver"] = rdrv
+            if serial and len(found) > 1:
+                args["serial"] = serial
+
+            results.append(
+                SdrDeviceInfo(
+                    driver="remote",
+                    label=label or f"{rdrv or 'remote'} @ {addr}",
+                    serial=serial,
+                    hardware=hardware,
+                    args=args,
+                )
+            )
+        return results
+
+    @classmethod
     def _enumerate_via_subprocess(cls) -> list[SdrDeviceInfo]:
         """Enumerate SoapySDR devices in a subprocess (Windows only).
 
