@@ -207,6 +207,38 @@ if sys.platform == "darwin" and getattr(sys, "frozen", False):
     if _soapy_modules_macos.exists():
         os.environ["SOAPY_SDR_PLUGIN_PATH"] = str(_soapy_modules_macos)
 
+# macOS source checkout (NOT frozen): point SoapySDR at its real module
+# directory.  The dev venv is created from radioconda's Python
+# (--system-site-packages), so `import SoapySDR` resolves to radioconda's
+# copy — whose compiled-in install prefix is NUL-truncated to the env root
+# (e.g. "/Users/<you>/radioconda\0\0\0..."), so SoapySDR::listModules()
+# returns that bogus path and NO device modules load at all: local RTL-SDR /
+# HackRF enumerate empty and driver=remote (SoapyRemote) fails with "no
+# match".  Setting SOAPY_SDR_PLUGIN_PATH to the actual modules dir before
+# `import SoapySDR` restores every plugin (a harmless "loadModule(<env root>)
+# dlopen failed" line may still be logged — SoapySDR also tries its broken
+# built-in path, then falls through to ours).  Non-frozen counterpart of the
+# darwin frozen block above; the shipped .app never runs it (frozen is True
+# there).  Diagnosed 2026-09-10.
+if (
+    sys.platform == "darwin"
+    and not getattr(sys, "frozen", False)
+    and "SOAPY_SDR_PLUGIN_PATH" not in os.environ
+):
+    import glob as _glob_soapy
+
+    _soapy_mod_candidates: list[str] = []
+    for _root in (sys.prefix, sys.base_prefix, "/opt/homebrew", "/usr/local"):
+        _soapy_mod_candidates.extend(
+            sorted(_glob_soapy.glob(f"{_root}/lib/SoapySDR/modules*"))
+        )
+    for _cand in _soapy_mod_candidates:
+        if os.path.isdir(_cand) and any(
+            f.endswith((".so", ".dylib")) for f in os.listdir(_cand)
+        ):
+            os.environ["SOAPY_SDR_PLUGIN_PATH"] = _cand
+            break
+
 # End-user macOS .app: expose Homebrew's Python site-packages (SoapySDR,
 # its device modules, etc.) to the frozen interpreter as a last-resort
 # fallback, in case the bundle above is missing (e.g. a build predating it,
