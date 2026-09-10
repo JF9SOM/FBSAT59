@@ -121,6 +121,15 @@ if sys.platform == "win32" and getattr(sys, "frozen", False):
     _mei = Path(getattr(sys, "_MEIPASS", ""))
     if _mei.exists() and hasattr(os, "add_dll_directory"):
         os.add_dll_directory(str(_mei))
+    # Also put it at the FRONT of PATH: os.add_dll_directory only steers DLLs
+    # loaded with the safe-search flags, not the transitive dependency lookup a
+    # C++ module (airspyhfSupport.dll -> airspyhf.dll -> libusb-1.0.dll) does,
+    # which still falls through to PATH.  Without this, another SDR app on PATH
+    # (SatDump, SDR#, GNU Radio) whose airspyhf.dll is linked against a newer
+    # libusb wins and the load fails.  Our bundle is a self-consistent set, so
+    # winning that lookup makes local Airspy / AirspyHF actually work.
+    if _mei.exists():
+        os.environ["PATH"] = str(_mei) + os.pathsep + os.environ.get("PATH", "")
 
 # Windows source checkout (NOT frozen): SoapySDR is not a pip package on
 # Windows, so `import SoapySDR` normally fails when running from source and the
@@ -143,9 +152,15 @@ if (
             sys.path.append(str(_installed_internal))  # append: never shadow venv packages
         if hasattr(os, "add_dll_directory"):
             os.add_dll_directory(str(_installed_internal))
-        _borrowed_modules = _installed_internal / "soapy_modules"
-        if _borrowed_modules.exists():
-            os.environ.setdefault("SOAPY_SDR_PLUGIN_PATH", str(_borrowed_modules))
+        # Front of PATH too — add_dll_directory does not cover the transitive
+        # dependency lookup a C++ module does (airspyhfSupport.dll ->
+        # airspyhf.dll -> libusb-1.0.dll), which falls through to PATH where
+        # another SDR app (SatDump, SDR#, GNU Radio) may shadow our bundled
+        # airspyhf.dll with one linked against an incompatible libusb.  See the
+        # matching note in the frozen block above.
+        os.environ["PATH"] = str(_installed_internal) + os.pathsep + os.environ.get(
+            "PATH", ""
+        )
 
 # Windows subprocess enumerate worker.
 # SdrDevice.enumerate() on Windows spawns this process with --_gpredict_soapy_enum
