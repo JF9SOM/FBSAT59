@@ -161,6 +161,9 @@ if (
         os.environ["PATH"] = str(_installed_internal) + os.pathsep + os.environ.get(
             "PATH", ""
         )
+        _borrowed_modules = _installed_internal / "soapy_modules"
+        if _borrowed_modules.exists():
+            os.environ.setdefault("SOAPY_SDR_PLUGIN_PATH", str(_borrowed_modules))
 
 # Windows subprocess enumerate worker.
 # SdrDevice.enumerate() on Windows spawns this process with --_gpredict_soapy_enum
