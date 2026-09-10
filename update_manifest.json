@@ -1,8 +1,8 @@
 {
   "latest_version": "0.3.55",
   "minimum_supported_version": "0.3.55",
-  "critical": true,
-  "message_ja": "重要なアップデートがあります。ローテーターを Direct モードで接続するとアプリがハング・強制終了する不具合を v0.3.55 で修正しました。最新バージョンにアップデートしてください。",
-  "message_en": "An important update is available. Version 0.3.55 fixes a bug where connecting a rotator in Direct mode could hang and force-quit the app. Please update to the latest version.",
+  "critical": false,
+  "message_ja": "v0.3.56 は SoapyRemote（別マシンに挿した RTL-SDR / HackRF を LAN 経由で使用）まわりの改善です。リモートホスト接続時のハング修正、「Add Remote Host」でのシリアル番号表示、Windows での DLL 読み込み不具合の修正を含みます。",
+  "message_en": "Version 0.3.56 improves SoapyRemote support (use an RTL-SDR / HackRF plugged into another machine over the LAN): it fixes a hang when connecting to a remote host, shows the device serial in Add Remote Host, and fixes a Windows DLL loading issue.",
   "_comment": "Bump latest_version on every release. Raise minimum_supported_version and set critical=true only when older versions genuinely misbehave and every user must update; otherwise keep critical=false. See docs/app-update.md."
 }
