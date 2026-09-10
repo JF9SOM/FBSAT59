@@ -1135,16 +1135,32 @@ class SdrDevice:
                 SoapySDR.registerLogHandler(_soapy_log_cb)
             # ──────────────────────────────────────────────────────────────────
 
-            last_exc: Exception | None = None
-            for attempt in range(1, _MAX_ATTEMPTS + 1):
-                for args_label, args in [
+            # For SoapyRemote, pass ONLY the full string form.  The SWIG dict
+            # typemap on the macOS conda-forge / Windows SoapySDR builds mangles
+            # the "remote=host:port" value (GitHub Issue #12): best case
+            # Device::make() returns "no match", worst case the host is dropped
+            # and SoapyRemote falls back to SSDP auto-discovery, which can hang
+            # for minutes on a host with many network interfaces (VM bridges,
+            # AirDrop, VPN tunnels).  The string typemap (KwargsFromString) is
+            # unaffected.  The minimal / driver-only fallbacks are skipped too:
+            # without "remote=" they also trigger the hanging SSDP discovery.
+            if (self._info.driver or "").lower() == "remote":
+                _attempt_specs: list[tuple[str, object]] = [
+                    ("full args (string form)", _kwargs_to_string(self._info.args)),
+                ]
+            else:
+                _attempt_specs = [
                     ("full args", self._info.args),
                     ("full args (string form)", _kwargs_to_string(self._info.args)),
                     ("minimal args", minimal_args),
                     ("minimal args (string form)", _kwargs_to_string(minimal_args)),
                     ("driver-only args", driver_only_args),
                     ("driver-only args (string form)", _kwargs_to_string(driver_only_args)),
-                ]:
+                ]
+
+            last_exc: Exception | None = None
+            for attempt in range(1, _MAX_ATTEMPTS + 1):
+                for args_label, args in _attempt_specs:
                     if not args:
                         continue
                     try:
