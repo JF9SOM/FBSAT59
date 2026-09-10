@@ -55,9 +55,7 @@ if sys.platform == "win32":
             _cur_err_mode = _k32.GetErrorMode()
         except AttributeError:  # pre-Windows-7; GetErrorMode unavailable
             _cur_err_mode = 0
-        _k32.SetErrorMode(
-            _cur_err_mode | _SEM_FAILCRITICALERRORS | _SEM_NOOPENFILEERRORBOX
-        )
+        _k32.SetErrorMode(_cur_err_mode | _SEM_FAILCRITICALERRORS | _SEM_NOOPENFILEERRORBOX)
     except Exception:
         pass
 
@@ -158,9 +156,7 @@ if (
         # another SDR app (SatDump, SDR#, GNU Radio) may shadow our bundled
         # airspyhf.dll with one linked against an incompatible libusb.  See the
         # matching note in the frozen block above.
-        os.environ["PATH"] = str(_installed_internal) + os.pathsep + os.environ.get(
-            "PATH", ""
-        )
+        os.environ["PATH"] = str(_installed_internal) + os.pathsep + os.environ.get("PATH", "")
         _borrowed_modules = _installed_internal / "soapy_modules"
         if _borrowed_modules.exists():
             os.environ.setdefault("SOAPY_SDR_PLUGIN_PATH", str(_borrowed_modules))
@@ -274,13 +270,9 @@ if (
 
     _soapy_mod_candidates: list[str] = []
     for _root in (sys.prefix, sys.base_prefix, "/opt/homebrew", "/usr/local"):
-        _soapy_mod_candidates.extend(
-            sorted(_glob_soapy.glob(f"{_root}/lib/SoapySDR/modules*"))
-        )
+        _soapy_mod_candidates.extend(sorted(_glob_soapy.glob(f"{_root}/lib/SoapySDR/modules*")))
     for _cand in _soapy_mod_candidates:
-        if os.path.isdir(_cand) and any(
-            f.endswith((".so", ".dylib")) for f in os.listdir(_cand)
-        ):
+        if os.path.isdir(_cand) and any(f.endswith((".so", ".dylib")) for f in os.listdir(_cand)):
             os.environ["SOAPY_SDR_PLUGIN_PATH"] = _cand
             break
 

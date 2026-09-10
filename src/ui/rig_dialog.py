@@ -1224,9 +1224,7 @@ class _SdrSettingsPanel(QWidget):
         # be restored even when a remote host's label changes (placeholder ->
         # real device name after query_remote_host).
         _prev_idx = self._dev_combo.currentIndex() if hasattr(self, "_dev_combo") else -1
-        _prev_dev = (
-            self._devices[_prev_idx] if 0 <= _prev_idx < len(self._devices) else None
-        )
+        _prev_dev = self._devices[_prev_idx] if 0 <= _prev_idx < len(self._devices) else None
 
         remote_infos: list[SdrDeviceInfo] = []
         for h in self._remote_hosts:
@@ -1304,9 +1302,7 @@ class _SdrSettingsPanel(QWidget):
         self._serial_label.setText(d.serial or "—")
         self._update_serial_row(d.serial or "")
         if hasattr(self, "_remove_remote_btn"):
-            is_saved_remote = any(
-                self._device_belongs_to_host(d, h) for h in self._remote_hosts
-            )
+            is_saved_remote = any(self._device_belongs_to_host(d, h) for h in self._remote_hosts)
             self._remove_remote_btn.setEnabled(is_saved_remote)
 
     # ------------------------------------------------------------------ #
@@ -1319,9 +1315,7 @@ class _SdrSettingsPanel(QWidget):
         return f"{entry.get('host', '')}:{entry.get('port', '') or '55132'}"
 
     @classmethod
-    def _device_belongs_to_host(
-        cls, dev: SdrDeviceInfo, entry: dict[str, str]
-    ) -> bool:
+    def _device_belongs_to_host(cls, dev: SdrDeviceInfo, entry: dict[str, str]) -> bool:
         """True if `dev` was produced by (or is the placeholder for) `entry`.
 
         Matched on the remote address rather than an exact args comparison,

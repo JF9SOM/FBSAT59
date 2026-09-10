@@ -831,8 +831,15 @@ class SdrDevice:
     # host:port that SoapyRemote connects to directly, no SSDP).  Network-
     # discovery drivers (uhd, netsdr, rfspace) are also omitted on purpose.
     _LOCAL_SDR_DRIVERS: tuple[str, ...] = (
-        "rtlsdr", "hackrf", "airspy", "airspyhf", "sdrplay",
-        "bladerf", "lime", "miri", "plutosdr",
+        "rtlsdr",
+        "hackrf",
+        "airspy",
+        "airspyhf",
+        "sdrplay",
+        "bladerf",
+        "lime",
+        "miri",
+        "plutosdr",
     )
 
     @classmethod
