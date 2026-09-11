@@ -980,6 +980,23 @@ class _SdrSettingsPanel(QWidget):
         ("3.2 MHz", 3_200_000),
     ]
 
+    # Overall RX gain ceiling (dB) for drivers whose real range exceeds the
+    # historical fixed QSpinBox max of 80.  HackRF has three independent
+    # gain stages -- LNA 0-40, VGA 0-62, AMP (front-end preamp) 0/14 --
+    # totalling 116 dB; the old fixed 0-80 range silently capped users out
+    # of the top ~36 dB *and* the preamp entirely.  Measured impact: at the
+    # UI's old default of 40 dB, SoapySDR's generic gain distribution left
+    # AMP at 0 and VGA at only 12/62 -- driving all three stages to their
+    # real maximum measured ~61x higher received amplitude on the same
+    # signal.  RTL-SDR's own max (49.6 dB, single gain element -- no
+    # AMP/VGA split) already fit the old range, so it is listed only for
+    # clarity / to document the real ceiling.
+    _GAIN_MAX_DB: dict[str, int] = {
+        "hackrf": 116,
+        "rtlsdr": 50,
+    }
+    _DEFAULT_GAIN_MAX_DB = 80  # unknown/other drivers: keep the old behavior
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._devices: list[SdrDeviceInfo] = []
@@ -1294,6 +1311,16 @@ class _SdrSettingsPanel(QWidget):
             return
         self._dev_form.setRowVisible(self._serial_label, bool(serial))
 
+    @classmethod
+    def _gain_max_for_args(cls, args: dict[str, str]) -> int:
+        """Real overall RX gain ceiling (dB) for a device's SoapySDR args.
+
+        For a remote device the driver actually doing the receiving is
+        `remote:driver`, not the literal "remote" in `driver`.
+        """
+        drv = str(args.get("remote:driver") or args.get("driver") or "").lower()
+        return cls._GAIN_MAX_DB.get(drv, cls._DEFAULT_GAIN_MAX_DB)
+
     def _on_device_selected(self, idx: int) -> None:
         if not self._devices or idx < 0 or idx >= len(self._devices):
             return
@@ -1301,6 +1328,8 @@ class _SdrSettingsPanel(QWidget):
         self._driver_label.setText(d.driver or "—")
         self._serial_label.setText(d.serial or "—")
         self._update_serial_row(d.serial or "")
+        if hasattr(self, "_gain_spin"):
+            self._gain_spin.setRange(0, self._gain_max_for_args(d.args))
         if hasattr(self, "_remove_remote_btn"):
             is_saved_remote = any(self._device_belongs_to_host(d, h) for h in self._remote_hosts)
             self._remove_remote_btn.setEnabled(is_saved_remote)
@@ -1543,6 +1572,14 @@ class _SdrSettingsPanel(QWidget):
             self._gain_auto_rb.setChecked(True)
         else:
             self._gain_manual_rb.setChecked(True)
+        # Set the range for the saved device *before* the value: enumerate()
+        # runs async and _on_device_selected may not have widened it yet for
+        # this device, and QSpinBox.setValue() silently clamps to whatever
+        # range is current -- a saved HackRF gain above the old fixed 0-80
+        # max would otherwise be clipped back down on every restart.
+        saved_args = data.get("device_args")
+        if isinstance(saved_args, dict):
+            self._gain_spin.setRange(0, self._gain_max_for_args(saved_args))
         self._gain_spin.setValue(int(data.get("gain_db") or 40))  # type: ignore[call-overload]
         self._bias_tee_chk.setChecked(bool(data.get("bias_tee", False)))
 
