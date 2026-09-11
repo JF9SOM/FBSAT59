@@ -1012,6 +1012,12 @@ class _SdrSettingsPanel(QWidget):
         # host:port -> SdrDeviceInfo list, filled by the enumerate worker from a
         # direct query to each saved remote host (carries the real serial).
         self._remote_query_results: dict[str, list[SdrDeviceInfo]] = {}
+        # Identity of the device _on_device_selected() last saw (see
+        # _device_identity()) -- lets it tell "the user just picked a
+        # different device" (default RF Gain to its max) apart from "the
+        # same device got re-selected because enumerate() re-ran" (leave
+        # whatever gain the user already dialed in alone).
+        self._last_selected_identity: tuple[str, str] | None = None
         self._enumerate_done.connect(self._on_enumerate)
         self._ppm_worker: PpmMeasureWorker | None = None
         self._ppm_progress: QProgressDialog | None = None
@@ -1366,6 +1372,23 @@ class _SdrSettingsPanel(QWidget):
             return max(1, math.ceil(dev.gain_max_db))
         return cls._gain_max_for_args(dev.args)
 
+    @staticmethod
+    def _device_identity(d: SdrDeviceInfo) -> tuple[str, str]:
+        """Stable "is this the same physical device as before" key.
+
+        Prefers the hardware serial (present once a local device or a
+        resolved remote one is identified) over a remote host's network
+        address, which is *not* stable across a DHCP renewal, Wi-Fi roam,
+        or the user typing a new hostname for the same box -- see
+        _resolve_ipv4_host()/54c2e93. Falls back to the remote address only
+        while a host is still an unresolved placeholder (no serial yet).
+        """
+        if d.serial:
+            return (d.driver or "", d.serial)
+        if (d.driver or "").lower() == "remote":
+            return ("remote", str(d.args.get("remote", "")).replace("tcp://", ""))
+        return (d.driver or "", "")
+
     def _on_device_selected(self, idx: int) -> None:
         if not self._devices or idx < 0 or idx >= len(self._devices):
             return
@@ -1374,7 +1397,23 @@ class _SdrSettingsPanel(QWidget):
         self._serial_label.setText(d.serial or "—")
         self._update_serial_row(d.serial or "")
         if hasattr(self, "_gain_spin"):
-            self._gain_spin.setRange(0, self._gain_max_for_device(d))
+            gain_max = self._gain_max_for_device(d)
+            self._gain_spin.setRange(0, gain_max)
+            identity = self._device_identity(d)
+            if identity != self._last_selected_identity:
+                # A genuinely different device from what was selected before
+                # (including the very first pick ever) -- default RF Gain to
+                # its real maximum. Guessing a "reasonable" manual gain by
+                # hand is close to impossible without knowing the specific
+                # hardware's actual range (see 2014e1a: HackRF's old 40 dB
+                # default left its front-end preamp off entirely, ~61x
+                # under real sensitivity). Start at max and let the user
+                # narrow it if a strong signal overloads, not the other way
+                # around. Re-selecting the *same* device across an
+                # enumerate refresh must not do this, or it would keep
+                # stomping on a gain the user deliberately dialed down.
+                self._gain_spin.setValue(gain_max)
+            self._last_selected_identity = identity
         if hasattr(self, "_remove_remote_btn"):
             is_saved_remote = any(self._device_belongs_to_host(d, h) for h in self._remote_hosts)
             self._remove_remote_btn.setEnabled(is_saved_remote)
@@ -1563,9 +1602,11 @@ class _SdrSettingsPanel(QWidget):
         idx = self._dev_combo.currentIndex()
         device_args: dict[str, str] = {}
         gain_max_db: float | None = None
+        device_identity: list[str] = []
         if self._devices and 0 <= idx < len(self._devices):
             device_args = dict(self._devices[idx].args)
             gain_max_db = self._devices[idx].gain_max_db
+            device_identity = list(self._device_identity(self._devices[idx]))
 
         rate_idx = self._rate_combo.currentIndex() if hasattr(self, "_rate_combo") else 5
         rate_hz = (
@@ -1594,6 +1635,11 @@ class _SdrSettingsPanel(QWidget):
             # correctly at startup, before the async re-enumerate that would
             # otherwise rediscover it completes. See _gain_max_for_device().
             "gain_max_db": gain_max_db,
+            # See _device_identity(): lets load() tell "this is the same
+            # device the saved gain_db belongs to" from "a different device
+            # got selected", so re-enumerating on startup doesn't itself
+            # look like a fresh pick and reset gain_db back to the max.
+            "device_identity": device_identity,
             "bias_tee": self._bias_tee_chk.isChecked() if hasattr(self, "_bias_tee_chk") else False,
             "iq_save_dir": self._iq_dir_edit.text() if hasattr(self, "_iq_dir_edit") else "",
             "remote_hosts": self._remote_hosts,
@@ -1638,6 +1684,20 @@ class _SdrSettingsPanel(QWidget):
         elif isinstance(saved_args, dict):
             self._gain_spin.setRange(0, self._gain_max_for_args(saved_args))
         self._gain_spin.setValue(int(data.get("gain_db") or 40))  # type: ignore[call-overload]
+        # Remember which device gain_db belongs to (see _device_identity()):
+        # _on_device_selected() defaults RF Gain to the device's max only when
+        # the selection is a genuinely *different* device from this one, so
+        # the async re-enumerate that follows startup restoring the same
+        # saved device does not stomp on the value just set above.
+        saved_identity = data.get("device_identity")
+        if (
+            isinstance(saved_identity, list)
+            and len(saved_identity) == 2
+            and all(isinstance(x, str) for x in saved_identity)
+        ):
+            self._last_selected_identity = (saved_identity[0], saved_identity[1])
+        else:
+            self._last_selected_identity = None
         self._bias_tee_chk.setChecked(bool(data.get("bias_tee", False)))
 
         assigned = data.get("assigned_rig")
