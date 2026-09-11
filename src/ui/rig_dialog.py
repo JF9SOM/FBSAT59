@@ -1316,9 +1316,26 @@ class _SdrSettingsPanel(QWidget):
         """Real overall RX gain ceiling (dB) for a device's SoapySDR args.
 
         For a remote device the driver actually doing the receiving is
-        `remote:driver`, not the literal "remote" in `driver`.
+        `remote:driver`, not the literal "remote" in `driver`. A remote host
+        whose driver isn't known *yet* -- the static placeholder shown before
+        query_remote_host() resolves it, or an "Add Remote Host" entry whose
+        driver-hint field was left blank -- defaults to the highest ceiling
+        we know of rather than falling through to the flat 80 default.
+        _rebuild_combo() re-runs _on_device_selected() on every enumerate
+        cycle (dialog open, Enumerate press, adding a host, ...), so a
+        transient query failure would otherwise narrow the range back to 80
+        and QSpinBox.setValue()'s silent clamping would throw away a value
+        the user had just set to e.g. 116 for a HackRF, moments later and
+        with no warning. Too wide is harmless here -- SoapySDR clamps to the
+        real device's own range when the gain is actually applied -- but too
+        narrow silently destroys user input.
         """
-        drv = str(args.get("remote:driver") or args.get("driver") or "").lower()
+        remote_drv = str(args.get("remote:driver") or "").lower()
+        if remote_drv:
+            return cls._GAIN_MAX_DB.get(remote_drv, cls._DEFAULT_GAIN_MAX_DB)
+        if str(args.get("driver") or "").lower() == "remote":
+            return max(cls._GAIN_MAX_DB.values())
+        drv = str(args.get("driver") or "").lower()
         return cls._GAIN_MAX_DB.get(drv, cls._DEFAULT_GAIN_MAX_DB)
 
     def _on_device_selected(self, idx: int) -> None:
