@@ -1348,6 +1348,24 @@ class _SdrSettingsPanel(QWidget):
         drv = str(args.get("driver") or "").lower()
         return cls._GAIN_MAX_DB.get(drv, cls._DEFAULT_GAIN_MAX_DB)
 
+    @classmethod
+    def _gain_max_for_device(cls, dev: SdrDeviceInfo) -> int:
+        """Real overall RX gain ceiling (dB) for an enumerated device.
+
+        Prefers `dev.gain_max_db` -- read straight from the device's own
+        getGainRange() by query_remote_host() -- over the driver-name table
+        in _gain_max_for_args(), so any SoapySDR-supported remote SDR gets
+        its correct ceiling automatically, not just the handful of drivers
+        (HackRF, RTL-SDR) we have hardcoded, verified values for. The table
+        is still the fallback: local devices and not-yet-queried remote
+        placeholders carry no gain_max_db.
+        """
+        if dev.gain_max_db is not None and dev.gain_max_db > 0:
+            import math
+
+            return max(1, math.ceil(dev.gain_max_db))
+        return cls._gain_max_for_args(dev.args)
+
     def _on_device_selected(self, idx: int) -> None:
         if not self._devices or idx < 0 or idx >= len(self._devices):
             return
@@ -1356,7 +1374,7 @@ class _SdrSettingsPanel(QWidget):
         self._serial_label.setText(d.serial or "—")
         self._update_serial_row(d.serial or "")
         if hasattr(self, "_gain_spin"):
-            self._gain_spin.setRange(0, self._gain_max_for_args(d.args))
+            self._gain_spin.setRange(0, self._gain_max_for_device(d))
         if hasattr(self, "_remove_remote_btn"):
             is_saved_remote = any(self._device_belongs_to_host(d, h) for h in self._remote_hosts)
             self._remove_remote_btn.setEnabled(is_saved_remote)
@@ -1544,8 +1562,10 @@ class _SdrSettingsPanel(QWidget):
 
         idx = self._dev_combo.currentIndex()
         device_args: dict[str, str] = {}
+        gain_max_db: float | None = None
         if self._devices and 0 <= idx < len(self._devices):
             device_args = dict(self._devices[idx].args)
+            gain_max_db = self._devices[idx].gain_max_db
 
         rate_idx = self._rate_combo.currentIndex() if hasattr(self, "_rate_combo") else 5
         rate_hz = (
@@ -1569,6 +1589,11 @@ class _SdrSettingsPanel(QWidget):
             "ppm": self._ppm_spin.value() if hasattr(self, "_ppm_spin") else 0,
             "gain_auto": self._gain_auto_rb.isChecked() if hasattr(self, "_gain_auto_rb") else True,
             "gain_db": self._gain_spin.value() if hasattr(self, "_gain_spin") else 40,
+            # The device's own real gain ceiling, if query_remote_host()
+            # discovered one for it -- lets load() size the RF Gain spinbox
+            # correctly at startup, before the async re-enumerate that would
+            # otherwise rediscover it completes. See _gain_max_for_device().
+            "gain_max_db": gain_max_db,
             "bias_tee": self._bias_tee_chk.isChecked() if hasattr(self, "_bias_tee_chk") else False,
             "iq_save_dir": self._iq_dir_edit.text() if hasattr(self, "_iq_dir_edit") else "",
             "remote_hosts": self._remote_hosts,
@@ -1604,8 +1629,13 @@ class _SdrSettingsPanel(QWidget):
         # this device, and QSpinBox.setValue() silently clamps to whatever
         # range is current -- a saved HackRF gain above the old fixed 0-80
         # max would otherwise be clipped back down on every restart.
+        saved_gain_max = data.get("gain_max_db")
         saved_args = data.get("device_args")
-        if isinstance(saved_args, dict):
+        if isinstance(saved_gain_max, (int, float)) and saved_gain_max > 0:
+            import math
+
+            self._gain_spin.setRange(0, max(1, math.ceil(saved_gain_max)))
+        elif isinstance(saved_args, dict):
             self._gain_spin.setRange(0, self._gain_max_for_args(saved_args))
         self._gain_spin.setValue(int(data.get("gain_db") or 40))  # type: ignore[call-overload]
         self._bias_tee_chk.setChecked(bool(data.get("bias_tee", False)))

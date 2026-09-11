@@ -125,6 +125,12 @@ class SdrDeviceInfo:
     vid: int = 0  # USB VID (USB fallback only)
     pid: int = 0  # USB PID (USB fallback only)
     soapy_module: str = ""  # Suggested SoapySDR module name for installation
+    # Real overall RX gain ceiling (dB), read from the device's own
+    # getGainRange() when available (currently: query_remote_host() only —
+    # see there for why). None means "not queried"; callers should fall back
+    # to a driver-name-based guess rather than assume a narrow default, since
+    # under-reporting silently discards gain values the user has set.
+    gain_max_db: float | None = None
 
     @property
     def display_name(self) -> str:
@@ -984,6 +990,38 @@ class SdrDevice:
             if serial and len(found) > 1:
                 args["serial"] = serial
 
+            # Best-effort: read the device's own real RX gain ceiling so
+            # callers (the RF Gain UI) never have to guess one from a
+            # hardcoded driver-name table, which cannot know about every
+            # SoapySDR-supported device a remote-host user might plug in.
+            # enumerate() above only returns identity fields (driver, label,
+            # serial, hardware) -- getting the actual gain range requires
+            # opening the device, which only makes sense to attempt here,
+            # before the caller has committed to a Rig assignment. Any
+            # failure (already open elsewhere, driver doesn't support
+            # queries this way, network hiccup) just leaves gain_max_db
+            # unset; it is not a reason to drop this device from the list.
+            gain_max_db: float | None = None
+            try:
+                with _SOAPY_GLOBAL_LOCK:
+                    probe_dev = SoapySDR.Device(_kwargs_to_string(args))
+                try:
+                    gain_max_db = probe_dev.getGainRange(SoapySDR.SOAPY_SDR_RX, 0).maximum()
+                finally:
+                    # No explicit Device.unmake(): the Python binding's own
+                    # __del__ releases the underlying device when the last
+                    # reference goes away, and calling unmake() ourselves on
+                    # the object make()/Device() already tracks internally
+                    # raised "unknown device" here despite closing the
+                    # connection correctly -- verified the device is not left
+                    # claimed either way. `del` just drops the ref promptly
+                    # instead of waiting on function-exit refcounting.
+                    del probe_dev
+            except Exception:
+                logger.debug(
+                    "query_remote_host(%s): could not read gain range", addr, exc_info=True
+                )
+
             results.append(
                 SdrDeviceInfo(
                     driver="remote",
@@ -991,6 +1029,7 @@ class SdrDevice:
                     serial=serial,
                     hardware=hardware,
                     args=args,
+                    gain_max_db=gain_max_db,
                 )
             )
         return results
