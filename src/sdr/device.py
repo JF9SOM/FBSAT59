@@ -27,8 +27,10 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.util
+import ipaddress
 import logging
 import queue
+import socket
 import sys
 import threading
 import time
@@ -39,6 +41,50 @@ from typing import Any
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_ipv4_host(host: str) -> str:
+    """Best-effort resolve `host` to a literal IPv4 address.
+
+    SoapyRemote's C++ client tries only the first address getaddrinfo()
+    returns and does not fall back to a later one on failure.  On macOS,
+    resolving a ".local" mDNS name returns an IPv6 link-local address
+    (fe80::...) *before* the IPv4 one; SoapyRemote's connect() to that raw
+    link-local address (no interface scope attached) fails immediately with
+    "Operation timed out" -- even though the exact same name resolves fine
+    for everything else (ping, dscacheutil, Python sockets, which all try
+    every address getaddrinfo() returns in order). Resolving to IPv4
+    ourselves before handing the address to SoapySDR works around it.
+    Returns `host` unchanged if it is already a literal IP address, or if
+    resolution fails for any reason, so this is never worse than doing
+    nothing.
+    """
+    try:
+        ipaddress.ip_address(host)
+        return host  # already a literal IPv4/IPv6 address
+    except ValueError:
+        pass
+    try:
+        infos = socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_STREAM)
+        return str(infos[0][4][0])
+    except OSError:
+        return host
+
+
+def _resolve_remote_addr(remote_value: str) -> str:
+    """Resolve the host part of a SoapyRemote `remote` arg value to IPv4.
+
+    Accepts "host", "host:port", or "scheme://host[:port]" and returns the
+    same shape with the host resolved via _resolve_ipv4_host().
+    """
+    scheme = ""
+    rest = remote_value
+    if "://" in rest:
+        scheme, rest = rest.split("://", 1)
+        scheme += "://"
+    host, sep, port = rest.partition(":")
+    return f"{scheme}{_resolve_ipv4_host(host)}{sep}{port}"
+
 
 try:
     import SoapySDR as _soapy_probe  # noqa: F401
@@ -907,6 +953,7 @@ class SdrDevice:
             return []
 
         addr = f"{host}:{port}" if str(port) else str(host)
+        addr = _resolve_remote_addr(addr)  # see _resolve_ipv4_host
         # String form only: the SWIG dict typemap mangles "remote=host:port"
         # on the macOS conda-forge / Windows builds (GitHub Issue #12).
         query = f"driver=remote,remote={addr}"
@@ -1248,8 +1295,16 @@ class SdrDevice:
             # unaffected.  The minimal / driver-only fallbacks are skipped too:
             # without "remote=" they also trigger the hanging SSDP discovery.
             if (self._info.driver or "").lower() == "remote":
+                _remote_args = dict(self._info.args)
+                if _remote_args.get("remote"):
+                    # Resolve a ".local" host to IPv4 ourselves: SoapyRemote's
+                    # C++ client only tries the first getaddrinfo() result and
+                    # does not fall back, and on macOS that first result for a
+                    # ".local" name is an IPv6 link-local address SoapyRemote
+                    # cannot connect to. See _resolve_ipv4_host.
+                    _remote_args["remote"] = _resolve_remote_addr(_remote_args["remote"])
                 _attempt_specs: list[tuple[str, object]] = [
-                    ("full args (string form)", _kwargs_to_string(self._info.args)),
+                    ("full args (string form)", _kwargs_to_string(_remote_args)),
                 ]
             else:
                 _attempt_specs = [
