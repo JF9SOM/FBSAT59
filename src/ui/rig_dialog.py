@@ -1204,19 +1204,29 @@ class _SdrSettingsPanel(QWidget):
                 devices = []
             # Query each manually-added remote host directly (one targeted
             # request per host, no SSDP) so its real serial / hardware come
-            # back instead of a blank placeholder.
-            rq: dict[str, list[SdrDeviceInfo]] = {}
+            # back instead of a blank placeholder. Keep the last successful
+            # result for a host when this cycle's query comes back empty (a
+            # transient network hiccup, or the server briefly unreachable):
+            # unconditionally overwriting a known-good resolution with
+            # "unknown" on every re-enumerate is what let the RF Gain range
+            # (and driver/serial display) flip back to the un-resolved
+            # default moments after the user had just seen the real device
+            # and configured it.
+            rq: dict[str, list[SdrDeviceInfo]] = dict(self._remote_query_results)
             for h in list(self._remote_hosts):
+                key = self._remote_key(h)
                 try:
                     from sdr.device import SdrDevice as _SD
 
-                    rq[self._remote_key(h)] = _SD.query_remote_host(
+                    result = _SD.query_remote_host(
                         h.get("host", ""),
                         h.get("port", "") or "55132",
                         h.get("driver_hint", ""),
                     )
                 except Exception:
-                    rq[self._remote_key(h)] = []
+                    result = []
+                if result or key not in rq:
+                    rq[key] = result
             self._remote_query_results = rq
             # Signal delivers result back to the UI thread via Qt event loop
             self._enumerate_done.emit(devices)
