@@ -131,6 +131,11 @@ class SdrDeviceInfo:
     # to a driver-name-based guess rather than assume a narrow default, since
     # under-reporting silently discards gain values the user has set.
     gain_max_db: float | None = None
+    # Whether the device has real hardware AGC (SoapySDR hasGainMode()),
+    # read alongside gain_max_db in query_remote_host(). None means "not
+    # queried"; callers should treat that as "assume supported" so the
+    # Auto option is never hidden for a device we simply couldn't probe.
+    supports_agc: bool | None = None
 
     @property
     def display_name(self) -> str:
@@ -1002,11 +1007,13 @@ class SdrDevice:
             # queries this way, network hiccup) just leaves gain_max_db
             # unset; it is not a reason to drop this device from the list.
             gain_max_db: float | None = None
+            supports_agc: bool | None = None
             try:
                 with _SOAPY_GLOBAL_LOCK:
                     probe_dev = SoapySDR.Device(_kwargs_to_string(args))
                 try:
                     gain_max_db = probe_dev.getGainRange(SoapySDR.SOAPY_SDR_RX, 0).maximum()
+                    supports_agc = bool(probe_dev.hasGainMode(SoapySDR.SOAPY_SDR_RX, 0))
                 finally:
                     # No explicit Device.unmake(): the Python binding's own
                     # __del__ releases the underlying device when the last
@@ -1030,6 +1037,7 @@ class SdrDevice:
                     hardware=hardware,
                     args=args,
                     gain_max_db=gain_max_db,
+                    supports_agc=supports_agc,
                 )
             )
         return results

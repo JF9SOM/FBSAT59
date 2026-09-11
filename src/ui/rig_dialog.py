@@ -997,6 +997,20 @@ class _SdrSettingsPanel(QWidget):
     }
     _DEFAULT_GAIN_MAX_DB = 80  # unknown/other drivers: keep the old behavior
 
+    # Whether a driver has real hardware AGC (SoapySDR hasGainMode()==True).
+    # HackRF has none -- its "Auto" radio used to silently do nothing
+    # (setGainMode() fails quietly, and the manual value is never sent
+    # either since the pipeline only calls set_gain_db() in Manual mode --
+    # see rig/controller.py SdrRigAdapter.connect()), leaving the real
+    # hardware gain in whatever undefined state it was last in. Unknown
+    # drivers default to True (Auto left selectable) so a device we simply
+    # haven't hardcoded here isn't wrongly blocked from using AGC it may
+    # genuinely support.
+    _SUPPORTS_AGC: dict[str, bool] = {
+        "rtlsdr": True,
+        "hackrf": False,
+    }
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._devices: list[SdrDeviceInfo] = []
@@ -1372,6 +1386,37 @@ class _SdrSettingsPanel(QWidget):
             return max(1, math.ceil(dev.gain_max_db))
         return cls._gain_max_for_args(dev.args)
 
+    @classmethod
+    def _supports_agc_for_args(cls, args: dict[str, str]) -> bool:
+        """Whether a device's SoapySDR args point at a driver with real AGC.
+
+        Mirrors _gain_max_for_args(): the driver actually doing the
+        receiving behind a remote host is `remote:driver`, and an
+        unresolved remote (no driver hint yet) defaults to True (Auto left
+        selectable) rather than guessing it unsupported -- same "don't
+        narrow before we actually know" reasoning as the gain-range default.
+        """
+        remote_drv = str(args.get("remote:driver") or "").lower()
+        if remote_drv:
+            return cls._SUPPORTS_AGC.get(remote_drv, True)
+        if str(args.get("driver") or "").lower() == "remote":
+            return True
+        drv = str(args.get("driver") or "").lower()
+        return cls._SUPPORTS_AGC.get(drv, True)
+
+    @classmethod
+    def _supports_agc_for_device(cls, dev: SdrDeviceInfo) -> bool:
+        """Whether an enumerated device has real hardware AGC.
+
+        Prefers `dev.supports_agc` -- read straight from the device's own
+        hasGainMode() by query_remote_host() -- over the driver-name table,
+        so any SoapySDR-supported remote SDR is judged by what it actually
+        reports rather than only the drivers hardcoded in _SUPPORTS_AGC.
+        """
+        if dev.supports_agc is not None:
+            return dev.supports_agc
+        return cls._supports_agc_for_args(dev.args)
+
     @staticmethod
     def _device_identity(d: SdrDeviceInfo) -> tuple[str, str]:
         """Stable "is this the same physical device as before" key.
@@ -1414,6 +1459,16 @@ class _SdrSettingsPanel(QWidget):
                 # stomping on a gain the user deliberately dialed down.
                 self._gain_spin.setValue(gain_max)
             self._last_selected_identity = identity
+        if hasattr(self, "_gain_auto_rb"):
+            agc_ok = self._supports_agc_for_device(d)
+            self._gain_auto_rb.setEnabled(agc_ok)
+            if not agc_ok and self._gain_auto_rb.isChecked():
+                # HackRF-style device: Auto would silently do nothing (no
+                # AGC to enable) and leave the real hardware gain undefined
+                # instead of at the value the Manual field shows -- force a
+                # real, known gain rather than leave Auto selected on a
+                # device it cannot do anything for.
+                self._gain_manual_rb.setChecked(True)
         if hasattr(self, "_remove_remote_btn"):
             is_saved_remote = any(self._device_belongs_to_host(d, h) for h in self._remote_hosts)
             self._remove_remote_btn.setEnabled(is_saved_remote)
