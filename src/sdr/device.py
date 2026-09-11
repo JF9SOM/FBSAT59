@@ -192,18 +192,25 @@ _SOAPY_SDR_RX: int = 1
 # magnitude of a complex sample |I+jQ| (max possible sqrt(2) for full-scale
 # I and Q). Measured against a real HackRF on a strong local FM broadcast
 # station (2026-09-11): ADC clipping was observed starting around 0.98, with
-# max gain (116 dB) driving ~65-93% of samples above that. _SW_AGC_TARGET_PEAK
-# keeps backing off (attack) until comfortably under that, not just until the
-# clipping itself stops -- an early version stopped attacking as soon as the
-# peak dropped below a single ~0.85 "still clipping" threshold, which left it
-# resting right at the edge with no margin for a real signal's peak-to-average
-# variation (a static test tone at that level looks fine; music/voice with the
-# same average would still clip on its peaks). _SW_AGC_LOW_PEAK sits below
-# the target with a dead band between them so the loop doesn't hunt at the
-# boundary; only sustained (_SW_AGC_RELEASE_S) headroom below LOW earns a
-# gain increase back.
-_SW_AGC_TARGET_PEAK: float = 0.5
-_SW_AGC_LOW_PEAK: float = 0.3
+# max gain (116 dB) driving ~65-93% of samples above that.
+#
+# An earlier version targeted a conservative, clipping-free 0.3-0.5 (chosen
+# to protect a weak satellite signal's SNR, the primary use case). For a
+# strong signal that's the technically "correct" level, but it left the
+# demodulated audio much quieter than at max gain -- and per user testing,
+# effectively inaudible against this app's FM demodulator, which is a
+# narrowband design (see demodulator.py's NFM_DEVIATION) that can't cleanly
+# render a wideband source either way. FM (unlike AM/SSB) only carries
+# information in phase, not amplitude, so some hard limiting is standard
+# behavior in real FM receivers, not pure signal destruction -- explicit
+# user direction (2026-09-12) was to prioritize always producing an audible
+# result over protecting headroom, i.e. run close to the observed clip
+# point rather than well under it. _SW_AGC_LOW_PEAK sits below the target
+# with a dead band between them so the loop doesn't hunt at the boundary;
+# only sustained (_SW_AGC_RELEASE_S) headroom below LOW earns a gain
+# increase back.
+_SW_AGC_TARGET_PEAK: float = 1.1
+_SW_AGC_LOW_PEAK: float = 0.9
 _SW_AGC_STEP_DB: float = 6.0
 _SW_AGC_RELEASE_S: float = 1.5
 # A single read_samples() call only returns whatever arrived in one network
