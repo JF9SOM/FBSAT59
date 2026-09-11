@@ -175,6 +175,49 @@ _enumerate_cache: list[SdrDeviceInfo] | None = None
 # range.
 _SOAPY_SDR_OVERFLOW: int = -4
 
+# SoapySDR's RX direction constant (from Types.h: SOAPY_SDR_TX=0, SOAPY_SDR_RX=1).
+# Hardcoded for the same reason as _SOAPY_SDR_OVERFLOW above. This one is worth
+# spelling out: every gain call in this class direction=0 -- which is TX, not
+# RX -- until a 2026-09-11 investigation caught it. It went unnoticed because
+# _apply_settings() (the open()-time gain setup) already imports SoapySDR and
+# correctly uses SoapySDR.SOAPY_SDR_RX there, so only the *live* gain-change
+# path (set_gain_db()/set_gain_auto(), and the new software AGC loop that
+# calls setGain() continuously while streaming) was silently steering a TX
+# gain element that these receive-only drivers don't actually use for RX --
+# harmless for a single redundant post-open() call, but fatal for a loop that
+# depends on it working every time.
+_SOAPY_SDR_RX: int = 1
+
+# Software AGC tuning (see SdrDevice._sw_agc_step()). Thresholds are the
+# magnitude of a complex sample |I+jQ| (max possible sqrt(2) for full-scale
+# I and Q). Measured against a real HackRF on a strong local FM broadcast
+# station (2026-09-11): ADC clipping was observed starting around 0.98, with
+# max gain (116 dB) driving ~65-93% of samples above that. _SW_AGC_TARGET_PEAK
+# keeps backing off (attack) until comfortably under that, not just until the
+# clipping itself stops -- an early version stopped attacking as soon as the
+# peak dropped below a single ~0.85 "still clipping" threshold, which left it
+# resting right at the edge with no margin for a real signal's peak-to-average
+# variation (a static test tone at that level looks fine; music/voice with the
+# same average would still clip on its peaks). _SW_AGC_LOW_PEAK sits below
+# the target with a dead band between them so the loop doesn't hunt at the
+# boundary; only sustained (_SW_AGC_RELEASE_S) headroom below LOW earns a
+# gain increase back.
+_SW_AGC_TARGET_PEAK: float = 0.5
+_SW_AGC_LOW_PEAK: float = 0.3
+_SW_AGC_STEP_DB: float = 6.0
+_SW_AGC_RELEASE_S: float = 1.5
+# A single read_samples() call only returns whatever arrived in one network
+# datagram (~700 samples for a 2 Msps HackRF stream over SoapyRemote, not
+# the much larger size actually requested), and a step's effect on the
+# analog front end takes a few of those chunks to show up in what's being
+# read. Without a cooldown, "fast attack" reacts to every one of those
+# still-stale, still-clipping chunks and ratchets down far past the gain
+# actually needed before the first step's effect is even visible -- verified
+# on a real HackRF (2026-09-11): an uncooled loop overshot from 116 dB to
+# 0 dB in ~3s against a signal that only needed ~32-44 dB. Bounding the
+# attack rate (still much faster than the release side) fixes this.
+_SW_AGC_ATTACK_COOLDOWN_S: float = 0.2
+
 
 # ---------------------------------------------------------------------------
 # RTL-SDR ctypes helpers
@@ -503,6 +546,9 @@ class RtlSdrDirectDevice:
         if self._handle is not None:
             self._lib.rtlsdr_set_tuner_gain_mode(self._handle, 0 if auto_gain else 1)
 
+    def hasGainMode(self, direction: int, channel: int) -> bool:
+        return True  # R820T tuner has real hardware AGC (see setGainMode above)
+
     def setGain(self, direction: int, channel: int, gain_db: float) -> None:
         if self._handle is not None:
             # rtlsdr_set_tuner_gain takes tenths of dB as integer
@@ -685,9 +731,16 @@ class HackRfDirectDevice:
 
     def setGainMode(self, direction: int, channel: int, auto_gain: bool) -> None:
         # HackRF has no AGC; apply a sensible default when "auto" is requested.
+        # SdrDevice normally drives Auto through the software AGC loop
+        # instead (see _sw_agc_step()) and calls setGainMode(False), so this
+        # branch is a fallback for any caller that still asks for
+        # setGainMode(True) directly.
         if auto_gain and self._handle is not None:
             self._lib.hackrf_set_lna_gain(self._handle, ctypes.c_uint32(16))
             self._lib.hackrf_set_vga_gain(self._handle, ctypes.c_uint32(20))
+
+    def hasGainMode(self, direction: int, channel: int) -> bool:
+        return False  # HackRF has no hardware AGC (see setGainMode above)
 
     def setGain(self, direction: int, channel: int, gain_db: float) -> None:
         if self._handle is None:
@@ -810,6 +863,71 @@ class HackRfDirectDevice:
         return _RangeResult(0.0, 102.0)  # LNA (0-40) + VGA (0-62)
 
 
+def _distribute_gain(dev: Any, gain_db: float) -> None:
+    """Set RX gain, allocating dB across named gain elements ourselves.
+
+    SoapyHackRF's own "overall" gain distribution (dev.setGain(RX, 0, value)
+    with no element name) is broken at the top of its declared range: asking
+    for the device's own getGainRange() maximum (116 dB) is rejected with a
+    C++-side "setGain(...) returned invalid parameter(s)" warning -- no
+    Python exception, so it goes unnoticed -- and leaves the gain in a much
+    lower, nonsensical state (verified against a real HackRF, 2026-09-11:
+    LNA 37 / VGA 65(!) / AMP 14 instead of the correct 40 / 62 / 14 -- VGA
+    even reads back above its own declared 62 dB max). This is exactly the
+    value "start Auto at the device's real max" (_engage_auto_gain) and "the
+    RF Gain spinbox defaults to the device's real max" (rig_dialog.py) both
+    ask for, so it can't be sidestepped by just avoiding 116 specifically.
+    Filling each named element to its own max before moving to the next
+    avoids the driver's overall-gain code path entirely. Devices with no
+    named elements (e.g. RTL-SDR, a single overall gain) are unaffected by
+    this bug and go through the normal overall call.
+
+    Front-end gain (LNA, then AMP) is filled first since it's generally
+    better for noise figure than back-end VGA gain, matching how
+    HackRfDirectDevice.setGain() already prioritises this on the Windows
+    ctypes bypass path (which never goes through this function at all --
+    dev.listGains() isn't defined there, so the no-names branch below calls
+    its setGain() directly, and it does its own LNA/VGA split internally).
+    """
+    try:
+        names = list(dev.listGains(_SOAPY_SDR_RX, 0))
+    except Exception:
+        names = []
+    if not names:
+        try:
+            dev.setGain(_SOAPY_SDR_RX, 0, gain_db)
+        except Exception:
+            logger.debug("setGain(%.1f) failed", gain_db, exc_info=True)
+        return
+
+    def _priority(name: str) -> int:
+        n = name.upper()
+        if n == "LNA":
+            return 0
+        if n == "AMP":
+            return 1
+        return 2
+
+    remaining = gain_db
+    for name in sorted(names, key=_priority):
+        try:
+            rng = dev.getGainRange(_SOAPY_SDR_RX, 0, name)
+            lo, hi = float(rng.minimum()), float(rng.maximum())
+            step = float(rng.step()) if hasattr(rng, "step") else 0.0
+        except Exception:
+            continue
+        value = max(lo, min(hi, remaining))
+        if step > 0:
+            value = lo + round((value - lo) / step) * step
+            value = max(lo, min(hi, value))
+        try:
+            dev.setGain(_SOAPY_SDR_RX, 0, name, value)
+        except Exception:
+            logger.debug("setGain(%s, %.1f) failed", name, value, exc_info=True)
+            continue
+        remaining -= value
+
+
 # ---------------------------------------------------------------------------
 # Main SdrDevice class
 # ---------------------------------------------------------------------------
@@ -843,6 +961,16 @@ class SdrDevice:
         self._ppm: float = 0.0
         self._bias_tee: bool = False
         self._overflow_count: int = 0
+        # Software AGC (see _sw_agc_step()): only engaged in "auto" mode for
+        # a device whose hasGainMode() says it has no real hardware AGC
+        # (e.g. HackRF). _sw_agc_active gates whether read_samples() runs
+        # the loop at all; the rest track its running state.
+        self._sw_agc_active: bool = False
+        self._sw_agc_gain_db: float = 0.0
+        self._sw_agc_gain_min: float = 0.0
+        self._sw_agc_gain_max: float = 40.0
+        self._sw_agc_low_since: float | None = None
+        self._sw_agc_last_attack: float = 0.0
 
     # ------------------------------------------------------------------
     # Class methods
@@ -1542,11 +1670,12 @@ class SdrDevice:
                 if sr.ret == _SOAPY_SDR_OVERFLOW:
                     self._overflow_count += 1
                 return None
-            if sr.ret < num_samples:
-                return buf[: sr.ret]
-            return buf
+            result = buf[: sr.ret] if sr.ret < num_samples else buf
         except Exception:
             return None
+        if self._sw_agc_active:
+            self._sw_agc_step(result)
+        return result
 
     # ------------------------------------------------------------------
     # Configuration
@@ -1596,31 +1725,119 @@ class SdrDevice:
                 return False
 
     def set_gain_auto(self) -> bool:
-        """Enable automatic gain control."""
+        """Enable automatic gain control.
+
+        Uses the device's own hardware AGC (setGainMode) when it has one.
+        For a device that doesn't (HackRF -- hasGainMode() is False, and
+        setGainMode(True) is a silent no-op that leaves the real gain
+        undefined) this falls back to a software AGC loop driven from
+        read_samples() instead -- see _sw_agc_step().
+        """
         with self._lock:
             self._gain_mode = "auto"
             if self._dev is None:
                 return True
-            try:
-                self._dev.setGainMode(0, 0, True)
-                return True
-            except Exception:
-                return False
+            return self._engage_auto_gain()
 
     def set_gain_db(self, gain_db: float) -> bool:
         """Set manual gain in dB."""
         with self._lock:
             self._gain_mode = "manual"
             self._gain_db = gain_db
+            self._sw_agc_active = False
             if self._dev is None:
                 return True
             try:
-                self._dev.setGainMode(0, 0, False)
-                self._dev.setGain(0, 0, gain_db)
+                self._dev.setGainMode(_SOAPY_SDR_RX, 0, False)
+                _distribute_gain(self._dev, gain_db)
                 return True
             except Exception:
                 logger.exception("set_gain_db failed")
                 return False
+
+    def _engage_auto_gain(self) -> bool:
+        """Turn on Auto gain on self._dev (real AGC or the software fallback).
+
+        Callable with or without self._lock held -- it only touches
+        self._dev and the _sw_agc_* fields, never re-enters the lock.
+        """
+        if self._dev is None:
+            return True
+        try:
+            hw_agc = bool(self._dev.hasGainMode(_SOAPY_SDR_RX, 0))
+        except Exception:
+            hw_agc = False
+        try:
+            if hw_agc:
+                self._dev.setGainMode(_SOAPY_SDR_RX, 0, True)
+                self._sw_agc_active = False
+            else:
+                # Start at the device's real max: right for the common case
+                # of a weak satellite signal, and _sw_agc_step() backs off
+                # within the first chunk or two if the signal is actually
+                # strong enough to saturate the ADC (e.g. a local FM
+                # broadcast station -- see the module-level AGC constants).
+                self._dev.setGainMode(_SOAPY_SDR_RX, 0, False)
+                gmin, gmax = self.get_gain_range()
+                self._sw_agc_gain_min = gmin
+                self._sw_agc_gain_max = gmax
+                self._sw_agc_gain_db = gmax
+                self._sw_agc_low_since = None
+                self._sw_agc_last_attack = 0.0
+                _distribute_gain(self._dev, gmax)
+                self._sw_agc_active = True
+            return True
+        except Exception:
+            logger.exception("set_gain_auto failed")
+            return False
+
+    def _sw_agc_step(self, iq: np.ndarray) -> None:
+        """Adjust gain for a device with no real hardware AGC.
+
+        Called from read_samples() on every chunk while _sw_agc_active.
+        Attack: while the peak is above target, back off one step at a time,
+        rate-limited by _SW_AGC_ATTACK_COOLDOWN_S -- a single read_samples()
+        call only returns one network datagram's worth of samples (a few
+        hundred microseconds), and a step's effect takes a few of those to
+        reach the stream, so reacting to every chunk without a cooldown
+        overshoots (ratchets down far past the gain actually needed before
+        the first step is even visible -- verified against a real HackRF).
+        Release: only creep the gain back up after a sustained quiet period,
+        so a brief fade doesn't trigger a hike that immediately re-clips.
+        """
+        if len(iq) == 0:
+            return
+        dev = self._dev
+        if dev is None:
+            return
+        peak = float(np.max(np.abs(iq)))
+        now = time.monotonic()
+        if peak > _SW_AGC_TARGET_PEAK:
+            self._sw_agc_low_since = None
+            if now - self._sw_agc_last_attack < _SW_AGC_ATTACK_COOLDOWN_S:
+                return  # let the last step's effect reach the sample stream first
+            new_gain = max(self._sw_agc_gain_min, self._sw_agc_gain_db - _SW_AGC_STEP_DB)
+            self._sw_agc_apply(dev, new_gain)
+            self._sw_agc_last_attack = now
+            return
+        if peak < _SW_AGC_LOW_PEAK:
+            if self._sw_agc_low_since is None:
+                self._sw_agc_low_since = now
+            elif now - self._sw_agc_low_since >= _SW_AGC_RELEASE_S:
+                new_gain = min(self._sw_agc_gain_max, self._sw_agc_gain_db + _SW_AGC_STEP_DB)
+                self._sw_agc_apply(dev, new_gain)
+                self._sw_agc_low_since = now
+        else:
+            self._sw_agc_low_since = None
+
+    def _sw_agc_apply(self, dev: Any, gain_db: float) -> None:
+        if gain_db == self._sw_agc_gain_db:
+            return
+        try:
+            _distribute_gain(dev, gain_db)
+            self._sw_agc_gain_db = gain_db
+        except Exception:
+            logger.debug("software AGC setGain(%.1f) failed", gain_db, exc_info=True)
 
     def set_bias_tee(self, enabled: bool) -> bool:
         """Enable or disable the Bias-T power supply on the antenna port.
@@ -1697,11 +1914,11 @@ class SdrDevice:
             return [250e3, 1.0e6, 2.4e6]
 
     def get_gain_range(self) -> tuple[float, float]:
-        """Return (min_db, max_db) for the overall gain element."""
+        """Return (min_db, max_db) for the overall RX gain element."""
         if not SOAPY_AVAILABLE or self._dev is None:
             return (0.0, 50.0)
         try:
-            r = self._dev.getGainRange(0, 0)
+            r = self._dev.getGainRange(_SOAPY_SDR_RX, 0)
             return (r.minimum(), r.maximum())
         except Exception:
             return (0.0, 50.0)
@@ -1734,10 +1951,11 @@ class SdrDevice:
                 self._dev.setBandwidth(SoapySDR.SOAPY_SDR_RX, 0, self._bandwidth)
         try:
             if self._gain_mode == "auto":
-                self._dev.setGainMode(SoapySDR.SOAPY_SDR_RX, 0, True)
+                self._engage_auto_gain()
             else:
                 self._dev.setGainMode(SoapySDR.SOAPY_SDR_RX, 0, False)
-                self._dev.setGain(SoapySDR.SOAPY_SDR_RX, 0, self._gain_db)
+                _distribute_gain(self._dev, self._gain_db)
+                self._sw_agc_active = False
         except Exception as exc:
             logger.warning("setGain/GainMode failed: %s", exc)
         if self._ppm != 0.0:

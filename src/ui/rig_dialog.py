@@ -1460,15 +1460,21 @@ class _SdrSettingsPanel(QWidget):
                 self._gain_spin.setValue(gain_max)
             self._last_selected_identity = identity
         if hasattr(self, "_gain_auto_rb"):
-            agc_ok = self._supports_agc_for_device(d)
-            self._gain_auto_rb.setEnabled(agc_ok)
-            if not agc_ok and self._gain_auto_rb.isChecked():
-                # HackRF-style device: Auto would silently do nothing (no
-                # AGC to enable) and leave the real hardware gain undefined
-                # instead of at the value the Manual field shows -- force a
-                # real, known gain rather than leave Auto selected on a
-                # device it cannot do anything for.
-                self._gain_manual_rb.setChecked(True)
+            if self._supports_agc_for_device(d):
+                self._gain_auto_rb.setToolTip(_("Uses the device's own hardware AGC."))
+            else:
+                # No real hardware AGC on this device (e.g. HackRF) -- Auto
+                # instead runs a software AGC loop that watches for ADC
+                # clipping and backs the gain off automatically. Surfaced as
+                # a tooltip rather than a label change so the control itself
+                # stays simple; see SdrDevice._sw_agc_step().
+                self._gain_auto_rb.setToolTip(
+                    _(
+                        "This device has no hardware AGC. Auto uses a software\n"
+                        "AGC instead: it starts at maximum gain and backs off\n"
+                        "automatically if a strong signal saturates the receiver."
+                    )
+                )
         if hasattr(self, "_remove_remote_btn"):
             is_saved_remote = any(self._device_belongs_to_host(d, h) for h in self._remote_hosts)
             self._remove_remote_btn.setEnabled(is_saved_remote)
