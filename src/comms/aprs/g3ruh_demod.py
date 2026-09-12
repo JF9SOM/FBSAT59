@@ -22,6 +22,7 @@ alongside another demod mode (e.g. CW Decoder) on the same SDR pipeline.
 
 from __future__ import annotations
 
+import math
 import queue
 import threading
 from typing import Any
@@ -72,7 +73,23 @@ class G3ruhDiscriminator:
 
         self._decim1 = max(1, int(rate / _INTERMEDIATE_RATE_TARGET))
         self._mid_rate = rate / self._decim1
-        self._decim2 = max(1, int(self._mid_rate / _AUDIO_RATE))
+
+        # Final stage to exactly _AUDIO_RATE via a rational resampler,
+        # rather than the naive integer-stride decimation this used to do
+        # (self._mid_rate / _AUDIO_RATE, e.g. 250000/1 / 48000 = 5.2,
+        # truncated to a stride of 5 -- landing on an *actual* output rate
+        # of 50000 Hz while direwolf.py's config still declares ARATE 48000
+        # to Direwolf. That's a ~4% clock/timebase lie fed straight into
+        # Direwolf's own G3RUH bit-clock recovery, for every SDR sample
+        # rate this constant combination could ever produce -- confirmed
+        # against a real captured 9600bps G3RUH signal, where Direwolf's
+        # own reference decoder could not lock at all until this was
+        # fixed). math.gcd() picks the smallest up/down pair that lands on
+        # _AUDIO_RATE exactly, whatever self._mid_rate rounds to.
+        mid_rate_int = max(1, int(round(self._mid_rate)))
+        gcd = math.gcd(_AUDIO_RATE, mid_rate_int)
+        self._resample_up = _AUDIO_RATE // gcd
+        self._resample_down = mid_rate_int // gcd
 
         if_bw = float(np.clip(_IF_HALF_BW_HZ / (rate / 2.0), 0.001, 0.499))
         self._if_b = sp_signal.firwin(63, if_bw).astype(np.float32) if _SCIPY_AVAILABLE else None
@@ -105,7 +122,7 @@ class G3ruhDiscriminator:
         # No de-emphasis here (unlike NFM voice) — 9600bps G3RUH needs the
         # raw, flat discriminator output, same as a radio's DATA port.
         audio_raw = discrim * (self._mid_rate / (2 * np.pi * _DEVIATION_HZ))
-        audio = self._decimate(audio_raw, self._decim2)
+        audio = sp_signal.resample_poly(audio_raw, self._resample_up, self._resample_down)
         result: np.ndarray = np.clip(audio, -1.0, 1.0).astype(np.float32)
         return result
 
