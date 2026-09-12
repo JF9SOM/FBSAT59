@@ -987,9 +987,19 @@ class SdrDevice:
     def enumerate(cls, force: bool = False) -> list[SdrDeviceInfo]:
         """Return SoapySDR-visible hardware SDR devices (audio devices excluded).
 
-        Results are cached after the first successful call.  Pass force=True to
-        bypass the cache (e.g. when the user explicitly clicks the Enumerate
-        button after plugging in a new device).
+        On Windows, results are cached after the first successful call — pass
+        force=True to bypass the cache (e.g. when the user explicitly clicks
+        the Enumerate button after plugging in a new device). The cache
+        exists only to dodge repeat crash risk from re-invoking Windows'
+        out-of-process enumeration subprocess (see below); it must not apply
+        on Linux/macOS, where enumeration is a plain in-process SoapySDR
+        call with no such risk. Caching there meant a single bad first
+        result (e.g. the SOAPY_SDR_PLUGIN_PATH bug fixed in b9e7f1d, or any
+        other transient USB hiccup) silently stuck as "no local SDR" for the
+        rest of the app's run -- confirmed live: Help > SDR's dialog forces
+        a fresh scan on every open and "fixed" it, only because Rig Settings'
+        own auto-enumerate-on-open never got a chance to see a good result
+        again after caching a bad one.
 
         On Windows the enumeration runs in a subprocess so that a C-level crash
         inside a SoapySDR plugin (e.g. SoapyRTLSDR with a libusbK driver) cannot
@@ -998,15 +1008,15 @@ class SdrDevice:
         global _enumerate_cache
         if not SOAPY_AVAILABLE:
             return []
-        if not force and _enumerate_cache is not None:
-            return list(_enumerate_cache)
-        with _SOAPY_GLOBAL_LOCK:
-            if sys.platform == "win32":
+        if sys.platform == "win32":
+            if not force and _enumerate_cache is not None:
+                return list(_enumerate_cache)
+            with _SOAPY_GLOBAL_LOCK:
                 results = cls._enumerate_via_subprocess()
-            else:
-                results = cls._enumerate_direct()
-            _enumerate_cache = results
-            return list(results)
+                _enumerate_cache = results
+                return list(results)
+        with _SOAPY_GLOBAL_LOCK:
+            return list(cls._enumerate_direct())
 
     # Local (USB) hardware drivers probed one at a time by _enumerate_direct().
     # We deliberately never call the unfiltered SoapySDR.Device.enumerate():
