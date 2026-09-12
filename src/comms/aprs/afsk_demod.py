@@ -9,7 +9,12 @@ Algorithm
        f[n] = angle(iq[n] * conj(iq[n-1])) * Fs / (2π)
 3. Smooth with a one-symbol-wide box filter.
 4. Threshold at 1 700 Hz (midpoint of mark=1 200 Hz and space=2 200 Hz).
-5. NRZI decode: a frequency change between symbols → bit 0, no change → bit 1.
+5. Symbol-clock recovery: a per-sample digital PLL tracks the transmitter's
+   bit clock (which is not synchronized to the receiver's), decoding one
+   bit each time it completes a symbol period; every observed tone
+   transition -- which can only occur at a true symbol boundary -- nudges
+   the PLL back into alignment. NRZI decode: a frequency change between
+   symbols → bit 0, no change → bit 1.
 6. HDLC sync + bit-unstuffing + CRC-16/CCITT verification.
 
 The class exposes the same ``frame_received(bytes)`` Signal as KissClient
@@ -57,6 +62,14 @@ _BAUD: float = 1200.0
 _THRESHOLD_HZ: float = (_MARK_HZ + _SPACE_HZ) / 2.0  # 1700 Hz
 _OVERSAMPLE: int = 8  # samples per symbol after decimation
 _TARGET_RATE: int = int(_BAUD * _OVERSAMPLE)  # 9 600 Hz
+
+# Digital-PLL correction strength applied to _pll_phase whenever a raw tone
+# transition is observed (see _process()). 0.0 = no correction (free-running
+# clock only); 1.0 = snap the phase fully onto the transition every time
+# (too twitchy under noise). 0.5 halves the current phase error per
+# transition -- the same damped-correction idea classic Bell 202 TNC modems
+# use for bit sync.
+_PLL_GAIN: float = 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -117,9 +130,26 @@ class _HdlcState:
         # --- bit-unstuffing ---
         if bit == 1:
             self._ones += 1
-            if self._ones > 5:
-                # abort — invalid sequence
+            if self._ones > 6:
+                # Genuine abort sequence (7+ consecutive 1s) -- not
+                # explainable by a flag (which has exactly six 1-bits) or
+                # valid stuffing (which never allows more than five in a
+                # row), so this really is a protocol violation.
                 self._reset()
+                return None
+            if self._ones == 6:
+                # Exactly six consecutive 1s can only be a flag's own six
+                # 1-bits in progress -- properly stuffed data never reaches
+                # six in a row (a 0 is always stuffed in after the fifth).
+                # Do not treat this bit as frame data or abort yet: the
+                # very next bit is the flag's closing 0, which the
+                # unconditional shift-register check above will recognize
+                # and handle. (Without this, every frame's own valid
+                # closing flag was mistaken for a bit-stuffing violation
+                # and the fully-assembled frame was discarded one bit
+                # before the shift register could ever recognize it as a
+                # flag -- no frame could ever be returned via the normal
+                # closing-flag path, regardless of signal quality.)
                 return None
         else:
             if self._ones == 5:
@@ -179,6 +209,30 @@ class AfskDemodulator(QThread):
         self._hdlc = _HdlcState()
         # Residual samples carried between consecutive push_samples() calls
         self._residual: np.ndarray = np.array([], dtype=np.complex64)
+        # Symbol-clock recovery (digital PLL) state, carried across
+        # consecutive _process() calls the same way _residual is. See the
+        # per-sample loop in _process() for how it's used: `_pll_phase` is
+        # the fraction of the current symbol elapsed (wraps 1.0 -> 0.0 at
+        # each symbol boundary, which is when a bit is decoded); `_raw_tone`
+        # is the last per-sample (not per-symbol) mark/space reading, so a
+        # real tone transition -- which in a clean Bell 202 signal can only
+        # occur exactly at a symbol boundary -- can be used to nudge
+        # `_pll_phase` back into alignment with the transmitter's clock.
+        # Without this, sampling drifted onto a fixed grid with no relation
+        # to the actual incoming bit timing and never decoded anything.
+        self._pll_phase: float = 0.0
+        self._raw_tone: int = 0
+        self._pll_seeded: bool = False
+        # Streaming state for the one-symbol box filter (step 4 in
+        # _process()): the last (sym_samples - 1) inst_freq values, carried
+        # over so the *next* call's convolution has real history at its
+        # leading edge instead of the implicit zero-padding
+        # np.convolve(..., mode="same") would otherwise use there. Without
+        # this, every block boundary (every ~16384-sample SDRPipeline
+        # block, i.e. roughly every 15-65ms depending on sample rate)
+        # corrupted a few samples right at the point where PLL continuity
+        # matters most -- fatal once packets span more than one block.
+        self._box_state: np.ndarray = np.array([], dtype=np.float32)
         # Diagnostic-only (see sdr.diag_log): counts blocks dropped because
         # this thread wasn't draining the queue fast enough. Logged on the
         # first drop and every 50th thereafter so a sustained backlog is
@@ -256,28 +310,71 @@ class AfskDemodulator(QThread):
         phase_diff = np.angle(iq[1:] * np.conj(iq[:-1]))
         inst_freq: np.ndarray = phase_diff * (actual_rate / (2.0 * np.pi))
 
-        # ---- 4. One-symbol box-filter smoothing ----
+        # ---- 4. One-symbol box-filter smoothing (streaming) ----
         sym_samples = max(1, int(round(actual_rate / _BAUD)))
+        if len(self._box_state) != sym_samples - 1:
+            # First call, or actual_rate rounded to a different sym_samples
+            # than last time (sr/dec can drift a little from call to call).
+            self._box_state = np.zeros(sym_samples - 1, dtype=np.float32)
         kernel = np.ones(sym_samples, dtype=np.float32) / sym_samples
-        smoothed = np.convolve(inst_freq.astype(np.float32), kernel, mode="same")
+        extended = np.concatenate([self._box_state, inst_freq.astype(np.float32)])
+        # "valid" (never "same"): every output here is a true, unpadded
+        # average -- history came from _box_state, not implicit zeros.
+        smoothed = np.convolve(extended, kernel, mode="valid")
+        if sym_samples > 1:
+            self._box_state = extended[-(sym_samples - 1) :]
 
-        # ---- 5. Symbol sampling + NRZI decode ----
-        n_syms = len(smoothed) // sym_samples
-        for i in range(n_syms):
-            centre = i * sym_samples + sym_samples // 2
-            if centre >= len(smoothed):
-                break
-            # tone: 0 = mark (f < 1700), 1 = space (f >= 1700)
-            tone = 1 if smoothed[centre] >= _THRESHOLD_HZ else 0
-            # NRZI: bit = 1 (no tone change), bit = 0 (tone change)
-            bit = 1 if (tone == self._hdlc.last_tone) else 0
-            self._hdlc.last_tone = tone
+        # ---- 5. Symbol-clock recovery (digital PLL) + NRZI decode ----
+        # Per-sample loop (not a fixed i*sym_samples grid): _pll_phase
+        # advances by 1/sym_samples every raw sample and a bit is decoded
+        # each time it wraps past 1.0. A real tone transition can only
+        # happen at a true symbol boundary in a clean Bell 202 signal, so
+        # whenever the per-sample tone changes, that sample IS (up to
+        # noise) a boundary -- used to damp-correct _pll_phase toward 0/1.0
+        # via _PLL_GAIN. Without this the sampling instant is fixed to an
+        # arbitrary block-relative grid with no relation to the actual
+        # incoming bit clock and never stays aligned long enough to decode
+        # a frame, however clean the signal is otherwise.
+        phase_inc = 1.0 / sym_samples
+        tones = smoothed >= _THRESHOLD_HZ  # 0 = mark, 1 = space, per raw sample
+        for tone_bool in tones:
+            tone = 1 if tone_bool else 0
+            if not self._pll_seeded:
+                self._raw_tone = tone
+                self._pll_seeded = True
 
-            frame = self._hdlc.push_bit(bit)
-            if frame is not None:
-                self.frame_received.emit(frame)
+            # Capture the tone that held through the symbol *up to* this
+            # sample before possibly updating it below. Once locked, a real
+            # transition lands on (or very near) the same sample as a phase
+            # wrap -- if _raw_tone were updated to the new tone first, the
+            # wrap below would sample the symbol that is only just starting
+            # instead of the one that just finished.
+            prev_tone = self._raw_tone
+            if tone != prev_tone:
+                if self._pll_phase < 0.5:
+                    self._pll_phase *= 1.0 - _PLL_GAIN
+                else:
+                    self._pll_phase += (1.0 - self._pll_phase) * _PLL_GAIN
+                self._raw_tone = tone
+
+            self._pll_phase += phase_inc
+            if self._pll_phase >= 1.0:
+                self._pll_phase -= 1.0
+                # Symbol boundary reached -- prev_tone held steady (mark or
+                # space) through the symbol that just ended, so it is that
+                # symbol's decoded tone.
+                bit = 1 if (prev_tone == self._hdlc.last_tone) else 0
+                self._hdlc.last_tone = prev_tone
+                frame = self._hdlc.push_bit(bit)
+                if frame is not None:
+                    self.frame_received.emit(frame)
 
         # ---- 6. Save residual for next call ----
-        used = n_syms * sym_samples
-        # +1 because inst_freq has one fewer sample than iq
-        self._residual = iq[used + 1 :]
+        # The PLL loop above always consumes the *entire* smoothed/inst_freq
+        # array now (unlike the old fixed-grid sampler, which intentionally
+        # left a partial symbol's worth unconsumed and, as a side effect,
+        # always retained enough raw iq tail for continuity). All that's
+        # actually needed for the next call's phase-difference calculation
+        # (phase_diff[0] = angle(new_iq[1] * conj(new_iq[0])), where
+        # new_iq[0] is this residual) is this block's very last raw sample.
+        self._residual = iq[-1:]
