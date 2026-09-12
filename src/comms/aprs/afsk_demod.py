@@ -110,6 +110,16 @@ class _HdlcState:
         self._bit_pos: int = 0  # bit position within current byte (0-7)
         self._byte: int = 0  # byte being assembled
         self._frame: bytearray = bytearray()
+        # TEMPORARY diagnostic (do not remove until the user confirms real
+        # decodes over SDR): counts flags seen (any 0x7E, whether or not a
+        # frame followed) and CRC pass/fail on candidate frames, logged
+        # periodically. Answers a narrower question than "did a frame
+        # decode": is the bitstream even HDLC-flag-synchronized at all
+        # (PLL/timing working), separate from whether assembled frames pass
+        # CRC (signal/DSP quality).
+        self._diag_flag_count: int = 0
+        self._diag_crc_ok: int = 0
+        self._diag_crc_fail: int = 0
 
     def push_bit(self, bit: int) -> bytes | None:
         """Push one NRZI-decoded data bit; return a validated frame or None."""
@@ -117,9 +127,36 @@ class _HdlcState:
         self._shift = ((self._shift >> 1) | (bit << 7)) & 0xFF
 
         if self._shift == self._FLAG:
+            self._diag_flag_count += 1
             result: bytes | None = None
+            was_in_frame = self._in_frame
+            frame_len = len(self._frame)
             if self._in_frame and len(self._frame) >= self._MIN_FRAME_BYTES:
                 result = self._validate()
+                if result is not None:
+                    self._diag_crc_ok += 1
+                else:
+                    self._diag_crc_fail += 1
+            # TEMPORARY diagnostic (do not remove until confirmed working):
+            # log EVERY flag event (not sampled) with the byte length (and a
+            # hex preview) of whatever accumulated since the previous flag,
+            # to tell "genuinely nothing between flags" (idle/flag-fill, or
+            # noise triggering the flag pattern in isolation) apart from
+            # "a real frame started but never reached 14 bytes" (garbled
+            # mid-frame, e.g. a PLL/bit-sync robustness issue under real
+            # noise that the earlier synthetic-signal tests couldn't catch).
+            from sdr.diag_log import get_sdr_diag_logger
+
+            get_sdr_diag_logger().info(
+                "afsk_demod HDLC flag #%d: was_in_frame=%s frame_len=%d hex=%s "
+                "totals(crc_ok=%d crc_fail=%d)",
+                self._diag_flag_count,
+                was_in_frame,
+                frame_len,
+                bytes(self._frame[:20]).hex(),
+                self._diag_crc_ok,
+                self._diag_crc_fail,
+            )
             self._reset()
             self._in_frame = True
             return result
@@ -256,6 +293,9 @@ class AfskDemodulator(QThread):
         # first drop and every 50th thereafter so a sustained backlog is
         # still visible without flooding the log.
         self._diag_drop_count: int = 0
+        # TEMPORARY diagnostic (do not remove until confirmed working): see
+        # push_samples().
+        self._diag_recv_count: int = 0
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -268,6 +308,16 @@ class AfskDemodulator(QThread):
         SDR pipeline's own thread) if the internal queue is full, i.e. this
         demodulator thread is not keeping up.
         """
+        self._diag_recv_count += 1
+        if self._diag_recv_count == 1 or self._diag_recv_count % 200 == 0:
+            from sdr.diag_log import get_sdr_diag_logger
+
+            get_sdr_diag_logger().info(
+                "afsk_demod push_samples: block #%d received (len=%d, peak_abs=%.4f)",
+                self._diag_recv_count,
+                len(iq),
+                float(np.max(np.abs(iq))) if len(iq) else 0.0,
+            )
         try:
             self._q.put_nowait(iq.astype(np.complex64))
         except queue.Full:

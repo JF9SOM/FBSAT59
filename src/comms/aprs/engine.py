@@ -293,14 +293,34 @@ class AprsEngine(QObject):
         (including a Rig + Sound Card Direwolf session — not ours to
         touch), or already on the right mechanism/modem.
         """
+        # TEMPORARY diagnostic (do not remove until confirmed working):
+        # confirm this method is reached on a Baud combo change and what it
+        # decided.
+        from sdr.diag_log import get_sdr_diag_logger
+
+        diag_logger = get_sdr_diag_logger()
+        diag_logger.info(
+            "sync_sdr_baud() called: target_modem=%s running=%s last_rig_params=%s "
+            "sdr_direwolf_active=%s current_modem=%s demod=%s sdr_pipeline=%s",
+            target_modem,
+            self._running,
+            self._last_rig_params,
+            self._sdr_direwolf_active,
+            self._current_modem,
+            self._demod is not None,
+            self._sdr_pipeline is not None,
+        )
         if not self._running or self._last_rig_params is not None:
+            diag_logger.info("sync_sdr_baud(): early return (not running, or rig+soundcard)")
             return
         want_direwolf = target_modem in ("4800", "9600")
         already_correct = (
             want_direwolf and self._sdr_direwolf_active and self._current_modem == target_modem
         ) or (not want_direwolf and not self._sdr_direwolf_active)
         if already_correct:
+            diag_logger.info("sync_sdr_baud(): already_correct, no-op")
             return
+        diag_logger.info("sync_sdr_baud(): tearing down and switching mechanism")
         self._teardown_pipeline()
         if want_direwolf:
             self._start_sdr_direwolf_pipeline(pipeline, target_modem)
@@ -327,12 +347,22 @@ class AprsEngine(QObject):
         restart_if_modem_changed()/sync_sdr_baud() (which tear down and
         immediately restart, keeping all current owners' claims intact).
         """
+        from sdr.diag_log import get_sdr_diag_logger
+
+        diag_logger = get_sdr_diag_logger()
+        diag_logger.info(
+            "_teardown_pipeline() called: demod=%s sdr_pipeline=%s sdr_direwolf_active=%s",
+            self._demod is not None,
+            self._sdr_pipeline is not None,
+            self._sdr_direwolf_active,
+        )
         if self._sdr_pipeline is not None and self._demod is not None:
             self._sdr_pipeline.unsubscribe(self._demod.push_samples)
             self._demod.stop()
             self._demod = None
             self._sdr_pipeline = None
         self._mgr.stop()
+        diag_logger.info("_teardown_pipeline(): done (mgr.stop() and demod teardown returned)")
         self._running = False
         self._current_modem = None
         self._last_rig_params = None
@@ -443,14 +473,25 @@ class AprsEngine(QObject):
 
     def _on_kiss_frame(self, raw: bytes) -> None:
         """Decode an AX.25 frame and emit packet_received."""
+        from sdr.diag_log import get_sdr_diag_logger
+
+        get_sdr_diag_logger().info(
+            "_on_kiss_frame: raw KISS frame received from Direwolf, len=%d, hex=%s",
+            len(raw),
+            raw[:32].hex(),
+        )
         self.raw_frame_received.emit(raw)
         frame: Ax25Frame | None = decode_ax25(raw)
         if frame is None:
+            get_sdr_diag_logger().info("_on_kiss_frame: decode_ax25() returned None")
             return
         packet: AprsPacket = parse_aprs(frame)
         self.packet_received.emit(packet)
 
     def _on_kiss_lost(self) -> None:
+        from sdr.diag_log import get_sdr_diag_logger
+
+        get_sdr_diag_logger().info("_on_kiss_lost: KISS TCP connection to Direwolf was lost")
         self._running = False
         self.error_occurred.emit("Direwolf connection lost.")
         self.status_changed.emit("Disconnected")

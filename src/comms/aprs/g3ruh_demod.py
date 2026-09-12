@@ -163,6 +163,9 @@ class G3ruhSdrDemod(QThread):
         # first drop and every 50th thereafter so a sustained backlog is
         # still visible without flooding the log.
         self._diag_drop_count: int = 0
+        # TEMPORARY diagnostic (do not remove until confirmed working): see
+        # push_samples().
+        self._diag_recv_count: int = 0
 
     def push_samples(self, iq: np.ndarray) -> None:
         """Receive one I/Q block from SDRPipeline.subscribe().
@@ -171,6 +174,16 @@ class G3ruhSdrDemod(QThread):
         is full (i.e. this thread is not keeping up) rather than blocking
         the SDR pipeline's own thread.
         """
+        self._diag_recv_count += 1
+        if self._diag_recv_count == 1 or self._diag_recv_count % 200 == 0:
+            from sdr.diag_log import get_sdr_diag_logger
+
+            get_sdr_diag_logger().info(
+                "g3ruh_demod push_samples: block #%d received (len=%d, peak_abs=%.4f)",
+                self._diag_recv_count,
+                len(iq),
+                float(np.max(np.abs(iq))) if len(iq) else 0.0,
+            )
         try:
             self._q.put_nowait(iq.astype(np.complex64))
         except queue.Full:
@@ -188,11 +201,39 @@ class G3ruhSdrDemod(QThread):
         self.wait(3000)
 
     def run(self) -> None:
+        # TEMPORARY diagnostic (do not remove until confirmed working):
+        # counts calls to process() and whether it returned empty, plus any
+        # exception it raises (previously unguarded -- an exception here
+        # would silently end this thread with no trace at all).
+        diag_call_count = 0
+        diag_empty_count = 0
         while not self._stop_event.is_set():
             try:
                 iq = self._q.get(timeout=0.1)
             except queue.Empty:
                 continue
-            audio = self._discriminator.process(iq)
+            diag_call_count += 1
+            try:
+                audio = self._discriminator.process(iq)
+            except Exception:
+                from sdr.diag_log import get_sdr_diag_logger
+
+                get_sdr_diag_logger().exception(
+                    "G3ruhSdrDemod.run(): process() raised at call #%d", diag_call_count
+                )
+                raise
+            if len(audio) == 0:
+                diag_empty_count += 1
+            if diag_call_count == 1 or diag_call_count % 200 == 0:
+                from sdr.diag_log import get_sdr_diag_logger
+
+                get_sdr_diag_logger().info(
+                    "G3ruhSdrDemod.run(): process() call #%d, empty=%d/%d so far, "
+                    "this result len=%d",
+                    diag_call_count,
+                    diag_empty_count,
+                    diag_call_count,
+                    len(audio),
+                )
             if len(audio):
                 self.audio_ready.emit(audio)

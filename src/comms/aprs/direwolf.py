@@ -39,7 +39,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal
 
 from comms.audio_device_manager import get_audio_device_manager
 
@@ -201,6 +201,9 @@ class KissClient(QThread):
 
     def run(self) -> None:
         """Connect and read KISS frames until stop() is called."""
+        from sdr.diag_log import get_sdr_diag_logger
+
+        diag_logger = get_sdr_diag_logger()
         deadline = time.monotonic() + self._CONNECT_TIMEOUT
         while not self._stop_event.is_set():
             try:
@@ -209,9 +212,16 @@ class KissClient(QThread):
                 sock.connect(("127.0.0.1", self._PORT))
                 sock.settimeout(self._RECV_TIMEOUT)
                 self._sock = sock
+                diag_logger.info("KissClient.run(): connected to Direwolf on port %d", self._PORT)
                 break
-            except OSError:
+            except OSError as exc:
                 if time.monotonic() > deadline:
+                    diag_logger.info(
+                        "KissClient.run(): giving up connecting to port %d after %.1fs: %r",
+                        self._PORT,
+                        self._CONNECT_TIMEOUT,
+                        exc,
+                    )
                     return
                 time.sleep(0.2)
 
@@ -299,15 +309,41 @@ class AudioBridge(QThread):
         except ImportError:
             return
 
+        # TEMPORARY diagnostic (do not remove until confirmed working):
+        # counts calls to _rx_callback and confirms PCM actually reaches
+        # Direwolf's stdin (vs. push_samples() reaching G3ruhSdrDemod but
+        # audio_ready never firing, or stdin.write() silently failing).
+        rx_cb_state = {"count": 0}
+
         # RX: audio source → Direwolf stdin
         def _rx_callback(chunk: Any) -> None:
             if self._stop_event.is_set():
                 return
+            rx_cb_state["count"] += 1
+            n = rx_cb_state["count"]
+            if n == 1 or n % 200 == 0:
+                from sdr.diag_log import get_sdr_diag_logger
+
+                get_sdr_diag_logger().info(
+                    "AudioBridge._rx_callback: call #%d, chunk len=%d, peak_abs=%.4f",
+                    n,
+                    len(chunk),
+                    float(np.max(np.abs(chunk))) if len(chunk) else 0.0,
+                )
             try:
                 pcm = (chunk * 32767).astype("int16").tobytes()
                 self._proc.stdin.write(pcm)  # type: ignore[union-attr]
                 self._proc.stdin.flush()  # type: ignore[union-attr]
-            except (OSError, BrokenPipeError):
+                if n == 1 or n % 200 == 0:
+                    from sdr.diag_log import get_sdr_diag_logger
+
+                    get_sdr_diag_logger().info(
+                        "AudioBridge._rx_callback: wrote %d bytes to Direwolf stdin", len(pcm)
+                    )
+            except (OSError, BrokenPipeError) as exc:
+                from sdr.diag_log import get_sdr_diag_logger
+
+                get_sdr_diag_logger().info("AudioBridge._rx_callback: stdin write FAILED: %r", exc)
                 self._stop_event.set()
 
         mgr = get_audio_device_manager()
@@ -331,7 +367,21 @@ class AudioBridge(QThread):
                 # is already managed explicitly via sdr_demod.stop() in the
                 # `finally` block below, so no parent is needed here at all.
                 sdr_demod = G3ruhSdrDemod(sample_rate=sr)
-                sdr_demod.audio_ready.connect(_rx_callback)
+                # Explicit DirectConnection: _rx_callback is a plain Python
+                # closure, not a QObject method, so Qt's auto-detected
+                # connection type has no receiver thread affinity to key
+                # off. Confirmed live via diagnostic counters: with the
+                # default (Auto) connection, process() succeeded and
+                # audio_ready.emit() ran on every call (800+, none empty),
+                # but _rx_callback's own call counter never advanced past 1
+                # -- the signal stopped being delivered after the very
+                # first emission, with no exception or error anywhere.
+                # DirectConnection makes the slot run synchronously on
+                # G3ruhSdrDemod's own emitting thread, matching the same
+                # plain-call pattern pipeline.subscribe(sdr_demod.push_samples)
+                # already uses successfully for delivery in the other
+                # direction.
+                sdr_demod.audio_ready.connect(_rx_callback, Qt.ConnectionType.DirectConnection)
                 sdr_demod.start()
                 self._sdr_pipeline.subscribe(sdr_demod.push_samples)
         else:
