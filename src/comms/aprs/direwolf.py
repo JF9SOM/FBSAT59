@@ -328,14 +328,34 @@ class AudioBridge(QThread):
             mgr.acquire_input(_AUDIO_OWNER, self._in_device, self._SAMPLE_RATE, _rx_callback)
 
         try:
-            while not self._stop_event.is_set():
-                # TX: Direwolf stdout → soundcard output (blocking read)
-                chunk = self._proc.stdout.read(  # type: ignore[union-attr]
-                    self._BLOCK_SIZE * self._BYTES_PER_SAMPLE
-                )
-                if not chunk:
-                    break
-                if self._out_device is not None:
+            if self._out_device is None:
+                # Receive-only bridge (the SDR-fed G3RUH path always has no
+                # output device -- SDR can't transmit -- and a Rig + Sound
+                # Card session with no configured output falls here too):
+                # nothing would ever be done with a chunk read from
+                # Direwolf's stdout, so there's no reason to block on
+                # reading it at all. That blocking proc.stdout.read() was
+                # the *only* thing keeping this thread from noticing
+                # self._stop_event promptly: stop() closes Direwolf's stdin/
+                # kills the process to make the read unblock, but if that
+                # doesn't happen fast enough (observed live -- a stale
+                # SDR-fed G3RUH session from a completed Baud switch kept
+                # consuming the SDR's I/Q for *minutes*, alongside whatever
+                # mechanism the switch started next, so neither ever
+                # decoded anything), this thread just sat blocked forever,
+                # never reaching the unsubscribe() in `finally` below.
+                # Waiting on the stop event directly is immediately
+                # interruptible regardless of what Direwolf's own process/
+                # pipe is doing.
+                self._stop_event.wait()
+            else:
+                while not self._stop_event.is_set():
+                    # TX: Direwolf stdout → soundcard output (blocking read)
+                    chunk = self._proc.stdout.read(  # type: ignore[union-attr]
+                        self._BLOCK_SIZE * self._BYTES_PER_SAMPLE
+                    )
+                    if not chunk:
+                        break
                     pcm = np.frombuffer(chunk, dtype="int16").astype("float32") / 32768.0
                     sd.play(
                         pcm,
