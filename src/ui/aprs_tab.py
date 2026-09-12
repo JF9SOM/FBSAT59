@@ -566,7 +566,24 @@ class AprsTab(QWidget):
         AprsEngine.start_sdr_direwolf()).
         """
         if self._engine.is_running:
-            return
+            if not self._rig_connected:
+                # The engine is only running because Sound Card happened to
+                # be configured (see _try_start_engine()'s "no rig needed"
+                # design in __init__) -- no actual Hamlib rig is connected,
+                # so nothing genuinely needs that session. An SDR connecting
+                # now means the user wants SDR reception; replace the
+                # passive/no-rig session with it rather than silently
+                # leaving reception stuck on whatever audio device Sound
+                # Card was last configured with (e.g. a real rig's
+                # soundcard from a previous session, reading silence).
+                # Reported live: SDR showed as the connected input, but
+                # nothing ever decoded, and changing Baud visibly affected
+                # a Rig + Sound Card session instead of SDR.
+                self._engine.stop(_ENGINE_OWNER)
+            else:
+                # A real (non-SDR) rig is genuinely connected and already
+                # driving the engine -- don't steal it out from under TX.
+                return
         pipeline = getattr(rig2, "_pipeline", None)
         if pipeline is None:
             return
