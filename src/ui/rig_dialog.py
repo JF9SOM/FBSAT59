@@ -1312,7 +1312,34 @@ class _SdrSettingsPanel(QWidget):
                 self._remove_remote_btn.setEnabled(False)
         else:
             restored = 0
-            if _prev_dev is not None:
+            # Prefer the persisted device identity (self._last_selected_identity,
+            # restored from settings by load() and kept current by every real
+            # selection via _on_device_selected()) over _prev_dev, which is only
+            # the combo's *current* index at this exact moment. On dialog
+            # open/settings load, hardware enumeration is async: this method
+            # can run once with self._hw_devices still empty (only saved
+            # remote hosts populate the combo, so a saved local RTL-SDR/HackRF
+            # selection can't be found and index 0 -- a remote host -- gets
+            # picked instead), then again once the real hardware list arrives.
+            # _prev_dev-only matching would just re-find that same wrongly-
+            # picked remote host on the second pass (it *is* still in the new
+            # list) and lock onto it permanently, silently losing the saved
+            # local device every time -- reported live: RTL-SDR selected in
+            # SDR Settings, but the very next connect attempt went to a long-
+            # stale saved remote host instead.
+            identity_restored: int | None = None
+            if self._last_selected_identity is not None:
+                identity_restored = next(
+                    (
+                        i
+                        for i, d in enumerate(self._devices)
+                        if self._device_identity(d) == self._last_selected_identity
+                    ),
+                    None,
+                )
+            if identity_restored is not None:
+                restored = identity_restored
+            elif _prev_dev is not None:
                 restored = next(
                     (i for i, d in enumerate(self._devices) if _same_device(d, _prev_dev)),
                     0,
