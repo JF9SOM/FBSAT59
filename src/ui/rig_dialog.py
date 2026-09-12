@@ -1032,6 +1032,19 @@ class _SdrSettingsPanel(QWidget):
         # same device got re-selected because enumerate() re-ran" (leave
         # whatever gain the user already dialed in alone).
         self._last_selected_identity: tuple[str, str] | None = None
+        # Device identity load() is trying to get back to, set only from
+        # saved settings and cleared once _rebuild_combo() actually finds a
+        # matching device in self._devices. Separate from
+        # _last_selected_identity because hardware enumeration is async:
+        # load() calls _rebuild_combo() before it has run even once, so the
+        # combo is briefly populated with only saved remote hosts and a
+        # provisional selection has to be shown. That provisional pick must
+        # not be treated as a real one (see the `provisional` parameter of
+        # _on_device_selected()) -- otherwise it both overwrites
+        # _last_selected_identity (permanently losing the saved device, see
+        # _rebuild_combo()) and forces RF Gain to the provisional device's
+        # max (clobbering the gain load() just restored).
+        self._pending_restore_identity: tuple[str, str] | None = None
         self._enumerate_done.connect(self._on_enumerate)
         self._ppm_worker: PpmMeasureWorker | None = None
         self._ppm_progress: QProgressDialog | None = None
@@ -1312,33 +1325,46 @@ class _SdrSettingsPanel(QWidget):
                 self._remove_remote_btn.setEnabled(False)
         else:
             restored = 0
-            # Prefer the persisted device identity (self._last_selected_identity,
-            # restored from settings by load() and kept current by every real
-            # selection via _on_device_selected()) over _prev_dev, which is only
-            # the combo's *current* index at this exact moment. On dialog
-            # open/settings load, hardware enumeration is async: this method
-            # can run once with self._hw_devices still empty (only saved
-            # remote hosts populate the combo, so a saved local RTL-SDR/HackRF
-            # selection can't be found and index 0 -- a remote host -- gets
-            # picked instead), then again once the real hardware list arrives.
-            # _prev_dev-only matching would just re-find that same wrongly-
-            # picked remote host on the second pass (it *is* still in the new
-            # list) and lock onto it permanently, silently losing the saved
-            # local device every time -- reported live: RTL-SDR selected in
-            # SDR Settings, but the very next connect attempt went to a long-
-            # stale saved remote host instead.
-            identity_restored: int | None = None
-            if self._last_selected_identity is not None:
-                identity_restored = next(
+            # self._pending_restore_identity (set only by load(), from saved
+            # settings) takes absolute priority over _prev_dev, which is
+            # only the combo's *current* index at this exact moment. On
+            # dialog open/settings load, hardware enumeration is async:
+            # this method runs once right away with self._hw_devices still
+            # empty (only saved remote hosts populate the combo, so a saved
+            # local RTL-SDR/HackRF selection can't be found yet and index 0
+            # -- a remote host -- would otherwise get picked), then again
+            # once the real hardware list arrives. Reported live: RTL-SDR
+            # selected and saved in SDR Settings, but reopening the dialog
+            # showed a long-stale saved remote host instead, with RF Gain
+            # reset to a generic 116dB -- caused by exactly this first,
+            # premature pass being treated as a real selection (see the
+            # `provisional` handling below and in _on_device_selected()).
+            provisional = False
+            if self._pending_restore_identity is not None:
+                match = next(
                     (
                         i
                         for i, d in enumerate(self._devices)
-                        if self._device_identity(d) == self._last_selected_identity
+                        if self._device_identity(d) == self._pending_restore_identity
                     ),
                     None,
                 )
-            if identity_restored is not None:
-                restored = identity_restored
+                if match is not None:
+                    restored = match
+                    self._pending_restore_identity = None
+                else:
+                    # Not found yet (hardware not enumerated on this pass) --
+                    # show *something* for now via the ordinary _prev_dev
+                    # heuristic, but keep self._pending_restore_identity set
+                    # so the next _rebuild_combo() call (e.g. once real
+                    # hardware enumerates) tries again, and mark this pick
+                    # as provisional so it isn't mistaken for a real one.
+                    provisional = True
+                    if _prev_dev is not None:
+                        restored = next(
+                            (i for i, d in enumerate(self._devices) if _same_device(d, _prev_dev)),
+                            0,
+                        )
             elif _prev_dev is not None:
                 restored = next(
                     (i for i, d in enumerate(self._devices) if _same_device(d, _prev_dev)),
@@ -1348,7 +1374,7 @@ class _SdrSettingsPanel(QWidget):
                 self._dev_combo.blockSignals(True)
                 self._dev_combo.setCurrentIndex(restored)
                 self._dev_combo.blockSignals(False)
-            self._on_device_selected(restored)
+            self._on_device_selected(restored, provisional=provisional)
 
     def _update_serial_row(self, serial: str) -> None:
         """Show or hide the Serial row for the selected device (Windows only).
@@ -1461,7 +1487,18 @@ class _SdrSettingsPanel(QWidget):
             return ("remote", str(d.args.get("remote", "")).replace("tcp://", ""))
         return (d.driver or "", "")
 
-    def _on_device_selected(self, idx: int) -> None:
+    def _on_device_selected(self, idx: int, provisional: bool = False) -> None:
+        """Apply the device at `idx` to the driver/serial/gain UI.
+
+        `provisional=True` marks a pick _rebuild_combo() made only because
+        hardware enumeration hadn't returned yet when trying to restore a
+        saved device (see self._pending_restore_identity) -- it must not be
+        mistaken for a real selection: skips updating
+        self._last_selected_identity and the RF-Gain-to-max reset below, so
+        the saved gain isn't clobbered before the actually-saved device has
+        even had a chance to be found on a later rebuild. The combo's own
+        currentIndexChanged signal (a genuine user pick) never passes this.
+        """
         if not self._devices or idx < 0 or idx >= len(self._devices):
             return
         d = self._devices[idx]
@@ -1471,21 +1508,30 @@ class _SdrSettingsPanel(QWidget):
         if hasattr(self, "_gain_spin"):
             gain_max = self._gain_max_for_device(d)
             self._gain_spin.setRange(0, gain_max)
-            identity = self._device_identity(d)
-            if identity != self._last_selected_identity:
-                # A genuinely different device from what was selected before
-                # (including the very first pick ever) -- default RF Gain to
-                # its real maximum. Guessing a "reasonable" manual gain by
-                # hand is close to impossible without knowing the specific
-                # hardware's actual range (see 2014e1a: HackRF's old 40 dB
-                # default left its front-end preamp off entirely, ~61x
-                # under real sensitivity). Start at max and let the user
-                # narrow it if a strong signal overloads, not the other way
-                # around. Re-selecting the *same* device across an
-                # enumerate refresh must not do this, or it would keep
-                # stomping on a gain the user deliberately dialed down.
-                self._gain_spin.setValue(gain_max)
-            self._last_selected_identity = identity
+            if not provisional:
+                # Any confirmed selection -- whether this is _rebuild_combo()
+                # fulfilling the restore or a genuine user pick from the
+                # combo -- means there's nothing left to keep chasing.
+                # Without this, a user picking a different device before a
+                # stuck/never-found pending restore target gave up (e.g. the
+                # saved device was unplugged) would have that stale target
+                # win again on the next Enumerate press.
+                self._pending_restore_identity = None
+                identity = self._device_identity(d)
+                if identity != self._last_selected_identity:
+                    # A genuinely different device from what was selected before
+                    # (including the very first pick ever) -- default RF Gain to
+                    # its real maximum. Guessing a "reasonable" manual gain by
+                    # hand is close to impossible without knowing the specific
+                    # hardware's actual range (see 2014e1a: HackRF's old 40 dB
+                    # default left its front-end preamp off entirely, ~61x
+                    # under real sensitivity). Start at max and let the user
+                    # narrow it if a strong signal overloads, not the other way
+                    # around. Re-selecting the *same* device across an
+                    # enumerate refresh must not do this, or it would keep
+                    # stomping on a gain the user deliberately dialed down.
+                    self._gain_spin.setValue(gain_max)
+                self._last_selected_identity = identity
         if hasattr(self, "_gain_auto_rb"):
             if self._supports_agc_for_device(d):
                 self._gain_auto_rb.setToolTip(_("Uses the device's own hardware AGC."))
@@ -1784,8 +1830,10 @@ class _SdrSettingsPanel(QWidget):
             and all(isinstance(x, str) for x in saved_identity)
         ):
             self._last_selected_identity = (saved_identity[0], saved_identity[1])
+            self._pending_restore_identity = self._last_selected_identity
         else:
             self._last_selected_identity = None
+            self._pending_restore_identity = None
         self._bias_tee_chk.setChecked(bool(data.get("bias_tee", False)))
 
         assigned = data.get("assigned_rig")
