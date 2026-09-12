@@ -34,6 +34,7 @@ import socket
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -1050,43 +1051,60 @@ class SdrDevice:
 
         Probes each known USB driver individually — see _LOCAL_SDR_DRIVERS for
         why the unfiltered SoapySDR.Device.enumerate() must not be used.
+
+        Probes run concurrently (one thread per driver) rather than one
+        after another: each call is still filtered to a single named
+        driver — no SSDP, no cross-driver shared state — so the only thing
+        serial probing bought was making the wall-clock cost the *sum* of
+        all nine drivers' individual probe times instead of the slowest
+        one. Reported live as "opening SDR Settings takes a long time
+        before anything is enumerated" -- worse after the enumerate cache
+        (df5ef7d) was restricted to Windows only (9fadf43), since every
+        dialog open now pays this cost instead of just the first one per
+        process. Results are still merged back in cls._LOCAL_SDR_DRIVERS
+        order for a deterministic combo list, regardless of which probe
+        thread happens to finish first.
         """
         try:
             import SoapySDR
-
-            results: list[SdrDeviceInfo] = []
-            seen: set[tuple[str, str]] = set()
-            for probe_driver in cls._LOCAL_SDR_DRIVERS:
-                try:
-                    found = SoapySDR.Device.enumerate({"driver": probe_driver})
-                except Exception:
-                    logger.debug("enumerate(driver=%s) failed", probe_driver, exc_info=True)
-                    continue
-                for kw in found:
-                    d = dict(kw)
-                    driver = str(d.get("driver") or probe_driver)
-                    if driver.lower() in _NON_SDR_DRIVERS:
-                        continue
-                    label = str(d.get("label") or d.get("device") or driver)
-                    serial = str(d.get("serial") or "")
-                    hardware = str(d.get("hardware") or "")
-                    key = (driver.lower(), serial or label)
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    results.append(
-                        SdrDeviceInfo(
-                            driver=driver,
-                            label=label,
-                            serial=serial,
-                            hardware=hardware,
-                            args=d,
-                        )
-                    )
-            return results
         except Exception:
             logger.exception("SoapySDR enumerate failed")
             return []
+
+        def _probe(probe_driver: str) -> list[dict[str, str]]:
+            try:
+                return [dict(kw) for kw in SoapySDR.Device.enumerate({"driver": probe_driver})]
+            except Exception:
+                logger.debug("enumerate(driver=%s) failed", probe_driver, exc_info=True)
+                return []
+
+        with ThreadPoolExecutor(max_workers=len(cls._LOCAL_SDR_DRIVERS)) as pool:
+            per_driver = list(pool.map(_probe, cls._LOCAL_SDR_DRIVERS))
+
+        results: list[SdrDeviceInfo] = []
+        seen: set[tuple[str, str]] = set()
+        for probe_driver, found in zip(cls._LOCAL_SDR_DRIVERS, per_driver, strict=True):
+            for d in found:
+                driver = str(d.get("driver") or probe_driver)
+                if driver.lower() in _NON_SDR_DRIVERS:
+                    continue
+                label = str(d.get("label") or d.get("device") or driver)
+                serial = str(d.get("serial") or "")
+                hardware = str(d.get("hardware") or "")
+                key = (driver.lower(), serial or label)
+                if key in seen:
+                    continue
+                seen.add(key)
+                results.append(
+                    SdrDeviceInfo(
+                        driver=driver,
+                        label=label,
+                        serial=serial,
+                        hardware=hardware,
+                        args=d,
+                    )
+                )
+        return results
 
     @classmethod
     def query_remote_host(
