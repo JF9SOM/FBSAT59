@@ -7,15 +7,33 @@ Algorithm
    decimation; otherwise simple stride-based decimation is used.
 2. Compute instantaneous frequency via the phase-difference method:
        f[n] = angle(iq[n] * conj(iq[n-1])) * Fs / (2π)
-3. Smooth with a one-symbol-wide box filter.
-4. Threshold at 1 700 Hz (midpoint of mark=1 200 Hz and space=2 200 Hz).
-5. Symbol-clock recovery: a per-sample digital PLL tracks the transmitter's
+   This is the *recovered audio* out of an FM discriminator. For a real
+   Bell 202 signal relayed over a radio's own NBFM voice channel (the
+   normal way APRS/packet actually gets on the air -- the 1200/2200 Hz
+   tones are fed into a radio's mic/DATA input, and the radio's own FM
+   modulator does the RF modulation using its own deviation setting,
+   commonly several kHz peak), this value oscillates at the tone's own
+   rate but with an amplitude set by that RF deviation -- it does *not*
+   itself equal "1200" or "2200". A direct-FSK baseband signal, where
+   the RF carrier hops by exactly the tone frequencies, is not how
+   Bell 202-over-FM actually works.
+3. Detect mark/space the way a hardware TNC's Goertzel filter does:
+   quadrature-mix the recovered audio down to DC at each tone frequency
+   and lowpass (one symbol wide -- an N=8-sample window at this file's
+   8x oversampling, the classic Goertzel window size for Bell 202) to
+   get each tone's instantaneous power; the higher one wins. (A fixed-Hz
+   threshold on the raw instantaneous frequency, tried first, measured
+   wrong live: the recovered audio spread roughly ±3-4kHz symmetric
+   around 0 on a real, visually-confirmed 1200bps signal, with only
+   2-9% of samples ever crossing the threshold -- nothing like a
+   genuine two-level 1200/2200Hz signal.)
+4. Symbol-clock recovery: a per-sample digital PLL tracks the transmitter's
    bit clock (which is not synchronized to the receiver's), decoding one
    bit each time it completes a symbol period; every observed tone
    transition -- which can only occur at a true symbol boundary -- nudges
    the PLL back into alignment. NRZI decode: a frequency change between
    symbols → bit 0, no change → bit 1.
-6. HDLC sync + bit-unstuffing + CRC-16/CCITT verification.
+5. HDLC sync + bit-unstuffing + CRC-16/CCITT verification.
 
 The class exposes the same ``frame_received(bytes)`` Signal as KissClient
 so it is a drop-in replacement for the Direwolf receive path.
@@ -59,7 +77,6 @@ except ImportError:
 _MARK_HZ: float = 1200.0
 _SPACE_HZ: float = 2200.0
 _BAUD: float = 1200.0
-_THRESHOLD_HZ: float = (_MARK_HZ + _SPACE_HZ) / 2.0  # 1700 Hz
 _OVERSAMPLE: int = 8  # samples per symbol after decimation
 _TARGET_RATE: int = int(_BAUD * _OVERSAMPLE)  # 9 600 Hz
 
@@ -260,16 +277,23 @@ class AfskDemodulator(QThread):
         self._pll_phase: float = 0.0
         self._raw_tone: int = 0
         self._pll_seeded: bool = False
-        # Streaming state for the one-symbol box filter (step 4 in
-        # _process()): the last (sym_samples - 1) inst_freq values, carried
-        # over so the *next* call's convolution has real history at its
-        # leading edge instead of the implicit zero-padding
-        # np.convolve(..., mode="same") would otherwise use there. Without
-        # this, every block boundary (every ~16384-sample SDRPipeline
-        # block, i.e. roughly every 15-65ms depending on sample rate)
-        # corrupted a few samples right at the point where PLL continuity
-        # matters most -- fatal once packets span more than one block.
-        self._box_state: np.ndarray = np.array([], dtype=np.float32)
+        # Mark/space tone-power detection (step 3 in the module docstring):
+        # quadrature-mix the recovered instantaneous frequency down to DC
+        # at 1200Hz and 2200Hz separately (lock-in-amplifier / Goertzel
+        # style), then lowpass each mixed stream over one symbol period to
+        # get that tone's instantaneous power. `_lo_phase_mark`/`_lo_phase_space`
+        # are each local oscillator's running phase (radians), carried
+        # across _process() calls so the mixer stays phase-continuous at
+        # block boundaries instead of restarting at phase 0 every ~16384
+        # samples (which would reintroduce a discontinuity right where PLL
+        # continuity matters most). `_box_state_mark`/`_box_state_space` are
+        # the complex-valued streaming lowpass (box filter) state, the same
+        # "history instead of implicit zero-padding" pattern used
+        # elsewhere in this file for DC removal.
+        self._lo_phase_mark: float = 0.0
+        self._lo_phase_space: float = 0.0
+        self._box_state_mark: np.ndarray = np.array([], dtype=np.complex64)
+        self._box_state_space: np.ndarray = np.array([], dtype=np.complex64)
         # DC-offset removal (single-pole high-pass, 30 Hz cutoff, same
         # design as sdr.demodulator.Demodulator._remove_dc()). Most SDRs
         # (RTL-SDR included) produce a DC spike from LO self-mixing right
@@ -296,6 +320,9 @@ class AfskDemodulator(QThread):
         # TEMPORARY diagnostic (do not remove until confirmed working): see
         # push_samples().
         self._diag_recv_count: int = 0
+        # TEMPORARY diagnostic (do not remove until confirmed working): see
+        # _process().
+        self._diag_process_count: int = 0
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -396,19 +423,47 @@ class AfskDemodulator(QThread):
         phase_diff = np.angle(iq[1:] * np.conj(iq[:-1]))
         inst_freq: np.ndarray = phase_diff * (actual_rate / (2.0 * np.pi))
 
-        # ---- 4. One-symbol box-filter smoothing (streaming) ----
+        # ---- 4. Mark/space tone power (quadrature mix + one-symbol lowpass) ----
+        # A real Bell 202-over-NBFM signal's recovered "audio" (inst_freq)
+        # oscillates at 1200Hz or 2200Hz with an amplitude set by the
+        # radio's own FM deviation (commonly several kHz) -- it is not
+        # itself close to "1200" or "2200" in value, so a fixed absolute-Hz
+        # threshold on inst_freq (tried first) cannot separate the tones;
+        # confirmed live (see docstring). Instead mix inst_freq down to DC
+        # at each candidate tone frequency (a lock-in amplifier / Goertzel
+        # filter) and lowpass over one symbol period -- whichever tone's
+        # mixer output has more power (stays closer to DC after mixing) is
+        # the one actually present.
         sym_samples = max(1, int(round(actual_rate / _BAUD)))
-        if len(self._box_state) != sym_samples - 1:
+        n = np.arange(len(inst_freq), dtype=np.float64)
+        mark_step = 2.0 * np.pi * _MARK_HZ / actual_rate
+        space_step = 2.0 * np.pi * _SPACE_HZ / actual_rate
+        phase_mark = self._lo_phase_mark + mark_step * n
+        phase_space = self._lo_phase_space + space_step * n
+        mix_mark = inst_freq.astype(np.complex128) * np.exp(-1j * phase_mark)
+        mix_space = inst_freq.astype(np.complex128) * np.exp(-1j * phase_space)
+        if len(n):
+            self._lo_phase_mark = float((phase_mark[-1] + mark_step) % (2.0 * np.pi))
+            self._lo_phase_space = float((phase_space[-1] + space_step) % (2.0 * np.pi))
+
+        if len(self._box_state_mark) != sym_samples - 1:
             # First call, or actual_rate rounded to a different sym_samples
             # than last time (sr/dec can drift a little from call to call).
-            self._box_state = np.zeros(sym_samples - 1, dtype=np.float32)
+            self._box_state_mark = np.zeros(sym_samples - 1, dtype=np.complex64)
+            self._box_state_space = np.zeros(sym_samples - 1, dtype=np.complex64)
         kernel = np.ones(sym_samples, dtype=np.float32) / sym_samples
-        extended = np.concatenate([self._box_state, inst_freq.astype(np.float32)])
+        extended_mark = np.concatenate([self._box_state_mark, mix_mark.astype(np.complex64)])
+        extended_space = np.concatenate([self._box_state_space, mix_space.astype(np.complex64)])
         # "valid" (never "same"): every output here is a true, unpadded
-        # average -- history came from _box_state, not implicit zeros.
-        smoothed = np.convolve(extended, kernel, mode="valid")
+        # average -- history came from _box_state_mark/_space, not implicit
+        # zeros.
+        lp_mark = np.convolve(extended_mark, kernel, mode="valid")
+        lp_space = np.convolve(extended_space, kernel, mode="valid")
         if sym_samples > 1:
-            self._box_state = extended[-(sym_samples - 1) :]
+            self._box_state_mark = extended_mark[-(sym_samples - 1) :]
+            self._box_state_space = extended_space[-(sym_samples - 1) :]
+        mark_power = np.abs(lp_mark)
+        space_power = np.abs(lp_space)
 
         # ---- 5. Symbol-clock recovery (digital PLL) + NRZI decode ----
         # Per-sample loop (not a fixed i*sym_samples grid): _pll_phase
@@ -422,7 +477,37 @@ class AfskDemodulator(QThread):
         # incoming bit clock and never stays aligned long enough to decode
         # a frame, however clean the signal is otherwise.
         phase_inc = 1.0 / sym_samples
-        tones = smoothed >= _THRESHOLD_HZ  # 0 = mark, 1 = space, per raw sample
+        tones = space_power > mark_power  # 0 = mark, 1 = space, per raw sample
+
+        # TEMPORARY diagnostic (do not remove until confirmed working):
+        # this replaces the earlier absolute-frequency-threshold diagnostic
+        # (which showed inst_freq spread symmetrically around 0, never
+        # clustering near 1200/2200Hz -- the evidence that approach was
+        # wrong). Logs mark/space power distributions directly so a real
+        # signal should show one consistently higher than the other,
+        # rather than assuming it without live confirmation.
+        self._diag_process_count += 1
+        if self._diag_process_count == 1 or self._diag_process_count % 20 == 0:
+            from sdr.diag_log import get_sdr_diag_logger
+
+            transitions = int(np.sum(tones[1:] != tones[:-1])) if len(tones) > 1 else 0
+            get_sdr_diag_logger().info(
+                "afsk_demod _process() #%d: mark_power min=%.1f mean=%.1f max=%.1f "
+                "space_power min=%.1f mean=%.1f max=%.1f space_frac=%.3f "
+                "transitions=%d/%d samples sym_samples=%d actual_rate=%.1f",
+                self._diag_process_count,
+                float(np.min(mark_power)) if len(mark_power) else 0.0,
+                float(np.mean(mark_power)) if len(mark_power) else 0.0,
+                float(np.max(mark_power)) if len(mark_power) else 0.0,
+                float(np.min(space_power)) if len(space_power) else 0.0,
+                float(np.mean(space_power)) if len(space_power) else 0.0,
+                float(np.max(space_power)) if len(space_power) else 0.0,
+                float(np.mean(tones)) if len(tones) else 0.0,
+                transitions,
+                len(tones),
+                sym_samples,
+                actual_rate,
+            )
         for tone_bool in tones:
             tone = 1 if tone_bool else 0
             if not self._pll_seeded:
