@@ -233,6 +233,24 @@ class AfskDemodulator(QThread):
         # corrupted a few samples right at the point where PLL continuity
         # matters most -- fatal once packets span more than one block.
         self._box_state: np.ndarray = np.array([], dtype=np.float32)
+        # DC-offset removal (single-pole high-pass, 30 Hz cutoff, same
+        # design as sdr.demodulator.Demodulator._remove_dc()). Most SDRs
+        # (RTL-SDR included) produce a DC spike from LO self-mixing right
+        # at the tuned centre frequency -- i.e. right on top of the FM
+        # carrier this demodulator needs, since it's tuned to sit exactly
+        # at baseband DC for direct phase-difference discrimination. The
+        # SDR Control tab's own NFM audio path already strips this before
+        # demodulating; this raw-I/Q subscriber tap never did, so it saw a
+        # biased instantaneous-frequency estimate even on a clean, audibly
+        # correct-sounding signal. Applied with scipy when available (a
+        # proper streaming IIR, state carried in _dc_zi_i/_dc_zi_q the same
+        # way _box_state is); otherwise falls back to simple per-block mean
+        # subtraction, which is cruder but still much better than nothing.
+        alpha_dc = float(np.clip(1.0 - (2.0 * np.pi * 30.0 / sample_rate), 0.0, 0.9999))
+        self._dc_b = np.array([1.0, -1.0], dtype=np.float64)
+        self._dc_a = np.array([1.0, -alpha_dc], dtype=np.float64)
+        self._dc_zi_i: np.ndarray = np.zeros(1)
+        self._dc_zi_q: np.ndarray = np.zeros(1)
         # Diagnostic-only (see sdr.diag_log): counts blocks dropped because
         # this thread wasn't draining the queue fast enough. Logged on the
         # first drop and every 50th thereafter so a sustained backlog is
@@ -283,8 +301,26 @@ class AfskDemodulator(QThread):
     # DSP pipeline
     # ------------------------------------------------------------------ #
 
+    def _remove_dc(self, iq: np.ndarray) -> np.ndarray:
+        """Strip the SDR's DC/LO-leakage offset from I and Q separately."""
+        if _SCIPY and sp_signal is not None:
+            i_dc_raw, self._dc_zi_i = sp_signal.lfilter(
+                self._dc_b, self._dc_a, iq.real.astype(np.float32), zi=self._dc_zi_i
+            )
+            q_dc_raw, self._dc_zi_q = sp_signal.lfilter(
+                self._dc_b, self._dc_a, iq.imag.astype(np.float32), zi=self._dc_zi_q
+            )
+            return (
+                np.asarray(i_dc_raw, dtype=np.float32) + 1j * np.asarray(q_dc_raw, dtype=np.float32)
+            ).astype(np.complex64)
+        if len(iq) == 0:
+            return iq
+        centered: np.ndarray = (iq - np.mean(iq)).astype(np.complex64)
+        return centered
+
     def _process(self, iq: np.ndarray) -> None:
         sr = self._sample_rate
+        iq = self._remove_dc(iq)
 
         # ---- 1. Decimate to ~_TARGET_RATE ----
         dec = max(1, round(sr / _TARGET_RATE))
