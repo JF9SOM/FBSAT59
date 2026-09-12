@@ -966,8 +966,11 @@ class _SdrSettingsPanel(QWidget):
 
     # Emitted when the assigned rig slot changes: value is 1, 2, or None.
     assigned_rig_changed = Signal(object)
-    # Emitted from background thread when enumerate() completes
-    _enumerate_done = Signal(object)
+    # Emitted from background thread when enumerate() completes. Second arg
+    # is False for the local-hardware-only interim result (remote host
+    # queries are still running) and True once that thread's whole cycle,
+    # remote hosts included, has finished.
+    _enumerate_done = Signal(object, bool)
 
     # Sample rates offered in the dropdown (Hz)
     _SAMPLE_RATES: list[tuple[str, float]] = [
@@ -1235,6 +1238,19 @@ class _SdrSettingsPanel(QWidget):
                 devices = SdrDevice.enumerate(force=force)
             except Exception:
                 devices = []
+            # Report local hardware immediately -- before querying any
+            # saved remote hosts below -- so the combo shows real devices
+            # right away instead of only updating once at the very end of
+            # this whole function. Each remote host query is now bounded to
+            # ~2s by query_remote_host()'s own reachability pre-check, but
+            # with several saved hosts (or before that fix landed) this
+            # emit was the only one, and a single stale/unreachable host
+            # made "opening SDR Settings" and "seeing the local RTL-SDR"
+            # feel like completely unrelated events, 10+ seconds apart.
+            # final=False: remote host queries are still pending below, so
+            # leave _enum_running/the Enumerate button alone for now.
+            self._enumerate_done.emit(devices, False)
+
             # Query each manually-added remote host directly (one targeted
             # request per host, no SSDP) so its real serial / hardware come
             # back instead of a blank placeholder. Keep the last successful
@@ -1261,16 +1277,28 @@ class _SdrSettingsPanel(QWidget):
                 if result or key not in rq:
                     rq[key] = result
             self._remote_query_results = rq
-            # Signal delivers result back to the UI thread via Qt event loop
-            self._enumerate_done.emit(devices)
+            # Re-deliver (same device list, refreshed remote host info) so
+            # _rebuild_combo() picks up resolved remote labels/serials too.
+            # final=True: the whole cycle is done now, re-enable Enumerate.
+            self._enumerate_done.emit(devices, True)
 
         t = threading.Thread(target=_run, daemon=True)
         t.start()
 
-    def _on_enumerate(self, devices: list[SdrDeviceInfo] | None = None) -> None:
-        self._enum_running = False
-        if hasattr(self, "_enum_btn"):
-            self._enum_btn.setEnabled(True)
+    def _on_enumerate(self, devices: list[SdrDeviceInfo] | None = None, final: bool = True) -> None:
+        """Apply an enumerate result to the combo.
+
+        `final=False` marks the local-hardware-only interim result _run()
+        emits before it has finished querying saved remote hosts (see
+        _start_enumerate()) -- the combo still gets updated with real local
+        devices right away, but _enum_running/the Enumerate button are left
+        alone until the *actual* final=True result (remote queries done)
+        arrives, so a second click mid-cycle can't race the same thread.
+        """
+        if final:
+            self._enum_running = False
+            if hasattr(self, "_enum_btn"):
+                self._enum_btn.setEnabled(True)
 
         if devices is not None:
             self._hw_devices = devices

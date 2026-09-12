@@ -1126,8 +1126,54 @@ class SdrDevice:
         except Exception:
             return []
 
+        # Fail fast on a genuinely unreachable host (e.g. a saved remote
+        # entry for a machine that's since been powered off or
+        # decommissioned) instead of paying for name resolution *twice*
+        # unbounded -- once in _resolve_ipv4_host() below, once more inside
+        # socket.create_connection() itself, since a passed `timeout` only
+        # bounds the connect() step, not getaddrinfo(). A dead ".local"
+        # mDNS name measured ~5s to fail resolution each time (~10s total)
+        # even with an earlier version of this fix that added a bounded
+        # socket.create_connection(timeout=2.0) *after* an unbounded
+        # _resolve_remote_addr() call. This function is called once per
+        # saved remote host on every SDR Settings dialog open (see
+        # rig_dialog.py's _start_enumerate()), so one stale host added that
+        # same stall to every single open. Reported live: opening SDR
+        # Settings taking 10+ seconds even after local USB enumeration
+        # itself was sped up (b5c0032).
+        #
+        # Run the resolve-and-connect probe on a throwaway daemon thread and
+        # cap how long *we* wait for it -- Python's blocking socket/DNS
+        # calls can't be cancelled once started, so a probe against a truly
+        # dead host is simply abandoned (it dies on its own once the OS
+        # resolver eventually gives up) rather than making this call wait
+        # for it.
+        probe_host, _, probe_port_s = host.rpartition(":") if ":" in host else (host, "", "")
+        try:
+            probe_port = int(probe_port_s) if probe_port_s else int(port)
+        except ValueError:
+            probe_port = 55132
+        reachable_q: queue.Queue[bool] = queue.Queue(maxsize=1)
+
+        def _probe_reachable() -> None:
+            try:
+                with socket.create_connection((probe_host, probe_port), timeout=2.0):
+                    reachable_q.put(True)
+            except OSError:
+                reachable_q.put(False)
+
+        threading.Thread(target=_probe_reachable, daemon=True).start()
+        try:
+            reachable = reachable_q.get(timeout=2.5)
+        except queue.Empty:
+            reachable = False
+        if not reachable:
+            logger.debug("query_remote_host(%s:%s): unreachable, skipping enumerate", host, port)
+            return []
+
         addr = f"{host}:{port}" if str(port) else str(host)
-        addr = _resolve_remote_addr(addr)  # see _resolve_ipv4_host
+        addr = _resolve_remote_addr(addr)  # see _resolve_ipv4_host -- fast now, host is reachable
+
         # String form only: the SWIG dict typemap mangles "remote=host:port"
         # on the macOS conda-forge / Windows builds (GitHub Issue #12).
         query = f"driver=remote,remote={addr}"
