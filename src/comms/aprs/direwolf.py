@@ -320,7 +320,17 @@ class AudioBridge(QThread):
             except AttributeError:
                 sr = 0
             if sr > 0:
-                sdr_demod = G3ruhSdrDemod(sample_rate=sr, parent=self)
+                # No `parent=self`: this runs inside AudioBridge.run(), i.e.
+                # on AudioBridge's own worker thread, but the AudioBridge
+                # QObject itself has the thread affinity of whatever thread
+                # constructed it (DirewolfManager.start(), on the Qt main
+                # thread) -- parenting a new QObject to it from here is a
+                # cross-thread parent assignment, which Qt refuses at
+                # runtime ("QObject: Cannot create children for a parent
+                # that is in a different thread"), confirmed live. Lifetime
+                # is already managed explicitly via sdr_demod.stop() in the
+                # `finally` block below, so no parent is needed here at all.
+                sdr_demod = G3ruhSdrDemod(sample_rate=sr)
                 sdr_demod.audio_ready.connect(_rx_callback)
                 sdr_demod.start()
                 self._sdr_pipeline.subscribe(sdr_demod.push_samples)

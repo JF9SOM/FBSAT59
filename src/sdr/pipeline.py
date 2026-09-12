@@ -112,8 +112,23 @@ class SDRPipeline(QThread):
                 self._subscribers.append(callback)
 
     def unsubscribe(self, callback: Callable[[np.ndarray], None]) -> None:
+        """Remove a callback registered via subscribe().
+
+        Compares by equality (==), not identity (is): subscribe()'s own
+        duplicate check uses `callback not in self._subscribers`, i.e.
+        equality, and a bound method (e.g. `demod.push_samples`) is a new
+        wrapper object on every attribute access -- equal to another access
+        of the same method on the same instance, but never identical to it.
+        Filtering by identity here meant unsubscribe() could never actually
+        remove a bound-method callback: confirmed live, a demodulator kept
+        receiving I/Q blocks for minutes after its owning session was torn
+        down and a different mechanism started, because every unsubscribe()
+        call across the whole SDR consumer set (AfskDemodulator,
+        G3ruhSdrDemod, and any other pipeline.subscribe() user) was
+        silently a no-op.
+        """
         with self._subscribers_lock:
-            self._subscribers = [c for c in self._subscribers if c is not callback]
+            self._subscribers = [c for c in self._subscribers if c != callback]
 
     def stop(self) -> None:
         """Signal the thread to stop."""
