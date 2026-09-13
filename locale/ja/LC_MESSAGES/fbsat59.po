@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-13 18:48+0900\n"
+"POT-Creation-Date: 2026-09-13 19:43+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -2558,7 +2558,7 @@ msgstr "■ 停止"
 msgid "—"
 msgstr "—"
 
-#: src/ui/telemetry_tab.py:273 src/ui/telemetry_tab.py:1136
+#: src/ui/telemetry_tab.py:273 src/ui/telemetry_tab.py:1138
 msgid "Frames: 0 received"
 msgstr "フレーム: 0件受信"
 
@@ -2641,47 +2641,47 @@ msgstr "項目"
 msgid "Value"
 msgstr "値"
 
-#: src/ui/telemetry_tab.py:1090
+#: src/ui/telemetry_tab.py:1092
 msgid "Rig + Direwolf (receiving)"
 msgstr "無線機 + Direwolf（受信中）"
 
-#: src/ui/telemetry_tab.py:1095
+#: src/ui/telemetry_tab.py:1097
 msgid "SDR — Direwolf (AX.25) (receive only)"
 msgstr "SDR — Direwolf (AX.25)（受信のみ）"
 
-#: src/ui/telemetry_tab.py:1101
+#: src/ui/telemetry_tab.py:1103
 msgid "—  (connect SDR, then click ▶ Start)"
 msgstr "—  （SDRを接続後、▶ 開始をクリック）"
 
-#: src/ui/telemetry_tab.py:1103
+#: src/ui/telemetry_tab.py:1105
 msgid "—  (connect Rig or SDR, then click ▶ Start)"
 msgstr "—  （無線機またはSDRを接続後、▶ 開始をクリック）"
 
-#: src/ui/telemetry_tab.py:1144
+#: src/ui/telemetry_tab.py:1146
 msgid "Export Telemetry CSV"
 msgstr "テレメトリーCSVエクスポート"
 
-#: src/ui/telemetry_tab.py:1171
+#: src/ui/telemetry_tab.py:1173
 msgid "SatNOGS Upload: ON"
 msgstr "SatNOGSアップロード: ON"
 
-#: src/ui/telemetry_tab.py:1171
+#: src/ui/telemetry_tab.py:1173
 msgid "SatNOGS Upload: OFF"
 msgstr "SatNOGSアップロード: OFF"
 
-#: src/ui/telemetry_tab.py:1203
+#: src/ui/telemetry_tab.py:1205
 msgid "API key"
 msgstr "APIキー"
 
-#: src/ui/telemetry_tab.py:1205
+#: src/ui/telemetry_tab.py:1207
 msgid "callsign"
 msgstr "コールサイン"
 
-#: src/ui/telemetry_tab.py:1207
+#: src/ui/telemetry_tab.py:1209
 msgid "station location"
 msgstr "観測地点"
 
-#: src/ui/telemetry_tab.py:1210
+#: src/ui/telemetry_tab.py:1212
 msgid "SatNOGS Upload is on but not sending — missing: "
 msgstr "SatNOGS アップロードは ON ですが送信されていません — 未設定: "
 
@@ -5675,6 +5675,11 @@ msgstr "（ビット {bits}）"
 #, python-brace-format
 msgid "Status: “{text}”"
 msgstr "ステータス: 「{text}」"
+
+#: src/comms/telemetry/decoder.py:107
+#, python-brace-format
+msgid "({shown}/{total} hex chars — rest omitted)"
+msgstr "（{shown}/{total}文字を表示、以下省略）"
 
 #~ msgid "SDR — Direwolf G3RUH (receive only)"
 #~ msgstr "SDR — Direwolf G3RUH（受信のみ）"

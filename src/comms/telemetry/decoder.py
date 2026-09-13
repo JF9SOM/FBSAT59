@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from i18n import _
+
 # ---------------------------------------------------------------------------
 # Format definition loader
 # ---------------------------------------------------------------------------
@@ -94,7 +96,19 @@ class TelemetryFrame:
     def summary(self) -> str:
         """Return a one-line human-readable summary."""
         if not self.fields:
-            return f"[raw] {self.raw_hex[:40]}"
+            shown_hex = self.raw_hex[:40]
+            text = f"[raw] {shown_hex}"
+            if len(shown_hex) < len(self.raw_hex):
+                # Flag the truncation explicitly — a lone "[raw] <hex>" line
+                # otherwise looks like the whole received frame, when this
+                # payload's full data (used in full by the Decoded Fields
+                # tab, once a telemetry_ids format exists for it) may run
+                # to hundreds of bytes.
+                note = _("({shown}/{total} hex chars — rest omitted)").format(
+                    shown=len(shown_hex), total=len(self.raw_hex)
+                )
+                text += f" {note}"
+            return text
         parts = [f"{f.label}: {f.scaled_value:.2f}{f.unit}" for f in self.fields[:4]]
         return "  ".join(parts)
 

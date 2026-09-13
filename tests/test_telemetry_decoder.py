@@ -76,3 +76,23 @@ def test_decode_unknown_telemetry_id_falls_back_to_raw() -> None:
     tf = decode_telemetry("JS1YRU", payload, norad=68795)
     assert tf.telemetry_id == 1
     assert not tf.has_fields
+
+
+def test_raw_summary_flags_truncation_when_payload_exceeds_preview() -> None:
+    # 33-byte payload (66 hex chars) — longer than the 40-char/20-byte
+    # preview summary() shows, so the truncation note must appear with the
+    # actual shown/total hex-char counts (not a hardcoded satellite-specific
+    # number).
+    payload = bytes([0x00, 0xFF, 0x01]) + b"\x00" * 30
+    tf = decode_telemetry("JS1YRU", payload, norad=68795)
+    assert (
+        tf.summary()
+        == "[raw] 00ff010000000000000000000000000000000000 (40/66 hex chars — rest omitted)"
+    )
+
+
+def test_raw_summary_no_truncation_note_for_short_payload() -> None:
+    # 10-byte payload (20 hex chars) fits entirely within the preview, so
+    # no "rest omitted" note should be appended.
+    tf = decode_telemetry("JS1YRU", bytes(10), norad=1)
+    assert tf.summary() == "[raw] 00000000000000000000"

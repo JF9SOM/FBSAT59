@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-13 18:48+0900\n"
+"POT-Creation-Date: 2026-09-13 19:43+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -2399,7 +2399,7 @@ msgstr ""
 msgid "—"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:273 src/ui/telemetry_tab.py:1136
+#: src/ui/telemetry_tab.py:273 src/ui/telemetry_tab.py:1138
 msgid "Frames: 0 received"
 msgstr ""
 
@@ -2478,47 +2478,47 @@ msgstr ""
 msgid "Value"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1090
+#: src/ui/telemetry_tab.py:1092
 msgid "Rig + Direwolf (receiving)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1095
+#: src/ui/telemetry_tab.py:1097
 msgid "SDR — Direwolf (AX.25) (receive only)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1101
+#: src/ui/telemetry_tab.py:1103
 msgid "—  (connect SDR, then click ▶ Start)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1103
+#: src/ui/telemetry_tab.py:1105
 msgid "—  (connect Rig or SDR, then click ▶ Start)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1144
+#: src/ui/telemetry_tab.py:1146
 msgid "Export Telemetry CSV"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1171
+#: src/ui/telemetry_tab.py:1173
 msgid "SatNOGS Upload: ON"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1171
+#: src/ui/telemetry_tab.py:1173
 msgid "SatNOGS Upload: OFF"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1203
+#: src/ui/telemetry_tab.py:1205
 msgid "API key"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1205
+#: src/ui/telemetry_tab.py:1207
 msgid "callsign"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1207
+#: src/ui/telemetry_tab.py:1209
 msgid "station location"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1210
+#: src/ui/telemetry_tab.py:1212
 msgid "SatNOGS Upload is on but not sending — missing: "
 msgstr ""
 
@@ -5212,4 +5212,9 @@ msgstr ""
 #: src/comms/aprs/humanize.py:366
 #, python-brace-format
 msgid "Status: “{text}”"
+msgstr ""
+
+#: src/comms/telemetry/decoder.py:107
+#, python-brace-format
+msgid "({shown}/{total} hex chars — rest omitted)"
 msgstr ""
