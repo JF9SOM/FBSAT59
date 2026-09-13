@@ -983,10 +983,10 @@ class TelemetryTab(QWidget):
     def _rebuild_decode_tabs(self, norad: int | None) -> None:
         """(Re)build the "Decoded Fields" sub-tabs for *norad*.
 
-        Each telemetry ID in the satellite's ``telemetry_ids`` format
-        definition gets its own sub-tab, pre-populated with field labels
-        (values filled in as matching frames arrive — see
-        _update_decode_tab()). Satellites without this newer per-ID schema
+        Each telemetry ID in the satellite's ``telemetry_ids``/``csv_messages``
+        format definition gets its own sub-tab, pre-populated with field
+        labels (values filled in as matching frames arrive — see
+        _update_decode_tab()). Satellites without either per-ID schema
         (including old flat-``fields`` format files) get the whole
         "Decoded Fields" tab disabled.
         """
@@ -1001,7 +1001,11 @@ class TelemetryTab(QWidget):
         if not id_defs:
             return
 
-        for id_str in sorted(id_defs.keys(), key=int):
+        # Keys are either numeric (OrigamiSat-2's "65"/"100"/"130") or a
+        # text prefix (Marina's "OBC"/"PSU"/...); sort numeric ones in
+        # numeric order first, then text ones alphabetically, rather than
+        # letting a plain string sort put "100" before "65".
+        for id_str in sorted(id_defs.keys(), key=lambda k: (0, int(k)) if k.isdigit() else (1, k)):
             id_def = id_defs[id_str]
             fields = id_def.get("fields", [])
             table = QTableWidget(len(fields), 2)
@@ -1042,17 +1046,20 @@ class TelemetryTab(QWidget):
             row = row_map.get(f.name)
             if row is None:
                 continue
-            value = f.scaled_value
-            if f.is_integer:
-                text = f"{round(value):,}"
-            elif abs(value) >= 1000:
-                text = f"{value:,.2f}"
-            elif abs(value) >= 1:
-                text = f"{value:.4f}"
+            if f.is_string:
+                text = f.unit
             else:
-                text = f"{value:.6f}"
-            if f.unit:
-                text += f" {f.unit}"
+                value = f.scaled_value
+                if f.is_integer:
+                    text = f"{round(value):,}"
+                elif abs(value) >= 1000:
+                    text = f"{value:,.2f}"
+                elif abs(value) >= 1:
+                    text = f"{value:.4f}"
+                else:
+                    text = f"{value:.6f}"
+                if f.unit:
+                    text += f" {f.unit}"
             item = table.item(row, 1)
             if item is None:
                 item = QTableWidgetItem()

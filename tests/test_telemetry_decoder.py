@@ -96,3 +96,67 @@ def test_raw_summary_no_truncation_note_for_short_payload() -> None:
     # no "rest omitted" note should be appended.
     tf = decode_telemetry("JS1YRU", bytes(10), norad=1)
     assert tf.summary() == "[raw] 00000000000000000000"
+
+
+# -- Marina (NORAD 69920): plain comma-separated ASCII telemetry, not a --
+# -- packed binary struct. Synthetic frames built from the field order in --
+# -- satnogs-decoders' marina.ksy (not real received data). --
+
+
+def test_get_telemetry_id_defs_marina() -> None:
+    id_defs = get_telemetry_id_defs(69920)
+    assert id_defs is not None
+    assert set(id_defs.keys()) == {"MGS", "OBC", "PSU", "SOL", "CLS", "LOD", "U", "V"}
+
+
+def test_decode_marina_obc_message() -> None:
+    payload = b"OBC,1234,987654,1700000000,45000,32000,1,3,42,WATCHDOG"
+    tf = decode_telemetry("OM9MAR", payload, norad=69920)
+
+    assert tf.telemetry_id == "OBC"
+    assert tf.has_fields
+
+    values = {f.name: f.scaled_value for f in tf.fields}
+    strings = {f.name: f.unit for f in tf.fields if f.is_string}
+    assert values["obc_uptime"] == 1234
+    assert values["obc_uptime_tot"] == 987654
+    assert values["obc_lifetime_boot_counter"] == 42
+    assert strings["obc_reset_cause"] == "WATCHDOG"
+
+
+def test_decode_marina_psu_message_hex_bitflags() -> None:
+    # psu_ch_state = 0x5B = 0b101_1011 -> bits 0,1,3,4,6 set; 2,5 clear.
+    payload = b"PSU,2,100,200000,4050,250,300,150,5B,1,0,1"
+    tf = decode_telemetry("OM9MAR", payload, norad=69920)
+
+    values = {f.name: f.scaled_value for f in tf.fields}
+    assert values["psu_ch_state_num"] == 0x5B
+    assert [values[f"psu_ch{i}_state"] for i in range(7)] == [1, 1, 0, 1, 1, 0, 1]
+
+
+def test_decode_marina_sol_message_nan_sentinel() -> None:
+    payload = b"SOL,nan,10,11,12,13,14,20,21,22,23,24,25"
+    tf = decode_telemetry("OM9MAR", payload, norad=69920)
+
+    values = {f.name: f.scaled_value for f in tf.fields}
+    assert values["sol_temp_yn"] == -32768
+    assert values["sol_temp_xp"] == 10
+    assert values["sol_diode_yp"] == 25
+
+
+def test_decode_marina_uhf_message_rssi_scale() -> None:
+    # marina.ksy: uhf_act_rssi_raw = raw/2 - 134 (dBm).
+    payload = b"U,111,222,1,0,25,26,27,3,OM9MAR,50,49,40,42"
+    tf = decode_telemetry("OM9MAR", payload, norad=69920)
+
+    values = {f.name: f.scaled_value for f in tf.fields}
+    is_integer = {f.name: f.is_integer for f in tf.fields}
+    assert values["uhf_act_rssi_raw"] == 40 / 2 - 134
+    assert values["uhf_dcd_rssi_raw"] == 42 / 2 - 134
+    assert not is_integer["uhf_act_rssi_raw"]  # scaled, not a plain count
+
+
+def test_decode_marina_unrecognized_prefix_falls_back_to_raw() -> None:
+    tf = decode_telemetry("OM9MAR", b"XYZ,1,2,3", norad=69920)
+    assert tf.telemetry_id is None
+    assert not tf.has_fields

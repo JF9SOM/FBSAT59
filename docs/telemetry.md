@@ -376,3 +376,96 @@ byte24が「RXマイコン再起動回数」（3.1.1.7項）と「各機器電�
 （ネットワーク不要）。ID130実フレームのデコード結果の物理的妥当性チェック
 （クォータニオン正規化・軌道半径）、`telemetry_ids`と旧`fields`形式の判別、
 rawサマリーの切り詰め表示の有無、を検証する。
+
+---
+
+## ASCII/CSV方式の`csv_messages`スキーマ（2026-09-13 追加、Marina対応）
+
+### 背景
+
+Marina（NORAD 69920, コールサインOM9MAR, スロバキア, 9600bps AX.25 GFSK G3RUH,
+VHF 145.925MHz / UHF 436.680MHz）のSatNOGSデコーダー（`satnogs-decoders`の
+[`marina.ksy`](https://gitlab.com/librespacefoundation/satnogs/satnogs-decoders/-/blob/master/ksy/marina.ksy)、
+"Based on the LASARSat satellite decoder"）を調査したところ、この衛星のテレメトリーは
+OrigamiSat-2のようなバイナリ構造体ではなく、**AX.25のペイロードがそのままカンマ区切りの
+ASCIIテキスト**（例: `"OBC,1234,987654,1700000000,...,WATCHDOG"`）であることが判明した。
+先頭のタグ文字列（`MGS,` `OBC,` `PSU,` `SOL,` `CLS,` `LOD,` `U,` `V,`）でメッセージ種別を
+判別し、以降はカンマ区切りの何番目かで各項目が決まる、という単純な設計。
+
+これは`telemetry_ids`スキーマ（ヘッダーバイトの数値でID判別、バイトオフセットで
+フィールド指定）の前提と根本的に異なるため、専用のスキーマを新設した。
+
+（比較として調査した ARICA-2 は、CW側は`satnogs-decoders`の`arica2.ksy`が公開されている
+もののビット単位パッキング（`type: b3`等）でバイト単位デコード不可、GMSK/AX.25側は
+青山学院大学 坂本研究室が"the format of this telemetry data will not be disclosed"と
+明言し意図的に非公開——という事情で対応を見送った。詳細はメモリ
+`project_arica2_telemetry_undisclosed.md`参照）
+
+### `csv_messages`スキーマ
+
+`get_telemetry_id_defs()`（[decoder.py:191](../src/comms/telemetry/decoder.py:191)）は
+`telemetry_ids`と`csv_messages`の両方をチェックし、どちらか存在する方を返す。UI
+（`_rebuild_decode_tabs()`）側は返り値の構造（`{キー: {"label":..., "fields":[...]}}`）が
+同じなので変更不要——ただしキーが数値文字列（"130"）とテキスト（"OBC"）の両方あり得るため、
+ソート順を`(0, int(k)) if k.isdigit() else (1, k)`という複合キーに変更し、数値キーは数値順・
+テキストキーはアルファベット順、が混在しても安全なようにした。
+
+```json
+{
+  "csv_messages": {
+    "OBC": {
+      "label": "OBC（搭載コンピュータ）",
+      "fields": [
+        {"name": "obc_uptime", "index": 1, "type": "int", "label": "OBC稼働時間（今回起動から）", "unit": "s"},
+        {"name": "obc_reset_cause", "index": 9, "type": "str", "label": "OBCリセット要因"}
+      ]
+    }
+  }
+}
+```
+
+`decode_telemetry()`（[decoder.py:206](../src/comms/telemetry/decoder.py:206)）は、
+フォーマットに`csv_messages`があれば、payloadをASCIIテキストとしてデコードし、
+`f"{key},"`で始まるかどうかで`csv_messages`の各キーと照合、一致したらカンマで
+`split()`して各フィールドの`index`（0=先頭のタグ自身）で該当トークンを取り出す
+（`_decode_csv_field()`, [decoder.py:139](../src/comms/telemetry/decoder.py:139)付近）。
+`telemetry_id`（`TelemetryFrame`のフィールド）は数値だけでなく文字列も受け付けるよう
+`int | str | None`に一般化した。
+
+CSVフィールドの`type`は4種類:
+
+| type | 内容 |
+|---|---|
+| `int` | 整数としてパース。`nan_sentinel`を指定すると、トークンが文字列`"nan"`の場合にその値を使う（Marinaの`SOL,`メッセージが欠測値を`"nan"`という文字列で送ってくるため） |
+| `hex_int` | 16進文字列としてパース（例: PSUのチャンネル状態ビットマスク） |
+| `bitflag` | `base`（既定16）でパースした値から`bit`ビット目だけを取り出す（0 or 1）。別フィールドの計算結果を参照するのではなく、同じトークンを毎回独立に再パースする設計にして、フィールド間の依存関係を持たせないようにした |
+| `str` | 文字列そのまま（コールサイン等）。`TelemetryField.is_string=True`で表す |
+
+`scale`・`add`（既存の`scale`に加えて、加算定数`add`を新設）で線形変換にも対応
+（例: MarinaのRSSIは`raw/2 - 134` = dBm。marina.ksyに明記された式をそのまま反映）。
+
+### `TelemetryField.is_string`（2026-09-13 追加）
+
+文字列型フィールド（バイナリ`ascii`型・CSVの`str`型の両方）はこれまで
+`unit`フィールドに文字列を詰める、というやや強引な流用（[decoder.py:149](../src/comms/telemetry/decoder.py:149)
+付近の元々のコメント "not ideal but functional" 参照）で表現していたが、UI側が
+数値と誤認して`0.000000 OM9MAR`のような表示をしないよう、`is_string: bool`を
+明示的に追加した。`summary()`・`_update_decode_tab()`双方がこのフラグを見て、
+文字列フィールドは`unit`の中身をそのまま表示するよう分岐する。
+
+### フィールド値の確度について（Marina特有の注意）
+
+`marina.ksy`自体に明示的な計算式があるもの（RSSIのdBm変換式、PSUチャンネル状態の
+ビットフラグ分解、SOLセンサの`"nan"`欠測値センチネル）は確度が高いが、**温度・電流・
+磁束密度・加速度・角速度等の大半のフィールドは`marina.ksy`自体がスケール変換式を
+持たず、整数値をそのまま使うだけ**——つまり正しい物理単位への換算式は分からない。
+[`69920.json`](../src/data/telemetry_formats/69920.json)ではこれらのラベルに
+「(生値)」と付記し、単位は付与していない（LilacSat-2の`note`と同種の確度の
+開示。実受信データで検証できるまでは推測でスケールを補わない方針）。
+
+### テスト
+
+`test_decode_marina_*`系のテストを[`tests/test_telemetry_decoder.py`](../tests/test_telemetry_decoder.py)
+に追加（合成フレーム、実受信データではない）。OBC/PSU（16進ビットフラグ）/SOL（nan
+センチネル）/U（RSSI線形変換）の各メッセージのデコード結果と、未知のタグに対する
+rawフォールバックを検証する。

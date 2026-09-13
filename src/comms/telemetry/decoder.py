@@ -74,6 +74,11 @@ class TelemetryField:
     scaled_value: float
     unit: str
     is_integer: bool = False
+    # True for a fundamentally textual value (an ASCII "ascii"-type binary
+    # field, or a "str"-type CSV field, e.g. a callsign) — the display
+    # string then lives in `unit` (raw_value/scaled_value are unused
+    # placeholders), so the UI must not run it through numeric formatting.
+    is_string: bool = False
 
 
 @dataclass
@@ -86,7 +91,7 @@ class TelemetryFrame:
     raw_hex: str
     fields: list[TelemetryField] = field(default_factory=list)
     signal_db: float | None = None
-    telemetry_id: int | None = None
+    telemetry_id: int | str | None = None
     telemetry_label: str = ""
 
     @property
@@ -109,7 +114,10 @@ class TelemetryFrame:
                 )
                 text += f" {note}"
             return text
-        parts = [f"{f.label}: {f.scaled_value:.2f}{f.unit}" for f in self.fields[:4]]
+        parts = [
+            f"{f.label}: {f.unit}" if f.is_string else f"{f.label}: {f.scaled_value:.2f}{f.unit}"
+            for f in self.fields[:4]
+        ]
         return "  ".join(parts)
 
 
@@ -157,6 +165,7 @@ def _decode_field(payload: bytes, field_def: dict[str, Any]) -> TelemetryField |
             raw_value=raw_val,
             scaled_value=0.0,
             unit=scaled,
+            is_string=True,
         )
 
     fmt = _STRUCT_MAP.get(ftype)
@@ -183,24 +192,94 @@ def _decode_field(payload: bytes, field_def: dict[str, Any]) -> TelemetryField |
     )
 
 
+def _decode_csv_field(tokens: list[str], field_def: dict[str, Any]) -> TelemetryField | None:
+    """Decode one field from a comma-split ASCII telemetry message.
+
+    Used for satellites (e.g. Marina) whose downlink is plain ASCII text
+    (``"OBC,1234,5678,..."``) rather than a packed binary struct — fields
+    are located by their position in the comma-split token list (``index``)
+    instead of a byte ``offset``/``length``.
+    """
+    index: int = field_def["index"]
+    ftype: str = field_def["type"]
+    label: str = field_def.get("label", field_def["name"])
+    unit: str = field_def.get("unit", "")
+
+    if index >= len(tokens):
+        return None
+    token = tokens[index].strip()
+
+    if ftype == "str":
+        return TelemetryField(
+            name=field_def["name"],
+            label=label,
+            raw_value=0,
+            scaled_value=0.0,
+            unit=token,
+            is_string=True,
+        )
+
+    raw: int
+    if ftype == "int":
+        nan_sentinel = field_def.get("nan_sentinel")
+        if nan_sentinel is not None and token.lower() == "nan":
+            raw = int(nan_sentinel)
+        else:
+            try:
+                raw = int(token)
+            except ValueError:
+                return None
+    elif ftype == "hex_int":
+        try:
+            raw = int(token, 16)
+        except ValueError:
+            return None
+    elif ftype == "bitflag":
+        base: int = field_def.get("base", 16)
+        bit: int = field_def["bit"]
+        try:
+            raw_full = int(token, base)
+        except ValueError:
+            return None
+        raw = (raw_full >> bit) & 1
+    else:
+        return None
+
+    scale: float = field_def.get("scale", 1.0)
+    add: float = field_def.get("add", 0.0)
+    return TelemetryField(
+        name=field_def["name"],
+        label=label,
+        raw_value=raw,
+        scaled_value=float(raw) * scale + add,
+        unit=unit,
+        is_integer=(scale == 1.0 and add == 0.0),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Main decode function
 # ---------------------------------------------------------------------------
 
 
 def get_telemetry_id_defs(norad: int | None) -> dict[str, Any] | None:
-    """Return the ``telemetry_ids`` mapping from *norad*'s format file, if any.
+    """Return the per-telemetry-ID mapping from *norad*'s format file, if any.
 
-    Satellites with a single flat ``fields`` list (the older format) return
-    None here — only the newer per-telemetry-ID schema is exposed, since a
-    telemetry ID sub-tab needs each ID's own field layout up front, before
-    any frame of that ID has actually been received.
+    Checks both the binary-offset ``telemetry_ids`` schema (keyed by a
+    numeric telemetry-ID byte, e.g. OrigamiSat-2) and the ASCII/CSV
+    ``csv_messages`` schema (keyed by a text prefix, e.g. Marina's "OBC").
+    Satellites with only the older single flat ``fields`` list return None
+    here — only a per-ID schema gives each ID's own field layout up front,
+    before any frame of that ID has actually been received.
     """
     fmt = load_format(norad) if norad is not None else None
     if not fmt:
         return None
-    telemetry_ids = fmt.get("telemetry_ids")
-    return telemetry_ids if isinstance(telemetry_ids, dict) and telemetry_ids else None
+    for key in ("telemetry_ids", "csv_messages"):
+        defs = fmt.get(key)
+        if isinstance(defs, dict) and defs:
+            return defs
+    return None
 
 
 def decode_telemetry(
@@ -211,22 +290,44 @@ def decode_telemetry(
     """Decode *payload* bytes using the JSON definition for *norad*.
 
     Always returns a TelemetryFrame; falls back to raw hex when no
-    definition exists or decoding fails. Format files may define either a
-    single flat ``fields`` list, or a ``telemetry_ids`` mapping keyed by the
-    telemetry ID byte (payload[2] in this project's common FM header
-    layout) for satellites whose downlink carries several distinct
-    telemetry structures.
+    definition exists or decoding fails. Format files may define:
+
+    - a single flat ``fields`` list (byte offset/length, the original
+      schema — one structure per satellite);
+    - a ``telemetry_ids`` mapping keyed by a numeric telemetry-ID byte
+      (``payload[2]`` in this project's common FM header layout), for
+      satellites whose downlink carries several distinct *binary*
+      structures (e.g. OrigamiSat-2); or
+    - a ``csv_messages`` mapping keyed by a text prefix (e.g. "OBC"), for
+      satellites whose downlink is plain comma-separated ASCII text
+      (e.g. Marina) — fields are located by token position, not byte
+      offset.
     """
     raw_hex = payload.hex()
     fmt = load_format(norad) if norad is not None else None
     sat_name = fmt["name"] if fmt else (f"NORAD {norad}" if norad else callsign)
 
     decoded_fields: list[TelemetryField] = []
-    telemetry_id: int | None = None
+    telemetry_id: int | str | None = None
     telemetry_label = ""
 
+    csv_messages = fmt.get("csv_messages") if fmt else None
     telemetry_ids = fmt.get("telemetry_ids") if fmt else None
-    if telemetry_ids and len(payload) >= 3:
+
+    if csv_messages:
+        text = payload.decode("ascii", errors="ignore")
+        for key, msg_def in csv_messages.items():
+            if not text.startswith(f"{key},"):
+                continue
+            telemetry_id = key
+            telemetry_label = msg_def.get("label", "")
+            tokens = text.split(",")
+            for fd in msg_def.get("fields", []):
+                result = _decode_csv_field(tokens, fd)
+                if result is not None:
+                    decoded_fields.append(result)
+            break
+    elif telemetry_ids and len(payload) >= 3:
         telemetry_id = payload[2]
         id_def = telemetry_ids.get(str(telemetry_id))
         if id_def:
