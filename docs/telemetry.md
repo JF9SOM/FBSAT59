@@ -12,8 +12,10 @@
 
 Telemetry タブは AX.25 テレメトリーフレームを2つの経路で受信・デコードする:
 
-- **Direwolf (AX.25) モード**（`_MODE_AFSK`）— 1200 baud Bell 202 AFSK（`AfskDemodulator`
-  または Direwolf） / 4800・9600 baud G3RUH スクランブルド FSK・GMSK（Direwolf）
+- **Direwolf (AX.25) モード**（`_MODE_AFSK`）— 1200 baud Bell 202 AFSK / 4800・9600 baud
+  G3RUH スクランブルド FSK・GMSK。Rig + Sound Card・SDR いずれの経路でも、実際のデコードは
+  常にDirewolf本家が行う（2026-09-13以降。SDR経路はafsk_audio_demod.py/g3ruh_demod.pyが
+  デコード用の音声を生成してDirewolfのstdinへ渡す。詳細は[docs/communications.md](communications.md)）
 - **gr-satellites モード**（`_MODE_GR`）— gr_satellites サブプロセット経由。SDR 専用
   （Rig + Sound Card 非対応。詳細は「i18n: gr-satellites アイドル文言」節参照）
 

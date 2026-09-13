@@ -1396,8 +1396,10 @@ PTT ON (CAT) → 150ms 待機 → KISS フレーム送信 → 550ms 待機 → 1
 - プラットフォーム別インストール案内（Linux: `apt install` コマンドコピー / Windows: GitHub Releases リンク / macOS: `brew install`）
 - 「Download & Install」ボタン: GitHub Releases からバンドル版を取得・ユーザーディレクトリへインストール
 
-**Bell 202 AFSK デモジュレーター**（`src/comms/aprs/afsk_demod.py`）
-- SDR パスで AX.25 フレームを 1200 baud AFSK で受信
-- アルゴリズム: デシメーション → 瞬時位相差分 → ボックスフィルター → NRZI デコード → HDLC 同期 + CRC-16/CCITT
-- scipy 利用可能な場合は FIR フィルター付きデシメーション、不可の場合はストライドで代替
-- `frame_received(bytes)` Signal で `KissClient` と互換インターフェース
+**Bell 202 AFSK 1200bps の SDR 受信**（`src/comms/aprs/afsk_audio_demod.py`）
+- 2026-09-12/13: 自前実装（トーン検出＋PLL＋HDLC、旧`afsk_demod.py`）は実信号で最後まで
+  安定デコードできず、実際には無線機＋サウンドカード経由でDirewolfが問題なくデコード
+  していた事実から、**SDR側もDirewolf本家のMODEM 1200デコーダーに任せる方式**へ全面変更
+  （経緯・診断の詳細は[docs/communications.md](communications.md)参照）。9600bps G3RUH
+  （`g3ruh_demod.py`）と同じ設計: SDRの生I/Qからde-emphasis付きNFM音声を復調し、
+  Direwolfのstdinへ流し込む。2026-09-13、実受信でデコード成功を確認済み。
