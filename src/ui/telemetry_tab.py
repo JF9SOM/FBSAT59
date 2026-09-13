@@ -22,7 +22,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtGui import QStandardItemModel
 from PySide6.QtWidgets import (
     QComboBox,
@@ -889,7 +889,6 @@ class TelemetryTab(QWidget):
             sat_name=tf.satellite_name,
             data=tf.summary(),
             norad=tf.norad,
-            gray=not tf.has_fields,
         )
         self._persist_frame(tf, now)
         # Forward the raw frame (full AX.25 frame, FCS already stripped by the
@@ -921,7 +920,6 @@ class TelemetryTab(QWidget):
         sat_name: str,
         data: str,
         norad: int | None,
-        gray: bool = False,
     ) -> None:
         now = datetime.datetime.now(datetime.UTC)
         ts = now.strftime("%H:%M:%S")
@@ -930,10 +928,7 @@ class TelemetryTab(QWidget):
         self._table.setItem(row, 0, QTableWidgetItem(ts))
         self._table.setItem(row, 1, QTableWidgetItem(callsign))
         self._table.setItem(row, 2, QTableWidgetItem(sat_name))
-        data_item = QTableWidgetItem(data)
-        if gray:
-            data_item.setForeground(Qt.GlobalColor.gray)
-        self._table.setItem(row, 3, data_item)
+        self._table.setItem(row, 3, QTableWidgetItem(data))
         self._table.scrollToBottom()
         self._frame_count += 1
         self._lbl_count.setText(_("Frames: ") + str(self._frame_count) + _(" received"))
