@@ -622,4 +622,23 @@ class AfskDemodulator(QThread):
                 self._hdlc.last_tone = prev_tone
                 frame = self._hdlc.push_bit(bit)
                 if frame is not None:
+                    # TEMPORARY diagnostic (do not remove until confirmed
+                    # working): pairs with engine.py's _on_kiss_frame log
+                    # (which fires on receipt) to directly confirm this
+                    # Signal actually crosses from this QThread to
+                    # AprsEngine on the GUI thread -- the same class of
+                    # question that caught yesterday's G3RUH audio_ready
+                    # bug (there, the receiver was a plain closure Qt
+                    # couldn't auto-queue for; here it's a bound QObject
+                    # method, the standard-supported case, confirmed by a
+                    # standalone reproduction test -- but this had never
+                    # actually been exercised live, since no frame had
+                    # passed CRC yet).
+                    from sdr.diag_log import get_sdr_diag_logger
+
+                    get_sdr_diag_logger().info(
+                        "afsk_demod: emitting frame_received, len=%d hex=%s",
+                        len(frame),
+                        frame[:32].hex(),
+                    )
                     self.frame_received.emit(frame)
