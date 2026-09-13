@@ -71,6 +71,7 @@ class TelemetryField:
     raw_value: int | float
     scaled_value: float
     unit: str
+    is_integer: bool = False
 
 
 @dataclass
@@ -115,6 +116,8 @@ _STRUCT_MAP: dict[str, str] = {
     "float64_be": ">d",
 }
 
+_FLOAT_TYPES = {"float32_be", "float64_be"}
+
 
 def _decode_field(payload: bytes, field_def: dict[str, Any]) -> TelemetryField | None:
     offset: int = field_def["offset"]
@@ -157,6 +160,12 @@ def _decode_field(payload: bytes, field_def: dict[str, Any]) -> TelemetryField |
         raw_value=raw,
         scaled_value=float(raw) * scale,
         unit=unit,
+        # An integer-typed field with no scaling applied is still a whole
+        # number after decoding (e.g. a uint8 status byte) — worth telling
+        # apart from a genuinely fractional measurement (e.g. a float32
+        # voltage, or an integer scaled into physical units) so the UI can
+        # skip pointless trailing zeros for the former.
+        is_integer=(ftype not in _FLOAT_TYPES and scale == 1.0),
     )
 
 

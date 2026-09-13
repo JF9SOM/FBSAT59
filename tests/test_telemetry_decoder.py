@@ -47,9 +47,18 @@ def test_decode_origamisat2_id130_frame() -> None:
     assert tf.has_fields
 
     values = {f.name: f.scaled_value for f in tf.fields}
+    is_integer = {f.name: f.is_integer for f in tf.fields}
     assert values["telemetry_id"] == 130
     assert values["adcs_mode"] == 1
     assert values["onboard_unix_time"] == 1788994262
+
+    # Plain uint8/uint16/uint32 status-and-count fields should be flagged
+    # as integers (for UI display without pointless trailing zeros); the
+    # physical-unit float32/float64 measurements should not be.
+    assert is_integer["telemetry_id"]
+    assert is_integer["onboard_unix_time"]
+    assert not is_integer["quat_x"]
+    assert not is_integer["pos_x"]
 
     # Unit quaternion: x^2+y^2+z^2+w^2 should be ~1.
     quat_sq_sum = sum(values[name] ** 2 for name in ("quat_x", "quat_y", "quat_z", "quat_w"))

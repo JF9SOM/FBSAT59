@@ -1043,7 +1043,9 @@ class TelemetryTab(QWidget):
             if row is None:
                 continue
             value = f.scaled_value
-            if abs(value) >= 1000:
+            if f.is_integer:
+                text = f"{round(value):,}"
+            elif abs(value) >= 1000:
                 text = f"{value:,.2f}"
             elif abs(value) >= 1:
                 text = f"{value:.4f}"
