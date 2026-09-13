@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -48,7 +49,12 @@ from comms.aprs.engine import (
     resolve_ax25_modem,
 )
 from comms.aprs.parser import decode_ax25
-from comms.telemetry.decoder import TelemetryFrame, decode_telemetry, list_formats
+from comms.telemetry.decoder import (
+    TelemetryFrame,
+    decode_telemetry,
+    get_telemetry_id_defs,
+    list_formats,
+)
 from comms.telemetry.gr_satellites_backend import (
     GrSatellitesBackend,
     detect_gr_satellites,
@@ -271,8 +277,18 @@ class TelemetryTab(QWidget):
         root.addWidget(input_box)
 
         # --- Receive log ---
-        log_box = QGroupBox(_("Received Frames"))
+        # No title: the inner tabs ("Received Frames" / "Decoded Fields")
+        # already label the content, so a group-box title would just repeat
+        # the first tab's name.
+        log_box = QGroupBox()
         log_layout = QVBoxLayout(log_box)
+
+        self._log_tabs = QTabWidget()
+        log_layout.addWidget(self._log_tabs)
+
+        self._raw_page = QWidget()
+        raw_page_layout = QVBoxLayout(self._raw_page)
+        raw_page_layout.setContentsMargins(0, 0, 0, 0)
         self._table = QTableWidget(0, 4)
         self._table.setHorizontalHeaderLabels(
             [_("Time (UTC)"), _("Callsign"), _("Satellite"), _("Data")]
@@ -305,7 +321,25 @@ class TelemetryTab(QWidget):
         self._table.setFont(_big_font)
         self._table.horizontalHeader().setFont(_header_font)
         self._table.verticalHeader().setFont(_header_font)
-        log_layout.addWidget(self._table)
+        raw_page_layout.addWidget(self._table)
+        self._log_tabs.addTab(self._raw_page, _("Received Frames"))
+
+        # "Decoded Fields" page: one inner sub-tab per telemetry ID, built
+        # from the satellite's telemetry_ids format definition (if any) and
+        # updated live as matching frames arrive. Only satellites with the
+        # newer per-ID schema get this tab enabled — see
+        # get_telemetry_id_defs().
+        self._decode_page = QWidget()
+        decode_page_layout = QVBoxLayout(self._decode_page)
+        decode_page_layout.setContentsMargins(0, 0, 0, 0)
+        self._decode_id_tabs = QTabWidget()
+        decode_page_layout.addWidget(self._decode_id_tabs)
+        self._log_tabs.addTab(self._decode_page, _("Decoded Fields"))
+        self._decode_tables: dict[str, QTableWidget] = {}
+        self._decode_field_rows: dict[str, dict[str, int]] = {}
+        self._decode_tabs_norad: int | None = None
+        self._rebuild_decode_tabs(None)
+
         root.addWidget(log_box, 1)
 
         # --- Footer ---
@@ -359,10 +393,12 @@ class TelemetryTab(QWidget):
         The satellite name itself is already shown in the Satellite Detail
         panel next to this tab, so this method's only visible effect is
         auto-selecting the matching entry in the active mode's satellite
-        combo, if that satellite is supported by it.
+        combo (if supported) and rebuilding the "Decoded Fields" sub-tabs
+        for the new satellite's telemetry_ids format, if it has one.
         """
         self._selected_norad = norad
         self._selected_name = name
+        self._rebuild_decode_tabs(norad)
         if norad:
             for combo in (self._combo_afsk_sat, self._combo_gr_sat):
                 for i in range(combo.count()):
@@ -588,6 +624,16 @@ class TelemetryTab(QWidget):
         self._btn_afsk_sat_search.setVisible(not is_gr)
         self._combo_gr_sat.setVisible(is_gr)
         self._btn_gr_sat_search.setVisible(is_gr)
+        # gr-satellites already turns each frame into human-readable text
+        # itself (see _on_gr_telemetry()'s "-> Packet from" parsing), so the
+        # "Decoded Fields" sub-tab — built from this project's own
+        # telemetry_ids format files — only applies to Direwolf (AX.25)
+        # mode. Hide the sub-tab bar entirely in gr-satellites mode rather
+        # than just disabling the tab, so it reads as a single plain table
+        # like before this feature existed.
+        self._log_tabs.tabBar().setVisible(not is_gr)
+        if is_gr:
+            self._log_tabs.setCurrentWidget(self._raw_page)
         # SatNOGS DB upload now covers both paths (Phase 2 added the
         # gr-satellites --kiss_server raw-frame route; see
         # _on_gr_raw_frame()), so the upload cluster stays visible in
@@ -890,6 +936,7 @@ class TelemetryTab(QWidget):
             data=tf.summary(),
             norad=tf.norad,
         )
+        self._update_decode_tab(tf)
         self._persist_frame(tf, now)
         # Forward the raw frame (full AX.25 frame, FCS already stripped by the
         # demodulator / KISS) to the SatNOGS DB. No-op unless the footer
@@ -932,6 +979,83 @@ class TelemetryTab(QWidget):
         self._table.scrollToBottom()
         self._frame_count += 1
         self._lbl_count.setText(_("Frames: ") + str(self._frame_count) + _(" received"))
+
+    def _rebuild_decode_tabs(self, norad: int | None) -> None:
+        """(Re)build the "Decoded Fields" sub-tabs for *norad*.
+
+        Each telemetry ID in the satellite's ``telemetry_ids`` format
+        definition gets its own sub-tab, pre-populated with field labels
+        (values filled in as matching frames arrive — see
+        _update_decode_tab()). Satellites without this newer per-ID schema
+        (including old flat-``fields`` format files) get the whole
+        "Decoded Fields" tab disabled.
+        """
+        self._decode_id_tabs.clear()
+        self._decode_tables = {}
+        self._decode_field_rows = {}
+        self._decode_tabs_norad = norad
+
+        id_defs = get_telemetry_id_defs(norad)
+        decode_tab_index = self._log_tabs.indexOf(self._decode_page)
+        self._log_tabs.setTabEnabled(decode_tab_index, bool(id_defs))
+        if not id_defs:
+            return
+
+        for id_str in sorted(id_defs.keys(), key=int):
+            id_def = id_defs[id_str]
+            fields = id_def.get("fields", [])
+            table = QTableWidget(len(fields), 2)
+            table.setHorizontalHeaderLabels([_("Field"), _("Value")])
+            table.verticalHeader().setVisible(False)
+            table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+            table.setAlternatingRowColors(True)
+            table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+            table.horizontalHeader().setSectionResizeMode(
+                0, QHeaderView.ResizeMode.ResizeToContents
+            )
+            table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+            row_map: dict[str, int] = {}
+            for row, fd in enumerate(fields):
+                table.setItem(row, 0, QTableWidgetItem(fd.get("label", fd["name"])))
+                table.setItem(row, 1, QTableWidgetItem("—"))
+                row_map[fd["name"]] = row
+            self._decode_tables[id_str] = table
+            self._decode_field_rows[id_str] = row_map
+            self._decode_id_tabs.addTab(table, id_def.get("label", f"ID{id_str}"))
+
+    def _update_decode_tab(self, tf: TelemetryFrame) -> None:
+        """Push *tf*'s decoded field values into its "Decoded Fields" sub-tab.
+
+        No-op unless tf carries a recognized telemetry ID for the satellite
+        the sub-tabs are currently built for (_rebuild_decode_tabs() is
+        called from set_satellite(), so this tracks the main satellite list
+        selection, not necessarily the AFSK combo).
+        """
+        if tf.telemetry_id is None or not tf.has_fields or tf.norad != self._decode_tabs_norad:
+            return
+        id_str = str(tf.telemetry_id)
+        table = self._decode_tables.get(id_str)
+        row_map = self._decode_field_rows.get(id_str)
+        if table is None or row_map is None:
+            return
+        for f in tf.fields:
+            row = row_map.get(f.name)
+            if row is None:
+                continue
+            value = f.scaled_value
+            if abs(value) >= 1000:
+                text = f"{value:,.2f}"
+            elif abs(value) >= 1:
+                text = f"{value:.4f}"
+            else:
+                text = f"{value:.6f}"
+            if f.unit:
+                text += f" {f.unit}"
+            item = table.item(row, 1)
+            if item is None:
+                item = QTableWidgetItem()
+                table.setItem(row, 1, item)
+            item.setText(text)
 
     def _persist_frame(self, tf: TelemetryFrame, ts: datetime.datetime) -> None:
         if not hasattr(self._conn, "execute"):

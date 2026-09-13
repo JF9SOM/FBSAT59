@@ -83,6 +83,8 @@ class TelemetryFrame:
     raw_hex: str
     fields: list[TelemetryField] = field(default_factory=list)
     signal_db: float | None = None
+    telemetry_id: int | None = None
+    telemetry_label: str = ""
 
     @property
     def has_fields(self) -> bool:
@@ -110,6 +112,7 @@ _STRUCT_MAP: dict[str, str] = {
     "uint32_be": ">I",
     "uint32_le": "<I",
     "float32_be": ">f",
+    "float64_be": ">d",
 }
 
 
@@ -162,6 +165,21 @@ def _decode_field(payload: bytes, field_def: dict[str, Any]) -> TelemetryField |
 # ---------------------------------------------------------------------------
 
 
+def get_telemetry_id_defs(norad: int | None) -> dict[str, Any] | None:
+    """Return the ``telemetry_ids`` mapping from *norad*'s format file, if any.
+
+    Satellites with a single flat ``fields`` list (the older format) return
+    None here — only the newer per-telemetry-ID schema is exposed, since a
+    telemetry ID sub-tab needs each ID's own field layout up front, before
+    any frame of that ID has actually been received.
+    """
+    fmt = load_format(norad) if norad is not None else None
+    if not fmt:
+        return None
+    telemetry_ids = fmt.get("telemetry_ids")
+    return telemetry_ids if isinstance(telemetry_ids, dict) and telemetry_ids else None
+
+
 def decode_telemetry(
     callsign: str,
     payload: bytes,
@@ -170,14 +188,31 @@ def decode_telemetry(
     """Decode *payload* bytes using the JSON definition for *norad*.
 
     Always returns a TelemetryFrame; falls back to raw hex when no
-    definition exists or decoding fails.
+    definition exists or decoding fails. Format files may define either a
+    single flat ``fields`` list, or a ``telemetry_ids`` mapping keyed by the
+    telemetry ID byte (payload[2] in this project's common FM header
+    layout) for satellites whose downlink carries several distinct
+    telemetry structures.
     """
     raw_hex = payload.hex()
     fmt = load_format(norad) if norad is not None else None
     sat_name = fmt["name"] if fmt else (f"NORAD {norad}" if norad else callsign)
 
     decoded_fields: list[TelemetryField] = []
-    if fmt and fmt.get("fields"):
+    telemetry_id: int | None = None
+    telemetry_label = ""
+
+    telemetry_ids = fmt.get("telemetry_ids") if fmt else None
+    if telemetry_ids and len(payload) >= 3:
+        telemetry_id = payload[2]
+        id_def = telemetry_ids.get(str(telemetry_id))
+        if id_def:
+            telemetry_label = id_def.get("label", "")
+            for fd in id_def.get("fields", []):
+                result = _decode_field(payload, fd)
+                if result is not None:
+                    decoded_fields.append(result)
+    elif fmt and fmt.get("fields"):
         for fd in fmt["fields"]:
             result = _decode_field(payload, fd)
             if result is not None:
@@ -189,4 +224,6 @@ def decode_telemetry(
         satellite_name=sat_name,
         raw_hex=raw_hex,
         fields=decoded_fields,
+        telemetry_id=telemetry_id,
+        telemetry_label=telemetry_label,
     )
