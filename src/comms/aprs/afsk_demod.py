@@ -2,11 +2,11 @@
 
 Algorithm
 ---------
-1. Decimate I/Q to ~9 600 Hz (8× oversampling at 1 200 baud).
-   If scipy is available, a proper FIR anti-alias filter is applied before
-   decimation; otherwise simple stride-based decimation is used.
-2. Compute instantaneous frequency via the phase-difference method:
+1. Compute instantaneous frequency via the phase-difference method
        f[n] = angle(iq[n] * conj(iq[n-1])) * Fs / (2π)
+   at a *high* intermediate rate (only lightly decimated from the raw SDR
+   rate, ~200kHz -- see ``_INTERMEDIATE_RATE_TARGET``), not at the final
+   ~9600Hz rate the tone detector and symbol clock actually run at.
    This is the *recovered audio* out of an FM discriminator. For a real
    Bell 202 signal relayed over a radio's own NBFM voice channel (the
    normal way APRS/packet actually gets on the air -- the 1200/2200 Hz
@@ -17,6 +17,28 @@ Algorithm
    itself equal "1200" or "2200". A direct-FSK baseband signal, where
    the RF carrier hops by exactly the tone frequencies, is not how
    Bell 202-over-FM actually works.
+   Decimating the *raw complex I/Q* straight down to ~9600Hz before this
+   step (the original design, until 2026-09-13) was itself a bug: a
+   several-kHz-peak-deviation FM signal's instantaneous frequency swings
+   through a range that, per Carson's rule, needs Nyquist bandwidth well
+   beyond 9600Hz/2 = 4800Hz to represent without aliasing -- decimating
+   first destroys exactly the information the discriminator needs, no
+   matter how clean the signal is. Confirmed with a corrected synthetic
+   test (a continuous-phase audio tone genuinely frequency-modulating a
+   carrier, unlike an earlier, incorrect direct-FSK test model): decoding
+   succeeded at an unrealistically low 2kHz deviation and failed outright
+   (0 valid CRCs, even with no noise added) at a realistic 5kHz deviation
+   -- matching the live symptom (mark/space power converging to
+   near-equal, roughly 2x too many tone flips per symbol to be real bit
+   transitions). ``g3ruh_demod.py``'s ``G3ruhDiscriminator`` already gets
+   this order right (discriminate near the raw rate, decimate the
+   *resulting audio* afterward); this file didn't, until now.
+2. Decimate the resulting instantaneous-frequency signal -- audio
+   bandwidth, never exceeding the tone frequencies themselves regardless
+   of RF deviation -- down to ~9600Hz (8x oversampling at 1200 baud) for
+   the tone-detection and symbol-timing steps below. Unlike step 1, this
+   decimation has no Nyquist problem: the signal being decimated here is
+   already audio-bandwidth-limited.
 3. Detect mark/space the way a hardware TNC's Goertzel filter does:
    quadrature-mix the recovered audio down to DC at each tone frequency
    and lowpass (one symbol wide -- an N=8-sample window at this file's
@@ -79,6 +101,16 @@ _SPACE_HZ: float = 2200.0
 _BAUD: float = 1200.0
 _OVERSAMPLE: int = 8  # samples per symbol after decimation
 _TARGET_RATE: int = int(_BAUD * _OVERSAMPLE)  # 9 600 Hz
+
+# Intermediate rate the raw I/Q is (lightly) decimated to *before* phase-
+# difference discrimination -- see step 1 of the module docstring. Must
+# leave enough Nyquist bandwidth (half of this) to represent a real NBFM
+# radio's Bell 202 relay deviation (commonly several kHz peak) without
+# aliasing the discriminator output; 200kHz matches the value already
+# verified working for this exact purpose in g3ruh_demod.py's
+# G3ruhDiscriminator (_INTERMEDIATE_RATE_TARGET there), giving the same
+# generous margin here.
+_INTERMEDIATE_RATE_TARGET: int = 200_000
 
 # Digital-PLL correction strength applied to _pll_phase whenever a raw tone
 # transition is observed (see _process()). 0.0 = no correction (free-running
@@ -261,7 +293,10 @@ class AfskDemodulator(QThread):
         self._q: queue.Queue[np.ndarray] = queue.Queue(maxsize=128)
         self._stop_event = threading.Event()
         self._hdlc = _HdlcState()
-        # Residual samples carried between consecutive push_samples() calls
+        # Residual samples carried between consecutive push_samples() calls,
+        # at the intermediate rate (_INTERMEDIATE_RATE_TARGET, before the
+        # final decimation to _TARGET_RATE) -- one raw I/Q sample, needed
+        # for phase-difference continuity across block boundaries there.
         self._residual: np.ndarray = np.array([], dtype=np.complex64)
         # Symbol-clock recovery (digital PLL) state, carried across
         # consecutive _process() calls the same way _residual is. See the
@@ -399,31 +434,78 @@ class AfskDemodulator(QThread):
         sr = self._sample_rate
         iq = self._remove_dc(iq)
 
-        # ---- 1. Decimate to ~_TARGET_RATE ----
-        dec = max(1, round(sr / _TARGET_RATE))
-        if dec > 1:
+        # ---- 1a. Lightly decimate raw I/Q to the intermediate rate ----
+        # NOT the final ~9600Hz target -- see the module docstring's step 1
+        # for why decimating straight to 9600Hz before discriminating
+        # aliases a realistically-deviated FM signal.
+        dec1 = max(1, round(sr / _INTERMEDIATE_RATE_TARGET))
+        if dec1 > 1:
             if _SCIPY and sp_signal is not None:
                 try:
                     iq = sp_signal.decimate(
-                        iq.astype(np.complex128), dec, ftype="fir", zero_phase=True
+                        iq.astype(np.complex128), dec1, ftype="fir", zero_phase=True
                     ).astype(np.complex64)
                 except Exception:
-                    iq = iq[::dec]
+                    iq = iq[::dec1]
             else:
-                iq = iq[::dec]
-        actual_rate: float = sr / dec
+                iq = iq[::dec1]
+        mid_rate: float = sr / dec1
 
-        # ---- 2. Prepend residual ----
+        # ---- 1b. Prepend residual (carried at this intermediate rate) ----
         iq = np.concatenate([self._residual, iq])
-
-        # ---- 3. Instantaneous frequency (phase-difference method) ----
         if len(iq) < 2:
             self._residual = iq
             return
-        phase_diff = np.angle(iq[1:] * np.conj(iq[:-1]))
-        inst_freq: np.ndarray = phase_diff * (actual_rate / (2.0 * np.pi))
 
-        # ---- 4. Mark/space tone power (quadrature mix + one-symbol lowpass) ----
+        # ---- 1c. Instantaneous frequency (phase-difference method) ----
+        phase_diff = np.angle(iq[1:] * np.conj(iq[:-1]))
+        inst_freq_mid: np.ndarray = phase_diff * (mid_rate / (2.0 * np.pi))
+        self._residual = iq[-1:]
+
+        # TEMPORARY diagnostic (do not remove until confirmed working):
+        # added 2026-09-13 to directly measure the real signal's FM
+        # deviation amplitude from the *unaliased* discriminator output --
+        # the old code could never show this accurately, since it only
+        # ever computed inst_freq *after* the aliasing 9600Hz decimation
+        # this replaces. A real several-kHz-deviation signal should show
+        # min/max spanning several kHz around a near-zero mean; if this
+        # instead still looks pathological, the aliasing theory needs to
+        # be revisited rather than assumed fixed.
+        self._diag_process_count += 1
+        if self._diag_process_count == 1 or self._diag_process_count % 20 == 0:
+            from sdr.diag_log import get_sdr_diag_logger
+
+            get_sdr_diag_logger().info(
+                "afsk_demod _process() #%d: raw inst_freq @ mid_rate=%.0f (dec1=%d) "
+                "min=%.1f mean=%.1f max=%.1f std=%.1f",
+                self._diag_process_count,
+                mid_rate,
+                dec1,
+                float(np.min(inst_freq_mid)) if len(inst_freq_mid) else 0.0,
+                float(np.mean(inst_freq_mid)) if len(inst_freq_mid) else 0.0,
+                float(np.max(inst_freq_mid)) if len(inst_freq_mid) else 0.0,
+                float(np.std(inst_freq_mid)) if len(inst_freq_mid) else 0.0,
+            )
+
+        # ---- 2. Decimate the (audio-bandwidth) inst_freq to ~_TARGET_RATE ----
+        dec2 = max(1, round(mid_rate / _TARGET_RATE))
+        if dec2 > 1:
+            if _SCIPY and sp_signal is not None:
+                try:
+                    inst_freq = sp_signal.decimate(
+                        inst_freq_mid.astype(np.float64), dec2, ftype="fir", zero_phase=True
+                    ).astype(np.float32)
+                except Exception:
+                    inst_freq = inst_freq_mid[::dec2]
+            else:
+                inst_freq = inst_freq_mid[::dec2]
+        else:
+            inst_freq = inst_freq_mid
+        actual_rate: float = mid_rate / dec2
+        if len(inst_freq) == 0:
+            return
+
+        # ---- 3. Mark/space tone power (quadrature mix + one-symbol lowpass) ----
         # A real Bell 202-over-NBFM signal's recovered "audio" (inst_freq)
         # oscillates at 1200Hz or 2200Hz with an amplitude set by the
         # radio's own FM deviation (commonly several kHz) -- it is not
@@ -485,8 +567,10 @@ class AfskDemodulator(QThread):
         # clustering near 1200/2200Hz -- the evidence that approach was
         # wrong). Logs mark/space power distributions directly so a real
         # signal should show one consistently higher than the other,
-        # rather than assuming it without live confirmation.
-        self._diag_process_count += 1
+        # rather than assuming it without live confirmation. Shares
+        # _diag_process_count (incremented once, above, at the raw
+        # inst_freq diagnostic) so the two log lines with the same call
+        # number can be read together as one block's before/after picture.
         if self._diag_process_count == 1 or self._diag_process_count % 20 == 0:
             from sdr.diag_log import get_sdr_diag_logger
 
@@ -539,13 +623,3 @@ class AfskDemodulator(QThread):
                 frame = self._hdlc.push_bit(bit)
                 if frame is not None:
                     self.frame_received.emit(frame)
-
-        # ---- 6. Save residual for next call ----
-        # The PLL loop above always consumes the *entire* smoothed/inst_freq
-        # array now (unlike the old fixed-grid sampler, which intentionally
-        # left a partial symbol's worth unconsumed and, as a side effect,
-        # always retained enough raw iq tail for continuity). All that's
-        # actually needed for the next call's phase-difference calculation
-        # (phase_diff[0] = angle(new_iq[1] * conj(new_iq[0])), where
-        # new_iq[0] is this residual) is this block's very last raw sample.
-        self._residual = iq[-1:]
