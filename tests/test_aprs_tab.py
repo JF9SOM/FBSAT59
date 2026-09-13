@@ -161,6 +161,31 @@ def test_display_toggle_switches_between_plain_and_raw(
     assert item.text().endswith("house · 35.4800°N 139.7200°E")
 
 
+def test_plain_mode_shows_origin_callsign_for_relayed_packet(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    """A third-party / I-Gate-relayed packet's frame source is the relaying
+    I-Gate (e.g. JH9YVX-10), not the station that actually sent it. Plain
+    mode should read as the originating station; Raw mode keeps the on-air
+    frame source untouched."""
+    tab = _make_tab(qtbot, conn)
+    tab.append_packet(
+        callsign="JH9YVX-10",
+        via="NOGATE",
+        comment="[}] JE9VAX-14>APK004,...",
+        raw_frame="}JE9VAX-14>APK004,TCPIP,JH9YVX-10*:!3540.00N/13945.00E-hi",
+        plain="truck moving · 36.9980°N 136.8763°E · NE 56 km/h",
+        plain_callsign="JE9VAX-14",
+    )
+    item = tab._log_list.item(tab._log_list.count() - 1)
+
+    assert "JE9VAX-14: truck moving" in item.text()
+    assert "JH9YVX-10" not in item.text()
+
+    tab._display_combo.setCurrentIndex(tab._display_combo.findData("raw"))
+    assert "JH9YVX-10,NOGATE: }JE9VAX-14>APK004" in item.text()
+
+
 def test_display_mode_persists_to_app_settings(qtbot: QtBot, conn: sqlite3.Connection) -> None:
     tab = _make_tab(qtbot, conn)
     tab._display_combo.setCurrentIndex(tab._display_combo.findData("raw"))

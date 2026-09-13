@@ -53,6 +53,7 @@ class AprsPacket:
     raw_info: str  # raw information field (UTF-8 best-effort)
     comment: str  # short summary (legacy: half-decoded, used for DB / ADIF / TX echo)
     plain: str = ""  # full plain-language line for the APRS tab's "Plain" view
+    plain_callsign: str | None = None  # originating callsign for third-party packets
     latitude: float | None = None
     longitude: float | None = None
     message_addressee: str | None = None
@@ -202,10 +203,11 @@ def parse_aprs(frame: Ax25Frame) -> AprsPacket:
     # whatever was active when this module first imported (see docs/i18n.md
     # pitfall #2). Falls back to the raw info field when it can't help.
     plain = info
+    plain_callsign: str | None = None
     try:
-        from comms.aprs.humanize import humanize_frame
+        from comms.aprs.humanize import humanize_frame_with_origin
 
-        rendered = humanize_frame(frame)
+        rendered, plain_callsign = humanize_frame_with_origin(frame)
         if rendered:
             plain = rendered
     except Exception:
@@ -219,6 +221,7 @@ def parse_aprs(frame: Ax25Frame) -> AprsPacket:
         raw_info=info,
         comment=comment,
         plain=plain,
+        plain_callsign=plain_callsign,
         latitude=lat,
         longitude=lon,
         message_addressee=msg_addr,

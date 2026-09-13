@@ -15,7 +15,12 @@ from __future__ import annotations
 
 import pytest
 
-from comms.aprs.humanize import humanize_frame, humanize_tnc2
+from comms.aprs.humanize import (
+    humanize_frame,
+    humanize_frame_with_origin,
+    humanize_tnc2,
+    humanize_tnc2_with_origin,
+)
 from comms.aprs.parser import decode_ax25, parse_aprs
 from i18n import get_language, set_language
 
@@ -136,6 +141,68 @@ def test_parse_aprs_populates_plain_and_falls_back() -> None:
     junk = decode_ax25(_ax25_ui_frame("JA1ZRL", "APRS", [], b"garbage nonsense"))
     assert junk is not None
     assert parse_aprs(junk).plain == "garbage nonsense"
+
+
+def test_third_party_origin_callsign_is_the_relayed_station_not_the_igate() -> None:
+    """For an I-Gate-relayed (third-party ``}``) packet, the AX.25 frame's own
+    source is the relaying I-Gate — the Plain view should credit whoever
+    actually sent it instead. This is exactly the user's screenshot case:
+    the frame source is JH9YVX-10 (an I-Gate), but the packet was sent by
+    JE9VAX-14."""
+    tnc2 = "JH9YVX-10>SURXY0,TCPIP*:}JE9VAX-14>APK004,TCPIP,JH9YVX-10*:!3540.00N/13945.00E-hi"
+    line, origin = humanize_tnc2_with_origin(tnc2)
+    assert origin == "JE9VAX-14"
+    assert line == "house · 35.6667°N 139.7500°E · “hi”"
+
+
+def test_non_third_party_origin_callsign_is_none() -> None:
+    """A directly-sent (non-relayed) packet has no separate "origin" — the
+    frame's own source callsign is already correct, so the caller should
+    keep using it."""
+    line, origin = humanize_tnc2_with_origin("JA1ZRL>APRS:!3540.00N/13945.00E-hi")
+    assert origin is None
+    assert line == "house · 35.6667°N 139.7500°E · “hi”"
+
+
+def test_doubly_nested_third_party_falls_back_gracefully() -> None:
+    """aprslib itself cannot parse a third-party packet wrapped in another
+    third-party packet (raises internally) — humanize must not propagate
+    that as a crash, just decline to render (caller falls back to raw)."""
+    tnc2 = "A>B:}C>D,E:}F>G,H:!3540.00N/13945.00E-nested"
+    assert humanize_tnc2_with_origin(tnc2) == (None, None)
+
+
+def test_humanize_frame_with_origin_matches_tnc2_path() -> None:
+    raw = _ax25_ui_frame(
+        src="JH9YVX-10",
+        dest="APRS",
+        via=["TCPIP*"],
+        info=b"}JE9VAX-14>APK004,TCPIP,JH9YVX-10*:!3540.00N/13945.00E-hi",
+    )
+    frame = decode_ax25(raw)
+    assert frame is not None
+    line, origin = humanize_frame_with_origin(frame)
+    assert origin == "JE9VAX-14"
+    assert line == "house · 35.6667°N 139.7500°E · “hi”"
+
+
+def test_parse_aprs_populates_plain_callsign_only_for_third_party() -> None:
+    relayed = decode_ax25(
+        _ax25_ui_frame(
+            "JH9YVX-10",
+            "APRS",
+            ["TCPIP*"],
+            b"}JE9VAX-14>APK004,TCPIP,JH9YVX-10*:!3540.00N/13945.00E-hi",
+        )
+    )
+    assert relayed is not None
+    packet = parse_aprs(relayed)
+    assert packet.plain_callsign == "JE9VAX-14"
+    assert packet.callsign == "JH9YVX-10"  # the AX.25 source is unchanged (Raw stays as-is)
+
+    direct = decode_ax25(_ax25_ui_frame("JA1ZRL", "APRS", ["TCPIP*"], b"!3540.00N/13945.00E-hi"))
+    assert direct is not None
+    assert parse_aprs(direct).plain_callsign is None
 
 
 def test_japanese_catalog_translates_plain_view() -> None:

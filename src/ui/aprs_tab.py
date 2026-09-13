@@ -620,6 +620,7 @@ class AprsTab(QWidget):
             lon=packet.longitude,
             log=log_to_db,
             plain=packet.plain or packet.comment,
+            plain_callsign=packet.plain_callsign,
         )
 
     def _is_confirmed_reply(self, packet: object) -> bool:
@@ -891,6 +892,7 @@ class AprsTab(QWidget):
         norad: int | None = None,
         log: bool = False,
         plain: str | None = None,
+        plain_callsign: str | None = None,
     ) -> None:
         """Add a decoded APRS packet to the receive log widget.
 
@@ -898,7 +900,11 @@ class AprsTab(QWidget):
         exported). The receive log itself shows either *plain* (a full
         human-readable line; falls back to *comment*) or *raw_frame* (the
         on-air information field; falls back to *comment*), per the Show
-        toggle. Persists to the DB only when *log* is True.
+        toggle. *plain_callsign*, when set (third-party / I-Gate-relayed
+        packets), replaces *callsign* in the Plain-mode prefix so the row
+        reads as the originating station rather than the relaying I-Gate;
+        Raw mode always keeps the on-air *callsign*/*via*. Persists to the
+        DB only when *log* is True.
         """
         ts = datetime.now(tz=UTC).strftime("%H:%M:%S")
         self._append_log_item(
@@ -909,6 +915,7 @@ class AprsTab(QWidget):
             raw=raw_frame or comment,
             lat=lat,
             lon=lon,
+            plain_callsign=plain_callsign,
         )
 
         if log and hasattr(self._conn, "execute"):
@@ -989,13 +996,24 @@ class AprsTab(QWidget):
         raw: str,
         lat: float | None = None,
         lon: float | None = None,
+        plain_callsign: str | None = None,
     ) -> None:
         via_str = f",{via}" if via else ""
-        prefix = f"{ts}  {callsign}{via_str}: "
-        item = QListWidgetItem(prefix + (plain if self._display_mode == "plain" else raw))
+        raw_text = f"{ts}  {callsign}{via_str}: {raw}"
+        # Raw always shows the on-air source (e.g. the relaying I-Gate). Plain
+        # swaps in the originating station when this was a third-party /
+        # I-Gate-relayed packet — the outer via (e.g. "NOGATE") describes the
+        # relay, not the origin's path, so it's dropped rather than shown
+        # attached to the wrong callsign.
+        plain_text = (
+            f"{ts}  {plain_callsign}: {plain}"
+            if plain_callsign
+            else f"{ts}  {callsign}{via_str}: {plain}"
+        )
+        item = QListWidgetItem(plain_text if self._display_mode == "plain" else raw_text)
         item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-        item.setData(_ROLE_PLAIN, prefix + plain)
-        item.setData(_ROLE_RAW, prefix + raw)
+        item.setData(_ROLE_PLAIN, plain_text)
+        item.setData(_ROLE_RAW, raw_text)
         # Stash the position (if any) so the right-click menu can offer a map link.
         if lat is not None and lon is not None:
             item.setData(_ROLE_COORDS, (float(lat), float(lon)))

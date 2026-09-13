@@ -308,6 +308,22 @@ def _render_telemetry(info: str) -> str | None:
     return line
 
 
+def _origin_callsign(parsed: dict[str, Any]) -> str | None:
+    """The callsign that actually originated a (possibly nested) third-party
+    packet, or None when *parsed* is not third-party.
+
+    Third-party (``}``) is how an I-Gate re-injects Internet-sourced traffic
+    onto RF: the AX.25 frame's own source is the I-Gate, not the station that
+    sent the packet. The Raw view intentionally leaves that outer wrapper
+    alone (see docs/aprs-plain-view.md), but the Plain view's callsign should
+    read as the originating station, not the relaying I-Gate.
+    """
+    if parsed.get("format") != "thirdparty":
+        return None
+    sub = parsed.get("subpacket") or {}
+    return _origin_callsign(sub) or (str(sub["from"]) if sub.get("from") else None)
+
+
 def _render(parsed: dict[str, Any], info: str) -> str | None:
     fmt = parsed.get("format")
     if fmt == "thirdparty":
@@ -333,10 +349,14 @@ def _render(parsed: dict[str, Any], info: str) -> str | None:
     return None
 
 
-def humanize_tnc2(tnc2: str) -> str | None:
-    """Render a TNC2-format APRS string (``SRC>DEST,path:info``) as one line.
+def humanize_tnc2_with_origin(tnc2: str) -> tuple[str | None, str | None]:
+    """Like :func:`humanize_tnc2`, plus the originating callsign.
 
-    Returns None when the packet can't be turned into a useful sentence.
+    Returns ``(plain_line, origin_callsign)``. *origin_callsign* is only
+    set when *tnc2* is third-party (an I-Gate re-injecting Internet traffic
+    onto RF) — it is the callsign that actually sent the packet, as opposed
+    to the AX.25 frame's own source (the relaying I-Gate). ``None`` means
+    "not third-party — the frame's own source callsign is already correct".
     """
     info = tnc2.split(":", 1)[1] if ":" in tnc2 else ""
     try:
@@ -344,15 +364,25 @@ def humanize_tnc2(tnc2: str) -> str | None:
     except Exception:
         # aprslib rejects a few types outright (e.g. "T#" telemetry reports).
         # Handle the ones worth a sentence ourselves before giving up.
-        return _render_telemetry(info) if info.startswith("T#") else None
+        rendered = _render_telemetry(info) if info.startswith("T#") else None
+        return rendered, None
     try:
-        return _render(parsed, info)
+        return _render(parsed, info), _origin_callsign(parsed)
     except Exception:
-        return None
+        return None, None
 
 
-def humanize_frame(frame: Any) -> str | None:
-    """Render an :class:`~comms.aprs.parser.Ax25Frame` as one plain line.
+def humanize_tnc2(tnc2: str) -> str | None:
+    """Render a TNC2-format APRS string (``SRC>DEST,path:info``) as one line.
+
+    Returns None when the packet can't be turned into a useful sentence.
+    """
+    return humanize_tnc2_with_origin(tnc2)[0]
+
+
+def humanize_frame_with_origin(frame: Any) -> tuple[str | None, str | None]:
+    """Like :func:`humanize_frame`, plus the originating callsign (see
+    :func:`humanize_tnc2_with_origin`).
 
     Uses latin-1 to reconstruct the info field so every original byte
     reaches aprslib intact (MIC-E position bytes must not be mangled by a
@@ -364,6 +394,11 @@ def humanize_frame(frame: Any) -> str | None:
         hdr = f"{frame.src}>{frame.dest}"
         if path:
             hdr += f",{path}"
-        return humanize_tnc2(f"{hdr}:{info}")
+        return humanize_tnc2_with_origin(f"{hdr}:{info}")
     except Exception:
-        return None
+        return None, None
+
+
+def humanize_frame(frame: Any) -> str | None:
+    """Render an :class:`~comms.aprs.parser.Ax25Frame` as one plain line."""
+    return humanize_frame_with_origin(frame)[0]
