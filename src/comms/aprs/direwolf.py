@@ -273,9 +273,14 @@ class AudioBridge(QThread):
     RX source is either:
       - the configured soundcard input device (shared with other
         Communications tabs via AudioDeviceManager), or
-      - *sdr_pipeline*, if given: a G3ruhSdrDemod is run against the SDR's
-        raw I/Q (used for the SDR-fed 9600 baud G3RUH receive-only path —
-        see AprsEngine.start_sdr_direwolf()). Mutually exclusive with the
+      - *sdr_pipeline*, if given: an SDR-derived discriminator is run
+        against the SDR's raw I/Q instead (used for the SDR-fed
+        receive-only path — see AprsEngine.start_sdr_direwolf()). Which
+        discriminator depends on *modem*: AfskAudioSdrDemod (de-emphasized
+        NFM audio, matching a real radio's voice output) for "1200", or
+        G3ruhSdrDemod (raw wideband discriminator, no de-emphasis) for
+        "4800"/"9600" — see comms.aprs.afsk_audio_demod / g3ruh_demod for
+        why these need different audio. Mutually exclusive with the
         soundcard input; *in_device* is ignored when *sdr_pipeline* is set.
 
     Either way, reads from *proc.stdout* and plays the TX audio through the
@@ -288,6 +293,7 @@ class AudioBridge(QThread):
         in_device: int | None,
         out_device: int | None,
         sdr_pipeline: Any = None,
+        modem: str = "1200",
         parent: Any = None,
     ) -> None:
         super().__init__(parent)
@@ -295,6 +301,7 @@ class AudioBridge(QThread):
         self._in_device = in_device
         self._out_device = out_device
         self._sdr_pipeline = sdr_pipeline
+        self._modem = modem
         self._stop_event = threading.Event()
 
     _SAMPLE_RATE = 48000
@@ -309,37 +316,14 @@ class AudioBridge(QThread):
         except ImportError:
             return
 
-        # TEMPORARY diagnostic (do not remove until confirmed working):
-        # counts calls to _rx_callback and confirms PCM actually reaches
-        # Direwolf's stdin (vs. push_samples() reaching G3ruhSdrDemod but
-        # audio_ready never firing, or stdin.write() silently failing).
-        rx_cb_state = {"count": 0}
-
         # RX: audio source → Direwolf stdin
         def _rx_callback(chunk: Any) -> None:
             if self._stop_event.is_set():
                 return
-            rx_cb_state["count"] += 1
-            n = rx_cb_state["count"]
-            if n == 1 or n % 200 == 0:
-                from sdr.diag_log import get_sdr_diag_logger
-
-                get_sdr_diag_logger().info(
-                    "AudioBridge._rx_callback: call #%d, chunk len=%d, peak_abs=%.4f",
-                    n,
-                    len(chunk),
-                    float(np.max(np.abs(chunk))) if len(chunk) else 0.0,
-                )
             try:
                 pcm = (chunk * 32767).astype("int16").tobytes()
                 self._proc.stdin.write(pcm)  # type: ignore[union-attr]
                 self._proc.stdin.flush()  # type: ignore[union-attr]
-                if n == 1 or n % 200 == 0:
-                    from sdr.diag_log import get_sdr_diag_logger
-
-                    get_sdr_diag_logger().info(
-                        "AudioBridge._rx_callback: wrote %d bytes to Direwolf stdin", len(pcm)
-                    )
             except (OSError, BrokenPipeError) as exc:
                 from sdr.diag_log import get_sdr_diag_logger
 
@@ -349,8 +333,6 @@ class AudioBridge(QThread):
         mgr = get_audio_device_manager()
         sdr_demod: Any = None
         if self._sdr_pipeline is not None:
-            from comms.aprs.g3ruh_demod import G3ruhSdrDemod
-
             try:
                 sr = int(self._sdr_pipeline._device.sample_rate)
             except AttributeError:
@@ -366,7 +348,14 @@ class AudioBridge(QThread):
                 # that is in a different thread"), confirmed live. Lifetime
                 # is already managed explicitly via sdr_demod.stop() in the
                 # `finally` block below, so no parent is needed here at all.
-                sdr_demod = G3ruhSdrDemod(sample_rate=sr)
+                if self._modem == "1200":
+                    from comms.aprs.afsk_audio_demod import AfskAudioSdrDemod
+
+                    sdr_demod = AfskAudioSdrDemod(sample_rate=sr)
+                else:
+                    from comms.aprs.g3ruh_demod import G3ruhSdrDemod
+
+                    sdr_demod = G3ruhSdrDemod(sample_rate=sr)
                 # Explicit DirectConnection: _rx_callback is a plain Python
                 # closure, not a QObject method, so Qt's auto-detected
                 # connection type has no receiver thread affinity to key
@@ -546,7 +535,9 @@ class DirewolfManager:
         self._conf_path = conf_path
 
         # Audio bridge: soundcard (or SDR) ↔ Direwolf stdin/stdout
-        self._audio = AudioBridge(self._proc, in_device, out_device, sdr_pipeline=sdr_pipeline)
+        self._audio = AudioBridge(
+            self._proc, in_device, out_device, sdr_pipeline=sdr_pipeline, modem=modem
+        )
         self._audio.start()
 
         # KISS client: connect after a brief delay for Direwolf to init

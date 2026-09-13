@@ -559,11 +559,9 @@ class AprsTab(QWidget):
     def _try_start_sdr(self, rig2: object) -> None:
         """Start AX.25 reception on the SDR pipeline (receive only).
 
-        Uses the lightweight AfskDemodulator (1200 baud Bell 202, no
-        Direwolf dependency) unless the resolved baud is 4800/9600, in
-        which case Direwolf's built-in G3RUH decoder is used instead (fed
-        by a raw-discriminator demod of the SDR's I/Q — see
-        AprsEngine.start_sdr_direwolf()).
+        Direwolf's own built-in decoder for the resolved baud does the
+        actual demod, fed by SDR-derived audio — see
+        AprsEngine.start_sdr_direwolf().
         """
         if self._engine.is_running:
             if not self._rig_connected:
@@ -590,10 +588,7 @@ class AprsTab(QWidget):
         from comms.aprs.engine import resolve_ax25_modem
 
         modem = resolve_ax25_modem(self._conn, self._radio_control)
-        if modem in ("4800", "9600"):
-            self._engine.start_sdr_direwolf(_ENGINE_OWNER, pipeline, modem=modem)
-        else:
-            self._engine.start_sdr(_ENGINE_OWNER, pipeline)
+        self._engine.start_sdr_direwolf(_ENGINE_OWNER, pipeline, modem=modem)
 
     # ------------------------------------------------------------------ #
     # Engine signal slots
@@ -845,11 +840,11 @@ class AprsTab(QWidget):
         """Re-resolve the target baud and apply it to whichever source is active.
 
         Rig + Sound Card (Direwolf) sessions are restarted in place via
-        restart_if_modem_changed(); SDR sessions may need a full mechanism
-        switch (AfskDemodulator <-> SDR-fed Direwolf) via sync_sdr_baud().
-        Both methods only act on the session type they own (checked via the
-        engine's internal state, not this tab's), so calling both
-        unconditionally is safe — whichever doesn't apply is a no-op.
+        restart_if_modem_changed(); SDR-fed Direwolf sessions via
+        sync_sdr_baud(). Both methods only act on the session type they own
+        (checked via the engine's internal state, not this tab's), so
+        calling both unconditionally is safe — whichever doesn't apply is
+        a no-op.
         """
         from comms.aprs.engine import resolve_ax25_modem
 

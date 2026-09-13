@@ -123,7 +123,7 @@ class SDRPipeline(QThread):
         remove a bound-method callback: confirmed live, a demodulator kept
         receiving I/Q blocks for minutes after its owning session was torn
         down and a different mechanism started, because every unsubscribe()
-        call across the whole SDR consumer set (AfskDemodulator,
+        call across the whole SDR consumer set (AfskAudioSdrDemod,
         G3ruhSdrDemod, and any other pipeline.subscribe() user) was
         silently a no-op.
         """

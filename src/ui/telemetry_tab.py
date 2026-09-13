@@ -65,13 +65,12 @@ from comms.telemetry.satnogs_uploader import (
 from i18n import _
 from ui.sat_search_dialog import SatSearchDialog
 
-# Named after the backend software, matching _MODE_GR's convention — this
-# option actually covers three underlying mechanisms depending on
-# connection/baud (AfskDemodulator for SDR+1200, SDR-fed Direwolf for
-# SDR+4800/9600, Direwolf for Rig+Sound Card at any baud), so "Bell 202
-# AFSK" alone was no longer accurate once 4800/9600 G3RUH were added. The
-# pure-Python AfskDemodulator case not literally being "Direwolf" is an
-# accepted, minor inaccuracy (2026-07-11, user decision).
+# Named after the backend software, matching _MODE_GR's convention — every
+# baud (1200/4800/9600) and connection (Rig+Sound Card or SDR-fed) is now
+# decoded by Direwolf itself, so "Direwolf" is accurate for all of them
+# (2026-09-13: the SDR+1200 path used to run a from-scratch Python
+# tone-detector + PLL + HDLC decoder instead — see comms.aprs.engine's
+# module docstring for why that was replaced).
 _MODE_AFSK = "Direwolf (AX.25)"
 _MODE_GR = "gr-satellites"
 
@@ -135,9 +134,9 @@ class TelemetryTab(QWidget):
 
         # AFSK backend state — shared with the APRS tab via the AprsEngine
         # singleton (see comms.aprs.engine) so the two tabs never spawn
-        # duplicate Direwolf processes / AfskDemodulator instances.
+        # duplicate Direwolf processes.
         self._engine = get_aprs_engine(conn)
-        self._afsk_source: str | None = None  # "direwolf" | "sdr" | None
+        self._afsk_source: str | None = None  # "direwolf" | "sdr_direwolf" | None
         self._sdr_pipeline: object | None = None
         self._rig_connected = False
         self._sdr_connected = False
@@ -678,18 +677,15 @@ class TelemetryTab(QWidget):
         """Re-resolve the target baud and apply it to whichever source is active.
 
         Rig + Sound Card (Direwolf) sessions are restarted in place via
-        restart_if_modem_changed(); SDR sessions may need a full mechanism
-        switch (AfskDemodulator <-> SDR-fed Direwolf) via sync_sdr_baud().
-        Both methods only act on the session type they own, so calling both
-        unconditionally is safe — whichever doesn't apply is a no-op.
+        restart_if_modem_changed(); SDR-fed Direwolf sessions via
+        sync_sdr_baud(). Both methods only act on the session type they
+        own, so calling both unconditionally is safe — whichever doesn't
+        apply is a no-op.
         """
         modem = resolve_ax25_modem(self._conn, self._radio_control)
         self._engine.restart_if_modem_changed(modem)
         if self._sdr_pipeline is not None:
             self._engine.sync_sdr_baud(self._sdr_pipeline, modem)
-            if self._afsk_source in ("sdr", "sdr_direwolf"):
-                self._afsk_source = "sdr_direwolf" if modem in ("4800", "9600") else "sdr"
-        self._refresh_status()
         self._refresh_status()
 
     # ------------------------------------------------------------------ #
@@ -848,30 +844,25 @@ class TelemetryTab(QWidget):
     def _try_start_sdr(self, pipeline: object) -> None:
         """Start AX.25 reception on the SDR pipeline (receive only).
 
-        Uses the lightweight AfskDemodulator (1200 baud Bell 202, no
-        Direwolf dependency) unless the resolved baud is 4800/9600, in
-        which case Direwolf's built-in G3RUH decoder is used instead — see
+        Direwolf's own built-in decoder for the resolved baud does the
+        actual demod, fed by SDR-derived audio — see
         AprsEngine.start_sdr_direwolf().
         """
         modem = resolve_ax25_modem(self._conn, self._radio_control)
-        use_direwolf = modem in ("4800", "9600")
-        if use_direwolf:
-            ok, err = self._engine.start_sdr_direwolf(_ENGINE_OWNER, pipeline, modem=modem)
-        else:
-            ok, err = self._engine.start_sdr(_ENGINE_OWNER, pipeline)
+        ok, err = self._engine.start_sdr_direwolf(_ENGINE_OWNER, pipeline, modem=modem)
         if not ok:
             self._set_error(f"⚠ {err}")
             return
         self._sdr_pipeline = pipeline
         self._engine.raw_frame_received.connect(self._on_ax25_frame)
-        self._afsk_source = "sdr_direwolf" if use_direwolf else "sdr"
+        self._afsk_source = "sdr_direwolf"
         self._refresh_status()
 
     def _stop_engine(self) -> None:
         """Release this tab's interest in the shared AprsEngine.
 
-        Only actually stops Direwolf / the AfskDemodulator once no other
-        tab (e.g. APRS) still needs it — see AprsEngine.stop().
+        Only actually stops Direwolf once no other tab (e.g. APRS) still
+        needs it — see AprsEngine.stop().
         """
         if self._afsk_source is None:
             return
@@ -979,13 +970,10 @@ class TelemetryTab(QWidget):
             suffix = f"  [{modem} baud]" if modem else ""
             self._lbl_status.setText(_("Rig + Direwolf (receiving)") + suffix)
             self._lbl_status.setStyleSheet("color: #27ae60;")
-        elif self._afsk_source == "sdr" and self._engine.is_running:
-            self._lbl_status.setText(_("SDR — Direwolf (AX.25) (receive only)"))
-            self._lbl_status.setStyleSheet("color: #4a9eff;")
         elif self._afsk_source == "sdr_direwolf" and self._engine.is_running:
             modem = self._engine.current_modem
             suffix = f"  [{modem} baud]" if modem else ""
-            self._lbl_status.setText(_("SDR — Direwolf G3RUH (receive only)") + suffix)
+            self._lbl_status.setText(_("SDR — Direwolf (AX.25) (receive only)") + suffix)
             self._lbl_status.setStyleSheet("color: #4a9eff;")
         else:
             # gr-satellites is SDR-only (no Rig + Sound Card path, unlike

@@ -2,7 +2,7 @@
 compatible), fed by raw SDR I/Q.
 
 Subscribes to an SDRPipeline's raw samples (pipeline.subscribe(), the same
-tap used by aprs/afsk_demod.py and aprs/g3ruh_demod.py — *not*
+tap used by aprs/afsk_audio_demod.py and aprs/g3ruh_demod.py — *not*
 pipeline.audio_ready, since the GMSK discriminator needs complex baseband,
 not a generic voice-oriented demodulated audio stream), runs a continuous
 GMSK discriminator, and buffers the result in a rolling window. A caller

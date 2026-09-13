@@ -7,11 +7,24 @@ backend.
 
 This is a process-wide singleton (see ``get_aprs_engine()``): both the APRS
 tab and the Telemetry tab's Direwolf (AX.25) mode need the same underlying
-Direwolf process / AfskDemodulator, since a second independent Direwolf
-instance would collide with the first over the hardcoded KISS TCP port and
-the shared audio output lock. ``start_rig()``/``start_sdr()``/``stop()``
-take an ``owner`` tag and are reference-counted so closing one tab never
-tears down the pipeline while another tab is still using it.
+Direwolf process, since a second independent Direwolf instance would
+collide with the first over the hardcoded KISS TCP port and the shared
+audio output lock. ``start_rig()``/``start_sdr_direwolf()``/``stop()`` take
+an ``owner`` tag and are reference-counted so closing one tab never tears
+down the pipeline while another tab is still using it.
+
+All AX.25 decoding -- 1200 baud Bell 202 AFSK included -- is done by
+Direwolf's own built-in decoders, whether the audio comes from a real
+Rig + Sound Card or is synthesized from an SDR's raw I/Q (see
+start_sdr_direwolf()). An earlier from-scratch Python implementation of
+1200 baud tone detection + PLL + HDLC framing (comms.aprs.afsk_demod, since
+removed) never reliably decoded a real SDR-received signal despite several
+rounds of DSP fixes (2026-09-12/13), while the exact same over-the-air
+signal decoded correctly the whole time via Rig + Sound Card through
+Direwolf -- so the SDR path was changed to feed Direwolf real audio
+instead of re-decoding it independently (see comms.aprs.afsk_audio_demod),
+matching the already-working 9600 baud G3RUH path's architecture. Both
+1200 and 9600 baud SDR reception confirmed decoding live (2026-09-13).
 """
 
 from __future__ import annotations
@@ -23,7 +36,6 @@ from typing import Any
 
 from PySide6.QtCore import QObject, Signal
 
-from comms.aprs.afsk_demod import AfskDemodulator
 from comms.aprs.direwolf import DirewolfManager, find_direwolf
 from comms.aprs.parser import AprsPacket, Ax25Frame, decode_ax25, parse_aprs
 
@@ -60,23 +72,21 @@ class AprsEngine(QObject):
         super().__init__(parent)
         self._conn = conn
         self._mgr = DirewolfManager()
-        self._demod: AfskDemodulator | None = None
-        self._sdr_pipeline: Any | None = None  # SDRPipeline reference
         self._rig: Any | None = None  # RigController for PTT
         self._ptt_active: bool = False
         self._running = False
         self._owners: set[str] = set()
-        # AX.25 baud rate ("1200"/"9600") Direwolf is currently configured
-        # with, and the (callsign, ssid, via) it was started with — both
-        # None unless running via start_rig() (the SDR/AFSK path has no
-        # MODEM concept). Used by restart_if_modem_changed().
+        # AX.25 baud rate ("1200"/"4800"/"9600") Direwolf is currently
+        # configured with, and the (callsign, ssid, via) it was started
+        # with if running via start_rig() (None for an SDR-fed session).
+        # Used by restart_if_modem_changed().
         self._current_modem: str | None = None
         self._last_rig_params: tuple[str, int, str] | None = None
-        # True only while running via start_sdr_direwolf() (SDR-fed
-        # Direwolf, 9600 G3RUH) — distinguishes that mechanism from a
-        # Rig + Sound Card Direwolf session that also happens to be at
-        # 9600 baud (_last_rig_params is set for that one). Used by
-        # sync_sdr_baud() to decide whether a mechanism switch is needed.
+        # True only while running via start_sdr_direwolf() (SDR-derived
+        # audio feeding Direwolf) — distinguishes that mechanism from a
+        # Rig + Sound Card Direwolf session that could be at the same baud
+        # rate (_last_rig_params is set for that one instead). Used by
+        # sync_sdr_baud() to decide whether a restart is needed.
         self._sdr_direwolf_active: bool = False
 
     @classmethod
@@ -103,10 +113,10 @@ class AprsEngine(QObject):
 
     @property
     def current_modem(self) -> str | None:
-        """AX.25 baud rate ("1200"/"9600") Direwolf is currently running at.
+        """AX.25 baud rate ("1200"/"4800"/"9600") Direwolf is running at.
 
-        None if not running via start_rig() — includes the SDR/AFSK path
-        (start_sdr()), which has no MODEM concept.
+        None only when not running at all — every running session (Rig +
+        Sound Card or SDR-fed) now goes through Direwolf and has a MODEM.
         """
         return self._current_modem
 
@@ -199,55 +209,18 @@ class AprsEngine(QObject):
         self.status_changed.emit(f"Restarting Direwolf for {new_modem} baud…")
         self._start_rig_pipeline(callsign, ssid, via, new_modem)
 
-    def start_sdr(self, owner: str, pipeline: Any) -> tuple[bool, str]:
-        """Start Bell 202 AFSK demodulation on an SDR pipeline (receive only).
-
-        *pipeline* must be an SDRPipeline instance with ``subscribe()`` and
-        a ``_device.sample_rate`` attribute. ``owner`` registers the
-        caller's interest in the pipeline (see ``stop()``). Lightweight,
-        no Direwolf dependency — 1200 baud Bell 202 only. Use
-        start_sdr_direwolf() for 9600 baud G3RUH.
-        """
-        self._owners.add(owner)
-        if self._running:
-            return True, ""
-        return self._start_sdr_pipeline(pipeline)
-
-    def _start_sdr_pipeline(self, pipeline: Any) -> tuple[bool, str]:
-        try:
-            sr = int(pipeline._device.sample_rate)
-        except AttributeError:
-            return False, "Cannot determine SDR sample rate."
-
-        self._sdr_pipeline = pipeline
-        self._demod = AfskDemodulator(sample_rate=sr, parent=self)
-        self._demod.frame_received.connect(self._on_kiss_frame)
-        self._demod.start()
-        pipeline.subscribe(self._demod.push_samples)
-
-        self._running = True
-        # No MODEM concept on the SDR/AFSK path (Bell 202 1200 baud only) —
-        # keep restart_if_modem_changed()/sync_sdr_baud() correctly no-op.
-        self._current_modem = None
-        self._last_rig_params = None
-        self._sdr_direwolf_active = False
-        self.status_changed.emit("Connected (SDR — receive only)")
-        return True, ""
-
     def start_sdr_direwolf(
-        self, owner: str, pipeline: Any, modem: str = "9600"
+        self, owner: str, pipeline: Any, modem: str = "1200"
     ) -> tuple[bool, str]:
-        """Start Direwolf fed by SDR-derived G3RUH-discriminator audio.
+        """Start Direwolf fed by SDR-derived audio (receive only).
 
-        *modem* is "4800" or "9600" — always receive-only (SDR can't
-        transmit). Exists because the lightweight start_sdr()
-        AfskDemodulator only decodes 1200 baud Bell 202 — callers pick this
-        instead once resolve_ax25_modem() says 4800/9600 is needed.
-        Direwolf's own built-in G3RUH decoder does the actual demod; see
-        comms.aprs.g3ruh_demod for the raw-discriminator audio it's fed
-        (the same filter is used regardless of *modem* — 4800 needs less
-        bandwidth than 9600, so the existing wideband filter admits it
-        without retuning). ``owner`` registers the caller's interest in
+        *modem* is "1200" (Bell 202 AFSK), "4800", or "9600" (both G3RUH) —
+        SDR can't transmit, so this is always receive-only. Direwolf's own
+        built-in decoder for *modem* does the actual demod; see
+        comms.aprs.afsk_audio_demod (1200 -- de-emphasized NFM audio,
+        matching a real radio's voice output) and comms.aprs.g3ruh_demod
+        (4800/9600 -- raw wideband discriminator, no de-emphasis) for the
+        audio each is fed. ``owner`` registers the caller's interest in
         the pipeline (see ``stop()``).
         """
         self._owners.add(owner)
@@ -255,7 +228,7 @@ class AprsEngine(QObject):
             return True, ""
         return self._start_sdr_direwolf_pipeline(pipeline, modem)
 
-    def _start_sdr_direwolf_pipeline(self, pipeline: Any, modem: str = "9600") -> tuple[bool, str]:
+    def _start_sdr_direwolf_pipeline(self, pipeline: Any, modem: str = "1200") -> tuple[bool, str]:
         ok, err = self._mgr.start(
             callsign="N0CALL",
             ssid=0,
@@ -274,64 +247,31 @@ class AprsEngine(QObject):
         self._current_modem = modem
         self._last_rig_params = None
         self._sdr_direwolf_active = True
-        self.status_changed.emit(f"Connected (SDR — G3RUH {modem} baud, receive only)")
+        self.status_changed.emit(f"Connected (SDR — Direwolf, {modem} baud, receive only)")
         return True, ""
 
     def sync_sdr_baud(self, pipeline: Any, target_modem: str) -> None:
-        """Switch the running SDR reception path to match target_modem.
+        """Restart the running SDR-fed Direwolf session at target_modem.
 
-        "1200" -> lightweight AfskDemodulator (start_sdr(), no Direwolf).
-        "4800"/"9600" -> SDR-fed Direwolf using its built-in G3RUH decoder
-        (start_sdr_direwolf()). AfskDemodulator vs SDR-fed Direwolf are two
-        entirely different decode mechanisms, so switching between them
-        tears down and restarts the pipeline in place; switching between
-        4800 and 9600 while already on the SDR-fed Direwolf mechanism is
-        just a modem change, handled the same way (tear down, restart with
-        the new modem) since either case needs a fresh Direwolf process —
-        same idea as restart_if_modem_changed() — without touching the
-        owner set. No-op if not currently running via an SDR path
-        (including a Rig + Sound Card Direwolf session — not ours to
-        touch), or already on the right mechanism/modem.
+        Direwolf reads MODEM once at startup, so a baud change needs a
+        fresh process — tear down and restart with the new modem, without
+        touching the owner set (same idea as restart_if_modem_changed()).
+        No-op if not currently running via an SDR path (including a
+        Rig + Sound Card Direwolf session — not ours to touch), or already
+        on target_modem.
         """
-        # TEMPORARY diagnostic (do not remove until confirmed working):
-        # confirm this method is reached on a Baud combo change and what it
-        # decided.
-        from sdr.diag_log import get_sdr_diag_logger
-
-        diag_logger = get_sdr_diag_logger()
-        diag_logger.info(
-            "sync_sdr_baud() called: target_modem=%s running=%s last_rig_params=%s "
-            "sdr_direwolf_active=%s current_modem=%s demod=%s sdr_pipeline=%s",
-            target_modem,
-            self._running,
-            self._last_rig_params,
-            self._sdr_direwolf_active,
-            self._current_modem,
-            self._demod is not None,
-            self._sdr_pipeline is not None,
-        )
         if not self._running or self._last_rig_params is not None:
-            diag_logger.info("sync_sdr_baud(): early return (not running, or rig+soundcard)")
             return
-        want_direwolf = target_modem in ("4800", "9600")
-        already_correct = (
-            want_direwolf and self._sdr_direwolf_active and self._current_modem == target_modem
-        ) or (not want_direwolf and not self._sdr_direwolf_active)
-        if already_correct:
-            diag_logger.info("sync_sdr_baud(): already_correct, no-op")
+        if self._sdr_direwolf_active and self._current_modem == target_modem:
             return
-        diag_logger.info("sync_sdr_baud(): tearing down and switching mechanism")
         self._teardown_pipeline()
-        if want_direwolf:
-            self._start_sdr_direwolf_pipeline(pipeline, target_modem)
-        else:
-            self._start_sdr_pipeline(pipeline)
+        self._start_sdr_direwolf_pipeline(pipeline, target_modem)
 
     def stop(self, owner: str) -> None:
         """Release `owner`'s interest in the pipeline.
 
-        The underlying Direwolf process / AfskDemodulator only actually
-        stops once every owner has released it — otherwise closing one tab
+        The underlying Direwolf process only actually stops once every
+        owner has released it — otherwise closing one tab
         (e.g. APRS) would silently kill AX.25 reception for another tab
         that is still using it (e.g. Telemetry).
         """
@@ -341,28 +281,13 @@ class AprsEngine(QObject):
         self._teardown_pipeline()
 
     def _teardown_pipeline(self) -> None:
-        """Stop Direwolf/AfskDemodulator without touching the owner set.
+        """Stop Direwolf without touching the owner set.
 
         Shared by stop() (once every owner has released) and
         restart_if_modem_changed()/sync_sdr_baud() (which tear down and
         immediately restart, keeping all current owners' claims intact).
         """
-        from sdr.diag_log import get_sdr_diag_logger
-
-        diag_logger = get_sdr_diag_logger()
-        diag_logger.info(
-            "_teardown_pipeline() called: demod=%s sdr_pipeline=%s sdr_direwolf_active=%s",
-            self._demod is not None,
-            self._sdr_pipeline is not None,
-            self._sdr_direwolf_active,
-        )
-        if self._sdr_pipeline is not None and self._demod is not None:
-            self._sdr_pipeline.unsubscribe(self._demod.push_samples)
-            self._demod.stop()
-            self._demod = None
-            self._sdr_pipeline = None
         self._mgr.stop()
-        diag_logger.info("_teardown_pipeline(): done (mgr.stop() and demod teardown returned)")
         self._running = False
         self._current_modem = None
         self._last_rig_params = None

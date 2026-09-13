@@ -1,24 +1,36 @@
-"""G3RUH 9600bps raw FM discriminator for SDR-fed Direwolf reception.
+"""Bell 202 1200bps AFSK audio recovery for SDR-fed Direwolf reception.
 
-Produces the *raw* (no de-emphasis, wideband) FM-discriminator audio a
-9600bps G3RUH AX.25 signal needs — the software equivalent of tapping a
-radio's "DATA" port (pre-de-emphasis discriminator output) rather than its
-normal speaker/mic audio path. The resulting 48kHz float32 PCM is fed to
-Direwolf's stdin exactly like real soundcard audio, so Direwolf's own
-built-in G3RUH decoder (MODEM 9600) does the actual demod / descramble /
-clock recovery — this module only produces audio at the right bandwidth
-and level for it.
+Produces properly demodulated, de-emphasized NFM audio -- the software
+equivalent of a real radio's normal speaker/mic audio output, which is
+exactly what Direwolf's built-in Bell 202 AFSK decoder (MODEM 1200) already
+expects and already decodes correctly via a real radio + sound card. The
+resulting 48kHz float32 PCM is fed to Direwolf's stdin exactly like real
+soundcard audio, so Direwolf's own decoder does the actual demod / bit sync
+/ HDLC framing -- this module only produces audio at the right bandwidth,
+de-emphasis, and level for it.
 
-Filter tuning (IF bandwidth, deviation constant) is based on the same
-phase-difference discriminator technique as sdr/demodulator.py's NFM path;
-field-verified against a real recorded 9600bps G3RUH signal (JAPRS digi
-network) and confirmed decoding live (2026-09-12/13).
+This deliberately mirrors comms.aprs.g3ruh_demod's G3ruhDiscriminator /
+G3ruhSdrDemod pair (same DC removal -> IF bandpass -> decimate -> phase-
+difference discriminator -> rational resample to exactly 48kHz structure),
+with two differences that matter for 1200 baud Bell 202 specifically:
 
-G3ruhSdrDemod subscribes to raw I/Q directly (SDRPipeline.subscribe()),
-independent of the SDR Control tab's Mode combo / shared Demodulator —
-the same approach comms.aprs.afsk_audio_demod.AfskAudioSdrDemod uses (the
-1200bps counterpart, which adds de-emphasis) — so it can run alongside
-another demod mode (e.g. CW Decoder) on the same SDR pipeline.
+  - De-emphasis IS applied here (G3RUH's 9600bps needs the raw, flat
+    discriminator output instead -- see g3ruh_demod.py's docstring). Bell
+    202 tones travel through a radio's normal voice audio path, which
+    always includes de-emphasis, so the software path must match that.
+  - The IF bandpass is sized for normal NBFM voice bandwidth (the same
+    NFM_DEVIATION + 4kHz half-bandwidth src/sdr/demodulator.py's
+    Demodulator._demod_nfm() already uses), not G3RUH's wider one.
+
+Earlier attempts (2026-09-12/13) to decode 1200bps SDR reception with a
+custom, from-scratch Python tone-detector + PLL + HDLC implementation
+(afsk_demod.py, since removed) never reliably decoded a real signal
+despite multiple DSP fixes, while the exact same tones decode correctly
+via a real radio + sound card through Direwolf. Rather than continue
+re-implementing what Direwolf's own AFSK decoder already does reliably,
+this module instead gets the *audio* right and lets Direwolf do the
+actual decoding, exactly like the already-working 9600bps G3RUH path
+does -- confirmed decoding a real 1200bps signal live (2026-09-13).
 """
 
 from __future__ import annotations
@@ -41,28 +53,33 @@ except ImportError:
 
 _AUDIO_RATE = 48_000
 _INTERMEDIATE_RATE_TARGET = 200_000
-# Assumed peak FM deviation — same order as typical NFM voice satellite
-# links. Kept separate from sdr/demodulator.py's NFM_DEVIATION so it can be
-# tuned independently once verified against a real signal.
+# Same NBFM voice deviation/IF-bandwidth assumption as
+# sdr.demodulator.Demodulator._demod_nfm() (NFM_DEVIATION + 4kHz audio
+# headroom) -- Bell 202 tones are relayed over a radio's normal voice
+# channel, so the same channel bandwidth applies.
 _DEVIATION_HZ = 5_000.0
-# IF half-bandwidth: wider padding than NFM's voice-oriented ~4kHz, since a
-# 9600 baud G3RUH signal needs more baseband bandwidth than 300-3000Hz voice.
-_IF_HALF_BW_HZ = _DEVIATION_HZ + 8_000.0
+_IF_HALF_BW_HZ = _DEVIATION_HZ + 4_000.0
+# De-emphasis time constant, 75us (US standard) -- same as
+# sdr.demodulator.NFM_DEEMPH_TAU. Unlike G3RUH's raw discriminator tap,
+# Bell 202 audio must have this applied to match what a real radio's
+# speaker/mic output (and thus Direwolf's already-working decoder) expects.
+_DEEMPH_TAU_S = 75e-6
 
 
-class G3ruhDiscriminator:
-    """Stateful raw-discriminator DSP.
+class AfskAudioDiscriminator:
+    """Stateful de-emphasized NFM audio recovery, tuned for Bell 202 relay.
 
-    Mirrors sdr/demodulator.py's Demodulator._demod_nfm() (DC removal → IF
-    bandpass → decimate → phase-difference FM discriminator → decimate to
-    48kHz), but skips the de-emphasis stage NFM applies for voice — 9600bps
-    G3RUH needs the flat, wideband discriminator output instead.
+    Mirrors g3ruh_demod.py's G3ruhDiscriminator (DC removal -> IF bandpass
+    -> decimate -> phase-difference FM discriminator -> exact-48kHz
+    rational resample), adding the de-emphasis stage G3RUH's raw wideband
+    tap deliberately skips.
     """
 
     def __init__(self, input_rate: float) -> None:
         self._input_rate = input_rate
         self._dc_zi_i = np.zeros(1, dtype=np.float32)
         self._dc_zi_q = np.zeros(1, dtype=np.float32)
+        self._deemph_zi = np.zeros(1, dtype=np.float64)
         self._build_filters()
 
     def _build_filters(self) -> None:
@@ -75,18 +92,11 @@ class G3ruhDiscriminator:
         self._decim1 = max(1, int(rate / _INTERMEDIATE_RATE_TARGET))
         self._mid_rate = rate / self._decim1
 
-        # Final stage to exactly _AUDIO_RATE via a rational resampler,
-        # rather than the naive integer-stride decimation this used to do
-        # (self._mid_rate / _AUDIO_RATE, e.g. 250000/1 / 48000 = 5.2,
-        # truncated to a stride of 5 -- landing on an *actual* output rate
-        # of 50000 Hz while direwolf.py's config still declares ARATE 48000
-        # to Direwolf. That's a ~4% clock/timebase lie fed straight into
-        # Direwolf's own G3RUH bit-clock recovery, for every SDR sample
-        # rate this constant combination could ever produce -- confirmed
-        # against a real captured 9600bps G3RUH signal, where Direwolf's
-        # own reference decoder could not lock at all until this was
-        # fixed). math.gcd() picks the smallest up/down pair that lands on
-        # _AUDIO_RATE exactly, whatever self._mid_rate rounds to.
+        # Rational resampler to exactly _AUDIO_RATE -- see g3ruh_demod.py's
+        # _build_filters() comment: naive integer-stride decimation lands on
+        # whatever self._mid_rate/_AUDIO_RATE happens to round to (not
+        # exactly 48000), which is a real-signal-confirmed ARATE mismatch
+        # that breaks Direwolf's bit-clock recovery.
         mid_rate_int = max(1, int(round(self._mid_rate)))
         gcd = math.gcd(_AUDIO_RATE, mid_rate_int)
         self._resample_up = _AUDIO_RATE // gcd
@@ -94,6 +104,11 @@ class G3ruhDiscriminator:
 
         if_bw = float(np.clip(_IF_HALF_BW_HZ / (rate / 2.0), 0.001, 0.499))
         self._if_b = sp_signal.firwin(63, if_bw).astype(np.float32) if _SCIPY_AVAILABLE else None
+
+        dt = 1.0 / self._mid_rate
+        deemph_alpha = dt / (_DEEMPH_TAU_S + dt)
+        self._deemph_b = np.array([deemph_alpha], dtype=np.float64)
+        self._deemph_a = np.array([1.0, -(1.0 - deemph_alpha)], dtype=np.float64)
 
     def process(self, iq: np.ndarray) -> np.ndarray:
         """Demodulate one I/Q block. Returns float32 PCM at 48kHz (possibly empty)."""
@@ -120,16 +135,17 @@ class G3ruhDiscriminator:
         prev[1:] = iq_ds[:-1]
         discrim = np.angle(iq_ds * np.conj(prev))
 
-        # No de-emphasis here (unlike NFM voice) — 9600bps G3RUH needs the
-        # raw, flat discriminator output, same as a radio's DATA port.
         audio_raw = discrim * (self._mid_rate / (2 * np.pi * _DEVIATION_HZ))
-        audio = sp_signal.resample_poly(audio_raw, self._resample_up, self._resample_down)
+        audio_de, self._deemph_zi = sp_signal.lfilter(
+            self._deemph_b, self._deemph_a, audio_raw, zi=self._deemph_zi
+        )
+        audio = sp_signal.resample_poly(audio_de, self._resample_up, self._resample_down)
         result: np.ndarray = np.clip(audio, -1.0, 1.0).astype(np.float32)
         return result
 
     @staticmethod
     def _decimate(x: np.ndarray, factor: int) -> np.ndarray:
-        """Simple decimation by integer factor — anti-aliasing is handled
+        """Simple decimation by integer factor -- anti-aliasing is handled
         by the preceding IF bandpass filter, same rationale as
         sdr/demodulator.py's Demodulator._decimate()."""
         if factor <= 1:
@@ -137,13 +153,14 @@ class G3ruhDiscriminator:
         return x[::factor]
 
 
-class G3ruhSdrDemod(QThread):
-    """Runs G3ruhDiscriminator on an SDR pipeline's raw I/Q in a background
-    thread, emitting ready-to-play 48kHz float32 PCM for Direwolf's stdin.
+class AfskAudioSdrDemod(QThread):
+    """Runs AfskAudioDiscriminator on an SDR pipeline's raw I/Q in a
+    background thread, emitting ready-to-play 48kHz float32 PCM for
+    Direwolf's stdin.
 
     Usage
     -----
-    demod = G3ruhSdrDemod(sample_rate=int(pipeline._device.sample_rate))
+    demod = AfskAudioSdrDemod(sample_rate=int(pipeline._device.sample_rate))
     demod.audio_ready.connect(my_pcm_consumer)
     demod.start()
     pipeline.subscribe(demod.push_samples)
@@ -156,13 +173,11 @@ class G3ruhSdrDemod(QThread):
 
     def __init__(self, sample_rate: int, parent: Any = None) -> None:
         super().__init__(parent)
-        self._discriminator = G3ruhDiscriminator(input_rate=sample_rate)
+        self._discriminator = AfskAudioDiscriminator(input_rate=sample_rate)
         self._q: queue.Queue[np.ndarray] = queue.Queue(maxsize=128)
         self._stop_event = threading.Event()
         # Diagnostic-only (see sdr.diag_log): counts blocks dropped because
-        # this thread wasn't draining the queue fast enough. Logged on the
-        # first drop and every 50th thereafter so a sustained backlog is
-        # still visible without flooding the log.
+        # this thread wasn't draining the queue fast enough.
         self._diag_drop_count: int = 0
 
     def push_samples(self, iq: np.ndarray) -> None:
@@ -180,7 +195,7 @@ class G3ruhSdrDemod(QThread):
                 from sdr.diag_log import get_sdr_diag_logger
 
                 get_sdr_diag_logger().info(
-                    "g3ruh_demod queue full, dropped block (total drops=%d)",
+                    "afsk_audio_demod queue full, dropped block (total drops=%d)",
                     self._diag_drop_count,
                 )
 
@@ -199,7 +214,7 @@ class G3ruhSdrDemod(QThread):
             except Exception:
                 from sdr.diag_log import get_sdr_diag_logger
 
-                get_sdr_diag_logger().exception("G3ruhSdrDemod.run(): process() raised")
+                get_sdr_diag_logger().exception("AfskAudioSdrDemod.run(): process() raised")
                 raise
             if len(audio):
                 self.audio_ready.emit(audio)
