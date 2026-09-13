@@ -231,9 +231,10 @@ AX.25 フレーム自体の送信元 (`frame.src`) は常に中継局であり�
 - [src/comms/aprs/humanize.py](../src/comms/aprs/humanize.py) — `_origin_callsign()`
   を追加（サードパーティを再帰的に辿り、最も内側の `subpacket['from']` を返す。
   非サードパーティなら `None`）。`humanize_tnc2_with_origin()` /
-  `humanize_frame_with_origin()` が `(平文, 送信元コールサイン)` のタプルを返す
-  新 API として追加され、既存の `humanize_tnc2()` / `humanize_frame()` は
-  そのラッパー（テキストのみ返す）として後方互換を維持
+  `humanize_frame_with_origin()` が `(平文, 送信元コールサイン, 座標)` の3要素
+  タプルを返す新 API として追加され（座標については 5.7 参照）、既存の
+  `humanize_tnc2()` / `humanize_frame()` はそのラッパー（テキストのみ返す）
+  として後方互換を維持
 - [src/comms/aprs/parser.py](../src/comms/aprs/parser.py) — `AprsPacket.plain_callsign:
   str | None` を追加。`parse_aprs()` が `humanize_frame_with_origin()` から populate
 - [src/ui/aprs_tab.py](../src/ui/aprs_tab.py) — 受信行は平文用・生用で
@@ -244,14 +245,41 @@ AX.25 フレーム自体の送信元 (`frame.src`) は常に中継局であり�
     表さないため、送信元コールサインに付けると誤解を招く）
 - aprslib 自体がサードパーティの二重入れ子（`}...}...`）をパースできない
   （内部で `NameError`）ため、`humanize_tnc2_with_origin()` はその例外も
-  キャッチして `(None, None)` を返す（＝生表示にフォールバック、クラッシュしない）
+  キャッチして `(None, None, None)` を返す（＝生表示にフォールバック、クラッシュしない）
 - テスト: [tests/test_aprs_humanize.py](../tests/test_aprs_humanize.py)
   （`_origin_callsign` の単体・二重入れ子のフォールバック・`AprsPacket.plain_callsign`
   の populate）、[tests/test_aprs_tab.py](../tests/test_aprs_tab.py)
   （`test_plain_mode_shows_origin_callsign_for_relayed_packet` — 平文では
   送信元、生では中継局のまま、をアサート）
 
-### 5.6 生モードの表示
+### 5.6 MIC-E・サードパーティ位置で「地図で開く」が反応しない問題（2026-09-13 実装済み・追記）
+
+**症状（実機フィードバック）**: 9600bps・1200bps 実受信で MIC-E パケット（地上系
+APRSの大半）を右クリックしても「Open in Google Maps」メニュー自体が出ない。
+
+**原因**: `parser.py` の `_parse_position()` は正規表現ベースで、非圧縮 ASCII 形式
+（`DDMM.mmN/DDDMM.mmE`、データ型 `! = @ /`）しか解釈できない。MIC-E（データ型が
+バッククォート）・圧縮位置・サードパーティに包まれた位置は対象外で、`AprsPacket.latitude/
+longitude` が常に `None` のままだった。右クリックメニューはこの2値の有無で表示可否を
+決めているため、MIC-E 行では常にメニューが出なかった（平文の文中に座標が出ているのは、
+`humanize.py` が内部で aprslib から得た値をテキスト整形にだけ使っていたためで、
+`AprsPacket` 側へは一切返していなかった）。
+
+**修正**:
+- [src/comms/aprs/humanize.py](../src/comms/aprs/humanize.py) — `_extract_latlon()`
+  を追加（サードパーティを再帰的に辿って `subpacket` から座標を取り出す）。
+  `humanize_tnc2_with_origin()` / `humanize_frame_with_origin()` の返り値タプルに
+  第3要素として座標を追加（1回の aprslib 呼び出しで平文・送信元・座標をまとめて取得）
+- [src/comms/aprs/parser.py](../src/comms/aprs/parser.py) — `parse_aprs()` が、
+  自前の正規表現で座標が取れなかった場合（`lat is None and lon is None`）のみ、
+  上記の humanize 側の座標をフォールバックとして採用。既存の非圧縮 ASCII 経路は
+  無変更（優先順位も変えていない）
+- テスト: `test_humanize_tnc2_with_origin_extracts_mic_e_position`・
+  `test_parse_aprs_fills_position_for_mic_e_via_humanize_fallback`・
+  サードパーティ経由のケースにも座標アサーションを追加
+  （[tests/test_aprs_humanize.py](../tests/test_aprs_humanize.py)）
+
+### 5.7 生モードの表示
 
 12. **サードパーティの `[}]` プレフィックス** — 生モードのその表記は
     `parser.parse_aprs()` の旧フォールバック（`f"[{data_type}] {info[1:]}"`）由来で、

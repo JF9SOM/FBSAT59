@@ -150,18 +150,20 @@ def test_third_party_origin_callsign_is_the_relayed_station_not_the_igate() -> N
     the frame source is JH9YVX-10 (an I-Gate), but the packet was sent by
     JE9VAX-14."""
     tnc2 = "JH9YVX-10>SURXY0,TCPIP*:}JE9VAX-14>APK004,TCPIP,JH9YVX-10*:!3540.00N/13945.00E-hi"
-    line, origin = humanize_tnc2_with_origin(tnc2)
+    line, origin, latlon = humanize_tnc2_with_origin(tnc2)
     assert origin == "JE9VAX-14"
     assert line == "house · 35.6667°N 139.7500°E · “hi”"
+    assert latlon == pytest.approx((35.6667, 139.75))
 
 
 def test_non_third_party_origin_callsign_is_none() -> None:
     """A directly-sent (non-relayed) packet has no separate "origin" — the
     frame's own source callsign is already correct, so the caller should
     keep using it."""
-    line, origin = humanize_tnc2_with_origin("JA1ZRL>APRS:!3540.00N/13945.00E-hi")
+    line, origin, latlon = humanize_tnc2_with_origin("JA1ZRL>APRS:!3540.00N/13945.00E-hi")
     assert origin is None
     assert line == "house · 35.6667°N 139.7500°E · “hi”"
+    assert latlon == pytest.approx((35.6667, 139.75))
 
 
 def test_doubly_nested_third_party_falls_back_gracefully() -> None:
@@ -169,7 +171,18 @@ def test_doubly_nested_third_party_falls_back_gracefully() -> None:
     third-party packet (raises internally) — humanize must not propagate
     that as a crash, just decline to render (caller falls back to raw)."""
     tnc2 = "A>B:}C>D,E:}F>G,H:!3540.00N/13945.00E-nested"
-    assert humanize_tnc2_with_origin(tnc2) == (None, None)
+    assert humanize_tnc2_with_origin(tnc2) == (None, None, None)
+
+
+def test_humanize_tnc2_with_origin_extracts_mic_e_position() -> None:
+    """MIC-E positions aren't caught by parser.py's own ASCII-only regex;
+    humanize's aprslib-backed extraction is what fills the gap (this is the
+    fix for "right-click Open in Google Maps does nothing for MIC-E rows",
+    the majority of real ground APRS traffic)."""
+    tnc2 = 'JE9VAX-14>SURXY0,TCPIP,JH9YVX-10*:`CG6q4Y>/`"3o}_1'
+    _line, origin, latlon = humanize_tnc2_with_origin(tnc2)
+    assert origin is None  # not third-party — direct MIC-E beacon
+    assert latlon == pytest.approx((35.4817, 139.721), abs=1e-3)
 
 
 def test_humanize_frame_with_origin_matches_tnc2_path() -> None:
@@ -181,9 +194,10 @@ def test_humanize_frame_with_origin_matches_tnc2_path() -> None:
     )
     frame = decode_ax25(raw)
     assert frame is not None
-    line, origin = humanize_frame_with_origin(frame)
+    line, origin, latlon = humanize_frame_with_origin(frame)
     assert origin == "JE9VAX-14"
     assert line == "house · 35.6667°N 139.7500°E · “hi”"
+    assert latlon == pytest.approx((35.6667, 139.75))
 
 
 def test_parse_aprs_populates_plain_callsign_only_for_third_party() -> None:
@@ -199,10 +213,34 @@ def test_parse_aprs_populates_plain_callsign_only_for_third_party() -> None:
     packet = parse_aprs(relayed)
     assert packet.plain_callsign == "JE9VAX-14"
     assert packet.callsign == "JH9YVX-10"  # the AX.25 source is unchanged (Raw stays as-is)
+    # parser.py's own regex sees data_type "}" (not ! = @ /) and finds no
+    # position; the humanize fallback recovers it from the inner subpacket.
+    assert packet.latitude == pytest.approx(35.6667, abs=1e-4)
+    assert packet.longitude == pytest.approx(139.75, abs=1e-4)
 
     direct = decode_ax25(_ax25_ui_frame("JA1ZRL", "APRS", ["TCPIP*"], b"!3540.00N/13945.00E-hi"))
     assert direct is not None
     assert parse_aprs(direct).plain_callsign is None
+
+
+def test_parse_aprs_fills_position_for_mic_e_via_humanize_fallback() -> None:
+    """Regression for the reported bug: MIC-E rows (the bulk of real ground
+    APRS traffic) had no position on AprsPacket at all — data_type is the
+    MIC-E marker byte, not one of ! = @ /, so parser.py's own
+    _parse_position() regex never even ran — which meant the receive log's
+    right-click "Open in Google Maps" silently did nothing for them."""
+    frame = decode_ax25(
+        _ax25_ui_frame(
+            "JE9VAX-14",
+            "SURXY0",
+            ["TCPIP", "JH9YVX-10*"],
+            b'`CG6q4Y>/`"3o}_1',
+        )
+    )
+    assert frame is not None
+    packet = parse_aprs(frame)
+    assert packet.latitude == pytest.approx(35.4817, abs=1e-3)
+    assert packet.longitude == pytest.approx(139.721, abs=1e-3)
 
 
 def test_japanese_catalog_translates_plain_view() -> None:

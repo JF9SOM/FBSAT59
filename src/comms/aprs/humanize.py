@@ -324,6 +324,26 @@ def _origin_callsign(parsed: dict[str, Any]) -> str | None:
     return _origin_callsign(sub) or (str(sub["from"]) if sub.get("from") else None)
 
 
+def _extract_latlon(parsed: dict[str, Any]) -> tuple[float, float] | None:
+    """(lat, lon) from a parsed packet, drilling into third-party subpackets.
+
+    aprslib decodes MIC-E and compressed positions (and, via recursion here,
+    third-party-wrapped ones) that ``comms.aprs.parser``'s own regex-based
+    ``_parse_position()`` cannot (it only understands the plain-ASCII
+    ``DDMM.mmN/DDDMM.mmE`` form). ``parse_aprs()`` uses this as a fallback so
+    features that need coordinates (the receive log's "Open in Google Maps",
+    ADIF gridsquare) aren't silently unavailable for the bulk of real-world
+    ground APRS traffic, which is mostly MIC-E.
+    """
+    if parsed.get("format") == "thirdparty":
+        return _extract_latlon(parsed.get("subpacket") or {})
+    lat = parsed.get("latitude")
+    lon = parsed.get("longitude")
+    if isinstance(lat, int | float) and isinstance(lon, int | float):
+        return float(lat), float(lon)
+    return None
+
+
 def _render(parsed: dict[str, Any], info: str) -> str | None:
     fmt = parsed.get("format")
     if fmt == "thirdparty":
@@ -349,14 +369,21 @@ def _render(parsed: dict[str, Any], info: str) -> str | None:
     return None
 
 
-def humanize_tnc2_with_origin(tnc2: str) -> tuple[str | None, str | None]:
-    """Like :func:`humanize_tnc2`, plus the originating callsign.
+def humanize_tnc2_with_origin(
+    tnc2: str,
+) -> tuple[str | None, str | None, tuple[float, float] | None]:
+    """Like :func:`humanize_tnc2`, plus the originating callsign and position.
 
-    Returns ``(plain_line, origin_callsign)``. *origin_callsign* is only
-    set when *tnc2* is third-party (an I-Gate re-injecting Internet traffic
-    onto RF) — it is the callsign that actually sent the packet, as opposed
-    to the AX.25 frame's own source (the relaying I-Gate). ``None`` means
-    "not third-party — the frame's own source callsign is already correct".
+    Returns ``(plain_line, origin_callsign, latlon)``.
+
+    * *origin_callsign* is only set when *tnc2* is third-party (an I-Gate
+      re-injecting Internet traffic onto RF) — it is the callsign that
+      actually sent the packet, as opposed to the AX.25 frame's own source
+      (the relaying I-Gate). ``None`` means "not third-party — the frame's
+      own source callsign is already correct".
+    * *latlon* is aprslib's decoded ``(lat, lon)`` when the packet carries a
+      position (uncompressed / compressed / MIC-E, third-party-unwrapped as
+      needed), else ``None``.
     """
     info = tnc2.split(":", 1)[1] if ":" in tnc2 else ""
     try:
@@ -365,11 +392,11 @@ def humanize_tnc2_with_origin(tnc2: str) -> tuple[str | None, str | None]:
         # aprslib rejects a few types outright (e.g. "T#" telemetry reports).
         # Handle the ones worth a sentence ourselves before giving up.
         rendered = _render_telemetry(info) if info.startswith("T#") else None
-        return rendered, None
+        return rendered, None, None
     try:
-        return _render(parsed, info), _origin_callsign(parsed)
+        return _render(parsed, info), _origin_callsign(parsed), _extract_latlon(parsed)
     except Exception:
-        return None, None
+        return None, None, None
 
 
 def humanize_tnc2(tnc2: str) -> str | None:
@@ -380,9 +407,11 @@ def humanize_tnc2(tnc2: str) -> str | None:
     return humanize_tnc2_with_origin(tnc2)[0]
 
 
-def humanize_frame_with_origin(frame: Any) -> tuple[str | None, str | None]:
-    """Like :func:`humanize_frame`, plus the originating callsign (see
-    :func:`humanize_tnc2_with_origin`).
+def humanize_frame_with_origin(
+    frame: Any,
+) -> tuple[str | None, str | None, tuple[float, float] | None]:
+    """Like :func:`humanize_frame`, plus the originating callsign and
+    position (see :func:`humanize_tnc2_with_origin`).
 
     Uses latin-1 to reconstruct the info field so every original byte
     reaches aprslib intact (MIC-E position bytes must not be mangled by a
@@ -396,7 +425,7 @@ def humanize_frame_with_origin(frame: Any) -> tuple[str | None, str | None]:
             hdr += f",{path}"
         return humanize_tnc2_with_origin(f"{hdr}:{info}")
     except Exception:
-        return None, None
+        return None, None, None
 
 
 def humanize_frame(frame: Any) -> str | None:

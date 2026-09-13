@@ -207,9 +207,18 @@ def parse_aprs(frame: Ax25Frame) -> AprsPacket:
     try:
         from comms.aprs.humanize import humanize_frame_with_origin
 
-        rendered, plain_callsign = humanize_frame_with_origin(frame)
+        rendered, plain_callsign, humanize_latlon = humanize_frame_with_origin(frame)
         if rendered:
             plain = rendered
+        # _parse_position() above only understands the plain-ASCII
+        # DDMM.mmN/DDDMM.mmE form (data types ! = @ /), so MIC-E, compressed,
+        # and third-party-wrapped positions leave lat/lon as None. aprslib
+        # (already invoked for `plain`) decodes all of those; use it as a
+        # fallback so map-dependent features (Google Maps link, ADIF
+        # gridsquare) work for the bulk of real ground APRS traffic, which is
+        # mostly MIC-E.
+        if lat is None and lon is None and humanize_latlon is not None:
+            lat, lon = humanize_latlon
     except Exception:
         pass
 
