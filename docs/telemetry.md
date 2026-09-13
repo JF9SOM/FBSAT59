@@ -222,3 +222,157 @@ Telemetryタブは非常駐タブ（Communicationsメニューから開き、×�
   （Rig + Sound Card経路が無い）ため"Rig or"を含めない
 
 日本語訳は `locale/ja/LC_MESSAGES/fbsat59.po`。更新手順は [docs/i18n.md](i18n.md) 参照。
+
+---
+
+## 「受信フレーム」テーブルの交互行コントラスト問題（2026-09-13 修正）
+
+`setAlternatingRowColors(True)`（[telemetry_tab.py:286](../src/ui/telemetry_tab.py:286)付近）
+自体は元から使われていたが、rawフレーム（未デコード）のデータ列にだけ
+`data_item.setForeground(Qt.GlobalColor.gray)` という固定の中間グレーを前景色として
+直接指定していた。この固定色が、OS/テーマ由来の交互行の明るい方の背景色や選択時の
+ハイライト背景と組み合わさるとほぼ同系色になり、コントラストが失われて文字が読めなくなる
+（黒背景の行では読めるが、明るい交互行・選択行では読めない）という実機報告があった。
+
+**修正**: rawフレームは現在ほぼ全ての受信フレームで発生する通常のケースになっており、
+グレー表示で特別視する意味が薄れていたため、この`setForeground()`呼び出し自体を削除した。
+以後は時刻・コールサイン・衛星名と同じ、テーマ標準の文字色（3状態＝通常行・交互行・選択行
+いずれでも自動的に十分なコントラストが確保される）で表示される。`Qt`（`PySide6.QtCore`）の
+importもこの変更で不要になったため削除済み。
+
+---
+
+## テレメトリーIDごとに異なるフォーマットを持つ衛星への対応（2026-09-13 追加）
+
+### 背景
+
+OrigamiSat-2（NORAD 68795）のテレメトリーを実際にSDRで受信し、「受信フレーム」テーブルの
+`[raw] <hex先頭40文字>` 表示だけでは中身が読めないという相談から、東京科学大学が公開して
+いる公式仕様書「OrigamiSat-2 FMダウンリンク通信データフォーマット」（文書番号
+ORI-2-0027-OPR, ver.2026-04-21。[受信報告ページ](http://www.origami.titech.ac.jp/archives/1958)
+で公開）を入手し全項目デコードを試みたところ、**1機の衛星が複数の全く異なるテレメトリ構造
+（ID01=MOBC HK, ID65=RasPi/カメラ制御 HK, ID100=ADCS基板 HK簡易, ID130=ADCS基板 HK詳細）
+を切り替えて送信する**ことが判明した。従来の `telemetry_formats/{norad}.json` は
+NORAD単位でフラットな `fields` 配列を1つだけ持つ設計（LilacSat-2等6衛星が使用中）で、
+この種の複数テレメトリ構造には対応できないため、スキーマを拡張した。
+
+### `telemetry_ids` スキーマ（後方互換）
+
+`load_format(norad)` が返すJSONに、従来の `fields`（フラット・単一構造）に加えて、
+**テレメトリIDをキーにした `telemetry_ids` マッピング**を新たに置けるようにした:
+
+```json
+{
+  "norad": 68795,
+  "name": "OrigamiSat-2",
+  "callsign": "JS1YRU",
+  "telemetry_ids": {
+    "65":  { "label": "ID65 (RasPi/カメラ制御 HK)", "fields": [...] },
+    "100": { "label": "ID100 (ADCS基板 HK)",        "fields": [...] },
+    "130": { "label": "ID130 (ADCS基板 HK詳細)",     "fields": [...] }
+  }
+}
+```
+
+`decode_telemetry()`（[decoder.py:206](../src/comms/telemetry/decoder.py:206)）は、
+フォーマットに `telemetry_ids` があれば **payload[2]（この通信プロトコルの共通ヘッダーに
+おける「テレメトリID」バイト）** を読み、対応するIDの `fields` でデコードする。
+`telemetry_ids` が無い（＝従来のフラット`fields`のみ、またはフォーマット自体が無い）場合は
+今まで通りの単一 `fields` デコード経路にフォールバックする——**既存6衛星（LilacSat-2等）の
+JSONは無変更で動作継続**。`get_telemetry_id_defs(norad)`（[decoder.py:191](../src/comms/telemetry/decoder.py:191)）
+は `telemetry_ids` の有無だけを判定するヘルパーで、UI側が「このタブを選択可能にしてよいか」
+を実際のフレーム受信前に判断するのに使う（後述）。
+
+新たに `float64_be`（`>d`、8バイトdouble）を `_STRUCT_MAP` に追加した。ID130の
+ADCS内部時刻（ユリウス日）・衛星位置速度（ECEF、m/m/s）がdouble型のため必要になった。
+
+### `TelemetryField.is_integer`（2026-09-13 追加、表示フォーマット用）
+
+`_decode_field()`は各フィールドについて `is_integer = (ftype がfloat32_be/float64_be以外) and (scale == 1.0)`
+を計算して返すようになった。整数型（uint8/int8/uint16/uint32等）かつスケール未適用のフィールド
+（パケット長・各種ステータスバイト・カウンタ等）は本来ちょうど整数値になるため、UI側
+（[telemetry_tab.py:1046](../src/ui/telemetry_tab.py:1046)）がこれを見て「204」のように整数表示
+し、`204.0000`のような不要な小数点以下ゼロを出さないようにする。スケールが適用されている
+フィールド（例: SAP電流 = 11.764 × DATA）やfloat32/float64型のフィールドは対象外で、従来通り
+値の大きさに応じた小数フォーマット（1000以上はカンマ区切り小数2桁、1以上は小数4桁、それ未満は
+小数6桁）を使う。
+
+### 「全項目デコード結果」タブ（入れ子タブ構造）
+
+「受信フレーム」表示領域を`QTabWidget`（`self._log_tabs`、[telemetry_tab.py:286](../src/ui/telemetry_tab.py:286)）
+で2枚のタブに分割した:
+
+```
+テレメトリータブ
+└─ [受信フレーム] [全項目デコード結果]        ← 外側タブ（self._log_tabs）
+                    │
+                    └─ [ID65] [ID100] [ID130]  ← 内側タブ（self._decode_id_tabs）
+                         └─ 「項目」/「値」の2列テーブル
+```
+
+- **「受信フレーム」タブ**: 従来の4列テーブル（`self._table`）をそのまま`self._raw_page`
+  に載せただけで、挙動・見た目は無変更
+- **「全項目デコード結果」タブ**: `_rebuild_decode_tabs(norad)`（[telemetry_tab.py:983](../src/ui/telemetry_tab.py:983)）
+  が、`set_satellite()`（main_windowから衛星リスト選択時に呼ばれる公開API）経由で衛星が
+  切り替わるたびに、`get_telemetry_id_defs(norad)` の結果から内側タブを作り直す。
+  **フレームを一度も受信していない時点でも**、JSON定義から項目名（ラベル）だけを先に
+  並べたテーブルを構築し、値欄は「—」で初期化する。`telemetry_ids`を持たない衛星
+  （LilacSat-2等、旧フラット`fields`形式のみの衛星や、フォーマット自体が無い衛星）では
+  外側タブの「全項目デコード結果」自体を`setTabEnabled(False)`でグレーアウトする
+- **値の更新**: `_update_decode_tab(tf)`（[telemetry_tab.py:1026](../src/ui/telemetry_tab.py:1026)）
+  が`_on_ax25_frame()`から毎フレーム呼ばれ、`tf.telemetry_id`に対応する内側タブの該当行
+  だけを最新値に上書きする（テーブルを作り直さない、ライブ更新）。`tf.norad`が
+  `_rebuild_decode_tabs()`時点の衛星と一致しない場合（例: Favoriteグループ表示中に
+  別衛星のフレームが紛れ込んだ場合）は無視する
+- **gr-satellitesモードでは常にサブタブ非表示**: gr-satellitesは自前で人間可読テキストに
+  変換して`_append_row()`に渡す設計（[telemetry_tab.py:793](../src/ui/telemetry_tab.py:793)
+  付近の`"-> Packet from"`パース）のため、この機能の対象外。`_on_mode_changed()`で
+  `self._log_tabs.tabBar().setVisible(not is_gr)`によりタブバー自体を隠し、gr-satellites
+  モードでは今まで通り単一テーブルに見えるようにしている
+
+### rawプレビューの切り詰め表示（2026-09-13 追加）
+
+`summary()`（[decoder.py:96](../src/comms/telemetry/decoder.py:96)）の`[raw]`分岐
+（フォーマット未対応、またはそのIDが`telemetry_ids`に定義されていない場合）は元々
+`raw_hex[:40]`（16進数40文字＝20バイト）だけを返しており、**207バイトのフレームでも
+20バイトの短いフレームでも同じ見た目**になり、「切り詰められている」ことが画面から
+分からないという問題があった。実際に受信したフレーム全体は`raw_hex`プロパティ自体には
+保持されており、`telemetry_log`テーブルにも全バイトが保存されている（表示だけが省略）。
+
+切り詰めが実際に発生した場合（`raw_hex`の長さが40文字を超える場合）のみ、末尾に
+`(40/207 hex chars — rest omitted)`（日本語: `（40/207文字を表示、以下省略）`）を追加する
+ようにした。「207」はハードコードではなく、その受信フレーム自身の`len(raw_hex)`から
+毎回動的に計算される（衛星・テレメトリIDによってフレーム長は異なるため）。
+
+### OrigamiSat-2（NORAD 68795）フォーマットファイル
+
+[`src/data/telemetry_formats/68795.json`](../src/data/telemetry_formats/68795.json)
+を新規作成。ORI-2-0027-OPR仕様書に基づき **ID65・ID100・ID130を実装**。ID130は
+実受信フレーム（2026-09-13、コールサインJS1YRU、SDR受信）で以下の物理的妥当性を確認済み:
+
+- 姿勢クォータニオン(x,y,z,w)の大きさが≈1.000（単位クォータニオンとして正しい）
+- 衛星位置ベクトルの大きさが≈6900km（地球半径6371km＋打上げ資料記載の軌道高度540kmと一致）
+- 衛星速度ベクトルの大きさが≈7.6km/s（LEOの周回速度として妥当）
+
+ID65・ID100は仕様書通りに実装したが、実フレームでの数値検証はまだ行っていない。
+
+**ID01（MOBC HK）は意図的に未実装**: 仕様書のTable8（ID01データ部の内訳）に、
+byte24が「RXマイコン再起動回数」（3.1.1.7項）と「各機器電源状態」（3.1.1.9項、byte24〜26）
+の2箇所で重複して割り当てられており、かつbyte22がどの項目にも割り当てられていない、
+という内部矛盾が仕様書自体にある（PDF原本を直接確認済み、こちらの読み取りミスではない）。
+実受信フレームでの裏付けが取れる、または版元に確認が取れるまでは推測でオフセットを
+決めず未実装のままにしている。
+
+**LilacSat-2（NORAD 40908）は今回のスキーマ拡張の対象外**: 既存の`40908.json`は
+フィールド定義が「コミュニティ文書を参考にした未検証の推測値」（ファイル内の`note`参照）
+であり、実際に受信して数値を検証してから`telemetry_ids`形式への移行を検討する方針
+（2026-09-13、ユーザー判断）。`get_telemetry_id_defs()`は`telemetry_ids`キーの有無だけを
+見るため、この衛星は自動的に「全項目デコード結果」タブ非対応のまま（旧`fields`ベースの
+一行サマリー表示は従来通り動作する）。
+
+### テスト
+
+[`tests/test_telemetry_decoder.py`](../tests/test_telemetry_decoder.py)に新規追加
+（ネットワーク不要）。ID130実フレームのデコード結果の物理的妥当性チェック
+（クォータニオン正規化・軌道半径）、`telemetry_ids`と旧`fields`形式の判別、
+rawサマリーの切り詰め表示の有無、を検証する。
