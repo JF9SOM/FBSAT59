@@ -171,11 +171,26 @@ jobs:
           New-Item -ItemType Directory -Force -Path $FLAT | Out-Null
 
           # Clone ft8_lib source
-          try {
-            git clone --depth 1 --branch "$env:FT8LIB_TAG" `
-              https://github.com/kgoba/ft8_lib.git ft8lib-src 2>$null
-          } catch {
+          #
+          # git exiting non-zero does not raise a PowerShell terminating
+          # exception, so a try/catch around it does nothing useful -- the
+          # catch block never runs, execution falls straight through, and
+          # the next step (Push-Location) fails on a directory that was
+          # never created. Same class of bug as the gcc $LASTEXITCODE
+          # checks below; this one just hadn't been caught yet (surfaced
+          # 2026-09-14 as a scheduled-run failure with no visible git
+          # error, because stderr was also being discarded to $null).
+          # $LASTEXITCODE is checked explicitly instead, and stderr is no
+          # longer discarded so a genuine failure is visible in the log.
+          git clone --depth 1 --branch "$env:FT8LIB_TAG" `
+            https://github.com/kgoba/ft8_lib.git ft8lib-src
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Branch/tag clone failed, falling back to default branch"
             git clone --depth 1 https://github.com/kgoba/ft8_lib.git ft8lib-src
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "git clone failed (exit code $LASTEXITCODE)"
+              exit 1
+            }
           }
 
           Push-Location ft8lib-src
