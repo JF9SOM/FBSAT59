@@ -1090,6 +1090,25 @@ class _SdrSettingsPanel(QWidget):
         dev_row.addWidget(self._enum_btn)
         dev_form.addRow(_("Device:"), dev_row)
 
+        self._remote_discovery_chk = QCheckBox(_("Enable Remote SDR discovery"))
+        self._remote_discovery_chk.setChecked(True)
+        self._remote_discovery_chk.setToolTip(
+            _(
+                "Search the LAN for SoapySDR servers (SSDP / Bonjour) and allow\n"
+                "connecting to Remote SDR hosts. SoapySDR runs this search on\n"
+                "every SDR connection, local devices included — if a reachable\n"
+                "server on your network never answers properly, that search can\n"
+                "hang every SDR connection indefinitely. Turn this off if that\n"
+                "happens; Remote SDR (including any added hosts below) will be\n"
+                "unavailable until it is turned back on.\n"
+                "Takes effect after restarting the app."
+            )
+        )
+        dev_form.addRow("", self._remote_discovery_chk)
+        _remote_discovery_hint = QLabel(_("(takes effect after restarting the app)"))
+        _remote_discovery_hint.setStyleSheet("color: gray; font-size: 10px;")
+        dev_form.addRow("", _remote_discovery_hint)
+
         remote_row = QHBoxLayout()
         self._add_remote_btn = QPushButton(_("Add Remote Host…"))
         self._add_remote_btn.setToolTip(
@@ -1805,6 +1824,11 @@ class _SdrSettingsPanel(QWidget):
             "bias_tee": self._bias_tee_chk.isChecked() if hasattr(self, "_bias_tee_chk") else False,
             "iq_save_dir": self._iq_dir_edit.text() if hasattr(self, "_iq_dir_edit") else "",
             "remote_hosts": self._remote_hosts,
+            "enable_remote_discovery": (
+                self._remote_discovery_chk.isChecked()
+                if hasattr(self, "_remote_discovery_chk")
+                else True
+            ),
         }
 
     def load(self, data: dict[str, object]) -> None:
@@ -1880,6 +1904,8 @@ class _SdrSettingsPanel(QWidget):
         if isinstance(raw_remote_hosts, list):
             self._remote_hosts = [dict(h) for h in raw_remote_hosts if isinstance(h, dict)]
             self._rebuild_combo()
+
+        self._remote_discovery_chk.setChecked(bool(data.get("enable_remote_discovery", True)))
 
 
 def _list_pactl_targets(kind: str) -> list[tuple[str, str]]:

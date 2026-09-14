@@ -104,6 +104,91 @@ if _hamlib_user_dir.exists():
     if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
         os.add_dll_directory(_hamlib_user_str)
 
+
+# Whether the user has disabled Remote SDR (SoapyRemote) auto-discovery in
+# SDR Settings. SoapySDR::Device::make()/enumerate() always asks EVERY loaded
+# module for candidate devices, regardless of the requested driver — so the
+# "remote" module's findRemote() runs its SSDP + mDNS/Bonjour LAN discovery on
+# every single SoapySDR call, including opening a plain local RTL-SDR. If a
+# reachable SoapyRemote server on the LAN never completes that exchange (e.g.
+# a server with no SDR attached), the discovery blocks forever and every SDR
+# operation in the app hangs with it (diagnosed via lldb, 2026-09-14: threads
+# stuck in SoapyMDNSEndpoint::getServerURLs()/SoapySSDPEndpoint::handlerLoop()
+# under SoapySDR::Device::make()). SoapySDR's public API has no per-call
+# opt-out for this, so the only way to stop it is to keep the "remote" module
+# out of SOAPY_SDR_PLUGIN_PATH entirely — which also means manually-added
+# Remote SDR hosts stop working while this is off (by design; see SDR
+# Settings). Read once, here, before any SoapySDR/Qt import; toggling the
+# checkbox only takes effect on the next launch since SoapySDR never re-scans
+# its plugin path mid-process.
+def _remote_discovery_enabled() -> bool:
+    try:
+        import json
+        import sqlite3
+
+        from data.database import get_db_path
+
+        db_path = get_db_path()
+        if not db_path.exists():
+            return True
+        conn = sqlite3.connect(str(db_path))
+        try:
+            row = conn.execute(
+                "SELECT value FROM app_settings WHERE key = 'sdr_settings'"
+            ).fetchone()
+        finally:
+            conn.close()
+        if not row or not row[0]:
+            return True
+        return bool(json.loads(row[0]).get("enable_remote_discovery", True))
+    except Exception:
+        return True
+
+
+_REMOTE_DISCOVERY_ENABLED = _remote_discovery_enabled()
+
+
+def _soapy_modules_dir_excluding_remote(src_dir: Path) -> Path | None:
+    """Mirror src_dir into a cache dir, omitting SoapyRemote's module file.
+
+    Called only when the user has switched Remote SDR discovery off. Copies
+    (rather than symlinks, for Windows portability) every module file except
+    the one implementing "remote" (libremoteSupport.so / remoteSupport.dll),
+    skipping files already up to date so this is cheap on repeat launches.
+    """
+    try:
+        import shutil
+
+        from platformdirs import user_cache_dir
+
+        cache_dir = Path(user_cache_dir("fbsat59", "fbsat59")) / "soapy_modules_no_remote"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        wanted = {
+            p.name: p
+            for p in src_dir.iterdir()
+            if p.is_file() and "remotesupport" not in p.name.lower()
+        }
+        for stale in cache_dir.iterdir():
+            if stale.name not in wanted:
+                stale.unlink(missing_ok=True)
+        for name, src in wanted.items():
+            dest = cache_dir / name
+            if not dest.exists() or dest.stat().st_mtime < src.stat().st_mtime:
+                shutil.copy2(src, dest)
+        return cache_dir
+    except Exception:
+        return None
+
+
+def _soapy_plugin_path_for(modules_dir: Path) -> str:
+    """Return modules_dir as-is, or a Remote-SDR-excluded copy of it."""
+    if not _REMOTE_DISCOVERY_ENABLED:
+        filtered = _soapy_modules_dir_excluding_remote(modules_dir)
+        if filtered is not None:
+            return str(filtered)
+    return str(modules_dir)
+
+
 # Windows frozen bundle: tell SoapySDR where to find device-module DLLs.
 # Must be set before any 'import SoapySDR' occurs.
 # Force-override any pre-existing SOAPY_SDR_PLUGIN_PATH (e.g. from PothosSDR
@@ -113,7 +198,7 @@ if _hamlib_user_dir.exists():
 if sys.platform == "win32" and getattr(sys, "frozen", False):
     _soapy_modules = Path(getattr(sys, "_MEIPASS", "")) / "soapy_modules"
     if _soapy_modules.exists():
-        os.environ["SOAPY_SDR_PLUGIN_PATH"] = str(_soapy_modules)
+        os.environ["SOAPY_SDR_PLUGIN_PATH"] = _soapy_plugin_path_for(_soapy_modules)
     # Add _internal/ to DLL search path so rtlsdrSupport.dll (in soapy_modules/)
     # can find SoapySDR.dll and rtlsdr.dll at load time.
     _mei = Path(getattr(sys, "_MEIPASS", ""))
@@ -159,7 +244,9 @@ if (
         os.environ["PATH"] = str(_installed_internal) + os.pathsep + os.environ.get("PATH", "")
         _borrowed_modules = _installed_internal / "soapy_modules"
         if _borrowed_modules.exists():
-            os.environ.setdefault("SOAPY_SDR_PLUGIN_PATH", str(_borrowed_modules))
+            os.environ.setdefault(
+                "SOAPY_SDR_PLUGIN_PATH", _soapy_plugin_path_for(_borrowed_modules)
+            )
 
 # Windows subprocess enumerate worker.
 # SdrDevice.enumerate() on Windows spawns this process with --_gpredict_soapy_enum
@@ -246,7 +333,7 @@ if sys.platform == "linux" and getattr(sys, "frozen", False):
 if sys.platform == "darwin" and getattr(sys, "frozen", False):
     _soapy_modules_macos = Path(getattr(sys, "_MEIPASS", "")) / "soapy_modules"
     if _soapy_modules_macos.exists():
-        os.environ["SOAPY_SDR_PLUGIN_PATH"] = str(_soapy_modules_macos)
+        os.environ["SOAPY_SDR_PLUGIN_PATH"] = _soapy_plugin_path_for(_soapy_modules_macos)
 
 # macOS source checkout (NOT frozen): point SoapySDR at its real module
 # directory.  The dev venv is created from radioconda's Python
@@ -273,7 +360,7 @@ if (
         _soapy_mod_candidates.extend(sorted(_glob_soapy.glob(f"{_root}/lib/SoapySDR/modules*")))
     for _cand in _soapy_mod_candidates:
         if os.path.isdir(_cand) and any(f.endswith((".so", ".dylib")) for f in os.listdir(_cand)):
-            os.environ["SOAPY_SDR_PLUGIN_PATH"] = _cand
+            os.environ["SOAPY_SDR_PLUGIN_PATH"] = _soapy_plugin_path_for(Path(_cand))
             break
 
 # End-user macOS .app: expose Homebrew's Python site-packages (SoapySDR,
