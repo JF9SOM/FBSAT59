@@ -852,22 +852,7 @@ def main() -> int:
     if splash is not None:
         splash.finish(window)
 
-    exit_code = app.exec()
-
-    # Relaunch for a setting that only takes effect at startup (currently
-    # just "Enable Remote SDR discovery" -- see MainWindow._restart_app()).
-    # window.close() already ran the normal closeEvent() cleanup before the
-    # event loop exited, so it is safe to replace this process image now.
-    if getattr(window, "restart_requested", False):
-        logger.info("Restarting to apply a startup-only setting change")
-        python = sys.executable
-        # Frozen: sys.argv[0] duplicates sys.executable already; dev checkout
-        # (`python src/main.py`): sys.argv[0] is the script path and must be
-        # kept, or execv would launch a bare interpreter with no script.
-        args = [python] + (sys.argv[1:] if getattr(sys, "frozen", False) else sys.argv)
-        os.execv(python, args)
-
-    return exit_code
+    return app.exec()
 
 
 if __name__ == "__main__":

@@ -658,11 +658,6 @@ class MainWindow(QMainWindow):
             rig_state:        shared RigWebState (written every tick for mobile UI)
         """
         super().__init__()
-        # Set by _restart_app() when a setting that only takes effect at
-        # startup (e.g. Remote SDR discovery) was changed and accepted —
-        # checked in main.py after app.exec() returns to decide whether to
-        # os.execv() a fresh process instead of just exiting.
-        self.restart_requested: bool = False
         self._conn = conn
         self._tle_manager = tle_manager
         self._engine = engine
@@ -6499,21 +6494,24 @@ class MainWindow(QMainWindow):
         """Relaunch the whole process to apply a startup-only setting.
 
         Only the Remote SDR discovery toggle uses this today (SoapySDR never
-        re-scans SOAPY_SDR_PLUGIN_PATH mid-process, see main.py). Closing this
-        window runs the normal closeEvent() cleanup (rig/rotator disconnect,
-        scheduler/web server shutdown) and, with the default
-        quitOnLastWindowClosed, ends the Qt event loop — main.py then checks
-        restart_requested after app.exec() returns and os.execv()s a fresh
-        process, so hardware/ports are released before the relaunch rather
-        than skipped by an abrupt re-exec from here.
+        re-scans SOAPY_SDR_PLUGIN_PATH mid-process, see main.py). Reuses the
+        same core.app_restart.restart_application() already proven for the
+        language-switch restart — it starts a genuinely new, detached
+        process (a different PID) before quitting this one, which matters
+        here specifically: an earlier os.execv()-based version of this
+        replaced the process image in place, keeping the same PID, so the
+        new process's single-instance QLockFile check saw that PID already
+        "holding" the lock and refused to start at all ("FBSAT59 is already
+        running", 2026-09-14).
         """
+        from core.app_restart import restart_application
+
         QMessageBox.information(
             self,
             _("Restarting"),
             _("FBSAT59 will now restart to apply the Remote SDR discovery setting."),
         )
-        self.restart_requested = True
-        self.close()
+        restart_application()
 
     def _load_rig_settings(self) -> None:
         """Load Rig 1 and Rig 2 settings from the DB and instantiate controllers.
