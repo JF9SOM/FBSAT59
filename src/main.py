@@ -244,9 +244,15 @@ if (
         os.environ["PATH"] = str(_installed_internal) + os.pathsep + os.environ.get("PATH", "")
         _borrowed_modules = _installed_internal / "soapy_modules"
         if _borrowed_modules.exists():
-            os.environ.setdefault(
-                "SOAPY_SDR_PLUGIN_PATH", _soapy_plugin_path_for(_borrowed_modules)
-            )
+            if "SOAPY_SDR_PLUGIN_PATH" in os.environ:
+                # See the matching darwin block above: a pre-set value must
+                # still be filtered when Remote SDR discovery is off.
+                if not _REMOTE_DISCOVERY_ENABLED:
+                    os.environ["SOAPY_SDR_PLUGIN_PATH"] = _soapy_plugin_path_for(
+                        Path(os.environ["SOAPY_SDR_PLUGIN_PATH"])
+                    )
+            else:
+                os.environ["SOAPY_SDR_PLUGIN_PATH"] = _soapy_plugin_path_for(_borrowed_modules)
 
 # Windows subprocess enumerate worker.
 # SdrDevice.enumerate() on Windows spawns this process with --_gpredict_soapy_enum
@@ -348,20 +354,34 @@ if sys.platform == "darwin" and getattr(sys, "frozen", False):
 # built-in path, then falls through to ours).  Non-frozen counterpart of the
 # darwin frozen block above; the shipped .app never runs it (frozen is True
 # there).  Diagnosed 2026-09-10.
-if (
-    sys.platform == "darwin"
-    and not getattr(sys, "frozen", False)
-    and "SOAPY_SDR_PLUGIN_PATH" not in os.environ
-):
-    import glob as _glob_soapy
+if sys.platform == "darwin" and not getattr(sys, "frozen", False):
+    if "SOAPY_SDR_PLUGIN_PATH" in os.environ:
+        # Something upstream of us already set this -- e.g. a developer's own
+        # shell `export`, left over from manually testing an extracted bundle
+        # (diagnosed 2026-09-14: a stray SOAPY_SDR_PLUGIN_PATH from the
+        # 2026-08-17 bundle fix was still live in the terminal session and
+        # silently pointed at a *different*, unfiltered modules directory,
+        # defeating the "Enable Remote SDR discovery" toggle below even
+        # though it correctly built its filtered copy). Remote-discovery-off
+        # must win over any such pre-set value, not just our own autodetected
+        # one, so re-filter whatever is already there instead of leaving it
+        # untouched.
+        if not _REMOTE_DISCOVERY_ENABLED:
+            os.environ["SOAPY_SDR_PLUGIN_PATH"] = _soapy_plugin_path_for(
+                Path(os.environ["SOAPY_SDR_PLUGIN_PATH"])
+            )
+    else:
+        import glob as _glob_soapy
 
-    _soapy_mod_candidates: list[str] = []
-    for _root in (sys.prefix, sys.base_prefix, "/opt/homebrew", "/usr/local"):
-        _soapy_mod_candidates.extend(sorted(_glob_soapy.glob(f"{_root}/lib/SoapySDR/modules*")))
-    for _cand in _soapy_mod_candidates:
-        if os.path.isdir(_cand) and any(f.endswith((".so", ".dylib")) for f in os.listdir(_cand)):
-            os.environ["SOAPY_SDR_PLUGIN_PATH"] = _soapy_plugin_path_for(Path(_cand))
-            break
+        _soapy_mod_candidates: list[str] = []
+        for _root in (sys.prefix, sys.base_prefix, "/opt/homebrew", "/usr/local"):
+            _soapy_mod_candidates.extend(sorted(_glob_soapy.glob(f"{_root}/lib/SoapySDR/modules*")))
+        for _cand in _soapy_mod_candidates:
+            if os.path.isdir(_cand) and any(
+                f.endswith((".so", ".dylib")) for f in os.listdir(_cand)
+            ):
+                os.environ["SOAPY_SDR_PLUGIN_PATH"] = _soapy_plugin_path_for(Path(_cand))
+                break
 
 # End-user macOS .app: expose Homebrew's Python site-packages (SoapySDR,
 # its device modules, etc.) to the frozen interpreter as a last-resort
