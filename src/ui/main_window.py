@@ -658,6 +658,11 @@ class MainWindow(QMainWindow):
             rig_state:        shared RigWebState (written every tick for mobile UI)
         """
         super().__init__()
+        # Set by _restart_app() when a setting that only takes effect at
+        # startup (e.g. Remote SDR discovery) was changed and accepted —
+        # checked in main.py after app.exec() returns to decide whether to
+        # os.execv() a fresh process instead of just exiting.
+        self.restart_requested: bool = False
         self._conn = conn
         self._tle_manager = tle_manager
         self._engine = engine
@@ -6487,6 +6492,28 @@ class MainWindow(QMainWindow):
         dialog = RigSettingsDialog(self._conn, parent=self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self._load_rig_settings()
+            if dialog.remote_discovery_changed:
+                self._restart_app()
+
+    def _restart_app(self) -> None:
+        """Relaunch the whole process to apply a startup-only setting.
+
+        Only the Remote SDR discovery toggle uses this today (SoapySDR never
+        re-scans SOAPY_SDR_PLUGIN_PATH mid-process, see main.py). Closing this
+        window runs the normal closeEvent() cleanup (rig/rotator disconnect,
+        scheduler/web server shutdown) and, with the default
+        quitOnLastWindowClosed, ends the Qt event loop — main.py then checks
+        restart_requested after app.exec() returns and os.execv()s a fresh
+        process, so hardware/ports are released before the relaunch rather
+        than skipped by an abrupt re-exec from here.
+        """
+        QMessageBox.information(
+            self,
+            _("Restarting"),
+            _("FBSAT59 will now restart to apply the Remote SDR discovery setting."),
+        )
+        self.restart_requested = True
+        self.close()
 
     def _load_rig_settings(self) -> None:
         """Load Rig 1 and Rig 2 settings from the DB and instantiate controllers.

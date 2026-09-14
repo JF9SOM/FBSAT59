@@ -2322,6 +2322,15 @@ class RigSettingsDialog(QDialog):
         self._sdr_panel = _SdrSettingsPanel()
         self._soundcard_panel = _SoundCardPanel()
 
+        # Snapshot of "Enable Remote SDR discovery" as loaded, compared against
+        # the saved value in _save_settings() -- the setting only takes effect
+        # on the next launch (SoapySDR never re-scans its plugin path
+        # mid-process), so the caller (MainWindow._on_rig_settings()) restarts
+        # the app when this flips instead of leaving the change silently
+        # pending until the user happens to quit and relaunch on their own.
+        self._initial_remote_discovery: bool = True
+        self.remote_discovery_changed: bool = False
+
         self._setup_ui()
         self._load_settings()
 
@@ -2490,7 +2499,9 @@ class RigSettingsDialog(QDialog):
         ).fetchone()
         if row_sdr and row_sdr["value"]:
             with contextlib.suppress(json.JSONDecodeError, TypeError):
-                self._sdr_panel.load(json.loads(row_sdr["value"]))
+                sdr_cfg = json.loads(row_sdr["value"])
+                self._sdr_panel.load(sdr_cfg)
+                self._initial_remote_discovery = bool(sdr_cfg.get("enable_remote_discovery", True))
 
         # Sync initial state: fire assignment signal so Rig tabs reflect loaded SDR setting
         self._sdr_panel._on_assignment_changed()
@@ -2544,6 +2555,9 @@ class RigSettingsDialog(QDialog):
             (json.dumps(s2),),
         )
         s_sdr = self._sdr_panel.save()
+        self.remote_discovery_changed = (
+            bool(s_sdr.get("enable_remote_discovery", True)) != self._initial_remote_discovery
+        )
         self._conn.execute(
             "INSERT OR REPLACE INTO app_settings (key, value, updated_at) "
             "VALUES ('sdr_settings', ?, CURRENT_TIMESTAMP)",
