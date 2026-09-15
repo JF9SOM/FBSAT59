@@ -193,6 +193,11 @@ _DIAL_FEEDBACK_SANITY_HZ = 200_000.0
 # is far too generous to ever reject a genuine reading.
 _DIAL_FEEDBACK_CROSSCHECK_HZ = 1000.0
 
+# Allowed values for the Rig CAT / Doppler "Cycle" dropdown
+# (radio_control_widget.py, spanning the Rig 1/Rig 2 rows) -- must match the
+# ms values added to _cycle_combo in RadioControlWidget._setup_ui().
+_CYCLE_CHOICES_MS = frozenset({2000, 1000, 500, 100})
+
 # Allowed values for the Rotator "Cycle" dropdown (radio_control_widget.py,
 # next to Connect Rotator) -- must match the ms values added to
 # _rotator_cycle_combo in RadioControlWidget._setup_ui().
@@ -7111,23 +7116,25 @@ class MainWindow(QMainWindow):
 
         Controls DopplerWorker's cycle interval, not self._timer (the 1s
         display-refresh timer is fixed and no longer user-configurable —
-        see __init__).
+        see __init__). Defaults to 1000ms when unset or when the stored
+        value isn't one of the combo's four allowed choices.
         """
+        ms = 1000
         try:
             row = self._conn.execute(
                 "SELECT value FROM app_settings WHERE key = 'rig_cycle_ms'"
             ).fetchone()
-            if row is not None:
+            if row is not None and int(row["value"]) in _CYCLE_CHOICES_MS:
                 ms = int(row["value"])
-                ms = max(10, min(10000, ms))
-                self._doppler_worker.set_interval(ms / 1000.0)
-                self._radio_control.set_cycle(ms)
         except Exception as exc:
             logger.warning("Failed to load cycle setting: %s", exc)
+        self._doppler_worker.set_interval(ms / 1000.0)
+        self._radio_control.set_cycle(ms)
 
     def _on_cycle_changed(self, ms: int) -> None:
-        """Update DopplerWorker's interval and save to DB when the Cycle spinbox changes."""
-        ms = max(10, min(10000, ms))
+        """Update DopplerWorker's interval and save to DB when the Cycle combo changes."""
+        if ms not in _CYCLE_CHOICES_MS:
+            return
         self._doppler_worker.set_interval(ms / 1000.0)
         try:
             self._conn.execute(

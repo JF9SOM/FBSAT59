@@ -438,17 +438,23 @@ class RadioControlWidget(QWidget):
         status_grid.addLayout(rig2_row, 1, 1)
 
         # Cycle — spans the two Rig rows, vertically centred
-        self._cycle_spin = QSpinBox()
-        self._cycle_spin.setRange(10, 10000)
-        self._cycle_spin.setSingleStep(10)
-        self._cycle_spin.setValue(1000)
-        self._cycle_spin.setSuffix(_(" ms"))
-        self._cycle_spin.setToolTip(_("Rig CAT / Doppler update interval"))
-        self._cycle_spin.valueChanged.connect(lambda v: self.cycle_changed.emit(v))
+        self._cycle_combo = QComboBox()
+        self._cycle_combo.setToolTip(_("Rig CAT / Doppler update interval"))
+        for label, ms in (
+            (_("2 s"), 2000),
+            (_("1 s"), 1000),
+            (_("0.5 s"), 500),
+            (_("0.1 s"), 100),
+        ):
+            self._cycle_combo.addItem(label, ms)
+        self._cycle_combo.setCurrentIndex(1)  # default: 1 s
+        self._cycle_combo.currentIndexChanged.connect(
+            lambda _idx: self.cycle_changed.emit(self._cycle_combo.currentData())
+        )
         cycle_box = QHBoxLayout()
         cycle_box.setSpacing(4)
         cycle_box.addWidget(QLabel(_("Cycle:")))
-        cycle_box.addWidget(self._cycle_spin)
+        cycle_box.addWidget(self._cycle_combo)
         status_grid.addLayout(cycle_box, 0, 2, 2, 1, Qt.AlignmentFlag.AlignVCenter)
 
         # Row 2 — Rotator status + Connect Rotator + South Init
@@ -779,10 +785,13 @@ class RadioControlWidget(QWidget):
         self._south_init_cb.blockSignals(False)
 
     def set_cycle(self, ms: int) -> None:
-        """Set the Cycle spin box value externally without emitting a signal."""
-        self._cycle_spin.blockSignals(True)
-        self._cycle_spin.setValue(max(10, min(10000, ms)))
-        self._cycle_spin.blockSignals(False)
+        """Set the Cycle combo box externally without emitting a signal."""
+        idx = self._cycle_combo.findData(ms)
+        if idx < 0:
+            idx = 1  # fall back to the 1 s default if the stored value is unknown
+        self._cycle_combo.blockSignals(True)
+        self._cycle_combo.setCurrentIndex(idx)
+        self._cycle_combo.blockSignals(False)
 
     def set_rotator_cycle(self, ms: int) -> None:
         """Set the Rotator Cycle combo box externally without emitting a signal."""

@@ -1837,29 +1837,28 @@ class TestOverwriteProtection:
 
 
 class TestCycleSetting:
-    """Cycle スピンボックスと QTimer 連携テスト。"""
+    """Cycle プルダウンと QTimer 連携テスト。"""
 
-    def test_cycle_spin_exists_and_default(self, qtbot, db) -> None:
-        """RadioControlWidget に _cycle_spin が存在しデフォルト 1000ms。"""
+    def test_cycle_combo_exists_and_default(self, qtbot, db) -> None:
+        """RadioControlWidget に _cycle_combo が存在しデフォルト 1000ms。"""
         from ui.radio_control_widget import RadioControlWidget
 
         w = RadioControlWidget()
         qtbot.addWidget(w)
-        assert hasattr(w, "_cycle_spin")
-        assert w._cycle_spin.value() == 1000
+        assert hasattr(w, "_cycle_combo")
+        assert w._cycle_combo.currentData() == 1000
 
-    def test_cycle_spin_range(self, qtbot, db) -> None:
-        """Cycle スピンボックスの範囲が 10〜10000。"""
+    def test_cycle_combo_choices(self, qtbot, db) -> None:
+        """Cycle プルダウンの選択肢が 2000/1000/500/100ms の4つ。"""
         from ui.radio_control_widget import RadioControlWidget
 
         w = RadioControlWidget()
         qtbot.addWidget(w)
-        assert w._cycle_spin.minimum() == 10
-        assert w._cycle_spin.maximum() == 10000
-        assert w._cycle_spin.singleStep() == 10
+        choices = {w._cycle_combo.itemData(i) for i in range(w._cycle_combo.count())}
+        assert choices == {2000, 1000, 500, 100}
 
-    def test_set_cycle_updates_spin(self, qtbot, db) -> None:
-        """set_cycle() がスピンボックスを更新する（シグナル発火なし）。"""
+    def test_set_cycle_updates_combo(self, qtbot, db) -> None:
+        """set_cycle() がプルダウンを更新する（シグナル発火なし）。"""
         from ui.radio_control_widget import RadioControlWidget
 
         w = RadioControlWidget()
@@ -1867,18 +1866,18 @@ class TestCycleSetting:
         received = []
         w.cycle_changed.connect(received.append)
         w.set_cycle(500)
-        assert w._cycle_spin.value() == 500
+        assert w._cycle_combo.currentData() == 500
         assert received == []  # blockSignals により発火しない
 
     def test_cycle_changed_signal_emitted(self, qtbot, db) -> None:
-        """スピンボックス変更時に cycle_changed シグナルが emit される。"""
+        """プルダウン変更時に cycle_changed シグナルが emit される。"""
         from ui.radio_control_widget import RadioControlWidget
 
         w = RadioControlWidget()
         qtbot.addWidget(w)
         received = []
         w.cycle_changed.connect(received.append)
-        w._cycle_spin.setValue(2000)
+        w._cycle_combo.setCurrentIndex(w._cycle_combo.findData(2000))
         assert 2000 in received
 
     def test_cycle_saved_to_db(self, qtbot, db) -> None:
@@ -1913,7 +1912,7 @@ class TestCycleSetting:
         qtbot.addWidget(w)
         assert w._doppler_worker._interval_s == 0.5
         assert w._timer.interval() == 1000
-        assert w._radio_control._cycle_spin.value() == 500
+        assert w._radio_control._cycle_combo.currentData() == 500
 
 
 class TestTuneLockButtons:
