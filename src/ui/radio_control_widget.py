@@ -472,12 +472,12 @@ class RadioControlWidget(QWidget):
         self._rotator_cycle_combo.setToolTip(_("Rotator update interval"))
         for label, ms in (
             (_("5 s"), 5000),
+            (_("2 s"), 2000),
             (_("1 s"), 1000),
             (_("0.5 s"), 500),
-            (_("0.1 s"), 100),
         ):
             self._rotator_cycle_combo.addItem(label, ms)
-        self._rotator_cycle_combo.setCurrentIndex(1)  # default: 1 s
+        self._rotator_cycle_combo.setCurrentIndex(2)  # default: 1 s
         self._rotator_cycle_combo.currentIndexChanged.connect(
             lambda _idx: self.rotator_cycle_changed.emit(self._rotator_cycle_combo.currentData())
         )
@@ -797,7 +797,7 @@ class RadioControlWidget(QWidget):
         """Set the Rotator Cycle combo box externally without emitting a signal."""
         idx = self._rotator_cycle_combo.findData(ms)
         if idx < 0:
-            idx = 1  # fall back to the 1 s default if the stored value is unknown
+            idx = 2  # fall back to the 1 s default if the stored value is unknown
         self._rotator_cycle_combo.blockSignals(True)
         self._rotator_cycle_combo.setCurrentIndex(idx)
         self._rotator_cycle_combo.blockSignals(False)

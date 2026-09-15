@@ -201,7 +201,7 @@ _CYCLE_CHOICES_MS = frozenset({2000, 1000, 500, 100})
 # Allowed values for the Rotator "Cycle" dropdown (radio_control_widget.py,
 # next to Connect Rotator) -- must match the ms values added to
 # _rotator_cycle_combo in RadioControlWidget._setup_ui().
-_ROTATOR_CYCLE_CHOICES_MS = frozenset({5000, 1000, 500, 100})
+_ROTATOR_CYCLE_CHOICES_MS = frozenset({5000, 2000, 1000, 500})
 
 
 def _is_generic_direct_rig(rig: RigController) -> bool:
