@@ -2329,8 +2329,19 @@ class TestSdrRetuneDeadband:
         assert adapter.set_frequency(435_612_000.0) is True
         assert dev.writes == [435_612_000.0]
 
+    def test_default_deadband_is_disabled(self) -> None:
+        """As of 2026-09-15 the deadband defaults to 0 -- every Doppler
+        cycle writes the SDR, since (unlike a mechanical rig's CAT bus) an
+        SDR tuner PLL has no meaningful retune-rate limit. See
+        _SDR_RETUNE_DEADBAND_HZ's docstring for the history."""
+        adapter, dev = self._adapter()
+        for hz in (435_612_000.0, 435_612_010.0, 435_612_020.0):
+            assert adapter.set_frequency(hz) is True
+        assert dev.writes == [435_612_000.0, 435_612_010.0, 435_612_020.0]
+
     def test_small_doppler_drift_suppressed(self) -> None:
         adapter, dev = self._adapter()
+        adapter.set_retune_deadband(200.0)
         adapter.set_frequency(435_612_000.0)
         # 50 Hz per cycle: +50/+100/+150 all stay under the 200 Hz deadband.
         for i in range(1, 4):
@@ -2339,6 +2350,7 @@ class TestSdrRetuneDeadband:
 
     def test_drift_beyond_deadband_writes_once(self) -> None:
         adapter, dev = self._adapter()
+        adapter.set_retune_deadband(200.0)
         adapter.set_frequency(435_612_000.0)
         adapter.set_frequency(435_612_150.0)  # inside
         adapter.set_frequency(435_612_250.0)  # crosses -> written
@@ -2352,6 +2364,7 @@ class TestSdrRetuneDeadband:
         all, and the SDR would drift arbitrarily far off frequency.
         """
         adapter, dev = self._adapter()
+        adapter.set_retune_deadband(200.0)
         adapter.set_frequency(435_612_000.0)
         for i in range(1, 9):
             adapter.set_frequency(435_612_000.0 + 60.0 * i)
@@ -2363,6 +2376,7 @@ class TestSdrRetuneDeadband:
 
     def test_invalidate_forces_next_write(self) -> None:
         adapter, dev = self._adapter()
+        adapter.set_retune_deadband(200.0)
         adapter.set_frequency(435_612_000.0)
         adapter.invalidate_retune_cache()
         # 100 Hz -- the smallest Passband Tune step, well under the deadband.

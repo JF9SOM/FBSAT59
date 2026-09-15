@@ -4517,22 +4517,21 @@ class HamlibRotatorController(RotatorController):
 # ---------------------------------------------------------------------------
 
 
-_SDR_RETUNE_DEADBAND_HZ: float = 200.0
+_SDR_RETUNE_DEADBAND_HZ: float = 0.0
 """Minimum Doppler drift (Hz) that justifies retuning the SDR hardware.
 
-Every hardware retune re-locks the tuner PLL, which breaks phase continuity
-in the sample stream (and, on RTL-SDR, can drop a few samples).  The Doppler
-loop runs once per second, so without a deadband a ten-minute pass costs
-~600 retunes -- and a 1200 baud AX.25 frame takes ~1.7 s, so *every* frame
-was being cut by at least one of them.
-
-Holding still until the drift exceeds this much cuts that by roughly 6x
-(~100 retunes/pass at 435 MHz, ~34 at 145 MHz).  The residual offset is well
-inside what gr-satellites' FLL and SatDump's Costas loops absorb.
-
-Trade-off: while listening to SSB/CW audio through the SDR, up to this much
-residual offset is an audible pitch wobble.  It is inaudible on NFM and
-irrelevant to every digital decoder.  See set_retune_deadband() to change it.
+Historically set to 200 Hz (2026-08-06) on the hypothesis that every
+hardware retune re-locks the tuner PLL and breaks phase continuity in the
+sample stream badly enough to cut 1200 baud AX.25 frames. That effect was
+never actually measured, and unlike a mechanical rig's CAT bus, an SDR's
+tuner PLL has no meaningful limit on retune rate or wear from retuning --
+so the deadband bought (unverified) demodulator robustness at the cost of
+leaving the SDR permanently mistuned by up to this many Hz relative to the
+true Doppler-corrected centre. Reverted to 0 (2026-09-15) after that
+trade-off was judged not worth it for narrowband digital signals (BPSK1200,
+FSK9600), where a constant few-hundred-Hz offset hurts more than an
+occasional brief PLL relock. See set_retune_deadband() to reinstate a
+deadband if retune glitches turn out to matter in practice.
 """
 
 
