@@ -193,6 +193,11 @@ _DIAL_FEEDBACK_SANITY_HZ = 200_000.0
 # is far too generous to ever reject a genuine reading.
 _DIAL_FEEDBACK_CROSSCHECK_HZ = 1000.0
 
+# Allowed values for the Rotator "Cycle" dropdown (radio_control_widget.py,
+# next to Connect Rotator) -- must match the ms values added to
+# _rotator_cycle_combo in RadioControlWidget._setup_ui().
+_ROTATOR_CYCLE_CHOICES_MS = frozenset({5000, 1000, 500, 100})
+
 
 def _is_generic_direct_rig(rig: RigController) -> bool:
     """True for a Direct-mode rig with no dedicated CTCSS path of its own."""
@@ -901,6 +906,7 @@ class MainWindow(QMainWindow):
         self._radio_control.ctcss_activate_requested.connect(self._on_ctcss_activate)
         self._radio_control.rotator_connected.connect(self._on_rotator_connected)
         self._radio_control.south_init_changed.connect(self._on_south_init_changed)
+        self._radio_control.rotator_cycle_changed.connect(self._on_rotator_cycle_changed)
         self._radio_control.rotator_manual_goto.connect(self._on_rotator_manual_goto)
         self._radio_control.rotator_manual_stop.connect(self._on_rotator_manual_stop)
         self._radio_control.rotator_manual_park.connect(self._on_rotator_manual_park)
@@ -951,6 +957,16 @@ class MainWindow(QMainWindow):
         self._timer.timeout.connect(self._on_tick)
         self._timer.start(1000)
 
+        # Rotator AZ/EL updates run on their own timer, decoupled from
+        # self._timer's fixed 1s display refresh, so the "Cycle" dropdown
+        # next to Connect Rotator can drive the rotator faster/slower
+        # without touching world-map/radar/dashboard redraw cost. Default
+        # 1000ms preserves the previous fixed-1s behavior; see
+        # _load_rotator_cycle_setting()/_on_rotator_cycle_changed().
+        self._rotator_timer = QTimer(self)
+        self._rotator_timer.timeout.connect(self._rotator_tick)
+        self._rotator_timer.start(1000)
+
         # Doppler correction + rig CAT sends run on their own precise
         # thread, independent of the Qt main thread's own business — see
         # core/doppler_worker.py. The user-facing "Cycle" setting now
@@ -958,6 +974,7 @@ class MainWindow(QMainWindow):
         self._doppler_worker = DopplerWorker(self._doppler_cycle)
         self._doppler_worker.start()
         self._load_cycle_setting()
+        self._load_rotator_cycle_setting()
 
         # Lock (L button) dial feedback: reuses DopplerWorker's generic
         # precise-interval thread (it owns no Doppler-specific state) to
@@ -3429,8 +3446,8 @@ class MainWindow(QMainWindow):
 
                 threading.Thread(target=_eme_rig2_send, daemon=True).start()
 
-        # Rotator tracking — same non-blocking path as regular satellites
-        self._send_to_rotator(obs)
+        # Rotator tracking now runs on its own configurable-interval timer —
+        # see _rotator_tick().
 
     def _update_selected_satellite(self) -> None:
         """Update the observation values and radar view for the currently selected satellite.
@@ -3517,8 +3534,8 @@ class MainWindow(QMainWindow):
             else:
                 self._dashboard_view.update_observation(obs, subpoint=swa, track_data=track)
 
-        # Send AZ/EL to the rotator every tick (same non-blocking pattern as rig).
-        self._send_to_rotator(obs)
+        # Rotator tracking now runs on its own configurable-interval timer —
+        # see _rotator_tick().
 
         self._radio_control.refresh_status()
         self._update_rig_label()
@@ -4380,6 +4397,35 @@ class MainWindow(QMainWindow):
             # sign of a rig-control failure for a user who cannot easily
             # pull fbsat59.log (e.g. testing on someone else's PC).
             sb.showMessage(f"RIG: {msg}", 8000)
+
+    def _rotator_tick(self) -> None:
+        """Compute the current observation and send it to the rotator.
+
+        Runs on self._rotator_timer, at the user-configurable interval set
+        via the "Cycle" dropdown next to Connect Rotator (default 1s,
+        persisted as 'rotator_cycle_ms' — see
+        _load_rotator_cycle_setting()/_on_rotator_cycle_changed()).
+        Deliberately kept minimal (just the obs lookup, no radar/dashboard/
+        panel updates) so it stays cheap even at the fastest 0.1s setting.
+        """
+        if self._selected_norad is None:
+            return
+
+        if self._selected_norad == MOON_ID:
+            if not self._celestial_engine.is_loaded:
+                return
+            loc = self._location_manager.current if self._location_manager else None
+            if loc is None:
+                return
+            obs = self._celestial_engine.observe_moon(
+                loc.latitude_deg, loc.longitude_deg, loc.elevation_m
+            )
+        else:
+            if self._engine is None:
+                return
+            obs = self._engine.observe(self._selected_norad)
+
+        self._send_to_rotator(obs)
 
     def _send_to_rotator(self, obs: Observation | None) -> None:
         """Send AZ/EL from obs to the rotator in a background thread (non-blocking)."""
@@ -7092,6 +7138,38 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             logger.warning("Failed to save cycle setting: %s", exc)
 
+    def _load_rotator_cycle_setting(self) -> None:
+        """Load rotator_cycle_ms from the DB and apply it to self._rotator_timer and the UI.
+
+        Defaults to 1000ms (the previous fixed behavior) when unset or when
+        the stored value isn't one of the combo's four allowed choices.
+        """
+        ms = 1000
+        try:
+            row = self._conn.execute(
+                "SELECT value FROM app_settings WHERE key = 'rotator_cycle_ms'"
+            ).fetchone()
+            if row is not None and int(row["value"]) in _ROTATOR_CYCLE_CHOICES_MS:
+                ms = int(row["value"])
+        except Exception as exc:
+            logger.warning("Failed to load rotator cycle setting: %s", exc)
+        self._rotator_timer.setInterval(ms)
+        self._radio_control.set_rotator_cycle(ms)
+
+    def _on_rotator_cycle_changed(self, ms: int) -> None:
+        """Update self._rotator_timer's interval and save to DB when Rotator Cycle changes."""
+        if ms not in _ROTATOR_CYCLE_CHOICES_MS:
+            return
+        self._rotator_timer.setInterval(ms)
+        try:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('rotator_cycle_ms', ?)",
+                (str(ms),),
+            )
+            self._conn.commit()
+        except Exception as exc:
+            logger.warning("Failed to save rotator cycle setting: %s", exc)
+
     def _on_tx_owner_changed(self, device: object, owner: object) -> None:
         """Update the status bar TX-owner indicator.
 
@@ -8271,6 +8349,7 @@ class MainWindow(QMainWindow):
         # Signal background threads to exit before tearing down other resources.
         self._shutdown_flag.set()
         self._timer.stop()
+        self._rotator_timer.stop()
         self._doppler_worker.stop()
         if self._web_server is not None:
             with contextlib.suppress(Exception):

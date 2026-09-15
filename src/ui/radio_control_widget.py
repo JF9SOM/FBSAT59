@@ -97,6 +97,7 @@ class RadioControlWidget(QWidget):
     rig2_disconnected: Signal = Signal()
     rotator_connected: Signal = Signal()
     south_init_changed: Signal = Signal(bool)
+    rotator_cycle_changed: Signal = Signal(int)  # ms
     # Manual rotator control (GitHub discussion #9): drive the rotator to an
     # operator-chosen AZ/EL without satellite tracking. goto/park put the
     # panel into "manual hold"; resume returns to tracking the selected sat.
@@ -461,11 +462,25 @@ class RadioControlWidget(QWidget):
             )
         )
         self._south_init_cb.toggled.connect(self.south_init_changed.emit)
+        self._rotator_cycle_combo = QComboBox()
+        self._rotator_cycle_combo.setToolTip(_("Rotator update interval"))
+        for label, ms in (
+            (_("5 s"), 5000),
+            (_("1 s"), 1000),
+            (_("0.5 s"), 500),
+            (_("0.1 s"), 100),
+        ):
+            self._rotator_cycle_combo.addItem(label, ms)
+        self._rotator_cycle_combo.setCurrentIndex(1)  # default: 1 s
+        self._rotator_cycle_combo.currentIndexChanged.connect(
+            lambda _idx: self.rotator_cycle_changed.emit(self._rotator_cycle_combo.currentData())
+        )
         rot_ctrl_row = QHBoxLayout()
         rot_ctrl_row.setSpacing(6)
         rot_ctrl_row.addWidget(self._rot_status_label)
         rot_ctrl_row.addStretch()
         rot_ctrl_row.addWidget(self._connect_rot_btn)
+        rot_ctrl_row.addWidget(self._rotator_cycle_combo)
         rot_ctrl_row.addWidget(self._south_init_cb)
         status_grid.addWidget(QLabel(_("Rotator:")), 2, 0)
         status_grid.addLayout(rot_ctrl_row, 2, 1, 1, 2)
@@ -768,6 +783,15 @@ class RadioControlWidget(QWidget):
         self._cycle_spin.blockSignals(True)
         self._cycle_spin.setValue(max(10, min(10000, ms)))
         self._cycle_spin.blockSignals(False)
+
+    def set_rotator_cycle(self, ms: int) -> None:
+        """Set the Rotator Cycle combo box externally without emitting a signal."""
+        idx = self._rotator_cycle_combo.findData(ms)
+        if idx < 0:
+            idx = 1  # fall back to the 1 s default if the stored value is unknown
+        self._rotator_cycle_combo.blockSignals(True)
+        self._rotator_cycle_combo.setCurrentIndex(idx)
+        self._rotator_cycle_combo.blockSignals(False)
 
     def refresh_status(self) -> None:
         """Update all connection status displays (called by timer)."""
