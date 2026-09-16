@@ -4860,6 +4860,18 @@ class SdrRigAdapter(RigController):
         Deliberate retunes must call invalidate_retune_cache() first either
         way — it simply forces the next call to treat the hardware as
         needing a fresh retune, which both paths honor.
+
+        A failed hardware retune in the pipeline-attached branch still
+        updates _last_tuned_hz (unlike the no-pipeline branch below, where
+        a failure deliberately stays uncached so a transient failure near
+        connect() can be retried with the very next call). At this
+        worker's fixed 50ms cadence, a target outside the tuner's range
+        (e.g. an S-band downlink on an RTL-SDR) would otherwise fail and
+        retry the *same doomed frequency* 20 times a second forever --
+        confirmed live (2026-09-16): a continuous setFrequency-failed flood
+        from SoapySDR's R820X driver. Caching the failed value here means
+        it's only retried once the target has actually moved by the margin
+        (e.g. real Doppler drift), not every single cycle.
         """
         if self._sdr_device is None:
             return False
@@ -4868,9 +4880,9 @@ class SdrRigAdapter(RigController):
             if self._last_tuned_hz is None or (
                 abs(freq_hz - self._last_tuned_hz) >= _SDR_HW_RETUNE_MARGIN_HZ
             ):
+                self._last_tuned_hz = freq_hz
                 if not self._sdr_device.set_center_freq(freq_hz):
                     return False
-                self._last_tuned_hz = freq_hz
             self._pipeline.set_doppler_target(freq_hz)
             return True
 

@@ -2455,14 +2455,20 @@ class TestHamlibVersionChecker:
 
 
 class _FakeSdrDevice:
-    """Minimal stand-in recording every accepted set_center_freq() call."""
+    """Minimal stand-in recording every set_center_freq() call.
+
+    `writes` only records *accepted* calls; `attempts` counts every call
+    regardless of outcome, used to distinguish "retried and failed again"
+    from "correctly not retried at all"."""
 
     def __init__(self) -> None:
         self.writes: list[float] = []
+        self.attempts: int = 0
         self.center_freq: float = 0.0
         self.fail_next = False
 
     def set_center_freq(self, freq_hz: float) -> bool:
+        self.attempts += 1
         if self.fail_next:
             self.fail_next = False
             return False
@@ -2661,3 +2667,32 @@ class TestSdrRigAdapterDigitalDopplerTracking:
         assert adapter.set_frequency(435_612_000.0) is False
         assert dev.writes == []
         assert pipeline.targets == []
+
+    def test_failed_hardware_retune_is_not_retried_every_cycle(self) -> None:
+        """Regression guard (2026-09-16, live): a target outside the
+        tuner's range (e.g. an S-band downlink on an RTL-SDR) must not be
+        retried every single call — at the SDR Doppler worker's fixed 50ms
+        cadence that produced a continuous setFrequency-failed flood from
+        SoapySDR's driver."""
+        adapter, dev, _pipeline = self._adapter_with_pipeline()
+        dev.fail_next = True
+        assert adapter.set_frequency(2_244_608_930.0) is False
+        assert dev.attempts == 1
+
+        # A near-identical target on the very next cycle (realistic
+        # ephemeris-driven drift is only a few Hz) must not touch hardware
+        # again — the failed value is now cached as the reference, so this
+        # cycle is treated the same as any other in-margin update (digital
+        # target tracked, hardware left alone -> True), not re-attempted.
+        dev.fail_next = True  # would fail again if (wrongly) attempted
+        assert adapter.set_frequency(2_244_608_918.0) is True
+        assert dev.attempts == 1
+        assert dev.writes == []
+
+        # Only once the target genuinely moves past the margin does this
+        # become eligible for another real attempt.
+        dev.fail_next = False  # never consumed above (attempt was skipped) -- reset for this one
+        far = 2_244_608_930.0 + 60_000.0
+        assert adapter.set_frequency(far) is True
+        assert dev.attempts == 2
+        assert dev.writes == [far]
