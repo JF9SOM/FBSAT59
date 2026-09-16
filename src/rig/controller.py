@@ -4366,7 +4366,8 @@ class HamlibRotatorController(RotatorController):
                 self._rotor_state.is_moving = True
 
     def _lead_target(self, azimuth_deg: float, el_cmd: float) -> tuple[float, float] | None:
-        """Compute the initial catch-up jump target.
+        """Compute a catch-up jump target: the initial jump, or a 0-degree
+        wrap re-entry.
 
         Without a predictor (or if it fails to produce a result), falls back
         to (azimuth_deg, el_cmd) — the current position, i.e. the previous
@@ -4431,7 +4432,11 @@ class HamlibRotatorController(RotatorController):
              live satellite position) and restart timer.
            - Otherwise: return and wait for the next cycle.
         3. Normal tracking: send P command with current satellite AZ/EL each cycle.
-        4. 0-degree wrap (large AZ jump): re-enter catch-up and send P immediately.
+        4. 0-degree wrap (large AZ jump): re-enter catch-up the same way as phase
+           1 — aim ahead via _lead_target() rather than jumping to the live
+           position, since a wrap tends to coincide with the highest
+           azimuth-rate moments of a pass (e.g. a near-zenith TCA), where the
+           live position goes stale almost immediately.
         """
         if not self.is_connected:
             return False
@@ -4506,14 +4511,34 @@ class HamlibRotatorController(RotatorController):
                 )
 
                 if crossed_zero:
+                    # A 0-degree wrap tends to happen exactly during the
+                    # highest-azimuth-rate moments of a pass (e.g. a
+                    # near-zenith TCA), so the live position at this instant
+                    # goes stale almost immediately. Aim ahead the same way
+                    # the initial jump does — see _lead_target() — instead of
+                    # a single static jump to the live position.
+                    target = self._lead_target(azimuth_deg, el_cmd)
+                    if target is None:
+                        # Lead target below the horizon (pass ending soon) —
+                        # hold off and re-evaluate the wrap fresh next cycle.
+                        logger.info(
+                            "Rotator: 0-degree wrap %.1f->%.1f, lead target below horizon, holding",
+                            last,
+                            azimuth_deg,
+                        )
+                        return True
+                    az_target, el_target = target
                     self._catching_up = True
                     self._catch_up_start_time = time.monotonic()
-                    self._last_az = azimuth_deg
-                    self._send_p(azimuth_deg, el_cmd)
+                    self._last_az = az_target
+                    self._send_p(az_target, el_target)
                     logger.info(
-                        "Rotator: 0-degree wrap %.1f->%.1f, re-entering catch-up",
+                        "Rotator: 0-degree wrap %.1f->%.1f, re-entering catch-up toward "
+                        "az=%.1f el=%.1f",
                         last,
                         azimuth_deg,
+                        az_target,
+                        el_target,
                     )
                     return True
 

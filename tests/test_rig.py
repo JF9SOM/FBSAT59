@@ -2141,6 +2141,31 @@ class TestHamlibRotatorController:
         assert ctrl._catching_up
         assert ctrl._last_az == pytest.approx(355.0)
 
+    def test_zero_crossing_with_predictor_aims_ahead(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl._last_az = 350.0
+        ctrl._catching_up = False
+        ctrl.set_predictor(lambda lead_s: (15.0, 40.0))
+        assert ctrl.set_position(1.0, 10.0)
+        assert ctrl._catching_up
+        assert ctrl._last_az == pytest.approx(15.0)
+
+    def test_zero_crossing_predictor_below_horizon_holds(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl._last_az = 350.0
+        ctrl._catching_up = False
+        ctrl.set_predictor(lambda lead_s: (15.0, -3.0))
+        ctrl._sock.sendall.reset_mock()  # type: ignore[union-attr]
+        assert ctrl.set_position(1.0, 10.0) is True
+        assert ctrl._catching_up is False
+        assert ctrl._last_az == pytest.approx(350.0)  # unchanged, not re-jumped
+        p_calls = [
+            c
+            for c in ctrl._sock.sendall.call_args_list  # type: ignore[union-attr]
+            if c.args[0].startswith(b"P ")
+        ]
+        assert p_calls == []
+
     def test_initial_jump_no_predictor_uses_current_position(self) -> None:
         ctrl = self._make_net_ctrl_connected()
         assert ctrl.set_position(200.0, 25.0)
