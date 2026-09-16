@@ -2141,6 +2141,55 @@ class TestHamlibRotatorController:
         assert ctrl._catching_up
         assert ctrl._last_az == pytest.approx(355.0)
 
+    def test_initial_jump_no_predictor_uses_current_position(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        assert ctrl.set_position(200.0, 25.0)
+        assert ctrl._last_az == pytest.approx(200.0)
+        assert ctrl._catching_up
+
+    def test_initial_jump_predictor_aims_ahead(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl.set_predictor(lambda lead_s: (210.0, 30.0))
+        assert ctrl.set_position(200.0, 25.0)
+        assert ctrl._last_az == pytest.approx(210.0)
+        assert ctrl._catching_up
+
+    def test_initial_jump_predictor_below_horizon_holds(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl.set_predictor(lambda lead_s: (210.0, -5.0))
+        ctrl._sock.sendall.reset_mock()  # type: ignore[union-attr]
+        assert ctrl.set_position(200.0, 25.0) is True
+        assert ctrl._last_az is None
+        assert ctrl._catching_up is False
+        p_calls = [
+            c
+            for c in ctrl._sock.sendall.call_args_list  # type: ignore[union-attr]
+            if c.args[0].startswith(b"P ")
+        ]
+        assert p_calls == []
+
+    def test_initial_jump_predictor_exception_falls_back(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+
+        def boom(lead_s: float) -> tuple[float, float]:
+            raise RuntimeError("boom")
+
+        ctrl.set_predictor(boom)
+        assert ctrl.set_position(200.0, 25.0)
+        assert ctrl._last_az == pytest.approx(200.0)
+
+    def test_initial_jump_lead_seconds_capped(self) -> None:
+        ctrl = self._make_net_ctrl_connected()  # get_position() reports az=180.0
+        received_lead: list[float] = []
+
+        def predictor(lead_s: float) -> tuple[float, float]:
+            received_lead.append(lead_s)
+            return 5.0, 25.0
+
+        ctrl.set_predictor(predictor)
+        assert ctrl.set_position(0.0, 25.0)
+        assert received_lead == [pytest.approx(ctrl._CATCH_UP_LEAD_MAX_S)]
+
     def test_net_stop_sends_command(self) -> None:
         ctrl = self._make_net_ctrl_connected()
         assert ctrl.stop()

@@ -4432,6 +4432,45 @@ class MainWindow(QMainWindow):
 
         self._send_to_rotator(obs)
 
+    def _predict_rotator_lead(self, lead_seconds: float) -> tuple[float, float] | None:
+        """Predict (az, el) `lead_seconds` from now for the current rotator target.
+
+        Passed to RotatorController.set_predictor() — used only for the
+        initial catch-up jump (see HamlibRotatorController._lead_target()),
+        so an already-visible, fast-moving target gets aimed at ahead of its
+        current position instead of a stale one. Called from the rotator's
+        background send thread (see _send_to_rotator()'s _rot_send()), not
+        the Qt main thread, so — like _doppler_cycle() — this must only
+        read plain (non-Qt-widget) MainWindow attributes.
+        """
+        if self._selected_norad is None:
+            return None
+
+        future = datetime.now(UTC) + timedelta(seconds=lead_seconds)
+
+        if self._selected_norad == MOON_ID:
+            if not self._celestial_engine.is_loaded:
+                return None
+            loc = self._location_manager.current if self._location_manager else None
+            if loc is None:
+                return None
+            obs = self._celestial_engine.observe_moon(
+                loc.latitude_deg, loc.longitude_deg, loc.elevation_m, at=future
+            )
+        else:
+            if self._engine is None:
+                return None
+            obs = self._engine.observe(self._selected_norad, at=future)
+
+        if obs is None:
+            return None
+        # HamlibRotatorController.set_position() always receives an
+        # already-south-offset-adjusted azimuth (see _send_to_rotator()'s
+        # _apply_south_offset() call) — apply the same transform here so the
+        # predicted azimuth is expressed in the same coordinate system the
+        # az-diff comparison inside _lead_target() uses.
+        return self._apply_south_offset(obs.azimuth_deg), obs.elevation_deg
+
     def _send_to_rotator(self, obs: Observation | None) -> None:
         """Send AZ/EL from obs to the rotator in a background thread (non-blocking)."""
         if (
@@ -7243,6 +7282,7 @@ class MainWindow(QMainWindow):
                     port=serial_port,
                     baud_rate=baud,
                 )
+            self._rotator_controller.set_predictor(self._predict_rotator_lead)
             self._radio_control.set_rotator(self._rotator_controller)
             self._update_rot_label()
         except Exception as exc:

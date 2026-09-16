@@ -23,6 +23,7 @@ import sys
 import threading
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -4177,6 +4178,21 @@ class RotatorController(ABC):
         self._lock = threading.Lock()
         self._state = RigState.DISCONNECTED
         self._rotor_state = RotatorState()
+        # Optional callback: given a lead time in seconds, returns the
+        # predicted (azimuth_deg, elevation_deg) that many seconds from now,
+        # or None if no prediction is available. Set via set_predictor() —
+        # used by HamlibRotatorController's initial catch-up jump to aim
+        # ahead of an already-visible, fast-moving target. Base class stores
+        # it so callers can set it on any RotatorController without an
+        # isinstance check; subclasses that don't support look-ahead simply
+        # never read it.
+        self._predictor: Callable[[float], tuple[float, float] | None] | None = None
+
+    def set_predictor(
+        self, predictor: Callable[[float], tuple[float, float] | None] | None
+    ) -> None:
+        """Register a lead-time position predictor (or None to disable it)."""
+        self._predictor = predictor
 
     @abstractmethod
     def connect(self) -> bool:
@@ -4234,6 +4250,14 @@ class HamlibRotatorController(RotatorController):
 
     _CATCH_UP_THRESHOLD: float = 5.0  # degrees; switch to normal tracking when within this
     _CATCH_UP_TIMEOUT: float = 60.0  # seconds; resend P command if catch-up takes too long
+    # Deliberately conservative (slower than the ~1.1-1.2 deg/s observed on a
+    # real SkyWatcher catch-up) lead-time assumption for the initial jump: the
+    # aim point lies on the target's real future path, so as long as this is
+    # a safe lower bound on the rotator's true slew speed, the target is
+    # guaranteed to sweep through the rotator's vicinity eventually — no
+    # accurate speed measurement needed. Tune via real-world testing.
+    _CATCH_UP_LEAD_ASSUMED_DEG_PER_S: float = 0.7
+    _CATCH_UP_LEAD_MAX_S: float = 120.0  # cap how far ahead we aim
 
     def __init__(
         self,
@@ -4341,12 +4365,59 @@ class HamlibRotatorController(RotatorController):
                 self._rotor_state.elevation_deg = el
                 self._rotor_state.is_moving = True
 
+    def _lead_target(self, azimuth_deg: float, el_cmd: float) -> tuple[float, float] | None:
+        """Compute the initial catch-up jump target.
+
+        Without a predictor (or if it fails to produce a result), falls back
+        to (azimuth_deg, el_cmd) — the current position, i.e. the previous
+        no-look-ahead behavior. With one, estimates how long the rotator
+        needs to close the current gap — assuming a deliberately
+        conservative slew rate (_CATCH_UP_LEAD_ASSUMED_DEG_PER_S, safely
+        below any real-world measurement) — and aims that far ahead along
+        the target's real future path instead of its current position. Since
+        the aim point lies on the real path, the target is guaranteed to
+        sweep through the rotator's eventual vicinity regardless of how
+        inaccurate the slew-rate assumption is, as long as it doesn't
+        overestimate the rotator's true speed.
+
+        Returns None if the predicted point is below the horizon — the
+        caller should hold off moving rather than jump to a point the
+        target hasn't risen to yet.
+        """
+        if self._predictor is None:
+            return azimuth_deg, el_cmd
+
+        try:
+            current = self.get_position()
+            az_diff = abs(current.azimuth_deg - azimuth_deg)
+            if az_diff > 180:
+                az_diff = 360.0 - az_diff
+            lead_s = min(
+                self._CATCH_UP_LEAD_MAX_S,
+                az_diff / self._CATCH_UP_LEAD_ASSUMED_DEG_PER_S,
+            )
+            predicted = self._predictor(lead_s)
+        except Exception as exc:
+            logger.error("Rotator: lead-time prediction failed, using current position: %s", exc)
+            return azimuth_deg, el_cmd
+
+        if predicted is None:
+            return azimuth_deg, el_cmd
+
+        pred_az, pred_el = predicted
+        if pred_el < 0.0:
+            return None
+        return pred_az, max(0.0, min(90.0, pred_el))
+
     def set_position(self, azimuth_deg: float, elevation_deg: float) -> bool:
         """Rotate to the specified azimuth and elevation.
 
         Four phases:
-        1. First call after connect (_last_az is None): send P command to current
-           satellite position and enter catch-up mode.
+        1. First call after connect (_last_az is None): send P command and enter
+           catch-up mode. If a predictor is registered (see set_predictor()),
+           aim ahead along the target's real path instead of its current
+           position — see _lead_target() — so an already-visible, fast-moving
+           target doesn't leave the rotator chasing a stale position.
         2. Catch-up mode: poll the rotator position each cycle.
            - Within _CATCH_UP_THRESHOLD degrees: exit catch-up, start normal tracking.
            - Timeout (_CATCH_UP_TIMEOUT seconds): resend P command and restart timer.
@@ -4364,11 +4435,21 @@ class HamlibRotatorController(RotatorController):
                 el_cmd = max(0.0, min(90.0, elevation_deg))
 
                 if self._last_az is None:
-                    self._send_p(azimuth_deg, el_cmd)
+                    target = self._lead_target(azimuth_deg, el_cmd)
+                    if target is None:
+                        # Lead target is below the horizon — the rotator would
+                        # have nothing to point at yet. Stay put and retry
+                        # next cycle with a freshly computed lead target.
+                        logger.info(
+                            "Rotator: lead target below horizon, holding before initial jump"
+                        )
+                        return True
+                    az_target, el_target = target
+                    self._send_p(az_target, el_target)
                     self._catching_up = True
                     self._catch_up_start_time = time.monotonic()
-                    self._last_az = azimuth_deg
-                    logger.info("Rotator: initial jump to az=%.1f el=%.1f", azimuth_deg, el_cmd)
+                    self._last_az = az_target
+                    logger.info("Rotator: initial jump to az=%.1f el=%.1f", az_target, el_target)
                     return True
 
                 if self._catching_up:
