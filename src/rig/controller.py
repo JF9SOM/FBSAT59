@@ -4418,9 +4418,17 @@ class HamlibRotatorController(RotatorController):
            aim ahead along the target's real path instead of its current
            position — see _lead_target() — so an already-visible, fast-moving
            target doesn't leave the rotator chasing a stale position.
-        2. Catch-up mode: poll the rotator position each cycle.
-           - Within _CATCH_UP_THRESHOLD degrees: exit catch-up, start normal tracking.
-           - Timeout (_CATCH_UP_TIMEOUT seconds): resend P command and restart timer.
+        2. Catch-up mode: poll the rotator position each cycle and compare it
+           to the target we last commanded (_last_az) — not the live,
+           continuously-moving satellite position — so the rotator always
+           travels all the way to that target before switching to per-cycle
+           tracking, rather than stopping early just because the live
+           satellite position happened to sweep close to wherever the
+           rotator currently is.
+           - Within _CATCH_UP_THRESHOLD degrees of that target (azimuth
+             only): exit catch-up, start normal tracking.
+           - Timeout (_CATCH_UP_TIMEOUT seconds): resend P command (to the
+             live satellite position) and restart timer.
            - Otherwise: return and wait for the next cycle.
         3. Normal tracking: send P command with current satellite AZ/EL each cycle.
         4. 0-degree wrap (large AZ jump): re-enter catch-up and send P immediately.
@@ -4455,16 +4463,30 @@ class HamlibRotatorController(RotatorController):
                 if self._catching_up:
                     current = self.get_position()
                     rot_az = current.azimuth_deg
-                    sat_az = azimuth_deg
+                    # Compare against the target we're actually moving toward
+                    # (the lead point we last commanded via _send_p — not the
+                    # live per-cycle satellite position), so the rotator
+                    # keeps moving all the way to that target instead of
+                    # stopping early wherever the live target happens to
+                    # sweep past it. self._last_az is always set by this
+                    # point (see the _last_az is None branch above).
+                    target_az = self._last_az
+                    if target_az is None:
+                        return True
 
-                    az_diff = abs(rot_az - sat_az)
+                    az_diff = abs(rot_az - target_az)
                     if az_diff > 180:
                         az_diff = 360.0 - az_diff
 
                     if az_diff <= self._CATCH_UP_THRESHOLD:
                         self._catching_up = False
                         self._catch_up_start_time = None
-                        logger.info("Rotator: caught up at rot=%.1f sat=%.1f", rot_az, sat_az)
+                        logger.info(
+                            "Rotator: caught up at rot=%.1f target=%.1f sat=%.1f",
+                            rot_az,
+                            target_az,
+                            azimuth_deg,
+                        )
                         # Fall through to normal tracking below
                     elif (
                         time.monotonic() - (self._catch_up_start_time or 0.0)

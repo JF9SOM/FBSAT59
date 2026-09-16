@@ -2190,6 +2190,32 @@ class TestHamlibRotatorController:
         assert ctrl.set_position(0.0, 25.0)
         assert received_lead == [pytest.approx(ctrl._CATCH_UP_LEAD_MAX_S)]
 
+    def test_catchup_exit_compares_against_target_not_live_satellite(self) -> None:
+        # get_position() (via _make_net_ctrl_connected's mock) always reports
+        # the rotator's real azimuth as 180.0.
+        ctrl = self._make_net_ctrl_connected()
+        ctrl._last_az = 200.0  # target we're moving toward, 20 deg from rot_az
+        ctrl._catching_up = True
+        ctrl._catch_up_start_time = time.monotonic()
+        # The live satellite position (182.0) is within 5 deg of the
+        # rotator's real position (180.0) — under the old design (comparing
+        # against the live satellite position) this alone would end
+        # catch-up early. It must not, since the target (200.0) is still 20
+        # deg away.
+        assert ctrl.set_position(182.0, 10.0)
+        assert ctrl._catching_up is True
+        assert ctrl._last_az == pytest.approx(200.0)
+
+    def test_catchup_exit_when_rotator_reaches_target(self) -> None:
+        ctrl = self._make_net_ctrl_connected()  # get_position() reports rot_az=180.0
+        ctrl._last_az = 183.0  # target close to the rotator's real position
+        ctrl._catching_up = True
+        ctrl._catch_up_start_time = time.monotonic()
+        # Live satellite position is far away — exit must be driven by
+        # reaching the target, not by the live satellite position.
+        assert ctrl.set_position(50.0, 10.0)
+        assert ctrl._catching_up is False
+
     def test_net_stop_sends_command(self) -> None:
         ctrl = self._make_net_ctrl_connected()
         assert ctrl.stop()
