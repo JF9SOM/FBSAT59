@@ -415,3 +415,40 @@ QT_LOGGING_RULES="qt.qpa.*=true" ./FBSAT59.AppImage 2>&1 | head -100
 - `src/rig/controller.py` — `set_transponder_freqs()`・`_send_split_init_independent()`・`_send_freq_preset_independent()`
 
 ---
+
+### macOS — SkyWatcherローテーターConnect直後に稀にネイティブクラッシュ（Hamlib `skywatcher_open()` 内、静観・修正なし、2026-09-16）
+
+**症状**: Radio Controlで「Connect Rotator」を手動クリックした直後、macOSのクラッシュレポート
+（`EXC_BAD_ACCESS (SIGSEGV)`）が表示されアプリプロセスが終了する。ハングせず、クリック直後に
+即座に発生する。
+
+**クラッシュ位置**: `libhamlib.4.dylib`内のネイティブC実装（Python/Qt側ではない）:
+
+```
+skywatcher_open() → skywatcher_cmd() → memmove()  (SIGSEGV, invalid address)
+```
+
+**ログでの切り分け（`~/Library/Logs/fbsat59/fbsat59.log`、2026-09-16 18:58:54前後）**:
+- `Rotator: creating controller port=/dev/cu.PL2303G-USBtoUART140 model=2801` のログ行の
+  わずか0.36秒後にクラッシュ発生
+- 同ログ行は該当時刻に**1回しか出ていない**ことを確認済み——`HamlibRotatorController.connect()`
+  の二重同時呼び出し（`_state`ガードが`CONNECTING`を捕捉できない既存の隙）が疑われたが、
+  今回はAutotrack未使用・単発の手動クリックのみで、二重接続レースではないと確定
+- アプリ再起動後、**同じポート・同じモデルへの2回目の接続は正常に成功**（`Rotator: connected`）
+- 直近5コミット（SDR用デジタルDoppler補正・catch-up到達ポーリングのスキップ・TLE
+  SATNOGSフォールバック等）はいずれも`connect()`/`rot.open()`のコードパスに触れておらず、
+  無関係と判断
+
+**原因（推定・未確証）**: クラッシュ前の9分間ローテーター操作がなく（前回パスのLOS後、
+アイドル状態）、その後の`rot.open()`（PL2303 USBシリアルアダプタ経由）でハンドシェイク応答が
+何らかの理由で乱れ、Hamlib側SkyWatcherバックエンドが応答長を検証せず`memmove()`した結果
+クラッシュした可能性が高い。ネイティブクラッシュのためPython側の`try/except`では捕捉不可。
+再現性は低く、同一条件の再試行では発生しなかった。
+
+**対応方針（ユーザー判断、2026-09-16）**: 静観する。単発・低頻度の事象であり、再試行で
+正常に接続できているため、現時点ではコード変更は行わない。再発・頻発するようであれば
+（1）`rot.open()`前にpyserialでポートを一度開いて入力バッファをフラッシュする防御的処理、
+（2）バンドル中のHamlibバージョンをdocs/hamlib.mdのバージョン管理方針に従って確認・更新、
+を検討する。
+
+---
