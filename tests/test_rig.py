@@ -2572,3 +2572,92 @@ class TestSdrRetuneDeadband:
     def test_no_device_returns_false(self) -> None:
         adapter = SdrRigAdapter()
         assert adapter.set_frequency(435_612_000.0) is False
+
+
+class _FakePipeline:
+    """Stand-in for SDRPipeline recording every set_doppler_target() call,
+    without needing a real QThread/QApplication (see test_sdr_pipeline.py
+    for the real pipeline's own NCO math tests)."""
+
+    def __init__(self, effective_center_freq: float = 0.0) -> None:
+        self.targets: list[float | None] = []
+        self.effective_center_freq = effective_center_freq
+
+    def set_doppler_target(self, freq_hz: float | None) -> None:
+        self.targets.append(freq_hz)
+        if freq_hz is not None:
+            self.effective_center_freq = freq_hz
+
+
+class TestSdrRigAdapterDigitalDopplerTracking:
+    """With a pipeline attached, set_frequency() tracks via the pipeline's
+    NCO on every call and only rarely touches hardware — see
+    _SDR_HW_RETUNE_MARGIN_HZ's docstring."""
+
+    def _adapter_with_pipeline(
+        self, effective_center_freq: float = 0.0
+    ) -> tuple[SdrRigAdapter, _FakeSdrDevice, _FakePipeline]:
+        adapter = SdrRigAdapter()
+        dev = _FakeSdrDevice()
+        pipeline = _FakePipeline(effective_center_freq)
+        adapter._sdr_device = dev  # type: ignore[assignment]
+        adapter._pipeline = pipeline  # type: ignore[assignment]
+        return adapter, dev, pipeline
+
+    def test_first_call_retunes_hardware_and_sets_target(self) -> None:
+        adapter, dev, pipeline = self._adapter_with_pipeline()
+        assert adapter.set_frequency(435_612_000.0) is True
+        assert dev.writes == [435_612_000.0]
+        assert pipeline.targets == [435_612_000.0]
+
+    def test_small_drift_updates_target_every_call_without_retuning_hardware(self) -> None:
+        adapter, dev, pipeline = self._adapter_with_pipeline()
+        adapter.set_frequency(435_612_000.0)
+        # Realistic Doppler drift, well under the 50 kHz margin.
+        for hz in (435_612_050.0, 435_612_100.0, 435_612_150.0):
+            assert adapter.set_frequency(hz) is True
+        # Hardware touched once (the first call); the NCO target tracks
+        # every single call, unlike the no-pipeline deadband path.
+        assert dev.writes == [435_612_000.0]
+        assert pipeline.targets == [
+            435_612_000.0,
+            435_612_050.0,
+            435_612_100.0,
+            435_612_150.0,
+        ]
+
+    def test_drift_beyond_margin_retunes_hardware(self) -> None:
+        adapter, dev, pipeline = self._adapter_with_pipeline()
+        adapter.set_frequency(435_612_000.0)
+        # 60 kHz away -- beyond _SDR_HW_RETUNE_MARGIN_HZ (50 kHz).
+        far = 435_612_000.0 + 60_000.0
+        assert adapter.set_frequency(far) is True
+        assert dev.writes == [435_612_000.0, far]
+        assert pipeline.targets == [435_612_000.0, far]
+
+    def test_get_frequency_returns_pipeline_effective_center_freq(self) -> None:
+        adapter, _dev, _pipeline = self._adapter_with_pipeline(effective_center_freq=437_123_000.0)
+        assert adapter.get_frequency() == 437_123_000.0
+
+    def test_get_frequency_falls_back_to_hardware_without_pipeline(self) -> None:
+        adapter = SdrRigAdapter()
+        dev = _FakeSdrDevice()
+        dev.center_freq = 145_825_000.0
+        adapter._sdr_device = dev  # type: ignore[assignment]
+        assert adapter.get_frequency() == 145_825_000.0
+
+    def test_invalidate_retune_cache_forces_hardware_retune_within_margin(self) -> None:
+        adapter, dev, pipeline = self._adapter_with_pipeline()
+        adapter.set_frequency(435_612_000.0)
+        adapter.invalidate_retune_cache()
+        # Small drift that would normally stay under the margin.
+        adapter.set_frequency(435_612_050.0)
+        assert dev.writes == [435_612_000.0, 435_612_050.0]
+        assert pipeline.targets == [435_612_000.0, 435_612_050.0]
+
+    def test_failed_hardware_retune_does_not_update_target(self) -> None:
+        adapter, dev, pipeline = self._adapter_with_pipeline()
+        dev.fail_next = True
+        assert adapter.set_frequency(435_612_000.0) is False
+        assert dev.writes == []
+        assert pipeline.targets == []

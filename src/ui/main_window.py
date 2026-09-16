@@ -981,6 +981,14 @@ class MainWindow(QMainWindow):
         self._load_cycle_setting()
         self._load_rotator_cycle_setting()
 
+        # SDR digital Doppler tracking: fixed 50ms cadence, independent of
+        # the "Cycle" setting above (which governs physical-rig CAT timing
+        # only) -- see _sdr_doppler_cycle()'s docstring. Always running
+        # (like _doppler_worker above); the method itself no-ops whenever
+        # neither Rig slot is SDR.
+        self._sdr_doppler_worker = DopplerWorker(self._sdr_doppler_cycle, interval_s=0.05)
+        self._sdr_doppler_worker.start()
+
         # Lock (L button) dial feedback: reuses DopplerWorker's generic
         # precise-interval thread (it owns no Doppler-specific state) to
         # poll _lock_watch_cycle() independently of the Doppler cycle's own
@@ -4019,7 +4027,14 @@ class MainWindow(QMainWindow):
         if sdr_is_rig2 and self._trsp_lock and tune != 0.0 and ul_rig1 is not None:
             ul_rig1 = ul_rig1 + (-tune if invert else tune)
 
-        if self._rig_controller is not None and self._rig_controller.is_connected:
+        # SDR-assigned slots are handled entirely by _sdr_doppler_cycle()
+        # (fixed 50ms cadence, independent of the Cycle setting below) --
+        # skip them here so the two paths never race writing the same rig.
+        if (
+            self._rig_controller is not None
+            and self._rig_controller.is_connected
+            and not sdr_is_rig1
+        ):
             if self._rig_busy_lock.acquire(blocking=False):
                 rig = self._rig_controller
                 dl = dl_rig1
@@ -4343,7 +4358,12 @@ class MainWindow(QMainWindow):
                 logger.debug("RigNet: previous cycle still running, skipping tick")
 
         # Transmit Doppler-corrected frequencies to Rig 2 (same non-blocking pattern).
-        if self._rig2_controller is not None and self._rig2_controller.is_connected:
+        # See the Rig 1 block above -- SDR slots are excluded the same way.
+        if (
+            self._rig2_controller is not None
+            and self._rig2_controller.is_connected
+            and not sdr_is_rig2
+        ):
             if self._rig2_busy_lock.acquire(blocking=False):
                 rig2 = self._rig2_controller
                 # DL for Rig 2: add tune offset when SDR is Rig 2
@@ -4377,6 +4397,87 @@ class MainWindow(QMainWindow):
                 threading.Thread(target=_rig2_send, daemon=True).start()
             else:
                 logger.debug("Rig2: previous cycle still running, skipping tick")
+
+    def _sdr_doppler_cycle(self) -> None:
+        """Digitally track Doppler for whichever Rig slot(s) are SDR.
+
+        Runs on its own DopplerWorker at a fixed 50ms interval (matching
+        real SatNOGS ground stations' gr-satnogs default of 20 corrections/
+        sec — see SDRPipeline's docstring), completely independent of the
+        Radio Control "Cycle" setting that drives _doppler_cycle() above:
+        that setting exists for physical-rig CAT round-trip limits, which
+        don't apply to SDRPipeline.set_doppler_target() (no hardware I/O
+        per call — see SdrRigAdapter.set_frequency()).
+
+        Deliberately does not consume _tune_dl_override/_tune_ul_override
+        (Radio Control's own "T" Tune button, single-use and consumed by
+        _doppler_cycle() above) -- SDR Control has its own equivalent
+        "T"/reset_tune_offset() for the same purpose, and having two
+        independent cycles race to consume a single-use value would be a
+        real bug, not a convenience. self._dial_feedback_offset_hz *is*
+        folded in here (read-only, matching _doppler_cycle()'s own
+        unconditional fold) since it's persistent state, not single-use,
+        and _doppler_cycle() already established that it should shift
+        every rig -- SDR included -- the same way.
+        """
+        if self._selected_norad is None or self._selected_norad == MOON_ID:
+            return
+        if self._engine is None or self._current_transmitter is None:
+            return
+
+        sdr_is_rig1 = (
+            self._rig_controller is not None
+            and getattr(self._rig_controller, "is_sdr", False)
+            and self._rig_controller.is_connected
+        )
+        sdr_is_rig2 = (
+            self._rig2_controller is not None
+            and getattr(self._rig2_controller, "is_sdr", False)
+            and self._rig2_controller.is_connected
+        )
+        if not sdr_is_rig1 and not sdr_is_rig2:
+            return
+
+        obs = self._engine.observe(self._selected_norad)
+        if obs is None:
+            return
+
+        dl_nom = _band_center_or_low(
+            self._current_transmitter.get("downlink_low"),
+            self._current_transmitter.get("downlink_high"),
+        )
+        if dl_nom is None:
+            return
+        rx_offset_hz = float(self._current_transmitter.get("rx_offset_hz") or 0.0)
+        dl_corr, _ = DopplerCalculator.correct_downlink(
+            float(dl_nom) + rx_offset_hz, obs.range_rate_km_s
+        )
+        if self._dial_feedback_offset_hz != 0.0:
+            dl_corr = dl_corr + self._dial_feedback_offset_hz
+
+        if sdr_is_rig1:
+            self._sdr_track_or_lock_readback(self._rig_controller, dl_corr)
+        if sdr_is_rig2:
+            self._sdr_track_or_lock_readback(self._rig2_controller, dl_corr)
+
+    def _sdr_track_or_lock_readback(self, rig: Any, dl_corr: float) -> None:
+        """One SDR slot's share of _sdr_doppler_cycle() — write, or (SDR
+        Lock ON) read back and recompute _sdr_tune_offset instead.
+
+        Mirrors _doppler_cycle()'s old do_sdr_lock branch exactly, just
+        without that branch's background-thread/busy-lock machinery --
+        none of that was ever about SDR here, it existed to keep a slow
+        CAT round-trip off this worker's precise wake-up loop, and
+        SdrRigAdapter's calls are just fast in-process attribute writes.
+        """
+        if self._sdr_lock:
+            live_freq = rig.get_frequency()
+            if live_freq > 0:
+                new_offset = live_freq - dl_corr
+                self._sdr_tune_offset = new_offset
+                self._sdr_lock_offset_computed.emit(new_offset)
+            return
+        rig.set_vfo_frequencies(dl_corr + self._sdr_tune_offset, None)
 
     @Slot(object)
     def _on_doppler_computed(self, result: DopplerDisplayUpdate) -> None:
@@ -8398,6 +8499,7 @@ class MainWindow(QMainWindow):
         self._timer.stop()
         self._rotator_timer.stop()
         self._doppler_worker.stop()
+        self._sdr_doppler_worker.stop()
         if self._web_server is not None:
             with contextlib.suppress(Exception):
                 self._web_server.stop()

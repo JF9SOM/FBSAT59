@@ -3419,6 +3419,157 @@ class TestLockDialFeedback:
         rig.apply_transponder_state.assert_called_once()
 
 
+class TestSdrDopplerCycle:
+    """_sdr_doppler_cycle() -- the fixed-50ms digital Doppler tracker for
+    SDR-assigned Rig slots, independent of the Radio Control "Cycle"
+    setting that drives _doppler_cycle() for physical rigs (see
+    _sdr_doppler_cycle()'s own docstring for why they're split)."""
+
+    def _make_window(self, qtbot, db):
+        from data.tle_manager import TLEManager
+        from ui.main_window import MainWindow
+
+        tle_manager = TLEManager(db)
+        w = MainWindow(conn=db, tle_manager=tle_manager)
+        qtbot.addWidget(w)
+        return w
+
+    def _make_sdr_rig(self, connected: bool = True):
+        rig = MagicMock()
+        rig.is_sdr = True
+        rig.is_connected = connected
+        rig.set_vfo_frequencies = MagicMock(return_value=True)
+        return rig
+
+    def _fake_engine(self, rr: float):
+        class _FakeEngine:
+            def observe(self, norad: int) -> Observation:
+                return Observation(
+                    norad_cat_id=norad,
+                    timestamp=datetime.now(UTC),
+                    elevation_deg=45.0,
+                    azimuth_deg=180.0,
+                    range_km=1000.0,
+                    range_rate_km_s=rr,
+                    is_above_horizon=True,
+                )
+
+        return _FakeEngine()
+
+    _TRANSMITTER = {
+        "downlink_low": 145_800_000,
+        "downlink_high": 145_950_000,  # band centre 145_875_000
+        "uplink_low": 435_000_000,
+        "uplink_high": 435_150_000,
+        "invert": False,
+        "mode": "FM",
+        "rx_offset_hz": 0.0,
+    }
+
+    def _prep(self, w, rig, rr: float = 0.0) -> None:
+        w._rig_controller = rig
+        w._rig2_controller = None
+        w._engine = self._fake_engine(rr)
+        w._selected_norad = 99999
+        w._current_transmitter = dict(self._TRANSMITTER)
+
+    def test_writes_doppler_corrected_frequency_plus_tune_offset(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        rig = self._make_sdr_rig()
+        self._prep(w, rig, rr=0.0)
+        w._sdr_tune_offset = 500.0
+        w._sdr_lock = False
+
+        w._sdr_doppler_cycle()
+
+        rig.set_vfo_frequencies.assert_called_once_with(145_875_500.0, None)
+
+    def test_no_norad_selected_is_noop(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        rig = self._make_sdr_rig()
+        self._prep(w, rig)
+        w._selected_norad = None
+
+        w._sdr_doppler_cycle()
+
+        rig.set_vfo_frequencies.assert_not_called()
+
+    def test_neither_rig_slot_is_sdr_is_noop(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        rig = self._make_sdr_rig()
+        rig.is_sdr = False
+        self._prep(w, rig)
+
+        w._sdr_doppler_cycle()
+
+        rig.set_vfo_frequencies.assert_not_called()
+
+    def test_dial_feedback_offset_is_folded_in_unconditionally(self, qtbot, db) -> None:
+        """Matches _doppler_cycle()'s own unconditional fold -- a manual
+        dial-feedback offset accumulated via a *different* (physical) rig's
+        Lock feature still shifts an SDR slot's tracking the same way."""
+        w = self._make_window(qtbot, db)
+        rig = self._make_sdr_rig()
+        self._prep(w, rig, rr=0.0)
+        w._sdr_tune_offset = 0.0
+        w._sdr_lock = False
+        w._dial_feedback_offset_hz = 120.0
+
+        w._sdr_doppler_cycle()
+
+        rig.set_vfo_frequencies.assert_called_once_with(145_875_120.0, None)
+
+    def test_sdr_lock_reads_back_instead_of_writing(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        rig = self._make_sdr_rig()
+        rig.get_frequency = MagicMock(return_value=145_876_000.0)
+        self._prep(w, rig, rr=0.0)
+        w._sdr_tune_offset = 0.0
+        w._sdr_lock = True
+
+        received: list = []
+        w._sdr_lock_offset_computed.connect(received.append)
+        w._sdr_doppler_cycle()
+
+        rig.set_vfo_frequencies.assert_not_called()
+        rig.get_frequency.assert_called_once()
+        # live (145_876_000) - dl_corr (band centre, 145_875_000) = 1000.
+        assert w._sdr_tune_offset == 1000.0
+        assert received == [1000.0]
+
+    def test_sdr_lock_off_resumes_from_last_computed_offset(self, qtbot, db) -> None:
+        """Turning Lock off must resume tracking from wherever it was left,
+        not snap back to the pure nominal trajectory -- same contract as
+        the physical-rig dial-feedback Lock."""
+        w = self._make_window(qtbot, db)
+        rig = self._make_sdr_rig()
+        self._prep(w, rig, rr=0.0)
+        w._sdr_tune_offset = 1000.0  # as left by a prior Lock-on cycle
+        w._sdr_lock = False
+
+        w._sdr_doppler_cycle()
+
+        rig.set_vfo_frequencies.assert_called_once_with(145_876_000.0, None)
+
+    def test_rig2_sdr_slot_is_tracked_independently(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        rig1 = self._make_sdr_rig()
+        rig1.is_sdr = False  # Rig 1 is a physical rig, not tracked here
+        rig2 = self._make_sdr_rig()
+        w._rig_controller = rig1
+        w._rig2_controller = rig2
+        w._engine = self._fake_engine(rr=0.0)
+        w._selected_norad = 99999
+        w._current_transmitter = dict(self._TRANSMITTER)
+        w._sdr_tune_offset = 0.0
+        w._sdr_lock = False
+
+        w._sdr_doppler_cycle()
+
+        rig1.set_vfo_frequencies.assert_not_called()
+        rig2.set_vfo_frequencies.assert_called_once_with(145_875_000.0, None)
+
+
 class TestRadioType:
     """Radio Type 設定テスト。"""
 

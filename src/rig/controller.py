@@ -4694,6 +4694,24 @@ occasional brief PLL relock. See set_retune_deadband() to reinstate a
 deadband if retune glitches turn out to matter in practice.
 """
 
+_SDR_HW_RETUNE_MARGIN_HZ: float = 50_000.0
+"""How far the Doppler target may drift from the SDR's actual hardware
+center frequency before set_frequency() bothers physically retuning it.
+
+Only used once an SDRPipeline is attached (see attach_pipeline()) — that
+pipeline applies the *real* Doppler tracking digitally, every call,
+regardless of this margin (see SDRPipeline.set_doppler_target()); this
+constant only governs how rarely the underlying hardware PLL gets
+touched. Realistic Doppler shift for the bands this app targets tops
+out around +-10-15 kHz, so 50 kHz of margin means the hardware is
+essentially retuned once (when tracking starts) and never again for the
+rest of a pass — mirroring how real SatNOGS ground stations park the
+SDR on one frequency for the whole pass (see SDRPipeline's docstring).
+Without an attached pipeline (e.g. briefly during connect(), before
+attach_pipeline() runs) set_frequency() falls back to the pre-existing
+deadband-gated direct retune below instead.
+"""
+
 
 class SdrRigAdapter(RigController):
     """
@@ -4823,15 +4841,39 @@ class SdrRigAdapter(RigController):
             self._state = RigState.DISCONNECTED
 
     def set_frequency(self, freq_hz: float, vfo: str = "VFOA") -> bool:
-        """Retune the SDR center frequency (used by Doppler correction loop).
+        """Track *freq_hz* (the live Doppler-corrected downlink).
 
-        Writes are suppressed while the requested frequency stays within
-        _SDR_RETUNE_DEADBAND_HZ of the last one actually written, so slow
-        Doppler drift does not re-lock the tuner PLL every single cycle.
-        Deliberate retunes must call invalidate_retune_cache() first.
+        With a pipeline attached (the normal case once connect() has run),
+        this hands *freq_hz* to the SDRPipeline's digital Doppler correction
+        (SDRPipeline.set_doppler_target()) on every single call — cheap, no
+        hardware I/O, so tracking is exact regardless of call rate. The SDR's
+        actual hardware center frequency is only touched when *freq_hz* has
+        drifted more than _SDR_HW_RETUNE_MARGIN_HZ from the last real retune
+        (essentially never within one pass), matching how real SatNOGS
+        ground stations park the hardware for the whole pass and do all
+        tracking digitally (see SDRPipeline's docstring).
+
+        Without a pipeline attached yet (briefly, early in connect()), falls
+        back to the previous direct-retune-with-deadband behavior: writes
+        are suppressed while the requested frequency stays within
+        _SDR_RETUNE_DEADBAND_HZ of the last one actually written.
+        Deliberate retunes must call invalidate_retune_cache() first either
+        way — it simply forces the next call to treat the hardware as
+        needing a fresh retune, which both paths honor.
         """
         if self._sdr_device is None:
             return False
+
+        if self._pipeline is not None:
+            if self._last_tuned_hz is None or (
+                abs(freq_hz - self._last_tuned_hz) >= _SDR_HW_RETUNE_MARGIN_HZ
+            ):
+                if not self._sdr_device.set_center_freq(freq_hz):
+                    return False
+                self._last_tuned_hz = freq_hz
+            self._pipeline.set_doppler_target(freq_hz)
+            return True
+
         if (
             self._last_tuned_hz is not None
             and abs(freq_hz - self._last_tuned_hz) < self._retune_deadband_hz
@@ -4843,6 +4885,15 @@ class SdrRigAdapter(RigController):
         return True
 
     def get_frequency(self, vfo: str = "VFOA") -> float:
+        """The frequency currently being tracked.
+
+        With a pipeline attached this is the live Doppler-tracking target
+        (SDRPipeline.effective_center_freq) — what SDR Lock's read-back and
+        the waterfall marker actually care about — not the rarely-changing
+        hardware register value.
+        """
+        if self._pipeline is not None:
+            return self._pipeline.effective_center_freq
         if self._sdr_device is not None:
             return self._sdr_device.center_freq
         return -1.0

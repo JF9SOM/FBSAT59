@@ -101,6 +101,21 @@ class SDRPipeline(QThread):
         # audible stutter if the PortAudio backend doesn't tolerate it.
         self._diag_audio_blocksize: int | None = None
 
+        # Digital Doppler correction (NCO) — see _apply_doppler_correction().
+        # When set (via set_doppler_target()), every I/Q block is frequency-
+        # shifted in software so *target* lands at baseband 0 Hz, without
+        # ever retuning the SDR's actual hardware center frequency. This is
+        # the same architecture real SatNOGS ground stations use (gr-satnogs'
+        # doppler_correction_cc block): the hardware stays parked on one
+        # frequency for the whole pass, and all Doppler tracking happens as
+        # a continuous per-sample phase rotation, which has no PLL-relock
+        # latency and no glitch even when updated tens of times a second —
+        # unlike physically retuning the device, which is what this
+        # replaces (see SdrRigAdapter.set_frequency() in rig/controller.py).
+        self._doppler_target_hz: float | None = None
+        self._nco_phase: float = 0.0
+        self._last_hw_cf: float | None = None
+
     # ------------------------------------------------------------------
     # Public API (safe to call from any thread)
     # ------------------------------------------------------------------
@@ -129,6 +144,67 @@ class SDRPipeline(QThread):
         """
         with self._subscribers_lock:
             self._subscribers = [c for c in self._subscribers if c != callback]
+
+    def set_doppler_target(self, freq_hz: float | None) -> None:
+        """Set (or clear, with None) the RF frequency to digitally track.
+
+        Safe to call frequently from any thread (a single float attribute
+        write/read, no lock needed — same assumption run() already makes
+        for _audio_enabled). run() applies the correction on its own
+        thread using whatever value is current at the start of each block.
+        """
+        self._doppler_target_hz = freq_hz
+
+    @property
+    def effective_center_freq(self) -> float:
+        """The RF frequency this pipeline currently reports as "centered".
+
+        This is the Doppler target while digital correction is active
+        (the whole point: after correction, the tracked signal really is
+        centered there, unlike the SDR's own rarely-retuned hardware
+        frequency) — otherwise the SDR's actual hardware-tuned frequency.
+        Used for the waterfall/spectrum frequency axis and by
+        SdrRigAdapter.get_frequency(), so both reflect what's actually
+        being tracked rather than a fixed hardware register value that
+        may not move for an entire pass.
+        """
+        target = self._doppler_target_hz
+        return target if target is not None else self._device.center_freq
+
+    def _apply_doppler_correction(self, iq: np.ndarray) -> np.ndarray:
+        """Shift *iq* so effective_center_freq lands at baseband 0 Hz.
+
+        Phase-continuous across blocks (the running phase is carried over,
+        not reset each call), so a changing Doppler target never produces
+        a click — only a smooth, instantaneous change in rotation rate,
+        exactly like a hardware NCO. Resets the running phase whenever the
+        device's actual hardware center frequency changes underneath us
+        (a real retune breaks the phase reference, so continuing from the
+        old value would be meaningless) — this self-heals without any
+        caller needing to coordinate with us.
+        """
+        hw_cf = self._device.center_freq
+        if hw_cf != self._last_hw_cf:
+            self._nco_phase = 0.0
+            self._last_hw_cf = hw_cf
+
+        target = self._doppler_target_hz
+        if target is None:
+            return iq
+        shift = target - hw_cf
+        if shift == 0.0:
+            return iq
+
+        sr = self._device.sample_rate
+        if not sr:
+            return iq
+        n = np.arange(len(iq), dtype=np.float64)
+        phase = self._nco_phase + (2.0 * np.pi * shift / sr) * n
+        corrected: np.ndarray = iq * np.exp(-1j * phase).astype(np.complex64)
+        self._nco_phase = float(
+            (self._nco_phase + (2.0 * np.pi * shift / sr) * len(iq)) % (2.0 * np.pi)
+        )
+        return corrected
 
     def stop(self) -> None:
         """Signal the thread to stop."""
@@ -220,6 +296,12 @@ class SDRPipeline(QThread):
                 time.sleep(0.005)
                 continue
 
+            # Digital Doppler correction, applied before anything else
+            # touches the samples — every consumer below (subscribers,
+            # recorder, demodulator, FFT) sees the already-corrected
+            # stream, with no per-consumer wiring needed.
+            iq = self._apply_doppler_correction(iq)
+
             # Distribute to plugin subscribers
             with self._subscribers_lock:
                 subs = list(self._subscribers)
@@ -253,7 +335,7 @@ class SDRPipeline(QThread):
                 try:
                     spectrum = self._compute_fft(iq)
                     self.spectrum_ready.emit(spectrum)
-                    self.center_freq_changed.emit(self._device.center_freq)
+                    self.center_freq_changed.emit(self.effective_center_freq)
                 except Exception:
                     logger.exception("FFT error")
 
@@ -310,7 +392,7 @@ class SDRPipeline(QThread):
         block = iq[:n] * window
         fft = np.fft.fftshift(np.fft.fft(block, n=_FFT_SIZE))
         power_db = 20.0 * np.log10(np.abs(fft) / n + 1e-12)
-        cf = self._device.center_freq
+        cf = self.effective_center_freq
         sr = self._device.sample_rate
         freqs = cf + np.fft.fftshift(np.fft.fftfreq(_FFT_SIZE, d=1.0 / sr))
         return list(zip(freqs.tolist(), power_db.tolist(), strict=False))
