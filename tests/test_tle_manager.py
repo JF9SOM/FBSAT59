@@ -507,6 +507,48 @@ class TestFetchActiveTlesPhase2RefreshesStaleSatnogsTles:
         # since this satellite never enters refresh_targets.
         assert mock_client.stream.call_count == 1
 
+    def test_celestrak_sourced_tle_is_requeried_by_phase2_when_celestrak_blocked(
+        self, db: sqlite3.Connection
+    ) -> None:
+        """Regression coverage: a source='celestrak' satellite must fall back
+        to SATNOGS when CelesTrak itself is confirmed unreachable this run --
+        otherwise it has no update path at all for the duration of the block
+        (confirmed live for KNACKSAT-2 / NORAD 67683, 2026-09-16)."""
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (67683, 'KNACKSAT-2', 'alive', 0)"
+        )
+        db.execute(
+            "INSERT INTO tle_data"
+            " (norad_cat_id, name, line1, line2, epoch, source, tle_group, fetched_at,"
+            "  quality_score)"
+            " VALUES (67683, 'KNACKSAT-2', ?, ?, '2026-06-26T21:51:46+00:00', 'celestrak',"
+            "  'amateur', '2026-06-27T07:34:09+00:00', 'poor')",
+            (_LINE1, _LINE2),
+        )
+        db.commit()
+
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.stream = MagicMock(
+            side_effect=_stream_items(
+                _error_resp(403),
+                _satnogs_bulk_resp([_bulk_record(67683, _LINE1_B, _LINE2_B, "KNACKSAT-2")]),
+            )
+        )
+
+        with _patched_client(mock_client) as mock_cls, patch.object(mgr, "_log_sync"):
+            _wire_mock_client(mock_cls, mock_client)
+            stats = asyncio.run(mgr.fetch_active_tles())
+
+        assert stats["celestrak_blocked"] == 1
+        row = db.execute(
+            "SELECT fetched_at, source FROM tle_data WHERE norad_cat_id = 67683"
+        ).fetchone()
+        assert row["fetched_at"] != "2026-06-27T07:34:09+00:00"
+        assert row["source"] == "satnogs"  # now tracked as a satnogs fallback target
+        assert stats["updated"] == 1
+
     def test_manual_tle_is_not_requeried_by_phase2(self, db: sqlite3.Connection) -> None:
         db.execute(
             "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"

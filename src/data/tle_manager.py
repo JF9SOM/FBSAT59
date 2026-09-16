@@ -1240,10 +1240,27 @@ class TLEManager:
         # stuck this way for 44 days for ORIGAMISAT-2 / NORAD 68795
         # (2026-08-09) before this fix, alongside ~700 other satellites
         # across three earlier one-shot Phase 2 runs.
-        # source='celestrak' rows are left alone here: they're kept fresh by
-        # the periodic group-specific fetches (2h/4h/6h/12h) and by Phase 1
-        # above, so re-querying them here would be redundant load.
+        # source='celestrak' rows are normally left alone here: they're kept
+        # fresh by the periodic group-specific fetches (2h/4h/6h/12h) and by
+        # Phase 1 above, so re-querying them here would be redundant load.
+        # But that assumption only holds while CelesTrak itself is actually
+        # reachable -- if it's confirmed unreachable *this run*
+        # (stats["celestrak_blocked"], set right after Phase 1 above), none
+        # of those mechanisms can be keeping anything fresh either, so a
+        # celestrak-sourced satellite has no fallback at all and goes stale
+        # indefinitely under a sustained IP block. When blocked, treat
+        # 'celestrak' the same as 'satnogs' so SATNOGS can stand in until
+        # CelesTrak is reachable again. Confirmed live (2026-09-16):
+        # KNACKSAT-2 / NORAD 67683 went unrefreshed for days under a
+        # persistent CelesTrak block despite SATNOGS staying reachable the
+        # whole time, purely because its TLE already had source='celestrak'
+        # from an earlier successful fetch before the block started.
         # source='manual' rows are never touched by any automated sync.
+        celestrak_source_clause = (
+            "t.source IN ('satnogs', 'celestrak')"
+            if stats["celestrak_blocked"]
+            else "t.source = 'satnogs'"
+        )
         #
         # Resolved via one SATNOGS bulk request (_fetch_satnogs_bulk_tles()),
         # not a per-satellite loop — see that method's docstring for why a
@@ -1300,7 +1317,7 @@ class TLEManager:
                 bool(r["had_tle"]),
             )
             for r in self._conn.execute(
-                """
+                f"""
                 SELECT s.norad_cat_id, s.name, s.status, s.tle_no_result_since,
                        s.satnogs_source_id, t.tle_group,
                        (t.norad_cat_id IS NOT NULL) AS had_tle
@@ -1309,7 +1326,7 @@ class TLEManager:
                 WHERE s.is_hidden IN (0, 2)
                   AND s.status != 'dead'
                   AND s.norad_cat_id BETWEEN 10000 AND 89999
-                  AND (t.norad_cat_id IS NULL OR t.source = 'satnogs')
+                  AND (t.norad_cat_id IS NULL OR {celestrak_source_clause})
                   AND s.norad_cat_id NOT IN (
                       SELECT satnogs_source_id FROM satellites
                       WHERE satnogs_source_id IS NOT NULL
