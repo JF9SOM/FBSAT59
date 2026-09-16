@@ -1084,34 +1084,87 @@ Passband Tune の Freq 欄も Radio Control の DL/UL 表示と同じ頻度で�
 （デフォルトで毎回書き込まれることを検証）。デッドバンド機構自体を検証する既存テスト群は
 `adapter.set_retune_deadband(200.0)`を明示的に呼ぶ形に変更（デフォルト値への依存を排除）。
 
-#### 案A（未実装）— ハードウェアを固定し、ドップラーをデジタルに適用する
+#### 案A実装 — ハードウェアを固定し、ドップラーをデジタルに適用（2026-09-16 実装）
 
 デッドバンドは再同調の**回数を減らす**だけで、位相不連続を**ゼロにはできない**。しかも
 435 MHz の高仰角パスでは TCA 付近のドップラー変化率が約 170 Hz/s に達するため、
 **最も信号が強いまさにその時間帯だけ、デッドバンドがほとんど効かない**（1.2秒に1回は再同調
-する）。根本解決するなら、チューナは公称周波数に固定したまま、IQ サンプル列に
+する）。根本解決するため、チューナは公称周波数に固定したまま、IQ サンプル列に
 
 ```
 出力[n] = 入力[n] × exp(-j·2π·Δf·n / fs)     Δf = ドップラー補正後の周波数 − 固定した中心周波数
 ```
 
-を掛ける方式（デジタル局発）になる。位相アキュムレータをチャンク間で持ち越せば位相は完全に
-連続で、`Δf` を更新した瞬間も波形が途切れない。SatNOGS や `gr-gpredict-doppler` と同じ考え方。
+を掛ける方式（デジタル局発）を実装した。位相アキュムレータをブロック間で持ち越すため位相は
+完全に連続で、`Δf` を更新した瞬間も波形が途切れない。
 
-**既存の再利用可能な部品**: `src/comms/ax100digi/audio_bridge.py` の `FrequencyShifter` が
-まさに「位相アキュムレータを持ち越すステートフルな複素ミキサ」。AX100 Digi 用に書いたものだが、
-`Δf` を実行中に差し替えられるようにする改修だけで流用できる。
+**きっかけ**: ユーザーが所有する実運用中のSatNOGS地上局（gpd-linux.local、Dockerの
+`librespace/satnogs-client`本家イメージ、station ID 3947）にSSHで入り、`gr-satnogs`
+（GNU Radio Out-Of-Tree module）の実際のフローグラフ（`/usr/bin/satnogs_fsk_ax25.py`・
+`/usr/bin/satnogs_afsk1200_ax25.py`）を直接調査したところ、**SatNOGS本家はSDRハードウェアの
+同調周波数を一切動かさず**、`gnuradio.satnogs.doppler_correction_cc`ブロックがIQサンプル列に
+対してこの複素回転を常時適用していることが判明した。デフォルトの更新頻度は
+`--doppler-correction-per-sec`（既定値`20`＝50msごと）。これを受けて、FBSAT59も同じ
+アーキテクチャに合わせることにした。
 
-**実装位置の設計判断（未決）**:
-- **A-1: `SDRPipeline` の中に入れる** — 下流すべて（SDR Control の音声復調・スペクトラム・
-  gr-satellites への UDP 転送）が補正済みストリームを受け取る。SDR で音声も聴く場合に
-  現在と同じ使い勝手が保てるので本命。ただしスペクトラム表示の「中心周波数マーカー」が
-  ハードウェアの実周波数を指すのか補正後の論理周波数を指すのか、意味づけの整理が要る
-- **A-2: `_UdpIqForwarder.push_samples()` だけに入れる** — 変更範囲は最小だが、
-  gr-satellites 受信中はハードウェアが公称周波数で固定されるため、同時に SDR の音声を聴くと
-  衛星が中心からずれて聞こえる
+**実装位置（A-1を採用）**: 当時「未決」としていたA-1/A-2の選択は、想定通りA-1
+（`SDRPipeline`内、下流すべてが補正済みストリームを受け取る）を採用した。
+「中心周波数マーカーの意味づけ」の課題は、`SDRPipeline.effective_center_freq`
+プロパティ（デジタル追尾中はターゲット周波数、そうでなければハードウェアの実周波数）を新設し、
+FFT軸ラベル・`center_freq_changed`シグナル・`SdrRigAdapter.get_frequency()`すべてがこれを
+参照するよう統一することで解決した——「今何を追尾しているか」を単一の情報源に一本化した形。
 
-**CPU コスト（この開発機 i3-N300 で実測）**: 1コアに対し 2.4 Msps で 10.4% / 1.024 Msps で
+**`FrequencyShifter`（`src/comms/ax100digi/audio_bridge.py`）は流用しなかった**:
+本節の旧稿で「既存の再利用可能な部品」として挙げていたが、実装時にはこのクラスの存在を
+再確認せず、`SDRPipeline._apply_doppler_correction()`として独立に新規実装してしまった
+（位相アキュムレータを使った複素ミキサという設計自体は事実上同一）。将来この種の複素回転処理を
+新設する際は、まず`FrequencyShifter`を流用できないか確認すること。
+
+**具体的な実装**:
+- `SDRPipeline.set_doppler_target(freq_hz)` — デジタル追尾の目標周波数を設定。読み取り専用
+  プロパティ`effective_center_freq`と合わせ、`run()`のブロック読み取り直後・FFT計算や
+  `subscribe()`購読者への配信より前に`_apply_doppler_correction()`が適用される（1箇所で
+  全消費者に効く設計）。ハードウェアの実周波数（`self._device.center_freq`）が変化したことを
+  検知すると位相アキュムレータを自動リセットする（実再同調は稀だが、起きた場合に古い位相基準を
+  引きずらないため）
+- `SdrRigAdapter.set_frequency()` — パイプライン接続後は毎回`set_doppler_target()`を無条件で
+  呼ぶ（ハードウェアI/Oなし・軽量）。ハードウェアの実同調は、目標が前回の実同調から
+  `_SDR_HW_RETUNE_MARGIN_HZ`（50kHz）以上ズレた時だけ行う——現実的なドップラーシフト
+  （UHF帯で最大±10〜15kHz程度）ではパス中に再同調が事実上発生しない
+- **更新周期はRadio Controlの「Cycle」設定から完全に独立**: 新設の`MainWindow._sdr_doppler_cycle()`
+  が専用の`DopplerWorker`（固定50ms、SatNOGS本家の既定値と同じ）で動作する。「Cycle」設定は
+  引き続きHamlib実機リグのCAT往復時間の制約にのみ使う。`_doppler_cycle()`側はSDRが割り当てられた
+  Rigスロットへの書き込みを完全にスキップし、2つの経路が競合しないようにした
+- **SDR Lock（Lボタン）も新しい50ms周期へ移設**: 読み戻し・`_sdr_tune_offset`再計算の
+  ロジック自体（仕様）は変更なし。ハードウェアI/O不要のため、旧来のCAT機向け
+  バックグラウンドスレッド／busy-lockパターンは不要になった
+
+**実機で発覚したリトライ嵐バグとその修正（2026-09-16、同日中）**: 50ms周期化した直後、
+アンテナ未接続のベンチテストで意図的に受信不可能な周波数（S-band 2.2GHz帯・KUバンド10GHz超）
+へ同調させたところ、`SdrRigAdapter.set_frequency()`のパイプライン経路は
+**ハードウェア再同調が成功した時だけ`_last_tuned_hz`を更新**する実装だったため、失敗すると
+次サイクルも同じ実現不可能な周波数への再同調を試み続け、**50ms周期・毎秒20回**の
+`setFrequency failed`（SoapySDR/R820XドライバのPLL計算失敗）が連続する不具合が実機で
+確認された。旧来のCycle駆動（0.5〜2秒に1回）ではこの潜在バグは実害が目立たなかったが、
+50ms化で顕在化した。**修正**: 失敗時も（ハードウェア呼び出しの**前に**）`_last_tuned_hz`を
+要求値のまま更新するよう変更し、目標が実際にマージンを超えて動くまで同じ失敗値への
+再試行をしないようにした（デジタル追尾側`pipeline.set_doppler_target()`は失敗時は呼ばない）。
+なおこの2例（2.2GHz帯・KUバンド）はいずれもRTL-SDR（R820T2、公称24〜1766MHz）の
+物理的な受信可能範囲外での意図的なストレステストであり、正常な衛星受信では起こらない状況。
+
+**既存の再同調デッドバンド機構（`_SDR_RETUNE_DEADBAND_HZ`・`set_retune_deadband()`）は
+削除せず維持**——パイプライン未接続時（`connect()`直後、`attach_pipeline()`が走る前の
+ごく短い窓）のフォールバック経路としてそのまま使われている。
+
+**テスト**: `tests/test_sdr_pipeline.py`（新規、NCOの数学的正しさ：位相連続性・周波数精度・
+ハードウェア実再同調検知時の位相リセット・FFT軸が`effective_center_freq`基準になること）、
+`tests/test_rig.py::TestSdrRigAdapterDigitalDopplerTracking`（`SdrRigAdapter`のパイプライン
+連動・マージン超過時のみ実同調・失敗時のリトライ嵐防止）、
+`tests/test_main_window.py::TestSdrDopplerCycle`（`_sdr_doppler_cycle()`のDoppler書き込み・
+dial-feedbackオフセットの畳み込み・SDR Lock読み戻し・Rig 1/2独立追尾）。
+
+**CPU コスト（この開発機 i3-N300 で実測、旧`FrequencyShifter`検討時の見積もり——桁感の参考値、
+実装後の再計測はしていない）**: 1コアに対し 2.4 Msps で 10.4% / 1.024 Msps で
 3.3% / 250 ksps で 0.8%。Celeron N4000（Goldmont Plus・2コア・**AVX 非対応**）は概ね 3〜4倍
 遅いと見込まれるため、2.4 Msps では1コアの 35〜40%（＝2コア全体の約20%）に達する。
 250 ksps なら約3%で実用範囲。
