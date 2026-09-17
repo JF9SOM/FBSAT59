@@ -22,7 +22,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QStandardItemModel
 from PySide6.QtWidgets import (
     QComboBox,
@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -120,6 +121,55 @@ class _SatnogsApiKeyDialog(QDialog):
         return self._edit.text().strip()
 
 
+class _ProcessLogDialog(QDialog):
+    """Modeless window showing a backend's own console log file.
+
+    Reused for both comms.aprs.direwolf_log (Direwolf's stdout, only
+    populated during SDR-fed reception -- a Rig + Sound Card session plays
+    that same stdout back as audio instead) and
+    comms.telemetry.gr_satellites_log (gr_satellites' stdout + stderr). The
+    log file is written by a background thread outside this dialog's
+    control, so this just re-reads it on open/refresh rather than streaming
+    live.
+    """
+
+    def __init__(self, title: str, log_path: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent, Qt.WindowType.Window)
+        self._log_path = log_path
+        self.setWindowTitle(title)
+        self.resize(640, 320)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)
+        self._view = QPlainTextEdit()
+        self._view.setReadOnly(True)
+        self._view.setMaximumBlockCount(5000)
+        self._view.setStyleSheet("font-family: monospace; font-size: 10px;")
+        layout.addWidget(self._view)
+        btn_row = QHBoxLayout()
+        btn_refresh = QPushButton(_("🔄 Refresh"))
+        btn_refresh.clicked.connect(self.reload)
+        btn_row.addStretch()
+        btn_row.addWidget(btn_refresh)
+        layout.addLayout(btn_row)
+        self.reload()
+
+    def reload(self) -> None:
+        path = Path(self._log_path)
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+        except OSError as exc:
+            text = f"[failed to read {path}: {exc}]"
+        self._view.setPlainText(text)
+        scrollbar = self._view.verticalScrollBar()
+        if scrollbar is not None:
+            scrollbar.setValue(scrollbar.maximum())
+
+    def closeEvent(self, event: Any) -> None:  # noqa: N802
+        # Hide rather than destroy so re-opening doesn't recreate the window
+        event.ignore()
+        self.hide()
+
+
 class TelemetryTab(QWidget):
     """Non-resident tab opened from Communications > Telemetry."""
 
@@ -159,6 +209,8 @@ class TelemetryTab(QWidget):
         self._selected_name: str = ""
 
         self._frame_count = 0
+        self._direwolf_log_window: _ProcessLogDialog | None = None
+        self._gr_log_window: _ProcessLogDialog | None = None
 
         self._ensure_db_table()
         self._setup_ui()
@@ -249,6 +301,21 @@ class TelemetryTab(QWidget):
         self._baud_combo.currentIndexChanged.connect(self._on_baud_mode_changed)
         row1.addWidget(QLabel(_("Baud:")))
         row1.addWidget(self._baud_combo)
+
+        self._btn_backend_log = QPushButton(_("📋 Log"))
+        self._btn_backend_log.setToolTip(
+            _(
+                "Show the active backend's own console output. Direwolf\n"
+                "(AX.25) mode: startup messages and a line per decoded\n"
+                "AX.25 frame with its own audio-level quality assessment —\n"
+                "only populated during SDR reception (Rig + Sound Card\n"
+                "sessions play this same output back as audio instead).\n"
+                "gr-satellites mode: its stdout/stderr, including errors\n"
+                "not shown anywhere else."
+            )
+        )
+        self._btn_backend_log.clicked.connect(self._on_backend_log_clicked)
+        row1.addWidget(self._btn_backend_log)
 
         row1.addStretch()
         input_layout.addLayout(row1)
@@ -714,6 +781,38 @@ class TelemetryTab(QWidget):
             )
             self._conn.commit()
         self._apply_baud_change()
+
+    def _on_backend_log_clicked(self) -> None:
+        """Open (or bring forward and refresh) the active backend's console log window.
+
+        Direwolf (AX.25) mode and gr-satellites mode each get their own
+        cached window (see _direwolf_log_window / _gr_log_window) so
+        switching modes doesn't repoint an already-open dialog out from
+        under the user.
+        """
+        if self._current_mode() == _MODE_GR:
+            from comms.telemetry.gr_satellites_log import gr_satellites_log_path
+
+            if self._gr_log_window is None:
+                self._gr_log_window = _ProcessLogDialog(
+                    _("gr-satellites Log"), gr_satellites_log_path(), self
+                )
+            else:
+                self._gr_log_window.reload()
+            window = self._gr_log_window
+        else:
+            from comms.aprs.direwolf_log import direwolf_log_path
+
+            if self._direwolf_log_window is None:
+                self._direwolf_log_window = _ProcessLogDialog(
+                    _("Direwolf Log"), direwolf_log_path(), self
+                )
+            else:
+                self._direwolf_log_window.reload()
+            window = self._direwolf_log_window
+        window.show()
+        window.raise_()
+        window.activateWindow()
 
     def _on_transmitter_changed(self, _xpdr: object) -> None:
         """Restart the AX.25 pipeline if the newly selected transponder's baud differs."""

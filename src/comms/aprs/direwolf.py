@@ -378,25 +378,35 @@ class AudioBridge(QThread):
 
         try:
             if self._out_device is None:
-                # Receive-only bridge (the SDR-fed G3RUH path always has no
-                # output device -- SDR can't transmit -- and a Rig + Sound
-                # Card session with no configured output falls here too):
-                # nothing would ever be done with a chunk read from
-                # Direwolf's stdout, so there's no reason to block on
-                # reading it at all. That blocking proc.stdout.read() was
-                # the *only* thing keeping this thread from noticing
-                # self._stop_event promptly: stop() closes Direwolf's stdin/
-                # kills the process to make the read unblock, but if that
-                # doesn't happen fast enough (observed live -- a stale
-                # SDR-fed G3RUH session from a completed Baud switch kept
-                # consuming the SDR's I/Q for *minutes*, alongside whatever
-                # mechanism the switch started next, so neither ever
-                # decoded anything), this thread just sat blocked forever,
-                # never reaching the unsubscribe() in `finally` below.
-                # Waiting on the stop event directly is immediately
-                # interruptible regardless of what Direwolf's own process/
-                # pipe is doing.
-                self._stop_event.wait()
+                # Receive-only bridge (the SDR-fed G3RUH/AFSK path always
+                # has no output device -- SDR can't transmit -- and a Rig +
+                # Sound Card session with no configured output falls here
+                # too). No real audio bytes are ever written to this
+                # stdout: TX never happens on a receive-only bridge (PTT
+                # NONE, nothing ever calls send_frame() to key up).
+                # Direwolf still writes its console output here though --
+                # startup banner, warnings, and a line per decoded AX.25
+                # frame with its own audio-level quality assessment --
+                # which was previously discarded unread, leaving no record
+                # of whether Direwolf ever even achieved bit sync on a
+                # given SDR reception attempt (2026-09-17, OrigamiSat-2
+                # zero-frame investigation; see direwolf_log.py). Read and
+                # log it line-by-line instead. Terminating the Direwolf
+                # process before setting stop_event (see
+                # DirewolfManager.stop()) closes this pipe and ends the
+                # loop promptly, the same assumption the TX-capable branch
+                # below already relies on for its blocking read().
+                from comms.aprs.direwolf_log import get_direwolf_logger
+
+                dw_logger = get_direwolf_logger()
+                stdout = self._proc.stdout
+                while not self._stop_event.is_set() and stdout is not None:
+                    raw_line = stdout.readline()
+                    if not raw_line:
+                        break  # EOF -- Direwolf exited
+                    line = raw_line.decode("utf-8", errors="replace").rstrip()
+                    if line:
+                        dw_logger.info(line)
             else:
                 while not self._stop_event.is_set():
                     # TX: Direwolf stdout → soundcard output (blocking read)

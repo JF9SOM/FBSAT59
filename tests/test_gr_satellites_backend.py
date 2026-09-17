@@ -22,6 +22,7 @@ import comms.telemetry.gr_satellites_backend as backend
 class _FakeProc:
     def __init__(self) -> None:
         self.stdout = iter([])
+        self.stderr = iter([])
         self.returncode = None
 
     def poll(self) -> None:

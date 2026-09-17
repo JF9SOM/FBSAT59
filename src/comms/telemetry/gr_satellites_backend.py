@@ -285,6 +285,7 @@ class GrSatellitesBackend(QObject):
         super().__init__(parent)
         self._proc: subprocess.Popen[str] | None = None
         self._reader: threading.Thread | None = None
+        self._stderr_reader: threading.Thread | None = None
         self._forwarder: _UdpIqForwarder | None = None
         self._pipeline: object | None = None
         self._kiss_reader: _KissFrameReader | None = None
@@ -363,7 +364,7 @@ class GrSatellitesBackend(QObject):
                 self._proc = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
                     text=True,
                     env=env,
                     creationflags=subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
@@ -372,15 +373,23 @@ class GrSatellitesBackend(QObject):
                 self._proc = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
                     text=True,
                     env=env,
                 )
         except OSError as exc:
             return False, str(exc)
 
+        from comms.telemetry.gr_satellites_log import get_gr_satellites_logger
+
+        get_gr_satellites_logger().info("--- start: %s", " ".join(cmd))
+
         self._reader = threading.Thread(target=self._read_stdout, daemon=True, name="gr-sat-reader")
         self._reader.start()
+        self._stderr_reader = threading.Thread(
+            target=self._read_stderr, daemon=True, name="gr-sat-stderr-reader"
+        )
+        self._stderr_reader.start()
 
         self._started_norad = norad
         if kiss_port is not None:
@@ -431,6 +440,9 @@ class GrSatellitesBackend(QObject):
         if self._reader is not None:
             self._reader.join(timeout=3)
             self._reader = None
+        if self._stderr_reader is not None:
+            self._stderr_reader.join(timeout=3)
+            self._stderr_reader = None
         if self._kiss_reader is not None:
             self._kiss_reader.join(timeout=3)
             self._kiss_reader = None
@@ -443,12 +455,23 @@ class GrSatellitesBackend(QObject):
     # ------------------------------------------------------------------
 
     def _read_stdout(self) -> None:
-        """Read gr_satellites stdout and emit one signal per frame block."""
+        """Read gr_satellites stdout and emit one signal per frame block.
+
+        Every line is also mirrored to gr_satellites.log (see
+        gr_satellites_log.py) — telemetry_received only carries the
+        blank-line-delimited blocks the UI parses, so this is the only
+        place gr_satellites' own non-block console output (progress
+        messages, warnings that don't go to stderr) is preserved at all.
+        """
+        from comms.telemetry.gr_satellites_log import get_gr_satellites_logger
+
         if self._proc is None or self._proc.stdout is None:
             return
+        gr_logger = get_gr_satellites_logger()
         buf: list[str] = []
         for raw_line in self._proc.stdout:
             line = raw_line.rstrip()
+            gr_logger.info(line)
             if not line:
                 if buf:
                     self.telemetry_received.emit("\n".join(buf))
@@ -457,3 +480,22 @@ class GrSatellitesBackend(QObject):
                 buf.append(line)
         if buf:
             self.telemetry_received.emit("\n".join(buf))
+
+    def _read_stderr(self) -> None:
+        """Read gr_satellites stderr and mirror it to gr_satellites.log.
+
+        Previously discarded entirely (stderr=subprocess.DEVNULL) — Python
+        tracebacks, gnuradio warnings, and "no such satellite" errors from
+        gr_satellites itself left no record of why a reception attempt
+        produced nothing. Tagged [stderr] to distinguish from the normal
+        decode/progress text _read_stdout() logs.
+        """
+        from comms.telemetry.gr_satellites_log import get_gr_satellites_logger
+
+        if self._proc is None or self._proc.stderr is None:
+            return
+        gr_logger = get_gr_satellites_logger()
+        for raw_line in self._proc.stderr:
+            line = raw_line.rstrip()
+            if line:
+                gr_logger.info("[stderr] %s", line)
