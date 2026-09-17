@@ -2166,6 +2166,54 @@ class TestHamlibRotatorController:
         ]
         assert p_calls == []
 
+    def test_wrap_catchup_gates_on_departure_from_origin(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        # Rotator's real position when the wrap begins.
+        ctrl._sock.recv.return_value = b"0.2\n31.0\nRPRT 0\n"  # type: ignore[union-attr]
+        ctrl._last_az = 1.2  # tracking near due-north just before the wrap
+        ctrl._catching_up = False
+        assert ctrl.set_position(359.4, 31.4)  # reverse wrap (last<90, az>270)
+        assert ctrl._catching_up is True
+        assert ctrl._catch_up_wrap_origin_az == pytest.approx(0.2)
+        assert ctrl._last_az == pytest.approx(359.4)  # no predictor -> live position
+
+        # Next poll: the rotor has moved only a few degrees from its origin
+        # (0.2 -> 3.8), which is numerically "close" to the target (359.4)
+        # via the shortest-path metric -- exactly the false-positive
+        # scenario. The departure gate must prevent a premature exit.
+        ctrl._sock.recv.return_value = b"3.8\n31.5\nRPRT 0\n"  # type: ignore[union-attr]
+        assert ctrl.set_position(359.3, 31.5)
+        assert ctrl._catching_up is True  # must not have exited
+
+    def test_wrap_catchup_clears_gate_after_departure(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl._catching_up = True
+        ctrl._catch_up_start_time = time.monotonic()
+        ctrl._catch_up_wrap_origin_az = 0.2
+        ctrl._last_az = 359.4  # target
+        # Rotor has now moved far enough from its origin (0.2 -> 20.0, a
+        # ~19.8 degree departure, past the 10-degree margin) but is still
+        # far from the target.
+        ctrl._sock.recv.return_value = b"20.0\n31.5\nRPRT 0\n"  # type: ignore[union-attr]
+        assert ctrl.set_position(300.0, 31.5)
+        assert ctrl._catching_up is True  # still catching up — far from target
+        assert ctrl._catch_up_wrap_origin_az is None  # gate cleared
+
+    def test_wrap_catchup_exits_once_near_target_after_departure(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl._catching_up = True
+        ctrl._catch_up_start_time = time.monotonic()
+        ctrl._catch_up_wrap_origin_az = None  # already departed, gate cleared
+        ctrl._last_az = 359.4  # target
+        ctrl._sock.recv.return_value = b"357.0\n31.5\nRPRT 0\n"  # type: ignore[union-attr]
+        assert ctrl.set_position(300.0, 31.5)
+        assert ctrl._catching_up is False  # genuinely arrived
+
+    def test_initial_jump_does_not_set_wrap_origin(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        assert ctrl.set_position(200.0, 25.0)
+        assert ctrl._catch_up_wrap_origin_az is None
+
     def test_initial_jump_no_predictor_uses_current_position(self) -> None:
         ctrl = self._make_net_ctrl_connected()
         assert ctrl.set_position(200.0, 25.0)

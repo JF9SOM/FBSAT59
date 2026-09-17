@@ -4267,6 +4267,15 @@ class HamlibRotatorController(RotatorController):
     # accurate speed measurement needed. Tune via real-world testing.
     _CATCH_UP_LEAD_ASSUMED_DEG_PER_S: float = 0.7
     _CATCH_UP_LEAD_MAX_S: float = 120.0  # cap how far ahead we aim
+    # A 0-degree wrap's start and target are always numerically adjacent
+    # across the 0/360 seam, so right after re-entering catch-up the
+    # shortest-path arrival check would read "close" before the rotor has
+    # genuinely moved. Require it to travel at least this far from where
+    # the wrap began (2x _CATCH_UP_THRESHOLD, so there's no overlap between
+    # "still near the start" and "near the target") before trusting any
+    # arrival check — distance-based rather than time-based, so it self-
+    # adjusts to however fast the rotator actually turns out to slew.
+    _CATCH_UP_WRAP_DEPARTURE_MARGIN_DEG: float = 10.0
 
     def __init__(
         self,
@@ -4291,6 +4300,15 @@ class HamlibRotatorController(RotatorController):
         self._last_az: float | None = None  # last commanded AZ for shortest-path calc
         self._catching_up: bool = False  # True while rotator is moving to initial position
         self._catch_up_start_time: float | None = None  # monotonic time when catch-up started
+        # Rotator's real azimuth at the moment a 0-degree wrap re-entered
+        # catch-up (None otherwise — including for the initial jump, which
+        # doesn't need this gate). A wrap's start and target are always
+        # numerically adjacent across the 0/360 seam by construction, so the
+        # shortest-path az_diff arrival check below would immediately read
+        # "close" even though the rotor has barely moved — see
+        # set_position()'s use of this for the departure gate that guards
+        # against that false positive.
+        self._catch_up_wrap_origin_az: float | None = None
         # Serialises every rotator I/O exchange (open/close/set_position/
         # get_position/stop/park) across all caller threads.  Re-entrant so
         # set_position() can call _send_p() and get_position() within one
@@ -4400,6 +4418,7 @@ class HamlibRotatorController(RotatorController):
                 self._last_az = None
                 self._catching_up = False
                 self._catch_up_start_time = None
+                self._catch_up_wrap_origin_az = None
                 logger.info("Rotator: connected")
                 return True
         except Exception as exc:
@@ -4499,6 +4518,11 @@ class HamlibRotatorController(RotatorController):
            tracking, rather than stopping early just because the live
            satellite position happened to sweep close to wherever the
            rotator currently is.
+           - If this catch-up episode came from a 0-degree wrap
+             (_catch_up_wrap_origin_az is set): the arrival check itself is
+             gated until the rotor has moved at least
+             _CATCH_UP_WRAP_DEPARTURE_MARGIN_DEG away from where the wrap
+             began — see phase 4 for why.
            - Within _CATCH_UP_THRESHOLD degrees of that target (azimuth
              only): exit catch-up, start normal tracking.
            - Timeout (_CATCH_UP_TIMEOUT seconds): resend P command (to the
@@ -4509,7 +4533,12 @@ class HamlibRotatorController(RotatorController):
            1 — aim ahead via _lead_target() rather than jumping to the live
            position, since a wrap tends to coincide with the highest
            azimuth-rate moments of a pass (e.g. a near-zenith TCA), where the
-           live position goes stale almost immediately.
+           live position goes stale almost immediately. A wrap's start and
+           target are also always numerically adjacent across the 0/360 seam
+           by construction, so the shortest-path arrival check in phase 2
+           would read "close" the instant catch-up begins, before the rotor
+           has genuinely moved — record the rotor's real position at this
+           moment (_catch_up_wrap_origin_az) so phase 2 can gate on it.
         """
         if not self.is_connected:
             return False
@@ -4534,6 +4563,7 @@ class HamlibRotatorController(RotatorController):
                     self._send_p(az_target, el_target)
                     self._catching_up = True
                     self._catch_up_start_time = time.monotonic()
+                    self._catch_up_wrap_origin_az = None
                     self._last_az = az_target
                     logger.info("Rotator: initial jump to az=%.1f el=%.1f", az_target, el_target)
                     return True
@@ -4541,6 +4571,24 @@ class HamlibRotatorController(RotatorController):
                 if self._catching_up:
                     current = self.get_position()
                     rot_az = current.azimuth_deg
+
+                    if self._catch_up_wrap_origin_az is not None:
+                        departed = abs(rot_az - self._catch_up_wrap_origin_az)
+                        if departed > 180:
+                            departed = 360.0 - departed
+                        if departed < self._CATCH_UP_WRAP_DEPARTURE_MARGIN_DEG:
+                            # Still too close to where the 0-degree wrap
+                            # began — a wrap's start and target are always
+                            # numerically adjacent across the 0/360 seam, so
+                            # an arrival check right now would very likely
+                            # read "close" as a false positive rather than
+                            # genuine arrival. Wait for real departure before
+                            # trusting any check below.
+                            return True
+                        # Departed far enough — stop gating for the rest of
+                        # this catch-up episode.
+                        self._catch_up_wrap_origin_az = None
+
                     # Compare against the target we're actually moving toward
                     # (the lead point we last commanded via _send_p — not the
                     # live per-cycle satellite position), so the rotator
@@ -4572,6 +4620,7 @@ class HamlibRotatorController(RotatorController):
                     ):
                         self._send_p(azimuth_deg, el_cmd)
                         self._catch_up_start_time = time.monotonic()
+                        self._catch_up_wrap_origin_az = None
                         self._last_az = azimuth_deg
                         logger.info("Rotator: catch-up timeout, retrying az=%.1f", azimuth_deg)
                         return True
@@ -4600,9 +4649,11 @@ class HamlibRotatorController(RotatorController):
                             azimuth_deg,
                         )
                         return True
+                    wrap_origin_az = self.get_position().azimuth_deg
                     az_target, el_target = target
                     self._catching_up = True
                     self._catch_up_start_time = time.monotonic()
+                    self._catch_up_wrap_origin_az = wrap_origin_az
                     self._last_az = az_target
                     self._send_p(az_target, el_target)
                     logger.info(
@@ -4638,6 +4689,7 @@ class HamlibRotatorController(RotatorController):
                 self._last_az = None
                 self._catching_up = False
                 self._catch_up_start_time = None
+                self._catch_up_wrap_origin_az = None
                 logger.info("Rotator: manual goto az=%.1f el=%.1f", azimuth_deg, el_cmd)
                 return True
         except Exception as exc:
