@@ -2057,6 +2057,15 @@ class TestSouthInitOffset:
 
 
 class TestHamlibRotatorController:
+    @pytest.fixture(autouse=True)
+    def _isolate_rot_record_log(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Prevent catch-up slew-speed measurements (see
+        _record_measured_slew_speed()) from writing to the real
+        rot-record.log during tests. Without this, every pytest run
+        pollutes the user's real log file with synthetic test values.
+        """
+        monkeypatch.setattr("rig.controller.get_rotor_record_logger", lambda: MagicMock())
+
     def _make_ctrl(self) -> HamlibRotatorController:
         return HamlibRotatorController(model_id=1, port="/dev/null")
 
@@ -2383,6 +2392,10 @@ class TestHamlibRotatorController:
         ctrl = self._make_net_ctrl_connected()
         ctrl._catch_up_measure_start_time = 1000.0
         ctrl._catch_up_measure_start_az = 350.0
+        # _catch_up_measure_long_path defaults to False -- this episode was
+        # not flagged as boundary-forced, so the plain short-path distance
+        # is used (contrast with test_record_measured_slew_speed_uses_long_
+        # path_when_flagged below).
         observed: list[float] = []
         ctrl.set_slew_speed_observer(observed.append)
         with patch("rig.controller.time.monotonic", return_value=1050.0):
@@ -2390,6 +2403,33 @@ class TestHamlibRotatorController:
             # seam, not the naive |350-10|=340. 20/50s=0.4 deg/s, *0.8=0.32.
             ctrl._record_measured_slew_speed(10.0)
         assert ctrl._assumed_slew_deg_per_s == pytest.approx(0.32)
+
+    def test_record_measured_slew_speed_uses_long_path_when_flagged(self) -> None:
+        # Regression test for a reported bug: when the catch-up episode was
+        # boundary-forced (the Hamlib SkyWatcher backend forced the long way
+        # around -- see _lead_target()'s docstring), the rotor's real
+        # travel distance is the LONG arc, not the short one between its
+        # start and end azimuths. Using the short arc (as the original
+        # implementation did) silently produced a measured speed roughly
+        # an order of magnitude too slow, which then got persisted as the
+        # new assumed speed -- exactly backwards from what this feature is
+        # supposed to achieve.
+        ctrl = self._make_net_ctrl_connected()
+        ctrl._catch_up_measure_start_time = 1000.0
+        ctrl._catch_up_measure_start_az = 0.0
+        ctrl._catch_up_measure_long_path = True
+        observed: list[float] = []
+        ctrl.set_slew_speed_observer(observed.append)
+        with patch("rig.controller.time.monotonic", return_value=1050.0):
+            # Short-path(0.0, 100.0) would be 100 deg, but long_path means
+            # the rotor actually traveled the other way around: 360-100=260
+            # deg in 50s -> 5.2 deg/s measured, * 0.8 margin = 4.16.
+            ctrl._record_measured_slew_speed(100.0)
+        assert ctrl._assumed_slew_deg_per_s == pytest.approx(4.16)
+        assert observed == [pytest.approx(4.16)]
+        # The flag is consumed (like the other measurement state) so a
+        # later, unrelated completion doesn't inherit it.
+        assert ctrl._catch_up_measure_long_path is False
 
     def test_record_measured_slew_speed_skips_short_distance(self) -> None:
         ctrl = self._make_net_ctrl_connected()
@@ -2439,6 +2479,42 @@ class TestHamlibRotatorController:
         # * 0.8 safety margin = 2.0 deg/s.
         assert observed == [pytest.approx(2.0)]
         assert ctrl._assumed_slew_deg_per_s == pytest.approx(2.0)
+
+    def test_wrap_catchup_completion_measures_long_path_distance(self) -> None:
+        # End-to-end regression test for a reported real-hardware bug: a
+        # boundary-forced 0-degree wrap catch-up (origin near 0, live
+        # satellite near 360 -- see test_wrap_catchup_uses_long_path_lead_
+        # target) must, on completion, measure the rotor's real slew speed
+        # using the LONG path it actually traveled, not the trivial short
+        # path between its start (~0) and end (~338) azimuths.
+        ctrl = self._make_net_ctrl_connected()
+        ctrl._sock.recv.side_effect = [  # type: ignore[union-attr]
+            b"0.1\n11.5\nRPRT 0\n",  # origin read inside _lead_target() for the wrap re-entry
+            b"0.1\n11.5\nRPRT 0\n",  # origin read again right after, for the wrap-departure gate
+            b"RPRT 0\n",  # _send_p()'s discarded RPRT for the wrap re-entry P command
+            b"337.7\n30.0\nRPRT 0\n",  # rotor position once caught up near the far target
+            b"RPRT 0\n",  # _send_p()'s discarded RPRT for the fall-through tracking command
+        ]
+        ctrl._last_az = 0.1
+        ctrl._catching_up = False
+        ctrl.set_predictor(lambda lead_s: (342.4, 28.1))
+        observed: list[float] = []
+        ctrl.set_slew_speed_observer(observed.append)
+
+        with patch("rig.controller.time.monotonic", side_effect=[1000.0, 1081.85]):
+            assert ctrl.set_position(360.0, 11.5)  # crosses zero -> wrap re-entry
+            assert ctrl._catching_up is True
+            assert ctrl._catch_up_measure_long_path is True
+
+            assert ctrl.set_position(353.1, 30.0)  # rotor now at 337.7, within 5 deg of 342.4
+            assert ctrl._catching_up is False
+        # Short-path(0.1, 337.7) is only 22.4 deg -- the buggy old result --
+        # but the rotor was forced the long way around, so the real
+        # distance is 360-22.4=337.6 deg over 81.85s -> ~4.125 deg/s
+        # measured, * 0.8 margin ~= 3.3 deg/s.
+        expected = (337.6 / 81.85) * 0.8
+        assert observed == [pytest.approx(expected, rel=1e-3)]
+        assert ctrl._assumed_slew_deg_per_s == pytest.approx(expected, rel=1e-3)
 
     def test_net_stop_sends_command(self) -> None:
         ctrl = self._make_net_ctrl_connected()

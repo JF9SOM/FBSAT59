@@ -4343,6 +4343,13 @@ class HamlibRotatorController(RotatorController):
         # entirely, see docs/hamlib.md).
         self._catch_up_measure_start_time: float | None = None
         self._catch_up_measure_start_az: float | None = None
+        # Whether this catch-up episode's origin and live satellite position
+        # straddled the 0/360 seam at the moment it started (the same
+        # condition _lead_target() calls boundary_forced) — recorded so
+        # _record_measured_slew_speed() knows the rotor was forced the long
+        # way around and must measure distance accordingly, instead of
+        # assuming the shorter numeric arc was the one actually traveled.
+        self._catch_up_measure_long_path: bool = False
         # Serialises every rotator I/O exchange (open/close/set_position/
         # get_position/stop/park) across all caller threads.  Re-entrant so
         # set_position() can call _send_p() and get_position() within one
@@ -4454,6 +4461,7 @@ class HamlibRotatorController(RotatorController):
                 self._catch_up_wrap_origin_az = None
                 self._catch_up_measure_start_time = None
                 self._catch_up_measure_start_az = None
+                self._catch_up_measure_long_path = False
                 logger.info("Rotator: connected")
                 return True
         except Exception as exc:
@@ -4590,11 +4598,23 @@ class HamlibRotatorController(RotatorController):
         the catch-up traveled less than _CATCH_UP_THRESHOLD: at that point
         the rotor may have started only a hair from the target, and
         distance-over-time from such a short trip is too noisy to trust.
+
+        Distance is computed via the shortest arc between origin_az and
+        rot_az_now UNLESS this episode's origin and live satellite position
+        straddled the 0/360 seam when catch-up started
+        (self._catch_up_measure_long_path, the same condition _lead_target()
+        calls boundary_forced) — in that case the rotor was forced the long
+        way around (see _lead_target()'s docstring), so the shortest arc
+        between the two endpoints would badly understate how far it actually
+        traveled, exactly the same reasoning _lead_target() itself applies
+        when sizing the lead-time distance.
         """
         start_time = self._catch_up_measure_start_time
         origin_az = self._catch_up_measure_start_az
+        long_path = self._catch_up_measure_long_path
         self._catch_up_measure_start_time = None
         self._catch_up_measure_start_az = None
+        self._catch_up_measure_long_path = False
         if start_time is None or origin_az is None:
             return
 
@@ -4604,6 +4624,8 @@ class HamlibRotatorController(RotatorController):
 
         distance_deg = abs(rot_az_now - origin_az)
         if distance_deg > 180:
+            distance_deg = 360.0 - distance_deg
+        if long_path:
             distance_deg = 360.0 - distance_deg
         if distance_deg <= self._CATCH_UP_THRESHOLD:
             return
@@ -4702,6 +4724,13 @@ class HamlibRotatorController(RotatorController):
                     self._last_az = az_target
                     self._catch_up_measure_start_time = time.monotonic()
                     self._catch_up_measure_start_az = origin_az
+                    # Same boundary_forced condition _lead_target() used to
+                    # pick the lead-time distance — recorded here so
+                    # _record_measured_slew_speed() applies the matching
+                    # long-path distance formula once this episode completes.
+                    self._catch_up_measure_long_path = (origin_az > 270 and azimuth_deg < 90) or (
+                        origin_az < 90 and azimuth_deg > 270
+                    )
                     logger.info("Rotator: initial jump to az=%.1f el=%.1f", az_target, el_target)
                     return True
 
@@ -4784,6 +4813,13 @@ class HamlibRotatorController(RotatorController):
                     self._send_p(az_target, el_target)
                     self._catch_up_measure_start_time = time.monotonic()
                     self._catch_up_measure_start_az = wrap_origin_az
+                    # Same boundary_forced condition _lead_target() used to
+                    # pick the lead-time distance — recorded here so
+                    # _record_measured_slew_speed() applies the matching
+                    # long-path distance formula once this episode completes.
+                    self._catch_up_measure_long_path = (
+                        wrap_origin_az > 270 and azimuth_deg < 90
+                    ) or (wrap_origin_az < 90 and azimuth_deg > 270)
                     logger.info(
                         "Rotator: 0-degree wrap %.1f->%.1f, re-entering catch-up toward "
                         "az=%.1f el=%.1f",
@@ -4819,6 +4855,7 @@ class HamlibRotatorController(RotatorController):
                 self._catch_up_wrap_origin_az = None
                 self._catch_up_measure_start_time = None
                 self._catch_up_measure_start_az = None
+                self._catch_up_measure_long_path = False
                 logger.info("Rotator: manual goto az=%.1f el=%.1f", azimuth_deg, el_cmd)
                 return True
         except Exception as exc:
