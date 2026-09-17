@@ -4291,14 +4291,6 @@ class HamlibRotatorController(RotatorController):
         self._last_az: float | None = None  # last commanded AZ for shortest-path calc
         self._catching_up: bool = False  # True while rotator is moving to initial position
         self._catch_up_start_time: float | None = None  # monotonic time when catch-up started
-        # Estimated seconds for the rotator to reach the current catch-up
-        # target (set alongside it by _lead_target(), 0.0 when there's no
-        # predictor-based estimate). While elapsed time since
-        # _catch_up_start_time is under this, set_position() skips the
-        # per-cycle get_position() arrival check entirely — see
-        # _lead_target()'s docstring for why polling less often shouldn't
-        # affect correctness (the 60s timeout is still the ultimate backstop).
-        self._catch_up_lead_s: float = 0.0
         # Serialises every rotator I/O exchange (open/close/set_position/
         # get_position/stop/park) across all caller threads.  Re-entrant so
         # set_position() can call _send_p() and get_position() within one
@@ -4408,7 +4400,6 @@ class HamlibRotatorController(RotatorController):
                 self._last_az = None
                 self._catching_up = False
                 self._catch_up_start_time = None
-                self._catch_up_lead_s = 0.0
                 logger.info("Rotator: connected")
                 return True
         except Exception as exc:
@@ -4466,13 +4457,7 @@ class HamlibRotatorController(RotatorController):
         Returns None if the predicted point is below the horizon — the
         caller should hold off moving rather than jump to a point the
         target hasn't risen to yet.
-
-        As a side effect, sets self._catch_up_lead_s to the estimated travel
-        time on a successful prediction (0.0 in every fallback case), so
-        set_position() knows how long to leave the rotator alone before
-        polling for arrival — see that method's use of it.
         """
-        self._catch_up_lead_s = 0.0
         if self._predictor is None:
             return azimuth_deg, el_cmd
 
@@ -4496,7 +4481,6 @@ class HamlibRotatorController(RotatorController):
         pred_az, pred_el = predicted
         if pred_el < 0.0:
             return None
-        self._catch_up_lead_s = lead_s
         return pred_az, max(0.0, min(90.0, pred_el))
 
     def set_position(self, azimuth_deg: float, elevation_deg: float) -> bool:
@@ -4555,17 +4539,6 @@ class HamlibRotatorController(RotatorController):
                     return True
 
                 if self._catching_up:
-                    elapsed = time.monotonic() - (self._catch_up_start_time or 0.0)
-                    if elapsed < self._catch_up_lead_s:
-                        # Still within the estimated travel time to the
-                        # catch-up target (see _lead_target()) — skip the
-                        # arrival check, and the rotator I/O it requires,
-                        # entirely. Nothing disturbs the rotator while it's
-                        # presumably still slewing toward the single P
-                        # command already sent, matching the initial jump's
-                        # "send once and leave it alone" behavior.
-                        return True
-
                     current = self.get_position()
                     rot_az = current.azimuth_deg
                     # Compare against the target we're actually moving toward
@@ -4586,7 +4559,6 @@ class HamlibRotatorController(RotatorController):
                     if az_diff <= self._CATCH_UP_THRESHOLD:
                         self._catching_up = False
                         self._catch_up_start_time = None
-                        self._catch_up_lead_s = 0.0
                         logger.info(
                             "Rotator: caught up at rot=%.1f target=%.1f sat=%.1f",
                             rot_az,
@@ -4594,15 +4566,12 @@ class HamlibRotatorController(RotatorController):
                             azimuth_deg,
                         )
                         # Fall through to normal tracking below
-                    elif elapsed > max(self._CATCH_UP_TIMEOUT, self._catch_up_lead_s):
-                        # The 60s timeout alone could fire before a
-                        # deliberately-far lead target (up to
-                        # _CATCH_UP_LEAD_MAX_S=120s) was ever reachable —
-                        # never call it premature before we've at least
-                        # given our own lead estimate a chance.
+                    elif (
+                        time.monotonic() - (self._catch_up_start_time or 0.0)
+                        > self._CATCH_UP_TIMEOUT
+                    ):
                         self._send_p(azimuth_deg, el_cmd)
                         self._catch_up_start_time = time.monotonic()
-                        self._catch_up_lead_s = 0.0
                         self._last_az = azimuth_deg
                         logger.info("Rotator: catch-up timeout, retrying az=%.1f", azimuth_deg)
                         return True
@@ -4669,7 +4638,6 @@ class HamlibRotatorController(RotatorController):
                 self._last_az = None
                 self._catching_up = False
                 self._catch_up_start_time = None
-                self._catch_up_lead_s = 0.0
                 logger.info("Rotator: manual goto az=%.1f el=%.1f", azimuth_deg, el_cmd)
                 return True
         except Exception as exc:

@@ -2241,62 +2241,6 @@ class TestHamlibRotatorController:
         assert ctrl.set_position(50.0, 10.0)
         assert ctrl._catching_up is False
 
-    def test_lead_target_sets_catch_up_lead_s(self) -> None:
-        ctrl = self._make_net_ctrl_connected()  # get_position() reports az=180.0
-        ctrl.set_predictor(lambda lead_s: (200.0, 30.0))
-        target = ctrl._lead_target(190.0, 20.0)
-        assert target == (200.0, 30.0)
-        # az_diff = |180.0 - 190.0| = 10.0
-        assert ctrl._catch_up_lead_s == pytest.approx(10.0 / ctrl._CATCH_UP_LEAD_ASSUMED_DEG_PER_S)
-
-    def test_lead_target_no_predictor_resets_lead_s(self) -> None:
-        ctrl = self._make_net_ctrl_connected()
-        ctrl._catch_up_lead_s = 42.0  # stale value from a previous call
-        target = ctrl._lead_target(190.0, 20.0)
-        assert target == (190.0, 20.0)
-        assert ctrl._catch_up_lead_s == 0.0
-
-    def test_catchup_skips_check_before_lead_time_elapses(self) -> None:
-        ctrl = self._make_net_ctrl_connected()
-        ctrl._last_az = 200.0
-        ctrl._catching_up = True
-        ctrl._catch_up_start_time = time.monotonic()
-        ctrl._catch_up_lead_s = 100.0
-        ctrl._sock.sendall.reset_mock()  # type: ignore[union-attr]
-        assert ctrl.set_position(50.0, 10.0) is True
-        assert ctrl._catching_up is True  # unchanged — no check was made
-        # No get_position() ("p") query should have been sent while still
-        # within the estimated lead time — the rotator is left alone.
-        assert ctrl._sock.sendall.call_args_list == []  # type: ignore[union-attr]
-
-    def test_catchup_resumes_check_after_lead_time_elapses(self) -> None:
-        ctrl = self._make_net_ctrl_connected()  # get_position() reports rot_az=180.0
-        ctrl._last_az = 183.0  # within threshold of the reported rot_az
-        ctrl._catching_up = True
-        ctrl._catch_up_start_time = time.monotonic() - 10.0  # started 10s ago
-        ctrl._catch_up_lead_s = 5.0  # lead time already elapsed
-        assert ctrl.set_position(50.0, 10.0) is True
-        assert ctrl._catching_up is False  # the check ran and exited catch-up
-
-    def test_catchup_timeout_waits_for_lead_time(self) -> None:
-        ctrl = self._make_net_ctrl_connected()  # get_position() reports rot_az=180.0
-        ctrl._last_az = 300.0  # far from rot_az — az_diff exceeds the threshold
-        ctrl._catching_up = True
-        ctrl._catch_up_start_time = time.monotonic() - 70.0  # past the 60s default timeout
-        ctrl._catch_up_lead_s = 100.0  # but our own lead estimate says 100s
-        assert ctrl.set_position(50.0, 10.0) is True
-        assert ctrl._catching_up is True  # must not time out before 100s
-
-    def test_catchup_timeout_fires_after_lead_time(self) -> None:
-        ctrl = self._make_net_ctrl_connected()  # get_position() reports rot_az=180.0
-        ctrl._last_az = 300.0
-        ctrl._catching_up = True
-        ctrl._catch_up_start_time = time.monotonic() - 110.0
-        ctrl._catch_up_lead_s = 100.0
-        assert ctrl.set_position(50.0, 10.0) is True
-        assert ctrl._catching_up is True  # still catching up, but re-sent
-        assert ctrl._catch_up_lead_s == 0.0  # reset for the fresh retry
-
     def test_net_stop_sends_command(self) -> None:
         ctrl = self._make_net_ctrl_connected()
         assert ctrl.stop()
