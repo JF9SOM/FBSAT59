@@ -2251,6 +2251,7 @@ class TestHamlibRotatorController:
 
     def test_initial_jump_lead_seconds_uncapped(self) -> None:
         ctrl = self._make_net_ctrl_connected()  # get_position() reports az=180.0
+        ctrl.set_assumed_slew_speed(1.0)
         received_lead: list[float] = []
 
         def predictor(lead_s: float) -> tuple[float, float]:
@@ -2265,6 +2266,7 @@ class TestHamlibRotatorController:
 
     def test_lead_target_uses_long_path_when_boundary_crossed(self) -> None:
         ctrl = self._make_net_ctrl_connected()
+        ctrl.set_assumed_slew_speed(1.0)
         ctrl._sock.recv.return_value = b"0.1\n30.0\nRPRT 0\n"  # type: ignore[union-attr]
         received_lead: list[float] = []
 
@@ -2283,6 +2285,7 @@ class TestHamlibRotatorController:
 
     def test_lead_target_uses_short_path_when_not_boundary_crossed(self) -> None:
         ctrl = self._make_net_ctrl_connected()  # get_position() reports az=180.0
+        ctrl.set_assumed_slew_speed(1.0)
         received_lead: list[float] = []
 
         def predictor(lead_s: float) -> tuple[float, float]:
@@ -2348,6 +2351,94 @@ class TestHamlibRotatorController:
         assert ctrl.set_position(50.0, 10.0) is True
         assert ctrl._catching_up is True  # still waiting, no timeout retry fired
         assert ctrl._last_az == pytest.approx(300.0)  # target unchanged, not resent
+
+    def test_default_assumed_slew_speed_is_2_5(self) -> None:
+        ctrl = HamlibRotatorController(net_mode=True)
+        assert ctrl._assumed_slew_deg_per_s == pytest.approx(2.5)
+
+    def test_set_assumed_slew_speed_overrides_default(self) -> None:
+        ctrl = HamlibRotatorController(net_mode=True)
+        ctrl.set_assumed_slew_speed(3.3)
+        assert ctrl._assumed_slew_deg_per_s == pytest.approx(3.3)
+
+    def test_record_measured_slew_speed_applies_safety_margin(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl._catch_up_measure_start_time = 1000.0
+        ctrl._catch_up_measure_start_az = 0.0
+        observed: list[float] = []
+        ctrl.set_slew_speed_observer(observed.append)
+        # Mock the clock for an exact elapsed time instead of a real
+        # backdated delta, whose gap to "now" depends on test execution
+        # speed and could push a tight pytest.approx over its tolerance.
+        with patch("rig.controller.time.monotonic", return_value=1050.0):
+            # Traveled 100 deg in 50s -> measured 2.0 deg/s, * 0.8 margin = 1.6.
+            ctrl._record_measured_slew_speed(100.0)
+        assert ctrl._assumed_slew_deg_per_s == pytest.approx(1.6)
+        assert observed == [pytest.approx(1.6)]
+        # Measurement state is consumed so a later completion doesn't reuse it.
+        assert ctrl._catch_up_measure_start_time is None
+        assert ctrl._catch_up_measure_start_az is None
+
+    def test_record_measured_slew_speed_wraps_across_seam(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl._catch_up_measure_start_time = 1000.0
+        ctrl._catch_up_measure_start_az = 350.0
+        observed: list[float] = []
+        ctrl.set_slew_speed_observer(observed.append)
+        with patch("rig.controller.time.monotonic", return_value=1050.0):
+            # 350 -> 10 is a 20 deg short-path distance across the 0/360
+            # seam, not the naive |350-10|=340. 20/50s=0.4 deg/s, *0.8=0.32.
+            ctrl._record_measured_slew_speed(10.0)
+        assert ctrl._assumed_slew_deg_per_s == pytest.approx(0.32)
+
+    def test_record_measured_slew_speed_skips_short_distance(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl._catch_up_measure_start_time = 1000.0
+        ctrl._catch_up_measure_start_az = 100.0
+        before = ctrl._assumed_slew_deg_per_s
+        observed: list[float] = []
+        ctrl.set_slew_speed_observer(observed.append)
+        with patch("rig.controller.time.monotonic", return_value=1010.0):
+            # Only 2 deg of travel (<= _CATCH_UP_THRESHOLD) — too noisy to trust.
+            ctrl._record_measured_slew_speed(102.0)
+        assert ctrl._assumed_slew_deg_per_s == pytest.approx(before)
+        assert observed == []
+
+    def test_record_measured_slew_speed_noop_without_start(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        before = ctrl._assumed_slew_deg_per_s
+        observed: list[float] = []
+        ctrl.set_slew_speed_observer(observed.append)
+        ctrl._record_measured_slew_speed(50.0)  # no catch-up episode was recorded
+        assert ctrl._assumed_slew_deg_per_s == pytest.approx(before)
+        assert observed == []
+
+    def test_initial_jump_catchup_completion_triggers_slew_speed_measurement(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl._sock.recv.side_effect = [  # type: ignore[union-attr]
+            b"0.0\n10.0\nRPRT 0\n",  # origin read inside _lead_target()
+            b"0.0\n10.0\nRPRT 0\n",  # origin read again right after, for measurement start
+            b"RPRT 0\n",  # _send_p()'s discarded RPRT for the initial jump P command
+            b"100.0\n20.0\nRPRT 0\n",  # rotor position on the next set_position() poll
+            b"RPRT 0\n",  # _send_p()'s discarded RPRT for the fall-through tracking command
+        ]
+        ctrl.set_predictor(lambda lead_s: (105.0, 20.0))
+        observed: list[float] = []
+        ctrl.set_slew_speed_observer(observed.append)
+
+        # Mock the clock instead of backdating by a real wall-clock delta,
+        # so the elapsed time (and therefore the measured speed) is exact
+        # rather than off by whatever the test itself takes to execute.
+        with patch("rig.controller.time.monotonic", side_effect=[1000.0, 1040.0]):
+            assert ctrl.set_position(50.0, 20.0)  # initial jump -> target 105.0
+            assert ctrl._catching_up is True
+
+            assert ctrl.set_position(102.0, 20.0)  # rotor now at 100.0, within 5 deg of 105.0
+            assert ctrl._catching_up is False
+        # distance |100.0 - 0.0| = 100 deg over 40s -> measured 2.5 deg/s,
+        # * 0.8 safety margin = 2.0 deg/s.
+        assert observed == [pytest.approx(2.0)]
+        assert ctrl._assumed_slew_deg_per_s == pytest.approx(2.0)
 
     def test_net_stop_sends_command(self) -> None:
         ctrl = self._make_net_ctrl_connected()

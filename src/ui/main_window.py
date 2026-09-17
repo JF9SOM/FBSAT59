@@ -623,6 +623,12 @@ class MainWindow(QMainWindow):
     _satnogs_network_error: Signal = Signal(str)
     # Signal used to pass rotator position from a background thread to the UI thread.
     _rot_pos_updated: Signal = Signal(float, float)
+    # Signal used to pass a freshly measured catch-up slew speed (deg/s,
+    # already safety-derated) from the background rotator I/O thread (see
+    # HamlibRotatorController.set_slew_speed_observer()) to the UI thread,
+    # which persists it — see _on_rotator_slew_speed_measured()/
+    # _save_rotator_slew_speed().
+    _rot_slew_speed_measured: Signal = Signal(float)
     # Signal fired from the download thread when the default NASA map has been saved.
     _map_downloaded: Signal = Signal()
     # Signal to update sync progress label from a background thread (empty string = hide).
@@ -907,6 +913,7 @@ class MainWindow(QMainWindow):
         self._radio_control.lock_changed.connect(self._on_lock_changed)
         self._radio_control.rx_offset_changed.connect(self._on_rx_offset_changed)
         self._rot_pos_updated.connect(self._on_rotator_pos_updated)
+        self._rot_slew_speed_measured.connect(self._save_rotator_slew_speed)
         self._radio_control.ctcss_send_requested.connect(self._on_ctcss_send)
         self._radio_control.ctcss_activate_requested.connect(self._on_ctcss_activate)
         self._radio_control.rotator_connected.connect(self._on_rotator_connected)
@@ -7317,6 +7324,56 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             logger.warning("Failed to save rotator cycle setting: %s", exc)
 
+    def _load_rotator_slew_speed_setting(self) -> float:
+        """Load the persisted rotator catch-up slew speed (deg/s) from the DB.
+
+        Defaults to 2.5 deg/s the first time a given installation runs this
+        (before any catch-up has completed and self-calibrated the value —
+        see HamlibRotatorController._record_measured_slew_speed()). Real
+        slew speed varies by rotator model and by the weight/wind load of
+        whatever antenna is mounted, so this is deliberately not a fixed
+        constant — see docs/hamlib.md "想定スルー速度の自動計測・永続化".
+        """
+        value = 2.5
+        try:
+            row = self._conn.execute(
+                "SELECT value FROM app_settings WHERE key = 'rotator_slew_deg_per_s'"
+            ).fetchone()
+            if row is not None:
+                value = float(row["value"])
+        except Exception as exc:
+            logger.warning("Failed to load rotator slew speed setting: %s", exc)
+        return value
+
+    def _on_rotator_slew_speed_measured(self, deg_per_s: float) -> None:
+        """RotatorController.set_slew_speed_observer() callback.
+
+        Runs on the background rotator I/O thread (see
+        HamlibRotatorController._record_measured_slew_speed(), invoked from
+        within set_position() in _send_to_rotator()'s worker thread) — just
+        emits a signal so the actual DB write happens on the UI thread via
+        _save_rotator_slew_speed().
+        """
+        self._rot_slew_speed_measured.emit(deg_per_s)
+
+    def _save_rotator_slew_speed(self, deg_per_s: float) -> None:
+        """Persist a freshly measured rotator catch-up slew speed (deg/s) to the DB.
+
+        Runs on the UI thread (connected to _rot_slew_speed_measured). The
+        value already has HamlibRotatorController's safety margin applied —
+        see _record_measured_slew_speed().
+        """
+        try:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value) VALUES"
+                " ('rotator_slew_deg_per_s', ?)",
+                (str(deg_per_s),),
+            )
+            self._conn.commit()
+            logger.info("Rotator: saved measured slew speed %.3f deg/s", deg_per_s)
+        except Exception as exc:
+            logger.warning("Failed to save rotator slew speed setting: %s", exc)
+
     def _on_tx_owner_changed(self, device: object, owner: object) -> None:
         """Update the status bar TX-owner indicator.
 
@@ -7384,6 +7441,8 @@ class MainWindow(QMainWindow):
                     baud_rate=baud,
                 )
             self._rotator_controller.set_predictor(self._predict_rotator_lead)
+            self._rotator_controller.set_assumed_slew_speed(self._load_rotator_slew_speed_setting())
+            self._rotator_controller.set_slew_speed_observer(self._on_rotator_slew_speed_measured)
             self._radio_control.set_rotator(self._rotator_controller)
             self._update_rot_label()
         except Exception as exc:

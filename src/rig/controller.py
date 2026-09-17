@@ -37,6 +37,8 @@ if TYPE_CHECKING:
 
 import httpx
 
+from rig.rot_record_log import get_rotor_record_logger
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -4190,12 +4192,39 @@ class RotatorController(ABC):
         # isinstance check; subclasses that don't support look-ahead simply
         # never read it.
         self._predictor: Callable[[float], tuple[float, float] | None] | None = None
+        # Assumed catch-up slew speed (degrees/second), used by
+        # HamlibRotatorController to size the lead-time distance in
+        # _lead_target(). Real slew speed varies by rotator model and by
+        # the weight/wind-load of whatever antenna is mounted on it, so
+        # this is not a fixed constant: MainWindow loads a persisted,
+        # previously-measured value at startup via set_assumed_slew_speed()
+        # (falling back to a conservative 2.5 deg/s default the first time),
+        # and HamlibRotatorController overwrites it automatically after each
+        # completed catch-up via set_slew_speed_observer() — see
+        # docs/hamlib.md "想定スルー速度の自動計測・永続化". Base class
+        # stores both so callers can register them on any RotatorController
+        # without an isinstance check; subclasses without a catch-up
+        # mechanism simply never read/invoke them.
+        self._assumed_slew_deg_per_s: float = 2.5
+        self._slew_speed_observer: Callable[[float], None] | None = None
 
     def set_predictor(
         self, predictor: Callable[[float], tuple[float, float] | None] | None
     ) -> None:
         """Register a lead-time position predictor (or None to disable it)."""
         self._predictor = predictor
+
+    def set_assumed_slew_speed(self, deg_per_s: float) -> None:
+        """Set the assumed rotator slew speed (deg/s) used to size catch-up lead time."""
+        self._assumed_slew_deg_per_s = deg_per_s
+
+    def set_slew_speed_observer(self, observer: Callable[[float], None] | None) -> None:
+        """Register a callback invoked with a newly measured slew speed
+        (deg/s, already safety-derated) whenever a catch-up episode
+        completes. Callers that want the measurement to survive a restart
+        (see MainWindow) should persist it here.
+        """
+        self._slew_speed_observer = observer
 
     @abstractmethod
     def connect(self) -> bool:
@@ -4258,13 +4287,14 @@ class HamlibRotatorController(RotatorController):
     """
 
     _CATCH_UP_THRESHOLD: float = 5.0  # degrees; switch to normal tracking when within this
-    # Deliberately conservative (slower than the ~1.1-1.2 deg/s observed on a
-    # real SkyWatcher catch-up) lead-time assumption for the initial jump: the
-    # aim point lies on the target's real future path, so as long as this is
-    # a safe lower bound on the rotator's true slew speed, the target is
-    # guaranteed to sweep through the rotator's vicinity eventually — no
-    # accurate speed measurement needed. Tune via real-world testing.
-    _CATCH_UP_LEAD_ASSUMED_DEG_PER_S: float = 1.0
+    # Safety margin applied to a freshly measured catch-up slew speed before
+    # it replaces self._assumed_slew_deg_per_s (see _record_measured_slew_speed()):
+    # the assumed speed must stay a lower bound on the rotator's true speed
+    # (see _lead_target()'s docstring), and a single measurement can run a
+    # little fast (favorable poll timing, no wind load that day, etc.), so
+    # only 80% of it is trusted. Raise toward 1.0 later if real-world use
+    # shows the lead time consistently overshooting by more than needed.
+    _SLEW_SPEED_SAFETY_MARGIN: float = 0.8
     # A 0-degree wrap's start and target are always numerically adjacent
     # across the 0/360 seam, so right after re-entering catch-up the
     # shortest-path arrival check would read "close" before the rotor has
@@ -4306,6 +4336,13 @@ class HamlibRotatorController(RotatorController):
         # set_position()'s use of this for the departure gate that guards
         # against that false positive.
         self._catch_up_wrap_origin_az: float | None = None
+        # Wall-clock start time and rotor origin azimuth of the current
+        # catch-up episode (initial jump or wrap re-entry), used only to
+        # measure the real slew speed once catch-up completes — see
+        # _record_measured_slew_speed(). Not used for any timeout (removed
+        # entirely, see docs/hamlib.md).
+        self._catch_up_measure_start_time: float | None = None
+        self._catch_up_measure_start_az: float | None = None
         # Serialises every rotator I/O exchange (open/close/set_position/
         # get_position/stop/park) across all caller threads.  Re-entrant so
         # set_position() can call _send_p() and get_position() within one
@@ -4415,6 +4452,8 @@ class HamlibRotatorController(RotatorController):
                 self._last_az = None
                 self._catching_up = False
                 self._catch_up_wrap_origin_az = None
+                self._catch_up_measure_start_time = None
+                self._catch_up_measure_start_az = None
                 logger.info("Rotator: connected")
                 return True
         except Exception as exc:
@@ -4460,14 +4499,17 @@ class HamlibRotatorController(RotatorController):
         Without a predictor (or if it fails to produce a result), falls back
         to (azimuth_deg, el_cmd) — the current position, i.e. the previous
         no-look-ahead behavior. With one, estimates how long the rotator
-        needs to close the current gap — assuming a deliberately
-        conservative slew rate (_CATCH_UP_LEAD_ASSUMED_DEG_PER_S, safely
-        below any real-world measurement) — and aims that far ahead along
-        the target's real future path instead of its current position. Since
-        the aim point lies on the real path, the target is guaranteed to
-        sweep through the rotator's eventual vicinity regardless of how
-        inaccurate the slew-rate assumption is, as long as it doesn't
-        overestimate the rotator's true speed.
+        needs to close the current gap — assuming a slew rate
+        (self._assumed_slew_deg_per_s, safely below any real-world
+        measurement; see set_assumed_slew_speed()/set_slew_speed_observer()
+        on the base class and _record_measured_slew_speed() below for how
+        it is calibrated from real catch-up episodes rather than left as a
+        fixed constant) — and aims that far ahead along the target's real
+        future path instead of its current position. Since the aim point
+        lies on the real path, the target is guaranteed to sweep through
+        the rotator's eventual vicinity regardless of how inaccurate the
+        slew-rate assumption is, as long as it doesn't overestimate the
+        rotator's true speed.
 
         Returns None if the predicted point is below the horizon — the
         caller should hold off moving rather than jump to a point the
@@ -4509,7 +4551,7 @@ class HamlibRotatorController(RotatorController):
             )
             if boundary_forced:
                 az_diff = 360.0 - az_diff
-            lead_s = az_diff / self._CATCH_UP_LEAD_ASSUMED_DEG_PER_S
+            lead_s = az_diff / self._assumed_slew_deg_per_s
             predicted = self._predictor(lead_s)
         except Exception as exc:
             logger.error("Rotator: lead-time prediction failed, using current position: %s", exc)
@@ -4522,6 +4564,69 @@ class HamlibRotatorController(RotatorController):
         if pred_el < 0.0:
             return None
         return pred_az, max(0.0, min(90.0, pred_el))
+
+    def _record_measured_slew_speed(self, rot_az_now: float) -> None:
+        """Measure the real slew speed of the catch-up episode that just
+        completed and, if it looks reliable, use it to update
+        self._assumed_slew_deg_per_s for future catch-ups.
+
+        The real slew speed varies by rotator model and by the weight/wind
+        load of whatever antenna happens to be mounted, so a single
+        hardcoded constant can't be right for every installation — see
+        docs/hamlib.md "想定スルー速度の自動計測・永続化". Every completed
+        catch-up is a free real-world measurement (distance actually
+        traveled / time actually taken), so it's used to keep the assumed
+        speed calibrated automatically, without the operator ever needing to
+        measure it by hand.
+
+        A margin (_SLEW_SPEED_SAFETY_MARGIN) is applied before the measured
+        value is trusted: the assumed speed must stay a genuine lower bound
+        on the rotator's true speed (see _lead_target()'s docstring for why
+        overestimating it would break the whole catch-up scheme), and a
+        single measurement can run a little fast — favorable poll timing, no
+        wind load that particular pass, etc.
+
+        Skips recording (leaves self._assumed_slew_deg_per_s untouched) when
+        the catch-up traveled less than _CATCH_UP_THRESHOLD: at that point
+        the rotor may have started only a hair from the target, and
+        distance-over-time from such a short trip is too noisy to trust.
+        """
+        start_time = self._catch_up_measure_start_time
+        origin_az = self._catch_up_measure_start_az
+        self._catch_up_measure_start_time = None
+        self._catch_up_measure_start_az = None
+        if start_time is None or origin_az is None:
+            return
+
+        elapsed_s = time.monotonic() - start_time
+        if elapsed_s <= 0.0:
+            return
+
+        distance_deg = abs(rot_az_now - origin_az)
+        if distance_deg > 180:
+            distance_deg = 360.0 - distance_deg
+        if distance_deg <= self._CATCH_UP_THRESHOLD:
+            return
+
+        measured_deg_per_s = distance_deg / elapsed_s
+        new_assumed = measured_deg_per_s * self._SLEW_SPEED_SAFETY_MARGIN
+        get_rotor_record_logger().info(
+            "catch-up complete origin=%.1f end=%.1f distance=%.1f elapsed=%.2fs "
+            "measured=%.3fdeg/s assumed(after %.0f%% margin)=%.3fdeg/s",
+            origin_az,
+            rot_az_now,
+            distance_deg,
+            elapsed_s,
+            measured_deg_per_s,
+            self._SLEW_SPEED_SAFETY_MARGIN * 100.0,
+            new_assumed,
+        )
+        self._assumed_slew_deg_per_s = new_assumed
+        if self._slew_speed_observer is not None:
+            try:
+                self._slew_speed_observer(new_assumed)
+            except Exception as exc:
+                logger.error("Rotator: slew-speed observer callback failed: %s", exc)
 
     def set_position(self, azimuth_deg: float, elevation_deg: float) -> bool:
         """Rotate to the specified azimuth and elevation.
@@ -4545,7 +4650,10 @@ class HamlibRotatorController(RotatorController):
              _CATCH_UP_WRAP_DEPARTURE_MARGIN_DEG away from where the wrap
              began — see phase 4 for why.
            - Within _CATCH_UP_THRESHOLD degrees of that target (azimuth
-             only): exit catch-up, start normal tracking.
+             only): exit catch-up, start normal tracking, and measure the
+             real slew speed this episode just demonstrated (see
+             _record_measured_slew_speed()) to keep self._assumed_slew_deg_per_s
+             calibrated to this rotator/antenna combination.
            - Otherwise: return and wait for the next cycle, however long
              that takes. There's no timeout: the aim point lies on the
              target's real future path (see _lead_target()), so as long as
@@ -4586,11 +4694,14 @@ class HamlibRotatorController(RotatorController):
                             "Rotator: lead target below horizon, holding before initial jump"
                         )
                         return True
+                    origin_az = self.get_position().azimuth_deg
                     az_target, el_target = target
                     self._send_p(az_target, el_target)
                     self._catching_up = True
                     self._catch_up_wrap_origin_az = None
                     self._last_az = az_target
+                    self._catch_up_measure_start_time = time.monotonic()
+                    self._catch_up_measure_start_az = origin_az
                     logger.info("Rotator: initial jump to az=%.1f el=%.1f", az_target, el_target)
                     return True
 
@@ -4638,6 +4749,7 @@ class HamlibRotatorController(RotatorController):
                             target_az,
                             azimuth_deg,
                         )
+                        self._record_measured_slew_speed(rot_az)
                         # Fall through to normal tracking below
                     else:
                         return True  # Still waiting for rotator to reach target
@@ -4670,6 +4782,8 @@ class HamlibRotatorController(RotatorController):
                     self._catch_up_wrap_origin_az = wrap_origin_az
                     self._last_az = az_target
                     self._send_p(az_target, el_target)
+                    self._catch_up_measure_start_time = time.monotonic()
+                    self._catch_up_measure_start_az = wrap_origin_az
                     logger.info(
                         "Rotator: 0-degree wrap %.1f->%.1f, re-entering catch-up toward "
                         "az=%.1f el=%.1f",
@@ -4703,6 +4817,8 @@ class HamlibRotatorController(RotatorController):
                 self._last_az = None
                 self._catching_up = False
                 self._catch_up_wrap_origin_az = None
+                self._catch_up_measure_start_time = None
+                self._catch_up_measure_start_az = None
                 logger.info("Rotator: manual goto az=%.1f el=%.1f", azimuth_deg, el_cmd)
                 return True
         except Exception as exc:
