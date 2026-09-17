@@ -4258,14 +4258,13 @@ class HamlibRotatorController(RotatorController):
     """
 
     _CATCH_UP_THRESHOLD: float = 5.0  # degrees; switch to normal tracking when within this
-    _CATCH_UP_TIMEOUT: float = 60.0  # seconds; resend P command if catch-up takes too long
     # Deliberately conservative (slower than the ~1.1-1.2 deg/s observed on a
     # real SkyWatcher catch-up) lead-time assumption for the initial jump: the
     # aim point lies on the target's real future path, so as long as this is
     # a safe lower bound on the rotator's true slew speed, the target is
     # guaranteed to sweep through the rotator's vicinity eventually — no
     # accurate speed measurement needed. Tune via real-world testing.
-    _CATCH_UP_LEAD_ASSUMED_DEG_PER_S: float = 0.7
+    _CATCH_UP_LEAD_ASSUMED_DEG_PER_S: float = 1.0
     _CATCH_UP_LEAD_MAX_S: float = 120.0  # cap how far ahead we aim
     # A 0-degree wrap's start and target are always numerically adjacent
     # across the 0/360 seam, so right after re-entering catch-up the
@@ -4299,7 +4298,6 @@ class HamlibRotatorController(RotatorController):
         self._sock: socket.socket | None = None
         self._last_az: float | None = None  # last commanded AZ for shortest-path calc
         self._catching_up: bool = False  # True while rotator is moving to initial position
-        self._catch_up_start_time: float | None = None  # monotonic time when catch-up started
         # Rotator's real azimuth at the moment a 0-degree wrap re-entered
         # catch-up (None otherwise — including for the initial jump, which
         # doesn't need this gate). A wrap's start and target are always
@@ -4417,7 +4415,6 @@ class HamlibRotatorController(RotatorController):
                     self._state = RigState.CONNECTED
                 self._last_az = None
                 self._catching_up = False
-                self._catch_up_start_time = None
                 self._catch_up_wrap_origin_az = None
                 logger.info("Rotator: connected")
                 return True
@@ -4525,9 +4522,15 @@ class HamlibRotatorController(RotatorController):
              began — see phase 4 for why.
            - Within _CATCH_UP_THRESHOLD degrees of that target (azimuth
              only): exit catch-up, start normal tracking.
-           - Timeout (_CATCH_UP_TIMEOUT seconds): resend P command (to the
-             live satellite position) and restart timer.
-           - Otherwise: return and wait for the next cycle.
+           - Otherwise: return and wait for the next cycle, however long
+             that takes. There's no timeout: the aim point lies on the
+             target's real future path (see _lead_target()), so as long as
+             the rotator hasn't genuinely stopped moving it's guaranteed to
+             get there eventually — no elapsed-time threshold could tell a
+             legitimately slow catch-up apart from one that needs more
+             time, and a wrong threshold only ever misfires by cutting a
+             still-progressing catch-up short (confirmed twice in
+             practice — see docs/hamlib.md).
         3. Normal tracking: send P command with current satellite AZ/EL each cycle.
         4. 0-degree wrap (large AZ jump): re-enter catch-up the same way as phase
            1 — aim ahead via _lead_target() rather than jumping to the live
@@ -4562,7 +4565,6 @@ class HamlibRotatorController(RotatorController):
                     az_target, el_target = target
                     self._send_p(az_target, el_target)
                     self._catching_up = True
-                    self._catch_up_start_time = time.monotonic()
                     self._catch_up_wrap_origin_az = None
                     self._last_az = az_target
                     logger.info("Rotator: initial jump to az=%.1f el=%.1f", az_target, el_target)
@@ -4606,7 +4608,6 @@ class HamlibRotatorController(RotatorController):
 
                     if az_diff <= self._CATCH_UP_THRESHOLD:
                         self._catching_up = False
-                        self._catch_up_start_time = None
                         logger.info(
                             "Rotator: caught up at rot=%.1f target=%.1f sat=%.1f",
                             rot_az,
@@ -4614,16 +4615,6 @@ class HamlibRotatorController(RotatorController):
                             azimuth_deg,
                         )
                         # Fall through to normal tracking below
-                    elif (
-                        time.monotonic() - (self._catch_up_start_time or 0.0)
-                        > self._CATCH_UP_TIMEOUT
-                    ):
-                        self._send_p(azimuth_deg, el_cmd)
-                        self._catch_up_start_time = time.monotonic()
-                        self._catch_up_wrap_origin_az = None
-                        self._last_az = azimuth_deg
-                        logger.info("Rotator: catch-up timeout, retrying az=%.1f", azimuth_deg)
-                        return True
                     else:
                         return True  # Still waiting for rotator to reach target
 
@@ -4652,7 +4643,6 @@ class HamlibRotatorController(RotatorController):
                     wrap_origin_az = self.get_position().azimuth_deg
                     az_target, el_target = target
                     self._catching_up = True
-                    self._catch_up_start_time = time.monotonic()
                     self._catch_up_wrap_origin_az = wrap_origin_az
                     self._last_az = az_target
                     self._send_p(az_target, el_target)
@@ -4688,7 +4678,6 @@ class HamlibRotatorController(RotatorController):
                 self._send_p(azimuth_deg, el_cmd)
                 self._last_az = None
                 self._catching_up = False
-                self._catch_up_start_time = None
                 self._catch_up_wrap_origin_az = None
                 logger.info("Rotator: manual goto az=%.1f el=%.1f", azimuth_deg, el_cmd)
                 return True

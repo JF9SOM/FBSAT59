@@ -2188,7 +2188,6 @@ class TestHamlibRotatorController:
     def test_wrap_catchup_clears_gate_after_departure(self) -> None:
         ctrl = self._make_net_ctrl_connected()
         ctrl._catching_up = True
-        ctrl._catch_up_start_time = time.monotonic()
         ctrl._catch_up_wrap_origin_az = 0.2
         ctrl._last_az = 359.4  # target
         # Rotor has now moved far enough from its origin (0.2 -> 20.0, a
@@ -2202,7 +2201,6 @@ class TestHamlibRotatorController:
     def test_wrap_catchup_exits_once_near_target_after_departure(self) -> None:
         ctrl = self._make_net_ctrl_connected()
         ctrl._catching_up = True
-        ctrl._catch_up_start_time = time.monotonic()
         ctrl._catch_up_wrap_origin_az = None  # already departed, gate cleared
         ctrl._last_az = 359.4  # target
         ctrl._sock.recv.return_value = b"357.0\n31.5\nRPRT 0\n"  # type: ignore[union-attr]
@@ -2269,7 +2267,6 @@ class TestHamlibRotatorController:
         ctrl = self._make_net_ctrl_connected()
         ctrl._last_az = 200.0  # target we're moving toward, 20 deg from rot_az
         ctrl._catching_up = True
-        ctrl._catch_up_start_time = time.monotonic()
         # The live satellite position (182.0) is within 5 deg of the
         # rotator's real position (180.0) — under the old design (comparing
         # against the live satellite position) this alone would end
@@ -2283,11 +2280,23 @@ class TestHamlibRotatorController:
         ctrl = self._make_net_ctrl_connected()  # get_position() reports rot_az=180.0
         ctrl._last_az = 183.0  # target close to the rotator's real position
         ctrl._catching_up = True
-        ctrl._catch_up_start_time = time.monotonic()
         # Live satellite position is far away — exit must be driven by
         # reaching the target, not by the live satellite position.
         assert ctrl.set_position(50.0, 10.0)
         assert ctrl._catching_up is False
+
+    def test_catchup_never_times_out(self) -> None:
+        # There is no elapsed-time timeout: catch-up must keep waiting no
+        # matter how long the rotator takes, as long as it hasn't reached
+        # the target — see docs/hamlib.md for why a time-based safety net
+        # was removed (it only ever misfired, cutting off legitimately slow
+        # but still-progressing catch-ups).
+        ctrl = self._make_net_ctrl_connected()  # get_position() reports rot_az=180.0
+        ctrl._last_az = 300.0  # far from rot_az — az_diff exceeds the threshold
+        ctrl._catching_up = True
+        assert ctrl.set_position(50.0, 10.0) is True
+        assert ctrl._catching_up is True  # still waiting, no timeout retry fired
+        assert ctrl._last_az == pytest.approx(300.0)  # target unchanged, not resent
 
     def test_net_stop_sends_command(self) -> None:
         ctrl = self._make_net_ctrl_connected()
@@ -2308,7 +2317,7 @@ class TestHamlibRotatorController:
         # Pretend a tracking cycle had left the controller mid-catch-up.
         ctrl._last_az = 200.0
         ctrl._catching_up = True
-        ctrl._catch_up_start_time = 123.0
+        ctrl._catch_up_wrap_origin_az = 195.0
 
         assert ctrl.goto(90.0, 15.0)
 
@@ -2318,7 +2327,7 @@ class TestHamlibRotatorController:
         # initial-jump phase from wherever the manual move ended.
         assert ctrl._last_az is None
         assert ctrl._catching_up is False
-        assert ctrl._catch_up_start_time is None
+        assert ctrl._catch_up_wrap_origin_az is None
 
     def test_net_goto_clamps_elevation(self) -> None:
         ctrl = self._make_net_ctrl_connected()
