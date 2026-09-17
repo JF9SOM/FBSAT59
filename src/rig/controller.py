@@ -4780,6 +4780,18 @@ class HamlibRotatorController(RotatorController):
                     current = self.get_position()
                     rot_az = current.azimuth_deg
 
+                    get_rotor_record_logger().info(
+                        "catch-up poll rot_az=%.1f rot_el=%.1f target_az=%.1f wrap_origin_az=%s",
+                        rot_az,
+                        current.elevation_deg,
+                        self._last_az if self._last_az is not None else float("nan"),
+                        (
+                            f"{self._catch_up_wrap_origin_az:.1f}"
+                            if self._catch_up_wrap_origin_az is not None
+                            else "None"
+                        ),
+                    )
+
                     if self._catch_up_wrap_origin_az is not None:
                         departed = abs(rot_az - self._catch_up_wrap_origin_az)
                         if departed > 180:
