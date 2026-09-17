@@ -6,6 +6,14 @@ same synthetic-signal approach as test_g3ruh_demod.py. A QApplication is
 required to construct any QObject-derived class (SDRPipeline is a
 QThread), so every test takes the qtbot fixture purely to guarantee one
 exists for the session — no widget is ever created or shown.
+
+Requires scipy (skipped otherwise, matching test_g3ruh_demod.py): CI only
+installs `.[dev]`, not the optional `[sdr]` extra, and SDRPipeline.__init__
+always builds a Demodulator (used for the NFM/USB/CW audio-out path, not
+touched by anything tested here) which itself hard-requires scipy — so
+just importing SDRPipeline already needs it, before any test body runs.
+The importorskip must come before that import (unlike g3ruh_demod, whose
+own import is scipy-safe and only needs the guard for its later use).
 """
 
 from __future__ import annotations
@@ -14,7 +22,9 @@ import numpy as np
 import pytest
 from pytestqt.qtbot import QtBot
 
-from sdr.pipeline import SDRPipeline
+pytest.importorskip("scipy")
+
+from sdr.pipeline import SDRPipeline  # noqa: E402 -- must follow importorskip above
 
 _SAMPLE_RATE = 250_000.0
 _HW_CF = 435_000_000.0

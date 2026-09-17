@@ -21,7 +21,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
-import scipy.io.wavfile as wav
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +167,15 @@ class IQRecorder:
         if not chunks:
             return
         try:
+            # Imported here, not at module level: scipy is only needed when
+            # actually writing a recording, and this keeps every other
+            # sdr.* module importable without it (e.g. in CI, which only
+            # installs `.[dev]` — see CLAUDE.md's optional-dependency
+            # notes). Confirmed live (2026-09-16): importing SDRPipeline
+            # from a test pulled this module in transitively and crashed
+            # CI's collection with ModuleNotFoundError before this fix.
+            import scipy.io.wavfile as wav
+
             data = np.concatenate(chunks).reshape(-1, 2)
             wav.write(str(path), sample_rate, data)
             logger.info("IQ WAV written: %s (%.1f MB)", path, path.stat().st_size / 1e6)
