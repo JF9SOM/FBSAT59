@@ -4500,6 +4500,30 @@ class HamlibRotatorController(RotatorController):
                 self._rotor_state.elevation_deg = el
                 self._rotor_state.is_moving = True
 
+    def _sane_origin_az(self, raw_az: float) -> float:
+        """Treat an out-of-[0, 360) azimuth reading as the rotator's home position.
+
+        A SkyWatcher rotator has been observed on real hardware to report an
+        azimuth far outside [0, 360) (e.g. 2912.7) at the very start of a
+        session, before any P command (set_position) has been sent yet — this
+        app only ever commands azimuths inside [0, 360) (the Hamlib backend
+        itself refuses anything outside that range), so such a reading is
+        never a legitimate position. Used only for the once-per-episode
+        "where did this catch-up start" snapshot (the initial jump's
+        lead-time calculation and its slew-speed-measurement start point) —
+        never for a live reading taken after a P command has already been
+        sent this session, since real hardware has been observed to resync
+        to a correct reading as soon as any P command goes out. See
+        docs/hamlib.md for the full investigation.
+        """
+        if raw_az < -1.0 or raw_az >= 361.0:
+            logger.error(
+                "Rotator: treating out-of-range azimuth %.1f as home position 0.0",
+                raw_az,
+            )
+            return 0.0
+        return raw_az
+
     def _lead_target(self, azimuth_deg: float, el_cmd: float) -> tuple[float, float] | None:
         """Compute a catch-up jump target: the initial jump, or a 0-degree
         wrap re-entry.
@@ -4550,7 +4574,7 @@ class HamlibRotatorController(RotatorController):
 
         try:
             current = self.get_position()
-            origin = current.azimuth_deg
+            origin = self._sane_origin_az(current.azimuth_deg)
             az_diff = abs(origin - azimuth_deg)
             if az_diff > 180:
                 az_diff = 360.0 - az_diff
@@ -4729,7 +4753,7 @@ class HamlibRotatorController(RotatorController):
                             "Rotator: lead target below horizon, holding before initial jump"
                         )
                         return True
-                    origin_az = self.get_position().azimuth_deg
+                    origin_az = self._sane_origin_az(self.get_position().azimuth_deg)
                     az_target, el_target = target
                     self._send_p(az_target, el_target)
                     self._catching_up = True
