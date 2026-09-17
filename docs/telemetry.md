@@ -469,3 +469,41 @@ CSVフィールドの`type`は4種類:
 に追加（合成フレーム、実受信データではない）。OBC/PSU（16進ビットフラグ）/SOL（nan
 センチネル）/U（RSSI線形変換）の各メッセージのデコード結果と、未知のタグに対する
 rawフォールバックを検証する。
+
+---
+
+## バックエンド自身のコンソールログを見る「📋 Log」ボタン（2026-09-17 追加）
+
+### 背景
+
+OrigamiSat-2（68795）のAX.25 TLM受信試験で、ウォーターフォールには綺麗な信号が見えて
+いたにもかかわらず「受信フレーム」に一度も何も出ない、という報告があった。調査した
+ところ、SDR受信専用経路（`AudioBridge`、[docs/communications.md](communications.md)の
+Direwolfセクション参照）では**Direwolf自身のstdout（起動バナー・警告・フレームごとの
+`DECODED`行＋自前のaudio level評価）が誰にも読まれず捨てられていた**ことが判明した
+（TX不可のSDR受信専用ブリッジではstdoutを読む理由が無い、という従来の設計上の正しい
+判断が、結果的にDirewolf自身の診断情報も一緒に握りつぶしていた）。gr-satellitesバック
+エンドも同様に、stderr（トレースバック・「そんな衛星は無い」等のエラー）を
+`subprocess.DEVNULL`で完全に捨てていた。
+
+### 実装
+
+- `src/comms/aprs/direwolf_log.py` / `src/comms/telemetry/gr_satellites_log.py`
+  （新規）— `sdr.diag_log`/`comms.ft4.decode_log`と同型の専用ロガー。それぞれ
+  `direwolf.log` / `gr_satellites.log`（`fbsat59.log`とは別ファイル、同じログ
+  ディレクトリ）に出力する
+- `AudioBridge.run()`のSDR受信専用ブランチ（`direwolf.py`）: 何もしていなかった
+  `self._stop_event.wait()`を、Direwolfのstdoutを1行ずつ読んで`direwolf.log`へ記録する
+  ループに置き換えた。TXが発生しない経路なのでstdoutに生音声が混ざる心配はない
+- `GrSatellitesBackend.start()`（`gr_satellites_backend.py`）: `stderr=subprocess.DEVNULL`
+  → `subprocess.PIPE`にし、専用スレッド`_read_stderr()`で`[stderr]`タグ付きで
+  `gr_satellites.log`へ記録。既存の`_read_stdout()`（UI表示用のフレームブロック
+  パース）はそのまま維持しつつ、生の各行も同じログに記録するようにした
+- Telemetryタブ: Baudコンボの右隣に「📋 Log」ボタンを追加（`_ProcessLogDialog`、
+  非モーダルウィンドウ、🔄 Refreshで再読み込み）。クリック時に`_current_mode()`を見て
+  Direwolf(AX.25)モードなら`direwolf.log`、gr-satellitesモードなら`gr_satellites.log`を
+  開く。モードごとに別ウィンドウインスタンスをキャッシュするので、モード切替中でも
+  取り違えない
+
+Rig + Sound Card経由（TX可能なDirewolfセッション）のstdoutは実音声PCMと混在するため
+対象外——SDR受信専用経路のみ。
