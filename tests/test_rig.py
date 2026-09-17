@@ -2249,7 +2249,7 @@ class TestHamlibRotatorController:
         assert ctrl.set_position(200.0, 25.0)
         assert ctrl._last_az == pytest.approx(200.0)
 
-    def test_initial_jump_lead_seconds_capped(self) -> None:
+    def test_initial_jump_lead_seconds_uncapped(self) -> None:
         ctrl = self._make_net_ctrl_connected()  # get_position() reports az=180.0
         received_lead: list[float] = []
 
@@ -2259,7 +2259,58 @@ class TestHamlibRotatorController:
 
         ctrl.set_predictor(predictor)
         assert ctrl.set_position(0.0, 25.0)
-        assert received_lead == [pytest.approx(ctrl._CATCH_UP_LEAD_MAX_S)]
+        # No cap: az_diff(180, 0) = 180 deg (opposite side, not a boundary
+        # crossing) -> lead_s = 180 / 1.0 deg/s = 180s.
+        assert received_lead == [pytest.approx(180.0)]
+
+    def test_lead_target_uses_long_path_when_boundary_crossed(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl._sock.recv.return_value = b"0.1\n30.0\nRPRT 0\n"  # type: ignore[union-attr]
+        received_lead: list[float] = []
+
+        def predictor(lead_s: float) -> tuple[float, float]:
+            received_lead.append(lead_s)
+            return 5.0, 25.0
+
+        ctrl.set_predictor(predictor)
+        target = ctrl._lead_target(360.0, 25.0)
+        assert target == (5.0, 25.0)
+        # Short-path distance is 0.1 deg, but origin (0.1) and target
+        # (360.0) straddle the 0/360 seam, so the Hamlib backend is forced
+        # the long way around -- the long-path distance (359.9 deg) must be
+        # used to size the lead time, not the short one.
+        assert received_lead == [pytest.approx(359.9)]
+
+    def test_lead_target_uses_short_path_when_not_boundary_crossed(self) -> None:
+        ctrl = self._make_net_ctrl_connected()  # get_position() reports az=180.0
+        received_lead: list[float] = []
+
+        def predictor(lead_s: float) -> tuple[float, float]:
+            received_lead.append(lead_s)
+            return 5.0, 25.0
+
+        ctrl.set_predictor(predictor)
+        target = ctrl._lead_target(190.0, 25.0)
+        assert target == (5.0, 25.0)
+        # origin=180, target=190: not a boundary crossing, short-path
+        # distance (10 deg) is used directly.
+        assert received_lead == [pytest.approx(10.0)]
+
+    def test_wrap_catchup_uses_long_path_lead_target(self) -> None:
+        # Regression test for a reported deadlock: origin and live satellite
+        # position both near the 0/360 seam (e.g. 0.1 -> 360.0) must not
+        # produce a near-identical "trivial" lead target, or the departure
+        # gate can never clear since the rotor has no real distance to
+        # travel toward it.
+        ctrl = self._make_net_ctrl_connected()
+        ctrl._sock.recv.return_value = b"0.1\n11.5\nRPRT 0\n"  # type: ignore[union-attr]
+        ctrl._last_az = 0.1
+        ctrl._catching_up = False
+        ctrl.set_predictor(lambda lead_s: (180.0, 40.0))  # a genuinely far point
+        assert ctrl.set_position(360.0, 11.5)
+        assert ctrl._catching_up is True
+        assert ctrl._last_az == pytest.approx(180.0)  # far target, not ~360/0
+        assert ctrl._catch_up_wrap_origin_az == pytest.approx(0.1)
 
     def test_catchup_exit_compares_against_target_not_live_satellite(self) -> None:
         # get_position() (via _make_net_ctrl_connected's mock) always reports

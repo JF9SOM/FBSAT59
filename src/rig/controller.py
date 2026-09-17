@@ -4265,7 +4265,6 @@ class HamlibRotatorController(RotatorController):
     # guaranteed to sweep through the rotator's vicinity eventually — no
     # accurate speed measurement needed. Tune via real-world testing.
     _CATCH_UP_LEAD_ASSUMED_DEG_PER_S: float = 1.0
-    _CATCH_UP_LEAD_MAX_S: float = 120.0  # cap how far ahead we aim
     # A 0-degree wrap's start and target are always numerically adjacent
     # across the 0/360 seam, so right after re-entering catch-up the
     # shortest-path arrival check would read "close" before the rotor has
@@ -4473,19 +4472,44 @@ class HamlibRotatorController(RotatorController):
         Returns None if the predicted point is below the horizon — the
         caller should hold off moving rather than jump to a point the
         target hasn't risen to yet.
+
+        The Hamlib SkyWatcher backend only accepts azimuths within [0, 360)
+        and refuses to route a GOTO through negative/>360 values. Whenever
+        the rotor's real position and the target straddle the 0/360 seam
+        (one near 0, the other near 360 — the same condition set_position()
+        checks for crossed_zero), the shortest numeric path would need to
+        cross that boundary, so the backend is forced to travel the OTHER
+        way around instead — confirmed on real hardware to take nearly a
+        full lap. Using the short-path distance to size the lead time would
+        badly underestimate the rotator's real travel time in that case (a
+        wrap's origin and target are, by construction, both near the 0/360
+        seam, so the short-path distance is always tiny even though the
+        forced journey is nearly 360 degrees) — so the long-path distance
+        (360 minus the short one) is used instead whenever that situation is
+        detected, regardless of whether this call came from the initial
+        jump or a 0-degree wrap re-entry.
+
+        There is no cap on the resulting lead time: the only other
+        motivation for one — not aiming at a point already below the
+        horizon — is independently handled by the below-horizon check
+        below, and the worst case (forced almost all the way around) is
+        already bounded at just under 360 degrees of real travel.
         """
         if self._predictor is None:
             return azimuth_deg, el_cmd
 
         try:
             current = self.get_position()
-            az_diff = abs(current.azimuth_deg - azimuth_deg)
+            origin = current.azimuth_deg
+            az_diff = abs(origin - azimuth_deg)
             if az_diff > 180:
                 az_diff = 360.0 - az_diff
-            lead_s = min(
-                self._CATCH_UP_LEAD_MAX_S,
-                az_diff / self._CATCH_UP_LEAD_ASSUMED_DEG_PER_S,
+            boundary_forced = (origin > 270 and azimuth_deg < 90) or (
+                origin < 90 and azimuth_deg > 270
             )
+            if boundary_forced:
+                az_diff = 360.0 - az_diff
+            lead_s = az_diff / self._CATCH_UP_LEAD_ASSUMED_DEG_PER_S
             predicted = self._predictor(lead_s)
         except Exception as exc:
             logger.error("Rotator: lead-time prediction failed, using current position: %s", exc)
