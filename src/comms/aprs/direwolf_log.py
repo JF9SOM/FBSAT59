@@ -54,3 +54,28 @@ def direwolf_log_path() -> str:
     from platformdirs import user_log_dir
 
     return os.path.join(user_log_dir("fbsat59", "fbsat59"), "direwolf.log")
+
+
+def reset_direwolf_log() -> None:
+    """Truncate direwolf.log so a new SDR reception session starts clean.
+
+    The underlying FileHandler is opened once (mode "a") for the life of
+    the process and otherwise never closed, so without this, old sessions'
+    output would keep accumulating in the same file forever -- confusing
+    when checking "did *this* attempt decode anything" (2026-09-17,
+    reported after the Log dialog's Refresh button appeared to do nothing
+    because there was nothing new to show, but old content from an earlier
+    attempt was still sitting there). Truncates the already-open stream in
+    place rather than closing/reopening the handler, so no reader ever sees
+    a moment where the file doesn't exist.
+    """
+    logger = get_direwolf_logger()
+    for handler in logger.handlers:
+        if isinstance(handler, logging.FileHandler):
+            handler.acquire()
+            try:
+                if handler.stream is not None:
+                    handler.stream.seek(0)
+                    handler.stream.truncate(0)
+            finally:
+                handler.release()

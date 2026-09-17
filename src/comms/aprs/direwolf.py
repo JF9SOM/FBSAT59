@@ -506,6 +506,17 @@ class DirewolfManager:
         if self.is_running:
             return True, ""
 
+        if sdr_pipeline is not None:
+            # New SDR reception attempt: start direwolf.log clean rather
+            # than appending after whatever an earlier session left behind
+            # (see direwolf_log.reset_direwolf_log() -- reported 2026-09-17
+            # as "Refresh doesn't do anything" when really there was
+            # nothing new to show, but old content from an earlier attempt
+            # was still sitting there).
+            from comms.aprs.direwolf_log import reset_direwolf_log
+
+            reset_direwolf_log()
+
         binary = find_direwolf()
         if binary is None:
             return False, "Direwolf not found. Use Help > Direwolf… to install."

@@ -325,6 +325,13 @@ class GrSatellitesBackend(QObject):
         if self.is_running:
             self.stop()
 
+        # New reception attempt: start gr_satellites.log clean rather than
+        # appending after whatever an earlier session left behind (see
+        # gr_satellites_log.reset_gr_satellites_log()).
+        from comms.telemetry.gr_satellites_log import reset_gr_satellites_log
+
+        reset_gr_satellites_log()
+
         resolved = resolve_gr_satellites_command()
         if resolved is None:
             return False, "gr_satellites not found — install via Help > gr-satellites…"

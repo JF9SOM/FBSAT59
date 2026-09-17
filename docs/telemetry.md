@@ -507,3 +507,26 @@ Direwolfセクション参照）では**Direwolf自身のstdout（起動バナ�
 
 Rig + Sound Card経由（TX可能なDirewolfセッション）のstdoutは実音声PCMと混在するため
 対象外——SDR受信専用経路のみ。
+
+### 🔄 Refreshは「消去」ではなく「再読み込み」——新規セッション開始時の自動クリアを追加（2026-09-17）
+
+上記の実機検証（KNACKSAT-2、9600bps G3RUH、仰角22.8°ピークだが1フレームもデコード
+できず）の直後、「🔄 Refreshを押してもログが消えない」という報告があった。原因は
+実装通りの挙動——`_ProcessLogDialog.reload()`はファイルをそのまま読み直すだけで
+消去はしない設計だった——だが、`direwolf.log`/`gr_satellites.log`の`FileHandler`は
+プロセス生存中（さらにアプリ再起動をまたいでも）ずっと追記モード（`mode="a"`）で
+開きっぱなしのため、**何セッション分も過去の内容が溜まり続け、「今回の試行で何が
+起きたか」が読み取りにくい**という実害があった。ユーザーに確認したところ、
+「新規受信セッション開始時に自動で空にする」方式を希望。
+
+- `direwolf_log.py` / `gr_satellites_log.py`に`reset_direwolf_log()` /
+  `reset_gr_satellites_log()`を追加。`FileHandler`を閉じて開き直すのではなく、
+  既に開いている`handler.stream`を`seek(0)`＋`truncate(0)`でその場で空にする
+  （読み手がファイル消失の瞬間を観測することがない）
+- `DirewolfManager.start()`: `sdr_pipeline`が渡された（＝SDR受信セッション）場合のみ、
+  プロセス起動前に`reset_direwolf_log()`を呼ぶ
+- `GrSatellitesBackend.start()`: 常にSDR専用なので、`if self.is_running: self.stop()`の
+  直後に無条件で`reset_gr_satellites_log()`を呼ぶ
+
+これにより「📋 Log」を開いた時点のログは常にその回の受信試行のみを表す。既存の
+🔄 Refreshボタンの挙動（消去ではなく再読み込み）自体は変更していない。

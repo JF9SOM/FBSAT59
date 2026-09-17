@@ -52,3 +52,22 @@ def gr_satellites_log_path() -> str:
     from platformdirs import user_log_dir
 
     return os.path.join(user_log_dir("fbsat59", "fbsat59"), "gr_satellites.log")
+
+
+def reset_gr_satellites_log() -> None:
+    """Truncate gr_satellites.log so a new reception session starts clean.
+
+    See comms.aprs.direwolf_log.reset_direwolf_log() -- same rationale, same
+    approach (truncate the already-open stream in place rather than
+    closing/reopening the handler).
+    """
+    logger = get_gr_satellites_logger()
+    for handler in logger.handlers:
+        if isinstance(handler, logging.FileHandler):
+            handler.acquire()
+            try:
+                if handler.stream is not None:
+                    handler.stream.seek(0)
+                    handler.stream.truncate(0)
+            finally:
+                handler.release()
