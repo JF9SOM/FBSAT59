@@ -451,4 +451,54 @@ skywatcher_open() → skywatcher_cmd() → memmove()  (SIGSEGV, invalid address)
 （2）バンドル中のHamlibバージョンをdocs/hamlib.mdのバージョン管理方針に従って確認・更新、
 を検討する。
 
+**フォローアップ（2026-09-17）— 再現条件が判明・サブプロセス隔離で修正**: ユーザーが
+「ローテーターの電源を入れずにConnect Rotatorを押す」という確実な再現条件を発見した。
+これにより「低頻度・原因不明」から「電源オフのローテーターへ`rot.open()`すると再現する」
+という具体的な原因像に変わった（USBシリアルアダプタ自体はポートを開けてしまうため、
+Hamlibのハンドシェイクだけが応答なしになり、応答長を検証しない`memmove()`で
+クラッシュしていたと推定）。
+
+`skywatcher_open()`自体はHamlib側のネイティックC実装のバグであり、Python側の
+`try/except`では原理的に捕捉できない（SIGSEGVはPythonの例外機構を経由しない）ため、
+根本修正はアプリ側では不可能。代わりに**クラッシュしうる`rot.open()`呼び出しを
+使い捨てのサブプロセスに隔離**することで、クラッシュしても本体のQtプロセスは
+道連れにしない設計に変更した（`SdrDevice._enumerate_via_subprocess()`
+[device.py:1255](../src/sdr/device.py)がWindows SoapySDRプラグインのC-levelクラッシュに
+対して既に採用している「アプリ自身を特殊CLIフラグで再起動し、JSON結果だけをstdout
+経由で受け取る」パターンをローテーターにも横展開した）。
+
+**実装（`HamlibRotatorController.connect()`、[controller.py](../src/rig/controller.py)）**:
+1. `_probe_rotator_open()`を新設。実際の（本体プロセス内で長期保持する）`Rot`オブジェクトを
+   作る前に、`sys.executable`で自分自身（開発時は`main.py`、フリーズ時は自身の実行ファイル）を
+   `--_fbsat59_rotator_probe <port> <baud> <model_id>`付きで`subprocess.run(..., timeout=15.0)`
+   起動し、サブプロセス側で使い捨ての`Rot`を`open()`→`close()`するだけの往復を先に行わせる
+2. サブプロセスが正常終了（JSON `{"ok": true}`）した場合のみ、本体プロセス側で実際の
+   `rot.open()`を実行する（＝観測されていた「2回目の接続は必ず成功する」という実機挙動を
+   意図的に先出しさせる格好になる）
+3. サブプロセスがクラッシュ（`returncode < 0`）・タイムアウト・不正な出力だった場合は
+   `rot.open()`を一切呼ばずに`RigState.ERROR`にして`connect()`を`False`で返す
+   （＝クラッシュを未然に防ぎ、赤字の`Error`表示に落とし込む。次項参照）
+4. `main.py`側に`--_fbsat59_rotator_probe`ディスパッチを追加（`--_gpredict_soapy_enum`と
+   同じ「Qt/重量級importより前」の位置。ただしSDR版と異なり`win32`限定にしていない
+   — 今回の実クラッシュ報告はmacOSのため、全プラットフォームで有効にした）
+
+**UI側の欠落も合わせて修正**: `RadioControlWidget._update_rot_status()`
+（[radio_control_widget.py](../src/ui/radio_control_widget.py)）には元々`RigState.ERROR`の
+分岐が存在せず、`connect()`がPython例外で失敗して`RigState.ERROR`になった場合でも
+UIは単に灰色の「Disconnected」に戻るだけだった（Rig 1/2の`_update_rig1_status()`/
+`_update_rig2_status()`には既に赤字「Error」+ボタン「Retry」の分岐がある）。
+`RotatorController`基底クラスに`RigController`と同型の`state`プロパティを新設した上で、
+`_update_rot_status()`にもRig 1/2と同じ赤字「Error」+「Retry」分岐を追加し、今回の
+サブプロセス隔離による接続失敗・その他のconnect()失敗全般が、クラッシュではなく
+赤字エラー表示として見えるようにした。
+
+**トレードオフ**: 接続のたびに小さなPythonサブプロセスが1回起動するため、Connect Rotator
+クリックから接続完了までの体感時間が数百ms〜1、2秒程度伸びる。ローテーター接続は
+頻繁に行う操作ではなく、`_on_connect_rotator()`は元々バックグラウンドスレッド実行済み
+（UIは固まらない）ため許容と判断。なお本対策は「電源オフ」という今回確認された引き金には
+直接効くが、ケーブル不良等の別要因によるHamlib側の未知のクラッシュパターンを100%
+防ぐ保証ではない（サブプロセス隔離自体はどんな native crash が起きても本体を守れる
+設計だが、"クラッシュせず本体プロセス内で確定的に壊れた状態のまま処理が続く"ような
+別種の不具合までは防げない）。
+
 ---

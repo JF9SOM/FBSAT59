@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import contextlib
 import importlib.util
+import json
 import logging
 import os
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -26,6 +28,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -4208,6 +4211,12 @@ class RotatorController(ABC):
         with self._lock:
             return self._state == RigState.CONNECTED
 
+    @property
+    def state(self) -> RigState:
+        """Current connection state."""
+        with self._lock:
+            return self._state
+
     @abstractmethod
     def set_position(self, azimuth_deg: float, elevation_deg: float) -> bool:
         """Set the azimuth and elevation in degrees."""
@@ -4299,6 +4308,66 @@ class HamlibRotatorController(RotatorController):
         # deadlock a Direct-mode rotator on Windows.
         self._io_lock = threading.RLock()
 
+    def _probe_rotator_open(self) -> bool:
+        """Run rot.open()/close() in a throwaway subprocess before doing it for real.
+
+        Hamlib's SkyWatcher backend has been observed to SIGSEGV inside its
+        native skywatcher_open() when the rotator is physically powered off
+        (the handshake gets no reply) — a native crash that a Python
+        try/except cannot catch and that takes the whole app down with it
+        (see docs/known-issues.md, "macOS — SkyWatcherローテーター...").
+        Running the same open()/close() exchange in a short-lived subprocess
+        first (mirrors SdrDevice._enumerate_via_subprocess()'s crash-isolation
+        pattern in src/sdr/device.py) means that crash, if it happens, kills
+        only this subprocess — a non-zero/negative exit code here is treated
+        as a connect failure instead of letting the same crash happen again
+        in the main process's rot.open() right below.
+        """
+        if getattr(sys, "frozen", False):
+            cmd = [
+                sys.executable,
+                "--_fbsat59_rotator_probe",
+                self._port,
+                str(self._baud_rate),
+                str(self._model_id),
+            ]
+        else:
+            main_py = Path(__file__).resolve().parent.parent / "main.py"
+            cmd = [
+                sys.executable,
+                str(main_py),
+                "--_fbsat59_rotator_probe",
+                self._port,
+                str(self._baud_rate),
+                str(self._model_id),
+            ]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15.0)
+        except subprocess.TimeoutExpired:
+            logger.error("Rotator: probe subprocess timed out — no response from rotator?")
+            return False
+        if proc.returncode < 0:
+            logger.error(
+                "Rotator: probe subprocess crashed (signal %d) — rotator likely "
+                "unresponsive (powered off?); aborting connect without touching "
+                "the real Hamlib handle",
+                -proc.returncode,
+            )
+            return False
+        try:
+            result = json.loads(proc.stdout.strip() or "{}")
+        except ValueError:
+            logger.error(
+                "Rotator: probe subprocess produced no valid output (exit %d): %s",
+                proc.returncode,
+                proc.stderr.strip()[:200],
+            )
+            return False
+        if not result.get("ok"):
+            logger.error("Rotator: probe open() failed — %s", result.get("error"))
+            return False
+        return True
+
     def connect(self) -> bool:
         """Connect to the rotator."""
         with self._lock:
@@ -4317,12 +4386,16 @@ class HamlibRotatorController(RotatorController):
                     import Hamlib as _H  # lazy — avoids Qt TLS collision at startup
 
                     self._hamlib = _H
-                    rot = _H.Rot(self._model_id)
                     logger.info(
                         "Rotator: creating controller port=%s model=%s",
                         self._port,
                         self._model_id,
                     )
+                    if not self._probe_rotator_open():
+                        with self._lock:
+                            self._state = RigState.ERROR
+                        return False
+                    rot = _H.Rot(self._model_id)
                     rot.set_conf("rot_pathname", self._port)
                     rot.set_conf("serial_speed", str(self._baud_rate))
                     rot.open()

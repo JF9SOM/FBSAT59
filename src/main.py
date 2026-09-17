@@ -283,6 +283,31 @@ if sys.platform == "win32" and len(sys.argv) >= 2 and sys.argv[1] == "--_gpredic
         print("[]", flush=True)
     sys.exit(0)
 
+# Rotator connect probe worker (all platforms).
+# HamlibRotatorController._probe_rotator_open() spawns this process and runs a
+# throwaway rot.open()/close() here before calling Hamlib's rot.open() for
+# real in the main process, because a powered-off SkyWatcher rotator has been
+# observed to SIGSEGV deep inside Hamlib's native skywatcher_open() when the
+# handshake gets no reply (see docs/known-issues.md). Must run before any Qt
+# or heavy library import; the Hamlib user-install sys.path/DLL setup above
+# (near the top of this file) already applies by the time we get here.
+if len(sys.argv) >= 5 and sys.argv[1] == "--_fbsat59_rotator_probe":
+    import json as _json_rotprobe
+
+    _probe_port, _probe_baud, _probe_model = sys.argv[2], sys.argv[3], sys.argv[4]
+    try:
+        import Hamlib as _H_rotprobe
+
+        _rot_probe = _H_rotprobe.Rot(int(_probe_model))
+        _rot_probe.set_conf("rot_pathname", _probe_port)
+        _rot_probe.set_conf("serial_speed", _probe_baud)
+        _rot_probe.open()
+        _rot_probe.close()
+        print(_json_rotprobe.dumps({"ok": True}), flush=True)
+    except Exception as _rotprobe_exc:
+        print(_json_rotprobe.dumps({"ok": False, "error": str(_rotprobe_exc)}), flush=True)
+    sys.exit(0)
+
 if sys.platform == "linux":
     _pyver = f"{sys.version_info.major}.{sys.version_info.minor}"
     _HAMLIB_SITE = f"/opt/hamlib/4.7/lib/python{_pyver}/site-packages"

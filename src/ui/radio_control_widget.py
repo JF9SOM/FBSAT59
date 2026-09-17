@@ -989,6 +989,11 @@ class RadioControlWidget(QWidget):
                 self._rot_status_label.setText(_("Connected"))
                 self._rot_status_label.setStyleSheet("color: green;")
             self._connect_rot_btn.setText(_("Disconnect Rotator"))
+        elif self._rotator.state == RigState.ERROR:
+            self._rot_status_label.setText(_("Error"))
+            self._rot_status_label.setStyleSheet("color: red;")
+            self._connect_rot_btn.setText(_("Retry"))
+            self._rot_manual_hold = False
         else:
             self._rot_status_label.setText(_("Disconnected"))
             self._rot_status_label.setStyleSheet("color: gray;")
