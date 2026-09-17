@@ -4570,6 +4570,19 @@ class HamlibRotatorController(RotatorController):
 
         pred_az, pred_el = predicted
         if pred_el < 0.0:
+            logger.info(
+                "Rotator: lead target below horizon (rotor_origin=%.1f live_sat_az=%.1f "
+                "boundary_forced=%s az_diff=%.1f lead_s=%.1f assumed_deg_per_s=%.2f "
+                "pred_az=%.1f pred_el=%.1f)",
+                origin,
+                azimuth_deg,
+                boundary_forced,
+                az_diff,
+                lead_s,
+                self._assumed_slew_deg_per_s,
+                pred_az,
+                pred_el,
+            )
             return None
         return pred_az, max(0.0, min(90.0, pred_el))
 
@@ -4731,7 +4744,12 @@ class HamlibRotatorController(RotatorController):
                     self._catch_up_measure_long_path = (origin_az > 270 and azimuth_deg < 90) or (
                         origin_az < 90 and azimuth_deg > 270
                     )
-                    logger.info("Rotator: initial jump to az=%.1f el=%.1f", az_target, el_target)
+                    logger.info(
+                        "Rotator: initial jump from origin=%.1f to az=%.1f el=%.1f",
+                        origin_az,
+                        az_target,
+                        el_target,
+                    )
                     return True
 
                 if self._catching_up:
@@ -4821,10 +4839,11 @@ class HamlibRotatorController(RotatorController):
                         wrap_origin_az > 270 and azimuth_deg < 90
                     ) or (wrap_origin_az < 90 and azimuth_deg > 270)
                     logger.info(
-                        "Rotator: 0-degree wrap %.1f->%.1f, re-entering catch-up toward "
-                        "az=%.1f el=%.1f",
+                        "Rotator: 0-degree wrap %.1f->%.1f, rotor_origin=%.1f, "
+                        "re-entering catch-up toward az=%.1f el=%.1f",
                         last,
                         azimuth_deg,
+                        wrap_origin_az,
                         az_target,
                         el_target,
                     )
