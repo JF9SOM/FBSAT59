@@ -7096,9 +7096,21 @@ class MainWindow(QMainWindow):
         Replaces whichever Rig slot is configured as SDR with a
         file-backed pseudo-device (SdrRigAdapter.connect_from_file()),
         then reuses _on_rig_slot_connected() -- the exact same
-        pipeline-attach/notify path a live connect uses -- so Telemetry/
-        FT4/Q65/SSTV and the waterfall all pick it up without any of them
-        needing to know playback exists.
+        pipeline-attach/notify path a live connect uses -- so the
+        waterfall, CW/FT4/Q65 (notified via
+        _notify_comms_tabs_sdr_pipeline(), which that method already
+        calls) and SSTV (re-queries the pipeline itself on every decoder
+        start, never caches it) all pick this up with no further work.
+
+        Telemetry and APRS are the exception: both cache their SDR
+        pipeline reference and only refresh it from RadioControlWidget's
+        rig_connected/rig2_connected signals, which a live Connect button
+        press emits but this playback path does not (there is no
+        background-thread hardware connect to finish) -- see
+        RadioControlWidget.notify_playback_connected()'s docstring for
+        the full story. Calling it explicitly below is what makes those
+        two tabs pick up playback too, regardless of whether they were
+        already open before Play was pressed.
         """
         from rig.controller import SdrRigAdapter
 
@@ -7129,6 +7141,7 @@ class MainWindow(QMainWindow):
 
         if rig.connect_from_file(Path(path)):
             self._on_rig_slot_connected(slot, is_replay=True)
+            self._radio_control.notify_playback_connected(slot)
         else:
             QMessageBox.warning(
                 self, _("Play IQ Recording"), _("Failed to open recording:\n%s") % path

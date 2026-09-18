@@ -1642,4 +1642,42 @@ OrigamiSat-2受信時に発生した「Doppler補正だけでは説明できな�
 自体は`test_main_window.py`側に新規テストを追加していない（同ファイルはCLAUDE.mdの
 ルール通りローカル実行せず`--collect-only`でのみ確認、CI待ち）。
 
----
+#### 追加修正（同日）— Telemetry・APRSタブがIQ再生を拾えていなかったバグ
+
+上記の初回実装をユーザーに確認してもらったところ、「Telemetryタブ・APRSタブでもIQ再生から
+デコードできるか」という質問を受けて調査したところ、**この2タブだけ**再生を拾えない
+条件があることが判明した。
+
+**原因**: Telemetry・APRSは`RadioControlWidget`の`rig_connected`/`rig2_connected`シグナルを
+直接購読し、シグナルを受けた時だけSDRパイプライン参照（`self._sdr_pipeline`）をキャッシュし
+直す設計（`telemetry_tab.py`の`_on_rig_connected()`/`_on_rig2_connected()`等）。この
+シグナルは`RadioControlWidget._finish_rig1_connect()`/`_on_connect_rig2()`——すなわち
+「Connect Rig 1/2」ボタンを押して実機へ接続する処理——からしか発火しない。IQ再生
+（`MainWindow._on_play_recording_requested()`）はこのボタンの処理を経由せず
+`SdrRigAdapter.connect_from_file()`を直接呼ぶため、このシグナルが一度も発火せず、
+Telemetry・APRSが古いパイプライン参照（または`None`）を持ったままになっていた。
+
+**他タブが無事だった理由（他タブ向けの修正は不要と判断した根拠）**:
+- **CW Decoder/FT4/Q65**: `RadioControlWidget`のシグナルではなく、
+  `MainWindow._notify_comms_tabs_sdr_pipeline()`という別経路（開いている
+  Communicationsタブへ`refresh_sdr_pipeline(pipeline)`を呼んで回る）で更新される。
+  この経路は`_on_rig_slot_connected()`から呼ばれており、IQ再生も`_on_rig_slot_connected(
+  slot, is_replay=True)`を呼ぶ設計のため、実装時点から問題なく機能していた
+- **SSTV/SSDV**: `_find_sdr_pipeline()`で自分のデコーダー起動のたびに`rig1/rig2._pipeline`を
+  都度取り直す設計（キャッシュ自体をしない）のため、どのシグナルにも依存せず影響を受けない
+- **Telemetryが「今セッションで一度もそのRigスロットへ実機接続していない」場合に限り
+  無事だった理由**: `_try_start_afsk()`/`_start_gr_satellites()`が`self._sdr_pipeline`が
+  `None`の場合のみ`_auto_connect_sdr()`にフォールバックし、そこで
+  `rig.is_connected`を見て`rig._pipeline`を再取得する救済ロジックが元々あったため
+  （`self._sdr_pipeline`の初期値は`None`）。一度でも実機へ接続・切断した後だと
+  この救済ロジックは`self._sdr_pipeline`が`None`でないため発動せず、古い参照を
+  使い続けてしまう
+
+**修正**: `RadioControlWidget.notify_playback_connected(slot)`を新設。中身は
+`_update_rig{1,2}_status()`（Connect/Disconnectボタンの表示・ステータスラベルを
+正しい状態へ更新）＋既存の`rig_connected`/`rig2_connected`シグナルの`emit()`のみ——
+新しい種類のシグナルを追加するのではなく、Telemetry・APRSが元々持っている
+`_on_rig_connected()`等のロジックをそのまま再利用する設計。IQ再生成功時
+（`_on_play_recording_requested()`）に`_on_rig_slot_connected()`の直後で1回呼ぶ。
+切断側（Disconnectボタンでの通常切断）は元々`rig_disconnected`/`rig2_disconnected`を
+無条件に発火する設計のため無改修で正しく動作する。

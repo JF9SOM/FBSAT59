@@ -1122,6 +1122,34 @@ class RadioControlWidget(QWidget):
             self._pending_comms_tab = None
         self._update_rig1_status()
 
+    def notify_playback_connected(self, slot: int) -> None:
+        """Tell Telemetry/APRS that *slot* just started IQ recording playback.
+
+        IQ recording playback (SdrControlWidget's "▶ Play…") replaces Rig
+        1/2's device directly via SdrRigAdapter.connect_from_file(),
+        bypassing this widget's own Connect button flow entirely (there's
+        no live hardware round-trip to run in a background thread) — so
+        rig_connected/rig2_connected, which _finish_rig1_connect() /
+        _on_connect_rig2() normally emit, never fire.
+
+        Every other Communications tab is unaffected by this: CW/FT4/Q65
+        are notified through a separate path
+        (MainWindow._notify_comms_tabs_sdr_pipeline(), which
+        MainWindow._on_rig_slot_connected() already covers for playback
+        too) and SSTV re-queries the pipeline fresh every time its own
+        decoder starts rather than caching it. Telemetry and APRS are the
+        only two that cache their SDR pipeline reference and refresh it
+        exclusively from these two signals — see
+        MainWindow._on_play_recording_requested(), which calls this right
+        after attaching the playback pipeline.
+        """
+        if slot == 1:
+            self._update_rig1_status()
+            self.rig_connected.emit()
+        else:
+            self._update_rig2_status()
+            self.rig2_connected.emit()
+
     def _on_connect_rig2(self) -> None:
         if self._rig2 is None:
             return
