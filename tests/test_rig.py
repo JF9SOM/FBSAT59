@@ -2568,6 +2568,137 @@ class TestHamlibRotatorController:
         assert ctrl._last_az == pytest.approx(200.0)
         ctrl.disconnect()
 
+    # -- next-AOS parking (below-horizon target -> park at next AOS) ----- #
+
+    def test_initial_jump_below_horizon_with_next_aos_jumps_there(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl.set_predictor(lambda lead_s: (210.0, -5.0))  # lead target below horizon
+        ctrl.set_next_aos_predictor(lambda: 77.0)
+        ctrl._sock.sendall.reset_mock()  # type: ignore[union-attr]
+        assert ctrl.set_position(200.0, 25.0) is True
+        assert ctrl._catching_up is True
+        assert ctrl._awaiting_aos is True
+        assert ctrl._last_az == pytest.approx(77.0)
+        p_sent = [
+            c.args[0]
+            for c in ctrl._sock.sendall.call_args_list  # type: ignore[union-attr]
+            if c.args[0].startswith(b"P ")
+        ]
+        assert p_sent == [b"P 77.0 0.0\n"]
+
+    def test_wrap_catchup_below_horizon_with_next_aos_jumps_there(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl._last_az = 350.0
+        ctrl._catching_up = False
+        ctrl.set_predictor(lambda lead_s: (15.0, -3.0))  # lead target below horizon
+        ctrl.set_next_aos_predictor(lambda: 123.4)
+        ctrl._sock.sendall.reset_mock()  # type: ignore[union-attr]
+        assert ctrl.set_position(1.0, 10.0) is True  # crosses zero (last=350, az=1)
+        assert ctrl._catching_up is True
+        assert ctrl._awaiting_aos is True
+        assert ctrl._last_az == pytest.approx(123.4)
+        p_sent = [
+            c.args[0]
+            for c in ctrl._sock.sendall.call_args_list  # type: ignore[union-attr]
+            if c.args[0].startswith(b"P ")
+        ]
+        assert p_sent == [b"P 123.4 0.0\n"]
+
+    def test_los_during_tracking_jumps_to_next_aos(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl._last_az = 100.0  # no crossed_zero relative to any az (100 is neither <90 nor >270)
+        ctrl._catching_up = False
+        ctrl.set_next_aos_predictor(lambda: 55.5)
+        ctrl._sock.sendall.reset_mock()  # type: ignore[union-attr]
+        assert ctrl.set_position(95.0, -2.0) is True  # LOS: elevation below horizon
+        assert ctrl._catching_up is True
+        assert ctrl._awaiting_aos is True
+        assert ctrl._last_az == pytest.approx(55.5)
+        p_sent = [
+            c.args[0]
+            for c in ctrl._sock.sendall.call_args_list  # type: ignore[union-attr]
+            if c.args[0].startswith(b"P ")
+        ]
+        assert p_sent == [b"P 55.5 0.0\n"]
+
+    def test_los_during_tracking_without_next_aos_predictor_falls_back(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl._last_az = 100.0
+        ctrl._catching_up = False
+        # No set_next_aos_predictor() call -- pre-existing behavior must be
+        # unchanged: keep sending the live (below-horizon) azimuth with
+        # elevation clamped to 0.
+        ctrl._sock.sendall.reset_mock()  # type: ignore[union-attr]
+        assert ctrl.set_position(95.0, -2.0) is True
+        assert ctrl._catching_up is False
+        assert ctrl._awaiting_aos is False
+        assert ctrl._last_az == pytest.approx(95.0)
+        p_sent = [
+            c.args[0]
+            for c in ctrl._sock.sendall.call_args_list  # type: ignore[union-attr]
+            if c.args[0].startswith(b"P ")
+        ]
+        assert p_sent == [b"P 95.0 0.0\n"]
+
+    def test_next_aos_predictor_returning_none_falls_back_to_holding(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl.set_predictor(lambda lead_s: (210.0, -5.0))
+        ctrl.set_next_aos_predictor(lambda: None)
+        ctrl._sock.sendall.reset_mock()  # type: ignore[union-attr]
+        assert ctrl.set_position(200.0, 25.0) is True
+        assert ctrl._last_az is None
+        assert ctrl._catching_up is False
+        assert ctrl._awaiting_aos is False
+        p_calls = [
+            c
+            for c in ctrl._sock.sendall.call_args_list  # type: ignore[union-attr]
+            if c.args[0].startswith(b"P ")
+        ]
+        assert p_calls == []
+
+    def test_next_aos_predictor_exception_falls_back_to_holding(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl.set_predictor(lambda lead_s: (210.0, -5.0))
+
+        def boom() -> float:
+            raise RuntimeError("boom")
+
+        ctrl.set_next_aos_predictor(boom)
+        assert ctrl.set_position(200.0, 25.0) is True
+        assert ctrl._last_az is None
+        assert ctrl._catching_up is False
+        assert ctrl._awaiting_aos is False
+
+    def test_awaiting_aos_holds_until_elevation_positive_then_resumes(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl.set_predictor(lambda lead_s: (210.0, -5.0))
+        ctrl.set_next_aos_predictor(lambda: 77.0)
+        assert ctrl.set_position(200.0, 25.0) is True  # jumps to the parked AOS point
+        assert ctrl._awaiting_aos is True
+        assert ctrl._catching_up is True
+
+        # Rotor arrives at the parked point (77.0, within threshold).
+        ctrl._sock.recv.return_value = b"76.5\n0.0\nRPRT 0\n"  # type: ignore[union-attr]
+        assert ctrl.set_position(200.0, -4.0) is True  # still below horizon
+        assert ctrl._catching_up is False
+        assert ctrl._awaiting_aos is True  # stays parked, not falling through
+
+        # Still below horizon on a later cycle -- must not send anything.
+        ctrl._sock.sendall.reset_mock()
+        assert ctrl.set_position(180.0, -1.0) is True
+        ctrl._sock.sendall.assert_not_called()
+        assert ctrl._awaiting_aos is True
+
+        # Target finally rises -- resume tracking from scratch. Clear the
+        # lead predictor so the fresh initial jump goes straight to the
+        # live (now above-horizon) position rather than immediately
+        # re-triggering another below-horizon AOS wait.
+        ctrl.set_predictor(None)
+        assert ctrl.set_position(78.0, 3.0) is True
+        assert ctrl._awaiting_aos is False
+        assert ctrl._catching_up is True  # fresh initial jump entered
+        assert ctrl._last_az == pytest.approx(78.0)
+
 
 # ---------------------------------------------------------------------------
 # HamlibVersionChecker

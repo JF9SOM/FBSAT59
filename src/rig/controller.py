@@ -4207,12 +4207,27 @@ class RotatorController(ABC):
         # mechanism simply never read/invoke them.
         self._assumed_slew_deg_per_s: float = 2.5
         self._slew_speed_observer: Callable[[float], None] | None = None
+        # Optional callback returning the azimuth (south-offset-adjusted,
+        # same coordinate system as set_position()'s azimuth_deg) of the
+        # current tracking target's next AOS, or None if unknown. Set via
+        # set_next_aos_predictor() — used by HamlibRotatorController
+        # whenever a catch-up target (or the live tracked position at LOS)
+        # is below the horizon, so the rotator can pre-position toward the
+        # next rise instead of sitting idle. Base class stores it so
+        # callers can register it on any RotatorController without an
+        # isinstance check; subclasses without this behavior simply never
+        # read it.
+        self._next_aos_predictor: Callable[[], float | None] | None = None
 
     def set_predictor(
         self, predictor: Callable[[float], tuple[float, float] | None] | None
     ) -> None:
         """Register a lead-time position predictor (or None to disable it)."""
         self._predictor = predictor
+
+    def set_next_aos_predictor(self, predictor: Callable[[], float | None] | None) -> None:
+        """Register the next-AOS azimuth predictor (or None to disable it)."""
+        self._next_aos_predictor = predictor
 
     def set_assumed_slew_speed(self, deg_per_s: float) -> None:
         """Set the assumed rotator slew speed (deg/s) used to size catch-up lead time."""
@@ -4327,6 +4342,13 @@ class HamlibRotatorController(RotatorController):
         self._sock: socket.socket | None = None
         self._last_az: float | None = None  # last commanded AZ for shortest-path calc
         self._catching_up: bool = False  # True while rotator is moving to initial position
+        # True once the rotator has been parked at the next AOS's azimuth
+        # (elevation 0) because the live target — or its lead-time catch-up
+        # target — was below the horizon. Stays True (independent of
+        # _catching_up, which only covers the travel-there leg) until the
+        # target's real elevation rises above 0 — see _start_aos_wait() and
+        # set_position()'s handling of this flag.
+        self._awaiting_aos: bool = False
         # Rotator's real azimuth at the moment a 0-degree wrap re-entered
         # catch-up (None otherwise — including for the initial jump, which
         # doesn't need this gate). A wrap's start and target are always
@@ -4458,6 +4480,7 @@ class HamlibRotatorController(RotatorController):
                     self._state = RigState.CONNECTED
                 self._last_az = None
                 self._catching_up = False
+                self._awaiting_aos = False
                 self._catch_up_wrap_origin_az = None
                 self._catch_up_measure_start_time = None
                 self._catch_up_measure_start_az = None
@@ -4523,6 +4546,65 @@ class HamlibRotatorController(RotatorController):
             )
             return 0.0
         return raw_az
+
+    def _start_aos_wait(self, origin_az: float) -> bool:
+        """Jump toward the next AOS's azimuth instead of holding in place.
+
+        Called wherever set_position() would otherwise just log and hold
+        because the current target is below the horizon: a catch-up lead
+        target that hasn't risen yet (initial jump or 0-degree wrap
+        re-entry), or the live tracked satellite itself going below the
+        horizon (LOS). Rather than sitting at whatever azimuth happened to
+        be last commanded, this points the rotator at a known future AOS
+        so it is already in position (elevation 0) well before the target
+        rises again — see docs/hamlib.md for the investigation this
+        addresses.
+
+        Reuses the existing catch-up machinery (_catching_up / _last_az /
+        arrival polling / slew-speed measurement) since travelling to a
+        fixed future AOS point is mechanically identical to travelling to
+        a lead-time catch-up target — no lead-time math is needed here
+        since the AOS azimuth is a known fixed point, not a moving one.
+
+        Sets self._awaiting_aos so that, once arrived, set_position() holds
+        at this point (rather than falling through to normal tracking)
+        until the target's real elevation rises above 0 — see
+        set_position()'s handling of that flag.
+
+        Returns True if a jump was sent (the caller should return True
+        without its own "holding" log), False if no next-AOS predictor is
+        registered or it couldn't produce an azimuth — the caller should
+        fall back to its pre-existing behavior.
+        """
+        if self._next_aos_predictor is None:
+            return False
+        try:
+            next_az = self._next_aos_predictor()
+        except Exception as exc:
+            logger.error("Rotator: next-AOS prediction failed: %s", exc)
+            return False
+        if next_az is None:
+            return False
+
+        self._send_p(next_az, 0.0)
+        self._catching_up = True
+        self._awaiting_aos = True
+        self._catch_up_wrap_origin_az = None
+        self._last_az = next_az
+        self._catch_up_measure_start_time = time.monotonic()
+        self._catch_up_measure_start_az = origin_az
+        # Same boundary_forced condition _lead_target() uses, so a jump
+        # that happens to straddle the 0/360 seam still measures the real
+        # (long-path) travel distance rather than the trivial short one.
+        self._catch_up_measure_long_path = (origin_az > 270 and next_az < 90) or (
+            origin_az < 90 and next_az > 270
+        )
+        logger.info(
+            "Rotator: target below horizon, moving to next AOS az=%.1f (origin=%.1f)",
+            next_az,
+            origin_az,
+        )
+        return True
 
     def _lead_target(self, azimuth_deg: float, el_cmd: float) -> tuple[float, float] | None:
         """Compute a catch-up jump target: the initial jump, or a 0-degree
@@ -4733,6 +4815,16 @@ class HamlibRotatorController(RotatorController):
            would read "close" the instant catch-up begins, before the rotor
            has genuinely moved — record the rotor's real position at this
            moment (_catch_up_wrap_origin_az) so phase 2 can gate on it.
+
+        Whenever a below-horizon situation would otherwise leave the rotator
+        holding in place (phases 1 and 4 below, plus a new below-horizon
+        check in phase 3 for LOS), _start_aos_wait() is tried first: if a
+        next-AOS predictor is registered (see set_next_aos_predictor()) and
+        produces an azimuth, the rotator jumps there instead and
+        self._awaiting_aos is set. While that flag is set, this method
+        parks at that point (ignoring the live, still-below-horizon target)
+        until elevation_deg is actually positive, then resumes normal
+        catch-up/tracking from scratch — see the top of the try block below.
         """
         if not self.is_connected:
             return False
@@ -4743,12 +4835,28 @@ class HamlibRotatorController(RotatorController):
             with self._io_lock:
                 el_cmd = max(0.0, min(90.0, elevation_deg))
 
+                if self._awaiting_aos and not self._catching_up:
+                    # Parked at a previously-computed next-AOS point (see
+                    # _start_aos_wait()) and already arrived — stay put
+                    # until the target's real elevation actually rises
+                    # above the horizon, ignoring the live (still
+                    # below-horizon) azimuth_deg this cycle would otherwise
+                    # chase.
+                    if elevation_deg <= 0.0:
+                        return True
+                    self._awaiting_aos = False
+                    self._last_az = None  # force a fresh initial jump below
+
                 if self._last_az is None:
                     target = self._lead_target(azimuth_deg, el_cmd)
                     if target is None:
                         # Lead target is below the horizon — the rotator would
-                        # have nothing to point at yet. Stay put and retry
-                        # next cycle with a freshly computed lead target.
+                        # have nothing to point at yet. Try parking at the
+                        # next AOS instead; if that's unavailable too, stay
+                        # put and retry next cycle with a fresh lead target.
+                        origin_az = self._sane_origin_az(self.get_position().azimuth_deg)
+                        if self._start_aos_wait(origin_az):
+                            return True
                         logger.info(
                             "Rotator: lead target below horizon, holding before initial jump"
                         )
@@ -4833,6 +4941,14 @@ class HamlibRotatorController(RotatorController):
                             azimuth_deg,
                         )
                         self._record_measured_slew_speed(rot_az)
+                        if self._awaiting_aos:
+                            # Arrived at a next-AOS parking point (see
+                            # _start_aos_wait()), not a live target — stay
+                            # here instead of falling through to normal
+                            # tracking with a still-below-horizon azimuth.
+                            # The top-of-function check above releases this
+                            # once elevation_deg actually turns positive.
+                            return True
                         # Fall through to normal tracking below
                     else:
                         return True  # Still waiting for rotator to reach target
@@ -4852,7 +4968,12 @@ class HamlibRotatorController(RotatorController):
                     target = self._lead_target(azimuth_deg, el_cmd)
                     if target is None:
                         # Lead target below the horizon (pass ending soon) —
-                        # hold off and re-evaluate the wrap fresh next cycle.
+                        # try parking at the next AOS instead; if that's
+                        # unavailable too, hold off and re-evaluate the wrap
+                        # fresh next cycle.
+                        wrap_origin_az = self.get_position().azimuth_deg
+                        if self._start_aos_wait(wrap_origin_az):
+                            return True
                         logger.info(
                             "Rotator: 0-degree wrap %.1f->%.1f, lead target below horizon, holding",
                             last,
@@ -4885,6 +5006,19 @@ class HamlibRotatorController(RotatorController):
                     )
                     return True
 
+                if elevation_deg <= 0.0:
+                    # LOS (or continuing to track a target that's already
+                    # below the horizon) — instead of parking at whatever
+                    # azimuth the orbit currently predicts, try jumping
+                    # ahead to the next pass's AOS point so the rotor is
+                    # ready before the target rises again.
+                    origin_az = self.get_position().azimuth_deg
+                    if self._start_aos_wait(origin_az):
+                        return True
+                    # No next-AOS prediction available — fall back to the
+                    # pre-existing behavior below (keep sending the live,
+                    # below-horizon azimuth with elevation clamped to 0).
+
                 self._last_az = azimuth_deg
                 self._send_p(azimuth_deg, el_cmd)
                 return True
@@ -4907,6 +5041,7 @@ class HamlibRotatorController(RotatorController):
                 self._send_p(azimuth_deg, el_cmd)
                 self._last_az = None
                 self._catching_up = False
+                self._awaiting_aos = False
                 self._catch_up_wrap_origin_az = None
                 self._catch_up_measure_start_time = None
                 self._catch_up_measure_start_az = None

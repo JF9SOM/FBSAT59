@@ -4579,6 +4579,44 @@ class MainWindow(QMainWindow):
         # az-diff comparison inside _lead_target() uses.
         return self._apply_south_offset(obs.azimuth_deg), obs.elevation_deg
 
+    def _predict_next_aos_az(self) -> float | None:
+        """Return the AZ (south-offset-adjusted) of the next AOS for the
+        currently selected satellite, or None if unknown.
+
+        Passed to RotatorController.set_next_aos_predictor() — used
+        whenever the rotator would otherwise sit idle because the current
+        target (or its catch-up lead target) is below the horizon, so it
+        can pre-position toward the next rise instead. Deliberately does
+        not special-case Autotrack: when Autotrack is driving satellite
+        selection, self._selected_norad is already whichever list entry
+        has the soonest AOS (AutotrackManager.check()'s Rule 2b switches to
+        it well before that satellite actually rises — see
+        src/core/autotrack.py), so reading self._selected_norad here always
+        reflects the right target with no Autotrack-specific logic needed.
+        Not supported for the Moon (no discrete AOS/LOS the same way).
+        Called from the rotator's background send thread — see
+        _predict_rotator_lead()'s docstring for the same
+        plain-attribute-only constraint.
+        """
+        if self._selected_norad is None or self._selected_norad == MOON_ID:
+            return None
+        if self._pass_predictor is None:
+            return None
+        now = datetime.now(UTC)
+        try:
+            passes = self._pass_predictor.get_passes(
+                self._selected_norad,
+                start=now,
+                end=now + timedelta(hours=24),
+                min_elevation_deg=0.0,
+            )
+        except Exception as exc:
+            logger.error("Rotator: next-AOS pass search failed: %s", exc)
+            return None
+        if not passes:
+            return None
+        return self._apply_south_offset(passes[0].aos_azimuth_deg)
+
     def _send_to_rotator(self, obs: Observation | None) -> None:
         """Send AZ/EL from obs to the rotator in a background thread (non-blocking)."""
         if (
@@ -7441,6 +7479,7 @@ class MainWindow(QMainWindow):
                     baud_rate=baud,
                 )
             self._rotator_controller.set_predictor(self._predict_rotator_lead)
+            self._rotator_controller.set_next_aos_predictor(self._predict_next_aos_az)
             self._rotator_controller.set_assumed_slew_speed(self._load_rotator_slew_speed_setting())
             self._rotator_controller.set_slew_speed_observer(self._on_rotator_slew_speed_measured)
             self._radio_control.set_rotator(self._rotator_controller)

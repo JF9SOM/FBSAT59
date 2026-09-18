@@ -624,6 +624,85 @@ South Init を ON にすればこのパス自体は北をまたがなくなり�
 `crossed_zero`経路の仕組み自体が実機で機能しているかを確認するため、診断ログのみを
 追加し、実機での再現待ちとしている。
 
+**追記（2026-09-18、実機再テストで解消）**: 上記の`crossed_zero`経路への毎サイクル
+ポーリングログを実装した状態で北跨ぎパスを複数回実機再テストしたところ、`rot_az`が
+2秒ごとに約8.3°ずつ単調に増加し続け、正常にcatch-up完了（`measured=4.037deg/s`）
+することを確認できた。359→0度・0→359度いずれの方向でも正常動作を確認。前回
+（本節冒頭の45秒間無反応）は既知の原因を特定できなかった一過性の事象だったと
+考えられる。詳細は[docs/known-issues.md](known-issues.md)ではなくこの節に留め、
+再発時はこの毎サイクルログで切り分ける運用とする。
+
+### 水平線下の衛星への「次のAOSへ先回り」機能の追加（2026-09-18）
+
+**背景**: 上記の北跨ぎ調査の過程で、**LOS後（あるいは接続時にまだAOS前）に衛星が
+水平線下にある間、ローテーターが一切動かない**という別の（catch-upの成否とは無関係な）
+設計上の制約が判明した。`_lead_target()`は先読み後の予測ELが負なら`None`を返し、
+呼び出し側（初回jump・`crossed_zero`再突入の両方）はそれを受けて単に
+`holding`ログを出すだけで、Pコマンドを一切送らずに待ち続ける設計だった
+（詳細は本ファイル「初回jumpの先読み（lead-time）ターゲティング」節参照）。
+実機ログでは15:48:33〜15:49:01の間、`rotor_origin=360.0`のまま（＝実機は完全に
+静止）で`lead target below horizon, holding`が最低14回連続することを確認した。
+通常追尾中（0/360をまたがない場合）はEL=0にクランプしつつAZだけ送り続けるため
+問題にならないが、**0/360をまたいだ瞬間に限って「先読み目標が水平線下なら完全に
+静止する」**という非対称な挙動になっていた。
+
+**ユーザー要件（2026-09-18、承認済み）**:
+1. 水平線下の衛星でRotator Connectした場合、そのAOS地点のAZ（EL=0）へ先読みなしで
+   一度だけPコマンドを送り全速力で移動、その地点で待機。対象衛星のELが0を超えたら
+   通常追尾を開始する
+2. 追尾中にLOSを迎えたら、次パスのAOS地点のAZへ全速力で移動し、以降は1と同じ
+3. `crossed_zero`再突入時に先読み目標が水平線下なら、そのパスの追尾を打ち切り、
+   2のLOS時と同じ動作（次パスのAOSへ先回り）とする
+4. 初回jump（パス終盤の衛星を選択した場合等）の先読み目標が水平線下の場合も、
+   3と同様に次パスのAOSへ先回りする
+5. Autotrack有効時、「次のパス」はAutotrackリストに登録された衛星群のうち、
+   現在選択中の衛星ではなく最も早くAOSを迎える衛星を基準にする
+
+**実装方針の確認（Autotrackとの関係）**: `AutotrackManager.check()`のRule 2b
+（[src/core/autotrack.py](../src/core/autotrack.py)、「見えている衛星がない場合は
+最も早いAOSの衛星を選ぶ」）が、対象衛星が実際に昇る**前から**`_select_satellite_by_norad()`
+経由で`MainWindow._selected_norad`を先回りして切り替えていることを確認した
+（[src/ui/main_window.py](../src/ui/main_window.py)の`_check_autotrack()`）。
+そのため、ローテーター制御層はAutotrackを一切意識する必要がなく、「今選択中の
+衛星（`_selected_norad`）の次のAOS」を計算するだけで要件5も自動的に満たされる。
+
+**実装**:
+- `RotatorController`（基底クラス）に`set_next_aos_predictor(callback)`を追加。
+  `set_predictor()`と同じ注入パターンで、`Callable[[], float | None]`
+  （south-offset適用済みの次AOSのAZ、不明なら`None`）を保持する
+- `MainWindow._predict_next_aos_az()`（`_predict_rotator_lead()`と同じくバック
+  グラウンドスレッドから呼ばれるためプレーンな属性読み取りのみ）を新設。
+  `self._pass_predictor.get_passes(self._selected_norad, start=now,
+  end=now+24h, min_elevation_deg=0.0)`の先頭パスの`aos_azimuth_deg`を返す
+  （`min_elevation_deg=0.0`＝品質フィルタなし、ユーザー承認済み仕様）。Moonは
+  対象外（`_selected_norad == MOON_ID`なら`None`）。`_load_rotator_settings()`で
+  `set_predictor()`と並べて配線
+- `HamlibRotatorController`に`_awaiting_aos: bool`を新設。新規ヘルパー
+  `_start_aos_wait(origin_az)`が、`_next_aos_predictor()`から有効なAZが得られれば
+  `_send_p(next_az, 0.0)`を送り`_catching_up=True`・`_awaiting_aos=True`・
+  `_last_az=next_az`に設定する（既存のcatch-up到達判定・`rot-record.log`
+  ポーリング・スルー速度計測をそのまま流用——AOS地点は動かない既知の固定点なので
+  先読み時間計算は不要）。`_next_aos_predictor`が未設定、または`None`を返す場合は
+  `False`を返し、呼び出し側は従来通りの`holding`ログへフォールバックする（後方互換）
+- `_start_aos_wait()`の呼び出し箇所3つ:
+  1. 初回jumpで`_lead_target()`が`None`を返した時（要件1・4）
+  2. `crossed_zero`再突入で`_lead_target()`が`None`を返した時（要件3）
+  3. **新規**: 通常追尾中（`crossed_zero`でない）に`elevation_deg<=0.0`を検出した時
+     （要件2、LOS検出。従来はこの分岐自体が存在せず、ELをクランプしてAZだけ送り
+     続けるだけだった）
+- 到達判定（`az_diff<=_CATCH_UP_THRESHOLD`）が成立した時点で`_awaiting_aos`なら
+  通常追尾へフォールスルーせず、その場に留まる
+- `set_position()`冒頭に`if self._awaiting_aos and not self._catching_up:`ガードを
+  追加。既にAOS地点へ到達済みなら、`elevation_deg<=0.0`の間は毎サイクル何もせず
+  `return True`するだけ（要件通り「1回移動したらEL>0まで一切動かさない」——先読みの
+  再計算やAZの微調整はしない）。`elevation_deg>0.0`になった瞬間に`_awaiting_aos=False`・
+  `_last_az=None`にリセットし、既存の初回jumpロジック（`_lead_target()`による通常の
+  先読みcatch-up）へ自然に委ねる
+- `connect()`・`goto()`（手動操作）でも`_awaiting_aos`をリセット
+
+**検証**: `ruff format`/`ruff check`/`mypy --strict`/`pytest tests/test_rig.py`
+（215 passed, 13 skipped）を通過。実機での動作確認は未実施。
+
 ---
 
 ## Direct モードのローテーターが Connect 直後にハングしてアプリごと落ちるバグ — 原因は接続時の複数スレッド競合（2026-09-09 実機確認・修正済み）
