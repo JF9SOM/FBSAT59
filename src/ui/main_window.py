@@ -21,6 +21,7 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any, TypedDict
 
 import httpx
@@ -1145,6 +1146,7 @@ class MainWindow(QMainWindow):
         self._sdr_control.tune_offset_changed.connect(self._on_sdr_tune_offset)
         self._sdr_control.sdr_lock_changed.connect(self._on_sdr_lock_changed)
         self._sdr_control.manual_freq_requested.connect(self._on_sdr_manual_freq_requested)
+        self._sdr_control.play_recording_requested.connect(self._on_play_recording_requested)
 
         self._tab_widget.currentChanged.connect(self._on_tab_changed)
 
@@ -4432,15 +4434,23 @@ class MainWindow(QMainWindow):
         if self._engine is None or self._current_transmitter is None:
             return
 
+        # is_replay slots are excluded here: a recorded IQ file's playback
+        # position has nothing to do with the satellite's *current*
+        # real-time Doppler, and this worker's 50ms writes would otherwise
+        # immediately overwrite the file device's fixed 0 Hz center_freq
+        # and the manual Offset the user is dialing in via
+        # SdrControlWidget's playback panel (see SdrRigAdapter.is_replay).
         sdr_is_rig1 = (
             self._rig_controller is not None
             and getattr(self._rig_controller, "is_sdr", False)
             and self._rig_controller.is_connected
+            and not getattr(self._rig_controller, "is_replay", False)
         )
         sdr_is_rig2 = (
             self._rig2_controller is not None
             and getattr(self._rig2_controller, "is_sdr", False)
             and self._rig2_controller.is_connected
+            and not getattr(self._rig2_controller, "is_replay", False)
         )
         if not sdr_is_rig1 and not sdr_is_rig2:
             return
@@ -7064,6 +7074,66 @@ class MainWindow(QMainWindow):
         self._sdr_control.sync_tune_offset(new_offset)
         self._invalidate_sdr_retune_cache()
 
+    def _sdr_playback_target_slot(self) -> int | None:
+        """Which Rig slot (1 or 2) IQ recording playback should target.
+
+        Prefers whichever slot is currently configured as SDR; if both
+        are, prefers Rig 1 (arbitrary but consistent -- playback only
+        ever replaces one slot at a time, unlike live dual-SDR Doppler
+        tracking in _sdr_doppler_cycle()). None if neither slot is SDR.
+        """
+        from rig.controller import SdrRigAdapter
+
+        if isinstance(self._rig_controller, SdrRigAdapter):
+            return 1
+        if isinstance(self._rig2_controller, SdrRigAdapter):
+            return 2
+        return None
+
+    def _on_play_recording_requested(self, path: str) -> None:
+        """Load a recorded .iq.wav file for playback, requested via SdrControlWidget's ▶ Play….
+
+        Replaces whichever Rig slot is configured as SDR with a
+        file-backed pseudo-device (SdrRigAdapter.connect_from_file()),
+        then reuses _on_rig_slot_connected() -- the exact same
+        pipeline-attach/notify path a live connect uses -- so Telemetry/
+        FT4/Q65/SSTV and the waterfall all pick it up without any of them
+        needing to know playback exists.
+        """
+        from rig.controller import SdrRigAdapter
+
+        slot = self._sdr_playback_target_slot()
+        if slot is None:
+            QMessageBox.warning(
+                self,
+                _("Play IQ Recording"),
+                _("No SDR is configured for Rig 1 or Rig 2 — set one up in Rig Settings first."),
+            )
+            return
+        rig = self._rig_controller if slot == 1 else self._rig2_controller
+        if not isinstance(rig, SdrRigAdapter):
+            return
+
+        if rig.is_connected and not rig.is_replay:
+            reply = QMessageBox.question(
+                self,
+                _("Play IQ Recording"),
+                _(
+                    "Rig %d is currently connected to live hardware. Disconnect it and "
+                    "play back the recording instead?"
+                )
+                % slot,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        if rig.connect_from_file(Path(path)):
+            self._on_rig_slot_connected(slot, is_replay=True)
+        else:
+            QMessageBox.warning(
+                self, _("Play IQ Recording"), _("Failed to open recording:\n%s") % path
+            )
+
     def _apply_mode_toggle_to_rig(self, dl_mode: str, ul_mode: str) -> None:
         """Apply an arbitrary DL/UL mode pair to Rig 1 in a background thread,
         without disconnecting or re-selecting the transponder.
@@ -8135,13 +8205,19 @@ class MainWindow(QMainWindow):
         dlg = GrSatellitesDialog(self)
         dlg.exec()
 
-    def _on_rig_slot_connected(self, slot: int) -> None:
+    def _on_rig_slot_connected(self, slot: int, is_replay: bool = False) -> None:
         """Called when Rig 1 or Rig 2 connects.  Starts SDR pipeline if the slot is an SDR.
 
         For satmode NET rigs (IC-9700 etc.), also sends mode after connect so that
         the mode command arrives after S 1 Main has activated satmode (which resets
         VFO modes on these rigs).  Only slot 1 (primary rig) participates in mode
         tracking.
+
+        *is_replay* — True when this call follows
+        SdrRigAdapter.connect_from_file() (IQ recording playback) rather
+        than a live rig.connect(). Passed straight through to
+        SdrControlWidget.set_pipeline() -- see its docstring for what
+        that gates. See _on_play_recording_requested().
         """
         # CTCSS is sent at transponder-selection time for all rigs (IC-9100 style).
         # No re-send needed here.
@@ -8178,7 +8254,7 @@ class MainWindow(QMainWindow):
 
         pipeline = SDRPipeline(device, parent=self)
         rig.attach_pipeline(pipeline)
-        self._sdr_control.set_pipeline(pipeline)
+        self._sdr_control.set_pipeline(pipeline, is_replay=is_replay)
         pipeline.start()
         self._notify_comms_tabs_sdr_pipeline(pipeline)
         self._update_rig_label()

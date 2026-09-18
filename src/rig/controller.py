@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from sdr.device import SdrDevice, SdrDeviceInfo
+    from sdr.file_device import SdrFileDevice
     from sdr.pipeline import SDRPipeline
 
 import httpx
@@ -5178,7 +5179,7 @@ class SdrRigAdapter(RigController):
     def __init__(self) -> None:
         super().__init__()
         # Lazily imported to avoid loading SoapySDR at startup
-        self._sdr_device: SdrDevice | None = None
+        self._sdr_device: SdrDevice | SdrFileDevice | None = None
         self._pipeline: SDRPipeline | None = None
         self._device_info: SdrDeviceInfo | None = None
         # Audio params applied after open()
@@ -5190,6 +5191,9 @@ class SdrRigAdapter(RigController):
         # Retune deadband state -- see _SDR_RETUNE_DEADBAND_HZ.
         self._retune_deadband_hz: float = _SDR_RETUNE_DEADBAND_HZ
         self._last_tuned_hz: float | None = None
+        # True while replaying a recorded IQ file instead of live hardware
+        # -- see is_replay's docstring and connect_from_file().
+        self._is_replay: bool = False
 
     def set_retune_deadband(self, deadband_hz: float) -> None:
         """Override the retune deadband (0 restores per-cycle retuning)."""
@@ -5230,6 +5234,69 @@ class SdrRigAdapter(RigController):
     def attach_pipeline(self, pipeline: SDRPipeline) -> None:
         """Attach a running SDRPipeline (set after connect succeeds)."""
         self._pipeline = pipeline
+
+    @property
+    def is_replay(self) -> bool:
+        """True while this slot is replaying a recorded IQ file instead of live hardware.
+
+        MainWindow._sdr_doppler_cycle() must skip a replaying slot
+        entirely: that worker writes the *current, real-time* TLE-based
+        Doppler target every 50ms, which would immediately overwrite the
+        file device's fixed 0 Hz center_freq reference and the manual
+        Offset the user is dialing in via SdrControlWidget's playback
+        panel with a value that has nothing to do with the recording.
+        """
+        return self._is_replay
+
+    def connect_from_file(self, wav_path: Path) -> bool:
+        """Open a recorded .iq.wav file for playback instead of live hardware.
+
+        Disconnects any existing connection first (live hardware or a
+        previous recording). Mirrors only the device-opening half of
+        connect() -- pipeline creation, attach_pipeline(), and notifying
+        SDR Control / Telemetry / FT4 / Q65 of the new pipeline are
+        MainWindow's job (_on_rig_slot_connected()), exactly like a live
+        connect, so that code is not duplicated here. See is_replay's
+        docstring for the one behavioral difference that matters
+        afterward.
+        """
+        self.disconnect()
+        try:
+            from sdr.file_device import SdrFileDevice
+
+            self._sdr_device = SdrFileDevice(wav_path)
+            self._is_replay = True
+            self._last_tuned_hz = None
+            with self._lock:
+                self._state = RigState.CONNECTED
+            logger.info("SDR replay opened: %s", wav_path)
+            return True
+        except Exception:
+            logger.exception("SdrRigAdapter.connect_from_file failed: %s", wav_path)
+            with self._lock:
+                self._state = RigState.ERROR
+            return False
+
+    def seek_file(self, position_s: float) -> None:
+        """Jump the replay position. No-op unless currently replaying."""
+        seek = getattr(self._sdr_device, "seek", None)
+        if seek is not None:
+            seek(position_s)
+
+    @property
+    def file_playback_position_s(self) -> float:
+        """Current replay position in seconds. 0.0 unless currently replaying."""
+        return float(getattr(self._sdr_device, "position_s", 0.0))
+
+    @property
+    def file_playback_duration_s(self) -> float:
+        """Total length of the file being replayed in seconds. 0.0 unless replaying."""
+        return float(getattr(self._sdr_device, "duration_s", 0.0))
+
+    @property
+    def file_playback_at_end(self) -> bool:
+        """True once replay has reached the end of the file."""
+        return bool(getattr(self._sdr_device, "at_end", False))
 
     def connect(self) -> bool:
         """Open the SoapySDR device. Returns True on success."""
@@ -5286,6 +5353,7 @@ class SdrRigAdapter(RigController):
                 self._sdr_device.close()
             self._sdr_device = None
         self._last_tuned_hz = None
+        self._is_replay = False
         with self._lock:
             self._state = RigState.DISCONNECTED
 
@@ -5398,7 +5466,7 @@ class SdrRigAdapter(RigController):
         )
 
     @property
-    def sdr_device(self) -> SdrDevice | None:
+    def sdr_device(self) -> SdrDevice | SdrFileDevice | None:
         return self._sdr_device
 
 

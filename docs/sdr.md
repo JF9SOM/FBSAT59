@@ -1526,3 +1526,120 @@ gain時よりも明らかに音が小さく／実質的に何も聞こえない*
 必要がある。
 
 ---
+
+### IQ録音の再生機能（2026-09-18 実装）
+
+#### 背景
+
+OrigamiSat-2受信時に発生した「Doppler補正だけでは説明できない周波数ズレ」の調査
+（本ファイル冒頭の経緯とは別件、`docs/telemetry.md`ではなくユーザーとの会話ログ参照）の
+過程で、SatNOGS公式クライアント（`librespace/satnogs-client`）の実装をSSH先の実機
+（GPD、`gpd-linux.local`）で調査したところ、**自動的な波形からのドリフト検知は行われて
+おらず、標準的なTLEベースのDoppler予測のみ**だと判明した。この結論を受け、「自動オフセット
+検知は諦め、手動オフセットのみとし、そのオフセット量を目で確認できるようIQ録音再生時にも
+ウォーターフォールを使えるようにする」という方針でユーザーと合意し実装した。
+
+#### アーキテクチャ — 「実機の代わりに再生する疑似デバイス」という設計
+
+`SDRPipeline`が実際に`self._device`へ要求しているメンバーは
+（`sample_rate`・`center_freq`・`start_stream()`・`read_samples()`・`stop_stream()`の）
+5つだけ（`src/sdr/pipeline.py`で`self._device.`をgrepして確認済み）。この最小限の契約を
+`SdrDeviceLike`という`typing.Protocol`として`pipeline.py`に切り出し、`SDRPipeline.__init__`の
+型を`SdrDevice`から`SdrDeviceLike`へ広げた（構造的部分型付けなので継承関係は不要）。
+
+新設の`SdrFileDevice`（`src/sdr/file_device.py`）はこの契約だけを満たす、`.iq.wav`を
+再生する疑似デバイス:
+- コンストラクタで`scipy.io.wavfile.read()`によりファイル全体を一度にメモリへ読み込む
+  （数分のVHF/UHFパスなら250kHzサンプルレートでも数十MB程度のため許容——シーク操作を
+  単なる配列インデックスの書き換えにできるメリットが大きい）
+- `center_freq`は**常に0.0固定**（`set_center_freq()`も無視するno-op）。理由は次項参照
+- `read_samples()`は実時間ペーシング（`time.sleep(len(block)/sample_rate)`）を行う。
+  メモリからの読み出しは実質瞬時のため、ペーシングを入れないとDirewolfのビット同期
+  タイミングやUI更新頻度が録音時のボーレートと無関係に暴走する
+- `seek()`・`position_s`・`duration_s`・`at_end`という再生専用の追加プロパティを持つ
+
+#### `center_freq`固定0Hz設計の理由 — 手動Offsetを「実質的なPassband Tune」として実装
+
+`SDRPipeline._apply_doppler_correction()`は`shift = target - hw_cf`でIQをシフトする
+（`target`は`set_doppler_target()`で設定した値、`hw_cf`は`self._device.center_freq`）。
+`SdrFileDevice.center_freq`を常に0固定にしておくと、`shift`は常に`target`そのものになる。
+再生パネルの「Offset」スピンボックスの値をそのまま`pipeline.set_doppler_target(value)`へ
+渡すだけで、ライブ受信のPassband Tune（`_sdr_tune_offset`）と全く同じ「なめらかで
+クリックの無い位相連続シフト」が実現できる——録音時点で真に0Hz（＝録音時のDoppler補正が
+正しかった位置）にある信号は、Offsetの値に関わらずウォーターフォール上では常にその
+「本当の位置」に表示され続け、赤い目標マーカー（`effective_center_freq`）だけがOffset値に
+連動して動く。両者が重なった瞬間のOffset値が、真のズレ量そのものになる（詳細な周波数系の
+導出はユーザーとの設計合意時の会話ログ参照）。
+
+#### `SdrRigAdapter`への統合 — Rig 1/2スロットへの「なりすまし接続」
+
+再生機能は独立した仕組みを新設せず、既存のRig 1/2（SDR）スロットの接続処理を再利用する:
+
+- `SdrRigAdapter.connect_from_file(wav_path)`: `connect()`の「デバイスを開く」半分だけを
+  再現する（`disconnect()`で前状態を確実に破棄 → `SdrFileDevice`を`self._sdr_device`に
+  セット → `self._is_replay = True`）。**パイプライン生成・`attach_pipeline()`・
+  SDR Control/Telemetry/FT4/Q65への通知は行わない**——それは`MainWindow.
+  _on_rig_slot_connected(slot, is_replay=True)`（ライブ接続時と全く同じ経路、
+  `is_replay`引数を追加しただけ）に委譲する。これにより、Telemetry/FT4/Q65/SSTVが
+  `getattr(rig, "_pipeline", None)`で拾っているパイプライン参照の取得経路は**無改修**で
+  再生パイプラインにもそのまま機能する
+- `SdrRigAdapter.is_replay`（プロパティ）: **`MainWindow._sdr_doppler_cycle()`は
+  このフラグが立っているスロットを完全にスキップする**（`sdr_is_rig1`/`sdr_is_rig2`の
+  算出条件に`and not getattr(rig, "is_replay", False)`を追加）。このワーカーは
+  衛星の**現在**のリアルタイムDopplerを50msごとに書き込み続けるため、ガードが無いと
+  再生中のOffset調整や固定0Hz基準を片っ端から上書きしてしまう。なお`_doppler_cycle()`
+  （Radio Controlの可変Cycle設定の方）は元々`not sdr_is_rig1`で完全にSDRスロットを
+  除外する設計だったため、こちらは無改修で安全だった
+- `SdrRigAdapter.seek_file()` / `file_playback_position_s` / `file_playback_duration_s` /
+  `file_playback_at_end`: いずれも`getattr(self._sdr_device, "...", <default>)`という
+  duck-typing経由で`SdrFileDevice`固有のメンバーへ委譲する。ライブハードウェア接続中や
+  未接続時にSdrControlWidgetのポーリングタイマーから無条件で呼ばれても例外を出さず、
+  無害なデフォルト値を返す
+- `disconnect()`は`self._is_replay = False`を追加でリセットする
+
+#### UI（`src/ui/sdr_control_widget.py`、SDR Controlタブの「IQ Recorder」枠）
+
+```
+┌─ IQ Recorder ────────────────────────────────────────────┐
+│ Record BW: [250 kHz ▾]                                     │
+│ File: 68795_OrigamiSat-2_20260918T072530Z.iq.wav           │
+│ [● REC] [■ STOP]   00:03:12  12.3 MB                [📁]   │
+├──────────────────────────────────────────────────────────┤
+│ [▶ Play…] [■ Stop]     Offset: [   +0 Hz ▲▼]               │
+│ 00:47  ━━━━━━━●──────────────────────────────  05:12       │
+└──────────────────────────────────────────────────────────┘
+```
+
+- **[▶ Play…]は常時有効**（`_set_sdr_connected()`の`_always_enabled`集合に追加）——
+  実機未接続でも再生を開始できることが本機能の主目的のため。クリックのたびに
+  ファイル選択ダイアログを開き、選んだファイルを**常に位置0から**読み込み直す
+  （`play_recording_requested(str)`シグナルでMainWindowへ依頼し、
+  `connect_from_file()` + `_on_rig_slot_connected(slot, is_replay=True)`を実行）
+- **[■ Stop]は一時停止**（`SdrFileDevice.stop_stream()`を直接呼ぶだけ。再生位置は保持）。
+  再開は[▶ Play…]の再クリックではなく、同じファイルが読み込まれたまま
+  `start_stream()`を呼ぶだけの内部動作——ただし現在の実装では[▶ Play…]は常に
+  ファイル選択ダイアログを開く設計のため、一時停止からの再開はスライダーやOffsetを
+  そのままに、内部的に`start_stream()`を呼ぶ経路（Stopボタンと対になる、明示的な
+  再開ボタンは無い）に依存する
+- **Offset・シークスライダー・[■ Stop]は`self._pipeline`/`self._pipeline._device`へ
+  直接触るだけで完結**し、MainWindowへの往復は一切発生しない（`play_recording_requested`
+  シグナルは「新しいファイルを読み込む」という、RigController自体の差し替えが必要な
+  最初の一手だけが対象）。範囲: Offset ±100,000Hz・ステップ100Hz
+- シークスライダーは250ms周期のポーリングタイマー（`_update_playback_position`）で
+  自動更新。`QSlider.isSliderDown()`でユーザーのドラッグ中は上書きしないようガードし、
+  録音終端（`at_end`）に達したら自動的に`stop_stream()`を呼んで一時停止扱いにする
+  （ループ再生はしない、との合意通り）
+- ウォーターフォールの周波数軸は`SdrWaterfallDialog.set_pipeline(pipeline, is_replay)`の
+  `is_replay`フラグで絶対値（MHz、ライブ）⇔相対値（Hz/kHz、録音再生。0=録音時点の
+  Doppler補正基準）を自動切替する（`_format_axis_label()`）
+
+#### テスト
+
+`tests/test_file_device.py`（`SdrFileDevice`単体、scipy必須で`importorskip`）・
+`tests/test_rig.py`の`TestSdrRigAdapterFilePlayback`（`connect_from_file`/`is_replay`/
+`disconnect`でのリセット/`seek_file`等の委譲）・`tests/test_sdr_waterfall_dialog.py`の
+軸フォーマット関連テストを追加。`MainWindow._sdr_doppler_cycle()`の`is_replay`除外条件
+自体は`test_main_window.py`側に新規テストを追加していない（同ファイルはCLAUDE.mdの
+ルール通りローカル実行せず`--collect-only`でのみ確認、CI待ち）。
+
+---

@@ -227,3 +227,36 @@ def test_position_top_right_is_queued_once_on_first_show_only(qtbot: QtBot) -> N
     dlg.show()
     qtbot.wait(20)
     assert len(calls) == 1  # not called again
+
+
+# ---------------------------------------------------------------------------
+# IQ recording playback: relative (not absolute) frequency axis
+# ---------------------------------------------------------------------------
+
+
+def test_format_axis_label_absolute_by_default(qtbot: QtBot) -> None:
+    dlg = SdrWaterfallDialog()
+    qtbot.addWidget(dlg)
+    assert dlg._format_axis_label(437_505_000.0) == "437.505"
+
+
+def test_format_axis_label_relative_when_replaying(qtbot: QtBot) -> None:
+    dlg = SdrWaterfallDialog()
+    qtbot.addWidget(dlg)
+    dlg.set_pipeline(_FakePipeline(), is_replay=True)
+    assert dlg._format_axis_label(0.0) == "0 Hz"
+    assert dlg._format_axis_label(500.0) == "+500 Hz"
+    assert dlg._format_axis_label(-500.0) == "-500 Hz"
+    assert dlg._format_axis_label(12_500.0) == "+12.50 kHz"
+    assert dlg._format_axis_label(-30_000.0) == "-30.00 kHz"
+
+
+def test_set_pipeline_is_replay_resets_to_false_on_detach(qtbot: QtBot) -> None:
+    """Detaching (set_pipeline(None)) must not leave a stale relative-axis mode
+    the next live SDR connection would silently inherit."""
+    dlg = SdrWaterfallDialog()
+    qtbot.addWidget(dlg)
+    dlg.set_pipeline(_FakePipeline(), is_replay=True)
+    assert dlg._is_replay is True
+    dlg.set_pipeline(None)
+    assert dlg._is_replay is False

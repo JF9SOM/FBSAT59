@@ -25,13 +25,12 @@ import logging
 import threading
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Protocol
 
 import numpy as np
 from PySide6.QtCore import QObject, QThread, Signal
 
 from sdr.demodulator import AUDIO_RATE, DemodMode, Demodulator
-from sdr.device import SdrDevice
 from sdr.diag_log import get_sdr_diag_logger
 from sdr.recorder import IQRecorder
 
@@ -47,11 +46,34 @@ _FFT_INTERVAL: float = 0.1  # 10 fps
 _FFT_SIZE: int = 1024
 
 
+class SdrDeviceLike(Protocol):
+    """Structural contract SDRPipeline actually needs from its device.
+
+    SdrDevice (real SoapySDR hardware) and SdrFileDevice (recorded .iq.wav
+    playback, see sdr/file_device.py) both satisfy this without either
+    inheriting from the other -- SDRPipeline only ever touches these five
+    members (grep self._device. in this file to confirm).
+    """
+
+    @property
+    def sample_rate(self) -> float: ...
+
+    @property
+    def center_freq(self) -> float: ...
+
+    def start_stream(self) -> bool: ...
+
+    def read_samples(self, num_samples: int = ...) -> np.ndarray | None: ...
+
+    def stop_stream(self) -> None: ...
+
+
 class SDRPipeline(QThread):
     """
     I/Q acquisition and distribution thread.
 
-    Instantiate with an open SdrDevice, then call start().
+    Instantiate with an open SdrDevice (or an SdrFileDevice for recorded
+    IQ playback -- see SdrDeviceLike), then call start().
     Stop by calling stop() followed by wait().
     """
 
@@ -61,7 +83,7 @@ class SDRPipeline(QThread):
     status_changed: Signal = Signal(str)
     error_occurred: Signal = Signal(str)
 
-    def __init__(self, device: SdrDevice, parent: QObject | None = None) -> None:
+    def __init__(self, device: SdrDeviceLike, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._device = device
         self._demodulator = Demodulator(input_rate=device.sample_rate)

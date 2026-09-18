@@ -23,6 +23,7 @@ from PySide6.QtGui import QColor, QDesktopServices, QPen
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
+    QFileDialog,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -30,6 +31,7 @@ from PySide6.QtWidgets import (
     QRadioButton,
     QScrollArea,
     QSlider,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -66,6 +68,12 @@ _REC_BANDWIDTHS: list[tuple[str, int]] = [
 ]
 
 
+def _format_mmss(seconds: float) -> str:
+    """Format a duration in seconds as MM:SS for the playback position slider."""
+    total = max(0, int(seconds))
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
 class SdrControlWidget(QWidget):
     """
     SDR Control panel.
@@ -93,6 +101,18 @@ class SdrControlWidget(QWidget):
     # this signal is not emitted at all.
     manual_freq_requested: Signal = Signal(float)
 
+    # Emitted when the user picks a .iq.wav file via the "▶ Play…" button.
+    # MainWindow owns the actual RigController, so it -- not this widget --
+    # calls SdrRigAdapter.connect_from_file() and re-runs the same
+    # pipeline-attach/notify path a live connect uses
+    # (_on_rig_slot_connected()). Pause/resume/seek/offset changes during
+    # an already-loaded playback are handled locally in this widget
+    # instead (see _on_stop_play_clicked() etc.) -- they only touch
+    # self._pipeline / self._pipeline._device, the same objects
+    # set_pipeline() already handed this widget, so no round trip through
+    # MainWindow is needed for those.
+    play_recording_requested: Signal = Signal(str)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._pipeline: Any = None  # SDRPipeline | None
@@ -102,9 +122,15 @@ class SdrControlWidget(QWidget):
         # Whether Radio Control currently has a transponder selected — see
         # set_transponder_active().
         self._transponder_active: bool = False
+        # True while self._pipeline is backed by a recorded .iq.wav file
+        # rather than live hardware -- see set_pipeline()'s is_replay param.
+        self._is_replay: bool = False
         self._status_timer = QTimer(self)
         self._status_timer.setInterval(1_000)
         self._status_timer.timeout.connect(self._update_rec_status)
+        self._playback_timer = QTimer(self)
+        self._playback_timer.setInterval(250)
+        self._playback_timer.timeout.connect(self._update_playback_position)
         self._setup_ui()
         self._set_sdr_connected(False)  # grey out until SDR connects
 
@@ -120,7 +146,12 @@ class SdrControlWidget(QWidget):
         the two file-manager buttons which must remain accessible at all times.
         """
         self._waterfall_btn.setEnabled(connected)
-        _always_enabled = {self._open_folder_btn, self._open_audio_folder_btn}
+        # "▶ Play…" must stay usable with no SDR connected at all -- that
+        # is the whole point of file playback. Its own paired controls
+        # (Stop / Offset / seek slider) are gated separately by
+        # _set_replay_controls_enabled(), driven by set_pipeline()'s
+        # is_replay flag rather than plain connected-ness.
+        _always_enabled = {self._open_folder_btn, self._open_audio_folder_btn, self._play_btn}
         for panel in (
             self._spectrum_panel,
             self._tune_panel,
@@ -134,10 +165,19 @@ class SdrControlWidget(QWidget):
             # (disabling the QGroupBox would grey out the title text too, which is fine,
             # but more importantly it would re-disable our exempt children above).
 
-    def set_pipeline(self, pipeline: Any) -> None:  # SDRPipeline | None
-        """Attach or detach the active SDRPipeline."""
+    def set_pipeline(self, pipeline: Any, is_replay: bool = False) -> None:  # SDRPipeline | None
+        """Attach or detach the active SDRPipeline.
+
+        *is_replay* marks *pipeline* as backed by a recorded .iq.wav file
+        (SdrRigAdapter.is_replay) rather than live hardware -- set by
+        MainWindow's IQ-recording-playback handler right after
+        connect_from_file() + _on_rig_slot_connected(). It gates the
+        Stop/Offset/seek-slider controls (meaningless for a live device)
+        and switches the waterfall's frequency axis to relative Hz (see
+        SdrWaterfallDialog.set_pipeline()).
+        """
         if self._waterfall_dialog is not None:
-            self._waterfall_dialog.set_pipeline(pipeline)
+            self._waterfall_dialog.set_pipeline(pipeline, is_replay)
         # Detach old pipeline
         if self._pipeline is not None:
             try:
@@ -148,7 +188,14 @@ class SdrControlWidget(QWidget):
                 pass
 
         self._pipeline = pipeline
+        self._is_replay = is_replay
         self._set_sdr_connected(pipeline is not None)
+        self._set_replay_controls_enabled(pipeline is not None and is_replay)
+        if pipeline is not None and is_replay:
+            self._playback_timer.start()
+            self._update_playback_position()
+        else:
+            self._playback_timer.stop()
 
         if pipeline is not None:
             pipeline.spectrum_ready.connect(self._on_spectrum)
@@ -678,6 +725,40 @@ class SdrControlWidget(QWidget):
         self._open_folder_btn.clicked.connect(self._open_iq_folder)
         ctrl_row.addWidget(self._open_folder_btn)
         v.addLayout(ctrl_row)
+
+        play_row = QHBoxLayout()
+        self._play_btn = QPushButton(_("▶ Play…"))
+        self._play_btn.setToolTip(_("Play back a recorded .iq.wav file"))
+        self._play_btn.clicked.connect(self._on_play_clicked)
+        self._stop_play_btn = QPushButton(_("■ Stop"))
+        self._stop_play_btn.setEnabled(False)
+        self._stop_play_btn.clicked.connect(self._on_stop_play_clicked)
+        play_row.addWidget(self._play_btn)
+        play_row.addWidget(self._stop_play_btn)
+        play_row.addSpacing(8)
+        play_row.addWidget(QLabel(_("Offset:")))
+        self._playback_offset_spin = QSpinBox()
+        self._playback_offset_spin.setRange(-100_000, 100_000)
+        self._playback_offset_spin.setSingleStep(100)
+        self._playback_offset_spin.setSuffix(" Hz")
+        self._playback_offset_spin.setFixedWidth(110)
+        self._playback_offset_spin.valueChanged.connect(self._on_playback_offset_changed)
+        play_row.addWidget(self._playback_offset_spin)
+        play_row.addStretch()
+        v.addLayout(play_row)
+
+        slider_row = QHBoxLayout()
+        self._playback_pos_label = QLabel("00:00")
+        self._playback_pos_label.setStyleSheet("color: gray; font-size: 10px;")
+        slider_row.addWidget(self._playback_pos_label)
+        self._playback_slider = QSlider(Qt.Orientation.Horizontal)
+        self._playback_slider.setRange(0, 0)
+        self._playback_slider.sliderMoved.connect(self._on_playback_slider_moved)
+        slider_row.addWidget(self._playback_slider)
+        self._playback_dur_label = QLabel("00:00")
+        self._playback_dur_label.setStyleSheet("color: gray; font-size: 10px;")
+        slider_row.addWidget(self._playback_dur_label)
+        v.addLayout(slider_row)
         return grp
 
     # ------------------------------------------------------------------
@@ -807,6 +888,88 @@ class SdrControlWidget(QWidget):
         """Open the IQ recordings save directory in the OS file manager."""
         self._iq_save_dir.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._iq_save_dir)))
+
+    # ------------------------------------------------------------------
+    # IQ recording playback
+    # ------------------------------------------------------------------
+
+    def _set_replay_controls_enabled(self, enabled: bool) -> None:
+        """Gate Stop/Offset/seek-slider -- meaningless without a loaded recording."""
+        self._stop_play_btn.setEnabled(enabled)
+        self._playback_offset_spin.setEnabled(enabled)
+        self._playback_slider.setEnabled(enabled)
+
+    def _on_play_clicked(self) -> None:
+        """Pick a .iq.wav file and ask MainWindow to load it for playback.
+
+        Always opens the file picker (a fresh load always restarts from
+        position 0) -- resuming an already-loaded, merely-paused
+        recording is _on_stop_play_clicked()'s pair action below, not
+        this one; that one doesn't need MainWindow at all since it only
+        touches the SdrFileDevice already attached to self._pipeline.
+        """
+        path, _filter = QFileDialog.getOpenFileName(
+            self,
+            _("Play IQ Recording"),
+            str(self._iq_save_dir),
+            _("IQ recordings (*.iq.wav);;All files (*)"),
+        )
+        if path:
+            self.play_recording_requested.emit(path)
+
+    def _on_stop_play_clicked(self) -> None:
+        """Pause playback in place -- the loaded file/position are kept.
+
+        Resuming is just pressing ▶ Play… again (see its docstring): as
+        long as this rig slot hasn't been disconnected or reloaded with a
+        different file, self._pipeline._device is still the same
+        SdrFileDevice, so start_stream() picks up right where this left
+        off.
+        """
+        device = getattr(self._pipeline, "_device", None)
+        stop_stream = getattr(device, "stop_stream", None)
+        if stop_stream is not None:
+            stop_stream()
+
+    def _on_playback_offset_changed(self, value: int) -> None:
+        """Drive SDRPipeline.set_doppler_target() directly.
+
+        See play_recording_requested's docstring for why this doesn't
+        need to go through MainWindow.
+        """
+        if self._pipeline is not None:
+            self._pipeline.set_doppler_target(float(value))
+
+    def _on_playback_slider_moved(self, value: int) -> None:
+        """Seek -- free scrubbing while the user drags the position slider."""
+        device = getattr(self._pipeline, "_device", None)
+        seek = getattr(device, "seek", None)
+        if seek is not None:
+            seek(float(value))
+        self._playback_pos_label.setText(_format_mmss(value))
+
+    def _update_playback_position(self) -> None:
+        """Timer-driven: refresh the slider/labels, auto-pause at end-of-file.
+
+        Skips updating the slider's own position while the user is
+        actively dragging it (isSliderDown()) so this 250ms timer doesn't
+        fight a manual seek in progress.
+        """
+        device = getattr(self._pipeline, "_device", None)
+        if device is None:
+            return
+        duration_s = float(getattr(device, "duration_s", 0.0))
+        position_s = float(getattr(device, "position_s", 0.0))
+        at_end = bool(getattr(device, "at_end", False))
+        self._playback_slider.setRange(0, int(duration_s))
+        self._playback_dur_label.setText(_format_mmss(duration_s))
+        if not self._playback_slider.isSliderDown():
+            self._playback_slider.setValue(int(position_s))
+            self._playback_pos_label.setText(_format_mmss(position_s))
+        if at_end:
+            stop_stream = getattr(device, "stop_stream", None)
+            if stop_stream is not None:
+                stop_stream()
 
     def _start_audio_recording(
         self,

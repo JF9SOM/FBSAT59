@@ -10,6 +10,7 @@ from __future__ import annotations
 import socket
 import threading
 import time
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -3046,3 +3047,94 @@ class TestSdrRigAdapterDigitalDopplerTracking:
         assert adapter.set_frequency(far) is True
         assert dev.attempts == 2
         assert dev.writes == [far]
+
+
+# ---------------------------------------------------------------------------
+# SdrRigAdapter — IQ recording playback (connect_from_file / is_replay)
+# ---------------------------------------------------------------------------
+
+
+def _write_tiny_wav(path: Path, num_samples: int = 100, sample_rate: int = 1000) -> None:
+    """Write a minimal valid .iq.wav for connect_from_file() to load.
+
+    Skips the test (not a failure) if scipy isn't installed, matching
+    test_sdr_pipeline.py's convention -- SdrFileDevice.__init__ (via
+    scipy.io.wavfile.read()) is what actually needs it, not
+    SdrRigAdapter.connect_from_file() itself.
+    """
+    pytest.importorskip("scipy")
+    import numpy as np
+    import scipy.io.wavfile as wav
+
+    stereo = np.zeros((num_samples, 2), dtype=np.float32)
+    wav.write(str(path), sample_rate, stereo)
+
+
+class TestSdrRigAdapterFilePlayback:
+    """connect_from_file() / is_replay — see docs/sdr.md's playback section."""
+
+    def test_connect_from_file_opens_device_and_sets_replay_state(self, tmp_path: Path) -> None:
+        adapter = SdrRigAdapter()
+        wav_path = tmp_path / "68795_OrigamiSat-2_20260918T072530Z.iq.wav"
+        _write_tiny_wav(wav_path)
+
+        assert adapter.connect_from_file(wav_path) is True
+        assert adapter.is_connected is True
+        assert adapter.is_replay is True
+        assert adapter.sdr_device is not None
+        assert adapter.file_playback_duration_s == pytest.approx(0.1)
+
+    def test_connect_from_file_disconnects_previous_connection_first(self, tmp_path: Path) -> None:
+        """A live connection (or an earlier recording) must not leak past a
+        new connect_from_file() call."""
+        adapter = SdrRigAdapter()
+        dev = _FakeSdrDevice()
+        adapter._sdr_device = dev  # type: ignore[assignment]
+        with adapter._lock:
+            adapter._state = RigState.CONNECTED
+
+        wav_path = tmp_path / "test.iq.wav"
+        _write_tiny_wav(wav_path)
+        assert adapter.connect_from_file(wav_path) is True
+        assert adapter.sdr_device is not dev
+        assert adapter.is_replay is True
+
+    def test_connect_from_file_failure_sets_error_state(self, tmp_path: Path) -> None:
+        pytest.importorskip("scipy")
+        adapter = SdrRigAdapter()
+        missing = tmp_path / "does_not_exist.iq.wav"
+        assert adapter.connect_from_file(missing) is False
+        assert adapter.is_connected is False
+        assert adapter.is_replay is False
+
+    def test_disconnect_resets_is_replay(self, tmp_path: Path) -> None:
+        adapter = SdrRigAdapter()
+        wav_path = tmp_path / "test.iq.wav"
+        _write_tiny_wav(wav_path)
+        adapter.connect_from_file(wav_path)
+        assert adapter.is_replay is True
+        adapter.disconnect()
+        assert adapter.is_replay is False
+        assert adapter.is_connected is False
+
+    def test_seek_file_and_position_properties_delegate_to_device(self, tmp_path: Path) -> None:
+        adapter = SdrRigAdapter()
+        wav_path = tmp_path / "test.iq.wav"
+        _write_tiny_wav(wav_path, num_samples=1000, sample_rate=1000)  # 1.0s
+        adapter.connect_from_file(wav_path)
+
+        assert adapter.file_playback_position_s == pytest.approx(0.0)
+        adapter.seek_file(0.4)
+        assert adapter.file_playback_position_s == pytest.approx(0.4)
+        assert adapter.file_playback_at_end is False
+
+    def test_playback_properties_are_harmless_without_a_file_device(self) -> None:
+        """Same properties on a fresh (or live-hardware) adapter must not
+        raise -- SdrControlWidget's polling timer calls these
+        unconditionally regardless of connection state."""
+        adapter = SdrRigAdapter()
+        assert adapter.is_replay is False
+        assert adapter.file_playback_position_s == 0.0
+        assert adapter.file_playback_duration_s == 0.0
+        assert adapter.file_playback_at_end is False
+        adapter.seek_file(1.0)  # no-op, must not raise

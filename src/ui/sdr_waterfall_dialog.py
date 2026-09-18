@@ -164,6 +164,12 @@ class SdrWaterfallDialog(QDialog):
         self.setMinimumSize(_CANVAS_WIDTH + 20, _CANVAS_HEIGHT + 70)
 
         self._pipeline: Any = None  # SDRPipeline | None
+        # True while self._pipeline is backed by a recorded .iq.wav file
+        # rather than live hardware -- see set_pipeline()'s is_replay
+        # param. Switches the frequency axis from absolute MHz to
+        # relative Hz (0 = the recording's own baseband reference), since
+        # there is no real absolute RF frequency to show during playback.
+        self._is_replay = False
         self._positioned_once = False
         self._history: deque[NDArray[np.float32]] = deque(maxlen=_WATERFALL_HEIGHT)
         self._latest_freqs: NDArray[np.float32] | None = None
@@ -228,7 +234,7 @@ class SdrWaterfallDialog(QDialog):
     # Public API
     # ------------------------------------------------------------------
 
-    def set_pipeline(self, pipeline: Any) -> None:  # SDRPipeline | None
+    def set_pipeline(self, pipeline: Any, is_replay: bool = False) -> None:  # SDRPipeline | None
         """Attach or detach the active SDRPipeline (mirrors SdrControlWidget).
 
         Called whenever the SDR (re)connects or disconnects, so the popup
@@ -236,6 +242,8 @@ class SdrWaterfallDialog(QDialog):
         instead of holding a stale reference from before a reconnect (the
         same pitfall fixed for the CW/FT4/Q65 tabs — see CLAUDE.md's "CW/
         FT4/Q65 タブ — SDR再接続でaudio_readyが二度と届かなくなるバグ").
+
+        *is_replay* — see self._is_replay's comment in __init__.
         """
         if self._pipeline is not None:
             try:
@@ -244,6 +252,7 @@ class SdrWaterfallDialog(QDialog):
             except Exception:
                 pass
         self._pipeline = pipeline
+        self._is_replay = is_replay
         self._history.clear()
         self._latest_freqs = None
         self._latest_powers = None
@@ -352,6 +361,22 @@ class SdrWaterfallDialog(QDialog):
         polyline = QPolygonF([QPointF(float(x), float(y)) for x, y in zip(xs, ys, strict=True)])
         painter.drawPolyline(polyline)
 
+    def _format_axis_label(self, hz: float) -> str:
+        """MHz for a live absolute frequency; signed Hz/kHz for IQ playback.
+
+        Playback has no real absolute RF frequency to show (see
+        SdrFileDevice's fixed 0 Hz center_freq) -- 0 is the recording's
+        own baseband reference, and the sign shows which side of it a
+        tick falls on.
+        """
+        if not self._is_replay:
+            return f"{hz / 1e6:.3f}"
+        if abs(hz) < 1e-9:
+            return "0 Hz"
+        if abs(hz) < 1000:
+            return f"{hz:+.0f} Hz"
+        return f"{hz / 1e3:+.2f} kHz"
+
     def _draw_freq_axis(self, painter: QPainter, freq_lo: float, freq_hi: float, y: int) -> None:
         painter.setPen(QPen(QColor("#cccccc"), 1))
         painter.setFont(QFont("Sans", 7))
@@ -361,7 +386,7 @@ class SdrWaterfallDialog(QDialog):
             x = self._freq_to_x(hz, freq_lo, freq_hi)
             painter.drawLine(x, y, x, y + 4)
             painter.drawText(
-                x - 30, y + 5, 60, 12, Qt.AlignmentFlag.AlignHCenter, f"{hz / 1e6:.3f}"
+                x - 30, y + 5, 60, 12, Qt.AlignmentFlag.AlignHCenter, self._format_axis_label(hz)
             )
             hz += step
 
