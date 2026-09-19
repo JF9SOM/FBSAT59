@@ -3438,6 +3438,7 @@ class TestSdrDopplerCycle:
         rig = MagicMock()
         rig.is_sdr = True
         rig.is_connected = connected
+        rig.is_replay = False
         rig.set_vfo_frequencies = MagicMock(return_value=True)
         return rig
 
