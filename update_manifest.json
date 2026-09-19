@@ -1,5 +1,5 @@
 {
-  "latest_version": "0.3.56",
+  "latest_version": "0.3.57",
   "minimum_supported_version": "0.3.57",
   "critical": true,
   "message_ja": "v0.3.57 は METEOR-M / Metop の HRPT 受信が起動できない不具合を修正します。SatDump に存在しないパイプライン ID を渡していたため、HRPT 受信ボタンを押しても起動できていませんでした（NOAA HRPT は影響なし）。あわせて SDR のデジタル Doppler 補正を SatDump 方式（周波数自体をなめらかに追従）に改善しました。HRPT 受信を予定されている方は必ず更新してください。",
