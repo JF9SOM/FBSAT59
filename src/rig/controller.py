@@ -4326,11 +4326,12 @@ class HamlibRotatorController(RotatorController):
     # arrival check — distance-based rather than time-based, so it self-
     # adjusts to however fast the rotator actually turns out to slew.
     _CATCH_UP_WRAP_DEPARTURE_MARGIN_DEG: float = 10.0
-    # Consecutive failed position exchanges (set_position/get_position)
-    # after which a previously connected rotator is declared unreachable —
-    # a single failure can be a one-off serial hiccup, so don't drop the
-    # connection on the first one.
-    _UNREACHABLE_AFTER_FAILURES: int = 3
+    # How long (seconds) position exchanges (set_position/get_position) must
+    # fail without a single success before a previously connected rotator
+    # is declared unreachable. Isolated or brief failures (a serial hiccup,
+    # a busy rotator) are ignored during tracking; only a sustained outage
+    # — cable pulled, rotator powered off — drops the connection.
+    _UNREACHABLE_AFTER_S: float = 30.0
 
     def __init__(
         self,
@@ -4384,9 +4385,11 @@ class HamlibRotatorController(RotatorController):
         # way around and must measure distance accordingly, instead of
         # assuming the shorter numeric arc was the one actually traveled.
         self._catch_up_measure_long_path: bool = False
-        # Consecutive failed position exchanges since the last success —
-        # see _record_io_result().
-        self._io_fail_streak: int = 0
+        # Monotonic times of the first and the most recent failed position
+        # exchange in the current unbroken run of failures (None when the
+        # last exchange succeeded) — see _record_io_result().
+        self._io_fail_since: float | None = None
+        self._io_fail_last: float = 0.0
         # Serialises every rotator I/O exchange (open/close/set_position/
         # get_position/stop/park) across all caller threads.  Re-entrant so
         # set_position() can call _send_p() and get_position() within one
@@ -4514,7 +4517,7 @@ class HamlibRotatorController(RotatorController):
                 self._catch_up_measure_start_time = None
                 self._catch_up_measure_start_az = None
                 self._catch_up_measure_long_path = False
-                self._io_fail_streak = 0
+                self._io_fail_since = None
                 logger.info("Rotator: connected")
                 return True
         except OSError as exc:
@@ -4552,25 +4555,31 @@ class HamlibRotatorController(RotatorController):
         Hamlib's Python binding (and rotctld's "RPRT <code>" reply) report a
         failed exchange without raising, so a rotator that is unplugged or
         powered off mid-session would otherwise keep showing "Connected"
-        and keep receiving commands forever. After
-        _UNREACHABLE_AFTER_FAILURES consecutive failures the connection is
-        closed and the state becomes UNREACHABLE, which makes every caller's
-        is_connected guard stop sending. A success resets the streak.
+        and keep receiving commands forever. Failures are deliberately
+        ignored while they are short-lived: only when exchanges have been
+        failing continuously — with no success in between — for
+        _UNREACHABLE_AFTER_S seconds is the connection closed and the state
+        set to UNREACHABLE, which makes every caller's is_connected guard
+        stop sending. Any success ends the run; a gap of more than
+        _UNREACHABLE_AFTER_S seconds between two failures also starts a new
+        run (no evidence in between).
         """
         with self._io_lock:
             if ok:
-                self._io_fail_streak = 0
+                self._io_fail_since = None
                 return
-            self._io_fail_streak += 1
-            logger.warning(
-                "Rotator: %s failed (%d/%d consecutive)",
-                what,
-                self._io_fail_streak,
-                self._UNREACHABLE_AFTER_FAILURES,
-            )
-            if self._io_fail_streak < self._UNREACHABLE_AFTER_FAILURES:
+            now = time.monotonic()
+            if self._io_fail_since is None or now - self._io_fail_last > self._UNREACHABLE_AFTER_S:
+                self._io_fail_since = now
+                logger.warning(
+                    "Rotator: %s failed — will drop the connection if this lasts %.0fs",
+                    what,
+                    self._UNREACHABLE_AFTER_S,
+                )
+            self._io_fail_last = now
+            if now - self._io_fail_since < self._UNREACHABLE_AFTER_S:
                 return
-            self._io_fail_streak = 0
+            self._io_fail_since = None
             with self._lock:
                 if self._state != RigState.CONNECTED:
                     return  # already disconnected by the user meanwhile
@@ -4615,7 +4624,8 @@ class HamlibRotatorController(RotatorController):
                 self._record_io_result(not failed, "P command")
             elif self._rot is not None:
                 self._rot.set_position(az, el)
-                self._record_io_result(getattr(self._rot, "error_status", 0) == 0, "set_position")
+                status = getattr(self._rot, "error_status", 0)
+                self._record_io_result(status == 0, f"set_position (Hamlib error {status})")
             with self._lock:
                 self._rotor_state.azimuth_deg = az
                 self._rotor_state.elevation_deg = el
@@ -5178,13 +5188,14 @@ class HamlibRotatorController(RotatorController):
                     # A failed read (dead port, no reply) still returns
                     # garbage values without raising — only error_status
                     # tells them apart, so never publish a failed reading.
-                    if getattr(self._rot, "error_status", 0) == 0:
+                    status = getattr(self._rot, "error_status", 0)
+                    if status == 0:
                         with self._lock:
                             self._rotor_state.azimuth_deg = float(az)
                             self._rotor_state.elevation_deg = float(el)
                         self._record_io_result(True, "get_position")
                     else:
-                        self._record_io_result(False, "get_position")
+                        self._record_io_result(False, f"get_position (Hamlib error {status})")
             except Exception as exc:
                 logger.error("Rotator.get_position: %s", exc)
                 self._record_io_result(False, "get_position")

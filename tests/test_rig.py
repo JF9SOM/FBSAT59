@@ -2820,45 +2820,98 @@ class TestHamlibRotatorUnreachable:
         assert ctrl.state == RigState.CONNECTED
 
     # -- mid-session loss (Direct mode) --------------------------------
+    #
+    # Only a *sustained* outage (no success for _UNREACHABLE_AFTER_S = 30 s)
+    # drops the connection; shorter failures are ignored. `clock` is a fake
+    # time.monotonic() so these tests don't sleep.
 
-    def test_direct_three_failed_reads_mark_unreachable(self) -> None:
+    @pytest.fixture()
+    def clock(self, monkeypatch: pytest.MonkeyPatch) -> list[float]:
+        now = [1000.0]
+
+        class _FakeTime:
+            def __getattr__(self, name: str) -> object:
+                return getattr(time, name)
+
+            @staticmethod
+            def monotonic() -> float:
+                return now[0]
+
+        monkeypatch.setattr("rig.controller.time", _FakeTime())
+        return now
+
+    @staticmethod
+    def _at(clock: list[float], seconds: float) -> None:
+        clock[0] = 1000.0 + seconds
+
+    def test_direct_failures_shorter_than_30s_are_ignored(self, clock: list[float]) -> None:
         rot = _FakeHamlibRot(error_status=-1)
         ctrl = self._direct_ctrl(rot)
-        ctrl.get_position()
-        ctrl.get_position()
-        assert ctrl.is_connected  # 2 failures: still tolerated
-        ctrl.get_position()
+        for t in (0.0, 10.0, 20.0, 29.0):
+            self._at(clock, t)
+            ctrl.get_position()
+        assert ctrl.is_connected
+        assert not rot.closed
+
+    def test_direct_failures_lasting_30s_mark_unreachable(self, clock: list[float]) -> None:
+        rot = _FakeHamlibRot(error_status=-1)
+        ctrl = self._direct_ctrl(rot)
+        for t in (0.0, 15.0, 30.0):
+            self._at(clock, t)
+            ctrl.get_position()
         assert ctrl.state == RigState.UNREACHABLE
         assert rot.closed
 
-    def test_direct_failed_read_does_not_publish_garbage(self) -> None:
+    def test_direct_failed_read_does_not_publish_garbage(self, clock: list[float]) -> None:
         ctrl = self._direct_ctrl(_FakeHamlibRot(error_status=-1))
         state = ctrl.get_position()
         assert state.azimuth_deg == 0.0  # not the 8.3e20 the failed read returned
 
-    def test_direct_success_resets_failure_streak(self) -> None:
+    def test_direct_success_restarts_the_failure_window(self, clock: list[float]) -> None:
         rot = _FakeHamlibRot(error_status=-1)
         ctrl = self._direct_ctrl(rot)
-        ctrl.get_position()
-        ctrl.get_position()
+        for t in (0.0, 20.0):
+            self._at(clock, t)
+            ctrl.get_position()
+        self._at(clock, 25.0)
         rot.error_status = 0
-        assert ctrl.get_position().azimuth_deg == 120.0
+        assert ctrl.get_position().azimuth_deg == 120.0  # success ends the run
         rot.error_status = -1
+        for t in (30.0, 55.0):  # a new run: only 25 s old at t=55
+            self._at(clock, t)
+            ctrl.get_position()
+        assert ctrl.is_connected
+        self._at(clock, 60.0)  # 30 s since the run began at t=30
         ctrl.get_position()
-        ctrl.get_position()
-        assert ctrl.is_connected  # streak restarted from the success
+        assert ctrl.state == RigState.UNREACHABLE
 
-    def test_direct_failed_set_position_counts_too(self) -> None:
+    def test_direct_long_gap_between_failures_starts_a_new_window(self, clock: list[float]) -> None:
+        ctrl = self._direct_ctrl(_FakeHamlibRot(error_status=-1))
+        self._at(clock, 0.0)
+        ctrl.get_position()
+        self._at(clock, 100.0)  # no evidence for 100 s: not one continuous outage
+        ctrl.get_position()
+        assert ctrl.is_connected
+        self._at(clock, 129.0)
+        ctrl.get_position()
+        assert ctrl.is_connected
+        self._at(clock, 130.0)
+        ctrl.get_position()
+        assert ctrl.state == RigState.UNREACHABLE
+
+    def test_direct_failed_set_position_counts_too(self, clock: list[float]) -> None:
         rot = _FakeHamlibRot(error_status=-1)
         ctrl = self._direct_ctrl(rot)
-        for _ in range(3):
+        for t in (0.0, 15.0, 30.0):
+            self._at(clock, t)
             ctrl._send_p(100.0, 10.0)
         assert ctrl.state == RigState.UNREACHABLE
 
-    def test_no_commands_sent_once_unreachable(self) -> None:
+    def test_no_commands_sent_once_unreachable(self, clock: list[float]) -> None:
         rot = _FakeHamlibRot(error_status=-1)
         ctrl = self._direct_ctrl(rot)
-        for _ in range(3):
+        for t in (0.0, 15.0, 30.0):
+            self._at(clock, t)
             ctrl.get_position()
         sent = len(rot.set_calls)
         gets = rot.get_calls
@@ -2870,46 +2923,59 @@ class TestHamlibRotatorUnreachable:
         assert len(rot.set_calls) == sent
         assert rot.get_calls == gets
 
-    def test_user_disconnect_is_not_overridden_by_late_failure(self) -> None:
+    def test_user_disconnect_is_not_overridden_by_late_failure(self, clock: list[float]) -> None:
         ctrl = self._direct_ctrl(_FakeHamlibRot(error_status=-1))
         ctrl.disconnect()
-        for _ in range(3):
+        for t in (0.0, 30.0):
+            self._at(clock, t)
             ctrl._record_io_result(False, "get_position")
         assert ctrl.state == RigState.DISCONNECTED
 
     # -- mid-session loss (NET mode, rotctld) --------------------------
 
-    def test_net_rprt_error_replies_mark_unreachable(self) -> None:
+    def test_net_rprt_error_replies_mark_unreachable(self, clock: list[float]) -> None:
         # rotctld is up but its rotator is gone: every "p" answers RPRT -6.
         ctrl = self._net_ctrl([b"RPRT -6\n"] * 3)
-        for _ in range(3):
+        for t in (0.0, 15.0, 30.0):
+            self._at(clock, t)
             ctrl.get_position()
         assert ctrl.state == RigState.UNREACHABLE
 
-    def test_net_closed_socket_marks_unreachable(self) -> None:
+    def test_net_closed_socket_marks_unreachable(self, clock: list[float]) -> None:
         ctrl = self._net_ctrl([b""] * 3)
-        for _ in range(3):
+        for t in (0.0, 15.0, 30.0):
+            self._at(clock, t)
             ctrl.get_position()
         assert ctrl.state == RigState.UNREACHABLE
 
-    def test_net_p_command_error_reply_counts(self) -> None:
+    def test_net_short_error_burst_is_ignored(self, clock: list[float]) -> None:
+        ctrl = self._net_ctrl([b"RPRT -6\n"] * 3 + [b"180.0\n45.0\n"])
+        for t in (0.0, 5.0, 10.0, 15.0):
+            self._at(clock, t)
+            ctrl.get_position()
+        assert ctrl.is_connected
+
+    def test_net_p_command_error_reply_counts(self, clock: list[float]) -> None:
         ctrl = self._net_ctrl([b"RPRT -6\n"] * 3)
-        for _ in range(3):
+        for t in (0.0, 15.0, 30.0):
+            self._at(clock, t)
             ctrl._send_p(90.0, 10.0)
         assert ctrl.state == RigState.UNREACHABLE
 
-    def test_net_healthy_replies_stay_connected(self) -> None:
+    def test_net_healthy_replies_stay_connected(self, clock: list[float]) -> None:
         ctrl = self._net_ctrl([b"RPRT 0\n", b"180.0\n45.0\n"] * 5)
-        for _ in range(5):
+        for i in range(5):
+            self._at(clock, i * 20.0)
             ctrl._send_p(180.0, 45.0)
             ctrl.get_position()
         assert ctrl.is_connected
 
-    def test_net_send_oserror_is_counted_and_raised(self) -> None:
+    def test_net_send_oserror_is_counted_and_raised(self, clock: list[float]) -> None:
         ctrl = self._net_ctrl([])
         assert ctrl._sock is not None
         ctrl._sock.sendall.side_effect = BrokenPipeError("gone")  # type: ignore[attr-defined]
-        for _ in range(3):
+        for t in (0.0, 15.0, 30.0):
+            self._at(clock, t)
             with pytest.raises(OSError):
                 ctrl._send_p(90.0, 10.0)
         assert ctrl.state == RigState.UNREACHABLE
