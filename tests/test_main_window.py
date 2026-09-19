@@ -5264,3 +5264,83 @@ class TestAutotrackRecordingCheckboxSync:
         assert w._autotrack_meteor_record is False
         assert w._autotrack_audio_record is False
         assert w._autotrack_iq_record is False
+
+
+class TestSdrPlaybackConnect:
+    """IQ recording playback must build exactly one SDRPipeline in replay mode.
+
+    Regression: _on_play_recording_requested() used to call
+    _on_rig_slot_connected() itself *and* emit rig_connected (via
+    RadioControlWidget.notify_playback_connected()), which MainWindow also
+    listens to -- so a second pipeline was built over the same file device
+    and SdrControlWidget.set_pipeline() was called again with
+    is_replay=False, disabling the Offset / seek / Stop controls.
+    """
+
+    def _make_window(self, qtbot, db):
+        w = MainWindow(conn=db, tle_manager=TLEManager(db))
+        qtbot.addWidget(w)
+        return w
+
+    def _make_adapter(self):
+        from rig.controller import RigState, SdrRigAdapter
+
+        adapter = SdrRigAdapter()
+
+        def _fake_connect_from_file(wav_path) -> bool:
+            adapter.disconnect()
+            adapter._sdr_device = MagicMock()
+            adapter._is_replay = True
+            adapter._state = RigState.CONNECTED
+            return True
+
+        adapter.connect_from_file = _fake_connect_from_file  # type: ignore[method-assign]
+        return adapter
+
+    def test_play_builds_one_replay_pipeline(self, qtbot, db, monkeypatch) -> None:
+        import sdr
+        import sdr.pipeline
+
+        pipelines: list[MagicMock] = []
+
+        def _fake_pipeline(device, parent=None):
+            p = MagicMock()
+            pipelines.append(p)
+            return p
+
+        monkeypatch.setattr(sdr, "SOAPY_AVAILABLE", True)
+        monkeypatch.setattr(sdr.pipeline, "SDRPipeline", _fake_pipeline)
+
+        w = self._make_window(qtbot, db)
+        adapter = self._make_adapter()
+        w._rig_controller = adapter
+        w._rig2_controller = None
+        w._radio_control.set_rig(adapter)
+        w._sdr_control = MagicMock()
+
+        w._on_play_recording_requested("/tmp/x.iq.wav")
+
+        assert len(pipelines) == 1
+        w._sdr_control.set_pipeline.assert_called_once_with(pipelines[0], is_replay=True)
+        assert adapter._pipeline is pipelines[0]
+
+    def test_reattaching_stops_the_previous_pipeline(self, qtbot, db, monkeypatch) -> None:
+        import sdr
+        import sdr.pipeline
+
+        monkeypatch.setattr(sdr, "SOAPY_AVAILABLE", True)
+        monkeypatch.setattr(sdr.pipeline, "SDRPipeline", lambda device, parent=None: MagicMock())
+
+        w = self._make_window(qtbot, db)
+        adapter = self._make_adapter()
+        w._rig_controller = adapter
+        w._rig2_controller = None
+        w._sdr_control = MagicMock()
+        adapter._sdr_device = MagicMock()
+        stale = MagicMock()
+        adapter.attach_pipeline(stale)
+
+        w._on_rig_slot_connected(1)
+
+        stale.stop.assert_called_once()
+        assert adapter._pipeline is not stale

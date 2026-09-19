@@ -1123,25 +1123,28 @@ class RadioControlWidget(QWidget):
         self._update_rig1_status()
 
     def notify_playback_connected(self, slot: int) -> None:
-        """Tell Telemetry/APRS that *slot* just started IQ recording playback.
+        """Announce that *slot* just started IQ recording playback.
 
         IQ recording playback (SdrControlWidget's "▶ Play…") replaces Rig
         1/2's device directly via SdrRigAdapter.connect_from_file(),
         bypassing this widget's own Connect button flow entirely (there's
         no live hardware round-trip to run in a background thread) — so
         rig_connected/rig2_connected, which _finish_rig1_connect() /
-        _on_connect_rig2() normally emit, never fire.
+        _on_connect_rig2() normally emit, never fire on their own. This
+        emits the same signal so every listener runs its normal
+        "rig connected" handling:
 
-        Every other Communications tab is unaffected by this: CW/FT4/Q65
-        are notified through a separate path
-        (MainWindow._notify_comms_tabs_sdr_pipeline(), which
-        MainWindow._on_rig_slot_connected() already covers for playback
-        too) and SSTV re-queries the pipeline fresh every time its own
-        decoder starts rather than caching it. Telemetry and APRS are the
-        only two that cache their SDR pipeline reference and refresh it
-        exclusively from these two signals — see
-        MainWindow._on_play_recording_requested(), which calls this right
-        after attaching the playback pipeline.
+        - MainWindow._on_rig_slot_connected() builds and attaches the
+          SDRPipeline (and covers the waterfall and CW/FT4/Q65 via
+          _notify_comms_tabs_sdr_pipeline()). It is connected first, so
+          the pipeline exists by the time the tabs below run.
+        - Telemetry and APRS cache their SDR pipeline reference and
+          refresh it exclusively from these two signals.
+
+        SSTV re-queries the pipeline fresh every time its own decoder
+        starts, so it does not depend on this. Callers must not also call
+        MainWindow._on_rig_slot_connected() themselves -- that would build
+        a second pipeline (see MainWindow._on_play_recording_requested()).
         """
         if slot == 1:
             self._update_rig1_status()

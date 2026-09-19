@@ -7095,22 +7095,21 @@ class MainWindow(QMainWindow):
 
         Replaces whichever Rig slot is configured as SDR with a
         file-backed pseudo-device (SdrRigAdapter.connect_from_file()),
-        then reuses _on_rig_slot_connected() -- the exact same
-        pipeline-attach/notify path a live connect uses -- so the
-        waterfall, CW/FT4/Q65 (notified via
-        _notify_comms_tabs_sdr_pipeline(), which that method already
-        calls) and SSTV (re-queries the pipeline itself on every decoder
-        start, never caches it) all pick this up with no further work.
+        then announces it through RadioControlWidget.
+        notify_playback_connected(), which emits the very same
+        rig_connected/rig2_connected signal a live Connect press emits.
+        MainWindow's own handler for that signal
+        (_on_rig_slot_connected()) builds and attaches the pipeline, so
+        the waterfall, CW/FT4/Q65 (via _notify_comms_tabs_sdr_pipeline())
+        and Telemetry/APRS (which subscribe to that signal directly)
+        all pick playback up through one path, exactly like a live
+        connect. SSTV re-queries the pipeline itself on every decoder
+        start, so it needs nothing.
 
-        Telemetry and APRS are the exception: both cache their SDR
-        pipeline reference and only refresh it from RadioControlWidget's
-        rig_connected/rig2_connected signals, which a live Connect button
-        press emits but this playback path does not (there is no
-        background-thread hardware connect to finish) -- see
-        RadioControlWidget.notify_playback_connected()'s docstring for
-        the full story. Calling it explicitly below is what makes those
-        two tabs pick up playback too, regardless of whether they were
-        already open before Play was pressed.
+        Do NOT also call _on_rig_slot_connected() from here: the signal
+        above already triggers it, and a second call builds a second
+        SDRPipeline over the same file device (each then gets alternate
+        blocks of the recording, and the replay controls get disabled).
         """
         from rig.controller import SdrRigAdapter
 
@@ -7140,7 +7139,6 @@ class MainWindow(QMainWindow):
                 return
 
         if rig.connect_from_file(Path(path)):
-            self._on_rig_slot_connected(slot, is_replay=True)
             self._radio_control.notify_playback_connected(slot)
         else:
             QMessageBox.warning(
@@ -8218,7 +8216,7 @@ class MainWindow(QMainWindow):
         dlg = GrSatellitesDialog(self)
         dlg.exec()
 
-    def _on_rig_slot_connected(self, slot: int, is_replay: bool = False) -> None:
+    def _on_rig_slot_connected(self, slot: int) -> None:
         """Called when Rig 1 or Rig 2 connects.  Starts SDR pipeline if the slot is an SDR.
 
         For satmode NET rigs (IC-9700 etc.), also sends mode after connect so that
@@ -8226,11 +8224,10 @@ class MainWindow(QMainWindow):
         VFO modes on these rigs).  Only slot 1 (primary rig) participates in mode
         tracking.
 
-        *is_replay* — True when this call follows
-        SdrRigAdapter.connect_from_file() (IQ recording playback) rather
-        than a live rig.connect(). Passed straight through to
-        SdrControlWidget.set_pipeline() -- see its docstring for what
-        that gates. See _on_play_recording_requested().
+        Whether the slot is replaying a recorded IQ file (rather than live
+        hardware) is read from SdrRigAdapter.is_replay and passed to
+        SdrControlWidget.set_pipeline() -- see its docstring for what that
+        gates. See _on_play_recording_requested().
         """
         # CTCSS is sent at transponder-selection time for all rigs (IC-9100 style).
         # No re-send needed here.
@@ -8265,9 +8262,17 @@ class MainWindow(QMainWindow):
 
         from sdr.pipeline import SDRPipeline
 
+        # A pipeline still attached here would keep reading from the same
+        # device as the new one (split blocks for a file device) and never
+        # be stopped, since attach_pipeline() only overwrites the reference.
+        stale = getattr(rig, "_pipeline", None)
+        if stale is not None:
+            stale.stop()
+            stale.wait(3000)
+
         pipeline = SDRPipeline(device, parent=self)
         rig.attach_pipeline(pipeline)
-        self._sdr_control.set_pipeline(pipeline, is_replay=is_replay)
+        self._sdr_control.set_pipeline(pipeline, is_replay=rig.is_replay)
         pipeline.start()
         self._notify_comms_tabs_sdr_pipeline(pipeline)
         self._update_rig_label()

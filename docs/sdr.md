@@ -1729,6 +1729,36 @@ Telemetry・APRSが古いパイプライン参照（または`None`）を持っ�
 正しい状態へ更新）＋既存の`rig_connected`/`rig2_connected`シグナルの`emit()`のみ——
 新しい種類のシグナルを追加するのではなく、Telemetry・APRSが元々持っている
 `_on_rig_connected()`等のロジックをそのまま再利用する設計。IQ再生成功時
-（`_on_play_recording_requested()`）に`_on_rig_slot_connected()`の直後で1回呼ぶ。
+（`_on_play_recording_requested()`）に呼ぶ（**`_on_rig_slot_connected()`の直後ではなく、これ1本のみ**。
+下記「追加修正（2026-09-19）」参照）。
 切断側（Disconnectボタンでの通常切断）は元々`rig_disconnected`/`rig2_disconnected`を
 無条件に発火する設計のため無改修で正しく動作する。
+
+#### 追加修正（2026-09-19）— 再生パイプラインが二重に作られ、再生UIが無効化されるバグ
+
+**症状**: `▶ Play…`を押すと、Offset・シークスライダー・Stopが使えず、ライブSDR接続のような表示
+（ウォーターフォール軸が絶対MHz）になる。デコードも成立しない。
+
+**原因**: 直前の「Telemetry・APRS」修正で`notify_playback_connected()`（`rig_connected`/
+`rig2_connected`を発火）を追加したが、**MainWindow自身もこのシグナルを購読している**
+（`rig_connected.connect(lambda: self._on_rig_slot_connected(1))`）ことを見落としていた。
+`_on_play_recording_requested()`は`_on_rig_slot_connected(slot, is_replay=True)`を直接呼んだ後に
+このシグナルを発火するため、`_on_rig_slot_connected(1)`が**`is_replay`既定値（False）で2回目**
+呼ばれ、(1)同じ`SdrFileDevice`上に2本目の`SDRPipeline`が作られ（1本目は停止されず孤立。
+2本が交互にブロックを読むため各パイプラインは飛び飛びのサンプルしか受け取れず再生位置も
+2倍速で進む）、(2)`SdrControlWidget.set_pipeline(..., is_replay=False)`で再生用コントロール
+が無効化・再生タイマー停止・軸が絶対MHzに戻る。`fbsat59.log`には
+`SDR replay opened`の直後3msの間隔で`SDRPipeline started`が2行出ていた（実機を開く
+`SdrRigAdapter.connect`は出ていない＝実機SDRは開かれていない）。
+
+**修正**:
+- `_on_play_recording_requested()`は`_on_rig_slot_connected()`を直接呼ばず、
+  `notify_playback_connected()`の発火**のみ**にした。MainWindowのハンドラ・Telemetry・APRSが
+  ライブ接続時と同じ経路で1回ずつ反応する（MainWindowは起動時に接続済みのため、Telemetry/
+  APRSの`_pipeline`参照より先にパイプラインが作られる）
+- `_on_rig_slot_connected()`の`is_replay`引数を廃止し、`rig.is_replay`から判定する
+  （どのシグナル経路から呼ばれても正しい値になる）
+- `_on_rig_slot_connected()`は、既にパイプラインがアタッチされている場合は新規作成前に
+  `stop()`+`wait()`する（`attach_pipeline()`は参照を上書きするだけで停止しないため）
+- テスト: `tests/test_main_window.py`の`TestSdrPlaybackConnect`（再生でパイプラインが1本・
+  `is_replay=True`で1回だけ`set_pipeline`されること、再アタッチで旧パイプラインが停止すること）
