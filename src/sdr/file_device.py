@@ -148,3 +148,11 @@ class SdrFileDevice:
         with self._lock:
             idx = int(position_s * self._sample_rate)
             self._pos = max(0, min(idx, len(self._samples)))
+            # Diagnostic, paired with SdrControlWidget's slider log (see
+            # there); remove once the slider-seek report is resolved.
+            logger.info(
+                "SdrFileDevice.seek: requested=%.2fs -> pos=%d/%d",
+                position_s,
+                self._pos,
+                len(self._samples),
+            )

@@ -944,8 +944,22 @@ class SdrControlWidget(QWidget):
         """Seek -- free scrubbing while the user drags the position slider."""
         device = getattr(self._pipeline, "_device", None)
         seek = getattr(device, "seek", None)
+        # Diagnostic: confirm slider drags actually reach the file device
+        # (added 2026-09-19 while investigating a report that dragging the
+        # slider did not skip ahead). Remove once that is resolved.
+        logger.info(
+            "playback slider moved: value=%d device=%s has_seek=%s pos_before=%.2fs",
+            value,
+            type(device).__name__,
+            seek is not None,
+            float(getattr(device, "position_s", -1.0)),
+        )
         if seek is not None:
             seek(float(value))
+            logger.info(
+                "playback slider seek done: pos_after=%.2fs",
+                float(getattr(device, "position_s", -1.0)),
+            )
         self._playback_pos_label.setText(_format_mmss(value))
 
     def _update_playback_position(self) -> None:
