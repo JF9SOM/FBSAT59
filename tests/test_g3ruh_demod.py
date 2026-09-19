@@ -145,15 +145,23 @@ def _capture(baud: int, wanted_hz: float, interferer_hz: float) -> float:
     return float(np.mean(out[len(out) // 2 :]) * disc.full_scale_hz)
 
 
-def test_9600_profile_rejects_an_out_of_band_interferer() -> None:
-    """The narrow 9600 IF removes a strong carrier 12 kHz off-centre so the
-    in-band signal (+1 kHz) is what the discriminator follows, whereas the
-    wide legacy IF (still used for 4800) lets the interferer capture it."""
-    assert _capture(9600, 1_000.0, 12_000.0) == pytest.approx(1_000.0, abs=300.0)
-    assert _capture(4800, 1_000.0, 12_000.0) > 4_000.0
+# A baud rate without a _PROFILES entry falls back to the original wide IF.
+_LEGACY_BAUD = 19_200
 
 
-@pytest.mark.parametrize("tone_hz", [4_000.0, -4_000.0])
-def test_9600_profile_passes_the_signal_band(tone_hz: float) -> None:
-    """A carrier at +/-4 kHz (inside the FSK signal band) still reads correctly."""
-    assert _capture(9600, tone_hz, tone_hz) == pytest.approx(tone_hz, rel=0.02)
+@pytest.mark.parametrize("baud", [9600, 4800])
+def test_narrow_profiles_reject_an_out_of_band_interferer(baud: int) -> None:
+    """The narrow 9600/4800 IF removes a strong carrier 12 kHz off-centre so
+    the in-band signal (+1 kHz) is what the discriminator follows, whereas
+    the wide legacy IF lets the interferer capture it."""
+    assert _capture(baud, 1_000.0, 12_000.0) == pytest.approx(1_000.0, abs=300.0)
+    assert _capture(_LEGACY_BAUD, 1_000.0, 12_000.0) > 4_000.0
+
+
+@pytest.mark.parametrize(
+    ("baud", "tone_hz"),
+    [(9600, 4_000.0), (9600, -4_000.0), (4800, 2_500.0), (4800, -2_500.0)],
+)
+def test_profiles_pass_their_signal_band(baud: int, tone_hz: float) -> None:
+    """A carrier inside each rate's FSK signal band still reads correctly."""
+    assert _capture(baud, tone_hz, tone_hz) == pytest.approx(tone_hz, rel=0.02)

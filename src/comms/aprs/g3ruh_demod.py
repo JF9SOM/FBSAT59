@@ -12,10 +12,10 @@ and level for it.
 The discriminator is the same phase-difference technique as
 sdr/demodulator.py's NFM path; field-verified against a real recorded
 9600bps G3RUH signal (JAPRS digi network) and confirmed decoding live
-(2026-09-12/13). Its tuning is per baud rate (see _Profile): 9600 uses a
-narrow IF chosen from decode-rate measurements on synthetic frames through
-Direwolf, other rates keep the original wide IF. All filters keep their
-state across process() calls -- see G3ruhDiscriminator.
+(2026-09-12/13). Its tuning is per baud rate (see _Profile): 9600 and 4800
+use a narrow IF chosen from decode-rate measurements on synthetic frames
+through Direwolf; other rates keep the original wide IF. All filters keep
+their state across process() calls -- see G3ruhDiscriminator.
 
 G3ruhSdrDemod subscribes to raw I/Q directly (SDRPipeline.subscribe()),
 independent of the SDR Control tab's Mode combo / shared Demodulator —
@@ -45,8 +45,8 @@ except ImportError:
 
 _AUDIO_RATE = 48_000
 _INTERMEDIATE_RATE_TARGET = 200_000
-# Legacy (pre-2026-09-19) discriminator parameters, still used for every baud
-# rate other than 9600: the assumed peak FM deviation (same order as typical
+# Legacy (pre-2026-09-19) discriminator parameters, still used for any baud
+# rate without a _PROFILES entry: the assumed peak FM deviation (same order as typical
 # NFM voice satellite links) and the wide IF half-bandwidth that followed
 # from it. Kept separate from sdr/demodulator.py's NFM_DEVIATION so they can
 # be tuned independently.
@@ -81,7 +81,16 @@ _LEGACY_PROFILE = _Profile(_IF_HALF_BW_HZ, 63, None, _DEVIATION_HZ)
 # +/-13 kHz to +/-7.5 kHz turns a 12 dB SNR (11 kHz band) signal from 0/40
 # frames decoded into ~38/40, while still tolerating a +/-2 kHz frequency
 # error.
-_PROFILES: dict[int, _Profile] = {9600: _Profile(7_500.0, 255, 6_500.0, 8_000.0)}
+# 4800 baud GMSK/FSK (occupied bandwidth roughly +/-3.5..5 kHz depending on the
+# deviation): the same measurement on synthetic 4800 baud frames showed the old
+# +/-13 kHz IF needed ~16 dB SNR (5.5 kHz band); +/-4.5 kHz plus a 3.5 kHz
+# post-discriminator low-pass decodes down to ~12 dB and still tolerates a
+# +/-1.5 kHz frequency error (a narrower IF is a little more sensitive but
+# loses that tolerance).
+_PROFILES: dict[int, _Profile] = {
+    9600: _Profile(7_500.0, 255, 6_500.0, 8_000.0),
+    4800: _Profile(4_500.0, 255, 3_500.0, 8_000.0),
+}
 
 
 def _profile_for(baud: int) -> _Profile:
