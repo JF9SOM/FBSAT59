@@ -12,7 +12,7 @@ and level for it.
 The discriminator is the same phase-difference technique as
 sdr/demodulator.py's NFM path; field-verified against a real recorded
 9600bps G3RUH signal (JAPRS digi network) and confirmed decoding live
-(2026-09-12/13). Its tuning is per baud rate (see _Profile): 9600 and 4800
+(2026-09-12/13). Its tuning is per baud rate (see DiscriminatorProfile): 9600 and 4800
 use a narrow IF chosen from decode-rate measurements on synthetic frames
 through Direwolf; other rates keep the original wide IF. All filters keep
 their state across process() calls -- see G3ruhDiscriminator.
@@ -55,7 +55,7 @@ _IF_HALF_BW_HZ = _DEVIATION_HZ + 8_000.0
 
 
 @dataclass(frozen=True)
-class _Profile:
+class DiscriminatorProfile:
     """Discriminator tuning for one baud rate.
 
     if_half_bw_hz   IF low-pass cutoff (one-sided) applied before the FM
@@ -66,15 +66,20 @@ class _Profile:
     post_lp_hz      Low-pass on the discriminator output (None = none).
     full_scale_hz   Instantaneous frequency that maps to audio +/-1.0; also
                     the clipping headroom against a carrier frequency error.
+    deemph_tau_s    Single-pole de-emphasis time constant applied to the
+                    discriminator output (None = flat, as a radio's DATA
+                    port gives for G3RUH). Bell 202 relayed through a
+                    radio's voice path needs it -- see afsk_audio_demod.py.
     """
 
     if_half_bw_hz: float
     if_taps: int
     post_lp_hz: float | None
     full_scale_hz: float
+    deemph_tau_s: float | None = None
 
 
-_LEGACY_PROFILE = _Profile(_IF_HALF_BW_HZ, 63, None, _DEVIATION_HZ)
+_LEGACY_PROFILE = DiscriminatorProfile(_IF_HALF_BW_HZ, 63, None, _DEVIATION_HZ)
 # 9600 baud G3RUH FSK/GMSK (occupied bandwidth roughly +/-6 kHz). Measured on
 # synthetic 9600 baud AX.25 frames through Direwolf's own decoder (see
 # docs/communications.md, "9600bps G3RUH の感度改善"): narrowing the IF from
@@ -87,13 +92,13 @@ _LEGACY_PROFILE = _Profile(_IF_HALF_BW_HZ, 63, None, _DEVIATION_HZ)
 # post-discriminator low-pass decodes down to ~12 dB and still tolerates a
 # +/-1.5 kHz frequency error (a narrower IF is a little more sensitive but
 # loses that tolerance).
-_PROFILES: dict[int, _Profile] = {
-    9600: _Profile(7_500.0, 255, 6_500.0, 8_000.0),
-    4800: _Profile(4_500.0, 255, 3_500.0, 8_000.0),
+_PROFILES: dict[int, DiscriminatorProfile] = {
+    9600: DiscriminatorProfile(7_500.0, 255, 6_500.0, 8_000.0),
+    4800: DiscriminatorProfile(4_500.0, 255, 3_500.0, 8_000.0),
 }
 
 
-def _profile_for(baud: int) -> _Profile:
+def _profile_for(baud: int) -> DiscriminatorProfile:
     return _PROFILES.get(baud, _LEGACY_PROFILE)
 
 
@@ -113,9 +118,14 @@ class G3ruhDiscriminator:
     boundaries).
     """
 
-    def __init__(self, input_rate: float, baud: int = 9600) -> None:
+    def __init__(
+        self,
+        input_rate: float,
+        baud: int = 9600,
+        profile: DiscriminatorProfile | None = None,
+    ) -> None:
         self._input_rate = input_rate
-        self._profile = _profile_for(baud)
+        self._profile = profile if profile is not None else _profile_for(baud)
         self._dc_zi_i = np.zeros(1, dtype=np.float32)
         self._dc_zi_q = np.zeros(1, dtype=np.float32)
         self._build_filters()
@@ -130,6 +140,7 @@ class G3ruhDiscriminator:
         self._aa_zi: np.ndarray | None = None
         self._if_zi: np.ndarray | None = None
         self._post_zi: np.ndarray | None = None
+        self._deemph_zi = np.zeros(1, dtype=np.float64)
         self._decim_phase = 0
         self._last_if: np.complex64 | None = None
 
@@ -161,8 +172,10 @@ class G3ruhDiscriminator:
         self._resample_up = _AUDIO_RATE // gcd
         self._resample_down = mid_rate_int // gcd
 
+        self._deemph_b: np.ndarray | None = None
         if not _SCIPY_AVAILABLE:
             self._aa_b = self._if_b = self._post_b = None
+            self._deemph_a = np.array([1.0], dtype=np.float64)
             return
         # Stage 1 (only when decimating): cheap anti-alias filter at the
         # input rate. The sharp IF filter below then runs at the much lower
@@ -180,6 +193,14 @@ class G3ruhDiscriminator:
             if prof.post_lp_hz is not None
             else None
         )
+        if prof.deemph_tau_s is not None:
+            dt = 1.0 / self._mid_rate
+            alpha = dt / (prof.deemph_tau_s + dt)
+            self._deemph_b = np.array([alpha], dtype=np.float64)
+            self._deemph_a = np.array([1.0, -(1.0 - alpha)], dtype=np.float64)
+        else:
+            self._deemph_b = None
+            self._deemph_a = np.array([1.0], dtype=np.float64)
 
     def process(self, iq: np.ndarray) -> np.ndarray:
         """Demodulate one I/Q block. Returns float32 PCM at 48kHz (possibly empty)."""
@@ -217,6 +238,10 @@ class G3ruhDiscriminator:
         # No de-emphasis here (unlike NFM voice) — 9600bps G3RUH needs the
         # raw, flat discriminator output, same as a radio's DATA port.
         audio_raw = discrim * (self._mid_rate / (2 * np.pi * self._profile.full_scale_hz))
+        if self._deemph_b is not None:
+            audio_raw, self._deemph_zi = sp_signal.lfilter(
+                self._deemph_b, self._deemph_a, audio_raw, zi=self._deemph_zi
+            )
         if self._post_b is not None:
             if self._post_zi is None:
                 self._post_zi = np.zeros(len(self._post_b) - 1, dtype=np.float64)
