@@ -530,3 +530,15 @@ Rig + Sound Card経由（TX可能なDirewolfセッション）のstdoutは実音
 
 これにより「📋 Log」を開いた時点のログは常にその回の受信試行のみを表す。既存の
 🔄 Refreshボタンの挙動（消去ではなく再読み込み）自体は変更していない。
+
+## 入力ソース行の「ⓘ」ボタン — デコードに必要な最低SNRの目安（2026-09-19 追加）
+
+Telemetryタブの「Input Source」枠の1行目（Mode / 衛星 / Baud / 📋 Log の並び）の右端に
+`ⓘ` ボタン（`_btn_snr_info`）を置いた。クリックで、速度別（1200 / 4800 / 9600 bps）に
+Direwolfとgr-satellitesがデコードできる最低SNR・信号帯域・Direwolfの周波数許容差と、
+gr-satellitesの長い前置信号の必要性などの注意を表示する非モーダルウィンドウ
+（`_SnrGuideDialog`）が開く（一度開いたウィンドウは再利用）。表示内容は `_SNR_GUIDE_ROWS` と
+`_snr_guide_html()`、数値の根拠・測定条件・生データは
+[communications.md](communications.md) の「デコードに必要な最低SNRの目安」を参照。
+数値を更新するときは両方を同時に直すこと。日本語訳は `locale/ja/LC_MESSAGES/fbsat59.po`
+（[i18n.md](i18n.md) の手順）。テスト: `tests/test_telemetry_snr_guide.py`。
