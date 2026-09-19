@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import math
 import re
 import sqlite3
@@ -59,6 +60,8 @@ from comms.ft4.rx_capture import Ft4RxCaptureWorker
 from comms.ft4.scheduler import Ft4Scheduler
 from i18n import _
 from ui.ft4_waterfall_dialog import Ft4WaterfallDialog
+
+logger = logging.getLogger(__name__)
 
 UTC = UTC
 
@@ -557,6 +560,7 @@ class Ft4Tab(QWidget):
         self._auto_progress: bool = False
         self._sdr_connected: bool = False
         self._sdr_pipeline: Any | None = None
+        self._sdr_tap: Any | None = None  # sdr.usb_audio.SdrUsbAudioTap while attached
         self._tx_level_pct: float = 100.0  # % of full-scale TX audio amplitude
 
         self._load_settings()
@@ -1085,7 +1089,16 @@ class Ft4Tab(QWidget):
     # ------------------------------------------------------------------ #
 
     def _connect_sdr_audio(self) -> None:
-        """Connect to SDR pipeline audio_ready signal if available."""
+        """Feed the SDR pipeline's I/Q to the FT4 receiver as 12 kHz USB audio.
+
+        FT4 takes 12 kHz audio in which each tone sits at its true audio
+        frequency above the dial frequency -- what a radio in USB mode
+        produces. The pipeline's own audio_ready is neither at 12 kHz nor
+        frequency-true (see sdr/usb_audio.py), so this taps the I/Q instead
+        (SdrUsbAudioTap) and converts it itself. Until 2026-09-19 the tab
+        connected audio_ready directly, which made FT4 reception from an
+        SDR impossible.
+        """
         if self._radio_control is None:
             return
         try:
@@ -1095,24 +1108,25 @@ class Ft4Tab(QWidget):
             pipeline = getattr(sdr_ctrl, "_pipeline", None)
             if pipeline is None:
                 return
-            pipeline.audio_ready.connect(self._on_sdr_audio_chunk)
-            # Without this, the pipeline never actually demodulates/emits
-            # audio_ready unless the user separately presses "Start Audio"
-            # in SDR Control — an easy-to-miss, unrelated-looking button in
-            # a different tab (GitHub Issue #12 follow-up).
-            pipeline.request_audio(_AUDIO_OWNER)
+            from sdr.usb_audio import SdrUsbAudioTap
+
+            tap = SdrUsbAudioTap(float(pipeline._device.sample_rate), self._on_sdr_audio_chunk)
+            tap.start()
+            pipeline.subscribe(tap.push_samples)
+            self._sdr_tap = tap
             self._sdr_pipeline = pipeline
             self._sdr_connected = True
         except Exception:
-            pass
+            logger.warning("FT4: could not attach to the SDR pipeline", exc_info=True)
 
     def _disconnect_sdr_audio(self) -> None:
-        if self._sdr_pipeline is not None:
+        tap, self._sdr_tap = self._sdr_tap, None
+        if self._sdr_pipeline is not None and tap is not None:
             with contextlib.suppress(Exception):
-                self._sdr_pipeline.release_audio(_AUDIO_OWNER)
-            with contextlib.suppress(Exception):
-                self._sdr_pipeline.audio_ready.disconnect(self._on_sdr_audio_chunk)
-            self._sdr_pipeline = None
+                self._sdr_pipeline.unsubscribe(tap.push_samples)
+        if tap is not None:
+            tap.stop()
+        self._sdr_pipeline = None
         self._sdr_connected = False
 
     def refresh_sdr_pipeline(self, pipeline: Any) -> None:
