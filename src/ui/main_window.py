@@ -197,12 +197,12 @@ _DIAL_FEEDBACK_CROSSCHECK_HZ = 1000.0
 # Allowed values for the Rig CAT / Doppler "Cycle" dropdown
 # (radio_control_widget.py, spanning the Rig 1/Rig 2 rows) -- must match the
 # ms values added to _cycle_combo in RadioControlWidget._setup_ui().
-_CYCLE_CHOICES_MS = frozenset({2000, 1000, 500, 100})
+_CYCLE_CHOICES_MS = frozenset({3000, 2000, 1000, 500})
 
 # Allowed values for the Rotator "Cycle" dropdown (radio_control_widget.py,
 # next to Connect Rotator) -- must match the ms values added to
 # _rotator_cycle_combo in RadioControlWidget._setup_ui().
-_ROTATOR_CYCLE_CHOICES_MS = frozenset({5000, 2000, 1000, 500})
+_ROTATOR_CYCLE_CHOICES_MS = frozenset({5000, 4000, 3000, 2000, 1000})
 
 
 def _is_generic_direct_rig(rig: RigController) -> bool:
@@ -7424,7 +7424,7 @@ class MainWindow(QMainWindow):
         """Load rotator_cycle_ms from the DB and apply it to self._rotator_timer and the UI.
 
         Defaults to 1000ms (the previous fixed behavior) when unset or when
-        the stored value isn't one of the combo's four allowed choices.
+        the stored value isn't one of the combo's five allowed choices.
         """
         ms = 1000
         try:

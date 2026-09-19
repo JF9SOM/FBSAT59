@@ -4307,7 +4307,15 @@ msgstr ""
 msgid "Rig CAT / Doppler update interval"
 msgstr "無線機CAT／ドップラー補正の更新間隔"
 
-#: src/ui/radio_control_widget.py:448 src/ui/radio_control_widget.py:479
+#: src/ui/radio_control_widget.py:447 src/ui/radio_control_widget.py:480
+msgid "3 s"
+msgstr "3秒"
+
+#: src/ui/radio_control_widget.py:479
+msgid "4 s"
+msgstr "4秒"
+
+#: src/ui/radio_control_widget.py:448 src/ui/radio_control_widget.py:481
 msgid "2 s"
 msgstr "2秒"
 
@@ -4318,10 +4326,6 @@ msgstr "1秒"
 #: src/ui/radio_control_widget.py:450 src/ui/radio_control_widget.py:481
 msgid "0.5 s"
 msgstr "0.5秒"
-
-#: src/ui/radio_control_widget.py:451
-msgid "0.1 s"
-msgstr ""
 
 #: src/ui/radio_control_widget.py:460
 msgid "Cycle:"

@@ -1935,13 +1935,23 @@ class TestCycleSetting:
         assert w._cycle_combo.currentData() == 1000
 
     def test_cycle_combo_choices(self, qtbot, db) -> None:
-        """Cycle プルダウンの選択肢が 2000/1000/500/100ms の4つ。"""
+        """Cycle プルダウンの選択肢が 3000/2000/1000/500ms の4つ。"""
         from ui.radio_control_widget import RadioControlWidget
 
         w = RadioControlWidget()
         qtbot.addWidget(w)
         choices = {w._cycle_combo.itemData(i) for i in range(w._cycle_combo.count())}
-        assert choices == {2000, 1000, 500, 100}
+        assert choices == {3000, 2000, 1000, 500}
+
+    def test_rotator_cycle_combo_choices(self, qtbot, db) -> None:
+        """Rotator Cycle プルダウンの選択肢が 5000/4000/3000/2000/1000ms の5つ（既定 1000ms）。"""
+        from ui.radio_control_widget import RadioControlWidget
+
+        w = RadioControlWidget()
+        qtbot.addWidget(w)
+        combo = w._rotator_cycle_combo
+        assert [combo.itemData(i) for i in range(combo.count())] == [5000, 4000, 3000, 2000, 1000]
+        assert combo.currentData() == 1000
 
     def test_set_cycle_updates_combo(self, qtbot, db) -> None:
         """set_cycle() がプルダウンを更新する（シグナル発火なし）。"""
