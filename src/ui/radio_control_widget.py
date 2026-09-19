@@ -127,6 +127,10 @@ class RadioControlWidget(QWidget):
         # True while the operator is manually pointing the rotator (Go/Park);
         # MainWindow then suspends satellite tracking until Resume.
         self._rot_manual_hold: bool = False
+        # True while Autotrack is set not to use the rotator ("Use Rotator"
+        # unchecked in the Autotrack/Record dialog): a disconnected rotator
+        # then reads "Not used" instead of "Disconnected".
+        self._rot_unused: bool = False
         self._transmitters: list[dict[str, Any]] = []
         self._current_ctcss_hz: float | None = None
         self._ctcss_activation_hz: float | None = None
@@ -681,6 +685,13 @@ class RadioControlWidget(QWidget):
         self._rot_manual_hold = held
         self._update_rot_status()
 
+    def set_rotator_unused(self, unused: bool) -> None:
+        """Mark the rotator as deliberately not used by Autotrack (label only)."""
+        if self._rot_unused == unused:
+            return
+        self._rot_unused = unused
+        self._update_rot_status()
+
     def _on_manual_go(self) -> None:
         self._rot_manual_hold = True
         self._update_rot_status()
@@ -994,8 +1005,19 @@ class RadioControlWidget(QWidget):
             self._rot_status_label.setStyleSheet("color: red;")
             self._connect_rot_btn.setText(_("Retry"))
             self._rot_manual_hold = False
+        elif self._rotator.state == RigState.UNREACHABLE:
+            # Nothing answered (unplugged / unpowered / rotctld down, or it
+            # stopped answering mid-session). A plain "Not connected", not an
+            # error: Autotrack without a rotator is a normal setup.
+            self._rot_status_label.setText(_("Not connected"))
+            self._rot_status_label.setStyleSheet("color: red;")
+            self._connect_rot_btn.setText(_("Connect Rotator"))
+            self._rot_manual_hold = False
         else:
-            self._rot_status_label.setText(_("Disconnected"))
+            if self._rot_unused:
+                self._rot_status_label.setText(_("Not used"))
+            else:
+                self._rot_status_label.setText(_("Disconnected"))
             self._rot_status_label.setStyleSheet("color: gray;")
             self._connect_rot_btn.setText(_("Connect Rotator"))
             self._rot_manual_hold = False

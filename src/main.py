@@ -302,8 +302,20 @@ if len(sys.argv) >= 5 and sys.argv[1] == "--_fbsat59_rotator_probe":
         _rot_probe.set_conf("rot_pathname", _probe_port)
         _rot_probe.set_conf("serial_speed", _probe_baud)
         _rot_probe.open()
+        # Hamlib's Python binding never raises from open(); a failed open
+        # (e.g. the serial port does not exist) is only visible in
+        # error_status, so a bare "no exception" must not be reported as ok.
+        _probe_status = _rot_probe.error_status
         _rot_probe.close()
-        print(_json_rotprobe.dumps({"ok": True}), flush=True)
+        if _probe_status != 0:
+            print(
+                _json_rotprobe.dumps(
+                    {"ok": False, "error": f"open() failed (Hamlib error {_probe_status})"}
+                ),
+                flush=True,
+            )
+        else:
+            print(_json_rotprobe.dumps({"ok": True}), flush=True)
     except Exception as _rotprobe_exc:
         print(_json_rotprobe.dumps({"ok": False, "error": str(_rotprobe_exc)}), flush=True)
     sys.exit(0)

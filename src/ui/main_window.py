@@ -824,6 +824,9 @@ class MainWindow(QMainWindow):
         self._autotrack_audio_record: bool = False
         self._autotrack_iq_record: bool = False
         self._autotrack_meteor_record: bool = False
+        # False when Autotrack must leave the rotator alone (omnidirectional
+        # antenna, no rotator): no auto-connect at AOS, no disconnect at LOS.
+        self._autotrack_use_rotator: bool = True
         self._autotrack_tracking_norad: int | None = None  # NORAD of currently auto-tracked sat
         # True once the AOS actions (rig connect, recording, METEOR/HRPT
         # start) have actually fired for _autotrack_tracking_norad -- see
@@ -858,6 +861,7 @@ class MainWindow(QMainWindow):
         self._at_dialog.audio_record_changed.connect(self._on_autotrack_audio_record_changed)
         self._at_dialog.iq_record_changed.connect(self._on_autotrack_iq_record_changed)
         self._at_dialog.meteor_record_changed.connect(self._on_autotrack_meteor_record_changed)
+        self._at_dialog.use_rotator_changed.connect(self._on_autotrack_use_rotator_changed)
         self._at_dialog.lists_modified.connect(self._on_autotrack_lists_modified)
         # The dialog restores its Audio/IQ/METEOR checkboxes from app_settings
         # in its own __init__() (before the *_changed signals above were
@@ -866,6 +870,7 @@ class MainWindow(QMainWindow):
         self._autotrack_audio_record = self._at_dialog.is_audio_record_enabled()
         self._autotrack_iq_record = self._at_dialog.is_iq_record_enabled()
         self._autotrack_meteor_record = self._at_dialog.is_meteor_record_enabled()
+        self._on_autotrack_use_rotator_changed(self._at_dialog.is_use_rotator_enabled())
         # Likewise, the dialog's combo already selected a list in its own
         # __init__() (if any lists exist) before autotrack_list_changed was
         # connected above -- go through the same handler now so
@@ -2667,6 +2672,10 @@ class MainWindow(QMainWindow):
 
     def _on_autotrack_meteor_record_changed(self, enabled: bool) -> None:
         self._autotrack_meteor_record = enabled
+
+    def _on_autotrack_use_rotator_changed(self, use_rotator: bool) -> None:
+        self._autotrack_use_rotator = use_rotator
+        self._radio_control.set_rotator_unused(not use_rotator)
 
     def _on_autotrack_lists_modified(self) -> None:
         """Called when lists (or a list's entries) are added/removed/reordered.
@@ -8370,10 +8379,17 @@ class MainWindow(QMainWindow):
                     self._radio_control.refresh_status()
                     self._update_rig_label()
                     self._on_rig_slot_connected(2)
-        # Connect rotator
-        if self._rotator_controller is not None and not self._rotator_controller.is_connected:
+        # Connect rotator (skipped when "Use Rotator" is unchecked — e.g. an
+        # omnidirectional antenna with no rotator attached). A failed connect
+        # leaves it "Not connected" and nothing is sent to it afterwards.
+        if (
+            self._autotrack_use_rotator
+            and self._rotator_controller is not None
+            and not self._rotator_controller.is_connected
+        ):
             self._rotator_controller.connect()
             self._radio_control.refresh_status()
+            self._update_rot_label()
 
         # Start SDR recordings
         norad = self._autotrack_tracking_norad or 0
@@ -8432,8 +8448,12 @@ class MainWindow(QMainWindow):
             self._rig2_controller.disconnect()
             if is_sdr2:
                 self._sdr_control.set_pipeline(None)
-        # Disconnect rotator
-        if self._rotator_controller is not None and self._rotator_controller.is_connected:
+        # Disconnect rotator (only if Autotrack is the one managing it)
+        if (
+            self._autotrack_use_rotator
+            and self._rotator_controller is not None
+            and self._rotator_controller.is_connected
+        ):
             self._rotator_controller.disconnect()
 
         self._radio_control.refresh_status()

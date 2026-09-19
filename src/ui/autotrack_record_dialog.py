@@ -46,6 +46,7 @@ logger = logging.getLogger(__name__)
 
 _RECORDING_SETTINGS_KEY = "autotrack_recording_settings"
 _AUTOTRACK_ENABLED_KEY = "autotrack_enabled"
+_USE_ROTATOR_KEY = "autotrack_use_rotator"
 
 
 _AUTOTRACK_HELP = (
@@ -94,6 +95,8 @@ class AutotrackRecordDialog(QDialog):
         Emitted when the Audio Record checkbox changes.
     iq_record_changed(bool)
         Emitted when the IQ Record checkbox changes.
+    use_rotator_changed(bool)
+        Emitted when the Use Rotator checkbox changes.
     lists_modified()
         Emitted when lists/entries are added, removed, or reordered
         (callers should reload their list combos).
@@ -104,6 +107,7 @@ class AutotrackRecordDialog(QDialog):
     audio_record_changed: Signal = Signal(bool)
     iq_record_changed: Signal = Signal(bool)
     meteor_record_changed: Signal = Signal(bool)
+    use_rotator_changed: Signal = Signal(bool)
     lists_modified: Signal = Signal()
 
     def __init__(self, conn: sqlite3.Connection, parent: QWidget | None = None) -> None:
@@ -118,6 +122,7 @@ class AutotrackRecordDialog(QDialog):
         self._reload_at_lists()
         self._load_recording_settings()
         self._load_autotrack_enabled_state()
+        self._load_use_rotator_state()
 
     # ------------------------------------------------------------------
     # Public API
@@ -186,6 +191,10 @@ class AutotrackRecordDialog(QDialog):
         self._at_status_label.setText(text)
         color = "#2ecc71" if ok else "#e74c3c"
         self._at_status_label.setStyleSheet(f"color: {color};")
+
+    def is_use_rotator_enabled(self) -> bool:
+        """Return whether Autotrack should connect/drive the rotator."""
+        return bool(self._use_rot_cb.isChecked())
 
     def is_audio_record_enabled(self) -> bool:
         return bool(self._audio_rec_cb.isChecked())
@@ -321,6 +330,17 @@ class AutotrackRecordDialog(QDialog):
         enable_row.addWidget(help_btn)
         ctrl_form.addRow(enable_row)
 
+        self._use_rot_cb = QCheckBox(_("Use Rotator"))
+        self._use_rot_cb.setChecked(True)
+        self._use_rot_cb.setToolTip(
+            _(
+                "Uncheck when tracking with an omnidirectional antenna (no rotator):\n"
+                "Autotrack will not connect the rotator at AOS or disconnect it at LOS."
+            )
+        )
+        self._use_rot_cb.toggled.connect(self._on_use_rot_toggled)
+        ctrl_form.addRow(self._use_rot_cb)
+
         self._at_status_label = QLabel("—")
         self._at_status_label.setWordWrap(True)
         # Status text like "Next: METEOR M2-3 in 463 min" wraps to two
@@ -445,6 +465,32 @@ class AutotrackRecordDialog(QDialog):
             (_AUTOTRACK_ENABLED_KEY, "1" if enabled else "0"),
         )
         self._conn.commit()
+
+    def _on_use_rot_toggled(self, checked: bool) -> None:
+        self.use_rotator_changed.emit(checked)
+        self._conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value, updated_at)"
+            " VALUES (?, ?, CURRENT_TIMESTAMP)",
+            (_USE_ROTATOR_KEY, "1" if checked else "0"),
+        )
+        self._conn.commit()
+
+    def _load_use_rotator_state(self) -> None:
+        """Restore the Use Rotator checkbox (default: checked, i.e. the
+        pre-existing behavior of connecting the rotator at every AOS).
+
+        Signals are blocked for the same reason as _load_recording_settings():
+        MainWindow reads the restored value via is_use_rotator_enabled()
+        after wiring up its own signals.
+        """
+        row = self._conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?",
+            (_USE_ROTATOR_KEY,),
+        ).fetchone()
+        use_rotator = row is None or row["value"] != "0"
+        self._use_rot_cb.blockSignals(True)
+        self._use_rot_cb.setChecked(use_rotator)
+        self._use_rot_cb.blockSignals(False)
 
     # ------------------------------------------------------------------
     # Slots — Recording checkboxes (persisted to app_settings)

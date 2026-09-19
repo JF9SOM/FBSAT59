@@ -705,6 +705,60 @@ South Init を ON にすればこのパス自体は北をまたがなくなり�
 
 ---
 
+## ローテーター未接続なのに「Connected」（緑）になるバグ — Hamlib の失敗は例外にならない（2026-09-19 修正）
+
+### 症状
+ローテーターも USB アダプタも PC に繋がない状態で Autotrack の IQ 録音を走らせたところ、
+Radio Control の「Rotator:」が緑の「Connected」、ステータスバーが「ROT: On」になり、
+約 7 分間 `Rotator: set position ...` を存在しない機器へ送り続けた。`rot-record.log` の
+読み戻し位置は `0.0` と `8.3e20`（未初期化メモリ由来のゴミ値）を交互に返していた。
+
+### 原因
+Hamlib の Python（SWIG）バインディングは、**`Rot.open()` / `set_position()` /
+`get_position()` が失敗しても例外を投げず**、結果を `rot.error_status`（0=OK、負=失敗）にしか
+書かない。リグ側は `_check_rig_ok()` で対処済みだったが、`HamlibRotatorController` だけ
+`error_status` を一度も見ていなかったため、例外が出なければ成功とみなして `CONNECTED` に
+していた。Hamlib 4.7.2 で確認: 存在しないポートへの `open()` は `None` を返し
+`error_status=-6`（RIG_EIO）、続く `get_position()` はゴミ値＋`error_status=-1`。
+接続前確認用のサブプロセス（`main.py --_fbsat59_rotator_probe`）も同じ見落としで、
+存在しないポートに対して `{"ok": true}` を返していた。NET モードも TCP が繋がれば成功扱いで、
+rotctld 稼働中にローテーター側が無応答でも検出できなかった。
+
+手動の「Connect Rotator」も同じ `connect()` を通るため、アダプタ未接続なら手動でも緑になる。
+過去に手動接続で見えていた赤い「Error」は、**アダプタは接続済みでローテーターの電源が
+入っていない**ケース（`probe subprocess crashed (signal 11)`、上記の SkyWatcher
+`skywatcher_open()` クラッシュ隔離）で、別の物理状況だった。
+
+### 修正
+- `RigState.UNREACHABLE`（ローテーター専用）を追加。「繋がっていない」ことを `ERROR` と
+  区別し、Radio Control の「Rotator:」欄は赤の **「未接続 / Not connected」** を表示する
+  （ボタンは「Connect Rotator」）。ステータスバーは従来どおり「ROT: Off」。
+- **接続時**: プローブと本体の `open()` の両方で `error_status` を確認。失敗・プローブの
+  クラッシュ/タイムアウト・NET の接続拒否はすべて `UNREACHABLE`（予期しない例外だけ
+  `ERROR`）。
+- **途中切断**: `set_position`（`_send_p`）と `get_position` の結果を `_record_io_result()` で
+  数え、**連続 3 回失敗**（`_UNREACHABLE_AFTER_FAILURES`）で接続を閉じて `UNREACHABLE` にする。
+  成功が 1 回でもあれば連続数はリセット。判定材料は Direct=`error_status`、
+  NET=空応答/`RPRT <負>`/送信時の `OSError`。失敗した読み取りのゴミ値は `_rotor_state` に
+  反映しない。
+- `UNREACHABLE` は `is_connected` が False なので、追尾送信・位置ポーリング・
+  `stop/park/goto` は既存のガードで自動的に止まる。復旧は手動の Connect か、次の AOS の
+  自動再試行（定期再接続はしない）。
+- **「Use Rotator」チェック**（Autotrack/Record ダイアログの Autotrack Control 枠、
+  `app_settings.autotrack_use_rotator`、既定=ON）: OFF の間、Autotrack は AOS でローテーターへ
+  接続せず LOS でも切断しない。Radio Control は未接続時に灰色の **「使用しない / Not used」**
+  を表示（手動で接続した場合は通常どおり「Connected」）。無指向性アンテナ運用向け。
+
+### 未検証・注意
+- **実機（SkyWatcher 2801 等の正常応答するローテーター）で `open()` 後の `error_status` が
+  0 になること、追尾中に誤って連続 3 回失敗しないことは未検証**（Dummy ローテーターと
+  存在しないポートでのみ確認）。実機で「未接続」が誤って出る場合は
+  `Rotator: ... failed (n/3 consecutive)` の警告ログ（`fbsat59.log`）を確認すること。
+- 電源オフ＋アダプタ接続のケースは従来どおりプローブのクラッシュ隔離で失敗扱いになり、
+  表示だけ「Error」から「未接続」に変わる。
+
+---
+
 ## Direct モードのローテーターが Connect 直後にハングしてアプリごと落ちるバグ — 原因は接続時の複数スレッド競合（2026-09-09 実機確認・修正済み）
 
 ### 症状

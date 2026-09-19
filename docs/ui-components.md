@@ -121,6 +121,13 @@ CREATE TABLE autotrack_entries (
    b. 可視衛星なし → AOS が最も近い衛星に切り替え（リスト順タイブレーク）
 3. パス途中は切り替えしない（LOS を待つ）
 
+#### 「Use Rotator」チェック（2026-09-19 追加）
+Autotrack/Record ダイアログの Autotrack Control 枠。OFF にすると AOS でのローテーター自動
+接続・LOS での切断をしない（無指向性アンテナ運用向け）。既定は ON（従来動作）。
+`app_settings.autotrack_use_rotator`（`"0"`/`"1"`）に保存。Radio Control の「Rotator:」欄は
+OFF かつ未接続のとき灰色「使用しない」、接続に失敗/無応答のときは赤「未接続」を表示する。
+詳細は [docs/hamlib.md](hamlib.md)「ローテーター未接続なのに『Connected』（緑）になるバグ」。
+
 #### 使用前提条件
 1. **Autotrack/Record メニュー** → Autotrack Lists 枠でリスト作成・衛星登録
 2. Upcoming Passes > Group タブでパス検索実施

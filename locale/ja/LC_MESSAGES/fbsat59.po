@@ -5817,6 +5817,26 @@ msgstr "ステータス: 「{text}」"
 msgid "({shown}/{total} hex chars — rest omitted)"
 msgstr "（{shown}/{total}文字を表示、以下省略）"
 
+#: src/ui/radio_control_widget.py
+msgid "Not connected"
+msgstr "未接続"
+
+#: src/ui/radio_control_widget.py
+msgid "Not used"
+msgstr "使用しない"
+
+#: src/ui/autotrack_record_dialog.py
+msgid "Use Rotator"
+msgstr "ローテーターを使用する"
+
+#: src/ui/autotrack_record_dialog.py
+msgid ""
+"Uncheck when tracking with an omnidirectional antenna (no rotator):\n"
+"Autotrack will not connect the rotator at AOS or disconnect it at LOS."
+msgstr ""
+"無指向性アンテナ（ローテーターなし）で追尾する場合はチェックを外してください:\n"
+"Autotrack は AOS でローテーターに接続せず、LOS でも切断しません。"
+
 #~ msgid " ms"
 #~ msgstr " ミリ秒"
 

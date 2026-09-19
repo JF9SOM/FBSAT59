@@ -285,6 +285,58 @@ class TestMainWindowSyncsInitialListSelection:
         assert w._autotrack.entries() == []
 
 
+class TestUseRotatorCheckbox:
+    """ "Use Rotator" lets Autotrack run with an omnidirectional antenna and
+    no rotator. Defaults to checked (the pre-existing behavior) and is
+    persisted separately from the recording checkboxes, whose "nothing saved"
+    default is unchecked."""
+
+    def test_defaults_to_checked_when_nothing_saved(
+        self, qtbot: QtBot, db: sqlite3.Connection
+    ) -> None:
+        dlg = AutotrackRecordDialog(db)
+        qtbot.addWidget(dlg)
+
+        assert dlg.is_use_rotator_enabled() is True
+
+    def test_unchecking_persists_and_emits(self, qtbot: QtBot, db: sqlite3.Connection) -> None:
+        dlg = AutotrackRecordDialog(db)
+        qtbot.addWidget(dlg)
+
+        with qtbot.waitSignal(dlg.use_rotator_changed) as blocker:
+            dlg._use_rot_cb.setChecked(False)
+
+        assert blocker.args == [False]
+        row = db.execute(
+            "SELECT value FROM app_settings WHERE key = 'autotrack_use_rotator'"
+        ).fetchone()
+        assert row is not None
+        assert row["value"] == "0"
+
+    def test_new_dialog_instance_restores_unchecked_state(
+        self, qtbot: QtBot, db: sqlite3.Connection
+    ) -> None:
+        first = AutotrackRecordDialog(db)
+        qtbot.addWidget(first)
+        first._use_rot_cb.setChecked(False)
+
+        second = AutotrackRecordDialog(db)
+        qtbot.addWidget(second)
+
+        assert second.is_use_rotator_enabled() is False
+
+    def test_rechecking_persists_too(self, qtbot: QtBot, db: sqlite3.Connection) -> None:
+        first = AutotrackRecordDialog(db)
+        qtbot.addWidget(first)
+        first._use_rot_cb.setChecked(False)
+        first._use_rot_cb.setChecked(True)
+
+        second = AutotrackRecordDialog(db)
+        qtbot.addWidget(second)
+
+        assert second.is_use_rotator_enabled() is True
+
+
 class TestStatusLabelHeight:
     """The status label must reserve enough height for two wrapped lines --
     "Next: METEOR M2-3 in 463 min" wraps to two lines under some fonts

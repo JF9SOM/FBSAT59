@@ -298,6 +298,58 @@ class TestRadioControlWidget:
         assert w._sat_name_label.text() == "—"
         assert w._norad_label.text() == "—"
 
+    @staticmethod
+    def _rotator_in_state(state):
+        from rig.controller import HamlibRotatorController
+
+        rot = HamlibRotatorController(net_mode=True)
+        with rot._lock:
+            rot._state = state
+        return rot
+
+    def test_rotator_unreachable_shows_red_not_connected(self, qtbot) -> None:
+        from rig.controller import RigState
+
+        w = RadioControlWidget()
+        qtbot.addWidget(w)
+        w.set_rotator(self._rotator_in_state(RigState.UNREACHABLE))
+
+        assert w._rot_status_label.text() == "Not connected"
+        assert "red" in w._rot_status_label.styleSheet()
+        assert w._connect_rot_btn.text() == "Connect Rotator"
+
+    def test_rotator_error_still_shows_error(self, qtbot) -> None:
+        from rig.controller import RigState
+
+        w = RadioControlWidget()
+        qtbot.addWidget(w)
+        w.set_rotator(self._rotator_in_state(RigState.ERROR))
+
+        assert w._rot_status_label.text() == "Error"
+
+    def test_rotator_not_used_shows_gray_when_disconnected(self, qtbot) -> None:
+        from rig.controller import RigState
+
+        w = RadioControlWidget()
+        qtbot.addWidget(w)
+        w.set_rotator(self._rotator_in_state(RigState.DISCONNECTED))
+        assert w._rot_status_label.text() == "Disconnected"
+
+        w.set_rotator_unused(True)
+
+        assert w._rot_status_label.text() == "Not used"
+        assert "gray" in w._rot_status_label.styleSheet()
+
+    def test_rotator_not_used_does_not_hide_a_live_connection(self, qtbot) -> None:
+        from rig.controller import RigState
+
+        w = RadioControlWidget()
+        qtbot.addWidget(w)
+        w.set_rotator_unused(True)
+        w.set_rotator(self._rotator_in_state(RigState.CONNECTED))
+
+        assert w._rot_status_label.text() == "Connected"
+
     def test_update_doppler_downlink(self, qtbot) -> None:
         w = RadioControlWidget()
         qtbot.addWidget(w)
@@ -5221,6 +5273,81 @@ class TestAutotrackOnAosSkipsSdrRig:
         w._autotrack_on_aos("METEOR M2-3")
 
         w._rig2_controller.connect.assert_not_called()
+
+
+class TestAutotrackUseRotator:
+    """With "Use Rotator" unchecked (omnidirectional antenna, no rotator),
+    Autotrack must neither connect the rotator at AOS nor disconnect it at
+    LOS; with it checked (the default) the pre-existing behavior stays."""
+
+    def _make_window(self, qtbot, db):
+        from data.tle_manager import TLEManager
+        from ui.main_window import MainWindow
+
+        tle_manager = TLEManager(db)
+        w = MainWindow(conn=db, tle_manager=tle_manager)
+        qtbot.addWidget(w)
+        w._autotrack_tracking_norad = 57166
+        w._autotrack_audio_record = False
+        w._autotrack_iq_record = False
+        w._autotrack_meteor_record = False
+        w._rig_controller = None
+        w._rig2_controller = None
+        w._rotator_controller = MagicMock()
+        return w
+
+    def test_defaults_to_using_the_rotator(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        assert w._autotrack_use_rotator is True
+
+    def test_aos_connects_rotator_by_default(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._rotator_controller.is_connected = False
+
+        w._autotrack_on_aos("ARICA-2")
+
+        w._rotator_controller.connect.assert_called_once()
+
+    def test_aos_skips_rotator_when_not_used(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._on_autotrack_use_rotator_changed(False)
+        w._rotator_controller.is_connected = False
+
+        w._autotrack_on_aos("ARICA-2")
+
+        w._rotator_controller.connect.assert_not_called()
+
+    def test_los_disconnects_rotator_by_default(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._autotrack_aos_fired = True
+        w._rotator_controller.is_connected = True
+
+        w._autotrack_on_los()
+
+        w._rotator_controller.disconnect.assert_called_once()
+
+    def test_los_leaves_rotator_alone_when_not_used(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._on_autotrack_use_rotator_changed(False)
+        w._autotrack_aos_fired = True
+        w._rotator_controller.is_connected = True
+
+        w._autotrack_on_los()
+
+        w._rotator_controller.disconnect.assert_not_called()
+
+    def test_saved_off_state_is_restored_into_mainwindow(self, qtbot, db) -> None:
+        db.execute("INSERT INTO app_settings (key, value) VALUES ('autotrack_use_rotator', '0')")
+        db.commit()
+
+        from data.tle_manager import TLEManager
+        from ui.main_window import MainWindow
+
+        w = MainWindow(conn=db, tle_manager=TLEManager(db))
+        qtbot.addWidget(w)
+
+        assert w._autotrack_use_rotator is False
+        assert w._radio_control._rot_unused is True
 
 
 class TestAutotrackRecordingCheckboxSync:

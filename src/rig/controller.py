@@ -349,6 +349,12 @@ class RigState(Enum):
     CONNECTING = "connecting"
     CONNECTED = "connected"
     ERROR = "error"
+    # Rotator only: the device could not be reached (adapter unplugged,
+    # unpowered, rotctld down) or stopped answering mid-session. Distinct
+    # from ERROR so the UI can show a plain "Not connected" instead of an
+    # error — Autotrack runs with an omnidirectional antenna and no rotator
+    # attached are routine, not faults.
+    UNREACHABLE = "unreachable"
 
 
 @dataclass
@@ -4320,6 +4326,11 @@ class HamlibRotatorController(RotatorController):
     # arrival check — distance-based rather than time-based, so it self-
     # adjusts to however fast the rotator actually turns out to slew.
     _CATCH_UP_WRAP_DEPARTURE_MARGIN_DEG: float = 10.0
+    # Consecutive failed position exchanges (set_position/get_position)
+    # after which a previously connected rotator is declared unreachable —
+    # a single failure can be a one-off serial hiccup, so don't drop the
+    # connection on the first one.
+    _UNREACHABLE_AFTER_FAILURES: int = 3
 
     def __init__(
         self,
@@ -4373,6 +4384,9 @@ class HamlibRotatorController(RotatorController):
         # way around and must measure distance accordingly, instead of
         # assuming the shorter numeric arc was the one actually traveled.
         self._catch_up_measure_long_path: bool = False
+        # Consecutive failed position exchanges since the last success —
+        # see _record_io_result().
+        self._io_fail_streak: int = 0
         # Serialises every rotator I/O exchange (open/close/set_position/
         # get_position/stop/park) across all caller threads.  Re-entrant so
         # set_position() can call _send_p() and get_position() within one
@@ -4467,12 +4481,26 @@ class HamlibRotatorController(RotatorController):
                     )
                     if not self._probe_rotator_open():
                         with self._lock:
-                            self._state = RigState.ERROR
+                            self._state = RigState.UNREACHABLE
                         return False
                     rot = _H.Rot(self._model_id)
                     rot.set_conf("rot_pathname", self._port)
                     rot.set_conf("serial_speed", str(self._baud_rate))
                     rot.open()
+                    # Hamlib's Python binding never raises from open(); a
+                    # failed open (e.g. the USB adapter is unplugged, so the
+                    # port does not exist) only shows up in error_status.
+                    open_status = getattr(rot, "error_status", 0)
+                    if open_status != 0:
+                        logger.error(
+                            "Rotator: open() failed (Hamlib error %s) — not connected",
+                            open_status,
+                        )
+                        with contextlib.suppress(Exception):
+                            rot.close()
+                        with self._lock:
+                            self._state = RigState.UNREACHABLE
+                        return False
                     self._rot = rot
                 else:
                     self._rot = _MockRotator()
@@ -4486,8 +4514,16 @@ class HamlibRotatorController(RotatorController):
                 self._catch_up_measure_start_time = None
                 self._catch_up_measure_start_az = None
                 self._catch_up_measure_long_path = False
+                self._io_fail_streak = 0
                 logger.info("Rotator: connected")
                 return True
+        except OSError as exc:
+            # rotctld refused/unreachable (NET mode): the rotator is simply
+            # not there, not a fault worth flagging as an error.
+            with self._lock:
+                self._state = RigState.UNREACHABLE
+            logger.error("Rotator: not reachable — %s", exc)
+            return False
         except Exception as exc:
             with self._lock:
                 self._state = RigState.ERROR
@@ -4510,15 +4546,76 @@ class HamlibRotatorController(RotatorController):
                 with self._lock:
                     self._state = RigState.DISCONNECTED
 
+    def _record_io_result(self, ok: bool, what: str) -> None:
+        """Track position-exchange outcomes and drop a dead rotator.
+
+        Hamlib's Python binding (and rotctld's "RPRT <code>" reply) report a
+        failed exchange without raising, so a rotator that is unplugged or
+        powered off mid-session would otherwise keep showing "Connected"
+        and keep receiving commands forever. After
+        _UNREACHABLE_AFTER_FAILURES consecutive failures the connection is
+        closed and the state becomes UNREACHABLE, which makes every caller's
+        is_connected guard stop sending. A success resets the streak.
+        """
+        with self._io_lock:
+            if ok:
+                self._io_fail_streak = 0
+                return
+            self._io_fail_streak += 1
+            logger.warning(
+                "Rotator: %s failed (%d/%d consecutive)",
+                what,
+                self._io_fail_streak,
+                self._UNREACHABLE_AFTER_FAILURES,
+            )
+            if self._io_fail_streak < self._UNREACHABLE_AFTER_FAILURES:
+                return
+            self._io_fail_streak = 0
+            with self._lock:
+                if self._state != RigState.CONNECTED:
+                    return  # already disconnected by the user meanwhile
+            logger.error("Rotator: no response from the rotator — marking as not connected")
+            try:
+                if self._net_mode and self._sock:
+                    self._sock.close()
+                elif self._rot is not None and self._hamlib is not None:
+                    self._rot.close()
+            except Exception:
+                pass
+            finally:
+                self._rot = None
+                self._sock = None
+                with self._lock:
+                    self._state = RigState.UNREACHABLE
+
+    @staticmethod
+    def _rprt_failed(reply: str) -> bool:
+        """True if a rotctld reply carries a negative "RPRT <code>" status."""
+        for line in reply.splitlines():
+            line = line.strip()
+            if line.startswith("RPRT"):
+                with contextlib.suppress(ValueError, IndexError):
+                    return int(line.split()[1]) < 0
+        return False
+
     def _send_p(self, az: float, el: float) -> None:
-        """Send the P command and discard the RPRT response to keep the socket buffer clean."""
+        """Send the P command and check its outcome (NET: RPRT reply; Direct: error_status)."""
         with self._io_lock:
             if self._net_mode and self._sock:
-                self._sock.sendall(f"P {az:.1f} {el:.1f}\n".encode())
+                try:
+                    self._sock.sendall(f"P {az:.1f} {el:.1f}\n".encode())
+                except OSError:
+                    self._record_io_result(False, "P command")
+                    raise
+                failed = False
                 with contextlib.suppress(Exception):
-                    self._sock.recv(256)  # discard RPRT 0
+                    # Also drains the reply to keep the socket buffer clean.
+                    reply = self._sock.recv(256).decode(errors="replace")
+                    failed = reply == "" or self._rprt_failed(reply)
+                self._record_io_result(not failed, "P command")
             elif self._rot is not None:
                 self._rot.set_position(az, el)
+                self._record_io_result(getattr(self._rot, "error_status", 0) == 0, "set_position")
             with self._lock:
                 self._rotor_state.azimuth_deg = az
                 self._rotor_state.elevation_deg = el
@@ -5072,13 +5169,25 @@ class HamlibRotatorController(RotatorController):
                         with self._lock:
                             self._rotor_state.azimuth_deg = values[0]
                             self._rotor_state.elevation_deg = values[1]
+                        self._record_io_result(True, "get_position")
+                    else:
+                        # Empty reply (socket closed) or "RPRT <error>".
+                        self._record_io_result(False, "get_position")
                 elif self._rot is not None:
                     az, el = self._rot.get_position()
-                    with self._lock:
-                        self._rotor_state.azimuth_deg = float(az)
-                        self._rotor_state.elevation_deg = float(el)
+                    # A failed read (dead port, no reply) still returns
+                    # garbage values without raising — only error_status
+                    # tells them apart, so never publish a failed reading.
+                    if getattr(self._rot, "error_status", 0) == 0:
+                        with self._lock:
+                            self._rotor_state.azimuth_deg = float(az)
+                            self._rotor_state.elevation_deg = float(el)
+                        self._record_io_result(True, "get_position")
+                    else:
+                        self._record_io_result(False, "get_position")
             except Exception as exc:
                 logger.error("Rotator.get_position: %s", exc)
+                self._record_io_result(False, "get_position")
 
             with self._lock:
                 return RotatorState(

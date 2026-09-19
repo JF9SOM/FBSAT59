@@ -2701,6 +2701,220 @@ class TestHamlibRotatorController:
         assert ctrl._last_az == pytest.approx(78.0)
 
 
+class _FakeHamlibRot:
+    """Stand-in for a Hamlib Rot handle.
+
+    Like the real Python binding, none of its methods raise on failure: the
+    outcome is only visible in error_status (0 = ok, negative = failed).
+    """
+
+    def __init__(self, error_status: int = 0) -> None:
+        self.error_status = error_status
+        self.set_calls: list[tuple[float, float]] = []
+        self.get_calls = 0
+        self.closed = False
+
+    def set_conf(self, name: str, value: str) -> None:
+        pass
+
+    def open(self) -> None:
+        pass
+
+    def set_position(self, az: float, el: float) -> None:
+        self.set_calls.append((az, el))
+
+    def get_position(self) -> tuple[float, float]:
+        self.get_calls += 1
+        # Real failed reads return garbage rather than raising.
+        return (8.3e20, 0.0) if self.error_status != 0 else (120.0, 30.0)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class TestHamlibRotatorUnreachable:
+    """A missing / silent rotator must end up UNREACHABLE, never CONNECTED.
+
+    Hamlib's Python binding does not raise on a failed open()/set_position()/
+    get_position(); it only sets error_status. Regression for the Autotrack
+    run where a rotator that was not attached at all still showed a green
+    "Connected" and was sent position commands for a whole pass.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _isolate_rot_record_log(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("rig.controller.get_rotor_record_logger", lambda: MagicMock())
+
+    @staticmethod
+    def _direct_ctrl(rot: _FakeHamlibRot) -> HamlibRotatorController:
+        """A Direct-mode controller already CONNECTED to the given fake handle."""
+        ctrl = HamlibRotatorController(model_id=2801, port="/dev/cu.fake")
+        ctrl._rot = rot
+        ctrl._hamlib = object()
+        with ctrl._lock:
+            ctrl._state = RigState.CONNECTED
+        return ctrl
+
+    @staticmethod
+    def _net_ctrl(replies: list[bytes]) -> HamlibRotatorController:
+        ctrl = HamlibRotatorController(net_mode=True)
+        sock = MagicMock(spec=socket.socket)
+        sock.recv.side_effect = replies
+        ctrl._sock = sock
+        with ctrl._lock:
+            ctrl._state = RigState.CONNECTED
+        return ctrl
+
+    def _connect_with_fake_hamlib(
+        self, monkeypatch: pytest.MonkeyPatch, rot: _FakeHamlibRot, *, probe_ok: bool = True
+    ) -> tuple[HamlibRotatorController, bool]:
+        import sys
+        import types
+
+        fake_module = types.SimpleNamespace(Rot=lambda model_id: rot)
+        monkeypatch.setitem(sys.modules, "Hamlib", fake_module)
+        monkeypatch.setattr("rig.controller.HAMLIB_AVAILABLE", True)
+        ctrl = HamlibRotatorController(model_id=2801, port="/dev/cu.missing")
+        monkeypatch.setattr(ctrl, "_probe_rotator_open", lambda: probe_ok)
+        return ctrl, ctrl.connect()
+
+    # -- connect() -----------------------------------------------------
+
+    def test_connect_open_error_status_is_unreachable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        rot = _FakeHamlibRot(error_status=-6)  # RIG_EIO, as for a missing port
+        ctrl, result = self._connect_with_fake_hamlib(monkeypatch, rot)
+        assert result is False
+        assert ctrl.state == RigState.UNREACHABLE
+        assert not ctrl.is_connected
+        assert rot.closed
+
+    def test_connect_open_ok_is_connected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        rot = _FakeHamlibRot(error_status=0)
+        ctrl, result = self._connect_with_fake_hamlib(monkeypatch, rot)
+        assert result is True
+        assert ctrl.state == RigState.CONNECTED
+
+    def test_connect_probe_failure_is_unreachable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        ctrl, result = self._connect_with_fake_hamlib(monkeypatch, _FakeHamlibRot(), probe_ok=False)
+        assert result is False
+        assert ctrl.state == RigState.UNREACHABLE
+
+    def test_net_connect_refused_is_unreachable(self) -> None:
+        ctrl = HamlibRotatorController(net_mode=True, net_host="localhost", net_port=4533)
+        with patch("rig.controller.socket.socket") as mock_cls:
+            mock_cls.return_value.connect.side_effect = ConnectionRefusedError("refused")
+            assert ctrl.connect() is False
+        assert ctrl.state == RigState.UNREACHABLE
+
+    def test_reconnect_after_unreachable_can_succeed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        ctrl, result = self._connect_with_fake_hamlib(monkeypatch, _FakeHamlibRot(-6))
+        assert result is False
+        good = _FakeHamlibRot(0)
+        import sys
+        import types
+
+        monkeypatch.setitem(sys.modules, "Hamlib", types.SimpleNamespace(Rot=lambda m: good))
+        assert ctrl.connect() is True
+        assert ctrl.state == RigState.CONNECTED
+
+    # -- mid-session loss (Direct mode) --------------------------------
+
+    def test_direct_three_failed_reads_mark_unreachable(self) -> None:
+        rot = _FakeHamlibRot(error_status=-1)
+        ctrl = self._direct_ctrl(rot)
+        ctrl.get_position()
+        ctrl.get_position()
+        assert ctrl.is_connected  # 2 failures: still tolerated
+        ctrl.get_position()
+        assert ctrl.state == RigState.UNREACHABLE
+        assert rot.closed
+
+    def test_direct_failed_read_does_not_publish_garbage(self) -> None:
+        ctrl = self._direct_ctrl(_FakeHamlibRot(error_status=-1))
+        state = ctrl.get_position()
+        assert state.azimuth_deg == 0.0  # not the 8.3e20 the failed read returned
+
+    def test_direct_success_resets_failure_streak(self) -> None:
+        rot = _FakeHamlibRot(error_status=-1)
+        ctrl = self._direct_ctrl(rot)
+        ctrl.get_position()
+        ctrl.get_position()
+        rot.error_status = 0
+        assert ctrl.get_position().azimuth_deg == 120.0
+        rot.error_status = -1
+        ctrl.get_position()
+        ctrl.get_position()
+        assert ctrl.is_connected  # streak restarted from the success
+
+    def test_direct_failed_set_position_counts_too(self) -> None:
+        rot = _FakeHamlibRot(error_status=-1)
+        ctrl = self._direct_ctrl(rot)
+        for _ in range(3):
+            ctrl._send_p(100.0, 10.0)
+        assert ctrl.state == RigState.UNREACHABLE
+
+    def test_no_commands_sent_once_unreachable(self) -> None:
+        rot = _FakeHamlibRot(error_status=-1)
+        ctrl = self._direct_ctrl(rot)
+        for _ in range(3):
+            ctrl.get_position()
+        sent = len(rot.set_calls)
+        gets = rot.get_calls
+        assert ctrl.set_position(200.0, 20.0) is False
+        assert ctrl.get_position().azimuth_deg == 0.0
+        assert ctrl.goto(10.0, 5.0) is False
+        assert ctrl.stop() is False
+        assert ctrl.park() is False
+        assert len(rot.set_calls) == sent
+        assert rot.get_calls == gets
+
+    def test_user_disconnect_is_not_overridden_by_late_failure(self) -> None:
+        ctrl = self._direct_ctrl(_FakeHamlibRot(error_status=-1))
+        ctrl.disconnect()
+        for _ in range(3):
+            ctrl._record_io_result(False, "get_position")
+        assert ctrl.state == RigState.DISCONNECTED
+
+    # -- mid-session loss (NET mode, rotctld) --------------------------
+
+    def test_net_rprt_error_replies_mark_unreachable(self) -> None:
+        # rotctld is up but its rotator is gone: every "p" answers RPRT -6.
+        ctrl = self._net_ctrl([b"RPRT -6\n"] * 3)
+        for _ in range(3):
+            ctrl.get_position()
+        assert ctrl.state == RigState.UNREACHABLE
+
+    def test_net_closed_socket_marks_unreachable(self) -> None:
+        ctrl = self._net_ctrl([b""] * 3)
+        for _ in range(3):
+            ctrl.get_position()
+        assert ctrl.state == RigState.UNREACHABLE
+
+    def test_net_p_command_error_reply_counts(self) -> None:
+        ctrl = self._net_ctrl([b"RPRT -6\n"] * 3)
+        for _ in range(3):
+            ctrl._send_p(90.0, 10.0)
+        assert ctrl.state == RigState.UNREACHABLE
+
+    def test_net_healthy_replies_stay_connected(self) -> None:
+        ctrl = self._net_ctrl([b"RPRT 0\n", b"180.0\n45.0\n"] * 5)
+        for _ in range(5):
+            ctrl._send_p(180.0, 45.0)
+            ctrl.get_position()
+        assert ctrl.is_connected
+
+    def test_net_send_oserror_is_counted_and_raised(self) -> None:
+        ctrl = self._net_ctrl([])
+        assert ctrl._sock is not None
+        ctrl._sock.sendall.side_effect = BrokenPipeError("gone")  # type: ignore[attr-defined]
+        for _ in range(3):
+            with pytest.raises(OSError):
+                ctrl._send_p(90.0, 10.0)
+        assert ctrl.state == RigState.UNREACHABLE
+
+
 # ---------------------------------------------------------------------------
 # HamlibVersionChecker
 # ---------------------------------------------------------------------------
