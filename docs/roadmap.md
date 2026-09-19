@@ -34,6 +34,22 @@
 11d. ~~**Q65 Phase 2（TX/QSO）実装**~~ **→ 2026-06-26 で完了**（純 Python encoder.py: GF(64)・CRC-12・65-FSK / Q65QsoManager: QSOステートマシン・q65_log DB・ADIF / q65_tab.py: TX UI・TX Enable・Halt TX・Log QSO・Export ADIF）
 11e. ~~**METEOR / HRPT 受信タブ実装**~~ **→ 2026-06-29 で完了**（SatDump サブプロセス管理・8衛星対応・Autotrack AOS/LOS 連携・SDR Connect・浮動ログウィンドウ・衛星検索ダイアログ）
 11h. ~~**METEORタブにウォーターフォール表示ボタンを追加**~~ **→ 2026-08-20 で完了・実機確認済み**（受信画像プレビュー欄をImage/Waterfallの2タブに分割。`satdump live`に`--fft_enable --fft_size N --fft_rate N --http_server 127.0.0.1:PORT`を追加しSatDump自身のHTTP API `fft_values`をポーリング。実機（METEOR-M N2-3、最大仰角約50°）でStart時のWaterfall自動表示・完了時のImage自動表示・電波受信の視覚的確認とも動作確認済み。詳細は「METEORタブのライブWaterfall表示」セクション参照）
+11i. **Q65 タブの SDR 受信対応（急ぎではない、2026-09-19 追加）** — FT4 タブと同じ欠陥が Q65 タブにもあり、
+    **SDR 入力（入力コンボの "SDR"）では一度もデコードできない**（Q65 も libq65 が12 kHz音声を要求
+    〔`SAMPLE_RATE=12000`〕するのに、`q65_tab.py` の `_on_audio_chunk()` が SDR パイプラインの
+    `audio_ready`〔公称48 kHz・実際はさらにずれている・USB復調は周波数を1350 Hz下へずらす〕をそのまま
+    受信バッファへ入れている）。FT4 は 2026-09-19 に修正済み（[communications.md](communications.md) の
+    「SDR 経由の FT4 受信」、`src/sdr/usb_audio.py` の `SdrUsbAudioTap`／`UsbAudio12k`）なので、
+    **同じ処理を流用して直す**: `q65_tab.py` の `_connect_sdr_audio()` 相当（`pipeline.audio_ready.connect()`
+    ＋`request_audio()`、524〜551行付近）を、FT4 タブ（`ft4_tab.py` の `_connect_sdr_audio()` /
+    `_disconnect_sdr_audio()`）と同様に「`SdrUsbAudioTap` を作って `pipeline.subscribe()`、切断時に
+    `unsubscribe()`＋`stop()`」へ置き換える。Q65 は周期が15〜60秒と長く、周波数の許容差・弱信号
+    （ムーンバウンス等）向けなので、`UsbAudio12k` の通過帯域（0〜約3.5 kHz）とAGC（時定数4秒）が
+    十分かも確認すること。検証は FT4 同様、`Q65Codec`/`encoder.py` で合成した送信をSDRのI/Q
+    （解析信号）にして通し、`Q65Codec` のデコードが成功することを確認する（`tests/test_usb_audio.py`
+    の FT4 通しテストが雛形）。関連: SDR Control の USB/LSB 復調が音の周波数を保たない件
+    （[sdr.md](sdr.md) の Demodulator 節・[communications.md](communications.md) の FT4 節）は
+    未対応のまま（FT4/Q65 は専用経路で回避するため直接は影響しない）
 11f. ~~**CW Decoder タブ実装**~~ **→ 2026-06-30 で完了（v0.2.6）**（deepcw-engine ONNX / onnxruntime 自動 pip インストール / model.onnx 自動ダウンロード / CW-R トランスポンダー自動オープン）
 11g. **MARMOTSat DVB-S2 受信タブ実装（保留中、2026-07-24）** — MARMOTSat の HF DVB-S2
     画像ビーコン（29.410 MHz）受信。一次情報（flowgraph／実 IQ／パイロット設定）が
