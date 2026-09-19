@@ -146,3 +146,24 @@ XXX.app/Contents/
   必須ではない）
 
 ---
+
+## GPD（Ubuntu）のワンクリック起動（2026-09-19 追加）
+
+Mac へ開発を移した後も GPD MicroPC2（`ssh GPD-MicroPC` = `sadatoshi@gpd-linux.local`）の
+`~/FBSAT59` はソース実行環境として残してある。放置すると古くなる（Mac で開発が進むため）ので、
+Windows の `scripts/win_launch.bat` と同じ「クリックすると最新化してから起動」ランチャーを用意した。
+
+- **`scripts/linux_launch.sh`**（コミット済み）: `git pull --ff-only`（60 秒タイムアウト。
+  オフライン／ローカル変更ありなら警告して現状のまま続行）→ `pyproject.toml` に差分が
+  あった時だけ `pip install -e .[dev,sdr,ax100digi]` → `python src/main.py`。
+  `bootstrap_natives.py` は Windows 専用なので呼ばない。Hamlib 4.7 は venv の
+  `activate`（`LD_LIBRARY_PATH=/opt/hamlib/4.7/lib`）経由なので **必ず activate を source する**。
+  全処理を関数に包んでいるのは、`git pull` がこのスクリプト自身を書き換えても bash が
+  壊れたファイルを途中から読まないようにするため。異常終了（非 0）や venv 不在では
+  Enter 待ちでターミナルを閉じない（正常終了なら閉じる）。
+- **デスクトップの起動アイコン** `~/Desktop/FBSAT59.desktop`（リポジトリ外。絶対パスを含むため）:
+  `Exec=/home/sadatoshi/FBSAT59/scripts/linux_launch.sh`、`Terminal=true`、
+  `Icon=/home/sadatoshi/FBSAT59/assets/icon_256.png`。実行権限が必要で、GNOME で
+  「起動を許可」されていること（`gio set <file> metadata::trusted true`）。
+- GPD 側のソースを直接編集しない運用は Windows と同じ（編集は Mac → commit → push →
+  GPD は `git pull` のみ）。
