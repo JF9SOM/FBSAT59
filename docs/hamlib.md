@@ -753,6 +753,13 @@ rotctld 稼働中にローテーター側が無応答でも検出できなかっ
   接続せず LOS でも切断しない。Radio Control は未接続時に灰色の **「使用しない / Not used」**
   を表示（手動で接続した場合は通常どおり「Connected」）。無指向性アンテナ運用向け。
 
+- **Rig 1 / Rig 2（SDR 含む）も同じ表示に統一**（2026-09-19）: リグの `RigState.ERROR` は
+  「接続試行が失敗した」場合にしか設定されない（途中で立たない）ため、Radio Control の
+  Rig 1/2 欄は `ERROR`（と `UNREACHABLE`）を赤の「未接続 / Not connected」で表示し、ボタンは
+  「Retry」ではなく「Connect Rig N」にする。手動の Connect ボタンでも Autotrack の AOS 自動接続
+  でも同じ（後者も 1 秒ごとの `refresh_status()` で反映）。コントローラー側の状態は変更なし
+  （表示のみ）。ローテーターの `ERROR`（予期しない例外）は従来どおり「Error / Retry」。
+
 ### 未検証・注意
 - **手動 Connect での「未接続」表示は実機確認済み**（2026-09-19、ローテーター未接続・
   電源オフ＋アダプタ接続の両方で赤の「未接続」）。**一方、正常応答する実機（SkyWatcher 2801 等）で

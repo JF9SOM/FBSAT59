@@ -942,10 +942,13 @@ class RadioControlWidget(QWidget):
             self._rig1_status_label.setText(_("Connecting..."))
             self._rig1_status_label.setStyleSheet("color: orange;")
             self._connect_rig1_btn.setText(_("Disconnect Rig 1"))
-        elif state == RigState.ERROR:
-            self._rig1_status_label.setText(_("Error"))
+        elif state in (RigState.ERROR, RigState.UNREACHABLE):
+            # A rig's ERROR state only ever means "the connect attempt
+            # failed" (rig or SDR absent/unpowered/unreachable), so show the
+            # same red "Not connected" the rotator uses rather than "Error".
+            self._rig1_status_label.setText(_("Not connected"))
             self._rig1_status_label.setStyleSheet("color: red;")
-            self._connect_rig1_btn.setText(_("Retry"))
+            self._connect_rig1_btn.setText(_("Connect Rig 1"))
         else:
             self._rig1_status_label.setText(_("Disconnected"))
             self._rig1_status_label.setStyleSheet("color: gray;")
@@ -974,10 +977,13 @@ class RadioControlWidget(QWidget):
             self._rig2_status_label.setText(_("Connecting..."))
             self._rig2_status_label.setStyleSheet("color: orange;")
             self._connect_rig2_btn.setText(_("Disconnect Rig 2"))
-        elif state == RigState.ERROR:
-            self._rig2_status_label.setText(_("Error"))
+        elif state in (RigState.ERROR, RigState.UNREACHABLE):
+            # A rig's ERROR state only ever means "the connect attempt
+            # failed" (rig or SDR absent/unpowered/unreachable), so show the
+            # same red "Not connected" the rotator uses rather than "Error".
+            self._rig2_status_label.setText(_("Not connected"))
             self._rig2_status_label.setStyleSheet("color: red;")
-            self._connect_rig2_btn.setText(_("Retry"))
+            self._connect_rig2_btn.setText(_("Connect Rig 2"))
         else:
             self._rig2_status_label.setText(_("Disconnected"))
             self._rig2_status_label.setStyleSheet("color: gray;")

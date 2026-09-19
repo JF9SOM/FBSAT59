@@ -318,6 +318,40 @@ class TestRadioControlWidget:
         assert "red" in w._rot_status_label.styleSheet()
         assert w._connect_rot_btn.text() == "Connect Rotator"
 
+    @pytest.mark.parametrize("is_sdr", [False, True])
+    @pytest.mark.parametrize("slot", ["1", "2"])
+    def test_failed_rig_connect_shows_red_not_connected(self, qtbot, slot, is_sdr) -> None:
+        """A rig/SDR whose connect failed (RigState.ERROR) reads the same red
+        "Not connected" as the rotator, with a plain Connect button."""
+        from rig.controller import RigState
+
+        rig = MagicMock()
+        rig.state = RigState.ERROR
+        rig.is_connected = False
+        rig.is_sdr = is_sdr
+        w = RadioControlWidget()
+        qtbot.addWidget(w)
+        getattr(w, f"set_rig{slot}")(rig)
+
+        label = getattr(w, f"_rig{slot}_status_label")
+        button = getattr(w, f"_connect_rig{slot}_btn")
+        assert label.text() == "Not connected"
+        assert "red" in label.styleSheet()
+        assert button.text() == f"Connect Rig {slot}"
+
+    @pytest.mark.parametrize("slot", ["1", "2"])
+    def test_disconnected_rig_still_reads_disconnected(self, qtbot, slot) -> None:
+        from rig.controller import RigState
+
+        rig = MagicMock()
+        rig.state = RigState.DISCONNECTED
+        rig.is_connected = False
+        w = RadioControlWidget()
+        qtbot.addWidget(w)
+        getattr(w, f"set_rig{slot}")(rig)
+
+        assert getattr(w, f"_rig{slot}_status_label").text() == "Disconnected"
+
     def test_rotator_error_still_shows_error(self, qtbot) -> None:
         from rig.controller import RigState
 
