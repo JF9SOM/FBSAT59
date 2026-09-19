@@ -50,7 +50,7 @@ METEOR_PIPELINES: list[dict[str, str | int]] = [
     # --- HRPT (1.7 GHz, dish + LNA required) ---
     {
         "label": "METEOR-M N2-3  HRPT  1700.0 MHz",
-        "pipeline": "meteor_m2-x_hrpt",
+        "pipeline": "meteor_hrpt",
         "frequency": 1_700_000_000,
         "samplerate": 3_000_000,
         "norad": 57166,
@@ -59,7 +59,7 @@ METEOR_PIPELINES: list[dict[str, str | int]] = [
     },
     {
         "label": "METEOR-M N2-4  HRPT  1700.0 MHz",
-        "pipeline": "meteor_m2-x_hrpt",
+        "pipeline": "meteor_hrpt",
         "frequency": 1_700_000_000,
         "samplerate": 3_000_000,
         "norad": 59051,
@@ -86,7 +86,7 @@ METEOR_PIPELINES: list[dict[str, str | int]] = [
     },
     {
         "label": "Metop-B  HRPT  1701.3 MHz",
-        "pipeline": "metop_hrpt",
+        "pipeline": "metop_ahrpt",
         "frequency": 1_701_300_000,
         "samplerate": 3_000_000,
         "norad": 38771,
@@ -95,7 +95,7 @@ METEOR_PIPELINES: list[dict[str, str | int]] = [
     },
     {
         "label": "Metop-C  HRPT  1701.3 MHz",
-        "pipeline": "metop_hrpt",
+        "pipeline": "metop_ahrpt",
         "frequency": 1_701_300_000,
         "samplerate": 3_000_000,
         "norad": 43689,
