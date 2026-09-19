@@ -9,13 +9,13 @@ and the next position-poll tick snapped it back.
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import MagicMock
 
 import numpy as np
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
 from pytestqt.qtbot import QtBot
 
-from sdr.pipeline import SDRPipeline
 from ui.sdr_control_widget import SdrControlWidget
 
 
@@ -51,7 +51,10 @@ def _make_widget(qtbot: QtBot) -> tuple[SdrControlWidget, _FakeFileDevice]:
     w.resize(600, 700)
     w.show()
     device = _FakeFileDevice()
-    pipeline: Any = SDRPipeline(device)  # never started
+    # A mock rather than a real SDRPipeline: that constructs a Demodulator,
+    # which needs scipy, an optional dependency CI does not install.
+    pipeline: Any = MagicMock()
+    pipeline._device = device
     w.set_pipeline(pipeline, is_replay=True)
     w._update_playback_position()  # sets the slider range from the device
     device.seeks.clear()
