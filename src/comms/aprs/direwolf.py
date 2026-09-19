@@ -355,7 +355,9 @@ class AudioBridge(QThread):
                 else:
                     from comms.aprs.g3ruh_demod import G3ruhSdrDemod
 
-                    sdr_demod = G3ruhSdrDemod(sample_rate=sr)
+                    sdr_demod = G3ruhSdrDemod(
+                        sample_rate=sr, baud=4800 if self._modem == "4800" else 9600
+                    )
                 # Explicit DirectConnection: _rx_callback is a plain Python
                 # closure, not a QObject method, so Qt's auto-detected
                 # connection type has no receiver thread affinity to key

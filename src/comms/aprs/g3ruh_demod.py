@@ -9,10 +9,13 @@ built-in G3RUH decoder (MODEM 9600) does the actual demod / descramble /
 clock recovery — this module only produces audio at the right bandwidth
 and level for it.
 
-Filter tuning (IF bandwidth, deviation constant) is based on the same
-phase-difference discriminator technique as sdr/demodulator.py's NFM path;
-field-verified against a real recorded 9600bps G3RUH signal (JAPRS digi
-network) and confirmed decoding live (2026-09-12/13).
+The discriminator is the same phase-difference technique as
+sdr/demodulator.py's NFM path; field-verified against a real recorded
+9600bps G3RUH signal (JAPRS digi network) and confirmed decoding live
+(2026-09-12/13). Its tuning is per baud rate (see _Profile): 9600 uses a
+narrow IF chosen from decode-rate measurements on synthetic frames through
+Direwolf, other rates keep the original wide IF. All filters keep their
+state across process() calls -- see G3ruhDiscriminator.
 
 G3ruhSdrDemod subscribes to raw I/Q directly (SDRPipeline.subscribe()),
 independent of the SDR Control tab's Mode combo / shared Demodulator —
@@ -26,6 +29,7 @@ from __future__ import annotations
 import math
 import queue
 import threading
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -41,13 +45,47 @@ except ImportError:
 
 _AUDIO_RATE = 48_000
 _INTERMEDIATE_RATE_TARGET = 200_000
-# Assumed peak FM deviation — same order as typical NFM voice satellite
-# links. Kept separate from sdr/demodulator.py's NFM_DEVIATION so it can be
-# tuned independently once verified against a real signal.
+# Legacy (pre-2026-09-19) discriminator parameters, still used for every baud
+# rate other than 9600: the assumed peak FM deviation (same order as typical
+# NFM voice satellite links) and the wide IF half-bandwidth that followed
+# from it. Kept separate from sdr/demodulator.py's NFM_DEVIATION so they can
+# be tuned independently.
 _DEVIATION_HZ = 5_000.0
-# IF half-bandwidth: wider padding than NFM's voice-oriented ~4kHz, since a
-# 9600 baud G3RUH signal needs more baseband bandwidth than 300-3000Hz voice.
 _IF_HALF_BW_HZ = _DEVIATION_HZ + 8_000.0
+
+
+@dataclass(frozen=True)
+class _Profile:
+    """Discriminator tuning for one baud rate.
+
+    if_half_bw_hz   IF low-pass cutoff (one-sided) applied before the FM
+                    discriminator. This sets how much noise reaches the
+                    discriminator, whose output noise grows quickly once the
+                    IF is much wider than the signal.
+    if_taps         FIR length of that IF filter (longer = sharper skirts).
+    post_lp_hz      Low-pass on the discriminator output (None = none).
+    full_scale_hz   Instantaneous frequency that maps to audio +/-1.0; also
+                    the clipping headroom against a carrier frequency error.
+    """
+
+    if_half_bw_hz: float
+    if_taps: int
+    post_lp_hz: float | None
+    full_scale_hz: float
+
+
+_LEGACY_PROFILE = _Profile(_IF_HALF_BW_HZ, 63, None, _DEVIATION_HZ)
+# 9600 baud G3RUH FSK/GMSK (occupied bandwidth roughly +/-6 kHz). Measured on
+# synthetic 9600 baud AX.25 frames through Direwolf's own decoder (see
+# docs/communications.md, "9600bps G3RUH の感度改善"): narrowing the IF from
+# +/-13 kHz to +/-7.5 kHz turns a 12 dB SNR (11 kHz band) signal from 0/40
+# frames decoded into ~38/40, while still tolerating a +/-2 kHz frequency
+# error.
+_PROFILES: dict[int, _Profile] = {9600: _Profile(7_500.0, 255, 6_500.0, 8_000.0)}
+
+
+def _profile_for(baud: int) -> _Profile:
+    return _PROFILES.get(baud, _LEGACY_PROFILE)
 
 
 class G3ruhDiscriminator:
@@ -57,16 +95,38 @@ class G3ruhDiscriminator:
     bandpass → decimate → phase-difference FM discriminator → decimate to
     48kHz), but skips the de-emphasis stage NFM applies for voice — 9600bps
     G3RUH needs the flat, wideband discriminator output instead.
+
+    Every filter carries its state from one process() call to the next.
+    Blocks arrive from SDRPipeline as independent 16384-sample slices
+    (~65 ms), and a filter restarted from zero at each slice puts a
+    start-up transient at every block boundary -- which corrupts any frame
+    longer than the block (a 9600 baud burst of ~170 ms spans two or three
+    boundaries).
     """
 
-    def __init__(self, input_rate: float) -> None:
+    def __init__(self, input_rate: float, baud: int = 9600) -> None:
         self._input_rate = input_rate
+        self._profile = _profile_for(baud)
         self._dc_zi_i = np.zeros(1, dtype=np.float32)
         self._dc_zi_q = np.zeros(1, dtype=np.float32)
         self._build_filters()
+        self._reset_stream_state()
+
+    @property
+    def full_scale_hz(self) -> float:
+        """Instantaneous frequency that maps to audio +/-1.0."""
+        return self._profile.full_scale_hz
+
+    def _reset_stream_state(self) -> None:
+        self._aa_zi: np.ndarray | None = None
+        self._if_zi: np.ndarray | None = None
+        self._post_zi: np.ndarray | None = None
+        self._decim_phase = 0
+        self._last_if: np.complex64 | None = None
 
     def _build_filters(self) -> None:
         rate = self._input_rate
+        prof = self._profile
 
         alpha_dc = float(np.clip(1.0 - (2.0 * np.pi * 30.0 / rate), 0.0, 0.9999))
         self._dc_b = np.array([1.0, -1.0], dtype=np.float64)
@@ -92,8 +152,25 @@ class G3ruhDiscriminator:
         self._resample_up = _AUDIO_RATE // gcd
         self._resample_down = mid_rate_int // gcd
 
-        if_bw = float(np.clip(_IF_HALF_BW_HZ / (rate / 2.0), 0.001, 0.499))
-        self._if_b = sp_signal.firwin(63, if_bw).astype(np.float32) if _SCIPY_AVAILABLE else None
+        if not _SCIPY_AVAILABLE:
+            self._aa_b = self._if_b = self._post_b = None
+            return
+        # Stage 1 (only when decimating): cheap anti-alias filter at the
+        # input rate. The sharp IF filter below then runs at the much lower
+        # intermediate rate, so a long FIR stays affordable even at 2.4 Msps.
+        self._aa_b = (
+            sp_signal.firwin(63, 0.25 * self._mid_rate, fs=rate).astype(np.float32)
+            if self._decim1 > 1
+            else None
+        )
+        # Stage 2: the IF filter proper, at the intermediate rate.
+        if_bw = float(np.clip(prof.if_half_bw_hz / (self._mid_rate / 2.0), 0.001, 0.499))
+        self._if_b = sp_signal.firwin(prof.if_taps, if_bw).astype(np.float32)
+        self._post_b = (
+            sp_signal.firwin(101, prof.post_lp_hz, fs=self._mid_rate).astype(np.float32)
+            if prof.post_lp_hz is not None
+            else None
+        )
 
     def process(self, iq: np.ndarray) -> np.ndarray:
         """Demodulate one I/Q block. Returns float32 PCM at 48kHz (possibly empty)."""
@@ -110,31 +187,50 @@ class G3ruhDiscriminator:
             np.asarray(i_dc_raw, dtype=np.float32) + 1j * np.asarray(q_dc_raw, dtype=np.float32)
         ).astype(np.complex64)
 
-        iq_if = sp_signal.lfilter(self._if_b, [1.0], iq_dc)
-        iq_ds = self._decimate(iq_if, self._decim1)
-        if len(iq_ds) < 2:
+        if self._aa_b is not None:
+            if self._aa_zi is None:
+                self._aa_zi = np.zeros(len(self._aa_b) - 1, dtype=np.complex64)
+            iq_dc, self._aa_zi = sp_signal.lfilter(self._aa_b, [1.0], iq_dc, zi=self._aa_zi)
+        iq_ds = self._decimate(iq_dc, self._decim1)
+        if len(iq_ds) == 0:
             return np.array([], dtype=np.float32)
 
-        prev = np.empty_like(iq_ds)
-        prev[0] = iq_ds[0]
-        prev[1:] = iq_ds[:-1]
-        discrim = np.angle(iq_ds * np.conj(prev))
+        if self._if_zi is None:
+            self._if_zi = np.zeros(len(self._if_b) - 1, dtype=np.complex64)
+        iq_if, self._if_zi = sp_signal.lfilter(self._if_b, [1.0], iq_ds, zi=self._if_zi)
+
+        prev = np.empty_like(iq_if)
+        prev[0] = iq_if[0] if self._last_if is None else self._last_if
+        prev[1:] = iq_if[:-1]
+        self._last_if = iq_if[-1]
+        discrim = np.angle(iq_if * np.conj(prev))
 
         # No de-emphasis here (unlike NFM voice) — 9600bps G3RUH needs the
         # raw, flat discriminator output, same as a radio's DATA port.
-        audio_raw = discrim * (self._mid_rate / (2 * np.pi * _DEVIATION_HZ))
+        audio_raw = discrim * (self._mid_rate / (2 * np.pi * self._profile.full_scale_hz))
+        if self._post_b is not None:
+            if self._post_zi is None:
+                self._post_zi = np.zeros(len(self._post_b) - 1, dtype=np.float64)
+            audio_raw, self._post_zi = sp_signal.lfilter(
+                self._post_b, [1.0], audio_raw, zi=self._post_zi
+            )
         audio = sp_signal.resample_poly(audio_raw, self._resample_up, self._resample_down)
         result: np.ndarray = np.clip(audio, -1.0, 1.0).astype(np.float32)
         return result
 
-    @staticmethod
-    def _decimate(x: np.ndarray, factor: int) -> np.ndarray:
-        """Simple decimation by integer factor — anti-aliasing is handled
-        by the preceding IF bandpass filter, same rationale as
-        sdr/demodulator.py's Demodulator._decimate()."""
+    def _decimate(self, x: np.ndarray, factor: int) -> np.ndarray:
+        """Integer-factor decimation that keeps its sample phase across blocks.
+
+        Anti-aliasing is handled by the preceding stage-1 filter, same
+        rationale as sdr/demodulator.py's Demodulator._decimate(). Blocks
+        rarely hold a multiple of *factor* samples, so a plain ``x[::factor]``
+        per block would drop or repeat a sample at every block edge.
+        """
         if factor <= 1:
             return x
-        return x[::factor]
+        start = self._decim_phase
+        self._decim_phase = (start - len(x)) % factor
+        return x[start::factor]
 
 
 class G3ruhSdrDemod(QThread):
@@ -143,7 +239,7 @@ class G3ruhSdrDemod(QThread):
 
     Usage
     -----
-    demod = G3ruhSdrDemod(sample_rate=int(pipeline._device.sample_rate))
+    demod = G3ruhSdrDemod(sample_rate=int(pipeline._device.sample_rate), baud=9600)
     demod.audio_ready.connect(my_pcm_consumer)
     demod.start()
     pipeline.subscribe(demod.push_samples)
@@ -154,9 +250,9 @@ class G3ruhSdrDemod(QThread):
 
     audio_ready: Signal = Signal(object)
 
-    def __init__(self, sample_rate: int, parent: Any = None) -> None:
+    def __init__(self, sample_rate: int, parent: Any = None, baud: int = 9600) -> None:
         super().__init__(parent)
-        self._discriminator = G3ruhDiscriminator(input_rate=sample_rate)
+        self._discriminator = G3ruhDiscriminator(input_rate=sample_rate, baud=baud)
         self._q: queue.Queue[np.ndarray] = queue.Queue(maxsize=128)
         self._stop_event = threading.Event()
         # Diagnostic-only (see sdr.diag_log): counts blocks dropped because
