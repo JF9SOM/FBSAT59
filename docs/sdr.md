@@ -1762,3 +1762,22 @@ Telemetry・APRSが古いパイプライン参照（または`None`）を持っ�
   `stop()`+`wait()`する（`attach_pipeline()`は参照を上書きするだけで停止しないため）
 - テスト: `tests/test_main_window.py`の`TestSdrPlaybackConnect`（再生でパイプラインが1本・
   `is_replay=True`で1回だけ`set_pipeline`されること、再アタッチで旧パイプラインが停止すること）
+
+#### 追加修正（2026-09-19）— 再生位置スライダーがバーのクリックでシークしない
+
+シークスライダーは`sliderMoved`（ハンドルをドラッグ中のみ発火）だけを購読していたため、
+バーを押しただけ（動かさず離す）ではシークされなかった。macOSのネイティブスタイルは
+バー上の左クリックでハンドルをクリック位置へ即ジャンプさせる（`SH_Slider_AbsoluteSetButtons`
+がmacOS=5でLeftButtonを含む。Fusionは4でMiddleのみ）が、この時発火するのは`valueChanged`/
+`actionTriggered`だけで`sliderMoved`は出ない。ハンドルだけ動いてシークされず、250msの位置更新
+タイマーが元の再生位置へ引き戻していた。なお押したまま動かせばシークされるため、当初の
+「早送りにならない」という報告の原因ではなかった（診断ログで、ドラッグのシークは実機でも
+正しく動作し再生位置も途切れず進むことを確認済み。報告は後日、正常動作と確認された）。
+
+**修正**: `valueChanged`で受けるように変更（`_on_playback_slider_changed()`）。ドラッグ・
+バークリック・キー操作・ホイールを1つの処理でシークに変換する。`_update_playback_position()`
+自身がスライダーを動かす間は`_updating_playback_slider`フラグで無視する（さもないと位置更新の
+たびに自分自身へシークがかかる）。調査用に追加していた診断ログ（`SdrFileDevice.seek`・
+スライダー操作）は削除した。テスト: `tests/test_sdr_control_widget.py`（バークリックでシーク・
+ドラッグでシーク・位置更新がシークしない、の3件。旧`sliderMoved`配線ではクリックのテストが失敗する
+ことを確認済み）。

@@ -128,6 +128,9 @@ class SdrControlWidget(QWidget):
         self._status_timer = QTimer(self)
         self._status_timer.setInterval(1_000)
         self._status_timer.timeout.connect(self._update_rec_status)
+        # True while _update_playback_position() moves the slider itself, so
+        # _on_playback_slider_changed() can tell that apart from the user.
+        self._updating_playback_slider: bool = False
         self._playback_timer = QTimer(self)
         self._playback_timer.setInterval(250)
         self._playback_timer.timeout.connect(self._update_playback_position)
@@ -753,7 +756,7 @@ class SdrControlWidget(QWidget):
         slider_row.addWidget(self._playback_pos_label)
         self._playback_slider = QSlider(Qt.Orientation.Horizontal)
         self._playback_slider.setRange(0, 0)
-        self._playback_slider.sliderMoved.connect(self._on_playback_slider_moved)
+        self._playback_slider.valueChanged.connect(self._on_playback_slider_changed)
         slider_row.addWidget(self._playback_slider)
         self._playback_dur_label = QLabel("00:00")
         self._playback_dur_label.setStyleSheet("color: gray; font-size: 10px;")
@@ -940,26 +943,22 @@ class SdrControlWidget(QWidget):
         if self._pipeline is not None:
             self._pipeline.set_doppler_target(float(value))
 
-    def _on_playback_slider_moved(self, value: int) -> None:
-        """Seek -- free scrubbing while the user drags the position slider."""
+    def _on_playback_slider_changed(self, value: int) -> None:
+        """Seek -- any user-driven change of the position slider.
+
+        Connected to valueChanged rather than sliderMoved: sliderMoved
+        only fires while the handle is being dragged, so a plain click on
+        the bar (which macOS's native style turns into an immediate jump
+        of the handle) would move the handle without seeking, and the
+        next _update_playback_position() tick would snap it back. Ignores
+        the changes _update_playback_position() itself makes.
+        """
+        if self._updating_playback_slider:
+            return
         device = getattr(self._pipeline, "_device", None)
         seek = getattr(device, "seek", None)
-        # Diagnostic: confirm slider drags actually reach the file device
-        # (added 2026-09-19 while investigating a report that dragging the
-        # slider did not skip ahead). Remove once that is resolved.
-        logger.info(
-            "playback slider moved: value=%d device=%s has_seek=%s pos_before=%.2fs",
-            value,
-            type(device).__name__,
-            seek is not None,
-            float(getattr(device, "position_s", -1.0)),
-        )
         if seek is not None:
             seek(float(value))
-            logger.info(
-                "playback slider seek done: pos_after=%.2fs",
-                float(getattr(device, "position_s", -1.0)),
-            )
         self._playback_pos_label.setText(_format_mmss(value))
 
     def _update_playback_position(self) -> None:
@@ -975,10 +974,15 @@ class SdrControlWidget(QWidget):
         duration_s = float(getattr(device, "duration_s", 0.0))
         position_s = float(getattr(device, "position_s", 0.0))
         at_end = bool(getattr(device, "at_end", False))
-        self._playback_slider.setRange(0, int(duration_s))
+        self._updating_playback_slider = True
+        try:
+            self._playback_slider.setRange(0, int(duration_s))
+            if not self._playback_slider.isSliderDown():
+                self._playback_slider.setValue(int(position_s))
+        finally:
+            self._updating_playback_slider = False
         self._playback_dur_label.setText(_format_mmss(duration_s))
         if not self._playback_slider.isSliderDown():
-            self._playback_slider.setValue(int(position_s))
             self._playback_pos_label.setText(_format_mmss(position_s))
         if at_end:
             stop_stream = getattr(device, "stop_stream", None)
