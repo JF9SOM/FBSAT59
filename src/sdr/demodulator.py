@@ -138,6 +138,137 @@ class _StreamResampler:
         return result
 
 
+# --- SidebandExtractor: I/Q -> single-sideband audio at its true frequencies ---------
+
+# I/Q is decimated to about this rate before the sharp sideband filter runs.
+_SIDEBAND_MID_RATE_TARGET: float = 50_000.0
+_SIDEBAND_STAGE_TAPS: int = 63
+_SIDEBAND_MAX_STAGE_FACTOR: int = 8
+_SIDEBAND_FILTER_TAPS: int = 255
+
+
+def _decimation_factors(total: int) -> list[int]:
+    """Split *total* into stage factors of at most _SIDEBAND_MAX_STAGE_FACTOR each."""
+    factors: list[int] = []
+    remaining = total
+    for prime in (2, 3, 5, 7):
+        while remaining % prime == 0:
+            factors.append(prime)
+            remaining //= prime
+    # Combine small factors into as few stages as possible.
+    factors.sort(reverse=True)
+    stages: list[int] = []
+    for f in factors:
+        for i, st in enumerate(stages):
+            if st * f <= _SIDEBAND_MAX_STAGE_FACTOR:
+                stages[i] = st * f
+                break
+        else:
+            stages.append(f)
+    return stages or [1]
+
+
+def _smooth_decimation(ratio: float) -> int:
+    """Largest integer <= *ratio* made only of the factors 2, 3, 5, 7 (at least 1)."""
+    n = max(1, int(ratio))
+    while n > 1:
+        m = n
+        for prime in (2, 3, 5, 7):
+            while m % prime == 0:
+                m //= prime
+        if m == 1:
+            return n
+        n -= 1
+    return 1
+
+
+class SidebandExtractor:
+    """Complex baseband (0 Hz = the tuned frequency) -> real audio of one sideband.
+
+    Produces what a receiver in USB mode does: a signal ``f`` Hz *above* the
+    tuned frequency comes out as an audio tone of exactly ``f`` Hz, only the
+    upper sideband is kept (the opposite one is rejected by the complex
+    filter, not mirrored into the audio), and the audio is at exactly
+    *out_rate*. The wanted band is 0 .. ``2 * band_centre_hz``; for lower
+    sideband, feed the conjugate of the I/Q.
+
+        I/Q --anti-alias + decimate--> ~50 kS/s
+            --mix -centre, complex low-pass +-half_width--> the band, centred on 0 Hz
+            --resample--> out_rate
+            --mix +centre, real part--> audio at the true frequencies
+
+    Every filter, oscillator and the resampler keep their state from block to
+    block, so block boundaries leave no seam. No level control here.
+    """
+
+    def __init__(
+        self,
+        input_rate: float,
+        out_rate: float,
+        band_centre_hz: float,
+        band_half_width_hz: float,
+    ) -> None:
+        self._out_rate = float(out_rate)
+        self._centre = float(band_centre_hz)
+        total = _smooth_decimation(float(input_rate) / _SIDEBAND_MID_RATE_TARGET)
+        rate = float(input_rate)
+        # Cascade of (low-pass, delay line, stride decimator) down to the mid rate.
+        self._stages: list[tuple[np.ndarray, np.ndarray, _StrideDecimator]] = []
+        for factor in _decimation_factors(total):
+            if factor > 1:
+                out = rate / factor
+                taps = sp_signal.firwin(_SIDEBAND_STAGE_TAPS, 0.4 * out, fs=rate).astype(np.float32)
+                zi = np.zeros(_SIDEBAND_STAGE_TAPS - 1, dtype=np.complex64)
+                self._stages.append((taps, zi, _StrideDecimator(factor)))
+                rate = out
+        self._mid_rate = rate
+        self._band_b = sp_signal.firwin(
+            _SIDEBAND_FILTER_TAPS, float(band_half_width_hz), fs=rate
+        ).astype(np.float32)
+        self._band_zi = np.zeros(_SIDEBAND_FILTER_TAPS - 1, dtype=np.complex64)
+        self._resampler = _StreamResampler(rate, self._out_rate)
+        self._down_phase = 0.0  # oscillators, radians, kept mod 2*pi
+        self._up_phase = 0.0
+
+    @property
+    def mid_rate(self) -> float:
+        """Sample rate of the intermediate stream."""
+        return self._mid_rate
+
+    def process(self, iq: np.ndarray) -> np.ndarray:
+        """Convert one block of complex baseband; returns float32 audio at out_rate."""
+        if len(iq) == 0:
+            return np.zeros(0, dtype=np.float32)
+        x = np.asarray(iq, dtype=np.complex64)
+        for i, (taps, zi, decimator) in enumerate(self._stages):
+            x, new_zi = sp_signal.lfilter(taps, [1.0], x, zi=zi)
+            self._stages[i] = (taps, np.asarray(new_zi, dtype=np.complex64), decimator)
+            x = decimator.process(np.asarray(x, dtype=np.complex64))
+        if len(x) == 0:
+            return np.zeros(0, dtype=np.float32)
+
+        # Centre the wanted sideband on 0 Hz and keep only it.
+        w_down = 2.0 * np.pi * self._centre / self._mid_rate
+        n = len(x)
+        mixed = x * np.exp(-1j * (self._down_phase + w_down * np.arange(n))).astype(np.complex64)
+        self._down_phase = float((self._down_phase + w_down * n) % (2.0 * np.pi))
+        banded, new_zi = sp_signal.lfilter(self._band_b, [1.0], mixed, zi=self._band_zi)
+        self._band_zi = np.asarray(new_zi, dtype=np.complex64)
+
+        slow = self._resampler.process(np.asarray(banded, dtype=np.complex64))
+        if len(slow) == 0:
+            return np.zeros(0, dtype=np.float32)
+
+        # Back up to the true audio frequencies; the real part is the audio.
+        w_up = 2.0 * np.pi * self._centre / self._out_rate
+        m = len(slow)
+        audio: np.ndarray = np.real(
+            slow * np.exp(1j * (self._up_phase + w_up * np.arange(m)))
+        ).astype(np.float32)
+        self._up_phase = float((self._up_phase + w_up * m) % (2.0 * np.pi))
+        return audio
+
+
 class DemodMode(str, Enum):  # noqa: UP042
     """Available demodulation modes."""
 
@@ -199,9 +330,7 @@ class Demodulator:
         self._nfm_if_zi: np.ndarray = np.zeros(0, dtype=np.complex128)
         self._nfm_prev: np.complex64 | None = None
         self._deemph_zi: np.ndarray = np.zeros(1)
-        self._ssb_lpf_zi: np.ndarray = np.zeros(0)
         self._cw_bpf_zi: np.ndarray = np.zeros((0, 2))
-        self._bfo_phase: float = 0.0
         self._build_filters()
 
     # ------------------------------------------------------------------
@@ -325,13 +454,17 @@ class Demodulator:
 
     def _demod_ssb(self, iq: np.ndarray, upper: bool) -> np.ndarray:
         """
-        SSB demodulation via complex mixing (Weaver / BFO injection) method.
+        SSB demodulation: keep one sideband and return it at its true audio frequency.
 
-        For USB: mix the I/Q signal by e^(-j*2π*f_bfo*t) to shift the upper
-        sideband audio to baseband, apply real LPF, decimate, take real part.
-        For LSB: conjugate the I/Q first to mirror the spectrum, then same.
+        For USB a signal f Hz above the tuned frequency comes out as an f Hz
+        tone, and the lower sideband is rejected. LSB mirrors the spectrum
+        first (conjugate) so a signal f Hz *below* the tuned frequency comes
+        out as an f Hz tone. See SidebandExtractor.
 
-        This correctly removes the DC spike and isolates one sideband.
+        (Until 2026-09-19 this mixed the band down by SSB_BW/2 and took the
+        real part without mixing back up: a 2000 Hz tone came out at 650 Hz,
+        tones below SSB_BW/2 were mirrored around it, and the opposite
+        sideband was audible.)
         """
         # Remove DC offset (HackRF DC spike → 50 Hz hum without this)
         iq = self._remove_dc(iq)
@@ -340,28 +473,7 @@ class Demodulator:
         if not upper:
             iq = np.conj(iq)
 
-        # BFO injection: shift signal so the SSB audio sits at baseband.
-        # We inject at SSB_BW/2 so the centre of the voice band lands at DC.
-        # This means 300–2700 Hz voice → -1200 to +1200 Hz after mixing.
-        # The oscillator's phase carries over from the previous block: restarting
-        # it at every block boundary put a phase jump into the audio ~15 times a second.
-        bfo_hz = self._ssb_bw / 2.0
-        n = len(iq)
-        step = 2.0 * np.pi * bfo_hz / self._input_rate
-        mix = np.exp(-1j * (self._bfo_phase + step * np.arange(n))).astype(np.complex64)
-        self._bfo_phase = float((self._bfo_phase + step * n) % (2.0 * np.pi))
-        iq_mixed = iq * mix
-
-        # Decimate to intermediate rate
-        iq_ds = self._ssb_stride.process(iq_mixed)
-
-        # Apply real LPF at SSB_BW to the real (I) channel
-        audio_raw, self._ssb_lpf_zi = sp_signal.lfilter(
-            self._ssb_audio_b, [1.0], iq_ds.real, zi=self._ssb_lpf_zi
-        )
-
-        # Resample to exactly AUDIO_RATE (already band-limited by the LPF above)
-        return self._finalize(self._to_audio_rate(audio_raw, self._ssb_resampler, None))
+        return self._finalize(self._ssb_extractor.process(iq))
 
     def _demod_cw(self, iq: np.ndarray) -> np.ndarray:
         """
@@ -448,8 +560,6 @@ class Demodulator:
         self._nfm_if_zi = np.zeros(_FIR_TAPS - 1, dtype=np.complex128)
         self._nfm_prev = None
         self._deemph_zi = np.zeros(1, dtype=np.float64)
-        self._ssb_lpf_zi = np.zeros(_FIR_TAPS - 1, dtype=np.float64)
-        self._bfo_phase = 0.0
 
         # ---- NFM chain ----
         # Stage 1: decimate to ~200 kHz intermediate rate
@@ -473,18 +583,10 @@ class Demodulator:
         self._deemph_a = np.array([1.0, -(1.0 - alpha)], dtype=np.float64)
 
         # ---- SSB chain ----
-        # Stage 1: decimate input to ~96 kHz
-        self._ssb_decim = max(1, int(rate / 96_000))
-        ssb_mid_rate = rate / self._ssb_decim
-        self._ssb_stride = _StrideDecimator(self._ssb_decim)
-        # Stage 2: resample to exactly AUDIO_RATE
-        self._ssb_resampler = _StreamResampler(ssb_mid_rate)
-
-        # Real LPF applied at ssb_mid_rate after BFO mixing.
-        # Passes ±SSB_BW/2 (the mixed voice band) and rejects the image.
-        nyq_mid = ssb_mid_rate / 2.0
-        cutoff_mid = float(np.clip(self._ssb_bw / nyq_mid, 0.001, 0.499))
-        self._ssb_audio_b = sp_signal.firwin(_FIR_TAPS, cutoff_mid).astype(np.float32)
+        # The wanted sideband is 0 .. SSB_BW above the tuned frequency (mirrored for LSB).
+        self._ssb_extractor = SidebandExtractor(
+            rate, float(AUDIO_RATE), self._ssb_bw / 2.0, self._ssb_bw / 2.0
+        )
 
         # ---- CW chain ----
         # CW uses a direct decimation path (bypasses SSB BFO injection).

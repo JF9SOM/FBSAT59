@@ -49,7 +49,21 @@
     （解析信号）にして通し、`Q65Codec` のデコードが成功することを確認する（`tests/test_usb_audio.py`
     の FT4 通しテストが雛形）。関連: SDR Control の USB/LSB 復調が音の周波数を保たない件
     （[sdr.md](sdr.md) の Demodulator 節・[communications.md](communications.md) の FT4 節）は
-    未対応のまま（FT4/Q65 は専用経路で回避するため直接は影響しない）
+    は 2026-09-19 に修正済み（[sdr.md](sdr.md)）。FT4/Q65 は12 kHz要求などのため専用経路のまま
+11j. **I/Q 直流除去フィルタの見直し（要検討、実信号での判断待ち、2026-09-19 追加）** — SDR の
+    復調系（`sdr/demodulator.py` の `_remove_dc()`、`comms/aprs/g3ruh_demod.py`・
+    `afsk_audio_demod.py` の `G3ruhDiscriminator`）は、RTL-SDR 等の**中心（0 Hz）に出るLO由来の
+    直流スパイク**を消すため、入力直後に I/Q それぞれへ **30 Hz の1次ハイパス**をかけている。
+    この副作用として、**中心にちょうど同調した狭帯域FM信号の搬送波成分（0 Hz付近）も一部削られる**。
+    合成した1200bps Bell 202信号（偏移±3 kHz）で、ハイパスを約0.4 Hzまで弱めるとDirewolfの復号数が
+    SNR 10 dBで18→27/30、9 dBで4→12/30（約1 dB相当）に改善した。9600bpsはほぼ変化なし
+    （SNR 11 dBで21→22/30）。**未確認/判断できないこと**: 実SDRの直流スパイクが復号を妨げる度合い
+    （弱めるとスパイクが残る）とのトレードオフで、実信号なしでは決められない。実信号での検証
+    （RTL-SDR で録音した実IQを、ハイパスの折り返し周波数を変えて Direwolf にオフライン投入し、
+    復号数を比較する）を経て決める。選択肢: (a) 折り返しを下げる（例: 5 Hz）、(b) 遅い平均で
+    真の定数DCだけを推定して引く、(c) 現状維持（運用で Offset を数 kHz ずらして中心を避ける）。
+    測定の詳細は [communications.md](communications.md) の「1200bps（Bell 202 AFSK）も同日中に
+    同じ手当てをした」節末尾の「未着手の観察」参照
 11f. ~~**CW Decoder タブ実装**~~ **→ 2026-06-30 で完了（v0.2.6）**（deepcw-engine ONNX / onnxruntime 自動 pip インストール / model.onnx 自動ダウンロード / CW-R トランスポンダー自動オープン）
 11g. **MARMOTSat DVB-S2 受信タブ実装（保留中、2026-07-24）** — MARMOTSat の HF DVB-S2
     画像ビーコン（29.410 MHz）受信。一次情報（flowgraph／実 IQ／パイロット設定）が

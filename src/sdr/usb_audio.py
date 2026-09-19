@@ -32,7 +32,11 @@ from collections.abc import Callable
 
 import numpy as np
 
-from sdr.demodulator import _StreamResampler, _StrideDecimator
+from sdr.demodulator import (  # noqa: F401 -- helpers re-exported for the tests
+    SidebandExtractor,
+    _decimation_factors,
+    _smooth_decimation,
+)
 
 try:
     from scipy import signal as sp_signal
@@ -50,12 +54,7 @@ OUT_RATE: int = 12_000  # what libft4wsjt / libq65 require
 # symmetrically around 0 Hz for the low-pass, then back up afterwards.
 _BAND_CENTRE_HZ: float = 1_750.0
 _BAND_HALF_WIDTH_HZ: float = 1_900.0
-_BAND_TAPS: int = 255
 
-# I/Q is decimated to about this rate before the sharp filter runs.
-_MID_RATE_TARGET: float = 50_000.0
-_STAGE_TAPS: int = 63
-_MAX_STAGE_FACTOR: int = 8
 
 # Output level: the SDR's I/Q amplitude depends on its gain (typically a few
 # 1e-3 of full scale), while the decoders want audio at a usable level. A slow
@@ -65,109 +64,27 @@ _AGC_TAU_S: float = 4.0
 _MAX_GAIN: float = 1e6
 
 
-def _decimation_factors(total: int) -> list[int]:
-    """Split *total* into stage factors of at most _MAX_STAGE_FACTOR each."""
-    factors: list[int] = []
-    remaining = total
-    for prime in (2, 3, 5, 7):
-        while remaining % prime == 0:
-            factors.append(prime)
-            remaining //= prime
-    # Combine small factors into as few stages as possible.
-    factors.sort(reverse=True)
-    stages: list[int] = []
-    for f in factors:
-        for i, s in enumerate(stages):
-            if s * f <= _MAX_STAGE_FACTOR:
-                stages[i] = s * f
-                break
-        else:
-            stages.append(f)
-    return stages or [1]
-
-
-def _smooth_decimation(ratio: float) -> int:
-    """Largest integer <= *ratio* made only of the factors 2, 3, 5, 7 (at least 1)."""
-    n = max(1, int(ratio))
-    while n > 1:
-        m = n
-        for prime in (2, 3, 5, 7):
-            while m % prime == 0:
-                m //= prime
-        if m == 1:
-            return n
-        n -= 1
-    return 1
-
-
 class UsbAudio12k:
     """Stateful I/Q -> 12 kHz USB audio converter (see the module docstring)."""
 
     def __init__(self, input_rate: float) -> None:
         if not _SCIPY_AVAILABLE:
             raise ImportError("scipy is required for SDR USB audio extraction")
-        self._input_rate = float(input_rate)
-        total = _smooth_decimation(self._input_rate / _MID_RATE_TARGET)
-        self._stage_factors = _decimation_factors(total)
-
-        # Cascade of (low-pass, stride decimator) pairs down to the mid rate.
-        self._stages: list[tuple[np.ndarray, np.ndarray, _StrideDecimator]] = []
-        rate = self._input_rate
-        for factor in self._stage_factors:
-            if factor > 1:
-                out_rate = rate / factor
-                taps = sp_signal.firwin(_STAGE_TAPS, 0.4 * out_rate, fs=rate).astype(np.float32)
-                zi = np.zeros(_STAGE_TAPS - 1, dtype=np.complex64)
-                self._stages.append((taps, zi, _StrideDecimator(factor)))
-                rate = out_rate
-        self._mid_rate = rate
-
-        self._band_b = sp_signal.firwin(_BAND_TAPS, _BAND_HALF_WIDTH_HZ, fs=self._mid_rate).astype(
-            np.float32
+        self._extractor = SidebandExtractor(
+            float(input_rate), float(OUT_RATE), _BAND_CENTRE_HZ, _BAND_HALF_WIDTH_HZ
         )
-        self._band_zi = np.zeros(_BAND_TAPS - 1, dtype=np.complex64)
-        self._resampler = _StreamResampler(self._mid_rate, float(OUT_RATE))
-
-        self._down_phase = 0.0  # oscillators, radians, kept mod 2*pi
-        self._up_phase = 0.0
         self._agc_power: float | None = None
 
     @property
     def mid_rate(self) -> float:
         """Sample rate of the intermediate stream (for tests)."""
-        return self._mid_rate
+        return self._extractor.mid_rate
 
     def process(self, iq: np.ndarray) -> np.ndarray:
         """Convert one block of complex baseband; returns float32 audio at OUT_RATE."""
-        if len(iq) == 0:
-            return np.zeros(0, dtype=np.float32)
-        x = np.asarray(iq, dtype=np.complex64)
-        for i, (taps, zi, decimator) in enumerate(self._stages):
-            x, new_zi = sp_signal.lfilter(taps, [1.0], x, zi=zi)
-            self._stages[i] = (taps, np.asarray(new_zi, dtype=np.complex64), decimator)
-            x = decimator.process(np.asarray(x, dtype=np.complex64))
-        if len(x) == 0:
-            return np.zeros(0, dtype=np.float32)
-
-        # Centre the wanted sideband on 0 Hz and keep only it.
-        w_down = 2.0 * np.pi * _BAND_CENTRE_HZ / self._mid_rate
-        n = len(x)
-        mixed = x * np.exp(-1j * (self._down_phase + w_down * np.arange(n))).astype(np.complex64)
-        self._down_phase = float((self._down_phase + w_down * n) % (2.0 * np.pi))
-        banded, new_zi = sp_signal.lfilter(self._band_b, [1.0], mixed, zi=self._band_zi)
-        self._band_zi = np.asarray(new_zi, dtype=np.complex64)
-
-        slow = self._resampler.process(np.asarray(banded, dtype=np.complex64))
-        if len(slow) == 0:
-            return np.zeros(0, dtype=np.float32)
-
-        # Back up to the true audio frequencies; the real part is the audio.
-        w_up = 2.0 * np.pi * _BAND_CENTRE_HZ / OUT_RATE
-        m = len(slow)
-        audio = np.real(slow * np.exp(1j * (self._up_phase + w_up * np.arange(m)))).astype(
-            np.float32
-        )
-        self._up_phase = float((self._up_phase + w_up * m) % (2.0 * np.pi))
+        audio = self._extractor.process(iq)
+        if len(audio) == 0:
+            return audio
         return self._apply_agc(audio)
 
     def _apply_agc(self, audio: np.ndarray) -> np.ndarray:
