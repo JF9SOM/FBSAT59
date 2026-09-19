@@ -575,6 +575,13 @@ class TLEManager:
             if isinstance(rec, dict) and isinstance(rec.get("norad_cat_id"), int):
                 by_norad[rec["norad_cat_id"]] = rec
 
+        # The only other trace of this download is httpx's raw GET line; without
+        # this the log never says that SATNOGS supplied TLEs (or how many).
+        logger.info(
+            "SATNOGS bulk TLE downloaded: %d record(s) (%d with a usable NORAD ID)",
+            len(data),
+            len(by_norad),
+        )
         self._satnogs_bulk_cache = (now, by_norad)
         return by_norad
 

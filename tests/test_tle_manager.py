@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json as _json
+import logging
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -1625,6 +1626,33 @@ class TestSatnogsBulkTleCache:
         assert mock_client.stream.call_count == 2
         assert active_stats["updated"] + active_stats["inserted"] == 1
         assert prov_stats["inserted"] == 1
+
+    def test_successful_download_is_logged_with_its_record_count(
+        self, db: sqlite3.Connection, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        mgr = TLEManager(db)
+        mock_client = AsyncMock()
+        mock_client.stream = MagicMock(
+            return_value=_stream_ctx(
+                _satnogs_bulk_resp(
+                    [
+                        _bulk_record(68795, _LINE1_B, _LINE2_B, "OrigamiSat-2"),
+                        _bulk_record(90001, _LINE1, _LINE2, "Provisional Sat"),
+                        {"tle0": "0 NO ID", "tle1": _LINE1, "tle2": _LINE2},
+                    ]
+                )
+            )
+        )
+
+        with (
+            _patched_client(mock_client) as mock_cls,
+            caplog.at_level(logging.INFO, logger="data.tle_manager"),
+        ):
+            _wire_mock_client(mock_cls, mock_client)
+            bulk = asyncio.run(mgr._fetch_satnogs_bulk_tles())
+
+        assert bulk is not None
+        assert "SATNOGS bulk TLE downloaded: 3 record(s) (2 with a usable NORAD ID)" in caplog.text
 
     def test_expired_cache_triggers_a_fresh_fetch(self, db: sqlite3.Connection) -> None:
         db.execute(
