@@ -1,8 +1,8 @@
 {
   "latest_version": "0.3.56",
-  "minimum_supported_version": "0.3.55",
-  "critical": false,
-  "message_ja": "v0.3.56 は SoapyRemote（別マシンに挿した RTL-SDR / HackRF を LAN 経由で使用）まわりの改善です。リモートホスト接続時のハング修正、「Add Remote Host」でのシリアル番号表示、Windows での DLL 読み込み不具合の修正を含みます。",
-  "message_en": "Version 0.3.56 improves SoapyRemote support (use an RTL-SDR / HackRF plugged into another machine over the LAN): it fixes a hang when connecting to a remote host, shows the device serial in Add Remote Host, and fixes a Windows DLL loading issue.",
+  "minimum_supported_version": "0.3.57",
+  "critical": true,
+  "message_ja": "v0.3.57 は METEOR-M / Metop の HRPT 受信が起動できない不具合を修正します。SatDump に存在しないパイプライン ID を渡していたため、HRPT 受信ボタンを押しても起動できていませんでした（NOAA HRPT は影響なし）。あわせて SDR のデジタル Doppler 補正を SatDump 方式（周波数自体をなめらかに追従）に改善しました。HRPT 受信を予定されている方は必ず更新してください。",
+  "message_en": "Version 0.3.57 fixes METEOR-M and Metop HRPT reception, which failed to start because the pipeline IDs passed to SatDump didn't exist (NOAA HRPT was unaffected). Also improves the SDR's digital Doppler correction to smoothly track the target frequency, matching SatDump's own approach. Update is required if you plan to receive HRPT.",
   "_comment": "Bump latest_version on every release. Raise minimum_supported_version and set critical=true only when older versions genuinely misbehave and every user must update; otherwise keep critical=false. See docs/app-update.md."
 }
