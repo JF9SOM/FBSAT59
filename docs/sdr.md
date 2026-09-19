@@ -1195,6 +1195,57 @@ METEOR 側は前述のとおりレートがハードコードで、LRPT（72 kSy
 理屈の上では 250 ksps の窓（±125 kHz）に収まるが、SatDump 側のリサンプラ最低入力レート等の
 制約は未検証。HRPT（665 kSym/s・占有帯域 約1.1 MHz）は 250 ksps では原理的に不可能。
 
+#### SatDump式「周波数自体のサンプル単位平滑化」を追加（2026-09-19 実装）
+
+**発端**: ユーザーから「SatDumpのCLI起動（`satdump live`）自身がDoppler補正しているのか」という
+質問をきっかけに、SatDump本家ソース（`src-core/common/dsp/utils/doppler_correct.cpp`）を
+直接読み、`DopplerCorrectBlock`の実装を確認した。要点:
+
+- SatDumpのDoppler補正も、位相アキュムレータを使う複素回転（本節の案Aと同じ設計思想）
+- ただし SatDump は**目標周波数`targ_freq`そのものへも、サンプル1個ごとに一次IIR平滑を掛けて
+  いる**（`curr_freq = curr_freq*(1-alpha) + targ_freq*alpha`、既定`alpha=0.01`
+  ＝`src-core/pipeline/modules/demod/module_demod_base.h`の`d_doppler_alpha`既定値）。
+  `targ_freq`自体は、DSPブロック境界（`work()`が1回呼ばれるたび。呼び出し頻度はSatDumpの
+  入力ソースのチャンクサイズとサンプルレートに依存し固定タイマーではない）ごとに、
+  libpredict（SGP4系TLE伝播、SatDump内部で完結・外部通信なし）で衛星位置を計算し直して更新
+- FBSAT59の従来実装（前項「案A実装」）は、`_sdr_doppler_cycle()`が書き込んだ`shift`を
+  ブロック全体にわたって**即座に一定値として**適用していた（位相は連続だが、周波数自体は
+  50msごとに階段状に変化）。位相が連続なのでクリック音は出ないが、SatDumpのような
+  「滑らかに追従する」挙動ではなかった
+
+**CPU負荷の検討**: 素朴にPythonの`for`文でサンプル単位のIIRフィルタを回すと、`_BLOCK_SIZE`
+（16,384サンプル）に対して1ブロックあたり数ms〜10ms超かかりうる（特に高サンプルレート時、
+1ブロックが表す実時間そのものが短くなるため致命的になりうる）。**目標周波数がブロック内で
+一定という前提を使うと、このIIR再帰には閉じた式がある**:
+
+```
+curr_freq[k] = targ + (curr_freq[0] - targ) * (1 - alpha)**k
+```
+
+これは`(1-alpha) ** np.arange(block_size)`という完全にベクトル化されたnumpy演算1回で
+計算でき、位相は`np.cumsum`で積分するだけ。Pythonループを一切使わないため、旧実装
+（`np.arange`＋`np.exp`のみ）に対して配列演算が数回増える程度で、実測が必要なほどの
+負荷増加ではないと判断した。
+
+**実装**: `SDRPipeline._apply_doppler_correction()`（[pipeline.py](../src/sdr/pipeline.py)）に
+`_nco_freq_hz`（現在の平滑化済み実効シフト量、Hzのfloat。`_doppler_target_hz`＝
+`_sdr_doppler_cycle()`が最後に要求した値とは別に保持し、平滑化が収束するまで両者は一致しない）
+を追加。`_DOPPLER_SMOOTH_ALPHA = 0.01`はSatDump自身の既定値をそのまま採用（独自にチューニング
+していない）。ハードウェアの実周波数が変化した時（既存の位相リセットと同じ条件）は
+`_nco_freq_hz`も0にリセットする——実再同調でハードウェア基準そのものが不連続になった以上、
+それ以前の平滑化状態を引き継ぐ意味がないため、既存の位相リセットと同じ理屈。
+
+**再生（IQ再生）機能への副次的な恩恵**: `SdrControlWidget`の再生パネルにあるOffsetスピン
+ボックス（`set_doppler_target()`を直接叩く）も、これでスピンボックスの値を動かした瞬間に
+周波数がなめらかに追従するようになった（[src/sdr/file_device.py](../src/sdr/file_device.py)の
+モジュールdocstringが謳う「smooth, phase-continuous shift」を、周波数自体の変化についても
+より徹底する形）。
+
+**テスト**: 既存の`tests/test_sdr_pipeline.py`（9件）を変更なしで全て通過することを確認
+（トーン→DC変換テストは、新規に作られたパイプラインの初期`_nco_freq_hz=0`から目標値へ
+収束する過渡時間が`alpha=0.01`では数百サンプル程度と短く、4096サンプルのブロックの大半で
+既に収束しきっているため、FFTピーク位置への影響は許容誤差内に収まる）。
+
 ### Remote SDR（SoapyRemote）対応（2026-07-14 実装・GitHub Issue #12）
 
 #### 背景

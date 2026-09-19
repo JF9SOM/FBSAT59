@@ -42,6 +42,14 @@ _BLOCK_SIZE: int = 16_384
 # FFT update interval (seconds)
 _FFT_INTERVAL: float = 0.1  # 10 fps
 
+# Per-sample exponential-smoothing coefficient for the Doppler NCO's
+# frequency itself (not just its phase) — see _apply_doppler_correction().
+# Matches SatDump's own DopplerCorrectBlock default (doppler_alpha=0.01 in
+# src-core/pipeline/modules/demod/module_demod_base.h), confirmed by reading
+# its source directly rather than assuming: SatDump blends
+# curr_freq = curr_freq*(1-alpha) + targ_freq*alpha once per sample.
+_DOPPLER_SMOOTH_ALPHA: float = 0.01
+
 # FFT resolution
 _FFT_SIZE: int = 1024
 
@@ -134,8 +142,14 @@ class SDRPipeline(QThread):
         # latency and no glitch even when updated tens of times a second —
         # unlike physically retuning the device, which is what this
         # replaces (see SdrRigAdapter.set_frequency() in rig/controller.py).
+        # _nco_freq_hz additionally tracks the *actual* (smoothed) shift
+        # currently being applied, separately from _doppler_target_hz (what
+        # _sdr_doppler_cycle() most recently asked for) — the two only
+        # coincide once the per-sample ramp in _apply_doppler_correction()
+        # has converged.
         self._doppler_target_hz: float | None = None
         self._nco_phase: float = 0.0
+        self._nco_freq_hz: float = 0.0
         self._last_hw_cf: float | None = None
 
     # ------------------------------------------------------------------
@@ -197,34 +211,62 @@ class SDRPipeline(QThread):
         """Shift *iq* so effective_center_freq lands at baseband 0 Hz.
 
         Phase-continuous across blocks (the running phase is carried over,
-        not reset each call), so a changing Doppler target never produces
-        a click — only a smooth, instantaneous change in rotation rate,
-        exactly like a hardware NCO. Resets the running phase whenever the
-        device's actual hardware center frequency changes underneath us
-        (a real retune breaks the phase reference, so continuing from the
-        old value would be meaningless) — this self-heals without any
+        not reset each call). On top of that, the shift *frequency* itself
+        is per-sample exponentially smoothed toward _doppler_target_hz
+        (see _DOPPLER_SMOOTH_ALPHA) rather than snapping to it the instant
+        _sdr_doppler_cycle() writes a new target — matching SatDump's own
+        DopplerCorrectBlock::work(), which blends curr_freq toward
+        targ_freq every sample instead of stepping. Computed in closed
+        form (geometric decay of the frequency, integrated via cumsum for
+        phase) rather than a literal per-sample Python loop, since
+        _doppler_target_hz is constant for the whole block: the recursion
+        curr_freq[k] = targ + (curr_freq[k-1] - targ)*(1-alpha) has the
+        closed form curr_freq[k] = targ + (curr_freq[0] - targ)*(1-alpha)**k,
+        which numpy evaluates as vectorized array ops — no more expensive
+        per block than the plain-shift version this replaced.
+
+        Resets both the running phase and the smoothed frequency whenever
+        the device's actual hardware center frequency changes underneath
+        us (a real retune breaks both references, so continuing from the
+        old values would be meaningless) — this self-heals without any
         caller needing to coordinate with us.
         """
         hw_cf = self._device.center_freq
         if hw_cf != self._last_hw_cf:
             self._nco_phase = 0.0
+            self._nco_freq_hz = 0.0
             self._last_hw_cf = hw_cf
+
+        if len(iq) == 0:
+            return iq
 
         target = self._doppler_target_hz
         if target is None:
-            return iq
-        shift = target - hw_cf
-        if shift == 0.0:
+            self._nco_freq_hz = 0.0
             return iq
 
         sr = self._device.sample_rate
         if not sr:
             return iq
-        n = np.arange(len(iq), dtype=np.float64)
-        phase = self._nco_phase + (2.0 * np.pi * shift / sr) * n
+
+        targ_shift = target - hw_cf
+        prev_freq = self._nco_freq_hz
+        if targ_shift == 0.0 and prev_freq == 0.0:
+            return iq
+
+        n = len(iq)
+        idx = np.arange(n, dtype=np.float64)
+        decay = (1.0 - _DOPPLER_SMOOTH_ALPHA) ** idx
+        freq_hz = targ_shift + (prev_freq - targ_shift) * decay
+        cum_incl = np.cumsum(freq_hz)
+        cum_excl = cum_incl - freq_hz
+        phase = self._nco_phase + (2.0 * np.pi / sr) * cum_excl
         corrected: np.ndarray = iq * np.exp(-1j * phase).astype(np.complex64)
         self._nco_phase = float(
-            (self._nco_phase + (2.0 * np.pi * shift / sr) * len(iq)) % (2.0 * np.pi)
+            (self._nco_phase + (2.0 * np.pi / sr) * cum_incl[-1]) % (2.0 * np.pi)
+        )
+        self._nco_freq_hz = float(
+            targ_shift + (prev_freq - targ_shift) * (1.0 - _DOPPLER_SMOOTH_ALPHA) ** n
         )
         return corrected
 
