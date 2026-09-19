@@ -36,6 +36,9 @@ SSB_BW_HZ: float = 2_700.0  # SSB audio bandwidth (Hz)
 NFM_DEEMPH_TAU: float = 75e-6  # De-emphasis time constant (75 µs, US standard)
 
 
+# Length of the IF / audio low-pass FIR filters built in _build_filters().
+_FIR_TAPS: int = 63
+
 # Low-pass applied before the final resample to AUDIO_RATE: keeps everything
 # above ~20 kHz (SDR noise, adjacent channels) from folding into the audio band.
 _AUDIO_AA_CUTOFF_HZ: float = 20_000.0
@@ -192,6 +195,13 @@ class Demodulator:
         # and to real PCM output before SSB/CW to remove SDR DC offset hum)
         self._dc_zi_i: np.ndarray = np.zeros(1)
         self._dc_zi_q: np.ndarray = np.zeros(1)
+        # Streaming filter state -- (re)initialised by _build_filters().
+        self._nfm_if_zi: np.ndarray = np.zeros(0, dtype=np.complex128)
+        self._nfm_prev: np.complex64 | None = None
+        self._deemph_zi: np.ndarray = np.zeros(1)
+        self._ssb_lpf_zi: np.ndarray = np.zeros(0)
+        self._cw_bpf_zi: np.ndarray = np.zeros((0, 2))
+        self._bfo_phase: float = 0.0
         self._build_filters()
 
     # ------------------------------------------------------------------
@@ -288,22 +298,28 @@ class Demodulator:
         iq = self._remove_dc(iq)
 
         # Apply IF bandpass filter to limit bandwidth to ±(deviation + audio_bw)
-        iq_if = sp_signal.lfilter(self._nfm_if_b, [1.0], iq)
+        iq_if, self._nfm_if_zi = sp_signal.lfilter(self._nfm_if_b, [1.0], iq, zi=self._nfm_if_zi)
 
         # Downsample to intermediate rate
         iq_ds = self._fm_stride.process(iq_if)
+        if len(iq_ds) == 0:
+            return np.array([], dtype=np.float32)
 
-        # Phase discriminator: arg(x[n] * conj(x[n-1]))
+        # Phase discriminator: arg(x[n] * conj(x[n-1])) -- the previous sample
+        # of the first output comes from the end of the last block
         prev = np.empty_like(iq_ds)
-        prev[0] = iq_ds[0]
+        prev[0] = iq_ds[0] if self._nfm_prev is None else self._nfm_prev
         prev[1:] = iq_ds[:-1]
+        self._nfm_prev = iq_ds[-1]
         discrim = np.angle(iq_ds * np.conj(prev))
 
         # Normalise by sample rate to get audio (deviation / rate)
         audio_raw = discrim * (self._fm_rate / (2 * np.pi * NFM_DEVIATION))
 
         # De-emphasis filter
-        audio_de = sp_signal.lfilter(self._deemph_b, self._deemph_a, audio_raw)
+        audio_de, self._deemph_zi = sp_signal.lfilter(
+            self._deemph_b, self._deemph_a, audio_raw, zi=self._deemph_zi
+        )
 
         return self._finalize(self._to_audio_rate(audio_de.real, self._fm_resampler, self._fm_aa))
 
@@ -327,17 +343,22 @@ class Demodulator:
         # BFO injection: shift signal so the SSB audio sits at baseband.
         # We inject at SSB_BW/2 so the centre of the voice band lands at DC.
         # This means 300–2700 Hz voice → -1200 to +1200 Hz after mixing.
+        # The oscillator's phase carries over from the previous block: restarting
+        # it at every block boundary put a phase jump into the audio ~15 times a second.
         bfo_hz = self._ssb_bw / 2.0
         n = len(iq)
-        t = np.arange(n, dtype=np.float32) / self._input_rate
-        mix = np.exp(-1j * 2.0 * np.pi * bfo_hz * t).astype(np.complex64)
+        step = 2.0 * np.pi * bfo_hz / self._input_rate
+        mix = np.exp(-1j * (self._bfo_phase + step * np.arange(n))).astype(np.complex64)
+        self._bfo_phase = float((self._bfo_phase + step * n) % (2.0 * np.pi))
         iq_mixed = iq * mix
 
         # Decimate to intermediate rate
         iq_ds = self._ssb_stride.process(iq_mixed)
 
         # Apply real LPF at SSB_BW to the real (I) channel
-        audio_raw = sp_signal.lfilter(self._ssb_audio_b, [1.0], iq_ds.real)
+        audio_raw, self._ssb_lpf_zi = sp_signal.lfilter(
+            self._ssb_audio_b, [1.0], iq_ds.real, zi=self._ssb_lpf_zi
+        )
 
         # Resample to exactly AUDIO_RATE (already band-limited by the LPF above)
         return self._finalize(self._to_audio_rate(audio_raw, self._ssb_resampler, None))
@@ -368,7 +389,10 @@ class Demodulator:
         audio_raw = self._to_audio_rate(iq_ds.real, self._cw_resampler, self._cw_aa)
 
         # Wide BPF (300–3000 Hz) — SOS format for numerical stability
-        audio = sp_signal.sosfilt(self._cw_bpf_sos, audio_raw).astype(np.float32)
+        audio_bp, self._cw_bpf_zi = sp_signal.sosfilt(
+            self._cw_bpf_sos, audio_raw, zi=self._cw_bpf_zi
+        )
+        audio = audio_bp.astype(np.float32)
         return self._finalize(audio)
 
     def _to_audio_rate(
@@ -417,6 +441,16 @@ class Demodulator:
         self._dc_b = np.array([1.0, -1.0], dtype=np.float64)
         self._dc_a = np.array([1.0, -alpha_dc], dtype=np.float64)
 
+        # Every filter below keeps its state from one block to the next (process()
+        # gets ~65 ms slices). Restarting a filter from zero at each slice puts a
+        # start-up transient at every block boundary, audible as a ~15 Hz buzz.
+        # A filter rebuild (mode / rate / bandwidth change) starts them all afresh.
+        self._nfm_if_zi = np.zeros(_FIR_TAPS - 1, dtype=np.complex128)
+        self._nfm_prev = None
+        self._deemph_zi = np.zeros(1, dtype=np.float64)
+        self._ssb_lpf_zi = np.zeros(_FIR_TAPS - 1, dtype=np.float64)
+        self._bfo_phase = 0.0
+
         # ---- NFM chain ----
         # Stage 1: decimate to ~200 kHz intermediate rate
         self._fm_decim = max(1, int(rate / 200_000))
@@ -430,7 +464,7 @@ class Demodulator:
         # Limits interference from strong out-of-band signals before decimation.
         nfm_if_bw = (NFM_DEVIATION + 4_000.0) / (rate / 2.0)
         nfm_if_bw = float(np.clip(nfm_if_bw, 0.001, 0.499))
-        self._nfm_if_b = sp_signal.firwin(63, nfm_if_bw).astype(np.float32)
+        self._nfm_if_b = sp_signal.firwin(_FIR_TAPS, nfm_if_bw).astype(np.float32)
 
         # De-emphasis IIR (single pole low-pass, τ = 75 µs)
         dt = 1.0 / self._fm_rate
@@ -450,7 +484,7 @@ class Demodulator:
         # Passes ±SSB_BW/2 (the mixed voice band) and rejects the image.
         nyq_mid = ssb_mid_rate / 2.0
         cutoff_mid = float(np.clip(self._ssb_bw / nyq_mid, 0.001, 0.499))
-        self._ssb_audio_b = sp_signal.firwin(63, cutoff_mid).astype(np.float32)
+        self._ssb_audio_b = sp_signal.firwin(_FIR_TAPS, cutoff_mid).astype(np.float32)
 
         # ---- CW chain ----
         # CW uses a direct decimation path (bypasses SSB BFO injection).
@@ -470,3 +504,4 @@ class Demodulator:
         self._cw_bpf_sos = sp_signal.butter(
             4, [300.0 / nyq_audio, 3000.0 / nyq_audio], btype="band", output="sos"
         )
+        self._cw_bpf_zi = np.zeros((self._cw_bpf_sos.shape[0], 2), dtype=np.float64)

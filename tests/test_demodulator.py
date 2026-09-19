@@ -108,3 +108,63 @@ def test_stride_decimator_keeps_phase_across_blocks() -> None:
     dec = _StrideDecimator(10)
     out = np.concatenate([dec.process(x[i : i + 137]) for i in range(0, len(x), 137)])
     assert np.array_equal(out, x[::10])
+
+
+def _noisy_tone(rate: float, n: int, seed: int = 3) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    noise = rng.standard_normal(n) + 1j * rng.standard_normal(n)
+    tone = np.exp(2j * np.pi * 1_200.0 * np.arange(n) / rate)
+    return (tone + 0.3 * noise).astype(np.complex64)
+
+
+def _noisy_fm(rate: float, n: int, seed: int = 4) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    t = np.arange(n) / rate
+    phase = 2 * np.pi * np.cumsum(3_000.0 * np.sin(2 * np.pi * 1_000.0 * t)) / rate
+    noise = 0.05 * (rng.standard_normal(n) + 1j * rng.standard_normal(n))
+    return (np.exp(1j * phase) + noise).astype(np.complex64)
+
+
+@pytest.mark.parametrize("mode", list(DemodMode))
+def test_chunking_does_not_change_the_output(mode: DemodMode) -> None:
+    """Regression: the BFO phase and every IF / audio filter used to restart at
+    each 16384-sample block, putting a glitch at every boundary (~15 a second).
+    Processed in blocks or in one go, the audio must be the same."""
+    rate = 250_000.0
+    n = _BLOCK * 20
+    if mode is DemodMode.NFM:
+        iq = _noisy_fm(rate, n)
+    elif mode is DemodMode.LSB:
+        iq = np.conj(_noisy_tone(rate, n))
+    else:
+        iq = _noisy_tone(rate, n)
+
+    def render(block: int) -> np.ndarray:
+        demod = Demodulator(input_rate=rate)
+        demod.set_mode(mode)
+        demod.set_agc(False)
+        return _run(demod, iq, block)
+
+    blocked, whole = render(_BLOCK), render(n)
+    m = min(len(blocked), len(whole))
+    a, b = blocked[500 : m - 500], whole[500 : m - 500]
+    assert np.max(np.abs(a - b)) / np.sqrt(np.mean(b**2)) < 1e-3
+
+
+@pytest.mark.parametrize("rate", [250_000.0, 2_400_000.0])
+def test_ssb_tone_stays_pure_across_blocks(rate: float) -> None:
+    """A USB carrier 2000 Hz above centre, mixed down by the 1350 Hz BFO, must
+    come out as a clean 650 Hz tone. With the BFO phase restarting every block
+    the tone was smeared (pitch off by 7-15 Hz, glitch energy exceeding the tone)."""
+    n = _BLOCK * 40
+    iq = np.exp(2j * np.pi * 2_000.0 * np.arange(n) / rate).astype(np.complex64)
+    demod = Demodulator(input_rate=rate)
+    demod.set_mode(DemodMode.USB)
+    demod.set_agc(False)
+    out = _run(demod, iq)[2_000:].astype(np.float64)
+
+    t = np.arange(len(out)) / AUDIO_RATE
+    carrier = np.exp(-2j * np.pi * 650.0 * t)
+    amplitude = 2 * np.mean(out * carrier)
+    residual = out - np.real(amplitude * np.conj(carrier))
+    assert np.sqrt(np.mean(residual**2)) < 0.02 * abs(amplitude) / np.sqrt(2)
