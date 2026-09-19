@@ -18,6 +18,11 @@ own import is scipy-safe and only needs the guard for its later use).
 
 from __future__ import annotations
 
+import sys
+import time
+import types
+from typing import Any
+
 import numpy as np
 import pytest
 from pytestqt.qtbot import QtBot
@@ -162,3 +167,247 @@ class TestEffectiveCenterFreqAndFftAxis:
         freqs = [f for f, _ in spectrum]
         center_freq = freqs[len(freqs) // 2]
         assert center_freq == pytest.approx(target)
+
+
+# ---------------------------------------------------------------------------
+# Speaker playback must not slow the SDR read loop
+# ---------------------------------------------------------------------------
+
+
+class _SlowStream:
+    """sounddevice.OutputStream stand-in whose write() is paced like real audio."""
+
+    def __init__(self, write_s: float = 0.15) -> None:
+        self.write_s = write_s
+        self.writes = 0
+        self.closed = False
+
+    def start(self) -> None:
+        pass
+
+    def write(self, pcm: np.ndarray) -> None:
+        time.sleep(self.write_s)
+        self.writes += 1
+
+    def stop(self) -> None:
+        pass
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _install_fake_sounddevice(monkeypatch: pytest.MonkeyPatch, stream: _SlowStream) -> None:
+    fake = types.ModuleType("sounddevice")
+    fake.OutputStream = lambda **kwargs: stream  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "sounddevice", fake)
+
+
+class TestAudioPlaybackIsOffTheReadLoop:
+    """Regression: OutputStream.write() blocks at audio real-time speed, and
+    calling it from the pipeline thread made each iteration ~82 ms for a
+    65.5 ms block, so the SDR's buffer overflowed and ~20% of all samples
+    (live decoding and IQ recordings alike) were dropped."""
+
+    def test_play_audio_never_blocks_the_caller(
+        self, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        stream = _SlowStream(write_s=0.15)
+        _install_fake_sounddevice(monkeypatch, stream)
+        pipeline = _make_pipeline(qtbot)
+        pipeline.set_audio_enabled(True)
+        pcm = np.zeros(3_146, dtype=np.float32)
+
+        start = time.monotonic()
+        for _ in range(40):
+            pipeline._play_audio(pcm)
+        elapsed = time.monotonic() - start
+
+        # 40 blocks x 150 ms of blocking writes would take 6 s inline.
+        assert elapsed < 0.5
+        # The writer can't keep up, so the oldest queued blocks are dropped
+        # rather than piling up (or slowing the caller).
+        assert pipeline._diag_audio_dropped > 0
+        qtbot.waitUntil(lambda: stream.writes >= 1, timeout=3_000)
+
+        pipeline.set_audio_enabled(False)
+
+    def test_disabling_audio_stops_the_writer_and_closes_the_stream(
+        self, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        stream = _SlowStream(write_s=0.01)
+        _install_fake_sounddevice(monkeypatch, stream)
+        pipeline = _make_pipeline(qtbot)
+        pipeline.set_audio_enabled(True)
+        pipeline._play_audio(np.zeros(3_146, dtype=np.float32))
+        qtbot.waitUntil(lambda: stream.writes >= 1, timeout=3_000)
+        writer = pipeline._audio_thread
+        assert writer is not None and writer.is_alive()
+
+        pipeline.set_audio_enabled(False)
+
+        assert not writer.is_alive()
+        assert stream.closed
+        assert pipeline._audio_queue.empty()
+
+    def test_audio_can_be_switched_on_again(
+        self, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        stream = _SlowStream(write_s=0.01)
+        _install_fake_sounddevice(monkeypatch, stream)
+        pipeline = _make_pipeline(qtbot)
+        pcm = np.zeros(3_146, dtype=np.float32)
+        pipeline.set_audio_enabled(True)
+        pipeline._play_audio(pcm)
+        qtbot.waitUntil(lambda: stream.writes >= 1, timeout=3_000)
+        pipeline.set_audio_enabled(False)
+        before = stream.writes
+
+        pipeline.set_audio_enabled(True)
+        pipeline._play_audio(pcm)
+
+        qtbot.waitUntil(lambda: stream.writes > before, timeout=3_000)
+        pipeline.set_audio_enabled(False)
+
+    def test_play_audio_after_disable_starts_no_writer(
+        self, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        stream = _SlowStream()
+        _install_fake_sounddevice(monkeypatch, stream)
+        pipeline = _make_pipeline(qtbot)
+
+        pipeline._play_audio(np.zeros(3_146, dtype=np.float32))  # audio never enabled
+
+        assert pipeline._audio_thread is None
+
+
+# ---------------------------------------------------------------------------
+# Stall watchdog
+# ---------------------------------------------------------------------------
+
+
+class _StallingDevice:
+    """A device that stops delivering samples until it is 'healed'."""
+
+    def __init__(self, heals_on: str | None) -> None:
+        self.sample_rate = _SAMPLE_RATE
+        self.center_freq = _HW_CF
+        self.heals_on = heals_on  # "restart", "reopen" or None (never)
+        self.stalled = True
+        self.restart_calls = 0
+        self.reopen_calls = 0
+
+    def start_stream(self) -> bool:
+        return True
+
+    def stop_stream(self) -> None:
+        pass
+
+    def read_samples(self, num_samples: int = 1024) -> np.ndarray | None:
+        time.sleep(0.005)
+        if self.stalled:
+            return None
+        return np.zeros(num_samples, dtype=np.complex64)
+
+    def restart_stream(self) -> bool:
+        self.restart_calls += 1
+        if self.heals_on == "restart":
+            self.stalled = False
+        return True
+
+    def reopen(self) -> bool:
+        self.reopen_calls += 1
+        if self.heals_on in ("restart", "reopen"):
+            self.stalled = False
+        return True
+
+
+class _SilentDevice:
+    """Returns nothing and defines no recovery methods, like a paused SdrFileDevice."""
+
+    sample_rate = _SAMPLE_RATE
+    center_freq = _HW_CF
+
+    def start_stream(self) -> bool:
+        return True
+
+    def stop_stream(self) -> None:
+        pass
+
+    def read_samples(self, num_samples: int = 1024) -> np.ndarray | None:
+        time.sleep(0.005)
+        return None
+
+
+def _run_pipeline(
+    qtbot: QtBot, device: Any, monkeypatch: pytest.MonkeyPatch
+) -> tuple[SDRPipeline, list[int]]:
+    del qtbot
+    monkeypatch.setattr("sdr.pipeline._STALL_TIMEOUT_S", 0.2)
+    pipeline = SDRPipeline(device)
+    blocks: list[int] = []
+    pipeline.subscribe(lambda iq: blocks.append(len(iq)))
+    pipeline.start()
+    return pipeline, blocks
+
+
+def _stop(pipeline: SDRPipeline) -> None:
+    pipeline.stop()
+    assert pipeline.wait(3_000)
+
+
+class TestStallWatchdog:
+    def test_a_stalled_stream_is_restarted_first(
+        self, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        device = _StallingDevice(heals_on="restart")
+        pipeline, blocks = _run_pipeline(qtbot, device, monkeypatch)
+        try:
+            qtbot.waitUntil(lambda: len(blocks) > 0, timeout=5_000)
+        finally:
+            _stop(pipeline)
+
+        assert device.restart_calls == 1
+        assert device.reopen_calls == 0
+
+    def test_a_device_that_stays_silent_is_reopened(
+        self, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        device = _StallingDevice(heals_on="reopen")
+        pipeline, blocks = _run_pipeline(qtbot, device, monkeypatch)
+        try:
+            qtbot.waitUntil(lambda: len(blocks) > 0, timeout=5_000)
+        finally:
+            _stop(pipeline)
+
+        assert device.restart_calls == 1  # tried the cheap fix first
+        assert device.reopen_calls >= 1
+
+    def test_no_recovery_while_samples_keep_arriving(
+        self, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        device = _StallingDevice(heals_on=None)
+        device.stalled = False
+        pipeline, blocks = _run_pipeline(qtbot, device, monkeypatch)
+        try:
+            qtbot.waitUntil(lambda: len(blocks) > 5, timeout=5_000)
+            time.sleep(0.5)  # well past the (patched) 0.2 s stall timeout
+        finally:
+            _stop(pipeline)
+
+        assert device.restart_calls == 0
+        assert device.reopen_calls == 0
+
+    def test_devices_without_recovery_support_are_left_alone(
+        self, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A paused or finished IQ recording (SdrFileDevice) legitimately
+        returns nothing; the watchdog must not touch it."""
+        device = _SilentDevice()
+        pipeline, blocks = _run_pipeline(qtbot, device, monkeypatch)
+        try:
+            time.sleep(0.7)
+            assert pipeline.isRunning()
+        finally:
+            _stop(pipeline)
+
+        assert blocks == []

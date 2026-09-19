@@ -21,7 +21,9 @@ Signals emitted on the Qt main thread (via QMetaObject / queued connection):
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import queue
 import threading
 import time
 from collections.abc import Callable
@@ -41,6 +43,16 @@ _BLOCK_SIZE: int = 16_384
 
 # FFT update interval (seconds)
 _FFT_INTERVAL: float = 0.1  # 10 fps
+
+# Speaker playback is queued to its own thread (see _play_audio()); this is
+# how many demodulated blocks (~65 ms each) may wait there before the oldest
+# is dropped, i.e. about half a second of audio.
+_AUDIO_QUEUE_BLOCKS: int = 8
+
+# SDR stall watchdog (see SDRPipeline._recover_stalled_device()): how long the
+# device may deliver no samples at all before the pipeline tries to restart
+# its stream, and the minimum spacing between successive recovery attempts.
+_STALL_TIMEOUT_S: float = 3.0
 
 # Per-sample exponential-smoothing coefficient for the Doppler NCO's
 # frequency itself (not just its phase) — see _apply_doppler_correction().
@@ -108,6 +120,13 @@ class SDRPipeline(QThread):
         # Lock protecting _sounddevice_stream: both the pipeline thread (writes
         # PCM) and the main Qt thread (stop/disable) access the stream object.
         self._audio_lock = threading.Lock()
+        # Playback thread: the OutputStream write blocks at audio real-time
+        # speed, so it must not run on the pipeline thread -- see _play_audio().
+        self._audio_queue: queue.Queue[np.ndarray] = queue.Queue(maxsize=_AUDIO_QUEUE_BLOCKS)
+        self._audio_thread: threading.Thread | None = None
+        self._audio_writer_stop = threading.Event()
+        # Diagnostic-only: blocks dropped because playback couldn't keep up.
+        self._diag_audio_dropped: int = 0
 
         # Consumers that need demodulated audio_ready data (CW/FT4/Q65/SSTV
         # decoders) but not necessarily speaker playback — see
@@ -288,10 +307,7 @@ class SDRPipeline(QThread):
     def set_audio_enabled(self, enabled: bool) -> None:
         self._audio_enabled = enabled
         if not enabled:
-            # Close stream from whichever thread calls this; lock prevents
-            # concurrent access with the pipeline thread's _play_audio().
-            with self._audio_lock:
-                self._close_audio_stream_locked()
+            self._stop_audio_writer()
 
     def request_audio(self, owner: str) -> None:
         """Register `owner`'s interest in demodulated audio (audio_ready).
@@ -352,13 +368,35 @@ class SDRPipeline(QThread):
         diag_lag_sum = 0.0
         diag_lag_max = 0.0
 
+        # Stall watchdog state -- see _recover_stalled_device().
+        last_data_time = time.monotonic()
+        last_recovery_time = 0.0
+        recovery_attempts = 0
+
         while not self._stop_flag.is_set():
             iter_start = time.monotonic()
             iq = self._device.read_samples(_BLOCK_SIZE)
             if iq is None or len(iq) == 0:
                 # Timeout or error — brief sleep to avoid spin-loop
                 time.sleep(0.005)
+                now = time.monotonic()
+                if (
+                    now - last_data_time >= _STALL_TIMEOUT_S
+                    and now - last_recovery_time >= _STALL_TIMEOUT_S
+                ):
+                    last_recovery_time = now
+                    recovery_attempts += 1
+                    self._recover_stalled_device(recovery_attempts, now - last_data_time)
                 continue
+            if recovery_attempts:
+                logger.warning(
+                    "SDR stream recovered after %d attempt(s), %.1fs without samples",
+                    recovery_attempts,
+                    time.monotonic() - last_data_time,
+                )
+                self.status_changed.emit("SDR streaming")
+                recovery_attempts = 0
+            last_data_time = time.monotonic()
 
             # Digital Doppler correction, applied before anything else
             # touches the samples — every consumer below (subscribers,
@@ -423,7 +461,8 @@ class SDRPipeline(QThread):
             if diag_now - diag_window_start >= 1.0:
                 diag_logger.info(
                     "pipeline iters=%d partial=%d avg_lag=%.4fs max_lag=%.4fs "
-                    "max_audio_write=%.4fs audio_enabled=%s demod_requesters=%d",
+                    "max_audio_write=%.4fs audio_enabled=%s demod_requesters=%d "
+                    "audio_dropped=%d",
                     diag_iters,
                     diag_partial,
                     diag_lag_sum / diag_iters if diag_iters else 0.0,
@@ -431,6 +470,7 @@ class SDRPipeline(QThread):
                     self._diag_last_audio_write_dur,
                     self._audio_enabled,
                     len(self._demod_requesters),
+                    self._diag_audio_dropped,
                 )
                 diag_window_start = diag_now
                 diag_iters = 0
@@ -440,10 +480,53 @@ class SDRPipeline(QThread):
                 self._diag_last_audio_write_dur = 0.0
 
         self._device.stop_stream()
-        with self._audio_lock:
-            self._close_audio_stream_locked()
+        self._stop_audio_writer()
         logger.info("SDRPipeline stopped")
         self.status_changed.emit("SDR stopped")
+
+    # ------------------------------------------------------------------
+    # Stall recovery
+    # ------------------------------------------------------------------
+
+    def _recover_stalled_device(self, attempt: int, stalled_s: float) -> None:
+        """Try to revive a device that has stopped delivering samples.
+
+        Called from run() once read_samples() has produced nothing for
+        _STALL_TIMEOUT_S, and again every _STALL_TIMEOUT_S while it
+        still doesn't. The first attempt only restarts the stream; later
+        ones close and reopen the whole device (SdrDevice.reopen()).
+
+        Observed 2026-09-19: an RTL-SDR stopped delivering samples for
+        ~53 s in the middle of a pass and the pipeline thread just kept
+        polling (read_samples() timing out) until the operator reconnected
+        by hand -- losing the rest of the pass and, on that reconnect, the
+        device (see SdrDevice.open()'s not-ready check).
+
+        Devices that cannot be restarted (SdrFileDevice: a paused or
+        finished recording legitimately returns nothing) simply don't
+        define restart_stream(), which switches this off for them.
+        """
+        restart = getattr(self._device, "restart_stream", None)
+        if restart is None:
+            return
+        reopen = getattr(self._device, "reopen", None)
+        if attempt == 1 or reopen is None:
+            logger.warning("SDR delivered no samples for %.1fs -- restarting stream", stalled_s)
+            self.status_changed.emit("SDR stalled - restarting stream")
+            action = restart
+        else:
+            logger.warning(
+                "SDR still silent after %.1fs -- reopening device (attempt %d)", stalled_s, attempt
+            )
+            self.status_changed.emit("SDR stalled - reopening device")
+            action = reopen
+        try:
+            ok = bool(action())
+        except Exception:
+            logger.exception("SDR stall recovery raised")
+            return
+        if not ok:
+            logger.warning("SDR stall recovery attempt %d did not succeed", attempt)
 
     # ------------------------------------------------------------------
     # FFT
@@ -466,10 +549,56 @@ class SDRPipeline(QThread):
     # ------------------------------------------------------------------
 
     def _play_audio(self, pcm: np.ndarray) -> None:
-        """Write PCM to sounddevice output stream, opening it on first call.
+        """Queue *pcm* for speaker playback. Never blocks.
 
         Must only be called from the pipeline thread.
+
+        sounddevice's OutputStream.write() returns only once the audio
+        device has room for the data, i.e. it is paced at audio real-time
+        speed. Called straight from run() it made every loop iteration take
+        the demodulator + FFT time *on top of* a full block of playback
+        (~82 ms for a 65.5 ms block at 250 kS/s), so the loop fell behind
+        the SDR: the driver's buffer overflowed and ~20% of all samples
+        were silently dropped -- from live decoding and IQ recordings alike
+        (observed 2026-09-19 on three ARICA-2 / OrigamiSat-2 pass
+        recordings, and a stream that stalled outright afterwards). A
+        separate writer thread absorbs that pacing; if playback still falls
+        behind, the oldest queued block is dropped -- a brief audio glitch
+        instead of lost I/Q.
         """
+        if not self._audio_enabled:
+            return  # switched off since the caller checked -- don't start a writer
+        thread = self._audio_thread
+        if thread is None or not thread.is_alive():
+            stop = threading.Event()
+            self._audio_writer_stop = stop
+            thread = threading.Thread(
+                target=self._audio_writer_loop, args=(stop,), name="sdr-audio-out", daemon=True
+            )
+            self._audio_thread = thread
+            thread.start()
+        try:
+            self._audio_queue.put_nowait(pcm)
+        except queue.Full:
+            with contextlib.suppress(queue.Empty):
+                self._audio_queue.get_nowait()
+            with contextlib.suppress(queue.Full):
+                self._audio_queue.put_nowait(pcm)
+            self._diag_audio_dropped += 1
+
+    def _audio_writer_loop(self, stop: threading.Event) -> None:
+        """Playback thread body: drain the queue into the OutputStream."""
+        while not stop.is_set():
+            try:
+                pcm = self._audio_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            self._write_audio_block(pcm)
+        with self._audio_lock:
+            self._close_audio_stream_locked()
+
+    def _write_audio_block(self, pcm: np.ndarray) -> None:
+        """Write one block to the sounddevice output stream, opening it on first use."""
         with self._audio_lock:
             try:
                 import sounddevice as sd
@@ -495,6 +624,25 @@ class SDRPipeline(QThread):
             except Exception:
                 logger.exception("Audio output error")
                 self._sounddevice_stream = None
+
+    def _stop_audio_writer(self) -> None:
+        """Stop the playback thread (if any), discard queued audio, close the stream.
+
+        Safe from any thread and idempotent: called when speaker playback is
+        switched off and when the pipeline stops.
+        """
+        self._audio_writer_stop.set()
+        while True:
+            try:
+                self._audio_queue.get_nowait()
+            except queue.Empty:
+                break
+        thread = self._audio_thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=1.0)
+        self._audio_thread = None
+        with self._audio_lock:
+            self._close_audio_stream_locked()
 
     def _close_audio_stream_locked(self) -> None:
         """Close sounddevice stream. Caller must hold _audio_lock."""

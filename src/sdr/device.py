@@ -941,6 +941,22 @@ def _distribute_gain(dev: Any, gain_db: float) -> None:
 # ---------------------------------------------------------------------------
 
 
+# Grace period after a device is closed before the next open() proceeds.
+# librtlsdr / libusb need a moment to fully release an RTL-SDR: reopening it
+# ~35 ms after the previous close (MainWindow._load_rig_settings() releases the
+# superseded adapter and immediately reconnects) produced a handle that opened
+# but rejected setSampleRate()/setFrequency() -- observed 2026-09-19 -- and
+# the SDR was then unusable until the app was restarted.
+_RELEASE_SETTLE_S = 0.5
+# Extra pause before retrying after a handle turned out not to be ready.
+_NOT_READY_DELAY_S = 0.3
+_last_close_monotonic: float = 0.0
+
+
+class _DeviceNotReady(RuntimeError):
+    """The device opened but refused its basic sample-rate/frequency setup."""
+
+
 class SdrDevice:
     """
     Wrapper around a SoapySDR.Device.
@@ -1480,7 +1496,13 @@ class SdrDevice:
         For all other drivers / platforms, uses the SoapySDR path with three arg
         sets per attempt (full / minimal / driver-only) and up to 3 retries.
         """
+        global _last_close_monotonic
         import os as _os
+
+        remaining = _RELEASE_SETTLE_S - (time.monotonic() - _last_close_monotonic)
+        if remaining > 0:
+            logger.info("SDR reopened right after a close -- waiting %.2fs for release", remaining)
+            time.sleep(remaining)
 
         _driver = (self._info.driver or "").lower()
         is_win_rtlsdr = sys.platform == "win32" and _driver == "rtlsdr"
@@ -1580,7 +1602,10 @@ class SdrDevice:
                     try:
                         with _SOAPY_GLOBAL_LOCK:
                             self._dev = SoapySDR.Device(args)
-                        self._apply_settings()
+                        if not self._apply_settings():
+                            raise _DeviceNotReady(
+                                "device opened but rejected its sample rate / frequency"
+                            )
                         logger.info(
                             "SDR opened: %s (attempt %d, %s)",
                             self._info.display_name,
@@ -1599,6 +1624,11 @@ class SdrDevice:
                             self._info.display_name,
                             exc,
                         )
+                        if isinstance(exc, _DeviceNotReady):
+                            # The handle we just dropped is still being released;
+                            # give it time before the next spec/attempt reopens it.
+                            _last_close_monotonic = time.monotonic()
+                            time.sleep(_NOT_READY_DELAY_S)
                 if attempt < _MAX_ATTEMPTS:
                     logger.warning(
                         "SDR open attempt %d/%d failed for %s, retrying in %.1fs…",
@@ -1692,13 +1722,34 @@ class SdrDevice:
 
     def close(self) -> None:
         """Close the device and release resources."""
+        global _last_close_monotonic
         with self._lock:
             self._stop_stream_locked()
             if self._dev is not None:
                 if isinstance(self._dev, (RtlSdrDirectDevice, HackRfDirectDevice)):
                     self._dev.close_device()
                 self._dev = None
+                _last_close_monotonic = time.monotonic()
                 logger.info("SDR closed: %s", self._info.display_name)
+
+    def reopen(self) -> bool:
+        """Close and reopen the device, then restart the RX stream.
+
+        Last-resort recovery for a device that has stopped delivering
+        samples (SDRPipeline._recover_stalled_device()). The stored
+        sample rate, frequency, gain, ppm etc. are re-applied by open().
+        """
+        self.close()
+        if not self.open():
+            return False
+        return self.start_stream()
+
+    def restart_stream(self) -> bool:
+        """Deactivate and re-activate the RX stream without closing the device."""
+        with self._lock:
+            self._stop_stream_locked()
+        time.sleep(0.2)
+        return self.start_stream()
 
     # ------------------------------------------------------------------
     # Stream control
@@ -2008,25 +2059,32 @@ class SdrDevice:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _apply_settings(self) -> None:
+    def _apply_settings(self) -> bool:
         """Push stored settings to the freshly opened device.
 
         Each setting is applied independently; failures are logged as warnings
         rather than raised so that one unsupported setting does not prevent the
         device from opening (e.g. RTL-SDR ignoring bandwidth setting).
+
+        Returns False if the sample rate or the centre frequency -- the two
+        settings every device supports and none can work without -- was
+        rejected, meaning the handle is not usable (see _DeviceNotReady).
         """
         import SoapySDR
 
         if self._dev is None:
-            return
+            return False
+        core_ok = True
         try:
             self._dev.setSampleRate(SoapySDR.SOAPY_SDR_RX, 0, self._sample_rate)
         except Exception as exc:
             logger.warning("setSampleRate failed: %s", exc)
+            core_ok = False
         try:
             self._dev.setFrequency(SoapySDR.SOAPY_SDR_RX, 0, self._center_freq)
         except Exception as exc:
             logger.warning("setFrequency failed: %s", exc)
+            core_ok = False
         if self._bandwidth > 0:
             with contextlib.suppress(Exception):
                 self._dev.setBandwidth(SoapySDR.SOAPY_SDR_RX, 0, self._bandwidth)
@@ -2053,6 +2111,7 @@ class SdrDevice:
                 bias_key, bias_val = "biastee", "true"
             with contextlib.suppress(Exception):
                 self._dev.writeSetting(bias_key, bias_val)
+        return core_ok
 
     def _stop_stream_locked(self) -> None:
         """Stop and release the stream. Must be called with _lock held."""
