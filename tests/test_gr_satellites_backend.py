@@ -113,6 +113,52 @@ class TestStartExecutableResolution:
         assert "250000" in cmd
         b.stop()
 
+    def test_catalog_norad_overrides_launch_id_but_not_attribution(self) -> None:
+        """gr-satellites knows Foresail-1p as 98467 while the app tracks it as
+        66778: the subprocess must get the catalog id, frames stay attributed
+        to the app's id."""
+        b = backend.GrSatellitesBackend()
+        with (
+            patch.object(
+                backend,
+                "resolve_gr_satellites_command",
+                return_value=(["/usr/bin/gr_satellites"], False),
+            ),
+            patch.object(backend, "_supports_kiss_server", return_value=False),
+            patch.object(backend.subprocess, "Popen", return_value=_FakeProc()) as mock_popen,
+        ):
+            b.start(66778, 250000, MagicMock(), catalog_norad=98467)
+
+        cmd = mock_popen.call_args[0][0]
+        assert "98467" in cmd
+        assert "66778" not in cmd
+        assert b.started_norad == 66778
+        b.stop()
+
+
+class TestMapProvisionalToTracked:
+    def test_maps_provisional_catalog_id_to_real_id_by_name(self) -> None:
+        catalog = [(98467, "FORESAIL-1P")]
+        tracked = [(66778, "Foresail-1p"), (25544, "ISS")]
+        assert backend.map_provisional_to_tracked(catalog, tracked) == {98467: 66778}
+
+    def test_name_match_ignores_case_and_punctuation(self) -> None:
+        catalog = [(98647, "TEVEL2-1")]
+        tracked = [(63217, "TEVEL 2_1")]
+        assert backend.map_provisional_to_tracked(catalog, tracked) == {98647: 63217}
+
+    def test_real_catalog_id_is_never_remapped(self) -> None:
+        """Two unrelated spacecraft can share a name (IRIS 57315 vs 39197)."""
+        assert backend.map_provisional_to_tracked([(57315, "IRIS")], [(39197, "IRIS")]) == {}
+
+    def test_ambiguous_name_is_skipped(self) -> None:
+        catalog = [(98500, "DUPE")]
+        tracked = [(60001, "Dupe"), (60002, "DUPE")]
+        assert backend.map_provisional_to_tracked(catalog, tracked) == {}
+
+    def test_no_match_is_skipped(self) -> None:
+        assert backend.map_provisional_to_tracked([(98500, "NOPE")], [(1, "Other")]) == {}
+
 
 class TestDetectGrSatellites:
     def test_true_when_resolvable(self) -> None:

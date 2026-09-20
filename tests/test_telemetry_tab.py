@@ -22,6 +22,7 @@ import types
 import pytest
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QApplication, QWidget
+from pytestqt.qtbot import QtBot
 
 import ui.telemetry_tab as telemetry_tab_mod
 from comms.telemetry.satnogs_uploader import (
@@ -399,3 +400,116 @@ def test_gr_raw_frame_noop_without_started_norad(
         assert rec.calls == []
     finally:
         tab.close()
+
+
+def test_gr_combo_lists_provisional_catalog_entry_under_real_id(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    """gr-satellites still files Foresail-1p under provisional 98467 while
+    the DB tracks it as 66778. It must be offered under 66778 (so the combo,
+    satellite list and Radio Control agree) and remember 98467 as the id to
+    launch gr_satellites with."""
+    conn.execute(
+        "INSERT INTO satellites (norad_cat_id, name, is_hidden) VALUES (66778, 'Foresail-1p', 0)"
+    )
+    conn.execute(
+        "INSERT INTO transmitters (uuid, norad_cat_id, description, mode, baud, alive) "
+        "VALUES ('u1', 66778, 'MODE U - GMSK 9k6 TLM Skylink', 'GMSK', 9600, 1)"
+    )
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab._gr_sat_list = [(98467, "FORESAIL-1P")]
+    tab._populate_gr_combo()
+    assert _gr_combo_items(tab) == [(66778, "FORESAIL-1P  (66778)")]
+    assert tab._gr_catalog_ids == {66778: 98467}
+
+
+def test_gr_combo_does_not_remap_real_id_entry_with_shared_name(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    """Only provisional catalog ids are matched by name: an unrelated
+    spacecraft that merely shares a name must not be wired to this catalog
+    entry."""
+    conn.execute("INSERT INTO satellites (norad_cat_id, name, is_hidden) VALUES (39197, 'IRIS', 0)")
+    conn.execute(
+        "INSERT INTO transmitters (uuid, norad_cat_id, description, mode, baud, alive) "
+        "VALUES ('u1', 39197, 'TLM', 'FM', 0, 1)"
+    )
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab._gr_sat_list = [(57315, "IRIS")]
+    tab._populate_gr_combo()
+    assert _gr_combo_items(tab) == []
+    assert tab._gr_catalog_ids == {}
+
+
+def test_gr_combo_provisional_match_skips_hidden_satellite(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    conn.execute(
+        "INSERT INTO satellites (norad_cat_id, name, is_hidden) VALUES (66778, 'Foresail-1p', 2)"
+    )
+    conn.execute(
+        "INSERT INTO transmitters (uuid, norad_cat_id, description, mode, baud, alive) "
+        "VALUES ('u1', 66778, 'TLM', 'GMSK', 9600, 1)"
+    )
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab._gr_sat_list = [(98467, "FORESAIL-1P")]
+    tab._populate_gr_combo()
+    assert _gr_combo_items(tab) == []
+
+
+def test_start_gr_satellites_launches_with_catalog_id(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    """Selecting the remapped entry must start gr_satellites with the catalog
+    id (98467) while frames stay attributed to the real id (66778)."""
+    conn.execute(
+        "INSERT INTO satellites (norad_cat_id, name, is_hidden) VALUES (66778, 'Foresail-1p', 0)"
+    )
+    conn.execute(
+        "INSERT INTO transmitters (uuid, norad_cat_id, description, mode, baud, alive) "
+        "VALUES ('u1', 66778, 'TLM', 'GMSK', 9600, 1)"
+    )
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab._gr_sat_list = [(98467, "FORESAIL-1P")]
+    tab._populate_gr_combo()
+    tab._sdr_pipeline = types.SimpleNamespace(_device=types.SimpleNamespace(sample_rate=250000))
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def fake_start(*args: object, **kwargs: object) -> tuple[bool, str]:
+        calls.append((args, kwargs))
+        return True, ""
+
+    tab._gr_backend.start = fake_start  # type: ignore[method-assign]
+    tab._start_gr_satellites()
+    assert len(calls) == 1
+    assert calls[0][0][0] == 66778
+    assert calls[0][1] == {"catalog_norad": 98467}
+
+
+def test_gr_combo_provisional_match_survives_hidden_old_provisional_row(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    """After a provisional->real migration the DB keeps the old provisional
+    row hidden (is_hidden=2) with no live transmitters. That must not hide the
+    live row under the real id (HCT-SAT2: catalog 98470, DB 98470 hidden +
+    66671 live)."""
+    conn.execute(
+        "INSERT INTO satellites (norad_cat_id, name, is_hidden) VALUES (98470, 'HCT-SAT2', 2)"
+    )
+    conn.execute(
+        "INSERT INTO satellites (norad_cat_id, name, is_hidden) VALUES (66671, 'HCT-SAT2', 0)"
+    )
+    conn.execute(
+        "INSERT INTO transmitters (uuid, norad_cat_id, description, mode, baud, alive) "
+        "VALUES ('u1', 66671, 'TLM', 'GMSK', 9600, 1)"
+    )
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab._gr_sat_list = [(98470, "HCT-SAT2")]
+    tab._populate_gr_combo()
+    assert _gr_combo_items(tab) == [(66671, "HCT-SAT2  (66671)")]
+    assert tab._gr_catalog_ids == {66671: 98470}

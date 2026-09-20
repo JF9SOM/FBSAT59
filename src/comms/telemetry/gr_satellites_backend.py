@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -37,6 +38,11 @@ from comms.telemetry.gr_satellites_install import (
 # Path that makes a *system* (apt) gr_satellites find system gnuradio + NumPy 1.x
 _GR_PYTHONPATH = "/usr/lib/python3/dist-packages"
 _SYSTEM_SATYAML_DIR = Path(_GR_PYTHONPATH) / "satellites" / "satyaml"
+
+# NORAD ids at or above this are SATNOGS provisional placeholders (see
+# docs/tle.md); gr-satellites' catalog keeps some satellites under them long
+# after the satellite received its real catalog number.
+PROVISIONAL_NORAD_MIN = 90000
 
 # UDP port used to send IQ from the SDR pipeline to gr_satellites
 _UDP_PORT = 7356
@@ -112,6 +118,41 @@ def list_gr_satellites_norads() -> set[int]:
         except Exception:
             pass
     return norads
+
+
+def _normalize_sat_name(name: str) -> str:
+    """Lower-case *name* and drop everything but letters and digits."""
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def map_provisional_to_tracked(
+    catalog: list[tuple[int, str]],
+    tracked: list[tuple[int, str]],
+) -> dict[int, int]:
+    """Map gr-satellites provisional NORAD ids to this app's real ones by name.
+
+    gr-satellites' catalog (satyaml) can still list a satellite under its
+    SATNOGS provisional id (>= 90000) after this app's DB has migrated it to
+    the real NORAD id, so the two never compare equal. Only catalog entries
+    whose id is provisional are matched, on the normalized satellite name: a
+    real-id entry that merely shares a name with an unrelated satellite (e.g.
+    two different "IRIS" spacecraft) must never be rewired. A catalog entry is
+    skipped when zero or several tracked satellites share its name.
+
+    Returns ``{catalog_norad: tracked_norad}``; the caller launches
+    gr_satellites with the key and talks to the rest of the app with the value.
+    """
+    by_name: dict[str, list[int]] = {}
+    for norad, name in tracked:
+        by_name.setdefault(_normalize_sat_name(name), []).append(norad)
+    mapping: dict[int, int] = {}
+    for catalog_norad, name in catalog:
+        if catalog_norad < PROVISIONAL_NORAD_MIN:
+            continue
+        candidates = [n for n in by_name.get(_normalize_sat_name(name), []) if n != catalog_norad]
+        if len(candidates) == 1:
+            mapping[catalog_norad] = candidates[0]
+    return mapping
 
 
 def list_gr_satellites_with_names() -> list[tuple[int, str]]:
@@ -317,8 +358,14 @@ class GrSatellitesBackend(QObject):
         norad: int,
         samp_rate: int,
         pipeline: object,
+        catalog_norad: int | None = None,
     ) -> tuple[bool, str]:
         """Start gr_satellites for *norad* and attach to *pipeline*.
+
+        *norad* is this app's NORAD id (used to attribute received frames).
+        *catalog_norad* is the id gr_satellites itself must be launched with
+        when its catalog lists the satellite under a different (provisional)
+        id; it defaults to *norad*.
 
         Returns (ok, error_message).
         """
@@ -351,7 +398,7 @@ class GrSatellitesBackend(QObject):
 
         cmd = [
             *argv_prefix,
-            str(norad),
+            str(catalog_norad if catalog_norad is not None else norad),
             "--udp",
             "--udp_port",
             str(_UDP_PORT),

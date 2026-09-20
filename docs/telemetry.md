@@ -173,6 +173,39 @@ signal on 435.860 MHz is active.」と公式発表し、それを受けてSATNOG
 そもそも定義を持たない衛星は、DB側にどれだけ有効なデータがあってもコンボには出て
 こない（ゴーストエントリ問題とは無関係な、単純な「カタログに無い」ケース）。
 
+### 仮 NORAD ID のまま載っている衛星の名前照合（2026-09-20）
+
+gr-satellites のカタログは、打ち上げ直後に SATNOGS の**仮 NORAD ID（90000 番台）で
+登録した衛星をその ID のまま放置する**ことがある。FBSAT59 側は正式 ID へ移行済みなので
+両者が一致せず、「DB に生存中トランスミッターがある」フィルタで落ちてコンボに出なかった
+（例: Foresail-1p は yml が 98467、DB は 66778。実 IQ 録音の解析で発覚）。
+
+`_populate_gr_combo()` は、カタログ NORAD が DB の生存中トランスミッター集合に無く、かつ
+**カタログ NORAD が 90000 以上**の場合に限り、衛星名の正規化一致（小文字化・英数字以外除去）で
+DB の生存中・非表示でない衛星を探す（`gr_satellites_backend.map_provisional_to_tracked()`）。
+
+- 実 ID（< 90000）のエントリは名前が同じでも結びつけない（IRIS: yml 57315 と DB 39197 は
+  別の衛星。誤結合防止）。DB 側候補が 0 件または複数件なら結びつけない
+- コンボの `userData` は **FBSAT59 の正式 ID**。衛星リスト連動・Radio Control・
+  SatNOGS アップロードの帰属・`set_satellite()` の自動選択は全てこの ID で動く
+- gr_satellites 起動時だけカタログ側の ID（仮 ID）を渡す。対応は
+  `TelemetryTab._gr_catalog_ids`（正式 ID → カタログ ID）、`GrSatellitesBackend.start()` の
+  `catalog_norad` 引数。`started_norad`（フレームの帰属）は正式 ID のまま
+- 非表示判定は**結びつけた後の ID**に対して行う。移行済み衛星は DB に古い仮 ID 行が
+  `is_hidden=2` で残るため、先にカタログ ID で判定すると正常な衛星まで落ちる
+- 2026-09-20 時点の実 DB では 21 衛星が該当（Foresail-1p、TEVEL2-1〜9、AEPEX、HUNITY、
+  INHA-RoSAT、JINJUSAT-1B、HCT-SAT2、JACK-001/003、K-HERO、PHI-1、SNUGLITE-III DURI、
+  SPIRONE）。下の「ゴーストエントリ」表の TEVEL2 は、DB 行が無かったのではなく、この
+  仮 ID 不一致だった可能性が高い
+
+**既知の未対応**: `main_window.py` の gr-satellites 用トランスポンダー自動選択
+（`get_satellite_info(norad)`、description に TLM/Telemetry が無い場合の周波数近接
+フォールバック）はカタログ ID で引くため、上記の衛星ではこのフォールバックだけ効かない
+（TLM を含む description があれば影響なし）。
+
+**Foresail-1p の注意**: フレーミングは GomSpace AX100（ASM）で AX.25 G3RUH ではないため、
+Direwolf 経路では S/N が十分でも復調できない。gr-satellites 経路のみ有効。
+
 ---
 
 ## ゴーストエントリ問題（症状のパターンと発見済みの実例、2026-09-05）

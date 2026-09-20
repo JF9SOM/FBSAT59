@@ -63,6 +63,7 @@ from comms.telemetry.gr_satellites_backend import (
     detect_gr_satellites,
     get_satellite_info,
     list_gr_satellites_with_names,
+    map_provisional_to_tracked,
 )
 from comms.telemetry.satnogs_uploader import (
     get_satnogs_uploader,
@@ -290,6 +291,10 @@ class TelemetryTab(QWidget):
         self._gr_backend.status_changed.connect(self._on_gr_status)
         self._gr_backend.raw_frame_received.connect(self._on_gr_raw_frame)
         self._gr_sat_list: list[tuple[int, str]] = []  # (norad, name) sorted by name
+        # This app's NORAD -> the id gr-satellites' catalog uses for it, only for
+        # satellites the catalog still lists under a provisional id (see
+        # _populate_gr_combo()).
+        self._gr_catalog_ids: dict[int, int] = {}
 
         # Selected satellite from main satellite list (set_satellite from main_window)
         self._selected_norad: int | None = None
@@ -746,6 +751,25 @@ class TelemetryTab(QWidget):
             }
         return set()
 
+    def _live_satellite_names(self) -> list[tuple[int, str]]:
+        """(norad, name) of non-hidden satellites with an alive transmitter in this DB.
+
+        Used by _populate_gr_combo() to find the real NORAD id of a satellite
+        gr-satellites' catalog still lists under a provisional id. Fails open
+        (empty list) if the query itself fails.
+        """
+        if not hasattr(self._conn, "execute"):
+            return []
+        with contextlib.suppress(Exception):
+            return [
+                (int(row["norad_cat_id"]), str(row["name"]))
+                for row in self._conn.execute(
+                    "SELECT norad_cat_id, name FROM satellites WHERE is_hidden = 0 "
+                    "AND norad_cat_id IN (SELECT norad_cat_id FROM transmitters WHERE alive = 1)"
+                ).fetchall()
+            ]
+        return []
+
     def _populate_gr_combo(self) -> None:
         """Fill the gr-satellites satellite combo from the loaded list.
 
@@ -760,13 +784,39 @@ class TelemetryTab(QWidget):
             _norads_with_live_transmitter()) — selecting one would be a
             silent no-op, same as the telemetry_formats-only "ghost"
             entries _populate_afsk_combo() used to show.
+
+        A catalog entry still filed under a SATNOGS provisional id (>= 90000)
+        after this app migrated the satellite to its real NORAD id (e.g.
+        Foresail-1p: catalog 98467, DB 66778) is matched by name (see
+        map_provisional_to_tracked()) and listed under the real id, so the
+        combo, the satellite list and Radio Control all agree. The catalog id
+        is kept in self._gr_catalog_ids because gr_satellites must still be
+        launched with it.
         """
         self._combo_gr_sat.clear()
+        self._gr_catalog_ids = {}
         hidden = self._hidden_norads()
         tracked = self._norads_with_live_transmitter()
-        for norad, name in self._gr_sat_list:
-            if norad in hidden or norad not in tracked:
+        renamed = map_provisional_to_tracked(
+            [(n, name) for n, name in self._gr_sat_list if n not in tracked],
+            self._live_satellite_names(),
+        )
+        shown: set[int] = set()
+        for catalog_norad, name in self._gr_sat_list:
+            # The hidden check must follow the remap: a migrated satellite keeps
+            # a hidden row under its old provisional id, which says nothing
+            # about the live row under the real id.
+            if catalog_norad in tracked:
+                norad = catalog_norad
+            elif catalog_norad in renamed:
+                norad = renamed[catalog_norad]
+            else:
                 continue
+            if norad in hidden or norad in shown:
+                continue
+            shown.add(norad)
+            if norad != catalog_norad:
+                self._gr_catalog_ids[norad] = catalog_norad
             self._combo_gr_sat.addItem(f"{name}  ({norad})", userData=norad)
 
     def _refresh_input_combo(self) -> None:
@@ -976,7 +1026,9 @@ class TelemetryTab(QWidget):
         except AttributeError:
             samp_rate = 2_400_000
 
-        ok, err = self._gr_backend.start(norad, samp_rate, pipeline)
+        ok, err = self._gr_backend.start(
+            norad, samp_rate, pipeline, catalog_norad=self._gr_catalog_ids.get(int(norad))
+        )
         if not ok:
             self._set_error(f"⚠ {err}")
             self._btn_start.setEnabled(True)
@@ -1034,7 +1086,9 @@ class TelemetryTab(QWidget):
 
         sat_name = self._selected_name
         if not sat_name and self._selected_norad:
-            info = get_satellite_info(self._selected_norad)
+            info = get_satellite_info(
+                self._gr_catalog_ids.get(self._selected_norad, self._selected_norad)
+            )
             sat_name = str(info.get("name", "")) if info else ""
         data_text = "  |  ".join(data_lines) if data_lines else text[:120]
 
