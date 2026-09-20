@@ -12,6 +12,7 @@ Tab is non-resident: opened via Communications > Q65, closed with x.
 from __future__ import annotations
 
 import contextlib
+import logging
 import sqlite3
 import threading
 from datetime import UTC, datetime
@@ -59,6 +60,9 @@ _COL_DT = 2
 _COL_FREQ = 3
 _COL_MSG = 4
 _COL_COUNT = 5
+
+logger = logging.getLogger(__name__)
+
 _AUDIO_OWNER = "Q65"
 # ~20ms @ 12000 Hz — bounds the worst-case delay before a TX Level slider
 # change takes effect during an active transmission (GitHub Issue #16).
@@ -90,6 +94,9 @@ class Q65Tab(QWidget):
     """
 
     _decoded_signal: Signal = Signal(str, list)
+    # Hops audio from the SDR tap's worker thread to the GUI thread, where
+    # _on_audio_chunk() may safely read the Input combo box.
+    _sdr_audio_signal: Signal = Signal(object)
 
     def __init__(
         self,
@@ -106,6 +113,7 @@ class Q65Tab(QWidget):
         self._buffer_lock = threading.Lock()
         self._sdr_connected = False
         self._sdr_pipeline: Any | None = None
+        self._sdr_tap: Any | None = None  # sdr.usb_audio.SdrUsbAudioTap while attached
         self._last_period_start: float = 0.0
 
         # TX state
@@ -129,6 +137,7 @@ class Q65Tab(QWidget):
         )
 
         self._decoded_signal.connect(self._on_decoded)
+        self._sdr_audio_signal.connect(self._on_audio_chunk)
         self._load_settings()
         self._connect_sdr_audio()
         self._connect_rig_signals()
@@ -512,6 +521,16 @@ class Q65Tab(QWidget):
     # ------------------------------------------------------------------
 
     def _connect_sdr_audio(self) -> None:
+        """Feed the SDR pipeline's I/Q to the Q65 receiver as 12 kHz USB audio.
+
+        Q65 takes 12 kHz audio in which each tone sits at its true audio
+        frequency above the dial frequency -- what a radio in USB mode
+        produces. The pipeline's own audio_ready is neither at 12 kHz (it is
+        48 kHz) nor frequency-true, and it follows SDR Control's demodulation
+        mode, so this taps the I/Q instead (SdrUsbAudioTap), exactly like
+        Ft4Tab. Until 2026-09-20 the tab buffered audio_ready directly and
+        treated it as 12 kHz.
+        """
         if self._radio_control is None:
             return
         try:
@@ -521,24 +540,27 @@ class Q65Tab(QWidget):
             pipeline = getattr(sdr_ctrl, "_pipeline", None)
             if pipeline is None:
                 return
-            pipeline.audio_ready.connect(self._on_audio_chunk)
-            # Without this, the pipeline never actually demodulates/emits
-            # audio_ready unless the user separately presses "Start Audio"
-            # in SDR Control — an easy-to-miss, unrelated-looking button in
-            # a different tab (GitHub Issue #12 follow-up).
-            pipeline.request_audio(_AUDIO_OWNER)
+            from sdr.usb_audio import SdrUsbAudioTap
+
+            tap = SdrUsbAudioTap(float(pipeline._device.sample_rate), self._sdr_audio_signal.emit)
+            tap.start()
+            # Hold the tap before subscribing so a failure below is still
+            # cleaned up by _disconnect_sdr_audio().
+            self._sdr_tap = tap
+            pipeline.subscribe(tap.push_samples)
             self._sdr_pipeline = pipeline
             self._sdr_connected = True
         except Exception:
-            pass
+            logger.warning("Q65: could not attach to the SDR pipeline", exc_info=True)
 
     def _disconnect_sdr_audio(self) -> None:
-        if self._sdr_pipeline is not None:
+        tap, self._sdr_tap = self._sdr_tap, None
+        if self._sdr_pipeline is not None and tap is not None:
             with contextlib.suppress(Exception):
-                self._sdr_pipeline.release_audio(_AUDIO_OWNER)
-            with contextlib.suppress(Exception):
-                self._sdr_pipeline.audio_ready.disconnect(self._on_audio_chunk)
-            self._sdr_pipeline = None
+                self._sdr_pipeline.unsubscribe(tap.push_samples)
+        if tap is not None:
+            tap.stop()
+        self._sdr_pipeline = None
         self._sdr_connected = False
 
     def refresh_sdr_pipeline(self, pipeline: Any) -> None:

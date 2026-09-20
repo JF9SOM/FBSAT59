@@ -2751,6 +2751,18 @@ DeepCWの入力範囲（400〜1200 Hz）とCW BPF（300〜3000 Hz）に入る位
 また、サンプルレートを表す定数（`SAMPLE_RATE`）を「デコーダのモデルレート」と「入力音声の
 実レート」の両方の意味で使い回すと、片方が変わったときに静かに壊れる。
 
+**Q65 タブにも同じ種類のバグがあり同日修正（2026-09-20）**: `Q65Tab` は `pipeline.audio_ready`
+（**48 kHz**・SDR Controlのモード依存）をそのまま受け取り、デコード直前に
+`period * SAMPLE_RATE`（**12000**）でサンプル数を切り出していた。リサンプルも周波数の
+調整も無く、48 kHz の音声を 12 kHz とみなしていた（FT4 は 2026-09-19 に修正済みで、Q65 だけ
+取り残されていた）。FT4 と同じく `SdrUsbAudioTap`（[src/sdr/usb_audio.py](../src/sdr/usb_audio.py)、
+生IQ購読→周波数どおりの12 kHz USB音声）に切り替えた。タップのワーカースレッドから
+`_on_audio_chunk()`（`QComboBox` を読む）を直接呼ばないよう、`_sdr_audio_signal` シグナルで
+GUIスレッドへ渡す。`request_audio()` / `audio_ready` は使わない。テストは
+`tests/test_q65_sdr_source.py`（配線はフェイクタップでscipy不要、実際の12 kHz化のみ
+`importorskip`）。**実機・実信号での検証は未実施**（Q65は知人の要望で搭載しており、
+アンテナ等の受信環境が無いため）。
+
 #### SDRPipeline motorboating — 調査用の一時的診断ログ（`src/sdr/diag_log.py`・2026-07-25 追加）
 
 上記一連の修正でCW Decoder等のSDR音声受信が実際に動くようになった後、報告者から新たに
