@@ -205,6 +205,79 @@ class TestListComboSelectionSync:
         assert dlg.current_list_id() is None
 
 
+class TestSelectedListPersistence:
+    """The list chosen in the "List:" combo must be remembered across
+    restarts instead of always falling back to the first list."""
+
+    def test_selecting_second_list_is_restored_by_new_dialog(
+        self, qtbot: QtBot, db: sqlite3.Connection
+    ) -> None:
+        from core.autotrack import AutotrackManager
+
+        AutotrackManager.create_list(db, "First")
+        second_id = AutotrackManager.create_list(db, "Second")
+        first = AutotrackRecordDialog(db)
+        qtbot.addWidget(first)
+        first._at_sel_combo.setCurrentIndex(first._at_sel_combo.findData(second_id))
+
+        second = AutotrackRecordDialog(db)
+        qtbot.addWidget(second)
+
+        assert second.current_list_id() == second_id
+
+    def test_defaults_to_first_list_when_nothing_saved(
+        self, qtbot: QtBot, db: sqlite3.Connection
+    ) -> None:
+        from core.autotrack import AutotrackManager
+
+        first_id = AutotrackManager.create_list(db, "First")
+        AutotrackManager.create_list(db, "Second")
+
+        dlg = AutotrackRecordDialog(db)
+        qtbot.addWidget(dlg)
+
+        assert dlg.current_list_id() == first_id
+
+    def test_deleted_saved_list_falls_back_to_first(
+        self, qtbot: QtBot, db: sqlite3.Connection
+    ) -> None:
+        from core.autotrack import AutotrackManager
+
+        first_id = AutotrackManager.create_list(db, "First")
+        second_id = AutotrackManager.create_list(db, "Second")
+        dlg = AutotrackRecordDialog(db)
+        qtbot.addWidget(dlg)
+        dlg._at_sel_combo.setCurrentIndex(dlg._at_sel_combo.findData(second_id))
+        AutotrackManager.delete_list(db, second_id)
+
+        reopened = AutotrackRecordDialog(db)
+        qtbot.addWidget(reopened)
+
+        assert reopened.current_list_id() == first_id
+
+    def test_main_window_syncs_restored_list_on_startup(
+        self, qtbot: QtBot, db: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from core.autotrack import AutotrackManager
+        from data.tle_manager import TLEManager
+
+        AutotrackManager.create_list(db, "First")
+        second_id = AutotrackManager.create_list(db, "Second")
+        AutotrackManager.add_entry(db, second_id, 57166, "test-xpdr-uuid")
+        db.execute(
+            "INSERT INTO app_settings (key, value) VALUES ('autotrack_selected_list_id', ?)",
+            (str(second_id),),
+        )
+        db.commit()
+
+        w = MainWindow(conn=db, tle_manager=TLEManager(db))
+        qtbot.addWidget(w)
+
+        assert w._at_dialog.current_list_id() == second_id
+        assert w._autotrack.entries()
+        assert w._autotrack.entries()[0].norad_cat_id == 57166
+
+
 class TestReloadAtEntriesSignalsListsModified:
     """_reload_at_entries() must emit lists_modified whenever the selected
     list's entries change (add/remove/reorder), not just when lists

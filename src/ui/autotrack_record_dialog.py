@@ -47,6 +47,7 @@ logger = logging.getLogger(__name__)
 _RECORDING_SETTINGS_KEY = "autotrack_recording_settings"
 _AUTOTRACK_ENABLED_KEY = "autotrack_enabled"
 _USE_ROTATOR_KEY = "autotrack_use_rotator"
+_SELECTED_LIST_KEY = "autotrack_selected_list_id"
 
 
 _AUTOTRACK_HELP = (
@@ -153,6 +154,11 @@ class AutotrackRecordDialog(QDialog):
         currentIndexChanged normally.
         """
         previous_id = self._at_sel_combo.currentData()
+        # On the very first populate (empty combo) fall back to the list the
+        # user last selected in a previous session, instead of always landing
+        # on the first list. A saved id whose list no longer exists is simply
+        # not found below and the combo keeps its default (first) selection.
+        wanted_id = previous_id if previous_id is not None else self._load_selected_list_id()
         self._at_sel_combo.blockSignals(True)
         self._at_sel_combo.clear()
         for lst in lists:
@@ -161,13 +167,15 @@ class AutotrackRecordDialog(QDialog):
         self._at_enable_cb.setEnabled(bool(lists))
         if not lists:
             self._at_enable_cb.setChecked(False)
-        if previous_id is not None:
-            idx = self._at_sel_combo.findData(previous_id)
+        if wanted_id is not None:
+            idx = self._at_sel_combo.findData(wanted_id)
             if idx >= 0:
                 self._at_sel_combo.setCurrentIndex(idx)
         new_id = self._at_sel_combo.currentData()
         self._at_sel_combo.blockSignals(False)
         if new_id != previous_id:
+            if new_id is not None:
+                self._save_selected_list_id(int(new_id))
             self.autotrack_list_changed.emit(new_id)
 
     def current_list_id(self) -> int | None:
@@ -427,7 +435,30 @@ class AutotrackRecordDialog(QDialog):
         self._at_enable_cb.setEnabled(has_list)
         if not has_list:
             self._at_enable_cb.setChecked(False)
+        else:
+            self._save_selected_list_id(int(list_id))
         self.autotrack_list_changed.emit(list_id)
+
+    def _load_selected_list_id(self) -> int | None:
+        """Return the Autotrack List id selected last session, if saved."""
+        row = self._conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?",
+            (_SELECTED_LIST_KEY,),
+        ).fetchone()
+        if not row:
+            return None
+        try:
+            return int(row["value"])
+        except (TypeError, ValueError):
+            return None
+
+    def _save_selected_list_id(self, list_id: int) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value, updated_at)"
+            " VALUES (?, ?, CURRENT_TIMESTAMP)",
+            (_SELECTED_LIST_KEY, str(list_id)),
+        )
+        self._conn.commit()
 
     def _on_enable_toggled(self, checked: bool) -> None:
         self.autotrack_toggled.emit(checked)
