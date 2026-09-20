@@ -108,3 +108,26 @@ def test_position_poll_does_not_seek(qtbot: QtBot) -> None:
 
     assert w._playback_slider.value() == 42
     assert device.seeks == []
+
+
+def test_waterfall_opened_during_playback_knows_it_is_a_replay(qtbot: QtBot) -> None:
+    """Opened after playback started, the dialog must still be told it is one
+    (it shows file positions, not clock times, and a relative axis)."""
+    w, _ = _make_widget(qtbot)
+    w._on_show_waterfall()
+    dialog = w._waterfall_dialog
+    assert dialog is not None
+    qtbot.addWidget(dialog)
+    assert dialog._is_replay is True
+
+
+def test_time_zone_setting_reaches_the_waterfall_dialog(qtbot: QtBot) -> None:
+    w, _ = _make_widget(qtbot)
+    w.set_use_utc(False)  # before the dialog exists: applied when it is created
+    w._on_show_waterfall()
+    dialog = w._waterfall_dialog
+    assert dialog is not None
+    qtbot.addWidget(dialog)
+    assert dialog._use_utc is False
+    w.set_use_utc(True)  # afterwards: forwarded straight away
+    assert dialog._use_utc is True

@@ -20,7 +20,9 @@ during a pass, and avoids clearing the whole history on every retune.
 The optional "Burst" mode (off by default) replaces the single-FFT rows with
 spectra averaged over each whole row and paints short narrow-band
 transmissions red (white outline), each with its estimated S/N on its right
-and the time it appeared on its left, plus a running "Bursts: N" counter. Detection lives in
+and the time it appeared on its left (the position in the file during IQ
+playback, the UTC or local clock time live), plus a running "Bursts: N"
+counter. Detection lives in
 sdr/burst_detector.py (fed via SDRPipeline.set_burst_detection()); the
 waterfall colours themselves are unchanged, so continuous signals still
 show up as before.
@@ -31,6 +33,7 @@ from __future__ import annotations
 import math
 from collections import deque
 from dataclasses import dataclass
+from datetime import UTC, datetime, tzinfo
 from typing import Any
 
 import numpy as np
@@ -141,6 +144,32 @@ class _RowMeta:
     event_id: int | None
 
 
+def format_burst_time(
+    time_s: float, is_replay: bool, use_utc: bool, local_tz: tzinfo | None = None
+) -> str:
+    """Text for the time a burst appeared.
+
+    Playback: seconds from the start of the file ("471.2 s"). Live: the clock
+    time to the second, in UTC ("09:12:05 UTC") or local time with its zone
+    ("18:12:05 JST"). *local_tz* only exists so tests do not depend on the
+    machine's time zone.
+    """
+    if is_replay:
+        return f"{time_s:.1f} s"
+    if use_utc:
+        return datetime.fromtimestamp(time_s, tz=UTC).strftime("%H:%M:%S UTC")
+    moment = datetime.fromtimestamp(time_s, tz=local_tz).astimezone(local_tz)
+    name = moment.tzname() or ""
+    if not name or len(name) > 5:
+        # Windows reports long names such as "Tokyo Standard Time".
+        offset = moment.utcoffset()
+        minutes = int(offset.total_seconds() // 60) if offset is not None else 0
+        sign = "+" if minutes >= 0 else "-"
+        hours, rest = divmod(abs(minutes), 60)
+        name = f"UTC{sign}{hours}" + (f":{rest:02d}" if rest else "")
+    return f"{moment.strftime('%H:%M:%S')} {name}"
+
+
 def burst_label_x(
     x0: int,
     x1: int,
@@ -232,6 +261,8 @@ class SdrWaterfallDialog(QDialog):
         # relative Hz (0 = the recording's own baseband reference), since
         # there is no real absolute RF frequency to show during playback.
         self._is_replay = False
+        # Live burst times are shown in UTC or local time (View > Time Zone).
+        self._use_utc = True
         self._positioned_once = False
         self._history: deque[NDArray[np.float32]] = deque(maxlen=_WATERFALL_HEIGHT)
         self._latest_freqs: NDArray[np.float32] | None = None
@@ -318,6 +349,10 @@ class SdrWaterfallDialog(QDialog):
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    def set_use_utc(self, use_utc: bool) -> None:
+        """Show live burst times in UTC (True) or local time (False)."""
+        self._use_utc = use_utc
 
     def set_pipeline(self, pipeline: Any, is_replay: bool = False) -> None:  # SDRPipeline | None
         """Attach or detach the active SDRPipeline (mirrors SdrControlWidget).
@@ -640,7 +675,11 @@ class SdrWaterfallDialog(QDialog):
             appeared = self._event_time.get(event_id)
             # (text, is_snr) for whichever of the two labels is known.
             snr_text = f"{snr:+.1f} dB" if snr is not None else ""
-            time_text = f"{appeared:.1f} s" if appeared is not None else ""
+            time_text = (
+                format_burst_time(appeared, self._is_replay, self._use_utc)
+                if appeared is not None
+                else ""
+            )
             if not snr_text and not time_text:
                 continue
             snr_w = metrics.horizontalAdvance(snr_text) + 6 if snr_text else 0

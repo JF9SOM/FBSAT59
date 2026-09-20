@@ -434,6 +434,15 @@ class _NoiseDevice:
         return z.astype(np.complex64)
 
 
+class _RealTimeNoiseDevice(_NoiseDevice):
+    """Noise delivered at exactly the pace the samples would arrive live."""
+
+    def read_samples(self, num_samples: int = 1024) -> np.ndarray | None:
+        time.sleep(num_samples / self.sample_rate)
+        z = self._rng.standard_normal(num_samples) + 1j * self._rng.standard_normal(num_samples)
+        return z.astype(np.complex64)
+
+
 class TestBurstDetectionSwitch:
     def test_off_by_default(self, qtbot: QtBot) -> None:
         assert _make_pipeline(qtbot)._burst_detector is None
@@ -477,21 +486,29 @@ class _PositionedDevice:
 
 
 class TestBurstTimeReference:
-    def test_none_for_a_live_device_that_is_not_recording(self, qtbot: QtBot) -> None:
-        assert _make_pipeline(qtbot)._burst_time_reference() is None
+    def test_wall_clock_for_a_live_device(self, qtbot: QtBot) -> None:
+        pipeline = _make_pipeline(qtbot)
+        before = time.time()
+        reference = pipeline._burst_time_reference()
+        assert before <= reference <= time.time()
 
     def test_file_position_while_playing_back_a_recording(self, qtbot: QtBot) -> None:
         del qtbot
         pipeline = SDRPipeline(_PositionedDevice())
         assert pipeline._burst_time_reference() == 471.5
 
-    def test_time_since_the_iq_recording_started(self, qtbot: QtBot) -> None:
+    def test_a_running_iq_recording_does_not_change_the_live_reference(self, qtbot: QtBot) -> None:
+        """Live burst times are clock times whether or not an IQ recording runs."""
         pipeline = _make_pipeline(qtbot)
-        pipeline._rec_samples = int(12.5 * _SAMPLE_RATE)
-        assert pipeline._burst_time_reference() == 12.5
+        pipeline._recorder._recording = True
+        before = time.time()
+        assert pipeline._burst_time_reference() >= before
 
     def test_rows_carry_increasing_times(self, qtbot: QtBot) -> None:
-        pipeline = SDRPipeline(_NoiseDevice())
+        # Real-time pace: a row's start time is "now" minus the signal it
+        # covers, so a device running faster than real time would make the
+        # (longer) later rows start earlier.
+        pipeline = SDRPipeline(_RealTimeNoiseDevice())
         rows: list[Any] = []
         pipeline.burst_row_ready.connect(rows.append)
         pipeline.set_burst_detection(True)

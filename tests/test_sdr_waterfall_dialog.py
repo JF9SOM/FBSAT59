@@ -15,6 +15,7 @@ for other widgets in this codebase).
 from __future__ import annotations
 
 import math
+from datetime import timedelta, timezone
 
 import numpy as np
 from PySide6.QtCore import QObject, QRect, QSize, Signal
@@ -25,6 +26,7 @@ from ui.sdr_waterfall_dialog import (
     SdrWaterfallDialog,
     burst_label_x,
     color_map,
+    format_burst_time,
     nice_axis_step,
     top_right_position,
 )
@@ -524,3 +526,43 @@ def test_burst_label_placement_at_the_far_right_keeps_both_on_the_left() -> None
     assert snr_x == 740 - 6 - 90
     assert time_x == snr_x - 6 - 80  # outside the S/N label, still in the plot
     assert time_x >= 55
+
+
+# 2026-09-20 09:12:05 UTC
+_EPOCH = 1_789_895_525.0
+_JST = timezone(timedelta(hours=9), "JST")
+
+
+def test_format_burst_time_playback_is_seconds_into_the_file() -> None:
+    assert format_burst_time(471.16, is_replay=True, use_utc=True) == "471.2 s"
+    assert format_burst_time(471.16, is_replay=True, use_utc=False) == "471.2 s"
+
+
+def test_format_burst_time_live_utc() -> None:
+    assert format_burst_time(_EPOCH, is_replay=False, use_utc=True) == "09:12:05 UTC"
+
+
+def test_format_burst_time_live_local_uses_the_zone_abbreviation() -> None:
+    text = format_burst_time(_EPOCH, is_replay=False, use_utc=False, local_tz=_JST)
+    assert text == "18:12:05 JST"
+
+
+def test_format_burst_time_local_falls_back_to_an_offset_for_long_zone_names() -> None:
+    windows_style = timezone(timedelta(hours=9), "Tokyo Standard Time")
+    text = format_burst_time(_EPOCH, is_replay=False, use_utc=False, local_tz=windows_style)
+    assert text == "18:12:05 UTC+9"
+    india = timezone(timedelta(hours=5, minutes=30), "India Standard Time")
+    assert format_burst_time(_EPOCH, False, False, india) == "14:42:05 UTC+5:30"
+    west = timezone(-timedelta(hours=8), "Pacific Standard Time")
+    assert format_burst_time(_EPOCH, False, False, west) == "01:12:05 UTC-8"
+
+
+def test_dialog_shows_live_burst_time_as_a_clock_and_playback_as_seconds(qtbot: QtBot) -> None:
+    dlg, pipeline = _shown_burst_dialog(qtbot)
+    assert dlg._use_utc is True  # UTC unless View > Time Zone says otherwise
+    dlg.set_use_utc(False)
+    assert dlg._use_utc is False
+    # The mode the times were recorded in decides how they are written.
+    assert format_burst_time(_EPOCH, dlg._is_replay, dlg._use_utc, _JST) == "18:12:05 JST"
+    dlg.set_pipeline(_FakePipeline(), is_replay=True)
+    assert format_burst_time(471.2, dlg._is_replay, dlg._use_utc) == "471.2 s"

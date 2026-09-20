@@ -149,10 +149,6 @@ class SDRPipeline(QThread):
         # per loop iteration on the pipeline thread (an atomic reference
         # swap, so no lock is needed).
         self._burst_detector: BurstDetector | None = None
-        # Samples handed to the IQ recorder since it started (0 while it is
-        # not recording). Only used to time bursts on the recording's own
-        # timeline, see _burst_time_reference().
-        self._rec_samples: int = 0
 
         # Diagnostic-only (see sdr.diag_log): duration of the most recent
         # _play_audio() write() call, read by run()'s per-second summary.
@@ -364,21 +360,19 @@ class SDRPipeline(QThread):
         else:
             self._burst_detector = None
 
-    def _burst_time_reference(self) -> float | None:
-        """Time (s) at the end of the current row, on the timeline a user relates to.
+    def _burst_time_reference(self) -> float:
+        """Time (s) at the end of the current row, for labelling bursts.
 
-        The position in the file while a recording is being played back (the
-        same number as the time in the file), else the time since the IQ
-        recording started while one is being made (the time in the file being
-        written), else None: the detector then counts from its own start.
+        While a recorded file is played back: the position in the file (the
+        same number as the time in the file). Live: the wall clock
+        (seconds since the epoch), which the waterfall shows as UTC or local
+        time. It is when the samples were taken up to the driver's buffering
+        delay, roughly 0.1-0.3 s.
         """
         position = getattr(self._device, "position_s", None)
         if isinstance(position, int | float):
             return float(position)
-        sample_rate = self._device.sample_rate
-        if self._rec_samples > 0 and sample_rate:
-            return self._rec_samples / sample_rate
-        return None
+        return time.time()
 
     # -- Recorder control --
 
@@ -462,7 +456,6 @@ class SDRPipeline(QThread):
 
             # IQ recorder
             self._recorder.put_samples(iq)
-            self._rec_samples = self._rec_samples + len(iq) if self._recorder.is_recording else 0
 
             # Demodulate → audio_ready (needed by any decoder tab that
             # requested it, independent of whether the user also wants

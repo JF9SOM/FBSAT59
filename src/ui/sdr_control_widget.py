@@ -125,6 +125,8 @@ class SdrControlWidget(QWidget):
         # True while self._pipeline is backed by a recorded .iq.wav file
         # rather than live hardware -- see set_pipeline()'s is_replay param.
         self._is_replay: bool = False
+        # UTC vs local time for the waterfall's live burst times, see set_use_utc().
+        self._use_utc: bool = True
         self._status_timer = QTimer(self)
         self._status_timer.setInterval(1_000)
         self._status_timer.timeout.connect(self._update_rec_status)
@@ -167,6 +169,12 @@ class SdrControlWidget(QWidget):
             # Keep the group-box title/frame itself enabled so it renders normally
             # (disabling the QGroupBox would grey out the title text too, which is fine,
             # but more importantly it would re-disable our exempt children above).
+
+    def set_use_utc(self, use_utc: bool) -> None:
+        """Show live burst times in the waterfall in UTC or local time (View > Time Zone)."""
+        self._use_utc = use_utc
+        if self._waterfall_dialog is not None:
+            self._waterfall_dialog.set_use_utc(use_utc)
 
     def set_pipeline(self, pipeline: Any, is_replay: bool = False) -> None:  # SDRPipeline | None
         """Attach or detach the active SDRPipeline.
@@ -771,7 +779,8 @@ class SdrControlWidget(QWidget):
     def _on_show_waterfall(self) -> None:
         if self._waterfall_dialog is None:
             self._waterfall_dialog = SdrWaterfallDialog(self)
-            self._waterfall_dialog.set_pipeline(self._pipeline)
+            self._waterfall_dialog.set_use_utc(self._use_utc)
+            self._waterfall_dialog.set_pipeline(self._pipeline, self._is_replay)
         self._waterfall_dialog.show()
         self._waterfall_dialog.raise_()
         self._waterfall_dialog.activateWindow()

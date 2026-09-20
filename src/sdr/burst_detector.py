@@ -85,8 +85,9 @@ class BurstRow:
     ``event_id`` the burst event this row belongs to and ``event_count`` the
     number of finished, counted burst events since the detector was created.
     ``time_s`` is when the row starts, in seconds on the caller's time base
-    (see BurstDetector.finish_row()); the time of a burst is that of the first
-    row it shows up in, so it is accurate to about one row (~0.13 s).
+    (see BurstDetector.finish_row(); SDRPipeline uses the position in the file
+    for playback and the wall clock live); the time of a burst is that of the
+    first row it shows up in, so it is accurate to about one row (~0.13 s).
     """
 
     freqs_hz: NDArray[np.float64]
@@ -161,10 +162,10 @@ class BurstDetector:
         """Close the current row; None if no samples arrived since the last one.
 
         *end_time_s* is the time at which the row ends on the caller's time
-        base (e.g. the position in a played-back file, or seconds since an IQ
-        recording started); rows then report ``time_s = end_time_s - row
-        length``. Without it the time base is seconds of signal processed
-        since this detector was created.
+        base (e.g. the position in a played-back file, or the wall clock);
+        rows then report ``time_s = end_time_s - row length``. Without it the
+        time base is seconds of signal processed since this detector was
+        created.
         """
         if self._frames == 0:
             return None

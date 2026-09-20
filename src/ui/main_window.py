@@ -5982,6 +5982,7 @@ class MainWindow(QMainWindow):
         self._dashboard_view._radar.set_use_utc(use_utc)
         self._at_dialog.set_use_utc(use_utc)
         self._detail_panel._mini_radar.set_use_utc(use_utc)
+        self._sdr_control.set_use_utc(use_utc)
         self._notify_comms_tabs_use_utc(use_utc)
 
     def _on_time_zone_changed(self, use_utc: bool) -> None:
@@ -6002,6 +6003,7 @@ class MainWindow(QMainWindow):
         self._dashboard_view._radar.set_use_utc(use_utc)
         self._at_dialog.set_use_utc(use_utc)
         self._detail_panel._mini_radar.set_use_utc(use_utc)
+        self._sdr_control.set_use_utc(use_utc)
         self._notify_comms_tabs_use_utc(use_utc)
 
     def _load_appearance_mode(self) -> str:
