@@ -14,6 +14,8 @@ New consumers simply call subscribe(callback) to receive each numpy block.
 
 Signals emitted on the Qt main thread (via QMetaObject / queued connection):
   spectrum_ready(list)   — [(freq_hz, power_dbfs), …] for spectrum display
+  burst_row_ready(BurstRow) — averaged spectrum row + burst verdict; only
+                              emitted while set_burst_detection(True) is active
   audio_ready(ndarray)   — float32 PCM block at AUDIO_RATE
   status_changed(str)    — human-readable status message
   error_occurred(str)    — error message
@@ -32,6 +34,7 @@ from typing import Any, Protocol
 import numpy as np
 from PySide6.QtCore import QObject, QThread, Signal
 
+from sdr.burst_detector import BurstDetector
 from sdr.demodulator import AUDIO_RATE, DemodMode, Demodulator
 from sdr.diag_log import get_sdr_diag_logger
 from sdr.recorder import IQRecorder
@@ -98,6 +101,7 @@ class SDRPipeline(QThread):
     """
 
     spectrum_ready: Signal = Signal(list)  # [(freq_hz, power_dbfs), …]
+    burst_row_ready: Signal = Signal(object)  # sdr.burst_detector.BurstRow
     center_freq_changed: Signal = Signal(float)  # current centre frequency (Hz)
     audio_ready: Signal = Signal(object)  # np.ndarray float32 PCM
     status_changed: Signal = Signal(str)
@@ -138,6 +142,13 @@ class SDRPipeline(QThread):
 
         # FFT timing
         self._last_fft_time: float = 0.0
+
+        # Burst detection for the waterfall (see sdr/burst_detector.py). None
+        # while switched off, which costs nothing: run() only touches the
+        # detector when it is set. Assigned from the UI thread and read once
+        # per loop iteration on the pipeline thread (an atomic reference
+        # swap, so no lock is needed).
+        self._burst_detector: BurstDetector | None = None
 
         # Diagnostic-only (see sdr.diag_log): duration of the most recent
         # _play_audio() write() call, read by run()'s per-second summary.
@@ -333,6 +344,22 @@ class SDRPipeline(QThread):
         """Release `owner`'s interest registered via request_audio()."""
         self._demod_requesters.discard(owner)
 
+    # -- Burst detection --
+
+    def set_burst_detection(self, enabled: bool) -> None:
+        """Switch burst detection for the waterfall on or off.
+
+        While on, every I/Q block also feeds a BurstDetector and each FFT
+        tick emits burst_row_ready with the averaged spectrum row and the
+        detector's verdict. Switching on when already on keeps the detector's
+        state (baseline and counter); switching off discards it.
+        """
+        if enabled:
+            if self._burst_detector is None:
+                self._burst_detector = BurstDetector(self._device.sample_rate)
+        else:
+            self._burst_detector = None
+
     # -- Recorder control --
 
     @property
@@ -430,6 +457,16 @@ class SDRPipeline(QThread):
                 except Exception:
                     logger.exception("Demodulator error")
 
+            # Burst detector: every block is averaged into the current row
+            # (the single-FFT spectrum below only ever looks at 1024 samples
+            # per tick, far too little to see a 0.2 s burst).
+            burst_detector = self._burst_detector
+            if burst_detector is not None:
+                try:
+                    burst_detector.feed(iq)
+                except Exception:
+                    logger.exception("Burst detector feed error")
+
             # FFT → spectrum + centre frequency overlay
             now = time.monotonic()
             if now - self._last_fft_time >= _FFT_INTERVAL:
@@ -440,6 +477,13 @@ class SDRPipeline(QThread):
                     self.center_freq_changed.emit(self.effective_center_freq)
                 except Exception:
                     logger.exception("FFT error")
+                if burst_detector is not None:
+                    try:
+                        burst_row = burst_detector.finish_row(self.effective_center_freq)
+                        if burst_row is not None:
+                            self.burst_row_ready.emit(burst_row)
+                    except Exception:
+                        logger.exception("Burst detector row error")
 
             # Diagnostic aggregation (see comment above the loop). Positive
             # lag means this iteration took longer than the real-time

@@ -411,3 +411,58 @@ class TestStallWatchdog:
             _stop(pipeline)
 
         assert blocks == []
+
+
+class _NoiseDevice:
+    """Delivers noise blocks at roughly real-time pace, like a live SDR."""
+
+    sample_rate = _SAMPLE_RATE
+    center_freq = _HW_CF
+
+    def __init__(self) -> None:
+        self._rng = np.random.default_rng(0)
+
+    def start_stream(self) -> bool:
+        return True
+
+    def stop_stream(self) -> None:
+        pass
+
+    def read_samples(self, num_samples: int = 1024) -> np.ndarray | None:
+        time.sleep(0.01)
+        z = self._rng.standard_normal(num_samples) + 1j * self._rng.standard_normal(num_samples)
+        return z.astype(np.complex64)
+
+
+class TestBurstDetectionSwitch:
+    def test_off_by_default(self, qtbot: QtBot) -> None:
+        assert _make_pipeline(qtbot)._burst_detector is None
+
+    def test_switching_on_keeps_state_and_off_discards_it(self, qtbot: QtBot) -> None:
+        pipeline = _make_pipeline(qtbot)
+        pipeline.set_burst_detection(True)
+        detector = pipeline._burst_detector
+        assert detector is not None
+        pipeline.set_burst_detection(True)  # already on: keep baseline and counter
+        assert pipeline._burst_detector is detector
+        pipeline.set_burst_detection(False)
+        assert pipeline._burst_detector is None
+
+    def test_rows_are_emitted_only_while_switched_on(self, qtbot: QtBot) -> None:
+        pipeline = SDRPipeline(_NoiseDevice())
+        rows: list[Any] = []
+        pipeline.burst_row_ready.connect(rows.append)
+        pipeline.start()
+        try:
+            with qtbot.waitSignal(pipeline.spectrum_ready, timeout=3_000):
+                pass
+            assert rows == []  # switched off: nothing is computed or emitted
+
+            pipeline.set_burst_detection(True)
+            qtbot.waitUntil(lambda: len(rows) >= 2, timeout=3_000)
+        finally:
+            _stop(pipeline)
+
+        row = rows[0]
+        assert len(row.power_dbfs) == len(row.freqs_hz) == 1024
+        assert row.warming_up is True

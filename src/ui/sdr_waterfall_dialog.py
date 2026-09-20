@@ -16,12 +16,21 @@ and the centre-frequency marker. Small frequency drift between rows
 (e.g. from Doppler-driven retunes) is not re-aligned — this matches how
 ordinary SDR waterfalls behave when the receiver is nudged slightly
 during a pass, and avoids clearing the whole history on every retune.
+
+The optional "Burst" mode (off by default) replaces the single-FFT rows with
+spectra averaged over each whole row and paints short narrow-band
+transmissions red (white outline), each with its estimated S/N beside it,
+plus a running "Bursts: N" counter. Detection lives in
+sdr/burst_detector.py (fed via SDRPipeline.set_burst_detection()); the
+waterfall colours themselves are unchanged, so continuous signals still
+show up as before.
 """
 
 from __future__ import annotations
 
 import math
 from collections import deque
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -50,6 +59,7 @@ from PySide6.QtWidgets import (
 )
 
 from i18n import _
+from sdr.burst_detector import BurstRow, RowKind
 
 # Shared frequency-axis width for both the spectrum trace and the
 # waterfall image below it.
@@ -106,6 +116,24 @@ _PALETTE = [
     (255, 140, 0),
     (255, 30, 30),
 ]
+
+
+# Burst mode overlay (see SdrWaterfallDialog._draw_burst_overlay()).
+_BURST_COLOR = QColor(255, 0, 0)
+_BURST_OUTLINE = QColor(255, 255, 255)  # the palette's hottest colour is red too
+_IMPULSE_TINT = QColor(160, 160, 160, 110)
+_BURST_PAD_BINS = 3  # widen the marked span a little so 1-3 px rows stay visible
+_BURST_TEXT_GAP = 6  # px between a burst and its S/N label
+
+
+@dataclass
+class _RowMeta:
+    """Burst-mode annotation of one waterfall row (kept parallel to _history)."""
+
+    seq: int
+    kind: RowKind
+    bins: tuple[int, int] | None
+    event_id: int | None
 
 
 def color_map(norm: NDArray[np.float32]) -> NDArray[np.uint8]:
@@ -176,6 +204,15 @@ class SdrWaterfallDialog(QDialog):
         self._latest_powers: NDArray[np.float32] | None = None
         self._center_freq_hz: float | None = None
 
+        # Burst mode state (see the module docstring). _row_meta runs
+        # parallel to _history while burst mode is on; _seq numbers the rows
+        # pushed since the last reset so a row's age is _seq - meta.seq.
+        self._row_meta: deque[_RowMeta] = deque(maxlen=_WATERFALL_HEIGHT)
+        self._event_snr: dict[int, float] = {}
+        self._seq = 0
+        self._burst_count = 0
+        self._burst_warming_up = False
+
         layout = QVBoxLayout(self)
 
         ctrl_row = QHBoxLayout()
@@ -197,7 +234,20 @@ class SdrWaterfallDialog(QDialog):
         self._high_spin.setValue(_DEFAULT_HIGH_DB)
         self._high_spin.setEnabled(False)
         ctrl_row.addWidget(self._high_spin)
+        self._burst_chk = QCheckBox(_("Burst"))
+        self._burst_chk.setToolTip(
+            _(
+                "Mark short narrow-band transmissions in red with their estimated S/N "
+                "(in an 11 kHz channel) and count them. Grey rows are broadband "
+                "interference. Detection starts about 10 s after switching on."
+            )
+        )
+        self._burst_chk.toggled.connect(self._on_burst_toggled)
+        ctrl_row.addWidget(self._burst_chk)
         ctrl_row.addStretch()
+        self._burst_label = QLabel("")
+        self._burst_label.setStyleSheet("color:#ff3b30; font-weight:bold;")
+        ctrl_row.addWidget(self._burst_label)
         layout.addLayout(ctrl_row)
 
         self._image_label = QLabel(_("Waiting for SDR spectrum data…"))
@@ -249,17 +299,23 @@ class SdrWaterfallDialog(QDialog):
             try:
                 self._pipeline.spectrum_ready.disconnect(self._on_spectrum)
                 self._pipeline.center_freq_changed.disconnect(self._on_center_freq)
+                self._pipeline.burst_row_ready.disconnect(self._on_burst_row)
+                self._pipeline.set_burst_detection(False)
             except Exception:
                 pass
         self._pipeline = pipeline
         self._is_replay = is_replay
         self._history.clear()
+        self._reset_burst_state()
         self._latest_freqs = None
         self._latest_powers = None
         self._center_freq_hz = None
         if pipeline is not None:
             pipeline.spectrum_ready.connect(self._on_spectrum)
             pipeline.center_freq_changed.connect(self._on_center_freq)
+            pipeline.burst_row_ready.connect(self._on_burst_row)
+            if self._burst_chk.isChecked():
+                pipeline.set_burst_detection(True)
         else:
             self._image_label.setPixmap(QPixmap())
             self._image_label.setText(_("Waiting for SDR spectrum data…"))
@@ -271,6 +327,10 @@ class SdrWaterfallDialog(QDialog):
     def hideEvent(self, event: QHideEvent) -> None:
         super().hideEvent(event)
         self._history.clear()
+        # Only the picture is dropped: detection (and so the counter) keeps
+        # running while the dialog is closed, see _on_burst_row().
+        self._row_meta.clear()
+        self._event_snr.clear()
         self._image_label.setPixmap(QPixmap())
         self._image_label.setText(_("Waiting for SDR spectrum data…"))
 
@@ -286,6 +346,8 @@ class SdrWaterfallDialog(QDialog):
         self._center_freq_hz = freq_hz
 
     def _on_spectrum(self, points: list[tuple[float, float]]) -> None:
+        if self._burst_chk.isChecked():
+            return  # burst mode is fed by burst_row_ready instead
         if not self.isVisible() or not points:
             return
         freqs = np.array([p[0] for p in points], dtype=np.float32)
@@ -296,6 +358,62 @@ class SdrWaterfallDialog(QDialog):
         self._latest_freqs = freqs
         self._latest_powers = powers
         self._redraw()
+
+    def _on_burst_toggled(self, checked: bool) -> None:
+        # The two modes build their rows differently, so never mix them.
+        self._history.clear()
+        self._reset_burst_state()
+        if self._pipeline is not None:
+            self._pipeline.set_burst_detection(checked)
+        if not self.isVisible():
+            return
+        self._image_label.setPixmap(QPixmap())
+        self._image_label.setText(_("Waiting for SDR spectrum data…"))
+
+    def _on_burst_row(self, row: BurstRow) -> None:
+        """One averaged spectrum row plus the burst detector's verdict."""
+        if not self._burst_chk.isChecked():
+            return
+        # The counter follows the detector even while the dialog is closed.
+        self._burst_count = row.event_count
+        self._burst_warming_up = row.warming_up
+        self._update_burst_label()
+        if not self.isVisible():
+            return
+
+        powers = row.power_dbfs
+        if self._history and len(powers) != len(self._history[-1]):
+            self._history.clear()
+            self._row_meta.clear()
+        self._seq += 1
+        self._history.append(powers)
+        self._row_meta.append(_RowMeta(self._seq, row.kind, row.burst_bins, row.event_id))
+        if row.event_id is not None and row.snr_db is not None:
+            self._event_snr[row.event_id] = max(
+                row.snr_db, self._event_snr.get(row.event_id, -math.inf)
+            )
+        self._latest_freqs = row.freqs_hz.astype(np.float32)
+        self._latest_powers = powers
+        self._redraw()
+
+    def _reset_burst_state(self) -> None:
+        """Forget all burst rows, events and the counter (new detector or pipeline)."""
+        self._row_meta.clear()
+        self._event_snr.clear()
+        self._seq = 0
+        self._burst_count = 0
+        self._burst_warming_up = False
+        self._update_burst_label()
+
+    def _update_burst_label(self) -> None:
+        if not self._burst_chk.isChecked():
+            self._burst_label.setText("")
+            return
+        prefix = _("Bursts:")
+        text = f"{prefix} {self._burst_count}"
+        if self._burst_warming_up:
+            text += f"  ({_('calibrating…')})"
+        self._burst_label.setText(text)
 
     # ------------------------------------------------------------------
     # Rendering
@@ -421,8 +539,64 @@ class SdrWaterfallDialog(QDialog):
             Qt.TransformationMode.FastTransformation,
         )
         painter.drawPixmap(_MARGIN_LEFT, wf_top, pix)
+        if self._burst_chk.isChecked() and len(self._row_meta) == n_rows:
+            self._draw_burst_overlay(painter, wf_top, n_bins)
         painter.setPen(QPen(QColor("#333355"), 1))
         painter.drawRect(_MARGIN_LEFT, wf_top, _PLOT_WIDTH, _WATERFALL_HEIGHT)
+
+    def _draw_burst_overlay(self, painter: QPainter, wf_top: int, n_bins: int) -> None:
+        """Paint detected bursts red with a white outline, their S/N beside them.
+
+        Impulse rows (broadband interference) get a translucent grey tint
+        instead. The waterfall colours underneath are left untouched, so a
+        continuous signal is still visible exactly as without burst mode.
+        """
+        scale = _PLOT_WIDTH / n_bins
+        plot_right = _MARGIN_LEFT + _PLOT_WIDTH
+        red_rects: list[QRect] = []
+        boxes: dict[int, list[int]] = {}  # event id -> [x0, x1, y0, y1]
+        for age, meta in enumerate(reversed(self._row_meta)):  # newest first
+            y = wf_top + age
+            if meta.kind == RowKind.IMPULSE:
+                painter.fillRect(_MARGIN_LEFT, y, _PLOT_WIDTH, 1, _IMPULSE_TINT)
+            elif meta.kind == RowKind.BURST and meta.bins is not None and meta.event_id is not None:
+                x0 = _MARGIN_LEFT + int((meta.bins[0] - _BURST_PAD_BINS) * scale)
+                x1 = _MARGIN_LEFT + int((meta.bins[1] + 1 + _BURST_PAD_BINS) * scale)
+                x0 = max(x0, _MARGIN_LEFT)
+                x1 = min(x1, plot_right)
+                red_rects.append(QRect(x0, y, x1 - x0, 1))
+                box = boxes.setdefault(meta.event_id, [x0, x1, y, y])
+                box[0] = min(box[0], x0)
+                box[1] = max(box[1], x1)
+                box[3] = y
+        # Outline first (a rectangle around the whole event), red rows on top.
+        wf_bottom = wf_top + _WATERFALL_HEIGHT
+        for x0, x1, y0, y1 in boxes.values():
+            top = max(y0 - 1, wf_top)  # keep the outline inside the waterfall
+            bottom = min(y1 + 2, wf_bottom)
+            painter.fillRect(x0 - 1, top, x1 - x0 + 2, bottom - top, _BURST_OUTLINE)
+        for rect in red_rects:
+            painter.fillRect(rect, _BURST_COLOR)
+
+        font = QFont("Sans", 8)
+        font.setBold(True)
+        painter.setFont(font)
+        metrics = painter.fontMetrics()
+        for event_id, (x0, x1, y0, y1) in boxes.items():
+            snr = self._event_snr.get(event_id)
+            if snr is None:
+                continue
+            text = f"{snr:+.1f} dB"
+            w = metrics.horizontalAdvance(text) + 6
+            h = metrics.height()
+            x = x1 + _BURST_TEXT_GAP
+            if x + w > plot_right:  # no room on the right: put it on the left
+                x = x0 - _BURST_TEXT_GAP - w
+            y = (y0 + y1) // 2 - h // 2
+            y = min(max(y, wf_top), wf_top + _WATERFALL_HEIGHT - h)
+            painter.fillRect(x, y, w, h, QColor(0, 0, 0, 170))
+            painter.setPen(QColor("#ffffff"))
+            painter.drawText(x + 3, y, w - 3, h, Qt.AlignmentFlag.AlignVCenter, text)
 
     def _draw_center_marker(self, painter: QPainter, freq_lo: float, freq_hi: float) -> None:
         if self._center_freq_hz is None:

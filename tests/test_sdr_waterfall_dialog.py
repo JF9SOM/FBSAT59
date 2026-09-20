@@ -20,6 +20,7 @@ import numpy as np
 from PySide6.QtCore import QObject, QRect, QSize, Signal
 from pytestqt.qtbot import QtBot
 
+from sdr.burst_detector import BurstRow, RowKind
 from ui.sdr_waterfall_dialog import (
     SdrWaterfallDialog,
     color_map,
@@ -29,11 +30,19 @@ from ui.sdr_waterfall_dialog import (
 
 
 class _FakePipeline(QObject):
-    """Minimal stand-in for SDRPipeline exposing only the two signals
-    SdrWaterfallDialog subscribes to."""
+    """Minimal stand-in for SDRPipeline exposing only what
+    SdrWaterfallDialog subscribes to / calls."""
 
     spectrum_ready: Signal = Signal(list)
     center_freq_changed: Signal = Signal(float)
+    burst_row_ready: Signal = Signal(object)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.burst_calls: list[bool] = []
+
+    def set_burst_detection(self, enabled: bool) -> None:
+        self.burst_calls.append(enabled)
 
 
 def _emit_spectrum(pipeline: _FakePipeline, center_hz: float, n: int = 256) -> None:
@@ -260,3 +269,180 @@ def test_set_pipeline_is_replay_resets_to_false_on_detach(qtbot: QtBot) -> None:
     assert dlg._is_replay is True
     dlg.set_pipeline(None)
     assert dlg._is_replay is False
+
+
+# ---------------------------------------------------------------------------
+# Burst mode
+# ---------------------------------------------------------------------------
+
+_N_BINS = 1024
+
+
+def _burst_row(
+    kind: RowKind = RowKind.NONE,
+    bins: tuple[int, int] | None = None,
+    snr_db: float | None = None,
+    event_id: int | None = None,
+    count: int = 0,
+    warming_up: bool = False,
+) -> BurstRow:
+    return BurstRow(
+        freqs_hz=435.6e6 + (np.arange(_N_BINS) - _N_BINS / 2) * 244.0,
+        power_dbfs=np.full(_N_BINS, -80.0, dtype=np.float32),
+        kind=kind,
+        burst_bins=bins,
+        snr_db=snr_db,
+        event_id=event_id,
+        event_count=count,
+        warming_up=warming_up,
+    )
+
+
+def _shown_burst_dialog(qtbot: QtBot) -> tuple[SdrWaterfallDialog, _FakePipeline]:
+    dlg = SdrWaterfallDialog()
+    qtbot.addWidget(dlg)
+    dlg.show()
+    pipeline = _FakePipeline()
+    dlg.set_pipeline(pipeline)
+    dlg._burst_chk.setChecked(True)
+    return dlg, pipeline
+
+
+def _pixel(dlg: SdrWaterfallDialog, x: int, y: int) -> tuple[int, int, int]:
+    c = dlg._image_label.pixmap().toImage().pixelColor(x, y)
+    return (c.red(), c.green(), c.blue())
+
+
+def test_burst_mode_is_off_by_default_and_costs_nothing(qtbot: QtBot) -> None:
+    dlg = SdrWaterfallDialog()
+    qtbot.addWidget(dlg)
+    dlg.show()
+    pipeline = _FakePipeline()
+    dlg.set_pipeline(pipeline)
+    assert dlg._burst_chk.isChecked() is False
+    assert pipeline.burst_calls == []  # detector never switched on
+    assert dlg._burst_label.text() == ""
+    _emit_spectrum(pipeline, 435.6e6)
+    assert len(dlg._history) == 1  # ordinary single-FFT rows as before
+    pipeline.burst_row_ready.emit(_burst_row())
+    assert len(dlg._history) == 1  # burst rows ignored while the box is off
+
+
+def test_burst_checkbox_switches_detection_on_the_pipeline(qtbot: QtBot) -> None:
+    dlg = SdrWaterfallDialog()
+    qtbot.addWidget(dlg)
+    pipeline = _FakePipeline()
+    dlg.set_pipeline(pipeline)
+    dlg._burst_chk.setChecked(True)
+    dlg._burst_chk.setChecked(False)
+    assert pipeline.burst_calls == [True, False]
+
+
+def test_burst_setting_follows_the_dialog_to_a_new_pipeline(qtbot: QtBot) -> None:
+    dlg = SdrWaterfallDialog()
+    qtbot.addWidget(dlg)
+    old = _FakePipeline()
+    dlg.set_pipeline(old)
+    dlg._burst_chk.setChecked(True)
+
+    new = _FakePipeline()
+    dlg.set_pipeline(new)
+    assert old.burst_calls == [True, False]  # released from the old one
+    assert new.burst_calls == [True]  # and switched on for the new one
+
+
+def test_burst_mode_takes_rows_from_burst_signal_only(qtbot: QtBot) -> None:
+    dlg, pipeline = _shown_burst_dialog(qtbot)
+    _emit_spectrum(pipeline, 435.6e6)
+    assert len(dlg._history) == 0  # single-FFT rows are ignored in burst mode
+    pipeline.burst_row_ready.emit(_burst_row())
+    assert len(dlg._history) == 1
+    assert len(dlg._row_meta) == 1
+    assert not dlg._image_label.pixmap().isNull()
+
+
+def test_burst_counter_label_and_calibration_note(qtbot: QtBot) -> None:
+    dlg, pipeline = _shown_burst_dialog(qtbot)
+    pipeline.burst_row_ready.emit(_burst_row(count=0, warming_up=True))
+    assert "0" in dlg._burst_label.text()
+    assert "calibrating" in dlg._burst_label.text()
+    pipeline.burst_row_ready.emit(_burst_row(count=3))
+    assert dlg._burst_label.text().endswith("3")
+    assert "calibrating" not in dlg._burst_label.text()
+
+
+def test_burst_counter_keeps_counting_while_the_dialog_is_hidden(qtbot: QtBot) -> None:
+    dlg, pipeline = _shown_burst_dialog(qtbot)
+    dlg.hide()
+    pipeline.burst_row_ready.emit(_burst_row(count=4))
+    assert dlg._burst_label.text().endswith("4")
+    assert len(dlg._history) == 0  # no picture is built while hidden
+
+
+def test_burst_counter_is_cleared_by_new_pipeline_and_by_toggling(qtbot: QtBot) -> None:
+    dlg, pipeline = _shown_burst_dialog(qtbot)
+    pipeline.burst_row_ready.emit(_burst_row(count=5))
+    assert dlg._burst_label.text().endswith("5")
+
+    dlg.set_pipeline(_FakePipeline())
+    assert dlg._burst_label.text().endswith("0")
+
+    dlg._burst_chk.setChecked(False)
+    assert dlg._burst_label.text() == ""
+    dlg._burst_chk.setChecked(True)
+    assert dlg._burst_label.text().endswith("0")
+
+
+def test_burst_row_is_painted_red_with_a_white_outline(qtbot: QtBot) -> None:
+    from ui.sdr_waterfall_dialog import _MARGIN_AXIS, _MARGIN_LEFT, _MARGIN_TOP, _SPECTRUM_HEIGHT
+
+    dlg, pipeline = _shown_burst_dialog(qtbot)
+    for _ in range(3):
+        pipeline.burst_row_ready.emit(_burst_row())
+    pipeline.burst_row_ready.emit(
+        _burst_row(RowKind.BURST, bins=(500, 540), snr_db=6.5, event_id=1)
+    )
+    pipeline.burst_row_ready.emit(_burst_row())  # let the burst scroll down one row
+
+    # (The frame line is drawn over the very top pixel row, so look one lower.)
+    wf_top = _MARGIN_TOP + _SPECTRUM_HEIGHT + _MARGIN_AXIS
+    y_burst = wf_top + 1
+    x_burst = _MARGIN_LEFT + int(520 * 760 / _N_BINS)
+    assert _pixel(dlg, x_burst, y_burst) == (255, 0, 0)
+    assert _pixel(dlg, x_burst, y_burst + 1) == (255, 255, 255)  # outline below it
+    x_away = _MARGIN_LEFT + int(100 * 760 / _N_BINS)
+    assert _pixel(dlg, x_away, y_burst) != (255, 0, 0)  # rest of the row untouched
+
+
+def test_burst_snr_label_keeps_the_best_row_of_an_event(qtbot: QtBot) -> None:
+    dlg, pipeline = _shown_burst_dialog(qtbot)
+    for snr in (2.0, 6.5, 4.0):
+        pipeline.burst_row_ready.emit(
+            _burst_row(RowKind.BURST, bins=(500, 540), snr_db=snr, event_id=1)
+        )
+    assert dlg._event_snr == {1: 6.5}
+
+
+def test_impulse_rows_are_tinted_not_red(qtbot: QtBot) -> None:
+    from ui.sdr_waterfall_dialog import _MARGIN_AXIS, _MARGIN_LEFT, _MARGIN_TOP, _SPECTRUM_HEIGHT
+
+    dlg, pipeline = _shown_burst_dialog(qtbot)
+    pipeline.burst_row_ready.emit(_burst_row())
+    pipeline.burst_row_ready.emit(_burst_row(RowKind.IMPULSE))
+    pipeline.burst_row_ready.emit(_burst_row())
+
+    wf_top = _MARGIN_TOP + _SPECTRUM_HEIGHT + _MARGIN_AXIS
+    x = _MARGIN_LEFT + 200
+    tinted = _pixel(dlg, x, wf_top + 1)  # the impulse, one row below the newest
+    plain = _pixel(dlg, x, wf_top + 2)
+    assert tinted != plain
+    assert tinted != (255, 0, 0)
+
+
+def test_burst_history_and_events_are_dropped_on_hide(qtbot: QtBot) -> None:
+    dlg, pipeline = _shown_burst_dialog(qtbot)
+    pipeline.burst_row_ready.emit(_burst_row(RowKind.BURST, (500, 540), 5.0, 1))
+    assert len(dlg._row_meta) == 1
+    dlg.hide()
+    assert len(dlg._row_meta) == 0
+    assert dlg._event_snr == {}
