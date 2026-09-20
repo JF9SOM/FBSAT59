@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import sqlite3
 from typing import Any
+from unittest.mock import MagicMock
 
 import numpy as np
+from PySide6.QtCore import QObject, Signal
 
 from comms.cw.codec import DecodeResult
 from ui.cw_tab import CwTab
@@ -136,3 +138,120 @@ class TestDeferredTrailingS:
 
         assert tab._confirmed_text == "73 VA"
         assert "S" not in tab._pending_text
+
+
+class _FakeSdrDemod(QObject):
+    """Stand-in for CwSdrDemod so these tests need neither scipy nor a thread."""
+
+    audio_ready = Signal(object)
+
+    instances: list[_FakeSdrDemod] = []
+
+    def __init__(self, sample_rate: int) -> None:
+        super().__init__()
+        self.sample_rate = sample_rate
+        self.started = False
+        self.stopped = False
+        _FakeSdrDemod.instances.append(self)
+
+    def start(self) -> None:
+        self.started = True
+
+    def stop(self) -> None:
+        self.stopped = True
+
+    def push_samples(self, iq: Any) -> None:  # pragma: no cover - never called here
+        pass
+
+
+def _make_sdr_tab(qtbot: Any, monkeypatch: Any, rate: int = 250_000) -> tuple[CwTab, MagicMock]:
+    """A CwTab whose radio control exposes a fake SDR pipeline."""
+    _FakeSdrDemod.instances.clear()
+    monkeypatch.setattr("ui.cw_tab.CwSdrDemod", _FakeSdrDemod)
+    pipeline = MagicMock()
+    pipeline._device.sample_rate = float(rate)
+    radio_control = MagicMock()
+    radio_control._sdr_control._pipeline = pipeline
+    tab = CwTab(sqlite3.connect(":memory:"), radio_control=radio_control)
+    qtbot.addWidget(tab)
+    return tab, pipeline
+
+
+class TestSdrInputUsesPrivateCwDemodulator:
+    """The SDR input must demodulate the raw I/Q itself (independent of SDR
+    Control's demodulation mode, which is USB by default and rejects a CW
+    carrier below the tuned frequency) and treat the result as 48 kHz PCM
+    (it used to be labelled 3200 Hz, the model's own rate)."""
+
+    def test_subscribes_to_raw_iq_and_does_not_use_pipeline_audio(
+        self, qtbot: Any, monkeypatch: Any
+    ) -> None:
+        tab, pipeline = _make_sdr_tab(qtbot, monkeypatch, rate=250_000)
+
+        tab._connect_sdr_audio()
+
+        demod = _FakeSdrDemod.instances[0]
+        assert demod.sample_rate == 250_000
+        assert demod.started
+        pipeline.subscribe.assert_called_once_with(demod.push_samples)
+        # The pipeline's mode-dependent audio path must not be involved.
+        pipeline.request_audio.assert_not_called()
+        pipeline.audio_ready.connect.assert_not_called()
+        assert tab._sdr_connected
+
+    def test_decoder_is_told_the_audio_is_48khz(self, qtbot: Any, monkeypatch: Any) -> None:
+        tab, _pipeline = _make_sdr_tab(qtbot, monkeypatch)
+
+        tab._connect_sdr_audio()
+
+        assert tab._rx_sample_rate == 48_000
+
+    def test_rolling_buffer_holds_20_real_seconds_at_48khz(
+        self, qtbot: Any, monkeypatch: Any
+    ) -> None:
+        tab, _pipeline = _make_sdr_tab(qtbot, monkeypatch)
+        tab._connect_sdr_audio()
+        tab._running = True
+
+        demod = _FakeSdrDemod.instances[0]
+        chunk = np.zeros(4_800, dtype=np.float32)  # 0.1 s at 48 kHz
+        for _ in range(250):  # 25 s of audio
+            demod.audio_ready.emit(chunk)
+
+        buffered_s = sum(len(c) for c in tab._rx_buffer) / 48_000
+        assert 19.0 <= buffered_s <= 20.0
+
+    def test_disconnect_unsubscribes_and_stops_the_demodulator(
+        self, qtbot: Any, monkeypatch: Any
+    ) -> None:
+        tab, pipeline = _make_sdr_tab(qtbot, monkeypatch)
+        tab._connect_sdr_audio()
+        demod = _FakeSdrDemod.instances[0]
+
+        tab._disconnect_sdr_audio()
+
+        pipeline.unsubscribe.assert_called_once_with(demod.push_samples)
+        assert demod.stopped
+        assert tab._sdr_demod is None
+        assert tab._sdr_pipeline is None
+        assert not tab._sdr_connected
+
+    def test_reconnect_after_pipeline_change_uses_a_fresh_demodulator(
+        self, qtbot: Any, monkeypatch: Any
+    ) -> None:
+        tab, _pipeline = _make_sdr_tab(qtbot, monkeypatch, rate=250_000)
+        tab._connect_sdr_audio()
+        tab._running = True
+
+        # MainWindow builds a brand-new SDRPipeline (possibly at another
+        # sample rate) on every SDR reconnect and then notifies the tab.
+        new_pipeline = MagicMock()
+        new_pipeline._device.sample_rate = 960_000.0
+        tab._radio_control._sdr_control._pipeline = new_pipeline  # type: ignore[union-attr]
+        tab.refresh_sdr_pipeline(new_pipeline)
+
+        old, fresh = _FakeSdrDemod.instances
+        assert old.stopped
+        assert fresh.sample_rate == 960_000
+        assert not fresh.stopped
+        new_pipeline.subscribe.assert_called_once_with(fresh.push_samples)

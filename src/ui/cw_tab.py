@@ -2,7 +2,9 @@
 
 Decodes CW (Morse code) from audio using the DeepCW ONNX model
 (e04/deepcw-engine).  Audio input can come from:
-  - SDR pipeline (audio_ready signal) when an SDR is connected
+  - SDR pipeline when an SDR is connected: the tab subscribes to the raw
+    I/Q and runs its own CW-mode demodulator (comms.cw.sdr_demod), so the
+    SDR Control tab's demodulation mode has no effect on decoding
   - Soundcard InputStream (sounddevice) for rig/external audio
 
 No rig is required — CW decoding is receive-only.
@@ -12,6 +14,7 @@ The model requires 5–20 seconds of audio per decode call.
 from __future__ import annotations
 
 import contextlib
+import logging
 import re
 import sqlite3
 from collections import deque
@@ -36,6 +39,7 @@ from PySide6.QtWidgets import (
 from comms.audio_device_manager import get_audio_device_manager
 from comms.cw.codec import HOP_LENGTH, MIN_AUDIO_SECONDS, SAMPLE_RATE, CwDecoder, DecodeResult
 from comms.cw.model_info import is_onnxruntime_available, is_ready
+from comms.cw.sdr_demod import SDR_AUDIO_RATE, CwSdrDemod
 from comms.cw.transcript import (
     apply_prosign_conventions,
     insert_gap_markers,
@@ -43,6 +47,8 @@ from comms.cw.transcript import (
     should_defer_trailing_s,
 )
 from i18n import _
+
+logger = logging.getLogger(__name__)
 
 # Rolling audio buffer: keep last N seconds (model max is 20 s)
 _BUFFER_SECONDS = 20
@@ -109,6 +115,7 @@ class CwTab(QWidget):
         self._rx_buffer: deque[NDArray[np.float32]] = deque()
         self._rx_sample_rate: int = SAMPLE_RATE
         self._sdr_pipeline: Any = None
+        self._sdr_demod: CwSdrDemod | None = None
         self._sdr_connected: bool = False
 
         # Sounddevice (shared with other Communications tabs via AudioDeviceManager)
@@ -315,25 +322,37 @@ class CwTab(QWidget):
             pipeline = getattr(sdr_ctrl, "_pipeline", None)
             if pipeline is None:
                 return
+            # Demodulate the raw I/Q with a private CW-mode demodulator
+            # instead of listening to pipeline.audio_ready, which carries
+            # whatever mode SDR Control is set to (USB by default -- a CW
+            # carrier below the tuned frequency is rejected there, and the
+            # decoder only hears interference).
+            demod = CwSdrDemod(int(pipeline._device.sample_rate))
+            demod.audio_ready.connect(self._on_sdr_audio_chunk)
+            demod.start()
+            # Hold the demodulator before subscribing so a failure below
+            # is still cleaned up by _disconnect_sdr_audio().
+            self._sdr_demod = demod
+            pipeline.subscribe(demod.push_samples)
             self._sdr_pipeline = pipeline
-            pipeline.audio_ready.connect(self._on_sdr_audio_chunk)
-            # Without this, the pipeline never actually demodulates/emits
-            # audio_ready unless the user separately presses "Start Audio"
-            # in SDR Control — an easy-to-miss, unrelated-looking button in
-            # a different tab (GitHub Issue #12 follow-up).
-            pipeline.request_audio(self._AUDIO_OWNER)
             self._sdr_connected = True
-            self._rx_sample_rate = SAMPLE_RATE
+            # The demodulator outputs SDR_AUDIO_RATE (48 kHz), not the
+            # decoder's own 3200 Hz model rate.
+            self._rx_sample_rate = SDR_AUDIO_RATE
         except Exception:
-            pass
+            logger.exception("CW Decoder: could not attach to the SDR pipeline")
 
     def _disconnect_sdr_audio(self) -> None:
         if self._sdr_pipeline is not None:
-            with contextlib.suppress(Exception):
-                self._sdr_pipeline.audio_ready.disconnect(self._on_sdr_audio_chunk)
-            with contextlib.suppress(Exception):
-                self._sdr_pipeline.release_audio(self._AUDIO_OWNER)
+            if self._sdr_demod is not None:
+                with contextlib.suppress(Exception):
+                    self._sdr_pipeline.unsubscribe(self._sdr_demod.push_samples)
             self._sdr_pipeline = None
+        if self._sdr_demod is not None:
+            with contextlib.suppress(Exception):
+                self._sdr_demod.audio_ready.disconnect(self._on_sdr_audio_chunk)
+            self._sdr_demod.stop()
+            self._sdr_demod = None
         self._sdr_connected = False
 
     @Slot(object)

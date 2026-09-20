@@ -27,7 +27,8 @@ src/
 │   │   └── qso.py          # Ft4QsoManager — QSO ステートマシン・ft4_log DB 操作
 │   ├── cw/
 │   │   ├── model_info.py   # モデルパス管理・onnxruntime 検出・ダウンロード URL
-│   │   └── codec.py        # CwDecoder — deepcw-engine ONNX 推論・前処理（CRNN + CTC）
+│   │   ├── codec.py        # CwDecoder — deepcw-engine ONNX 推論・前処理（CRNN + CTC）
+│   │   └── sdr_demod.py    # CwSdrDemod — SDR入力用の専用CW復調スレッド（生IQを購読・48 kHz PCMを出力）
 │   └── q65/
 │       ├── codec.py        # Q65Codec — libq65 ctypes RX デコーダー（Phase 1）
 │       ├── encoder.py      # 純 Python TX エンコーダー — GF(64)・CRC-12・65-FSK 音声合成（Phase 2）
@@ -2699,6 +2700,56 @@ AX100 Digiタブ）のSDR入力は、**実装されて以来一度も実際に�
 その原因が本当に実行パス上にあるのか（今回のように、もっと手前で早期returnしていて
 一度もそこまで到達していない可能性）を疑い、修正箇所から遡ってエントリーポイントまで
 実際に辿り直すこと。
+
+#### CW Decoder — SDR入力を専用CW復調器化＋サンプルレート修正（2026-09-20）
+
+**発端**: ARICA-2（436.830 MHz、CW）のIQ録音を再生パイプライン経由でCW Decoderに入れても
+一切デコードされない、という報告。ウォーターフォールにはCWの点々線がはっきり見えていた。
+録音自体はオフラインでも実タブ相当でも `2FFE8594EB880124` まで読める良好な信号だった
+（キャリアは基準周波数より −927 Hz、S/N約21 dB。OrigamiSat-2は −221 Hz で弱い）。
+
+**原因は2つ**（どちらも `src/ui/cw_tab.py` の SDR 入力）:
+
+1. **サンプルレートの取り違え**: `_connect_sdr_audio()` が `self._rx_sample_rate = SAMPLE_RATE`
+   （3200＝DeepCWモデルのレート）としていたが、SDRパイプラインの `audio_ready` は
+   `AUDIO_RATE`＝48000 Hz。デコーダは48 kHzの音声を3.2 kHzとして扱い（音高・符号速度が
+   約1/15）、20秒バッファも実質1.3秒分しか保持できなかった。最初の実装（2026-06-30）から
+   存在した。同じ音声を 3200 と誤ってラベルすると全ウィンドウが空、48000 と正しく渡すと
+   フレームが読める、で確認済み。
+2. **SDR Controlの復調モードへの依存**: 音声を `pipeline.audio_ready` から受けていたため、
+   SDR Controlのモードコンボ（既定 **USB**）がそのままCWデコーダに影響した。USBは
+   同調周波数より下側のキャリアを除去するので、−927 Hz にいるARICA-2は音にならず、
+   別の干渉波（2430 Hz付近）だけがデコーダに届いて文字化けした。CW/LSBなら届く。
+
+**修正**: `src/comms/cw/sdr_demod.py` に `CwSdrDemod`（QThread）を新設。CWタブはSDR入力時、
+`pipeline.subscribe()` でドップラー補正・Offset適用後の生IQを受け取り、**自前の
+`Demodulator`（CWモード固定・AGC/ゲインは既定）**で復調する（`AfskAudioSdrDemod` /
+`G3ruhSdrDemod` と同型）。出力は `SDR_AUDIO_RATE`（48000）で、タブはそれをレートとして
+デコーダに渡す。`request_audio()` / `audio_ready` は使わない（デコーダのためだけに
+パイプライン側の復調を回さずに済む）。効果:
+
+- SDR Controlのモード・音量・AGC設定はCWデコーダに影響しない（スピーカー経路も無干渉）
+- 実タブ＋再生パイプラインで、パイプラインのモードが **USB / NFM のままでも** ARICA-2 の
+  フレームを読めることを確認済み
+
+**Offset（Passband Tune）は依然として必要**: CW復調は実部をそのまま音にするので、キャリアが
+DeepCWの入力範囲（400〜1200 Hz）とCW BPF（300〜3000 Hz）に入る位置にいなければならない。
+`SDRPipeline` はIQを `exp(-j·phase)` で **Offset の分だけ下げる**ので、キャリアが
+基準周波数から d Hz ずれている衛星は、Offset に `d − 700` 程度を入れると約700 Hzのトーンに
+なる（OrigamiSat-2は d = −221 Hz → Offset ≈ −921 Hz。ARICA-2は Offset 0 で約935 Hz の
+トーンになり、そのまま読める）。Offsetを合わせないとOrigamiSat-2は221 Hz付近に落ちて読めない。
+
+**テスト**: `tests/test_cw_sdr_demod.py`（scipy必須のため `importorskip`。出力が48 kHz PCM
+であること、キャリアが0 Hzの上下どちらでも約927 Hzのトーンになること）、
+`tests/test_cw_tab.py`（`CwSdrDemod` をフェイクに差し替えるのでscipy不要。生IQの購読・
+`request_audio` を使わないこと・レート48000・20秒バッファが実時間20秒分であること・
+切断/再接続でのクリーンアップ）。
+
+**教訓**: 「復調済み音声を別タブが横取りする」設計は、そのタブの設定（復調モード）が
+デコーダの入力を黙って変えてしまう。データモードのデコーダは、`pipeline.subscribe()` で
+生IQを受けて自前で復調する方が堅牢（Telemetry/APRSのAFSK・G3RUHは元々そうしている）。
+また、サンプルレートを表す定数（`SAMPLE_RATE`）を「デコーダのモデルレート」と「入力音声の
+実レート」の両方の意味で使い回すと、片方が変わったときに静かに壊れる。
 
 #### SDRPipeline motorboating — 調査用の一時的診断ログ（`src/sdr/diag_log.py`・2026-07-25 追加）
 
