@@ -79,10 +79,15 @@ _WATERFALL_HEIGHT = 280
 # the following ~28s.
 _BACKGROUND_RGB = (16, 16, 16)  # matches the QLabel's "#101010" background
 
+# Point sizes of the numbers drawn on the canvas (dB scale, frequency axis,
+# burst S/N labels). Doubled from 7/8 pt on 2026-09-20: they were unreadable.
+_AXIS_FONT_PT = 14
+_BURST_FONT_PT = 16
+
 _MARGIN_LEFT = 55
 _MARGIN_RIGHT = 10
-_MARGIN_TOP = 6
-_MARGIN_AXIS = 22  # frequency-axis tick strip between spectrum and waterfall
+_MARGIN_TOP = 12  # room for half of the top dB label
+_MARGIN_AXIS = 36  # frequency-axis tick strip between spectrum and waterfall
 _MARGIN_BOTTOM = 6
 
 _CANVAS_WIDTH = _MARGIN_LEFT + _PLOT_WIDTH + _MARGIN_RIGHT
@@ -464,12 +469,18 @@ class SdrWaterfallDialog(QDialog):
         painter.drawRect(_MARGIN_LEFT, top, _PLOT_WIDTH, _SPECTRUM_HEIGHT)
 
         painter.setPen(QPen(QColor("#cccccc"), 1))
-        painter.setFont(QFont("Sans", 7))
+        painter.setFont(QFont("Sans", _AXIS_FONT_PT))
+        label_h = 2 * _AXIS_FONT_PT
         for frac in (0.0, 0.5, 1.0):
             db = hi_db - frac * rng
             y = top + int(frac * _SPECTRUM_HEIGHT)
             painter.drawText(
-                0, y - 6, _MARGIN_LEFT - 6, 12, Qt.AlignmentFlag.AlignRight, f"{db:.0f}"
+                0,
+                y - label_h // 2,
+                _MARGIN_LEFT - 6,
+                label_h,
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                f"{db:.0f}",
             )
 
         xs = _MARGIN_LEFT + (self._latest_freqs - freq_lo) / (freq_hi - freq_lo) * _PLOT_WIDTH
@@ -497,14 +508,19 @@ class SdrWaterfallDialog(QDialog):
 
     def _draw_freq_axis(self, painter: QPainter, freq_lo: float, freq_hi: float, y: int) -> None:
         painter.setPen(QPen(QColor("#cccccc"), 1))
-        painter.setFont(QFont("Sans", 7))
+        painter.setFont(QFont("Sans", _AXIS_FONT_PT))
         step = nice_axis_step(freq_hi - freq_lo)
         hz = math.ceil(freq_lo / step) * step
         while hz <= freq_hi:
             x = self._freq_to_x(hz, freq_lo, freq_hi)
             painter.drawLine(x, y, x, y + 4)
             painter.drawText(
-                x - 30, y + 5, 60, 12, Qt.AlignmentFlag.AlignHCenter, self._format_axis_label(hz)
+                x - 60,
+                y + 5,
+                120,
+                _MARGIN_AXIS - 6,
+                Qt.AlignmentFlag.AlignHCenter,
+                self._format_axis_label(hz),
             )
             hz += step
 
@@ -578,22 +594,27 @@ class SdrWaterfallDialog(QDialog):
         for rect in red_rects:
             painter.fillRect(rect, _BURST_COLOR)
 
-        font = QFont("Sans", 8)
+        font = QFont("Sans", _BURST_FONT_PT)
         font.setBold(True)
         painter.setFont(font)
         metrics = painter.fontMetrics()
-        for event_id, (x0, x1, y0, y1) in boxes.items():
+        h = metrics.height()
+        label_bottom = wf_top  # lowest pixel used by the labels placed so far
+        for event_id, (x0, x1, y0, y1) in sorted(boxes.items(), key=lambda item: item[1][2]):
             snr = self._event_snr.get(event_id)
             if snr is None:
                 continue
             text = f"{snr:+.1f} dB"
             w = metrics.horizontalAdvance(text) + 6
-            h = metrics.height()
             x = x1 + _BURST_TEXT_GAP
             if x + w > plot_right:  # no room on the right: put it on the left
                 x = x0 - _BURST_TEXT_GAP - w
             y = (y0 + y1) // 2 - h // 2
+            # Bursts a couple of seconds apart are only ~24 rows apart, less
+            # than one label: push a label down rather than let two overlap.
+            y = max(y, label_bottom)
             y = min(max(y, wf_top), wf_top + _WATERFALL_HEIGHT - h)
+            label_bottom = y + h
             painter.fillRect(x, y, w, h, QColor(0, 0, 0, 170))
             painter.setPen(QColor("#ffffff"))
             painter.drawText(x + 3, y, w - 3, h, Qt.AlignmentFlag.AlignVCenter, text)
