@@ -1,5 +1,5 @@
 {
-  "latest_version": "0.3.57",
+  "latest_version": "0.3.58",
   "minimum_supported_version": "0.3.58",
   "critical": true,
   "message_ja": "v0.3.58 は SDR 受信とローテーター制御の重要な不具合を修正します。ローテーターが未接続でも「Connected」と表示され、存在しない機器へ位置コマンドを送り続けていた問題を修正し、未接続を検出して赤い「未接続」表示にするようにしました（Autotrack に「Use Rotator」チェックも追加）。SDR の USB/LSB 復調を本物の SSB 受信機にし、復調出力を正確に 48 kHz に揃え、スピーカー音声 ON 時にサンプルが欠落する問題を修正しました（FT4 も SDR でデコード可能）。SDR やローテーターを使う方は必ず更新してください。",
