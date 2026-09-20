@@ -63,6 +63,7 @@ def _run(
     injections: list[_Injection] | None = None,
     seed: int = 1,
     detector: BurstDetector | None = None,
+    time_offset_s: float | None = None,
 ) -> list[BurstRow]:
     rng = np.random.default_rng(seed)
     det = detector or BurstDetector(_FS)
@@ -75,7 +76,8 @@ def _run(
                 block[ov[0]] += inj.samples[ov[1]]
         det.feed(block)
         if k % 2 == 1:
-            row = det.finish_row(_CENTER)
+            end = None if time_offset_s is None else (k + 1) * _BLOCK / _FS + time_offset_s
+            row = det.finish_row(_CENTER, end)
             assert row is not None
             rows.append(row)
     return rows
@@ -197,3 +199,29 @@ def test_silence_does_not_crash_or_fire() -> None:
             row = det.finish_row(_CENTER)
             assert row is not None
             assert row.kind == RowKind.NONE
+
+
+def test_burst_time_is_seconds_since_the_detector_started_by_default() -> None:
+    rng = np.random.default_rng(7)
+    rows = _run(30.0, [_Injection(15.0, _burst(int(0.25 * _FS), 8.0, 0.0, rng))])
+    first = _bursts(rows)[0]
+    assert 14.8 <= first.time_s <= 15.3
+    # Row times increase by one row (2 blocks ~ 0.131 s) each.
+    assert abs((rows[1].time_s - rows[0].time_s) - 2 * _BLOCK / _FS) < 1e-6
+
+
+def test_burst_time_follows_the_callers_time_base() -> None:
+    rng = np.random.default_rng(7)
+    rows = _run(
+        30.0, [_Injection(15.0, _burst(int(0.25 * _FS), 8.0, 0.0, rng))], time_offset_s=100.0
+    )
+    first = _bursts(rows)[0]
+    assert 114.8 <= first.time_s <= 115.3
+
+
+def test_row_time_never_goes_negative() -> None:
+    det = BurstDetector(_FS)
+    det.feed(np.zeros(_BLOCK, dtype=np.complex64))
+    row = det.finish_row(_CENTER, end_time_s=0.01)  # ends before one row has elapsed
+    assert row is not None
+    assert row.time_s == 0.0

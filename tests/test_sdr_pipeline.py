@@ -466,3 +466,40 @@ class TestBurstDetectionSwitch:
         row = rows[0]
         assert len(row.power_dbfs) == len(row.freqs_hz) == 1024
         assert row.warming_up is True
+
+
+class _PositionedDevice:
+    """A file-like device that reports how far into its data it has read."""
+
+    sample_rate = _SAMPLE_RATE
+    center_freq = _HW_CF
+    position_s = 471.5
+
+
+class TestBurstTimeReference:
+    def test_none_for_a_live_device_that_is_not_recording(self, qtbot: QtBot) -> None:
+        assert _make_pipeline(qtbot)._burst_time_reference() is None
+
+    def test_file_position_while_playing_back_a_recording(self, qtbot: QtBot) -> None:
+        del qtbot
+        pipeline = SDRPipeline(_PositionedDevice())
+        assert pipeline._burst_time_reference() == 471.5
+
+    def test_time_since_the_iq_recording_started(self, qtbot: QtBot) -> None:
+        pipeline = _make_pipeline(qtbot)
+        pipeline._rec_samples = int(12.5 * _SAMPLE_RATE)
+        assert pipeline._burst_time_reference() == 12.5
+
+    def test_rows_carry_increasing_times(self, qtbot: QtBot) -> None:
+        pipeline = SDRPipeline(_NoiseDevice())
+        rows: list[Any] = []
+        pipeline.burst_row_ready.connect(rows.append)
+        pipeline.set_burst_detection(True)
+        pipeline.start()
+        try:
+            qtbot.waitUntil(lambda: len(rows) >= 3, timeout=3_000)
+        finally:
+            _stop(pipeline)
+        assert rows[0].time_s >= 0.0
+        assert rows[1].time_s > rows[0].time_s
+        assert rows[2].time_s > rows[1].time_s

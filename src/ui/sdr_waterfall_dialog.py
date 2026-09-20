@@ -19,8 +19,8 @@ during a pass, and avoids clearing the whole history on every retune.
 
 The optional "Burst" mode (off by default) replaces the single-FFT rows with
 spectra averaged over each whole row and paints short narrow-band
-transmissions red (white outline), each with its estimated S/N beside it,
-plus a running "Bursts: N" counter. Detection lives in
+transmissions red (white outline), each with its estimated S/N on its right
+and the time it appeared on its left, plus a running "Bursts: N" counter. Detection lives in
 sdr/burst_detector.py (fed via SDRPipeline.set_burst_detection()); the
 waterfall colours themselves are unchanged, so continuous signals still
 show up as before.
@@ -141,6 +141,35 @@ class _RowMeta:
     event_id: int | None
 
 
+def burst_label_x(
+    x0: int,
+    x1: int,
+    snr_w: int,
+    time_w: int,
+    plot_left: int,
+    plot_right: int,
+    gap: int = _BURST_TEXT_GAP,
+) -> tuple[int, int]:
+    """Left edges of a burst's S/N label and time label as (snr_x, time_x).
+
+    The S/N label goes to the right of the burst (x0..x1) and the time label
+    to its left. If one of them does not fit inside the plot on its side it
+    moves to the outer side of the other label instead, and if S/N itself has
+    no room on the right the two swap sides.
+    """
+    if x1 + gap + snr_w <= plot_right:
+        snr_x = x1 + gap
+        time_x = x0 - gap - time_w
+        if time_x < plot_left:  # no room on the left: outside the S/N label
+            time_x = snr_x + snr_w + gap
+    else:
+        snr_x = x0 - gap - snr_w
+        time_x = x1 + gap
+        if time_x + time_w > plot_right:  # no room on the right: outside the S/N label
+            time_x = snr_x - gap - time_w
+    return snr_x, time_x
+
+
 def color_map(norm: NDArray[np.float32]) -> NDArray[np.uint8]:
     """Map a 0..1 float array to an RGB uint8 array via a fixed palette."""
     n_colors = len(_PALETTE)
@@ -214,6 +243,7 @@ class SdrWaterfallDialog(QDialog):
         # pushed since the last reset so a row's age is _seq - meta.seq.
         self._row_meta: deque[_RowMeta] = deque(maxlen=_WATERFALL_HEIGHT)
         self._event_snr: dict[int, float] = {}
+        self._event_time: dict[int, float] = {}  # when each event first appeared
         self._seq = 0
         self._burst_count = 0
         self._burst_warming_up = False
@@ -336,6 +366,7 @@ class SdrWaterfallDialog(QDialog):
         # running while the dialog is closed, see _on_burst_row().
         self._row_meta.clear()
         self._event_snr.clear()
+        self._event_time.clear()
         self._image_label.setPixmap(QPixmap())
         self._image_label.setText(_("Waiting for SDR spectrum data…"))
 
@@ -393,10 +424,13 @@ class SdrWaterfallDialog(QDialog):
         self._seq += 1
         self._history.append(powers)
         self._row_meta.append(_RowMeta(self._seq, row.kind, row.burst_bins, row.event_id))
-        if row.event_id is not None and row.snr_db is not None:
-            self._event_snr[row.event_id] = max(
-                row.snr_db, self._event_snr.get(row.event_id, -math.inf)
-            )
+        if row.event_id is not None:
+            # An event's time is that of its first row (later rows only add S/N).
+            self._event_time.setdefault(row.event_id, row.time_s)
+            if row.snr_db is not None:
+                self._event_snr[row.event_id] = max(
+                    row.snr_db, self._event_snr.get(row.event_id, -math.inf)
+                )
         self._latest_freqs = row.freqs_hz.astype(np.float32)
         self._latest_powers = powers
         self._redraw()
@@ -405,6 +439,7 @@ class SdrWaterfallDialog(QDialog):
         """Forget all burst rows, events and the counter (new detector or pipeline)."""
         self._row_meta.clear()
         self._event_snr.clear()
+        self._event_time.clear()
         self._seq = 0
         self._burst_count = 0
         self._burst_warming_up = False
@@ -602,22 +637,32 @@ class SdrWaterfallDialog(QDialog):
         label_bottom = wf_top  # lowest pixel used by the labels placed so far
         for event_id, (x0, x1, y0, y1) in sorted(boxes.items(), key=lambda item: item[1][2]):
             snr = self._event_snr.get(event_id)
-            if snr is None:
+            appeared = self._event_time.get(event_id)
+            # (text, is_snr) for whichever of the two labels is known.
+            snr_text = f"{snr:+.1f} dB" if snr is not None else ""
+            time_text = f"{appeared:.1f} s" if appeared is not None else ""
+            if not snr_text and not time_text:
                 continue
-            text = f"{snr:+.1f} dB"
-            w = metrics.horizontalAdvance(text) + 6
-            x = x1 + _BURST_TEXT_GAP
-            if x + w > plot_right:  # no room on the right: put it on the left
-                x = x0 - _BURST_TEXT_GAP - w
+            snr_w = metrics.horizontalAdvance(snr_text) + 6 if snr_text else 0
+            time_w = metrics.horizontalAdvance(time_text) + 6 if time_text else 0
+            snr_x, time_x = burst_label_x(x0, x1, snr_w, time_w, _MARGIN_LEFT, plot_right)
             y = (y0 + y1) // 2 - h // 2
             # Bursts a couple of seconds apart are only ~24 rows apart, less
-            # than one label: push a label down rather than let two overlap.
+            # than one label: push the labels down rather than let two overlap.
             y = max(y, label_bottom)
             y = min(max(y, wf_top), wf_top + _WATERFALL_HEIGHT - h)
             label_bottom = y + h
-            painter.fillRect(x, y, w, h, QColor(0, 0, 0, 170))
             painter.setPen(QColor("#ffffff"))
-            painter.drawText(x + 3, y, w - 3, h, Qt.AlignmentFlag.AlignVCenter, text)
+            for text, x, w in ((snr_text, snr_x, snr_w), (time_text, time_x, time_w)):
+                if not text:
+                    continue
+                painter.fillRect(x, y, w, h, QColor(0, 0, 0, 170))
+                painter.drawText(x + 3, y, w - 3, h, Qt.AlignmentFlag.AlignVCenter, text)
+
+        # Forget events that have scrolled out of the waterfall.
+        for stale in [eid for eid in self._event_time if eid not in boxes]:
+            del self._event_time[stale]
+            self._event_snr.pop(stale, None)
 
     def _draw_center_marker(self, painter: QPainter, freq_lo: float, freq_hi: float) -> None:
         if self._center_freq_hz is None:

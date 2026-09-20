@@ -23,6 +23,7 @@ from pytestqt.qtbot import QtBot
 from sdr.burst_detector import BurstRow, RowKind
 from ui.sdr_waterfall_dialog import (
     SdrWaterfallDialog,
+    burst_label_x,
     color_map,
     nice_axis_step,
     top_right_position,
@@ -285,6 +286,7 @@ def _burst_row(
     event_id: int | None = None,
     count: int = 0,
     warming_up: bool = False,
+    time_s: float = 0.0,
 ) -> BurstRow:
     return BurstRow(
         freqs_hz=435.6e6 + (np.arange(_N_BINS) - _N_BINS / 2) * 244.0,
@@ -295,6 +297,7 @@ def _burst_row(
         event_id=event_id,
         event_count=count,
         warming_up=warming_up,
+        time_s=time_s,
     )
 
 
@@ -446,3 +449,78 @@ def test_burst_history_and_events_are_dropped_on_hide(qtbot: QtBot) -> None:
     dlg.hide()
     assert len(dlg._row_meta) == 0
     assert dlg._event_snr == {}
+
+
+def test_burst_time_is_that_of_the_first_row_of_the_event(qtbot: QtBot) -> None:
+    dlg, pipeline = _shown_burst_dialog(qtbot)
+    for t in (471.2, 471.3, 471.4):
+        pipeline.burst_row_ready.emit(
+            _burst_row(RowKind.BURST, (500, 540), snr_db=5.0, event_id=1, time_s=t)
+        )
+    pipeline.burst_row_ready.emit(
+        _burst_row(RowKind.BURST, (500, 540), snr_db=3.0, event_id=2, time_s=473.6)
+    )
+    assert dlg._event_time == {1: 471.2, 2: 473.6}
+
+
+def test_time_label_is_drawn_on_the_left_of_the_burst(qtbot: QtBot) -> None:
+    from ui.sdr_waterfall_dialog import _MARGIN_AXIS, _MARGIN_LEFT, _MARGIN_TOP, _SPECTRUM_HEIGHT
+
+    dlg, pipeline = _shown_burst_dialog(qtbot)
+    pipeline.burst_row_ready.emit(
+        _burst_row(RowKind.BURST, (500, 540), snr_db=6.5, event_id=1, time_s=471.2)
+    )
+    for _ in range(3):
+        pipeline.burst_row_ready.emit(_burst_row())
+
+    wf_top = _MARGIN_TOP + _SPECTRUM_HEIGHT + _MARGIN_AXIS
+    y = wf_top + 3  # the burst row, three rows below the newest
+    x_burst_left = _MARGIN_LEFT + int(497 * 760 / _N_BINS)
+    # The label box is a dark translucent plate ending just left of the burst,
+    # and the same plate exists on the right for S/N. Waterfall pixels are
+    # dark blue there, so compare with the same row further left instead.
+    img = dlg._image_label.pixmap().toImage()
+    near = img.pixelColor(x_burst_left - 10, y)
+    far = img.pixelColor(_MARGIN_LEFT + 5, y)
+    assert (near.red(), near.green(), near.blue()) != (far.red(), far.green(), far.blue())
+
+
+def test_events_that_scrolled_off_are_forgotten(qtbot: QtBot) -> None:
+    from ui.sdr_waterfall_dialog import _WATERFALL_HEIGHT
+
+    dlg, pipeline = _shown_burst_dialog(qtbot)
+    pipeline.burst_row_ready.emit(
+        _burst_row(RowKind.BURST, (500, 540), snr_db=5.0, event_id=1, time_s=10.0)
+    )
+    for _ in range(_WATERFALL_HEIGHT + 2):
+        pipeline.burst_row_ready.emit(_burst_row())
+    assert dlg._event_time == {}
+    assert dlg._event_snr == {}
+
+
+def test_burst_label_placement_default_is_snr_right_and_time_left() -> None:
+    snr_x, time_x = burst_label_x(400, 460, snr_w=90, time_w=80, plot_left=55, plot_right=815)
+    assert snr_x == 466  # 460 + gap 6
+    assert time_x == 400 - 6 - 80
+
+
+def test_burst_label_placement_near_left_edge_puts_time_outside_snr() -> None:
+    snr_x, time_x = burst_label_x(60, 120, snr_w=90, time_w=80, plot_left=55, plot_right=815)
+    assert snr_x == 126
+    assert time_x == snr_x + 90 + 6  # right of the S/N label
+    assert time_x + 80 <= 815
+
+
+def test_burst_label_placement_near_right_edge_swaps_sides() -> None:
+    # 725 + 6 + 90 > 815 (S/N does not fit on the right) but 725 + 6 + 80 <= 815.
+    snr_x, time_x = burst_label_x(665, 725, snr_w=90, time_w=80, plot_left=55, plot_right=815)
+    assert snr_x == 665 - 6 - 90  # S/N moves to the left of the burst
+    assert time_x == 731  # time takes the right side, it still fits
+    assert time_x + 80 <= 815
+
+
+def test_burst_label_placement_at_the_far_right_keeps_both_on_the_left() -> None:
+    snr_x, time_x = burst_label_x(740, 806, snr_w=90, time_w=80, plot_left=55, plot_right=815)
+    assert snr_x == 740 - 6 - 90
+    assert time_x == snr_x - 6 - 80  # outside the S/N label, still in the plot
+    assert time_x >= 55

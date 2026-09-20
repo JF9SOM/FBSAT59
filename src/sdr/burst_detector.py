@@ -84,6 +84,9 @@ class BurstRow:
     estimated S/N in an 11 kHz channel (None if it could not be estimated),
     ``event_id`` the burst event this row belongs to and ``event_count`` the
     number of finished, counted burst events since the detector was created.
+    ``time_s`` is when the row starts, in seconds on the caller's time base
+    (see BurstDetector.finish_row()); the time of a burst is that of the first
+    row it shows up in, so it is accurate to about one row (~0.13 s).
     """
 
     freqs_hz: NDArray[np.float64]
@@ -94,6 +97,7 @@ class BurstRow:
     event_id: int | None
     event_count: int
     warming_up: bool
+    time_s: float
 
 
 def _box_filter(x: NDArray[np.float64], half: int) -> NDArray[np.float64]:
@@ -153,8 +157,15 @@ class BurstDetector:
         self._acc += power.sum(axis=0, dtype=np.float64)
         self._frames += n
 
-    def finish_row(self, center_freq_hz: float) -> BurstRow | None:
-        """Close the current row; None if no samples arrived since the last one."""
+    def finish_row(self, center_freq_hz: float, end_time_s: float | None = None) -> BurstRow | None:
+        """Close the current row; None if no samples arrived since the last one.
+
+        *end_time_s* is the time at which the row ends on the caller's time
+        base (e.g. the position in a played-back file, or seconds since an IQ
+        recording started); rows then report ``time_s = end_time_s - row
+        length``. Without it the time base is seconds of signal processed
+        since this detector was created.
+        """
         if self._frames == 0:
             return None
         psd = np.fft.fftshift(self._acc / self._frames)
@@ -162,6 +173,7 @@ class BurstDetector:
         self._acc[:] = 0.0
         self._frames = 0
         self._t += row_s
+        row_start_s = max(0.0, (self._t if end_time_s is None else end_time_s) - row_s)
 
         power_dbfs = (10.0 * np.log10(psd + 1e-24)).astype(np.float32)
         freqs = center_freq_hz + np.fft.fftshift(np.fft.fftfreq(FFT_SIZE, d=1.0 / self._sr))
@@ -193,6 +205,7 @@ class BurstDetector:
             event_id=event_id,
             event_count=self._count,
             warming_up=warming,
+            time_s=row_start_s,
         )
 
     # ------------------------------------------------------------------
