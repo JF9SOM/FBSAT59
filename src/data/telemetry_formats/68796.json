@@ -1,0 +1,640 @@
+{
+  "norad": 68796,
+  "name": "ARICA-2",
+  "callsign": "JS1YSD",
+  "reference": "http://sakamotoagu.mydns.jp/ARICA-2/data/amateur/cw_hp_calender_srv.html",
+  "document": "Frame layout and conversions: arica2.ksy (SatNOGS satnogs-decoders, cw1/cw2/cw3); wording of labels and flag/range texts: Sakamoto Lab (Aoyama Gakuin Univ.) published CW HK1/HK2/HK3 tables.",
+  "note": "CW housekeeping only. The GMSK/AX.25 telemetry format is deliberately not disclosed by the operator and is not defined here (no 'modulation' key on purpose: it would make the Direwolf-mode transmitter scoring prefer the CW transmitter). HK1 and HK3 were checked against real CW reception on 2026-09-20 (every discrete field, UHF temperature and battery voltage matched the operator's table). Battery Heater: bit 1 is shown as 'off' -- the operator's table showed 'off' in all 126 rows while the received frames had bit 1; a bit-0 (on) frame has never been seen. Angular velocity: 5-bit sign-magnitude code; the range table is the operator's published one (magnitudes 0-9 seen in 32 days of data, larger codes only show a lower bound). HK2 was not received yet: its three flag bits are shown raw (polarity unverified). The operator's table calls spresense2's sub-cores sub1/2/4/5, arica2.ksy sub1/2/3/5; the operator's names are used.",
+  "cw_frames": {
+    "HK1": {
+      "label": "HK1 (CW housekeeping 1)",
+      "hex_digits": 16,
+      "fields": [
+        {
+          "name": "command_id",
+          "label": "Command ID",
+          "bits": 4,
+          "type": "uint"
+        },
+        {
+          "name": "setup_mode",
+          "label": "Setup Mode",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "Incomplete",
+            "1": "Complete"
+          }
+        },
+        {
+          "name": "antenna_deployment",
+          "label": "Antenna Deployment",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "Incomplete",
+            "1": "Complete"
+          }
+        },
+        {
+          "name": "spr1_sub1",
+          "label": "spr1_sub1",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "off",
+            "1": "on"
+          }
+        },
+        {
+          "name": "spr1_sub2",
+          "label": "spr1_sub2",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "off",
+            "1": "on"
+          }
+        },
+        {
+          "name": "spr1_sub3",
+          "label": "spr1_sub3",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "off",
+            "1": "on"
+          }
+        },
+        {
+          "name": "spr1_sub4",
+          "label": "spr1_sub4",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "off",
+            "1": "on"
+          }
+        },
+        {
+          "name": "spr1_sub5",
+          "label": "spr1_sub5",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "off",
+            "1": "on"
+          }
+        },
+        {
+          "name": "spr2_sub1",
+          "label": "spr2_sub1",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "off",
+            "1": "on"
+          }
+        },
+        {
+          "name": "spr2_sub2",
+          "label": "spr2_sub2",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "off",
+            "1": "on"
+          }
+        },
+        {
+          "name": "spr2_sub4",
+          "label": "spr2_sub4",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "off",
+            "1": "on"
+          }
+        },
+        {
+          "name": "spr2_sub5",
+          "label": "spr2_sub5",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "off",
+            "1": "on"
+          }
+        },
+        {
+          "name": "eps_error",
+          "label": "EPS error",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "Normal",
+            "1": "Abnormal"
+          }
+        },
+        {
+          "name": "sbd_error",
+          "label": "SBD error",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "Normal",
+            "1": "Abnormal"
+          }
+        },
+        {
+          "name": "stx3_error",
+          "label": "STX3 error",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "Normal",
+            "1": "Abnormal"
+          }
+        },
+        {
+          "name": "uhf_error",
+          "label": "UHF error",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "Normal",
+            "1": "Abnormal"
+          }
+        },
+        {
+          "name": "spr2_error",
+          "label": "spr2 error",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "Normal",
+            "1": "Abnormal"
+          }
+        },
+        {
+          "name": "ir1_sleep",
+          "label": "IR sensor① Sleep-Mode",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "off",
+            "1": "on"
+          }
+        },
+        {
+          "name": "ir2_power",
+          "label": "IR sensor②",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "off",
+            "1": "on"
+          }
+        },
+        {
+          "name": "attitude_control",
+          "label": "Status of Attitude Control",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "the attitude control is NOT possible",
+            "1": "the attitude control is possible"
+          }
+        },
+        {
+          "name": "motor_driver",
+          "label": "Motor Driver",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "off",
+            "1": "on"
+          }
+        },
+        {
+          "name": "imu_board",
+          "label": "sony multi IMU add-on board",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "off",
+            "1": "on"
+          }
+        },
+        {
+          "name": "power_saving_count",
+          "label": "Count of mode change to power-saving mode",
+          "bits": 4,
+          "type": "uint"
+        },
+        {
+          "name": "reboot_spr1",
+          "label": "Reboot count of SPRESENSE 1",
+          "bits": 3,
+          "type": "uint"
+        },
+        {
+          "name": "reboot_spr2",
+          "label": "Reboot count of SPRESENSE 2",
+          "bits": 3,
+          "type": "uint"
+        },
+        {
+          "name": "comm_other_spr",
+          "label": "Communication to another SPRESENSE",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "SPR1sub5→SPR2sub1",
+            "1": "1 (meaning not confirmed)"
+          }
+        },
+        {
+          "name": "angvel_x",
+          "label": "Angular Velocity X",
+          "bits": 5,
+          "type": "angvel",
+          "table": "angvel_edges",
+          "axis": "Gx"
+        },
+        {
+          "name": "angvel_y",
+          "label": "Angular Velocity Y",
+          "bits": 5,
+          "type": "angvel",
+          "table": "angvel_edges",
+          "axis": "Gy"
+        },
+        {
+          "name": "angvel_z",
+          "label": "Angular Velocity Z",
+          "bits": 5,
+          "type": "angvel",
+          "table": "angvel_edges",
+          "axis": "Gz"
+        },
+        {
+          "name": "ir2_checks_earth",
+          "label": "IR sensor ② checks the earth",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "Undetermined",
+            "1": "Determined"
+          }
+        },
+        {
+          "name": "ir1_checks_earth",
+          "label": "IR sensor ① checks the earth",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "Undetermined",
+            "1": "Determined"
+          }
+        },
+        {
+          "name": "not_used",
+          "bits": 2,
+          "type": "uint",
+          "hidden": true,
+          "expect": 0
+        },
+        {
+          "name": "attitude_control_count",
+          "label": "Count of Attitude Control",
+          "bits": 3,
+          "type": "uint"
+        },
+        {
+          "name": "mode_spr1",
+          "label": "Mode of SPRESENSE 1 (raw)",
+          "bits": 3,
+          "type": "uint"
+        },
+        {
+          "name": "mode_spr2",
+          "label": "Mode of SPRESENSE 2 (raw)",
+          "bits": 3,
+          "type": "uint"
+        }
+      ]
+    },
+    "HK2": {
+      "label": "HK2 (CW GPS)",
+      "hex_digits": 12,
+      "fields": [
+        {
+          "name": "not_used",
+          "bits": 4,
+          "type": "uint",
+          "hidden": true,
+          "expect": 0
+        },
+        {
+          "name": "thumbnail",
+          "label": "Thumbnail (raw bit)",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "0",
+            "1": "1"
+          }
+        },
+        {
+          "name": "jpeg_preparation",
+          "label": "JPEG Image Preparation (raw bit)",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "0",
+            "1": "1"
+          }
+        },
+        {
+          "name": "gps_update",
+          "label": "GPS update (raw bit)",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "0",
+            "1": "1"
+          }
+        },
+        {
+          "name": "gps_hour",
+          "bits": 5,
+          "type": "uint",
+          "hidden": true,
+          "range": [
+            0,
+            23
+          ]
+        },
+        {
+          "name": "gps_minute",
+          "bits": 6,
+          "type": "uint",
+          "hidden": true,
+          "range": [
+            0,
+            59
+          ]
+        },
+        {
+          "name": "gps_second",
+          "bits": 6,
+          "type": "uint",
+          "hidden": true,
+          "range": [
+            0,
+            59
+          ]
+        },
+        {
+          "name": "gps_time",
+          "label": "GPS Time",
+          "type": "hms",
+          "from": [
+            "gps_hour",
+            "gps_minute",
+            "gps_second"
+          ]
+        },
+        {
+          "name": "gps_lat_sign",
+          "label": "GPS Add-info①",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "S",
+            "1": "N"
+          },
+          "hidden": true
+        },
+        {
+          "name": "gps_lat",
+          "label": "GPS Location - Latitude (+N / -S)",
+          "bits": 7,
+          "type": "uint",
+          "range": [
+            0,
+            90
+          ],
+          "sign_from": "gps_lat_sign",
+          "unit": "deg"
+        },
+        {
+          "name": "gps_lon_sign",
+          "label": "GPS Add-info②",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "W",
+            "1": "E"
+          },
+          "hidden": true
+        },
+        {
+          "name": "gps_lon",
+          "label": "GPS Location - Longitude (+E / -W)",
+          "bits": 8,
+          "type": "uint",
+          "range": [
+            0,
+            180
+          ],
+          "sign_from": "gps_lon_sign",
+          "unit": "deg"
+        },
+        {
+          "name": "gps_alt",
+          "label": "GPS Location - Altitude",
+          "bits": 7,
+          "type": "uint",
+          "unit": "km"
+        }
+      ]
+    },
+    "HK3": {
+      "label": "HK3 (CW housekeeping 3)",
+      "hex_digits": 14,
+      "fields": [
+        {
+          "name": "batt_temp",
+          "label": "Battery Daughter Board 1 Temp",
+          "bits": 9,
+          "type": "uint",
+          "scale": 0.7952,
+          "add": -238.3712,
+          "unit": "°C"
+        },
+        {
+          "name": "battery_heater",
+          "label": "Battery Heater",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "1": "off",
+            "0": "on"
+          }
+        },
+        {
+          "name": "power_flow",
+          "label": "Power Flow Status",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "charge",
+            "1": "discharge"
+          }
+        },
+        {
+          "name": "icm20948_2",
+          "label": "ICM-20948②",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "off",
+            "1": "on"
+          }
+        },
+        {
+          "name": "icm20948_1",
+          "label": "ICM-20948①",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "off",
+            "1": "on"
+          }
+        },
+        {
+          "name": "stx3",
+          "label": "STX-3",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "off",
+            "1": "on"
+          }
+        },
+        {
+          "name": "spresense2",
+          "label": "Spresense2",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "off",
+            "1": "on"
+          }
+        },
+        {
+          "name": "spresense1",
+          "label": "Spresense1",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "off",
+            "1": "on"
+          }
+        },
+        {
+          "name": "gamma_ray",
+          "label": "gamma-ray detector",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "off",
+            "1": "on"
+          }
+        },
+        {
+          "name": "sbd",
+          "label": "SBD",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "off",
+            "1": "on"
+          }
+        },
+        {
+          "name": "nichrome_cutter",
+          "label": "nichrome wire cutter",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "off",
+            "1": "on"
+          }
+        },
+        {
+          "name": "last_cmd_sbd",
+          "label": "Last Command ID (SBD)",
+          "bits": 4,
+          "type": "uint"
+        },
+        {
+          "name": "uhf_temp",
+          "label": "UHF communication device Temp",
+          "bits": 9,
+          "type": "uint",
+          "scale": -0.879765395894,
+          "add": 184.482142857,
+          "unit": "°C"
+        },
+        {
+          "name": "uplink_count",
+          "label": "Count of Uplink (UHF)",
+          "bits": 4,
+          "type": "uint"
+        },
+        {
+          "name": "rx_voltage",
+          "label": "Voltage of the received radio",
+          "bits": 9,
+          "type": "uint",
+          "scale": 0.004926686217,
+          "unit": "V"
+        },
+        {
+          "name": "not_used",
+          "bits": 3,
+          "type": "uint",
+          "hidden": true,
+          "expect": 0
+        },
+        {
+          "name": "battery_voltage",
+          "label": "Battery Voltage",
+          "bits": 8,
+          "type": "uint",
+          "scale": 0.008978,
+          "add": 6.1,
+          "unit": "V"
+        }
+      ]
+    }
+  },
+  "tables": {
+    "angvel_edges": [
+      0.0,
+      0.173,
+      0.377,
+      0.615,
+      0.895,
+      1.223,
+      1.609,
+      2.061,
+      2.591,
+      3.213,
+      3.943
+    ]
+  }
+}

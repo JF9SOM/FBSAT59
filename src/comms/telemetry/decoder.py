@@ -271,6 +271,11 @@ def get_telemetry_id_defs(norad: int | None) -> dict[str, Any] | None:
     Satellites with only the older single flat ``fields`` list return None
     here — only a per-ID schema gives each ID's own field layout up front,
     before any frame of that ID has actually been received.
+
+    A ``cw_frames`` schema (bit-packed Morse-coded hex frames, see
+    comms.telemetry.cw_frames) is returned in the same {key: {"label",
+    "fields"}} shape, listing only the fields a table shows (not the hidden
+    helper bits), so the "Decoded Fields" tabs need no special case.
     """
     fmt = load_format(norad) if norad is not None else None
     if not fmt:
@@ -279,6 +284,15 @@ def get_telemetry_id_defs(norad: int | None) -> dict[str, Any] | None:
         defs = fmt.get(key)
         if isinstance(defs, dict) and defs:
             return defs
+    cw_frames = fmt.get("cw_frames")
+    if isinstance(cw_frames, dict) and cw_frames:
+        return {
+            str(k): {
+                "label": v.get("label", k),
+                "fields": [f for f in v.get("fields", []) if not f.get("hidden")],
+            }
+            for k, v in cw_frames.items()
+        }
     return None
 
 
