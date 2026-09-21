@@ -199,6 +199,15 @@ SoapySDR は Windows では pip パッケージが無いため、ソースチェ
 - **配布 .exe には一切影響しない**（`getattr(sys, "frozen", False)` が True のため即スキップ）。
   CI（Linux）でも Windows 非 frozen 限定なので素通り。
 
+**ctypes バイパス側の DLL 探索にも `_internal` が必要**（2026-09-21 修正）: 上の借用は
+SoapySDR 用だけで、RTL-SDR / HackRF の実接続（`rtlsdr.dll` / `hackrf.dll` を ctypes で直接
+ロード）は `src/sdr/device.py` の `_find_rtlsdr_dll()` / `_find_hackrf_dll()` が別途探す。
+以前はここに `_internal` が入っておらず、開発版でだけ「未接続」になっていた
+（ログに `function 'hackrf_init' not found`）。SDR が繋がらないときは `fbsat59.log` の
+`[HackRF direct]` / `[RTL-SDR diag]` の探索先ディレクトリに
+`C:\Program Files\FBSAT59\_internal` が含まれているかを見る。詳細は
+[sdr.md](sdr.md) の Windows 節。
+
 前提: RTL-SDR / HackRF は Zadig で **WinUSB ドライバー**適用済みであること。
 TCP Remote SDR（SoapyRemote）は当面対象外。
 

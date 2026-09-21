@@ -163,6 +163,21 @@ SoapySDR モジュール DLL（SoapyRTLSDR.dll・SoapyHackRF.dll 等）は Windo
 バンドル DLL の配置: core DLL + Python binding は `_MEIPASS/`、モジュール DLL は `_MEIPASS/soapy_modules/`。
 起動時に `SOAPY_SDR_PLUGIN_PATH=soapy_modules/` をセット（`src/main.py` の frozen ブロック）。
 
+**Windows ソース実行（開発チェックアウト）での DLL 探索（2026-09-21 修正）**: ソース
+チェックアウトにはネイティブ DLL が無く、`src/main.py` の非 frozen ブロックがインストール版
+`%PROGRAMFILES%\FBSAT59\_internal` の SoapySDR 一式を借りる。ctypes バイパスの
+`_find_hackrf_dll()` / `_find_rtlsdr_dll()`（`src/sdr/device.py`）も同じ `_internal` を
+探索先に含める必要があり、`_installed_bundle_dir()` がそれを返す（frozen・非 Windows では
+None）。修正前は開発版でだけ HackRF/RTL-SDR が「未接続」になっていた（パッケージ版は
+`_MEIPASS` = `_internal` を探すので無症状）。症状は
+`AttributeError: function 'hackrf_init' not found`:
+探索先が Cache 側（`soapy_modules_no_remote`）だけで、`hackrf*.dll` のグロブが
+SoapySDR プラグイン `HackRFSupport.dll`（`hackrf_init` を持たない。Windows は大文字小文字を
+区別しないので一致する）を掴んでいた。グロブは `*support.dll` を除外する。
+**インストール版が入っていない Windows でソース実行すると、この経路は使えない**
+（[windows-dev-ssh.md](windows-dev-ssh.md)「SDR（ローカル USB）をソース実行で使う仕組み」）。
+テスト: `tests/test_sdr_dll_search.py`。
+
 conda-forge パッケージ取得スクリプト: `scripts/extract_soapy_conda.py`（CI の Windows ビルドステップで実行）。
 SoapyPlutoSDR は conda-forge に存在しないため CI で MSVC ソースビルドし `soapy-win64/modules/` に配置する（ただし Windows では実際に使用されない）。
 
