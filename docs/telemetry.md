@@ -811,3 +811,58 @@ ARICA-2 は SatNOGS DB で **NORAD 98329**（`norad_follow_id`=68796）として
 `tests/test_cw_upload.py`（規則）、`tests/test_signal_clock.py`、`tests/test_telemetry_cw_tlm.py`
 （日付・CSV・再生時の時刻・自動/手動送信）、`tests/test_satnogs_uploader.py`（`force`・`upload_blocker`）、
 `tests/test_cw_frames.py`（`build_satnogs_frame`）。
+
+---
+
+## AX.25 / gr-satellites の時計（第二段階、2026-09-21）
+
+### 時計の共通化
+
+Direwolf (AX.25)・gr-satellites・CW TLM の3モードすべてが、同じ `comms.signal_clock.signal_time()`
+（ライブ＝現在の UTC、IQ 再生＝録音の開始時刻＋再生位置。仮の開始時刻は「信頼できない」扱い）を通す。
+`TelemetryTab._frame_time()` が窓口で、AX.25 の `_on_ax25_frame()`、gr-satellites の
+`_on_gr_telemetry()`（表の行）と `_on_gr_raw_frame()`（SatNOGS 送信）が使う。表・`telemetry_log`・
+SatNOGS の `timestamp` に同じ時刻が入り、信頼できない時刻のフレームは送らない
+（詳細は「SatNOGS DB へのアップロードと時刻」節）。CW は先頭文字の時刻、AX.25/gr は
+フレームを受け取った時点の時刻（ミリ秒〜秒未満の短いフレームなので先頭/末尾の差は無視できる）。
+
+### 実測（合成 IQ の再生。`scripts/g3ruh_sensitivity.py` の 9k6 G3RUH フレームを 0.19 秒の
+バーストとして 4/10/16/22 秒に置き、開始時刻 12:00:00 の録音として再生、SNR 25 dB）
+
+| 経路 | 表示・記録・送信される時刻（フレーム終端 +） |
+|---|---|
+| Direwolf (AX.25) | +0.07〜0.10 秒。4件とも 12:00:04/:10/:16/:22 |
+| gr-satellites（実物の gr_satellites） | +0.23〜0.29 秒。表の行と SatNOGS 送信の両方が正しい時刻 |
+
+どちらも受信後の処理遅延が 0.3 秒以下で、ライブ（`now()`）と同じ意味の時刻になる。
+
+### gr-satellites モードの不具合（第二段階の検証で判明・修正）
+
+gr-satellites モードは、SDR からの入力では**これまで一度もデコードされない状態**だった
+（同梱の gr_satellites で実測。実機での完全な E2E が未検証だった）。原因は次の5つで、
+いずれも合成 IQ を実物の gr_satellites に通して1つずつ確かめた:
+
+1. **`--udp_raw` が無かった**: gr_satellites は `--udp` だけだと**16bit整数**を期待する
+   （`udp_source(sizeof_short)`→`short_to_float`）。パイプラインは complex64 を送るので、ノイズとして
+   読まれ、何もデコードされなかった。`--udp_raw`（float32/complex64）が必要。`--help` に
+   `--udp_raw` があるビルドだけに付ける（`_supports_udp_raw()`、`--kiss_server` と同じ確認方法）。
+2. **UDP データグラムが大きすぎた（macOS）**: 32768 バイトで送っていたが、macOS のループバックは
+   `net.inet.udp.maxdgram`（既定 9216）を超えると EMSGSIZE で失敗し、しかもエラーを握りつぶしていた
+   → 1サンプルも届かない。`_UDP_CHUNK_BYTES = 8192`（complex64 の整数個）に変更。
+3. **KISS の受け口が1秒で切れた**: `_KissFrameReader` は `create_connection(timeout=1.0)` で接続し、
+   この1秒が接続後の `recv()` にも残っていた。フレームはまばらなので、無音が1秒続くと `recv` が
+   タイムアウトしてループを抜け、接続を閉じていた（以後のフレームは二度と読まれず、macOS では
+   gr_satellites 側も `shutdown: Socket is not connected` で落ちた）。`settimeout(0.5)` にし、
+   タイムアウトは「まだ何も無い」として待ち続ける。
+4. **標準出力がバッファされた**: gr_satellites は Python 製で、標準出力がパイプだとブロック
+   バッファされる（約8 KiB 溜まるまで出ない）。まばらなフレームは表に出なかった。
+   `PYTHONUNBUFFERED=1` を環境に設定。
+5. **表の行の区切り**: 標準出力を「空行」で区切っていたが、同梱版の gr_satellites はフレーム間に
+   空行を入れない → プロセス終了まで1件も出なかった。次のフレームの見出し（`-> Packet from`）でも
+   区切り、出力が0.3秒止まったらそのブロックを出す。また `-> Packet from` を含まないブロック
+   （gr_satellites 自身の警告・進捗）は表に出さない（`gr_satellites.log` には残る）。
+
+テスト: `tests/test_gr_satellites_backend.py`（各修正の回帰テスト。KISS の無音、UDP の loopback 転送、
+`--udp_raw`、出力のバッファ、ブロックの区切り）、`tests/test_telemetry_clock.py`（AX.25/gr の
+再生時の時刻・記録・送信・仮の時刻・ライブ）。**IQ 録音の再生 → 実物の Direwolf / gr_satellites →
+Telemetry タブ**の通しの動作は合成 IQ で確認した。実信号（衛星）での確認は未実施。
