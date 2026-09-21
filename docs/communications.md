@@ -2763,6 +2763,12 @@ GUIスレッドへ渡す。`request_audio()` / `audio_ready` は使わない。�
 `importorskip`）。**実機・実信号での検証は未実施**（Q65は知人の要望で搭載しており、
 アンテナ等の受信環境が無いため）。
 
+**CW Decoder タブの新API（2026-09-21）**: Telemetry タブの「CW TLM」モード用に、`CwTab` は
+`frame_block_ready(text, start_utc, end_utc)`（確定文字を3秒を超える無音で区切ったブロック、
+`comms/cw/block_extractor.py`）と `start_decoding()` / `stop_decoding()` / `is_decoding` を持つ。
+時刻はライブなら現在の UTC、IQ 再生なら録音の開始時刻＋再生位置。詳細は
+[docs/telemetry.md](telemetry.md)「CW TLM モード」。
+
 #### SDRPipeline motorboating — 調査用の一時的診断ログ（`src/sdr/diag_log.py`・2026-07-25 追加）
 
 上記一連の修正でCW Decoder等のSDR音声受信が実際に動くようになった後、報告者から新たに

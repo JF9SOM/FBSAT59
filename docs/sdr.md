@@ -1622,6 +1622,15 @@ OrigamiSat-2受信時に発生した「Doppler補正だけでは説明できな�
 連動して動く。両者が重なった瞬間のOffset値が、真のズレ量そのものになる（詳細な周波数系の
 導出はユーザーとの設計合意時の会話ログ参照）。
 
+#### 録音の開始時刻（2026-09-21 追加）
+
+デコードしたデータに時刻を付けるため（Telemetry タブの CW TLM モード）、`SdrFileDevice` は
+**先頭サンプルの UTC 時刻**（`start_time_utc`、`set_start_time_utc()`）を持つ。`IQRecorder` の
+ファイル名 `{norad}_{name}_{YYYYMMDDTHHMMSSZ}.iq.wav` から読み、読めなければ None。再生中の時刻は
+`start_time_utc + position_s`。SDR コントロールの再生行の Offset 入力の右にある「Start (UTC):」で
+読み取った値を確認でき、読めなかった時は 00:00:00（今日の日付）が出るので手入力で直せる。
+詳細は [docs/telemetry.md](telemetry.md)「CW TLM モード」。
+
 #### `SdrRigAdapter`への統合 — Rig 1/2スロットへの「なりすまし接続」
 
 再生機能は独立した仕組みを新設せず、既存のRig 1/2（SDR）スロットの接続処理を再利用する:

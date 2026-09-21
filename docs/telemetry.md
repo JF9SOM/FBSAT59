@@ -575,3 +575,148 @@ gr-satellitesの長い前置信号の必要性などの注意を表示する非�
 [communications.md](communications.md) の「デコードに必要な最低SNRの目安」を参照。
 数値を更新するときは両方を同時に直すこと。日本語訳は `locale/ja/LC_MESSAGES/fbsat59.po`
 （[i18n.md](i18n.md) の手順）。テスト: `tests/test_telemetry_snr_guide.py`。
+
+---
+
+## 「CW TLM」モード — モールス符号の16進テレメトリの受信（2026-09-21 追加、ARICA-2 対応）
+
+### 背景
+
+ARICA-2（NORAD 68796）は AX.25/GMSK 側のテレメトリ形式を意図的に非公開にしている
+（メモリ `project_arica2_telemetry_undisclosed.md`）が、**CW ビーコンのハウスキーピング
+（HK）は公開されている**（SatNOGS `satnogs-decoders` の `arica2.ksy`＋坂本研究室の
+[CW HK データページ](http://sakamotoagu.mydns.jp/ARICA-2/data/amateur/cw_hp_calender_srv.html)）。
+2026-09-20 に録音した IQ（250 kHz、ARICA-2 のパス）を CW デコーダタブで再生して
+`2FFE8594EB880124`（HK1）と `00D7C2A8D6B8EA`（HK3、先頭桁は誤読を補正）を読み、
+坂本研の表と全項目照合できた（[docs/communications.md](communications.md)「CW Decoder — SDR入力を
+専用CW復調器化」節）ことから、これを Telemetry タブの第3のモードとして取り込んだ。
+
+### 全体の流れ
+
+```
+CW Decoder タブ（CwTab）— 確定した文字＋時刻を CwBlockExtractor へ
+   └ frame_block_ready(text, start_utc, end_utc)   ← 3秒を超える無音で区切ったブロック
+        └ TelemetryTab._on_cw_block()
+             ├ comms.telemetry.cw_frames.decode_cw_frame()  ← ビット単位デコード＋妥当性検査
+             ├ 「受信フレーム」表に行を追加（時刻 = ブロック末尾の UTC）
+             ├ 「全項目デコード結果」（HK1/HK2/HK3 サブタブ）を更新
+             └ telemetry_log に保存（received_at = 同じ UTC）
+```
+
+- **モード**: `_MODE_CW = "CW TLM"`（`Direwolf (AX.25)` / `gr-satellites` に続く3つ目）。選ぶと専用の
+  衛星コンボ（`_combo_cw_sat`）と 🔍 が現れ、Baud・📋 Log は隠れる。
+- **開始/停止**: ▶ Start で `cw_tlm_start_requested` を emit → `MainWindow._on_telemetry_cw_tlm_start()`
+  が CW デコーダタブを開き（既に開いていればそれを使う）`TelemetryTab.attach_cw_tab()` で結び、
+  `CwTab.start_decoding()` で開始する。**Telemetry タブは前面のまま**（CW タブは隣に開くだけ）。
+  ■ Stop は `stop_decoding()`。CW タブが停止時に「作りかけのブロック」を最後に流す
+  （`_stop_cw_tlm()` は停止要求の**後で** `_cw_tlm_norad` を消す。順序が逆だと最後のフレームを取りこぼす）。
+- 衛星/送信機の選択は `satellite_selected(norad, "cw_tlm")` →
+  `MainWindow._select_telemetry_satellite()`（旧 `_on_telemetry_satellite_requested()` の本体を改名）。
+  `cw_tlm` は `mode_detection.is_cw_telemetry_transmitter` に合う送信機を Radio Control で選ぶ
+  （無ければ任意の CW 送信機）。CW 送信機の選択は Radio Control が CW タブを自動オープンする
+  （`cw_transponder_selected`）ので、`_on_telemetry_satellite_requested()`（ラッパー）が
+  **Telemetry タブを前面に戻す**。
+
+### 衛星・送信機の DB 検索（`comms/mode_detection.py`）
+
+`is_cw_telemetry_transmitter()` = CW/CW-R モードで、**説明に `TLM`/`TELEMETRY` を含む**か、
+**`cw_frames` フォーマットを持つ衛星**（＝デコードできる衛星）。`get_norads_matching(conn, matcher)`
+（`get_norads_for_tab()` から切り出した共通ヘルパー）で `alive=1` かつ非 hidden の衛星を探す。
+ARICA-2 の SATNOGS 送信機は単に `Mode U - CW`（TLM の語なし）なので、**フォーマット定義の有無が
+無いと見つからない**。DB には他に `CW TLM`/`TLM CW`/`CW Telemetry` の衛星が約30あり（CAS-2T・
+DUCHIFAT-1・PROITERES 等）、それらもコンボに並ぶ。**デコードできる衛星（`cw_frames` あり）が先頭**。
+形式が無い衛星を選んで ▶ Start すると「まだ定義されていません（ARICA-2 のみ）」と出て開始しない。
+`COMMS_TAB_CONFIG` には**キーを足していない**（実在のタブ用で、Quick Panel と自動オープンが使うため）。
+
+### `cw_frames` スキーマ（`telemetry_formats/{norad}.json`、`comms/telemetry/cw_frames.py`）
+
+`telemetry_ids`（バイト単位）とは別の、ビット詰めの16進フレーム用スキーマ:
+
+```json
+"cw_frames": { "HK1": {"label": "...", "hex_digits": 16, "fields": [ ... ]}, "HK2": ..., "HK3": ... },
+"tables":    { "angvel_edges": [0.0, 0.173, ...] }
+```
+
+`fields` は MSB から順に消費される。種別: `flag`（1bit、`labels` で文言）・`uint`（`scale`/`add`/`unit`、
+`sign_from` で前のフラグの符号）・`angvel`（5bit 符号＋大きさ）・`hms`（GPS 時刻を3項目から合成、bit なし）。
+`hidden` は解析するが表示しない。`expect`（常にこの値）と `range`（[最小,最大]）が妥当性検査。
+`get_telemetry_id_defs()` が `cw_frames` も `{key: {label, fields}}` の形で返す（hidden を除く）ので、
+「全項目デコード結果」の HK1/HK2/HK3 サブタブは既存コードのまま出る。
+
+**`68796.json` に `modulation` キーを入れてはいけない**: `_select_telemetry_satellite()` の
+Direwolf 分岐が `modulation` の先頭文字（`CW`）を「優先するモード」として使い、Direwolf コンボで
+ARICA-2 を選ぶと GMSK ではなく CW 送信機が選ばれてしまう。
+
+### ARICA-2 のフレーム（`arica2.ksy` ＝レイアウト・換算式、坂本研の表＝文言）
+
+| フレーム | 16進桁数 | bit 数 | 内容 |
+|---|---|---|---|
+| HK1 (`cw1`) | 16 | 64 | コマンドID・セットアップ/アンテナ・各コアの電源・エラー・姿勢制御・角速度X/Y/Z 等 |
+| HK2 (`cw2`) | 12 | 48 | サムネ/JPEG/GPS 更新・GPS 時刻・緯度/経度・高度 |
+| HK3 (`cw3`) | 14 | 56 | 電池基板温度・ヒーター・電力の流れ・各機器電源・UHF 温度・アップリンク数・受信電圧・電池電圧 |
+
+換算式（ksy）: 電池基板温度 = raw×0.7952 − 238.3712、UHF 温度 = (1.0331 − raw×5.04/1023)/0.0056、
+受信電圧 = raw×5.04/1023、電池電圧 = raw×0.008978 + 6.1。ksy の `*_form`（呼出符号・beacon_type
+付き）は SatNOGS 投稿フォーム用で電波上のものではない。
+
+**実データでの確認（2026-09-20 の IQ 録音）**: HK1 `2FFE8594EB880124` は坂本研の表の該当行と
+**全ての離散項目が一致**（SBD error=Abnormal、省電力遷移2、再起動 4/7、姿勢制御回数4、姿勢制御「不可」）。
+HK3 `00D7C2A8D6B8EA` は温度 −237.576、UHF 温度 36.682、受信電圧 1.059、電池電圧 8.201、
+アップリンク13、最終コマンドID 1 が表と一致。
+
+**極性・表の決め方（実データと表を突き合わせた結果）**:
+- **電池ヒーター**: 生ビット 1 ＝「off」。坂本研の32日分（126行）は全行 `off` で、受信フレームのビットは 1。
+  ビット 0（on）のフレームは見たことがないので、0=on は未検証（JSON の `labels` は `{"1":"off","0":"on"}`）。
+- **電力の流れ**: 0=charge（受信フレームと一致）、1=discharge（補集合）。
+- **角速度**: 5bit **符号＋大きさ**（最上位=符号、下位4bit=大きさ）。X/Y/Z は同じ範囲表を共有し、
+  境界は `0, 0.173, 0.377, 0.615, 0.895, 1.223, 1.609, 2.061, 2.591, 3.213, 3.943`（32日分の
+  範囲表示18種から収集）。受信フレームの X=23（1 0111）→ −2.591〜−2.061、Y=2 → 0.377〜0.615、
+  Z=0 → 0〜0.173 が全て表と一致。**大きさ10以上は下限しか分からない**ので「範囲未確認」と表示する。
+  範囲表示の単位は公開ページに無く、表示しない。
+- **spr2 のサブコア**: 坂本研の表は `sub1/2/4/5`、ksy は `sub1/2/3/5`。坂本研の名前を採用。
+- **HK2** は実フレーム未受信。3つのフラグ（Thumbnail/JPEG/GPS update）は極性が未確認なので生ビット
+  （0/1）で表示し、GPS 時刻・緯度経度・高度は ksy どおり。ksy の `valid`（時0–23・分/秒0–59・緯度≦90・経度≦180）
+  を妥当性検査に使う。
+
+### 誤読への対策（厳格モード）
+
+CW には CRC が無く、AI の CW デコーダは弱い信号で桁を間違える（実際に HK3 の先頭桁が `1`/`0` で揺れた）。
+`_on_cw_block()` の扱い:
+
+| ブロック | 扱い |
+|---|---|
+| 16進桁数がちょうど12/14/16で、`expect`/`range` を満たす | **受信フレーム**（表に追加・全項目更新・DB 保存・件数に数える） |
+| 桁数は合うが検査に落ちる（`not_used`≠0 等） | 灰色の行 `[?] HK1 <16進> (理由)`。**データとして使わない**・件数に数えない・DB に保存しない |
+| 桁数が±1桁、または非16進文字が少し混ざる | 灰色の行 `[?] <文字列> (…不使用)` |
+| それ以外（ID テキスト `DE JS1YSD ARICA2`・ノイズ） | 無視 |
+
+将来の改善案（未実装）: ビーコンは約41.5秒周期で繰り返すので、桁ごとの多数決で確度を付ける。
+
+### 時刻（`CwTab._signal_time_now()`）
+
+- **ライブ**: 現在の UTC。
+- **IQ 再生**: `SdrFileDevice.start_time_utc + position_s`（先頭サンプルの UTC ＋ 再生位置）。シークや
+  一時停止にも追従する（位置を都度読むので）。ブロック内の文字ごとの時刻は
+  `スナップショット時刻 − 窓長 + 文字のオフセット`。**デコードは約1秒かかり、その間にバッファが進む**ので、
+  スナップショット時刻と破棄済みサンプル数は `_trigger_decode()` の時点で保存し、結果を受けた時に使う。
+- ブロックの区切りは**音声時間**（単調増加）で判定するので、再生位置の飛びで2つのブロックが
+  くっついたり割れたりしない。各文字は1回だけ渡す（窓が重なる分は `_block_up_to_abs` で除外）。
+- 表示する時刻は**ブロック末尾**（フレームを受け終わった時刻）。実測: 07:01:48〜07:02:05 の HK1 が `07:02:04`。
+
+### IQ 録音の開始時刻（SDR コントロールタブ）
+
+WAV には時刻情報が無い。`IQRecorder` は `{norad}_{name}_{YYYYMMDDTHHMMSSZ}.iq.wav` と名付けるので
+`SdrFileDevice` が**ファイル名から UTC の開始時刻を読む**（`parse_start_time_from_filename()`）。
+読めないファイル用に、SDR コントロールの再生行の **Offset 入力の右に「Start (UTC):」入力**
+（`_playback_start_edit`、`QDateTimeEdit`、UTC）を置いた。読めた時はその時刻を表示し、**読めなかった時は
+今日の 00:00:00 を表示**して、その値をデバイスへも渡す（表示 = 実際に使われる値）。修正すると
+`SdrFileDevice.set_start_time_utc()` に反映される。再生中の録音がある時だけ有効。
+
+### テスト
+
+`tests/test_cw_frames.py`（実フレームの全項目・HK2 の合成・妥当性検査・角速度表）、
+`tests/test_cw_block_extractor.py`、`tests/test_cw_tab.py`（`TestFrameBlocks`/`TestControlApi`/`TestSignalTime`）、
+`tests/test_telemetry_cw_tlm.py`（コンボ・モード切替・開始停止・受信ブロック・MainWindow 配線）、
+`tests/test_mode_detection.py`、`tests/test_recording_start_time.py`、`tests/test_file_device.py`、
+`tests/test_sdr_control_widget.py`。いずれも CW モデル・scipy 無しで動く（`SdrFileDevice` が絡むものだけ `importorskip`）。
+実物の CW デコーダ＋再生パイプライン＋Telemetry タブを通した通しの動作も、ARICA-2 の録音で確認済み。
