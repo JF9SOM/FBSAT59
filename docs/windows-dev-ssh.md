@@ -169,8 +169,15 @@ FT4 タブのレベルメータも「sounddevice not installed」表示のまま
   実行中はログがコンソールに流れる。
 - **`scripts/bootstrap_natives.py`**（コミット済み）: 上表のネイティブ依存の
   ヘッドレスダウンローダ。`--force` / `--only a,b` / `--skip a,b` / `--quiet`。
-- **デスクトップのショートカット** `C:\Users\pc\Desktop\FBSAT59.lnk` → 上記 `.bat`。
+- **デスクトップのショートカット** `C:\Users\pc\Desktop\FBSAT59(Dev).lnk` → 上記 `.bat`。
   作業フォルダ = リポジトリルート、アイコン = `assets\icon.ico`。
+  **名前を `FBSAT59.lnk` にしてはいけない。** パッケージ版（.exe）のインストーラーが
+  デスクトップに `FBSAT59.lnk` を作成するため、同名だと上書きされて開発用ランチャーが
+  消える（2026-09-21 に実際に発生し、`FBSAT59(Dev).lnk` として作り直した）。
+  `FBSAT59.lnk` はパッケージ版の起動用としてそのまま残す。
+  SSH 越しに作り直すときは、cmd のクォートで詰まるので PowerShell スクリプトを
+  `-EncodedCommand`（UTF-16LE の base64）で渡すと確実。`WScript.Shell` の
+  `CreateShortcut` で `TargetPath` / `WorkingDirectory` / `IconLocation` を設定して `Save()`。
 
 ---
 
@@ -235,8 +242,9 @@ TCP Remote SDR（SoapyRemote）は当面対象外。
    `py -3.11 -m venv .venv` →
    `.venv\Scripts\python.exe -m pip install -e .[dev,sdr,notifications,ax100digi]`。
 6. `.venv\Scripts\python.exe scripts\bootstrap_natives.py` でネイティブ依存を取得。
-7. `WScript.Shell` でデスクトップに `FBSAT59.lnk`（ターゲット = `scripts\win_launch.bat`、
+7. `WScript.Shell` でデスクトップに `FBSAT59(Dev).lnk`（ターゲット = `scripts\win_launch.bat`、
    作業フォルダ = リポジトリルート、アイコン = `assets\icon.ico`）を作成。
+   名前は必ず `FBSAT59(Dev)`（`FBSAT59.lnk` はパッケージ版インストーラーが上書きする）。
 8. SDR を使うならインストール版 .exe も入れておく（`_internal` の SoapySDR 一式を流用するため）。
 9. sshd 自己復旧を仕込む（上の「sshd の自己復旧（ガーディアン）」）:
    `scripts/sshd_guardian.ps1` を `C:\ProgramData\fbsat59-sshd-guardian.ps1` へコピー →
