@@ -140,9 +140,11 @@ class _TimedFileDevice(_FakeFileDevice):
     def __init__(self, start: datetime | None) -> None:
         super().__init__()
         self.start_time_utc = start
+        self.start_time_confirmed = start is not None
 
-    def set_start_time_utc(self, when: datetime | None) -> None:
+    def set_start_time_utc(self, when: datetime | None, confirmed: bool = True) -> None:
         self.start_time_utc = when
+        self.start_time_confirmed = confirmed
 
 
 def _make_timed_widget(
@@ -177,6 +179,7 @@ class TestRecordingStartTimeForm:
         assert device.start_time_utc is not None
         assert device.start_time_utc.hour == device.start_time_utc.minute == 0
         assert device.start_time_utc.tzinfo is UTC
+        assert not device.start_time_confirmed  # a placeholder, not a real time
 
     def test_editing_the_field_updates_the_device(self, qtbot: QtBot) -> None:
         w, device = _make_timed_widget(qtbot, None)
@@ -184,6 +187,7 @@ class TestRecordingStartTimeForm:
             QDateTime(QDate(2026, 9, 20), QTime(7, 7, 34), QTimeZone.utc())
         )
         assert device.start_time_utc == datetime(2026, 9, 20, 7, 7, 34, tzinfo=UTC)
+        assert device.start_time_confirmed  # typed by the user
 
     def test_disabled_without_a_replay(self, qtbot: QtBot) -> None:
         w, _device = _make_timed_widget(qtbot, None, is_replay=False)

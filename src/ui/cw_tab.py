@@ -48,6 +48,7 @@ from comms.cw.transcript import (
     reconcile_pending,
     should_defer_trailing_s,
 )
+from comms.signal_clock import signal_time
 from i18n import _
 
 logger = logging.getLogger(__name__)
@@ -616,18 +617,20 @@ class CwTab(QWidget):
         self._pending_text = new_pending
 
     def _signal_time_now(self) -> datetime:
-        """UTC time of the newest audio in the buffer.
+        """UTC time of the newest audio in the buffer (see comms.signal_clock).
 
-        The wall clock for a live input. For a played-back IQ recording (the
-        device knows its start time) the recording's start time plus the
-        playback position, so the time follows seeks and pauses.
+        The wall clock for a live input. For a played-back IQ recording the
+        recording's start time plus the playback position, so the time follows
+        seeks and pauses.
         """
-        device = getattr(self._sdr_pipeline, "_device", None)
-        start = getattr(device, "start_time_utc", None)
-        position = getattr(device, "position_s", None)
-        if isinstance(start, datetime) and isinstance(position, int | float):
-            return start + timedelta(seconds=float(position))
-        return datetime.now(UTC)
+        return signal_time(self._sdr_pipeline)[0]
+
+    def signal_time_reliable(self) -> bool:
+        """False while a played-back recording's start time is only a placeholder.
+
+        Data stamped with an unreliable time must not be published anywhere.
+        """
+        return signal_time(self._sdr_pipeline)[1]
 
     def _feed_block_extractor(self, result: DecodeResult) -> None:
         """Hand the characters this decode newly *confirmed* to the block extractor.

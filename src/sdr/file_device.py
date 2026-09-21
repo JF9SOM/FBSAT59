@@ -83,6 +83,10 @@ class SdrFileDevice:
         # (SdrControlWidget's "Start" field). With position_s it gives the
         # UTC time of whatever is being played, for time-stamping decoded data.
         self._start_time_utc: datetime | None = parse_start_time_from_filename(Path(wav_path).name)
+        # True once the start time is trustworthy: read from the file name or set by
+        # the user. A placeholder (SdrControlWidget's 00:00 for an unreadable name)
+        # is not, and data stamped with it must not be published.
+        self._start_time_confirmed: bool = self._start_time_utc is not None
         logger.info(
             "SdrFileDevice: loaded %s (%.1fs at %.0f Hz)",
             wav_path,
@@ -155,11 +159,21 @@ class SdrFileDevice:
         """UTC time of the recording's first sample, or None if unknown."""
         return self._start_time_utc
 
-    def set_start_time_utc(self, when: datetime | None) -> None:
-        """Set the recording's start time (None = unknown). A naive value is taken as UTC."""
+    @property
+    def start_time_confirmed(self) -> bool:
+        """True if start_time_utc came from the file name or the user (not a placeholder)."""
+        return self._start_time_confirmed
+
+    def set_start_time_utc(self, when: datetime | None, confirmed: bool = True) -> None:
+        """Set the recording's start time (None = unknown). A naive value is taken as UTC.
+
+        *confirmed* is False only for a placeholder shown until the user enters the
+        real time (see start_time_confirmed).
+        """
         if when is not None and when.tzinfo is None:
             when = when.replace(tzinfo=UTC)
         self._start_time_utc = when
+        self._start_time_confirmed = confirmed and when is not None
 
     @property
     def duration_s(self) -> float:

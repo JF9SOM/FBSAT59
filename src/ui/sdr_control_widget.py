@@ -988,7 +988,8 @@ class SdrControlWidget(QWidget):
         Uses the time the device read from the file name. When there is none
         the field shows 00:00 (of today, UTC) and that value is also handed to
         the device, so what is displayed is always what time-stamps the data
-        until the user corrects it.
+        until the user corrects it. It is handed over as *unconfirmed*: data
+        stamped with it is never uploaded anywhere.
         """
         device = self._playback_device()
         start = getattr(device, "start_time_utc", None)
@@ -997,7 +998,7 @@ class SdrControlWidget(QWidget):
             start = datetime(today.year, today.month, today.day, tzinfo=UTC)
             setter = getattr(device, "set_start_time_utc", None)
             if callable(setter):
-                setter(start)
+                setter(start, confirmed=False)
         edit = self._playback_start_edit
         edit.blockSignals(True)
         edit.setDateTime(

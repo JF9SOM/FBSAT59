@@ -146,7 +146,9 @@ def test_start_time_comes_from_the_file_name(tmp_path: Path) -> None:
 
     path = tmp_path / "0_unknown_20260920T065551Z.iq.wav"
     _write_test_wav(path, num_samples=100)
-    assert SdrFileDevice(path).start_time_utc == datetime(2026, 9, 20, 6, 55, 51, tzinfo=UTC)
+    dev = SdrFileDevice(path)
+    assert dev.start_time_utc == datetime(2026, 9, 20, 6, 55, 51, tzinfo=UTC)
+    assert dev.start_time_confirmed
 
 
 def test_start_time_is_none_without_a_time_in_the_name_and_can_be_set(tmp_path: Path) -> None:
@@ -156,8 +158,13 @@ def test_start_time_is_none_without_a_time_in_the_name_and_can_be_set(tmp_path: 
     _write_test_wav(path, num_samples=100)
     dev = SdrFileDevice(path)
     assert dev.start_time_utc is None
+    assert not dev.start_time_confirmed
 
     dev.set_start_time_utc(datetime(2026, 9, 20, 1, 2, 3))  # naive -> taken as UTC
     assert dev.start_time_utc == datetime(2026, 9, 20, 1, 2, 3, tzinfo=UTC)
+    assert dev.start_time_confirmed  # set by the user
+    dev.set_start_time_utc(datetime(2026, 9, 20, 0, 0, 0), confirmed=False)  # a placeholder
+    assert not dev.start_time_confirmed
     dev.set_start_time_utc(None)
     assert dev.start_time_utc is None
+    assert not dev.start_time_confirmed
