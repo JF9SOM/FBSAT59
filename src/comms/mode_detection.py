@@ -61,6 +61,28 @@ def is_cw_transmitter(xpdr: dict[str, Any]) -> bool:
     return mode in ("CW", "CW-R")
 
 
+def is_cw_telemetry_transmitter(xpdr: dict[str, Any]) -> bool:
+    """CW transmitters the Telemetry tab's "CW TLM" mode offers.
+
+    A CW transmitter (mode CW / CW-R) whose SATNOGS description says it carries
+    telemetry ("CW TLM", "TLM CW", "Mode U - CW Telemetry", ...), or that belongs
+    to a satellite this app has a CW frame definition for (a ``cw_frames``
+    schema in telemetry_formats/{norad}.json). The second rule is needed because
+    SATNOGS does not always say so: ARICA-2's CW beacon is just "Mode U - CW".
+    """
+    if not is_cw_transmitter(xpdr):
+        return False
+    desc = (xpdr.get("description") or "").upper()
+    if "TLM" in desc or "TELEMETRY" in desc:
+        return True
+    norad = xpdr.get("norad_cat_id")
+    if norad is None:
+        return False
+    from comms.telemetry.cw_frames import load_cw_frames
+
+    return load_cw_frames(int(norad)) is not None
+
+
 # MARMOTSat appears under two NORAD ids: 69912 is the real catalogued id
 # (visible, carries the SATNOGS "Mode V/V Digipeater" row), and 98272 is the
 # provisional 9xxxx id it launched under. The provisional satellites row is
@@ -223,6 +245,19 @@ def get_norads_for_tab(conn: sqlite3.Connection, tab_key: str) -> list[int]:
     config = COMMS_TAB_CONFIG.get(tab_key)
     if config is None or config.matcher is None:
         return []
+    return get_norads_matching(conn, config.matcher)
+
+
+def get_norads_matching(
+    conn: sqlite3.Connection, matcher: Callable[[dict[str, Any]], bool]
+) -> list[int]:
+    """NORAD ids of visible satellites with an alive transmitter accepted by *matcher*.
+
+    The transmitter dict handed to *matcher* has ``description``, ``mode``,
+    ``baud`` and ``norad_cat_id``. Satellites hidden by the TLE cleanup /
+    provisional-ID migration (``is_hidden``) never appear -- see
+    get_norads_for_tab().
+    """
     rows = conn.execute(
         """
         SELECT DISTINCT t.norad_cat_id, t.description, t.mode, t.baud
@@ -231,7 +266,6 @@ def get_norads_for_tab(conn: sqlite3.Connection, tab_key: str) -> list[int]:
         WHERE t.alive = 1 AND s.is_hidden = 0
         """
     ).fetchall()
-    matcher = config.matcher
     norads: set[int] = set()
     for row in rows:
         xpdr = {

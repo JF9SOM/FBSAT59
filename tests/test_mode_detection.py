@@ -13,9 +13,11 @@ import pytest
 
 from comms.mode_detection import (
     get_norads_for_tab,
+    get_norads_matching,
     is_aprs_transmitter,
     is_ax25_telemetry_transmitter,
     is_ax100_digi_transmitter,
+    is_cw_telemetry_transmitter,
     pick_preferred_transponder_index,
 )
 
@@ -360,3 +362,61 @@ def test_get_norads_ax100_digi_excludes_greencube(conn: sqlite3.Connection) -> N
     _add_sat(conn, 53106, "GreenCube")
     _add_xmit(conn, "u1", 53106, mode="GMSK", baud=1200, description="Digipeater")
     assert get_norads_for_tab(conn, "ax100digi") == []
+
+
+# ---------------------------------------------------------------------------
+# is_cw_telemetry_transmitter() / get_norads_matching() -- the Telemetry tab's CW TLM mode
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "description",
+    ["CW TLM", "TLM CW", "Mode U - CW Telemetry", "Mode S - CW - Telemetry Beacon 22wpm", "cw tlm"],
+)
+def test_cw_transmitter_described_as_telemetry_matches(description: str) -> None:
+    assert is_cw_telemetry_transmitter({"mode": "CW", "description": description})
+
+
+def test_cw_r_mode_also_counts_as_cw() -> None:
+    assert is_cw_telemetry_transmitter({"mode": "CW-R", "description": "CW TLM"})
+
+
+@pytest.mark.parametrize(
+    "xpdr",
+    [
+        {"mode": "CW", "description": "Beacon"},  # plain CW beacon: no telemetry claim
+        {"mode": "CW", "description": "Mode U - CW", "norad_cat_id": 25544},  # no cw_frames format
+        {"mode": "AFSK", "description": "AFSK1k2 TLM"},  # telemetry but not CW
+        {"mode": "FM", "description": "CW TLM"},  # description alone is not enough
+        {"mode": None, "description": None},
+    ],
+)
+def test_other_transmitters_do_not_match(xpdr: dict[str, object]) -> None:
+    assert not is_cw_telemetry_transmitter(xpdr)
+
+
+def test_satellite_with_a_cw_frame_definition_matches_even_without_tlm_in_the_text() -> None:
+    """ARICA-2's SATNOGS entry is just "Mode U - CW", but its cw_frames format exists."""
+    xpdr = {"mode": "CW", "description": "Mode U - CW", "norad_cat_id": 68796}
+    assert is_cw_telemetry_transmitter(xpdr)
+    # ... and only its CW transmitter, not the GMSK one.
+    assert not is_cw_telemetry_transmitter(
+        {"mode": "GMSK", "description": "Mode U - GMSK4k8 - AX.25", "norad_cat_id": 68796}
+    )
+
+
+def test_get_norads_matching_searches_the_db(conn: sqlite3.Connection) -> None:
+    _add_sat(conn, 68796, "ARICA-2")
+    _add_xmit(conn, "a", 68796, description="Mode U - CW", mode="CW", baud=20)
+    _add_xmit(conn, "b", 68796, description="Mode U - GMSK4k8 - AX.25", mode="GMSK", baud=4800)
+    _add_sat(conn, 41847, "CAS-2T")
+    _add_xmit(conn, "c", 41847, description="CW Telemetry", mode="CW", baud=14)
+    _add_sat(conn, 40021, "DUCHIFAT-1")
+    _add_xmit(conn, "d", 40021, description="CW TLM beacon callsign 4X4HSL", mode="CW", alive=0)
+    _add_sat(conn, 42775, "AALTO-1", hidden=2)
+    _add_xmit(conn, "e", 42775, description="TLM CW", mode="CW")
+    _add_sat(conn, 99999, "OTHER")
+    _add_xmit(conn, "f", 99999, description="Linear transponder", mode="USB")
+
+    # dead transmitter (alive=0), hidden satellite and non-CW-telemetry ones are excluded
+    assert get_norads_matching(conn, is_cw_telemetry_transmitter) == [41847, 68796]

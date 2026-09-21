@@ -2829,6 +2829,8 @@ class MainWindow(QMainWindow):
         tab = TelemetryTab(self._conn, self._radio_control, parent=self)
         tab.satellite_selected.connect(self._on_telemetry_satellite_requested)
         tab.open_satnogs_requested.connect(self._open_in_satnogs)
+        tab.cw_tlm_start_requested.connect(lambda t=tab: self._on_telemetry_cw_tlm_start(t))
+        tab.cw_tlm_stop_requested.connect(self._on_telemetry_cw_tlm_stop)
         self._comms_tab_keys[tab] = "telemetry"
         idx = self._tab_widget.addTab(tab, _("Telemetry"))
         self._add_tab_close_button(tab)
@@ -2839,6 +2841,41 @@ class MainWindow(QMainWindow):
             tab.set_satellite(self._selected_norad, sat_name)
 
     def _on_telemetry_satellite_requested(self, norad: int, mode: str = "afsk") -> None:
+        """Telemetry tab combo changed (see _select_telemetry_satellite()).
+
+        In CW TLM mode selecting a CW transponder makes Radio Control open the
+        CW Decoder tab (see _on_cw_transponder_selected()); the user picked the
+        satellite in the Telemetry tab, so that tab stays in front.
+        """
+        keep = self._tab_widget.currentWidget() if mode == "cw_tlm" else None
+        self._select_telemetry_satellite(norad, mode)
+        if keep is not None:
+            self._tab_widget.setCurrentWidget(keep)
+
+    def _find_comms_tab(self, key: str) -> QWidget | None:
+        """The open Communications tab registered under *key* (e.g. "cw"), if any."""
+        for tab, tab_key in self._comms_tab_keys.items():
+            if tab_key == key:
+                return tab
+        return None
+
+    def _on_telemetry_cw_tlm_start(self, telemetry_tab: Any) -> None:
+        """Telemetry tab's CW TLM ▶ Start: open the CW Decoder tab, feed this
+        tab from it, and start decoding. The Telemetry tab stays in front."""
+        self._on_open_cw()
+        cw_tab = self._find_comms_tab("cw")
+        if cw_tab is not None:
+            telemetry_tab.attach_cw_tab(cw_tab)
+            cw_tab.start_decoding()  # type: ignore[attr-defined]
+        self._tab_widget.setCurrentWidget(telemetry_tab)
+
+    def _on_telemetry_cw_tlm_stop(self) -> None:
+        """Telemetry tab's CW TLM ■ Stop: stop the CW Decoder tab's decoding."""
+        cw_tab = self._find_comms_tab("cw")
+        if cw_tab is not None:
+            cw_tab.stop_decoding()  # type: ignore[attr-defined]
+
+    def _select_telemetry_satellite(self, norad: int, mode: str = "afsk") -> None:
         """Telemetry tab combo changed — switch filter to All, select satellite, pick transponder.
 
         For AFSK mode: prefer this satellite's declared telemetry modulation,
@@ -2912,6 +2949,19 @@ class MainWindow(QMainWindow):
                 if score < best_score:
                     best_score = score
                     best_idx = i
+        elif mode == "cw_tlm":
+            # CW TLM: the transmitter the DB search behind the combo found (CW mode and a
+            # telemetry description, or a satellite with a CW frame definition); any CW
+            # transmitter if none of them matches.
+            picked = mode_detection.pick_preferred_transponder_index(
+                transmitters, mode_detection.is_cw_telemetry_transmitter
+            )
+            if picked is None:
+                picked = mode_detection.pick_preferred_transponder_index(
+                    transmitters, mode_detection.is_cw_transmitter
+                )
+            if picked is not None:
+                best_idx = picked
         else:
             # gr-satellites: TLM/Telemetry description first, then YAML frequency proximity
             tlm_idx: int | None = None

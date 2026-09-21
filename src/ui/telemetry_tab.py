@@ -4,6 +4,8 @@ Receives AX.25 frames from:
   - Bell 202 AFSK Python demodulator (SDR receive path)
   - Direwolf / KISS (via Rig + Sound Card)
   - gr-satellites subprocess (SDR path, 300+ satellites including 9k6 FSK)
+  - the CW Decoder tab ("CW TLM" mode): Morse-coded hexadecimal housekeeping
+    frames, cut out of the decoded CW text (see comms.telemetry.cw_frames)
 
 Decodes frames using JSON format definitions in
 src/data/telemetry_formats/{norad}.json.
@@ -23,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QStandardItemModel
+from PySide6.QtGui import QBrush, QColor, QStandardItemModel
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -52,11 +54,18 @@ from comms.aprs.engine import (
     resolve_ax25_modem,
 )
 from comms.aprs.parser import decode_ax25
+from comms.telemetry.cw_frames import (
+    decode_cw_frame,
+    is_near_miss,
+    load_cw_frames,
+    normalize_block,
+)
 from comms.telemetry.decoder import (
     TelemetryFrame,
     decode_telemetry,
     get_telemetry_id_defs,
     list_formats,
+    load_format,
 )
 from comms.telemetry.gr_satellites_backend import (
     GrSatellitesBackend,
@@ -83,6 +92,8 @@ from ui.sat_search_dialog import SatSearchDialog
 # module docstring for why that was replaced).
 _MODE_AFSK = "Direwolf (AX.25)"
 _MODE_GR = "gr-satellites"
+# Housekeeping frames sent as Morse-coded hex (ARICA-2 so far); decoded by the CW Decoder tab.
+_MODE_CW = "CW TLM"
 
 # Owner tag for the shared AprsEngine singleton (see comms.aprs.engine).
 # The APRS tab shares the same engine under its own "aprs" tag so closing
@@ -265,6 +276,10 @@ class TelemetryTab(QWidget):
     satellite_selected = Signal(int, str)
     # emitted when the "SatNOGS ↗" footer button is clicked: (norad, name)
     open_satnogs_requested = Signal(int, str)
+    # CW TLM mode's ▶ Start / ■ Stop: MainWindow opens the CW Decoder tab, hands it to
+    # attach_cw_tab() and starts / stops its decoding.
+    cw_tlm_start_requested = Signal()
+    cw_tlm_stop_requested = Signal()
 
     def __init__(
         self,
@@ -300,6 +315,11 @@ class TelemetryTab(QWidget):
         self._selected_norad: int | None = None
         self._selected_name: str = ""
 
+        # CW TLM mode: the CW Decoder tab feeding this one (attach_cw_tab()) and the
+        # satellite whose frames are being collected while it runs.
+        self._cw_tab: Any = None
+        self._cw_tlm_norad: int | None = None
+
         self._frame_count = 0
         self._direwolf_log_window: _ProcessLogDialog | None = None
         self._gr_log_window: _ProcessLogDialog | None = None
@@ -310,6 +330,7 @@ class TelemetryTab(QWidget):
         self._load_baud_mode()
         self._connect_signals()
         self._populate_afsk_combo()
+        self._populate_cw_combo()
         if detect_gr_satellites():
             self._gr_sat_list = list_gr_satellites_with_names()
             self._populate_gr_combo()
@@ -353,6 +374,7 @@ class TelemetryTab(QWidget):
         self._combo_mode = QComboBox()
         self._combo_mode.addItem(_MODE_AFSK)
         self._combo_mode.addItem(_MODE_GR)
+        self._combo_mode.addItem(_MODE_CW)
         self._combo_mode.currentIndexChanged.connect(self._on_mode_changed)
         row1.addWidget(self._combo_mode)
         self._combo_afsk_sat = QComboBox()
@@ -375,6 +397,17 @@ class TelemetryTab(QWidget):
         self._btn_gr_sat_search.setVisible(False)
         self._btn_gr_sat_search.clicked.connect(self._on_gr_sat_search_clicked)
         row1.addWidget(self._btn_gr_sat_search)
+        self._combo_cw_sat = QComboBox()
+        self._combo_cw_sat.setMinimumWidth(280)
+        self._combo_cw_sat.setVisible(False)
+        self._combo_cw_sat.currentIndexChanged.connect(self._on_cw_sat_changed)
+        row1.addWidget(self._combo_cw_sat)
+        self._btn_cw_sat_search = QPushButton("🔍")
+        self._btn_cw_sat_search.setToolTip(_("Search satellites…"))
+        self._btn_cw_sat_search.setFixedWidth(28)
+        self._btn_cw_sat_search.setVisible(False)
+        self._btn_cw_sat_search.clicked.connect(self._on_cw_sat_search_clicked)
+        row1.addWidget(self._btn_cw_sat_search)
 
         row1.addSpacing(12)
         self._baud_combo = QComboBox()
@@ -392,7 +425,8 @@ class TelemetryTab(QWidget):
             )
         )
         self._baud_combo.currentIndexChanged.connect(self._on_baud_mode_changed)
-        row1.addWidget(QLabel(_("Baud:")))
+        self._lbl_baud = QLabel(_("Baud:"))
+        row1.addWidget(self._lbl_baud)
         row1.addWidget(self._baud_combo)
 
         self._btn_backend_log = QPushButton(_("📋 Log"))
@@ -567,7 +601,7 @@ class TelemetryTab(QWidget):
         self._selected_name = name
         self._rebuild_decode_tabs(norad)
         if norad:
-            for combo in (self._combo_afsk_sat, self._combo_gr_sat):
+            for combo in (self._combo_afsk_sat, self._combo_gr_sat, self._combo_cw_sat):
                 for i in range(combo.count()):
                     if combo.itemData(i) == norad:
                         combo.blockSignals(True)
@@ -700,6 +734,45 @@ class TelemetryTab(QWidget):
             self._combo_afsk_sat.addItem(f"{name}  ({norad})", userData=norad)
         self._combo_afsk_sat.blockSignals(False)
 
+    def _populate_cw_combo(self) -> None:
+        """Fill the CW TLM satellite combo by searching this app's own DB.
+
+        Lists every visible satellite with an alive CW transmitter whose SATNOGS
+        description mentions telemetry ("CW TLM", "TLM CW", "CW Telemetry", ...)
+        or that this app has a CW frame definition for (mode_detection.
+        is_cw_telemetry_transmitter(); ARICA-2's entry is just "Mode U - CW", so
+        the definition is what finds it). Satellites that can actually be decoded
+        (a ``cw_frames`` format exists) come first; the others are listed too
+        because the DB says they carry CW telemetry, but ▶ Start explains that
+        no frame format is known for them yet.
+        """
+        self._combo_cw_sat.blockSignals(True)
+        self._combo_cw_sat.clear()
+
+        entries: dict[int, str] = {}
+        if hasattr(self._conn, "execute"):
+            with contextlib.suppress(Exception):
+                from comms.mode_detection import get_norads_matching, is_cw_telemetry_transmitter
+
+                norads = get_norads_matching(self._conn, is_cw_telemetry_transmitter)
+                if norads:
+                    placeholders = ",".join("?" * len(norads))
+                    rows = self._conn.execute(
+                        f"SELECT norad_cat_id, name FROM satellites "
+                        f"WHERE norad_cat_id IN ({placeholders})",
+                        tuple(norads),
+                    ).fetchall()
+                    for row in rows:
+                        entries[int(row["norad_cat_id"])] = str(row["name"])
+
+        def sort_key(item: tuple[int, str]) -> tuple[int, str]:
+            norad, name = item
+            return (0 if load_cw_frames(norad) else 1, name.upper())
+
+        for norad, name in sorted(entries.items(), key=sort_key):
+            self._combo_cw_sat.addItem(f"{name}  ({norad})", userData=norad)
+        self._combo_cw_sat.blockSignals(False)
+
     def _hidden_norads(self) -> set[int]:
         """NORAD ids satellites.is_hidden marks as no longer tracked.
 
@@ -831,11 +904,20 @@ class TelemetryTab(QWidget):
             self._combo_mode.setCurrentIndex(0)
 
     def _on_mode_changed(self, _index: int) -> None:
-        is_gr = self._current_mode() == _MODE_GR
-        self._combo_afsk_sat.setVisible(not is_gr)
-        self._btn_afsk_sat_search.setVisible(not is_gr)
+        mode = self._current_mode()
+        is_gr = mode == _MODE_GR
+        is_cw = mode == _MODE_CW
+        is_afsk = not is_gr and not is_cw
+        self._combo_afsk_sat.setVisible(is_afsk)
+        self._btn_afsk_sat_search.setVisible(is_afsk)
         self._combo_gr_sat.setVisible(is_gr)
         self._btn_gr_sat_search.setVisible(is_gr)
+        self._combo_cw_sat.setVisible(is_cw)
+        self._btn_cw_sat_search.setVisible(is_cw)
+        # Baud and the backend log are Direwolf / gr-satellites matters; CW TLM has
+        # neither (its text is in the CW Decoder tab).
+        for widget in (self._lbl_baud, self._baud_combo, self._btn_backend_log):
+            widget.setVisible(not is_cw)
         # gr-satellites already turns each frame into human-readable text
         # itself (see _on_gr_telemetry()'s "-> Packet from" parsing), so the
         # "Decoded Fields" sub-tab — built from this project's own
@@ -846,6 +928,10 @@ class TelemetryTab(QWidget):
         self._log_tabs.tabBar().setVisible(not is_gr)
         if is_gr:
             self._log_tabs.setCurrentWidget(self._raw_page)
+        if is_cw and self._combo_cw_sat.count():
+            # Select the combo's satellite the way changing the combo would, so the
+            # satellite list, Radio Control and the Decoded Fields tabs follow.
+            self._on_cw_sat_changed(self._combo_cw_sat.currentIndex())
         # SatNOGS DB upload now covers both paths (Phase 2 added the
         # gr-satellites --kiss_server raw-frame route; see
         # _on_gr_raw_frame()), so the upload cluster stays visible in
@@ -862,6 +948,15 @@ class TelemetryTab(QWidget):
         norad = self._combo_gr_sat.currentData()
         if norad is not None:
             self.satellite_selected.emit(int(norad), "gr")
+
+    def _on_cw_sat_changed(self, _index: int) -> None:
+        norad = self._combo_cw_sat.currentData()
+        self._update_satnogs_link_enabled()
+        if norad is not None:
+            self.satellite_selected.emit(int(norad), "cw_tlm")
+
+    def _on_cw_sat_search_clicked(self) -> None:
+        self._open_sat_search(self._combo_cw_sat)
 
     def _on_afsk_sat_search_clicked(self) -> None:
         self._open_sat_search(self._combo_afsk_sat)
@@ -991,7 +1086,11 @@ class TelemetryTab(QWidget):
     # ------------------------------------------------------------------ #
 
     def _on_start(self) -> None:
-        if self._current_mode() == _MODE_GR:
+        mode = self._current_mode()
+        if mode == _MODE_CW:
+            if not self._start_cw_tlm():
+                return
+        elif mode == _MODE_GR:
             self._start_gr_satellites()
         else:
             self._try_start_afsk()
@@ -1001,9 +1100,115 @@ class TelemetryTab(QWidget):
     def _on_stop(self) -> None:
         self._stop_gr_satellites()
         self._stop_engine()
+        self._stop_cw_tlm()
         self._btn_start.setEnabled(True)
         self._btn_stop.setEnabled(False)
         self._refresh_status()
+
+    # ------------------------------------------------------------------ #
+    # CW TLM (frames cut out of the CW Decoder tab's text)
+    # ------------------------------------------------------------------ #
+
+    def attach_cw_tab(self, cw_tab: Any) -> None:
+        """Receive the CW Decoder tab's finished text blocks (called by MainWindow)."""
+        if cw_tab is self._cw_tab:
+            return
+        if self._cw_tab is not None:
+            with contextlib.suppress(RuntimeError, TypeError):
+                self._cw_tab.frame_block_ready.disconnect(self._on_cw_block)
+        self._cw_tab = cw_tab
+        cw_tab.frame_block_ready.connect(self._on_cw_block)
+
+    def _start_cw_tlm(self) -> bool:
+        """Ask MainWindow to open and start the CW Decoder tab. False if it cannot be done."""
+        norad = self._combo_cw_sat.currentData()
+        if not isinstance(norad, int):
+            self._set_error("⚠ " + _("Select a satellite first."))
+            return False
+        if load_cw_frames(norad) is None:
+            self._set_error(
+                "⚠ "
+                + _(
+                    "No CW telemetry frame format is defined for this satellite yet "
+                    "(ARICA-2 only so far)."
+                )
+            )
+            return False
+        if self._decode_tabs_norad != norad:
+            self._rebuild_decode_tabs(norad)
+        self._cw_tlm_norad = norad
+        self.cw_tlm_start_requested.emit()
+        self._lbl_status.setText(_("CW TLM — decoding in the CW Decoder tab"))
+        self._lbl_status.setStyleSheet("color: #27ae60;")
+        return True
+
+    def _stop_cw_tlm(self) -> None:
+        if self._cw_tlm_norad is None:
+            return
+        # Stopping the CW tab hands over the block in progress, which still needs
+        # _cw_tlm_norad -- clear it only afterwards.
+        self.cw_tlm_stop_requested.emit()
+        self._cw_tlm_norad = None
+
+    def _on_cw_block(self, text: str, start: Any, end: Any) -> None:
+        """One finished block of CW text from the CW Decoder tab.
+
+        A block that is exactly a known frame's length of hex digits and passes
+        that frame's plausibility checks becomes a received frame (table row,
+        Decoded Fields update, log entry). A block that looks like a mis-read
+        frame is listed greyed out with a "?" and never used as data -- CW has
+        no CRC, so a wrong digit can not be told from a right one otherwise.
+        Anything else (the beacon's ID text, noise) is ignored.
+        """
+        norad = self._cw_tlm_norad
+        if norad is None:
+            return
+        fmt = load_format(norad) or {}
+        callsign = str(fmt.get("callsign", ""))
+        sat_name = str(fmt.get("name", f"NORAD {norad}"))
+        ts = end if isinstance(end, datetime.datetime) else datetime.datetime.now(datetime.UTC)
+
+        result = decode_cw_frame(norad, text)
+        if result is None:
+            if is_near_miss(norad, text):
+                note = _("length or characters not valid, not used")
+                self._append_row(
+                    callsign=callsign,
+                    sat_name=sat_name,
+                    data=f"[?] {normalize_block(text)}  ({note})",
+                    norad=norad,
+                    ts=ts,
+                    dim=True,
+                )
+            return
+        if not result.valid:
+            self._append_row(
+                callsign=callsign,
+                sat_name=sat_name,
+                data=f"[?] {result.key} {result.hex_text}  ({'; '.join(result.problems)})",
+                norad=norad,
+                ts=ts,
+                dim=True,
+            )
+            return
+        tf = TelemetryFrame(
+            norad=norad,
+            callsign=callsign,
+            satellite_name=sat_name,
+            raw_hex=result.hex_text,
+            fields=result.fields,
+            telemetry_id=result.key,
+            telemetry_label=result.label,
+        )
+        self._append_row(
+            callsign=callsign,
+            sat_name=sat_name,
+            data=f"[{result.key}] {result.hex_text}",
+            norad=norad,
+            ts=ts,
+        )
+        self._update_decode_tab(tf)
+        self._persist_frame(tf, ts)
 
     # ------------------------------------------------------------------ #
     # gr-satellites lifecycle
@@ -1223,18 +1428,26 @@ class TelemetryTab(QWidget):
         sat_name: str,
         data: str,
         norad: int | None,
+        ts: datetime.datetime | None = None,
+        dim: bool = False,
     ) -> None:
-        now = datetime.datetime.now(datetime.UTC)
-        ts = now.strftime("%H:%M:%S")
+        """Add a row to the Received Frames table.
+
+        *ts* is the time to show (UTC); the default is now. *dim* greys the row
+        out and leaves it out of the frame count (a rejected CW candidate).
+        """
+        when = ts if ts is not None else datetime.datetime.now(datetime.UTC)
         row = self._table.rowCount()
         self._table.insertRow(row)
-        self._table.setItem(row, 0, QTableWidgetItem(ts))
-        self._table.setItem(row, 1, QTableWidgetItem(callsign))
-        self._table.setItem(row, 2, QTableWidgetItem(sat_name))
-        self._table.setItem(row, 3, QTableWidgetItem(data))
+        for column, text in enumerate((when.strftime("%H:%M:%S"), callsign, sat_name, data)):
+            item = QTableWidgetItem(text)
+            if dim:
+                item.setForeground(QBrush(QColor("#888888")))
+            self._table.setItem(row, column, item)
         self._table.scrollToBottom()
-        self._frame_count += 1
-        self._lbl_count.setText(_("Frames: ") + str(self._frame_count) + _(" received"))
+        if not dim:
+            self._frame_count += 1
+            self._lbl_count.setText(_("Frames: ") + str(self._frame_count) + _(" received"))
 
     def _rebuild_decode_tabs(self, norad: int | None) -> None:
         """(Re)build the "Decoded Fields" sub-tabs for *norad*.
@@ -1349,6 +1562,8 @@ class TelemetryTab(QWidget):
     def _refresh_status(self) -> None:
         if self._gr_backend.is_running:
             return  # managed by _on_gr_status
+        if self._cw_tlm_norad is not None:
+            return  # CW TLM is running; _start_cw_tlm() set the status
         if self._afsk_source == "direwolf" and self._engine.is_running:
             modem = self._engine.current_modem
             suffix = f"  [{modem} baud]" if modem else ""
@@ -1364,6 +1579,10 @@ class TelemetryTab(QWidget):
             # Direwolf mode above), so its idle hint must not mention Rig.
             if self._current_mode() == _MODE_GR:
                 self._lbl_status.setText(_("—  (connect SDR, then click ▶ Start)"))
+            elif self._current_mode() == _MODE_CW:
+                self._lbl_status.setText(
+                    _("—  (click ▶ Start; the CW Decoder tab opens automatically)")
+                )
             else:
                 self._lbl_status.setText(_("—  (connect Rig or SDR, then click ▶ Start)"))
             self._lbl_status.setStyleSheet("color: #aaa;")
@@ -1478,7 +1697,14 @@ class TelemetryTab(QWidget):
     def _active_norad(self) -> int | None:
         """NORAD of the satellite the SatNOGS link should point at: the one
         selected in the active mode's combo, else the main-list selection."""
-        combo = self._combo_gr_sat if self._current_mode() == _MODE_GR else self._combo_afsk_sat
+        mode = self._current_mode()
+        combo = (
+            self._combo_gr_sat
+            if mode == _MODE_GR
+            else self._combo_cw_sat
+            if mode == _MODE_CW
+            else self._combo_afsk_sat
+        )
         data = combo.currentData()
         if isinstance(data, int):
             return data
