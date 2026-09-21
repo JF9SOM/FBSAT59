@@ -756,6 +756,9 @@ class MainWindow(QMainWindow):
         self._transmitter_manager = TransmitterManager(conn)
         self._rig_controller: RigController | None = None
         self._rig2_controller: RigController | None = None
+        # (slot, original controller) while IQ recording playback has taken over a
+        # Rig slot that was not an SDR -- see _borrow_slot_for_playback().
+        self._playback_borrow: tuple[int, RigController | None] | None = None
         self._rotator_controller: RotatorController | None = None
         self._ctcss_method: str = "hamlib"
         self._ctcss_cat_on: str = ""
@@ -5382,6 +5385,7 @@ class MainWindow(QMainWindow):
             self._rig_controller.disconnect()
             if is_sdr:
                 self._sdr_control.set_pipeline(None)
+        self._release_idle_playback_borrow()
         self._radio_control.refresh_status()
         self._update_rig_label()
 
@@ -6833,7 +6837,23 @@ class MainWindow(QMainWindow):
         _build_rig_controller() / _build_sdr_rig_adapter() always return a
         fresh, unconnected instance, so accepting this dialog silently drops
         an existing connection unless we explicitly reconnect it below.
+
+        A slot borrowed for IQ recording playback is given back first: the
+        playback ends, and the slot is rebuilt from its saved settings like
+        any other (and, holding its original controller again, is not
+        mistaken for a connection to restore).
         """
+        if self._playback_borrow is not None:
+            borrowed_rig = (
+                self._rig_controller if self._playback_borrow[0] == 1 else self._rig2_controller
+            )
+            if borrowed_rig is not None:
+                with contextlib.suppress(Exception):
+                    borrowed_rig.disconnect()
+            self._sdr_control.set_pipeline(None)
+            self._notify_comms_tabs_sdr_pipeline(None)
+            self._restore_borrowed_slot()
+
         # Load SDR settings once so both rig slots can check assigned_rig
         sdr_cfg: dict[str, Any] = {}
         try:
@@ -7135,13 +7155,15 @@ class MainWindow(QMainWindow):
         self._sdr_control.sync_tune_offset(new_offset)
         self._invalidate_sdr_retune_cache()
 
-    def _sdr_playback_target_slot(self) -> int | None:
-        """Which Rig slot (1 or 2) IQ recording playback should target.
+    def _sdr_playback_target_slot(self) -> int:
+        """Which Rig slot (1 or 2) IQ recording playback should use.
 
         Prefers whichever slot is currently configured as SDR; if both
         are, prefers Rig 1 (arbitrary but consistent -- playback only
         ever replaces one slot at a time, unlike live dual-SDR Doppler
-        tracking in _sdr_doppler_cycle()). None if neither slot is SDR.
+        tracking in _sdr_doppler_cycle()). With no SDR assigned, an
+        unconfigured slot is used (Rig 2 first); if both slots hold a rig,
+        Rig 2 is borrowed -- see _borrow_slot_for_playback().
         """
         from rig.controller import SdrRigAdapter
 
@@ -7149,7 +7171,87 @@ class MainWindow(QMainWindow):
             return 1
         if isinstance(self._rig2_controller, SdrRigAdapter):
             return 2
-        return None
+        if self._rig2_controller is None:
+            return 2
+        if self._rig_controller is None:
+            return 1
+        return 2
+
+    def _borrow_slot_for_playback(self, slot: int) -> bool:
+        """Put a playback-only SdrRigAdapter into *slot*, which is not an SDR.
+
+        IQ recording playback runs through a Rig slot's SdrRigAdapter (see
+        _on_play_recording_requested()), but a recording needs no SDR
+        hardware, so it must not require one to be assigned in Rig
+        Settings. The slot's own controller (a Hamlib rig, or None for an
+        unconfigured slot) is remembered in self._playback_borrow and put
+        back by _restore_borrowed_slot() once the playback is disconnected.
+        Nothing is written to the DB.
+
+        A rig that is connected is disconnected first, after asking. Returns
+        False if the user declines.
+        """
+        from rig.controller import SdrRigAdapter
+
+        original = self._rig_controller if slot == 1 else self._rig2_controller
+        if original is not None and original.is_connected:
+            reply = QMessageBox.question(
+                self,
+                _("Play IQ Recording"),
+                _(
+                    "Rig %d is currently connected to live hardware. Disconnect it and "
+                    "play back the recording instead?"
+                )
+                % slot,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return False
+            original.disconnect()
+            # Same notification the Disconnect button sends. The borrow is not
+            # registered yet, so _on_rig_slot_disconnected() only refreshes.
+            if slot == 1:
+                self._radio_control.rig_disconnected.emit()
+            else:
+                self._radio_control.rig2_disconnected.emit()
+
+        adapter = SdrRigAdapter()
+        self._playback_borrow = (slot, original)
+        if slot == 1:
+            self._rig_controller = adapter
+            self._radio_control.set_rig1(adapter)
+        else:
+            self._rig2_controller = adapter
+            self._radio_control.set_rig2(adapter)
+        return True
+
+    def _restore_borrowed_slot(self) -> None:
+        """Give the borrowed Rig slot back its own controller (see _borrow_slot_for_playback())."""
+        borrow = self._playback_borrow
+        if borrow is None:
+            return
+        self._playback_borrow = None
+        slot, original = borrow
+        if slot == 1:
+            self._rig_controller = original
+            self._radio_control.set_rig1(original)
+        else:
+            self._rig2_controller = original
+            self._radio_control.set_rig2(original)
+        self._update_rig_label()
+
+    def _release_idle_playback_borrow(self) -> None:
+        """Restore a borrowed slot whose playback was disconnected outside the Disconnect button.
+
+        Autotrack LOS and _disconnect_rig() disconnect the adapter without
+        going through the rig*_disconnected signals, which would leave a
+        bare SdrRigAdapter (nothing to connect to) in the slot.
+        """
+        borrow = self._playback_borrow
+        if borrow is None:
+            return
+        rig = self._rig_controller if borrow[0] == 1 else self._rig2_controller
+        if rig is None or not rig.is_connected:
+            self._restore_borrowed_slot()
 
     def _on_play_recording_requested(self, path: str) -> None:
         """Load a recorded .iq.wav file for playback, requested via SdrControlWidget's 📂 Open….
@@ -7167,6 +7269,9 @@ class MainWindow(QMainWindow):
         connect. SSTV re-queries the pipeline itself on every decoder
         start, so it needs nothing.
 
+        No SDR has to be assigned in Rig Settings: without one, a slot is
+        borrowed for the playback (_borrow_slot_for_playback()).
+
         Do NOT also call _on_rig_slot_connected() from here: the signal
         above already triggers it, and a second call builds a second
         SDRPipeline over the same file device (each then gets alternate
@@ -7175,14 +7280,13 @@ class MainWindow(QMainWindow):
         from rig.controller import SdrRigAdapter
 
         slot = self._sdr_playback_target_slot()
-        if slot is None:
-            QMessageBox.warning(
-                self,
-                _("Play IQ Recording"),
-                _("No SDR is configured for Rig 1 or Rig 2 — set one up in Rig Settings first."),
-            )
-            return
         rig = self._rig_controller if slot == 1 else self._rig2_controller
+        borrowed_now = False
+        if not isinstance(rig, SdrRigAdapter):
+            if not self._borrow_slot_for_playback(slot):
+                return
+            borrowed_now = True
+            rig = self._rig_controller if slot == 1 else self._rig2_controller
         if not isinstance(rig, SdrRigAdapter):
             return
 
@@ -7202,6 +7306,8 @@ class MainWindow(QMainWindow):
         if rig.connect_from_file(Path(path)):
             self._radio_control.notify_playback_connected(slot)
         else:
+            if borrowed_now:
+                self._restore_borrowed_slot()
             QMessageBox.warning(
                 self, _("Play IQ Recording"), _("Failed to open recording:\n%s") % path
             )
@@ -8344,6 +8450,8 @@ class MainWindow(QMainWindow):
         if getattr(rig, "is_sdr", False):
             self._sdr_control.set_pipeline(None)
             self._notify_comms_tabs_sdr_pipeline(None)
+        if self._playback_borrow is not None and self._playback_borrow[0] == slot:
+            self._restore_borrowed_slot()
         self._update_rig_label()
 
     def _notify_comms_tabs_sdr_pipeline(self, pipeline: Any) -> None:
@@ -8500,6 +8608,7 @@ class MainWindow(QMainWindow):
             self._rig2_controller.disconnect()
             if is_sdr2:
                 self._sdr_control.set_pipeline(None)
+        self._release_idle_playback_borrow()
         # Disconnect rotator (only if Autotrack is the one managing it)
         if (
             self._autotrack_use_rotator

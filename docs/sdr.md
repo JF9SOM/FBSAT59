@@ -1708,6 +1708,28 @@ OrigamiSat-2受信時に発生した「Doppler補正だけでは説明できな�
 自体は`test_main_window.py`側に新規テストを追加していない（同ファイルはCLAUDE.mdの
 ルール通りローカル実行せず`--collect-only`でのみ確認、CI待ち）。
 
+#### SDR 未割り当てでも再生できる（2026-09-21）— Rig 枠の一時借用
+
+**問題**: 再生は Rig 1/2 のうち `SdrRigAdapter` の枠へ差し込む作りだったため、Rig Settings で SDR を
+割り当てていないと「No SDR is configured for Rig 1 or Rig 2」で中断していた。録音の再生に実機は要らないので、
+これは分かりにくい前提条件だった。
+
+**仕様**（`MainWindow._borrow_slot_for_playback()` / `_restore_borrowed_slot()`）:
+- 再生先の枠（`_sdr_playback_target_slot()`）: SDR 割り当て済みの枠（Rig 1 優先）→ 未設定の枠（Rig 2 → Rig 1）→
+  両方 Hamlib 無線機なら **Rig 2 を借りる**
+- 借りる枠には再生専用の空の `SdrRigAdapter()` を差し込む（`_rig*_controller` と `RadioControlWidget.set_rig1/2`）。
+  **DB には何も書かない**。元のコントローラーは `MainWindow._playback_borrow = (slot, original)` に保持
+- 借りる枠の無線機が接続中なら確認ダイアログを出し、Yes なら `disconnect()` して `rig*_disconnected` を発火する
+  （Disconnect ボタンと同じ通知）。No なら何も変えない
+- **元に戻るタイミング**: 再生中の枠の Disconnect ボタン（`_on_rig_slot_disconnected()`）／Rig Settings の OK
+  （`_load_rig_settings()` の冒頭で借用を解除。元の Hamlib 無線機は借用時に切断済みなので勝手に再接続されない）／
+  ファイルを開けなかったとき／Autotrack LOS・`_disconnect_rig()` で切断されたとき
+  （`_release_idle_playback_borrow()`。これらは `rig*_disconnected` を発火しないため個別に対処）
+- 借用中に別の録音を開き直すと、借りている枠（すでに `SdrRigAdapter`）をそのまま使う
+- 借用中であることを示す表示は出さない（ユーザー判断）
+
+テスト: `tests/test_main_window.py` の `TestSdrPlaybackBorrowsSlot`。
+
 #### 追加修正（同日）— Telemetry・APRSタブがIQ再生を拾えていなかったバグ
 
 上記の初回実装をユーザーに確認してもらったところ、「Telemetryタブ・APRSタブでもIQ再生から

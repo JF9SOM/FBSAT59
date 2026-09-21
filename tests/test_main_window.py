@@ -5515,3 +5515,143 @@ class TestSdrPlaybackConnect:
 
         stale.stop.assert_called_once()
         assert adapter._pipeline is not stale
+
+
+class TestSdrPlaybackBorrowsSlot:
+    """IQ recording playback must not require an SDR to be assigned in Rig Settings.
+
+    Without one, a Rig slot is borrowed for the playback (an unconfigured slot
+    first, Rig 2 when both hold a Hamlib rig) and handed back to its own
+    controller once the playback is disconnected.
+    """
+
+    def _make_window(self, qtbot, db, monkeypatch):
+        import sdr
+        import sdr.pipeline
+
+        monkeypatch.setattr(sdr, "SOAPY_AVAILABLE", True)
+        monkeypatch.setattr(sdr.pipeline, "SDRPipeline", lambda device, parent=None: MagicMock())
+        w = MainWindow(conn=db, tle_manager=TLEManager(db))
+        qtbot.addWidget(w)
+        w._sdr_control = MagicMock()
+        return w
+
+    @staticmethod
+    def _fake_playback(monkeypatch) -> None:
+        from rig.controller import RigState, SdrRigAdapter
+
+        def _connect_from_file(self, wav_path) -> bool:
+            self._sdr_device = MagicMock()
+            self._is_replay = True
+            self._state = RigState.CONNECTED
+            return True
+
+        monkeypatch.setattr(SdrRigAdapter, "connect_from_file", _connect_from_file)
+
+    @staticmethod
+    def _hamlib_rig(connected: bool = False) -> MagicMock:
+        rig = MagicMock()
+        rig.is_sdr = False
+        rig.is_connected = connected
+        return rig
+
+    def test_unconfigured_rig2_is_used_and_emptied_again(self, qtbot, db, monkeypatch) -> None:
+        from rig.controller import SdrRigAdapter
+
+        self._fake_playback(monkeypatch)
+        w = self._make_window(qtbot, db, monkeypatch)
+        rig1 = self._hamlib_rig()
+        w._rig_controller = rig1
+        w._rig2_controller = None
+
+        w._on_play_recording_requested("/tmp/x.iq.wav")
+
+        assert w._rig_controller is rig1
+        assert isinstance(w._rig2_controller, SdrRigAdapter)
+        assert w._rig2_controller.is_replay
+        assert w._radio_control._rig2 is w._rig2_controller
+
+        w._radio_control._on_connect_rig2()  # the Disconnect button
+
+        assert w._rig2_controller is None
+        assert w._radio_control._rig2 is None
+        assert w._playback_borrow is None
+
+    def test_rig2_is_borrowed_when_both_slots_hold_a_rig(self, qtbot, db, monkeypatch) -> None:
+        from rig.controller import SdrRigAdapter
+
+        self._fake_playback(monkeypatch)
+        w = self._make_window(qtbot, db, monkeypatch)
+        rig1 = self._hamlib_rig()
+        rig2 = self._hamlib_rig()
+        w._rig_controller = rig1
+        w._rig2_controller = rig2
+
+        w._on_play_recording_requested("/tmp/x.iq.wav")
+
+        assert w._rig_controller is rig1
+        assert isinstance(w._rig2_controller, SdrRigAdapter)
+
+        w._radio_control._on_connect_rig2()
+
+        assert w._rig2_controller is rig2
+        assert w._radio_control._rig2 is rig2
+
+    def test_connected_rig_is_disconnected_only_after_confirming(
+        self, qtbot, db, monkeypatch
+    ) -> None:
+        from unittest.mock import patch
+
+        from PySide6.QtWidgets import QMessageBox
+
+        self._fake_playback(monkeypatch)
+        w = self._make_window(qtbot, db, monkeypatch)
+        rig1 = self._hamlib_rig()
+        rig2 = self._hamlib_rig(connected=True)
+        w._rig_controller = rig1
+        w._rig2_controller = rig2
+
+        with patch(
+            "ui.main_window.QMessageBox.question", return_value=QMessageBox.StandardButton.No
+        ):
+            w._on_play_recording_requested("/tmp/x.iq.wav")
+        rig2.disconnect.assert_not_called()
+        assert w._rig2_controller is rig2
+
+        with patch(
+            "ui.main_window.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes
+        ):
+            w._on_play_recording_requested("/tmp/x.iq.wav")
+        rig2.disconnect.assert_called_once()
+        assert w._rig2_controller is not rig2
+
+    def test_failed_open_gives_the_slot_back(self, qtbot, db, monkeypatch) -> None:
+        from unittest.mock import patch
+
+        from rig.controller import SdrRigAdapter
+
+        monkeypatch.setattr(SdrRigAdapter, "connect_from_file", lambda self, wav_path: False)
+        w = self._make_window(qtbot, db, monkeypatch)
+        rig2 = self._hamlib_rig()
+        w._rig_controller = self._hamlib_rig()
+        w._rig2_controller = rig2
+
+        with patch("ui.main_window.QMessageBox.warning"):
+            w._on_play_recording_requested("/tmp/x.iq.wav")
+
+        assert w._rig2_controller is rig2
+        assert w._playback_borrow is None
+
+    def test_assigned_sdr_slot_is_not_borrowed(self, qtbot, db, monkeypatch) -> None:
+        from rig.controller import SdrRigAdapter
+
+        self._fake_playback(monkeypatch)
+        w = self._make_window(qtbot, db, monkeypatch)
+        adapter = SdrRigAdapter()
+        w._rig_controller = adapter
+        w._rig2_controller = self._hamlib_rig()
+
+        w._on_play_recording_requested("/tmp/x.iq.wav")
+
+        assert w._rig_controller is adapter
+        assert w._playback_borrow is None
