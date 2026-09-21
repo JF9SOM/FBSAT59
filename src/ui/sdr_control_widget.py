@@ -164,12 +164,12 @@ class SdrControlWidget(QWidget):
         the two file-manager buttons which must remain accessible at all times.
         """
         self._waterfall_btn.setEnabled(connected)
-        # "▶ Play…" must stay usable with no SDR connected at all -- that
+        # "📂 Open…" must stay usable with no SDR connected at all -- that
         # is the whole point of file playback. Its own paired controls
-        # (Stop / Offset / seek slider) are gated separately by
+        # (Play / Stop / Offset / seek slider) are gated separately by
         # _set_replay_controls_enabled(), driven by set_pipeline()'s
         # is_replay flag rather than plain connected-ness.
-        _always_enabled = {self._open_folder_btn, self._open_audio_folder_btn, self._play_btn}
+        _always_enabled = {self._open_btn, self._open_audio_folder_btn}
         for panel in (
             self._spectrum_panel,
             self._tune_panel,
@@ -744,20 +744,25 @@ class SdrControlWidget(QWidget):
         ctrl_row.addWidget(self._stop_rec_btn)
         ctrl_row.addWidget(self._rec_status_label)
         ctrl_row.addStretch()
-        self._open_folder_btn = QPushButton(_("📁"))
-        self._open_folder_btn.setToolTip(_("Open IQ recordings folder in file manager"))
-        self._open_folder_btn.setFixedWidth(32)
-        self._open_folder_btn.clicked.connect(self._open_iq_folder)
-        ctrl_row.addWidget(self._open_folder_btn)
         v.addLayout(ctrl_row)
 
         play_row = QHBoxLayout()
-        self._play_btn = QPushButton(_("▶ Play…"))
-        self._play_btn.setToolTip(_("Play back a recorded .iq.wav file"))
+        self._open_btn = QPushButton(_("📂 Open…"))
+        self._open_btn.setToolTip(_("Choose a recorded .iq.wav file and start playing it"))
+        self._open_btn.clicked.connect(self._on_open_clicked)
+        self._play_btn = QPushButton(_("▶ Play"))
+        self._play_btn.setToolTip(
+            _(
+                "Play the loaded recording again from where it stopped\n"
+                "(from the start if it had reached the end)"
+            )
+        )
+        self._play_btn.setEnabled(False)
         self._play_btn.clicked.connect(self._on_play_clicked)
         self._stop_play_btn = QPushButton(_("■ Stop"))
         self._stop_play_btn.setEnabled(False)
         self._stop_play_btn.clicked.connect(self._on_stop_play_clicked)
+        play_row.addWidget(self._open_btn)
         play_row.addWidget(self._play_btn)
         play_row.addWidget(self._stop_play_btn)
         play_row.addSpacing(8)
@@ -930,30 +935,22 @@ class SdrControlWidget(QWidget):
         self._stop_rec_btn.setEnabled(False)
         self._rec_status_label.setText("00:00:00  0 MB")
 
-    def _open_iq_folder(self) -> None:
-        """Open the IQ recordings save directory in the OS file manager."""
-        self._iq_save_dir.mkdir(parents=True, exist_ok=True)
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._iq_save_dir)))
-
     # ------------------------------------------------------------------
     # IQ recording playback
     # ------------------------------------------------------------------
 
     def _set_replay_controls_enabled(self, enabled: bool) -> None:
-        """Gate Stop/Offset/seek-slider -- meaningless without a loaded recording."""
-        self._stop_play_btn.setEnabled(enabled)
+        """Gate Offset/Start/slider and Play/Stop -- meaningless without a loaded recording."""
         self._playback_offset_spin.setEnabled(enabled)
         self._playback_start_edit.setEnabled(enabled)
         self._playback_slider.setEnabled(enabled)
+        self._update_playback_buttons()
 
-    def _on_play_clicked(self) -> None:
-        """Pick a .iq.wav file and ask MainWindow to load it for playback.
+    def _on_open_clicked(self) -> None:
+        """Pick a .iq.wav file and ask MainWindow to load it and start playing it.
 
-        Always opens the file picker (a fresh load always restarts from
-        position 0) -- resuming an already-loaded, merely-paused
-        recording is _on_stop_play_clicked()'s pair action below, not
-        this one; that one doesn't need MainWindow at all since it only
-        touches the SdrFileDevice already attached to self._pipeline.
+        A fresh load always starts at position 0. Playing the *same* recording
+        again after a stop needs no file picker: that is _on_play_clicked().
         """
         path, _filter = QFileDialog.getOpenFileName(
             self,
@@ -964,19 +961,46 @@ class SdrControlWidget(QWidget):
         if path:
             self.play_recording_requested.emit(path)
 
-    def _on_stop_play_clicked(self) -> None:
-        """Pause playback in place -- the loaded file/position are kept.
+    def _on_play_clicked(self) -> None:
+        """Play the already loaded recording again, without asking for a file.
 
-        Resuming is just pressing ▶ Play… again (see its docstring): as
-        long as this rig slot hasn't been disconnected or reloaded with a
-        different file, self._pipeline._device is still the same
-        SdrFileDevice, so start_stream() picks up right where this left
-        off.
+        Continues from where it was stopped; a recording that had played to its
+        end starts over from the beginning. The pipeline's thread is still
+        running (it just idles while the file device is stopped), so this only
+        has to restart the file device -- no MainWindow round trip.
+        """
+        device = self._playback_device()
+        if device is None:
+            return
+        if bool(getattr(device, "at_end", False)):
+            seek = getattr(device, "seek", None)
+            if seek is not None:
+                seek(0.0)
+        start_stream = getattr(device, "start_stream", None)
+        if start_stream is not None:
+            start_stream()
+        self._update_playback_buttons()
+
+    def _on_stop_play_clicked(self) -> None:
+        """Pause playback in place -- the loaded file and position are kept.
+
+        Playing again is ▶ Play (see _on_play_clicked()): as long as this rig
+        slot has not been disconnected or reloaded with another file,
+        self._pipeline._device is still the same SdrFileDevice.
         """
         device = getattr(self._pipeline, "_device", None)
         stop_stream = getattr(device, "stop_stream", None)
         if stop_stream is not None:
             stop_stream()
+        self._update_playback_buttons()
+
+    def _update_playback_buttons(self) -> None:
+        """Play is usable while a loaded recording is not playing, Stop while it is."""
+        device = self._playback_device() if self._is_replay else None
+        loaded = device is not None
+        playing = loaded and bool(getattr(device, "is_streaming", False))
+        self._play_btn.setEnabled(loaded and not playing)
+        self._stop_play_btn.setEnabled(loaded and playing)
 
     def _playback_device(self) -> Any:
         """The SdrFileDevice behind the attached replay pipeline, if any."""
@@ -1072,6 +1096,7 @@ class SdrControlWidget(QWidget):
             stop_stream = getattr(device, "stop_stream", None)
             if stop_stream is not None:
                 stop_stream()
+        self._update_playback_buttons()
 
     def _start_audio_recording(
         self,

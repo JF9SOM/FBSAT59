@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-21 17:03+0900\n"
+"POT-Creation-Date: 2026-09-21 17:47+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -1210,7 +1210,7 @@ msgid "FBSAT59 will now restart to apply the Remote SDR discovery setting."
 msgstr "Remote SDR自動検索の設定を反映するため、FBSAT59を今すぐ再起動します。"
 
 #: src/ui/main_window.py:7181 src/ui/main_window.py:7192
-#: src/ui/main_window.py:7206 src/ui/sdr_control_widget.py:960
+#: src/ui/main_window.py:7206 src/ui/sdr_control_widget.py:957
 msgid "Play IQ Recording"
 msgstr "IQ録音を再生"
 
@@ -2741,7 +2741,7 @@ msgid "▶ Start"
 msgstr "▶ 開始"
 
 #: src/ui/telemetry_tab.py:484 src/ui/cw_tab.py:290
-#: src/ui/sdr_control_widget.py:758
+#: src/ui/sdr_control_widget.py:762
 msgid "■ Stop"
 msgstr "■ 停止"
 
@@ -2749,7 +2749,7 @@ msgstr "■ 停止"
 msgid "—"
 msgstr "—"
 
-#: src/ui/telemetry_tab.py:498 src/ui/telemetry_tab.py:1895
+#: src/ui/telemetry_tab.py:498 src/ui/telemetry_tab.py:1899
 msgid "Frames: 0 received"
 msgstr "フレーム: 0件受信"
 
@@ -2836,7 +2836,7 @@ msgstr "gr-satellitesログ"
 msgid "Direwolf Log"
 msgstr "Direwolfログ"
 
-#: src/ui/telemetry_tab.py:1178 src/ui/telemetry_tab.py:1319
+#: src/ui/telemetry_tab.py:1178 src/ui/telemetry_tab.py:1323
 msgid "Select a satellite first."
 msgstr "先に衛星を選択してください。"
 
@@ -2852,15 +2852,15 @@ msgstr ""
 msgid "CW TLM — decoding in the CW Decoder tab"
 msgstr "CW TLM — CWデコーダータブでデコード中"
 
-#: src/ui/telemetry_tab.py:1228
+#: src/ui/telemetry_tab.py:1232
 msgid "length or characters not valid, not used"
 msgstr "長さまたは文字が不正のため不使用"
 
-#: src/ui/telemetry_tab.py:1302
+#: src/ui/telemetry_tab.py:1306
 msgid "Select received CW frames in the table first."
 msgstr "先に表で受信したCWフレームを選択してください。"
 
-#: src/ui/telemetry_tab.py:1325
+#: src/ui/telemetry_tab.py:1329
 msgid ""
 "Nothing ready to send: a frame needs a second reception and a reliable time, "
 "and must not be sent already."
@@ -2868,7 +2868,7 @@ msgstr ""
 "送信できるものがありません: 2回目の受信と確実な時刻が必要で、送信済みは除きま"
 "す。"
 
-#: src/ui/telemetry_tab.py:1332
+#: src/ui/telemetry_tab.py:1336
 #, python-brace-format
 msgid ""
 "Send {n} logged frame(s) ({m} different) of {name} to the SatNOGS DB?\n"
@@ -2880,150 +2880,152 @@ msgstr ""
 "\n"
 "2回以上受信し、時刻が確実で、未送信のものだけが対象です。"
 
-#: src/ui/telemetry_tab.py:1338
+#: src/ui/telemetry_tab.py:1342
 msgid "Send to SatNOGS"
 msgstr "SatNOGSへ送信"
 
-#: src/ui/telemetry_tab.py:1371
+#: src/ui/telemetry_tab.py:1375
 #, python-brace-format
 msgid "SatNOGS accepted the frame (HTTP {n})"
 msgstr "SatNOGSがフレームを受理しました（HTTP {n}）"
 
-#: src/ui/telemetry_tab.py:1391
+#: src/ui/telemetry_tab.py:1395
+#, python-brace-format
 msgid "SatNOGS upload failed: {detail}"
 msgstr "SatNOGSへの送信に失敗しました: {detail}"
 
-#: src/ui/telemetry_tab.py:1392
+#: src/ui/telemetry_tab.py:1396
 #, python-brace-format
 msgid "SatNOGS rejected the upload (HTTP {status}): {detail}"
 msgstr "SatNOGSが送信を拒否しました（HTTP {status}）: {detail}"
 
-#: src/ui/telemetry_tab.py:1396
+#: src/ui/telemetry_tab.py:1400
 msgid "check the API key (API button)"
 msgstr "APIキーを確認してください（APIボタン）"
 
-#: src/ui/telemetry_tab.py:1404 src/ui/telemetry_tab.py:1962
+#: src/ui/telemetry_tab.py:1408 src/ui/telemetry_tab.py:1966
 msgid "API key"
 msgstr "APIキー"
 
-#: src/ui/telemetry_tab.py:1405 src/ui/telemetry_tab.py:1964
+#: src/ui/telemetry_tab.py:1409 src/ui/telemetry_tab.py:1968
 msgid "callsign"
 msgstr "コールサイン"
 
-#: src/ui/telemetry_tab.py:1406 src/ui/telemetry_tab.py:1966
+#: src/ui/telemetry_tab.py:1410 src/ui/telemetry_tab.py:1970
 msgid "station location"
 msgstr "観測地点"
 
-#: src/ui/telemetry_tab.py:1409
+#: src/ui/telemetry_tab.py:1413
 msgid "SatNOGS upload not possible — missing: "
 msgstr "SatNOGSへ送信できません — 未設定: "
 
-#: src/ui/telemetry_tab.py:1415
+#: src/ui/telemetry_tab.py:1419
 #, python-brace-format
 msgid "{n} queued for upload"
 msgstr "{n}件を送信待ちに追加"
 
-#: src/ui/telemetry_tab.py:1417
+#: src/ui/telemetry_tab.py:1421
+#, python-brace-format
 msgid "{n} awaiting SatNOGS's reply"
 msgstr "{n}件はSatNOGSの応答待ち"
 
-#: src/ui/telemetry_tab.py:1419
+#: src/ui/telemetry_tab.py:1423
 #, python-brace-format
 msgid "{n} already sent"
 msgstr "{n}件は送信済み"
 
-#: src/ui/telemetry_tab.py:1421
+#: src/ui/telemetry_tab.py:1425
 #, python-brace-format
 msgid "{n} waiting for a second reception"
 msgstr "{n}件は2回目の受信待ち"
 
-#: src/ui/telemetry_tab.py:1423
+#: src/ui/telemetry_tab.py:1427
 #, python-brace-format
 msgid "{n} skipped: recording start time not set"
 msgstr "{n}件は録音の開始時刻が未設定のため保留"
 
-#: src/ui/telemetry_tab.py:1425
+#: src/ui/telemetry_tab.py:1429
 #, python-brace-format
 msgid "{n} without a SatNOGS format"
 msgstr "{n}件はSatNOGS形式なし"
 
-#: src/ui/telemetry_tab.py:1426
+#: src/ui/telemetry_tab.py:1430
 msgid "nothing to send"
 msgstr "送信するものなし"
 
-#: src/ui/telemetry_tab.py:1443
+#: src/ui/telemetry_tab.py:1447
 msgid "⚠ No satellite selected"
 msgstr "⚠ 衛星が選択されていません"
 
-#: src/ui/telemetry_tab.py:1482
+#: src/ui/telemetry_tab.py:1486
 msgid "Connecting SDR…"
 msgstr "SDR接続中…"
 
-#: src/ui/telemetry_tab.py:1489
+#: src/ui/telemetry_tab.py:1493
 msgid "SDR connecting via Radio Control — press Start again once connected"
 msgstr ""
 "SDRはRadio Control経由で接続中です — 接続完了後、再度Startを押してください"
 
-#: src/ui/telemetry_tab.py:1492
+#: src/ui/telemetry_tab.py:1496
 msgid "⚠ No SDR configured in Rig Settings"
 msgstr "⚠ Rig SettingsでSDRが設定されていません"
 
-#: src/ui/telemetry_tab.py:1666
+#: src/ui/telemetry_tab.py:1670
 msgid ""
 "SatNOGS upload skipped: set the recording's start time in SDR Control first."
 msgstr ""
 "SatNOGSへの送信を見送りました: 先にSDRコントロールで録音の開始時刻を設定して"
 "ください。"
 
-#: src/ui/telemetry_tab.py:1719
+#: src/ui/telemetry_tab.py:1723
 msgid "Frames: "
 msgstr "フレーム: "
 
-#: src/ui/telemetry_tab.py:1719
+#: src/ui/telemetry_tab.py:1723
 msgid " received"
 msgstr "件受信"
 
-#: src/ui/telemetry_tab.py:1750
+#: src/ui/telemetry_tab.py:1754
 msgid "Field"
 msgstr "項目"
 
-#: src/ui/telemetry_tab.py:1750
+#: src/ui/telemetry_tab.py:1754
 msgid "Value"
 msgstr "値"
 
-#: src/ui/telemetry_tab.py:1845
+#: src/ui/telemetry_tab.py:1849
 msgid "Rig + Direwolf (receiving)"
 msgstr "無線機 + Direwolf（受信中）"
 
-#: src/ui/telemetry_tab.py:1850
+#: src/ui/telemetry_tab.py:1854
 msgid "SDR — Direwolf (AX.25) (receive only)"
 msgstr "SDR — Direwolf (AX.25)（受信のみ）"
 
-#: src/ui/telemetry_tab.py:1856
+#: src/ui/telemetry_tab.py:1860
 msgid "—  (connect SDR, then click ▶ Start)"
 msgstr "—  （SDRを接続後、▶ 開始をクリック）"
 
-#: src/ui/telemetry_tab.py:1859
+#: src/ui/telemetry_tab.py:1863
 msgid "—  (click ▶ Start; the CW Decoder tab opens automatically)"
 msgstr "—  (▶ 開始を押すとCWデコーダータブが自動で開きます)"
 
-#: src/ui/telemetry_tab.py:1862
+#: src/ui/telemetry_tab.py:1866
 msgid "—  (connect Rig or SDR, then click ▶ Start)"
 msgstr "—  （無線機またはSDRを接続後、▶ 開始をクリック）"
 
-#: src/ui/telemetry_tab.py:1903
+#: src/ui/telemetry_tab.py:1907
 msgid "Export Telemetry CSV"
 msgstr "テレメトリーCSVエクスポート"
 
-#: src/ui/telemetry_tab.py:1930
+#: src/ui/telemetry_tab.py:1934
 msgid "SatNOGS Upload: ON"
 msgstr "SatNOGSアップロード: ON"
 
-#: src/ui/telemetry_tab.py:1930
+#: src/ui/telemetry_tab.py:1934
 msgid "SatNOGS Upload: OFF"
 msgstr "SatNOGSアップロード: OFF"
 
-#: src/ui/telemetry_tab.py:1969
+#: src/ui/telemetry_tab.py:1973
 msgid "SatNOGS Upload is on but not sending — missing: "
 msgstr "SatNOGS アップロードは ON ですが送信されていません — 未設定: "
 
@@ -4013,7 +4015,7 @@ msgid "Autotrack / Record"
 msgstr "自動追尾 / 記録"
 
 #: src/ui/autotrack_record_dialog.py:225 src/ui/autotrack_record_dialog.py:407
-#: src/ui/sdr_control_widget.py:773
+#: src/ui/sdr_control_widget.py:778
 msgid "Start (UTC):"
 msgstr "開始 (UTC):"
 
@@ -4343,7 +4345,7 @@ msgstr "Line 1からNORAD IDを解析できません。"
 msgid "TLE validation failed. Please check the format."
 msgstr "TLEの検証に失敗しました。形式を確認してください。"
 
-#: src/ui/radio_control_widget.py:199 src/ui/sdr_control_widget.py:764
+#: src/ui/radio_control_widget.py:199 src/ui/sdr_control_widget.py:769
 msgid "Offset:"
 msgstr "オフセット:"
 
@@ -4563,7 +4565,6 @@ msgid "■ STOP"
 msgstr "■ 停止"
 
 #: src/ui/radio_control_widget.py:547 src/ui/sdr_control_widget.py:705
-#: src/ui/sdr_control_widget.py:747
 msgid "📁"
 msgstr "📁"
 
@@ -5679,19 +5680,27 @@ msgstr "録音 BW:"
 msgid "File:"
 msgstr "ファイル:"
 
-#: src/ui/sdr_control_widget.py:748
-msgid "Open IQ recordings folder in file manager"
-msgstr "ファイルマネージャーでIQ録音フォルダを開く"
+#: src/ui/sdr_control_widget.py:750
+msgid "📂 Open…"
+msgstr "📂 開く…"
 
-#: src/ui/sdr_control_widget.py:755
-msgid "▶ Play…"
-msgstr "▶ 再生…"
+#: src/ui/sdr_control_widget.py:751
+msgid "Choose a recorded .iq.wav file and start playing it"
+msgstr "録音した .iq.wav ファイルを選んで、再生を始めます"
+
+#: src/ui/sdr_control_widget.py:753
+msgid "▶ Play"
+msgstr "▶ 再生"
 
 #: src/ui/sdr_control_widget.py:756
-msgid "Play back a recorded .iq.wav file"
-msgstr "録音済みの .iq.wav ファイルを再生"
+msgid ""
+"Play the loaded recording again from where it stopped\n"
+"(from the start if it had reached the end)"
+msgstr ""
+"読み込み済みの録音を、停止した位置から再び再生します\n"
+"（最後まで再生した後は先頭から）"
 
-#: src/ui/sdr_control_widget.py:784
+#: src/ui/sdr_control_widget.py:789
 msgid ""
 "UTC time of the recording's first sample. Read from the file name\n"
 "when it has one; otherwise it shows 00:00 and can be entered here.\n"
@@ -5702,7 +5711,7 @@ msgstr ""
 "無い場合は00:00と表示されるので、ここで入力してください。\n"
 "デコードしたデータ（CW TLM）には、この時刻＋再生位置で時刻が付きます。"
 
-#: src/ui/sdr_control_widget.py:962
+#: src/ui/sdr_control_widget.py:959
 msgid "IQ recordings (*.iq.wav);;All files (*)"
 msgstr "IQ録音 (*.iq.wav);;すべてのファイル (*)"
 
@@ -6091,6 +6100,12 @@ msgstr "ステータス: 「{text}」"
 #, python-brace-format
 msgid "({shown}/{total} hex chars — rest omitted)"
 msgstr "（{shown}/{total}文字を表示、以下省略）"
+
+#~ msgid "Open IQ recordings folder in file manager"
+#~ msgstr "ファイルマネージャーでIQ録音フォルダを開く"
+
+#~ msgid "Play back a recorded .iq.wav file"
+#~ msgstr "録音済みの .iq.wav ファイルを再生"
 
 #~ msgid " ms"
 #~ msgstr " ミリ秒"

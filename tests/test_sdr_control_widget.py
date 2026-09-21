@@ -13,6 +13,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
 from PySide6.QtCore import QDate, QDateTime, QPoint, Qt, QTime, QTimeZone
 from PySide6.QtTest import QTest
 from pytestqt.qtbot import QtBot
@@ -31,15 +32,21 @@ class _FakeFileDevice:
     def __init__(self) -> None:
         self.position_s = 0.0
         self.seeks: list[float] = []
+        self.is_streaming = True  # the pipeline starts a loaded recording playing
+        self.starts = 0
+        self.stops = 0
 
     def start_stream(self) -> bool:
+        self.is_streaming = True
+        self.starts += 1
         return True
 
     def read_samples(self, num_samples: int = 1024) -> np.ndarray | None:
         return None
 
     def stop_stream(self) -> None:
-        pass
+        self.is_streaming = False
+        self.stops += 1
 
     def seek(self, position_s: float) -> None:
         self.seeks.append(position_s)
@@ -192,3 +199,111 @@ class TestRecordingStartTimeForm:
     def test_disabled_without_a_replay(self, qtbot: QtBot) -> None:
         w, _device = _make_timed_widget(qtbot, None, is_replay=False)
         assert not w._playback_start_edit.isEnabled()
+
+
+class TestOpenPlayStop:
+    """ "📂 Open…" chooses a file and plays it; after "■ Stop", "▶ Play" plays the same
+    file again without asking for it. The recordings-folder button is gone."""
+
+    def _no_dialog(self, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+        opened: list[str] = []
+
+        def refuse(*args: Any, **kwargs: Any) -> tuple[str, str]:
+            opened.append("dialog")
+            return "", ""
+
+        monkeypatch.setattr("ui.sdr_control_widget.QFileDialog.getOpenFileName", refuse)
+        return opened
+
+    def test_open_asks_for_a_file_and_requests_playback(
+        self, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        w = SdrControlWidget()
+        qtbot.addWidget(w)
+        monkeypatch.setattr(
+            "ui.sdr_control_widget.QFileDialog.getOpenFileName",
+            lambda *a, **k: ("/rec/0_unknown_20260920T065551Z.iq.wav", ""),
+        )
+        with qtbot.waitSignal(w.play_recording_requested) as blocker:
+            w._open_btn.click()
+        assert blocker.args == ["/rec/0_unknown_20260920T065551Z.iq.wav"]
+
+    def test_cancelling_the_file_dialog_requests_nothing(
+        self, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        w = SdrControlWidget()
+        qtbot.addWidget(w)
+        self._no_dialog(monkeypatch)
+        requested: list[str] = []
+        w.play_recording_requested.connect(requested.append)
+        w._open_btn.click()
+        assert requested == []
+
+    def test_open_is_usable_without_any_recording_or_sdr(self, qtbot: QtBot) -> None:
+        w = SdrControlWidget()
+        qtbot.addWidget(w)
+        assert w._open_btn.isEnabled()
+        assert not w._play_btn.isEnabled()
+        assert not w._stop_play_btn.isEnabled()
+
+    def test_a_playing_recording_can_be_stopped_but_not_played(self, qtbot: QtBot) -> None:
+        w, device = _make_widget(qtbot)  # loaded, and playing
+        assert device.is_streaming
+        assert w._stop_play_btn.isEnabled()
+        assert not w._play_btn.isEnabled()
+        assert w._open_btn.isEnabled()
+
+    def test_stop_pauses_and_swaps_the_buttons(self, qtbot: QtBot) -> None:
+        w, device = _make_widget(qtbot)
+
+        w._stop_play_btn.click()
+
+        assert (device.stops, device.is_streaming) == (1, False)
+        assert w._play_btn.isEnabled()
+        assert not w._stop_play_btn.isEnabled()
+
+    def test_play_after_stop_resumes_without_a_file_dialog(
+        self, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        w, device = _make_widget(qtbot)
+        opened = self._no_dialog(monkeypatch)
+        requested: list[str] = []
+        w.play_recording_requested.connect(requested.append)
+        device.position_s = 42.0
+        w._stop_play_btn.click()
+
+        w._play_btn.click()
+
+        assert opened == [] and requested == []  # no file manager, nothing reloaded
+        assert device.is_streaming
+        assert device.starts == 1
+        assert device.seeks == []  # continues where it stopped
+        assert w._stop_play_btn.isEnabled()
+        assert not w._play_btn.isEnabled()
+
+    def test_play_after_the_end_starts_over_from_the_beginning(self, qtbot: QtBot) -> None:
+        w, device = _make_widget(qtbot)
+        device.at_end = True
+        w._update_playback_position()  # the timer pauses a recording that reached its end
+        assert not device.is_streaming
+        assert w._play_btn.isEnabled()
+
+        w._play_btn.click()
+
+        assert device.seeks == [0.0]
+        assert device.is_streaming
+
+    def test_the_recordings_folder_button_is_gone(self, qtbot: QtBot) -> None:
+        w = SdrControlWidget()
+        qtbot.addWidget(w)
+        assert not hasattr(w, "_open_folder_btn")
+        assert not hasattr(w, "_open_iq_folder")
+
+    def test_a_live_pipeline_has_nothing_to_play_or_stop(self, qtbot: QtBot) -> None:
+        w = SdrControlWidget()
+        qtbot.addWidget(w)
+        pipeline: Any = MagicMock()
+        pipeline._device = _FakeFileDevice()
+        w.set_pipeline(pipeline, is_replay=False)
+        assert not w._play_btn.isEnabled()
+        assert not w._stop_play_btn.isEnabled()

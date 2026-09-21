@@ -88,7 +88,7 @@
   - デモジュレーター（モード選択・ボリューム・AGC・Start/Stop Audio）
     - **MP3音声録音**（`● REC Audio` / `■ STOP` / `📁`）— `lameenc` によるピュアPythonエンコード、外部ツール不要
   - IQ レコーダー（帯域幅選択・REC/STOP・経過時間表示）
-    - **📁ファイルマネージャーボタン**（IQ・Audio 両方）— SDR未接続時も常時クリック可能。巨大IQファイルの削除に使用
+    - **📁ファイルマネージャーボタン**（Audio 録音の行のみ。IQ 録音の行の 📁 は 2026-09-21 に削除）— SDR未接続時も常時クリック可能
   - トランスポンダー選択に連動したモード自動切替（Connect 前でも反映）
 - **Help > Clear TLE Sync History…**（2026-08-10 追加）
   - `sync_log` からTLE関連の全エントリ（`celestrak-active`・`satnogs-provisional`・
@@ -1665,28 +1665,32 @@ OrigamiSat-2受信時に発生した「Doppler補正だけでは説明できな�
 ┌─ IQ Recorder ────────────────────────────────────────────┐
 │ Record BW: [250 kHz ▾]                                     │
 │ File: 68795_OrigamiSat-2_20260918T072530Z.iq.wav           │
-│ [● REC] [■ STOP]   00:03:12  12.3 MB                [📁]   │
+│ [● REC] [■ STOP]   00:03:12  12.3 MB                       │
 ├──────────────────────────────────────────────────────────┤
-│ [▶ Play…] [■ Stop]     Offset: [   +0 Hz ▲▼]               │
+│ [📂 Open…] [▶ Play] [■ Stop]  Offset: [ +0 Hz ▲▼] Start(UTC)…│
 │ 00:47  ━━━━━━━●──────────────────────────────  05:12       │
 └──────────────────────────────────────────────────────────┘
 ```
 
-- **[▶ Play…]は常時有効**（`_set_sdr_connected()`の`_always_enabled`集合に追加）——
-  実機未接続でも再生を開始できることが本機能の主目的のため。クリックのたびに
-  ファイル選択ダイアログを開き、選んだファイルを**常に位置0から**読み込み直す
-  （`play_recording_requested(str)`シグナルでMainWindowへ依頼し、
-  `connect_from_file()` + `_on_rig_slot_connected(slot, is_replay=True)`を実行）
-- **[■ Stop]は一時停止**（`SdrFileDevice.stop_stream()`を直接呼ぶだけ。再生位置は保持）。
-  再開は[▶ Play…]の再クリックではなく、同じファイルが読み込まれたまま
-  `start_stream()`を呼ぶだけの内部動作——ただし現在の実装では[▶ Play…]は常に
-  ファイル選択ダイアログを開く設計のため、一時停止からの再開はスライダーやOffsetを
-  そのままに、内部的に`start_stream()`を呼ぶ経路（Stopボタンと対になる、明示的な
-  再開ボタンは無い）に依存する
-- **Offset・シークスライダー・[■ Stop]は`self._pipeline`/`self._pipeline._device`へ
+- **[📂 Open…]は常時有効**（`_set_sdr_connected()`の`_always_enabled`集合に追加）——実機未接続でも
+  再生を開始できることが本機能の主目的のため。クリックのたびにファイル選択ダイアログを開き、選んだ
+  ファイルを**位置0から**読み込んで再生を始める（`play_recording_requested(str)`シグナルで
+  MainWindowへ依頼し、`connect_from_file()` + `_on_rig_slot_connected(slot, is_replay=True)`を実行）
+- **[▶ Play]は読み込み済みの録音を再び再生する**（2026-09-21 追加。以前は[▶ Play…]が押すたびに
+  ファイル選択を開き、一時停止からの再開手段が無かった）。**ファイルダイアログは開かず**、停止した位置から
+  `SdrFileDevice.start_stream()`で再開する。最後まで再生した後は先頭（`seek(0)`）から。パイプラインの
+  スレッドは動き続けている（停止中は`read_samples()`が`None`を返して待つだけ）ので、MainWindowへの
+  往復は要らない
+- **[■ Stop]は一時停止**（`SdrFileDevice.stop_stream()`を直接呼ぶだけ。再生位置は保持）
+- **Play / Stop の有効状態**（`_update_playback_buttons()`）: 録音が読み込み済みなら、再生中は Stop、
+  停止中（一時停止・終端・未開始）は Play が押せる。録音が無い（ライブ SDR・未接続）間は両方無効。
+  `SdrFileDevice.is_streaming`（新設の公開プロパティ）を250ms周期の位置更新タイマーとクリック時に反映する
+- 「録音」の行の右端にあった IQ 保存フォルダを開く 📁 ボタンは削除した（[📂 Open…]のファイル
+  ダイアログが保存先フォルダから開く）
+- **Offset・シークスライダー・[▶ Play]・[■ Stop]は`self._pipeline`/`self._pipeline._device`へ
   直接触るだけで完結**し、MainWindowへの往復は一切発生しない（`play_recording_requested`
   シグナルは「新しいファイルを読み込む」という、RigController自体の差し替えが必要な
-  最初の一手だけが対象）。範囲: Offset ±100,000Hz・ステップ100Hz
+  [📂 Open…]だけが対象）。範囲: Offset ±100,000Hz・ステップ100Hz
 - シークスライダーは250ms周期のポーリングタイマー（`_update_playback_position`）で
   自動更新。`QSlider.isSliderDown()`でユーザーのドラッグ中は上書きしないようガードし、
   録音終端（`at_end`）に達したら自動的に`stop_stream()`を呼んで一時停止扱いにする
@@ -1747,7 +1751,7 @@ Telemetry・APRSが古いパイプライン参照（または`None`）を持っ�
 
 #### 追加修正（2026-09-19）— 再生パイプラインが二重に作られ、再生UIが無効化されるバグ
 
-**症状**: `▶ Play…`を押すと、Offset・シークスライダー・Stopが使えず、ライブSDR接続のような表示
+**症状**: `📂 Open…`（当時は`▶ Play…`）でファイルを選ぶと、Offset・シークスライダー・Stopが使えず、ライブSDR接続のような表示
 （ウォーターフォール軸が絶対MHz）になる。デコードも成立しない。
 
 **原因**: 直前の「Telemetry・APRS」修正で`notify_playback_connected()`（`rig_connected`/

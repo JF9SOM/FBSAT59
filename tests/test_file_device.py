@@ -168,3 +168,20 @@ def test_start_time_is_none_without_a_time_in_the_name_and_can_be_set(tmp_path: 
     dev.set_start_time_utc(None)
     assert dev.start_time_utc is None
     assert not dev.start_time_confirmed
+
+
+def test_is_streaming_follows_start_and_stop_and_keeps_the_position(tmp_path: Path) -> None:
+    path = tmp_path / "test.iq.wav"
+    _write_test_wav(path, num_samples=2000)
+    dev = SdrFileDevice(path)
+    assert not dev.is_streaming
+    dev.start_stream()
+    assert dev.is_streaming
+    dev.read_samples(500)
+    dev.stop_stream()
+    assert not dev.is_streaming
+    assert dev.position_s == pytest.approx(0.5)  # a pause keeps the place
+    dev.start_stream()  # ... and playing again continues from it
+    block = dev.read_samples(500)
+    assert block is not None
+    assert dev.position_s == pytest.approx(1.0)

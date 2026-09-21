@@ -185,6 +185,11 @@ class SdrFileDevice:
             return self._pos / self._sample_rate if self._sample_rate else 0.0
 
     @property
+    def is_streaming(self) -> bool:
+        """True while the recording is playing (False when paused, stopped or not started)."""
+        return self._streaming
+
+    @property
     def at_end(self) -> bool:
         with self._lock:
             return self._pos >= len(self._samples)

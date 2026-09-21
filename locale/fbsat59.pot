@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-21 17:03+0900\n"
+"POT-Creation-Date: 2026-09-21 17:47+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1150,7 +1150,7 @@ msgid "FBSAT59 will now restart to apply the Remote SDR discovery setting."
 msgstr ""
 
 #: src/ui/main_window.py:7181 src/ui/main_window.py:7192
-#: src/ui/main_window.py:7206 src/ui/sdr_control_widget.py:960
+#: src/ui/main_window.py:7206 src/ui/sdr_control_widget.py:957
 msgid "Play IQ Recording"
 msgstr ""
 
@@ -2544,7 +2544,7 @@ msgid "▶ Start"
 msgstr ""
 
 #: src/ui/telemetry_tab.py:484 src/ui/cw_tab.py:290
-#: src/ui/sdr_control_widget.py:758
+#: src/ui/sdr_control_widget.py:762
 msgid "■ Stop"
 msgstr ""
 
@@ -2552,7 +2552,7 @@ msgstr ""
 msgid "—"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:498 src/ui/telemetry_tab.py:1895
+#: src/ui/telemetry_tab.py:498 src/ui/telemetry_tab.py:1899
 msgid "Frames: 0 received"
 msgstr ""
 
@@ -2629,7 +2629,7 @@ msgstr ""
 msgid "Direwolf Log"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1178 src/ui/telemetry_tab.py:1319
+#: src/ui/telemetry_tab.py:1178 src/ui/telemetry_tab.py:1323
 msgid "Select a satellite first."
 msgstr ""
 
@@ -2643,21 +2643,21 @@ msgstr ""
 msgid "CW TLM — decoding in the CW Decoder tab"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1228
+#: src/ui/telemetry_tab.py:1232
 msgid "length or characters not valid, not used"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1302
+#: src/ui/telemetry_tab.py:1306
 msgid "Select received CW frames in the table first."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1325
+#: src/ui/telemetry_tab.py:1329
 msgid ""
 "Nothing ready to send: a frame needs a second reception and a reliable time, "
 "and must not be sent already."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1332
+#: src/ui/telemetry_tab.py:1336
 #, python-brace-format
 msgid ""
 "Send {n} logged frame(s) ({m} different) of {name} to the SatNOGS DB?\n"
@@ -2666,149 +2666,149 @@ msgid ""
 "sent before are included."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1338
+#: src/ui/telemetry_tab.py:1342
 msgid "Send to SatNOGS"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1371
+#: src/ui/telemetry_tab.py:1375
 #, python-brace-format
 msgid "SatNOGS accepted the frame (HTTP {n})"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1391
+#: src/ui/telemetry_tab.py:1395
 #, python-brace-format
 msgid "SatNOGS upload failed: {detail}"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1392
+#: src/ui/telemetry_tab.py:1396
 #, python-brace-format
 msgid "SatNOGS rejected the upload (HTTP {status}): {detail}"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1396
+#: src/ui/telemetry_tab.py:1400
 msgid "check the API key (API button)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1404 src/ui/telemetry_tab.py:1962
+#: src/ui/telemetry_tab.py:1408 src/ui/telemetry_tab.py:1966
 msgid "API key"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1405 src/ui/telemetry_tab.py:1964
+#: src/ui/telemetry_tab.py:1409 src/ui/telemetry_tab.py:1968
 msgid "callsign"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1406 src/ui/telemetry_tab.py:1966
+#: src/ui/telemetry_tab.py:1410 src/ui/telemetry_tab.py:1970
 msgid "station location"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1409
+#: src/ui/telemetry_tab.py:1413
 msgid "SatNOGS upload not possible — missing: "
-msgstr ""
-
-#: src/ui/telemetry_tab.py:1415
-#, python-brace-format
-msgid "{n} queued for upload"
-msgstr ""
-
-#: src/ui/telemetry_tab.py:1417
-#, python-brace-format
-msgid "{n} awaiting SatNOGS's reply"
 msgstr ""
 
 #: src/ui/telemetry_tab.py:1419
 #, python-brace-format
-msgid "{n} already sent"
+msgid "{n} queued for upload"
 msgstr ""
 
 #: src/ui/telemetry_tab.py:1421
 #, python-brace-format
-msgid "{n} waiting for a second reception"
+msgid "{n} awaiting SatNOGS's reply"
 msgstr ""
 
 #: src/ui/telemetry_tab.py:1423
 #, python-brace-format
-msgid "{n} skipped: recording start time not set"
+msgid "{n} already sent"
 msgstr ""
 
 #: src/ui/telemetry_tab.py:1425
 #, python-brace-format
+msgid "{n} waiting for a second reception"
+msgstr ""
+
+#: src/ui/telemetry_tab.py:1427
+#, python-brace-format
+msgid "{n} skipped: recording start time not set"
+msgstr ""
+
+#: src/ui/telemetry_tab.py:1429
+#, python-brace-format
 msgid "{n} without a SatNOGS format"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1426
+#: src/ui/telemetry_tab.py:1430
 msgid "nothing to send"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1443
+#: src/ui/telemetry_tab.py:1447
 msgid "⚠ No satellite selected"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1482
+#: src/ui/telemetry_tab.py:1486
 msgid "Connecting SDR…"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1489
+#: src/ui/telemetry_tab.py:1493
 msgid "SDR connecting via Radio Control — press Start again once connected"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1492
+#: src/ui/telemetry_tab.py:1496
 msgid "⚠ No SDR configured in Rig Settings"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1666
+#: src/ui/telemetry_tab.py:1670
 msgid ""
 "SatNOGS upload skipped: set the recording's start time in SDR Control first."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1719
+#: src/ui/telemetry_tab.py:1723
 msgid "Frames: "
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1719
+#: src/ui/telemetry_tab.py:1723
 msgid " received"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1750
+#: src/ui/telemetry_tab.py:1754
 msgid "Field"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1750
+#: src/ui/telemetry_tab.py:1754
 msgid "Value"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1845
+#: src/ui/telemetry_tab.py:1849
 msgid "Rig + Direwolf (receiving)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1850
+#: src/ui/telemetry_tab.py:1854
 msgid "SDR — Direwolf (AX.25) (receive only)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1856
+#: src/ui/telemetry_tab.py:1860
 msgid "—  (connect SDR, then click ▶ Start)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1859
+#: src/ui/telemetry_tab.py:1863
 msgid "—  (click ▶ Start; the CW Decoder tab opens automatically)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1862
+#: src/ui/telemetry_tab.py:1866
 msgid "—  (connect Rig or SDR, then click ▶ Start)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1903
+#: src/ui/telemetry_tab.py:1907
 msgid "Export Telemetry CSV"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1930
+#: src/ui/telemetry_tab.py:1934
 msgid "SatNOGS Upload: ON"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1930
+#: src/ui/telemetry_tab.py:1934
 msgid "SatNOGS Upload: OFF"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1969
+#: src/ui/telemetry_tab.py:1973
 msgid "SatNOGS Upload is on but not sending — missing: "
 msgstr ""
 
@@ -3628,7 +3628,7 @@ msgid "Autotrack / Record"
 msgstr ""
 
 #: src/ui/autotrack_record_dialog.py:225 src/ui/autotrack_record_dialog.py:407
-#: src/ui/sdr_control_widget.py:773
+#: src/ui/sdr_control_widget.py:778
 msgid "Start (UTC):"
 msgstr ""
 
@@ -3941,7 +3941,7 @@ msgstr ""
 msgid "TLE validation failed. Please check the format."
 msgstr ""
 
-#: src/ui/radio_control_widget.py:199 src/ui/sdr_control_widget.py:764
+#: src/ui/radio_control_widget.py:199 src/ui/sdr_control_widget.py:769
 msgid "Offset:"
 msgstr ""
 
@@ -4146,7 +4146,6 @@ msgid "■ STOP"
 msgstr ""
 
 #: src/ui/radio_control_widget.py:547 src/ui/sdr_control_widget.py:705
-#: src/ui/sdr_control_widget.py:747
 msgid "📁"
 msgstr ""
 
@@ -5173,19 +5172,25 @@ msgstr ""
 msgid "File:"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:748
-msgid "Open IQ recordings folder in file manager"
+#: src/ui/sdr_control_widget.py:750
+msgid "📂 Open…"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:755
-msgid "▶ Play…"
+#: src/ui/sdr_control_widget.py:751
+msgid "Choose a recorded .iq.wav file and start playing it"
+msgstr ""
+
+#: src/ui/sdr_control_widget.py:753
+msgid "▶ Play"
 msgstr ""
 
 #: src/ui/sdr_control_widget.py:756
-msgid "Play back a recorded .iq.wav file"
+msgid ""
+"Play the loaded recording again from where it stopped\n"
+"(from the start if it had reached the end)"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:784
+#: src/ui/sdr_control_widget.py:789
 msgid ""
 "UTC time of the recording's first sample. Read from the file name\n"
 "when it has one; otherwise it shows 00:00 and can be entered here.\n"
@@ -5193,7 +5198,7 @@ msgid ""
 "playback position."
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:962
+#: src/ui/sdr_control_widget.py:959
 msgid "IQ recordings (*.iq.wav);;All files (*)"
 msgstr ""
 

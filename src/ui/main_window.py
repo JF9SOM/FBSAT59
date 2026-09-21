@@ -7152,7 +7152,7 @@ class MainWindow(QMainWindow):
         return None
 
     def _on_play_recording_requested(self, path: str) -> None:
-        """Load a recorded .iq.wav file for playback, requested via SdrControlWidget's ▶ Play….
+        """Load a recorded .iq.wav file for playback, requested via SdrControlWidget's 📂 Open….
 
         Replaces whichever Rig slot is configured as SDR with a
         file-backed pseudo-device (SdrRigAdapter.connect_from_file()),
