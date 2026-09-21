@@ -383,16 +383,25 @@ class TestMainWindowWiring:
 
 
 class _FakeUploader:
-    """Stands in for the SatNOGS uploader: records what would be sent."""
+    """Stands in for the SatNOGS uploader: records what would be sent, and lets a
+    test deliver SatNOGS's answer."""
 
     def __init__(self) -> None:
         self.sent: list[tuple[bytes, int, datetime, bool]] = []
+        self.callbacks: list[Any] = []
 
     def submit(
-        self, conn: Any, raw: bytes, norad: int | None, received_at: datetime, force: bool = False
+        self,
+        conn: Any,
+        raw: bytes,
+        norad: int | None,
+        received_at: datetime,
+        force: bool = False,
+        on_result: Any = None,
     ) -> bool:
         assert norad is not None
         self.sent.append((raw, norad, received_at, force))
+        self.callbacks.append(on_result)
         return True
 
 
@@ -661,3 +670,83 @@ class TestManualSend:
         _select_cw_mode(tab)
         assert tab._btn_satnogs_send.isVisible()
         assert tab._btn_satnogs_send_unsent.isVisible()
+
+
+class TestSatnogsAnswer:
+    """What the user sees, and what is remembered, once SatNOGS has answered."""
+
+    def _sent_tab(
+        self, qtbot: QtBot, conn: sqlite3.Connection, uploader: _FakeUploader
+    ) -> TelemetryTab:
+        _configure_upload(conn, enabled=False)
+        tab = _running_with(qtbot, conn)
+        tab._on_cw_block(HK1, START, END)
+        tab._table.selectRow(0)
+        tab._on_send_selected()
+        assert len(uploader.sent) == 1
+        return tab
+
+    @staticmethod
+    def _marked(conn: sqlite3.Connection) -> bool:
+        row = conn.execute("SELECT satnogs_uploaded_at FROM telemetry_log").fetchone()
+        return bool(row[0])
+
+    def test_queued_is_not_sent(
+        self, qtbot: QtBot, cw_conn: sqlite3.Connection, uploader: _FakeUploader
+    ) -> None:
+        tab = self._sent_tab(qtbot, cw_conn, uploader)
+        assert "1 queued" in tab._lbl_status.text()
+        assert not self._marked(cw_conn)  # nothing is marked before SatNOGS answered
+
+    def test_an_accepted_frame_is_marked_and_confirmed_on_screen(
+        self, qtbot: QtBot, cw_conn: sqlite3.Connection, uploader: _FakeUploader
+    ) -> None:
+        tab = self._sent_tab(qtbot, cw_conn, uploader)
+
+        uploader.callbacks[0](True, 201, "ok")  # from the uploader's thread
+        qtbot.waitUntil(lambda: self._marked(cw_conn), timeout=2000)
+
+        assert "accepted" in tab._lbl_status.text()
+        assert tab._upload_pending == set()
+
+    def test_a_rejected_key_is_shown_and_the_frame_stays_unsent(
+        self, qtbot: QtBot, cw_conn: sqlite3.Connection, uploader: _FakeUploader
+    ) -> None:
+        tab = self._sent_tab(qtbot, cw_conn, uploader)
+
+        uploader.callbacks[0](False, 401, '{"detail":"Invalid token."}')
+        qtbot.waitUntil(lambda: "401" in tab._lbl_status.text(), timeout=2000)
+
+        text = tab._lbl_status.text()
+        assert "Invalid token." in text
+        assert "API key" in text  # 401 means the key is wrong: say where to fix it
+        assert not self._marked(cw_conn)
+        assert tab._upload_pending == set()  # it can be sent again
+
+        tab._on_send_selected()
+        assert len(uploader.sent) == 2
+
+    def test_a_network_error_is_shown(
+        self, qtbot: QtBot, cw_conn: sqlite3.Connection, uploader: _FakeUploader
+    ) -> None:
+        tab = self._sent_tab(qtbot, cw_conn, uploader)
+        uploader.callbacks[0](False, 0, "no route to host")
+        qtbot.waitUntil(lambda: "no route to host" in tab._lbl_status.text(), timeout=2000)
+        assert not self._marked(cw_conn)
+
+    def test_the_answer_of_an_ax25_upload_shows_failures_only_once(
+        self, qtbot: QtBot, cw_conn: sqlite3.Connection, uploader: _FakeUploader
+    ) -> None:
+        tab = _make_tab(qtbot, cw_conn)
+        tab._submit_raw_frame(b"\x01", 25544, START, True)
+        cb = uploader.callbacks[0]
+
+        cb(True, 201, "ok")  # success of an AX.25 frame: silent
+        assert "accepted" not in tab._lbl_status.text()
+
+        cb(False, 401, '{"detail":"Invalid token."}')
+        qtbot.waitUntil(lambda: "401" in tab._lbl_status.text(), timeout=2000)
+        tab._lbl_status.setText("cleared")
+        cb(False, 401, '{"detail":"Invalid token."}')
+        qtbot.wait(100)
+        assert tab._lbl_status.text() == "cleared"  # not repeated for every frame

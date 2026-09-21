@@ -770,8 +770,14 @@ CW にはCRCが無く、検査を通っても桁を間違えていることが�
   スイッチが OFF でも送る（`force=True`）。API キー・コールサイン・位置は必要。時刻と一度だけの規則は守る。
 - **未送信を送信…**: このログ済みの未送信フレームのうち、規則を満たすものを確認ダイアログの後に送る
   （後から送るための操作。IQ を再生し直した分の重複は「一度だけ」で弾く）。
-- 送信は「キューに入れた」時点で送信済みに印を付ける（既存の `SatnogsUploader` は失敗を記録して
-  捨てる作りで、再送しない）。
+- **送信済みの印は、SatNOGS が受理（HTTP 2xx）したときだけ付ける。** `SatnogsUploader.submit(on_result=...)` が
+  POST の結果（受理か・HTTP ステータス・本文、ネットワークエラーはステータス0）をワーカースレッドから返し、
+  `TelemetryTab._upload_result` シグナルで GUI スレッドへ渡して `mark_uploaded()` する。拒否・失敗は
+  ステータスに理由を出し（401/403 は「APIキーを確認」）、フレームは未送信のまま残るので再送できる。
+  応答待ちのフレームは `_upload_pending` で二重にキューへ入れない。AX.25 / gr-satellites の送信も結果を受け、
+  **失敗だけ**を1回の実行につき1度表示する。
+  （初版は「キューに入れた」時点で印を付けたため、キーが不正で HTTP 401 で拒否されても
+  「送信済み」と表示・記録された。`reset_unconfirmed_marks()` が既存 DB の旧マークを1度だけ消す。）
 - `telemetry_log` に `satnogs_uploaded_at` と `time_reliable` 列を追加（`ensure_columns()`、既存 DB へは
   `ALTER TABLE`）。`SatnogsUploader.submit()` / `build_submission()` に `force`、`upload_blocker()`
   （送れない理由: `disabled`/`no_api_key`/`no_callsign`/`no_location`）を追加。

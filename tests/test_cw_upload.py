@@ -15,6 +15,8 @@ from comms.telemetry.cw_upload import (
     eligible_unsent,
     ensure_columns,
     logged_frames,
+    mark_uploaded,
+    reset_unconfirmed_marks,
     send_frames,
 )
 from comms.telemetry.satnogs_uploader import save_satnogs_upload_settings
@@ -29,11 +31,19 @@ T0 = datetime(2026, 9, 20, 7, 1, 48, tzinfo=UTC)
 class _FakeUploader:
     def __init__(self) -> None:
         self.sent: list[tuple[bytes, int, datetime, bool]] = []
+        self.callbacks: list[Any] = []
 
     def submit(
-        self, conn: Any, raw: bytes, norad: int, received_at: datetime, force: bool = False
+        self,
+        conn: Any,
+        raw: bytes,
+        norad: int,
+        received_at: datetime,
+        force: bool = False,
+        on_result: Any = None,
     ) -> bool:
         self.sent.append((raw, norad, received_at, force))
+        self.callbacks.append(on_result)
         return True
 
 
@@ -122,7 +132,8 @@ class TestRepeatRule:
             T0,
             T0 + timedelta(seconds=125),
         ]  # each with its own time
-        assert _uploaded(conn, first) and _uploaded(conn, second)
+        # Queued only: nothing counts as sent until SatNOGS accepted it.
+        assert not _uploaded(conn, first) and not _uploaded(conn, second)
         assert all(not s[3] for s in up.sent)  # automatic: the switch must be on
 
     def test_the_same_transmission_decoded_twice_does_not_confirm_itself(
@@ -196,7 +207,7 @@ class TestManualSend:
         (raw, norad, at, forced) = up.sent[0]
         assert raw == b"arica-2\x01" + bytes.fromhex(HK1)
         assert (norad, at, forced) == (ARICA2, T0, True)
-        assert _uploaded(conn, fid)
+        assert not _uploaded(conn, fid)  # not before SatNOGS accepted it
 
     def test_missing_prerequisites_are_reported_and_nothing_is_marked(
         self, conn: sqlite3.Connection
@@ -237,3 +248,98 @@ class TestSendUnsent:
         _log(conn, HK1, T0 + timedelta(seconds=90))
         assert eligible_unsent(conn, 25544) == []
         assert len(logged_frames(conn, ARICA2)) == 2
+
+
+class TestResultsFromSatnogs:
+    """A frame counts as sent only when SatNOGS accepted it."""
+
+    def test_the_result_callback_names_the_frame(self, conn: sqlite3.Connection) -> None:
+        fid = _log(conn, HK1, T0)
+        up = _FakeUploader()
+        results: list[tuple[int, bool, int, str]] = []
+
+        send_frames(
+            conn,
+            up,  # type: ignore[arg-type]
+            ARICA2,
+            [fid],
+            force=True,
+            require_repeat=False,
+            on_result=lambda *a: results.append(a),
+        )
+        up.callbacks[0](False, 401, '{"detail":"Invalid token."}')
+
+        assert results == [(fid, False, 401, '{"detail":"Invalid token."}')]
+        assert not _uploaded(conn, fid)  # a rejected upload leaves the frame unsent
+
+    def test_a_frame_awaiting_an_answer_is_not_queued_twice(self, conn: sqlite3.Connection) -> None:
+        fid = _log(conn, HK1, T0)
+        up = _FakeUploader()
+        pending: set[int] = set()
+
+        first = send_frames(
+            conn,
+            up,
+            ARICA2,
+            [fid],
+            force=True,
+            require_repeat=False,
+            pending=pending,  # type: ignore[arg-type]
+        )
+        second = send_frames(
+            conn,
+            up,
+            ARICA2,
+            [fid],
+            force=True,
+            require_repeat=False,
+            pending=pending,  # type: ignore[arg-type]
+        )
+
+        assert (first.queued, second.queued, second.pending) == (1, 0, 1)
+        assert pending == {fid}
+        assert len(up.sent) == 1
+
+    def test_after_a_rejection_the_frame_can_be_sent_again(self, conn: sqlite3.Connection) -> None:
+        fid = _log(conn, HK1, T0)
+        up = _FakeUploader()
+        pending: set[int] = set()
+        send_frames(conn, up, ARICA2, [fid], force=True, require_repeat=False, pending=pending)  # type: ignore[arg-type]
+        pending.discard(fid)  # the answer (a rejection) arrived
+
+        again = send_frames(
+            conn,
+            up,
+            ARICA2,
+            [fid],
+            force=True,
+            require_repeat=False,
+            pending=pending,  # type: ignore[arg-type]
+        )
+
+        assert again.queued == 1
+
+    def test_an_accepted_frame_is_marked_and_not_sent_again(self, conn: sqlite3.Connection) -> None:
+        fid = _log(conn, HK1, T0)
+        up = _FakeUploader()
+        mark_uploaded(conn, fid)
+        again = send_frames(conn, up, ARICA2, [fid], force=True, require_repeat=False)  # type: ignore[arg-type]
+        assert again.queued == 0
+        assert up.sent == []
+
+
+class TestOneTimeRepair:
+    def test_marks_written_when_a_frame_was_only_queued_are_cleared_once(
+        self, conn: sqlite3.Connection
+    ) -> None:
+        marked = _log(conn, HK1, T0, uploaded=True)  # the first version's queue-time mark
+
+        reset_unconfirmed_marks(conn)
+        assert not _uploaded(conn, marked)
+
+        mark_uploaded(conn, marked)  # a real, accepted upload later
+        reset_unconfirmed_marks(conn)  # must not clear it again
+        assert _uploaded(conn, marked)
+
+    def test_without_the_tables_it_does_nothing(self) -> None:
+        reset_unconfirmed_marks(sqlite3.connect(":memory:"))

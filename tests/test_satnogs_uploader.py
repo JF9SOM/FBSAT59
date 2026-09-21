@@ -350,3 +350,72 @@ def test_submit_with_force_posts_although_the_switch_is_off(
     assert up.submit(db, _FRAME, 25544, _TS, force=True) is True
     assert fake.called.wait(timeout=2.0)
     assert len(fake.calls) == 1
+
+
+# --------------------------------------------------------------------------- #
+# on_result -- the outcome of each POST is reported back
+# --------------------------------------------------------------------------- #
+
+
+def _submit_and_wait(
+    db: sqlite3.Connection, uploader: SatnogsUploader, post: _FakePost
+) -> list[tuple[bool, int, str]]:
+    results: list[tuple[bool, int, str]] = []
+    done = threading.Event()
+
+    def on_result(accepted: bool, status: int, body: str) -> None:
+        results.append((accepted, status, body))
+        done.set()
+
+    assert uploader.submit(db, _FRAME, 25544, _TS, on_result=on_result)
+    assert done.wait(timeout=2.0)
+    return results
+
+
+def test_result_callback_reports_an_accepted_upload(
+    db: sqlite3.Connection, uploader_factory: list[SatnogsUploader]
+) -> None:
+    _configure(db)
+    post = _FakePost(status=201, body="ok")
+    up = SatnogsUploader(post_fn=post)
+    uploader_factory.append(up)
+    assert _submit_and_wait(db, up, post) == [(True, 201, "ok")]
+
+
+def test_result_callback_reports_a_rejection_such_as_a_bad_api_key(
+    db: sqlite3.Connection, uploader_factory: list[SatnogsUploader]
+) -> None:
+    _configure(db)
+    post = _FakePost(status=401, body='{"detail":"Invalid token."}')
+    up = SatnogsUploader(post_fn=post)
+    uploader_factory.append(up)
+    assert _submit_and_wait(db, up, post) == [(False, 401, '{"detail":"Invalid token."}')]
+
+
+def test_result_callback_reports_a_network_error_as_status_zero(
+    db: sqlite3.Connection, uploader_factory: list[SatnogsUploader]
+) -> None:
+    _configure(db)
+
+    def failing(api_key: str, fields: dict[str, str]) -> tuple[int, str]:
+        raise OSError("no route to host")
+
+    up = SatnogsUploader(post_fn=failing)
+    uploader_factory.append(up)
+    assert _submit_and_wait(db, up, _FakePost()) == [(False, 0, "no route to host")]
+
+
+def test_a_failing_result_callback_does_not_stop_the_worker(
+    db: sqlite3.Connection, uploader_factory: list[SatnogsUploader]
+) -> None:
+    _configure(db)
+    post = _FakePost()
+    up = SatnogsUploader(post_fn=post)
+    uploader_factory.append(up)
+
+    def broken(accepted: bool, status: int, body: str) -> None:
+        raise RuntimeError("boom")
+
+    assert up.submit(db, _FRAME, 25544, _TS, on_result=broken)
+    assert up.submit(db, _FRAME, 25544, _TS)
+    assert _wait_for(lambda: len(post.calls) == 2)

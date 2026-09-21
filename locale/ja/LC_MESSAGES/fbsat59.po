@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-21 16:45+0900\n"
+"POT-Creation-Date: 2026-09-21 17:03+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -126,7 +126,7 @@ msgstr "交信を終える（73）"
 msgid "TX Slot:"
 msgstr "TX Slot:"
 
-#: src/ui/ft4_tab.py:745 src/ui/rig_dialog.py:1182 src/ui/telemetry_tab.py:427
+#: src/ui/ft4_tab.py:745 src/ui/rig_dialog.py:1182 src/ui/telemetry_tab.py:438
 #: src/ui/aprs_tab.py:249
 msgid "Auto"
 msgstr "自動"
@@ -696,7 +696,7 @@ msgstr "全般設定"
 msgid "Exit"
 msgstr "終了"
 
-#: src/ui/main_window.py:1236 src/ui/telemetry_tab.py:508
+#: src/ui/main_window.py:1236 src/ui/telemetry_tab.py:519
 #: src/ui/autotrack_record_dialog.py:286 src/ui/radio_control_widget.py:182
 #: src/ui/transmitter_dialog.py:87
 msgid "Satellite"
@@ -964,7 +964,7 @@ msgstr ""
 msgid "Autotrack ready"
 msgstr "自動追尾の準備完了"
 
-#: src/ui/main_window.py:2724 src/ui/telemetry_tab.py:275
+#: src/ui/main_window.py:2724 src/ui/telemetry_tab.py:277
 msgid "Close"
 msgstr "閉じる"
 
@@ -1769,7 +1769,7 @@ msgstr ""
 "にノイズが溜まるのを見てから、そのノイズフロアを目安に引き上げてください。高"
 "くしすぎると弱い実信号までブロックする可能性があります。"
 
-#: src/ui/ax100_digi_tab.py:480 src/ui/telemetry_tab.py:616
+#: src/ui/ax100_digi_tab.py:480 src/ui/telemetry_tab.py:627
 msgid "Export CSV…"
 msgstr "CSVエクスポート…"
 
@@ -1850,7 +1850,7 @@ msgstr ""
 "送信フレームのCSPアドレス指定は実際の衛星での確認が取れていません — comms/"
 "ax100digi/tx.py を参照してください。"
 
-#: src/ui/ax100_digi_tab.py:590 src/ui/telemetry_tab.py:508
+#: src/ui/ax100_digi_tab.py:590 src/ui/telemetry_tab.py:519
 #: src/ui/pass_chart.py:440 src/ui/pass_chart.py:799
 msgid "Time (UTC)"
 msgstr "時刻 (UTC)"
@@ -2581,11 +2581,11 @@ msgid "{n} rotator models available"
 msgstr "{n}機種が利用可能"
 
 # --- Satellite list columns ---
-#: src/ui/telemetry_tab.py:118
+#: src/ui/telemetry_tab.py:120
 msgid "SatNOGS DB API Key"
 msgstr "SatNOGS DB APIキー"
 
-#: src/ui/telemetry_tab.py:123
+#: src/ui/telemetry_tab.py:125
 msgid ""
 "Log in at db.satnogs.org, open your account Settings, and copy the API Key "
 "shown there. It is required to upload telemetry frames to the SatNOGS "
@@ -2595,19 +2595,19 @@ msgstr ""
 "る API Key をコピーしてください。テレメトリーフレームを SatNOGS データベース"
 "へアップロードするために必要です。"
 
-#: src/ui/telemetry_tab.py:132
+#: src/ui/telemetry_tab.py:134
 msgid "Paste your SatNOGS DB API key"
 msgstr "SatNOGS DB の API キーを貼り付け"
 
-#: src/ui/telemetry_tab.py:172
+#: src/ui/telemetry_tab.py:174
 msgid "🔄 Refresh"
 msgstr "更新"
 
-#: src/ui/telemetry_tab.py:211
+#: src/ui/telemetry_tab.py:213
 msgid "Minimum SNR needed to decode"
 msgstr "デコードに必要な最低SNR"
 
-#: src/ui/telemetry_tab.py:213
+#: src/ui/telemetry_tab.py:215
 msgid ""
 "Approximate signal-to-noise ratio (SNR) at which most frames (about 90%) "
 "decode. SNR here is the signal's power compared with the noise in the "
@@ -2621,19 +2621,19 @@ msgstr ""
 "が雑音からはっきり浮き出ているかで判断してください。下の値より約3 dB余裕を持"
 "たせるのが目安です。"
 
-#: src/ui/telemetry_tab.py:219
+#: src/ui/telemetry_tab.py:221
 msgid "Speed"
 msgstr "速度"
 
-#: src/ui/telemetry_tab.py:220
+#: src/ui/telemetry_tab.py:222
 msgid "Signal band"
 msgstr "信号の帯域"
 
-#: src/ui/telemetry_tab.py:221
+#: src/ui/telemetry_tab.py:223
 msgid "Direwolf frequency tolerance"
 msgstr "Direwolfの周波数許容差"
 
-#: src/ui/telemetry_tab.py:230
+#: src/ui/telemetry_tab.py:232
 msgid ""
 "Direwolf (AX.25) mode: measured with synthetic AX.25 frames through this "
 "app's own demodulator. The frequency tolerance is how far off centre the "
@@ -2643,7 +2643,7 @@ msgstr ""
 "して測定しました。周波数許容差は、中心からどれだけずれてもデコードできるかの"
 "目安です（SDRのOffsetで中心に合わせてください）。"
 
-#: src/ui/telemetry_tab.py:235
+#: src/ui/telemetry_tab.py:237
 msgid ""
 "gr-satellites needs a long preamble: it often misses a burst that starts "
 "with less than about 0.2 s of preamble even at high SNR, whereas Direwolf "
@@ -2654,7 +2654,7 @@ msgstr ""
 "バーストは、SNRが高くても取りこぼすことが多い一方、Direwolfは約30 msのプリア"
 "ンブルでもデコードできます。gr-satellitesの周波数許容差は測定していません。"
 
-#: src/ui/telemetry_tab.py:241
+#: src/ui/telemetry_tab.py:243
 msgid ""
 "These are estimates from synthetic signals. A real satellite's modulation, "
 "deviation and frame length differ, so treat them as a guide. A signal weaker "
@@ -2665,7 +2665,7 @@ msgstr ""
 "め、目安として扱ってください。この値より弱い信号はデコードできません。アンテ"
 "ナやLNAを改善するか、仰角の高いパスを待ってください。"
 
-#: src/ui/telemetry_tab.py:247
+#: src/ui/telemetry_tab.py:249
 msgid ""
 "Example: 9600 bps bursts seen at +4 to +8 dB (KNACKSAT-2, 2026-09-19) were "
 "too weak for either decoder."
@@ -2673,26 +2673,26 @@ msgstr ""
 "例: 9600 bpsのバースト（KNACKSAT-2、2026-09-19）は+4〜+8 dBで見えましたが、ど"
 "ちらのデコーダーでも弱すぎました。"
 
-#: src/ui/telemetry_tab.py:266
+#: src/ui/telemetry_tab.py:268
 msgid "Decoding SNR guide"
 msgstr "デコードSNRの目安"
 
-#: src/ui/telemetry_tab.py:382
+#: src/ui/telemetry_tab.py:393
 msgid "Input Source"
 msgstr "入力ソース"
 
-#: src/ui/telemetry_tab.py:386 src/ui/radio_control_widget.py:332
+#: src/ui/telemetry_tab.py:397 src/ui/radio_control_widget.py:332
 #: src/ui/q65_tab.py:198 src/ui/sstv_tab.py:165
 #: src/ui/sdr_control_widget.py:647
 msgid "Mode:"
 msgstr "モード:"
 
-#: src/ui/telemetry_tab.py:398 src/ui/telemetry_tab.py:408
-#: src/ui/telemetry_tab.py:419
+#: src/ui/telemetry_tab.py:409 src/ui/telemetry_tab.py:419
+#: src/ui/telemetry_tab.py:430
 msgid "Search satellites…"
 msgstr "衛星を検索…"
 
-#: src/ui/telemetry_tab.py:433
+#: src/ui/telemetry_tab.py:444
 msgid ""
 "AX.25 baud rate for Direwolf (AX.25) mode's Rig + Sound\n"
 "Card (Direwolf) or SDR reception. Auto reads the selected\n"
@@ -2706,15 +2706,15 @@ msgstr ""
 "フォールバック）。APRSタブと共有される設定です — gr-satellites\n"
 "モードには影響しません。"
 
-#: src/ui/telemetry_tab.py:441 src/ui/aprs_tab.py:262
+#: src/ui/telemetry_tab.py:452 src/ui/aprs_tab.py:262
 msgid "Baud:"
 msgstr "ボーレート:"
 
-#: src/ui/telemetry_tab.py:445 src/ui/meteor_tab.py:393
+#: src/ui/telemetry_tab.py:456 src/ui/meteor_tab.py:393
 msgid "📋 Log"
 msgstr "📋 ログ"
 
-#: src/ui/telemetry_tab.py:448
+#: src/ui/telemetry_tab.py:459
 msgid ""
 "Show the active backend's own console output. Direwolf\n"
 "(AX.25) mode: startup messages and a line per decoded\n"
@@ -2732,44 +2732,44 @@ msgstr ""
 "gr-satellitesモード: その標準出力・標準エラー出力（他の画面には\n"
 "表示されないエラーを含みます）。"
 
-#: src/ui/telemetry_tab.py:465
+#: src/ui/telemetry_tab.py:476
 msgid "Minimum SNR needed to decode — click for details"
 msgstr "デコードに必要な最低SNR — クリックで詳細"
 
-#: src/ui/telemetry_tab.py:471 src/ui/cw_tab.py:205 src/ui/cw_tab.py:312
+#: src/ui/telemetry_tab.py:482 src/ui/cw_tab.py:205 src/ui/cw_tab.py:312
 msgid "▶ Start"
 msgstr "▶ 開始"
 
-#: src/ui/telemetry_tab.py:473 src/ui/cw_tab.py:290
+#: src/ui/telemetry_tab.py:484 src/ui/cw_tab.py:290
 #: src/ui/sdr_control_widget.py:758
 msgid "■ Stop"
 msgstr "■ 停止"
 
-#: src/ui/telemetry_tab.py:476
+#: src/ui/telemetry_tab.py:487
 msgid "—"
 msgstr "—"
 
-#: src/ui/telemetry_tab.py:487 src/ui/telemetry_tab.py:1811
+#: src/ui/telemetry_tab.py:498 src/ui/telemetry_tab.py:1895
 msgid "Frames: 0 received"
 msgstr "フレーム: 0件受信"
 
-#: src/ui/telemetry_tab.py:508
+#: src/ui/telemetry_tab.py:519
 msgid "Callsign"
 msgstr "コールサイン"
 
-#: src/ui/telemetry_tab.py:508
+#: src/ui/telemetry_tab.py:519
 msgid "Data"
 msgstr "データ"
 
-#: src/ui/telemetry_tab.py:539
+#: src/ui/telemetry_tab.py:550
 msgid "Received Frames"
 msgstr "受信フレーム"
 
-#: src/ui/telemetry_tab.py:551
+#: src/ui/telemetry_tab.py:562
 msgid "Decoded Fields"
 msgstr "全項目デコード結果"
 
-#: src/ui/telemetry_tab.py:569
+#: src/ui/telemetry_tab.py:580
 msgid ""
 "Upload every decoded frame to the SatNOGS DB (SiDS).\n"
 "Needs a SatNOGS DB API key (API button) plus your callsign\n"
@@ -2779,27 +2779,27 @@ msgstr ""
 "SatNOGS DB の API キー（API ボタン）と、コールサイン・\n"
 "観測地点（File → Set QTH）の設定が必要です。"
 
-#: src/ui/telemetry_tab.py:577
+#: src/ui/telemetry_tab.py:588
 msgid "API"
 msgstr "API"
 
-#: src/ui/telemetry_tab.py:578
+#: src/ui/telemetry_tab.py:589
 msgid "Enter your SatNOGS DB API key"
 msgstr "SatNOGS DB の API キーを入力"
 
-#: src/ui/telemetry_tab.py:582
+#: src/ui/telemetry_tab.py:593
 msgid "SatNOGS ↗"
 msgstr "SatNOGS ↗"
 
-#: src/ui/telemetry_tab.py:583
+#: src/ui/telemetry_tab.py:594
 msgid "Open the selected satellite's page on db.satnogs.org"
 msgstr "選択中の衛星の db.satnogs.org ページを開く"
 
-#: src/ui/telemetry_tab.py:588
+#: src/ui/telemetry_tab.py:599
 msgid "Send selected"
 msgstr "選択分を送信"
 
-#: src/ui/telemetry_tab.py:591
+#: src/ui/telemetry_tab.py:602
 msgid ""
 "Send the CW frames selected in the table to the SatNOGS DB now,\n"
 "even if they were received only once and the Upload switch is off.\n"
@@ -2809,11 +2809,11 @@ msgstr ""
 "1回しか受信していなくても、アップロードのスイッチがOFFでも送ります。\n"
 "時刻が確実でないもの、送信済みのものは除きます。"
 
-#: src/ui/telemetry_tab.py:599
+#: src/ui/telemetry_tab.py:610
 msgid "Send unsent…"
 msgstr "未送信を送信…"
 
-#: src/ui/telemetry_tab.py:602
+#: src/ui/telemetry_tab.py:613
 msgid ""
 "Send the logged CW frames of this satellite that were not sent yet\n"
 "and were received at least twice (a single reading may be a\n"
@@ -2823,24 +2823,24 @@ msgstr ""
 "（1回だけの読みは桁の読み違いの可能性があります）、\n"
 "時刻が確実なものを送ります。"
 
-#: src/ui/telemetry_tab.py:613
+#: src/ui/telemetry_tab.py:624
 msgid "Clear Log"
 msgstr "ログをクリア"
 
 # --- Plural forms (日本語は単複同形) ---
-#: src/ui/telemetry_tab.py:1085
+#: src/ui/telemetry_tab.py:1096
 msgid "gr-satellites Log"
 msgstr "gr-satellitesログ"
 
-#: src/ui/telemetry_tab.py:1095
+#: src/ui/telemetry_tab.py:1106
 msgid "Direwolf Log"
 msgstr "Direwolfログ"
 
-#: src/ui/telemetry_tab.py:1166 src/ui/telemetry_tab.py:1293
+#: src/ui/telemetry_tab.py:1178 src/ui/telemetry_tab.py:1319
 msgid "Select a satellite first."
 msgstr "先に衛星を選択してください。"
 
-#: src/ui/telemetry_tab.py:1172
+#: src/ui/telemetry_tab.py:1184
 msgid ""
 "No CW telemetry frame format is defined for this satellite yet (ARICA-2 only "
 "so far)."
@@ -2848,25 +2848,27 @@ msgstr ""
 "この衛星のCWテレメトリーのフレーム形式はまだ定義されていません（現時点では"
 "ARICA-2のみ対応）。"
 
-#: src/ui/telemetry_tab.py:1181
+#: src/ui/telemetry_tab.py:1193
 msgid "CW TLM — decoding in the CW Decoder tab"
 msgstr "CW TLM — CWデコーダータブでデコード中"
 
-#: src/ui/telemetry_tab.py:1216
+#: src/ui/telemetry_tab.py:1228
 msgid "length or characters not valid, not used"
 msgstr "長さまたは文字が不正のため不使用"
 
-#: src/ui/telemetry_tab.py:1283
+#: src/ui/telemetry_tab.py:1302
 msgid "Select received CW frames in the table first."
 msgstr "先に表で受信したCWフレームを選択してください。"
 
-#: src/ui/telemetry_tab.py:1299
+#: src/ui/telemetry_tab.py:1325
 msgid ""
 "Nothing ready to send: a frame needs a second reception and a reliable time, "
 "and must not be sent already."
-msgstr "送信できるものがありません: 2回目の受信と確実な時刻が必要で、送信済みは除きます。"
+msgstr ""
+"送信できるものがありません: 2回目の受信と確実な時刻が必要で、送信済みは除きま"
+"す。"
 
-#: src/ui/telemetry_tab.py:1306
+#: src/ui/telemetry_tab.py:1332
 #, python-brace-format
 msgid ""
 "Send {n} logged frame(s) ({m} different) of {name} to the SatNOGS DB?\n"
@@ -2878,126 +2880,150 @@ msgstr ""
 "\n"
 "2回以上受信し、時刻が確実で、未送信のものだけが対象です。"
 
-#: src/ui/telemetry_tab.py:1312
+#: src/ui/telemetry_tab.py:1338
 msgid "Send to SatNOGS"
 msgstr "SatNOGSへ送信"
 
-#: src/ui/telemetry_tab.py:1330 src/ui/telemetry_tab.py:1878
+#: src/ui/telemetry_tab.py:1371
+#, python-brace-format
+msgid "SatNOGS accepted the frame (HTTP {n})"
+msgstr "SatNOGSがフレームを受理しました（HTTP {n}）"
+
+#: src/ui/telemetry_tab.py:1391
+msgid "SatNOGS upload failed: {detail}"
+msgstr "SatNOGSへの送信に失敗しました: {detail}"
+
+#: src/ui/telemetry_tab.py:1392
+#, python-brace-format
+msgid "SatNOGS rejected the upload (HTTP {status}): {detail}"
+msgstr "SatNOGSが送信を拒否しました（HTTP {status}）: {detail}"
+
+#: src/ui/telemetry_tab.py:1396
+msgid "check the API key (API button)"
+msgstr "APIキーを確認してください（APIボタン）"
+
+#: src/ui/telemetry_tab.py:1404 src/ui/telemetry_tab.py:1962
 msgid "API key"
 msgstr "APIキー"
 
-#: src/ui/telemetry_tab.py:1331 src/ui/telemetry_tab.py:1880
+#: src/ui/telemetry_tab.py:1405 src/ui/telemetry_tab.py:1964
 msgid "callsign"
 msgstr "コールサイン"
 
-#: src/ui/telemetry_tab.py:1332 src/ui/telemetry_tab.py:1882
+#: src/ui/telemetry_tab.py:1406 src/ui/telemetry_tab.py:1966
 msgid "station location"
 msgstr "観測地点"
 
-#: src/ui/telemetry_tab.py:1335
+#: src/ui/telemetry_tab.py:1409
 msgid "SatNOGS upload not possible — missing: "
 msgstr "SatNOGSへ送信できません — 未設定: "
 
-#: src/ui/telemetry_tab.py:1341
+#: src/ui/telemetry_tab.py:1415
 #, python-brace-format
 msgid "{n} queued for upload"
 msgstr "{n}件を送信待ちに追加"
 
-#: src/ui/telemetry_tab.py:1343
+#: src/ui/telemetry_tab.py:1417
+msgid "{n} awaiting SatNOGS's reply"
+msgstr "{n}件はSatNOGSの応答待ち"
+
+#: src/ui/telemetry_tab.py:1419
 #, python-brace-format
 msgid "{n} already sent"
 msgstr "{n}件は送信済み"
 
-#: src/ui/telemetry_tab.py:1345
+#: src/ui/telemetry_tab.py:1421
 #, python-brace-format
 msgid "{n} waiting for a second reception"
 msgstr "{n}件は2回目の受信待ち"
 
-#: src/ui/telemetry_tab.py:1347
+#: src/ui/telemetry_tab.py:1423
 #, python-brace-format
 msgid "{n} skipped: recording start time not set"
 msgstr "{n}件は録音の開始時刻が未設定のため保留"
 
-#: src/ui/telemetry_tab.py:1349
+#: src/ui/telemetry_tab.py:1425
 #, python-brace-format
 msgid "{n} without a SatNOGS format"
 msgstr "{n}件はSatNOGS形式なし"
 
-#: src/ui/telemetry_tab.py:1350
+#: src/ui/telemetry_tab.py:1426
 msgid "nothing to send"
 msgstr "送信するものなし"
 
-#: src/ui/telemetry_tab.py:1367
+#: src/ui/telemetry_tab.py:1443
 msgid "⚠ No satellite selected"
 msgstr "⚠ 衛星が選択されていません"
 
-#: src/ui/telemetry_tab.py:1406
+#: src/ui/telemetry_tab.py:1482
 msgid "Connecting SDR…"
 msgstr "SDR接続中…"
 
-#: src/ui/telemetry_tab.py:1413
+#: src/ui/telemetry_tab.py:1489
 msgid "SDR connecting via Radio Control — press Start again once connected"
 msgstr ""
 "SDRはRadio Control経由で接続中です — 接続完了後、再度Startを押してください"
 
-#: src/ui/telemetry_tab.py:1416
+#: src/ui/telemetry_tab.py:1492
 msgid "⚠ No SDR configured in Rig Settings"
 msgstr "⚠ Rig SettingsでSDRが設定されていません"
 
-#: src/ui/telemetry_tab.py:1582
+#: src/ui/telemetry_tab.py:1666
 msgid ""
 "SatNOGS upload skipped: set the recording's start time in SDR Control first."
-msgstr "SatNOGSへの送信を見送りました: 先にSDRコントロールで録音の開始時刻を設定してください。"
+msgstr ""
+"SatNOGSへの送信を見送りました: 先にSDRコントロールで録音の開始時刻を設定して"
+"ください。"
 
-#: src/ui/telemetry_tab.py:1635
+#: src/ui/telemetry_tab.py:1719
 msgid "Frames: "
 msgstr "フレーム: "
 
-#: src/ui/telemetry_tab.py:1635
+#: src/ui/telemetry_tab.py:1719
 msgid " received"
 msgstr "件受信"
 
-#: src/ui/telemetry_tab.py:1666
+#: src/ui/telemetry_tab.py:1750
 msgid "Field"
 msgstr "項目"
 
-#: src/ui/telemetry_tab.py:1666
+#: src/ui/telemetry_tab.py:1750
 msgid "Value"
 msgstr "値"
 
-#: src/ui/telemetry_tab.py:1761
+#: src/ui/telemetry_tab.py:1845
 msgid "Rig + Direwolf (receiving)"
 msgstr "無線機 + Direwolf（受信中）"
 
-#: src/ui/telemetry_tab.py:1766
+#: src/ui/telemetry_tab.py:1850
 msgid "SDR — Direwolf (AX.25) (receive only)"
 msgstr "SDR — Direwolf (AX.25)（受信のみ）"
 
-#: src/ui/telemetry_tab.py:1772
+#: src/ui/telemetry_tab.py:1856
 msgid "—  (connect SDR, then click ▶ Start)"
 msgstr "—  （SDRを接続後、▶ 開始をクリック）"
 
-#: src/ui/telemetry_tab.py:1775
+#: src/ui/telemetry_tab.py:1859
 msgid "—  (click ▶ Start; the CW Decoder tab opens automatically)"
 msgstr "—  (▶ 開始を押すとCWデコーダータブが自動で開きます)"
 
-#: src/ui/telemetry_tab.py:1778
+#: src/ui/telemetry_tab.py:1862
 msgid "—  (connect Rig or SDR, then click ▶ Start)"
 msgstr "—  （無線機またはSDRを接続後、▶ 開始をクリック）"
 
-#: src/ui/telemetry_tab.py:1819
+#: src/ui/telemetry_tab.py:1903
 msgid "Export Telemetry CSV"
 msgstr "テレメトリーCSVエクスポート"
 
-#: src/ui/telemetry_tab.py:1846
+#: src/ui/telemetry_tab.py:1930
 msgid "SatNOGS Upload: ON"
 msgstr "SatNOGSアップロード: ON"
 
-#: src/ui/telemetry_tab.py:1846
+#: src/ui/telemetry_tab.py:1930
 msgid "SatNOGS Upload: OFF"
 msgstr "SatNOGSアップロード: OFF"
 
-#: src/ui/telemetry_tab.py:1885
+#: src/ui/telemetry_tab.py:1969
 msgid "SatNOGS Upload is on but not sending — missing: "
 msgstr "SatNOGS アップロードは ON ですが送信されていません — 未設定: "
 

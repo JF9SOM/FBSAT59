@@ -19,17 +19,24 @@ The user can override the *repeated* rule for frames they select themselves
 (``require_repeat=False``); the time and once rules always hold.
 
 Everything is recorded in the ``telemetry_log`` table: ``satnogs_uploaded_at``
-(when the frame was queued for sending) and ``time_reliable``.
+(when SatNOGS *accepted* the frame -- set by mark_uploaded() from the upload's
+result, never when it is merely queued: a rejected upload, e.g. a wrong API key,
+must leave the frame unsent) and ``time_reliable``.
 """
 
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from comms.telemetry.cw_frames import build_satnogs_frame
 from comms.telemetry.satnogs_uploader import SatnogsUploader, upload_blocker
+
+# (frame id, accepted, http status, body) -- the outcome of one frame's upload, see
+# SatnogsUploader.submit(on_result=...). Called on the uploader's thread.
+FrameResultFn = Callable[[int, bool, int, str], None]
 
 # Two receptions of a frame confirm each other only if this far apart (a repeat of
 # the beacon item, not the same transmission decoded twice) ...
@@ -70,6 +77,7 @@ class SendReport:
     queued: int = 0
     duplicates: int = 0  # already sent / replayed reception
     unreliable: int = 0  # time was a placeholder
+    pending: int = 0  # already handed to the uploader, no answer yet
     waiting: int = 0  # not yet confirmed by a second reception
     unsupported: int = 0  # no SatNOGS format for the frame
     blocker: str | None = None  # a missing prerequisite, see upload_blocker()
@@ -139,6 +147,36 @@ def eligible_unsent(conn: sqlite3.Connection, norad: int) -> list[LoggedFrame]:
     ]
 
 
+def mark_uploaded(conn: sqlite3.Connection, frame_id: int) -> None:
+    """Record that SatNOGS accepted frame *frame_id*."""
+    conn.execute(
+        "UPDATE telemetry_log SET satnogs_uploaded_at = ? WHERE id = ?",
+        (datetime.now(UTC).isoformat(), frame_id),
+    )
+    conn.commit()
+
+
+def reset_unconfirmed_marks(conn: sqlite3.Connection) -> None:
+    """One-time repair: forget "sent" marks written when a frame was merely queued.
+
+    The first version marked a frame as sent as soon as it was handed to the
+    uploader, so a rejected upload (e.g. HTTP 401, wrong API key) still left it
+    marked. No upload was ever confirmed then, so every mark is cleared once.
+    """
+    key = "cw_upload_marks_v2"
+    try:
+        if conn.execute("SELECT 1 FROM app_settings WHERE key = ?", (key,)).fetchone():
+            return
+        conn.execute(
+            "UPDATE telemetry_log SET satnogs_uploaded_at = NULL "
+            "WHERE satnogs_uploaded_at IS NOT NULL"
+        )
+        conn.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, '1')", (key,))
+        conn.commit()
+    except sqlite3.OperationalError:
+        return  # no app_settings / telemetry_log yet: nothing to repair
+
+
 def send_frames(
     conn: sqlite3.Connection,
     uploader: SatnogsUploader,
@@ -147,11 +185,18 @@ def send_frames(
     *,
     force: bool,
     require_repeat: bool,
+    on_result: FrameResultFn | None = None,
+    pending: set[int] | None = None,
 ) -> SendReport:
     """Queue the logged frames *ids* for the SatNOGS DB, honouring the rules above.
 
     *force* sends although the automatic-upload switch is off (an explicit
     user action); the API key, callsign and location are still required.
+    Nothing is marked as sent here: SatNOGS's answer arrives later through
+    *on_result*, and the caller calls mark_uploaded() when it was accepted.
+    *pending* holds the ids handed to the uploader that have no answer yet; they
+    are not queued twice, and each queued id is added to it (the caller removes
+    it when the answer arrives).
     """
     report = SendReport(blocker=upload_blocker(conn, force))
     if report.blocker is not None:
@@ -161,7 +206,9 @@ def send_frames(
     for frame in frames:
         if frame.id not in wanted or frame.uploaded:
             continue
-        if not frame.reliable:
+        if pending is not None and frame.id in pending:
+            report.pending += 1
+        elif not frame.reliable:
             report.unreliable += 1
         elif is_duplicate(frame, frames):
             report.duplicates += 1
@@ -171,18 +218,36 @@ def send_frames(
             wire = build_satnogs_frame(norad, frame.raw_hex)
             if wire is None:
                 report.unsupported += 1
-            elif uploader.submit(conn, wire, norad, frame.received_at, force=force):
-                conn.execute(
-                    "UPDATE telemetry_log SET satnogs_uploaded_at = ? WHERE id = ?",
-                    (datetime.now(UTC).isoformat(), frame.id),
-                )
-                conn.commit()
+                continue
+            callback = _frame_callback(frame.id, on_result)
+            if uploader.submit(
+                conn, wire, norad, frame.received_at, force=force, on_result=callback
+            ):
+                if pending is not None:
+                    pending.add(frame.id)
                 report.queued += 1
     return report
 
 
+def _frame_callback(
+    frame_id: int, on_result: FrameResultFn | None
+) -> Callable[[bool, int, str], None] | None:
+    if on_result is None:
+        return None
+
+    def report(accepted: bool, status: int, body: str) -> None:
+        on_result(frame_id, accepted, status, body)
+
+    return report
+
+
 def auto_send(
-    conn: sqlite3.Connection, uploader: SatnogsUploader, norad: int, frame_id: int
+    conn: sqlite3.Connection,
+    uploader: SatnogsUploader,
+    norad: int,
+    frame_id: int,
+    on_result: FrameResultFn | None = None,
+    pending: set[int] | None = None,
 ) -> SendReport:
     """Automatic upload after frame *frame_id* was logged (footer switch on).
 
@@ -194,4 +259,13 @@ def auto_send(
     if this is None:
         return SendReport()
     group = [f.id for f in frames if f.raw_hex == this.raw_hex and not f.uploaded]
-    return send_frames(conn, uploader, norad, group, force=False, require_repeat=True)
+    return send_frames(
+        conn,
+        uploader,
+        norad,
+        group,
+        force=False,
+        require_repeat=True,
+        on_result=on_result,
+        pending=pending,
+    )

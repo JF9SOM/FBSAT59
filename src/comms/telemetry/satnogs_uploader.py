@@ -50,6 +50,11 @@ SatnogsUploadSettings = dict[str, bool | str]
 # (api_key, form_fields) -> (http_status, response_body)
 PostFn = Callable[[str, dict[str, str]], tuple[int, str]]
 
+# Called on the worker thread once a submission has been answered (or has failed):
+# (accepted, http_status, body). http_status is 0 when there was no HTTP answer at
+# all (network error); body is then the error text.
+ResultFn = Callable[[bool, int, str], None]
+
 
 # --------------------------------------------------------------------------- #
 # Settings (app_settings JSON blob, same pattern as comms.log_broadcast)
@@ -208,7 +213,7 @@ class SatnogsUploader:
 
     def __init__(self, post_fn: PostFn | None = None) -> None:
         self._post: PostFn = post_fn or _http_post
-        self._queue: queue.Queue[tuple[str, dict[str, str]] | None] = queue.Queue(
+        self._queue: queue.Queue[tuple[str, dict[str, str], ResultFn | None] | None] = queue.Queue(
             maxsize=_QUEUE_MAXSIZE
         )
         self._thread = threading.Thread(target=self._run, name="SatnogsUploader", daemon=True)
@@ -221,12 +226,15 @@ class SatnogsUploader:
         norad: int | None,
         received_at: datetime,
         force: bool = False,
+        on_result: ResultFn | None = None,
     ) -> bool:
         """Queue *raw_frame* for upload. Returns ``True`` if it was queued.
 
         No-op (returns ``False``) when *norad* is ``None`` or any upload
         prerequisite is missing. *force* sends even though the automatic
         upload switch is off (an explicit user request, see upload_blocker()).
+        *on_result*, if given, is called on the worker thread with the outcome
+        (see ResultFn) -- "queued" only means the POST has not been made yet.
         """
         if norad is None:
             return False
@@ -234,7 +242,7 @@ class SatnogsUploader:
         if built is None:
             return False
         try:
-            self._queue.put_nowait(built)
+            self._queue.put_nowait((*built, on_result))
             return True
         except queue.Full:
             logger.warning("SatNOGS upload queue full -- dropping frame for NORAD %s", norad)
@@ -253,13 +261,15 @@ class SatnogsUploader:
             item = self._queue.get()
             if item is None:
                 break
-            api_key, fields = item
+            api_key, fields, on_result = item
             try:
                 status, body = self._post(api_key, fields)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("SatNOGS upload failed: %s", exc)
+                self._report(on_result, False, 0, str(exc))
                 continue
-            if 200 <= status < 300:
+            accepted = 200 <= status < 300
+            if accepted:
                 logger.info(
                     "SatNOGS frame uploaded (HTTP %d) for NORAD %s",
                     status,
@@ -271,6 +281,16 @@ class SatnogsUploader:
                     status,
                     body.strip()[:300],
                 )
+            self._report(on_result, accepted, status, body)
+
+    @staticmethod
+    def _report(on_result: ResultFn | None, accepted: bool, status: int, body: str) -> None:
+        if on_result is None:
+            return
+        try:
+            on_result(accepted, status, body)
+        except Exception:  # noqa: BLE001
+            logger.exception("SatNOGS upload result callback failed")
 
 
 _uploader: SatnogsUploader | None = None

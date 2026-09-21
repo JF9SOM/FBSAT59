@@ -67,6 +67,8 @@ from comms.telemetry.cw_upload import (
     auto_send,
     eligible_unsent,
     ensure_columns,
+    mark_uploaded,
+    reset_unconfirmed_marks,
     send_frames,
 )
 from comms.telemetry.decoder import (
@@ -289,6 +291,9 @@ class TelemetryTab(QWidget):
     # attach_cw_tab() and starts / stops its decoding.
     cw_tlm_start_requested = Signal()
     cw_tlm_stop_requested = Signal()
+    # SatNOGS's answer to one upload, emitted from the uploader's thread (delivered on the
+    # GUI thread): (telemetry_log id or None for an AX.25 frame, accepted, HTTP status, body).
+    _upload_result = Signal(object, bool, int, str)
 
     def __init__(
         self,
@@ -330,6 +335,11 @@ class TelemetryTab(QWidget):
         self._cw_tlm_norad: int | None = None
         # True once the "recording start time not set" upload notice was shown this run.
         self._warned_time_unconfirmed = False
+        # telemetry_log ids handed to the uploader that SatNOGS has not answered yet, and
+        # whether a failure of an AX.25 upload was already shown this run.
+        self._upload_pending: set[int] = set()
+        self._warned_upload_failure = False
+        self._upload_result.connect(self._on_upload_result)
 
         self._frame_count = 0
         self._direwolf_log_window: _ProcessLogDialog | None = None
@@ -370,6 +380,7 @@ class TelemetryTab(QWidget):
         self._conn.commit()
         # Upload tracking (satnogs_uploaded_at, time_reliable), added later.
         ensure_columns(self._conn)
+        reset_unconfirmed_marks(self._conn)
 
     # ------------------------------------------------------------------ #
     # UI
@@ -1126,6 +1137,7 @@ class TelemetryTab(QWidget):
 
     def _on_start(self) -> None:
         self._warned_time_unconfirmed = False
+        self._warned_upload_failure = False
         mode = self._current_mode()
         if mode == _MODE_CW:
             if not self._start_cw_tlm():
@@ -1263,7 +1275,14 @@ class TelemetryTab(QWidget):
         """Send a just-logged CW frame if the upload switch is on and a repeat confirms it."""
         if not load_satnogs_upload_settings(self._conn).get("enabled"):
             return
-        report = auto_send(self._conn, get_satnogs_uploader(), norad, log_id)
+        report = auto_send(
+            self._conn,
+            get_satnogs_uploader(),
+            norad,
+            log_id,
+            on_result=self._on_cw_frame_result,
+            pending=self._upload_pending,
+        )
         self._show_send_report(report, automatic=True)
 
     def _selected_log_ids(self) -> list[int]:
@@ -1283,7 +1302,14 @@ class TelemetryTab(QWidget):
             self._set_error(_("Select received CW frames in the table first."))
             return
         report = send_frames(
-            self._conn, get_satnogs_uploader(), norad, ids, force=True, require_repeat=False
+            self._conn,
+            get_satnogs_uploader(),
+            norad,
+            ids,
+            force=True,
+            require_repeat=False,
+            on_result=self._on_cw_frame_result,
+            pending=self._upload_pending,
         )
         self._show_send_report(report)
 
@@ -1319,8 +1345,56 @@ class TelemetryTab(QWidget):
             [f.id for f in frames],
             force=True,
             require_repeat=True,
+            on_result=self._on_cw_frame_result,
+            pending=self._upload_pending,
         )
         self._show_send_report(report)
+
+    def _on_cw_frame_result(self, frame_id: int, accepted: bool, status: int, body: str) -> None:
+        """Uploader thread: SatNOGS answered the upload of CW frame *frame_id*."""
+        self._upload_result.emit(frame_id, accepted, status, body)
+
+    def _on_upload_result(self, frame_id: object, accepted: bool, status: int, body: str) -> None:
+        """GUI thread: show SatNOGS's answer to an upload.
+
+        A CW frame is marked as sent only when SatNOGS accepted it; a rejected
+        one (e.g. HTTP 401 for a wrong API key) stays unsent, can be sent again,
+        and the reason is shown. An AX.25 upload reports failures only (once per run).
+        """
+        if isinstance(frame_id, int):
+            self._upload_pending.discard(frame_id)
+            if accepted:
+                mark_uploaded(self._conn, frame_id)
+        if accepted:
+            if isinstance(frame_id, int):
+                self._lbl_status.setText(
+                    _("SatNOGS accepted the frame (HTTP {n})").format(n=status)
+                )
+                self._lbl_status.setStyleSheet("color: #27ae60;")
+            return
+        if frame_id is None:
+            if self._warned_upload_failure:
+                return
+            self._warned_upload_failure = True
+        self._set_error(self._upload_failure_text(status, body))
+
+    @staticmethod
+    def _upload_failure_text(status: int, body: str) -> str:
+        """User-facing text for a failed SatNOGS upload (401/403 mean a bad API key)."""
+        detail = body.strip()
+        with contextlib.suppress(ValueError, TypeError):
+            parsed = json.loads(body)
+            if isinstance(parsed, dict) and parsed.get("detail"):
+                detail = str(parsed["detail"])
+        detail = detail[:200]
+        if status == 0:
+            return "⚠ " + _("SatNOGS upload failed: {detail}").format(detail=detail)
+        text = _("SatNOGS rejected the upload (HTTP {status}): {detail}").format(
+            status=status, detail=detail
+        )
+        if status in (401, 403):
+            text += " — " + _("check the API key (API button)")
+        return "⚠ " + text
 
     def _show_send_report(self, report: SendReport, automatic: bool = False) -> None:
         """Say what a send did in the status label. An automatic upload stays quiet
@@ -1334,11 +1408,13 @@ class TelemetryTab(QWidget):
             if missing is not None:
                 self._set_error(_("SatNOGS upload not possible — missing: ") + missing)
             return
-        if automatic and not report.queued and not report.unreliable:
+        if automatic and not report.queued and not report.unreliable and not report.pending:
             return
         parts: list[str] = []
         if report.queued:
             parts.append(_("{n} queued for upload").format(n=report.queued))
+        if report.pending:
+            parts.append(_("{n} awaiting SatNOGS's reply").format(n=report.pending))
         if report.duplicates:
             parts.append(_("{n} already sent").format(n=report.duplicates))
         if report.waiting:
@@ -1572,7 +1648,15 @@ class TelemetryTab(QWidget):
         told once per run.
         """
         if reliable:
-            get_satnogs_uploader().submit(self._conn, raw, norad, when)
+            get_satnogs_uploader().submit(
+                self._conn,
+                raw,
+                norad,
+                when,
+                on_result=lambda accepted, status, body: self._upload_result.emit(
+                    None, accepted, status, body
+                ),
+            )
             return
         if load_satnogs_upload_settings(self._conn).get("enabled") and not (
             self._warned_time_unconfirmed

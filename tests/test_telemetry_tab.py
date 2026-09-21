@@ -250,7 +250,7 @@ class _RecordingUploader:
     def __init__(self) -> None:
         self.calls: list[tuple] = []
 
-    def submit(self, conn, raw, norad, received_at) -> bool:  # noqa: ANN001
+    def submit(self, conn, raw, norad, received_at, force=False, on_result=None) -> bool:  # noqa: ANN001
         self.calls.append((conn, raw, norad, received_at))
         return True
 
