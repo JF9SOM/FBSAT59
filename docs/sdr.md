@@ -1629,6 +1629,8 @@ OrigamiSat-2受信時に発生した「Doppler補正だけでは説明できな�
 ファイル名 `{norad}_{name}_{YYYYMMDDTHHMMSSZ}.iq.wav` から読み、読めなければ None。再生中の時刻は
 `start_time_utc + position_s`。SDR コントロールの再生行の Offset 入力の右にある「Start (UTC):」で
 読み取った値を確認でき、読めなかった時は 00:00:00（今日の日付）が出るので手入力で直せる。
+**確定/仮値の区別**（`start_time_confirmed`）: ファイル名から読めた、またはユーザーが入力した時刻だけが確定で、
+読めなかった時に出す 00:00 は仮値（`confirmed=False`）。仮値で時刻を付けたデータは SatNOGS へ送らない。
 詳細は [docs/telemetry.md](telemetry.md)「CW TLM モード」。
 
 #### `SdrRigAdapter`への統合 — Rig 1/2スロットへの「なりすまし接続」

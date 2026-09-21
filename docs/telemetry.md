@@ -720,3 +720,64 @@ WAV には時刻情報が無い。`IQRecorder` は `{norad}_{name}_{YYYYMMDDTHHM
 `tests/test_mode_detection.py`、`tests/test_recording_start_time.py`、`tests/test_file_device.py`、
 `tests/test_sdr_control_widget.py`。いずれも CW モデル・scipy 無しで動く（`SdrFileDevice` が絡むものだけ `importorskip`）。
 実物の CW デコーダ＋再生パイプライン＋Telemetry タブを通した通しの動作も、ARICA-2 の録音で確認済み。
+
+---
+
+## SatNOGS DB へのアップロードと時刻（2026-09-21 追加）
+
+### 「SatNOGS Upload: ON/OFF」の対象と、再生時の時刻
+
+フッターの ON/OFF スイッチは**ライブ専用ではない**。Direwolf（AX.25）・gr-satellites・CW TLM の
+どの経路でも、IQ 再生中でも効く。以前は AX.25 / gr-satellites の経路が**アップロード時刻に
+`datetime.now()`（今の時刻）を使っていた**ため、古い録音を再生しながら ON にすると、
+**再生日ではなく現在の時刻**で公開されてしまった。今は次のとおり（`TelemetryTab._frame_time()`）:
+
+- 時刻は `comms.signal_clock.signal_time()`（ライブ＝現在の UTC、IQ 再生＝録音の開始時刻＋再生位置）。
+  「受信フレーム」表・`telemetry_log`・SatNOGS への `timestamp` に同じ時刻が入る。
+- 再生中の録音の開始時刻が**確定していない**（ファイル名に無く、SDR コントロールの「Start (UTC)」が
+  仮の 00:00 のまま）ときは**アップロードしない**（`_submit_raw_frame()`。1回の実行につき1度だけ
+  ステータスに理由を出す）。確定 = ファイル名から読めた、またはユーザーが入力した
+  （`SdrFileDevice.start_time_confirmed`、`SdrControlWidget` は仮値を `confirmed=False` で渡す）。
+
+### 日付
+
+「受信フレーム」表の時刻列は `YYYY-MM-DD HH:MM:SS`（UTC）。再生する録音は何日の受信でもありうるので
+日付が要る。CSV エクスポートは表をそのまま書き出すので日付が入る。`telemetry_log.received_at` は
+以前から日付付きの ISO 形式。
+
+### CW フレームの SatNOGS DB アップロード（`comms/telemetry/cw_upload.py`）
+
+送るバイト列: **`arica-2`（7バイト）＋ 種別（HK1=1, HK2=2, HK3=3）＋ フレームのバイト**
+（HK1=16、HK2=14、HK3=15 バイト）。`arica2.ksy` の `cw1_form`/`cw2_form`/`cw3_form`
+（DL7NDR の CW アップロード用フォーム向け）と同じ並び。定義は `68796.json` の各フレームの
+`satnogs`（`callsign`・`beacon_type`）、組み立ては `cw_frames.build_satnogs_frame()`。既存の
+`SatnogsUploader`（SiDS、`timestamp` はミリ秒付き UTC）でそのまま送る。**SatNOGS が実際に
+受理するかは、実際に送った結果で確認していない**（既存データの読み取り API は認証が要る）ので、
+最初は1件だけ手で試すこと。
+
+CW にはCRCが無く、検査を通っても桁を間違えていることがある（HK3 の先頭桁 `1`/`0`）。公開DBを
+汚さないため、次の規則で送る:
+
+| 規則 | 内容 |
+|---|---|
+| **2回以上受信** | 同じフレームが、**別の送信として**（`MIN_REPEAT_GAP_S`=20秒以上離れて）30分以内に受信されていること。同じ録音を2回デコードしたものは数えない |
+| **時刻が確実** | 録音開始時刻が仮値のフレーム（`telemetry_log.time_reliable=0`）は**手動でも送らない** |
+| **一度だけ** | 送信済み（`satnogs_uploaded_at`）は送らない。同じフレームが10秒以内なら「同じ受信の再生」として送らない |
+
+- **自動**: スイッチ ON のとき、CW フレームを記録するたびに `auto_send()` が規則を確認し、2回目が
+  届いた時点で、待っていた1回目も一緒に送る。1回目だけのときは何もしない（静かに待つ）。
+- **選択分を送信**（CW TLM モードのフッター）: 表で選んだ行を、1回しか受信していなくても、
+  スイッチが OFF でも送る（`force=True`）。API キー・コールサイン・位置は必要。時刻と一度だけの規則は守る。
+- **未送信を送信…**: このログ済みの未送信フレームのうち、規則を満たすものを確認ダイアログの後に送る
+  （後から送るための操作。IQ を再生し直した分の重複は「一度だけ」で弾く）。
+- 送信は「キューに入れた」時点で送信済みに印を付ける（既存の `SatnogsUploader` は失敗を記録して
+  捨てる作りで、再送しない）。
+- `telemetry_log` に `satnogs_uploaded_at` と `time_reliable` 列を追加（`ensure_columns()`、既存 DB へは
+  `ALTER TABLE`）。`SatnogsUploader.submit()` / `build_submission()` に `force`、`upload_blocker()`
+  （送れない理由: `disabled`/`no_api_key`/`no_callsign`/`no_location`）を追加。
+
+### テスト
+
+`tests/test_cw_upload.py`（規則）、`tests/test_signal_clock.py`、`tests/test_telemetry_cw_tlm.py`
+（日付・CSV・再生時の時刻・自動/手動送信）、`tests/test_satnogs_uploader.py`（`force`・`upload_blocker`）、
+`tests/test_cw_frames.py`（`build_satnogs_frame`）。

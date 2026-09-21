@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QTableWidget,
@@ -54,11 +55,19 @@ from comms.aprs.engine import (
     resolve_ax25_modem,
 )
 from comms.aprs.parser import decode_ax25
+from comms.signal_clock import signal_time
 from comms.telemetry.cw_frames import (
     decode_cw_frame,
     is_near_miss,
     load_cw_frames,
     normalize_block,
+)
+from comms.telemetry.cw_upload import (
+    SendReport,
+    auto_send,
+    eligible_unsent,
+    ensure_columns,
+    send_frames,
 )
 from comms.telemetry.decoder import (
     TelemetryFrame,
@@ -319,6 +328,8 @@ class TelemetryTab(QWidget):
         # satellite whose frames are being collected while it runs.
         self._cw_tab: Any = None
         self._cw_tlm_norad: int | None = None
+        # True once the "recording start time not set" upload notice was shown this run.
+        self._warned_time_unconfirmed = False
 
         self._frame_count = 0
         self._direwolf_log_window: _ProcessLogDialog | None = None
@@ -357,6 +368,8 @@ class TelemetryTab(QWidget):
             )
         """)
         self._conn.commit()
+        # Upload tracking (satnogs_uploaded_at, time_reliable), added later.
+        ensure_columns(self._conn)
 
     # ------------------------------------------------------------------ #
     # UI
@@ -570,6 +583,30 @@ class TelemetryTab(QWidget):
         self._btn_satnogs_link.setToolTip(_("Open the selected satellite's page on db.satnogs.org"))
         self._btn_satnogs_link.clicked.connect(self._on_open_satnogs)
         footer.addWidget(self._btn_satnogs_link)
+
+        # CW TLM mode only: send frames by hand, or the ones a repeat has confirmed.
+        self._btn_satnogs_send = QPushButton(_("Send selected"))
+        self._btn_satnogs_send.setToolTip(
+            _(
+                "Send the CW frames selected in the table to the SatNOGS DB now,\n"
+                "even if they were received only once and the Upload switch is off.\n"
+                "Frames without a reliable time or already sent are skipped."
+            )
+        )
+        self._btn_satnogs_send.clicked.connect(self._on_send_selected)
+        self._btn_satnogs_send.setVisible(False)
+        footer.addWidget(self._btn_satnogs_send)
+        self._btn_satnogs_send_unsent = QPushButton(_("Send unsent…"))
+        self._btn_satnogs_send_unsent.setToolTip(
+            _(
+                "Send the logged CW frames of this satellite that were not sent yet\n"
+                "and were received at least twice (a single reading may be a\n"
+                "mis-read digit) with a reliable time."
+            )
+        )
+        self._btn_satnogs_send_unsent.clicked.connect(self._on_send_unsent)
+        self._btn_satnogs_send_unsent.setVisible(False)
+        footer.addWidget(self._btn_satnogs_send_unsent)
 
         footer.addStretch()
 
@@ -918,6 +955,8 @@ class TelemetryTab(QWidget):
         # neither (its text is in the CW Decoder tab).
         for widget in (self._lbl_baud, self._baud_combo, self._btn_backend_log):
             widget.setVisible(not is_cw)
+        self._btn_satnogs_send.setVisible(is_cw)
+        self._btn_satnogs_send_unsent.setVisible(is_cw)
         # gr-satellites already turns each frame into human-readable text
         # itself (see _on_gr_telemetry()'s "-> Packet from" parsing), so the
         # "Decoded Fields" sub-tab — built from this project's own
@@ -1086,6 +1125,7 @@ class TelemetryTab(QWidget):
     # ------------------------------------------------------------------ #
 
     def _on_start(self) -> None:
+        self._warned_time_unconfirmed = False
         mode = self._current_mode()
         if mode == _MODE_CW:
             if not self._start_cw_tlm():
@@ -1167,6 +1207,8 @@ class TelemetryTab(QWidget):
         callsign = str(fmt.get("callsign", ""))
         sat_name = str(fmt.get("name", f"NORAD {norad}"))
         ts = end if isinstance(end, datetime.datetime) else datetime.datetime.now(datetime.UTC)
+        reliable_fn = getattr(self._cw_tab, "signal_time_reliable", None)
+        reliable = bool(reliable_fn()) if callable(reliable_fn) else True
 
         result = decode_cw_frame(norad, text)
         if result is None:
@@ -1200,15 +1242,120 @@ class TelemetryTab(QWidget):
             telemetry_id=result.key,
             telemetry_label=result.label,
         )
+        log_id = self._persist_frame(tf, ts, reliable)
         self._append_row(
             callsign=callsign,
             sat_name=sat_name,
             data=f"[{result.key}] {result.hex_text}",
             norad=norad,
             ts=ts,
+            log_id=log_id,
         )
         self._update_decode_tab(tf)
-        self._persist_frame(tf, ts)
+        if log_id is not None:
+            self._auto_send_cw(norad, log_id)
+
+    # ------------------------------------------------------------------ #
+    # SatNOGS upload of CW frames (rules: comms.telemetry.cw_upload)
+    # ------------------------------------------------------------------ #
+
+    def _auto_send_cw(self, norad: int, log_id: int) -> None:
+        """Send a just-logged CW frame if the upload switch is on and a repeat confirms it."""
+        if not load_satnogs_upload_settings(self._conn).get("enabled"):
+            return
+        report = auto_send(self._conn, get_satnogs_uploader(), norad, log_id)
+        self._show_send_report(report, automatic=True)
+
+    def _selected_log_ids(self) -> list[int]:
+        ids: list[int] = []
+        selection = self._table.selectionModel()
+        for index in selection.selectedRows() if selection is not None else []:
+            item = self._table.item(index.row(), 0)
+            value = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+            if isinstance(value, int):
+                ids.append(value)
+        return ids
+
+    def _on_send_selected(self) -> None:
+        norad = self._active_norad()
+        ids = self._selected_log_ids()
+        if norad is None or not ids:
+            self._set_error(_("Select received CW frames in the table first."))
+            return
+        report = send_frames(
+            self._conn, get_satnogs_uploader(), norad, ids, force=True, require_repeat=False
+        )
+        self._show_send_report(report)
+
+    def _on_send_unsent(self) -> None:
+        norad = self._active_norad()
+        if norad is None:
+            self._set_error(_("Select a satellite first."))
+            return
+        frames = eligible_unsent(self._conn, norad)
+        if not frames:
+            self._lbl_status.setText(
+                _(
+                    "Nothing ready to send: a frame needs a second reception and a "
+                    "reliable time, and must not be sent already."
+                )
+            )
+            self._lbl_status.setStyleSheet("color: #aaa;")
+            return
+        question = _(
+            "Send {n} logged frame(s) ({m} different) of {name} to the SatNOGS DB?\n\n"
+            "Only frames received at least twice, with a reliable time, that were "
+            "not sent before are included."
+        ).format(
+            n=len(frames), m=len({f.raw_hex for f in frames}), name=self._selected_name or norad
+        )
+        answer = QMessageBox.question(self, _("Send to SatNOGS"), question)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        report = send_frames(
+            self._conn,
+            get_satnogs_uploader(),
+            norad,
+            [f.id for f in frames],
+            force=True,
+            require_repeat=True,
+        )
+        self._show_send_report(report)
+
+    def _show_send_report(self, report: SendReport, automatic: bool = False) -> None:
+        """Say what a send did in the status label. An automatic upload stays quiet
+        unless something was sent or the user needs to act."""
+        if report.blocker is not None:
+            missing = {
+                "no_api_key": _("API key"),
+                "no_callsign": _("callsign"),
+                "no_location": _("station location"),
+            }.get(report.blocker)
+            if missing is not None:
+                self._set_error(_("SatNOGS upload not possible — missing: ") + missing)
+            return
+        if automatic and not report.queued and not report.unreliable:
+            return
+        parts: list[str] = []
+        if report.queued:
+            parts.append(_("{n} queued for upload").format(n=report.queued))
+        if report.duplicates:
+            parts.append(_("{n} already sent").format(n=report.duplicates))
+        if report.waiting:
+            parts.append(_("{n} waiting for a second reception").format(n=report.waiting))
+        if report.unreliable:
+            parts.append(_("{n} skipped: recording start time not set").format(n=report.unreliable))
+        if report.unsupported:
+            parts.append(_("{n} without a SatNOGS format").format(n=report.unsupported))
+        text = "SatNOGS: " + (", ".join(parts) if parts else _("nothing to send"))
+        self._lbl_status.setText(text)
+        self._lbl_status.setStyleSheet(
+            "color: #27ae60;"
+            if report.queued
+            else "color: #e67e22;"
+            if report.unreliable
+            else "color: #aaa;"
+        )
 
     # ------------------------------------------------------------------ #
     # gr-satellites lifecycle
@@ -1302,6 +1449,7 @@ class TelemetryTab(QWidget):
             sat_name=sat_name or "—",
             data=data_text,
             norad=self._selected_norad,
+            ts=self._frame_time()[0],
         )
 
     def _on_gr_raw_frame(self, raw: bytes) -> None:
@@ -1316,8 +1464,8 @@ class TelemetryTab(QWidget):
         norad = self._gr_backend.started_norad
         if norad is None:
             return
-        now = datetime.datetime.now(datetime.UTC)
-        get_satnogs_uploader().submit(self._conn, raw, norad, now)
+        when, reliable = self._frame_time()
+        self._submit_raw_frame(raw, norad, when, reliable)
 
     # ------------------------------------------------------------------ #
     # AFSK lifecycle (Bell 202)
@@ -1390,19 +1538,49 @@ class TelemetryTab(QWidget):
             return
         norad = self._callsign_to_norad(frame.src)
         tf = decode_telemetry(frame.src, frame.payload, norad)
-        now = datetime.datetime.now(datetime.UTC)
+        when, reliable = self._frame_time()
         self._append_row(
             callsign=tf.callsign,
             sat_name=tf.satellite_name,
             data=tf.summary(),
             norad=tf.norad,
+            ts=when,
         )
         self._update_decode_tab(tf)
-        self._persist_frame(tf, now)
+        self._persist_frame(tf, when, reliable)
         # Forward the raw frame (full AX.25 frame, FCS already stripped by the
         # demodulator / KISS) to the SatNOGS DB. No-op unless the footer
         # toggle is on and callsign / location / API key are all set.
-        get_satnogs_uploader().submit(self._conn, raw, norad, now)
+        self._submit_raw_frame(raw, norad, when, reliable)
+
+    def _frame_time(self) -> tuple[datetime.datetime, bool]:
+        """(UTC time of the frame just decoded, time trustworthy?).
+
+        The wall clock live; for a played-back IQ recording the recording's start
+        time plus the playback position (comms.signal_clock). A recording whose
+        start time is only a placeholder gives an untrustworthy time.
+        """
+        return signal_time(self._sdr_pipeline)
+
+    def _submit_raw_frame(
+        self, raw: bytes, norad: int | None, when: datetime.datetime, reliable: bool
+    ) -> None:
+        """Queue *raw* for the SatNOGS DB with its real reception time.
+
+        A frame whose time is only a placeholder (a recording with no start time
+        yet) is not sent -- it would be published with a wrong time. The user is
+        told once per run.
+        """
+        if reliable:
+            get_satnogs_uploader().submit(self._conn, raw, norad, when)
+            return
+        if load_satnogs_upload_settings(self._conn).get("enabled") and not (
+            self._warned_time_unconfirmed
+        ):
+            self._warned_time_unconfirmed = True
+            self._set_error(
+                _("SatNOGS upload skipped: set the recording's start time in SDR Control first.")
+            )
 
     def _callsign_to_norad(self, callsign: str) -> int | None:
         call_upper = callsign.upper().split("-")[0]
@@ -1430,19 +1608,26 @@ class TelemetryTab(QWidget):
         norad: int | None,
         ts: datetime.datetime | None = None,
         dim: bool = False,
+        log_id: int | None = None,
     ) -> None:
         """Add a row to the Received Frames table.
 
-        *ts* is the time to show (UTC); the default is now. *dim* greys the row
-        out and leaves it out of the frame count (a rejected CW candidate).
+        *ts* is the time to show (UTC, with the date -- a played-back recording
+        can be from any day); the default is now. *dim* greys the row out and
+        leaves it out of the frame count (a rejected CW candidate). *log_id* is
+        the frame's ``telemetry_log`` id, kept on the row for "Send selected".
         """
         when = ts if ts is not None else datetime.datetime.now(datetime.UTC)
         row = self._table.rowCount()
         self._table.insertRow(row)
-        for column, text in enumerate((when.strftime("%H:%M:%S"), callsign, sat_name, data)):
+        for column, text in enumerate(
+            (when.strftime("%Y-%m-%d %H:%M:%S"), callsign, sat_name, data)
+        ):
             item = QTableWidgetItem(text)
             if dim:
                 item.setForeground(QBrush(QColor("#888888")))
+            if column == 0 and log_id is not None:
+                item.setData(Qt.ItemDataRole.UserRole, log_id)
             self._table.setItem(row, column, item)
         self._table.scrollToBottom()
         if not dim:
@@ -1535,21 +1720,27 @@ class TelemetryTab(QWidget):
                 table.setItem(row, 1, item)
             item.setText(text)
 
-    def _persist_frame(self, tf: TelemetryFrame, ts: datetime.datetime) -> None:
+    def _persist_frame(
+        self, tf: TelemetryFrame, ts: datetime.datetime, reliable: bool = True
+    ) -> int | None:
+        """Log *tf*; returns its ``telemetry_log`` id. *reliable* is False when *ts*
+        comes from a placeholder recording start time (such frames are never sent)."""
         if not hasattr(self._conn, "execute"):
-            return
+            return None
         parsed = (
             json.dumps({f.name: {"value": f.scaled_value, "unit": f.unit} for f in tf.fields})
             if tf.fields
             else None
         )
-        self._conn.execute(
+        cursor = self._conn.execute(
             """INSERT INTO telemetry_log
-               (received_at, norad_cat_id, callsign, raw_hex, parsed_json)
-               VALUES (?, ?, ?, ?, ?)""",
-            (ts.isoformat(), tf.norad, tf.callsign, tf.raw_hex, parsed),
+               (received_at, norad_cat_id, callsign, raw_hex, parsed_json, time_reliable)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (ts.isoformat(), tf.norad, tf.callsign, tf.raw_hex, parsed, int(reliable)),
         )
         self._conn.commit()
+        row_id = cursor.lastrowid
+        return int(row_id) if row_id is not None else None
 
     # ------------------------------------------------------------------ #
     # Status helpers
