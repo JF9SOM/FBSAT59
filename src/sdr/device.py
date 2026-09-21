@@ -232,6 +232,22 @@ _SW_AGC_ATTACK_COOLDOWN_S: float = 0.2
 # ---------------------------------------------------------------------------
 
 
+def _installed_bundle_dir() -> Path | None:
+    """Return the installed build's ``_internal`` dir on a Windows source checkout.
+
+    A source checkout ships no native DLLs, so ``src/main.py`` borrows the SoapySDR
+    bundle of an installed FBSAT59 build (same CPython ABI).  The ctypes bypass
+    devices need the same directory for ``rtlsdr.dll`` / ``hackrf.dll``.  Returns
+    None in the frozen build (it uses ``_MEIPASS``) and on other platforms.
+    """
+    import os as _os
+
+    if sys.platform != "win32" or getattr(sys, "frozen", False):
+        return None
+    internal = Path(_os.environ.get("PROGRAMFILES", r"C:\Program Files")) / "FBSAT59" / "_internal"
+    return internal if internal.is_dir() else None
+
+
 def _find_rtlsdr_dll() -> str | None:
     """Locate rtlsdr.dll on Windows, returning the full path or None."""
     search_dirs: list[str] = []
@@ -244,6 +260,9 @@ def _find_rtlsdr_dll() -> str | None:
     plugin_path = __import__("os").environ.get("SOAPY_SDR_PLUGIN_PATH", "")
     if plugin_path:
         search_dirs.append(str(Path(plugin_path).parent.parent / "bin"))
+    installed = _installed_bundle_dir()
+    if installed is not None:
+        search_dirs.append(str(installed))
 
     logger.info("[RTL-SDR diag] rtlsdr.dll search dirs: %s", search_dirs)
     for d in search_dirs:
@@ -263,9 +282,13 @@ def _find_hackrf_dll() -> str | None:
       1. PyInstaller _MEIPASS (_internal/)
       2. soapy_modules/ directory (where HackRFSupport.dll lives)
       3. SOAPY_SDR_PLUGIN_PATH parent (development environment)
+      4. The installed build's _internal/ (Windows source checkout, see
+         _installed_bundle_dir)
       Tries exact name 'hackrf.dll' first, then glob 'hackrf*.dll' and
       'libhackrf*.dll' to handle versioned or differently-named DLLs from
-      conda-forge (e.g. libhackrf.dll, hackrf-0.dll).
+      conda-forge (e.g. libhackrf.dll, hackrf-0.dll).  The SoapySDR plugin
+      'HackRFSupport.dll' also matches the glob on Windows (case-insensitive) but
+      is not libhackrf (no hackrf_init), so it is skipped.
     """
     import os as _os
 
@@ -280,6 +303,9 @@ def _find_hackrf_dll() -> str | None:
         pp = Path(plugin_path)
         search_dirs.append(pp.parent)  # _MEIPASS in dev
         search_dirs.append(pp)  # soapy_modules/ itself in dev
+    installed = _installed_bundle_dir()
+    if installed is not None:
+        search_dirs.append(installed)
 
     # Exact-name candidates first (most common), then versioned/prefixed variants
     name_patterns = ["hackrf.dll", "hackrf-0.dll", "libhackrf.dll", "libhackrf-0.dll"]
@@ -293,6 +319,8 @@ def _find_hackrf_dll() -> str | None:
                 return str(candidate)
         # Glob fallback: catch any hackrf*.dll not matched above
         for match in sorted(d.glob("hackrf*.dll")):
+            if match.name.lower().endswith("support.dll"):
+                continue  # SoapySDR plugin (HackRFSupport.dll), not libhackrf
             logger.info("[HackRF direct] hackrf.dll found via glob: %s", match)
             return str(match)
 
