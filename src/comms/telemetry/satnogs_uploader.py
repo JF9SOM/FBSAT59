@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 # Production SatNOGS DB telemetry endpoint (SiDS). The db-dev staging server
 # exists only to test the SatNOGS platform itself and must not be used.
 SATNOGS_TELEMETRY_URL = "https://db.satnogs.org/api/telemetry/"
+SATNOGS_SATELLITES_URL = "https://db.satnogs.org/api/satellites/"
 
 SATNOGS_UPLOAD_SETTINGS_KEY = "satnogs_upload_settings"
 
@@ -54,6 +55,10 @@ PostFn = Callable[[str, dict[str, str]], tuple[int, str]]
 # (accepted, http_status, body). http_status is 0 when there was no HTTP answer at
 # all (network error); body is then the error text.
 ResultFn = Callable[[bool, int, str], None]
+
+# (api_key, norad_id) -> does the SatNOGS DB list a satellite with this norad_cat_id?
+# None = could not be determined (network error).
+LookupFn = Callable[[str, int], bool | None]
 
 
 # --------------------------------------------------------------------------- #
@@ -125,6 +130,27 @@ def _client_version() -> str:
         return "FBSAT59"
 
 
+def satnogs_norad_candidates(conn: sqlite3.Connection, norad: int) -> list[int]:
+    """NORAD ids the SatNOGS DB may know satellite *norad* by, best first.
+
+    A satellite this app has migrated from a provisional (>= 90000) id to its real
+    one is often still filed under the provisional id in the SatNOGS DB;
+    ``satellites.satnogs_source_id`` records that id. The real id comes last.
+    """
+    candidates: list[int] = []
+    try:
+        row = conn.execute(
+            "SELECT satnogs_source_id FROM satellites WHERE norad_cat_id = ?", (norad,)
+        ).fetchone()
+    except sqlite3.Error:
+        row = None
+    if row is not None and row[0]:
+        candidates.append(int(row[0]))
+    if norad not in candidates:
+        candidates.append(norad)
+    return candidates
+
+
 def upload_blocker(conn: sqlite3.Connection, force: bool = False) -> str | None:
     """Why an upload can not be made right now, or None if it can.
 
@@ -174,7 +200,7 @@ def build_submission(
 
     ts = received_at.astimezone(UTC)
     fields = {
-        "noradID": str(norad),
+        "noradID": str(satnogs_norad_candidates(conn, norad)[0]),
         "source": callsign.upper(),
         "locator": "longLat",
         "longitude": f"{abs(lon):.4f}{'E' if lon >= 0 else 'W'}",
@@ -201,6 +227,23 @@ def _http_post(api_key: str, fields: dict[str, str]) -> tuple[int, str]:
     return resp.status_code, resp.text
 
 
+def _http_satellite_exists(api_key: str, norad: int) -> bool | None:
+    """Does the SatNOGS DB list a satellite with this norad_cat_id? (read only)"""
+    try:
+        resp = httpx.get(
+            SATNOGS_SATELLITES_URL,
+            params={"norad_cat_id": str(norad), "format": "json"},
+            headers={"Authorization": f"Token {api_key}"},
+            timeout=_HTTP_TIMEOUT_S,
+        )
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+    except (httpx.HTTPError, ValueError):
+        return None
+    return isinstance(data, list) and len(data) > 0
+
+
 class SatnogsUploader:
     """Background uploader of decoded telemetry frames to the SatNOGS DB.
 
@@ -211,10 +254,16 @@ class SatnogsUploader:
     nothing but the POST -- so no SQLite handle is ever touched off-thread.
     """
 
-    def __init__(self, post_fn: PostFn | None = None) -> None:
+    def __init__(self, post_fn: PostFn | None = None, lookup_fn: LookupFn | None = None) -> None:
         self._post: PostFn = post_fn or _http_post
-        self._queue: queue.Queue[tuple[str, dict[str, str], ResultFn | None] | None] = queue.Queue(
-            maxsize=_QUEUE_MAXSIZE
+        # The satellite check needs the network; a uploader built with a fake
+        # post_fn (tests) skips it unless a lookup_fn is given too.
+        self._lookup: LookupFn | None = lookup_fn or (
+            _http_satellite_exists if post_fn is None else None
+        )
+        self._known_ids: dict[tuple[int, ...], int] = {}
+        self._queue: queue.Queue[tuple[str, dict[str, str], ResultFn | None, list[int]] | None] = (
+            queue.Queue(maxsize=_QUEUE_MAXSIZE)
         )
         self._thread = threading.Thread(target=self._run, name="SatnogsUploader", daemon=True)
         self._thread.start()
@@ -242,7 +291,7 @@ class SatnogsUploader:
         if built is None:
             return False
         try:
-            self._queue.put_nowait((*built, on_result))
+            self._queue.put_nowait((*built, on_result, satnogs_norad_candidates(conn, norad)))
             return True
         except queue.Full:
             logger.warning("SatNOGS upload queue full -- dropping frame for NORAD %s", norad)
@@ -261,7 +310,13 @@ class SatnogsUploader:
             item = self._queue.get()
             if item is None:
                 break
-            api_key, fields, on_result = item
+            api_key, fields, on_result, candidates = item
+            resolved = self._resolve_norad(api_key, candidates)
+            if isinstance(resolved, tuple):  # not sent: (status, why)
+                logger.warning("SatNOGS upload not sent: %s", resolved[1])
+                self._report(on_result, False, resolved[0], resolved[1])
+                continue
+            fields["noradID"] = str(resolved)
             try:
                 status, body = self._post(api_key, fields)
             except Exception as exc:  # noqa: BLE001
@@ -282,6 +337,36 @@ class SatnogsUploader:
                     body.strip()[:300],
                 )
             self._report(on_result, accepted, status, body)
+
+    def _resolve_norad(self, api_key: str, candidates: list[int]) -> int | tuple[int, str]:
+        """The NORAD id to submit under, or (status, text) saying why the frame is not sent.
+
+        The SatNOGS DB looks a submission's noradID up by norad_cat_id and, if it
+        finds no such satellite, *creates a new satellite entry* for it -- so a
+        frame filed under an id the DB does not know would neither reach the real
+        satellite nor leave the DB clean. Each candidate is therefore checked
+        (read only, once per run) and the first one the DB lists is used.
+        """
+        if self._lookup is None:
+            return candidates[0]
+        key = tuple(candidates)
+        if key in self._known_ids:
+            return self._known_ids[key]
+        unknown = False
+        for norad in candidates:
+            found = self._lookup(api_key, norad)
+            if found:
+                self._known_ids[key] = norad
+                return norad
+            if found is None:
+                unknown = True
+        ids = "/".join(str(n) for n in candidates)
+        if unknown:
+            return 0, f"could not check whether the SatNOGS DB lists NORAD {ids}; not sent"
+        return 404, (
+            f"the SatNOGS DB does not list NORAD {ids}; not sent "
+            "(it would create a new satellite entry there)"
+        )
 
     @staticmethod
     def _report(on_result: ResultFn | None, accepted: bool, status: int, body: str) -> None:

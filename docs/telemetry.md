@@ -753,7 +753,7 @@ WAV には時刻情報が無い。`IQRecorder` は `{norad}_{name}_{YYYYMMDDTHHM
 `satnogs`（`callsign`・`beacon_type`）、組み立ては `cw_frames.build_satnogs_frame()`。既存の
 `SatnogsUploader`（SiDS、`timestamp` はミリ秒付き UTC）でそのまま送る。**SatNOGS が実際に
 受理するかは、実際に送った結果で確認していない**（既存データの読み取り API は認証が要る）ので、
-最初は1件だけ手で試すこと。
+最初は1件だけ手で試すこと（形式は、運用者の局が既に投稿しているフレームと同じことを確認済み）。
 
 CW にはCRCが無く、検査を通っても桁を間違えていることがある（HK3 の先頭桁 `1`/`0`）。公開DBを
 汚さないため、次の規則で送る:
@@ -781,6 +781,27 @@ CW にはCRCが無く、検査を通っても桁を間違えていることが�
 - `telemetry_log` に `satnogs_uploaded_at` と `time_reliable` 列を追加（`ensure_columns()`、既存 DB へは
   `ALTER TABLE`）。`SatnogsUploader.submit()` / `build_submission()` に `force`、`upload_blocker()`
   （送れない理由: `disabled`/`no_api_key`/`no_callsign`/`no_location`）を追加。
+
+### SatNOGS DB が衛星を登録している NORAD ID（2026-09-21）
+
+SatNOGS DB の受信側（`satnogs-db` の `TelemetryViewSet.create`）は、投稿の `noradID` を
+`Satellite.objects.get(satellite_entry__norad_cat_id=noradID)` で探し、**見つからなければ
+「New Satellite」という衛星エントリを新規作成する**（`norad_follow_id` では探さない）。
+ARICA-2 は SatNOGS DB で **NORAD 98329**（`norad_follow_id`=68796）として登録されていて、68796 では
+見つからない。そのまま 68796 で送ると、ARICA-2 に付かないうえ、SatNOGS DB に余計な衛星を作ってしまう。
+
+- 本アプリでは、実 ID へ移行済みの衛星の `satellites.satnogs_source_id` に SatNOGS 側の ID が入っている
+  （68796 → 98329）。`satnogs_norad_candidates()` が「`satnogs_source_id`、実 ID」の順の候補を返す。
+- `SatnogsUploader` はワーカースレッドで、送る前に候補を**読み取りで照会**して
+  （`GET /api/satellites/?norad_cat_id=…`、要 API キー、衛星ごとに1回・実行中は記憶）、SatNOGS DB が
+  実際に載せている最初の ID で `noradID` を決める。**どれも載っていなければ送らず**、
+  `SatNOGS DB does not list NORAD …` と結果に返す（HTTP 404 扱い）。照会自体ができないときも送らない。
+  移行が進んで 98329 が無くなり 68796 が載った場合は、自動で 68796 に切り替わる。
+- これは AX.25 / gr-satellites の送信にも同じく効く（仮 ID から実 ID へ移行済みの衛星は同じ危険があった）。
+- ドライラン（POST を記録するだけの偽物で実 SatNOGS DB を照会）で、ARICA-2 の HK1 は
+  `noradID=98329`・`frame=61726963612d32012ffe8594eb880124`（`arica-2`＋`01`＋16バイト）になることを確認済み。
+  SatNOGS DB には運用者の局が同じ形式（`arica-2`＋1/2/3＋フレーム、16/14/15バイト）のフレームを
+  既に投稿していて、DB 側でデコードされている。
 
 ### テスト
 

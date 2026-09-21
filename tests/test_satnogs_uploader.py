@@ -25,6 +25,7 @@ from comms.telemetry.satnogs_uploader import (
     get_station_callsign,
     get_station_latlon,
     load_satnogs_upload_settings,
+    satnogs_norad_candidates,
     save_satnogs_upload_settings,
     upload_blocker,
 )
@@ -419,3 +420,135 @@ def test_a_failing_result_callback_does_not_stop_the_worker(
     assert up.submit(db, _FRAME, 25544, _TS, on_result=broken)
     assert up.submit(db, _FRAME, 25544, _TS)
     assert _wait_for(lambda: len(post.calls) == 2)
+
+
+# --------------------------------------------------------------------------- #
+# NORAD id the SatNOGS DB knows the satellite by (satellites.satnogs_source_id)
+# --------------------------------------------------------------------------- #
+
+
+def _add_satellite(db: sqlite3.Connection, norad: int, source_id: int | None) -> None:
+    db.execute(
+        "INSERT INTO satellites (norad_cat_id, name, satnogs_source_id) VALUES (?, 'ARICA-2', ?)",
+        (norad, source_id),
+    )
+    db.commit()
+
+
+class _FakeLookup:
+    """Which NORAD ids the pretend SatNOGS DB lists (None entry = network error)."""
+
+    def __init__(self, listed: dict[int, bool | None]) -> None:
+        self.listed = listed
+        self.calls: list[int] = []
+
+    def __call__(self, api_key: str, norad: int) -> bool | None:
+        self.calls.append(norad)
+        return self.listed.get(norad, False)
+
+
+def test_candidates_put_the_id_satnogs_files_the_satellite_under_first(
+    db: sqlite3.Connection,
+) -> None:
+    _add_satellite(db, 68796, 98329)
+    assert satnogs_norad_candidates(db, 68796) == [98329, 68796]
+
+
+def test_candidates_are_just_the_norad_without_a_source_id(db: sqlite3.Connection) -> None:
+    _add_satellite(db, 25544, None)
+    assert satnogs_norad_candidates(db, 25544) == [25544]
+    assert satnogs_norad_candidates(db, 99999) == [99999]  # not in the DB at all
+
+
+def test_the_submission_form_uses_the_satnogs_id(db: sqlite3.Connection) -> None:
+    _configure(db)
+    _add_satellite(db, 68796, 98329)
+    built = build_submission(db, _FRAME, 68796, _TS)
+    assert built is not None
+    assert built[1]["noradID"] == "98329"
+
+
+def test_the_worker_posts_under_the_id_the_satnogs_db_lists(
+    db: sqlite3.Connection, uploader_factory: list[SatnogsUploader]
+) -> None:
+    _configure(db)
+    _add_satellite(db, 68796, 98329)
+    post = _FakePost()
+    lookup = _FakeLookup({98329: True, 68796: False})
+    up = SatnogsUploader(post_fn=post, lookup_fn=lookup)
+    uploader_factory.append(up)
+
+    assert up.submit(db, _FRAME, 68796, _TS)
+    assert post.called.wait(timeout=2.0)
+    assert post.calls[0][1]["noradID"] == "98329"
+
+
+def test_after_a_migration_the_real_id_is_used_when_the_old_one_is_gone(
+    db: sqlite3.Connection, uploader_factory: list[SatnogsUploader]
+) -> None:
+    _configure(db)
+    _add_satellite(db, 68796, 98329)  # our record still points at the old id ...
+    post = _FakePost()
+    up = SatnogsUploader(post_fn=post, lookup_fn=_FakeLookup({98329: False, 68796: True}))
+    uploader_factory.append(up)  # ... but the SatNOGS DB has moved on to the real one
+
+    assert up.submit(db, _FRAME, 68796, _TS)
+    assert post.called.wait(timeout=2.0)
+    assert post.calls[0][1]["noradID"] == "68796"
+
+
+def test_a_satellite_the_satnogs_db_does_not_list_is_not_sent(
+    db: sqlite3.Connection, uploader_factory: list[SatnogsUploader]
+) -> None:
+    """The SatNOGS DB would create a new satellite entry for an unknown id."""
+    _configure(db)
+    _add_satellite(db, 68796, 98329)
+    post = _FakePost()
+    up = SatnogsUploader(post_fn=post, lookup_fn=_FakeLookup({}))
+    uploader_factory.append(up)
+    results: list[tuple[bool, int, str]] = []
+    done = threading.Event()
+
+    def on_result(accepted: bool, status: int, body: str) -> None:
+        results.append((accepted, status, body))
+        done.set()
+
+    assert up.submit(db, _FRAME, 68796, _TS, on_result=on_result)
+    assert done.wait(timeout=2.0)
+
+    assert post.calls == []
+    accepted, status, body = results[0]
+    assert (accepted, status) == (False, 404)
+    assert "does not list NORAD 98329/68796" in body
+
+
+def test_a_failed_check_does_not_send_either(
+    db: sqlite3.Connection, uploader_factory: list[SatnogsUploader]
+) -> None:
+    _configure(db)
+    post = _FakePost()
+    up = SatnogsUploader(post_fn=post, lookup_fn=_FakeLookup({43803: None}))
+    uploader_factory.append(up)
+    results: list[tuple[bool, int, str]] = []
+    done = threading.Event()
+    up.submit(
+        db, _FRAME, 43803, _TS, on_result=lambda a, s, b: (results.append((a, s, b)), done.set())
+    )
+    assert done.wait(timeout=2.0)
+    assert post.calls == []
+    assert results[0][:2] == (False, 0)
+
+
+def test_a_found_id_is_remembered_so_the_check_is_made_once(
+    db: sqlite3.Connection, uploader_factory: list[SatnogsUploader]
+) -> None:
+    _configure(db)
+    post = _FakePost()
+    lookup = _FakeLookup({43803: True})
+    up = SatnogsUploader(post_fn=post, lookup_fn=lookup)
+    uploader_factory.append(up)
+
+    assert up.submit(db, _FRAME, 43803, _TS)
+    assert up.submit(db, _FRAME, 43803, _TS)
+    assert _wait_for(lambda: len(post.calls) == 2)
+    assert lookup.calls == [43803]
