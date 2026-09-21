@@ -43,8 +43,11 @@ FrameResultFn = Callable[[int, bool, int, str], None]
 MIN_REPEAT_GAP_S = 20.0
 # ... and no further apart than this (a frame that recurs a day later confirms nothing).
 REPEAT_WINDOW_S = 30 * 60.0
-# The same frame this close in time to one already sent is the same reception replayed.
-DUPLICATE_WINDOW_S = 10.0
+# The same frame this close in time to one already sent is the same reception replayed. Wide enough
+# for the ~17 s a CW frame lasts (a frame first logged and sent with its end time, then decoded
+# again and stamped with its start) and still under the 41.5 s the beacon takes between two
+# transmissions of the same item.
+DUPLICATE_WINDOW_S = 30.0
 
 
 def ensure_columns(conn: sqlite3.Connection) -> None:

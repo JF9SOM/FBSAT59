@@ -1218,7 +1218,11 @@ class TelemetryTab(QWidget):
         fmt = load_format(norad) or {}
         callsign = str(fmt.get("callsign", ""))
         sat_name = str(fmt.get("name", f"NORAD {norad}"))
-        ts = end if isinstance(end, datetime.datetime) else datetime.datetime.now(datetime.UTC)
+        # A frame is timed by when its transmission *started*: that is how the operator's
+        # own station stamps its ARICA-2 frames on the SatNOGS DB (a CW frame lasts
+        # ~17 s, so the end would be off by that much from theirs). The same time is shown,
+        # logged and uploaded.
+        ts = start if isinstance(start, datetime.datetime) else datetime.datetime.now(datetime.UTC)
         reliable_fn = getattr(self._cw_tab, "signal_time_reliable", None)
         reliable = bool(reliable_fn()) if callable(reliable_fn) else True
 

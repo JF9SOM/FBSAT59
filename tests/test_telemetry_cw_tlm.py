@@ -226,7 +226,9 @@ class TestReceivedBlocks:
 
         assert tab._table.rowCount() == 1
         item = lambda col: tab._table.item(0, col).text()  # noqa: E731
-        assert item(0) == "2026-09-20 07:01:48"  # the block's end time, UTC, with the date
+        assert (
+            item(0) == "2026-09-20 07:01:31"
+        )  # the block's START (transmission start), UTC, with the date
         assert item(1) == "JS1YSD"
         assert item(2) == "ARICA-2"
         assert item(3) == f"[HK1] {HK1}"
@@ -236,7 +238,7 @@ class TestReceivedBlocks:
         row = cw_conn.execute(
             "SELECT received_at, norad_cat_id, raw_hex FROM telemetry_log"
         ).fetchone()
-        assert row["received_at"].startswith("2026-09-20T07:01:48")
+        assert row["received_at"].startswith("2026-09-20T07:01:31")
         assert (row["norad_cat_id"], row["raw_hex"]) == (68796, HK1)
 
     def test_hk3_updates_its_own_tab(self, qtbot: QtBot, cw_conn: sqlite3.Connection) -> None:
@@ -447,7 +449,7 @@ class TestDateInTheTable:
     ) -> None:
         tab = _running_tab(qtbot, cw_conn)
         tab._on_cw_block(HK1, START, END)
-        assert tab._table.item(0, 0).text() == "2026-09-20 07:01:48"
+        assert tab._table.item(0, 0).text() == "2026-09-20 07:01:31"
 
     def test_the_csv_export_has_the_date(
         self,
@@ -465,7 +467,7 @@ class TestDateInTheTable:
 
         tab._on_export_csv()
 
-        assert "2026-09-20 07:01:48" in target.read_text(encoding="utf-8")
+        assert "2026-09-20 07:01:31" in target.read_text(encoding="utf-8")
 
 
 class TestClockOfARecording:
@@ -524,9 +526,9 @@ class TestAutomaticUpload:
         tab._on_cw_block(HK1, START, END)
         assert uploader.sent == []  # one reading: could be a mis-read digit
 
-        tab._on_cw_block(HK1, START, END + timedelta(seconds=125))
+        tab._on_cw_block(HK1, START + timedelta(seconds=125), END + timedelta(seconds=125))
         assert [s[0] for s in uploader.sent] == [b"arica-2\x01" + bytes.fromhex(HK1)] * 2
-        assert [s[2] for s in uploader.sent] == [END, END + timedelta(seconds=125)]
+        assert [s[2] for s in uploader.sent] == [START, START + timedelta(seconds=125)]
         assert "2 queued" in tab._lbl_status.text()
 
     def test_nothing_is_sent_with_the_switch_off(
@@ -535,7 +537,7 @@ class TestAutomaticUpload:
         _configure_upload(cw_conn, enabled=False)
         tab = _running_with(qtbot, cw_conn)
         tab._on_cw_block(HK1, START, END)
-        tab._on_cw_block(HK1, START, END + timedelta(seconds=125))
+        tab._on_cw_block(HK1, START + timedelta(seconds=125), END + timedelta(seconds=125))
         assert uploader.sent == []
 
     def test_a_placeholder_time_is_logged_as_unreliable_and_not_sent(
@@ -544,7 +546,7 @@ class TestAutomaticUpload:
         _configure_upload(cw_conn)
         tab = _running_with(qtbot, cw_conn, reliable=False)
         tab._on_cw_block(HK1, START, END)
-        tab._on_cw_block(HK1, START, END + timedelta(seconds=125))
+        tab._on_cw_block(HK1, START + timedelta(seconds=125), END + timedelta(seconds=125))
 
         assert uploader.sent == []
         rows = cw_conn.execute("SELECT time_reliable FROM telemetry_log").fetchall()
@@ -575,7 +577,7 @@ class TestManualSend:
 
         ((raw, norad, when, forced),) = uploader.sent
         assert raw == b"arica-2\x01" + bytes.fromhex(HK1)
-        assert (norad, when, forced) == (68796, END, True)
+        assert (norad, when, forced) == (68796, START, True)
         assert "1 queued" in tab._lbl_status.text()
 
     def test_send_selected_needs_a_selection(
@@ -614,8 +616,10 @@ class TestManualSend:
         _configure_upload(cw_conn, enabled=False)
         tab = _running_with(qtbot, cw_conn)
         tab._on_cw_block(HK1, START, END)
-        tab._on_cw_block(HK1, START, END + timedelta(seconds=125))
-        tab._on_cw_block(HK3, START, END + timedelta(seconds=300))  # single reading
+        tab._on_cw_block(HK1, START + timedelta(seconds=125), END + timedelta(seconds=125))
+        tab._on_cw_block(
+            HK3, START + timedelta(seconds=300), END + timedelta(seconds=300)
+        )  # single reading
         assert uploader.sent == []
         asked: list[str] = []
 
@@ -644,7 +648,7 @@ class TestManualSend:
         _configure_upload(cw_conn, enabled=False)
         tab = _running_with(qtbot, cw_conn)
         tab._on_cw_block(HK1, START, END)
-        tab._on_cw_block(HK1, START, END + timedelta(seconds=125))
+        tab._on_cw_block(HK1, START + timedelta(seconds=125), END + timedelta(seconds=125))
         monkeypatch.setattr(
             "ui.telemetry_tab.QMessageBox.question", lambda *a, **k: QMessageBox.StandardButton.No
         )

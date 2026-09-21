@@ -343,3 +343,17 @@ class TestOneTimeRepair:
 
     def test_without_the_tables_it_does_nothing(self) -> None:
         reset_unconfirmed_marks(sqlite3.connect(":memory:"))
+
+
+def test_a_frame_first_sent_with_its_end_time_is_not_sent_again_with_its_start_time(
+    conn: sqlite3.Connection,
+) -> None:
+    """The first version stamped a ~17 s CW frame with its end; now the start is used.
+    Decoding the same recording again must not publish the frame a second time."""
+    _log(conn, HK1, T0 + timedelta(seconds=17), uploaded=True)  # sent with the end time
+    again = _log(conn, HK1, T0)  # the same transmission, now stamped with its start
+    up = _FakeUploader()
+
+    report = send_frames(conn, up, ARICA2, [again], force=True, require_repeat=False)  # type: ignore[arg-type]
+
+    assert (report.queued, report.duplicates) == (0, 1)
