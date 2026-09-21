@@ -46,11 +46,23 @@ PROVISIONAL_NORAD_MIN = 90000
 
 # UDP port used to send IQ from the SDR pipeline to gr_satellites
 _UDP_PORT = 7356
+# Payload of one UDP datagram carrying IQ. macOS refuses loopback datagrams larger than
+# net.inet.udp.maxdgram (9216 bytes by default) with EMSGSIZE; the send error is swallowed,
+# so 32 KiB datagrams meant gr_satellites never received a single sample on macOS. A whole
+# number of complex64 samples (8 bytes each), and well below every platform's limit.
+_UDP_CHUNK_BYTES = 8192
 
 # How long to wait for gr_satellites' --kiss_server to accept a connection
 # after Popen returns (the subprocess needs a moment to bind it).
 _KISS_CONNECT_RETRY_INTERVAL_S = 0.2
 _KISS_CONNECT_RETRIES = 15  # ~3s total
+# gr_satellites prints one decoded frame as a burst of lines; once no line has come for
+# this long the frame's block is complete (see GrSatellitesBackend._read_stdout()).
+_STDOUT_BLOCK_IDLE_S = 0.3
+
+# How long recv() waits before the reader looks at its stop flag again. A quiet
+# link is normal (frames are sparse), so a timeout is not an error.
+_KISS_RECV_TIMEOUT_S = 0.5
 
 # Cache of "does this argv_prefix's gr_satellites support --kiss_server?",
 # keyed by the resolved command (bundled python+script, or system
@@ -83,6 +95,38 @@ def _supports_kiss_server(argv_prefix: list[str], env: dict[str, str]) -> bool:
     except (OSError, subprocess.TimeoutExpired):
         supported = False
     _kiss_server_supported_cache[key] = supported
+    return supported
+
+
+# Same idea for --udp_raw (see _supports_udp_raw()).
+_udp_raw_supported_cache: dict[tuple[str, ...], bool] = {}
+
+
+def _supports_udp_raw(argv_prefix: list[str], env: dict[str, str]) -> bool:
+    """Probe whether this gr_satellites build has --udp_raw.
+
+    Without it, ``--udp`` expects *16-bit integer* samples; the SDR pipeline
+    sends complex64, which gr_satellites then misreads as noise, so nothing is
+    ever decoded. With it, ``--udp`` takes raw float32/complex64 (``--iq``).
+    Probed once per resolved command, like --kiss_server.
+    """
+    key = tuple(argv_prefix)
+    cached = _udp_raw_supported_cache.get(key)
+    if cached is not None:
+        return cached
+    supported = False
+    try:
+        result = subprocess.run(  # noqa: S603
+            [*argv_prefix, "--help"],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=10,
+        )
+        supported = "--udp_raw" in (result.stdout + result.stderr)
+    except (OSError, subprocess.TimeoutExpired):
+        supported = False
+    _udp_raw_supported_cache[key] = supported
     return supported
 
 
@@ -234,10 +278,9 @@ class _UdpIqForwarder:
         if not self._active:
             return
         data = samples.view(np.float32).tobytes()
-        chunk = 32768
-        for i in range(0, len(data), chunk):
+        for i in range(0, len(data), _UDP_CHUNK_BYTES):
             with contextlib.suppress(OSError):
-                self._sock.sendto(data[i : i + chunk], ("127.0.0.1", self._port))
+                self._sock.sendto(data[i : i + _UDP_CHUNK_BYTES], ("127.0.0.1", self._port))
 
     def close(self) -> None:
         self._active = False
@@ -286,10 +329,15 @@ class _KissFrameReader(threading.Thread):
         if sock is None:
             return
         self._sock = sock
+        # create_connection(timeout=1.0) left a 1 s timeout on the socket; without this
+        # the first quiet second ended the loop below and closed the connection.
+        sock.settimeout(_KISS_RECV_TIMEOUT_S)
         buf = bytearray()
         while not self._stop_event.is_set():
             try:
                 chunk = sock.recv(4096)
+            except TimeoutError:
+                continue  # nothing decoded lately: keep listening
             except OSError:
                 break
             if not chunk:
@@ -391,6 +439,11 @@ class GrSatellitesBackend(QObject):
             # no such workaround.
             env["PYTHONPATH"] = _GR_PYTHONPATH + os.pathsep + env.get("PYTHONPATH", "")
 
+        # gr_satellites is a Python program whose stdout is a pipe here, so Python block-buffers
+        # it: a decoded frame's text only appears once ~8 KiB have accumulated (or at exit),
+        # i.e. with sparse frames the table would not show them.
+        env["PYTHONUNBUFFERED"] = "1"
+
         self._kiss_supported = _supports_kiss_server(argv_prefix, env)
         kiss_port: int | None = None
         if self._kiss_supported:
@@ -406,6 +459,10 @@ class GrSatellitesBackend(QObject):
             "--samp_rate",
             str(samp_rate),
         ]
+        if _supports_udp_raw(argv_prefix, env):
+            # The pipeline sends complex64; without --udp_raw gr_satellites reads
+            # --udp input as int16 and decodes nothing.
+            cmd.append("--udp_raw")
         if kiss_port is not None:
             cmd += ["--kiss_server", str(kiss_port), "--kiss_server_address", "127.0.0.1"]
 
@@ -523,17 +580,43 @@ class GrSatellitesBackend(QObject):
             return
         gr_logger = get_gr_satellites_logger()
         buf: list[str] = []
+        lock = threading.Lock()
+        idle: threading.Timer | None = None
+
+        def flush() -> None:
+            with lock:
+                if not buf:
+                    return
+                block = list(buf)
+                buf.clear()
+            # Only a decoded frame is a table row. gr_satellites' own warnings and
+            # progress messages ("udp_source :warning: ...") stay in gr_satellites.log.
+            if any(line.startswith("-> Packet from") for line in block):
+                self.telemetry_received.emit("\n".join(block))
+
         for raw_line in self._proc.stdout:
             line = raw_line.rstrip()
             gr_logger.info(line)
+            if idle is not None:
+                idle.cancel()
             if not line:
-                if buf:
-                    self.telemetry_received.emit("\n".join(buf))
-                    buf = []
-            else:
+                flush()
+                continue
+            # A frame's text is not followed by a blank line in every gr_satellites build
+            # (the one bundled here prints none), so the next frame's "-> Packet from"
+            # heading also ends the previous block ...
+            if line.startswith("-> Packet from"):
+                flush()
+            with lock:
                 buf.append(line)
-        if buf:
-            self.telemetry_received.emit("\n".join(buf))
+            # ... and a block is sent once the output goes quiet, so the newest frame
+            # shows up when it arrives instead of when the next one does.
+            idle = threading.Timer(_STDOUT_BLOCK_IDLE_S, flush)
+            idle.daemon = True
+            idle.start()
+        if idle is not None:
+            idle.cancel()
+        flush()
 
     def _read_stderr(self) -> None:
         """Read gr_satellites stderr and mirror it to gr_satellites.log.

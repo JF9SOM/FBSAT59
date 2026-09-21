@@ -12,11 +12,29 @@ from __future__ import annotations
 
 import socket
 import subprocess
+import threading
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import numpy as np
+import pytest
+from PySide6.QtCore import Qt
+
 import comms.telemetry.gr_satellites_backend as backend
+
+# The real probe, kept before the fixture below replaces it.
+_REAL_SUPPORTS_UDP_RAW = backend._supports_udp_raw
+
+
+@pytest.fixture(autouse=True)
+def _no_udp_raw_probe() -> Iterator[None]:
+    """start() probes ``gr_satellites --help`` for --udp_raw; most tests here replace
+    subprocess.Popen wholesale, which that probe would run into. Fix its answer
+    (False); a test that wants another answer patches it itself."""
+    with patch.object(backend, "_supports_udp_raw", return_value=False):
+        yield
 
 
 class _FakeProc:
@@ -381,6 +399,36 @@ class TestKissFrameReader:
             reader.join(timeout=3)
             server.close()
 
+    def test_a_frame_after_a_silence_longer_than_the_connect_timeout_still_arrives(self) -> None:
+        """Frames are sparse. The 1 s timeout of create_connection() used to stay on the
+        socket, so after one quiet second recv() timed out, the reader quit and closed
+        the connection (which also crashed gr_satellites on macOS) -- no later frame was
+        ever read."""
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        port = server.getsockname()[1]
+
+        received: list[bytes] = []
+        reader = backend._KissFrameReader(port, received.append)
+        reader.start()
+        try:
+            conn, _addr = server.accept()
+            try:
+                time.sleep(1.6)  # longer than the 1 s connect timeout: nothing decoded yet
+                assert reader.is_alive()  # ... and the reader must not have given up
+                conn.sendall(b"\xc0\x00late\xc0")
+                deadline = time.monotonic() + 3
+                while not received and time.monotonic() < deadline:
+                    time.sleep(0.05)
+            finally:
+                conn.close()
+            assert received == [b"late"]
+        finally:
+            reader.close()
+            reader.join(timeout=3)
+            server.close()
+
     def test_close_before_any_connection_stops_the_thread(self) -> None:
         """close() called immediately (server never listening / never
         connects) must still let run() return instead of hanging in the
@@ -390,3 +438,185 @@ class TestKissFrameReader:
         reader.close()
         reader.join(timeout=3)
         assert not reader.is_alive()
+
+
+class TestUdpIqForwarder:
+    """IQ goes to gr_satellites in UDP datagrams; macOS drops (EMSGSIZE) any loopback
+    datagram over 9216 bytes, and the forwarder swallows send errors, so an oversized
+    datagram silently meant "no data at all"."""
+
+    def test_a_pipeline_block_arrives_whole_over_loopback(self) -> None:
+        receiver = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        receiver.bind(("127.0.0.1", 0))
+        receiver.settimeout(1.0)
+        forwarder = backend._UdpIqForwarder(receiver.getsockname()[1])
+        forwarder.start()
+        try:
+            block = (np.arange(16384) + 1j * np.arange(16384)).astype(np.complex64)
+            forwarder.push_samples(block)
+
+            received = bytearray()
+            sizes: list[int] = []
+            try:
+                while len(received) < block.nbytes:
+                    datagram = receiver.recv(65535)
+                    sizes.append(len(datagram))
+                    received.extend(datagram)
+            except TimeoutError:
+                pass
+            assert bytes(received) == block.tobytes()
+            assert max(sizes) <= 9216  # what macOS accepts by default
+            assert all(n % 8 == 0 for n in sizes)  # never splits a complex64 sample
+        finally:
+            forwarder.close()
+            receiver.close()
+
+
+class TestSupportsUdpRaw:
+    def setup_method(self) -> None:
+        backend._udp_raw_supported_cache.clear()
+
+    def test_detects_the_flag_and_caches(self) -> None:
+        completed = subprocess.CompletedProcess(
+            ["gr_satellites", "--help"], 1, "", "usage: ... [--udp_raw] ..."
+        )
+        with patch.object(backend.subprocess, "run", return_value=completed) as mock_run:
+            assert _REAL_SUPPORTS_UDP_RAW(["gr_satellites"], {}) is True
+            assert _REAL_SUPPORTS_UDP_RAW(["gr_satellites"], {}) is True
+        assert mock_run.call_count == 1
+
+    def test_false_for_a_build_without_the_flag_or_when_it_cannot_run(self) -> None:
+        old = subprocess.CompletedProcess([], 1, "", "usage: ... no such flag ...")
+        with patch.object(backend.subprocess, "run", return_value=old):
+            assert _REAL_SUPPORTS_UDP_RAW(["old"], {}) is False
+        with patch.object(backend.subprocess, "run", side_effect=OSError("nope")):
+            assert _REAL_SUPPORTS_UDP_RAW(["missing"], {}) is False
+
+
+class TestStartUdpRaw:
+    """gr_satellites reads --udp as int16 unless --udp_raw is given (we send complex64)."""
+
+    def test_the_flag_is_added_when_the_build_supports_it(self) -> None:
+        b = backend.GrSatellitesBackend()
+        with (
+            patch.object(
+                backend,
+                "resolve_gr_satellites_command",
+                return_value=(["/usr/bin/gr_satellites"], False),
+            ),
+            patch.object(backend, "_supports_kiss_server", return_value=False),
+            patch.object(backend, "_supports_udp_raw", return_value=True),
+            patch.object(backend.subprocess, "Popen", return_value=_FakeProc()) as mock_popen,
+        ):
+            b.start(25544, 250000, MagicMock())
+        cmd = mock_popen.call_args[0][0]
+        assert "--udp_raw" in cmd
+        assert cmd.index("--udp") < cmd.index("--udp_raw")
+        b.stop()
+
+    def test_it_is_left_out_for_a_build_without_it(self) -> None:
+        b = backend.GrSatellitesBackend()
+        with (
+            patch.object(
+                backend,
+                "resolve_gr_satellites_command",
+                return_value=(["/usr/bin/gr_satellites"], False),
+            ),
+            patch.object(backend, "_supports_kiss_server", return_value=False),
+            patch.object(backend.subprocess, "Popen", return_value=_FakeProc()) as mock_popen,
+        ):
+            b.start(25544, 250000, MagicMock())
+        assert "--udp_raw" not in mock_popen.call_args[0][0]
+        b.stop()
+
+
+def test_start_makes_the_subprocess_output_unbuffered() -> None:
+    """A piped Python stdout is block-buffered, so a sparse stream of frames would not
+    reach the table until ~8 KiB had accumulated."""
+    b = backend.GrSatellitesBackend()
+    with (
+        patch.object(
+            backend,
+            "resolve_gr_satellites_command",
+            return_value=(["/usr/bin/gr_satellites"], False),
+        ),
+        patch.object(backend, "_supports_kiss_server", return_value=False),
+        patch.object(backend.subprocess, "Popen", return_value=_FakeProc()) as mock_popen,
+    ):
+        b.start(25544, 250000, MagicMock())
+    assert mock_popen.call_args.kwargs["env"]["PYTHONUNBUFFERED"] == "1"
+    b.stop()
+
+
+class TestReadStdoutBlocks:
+    """Frame text from gr_satellites becomes one table block per frame."""
+
+    def _run(self, lines: list[str], pause_after: float = 0.0) -> list[str]:
+        b = backend.GrSatellitesBackend()
+        blocks: list[str] = []
+        b.telemetry_received.connect(blocks.append, Qt.ConnectionType.DirectConnection)
+        b._proc = MagicMock()
+        b._proc.stdout = iter(lines)
+        with patch("comms.telemetry.gr_satellites_log.get_gr_satellites_logger"):
+            b._read_stdout()
+        if pause_after:
+            time.sleep(pause_after)
+        return blocks
+
+    def test_blank_line_delimited_blocks(self) -> None:
+        blocks = self._run(["-> Packet from A\n", "x = 1\n", "\n", "-> Packet from A\n", "x = 2\n"])
+        assert blocks == ["-> Packet from A\nx = 1", "-> Packet from A\nx = 2"]
+
+    def test_the_next_frames_heading_ends_the_block_when_there_is_no_blank_line(self) -> None:
+        """The bundled gr_satellites prints no blank line between frames: with only blank
+        lines as delimiters no frame reached the table until the process exited."""
+        lines = [
+            "-> Packet from 9k6 FSK downlink\n",
+            "Container:\n",
+            "    callsign = u'A'\n",
+            "-> Packet from 9k6 FSK downlink\n",
+            "Container:\n",
+            "    callsign = u'B'\n",
+        ]
+        blocks = self._run(lines)
+        assert blocks == [
+            "-> Packet from 9k6 FSK downlink\nContainer:\n    callsign = u'A'",
+            "-> Packet from 9k6 FSK downlink\nContainer:\n    callsign = u'B'",
+        ]
+
+    def test_the_last_block_is_sent_when_the_output_stops(self) -> None:
+        b = backend.GrSatellitesBackend()
+        blocks: list[str] = []
+        b.telemetry_received.connect(blocks.append, Qt.ConnectionType.DirectConnection)
+        gate = threading.Event()
+
+        def stream() -> Iterator[str]:
+            yield "-> Packet from A\n"
+            yield "x = 1\n"
+            gate.wait(3)  # the process is still running, nothing more printed for a while
+            yield "-> Packet from A\n"
+
+        b._proc = MagicMock()
+        b._proc.stdout = stream()
+        with patch("comms.telemetry.gr_satellites_log.get_gr_satellites_logger"):
+            reader = threading.Thread(target=b._read_stdout, daemon=True)
+            reader.start()
+            deadline = time.monotonic() + 2.0
+            while not blocks and time.monotonic() < deadline:
+                time.sleep(0.05)
+            assert blocks == ["-> Packet from A\nx = 1"]  # sent without waiting for a next frame
+            gate.set()
+            reader.join(timeout=3)
+
+    def test_warnings_and_progress_messages_are_not_frames(self) -> None:
+        lines = [
+            "log :warning: `socket_pdu` has moved to gr-network\n",
+            "udp_source :info: Listening for data on UDP port 7356.\n",
+            "-> Packet from 9k6 FSK downlink\n",
+            "Container:\n",
+            "udp_source :warning: Insufficient block data.\n",
+        ]
+        blocks = self._run(lines)
+        # the two start-up lines are dropped; the last line belongs to the frame's block
+        assert len(blocks) == 1
+        assert blocks[0].startswith("-> Packet from 9k6 FSK downlink")
