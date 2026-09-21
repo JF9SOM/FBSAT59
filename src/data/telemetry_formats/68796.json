@@ -4,11 +4,15 @@
   "callsign": "JS1YSD",
   "reference": "http://sakamotoagu.mydns.jp/ARICA-2/data/amateur/cw_hp_calender_srv.html",
   "document": "Frame layout and conversions: arica2.ksy (SatNOGS satnogs-decoders, cw1/cw2/cw3); wording of labels and flag/range texts: Sakamoto Lab (Aoyama Gakuin Univ.) published CW HK1/HK2/HK3 tables.",
-  "note": "CW housekeeping only. The GMSK/AX.25 telemetry format is deliberately not disclosed by the operator and is not defined here (no 'modulation' key on purpose: it would make the Direwolf-mode transmitter scoring prefer the CW transmitter). HK1 and HK3 were checked against real CW reception on 2026-09-20 (every discrete field, UHF temperature and battery voltage matched the operator's table). Battery Heater: bit 1 is shown as 'off' -- the operator's table showed 'off' in all 126 rows while the received frames had bit 1; a bit-0 (on) frame has never been seen. Angular velocity: 5-bit sign-magnitude code; the range table is the operator's published one (magnitudes 0-9 seen in 32 days of data, larger codes only show a lower bound). HK2 was not received yet: its three flag bits are shown raw (polarity unverified). The operator's table calls spresense2's sub-cores sub1/2/4/5, arica2.ksy sub1/2/3/5; the operator's names are used.",
+  "note": "CW housekeeping only. The GMSK/AX.25 telemetry format is deliberately not disclosed by the operator and is not defined here (no 'modulation' key on purpose: it would make the Direwolf-mode transmitter scoring prefer the CW transmitter). HK1 and HK3 were checked against real CW reception on 2026-09-20 (every discrete field, UHF temperature and battery voltage matched the operator's table). Battery Heater: bit 1 is shown as 'off' -- the operator's table showed 'off' in all 126 rows while the received frames had bit 1; a bit-0 (on) frame has never been seen. Angular velocity: 5-bit sign-magnitude code; the range table is the operator's published one (magnitudes 0-9 seen in 32 days of data, larger codes only show a lower bound). HK2 was not received yet: its three flag bits are shown raw (polarity unverified). The operator's table calls spresense2's sub-cores sub1/2/4/5, arica2.ksy sub1/2/3/5; the operator's names are used. SatNOGS DB upload: a frame is sent as 'arica-2' (7 bytes) + beacon type (1 byte: HK1=1, HK2=2, HK3=3) + the frame bytes, the layout arica2.ksy calls cw1_form/cw2_form/cw3_form (made for the DL7NDR CW upload form). Not yet confirmed by an accepted submission.",
   "cw_frames": {
     "HK1": {
       "label": "HK1 (CW housekeeping 1)",
       "hex_digits": 16,
+      "satnogs": {
+        "callsign": "arica-2",
+        "beacon_type": 1
+      },
       "fields": [
         {
           "name": "command_id",
@@ -328,6 +332,10 @@
     "HK2": {
       "label": "HK2 (CW GPS)",
       "hex_digits": 12,
+      "satnogs": {
+        "callsign": "arica-2",
+        "beacon_type": 2
+      },
       "fields": [
         {
           "name": "not_used",
@@ -464,6 +472,10 @@
     "HK3": {
       "label": "HK3 (CW housekeeping 3)",
       "hex_digits": 14,
+      "satnogs": {
+        "callsign": "arica-2",
+        "beacon_type": 3
+      },
       "fields": [
         {
           "name": "batt_temp",

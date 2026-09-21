@@ -12,6 +12,7 @@ import pytest
 
 from comms.telemetry.cw_frames import (
     _angvel_text,
+    build_satnogs_frame,
     decode_cw_frame,
     is_near_miss,
     load_cw_frames,
@@ -204,3 +205,37 @@ class TestDecodedFieldsDefinition:
         names = {f["name"] for f in defs["HK2"]["fields"]}
         assert "gps_time" in names
         assert not {"gps_hour", "gps_minute", "gps_second", "gps_lat_sign", "not_used"} & names
+
+
+class TestSatnogsFrame:
+    """The bytes submitted to the SatNOGS DB: 'arica-2' + beacon type + the frame
+    (arica2.ksy cw1_form/cw2_form/cw3_form: 16/14/15 bytes)."""
+
+    def test_hk1(self) -> None:
+        frame = build_satnogs_frame(ARICA2, HK1_REAL)
+        assert frame == b"arica-2" + b"\x01" + bytes.fromhex(HK1_REAL)
+        assert frame is not None
+        assert len(frame) == 0x10
+
+    def test_hk2(self) -> None:
+        text = _hk2(7, 3, 11, 78, 168, north=1, east=1)
+        frame = build_satnogs_frame(ARICA2, text)
+        assert frame is not None
+        assert frame[:8] == b"arica-2\x02"
+        assert len(frame) == 0x0E
+
+    def test_hk3(self) -> None:
+        frame = build_satnogs_frame(ARICA2, HK3_REAL)
+        assert frame == b"arica-2" + b"\x03" + bytes.fromhex(HK3_REAL)
+        assert frame is not None
+        assert len(frame) == 0x0F
+
+    def test_whitespace_and_case_are_ignored(self) -> None:
+        assert build_satnogs_frame(ARICA2, "2f fe 85 94 eb 88 01 24") == build_satnogs_frame(
+            ARICA2, HK1_REAL
+        )
+
+    def test_not_a_frame_or_no_satnogs_entry(self) -> None:
+        assert build_satnogs_frame(ARICA2, "DE JS1YSD ARICA2") is None
+        assert build_satnogs_frame(ARICA2, HK1_REAL[:-1]) is None
+        assert build_satnogs_frame(25544, HK1_REAL) is None

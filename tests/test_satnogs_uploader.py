@@ -26,6 +26,7 @@ from comms.telemetry.satnogs_uploader import (
     get_station_latlon,
     load_satnogs_upload_settings,
     save_satnogs_upload_settings,
+    upload_blocker,
 )
 from data.database import SCHEMA_SQL
 
@@ -302,3 +303,50 @@ def test_worker_swallows_post_exception(
 
 def test_get_satnogs_uploader_is_singleton() -> None:
     assert get_satnogs_uploader() is get_satnogs_uploader()
+
+
+# --------------------------------------------------------------------------- #
+# upload_blocker() / force -- a send the user asked for explicitly
+# --------------------------------------------------------------------------- #
+
+
+def test_blocker_names_the_first_missing_prerequisite(db: sqlite3.Connection) -> None:
+    assert upload_blocker(db) == "disabled"
+    _configure(db, enabled=False)
+    assert upload_blocker(db) == "disabled"
+    _configure(db, api_key="")
+    assert upload_blocker(db) == "no_api_key"
+    _configure(db)
+    assert upload_blocker(db) is None
+    db.execute("DELETE FROM app_settings WHERE key = 'callsign'")
+    db.commit()
+    assert upload_blocker(db) == "no_callsign"
+    _configure(db)
+    db.execute("DELETE FROM app_settings WHERE key = 'observer_location'")
+    db.commit()
+    assert upload_blocker(db) == "no_location"
+
+
+def test_force_ignores_only_the_automatic_upload_switch(db: sqlite3.Connection) -> None:
+    _configure(db, enabled=False)
+    assert upload_blocker(db, force=True) is None
+    assert build_submission(db, _FRAME, 25544, _TS) is None
+    assert build_submission(db, _FRAME, 25544, _TS, force=True) is not None
+
+    _configure(db, enabled=False, api_key="")
+    assert upload_blocker(db, force=True) == "no_api_key"
+    assert build_submission(db, _FRAME, 25544, _TS, force=True) is None
+
+
+def test_submit_with_force_posts_although_the_switch_is_off(
+    db: sqlite3.Connection, uploader_factory: list[SatnogsUploader]
+) -> None:
+    _configure(db, enabled=False)
+    fake = _FakePost()
+    up = SatnogsUploader(post_fn=fake)
+    uploader_factory.append(up)
+
+    assert up.submit(db, _FRAME, 25544, _TS) is False
+    assert up.submit(db, _FRAME, 25544, _TS, force=True) is True
+    assert fake.called.wait(timeout=2.0)
+    assert len(fake.calls) == 1

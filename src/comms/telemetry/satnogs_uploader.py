@@ -120,34 +120,51 @@ def _client_version() -> str:
         return "FBSAT59"
 
 
+def upload_blocker(conn: sqlite3.Connection, force: bool = False) -> str | None:
+    """Why an upload can not be made right now, or None if it can.
+
+    One of ``"disabled"`` (the footer switch is off), ``"no_api_key"``,
+    ``"no_callsign"`` or ``"no_location"``. *force* is for a send the user asked
+    for explicitly: it ignores the automatic-upload switch but still needs the
+    key, callsign and location.
+    """
+    settings = load_satnogs_upload_settings(conn)
+    if not force and not settings.get("enabled"):
+        return "disabled"
+    if not str(settings.get("api_key", "")).strip():
+        return "no_api_key"
+    if not get_station_callsign(conn):
+        return "no_callsign"
+    if get_station_latlon(conn) is None:
+        return "no_location"
+    return None
+
+
 def build_submission(
     conn: sqlite3.Connection,
     raw_frame: bytes,
     norad: int,
     received_at: datetime,
+    force: bool = False,
 ) -> tuple[str, dict[str, str]] | None:
     """Build ``(api_key, sids_form_fields)`` for *raw_frame*.
 
-    Returns ``None`` when a prerequisite is missing: upload disabled, no API
-    key, no callsign, or no saved location. The API key is returned
-    separately from the form so it is never written to a log line.
+    Returns ``None`` when a prerequisite is missing: upload disabled (unless
+    *force*, see upload_blocker()), no API key, no callsign, or no saved
+    location. The API key is returned separately from the form so it is never
+    written to a log line.
 
     *raw_frame* is the frame as received (full AX.25 frame without the FCS);
     it is hex-encoded into the ``frame`` field. *received_at* is coerced to
     UTC for the ``timestamp`` field.
     """
+    if upload_blocker(conn, force) is not None:
+        return None
     settings = load_satnogs_upload_settings(conn)
-    if not settings.get("enabled"):
-        return None
     api_key = str(settings.get("api_key", "")).strip()
-    if not api_key:
-        return None
     callsign = get_station_callsign(conn)
-    if not callsign:
-        return None
     latlon = get_station_latlon(conn)
-    if latlon is None:
-        return None
+    assert latlon is not None  # upload_blocker() checked
     lat, lon = latlon
 
     ts = received_at.astimezone(UTC)
@@ -203,15 +220,17 @@ class SatnogsUploader:
         raw_frame: bytes,
         norad: int | None,
         received_at: datetime,
+        force: bool = False,
     ) -> bool:
         """Queue *raw_frame* for upload. Returns ``True`` if it was queued.
 
         No-op (returns ``False``) when *norad* is ``None`` or any upload
-        prerequisite is missing.
+        prerequisite is missing. *force* sends even though the automatic
+        upload switch is off (an explicit user request, see upload_blocker()).
         """
         if norad is None:
             return False
-        built = build_submission(conn, raw_frame, norad, received_at)
+        built = build_submission(conn, raw_frame, norad, received_at, force)
         if built is None:
             return False
         try:

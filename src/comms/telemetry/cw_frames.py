@@ -109,6 +109,27 @@ def is_near_miss(norad: int | None, text: str) -> bool:
     return any(abs(len(block) - n) == 1 for n in lengths)
 
 
+def build_satnogs_frame(norad: int | None, text: str) -> bytes | None:
+    """The frame as the SatNOGS DB expects a CW telemetry submission.
+
+    A frame definition's ``satnogs`` entry gives a callsign prefix and a beacon
+    type; the submission is ``prefix + type byte + the frame's bytes`` (for
+    ARICA-2 the layout arica2.ksy names cw1_form/cw2_form/cw3_form). None if
+    *text* is not exactly one of the satellite's frames or the satellite has no
+    ``satnogs`` entry.
+    """
+    key = match_frame_key(norad, text)
+    frames = load_cw_frames(norad)
+    if key is None or frames is None:
+        return None
+    upload = frames[key].get("satnogs")
+    block = normalize_block(text)
+    if not upload or len(block) % 2:
+        return None
+    prefix = str(upload["callsign"]).encode("ascii")
+    return prefix + bytes([int(upload["beacon_type"])]) + bytes.fromhex(block)
+
+
 def _format_edge(value: float) -> str:
     return f"{value:g}"
 
