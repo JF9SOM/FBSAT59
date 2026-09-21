@@ -18,6 +18,7 @@ import logging
 import re
 import sqlite3
 from collections import deque
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import numpy as np
@@ -37,6 +38,7 @@ from PySide6.QtWidgets import (
 )
 
 from comms.audio_device_manager import get_audio_device_manager
+from comms.cw.block_extractor import CwBlockExtractor
 from comms.cw.codec import HOP_LENGTH, MIN_AUDIO_SECONDS, SAMPLE_RATE, CwDecoder, DecodeResult
 from comms.cw.model_info import is_onnxruntime_available, is_ready
 from comms.cw.sdr_demod import SDR_AUDIO_RATE, CwSdrDemod
@@ -96,7 +98,17 @@ class _DecodeWorker(QThread):
 
 
 class CwTab(QWidget):
-    """Non-resident Communications > CW Decoder tab."""
+    """Non-resident Communications > CW Decoder tab.
+
+    Besides showing the decoded text it cuts the confirmed characters into
+    blocks at long pauses and announces each one through ``frame_block_ready``
+    (text, start time, end time -- UTC datetimes), which the Telemetry tab's
+    "CW TLM" mode turns into housekeeping frames. The times are the live clock
+    for a live input and, for a played-back IQ recording, the recording's start
+    time plus the playback position.
+    """
+
+    frame_block_ready = Signal(str, object, object)
 
     def __init__(
         self,
@@ -133,6 +145,15 @@ class CwTab(QWidget):
         self._confirmed_up_to_abs: float = 0.0
         self._samples_dropped_total: int = 0
         self._last_char_abs_time: float | None = None
+
+        # Block extraction for the Telemetry tab's CW TLM mode (see frame_block_ready).
+        self._block_extractor = CwBlockExtractor()
+        self._block_up_to_abs = 0.0
+        # Signal time and dropped-sample count captured when a decode snapshot is
+        # taken; the decode finishes about a second later, by which time the live
+        # buffer has moved on.
+        self._snapshot_time: datetime | None = None
+        self._snapshot_dropped = 0
 
         self._setup_ui()
         self._load_sound_card_device()
@@ -263,6 +284,8 @@ class CwTab(QWidget):
         self._confirmed_up_to_abs = 0.0
         self._samples_dropped_total = 0
         self._last_char_abs_time = None
+        self._block_extractor.reset()
+        self._block_up_to_abs = 0.0
         self._start_btn.setText(_("■ Stop"))
 
         if self._rb_sdr.isChecked():
@@ -281,6 +304,8 @@ class CwTab(QWidget):
 
     def _stop(self) -> None:
         self._running = False
+        for block in self._block_extractor.flush():
+            self.frame_block_ready.emit(block.text, block.start_utc, block.end_utc)
         self._decode_timer.stop()
         self._level_timer.stop()
         self._start_btn.setText(_("▶ Start"))
@@ -307,6 +332,27 @@ class CwTab(QWidget):
         self._confirmed_up_to_abs = 0.0
         self._samples_dropped_total = 0
         self._last_char_abs_time = None
+        self._block_extractor.reset()
+        self._block_up_to_abs = 0.0
+
+    # ------------------------------------------------------------------ #
+    # Public control (used by the Telemetry tab's CW TLM mode)
+    # ------------------------------------------------------------------ #
+
+    @property
+    def is_decoding(self) -> bool:
+        """True while the decoder is running."""
+        return self._running
+
+    def start_decoding(self) -> None:
+        """Start decoding, as if the user had pressed Start (no-op if already running)."""
+        if not self._running:
+            self._start_btn.setChecked(True)
+
+    def stop_decoding(self) -> None:
+        """Stop decoding, as if the user had pressed Stop (no-op if not running)."""
+        if self._running:
+            self._start_btn.setChecked(False)
 
     # ------------------------------------------------------------------ #
     # SDR audio
@@ -451,6 +497,8 @@ class CwTab(QWidget):
             self._status_label.setText(_("Buffering… {n:.0f} s remaining").format(n=remaining))
             return
 
+        self._snapshot_time = self._signal_time_now()
+        self._snapshot_dropped = self._samples_dropped_total
         self._decoding = True
         self._worker = _DecodeWorker(self._decoder, audio, self._rx_sample_rate)
         self._worker.result_ready.connect(self._on_decode_result)
@@ -500,6 +548,7 @@ class CwTab(QWidget):
         on confirmed content means the anchor never moves until a gap
         decision is truly final.
         """
+        self._feed_block_extractor(result)
         offsets = result.offsets
         window_duration = result.window_duration
         window_start_abs = self._samples_dropped_total / self._rx_sample_rate
@@ -565,6 +614,45 @@ class CwTab(QWidget):
         self._replace_tail(delta, new_pending)
         self._confirmed_text += delta
         self._pending_text = new_pending
+
+    def _signal_time_now(self) -> datetime:
+        """UTC time of the newest audio in the buffer.
+
+        The wall clock for a live input. For a played-back IQ recording (the
+        device knows its start time) the recording's start time plus the
+        playback position, so the time follows seeks and pauses.
+        """
+        device = getattr(self._sdr_pipeline, "_device", None)
+        start = getattr(device, "start_time_utc", None)
+        position = getattr(device, "position_s", None)
+        if isinstance(start, datetime) and isinstance(position, int | float):
+            return start + timedelta(seconds=float(position))
+        return datetime.now(UTC)
+
+    def _feed_block_extractor(self, result: DecodeResult) -> None:
+        """Hand the characters this decode newly *confirmed* to the block extractor.
+
+        "Confirmed" follows the same rule as the transcript: a character is
+        final once it lies more than _PENDING_MARGIN_S before the window's
+        trailing edge. Each character is passed on exactly once (windows
+        overlap), with its audio time and its UTC time.
+        """
+        snapshot = self._snapshot_time or datetime.now(UTC)
+        window_start_abs = self._snapshot_dropped / self._rx_sample_rate
+        cutoff_rel = result.window_duration - _PENDING_MARGIN_S
+        fresh = [
+            (
+                ch,
+                window_start_abs + t,
+                snapshot + timedelta(seconds=t - result.window_duration),
+            )
+            for ch, t in result.offsets
+            if t <= cutoff_rel and window_start_abs + t > self._block_up_to_abs
+        ]
+        confirmed_until = window_start_abs + cutoff_rel
+        self._block_up_to_abs = max(self._block_up_to_abs, confirmed_until)
+        for block in self._block_extractor.feed(fresh, confirmed_until):
+            self.frame_block_ready.emit(block.text, block.start_utc, block.end_utc)
 
     @staticmethod
     def _clean_join(prefix: str, addition: str) -> str:

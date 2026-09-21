@@ -9,6 +9,7 @@ project's QWidget testing convention.
 from __future__ import annotations
 
 import sqlite3
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -255,3 +256,167 @@ class TestSdrInputUsesPrivateCwDemodulator:
         assert fresh.sample_rate == 960_000
         assert not fresh.stopped
         new_pipeline.subscribe.assert_called_once_with(fresh.push_samples)
+
+
+class TestFrameBlocks:
+    """CwTab cuts the confirmed characters into blocks and announces them
+    (frame_block_ready) with UTC times -- the input of the Telemetry tab's
+    CW TLM mode."""
+
+    SNAPSHOT = datetime(2026, 9, 20, 7, 0, 20, tzinfo=UTC)
+
+    def _tab(self, qtbot: Any) -> tuple[CwTab, list[tuple[str, datetime, datetime]]]:
+        tab = _make_tab(qtbot)
+        got: list[tuple[str, datetime, datetime]] = []
+        tab.frame_block_ready.connect(lambda t, a, b: got.append((t, a, b)))
+        tab._snapshot_time = self.SNAPSHOT
+        tab._snapshot_dropped = 0
+        return tab, got
+
+    @staticmethod
+    def _result(text: str, first: float, step: float = 0.4) -> DecodeResult:
+        return DecodeResult(
+            offsets=[(c, first + i * step) for i, c in enumerate(text)],
+            window_duration=20.0,
+            frame_energy=_EMPTY_ENERGY,
+        )
+
+    def test_a_block_is_announced_with_utc_times(self, qtbot: Any) -> None:
+        tab, got = self._tab(qtbot)
+
+        tab._reconcile_decode(self._result("2FFE8594EB880124", 1.0))
+
+        ((text, start, end),) = got
+        assert text == "2FFE8594EB880124"
+        # snapshot is the end of a 20 s window: a character at t s is at snapshot - (20 - t)
+        assert start == self.SNAPSHOT - timedelta(seconds=19.0)
+        assert end == self.SNAPSHOT - timedelta(seconds=13.0)
+
+    def test_overlapping_windows_do_not_announce_a_block_twice(self, qtbot: Any) -> None:
+        tab, got = self._tab(qtbot)
+        first = self._result("2FFE8594EB880124", 1.0)
+        tab._reconcile_decode(first)
+        assert len(got) == 1
+
+        # The next decode, 5 s later, sees the same characters 5 s earlier in its window.
+        tab._snapshot_time = self.SNAPSHOT + timedelta(seconds=5)
+        tab._snapshot_dropped = 5 * tab._rx_sample_rate
+        tab._reconcile_decode(
+            DecodeResult(
+                offsets=[(c, t - 5.0) for c, t in first.offsets if t > 5.0],
+                window_duration=20.0,
+                frame_energy=_EMPTY_ENERGY,
+            )
+        )
+
+        assert len(got) == 1
+
+    def test_a_block_spanning_two_decodes_is_one_block(self, qtbot: Any) -> None:
+        tab, got = self._tab(qtbot)
+        text = "2FFE8594EB880124"
+        chars = [(c, 10.0 + i * 0.4) for i, c in enumerate(text)]  # 10.0 .. 16.0
+
+        # Only characters up to t = 15 (window 20 s minus the 5 s pending margin) are final.
+        tab._reconcile_decode(
+            DecodeResult(
+                offsets=chars,
+                window_duration=20.0,
+                frame_energy=_EMPTY_ENERGY,
+            )
+        )
+        assert got == []
+
+        tab._snapshot_time = self.SNAPSHOT + timedelta(seconds=5)
+        tab._snapshot_dropped = 5 * tab._rx_sample_rate
+        tab._reconcile_decode(
+            DecodeResult(
+                offsets=[(c, t - 5.0) for c, t in chars],
+                window_duration=20.0,
+                frame_energy=_EMPTY_ENERGY,
+            )
+        )
+
+        assert [g[0] for g in got] == [text]
+
+    def test_a_later_decode_with_a_pause_finishes_a_block_left_open(self, qtbot: Any) -> None:
+        tab, got = self._tab(qtbot)
+        chars = [(c, 12.0 + i * 0.4) for i, c in enumerate("2FFE8594EB880124")]  # ends 18.0
+        # Only t <= 15 is final in the first decode, so the block is still open.
+        tab._reconcile_decode(
+            DecodeResult(offsets=chars, window_duration=20.0, frame_energy=_EMPTY_ENERGY)
+        )
+        assert got == []
+
+        # 10 s later the whole frame is final and the audio after it is silent.
+        tab._snapshot_time = self.SNAPSHOT + timedelta(seconds=10)
+        tab._snapshot_dropped = 10 * tab._rx_sample_rate
+        tab._reconcile_decode(
+            DecodeResult(
+                offsets=[(c, t - 10.0) for c, t in chars],
+                window_duration=20.0,
+                frame_energy=_EMPTY_ENERGY,
+            )
+        )
+
+        assert [g[0] for g in got] == ["2FFE8594EB880124"]
+
+
+class _ReadyDecoder:
+    is_ready = True
+
+
+class TestControlApi:
+    def test_start_and_stop_decoding(self, qtbot: Any, monkeypatch: Any) -> None:
+        monkeypatch.setattr("ui.cw_tab.CwDecoder", _ReadyDecoder)
+        tab = _make_tab(qtbot)
+        assert not tab.is_decoding
+
+        tab.start_decoding()
+        assert tab.is_decoding
+        tab.start_decoding()  # already running: no-op
+        assert tab.is_decoding
+
+        tab.stop_decoding()
+        assert not tab.is_decoding
+        tab.stop_decoding()  # already stopped: no-op
+
+    def test_stopping_announces_the_block_in_progress(self, qtbot: Any, monkeypatch: Any) -> None:
+        monkeypatch.setattr("ui.cw_tab.CwDecoder", _ReadyDecoder)
+        tab = _make_tab(qtbot)
+        got: list[str] = []
+        tab.frame_block_ready.connect(lambda t, a, b: got.append(t))
+        tab.start_decoding()
+        tab._snapshot_time = datetime(2026, 9, 20, 7, 0, 20, tzinfo=UTC)
+        # All final (t <= 15) and the last one just before the confirmed edge: block still open.
+        chars = [(c, 8.6 + i * 0.4) for i, c in enumerate("2FFE8594EB880124")]
+        tab._reconcile_decode(
+            DecodeResult(offsets=chars, window_duration=20.0, frame_energy=_EMPTY_ENERGY)
+        )
+        assert got == []
+
+        tab.stop_decoding()
+
+        assert got == ["2FFE8594EB880124"]
+
+
+class TestSignalTime:
+    """The time of the newest audio: the wall clock live, recording start plus
+    playback position when an IQ recording is being played."""
+
+    def test_live_input_uses_the_wall_clock(self, qtbot: Any) -> None:
+        tab = _make_tab(qtbot)
+        assert abs((tab._signal_time_now() - datetime.now(UTC)).total_seconds()) < 5.0
+
+    def test_replay_uses_start_time_plus_position(self, qtbot: Any) -> None:
+        tab = _make_tab(qtbot)
+        pipeline = MagicMock()
+        pipeline._device.start_time_utc = datetime(2026, 9, 20, 6, 55, 51, tzinfo=UTC)
+        pipeline._device.position_s = 357.5
+        tab._sdr_pipeline = pipeline
+
+        assert tab._signal_time_now() == datetime(2026, 9, 20, 7, 1, 48, 500000, tzinfo=UTC)
+
+    def test_a_device_without_a_start_time_falls_back_to_the_wall_clock(self, qtbot: Any) -> None:
+        tab = _make_tab(qtbot)
+        tab._sdr_pipeline = MagicMock()  # a live SDR: no start_time_utc / position_s
+        assert abs((tab._signal_time_now() - datetime.now(UTC)).total_seconds()) < 5.0
