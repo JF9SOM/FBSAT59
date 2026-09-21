@@ -139,3 +139,25 @@ def test_close_frees_the_buffer(tmp_path: Path) -> None:
     dev = SdrFileDevice(path)
     dev.close()
     assert dev.duration_s == 0.0
+
+
+def test_start_time_comes_from_the_file_name(tmp_path: Path) -> None:
+    from datetime import UTC, datetime
+
+    path = tmp_path / "0_unknown_20260920T065551Z.iq.wav"
+    _write_test_wav(path, num_samples=100)
+    assert SdrFileDevice(path).start_time_utc == datetime(2026, 9, 20, 6, 55, 51, tzinfo=UTC)
+
+
+def test_start_time_is_none_without_a_time_in_the_name_and_can_be_set(tmp_path: Path) -> None:
+    from datetime import UTC, datetime
+
+    path = tmp_path / "test.iq.wav"
+    _write_test_wav(path, num_samples=100)
+    dev = SdrFileDevice(path)
+    assert dev.start_time_utc is None
+
+    dev.set_start_time_utc(datetime(2026, 9, 20, 1, 2, 3))  # naive -> taken as UTC
+    assert dev.start_time_utc == datetime(2026, 9, 20, 1, 2, 3, tzinfo=UTC)
+    dev.set_start_time_utc(None)
+    assert dev.start_time_utc is None

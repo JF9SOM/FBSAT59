@@ -8,11 +8,12 @@ and the next position-poll tick snapped it back.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock
 
 import numpy as np
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QDate, QDateTime, QPoint, Qt, QTime, QTimeZone
 from PySide6.QtTest import QTest
 from pytestqt.qtbot import QtBot
 
@@ -131,3 +132,59 @@ def test_time_zone_setting_reaches_the_waterfall_dialog(qtbot: QtBot) -> None:
     assert dialog._use_utc is False
     w.set_use_utc(True)  # afterwards: forwarded straight away
     assert dialog._use_utc is True
+
+
+class _TimedFileDevice(_FakeFileDevice):
+    """A file device that also knows the recording's UTC start time."""
+
+    def __init__(self, start: datetime | None) -> None:
+        super().__init__()
+        self.start_time_utc = start
+
+    def set_start_time_utc(self, when: datetime | None) -> None:
+        self.start_time_utc = when
+
+
+def _make_timed_widget(
+    qtbot: QtBot, start: datetime | None, is_replay: bool = True
+) -> tuple[SdrControlWidget, _TimedFileDevice]:
+    w = SdrControlWidget()
+    qtbot.addWidget(w)
+    device = _TimedFileDevice(start)
+    pipeline: Any = MagicMock()
+    pipeline._device = device
+    w.set_pipeline(pipeline, is_replay=is_replay)
+    return w, device
+
+
+def _shown_start(w: SdrControlWidget) -> str:
+    return str(w._playback_start_edit.dateTime().toString("yyyy-MM-dd HH:mm:ss"))
+
+
+class TestRecordingStartTimeForm:
+    """The "Start (UTC)" field right of Offset: the recording's start time,
+    read from the file name when possible, otherwise 00:00 and user-editable."""
+
+    def test_shows_the_time_read_from_the_file_name(self, qtbot: QtBot) -> None:
+        w, _device = _make_timed_widget(qtbot, datetime(2026, 9, 20, 6, 55, 51, tzinfo=UTC))
+        assert _shown_start(w) == "2026-09-20 06:55:51"
+        assert w._playback_start_edit.isEnabled()
+
+    def test_unreadable_name_shows_midnight_and_hands_it_to_the_device(self, qtbot: QtBot) -> None:
+        w, device = _make_timed_widget(qtbot, None)
+        shown = _shown_start(w)
+        assert shown.endswith(" 00:00:00")
+        assert device.start_time_utc is not None
+        assert device.start_time_utc.hour == device.start_time_utc.minute == 0
+        assert device.start_time_utc.tzinfo is UTC
+
+    def test_editing_the_field_updates_the_device(self, qtbot: QtBot) -> None:
+        w, device = _make_timed_widget(qtbot, None)
+        w._playback_start_edit.setDateTime(
+            QDateTime(QDate(2026, 9, 20), QTime(7, 7, 34), QTimeZone.utc())
+        )
+        assert device.start_time_utc == datetime(2026, 9, 20, 7, 7, 34, tzinfo=UTC)
+
+    def test_disabled_without_a_replay(self, qtbot: QtBot) -> None:
+        w, _device = _make_timed_widget(qtbot, None, is_replay=False)
+        assert not w._playback_start_edit.isEnabled()

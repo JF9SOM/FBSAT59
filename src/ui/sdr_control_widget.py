@@ -14,14 +14,27 @@ can auto-select the correct demodulation mode.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from PySide6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis
-from PySide6.QtCore import QPointF, Qt, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import (
+    QDate,
+    QDateTime,
+    QPointF,
+    Qt,
+    QTime,
+    QTimer,
+    QTimeZone,
+    QUrl,
+    Signal,
+    Slot,
+)
 from PySide6.QtGui import QColor, QDesktopServices, QPen
 from PySide6.QtWidgets import (
     QComboBox,
+    QDateTimeEdit,
     QDoubleSpinBox,
     QFileDialog,
     QGroupBox,
@@ -203,6 +216,7 @@ class SdrControlWidget(QWidget):
         self._set_sdr_connected(pipeline is not None)
         self._set_replay_controls_enabled(pipeline is not None and is_replay)
         if pipeline is not None and is_replay:
+            self._load_playback_start_time()
             self._playback_timer.start()
             self._update_playback_position()
         else:
@@ -755,6 +769,26 @@ class SdrControlWidget(QWidget):
         self._playback_offset_spin.setFixedWidth(110)
         self._playback_offset_spin.valueChanged.connect(self._on_playback_offset_changed)
         play_row.addWidget(self._playback_offset_spin)
+        play_row.addSpacing(8)
+        play_row.addWidget(QLabel(_("Start (UTC):")))
+        self._playback_start_edit = QDateTimeEdit()
+        self._playback_start_edit.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
+        # The field holds a UTC time (its date/time parts are read back as they are shown).
+        # setTimeZone() needs Qt 6.7; setTimeSpec() is its deprecated predecessor.
+        if hasattr(self._playback_start_edit, "setTimeZone"):
+            self._playback_start_edit.setTimeZone(QTimeZone.utc())
+        else:
+            self._playback_start_edit.setTimeSpec(Qt.TimeSpec.UTC)
+        self._playback_start_edit.setToolTip(
+            _(
+                "UTC time of the recording's first sample. Read from the file name\n"
+                "when it has one; otherwise it shows 00:00 and can be entered here.\n"
+                "Decoded data (CW TLM) is time-stamped with this time plus the\n"
+                "playback position."
+            )
+        )
+        self._playback_start_edit.dateTimeChanged.connect(self._on_playback_start_changed)
+        play_row.addWidget(self._playback_start_edit)
         play_row.addStretch()
         v.addLayout(play_row)
 
@@ -909,6 +943,7 @@ class SdrControlWidget(QWidget):
         """Gate Stop/Offset/seek-slider -- meaningless without a loaded recording."""
         self._stop_play_btn.setEnabled(enabled)
         self._playback_offset_spin.setEnabled(enabled)
+        self._playback_start_edit.setEnabled(enabled)
         self._playback_slider.setEnabled(enabled)
 
     def _on_play_clicked(self) -> None:
@@ -942,6 +977,45 @@ class SdrControlWidget(QWidget):
         stop_stream = getattr(device, "stop_stream", None)
         if stop_stream is not None:
             stop_stream()
+
+    def _playback_device(self) -> Any:
+        """The SdrFileDevice behind the attached replay pipeline, if any."""
+        return getattr(self._pipeline, "_device", None)
+
+    def _load_playback_start_time(self) -> None:
+        """Show the loaded recording's start time in the Start (UTC) field.
+
+        Uses the time the device read from the file name. When there is none
+        the field shows 00:00 (of today, UTC) and that value is also handed to
+        the device, so what is displayed is always what time-stamps the data
+        until the user corrects it.
+        """
+        device = self._playback_device()
+        start = getattr(device, "start_time_utc", None)
+        if not isinstance(start, datetime):
+            today = datetime.now(UTC)
+            start = datetime(today.year, today.month, today.day, tzinfo=UTC)
+            setter = getattr(device, "set_start_time_utc", None)
+            if callable(setter):
+                setter(start)
+        edit = self._playback_start_edit
+        edit.blockSignals(True)
+        edit.setDateTime(
+            QDateTime(
+                QDate(start.year, start.month, start.day),
+                QTime(start.hour, start.minute, start.second),
+                QTimeZone.utc(),
+            )
+        )
+        edit.blockSignals(False)
+
+    def _on_playback_start_changed(self, value: QDateTime) -> None:
+        """The user corrected the recording's start time -- pass it to the device."""
+        setter = getattr(self._playback_device(), "set_start_time_utc", None)
+        if not callable(setter):
+            return
+        d, t = value.date(), value.time()
+        setter(datetime(d.year(), d.month(), d.day(), t.hour(), t.minute(), t.second(), tzinfo=UTC))
 
     def _on_playback_offset_changed(self, value: int) -> None:
         """Drive SDRPipeline.set_doppler_target() directly.

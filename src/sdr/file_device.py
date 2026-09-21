@@ -34,13 +34,29 @@ trivially thread-safe against the pipeline thread's concurrent reads.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# IQRecorder names its files "{norad}_{name}_{YYYYMMDDTHHMMSSZ}.iq.wav" (UTC start time).
+_FILENAME_TIME_RE = re.compile(r"(\d{8}T\d{6}Z)")
+
+
+def parse_start_time_from_filename(name: str) -> datetime | None:
+    """UTC start time encoded in an IQ recording's file name, or None if there is none."""
+    match = _FILENAME_TIME_RE.search(name)
+    if match is None:
+        return None
+    try:
+        return datetime.strptime(match.group(1), "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+    except ValueError:
+        return None
 
 
 class SdrFileDevice:
@@ -62,6 +78,11 @@ class SdrFileDevice:
         self._lock = threading.Lock()
         self._pos: int = 0
         self._streaming = False
+        # UTC time of the first sample. The WAV holds no time, so it comes from
+        # the file name when there is one and is otherwise entered by the user
+        # (SdrControlWidget's "Start" field). With position_s it gives the
+        # UTC time of whatever is being played, for time-stamping decoded data.
+        self._start_time_utc: datetime | None = parse_start_time_from_filename(Path(wav_path).name)
         logger.info(
             "SdrFileDevice: loaded %s (%.1fs at %.0f Hz)",
             wav_path,
@@ -128,6 +149,17 @@ class SdrFileDevice:
     # ------------------------------------------------------------------
     # Playback-specific extensions (SdrRigAdapter.seek_file() etc.)
     # ------------------------------------------------------------------
+
+    @property
+    def start_time_utc(self) -> datetime | None:
+        """UTC time of the recording's first sample, or None if unknown."""
+        return self._start_time_utc
+
+    def set_start_time_utc(self, when: datetime | None) -> None:
+        """Set the recording's start time (None = unknown). A naive value is taken as UTC."""
+        if when is not None and when.tzinfo is None:
+            when = when.replace(tzinfo=UTC)
+        self._start_time_utc = when
 
     @property
     def duration_s(self) -> float:
