@@ -21,6 +21,7 @@ import contextlib
 import csv
 import datetime
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -95,6 +96,8 @@ from comms.telemetry.satnogs_uploader import (
 from i18n import _
 from ui.sat_search_dialog import SatSearchDialog
 
+logger = logging.getLogger(__name__)
+
 # Named after the backend software, matching _MODE_GR's convention — every
 # baud (1200/4800/9600) and connection (Rig+Sound Card or SDR-fed) is now
 # decoded by Direwolf itself, so "Direwolf" is accurate for all of them
@@ -103,7 +106,8 @@ from ui.sat_search_dialog import SatSearchDialog
 # module docstring for why that was replaced).
 _MODE_AFSK = "Direwolf (AX.25)"
 _MODE_GR = "gr-satellites"
-# Housekeeping frames sent as Morse-coded hex (ARICA-2 so far); decoded by the CW Decoder tab.
+# Housekeeping frames sent as Morse-coded hex, decoded by the CW Decoder tab
+# (see telemetry_formats/{norad}.json's "cw_frames"; ARICA-2, OrigamiSat-2).
 _MODE_CW = "CW TLM"
 
 # Owner tag for the shared AprsEngine singleton (see comms.aprs.engine).
@@ -1233,6 +1237,18 @@ class TelemetryTab(QWidget):
                     norad=norad,
                     ts=ts,
                     dim=True,
+                )
+            else:
+                # Not a frame-length hex block and not a near-miss either (e.g. the
+                # beacon's callsign/name text, or a block where the name and the hex
+                # data never got split apart by the block extractor's pause — see
+                # docs/telemetry.md "CW TLM" for why that can happen). Nothing is
+                # shown in the table for this case, so log it: it is the only trace
+                # of a block that silently produced no telemetry.
+                logger.info(
+                    "CW block ignored (norad=%s, not a known frame length or near-miss): %r",
+                    norad,
+                    normalize_block(text),
                 )
             return
         if not result.valid:

@@ -8,6 +8,8 @@ flag polarities, the conversions, and the angular-velocity range table.
 
 from __future__ import annotations
 
+from datetime import UTC, date, datetime
+
 import pytest
 
 from comms.telemetry.cw_frames import (
@@ -242,47 +244,64 @@ class TestSatnogsFrame:
 
 
 ORIGAMISAT2 = 68795
-# Two independent CW copies of the same 28-byte frame, received 2026-09-22 (CW Decoder
-# tab, callsign JS1YRU). The two transmissions are ~73s apart (satellite_time confirms
-# it), so bytes that differ between them (battery_current, angular velocity) are
-# genuinely dynamic, not a copy error; the ones that agree pin the byte layout --
-# most tellingly the four UVC threshold bytes, which land on exactly the example
-# voltages (7.5/6.6/7.2/6.2 V) in Figure 3 of ORI-2-0027e-OPR ver.1.1 (document_cw).
-OSAT2_FRAME_A = "817F7F8E841C05827E773D160000008585230 66AB225BF4B42483E00".replace(" ", "")
-OSAT2_FRAME_B = "817F7E5284 1C057082 6D3D16000000858523066AB226084B42483E00".replace(" ", "")
+# Real block text as CwTab._feed_block_extractor() -> frame_block_ready actually hands
+# TelemetryTab._on_cw_block() (fbsat59.log, 2026-09-22 22:24:11 / 22:25:26, IQ replay of
+# the 2026-09-22 06:52 UTC pass, callsign JS1YRU): "call sign, satellite name, data
+# section" (ORI-2-0027e-OPR Table 1) are sent back to back with no >3s pause, so the
+# block extractor (block_extractor.DEFAULT_GAP_S) never splits "JS1YRUORIGAMI2" from the
+# 56 hex digits -- cw_frames' id_prefix strips it before matching. The first frame is a
+# clean copy; the second has one CW-misread character ('?', 14th byte) and is used below
+# to check that a garbled id_prefix+hex block is flagged as a near miss, not decoded as
+# data. Both being exactly 70 chars (14-char prefix + 56 hex digits) matches the log.
+OSAT2_BLOCK_CLEAN = "JS1YRUORIGAMI2817F7F8E841C05827E773D16000000858523066AB225BF4B42483E00"
+OSAT2_BLOCK_GARBLED = "JS1YRUORIGAMI2817F7E52841C05?0826D3D16000000858523066AB226084B42483E00"
 
 
-def _osat2_shown(hex_text: str) -> dict[str, str]:
-    result = decode_cw_frame(ORIGAMISAT2, hex_text)
+def _osat2_shown(block_text: str) -> dict[str, str]:
+    result = decode_cw_frame(ORIGAMISAT2, block_text)
     assert result is not None
     return {f.label: (f.unit if f.is_string else f"{f.scaled_value:.4f}") for f in result.fields}
 
 
 class TestOrigamiSat2:
-    def test_both_real_frames_are_recognised_and_valid(self) -> None:
-        for hex_text in (OSAT2_FRAME_A, OSAT2_FRAME_B):
-            result = decode_cw_frame(ORIGAMISAT2, hex_text)
-            assert result is not None
-            assert result.key == "TLM"
-            assert result.valid
+    def test_id_prefix_is_stripped_before_matching(self) -> None:
+        # Bare hex with no id_prefix never matches -- OrigamiSat-2's real CW block
+        # always carries "JS1YRUORIGAMI2" in front (unlike ARICA-2's bare-hex beacon).
+        assert decode_cw_frame(ORIGAMISAT2, OSAT2_BLOCK_CLEAN[14:]) is None
+        result = decode_cw_frame(ORIGAMISAT2, OSAT2_BLOCK_CLEAN)
+        assert result is not None
+        assert result.key == "TLM"
+        assert result.valid
+        assert result.hex_text == OSAT2_BLOCK_CLEAN[14:]
+
+    def test_garbled_block_is_a_near_miss_not_a_decode(self) -> None:
+        # The '?' (14th hex digit) makes this real block fail decode entirely --
+        # it must be flagged for the grey "[?]" row, never silently accepted as data.
+        assert decode_cw_frame(ORIGAMISAT2, OSAT2_BLOCK_GARBLED) is None
+        assert is_near_miss(ORIGAMISAT2, OSAT2_BLOCK_GARBLED)
+
+    def test_prefix_plus_id_text_alone_is_ignored_not_a_near_miss(self) -> None:
+        # Callsign+name with no data section at all (e.g. a block cut right after the
+        # ID, before any hex arrived) must not be mistaken for a garbled frame.
+        assert decode_cw_frame(ORIGAMISAT2, "JS1YRUORIGAMI2") is None
+        assert not is_near_miss(ORIGAMISAT2, "JS1YRUORIGAMI2")
 
     def test_uvc_thresholds_match_the_documents_own_example_figure(self) -> None:
-        for hex_text in (OSAT2_FRAME_A, OSAT2_FRAME_B):
-            shown = _osat2_shown(hex_text)
-            assert shown["UVC閾値: Normal Mode復帰"] == "7.5000"
-            assert shown["UVC閾値: Safe Mode移行"] == "6.6000"
-            assert shown["UVC閾値: Level 1"] == "7.2000"
-            assert shown["UVC閾値: Level 2"] == "6.2000"
+        shown = _osat2_shown(OSAT2_BLOCK_CLEAN)
+        assert shown["UVC閾値: Normal Mode復帰"] == "7.5000"
+        assert shown["UVC閾値: Safe Mode移行"] == "6.6000"
+        assert shown["UVC閾値: Level 1"] == "7.2000"
+        assert shown["UVC閾値: Level 2"] == "6.2000"
 
-    def test_satellite_time_advances_by_the_gap_between_receptions(self) -> None:
-        shown_a = _osat2_shown(OSAT2_FRAME_A)
-        shown_b = _osat2_shown(OSAT2_FRAME_B)
-        t_a = float(shown_a["衛星内部時刻(UNIX秒)"])
-        t_b = float(shown_b["衛星内部時刻(UNIX秒)"])
-        assert t_b - t_a == pytest.approx(73.0)
+    def test_satellite_time_matches_the_reception_date(self) -> None:
+        # 1790059967 -> 2026-09-22T06:52:47Z, the actual UTC date/time of this IQ
+        # recording's pass (fbsat59.log: file 0_unknown_20260922T065218Z.iq.wav).
+        shown = _osat2_shown(OSAT2_BLOCK_CLEAN)
+        t = float(shown["衛星内部時刻(UNIX秒)"])
+        assert datetime.fromtimestamp(t, tz=UTC).date() == date(2026, 9, 22)
 
     def test_mode_and_static_fields(self) -> None:
-        shown = _osat2_shown(OSAT2_FRAME_A)
+        shown = _osat2_shown(OSAT2_BLOCK_CLEAN)
         assert shown["Operating Mode"] == "Normal Mode"
         assert shown["Operating Mode Status"] == "遷移完了"
         assert shown["UVC Level"] == "UVC startup successful"
@@ -297,7 +316,7 @@ class TestOrigamiSat2:
         """No confirmed SatNOGS submission layout exists for this satellite's CW
         frame (unlike ARICA-2's arica2.ksy *_form), so build_satnogs_frame must not
         guess one."""
-        assert build_satnogs_frame(ORIGAMISAT2, OSAT2_FRAME_A) is None
+        assert build_satnogs_frame(ORIGAMISAT2, OSAT2_BLOCK_CLEAN) is None
 
     def test_hidden_helper_fields_are_not_listed(self) -> None:
         defs = get_telemetry_id_defs(ORIGAMISAT2)

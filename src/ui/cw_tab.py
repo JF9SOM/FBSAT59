@@ -655,6 +655,13 @@ class CwTab(QWidget):
         confirmed_until = window_start_abs + cutoff_rel
         self._block_up_to_abs = max(self._block_up_to_abs, confirmed_until)
         for block in self._block_extractor.feed(fresh, confirmed_until):
+            logger.info(
+                "CW block finished (%d chars, %.1fs-%.1fs UTC): %r",
+                len(block.text),
+                (block.start_utc - snapshot).total_seconds(),
+                (block.end_utc - snapshot).total_seconds(),
+                block.text,
+            )
             self.frame_block_ready.emit(block.text, block.start_utc, block.end_utc)
 
     @staticmethod
