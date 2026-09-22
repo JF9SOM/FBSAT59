@@ -273,27 +273,35 @@ def get_telemetry_id_defs(norad: int | None) -> dict[str, Any] | None:
     before any frame of that ID has actually been received.
 
     A ``cw_frames`` schema (bit-packed Morse-coded hex frames, see
-    comms.telemetry.cw_frames) is returned in the same {key: {"label",
+    comms.telemetry.cw_frames) is merged into the same {key: {"label",
     "fields"}} shape, listing only the fields a table shows (not the hidden
-    helper bits), so the "Decoded Fields" tabs need no special case.
+    helper bits), so the "Decoded Fields" tabs need no special case. A
+    satellite can have both an AX.25 ``telemetry_ids`` schema *and* a
+    ``cw_frames`` schema (e.g. OrigamiSat-2, whose CW beacon is a distinct,
+    shorter frame from its FM/AX.25 housekeeping) — both sets of keys are
+    returned together; cw_frames keys ("TLM", "HK1", ...) never collide with
+    telemetry_ids' numeric-string keys or csv_messages' text-prefix keys.
     """
     fmt = load_format(norad) if norad is not None else None
     if not fmt:
         return None
+
+    defs: dict[str, Any] = {}
     for key in ("telemetry_ids", "csv_messages"):
-        defs = fmt.get(key)
-        if isinstance(defs, dict) and defs:
-            return defs
+        candidate = fmt.get(key)
+        if isinstance(candidate, dict) and candidate:
+            defs = dict(candidate)
+            break
+
     cw_frames = fmt.get("cw_frames")
     if isinstance(cw_frames, dict) and cw_frames:
-        return {
-            str(k): {
+        for k, v in cw_frames.items():
+            defs[str(k)] = {
                 "label": v.get("label", k),
                 "fields": [f for f in v.get("fields", []) if not f.get("hidden")],
             }
-            for k, v in cw_frames.items()
-        }
-    return None
+
+    return defs or None
 
 
 def decode_telemetry(

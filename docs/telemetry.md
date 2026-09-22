@@ -578,7 +578,7 @@ gr-satellitesの長い前置信号の必要性などの注意を表示する非�
 
 ---
 
-## 「CW TLM」モード — モールス符号の16進テレメトリの受信（2026-09-21 追加、ARICA-2 対応）
+## 「CW TLM」モード — モールス符号の16進テレメトリの受信（2026-09-21 追加、ARICA-2 対応。2026-09-22 OrigamiSat-2 対応追加）
 
 ### 背景
 
@@ -625,7 +625,9 @@ CW Decoder タブ（CwTab）— 確定した文字＋時刻を CwBlockExtractor 
 ARICA-2 の SATNOGS 送信機は単に `Mode U - CW`（TLM の語なし）なので、**フォーマット定義の有無が
 無いと見つからない**。DB には他に `CW TLM`/`TLM CW`/`CW Telemetry` の衛星が約30あり（CAS-2T・
 DUCHIFAT-1・PROITERES 等）、それらもコンボに並ぶ。**デコードできる衛星（`cw_frames` あり）が先頭**。
-形式が無い衛星を選んで ▶ Start すると「まだ定義されていません（ARICA-2 のみ）」と出て開始しない。
+形式が無い衛星を選んで ▶ Start すると「まだ定義されていません」と出て開始しない
+（2026-09-22 まで文言に「ARICA-2 のみ」と衛星名を固定で入れていたが、OrigamiSat-2 対応追加で
+古い情報になったため汎用の文言に変更）。
 `COMMS_TAB_CONFIG` には**キーを足していない**（実在のタブ用で、Quick Panel と自動オープンが使うため）。
 
 ### `cw_frames` スキーマ（`telemetry_formats/{norad}.json`、`comms/telemetry/cw_frames.py`）
@@ -641,7 +643,14 @@ DUCHIFAT-1・PROITERES 等）、それらもコンボに並ぶ。**デコード�
 `sign_from` で前のフラグの符号）・`angvel`（5bit 符号＋大きさ）・`hms`（GPS 時刻を3項目から合成、bit なし）。
 `hidden` は解析するが表示しない。`expect`（常にこの値）と `range`（[最小,最大]）が妥当性検査。
 `get_telemetry_id_defs()` が `cw_frames` も `{key: {label, fields}}` の形で返す（hidden を除く）ので、
-「全項目デコード結果」の HK1/HK2/HK3 サブタブは既存コードのまま出る。
+「全項目デコード結果」の HK1/HK2/HK3 サブタブは既存コードのまま出る。**`telemetry_ids`（バイト単位の
+AX.25 用）と `cw_frames` は同じ衛星が両方持てる**（2026-09-22、OrigamiSat-2 で判明。当初は
+「どちらか一方」という前提で `telemetry_ids` があれば `cw_frames` を見ずに即 return していたため、
+OrigamiSat-2 に `cw_frames` を追加しても「全項目デコード結果」タブに `TLM` サブタブが出ず、CW TLM
+モードで受信してもテーブル行は増えるのにサブタブの値が更新されない、という不具合になった。
+`get_telemetry_id_defs()` を「`telemetry_ids`/`csv_messages` を土台に、存在すれば `cw_frames` の
+エントリをマージして返す」方式に修正済み。キーの衝突は起きない設計（`telemetry_ids` は数値文字列
+キー、`cw_frames` は `"TLM"`/`"HK1"` のようなテキストキー）。
 
 **`68796.json` に `modulation` キーを入れてはいけない**: `_select_telemetry_satellite()` の
 Direwolf 分岐が `modulation` の先頭文字（`CW`）を「優先するモード」として使い、Direwolf コンボで
@@ -677,6 +686,38 @@ HK3 `00D7C2A8D6B8EA` は温度 −237.576、UHF 温度 36.682、受信電圧 1.0
 - **HK2** は実フレーム未受信。3つのフラグ（Thumbnail/JPEG/GPS update）は極性が未確認なので生ビット
   （0/1）で表示し、GPS 時刻・緯度経度・高度は ksy どおり。ksy の `valid`（時0–23・分/秒0–59・緯度≦90・経度≦180）
   を妥当性検査に使う。
+
+### OrigamiSat-2 のフレーム（2026-09-22 追加、公式 CW 仕様書ベース）
+
+ARICA-2と違い、OrigamiSat-2（NORAD 68795）は**CW用の公式データフォーマット文書が公開されている**
+（[ORI-2-0027e-OPR "OrigamiSat-2 CW Downlink Communication Data Format" ver.1.1](http://www.origami.titech.ac.jp/wp/wp-content/uploads/2026/04/ORI-2-0027e-OPR_OrigamiSat-2_CW_Downlink_Communication_Data_Format_ver1.1.pdf)、
+`68795.json` の `document_cw` 参照）。既存の `telemetry_ids`（ID65/100/130）は別文書
+（ORI-2-0027-OPR「FMダウンリンク通信データフォーマット」）が定義する**AX.25側**のバイトオフセット
+形式で、CWの28バイト固定フォーマットとは無関係の別構造（このため同じ衛星が `telemetry_ids` と
+`cw_frames` の両方を持つ、初めてのケースになった。前述の `get_telemetry_id_defs()` マージ対応の
+きっかけ）。
+
+| フレーム | 16進桁数 | bit数 | 内容 |
+|---|---|---|---|
+| TLM | 56 | 224（28バイト） | 衛星モード（UVC状態/レベル・運用モード）・バッテリー電圧/電流/温度・発電状況（SAP×5面）・スイッチ情報・角速度X/Y/Z・OBC/ADCS/Raspiの最終コマンドID・ADCSモード・バス通信部/CBand送信機温度・OBC起動回数・予約コマンド数・衛星内部UNIX時刻・UVC閾値×4・バス通信ヒューズカット回数 |
+
+仕様書通りバイト単位（ビット未満のサブフィールドは衛星モード・発電状況・スイッチ情報の3バイトのみ）。
+換算式（仕様書2.2〜2.14節）: 電圧＝raw/16、電流＝(raw−32767)/10.9225、温度＝raw−128、
+角速度＝raw/10−12.7、UVC閾値＝raw/10。ADCSモードは0x00=START UP/0x01=INITIAL/0x02=BDOT/
+0x04=3AXIS/0x06=RMMEST/0x07=EARTHPOINT（Table 9）。OBCコマンド実行結果は仕様書に
+「解釈方法は非公開」と明記されており生の数値のみ表示。SatNOGS投稿レイアウト（ARICA-2の
+`arica2.ksy` `*_form` に相当するもの）は未確認のため `satnogs` キーは付けていない
+（`build_satnogs_frame()` は常に `None` を返す）。
+
+**実データでの確認（2026-09-22、コールサインJS1YRU、独立した2回のCWコピー）**: `817F7F8E841C05
+827E773D160000008585230 66AB225BF4B42483E00` と `817F7E5284 1C057082 6D3D16000000858523066AB2
+26084B42483E00`（空白はCWコピーの区切りで、実際の28バイトからは除去）を手動デコードし、
+**UVC閾値4バイトが仕様書Figure 3の例示電圧値（7.5V/6.6V/7.2V/6.2V）と完全一致**、
+**衛星内部UNIX時刻が受信当日の日付に変換され、2回の受信間で73秒進んでいた**
+（衛星モードは両方とも Normal Mode＝3秒間隔ビーコンと矛盾しない）ことから、オフセット割り当ての
+正しさを確認済み（`tests/test_cw_frames.py::TestOrigamiSat2`）。電流・角速度バイトは2回で大きく
+食い違った（値そのものが変動する項目のため無矛盾）ため、この2フィールドは今回のコピーでは
+数値の妥当性を検証できていない。
 
 ### 誤読への対策（厳格モード）
 

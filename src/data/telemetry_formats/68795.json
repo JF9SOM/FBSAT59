@@ -6,6 +6,7 @@
   "ax25_pid": "0xF0",
   "reference": "http://www.origami.titech.ac.jp/archives/1958",
   "document": "ORI-2-0027-OPR OrigamiSat-2 FMダウンリンク通信データフォーマット ver.2026-04-21 (Institute of Science Tokyo)",
+  "document_cw": "ORI-2-0027e-OPR OrigamiSat-2 CW Downlink Communication Data Format ver.1.1 (Institute of Science Tokyo), http://www.origami.titech.ac.jp/wp/wp-content/uploads/2026/04/ORI-2-0027e-OPR_OrigamiSat-2_CW_Downlink_Communication_Data_Format_ver1.1.pdf",
   "telemetry_ids": {
     "65": {
       "label": "ID65 (RasPi/カメラ制御 HK)",
@@ -780,5 +781,357 @@
       ]
     }
   },
-  "note": "公式仕様書ORI-2-0027-OPR ver.2026-04-21に基づく。ID130は実受信フレーム(2026-09-13)で単位クォータニオンの大きさ・軌道半径・軌道速度が物理的に妥当な値になることを確認済み。ID65/ID100は仕様書通りだが実フレームでの検証はまだ。ID01(MOBC HK)は仕様書のbyteオフセット表に矛盾(byte24が「RXマイコン再起動回数」と「各機器電源状態」で二重定義され、byte22がどの項目にも割り当てられていない)があり、実受信フレームでの裏付けが取れるまで未実装。"
+  "note": "公式仕様書ORI-2-0027-OPR ver.2026-04-21に基づく。ID130は実受信フレーム(2026-09-13)で単位クォータニオンの大きさ・軌道半径・軌道速度が物理的に妥当な値になることを確認済み。ID65/ID100は仕様書通りだが実フレームでの検証はまだ。ID01(MOBC HK)は仕様書のbyteオフセット表に矛盾(byte24が「RXマイコン再起動回数」と「各機器電源状態」で二重定義され、byte22がどの項目にも割り当てられていない)があり、実受信フレームでの裏付けが取れるまで未実装。cw_frames(CW TLM)はORI-2-0027e-OPR ver.1.1(document_cw参照)の28バイト固定フォーマットに基づく。2026-09-22のCW実受信(コールサインJS1YRU、独立した2回のCWコピー)で手動デコードし、UVC閾値4バイトがFigure 3の例示電圧値(7.5V/7.2V/6.6V/6.2V)と完全一致・衛星内部UNIX時刻が受信当日の日付に変換され2回の受信間で73秒進んでいた(Normal Modeの3秒間隔ビーコンと矛盾しない)ことから、オフセット割り当ての正しさを確認済み。電流・角速度は2回の受信で値が大きく食い違った(値そのものが変動する項目であるため無矛盾)ため、アプリでの実受信によるフィールド単位の妥当性検証はまだ行っていない。",
+  "cw_frames": {
+    "TLM": {
+      "label": "CW Telemetry (28 bytes)",
+      "hex_digits": 56,
+      "fields": [
+        {
+          "name": "uvc_enabled",
+          "label": "UVC Enabled Status",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "Disabled",
+            "1": "Enabled"
+          }
+        },
+        {
+          "name": "uvc_level",
+          "label": "UVC Level",
+          "bits": 3,
+          "type": "flag",
+          "labels": {
+            "0": "UVC startup successful",
+            "1": "Level 1",
+            "2": "Level 2",
+            "3": "Switch to Normal Mode",
+            "4": "Switch to Safe Mode"
+          }
+        },
+        {
+          "name": "op_mode_status",
+          "label": "Operating Mode Status",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "遷移完了",
+            "1": "遷移中"
+          }
+        },
+        {
+          "name": "op_mode_id",
+          "label": "Operating Mode",
+          "bits": 3,
+          "type": "flag",
+          "labels": {
+            "0": "Safe Mode",
+            "1": "Normal Mode",
+            "2": "Survival Mode",
+            "6": "Initial Mode"
+          }
+        },
+        {
+          "name": "battery_voltage",
+          "label": "Battery Voltage",
+          "bits": 8,
+          "type": "uint",
+          "scale": 0.0625,
+          "unit": "V"
+        },
+        {
+          "name": "battery_current",
+          "label": "Battery Current",
+          "bits": 16,
+          "type": "uint",
+          "scale": 0.0915541314,
+          "add": -2999.954223,
+          "unit": "A"
+        },
+        {
+          "name": "battery_temp",
+          "label": "Battery Temperature",
+          "bits": 8,
+          "type": "uint",
+          "scale": 1.0,
+          "add": -128.0,
+          "unit": "°C"
+        },
+        {
+          "name": "pwrgen_reserved",
+          "bits": 3,
+          "type": "uint",
+          "hidden": true,
+          "expect": 0
+        },
+        {
+          "name": "sap_y",
+          "label": "SAP Y+,- 発電状況",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "非発電",
+            "1": "発電中"
+          }
+        },
+        {
+          "name": "sap_x",
+          "label": "SAP X- 発電状況",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "非発電",
+            "1": "発電中"
+          }
+        },
+        {
+          "name": "sap_z_minus",
+          "label": "SAP Z- 発電状況",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "非発電",
+            "1": "発電中"
+          }
+        },
+        {
+          "name": "sap_z_plus",
+          "label": "SAP Z+ 発電状況",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "非発電",
+            "1": "発電中"
+          }
+        },
+        {
+          "name": "thin_film_sap",
+          "label": "薄膜太陽電池 発電状況",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "非発電",
+            "1": "発電中"
+          }
+        },
+        {
+          "name": "sw_cband_tx",
+          "label": "CBand送信機",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "OFF",
+            "1": "ON"
+          }
+        },
+        {
+          "name": "sw_ext_mast",
+          "label": "伸展マスト",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "OFF",
+            "1": "ON"
+          }
+        },
+        {
+          "name": "sw_adcs",
+          "label": "ADCS",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "OFF",
+            "1": "ON"
+          }
+        },
+        {
+          "name": "sw_camera",
+          "label": "カメラ",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "OFF",
+            "1": "ON"
+          }
+        },
+        {
+          "name": "sw_fuse_cuts",
+          "label": "バス通信ヒューズカット",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "OFF",
+            "1": "ON"
+          }
+        },
+        {
+          "name": "sw_tfsc_iv",
+          "label": "薄膜太陽電池IV特性計測回路(TFSC_IV)",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "OFF",
+            "1": "ON"
+          }
+        },
+        {
+          "name": "sw_no_use",
+          "bits": 1,
+          "type": "uint",
+          "hidden": true
+        },
+        {
+          "name": "sw_imu",
+          "label": "IMU",
+          "bits": 1,
+          "type": "flag",
+          "labels": {
+            "0": "OFF",
+            "1": "ON"
+          }
+        },
+        {
+          "name": "angvel_x",
+          "label": "角速度 X軸",
+          "bits": 8,
+          "type": "uint",
+          "scale": 0.1,
+          "add": -12.7,
+          "unit": "deg/s"
+        },
+        {
+          "name": "angvel_y",
+          "label": "角速度 Y軸",
+          "bits": 8,
+          "type": "uint",
+          "scale": 0.1,
+          "add": -12.7,
+          "unit": "deg/s"
+        },
+        {
+          "name": "angvel_z",
+          "label": "角速度 Z軸",
+          "bits": 8,
+          "type": "uint",
+          "scale": 0.1,
+          "add": -12.7,
+          "unit": "deg/s"
+        },
+        {
+          "name": "cmd_id_obc",
+          "label": "OBCコマンド最終実行ID",
+          "bits": 8,
+          "type": "uint"
+        },
+        {
+          "name": "obc_cmd_result",
+          "label": "OBCコマンド実行結果(解釈方法非公開)",
+          "bits": 8,
+          "type": "uint"
+        },
+        {
+          "name": "cmd_id_adcs",
+          "label": "ADCSコマンド最終実行ID",
+          "bits": 8,
+          "type": "uint"
+        },
+        {
+          "name": "adcs_mode",
+          "label": "ADCSモード",
+          "bits": 8,
+          "type": "flag",
+          "labels": {
+            "0": "START UP",
+            "1": "INITIAL",
+            "2": "BDOT",
+            "4": "3AXIS",
+            "6": "RMMEST",
+            "7": "EARTHPOINT"
+          }
+        },
+        {
+          "name": "cmd_id_raspi",
+          "label": "Raspiコマンド最終実行ID",
+          "bits": 8,
+          "type": "uint"
+        },
+        {
+          "name": "bus_comm_temp",
+          "label": "バス通信部温度",
+          "bits": 8,
+          "type": "uint",
+          "scale": 1.0,
+          "add": -128.0,
+          "unit": "°C"
+        },
+        {
+          "name": "cband_tx_temp",
+          "label": "CBand送信機温度",
+          "bits": 8,
+          "type": "uint",
+          "scale": 1.0,
+          "add": -128.0,
+          "unit": "°C"
+        },
+        {
+          "name": "obc_startup_count",
+          "label": "OBC起動回数",
+          "bits": 8,
+          "type": "uint"
+        },
+        {
+          "name": "reservation_cmd_count",
+          "label": "予約コマンド数",
+          "bits": 8,
+          "type": "uint"
+        },
+        {
+          "name": "satellite_time",
+          "label": "衛星内部時刻(UNIX秒)",
+          "bits": 32,
+          "type": "uint",
+          "unit": "s"
+        },
+        {
+          "name": "uvc_threshold_normal",
+          "label": "UVC閾値: Normal Mode復帰",
+          "bits": 8,
+          "type": "uint",
+          "scale": 0.1,
+          "unit": "V"
+        },
+        {
+          "name": "uvc_threshold_safe",
+          "label": "UVC閾値: Safe Mode移行",
+          "bits": 8,
+          "type": "uint",
+          "scale": 0.1,
+          "unit": "V"
+        },
+        {
+          "name": "uvc_threshold_level1",
+          "label": "UVC閾値: Level 1",
+          "bits": 8,
+          "type": "uint",
+          "scale": 0.1,
+          "unit": "V"
+        },
+        {
+          "name": "uvc_threshold_level2",
+          "label": "UVC閾値: Level 2",
+          "bits": 8,
+          "type": "uint",
+          "scale": 0.1,
+          "unit": "V"
+        },
+        {
+          "name": "fuse_cut_count",
+          "label": "バス通信ヒューズカット回数",
+          "bits": 8,
+          "type": "uint"
+        }
+      ]
+    }
+  }
 }

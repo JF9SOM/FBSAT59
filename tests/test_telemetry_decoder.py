@@ -24,9 +24,13 @@ _ORIGAMISAT2_ID130_HEX = (
 
 
 def test_get_telemetry_id_defs_origamisat2() -> None:
+    # OrigamiSat-2 has both an AX.25 telemetry_ids schema (65/100/130) and a
+    # cw_frames schema ("TLM", the CW beacon) -- get_telemetry_id_defs() merges
+    # both so the "Decoded Fields" tabs work regardless of which mode a frame
+    # came in on.
     id_defs = get_telemetry_id_defs(68795)
     assert id_defs is not None
-    assert set(id_defs.keys()) == {"65", "100", "130"}
+    assert set(id_defs.keys()) == {"65", "100", "130", "TLM"}
 
 
 def test_get_telemetry_id_defs_missing_norad_returns_none() -> None:

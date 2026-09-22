@@ -239,3 +239,69 @@ class TestSatnogsFrame:
         assert build_satnogs_frame(ARICA2, "DE JS1YSD ARICA2") is None
         assert build_satnogs_frame(ARICA2, HK1_REAL[:-1]) is None
         assert build_satnogs_frame(25544, HK1_REAL) is None
+
+
+ORIGAMISAT2 = 68795
+# Two independent CW copies of the same 28-byte frame, received 2026-09-22 (CW Decoder
+# tab, callsign JS1YRU). The two transmissions are ~73s apart (satellite_time confirms
+# it), so bytes that differ between them (battery_current, angular velocity) are
+# genuinely dynamic, not a copy error; the ones that agree pin the byte layout --
+# most tellingly the four UVC threshold bytes, which land on exactly the example
+# voltages (7.5/6.6/7.2/6.2 V) in Figure 3 of ORI-2-0027e-OPR ver.1.1 (document_cw).
+OSAT2_FRAME_A = "817F7F8E841C05827E773D160000008585230 66AB225BF4B42483E00".replace(" ", "")
+OSAT2_FRAME_B = "817F7E5284 1C057082 6D3D16000000858523066AB226084B42483E00".replace(" ", "")
+
+
+def _osat2_shown(hex_text: str) -> dict[str, str]:
+    result = decode_cw_frame(ORIGAMISAT2, hex_text)
+    assert result is not None
+    return {f.label: (f.unit if f.is_string else f"{f.scaled_value:.4f}") for f in result.fields}
+
+
+class TestOrigamiSat2:
+    def test_both_real_frames_are_recognised_and_valid(self) -> None:
+        for hex_text in (OSAT2_FRAME_A, OSAT2_FRAME_B):
+            result = decode_cw_frame(ORIGAMISAT2, hex_text)
+            assert result is not None
+            assert result.key == "TLM"
+            assert result.valid
+
+    def test_uvc_thresholds_match_the_documents_own_example_figure(self) -> None:
+        for hex_text in (OSAT2_FRAME_A, OSAT2_FRAME_B):
+            shown = _osat2_shown(hex_text)
+            assert shown["UVC閾値: Normal Mode復帰"] == "7.5000"
+            assert shown["UVC閾値: Safe Mode移行"] == "6.6000"
+            assert shown["UVC閾値: Level 1"] == "7.2000"
+            assert shown["UVC閾値: Level 2"] == "6.2000"
+
+    def test_satellite_time_advances_by_the_gap_between_receptions(self) -> None:
+        shown_a = _osat2_shown(OSAT2_FRAME_A)
+        shown_b = _osat2_shown(OSAT2_FRAME_B)
+        t_a = float(shown_a["衛星内部時刻(UNIX秒)"])
+        t_b = float(shown_b["衛星内部時刻(UNIX秒)"])
+        assert t_b - t_a == pytest.approx(73.0)
+
+    def test_mode_and_static_fields(self) -> None:
+        shown = _osat2_shown(OSAT2_FRAME_A)
+        assert shown["Operating Mode"] == "Normal Mode"
+        assert shown["Operating Mode Status"] == "遷移完了"
+        assert shown["UVC Level"] == "UVC startup successful"
+        assert shown["Battery Voltage"] == "7.9375"
+        assert shown["Battery Temperature"] == "4.0000"
+        assert shown["ADCSモード"] == "START UP"
+        assert shown["OBC起動回数"] == "35.0000"
+        assert shown["予約コマンド数"] == "6.0000"
+        assert shown["バス通信ヒューズカット回数"] == "0.0000"
+
+    def test_no_satnogs_wire_format_defined_yet(self) -> None:
+        """No confirmed SatNOGS submission layout exists for this satellite's CW
+        frame (unlike ARICA-2's arica2.ksy *_form), so build_satnogs_frame must not
+        guess one."""
+        assert build_satnogs_frame(ORIGAMISAT2, OSAT2_FRAME_A) is None
+
+    def test_hidden_helper_fields_are_not_listed(self) -> None:
+        defs = get_telemetry_id_defs(ORIGAMISAT2)
+        assert defs is not None
+        assert "TLM" in defs
+        names = {f["name"] for f in defs["TLM"]["fields"]}
+        assert not {"pwrgen_reserved", "sw_no_use"} & names

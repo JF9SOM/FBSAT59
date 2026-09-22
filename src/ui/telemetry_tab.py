@@ -1179,11 +1179,7 @@ class TelemetryTab(QWidget):
             return False
         if load_cw_frames(norad) is None:
             self._set_error(
-                "⚠ "
-                + _(
-                    "No CW telemetry frame format is defined for this satellite yet "
-                    "(ARICA-2 only so far)."
-                )
+                "⚠ " + _("No CW telemetry frame format is defined for this satellite yet.")
             )
             return False
         if self._decode_tabs_norad != norad:
