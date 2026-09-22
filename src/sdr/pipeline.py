@@ -154,11 +154,9 @@ class SDRPipeline(QThread):
         # _play_audio() write() call, read by run()'s per-second summary.
         # Written and read from the pipeline thread only — no lock needed.
         self._diag_last_audio_write_dur: float = 0.0
-        # Diagnostic-only: the OutputStream's blocksize is fixed to
-        # whatever the first _play_audio() call's PCM length happened to
-        # be (see _play_audio()) — tracked here to log if a later call
-        # ever passes a differently-sized block, a plausible cause of
-        # audible stutter if the PortAudio backend doesn't tolerate it.
+        # Diagnostic-only: PCM length of the most recent _play_audio() call,
+        # read by run()'s per-second summary. See _write_audio_block() for
+        # why the OutputStream itself no longer pins a fixed blocksize.
         self._diag_audio_blocksize: int | None = None
 
         # Digital Doppler correction (NCO) — see _apply_doppler_correction().
@@ -658,7 +656,23 @@ class SDRPipeline(QThread):
             self._close_audio_stream_locked()
 
     def _write_audio_block(self, pcm: np.ndarray) -> None:
-        """Write one block to the sounddevice output stream, opening it on first use."""
+        """Write one block to the sounddevice output stream, opening it on first use.
+
+        blocksize=0 (PortAudio's "let the host pick" default) rather than a
+        size pinned to the first call's PCM length: the demodulator's
+        streaming resampler (_StreamResampler in demodulator.py) carries a
+        fractional position across blocks to hit AUDIO_RATE exactly over
+        time, so its output length legitimately varies by ±1 sample from
+        one call to the next -- that is not a bug to flag, it is normal for
+        every block after the first. Pinning blocksize to a fixed value and
+        then writing a different-sized array on nearly every call was the
+        actual cause of the periodic audible clicking reported during both
+        live listening and IQ recording playback (confirmed via
+        sdr_pipeline_diag.log: "blocksize_mismatch" on nearly every write,
+        present since 2026-08-25, unrelated to IQ playback's Rig-slot
+        borrowing). blocksize=0 lets OutputStream.write() accept
+        arbitrary-length arrays without that mismatch.
+        """
         with self._audio_lock:
             try:
                 import sounddevice as sd
@@ -668,16 +682,10 @@ class SDRPipeline(QThread):
                         samplerate=AUDIO_RATE,
                         channels=1,
                         dtype="float32",
-                        blocksize=len(pcm),
+                        blocksize=0,
                     )
                     self._sounddevice_stream.start()
-                    self._diag_audio_blocksize = len(pcm)
-                elif len(pcm) != self._diag_audio_blocksize:
-                    get_sdr_diag_logger().info(
-                        "pipeline audio_write blocksize_mismatch stream_blocksize=%d pcm_len=%d",
-                        self._diag_audio_blocksize,
-                        len(pcm),
-                    )
+                self._diag_audio_blocksize = len(pcm)
                 write_start = time.monotonic()
                 self._sounddevice_stream.write(pcm)
                 self._diag_last_audio_write_dur = time.monotonic() - write_start
