@@ -170,6 +170,130 @@ def test_start_time_is_none_without_a_time_in_the_name_and_can_be_set(tmp_path: 
     assert not dev.start_time_confirmed
 
 
+class _FakeClock:
+    """A controllable clock for pacing tests -- see the tests below.
+
+    Patched in for both time.monotonic() (what read_samples() checks its
+    target against) and time.sleep() (which advances the clock instead of
+    actually blocking, so these tests run instantly).
+    """
+
+    def __init__(self, start: float = 1000.0) -> None:
+        self.now = start
+        self.sleep_calls: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleep_calls.append(seconds)
+        if seconds > 0:
+            self.now += seconds
+
+    def advance(self, seconds: float) -> None:
+        """Simulate wall-clock time passing outside of read_samples() --
+        e.g. the rest of SDRPipeline.run() doing Doppler correction,
+        demodulation and IQ recording between calls."""
+        self.now += seconds
+
+
+def test_read_samples_paces_each_block_to_real_time(tmp_path: Path, monkeypatch) -> None:
+    """With no external delay, each block still sleeps out its own nominal duration."""
+    import sdr.file_device as file_device_module
+
+    path = tmp_path / "test.iq.wav"
+    _write_test_wav(path, num_samples=1000)  # 1s at 1000 Hz
+    dev = SdrFileDevice(path)
+
+    clock = _FakeClock()
+    monkeypatch.setattr(file_device_module.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(file_device_module.time, "sleep", clock.sleep)
+
+    dev.start_stream()
+    for _ in range(10):
+        dev.read_samples(100)  # 100 samples = 0.1s at 1000 Hz
+
+    assert clock.now == pytest.approx(1000.0 + 1.0)  # 10 blocks * 0.1s
+    assert sum(clock.sleep_calls) == pytest.approx(1.0)
+
+
+def test_read_samples_catches_up_after_slow_processing(tmp_path: Path, monkeypatch) -> None:
+    """A slow iteration must shorten the *next* sleep instead of the delay
+    just adding onto the total -- this is the whole point of pacing off a
+    fixed reference instead of sleep(block_duration) every call (see
+    read_samples()'s docstring: this is what was causing SDRPipeline's
+    audio output queue to run dry during file playback).
+    """
+    import sdr.file_device as file_device_module
+
+    path = tmp_path / "test.iq.wav"
+    _write_test_wav(path, num_samples=1000)  # 1s at 1000 Hz
+    dev = SdrFileDevice(path)
+
+    clock = _FakeClock()
+    monkeypatch.setattr(file_device_module.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(file_device_module.time, "sleep", clock.sleep)
+
+    dev.start_stream()
+    dev.read_samples(100)  # nominal: sleeps 0.1s
+    clock.advance(0.05)  # simulate 50ms of processing elsewhere in the loop
+    dev.read_samples(100)  # should only sleep ~0.05s to stay on schedule, not 0.1s
+
+    assert clock.sleep_calls[0] == pytest.approx(0.1)
+    assert clock.sleep_calls[1] == pytest.approx(0.05, abs=1e-9)
+    # The 50ms external delay was fully absorbed by shortening the next
+    # sleep (it was less than that block's own 0.1s budget), so the clock
+    # lands exactly on the fixed reference's schedule for 200 samples --
+    # no drift accumulated, unlike the old sleep(block_duration) every call.
+    assert clock.now == pytest.approx(1000.0 + 0.2)
+
+
+def test_read_samples_never_sleeps_negative_when_badly_behind(tmp_path: Path, monkeypatch) -> None:
+    """If external processing eats more than a block's own duration, the
+    next read must not sleep at all (not a negative/zero-clamped call) --
+    it should just return immediately to help the pipeline catch up.
+    """
+    import sdr.file_device as file_device_module
+
+    path = tmp_path / "test.iq.wav"
+    _write_test_wav(path, num_samples=1000)
+    dev = SdrFileDevice(path)
+
+    clock = _FakeClock()
+    monkeypatch.setattr(file_device_module.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(file_device_module.time, "sleep", clock.sleep)
+
+    dev.start_stream()
+    clock.advance(5.0)  # already far behind before the first read
+    dev.read_samples(100)
+
+    assert clock.sleep_calls == [0.0] or clock.sleep_calls == []
+
+
+def test_seek_resets_the_pacing_reference(tmp_path: Path, monkeypatch) -> None:
+    """Without a reset, seeking backward would make read_samples() try to
+    sleep out the (now huge, stale) gap back to the old reference; seeking
+    forward would make it sleep 0 for a long stretch. Neither should happen.
+    """
+    import sdr.file_device as file_device_module
+
+    path = tmp_path / "test.iq.wav"
+    _write_test_wav(path, num_samples=1000)  # 1s at 1000 Hz
+    dev = SdrFileDevice(path)
+
+    clock = _FakeClock()
+    monkeypatch.setattr(file_device_module.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(file_device_module.time, "sleep", clock.sleep)
+
+    dev.start_stream()
+    dev.read_samples(500)  # halfway through, clock now at +0.5s
+    dev.seek(0.1)  # jump back near the start
+    clock.sleep_calls.clear()
+    dev.read_samples(100)  # should pace like a fresh 0.1s block, not -0.4s
+
+    assert clock.sleep_calls == [pytest.approx(0.1)]
+
+
 def test_is_streaming_follows_start_and_stop_and_keeps_the_position(tmp_path: Path) -> None:
     path = tmp_path / "test.iq.wav"
     _write_test_wav(path, num_samples=2000)

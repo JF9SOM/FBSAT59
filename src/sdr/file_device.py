@@ -78,6 +78,11 @@ class SdrFileDevice:
         self._lock = threading.Lock()
         self._pos: int = 0
         self._streaming = False
+        # Pacing reference for read_samples() -- see its docstring. Reset in
+        # start_stream() and seek() so a pause/resume or a jump never leaves
+        # a stale reference to catch up (or slow down) against.
+        self._pace_ref_mono: float = 0.0
+        self._pace_ref_pos: int = 0
         # UTC time of the first sample. The WAV holds no time, so it comes from
         # the file name when there is one and is otherwise entered by the user
         # (SdrControlWidget's "Start" field). With position_s it gives the
@@ -112,6 +117,9 @@ class SdrFileDevice:
         return True
 
     def start_stream(self) -> bool:
+        with self._lock:
+            self._pace_ref_mono = time.monotonic()
+            self._pace_ref_pos = self._pos
         self._streaming = True
         return True
 
@@ -120,6 +128,31 @@ class SdrFileDevice:
 
     def read_samples(self, num_samples: int = 1024) -> np.ndarray | None:
         """Return the next *num_samples* samples, paced to real time.
+
+        Real hardware paces reads by blocking on the USB transfer; a
+        from-memory read is instant, so this sleeps out the equivalent
+        wall-clock duration instead -- otherwise Direwolf's bit-sync
+        timing (and the waterfall/UI update rate) would see samples
+        arrive far faster than the baud rate they were recorded at.
+
+        The sleep targets a wall-clock position computed from a fixed
+        reference (_pace_ref_mono/_pace_ref_pos, set by start_stream() and
+        seek()) rather than always sleeping this block's own nominal
+        duration. A per-call sleep(len(block) / sample_rate) does not
+        account for however long the rest of SDRPipeline.run() -- Doppler
+        correction, the demodulator's resampler, IQ recording, subscriber
+        callbacks -- took on the *previous* iteration, so every one of
+        those adds straight onto the loop period without ever being paid
+        back: confirmed live via sdr_pipeline_diag.log, where a file-
+        playback session ran a steady ~8-14ms/iteration behind real time
+        (worse with the demodulator active) for its entire length,
+        continuously draining SDRPipeline's audio output queue until the
+        writer thread ran dry and stalled -- audible as persistent
+        choppiness even though the demodulated PCM itself, rendered
+        offline with no timing involved, was clean. Targeting a fixed
+        wall-clock reference instead sleeps *less* on an iteration that
+        follows a slow one, so transient overruns are absorbed instead of
+        accumulating.
 
         Returns None once playback has reached the end of the file (the
         same "nothing available right now" convention SdrDevice.
@@ -137,12 +170,12 @@ class SdrFileDevice:
                 return None
             block = self._samples[start:end].copy()
             self._pos = end
-        # Real hardware paces reads by blocking on the USB transfer; a
-        # from-memory read is instant, so sleep out the equivalent
-        # wall-clock duration instead -- otherwise Direwolf's bit-sync
-        # timing (and the waterfall/UI update rate) would see samples
-        # arrive far faster than the baud rate they were recorded at.
-        time.sleep(len(block) / self._sample_rate)
+            ref_mono = self._pace_ref_mono
+            ref_pos = self._pace_ref_pos
+        target_mono = ref_mono + (end - ref_pos) / self._sample_rate
+        sleep_s = target_mono - time.monotonic()
+        if sleep_s > 0:
+            time.sleep(sleep_s)
         return block
 
     def close(self) -> None:
@@ -199,3 +232,10 @@ class SdrFileDevice:
         with self._lock:
             idx = int(position_s * self._sample_rate)
             self._pos = max(0, min(idx, len(self._samples)))
+            # Restart the pacing reference from here -- otherwise
+            # read_samples() would compute its target wall-clock position
+            # from the pre-seek reference and either sleep far too long
+            # (seeking backward) or not at all for a long stretch (seeking
+            # forward).
+            self._pace_ref_mono = time.monotonic()
+            self._pace_ref_pos = self._pos
