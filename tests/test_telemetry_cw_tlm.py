@@ -204,7 +204,7 @@ class TestStartStop:
         assert requested == []
         assert tab._cw_tlm_norad is None
         assert tab._btn_start.isEnabled()
-        assert "ARICA-2" in tab._lbl_status.text()
+        assert "No CW telemetry frame format is defined" in tab._lbl_status.text()
 
     def test_stopping_when_not_running_sends_nothing(
         self, qtbot: QtBot, cw_conn: sqlite3.Connection
