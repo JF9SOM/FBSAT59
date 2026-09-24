@@ -18,6 +18,7 @@ import sqlite3
 import subprocess
 import sys
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -62,6 +63,7 @@ from PySide6.QtWidgets import (
 from comms import mode_detection
 from comms.audio_device_manager import get_audio_device_manager
 from comms.telemetry.decoder import load_format
+from core import ui_hang_watchdog
 from core.autotrack import AutotrackManager
 from core.celestial_engine import MOON_ID, CelestialEngine
 from core.clock_offset import set_clock_offset
@@ -977,6 +979,7 @@ class MainWindow(QMainWindow):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._on_tick)
         self._timer.start(1000)
+        ui_hang_watchdog.start()
 
         # Rotator AZ/EL updates run on their own timer, decoupled from
         # self._timer's fixed 1s display refresh, so the "Cycle" dropdown
@@ -2238,6 +2241,7 @@ class MainWindow(QMainWindow):
 
     def _on_tick(self) -> None:
         """Timer callback that updates satellite positions and the status bar."""
+        ui_hang_watchdog.kick()
         try:
             # World map position update is throttled to every MAP_UPDATE_INTERVAL ticks
             # (default 5 seconds) to reduce Skyfield SGP4 computation load — or
@@ -5337,6 +5341,18 @@ class MainWindow(QMainWindow):
 
     def _on_transmitter_changed(self, xpdr: Any) -> None:
         """Update _current_transmitter and refresh the display on transponder selection change."""
+        t0 = time.monotonic()
+        logger.info(
+            "Transmitter change: begin uuid=%s",
+            xpdr.get("uuid") if isinstance(xpdr, dict) else None,
+        )
+        try:
+            self._on_transmitter_changed_impl(xpdr)
+        finally:
+            logger.info("Transmitter change: done in %.3fs", time.monotonic() - t0)
+
+    def _on_transmitter_changed_impl(self, xpdr: Any) -> None:
+        """Body of _on_transmitter_changed (split out for timing diagnostics)."""
         previous_transmitter = self._current_transmitter
         self._current_transmitter = xpdr if isinstance(xpdr, dict) else None
         self._current_ctcss_tone = None  # revert to transponder tone on selection change
@@ -8867,6 +8883,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         """Stop the timer, web server, and scheduler when the window is closed."""
+        ui_hang_watchdog.stop()
         # Communications tabs (APRS, Telemetry, FT4, Q65, SSTV, CW Decoder,
         # METEOR/HRPT) are child widgets of the tab bar, not top-level
         # windows, so Qt never auto-invokes their closeEvent() just because
