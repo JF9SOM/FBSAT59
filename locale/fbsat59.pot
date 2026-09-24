@@ -2434,62 +2434,8 @@ msgstr ""
 msgid "🔄 Refresh"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:213
-msgid "Minimum SNR needed to decode"
-msgstr ""
-
-#: src/ui/telemetry_tab.py:215
-msgid ""
-"Approximate signal-to-noise ratio (SNR) at which most frames (about 90%) "
-"decode. SNR here is the signal's power compared with the noise in the "
-"signal's own bandwidth (listed for each speed). The app does not show it as "
-"a number: judge it on the waterfall — the signal should stand out clearly "
-"from the noise. Aim for about 3 dB more than the values below."
-msgstr ""
-
 #: src/ui/telemetry_tab.py:221
 msgid "Speed"
-msgstr ""
-
-#: src/ui/telemetry_tab.py:222
-msgid "Signal band"
-msgstr ""
-
-#: src/ui/telemetry_tab.py:223
-msgid "Direwolf frequency tolerance"
-msgstr ""
-
-#: src/ui/telemetry_tab.py:232
-msgid ""
-"Direwolf (AX.25) mode: measured with synthetic AX.25 frames through this "
-"app's own demodulator. The frequency tolerance is how far off centre the "
-"signal may be and still decode (use the SDR Offset to centre it)."
-msgstr ""
-
-#: src/ui/telemetry_tab.py:237
-msgid ""
-"gr-satellites needs a long preamble: it often misses a burst that starts "
-"with less than about 0.2 s of preamble even at high SNR, whereas Direwolf "
-"decodes a burst with a preamble of about 30 ms. Its frequency tolerance has "
-"not been measured."
-msgstr ""
-
-#: src/ui/telemetry_tab.py:243
-msgid ""
-"These are estimates from synthetic signals. A real satellite's modulation, "
-"deviation and frame length differ, so treat them as a guide. A signal weaker "
-"than these values will not decode: improve the antenna or LNA, or wait for a "
-"higher-elevation pass."
-msgstr ""
-
-#: src/ui/telemetry_tab.py:249
-msgid ""
-"Example: 9600 bps bursts seen at +4 to +8 dB (KNACKSAT-2, 2026-09-19) were "
-"too weak for either decoder."
-msgstr ""
-
-#: src/ui/telemetry_tab.py:268
-msgid "Decoding SNR guide"
 msgstr ""
 
 #: src/ui/telemetry_tab.py:393
@@ -2533,10 +2479,6 @@ msgid ""
 "sessions play this same output back as audio instead).\n"
 "gr-satellites mode: its stdout/stderr, including errors\n"
 "not shown anywhere else."
-msgstr ""
-
-#: src/ui/telemetry_tab.py:476
-msgid "Minimum SNR needed to decode — click for details"
 msgstr ""
 
 #: src/ui/telemetry_tab.py:482 src/ui/cw_tab.py:205 src/ui/cw_tab.py:312

@@ -43,8 +43,6 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
-    QTextBrowser,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -199,98 +197,6 @@ class _ProcessLogDialog(QDialog):
         self.hide()
 
 
-# Minimum SNR (dB) at which most frames (~90%) decode, per speed. Measured on
-# synthetic AX.25 signals (see docs/communications.md, "デコードに必要な最低SNR
-# の目安"): Direwolf through this app's own demodulator, gr-satellites with the
-# ACRUX-1 / BOTAN / AmicalSat definitions and a 0.5 s preamble. The SNR is that
-# of the signal in its own band: 11 kHz (9600), 5.5 kHz (4800), 10 kHz (1200).
-_SNR_GUIDE_ROWS: tuple[tuple[str, str, str, str, str], ...] = (
-    # speed, Direwolf SNR, gr-satellites SNR, signal band, Direwolf frequency tolerance
-    ("1200 bps (AFSK)", "≈ 11 dB", "≈ 10 dB", "10 kHz", "±2 kHz"),
-    ("4800 bps (G3RUH)", "≈ 13 dB", "≈ 16+ dB", "5.5 kHz", "±1.5 kHz"),
-    ("9600 bps (G3RUH)", "≈ 12 dB", "≈ 14 dB", "11 kHz", "±2 kHz"),
-)
-
-
-def _snr_guide_html() -> str:
-    """The body of the "minimum SNR" guide window (translated at call time)."""
-    title = _("Minimum SNR needed to decode")
-    intro = _(
-        "Approximate signal-to-noise ratio (SNR) at which most frames (about 90%) "
-        "decode. SNR here is the signal's power compared with the noise in the "
-        "signal's own bandwidth (listed for each speed). The app does not show it "
-        "as a number: judge it on the waterfall — the signal should stand out "
-        "clearly from the noise. Aim for about 3 dB more than the values below."
-    )
-    col_speed = _("Speed")
-    col_band = _("Signal band")
-    col_tol = _("Direwolf frequency tolerance")
-    rows = "".join(
-        f"<tr><td>{speed}</td><td align='center'><b>{dw}</b></td>"
-        f"<td align='center'><b>{gr}</b></td><td align='center'>{band}</td>"
-        f"<td align='center'>{tol}</td></tr>"
-        for speed, dw, gr, band, tol in _SNR_GUIDE_ROWS
-    )
-    notes = [
-        _(
-            "Direwolf (AX.25) mode: measured with synthetic AX.25 frames through this "
-            "app's own demodulator. The frequency tolerance is how far off centre the "
-            "signal may be and still decode (use the SDR Offset to centre it)."
-        ),
-        _(
-            "gr-satellites needs a long preamble: it often misses a burst that starts "
-            "with less than about 0.2 s of preamble even at high SNR, whereas Direwolf "
-            "decodes a burst with a preamble of about 30 ms. Its frequency tolerance "
-            "has not been measured."
-        ),
-        _(
-            "These are estimates from synthetic signals. A real satellite's modulation, "
-            "deviation and frame length differ, so treat them as a guide. A signal "
-            "weaker than these values will not decode: improve the antenna or LNA, or "
-            "wait for a higher-elevation pass."
-        ),
-        _(
-            "SDR reception at 4800 and 9600 bps also runs a coherent MSK decoder next "
-            "to Direwolf. It decodes most frames from about 10 dB (4800 bps) and 11 dB "
-            "(9600 bps) upward, i.e. roughly 3 to 4 dB weaker signals than Direwolf, "
-            "but only for a modulation index of 0.5 (deviation = baud / 4, e.g. GMSK); "
-            "other deviations are decoded by Direwolf alone."
-        ),
-        _(
-            "Example: 9600 bps bursts seen at +4 to +8 dB (KNACKSAT-2, 2026-09-19) were "
-            "too weak for either decoder."
-        ),
-    ]
-    items = "".join(f"<li>{n}</li>" for n in notes)
-    return (
-        f"<h3>{title}</h3><p>{intro}</p>"
-        "<table border='1' cellspacing='0' cellpadding='5'>"
-        f"<tr><th>{col_speed}</th><th>Direwolf (AX.25)</th><th>gr-satellites</th>"
-        f"<th>{col_band}</th><th>{col_tol}</th></tr>{rows}</table>"
-        f"<ul>{items}</ul>"
-    )
-
-
-class _SnrGuideDialog(QDialog):
-    """Modeless window explaining the SNR each decoder needs (see _snr_guide_html())."""
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent, Qt.WindowType.Window)
-        self.setWindowTitle(_("Decoding SNR guide"))
-        self.resize(640, 420)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        self._view = QTextBrowser()
-        self._view.setHtml(_snr_guide_html())
-        layout.addWidget(self._view)
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-        btn_close = QPushButton(_("Close"))
-        btn_close.clicked.connect(self.close)
-        btn_row.addWidget(btn_close)
-        layout.addLayout(btn_row)
-
-
 class TelemetryTab(QWidget):
     """Non-resident tab opened from Communications > Telemetry."""
 
@@ -355,7 +261,6 @@ class TelemetryTab(QWidget):
         self._frame_count = 0
         self._direwolf_log_window: _ProcessLogDialog | None = None
         self._gr_log_window: _ProcessLogDialog | None = None
-        self._snr_guide_window: _SnrGuideDialog | None = None
 
         self._ensure_db_table()
         self._setup_ui()
@@ -480,13 +385,6 @@ class TelemetryTab(QWidget):
         row1.addWidget(self._btn_backend_log)
 
         row1.addStretch()
-        self._btn_snr_info = QToolButton()
-        self._btn_snr_info.setText("ⓘ")
-        self._btn_snr_info.setAutoRaise(True)
-        self._btn_snr_info.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_snr_info.setToolTip(_("Minimum SNR needed to decode — click for details"))
-        self._btn_snr_info.clicked.connect(self._on_snr_info_clicked)
-        row1.addWidget(self._btn_snr_info)
         input_layout.addLayout(row1)
 
         row2 = QHBoxLayout()
@@ -1082,14 +980,6 @@ class TelemetryTab(QWidget):
             )
             self._conn.commit()
         self._apply_baud_change()
-
-    def _on_snr_info_clicked(self) -> None:
-        """Open (or bring forward) the window explaining the SNR each decoder needs."""
-        if self._snr_guide_window is None:
-            self._snr_guide_window = _SnrGuideDialog(self)
-        self._snr_guide_window.show()
-        self._snr_guide_window.raise_()
-        self._snr_guide_window.activateWindow()
 
     def _on_backend_log_clicked(self) -> None:
         """Open (or bring forward and refresh) the active backend's console log window.
