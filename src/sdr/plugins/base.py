@@ -14,7 +14,7 @@ Future plugins (phase 2+):
   SatDumpPlugin     — HRPT/LRPT satellite imagery via SatDump subprocess
   DirewolfPlugin    — APRS via Direwolf TCP KISS
   WsjtxPlugin       — FT4 via WSJT-X UDP
-  SstvPlugin        — SSTV reception via pySSTV
+  SstvPlugin        — SSTV reception (comms.sstv.decoder: Robot36 / PD120)
 
 Audio input source (for data mode plugins that accept voice audio):
   SdrAudioSource    — software-demodulated audio from the I/Q pipeline

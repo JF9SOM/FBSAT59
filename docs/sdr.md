@@ -700,7 +700,7 @@ Radio Control でトランスポンダーを選択すると SDR Control のモ�
 | ~~FT4~~ | ~~WSJT-X（UDP 連携）~~ | ~~SDR or Rigサウンドカード~~ | ~~Rig サウンドカード + PTT~~ |
 | → **FT4（実装済み）** | **ft8_lib ctypes（内蔵）** | Rig必須・SDR RX 補助可 | Rig サウンドカード + PTT |
 | ~~CW デコード~~ | ~~AI-CW デコーダー（内蔵、ML推論）~~ | ~~SDR or Rigサウンドカード~~ | ~~なし~~ | → **実装済み** `src/comms/cw/`（deepcw-engine ONNX）|
-| SSTV 受信 | pySSTV（内蔵） | SDR or Rigサウンドカード | なし |
+| SSTV 受信 | 自前デコーダー（Robot36/PD120 のみ） | SDR or Rigサウンドカード | なし |
 
 外部ツール（SatDump・Direwolf・gr-satellites）はサブプロセス起動。内部実装しない。
 FT4 は ft8_lib ctypes で内蔵実装済み（WSJT-X UDP 方式から変更）。

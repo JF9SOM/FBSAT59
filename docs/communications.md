@@ -19,7 +19,7 @@ src/
 │   ├── telemetry/
 │   │   └── decoder.py      # テレメトリーフレームデコーダー（JSON 定義ベース）
 │   ├── sstv/
-│   │   ├── decoder.py      # SstvDecoder — pySSTV ラッパー（Robot36/PD120 等）
+│   │   ├── decoder.py      # SstvDecoder — 自前のデコーダー（Robot36/PD120 のみ。Martin/Scottie は非対応）
 │   │   └── ssdv.py         # SsdvDecoder — ssdv CLI サブプロセス管理
 │   ├── ft4/
 │   │   ├── codec.py        # Ft4Codec — ft8_lib ctypes ラッパー（エンコード・デコード）
@@ -356,7 +356,7 @@ revert / デフレーマ + reader のテスト
 というのが Phase 1 との主な違い。
 
 **メニュー: Communications > SSTV / SSDV**（`src/ui/sstv_tab.py`）
-- SSTV 受信: pySSTV（Robot36/PD120/Martin/Scottie）、SDR audio_ready または sounddevice 入力
+- SSTV 受信: 自前デコーダー（Robot36/PD120 のみ。**Martin/Scottie は非対応**、HF 用のため衛星では不要という判断）、SDR audio_ready または sounddevice 入力
 - SSDV 受信: AX.25 `raw_frame_received` Signal をタップ → ssdv CLI でデコード
 - プログレッシブ画像表示・受信履歴サムネイル・PNG 手動/自動保存
 - SQLite `sstv_log` テーブルへ自動永続化
@@ -1230,8 +1230,8 @@ HEX にして貼り付け→全パケット検出→`ssdv -d` で元サイズの
 |---|---|---|
 | Robot36 | ISS（主要イベント） | 対応 |
 | PD120 | ISS（一部イベント）・その他 | 対応 |
-| Martin M1 / M2 | 地上局運用・一部衛星 | **未対応**（以前の文書は対応と書いていたが実装は無かった） |
-| Scottie S1 / S2 | 地上局運用 | **未対応**（同上） |
+| Martin M1 / M2 | HF の地上局運用 | **非対応**（衛星では使われないため、作らない判断。以前の文書は対応と書いていたが実装は無かった） |
+| Scottie S1 / S2 / DX | HF の地上局運用 | **非対応**（同上） |
 
 #### ssdv ツールの検出・バンドル方針
 
