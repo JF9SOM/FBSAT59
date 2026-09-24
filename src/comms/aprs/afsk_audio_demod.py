@@ -69,6 +69,29 @@ _AFSK_PROFILE = DiscriminatorProfile(
 )
 
 
+# Satellite 1200 baud AFSK (Telemetry tab). Weak FM signals sit near the FM
+# threshold, where the discriminator emits spikes ("clicks") that swamp the
+# tone detector. Measured on a real OrigamiSat-2 pass (2026-09-23: 21 frames,
+# covering 19 of the 24 transmitted frame counters, vs 0-1 with _AFSK_PROFILE):
+# a narrower IF (+/-5 kHz; the signal itself needs +/-(2.5 kHz deviation +
+# 2.2 kHz tone)), a discriminator run at ~50 kHz, fading the output where the
+# IF envelope dips, and limiting the output to the real deviation. No
+# de-emphasis: the satellite does not pre-emphasize, and the result was
+# identical with it on or off.
+# Only for links known to have a small deviation -- the limiter would distort a
+# terrestrial +/-5 kHz APRS signal, which keeps _AFSK_PROFILE.
+_AFSK_SATELLITE_PROFILE = DiscriminatorProfile(
+    if_half_bw_hz=5_000.0,
+    if_taps=255,
+    post_lp_hz=3_200.0,
+    full_scale_hz=6_000.0,
+    deemph_tau_s=None,
+    clamp_hz=2_500.0,
+    env_weight=0.5,
+    disc_rate_hz=50_000.0,
+)
+
+
 class AfskAudioDiscriminator(G3ruhDiscriminator):
     """Stateful de-emphasized NFM audio recovery, tuned for Bell 202 relay.
 
@@ -78,8 +101,15 @@ class AfskAudioDiscriminator(G3ruhDiscriminator):
     the de-emphasis stage G3RUH's raw wideband tap deliberately skips.
     """
 
-    def __init__(self, input_rate: float, profile: DiscriminatorProfile | None = None) -> None:
-        super().__init__(input_rate, profile=profile if profile is not None else _AFSK_PROFILE)
+    def __init__(
+        self,
+        input_rate: float,
+        profile: DiscriminatorProfile | None = None,
+        satellite: bool = False,
+    ) -> None:
+        if profile is None:
+            profile = _AFSK_SATELLITE_PROFILE if satellite else _AFSK_PROFILE
+        super().__init__(input_rate, profile=profile)
 
 
 class AfskAudioSdrDemod(QThread):
@@ -100,9 +130,9 @@ class AfskAudioSdrDemod(QThread):
 
     audio_ready: Signal = Signal(object)
 
-    def __init__(self, sample_rate: int, parent: Any = None) -> None:
+    def __init__(self, sample_rate: int, parent: Any = None, satellite: bool = False) -> None:
         super().__init__(parent)
-        self._discriminator = AfskAudioDiscriminator(input_rate=sample_rate)
+        self._discriminator = AfskAudioDiscriminator(input_rate=sample_rate, satellite=satellite)
         self._q: queue.Queue[np.ndarray] = queue.Queue(maxsize=128)
         self._stop_event = threading.Event()
         # Diagnostic-only (see sdr.diag_log): counts blocks dropped because

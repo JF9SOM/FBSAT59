@@ -295,6 +295,7 @@ class AudioBridge(QThread):
         sdr_pipeline: Any = None,
         modem: str = "1200",
         parent: Any = None,
+        sdr_satellite: bool = False,
     ) -> None:
         super().__init__(parent)
         self._proc = proc
@@ -302,6 +303,9 @@ class AudioBridge(QThread):
         self._out_device = out_device
         self._sdr_pipeline = sdr_pipeline
         self._modem = modem
+        # 1200 baud only: use the satellite-tuned front end (see
+        # afsk_audio_demod.AfskAudioSdrDemod).
+        self._sdr_satellite = sdr_satellite
         self._stop_event = threading.Event()
 
     _SAMPLE_RATE = 48000
@@ -351,7 +355,7 @@ class AudioBridge(QThread):
                 if self._modem == "1200":
                     from comms.aprs.afsk_audio_demod import AfskAudioSdrDemod
 
-                    sdr_demod = AfskAudioSdrDemod(sample_rate=sr)
+                    sdr_demod = AfskAudioSdrDemod(sample_rate=sr, satellite=self._sdr_satellite)
                 else:
                     from comms.aprs.g3ruh_demod import G3ruhSdrDemod
 
@@ -490,6 +494,7 @@ class DirewolfManager:
         out_device: int | None = None,
         modem: str = "1200",
         sdr_pipeline: Any = None,
+        sdr_satellite: bool = False,
     ) -> tuple[bool, str]:
         """Start Direwolf and the audio / KISS threads.
 
@@ -559,7 +564,12 @@ class DirewolfManager:
 
         # Audio bridge: soundcard (or SDR) ↔ Direwolf stdin/stdout
         self._audio = AudioBridge(
-            self._proc, in_device, out_device, sdr_pipeline=sdr_pipeline, modem=modem
+            self._proc,
+            in_device,
+            out_device,
+            sdr_pipeline=sdr_pipeline,
+            modem=modem,
+            sdr_satellite=sdr_satellite,
         )
         self._audio.start()
 

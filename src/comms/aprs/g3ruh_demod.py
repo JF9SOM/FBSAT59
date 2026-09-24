@@ -70,6 +70,20 @@ class DiscriminatorProfile:
                     discriminator output (None = flat, as a radio's DATA
                     port gives for G3RUH). Bell 202 relayed through a
                     radio's voice path needs it -- see afsk_audio_demod.py.
+    clamp_hz        Limit the discriminator output to +/- this many Hz before
+                    de-emphasis / the output low-pass (None = no limiting).
+                    Below the FM threshold the discriminator emits sharp
+                    spikes ("clicks") far larger than any real modulation;
+                    limiting them near the true deviation keeps them from
+                    swamping the tone detector. Only valid when the real
+                    deviation is known to be small (satellite links).
+    env_weight      Fade the discriminator output where the IF envelope drops
+                    below ``env_weight`` x its 10 ms mean (None = off). The
+                    clicks occur exactly at those envelope dips, so this
+                    removes most of them without touching the clean signal.
+    disc_rate_hz    Decimate to about this rate before the discriminator
+                    (None = run it at the intermediate rate). A slower
+                    discriminator averages the per-sample phase noise.
     """
 
     if_half_bw_hz: float
@@ -77,6 +91,9 @@ class DiscriminatorProfile:
     post_lp_hz: float | None
     full_scale_hz: float
     deemph_tau_s: float | None = None
+    clamp_hz: float | None = None
+    env_weight: float | None = None
+    disc_rate_hz: float | None = None
 
 
 _LEGACY_PROFILE = DiscriminatorProfile(_IF_HALF_BW_HZ, 63, None, _DEVIATION_HZ)
@@ -142,6 +159,8 @@ class G3ruhDiscriminator:
         self._post_zi: np.ndarray | None = None
         self._deemph_zi = np.zeros(1, dtype=np.float64)
         self._decim_phase = 0
+        self._decim2_phase = 0
+        self._env_zi: np.ndarray | None = None
         self._last_if: np.complex64 | None = None
 
     def _build_filters(self) -> None:
@@ -167,7 +186,13 @@ class G3ruhDiscriminator:
         # own reference decoder could not lock at all until this was
         # fixed). math.gcd() picks the smallest up/down pair that lands on
         # _AUDIO_RATE exactly, whatever self._mid_rate rounds to.
-        mid_rate_int = max(1, int(round(self._mid_rate)))
+        # Optional extra decimation after the IF filter (see disc_rate_hz).
+        self._post_decim = (
+            max(1, int(self._mid_rate / prof.disc_rate_hz)) if prof.disc_rate_hz else 1
+        )
+        self._disc_rate = self._mid_rate / self._post_decim
+        self._env_len = max(1, int(round(0.010 * self._disc_rate)))
+        mid_rate_int = max(1, int(round(self._disc_rate)))
         gcd = math.gcd(_AUDIO_RATE, mid_rate_int)
         self._resample_up = _AUDIO_RATE // gcd
         self._resample_down = mid_rate_int // gcd
@@ -189,12 +214,12 @@ class G3ruhDiscriminator:
         if_bw = float(np.clip(prof.if_half_bw_hz / (self._mid_rate / 2.0), 0.001, 0.499))
         self._if_b = sp_signal.firwin(prof.if_taps, if_bw).astype(np.float32)
         self._post_b = (
-            sp_signal.firwin(101, prof.post_lp_hz, fs=self._mid_rate).astype(np.float32)
+            sp_signal.firwin(101, prof.post_lp_hz, fs=self._disc_rate).astype(np.float32)
             if prof.post_lp_hz is not None
             else None
         )
         if prof.deemph_tau_s is not None:
-            dt = 1.0 / self._mid_rate
+            dt = 1.0 / self._disc_rate
             alpha = dt / (prof.deemph_tau_s + dt)
             self._deemph_b = np.array([alpha], dtype=np.float64)
             self._deemph_a = np.array([1.0, -(1.0 - alpha)], dtype=np.float64)
@@ -228,6 +253,9 @@ class G3ruhDiscriminator:
         if self._if_zi is None:
             self._if_zi = np.zeros(len(self._if_b) - 1, dtype=np.complex64)
         iq_if, self._if_zi = sp_signal.lfilter(self._if_b, [1.0], iq_ds, zi=self._if_zi)
+        iq_if = self._decimate_post(iq_if)
+        if len(iq_if) == 0:
+            return np.array([], dtype=np.float32)
 
         prev = np.empty_like(iq_if)
         prev[0] = iq_if[0] if self._last_if is None else self._last_if
@@ -237,7 +265,12 @@ class G3ruhDiscriminator:
 
         # No de-emphasis here (unlike NFM voice) — 9600bps G3RUH needs the
         # raw, flat discriminator output, same as a radio's DATA port.
-        audio_raw = discrim * (self._mid_rate / (2 * np.pi * self._profile.full_scale_hz))
+        audio_raw = discrim * (self._disc_rate / (2 * np.pi * self._profile.full_scale_hz))
+        if self._profile.env_weight:
+            audio_raw = audio_raw * self._envelope_weight(iq_if)
+        if self._profile.clamp_hz:
+            limit = self._profile.clamp_hz / self._profile.full_scale_hz
+            audio_raw = np.clip(audio_raw, -limit, limit)
         if self._deemph_b is not None:
             audio_raw, self._deemph_zi = sp_signal.lfilter(
                 self._deemph_b, self._deemph_a, audio_raw, zi=self._deemph_zi
@@ -251,6 +284,32 @@ class G3ruhDiscriminator:
         audio = sp_signal.resample_poly(audio_raw, self._resample_up, self._resample_down)
         result: np.ndarray = np.clip(audio, -1.0, 1.0).astype(np.float32)
         return result
+
+    def _envelope_weight(self, iq_if: np.ndarray) -> np.ndarray:
+        """Per-sample weight in [0, 1] that fades the discriminator at envelope dips.
+
+        ``weight = min(1, (|x| / (env_weight * mean|x| over ~10 ms))^2)``; the
+        mean carries its filter state across blocks.
+        """
+        env = np.abs(iq_if).astype(np.float64)
+        if self._env_zi is None:
+            self._env_zi = np.zeros(self._env_len - 1, dtype=np.float64)
+        mean, self._env_zi = sp_signal.lfilter(
+            np.full(self._env_len, 1.0 / self._env_len), [1.0], env, zi=self._env_zi
+        )
+        weight = np.minimum(
+            1.0, (env / (float(self._profile.env_weight or 1.0) * mean + 1e-9)) ** 2
+        )
+        return np.asarray(weight)
+
+    def _decimate_post(self, x: np.ndarray) -> np.ndarray:
+        """Second integer decimation (after the IF filter), phase kept across blocks."""
+        factor = self._post_decim
+        if factor <= 1:
+            return x
+        start = self._decim2_phase
+        self._decim2_phase = (start - len(x)) % factor
+        return x[start::factor]
 
     def _decimate(self, x: np.ndarray, factor: int) -> np.ndarray:
         """Integer-factor decimation that keeps its sample phase across blocks.
