@@ -18,10 +18,12 @@ from __future__ import annotations
 
 import sqlite3
 import types
+from typing import Any
 
 import pytest
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QPalette
+from PySide6.QtWidgets import QApplication, QStyle, QStyleOptionViewItem, QWidget
 from pytestqt.qtbot import QtBot
 
 import ui.telemetry_tab as telemetry_tab_mod
@@ -513,3 +515,92 @@ def test_gr_combo_provisional_match_survives_hidden_old_provisional_row(
     tab._populate_gr_combo()
     assert _gr_combo_items(tab) == [(66671, "HCT-SAT2  (66671)")]
     assert tab._gr_catalog_ids == {66671: 98470}
+
+
+# ---------------------------------------------------------------------------
+# Received Frames table: rejected (dim) rows must stay readable
+# ---------------------------------------------------------------------------
+
+
+def _luminance(c: QColor) -> float:
+    def lin(v: int) -> float:
+        x = v / 255
+        return x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4
+
+    return 0.2126 * lin(c.red()) + 0.7152 * lin(c.green()) + 0.0722 * lin(c.blue())
+
+
+def _contrast(a: QColor, b: QColor) -> float:
+    la, lb = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def _option(tab: TelemetryTab, row: int, *, selected: bool, text: str, base: str) -> Any:
+    """The style option the table delegate paints *row* with, on a given theme."""
+    palette = QPalette()
+    palette.setColor(QPalette.ColorRole.Text, QColor(text))
+    palette.setColor(QPalette.ColorRole.Base, QColor(base))
+    option = QStyleOptionViewItem()
+    option.palette = palette
+    if selected:
+        option.state |= QStyle.StateFlag.State_Selected
+    tab._table.itemDelegate().initStyleOption(option, tab._table.model().index(row, 3))
+    return option
+
+
+def test_dim_row_uses_no_fixed_foreground_colour(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    """A hard-coded grey foreground is what made rejected rows unreadable."""
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab._append_row(callsign="", sat_name="X", data="[?] ...", norad=None, dim=True)
+    item = tab._table.item(0, 3)
+    assert item.data(Qt.ItemDataRole.ForegroundRole) is None
+    assert item.data(Qt.ItemDataRole.UserRole + 1) is True
+
+
+@pytest.mark.parametrize(
+    ("text", "base"),
+    [
+        ("#dddddd", "#1e1e1e"),
+        ("#dddddd", "#2b2b2b"),
+        ("#111111", "#ffffff"),
+        ("#222222", "#ececec"),
+    ],
+)
+def test_dim_row_stays_readable_on_dark_and_light_themes(
+    qtbot: QtBot, conn: sqlite3.Connection, text: str, base: str
+) -> None:
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab._append_row(callsign="", sat_name="X", data="[?] ...", norad=None, dim=True)
+    opt = _option(tab, 0, selected=False, text=text, base=base)
+    muted = opt.palette.color(QPalette.ColorRole.Text)
+    assert muted != QColor(text)  # actually muted
+    assert _contrast(muted, QColor(base)) >= 3.0
+    assert opt.font.italic()
+
+
+def test_dim_row_keeps_theme_selection_colours_when_selected(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    """Selected: the theme's own highlight text colour is used (grey on the grey
+    selection highlight was the reported problem) -- only italics mark it muted."""
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab._append_row(callsign="", sat_name="X", data="[?] ...", norad=None, dim=True)
+    tab._append_row(callsign="J", sat_name="X", data="[TLM] ...", norad=1)
+    dim_sel = _option(tab, 0, selected=True, text="#dddddd", base="#1e1e1e")
+    normal_sel = _option(tab, 1, selected=True, text="#dddddd", base="#1e1e1e")
+    assert dim_sel.palette.color(QPalette.ColorRole.Text) == normal_sel.palette.color(
+        QPalette.ColorRole.Text
+    )
+    assert dim_sel.font.italic() and not normal_sel.font.italic()
+
+
+def test_normal_row_is_not_restyled(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab._append_row(callsign="J", sat_name="X", data="[TLM] ...", norad=1)
+    opt = _option(tab, 0, selected=False, text="#dddddd", base="#1e1e1e")
+    assert opt.palette.color(QPalette.ColorRole.Text) == QColor("#dddddd")
+    assert not opt.font.italic()

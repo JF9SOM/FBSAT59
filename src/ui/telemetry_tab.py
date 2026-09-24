@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QStandardItemModel
+from PySide6.QtGui import QColor, QPalette, QStandardItemModel
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -40,6 +40,9 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -146,6 +149,40 @@ class _SatnogsApiKeyDialog(QDialog):
 
     def api_key(self) -> str:
         return self._edit.text().strip()
+
+
+# Item role marking a Received Frames row as a rejected candidate (drawn muted).
+_DIM_ROLE = Qt.ItemDataRole.UserRole + 1
+
+
+class _DimRowDelegate(QStyledItemDelegate):
+    """Draws rows marked with _DIM_ROLE in a muted, italic style that stays readable.
+
+    A fixed grey foreground (the earlier approach) is unreadable whenever it
+    lands on a background of a similar grey -- the selection highlight or an
+    alternating row. Here the muted colour is a blend of the *theme's* text and
+    base colours, and a selected row keeps the theme's own selection colours
+    (only italics mark it as muted).
+    """
+
+    _TEXT_WEIGHT = 0.6  # share of the text colour in the muted colour
+
+    def initStyleOption(self, option: QStyleOptionViewItem, index: Any) -> None:  # noqa: N802
+        super().initStyleOption(option, index)
+        if not index.data(_DIM_ROLE):
+            return
+        option.font.setItalic(True)
+        if option.state & QStyle.StateFlag.State_Selected:
+            return
+        text = option.palette.color(QPalette.ColorRole.Text)
+        base = option.palette.color(QPalette.ColorRole.Base)
+        w = self._TEXT_WEIGHT
+        muted = QColor(
+            round(text.red() * w + base.red() * (1 - w)),
+            round(text.green() * w + base.green() * (1 - w)),
+            round(text.blue() * w + base.blue() * (1 - w)),
+        )
+        option.palette.setColor(QPalette.ColorRole.Text, muted)
 
 
 class _ProcessLogDialog(QDialog):
@@ -434,6 +471,7 @@ class TelemetryTab(QWidget):
         hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setAlternatingRowColors(True)
+        self._table.setItemDelegate(_DimRowDelegate(self._table))
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         # Enlarge the frame-log font ~1.5x to match the APRS Received Packets
         # list; the decoded data column is dense and hard to read at the
@@ -1612,9 +1650,10 @@ class TelemetryTab(QWidget):
         """Add a row to the Received Frames table.
 
         *ts* is the time to show (UTC, with the date -- a played-back recording
-        can be from any day); the default is now. *dim* greys the row out and
-        leaves it out of the frame count (a rejected CW candidate). *log_id* is
-        the frame's ``telemetry_log`` id, kept on the row for "Send selected".
+        can be from any day); the default is now. *dim* mutes the row (italic, a
+        theme-relative colour -- see _DimRowDelegate) and leaves it out of the
+        frame count (a rejected CW candidate). *log_id* is the frame's
+        ``telemetry_log`` id, kept on the row for "Send selected".
         """
         when = ts if ts is not None else datetime.datetime.now(datetime.UTC)
         row = self._table.rowCount()
@@ -1624,7 +1663,7 @@ class TelemetryTab(QWidget):
         ):
             item = QTableWidgetItem(text)
             if dim:
-                item.setForeground(QBrush(QColor("#888888")))
+                item.setData(_DIM_ROLE, True)
             if column == 0 and log_id is not None:
                 item.setData(Qt.ItemDataRole.UserRole, log_id)
             self._table.setItem(row, column, item)
