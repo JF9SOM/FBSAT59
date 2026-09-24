@@ -102,6 +102,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Homebrew's Python refuses `pip install` (PEP 668); use a normal interpreter
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Fetch pinned source
         run: |
           git clone "$SSDV_REPO" ssdv-src
