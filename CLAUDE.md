@@ -990,6 +990,7 @@ sudo usermod -aG dialout $USER
   MARMOTSat VHF デジピータ（145.875 MHz、GreenCube/IO-117 と同一の AX100 "ASM+Golay" GMSK
   プロトコル）の受信・送信。Rig+サウンドカード（SSBモード）・SDR 両対応。詳細設計は
   「AX100 Digi 機能設計」セクション参照
+- **SDR 4800/9600bps コヒーレント MSK 検波・1200bps 衛星用前段**（2026-09-24、`src/comms/aprs/coherent_msk.py`、`afsk_audio_demod._AFSK_SATELLITE_PROFILE`）— FM 弁別器＋Direwolf は約 12〜13.5 dB の Eb/N0 を要し、Direwolf / gr-satnogs / GNU Radio `gmsk_demod` / gr-satellites のどれも実 ARICA-2 録音で同じ数フレームで頭打ちだった。**変調指数 0.5（GMSK）専用**のコヒーレント検波（位相追跡＋半正弦整合フィルタ＋自前 HDLC/CRC）を SDR セッションで Direwolf と並列に動かし、フレームを合流・重複除去する（約 4 dB 高感度。実 ARICA-2 で 4→43 フレーム、他局の公開フレームと内容一致）。1200bps は Telemetry タブ専用の前段（IF ±5 kHz・包絡線フェード・クランプ・ディエンファシスなし）で OrigamiSat-2 が 0〜1→20 フレーム。ARICA-2 のフレームは HDLC/CRC は AX.25 と同じだが中身は AX.25 のアドレス部ではない。詳細・限界・再現手順は [docs/communications.md](docs/communications.md) の該当節
 - CI緑（mypy strict + pytest）
 
 > 各機能の詳細設計・不具合調査履歴は下記「詳細ドキュメント索引」の該当ファイルを参照。
