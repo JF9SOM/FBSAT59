@@ -250,6 +250,13 @@ def _snr_guide_html() -> str:
             "wait for a higher-elevation pass."
         ),
         _(
+            "SDR reception at 4800 and 9600 bps also runs a coherent MSK decoder next "
+            "to Direwolf. It decodes most frames from about 10 dB (4800 bps) and 11 dB "
+            "(9600 bps) upward, i.e. roughly 3 to 4 dB weaker signals than Direwolf, "
+            "but only for a modulation index of 0.5 (deviation = baud / 4, e.g. GMSK); "
+            "other deviations are decoded by Direwolf alone."
+        ),
+        _(
             "Example: 9600 bps bursts seen at +4 to +8 dB (KNACKSAT-2, 2026-09-19) were "
             "too weak for either decoder."
         ),
@@ -1132,7 +1139,7 @@ class TelemetryTab(QWidget):
         modem = resolve_ax25_modem(self._conn, self._radio_control)
         self._engine.restart_if_modem_changed(modem)
         if self._sdr_pipeline is not None:
-            self._engine.sync_sdr_baud(self._sdr_pipeline, modem)
+            self._engine.sync_sdr_baud(self._sdr_pipeline, modem, satellite=True)
         self._refresh_status()
 
     # ------------------------------------------------------------------ #
@@ -1596,7 +1603,9 @@ class TelemetryTab(QWidget):
         AprsEngine.start_sdr_direwolf().
         """
         modem = resolve_ax25_modem(self._conn, self._radio_control)
-        ok, err = self._engine.start_sdr_direwolf(_ENGINE_OWNER, pipeline, modem=modem)
+        ok, err = self._engine.start_sdr_direwolf(
+            _ENGINE_OWNER, pipeline, modem=modem, satellite=True
+        )
         if not ok:
             self._set_error(f"⚠ {err}")
             return

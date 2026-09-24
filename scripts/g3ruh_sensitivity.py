@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Measure 9600 baud G3RUH AX.25 decode sensitivity of the SDR reception paths.
 
-Two decoder paths are exercised with exactly the same 250 kHz complex IQ:
+Three decoder paths are exercised with exactly the same 250 kHz complex IQ:
 
   direwolf      the app's G3ruhDiscriminator (src/comms/aprs/g3ruh_demod.py)
                 feeding the real Direwolf binary (MODEM 9600), i.e. the chain
                 the APRS / Telemetry tabs use for SDR reception.
   gr-satellites the gr_satellites command line on raw IQ (--iq), i.e. the
                 Telemetry tab's gr-satellites mode.
+  coherent      the app's coherent MSK decoder (src/comms/aprs/coherent_msk.py),
+                the second decoder the SDR 4800/9600 baud session runs next to
+                Direwolf. Needs modulation index 0.5 (the default +/-2.4 kHz
+                deviation here is exactly that).
 
 Two sub-commands:
 
@@ -294,6 +298,20 @@ def run_gr_satellites(iq: np.ndarray) -> tuple[int, list[bytes]]:
     return len(pdus), pdus
 
 
+def run_coherent(iq: np.ndarray) -> tuple[int, list[bytes]]:
+    """Run the app's coherent MSK decoder (comms.aprs.coherent_msk). Returns (count, frames)."""
+    sys.path.insert(0, str(_SRC))
+    from comms.aprs.coherent_msk import CoherentMskStream
+
+    stream = CoherentMskStream(FS, BAUD)
+    frames: list[bytes] = []
+    block = 16384  # the SDRPipeline block size
+    for i in range(0, len(iq), block):
+        frames += stream.feed(iq[i : i + block])
+    frames += stream.flush()
+    return len(frames), frames
+
+
 def _synthetic_hits_direwolf(lines: list[str]) -> int:
     return len({m for ln in lines for m in re.findall(rf"{FRAME_TAG} (\d{{3}})", ln)})
 
@@ -327,6 +345,9 @@ def _cmd_sweep(args: argparse.Namespace) -> int:
         if "gr-satellites" in args.decoders:
             _, pdus = run_gr_satellites(iq)
             cells.append(f"gr-satellites {_synthetic_hits_gr(pdus):2d}/{frames}")
+        if "coherent" in args.decoders:
+            _, cframes = run_coherent(iq)
+            cells.append(f"coherent {_synthetic_hits_gr(cframes):2d}/{frames}")
         print(f"SNR(11 kHz) {snr:5.1f} dB : " + "   ".join(cells), flush=True)
     return 0
 
@@ -344,6 +365,11 @@ def _cmd_file(args: argparse.Namespace) -> int:
         print(f"gr-satellites : {n} frame(s)")
         for pdu in pdus[:20]:
             print("   ", pdu[:48].hex(" "))
+    if "coherent" in args.decoders:
+        n, cframes = run_coherent(iq)
+        print(f"coherent MSK  : {n} frame(s)")
+        for fr in cframes[:20]:
+            print("   ", fr[:48].hex(" "))
     return 0
 
 
@@ -356,9 +382,9 @@ def main() -> int:
         p.add_argument(
             "--decoders",
             nargs="+",
-            choices=["direwolf", "gr-satellites"],
-            default=["direwolf", "gr-satellites"],
-            help="which decoder paths to run (default: both)",
+            choices=["direwolf", "gr-satellites", "coherent"],
+            default=["direwolf", "gr-satellites", "coherent"],
+            help="which decoder paths to run (default: all)",
         )
 
     sweep = sub.add_parser("sweep", help="synthetic frames at a list of SNRs")

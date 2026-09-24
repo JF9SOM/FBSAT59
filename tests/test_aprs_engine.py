@@ -54,6 +54,7 @@ class _FakeDirewolfManager:
         out_device: int | None,
         modem: str = "1200",
         sdr_pipeline: Any = None,
+        sdr_satellite: bool = False,
     ) -> tuple[bool, str]:
         self.start_calls.append(
             {
@@ -62,6 +63,7 @@ class _FakeDirewolfManager:
                 "via": via,
                 "modem": modem,
                 "sdr_pipeline": sdr_pipeline,
+                "sdr_satellite": sdr_satellite,
             }
         )
         return True, ""
@@ -230,7 +232,7 @@ def test_stop_only_tears_down_after_last_owner_releases(engine: AprsEngine) -> N
 
 
 # ---------------------------------------------------------------------------
-# start_sdr_direwolf() / sync_sdr_baud() — SDR-fed Direwolf path (all bauds)
+# start_sdr_direwolf() / sync_sdr_baud() — SDR path (1200: Direwolf, 4800/9600: coherent MSK)
 # ---------------------------------------------------------------------------
 
 
@@ -244,38 +246,152 @@ def test_start_sdr_direwolf_defaults_to_modem_1200(engine: AprsEngine) -> None:
     assert engine.is_running
 
 
-def test_start_sdr_direwolf_accepts_modem_9600(engine: AprsEngine) -> None:
-    ok, err = engine.start_sdr_direwolf("aprs", _FakePipeline(), modem="9600")
-    assert ok and err == ""
-    fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
-    assert fake_mgr.start_calls[-1]["modem"] == "9600"
-    assert engine.current_modem == "9600"
-    assert engine.is_running
+def test_start_sdr_direwolf_passes_satellite_flag_for_1200(engine: AprsEngine) -> None:
+    ok, _err = engine.start_sdr_direwolf("telemetry", _FakePipeline(), modem="1200", satellite=True)
+    assert ok
+    try:
+        fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
+        assert fake_mgr.start_calls[-1]["sdr_satellite"] is True
+    finally:
+        engine.stop("telemetry")
 
 
-def test_start_sdr_direwolf_accepts_modem_4800(engine: AprsEngine) -> None:
+@pytest.mark.parametrize("modem", ["9600", "4800"])
+def test_start_sdr_direwolf_runs_coherent_decoder_next_to_direwolf_for_g3ruh(
+    engine: AprsEngine, modem: str
+) -> None:
+    ok, err = engine.start_sdr_direwolf("aprs", _FakePipeline(), modem=modem)
+    try:
+        assert ok and err == ""
+        fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
+        assert fake_mgr.start_calls[-1]["modem"] == modem  # Direwolf too (other deviations)
+        assert engine._coherent_demod is not None
+        assert engine.current_modem == modem
+        assert engine.is_running
+    finally:
+        engine.stop("aprs")
+    assert engine._coherent_demod is None
+    assert not engine.is_running
+
+
+def test_coherent_session_unsubscribes_from_pipeline_on_stop(engine: AprsEngine) -> None:
+    class _Pipeline(_FakePipeline):
+        def __init__(self) -> None:
+            self.subscribed: list[Any] = []
+
+        def subscribe(self, cb: Any) -> None:
+            self.subscribed.append(cb)
+
+        def unsubscribe(self, cb: Any) -> None:
+            self.subscribed.remove(cb)
+
+    pipeline = _Pipeline()
+    engine.start_sdr_direwolf("aprs", pipeline, modem="4800")
+    assert len(pipeline.subscribed) == 1
+    engine.stop("aprs")
+    assert pipeline.subscribed == []
+
+
+def test_coherent_session_survives_a_missing_direwolf_binary(engine: AprsEngine) -> None:
+    class _NoDirewolf(_FakeDirewolfManager):
+        def start(self, **kwargs: Any) -> tuple[bool, str]:
+            return False, "Direwolf not found"
+
+    engine._mgr = _NoDirewolf()  # type: ignore[assignment]
     ok, err = engine.start_sdr_direwolf("aprs", _FakePipeline(), modem="4800")
-    assert ok and err == ""
-    fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
-    assert fake_mgr.start_calls[-1]["modem"] == "4800"
-    assert engine.current_modem == "4800"
-    assert engine.is_running
+    try:
+        assert ok and err == ""
+        assert engine._coherent_demod is not None
+        assert engine.is_running
+    finally:
+        engine.stop("aprs")
 
 
-def test_sync_sdr_baud_switches_modem_within_direwolf_mechanism(engine: AprsEngine) -> None:
-    """9600 <-> 4800 while already on the SDR-fed Direwolf mechanism is just
-    a modem change (both need a fresh Direwolf process), not a mechanism
-    switch — still handled by sync_sdr_baud(), owners must survive."""
+def test_same_frame_from_both_decoders_is_published_once(engine: AprsEngine) -> None:
+    raw_frames: list[bytes] = []
+    engine.raw_frame_received.connect(raw_frames.append)
+    engine.start_sdr_direwolf("aprs", _FakePipeline(), modem="9600")
+    try:
+        frame = bytes([0x76, 1]) + bytes(range(60))
+        engine._on_kiss_frame(frame)  # Direwolf reports it first ...
+        engine._on_coherent_frame(frame)  # ... the coherent decoder a chunk later
+        assert raw_frames == [frame]
+        other = bytes([0x76, 2]) + bytes(range(60))
+        engine._on_coherent_frame(other)
+        assert raw_frames == [frame, other]
+    finally:
+        engine.stop("aprs")
+
+
+def test_repeated_frame_is_reported_again_after_the_duplicate_window(
+    engine: AprsEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw_frames: list[bytes] = []
+    engine.raw_frame_received.connect(raw_frames.append)
+    engine.start_sdr_direwolf("aprs", _FakePipeline(), modem="4800")
+    now = [100.0]
+    monkeypatch.setattr("comms.aprs.engine.time.monotonic", lambda: now[0])
+    try:
+        frame = bytes([0x76, 1]) + bytes(range(60))
+        engine._on_coherent_frame(frame)
+        now[0] += 10.0  # a genuine retransmission, well outside the window
+        engine._on_coherent_frame(frame)
+        assert raw_frames == [frame, frame]
+    finally:
+        engine.stop("aprs")
+
+
+def test_single_direwolf_session_never_drops_repeated_frames(engine: AprsEngine) -> None:
+    """Without the coherent decoder there is nothing to de-duplicate against."""
+    raw_frames: list[bytes] = []
+    engine.raw_frame_received.connect(raw_frames.append)
+    engine.start_sdr_direwolf("aprs", _FakePipeline(), modem="1200")
+    try:
+        frame = bytes([1, 2, 3])
+        engine._on_kiss_frame(frame)
+        engine._on_kiss_frame(frame)
+        assert raw_frames == [frame, frame]
+    finally:
+        engine.stop("aprs")
+
+
+def test_start_sdr_coherent_fails_without_sample_rate(engine: AprsEngine) -> None:
+    class _NoRate:
+        _device = object()
+
+        def subscribe(self, _cb: Any) -> None:
+            pass
+
+    ok, err = engine.start_sdr_direwolf("aprs", _NoRate(), modem="9600")
+    assert not ok and err
+    assert not engine.is_running
+
+
+def test_coherent_frame_is_published_raw_even_when_not_ax25(engine: AprsEngine) -> None:
+    raw_frames: list[bytes] = []
+    packets: list[Any] = []
+    engine.raw_frame_received.connect(raw_frames.append)
+    engine.packet_received.connect(packets.append)
+    frame = bytes([0x76, 0x20]) + bytes(range(98))  # ARICA-2 style: HDLC, not an AX.25 header
+    engine._on_coherent_frame(frame)
+    assert raw_frames == [frame]
+    assert packets == []
+
+
+def test_sync_sdr_baud_switches_modem_within_coherent_mechanism(engine: AprsEngine) -> None:
+    """9600 <-> 4800 both run the coherent decoder next to Direwolf: a fresh
+    decoder and Direwolf for the new baud, owners must survive."""
     pipeline = _FakePipeline()
     ok, _err = engine.start_sdr_direwolf("aprs", pipeline, modem="9600")
     assert ok
     engine.add_owner("telemetry")
     fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
     try:
+        first = engine._coherent_demod
         engine.sync_sdr_baud(pipeline, "4800")
 
-        assert fake_mgr.stop_calls == 1
         assert fake_mgr.start_calls[-1]["modem"] == "4800"
+        assert engine._coherent_demod is not None and engine._coherent_demod is not first
         assert engine.current_modem == "4800"
         assert engine.is_running
         assert engine._owners == {"aprs", "telemetry"}
@@ -285,9 +401,8 @@ def test_sync_sdr_baud_switches_modem_within_direwolf_mechanism(engine: AprsEngi
 
 
 def test_sync_sdr_baud_switches_to_1200(engine: AprsEngine) -> None:
-    """Switching to 1200 from 9600 is just a modem restart within the single
-    SDR-fed Direwolf mechanism, same as any other baud change — owners
-    must survive, matching test_sync_sdr_baud_switches_modem_within_direwolf_mechanism."""
+    """Switching to 1200 from 9600 stops the coherent decoder and restarts
+    Direwolf at 1200; owners must survive."""
     pipeline = _FakePipeline()
     ok, _err = engine.start_sdr_direwolf("aprs", pipeline, modem="9600")
     assert ok
@@ -297,7 +412,7 @@ def test_sync_sdr_baud_switches_to_1200(engine: AprsEngine) -> None:
 
         engine.sync_sdr_baud(pipeline, "1200")
 
-        assert fake_mgr.stop_calls == 1
+        assert engine._coherent_demod is None
         assert fake_mgr.start_calls[-1]["modem"] == "1200"
         assert engine.current_modem == "1200"
         assert engine.is_running
@@ -307,14 +422,55 @@ def test_sync_sdr_baud_switches_to_1200(engine: AprsEngine) -> None:
         engine.stop("telemetry")
 
 
+def test_sync_sdr_baud_switches_from_1200_to_coherent(engine: AprsEngine) -> None:
+    pipeline = _FakePipeline()
+    ok, _err = engine.start_sdr_direwolf("aprs", pipeline, modem="1200")
+    assert ok
+    try:
+        fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
+        engine.sync_sdr_baud(pipeline, "9600")
+
+        assert fake_mgr.stop_calls == 1
+        assert engine._coherent_demod is not None
+        assert engine.current_modem == "9600"
+    finally:
+        engine.stop("aprs")
+
+
 def test_sync_sdr_baud_noop_when_already_correct(engine: AprsEngine) -> None:
     pipeline = _FakePipeline()
     ok, _err = engine.start_sdr_direwolf("aprs", pipeline, modem="9600")
     assert ok
-    fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
-    engine.sync_sdr_baud(pipeline, "9600")
-    assert fake_mgr.stop_calls == 0
-    assert len(fake_mgr.start_calls) == 1
+    try:
+        fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
+        demod = engine._coherent_demod
+        engine.sync_sdr_baud(pipeline, "9600")
+        assert fake_mgr.stop_calls == 0
+        assert engine._coherent_demod is demod
+    finally:
+        engine.stop("aprs")
+
+
+def test_sync_sdr_baud_restarts_1200_when_front_end_changes(engine: AprsEngine) -> None:
+    """The satellite/terrestrial front end only exists at 1200 baud: changing it
+    restarts Direwolf, while at 9600 the flag is irrelevant and nothing restarts."""
+    pipeline = _FakePipeline()
+    ok, _err = engine.start_sdr_direwolf("aprs", pipeline, modem="1200", satellite=False)
+    assert ok
+    try:
+        fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
+        engine.sync_sdr_baud(pipeline, "1200", satellite=False)
+        assert fake_mgr.stop_calls == 0
+        engine.sync_sdr_baud(pipeline, "1200", satellite=True)
+        assert fake_mgr.stop_calls == 1
+        assert fake_mgr.start_calls[-1]["sdr_satellite"] is True
+
+        engine.sync_sdr_baud(pipeline, "9600", satellite=True)
+        demod = engine._coherent_demod
+        engine.sync_sdr_baud(pipeline, "9600", satellite=False)
+        assert engine._coherent_demod is demod
+    finally:
+        engine.stop("aprs")
 
 
 def test_sync_sdr_baud_noop_when_rig_session_active(engine: AprsEngine) -> None:

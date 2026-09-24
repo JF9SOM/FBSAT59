@@ -13,8 +13,8 @@ audio output lock. ``start_rig()``/``start_sdr_direwolf()``/``stop()`` take
 an ``owner`` tag and are reference-counted so closing one tab never tears
 down the pipeline while another tab is still using it.
 
-All AX.25 decoding -- 1200 baud Bell 202 AFSK included -- is done by
-Direwolf's own built-in decoders, whether the audio comes from a real
+AX.25 decoding is done by Direwolf's own built-in decoders -- 1200 baud Bell 202
+AFSK included -- whether the audio comes from a real
 Rig + Sound Card or is synthesized from an SDR's raw I/Q (see
 start_sdr_direwolf()). An earlier from-scratch Python implementation of
 1200 baud tone detection + PLL + HDLC framing (comms.aprs.afsk_demod, since
@@ -25,6 +25,13 @@ Direwolf -- so the SDR path was changed to feed Direwolf real audio
 instead of re-decoding it independently (see comms.aprs.afsk_audio_demod),
 matching the already-working 9600 baud G3RUH path's architecture. Both
 1200 and 9600 baud SDR reception confirmed decoding live (2026-09-13).
+
+One addition (2026-09-24): SDR reception at 4800/9600 baud also runs a coherent
+MSK decoder (comms.aprs.coherent_msk) next to Direwolf. It decodes HDLC frames
+itself -- with a real-signal check against another station's recording of the
+same pass -- because that step *does* gain ~4 dB over any FM-discriminator
+decoder; the two decoders' frames are merged and de-duplicated
+(_is_recent_duplicate). It needs modulation index 0.5, hence Direwolf stays.
 """
 
 from __future__ import annotations
@@ -88,6 +95,17 @@ class AprsEngine(QObject):
         # rate (_last_rig_params is set for that one instead). Used by
         # sync_sdr_baud() to decide whether a restart is needed.
         self._sdr_direwolf_active: bool = False
+        # Coherent MSK decoder (4800/9600 baud SDR sessions): runs next to the
+        # Direwolf session in _mgr. See coherent_msk.py.
+        self._coherent_demod: Any | None = None
+        self._coherent_pipeline: Any | None = None
+        # Frames published recently (raw bytes -> monotonic time). The coherent
+        # decoder and Direwolf run side by side at 4800/9600 baud and often
+        # decode the very same frame; the coherent one lags by up to a chunk.
+        self._recent_frames: dict[bytes, float] = {}
+        # True when the SDR session uses the satellite-tuned 1200 baud front
+        # end (Telemetry tab) rather than the terrestrial one (APRS tab).
+        self._sdr_satellite: bool = False
 
     @classmethod
     def instance(cls, conn: Any) -> AprsEngine:
@@ -210,25 +228,37 @@ class AprsEngine(QObject):
         self._start_rig_pipeline(callsign, ssid, via, new_modem)
 
     def start_sdr_direwolf(
-        self, owner: str, pipeline: Any, modem: str = "1200"
+        self, owner: str, pipeline: Any, modem: str = "1200", satellite: bool = False
     ) -> tuple[bool, str]:
-        """Start Direwolf fed by SDR-derived audio (receive only).
+        """Start AX.25 reception on the SDR pipeline (receive only).
 
         *modem* is "1200" (Bell 202 AFSK), "4800", or "9600" (both G3RUH) —
-        SDR can't transmit, so this is always receive-only. Direwolf's own
-        built-in decoder for *modem* does the actual demod; see
-        comms.aprs.afsk_audio_demod (1200 -- de-emphasized NFM audio,
-        matching a real radio's voice output) and comms.aprs.g3ruh_demod
-        (4800/9600 -- raw wideband discriminator, no de-emphasis) for the
-        audio each is fed. ``owner`` registers the caller's interest in
-        the pipeline (see ``stop()``).
+        SDR can't transmit, so this is always receive-only.
+
+        * "1200": Direwolf's own Bell 202 decoder does the demod, fed by
+          SDR-derived audio; see comms.aprs.afsk_audio_demod. *satellite*
+          selects the front end tuned for weak satellite signals (narrow IF,
+          FM click suppression, no de-emphasis) instead of the terrestrial
+          voice-style one.
+        * "4800"/"9600": a coherent MSK detector (comms.aprs.coherent_msk)
+          runs next to the discriminator + Direwolf path and their frames are
+          merged. The coherent detector needs about 4 dB less signal but only
+          works for modulation index 0.5 (deviation = baud/4, e.g. GMSK); other
+          deviations (a +/-3 kHz 9600 baud link, say) are left to Direwolf.
+
+        ``owner`` registers the caller's interest in the pipeline (see
+        ``stop()``).
         """
         self._owners.add(owner)
         if self._running:
             return True, ""
-        return self._start_sdr_direwolf_pipeline(pipeline, modem)
+        return self._start_sdr_direwolf_pipeline(pipeline, modem, satellite)
 
-    def _start_sdr_direwolf_pipeline(self, pipeline: Any, modem: str = "1200") -> tuple[bool, str]:
+    def _start_sdr_direwolf_pipeline(
+        self, pipeline: Any, modem: str = "1200", satellite: bool = False
+    ) -> tuple[bool, str]:
+        if modem in ("4800", "9600"):
+            return self._start_sdr_coherent_pipeline(pipeline, modem, satellite)
         ok, err = self._mgr.start(
             callsign="N0CALL",
             ssid=0,
@@ -237,6 +267,7 @@ class AprsEngine(QObject):
             out_device=None,
             modem=modem,
             sdr_pipeline=pipeline,
+            sdr_satellite=satellite,
         )
         if not ok:
             self.error_occurred.emit(err)
@@ -247,25 +278,80 @@ class AprsEngine(QObject):
         self._current_modem = modem
         self._last_rig_params = None
         self._sdr_direwolf_active = True
+        self._sdr_satellite = satellite
         self.status_changed.emit(f"Connected (SDR — Direwolf, {modem} baud, receive only)")
         return True, ""
 
-    def sync_sdr_baud(self, pipeline: Any, target_modem: str) -> None:
-        """Restart the running SDR-fed Direwolf session at target_modem.
+    def _start_sdr_coherent_pipeline(
+        self, pipeline: Any, modem: str, satellite: bool
+    ) -> tuple[bool, str]:
+        """Start the 4800/9600 baud SDR session: coherent MSK decoder + Direwolf.
 
-        Direwolf reads MODEM once at startup, so a baud change needs a
-        fresh process — tear down and restart with the new modem, without
-        touching the owner set (same idea as restart_if_modem_changed()).
-        No-op if not currently running via an SDR path (including a
-        Rig + Sound Card Direwolf session — not ours to touch), or already
-        on target_modem.
+        Both consume the same I/Q; frames from either are published once (see
+        _handle_frame). Direwolf is best effort -- if its binary is missing the
+        coherent decoder still runs.
+        """
+        try:
+            sample_rate = int(pipeline._device.sample_rate)
+        except (AttributeError, TypeError, ValueError):
+            sample_rate = 0
+        if sample_rate <= 0:
+            err = "SDR sample rate unavailable"
+            self.error_occurred.emit(err)
+            return False, err
+        from comms.aprs.coherent_msk import CoherentMskSdrDemod
+
+        # Direwolf resets its own log on an SDR start; do the same when it is
+        # missing so the log viewer never shows a stale session.
+        dw_ok, _dw_err = self._mgr.start(
+            callsign="N0CALL",
+            ssid=0,
+            via="",
+            in_device=None,
+            out_device=None,
+            modem=modem,
+            sdr_pipeline=pipeline,
+            sdr_satellite=satellite,
+        )
+        if dw_ok:
+            self._wire_kiss()
+        else:
+            from comms.aprs.direwolf_log import reset_direwolf_log
+
+            reset_direwolf_log()
+        demod = CoherentMskSdrDemod(sample_rate=sample_rate, baud=int(modem))
+        demod.frame_received.connect(self._on_coherent_frame)
+        demod.start()
+        pipeline.subscribe(demod.push_samples)
+        self._coherent_demod = demod
+        self._coherent_pipeline = pipeline
+        self._running = True
+        self._current_modem = modem
+        self._last_rig_params = None
+        self._sdr_direwolf_active = True
+        self._sdr_satellite = satellite
+        how = "coherent MSK + Direwolf" if dw_ok else "coherent MSK"
+        self.status_changed.emit(f"Connected (SDR — {how}, {modem} baud, receive only)")
+        return True, ""
+
+    def sync_sdr_baud(self, pipeline: Any, target_modem: str, satellite: bool = False) -> None:
+        """Restart the running SDR session at target_modem.
+
+        Direwolf reads MODEM once at startup, and 4800/9600 use a different
+        decoder altogether, so a baud change needs a fresh start — tear down
+        and restart with the new modem, without touching the owner set (same
+        idea as restart_if_modem_changed()). No-op if not currently running
+        via an SDR path (including a Rig + Sound Card Direwolf session — not
+        ours to touch), or already on target_modem with the same front end.
         """
         if not self._running or self._last_rig_params is not None:
             return
-        if self._sdr_direwolf_active and self._current_modem == target_modem:
+        # The satellite/terrestrial front-end choice only exists for 1200 baud.
+        same_front_end = target_modem != "1200" or self._sdr_satellite == satellite
+        if self._sdr_direwolf_active and self._current_modem == target_modem and same_front_end:
             return
         self._teardown_pipeline()
-        self._start_sdr_direwolf_pipeline(pipeline, target_modem)
+        self._start_sdr_direwolf_pipeline(pipeline, target_modem, satellite)
 
     def stop(self, owner: str) -> None:
         """Release `owner`'s interest in the pipeline.
@@ -287,12 +373,26 @@ class AprsEngine(QObject):
         restart_if_modem_changed()/sync_sdr_baud() (which tear down and
         immediately restart, keeping all current owners' claims intact).
         """
+        self._stop_coherent()
+        self._recent_frames.clear()
         self._mgr.stop()
         self._running = False
         self._current_modem = None
         self._last_rig_params = None
         self._sdr_direwolf_active = False
+        self._sdr_satellite = False
         self.status_changed.emit("Stopped")
+
+    def _stop_coherent(self) -> None:
+        """Stop the coherent MSK decoder if one is running (no-op otherwise)."""
+        demod, pipeline = self._coherent_demod, self._coherent_pipeline
+        self._coherent_demod = None
+        self._coherent_pipeline = None
+        if demod is None:
+            return
+        if pipeline is not None:
+            pipeline.unsubscribe(demod.push_samples)
+        demod.stop()
 
     def send_message(
         self,
@@ -405,13 +505,48 @@ class AprsEngine(QObject):
             len(raw),
             raw[:32].hex(),
         )
+        self._handle_frame(raw)
+
+    def _on_coherent_frame(self, raw: bytes) -> None:
+        """A CRC-valid HDLC frame from the coherent MSK decoder (4800/9600 baud)."""
+        from comms.aprs.direwolf_log import get_direwolf_logger
+
+        get_direwolf_logger().info("coherent MSK frame, len=%d, hex=%s", len(raw), raw[:32].hex())
+        self._handle_frame(raw)
+
+    def _handle_frame(self, raw: bytes) -> None:
+        """Publish a raw frame and, if it is valid AX.25, the parsed APRS packet."""
+        from sdr.diag_log import get_sdr_diag_logger
+
+        if self._is_recent_duplicate(raw):
+            return
         self.raw_frame_received.emit(raw)
         frame: Ax25Frame | None = decode_ax25(raw)
         if frame is None:
-            get_sdr_diag_logger().info("_on_kiss_frame: decode_ax25() returned None")
+            get_sdr_diag_logger().info("_handle_frame: decode_ax25() returned None")
             return
         packet: AprsPacket = parse_aprs(frame)
         self.packet_received.emit(packet)
+
+    # The coherent decoder reports a frame up to one chunk after Direwolf does.
+    _DUPLICATE_WINDOW_S: float = 4.0
+
+    def _is_recent_duplicate(self, raw: bytes) -> bool:
+        """True if this exact frame was already published within the last few seconds.
+
+        Only matters when two decoders run side by side (4800/9600 baud SDR);
+        a lone Direwolf never reports the same frame twice in this window.
+        """
+        if self._coherent_demod is None:
+            return False
+        now = time.monotonic()
+        for key in [
+            k for k, t in self._recent_frames.items() if now - t > 3 * self._DUPLICATE_WINDOW_S
+        ]:
+            del self._recent_frames[key]
+        last = self._recent_frames.get(raw)
+        self._recent_frames[raw] = now
+        return last is not None and now - last < self._DUPLICATE_WINDOW_S
 
     def _on_kiss_lost(self) -> None:
         from sdr.diag_log import get_sdr_diag_logger
