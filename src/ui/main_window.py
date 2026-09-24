@@ -2483,20 +2483,8 @@ class MainWindow(QMainWindow):
         next_norad, xpdr_uuid = result
         is_new_sat = next_norad != self._autotrack_tracking_norad
 
-        # Switch satellite in the UI
-        self._select_satellite_by_norad(next_norad)
-
-        # Switch transponder to the registered one
-        xpdr_row = self._conn.execute(
-            "SELECT * FROM transmitters WHERE uuid = ?", (xpdr_uuid,)
-        ).fetchone()
-        if xpdr_row:
-            transmitters = self._transmitter_manager.get_transmitters(next_norad, include_dead=True)
-            try:
-                idx = next(i for i, t in enumerate(transmitters) if t["uuid"] == xpdr_uuid)
-            except StopIteration:
-                idx = 0
-            self._radio_control.set_transmitters(transmitters, default_index=idx)
+        # Switch satellite and transponder to the registered ones
+        self._apply_autotrack_transponder(next_norad, xpdr_uuid)
 
         sat_name = self._sat_name_cache.get(next_norad, str(next_norad))
 
@@ -2541,6 +2529,36 @@ class MainWindow(QMainWindow):
                 self._at_dialog.set_autotrack_status(f"Next: {sat_name} in {mins} min", ok=True)
             else:
                 self._at_dialog.set_autotrack_status(f"Next: {sat_name}", ok=True)
+
+    def _apply_autotrack_transponder(self, norad: int, xpdr_uuid: str, force: bool = False) -> None:
+        """Select *norad* and its registered transponder in the UI.
+
+        With force=False the selection is always re-applied (the switch path).
+        With force=True it is applied only if the current satellite or
+        transponder differs, so a manual selection made after the Rule 2b
+        reservation cannot survive into the AOS actions.
+        """
+        cur = self._current_transmitter
+        if (
+            force
+            and self._selected_norad == norad
+            and cur is not None
+            and cur.get("uuid") == xpdr_uuid
+        ):
+            return
+        if self._selected_norad != norad:
+            self._select_satellite_by_norad(norad)
+        xpdr_row = self._conn.execute(
+            "SELECT 1 FROM transmitters WHERE uuid = ?", (xpdr_uuid,)
+        ).fetchone()
+        if not xpdr_row:
+            return
+        transmitters = self._transmitter_manager.get_transmitters(norad, include_dead=True)
+        try:
+            idx = next(i for i, t in enumerate(transmitters) if t["uuid"] == xpdr_uuid)
+        except StopIteration:
+            idx = 0
+        self._radio_control.set_transmitters(transmitters, default_index=idx)
 
     def _maybe_fire_autotrack_aos(self, norad: int, sat_name: str, el: float) -> bool:
         """Fire the Autotrack AOS actions for *norad* if it has genuinely
@@ -8503,6 +8521,21 @@ class MainWindow(QMainWindow):
         # Autotrack is an explicit automation the operator armed — it wins
         # over any manual rotator hold left over from before AOS.
         self._clear_rotator_manual_hold()
+        # Autotrack wins over any manual satellite/transponder selection made
+        # since the satellite was reserved: re-apply the registered
+        # transponder before connecting/recording so the SDR tunes to it.
+        at_norad = self._autotrack_tracking_norad
+        at_uuid = self._autotrack.current_xpdr_uuid
+        if at_norad is not None and at_uuid:
+            self._apply_autotrack_transponder(at_norad, at_uuid, force=True)
+        cur_xpdr = self._current_transmitter or {}
+        logger.info(
+            "Autotrack AOS transponder: norad=%s uuid=%s desc=%r downlink=%s",
+            at_norad,
+            cur_xpdr.get("uuid"),
+            cur_xpdr.get("description"),
+            cur_xpdr.get("downlink_low"),
+        )
         # Connect Rig 1 — but skip it if it's an SDR and METEOR/HRPT
         # reception is enabled. The METEOR tab manages its own SDR
         # connection independently of Rig 1/2 (it reads Rig Settings > SDR
