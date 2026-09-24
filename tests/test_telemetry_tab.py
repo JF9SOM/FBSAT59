@@ -604,3 +604,51 @@ def test_normal_row_is_not_restyled(qtbot: QtBot, conn: sqlite3.Connection) -> N
     opt = _option(tab, 0, selected=False, text="#dddddd", base="#1e1e1e")
     assert opt.palette.color(QPalette.ColorRole.Text) == QColor("#dddddd")
     assert not opt.font.italic()
+
+
+# ---------------------------------------------------------------------------
+# Received Frames "Data" column shows the frame as hex
+# ---------------------------------------------------------------------------
+
+
+def test_ax25_frame_data_column_is_the_full_frame_in_hex(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: _RecordingUploader())
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    # an OrigamiSat-2 frame as decoded from a real recording: JS1YRU>JS1YNU, UI, PID F0
+    raw = bytes.fromhex("94a662b29caa6094a662b2a4aae103f022fe646a6a3a8fc6")
+    tab._on_ax25_frame(raw)
+    assert tab._table.rowCount() == 1
+    item = tab._table.item(0, 3)
+    assert item.text() == "94 A6 62 B2 9C AA 60 94 A6 62 B2 A4 AA E1 03 F0 22 FE 64 6A 6A 3A 8F C6"
+    assert item.toolTip() == item.text()  # a long frame is elided in the cell
+
+
+def test_format_frame_hex() -> None:
+    assert telemetry_tab_mod.format_frame_hex(b"") == ""
+    assert telemetry_tab_mod.format_frame_hex(bytes([0, 15, 255])) == "00 0F FF"
+
+
+def test_non_ax25_frame_is_shown_as_hex_and_logged_but_not_uploaded(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ARICA-2 style: HDLC/CRC like AX.25, but no AX.25 address field."""
+    rec = _RecordingUploader()
+    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: rec)
+    conn.execute(
+        "INSERT INTO satellites (norad_cat_id, name, is_hidden) VALUES (68796, 'ARICA-2', 0)"
+    )
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab._selected_norad = 68796
+    raw = bytes([0x76, 0x20, 0x00, 0xE4, 0xE6, 0x93]) + bytes(range(94))
+    tab._on_ax25_frame(raw)
+    assert tab._table.rowCount() == 1
+    assert tab._table.item(0, 2).text() == "ARICA-2"
+    assert tab._table.item(0, 3).text().startswith("76 20 00 E4 E6 93 00 01 02")
+    assert tab._table.item(0, 0).data(Qt.ItemDataRole.UserRole) is not None  # logged
+    logged = conn.execute("SELECT norad_cat_id, raw_hex FROM telemetry_log").fetchall()
+    assert [(r["norad_cat_id"], r["raw_hex"]) for r in logged] == [(68796, raw.hex())]
+    assert rec.calls == []  # unknown format: not sent to SatNOGS automatically

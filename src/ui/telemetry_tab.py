@@ -151,6 +151,11 @@ class _SatnogsApiKeyDialog(QDialog):
         return self._edit.text().strip()
 
 
+def format_frame_hex(raw: bytes) -> str:
+    """*raw* as upper-case hex bytes separated by spaces (``94 A6 62 ...``)."""
+    return raw.hex(" ").upper()
+
+
 # Item role marking a Received Frames row as a rejected candidate (drawn muted).
 _DIM_ROLE = Qt.ItemDataRole.UserRole + 1
 
@@ -471,6 +476,11 @@ class TelemetryTab(QWidget):
         hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setItemDelegate(_DimRowDelegate(self._table))
+        # A frame is shown as hex bytes, which can run to hundreds of characters:
+        # wrap it (at the spaces between bytes) and grow the row to fit rather
+        # than eliding it.
+        self._table.setWordWrap(True)
+        self._table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         # Enlarge the frame-log font ~1.5x to match the APRS Received Packets
         # list; the decoded data column is dense and hard to read at the
@@ -1563,14 +1573,19 @@ class TelemetryTab(QWidget):
     def _on_ax25_frame(self, raw: bytes) -> None:
         frame = decode_ax25(raw)
         if frame is None:
+            self._on_non_ax25_frame(raw)
             return
         norad = self._callsign_to_norad(frame.src)
         tf = decode_telemetry(frame.src, frame.payload, norad)
         when, reliable = self._frame_time()
+        # The Data column shows the whole received frame as hex bytes -- the
+        # same form as SatNOGS Network's "Data" tab, so it can be compared with
+        # other stations' frames and the bytes copied out (image data, say).
+        # The per-field values are in the "Decoded Fields" tab.
         self._append_row(
             callsign=tf.callsign,
             sat_name=tf.satellite_name,
-            data=tf.summary(),
+            data=format_frame_hex(raw),
             norad=tf.norad,
             ts=when,
         )
@@ -1580,6 +1595,34 @@ class TelemetryTab(QWidget):
         # demodulator / KISS) to the SatNOGS DB. No-op unless the footer
         # toggle is on and callsign / location / API key are all set.
         self._submit_raw_frame(raw, norad, when, reliable)
+
+    def _on_non_ax25_frame(self, raw: bytes) -> None:
+        """Show and log a CRC-valid HDLC frame that is not an AX.25 frame.
+
+        Some satellites (ARICA-2, for one) use AX.25's framing but put their own
+        data where the address field would be, so decode_ax25() rejects them.
+        They are shown as hex like any other frame, attributed to the satellite
+        the user selected, and logged (so "Send selected" works). They are *not*
+        uploaded to SatNOGS automatically: nothing is known about their format.
+        """
+        norad = self._selected_norad
+        name = ""
+        if norad is not None and hasattr(self._conn, "execute"):
+            row = self._conn.execute(
+                "SELECT name FROM satellites WHERE norad_cat_id = ?", (norad,)
+            ).fetchone()
+            name = str(row["name"]) if row else ""
+        when, reliable = self._frame_time()
+        tf = TelemetryFrame(norad=norad, callsign="", satellite_name=name, raw_hex=raw.hex())
+        log_id = self._persist_frame(tf, when, reliable)
+        self._append_row(
+            callsign="—",
+            sat_name=name or "—",
+            data=format_frame_hex(raw),
+            norad=norad,
+            ts=when,
+            log_id=log_id,
+        )
 
     def _frame_time(self) -> tuple[datetime.datetime, bool]:
         """(UTC time of the frame just decoded, time trustworthy?).
@@ -1661,6 +1704,8 @@ class TelemetryTab(QWidget):
             (when.strftime("%Y-%m-%d %H:%M:%S"), callsign, sat_name, data)
         ):
             item = QTableWidgetItem(text)
+            if column == 3:
+                item.setToolTip(text)  # the column is elided when the frame is long
             if dim:
                 item.setData(_DIM_ROLE, True)
             if column == 0 and log_id is not None:
