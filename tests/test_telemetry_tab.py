@@ -303,7 +303,7 @@ def test_satnogs_controls_stay_visible_in_gr_satellites_mode(
         tab._combo_mode.setCurrentText("gr-satellites")
         assert all(not w.isHidden() for w in widgets)
 
-        tab._combo_mode.setCurrentText("AX.25")
+        tab._combo_mode.setCurrentText("Direwolf (AX.25)")
         assert all(not w.isHidden() for w in widgets)
     finally:
         tab.close()

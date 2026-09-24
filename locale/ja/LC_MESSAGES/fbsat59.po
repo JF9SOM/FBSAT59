@@ -2909,8 +2909,8 @@ msgid "Rig + Direwolf (receiving)"
 msgstr "無線機 + Direwolf（受信中）"
 
 #: src/ui/telemetry_tab.py:1847
-msgid "SDR — AX.25 (receive only)"
-msgstr "SDR — AX.25（受信のみ）"
+msgid "SDR — Direwolf (AX.25) (receive only)"
+msgstr "SDR — Direwolf (AX.25)（受信のみ）"
 
 #: src/ui/telemetry_tab.py:1853
 msgid "—  (connect SDR, then click ▶ Start)"
