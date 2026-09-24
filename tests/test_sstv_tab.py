@@ -115,8 +115,22 @@ def engine() -> _FakeEngine:
 
 @pytest.fixture
 def tab(
-    qtbot: QtBot, conn: sqlite3.Connection, rc: _FakeRadioControl, engine: _FakeEngine
+    qtbot: QtBot,
+    conn: sqlite3.Connection,
+    rc: _FakeRadioControl,
+    engine: _FakeEngine,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> SstvTab:
+    # Completed images are auto-saved as PNGs: keep them out of the real Pictures folder
+    def _save_here(
+        self: SstvTab, qimg: QImage, mode: str, ts: Any, sat_name: str | None = None
+    ) -> str:
+        path = str(tmp_path / f"{mode}_{ts:%H%M%S%f}.png")
+        qimg.save(path)
+        return path
+
+    monkeypatch.setattr(SstvTab, "_auto_save_image", _save_here)
     t = SstvTab(conn, rc, aprs_engine=engine)
     qtbot.addWidget(t)
     return t
@@ -378,3 +392,105 @@ def test_a_paste_at_the_end_after_live_lines_keeps_every_frame_intact(tab: SstvT
     tab._raw_edit.setTextCursor(cursor)
     _paste(tab, "11 22\n33 44")
     assert tab._raw_edit.toPlainText().splitlines() == ["AA BB", "11 22", "33 44"]
+
+
+# ---------------------------------------------------- SSTV mode: reception
+
+
+class _SignalPipeline(QObject):
+    """An SDR pipeline whose audio_ready is a real signal, so audio can be fed through it."""
+
+    audio_ready = Signal(object)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.requested: list[str] = []
+        self.released: list[str] = []
+
+    def request_audio(self, owner: str) -> None:
+        self.requested.append(owner)
+
+    def release_audio(self, owner: str) -> None:
+        self.released.append(owner)
+
+
+def _connect_sdr_with(rc: _FakeRadioControl, pipeline: _SignalPipeline) -> None:
+    rig = _FakeRig()
+    rig._pipeline = pipeline  # type: ignore[assignment]
+    rc._rig1 = rig
+    rc.sdr_connected.emit()
+
+
+def test_sstv_decoder_listens_as_soon_as_the_tab_opens(tab: SstvTab) -> None:
+    """It used to start only after switching to SSDV and back."""
+    assert tab._mode_combo.currentText() == "SSTV"
+    assert tab._decoder is not None
+    assert tab._decoder._active
+
+
+def test_sdr_audio_is_decoded_at_the_sdr_audio_rate(tab: SstvTab, rc: _FakeRadioControl) -> None:
+    from sdr.demodulator import AUDIO_RATE
+
+    pipeline = _SignalPipeline()
+    _connect_sdr_with(rc, pipeline)
+    assert tab._decoder is not None
+    assert (
+        tab._decoder.sample_rate == AUDIO_RATE
+    )  # not 44100: 48 kHz audio at 44.1 kHz decodes nothing
+    assert pipeline.requested == ["SSTV/SSDV"]
+
+
+def test_sound_card_audio_is_decoded_at_44100(
+    tab: SstvTab, rc: _FakeRadioControl, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[tuple[str, Any, int, Any]] = []
+
+    class _Manager:
+        def acquire_input(self, owner: str, device: Any, rate: int, callback: Any) -> None:
+            calls.append((owner, device, rate, callback))
+
+        def release_input(self, *_a: Any) -> None:
+            pass
+
+    monkeypatch.setattr("comms.audio_device_manager.get_audio_device_manager", lambda: _Manager())
+    rc.rig_connected.emit()  # no SDR in the rig slots: the sound card
+    assert tab._decoder is not None and tab._decoder.sample_rate == 44100
+    assert len(calls) == 1 and calls[0][2] == 44100
+
+
+def test_the_rate_follows_the_input_when_it_changes(
+    tab: SstvTab, rc: _FakeRadioControl, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert tab._decoder is not None
+    assert tab._decoder.sample_rate == 44100  # nothing connected: sound-card rate
+    _connect_sdr_with(rc, _SignalPipeline())
+    assert tab._decoder.sample_rate == 48000
+
+
+def test_an_sstv_picture_arriving_through_the_sdr_audio_ends_up_in_the_history(
+    qtbot: QtBot, tab: SstvTab, rc: _FakeRadioControl
+) -> None:
+    """The whole path: SDR audio_ready -> decoder -> image tab and history."""
+    pytest.importorskip("scipy")
+    pytest.importorskip("pysstv")
+    import numpy as np
+    from PIL import Image
+    from pysstv.color import Robot36
+
+    pipeline = _SignalPipeline()
+    _connect_sdr_with(rc, pipeline)
+    image = Image.new("RGB", (320, 240), (40, 80, 200))
+    audio = np.array(list(Robot36(image, 48000, 16).gen_samples()), dtype=np.float32) / 32768.0
+    audio = np.concatenate([np.zeros(48000, np.float32), audio, np.zeros(24000, np.float32)])
+    for i in range(0, len(audio), 4096):
+        pipeline.audio_ready.emit(audio[i : i + 4096])
+    qtbot.waitUntil(lambda: tab._history_list.count() == 1, timeout=5000)
+    assert tab._image_label.pixmap() is not None and not tab._image_label.pixmap().isNull()
+    assert tab._save_btn.isEnabled()
+
+
+def test_disconnecting_the_sdr_stops_the_audio_feed(tab: SstvTab, rc: _FakeRadioControl) -> None:
+    pipeline = _SignalPipeline()
+    _connect_sdr_with(rc, pipeline)
+    rc.sdr_disconnected.emit()
+    assert pipeline.released == ["SSTV/SSDV"]

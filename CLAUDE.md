@@ -992,6 +992,7 @@ sudo usermod -aG dialout $USER
   「AX100 Digi 機能設計」セクション参照
 - **SDR 4800/9600bps コヒーレント MSK 検波・1200bps 衛星用前段**（2026-09-24、`src/comms/aprs/coherent_msk.py`、`afsk_audio_demod._AFSK_SATELLITE_PROFILE`）— FM 弁別器＋Direwolf は約 12〜13.5 dB の Eb/N0 を要し、Direwolf / gr-satnogs / GNU Radio `gmsk_demod` / gr-satellites のどれも実 ARICA-2 録音で同じ数フレームで頭打ちだった。**変調指数 0.5（GMSK）専用**のコヒーレント検波（位相追跡＋半正弦整合フィルタ＋自前 HDLC/CRC）を SDR セッションで Direwolf と並列に動かし、フレームを合流・重複除去する（約 4 dB 高感度。実 ARICA-2 で 4→43 フレーム、他局の公開フレームと内容一致）。1200bps は Telemetry タブ専用の前段（IF ±5 kHz・包絡線フェード・クランプ・ディエンファシスなし）で OrigamiSat-2 が 0〜1→20 フレーム。ARICA-2 のフレームは HDLC/CRC は AX.25 と同じだが中身は AX.25 のアドレス部ではない。詳細・限界・再現手順は [docs/communications.md](docs/communications.md) の該当節
 - **SSDV タブ**（2026-09-24、`src/ui/sstv_tab.py`・`src/comms/sstv/ssdv.py`）— SSDV モードは AX.25 受信を自分で開始（APRS タブ不要）。画像表示区域は「生パケット」（受信フレームをリアルタイム HEX 表示。**HEX を貼り付けると画像を生成**）と「画像」のサブタブ。フレーム内の `55 66`/`55 67`＋CRC-32 で SSDV パケットを検出（`ssdv -l` の短い長さにも対応）。**`ssdv` 実行ファイルは CI（`build-ssdv.yml`）でビルドして最初から同梱**（従来は未同梱で、SSDV タブは画像を復元できなかった）。詳細は [docs/communications.md](docs/communications.md)
+- **SSTV タブ（アナログ画像）の修正**（2026-09-24、`src/comms/sstv/decoder.py`）— それまで実質動いていなかった（起動バグ・SDR 音声 48 kHz を 44.1 kHz として処理・デコーダー自体が誤実装）。タブを開いた時点で起動し、入力源に合わせたサンプルレートで動く、VIS/同期パルス対応のストリーミングデコーダー（Robot36/PD120）に作り直し、pySSTV（エンコーダーのみ。テスト用の基準信号）の音声で検証。実信号での検証は未。詳細は [docs/communications.md](docs/communications.md)
 - CI緑（mypy strict + pytest）
 
 > 各機能の詳細設計・不具合調査履歴は下記「詳細ドキュメント索引」の該当ファイルを参照。

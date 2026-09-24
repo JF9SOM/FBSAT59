@@ -199,6 +199,9 @@ class SstvTab(QWidget):
         self._setup_ui()
         self._wire_radio_signals()
         self._refresh_input_source()
+        # SSTV is the mode shown at start: listen right away (it used to start only after
+        # switching to SSDV and back, so a freshly opened tab never received anything)
+        self._start_decoder()
 
     # ------------------------------------------------------------------ #
     # UI construction
@@ -462,7 +465,7 @@ class SstvTab(QWidget):
             return
         from comms.sstv.decoder import SstvDecoder
 
-        self._decoder = SstvDecoder(sample_rate=44100, parent=self)
+        self._decoder = SstvDecoder(sample_rate=self._audio_rate(), parent=self)
         self._decoder.line_received.connect(self._on_line_received)
         self._decoder.image_complete.connect(self._on_image_complete)
         self._decoder.mode_detected.connect(self._on_mode_detected)
@@ -477,10 +480,26 @@ class SstvTab(QWidget):
             self._decoder.stop()
             self._decoder = None
 
+    def _audio_rate(self) -> int:
+        """Sample rate of the audio the decoder is fed: SDR audio comes at the SDR
+        pipeline's audio rate (48 kHz), the shared sound-card input at 44.1 kHz.
+
+        Decoding audio at the wrong rate scales every tone and every duration (48 kHz
+        read as 44.1 kHz is 8.8 % off), so nothing would decode.
+        """
+        if self._find_sdr_pipeline() is not None:
+            from sdr.demodulator import AUDIO_RATE
+
+            return int(AUDIO_RATE)
+        return self._SOUNDCARD_SAMPLE_RATE
+
     def _connect_audio_source(self) -> None:
         """Connect the current audio source to the active SSTV decoder."""
         if self._decoder is None:
             return
+        rate = self._audio_rate()
+        if self._decoder.sample_rate != rate:
+            self._decoder.set_sample_rate(rate)
         pipeline = self._find_sdr_pipeline()
         if pipeline is not None:
             with contextlib.suppress(RuntimeError):

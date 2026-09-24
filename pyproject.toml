@@ -65,6 +65,8 @@ dev = [
     "types-python-dateutil",
     "httpx",               # テスト用モック
     "respx>=0.21",         # httpxモック
+    "pysstv>=0.5",         # SSTV音声の生成（SSTVデコーダー検証の基準・独立実装。エンコーダーのみでデコーダーは無い）
+    "Pillow>=10.0",        # pysstv が使う
 ]
 packaging = [
     "pyinstaller>=6.4",
