@@ -391,3 +391,61 @@ class TestMidPassBelowMinElDoesNotSwitch:
         result2 = mgr.check(_engine(engine), predictor)
         assert result2 == (_NORAD_B, _XPDR_UUID_B)
         assert mgr.current_norad == _NORAD_B
+
+
+class TestEarlyHandoffToOverlappingPass:
+    """Rule 4: a descending current satellite below HANDOFF_EL_DEG hands off
+    to another entry already above the true horizon, without waiting for LOS."""
+
+    @staticmethod
+    def _tracking(current_el: float) -> tuple[AutotrackManager, _FakeEngine, PassPredictor]:
+        conn = _make_conn_with_two_entries()
+        mgr = AutotrackManager(conn)
+        mgr.set_list(1)
+        mgr.mark_searches_ready()
+        predictor = _predictor_with_passes({})
+        engine = _FakeEngine({_NORAD: current_el})
+        assert mgr.check(_engine(engine), predictor) == (_NORAD, _XPDR_UUID)
+        return mgr, engine, predictor
+
+    def test_descending_below_threshold_hands_off_to_rising_low_candidate(self) -> None:
+        mgr, engine, predictor = self._tracking(12.0)
+        # Candidate is below min_el (5) but above the horizon and rising.
+        engine._elevations.update({_NORAD: 9.0, _NORAD_B: 1.0})
+        assert mgr.check(_engine(engine), predictor) is None  # candidate trend unknown
+        engine._elevations.update({_NORAD: 8.0, _NORAD_B: 2.0})
+        assert mgr.check(_engine(engine), predictor) == (_NORAD_B, _XPDR_UUID_B)
+        assert mgr.current_norad == _NORAD_B
+
+    def test_no_handoff_when_current_is_still_above_threshold(self) -> None:
+        mgr, engine, predictor = self._tracking(30.0)
+        engine._elevations.update({_NORAD: 20.0, _NORAD_B: 15.0})
+        assert mgr.check(_engine(engine), predictor) is None
+        assert mgr.current_norad == _NORAD
+
+    def test_no_handoff_while_current_is_rising(self) -> None:
+        mgr, engine, predictor = self._tracking(6.0)
+        engine._elevations.update({_NORAD: 8.0, _NORAD_B: 20.0})
+        assert mgr.check(_engine(engine), predictor) is None
+        assert mgr.current_norad == _NORAD
+
+    def test_no_handoff_to_candidate_below_horizon(self) -> None:
+        mgr, engine, predictor = self._tracking(12.0)
+        engine._elevations.update({_NORAD: 9.0, _NORAD_B: -2.0})
+        assert mgr.check(_engine(engine), predictor) is None
+
+    def test_no_ping_pong_between_two_descending_satellites(self) -> None:
+        mgr, engine, predictor = self._tracking(12.0)
+        engine._elevations.update({_NORAD: 9.0, _NORAD_B: 4.0})
+        mgr.check(_engine(engine), predictor)
+        engine._elevations.update({_NORAD: 8.0, _NORAD_B: 3.0})  # B descending
+        assert mgr.check(_engine(engine), predictor) is None
+        assert mgr.current_norad == _NORAD
+
+    def test_disabled_flag_waits_for_los(self) -> None:
+        mgr, engine, predictor = self._tracking(12.0)
+        engine._elevations.update({_NORAD: 9.0, _NORAD_B: 1.0})
+        mgr.check(_engine(engine), predictor, early_handoff=False)
+        engine._elevations.update({_NORAD: 8.0, _NORAD_B: 2.0})
+        assert mgr.check(_engine(engine), predictor, early_handoff=False) is None
+        assert mgr.current_norad == _NORAD

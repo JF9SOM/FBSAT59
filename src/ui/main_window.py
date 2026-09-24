@@ -2441,6 +2441,9 @@ class MainWindow(QMainWindow):
         result = self._autotrack.check(
             self._engine,
             self._pass_predictor,
+            # METEOR/HRPT reception must wait for LOS so SatDump can release
+            # the SDR before the next satellite's start opens it.
+            early_handoff=not self._autotrack_meteor_record,
         )
         if result is None:
             # No satellite to switch to. This covers two very different

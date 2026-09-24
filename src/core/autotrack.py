@@ -10,8 +10,12 @@ Autotrack List according to the following priority rules:
       Tiebreak: list sort_order (lower = higher priority).
    b. No satellite is currently visible → select the one with the earliest AOS.
       Tiebreak: list sort_order.
-3. Overlapping passes: never interrupt a pass in progress.
-   Wait for the current satellite's LOS before switching.
+3. Overlapping passes: don't interrupt a pass in progress, except for the
+   early handoff below; otherwise wait for the current satellite's LOS.
+4. Early handoff: once the current satellite is descending below
+   HANDOFF_EL_DEG and another entry is already above the true horizon
+   (and rising, or itself above HANDOFF_EL_DEG), switch without waiting
+   for LOS.
 
 Usage::
 
@@ -25,12 +29,17 @@ Usage::
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from core.engine import PassPredictor, SatelliteEngine
+
+
+# Elevation (deg) below which a descending current satellite may be handed
+# off to an overlapping pass without waiting for LOS.
+HANDOFF_EL_DEG = 10.0
 
 
 @dataclass
@@ -52,6 +61,9 @@ class AutotrackState:
     current_xpdr_uuid: str | None = None
     pass_in_progress: bool = False  # True once current sat is above min_el
     passes_searched: bool = False  # True after user triggers pass search
+    # Elevations seen on the previous check() call, used to tell rising from
+    # descending for the early handoff.
+    last_elevations: dict[int, float] = field(default_factory=dict)
 
 
 class AutotrackManager:
@@ -159,6 +171,7 @@ class AutotrackManager:
         predictor: PassPredictor,
         min_el: float = 5.0,
         cached_elevations: dict[int, float] | None = None,
+        early_handoff: bool = True,
     ) -> tuple[int, str] | None:
         """Evaluate whether to switch to a different satellite.
 
@@ -171,6 +184,11 @@ class AutotrackManager:
             cached_elevations: Pre-computed {norad: elevation_deg} dict from the
                                world-map update cycle.  When supplied, avoids
                                redundant Skyfield calls for the same tick.
+            early_handoff:     Allow rule 4 (switch to an overlapping pass once the
+                               current satellite descends below HANDOFF_EL_DEG).
+                               Callers pass False when a switch must wait for LOS
+                               (e.g. METEOR/HRPT reception needs SatDump to release
+                               the SDR first).
 
         Returns:
             (norad_cat_id, xpdr_uuid) if a switch should happen, else None.
@@ -192,6 +210,26 @@ class AutotrackManager:
             elevations = self._get_elevations(engine, norads)
 
         current = self._state.current_norad
+        prev_elevations = self._state.last_elevations
+        self._state.last_elevations = dict(elevations)
+
+        # Rule 4: early handoff to an overlapping pass.
+        if early_handoff and current is not None:
+            cur_el = elevations.get(current, -90.0)
+            prev_cur_el = prev_elevations.get(current)
+            if prev_cur_el is not None and 0.0 <= cur_el < HANDOFF_EL_DEG and cur_el < prev_cur_el:
+                for entry in self._entries:
+                    n = entry.norad_cat_id
+                    if n == current:
+                        continue
+                    el = elevations.get(n, -90.0)
+                    prev_el = prev_elevations.get(n)
+                    # Require the candidate to be rising (or high) so two
+                    # satellites both low and descending cannot ping-pong.
+                    if el >= 0.0 and (
+                        el >= HANDOFF_EL_DEG or (prev_el is not None and el > prev_el)
+                    ):
+                        return self._commit_switch(entry)
 
         # Rule 1: current satellite is above min_el → keep tracking
         if current is not None:
