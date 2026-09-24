@@ -3030,15 +3030,8 @@ class MainWindow(QMainWindow):
 
         from ui.sstv_tab import SstvTab
 
-        # Pass the APRS engine so SSDV can tap the AX.25 pipeline
-        aprs_engine = None
-        for i in range(self._tab_widget.count()):
-            w = self._tab_widget.widget(i)
-            if w is not None and hasattr(w, "engine"):
-                aprs_engine = w.engine
-                break
-
-        tab = SstvTab(self._conn, self._radio_control, aprs_engine=aprs_engine, parent=self)
+        # SSDV mode starts AX.25 reception itself (shared AprsEngine singleton)
+        tab = SstvTab(self._conn, self._radio_control, parent=self)
         self._comms_tab_keys[tab] = "sstv"
         idx = self._tab_widget.addTab(tab, tab_label)
         self._add_tab_close_button(tab)

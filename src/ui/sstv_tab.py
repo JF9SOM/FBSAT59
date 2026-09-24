@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QStandardPaths, Qt, QThread, Signal
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QFontDatabase, QImage, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -30,25 +30,28 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QSizePolicy,
     QSplitter,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from comms.aprs.engine import get_aprs_engine, resolve_ax25_modem
 from comms.sstv.file_decoder import SOUNDFILE_AVAILABLE, load_audio_mono
+from comms.sstv.ssdv import extract_hex_frames, find_ssdv_packet, format_hex_line
 from i18n import _
 
 # Thumbnail size for history list
 _THUMB_W = 120
 _THUMB_H = 90
 
-# Owner tag for the shared AprsEngine singleton (see comms.aprs.engine).
-# SSDV mode only taps raw_frame_received off whatever the APRS/Telemetry
-# tabs already started (it never starts the pipeline itself), but must
-# still register as an owner so closing the APRS tab doesn't silently stop
-# reception here too.
+# Owner tag for the shared AprsEngine singleton (see comms.aprs.engine). SSDV
+# mode starts AX.25 reception itself (SDR or Rig + Sound Card, like the Telemetry
+# tab) and registers as an owner so closing another tab never stops it, and this
+# tab closing never stops another tab's reception.
 _ENGINE_OWNER = "sstv"
 
 
@@ -71,6 +74,48 @@ class _ThumbnailItem(QListWidgetItem):
         self.setSizeHint(
             __import__("PySide6.QtCore", fromlist=["QSize"]).QSize(_THUMB_W + 8, _THUMB_H + 24)
         )
+
+
+class _RawPacketEdit(QPlainTextEdit):
+    """The "Raw Packets" text: one frame per line as hex bytes.
+
+    Received frames are appended live; text can also be pasted (from the
+    Telemetry tab, SatNOGS Network ...). ``pasted`` is emitted after a paste so
+    the tab can rebuild the image from the whole text.
+    """
+
+    pasted: Signal = Signal()
+
+    _MAX_LINES = 5000
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
+        self.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
+        self.setMaximumBlockCount(self._MAX_LINES)
+
+    def append_frame(self, frame: bytes) -> None:
+        """Add *frame* as a new hex line (keeps the view at the bottom if it was there)."""
+        self.appendPlainText(format_hex_line(frame))
+
+    def insertFromMimeData(self, source: Any) -> None:  # noqa: N802
+        """Paste *source* as whole lines: one frame per line must survive the paste.
+
+        A plain paste would glue the text onto the line the cursor is in (and a
+        paste without a final newline onto the next one), corrupting frames.
+        """
+        text = source.text() if source.hasText() else ""
+        if not text:
+            super().insertFromMimeData(source)
+            return
+        cursor = self.textCursor()
+        if cursor.positionInBlock() != 0:
+            text = "\n" + text
+        if not text.endswith("\n"):
+            text += "\n"
+        cursor.insertText(text)
+        self.setTextCursor(cursor)
+        self.pasted.emit()
 
 
 class _FileDecodeWorker(QThread):
@@ -129,6 +174,11 @@ class SstvTab(QWidget):
         self._conn = conn
         self._radio_control = radio_control
         self._aprs_engine: Any | None = aprs_engine
+        self._ssdv_engine_signals: bool = False  # raw_frame_received connected to us
+        self._ssdv_reception: bool = False  # we hold an owner claim on the AX.25 pipeline
+        self._ssdv_frames: int = 0  # live frames received this session
+        self._ssdv_packets: int = 0  # ... of which contained an SSDV packet
+        self._ssdv_pending: QImage | None = None  # latest SSDV image, not yet in the history
 
         self._rig_connected: bool = False
         self._sdr_connected: bool = False
@@ -200,20 +250,53 @@ class SstvTab(QWidget):
         # ── main splitter: image | history ───────────────────────────────
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # Left: live image display
-        left_widget = QWidget()
-        left_layout = QVBoxLayout(left_widget)
-        left_layout.setContentsMargins(0, 0, 0, 0)
+        # Left: sub-tabs -- "Raw Packets" (hex, live + paste) and "Image"
+        self._view_tabs = QTabWidget()
 
+        self._raw_page = QWidget()
+        raw_layout = QVBoxLayout(self._raw_page)
+        raw_layout.setContentsMargins(4, 4, 4, 4)
+        raw_hint = QLabel(
+            _(
+                "Received AX.25 frames appear here live, one per line, as hex. Paste hex "
+                "from another tab (Telemetry) or from SatNOGS Network to build the image "
+                "from it."
+            )
+        )
+        raw_hint.setWordWrap(True)
+        raw_hint.setStyleSheet("color: #888;")
+        raw_layout.addWidget(raw_hint)
+        self._raw_edit = _RawPacketEdit()
+        self._raw_edit.setPlaceholderText(_("94 A6 62 B2 9C AA 60 …  (one frame per line)"))
+        self._raw_edit.pasted.connect(self._on_hex_pasted)
+        raw_layout.addWidget(self._raw_edit, stretch=1)
+        raw_buttons = QHBoxLayout()
+        self._raw_count_label = QLabel("")
+        self._raw_count_label.setStyleSheet("color: #888;")
+        raw_buttons.addWidget(self._raw_count_label)
+        raw_buttons.addStretch()
+        self._decode_hex_btn = QPushButton(_("Build image from hex"))
+        self._decode_hex_btn.clicked.connect(self._on_hex_pasted)
+        raw_buttons.addWidget(self._decode_hex_btn)
+        self._clear_raw_btn = QPushButton(_("Clear packets"))
+        self._clear_raw_btn.clicked.connect(self._on_clear_raw)
+        raw_buttons.addWidget(self._clear_raw_btn)
+        raw_layout.addLayout(raw_buttons)
+        self._view_tabs.addTab(self._raw_page, _("Raw Packets"))
+
+        self._image_page = QWidget()
+        image_layout = QVBoxLayout(self._image_page)
+        image_layout.setContentsMargins(0, 0, 0, 0)
         self._image_label = QLabel()
         self._image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._image_label.setMinimumSize(320, 240)
         self._image_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self._image_label.setStyleSheet("background: #111; border: 1px solid #444;")
         self._image_label.setText(_("Waiting for signal…"))
         self._image_label.setStyleSheet("background: #111; border: 1px solid #444; color: #666;")
-        left_layout.addWidget(self._image_label)
-        splitter.addWidget(left_widget)
+        image_layout.addWidget(self._image_label)
+        self._view_tabs.addTab(self._image_page, _("Image"))
+        self._view_tabs.setCurrentWidget(self._image_page)  # SSTV is the default mode
+        splitter.addWidget(self._view_tabs)
 
         # Right: received image history
         right_widget = QWidget()
@@ -317,28 +400,45 @@ class SstvTab(QWidget):
         self._refresh_input_source()
         if self._decoder is not None and self._mode_combo.currentText() == "SSTV":
             self._connect_audio_source()
+        self._resume_ssdv_reception()
 
     def _on_rig_disconnected(self) -> None:
         self._disconnect_audio_source()
         self._rig_connected = False
         self._sdr_connected = False
         self._refresh_input_source()
+        self._stop_ssdv_reception()
 
     def _on_sdr_connected(self) -> None:
         self._sdr_connected = True
         self._refresh_input_source()
         if self._decoder is not None and self._mode_combo.currentText() == "SSTV":
             self._connect_audio_source()
+        self._resume_ssdv_reception()
 
     def _on_sdr_disconnected(self) -> None:
         self._disconnect_audio_source()
         self._sdr_connected = False
         self._refresh_input_source()
+        self._stop_ssdv_reception()
+
+    def _resume_ssdv_reception(self) -> None:
+        """In SSDV mode, (re)start AX.25 reception when an input has just connected."""
+        if self._mode_combo.currentText() == "SSDV" and self._ssdv_engine_signals:
+            self._start_ssdv_reception()
 
     def _on_transmitter_changed(self, xpdr: Any) -> None:
         """Update satellite name when transponder selection changes."""
         if xpdr and isinstance(xpdr, dict):
             self._sat_name = xpdr.get("description", "")
+        if self._ssdv_reception:
+            # a different transponder can mean a different AX.25 baud rate
+            modem = resolve_ax25_modem(self._conn, self._radio_control)
+            engine = self._engine()
+            engine.restart_if_modem_changed(modem)
+            pipeline = self._find_sdr_pipeline()
+            if pipeline is not None:
+                engine.sync_sdr_baud(pipeline, modem, satellite=True)
 
     def _refresh_input_source(self) -> None:
         if self._sdr_connected:
@@ -466,8 +566,8 @@ class SstvTab(QWidget):
             pass
         return None
 
-    def _start_ssdv(self) -> None:
-        """Create SsdvDecoder and subscribe to the APRS engine's raw AX.25 frames."""
+    def _ensure_ssdv_decoder(self) -> Any:
+        """The SsdvDecoder, created on first use (it outlives reconnects)."""
         from comms.sstv.ssdv import SsdvDecoder
 
         if self._ssdv_decoder is None:
@@ -475,32 +575,153 @@ class SstvTab(QWidget):
             self._ssdv_decoder.image_updated.connect(self._on_ssdv_image)
             self._ssdv_decoder.status_changed.connect(self._status_label.setText)
             self._ssdv_decoder.error_occurred.connect(self._status_label.setText)
+        return self._ssdv_decoder
 
-        if self._aprs_engine is not None:
-            self._aprs_engine.add_owner(_ENGINE_OWNER)
-            self._aprs_engine.raw_frame_received.connect(self._on_ax25_frame)
-            self._status_label.setText(_("SSDV: waiting for AX.25 frames…"))
+    def _engine(self) -> Any:
+        """The process-wide AprsEngine (started/stopped by owner, shared with other tabs)."""
+        if self._aprs_engine is None:
+            self._aprs_engine = get_aprs_engine(self._conn)
+        return self._aprs_engine
+
+    def _start_ssdv(self) -> None:
+        """SSDV mode: start AX.25 reception and feed the frames to the SSDV decoder.
+
+        Reception is started here (SDR or Rig + Sound Card, like the Telemetry
+        tab) -- no other tab needs to be open. Without an audio source the tab
+        still works for pasted hex.
+        """
+        self._ensure_ssdv_decoder()
+        engine = self._engine()
+        if not self._ssdv_engine_signals:
+            engine.raw_frame_received.connect(self._on_ax25_frame)
+            self._ssdv_engine_signals = True
+        self._ssdv_frames = 0
+        self._ssdv_packets = 0
+        self._start_ssdv_reception()
+
+    def _start_ssdv_reception(self) -> None:
+        """Claim the AX.25 pipeline for the connected input (no-op without one)."""
+        if self._ssdv_reception:
+            return
+        engine = self._engine()
+        modem = resolve_ax25_modem(self._conn, self._radio_control)
+        pipeline = self._find_sdr_pipeline()
+        if pipeline is not None:
+            ok, err = engine.start_sdr_direwolf(
+                _ENGINE_OWNER, pipeline, modem=modem, satellite=True
+            )
+        elif self._rig_connected:
+            ok, err = engine.start_rig(_ENGINE_OWNER, "N0CALL", 0, "", modem=modem)
         else:
-            self._status_label.setText(_("SSDV: open APRS tab first to enable AX.25 reception"))
+            self._status_label.setText(
+                _("SSDV: no audio source — connect Rig or SDR in Radio Control (pasting hex works)")
+            )
+            return
+        if not ok:
+            self._status_label.setText(f"⚠ {err}")
+            return
+        self._ssdv_reception = True
+        self._status_label.setText(_("SSDV: waiting for AX.25 frames…"))
+
+    def _stop_ssdv_reception(self) -> None:
+        """Release this tab's claim on the AX.25 pipeline."""
+        if self._ssdv_reception:
+            self._engine().stop(_ENGINE_OWNER)
+            self._ssdv_reception = False
 
     def _stop_ssdv(self) -> None:
-        """Disconnect from the AX.25 pipeline and flush any buffered packets."""
+        """Leave SSDV mode: disconnect from the AX.25 pipeline, decode what is buffered."""
         if self._aprs_engine is not None:
-            with contextlib.suppress(RuntimeError):
-                self._aprs_engine.raw_frame_received.disconnect(self._on_ax25_frame)
-            self._aprs_engine.stop(_ENGINE_OWNER)
+            if self._ssdv_engine_signals:
+                with contextlib.suppress(RuntimeError, TypeError):
+                    self._aprs_engine.raw_frame_received.disconnect(self._on_ax25_frame)
+                self._ssdv_engine_signals = False
+            self._stop_ssdv_reception()
         if self._ssdv_decoder is not None:
             self._ssdv_decoder.flush()
+        self._commit_pending_ssdv()
 
     def _on_ax25_frame(self, raw: bytes) -> None:
-        """Filter raw AX.25 frames for SSDV packets and feed the decoder."""
-        # SSDV packets start with sync byte 0x55 followed by type 0x66
-        if len(raw) >= 2 and raw[0] == 0x55 and raw[1] == 0x66 and self._ssdv_decoder is not None:
-            self._ssdv_decoder.push_packet(raw)
+        """A live AX.25 (or bare HDLC) frame: show it as hex, feed any SSDV packet in it."""
+        self._raw_edit.append_frame(raw)
+        self._ssdv_frames += 1
+        packet = find_ssdv_packet(raw)
+        if (
+            packet is not None
+            and self._ssdv_decoder is not None
+            and self._ssdv_decoder.push_packet(packet)
+        ):
+            self._ssdv_packets += 1
+        self._update_raw_count()
+
+    def _update_raw_count(self) -> None:
+        self._raw_count_label.setText(
+            _("Frames: ")
+            + str(self._ssdv_frames)
+            + "   "
+            + _("SSDV packets: ")
+            + str(self._ssdv_packets)
+        )
+
+    def _on_hex_pasted(self) -> None:
+        """Build the image from the whole Raw Packets text (after a paste, or the button)."""
+        frames = extract_hex_frames(self._raw_edit.toPlainText())
+        if not frames:
+            self._status_label.setText(_("No hex frames found in the text."))
+            return
+        decoder = self._ensure_ssdv_decoder()
+        decoder.reset()
+        packets = 0
+        for frame in frames:
+            packet = find_ssdv_packet(frame)
+            if packet is not None and decoder.push_packet(packet):
+                packets += 1
+        if packets == 0:
+            self._status_label.setText(
+                _(
+                    "{n} frames, but none contains an SSDV packet "
+                    "(sync 55 66 / 55 67 and a valid CRC)."
+                ).format(n=len(frames))
+            )
+            return
+        self._status_label.setText(
+            _("{n} frames, {m} SSDV packets — decoding…").format(n=len(frames), m=packets)
+        )
+        if decoder.decode_now():
+            self._commit_pending_ssdv()
+            self._view_tabs.setCurrentWidget(self._image_page)
+
+    def _on_clear_raw(self) -> None:
+        """Empty the Raw Packets text and forget the buffered SSDV packets."""
+        self._raw_edit.clear()
+        if self._ssdv_decoder is not None:
+            self._ssdv_decoder.reset()
+        self._ssdv_frames = 0
+        self._ssdv_packets = 0
+        self._raw_count_label.setText("")
 
     def _on_ssdv_image(self, qimg: QImage) -> None:
-        """Handle a completed SSDV image (same flow as SSTV image_complete)."""
-        self._on_image_complete(qimg, "SSDV")
+        """Show the (progressively better) SSDV image; it enters the history on commit."""
+        self._ssdv_pending = qimg
+        self._current_image = qimg
+        self._save_btn.setEnabled(True)
+        self._show_scaled(qimg)
+
+    def _commit_pending_ssdv(self) -> None:
+        """Put the latest SSDV image into the history / DB / auto-save, once."""
+        if self._ssdv_pending is not None:
+            qimg, self._ssdv_pending = self._ssdv_pending, None
+            self._on_image_complete(qimg, "SSDV")
+
+    def _show_scaled(self, qimg: QImage) -> None:
+        self._image_label.setPixmap(
+            QPixmap.fromImage(qimg).scaled(
+                self._image_label.width(),
+                self._image_label.height(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
 
     # ------------------------------------------------------------------ #
     # Decoder signal handlers
@@ -567,8 +788,10 @@ class SstvTab(QWidget):
         self._stop_decoder()
         self._stop_ssdv()
         if mode_text == "SSTV":
+            self._view_tabs.setCurrentWidget(self._image_page)
             self._start_decoder()
         else:
+            self._view_tabs.setCurrentWidget(self._raw_page)
             self._start_ssdv()
 
     def _on_decode_file(self) -> None:
@@ -651,6 +874,7 @@ class SstvTab(QWidget):
 
     def _on_clear(self) -> None:
         """Clear the live image display."""
+        self._ssdv_pending = None
         self._image_label.setPixmap(QPixmap())
         self._image_label.setText(_("Waiting for signal…"))
         self._current_image = None
