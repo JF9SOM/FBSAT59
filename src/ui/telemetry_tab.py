@@ -159,10 +159,10 @@ class _DimRowDelegate(QStyledItemDelegate):
     """Draws rows marked with _DIM_ROLE in a muted, italic style that stays readable.
 
     A fixed grey foreground (the earlier approach) is unreadable whenever it
-    lands on a background of a similar grey -- the selection highlight or an
-    alternating row. Here the muted colour is a blend of the *theme's* text and
-    base colours, and a selected row keeps the theme's own selection colours
-    (only italics mark it as muted).
+    lands on a background of a similar grey -- the selection highlight, say.
+    Here the muted colour is a blend of the *theme's* text and base colours,
+    and a selected row keeps the theme's own selection colours (only italics
+    mark it as muted).
     """
 
     _TEXT_WEIGHT = 0.6  # share of the text colour in the muted colour
@@ -470,7 +470,6 @@ class TelemetryTab(QWidget):
         hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._table.setAlternatingRowColors(True)
         self._table.setItemDelegate(_DimRowDelegate(self._table))
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         # Enlarge the frame-log font ~1.5x to match the APRS Received Packets
@@ -1704,7 +1703,6 @@ class TelemetryTab(QWidget):
             table.setHorizontalHeaderLabels([_("Field"), _("Value")])
             table.verticalHeader().setVisible(False)
             table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-            table.setAlternatingRowColors(True)
             table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
             table.horizontalHeader().setSectionResizeMode(
                 0, QHeaderView.ResizeMode.ResizeToContents

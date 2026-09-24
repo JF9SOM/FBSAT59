@@ -285,6 +285,16 @@ CW TLM モードの「棄却された候補」行（`_append_row(dim=True)`）�
 教訓: 前景色を固定値で指定しない（テーマ・選択・交互行の全てで読める保証がない）。テスト:
 `tests/test_telemetry_tab.py`（暗色・明色テーマでのコントラスト、選択時、通常行が影響を受けないこと）。
 
+### 交互行の背景色を全廃（2026-09-24、ユーザー指示）
+
+`setAlternatingRowColors(True)` は、交互行の片方が必ず明るいグレーになり、白い文字が読みにくいという
+指摘（OrigamiSat-2 の受信フレーム表）で、**アプリ内の全ての表・リストから削除した**（Telemetry の
+受信フレーム表と全項目デコード表、APRS、FT4、Q65、衛星検索ダイアログ）。以後は**全行が同じ暗い背景
+に白い文字**。選択行だけテーマ標準のハイライトになる。**新しい表・リストで交互行を有効にしないこと**:
+`tests/test_no_alternating_row_colors.py` が `src/` を走査して `setAlternatingRowColors(True)` /
+`alternate-background-color` を見つけると失敗する。上の 2026-09-13 の節の `setAlternatingRowColors`
+への言及は、当時の状態の記録。
+
 ---
 
 ## テレメトリーIDごとに異なるフォーマットを持つ衛星への対応（2026-09-13 追加）

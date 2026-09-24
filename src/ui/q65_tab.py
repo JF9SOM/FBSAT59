@@ -366,7 +366,6 @@ class Q65Tab(QWidget):
         self._table.setColumnWidth(_COL_FREQ, 60)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self._table.setAlternatingRowColors(True)
         self._table.setFont(QFont("Courier New", 9))
         self._table.cellDoubleClicked.connect(self._on_table_double_click)
         root.addWidget(self._table, stretch=1)

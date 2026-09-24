@@ -303,7 +303,6 @@ class AprsTab(QWidget):
         log_group = QGroupBox(_("Received Packets"))
         log_layout = QVBoxLayout(log_group)
         self._log_list = QListWidget()
-        self._log_list.setAlternatingRowColors(True)
         self._log_list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         # Enlarge the packet-log font ~1.5x; the raw AX.25 info field is dense
         # and the default size is hard to read.

@@ -889,7 +889,6 @@ class Ft4Tab(QWidget):
         self._table.setColumnWidth(_COL_FREQ, 112)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self._table.setAlternatingRowColors(True)
         self._table.setFont(QFont("Courier New", 18))
         # The native style's default item padding (most noticeable on
         # macOS) left excess space above/below the text once the font grew

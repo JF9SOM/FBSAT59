@@ -44,7 +44,6 @@ class SatSearchDialog(QDialog):
         layout.addWidget(self._search)
 
         self._list = QListWidget()
-        self._list.setAlternatingRowColors(True)
         layout.addWidget(self._list)
 
         btns = QDialogButtonBox(
