@@ -294,6 +294,24 @@ jobs:
           chmod +x direwolf-bundle/direwolf
           echo "Direwolf version: $(cat /tmp/dw-dl/version.txt)"
 
+      - name: Download ssdv bundle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ARCH=$(uname -m)
+          mkdir -p ssdv-bundle
+          if gh release download ssdv-bundle \
+              --repo "${{ github.repository }}" \
+              --pattern "ssdv-linux-${ARCH}.tar.gz" \
+              --dir /tmp/ssdv-dl; then
+            tar -xzf /tmp/ssdv-dl/ssdv-linux-${ARCH}.tar.gz -C /tmp/ssdv-dl --strip-components=1
+            cp /tmp/ssdv-dl/ssdv /tmp/ssdv-dl/COPYING /tmp/ssdv-dl/SOURCE.txt ssdv-bundle/
+            chmod +x ssdv-bundle/ssdv
+            echo "ssdv commit: $(cat /tmp/ssdv-dl/version.txt)"
+          else
+            echo "::warning::ssdv bundle not available yet -- run the 'Build ssdv Bundle' workflow. The SSDV tab will not decode images in this build."
+          fi
+
       - name: Download q65lib bundle
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -833,6 +851,29 @@ jobs:
           Copy-Item "$extracted\*" direwolf-bundle\ -Force
           $ver = Get-Content "direwolf-bundle\version.txt" -ErrorAction SilentlyContinue
           Write-Host "Direwolf version: $ver"
+
+      - name: Download ssdv bundle
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          New-Item -ItemType Directory -Force -Path ssdv-bundle | Out-Null
+          gh release download ssdv-bundle `
+            --repo "${{ github.repository }}" `
+            --pattern "ssdv-windows-x86_64.zip" `
+            --dir "$env:RUNNER_TEMP\ssdv-dl"
+          if ($LASTEXITCODE -eq 0) {
+            Expand-Archive -Path "$env:RUNNER_TEMP\ssdv-dl\ssdv-windows-x86_64.zip" `
+              -DestinationPath "$env:RUNNER_TEMP\ssdv-dl\extracted"
+            $extracted = "$env:RUNNER_TEMP\ssdv-dl\extracted"
+            $sub = Get-ChildItem $extracted -Directory | Select-Object -First 1
+            if ($sub) { $extracted = $sub.FullName }
+            Copy-Item "$extracted\*" ssdv-bundle\ -Force
+            Write-Host "ssdv commit: $(Get-Content ssdv-bundle\version.txt)"
+          } else {
+            Write-Host "::warning::ssdv bundle not available yet -- run the 'Build ssdv Bundle' workflow. The SSDV tab will not decode images in this build."
+            $global:LASTEXITCODE = 0
+          }
 
       - name: Download q65lib bundle
         shell: pwsh
@@ -1385,6 +1426,24 @@ jobs:
           cp /tmp/dw-dl/*.dylib direwolf-bundle/ 2>/dev/null || true
           chmod +x direwolf-bundle/direwolf
           echo "Direwolf version: $(cat /tmp/dw-dl/version.txt)"
+
+      - name: Download ssdv bundle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ARCH=$(uname -m)
+          mkdir -p ssdv-bundle
+          if gh release download ssdv-bundle \
+              --repo "${{ github.repository }}" \
+              --pattern "ssdv-macos-${ARCH}.tar.gz" \
+              --dir /tmp/ssdv-dl; then
+            tar -xzf /tmp/ssdv-dl/ssdv-macos-${ARCH}.tar.gz -C /tmp/ssdv-dl --strip-components=1
+            cp /tmp/ssdv-dl/ssdv /tmp/ssdv-dl/COPYING /tmp/ssdv-dl/SOURCE.txt ssdv-bundle/
+            chmod +x ssdv-bundle/ssdv
+            echo "ssdv commit: $(cat /tmp/ssdv-dl/version.txt)"
+          else
+            echo "::warning::ssdv bundle not available yet -- run the 'Build ssdv Bundle' workflow. The SSDV tab will not decode images in this build."
+          fi
 
       - name: Download q65lib bundle
         env:

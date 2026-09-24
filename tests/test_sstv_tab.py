@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import sqlite3
 import subprocess
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -131,7 +132,7 @@ def _fake_ssdv_binary(monkeypatch: pytest.MonkeyPatch) -> list[bytes]:
     seen: list[bytes] = []
 
     def run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
-        seen.append(kwargs["input"])
+        seen.append(Path(argv[-2]).read_bytes())  # ssdv is given files: ... <packets> <image>
         img = QImage(80, 60, QImage.Format.Format_RGB32)
         img.fill(QColor("#c07030"))
         img.save(argv[-1], "PNG")

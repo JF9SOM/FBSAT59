@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 import zlib
 from pathlib import Path
 from typing import Any
@@ -150,7 +151,8 @@ class _FakeSsdv:
         self.write = write
 
     def __call__(self, argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
-        self.calls.append((list(argv), kwargs["input"]))
+        # ssdv is given files (binary-safe on Windows): -d -l N <packets file> <image file>
+        self.calls.append((list(argv), Path(argv[-2]).read_bytes()))
         if self.write:
             _png(argv[-1])
         return subprocess.CompletedProcess(argv, self.returncode, b"", b"")
@@ -199,7 +201,7 @@ def test_decode_orders_by_packet_id_and_passes_the_length(
         dec.push_packet(p)
     assert dec.decode_now()
     argv, data = fake_ssdv.calls[0]
-    assert argv[:5] == ["/fake/ssdv", "-d", "-l", "100", "-"]
+    assert argv[:4] == ["/fake/ssdv", "-d", "-l", "100"]
     assert data == pkts[1] + pkts[2] + pkts[0]
 
 
@@ -328,3 +330,54 @@ def test_real_ssdv_round_trip_through_hex_text(
     with qtbot.waitSignal(dec.image_updated, timeout=5000) as blocker:
         dec.decode_now()
     assert (blocker.args[0].width(), blocker.args[0].height()) == (160, 112)
+
+
+def test_decode_leaves_no_temporary_files_behind(
+    qtbot: QtBot, fake_ssdv: _FakeSsdv, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import tempfile
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    dec = SsdvDecoder()
+    dec.push_packet(make_packet())
+    assert dec.decode_now()
+    assert list(tmp_path.iterdir()) == []
+
+
+# --------------------------------------------------------------------------
+# find_ssdv: user copy, PATH, then the copy bundled with the app
+# --------------------------------------------------------------------------
+
+
+def _exe(directory: Path) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / ("ssdv.exe" if sys.platform == "win32" else "ssdv")
+    path.write_bytes(b"#!/bin/sh\n")
+    return path
+
+
+def test_find_ssdv_prefers_the_user_copy_then_path_then_the_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user_dir, on_path, bundle = tmp_path / "user", tmp_path / "path", tmp_path / "bundle"
+    monkeypatch.setattr(ssdv_mod, "_user_ssdv_dirs", lambda: [user_dir])
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "_MEIPASS", str(bundle), raising=False)
+    monkeypatch.setattr(ssdv_mod.shutil, "which", lambda _name: None)
+
+    assert find_ssdv() is None
+    bundled = _exe(bundle)
+    assert find_ssdv() == str(bundled)
+    monkeypatch.setattr(ssdv_mod.shutil, "which", lambda _name: str(_exe(on_path)))
+    assert find_ssdv() == str(on_path / bundled.name)
+    user = _exe(user_dir)
+    assert find_ssdv() == str(user)
+
+
+def test_bundled_ssdv_is_ignored_when_not_frozen(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _exe(tmp_path)
+    monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    assert ssdv_mod._bundled_ssdv() is None

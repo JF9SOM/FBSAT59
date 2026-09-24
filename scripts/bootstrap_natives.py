@@ -14,7 +14,8 @@ unless ``--force`` is given.  A network failure is reported but never fatal so
 the app can still start offline with whatever is already installed.
 
 Components: ``hamlib`` (rig control), ``ft8lib`` (FT8/FT4 decode), ``q65lib``
-(Q65), ``ft4wsjt`` (WSJT-X FT4 engine), ``direwolf`` (APRS), ``cwmodel`` (CW
+(Q65), ``ft4wsjt`` (WSJT-X FT4 engine), ``direwolf`` (APRS), ``ssdv`` (SSDV
+tab), ``cwmodel`` (CW
 decoder ONNX model + ``onnxruntime``), ``lameenc`` (MP3 recording, pip only).
 
 Usage:
@@ -126,6 +127,13 @@ _COMPONENTS: tuple[Component, ...] = (
         key_file="direwolf.exe",
         release_tag="direwolf-bundle",  # dedicated pre-release tag (CI: build-direwolf.yml)
         asset_name="direwolf-windows-x86_64.zip",
+    ),
+    Component(
+        name="ssdv",
+        subdir="ssdv",
+        key_file="ssdv.exe",
+        release_tag="ssdv-bundle",  # dedicated pre-release tag (CI: build-ssdv.yml)
+        asset_name="ssdv-windows-x86_64.zip",
     ),
     # cwmodel is handled specially (pip + raw download); listed for --only/--skip.
     Component(

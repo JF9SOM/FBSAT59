@@ -19,15 +19,19 @@ Reception paths:
   - Audio path: SSDV packets as FM audio tones (some CubeSats), not implemented here.
 
 SsdvDecoder groups packets by image id, drops duplicates, orders them by packet
-id and hands them to the ``ssdv`` binary. The binary is located as: user-installed
-copy in the app data directory, then PATH.
+id and hands them to the ``ssdv`` binary. The binary ships with the app (built
+in CI from https://github.com/fsphil/ssdv, GPL-3.0, and run as a separate
+program); it is located as: user-installed copy in the app data directory, then
+PATH, then the copy bundled next to the frozen app.
 """
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import zlib
 from collections import Counter
@@ -126,21 +130,47 @@ def packet_id(packet: bytes) -> int:
     return (packet[7] << 8) | packet[8]
 
 
-def find_ssdv() -> str | None:
-    """Return path to the ssdv binary, or None if not found."""
-    # 1. User-installed
-    data_dir = (
+def _exe_name() -> str:
+    return "ssdv.exe" if sys.platform == "win32" else "ssdv"
+
+
+def _user_ssdv_dirs() -> list[Path]:
+    """Directories a user-installed ssdv may live in (same base as Direwolf's)."""
+    dirs: list[Path] = []
+    try:
+        from platformdirs import user_data_dir
+
+        dirs.append(Path(user_data_dir("fbsat59")) / "ssdv")
+    except ImportError:
+        pass
+    dirs.append(
         Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation))
         / "ssdv"
     )
-    for candidate in (data_dir / "ssdv", data_dir / "ssdv.exe"):
+    return dirs
+
+
+def _bundled_ssdv() -> str | None:
+    """The ssdv binary shipped inside the frozen (PyInstaller) app, if any."""
+    if not getattr(sys, "frozen", False):
+        return None
+    candidate = Path(sys._MEIPASS) / _exe_name()  # type: ignore[attr-defined]
+    return str(candidate) if candidate.is_file() else None
+
+
+def find_ssdv() -> str | None:
+    """Return the path to the ssdv binary, or None if not found.
+
+    Priority: user-installed, PATH, then the copy bundled with the app.
+    """
+    for directory in _user_ssdv_dirs():
+        candidate = directory / _exe_name()
         if candidate.is_file():
             return str(candidate)
-    # 2. System PATH
     found = shutil.which("ssdv")
     if found:
         return found
-    return None
+    return _bundled_ssdv()
 
 
 class SsdvDecoder(QObject):
@@ -225,8 +255,9 @@ class SsdvDecoder(QObject):
             self._ssdv_path = find_ssdv()
         if not self._ssdv_path:
             self.error_occurred.emit(
-                "ssdv binary not found. Build it from https://github.com/fsphil/ssdv "
-                "and put it on PATH (or in the app data 'ssdv' folder)."
+                "ssdv binary not found. Installed apps bundle it; when running from source, "
+                "run scripts/bootstrap_natives.py (or build https://github.com/fsphil/ssdv "
+                "and put it on PATH)."
             )
             return False
 
@@ -234,12 +265,15 @@ class SsdvDecoder(QObject):
         lengths = Counter(len(p) for p in packets)
         length = lengths.most_common(1)[0][0]  # ssdv takes one packet length for the run
         packets = [p for p in packets if len(p) == length]
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-            out_path = tmp.name
+        # Files, not stdin/stdout: ssdv reads and writes them in binary mode, whereas on
+        # Windows its standard streams are text mode and would corrupt the packets.
+        workdir = tempfile.mkdtemp(prefix="fbsat59_ssdv_")
+        in_path = os.path.join(workdir, "packets.bin")
+        out_path = os.path.join(workdir, "image.jpg")
         try:
+            Path(in_path).write_bytes(b"".join(packets))
             result = subprocess.run(  # noqa: S603
-                [self._ssdv_path, "-d", "-l", str(length), "-", out_path],
-                input=b"".join(packets),
+                [self._ssdv_path, "-d", "-l", str(length), in_path, out_path],
                 capture_output=True,
                 timeout=10,
             )
@@ -260,7 +294,7 @@ class SsdvDecoder(QObject):
         except OSError:
             self.error_occurred.emit(f"ssdv binary not executable: {self._ssdv_path}")
         finally:
-            Path(out_path).unlink(missing_ok=True)
+            shutil.rmtree(workdir, ignore_errors=True)
         return False
 
     def _best_image(self) -> tuple[int, list[bytes]]:

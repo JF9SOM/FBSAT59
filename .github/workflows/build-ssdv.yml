@@ -1,0 +1,186 @@
+name: Build ssdv Bundle
+
+# Builds the `ssdv` command-line tool (https://github.com/fsphil/ssdv, GPL-3.0,
+# a tiny dependency-free C program that reassembles SSDV packets into a JPEG)
+# for every platform and publishes it on the dedicated "ssdv-bundle" release.
+# ci.yml downloads it and PyInstaller ships it inside the app, so the SSDV tab
+# works out of the box. It runs as a separate program (never linked into the
+# app), which is why its GPL-3.0 licence text and source location travel with it.
+#
+# Upstream is archived (read-only since 2025-12), so the source is pinned to a
+# commit and there is no weekly version check like build-direwolf.yml has.
+# Run it manually (or edit this file) to rebuild.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-ssdv.yml"
+
+env:
+  SSDV_REPO: https://github.com/fsphil/ssdv.git
+  SSDV_COMMIT: d1ceda81b69f88741396f3e052b50c8ae40efb76
+
+jobs:
+  # ------------------------------------------------------------------ #
+  # Make sure the release exists before the three build jobs upload to it
+  # (created once here, so the jobs cannot race each other to create it)
+  # ------------------------------------------------------------------ #
+  release:
+    name: Ensure ssdv-bundle release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create the release if missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view ssdv-bundle --repo "${{ github.repository }}" 2>/dev/null || \
+          gh release create ssdv-bundle \
+            --repo "${{ github.repository }}" \
+            --title "ssdv Bundle" \
+            --notes "Pre-built ssdv (fsphil/ssdv, GPL-3.0) for the SSDV tab. Built from a pinned commit by build-ssdv.yml." \
+            --prerelease
+
+  # ------------------------------------------------------------------ #
+  # Linux
+  # ------------------------------------------------------------------ #
+  build-linux:
+    needs: release
+    name: Build ssdv (Linux)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch pinned source
+        run: |
+          git clone "$SSDV_REPO" ssdv-src
+          git -C ssdv-src checkout "$SSDV_COMMIT"
+
+      - name: Build
+        run: |
+          cd ssdv-src
+          gcc -O2 -Wall -o ssdv main.c ssdv.c rs8.c
+
+      - name: Smoke test (encode + decode round trip)
+        run: |
+          python3 -m pip install --quiet pillow
+          bash scripts/ssdv_smoke_test.sh ssdv-src/ssdv
+
+      - name: Package
+        run: |
+          ARCH=$(uname -m)
+          PKG_DIR=/tmp/ssdv-flat
+          mkdir -p "$PKG_DIR"
+          cp ssdv-src/ssdv "$PKG_DIR/"
+          cp ssdv-src/COPYING "$PKG_DIR/COPYING"
+          echo "$SSDV_COMMIT" > "$PKG_DIR/version.txt"
+          echo "Source: ${SSDV_REPO%.git} (commit $SSDV_COMMIT), GPL-3.0" > "$PKG_DIR/SOURCE.txt"
+          PKG_NAME="ssdv-linux-${ARCH}.tar.gz"
+          tar -czf "/tmp/${PKG_NAME}" -C /tmp ssdv-flat
+          echo "PKG=/tmp/${PKG_NAME}" >> "$GITHUB_ENV"
+
+      - name: Upload to ssdv-bundle release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ssdv-bundle --repo "${{ github.repository }}" --clobber "${{ env.PKG }}"
+
+  # ------------------------------------------------------------------ #
+  # macOS
+  # ------------------------------------------------------------------ #
+  build-macos:
+    needs: release
+    name: Build ssdv (macOS)
+    runs-on: macos-14
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch pinned source
+        run: |
+          git clone "$SSDV_REPO" ssdv-src
+          git -C ssdv-src checkout "$SSDV_COMMIT"
+
+      - name: Build
+        run: |
+          cd ssdv-src
+          cc -O2 -Wall -mmacosx-version-min=11.0 -o ssdv main.c ssdv.c rs8.c
+
+      - name: Smoke test (encode + decode round trip)
+        run: |
+          python3 -m pip install --quiet pillow
+          bash scripts/ssdv_smoke_test.sh ssdv-src/ssdv
+
+      - name: Package
+        run: |
+          ARCH=$(uname -m)
+          PKG_DIR=/tmp/ssdv-flat
+          mkdir -p "$PKG_DIR"
+          cp ssdv-src/ssdv "$PKG_DIR/"
+          cp ssdv-src/COPYING "$PKG_DIR/COPYING"
+          echo "$SSDV_COMMIT" > "$PKG_DIR/version.txt"
+          echo "Source: ${SSDV_REPO%.git} (commit $SSDV_COMMIT), GPL-3.0" > "$PKG_DIR/SOURCE.txt"
+          PKG_NAME="ssdv-macos-${ARCH}.tar.gz"
+          tar -czf "/tmp/${PKG_NAME}" -C /tmp ssdv-flat
+          echo "PKG=/tmp/${PKG_NAME}" >> "$GITHUB_ENV"
+
+      - name: Upload to ssdv-bundle release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ssdv-bundle --repo "${{ github.repository }}" --clobber "${{ env.PKG }}"
+
+  # ------------------------------------------------------------------ #
+  # Windows (MinGW gcc, statically linked: no DLLs to ship)
+  # ------------------------------------------------------------------ #
+  build-windows:
+    needs: release
+    name: Build ssdv (Windows)
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch pinned source
+        run: |
+          git clone "$SSDV_REPO" ssdv-src
+          git -C ssdv-src checkout "$SSDV_COMMIT"
+
+      - name: Build
+        run: |
+          gcc --version | head -1
+          cd ssdv-src
+          gcc -O2 -Wall -static -o ssdv.exe main.c ssdv.c rs8.c
+
+      - name: Smoke test (encode + decode round trip)
+        run: |
+          python -m pip install --quiet pillow
+          bash scripts/ssdv_smoke_test.sh ssdv-src/ssdv.exe
+
+      - name: Package
+        run: |
+          PKG_DIR="$RUNNER_TEMP/ssdv-flat"
+          mkdir -p "$PKG_DIR"
+          cp ssdv-src/ssdv.exe "$PKG_DIR/"
+          cp ssdv-src/COPYING "$PKG_DIR/COPYING"
+          echo "$SSDV_COMMIT" > "$PKG_DIR/version.txt"
+          echo "Source: ${SSDV_REPO%.git} (commit $SSDV_COMMIT), GPL-3.0" > "$PKG_DIR/SOURCE.txt"
+          cd "$RUNNER_TEMP"
+          powershell -NoProfile -Command "Compress-Archive -Path ssdv-flat -DestinationPath ssdv-windows-x86_64.zip -Force"
+          echo "PKG=$RUNNER_TEMP/ssdv-windows-x86_64.zip" >> "$GITHUB_ENV"
+
+      - name: Upload to ssdv-bundle release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ssdv-bundle --repo "${{ github.repository }}" --clobber "$PKG"

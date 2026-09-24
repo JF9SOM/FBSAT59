@@ -90,3 +90,14 @@ makensis /DAPP_VERSION=$ver /DVIVERSION=$viVer scripts\installer.nsi
 **追加の見落とし**: Windows ビルドで FFTW3 の実行時 DLL（`fftw3f*.dll`）を出力に同梱し忘れていた（MinGW ランタイムDLLのみコピーしていた）。ビルドと ctypes ロードは別物であり、リンクが通っても実行時に依存 DLL が同梱されていなければ `ctypes.CDLL()` は失敗する。`$CONDA_PREFIX/Library/bin/*fftw3f*.dll` を出力ディレクトリにコピーして解決
 
 ---
+
+---
+
+## ssdv バンドル（2026-09-24 追加）
+
+SSDV タブが使う `ssdv`（https://github.com/fsphil/ssdv、GPL-3.0）は、`build-ssdv.yml` が固定コミットから
+3 プラットフォーム分をビルド・動作確認して `ssdv-bundle` リリースに公開し、`ci.yml` の各ビルドが取り込んで
+`scripts/fbsat59.spec` が同梱する（Direwolf と同じ流れ）。他のバンドルと違い**週次のバージョン確認は無い**
+（上流がアーカイブ済み）。再ビルドは `workflow_dispatch` か、`build-ssdv.yml` を main に push する。
+リリースが未作成でも本体ビルドは失敗しない（警告のみ）。詳細は [communications.md](communications.md) の
+「SSDV の受信・「生パケット」/「画像」サブタブ」。

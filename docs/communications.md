@@ -1141,12 +1141,23 @@ Radio Control / SDR Control の音声REC機能（共に `~/audio_recordings` に
   **途中経過は履歴に入れない**（履歴・DB・自動保存 PNG に入るのは、貼り付けからの生成完了時、SSDV モードを
   離れる/タブを閉じるとき）。
 
-**`ssdv` 実行ファイルが要る（未同梱・要ビルド）**: `Help > SSDV Installation…` や `brew install ssdv` は
-**実在しない**（後述の検出方針の記述は計画で、ダイアログは未実装。Homebrew に formula は無い）。
-現状は https://github.com/fsphil/ssdv を `make` して PATH に置く（またはアプリデータフォルダの `ssdv/`）。
-無いと「ssdv binary not found…」がステータスに出る。ライセンス（GPL-3.0）上、アプリに組み込むのではなく
-**別プログラムとして同梱・呼び出す**方針（Python 移植は派生物になるため不可）。配布は今後の課題
-（CI でのビルドと「Download & Install」ダイアログ）。
+**`ssdv` 実行ファイルは最初からアプリに同梱する（2026-09-24）**: それまで `ssdv` は**どこにも同梱・配布
+されておらず、SSDV タブは画像を復元できなかった**（`Help > SSDV Installation…` はドキュメントの計画だけで
+未実装、Homebrew に formula は無い）。今は Direwolf 等と同じ方式で同梱する:
+
+- `.github/workflows/build-ssdv.yml`: https://github.com/fsphil/ssdv（GPL-3.0、依存ゼロの C、上流は 2025-12 に
+  アーカイブ済みなのでコミット `d1ceda8…` に固定）を Linux(x86_64) / macOS(arm64) / Windows(x86_64, MinGW の
+  静的リンク) でビルドし、`scripts/ssdv_smoke_test.sh`（JPEG→`ssdv -e`→`ssdv -d`→JPEG を通常/`-n`/`-l 100` で確認）に
+  通してから `ssdv-bundle` リリースへ公開する（手動実行、またはこのファイルを main に push すると自動実行）。
+- `ci.yml` の 3 つのビルドで `ssdv-bundle` をダウンロード→`ssdv-bundle/`→`fbsat59.spec` が PyInstaller の
+  ルート（`_MEIPASS/ssdv[.exe]`）に同梱。ライセンス本文と入手先は `licenses/ssdv/`（COPYING・SOURCE.txt）。
+  **リリースがまだ無くてもビルドは通る**（警告を出し、その版の SSDV タブは復元できない）。
+- `find_ssdv()` の探索順: ユーザー導入版（`user_data_dir("fbsat59")/ssdv/`）→ PATH → 同梱版。ソースから実行する
+  Windows は `scripts/bootstrap_natives.py`（`ssdv` コンポーネント）が同じリリースから取得する。macOS/Linux の
+  ソース実行は、ビルドした `ssdv` を `~/Library/Application Support/fbsat59/ssdv/` 等に置く。
+- **`ssdv` は別プログラムとして呼び出す**（GPL-3.0 をアプリ（GPL-2.0）にリンク・移植しない）。**Python 移植は
+  派生物になるため不可**。呼び出しは**標準入出力ではなくファイル経由**（`main.c` は標準入出力をバイナリ
+  モードにしておらず、Windows でパケットが壊れるため。以前の `-` 入力は Windows で動かなかったはず）。
 
 **検証**: 実際の `ssdv -e`（通常/FEC なし/`-l 100`/`-n -l 64`）でエンコードしたパケットを AX.25 ヘッダ付きの
 HEX にして貼り付け→全パケット検出→`ssdv -d` で元サイズの画像を復元できることを確認
@@ -1186,16 +1197,13 @@ HEX にして貼り付け→全パケット検出→`ssdv -d` で元サイズの
 
 #### ssdv ツールの検出・バンドル方針
 
-Direwolf と同様の優先順位で検出:
-1. ユーザーインストール版（`~/.local/share/fbsat59/ssdv/`）
-2. システムインストール版（`which ssdv` / PATH）
+Direwolf と同様の優先順位で検出（**実装済み・アプリに同梱**。上の「SSDV の受信・「生パケット」/「画像」
+サブタブ」の節を参照）:
+1. ユーザーインストール版（`user_data_dir("fbsat59")/ssdv/`）
+2. システムインストール版（PATH）
 3. バンドル版（アプリ同梱）
 
-`Help > SSDV Installation…` ダイアログ:
-- Linux: `apt install ssdv` コマンド案内
-- macOS: `brew install ssdv` コマンド案内
-- Windows: GitHub Releases からバイナリをダウンロード
-- SSDV モード選択時のみ必要（SSTV のみなら不要）
+（かつて計画にあった `Help > SSDV Installation…` ダイアログは、同梱により不要になったため作らない。）
 
 #### データ永続化
 

@@ -102,6 +102,23 @@ if _direwolf_dir.exists():
         for _dylib in _direwolf_dir.glob("*.dylib"):
             direwolf_binaries.append((str(_dylib), "."))
 
+# --------------------------------------------------------------------------- #
+# ssdv bundle (downloaded from the ssdv-bundle release by CI; see build-ssdv.yml)
+# The SSDV tab runs it as a separate program. Placed at _MEIPASS root so
+# find_ssdv() finds it as _MEIPASS/ssdv[.exe]. ssdv is GPL-3.0: its licence text
+# and source location ship next to it under licenses/ssdv/.
+# --------------------------------------------------------------------------- #
+ssdv_binaries: list[tuple[str, str]] = []
+ssdv_datas: list[tuple[str, str]] = []
+_ssdv_dir = ROOT / "ssdv-bundle"
+if _ssdv_dir.exists():
+    _ssdv_exe = _ssdv_dir / ("ssdv.exe" if sys.platform == "win32" else "ssdv")
+    if _ssdv_exe.exists():
+        ssdv_binaries.append((str(_ssdv_exe), "."))
+        for _note in ("COPYING", "SOURCE.txt"):
+            if (_ssdv_dir / _note).exists():
+                ssdv_datas.append((str(_ssdv_dir / _note), "licenses/ssdv"))
+
 q65lib_binaries: list[tuple[str, str]] = []
 _q65lib_dir = ROOT / "q65lib-bundle"
 if _q65lib_dir.exists():
@@ -250,8 +267,14 @@ hidden_imports = [
 a = Analysis(
     [str(SRC / "main.py")],
     pathex=[str(SRC)],
-    binaries=hamlib_binaries + soapy_binaries + direwolf_binaries + q65lib_binaries + ft8lib_binaries + extra_binaries,
-    datas=datas + extra_datas,
+    binaries=hamlib_binaries
+    + soapy_binaries
+    + direwolf_binaries
+    + ssdv_binaries
+    + q65lib_binaries
+    + ft8lib_binaries
+    + extra_binaries,
+    datas=datas + extra_datas + ssdv_datas,
     hiddenimports=hidden_imports + extra_hidden,
     hookspath=[],
     hooksconfig={},
