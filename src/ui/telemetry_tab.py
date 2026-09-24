@@ -99,13 +99,10 @@ from ui.sat_search_dialog import SatSearchDialog
 
 logger = logging.getLogger(__name__)
 
-# Named after the backend software, matching _MODE_GR's convention — every
-# baud (1200/4800/9600) and connection (Rig+Sound Card or SDR-fed) is now
-# decoded by Direwolf itself, so "Direwolf" is accurate for all of them
-# (2026-09-13: the SDR+1200 path used to run a from-scratch Python
-# tone-detector + PLL + HDLC decoder instead — see comms.aprs.engine's
-# module docstring for why that was replaced).
-_MODE_AFSK = "Direwolf (AX.25)"
+# Named after the protocol rather than the backend: SDR sessions now run our
+# own coherent MSK detector alongside Direwolf (2026-09-24), so "Direwolf"
+# no longer describes every decoder in use.
+_MODE_AFSK = "AX.25"
 _MODE_GR = "gr-satellites"
 # Housekeeping frames sent as Morse-coded hex, decoded by the CW Decoder tab
 # (see telemetry_formats/{norad}.json's "cw_frames"; ARICA-2, OrigamiSat-2).
@@ -1844,7 +1841,7 @@ class TelemetryTab(QWidget):
         elif self._afsk_source == "sdr_direwolf" and self._engine.is_running:
             modem = self._engine.current_modem
             suffix = f"  [{modem} baud]" if modem else ""
-            self._lbl_status.setText(_("SDR — Direwolf (AX.25) (receive only)") + suffix)
+            self._lbl_status.setText(_("SDR — AX.25 (receive only)") + suffix)
             self._lbl_status.setStyleSheet("color: #4a9eff;")
         else:
             # gr-satellites is SDR-only (no Rig + Sound Card path, unlike

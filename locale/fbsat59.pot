@@ -2712,7 +2712,7 @@ msgid "Rig + Direwolf (receiving)"
 msgstr ""
 
 #: src/ui/telemetry_tab.py:1847
-msgid "SDR — Direwolf (AX.25) (receive only)"
+msgid "SDR — AX.25 (receive only)"
 msgstr ""
 
 #: src/ui/telemetry_tab.py:1853
