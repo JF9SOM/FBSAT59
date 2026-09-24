@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import sqlite3
 import subprocess
+import sys
+import types
 from pathlib import Path
 from typing import Any
 
@@ -453,6 +455,8 @@ def test_sound_card_audio_is_decoded_at_44100(
             pass
 
     monkeypatch.setattr("comms.audio_device_manager.get_audio_device_manager", lambda: _Manager())
+    # CI has no PortAudio, so the tab's "is sounddevice available" check needs a stub.
+    monkeypatch.setitem(sys.modules, "sounddevice", types.ModuleType("sounddevice"))
     rc.rig_connected.emit()  # no SDR in the rig slots: the sound card
     assert tab._decoder is not None and tab._decoder.sample_rate == 44100
     assert len(calls) == 1 and calls[0][2] == 44100
