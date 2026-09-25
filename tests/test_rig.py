@@ -2222,6 +2222,45 @@ class TestHamlibRotatorController:
         assert ctrl.set_position(200.0, 25.0)
         assert ctrl._catch_up_wrap_origin_az is None
 
+    def _make_tracking_ctrl(self) -> HamlibRotatorController:
+        ctrl = self._make_net_ctrl_connected()  # rotor reads az=180
+        ctrl.set_assumed_slew_speed(3.0)
+        ctrl._last_az = 170.0
+        ctrl._catching_up = False
+        return ctrl
+
+    def test_fast_pass_intercept_sends_rotor_ahead_once(self) -> None:
+        ctrl = self._make_tracking_ctrl()
+        # Sat az races at 13 deg/s (rotor manages 3) and then levels off.
+        ctrl.set_predictor(lambda t: (min(170.0 + 13.0 * t, 260.0), 80.0))
+        assert ctrl.set_position(170.0, 80.0)
+        assert ctrl._catching_up
+        assert ctrl._last_az == pytest.approx(260.0)
+
+    def test_ordinary_pass_is_not_intercepted(self) -> None:
+        ctrl = self._make_tracking_ctrl()
+        ctrl.set_predictor(lambda t: (170.0 + 1.0 * t, 30.0))
+        assert ctrl.set_position(170.0, 30.0)
+        assert not ctrl._catching_up
+        assert ctrl._last_az == pytest.approx(170.0)
+
+    def test_fast_pass_intercept_skipped_when_point_below_horizon(self) -> None:
+        ctrl = self._make_tracking_ctrl()
+        ctrl.set_predictor(lambda t: (min(170.0 + 13.0 * t, 260.0), -1.0))
+        assert ctrl.set_position(170.0, 80.0)
+        assert not ctrl._catching_up
+        assert ctrl._last_az == pytest.approx(170.0)
+
+    def test_fast_pass_intercept_skipped_across_seam(self) -> None:
+        ctrl = self._make_tracking_ctrl()
+        ctrl._sock.recv.return_value = b"350.0\n45.0\nRPRT 0\n"  # type: ignore[union-attr]
+        ctrl._last_az = 340.0
+        # Target races from 340 across the seam to 20 and beyond.
+        ctrl.set_predictor(lambda t: ((340.0 + 13.0 * t) % 360.0, 80.0))
+        assert ctrl.set_position(340.0, 80.0)
+        assert not ctrl._catching_up
+        assert ctrl._last_az == pytest.approx(340.0)
+
     def test_initial_jump_no_predictor_uses_current_position(self) -> None:
         ctrl = self._make_net_ctrl_connected()
         assert ctrl.set_position(200.0, 25.0)

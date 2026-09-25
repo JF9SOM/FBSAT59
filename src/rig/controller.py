@@ -4818,6 +4818,103 @@ class HamlibRotatorController(RotatorController):
             return None
         return pred_az, max(0.0, min(90.0, pred_el))
 
+    # Look-ahead used to detect a target whose azimuth is about to outrun
+    # the rotator (near-zenith passes), and the scan limits used to find the
+    # point where the rotator can meet it — see _try_fast_pass_intercept().
+    _INTERCEPT_RATE_PROBE_S: float = 5.0
+    _INTERCEPT_SCAN_STEP_S: float = 2.0
+    _INTERCEPT_SCAN_MAX_S: float = 180.0
+    # Ignore intercepts that would need less than this much lead time or
+    # less than this much rotation: the rotor is then close enough to keep
+    # up with ordinary per-cycle tracking.
+    _INTERCEPT_MIN_LEAD_S: float = 6.0
+    _INTERCEPT_MIN_TRAVEL_DEG: float = 15.0
+
+    def _try_fast_pass_intercept(self, azimuth_deg: float) -> bool:
+        """Near-zenith passes: send the rotor to where it can meet the target.
+
+        Around the TCA of a high pass the target's azimuth rate can reach
+        several times the rotator's slew speed (13 deg/s observed against
+        2-4 deg/s), so following the live position each cycle leaves the
+        rotor far behind for tens of seconds. Following it also re-sends a
+        GOTO every cycle, which on the SkyWatcher restarts the motor's
+        acceleration each time, so it is not even slewing at full speed.
+
+        When the target's azimuth 5 s ahead is further away than the
+        rotator can travel in that time (self._assumed_slew_deg_per_s, a
+        lower bound on the true speed), scan forward for the earliest
+        moment t at which the rotor can reach the target's azimuth by then
+        (angular distance / speed <= t), and send it there once through
+        the existing catch-up state machine: no per-cycle re-sends until it
+        has arrived, after which normal tracking resumes. Returns True if
+        that was done (the caller must not send the live position).
+
+        Deliberately does nothing (returns False) when there is no
+        predictor, when the intercept point is below the horizon, when the
+        scan would involve the 0/360 seam (the existing wrap handling owns
+        that), or when the needed lead/travel is small — so ordinary passes
+        are never affected.
+        """
+        if self._predictor is None:
+            return False
+        try:
+            speed = self._assumed_slew_deg_per_s
+            probe = self._predictor(self._INTERCEPT_RATE_PROBE_S)
+            if probe is None:
+                return False
+            ahead = abs(probe[0] - azimuth_deg)
+            if ahead > 180:
+                ahead = 360.0 - ahead
+            if ahead <= speed * self._INTERCEPT_RATE_PROBE_S:
+                return False
+
+            origin_az = self._sane_origin_az(self.get_position().azimuth_deg)
+            t = self._INTERCEPT_SCAN_STEP_S
+            while t <= self._INTERCEPT_SCAN_MAX_S:
+                pred = self._predictor(t)
+                if pred is None or pred[1] < 0.0:
+                    return False
+                pred_az, pred_el = pred
+                if (origin_az > 270 and pred_az < 90) or (origin_az < 90 and pred_az > 270):
+                    return False
+                dist = abs(origin_az - pred_az)
+                if dist > 180:
+                    dist = 360.0 - dist
+                if dist / speed <= t:
+                    break
+                t += self._INTERCEPT_SCAN_STEP_S
+            else:
+                return False
+        except Exception as exc:
+            logger.error("Rotator: fast-pass intercept prediction failed: %s", exc)
+            return False
+
+        if t < self._INTERCEPT_MIN_LEAD_S or dist < self._INTERCEPT_MIN_TRAVEL_DEG:
+            return False
+
+        az_target = pred_az
+        el_target = max(0.0, min(90.0, pred_el))
+        self._send_p(az_target, el_target)
+        self._catching_up = True
+        self._catch_up_wrap_origin_az = None
+        self._last_az = az_target
+        self._catch_up_measure_start_time = time.monotonic()
+        self._catch_up_measure_start_az = origin_az
+        self._catch_up_measure_long_path = False
+        logger.info(
+            "Rotator: fast pass, sat az %.1f -> %.1f within %.0fs; intercepting at "
+            "az=%.1f el=%.1f in %.0fs (rotor_origin=%.1f assumed=%.2fdeg/s)",
+            azimuth_deg,
+            probe[0],
+            self._INTERCEPT_RATE_PROBE_S,
+            az_target,
+            el_target,
+            t,
+            origin_az,
+            speed,
+        )
+        return True
+
     def _record_measured_slew_speed(self, rot_az_now: float) -> None:
         """Measure the real slew speed of the catch-up episode that just
         completed and, if it looks reliable, use it to update
@@ -5144,6 +5241,9 @@ class HamlibRotatorController(RotatorController):
                     # No next-AOS prediction available — fall back to the
                     # pre-existing behavior below (keep sending the live,
                     # below-horizon azimuth with elevation clamped to 0).
+
+                if elevation_deg > 0.0 and self._try_fast_pass_intercept(azimuth_deg):
+                    return True
 
                 self._last_az = azimuth_deg
                 self._send_p(azimuth_deg, el_cmd)
