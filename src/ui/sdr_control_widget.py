@@ -160,6 +160,9 @@ class SdrControlWidget(QWidget):
         self._status_timer = QTimer(self)
         self._status_timer.setInterval(1_000)
         self._status_timer.timeout.connect(self._update_rec_status)
+        self._gain_timer = QTimer(self)
+        self._gain_timer.setInterval(1_000)
+        self._gain_timer.timeout.connect(self._update_gain_label)
         # True while _update_playback_position() moves the slider itself, so
         # _on_playback_slider_changed() can tell that apart from the user.
         self._updating_playback_slider: bool = False
@@ -240,6 +243,11 @@ class SdrControlWidget(QWidget):
 
         self._pipeline = pipeline
         self._is_replay = is_replay
+        if pipeline is not None and not is_replay:
+            self._gain_timer.start()
+        else:
+            self._gain_timer.stop()
+        self._update_gain_label()
         self._set_sdr_connected(pipeline is not None)
         self._set_replay_controls_enabled(pipeline is not None and is_replay)
         if pipeline is not None and is_replay:
@@ -383,6 +391,12 @@ class SdrControlWidget(QWidget):
         self._status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._status_label.setStyleSheet("color: gray; font-weight: bold;")
         status_row.addWidget(self._status_label, stretch=1)
+        self._gain_label = QLabel("")
+        self._gain_label.setStyleSheet("color: gray;")
+        self._gain_label.setToolTip(
+            _("Total RX gain now applied. In Auto, HackRF's software AGC changes it in 6 dB steps.")
+        )
+        status_row.addWidget(self._gain_label)
         self._waterfall_btn = QPushButton(_("🌊 Waterfall"))
         self._waterfall_btn.setToolTip(
             _("Open a scrolling spectrum + waterfall popup for this SDR")
@@ -967,6 +981,7 @@ class SdrControlWidget(QWidget):
         self._rec_btn.setEnabled(False)
         self._stop_rec_btn.setEnabled(True)
         self._status_timer.start()
+        logger.info("IQ recording: SDR %s", self._gain_text() or "gain unknown")
 
     def _stop_recording(self) -> None:
         if not self._recording:
@@ -975,6 +990,7 @@ class SdrControlWidget(QWidget):
         self._status_timer.stop()
         recorder, self._active_recorder = self._active_recorder, None
         if recorder is not None:
+            logger.info("IQ recording ending: SDR %s", self._gain_text() or "gain unknown")
             recorder.stop()
         self._rec_btn.setEnabled(True)
         self._stop_rec_btn.setEnabled(False)
@@ -1204,6 +1220,21 @@ class SdrControlWidget(QWidget):
         mb = rec.bytes_written / 1e6
         self._rec_status_label.setText(f"{h:02d}:{m:02d}:{s:02d}  {mb:.1f} MB")
         self._update_clip_warning(rec.clip_fraction_recent)
+
+    def _gain_text(self) -> str:
+        """Current SDR gain as text ("Gain: 104 dB (auto)"), or "" when not applicable."""
+        device = getattr(self._pipeline, "_device", None) if self._pipeline is not None else None
+        if device is None or self._is_replay:
+            return ""
+        gain = getattr(device, "current_gain_db", None)
+        is_auto = getattr(device, "gain_is_auto", False)
+        if isinstance(gain, int | float):
+            value = f"{gain:.0f} dB" + (" (auto)" if is_auto else "")
+            return _("Gain: {value}").format(value=value)
+        return _("Gain: auto (set by the tuner)") if is_auto else ""
+
+    def _update_gain_label(self) -> None:
+        self._gain_label.setText(self._gain_text())
 
     def _update_clip_warning(self, frac: float) -> None:
         """Show the input-overload label and raise/clear the alert (1 Hz)."""

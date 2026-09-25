@@ -403,3 +403,25 @@ def test_short_clipping_burst_does_not_alert(qtbot: QtBot) -> None:
     for _ in range(5):
         w._update_clip_warning(0.2)
     assert alerts == []
+
+
+def test_gain_label_shows_the_applied_gain(qtbot: QtBot) -> None:
+    w = SdrControlWidget()
+    qtbot.addWidget(w)
+    pipe = _fake_pipeline()
+    pipe._device = MagicMock()
+    pipe._device.center_freq = 435e6
+    pipe._device.current_gain_db = 104.0
+    pipe._device.gain_is_auto = True
+    w.set_pipeline(pipe)
+    assert w._gain_label.text() == "Gain: 104 dB (auto)"
+    pipe._device.current_gain_db = 50.0
+    pipe._device.gain_is_auto = False
+    w._update_gain_label()
+    assert w._gain_label.text() == "Gain: 50 dB"
+    pipe._device.current_gain_db = None  # hardware AGC: the tuner decides
+    pipe._device.gain_is_auto = True
+    w._update_gain_label()
+    assert "auto" in w._gain_label.text()
+    w.set_pipeline(None)
+    assert w._gain_label.text() == ""

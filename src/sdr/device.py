@@ -1884,6 +1884,24 @@ class SdrDevice:
                 logger.exception("set_bandwidth failed")
                 return False
 
+    @property
+    def current_gain_db(self) -> float | None:
+        """Total RX gain in dB currently applied, or None when it is not known.
+
+        Software AGC (HackRF): the AGC's running value.  Manual: the value set.
+        Hardware AGC (e.g. RTL-SDR): the tuner picks the gain itself, so None.
+        """
+        if self._sw_agc_active:
+            return self._sw_agc_gain_db
+        if self._gain_mode == "manual":
+            return self._gain_db
+        return None
+
+    @property
+    def gain_is_auto(self) -> bool:
+        """True while an AGC (hardware or software) is choosing the gain."""
+        return self._gain_mode == "auto"
+
     def set_gain_auto(self) -> bool:
         """Enable automatic gain control.
 
@@ -1995,7 +2013,13 @@ class SdrDevice:
             return
         try:
             _distribute_gain(dev, gain_db)
+            previous = self._sw_agc_gain_db
             self._sw_agc_gain_db = gain_db
+            # Kept out of fbsat59.log: while it hunts this changes every few
+            # seconds. Read it in sdr_pipeline_diag.log.
+            from sdr.diag_log import get_sdr_diag_logger
+
+            get_sdr_diag_logger().info("software AGC gain %.0f -> %.0f dB", previous, gain_db)
         except Exception:
             logger.debug("software AGC setGain(%.1f) failed", gain_db, exc_info=True)
 
