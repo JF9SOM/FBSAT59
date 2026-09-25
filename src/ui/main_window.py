@@ -1227,6 +1227,7 @@ class MainWindow(QMainWindow):
         self._detail_panel.setMaximumWidth(260)
         self._detail_panel.bind_radio_control(self._radio_control)
         self._detail_panel.comms_satellite_requested.connect(self._on_comms_satellite_requested)
+        self._comms_restored_tabs: set[str] = set()
         self._detail_panel.set_last_input_sources(self._load_comms_input_sources())
         h_splitter.addWidget(self._detail_panel)
 
@@ -3092,6 +3093,26 @@ class MainWindow(QMainWindow):
         self._tab_widget.setCurrentIndex(idx)
         self._notify_comms_tab_of_rig_state(tab)
 
+    def _restore_comms_satellite_once(self, tab_key: str) -> None:
+        """On the first activation of a Communications tab after startup,
+        re-apply the satellite remembered in its Input combo (satellite,
+        Radio Control transponder, Doppler) as if the user had picked it.
+
+        Later activations leave the current selection alone.
+        """
+        if tab_key in self._comms_restored_tabs:
+            return
+        self._comms_restored_tabs.add(tab_key)
+        config = mode_detection.COMMS_TAB_CONFIG.get(tab_key)
+        if config is None or not config.show_input_source:
+            return
+        norad = self._detail_panel._last_input_source.get(tab_key)
+        if norad is None or norad == self._selected_norad:
+            return
+        if self._detail_panel._input_source_combo.findData(norad) < 0:
+            return
+        self._on_comms_satellite_requested(tab_key, norad)
+
     def _load_comms_input_sources(self) -> dict[str, int]:
         """Load the per-tab Quick Comms Input choices saved in app_settings."""
         try:
@@ -4893,6 +4914,7 @@ class MainWindow(QMainWindow):
                 for norad in mode_detection.get_norads_for_tab(self._conn, tab_key)
             ]
             self._detail_panel.set_active_comms_tab(tab_key, options, tab_widget=widget)
+            self._restore_comms_satellite_once(tab_key)
         else:
             self._detail_panel.deactivate_comms_panel()
         self._h_splitter.setSizes(prev_sizes)
