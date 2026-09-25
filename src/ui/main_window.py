@@ -89,6 +89,7 @@ from rig.controller import (
     HamlibRotatorController,
     RigControlError,
     RigController,
+    RigState,
     RotatorController,
     normalize_civ_addr,
 )
@@ -310,6 +311,12 @@ class SatDetailPanel(QWidget):
         # satellite last picked in that tab's Input combo (persisted by
         # MainWindow across restarts).
         self._current_norad: int | None = None
+        # Cheap poll so a Connect click shows orange/cyan without waiting
+        # for the 1 s main tick.
+        self._conn_timer = QTimer(self)
+        self._conn_timer.setInterval(250)
+        self._conn_timer.timeout.connect(self.refresh_connection_state)
+        self._conn_timer.start()
         self._last_input_source: dict[str, int] = {}
         self._active_tab_widget: QWidget | None = None
         self._freq_source: str | None = None
@@ -578,25 +585,36 @@ class SatDetailPanel(QWidget):
             self.comms_satellite_requested.emit(self._active_comms_tab, int(norad))
 
     # Highlight for a connected Rig / Rotator button (same cyan as Radio
-    # Control's "SDR: Connected" label); connected buttons get dark text.
+    # Control's "SDR: Connected" label) and for one still connecting (orange,
+    # like Radio Control's "Connecting..." label).
     _QUICK_CONNECTED_STYLE: str = "background-color: #00dcff; color: #002b33; font-weight: bold;"
+    _QUICK_CONNECTING_STYLE: str = "background-color: #ff9800; color: #2b1a00; font-weight: bold;"
 
     def refresh_connection_state(self) -> None:
-        """Colour the Rig 1 / Rig 2 / Rotator proxy buttons cyan while the
-        corresponding device is connected (plain while disconnected,
-        connecting, failed or not configured). Polled from MainWindow._on_tick().
+        """Colour the Rig 1 / Rig 2 / Rotator proxy buttons: cyan while the
+        device is connected, orange while it is connecting, plain otherwise
+        (disconnected, failed or not configured). Polled by a short timer.
         """
         rc = self._radio_control
         if rc is None:
             return
-        pairs = (
-            (self._quick_rig1_btn, getattr(rc, "_rig1", None)),
-            (self._quick_rig2_btn, getattr(rc, "_rig2", None)),
-            (self._quick_rot_btn, getattr(rc, "_rotator", None)),
+        triples = (
+            (self._quick_rig1_btn, getattr(rc, "_rig1", None), "_connect_rig1_btn"),
+            (self._quick_rig2_btn, getattr(rc, "_rig2", None), "_connect_rig2_btn"),
+            (self._quick_rot_btn, getattr(rc, "_rotator", None), "_connect_rot_btn"),
         )
-        for btn, dev in pairs:
-            connected = bool(dev is not None and dev.is_connected)
-            style = self._QUICK_CONNECTED_STYLE if connected else ""
+        for btn, dev, rc_btn_name in triples:
+            style = ""
+            if dev is not None:
+                if dev.is_connected:
+                    style = self._QUICK_CONNECTED_STYLE
+                else:
+                    # Radio Control disables its own connect button for the
+                    # duration of a background connect attempt.
+                    rc_btn = getattr(rc, rc_btn_name, None)
+                    busy = rc_btn is not None and not rc_btn.isEnabled()
+                    if busy or getattr(dev, "state", None) == RigState.CONNECTING:
+                        style = self._QUICK_CONNECTING_STYLE
             if btn.styleSheet() != style:
                 btn.setStyleSheet(style)
 
@@ -2346,7 +2364,6 @@ class MainWindow(QMainWindow):
             self._check_autotrack()
             self._update_rig_web_state()
             self._detail_panel.refresh_freq_mirror()
-            self._detail_panel.refresh_connection_state()
         except Exception:
             logger.exception("_on_tick error")
 
