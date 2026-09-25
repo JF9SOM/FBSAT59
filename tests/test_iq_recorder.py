@@ -126,3 +126,54 @@ def test_clean_signal_reports_no_clipping(tmp_path: Path) -> None:
     rec.put_samples(_block(1000, 0.1, 0.0))
     rec.stop()
     assert rec.clip_fraction_average == 0.0 and rec.clip_fraction_max == 0.0
+
+
+def _tone(freq: float, rate: float, n: int) -> np.ndarray:
+    t = np.arange(n) / rate
+    return np.exp(2j * np.pi * freq * t).astype(np.complex64)
+
+
+def test_decimator_keeps_in_band_tone_and_removes_alias() -> None:
+    d = rec_mod._Decimator(4)  # 1 MS/s -> 250 kS/s
+    keep = d.process(_tone(20_000, 1_000_000, 200_000))
+    keep = keep[200:]  # skip the filter start-up
+    assert 0.95 < np.abs(keep).mean() < 1.05
+    d2 = rec_mod._Decimator(4)
+    alias = d2.process(_tone(240_000, 1_000_000, 200_000))[200:]  # would fold into band
+    assert np.abs(alias).mean() < 0.01  # > 40 dB down
+
+
+def test_decimator_is_continuous_across_blocks() -> None:
+    x = _tone(30_000, 1_000_000, 50_000)
+    whole = rec_mod._Decimator(4).process(x)
+    d = rec_mod._Decimator(4)
+    parts = [d.process(x[i : i + 777]) for i in range(0, len(x), 777)]
+    joined = np.concatenate(parts)
+    n = min(len(whole), len(joined))
+    assert np.allclose(whole[:n], joined[:n], atol=1e-4)
+
+
+def test_recorder_decimates_to_requested_bandwidth(tmp_path: Path) -> None:
+    rec = IQRecorder(save_dir=tmp_path)
+    path = rec.start(sample_rate=250_000, input_rate=1_000_000.0)
+    rec.put_samples(_tone(20_000, 1_000_000, 100_000))
+    rec.stop()
+    _, rate, _, data = _read_header(path)
+    assert rate == 250_000
+    assert 24_000 < data // 8 <= 25_000  # ~100k samples / 4
+
+
+def test_recorder_rate_when_ratio_is_not_an_integer(tmp_path: Path) -> None:
+    rec = IQRecorder(save_dir=tmp_path)
+    path = rec.start(sample_rate=250_000, input_rate=1_400_000.0)  # factor 5 -> 280 kS/s
+    rec.put_samples(_tone(20_000, 1_400_000, 70_000))
+    rec.stop()
+    assert _read_header(path)[1] == 280_000
+
+
+def test_recorder_never_records_wider_than_the_stream(tmp_path: Path) -> None:
+    rec = IQRecorder(save_dir=tmp_path)
+    path = rec.start(sample_rate=1_000_000, input_rate=250_000.0)
+    rec.put_samples(_tone(20_000, 250_000, 5_000))
+    rec.stop()
+    assert _read_header(path)[1] == 250_000

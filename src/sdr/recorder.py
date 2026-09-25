@@ -101,6 +101,48 @@ class _StreamingWavWriter:
             self._fh.close()
 
 
+class _Decimator:
+    """
+    Streaming FIR low-pass + integer decimation for complex IQ (numpy only).
+
+    Lets the recorder write at the requested bandwidth while the SDR keeps
+    running at its own rate.  Kaiser-windowed sinc, ~60 dB stop-band, pass-band
+    to 0.4x the output rate, so anything that would alias into the recording
+    is removed before decimation.  State is carried across blocks.
+    """
+
+    _CHUNK = 2048  # outputs per matrix product (bounds temporary memory)
+
+    def __init__(self, factor: int) -> None:
+        self.factor = factor
+        n_taps = 18 * factor + 1  # odd -> linear phase, integer group delay
+        n = np.arange(n_taps) - (n_taps - 1) / 2
+        h = np.sinc(2.0 * 0.5 / factor * n) * (1.0 / factor) * np.kaiser(n_taps, 5.65)
+        h *= 1.0 / np.sum(h)  # unity DC gain
+        self._taps = h.astype(np.float32)  # symmetric: convolution == correlation
+        self._tail = np.zeros(0, dtype=np.complex64)
+
+    def process(self, block: np.ndarray) -> np.ndarray:
+        """Filter and decimate one block; returns the new output samples."""
+        if self.factor == 1:
+            return block
+        n_taps = len(self._taps)
+        buf = np.concatenate((self._tail, block.astype(np.complex64, copy=False)))
+        n_out = (len(buf) - n_taps) // self.factor + 1 if len(buf) >= n_taps else 0
+        if n_out <= 0:
+            self._tail = buf
+            return np.zeros(0, dtype=np.complex64)
+        parts: list[np.ndarray] = []
+        for start in range(0, n_out, self._CHUNK):
+            m = min(self._CHUNK, n_out - start)
+            first = start * self.factor
+            seg = buf[first : first + (m - 1) * self.factor + n_taps]
+            win = np.lib.stride_tricks.sliding_window_view(seg, n_taps)[:: self.factor]
+            parts.append(win @ self._taps)
+        self._tail = buf[n_out * self.factor :]
+        return np.concatenate(parts).astype(np.complex64, copy=False)
+
+
 class IQRecorder:
     """
     Thread-safe IQ recorder.
@@ -128,6 +170,7 @@ class IQRecorder:
         self._bytes_written: int = 0
         self._start_time: float = 0.0
         self._dropped: int = 0
+        self._decimator = _Decimator(1)
         # Clipping statistics (updated from the pipeline thread, read by the UI)
         self._clip_lock = threading.Lock()
         self._reset_clip_stats()
@@ -211,15 +254,30 @@ class IQRecorder:
         sample_rate: int,
         norad: int = 0,
         sat_name: str = "unknown",
+        input_rate: float | None = None,
     ) -> Path:
         """
         Begin recording.  Returns the file path that will be written.
         Raises RuntimeError if already recording.
+
+        *sample_rate* is the requested recording bandwidth.  If *input_rate*
+        (the SDR's real stream rate) is higher, the stream is low-pass
+        filtered and decimated by floor(input_rate / sample_rate) so the
+        file is written at input_rate / factor (>= sample_rate) while the
+        SDR itself keeps running at its own rate.  The WAV header carries
+        the rate actually written.
         """
         if self._recording:
             raise RuntimeError("IQRecorder is already recording")
 
         self._save_dir.mkdir(parents=True, exist_ok=True)
+        factor = 1
+        if input_rate and input_rate > sample_rate:
+            factor = max(1, int(input_rate // sample_rate))
+            sample_rate = round(input_rate / factor)
+        elif input_rate:
+            sample_rate = round(input_rate)  # cannot record wider than the stream
+        self._decimator = _Decimator(factor)
         self._sample_rate = sample_rate
         self._bytes_written = 0
         self._dropped = 0
@@ -239,7 +297,12 @@ class IQRecorder:
             name="IQRecorder",
         )
         self._thread.start()
-        logger.info("IQ recording started: %s", self._file_path)
+        logger.info(
+            "IQ recording started: %s (%d Hz%s)",
+            self._file_path,
+            sample_rate,
+            f", decimated x{factor} from the SDR stream" if factor > 1 else "",
+        )
         return self._file_path
 
     def stop(self) -> None:
@@ -295,6 +358,9 @@ class IQRecorder:
                 if failed:
                     continue  # keep draining so the pipeline never blocks
                 try:
+                    block = self._decimator.process(block)
+                    if len(block) == 0:
+                        continue
                     if writer is None:
                         writer = _StreamingWavWriter(path, sample_rate)
                     # Interleave I and Q into stereo float32

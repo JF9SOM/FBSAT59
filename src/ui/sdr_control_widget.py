@@ -948,15 +948,19 @@ class SdrControlWidget(QWidget):
         idx = self._rec_bw_combo.currentIndex()
         bw_hz = _REC_BANDWIDTHS[idx][1] if 0 <= idx < len(_REC_BANDWIDTHS) else 250_000
 
-        # Adjust device sample rate for recording bandwidth
-        if hasattr(self._pipeline, "_device") and self._pipeline._device is not None:
-            self._pipeline._device.set_sample_rate(float(bw_hz))
+        # The SDR keeps running at its own rate (changing it live left the
+        # demodulator on the old rate and broke the audio); the recorder
+        # filters and decimates down to the requested bandwidth instead.
+        device = getattr(self._pipeline, "_device", None)
+        device_rate = getattr(device, "sample_rate", None)
+        input_rate = float(device_rate) if isinstance(device_rate, int | float) else None
 
         self._active_recorder = self._pipeline.recorder
         file_path = self._pipeline.recorder.start(
             sample_rate=bw_hz,
             norad=self._sat_norad,
             sat_name=self._sat_name,
+            input_rate=input_rate,
         )
         self._recording = True
         self._rec_file_label.setText(file_path.name)
