@@ -4276,6 +4276,21 @@ class RotatorController(ABC):
     def get_position(self) -> RotatorState:
         """Return the current azimuth and elevation."""
 
+    def get_cached_position(self) -> RotatorState:
+        """Return the last known position without touching the rotator.
+
+        Never performs I/O and never waits on the I/O lock, so it is safe to
+        call from the UI thread even while a background transaction is stuck
+        on an unresponsive rotator.  The value is refreshed by the tracking
+        thread's get_position() calls.
+        """
+        with self._lock:
+            return RotatorState(
+                azimuth_deg=self._rotor_state.azimuth_deg,
+                elevation_deg=self._rotor_state.elevation_deg,
+                is_moving=self._rotor_state.is_moving,
+            )
+
     @abstractmethod
     def stop(self) -> bool:
         """Stop rotation."""

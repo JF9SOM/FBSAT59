@@ -820,7 +820,9 @@ class RadioControlWidget(QWidget):
         self._update_rig2_status()
         self._update_rot_status()
         if self._rotator is not None and self._rotator.is_connected:
-            self.update_rotator(self._rotator.get_position())
+            # Cached value only: querying the rotator here would block the UI
+            # thread on the controller's I/O lock whenever it stops answering.
+            self.update_rotator(self._rotator.get_cached_position())
 
     # ------------------------------------------------------------------ #
     # Internal helpers
