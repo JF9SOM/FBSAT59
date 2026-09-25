@@ -298,6 +298,11 @@ class SatDetailPanel(QWidget):
         super().__init__(parent)
         self._radio_control: Any = None
         self._active_comms_tab: str | None = None
+        # Currently selected satellite and, per Communications tab, the
+        # satellite last picked in that tab's Input combo (persisted by
+        # MainWindow across restarts).
+        self._current_norad: int | None = None
+        self._last_input_source: dict[str, int] = {}
         self._active_tab_widget: QWidget | None = None
         self._freq_source: str | None = None
         self._radar_only: bool = False
@@ -380,6 +385,27 @@ class SatDetailPanel(QWidget):
         """Set basic info for the selected satellite."""
         self._name_label.setText(name)
         self._norad_label.setText("—" if norad == MOON_ID else str(norad))
+        self._current_norad = norad
+        # Follow the selection (e.g. a transponder picked in Radio Control)
+        # in the Input combo without re-emitting comms_satellite_requested.
+        if self._active_comms_tab is not None and self._input_source_row.isVisible():
+            self._select_input_source(norad)
+
+    def set_last_input_sources(self, sources: dict[str, int]) -> None:
+        """Restore the per-tab Input combo choices saved from a previous run."""
+        self._last_input_source = dict(sources)
+
+    def _select_input_source(self, norad: int | None) -> bool:
+        """Show *norad* in the Input combo without emitting any signal."""
+        if norad is None:
+            return False
+        idx = self._input_source_combo.findData(norad)
+        if idx < 0:
+            return False
+        self._input_source_combo.blockSignals(True)
+        self._input_source_combo.setCurrentIndex(idx)
+        self._input_source_combo.blockSignals(False)
+        return True
 
     def update_observation(self, obs: Observation | None) -> None:
         """Update observation values. Sets '—' for all fields when obs is None."""
@@ -447,6 +473,10 @@ class SatDetailPanel(QWidget):
             for norad, name in satellite_options:
                 self._input_source_combo.addItem(name, norad)
             self._input_source_combo.blockSignals(False)
+            # Prefer the satellite selected in the main window, then the one
+            # last picked in this tab, else keep the first entry.
+            if not self._select_input_source(self._current_norad):
+                self._select_input_source(self._last_input_source.get(tab_key))
 
         show_freq = self._freq_source is not None
         self._quick_dl_label.setVisible(show_freq)
@@ -525,6 +555,7 @@ class SatDetailPanel(QWidget):
             return
         norad = self._input_source_combo.itemData(index)
         if norad is not None:
+            self._last_input_source[self._active_comms_tab] = int(norad)
             self.comms_satellite_requested.emit(self._active_comms_tab, int(norad))
 
     def _on_quick_connect_rig1(self) -> None:
@@ -1196,6 +1227,7 @@ class MainWindow(QMainWindow):
         self._detail_panel.setMaximumWidth(260)
         self._detail_panel.bind_radio_control(self._radio_control)
         self._detail_panel.comms_satellite_requested.connect(self._on_comms_satellite_requested)
+        self._detail_panel.set_last_input_sources(self._load_comms_input_sources())
         h_splitter.addWidget(self._detail_panel)
 
         h_splitter.setStretchFactor(0, 0)
@@ -3060,6 +3092,28 @@ class MainWindow(QMainWindow):
         self._tab_widget.setCurrentIndex(idx)
         self._notify_comms_tab_of_rig_state(tab)
 
+    def _load_comms_input_sources(self) -> dict[str, int]:
+        """Load the per-tab Quick Comms Input choices saved in app_settings."""
+        try:
+            row = self._conn.execute(
+                "SELECT value FROM app_settings WHERE key = 'comms_input_sources'"
+            ).fetchone()
+            data = json.loads(row["value"]) if row and row["value"] else {}
+            return {str(k): int(v) for k, v in data.items()}
+        except (sqlite3.Error, ValueError, TypeError, AttributeError):
+            return {}
+
+    def _save_comms_input_sources(self) -> None:
+        """Persist the per-tab Quick Comms Input choices to app_settings."""
+        self._conn.execute(
+            """
+            INSERT OR REPLACE INTO app_settings (key, value, updated_at)
+            VALUES ('comms_input_sources', ?, CURRENT_TIMESTAMP)
+            """,
+            (json.dumps(self._detail_panel._last_input_source),),
+        )
+        self._conn.commit()
+
     def _on_comms_satellite_requested(self, tab_key: str, norad: int) -> None:
         """Comms Quick Panel's Input Source combo changed — switch filter to
         All Satellites, select the satellite, and auto-pick the first
@@ -3069,6 +3123,7 @@ class MainWindow(QMainWindow):
         every Communications tab that has show_input_source=True in
         COMMS_TAB_CONFIG (FT4 now; APRS/SSTV in a later phase).
         """
+        self._save_comms_input_sources()
         all_text = "All Satellites"
         if self._filter_combo.currentText() != all_text:
             idx = self._filter_combo.findText(all_text)
