@@ -577,6 +577,29 @@ class SatDetailPanel(QWidget):
             self.input_source_remembered.emit()
             self.comms_satellite_requested.emit(self._active_comms_tab, int(norad))
 
+    # Highlight for a connected Rig / Rotator button (same cyan as Radio
+    # Control's "SDR: Connected" label); connected buttons get dark text.
+    _QUICK_CONNECTED_STYLE: str = "background-color: #00dcff; color: #002b33; font-weight: bold;"
+
+    def refresh_connection_state(self) -> None:
+        """Colour the Rig 1 / Rig 2 / Rotator proxy buttons cyan while the
+        corresponding device is connected (plain while disconnected,
+        connecting, failed or not configured). Polled from MainWindow._on_tick().
+        """
+        rc = self._radio_control
+        if rc is None:
+            return
+        pairs = (
+            (self._quick_rig1_btn, getattr(rc, "_rig1", None)),
+            (self._quick_rig2_btn, getattr(rc, "_rig2", None)),
+            (self._quick_rot_btn, getattr(rc, "_rotator", None)),
+        )
+        for btn, dev in pairs:
+            connected = bool(dev is not None and dev.is_connected)
+            style = self._QUICK_CONNECTED_STYLE if connected else ""
+            if btn.styleSheet() != style:
+                btn.setStyleSheet(style)
+
     def _on_quick_connect_rig1(self) -> None:
         if self._radio_control is not None:
             self._radio_control._connect_rig1_btn.click()
@@ -2323,6 +2346,7 @@ class MainWindow(QMainWindow):
             self._check_autotrack()
             self._update_rig_web_state()
             self._detail_panel.refresh_freq_mirror()
+            self._detail_panel.refresh_connection_state()
         except Exception:
             logger.exception("_on_tick error")
 
