@@ -828,6 +828,9 @@ class MainWindow(QMainWindow):
         self._autotrack_enabled: bool = False
         self._autotrack_audio_record: bool = False
         self._autotrack_iq_record: bool = False
+        # sdr_settings each slot's SdrRigAdapter was built from (see
+        # _load_rig_settings(): an unchanged config keeps the live adapter).
+        self._sdr_adapter_cfg: dict[int, dict[str, Any] | None] = {1: None, 2: None}
         self._autotrack_meteor_record: bool = False
         # False when Autotrack must leave the rotator alone (omnidirectional
         # antenna, no rotator): no auto-connect at AOS, no disconnect at LOS.
@@ -6901,10 +6904,18 @@ class MainWindow(QMainWindow):
         try:
             # If SDR is assigned to slot 1, build an SdrRigAdapter
             if sdr_cfg.get("assigned_rig") == 1 and sdr_cfg.get("enabled", False):
-                self._rig_controller = self._build_sdr_rig_adapter(sdr_cfg)
-                logger.info("Rig1: SDR assigned — %s", sdr_cfg.get("device_label", ""))
-                self._radio_control.set_rig(self._rig_controller)
+                if self._sdr_adapter_unchanged(old_rig1, self._sdr_adapter_cfg[1], sdr_cfg):
+                    # Same SDR settings and still connected: keep the live
+                    # adapter so an in-progress reception/IQ recording is not
+                    # interrupted by an OK press that changed nothing.
+                    logger.info("Rig1: SDR settings unchanged — keeping the live connection")
+                else:
+                    self._rig_controller = self._build_sdr_rig_adapter(sdr_cfg)
+                    self._sdr_adapter_cfg[1] = dict(sdr_cfg)
+                    logger.info("Rig1: SDR assigned — %s", sdr_cfg.get("device_label", ""))
+                    self._radio_control.set_rig(self._rig_controller)
             else:
+                self._sdr_adapter_cfg[1] = None
                 row = self._conn.execute(
                     "SELECT value FROM app_settings WHERE key = 'rig1_settings'"
                 ).fetchone()
@@ -6968,10 +6979,15 @@ class MainWindow(QMainWindow):
         try:
             # If SDR is assigned to slot 2, build an SdrRigAdapter
             if sdr_cfg.get("assigned_rig") == 2 and sdr_cfg.get("enabled", False):
-                self._rig2_controller = self._build_sdr_rig_adapter(sdr_cfg)
-                logger.info("Rig2: SDR assigned — %s", sdr_cfg.get("device_label", ""))
-                self._radio_control.set_rig2(self._rig2_controller)
+                if self._sdr_adapter_unchanged(old_rig2, self._sdr_adapter_cfg[2], sdr_cfg):
+                    logger.info("Rig2: SDR settings unchanged — keeping the live connection")
+                else:
+                    self._rig2_controller = self._build_sdr_rig_adapter(sdr_cfg)
+                    self._sdr_adapter_cfg[2] = dict(sdr_cfg)
+                    logger.info("Rig2: SDR assigned — %s", sdr_cfg.get("device_label", ""))
+                    self._radio_control.set_rig2(self._rig2_controller)
             else:
+                self._sdr_adapter_cfg[2] = None
                 row2 = self._conn.execute(
                     "SELECT value FROM app_settings WHERE key = 'rig2_settings'"
                 ).fetchone()
@@ -7045,6 +7061,21 @@ class MainWindow(QMainWindow):
             port=str(settings.get("port", "/dev/ttyUSB0")),
             baud_rate=int(settings.get("baud_rate", 9600)),
             civ_addr=str(settings.get("civ_addr", "")),
+        )
+
+    @staticmethod
+    def _sdr_adapter_unchanged(
+        old_rig: RigController | None,
+        built_from: dict[str, Any] | None,
+        sdr_cfg: dict[str, Any],
+    ) -> bool:
+        """True if *old_rig* is a live SDR adapter built from the same settings."""
+        return (
+            old_rig is not None
+            and getattr(old_rig, "is_sdr", False)
+            and old_rig.is_connected
+            and built_from is not None
+            and built_from == sdr_cfg
         )
 
     def _build_sdr_rig_adapter(self, sdr_cfg: dict[str, Any]) -> RigController:

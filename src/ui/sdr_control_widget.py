@@ -210,8 +210,13 @@ class SdrControlWidget(QWidget):
         # A recording belongs to the pipeline that produced it: finalise it
         # before that pipeline is replaced or detached, so the file is closed
         # instead of being left open (and unwritten) when the pipeline goes.
+        resume_recording = False
         if self._recording and pipeline is not self._pipeline:
             self._stop_recording()
+            # Swapped for another live pipeline (e.g. SDR settings changed):
+            # carry on recording into a new file. Detaching (None, LOS,
+            # manual disconnect) or switching to file playback ends it.
+            resume_recording = pipeline is not None and not is_replay
         # Detach old pipeline
         if self._pipeline is not None:
             try:
@@ -256,6 +261,13 @@ class SdrControlWidget(QWidget):
             self._stop_audio()
             self._stop_recording()
             self._stop_audio_recording()
+
+        if resume_recording:
+            try:
+                self._start_recording()
+                logger.info("IQ recording resumed in a new file after the SDR pipeline changed")
+            except Exception:
+                logger.exception("Could not resume IQ recording after the SDR pipeline changed")
 
     def set_transponder_mode(self, satnogs_mode: str) -> None:
         """Auto-select demodulator mode from a SATNOGS transponder mode string."""

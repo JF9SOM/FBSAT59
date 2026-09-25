@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import struct
 from pathlib import Path
+from typing import Any
 
 import numpy as np
+import pytest
 
 from sdr import recorder as rec_mod
 from sdr.recorder import IQRecorder, _StreamingWavWriter
@@ -45,7 +47,7 @@ def test_no_samples_leaves_no_file(tmp_path: Path) -> None:
     assert list(tmp_path.iterdir()) == []
 
 
-def test_data_survives_without_close(tmp_path: Path, monkeypatch) -> None:
+def test_data_survives_without_close(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A writer that is never closed (crash) still leaves data + a valid header."""
     monkeypatch.setattr(rec_mod, "_HEADER_REFRESH_S", 0.0)
     path = tmp_path / "crash.iq.wav"
@@ -78,3 +80,19 @@ def test_cached_rotator_position_does_not_wait_for_io_lock() -> None:
         t.join(timeout=2.0)
         assert not t.is_alive()
     assert result == [123.4]
+
+
+def test_unchanged_sdr_settings_keep_the_live_adapter() -> None:
+    from types import SimpleNamespace
+
+    from ui.main_window import MainWindow
+
+    live = SimpleNamespace(is_sdr=True, is_connected=True)
+    cfg = {"device_label": "HackRF", "gain_db": 110}
+    check: Any = MainWindow._sdr_adapter_unchanged
+    assert check(live, dict(cfg), dict(cfg))
+    assert not check(live, dict(cfg), {**cfg, "gain_db": 40})
+    assert not check(live, None, dict(cfg))
+    assert not check(SimpleNamespace(is_sdr=True, is_connected=False), dict(cfg), dict(cfg))
+    assert not check(SimpleNamespace(is_sdr=False, is_connected=True), dict(cfg), dict(cfg))
+    assert not check(None, dict(cfg), dict(cfg))

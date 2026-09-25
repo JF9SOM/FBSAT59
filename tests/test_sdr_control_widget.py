@@ -339,3 +339,32 @@ def test_recording_is_stopped_when_the_pipeline_is_detached(qtbot: QtBot) -> Non
     w.start_iq_recording_for_autotrack()
     w.set_pipeline(None)
     pipe.recorder.stop.assert_called_once()
+
+
+def test_recording_resumes_in_a_new_file_when_swapped_for_a_live_pipeline(qtbot: QtBot) -> None:
+    w = SdrControlWidget()
+    qtbot.addWidget(w)
+    old, new = _fake_pipeline(), _fake_pipeline()
+    w.set_pipeline(old)
+    w.start_iq_recording_for_autotrack()
+    w.set_pipeline(new)
+    old.recorder.stop.assert_called_once()
+    new.recorder.start.assert_called_once()
+    assert w._recording
+
+
+def test_recording_does_not_resume_after_detach_or_replay(qtbot: QtBot) -> None:
+    w = SdrControlWidget()
+    qtbot.addWidget(w)
+    pipe = _fake_pipeline()
+    w.set_pipeline(pipe)
+    w.start_iq_recording_for_autotrack()
+    w.set_pipeline(None)
+    assert not w._recording
+    other = _fake_pipeline()
+    w.set_pipeline(other)
+    w.start_iq_recording_for_autotrack()
+    replay = _fake_pipeline()
+    w.set_pipeline(replay, is_replay=True)
+    replay.recorder.start.assert_not_called()
+    assert not w._recording
