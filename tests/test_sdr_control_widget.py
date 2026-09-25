@@ -9,6 +9,7 @@ and the next position-poll tick snapped it back.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -307,3 +308,34 @@ class TestOpenPlayStop:
         w.set_pipeline(pipeline, is_replay=False)
         assert not w._play_btn.isEnabled()
         assert not w._stop_play_btn.isEnabled()
+
+
+def _fake_pipeline() -> MagicMock:
+    """Pipeline stand-in: a MagicMock whose recorder.start() returns a path."""
+    pipe = MagicMock()
+    pipe._device = None
+    pipe.recorder.start.return_value = Path("x.iq.wav")
+    return pipe
+
+
+def test_recording_is_stopped_when_the_pipeline_is_replaced(qtbot: QtBot) -> None:
+    """Rig Settings OK swaps the SDR pipeline mid-pass: the old recorder must be closed."""
+    w = SdrControlWidget()
+    qtbot.addWidget(w)
+    old, new = _fake_pipeline(), _fake_pipeline()
+    w.set_pipeline(old)
+    w.start_iq_recording_for_autotrack()
+    old.recorder.start.assert_called_once()
+    w.set_pipeline(new)
+    old.recorder.stop.assert_called_once()
+    new.recorder.stop.assert_not_called()
+
+
+def test_recording_is_stopped_when_the_pipeline_is_detached(qtbot: QtBot) -> None:
+    w = SdrControlWidget()
+    qtbot.addWidget(w)
+    pipe = _fake_pipeline()
+    w.set_pipeline(pipe)
+    w.start_iq_recording_for_autotrack()
+    w.set_pipeline(None)
+    pipe.recorder.stop.assert_called_once()

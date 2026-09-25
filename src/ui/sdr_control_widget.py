@@ -131,6 +131,11 @@ class SdrControlWidget(QWidget):
         self._pipeline: Any = None  # SDRPipeline | None
         self._waterfall_dialog: SdrWaterfallDialog | None = None
         self._recording = False
+        # The IQRecorder that _start_recording() actually started. Kept
+        # separately from self._pipeline because the pipeline can be swapped
+        # or detached mid-recording (Rig Settings OK reconnects the SDR), and
+        # stop must reach the recorder that is running, not the new pipeline's.
+        self._active_recorder: Any = None
         self._tune_offset_hz: float = 0.0  # cumulative passband tune offset
         # Whether Radio Control currently has a transponder selected — see
         # set_transponder_active().
@@ -202,6 +207,11 @@ class SdrControlWidget(QWidget):
         """
         if self._waterfall_dialog is not None:
             self._waterfall_dialog.set_pipeline(pipeline, is_replay)
+        # A recording belongs to the pipeline that produced it: finalise it
+        # before that pipeline is replaced or detached, so the file is closed
+        # instead of being left open (and unwritten) when the pipeline goes.
+        if self._recording and pipeline is not self._pipeline:
+            self._stop_recording()
         # Detach old pipeline
         if self._pipeline is not None:
             try:
@@ -913,6 +923,7 @@ class SdrControlWidget(QWidget):
         if hasattr(self._pipeline, "_device") and self._pipeline._device is not None:
             self._pipeline._device.set_sample_rate(float(bw_hz))
 
+        self._active_recorder = self._pipeline.recorder
         file_path = self._pipeline.recorder.start(
             sample_rate=bw_hz,
             norad=self._sat_norad,
@@ -929,8 +940,9 @@ class SdrControlWidget(QWidget):
             return
         self._recording = False
         self._status_timer.stop()
-        if self._pipeline is not None:
-            self._pipeline.recorder.stop()
+        recorder, self._active_recorder = self._active_recorder, None
+        if recorder is not None:
+            recorder.stop()
         self._rec_btn.setEnabled(True)
         self._stop_rec_btn.setEnabled(False)
         self._rec_status_label.setText("00:00:00  0 MB")
