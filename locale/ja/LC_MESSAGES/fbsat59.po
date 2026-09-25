@@ -616,6 +616,9 @@ msgstr "クイック通信コントロール"
 msgid "Input:"
 msgstr "入力:"
 
+msgid "Others"
+msgstr "その他"
+
 #: src/ui/main_window.py:362 src/ui/rig_dialog.py:1204
 #: src/ui/rig_dialog.py:2359
 msgid "Rig 1"

@@ -280,6 +280,14 @@ class SatDetailPanel(QWidget):
     # Source combo. Args: tab_key (e.g. "ft4"), norad_cat_id.
     comms_satellite_requested: Signal = Signal(str, int)
 
+    # Emitted whenever the remembered per-tab Input choice changes so
+    # MainWindow can persist it.
+    input_source_remembered: Signal = Signal()
+
+    # Input combo item data for the "Others" entry (any satellite/frequency
+    # not covered by the tab's own satellite list). Never a real NORAD id.
+    INPUT_SOURCE_OTHERS: int = -1
+
     # Mini radar max height for the full Quick Comms Panel (Communications
     # tabs) vs. Radio Control's radar-only box. In the full panel, the
     # other rows below the radar (Input Source, D:/U:, Rig 1/Rig 2) already
@@ -388,8 +396,13 @@ class SatDetailPanel(QWidget):
         self._current_norad = norad
         # Follow the selection (e.g. a transponder picked in Radio Control)
         # in the Input combo without re-emitting comms_satellite_requested.
-        if self._active_comms_tab is not None and self._input_source_row.isVisible():
-            self._select_input_source(norad)
+        if self._active_comms_tab is not None and not self._input_source_row.isHidden():
+            if not self._select_input_source(norad):
+                self._select_input_source(self.INPUT_SOURCE_OTHERS)
+            shown = self._input_source_combo.currentData()
+            if shown is not None and self._last_input_source.get(self._active_comms_tab) != shown:
+                self._last_input_source[self._active_comms_tab] = int(shown)
+                self.input_source_remembered.emit()
 
     def set_last_input_sources(self, sources: dict[str, int]) -> None:
         """Restore the per-tab Input combo choices saved from a previous run."""
@@ -472,11 +485,16 @@ class SatDetailPanel(QWidget):
             self._input_source_combo.clear()
             for norad, name in satellite_options:
                 self._input_source_combo.addItem(name, norad)
+            self._input_source_combo.addItem(_("Others"), self.INPUT_SOURCE_OTHERS)
             self._input_source_combo.blockSignals(False)
-            # Prefer the satellite selected in the main window, then the one
-            # last picked in this tab, else keep the first entry.
-            if not self._select_input_source(self._current_norad):
+            # Prefer the choice last made in this tab, then the satellite
+            # selected in the main window, else "Others" (a satellite this
+            # tab's list does not know about).
+            if not (
                 self._select_input_source(self._last_input_source.get(tab_key))
+                or self._select_input_source(self._current_norad)
+            ):
+                self._select_input_source(self.INPUT_SOURCE_OTHERS)
 
         show_freq = self._freq_source is not None
         self._quick_dl_label.setVisible(show_freq)
@@ -556,6 +574,7 @@ class SatDetailPanel(QWidget):
         norad = self._input_source_combo.itemData(index)
         if norad is not None:
             self._last_input_source[self._active_comms_tab] = int(norad)
+            self.input_source_remembered.emit()
             self.comms_satellite_requested.emit(self._active_comms_tab, int(norad))
 
     def _on_quick_connect_rig1(self) -> None:
@@ -1227,7 +1246,7 @@ class MainWindow(QMainWindow):
         self._detail_panel.setMaximumWidth(260)
         self._detail_panel.bind_radio_control(self._radio_control)
         self._detail_panel.comms_satellite_requested.connect(self._on_comms_satellite_requested)
-        self._comms_restored_tabs: set[str] = set()
+        self._detail_panel.input_source_remembered.connect(self._save_comms_input_sources)
         self._detail_panel.set_last_input_sources(self._load_comms_input_sources())
         h_splitter.addWidget(self._detail_panel)
 
@@ -3093,21 +3112,17 @@ class MainWindow(QMainWindow):
         self._tab_widget.setCurrentIndex(idx)
         self._notify_comms_tab_of_rig_state(tab)
 
-    def _restore_comms_satellite_once(self, tab_key: str) -> None:
-        """On the first activation of a Communications tab after startup,
-        re-apply the satellite remembered in its Input combo (satellite,
-        Radio Control transponder, Doppler) as if the user had picked it.
-
-        Later activations leave the current selection alone.
+    def _restore_comms_satellite(self, tab_key: str) -> None:
+        """When a Communications tab is shown, re-apply the satellite
+        remembered in its Input combo (satellite, Radio Control transponder,
+        Doppler) as if the user had picked it. "Others" leaves the current
+        selection untouched.
         """
-        if tab_key in self._comms_restored_tabs:
-            return
-        self._comms_restored_tabs.add(tab_key)
         config = mode_detection.COMMS_TAB_CONFIG.get(tab_key)
         if config is None or not config.show_input_source:
             return
         norad = self._detail_panel._last_input_source.get(tab_key)
-        if norad is None or norad == self._selected_norad:
+        if norad is None or norad < 0 or norad == self._selected_norad:
             return
         if self._detail_panel._input_source_combo.findData(norad) < 0:
             return
@@ -3144,7 +3159,9 @@ class MainWindow(QMainWindow):
         every Communications tab that has show_input_source=True in
         COMMS_TAB_CONFIG (FT4 now; APRS/SSTV in a later phase).
         """
-        self._save_comms_input_sources()
+        if norad < 0:
+            # "Others": keep whatever satellite/transponder is selected now.
+            return
         all_text = "All Satellites"
         if self._filter_combo.currentText() != all_text:
             idx = self._filter_combo.findText(all_text)
@@ -4914,7 +4931,7 @@ class MainWindow(QMainWindow):
                 for norad in mode_detection.get_norads_for_tab(self._conn, tab_key)
             ]
             self._detail_panel.set_active_comms_tab(tab_key, options, tab_widget=widget)
-            self._restore_comms_satellite_once(tab_key)
+            self._restore_comms_satellite(tab_key)
         else:
             self._detail_panel.deactivate_comms_panel()
         self._h_splitter.setSizes(prev_sizes)
