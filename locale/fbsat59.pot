@@ -2683,7 +2683,7 @@ msgid "SDR connecting via Radio Control — press Start again once connected"
 msgstr ""
 
 #: src/ui/telemetry_tab.py:1452
-msgid "⚠ No SDR configured in Rig Settings"
+msgid "⚠ No SDR or rig connected"
 msgstr ""
 
 #: src/ui/telemetry_tab.py:1661

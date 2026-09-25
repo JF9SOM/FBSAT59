@@ -1091,9 +1091,12 @@ class TelemetryTab(QWidget):
             if not self._start_cw_tlm():
                 return
         elif mode == _MODE_GR:
-            self._start_gr_satellites()
+            if not self._start_gr_satellites():
+                return  # Start stays pressable; the reason is in the status label
         else:
             self._try_start_afsk()
+            if self._afsk_source is None:
+                return
         self._btn_start.setEnabled(False)
         self._btn_stop.setEnabled(True)
 
@@ -1397,17 +1400,18 @@ class TelemetryTab(QWidget):
     # gr-satellites lifecycle
     # ------------------------------------------------------------------ #
 
-    def _start_gr_satellites(self) -> None:
+    def _start_gr_satellites(self) -> bool:
+        """Start gr-satellites; False (with the reason on screen) if it did not start."""
         norad = self._combo_gr_sat.currentData()
         if norad is None:
             self._set_error(_("⚠ No satellite selected"))
-            return
+            return False
 
         pipeline = self._sdr_pipeline
         if pipeline is None:
             pipeline = self._auto_connect_sdr()
             if pipeline is None:
-                return
+                return False
 
         try:
             samp_rate = int(pipeline._device.sample_rate)  # type: ignore[attr-defined]
@@ -1421,6 +1425,8 @@ class TelemetryTab(QWidget):
             self._set_error(f"⚠ {err}")
             self._btn_start.setEnabled(True)
             self._btn_stop.setEnabled(False)
+            return False
+        return True
 
     def _auto_connect_sdr(self) -> object | None:
         """Connect the first available SDR rig via Radio Control and return its pipeline."""
@@ -1449,7 +1455,7 @@ class TelemetryTab(QWidget):
                 _("SDR connecting via Radio Control — press Start again once connected")
             )
             return None
-        self._set_error(_("⚠ No SDR configured in Rig Settings"))
+        self._set_error(_("⚠ No SDR or rig connected"))
         return None
 
     def _stop_gr_satellites(self) -> None:

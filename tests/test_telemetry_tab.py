@@ -652,3 +652,19 @@ def test_non_ax25_frame_is_shown_as_hex_and_logged_but_not_uploaded(
     logged = conn.execute("SELECT norad_cat_id, raw_hex FROM telemetry_log").fetchall()
     assert [(r["norad_cat_id"], r["raw_hex"]) for r in logged] == [(68796, raw.hex())]
     assert rec.calls == []  # unknown format: not sent to SatNOGS automatically
+
+
+@pytest.mark.parametrize("mode", ["AX.25", "gr-satellites"])
+def test_start_with_nothing_connected_says_so_and_stays_pressable(
+    qtbot: QtBot, conn: sqlite3.Connection, mode: str
+) -> None:
+    """Start with no SDR/rig shows why it did not start and can be pressed again."""
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab._combo_mode.setCurrentText(mode)
+    tab._combo_gr_sat.addItem("Test sat", 66778)
+    tab._combo_gr_sat.setCurrentIndex(tab._combo_gr_sat.count() - 1)
+    tab._on_start()
+    assert "No SDR or rig connected" in tab._lbl_status.text()
+    assert tab._btn_start.isEnabled()
+    assert not tab._btn_stop.isEnabled()

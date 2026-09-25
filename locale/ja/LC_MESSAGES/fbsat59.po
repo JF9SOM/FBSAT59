@@ -2878,8 +2878,8 @@ msgstr ""
 "SDRはRadio Control経由で接続中です — 接続完了後、再度Startを押してください"
 
 #: src/ui/telemetry_tab.py:1452
-msgid "⚠ No SDR configured in Rig Settings"
-msgstr "⚠ Rig SettingsでSDRが設定されていません"
+msgid "⚠ No SDR or rig connected"
+msgstr "⚠ SDRまたは無線機が接続されていません"
 
 #: src/ui/telemetry_tab.py:1661
 msgid ""
