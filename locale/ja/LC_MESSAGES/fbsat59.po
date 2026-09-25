@@ -2747,10 +2747,6 @@ msgstr "ログをクリア"
 msgid "gr-satellites Log"
 msgstr "gr-satellitesログ"
 
-#: src/ui/telemetry_tab.py:1054
-msgid "Direwolf Log"
-msgstr "Direwolfログ"
-
 #: src/ui/telemetry_tab.py:1126 src/ui/telemetry_tab.py:1279
 msgid "Select a satellite first."
 msgstr "先に衛星を選択してください。"

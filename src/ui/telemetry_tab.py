@@ -1092,9 +1092,7 @@ class TelemetryTab(QWidget):
             from comms.aprs.direwolf_log import direwolf_log_path
 
             if self._direwolf_log_window is None:
-                self._direwolf_log_window = _ProcessLogDialog(
-                    _("Direwolf Log"), direwolf_log_path(), self
-                )
+                self._direwolf_log_window = _ProcessLogDialog(_("Log"), direwolf_log_path(), self)
             else:
                 self._direwolf_log_window.reload()
             window = self._direwolf_log_window

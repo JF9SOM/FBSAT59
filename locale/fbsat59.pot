@@ -2558,10 +2558,6 @@ msgstr ""
 msgid "gr-satellites Log"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1054
-msgid "Direwolf Log"
-msgstr ""
-
 #: src/ui/telemetry_tab.py:1126 src/ui/telemetry_tab.py:1279
 msgid "Select a satellite first."
 msgstr ""
