@@ -239,6 +239,19 @@ _OSCAR_RE = re.compile(
 )
 
 
+def _oscar_label(name: str, alt_names_json: str | None) -> str:
+    """Return the Oscar designator (e.g. "AO-73") from alt_names, else *name*."""
+    try:
+        alts: list[str] = json.loads(alt_names_json) if alt_names_json else []
+    except (json.JSONDecodeError, ValueError, TypeError):
+        alts = []
+    for alt in alts:
+        m = _OSCAR_RE.search(alt)
+        if m:
+            return f"{m.group(1)}-{m.group(2)}".upper()
+    return name
+
+
 def _extract_designators(name: str) -> set[str]:
     """Extract and normalize AMSAT designators from a satellite name (e.g. 'AO-91' -> {'ao91'})."""
     return {(m.group(1) + m.group(2)).lower() for m in _DESIG_RE.finditer(name)}
@@ -4967,15 +4980,29 @@ class MainWindow(QMainWindow):
 
         tab_key = self._comms_tab_keys.get(widget) if widget is not None else None
         if tab_key is not None:
-            options = [
-                (norad, self._sat_name_cache.get(norad, str(norad)))
-                for norad in mode_detection.get_norads_for_tab(self._conn, tab_key)
-            ]
+            options = self._comms_satellite_options(tab_key)
             self._detail_panel.set_active_comms_tab(tab_key, options, tab_widget=widget)
             self._restore_comms_satellite(tab_key)
         else:
             self._detail_panel.deactivate_comms_panel()
         self._h_splitter.setSizes(prev_sizes)
+
+    def _comms_satellite_options(self, tab_key: str) -> list[tuple[int, str]]:
+        """(norad, label) pairs for a Quick Comms Input combo, labelled with the
+        Oscar designator (e.g. "AO-73") when the satellite has one, else its
+        name, sorted by label."""
+        options: list[tuple[int, str]] = []
+        for norad in mode_detection.get_norads_for_tab(self._conn, tab_key):
+            name = self._sat_name_cache.get(norad, str(norad))
+            try:
+                row = self._conn.execute(
+                    "SELECT alt_names FROM satellites WHERE norad_cat_id = ?", (norad,)
+                ).fetchone()
+            except sqlite3.Error:
+                row = None
+            options.append((norad, _oscar_label(name, row["alt_names"] if row else None)))
+        options.sort(key=lambda o: o[1].lower())
+        return options
 
     def _update_pass_panel_size(self, hide: bool) -> None:
         """Collapse the pass-prediction (bottom) panel to zero height, or
