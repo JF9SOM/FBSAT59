@@ -653,14 +653,31 @@ class TelemetryTab(QWidget):
     def _on_rig_connected(self) -> None:
         rc = self._radio_control
         rig1 = getattr(rc, "_rig1", None)
+        old_pipeline = self._sdr_pipeline
         if rig1 is not None and getattr(rig1, "is_sdr", False):
             self._sdr_connected = True
             self._sdr_pipeline = getattr(rig1, "_pipeline", None)
         else:
             self._rig_connected = True
         self._refresh_input_combo()
+        self._restart_on_new_pipeline(old_pipeline)
         self._resume_pending_start()
         self._refresh_status()
+
+    def _restart_on_new_pipeline(self, old_pipeline: object | None) -> None:
+        """Move a running SDR session onto a replaced pipeline.
+
+        Playing an IQ recording (or reconnecting the SDR) swaps the slot's
+        pipeline without a disconnect signal, leaving a running decoder
+        subscribed to the dead one — it would receive nothing.
+        """
+        new_pipeline = self._sdr_pipeline
+        if new_pipeline is None or new_pipeline is old_pipeline:
+            return
+        if self._afsk_source != "sdr_direwolf" and not self._gr_backend.is_running:
+            return
+        self._on_stop()
+        self._on_start()
 
     def _resume_pending_start(self) -> None:
         """Finish a Start that was waiting for the SDR to connect."""
@@ -692,12 +709,14 @@ class TelemetryTab(QWidget):
     def _on_rig2_connected(self) -> None:
         rc = self._radio_control
         rig2 = getattr(rc, "_rig2", None)
+        old_pipeline = self._sdr_pipeline
         if rig2 is not None and getattr(rig2, "is_sdr", False):
             self._sdr_connected = True
             self._sdr_pipeline = getattr(rig2, "_pipeline", None)
         else:
             self._rig_connected = True
         self._refresh_input_combo()
+        self._restart_on_new_pipeline(old_pipeline)
         self._resume_pending_start()
         self._refresh_status()
 

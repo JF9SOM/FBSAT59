@@ -737,3 +737,29 @@ def test_stop_cancels_a_start_that_is_waiting_for_the_sdr(
     qtbot.wait(200)  # the SDR finishes connecting after the cancel
     assert started == []
     assert tab._afsk_source is None
+
+
+def test_running_decoder_follows_the_sdr_to_a_new_pipeline(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    """Playing a recording replaces the SDR pipeline; decoding must move onto it."""
+    rc = _AutoConnectRadioControl()
+    tab = TelemetryTab(conn, rc)
+    qtbot.addWidget(tab)
+    started: list[object] = []
+
+    def fake_start(owner: str, pipeline: object, **kwargs: object) -> tuple[bool, str]:
+        started.append(pipeline)
+        return True, ""
+
+    tab._engine.start_sdr_direwolf = fake_start  # type: ignore[method-assign]
+    tab._engine.stop = lambda *_a, **_k: None  # type: ignore[method-assign]
+    tab._on_start()
+    qtbot.waitUntil(lambda: len(started) == 1, timeout=2000)
+
+    replay_pipeline = object()  # what playing a recording puts in the slot
+    rc._rig1._pipeline = replay_pipeline
+    rc.rig_connected.emit()
+    assert started[-1] is replay_pipeline and len(started) == 2
+    assert tab._afsk_source == "sdr_direwolf"
+    assert tab._btn_stop.isEnabled()
