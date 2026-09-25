@@ -7198,15 +7198,12 @@ class MainWindow(QMainWindow):
 
     @Slot(float)
     def _on_sdr_clipping_alert(self, fraction: float) -> None:
-        """IQ recording input is overloaded: tell the operator (status bar + beeps)."""
+        """IQ recording input is overloaded: tell the operator (status bar message)."""
         msg = _(
             "IQ recording: input is saturating ({pct:.0f}% clipped) — lower the SDR gain"
         ).format(pct=fraction * 100)
         logger.warning("IQ recording input is saturating (%.1f%% clipped)", fraction * 100)
         self.statusBar().showMessage(msg, 65_000)
-        # Three beeps, so it is noticed even when the window is in the background.
-        for delay_ms in (0, 400, 800):
-            QTimer.singleShot(delay_ms, QApplication.beep)
 
     def _on_sdr_clipping_cleared(self) -> None:
         self.statusBar().clearMessage()
