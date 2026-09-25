@@ -2873,9 +2873,12 @@ msgid "Connecting SDR…"
 msgstr "SDR接続中…"
 
 #: src/ui/telemetry_tab.py:1449
-msgid "SDR connecting via Radio Control — press Start again once connected"
-msgstr ""
-"SDRはRadio Control経由で接続中です — 接続完了後、再度Startを押してください"
+msgid "Connecting SDR… decoding starts once it is connected"
+msgstr "SDRに接続中… 接続後に自動でデコードを開始します"
+
+#: src/ui/telemetry_tab.py
+msgid "⚠ SDR connected but not ready"
+msgstr "⚠ SDRは接続済みですが準備ができていません"
 
 #: src/ui/telemetry_tab.py:1452
 msgid "⚠ No SDR or rig connected"

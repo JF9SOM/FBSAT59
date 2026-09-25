@@ -668,3 +668,72 @@ def test_start_with_nothing_connected_says_so_and_stays_pressable(
     assert "No SDR or rig connected" in tab._lbl_status.text()
     assert tab._btn_start.isEnabled()
     assert not tab._btn_stop.isEnabled()
+
+
+class _FakeSdrRig:
+    is_sdr = True
+    is_connected = False
+    _pipeline: object | None = None
+
+
+class _AutoConnectRadioControl(_FakeRadioControl):
+    """Connects its SDR a moment after Start asks for it (as the real one does)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._rig1 = _FakeSdrRig()
+        self._rig2 = None
+        self.connect_calls = 0
+
+    def _on_connect_rig1(self) -> None:
+        from PySide6.QtCore import QTimer
+
+        self.connect_calls += 1
+
+        def _done() -> None:
+            self._rig1.is_connected = True
+            self._rig1._pipeline = object()
+            self.rig_connected.emit()
+
+        QTimer.singleShot(0, _done)
+
+
+def test_start_connects_the_sdr_and_then_starts_decoding_by_itself(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    """One press of Start is enough: it connects the SDR, then begins decoding."""
+    rc = _AutoConnectRadioControl()
+    tab = TelemetryTab(conn, rc)
+    qtbot.addWidget(tab)
+    started: list[object] = []
+
+    def fake_start(owner: str, pipeline: object, **kwargs: object) -> tuple[bool, str]:
+        started.append(pipeline)
+        return True, ""
+
+    tab._engine.start_sdr_direwolf = fake_start  # type: ignore[method-assign]
+    tab._engine.stop = lambda *_a, **_k: None  # type: ignore[method-assign]
+    tab._on_start()
+    assert started == []  # still connecting
+    assert tab._btn_start.isEnabled()
+    qtbot.waitUntil(lambda: len(started) == 1, timeout=2000)
+    assert rc.connect_calls == 1
+    assert tab._afsk_source == "sdr_direwolf"
+    assert not tab._btn_start.isEnabled()
+    assert tab._btn_stop.isEnabled()
+
+
+def test_stop_cancels_a_start_that_is_waiting_for_the_sdr(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    rc = _AutoConnectRadioControl()
+    tab = TelemetryTab(conn, rc)
+    qtbot.addWidget(tab)
+    started: list[object] = []
+    tab._engine.start_sdr_direwolf = lambda *a, **k: (started.append(1), (True, ""))[1]  # type: ignore[method-assign]
+    tab._engine.stop = lambda *_a, **_k: None  # type: ignore[method-assign]
+    tab._on_start()
+    tab._on_stop()
+    qtbot.wait(200)  # the SDR finishes connecting after the cancel
+    assert started == []
+    assert tab._afsk_source is None

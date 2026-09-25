@@ -22,6 +22,7 @@ import csv
 import datetime
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -110,6 +111,8 @@ _MODE_GR = "gr-satellites"
 # Housekeeping frames sent as Morse-coded hex, decoded by the CW Decoder tab
 # (see telemetry_formats/{norad}.json's "cw_frames"; ARICA-2, OrigamiSat-2).
 _MODE_CW = "CW TLM"
+# How long a Start waits for the SDR to finish connecting before it is dropped.
+_PENDING_START_TIMEOUT_S = 30.0
 
 # Owner tag for the shared AprsEngine singleton (see comms.aprs.engine).
 # The APRS tab shares the same engine under its own "aprs" tag so closing
@@ -272,6 +275,11 @@ class TelemetryTab(QWidget):
         self._sdr_pipeline: object | None = None
         self._rig_connected = False
         self._sdr_connected = False
+        # Start pressed while the SDR was still connecting: begin decoding as soon
+        # as it is up (see _auto_connect_sdr / _resume_pending_start).
+        self._pending_start = False
+        self._pending_start_at = 0.0
+        self._resuming_start = False
 
         # gr-satellites backend
         self._gr_backend = GrSatellitesBackend(self)
@@ -651,7 +659,23 @@ class TelemetryTab(QWidget):
         else:
             self._rig_connected = True
         self._refresh_input_combo()
+        self._resume_pending_start()
         self._refresh_status()
+
+    def _resume_pending_start(self) -> None:
+        """Finish a Start that was waiting for the SDR to connect."""
+        if not self._pending_start:
+            return
+        self._pending_start = False
+        if time.monotonic() - self._pending_start_at > _PENDING_START_TIMEOUT_S:
+            return
+        if not (self._sdr_connected and self._sdr_pipeline is not None):
+            return
+        self._resuming_start = True
+        try:
+            self._on_start()
+        finally:
+            self._resuming_start = False
 
     def _on_rig_disconnected(self) -> None:
         rc = self._radio_control
@@ -674,6 +698,7 @@ class TelemetryTab(QWidget):
         else:
             self._rig_connected = True
         self._refresh_input_combo()
+        self._resume_pending_start()
         self._refresh_status()
 
     def _on_rig2_disconnected(self) -> None:
@@ -908,6 +933,7 @@ class TelemetryTab(QWidget):
             self._combo_mode.setCurrentIndex(0)
 
     def _on_mode_changed(self, _index: int) -> None:
+        self._pending_start = False
         mode = self._current_mode()
         is_gr = mode == _MODE_GR
         is_cw = mode == _MODE_CW
@@ -1101,6 +1127,7 @@ class TelemetryTab(QWidget):
         self._btn_stop.setEnabled(True)
 
     def _on_stop(self) -> None:
+        self._pending_start = False
         self._stop_gr_satellites()
         self._stop_engine()
         self._stop_cw_tlm()
@@ -1443,17 +1470,22 @@ class TelemetryTab(QWidget):
                     self._sdr_pipeline = pipeline
                     result: object = pipeline
                     return result
+            if self._resuming_start:
+                # Connected but no pipeline: connecting again would only toggle it.
+                self._set_error(_("⚠ SDR connected but not ready"))
+                return None
             # Delegate to Radio Control's connect button handler so the UI
             # stays consistent (button state, status label, signals, etc.)
+            self._pending_start = True
+            self._pending_start_at = time.monotonic()
             self._lbl_status.setText(_("Connecting SDR…"))
             connect_fn = getattr(
                 rc, "_on_connect_rig1" if attr == "_rig1" else "_on_connect_rig2", None
             )
             if connect_fn is not None:
                 connect_fn()
-            self._set_error(
-                _("SDR connecting via Radio Control — press Start again once connected")
-            )
+            self._lbl_status.setText(_("Connecting SDR… decoding starts once it is connected"))
+            self._lbl_status.setStyleSheet("color: #f39c12;")
             return None
         self._set_error(_("⚠ No SDR or rig connected"))
         return None

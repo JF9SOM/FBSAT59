@@ -2679,7 +2679,11 @@ msgid "Connecting SDR…"
 msgstr ""
 
 #: src/ui/telemetry_tab.py:1449
-msgid "SDR connecting via Radio Control — press Start again once connected"
+msgid "Connecting SDR… decoding starts once it is connected"
+msgstr ""
+
+#: src/ui/telemetry_tab.py
+msgid "⚠ SDR connected but not ready"
 msgstr ""
 
 #: src/ui/telemetry_tab.py:1452
