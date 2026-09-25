@@ -4632,10 +4632,13 @@ class HamlibRotatorController(RotatorController):
                     self._record_io_result(False, "P command")
                     raise
                 failed = False
+                reply = ""
                 with contextlib.suppress(Exception):
                     # Also drains the reply to keep the socket buffer clean.
                     reply = self._sock.recv(256).decode(errors="replace")
                     failed = reply == "" or self._rprt_failed(reply)
+                if failed:
+                    logger.warning("Rotator: P %.1f %.1f rejected, reply=%r", az, el, reply)
                 self._record_io_result(not failed, "P command")
             elif self._rot is not None:
                 self._rot.set_position(az, el)

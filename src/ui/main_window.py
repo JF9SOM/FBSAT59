@@ -4897,8 +4897,14 @@ class MainWindow(QMainWindow):
                 def _rot_send() -> None:
                     try:
                         rot.set_position(az, el)
-                        logger.info("Rotator: set position az=%.1f el=%.1f", az, el)
                         pos = rot.get_position()
+                        logger.info(
+                            "Rotator: set position az=%.1f el=%.1f (actual az=%.1f el=%.1f)",
+                            az,
+                            el,
+                            pos.azimuth_deg,
+                            pos.elevation_deg,
+                        )
                         self._rot_pos_updated.emit(pos.azimuth_deg, pos.elevation_deg)
                     except Exception as exc:
                         logger.error("Rotator: set_position error: %s", exc)
