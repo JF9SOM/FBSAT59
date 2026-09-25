@@ -368,3 +368,38 @@ def test_recording_does_not_resume_after_detach_or_replay(qtbot: QtBot) -> None:
     w.set_pipeline(replay, is_replay=True)
     replay.recorder.start.assert_not_called()
     assert not w._recording
+
+
+def test_clipping_alert_fires_after_sustained_clipping_then_clears(qtbot: QtBot) -> None:
+    w = SdrControlWidget()
+    qtbot.addWidget(w)
+    alerts: list[float] = []
+    cleared: list[bool] = []
+    w.clipping_alert.connect(alerts.append)
+    w.clipping_cleared.connect(lambda: cleared.append(True))
+    for _ in range(9):
+        w._update_clip_warning(0.09)
+    assert alerts == []  # not yet sustained
+    assert "9%" in w._rec_clip_label.text()
+    w._update_clip_warning(0.09)  # 10th second
+    assert alerts == [0.09]
+    for _ in range(59):
+        w._update_clip_warning(0.09)
+    assert len(alerts) == 1  # no repeat before 60 s
+    w._update_clip_warning(0.09)
+    assert len(alerts) == 2
+    w._update_clip_warning(0.0)
+    assert cleared == [True] and w._rec_clip_label.text() == ""
+
+
+def test_short_clipping_burst_does_not_alert(qtbot: QtBot) -> None:
+    w = SdrControlWidget()
+    qtbot.addWidget(w)
+    alerts: list[float] = []
+    w.clipping_alert.connect(alerts.append)
+    for _ in range(5):
+        w._update_clip_warning(0.2)
+    w._update_clip_warning(0.0)
+    for _ in range(5):
+        w._update_clip_warning(0.2)
+    assert alerts == []

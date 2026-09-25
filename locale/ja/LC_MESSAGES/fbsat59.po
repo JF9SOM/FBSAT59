@@ -6056,6 +6056,17 @@ msgstr "ステータス: 「{text}」"
 msgid "({shown}/{total} hex chars — rest omitted)"
 msgstr "（{shown}/{total}文字を表示、以下省略）"
 
+msgid "The SDR input is at full scale, so weak signals are distorted or lost."
+msgstr "SDR入力が満スケールに張り付いており、弱い信号が歪むか失われます。"
+
+#, python-brace-format
+msgid "⚠ Clipping {pct:.0f}% — lower the gain"
+msgstr "⚠ 飽和 {pct:.0f}% — ゲインを下げてください"
+
+#, python-brace-format
+msgid "IQ recording: input is saturating ({pct:.0f}% clipped) — lower the SDR gain"
+msgstr "IQ録音: 入力が飽和しています（{pct:.0f}% が振り切れ）— SDRのゲインを下げてください"
+
 #~ msgid ""
 #~ "No SDR is configured for Rig 1 or Rig 2 — set one up in Rig Settings "
 #~ "first."

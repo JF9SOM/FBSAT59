@@ -51,12 +51,17 @@ from PySide6.QtWidgets import (
 
 from i18n import _
 from sdr import LAMEENC_AVAILABLE, SOAPY_AVAILABLE, AudioRecorder
+from sdr.recorder import CLIP_WARN_FRACTION
 from ui.sdr_waterfall_dialog import SdrWaterfallDialog
 
 if SOAPY_AVAILABLE:
     from sdr.demodulator import DemodMode
 
 logger = logging.getLogger(__name__)
+
+_CLIP_ALERT_AFTER_S = 10  # sustained clipping before the first alert
+_CLIP_REPEAT_S = 60  # re-alert interval while it continues
+_CLIP_RED_FRACTION = 0.05
 
 # Spectrum chart Y-axis range (dBFS)
 _SPECTRUM_YMIN: float = -90.0
@@ -125,6 +130,11 @@ class SdrControlWidget(QWidget):
     # set_pipeline() already handed this widget, so no round trip through
     # MainWindow is needed for those.
     play_recording_requested: Signal = Signal(str)
+    # IQ recording input is overloaded (fraction 0..1): emitted once the
+    # clipping has lasted _CLIP_ALERT_AFTER_S seconds, then every
+    # _CLIP_REPEAT_S seconds while it continues.
+    clipping_alert: Signal = Signal(float)
+    clipping_cleared: Signal = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -136,6 +146,8 @@ class SdrControlWidget(QWidget):
         # or detached mid-recording (Rig Settings OK reconnects the SDR), and
         # stop must reach the recorder that is running, not the new pipeline's.
         self._active_recorder: Any = None
+        self._clip_bad_ticks = 0
+        self._clip_alerted = False
         self._tune_offset_hz: float = 0.0  # cumulative passband tune offset
         # Whether Radio Control currently has a transponder selected — see
         # set_transponder_active().
@@ -765,6 +777,11 @@ class SdrControlWidget(QWidget):
         ctrl_row.addWidget(self._rec_btn)
         ctrl_row.addWidget(self._stop_rec_btn)
         ctrl_row.addWidget(self._rec_status_label)
+        self._rec_clip_label = QLabel("")
+        self._rec_clip_label.setToolTip(
+            _("The SDR input is at full scale, so weak signals are distorted or lost.")
+        )
+        ctrl_row.addWidget(self._rec_clip_label)
         ctrl_row.addStretch()
         v.addLayout(ctrl_row)
 
@@ -958,6 +975,7 @@ class SdrControlWidget(QWidget):
         self._rec_btn.setEnabled(True)
         self._stop_rec_btn.setEnabled(False)
         self._rec_status_label.setText("00:00:00  0 MB")
+        self._reset_clip_warning()
 
     # ------------------------------------------------------------------
     # IQ recording playback
@@ -1181,3 +1199,27 @@ class SdrControlWidget(QWidget):
         m, s = divmod(rem, 60)
         mb = rec.bytes_written / 1e6
         self._rec_status_label.setText(f"{h:02d}:{m:02d}:{s:02d}  {mb:.1f} MB")
+        self._update_clip_warning(rec.clip_fraction_recent)
+
+    def _update_clip_warning(self, frac: float) -> None:
+        """Show the input-overload label and raise/clear the alert (1 Hz)."""
+        if frac >= CLIP_WARN_FRACTION:
+            color = "#e74c3c" if frac >= _CLIP_RED_FRACTION else "#f0a500"
+            self._rec_clip_label.setStyleSheet(f"color: {color}; font-weight: bold;")
+            self._rec_clip_label.setText(
+                _("⚠ Clipping {pct:.0f}% — lower the gain").format(pct=frac * 100)
+            )
+            self._clip_bad_ticks += 1
+            n = self._clip_bad_ticks - _CLIP_ALERT_AFTER_S
+            if n >= 0 and n % _CLIP_REPEAT_S == 0:
+                self._clip_alerted = True
+                self.clipping_alert.emit(frac)
+        else:
+            self._reset_clip_warning()
+
+    def _reset_clip_warning(self) -> None:
+        self._rec_clip_label.setText("")
+        self._clip_bad_ticks = 0
+        if self._clip_alerted:
+            self._clip_alerted = False
+            self.clipping_cleared.emit()

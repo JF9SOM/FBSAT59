@@ -1161,6 +1161,8 @@ class MainWindow(QMainWindow):
         self._sdr_control.sdr_lock_changed.connect(self._on_sdr_lock_changed)
         self._sdr_control.manual_freq_requested.connect(self._on_sdr_manual_freq_requested)
         self._sdr_control.play_recording_requested.connect(self._on_play_recording_requested)
+        self._sdr_control.clipping_alert.connect(self._on_sdr_clipping_alert)
+        self._sdr_control.clipping_cleared.connect(self._on_sdr_clipping_cleared)
 
         self._tab_widget.currentChanged.connect(self._on_tab_changed)
 
@@ -7195,6 +7197,20 @@ class MainWindow(QMainWindow):
         self._sdr_control.sync_tune_offset(offset_hz)
 
     @Slot(float)
+    def _on_sdr_clipping_alert(self, fraction: float) -> None:
+        """IQ recording input is overloaded: tell the operator (status bar + beeps)."""
+        msg = _(
+            "IQ recording: input is saturating ({pct:.0f}% clipped) — lower the SDR gain"
+        ).format(pct=fraction * 100)
+        logger.warning("IQ recording input is saturating (%.1f%% clipped)", fraction * 100)
+        self.statusBar().showMessage(msg, 65_000)
+        # Three beeps, so it is noticed even when the window is in the background.
+        for delay_ms in (0, 400, 800):
+            QTimer.singleShot(delay_ms, QApplication.beep)
+
+    def _on_sdr_clipping_cleared(self) -> None:
+        self.statusBar().clearMessage()
+
     def _on_sdr_manual_freq_requested(self, freq_hz: float) -> None:
         """Apply a manually typed absolute SDR frequency (Freq box, transponder selected).
 

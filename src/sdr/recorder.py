@@ -18,6 +18,7 @@ import queue
 import struct
 import threading
 import time
+from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -31,6 +32,13 @@ _QUEUE_MAXSIZE = 512
 # How often (seconds) the WAV header sizes are rewritten while recording, so a
 # crash loses at most this much of the recording's "declared" length.
 _HEADER_REFRESH_S = 5.0
+
+# A complex sample counts as clipped when |I| or |Q| reaches this fraction of
+# full scale (8-bit SDRs top out at 127/128 = 0.992).
+CLIP_LEVEL = 0.98
+
+# Clipped fraction at or above which the input counts as overloaded.
+CLIP_WARN_FRACTION = 0.01
 
 # WAV header layout: RIFF(12) + fmt(24) + fact(12) + data chunk header(8).
 _WAV_HEADER_BYTES = 56
@@ -120,6 +128,19 @@ class IQRecorder:
         self._bytes_written: int = 0
         self._start_time: float = 0.0
         self._dropped: int = 0
+        # Clipping statistics (updated from the pipeline thread, read by the UI)
+        self._clip_lock = threading.Lock()
+        self._reset_clip_stats()
+
+    def _reset_clip_stats(self) -> None:
+        with self._clip_lock:
+            self._clip_bucket_start = time.monotonic()
+            self._clip_bucket_n = 0
+            self._clip_bucket_clipped = 0
+            self._clip_recent: deque[float] = deque(maxlen=2)  # last 1 s bucket fractions
+            self._clip_total_n = 0
+            self._clip_total_clipped = 0
+            self._clip_max = 0.0
 
     # ------------------------------------------------------------------
     # Public API
@@ -147,6 +168,44 @@ class IQRecorder:
     def dropped_blocks(self) -> int:
         return self._dropped
 
+    @property
+    def clip_fraction_recent(self) -> float:
+        """Fraction of samples at full scale over roughly the last 2 s (0..1)."""
+        with self._clip_lock:
+            return sum(self._clip_recent) / len(self._clip_recent) if self._clip_recent else 0.0
+
+    @property
+    def clip_fraction_average(self) -> float:
+        """Fraction of samples at full scale over the whole recording (0..1)."""
+        with self._clip_lock:
+            n = self._clip_total_n + self._clip_bucket_n
+            return (self._clip_total_clipped + self._clip_bucket_clipped) / n if n else 0.0
+
+    @property
+    def clip_fraction_max(self) -> float:
+        """Worst 1 s clipped fraction seen so far in this recording (0..1)."""
+        with self._clip_lock:
+            return self._clip_max
+
+    def _track_clipping(self, iq: np.ndarray) -> None:
+        """Accumulate how many samples sit at full scale (input overload)."""
+        clipped = int(
+            np.count_nonzero((np.abs(iq.real) >= CLIP_LEVEL) | (np.abs(iq.imag) >= CLIP_LEVEL))
+        )
+        now = time.monotonic()
+        with self._clip_lock:
+            self._clip_bucket_n += len(iq)
+            self._clip_bucket_clipped += clipped
+            if now - self._clip_bucket_start >= 1.0 and self._clip_bucket_n:
+                frac = self._clip_bucket_clipped / self._clip_bucket_n
+                self._clip_recent.append(frac)
+                self._clip_max = max(self._clip_max, frac)
+                self._clip_total_n += self._clip_bucket_n
+                self._clip_total_clipped += self._clip_bucket_clipped
+                self._clip_bucket_n = 0
+                self._clip_bucket_clipped = 0
+                self._clip_bucket_start = now
+
     def start(
         self,
         sample_rate: int,
@@ -164,6 +223,7 @@ class IQRecorder:
         self._sample_rate = sample_rate
         self._bytes_written = 0
         self._dropped = 0
+        self._reset_clip_stats()
         self._start_time = time.monotonic()
 
         ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -197,6 +257,13 @@ class IQRecorder:
             self._bytes_written / 1e6,
             self._dropped,
         )
+        if self.clip_fraction_max >= CLIP_WARN_FRACTION:
+            logger.warning(
+                "IQ recording was saturating: %.1f%% of samples clipped on average, "
+                "%.1f%% at worst — lower the SDR gain",
+                self.clip_fraction_average * 100,
+                self.clip_fraction_max * 100,
+            )
 
     def put_samples(self, iq: np.ndarray) -> None:
         """
@@ -206,6 +273,7 @@ class IQRecorder:
         """
         if not self._recording:
             return
+        self._track_clipping(iq)
         try:
             self._queue.put_nowait(iq.copy())
         except queue.Full:

@@ -96,3 +96,33 @@ def test_unchanged_sdr_settings_keep_the_live_adapter() -> None:
     assert not check(SimpleNamespace(is_sdr=True, is_connected=False), dict(cfg), dict(cfg))
     assert not check(SimpleNamespace(is_sdr=False, is_connected=True), dict(cfg), dict(cfg))
     assert not check(None, dict(cfg), dict(cfg))
+
+
+def _block(n: int, amp: float, clipped_frac: float) -> np.ndarray:
+    iq = np.full(n, amp + 0j, dtype=np.complex64)
+    iq[: int(n * clipped_frac)] = 1.0 + 0j
+    return iq
+
+
+def test_clipping_is_measured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    rec = IQRecorder(save_dir=tmp_path)
+    rec.start(sample_rate=250_000)
+    t = [100.0]
+    monkeypatch.setattr(rec_mod.time, "monotonic", lambda: t[0])
+    rec._clip_bucket_start = t[0]
+    for _ in range(3):  # three 1 s buckets with 10 % of samples at full scale
+        rec.put_samples(_block(1000, 0.1, 0.10))
+        t[0] += 1.0
+        rec.put_samples(_block(1000, 0.1, 0.10))
+    rec.stop()
+    assert 0.09 < rec.clip_fraction_recent < 0.11
+    assert 0.09 < rec.clip_fraction_max < 0.11
+    assert 0.09 < rec.clip_fraction_average < 0.11
+
+
+def test_clean_signal_reports_no_clipping(tmp_path: Path) -> None:
+    rec = IQRecorder(save_dir=tmp_path)
+    rec.start(sample_rate=250_000)
+    rec.put_samples(_block(1000, 0.1, 0.0))
+    rec.stop()
+    assert rec.clip_fraction_average == 0.0 and rec.clip_fraction_max == 0.0
