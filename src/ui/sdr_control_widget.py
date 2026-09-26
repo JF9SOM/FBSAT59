@@ -153,6 +153,8 @@ class SdrControlWidget(QWidget):
         # Whether Radio Control currently has a transponder selected — see
         # set_transponder_active().
         self._transponder_active: bool = False
+        # Spectrogram window of the recording last opened with "Open…" (or None).
+        self._overview_dialog: SdrOverviewDialog | None = None
         # True while self._pipeline is backed by a recorded .iq.wav file
         # rather than live hardware -- see set_pipeline()'s is_replay param.
         self._is_replay: bool = False
@@ -190,7 +192,7 @@ class SdrControlWidget(QWidget):
         # (Play / Stop / Offset / seek slider) are gated separately by
         # _set_replay_controls_enabled(), driven by set_pipeline()'s
         # is_replay flag rather than plain connected-ness.
-        _always_enabled = {self._open_btn, self._overview_btn, self._open_audio_folder_btn}
+        _always_enabled = {self._open_btn, self._open_audio_folder_btn}
         for panel in (
             self._spectrum_panel,
             self._tune_panel,
@@ -816,16 +818,7 @@ class SdrControlWidget(QWidget):
         self._stop_play_btn = QPushButton(_("■ Stop"))
         self._stop_play_btn.setEnabled(False)
         self._stop_play_btn.clicked.connect(self._on_stop_play_clicked)
-        self._overview_btn = QPushButton(_("📊 Overview…"))
-        self._overview_btn.setToolTip(
-            _(
-                "Choose a recorded .iq.wav file and show the whole recording\n"
-                "as one spectrogram image, without playing it"
-            )
-        )
-        self._overview_btn.clicked.connect(self._on_overview_clicked)
         play_row.addWidget(self._open_btn)
-        play_row.addWidget(self._overview_btn)
         play_row.addWidget(self._play_btn)
         play_row.addWidget(self._stop_play_btn)
         play_row.addSpacing(8)
@@ -1021,6 +1014,8 @@ class SdrControlWidget(QWidget):
     def _on_open_clicked(self) -> None:
         """Pick a .iq.wav file and ask MainWindow to load it and start playing it.
 
+        The recording's whole-recording spectrogram opens in its own window at the
+        same time; clicking it jumps the playback there.
         A fresh load always starts at position 0. Playing the *same* recording
         again after a stop needs no file picker: that is _on_play_clicked().
         """
@@ -1032,17 +1027,25 @@ class SdrControlWidget(QWidget):
         )
         if path:
             self.play_recording_requested.emit(path)
+            self._show_overview(path)
 
-    def _on_overview_clicked(self) -> None:
-        """Pick a .iq.wav file and show its whole-recording spectrogram in a window."""
-        path, _filter = QFileDialog.getOpenFileName(
-            self,
-            _("Pass Overview"),
-            str(self._iq_save_dir),
-            _("IQ recordings (*.iq.wav);;All files (*)"),
-        )
-        if path:
-            SdrOverviewDialog(Path(path), self).show()
+    def _show_overview(self, path: str) -> None:
+        """Show the whole-recording spectrogram of *path*; clicking it seeks the playback."""
+        if self._overview_dialog is not None:
+            self._overview_dialog.close()
+        dlg = SdrOverviewDialog(Path(path), self)
+        dlg.seek_requested.connect(self._on_overview_seek)
+        dlg.destroyed.connect(lambda *_a: setattr(self, "_overview_dialog", None))
+        self._overview_dialog = dlg
+        dlg.show()
+
+    def _on_overview_seek(self, position_s: float) -> None:
+        """Jump the loaded recording to the position clicked in the overview."""
+        device = self._playback_device() if self._is_replay else None
+        seek = getattr(device, "seek", None)
+        if seek is not None:
+            seek(float(position_s))
+            self._playback_pos_label.setText(_format_mmss(position_s))
 
     def _on_play_clicked(self) -> None:
         """Play the already loaded recording again, without asking for a file.

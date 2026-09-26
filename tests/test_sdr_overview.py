@@ -6,6 +6,7 @@ import struct
 from pathlib import Path
 
 import numpy as np
+from pytestqt.qtbot import QtBot
 
 from sdr.overview import DISPLAY_BINS, compute_overview, remove_background, to_rgb
 
@@ -72,3 +73,24 @@ def test_cancel_returns_none(tmp_path: Path) -> None:
 def test_to_rgb_shape_and_dtype() -> None:
     rgb = to_rgb(np.random.default_rng(0).standard_normal((10, 16)), True)
     assert rgb.shape == (10, 16, 3) and rgb.dtype == np.uint8
+
+
+def test_click_in_overview_requests_seek(tmp_path: Path, qtbot: QtBot) -> None:
+    """A click at the vertical middle of the image asks to seek to mid-recording."""
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    from ui.sdr_overview_dialog import SdrOverviewDialog
+
+    p = tmp_path / "d.iq.wav"
+    _write_wav(p, _signal(10.0))
+    dlg = SdrOverviewDialog(p)
+    qtbot.addWidget(dlg)
+    dlg.show()
+    qtbot.waitUntil(lambda: dlg._data is not None, timeout=10000)
+    canvas = dlg._canvas
+    r = canvas._plot_rect(canvas.width(), canvas.height())
+    got: list[float] = []
+    dlg.seek_requested.connect(got.append)
+    QTest.mouseClick(canvas, Qt.MouseButton.LeftButton, pos=QPoint(r.center().x(), r.center().y()))
+    assert len(got) == 1 and abs(got[0] - 5.0) < 0.2

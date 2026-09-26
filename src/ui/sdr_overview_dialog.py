@@ -61,6 +61,7 @@ class _OverviewCanvas(QWidget):
     """Draws the spectrogram image with time / frequency axes."""
 
     hovered = Signal(str)
+    clicked_at = Signal(float)  # seconds from the start of the recording
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -142,6 +143,18 @@ class _OverviewCanvas(QWidget):
         self._paint(p, self.width(), self.height(), self.palette().text().color())
         p.end()
 
+    def mousePressEvent(self, event: object) -> None:  # noqa: N802
+        """Report the clicked time (only for a left click inside the image)."""
+        if self._data is None or self._image is None:
+            return
+        if event.button() != Qt.MouseButton.LeftButton:  # type: ignore[attr-defined]
+            return
+        pos: QPoint = event.position().toPoint()  # type: ignore[attr-defined]
+        r = self._plot_rect(self.width(), self.height())
+        if r.contains(pos):
+            frac = (pos.y() - r.top()) / max(1, r.height())
+            self.clicked_at.emit(float(frac * self._data.duration_s))
+
     def mouseMoveEvent(self, event: object) -> None:  # noqa: N802
         if self._data is None or self._image is None:
             return
@@ -162,6 +175,8 @@ class SdrOverviewDialog(QDialog):
     _progress = Signal(int)
     _finished = Signal(object)  # OverviewData | None
     _failed = Signal(str)
+    # Emitted with the time (seconds) the user clicked in the image.
+    seek_requested = Signal(float)
 
     def __init__(self, path: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -196,6 +211,8 @@ class SdrOverviewDialog(QDialog):
         self._info = QLabel("")
         self._info.setStyleSheet("color: gray; font-size: 11px;")
         self._canvas.hovered.connect(self._info.setText)
+        self._canvas.clicked_at.connect(self.seek_requested)
+        self._canvas.setToolTip(_("Click to jump the playback to that time"))
         self._bar = QProgressBar()
         self._bar.setRange(0, 100)
         v.addWidget(self._info)
