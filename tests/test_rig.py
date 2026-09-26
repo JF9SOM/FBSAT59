@@ -496,6 +496,41 @@ class TestGenericDirectUlWriteVfoRestore:
         ctrl._rig.set_vfo.assert_not_called()
 
 
+class TestDirectRadioTypeSplitRoles:
+    """radio_type ("rx_only" / "tx_only") must be honoured in Direct mode
+    too, so a dual-rig setup (Rig 1 = DL only, Rig 2 = UL only) never writes
+    the other direction's frequency to either rig."""
+
+    def _make_connected_ctrl(self, radio_type: str) -> HamlibDirectController:
+        ctrl = HamlibDirectController(model_id=3085, port="/dev/null", radio_type=radio_type)
+        ctrl._rig = MagicMock()
+        fake_hamlib = MagicMock()
+        fake_hamlib.RIG_VFO_A = 101
+        fake_hamlib.RIG_VFO_B = 102
+        fake_hamlib.RIG_VFO_MAIN = 103
+        fake_hamlib.RIG_VFO_SUB = 104
+        ctrl._hamlib = fake_hamlib
+        with ctrl._lock:
+            ctrl._state = RigState.CONNECTED
+        return ctrl
+
+    def test_rx_only_skips_uplink(self) -> None:
+        ctrl = self._make_connected_ctrl("rx_only")
+        assert ctrl.set_vfo_frequencies(145_800_000.0, 435_000_000.0) is True
+        ctrl._rig.set_freq.assert_called_once_with(101, 145_800_000)
+
+    def test_tx_only_skips_downlink(self) -> None:
+        ctrl = self._make_connected_ctrl("tx_only")
+        assert ctrl.set_vfo_frequencies(145_800_000.0, 435_000_000.0) is True
+        ctrl._rig.set_freq.assert_called_once_with(102, 435_000_000)
+
+    def test_full_duplex_writes_both(self) -> None:
+        ctrl = self._make_connected_ctrl("full_duplex")
+        assert ctrl.set_vfo_frequencies(145_800_000.0, 435_000_000.0) is True
+        ctrl._rig.set_freq.assert_any_call(101, 145_800_000)
+        ctrl._rig.set_freq.assert_any_call(102, 435_000_000)
+
+
 class TestIc9700ScopeSelectRestore:
     """GitHub Issue #25: IC-9700's front-panel spectrum scope/waterfall
     tracks a separate, persistent CI-V setting (27 12, "Main/Sub scope

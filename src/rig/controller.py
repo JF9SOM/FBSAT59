@@ -939,6 +939,7 @@ class HamlibDirectController(RigController):
         stop_bits: int = 1,
         handshake: str = "None",
         civ_addr: str = "",
+        radio_type: str = "full_duplex",
     ) -> None:
         """
         Args:
@@ -950,8 +951,11 @@ class HamlibDirectController(RigController):
             handshake: Flow control ("None", "XONXOFF", "Hardware")
             civ_addr:  CI-V address override for Icom rigs (e.g. "0x65").
                        Empty string uses Hamlib's default for the model.
+            radio_type: "full_duplex" (default) / "rx_only" (DL only) /
+                       "tx_only" (UL only), same meaning as HamlibNetController.
         """
         super().__init__()
+        self._radio_type = radio_type
         self._model_id = model_id
         self._port = port
         self._baud_rate = baud_rate
@@ -1719,6 +1723,12 @@ class HamlibDirectController(RigController):
         """
         if not self.is_connected or self._rig is None:
             return False
+        # Split-rig roles: an RX-only rig never receives the uplink and a
+        # TX-only rig never receives the downlink.
+        if self._radio_type == "rx_only":
+            vfob_hz = None
+        elif self._radio_type == "tx_only":
+            vfoa_hz = None
         # Remember what we were told even if we skip the write below, so
         # _flush_pending_frequencies() can bring the rig fully up to date at
         # the instant a tone mode keys up (GitHub Issue #16).

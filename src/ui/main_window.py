@@ -7231,6 +7231,7 @@ class MainWindow(QMainWindow):
             port=str(settings.get("port", "/dev/ttyUSB0")),
             baud_rate=int(settings.get("baud_rate", 9600)),
             civ_addr=str(settings.get("civ_addr", "")),
+            radio_type=radio_type,
         )
 
     @staticmethod
