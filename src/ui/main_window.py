@@ -5942,9 +5942,7 @@ class MainWindow(QMainWindow):
             key = id(rig)
             gen = self._split_gens.get(key, 0) + 1
             self._split_gens[key] = gen
-            cat_on = self._ctcss_cat_on
-            cat_off = self._ctcss_cat_off
-            method = str(getattr(rig, "_ctcss_method", self._ctcss_method))
+            method, cat_on, cat_off = self._ctcss_cat_config(rig)
 
             def _do_split(
                 r: RigController = rig,
@@ -6031,6 +6029,16 @@ class MainWindow(QMainWindow):
         result: RigController | None = select_tx_rig(self._rig_controller, self._rig2_controller)
         return result
 
+    def _ctcss_cat_config(self, rig: RigController) -> tuple[str, str, str]:
+        """Return (method, cat_on, cat_off) for *rig*.
+
+        A NET rig carries its own method and templates, so Rig 2 (or an SDR
+        Rig 1) never borrows Rig 1's. Direct rigs keep the shared Rig 1 values.
+        """
+        if isinstance(rig, HamlibNetController):
+            return rig._ctcss_method, rig.ctcss_cat_on, rig.ctcss_cat_off
+        return self._ctcss_method, self._ctcss_cat_on, self._ctcss_cat_off
+
     def _send_ctcss_cat_to_rig(self, tone_hz: float | None = None) -> None:
         """Send CTCSS tone to the rig when a transponder is selected or the button is pressed.
 
@@ -6053,15 +6061,14 @@ class MainWindow(QMainWindow):
         if tone_hz is None:
             tone_hz = float(self._ctcss_tone_hz or 0.0)
 
-        if self._ctcss_method in self._CAT_CTCSS_METHODS:
+        method, cat_on, cat_off = self._ctcss_cat_config(tx_rig)
+        if method in self._CAT_CTCSS_METHODS:
             # Send via direct serial port (direct_port mandatory for ftx1/ft991/icom_civ).
             # No connection guard: _send_cat_direct() works regardless of Doppler state
             # because _cmd_lock in _send_cat_direct() serialises against in-flight F/I
             # commands.  This mirrors the IC-9100 approach of setting CTCSS at
             # transponder-selection time so Connect() needs no re-send.
             rig = tx_rig
-            cat_on = self._ctcss_cat_on
-            cat_off = self._ctcss_cat_off
 
             def _send_cat() -> None:
                 try:
@@ -6071,7 +6078,7 @@ class MainWindow(QMainWindow):
 
             threading.Thread(target=_send_cat, daemon=True).start()
 
-        elif self._ctcss_method == "hamlib":
+        elif method == "hamlib":
             # Hamlib CTCSS: HamlibDirectController.set_ctcss_tone() handles both
             # the connected case (existing handle, under _rig_cmd_lock) and the
             # not-yet-connected case (temporary connection, then close).  This
@@ -7344,12 +7351,22 @@ class MainWindow(QMainWindow):
         mode = settings.get("mode", "net")
         radio_type = str(settings.get("radio_type", "full_duplex"))
         if mode == "net":
+            ctcss_method = str(settings.get("ctcss_method", "hamlib"))
+            if ctcss_method == "icom_civ":  # legacy value, same migration as Rig 1's global
+                ctcss_method = "hamlib"
+            if ctcss_method in CTCSS_PRESET_TEMPLATES:
+                cat_on, cat_off = CTCSS_PRESET_TEMPLATES[ctcss_method]
+            else:
+                cat_on = str(settings.get("ctcss_cat_on", ""))
+                cat_off = str(settings.get("ctcss_cat_off", ""))
             return HamlibNetController(
                 host=str(settings.get("host", "localhost")),
                 port=int(settings.get("net_port", 4532)),
                 radio_type=radio_type,
-                ctcss_method=str(settings.get("ctcss_method", "hamlib")),
+                ctcss_method=ctcss_method,
                 is_satmode_rig=bool(settings.get("icom_satmode_rig", False)),
+                ctcss_cat_on=cat_on,
+                ctcss_cat_off=cat_off,
             )
         return HamlibDirectController(
             model_id=int(settings.get("model_id", 1)),
@@ -7852,7 +7869,10 @@ class MainWindow(QMainWindow):
 
         # NET mode: the CTCSS Method dropdown (ftx1/ft991/custom_cat templates)
         # is meaningful here and selects the raw CAT template to send.
-        if isinstance(rig, HamlibNetController) and self._ctcss_method in self._CAT_CTCSS_METHODS:
+        if (
+            isinstance(rig, HamlibNetController)
+            and self._ctcss_cat_config(rig)[0] in self._CAT_CTCSS_METHODS
+        ):
             self._send_ctcss_cat_to_rig(tone_hz=tone_hz)
             return
 

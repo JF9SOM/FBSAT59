@@ -3394,6 +3394,61 @@ class TestLockDialFeedback:
         sdr.send_mode_only.assert_not_called()
         tx.send_mode_only.assert_called_once_with("LSB", "LSB")
 
+    def test_split_sdr_rig1_net_ft991_rig2_uses_rig2_ctcss_template(self, qtbot, db) -> None:
+        """Rig 1 = SDR, Rig 2 = NET FT-991 (TX): CTCSS goes to Rig 2 with Rig 2's own
+        method and templates, not Rig 1's."""
+        from unittest.mock import patch
+
+        from rig.controller import CTCSS_PRESET_TEMPLATES
+
+        w = self._make_window(qtbot, db)
+        sdr = MagicMock()
+        sdr.is_sdr = True
+        w._ctcss_method = "hamlib"  # Rig 1 / SDR side: empty templates
+        w._ctcss_cat_on = ""
+        w._ctcss_cat_off = ""
+        on, off = CTCSS_PRESET_TEMPLATES["ft991"]
+        tx = w._build_rig_controller(
+            {"mode": "net", "radio_type": "tx_only", "ctcss_method": "ft991"}
+        )
+        tx.send_mode_only = MagicMock()
+        tx.send_ctcss_cat = MagicMock()
+        tx.set_ctcss_tone = MagicMock()
+        w._rig_controller = sdr
+        w._rig2_controller = tx
+        w._current_transmitter = dict(self._TRANSMITTER)
+        w._ctcss_tone_hz = 74.4
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._apply_transponder_state_to_rig()
+
+        tx.send_ctcss_cat.assert_called_once_with(74.4, on, off)
+        tx.set_ctcss_tone.assert_not_called()
+
+    def test_ctcss_button_uses_tx_rigs_own_cat_method(self, qtbot, db) -> None:
+        from unittest.mock import patch
+
+        from rig.controller import CTCSS_PRESET_TEMPLATES
+
+        w = self._make_window(qtbot, db)
+        sdr = MagicMock()
+        sdr.is_sdr = True
+        w._ctcss_method = "hamlib"
+        tx = w._build_rig_controller(
+            {"mode": "net", "radio_type": "tx_only", "ctcss_method": "ft991"}
+        )
+        tx.send_ctcss_cat = MagicMock()
+        tx.set_ctcss_tone = MagicMock()
+        w._rig_controller = sdr
+        w._rig2_controller = tx
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._on_ctcss_send(74.4)
+
+        on, off = CTCSS_PRESET_TEMPLATES["ft991"]
+        tx.send_ctcss_cat.assert_called_once_with(74.4, on, off)
+        tx.set_ctcss_tone.assert_not_called()
+
     def test_split_mode_toggle_routes_modes_by_side(self, qtbot, db) -> None:
         from unittest.mock import patch
 

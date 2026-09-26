@@ -3133,6 +3133,8 @@ class HamlibNetController(RigController):
         ctcss_method: str = "hamlib",
         ctcss_civ_addr: str = "",
         is_satmode_rig: bool = False,
+        ctcss_cat_on: str = "",
+        ctcss_cat_off: str = "",
     ) -> None:
         """
         Args:
@@ -3144,8 +3146,12 @@ class HamlibNetController(RigController):
             ctcss_civ_addr: Unused; kept for backward compatibility only.
             is_satmode_rig: True when the rig is an Icom satmode rig (IC-9100/9700/910H/821H).
                             Controls satmode split init and same-band detection.
+            ctcss_cat_on / ctcss_cat_off: this rig's own CAT command templates for
+                            the CAT CTCSS methods, so Rig 1 and Rig 2 need not share them.
         """
         super().__init__()
+        self.ctcss_cat_on = ctcss_cat_on
+        self.ctcss_cat_off = ctcss_cat_off
         self._host = host
         self._port = port
         self._radio_type = radio_type
