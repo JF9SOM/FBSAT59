@@ -196,6 +196,8 @@ COMMS_TAB_CONFIG: dict[str, CommsTabConfig] = {
         freq_source="radio_control",
         matcher=is_ax25_telemetry_transmitter,
     ),
+    # SDR Control (a resident tab): same box as Telemetry, no satellite combo.
+    "sdr": CommsTabConfig(show_input_source=False, freq_source="radio_control"),
     "ax100digi": CommsTabConfig(
         show_input_source=True, freq_source="radio_control", matcher=is_ax100_digi_transmitter
     ),

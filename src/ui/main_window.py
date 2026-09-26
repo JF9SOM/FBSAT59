@@ -4983,6 +4983,10 @@ class MainWindow(QMainWindow):
         if is_resident:
             if widget is self._radio_control:
                 self._detail_panel.show_radar_only()
+            elif widget is self._sdr_control:
+                # Same Quick Comms box as Telemetry (radar, D:/U:, Rig and
+                # Rotator buttons; no Input combo).
+                self._detail_panel.set_active_comms_tab("sdr", [], tab_widget=widget)
             else:
                 self._detail_panel.deactivate_comms_panel()
             self._h_splitter.setSizes(prev_sizes)
