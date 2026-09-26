@@ -1,5 +1,5 @@
 {
-  "latest_version": "0.3.58",
+  "latest_version": "0.3.59",
   "minimum_supported_version": "0.3.58",
   "critical": false,
   "message_ja": "v0.3.59 は Quick Comms パネルの使い勝手の改善です。衛星選択とその記憶、「Others」項目、オスカー番号表示、Rig/Rotator 接続状態の色表示、SDR Control タブへの表示を追加しました。",
