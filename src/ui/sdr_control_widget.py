@@ -1044,8 +1044,14 @@ class SdrControlWidget(QWidget):
         device = self._playback_device() if self._is_replay else None
         seek = getattr(device, "seek", None)
         if seek is not None:
+            # A recording that had played to its end is stopped: play on from the click.
+            was_at_end = bool(getattr(device, "at_end", False))
             seek(float(position_s))
             self._playback_pos_label.setText(_format_mmss(position_s))
+            start_stream = getattr(device, "start_stream", None)
+            if was_at_end and start_stream is not None:
+                start_stream()
+                self._update_playback_buttons()
 
     def _on_play_clicked(self) -> None:
         """Play the already loaded recording again, without asking for a file.
