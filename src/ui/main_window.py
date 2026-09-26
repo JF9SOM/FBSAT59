@@ -872,6 +872,9 @@ class MainWindow(QMainWindow):
         self._ctcss_cat_off: str = ""
         # Generation counter to cancel superseded _do_nonsatmode() threads.
         self._nonsatmode_gen: int = 0
+        # Per-rig supersede counters for the split (Rig 1 / Rig 2) mode+CTCSS
+        # threads, keyed by id(rig), so one rig's thread never cancels the other's.
+        self._split_gens: dict[int, int] = {}
         # Lock indicating whether the rig control thread is currently running.
         # If acquire(blocking=False) fails, the previous cycle is still executing.
         self._rig_busy_lock = threading.Lock()
@@ -5582,11 +5585,35 @@ class MainWindow(QMainWindow):
         self._current_transmitter["rx_offset_hz"] = value
         self._transmitter_manager.update_transmitter(xpdr_uuid, rx_offset_hz=value)
 
-    def _disconnect_rig(self) -> None:
-        """Disconnect the rig and refresh the UI status."""
-        if self._rig_controller is not None:
-            is_sdr = getattr(self._rig_controller, "is_sdr", False)
-            self._rig_controller.disconnect()
+    @staticmethod
+    def _rig_role(rig: RigController) -> str:
+        """Return "rx_only" / "tx_only" / "full_duplex" for a rig; an SDR is always RX."""
+        if getattr(rig, "is_sdr", False):
+            return "rx_only"
+        return str(getattr(rig, "_radio_type", "full_duplex"))
+
+    def _split_rigs(self) -> tuple[RigController, RigController] | None:
+        """Return (rx_rig, tx_rig) when Rig 1 / Rig 2 are split into DL and UL duties.
+
+        None for a single rig or any non-split configuration (the caller then
+        keeps the ordinary Rig 1 behaviour).
+        """
+        rig1, rig2 = self._rig_controller, self._rig2_controller
+        if rig1 is None or rig2 is None:
+            return None
+        role1, role2 = self._rig_role(rig1), self._rig_role(rig2)
+        if (role1, role2) == ("rx_only", "tx_only"):
+            return rig1, rig2
+        if (role1, role2) == ("tx_only", "rx_only"):
+            return rig2, rig1
+        return None
+
+    def _disconnect_rig(self, rig: RigController | None = None) -> None:
+        """Disconnect *rig* (default: Rig 1) and refresh the UI status."""
+        target = rig if rig is not None else self._rig_controller
+        if target is not None:
+            is_sdr = getattr(target, "is_sdr", False)
+            target.disconnect()
             if is_sdr:
                 self._sdr_control.set_pipeline(None)
         self._release_idle_playback_borrow()
@@ -5661,6 +5688,15 @@ class MainWindow(QMainWindow):
         # Update CW / DATA toggle button visibility/label in Radio Control tab.
         self._radio_control.update_cw_button(dl_mode, ul_mode)
         self._radio_control.update_dmode_button(dl_mode, ul_mode)
+
+        # Rig 1 / Rig 2 split into DL (RX) and UL (TX) duties: each rig gets only
+        # its own side's mode, and only the TX rig gets the CTCSS tone.
+        split = self._split_rigs()
+        if split is not None:
+            self._apply_transponder_state_split(
+                split[0], split[1], dl_mode, ul_mode, ctcss_hz, dl_hz, ul_hz
+            )
+            return
 
         # Notify NET rig of DL/UL frequencies (same-band detection) and
         # current mode (UL update throttle threshold).
@@ -5853,6 +5889,91 @@ class MainWindow(QMainWindow):
                         rig.set_ctcss_tone(ctcss_hz)
 
                 threading.Thread(target=_do_nonsatmode, daemon=True).start()
+
+    def _apply_transponder_state_split(
+        self,
+        rx_rig: RigController,
+        tx_rig: RigController,
+        dl_mode: str,
+        ul_mode: str,
+        ctcss_hz: float,
+        dl_hz: float,
+        ul_hz: float,
+    ) -> None:
+        """Apply mode (+ CTCSS on the TX rig) when Rig 1 / Rig 2 are split RX / TX.
+
+        The RX rig gets the downlink mode, the TX rig the uplink mode and the
+        CTCSS tone. Each rig is written as a plain simplex rig, so the mode is
+        sent for that side only (``m, m``). SDRs are skipped (no CAT). The
+        pre-connect frequency preset is skipped; the first Doppler cycle after
+        Connect writes each rig's own side.
+        """
+        from rig.controller import HamlibNetController
+
+        for rig, is_tx in ((rx_rig, False), (tx_rig, True)):
+            if getattr(rig, "is_sdr", False):
+                continue
+            mode = ul_mode if is_tx else dl_mode
+            tone_hz = ctcss_hz if is_tx else 0.0
+            if isinstance(rig, HamlibNetController):
+                rig.set_transponder_freqs(dl_hz, ul_hz)
+                rig.set_current_modes(mode, mode)
+
+            if isinstance(rig, HamlibDirectController) and rig._model_id in _RAW_CAT_MODEL_IDS:
+                # FTX-1F / FT-991 Direct raw CAT: no disconnect needed.
+                def _do_raw(
+                    r: HamlibDirectController = rig, m: str = mode, t: float = tone_hz
+                ) -> None:
+                    try:
+                        r.apply_transponder_state(m, m, t)
+                    except RigControlError as exc:
+                        self._rig_error.emit(str(exc))
+                    except Exception as exc:
+                        logger.error("Split raw CAT: unexpected error: %s", exc)
+                        self._rig_error.emit(str(exc))
+
+                threading.Thread(target=_do_raw, daemon=True).start()
+                continue
+
+            # Everything else: release the rig so the Doppler loop cannot race
+            # the VFO commands, then write mode (+ CTCSS) in a background thread.
+            if rig.is_connected:
+                self._disconnect_rig(rig)  # must run on UI thread
+            key = id(rig)
+            gen = self._split_gens.get(key, 0) + 1
+            self._split_gens[key] = gen
+            cat_on = self._ctcss_cat_on
+            cat_off = self._ctcss_cat_off
+            method = str(getattr(rig, "_ctcss_method", self._ctcss_method))
+
+            def _do_split(
+                r: RigController = rig,
+                m: str = mode,
+                t: float = tone_hz,
+                tx: bool = is_tx,
+                g: int = gen,
+                k: int = key,
+                meth: str = method,
+                on: str = cat_on,
+                off: str = cat_off,
+            ) -> None:
+                if self._split_gens.get(k) != g:
+                    return
+                try:
+                    r.send_mode_only(m, m)
+                    if not tx or self._split_gens.get(k) != g:
+                        return
+                    if not _is_generic_direct_rig(r) and meth in self._CAT_CTCSS_METHODS:
+                        r.send_ctcss_cat(t, on, off)
+                    else:
+                        r.set_ctcss_tone(t)
+                except RigControlError as exc:
+                    self._rig_error.emit(str(exc))
+                except Exception as exc:
+                    logger.error("Split mode/CTCSS: unexpected error: %s", exc)
+                    self._rig_error.emit(str(exc))
+
+            threading.Thread(target=_do_split, daemon=True).start()
 
     def _send_mode_only_to_rig(self) -> None:
         """Set mode on both VFOs via an independent connection on transponder change.
@@ -7595,8 +7716,26 @@ class MainWindow(QMainWindow):
 
         NET-mode rigs (HamlibNetController) are unchanged: send_mode_only()
         already works there per confirmed FTX-1 NET testing.
+
+        When Rig 1 / Rig 2 are split into RX and TX duties, the RX rig gets the
+        downlink mode and the TX rig the uplink mode (and the CTCSS tone).
         """
-        rig = self._rig_controller
+        split = self._split_rigs()
+        if split is not None:
+            rx_rig, tx_rig = split
+            self._apply_mode_toggle_single(rx_rig, dl_mode, dl_mode, send_ctcss=False)
+            self._apply_mode_toggle_single(tx_rig, ul_mode, ul_mode, send_ctcss=True)
+            return
+        self._apply_mode_toggle_single(self._rig_controller, dl_mode, ul_mode)
+
+    def _apply_mode_toggle_single(
+        self,
+        rig: RigController | None,
+        dl_mode: str,
+        ul_mode: str,
+        send_ctcss: bool = True,
+    ) -> None:
+        """Apply a DL/UL mode pair to one rig (see _apply_mode_toggle_to_rig())."""
         if rig is None:
             return
 
@@ -7604,8 +7743,13 @@ class MainWindow(QMainWindow):
 
         if isinstance(rig, HamlibDirectController):
             # Preserve the current CTCSS tone when reverting to the original
-            # mode; suppress it when switching to CW (CW has no CTCSS).
-            ctcss_hz = 0.0 if dl_mode in ("CW", "CW-R") else float(self._ctcss_tone_hz or 0.0)
+            # mode; suppress it when switching to CW (CW has no CTCSS) or when
+            # this rig is not the transmitter.
+            ctcss_hz = (
+                0.0
+                if not send_ctcss or dl_mode in ("CW", "CW-R")
+                else float(self._ctcss_tone_hz or 0.0)
+            )
 
             if rig.is_satmode and rig.is_connected and rig._satmode_active:
 
@@ -7630,7 +7774,7 @@ class MainWindow(QMainWindow):
                 # connection. Disconnect first, apply, then automatically
                 # reconnect — same pattern already used for the satmode
                 # CTCSS button (see _on_ctcss_send()'s satmode branch).
-                self._disconnect_rig()  # must run on UI thread
+                self._disconnect_rig(rig)  # must run on UI thread
 
                 def _send_direct_reconnect() -> None:
                     try:

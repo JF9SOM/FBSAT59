@@ -3343,6 +3343,72 @@ class TestLockDialFeedback:
 
         rig.set_transponder_freqs.assert_called_once_with(435_612_000.0, 145_993_000.0)
 
+    # -- Rig 1 / Rig 2 split (RX only / TX only): mode goes per side, CTCSS to TX --
+
+    def _make_split_net_rig(self, radio_type: str):
+        from rig.controller import HamlibNetController
+
+        rig = HamlibNetController(
+            host="localhost", port=4532, radio_type=radio_type, ctcss_method="hamlib"
+        )
+        rig.set_transponder_freqs = MagicMock()
+        rig.set_current_modes = MagicMock()
+        rig.send_mode_only = MagicMock()
+        rig.set_ctcss_tone = MagicMock()
+        return rig
+
+    def test_split_apply_sends_each_side_its_own_mode_and_ctcss_to_tx(self, qtbot, db) -> None:
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        rx = self._make_split_net_rig("rx_only")
+        tx = self._make_split_net_rig("tx_only")
+        w._rig_controller = rx
+        w._rig2_controller = tx
+        w._current_transmitter = dict(self._TRANSMITTER_INVERTED)  # DL USB / UL LSB
+        w._ctcss_tone_hz = 74.4
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._apply_transponder_state_to_rig()
+
+        rx.send_mode_only.assert_called_once_with("USB", "USB")
+        tx.send_mode_only.assert_called_once_with("LSB", "LSB")
+        tx.set_ctcss_tone.assert_called_once_with(74.4)
+        rx.set_ctcss_tone.assert_not_called()
+
+    def test_split_apply_skips_sdr_rx_rig_and_configures_tx_rig(self, qtbot, db) -> None:
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        sdr = MagicMock()
+        sdr.is_sdr = True
+        tx = self._make_split_net_rig("tx_only")
+        w._rig_controller = sdr
+        w._rig2_controller = tx
+        w._current_transmitter = dict(self._TRANSMITTER_INVERTED)
+        w._ctcss_tone_hz = None
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._apply_transponder_state_to_rig()
+
+        sdr.send_mode_only.assert_not_called()
+        tx.send_mode_only.assert_called_once_with("LSB", "LSB")
+
+    def test_split_mode_toggle_routes_modes_by_side(self, qtbot, db) -> None:
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        rx = self._make_split_net_rig("rx_only")
+        tx = self._make_split_net_rig("tx_only")
+        w._rig_controller = rx
+        w._rig2_controller = tx
+
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._apply_mode_toggle_to_rig("CW", "CW-R")
+
+        rx.send_mode_only.assert_called_once_with("CW", "CW")
+        tx.send_mode_only.assert_called_once_with("CW-R", "CW-R")
+
     # -- _apply_transponder_state_to_rig(): live mode-only update when the
     # newly selected transmitter shares the same DL/UL band pairing as the
     # previous one (GitHub Issues #21/#22) --
