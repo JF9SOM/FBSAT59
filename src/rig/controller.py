@@ -1738,12 +1738,12 @@ class HamlibDirectController(RigController):
         """
         if not self.is_connected or self._rig is None:
             return False
-        # Split-rig roles: an RX-only rig never receives the uplink and a
-        # TX-only rig never receives the downlink.
+        # Split-rig roles: an RX-only rig never receives the uplink. A TX-only
+        # rig is plain simplex: the uplink is its one frequency (VFOA), no split.
         if self._radio_type == "rx_only":
             vfob_hz = None
         elif self._radio_type == "tx_only":
-            vfoa_hz = None
+            vfoa_hz, vfob_hz = vfob_hz, None
         # Remember what we were told even if we skip the write below, so
         # _flush_pending_frequencies() can bring the rig fully up to date at
         # the instant a tone mode keys up (GitHub Issue #16).
@@ -2126,7 +2126,11 @@ class HamlibDirectController(RigController):
                 rig.set_conf("civaddr", normalize_civ_addr(self._civ_addr))
             with self._port_lock:
                 _open_rig_with_retry(rig, "RigDirect send_mode_only: open()")
-                if _use_satmode_vfo:
+                if self._radio_type == "tx_only":
+                    # Simplex TX rig: one VFO, so the mode is set once with no
+                    # VFO switching.
+                    rig.set_mode(dl_hamlib, 0)
+                elif _use_satmode_vfo:
                     # Icom satmode rigs support set_mode(mode, 0, VFO_MAIN/SUB_A)
                     # directly — no VFO switch needed.
                     rig.set_mode(dl_hamlib, 0, dl_vfo)
@@ -2517,12 +2521,16 @@ class HamlibDirectController(RigController):
         dl_code = _FT991_MODE_MAP.get(dl_mode, "4")
         ul_code = _FT991_MODE_MAP.get(ul_mode, "4")
 
-        commands: list[bytes] = [
-            b"SV;",
-            f"MD0{ul_code};".encode(),
-            b"SV;",
-            f"MD0{dl_code};".encode(),
-        ]
+        if self._radio_type == "tx_only":
+            # Simplex TX rig: one VFO, no SV swap.
+            commands: list[bytes] = [f"MD0{dl_code};".encode()]
+        else:
+            commands = [
+                b"SV;",
+                f"MD0{ul_code};".encode(),
+                b"SV;",
+                f"MD0{dl_code};".encode(),
+            ]
 
         if ctcss_hz > 0:
             tone_number = CTCSS_TABLE.get(ctcss_hz)
@@ -2967,6 +2975,9 @@ class HamlibDirectController(RigController):
         """
         if self._rig is None:
             return
+        if self._radio_type == "tx_only":
+            logger.info("RigDirect: TX-only rig runs simplex, split not enabled")
+            return
         try:
             if self._satmode:
                 self._satmode_active = True
@@ -3368,13 +3379,17 @@ class HamlibNetController(RigController):
         """
         is_satmode_rig = self._satmode or self._is_satmode_rig
         is_yaesu_cat = self._ctcss_method in ("ftx1", "ft991")
-        if (is_satmode_rig and self._is_same_band) or (not is_satmode_rig and not is_yaesu_cat):
-            resp = self._cmd("S 1 VFOB")
-            logger.info("RigNet: VFOA/VFOB split init (S 1 VFOB)")
+        if self._radio_type == "tx_only":
+            # Simplex TX rig: no split. (The \uplink reset below still applies.)
+            logger.info("RigNet: TX-only rig runs simplex, split not enabled")
         else:
-            resp = self._cmd("S 1 Main")
-        if "RPRT 0" not in resp:
-            logger.warning("RigNet: split setup returned %r", resp)
+            if (is_satmode_rig and self._is_same_band) or (not is_satmode_rig and not is_yaesu_cat):
+                resp = self._cmd("S 1 VFOB")
+                logger.info("RigNet: VFOA/VFOB split init (S 1 VFOB)")
+            else:
+                resp = self._cmd("S 1 Main")
+            if "RPRT 0" not in resp:
+                logger.warning("RigNet: split setup returned %r", resp)
 
         if is_yaesu_cat:
             # rigctld shares a single RIG object across every TCP client
@@ -3512,7 +3527,11 @@ class HamlibNetController(RigController):
         if self._doppler_frozen:
             return True
 
-        send_rx = self._radio_type != "tx_only"
+        # A TX-only rig is plain simplex: the uplink is sent as its one
+        # frequency (F, VFOA) and no split TX frequency (I) is ever written.
+        if self._radio_type == "tx_only":
+            vfoa_hz, vfob_hz = vfob_hz, None
+        send_rx = True
         send_tx = self._radio_type != "rx_only"
 
         with self._cmd_lock:
@@ -3864,7 +3883,7 @@ class HamlibNetController(RigController):
 
                 if dl_code:
                     _w(f"MD0{dl_code};")
-                if ul_code:
+                if ul_code and self._radio_type != "tx_only":
                     _w("SV;")
                     _w(f"MD0{ul_code};")
                     _w("SV;")
@@ -3896,6 +3915,17 @@ class HamlibNetController(RigController):
                 if resp and "RPRT 0" not in resp:
                     logger.warning("RigNet.send_mode_only: %r -> %r", cmd, resp)
                 return resp
+
+            if self._radio_type == "tx_only":
+                # Simplex TX rig: set the mode once on its one VFO. No VFO
+                # switching and no split (re)initialisation.
+                if self._vfo_mode:
+                    _send_recv(f"\\set_mode VFOA {rigctld_dl} 0")
+                else:
+                    _send_recv(f"M {rigctld_dl} 0")
+                sock.close()
+                logger.info("RigNet: send_mode_only (simplex) mode=%s done", dl_mode)
+                return
 
             # For icom satmode rigs establish split before setting modes.
             # Same-band (V/V or U/U): S 1 VFOB → normal split (VFOA=RX, VFOB=TX).
@@ -4080,6 +4110,8 @@ class HamlibNetController(RigController):
         live) — use plain VFOA/VFOB split instead. See _init_vfo() for the
         satmode/FTX-1F/FT-991A cases this preserves unchanged.
         """
+        if self._radio_type == "tx_only":
+            return  # simplex TX rig: never split
         is_satmode_rig = self._satmode or self._is_satmode_rig
         is_yaesu_cat = self._ctcss_method in ("ftx1", "ft991")
         is_generic = not is_satmode_rig and not is_yaesu_cat

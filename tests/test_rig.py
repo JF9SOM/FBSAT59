@@ -520,16 +520,63 @@ class TestDirectRadioTypeSplitRoles:
         assert ctrl.set_vfo_frequencies(145_800_000.0, 435_000_000.0) is True
         ctrl._rig.set_freq.assert_called_once_with(101, 145_800_000)
 
-    def test_tx_only_skips_downlink(self) -> None:
+    def test_tx_only_is_simplex_on_uplink(self) -> None:
         ctrl = self._make_connected_ctrl("tx_only")
         assert ctrl.set_vfo_frequencies(145_800_000.0, 435_000_000.0) is True
-        ctrl._rig.set_freq.assert_called_once_with(102, 435_000_000)
+        # The uplink is the rig's single frequency on VFOA; VFOB / split unused.
+        ctrl._rig.set_freq.assert_called_once_with(101, 435_000_000)
 
     def test_full_duplex_writes_both(self) -> None:
         ctrl = self._make_connected_ctrl("full_duplex")
         assert ctrl.set_vfo_frequencies(145_800_000.0, 435_000_000.0) is True
         ctrl._rig.set_freq.assert_any_call(101, 145_800_000)
         ctrl._rig.set_freq.assert_any_call(102, 435_000_000)
+
+
+class TestTxOnlySimplexNoSplit:
+    """A TX-only rig is plain simplex: no split init, no VFO switching."""
+
+    def test_direct_init_split_skipped(self) -> None:
+        ctrl = HamlibDirectController(model_id=1035, port="/dev/null", radio_type="tx_only")
+        ctrl._rig = MagicMock()
+        with patch("builtins.open", side_effect=AssertionError("no serial write")):
+            ctrl._init_split()  # must return before any raw CAT write
+        ctrl._rig.set_split_vfo.assert_not_called()
+
+    def test_net_init_vfo_sends_no_split_command(self) -> None:
+        ctrl = HamlibNetController(radio_type="tx_only", ctcss_method="ft991")
+        sent: list[str] = []
+        ctrl._cmd = lambda c: sent.append(c) or "RPRT 0"  # type: ignore[method-assign]
+        ctrl._init_vfo()
+        assert not any(c.startswith("S ") for c in sent)  # no split command
+
+    def test_net_full_duplex_still_inits_split(self) -> None:
+        ctrl = HamlibNetController(radio_type="full_duplex", ctcss_method="ft991")
+        sent: list[str] = []
+        ctrl._cmd = lambda c: sent.append(c) or "RPRT 0"  # type: ignore[method-assign]
+        ctrl._init_vfo()
+        assert "S 1 Main" in sent
+
+    def test_net_send_mode_only_uses_single_vfo(self) -> None:
+        ctrl = HamlibNetController(radio_type="tx_only", ctcss_method="hamlib")
+        sent: list[str] = []
+        sock = MagicMock()
+        sock.recv.return_value = b"RPRT 0\n"
+        sock.sendall.side_effect = lambda b: sent.append(b.decode().strip())
+        with patch("rig.controller.socket.socket", return_value=sock):
+            ctrl.send_mode_only("USB", "LSB")
+        assert sent == ["M USB 0"]
+
+    def test_ft991_raw_cat_mode_has_no_sv_swap(self) -> None:
+        ctrl = HamlibDirectController(model_id=1035, port="/dev/null", radio_type="tx_only")
+        written: list[bytes] = []
+        ser = MagicMock()
+        ser.__enter__.return_value = ser
+        ser.write.side_effect = written.append
+        with patch("serial.Serial", return_value=ser), patch("rig.controller.time.sleep"):
+            ctrl._apply_mode_and_ctcss_cat_ft991("USB", "LSB", 0.0)
+        assert b"SV;" not in written
+        assert written[0] == b"MD02;"  # USB code, on VFOA only
 
 
 class TestSelectTxRig:

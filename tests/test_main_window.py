@@ -3842,8 +3842,8 @@ class TestRadioType:
         assert any(c.startswith("F ") for c in sent)
         assert not any(c.startswith("I ") for c in sent)
 
-    def test_net_controller_tx_only_skips_rx(self) -> None:
-        """tx_only モードでは F コマンドを送信しない。"""
+    def test_net_controller_tx_only_is_simplex_on_uplink(self) -> None:
+        """tx_only は単純なシンプレックス: UL を F（VFOA）で送り、I は送らない。"""
         from unittest.mock import MagicMock
 
         from rig.controller import HamlibNetController, RigState
@@ -3862,8 +3862,7 @@ class TestRadioType:
         ctrl._last_dl_hz = None
         ctrl._last_ul_hz = None
         ctrl.set_vfo_frequencies(145_800_000, 435_000_000)
-        assert not any(c.startswith("F ") for c in sent)
-        assert any(c.startswith("I ") for c in sent)
+        assert sent == ["F 435000000"]
 
     def test_net_controller_full_duplex_sends_both(self) -> None:
         """full_duplex モードでは F と I 両方を送信する。"""
