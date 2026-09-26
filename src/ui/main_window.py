@@ -92,6 +92,7 @@ from rig.controller import (
     RigState,
     RotatorController,
     normalize_civ_addr,
+    select_tx_rig,
 )
 from ui.dashboard_view import DashboardView
 from ui.pass_chart import GroupPassChartView, PassChartView
@@ -5904,6 +5905,11 @@ class MainWindow(QMainWindow):
     # Methods that use custom CAT commands for CTCSS (not handled by Hamlib itself).
     _CAT_CTCSS_METHODS: frozenset[str] = frozenset({"custom_cat", "ftx1", "ft991"})
 
+    def _tx_rig_controller(self) -> RigController | None:
+        """Rig that transmits (CTCSS target): the tx_only rig in a split setup, else Rig 1."""
+        result: RigController | None = select_tx_rig(self._rig_controller, self._rig2_controller)
+        return result
+
     def _send_ctcss_cat_to_rig(self, tone_hz: float | None = None) -> None:
         """Send CTCSS tone to the rig when a transponder is selected or the button is pressed.
 
@@ -5920,7 +5926,8 @@ class MainWindow(QMainWindow):
                      takes precedence so the Activate button can force 74.4 Hz
                      regardless of what the transmitter record says.
         """
-        if self._rig_controller is None:
+        tx_rig = self._tx_rig_controller()
+        if tx_rig is None:
             return
         if tone_hz is None:
             tone_hz = float(self._ctcss_tone_hz or 0.0)
@@ -5931,7 +5938,7 @@ class MainWindow(QMainWindow):
             # because _cmd_lock in _send_cat_direct() serialises against in-flight F/I
             # commands.  This mirrors the IC-9100 approach of setting CTCSS at
             # transponder-selection time so Connect() needs no re-send.
-            rig = self._rig_controller
+            rig = tx_rig
             cat_on = self._ctcss_cat_on
             cat_off = self._ctcss_cat_off
 
@@ -5954,18 +5961,15 @@ class MainWindow(QMainWindow):
             # re-sent in _on_rig_slot_connected if not.
             from rig.controller import HamlibDirectController
 
-            if (
-                not isinstance(self._rig_controller, HamlibDirectController)
-                and not self._rig_controller.is_connected
-            ):
+            if not isinstance(tx_rig, HamlibDirectController) and not tx_rig.is_connected:
                 # NET / SDR: require active connection (Direct handles it via temp connection).
                 return
             logger.info(
                 "_send_ctcss_cat_to_rig hamlib: rig_type=%s tone_hz=%.1f",
-                type(self._rig_controller).__name__,
+                type(tx_rig).__name__,
                 tone_hz,
             )
-            rig = self._rig_controller
+            rig = tx_rig
 
             def _send_hamlib() -> None:
                 try:
@@ -7673,10 +7677,9 @@ class MainWindow(QMainWindow):
 
         from rig.controller import HamlibDirectController, HamlibNetController
 
-        if self._rig_controller is None:
+        rig = self._tx_rig_controller()
+        if rig is None:
             return
-
-        rig = self._rig_controller
 
         # Direct mode: CTCSS routing depends ONLY on the connected rig's model
         # (satmode -> Hamlib, FTX-1F/FT-991 -> their own raw CAT sequence,

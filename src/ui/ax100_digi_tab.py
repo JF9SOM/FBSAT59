@@ -59,6 +59,7 @@ from comms.ax100digi.csp import CspHeader
 from comms.ax100digi.engine import Ax100DigiReceiver, DecodedDigiFrame
 from comms.ax100digi.tx import DEFAULT_CSP_HEADER, build_tx_audio
 from i18n import _
+from rig.controller import select_tx_rig
 from ui.adif_utils import adif_default_filename, adif_write_or_append, build_adif_record
 
 _POLL_INTERVAL_MS = 1_000
@@ -121,7 +122,7 @@ class _TxWorker(QObject):
             import sounddevice as sd  # optional dep
 
             if self._rig is None:
-                self.error.emit(_("Rig 1 not connected — cannot key PTT"))
+                self.error.emit(_("TX rig not connected — cannot key PTT"))
                 return
             if not self._rig.set_ptt(True):
                 self.error.emit(_("PTT command failed — check Rig 1 connection"))
@@ -688,8 +689,10 @@ class Ax100DigiTab(QWidget):
         iq = self._rx_audio_bridge.process(chunk)
         self._receiver.push_samples(iq)
 
-    def _rig1(self) -> Any:
-        return getattr(self._radio_control, "_rig1", None)
+    def _tx_rig(self) -> Any:
+        """Return the transmitting rig controller (PTT), or None."""
+        rc = self._radio_control
+        return select_tx_rig(getattr(rc, "_rig1", None), getattr(rc, "_rig2", None))
 
     # ------------------------------------------------------------------ #
     # SDR I/Q (receive only)
@@ -780,9 +783,9 @@ class Ax100DigiTab(QWidget):
             self._tx_status_label.setText(_("Switch Input/Output to Rig Soundcard to send"))
             return
 
-        rig = self._rig1()
+        rig = self._tx_rig()
         if rig is None or not getattr(rig, "is_connected", False):
-            self._tx_status_label.setText(_("Rig 1 not connected"))
+            self._tx_status_label.setText(_("TX rig not connected"))
             return
 
         try:
@@ -915,7 +918,7 @@ class Ax100DigiTab(QWidget):
         if self._tx_thread is not None and self._tx_thread.is_alive():
             self._tx_thread.join(timeout=2.0)
             if self._tx_thread.is_alive():
-                rig = self._rig1()
+                rig = self._tx_rig()
                 if rig is not None:
                     with contextlib.suppress(Exception):
                         rig.set_ptt(False)

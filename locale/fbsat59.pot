@@ -1553,7 +1553,7 @@ msgid "Failed — use Copy instead"
 msgstr ""
 
 #: src/ui/ax100_digi_tab.py:124
-msgid "Rig 1 not connected — cannot key PTT"
+msgid "TX rig not connected — cannot key PTT"
 msgstr ""
 
 #: src/ui/ax100_digi_tab.py:165
@@ -1756,7 +1756,7 @@ msgid "Switch Input/Output to Rig Soundcard to send"
 msgstr ""
 
 #: src/ui/ax100_digi_tab.py:785
-msgid "Rig 1 not connected"
+msgid "TX rig not connected"
 msgstr ""
 
 #: src/ui/ax100_digi_tab.py:817

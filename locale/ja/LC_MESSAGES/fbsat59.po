@@ -1677,8 +1677,8 @@ msgid "Failed — use Copy instead"
 msgstr "失敗しました — コピーをご利用ください"
 
 #: src/ui/ax100_digi_tab.py:124
-msgid "Rig 1 not connected — cannot key PTT"
-msgstr "Rig 1未接続 — PTTを制御できません"
+msgid "TX rig not connected — cannot key PTT"
+msgstr "送信側リグ未接続 — PTTを制御できません"
 
 # --- Settings dialog ---
 #: src/ui/ax100_digi_tab.py:165
@@ -1894,8 +1894,8 @@ msgid "Switch Input/Output to Rig Soundcard to send"
 msgstr "送信するには入出力を無線機サウンドカードに切り替えてください"
 
 #: src/ui/ax100_digi_tab.py:785
-msgid "Rig 1 not connected"
-msgstr "Rig 1未接続"
+msgid "TX rig not connected"
+msgstr "送信側リグ未接続"
 
 #: src/ui/ax100_digi_tab.py:817
 msgid "TX done"

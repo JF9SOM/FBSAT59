@@ -59,6 +59,7 @@ from comms.ft4.qso import Ft4QsoManager, QsoState, format_report
 from comms.ft4.rx_capture import Ft4RxCaptureWorker
 from comms.ft4.scheduler import Ft4Scheduler
 from i18n import _
+from rig.controller import select_tx_rig
 from ui.ft4_waterfall_dialog import Ft4WaterfallDialog
 
 logger = logging.getLogger(__name__)
@@ -1079,9 +1080,10 @@ class Ft4Tab(QWidget):
     # Rig / audio                                                          #
     # ------------------------------------------------------------------ #
 
-    def _rig1(self) -> Any:
-        """Return the Rig 1 controller, or None."""
-        return getattr(self._radio_control, "_rig1", None)
+    def _tx_rig(self) -> Any:
+        """Return the transmitting rig controller (PTT), or None."""
+        rc = self._radio_control
+        return select_tx_rig(getattr(rc, "_rig1", None), getattr(rc, "_rig2", None))
 
     # ------------------------------------------------------------------ #
     # SDR audio connection                                                #
@@ -1349,7 +1351,7 @@ class Ft4Tab(QWidget):
         # TX Level slider's gain live, block by block, so operators can trim
         # output level (and hear the effect immediately) even while actively
         # transmitting, to avoid rig ALC action / distortion (Issue #16).
-        rig = self._rig1()
+        rig = self._tx_rig()
         worker = _TxWorker(
             audio, self._out_device, rig, get_gain=lambda: self._tx_level_pct / 100.0
         )
@@ -1876,7 +1878,7 @@ class Ft4Tab(QWidget):
             if self._tx_in_progress:
                 # Thread still didn't finish — force PTT off directly as a
                 # last-resort safety net so the rig can't stay keyed.
-                rig = self._rig1()
+                rig = self._tx_rig()
                 if rig is not None:
                     with contextlib.suppress(Exception):
                         rig.set_ptt(False)

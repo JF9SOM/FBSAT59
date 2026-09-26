@@ -37,6 +37,7 @@ from rig.controller import (
     _MockRig,
     _open_rig_with_retry,
     normalize_civ_addr,
+    select_tx_rig,
 )
 
 # ---------------------------------------------------------------------------
@@ -529,6 +530,40 @@ class TestDirectRadioTypeSplitRoles:
         assert ctrl.set_vfo_frequencies(145_800_000.0, 435_000_000.0) is True
         ctrl._rig.set_freq.assert_any_call(101, 145_800_000)
         ctrl._rig.set_freq.assert_any_call(102, 435_000_000)
+
+
+class TestSelectTxRig:
+    """select_tx_rig() picks the rig that keys PTT / receives CTCSS."""
+
+    def test_rig2_tx_only_is_chosen(self) -> None:
+        rig1 = HamlibDirectController(model_id=1, port="/dev/null", radio_type="rx_only")
+        rig2 = HamlibDirectController(model_id=1, port="/dev/null", radio_type="tx_only")
+        assert select_tx_rig(rig1, rig2) is rig2
+
+    def test_rig1_tx_only_is_chosen(self) -> None:
+        rig1 = HamlibDirectController(model_id=1, port="/dev/null", radio_type="tx_only")
+        rig2 = HamlibDirectController(model_id=1, port="/dev/null", radio_type="rx_only")
+        assert select_tx_rig(rig1, rig2) is rig1
+
+    def test_single_rig_falls_back_to_rig1(self) -> None:
+        rig1 = HamlibDirectController(model_id=1, port="/dev/null")
+        assert select_tx_rig(rig1, None) is rig1
+
+    def test_sdr_is_never_chosen(self) -> None:
+        rig1 = MagicMock(spec=[])  # no _radio_type, like SdrRigAdapter
+        rig2 = HamlibDirectController(model_id=1, port="/dev/null", radio_type="tx_only")
+        assert select_tx_rig(rig1, rig2) is rig2
+
+    def test_no_rigs(self) -> None:
+        assert select_tx_rig(None, None) is None
+
+
+class TestTxOnlySatmodeRigIsSimplex:
+    def test_ic9700_tx_only_is_not_satmode(self) -> None:
+        assert HamlibDirectController(model_id=3081, port="/dev/null").is_satmode
+        assert not HamlibDirectController(
+            model_id=3081, port="/dev/null", radio_type="tx_only"
+        ).is_satmode
 
 
 class TestIc9700ScopeSelectRestore:

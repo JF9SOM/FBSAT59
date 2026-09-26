@@ -720,6 +720,19 @@ def _open_rig_with_retry(
 # ---------------------------------------------------------------------------
 
 
+def select_tx_rig(rig1: Any, rig2: Any) -> Any:
+    """Return the rig that transmits (PTT, CTCSS).
+
+    In a split setup the rig configured ``tx_only`` is the TX rig; otherwise
+    (single rig, full duplex, or an RX-only Rig 2) it is Rig 1. SDR adapters
+    carry no radio_type and are never chosen, as they cannot transmit.
+    """
+    for rig in (rig1, rig2):
+        if rig is not None and getattr(rig, "_radio_type", "full_duplex") == "tx_only":
+            return rig
+    return rig1
+
+
 class RigController(ABC):
     """
     Abstract base class for transceiver control.
@@ -979,7 +992,9 @@ class HamlibDirectController(RigController):
         # replayed by _flush_pending_frequencies() just before a tone mode keys up.
         self._pending_dl_hz: float | None = None
         self._pending_ul_hz: float | None = None
-        self._satmode: bool = model_id in _SATMODE_RIG_IDS
+        # A TX-only rig is treated as plain simplex even when the model has a
+        # satmode (e.g. IC-9700 as the UL rig in a Rig 1 / Rig 2 split).
+        self._satmode: bool = model_id in _SATMODE_RIG_IDS and radio_type != "tx_only"
         # True while IC-9100/9700 satmode is actually active on the rig.
         # Dynamically toggled: same-band pairs (V/V, U/U) use normal split
         # because IC-9100 satmode always assigns Main/Sub to different bands.
