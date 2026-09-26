@@ -330,6 +330,7 @@ class SatDetailPanel(QWidget):
         self._conn_timer = QTimer(self)
         self._conn_timer.setInterval(250)
         self._conn_timer.timeout.connect(self.refresh_connection_state)
+        self._conn_timer.timeout.connect(self.refresh_xpdr_mirror)
         self._conn_timer.start()
         self._last_input_source: dict[str, int] = {}
         self._active_tab_widget: QWidget | None = None
@@ -386,6 +387,24 @@ class SatDetailPanel(QWidget):
         self._input_source_combo.activated.connect(self._on_input_source_changed)
         src_lay.addWidget(self._input_source_combo, stretch=1)
         comms_lay.addWidget(self._input_source_row)
+
+        # Transmitter combo (SDR Control tab only): mirrors Radio Control's
+        # transponder combo — see refresh_xpdr_mirror().
+        self._xpdr_row = QWidget()
+        xpdr_lay = QHBoxLayout(self._xpdr_row)
+        xpdr_lay.setContentsMargins(0, 0, 0, 0)
+        xpdr_lay.addWidget(QLabel(_("TX:")))
+        self._xpdr_mirror_combo = QComboBox()
+        self._xpdr_mirror_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self._xpdr_mirror_combo.setMinimumContentsLength(8)
+        self._xpdr_mirror_combo.setEnabled(False)
+        self._xpdr_mirror_combo.activated.connect(self._on_xpdr_mirror_activated)
+        xpdr_lay.addWidget(self._xpdr_mirror_combo, stretch=1)
+        self._xpdr_row.setVisible(False)
+        self._xpdr_mirror_sig: tuple[object, ...] | None = None
+        comms_lay.addWidget(self._xpdr_row)
 
         self._quick_dl_label = QLabel("D: —")
         self._quick_ul_label = QLabel("U: —")
@@ -499,6 +518,9 @@ class SatDetailPanel(QWidget):
         self._comms_group.setVisible(True)
         self._mini_radar.setMaximumHeight(self._MINI_RADAR_MAX_HEIGHT_FULL)
 
+        self._xpdr_row.setVisible(tab_key == "sdr")
+        if tab_key == "sdr":
+            self.refresh_xpdr_mirror()
         show_input = bool(config and config.show_input_source)
         self._input_source_row.setVisible(show_input)
         if show_input:
@@ -541,6 +563,7 @@ class SatDetailPanel(QWidget):
         self._active_tab_widget = None
         self._radar_only = False
         self._comms_group.setVisible(False)
+        self._xpdr_row.setVisible(False)
 
     def show_radar_only(self) -> None:
         """Show just the mini radar in the Quick Comms Panel box, with the
@@ -557,6 +580,7 @@ class SatDetailPanel(QWidget):
         self._comms_group.setVisible(True)
         self._mini_radar.setMaximumHeight(self._MINI_RADAR_MAX_HEIGHT_RADAR_ONLY)
         self._input_source_row.setVisible(False)
+        self._xpdr_row.setVisible(False)
         self._quick_dl_label.setVisible(False)
         self._quick_ul_label.setVisible(False)
         self._quick_rig1_btn.setVisible(False)
@@ -631,6 +655,39 @@ class SatDetailPanel(QWidget):
                         style = self._QUICK_CONNECTING_STYLE
             if btn.styleSheet() != style:
                 btn.setStyleSheet(style)
+
+    def refresh_xpdr_mirror(self) -> None:
+        """Mirror Radio Control's transponder combo into the SDR Control tab's
+        Quick Comms combo (items, tooltips, background colours, selection).
+        Cheap no-op unless the combo is shown and something changed."""
+        rc = self._radio_control
+        if self._active_comms_tab != "sdr" or rc is None:
+            return
+        src = rc._xpdr_combo
+        labels = [src.itemText(i) for i in range(src.count())]
+        sig: tuple[object, ...] = (tuple(labels), src.currentIndex(), src.isEnabled())
+        if sig == self._xpdr_mirror_sig:
+            return
+        self._xpdr_mirror_sig = sig
+        dst = self._xpdr_mirror_combo
+        dst.blockSignals(True)
+        dst.clear()
+        for i, text in enumerate(labels):
+            dst.addItem(text)
+            dst.setItemData(i, text, Qt.ItemDataRole.ToolTipRole)
+            bg = src.itemData(i, Qt.ItemDataRole.BackgroundRole)
+            if bg is not None:
+                dst.setItemData(i, bg, Qt.ItemDataRole.BackgroundRole)
+        dst.setCurrentIndex(src.currentIndex())
+        dst.setEnabled(src.isEnabled() and bool(labels))
+        dst.setToolTip(dst.currentText())
+        dst.blockSignals(False)
+
+    def _on_xpdr_mirror_activated(self, index: int) -> None:
+        """User picked a transmitter here: apply it via Radio Control's combo."""
+        rc = self._radio_control
+        if rc is not None and 0 <= index < rc._xpdr_combo.count():
+            rc._xpdr_combo.setCurrentIndex(index)
 
     def _on_quick_connect_rig1(self) -> None:
         if self._radio_control is not None:
