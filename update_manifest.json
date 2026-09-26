@@ -1,8 +1,8 @@
 {
   "latest_version": "0.3.58",
   "minimum_supported_version": "0.3.58",
-  "critical": true,
-  "message_ja": "v0.3.58 は SDR 受信とローテーター制御の重要な不具合を修正します。ローテーターが未接続でも「Connected」と表示され、存在しない機器へ位置コマンドを送り続けていた問題を修正し、未接続を検出して赤い「未接続」表示にするようにしました（Autotrack に「Use Rotator」チェックも追加）。SDR の USB/LSB 復調を本物の SSB 受信機にし、復調出力を正確に 48 kHz に揃え、スピーカー音声 ON 時にサンプルが欠落する問題を修正しました（FT4 も SDR でデコード可能）。SDR やローテーターを使う方は必ず更新してください。",
-  "message_en": "Version 0.3.58 fixes important SDR reception and rotator issues. The rotator could show 'Connected' when it was not connected and keep sending position commands to a device that wasn't there; a missing rotator is now detected and shown as a red 'Not connected' (Autotrack also gains a 'Use Rotator' checkbox). The SDR's USB/LSB demodulation is now a true single-sideband receiver, its demodulator output is exactly 48 kHz, and samples are no longer dropped with speaker audio on (FT4 can now decode from an SDR). Update is required if you use an SDR or a rotator.",
+  "critical": false,
+  "message_ja": "v0.3.59 は Quick Comms パネルの使い勝手の改善です。衛星選択とその記憶、「Others」項目、オスカー番号表示、Rig/Rotator 接続状態の色表示、SDR Control タブへの表示を追加しました。",
+  "message_en": "Version 0.3.59 improves the Quick Comms panel: satellite selection is now remembered, an 'Others' entry, Oscar designators in the list, colour-coded Rig/Rotator connection buttons, and the panel is now shown on the SDR Control tab.",
   "_comment": "Bump latest_version on every release. Raise minimum_supported_version and set critical=true only when older versions genuinely misbehave and every user must update; otherwise keep critical=false. See docs/app-update.md."
 }
