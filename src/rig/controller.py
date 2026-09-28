@@ -38,6 +38,14 @@ if TYPE_CHECKING:
 
 import httpx
 
+from rig.ptt import (
+    PTT_CAT,
+    PTT_LINE_METHODS,
+    PTT_RTS,
+    PTT_VOX,
+    SerialPttLine,
+    normalize_ptt_method,
+)
 from rig.rot_record_log import get_rotor_record_logger
 
 logger = logging.getLogger(__name__)
@@ -750,6 +758,19 @@ class RigController(ABC):
         # freeze_doppler=True (the default) is transmitting. Tone modes
         # (FT4/Q65) pass False and keep tracking during TX -- see set_ptt().
         self._doppler_frozen: bool = False
+        # How this rig is keyed (see rig.ptt): CAT (default), RTS, DTR or VOX.
+        self._ptt_method: str = PTT_CAT
+        self._ptt_port: str = ""
+
+    def set_ptt_config(self, method: str, port: str = "") -> None:
+        """Choose the PTT method (and serial port for RTS/DTR). Applies on the next connect()."""
+        self._ptt_method = normalize_ptt_method(method)
+        self._ptt_port = port.strip()
+
+    @property
+    def ptt_method(self) -> str:
+        """The configured PTT method: "cat", "rts", "dtr" or "vox"."""
+        return self._ptt_method
 
     # -- Connection management --
 
@@ -1082,6 +1103,22 @@ class HamlibDirectController(RigController):
                 rig.set_conf("serial_speed", str(self._baud_rate))
                 rig.set_conf("data_bits", str(self._data_bits))
                 rig.set_conf("stop_bits", str(self._stop_bits))
+                if self._ptt_method in PTT_LINE_METHODS:
+                    if not self._ptt_port:
+                        logger.error(
+                            "RigDirect: PTT method %s needs a PTT port (Rig Settings > PTT)",
+                            self._ptt_method.upper(),
+                        )
+                        with self._lock:
+                            self._state = RigState.ERROR
+                        return False
+                    # Hamlib drives the line itself. The port may be the CAT
+                    # port (typical for Icom USB) -- Hamlib shares it.
+                    rig.set_conf("ptt_type", "RTS" if self._ptt_method == PTT_RTS else "DTR")
+                    rig.set_conf("ptt_pathname", self._ptt_port)
+                    logger.info(
+                        "RigDirect: PTT via %s on %s", self._ptt_method.upper(), self._ptt_port
+                    )
                 if self._civ_addr:
                     addr = normalize_civ_addr(self._civ_addr)
                     rig.set_conf("civaddr", addr)
@@ -1662,6 +1699,9 @@ class HamlibDirectController(RigController):
             # a whole Doppler cycle away. Flush the newest computed UL first so
             # the transmission starts accurate instead of stepping mid-burst.
             self._flush_pending_frequencies()
+        if self._ptt_method == PTT_VOX:
+            # The rig's own VOX keys off the audio; nothing is sent from here.
+            return True
         try:
             # GitHub Issue #26: this is the highest-risk unlocked call --
             # _TxWorker (FT4/Q65) fires it from its own thread right at TX
@@ -3211,6 +3251,9 @@ class HamlibNetController(RigController):
         # Stage-2 flag: after first I (UL) write post-connect, re-send mode/CTCSS
         # with the connection's send_mode_only and _apply_ctcss_civ_direct.
         self._pending_mode_net: bool = False
+        # RTS/DTR PTT: rigctld cannot be reconfigured from here, so the app
+        # holds the PTT serial port itself (opened in connect()).
+        self._ptt_line: SerialPttLine | None = None
 
     # -- Connection management --
 
@@ -3297,12 +3340,39 @@ class HamlibNetController(RigController):
                     self._pending_ctcss_hz,
                 )
                 self._apply_ctcss_civ_direct(self._pending_ctcss_hz)
+            self._open_ptt_line()
             return True
         except OSError as exc:
             with self._lock:
                 self._state = RigState.ERROR
             logger.error("RigNet: connect failed — %s", exc)
             return False
+
+    def _open_ptt_line(self) -> None:
+        """Open the RTS/DTR PTT port (no-op for CAT/VOX).
+
+        A failure does not drop the rig connection (Doppler/RX keep working);
+        it only makes set_ptt(True) fail, which aborts a transmission with a
+        clear "PTT command failed" message instead of transmitting unkeyed.
+        """
+        self._close_ptt_line()
+        if self._ptt_method not in PTT_LINE_METHODS:
+            return
+        if not self._ptt_port:
+            logger.error(
+                "RigNet: PTT method %s needs a PTT port (Rig Settings > PTT)",
+                self._ptt_method.upper(),
+            )
+            return
+        line = SerialPttLine(self._ptt_port, self._ptt_method)
+        if line.open():
+            self._ptt_line = line
+            logger.info("RigNet: PTT via %s on %s", self._ptt_method.upper(), self._ptt_port)
+
+    def _close_ptt_line(self) -> None:
+        line, self._ptt_line = self._ptt_line, None
+        if line is not None:
+            line.close()
 
     def disconnect(self) -> None:
         """Disconnect the TCP connection.
@@ -3313,6 +3383,9 @@ class HamlibNetController(RigController):
         """
         with self._lock:
             if self._state == RigState.DISCONNECTED:
+                # The socket may already be gone, but an RTS/DTR PTT port can
+                # still be held open: release it.
+                self._close_ptt_line()
                 return
         with self._cmd_lock:
             try:
@@ -3327,6 +3400,7 @@ class HamlibNetController(RigController):
         self._last_ul_update_time = 0.0
         with self._lock:
             self._state = RigState.DISCONNECTED
+        self._close_ptt_line()
 
     # -- Low-level communication --
 
@@ -3371,7 +3445,7 @@ class HamlibNetController(RigController):
             self._sock = None
             with self._lock:
                 self._state = RigState.DISCONNECTED
-            if self._ptt_active:
+            if self._ptt_active and self._ptt_method == PTT_CAT:
                 # Dropped mid-transmission: nothing else is guaranteed to
                 # un-key the rig now that the tracking connection is gone.
                 self._emergency_ptt_off_async()
@@ -3767,9 +3841,13 @@ class HamlibNetController(RigController):
 
         Key-up goes over the shared command socket like any other command.
         Un-keying deliberately does NOT: see _ptt_off_independent().
+        RTS/DTR rigs are keyed on their own serial line instead, and VOX rigs
+        are not keyed at all (the rig's VOX does it from the audio).
         """
         was_active = self._ptt_active
         super().set_ptt(enabled, freeze_doppler=freeze_doppler)
+        if self._ptt_method == PTT_VOX:
+            return True
         if not enabled:
             # Also attempted when we had keyed the rig but the shared socket has
             # since dropped: the rig must never be left transmitting just
@@ -3777,7 +3855,11 @@ class HamlibNetController(RigController):
             if not (was_active or self.is_connected):
                 return False
             return self._ptt_off_independent()
-        ok = self.is_connected and "RPRT 0" in self._cmd("T 1")
+        if self._ptt_method in PTT_LINE_METHODS:
+            line = self._ptt_line
+            ok = self.is_connected and line is not None and line.key(True)
+        else:
+            ok = self.is_connected and "RPRT 0" in self._cmd("T 1")
         if not ok:
             # Never keyed: don't leave the TX-window flags set, or Doppler
             # writes would stay suppressed (FT-991) / frozen until the next PTT.
@@ -3797,7 +3879,18 @@ class HamlibNetController(RigController):
         hung F timed out; 09-21 and 09-28). Un-keying therefore must not
         depend on that socket or its lock at all. rigctld serves each client
         connection separately, so a new connection can still deliver T 0.
+
+        RTS/DTR rigs drop their serial line instead (no rigctld involved).
         """
+        if self._ptt_method in PTT_LINE_METHODS:
+            line = self._ptt_line
+            for attempt in range(1, self._PTT_OFF_ATTEMPTS + 1):
+                if line is not None and line.key(False):
+                    return True
+                if attempt < self._PTT_OFF_ATTEMPTS:
+                    time.sleep(self._PTT_OFF_RETRY_DELAY)
+            logger.error("RigNet: PTT line off FAILED after %d attempts", self._PTT_OFF_ATTEMPTS)
+            return False
         for attempt in range(1, self._PTT_OFF_ATTEMPTS + 1):
             sock: socket.socket | None = None
             try:

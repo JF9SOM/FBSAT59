@@ -7403,6 +7403,15 @@ class MainWindow(QMainWindow):
         Returns:
             Configured (but not yet connected) RigController instance.
         """
+        controller = self._build_rig_controller_for_mode(settings)
+        # PTT method (Rig Settings > PTT); absent in older settings = CAT.
+        controller.set_ptt_config(
+            str(settings.get("ptt_method", "cat")), str(settings.get("ptt_port", ""))
+        )
+        return controller
+
+    def _build_rig_controller_for_mode(self, settings: dict[str, Any]) -> RigController:
+        """Instantiate the NET or Direct controller for *settings* (see _build_rig_controller)."""
         mode = settings.get("mode", "net")
         radio_type = str(settings.get("radio_type", "full_duplex"))
         if mode == "net":

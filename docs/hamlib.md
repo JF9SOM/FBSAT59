@@ -1120,3 +1120,33 @@ CLAUDE.md参照、v0.1.19）。`rigctl -m 2`（Hamlib NET rigctlクライアン�
 - Q65 タブも同様に `set_ptt(False)` の戻り値を確認して 1 回再試行し、失敗時はステータスバーに警告。PTT ON 失敗時は FT4 同様に音声を再生せず中止（2026-09-28、実機未テスト）
 - Direct の `set_ptt()` は Hamlib の `error_status` を確認して失敗を検出する（バインディングは例外を出さないため、従来は失敗しても True を返していた）
 - NET・Direct の `set_ptt(True)` が失敗したら `_ptt_active`/`_doppler_frozen` を戻す（戻さないと FT-991 の送信中スキップや Direct の Doppler 凍結が解除されない）
+
+---
+
+### PTT 方式の選択（CAT / RTS / DTR / VOX、2026-09-28 追加）
+
+**目的**: 従来は PTT が CAT のみだった。CAT が詰まっても PTT だけは独立して動かせるよう、また
+無線機側の設定次第で使える RTS/DTR・VOX を選べるよう、Rig ごとに方式を選べるようにした
+（Radio > Rig Settings > **PTT** タブ、Rig 1 / Rig 2 それぞれ）。未設定は CAT（従来動作）。
+
+**保存先**: 各 Rig の設定 dict（`rig1_settings` / `rig2_settings`）内の `ptt_method`
+（`cat`/`rts`/`dtr`/`vox`）と `ptt_port`。`RigSettingsDialog._save_settings()` が PTT タブの値を
+各 Rig の dict にマージし、`MainWindow._build_rig_controller()` が
+`RigController.set_ptt_config()` で適用する（接続時に反映）。
+
+| 方式 | Direct モード | NET モード |
+|---|---|---|
+| CAT | 従来どおり Hamlib `set_ptt` | 従来どおり rigctld `T 1`/`T 0` |
+| RTS/DTR | 接続時に Hamlib へ `ptt_type`=RTS/DTR・`ptt_pathname` を設定し、Hamlib が線を操作。**CAT と同じポートでも可**（Icom の USB で一般的なため）。ポート未指定なら接続失敗（ERROR） | アプリが自前の pyserial（`src/rig/ptt.py` の `SerialPttLine`）で線を操作。rigctld が使っていないポートが必要（Yaesu は別ポート）。接続時に開き、切断まで保持。開けなくても Rig 接続は維持し、`set_ptt(True)` だけ失敗（送信を中止） |
+| VOX | `set_ptt` は何も送らず True（Doppler の事前フラッシュだけ実行） | 同左 |
+
+- `SerialPttLine.open()` は RTS/DTR を両方とも Low にしてから開く。`close()` は先に線を落とす。
+- NET の RTS/DTR では PTT OFF が rigctld に依存しない（`_ptt_off_independent()` が線を直接落とす）。
+  共有ソケットが切れても送信中の PTT を強制解除しない（CAT 方式のときだけ緊急解除）。
+- **Test PTT ボタン**: RTS/DTR のみ。確認ダイアログの後に約 1.5 秒だけキーイングして自動解除。
+  ダイアログを閉じるときは `RigSettingsDialog.done()` が必ず線を落とす。CAT/VOX では無効。
+- SDR を割り当てた Rig と無効な Rig 2 は PTT タブでグレーアウト。
+- **VOX の注意**: 音声が出てから VOX が反応するため、送信の頭が欠けることがある。無線機側の
+  VOX ディレイ・感度で調整する。
+- **未確認**: 実機での RTS/DTR・VOX 動作、Icom 各機種で PTT に必要なメニュー設定、
+  Hamlib の `rts_state`/`dtr_state`（get で空が返り効果を確認できなかったため使っていない）。

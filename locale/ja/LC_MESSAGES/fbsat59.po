@@ -6463,3 +6463,93 @@ msgstr "タブへ入力"
 #: src/ui/radio_control_widget.py
 msgid "Also send the played recording to the communication tabs (APRS, SSTV, CW...) that receive from the Sound Card, so they decode it as if it were live."
 msgstr "再生中の録音を、Sound Card から受信している通信タブ（APRS・SSTV・CW など）にも入力し、リアルタイム受信と同じようにデコードさせます。"
+
+#: src/ui/ptt_panel.py
+msgid "PTT"
+msgstr "PTT"
+
+#: src/ui/ptt_panel.py
+msgid "PTT method:"
+msgstr "PTT方式:"
+
+#: src/ui/ptt_panel.py
+msgid "CAT"
+msgstr "CAT"
+
+#: src/ui/ptt_panel.py
+msgid "RTS"
+msgstr "RTS"
+
+#: src/ui/ptt_panel.py
+msgid "DTR"
+msgstr "DTR"
+
+#: src/ui/ptt_panel.py
+msgid "VOX"
+msgstr "VOX"
+
+#: src/ui/ptt_panel.py
+msgid "PTT port:"
+msgstr "PTTポート:"
+
+#: src/ui/ptt_panel.py
+msgid "Test PTT"
+msgstr "PTTテスト"
+
+#: src/ui/ptt_panel.py
+msgid "Key the transmitter for about 1.5 seconds."
+msgstr "送信機を約1.5秒間キーイングします。"
+
+#: src/ui/ptt_panel.py
+msgid "The radio must be set to accept RTS/DTR PTT (see its menu). Direct mode: the port may be the same as the CAT port (typical for Icom USB). NET mode: use a port that rigctld is not using."
+msgstr "無線機側でRTS/DTRによるPTTを受け付ける設定が必要です（無線機のメニューを参照）。Directモード: CATと同じポートでも構いません（IcomのUSBで一般的）。NETモード: rigctldが使っていないポートを指定してください。"
+
+#: src/ui/ptt_panel.py
+msgid "The app sends no PTT signal. Enable VOX on the radio and set its delay so the start and end of each transmission are not cut."
+msgstr "アプリはPTT信号を送りません。無線機側でVOXを有効にし、送信の始めと終わりが切れないようVOXのディレイを設定してください。"
+
+#: src/ui/ptt_panel.py
+msgid "PTT is sent over the rig's CAT/CI-V connection (the default)."
+msgstr "PTTは無線機のCAT/CI-V接続で送ります（既定）。"
+
+#: src/ui/ptt_panel.py
+msgid "Not available: VOX sends no PTT signal."
+msgstr "使用できません: VOXではPTT信号を送りません。"
+
+#: src/ui/ptt_panel.py
+msgid "Not available: CAT PTT uses the connected rig."
+msgstr "使用できません: CATのPTTは接続中の無線機を使います。"
+
+#: src/ui/ptt_panel.py
+msgid "Select the PTT port first."
+msgstr "先にPTTポートを選択してください。"
+
+#: src/ui/ptt_panel.py
+msgid "The transmitter will be keyed for about 1.5 seconds (an unmodulated carrier on the current frequency). Connect a dummy load or check that the antenna and frequency are safe to transmit on.\n\nContinue?"
+msgstr "送信機を約1.5秒間キーイングします（現在の周波数で無変調のキャリアが出ます）。ダミーロードを接続するか、アンテナと周波数が送信して問題ないことを確認してください。\n\n続行しますか？"
+
+#: src/ui/ptt_panel.py
+#, python-brace-format
+msgid "Cannot open {port} (in use by another program, or wrong port)."
+msgstr "{port} を開けません（他のプログラムが使用中か、ポートが違います）。"
+
+#: src/ui/ptt_panel.py
+#, python-brace-format
+msgid "Could not set the {line} line."
+msgstr "{line} ラインを設定できませんでした。"
+
+#: src/ui/ptt_panel.py
+msgid "Keying…"
+msgstr "キーイング中…"
+
+#: src/ui/ptt_panel.py
+msgid "Test finished — the transmitter should have keyed and released."
+msgstr "テスト完了 — 送信機はキーイングされ、解除されたはずです。"
+
+#: src/ui/ptt_panel.py
+msgid "This rig is an SDR: it has no transmitter to key."
+msgstr "このリグはSDRです。キーイングする送信機がありません。"
+
+#: src/ui/ptt_panel.py
+msgid "Rig 2 is disabled (see the Rig 2 tab)."
+msgstr "Rig 2は無効です（Rig 2タブを参照）。"

@@ -57,6 +57,7 @@ from rig.controller import CTCSS_PRESET_TEMPLATES, normalize_civ_addr
 from sdr import SOAPY_AVAILABLE
 from sdr.device import SdrDeviceInfo
 from sdr.ppm_measure import PpmMeasureWorker
+from ui.ptt_panel import PttPanel
 
 # ---------------------------------------------------------------------------
 # Hamlib Python binding (imported lazily to avoid Qt TLS collision at startup)
@@ -2299,7 +2300,7 @@ class _SoundCardPanel(QWidget):
 class RigSettingsDialog(QDialog):
     """Radio > Rig Settings dialog.
 
-    Four tabs — Rig 1, Rig 2, SDR Settings, and Sound Card — each backed
+    Five tabs — Rig 1, Rig 2, SDR Settings, Sound Card and PTT — each backed
     by its panel.  Hamlib models are loaded once and shared between both
     rig panels.
 
@@ -2321,6 +2322,7 @@ class RigSettingsDialog(QDialog):
         self._panel2 = _RigPanel(2, self._all_models)
         self._sdr_panel = _SdrSettingsPanel()
         self._soundcard_panel = _SoundCardPanel()
+        self._ptt_panel = PttPanel(_scan_serial_ports)
 
         # Snapshot of "Enable Remote SDR discovery" as loaded, compared against
         # the saved value in _save_settings() -- the setting only takes effect
@@ -2360,12 +2362,18 @@ class RigSettingsDialog(QDialog):
         self._tabs.addTab(self._panel2, _("Rig 2"))
         self._tabs.addTab(self._sdr_panel, _("SDR Settings"))
         self._tabs.addTab(self._soundcard_panel, _("Sound Card"))
+        self._tabs.addTab(self._ptt_panel, _("PTT"))
         layout.addWidget(self._tabs)
 
         # Bidirectional sync: SDR tab ↔ Rig tabs
         self._sdr_panel.assigned_rig_changed.connect(self._on_sdr_assignment_changed)
         self._panel1.sdr_mode_changed.connect(lambda on: self._on_rig_sdr_toggled(1, on))
         self._panel2.sdr_mode_changed.connect(lambda on: self._on_rig_sdr_toggled(2, on))
+        # PTT tab: an SDR rig / a disabled Rig 2 has nothing to configure
+        self._panel1.sdr_mode_changed.connect(lambda _on: self._sync_ptt_panel())
+        self._panel2.sdr_mode_changed.connect(lambda _on: self._sync_ptt_panel())
+        if self._panel2._enable_cb is not None:
+            self._panel2._enable_cb.toggled.connect(lambda _on: self._sync_ptt_panel())
 
         # Hamlib info row: shown only on Rig 1 / Rig 2 tabs, hidden on SDR tab
         from PySide6.QtWidgets import QWidget as _QWidget
@@ -2413,8 +2421,18 @@ class RigSettingsDialog(QDialog):
 
     def _on_tab_changed(self, index: int) -> None:
         """Show Hamlib info row only on Rig 1 / Rig 2 tabs (not SDR or Sound Card tab)."""
-        # Tab 0=Rig1, 1=Rig2, 2=SDR Settings, 3=Sound Card
+        # Tab 0=Rig1, 1=Rig2, 2=SDR Settings, 3=Sound Card, 4=PTT
         self._hamlib_info_widget.setVisible(index < 2)
+
+    def _sync_ptt_panel(self) -> None:
+        """Push each Rig tab's SDR / enabled state into the PTT tab."""
+        for idx, panel in ((1, self._panel1), (2, self._panel2)):
+            self._ptt_panel.set_rig_state(idx, panel._radio_sdr.isChecked(), panel.is_enabled())
+
+    def done(self, result: int) -> None:
+        """Never leave a PTT test keying the transmitter when the dialog closes."""
+        self._ptt_panel.release_all()
+        super().done(result)
 
     def _on_sdr_assignment_changed(self, assigned_rig: object) -> None:
         """Sync Rig tab SDR radio buttons when the SDR panel assignment changes."""
@@ -2483,7 +2501,9 @@ class RigSettingsDialog(QDialog):
 
         if row1 and row1["value"]:
             with contextlib.suppress(json.JSONDecodeError, TypeError):
-                self._panel1.load(json.loads(row1["value"]))
+                s1_loaded = json.loads(row1["value"])
+                self._panel1.load(s1_loaded)
+                self._ptt_panel.load(1, s1_loaded)
 
         # --- Rig 2 ---
         row2 = self._conn.execute(
@@ -2491,7 +2511,9 @@ class RigSettingsDialog(QDialog):
         ).fetchone()
         if row2 and row2["value"]:
             with contextlib.suppress(json.JSONDecodeError, TypeError):
-                self._panel2.load(json.loads(row2["value"]))
+                s2_loaded = json.loads(row2["value"])
+                self._panel2.load(s2_loaded)
+                self._ptt_panel.load(2, s2_loaded)
 
         # --- SDR ---
         row_sdr = self._conn.execute(
@@ -2508,6 +2530,7 @@ class RigSettingsDialog(QDialog):
         # Also restore SDR radio button state on Rig panels from their own saved mode
         self._panel1._on_mode_toggled()
         self._panel2._on_mode_toggled()
+        self._sync_ptt_panel()
 
         # --- Sound Card ---
         row_sc = self._conn.execute(
@@ -2532,6 +2555,8 @@ class RigSettingsDialog(QDialog):
 
         s1 = self._panel1.save()
         s2 = self._panel2.save()
+        s1.update(self._ptt_panel.save(1))
+        s2.update(self._ptt_panel.save(2))
 
         # Derive radio_type for both rigs from the split-mode combo when Rig 2 is active
         if s2.get("enabled", False):
