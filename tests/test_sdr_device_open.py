@@ -133,3 +133,52 @@ def test_restart_stream_keeps_the_device_and_cycles_the_stream(env: _Env) -> Non
     assert dev._dev is handle
     assert handle.deactivateStream.call_count == 1
     assert handle.activateStream.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# RX filter bandwidth follows the sample rate (GitHub issue #31)
+# ---------------------------------------------------------------------------
+
+
+def _bandwidth_calls(dev_handle: MagicMock) -> list[tuple[Any, ...]]:
+    return [c.args for c in dev_handle.setBandwidth.call_args_list]
+
+
+def test_open_sets_rx_bandwidth_to_the_sample_rate(env: _Env) -> None:
+    dev = _new_device()
+
+    assert dev.open() is True
+
+    rx = device_mod._SOAPY_SDR_RX
+    assert _bandwidth_calls(env.handles[0]) == [(rx, 0, 2.4e6)]
+
+
+def test_set_sample_rate_moves_the_bandwidth_with_it(env: _Env) -> None:
+    dev = _new_device()
+    assert dev.open() is True
+    handle = env.handles[0]
+    handle.setBandwidth.reset_mock()
+
+    assert dev.set_sample_rate(3.0e6) is True
+
+    assert _bandwidth_calls(handle) == [(device_mod._SOAPY_SDR_RX, 0, 3.0e6)]
+
+
+def test_pinned_bandwidth_is_not_overridden_by_the_sample_rate(env: _Env) -> None:
+    dev = _new_device()
+    assert dev.open() is True
+    dev._bandwidth = 1.5e6
+    handle = env.handles[0]
+    handle.setBandwidth.reset_mock()
+
+    assert dev.set_sample_rate(3.0e6) is True
+
+    assert _bandwidth_calls(handle) == [(device_mod._SOAPY_SDR_RX, 0, 1.5e6)]
+
+
+def test_a_device_that_rejects_bandwidth_still_opens_and_retunes(env: _Env) -> None:
+    dev = _new_device()
+    assert dev.open() is True
+    env.handles[0].setBandwidth.side_effect = RuntimeError("no programmable filter")
+
+    assert dev.set_sample_rate(2.0e6) is True

@@ -1849,6 +1849,7 @@ class SdrDevice:
                 return True
             try:
                 self._dev.setSampleRate(0, 0, rate_hz)  # direction=RX, channel=0
+                self._sync_bandwidth()
                 return True
             except Exception:
                 logger.exception("set_sample_rate failed")
@@ -2111,6 +2112,24 @@ class SdrDevice:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _sync_bandwidth(self) -> None:
+        """Set the RX analog filter bandwidth; the caller holds ``_lock`` or owns ``_dev``.
+
+        Devices with a programmable filter (e.g. PlutoSDR / AD9361) keep whatever
+        bandwidth the last program left behind, which can put a large hump across
+        the spectrum.  Unless a bandwidth was pinned via set_bandwidth(), follow
+        the sample rate.  Devices that reject the call are left as they are.
+        """
+        if self._dev is None:
+            return
+        bw_hz = self._bandwidth if self._bandwidth > 0 else self._sample_rate
+        if bw_hz <= 0:
+            return
+        try:
+            self._dev.setBandwidth(_SOAPY_SDR_RX, 0, bw_hz)
+        except Exception as exc:
+            logger.debug("setBandwidth(%.0f) not applied: %s", bw_hz, exc)
+
     def _apply_settings(self) -> bool:
         """Push stored settings to the freshly opened device.
 
@@ -2137,9 +2156,7 @@ class SdrDevice:
         except Exception as exc:
             logger.warning("setFrequency failed: %s", exc)
             core_ok = False
-        if self._bandwidth > 0:
-            with contextlib.suppress(Exception):
-                self._dev.setBandwidth(SoapySDR.SOAPY_SDR_RX, 0, self._bandwidth)
+        self._sync_bandwidth()
         try:
             if self._gain_mode == "auto":
                 self._engage_auto_gain()
