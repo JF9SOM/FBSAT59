@@ -896,6 +896,7 @@ class Q65Tab(QWidget):
                 self._status_label.setText(_("PTT command failed — check Rig 1 connection"))
                 mgr.release_output(_AUDIO_OWNER, self._out_device)
                 return
+            time.sleep(0.15)  # PTT lead time (same as the FT4 tab)
 
         try:
             import sounddevice as sd
