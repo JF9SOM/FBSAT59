@@ -988,7 +988,8 @@ Telemetryタブの `_on_telemetry_satellite_requested()` と同型の汎用ハ�
 #### スプリッター自動縮小・復元（`MainWindow._on_tab_changed`）
 
 `_resident_tab_widgets`（Dashboard/World Map/Radar/Pass Chart/Group Pass Chart/Radio Control/
-SDR Control）に含まれないタブ（＝Communicationsタブ全般）がアクティブになったとき:
+SDR Control）に含まれないタブ（＝Communicationsタブ全般）、および resident だが例外的に
+**SDR Control**（2026-09-28 以降。`MainWindow._hides_pass_panel()`）がアクティブになったとき:
 - 直前のスプリッターサイズを `_pass_panel_saved_sizes` に退避（すでに退避済みなら上書きしない。
   Comms タブ同士を連続で切り替えても元のサイズを覚え続ける）
 - 下部 Upcoming Passes パネルを `PassPanel.minimumHeight()`（200px）まで縮小し、

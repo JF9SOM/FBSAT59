@@ -5780,3 +5780,33 @@ class TestSdrPlaybackBorrowsSlot:
 
         assert w._rig_controller is adapter
         assert w._playback_borrow is None
+
+
+class TestPassPanelAutoHide:
+    """The bottom pass-prediction panel auto-collapses for SDR Control like Comms tabs."""
+
+    def _make_window(self, qtbot, db):
+        from data.tle_manager import TLEManager
+        from ui.main_window import MainWindow
+
+        w = MainWindow(conn=db, tle_manager=TLEManager(db))
+        qtbot.addWidget(w)
+        return w
+
+    def test_sdr_control_hides_pass_panel(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        assert w._hides_pass_panel(w._sdr_control) is True
+
+    def test_other_resident_tabs_keep_pass_panel(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        assert w._hides_pass_panel(w._radio_control) is False
+        assert w._hides_pass_panel(w._dashboard_view) is False
+        assert w._hides_pass_panel(None) is False
+
+    def test_non_resident_tab_hides_pass_panel(self, qtbot, db) -> None:
+        from PySide6.QtWidgets import QWidget
+
+        w = self._make_window(qtbot, db)
+        other = QWidget()
+        qtbot.addWidget(other)
+        assert w._hides_pass_panel(other) is True

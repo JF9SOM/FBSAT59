@@ -5016,7 +5016,7 @@ class MainWindow(QMainWindow):
         if widget is self._dashboard_view or widget is self._world_map:
             self._update_world_map()
 
-        self._update_pass_panel_size(hide=self._wide_tab_enabled or not is_resident)
+        self._update_pass_panel_size(hide=self._wide_tab_enabled or self._hides_pass_panel(widget))
 
         # Toggling the Comms Quick Panel's visibility/content below can make
         # Qt briefly recompute h_splitter's pane widths from the newly
@@ -5069,6 +5069,15 @@ class MainWindow(QMainWindow):
         options.sort(key=lambda o: o[1].lower())
         return options
 
+    def _hides_pass_panel(self, widget: QWidget | None) -> bool:
+        """Whether the pass-prediction (bottom) panel auto-collapses for this tab.
+
+        Communications tabs need the height for their decoded output, and SDR
+        Control (a resident tab) does too, so it is treated the same way."""
+        if widget is None:
+            return False
+        return widget is self._sdr_control or widget not in self._resident_tab_widgets
+
     def _update_pass_panel_size(self, hide: bool) -> None:
         """Collapse the pass-prediction (bottom) panel to zero height, or
         restore the sizes saved before it was last collapsed. The splitter
@@ -5109,8 +5118,7 @@ class MainWindow(QMainWindow):
         _update_pass_panel_size / _update_sat_list_panel_size)."""
         self._wide_tab_enabled = checked
         widget = self._tab_widget.currentWidget()
-        is_resident = widget is None or widget in self._resident_tab_widgets
-        self._update_pass_panel_size(hide=checked or not is_resident)
+        self._update_pass_panel_size(hide=checked or self._hides_pass_panel(widget))
         self._update_sat_list_panel_size(hide=checked)
 
     def _on_filter_changed(self, text: str) -> None:
