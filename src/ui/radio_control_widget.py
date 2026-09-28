@@ -540,7 +540,9 @@ class RadioControlWidget(QWidget):
         self._audio_rec_btn = QPushButton(_("● REC"))
         self._audio_rec_btn.setStyleSheet("color: red; font-weight: bold;")
         self._audio_rec_btn.setEnabled(LAMEENC_AVAILABLE)
-        if not LAMEENC_AVAILABLE:
+        if LAMEENC_AVAILABLE:
+            self._audio_rec_btn.setToolTip(_("Start recording"))
+        else:
             self._audio_rec_btn.setToolTip(_("lameenc not installed — pip install lameenc"))
         self._audio_rec_btn.clicked.connect(self._start_audio_recording)
 
@@ -552,7 +554,7 @@ class RadioControlWidget(QWidget):
         self._audio_stop_rec_btn.clicked.connect(self._stop_audio_recording)
 
         self._play_open_btn = QPushButton("📂")
-        self._play_open_btn.setToolTip(_("Choose a recorded audio file and start playing it"))
+        self._play_open_btn.setToolTip(_("Open recording"))
         self._play_open_btn.clicked.connect(self._on_play_open_clicked)
         # One toggle: shows the action a click performs (▶️ while stopped or
         # paused, ⏸️ while playing), like SDR Control's Mute/Unmute button.
