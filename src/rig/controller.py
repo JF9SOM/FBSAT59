@@ -3760,10 +3760,13 @@ class HamlibNetController(RigController):
             if not (was_active or self.is_connected):
                 return False
             return self._ptt_off_independent()
-        if not self.is_connected:
-            return False
-        resp = self._cmd("T 1")
-        return "RPRT 0" in resp
+        ok = self.is_connected and "RPRT 0" in self._cmd("T 1")
+        if not ok:
+            # Never keyed: don't leave the TX-window flags set, or Doppler
+            # writes would stay suppressed (FT-991) / frozen until the next PTT.
+            self._ptt_active = False
+            self._doppler_frozen = False
+        return ok
 
     def _ptt_off_independent(self) -> bool:
         """Send T 0 over a fresh, short-lived TCP connection, with retries.

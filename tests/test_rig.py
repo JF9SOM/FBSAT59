@@ -2042,6 +2042,15 @@ class TestHamlibNetController:
         assert b"F 435600000\n" in sent
         assert b"I 145900000\n" in sent
 
+    def test_failed_ptt_on_does_not_leave_doppler_suppressed(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="ft991")
+        ctrl._sock.recv.return_value = b"RPRT -1\n"  # type: ignore[union-attr]
+        assert ctrl.set_ptt(True, freeze_doppler=False) is False
+        ctrl._sock.recv.return_value = b"RPRT 0\n"  # type: ignore[union-attr]
+        ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0)
+        sent = b"".join(c.args[0] for c in ctrl._sock.sendall.call_args_list)  # type: ignore[union-attr]
+        assert b"F 435600000\n" in sent
+
     def test_non_ft991_keeps_tracking_through_tx(self) -> None:
         # Icom rigs accept mid-TX frequency changes (GitHub Issue #16).
         ctrl = self._make_connected_ctrl(ctcss_method="hamlib")

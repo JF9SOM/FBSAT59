@@ -887,9 +887,15 @@ class Q65Tab(QWidget):
         # PTT ON. freeze_doppler=False: a Q65 transmission runs 15-60 s, so
         # holding the VFOs still for its duration would drag our signal right
         # out of the passband. Keep correcting through TX (GitHub Issue #16).
+        # Like the FT4 tab: if the rig cannot be keyed, do not play the audio.
         if rig is not None:
+            ptt_ok = False
             with contextlib.suppress(Exception):
-                rig.set_ptt(True, freeze_doppler=False)
+                ptt_ok = bool(rig.set_ptt(True, freeze_doppler=False))
+            if not ptt_ok:
+                self._status_label.setText(_("PTT command failed — check Rig 1 connection"))
+                mgr.release_output(_AUDIO_OWNER, self._out_device)
+                return
 
         try:
             import sounddevice as sd
