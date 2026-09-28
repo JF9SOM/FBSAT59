@@ -5,7 +5,7 @@
 
 ---
 
-### カスタムFavoriteグループ設計（src/data/database.py）
+### カスタムFavoriteグループ設計（src/data/database.py・src/data/favorites.py）
 
 ```sql
 CREATE TABLE custom_groups (
@@ -13,13 +13,26 @@ CREATE TABLE custom_groups (
     name        TEXT NOT NULL,        -- display name (e.g. "Favorite 1")
     sort_order  INTEGER NOT NULL DEFAULT 0
 );
--- satellites テーブルに favorite_group INTEGER DEFAULT 0 カラムを追加
--- 0=未所属, 1..N=custom_groups.id
+-- 衛星 ⇔ グループは多対多（2026-09-28〜。1衛星が複数グループに所属できる）
+CREATE TABLE satellite_favorites (
+    norad_cat_id INTEGER NOT NULL,
+    group_id     INTEGER NOT NULL,   -- custom_groups.id
+    PRIMARY KEY (norad_cat_id, group_id)
+);
 ```
 
 - デフォルトで Favorite 1/2/3 を作成（既存 is_favorite=1 は Favorite 1 に移行）
-- 右クリック → 「★ Favorite Groups」サブメニューでグループ割当・解除
-- Settings > Custom Groups タブでグループ名インライン編集・追加・削除
+- 右クリック → 「★ Favorite Groups」サブメニューで**複数チェック可能**（各項目は独立にトグル）。
+  「Remove from Favorites」で全解除
+- Settings > Custom Groups タブでグループ名インライン編集・追加・削除（削除時は当該グループの所属だけ消える）
+- 所属の読み書きは必ず `data/favorites.py`（`get_groups`/`set_groups`/`toggle_group`/`remove_group`/
+  `move_groups`/`load_all_memberships`）を経由する。SQL を直接書かない
+- 旧カラム `satellites.favorite_group`（単一値）と `is_favorite` は**アプリでは読まない**。旧バージョンで
+  同じDBを開いても破綻しないよう、`favorites.py` が「最小のグループID」「所属ありか」を書き続けるだけ
+- 旧 `favorite_group` → `satellite_favorites` への移行は `database._migrate_favorites_to_multi_group()`
+  （マーカー `db_migrate_favorites_multi_v1` で一度きり。再実行すると意図的な解除が復活するため）
+- Web API: `SatelliteOut.favorite_groups: list[int]`、`PUT /api/satellites/{norad}/favorite-groups`
+  （body `{"group_ids": [...]}` で所属を丸ごと置換。空配列で全解除）。スマホUIも複数チェック
 
 ### Dashboard タブ（src/ui/dashboard_view.py）
 

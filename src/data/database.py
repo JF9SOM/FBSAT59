@@ -101,6 +101,15 @@ CREATE TABLE IF NOT EXISTS custom_groups (
     sort_order  INTEGER NOT NULL DEFAULT 0
 );
 
+-- Many-to-many membership between satellites and custom groups: a satellite can
+-- be in any number of favorite groups. Replaces the single-valued
+-- satellites.favorite_group column (kept only for older builds; see data/favorites.py).
+CREATE TABLE IF NOT EXISTS satellite_favorites (
+    norad_cat_id INTEGER NOT NULL,
+    group_id     INTEGER NOT NULL,
+    PRIMARY KEY (norad_cat_id, group_id)
+);
+
 -- Autotrack lists — user-defined ordered lists of (satellite, transponder) pairs
 -- for automatic sequential tracking via the Radio Control panel.
 CREATE TABLE IF NOT EXISTS autotrack_lists (
@@ -357,6 +366,50 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
     conn.commit()
 
     _repair_satnogs_in_orbit_status(conn)
+    _migrate_favorites_to_multi_group(conn)
+
+
+def _migrate_favorites_to_multi_group(conn: sqlite3.Connection) -> None:
+    """One-time move of single-valued favorite_group into satellite_favorites.
+
+    Also repairs favorites lost by the provisional-ID -> official-ID migration:
+    its old step 5 copied only the legacy is_favorite flag, never favorite_group,
+    so an official satellite linked from a favorited provisional one ended up in
+    no group at all, while the (hidden, is_hidden=2) provisional row kept the
+    real membership. Those memberships are moved onto the official satellite.
+
+    Guarded by a marker so a later, deliberate removal is never undone by a
+    re-run (the legacy columns stay behind as stale data after this).
+    """
+    marker = "db_migrate_favorites_multi_v1"
+    if conn.execute("SELECT 1 FROM app_settings WHERE key = ?", (marker,)).fetchone():
+        return
+
+    from data.favorites import move_groups
+
+    conn.execute(
+        "INSERT OR IGNORE INTO satellite_favorites (norad_cat_id, group_id)"
+        " SELECT norad_cat_id, favorite_group FROM satellites WHERE favorite_group > 0"
+    )
+    recovered = 0
+    for row in conn.execute(
+        """
+        SELECT s.norad_cat_id AS real_id, s.satnogs_source_id AS fake_id
+        FROM satellites s
+        JOIN satellites p ON p.norad_cat_id = s.satnogs_source_id
+        WHERE p.is_hidden = 2
+          AND EXISTS (SELECT 1 FROM satellite_favorites f WHERE f.norad_cat_id = p.norad_cat_id)
+        """
+    ).fetchall():
+        move_groups(conn, int(row["fake_id"]), int(row["real_id"]))
+        recovered += 1
+
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value, updated_at)"
+        " VALUES (?, ?, CURRENT_TIMESTAMP)",
+        (marker, str(recovered)),
+    )
+    conn.commit()
 
 
 def _repair_satnogs_in_orbit_status(conn: sqlite3.Connection) -> None:

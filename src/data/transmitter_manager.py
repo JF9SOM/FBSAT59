@@ -19,6 +19,7 @@ from typing import Any
 
 import httpx
 
+from data.favorites import move_groups
 from data.http_client import DEFAULT_HEADERS
 
 logger = logging.getLogger(__name__)
@@ -398,7 +399,7 @@ class TransmitterManager:
              already exists on the official side).
           4. Migrate transmitters from provisional → official (skipped when the
              official side already has transmitters).
-          5. Copy is_favorite from provisional → official.
+          5. Move favorite group membership from provisional → official.
           6. Record satnogs_source_id = fake_id on the official satellite so that
              future SATNOGS syncs query under the provisional ID.
           7. Hide the provisional satellite (is_hidden = 2).
@@ -407,7 +408,7 @@ class TransmitterManager:
 
         # --- Step 1: load provisional satellite info ---------------------------
         fake_row = self._conn.execute(
-            "SELECT name, status, alt_names, is_favorite FROM satellites WHERE norad_cat_id = ?",
+            "SELECT name, status, alt_names FROM satellites WHERE norad_cat_id = ?",
             (fake_id,),
         ).fetchone()
         if not fake_row:
@@ -537,12 +538,10 @@ class TransmitterManager:
             )
         # If transmitters are already on the official side → leave them alone.
 
-        # --- Step 5: copy is_favorite -----------------------------------------
-        if fake_row["is_favorite"]:
-            self._conn.execute(
-                "UPDATE satellites SET is_favorite = 1 WHERE norad_cat_id = ?",
-                (real_id,),
-            )
+        # --- Step 5: move favorite group membership ---------------------------
+        # Moved (not copied) so re-running this pipeline never re-adds a group
+        # the user has since removed from the official satellite.
+        move_groups(self._conn, fake_id, real_id)
 
         # --- Step 6: record satnogs_source_id on the official satellite --------
         self._conn.execute(
@@ -942,7 +941,7 @@ class TransmitterManager:
                                         (json.dumps(merged, ensure_ascii=False), now, norad_follow),
                                     )
                             # Run full migration pipeline: migrate TLE, transmitters,
-                            # is_favorite, and set satnogs_source_id on the official satellite.
+                            # favorite groups, and set satnogs_source_id on the official satellite.
                             if norad_follow is not None:
                                 self._run_migration_pipeline(norad, norad_follow)
                         else:

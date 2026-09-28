@@ -692,9 +692,17 @@ GET https://db.satnogs.org/api/tle/?norad_cat_id={fake_id}&format=json
    セクションの「関連する副次修正」参照）
 3. TLE を仮 ID → 実 ID へコピー（実 ID 側に manual TLE があればスキップ）
 4. トランスミッタを仮 ID → 実 ID へ移行（実 ID 側に既存ならスキップ）
-5. `is_favorite` を実 ID にコピー
+5. Favorite グループ所属を仮 ID → 実 ID へ**移動**（`favorites.move_groups()`。コピーではなく移動にしているのは、
+   このパイプラインが同期のたびに再実行されるため、ユーザーが実 ID 側で外したグループが復活するのを防ぐ）
 6. 実 ID 衛星に `satnogs_source_id = fake_id` を記録
 7. 仮 ID を `is_hidden = 2`（システム非表示）に設定
+
+**2026-09-28 修正（手順5の引き継ぎ漏れ）**: 旧手順5は旧フラグ `is_favorite` しかコピーせず、画面が実際に
+見ている `favorite_group`（どの Favorite グループか）を引き継いでいなかった。Favorite 2 に入れていた仮 ID 衛星が
+実 ID へ移行すると、実 ID 側はどのグループにも現れず、仮 ID 側（`is_hidden=2` で非表示）に所属だけが取り残され
+「お気に入りが消えた」ように見えた。多対多化（[ui-components.md](ui-components.md)「カスタムFavoriteグループ設計」）と
+同時に手順5を「移動」へ変更し、既に移行済みで取り残された所属は `_migrate_favorites_to_multi_group()` が
+一度だけ実 ID へ移す（`satnogs_source_id` で結ばれ、仮 ID 側が `is_hidden=2` のペアが対象）。
 
 #### トリガー
 | トリガー | 発火場所 |

@@ -734,7 +734,7 @@ canvas#radar { background: transparent; }
 /* ── State ── */
 let allSats = [];
 let customGroups = [];       // [{id, name, sort_order}, ...] — mirrors desktop's ★ Favorite N filters
-let favMap = new Map();      // norad_cat_id -> favorite_group id (0/absent = not favorited)
+let favMap = new Map();      // norad_cat_id -> array of favorite group ids (absent = not favorited)
 let selectedNorad = null;
 let ws = null;
 let radarView = null;
@@ -807,18 +807,18 @@ function openFavMenu(norad, anchorEl) {
   closeFavMenu();
   const menu = document.createElement('div');
   menu.className = 'fav-menu';
-  const currentGroup = favMap.get(norad) || 0;
+  const currentGroups = favMap.get(norad) || [];
   customGroups.forEach(g => {
     const btn = document.createElement('button');
-    btn.textContent = (g.id === currentGroup ? '✓ ' : '') + g.name;
-    btn.addEventListener('click', () => setFavoriteGroup(norad, g.id));
+    btn.textContent = (currentGroups.includes(g.id) ? '✓ ' : '') + g.name;
+    btn.addEventListener('click', () => toggleFavoriteGroup(norad, g.id));
     menu.appendChild(btn);
   });
-  if (currentGroup > 0) {
+  if (currentGroups.length > 0) {
     const rmBtn = document.createElement('button');
     rmBtn.className = 'fav-menu-remove';
     rmBtn.textContent = 'Remove from favorites';
-    rmBtn.addEventListener('click', () => setFavoriteGroup(norad, 0));
+    rmBtn.addEventListener('click', () => setFavoriteGroups(norad, []));
     menu.appendChild(rmBtn);
   }
   document.body.appendChild(menu);
@@ -829,15 +829,23 @@ function openFavMenu(norad, anchorEl) {
   setTimeout(() => document.addEventListener('click', closeFavMenuOnOutsideClick, true), 0);
 }
 
-async function setFavoriteGroup(norad, groupId) {
+function toggleFavoriteGroup(norad, groupId) {
+  const current = favMap.get(norad) || [];
+  const next = current.includes(groupId)
+    ? current.filter(id => id !== groupId)
+    : [...current, groupId];
+  return setFavoriteGroups(norad, next);
+}
+
+async function setFavoriteGroups(norad, groupIds) {
   closeFavMenu();
-  const resp = await fetch(`/api/satellites/${norad}/favorite-group`, {
+  const resp = await fetch(`/api/satellites/${norad}/favorite-groups`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ group_id: groupId }),
+    body: JSON.stringify({ group_ids: groupIds }),
   }).catch(() => null);
   if (!resp || !resp.ok) return;
-  if (groupId > 0) favMap.set(norad, groupId);
+  if (groupIds.length > 0) favMap.set(norad, groupIds);
   else favMap.delete(norad);
   const currentFilter = document.getElementById('group-filter').value;
   if (currentFilter.startsWith('fav:')) {
@@ -861,7 +869,7 @@ function renderSatList() {
   ul.innerHTML = '';
   allSats.forEach(sat => {
     const li = document.createElement('li');
-    const isFav = (favMap.get(sat.norad_cat_id) || 0) > 0;
+    const isFav = (favMap.get(sat.norad_cat_id) || []).length > 0;
     li.classList.add(amsatColorClass(sat));
     if (sat.norad_cat_id === selectedNorad) li.classList.add('selected');
     li.dataset.name = sat.name.toLowerCase();
@@ -1395,7 +1403,7 @@ async function init() {
 
   allSats = sats;
   customGroups = groups;
-  favMap = new Map(favSats.map(s => [s.norad_cat_id, s.favorite_group]));
+  favMap = new Map(favSats.map(s => [s.norad_cat_id, s.favorite_groups]));
 
   const optAll = document.getElementById('opt-all');
   if (optAll) {

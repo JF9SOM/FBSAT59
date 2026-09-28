@@ -72,6 +72,7 @@ from core.engine import DopplerCalculator, Observation, PassPredictor, Satellite
 from core.location import LocationManager
 from core.notifier import PassNotifier
 from core.ntp_check import check_system_clock
+from data import favorites as favorites_db
 from data.amsat_status import AMSATStatusFetcher
 from data.amsat_upcoming import AMSATUpcomingFetcher
 from data.ctcss_db import get_ctcss
@@ -117,7 +118,7 @@ class _SatData(TypedDict):
     amsat_status: str | None
     amsat_upcoming: bool  # True if listed in AMSAT's "In Testing" upcoming-satellite list
     tle_no_result_since: str | None  # set when no TLE found; shown yellow in list
-    favorite_group: int  # 0 = not in any group, 1..N = custom group id
+    favorite_groups: list[int]  # custom group ids this satellite belongs to (empty = none)
     has_transmitter: bool  # False when no alive transmitter row exists; shown "(no TX)" in list
 
 
@@ -1654,7 +1655,6 @@ class MainWindow(QMainWindow):
             SELECT s.norad_cat_id, s.name, s.alt_names, s.is_favorite, s.is_hidden, s.status,
                    COALESCE(t.tle_group, 'amateur') AS tle_group,
                    s.tle_no_result_since,
-                   COALESCE(s.favorite_group, 0) AS favorite_group,
                    EXISTS (
                        SELECT 1 FROM transmitters x
                        WHERE x.norad_cat_id = s.norad_cat_id AND x.alive = 1
@@ -1664,6 +1664,8 @@ class MainWindow(QMainWindow):
             ORDER BY s.name
             """
         ).fetchall()
+
+        favorite_memberships = favorites_db.load_all_memberships(self._conn)
 
         self._all_sat_data = []
         self._all_norads = []
@@ -1731,7 +1733,7 @@ class MainWindow(QMainWindow):
                     tle_no_result_since=(
                         str(row["tle_no_result_since"]) if row["tle_no_result_since"] else None
                     ),
-                    favorite_group=int(row["favorite_group"] or 0),
+                    favorite_groups=favorite_memberships.get(norad, []),
                     has_transmitter=bool(row["has_transmitter"]),
                 )
             )
@@ -1793,7 +1795,7 @@ class MainWindow(QMainWindow):
                 grp_row = self._conn.execute(
                     "SELECT id FROM custom_groups WHERE name = ?", (group_name,)
                 ).fetchone()
-                if grp_row is None or d["favorite_group"] != grp_row["id"]:
+                if grp_row is None or grp_row["id"] not in d["favorite_groups"]:
                     continue
             if filter_text == "Amateur" and d["tle_group"] != "amateur":
                 continue
@@ -1822,7 +1824,7 @@ class MainWindow(QMainWindow):
                 if search_query not in alts_lower:
                     continue
 
-            prefix = "★ " if d["favorite_group"] > 0 else ""
+            prefix = "★ " if d["favorite_groups"] else ""
             # Append Oscar designator (e.g. "(IO-86)") when not already in the name
             oscar_suffix = ""
             try:
@@ -5148,8 +5150,7 @@ class MainWindow(QMainWindow):
         norad = int(item.data(Qt.ItemDataRole.UserRole))
 
         row_data = self._conn.execute(
-            "SELECT name, is_favorite, is_hidden, favorite_group FROM satellites"
-            " WHERE norad_cat_id = ?",
+            "SELECT name, is_hidden FROM satellites WHERE norad_cat_id = ?",
             (norad,),
         ).fetchone()
         if row_data is None:
@@ -5157,7 +5158,7 @@ class MainWindow(QMainWindow):
 
         name = str(row_data["name"])
         is_hidden = bool(row_data["is_hidden"])
-        current_group: int = int(row_data["favorite_group"] or 0)
+        current_groups: set[int] = set(favorites_db.get_groups(self._conn, norad))
 
         # Load custom groups for submenu
         groups = self._conn.execute(
@@ -5172,9 +5173,9 @@ class MainWindow(QMainWindow):
             grp_name = str(grp["name"])
             act = fav_menu.addAction(f"★ {grp_name}")
             act.setCheckable(True)
-            act.setChecked(current_group == grp_id)
+            act.setChecked(grp_id in current_groups)
             fav_actions[grp_id] = act
-        if current_group > 0:
+        if current_groups:
             fav_menu.addSeparator()
             remove_fav_action: QAction | None = fav_menu.addAction(_("Remove from Favorites"))
         else:
@@ -5200,10 +5201,9 @@ class MainWindow(QMainWindow):
         action = menu.exec(self._sat_list.mapToGlobal(pos))
         if action is not None and action in fav_actions.values():
             chosen_id = next(k for k, v in fav_actions.items() if v == action)
-            new_group = 0 if current_group == chosen_id else chosen_id
-            self._set_favorite_group(norad, new_group)
+            self._toggle_favorite_group(norad, chosen_id)
         elif action is not None and action == remove_fav_action:
-            self._set_favorite_group(norad, 0)
+            self._clear_favorite_groups(norad)
         elif action == hide_action:
             self._set_hidden(norad, not is_hidden)
         elif action == info_action:
@@ -5374,21 +5374,15 @@ class MainWindow(QMainWindow):
         if sb:
             sb.showMessage(msg, 8000)
 
-    def _toggle_favorite(self, norad: int, favorite: bool) -> None:
-        """Save the favorite state to the DB and reload the satellite list (legacy)."""
-        self._conn.execute(
-            "UPDATE satellites SET is_favorite = ? WHERE norad_cat_id = ?",
-            (1 if favorite else 0, norad),
-        )
+    def _toggle_favorite_group(self, norad: int, group_id: int) -> None:
+        """Add the satellite to a custom favorite group, or remove it if already in it."""
+        favorites_db.toggle_group(self._conn, norad, group_id)
         self._conn.commit()
         self._load_satellites()
 
-    def _set_favorite_group(self, norad: int, group_id: int) -> None:
-        """Assign a satellite to a custom favorite group (0 = remove from all groups)."""
-        self._conn.execute(
-            "UPDATE satellites SET favorite_group = ?, is_favorite = ? WHERE norad_cat_id = ?",
-            (group_id, 1 if group_id > 0 else 0, norad),
-        )
+    def _clear_favorite_groups(self, norad: int) -> None:
+        """Remove a satellite from every custom favorite group."""
+        favorites_db.set_groups(self._conn, norad, [])
         self._conn.commit()
         self._load_satellites()
 

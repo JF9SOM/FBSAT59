@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from data import favorites as favorites_db
 from data.tle_manager import TLE_SOURCE_DISPLAY_NAMES, TLE_SOURCES
 from i18n import _
 
@@ -497,10 +498,7 @@ class SettingsDialog(QDialog):
         if ans != QMessageBox.StandardButton.Yes:
             return
         self._conn.execute("DELETE FROM custom_groups WHERE id = ?", (grp_id,))
-        self._conn.execute(
-            "UPDATE satellites SET favorite_group = 0, is_favorite = 0 WHERE favorite_group = ?",
-            (grp_id,),
-        )
+        favorites_db.remove_group(self._conn, grp_id)
         self._conn.commit()
         self._reload_groups_list()
 

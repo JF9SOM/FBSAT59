@@ -363,7 +363,7 @@ class TestApiSatellitesGroupFilter:
     def test_group_fav_prefix_with_no_matching_satellite_returns_empty(
         self, populated_client: TestClient
     ) -> None:
-        # group=fav:1 filters by favorite_group=1; populated_db has no favorites by default
+        # group=fav:1 filters by group membership; populated_db has no favorites by default
         data = populated_client.get("/api/satellites?group=fav:1").json()
         assert data == []
 
@@ -464,6 +464,10 @@ class TestApiPassesDateRange:
 
 
 class TestApiFavorites:
+    @staticmethod
+    def _put(c: TestClient, norad: int, group_ids: list[int]) -> Any:
+        return c.put(f"/api/satellites/{norad}/favorite-groups", json={"group_ids": group_ids})
+
     def test_get_favorites_empty(self, client: TestClient) -> None:
         resp = client.get("/api/favorites")
         assert resp.status_code == 200
@@ -473,38 +477,45 @@ class TestApiFavorites:
         data = populated_client.get("/api/favorites").json()
         assert data == []
 
-    def test_set_favorite_group_returns_204(self, populated_client: TestClient) -> None:
-        resp = populated_client.put("/api/satellites/25544/favorite-group", json={"group_id": 1})
-        assert resp.status_code == 204
+    def test_set_favorite_groups_returns_204(self, populated_client: TestClient) -> None:
+        assert self._put(populated_client, 25544, [1]).status_code == 204
 
-    def test_set_favorite_group_unknown_returns_404(self, populated_client: TestClient) -> None:
-        resp = populated_client.put("/api/satellites/99999/favorite-group", json={"group_id": 1})
-        assert resp.status_code == 404
+    def test_set_favorite_groups_unknown_returns_404(self, populated_client: TestClient) -> None:
+        assert self._put(populated_client, 99999, [1]).status_code == 404
 
     def test_get_favorites_after_set(self, populated_client: TestClient) -> None:
-        populated_client.put("/api/satellites/25544/favorite-group", json={"group_id": 2})
+        self._put(populated_client, 25544, [2])
         data = populated_client.get("/api/favorites").json()
         assert len(data) == 1
         assert data[0]["norad_cat_id"] == 25544
-        assert data[0]["favorite_group"] == 2
+        assert data[0]["favorite_groups"] == [2]
 
-    def test_clear_favorite_group_returns_204(self, populated_client: TestClient) -> None:
-        populated_client.put("/api/satellites/25544/favorite-group", json={"group_id": 1})
-        resp = populated_client.put("/api/satellites/25544/favorite-group", json={"group_id": 0})
-        assert resp.status_code == 204
+    def test_satellite_can_belong_to_several_groups(self, populated_client: TestClient) -> None:
+        self._put(populated_client, 25544, [1, 3])
+        data = populated_client.get("/api/favorites").json()
+        assert len(data) == 1
+        assert data[0]["favorite_groups"] == [1, 3]
+        for grp in (1, 3):
+            in_group = populated_client.get(f"/api/satellites?group=fav:{grp}").json()
+            assert [s["norad_cat_id"] for s in in_group] == [25544]
+        assert populated_client.get("/api/satellites?group=fav:2").json() == []
+
+    def test_clear_favorite_groups_returns_204(self, populated_client: TestClient) -> None:
+        self._put(populated_client, 25544, [1])
+        assert self._put(populated_client, 25544, []).status_code == 204
 
     def test_get_favorites_after_clear(self, populated_client: TestClient) -> None:
-        populated_client.put("/api/satellites/25544/favorite-group", json={"group_id": 1})
-        populated_client.put("/api/satellites/25544/favorite-group", json={"group_id": 0})
+        self._put(populated_client, 25544, [1, 2])
+        self._put(populated_client, 25544, [])
         data = populated_client.get("/api/favorites").json()
         assert data == []
 
     def test_satellites_group_fav_prefix_returns_only_matching_group(
         self, populated_client: TestClient
     ) -> None:
-        populated_client.put("/api/satellites/25544/favorite-group", json={"group_id": 1})
+        self._put(populated_client, 25544, [1])
         # 43017 (FOX-1D) is put in a different group and must not appear in group=fav:1
-        populated_client.put("/api/satellites/43017/favorite-group", json={"group_id": 2})
+        self._put(populated_client, 43017, [2])
         data = populated_client.get("/api/satellites?group=fav:1").json()
         assert len(data) == 1
         assert data[0]["norad_cat_id"] == 25544
