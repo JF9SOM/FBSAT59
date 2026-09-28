@@ -52,6 +52,8 @@ MODULE_CHAIN=(
   lib/fftw3mod.f90
   lib/four2a.f90
   lib/packjt.f90
+  lib/77bit/packjt77_schema.f90
+  lib/77bit/packjt77_grammar.f90
   lib/77bit/packjt77.f90
   lib/ft8/encode174_91.f90
   lib/ft8/decode174_91.f90
@@ -86,7 +88,7 @@ LEAF_FILES=(
   lib/ft8/twkfreq1.f90
   lib/determ.f90
   lib/ft8/encode174_91_nocrc.f90
-  lib/ft2/gfsk_pulse.f90
+  lib/gfsk_pulse.f90
   lib/indexx.f90
   lib/shell.f90
 )

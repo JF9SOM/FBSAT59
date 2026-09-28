@@ -55,6 +55,8 @@ MODULE_CHAIN=(
   lib/types.f90
   lib/timer_module.f90
   lib/packjt.f90
+  lib/77bit/packjt77_schema.f90
+  lib/77bit/packjt77_grammar.f90
   lib/77bit/packjt77.f90
   lib/prog_args.f90
   lib/fftw3mod.f90
