@@ -719,21 +719,6 @@ class SdrControlWidget(QWidget):
         self._vol_label = QLabel("70%")
         vol_row.addWidget(self._vol_slider)
         vol_row.addWidget(self._vol_label)
-        form.addLayout(vol_row)
-
-        # AGC checkbox
-        agc_row = QHBoxLayout()
-        self._agc_rb_on = QRadioButton(_("AGC On"))
-        self._agc_rb_on.setChecked(True)
-        self._agc_rb_off = QRadioButton(_("AGC Off"))
-        self._agc_rb_on.toggled.connect(self._on_agc_changed)
-        agc_row.addWidget(self._agc_rb_on)
-        agc_row.addWidget(self._agc_rb_off)
-        agc_row.addStretch()
-        form.addLayout(agc_row)
-
-        # Audio playback + MP3 recording buttons
-        btn_row = QHBoxLayout()
         # One toggle for speaker output: the label names the action a click performs.
         self._audio_on = False
         self._audio_toggle_btn = QPushButton()
@@ -749,7 +734,22 @@ class SdrControlWidget(QWidget):
         self._audio_on = False
         self._refresh_audio_toggle_btn()
         self._audio_toggle_btn.setMinimumWidth(widest)
-        btn_row.addWidget(self._audio_toggle_btn)
+        vol_row.addWidget(self._audio_toggle_btn)
+        form.addLayout(vol_row)
+
+        # AGC checkbox
+        agc_row = QHBoxLayout()
+        self._agc_rb_on = QRadioButton(_("AGC On"))
+        self._agc_rb_on.setChecked(True)
+        self._agc_rb_off = QRadioButton(_("AGC Off"))
+        self._agc_rb_on.toggled.connect(self._on_agc_changed)
+        agc_row.addWidget(self._agc_rb_on)
+        agc_row.addWidget(self._agc_rb_off)
+        agc_row.addStretch()
+        form.addLayout(agc_row)
+
+        # MP3 recording buttons
+        btn_row = QHBoxLayout()
         btn_row.addStretch()
 
         self._audio_rec_btn = QPushButton(_("● REC Audio"))

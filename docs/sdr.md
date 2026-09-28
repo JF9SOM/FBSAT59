@@ -660,8 +660,8 @@ SDR の Rig:  [SDR: Connected  ■ 435.612 MHz]  ← シアン色で区別
 └──────────────────────────────────────────────────┘
 ┌─ Demodulator ───────────────────────────────────┐
 │  Mode: [NFM ▼] [USB] [LSB] [CW]                  │
-│  Filter BW: スライダー  Volume: スライダー  AGC    │
-│  [🔊 Unmute] ⇄ [🔇 Mute]  (single toggle button)  │
+│  Filter BW: スライダー  Volume: スライダー [🔊 Unmute⇄🔇 Mute]│
+│  AGC                                             │
 └──────────────────────────────────────────────────┘
 ┌─ IQ Recorder ───────────────────────────────────┐
 │  BW: [250 kHz ▼]   ファイル名自動生成             │
