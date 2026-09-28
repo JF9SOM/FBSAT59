@@ -665,12 +665,20 @@ class Ft4Tab(QWidget):
         self._grid_edit.textChanged.connect(self._on_settings_changed)
         cfg_lay.addWidget(self._grid_edit)
 
-        cfg_lay.addWidget(QLabel(_("Audio Hz:")))
+        _tx_audio_tip = _(
+            "Audio tone frequency of your transmission. Reception is not "
+            "affected: the whole passband is always decoded."
+        )
+        _tx_audio_label = QLabel(_("TX Audio:"))
+        _tx_audio_label.setToolTip(_tx_audio_tip)
+        cfg_lay.addWidget(_tx_audio_label)
         self._audio_freq_edit = QLineEdit(str(int(self._audio_freq)))
         self._audio_freq_edit.setMinimumWidth(50)
         self._audio_freq_edit.setMaximumWidth(60)
+        self._audio_freq_edit.setToolTip(_tx_audio_tip)
         self._audio_freq_edit.textChanged.connect(self._on_settings_changed)
         cfg_lay.addWidget(self._audio_freq_edit)
+        cfg_lay.addWidget(QLabel(_("Hz")))
 
         cfg_lay.addWidget(QLabel(_("RX:")))
         self._rx_src_combo = QComboBox()

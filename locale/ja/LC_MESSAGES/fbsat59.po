@@ -50,9 +50,15 @@ msgstr "コールサイン:"
 msgid "Grid:"
 msgstr "グリッド:"
 
-#: src/ui/ft4_tab.py:647
-msgid "Audio Hz:"
-msgstr "オーディオ Hz:"
+#: src/ui/ft4_tab.py
+msgid "TX Audio:"
+msgstr "送信音声:"
+
+#: src/ui/ft4_tab.py
+msgid ""
+"Audio tone frequency of your transmission. Reception is not affected: the "
+"whole passband is always decoded."
+msgstr "送信するオーディオトーンの周波数です。受信には影響しません（通過帯域全体を常にデコードします）。"
 
 #: src/ui/ft4_tab.py:654 src/ui/q65_tab.py:211
 msgid "RX:"
