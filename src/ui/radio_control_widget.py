@@ -554,24 +554,22 @@ class RadioControlWidget(QWidget):
         self._play_open_btn = QPushButton("📂")
         self._play_open_btn.setToolTip(_("Choose a recorded audio file and start playing it"))
         self._play_open_btn.clicked.connect(self._on_play_open_clicked)
-        self._play_btn = QPushButton("▶️")
-        self._play_btn.setToolTip(_("Play"))
-        self._play_btn.clicked.connect(self._on_play_clicked)
+        # One toggle: shows the action a click performs (▶️ while stopped or
+        # paused, ⏸️ while playing), like SDR Control's Mute/Unmute button.
+        self._play_pause_btn = QPushButton("▶️")
+        self._play_pause_btn.setToolTip(_("Play"))
+        self._play_pause_btn.clicked.connect(self._on_play_pause_clicked)
         self._rew_btn = QPushButton("⏪")
         self._rew_btn.setToolTip(_("Rewind 5 seconds"))
         self._rew_btn.clicked.connect(lambda: self._on_seek_clicked(-self._SEEK_STEP_S))
         self._ff_btn = QPushButton("⏩")
         self._ff_btn.setToolTip(_("Fast-forward 5 seconds"))
         self._ff_btn.clicked.connect(lambda: self._on_seek_clicked(self._SEEK_STEP_S))
-        self._pause_btn = QPushButton("⏸️")
-        self._pause_btn.setToolTip(_("Pause"))
-        self._pause_btn.clicked.connect(self._on_pause_clicked)
         for btn in (
             self._play_open_btn,
-            self._play_btn,
+            self._play_pause_btn,
             self._rew_btn,
             self._ff_btn,
-            self._pause_btn,
         ):
             btn.setFixedWidth(self._REC_ICON_BTN_WIDTH)
         self._update_play_buttons()
@@ -583,10 +581,9 @@ class RadioControlWidget(QWidget):
         rec_layout.addWidget(self._audio_rec_btn)
         rec_layout.addWidget(self._audio_stop_rec_btn)
         rec_layout.addWidget(self._play_open_btn)
-        rec_layout.addWidget(self._play_btn)
+        rec_layout.addWidget(self._play_pause_btn)
         rec_layout.addWidget(self._rew_btn)
         rec_layout.addWidget(self._ff_btn)
-        rec_layout.addWidget(self._pause_btn)
         rec_layout.addWidget(self._audio_rec_status_label)
         rec_layout.addStretch()
         return grp
@@ -1481,22 +1478,20 @@ class RadioControlWidget(QWidget):
         self._play_timer.start()
         self._update_play_state()
 
-    def _on_play_clicked(self) -> None:
-        """Play (or resume) the loaded recording."""
+    def _on_play_pause_clicked(self) -> None:
+        """Pause while playing; otherwise play (or resume) the loaded recording."""
         if not self._audio_player.is_loaded:
             return
-        try:
-            self._audio_player.play()
-        except Exception as exc:
-            QMessageBox.warning(
-                self, _("Recording"), _("Cannot play this file: {exc}").format(exc=exc)
-            )
-        self._play_timer.start()
-        self._update_play_state()
-
-    def _on_pause_clicked(self) -> None:
-        """Pause playback, keeping the position."""
-        self._audio_player.pause()
+        if self._audio_player.is_playing:
+            self._audio_player.pause()
+        else:
+            try:
+                self._audio_player.play()
+            except Exception as exc:
+                QMessageBox.warning(
+                    self, _("Recording"), _("Cannot play this file: {exc}").format(exc=exc)
+                )
+            self._play_timer.start()
         self._update_play_state()
 
     def _on_seek_clicked(self, seconds: float) -> None:
@@ -1514,8 +1509,9 @@ class RadioControlWidget(QWidget):
     def _update_play_buttons(self) -> None:
         loaded = self._audio_player.is_loaded
         playing = self._audio_player.is_playing
-        self._play_btn.setEnabled(loaded and not playing)
-        self._pause_btn.setEnabled(playing)
+        self._play_pause_btn.setEnabled(loaded)
+        self._play_pause_btn.setText("⏸️" if playing else "▶️")
+        self._play_pause_btn.setToolTip(_("Pause") if playing else _("Play"))
         self._rew_btn.setEnabled(loaded)
         self._ff_btn.setEnabled(loaded)
 

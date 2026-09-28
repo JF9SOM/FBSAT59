@@ -157,8 +157,8 @@ class TestRadioControlPlaybackButtons:
         assert w._audio_stop_rec_btn.text() == "■"
         assert "STOP" not in w._audio_rec_btn.text()
         assert w._audio_rec_btn.text().endswith("REC")
-        assert not w._play_btn.isEnabled()
-        assert not w._pause_btn.isEnabled()
+        assert w._play_pause_btn.text() == "▶️"
+        assert not w._play_pause_btn.isEnabled()
         assert not w._rew_btn.isEnabled()
         assert not w._ff_btn.isEnabled()
         assert w._play_open_btn.isEnabled()
@@ -173,20 +173,41 @@ class TestRadioControlPlaybackButtons:
         w._on_play_open_clicked()
 
         assert w._audio_player.is_playing
-        assert w._pause_btn.isEnabled()
-        assert not w._play_btn.isEnabled()
+        assert w._play_pause_btn.isEnabled()
+        assert w._play_pause_btn.text() == "⏸️"
         assert w._rew_btn.isEnabled()
         assert w._ff_btn.isEnabled()
         assert w._audio_rec_status_label.text() == "00:00"
 
-        w._on_pause_clicked()
+        w._play_pause_btn.click()
         assert not w._audio_player.is_playing
-        assert w._play_btn.isEnabled()
-        assert not w._pause_btn.isEnabled()
+        assert w._play_pause_btn.text() == "▶️"
+
+        w._play_pause_btn.click()
+        assert w._audio_player.is_playing
+        assert w._play_pause_btn.text() == "⏸️"
+        w._play_pause_btn.click()
 
         w._on_seek_clicked(1.0)
         assert w._audio_player.position_s == pytest.approx(1.0)
         assert w._audio_rec_status_label.text() == "00:01"
+        w.close()
+
+    def test_button_returns_to_play_when_file_ends(
+        self, qtbot: QtBot, wav_path: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from PySide6.QtWidgets import QFileDialog
+
+        w = self._make(qtbot)
+        monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (wav_path, ""))
+        w._on_play_open_clicked()
+        assert w._play_pause_btn.text() == "⏸️"
+
+        _pull(_FakeStream.instances[-1], RATE * 3)  # runs off the end of the file
+        w._update_play_state()  # what the 250 ms poll does
+
+        assert w._play_pause_btn.text() == "▶️"
+        assert w._play_pause_btn.isEnabled()
         w.close()
 
     def test_cancelled_dialog_changes_nothing(
@@ -198,4 +219,4 @@ class TestRadioControlPlaybackButtons:
         monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: ("", ""))
         w._on_play_open_clicked()
         assert not w._audio_player.is_loaded
-        assert not w._play_btn.isEnabled()
+        assert not w._play_pause_btn.isEnabled()
