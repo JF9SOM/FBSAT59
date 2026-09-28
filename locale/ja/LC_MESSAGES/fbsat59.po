@@ -4486,14 +4486,6 @@ msgstr "lameencがインストールされていません — pip install lameen
 msgid "■ STOP"
 msgstr "■ 停止"
 
-#: src/ui/radio_control_widget.py:547 src/ui/sdr_control_widget.py:756
-msgid "📁"
-msgstr "📁"
-
-#: src/ui/radio_control_widget.py:548 src/ui/sdr_control_widget.py:757
-msgid "Open audio recordings folder in file manager"
-msgstr "ファイルマネージャーで音声録音フォルダを開く"
-
 #: src/ui/radio_control_widget.py:782
 msgid "ON"
 msgstr "オン"

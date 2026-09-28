@@ -4082,14 +4082,6 @@ msgstr ""
 msgid "■ STOP"
 msgstr ""
 
-#: src/ui/radio_control_widget.py:547 src/ui/sdr_control_widget.py:756
-msgid "📁"
-msgstr ""
-
-#: src/ui/radio_control_widget.py:548 src/ui/sdr_control_widget.py:757
-msgid "Open audio recordings folder in file manager"
-msgstr ""
-
 #: src/ui/radio_control_widget.py:782
 msgid "ON"
 msgstr ""

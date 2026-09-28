@@ -18,8 +18,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QDesktopServices
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -580,11 +580,6 @@ class RadioControlWidget(QWidget):
         self._audio_rec_status_label.setStyleSheet("color: gray; font-size: 10px;")
         self._audio_rec_status_label.setMinimumWidth(40)
 
-        self._open_audio_folder_btn = QPushButton(_("📁"))
-        self._open_audio_folder_btn.setToolTip(_("Open audio recordings folder in file manager"))
-        self._open_audio_folder_btn.setFixedWidth(28)
-        self._open_audio_folder_btn.clicked.connect(self._open_audio_folder)
-
         rec_layout.addWidget(self._audio_rec_btn)
         rec_layout.addWidget(self._audio_stop_rec_btn)
         rec_layout.addWidget(self._play_open_btn)
@@ -594,7 +589,6 @@ class RadioControlWidget(QWidget):
         rec_layout.addWidget(self._pause_btn)
         rec_layout.addWidget(self._audio_rec_status_label)
         rec_layout.addStretch()
-        rec_layout.addWidget(self._open_audio_folder_btn)
         return grp
 
     # ------------------------------------------------------------------ #
@@ -1457,11 +1451,6 @@ class RadioControlWidget(QWidget):
             return
         elapsed = int(self._audio_recorder.elapsed_seconds)
         self._audio_rec_status_label.setText(f"{elapsed // 60:02d}:{elapsed % 60:02d}")
-
-    def _open_audio_folder(self) -> None:
-        """Open the audio recordings save directory in the OS file manager."""
-        self._audio_save_dir.mkdir(parents=True, exist_ok=True)
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._audio_save_dir)))
 
     # ------------------------------------------------------------------ #
     # Playback of recorded audio
