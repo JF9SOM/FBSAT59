@@ -15,7 +15,7 @@
 ! EME/QSO decoding, never NA VHF/WW-Digi contest operation):
 !   - single_decode = .true.   (one decode attempt per period; skip the
 !                               extra multi-candidate search loop)
-!   - ncontest = 0, lapcqonly = .false., nQSOprogress = 0
+!   - ncontest = 0, lq65pileup = .false., lapcqonly = .false., nQSOprogress = 0
 !   - lnewdat0 = .true.        (each call is a freshly captured period)
 !   - max_drift0 = 0
 ! lclearave and emedelay are exposed because they matter for real
@@ -48,7 +48,7 @@ module q65wsjt_bridge
 
 contains
 
-   subroutine bridge_callback(this, nutc, snr1, nsnr, dt, freq, decoded, idec, nused, ntrperiod)
+   subroutine bridge_callback(this, nutc, snr1, nsnr, dt, freq, decoded, idec, nused, ntrperiod, iflagdec)
       class(q65_decoder), intent(inout) :: this
       integer, intent(in) :: nutc
       real, intent(in) :: snr1
@@ -59,6 +59,8 @@ contains
       integer, intent(in) :: idec
       integer, intent(in) :: nused
       integer, intent(in) :: ntrperiod
+      ! Recovered spare 78th bit; not part of our C ABI, so unused here.
+      integer, intent(in) :: iflagdec
 
       procedure(c_callback_iface), pointer :: cb
       character(kind=c_char, len=38) :: c_text
@@ -113,7 +115,7 @@ contains
       integer*2 :: dd(Q65WSJT_NMAX)
       character*12 :: f_mycall, f_hiscall
       character*6 :: f_hisgrid
-      logical :: lclearave, single_decode, lagain, lnewdat0, lapcqonly
+      logical :: lclearave, single_decode, lagain, lnewdat0, lapcqonly, lq65pileup
       integer :: ncontest, nQSOprogress, max_drift0, navg0, nqf(20)
       integer :: nutc, i, ncopy
 
@@ -149,6 +151,7 @@ contains
       max_drift0 = 0
       nQSOprogress = 0
       ncontest = 0
+      lq65pileup = .false.
       lapcqonly = .false.
       nutc = 0
 
@@ -156,7 +159,7 @@ contains
                              max(nfb - nfqso, nfqso - nfa), ndepth, nfa, nfb, &
                              lclearave, single_decode, lagain, max_drift0, lnewdat0, &
                              emedelay, f_mycall, f_hiscall, f_hisgrid, nQSOprogress, &
-                             ncontest, lapcqonly, navg0, nqf)
+                             ncontest, lq65pileup, lapcqonly, navg0, nqf)
    end subroutine q65wsjt_decode
 
 end module q65wsjt_bridge
