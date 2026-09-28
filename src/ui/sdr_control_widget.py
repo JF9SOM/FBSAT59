@@ -684,6 +684,12 @@ class SdrControlWidget(QWidget):
         self._mode_combo.setCurrentIndex(1)  # USB default
         self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         mode_row.addWidget(self._mode_combo)
+        self._agc_rb_on = QRadioButton(_("AGC On"))
+        self._agc_rb_on.setChecked(True)
+        self._agc_rb_off = QRadioButton(_("AGC Off"))
+        self._agc_rb_on.toggled.connect(self._on_agc_changed)
+        mode_row.addWidget(self._agc_rb_on)
+        mode_row.addWidget(self._agc_rb_off)
         mode_row.addStretch()
         form.addLayout(mode_row)
 
@@ -714,17 +720,6 @@ class SdrControlWidget(QWidget):
         self._audio_toggle_btn.setMinimumWidth(widest)
         vol_row.addWidget(self._audio_toggle_btn)
         form.addLayout(vol_row)
-
-        # AGC checkbox
-        agc_row = QHBoxLayout()
-        self._agc_rb_on = QRadioButton(_("AGC On"))
-        self._agc_rb_on.setChecked(True)
-        self._agc_rb_off = QRadioButton(_("AGC Off"))
-        self._agc_rb_on.toggled.connect(self._on_agc_changed)
-        agc_row.addWidget(self._agc_rb_on)
-        agc_row.addWidget(self._agc_rb_off)
-        agc_row.addStretch()
-        form.addLayout(agc_row)
         return grp
 
     def _build_recorder_panel(self) -> QGroupBox:
