@@ -122,6 +122,11 @@ mac には `timeout` コマンドが無いので、止め時間を制御した�
 
 冪等（導入済みならスキップ）・オフラインでも起動を止めない・ランチャーを失敗させない設計。
 
+**zip の最上位フォルダは自動で剥がす（2026-09-28）**: `ssdv-windows-x86_64.zip` が `Compress-Archive -Path ssdv-flat`
+でフォルダごと圧縮されていたため、`ssdv.exe` が `ssdv\ssdv-flat\` に展開されて `ssdv: ssdv.exe missing after
+extracting …` と毎回失敗していた（アプリも `ssdv\ssdv.exe` しか探さず SSDV が動かなかった）。
+`_extract_flat()` は最上位が単一フォルダの zip ならそのフォルダを剥がして展開し、`build-ssdv.yml` も平らな zip を作るよう修正済み。
+
 **音声・DSP 系の pip 依存（`sounddevice` / `scipy` / `pyusb` / `plyer` /
 `reed-solomon-ccsds`）は `bootstrap_natives.py` では入れない。** これらは
 `pyproject.toml` の `[sdr]` / `[notifications]` / `[ax100digi]` エクストラに属し、

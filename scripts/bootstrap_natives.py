@@ -240,16 +240,44 @@ def _download(url: str, dest: Path, *, quiet: bool) -> None:
         raise BootstrapError(f"download failed: {exc}") from exc
 
 
+def _extract_zip_stripping_single_root(zf: zipfile.ZipFile, dest_dir: Path) -> None:
+    """Extract *zf*, dropping the top-level directory when every entry shares one."""
+    names = [n.replace("\\", "/") for n in zf.namelist() if n.strip("/\\")]
+    roots = {n.split("/", 1)[0] for n in names}
+    files = [n for n in names if not n.endswith("/")]
+    nested = len(roots) == 1 and bool(files) and all("/" in n for n in files)
+    if not nested:
+        zf.extractall(dest_dir)
+        return
+    prefix = roots.pop() + "/"
+    root = dest_dir.resolve()
+    for info in zf.infolist():
+        name = info.filename.replace("\\", "/")
+        if not name.startswith(prefix) or name == prefix:
+            continue
+        target = (root / name[len(prefix) :]).resolve()
+        if root not in target.parents and target != root:
+            raise BootstrapError(f"unsafe path in archive: {info.filename}")
+        if info.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(zf.read(info))
+
+
 def _extract_flat(archive: Path, dest_dir: Path) -> None:
     """Extract *archive* into *dest_dir*.
 
-    Windows assets are flat zips; .tar.gz assets (other platforms) have a single
-    top-level directory that is stripped so the layout matches.
+    Windows assets are normally flat zips; .tar.gz assets (other platforms) have a
+    single top-level directory that is stripped so the layout matches. A zip whose
+    entries all sit under one top-level directory (e.g. made with
+    ``Compress-Archive -Path dir``) is treated the same way, so the key file always
+    lands directly in *dest_dir*.
     """
     dest_dir.mkdir(parents=True, exist_ok=True)
     if archive.name.endswith(".zip"):
         with zipfile.ZipFile(archive) as zf:
-            zf.extractall(dest_dir)
+            _extract_zip_stripping_single_root(zf, dest_dir)
         return
     with tarfile.open(archive) as tf:
         members = tf.getmembers()

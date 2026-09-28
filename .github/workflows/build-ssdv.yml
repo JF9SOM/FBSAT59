@@ -181,7 +181,7 @@ jobs:
           echo "$SSDV_COMMIT" > "$PKG_DIR/version.txt"
           echo "Source: ${SSDV_REPO%.git} (commit $SSDV_COMMIT), GPL-3.0" > "$PKG_DIR/SOURCE.txt"
           cd "$RUNNER_TEMP"
-          powershell -NoProfile -Command "Compress-Archive -Path ssdv-flat -DestinationPath ssdv-windows-x86_64.zip -Force"
+          powershell -NoProfile -Command "Compress-Archive -Path ssdv-flat\* -DestinationPath ssdv-windows-x86_64.zip -Force"
           echo "PKG=$RUNNER_TEMP/ssdv-windows-x86_64.zip" >> "$GITHUB_ENV"
 
       - name: Upload to ssdv-bundle release
