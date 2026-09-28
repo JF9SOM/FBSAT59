@@ -3659,10 +3659,6 @@ msgstr ""
 msgid "Recording (SDR)  — starts at AOS, stops at LOS"
 msgstr ""
 
-#: src/ui/autotrack_record_dialog.py:368
-msgid "Audio Record (MP3)"
-msgstr ""
-
 #: src/ui/autotrack_record_dialog.py:370
 msgid "IQ Record"
 msgstr ""
@@ -5149,10 +5145,6 @@ msgstr ""
 
 #: src/ui/sdr_control_widget.py:749
 msgid "🔊 Unmute"
-msgstr ""
-
-#: src/ui/sdr_control_widget.py:742
-msgid "● REC Audio"
 msgstr ""
 
 #: src/ui/sdr_control_widget.py:766

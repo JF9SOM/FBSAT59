@@ -816,7 +816,7 @@ sudo usermod -aG dialout $USER
     - **衛星検索ダイアログ**（`_SatSearchDialog`）— Add Satellite ボタン押下時に表示。上部に QLineEdit 検索欄を持ち、入力に一致する衛星をリアルタイムフィルタリング。ダブルクリックまたは OK で選択
     - **衛星選択の注意**: Autotrack で AOS/LOS を正確に計算するため、受信する衛星と同一の NORAD ID を選択すること（トランスポンダーは SDR 受信目的なら任意）
   - **Autotrack Control 枠**: リスト選択コンボ・Enable チェックボックス・ステータス表示・?ヘルプボタン
-  - **Recording 枠**: Audio Record (MP3) / IQ Record チェックボックス（AOS で自動開始・LOS で自動停止）
+  - **Recording 枠**: IQ Record / METEOR チェックボックス（AOS で自動開始・LOS で自動停止。Audio Record (MP3) は 2026-09-28 に SDR 音声録音機能ごと削除）
     - **METEOR / HRPT Reception チェックボックス** — チェックを ON にすると、Autotrack AOS 検出時に対応する衛星の METEOR/HRPT タブを自動オープンし SatDump 受信を開始、LOS で自動停止する
   - **Autotrack Timer 枠**: 開始時刻（カレンダーポップアップ付き QDateTimeEdit + Now ボタン）・停止時間（3/6/12/24時間コンボ）
     - View > Time Zone 設定に連動: UTC モードなら「Start (UTC):」、Local モードなら「Start (Local):」表示

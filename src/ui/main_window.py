@@ -992,7 +992,6 @@ class MainWindow(QMainWindow):
         # Sequential autotrack engine
         self._autotrack = AutotrackManager(conn)
         self._autotrack_enabled: bool = False
-        self._autotrack_audio_record: bool = False
         self._autotrack_iq_record: bool = False
         # sdr_settings each slot's SdrRigAdapter was built from (see
         # _load_rig_settings(): an unchanged config keeps the live adapter).
@@ -1032,16 +1031,14 @@ class MainWindow(QMainWindow):
         self._at_dialog = AutotrackRecordDialog(self._conn, parent=self)
         self._at_dialog.autotrack_toggled.connect(self._on_autotrack_toggled)
         self._at_dialog.autotrack_list_changed.connect(self._on_autotrack_list_changed)
-        self._at_dialog.audio_record_changed.connect(self._on_autotrack_audio_record_changed)
         self._at_dialog.iq_record_changed.connect(self._on_autotrack_iq_record_changed)
         self._at_dialog.meteor_record_changed.connect(self._on_autotrack_meteor_record_changed)
         self._at_dialog.use_rotator_changed.connect(self._on_autotrack_use_rotator_changed)
         self._at_dialog.lists_modified.connect(self._on_autotrack_lists_modified)
-        # The dialog restores its Audio/IQ/METEOR checkboxes from app_settings
+        # The dialog restores its IQ/METEOR checkboxes from app_settings
         # in its own __init__() (before the *_changed signals above were
         # connected), so pull its already-restored state now via the getters
         # rather than relying on a signal that already fired unheard.
-        self._autotrack_audio_record = self._at_dialog.is_audio_record_enabled()
         self._autotrack_iq_record = self._at_dialog.is_iq_record_enabled()
         self._autotrack_meteor_record = self._at_dialog.is_meteor_record_enabled()
         self._on_autotrack_use_rotator_changed(self._at_dialog.is_use_rotator_enabled())
@@ -2751,13 +2748,11 @@ class MainWindow(QMainWindow):
             return False
         self._autotrack_aos_fired = True
         logger.info(
-            "Autotrack AOS fired: norad=%s name=%s el=%.1f"
-            " meteor_record=%s audio_record=%s iq_record=%s",
+            "Autotrack AOS fired: norad=%s name=%s el=%.1f meteor_record=%s iq_record=%s",
             norad,
             sat_name,
             el,
             self._autotrack_meteor_record,
-            self._autotrack_audio_record,
             self._autotrack_iq_record,
         )
         self._at_dialog.set_autotrack_status(f"Tracking: {sat_name}", ok=True)
@@ -2865,9 +2860,6 @@ class MainWindow(QMainWindow):
         self._autotrack.mark_searches_ready()
         if self._autotrack_enabled:
             self._at_dialog.set_autotrack_status(_("Autotrack ready"), ok=True)
-
-    def _on_autotrack_audio_record_changed(self, enabled: bool) -> None:
-        self._autotrack_audio_record = enabled
 
     def _on_autotrack_iq_record_changed(self, enabled: bool) -> None:
         self._autotrack_iq_record = enabled
@@ -9033,11 +9025,6 @@ class MainWindow(QMainWindow):
 
         # Start SDR recordings
         norad = self._autotrack_tracking_norad or 0
-        if self._autotrack_audio_record:
-            try:
-                self._sdr_control.start_audio_recording_for_autotrack(norad, sat_name)
-            except Exception as exc:
-                logger.warning("Autotrack audio record start failed: %s", exc)
         if self._autotrack_iq_record:
             try:
                 self._sdr_control.start_iq_recording_for_autotrack()
@@ -9066,11 +9053,6 @@ class MainWindow(QMainWindow):
             return
         self._autotrack_aos_fired = False
         # Stop recordings
-        if self._autotrack_audio_record:
-            try:
-                self._sdr_control.stop_audio_recording_for_autotrack()
-            except Exception as exc:
-                logger.warning("Autotrack audio record stop failed: %s", exc)
         if self._autotrack_iq_record:
             try:
                 self._sdr_control.stop_iq_recording_for_autotrack()

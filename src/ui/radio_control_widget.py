@@ -756,7 +756,7 @@ class RadioControlWidget(QWidget):
         anything over SDR, independent of the two earlier, real but
         secondary bugs already fixed in v0.2.30/v0.2.31: SDRPipeline
         reference staleness across reconnects, and audio_ready being
-        gated behind SDR Control's own Start Audio toggle).
+        gated behind SDR Control's own Unmute toggle).
         """
         self._sdr_control = sdr_control
 

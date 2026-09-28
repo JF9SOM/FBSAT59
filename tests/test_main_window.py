@@ -5391,7 +5391,6 @@ class TestAutotrackOnAosSkipsSdrRig:
         # Neutralize the rest of _autotrack_on_aos() so these tests focus
         # purely on the Rig 1/2 connect decision.
         w._autotrack_tracking_norad = 57166
-        w._autotrack_audio_record = False
         w._autotrack_iq_record = False
         w._autotrack_meteor_record = False
         w._meteor_autotrack_aos = MagicMock()
@@ -5460,7 +5459,6 @@ class TestAutotrackUseRotator:
         w = MainWindow(conn=db, tle_manager=tle_manager)
         qtbot.addWidget(w)
         w._autotrack_tracking_norad = 57166
-        w._autotrack_audio_record = False
         w._autotrack_iq_record = False
         w._autotrack_meteor_record = False
         w._rig_controller = None
@@ -5548,7 +5546,7 @@ class TestAutotrackRecordingCheckboxSync:
 
         db.execute(
             "INSERT INTO app_settings (key, value) VALUES ('autotrack_recording_settings', ?)",
-            (json.dumps({"audio_record": False, "iq_record": False, "meteor_record": True}),),
+            (json.dumps({"iq_record": False, "meteor_record": True}),),
         )
         db.commit()
 
@@ -5561,7 +5559,6 @@ class TestAutotrackRecordingCheckboxSync:
         w = self._make_window(qtbot, db)
 
         assert w._autotrack_meteor_record is False
-        assert w._autotrack_audio_record is False
         assert w._autotrack_iq_record is False
 
 

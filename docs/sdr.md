@@ -86,9 +86,9 @@
     - Lock ON 時: 相手リグの TX を自動追従（反転トランスポンダーは符号反転）
     - トランスポンダー切り替え時にオフセット自動リセット
   - デモジュレーター（モード選択・ボリューム・AGC・Mute/Unmute トグル）
-    - **MP3音声録音**（`● REC Audio` / `■ STOP` / `📁`）— `lameenc` によるピュアPythonエンコード、外部ツール不要
+    - **MP3音声録音は 2026-09-28 に削除**（SDR の録音は IQ 録音のみ。Autotrack/Record ダイアログの「Audio Record (MP3)」も同時に削除）。`AudioRecorder` 自体は Radio Control の REC が使うため残置
   - IQ レコーダー（帯域幅選択・REC/STOP・経過時間表示）
-    - **📁ファイルマネージャーボタン**（Audio 録音の行のみ。IQ 録音の行の 📁 は 2026-09-21 に削除）— SDR未接続時も常時クリック可能
+    - **📁ファイルマネージャーボタン**は IQ 録音の行・Audio 録音の行とも削除済み（IQ 側は 2026-09-21、Audio 側は 2026-09-28）
   - トランスポンダー選択に連動したモード自動切替（Connect 前でも反映）
 - **Help > Clear TLE Sync History…**（2026-08-10 追加）
   - `sync_log` からTLE関連の全エントリ（`celestrak-active`・`satnogs-provisional`・
@@ -1899,7 +1899,7 @@ ARICA-2 / OrigamiSat-2 のパスを IQ 録音しながら受信したところ�
 1つも返さなくなり**、設定の再読み込み時の再接続にも失敗して SDR が使えなくなった
 （アプリ再起動で復旧）。`sdr_pipeline_diag.log` を突き合わせると:
 
-- SDR Control の「Start Audio」（スピーカー出力）が**オフ**の間は `iters=16`（1秒あたり
+- SDR Control の「Unmute」（スピーカー出力）が**オフ**の間は `iters=16`（1秒あたり
   ブロック数、`avg_lag` 負）で実時間に追随
 - **オン**の間は `iters=12`・`avg_lag=+0.02 s`・`max_audio_write=0.07〜0.087 s`。1ブロック
   （250 kS/s・16384サンプル＝65.5 ms）の処理に約82〜85 msかかり、SDRの内部バッファが

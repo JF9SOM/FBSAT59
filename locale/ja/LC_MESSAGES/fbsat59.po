@@ -4035,10 +4035,6 @@ msgstr "状態:"
 msgid "Recording (SDR)  — starts at AOS, stops at LOS"
 msgstr "記録（SDR） — AOSで開始・LOSで停止"
 
-#: src/ui/autotrack_record_dialog.py:368
-msgid "Audio Record (MP3)"
-msgstr "音声録音（MP3）"
-
 #: src/ui/autotrack_record_dialog.py:370
 msgid "IQ Record"
 msgstr "IQ録音"
@@ -5649,10 +5645,6 @@ msgstr "🔇 ミュート"
 #: src/ui/sdr_control_widget.py:749
 msgid "🔊 Unmute"
 msgstr "🔊 ミュート解除"
-
-#: src/ui/sdr_control_widget.py:742
-msgid "● REC Audio"
-msgstr "● 音声録音"
 
 #: src/ui/sdr_control_widget.py:766
 msgid "IQ Recorder"

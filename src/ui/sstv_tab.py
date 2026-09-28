@@ -505,7 +505,7 @@ class SstvTab(QWidget):
             with contextlib.suppress(RuntimeError):
                 pipeline.audio_ready.connect(self._decoder.push_samples)
             # Without this, the pipeline never actually demodulates/emits
-            # audio_ready unless the user separately presses "Start Audio"
+            # audio_ready unless the user separately presses "Unmute"
             # in SDR Control — an easy-to-miss, unrelated-looking button in
             # a different tab (GitHub Issue #12 follow-up).
             with contextlib.suppress(Exception):

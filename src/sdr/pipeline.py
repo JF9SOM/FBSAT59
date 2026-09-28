@@ -324,7 +324,7 @@ class SDRPipeline(QThread):
         Decoder tabs (CW/FT4/Q65/SSTV) that subscribe to audio_ready need
         run() to actually call the demodulator and emit the signal — but
         that was previously gated entirely behind _audio_enabled, which
-        only SdrControlWidget's own "Start Audio" button (speaker
+        only SdrControlWidget's own "Unmute" button (speaker
         playback) ever set. Without pressing that *separate*, easy-to-miss
         button in a different tab first, a decoder's own "Start" did
         nothing at all: audio_ready simply never fired (GitHub Issue #12
@@ -458,7 +458,7 @@ class SDRPipeline(QThread):
             # Demodulate → audio_ready (needed by any decoder tab that
             # requested it, independent of whether the user also wants
             # speaker playback) → speaker playback (only if the user
-            # actually turned that on via SdrControlWidget's Start Audio).
+            # actually turned that on via SdrControlWidget's Unmute).
             if self._audio_enabled or self._demod_requesters:
                 try:
                     pcm = self._demodulator.process(iq)

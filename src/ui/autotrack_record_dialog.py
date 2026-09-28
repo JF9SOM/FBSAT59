@@ -92,8 +92,6 @@ class AutotrackRecordDialog(QDialog):
         Emitted when the Enable Autotrack checkbox changes.
     autotrack_list_changed(object)
         Emitted when the selected list changes (int list_id or None).
-    audio_record_changed(bool)
-        Emitted when the Audio Record checkbox changes.
     iq_record_changed(bool)
         Emitted when the IQ Record checkbox changes.
     use_rotator_changed(bool)
@@ -105,7 +103,6 @@ class AutotrackRecordDialog(QDialog):
 
     autotrack_toggled: Signal = Signal(bool)
     autotrack_list_changed: Signal = Signal(object)
-    audio_record_changed: Signal = Signal(bool)
     iq_record_changed: Signal = Signal(bool)
     meteor_record_changed: Signal = Signal(bool)
     use_rotator_changed: Signal = Signal(bool)
@@ -203,9 +200,6 @@ class AutotrackRecordDialog(QDialog):
     def is_use_rotator_enabled(self) -> bool:
         """Return whether Autotrack should connect/drive the rotator."""
         return bool(self._use_rot_cb.isChecked())
-
-    def is_audio_record_enabled(self) -> bool:
-        return bool(self._audio_rec_cb.isChecked())
 
     def is_meteor_record_enabled(self) -> bool:
         return bool(self._meteor_rec_cb.isChecked())
@@ -365,8 +359,6 @@ class AutotrackRecordDialog(QDialog):
         # ── Recording ─────────────────────────────────────────────────
         rec_group = QGroupBox(_("Recording (SDR)  — starts at AOS, stops at LOS"))
         rec_layout = QHBoxLayout(rec_group)
-        self._audio_rec_cb = QCheckBox(_("Audio Record (MP3)"))
-        self._audio_rec_cb.toggled.connect(self._on_audio_rec_toggled)
         self._iq_rec_cb = QCheckBox(_("IQ Record"))
         self._iq_rec_cb.toggled.connect(self._on_iq_rec_toggled)
         self._meteor_rec_cb = QCheckBox(_("METEOR / HRPT Reception"))
@@ -378,7 +370,6 @@ class AutotrackRecordDialog(QDialog):
             )
         )
         self._meteor_rec_cb.toggled.connect(self._on_meteor_rec_toggled)
-        rec_layout.addWidget(self._audio_rec_cb)
         rec_layout.addWidget(self._iq_rec_cb)
         rec_layout.addWidget(self._meteor_rec_cb)
         rec_layout.addStretch()
@@ -527,10 +518,6 @@ class AutotrackRecordDialog(QDialog):
     # Slots — Recording checkboxes (persisted to app_settings)
     # ------------------------------------------------------------------
 
-    def _on_audio_rec_toggled(self, checked: bool) -> None:
-        self.audio_record_changed.emit(checked)
-        self._save_recording_settings()
-
     def _on_iq_rec_toggled(self, checked: bool) -> None:
         self.iq_record_changed.emit(checked)
         self._save_recording_settings()
@@ -564,7 +551,6 @@ class AutotrackRecordDialog(QDialog):
         except (TypeError, ValueError):
             return
         for checkbox, key in (
-            (self._audio_rec_cb, "audio_record"),
             (self._iq_rec_cb, "iq_record"),
             (self._meteor_rec_cb, "meteor_record"),
         ):
@@ -574,7 +560,6 @@ class AutotrackRecordDialog(QDialog):
 
     def _save_recording_settings(self) -> None:
         settings = {
-            "audio_record": self._audio_rec_cb.isChecked(),
             "iq_record": self._iq_rec_cb.isChecked(),
             "meteor_record": self._meteor_rec_cb.isChecked(),
         }

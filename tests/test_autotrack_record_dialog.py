@@ -47,7 +47,6 @@ class TestRecordingSettingsPersistence:
         dlg = AutotrackRecordDialog(db)
         qtbot.addWidget(dlg)
 
-        assert dlg.is_audio_record_enabled() is False
         assert dlg.is_iq_record_enabled() is False
         assert dlg.is_meteor_record_enabled() is False
 
@@ -65,7 +64,6 @@ class TestRecordingSettingsPersistence:
         assert row is not None
         saved = json.loads(row["value"])
         assert saved["meteor_record"] is True
-        assert saved["audio_record"] is False
         assert saved["iq_record"] is False
 
     def test_new_dialog_instance_restores_saved_state(
@@ -73,14 +71,12 @@ class TestRecordingSettingsPersistence:
     ) -> None:
         first = AutotrackRecordDialog(db)
         qtbot.addWidget(first)
-        first._audio_rec_cb.setChecked(True)
         first._meteor_rec_cb.setChecked(True)
         # iq_record left unchecked
 
         second = AutotrackRecordDialog(db)
         qtbot.addWidget(second)
 
-        assert second.is_audio_record_enabled() is True
         assert second.is_iq_record_enabled() is False
         assert second.is_meteor_record_enabled() is True
 

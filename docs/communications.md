@@ -1086,7 +1086,7 @@ if "APRS" in desc or xpdr.mode == "AFSK":
 
 #### 録音ファイルからの画像デコード（2026-07-24 実装、`📂 Decode Recording…`）
 
-Radio Control / SDR Control の音声REC機能（共に `~/audio_recordings` にMP3保存）で録れた
+Radio Control の音声REC機能（2026-09-28 に SDR Control 側の音声 REC は削除。従来は共に `~/audio_recordings` にMP3保存）で録れた
 音声から、ライブ受信を待たずにSSTV画像を再生成できる。**SSTVモード専用**（SSDVはAX.25パケット
 経由でデコードする設計のため、音声ファイル再生では対応不可）。
 
@@ -2796,13 +2796,13 @@ SDR Control側のスペクトラムに強いCW信号がマーカー位置ぴっ�
 **真因**: `SDRPipeline.run()`（`src/sdr/pipeline.py`）は`if self._audio_enabled:`の中で
 復調（`self._demodulator.process(iq)`）・`audio_ready`シグナルの発行・スピーカー再生
 （`_play_audio()`）の3つ全てをまとめて実行しており、`_audio_enabled`を`True`にする
-`set_audio_enabled()`は**`SdrControlWidget`自身の「▶ Start Audio」ボタンからしか
+`set_audio_enabled()`は**`SdrControlWidget`自身の「Unmute」ボタン（旧 ▶ Start Audio）からしか
 呼ばれていなかった**。CW Decoder・FT4・Q65・SSTV（アナログSSTVパスのみ。SSDVは
 `AprsEngine`経由の別系統`pipeline.subscribe()`＝生IQ購読であり、この`_audio_enabled`
 ゲートと無関係なため対象外。Telemetryタブも同様にAFSK/gr-satellitesとも`subscribe()`系統
 のため対象外）は、どれも`pipeline.audio_ready`を購読するだけで、**自分から復調を有効化する
 呼び出しを一切行っていなかった**。つまり「CW Decoderの'Start'を押す」だけでは何も起きず、
-ユーザーが**別のSDR Controlタブに切り替えて『Start Audio』も押す**という、UI上まったく
+ユーザーが**別のSDR Controlタブに切り替えて『Unmute』も押す**という、UI上まったく
 自明でない前提条件を満たさない限り、これらのタブは永遠に無音のままだった。
 
 **修正**: `SDRPipeline`に参照カウント式の`request_audio(owner)`/`release_audio(owner)`
