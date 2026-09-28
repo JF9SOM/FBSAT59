@@ -37,7 +37,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from comms.audio_device_manager import get_audio_device_manager
+from comms.audio_device_manager import DeviceFeedSink, get_audio_device_manager
 from comms.audio_player import AudioFilePlayer
 from comms.mode_detection import (
     is_aprs_transmitter,
@@ -361,13 +361,15 @@ class RadioControlWidget(QWidget):
         rot_layout.addWidget(self._rot_el_label)
         rot_layout.addStretch()
 
-        # Recording group sits beside Rotator (half width each) — rig audio
+        # Recording group sits beside Rotator (2:3 width) — rig audio
         # (FM/SSB voice from the Sound Card input) recorded to MP3.
         rec_group = self._build_recording_group()
         rot_rec_row = QHBoxLayout()
         rot_rec_row.setSpacing(4)
-        rot_rec_row.addWidget(rot_group, 1)
-        rot_rec_row.addWidget(rec_group, 1)
+        # Recording gets the larger share: it holds the transport buttons plus the
+        # "Feed to tabs" checkbox, while Rotator only shows AZ/EL.
+        rot_rec_row.addWidget(rot_group, 2)
+        rot_rec_row.addWidget(rec_group, 3)
         layout.addLayout(rot_rec_row)
 
         # ── Manual rotator control (GitHub discussion #9) ──────────────
@@ -588,6 +590,16 @@ class RadioControlWidget(QWidget):
         rec_layout.addWidget(self._ff_btn)
         rec_layout.addWidget(self._audio_rec_status_label)
         rec_layout.addStretch()
+        self._feed_cb = QCheckBox(_("Feed to tabs"))
+        self._feed_cb.setToolTip(
+            _(
+                "Also send the played recording to the communication tabs "
+                "(APRS, SSTV, CW...) that receive from the Sound Card, "
+                "so they decode it as if it were live."
+            )
+        )
+        self._feed_cb.toggled.connect(self._on_feed_toggled)
+        rec_layout.addWidget(self._feed_cb)
         return grp
 
     # ------------------------------------------------------------------ #
@@ -1467,6 +1479,7 @@ class RadioControlWidget(QWidget):
             return
         try:
             self._audio_player.load(path)
+            self._audio_player.set_feed_sink(self._make_feed_sink())
             self._audio_player.play()
         except Exception as exc:
             QMessageBox.warning(
@@ -1488,6 +1501,7 @@ class RadioControlWidget(QWidget):
             self._audio_player.pause()
         else:
             try:
+                self._audio_player.set_feed_sink(self._make_feed_sink())
                 self._audio_player.play()
             except Exception as exc:
                 QMessageBox.warning(
@@ -1495,6 +1509,21 @@ class RadioControlWidget(QWidget):
                 )
             self._play_timer.start()
         self._update_play_state()
+
+    def _make_feed_sink(self) -> DeviceFeedSink | None:
+        """Sink that injects the played audio into the Sound Card input's
+        subscribers, or None when "Feed to tabs" is off or no Sound Card input is
+        configured. The recorder is excluded so a running REC never captures the file."""
+        if not self._feed_cb.isChecked():
+            return None
+        device = self._load_sound_card_input_device()
+        if device is None:
+            return None
+        return DeviceFeedSink(device, exclude_owner=self._AUDIO_OWNER)
+
+    def _on_feed_toggled(self, _checked: bool) -> None:
+        """Apply the checkbox immediately, even in the middle of a playback."""
+        self._audio_player.set_feed_sink(self._make_feed_sink())
 
     def _on_seek_clicked(self, seconds: float) -> None:
         """Rewind or fast-forward the loaded recording."""

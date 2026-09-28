@@ -6449,3 +6449,11 @@ msgstr "音声録音 (*.mp3 *.wav *.flac *.ogg);;すべてのファイル (*)"
 #: src/ui/radio_control_widget.py
 msgid "Cannot play this file: {exc}"
 msgstr "このファイルを再生できません: {exc}"
+
+#: src/ui/radio_control_widget.py
+msgid "Feed to tabs"
+msgstr "タブへ入力"
+
+#: src/ui/radio_control_widget.py
+msgid "Also send the played recording to the communication tabs (APRS, SSTV, CW...) that receive from the Sound Card, so they decode it as if it were live."
+msgstr "再生中の録音を、Sound Card から受信している通信タブ（APRS・SSTV・CW など）にも入力し、リアルタイム受信と同じようにデコードさせます。"

@@ -38,6 +38,7 @@ non-Linux platforms and when no pin target is configured.
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 import shutil
 import subprocess
@@ -302,8 +303,15 @@ def pin_output_stream(target: str, before: set[str]) -> None:
 class _SharedInputStream:
     """A single real sounddevice.InputStream, fanned out to N subscribers."""
 
-    def __init__(self, device: int | None) -> None:
+    def __init__(
+        self,
+        device: int | None,
+        feed_state: Callable[[], tuple[bool, str | None]] | None = None,
+    ) -> None:
         self._device = device
+        # Returns (feeding, keep_live_owner): while feeding, live hardware audio is
+        # withheld from every subscriber except keep_live_owner (see AudioDeviceManager.begin_feed).
+        self._feed_state = feed_state
         self._stream: Any = None
         self._subscribers: dict[str, tuple[int, AudioCallback]] = {}
         self._lock = threading.Lock()
@@ -396,11 +404,23 @@ class _SharedInputStream:
         self, indata: NDArray[np.float32], frames: int, time_info: Any, status: Any
     ) -> None:
         chunk = indata[:, 0].copy()
+        feeding, keep_live_owner = self._feed_state() if self._feed_state else (False, None)
         with self._lock:
-            subs = list(self._subscribers.values())
+            if feeding:
+                subs = [sub for owner, sub in self._subscribers.items() if owner == keep_live_owner]
+            else:
+                subs = list(self._subscribers.values())
         for samplerate, callback in subs:
             with contextlib.suppress(Exception):
                 callback(_resample(chunk, _HW_SAMPLE_RATE, samplerate))
+
+    def feed(self, chunk: NDArray[np.float32], src_rate: int, exclude_owner: str | None) -> None:
+        """Deliver an injected PCM block to every subscriber except `exclude_owner`."""
+        with self._lock:
+            subs = [sub for owner, sub in self._subscribers.items() if owner != exclude_owner]
+        for samplerate, callback in subs:
+            with contextlib.suppress(Exception):
+                callback(_resample(chunk, src_rate, samplerate))
 
 
 class AudioDeviceManager(QObject):
@@ -422,6 +442,11 @@ class AudioDeviceManager(QObject):
         super().__init__()
         self._inputs: dict[int, _SharedInputStream] = {}
         self._inputs_lock = threading.Lock()
+        # Injected-audio (feed) sessions per device: nesting count and the one
+        # owner that keeps receiving live audio meanwhile.
+        self._feed_counts: dict[int, int] = {}
+        self._feed_keep_live: dict[int, str | None] = {}
+        self._feed_lock = threading.Lock()
         self._tx_owners: dict[int, str] = {}
         self._tx_lock = threading.Lock()
         self._tx_pin_snapshots: dict[str, set[str]] = {}
@@ -455,7 +480,7 @@ class AudioDeviceManager(QObject):
         with self._inputs_lock:
             stream = self._inputs.get(key)
             if stream is None:
-                stream = _SharedInputStream(device)
+                stream = _SharedInputStream(device, functools.partial(self._feed_state, key))
                 self._inputs[key] = stream
         stream.add_subscriber(owner, samplerate, callback)
 
@@ -469,6 +494,52 @@ class AudioDeviceManager(QObject):
                 return
             if stream.remove_subscriber(owner):
                 del self._inputs[key]
+
+    # ------------------------------------------------------------------ #
+    # RX — injected audio (recording playback fed to the decoder tabs)
+    # ------------------------------------------------------------------ #
+
+    def _feed_state(self, key: int) -> tuple[bool, str | None]:
+        with self._feed_lock:
+            return self._feed_counts.get(key, 0) > 0, self._feed_keep_live.get(key)
+
+    def begin_feed(self, device: int | None, keep_live_owner: str | None = None) -> None:
+        """Start substituting injected audio for the live input of `device`.
+
+        Until the matching end_feed(), subscribers receive only what feed()
+        delivers (live hardware audio is withheld), except `keep_live_owner`,
+        which keeps getting live audio (e.g. a recorder that must not capture
+        the played-back file). Calls nest; each begin needs its own end.
+        """
+        key = self._key(device)
+        with self._feed_lock:
+            self._feed_counts[key] = self._feed_counts.get(key, 0) + 1
+            self._feed_keep_live[key] = keep_live_owner
+
+    def end_feed(self, device: int | None) -> None:
+        """Undo one begin_feed(); live audio resumes when the count reaches zero."""
+        key = self._key(device)
+        with self._feed_lock:
+            count = self._feed_counts.get(key, 0) - 1
+            if count <= 0:
+                self._feed_counts.pop(key, None)
+                self._feed_keep_live.pop(key, None)
+            else:
+                self._feed_counts[key] = count
+
+    def feed(
+        self,
+        device: int | None,
+        chunk: NDArray[np.float32],
+        samplerate: int,
+        exclude_owner: str | None = None,
+    ) -> None:
+        """Deliver a mono PCM block to the subscribers of `device`, as if it had
+        come from the hardware. No-op when nobody has subscribed to `device`."""
+        with self._inputs_lock:
+            stream = self._inputs.get(self._key(device))
+        if stream is not None:
+            stream.feed(chunk, samplerate, exclude_owner)
 
     # ------------------------------------------------------------------ #
     # TX — exclusive output lock
@@ -531,6 +602,23 @@ class AudioDeviceManager(QObject):
         key = self._key(device)
         with self._tx_lock:
             return self._tx_owners.get(key)
+
+
+class DeviceFeedSink:
+    """FeedSink (see comms.audio_player) that injects audio into a device's subscribers."""
+
+    def __init__(self, device: int | None, exclude_owner: str | None = None) -> None:
+        self._device = device
+        self._exclude_owner = exclude_owner
+
+    def begin(self) -> None:
+        get_audio_device_manager().begin_feed(self._device, self._exclude_owner)
+
+    def push(self, chunk: NDArray[np.float32], samplerate: int) -> None:
+        get_audio_device_manager().feed(self._device, chunk, samplerate, self._exclude_owner)
+
+    def end(self) -> None:
+        get_audio_device_manager().end_feed(self._device)
 
 
 def get_audio_device_manager() -> AudioDeviceManager:

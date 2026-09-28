@@ -5646,3 +5646,11 @@ msgstr ""
 #: src/ui/radio_control_widget.py
 msgid "Cannot play this file: {exc}"
 msgstr ""
+
+#: src/ui/radio_control_widget.py
+msgid "Feed to tabs"
+msgstr ""
+
+#: src/ui/radio_control_widget.py
+msgid "Also send the played recording to the communication tabs (APRS, SSTV, CW...) that receive from the Sound Card, so they decode it as if it were live."
+msgstr ""

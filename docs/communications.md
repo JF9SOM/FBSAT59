@@ -2687,6 +2687,22 @@ mgr.output_owner(device: int | None) -> str | None            # エラーメッ�
 
 `device=None`（システムデフォルト出力を使う Q65 の TX など）も有効なキーとして扱う。
 
+**注入（feed）— 録音の再生を RX 購読者へ入力する（2026-09-28、Radio Control の「Feed to tabs」）**:
+
+```python
+mgr.begin_feed(device, keep_live_owner: str | None = None) -> None  # 実入力を止め、feed() の音声だけを配る（ネスト可）
+mgr.feed(device, chunk: mono float32, samplerate: int, exclude_owner: str | None = None) -> None
+mgr.end_feed(device) -> None                                       # カウントが 0 になったら実入力が復帰
+```
+
+Radio Control の再生（`comms/audio_player.AudioFilePlayer`）が、`DeviceFeedSink`（begin/push/end）を通じて
+Sound Card 入力デバイスの購読者（APRS/SSTV/CW/FT4/AX100 Digi）へ再生音を実時間で流し込む。
+`_SharedInputStream._on_audio()` は feed 中、`keep_live_owner`（= REC 中の Radio Control 自身。ファイルの音を
+録音に混ぜないため）以外へ実入力を配らない。`AudioFilePlayer` は音声コールバックをブロックしないよう、
+有界キュー＋専用スレッド（`_FeedSession`）で sink へ渡し、デコーダーが遅れたらブロックを捨てる。
+**対象は Sound Card 入力で受信するタブのみ**（SDR モードの `audio_ready` 経路には届かない）。
+FT4/Q65 は UTC の周期枠に同期するため、任意の時刻に再生した録音は枠がずれてデコードできない可能性が高い。
+
 #### 各タブでの利用箇所
 
 | タブ / モジュール | owner 文字列 | RX | TX |
