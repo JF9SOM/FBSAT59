@@ -684,6 +684,8 @@ class SdrControlWidget(QWidget):
         self._mode_combo.setCurrentIndex(1)  # USB default
         self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         mode_row.addWidget(self._mode_combo)
+        # Roughly two half-width characters of breathing room before the AGC buttons.
+        mode_row.addSpacing(self.fontMetrics().horizontalAdvance("00"))
         self._agc_rb_on = QRadioButton(_("AGC On"))
         self._agc_rb_on.setChecked(True)
         self._agc_rb_off = QRadioButton(_("AGC Off"))
