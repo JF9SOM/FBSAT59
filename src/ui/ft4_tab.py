@@ -1587,6 +1587,11 @@ class Ft4Tab(QWidget):
         if stored_even is None:
             stored_even, _pos = Ft4Scheduler.current_slot_info()
         self._start_scheduler(tx_even=bool(stored_even))
+        # Double-clicking a station means "call them": arm TX now so the reply
+        # goes out in the next TX slot, instead of also requiring TX Enable.
+        # Idempotent when TX is already enabled; refuses (and unchecks) the
+        # same way the button itself does if the codec or My Call is missing.
+        self._tx_enable_btn.setChecked(True)
 
     # ------------------------------------------------------------------ #
     # TX quick buttons                                                     #

@@ -370,7 +370,7 @@ revert / デフレーマ + reader のテスト
 - デコードメッセージ一覧（UTC / dB / DT / Hz / Message）
 - TX クイックボタン: CQ / RST / R+RST / RR73 / 73
 - QSO ステートマシン自動進行（IDLE→CALLING→EXCHANGE→CONFIRM→LOGGED）
-- デコードメッセージのダブルクリックで応答シーケンス開始
+- デコードメッセージのダブルクリックで応答シーケンス開始。相手コールを取り込んで TX Enable も自動でオンにし、次の送信スロットで送信が始まる（2026-09-28。それ以前は TX Enable を別途押す必要があった）
 - SQLite `ft4_log` テーブルへ永続化・ADIF エクスポート
 - Radio Control でトランスポンダー説明に「FT4」「FT8」が含まれると自動オープン
 - ft8_lib 未インストール時は赤バナー表示・TX Enable 無効化。インストール先: `~/.local/share/fbsat59/ft8lib/`
