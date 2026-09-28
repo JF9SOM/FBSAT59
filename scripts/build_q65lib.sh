@@ -63,6 +63,7 @@ MODULE_CHAIN=(
   lib/four2a.f90
   lib/ana64.f90
   lib/qra/q65/q65.f90
+  lib/qra/q65/q65_workspace.f90
   lib/qra/q65/q65_loops.f90
   lib/qra/q65/q65_ap.f90
   lib/qra/q65/q65_set_list.f90
