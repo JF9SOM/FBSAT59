@@ -15,6 +15,7 @@ import contextlib
 import logging
 import sqlite3
 import threading
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -930,10 +931,25 @@ class Q65Tab(QWidget):
         except Exception as exc:
             self._status_label.setText(f"Audio error: {exc}")
         finally:
-            if rig is not None:
-                with contextlib.suppress(Exception):
-                    rig.set_ptt(False)
+            if rig is not None and not self._release_ptt(rig):
+                logger.error("Q65: PTT off FAILED — the radio may still be transmitting")
+                self._status_label.setText(
+                    _("PTT OFF failed — the radio may still be transmitting. Check the radio!")
+                )
             mgr.release_output(_AUDIO_OWNER, self._out_device)
+
+    @staticmethod
+    def _release_ptt(rig: Any) -> bool:
+        """Un-key the rig; try once more if the first attempt reports failure."""
+        for attempt in range(2):
+            try:
+                if rig.set_ptt(False):
+                    return True
+            except Exception:
+                logger.exception("Q65: set_ptt(False) raised")
+            if attempt == 0:
+                time.sleep(0.3)
+        return False
 
     def _get_rig(self) -> Any | None:
         """Return RigController for Rig 1 if connected, else None."""
