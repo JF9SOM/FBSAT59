@@ -1678,6 +1678,10 @@ class HamlibDirectController(RigController):
             with self._rig_cmd_lock:
                 ptt_val = self._hamlib.RIG_PTT_ON if enabled else self._hamlib.RIG_PTT_OFF
                 self._rig.set_ptt(self._hamlib.RIG_VFO_CURR, ptt_val)
+                # The binding never raises on a CAT failure; the result is only
+                # in error_status (see _check_rig_ok()). Without this a PTT
+                # command that failed inside Hamlib was reported as success.
+                _check_rig_ok(self._rig, f"set_ptt({'on' if enabled else 'off'})")
             return True
         except Exception as exc:
             logger.error("RigDirect.set_ptt(%s): %s", enabled, exc)

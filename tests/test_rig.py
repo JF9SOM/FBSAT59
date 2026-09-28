@@ -699,7 +699,7 @@ class TestPttDopplerFreeze:
 
     def _make_connected_ctrl(self) -> HamlibDirectController:
         ctrl = HamlibDirectController(model_id=3085, port="/dev/null")  # IC-705
-        ctrl._rig = MagicMock()
+        ctrl._rig = MagicMock(error_status=0)
         fake_hamlib = MagicMock()
         fake_hamlib.RIG_VFO_A = 101
         fake_hamlib.RIG_VFO_B = 102
@@ -1318,7 +1318,7 @@ class TestDirectFailedPttOn:
 
     def _ctrl(self) -> HamlibDirectController:
         ctrl = HamlibDirectController(model_id=1035, port="/dev/null")
-        ctrl._rig = MagicMock()
+        ctrl._rig = MagicMock(error_status=0)
         ctrl._hamlib = MagicMock()
         with ctrl._lock:
             ctrl._state = RigState.CONNECTED
@@ -1330,6 +1330,20 @@ class TestDirectFailedPttOn:
         assert ctrl.set_ptt(True) is False
         assert ctrl._ptt_active is False
         assert ctrl._doppler_frozen is False
+
+    def test_hamlib_error_status_on_key_up_is_a_failure(self) -> None:
+        # The SWIG binding never raises: a CAT failure only sets error_status.
+        ctrl = self._ctrl()
+        ctrl._rig.error_status = -6
+        assert ctrl.set_ptt(True) is False
+        assert ctrl._ptt_active is False
+        assert ctrl._doppler_frozen is False
+
+    def test_hamlib_error_status_on_un_key_is_a_failure(self) -> None:
+        ctrl = self._ctrl()
+        assert ctrl.set_ptt(True) is True
+        ctrl._rig.error_status = -6
+        assert ctrl.set_ptt(False) is False
 
     def test_not_connected_key_up_clears_flags(self) -> None:
         ctrl = HamlibDirectController(model_id=1035, port="/dev/null")
