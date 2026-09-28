@@ -5614,3 +5614,39 @@ msgstr ""
 #, python-brace-format
 msgid "({shown}/{total} hex chars — rest omitted)"
 msgstr ""
+
+#: src/ui/radio_control_widget.py
+msgid "Stop recording"
+msgstr ""
+
+#: src/ui/radio_control_widget.py
+msgid "Choose a recorded audio file and start playing it"
+msgstr ""
+
+#: src/ui/radio_control_widget.py
+msgid "Play"
+msgstr ""
+
+#: src/ui/radio_control_widget.py
+msgid "Rewind 5 seconds"
+msgstr ""
+
+#: src/ui/radio_control_widget.py
+msgid "Fast-forward 5 seconds"
+msgstr ""
+
+#: src/ui/radio_control_widget.py
+msgid "Pause"
+msgstr ""
+
+#: src/ui/radio_control_widget.py
+msgid "Play Audio Recording"
+msgstr ""
+
+#: src/ui/radio_control_widget.py
+msgid "Audio recordings (*.mp3 *.wav *.flac *.ogg);;All files (*)"
+msgstr ""
+
+#: src/ui/radio_control_widget.py
+msgid "Cannot play this file: {exc}"
+msgstr ""

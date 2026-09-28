@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
+    QFileDialog,
     QFormLayout,
     QGridLayout,
     QGroupBox,
@@ -37,6 +38,7 @@ from PySide6.QtWidgets import (
 )
 
 from comms.audio_device_manager import get_audio_device_manager
+from comms.audio_player import AudioFilePlayer
 from comms.mode_detection import (
     is_aprs_transmitter,
     is_cw_transmitter,
@@ -165,6 +167,12 @@ class RadioControlWidget(QWidget):
         self._audio_rec_timer = QTimer(self)
         self._audio_rec_timer.setInterval(1_000)
         self._audio_rec_timer.timeout.connect(self._update_audio_rec_status)
+        # Playback of recorded MP3s (Recording box's Open / play / seek / pause).
+        self._audio_player = AudioFilePlayer()
+        self._play_path: str = ""
+        self._play_timer = QTimer(self)
+        self._play_timer.setInterval(250)
+        self._play_timer.timeout.connect(self._update_play_state)
         self._setup_ui()
         self._rig1_connect_done.connect(self._finish_rig1_connect)
         self._rotator_connect_done.connect(self._finish_connect_rotator)
@@ -536,9 +544,37 @@ class RadioControlWidget(QWidget):
             self._audio_rec_btn.setToolTip(_("lameenc not installed — pip install lameenc"))
         self._audio_rec_btn.clicked.connect(self._start_audio_recording)
 
-        self._audio_stop_rec_btn = QPushButton(_("■ STOP"))
+        # Icon-only buttons (only REC keeps its text) so everything fits the box.
+        self._audio_stop_rec_btn = QPushButton("■")
+        self._audio_stop_rec_btn.setToolTip(_("Stop recording"))
+        self._audio_stop_rec_btn.setFixedWidth(self._REC_ICON_BTN_WIDTH)
         self._audio_stop_rec_btn.setEnabled(False)
         self._audio_stop_rec_btn.clicked.connect(self._stop_audio_recording)
+
+        self._play_open_btn = QPushButton("📂")
+        self._play_open_btn.setToolTip(_("Choose a recorded audio file and start playing it"))
+        self._play_open_btn.clicked.connect(self._on_play_open_clicked)
+        self._play_btn = QPushButton("▶️")
+        self._play_btn.setToolTip(_("Play"))
+        self._play_btn.clicked.connect(self._on_play_clicked)
+        self._rew_btn = QPushButton("⏪")
+        self._rew_btn.setToolTip(_("Rewind 5 seconds"))
+        self._rew_btn.clicked.connect(lambda: self._on_seek_clicked(-self._SEEK_STEP_S))
+        self._ff_btn = QPushButton("⏩")
+        self._ff_btn.setToolTip(_("Fast-forward 5 seconds"))
+        self._ff_btn.clicked.connect(lambda: self._on_seek_clicked(self._SEEK_STEP_S))
+        self._pause_btn = QPushButton("⏸️")
+        self._pause_btn.setToolTip(_("Pause"))
+        self._pause_btn.clicked.connect(self._on_pause_clicked)
+        for btn in (
+            self._play_open_btn,
+            self._play_btn,
+            self._rew_btn,
+            self._ff_btn,
+            self._pause_btn,
+        ):
+            btn.setFixedWidth(self._REC_ICON_BTN_WIDTH)
+        self._update_play_buttons()
 
         self._audio_rec_status_label = QLabel("")
         self._audio_rec_status_label.setStyleSheet("color: gray; font-size: 10px;")
@@ -551,6 +587,11 @@ class RadioControlWidget(QWidget):
 
         rec_layout.addWidget(self._audio_rec_btn)
         rec_layout.addWidget(self._audio_stop_rec_btn)
+        rec_layout.addWidget(self._play_open_btn)
+        rec_layout.addWidget(self._play_btn)
+        rec_layout.addWidget(self._rew_btn)
+        rec_layout.addWidget(self._ff_btn)
+        rec_layout.addWidget(self._pause_btn)
         rec_layout.addWidget(self._audio_rec_status_label)
         rec_layout.addStretch()
         rec_layout.addWidget(self._open_audio_folder_btn)
@@ -1336,6 +1377,8 @@ class RadioControlWidget(QWidget):
     # ------------------------------------------------------------------ #
 
     _AUDIO_OWNER = "Radio Control"
+    _REC_ICON_BTN_WIDTH = 30
+    _SEEK_STEP_S = 5.0
 
     def _load_sound_card_input_device(self) -> int | None:
         """Read the configured Sound Card input device index, fresh from the DB.
@@ -1406,8 +1449,7 @@ class RadioControlWidget(QWidget):
         self._audio_rec_timer.stop()
         self._audio_rec_btn.setEnabled(LAMEENC_AVAILABLE)
         self._audio_stop_rec_btn.setEnabled(False)
-        self._audio_rec_status_label.setText("")
-        self._audio_rec_status_label.setToolTip("")
+        self._refresh_play_status()
 
     def _update_audio_rec_status(self) -> None:
         """Update the elapsed-time label while recording (mm:ss)."""
@@ -1421,6 +1463,88 @@ class RadioControlWidget(QWidget):
         self._audio_save_dir.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._audio_save_dir)))
 
+    # ------------------------------------------------------------------ #
+    # Playback of recorded audio
+    # ------------------------------------------------------------------ #
+
+    def _on_play_open_clicked(self) -> None:
+        """Pick a recorded audio file and start playing it from the beginning."""
+        path, _filter = QFileDialog.getOpenFileName(
+            self,
+            _("Play Audio Recording"),
+            str(self._audio_save_dir),
+            _("Audio recordings (*.mp3 *.wav *.flac *.ogg);;All files (*)"),
+        )
+        if not path:
+            return
+        try:
+            self._audio_player.load(path)
+            self._audio_player.play()
+        except Exception as exc:
+            QMessageBox.warning(
+                self, _("Recording"), _("Cannot play this file: {exc}").format(exc=exc)
+            )
+            self._audio_player.close()
+            self._play_path = ""
+            self._update_play_state()
+            return
+        self._play_path = path
+        self._play_timer.start()
+        self._update_play_state()
+
+    def _on_play_clicked(self) -> None:
+        """Play (or resume) the loaded recording."""
+        if not self._audio_player.is_loaded:
+            return
+        try:
+            self._audio_player.play()
+        except Exception as exc:
+            QMessageBox.warning(
+                self, _("Recording"), _("Cannot play this file: {exc}").format(exc=exc)
+            )
+        self._play_timer.start()
+        self._update_play_state()
+
+    def _on_pause_clicked(self) -> None:
+        """Pause playback, keeping the position."""
+        self._audio_player.pause()
+        self._update_play_state()
+
+    def _on_seek_clicked(self, seconds: float) -> None:
+        """Rewind or fast-forward the loaded recording."""
+        self._audio_player.seek_relative(seconds)
+        self._update_play_state()
+
+    def _update_play_state(self) -> None:
+        """Refresh playback buttons and the position label; stop polling when idle."""
+        self._update_play_buttons()
+        self._refresh_play_status()
+        if not self._audio_player.is_playing:
+            self._play_timer.stop()
+
+    def _update_play_buttons(self) -> None:
+        loaded = self._audio_player.is_loaded
+        playing = self._audio_player.is_playing
+        self._play_btn.setEnabled(loaded and not playing)
+        self._pause_btn.setEnabled(playing)
+        self._rew_btn.setEnabled(loaded)
+        self._ff_btn.setEnabled(loaded)
+
+    def _refresh_play_status(self) -> None:
+        """Show the playback position (mm:ss) unless a recording owns the label."""
+        if self._audio_recorder.is_active:
+            return
+        if self._audio_player.is_loaded:
+            pos = int(self._audio_player.position_s)
+            dur = int(self._audio_player.duration_s)
+            pos_text = f"{pos // 60:02d}:{pos % 60:02d}"
+            dur_text = f"{dur // 60:02d}:{dur % 60:02d}"
+            self._audio_rec_status_label.setText(pos_text)
+            self._audio_rec_status_label.setToolTip(f"{self._play_path}\n{pos_text} / {dur_text}")
+        else:
+            self._audio_rec_status_label.setText("")
+            self._audio_rec_status_label.setToolTip("")
+
     def closeEvent(self, event: Any) -> None:
         """Stop recording and release the shared audio device on app exit.
 
@@ -1429,4 +1553,5 @@ class RadioControlWidget(QWidget):
         though RadioControlWidget is never individually closed by the user.
         """
         self._stop_audio_recording()
+        self._audio_player.close()
         super().closeEvent(event)

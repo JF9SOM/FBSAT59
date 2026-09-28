@@ -6417,3 +6417,39 @@ msgstr "（{shown}/{total}文字を表示、以下省略）"
 #~ msgid "%(count)d pass"
 #~ msgid_plural "%(count)d passes"
 #~ msgstr[0] "%(count)d パス"
+
+#: src/ui/radio_control_widget.py
+msgid "Stop recording"
+msgstr "録音を停止"
+
+#: src/ui/radio_control_widget.py
+msgid "Choose a recorded audio file and start playing it"
+msgstr "録音した音声ファイルを選んで再生を開始"
+
+#: src/ui/radio_control_widget.py
+msgid "Play"
+msgstr "再生"
+
+#: src/ui/radio_control_widget.py
+msgid "Rewind 5 seconds"
+msgstr "5秒戻す"
+
+#: src/ui/radio_control_widget.py
+msgid "Fast-forward 5 seconds"
+msgstr "5秒進める"
+
+#: src/ui/radio_control_widget.py
+msgid "Pause"
+msgstr "一時停止"
+
+#: src/ui/radio_control_widget.py
+msgid "Play Audio Recording"
+msgstr "音声録音を再生"
+
+#: src/ui/radio_control_widget.py
+msgid "Audio recordings (*.mp3 *.wav *.flac *.ogg);;All files (*)"
+msgstr "音声録音 (*.mp3 *.wav *.flac *.ogg);;すべてのファイル (*)"
+
+#: src/ui/radio_control_widget.py
+msgid "Cannot play this file: {exc}"
+msgstr "このファイルを再生できません: {exc}"
