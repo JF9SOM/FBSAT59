@@ -1118,4 +1118,4 @@ CLAUDE.md参照、v0.1.19）。`rigctl -m 2`（Hamlib NET rigctlクライアン�
   rigctld 停止に遭遇する機会を減らす。`_last_dl_hz`/`_last_ul_hz` は更新しないので、PTT OFF 後の
   最初のサイクルで最新値が書かれる。Icom は送信中の変更を受け付ける（Issue #16）ため対象外
 - Q65 タブも同様に `set_ptt(False)` の戻り値を確認して 1 回再試行し、失敗時はステータスバーに警告。PTT ON 失敗時は FT4 同様に音声を再生せず中止（2026-09-28、実機未テスト）
-- NET の `set_ptt(True)` が失敗したら `_ptt_active`/`_doppler_frozen` を戻す（戻さないと FT-991 の送信中スキップが解除されない）
+- NET・Direct の `set_ptt(True)` が失敗したら `_ptt_active`/`_doppler_frozen` を戻す（戻さないと FT-991 の送信中スキップや Direct の Doppler 凍結が解除されない）

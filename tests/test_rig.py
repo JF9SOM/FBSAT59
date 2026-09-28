@@ -1313,6 +1313,37 @@ class TestApplyModeCtcssLive:
 # ---------------------------------------------------------------------------
 
 
+class TestDirectFailedPttOn:
+    """A failed key-up must not leave the TX-window flags set."""
+
+    def _ctrl(self) -> HamlibDirectController:
+        ctrl = HamlibDirectController(model_id=1035, port="/dev/null")
+        ctrl._rig = MagicMock()
+        ctrl._hamlib = MagicMock()
+        with ctrl._lock:
+            ctrl._state = RigState.CONNECTED
+        return ctrl
+
+    def test_exception_on_key_up_clears_flags(self) -> None:
+        ctrl = self._ctrl()
+        ctrl._rig.set_ptt.side_effect = RuntimeError("cat error")
+        assert ctrl.set_ptt(True) is False
+        assert ctrl._ptt_active is False
+        assert ctrl._doppler_frozen is False
+
+    def test_not_connected_key_up_clears_flags(self) -> None:
+        ctrl = HamlibDirectController(model_id=1035, port="/dev/null")
+        assert ctrl.set_ptt(True) is False
+        assert ctrl._ptt_active is False
+        assert ctrl._doppler_frozen is False
+
+    def test_successful_key_up_sets_flags(self) -> None:
+        ctrl = self._ctrl()
+        assert ctrl.set_ptt(True) is True
+        assert ctrl._ptt_active is True
+        assert ctrl._doppler_frozen is True
+
+
 class TestHamlibNetController:
     def _make_ctrl(self, ctcss_method: str = "hamlib") -> HamlibNetController:
         return HamlibNetController(host="localhost", port=4532, ctcss_method=ctcss_method)

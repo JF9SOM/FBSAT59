@@ -1653,6 +1653,7 @@ class HamlibDirectController(RigController):
         """Key or un-key the transmitter via Hamlib direct binding."""
         super().set_ptt(enabled, freeze_doppler=freeze_doppler)
         if not self.is_connected or self._rig is None:
+            self._clear_tx_flags_if_keying(enabled)
             return False
         if enabled and not freeze_doppler:
             # Tone modes keep tracking through TX, so the carrier must come up
@@ -1680,7 +1681,19 @@ class HamlibDirectController(RigController):
             return True
         except Exception as exc:
             logger.error("RigDirect.set_ptt(%s): %s", enabled, exc)
+            self._clear_tx_flags_if_keying(enabled)
             return False
+
+    def _clear_tx_flags_if_keying(self, enabled: bool) -> None:
+        """Undo the TX-window flags when a key-up failed (the rig never keyed).
+
+        Otherwise _doppler_frozen would keep Doppler updates suppressed (and
+        _ptt_active keep the in-TX write throttles on) until some later
+        set_ptt(False).
+        """
+        if enabled:
+            self._ptt_active = False
+            self._doppler_frozen = False
 
     def _flush_pending_frequencies(self) -> None:
         """Re-apply the most recently *computed* DL/UL pair right now.
