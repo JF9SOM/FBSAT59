@@ -5638,13 +5638,17 @@ msgstr "AGC オン"
 msgid "AGC Off"
 msgstr "AGC オフ"
 
-#: src/ui/sdr_control_widget.py:733
-msgid "▶ Start Audio"
-msgstr "▶ 音声開始"
-
 #: src/ui/sdr_control_widget.py:734
-msgid "■ Stop Audio"
-msgstr "■ 音声停止"
+msgid "Speaker output"
+msgstr "スピーカー出力"
+
+#: src/ui/sdr_control_widget.py:749
+msgid "🔇 Mute"
+msgstr "🔇 ミュート"
+
+#: src/ui/sdr_control_widget.py:749
+msgid "🔊 Unmute"
+msgstr "🔊 ミュート解除"
 
 #: src/ui/sdr_control_widget.py:742
 msgid "● REC Audio"

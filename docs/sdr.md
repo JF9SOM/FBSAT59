@@ -85,7 +85,7 @@
     - SDR が Rig 1/Rig 2 どちらでも動作
     - Lock ON 時: 相手リグの TX を自動追従（反転トランスポンダーは符号反転）
     - トランスポンダー切り替え時にオフセット自動リセット
-  - デモジュレーター（モード選択・ボリューム・AGC・Start/Stop Audio）
+  - デモジュレーター（モード選択・ボリューム・AGC・Mute/Unmute トグル）
     - **MP3音声録音**（`● REC Audio` / `■ STOP` / `📁`）— `lameenc` によるピュアPythonエンコード、外部ツール不要
   - IQ レコーダー（帯域幅選択・REC/STOP・経過時間表示）
     - **📁ファイルマネージャーボタン**（Audio 録音の行のみ。IQ 録音の行の 📁 は 2026-09-21 に削除）— SDR未接続時も常時クリック可能
@@ -661,7 +661,7 @@ SDR の Rig:  [SDR: Connected  ■ 435.612 MHz]  ← シアン色で区別
 ┌─ Demodulator ───────────────────────────────────┐
 │  Mode: [NFM ▼] [USB] [LSB] [CW]                  │
 │  Filter BW: スライダー  Volume: スライダー  AGC    │
-│  [▶ Start Audio]  [■ Stop Audio]                 │
+│  [🔊 Unmute] ⇄ [🔇 Mute]  (single toggle button)  │
 └──────────────────────────────────────────────────┘
 ┌─ IQ Recorder ───────────────────────────────────┐
 │  BW: [250 kHz ▼]   ファイル名自動生成             │

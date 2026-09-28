@@ -246,6 +246,10 @@ class SdrControlWidget(QWidget):
 
         self._pipeline = pipeline
         self._is_replay = is_replay
+        if pipeline is not None:
+            # A fresh pipeline starts with speaker output off; keep the toggle in step.
+            self._audio_on = False
+            self._refresh_audio_toggle_btn()
         if pipeline is not None and not is_replay:
             self._gain_timer.start()
         else:
@@ -281,7 +285,7 @@ class SdrControlWidget(QWidget):
                 self._manual_freq_spin.blockSignals(False)
         else:
             self._status_label.setText(_("SDR Disconnected"))
-            self._stop_audio()
+            self._set_audio(False)
             self._stop_recording()
             self._stop_audio_recording()
 
@@ -730,13 +734,22 @@ class SdrControlWidget(QWidget):
 
         # Audio playback + MP3 recording buttons
         btn_row = QHBoxLayout()
-        self._start_audio_btn = QPushButton(_("▶ Start Audio"))
-        self._stop_audio_btn = QPushButton(_("■ Stop Audio"))
-        self._stop_audio_btn.setEnabled(False)
-        self._start_audio_btn.clicked.connect(self._start_audio)
-        self._stop_audio_btn.clicked.connect(self._stop_audio)
-        btn_row.addWidget(self._start_audio_btn)
-        btn_row.addWidget(self._stop_audio_btn)
+        # One toggle for speaker output: the label names the action a click performs.
+        self._audio_on = False
+        self._audio_toggle_btn = QPushButton()
+        self._audio_toggle_btn.setToolTip(_("Speaker output"))
+        self._audio_toggle_btn.clicked.connect(self._toggle_audio)
+        self._refresh_audio_toggle_btn()
+        # Reserve room for the wider label so the row does not shift when it flips.
+        widest = 0
+        for on in (False, True):
+            self._audio_on = on
+            self._refresh_audio_toggle_btn()
+            widest = max(widest, self._audio_toggle_btn.sizeHint().width())
+        self._audio_on = False
+        self._refresh_audio_toggle_btn()
+        self._audio_toggle_btn.setMinimumWidth(widest)
+        btn_row.addWidget(self._audio_toggle_btn)
         btn_row.addStretch()
 
         self._audio_rec_btn = QPushButton(_("● REC Audio"))
@@ -946,18 +959,20 @@ class SdrControlWidget(QWidget):
         if self._pipeline is not None:
             self._pipeline.set_agc(on)
 
-    def _start_audio(self) -> None:
-        if self._pipeline is None:
-            return
-        self._pipeline.set_audio_enabled(True)
-        self._start_audio_btn.setEnabled(False)
-        self._stop_audio_btn.setEnabled(True)
+    def _refresh_audio_toggle_btn(self) -> None:
+        """Show the action a click performs: Mute while audible, Unmute while muted."""
+        self._audio_toggle_btn.setText(_("🔇 Mute") if self._audio_on else _("🔊 Unmute"))
 
-    def _stop_audio(self) -> None:
+    def _set_audio(self, enabled: bool) -> None:
+        if enabled and self._pipeline is None:
+            return
         if self._pipeline is not None:
-            self._pipeline.set_audio_enabled(False)
-        self._start_audio_btn.setEnabled(True)
-        self._stop_audio_btn.setEnabled(False)
+            self._pipeline.set_audio_enabled(enabled)
+        self._audio_on = enabled
+        self._refresh_audio_toggle_btn()
+
+    def _toggle_audio(self) -> None:
+        self._set_audio(not self._audio_on)
 
     def _start_recording(self) -> None:
         if self._pipeline is None or self._recording:

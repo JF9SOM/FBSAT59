@@ -5139,12 +5139,16 @@ msgstr ""
 msgid "AGC Off"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:733
-msgid "▶ Start Audio"
+#: src/ui/sdr_control_widget.py:734
+msgid "Speaker output"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:734
-msgid "■ Stop Audio"
+#: src/ui/sdr_control_widget.py:749
+msgid "🔇 Mute"
+msgstr ""
+
+#: src/ui/sdr_control_widget.py:749
+msgid "🔊 Unmute"
 msgstr ""
 
 #: src/ui/sdr_control_widget.py:742
