@@ -52,6 +52,8 @@ dependencies = [
     "certifi>=2024.2",          # CA bundle used by httpx in PyInstaller bundles
     "pyserial>=3.5",            # CI-V serial communication for Icom satmode rigs
     "aprslib>=0.7.2",          # APRS packet parsing (MIC-E / compressed / message) for the APRS tab's Plain-text view
+    "lameenc>=1.7",            # Pure-Python MP3 encoder for Radio Control audio recording
+    "soundfile>=0.12",         # MP3/WAV decode for recording playback and SSTV "Decode Recording…" (libsndfile, no ffmpeg needed)
 ]
 
 [project.optional-dependencies]
@@ -75,8 +77,6 @@ packaging = [
     "pyusb>=1.2",
     "scipy>=1.12",
     "sounddevice>=0.4",
-    "lameenc>=1.7",
-    "soundfile>=0.12",     # MP3/WAV decode for SSTV "Decode Recording…" (libsndfile, no ffmpeg needed)
     # CW Decoder ML runtime — bundled directly (see cw_model_dialog.py; frozen
     # builds cannot pip-install at runtime, sys.executable points at the app itself)
     "onnxruntime>=1.17",
@@ -93,8 +93,6 @@ sdr = [
     "pyusb>=1.2",        # USB VID/PID scan for SDR Device Installation dialog
     "scipy>=1.12",       # DSP filters and Hilbert transform for demodulators
     "sounddevice>=0.4",  # Audio output (PortAudio wrapper)
-    "lameenc>=1.7",     # Pure-Python MP3 encoder for audio recording
-    "soundfile>=0.12",  # MP3/WAV decode for SSTV "Decode Recording…" (libsndfile, no ffmpeg needed)
 ]
 # AX100 "ASM+Golay" digipeater (GreenCube/MARMOTSat-compatible) — RS(255,223) FEC.
 # Pure Python + numpy, no native build required.

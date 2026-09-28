@@ -118,11 +118,11 @@ mac には `timeout` コマンドが無いので、止め時間を制御した�
 | ft4wsjt（WSJT-X FT4 エンジン） | `ft4wsjt-bundle` | `…\ft4wsjt\` |
 | direwolf（APRS） | `direwolf-bundle`（**`/releases/latest` ではない**。プレリリースタグ） | `…\direwolf\` |
 | CW デコーダモデル | `raw.githubusercontent.com/e04/deepcw-engine/main/model.onnx` ＋ `pip install onnxruntime` | `…\cwmodel\` |
-| lameenc（MP3 録音） | `pip install lameenc` | venv |
+| lameenc（MP3 録音） | `pip install lameenc`（2026-09-28 から `pyproject.toml` の必須依存に昇格したので通常は `pip install -e .` で入る。既存 venv 向けの保険） | venv |
 
 冪等（導入済みならスキップ）・オフラインでも起動を止めない・ランチャーを失敗させない設計。
 
-**音声・DSP 系の pip 依存（`sounddevice` / `scipy` / `pyusb` / `soundfile` / `plyer` /
+**音声・DSP 系の pip 依存（`sounddevice` / `scipy` / `pyusb` / `plyer` /
 `reed-solomon-ccsds`）は `bootstrap_natives.py` では入れない。** これらは
 `pyproject.toml` の `[sdr]` / `[notifications]` / `[ax100digi]` エクストラに属し、
 venv セットアップ（および `win_launch.bat` の再インストール）で
