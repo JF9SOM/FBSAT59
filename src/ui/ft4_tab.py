@@ -221,6 +221,18 @@ class _TxWorker(QObject):
             with contextlib.suppress(Exception):
                 stream.abort()
 
+    def _release_ptt(self) -> bool:
+        """Un-key the rig; try once more if the first attempt reports failure."""
+        for attempt in range(2):
+            try:
+                if self._rig.set_ptt(False):
+                    return True
+            except Exception:
+                logger.exception("FT4: set_ptt(False) raised")
+            if attempt == 0:
+                time.sleep(0.3)
+        return False
+
     def run(self) -> None:
         """Emits exactly one of `error` or `finished` — never both, so a
         failure status is never clobbered by an immediately-following
@@ -390,13 +402,22 @@ class _TxWorker(QObject):
                     sorted(cb_stats["status_flags"]) or ["none"],
                 )
 
+            ptt_off_ok = True
             if self._rig is not None:
                 time.sleep(0.10)  # PTT tail time
                 t0 = time.monotonic()
-                self._rig.set_ptt(False)
-                log.info("tx ptt_off duration=%.3fs", time.monotonic() - t0)
+                ptt_off_ok = self._release_ptt()
+                log.info("tx ptt_off ok=%s duration=%.3fs", ptt_off_ok, time.monotonic() - t0)
 
-            if finished_naturally:
+            if not ptt_off_ok:
+                # Never report a normal finish while the rig may still be keyed
+                # (ft4_decode.log used to print "ptt_off" even when the command
+                # never reached the radio).
+                log.error("tx ptt_off FAILED — the radio may still be transmitting")
+                self.error.emit(
+                    _("PTT OFF failed — the radio may still be transmitting. Check the radio!")
+                )
+            elif finished_naturally:
                 self.finished.emit()
             else:
                 # Surfaced as an error (rather than finished) so the
@@ -411,7 +432,7 @@ class _TxWorker(QObject):
         except Exception as exc:
             if self._rig is not None:
                 with contextlib.suppress(Exception):
-                    self._rig.set_ptt(False)
+                    self._release_ptt()
             self.error.emit(str(exc))
         finally:
             with self._stream_lock:

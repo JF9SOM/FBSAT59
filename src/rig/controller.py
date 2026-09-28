@@ -3135,6 +3135,11 @@ class HamlibNetController(RigController):
     """
 
     _TIMEOUT = 10.0  # seconds — allows for slow CAT backends such as FTX-1
+    # PTT-off delivery (see _ptt_off_independent()): per-attempt socket timeout,
+    # number of attempts, and the pause between them.
+    _PTT_OFF_TIMEOUT = 5.0
+    _PTT_OFF_ATTEMPTS = 3
+    _PTT_OFF_RETRY_DELAY = 0.3
 
     def __init__(
         self,
@@ -3349,6 +3354,10 @@ class HamlibNetController(RigController):
             self._sock = None
             with self._lock:
                 self._state = RigState.DISCONNECTED
+            if self._ptt_active:
+                # Dropped mid-transmission: nothing else is guaranteed to
+                # un-key the rig now that the tracking connection is gone.
+                self._emergency_ptt_off_async()
             return ""
 
     def _cmd(self, command: str) -> str:
@@ -3525,6 +3534,16 @@ class HamlibNetController(RigController):
         # freeze_doppler=False to set_ptt() and keep tracking right through
         # their much longer transmissions -- see set_ptt()'s docstring.
         if self._doppler_frozen:
+            return True
+
+        # FT-991/FT-991A ignore a frequency write while transmitting, so an
+        # in-TX F/I buys no tracking and only risks a rigctld stall: in five
+        # logged FT4 transmissions (2026-09-21, 09-28) an F sent mid-TX was
+        # never answered, timed out after 10 s and dropped the shared socket.
+        # Skip it; _last_dl_hz/_last_ul_hz are untouched, so the first cycle
+        # after PTT off writes the current values. Icom rigs do accept mid-TX
+        # changes (GitHub Issue #16) and keep tracking.
+        if self._ctcss_method == "ft991" and self._tracking_through_tx():
             return True
 
         # A TX-only rig is plain simplex: the uplink is sent as its one
@@ -3727,12 +3746,90 @@ class HamlibNetController(RigController):
         return "RPRT 0" in resp
 
     def set_ptt(self, enabled: bool, *, freeze_doppler: bool = True) -> bool:
-        """Key (T 1) or un-key (T 0) via rigctld CAT PTT command."""
+        """Key (T 1) or un-key (T 0) via rigctld CAT PTT command.
+
+        Key-up goes over the shared command socket like any other command.
+        Un-keying deliberately does NOT: see _ptt_off_independent().
+        """
+        was_active = self._ptt_active
         super().set_ptt(enabled, freeze_doppler=freeze_doppler)
+        if not enabled:
+            # Also attempted when we had keyed the rig but the shared socket has
+            # since dropped: the rig must never be left transmitting just
+            # because the tracking connection died.
+            if not (was_active or self.is_connected):
+                return False
+            return self._ptt_off_independent()
         if not self.is_connected:
             return False
-        resp = self._cmd(f"T {'1' if enabled else '0'}")
+        resp = self._cmd("T 1")
         return "RPRT 0" in resp
+
+    def _ptt_off_independent(self) -> bool:
+        """Send T 0 over a fresh, short-lived TCP connection, with retries.
+
+        The shared command socket serialises every command behind _cmd_lock
+        and shares one 10 s timeout. When rigctld stops answering a Doppler
+        "F"/"I" write, that timeout closes the shared socket, and a "T 0"
+        that had been queued behind it found _sock None and was silently
+        never sent -- the rig stayed keyed after an FT4 transmission
+        (ft4_decode.log: ptt_off took 5.7-9.7 s, ending exactly when the
+        hung F timed out; 09-21 and 09-28). Un-keying therefore must not
+        depend on that socket or its lock at all. rigctld serves each client
+        connection separately, so a new connection can still deliver T 0.
+        """
+        for attempt in range(1, self._PTT_OFF_ATTEMPTS + 1):
+            sock: socket.socket | None = None
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(self._PTT_OFF_TIMEOUT)
+                sock.connect((self._host, self._port))
+                sock.sendall(b"T 0\n")
+                buf = b""
+                while b"RPRT" not in buf:
+                    chunk = sock.recv(256)
+                    if not chunk:
+                        break
+                    buf += chunk
+                if b"RPRT 0" in buf:
+                    return True
+                logger.warning(
+                    "RigNet: PTT off attempt %d/%d got %r",
+                    attempt,
+                    self._PTT_OFF_ATTEMPTS,
+                    buf,
+                )
+            except OSError as exc:
+                logger.warning(
+                    "RigNet: PTT off attempt %d/%d failed: %s",
+                    attempt,
+                    self._PTT_OFF_ATTEMPTS,
+                    exc,
+                )
+            finally:
+                if sock is not None:
+                    with contextlib.suppress(OSError):
+                        sock.close()
+            if attempt < self._PTT_OFF_ATTEMPTS:
+                time.sleep(self._PTT_OFF_RETRY_DELAY)
+        logger.error("RigNet: PTT off FAILED after %d attempts", self._PTT_OFF_ATTEMPTS)
+        return False
+
+    def _emergency_ptt_off_async(self) -> None:
+        """Un-key from a background thread after the shared socket was lost mid-TX.
+
+        Called from _cmd_raw()'s error path, which runs on whichever thread
+        issued the failing command (typically the Doppler worker) and holds
+        _cmd_lock; the retrying independent-socket un-key must not stall it.
+        """
+
+        def _run() -> None:
+            logger.warning("RigNet: connection lost while keyed — forcing PTT off")
+            if self._ptt_off_independent():
+                self._ptt_active = False
+                self._doppler_frozen = False
+
+        threading.Thread(target=_run, name="rigctld-ptt-off", daemon=True).start()
 
     def _apply_ctcss_civ_direct(self, tone_hz: float) -> None:
         """Set CTCSS on Icom Sub band (TX/UL) via rigctld commands.

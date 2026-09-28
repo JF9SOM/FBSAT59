@@ -1945,6 +1945,113 @@ class TestHamlibNetController:
         assert resp == "RPRT 0"
         assert ctrl._sock.recv.call_count == 2  # type: ignore[union-attr]
 
+    # -- PTT off must not depend on the shared command socket --
+    #
+    # ft4_decode.log 2026-09-21 / 09-28: rigctld stopped answering a mid-TX
+    # Doppler "F", the 10 s timeout closed the shared socket, and the queued
+    # "T 0" then found _sock None and sent nothing -- the rig stayed keyed.
+
+    @staticmethod
+    def _fake_ptt_socket(replies: list[bytes]) -> tuple[MagicMock, list[bytes]]:
+        sent: list[bytes] = []
+        sock = MagicMock(spec=socket.socket)
+        sock.sendall.side_effect = lambda data: sent.append(data)
+        sock.recv.side_effect = replies
+        return sock, sent
+
+    def test_ptt_off_sent_on_fresh_socket_even_after_shared_socket_dropped(self) -> None:
+        ctrl = self._make_connected_ctrl()
+        ctrl.set_ptt(True, freeze_doppler=False)
+        ctrl._sock = None  # what a timed-out _cmd_raw leaves behind
+        with ctrl._lock:
+            ctrl._state = RigState.DISCONNECTED
+        sock, sent = self._fake_ptt_socket([b"RPRT 0\n"])
+        with patch("rig.controller.socket.socket", return_value=sock):
+            assert ctrl.set_ptt(False) is True
+        assert sent == [b"T 0\n"]
+
+    def test_ptt_off_does_not_wait_for_cmd_lock(self) -> None:
+        ctrl = self._make_connected_ctrl()
+        sock, sent = self._fake_ptt_socket([b"RPRT 0\n"])
+        with ctrl._cmd_lock, patch("rig.controller.socket.socket", return_value=sock):
+            # _cmd_lock is held, as by a Doppler "F" stuck waiting on rigctld.
+            assert ctrl.set_ptt(False) is True
+        assert sent == [b"T 0\n"]
+
+    def test_ptt_off_retries_until_rigctld_answers(self) -> None:
+        ctrl = self._make_connected_ctrl()
+        bad, _ = self._fake_ptt_socket([b"RPRT -1\n"])
+        good, sent = self._fake_ptt_socket([b"RPRT 0\n"])
+        with (
+            patch("rig.controller.socket.socket", side_effect=[bad, good]),
+            patch("rig.controller.time.sleep"),
+        ):
+            assert ctrl.set_ptt(False) is True
+        assert sent == [b"T 0\n"]
+
+    def test_ptt_off_reports_failure_after_all_attempts(self) -> None:
+        ctrl = self._make_connected_ctrl()
+        with (
+            patch("rig.controller.socket.socket", side_effect=ConnectionRefusedError("down")),
+            patch("rig.controller.time.sleep"),
+        ):
+            assert ctrl.set_ptt(False) is False
+
+    def test_ptt_off_when_never_connected_or_keyed_sends_nothing(self) -> None:
+        ctrl = self._make_ctrl()
+        with patch("rig.controller.socket.socket") as mock_cls:
+            assert ctrl.set_ptt(False) is False
+        mock_cls.assert_not_called()
+
+    def test_socket_loss_while_keyed_forces_ptt_off(self) -> None:
+        ctrl = self._make_connected_ctrl()
+        ctrl.set_ptt(True, freeze_doppler=False)
+        ctrl._sock.sendall.side_effect = TimeoutError("timed out")  # type: ignore[union-attr]
+        with patch.object(ctrl, "_emergency_ptt_off_async") as emergency, ctrl._cmd_lock:
+            ctrl._cmd_raw("F 435600000")
+        emergency.assert_called_once()
+
+    def test_socket_loss_while_not_keyed_does_not_touch_ptt(self) -> None:
+        ctrl = self._make_connected_ctrl()
+        ctrl._sock.sendall.side_effect = TimeoutError("timed out")  # type: ignore[union-attr]
+        with patch.object(ctrl, "_emergency_ptt_off_async") as emergency, ctrl._cmd_lock:
+            ctrl._cmd_raw("F 435600000")
+        emergency.assert_not_called()
+
+    # -- FT-991 ignores frequency writes while transmitting: skip them --
+
+    def test_ft991_skips_doppler_writes_while_tracking_through_tx(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="ft991")
+        ctrl._sock.recv.return_value = b"RPRT 0\n"  # type: ignore[union-attr]
+        ctrl.set_ptt(True, freeze_doppler=False)
+        ctrl._sock.sendall.reset_mock()  # type: ignore[union-attr]  # drop the "T 1"
+        assert ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0) is True
+        ctrl._sock.sendall.assert_not_called()  # type: ignore[union-attr]
+        assert ctrl._last_dl_hz is None
+        assert ctrl._last_ul_hz is None
+
+    def test_ft991_resumes_doppler_writes_after_ptt_off(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="ft991")
+        ctrl._sock.recv.return_value = b"RPRT 0\n"  # type: ignore[union-attr]
+        sock, _ = self._fake_ptt_socket([b"RPRT 0\n"])
+        ctrl.set_ptt(True, freeze_doppler=False)
+        with patch("rig.controller.socket.socket", return_value=sock):
+            ctrl.set_ptt(False)
+        ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0)
+        sent = b"".join(c.args[0] for c in ctrl._sock.sendall.call_args_list)  # type: ignore[union-attr]
+        assert b"F 435600000\n" in sent
+        assert b"I 145900000\n" in sent
+
+    def test_non_ft991_keeps_tracking_through_tx(self) -> None:
+        # Icom rigs accept mid-TX frequency changes (GitHub Issue #16).
+        ctrl = self._make_connected_ctrl(ctcss_method="hamlib")
+        ctrl._sock.recv.return_value = b"RPRT 0\n"  # type: ignore[union-attr]
+        ctrl.set_ptt(True, freeze_doppler=False)
+        ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0)
+        sent = b"".join(c.args[0] for c in ctrl._sock.sendall.call_args_list)  # type: ignore[union-attr]
+        assert b"F 435600000\n" in sent
+        assert b"I 145900000\n" in sent
+
     # -- read_dl_ul_independent: Lock dial feedback --
 
     def test_read_dl_ul_independent_yaesu_cat_reads_both(self) -> None:

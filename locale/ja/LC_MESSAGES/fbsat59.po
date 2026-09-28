@@ -29,6 +29,10 @@ msgstr "サウンドカード出力は{other}が使用中です"
 msgid "PTT command failed — check Rig 1 connection"
 msgstr "PTTコマンドが失敗しました — Rig 1の接続を確認してください"
 
+#: src/ui/ft4_tab.py
+msgid "PTT OFF failed — the radio may still be transmitting. Check the radio!"
+msgstr "PTT OFFに失敗しました — 無線機が送信し続けている可能性があります。無線機を確認してください！"
+
 #: src/ui/ft4_tab.py:407
 #, python-brace-format
 msgid "TX watchdog: forced PTT off after {s:.0f}s (audio stalled)"

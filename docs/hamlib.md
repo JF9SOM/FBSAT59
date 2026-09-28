@@ -1089,3 +1089,32 @@ CLAUDE.md参照、v0.1.19）。`rigctl -m 2`（Hamlib NET rigctlクライアン�
 
 **未確認/要調整**: 次の高仰角パスで、実位置ログと突き合わせて 発動閾値（`_INTERCEPT_*`）・EL の扱い（迎撃点の EL を
 そのまま送っているので、その間 EL は先に下がる）・P 失敗の原因を確認する。
+
+---
+
+### NET モードで PTT が切れなくなる不具合（2026-09-28 修正）
+
+**症状**: FT4 送信後、PTT が OFF に戻らず、無線機の電源を落とすしかない（09-21・09-28 のログで
+計 5 回確認）。Direct モードでは発生せず、NET モード（rigctld 経由）のみ。
+
+**原因（`ft4_decode.log` と `fbsat59.log` の突き合わせで確定）**: 送信中に送った Doppler の
+`F`/`I` を rigctld が 10 秒間応答しないことがあり、その間 `_cmd_lock` が保持される。送信終了時の
+`T 0` はこのロックの後ろで待たされ、`F` のタイムアウトで `_cmd_raw` が共有ソケットを閉じて
+`_sock = None` にした後にロックを得るため、**何も送らずに `""` を返して終わっていた**
+（`ptt_off duration` が 5.7〜9.7 秒で、`F ... timed out` の時刻と一致）。呼び出し側は戻り値を
+見ておらず、`ptt_off` ログも成否に関係なく出ていた。`F` が止まる根本原因（rigctld / FT-991A 側）は
+アプリのログからは未特定（rigctld 側のログがない）。
+
+**修正**:
+- `HamlibNetController.set_ptt(False)` は共有ソケット・`_cmd_lock` を使わず、毎回新規の TCP 接続で
+  `T 0` を送り `RPRT 0` を確認、失敗時は最大 3 回リトライ（`_ptt_off_independent()`）。
+  未接続でも、直前まで PTT ON にしていた場合は試行する
+- 送信中（`_ptt_active`）に共有ソケットがエラーで閉じられたら、別スレッドで PTT OFF を強制
+  （`_emergency_ptt_off_async()`）
+- `_TxWorker`（FT4）は `set_ptt(False)` の戻り値を確認して 1 回再試行し、失敗したら
+  `tx ptt_off ok=False` をログに残してステータスバーに「PTT OFF failed」を出す
+- **FT-991（`ctcss_method == "ft991"`）のみ**、送信中（`_tracking_through_tx()`）の NET モード
+  `F`/`I` 書き込みをスキップ。FT-991 は送信中の周波数書き込みが効かない前提（ユーザー判断）で、
+  rigctld 停止に遭遇する機会を減らす。`_last_dl_hz`/`_last_ul_hz` は更新しないので、PTT OFF 後の
+  最初のサイクルで最新値が書かれる。Icom は送信中の変更を受け付ける（Issue #16）ため対象外
+- 未対応: Q65 タブの `set_ptt(False)` 戻り値確認（コントローラー側の修正で NET の主要因は解消済み）
