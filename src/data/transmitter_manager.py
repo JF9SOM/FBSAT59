@@ -399,7 +399,8 @@ class TransmitterManager:
              already exists on the official side).
           4. Migrate transmitters from provisional → official (skipped when the
              official side already has transmitters).
-          5. Move favorite group membership from provisional → official.
+          5. Move favorite group membership and Autotrack list entries from
+             provisional → official.
           6. Record satnogs_source_id = fake_id on the official satellite so that
              future SATNOGS syncs query under the provisional ID.
           7. Hide the provisional satellite (is_hidden = 2).
@@ -542,6 +543,15 @@ class TransmitterManager:
         # Moved (not copied) so re-running this pipeline never re-adds a group
         # the user has since removed from the official satellite.
         move_groups(self._conn, fake_id, real_id)
+
+        # --- Step 5b: repoint Autotrack list entries ---------------------------
+        # Entries store a satellite NORAD ID; left on the (now hidden) provisional
+        # ID they would keep using a TLE that is no longer refreshed for AOS/LOS.
+        # The transponder UUID is unaffected (transmitters keep their uuid).
+        self._conn.execute(
+            "UPDATE autotrack_entries SET norad_cat_id = ? WHERE norad_cat_id = ?",
+            (real_id, fake_id),
+        )
 
         # --- Step 6: record satnogs_source_id on the official satellite --------
         self._conn.execute(

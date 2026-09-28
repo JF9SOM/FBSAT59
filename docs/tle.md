@@ -694,6 +694,7 @@ GET https://db.satnogs.org/api/tle/?norad_cat_id={fake_id}&format=json
 4. トランスミッタを仮 ID → 実 ID へ移行（実 ID 側に既存ならスキップ）
 5. Favorite グループ所属を仮 ID → 実 ID へ**移動**（`favorites.move_groups()`。コピーではなく移動にしているのは、
    このパイプラインが同期のたびに再実行されるため、ユーザーが実 ID 側で外したグループが復活するのを防ぐ）
+5b. Autotrack リストのエントリ（`autotrack_entries.norad_cat_id`）を仮 ID → 実 ID へ付け替え
 6. 実 ID 衛星に `satnogs_source_id = fake_id` を記録
 7. 仮 ID を `is_hidden = 2`（システム非表示）に設定
 
@@ -703,6 +704,14 @@ GET https://db.satnogs.org/api/tle/?norad_cat_id={fake_id}&format=json
 「お気に入りが消えた」ように見えた。多対多化（[ui-components.md](ui-components.md)「カスタムFavoriteグループ設計」）と
 同時に手順5を「移動」へ変更し、既に移行済みで取り残された所属は `_migrate_favorites_to_multi_group()` が
 一度だけ実 ID へ移す（`satnogs_source_id` で結ばれ、仮 ID 側が `is_hidden=2` のペアが対象）。
+
+**2026-09-28 修正（Autotrack エントリの取り残し）**: 同じパイプラインが `autotrack_entries` を書き換えておらず、
+仮 ID で登録された Autotrack エントリは移行後も非表示の仮 ID を指したままになる構造だった（仮 ID 側の TLE は
+`fetch_provisional_tles()` の更新対象から外れる＝AOS/LOS が古い軌道で計算される。衛星検索ダイアログには
+実 ID しか出ないためユーザーは気づけない）。実 DB（2026-09-28 時点）では該当エントリは 0 件だった。
+手順5b を追加し、取り残し分は `_repair_autotrack_provisional_entries()`（マーカー
+`db_repair_autotrack_provisional_v1`、一度きり）が起動時に付け替える。エントリのトランスポンダー参照は
+UUID のみ（`xpdr_uuid`）で衛星 ID と独立のため、付け替えでトランスポンダー選択は影響を受けない。
 
 #### トリガー
 | トリガー | 発火場所 |

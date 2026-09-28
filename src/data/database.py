@@ -367,6 +367,7 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
 
     _repair_satnogs_in_orbit_status(conn)
     _migrate_favorites_to_multi_group(conn)
+    _repair_autotrack_provisional_entries(conn)
 
 
 def _migrate_favorites_to_multi_group(conn: sqlite3.Connection) -> None:
@@ -408,6 +409,42 @@ def _migrate_favorites_to_multi_group(conn: sqlite3.Connection) -> None:
         "INSERT OR REPLACE INTO app_settings (key, value, updated_at)"
         " VALUES (?, ?, CURRENT_TIMESTAMP)",
         (marker, str(recovered)),
+    )
+    conn.commit()
+
+
+def _repair_autotrack_provisional_entries(conn: sqlite3.Connection) -> None:
+    """One-time repair: repoint Autotrack entries stranded on a provisional NORAD ID.
+
+    The provisional->official migration used to leave autotrack_entries on the
+    provisional (now hidden, is_hidden=2) satellite, whose TLE is no longer
+    refreshed, so AOS/LOS were computed from a stale orbit. Same linkage test as
+    _migrate_favorites_to_multi_group(): official row with satnogs_source_id set
+    and a hidden provisional row.
+    """
+    marker = "db_repair_autotrack_provisional_v1"
+    if conn.execute("SELECT 1 FROM app_settings WHERE key = ?", (marker,)).fetchone():
+        return
+
+    repaired = 0
+    for row in conn.execute(
+        """
+        SELECT s.norad_cat_id AS real_id, s.satnogs_source_id AS fake_id
+        FROM satellites s
+        JOIN satellites p ON p.norad_cat_id = s.satnogs_source_id
+        WHERE p.is_hidden = 2
+        """
+    ).fetchall():
+        cur = conn.execute(
+            "UPDATE autotrack_entries SET norad_cat_id = ? WHERE norad_cat_id = ?",
+            (row["real_id"], row["fake_id"]),
+        )
+        repaired += cur.rowcount
+
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value, updated_at)"
+        " VALUES (?, ?, CURRENT_TIMESTAMP)",
+        (marker, str(repaired)),
     )
     conn.commit()
 
