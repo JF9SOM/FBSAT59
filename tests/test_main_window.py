@@ -10,6 +10,7 @@ MainWindow     — メインウィンドウ
 from __future__ import annotations
 
 import sqlite3
+import time
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
@@ -3649,6 +3650,13 @@ class TestSdrDopplerCycle:
         tle_manager = TLEManager(db)
         w = MainWindow(conn=db, tle_manager=tle_manager)
         qtbot.addWidget(w)
+        # MainWindow always runs a 50 ms background worker that calls
+        # _sdr_doppler_cycle() itself. These tests call it synchronously and
+        # count calls on the mock rig, so a worker tick landing between _prep()
+        # and the assertions (easy on a loaded CI runner) adds extra calls.
+        # stop() does not join, so wait out one interval for the thread to exit.
+        w._sdr_doppler_worker.stop()
+        time.sleep(0.1)
         return w
 
     def _make_sdr_rig(self, connected: bool = True):
