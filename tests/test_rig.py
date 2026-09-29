@@ -497,6 +497,63 @@ class TestGenericDirectUlWriteVfoRestore:
         ctrl._rig.set_vfo.assert_not_called()
 
 
+class TestFt991DirectSkipsWritesWhileTransmitting:
+    """FT-991/FT-991A ignore a frequency write while transmitting -- the same
+    hardware behavior confirmed for NET mode/rigctld (see
+    test_ft991_skips_doppler_writes_while_tracking_through_tx below) applies
+    regardless of the CAT transport used to reach the radio, so Direct
+    mode's generic branch must skip DL/UL writes too while
+    _tracking_through_tx() is True, instead of only NET mode."""
+
+    def _make_connected_ctrl(self, model_id: int = 1035) -> HamlibDirectController:
+        ctrl = HamlibDirectController(model_id=model_id, port="/dev/null")
+        ctrl._rig = MagicMock(error_status=0)
+        fake_hamlib = MagicMock()
+        fake_hamlib.RIG_VFO_A = 101
+        fake_hamlib.RIG_VFO_B = 102
+        ctrl._hamlib = fake_hamlib
+        with ctrl._lock:
+            ctrl._state = RigState.CONNECTED
+        return ctrl
+
+    def test_skips_dl_and_ul_writes_while_tracking_through_tx(self) -> None:
+        ctrl = self._make_connected_ctrl()
+        ctrl.set_ptt(True, freeze_doppler=False)
+        with patch("os.open") as mock_open:
+            assert ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0) is True
+        ctrl._rig.set_freq.assert_not_called()
+        mock_open.assert_not_called()  # the raw FB write never happened either
+        assert ctrl._last_dl_hz is None
+        assert ctrl._last_ul_hz is None
+
+    def test_resumes_writes_after_ptt_off(self) -> None:
+        ctrl = self._make_connected_ctrl()
+        ctrl.set_ptt(True, freeze_doppler=False)
+        with patch("os.open"):
+            ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0)  # skipped, see above
+        ctrl.set_ptt(False)
+        with (
+            patch("os.open", return_value=7) as mock_open,
+            patch("os.write") as mock_write,
+            patch("os.close"),
+        ):
+            assert ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0) is True
+        ctrl._rig.set_freq.assert_called_once_with(101, 435_600_000)  # DL
+        mock_open.assert_called_once()
+        mock_write.assert_called_once_with(7, b"FB145900000;")  # raw UL write
+        assert ctrl._last_dl_hz == 435_600_000.0
+        assert ctrl._last_ul_hz == 145_900_000.0
+
+    def test_other_generic_direct_rigs_keep_tracking_through_tx(self) -> None:
+        """FTX-1F/IC-705 share this same generic branch but are not FT-991 --
+        they must keep writing during TX (IC-705: Issue #16 confirmed Icom
+        accepts it; FTX-1F: no evidence it behaves like FT-991)."""
+        ctrl = self._make_connected_ctrl(model_id=3085)  # IC-705
+        ctrl.set_ptt(True, freeze_doppler=False)
+        assert ctrl.set_vfo_frequencies(145_800_000.0, 435_000_000.0) is True
+        ctrl._rig.set_freq.assert_any_call(102, 435_000_000)  # UL write happened
+
+
 class TestDirectRadioTypeSplitRoles:
     """radio_type ("rx_only" / "tx_only") must be honoured in Direct mode
     too, so a dual-rig setup (Rig 1 = DL only, Rig 2 = UL only) never writes
@@ -2112,6 +2169,23 @@ class TestHamlibNetController:
         sent = b"".join(c.args[0] for c in ctrl._sock.sendall.call_args_list)  # type: ignore[union-attr]
         assert b"F 435600000\n" in sent
         assert b"I 145900000\n" in sent
+
+    def test_last_ul_hz_property_mirrors_internal_state(self) -> None:
+        """RigController.last_ul_hz -- the public property FT4's TX-time
+        residual Doppler correction reads -- must reflect _last_ul_hz: None
+        before any write, frozen during FT-991 TX (skipped above), updated
+        after PTT off."""
+        ctrl = self._make_connected_ctrl(ctcss_method="ft991")
+        ctrl._sock.recv.return_value = b"RPRT 0\n"  # type: ignore[union-attr]
+        assert ctrl.last_ul_hz is None
+        ctrl.set_ptt(True, freeze_doppler=False)
+        ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0)  # skipped while keyed
+        assert ctrl.last_ul_hz is None
+        sock, _ = self._fake_ptt_socket([b"RPRT 0\n"])
+        with patch("rig.controller.socket.socket", return_value=sock):
+            ctrl.set_ptt(False)
+        ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0)
+        assert ctrl.last_ul_hz == 145_900_000.0
 
     def test_failed_ptt_on_does_not_leave_doppler_suppressed(self) -> None:
         ctrl = self._make_connected_ctrl(ctcss_method="ft991")

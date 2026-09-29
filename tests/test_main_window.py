@@ -3637,6 +3637,108 @@ class TestLockDialFeedback:
         rig.apply_transponder_state.assert_called_once()
 
 
+class TestFt4TxDopplerOffsets:
+    """get_ft4_tx_doppler_offsets_hz() / _ul_corr_at() -- the UL Doppler
+    trajectory FT4's TX-time residual correction samples across an upcoming
+    burst (see Ft4Tab._build_tx_doppler_offset_fn() and docs/hamlib.md
+    "FT4 送信中ドップラー残差補正"). Mirrors _doppler_cycle()'s own UL
+    computation but evaluated at several future timestamps via
+    SatelliteEngine.observe(at=...) instead of "now"."""
+
+    def _make_window(self, qtbot, db):
+        from data.tle_manager import TLEManager
+        from ui.main_window import MainWindow
+
+        tle_manager = TLEManager(db)
+        w = MainWindow(conn=db, tle_manager=tle_manager)
+        qtbot.addWidget(w)
+        return w
+
+    def _fake_engine_at(self, rr_by_second: float = 0.0):
+        """A fake SatelliteEngine.observe(at=...) whose range-rate is
+        constant across the requested times (rr_by_second=0.0 -> constant
+        nominal UL, no drift) -- callers needing a drifting trajectory pass
+        a nonzero rr, which DopplerCalculator turns into a fixed UL shift
+        (constant rr -> constant, nonzero UL correction each sample)."""
+        from datetime import UTC as _UTC
+        from datetime import datetime as _datetime
+
+        class _FakeEngine:
+            def observe(self, norad: int, at=None) -> Observation:
+                return Observation(
+                    norad_cat_id=norad,
+                    timestamp=at or _datetime.now(_UTC),
+                    elevation_deg=45.0,
+                    azimuth_deg=180.0,
+                    range_km=1000.0,
+                    range_rate_km_s=rr_by_second,
+                    is_above_horizon=True,
+                )
+
+        return _FakeEngine()
+
+    _TRANSMITTER = {
+        "downlink_low": 145_800_000,
+        "downlink_high": 145_950_000,
+        "uplink_low": 435_000_000,
+        "uplink_high": 435_150_000,
+        "invert": False,
+        "mode": "USB",
+    }
+
+    def test_none_when_no_satellite_selected(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._engine = self._fake_engine_at()
+        w._selected_norad = None
+        w._current_transmitter = dict(self._TRANSMITTER)
+        assert w.get_ft4_tx_doppler_offsets_hz(5.0) is None
+
+    def test_none_when_no_transmitter(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._engine = self._fake_engine_at()
+        w._selected_norad = 99999
+        w._current_transmitter = None
+        assert w.get_ft4_tx_doppler_offsets_hz(5.0) is None
+
+    def test_returns_n_samples_covering_the_duration(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._engine = self._fake_engine_at(rr_by_second=0.0)
+        w._selected_norad = 99999
+        w._current_transmitter = dict(self._TRANSMITTER)
+        w._dial_feedback_offset_hz = 0.0
+
+        result = w.get_ft4_tx_doppler_offsets_hz(5.04, n_samples=6)
+
+        assert result is not None
+        assert len(result) == 6
+        # rr=0 -> UL sits exactly at the band-centre nominal every sample.
+        assert all(v == pytest.approx(435_075_000.0) for v in result)
+
+    def test_folds_dial_feedback_offset(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._engine = self._fake_engine_at(rr_by_second=0.0)
+        w._selected_norad = 99999
+        w._current_transmitter = dict(self._TRANSMITTER)
+        w._dial_feedback_offset_hz = 50.0
+
+        result = w.get_ft4_tx_doppler_offsets_hz(5.04, n_samples=3)
+
+        assert result is not None
+        assert all(v == pytest.approx(435_075_050.0) for v in result)
+
+    def test_folds_dial_feedback_offset_inverted(self, qtbot, db) -> None:
+        w = self._make_window(qtbot, db)
+        w._engine = self._fake_engine_at(rr_by_second=0.0)
+        w._selected_norad = 99999
+        w._current_transmitter = {**self._TRANSMITTER, "invert": True}
+        w._dial_feedback_offset_hz = 50.0
+
+        result = w.get_ft4_tx_doppler_offsets_hz(5.04, n_samples=3)
+
+        assert result is not None
+        assert all(v == pytest.approx(435_075_000.0 - 50.0) for v in result)
+
+
 class TestSdrDopplerCycle:
     """_sdr_doppler_cycle() -- the fixed-50ms digital Doppler tracker for
     SDR-assigned Rig slots, independent of the Radio Control "Cycle"

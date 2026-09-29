@@ -19,6 +19,7 @@ import ctypes.util
 import logging
 import os
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -429,6 +430,7 @@ def symbols_to_audio(
     tones: bytes,
     base_freq: float,
     sample_rate: int = SAMPLE_RATE,
+    freq_offset_hz: Callable[[float], float] | None = None,
 ) -> NDArray[np.float32]:
     """Generate phase-continuous 4-FSK audio from a FT4 tone array.
 
@@ -436,6 +438,13 @@ def symbols_to_audio(
         tones: Sequence of tone values (0-3), typically 105 bytes.
         base_freq: Frequency (Hz) of tone 0.
         sample_rate: Output audio sample rate.
+        freq_offset_hz: Optional function mapping seconds-elapsed-since-the-
+            start-of-the-burst to an additional frequency offset (Hz), added
+            to every symbol's tone at that instant. Used for TX-time residual
+            Doppler correction: some rigs (FT-991) ignore CAT frequency
+            writes while transmitting, so the correction that would normally
+            go to the rig is applied to the audio tone instead, continuously
+            through the whole ~5 s burst -- see docs/hamlib.md.
 
     Returns:
         Float32 audio array of length len(tones) * samples_per_symbol.
@@ -445,8 +454,11 @@ def symbols_to_audio(
     audio = np.empty(total, dtype=np.float32)
     phase = 0.0
     pos = 0
-    for tone in tones:
+    symbol_dur = spf / sample_rate
+    for i, tone in enumerate(tones):
         freq = base_freq + tone * FT4_TONE_SPACING
+        if freq_offset_hz is not None:
+            freq += freq_offset_hz(i * symbol_dur)
         n = spf
         delta_phi = 2.0 * np.pi * freq / sample_rate
         phases = phase + delta_phi * np.arange(1, n + 1, dtype=np.float64)
@@ -571,8 +583,12 @@ class Ft4Codec:
         message: str,
         base_freq: float = 1000.0,
         sample_rate: int = SAMPLE_RATE,
+        freq_offset_hz: Callable[[float], float] | None = None,
     ) -> NDArray[np.float32] | None:
         """Encode a standard FT4 message to audio.
+
+        freq_offset_hz: see symbols_to_audio() — TX-time residual Doppler
+        correction, applied continuously through the burst.
 
         Returns float32 audio array, or None if ft8_lib is unavailable
         or the message string is not valid FT4 format.
@@ -583,7 +599,7 @@ class Ft4Codec:
         if payload is None:
             return None
         tones = self._lib.generate_tones(payload)
-        return symbols_to_audio(tones, base_freq, sample_rate)
+        return symbols_to_audio(tones, base_freq, sample_rate, freq_offset_hz)
 
     def decode_audio(
         self,

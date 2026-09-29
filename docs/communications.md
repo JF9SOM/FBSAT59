@@ -2528,13 +2528,19 @@ FT4 は **6 秒周期**（UTC の偶数秒が一方、奇数秒がもう一方�
 #### PTT・ドップラー制御
 
 APRS と同じパターンを使用:
-- TX 開始前: Doppler 凍結（`_ptt_active = True`）→ 送信中の周波数変更を防止
-- PTT ON: `RigController.set_ptt(True)`
+- PTT ON: `RigController.set_ptt(True, freeze_doppler=False)` — FT4 の TX は約 5.2 秒と
+  VFO を止めておくには長すぎるため、APRS 等の短いパケット送信と異なり Doppler は凍結せず
+  TX 中も追尾を継続する（GitHub Issue #16）
 - 音声送出: sounddevice で FT4 エンコード済み音声を再生（約 5.2 秒）
-- PTT OFF: `RigController.set_ptt(False)` → Doppler 補正ループ再開
+- PTT OFF: `RigController.set_ptt(False)`
 
-FT4 の TX は約 5.2 秒間継続するため、Doppler 補正はその間停止。
-衛星パス中央付近（最大仰角前後）での周波数変化は 5 秒で数 Hz 程度であり実用上無視できる。
+**訂正（2026-09-29）**: 旧版のこの節には「5秒間のドップラー変化は数Hzで無視できる」と
+記載していたが、実測された RS-44 のドップラー変化率（6〜8 Hz/s）だと 5.2 秒のバーストで
+約30〜40Hz のずれが生じ得り、この想定は誤りだった。さらに FT-991 は TX 中の CAT 周波数
+書き込みを無視するため、TX 中は VFO が完全に凍結され、上記の「Doppler は凍結せず追尾を
+継続する」という設計意図もこの機種では実質的に機能していなかった。TX 音声トーン周波数側で
+残差を継続的に補正する仕組みを追加済み——詳細は [docs/hamlib.md](hamlib.md)
+「FT4 送信中ドップラー残差補正」参照。
 
 **`_TxWorker` のエラー通知**（2026-07-03 確定）: `set_ptt(True)` の戻り値を必ずチェックし、
 `False`（Rig 未接続・CAT失敗等）が返った場合は音声を再生せず

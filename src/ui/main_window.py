@@ -3214,7 +3214,12 @@ class MainWindow(QMainWindow):
 
         from ui.ft4_tab import Ft4Tab
 
-        tab = Ft4Tab(self._conn, self._radio_control, parent=self)
+        tab = Ft4Tab(
+            self._conn,
+            self._radio_control,
+            tx_doppler_offsets_fn=self.get_ft4_tx_doppler_offsets_hz,
+            parent=self,
+        )
         self._comms_tab_keys[tab] = "ft4"
         idx = self._tab_widget.addTab(tab, tab_label)
         self._add_tab_close_button(tab)
@@ -4693,6 +4698,73 @@ class MainWindow(QMainWindow):
                 threading.Thread(target=_rig2_send, daemon=True).start()
             else:
                 logger.debug("Rig2: previous cycle still running, skipping tick")
+
+    def _ul_corr_at(self, at: datetime) -> float | None:
+        """UL Doppler-corrected frequency (Hz) for the current transponder at
+        a given time. Mirrors _doppler_cycle()'s own UL computation (band-
+        centre nominal + persistent dial-feedback offset), but evaluated at
+        an arbitrary time via SatelliteEngine.observe(at=...) instead of
+        "now" -- used by get_ft4_tx_doppler_offsets_hz() below to sample a
+        few seconds into the future. Deliberately does not reuse
+        _doppler_cycle()'s own code path (tune override / SDR tune offset
+        folding are irrelevant to a TX-only rig and would add risk to an
+        already-delicate, well-tested method for no benefit here).
+
+        Returns None if no satellite/transponder is selected, the engine has
+        no TLE for it, or the transponder has no uplink defined.
+        """
+        if self._selected_norad is None or self._selected_norad == MOON_ID:
+            return None
+        if self._engine is None or self._current_transmitter is None:
+            return None
+        obs = self._engine.observe(self._selected_norad, at=at)
+        if obs is None:
+            return None
+        ul_nom = _band_center_or_low(
+            self._current_transmitter.get("uplink_low"),
+            self._current_transmitter.get("uplink_high"),
+        )
+        if ul_nom is None:
+            return None
+        ul_corr, _ul_shift = DopplerCalculator.correct_uplink(float(ul_nom), obs.range_rate_km_s)
+        if ul_corr is None:
+            return None
+        if self._dial_feedback_offset_hz != 0.0:
+            invert = bool(self._current_transmitter.get("invert", False))
+            ul_corr = ul_corr + (
+                -self._dial_feedback_offset_hz if invert else self._dial_feedback_offset_hz
+            )
+        return float(ul_corr)
+
+    def get_ft4_tx_doppler_offsets_hz(
+        self, duration_s: float, n_samples: int = 6
+    ) -> list[float] | None:
+        """Sample the UL Doppler-corrected target frequency across an FT4 burst.
+
+        Called once from Ft4Tab right before encoding each TX burst's audio
+        (see _transmit_now()'s _build_tx_doppler_offset_fn()). Returns
+        n_samples evenly-spaced UL target frequencies (Hz) covering the next
+        duration_s seconds (roughly one FT4 transmission, ~5.2 s), so Ft4Tab
+        can compare them against RigController.last_ul_hz -- the frequency
+        actually sitting on the rig's VFO -- and correct the residual via the
+        TX audio tone instead of a CAT rewrite some rigs (FT-991) ignore
+        while keyed. See docs/hamlib.md for the full design.
+
+        Returns None if no satellite/transponder is selected (Ft4Tab then
+        falls back to an uncorrected, fixed-tone transmission, same as
+        today).
+        """
+        if n_samples < 2:
+            n_samples = 2
+        now = datetime.now(UTC)
+        step = duration_s / (n_samples - 1)
+        out: list[float] = []
+        for i in range(n_samples):
+            v = self._ul_corr_at(now + timedelta(seconds=i * step))
+            if v is None:
+                return None
+            out.append(v)
+        return out
 
     def _sdr_doppler_cycle(self) -> None:
         """Digitally track Doppler for whichever Rig slot(s) are SDR.

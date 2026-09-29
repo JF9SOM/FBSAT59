@@ -49,6 +49,7 @@ from PySide6.QtWidgets import (
 from comms.audio_device_manager import get_audio_device_manager, validate_output_device
 from comms.ft4.codec import (
     FT4_PERIOD,
+    FT4_TX_DURATION,
     SAMPLE_RATE,
     Ft4Codec,
     Ft4Message,
@@ -113,6 +114,12 @@ _DEFAULT_AUDIO_FREQ = 1500.0  # Hz — matches Q65's/WSJT-X's own default; see
 # don't extend that low, whereas 1500 Hz (and the ~2300 Hz that *was*
 # confirmed) sit comfortably inside them.
 _AUDIO_OWNER = "FT4"
+# Number of Doppler samples taken across one ~5.2s TX burst for the TX-time
+# residual correction (see _build_tx_doppler_offset_fn()) — roughly one
+# sample per second, far finer than actually needed (satellite range-rate is
+# smooth on this timescale) but cheap since each sample is just a Skyfield
+# lookup, not a CAT round-trip.
+_DOPPLER_TX_SAMPLES = 6
 # 250ms @ 12000 Hz. Originally 240 (~20ms), sized only to bound the delay
 # before a TX Level slider change takes effect mid-transmission (GitHub
 # Issue #16). Raised to 6000 (500ms) for GitHub Issue #26: on IC-9700
@@ -543,11 +550,17 @@ class Ft4Tab(QWidget):
         self,
         conn: sqlite3.Connection,
         radio_control: Any,
+        tx_doppler_offsets_fn: Callable[[float, int], list[float] | None] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._conn = conn
         self._radio_control = radio_control
+        # MainWindow.get_ft4_tx_doppler_offsets_hz — injected rather than
+        # imported directly to avoid a ui.main_window <-> ui.ft4_tab import
+        # cycle (main_window.py already imports Ft4Tab). See
+        # _build_tx_doppler_offset_fn() for how this is used.
+        self._tx_doppler_offsets_fn = tx_doppler_offsets_fn
 
         self._codec = Ft4Codec()
         self._scheduler = Ft4Scheduler(self)
@@ -1368,6 +1381,49 @@ class Ft4Tab(QWidget):
     # Transmit path                                                        #
     # ------------------------------------------------------------------ #
 
+    def _build_tx_doppler_offset_fn(
+        self, rig: Any
+    ) -> tuple[Callable[[float], float] | None, float | None]:
+        """Build a burst-elapsed-seconds -> Hz function for TX-time residual
+        Doppler correction (see docs/hamlib.md "FT4 送信中ドップラー残差補正").
+
+        Some rigs (FT-991, both NET and Direct mode) ignore CAT frequency
+        writes while transmitting -- RigController deliberately stops writing
+        UL for the whole TX window on those rigs, so rig.last_ul_hz stays
+        frozen at the pre-TX value. This computes the gap between that frozen
+        value and where the UL *should* be at several points across the
+        upcoming burst (via MainWindow's injected callback), and returns a
+        function that adds the interpolated gap to the TX audio tone at any
+        instant during the burst -- correcting continuously in software
+        exactly what CAT would have done had the rig not ignored it.
+
+        For rigs that DO keep tracking through TX (Icom, FTX-1F), last_ul_hz
+        is itself already kept live by the ordinary Doppler cycle, so the gap
+        computed here stays near zero and this is a harmless no-op.
+
+        Returns (None, None) if unavailable (no rig, no callback wired up, no
+        satellite/transponder selected, or the rig has never written a UL
+        frequency yet) -- the caller then falls back to a plain fixed-tone
+        transmission, exactly like today. The second element of the tuple is
+        the residual (Hz) at the very start of the burst, for diagnostics
+        only (ft4_decode.log).
+        """
+        if rig is None or self._tx_doppler_offsets_fn is None:
+            return None, None
+        last_ul = getattr(rig, "last_ul_hz", None)
+        if last_ul is None:
+            return None, None
+        targets = self._tx_doppler_offsets_fn(FT4_TX_DURATION, _DOPPLER_TX_SAMPLES)
+        if not targets:
+            return None, None
+        sample_times = np.linspace(0.0, FT4_TX_DURATION, len(targets))
+        residual = np.asarray(targets, dtype=np.float64) - last_ul
+
+        def _offset(t: float) -> float:
+            return float(np.interp(t, sample_times, residual))
+
+        return _offset, float(residual[0])
+
     def _transmit_now(self) -> None:
         """Start TX in a daemon thread."""
         if not self._codec.is_available:
@@ -1385,18 +1441,27 @@ class Ft4Tab(QWidget):
         except ValueError:
             audio_freq = _DEFAULT_AUDIO_FREQ
 
-        audio = self._codec.encode_audio(msg, base_freq=audio_freq)
+        rig = self._tx_rig()
+        doppler_offset_fn, doppler_residual_hz = self._build_tx_doppler_offset_fn(rig)
+        audio = self._codec.encode_audio(
+            msg, base_freq=audio_freq, freq_offset_hz=doppler_offset_fn
+        )
         if audio is None:
             self._status_label.setText(_("Invalid FT4 message: ") + msg)
             return
 
         # GitHub Issue #16: "include the FT4 activity in the ft4_decode.log
         # — so ... all TX messages are logged, with a timestamp for each."
+        # doppler_residual_hz: the TX-time residual Doppler correction (Hz)
+        # applied to the audio tone at the very start of this burst — "n/a"
+        # when unavailable (no rig, no satellite selected, etc., see
+        # _build_tx_doppler_offset_fn()); logged for real-pass diagnostics.
         get_ft4_decode_logger().info(
-            'tx slot=%s freq=%.0f text="%s"',
+            'tx slot=%s freq=%.0f text="%s" doppler_residual_hz=%s',
             "EVEN" if self._scheduler._tx_even else "ODD",
             audio_freq,
             msg,
+            f"{doppler_residual_hz:.1f}" if doppler_residual_hz is not None else "n/a",
         )
         self._display_own_tx(msg, audio_freq)
         with self._tx_this_period_lock:
@@ -1406,7 +1471,7 @@ class Ft4Tab(QWidget):
         # TX Level slider's gain live, block by block, so operators can trim
         # output level (and hear the effect immediately) even while actively
         # transmitting, to avoid rig ALC action / distortion (Issue #16).
-        rig = self._tx_rig()
+        # `rig` was already fetched above to build doppler_offset_fn.
         worker = _TxWorker(
             audio, self._out_device, rig, get_gain=lambda: self._tx_level_pct / 100.0
         )

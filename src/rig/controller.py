@@ -761,6 +761,10 @@ class RigController(ABC):
         # How this rig is keyed (see rig.ptt): CAT (default), RTS, DTR or VOX.
         self._ptt_method: str = PTT_CAT
         self._ptt_port: str = ""
+        # UL frequency (Hz) most recently actually written via CAT. Redeclared
+        # (same type) in each subclass's own __init__, which is where it is
+        # actually maintained -- see the last_ul_hz property below.
+        self._last_ul_hz: float | None = None
 
     def set_ptt_config(self, method: str, port: str = "") -> None:
         """Choose the PTT method (and serial port for RTS/DTR). Applies on the next connect()."""
@@ -771,6 +775,19 @@ class RigController(ABC):
     def ptt_method(self) -> str:
         """The configured PTT method: "cat", "rts", "dtr" or "vox"."""
         return self._ptt_method
+
+    @property
+    def last_ul_hz(self) -> float | None:
+        """The UL (uplink) frequency actually written to the rig via CAT.
+
+        None until the first write after connect. Some rigs (FT-991, both
+        NET and Direct mode) ignore CAT frequency writes while transmitting,
+        so set_vfo_frequencies() deliberately skips the write -- and this
+        value stays frozen -- for the whole TX window on those rigs. Used by
+        FT4's TX-time residual Doppler correction (audio-tone based, see
+        docs/hamlib.md) as the baseline the rig's VFO is actually sitting at.
+        """
+        return self._last_ul_hz
 
     # -- Connection management --
 
@@ -2054,6 +2071,16 @@ class HamlibDirectController(RigController):
                                 self._pending_mode_ctcss = False
                                 self._resend_mode_ctcss_via_rig()
 
+            elif self._model_id in _FT991_DIRECT_MODEL_IDS and self._tracking_through_tx():
+                # FT-991/FT-991A ignore a frequency write while transmitting --
+                # confirmed via rigctld (NET mode, see
+                # HamlibNetController.set_vfo_frequencies()), and the same
+                # physical radio applies regardless of which CAT transport
+                # reaches it. Skip DL/UL entirely so _last_dl_hz/_last_ul_hz
+                # stay pinned at the pre-TX value (FT4's TX-time residual
+                # Doppler correction needs that as a stable baseline); the
+                # first cycle after PTT off writes the current values as usual.
+                return True
             else:
                 rx_vfo = self._vfo_str_to_const("VFOA")
                 dl_written = False

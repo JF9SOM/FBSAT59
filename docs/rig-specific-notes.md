@@ -125,6 +125,13 @@ rig_dialog.py のカスタムリストでは 1036 = FT-991A として登録。`_
 - `_port_lock` を取得して `connect()` との競合を防ぐ
 - `_FT991_MODE_MAP`（`HamlibNetController` と共用）を使用してモードコードを引く
 - main_window.py では `_FTX1_MODEL_IDS | _FT991_DIRECT_MODEL_IDS` をまとめて同一ブランチで処理
+- **TX中のDL/UL周波数書き込みをスキップ**（2026-09-29、`set_vfo_frequencies()`の
+  generic分岐）: rigctld（NETモード）でFT-991がTX中のCAT周波数変更を無視することが
+  確認されたのを受け、同じ物理無線機を駆動するDirectモードにも同じ挙動を仮定し、
+  `_tracking_through_tx()`の間はraw CAT `FB`書き込み（生CATのため確認応答がなく、
+  以前は無条件に成功扱いしていた）を丸ごとスキップするようにした。FTX-1F・IC-705は
+  この分岐が共有するgeneric経路の対象外（TX中も書き込みを継続）。詳細は
+  [docs/hamlib.md](hamlib.md)「FT4 送信中ドップラー残差補正」参照。
 
 ### IC-9700 / IC-9100 / IC-910H / IC-821H (Icom satmode rigs — `_SATMODE_RIG_IDS`)
 - These rigs implement Hamlib **satmode**: firmware always routes Main=RX(DL) and Sub=TX(UL)
