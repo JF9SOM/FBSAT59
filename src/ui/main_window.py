@@ -2549,8 +2549,11 @@ class MainWindow(QMainWindow):
             sat_name = self._sat_name_cache.get(self._selected_norad, str(self._selected_norad))
             self._notifier.check(self._current_passes, sat_name)
 
-        # Group search passes
-        if self._group_pass_results:
+        # Group search passes. "All Satellites" pulls in every satellite in
+        # the DB (hundreds to thousands), so AOS/LOS notifications for that
+        # filter would fire constantly — skip them while it's selected
+        # (2026-09-29, user reported the notification flood).
+        if self._group_pass_results and self._filter_combo.currentText() != "All Satellites":
             self._notifier.check_group(self._group_pass_results)
 
     def _check_autotrack(self) -> None:
