@@ -973,6 +973,26 @@ class TransmitterManager:
                                     " WHERE norad_cat_id = ? AND is_hidden = 2",
                                     (norad,),
                                 )
+                            elif status == "dead":
+                                # SATNOGS reports the satellite has re-entered.
+                                # The existing "TLE なし衛星の自動非表示ルール"
+                                # (docs/tle.md) only hides a satellite when a TLE
+                                # fetch attempt comes back empty, so a satellite
+                                # that still has an old cached TLE row (nothing
+                                # re-fetches it once it drops out of every
+                                # CelesTrak/SATNOGS group) never reaches that
+                                # branch and stays visible forever, cluttering
+                                # pass-prediction lists with a re-entered object
+                                # (e.g. NAPA-2, NORAD 48963 — seen 2026-09-29).
+                                # Hide it directly here as soon as SATNOGS
+                                # confirms it, independent of TLE state.
+                                # is_hidden=1 (user-hidden) is left untouched,
+                                # same as the alive branch above.
+                                self._conn.execute(
+                                    "UPDATE satellites SET is_hidden = 2"
+                                    " WHERE norad_cat_id = ? AND is_hidden = 0",
+                                    (norad,),
+                                )
                         stats["updated"] += 1
                     else:
                         # Satellite not yet in DB (fresh install or new launch).

@@ -149,6 +149,88 @@ class TestSyncSatelliteNamesUnhide:
         assert row["is_hidden"] == 0
 
 
+class TestSyncSatelliteNamesHideOnDead:
+    """A satellite SATNOGS reports as re-entered ('dead') should be hidden
+    even when it still has a cached (stale) TLE row, since the TLE-fetch-
+    failure branch that normally drives auto-hiding never runs for it once
+    it drops out of every CelesTrak/SATNOGS group — see NAPA-2 (NORAD 48963,
+    2026-09-29): status was already 'dead' but is_hidden stayed 0 forever.
+    """
+
+    def test_visible_satellite_is_hidden_when_dead(self, db: sqlite3.Connection) -> None:
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (48963, 'NAPA 2', 'alive', 0)"
+        )
+        db.commit()
+
+        _run_sync(
+            db,
+            [
+                {
+                    "norad_cat_id": 48963,
+                    "name": "NAPA 2",
+                    "names": "",
+                    "status": "re-entered",
+                    "norad_follow_id": None,
+                }
+            ],
+        )
+
+        row = db.execute(
+            "SELECT status, is_hidden FROM satellites WHERE norad_cat_id = 48963"
+        ).fetchone()
+        assert row["status"] == "dead"
+        assert row["is_hidden"] == 2
+
+    def test_user_hidden_satellite_is_not_touched_when_dead(self, db: sqlite3.Connection) -> None:
+        """is_hidden=1 (user chose to hide it) must never be overridden automatically."""
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (48963, 'NAPA 2', 'alive', 1)"
+        )
+        db.commit()
+
+        _run_sync(
+            db,
+            [
+                {
+                    "norad_cat_id": 48963,
+                    "name": "NAPA 2",
+                    "names": "",
+                    "status": "re-entered",
+                    "norad_follow_id": None,
+                }
+            ],
+        )
+
+        row = db.execute("SELECT is_hidden FROM satellites WHERE norad_cat_id = 48963").fetchone()
+        assert row["is_hidden"] == 1
+
+    def test_already_hidden_dead_satellite_stays_hidden(self, db: sqlite3.Connection) -> None:
+        db.execute(
+            "INSERT INTO satellites (norad_cat_id, name, status, is_hidden)"
+            " VALUES (48963, 'NAPA 2', 'dead', 2)"
+        )
+        db.commit()
+
+        _run_sync(
+            db,
+            [
+                {
+                    "norad_cat_id": 48963,
+                    "name": "NAPA 2",
+                    "names": "",
+                    "status": "re-entered",
+                    "norad_follow_id": None,
+                }
+            ],
+        )
+
+        row = db.execute("SELECT is_hidden FROM satellites WHERE norad_cat_id = 48963").fetchone()
+        assert row["is_hidden"] == 2
+
+
 class TestSyncSatelliteNamesStatusVocabulary:
     """SatNOGS reworked the /api/satellites/ 'status' vocabulary in 2026-09:
     'alive' became 'in orbit', 'dead' was dropped. The old map's
