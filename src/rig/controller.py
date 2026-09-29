@@ -3197,6 +3197,17 @@ class HamlibNetController(RigController):
     _PTT_OFF_TIMEOUT = 5.0
     _PTT_OFF_ATTEMPTS = 3
     _PTT_OFF_RETRY_DELAY = 0.3
+    # How long to wait for _cmd_lock before giving up on reusing the shared
+    # connection (see _try_ptt_off_shared()) -- long enough to ride out an
+    # ordinary CAT round trip (~200-266ms measured), short enough that a
+    # genuinely stuck command (which can hold the lock for the full 10s
+    # _TIMEOUT) is not waited out here.
+    _PTT_OFF_SHARED_LOCK_WAIT = 0.3
+    # Read timeout used only for this one "T 0" on the shared connection --
+    # deliberately much shorter than the connection's normal 10s _TIMEOUT, so
+    # a rig that has gone quiet cannot block this call; falls back to
+    # _ptt_off_independent() instead.
+    _PTT_OFF_SHARED_TIMEOUT = 1.5
 
     def __init__(
         self,
@@ -3840,7 +3851,10 @@ class HamlibNetController(RigController):
         """Key (T 1) or un-key (T 0) via rigctld CAT PTT command.
 
         Key-up goes over the shared command socket like any other command.
-        Un-keying deliberately does NOT: see _ptt_off_independent().
+        Un-keying tries the shared connection first (_try_ptt_off_shared()) and
+        only opens a new one if that is not available right now -- see
+        _ptt_off_independent()'s docstring for why un-keying cannot simply
+        depend on the shared connection unconditionally.
         RTS/DTR rigs are keyed on their own serial line instead, and VOX rigs
         are not keyed at all (the rig's VOX does it from the audio).
         """
@@ -3854,6 +3868,8 @@ class HamlibNetController(RigController):
             # because the tracking connection died.
             if not (was_active or self.is_connected):
                 return False
+            if self._ptt_method not in PTT_LINE_METHODS and self._try_ptt_off_shared():
+                return True
             return self._ptt_off_independent()
         if self._ptt_method in PTT_LINE_METHODS:
             line = self._ptt_line
@@ -3867,18 +3883,63 @@ class HamlibNetController(RigController):
             self._doppler_frozen = False
         return ok
 
+    def _try_ptt_off_shared(self) -> bool:
+        """Try "T 0" on the already-open persistent connection, without blocking.
+
+        FT4/Q65 un-key roughly every 15 s while transmitting -- on top of the
+        Doppler thread's own ~1/s "F"/"I" traffic, unconditionally opening a
+        new TCP connection for every un-key (the original fix below) adds a
+        recurring burst of connection churn to a link that a satellite pass's
+        continuous 1 Hz Doppler correction already keeps busier than, say, a
+        terrestrial WSJT-X session ever does -- and that appears to make an
+        already fragile rigctld/FT-991A CAT link (recv timeouts observed well
+        before this PTT work existed) drop out more, not less (2026-09-29,
+        RS-44 pass: frequent "Connection reset by peer" / "Broken pipe" across
+        *all* sockets, CAT and DTR PTT alike, not specific to either).
+
+        So: reuse the existing connection when it is actually free. Acquiring
+        _cmd_lock is attempted with a short timeout rather than blocking, so a
+        Doppler write that is genuinely stuck (and could hold the lock for
+        this connection's full 10 s _TIMEOUT) is not waited out here -- that
+        is exactly the scenario _ptt_off_independent() exists for, so this
+        just falls through to it instead. When the lock is free, "T 0" is
+        sent under a temporary short read timeout of its own (independent of
+        the connection's normal 10 s), so a rig that has gone quiet since the
+        lock was released still cannot block this call for long.
+        """
+        if self._sock is None:
+            return False
+        if not self._cmd_lock.acquire(timeout=self._PTT_OFF_SHARED_LOCK_WAIT):
+            return False
+        try:
+            if self._sock is None:
+                return False
+            prev_timeout = self._sock.gettimeout()
+            try:
+                self._sock.settimeout(self._PTT_OFF_SHARED_TIMEOUT)
+                resp = self._cmd_raw("T 0")
+            finally:
+                if self._sock is not None:
+                    with contextlib.suppress(OSError):
+                        self._sock.settimeout(prev_timeout)
+            return "RPRT 0" in resp
+        finally:
+            self._cmd_lock.release()
+
     def _ptt_off_independent(self) -> bool:
         """Send T 0 over a fresh, short-lived TCP connection, with retries.
 
-        The shared command socket serialises every command behind _cmd_lock
-        and shares one 10 s timeout. When rigctld stops answering a Doppler
-        "F"/"I" write, that timeout closes the shared socket, and a "T 0"
-        that had been queued behind it found _sock None and was silently
-        never sent -- the rig stayed keyed after an FT4 transmission
-        (ft4_decode.log: ptt_off took 5.7-9.7 s, ending exactly when the
-        hung F timed out; 09-21 and 09-28). Un-keying therefore must not
-        depend on that socket or its lock at all. rigctld serves each client
-        connection separately, so a new connection can still deliver T 0.
+        Fallback for when _try_ptt_off_shared() could not use the shared
+        connection (its lock was held -- a command already in flight -- or
+        the socket was already gone). The shared connection's own timeout is
+        10 s; when rigctld stops answering a Doppler "F"/"I" write, that
+        timeout closes the shared socket, and a "T 0" that had been queued
+        behind it (the pre-2026-09-28 behaviour) found _sock None and was
+        silently never sent -- the rig stayed keyed after an FT4 transmission
+        (ft4_decode.log: ptt_off took 5.7-9.7 s, ending exactly when the hung
+        F timed out; 09-21 and 09-28). rigctld serves each client connection
+        separately, so a new connection can still deliver T 0 independently
+        of whatever the stuck shared connection is doing.
 
         RTS/DTR rigs drop their serial line instead (no rigctld involved).
         """

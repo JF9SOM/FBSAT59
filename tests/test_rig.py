@@ -2023,8 +2023,33 @@ class TestHamlibNetController:
             assert ctrl.set_ptt(False) is True
         assert sent == [b"T 0\n"]
 
+    def test_ptt_off_reuses_the_shared_connection_when_it_is_free(self) -> None:
+        """2026-09-29: FT4 un-keys roughly every 15s; unconditionally opening a
+        new connection for every one of those, on top of the Doppler thread's
+        own ~1/s traffic, turned out to add enough load to an already-fragile
+        rigctld/FT-991A link to make disconnects *more* frequent (RS-44 pass,
+        09-29: identical churn seen with CAT and DTR PTT alike, so not a PTT
+        line-current-vs-CAT issue, and ground WSJT-X sessions on the same
+        rigctld setup were unaffected -- pointing at FBSAT59's own connection
+        pattern). Reusing the shared connection when nothing else is using it
+        removes that added churn in the common case."""
+        ctrl = self._make_connected_ctrl()  # ctrl._sock.recv() -> b"RPRT 0\n"
+        with patch("rig.controller.socket.socket") as mock_cls:
+            assert ctrl.set_ptt(False) is True
+        mock_cls.assert_not_called()
+        assert ctrl._sock.sendall.call_args.args[0] == b"T 0\n"  # type: ignore[union-attr]
+
+    def test_ptt_off_falls_back_when_the_shared_connection_is_stuck(self) -> None:
+        ctrl = self._make_connected_ctrl()
+        ctrl._sock.recv.side_effect = OSError("stuck")  # type: ignore[union-attr]
+        sock, sent = self._fake_ptt_socket([b"RPRT 0\n"])
+        with patch("rig.controller.socket.socket", return_value=sock):
+            assert ctrl.set_ptt(False) is True
+        assert sent == [b"T 0\n"]
+
     def test_ptt_off_retries_until_rigctld_answers(self) -> None:
         ctrl = self._make_connected_ctrl()
+        ctrl._sock.recv.side_effect = OSError("stuck")  # type: ignore[union-attr]  # shared connection unusable
         bad, _ = self._fake_ptt_socket([b"RPRT -1\n"])
         good, sent = self._fake_ptt_socket([b"RPRT 0\n"])
         with (
@@ -2036,6 +2061,7 @@ class TestHamlibNetController:
 
     def test_ptt_off_reports_failure_after_all_attempts(self) -> None:
         ctrl = self._make_connected_ctrl()
+        ctrl._sock.recv.side_effect = OSError("stuck")  # type: ignore[union-attr]  # shared connection unusable
         with (
             patch("rig.controller.socket.socket", side_effect=ConnectionRefusedError("down")),
             patch("rig.controller.time.sleep"),
