@@ -2522,6 +2522,25 @@ class TestHamlibRotatorController:
         assert not ctrl._catching_up
         assert ctrl._last_az == pytest.approx(170.0)
 
+    def test_fast_pass_intercept_uses_current_elevation_not_predicted(self) -> None:
+        ctrl = self._make_tracking_ctrl()
+        ctrl._sock.sendall.reset_mock()  # type: ignore[union-attr]
+        # The predictor's elevation at the intercept arrival time (10.0) is
+        # far from the live elevation passed to set_position() (80.0) — the
+        # single P command must use the live elevation (see
+        # _try_fast_pass_intercept()'s docstring and
+        # scripts/test_rotator_resend_stutter.py: resending every cycle to
+        # chase the live elevation instead would roughly halve the
+        # rotator's effective slew speed on real hardware).
+        ctrl.set_predictor(lambda t: (min(170.0 + 13.0 * t, 260.0), 10.0))
+        assert ctrl.set_position(170.0, 80.0)
+        p_calls = [
+            c.args[0]
+            for c in ctrl._sock.sendall.call_args_list  # type: ignore[union-attr]
+            if c.args[0].startswith(b"P ")
+        ]
+        assert p_calls == [b"P 260.0 80.0\n"]
+
     def test_fast_pass_intercept_skipped_when_point_below_horizon(self) -> None:
         ctrl = self._make_tracking_ctrl()
         ctrl.set_predictor(lambda t: (min(170.0 + 13.0 * t, 260.0), -1.0))

@@ -5103,7 +5103,7 @@ class HamlibRotatorController(RotatorController):
     _INTERCEPT_MIN_LEAD_S: float = 6.0
     _INTERCEPT_MIN_TRAVEL_DEG: float = 15.0
 
-    def _try_fast_pass_intercept(self, azimuth_deg: float) -> bool:
+    def _try_fast_pass_intercept(self, azimuth_deg: float, el_cmd: float) -> bool:
         """Near-zenith passes: send the rotor to where it can meet the target.
 
         Around the TCA of a high pass the target's azimuth rate can reach
@@ -5111,7 +5111,11 @@ class HamlibRotatorController(RotatorController):
         2-4 deg/s), so following the live position each cycle leaves the
         rotor far behind for tens of seconds. Following it also re-sends a
         GOTO every cycle, which on the SkyWatcher restarts the motor's
-        acceleration each time, so it is not even slewing at full speed.
+        acceleration each time, so it is not even slewing at full speed —
+        confirmed on real hardware (see scripts/test_rotator_resend_stutter.py
+        and docs/hamlib.md): resending every cycle, even with an unchanged
+        azimuth, roughly halves the rotor's effective slew speed because
+        every P command's transaction includes an axis-stop.
 
         When the target's azimuth 5 s ahead is further away than the
         rotator can travel in that time (self._assumed_slew_deg_per_s, a
@@ -5119,8 +5123,24 @@ class HamlibRotatorController(RotatorController):
         moment t at which the rotor can reach the target's azimuth by then
         (angular distance / speed <= t), and send it there once through
         the existing catch-up state machine: no per-cycle re-sends until it
-        has arrived, after which normal tracking resumes. Returns True if
-        that was done (the caller must not send the live position).
+        has arrived, after which normal tracking resumes (which sends the
+        real live position exactly once, right as catch-up ends — see the
+        "Fall through to normal tracking" comment in set_position()).
+        Returns True if that was done (the caller must not send the live
+        position).
+
+        The elevation sent with that single command is el_cmd — the
+        CURRENT live elevation, not the target's predicted elevation at
+        arrival time t. Near zenith the target's real elevation stays high
+        for the whole transit and only descends afterwards, so holding the
+        rotor at today's elevation tracks the truth far more closely
+        throughout the transit than jumping straight to the (much lower)
+        arrival-time elevation would — confirmed against real pass logs
+        (2026-09-25 KOSEN-2R, 2026-09-29 BY70-4): average elevation error
+        during the transit measured about 9 degrees with this approach
+        versus about 25 degrees when the arrival-time elevation was used
+        instead. The predictor's elevation is still used to size the az
+        scan and to reject an intercept point that is below the horizon.
 
         Deliberately does nothing (returns False) when there is no
         predictor, when the intercept point is below the horizon, when the
@@ -5166,7 +5186,7 @@ class HamlibRotatorController(RotatorController):
             return False
 
         az_target = pred_az
-        el_target = max(0.0, min(90.0, pred_el))
+        el_target = el_cmd  # current live elevation, not pred_el — see docstring
         self._send_p(az_target, el_target)
         self._catching_up = True
         self._catch_up_wrap_origin_az = None
@@ -5515,7 +5535,7 @@ class HamlibRotatorController(RotatorController):
                     # pre-existing behavior below (keep sending the live,
                     # below-horizon azimuth with elevation clamped to 0).
 
-                if elevation_deg > 0.0 and self._try_fast_pass_intercept(azimuth_deg):
+                if elevation_deg > 0.0 and self._try_fast_pass_intercept(azimuth_deg, el_cmd):
                     return True
 
                 self._last_az = azimuth_deg
