@@ -385,6 +385,10 @@ msgstr "無線機接続済み — 準備完了"
 msgid "Rig disconnected"
 msgstr "無線機未接続"
 
+#: src/ui/ft4_tab.py
+msgid "Rig connection lost — reconnecting…"
+msgstr "無線機接続が失われました — 再接続しています…"
+
 #: src/ui/ft4_tab.py:1823 src/ui/q65_tab.py:513
 msgid "Input: Rig connected"
 msgstr "入力: 無線機接続中"

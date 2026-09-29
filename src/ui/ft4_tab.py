@@ -28,7 +28,7 @@ from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
-from PySide6.QtCore import QObject, Qt, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QComboBox,
@@ -153,6 +153,11 @@ _TX_BLOCK_SIZE = 3000
 # margin over a normal transmission while still guaranteeing PTT comes
 # back off before the *next* period would otherwise try to key up again.
 _TX_WATCHDOG_S = 7.0
+
+# How often to poll the TX rig's is_connected while TX Enable is on (see
+# _check_tx_rig_connection()). A few seconds is plenty for a UI-visible
+# reconnect and cheap enough to run continuously.
+_RIG_WATCH_INTERVAL_MS = 3000
 
 
 # ---------------------------------------------------------------------------
@@ -569,6 +574,27 @@ class Ft4Tab(QWidget):
         # contamination path.
         self._tx_this_period_lock = threading.Lock()
         self._tx_this_period: bool = False
+
+        # Auto-reconnect the TX rig if its connection drops while TX Enable
+        # is on (2026-09-29): RS-44 pass testing found the NET/rigctld link
+        # dropping repeatedly (ft4_decode.log / fbsat59.log correlated with
+        # rigctld itself being killed and restarted by ctld-launcher's own
+        # health-check watchdog after the radio's CAT interface went quiet)
+        # -- previously nothing reconnected it, silently stopping Doppler
+        # tracking and TX until the operator noticed and clicked Connect by
+        # hand. _rig_watch_timer polls the TX rig's is_connected once every
+        # _RIG_WATCH_INTERVAL_MS while armed and reconnects on a
+        # True->False transition, mirroring the existing "was connected
+        # before settings reload -- reconnecting" pattern in
+        # MainWindow._load_rig_settings() (calls the same
+        # RadioControlWidget._on_connect_rig1()/_on_connect_rig2() the
+        # Connect button itself uses). Armed only while _tx_enabled is True
+        # and skipped whenever a burst is actually in flight, to avoid
+        # racing a live PTT-off retry sequence on the same controller.
+        self._rig_watch_timer = QTimer(self)
+        self._rig_watch_timer.setInterval(_RIG_WATCH_INTERVAL_MS)
+        self._rig_watch_timer.timeout.connect(self._check_tx_rig_connection)
+        self._rig_was_connected: bool = False
 
         self._my_call: str = ""
         self._my_grid: str = ""
@@ -1810,12 +1836,65 @@ class Ft4Tab(QWidget):
                 is_even, _pos = Ft4Scheduler.current_slot_info()
                 self._start_scheduler(tx_even=self._resolve_tx_even(is_even))
             self._status_label.setText(_("TX enabled — waiting for next period"))
+            rig = self._tx_rig()
+            self._rig_was_connected = rig is not None and rig.is_connected
+            self._rig_watch_timer.start()
         else:
             self._status_label.setText(_("TX disabled"))
+            self._rig_watch_timer.stop()
+            self._rig_reconnecting = False
+
+    def _check_tx_rig_connection(self) -> None:
+        """Reconnect the TX rig on a connected->disconnected transition (see
+        _rig_watch_timer's construction comment for why this exists).
+
+        Called on the Qt main thread (QTimer.timeout), same as the Connect
+        button's own click handler -- so the reconnect handler below can be
+        (and must be) called directly, not from a worker thread: it touches
+        widgets itself and only spawns its own background thread for the
+        actual blocking rig.connect() I/O.
+        """
+        if self._tx_in_progress:
+            return  # never race a live burst's PTT-off retries
+        rig = self._tx_rig()
+        if rig is None:
+            return
+        connected = rig.is_connected
+        if self._rig_was_connected and not connected:
+            rc = self._radio_control
+            handler = None
+            button = None
+            if rc is not None:
+                if rig is getattr(rc, "_rig1", None):
+                    handler = getattr(rc, "_on_connect_rig1", None)
+                    button = getattr(rc, "_connect_rig1_btn", None)
+                elif rig is getattr(rc, "_rig2", None):
+                    handler = getattr(rc, "_on_connect_rig2", None)
+                    button = getattr(rc, "_connect_rig2_btn", None)
+            # The Connect button disables itself for the duration of an
+            # in-flight connect() (see _on_connect_rig1()'s own comment on
+            # why) -- reuse that same guard rather than tracking our own,
+            # so we never fire a second concurrent connect() attempt while
+            # one from a previous tick (or the user's own click) is still
+            # running.
+            can_reconnect = handler is not None and (button is None or button.isEnabled())
+            get_ft4_decode_logger().warning(
+                "TX rig connection lost — %s",
+                "reconnecting" if can_reconnect else "reconnect already in progress or unavailable",
+            )
+            self._status_label.setText(_("Rig connection lost — reconnecting…"))
+            if can_reconnect and handler is not None:
+                handler()
+        self._rig_was_connected = connected
 
     @Slot()
     def _on_halt(self) -> None:
         self._tx_enabled = False
+        # setChecked(False) below only emits toggled() -- which is what
+        # normally stops _rig_watch_timer -- when the button's checked
+        # state actually changes; stop it directly here too so Halt and
+        # closeEvent always disarm it regardless of the button's prior state.
+        self._rig_watch_timer.stop()
         self._tx_enable_btn.setChecked(False)
         if self._tx_in_progress and self._tx_worker is not None:
             # GitHub Issue #26: this used to only stop *future* bursts —
