@@ -341,7 +341,7 @@ class TestHamlibDirectController:
         """
         ctrl = self._make_ctrl()
         ctrl.connect()
-        mock_rig = MagicMock()
+        mock_rig = MagicMock(error_status=0)
         ctrl._rig = mock_rig
         result = ctrl.set_vfo_frequencies(435_000_000.0, 145_000_000.0)
         assert result is True
@@ -358,7 +358,7 @@ class TestHamlibDirectController:
         ctrl = self._make_ctrl()
         ctrl.connect()
         ctrl._last_dl_hz = 435_000_000.0
-        mock_rig = MagicMock()
+        mock_rig = MagicMock(error_status=0)
         ctrl._rig = mock_rig
         ctrl.set_vfo_frequencies(435_000_000.5, None)
         mock_rig.set_freq.assert_not_called()
@@ -370,7 +370,7 @@ class TestHamlibDirectController:
         ctrl = self._make_ctrl()
         ctrl.connect()
         ctrl._last_dl_hz = 435_000_000.0
-        mock_rig = MagicMock()
+        mock_rig = MagicMock(error_status=0)
         ctrl._rig = mock_rig
         ctrl.set_vfo_frequencies(435_000_001.0, None)
         mock_rig.set_freq.assert_called_once()
@@ -386,7 +386,7 @@ class TestHamlibDirectController:
         ctrl = self._make_ctrl()
         ctrl.connect()
         assert ctrl._last_dl_hz is None
-        mock_rig = MagicMock()
+        mock_rig = MagicMock(error_status=0)
         ctrl._rig = mock_rig
         ctrl.set_vfo_frequencies(435_000_000.0, 145_000_000.0)
         assert mock_rig.set_freq.call_count == 2
@@ -472,7 +472,7 @@ class TestGenericDirectUlWriteVfoRestore:
 
     def _make_connected_ctrl(self, model_id: int) -> HamlibDirectController:
         ctrl = HamlibDirectController(model_id=model_id, port="/dev/null")
-        ctrl._rig = MagicMock()
+        ctrl._rig = MagicMock(error_status=0)
         fake_hamlib = MagicMock()
         fake_hamlib.RIG_VFO_A = 101
         fake_hamlib.RIG_VFO_B = 102
@@ -495,6 +495,44 @@ class TestGenericDirectUlWriteVfoRestore:
         # The UL write itself must still happen -- only the restore is skipped.
         ctrl._rig.set_freq.assert_any_call(102, 435_000_000)  # RIG_VFO_B
         ctrl._rig.set_vfo.assert_not_called()
+
+
+class TestGenericDirectCatErrorDetection:
+    """Direct mode's generic branch (FTX-1F/IC-705/FT-991-when-not-in-TX)
+    previously never checked set_freq()'s outcome at all -- a silently
+    failing/ignored CAT write (e.g. testing whether a rig other than
+    FT-991 also ignores frequency changes while transmitting) left no
+    trace anywhere. _check_rig_ok() now raises so the failure reaches
+    fbsat59.log via the normal RigControlError path (see docs/hamlib.md
+    "FT4 送信中ドップラー残差補正")."""
+
+    def _make_connected_ctrl(self, model_id: int) -> HamlibDirectController:
+        ctrl = HamlibDirectController(model_id=model_id, port="/dev/null")
+        ctrl._rig = MagicMock(error_status=0)
+        fake_hamlib = MagicMock()
+        fake_hamlib.RIG_VFO_A = 101
+        fake_hamlib.RIG_VFO_B = 102
+        ctrl._hamlib = fake_hamlib
+        with ctrl._lock:
+            ctrl._state = RigState.CONNECTED
+        return ctrl
+
+    def test_ftx1_dl_write_failure_raises(self) -> None:
+        ctrl = self._make_connected_ctrl(model_id=1051)  # FTX-1F
+        ctrl._rig.error_status = -1
+        with pytest.raises(RigControlError, match="generic DL set_freq"):
+            ctrl.set_vfo_frequencies(145_800_000.0, None)
+
+    def test_ic705_ul_write_failure_raises(self) -> None:
+        ctrl = self._make_connected_ctrl(model_id=3085)  # IC-705
+        ctrl._last_dl_hz = 145_800_000.0  # DL already current -- only UL is written this cycle
+        ctrl._rig.error_status = -1
+        with pytest.raises(RigControlError, match="generic UL set_freq"):
+            ctrl.set_vfo_frequencies(145_800_000.0, 435_000_000.0)
+
+    def test_ftx1_successful_writes_do_not_raise(self) -> None:
+        ctrl = self._make_connected_ctrl(model_id=1051)  # FTX-1F
+        assert ctrl.set_vfo_frequencies(145_800_000.0, 435_000_000.0) is True
 
 
 class TestFt991DirectSkipsWritesWhileTransmitting:
@@ -561,7 +599,7 @@ class TestDirectRadioTypeSplitRoles:
 
     def _make_connected_ctrl(self, radio_type: str) -> HamlibDirectController:
         ctrl = HamlibDirectController(model_id=3085, port="/dev/null", radio_type=radio_type)
-        ctrl._rig = MagicMock()
+        ctrl._rig = MagicMock(error_status=0)
         fake_hamlib = MagicMock()
         fake_hamlib.RIG_VFO_A = 101
         fake_hamlib.RIG_VFO_B = 102
