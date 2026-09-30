@@ -520,7 +520,7 @@ class TestGenericDirectCatErrorDetection:
     def test_ftx1_dl_write_failure_raises(self) -> None:
         ctrl = self._make_connected_ctrl(model_id=1051)  # FTX-1F
         ctrl._rig.error_status = -1
-        with pytest.raises(RigControlError, match="generic DL set_freq"):
+        with pytest.raises(RigControlError, match="FTX-1 DL set_freq"):
             ctrl.set_vfo_frequencies(145_800_000.0, None)
 
     def test_ic705_ul_write_failure_raises(self) -> None:
