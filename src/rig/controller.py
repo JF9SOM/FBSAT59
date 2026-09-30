@@ -2619,6 +2619,7 @@ class HamlibDirectController(RigController):
         port so the rig does not need to be connected via Hamlib.
 
         Sequence:
+          VM000;          — force-exit Memory mode, see below
           MD1{ul_code};   — SUB side (TX/UL) mode
           MD0{dl_code};   — MAIN side (RX/DL) mode
           CN10{tone:03d}; — CTCSS tone number on SUB (if tone > 0)
@@ -2626,35 +2627,43 @@ class HamlibDirectController(RigController):
           CT10;           — CTCSS OFF on SUB (if tone <= 0)
           FT1;            — re-assert split (Sub=TX), see below
 
-        FT1; re-assertion, trailing only (2026-09-30, reverted from a
-        before-and-after bracket the same day): this runs on every
+        VM000; (2026-09-30, root cause of a real "mode never changes, no
+        error, no flicker" report): Hamlib's own ftx1.c documents this
+        exact failure mode -- "FTX-1 firmware rejects FA/OS sets when the
+        Main side is in Memory mode (VM011) and silently discards CT/CN/MD
+        sets as transient memory-tune overlays." Hamlib's ftx1_set_mode()
+        calls a helper (ftx1_ensure_vfo_mode(), sending "VM000;" when
+        needed) before every mode change for exactly this reason. This
+        function bypasses Hamlib entirely (raw os.write(), to avoid a GIL-
+        freeze risk from Hamlib's serial round-trip -- see the class
+        docstring), so it never got that protection: if the rig was left in
+        Memory mode by anything (a memory-channel recall, a front-panel V/M
+        press, etc.), every MD/CN/CT command here was accepted by the CAT
+        parser (no error) but silently discarded, while DL/UL frequency
+        writes kept working fine because those go through Hamlib's own
+        set_freq()/set_split_freq() in the regular Doppler cycle, which
+        Hamlib itself protects the same way. Sending "VM000;" first is a
+        no-op when already in VFO mode, so this is safe to send
+        unconditionally rather than tracking the mode ourselves.
+
+        FT1; re-assertion, trailing only (2026-09-30): this runs on every
         transponder selection, not just at connect() (_init_split() already
         sends FT1; there). set_split_freq() (see set_vfo_frequencies()'s
         generic branch) writes UL without touching the active/displayed VFO
         at all, so without this, the rig's TX VFO no longer visibly jumps
-        to Sub the moment the operator picks a transponder.
-        A prior version of this function also sent FT1; *before* the MD/CN/
-        CT commands (mirroring HamlibNetController.apply_transponder_state()'s
-        own before-and-after _send_split_init_independent() bracket for
-        non-satmode rigs), to close the same gap NET mode already guards
-        against ("TX could still end up on Main while the mode commands are
-        in flight"). Confirmed live on real hardware: with that leading
-        FT1;, the mode stopped applying at all -- fbsat59.log kept showing
-        the correct dl=USB-D ul=LSB-D being sent, no error, but the rig's
-        actual mode stayed completely stuck at whatever it was before. A
-        0.05s settle delay between every command (still in place below)
-        did not fix it, so this is not just a timing issue -- sending FT1;
-        immediately before the MD commands breaks something structural on
-        this rig, not yet understood. Reverted to trailing-only, which is
-        the last state confirmed working end-to-end (TX moves to Sub AND
-        mode applies correctly). The theoretical "TX drifts to Main while
-        MD/CN/CT are in flight" risk the leading FT1; was meant to prevent
-        remains unconfirmed and is not worth this regression.
+        to Sub the moment the operator picks a transponder. A before-and-
+        after bracket was tried the same day (matching NET mode's own
+        pattern) but broke mode application in a way that looked identical
+        to the Memory-mode issue above at the time; reverted to trailing-
+        only once VM000; was identified as the real fix. Revisiting the
+        leading-FT1; bracket is not pursued further here since trailing-
+        only is confirmed sufficient.
         """
         ul_code = _FTX1_MODE_CODES.get(ul_mode, "4")
         dl_code = _FTX1_MODE_CODES.get(dl_mode, "4")
 
         commands: list[bytes] = [
+            b"VM000;",
             f"MD1{ul_code};".encode(),
             f"MD0{dl_code};".encode(),
         ]
@@ -2926,6 +2935,15 @@ class HamlibDirectController(RigController):
                     import serial as _serial
 
                     with _serial.Serial(self._port, self._baud_rate, timeout=1) as ser:
+                        # VM000; (2026-09-30): Hamlib's ftx1.c documents
+                        # "FTX-1 firmware rejects FA/OS sets when the Main
+                        # side is in Memory mode" -- same root cause as
+                        # _apply_mode_and_ctcss_cat_ftx1()'s own VM000;, see
+                        # that docstring. This raw-CAT preset path is
+                        # equally unprotected (no Hamlib call at all here),
+                        # so force VFO mode first for the same reason.
+                        ser.write(b"VM000;")
+                        time.sleep(0.05)
                         ser.write(f"FA{int(dl_hz):09d};".encode())
                         time.sleep(0.05)
                         ser.write(f"FB{int(ul_hz):09d};".encode())
