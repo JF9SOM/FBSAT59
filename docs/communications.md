@@ -901,7 +901,7 @@ NTPサーバーに一切到達できなかった場合（オフセット自体�
 
 | 衛星 | Rx (DL) | Tx (UL) | Mode（DB `mode`列） | invert | 出典 |
 |------|---------|---------|------|------|------|
-| RS-44 (NORAD 44909) | 435.612 MHz | 145.993 MHz | USB-D（invert=true→UL側はLSB-D） | true | JH1NHK |
+| RS-44 (NORAD 44909) | 435.612 MHz | 145.9906 MHz（2026-09-30、145.993から変更） | USB-D（invert=true→UL側はLSB-D） | true | JH1NHK→Rymansat Satellite Tracker |
 | JO-97 (NORAD 43803) | 145.857 MHz | 435.118 MHz | USB-D（invert=true→UL側はLSB-D） | **true**（2026-08-02修正） | JH1NHK |
 | MO-122 (NORAD 60209) | 435.812 MHz | 145.938 MHz | USB-D | false | JH1NHK |
 
@@ -916,6 +916,21 @@ description文字列を見るため無関係）。`mode` 列だけ実際のリ�
 反転トランスポンダーであることが確定した。`invert: true` に修正し、descriptionも
 「(U/V transponder)」から「(U/V inverting transponder)」に変更。RS-44と同じ反転パターン
 （DL=USB-D固定・UL側は`_MODE_INVERT`のUSB-D⇔LSB-D変換で自動的にLSB-Dになる）に統一された。
+
+**RS-44 のアップリンク周波数を145.993→145.9906に変更（2026-09-30）**: 実パス試験（09-30、
+[docs/hamlib.md](hamlib.md)参照）でQSOが一件も成立せず、ユーザーからモード（USB/LSB）の
+疑いが提起された。調査の結果モード自体（UL=LSB-D）はSATNOGS公式APIの`uplink_mode: LSB`
+（`db.satnogs.org/api/transmitters/?satellite__norad_cat_id=44909`で直接確認）と一致しており
+問題なしと判明したが、多くのJA局が実際に使っているRymansat Satellite Tracker
+（github.com/RymansatSatelliteTracker/RST、`satellite_data/frequency.json`のRS-44
+`uplink3`）はUL=145.9906MHzを使用していることが判明。そのPR #182の添付表（出典不明の
+外部提供表）を遡ると、SSB・CW・Digitalの各行でUL+DL合計がSATNOGSのパスバンド境界から
+導いた理論定数（581.605MHz）と2〜7kHz程度ズレており、単一の数式から厳密に導出された値
+ではなく実運用report寄せ集めの値と見られる。この程度のズレはFT4デコーダーの探索帯域
+（通常±1kHz以上）や、6年選手の衛星発振器ドリフトを考えれば実害は薄いと考えられるが、
+「実際に多くの局が使っている値に合わせる」方が相手に聞こえる可能性を上げるという
+ユーザー判断で、コミュニティ標準のUL値をRymansat Trackerに合わせて変更した。DL側
+（435.612MHz）は両者で完全一致しており変更なし。
 
 ### Comms Quick Panel 設計（src/comms/mode_detection.py, src/ui/main_window.py — 2026-07-04 実装）
 
@@ -2571,7 +2586,7 @@ Radio Control で選択したトランスポンダーの周波数を使用（Dop
 FT4 用トランスポンダーは `community_transmitters.json` にすでに登録済み:
 | 衛星 | DL | UL | Mode |
 |---|---|---|---|
-| RS-44 (44909) | 435.612 MHz | 145.993 MHz | FT4 |
+| RS-44 (44909) | 435.612 MHz | 145.9906 MHz | FT4 |
 | JO-97 (43803) | 145.857 MHz | 435.118 MHz | FT4 |
 | MO-122 (60209) | 435.812 MHz | 145.938 MHz | FT4 |
 
