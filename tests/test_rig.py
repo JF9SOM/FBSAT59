@@ -462,11 +462,13 @@ class TestHamlibDirectController:
 
 class TestGenericDirectUlWriteVfoRestore:
     """set_vfo_frequencies()'s generic branch (model not satmode, not
-    FT-991, not FTX-1F -- see TestFtx1DirectUsesSplitFreq for FTX-1F's own
-    branch, split out 2026-09-30) is IC-705's. The set_vfo(VFOA) restore
-    after the UL write was added (commit 6885275, 2026-07-06) for Icom
-    CI-V's "CURR stuck on VFO-B" display quirk, confirmed on IC-705, and
-    now applies unconditionally since FTX-1F no longer shares this path."""
+    FT-991) is shared by IC-705 and FTX-1F. The set_vfo(VFOA) restore after
+    the UL write was added (commit 6885275, 2026-07-06) specifically for
+    Icom CI-V's "CURR stuck on VFO-B" display quirk, confirmed on IC-705 --
+    but for FTX-1F, set_vfo(VFOA) sends raw CAT "VS0;", which (confirmed
+    live 2026-07-20) resets TX from Sub back to Main, undoing
+    _init_split()'s "FT1;" on every single UL update. FTX-1F must be
+    excluded from this restore."""
 
     def _make_connected_ctrl(self, model_id: int) -> HamlibDirectController:
         ctrl = HamlibDirectController(model_id=model_id, port="/dev/null")
@@ -487,51 +489,12 @@ class TestGenericDirectUlWriteVfoRestore:
         ctrl._rig.set_freq.assert_any_call(102, 435_000_000)  # RIG_VFO_B
         ctrl._rig.set_vfo.assert_called_once_with(101)  # RIG_VFO_A
 
-
-class TestFtx1DirectUsesSplitFreq:
-    """FTX-1F's UL write reverted to Hamlib's set_split_freq() (2026-09-30),
-    matching what NET mode/rigctld already uses internally for this rig and
-    what this branch itself used before 2026-07-06's IC-705 fix (commit
-    9277ab4) switched the whole shared generic branch to set_freq(VFOB)
-    without re-verifying FTX-1F. Root cause: plain set_freq(RIG_VFO_B, ...)
-    doesn't tell Hamlib this is the split TX frequency (FBSAT59 never sends
-    FTX-1F's official split "ST" command), so Hamlib's own vfo_fixup()
-    occasionally takes a "switch VFO, write, switch back" path whose
-    restore step sends a genuine "VS0;" -- confirmed via hamlib_trace.log
-    to be exactly the command that resets FTX-1F's TX from Sub back to
-    Main, undoing _init_split()'s FT1;. set_split_freq() is split-aware and
-    never hits this."""
-
-    def _make_connected_ctrl(self) -> HamlibDirectController:
-        ctrl = HamlibDirectController(model_id=1051, port="/dev/null")  # FTX-1F
-        ctrl._rig = MagicMock(error_status=0)
-        fake_hamlib = MagicMock()
-        fake_hamlib.RIG_VFO_A = 101
-        fake_hamlib.RIG_VFO_B = 102
-        ctrl._hamlib = fake_hamlib
-        with ctrl._lock:
-            ctrl._state = RigState.CONNECTED
-        return ctrl
-
-    def test_ftx1_ul_uses_set_split_freq_not_set_freq(self) -> None:
-        ctrl = self._make_connected_ctrl()
+    def test_ftx1_skips_vfoa_restore_after_ul_write(self) -> None:
+        ctrl = self._make_connected_ctrl(model_id=1051)  # FTX-1F
         assert ctrl.set_vfo_frequencies(145_800_000.0, 435_000_000.0) is True
-        ctrl._rig.set_split_freq.assert_called_once_with(101, 435_000_000)  # RIG_VFO_A ref
-        ctrl._rig.set_freq.assert_any_call(101, 145_800_000)  # DL still plain set_freq(VFOA)
-        # UL must never go through set_freq(VFOB, ...) -- that is the whole point.
-        assert 102 not in [c.args[0] for c in ctrl._rig.set_freq.call_args_list]
-
-    def test_ftx1_never_restores_vfoa_after_ul_write(self) -> None:
-        ctrl = self._make_connected_ctrl()
-        assert ctrl.set_vfo_frequencies(145_800_000.0, 435_000_000.0) is True
+        # The UL write itself must still happen -- only the restore is skipped.
+        ctrl._rig.set_freq.assert_any_call(102, 435_000_000)  # RIG_VFO_B
         ctrl._rig.set_vfo.assert_not_called()
-
-    def test_ftx1_ul_write_failure_raises(self) -> None:
-        ctrl = self._make_connected_ctrl()
-        ctrl._rig.error_status = -1
-        ctrl._last_dl_hz = 145_800_000.0  # DL already current -- only UL is written this cycle
-        with pytest.raises(RigControlError, match="FTX-1 UL set_split_freq"):
-            ctrl.set_vfo_frequencies(145_800_000.0, 435_000_000.0)
 
 
 class TestGenericDirectCatErrorDetection:
