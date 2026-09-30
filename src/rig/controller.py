@@ -2619,30 +2619,44 @@ class HamlibDirectController(RigController):
         port so the rig does not need to be connected via Hamlib.
 
         Sequence:
+          FT1;            — re-assert split (Sub=TX), see below
           MD1{ul_code};   — SUB side (TX/UL) mode
           MD0{dl_code};   — MAIN side (RX/DL) mode
           CN10{tone:03d}; — CTCSS tone number on SUB (if tone > 0)
           CT11;           — CTCSS ENC ON on SUB (if tone > 0)
           CT10;           — CTCSS OFF on SUB (if tone <= 0)
-          FT1;            — re-assert split (Sub=TX), see below
+          FT1;            — re-assert split (Sub=TX) again, see below
 
-        FT1; re-assertion (2026-09-30): this runs on every transponder
-        selection, not just at connect() (_init_split() already sends FT1;
-        there). Confirmed live: with the Doppler-cycle UL write now on
-        set_split_freq() (see set_vfo_frequencies()'s generic branch —
-        2026-09-30, split out of the shared IC-705 path because plain
-        set_freq(RIG_VFO_B) let Hamlib's own vfo_fixup() occasionally send a
-        real "VS0;" that reset TX from Sub back to Main), the rig's TX VFO
-        no longer visibly jumps to Sub the moment the operator picks a
-        transponder -- set_split_freq() writes UL without touching the
-        active/displayed VFO at all, by design, now that it no longer hits
-        that bug. Resending FT1; here restores that visible confirmation
-        cue on every transponder change, not just once at Connect.
+        FT1; re-assertion, both before and after (2026-09-30): this runs on
+        every transponder selection, not just at connect() (_init_split()
+        already sends FT1; there). Mirrors HamlibNetController's own
+        apply_transponder_state() for non-satmode rigs, which already
+        brackets send_mode_only() with _send_split_init_independent() both
+        before and after -- "send_mode_only uses V Sub/V Main which leaves
+        TX on Main after the last V Main command. Bracket the mode set with
+        split init so TX stays on Sub (uplink) both before and after mode
+        is applied." The FTX-1F MD command needs no such VFO switching, but
+        the same class of problem applies here for a different reason: with
+        the Doppler-cycle UL write now on set_split_freq() (see
+        set_vfo_frequencies()'s generic branch — 2026-09-30, split out of
+        the shared IC-705 path because plain set_freq(RIG_VFO_B) let
+        Hamlib's own vfo_fixup() occasionally send a real "VS0;" that reset
+        TX from Sub back to Main), the rig's TX VFO no longer visibly jumps
+        to Sub the moment the operator picks a transponder -- set_split_freq()
+        writes UL without touching the active/displayed VFO at all, by
+        design, now that it no longer hits that bug. A single FT1; only
+        after the MD/CN/CT commands (this function's first version, same
+        day) restored the visible confirmation cue but left the same gap
+        NET mode already guards against: nothing re-establishes split
+        immediately before the mode commands run, so TX could still end up
+        on Main while they are in flight. Bracketing with FT1; on both
+        sides closes that gap the same way NET mode already does.
         """
         ul_code = _FTX1_MODE_CODES.get(ul_mode, "4")
         dl_code = _FTX1_MODE_CODES.get(dl_mode, "4")
 
         commands: list[bytes] = [
+            b"FT1;",
             f"MD1{ul_code};".encode(),
             f"MD0{dl_code};".encode(),
         ]

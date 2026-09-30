@@ -536,13 +536,13 @@ class TestFtx1DirectUsesSplitFreq:
 
 class TestFtx1ModeCtcssReassertsSplit:
     """_apply_mode_and_ctcss_cat_ftx1() (run on every transponder selection,
-    not just connect()) now also resends FT1; (split ON, Sub=TX) --
-    2026-09-30. Restores a visible "TX moved to Sub" confirmation the
-    operator relied on: set_split_freq() (this session's earlier fix, see
-    TestFtx1DirectUsesSplitFreq) writes UL without touching the active/
-    displayed VFO at all, so the rig no longer visibly jumps to Sub the
-    moment a transponder is picked the way plain set_freq(RIG_VFO_B) used
-    to (via the bug that fix removed)."""
+    not just connect()) now brackets the MD/CN/CT commands with FT1; (split
+    ON, Sub=TX) both before and after -- 2026-09-30, mirroring
+    HamlibNetController.apply_transponder_state()'s own
+    _send_split_init_independent() bracket for non-satmode rigs (a single
+    FT1; only at the end, this function's first version the same day, left
+    the same gap NET mode already guards against: nothing re-establishes
+    split immediately before the mode commands run)."""
 
     def _writes(self, ctrl: HamlibDirectController, *args: object) -> list[bytes]:
         writes: list[bytes] = []
@@ -554,17 +554,20 @@ class TestFtx1ModeCtcssReassertsSplit:
             ctrl._apply_mode_and_ctcss_cat_ftx1(*args)  # type: ignore[arg-type]
         return writes
 
-    def test_ft1_is_the_last_command_sent(self) -> None:
+    def test_ft1_brackets_the_mode_commands(self) -> None:
         ctrl = HamlibDirectController(model_id=1051, port="/dev/null")
         writes = self._writes(ctrl, "USB-D", "LSB-D", 0.0)
+        assert writes[0] == b"FT1;"
         assert writes[-1] == b"FT1;"
-        assert writes[0] == b"MD18;"  # LSB-D UL mode code
-        assert writes[1] == b"MD0C;"  # USB-D DL mode code
+        assert writes[1] == b"MD18;"  # LSB-D UL mode code
+        assert writes[2] == b"MD0C;"  # USB-D DL mode code
 
-    def test_ft1_still_last_when_ctcss_is_set(self) -> None:
+    def test_ft1_still_brackets_when_ctcss_is_set(self) -> None:
         ctrl = HamlibDirectController(model_id=1051, port="/dev/null")
         writes = self._writes(ctrl, "USB-D", "LSB-D", 67.0)
+        assert writes[0] == b"FT1;"
         assert writes[-1] == b"FT1;"
+        assert writes.count(b"FT1;") == 2
 
 
 class TestGenericDirectCatErrorDetection:
