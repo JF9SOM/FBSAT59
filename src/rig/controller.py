@@ -2682,6 +2682,19 @@ class HamlibDirectController(RigController):
             ctcss_hz,
             self._port,
         )
+        # 0.05s between commands (2026-09-30): with only the 3 original MD/CN/
+        # CT commands, back-to-back sends with no delay worked fine. Adding
+        # FT1; (a split/TX-VFO reassignment, not just a mode change) into
+        # that same rapid, no-delay sequence made the mode land as "no
+        # change at all" on real hardware -- confirmed live: fbsat59.log
+        # showed the correct dl=USB-D ul=LSB-D being sent, but the rig's
+        # actual mode stayed stuck on whatever it was before (e.g. FM from
+        # an earlier FM-satellite test), with no error logged. Matches the
+        # existing precedent in _send_freq_preset_direct(), which already
+        # sleeps 0.05s around its own FT1;/FA;/FB; sequence for this same
+        # rig -- FTX-1F needs that settle time for frequency/split commands
+        # specifically, not just the plain MD/CN/CT ones this function used
+        # to send alone.
         for raw in commands:
             try:
                 fd = os.open(self._port, os.O_WRONLY | os.O_NOCTTY | os.O_NONBLOCK)
@@ -2691,6 +2704,7 @@ class HamlibDirectController(RigController):
                     os.close(fd)
             except OSError as exc:
                 logger.error("RigDirect.ftx1 write(%r): %s", raw, exc)
+            time.sleep(0.05)
 
     def _apply_mode_and_ctcss_cat_ft991(self, dl_mode: str, ul_mode: str, ctcss_hz: float) -> None:
         """Set mode and CTCSS on FT-991/FT-991A via raw CAT commands (no Hamlib calls).
