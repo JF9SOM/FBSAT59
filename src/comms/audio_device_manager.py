@@ -40,6 +40,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import json
+import logging
 import shutil
 import subprocess
 import sys
@@ -54,6 +55,8 @@ from PySide6.QtCore import QObject, Signal
 
 from i18n import _
 
+logger = logging.getLogger(__name__)
+
 try:
     from scipy import signal as sp_signal
 
@@ -65,6 +68,21 @@ except ImportError:
 # Every shared input stream is opened at this rate; each subscriber's audio
 # is resampled from here to whatever rate it asked for.
 _HW_SAMPLE_RATE = 48_000
+
+# Diagnostics added 2026-09-30 to check for a real-world reported RX audio
+# freeze ("meter stopped moving") during a FT-991 Direct-mode pass, possibly
+# related to the FT-991 raw UL frequency write opening a second file
+# descriptor on the same serial port Hamlib already holds open (see
+# rig/controller.py's "RigDirect FT-991 UL raw FB" log line, and
+# docs/communications.md "共有サウンドカードアクセス設計"). A callback gap
+# this large is never expected for a healthy PortAudio input stream (typical
+# callback spacing is tens of ms) -- logging it directly implicates a real
+# stall, not normal jitter.
+_CB_GAP_WARN_S = 0.5
+# RMS/peak level is logged at most this often (not every callback, which
+# would otherwise fire every ~10-40ms and flood the log) -- frequent enough
+# to correlate against rig.controller's own CAT timing logs by eye.
+_RMS_LOG_INTERVAL_S = 2.0
 
 # Some USB audio interfaces (rig soundcards in particular) and/or PipeWire's
 # routing only settle into the real input level/target a moment after a
@@ -315,6 +333,11 @@ class _SharedInputStream:
         self._stream: Any = None
         self._subscribers: dict[str, tuple[int, AudioCallback]] = {}
         self._lock = threading.Lock()
+        # Callback-health diagnostics (2026-09-30) -- see _CB_GAP_WARN_S/
+        # _RMS_LOG_INTERVAL_S above. Touched only from the audio callback
+        # thread itself, so no lock needed for these two.
+        self._cb_last_time: float | None = None
+        self._cb_last_rms_log_time: float = 0.0
 
     def add_subscriber(self, owner: str, samplerate: int, callback: AudioCallback) -> None:
         with self._lock:
@@ -403,7 +426,38 @@ class _SharedInputStream:
     def _on_audio(
         self, indata: NDArray[np.float32], frames: int, time_info: Any, status: Any
     ) -> None:
+        now = time.monotonic()
+        # PortAudio's own overrun/underrun report for this callback -- was
+        # previously received but never even looked at (see _CB_GAP_WARN_S's
+        # docstring above for why this was added).
+        if status:
+            logger.warning(
+                "AudioDeviceManager: input stream status=%s device=%r", status, self._device
+            )
+        if self._cb_last_time is not None:
+            gap = now - self._cb_last_time
+            if gap > _CB_GAP_WARN_S:
+                logger.warning(
+                    "AudioDeviceManager: input callback gap %.2fs (device=%r) "
+                    "-- possible audio stream stall",
+                    gap,
+                    self._device,
+                )
+        self._cb_last_time = now
+
         chunk = indata[:, 0].copy()
+
+        if now - self._cb_last_rms_log_time >= _RMS_LOG_INTERVAL_S:
+            self._cb_last_rms_log_time = now
+            rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
+            peak = float(np.max(np.abs(chunk))) if chunk.size else 0.0
+            logger.info(
+                "AudioDeviceManager: input level rms=%.5f peak=%.5f device=%r",
+                rms,
+                peak,
+                self._device,
+            )
+
         feeding, keep_live_owner = self._feed_state() if self._feed_state else (False, None)
         with self._lock:
             if feeding:

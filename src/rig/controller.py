@@ -2113,15 +2113,37 @@ class HamlibDirectController(RigController):
                             # Hamlib set_split_freq returns -11 (ENAVAIL) for
                             # FT-991/991A and silently does nothing.  Send the
                             # raw CAT FB command directly instead.
+                            #
+                            # This opens a SECOND, independent file descriptor
+                            # on the same serial port Hamlib's Rig object
+                            # already holds open for DL (unlike the mode/CTCSS
+                            # write path below, which goes through pyserial +
+                            # _port_lock). Timing/INFO logging added
+                            # 2026-09-30 to help check whether this dual-open
+                            # correlates with the RX audio instability
+                            # observed on a real RS-44 pass (see
+                            # docs/hamlib.md "FT4 送信中ドップラー残差補正" ->
+                            # "Direct モード generic 分岐に CAT 失敗検出を追加"
+                            # follow-up) -- no error checking is possible here
+                            # (raw serial write, no ACK in the protocol), so
+                            # an OSError from os.write()/os.open() still only
+                            # surfaces via the existing outer except-clause.
                             import os as _os
 
                             cmd = f"FB{int(vfob_hz):09d};".encode()
+                            _cat_t0 = time.monotonic()
                             _fd = _os.open(self._port, _os.O_WRONLY | _os.O_NOCTTY | _os.O_NONBLOCK)
                             try:
                                 _os.write(_fd, cmd)
                             finally:
                                 _os.close(_fd)
-                            logger.debug("RigDirect FT-991 UL raw FB: %d Hz", int(vfob_hz))
+                            _cat_dt_ms = (time.monotonic() - _cat_t0) * 1000.0
+                            _log_cat_call_diag(
+                                _cat_dt_ms,
+                                "RigDirect FT-991 UL raw FB: %d Hz took=%.0fms",
+                                int(vfob_hz),
+                                _cat_dt_ms,
+                            )
                         else:
                             # Hamlib set_split_freq is unreliable on generic
                             # rigs (e.g. IC-705): passing either the RX vfo or

@@ -315,6 +315,102 @@ class TestInputSharing:
         assert fake_sounddevice_blocking_stop.instances[0].closed is True
 
 
+class TestInputCallbackDiagnostics:
+    """_on_audio() previously received PortAudio's status flag and never
+    looked at it, and had no way to notice the callback itself going quiet
+    -- added 2026-09-30 to help diagnose a real-world reported RX audio
+    freeze during a FT-991 Direct-mode pass (see docs/communications.md)."""
+
+    def test_status_flag_is_logged(
+        self, fake_sounddevice: type[_FakeInputStream], caplog: pytest.LogCaptureFixture
+    ) -> None:
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("cw", 5, 48_000, lambda c: None)
+        stream = fake_sounddevice.instances[0]
+
+        with caplog.at_level("WARNING", logger="comms.audio_device_manager"):
+            stream.kwargs["callback"](
+                np.zeros((480, 1), dtype=np.float32), 480, None, "input overflow"
+            )
+
+        assert any("status=input overflow" in r.message for r in caplog.records)
+
+    def test_no_status_flag_logs_nothing(
+        self, fake_sounddevice: type[_FakeInputStream], caplog: pytest.LogCaptureFixture
+    ) -> None:
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("cw", 5, 48_000, lambda c: None)
+        stream = fake_sounddevice.instances[0]
+
+        with caplog.at_level("WARNING", logger="comms.audio_device_manager"):
+            stream.push(np.zeros(480, dtype=np.float32))
+
+        assert not any("status=" in r.message for r in caplog.records)
+
+    def test_large_callback_gap_is_logged(
+        self,
+        fake_sounddevice: type[_FakeInputStream],
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("cw", 5, 48_000, lambda c: None)
+        stream = fake_sounddevice.instances[0]
+
+        times = iter([100.0, 101.0])  # 1.0s apart -- well above _CB_GAP_WARN_S (0.5s)
+        monkeypatch.setattr(adm.time, "monotonic", lambda: next(times))
+
+        with caplog.at_level("WARNING", logger="comms.audio_device_manager"):
+            stream.push(np.zeros(480, dtype=np.float32))  # establishes the baseline
+            stream.push(np.zeros(480, dtype=np.float32))  # the 1.0s-later callback
+
+        assert any("callback gap" in r.message for r in caplog.records)
+
+    def test_small_callback_gap_is_not_logged(
+        self,
+        fake_sounddevice: type[_FakeInputStream],
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("cw", 5, 48_000, lambda c: None)
+        stream = fake_sounddevice.instances[0]
+
+        times = iter([100.0, 100.02])  # 20ms apart -- normal callback spacing
+        monkeypatch.setattr(adm.time, "monotonic", lambda: next(times))
+
+        with caplog.at_level("WARNING", logger="comms.audio_device_manager"):
+            stream.push(np.zeros(480, dtype=np.float32))
+            stream.push(np.zeros(480, dtype=np.float32))
+
+        assert not any("callback gap" in r.message for r in caplog.records)
+
+    def test_rms_level_is_logged_and_rate_limited(
+        self,
+        fake_sounddevice: type[_FakeInputStream],
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("cw", 5, 48_000, lambda c: None)
+        stream = fake_sounddevice.instances[0]
+
+        # First call at t=100 always logs (last-log-time starts at 0). Second
+        # call at t=100.1 is within _RMS_LOG_INTERVAL_S (2.0s) of the first
+        # and must NOT log again.
+        times = iter([100.0, 100.1])
+        monkeypatch.setattr(adm.time, "monotonic", lambda: next(times))
+
+        with caplog.at_level("INFO", logger="comms.audio_device_manager"):
+            stream.push(np.full(480, 0.5, dtype=np.float32))
+            stream.push(np.full(480, 0.5, dtype=np.float32))
+
+        level_records = [r for r in caplog.records if "input level" in r.message]
+        assert len(level_records) == 1
+        assert "rms=0.50000" in level_records[0].message
+        assert "peak=0.50000" in level_records[0].message
+
+
 # ---------------------------------------------------------------------------
 # Input device validation — a stale/invalid device index must raise a clear
 # error instead of either silently failing or opening the wrong hardware
