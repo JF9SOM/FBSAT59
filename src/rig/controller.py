@@ -2129,22 +2129,12 @@ class HamlibDirectController(RigController):
                 if vfoa_hz is not None:
                     last_dl = self._last_dl_hz
                     if last_dl is None or abs(vfoa_hz - last_dl) >= 1.0:
-                        # _check_rig_ok()/timing added 2026-09-29 so a TX-time
-                        # CAT failure (e.g. testing whether an as-yet-unknown
-                        # rig also ignores writes while keyed, like FT-991 --
-                        # see docs/hamlib.md "FT4 送信中ドップラー残差補正")
-                        # shows up directly in fbsat59.log, matching the
-                        # satmode branch above -- this generic branch
-                        # previously never checked set_freq()'s outcome at all.
-                        _cat_t0 = time.monotonic()
+                        # _check_rig_ok() added 2026-09-29 so a silently
+                        # failing/ignored CAT write surfaces as a
+                        # RigControlError, matching the satmode branch above
+                        # -- this generic branch previously never checked
+                        # set_freq()'s outcome at all.
                         self._rig.set_freq(rx_vfo, int(vfoa_hz))
-                        _cat_dt_ms = (time.monotonic() - _cat_t0) * 1000.0
-                        _log_cat_call_diag(
-                            _cat_dt_ms,
-                            "RigDirect generic DL: set_freq(VFOA, %d) took=%.0fms",
-                            int(vfoa_hz),
-                            _cat_dt_ms,
-                        )
                         _check_rig_ok(self._rig, "generic DL set_freq(VFOA)")
                         self._last_dl_hz = vfoa_hz
                         dl_written = True
@@ -2206,17 +2196,9 @@ class HamlibDirectController(RigController):
                             if dl_written:
                                 time.sleep(0.05)
                             tx_vfo = self._vfo_str_to_const("VFOB")
-                            # _check_rig_ok()/timing added 2026-09-29 -- see
-                            # the DL write above for why.
-                            _cat_t0 = time.monotonic()
+                            # _check_rig_ok() added 2026-09-29 -- see the DL
+                            # write above for why.
                             self._rig.set_freq(tx_vfo, int(vfob_hz))
-                            _cat_dt_ms = (time.monotonic() - _cat_t0) * 1000.0
-                            _log_cat_call_diag(
-                                _cat_dt_ms,
-                                "RigDirect generic UL: set_freq(VFOB, %d) took=%.0fms",
-                                int(vfob_hz),
-                                _cat_dt_ms,
-                            )
                             _check_rig_ok(self._rig, "generic UL set_freq(VFOB)")
                             time.sleep(0.05)
                             # Icom CI-V backends (e.g. IC-705) leave their
