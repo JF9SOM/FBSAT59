@@ -1386,3 +1386,58 @@ pyserial＋`_port_lock`で排他制御しているのに、この周波数書き
    追加（詳細は[docs/communications.md](communications.md)「RX音声コールバックの
    診断ログ追加」参照）。次回同じ症状が起きた際、FB書き込みのタイミングとRX
    コールバックの異常（ギャップ・ステータスフラグ・レベル異常）を突き合わせられる。
+
+#### FTX-1F Direct モードで RS-44 の TX が Sub から Main に戻ってしまう不具合（2026-09-30）
+
+**症状**: 上記の実パス試験の続き。PTTポートの誤設定（後述）を修正しFTX-1に接続できる
+ようになった後、RS-44を選択してDopplerトラッキングを開始すると、TX（UL）が
+`_init_split()`が`FT1;`で設定したはずのSubから、いつの間にかMainへ戻ってしまう
+症状が発生。**NETモード（rigctld経由）では同じFTX-1で問題なくSubのまま維持できる**
+ことから、Directモード固有の問題と特定。
+
+**（前提の不具合）PTTポートの誤設定**: 調査の過程で、Rig 1（FTX-1）の`ptt_port`が
+`/dev/cu.usbserial-00BC81D11`（FT-991のポート命名パターン）になっており、FTX-1
+自身の2番目のポート（`/dev/cu.usbserial-01A994281`）を指していないことが判明。
+FT-991が未接続だとこの存在しないポートをHamlibが開こうとしてI/Oエラー（-6）で
+`rig.open()`全体が失敗する。恐らく以前FT-991をテストした際の設定が残っていた。
+ユーザーがRig SettingsのPTTタブで修正し、接続自体は成功するようになった。
+
+**調査方法**: `_check_rig_ok()`の失敗検出を仕込んだ直後だったため、まず失敗検出が
+機能しているか確認したが、`set_freq`自体はエラーを返していなかった（`error_status`は
+常に0）。次に一時的にHamlibのCAT/CI-Vデバッグトレース（`Hamlib debug trace
+redirected to hamlib_trace.log`、既存の`_hamlib_file_trace_enabled`機構）を有効化し、
+生のCATバイト列を直接解析した。
+
+**根本原因（`hamlib_trace.log`の生バイト列で確定）**: Direct モードの generic 分岐
+（2026-07-06、commit `9277ab4`でIC-705の`set_split_freq`不具合を回避するため
+`self._rig.set_split_freq(rx_vfo, ul)` から `self._rig.set_freq(RIG_VFO_B, ul)` へ
+切り替えられていた。この変更はFTX-1Fも同じ`else`分岐を共有していたため、**IC-705
+向けの修正がFTX-1Fにも巻き込まれて適用され、以後one度も再確認されていなかった**
+——「以前はDirectモードでも問題なく動いていた」というユーザーの記憶通りだった）。
+
+`set_freq(RIG_VFO_B, ...)`は「これはsplitのTX周波数だ」とHamlibに伝える手段を
+持たない、ただの生の周波数設定要求。FBSAT59はFTX-1Fに正式なsplit（`ST`）コマンドを
+一度も送らない設計（`_init_split()`のFT1;/FT0; raw-CATバイパス）のため、Hamlib
+自身のキャッシュ上は常にsplit=OFFのまま。この不整合により、Hamlib内部の
+`vfo_fixup()`ロジックが、サイクルによっては「対象VFOへ切り替え→書き込み→元のVFOへ
+戻す」という経路を取ってしまい、その「戻す」ステップで本物の`VS0;`コマンドを送信する
+——これが2026-07-20に特定済みの「`VS0;`がFT1;で設定したTX=SubをMainへ戻す」その
+コマンドだった。Hamlib本体のソース（`rig.c`の`rig_set_freq()`/`rig_set_split_freq()`）
+を直接確認して構造を確認済み: `set_split_freq()`はHamlib自身のsplit状態を
+書き込み前に確立してから内部的に`set_freq()`を呼ぶのに対し、生の`set_freq(VFO_B,
+...)`はそれを一切経由しない。NETモード（rigctld経由の`I`コマンド）は内部で
+`rig_set_split_freq()`を使っているため、この問題に一度も遭遇していなかった
+——ユーザーの「NETモードでは問題が起きない」という指摘が、原因究明の決め手になった。
+
+**修正**: `_set_vfo_frequencies_locked()`のgeneric分岐に、FTX-1F専用の`elif`を
+新設し、UL書き込みを`self._rig.set_split_freq(rx_vfo, ul)`（2026-07-06の変更以前に
+実際に確認済みだった、NETモードと同じ経路）に戻した。IC-705は影響を受けない
+（既存の`else`分岐にそのまま残り、`set_freq(VFOB)` + `set_vfo(VFOA)`復元を継続。
+FTX-1Fがこの分岐を離れたため、FTX-1F向けだった`if self._model_id not in
+_FTX1_MODEL_IDS:`という条件分岐も不要になり削除——常に復元を実行してよい）。
+
+**確認できていないこと**: `set_split_freq()`がFTX-1Fで実際に安全に動くかは、この
+セッション時点ではログ分析とHamlibソースコードの突き合わせによる推論であり、
+実機での再テストで確認する必要がある（2026-07-06以前に確認済みだった、という
+ユーザーの記憶が正しければ問題ないはずだが、Hamlibのバージョンが当時と変わっている
+可能性もゼロではない）。

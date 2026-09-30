@@ -2144,6 +2144,50 @@ class HamlibDirectController(RigController):
                                 int(vfob_hz),
                                 _cat_dt_ms,
                             )
+                        elif self._model_id in _FTX1_MODEL_IDS:
+                            # FTX-1F gets its own branch, split out
+                            # 2026-09-30 -- it must NOT share IC-705's
+                            # set_freq(VFOB) path below.
+                            #
+                            # Root cause (found comparing NET mode, which
+                            # works, against Direct mode, which doesn't, on
+                            # a real RS-44 pass): plain set_freq(RIG_VFO_B,
+                            # ...) doesn't tell Hamlib "this is the split TX
+                            # frequency" -- Hamlib's own split-state cache
+                            # stays OFF, since FBSAT59 deliberately never
+                            # sends FTX-1F's official split ("ST") command
+                            # (see _init_split()'s FT1;/FT0; raw-CAT
+                            # bypass). Confirmed via hamlib_trace.log: on
+                            # some cycles this makes Hamlib's internal
+                            # vfo_fixup() take the "switch VFO, write,
+                            # switch back" path instead of a direct
+                            # targeted write, and that restore step sends a
+                            # genuine "VS0;" CAT command -- exactly the
+                            # command already identified (2026-07-20) as
+                            # resetting FTX-1F's TX from Sub back to Main,
+                            # undoing _init_split()'s FT1;. NET mode never
+                            # hits this: rigctld's "I" command handler
+                            # calls Hamlib's rig_set_split_freq(), which is
+                            # split-aware (it establishes Hamlib's own
+                            # split state before writing) and works fine.
+                            #
+                            # Fix: call set_split_freq() here too, exactly
+                            # matching NET mode's own internal path, and
+                            # exactly what this branch used before
+                            # 2026-07-06 (commit 9277ab4) switched it to
+                            # set_freq(VFOB) to fix an unrelated IC-705 bug
+                            # -- without re-verifying FTX-1F, which had
+                            # worked fine here before that change.
+                            _cat_t0 = time.monotonic()
+                            self._rig.set_split_freq(rx_vfo, int(vfob_hz))
+                            _cat_dt_ms = (time.monotonic() - _cat_t0) * 1000.0
+                            _log_cat_call_diag(
+                                _cat_dt_ms,
+                                "RigDirect FTX-1 UL: set_split_freq(%d) took=%.0fms",
+                                int(vfob_hz),
+                                _cat_dt_ms,
+                            )
+                            _check_rig_ok(self._rig, "FTX-1 UL set_split_freq")
                         else:
                             # Hamlib set_split_freq is unreliable on generic
                             # rigs (e.g. IC-705): passing either the RX vfo or
@@ -2152,7 +2196,8 @@ class HamlibDirectController(RigController):
                             # scripts/test_ic705_split.py 2026-07-06 — same
                             # root cause already documented for the satmode
                             # same-band fallback above).  Target VFO-B
-                            # directly instead.
+                            # directly instead. FTX-1F no longer shares this
+                            # branch (see the elif above, split out 2026-09-30).
                             #
                             # Every other Icom CI-V write sequence in this
                             # file (mode/CTCSS setup) separates commands with
@@ -2182,24 +2227,9 @@ class HamlibDirectController(RigController):
                             # rig keeps displaying UL as the main frequency.
                             # Same quirk as the satmode same-band fallback
                             # above — explicitly reselect VFO-A to restore
-                            # the DL display.
-                            #
-                            # FTX-1F must NOT receive this: this branch is
-                            # shared with IC-705 (confirmed 2026-07-06, commit
-                            # 6885275, "Icom CI-V backends (confirmed on
-                            # IC-705)"), but for FTX-1F set_vfo(VFOA) sends
-                            # raw CAT "VS0;" (active-VFO select) -- a command
-                            # ftx1_vfo.c documents as independent from "FT"
-                            # (TX-VFO assignment). FBSAT59 deliberately never
-                            # sends FTX-1F's official split ("ST") command
-                            # (see _init_split()'s FT1;/FT0; raw-CAT bypass),
-                            # so the rig has no split state telling it these
-                            # two are unrelated -- confirmed live (2026-07-20)
-                            # that "VS0;" resets TX from Sub back to Main,
-                            # undoing _init_split()'s "FT1;" on every UL
-                            # write. Skip the restore entirely for FTX-1F.
-                            if self._model_id not in _FTX1_MODEL_IDS:
-                                self._rig.set_vfo(rx_vfo)
+                            # the DL display. Safe unconditionally now that
+                            # FTX-1F has its own branch above.
+                            self._rig.set_vfo(rx_vfo)
                         self._last_ul_hz = vfob_hz
             return True
         except RigControlError as exc:

@@ -40,6 +40,13 @@
   FT-991A の `FT2;`/`FT3;` は FTX-1F では無視される（非対応）。
   `_init_split()` と `_send_freq_preset_direct()` で `_FTX1_MODEL_IDS` を独立 `elif` ブランチで処理。
   アプリ終了時は `_release_rig_split_on_exit()`（main_window.py）が `FT0;` を pyserial で送信。
+- **UL（TX）周波数の書き込みは `set_freq(RIG_VFO_B)` ではなく `set_split_freq()`**
+  （2026-09-30、実機で再確認・修正。2026-07-06〜09-30の間は誤って`set_freq(RIG_VFO_B)`
+  を使っており、Doppler追尾中にTXがSubからMainへ勝手に戻る不具合があった）。
+  詳細・根本原因（Hamlib自身が内部で`VS0;`を送ってしまう仕組み）は
+  [docs/hamlib.md](hamlib.md)「FTX-1F Direct モードで RS-44 の TX が Sub から Main に
+  戻ってしまう不具合」参照。IC-705は対象外（`set_freq(RIG_VFO_B)`のまま、独立した
+  `elif`分岐）。
 
 #### Connect直後にTXがSubからMainへ勝手に戻るバグと修正（2026-07-20 発見・修正）
 
