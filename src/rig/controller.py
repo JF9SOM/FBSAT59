@@ -2081,6 +2081,48 @@ class HamlibDirectController(RigController):
                 # Doppler correction needs that as a stable baseline); the
                 # first cycle after PTT off writes the current values as usual.
                 return True
+            elif self._model_id in _FTX1_MODEL_IDS:
+                # FTX-1F has its own dedicated write path, fully separate from
+                # the generic (IC-705 etc.) branch below. FBSAT59 deliberately
+                # never sends FTX-1F's official split ("ST") command (see
+                # _init_split()'s FT1;/FT0; raw-CAT bypass), so this path must
+                # never issue a VFO-select ("VS0;" via set_vfo) -- that resets
+                # TX from Sub back to Main. DL/UL are written straight to
+                # VFO-A / VFO-B and the active VFO is never restored.
+                rx_vfo = self._vfo_str_to_const("VFOA")
+                dl_written = False
+                if vfoa_hz is not None:
+                    last_dl = self._last_dl_hz
+                    if last_dl is None or abs(vfoa_hz - last_dl) >= 1.0:
+                        _cat_t0 = time.monotonic()
+                        self._rig.set_freq(rx_vfo, int(vfoa_hz))
+                        _cat_dt_ms = (time.monotonic() - _cat_t0) * 1000.0
+                        _log_cat_call_diag(
+                            _cat_dt_ms,
+                            "RigDirect FTX-1 DL: set_freq(VFOA, %d) took=%.0fms",
+                            int(vfoa_hz),
+                            _cat_dt_ms,
+                        )
+                        _check_rig_ok(self._rig, "FTX-1 DL set_freq(VFOA)")
+                        self._last_dl_hz = vfoa_hz
+                        dl_written = True
+                if vfob_hz is not None:
+                    last_ul = self._last_ul_hz
+                    if last_ul is None or abs(vfob_hz - last_ul) >= 1.0:
+                        if dl_written:
+                            time.sleep(0.05)
+                        tx_vfo = self._vfo_str_to_const("VFOB")
+                        _cat_t0 = time.monotonic()
+                        self._rig.set_freq(tx_vfo, int(vfob_hz))
+                        _cat_dt_ms = (time.monotonic() - _cat_t0) * 1000.0
+                        _log_cat_call_diag(
+                            _cat_dt_ms,
+                            "RigDirect FTX-1 UL: set_freq(VFOB, %d) took=%.0fms",
+                            int(vfob_hz),
+                            _cat_dt_ms,
+                        )
+                        _check_rig_ok(self._rig, "FTX-1 UL set_freq(VFOB)")
+                        self._last_ul_hz = vfob_hz
             else:
                 rx_vfo = self._vfo_str_to_const("VFOA")
                 dl_written = False
@@ -2184,22 +2226,8 @@ class HamlibDirectController(RigController):
                             # above — explicitly reselect VFO-A to restore
                             # the DL display.
                             #
-                            # FTX-1F must NOT receive this: this branch is
-                            # shared with IC-705 (confirmed 2026-07-06, commit
-                            # 6885275, "Icom CI-V backends (confirmed on
-                            # IC-705)"), but for FTX-1F set_vfo(VFOA) sends
-                            # raw CAT "VS0;" (active-VFO select) -- a command
-                            # ftx1_vfo.c documents as independent from "FT"
-                            # (TX-VFO assignment). FBSAT59 deliberately never
-                            # sends FTX-1F's official split ("ST") command
-                            # (see _init_split()'s FT1;/FT0; raw-CAT bypass),
-                            # so the rig has no split state telling it these
-                            # two are unrelated -- confirmed live (2026-07-20)
-                            # that "VS0;" resets TX from Sub back to Main,
-                            # undoing _init_split()'s "FT1;" on every UL
-                            # write. Skip the restore entirely for FTX-1F.
-                            if self._model_id not in _FTX1_MODEL_IDS:
-                                self._rig.set_vfo(rx_vfo)
+                            # (FTX-1F has its own branch above and never reaches here.)
+                            self._rig.set_vfo(rx_vfo)
                         self._last_ul_hz = vfob_hz
             return True
         except RigControlError as exc:
@@ -2622,15 +2650,19 @@ class HamlibDirectController(RigController):
             ctcss_hz,
             self._port,
         )
-        for raw in commands:
-            try:
-                fd = os.open(self._port, os.O_WRONLY | os.O_NOCTTY | os.O_NONBLOCK)
-                try:
-                    os.write(fd, raw)
-                finally:
-                    os.close(fd)
-            except OSError as exc:
-                logger.error("RigDirect.ftx1 write(%r): %s", raw, exc)
+        # pyserial (not raw os.open) so the port is opened at the baud rate
+        # configured in Rig Settings. A raw open leaves the tty at the OS
+        # default (9600 on macOS), so commands sent to a rig configured for
+        # e.g. 38400 baud are silently ignored.
+        try:
+            import serial  # pyserial — optional dependency
+
+            with self._port_lock, serial.Serial(self._port, self._baud_rate, timeout=1) as ser:
+                for raw in commands:
+                    ser.write(raw)
+                    time.sleep(0.05)  # brief inter-command gap
+        except Exception as exc:
+            logger.error("RigDirect.ftx1 CAT: %s", exc)
 
     def _apply_mode_and_ctcss_cat_ft991(self, dl_mode: str, ul_mode: str, ctcss_hz: float) -> None:
         """Set mode and CTCSS on FT-991/FT-991A via raw CAT commands (no Hamlib calls).
