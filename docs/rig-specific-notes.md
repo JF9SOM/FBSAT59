@@ -47,22 +47,13 @@
   [docs/hamlib.md](hamlib.md)「FTX-1F Direct モードで RS-44 の TX が Sub から Main に
   戻ってしまう不具合」参照。IC-705は対象外（`set_freq(RIG_VFO_B)`のまま、独立した
   `elif`分岐）。
-- **トランスポンダー選択のたびに`FT1;`を再送信（MD/CN/CTコマンドの前後両方）**
-  （2026-09-30、同日2回に分けて追記）:
+- **トランスポンダー選択のたびに`FT1;`を再送信**（2026-09-30、同日追記）:
   `_apply_mode_and_ctcss_cat_ftx1()`の末尾に`FT1;`を追加。上記`set_split_freq()`化の
   副作用として、Doppler書き込みがリグのアクティブ/表示VFOに一切触れなくなったため、
   従来「トランスポンダーを選ぶとリグの表示がSubへパッと切り替わる」という、ユーザーが
   確認手段として使っていた挙動が消えてしまった。`_init_split()`は接続時に一度だけ
   `FT1;`を送るが、接続中に別のトランスポンダーへ切り替えた時には送られないため、
   この可視的な確認動作をトランスポンダー選択のたびにも復元した。
-  **末尾だけでは不十分**（ユーザー報告により同日中に追加修正）: NETモードの同等関数
-  `HamlibNetController.apply_transponder_state()`の非satmode分岐は、
-  `_send_split_init_independent()`で`send_mode_only()`の**前後両方**を挟んでいる
-  （コメント: 「send_mode_onlyはV Sub/V Mainを使うため最後のV Mainコマンドの後TXが
-  Mainに残る。モード設定の前後をsplit initで挟むことでTXを常にSubに保つ」）。
-  Direct モードの最初の修正はこの「前」を欠いており、MD/CN/CTコマンド送信中に
-  TXがMainへ動く余地が残っていた。NETモードと同じ「前後両方に`FT1;`」のブラケット
-  構造に揃えて解消した。
 
 #### Connect直後にTXがSubからMainへ勝手に戻るバグと修正（2026-07-20 発見・修正）
 
