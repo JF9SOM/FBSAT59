@@ -536,22 +536,14 @@ class TestFtx1DirectUsesSplitFreq:
 
 class TestFtx1ModeCtcssReassertsSplit:
     """_apply_mode_and_ctcss_cat_ftx1() (run on every transponder selection,
-    not just connect()) now sends VM000; (force-exit Memory mode) first,
-    then MD/CN/CT, then a trailing FT1; (split ON, Sub=TX) -- 2026-09-30.
-
-    VM000; is the real fix for a live "mode never changes, no error, no
-    flicker" report: Hamlib's own ftx1.c documents that FTX-1 firmware
-    silently discards MD/CN/CT sets (accepted, no error) while the rig is
-    in Memory mode, and Hamlib's own ftx1_set_mode() always force-exits
-    Memory mode first for exactly this reason -- this raw-CAT path bypassed
-    Hamlib entirely and never had that protection.
-
-    FT1; stays trailing-only: a before-and-after bracket (mirroring
+    not just connect()) resends FT1; (split ON, Sub=TX) *after* the MD/CN/CT
+    commands only -- 2026-09-30. A before-and-after bracket (mirroring
     HamlibNetController.apply_transponder_state()'s own
     _send_split_init_independent() bracket for non-satmode rigs) was tried
-    earlier the same day but looked identical to the Memory-mode bug at the
-    time (mode stuck); reverted once VM000; was identified as the actual
-    fix."""
+    the same day but broke mode application on real hardware (confirmed:
+    fbsat59.log kept showing the correct mode being sent, but the rig's
+    actual mode stayed stuck); reverted to trailing-only, the last
+    confirmed-working state."""
 
     def _writes(self, ctrl: HamlibDirectController, *args: object) -> list[bytes]:
         writes: list[bytes] = []
@@ -567,9 +559,8 @@ class TestFtx1ModeCtcssReassertsSplit:
         ctrl = HamlibDirectController(model_id=1051, port="/dev/null")
         writes = self._writes(ctrl, "USB-D", "LSB-D", 0.0)
         assert writes[-1] == b"FT1;"
-        assert writes[0] == b"VM000;"  # force-exit Memory mode first
-        assert writes[1] == b"MD18;"  # LSB-D UL mode code
-        assert writes[2] == b"MD0C;"  # USB-D DL mode code
+        assert writes[0] == b"MD18;"  # LSB-D UL mode code
+        assert writes[1] == b"MD0C;"  # USB-D DL mode code
         assert writes.count(b"FT1;") == 1
 
     def test_ft1_still_last_when_ctcss_is_set(self) -> None:
