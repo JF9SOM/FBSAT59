@@ -534,39 +534,6 @@ class TestFtx1DirectUsesSplitFreq:
             ctrl.set_vfo_frequencies(145_800_000.0, 435_000_000.0)
 
 
-class TestFtx1ModeCtcssReassertsSplit:
-    """_apply_mode_and_ctcss_cat_ftx1() (run on every transponder selection,
-    not just connect()) now also resends FT1; (split ON, Sub=TX) --
-    2026-09-30. Restores a visible "TX moved to Sub" confirmation the
-    operator relied on: set_split_freq() (this session's earlier fix, see
-    TestFtx1DirectUsesSplitFreq) writes UL without touching the active/
-    displayed VFO at all, so the rig no longer visibly jumps to Sub the
-    moment a transponder is picked the way plain set_freq(RIG_VFO_B) used
-    to (via the bug that fix removed)."""
-
-    def _writes(self, ctrl: HamlibDirectController, *args: object) -> list[bytes]:
-        writes: list[bytes] = []
-        with (
-            patch("os.open", return_value=7),
-            patch("os.write", side_effect=lambda fd, data: writes.append(data)),
-            patch("os.close"),
-        ):
-            ctrl._apply_mode_and_ctcss_cat_ftx1(*args)  # type: ignore[arg-type]
-        return writes
-
-    def test_ft1_is_the_last_command_sent(self) -> None:
-        ctrl = HamlibDirectController(model_id=1051, port="/dev/null")
-        writes = self._writes(ctrl, "USB-D", "LSB-D", 0.0)
-        assert writes[-1] == b"FT1;"
-        assert writes[0] == b"MD18;"  # LSB-D UL mode code
-        assert writes[1] == b"MD0C;"  # USB-D DL mode code
-
-    def test_ft1_still_last_when_ctcss_is_set(self) -> None:
-        ctrl = HamlibDirectController(model_id=1051, port="/dev/null")
-        writes = self._writes(ctrl, "USB-D", "LSB-D", 67.0)
-        assert writes[-1] == b"FT1;"
-
-
 class TestGenericDirectCatErrorDetection:
     """Direct mode's generic branch (FTX-1F/IC-705/FT-991-when-not-in-TX)
     previously never checked set_freq()'s outcome at all -- a silently

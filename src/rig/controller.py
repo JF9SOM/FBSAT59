@@ -2624,20 +2624,6 @@ class HamlibDirectController(RigController):
           CN10{tone:03d}; — CTCSS tone number on SUB (if tone > 0)
           CT11;           — CTCSS ENC ON on SUB (if tone > 0)
           CT10;           — CTCSS OFF on SUB (if tone <= 0)
-          FT1;            — re-assert split (Sub=TX), see below
-
-        FT1; re-assertion (2026-09-30): this runs on every transponder
-        selection, not just at connect() (_init_split() already sends FT1;
-        there). Confirmed live: with the Doppler-cycle UL write now on
-        set_split_freq() (see set_vfo_frequencies()'s generic branch —
-        2026-09-30, split out of the shared IC-705 path because plain
-        set_freq(RIG_VFO_B) let Hamlib's own vfo_fixup() occasionally send a
-        real "VS0;" that reset TX from Sub back to Main), the rig's TX VFO
-        no longer visibly jumps to Sub the moment the operator picks a
-        transponder -- set_split_freq() writes UL without touching the
-        active/displayed VFO at all, by design, now that it no longer hits
-        that bug. Resending FT1; here restores that visible confirmation
-        cue on every transponder change, not just once at Connect.
         """
         ul_code = _FTX1_MODE_CODES.get(ul_mode, "4")
         dl_code = _FTX1_MODE_CODES.get(dl_mode, "4")
@@ -2658,8 +2644,6 @@ class HamlibDirectController(RigController):
                 )
         else:
             commands.append(b"CT10;")
-
-        commands.append(b"FT1;")
 
         logger.info(
             "RigDirect: FTX-1 CAT mode+CTCSS dl=%s ul=%s ctcss=%.1f port=%s",
