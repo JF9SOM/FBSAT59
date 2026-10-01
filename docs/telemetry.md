@@ -1013,3 +1013,20 @@ SatNOGS が要求するフル フレームを再構成できない — **送信�
 （`_rebuild_decode_tabs()`）は flat 形式の衛星では無効になるため値が表示されなかった。
 `match` 付き flat リストは `get_telemetry_id_defs()` で単一サブタブ `BEACON_ID`（`"beacon"`、
 ラベルは `beacon_label`）として扱うよう修正。`match` の無い従来の flat 形式の挙動は変えていない。
+
+### 保存済みフレームの再表示（Load saved、2026-10-01）
+
+受信フレームは従来から `telemetry_log` に自動保存されていたが、表への再読み込み手段が無く、
+再起動後は IQ 録音を再生し直す必要があった。Telemetry タブのフッターに **Load saved** を追加
+（AX.25 モード。選択衛星の保存済みフレームを表と Decoded Fields へ戻す。表示済みの行は
+`_LOGGED_ROLE` の log id で重複を避ける）。
+
+- `telemetry_log` に列 `frame_hex`（**フル AX.25 フレーム**、SatNOGS 送信に必要）と
+  `kind`（`ax25` / `hdlc` / `cw`）を追加（`_ensure_db_table()` が ALTER）。それ以前の行は
+  `frame_hex` が NULL で、`kind` は `_saved_kind()` が推定する（callsign 空→hdlc、空白を含む→cw）。
+- **フル フレームの無い旧行**はペイロードだけを表示し、SatNOGS へは送れない（"without a SatNOGS
+  format" として数える）。デコード結果の表示には支障ない。
+- `norad_cat_id` が NULL の行（コールサイン未対応付けの頃に保存）は、コールサインが今は選択衛星に
+  対応付く場合に含める。
+- 手動送信が受理されたら `satnogs_uploaded_at` を記録する（再読み込み後に二重送信しない）。
+- CW TLM の行は対象外（CW は従来どおり録音からのデコード結果を保持）。

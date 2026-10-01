@@ -163,6 +163,8 @@ def format_frame_hex(raw: bytes) -> str:
 _DIM_ROLE = Qt.ItemDataRole.UserRole + 1
 # Row role holding the _Ax25Row of a received AX.25 frame (for "Send selected").
 _AX25_ROLE = Qt.ItemDataRole.UserRole + 2
+# Row role holding the ``telemetry_log`` id of a logged AX.25/HDLC row (no duplicates on load).
+_LOGGED_ROLE = Qt.ItemDataRole.UserRole + 3
 
 
 @dataclass
@@ -181,6 +183,7 @@ class _Ax25Row:
     sent: bool = False  # SatNOGS accepted it
     pending: bool = False  # handed to the uploader, no answer yet
     manual: bool = False  # the user asked for this send
+    log_id: int | None = None  # its ``telemetry_log`` row
 
 
 class _DimRowDelegate(QStyledItemDelegate):
@@ -369,6 +372,12 @@ class TelemetryTab(QWidget):
         # Upload tracking (satnogs_uploaded_at, time_reliable), added later.
         ensure_columns(self._conn)
         reset_unconfirmed_marks(self._conn)
+        # The whole received frame and the kind of frame, for "Load saved".
+        columns = {str(r[1]) for r in self._conn.execute("PRAGMA table_info(telemetry_log)")}
+        for column in ("frame_hex", "kind"):
+            if column not in columns:
+                self._conn.execute(f"ALTER TABLE telemetry_log ADD COLUMN {column} TEXT")
+        self._conn.commit()
 
     # ------------------------------------------------------------------ #
     # UI
@@ -608,6 +617,15 @@ class TelemetryTab(QWidget):
 
         footer.addStretch()
 
+        self._btn_load = QPushButton(_("Load saved"))
+        self._btn_load.setToolTip(
+            _(
+                "Show the frames saved earlier for the selected satellite again\n"
+                "(AX.25 mode), without replaying a recording."
+            )
+        )
+        self._btn_load.clicked.connect(self._on_load_saved)
+        footer.addWidget(self._btn_load)
         self._btn_clear = QPushButton(_("Clear Log"))
         self._btn_clear.clicked.connect(self._on_clear)
         footer.addWidget(self._btn_clear)
@@ -1284,7 +1302,7 @@ class TelemetryTab(QWidget):
             telemetry_id=result.key,
             telemetry_label=result.label,
         )
-        log_id = self._persist_frame(tf, ts, reliable)
+        log_id = self._persist_frame(tf, ts, reliable, kind="cw")
         self._append_row(
             callsign=callsign,
             sat_name=sat_name,
@@ -1385,6 +1403,8 @@ class TelemetryTab(QWidget):
         for row in rows:
             if row.sent:
                 report.duplicates += 1
+            elif not row.raw:
+                report.unsupported += 1  # loaded from an old log: payload only
             elif row.pending:
                 report.pending += 1
             elif not row.reliable:
@@ -1432,6 +1452,8 @@ class TelemetryTab(QWidget):
         row.pending = False
         if accepted:
             row.sent = True
+            if row.log_id is not None:
+                mark_uploaded(self._conn, row.log_id)
             if row.manual:
                 self._lbl_status.setText(
                     _("SatNOGS accepted the frame (HTTP {n})").format(n=status)
@@ -1770,7 +1792,8 @@ class TelemetryTab(QWidget):
             ax25_row=ax25_row,
         )
         self._update_decode_tab(tf)
-        self._persist_frame(tf, when, reliable)
+        ax25_row.log_id = self._persist_frame(tf, when, reliable, raw.hex(), "ax25")
+        self._mark_row_logged(self._table.rowCount() - 1, ax25_row.log_id)
         # Forward the raw frame (full AX.25 frame, FCS already stripped by the
         # demodulator / KISS) to the SatNOGS DB. No-op unless the footer
         # toggle is on and callsign / location / API key are all set.
@@ -1794,7 +1817,7 @@ class TelemetryTab(QWidget):
             name = str(row["name"]) if row else ""
         when, reliable = self._frame_time()
         tf = TelemetryFrame(norad=norad, callsign="", satellite_name=name, raw_hex=raw.hex())
-        log_id = self._persist_frame(tf, when, reliable)
+        log_id = self._persist_frame(tf, when, reliable, raw.hex(), "hdlc")
         self._append_row(
             callsign="—",
             sat_name=name or "—",
@@ -2021,9 +2044,15 @@ class TelemetryTab(QWidget):
             item.setText(text)
 
     def _persist_frame(
-        self, tf: TelemetryFrame, ts: datetime.datetime, reliable: bool = True
+        self,
+        tf: TelemetryFrame,
+        ts: datetime.datetime,
+        reliable: bool = True,
+        frame_hex: str | None = None,
+        kind: str | None = None,
     ) -> int | None:
-        """Log *tf*; returns its ``telemetry_log`` id. *reliable* is False when *ts*
+        """Log *tf* (*frame_hex*: the whole frame; *kind*: "ax25" / "hdlc" / "cw");
+        returns its ``telemetry_log`` id. *reliable* is False when *ts*
         comes from a placeholder recording start time (such frames are never sent)."""
         if not hasattr(self._conn, "execute"):
             return None
@@ -2034,9 +2063,19 @@ class TelemetryTab(QWidget):
         )
         cursor = self._conn.execute(
             """INSERT INTO telemetry_log
-               (received_at, norad_cat_id, callsign, raw_hex, parsed_json, time_reliable)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (ts.isoformat(), tf.norad, tf.callsign, tf.raw_hex, parsed, int(reliable)),
+               (received_at, norad_cat_id, callsign, raw_hex, parsed_json, time_reliable,
+                frame_hex, kind)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                ts.isoformat(),
+                tf.norad,
+                tf.callsign,
+                tf.raw_hex,
+                parsed,
+                int(reliable),
+                frame_hex,
+                kind,
+            ),
         )
         self._conn.commit()
         row_id = cursor.lastrowid
@@ -2104,6 +2143,131 @@ class TelemetryTab(QWidget):
     # ------------------------------------------------------------------ #
     # Actions
     # ------------------------------------------------------------------ #
+
+    def _mark_row_logged(self, row: int, log_id: int | None) -> None:
+        """Remember on table *row* which ``telemetry_log`` row it shows."""
+        item = self._table.item(row, 0)
+        if item is not None and log_id is not None:
+            item.setData(_LOGGED_ROLE, log_id)
+
+    def _shown_log_ids(self) -> set[int]:
+        ids: set[int] = set()
+        for r in range(self._table.rowCount()):
+            item = self._table.item(r, 0)
+            value = item.data(_LOGGED_ROLE) if item is not None else None
+            if isinstance(value, int):
+                ids.add(value)
+        return ids
+
+    def _on_load_saved(self) -> None:
+        """Show the saved frames of the selected satellite again (no recording replay)."""
+        if self._current_mode() == _MODE_CW:
+            self._set_error(_("Load saved works in AX.25 mode."))
+            return
+        norad = self._active_norad()
+        if norad is None:
+            self._set_error(_("Select a satellite first."))
+            return
+        n = self._load_saved_frames(norad)
+        self._lbl_status.setText(_("Loaded {n} saved frame(s)").format(n=n))
+        self._lbl_status.setStyleSheet("color: #27ae60;" if n else "color: #aaa;")
+
+    @staticmethod
+    def _saved_kind(kind: str | None, callsign: str, raw_hex: str) -> str:
+        """Kind of a logged frame; rows from before the ``kind`` column are inferred."""
+        if kind:
+            return kind
+        if not callsign:
+            return "hdlc"
+        return "cw" if any(c.isspace() for c in raw_hex) else "ax25"
+
+    def _load_saved_frames(self, norad: int) -> int:
+        """Append the logged AX.25 / HDLC frames of *norad* to the table; returns how many.
+
+        A frame logged before its callsign was known (``norad_cat_id`` NULL) is
+        included when its callsign now maps to *norad*. Frames already shown are
+        skipped. A frame logged before the whole frame was saved shows its payload
+        only and cannot be sent to the SatNOGS DB.
+        """
+        if not hasattr(self._conn, "execute"):
+            return 0
+        shown = self._shown_log_ids()
+        rows = self._conn.execute(
+            "SELECT id, received_at, norad_cat_id, callsign, raw_hex, frame_hex, kind,"
+            " satnogs_uploaded_at, time_reliable FROM telemetry_log"
+            " WHERE norad_cat_id = ? OR norad_cat_id IS NULL ORDER BY received_at, id",
+            (norad,),
+        ).fetchall()
+        name = self._satellite_name(norad)
+        loaded = 0
+        for r in rows:
+            log_id, received, row_norad, callsign, raw_hex, frame_hex, kind, uploaded, reliable = (
+                int(r[0]),
+                str(r[1]),
+                r[2],
+                str(r[3]),
+                str(r[4]),
+                r[5],
+                r[6],
+                r[7],
+                bool(r[8]),
+            )
+            if log_id in shown:
+                continue
+            kind = self._saved_kind(kind, callsign, raw_hex)
+            if kind == "cw":
+                continue
+            if row_norad is None and (not callsign or self._callsign_to_norad(callsign) != norad):
+                continue
+            try:
+                when = datetime.datetime.fromisoformat(received)
+                payload = bytes.fromhex(raw_hex)
+                whole = bytes.fromhex(str(frame_hex)) if frame_hex else b""
+            except ValueError:
+                continue
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=datetime.UTC)
+            if kind == "hdlc":
+                self._append_row(
+                    callsign="—",
+                    sat_name=name or "—",
+                    data=format_frame_hex(payload),
+                    norad=norad,
+                    ts=when,
+                    log_id=log_id,
+                )
+                self._mark_row_logged(self._table.rowCount() - 1, log_id)
+                loaded += 1
+                continue
+            tf = decode_telemetry(callsign, payload, norad)
+            ax25_row = _Ax25Row(
+                raw=whole,
+                when=when,
+                reliable=reliable,
+                norad=norad,
+                sent=uploaded is not None,
+                log_id=log_id,
+            )
+            self._append_row(
+                callsign=tf.callsign,
+                sat_name=tf.satellite_name,
+                data=format_frame_hex(whole or payload),
+                norad=norad,
+                ts=when,
+                ax25_row=ax25_row,
+            )
+            self._mark_row_logged(self._table.rowCount() - 1, log_id)
+            self._update_decode_tab(tf)
+            loaded += 1
+        return loaded
+
+    def _satellite_name(self, norad: int) -> str:
+        if not hasattr(self._conn, "execute"):
+            return ""
+        row = self._conn.execute(
+            "SELECT name FROM satellites WHERE norad_cat_id = ?", (norad,)
+        ).fetchone()
+        return str(row[0]) if row else ""
 
     def _on_clear(self) -> None:
         self._table.setRowCount(0)

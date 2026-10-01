@@ -6845,3 +6845,23 @@ msgstr ""
 "{n}件のフレームをSatNOGS DBへ送信しますか？\n"
 "\n"
 "{lines}"
+
+#: src/ui/telemetry_tab.py
+msgid "Load saved"
+msgstr "保存済みを読込"
+
+#: src/ui/telemetry_tab.py
+msgid ""
+"Show the frames saved earlier for the selected satellite again\n"
+"(AX.25 mode), without replaying a recording."
+msgstr ""
+"選択中の衛星について、以前に保存したフレームを再表示します\n"
+"（AX.25モード。録音の再生は不要です）。"
+
+#: src/ui/telemetry_tab.py
+msgid "Load saved works in AX.25 mode."
+msgstr "「保存済みを読込」はAX.25モードで使えます。"
+
+#: src/ui/telemetry_tab.py
+msgid "Loaded {n} saved frame(s)"
+msgstr "保存済みフレームを{n}件読み込みました"

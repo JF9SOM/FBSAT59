@@ -16,6 +16,7 @@ installation.
 
 from __future__ import annotations
 
+import datetime
 import sqlite3
 import types
 from typing import Any
@@ -878,3 +879,96 @@ def test_knacksat2_beacon_fills_the_decoded_fields_tab(
     table = tab._decode_tables["beacon"]
     row = tab._decode_field_rows["beacon"]["batt_vout"]
     assert table.item(row, 1).text().startswith("8.23")
+
+
+# Load saved frames
+# ---------------------------------------------------------------------------
+
+
+def _log(
+    conn: sqlite3.Connection,
+    when: str,
+    norad: int | None,
+    callsign: str,
+    raw_hex: str,
+    frame_hex: str | None = None,
+    kind: str | None = None,
+    uploaded: str | None = None,
+) -> None:
+    conn.execute(
+        "INSERT INTO telemetry_log (received_at, norad_cat_id, callsign, raw_hex, frame_hex,"
+        " kind, satnogs_uploaded_at, time_reliable) VALUES (?, ?, ?, ?, ?, ?, ?, 1)",
+        (when, norad, callsign, raw_hex, frame_hex, kind, uploaded),
+    )
+    conn.commit()
+
+
+def test_ax25_frame_is_logged_with_the_whole_frame(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: _RecordingUploader())
+    monkeypatch.setattr(
+        telemetry_tab_mod,
+        "decode_ax25",
+        lambda raw: types.SimpleNamespace(src="HS0K", payload=b"\x00\x11"),
+    )
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    raw = bytes.fromhex("9c86aa8ea662e0a08a82a49886e103f00011")
+    tab._on_ax25_frame(raw)
+    row = conn.execute("SELECT frame_hex, kind, raw_hex FROM telemetry_log").fetchone()
+    assert (row[0], row[1], row[2]) == (raw.hex(), "ax25", "0011")
+    # the shown row remembers its log row, so Load saved will not add it again
+    assert tab._load_saved_frames(67683) == 0
+
+
+def test_load_saved_shows_frames_again_without_duplicates(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.test_telemetry_knacksat2 import BEACON  # noqa: PLC0415
+
+    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: _RecordingUploader())
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab.set_satellite(67683, "KNACKSAT-2")
+    whole = bytes.fromhex("9c86aa8ea662e0") + BEACON
+    # logged before the callsign was known (norad NULL), payload only
+    _log(conn, "2026-10-01T07:22:28+00:00", None, "HS0K", BEACON.hex())
+    # logged with the whole frame, already sent to SatNOGS
+    _log(
+        conn,
+        "2026-10-01T07:24:00+00:00",
+        67683,
+        "HS0K",
+        BEACON.hex(),
+        whole.hex(),
+        "ax25",
+        "2026-10-01T09:00:00+00:00",
+    )
+    _log(conn, "2026-10-01T07:25:00+00:00", 68795, "JS1YRU", "0011")  # another satellite
+    _log(conn, "2026-10-01T07:26:00+00:00", 67683, "HS0K", "AB CD EF", None, "cw")  # CW: skipped
+    assert tab._load_saved_frames(67683) == 2
+    assert tab._table.rowCount() == 2
+    old = tab._table.item(0, 0).data(telemetry_tab_mod._AX25_ROLE)
+    new = tab._table.item(1, 0).data(telemetry_tab_mod._AX25_ROLE)
+    assert (old.raw, old.sent) == (b"", False)  # payload only: cannot be sent
+    assert (new.raw, new.sent) == (whole, True)
+    assert tab._table.item(1, 3).text().startswith("9C 86 AA")
+    row = tab._decode_field_rows["beacon"]["batt_vout"]
+    assert tab._decode_tables["beacon"].item(row, 1).text().startswith("8.23")
+    assert tab._load_saved_frames(67683) == 0  # nothing twice
+
+
+def test_accepted_manual_send_is_recorded_in_the_log(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    _log(conn, "2026-10-01T07:24:00+00:00", 67683, "HS0K", "0011", "aabb", "ax25")
+    row = telemetry_tab_mod._Ax25Row(
+        raw=b"\xaa\xbb", when=datetime.datetime.now(datetime.UTC), reliable=True,
+        norad=67683, log_id=1,
+    )  # fmt: skip
+    tab._on_ax25_send_result(row, True, 201, "")
+    assert row.sent
+    assert conn.execute("SELECT satnogs_uploaded_at FROM telemetry_log").fetchone()[0]
