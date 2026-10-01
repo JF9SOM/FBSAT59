@@ -591,7 +591,8 @@ class TelemetryTab(QWidget):
             )
         )
         self._btn_satnogs_send.clicked.connect(self._on_send_selected)
-        self._btn_satnogs_send.setVisible(False)
+        # _on_mode_changed() only runs on a mode *change*, so set the start-up state here.
+        self._btn_satnogs_send.setVisible(self._current_mode() != _MODE_GR)
         footer.addWidget(self._btn_satnogs_send)
         self._btn_satnogs_send_unsent = QPushButton(_("Send unsent…"))
         self._btn_satnogs_send_unsent.setToolTip(

@@ -848,3 +848,13 @@ def test_send_selected_without_selection_asks_for_one(
     tab._on_send_selected()
     assert rec.calls == []
     assert "Select received AX.25 frames" in tab._lbl_status.text()
+
+
+def test_send_selected_button_is_visible_at_startup_in_ax25_mode(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab.show()
+    assert tab._btn_satnogs_send.isVisible()
+    assert not tab._btn_satnogs_send_unsent.isVisible()  # CW TLM only
