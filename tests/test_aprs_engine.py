@@ -8,7 +8,9 @@ DirewolfManager is swapped for a fake that just records calls, so no real
 
 from __future__ import annotations
 
+import json
 import sqlite3
+import time
 from typing import Any
 
 import pytest
@@ -62,6 +64,7 @@ class _FakeDirewolfManager:
                 "ssid": ssid,
                 "via": via,
                 "modem": modem,
+                "out_device": out_device,
                 "sdr_pipeline": sdr_pipeline,
                 "sdr_satellite": sdr_satellite,
             }
@@ -491,3 +494,112 @@ def test_sync_sdr_baud_noop_when_not_running(engine: AprsEngine) -> None:
     fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
     assert fake_mgr.start_calls == []
     assert fake_mgr.stop_calls == 0
+
+
+# ---------------------------------------------------------------------------
+# SDR receive + Sound Card transmit, send_raw()
+# ---------------------------------------------------------------------------
+
+
+class _FakeKiss:
+    def __init__(self) -> None:
+        self.sent: list[bytes] = []
+
+    def send_frame(self, data: bytes) -> None:
+        self.sent.append(data)
+
+
+class _FakeRig:
+    def __init__(self) -> None:
+        self.ptt: list[bool] = []
+
+    def set_ptt(self, on: bool) -> bool:
+        self.ptt.append(on)
+        return True
+
+
+def _set_output_device(conn: sqlite3.Connection, index: int) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
+        ("soundcard_settings", json.dumps({"input_device_index": 1, "output_device_index": index})),
+    )
+    conn.commit()
+
+
+def test_sdr_session_is_receive_only_by_default(
+    engine: AprsEngine, conn: sqlite3.Connection
+) -> None:
+    _set_output_device(conn, 7)
+    engine.start_sdr_direwolf("msgbox", _FakePipeline(), modem="4800")
+    try:
+        fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
+        assert fake_mgr.start_calls[-1]["out_device"] is None
+        engine.set_rig(_FakeRig())
+        assert not engine.can_transmit
+    finally:
+        engine.stop("msgbox")
+
+
+def test_sdr_session_with_tx_attaches_sound_card_output(
+    engine: AprsEngine, conn: sqlite3.Connection
+) -> None:
+    _set_output_device(conn, 7)
+    engine.start_sdr_direwolf("msgbox", _FakePipeline(), modem="4800", tx=True)
+    try:
+        fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
+        assert fake_mgr.start_calls[-1]["out_device"] == 7
+        assert not engine.can_transmit  # no rig registered yet
+        engine.set_rig(_FakeRig())
+        assert engine.can_transmit
+    finally:
+        engine.stop("msgbox")
+    assert not engine.can_transmit
+
+
+def test_receive_only_sdr_session_restarts_when_a_caller_needs_tx(
+    engine: AprsEngine, conn: sqlite3.Connection
+) -> None:
+    _set_output_device(conn, 7)
+    engine.start_sdr_direwolf("telemetry", _FakePipeline(), modem="4800")
+    engine.start_sdr_direwolf("msgbox", _FakePipeline(), modem="4800", tx=True)
+    try:
+        fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
+        assert [c["out_device"] for c in fake_mgr.start_calls] == [None, 7]
+        assert engine._owners == {"telemetry", "msgbox"}
+    finally:
+        engine.stop("telemetry")
+        engine.stop("msgbox")
+
+
+def test_sync_sdr_baud_keeps_tx(engine: AprsEngine, conn: sqlite3.Connection) -> None:
+    _set_output_device(conn, 7)
+    pipeline = _FakePipeline()
+    engine.start_sdr_direwolf("msgbox", pipeline, modem="4800", tx=True)
+    try:
+        engine.sync_sdr_baud(pipeline, "9600")
+        fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
+        assert fake_mgr.start_calls[-1]["modem"] == "9600"
+        assert fake_mgr.start_calls[-1]["out_device"] == 7
+    finally:
+        engine.stop("msgbox")
+
+
+def test_send_raw_keys_ptt_and_sends_payload(engine: AprsEngine) -> None:
+    kiss = _FakeKiss()
+    rig = _FakeRig()
+    engine._mgr.kiss_client = kiss  # type: ignore[assignment]
+    engine.set_rig(rig)
+    engine._PTT_LEAD_S = 0.0
+    engine._PTT_TAIL_S = 0.0
+    assert engine.send_raw(b"\x42\xf8\xbd", audio_s=0.0)
+    deadline = time.monotonic() + 2.0
+    while rig.ptt != [True, False] and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert rig.ptt == [True, False]
+    assert kiss.sent == [b"\x42\xf8\xbd"]
+
+
+def test_send_raw_refuses_without_rig_or_kiss(engine: AprsEngine) -> None:
+    assert not engine.send_raw(b"x")  # no kiss
+    engine._mgr.kiss_client = _FakeKiss()  # type: ignore[assignment]
+    assert not engine.send_raw(b"x")  # no rig
