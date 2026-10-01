@@ -786,18 +786,18 @@ def test_callsign_maps_to_satellite_by_alt_names(qtbot: QtBot, conn: sqlite3.Con
     conn.execute("ALTER TABLE satellites ADD COLUMN alt_names TEXT")
     conn.execute(
         "INSERT INTO satellites (norad_cat_id, name, is_hidden, alt_names)"
-        " VALUES (67683, 'KNACKSAT-2', 0, '[\"HS0K\"]')"
+        " VALUES (77777, 'TESTSAT-1', 0, '[\"XY1ZZ\"]')"
     )
     tab = TelemetryTab(conn, _FakeRadioControl())
     qtbot.addWidget(tab)
-    assert tab._callsign_to_norad("HS0K") == 67683
-    assert tab._callsign_to_norad("HS0K-1") == 67683
-    assert tab._callsign_to_norad("HS0X") is None
+    assert tab._callsign_to_norad("XY1ZZ") == 77777
+    assert tab._callsign_to_norad("XY1ZZ-1") == 77777
+    assert tab._callsign_to_norad("XY1ZY") is None
     conn.execute(
         "INSERT INTO satellites (norad_cat_id, name, is_hidden, alt_names)"
-        " VALUES (99999, 'OTHER', 0, '[\"HS0K\"]')"
+        " VALUES (99999, 'OTHER', 0, '[\"XY1ZZ\"]')"
     )
-    assert tab._callsign_to_norad("HS0K") is None  # ambiguous
+    assert tab._callsign_to_norad("XY1ZZ") is None  # ambiguous
 
 
 def test_send_selected_sends_ax25_frame_under_selected_satellite(

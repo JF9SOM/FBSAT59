@@ -1,0 +1,387 @@
+{
+  "norad": 67683,
+  "name": "KNACKSAT-2",
+  "callsign": "HS0K",
+  "modulation": "GMSK9k6",
+  "reference": "https://insted.kmutnb.ac.th/knacksat-2/",
+  "match": {
+    "offset": 0,
+    "hex": "0000"
+  },
+  "document": "Layout from the SatNOGS decoder knacksat2.ksy (MIT, EmOne / Anol P.): https://gitlab.com/librespacefoundation/satnogs/satnogs-decoders/-/blob/master/ksy/knacksat2.ksy",
+  "note": "Beacon frame (payload starts 00 00, 149 bytes, little-endian floats). Units are inferred from the ksy field names and checked against received frames (battery ~8.2 V, ~12.5 degC, MPPT current x voltage = power); the ksy states none. The *_res_* fields are the CSP-header bytes of each block, shown as the ksy decodes them. Other frame types (e.g. file-name replies, payload starts 40 5A) are not decoded.",
+  "fields": [
+    {
+      "name": "pcdu_res_1",
+      "offset": 0,
+      "length": 1,
+      "type": "uint8",
+      "label": "PCDU CSPヘッダー1（フラグ）"
+    },
+    {
+      "name": "pcdu_res_2",
+      "offset": 1,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "PCDU CSPヘッダー2"
+    },
+    {
+      "name": "pcdu_res_3",
+      "offset": 3,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "PCDU CSPヘッダー3"
+    },
+    {
+      "name": "pcdu_enable",
+      "offset": 5,
+      "length": 1,
+      "type": "uint8",
+      "label": "PCDU イネーブル"
+    },
+    {
+      "name": "comm_res_1",
+      "offset": 6,
+      "length": 1,
+      "type": "uint8",
+      "label": "通信系 CSPヘッダー1（フラグ）"
+    },
+    {
+      "name": "comm_res_2",
+      "offset": 7,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "通信系 CSPヘッダー2"
+    },
+    {
+      "name": "comm_res_3",
+      "offset": 9,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "通信系 CSPヘッダー3"
+    },
+    {
+      "name": "mppt_res_1",
+      "offset": 11,
+      "length": 1,
+      "type": "uint8",
+      "label": "MPPT CSPヘッダー1（フラグ）"
+    },
+    {
+      "name": "mppt_res_2",
+      "offset": 12,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "MPPT CSPヘッダー2"
+    },
+    {
+      "name": "mppt_res_3",
+      "offset": 14,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "MPPT CSPヘッダー3"
+    },
+    {
+      "name": "mppt_isens_0",
+      "offset": 16,
+      "length": 4,
+      "type": "float32_le",
+      "label": "MPPT0 電流",
+      "unit": "A"
+    },
+    {
+      "name": "mppt_isens_1",
+      "offset": 20,
+      "length": 4,
+      "type": "float32_le",
+      "label": "MPPT1 電流",
+      "unit": "A"
+    },
+    {
+      "name": "mppt_isens_2",
+      "offset": 24,
+      "length": 4,
+      "type": "float32_le",
+      "label": "MPPT2 電流",
+      "unit": "A"
+    },
+    {
+      "name": "mppt_isens_3",
+      "offset": 28,
+      "length": 4,
+      "type": "float32_le",
+      "label": "MPPT3 電流",
+      "unit": "A"
+    },
+    {
+      "name": "mppt_isens_4",
+      "offset": 32,
+      "length": 4,
+      "type": "float32_le",
+      "label": "MPPT4 電流",
+      "unit": "A"
+    },
+    {
+      "name": "mppt_isens_5",
+      "offset": 36,
+      "length": 4,
+      "type": "float32_le",
+      "label": "MPPT5 電流",
+      "unit": "A"
+    },
+    {
+      "name": "mppt_isens_6",
+      "offset": 40,
+      "length": 4,
+      "type": "float32_le",
+      "label": "MPPT6 電流",
+      "unit": "A"
+    },
+    {
+      "name": "mppt_power_0",
+      "offset": 44,
+      "length": 4,
+      "type": "float32_le",
+      "label": "MPPT0 電力",
+      "unit": "W"
+    },
+    {
+      "name": "mppt_power_1",
+      "offset": 48,
+      "length": 4,
+      "type": "float32_le",
+      "label": "MPPT1 電力",
+      "unit": "W"
+    },
+    {
+      "name": "mppt_power_2",
+      "offset": 52,
+      "length": 4,
+      "type": "float32_le",
+      "label": "MPPT2 電力",
+      "unit": "W"
+    },
+    {
+      "name": "mppt_power_3",
+      "offset": 56,
+      "length": 4,
+      "type": "float32_le",
+      "label": "MPPT3 電力",
+      "unit": "W"
+    },
+    {
+      "name": "mppt_power_4",
+      "offset": 60,
+      "length": 4,
+      "type": "float32_le",
+      "label": "MPPT4 電力",
+      "unit": "W"
+    },
+    {
+      "name": "mppt_power_5",
+      "offset": 64,
+      "length": 4,
+      "type": "float32_le",
+      "label": "MPPT5 電力",
+      "unit": "W"
+    },
+    {
+      "name": "mppt_power_6",
+      "offset": 68,
+      "length": 4,
+      "type": "float32_le",
+      "label": "MPPT6 電力",
+      "unit": "W"
+    },
+    {
+      "name": "mppt_vbus_0",
+      "offset": 72,
+      "length": 4,
+      "type": "float32_le",
+      "label": "MPPT0 バス電圧",
+      "unit": "V"
+    },
+    {
+      "name": "mppt_vbus_1",
+      "offset": 76,
+      "length": 4,
+      "type": "float32_le",
+      "label": "MPPT1 バス電圧",
+      "unit": "V"
+    },
+    {
+      "name": "mppt_vbus_2",
+      "offset": 80,
+      "length": 4,
+      "type": "float32_le",
+      "label": "MPPT2 バス電圧",
+      "unit": "V"
+    },
+    {
+      "name": "mppt_vbus_3",
+      "offset": 84,
+      "length": 4,
+      "type": "float32_le",
+      "label": "MPPT3 バス電圧",
+      "unit": "V"
+    },
+    {
+      "name": "mppt_vbus_4",
+      "offset": 88,
+      "length": 4,
+      "type": "float32_le",
+      "label": "MPPT4 バス電圧",
+      "unit": "V"
+    },
+    {
+      "name": "mppt_vbus_5",
+      "offset": 92,
+      "length": 4,
+      "type": "float32_le",
+      "label": "MPPT5 バス電圧",
+      "unit": "V"
+    },
+    {
+      "name": "mppt_vbus_6",
+      "offset": 96,
+      "length": 4,
+      "type": "float32_le",
+      "label": "MPPT6 バス電圧",
+      "unit": "V"
+    },
+    {
+      "name": "batt_res_1",
+      "offset": 100,
+      "length": 1,
+      "type": "uint8",
+      "label": "バッテリー CSPヘッダー1（フラグ）"
+    },
+    {
+      "name": "batt_res_2",
+      "offset": 101,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "バッテリー CSPヘッダー2"
+    },
+    {
+      "name": "batt_res_3",
+      "offset": 103,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "バッテリー CSPヘッダー3"
+    },
+    {
+      "name": "batt_heater_cnt",
+      "offset": 105,
+      "length": 2,
+      "type": "uint16_le",
+      "label": "バッテリー ヒーター動作回数"
+    },
+    {
+      "name": "batt_temp_0",
+      "offset": 107,
+      "length": 4,
+      "type": "float32_le",
+      "label": "バッテリー温度0",
+      "unit": "℃"
+    },
+    {
+      "name": "batt_temp_1",
+      "offset": 111,
+      "length": 4,
+      "type": "float32_le",
+      "label": "バッテリー温度1",
+      "unit": "℃"
+    },
+    {
+      "name": "batt_temp_2",
+      "offset": 115,
+      "length": 4,
+      "type": "float32_le",
+      "label": "バッテリー温度2",
+      "unit": "℃"
+    },
+    {
+      "name": "batt_temp_3",
+      "offset": 119,
+      "length": 4,
+      "type": "float32_le",
+      "label": "バッテリー温度3",
+      "unit": "℃"
+    },
+    {
+      "name": "batt_vout",
+      "offset": 123,
+      "length": 4,
+      "type": "float32_le",
+      "label": "バッテリー 出力電圧",
+      "unit": "V"
+    },
+    {
+      "name": "batt_iout",
+      "offset": 127,
+      "length": 4,
+      "type": "float32_le",
+      "label": "バッテリー 出力電流",
+      "unit": "A"
+    },
+    {
+      "name": "batt_vin",
+      "offset": 131,
+      "length": 4,
+      "type": "float32_le",
+      "label": "バッテリー 入力電圧",
+      "unit": "V"
+    },
+    {
+      "name": "batt_iin",
+      "offset": 135,
+      "length": 4,
+      "type": "float32_le",
+      "label": "バッテリー 入力電流",
+      "unit": "A"
+    },
+    {
+      "name": "ant_isis",
+      "offset": 139,
+      "length": 1,
+      "type": "uint8",
+      "label": "アンテナ状態（ISIS）"
+    },
+    {
+      "name": "ant_lora",
+      "offset": 140,
+      "length": 1,
+      "type": "uint8",
+      "label": "アンテナ状態（LoRa）"
+    },
+    {
+      "name": "obc_res_1",
+      "offset": 141,
+      "length": 1,
+      "type": "uint8",
+      "label": "OBC CSPヘッダー1（フラグ）"
+    },
+    {
+      "name": "obc_res_2",
+      "offset": 142,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "OBC CSPヘッダー2"
+    },
+    {
+      "name": "obc_res_3",
+      "offset": 144,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "OBC CSPヘッダー3"
+    },
+    {
+      "name": "ident",
+      "offset": 146,
+      "length": 3,
+      "type": "ascii",
+      "label": "識別子"
+    }
+  ]
+}

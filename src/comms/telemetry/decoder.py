@@ -135,10 +135,11 @@ _STRUCT_MAP: dict[str, str] = {
     "uint32_be": ">I",
     "uint32_le": "<I",
     "float32_be": ">f",
+    "float32_le": "<f",
     "float64_be": ">d",
 }
 
-_FLOAT_TYPES = {"float32_be", "float64_be"}
+_FLOAT_TYPES = {"float32_be", "float32_le", "float64_be"}
 
 
 def _decode_field(payload: bytes, field_def: dict[str, Any]) -> TelemetryField | None:
@@ -304,6 +305,23 @@ def get_telemetry_id_defs(norad: int | None) -> dict[str, Any] | None:
     return defs or None
 
 
+def _payload_matches(match: dict[str, Any] | None, payload: bytes) -> bool:
+    """Whether *payload* is the frame type a flat ``fields`` list describes.
+
+    A satellite with several frame types and no telemetry-ID byte can tell the
+    beacon by a fixed byte pattern: ``"match": {"offset": 0, "hex": "0000"}``.
+    No ``match`` means every payload is decoded with the list.
+    """
+    if not match:
+        return True
+    try:
+        pattern = bytes.fromhex(str(match["hex"]))
+        offset = int(match["offset"])
+    except (KeyError, ValueError, TypeError):
+        return True
+    return payload[offset : offset + len(pattern)] == pattern
+
+
 def decode_telemetry(
     callsign: str,
     payload: bytes,
@@ -316,6 +334,8 @@ def decode_telemetry(
 
     - a single flat ``fields`` list (byte offset/length, the original
       schema — one structure per satellite);
+    - an optional ``match`` ({"offset", "hex"}) restricting that flat list to
+      payloads starting with a fixed byte pattern (e.g. KNACKSAT-2's beacon);
     - a ``telemetry_ids`` mapping keyed by a numeric telemetry-ID byte
       (``payload[2]`` in this project's common FM header layout), for
       satellites whose downlink carries several distinct *binary*
@@ -358,7 +378,7 @@ def decode_telemetry(
                 result = _decode_field(payload, fd)
                 if result is not None:
                     decoded_fields.append(result)
-    elif fmt and fmt.get("fields"):
+    elif fmt and fmt.get("fields") and _payload_matches(fmt.get("match"), payload):
         for fd in fmt["fields"]:
             result = _decode_field(payload, fd)
             if result is not None:
