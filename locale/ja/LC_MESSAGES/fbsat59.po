@@ -4281,6 +4281,28 @@ msgstr "TLEの検証に失敗しました。形式を確認してください。
 msgid "Offset:"
 msgstr "オフセット:"
 
+#: src/ui/radio_control_widget.py
+msgid "DL"
+msgstr "DL"
+
+#: src/ui/radio_control_widget.py
+msgid "UL"
+msgstr "UL"
+
+#: src/ui/radio_control_widget.py
+msgid ""
+"Persistent per-transponder TX (uplink) offset, saved with this transponder. "
+"Applied to this transponder's uplink center frequency before Doppler "
+"correction (e.g. when the commonly used uplink frequency differs from the "
+"catalog value), and carried over to every future pass and Tune (T). Positive "
+"shifts the corrected frequency higher."
+msgstr ""
+"このトランスポンダーに保存される、送信（アップリンク）側の永続的な補正値で"
+"す。ドップラー補正を行う前に、このトランスポンダーのアップリンク中心周波数へ"
+"適用されます（一般に使われているアップリンク周波数がカタログ値と異なる場合な"
+"ど）。設定は今後のすべてのパスとTune（T）に引き継がれます。正の値にすると補正"
+"後の周波数はより高い方向にシフトします。"
+
 #: src/ui/radio_control_widget.py:203
 msgid " Hz"
 msgstr " Hz"

@@ -901,7 +901,7 @@ NTPサーバーに一切到達できなかった場合（オフセット自体�
 
 | 衛星 | Rx (DL) | Tx (UL) | Mode（DB `mode`列） | invert | 出典 |
 |------|---------|---------|------|------|------|
-| RS-44 (NORAD 44909) | 435.612 MHz | 145.9906 MHz（2026-09-30、145.993から変更） | USB-D（invert=true→UL側はLSB-D） | true | JH1NHK→Rymansat Satellite Tracker |
+| RS-44 (NORAD 44909) | 435.612 MHz | 145.993 MHz（09-30に145.9906へ変更→10-01に145.993へ戻し、代わりにUL Offset −2400Hzで運用） | USB-D（invert=true→UL側はLSB-D） | true | JH1NHK→Rymansat Satellite Tracker |
 | JO-97 (NORAD 43803) | 145.857 MHz | 435.118 MHz | USB-D（invert=true→UL側はLSB-D） | **true**（2026-08-02修正） | JH1NHK |
 | MO-122 (NORAD 60209) | 435.812 MHz | 145.938 MHz | USB-D | false | JH1NHK |
 
@@ -917,7 +917,7 @@ description文字列を見るため無関係）。`mode` 列だけ実際のリ�
 「(U/V transponder)」から「(U/V inverting transponder)」に変更。RS-44と同じ反転パターン
 （DL=USB-D固定・UL側は`_MODE_INVERT`のUSB-D⇔LSB-D変換で自動的にLSB-Dになる）に統一された。
 
-**RS-44 のアップリンク周波数を145.993→145.9906に変更（2026-09-30）**: 実パス試験（09-30、
+**RS-44 のアップリンク周波数を145.993→145.9906に変更（2026-09-30。2026-10-01にカタログ値は145.993へ戻し、UL Offset −2400Hzで同じ実効周波数にする方式へ変更。[docs/doppler-tuning.md](doppler-tuning.md)参照）**: 実パス試験（09-30、
 [docs/hamlib.md](hamlib.md)参照）でQSOが一件も成立せず、ユーザーからモード（USB/LSB）の
 疑いが提起された。調査の結果モード自体（UL=LSB-D）はSATNOGS公式APIの`uplink_mode: LSB`
 （`db.satnogs.org/api/transmitters/?satellite__norad_cat_id=44909`で直接確認）と一致しており

@@ -1089,6 +1089,7 @@ class MainWindow(QMainWindow):
         self._radio_control.tune_requested.connect(self._on_tune_requested)
         self._radio_control.lock_changed.connect(self._on_lock_changed)
         self._radio_control.rx_offset_changed.connect(self._on_rx_offset_changed)
+        self._radio_control.ul_offset_changed.connect(self._on_ul_offset_changed)
         self._rot_pos_updated.connect(self._on_rotator_pos_updated)
         self._rot_slew_speed_measured.connect(self._save_rotator_slew_speed)
         self._radio_control.ctcss_send_requested.connect(self._on_ctcss_send)
@@ -4214,6 +4215,12 @@ class MainWindow(QMainWindow):
         rx_offset_hz = float(self._current_transmitter.get("rx_offset_hz") or 0.0)
         if dl_nom is not None and rx_offset_hz != 0.0:
             dl_nom = float(dl_nom) + rx_offset_hz
+        # Same idea for the persistent UL offset (e.g. RS-44's FT4 uplink
+        # convention differing from the catalog value): folded into the
+        # nominal UL before Doppler correction.
+        ul_offset_hz = float(self._current_transmitter.get("ul_offset_hz") or 0.0)
+        if ul_nom is not None and ul_offset_hz != 0.0:
+            ul_nom = float(ul_nom) + ul_offset_hz
         dl_corr, dl_shift = (
             DopplerCalculator.correct_downlink(float(dl_nom), rr)
             if dl_nom is not None
@@ -4729,6 +4736,7 @@ class MainWindow(QMainWindow):
         )
         if ul_nom is None:
             return None
+        ul_nom = float(ul_nom) + float(self._current_transmitter.get("ul_offset_hz") or 0.0)
         ul_corr, _ul_shift = DopplerCalculator.correct_uplink(float(ul_nom), obs.range_rate_km_s)
         if ul_corr is None:
             return None
@@ -5621,7 +5629,8 @@ class MainWindow(QMainWindow):
             SELECT uuid, description, type,
                    downlink_low, downlink_high, uplink_low, uplink_high,
                    mode, ctcss_tone, invert,
-                   alive, satnogs_status, norad_cat_id, source, rx_offset_hz
+                   alive, satnogs_status, norad_cat_id, source, rx_offset_hz,
+                   ul_offset_hz
             FROM transmitters
             WHERE norad_cat_id = ?
             ORDER BY
@@ -5714,6 +5723,17 @@ class MainWindow(QMainWindow):
             return
         self._current_transmitter["rx_offset_hz"] = value
         self._transmitter_manager.update_transmitter(xpdr_uuid, rx_offset_hz=value)
+
+    def _on_ul_offset_changed(self, value: float) -> None:
+        """Persist the UL Offset spinbox's new value for the current
+        transponder. UL twin of _on_rx_offset_changed()."""
+        if self._current_transmitter is None:
+            return
+        xpdr_uuid = self._current_transmitter.get("uuid")
+        if not xpdr_uuid:
+            return
+        self._current_transmitter["ul_offset_hz"] = value
+        self._transmitter_manager.update_transmitter(xpdr_uuid, ul_offset_hz=value)
 
     @staticmethod
     def _rig_role(rig: RigController) -> str:
@@ -8088,10 +8108,11 @@ class MainWindow(QMainWindow):
         elif dl_low is not None:
             self._tune_dl_override = float(dl_low) + rx_offset_hz
 
+        ul_offset_hz = float(self._current_transmitter.get("ul_offset_hz") or 0.0)
         if ul_low is not None and ul_high is not None:
-            self._tune_ul_override = (float(ul_low) + float(ul_high)) / 2
+            self._tune_ul_override = (float(ul_low) + float(ul_high)) / 2 + ul_offset_hz
         elif ul_low is not None:
-            self._tune_ul_override = float(ul_low)
+            self._tune_ul_override = float(ul_low) + ul_offset_hz
 
     def _load_cycle_setting(self) -> None:
         """Load rig_cycle_ms from the DB and apply it to DopplerWorker and the UI.

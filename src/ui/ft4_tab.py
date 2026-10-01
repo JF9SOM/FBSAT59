@@ -666,7 +666,7 @@ class Ft4Tab(QWidget):
         )
         _ft4_help.setToolTip(
             "FT4 is available on:\n"
-            "  • RS-44   (NORAD 44909)  DL 435.612 MHz / UL 145.9906 MHz\n"
+            "  • RS-44   (NORAD 44909)  DL 435.612 MHz / UL 145.993 MHz\n"
             "  • JO-97   (NORAD 43803)  DL 145.857 MHz / UL 435.118 MHz\n"
             "  • MO-122  (NORAD 60209)  DL 435.812 MHz / UL 145.938 MHz\n"
             "  • AO-73   (NORAD 39444)  DL 145.952 MHz / UL 435.148 MHz\n\n"

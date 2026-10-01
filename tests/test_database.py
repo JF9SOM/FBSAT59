@@ -136,6 +136,32 @@ class TestTransmitterCRUD:
         ).fetchone()
         assert row["rx_offset_hz"] == -1240.0
 
+    def test_ul_offset_hz_defaults_to_zero_and_persists(self, db_conn: sqlite3.Connection) -> None:
+        """UL twin of rx_offset_hz: defaults to 0 and survives an UPDATE."""
+        db_conn.execute(
+            "INSERT INTO satellites (norad_cat_id, name) VALUES (?, ?)",
+            (44909, "RS-44"),
+        )
+        db_conn.execute(
+            """INSERT INTO transmitters
+               (uuid, norad_cat_id, description, uplink_low, mode, source)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            ("ul-offset", 44909, "RS-44 FT4", 145993000, "USB-D", "manual"),
+        )
+        db_conn.commit()
+        row = db_conn.execute(
+            "SELECT ul_offset_hz FROM transmitters WHERE uuid = 'ul-offset'"
+        ).fetchone()
+        assert row["ul_offset_hz"] == 0
+        db_conn.execute(
+            "UPDATE transmitters SET ul_offset_hz = ? WHERE uuid = ?", (-2400.0, "ul-offset")
+        )
+        db_conn.commit()
+        row = db_conn.execute(
+            "SELECT ul_offset_hz FROM transmitters WHERE uuid = 'ul-offset'"
+        ).fetchone()
+        assert row["ul_offset_hz"] == -2400.0
+
     def test_cascade_delete(self, db_conn: sqlite3.Connection) -> None:
         db_conn.execute(
             "INSERT INTO satellites (norad_cat_id, name) VALUES (?, ?)",

@@ -93,6 +93,8 @@ class RadioControlWidget(QWidget):
     # Emitted when the user edits the persistent per-transponder RX offset
     # spinbox (GitHub Issue #18) — not emitted for programmatic display updates.
     rx_offset_changed: Signal = Signal(float)
+    # UL twin of rx_offset_changed (persistent per-transponder uplink offset).
+    ul_offset_changed: Signal = Signal(float)
     rig_connected: Signal = Signal()
     rig_disconnected: Signal = Signal()
     rig2_connected: Signal = Signal()
@@ -205,6 +207,7 @@ class RadioControlWidget(QWidget):
         name_norad_row.addWidget(self._norad_label)
         name_norad_row.addStretch()
         name_norad_row.addWidget(QLabel(_("Offset:")))
+        name_norad_row.addWidget(QLabel(_("DL")))
         self._offset_spin = QSpinBox()
         self._offset_spin.setRange(-_RX_OFFSET_RANGE_HZ, _RX_OFFSET_RANGE_HZ)
         self._offset_spin.setSingleStep(_RX_OFFSET_STEP_HZ)
@@ -223,6 +226,24 @@ class RadioControlWidget(QWidget):
         self._offset_spin.setEnabled(False)
         self._offset_spin.valueChanged.connect(self._on_offset_spin_changed)
         name_norad_row.addWidget(self._offset_spin)
+        name_norad_row.addWidget(QLabel(_("UL")))
+        self._ul_offset_spin = QSpinBox()
+        self._ul_offset_spin.setRange(-_RX_OFFSET_RANGE_HZ, _RX_OFFSET_RANGE_HZ)
+        self._ul_offset_spin.setSingleStep(_RX_OFFSET_STEP_HZ)
+        self._ul_offset_spin.setSuffix(_(" Hz"))
+        self._ul_offset_spin.setToolTip(
+            _(
+                "Persistent per-transponder TX (uplink) offset, saved with this "
+                "transponder. Applied to this transponder's uplink center frequency "
+                "before Doppler correction (e.g. when the commonly used uplink "
+                "frequency differs from the catalog value), and carried over to "
+                "every future pass and Tune (T). Positive shifts the corrected "
+                "frequency higher."
+            )
+        )
+        self._ul_offset_spin.setEnabled(False)
+        self._ul_offset_spin.valueChanged.connect(self._on_ul_offset_spin_changed)
+        name_norad_row.addWidget(self._ul_offset_spin)
         sat_form.addRow(_("Name:"), name_norad_row)
 
         self._xpdr_combo = QComboBox()
@@ -936,9 +957,16 @@ class RadioControlWidget(QWidget):
         self._offset_spin.setValue(int(xpdr.get("rx_offset_hz") or 0) if xpdr else 0)
         self._offset_spin.blockSignals(False)
         self._offset_spin.setEnabled(xpdr is not None)
+        self._ul_offset_spin.blockSignals(True)
+        self._ul_offset_spin.setValue(int(xpdr.get("ul_offset_hz") or 0) if xpdr else 0)
+        self._ul_offset_spin.blockSignals(False)
+        self._ul_offset_spin.setEnabled(xpdr is not None)
 
     def _on_offset_spin_changed(self, value: int) -> None:
         self.rx_offset_changed.emit(float(value))
+
+    def _on_ul_offset_spin_changed(self, value: int) -> None:
+        self.ul_offset_changed.emit(float(value))
 
     def _check_comms_auto_open(self, xpdr: Any) -> None:
         """Store the comms tab to open once the rig connects (not immediately).

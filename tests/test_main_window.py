@@ -2095,6 +2095,58 @@ class TestTuneLockButtons:
         assert w._tune_dl_override == (145_800_000 + 145_950_000) / 2 + 500.0
         assert w._tune_ul_override == (435_000_000 + 435_150_000) / 2
 
+    def test_tune_applies_ul_offset(self, qtbot, db) -> None:
+        """T lands UL on the offset-corrected centre, like DL."""
+        from data.tle_manager import TLEManager
+        from ui.main_window import MainWindow
+
+        w = MainWindow(conn=db, tle_manager=TLEManager(db))
+        qtbot.addWidget(w)
+        w._current_transmitter = {
+            "downlink_low": 435_612_000,
+            "downlink_high": None,
+            "uplink_low": 145_993_000,
+            "uplink_high": None,
+            "invert": True,
+            "ul_offset_hz": -2400.0,
+        }
+        w._on_tune_requested()
+        assert w._tune_ul_override == 145_993_000 - 2400.0
+        assert w._tune_dl_override == 435_612_000
+
+    def test_on_ul_offset_changed_updates_dict_and_db(self, qtbot, db) -> None:
+        from data.tle_manager import TLEManager
+        from ui.main_window import MainWindow
+
+        db.execute("INSERT INTO satellites (norad_cat_id, name) VALUES (44909, 'RS-44')")
+        db.execute(
+            "INSERT INTO transmitters (uuid, norad_cat_id, description, uplink_low, source) "
+            "VALUES ('ul-x', 44909, 'FT4', 145993000, 'manual')"
+        )
+        db.commit()
+        w = MainWindow(conn=db, tle_manager=TLEManager(db))
+        qtbot.addWidget(w)
+        w._current_transmitter = {"uuid": "ul-x", "uplink_low": 145_993_000}
+        w._on_ul_offset_changed(-2400.0)
+        assert w._current_transmitter["ul_offset_hz"] == -2400.0
+        row = db.execute("SELECT ul_offset_hz FROM transmitters WHERE uuid='ul-x'").fetchone()
+        assert row[0] == -2400.0
+
+    def test_ul_offset_spin_syncs_and_emits(self, qtbot) -> None:
+        from ui.radio_control_widget import RadioControlWidget
+
+        w = RadioControlWidget()
+        qtbot.addWidget(w)
+        assert w._ul_offset_spin.isEnabled() is False
+        received: list[float] = []
+        w.ul_offset_changed.connect(received.append)
+        w.set_transmitters([{"description": "FT4", "rx_offset_hz": 0.0, "ul_offset_hz": -2400.0}])
+        assert w._ul_offset_spin.isEnabled() is True
+        assert w._ul_offset_spin.value() == -2400
+        assert received == []  # programmatic sync does not emit
+        w._ul_offset_spin.setValue(-2300)
+        assert received == [-2300.0]
+
     def test_lock_flag_updated(self, qtbot, db) -> None:
         """Lock ボタントグルで _trsp_lock フラグが更新される。"""
         from data.tle_manager import TLEManager

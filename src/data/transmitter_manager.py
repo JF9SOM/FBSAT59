@@ -354,6 +354,7 @@ class TransmitterManager:
             "notes",
             "manual_override",
             "rx_offset_hz",
+            "ul_offset_hz",
         }
         updates = {k: v for k, v in fields.items() if k in allowed}
         if not updates:

@@ -22,7 +22,7 @@ Lock（dial feedback）はセッション内のみの手動補正で、衛星切
 1. **保存単位はトランスポンダー（`transmitters`行）ごと**（衛星＝NORAD IDごとではない）
 2. **Tune（T）ボタン押下時も保持する**（リセットしない）— T一発でオフセット込みの正しい
    中心周波数へ戻れることが、Issue #18の目的（パス開始時の再チューニング省略）に直結するため
-3. **DLのみ（v1スコープ）**。ULは引き続きLock等で運用者が都度合わせる
+3. **DLのみ（v1スコープ）**。ULは引き続きLock等で運用者が都度合わせる（→ 2026-10-01 に UL オフセットを追加、下記参照）
 
 ### UI（`src/ui/radio_control_widget.py`）
 
@@ -76,6 +76,29 @@ Lock（dial feedback）はセッション内のみの手動補正で、衛星切
 （`TestTuneLockButtons`にOffsetスピンボックスのUI同期・シグナル発火テスト、
 `TestLockDialFeedback`に`_doppler_cycle()`でのオフセット折り込み・Lock offsetとの合成・
 `_on_tune_requested()`でのオフセット保持・`_on_rx_offset_changed()`の永続化テストを追加）。
+
+### UL オフセットの追加（2026-10-01）— Offset 欄を DL / UL の2つに分割
+
+RS-44 の FT4 アップリンクを 145.993→145.9906 MHz に変更した（09-30）が、周波数をカタログ値から
+書き換えるより、コミュニティ DB は 145.993 のまま保ち**UL 側にも永続オフセットを持たせる**方が
+運用しやすいため、v1 の「DL のみ」を拡張した。
+
+- UI: `Offset: DL [ ] Hz  UL [ ] Hz`（`_offset_spin` = DL、`_ul_offset_spin` = UL。範囲±10000Hz・
+  ステップ10Hz）。シグナルは `rx_offset_changed`（DL、従来通り）と `ul_offset_changed`（UL、新規）
+- DB: `transmitters.ul_offset_hz REAL DEFAULT 0`（既存の `rx_offset_hz` は**そのまま DL 用**。
+  リネーム・データ移行なし）。`needs_tx_migration` の再作成パスにも列追加済み。
+  `update_transmitter()` の `allowed` に `"ul_offset_hz"` を追加
+- 適用箇所: `_doppler_cycle()`（`ul_nom += ul_offset_hz`、ドップラー補正**前**）・
+  `_ul_corr_at()`（FT4 TX ドップラー先読み）・`_on_tune_requested()`（`_tune_ul_override` に加算）。
+  **EME（`_update_moon()`）は対象外**（DB 行を持たず、DL と同様に保存もされない）
+- `_refresh_radio_control()` の生 SQL の SELECT 列リストにも `ul_offset_hz` を追加
+  （`rx_offset_hz` で過去に起きた「切り替えて戻ると消える」バグの再発防止）
+- Lock の dial-feedback オフセット（DL/UL 両方に同量が乗る一時値）とは独立
+- コミュニティ同期（`load_community_transmitters`）の UPDATE は列を明示指定しているため
+  `ul_offset_hz` を上書きしない
+- RS-44 FT4（`community-rs44-ft4`）: カタログ UL を 145.993 MHz に戻し、運用者の DB で
+  `ul_offset_hz = -2400`（実効 145.9906 MHz）を設定。**出荷データ側にはオフセットを持たせて
+  いない**（他ユーザーの DB は 145.993 / オフセット0 になる）
 
 ### バグ修正 — 衛星を切り替えて戻るとOffsetが消える（v0.3.7実運用で発覚・修正済み、2026-08-12）
 
