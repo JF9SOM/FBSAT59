@@ -320,6 +320,8 @@ class TelemetryTab(QWidget):
 
         # Selected satellite from main satellite list (set_satellite from main_window)
         self._selected_norad: int | None = None
+        # The satellite the Received Frames table currently shows (None: not chosen yet).
+        self._table_norad: int | None = None
         self._selected_name: str = ""
 
         # CW TLM mode: the CW Decoder tab feeding this one (attach_cw_tab()) and the
@@ -652,6 +654,13 @@ class TelemetryTab(QWidget):
         combo (if supported) and rebuilding the "Decoded Fields" sub-tabs
         for the new satellite's telemetry_ids format, if it has one.
         """
+        # The Received Frames table belongs to one satellite: showing another one starts it
+        # afresh, so frames of two satellites are never listed together. The frames are all
+        # in the log; "Load saved" brings them back.
+        if norad and norad != self._table_norad:
+            if self._table_norad is not None and self._table.rowCount():
+                self._on_clear()
+            self._table_norad = norad
         self._selected_norad = norad
         self._selected_name = name
         self._rebuild_decode_tabs(norad)

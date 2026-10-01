@@ -1021,3 +1021,33 @@ def test_load_saved_cw_frames_in_cw_mode(qtbot: QtBot, conn: sqlite3.Connection)
     assert tab._load_saved_frames(68796, cw=True) == 0  # not twice
     first = tab._decode_field_rows[key][names[0]]
     assert tab._decode_tables[key].item(first, 1).text() != "—"
+
+
+def test_table_is_cleared_when_another_satellite_is_selected(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab.set_satellite(67683, "KNACKSAT-2")
+    tab._append_row(callsign="HS0K", sat_name="KNACKSAT-2", data="00 01", norad=67683)
+    tab._append_row(callsign="HS0K", sat_name="KNACKSAT-2", data="00 02", norad=67683)
+    assert tab._table.rowCount() == 2
+
+    tab.set_satellite(67683, "KNACKSAT-2")  # same satellite again: kept
+    assert tab._table.rowCount() == 2
+    tab.set_satellite(None, "")  # nothing selected: kept
+    assert tab._table.rowCount() == 2
+
+    tab.set_satellite(68795, "OrigamiSat-2")  # another satellite: starts afresh
+    assert tab._table.rowCount() == 0
+    assert "0" in tab._lbl_count.text()
+
+
+def test_first_selection_keeps_frames_already_received(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab._append_row(callsign="HS0K", sat_name="KNACKSAT-2", data="00 01", norad=67683)
+    tab.set_satellite(67683, "KNACKSAT-2")  # nothing was chosen before: nothing to discard
+    assert tab._table.rowCount() == 1
