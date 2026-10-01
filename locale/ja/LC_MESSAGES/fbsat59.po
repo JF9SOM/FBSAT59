@@ -6883,3 +6883,17 @@ msgstr ""
 "AIモデル: DeepCWニューラルネットワーク（モデルのインストールが必要）。\n"
 "古典的: 搬送波のON/OFFのタイミングを読みます。モデルは不要で、\n"
 "強くきれいな信号では正確ですが、弱い信号には向きません。"
+
+#: src/ui/cw_tab.py
+msgid "Majority vote"
+msgstr "多数決"
+
+#: src/ui/cw_tab.py
+msgid ""
+"Decide each character of a telemetry frame from all the overlapping\n"
+"decodes of it, not the first one (fewer wrong characters, but frames\n"
+"appear about 15 s later). The text shown in this tab is not affected."
+msgstr ""
+"テレメトリーフレームの各文字を、最初の1回ではなく、重なる全てのデコード結果から\n"
+"決めます（誤読が減りますが、フレームの表示が約15秒遅れます）。\n"
+"このタブに表示されるテキストには影響しません。"

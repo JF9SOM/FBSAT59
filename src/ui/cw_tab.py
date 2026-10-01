@@ -27,6 +27,7 @@ from numpy.typing import NDArray
 from PySide6.QtCore import Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QFont, QTextCursor
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QGroupBox,
     QHBoxLayout,
@@ -51,6 +52,7 @@ from comms.cw.transcript import (
     reconcile_pending,
     should_defer_trailing_s,
 )
+from comms.cw.voting import WindowVoter
 from comms.signal_clock import signal_time
 from i18n import _
 
@@ -72,6 +74,7 @@ _PENDING_MARGIN_S = _DECODE_INTERVAL_MS / 1000.0
 _METHOD_AI = "ai"
 _METHOD_CLASSIC = "classic"
 _METHOD_KEY = "cw_decoder_method"
+_VOTE_KEY = "cw_vote"
 # A real pause between transmissions produces no decoded characters at all
 # (see comms.cw.transcript.insert_gap_markers) — bridge it with an explicit
 # separator instead of running unrelated messages together.
@@ -165,6 +168,9 @@ class CwTab(QWidget):
         # Block extraction for the Telemetry tab's CW TLM mode (see frame_block_ready).
         self._block_extractor = CwBlockExtractor()
         self._block_up_to_abs = 0.0
+        # Majority vote over the overlapping windows (see comms.cw.voting).
+        self._voter = WindowVoter()
+        self._vote_map: tuple[datetime, float] | None = None
         # Signal time and dropped-sample count captured when a decode snapshot is
         # taken; the decode finishes about a second later, by which time the live
         # buffer has moved on.
@@ -231,6 +237,18 @@ class CwTab(QWidget):
         self._method_combo.currentIndexChanged.connect(self._on_method_changed)
         cl.addWidget(self._method_combo)
 
+        self._vote_check = QCheckBox(_("Majority vote"))
+        self._vote_check.setChecked(True)
+        self._vote_check.setToolTip(
+            _(
+                "Decide each character of a telemetry frame from all the overlapping\n"
+                "decodes of it, not the first one (fewer wrong characters, but frames\n"
+                "appear about 15 s later). The text shown in this tab is not affected."
+            )
+        )
+        self._vote_check.toggled.connect(self._on_vote_toggled)
+        cl.addWidget(self._vote_check)
+
         cl.addStretch()
 
         self._start_btn = QPushButton(_("▶ Start"))
@@ -294,6 +312,33 @@ class CwTab(QWidget):
             self._method_combo.blockSignals(True)
             self._method_combo.setCurrentIndex(index)
             self._method_combo.blockSignals(False)
+        try:
+            vote = self._conn.execute(
+                "SELECT value FROM app_settings WHERE key = ?", (_VOTE_KEY,)
+            ).fetchone()
+        except Exception:  # noqa: BLE001
+            return
+        if vote and str(vote[0]) == "0":
+            self._vote_check.blockSignals(True)
+            self._vote_check.setChecked(False)
+            self._vote_check.blockSignals(False)
+
+    @Slot(bool)
+    def _on_vote_toggled(self, _checked: bool) -> None:
+        # Switching mid-decode would mix the two ways of confirming characters.
+        self._voter.reset()
+        self._vote_map = None
+        self._block_up_to_abs = 0.0
+        self._block_extractor.reset()
+        try:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value, updated_at)"
+                " VALUES (?, ?, CURRENT_TIMESTAMP)",
+                (_VOTE_KEY, "1" if self._vote_check.isChecked() else "0"),
+            )
+            self._conn.commit()
+        except Exception:  # noqa: BLE001
+            logger.exception("CW Decoder: could not save the majority-vote setting")
 
     @Slot()
     def _on_method_changed(self) -> None:
@@ -356,6 +401,8 @@ class CwTab(QWidget):
         self._last_char_abs_time = None
         self._block_extractor.reset()
         self._block_up_to_abs = 0.0
+        self._voter.reset()
+        self._vote_map = None
         self._start_btn.setText(_("■ Stop"))
 
         if self._rb_sdr.isChecked():
@@ -374,6 +421,7 @@ class CwTab(QWidget):
 
     def _stop(self) -> None:
         self._running = False
+        self._flush_votes()
         for block in self._block_extractor.flush():
             self.frame_block_ready.emit(block.text, block.start_utc, block.end_utc)
         self._decode_timer.stop()
@@ -404,6 +452,8 @@ class CwTab(QWidget):
         self._last_char_abs_time = None
         self._block_extractor.reset()
         self._block_up_to_abs = 0.0
+        self._voter.reset()
+        self._vote_map = None
 
     # ------------------------------------------------------------------ #
     # Public control (used by the Telemetry tab's CW TLM mode)
@@ -711,28 +761,41 @@ class CwTab(QWidget):
         return signal_time(self._sdr_pipeline)[1]
 
     def _feed_block_extractor(self, result: DecodeResult) -> None:
-        """Hand the characters this decode newly *confirmed* to the block extractor.
+        """Hand the characters this decode newly *finalised* to the block extractor.
 
-        "Confirmed" follows the same rule as the transcript: a character is
-        final once it lies more than _PENDING_MARGIN_S before the window's
-        trailing edge. Each character is passed on exactly once (windows
-        overlap), with its audio time and its UTC time.
+        With majority voting (default) a character is decided from all the
+        overlapping windows that read it and released once no later window can
+        cover it; without, it is final once it lies more than _PENDING_MARGIN_S
+        before the window's trailing edge and the first reading is used. Either
+        way each character is passed on exactly once, with its audio time and its
+        UTC time.
         """
         snapshot = self._snapshot_time or datetime.now(UTC)
         window_start_abs = self._snapshot_dropped / self._rx_sample_rate
-        cutoff_rel = result.window_duration - _PENDING_MARGIN_S
-        fresh = [
-            (
-                ch,
-                window_start_abs + t,
-                snapshot + timedelta(seconds=t - result.window_duration),
+        if self._vote_check.isChecked():
+            window_end = window_start_abs + result.window_duration
+            self._vote_map = (snapshot, window_end)
+            chars, confirmed_until = self._voter.add_window(
+                window_start_abs, result.window_duration, result.offsets
             )
-            for ch, t in result.offsets
-            if t <= cutoff_rel and window_start_abs + t > self._block_up_to_abs
-        ]
-        confirmed_until = window_start_abs + cutoff_rel
-        self._block_up_to_abs = max(self._block_up_to_abs, confirmed_until)
-        for block in self._block_extractor.feed(fresh, confirmed_until):
+            fresh = [(ch, t, snapshot + timedelta(seconds=t - window_end)) for ch, t in chars]
+        else:
+            cutoff_rel = result.window_duration - _PENDING_MARGIN_S
+            fresh = [
+                (
+                    ch,
+                    window_start_abs + t,
+                    snapshot + timedelta(seconds=t - result.window_duration),
+                )
+                for ch, t in result.offsets
+                if t <= cutoff_rel and window_start_abs + t > self._block_up_to_abs
+            ]
+            confirmed_until = window_start_abs + cutoff_rel
+            self._block_up_to_abs = max(self._block_up_to_abs, confirmed_until)
+        self._emit_blocks(self._block_extractor.feed(fresh, confirmed_until), snapshot)
+
+    def _emit_blocks(self, blocks: list[Any], snapshot: datetime) -> None:
+        for block in blocks:
             logger.info(
                 "CW block finished (%d chars, %.1fs-%.1fs UTC): %r",
                 len(block.text),
@@ -741,6 +804,16 @@ class CwTab(QWidget):
                 block.text,
             )
             self.frame_block_ready.emit(block.text, block.start_utc, block.end_utc)
+
+    def _flush_votes(self) -> None:
+        """Release the characters the voter still holds (the decoder is stopping)."""
+        if self._vote_map is None:
+            return
+        snapshot, window_end = self._vote_map
+        chars, confirmed_until = self._voter.flush()
+        fresh = [(ch, t, snapshot + timedelta(seconds=t - window_end)) for ch, t in chars]
+        self._emit_blocks(self._block_extractor.feed(fresh, confirmed_until), snapshot)
+        self._vote_map = None
 
     @staticmethod
     def _clean_join(prefix: str, addition: str) -> str:

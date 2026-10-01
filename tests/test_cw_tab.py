@@ -265,8 +265,13 @@ class TestFrameBlocks:
 
     SNAPSHOT = datetime(2026, 9, 20, 7, 0, 20, tzinfo=UTC)
 
-    def _tab(self, qtbot: Any) -> tuple[CwTab, list[tuple[str, datetime, datetime]]]:
+    def _tab(
+        self, qtbot: Any, vote: bool = False
+    ) -> tuple[CwTab, list[tuple[str, datetime, datetime]]]:
         tab = _make_tab(qtbot)
+        # these tests cover the original way of confirming a character (first reading);
+        # the majority vote has its own tests below
+        tab._vote_check.setChecked(vote)
         got: list[tuple[str, datetime, datetime]] = []
         tab.frame_block_ready.connect(lambda t, a, b: got.append((t, a, b)))
         tab._snapshot_time = self.SNAPSHOT
@@ -280,6 +285,51 @@ class TestFrameBlocks:
             window_duration=20.0,
             frame_energy=_EMPTY_ENERGY,
         )
+
+    def test_majority_vote_announces_a_block_once_no_later_window_covers_it(
+        self, qtbot: Any
+    ) -> None:
+        tab, got = self._tab(qtbot, vote=True)
+        text = "2FFE8594EB880124"
+
+        def window(start: float, first: float) -> None:
+            tab._snapshot_time = self.SNAPSHOT + timedelta(seconds=start)
+            tab._snapshot_dropped = int(start * tab._rx_sample_rate)
+            offsets = [(c, first + i * 0.4 - start) for i, c in enumerate(text)]
+            offsets = [(c, t) for c, t in offsets if 0.0 <= t <= 20.0]
+            tab._reconcile_decode(
+                DecodeResult(offsets=offsets, window_duration=20.0, frame_energy=_EMPTY_ENERGY)
+            )
+
+        window(0.0, 8.0)
+        window(5.0, 8.0)
+        window(10.0, 8.0)
+        assert got == []  # the block's tail is still within reach of later windows
+        window(15.0, 8.0)
+        window(20.0, 8.0)
+        window(25.0, 8.0)
+        ((announced, _start, _end),) = got
+        assert announced == text
+
+    def test_majority_vote_corrects_a_character_misread_by_one_window(self, qtbot: Any) -> None:
+        tab, got = self._tab(qtbot, vote=True)
+        text = "2FFE8594EB880124"
+        for start in (0.0, 4.0, 8.0, 12.0, 16.0, 20.0, 24.0):
+            tab._snapshot_time = self.SNAPSHOT + timedelta(seconds=start)
+            tab._snapshot_dropped = int(start * tab._rx_sample_rate)
+            offsets = [(c, 8.0 + i * 0.4 - start) for i, c in enumerate(text)]
+            offsets = [(c, t) for c, t in offsets if 0.0 <= t <= 20.0]
+            if start == 12.0:  # this window reads "8" (index 5) as "S"
+                offsets = [
+                    ("S" if abs(t - (8.0 + 5 * 0.4 - start)) < 1e-6 else c, t) for c, t in offsets
+                ]
+            tab._reconcile_decode(
+                DecodeResult(offsets=offsets, window_duration=20.0, frame_energy=_EMPTY_ENERGY)
+            )
+        tab._flush_votes()
+        for block in tab._block_extractor.flush():
+            tab.frame_block_ready.emit(block.text, block.start_utc, block.end_utc)
+        assert [g[0] for g in got] == [text]
 
     def test_a_block_is_announced_with_utc_times(self, qtbot: Any) -> None:
         tab, got = self._tab(qtbot)

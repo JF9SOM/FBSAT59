@@ -43,3 +43,15 @@ def test_classical_method_needs_no_model(qtbot: QtBot, conn: sqlite3.Connection)
     assert tab._decode_function() is decode_classic
     assert tab._start_btn.isEnabled()
     assert not tab._banner.isVisibleTo(tab)
+
+
+def test_majority_vote_defaults_on_and_is_remembered(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = CwTab(conn)
+    qtbot.addWidget(tab)
+    assert tab._vote_check.isChecked()
+    tab._vote_check.setChecked(False)
+    again = CwTab(conn)
+    qtbot.addWidget(again)
+    assert not again._vote_check.isChecked()
