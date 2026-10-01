@@ -989,3 +989,35 @@ def test_old_cw_rows_are_not_loaded_as_ax25_frames(qtbot: QtBot, conn: sqlite3.C
     assert tab._saved_kind(68795, None, "JS1YRU", '{"packet_length": {}}') == "ax25"
     assert tab._saved_kind(68795, None, "JS1YRU", None) == "ax25"
     assert tab._load_saved_frames(68795) == 0
+
+
+def test_load_saved_cw_frames_in_cw_mode(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    from comms.telemetry.cw_frames import fields_from_saved, load_cw_frames  # noqa: PLC0415
+
+    frames = load_cw_frames(68796)
+    assert frames is not None
+    key, frame_def = next(iter(frames.items()))
+    names = [str(f["name"]) for f in frame_def["fields"] if not f.get("hidden")]
+    saved = {n: {"value": 1.0, "unit": ""} for n in names}
+    rebuilt = fields_from_saved(68796, saved)
+    assert rebuilt is not None and rebuilt[0] == key
+    assert [f.name for f in rebuilt[2]] == names
+    assert fields_from_saved(68796, {"nope": {"value": 1, "unit": ""}}) is None
+
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab.set_satellite(68796, "ARICA-2")
+    import json  # noqa: PLC0415
+
+    conn.execute(
+        "INSERT INTO telemetry_log (received_at, norad_cat_id, callsign, raw_hex, parsed_json,"
+        " kind) VALUES ('2026-09-21T06:51:23+00:00', 68796, 'JS1YSD', 'AABBCC', ?, 'cw')",
+        (json.dumps(saved),),
+    )
+    conn.commit()
+    assert tab._load_saved_frames(68796) == 0  # AX.25 mode does not show CW rows
+    assert tab._load_saved_frames(68796, cw=True) == 1
+    assert tab._table.item(0, 3).text() == f"[{key}] AABBCC"
+    assert tab._load_saved_frames(68796, cw=True) == 0  # not twice
+    first = tab._decode_field_rows[key][names[0]]
+    assert tab._decode_tables[key].item(first, 1).text() != "—"

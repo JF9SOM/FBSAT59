@@ -175,6 +175,59 @@ def build_satnogs_frame(norad: int | None, text: str) -> bytes | None:
     return prefix + bytes([int(upload["beacon_type"])]) + bytes.fromhex(hex_part)
 
 
+def fields_from_saved(
+    norad: int | None, saved: dict[str, Any]
+) -> tuple[str, str, list[TelemetryField]] | None:
+    """Rebuild a logged CW frame's decoded fields from what ``telemetry_log`` saved.
+
+    *saved* is the stored ``{field name: {"value", "unit"}}`` (the scaled value, and
+    the unit -- or the display text of a flag / angular-velocity / time field). Returns
+    ``(frame key, frame label, fields)`` for the frame definition whose displayed fields
+    are exactly *saved*'s, or None if none is.
+    """
+    frames = load_cw_frames(norad)
+    if not frames or not saved:
+        return None
+    for key, frame_def in frames.items():
+        defs = display_field_defs(frame_def)
+        if {str(fd["name"]) for fd in defs} != set(saved):
+            continue
+        fields: list[TelemetryField] = []
+        for fd in defs:
+            entry = saved[str(fd["name"])]
+            if not isinstance(entry, dict):
+                return None
+            value = float(entry.get("value", 0.0))
+            unit = str(entry.get("unit", ""))
+            name = str(fd["name"])
+            label = str(fd.get("label", name))
+            if fd.get("type", "uint") in ("hms", "flag", "angvel"):
+                fields.append(
+                    TelemetryField(
+                        name=name,
+                        label=label,
+                        raw_value=int(value),
+                        scaled_value=value,
+                        unit=unit,
+                        is_string=True,
+                    )
+                )
+            else:
+                fields.append(
+                    TelemetryField(
+                        name=name,
+                        label=label,
+                        raw_value=value,
+                        scaled_value=value,
+                        unit=unit,
+                        is_integer=float(fd.get("scale", 1.0)) == 1.0
+                        and float(fd.get("add", 0.0)) == 0.0,
+                    )
+                )
+        return str(key), str(frame_def.get("label", key)), fields
+    return None
+
+
 def _format_edge(value: float) -> str:
     return f"{value:g}"
 

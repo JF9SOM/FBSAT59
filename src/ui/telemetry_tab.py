@@ -63,6 +63,7 @@ from comms.aprs.parser import decode_ax25
 from comms.signal_clock import signal_time
 from comms.telemetry.cw_frames import (
     decode_cw_frame,
+    fields_from_saved,
     is_near_miss,
     load_cw_frames,
     normalize_block,
@@ -621,7 +622,7 @@ class TelemetryTab(QWidget):
         self._btn_load.setToolTip(
             _(
                 "Show the frames saved earlier for the selected satellite again\n"
-                "(AX.25 mode), without replaying a recording."
+                "(the current mode's: AX.25 or CW TLM), without replaying a recording."
             )
         )
         self._btn_load.clicked.connect(self._on_load_saved)
@@ -1950,6 +1951,7 @@ class TelemetryTab(QWidget):
                 item.setData(_DIM_ROLE, True)
             if column == 0 and log_id is not None:
                 item.setData(Qt.ItemDataRole.UserRole, log_id)
+                item.setData(_LOGGED_ROLE, log_id)
             if column == 0 and ax25_row is not None:
                 item.setData(_AX25_ROLE, ax25_row)
             self._table.setItem(row, column, item)
@@ -2161,14 +2163,11 @@ class TelemetryTab(QWidget):
 
     def _on_load_saved(self) -> None:
         """Show the saved frames of the selected satellite again (no recording replay)."""
-        if self._current_mode() == _MODE_CW:
-            self._set_error(_("Load saved works in AX.25 mode."))
-            return
         norad = self._active_norad()
         if norad is None:
             self._set_error(_("Select a satellite first."))
             return
-        n = self._load_saved_frames(norad)
+        n = self._load_saved_frames(norad, cw=self._current_mode() == _MODE_CW)
         self._lbl_status.setText(_("Loaded {n} saved frame(s)").format(n=n))
         self._lbl_status.setStyleSheet("color: #27ae60;" if n else "color: #aaa;")
 
@@ -2197,8 +2196,10 @@ class TelemetryTab(QWidget):
                 return "cw"
         return "ax25"
 
-    def _load_saved_frames(self, norad: int) -> int:
-        """Append the logged AX.25 / HDLC frames of *norad* to the table; returns how many.
+    def _load_saved_frames(self, norad: int, cw: bool = False) -> int:
+        """Append the logged frames of *norad* to the table; returns how many.
+
+        *cw*: the CW TLM frames (CW mode), else the AX.25 / HDLC frames.
 
         A frame logged before its callsign was known (``norad_cat_id`` NULL) is
         included when its callsign now maps to *norad*. Frames already shown are
@@ -2243,18 +2244,22 @@ class TelemetryTab(QWidget):
             if log_id in shown:
                 continue
             kind = self._saved_kind(norad, kind, callsign, parsed_json)
-            if kind == "cw":
+            if (kind == "cw") != cw:
                 continue
             if row_norad is None and (not callsign or self._callsign_to_norad(callsign) != norad):
                 continue
             try:
                 when = datetime.datetime.fromisoformat(received)
-                payload = bytes.fromhex(raw_hex)
+                payload = b"" if kind == "cw" else bytes.fromhex(raw_hex)
                 whole = bytes.fromhex(str(frame_hex)) if frame_hex else b""
             except ValueError:
                 continue
             if when.tzinfo is None:
                 when = when.replace(tzinfo=datetime.UTC)
+            if kind == "cw":
+                if self._load_saved_cw(norad, callsign, raw_hex, parsed_json, when, log_id):
+                    loaded += 1
+                continue
             if kind == "hdlc":
                 self._append_row(
                     callsign="—",
@@ -2288,6 +2293,44 @@ class TelemetryTab(QWidget):
             self._update_decode_tab(tf)
             loaded += 1
         return loaded
+
+    def _load_saved_cw(
+        self,
+        norad: int,
+        callsign: str,
+        raw_hex: str,
+        parsed_json: str | None,
+        when: datetime.datetime,
+        log_id: int,
+    ) -> bool:
+        """Show one logged CW frame again from its saved values; False if it can not be."""
+        try:
+            saved = json.loads(parsed_json) if parsed_json else {}
+        except (ValueError, TypeError):
+            return False
+        rebuilt = fields_from_saved(norad, saved if isinstance(saved, dict) else {})
+        if rebuilt is None:
+            return False
+        key, label, fields = rebuilt
+        tf = TelemetryFrame(
+            norad=norad,
+            callsign=callsign,
+            satellite_name=self._satellite_name(norad),
+            raw_hex=raw_hex,
+            fields=fields,
+            telemetry_id=key,
+            telemetry_label=label,
+        )
+        self._append_row(
+            callsign=callsign,
+            sat_name=tf.satellite_name,
+            data=f"[{key}] {raw_hex}",
+            norad=norad,
+            ts=when,
+            log_id=log_id,
+        )
+        self._update_decode_tab(tf)
+        return True
 
     def _satellite_name(self, norad: int) -> str:
         if not hasattr(self._conn, "execute"):
