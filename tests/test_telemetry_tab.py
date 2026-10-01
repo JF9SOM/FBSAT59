@@ -972,3 +972,20 @@ def test_accepted_manual_send_is_recorded_in_the_log(
     tab._on_ax25_send_result(row, True, 201, "")
     assert row.sent
     assert conn.execute("SELECT satnogs_uploaded_at FROM telemetry_log").fetchone()[0]
+
+
+def test_old_cw_rows_are_not_loaded_as_ax25_frames(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    # an OrigamiSat-2 CW frame logged before the `kind` column existed
+    cw_hex = "817E7BA4811C0581817A0000000000808152006ABE06064B42483E00"
+    conn.execute(
+        "INSERT INTO telemetry_log (received_at, norad_cat_id, callsign, raw_hex, parsed_json)"
+        " VALUES ('2026-09-25T10:00:00+00:00', 68795, 'JS1YRU', ?, ?)",
+        (cw_hex, '{"uvc_enabled": {"value": 1.0, "unit": "Enabled"}}'),
+    )
+    conn.commit()
+    assert tab._saved_kind(68795, None, "JS1YRU", '{"uvc_enabled": {}}') == "cw"
+    assert tab._saved_kind(68795, None, "JS1YRU", '{"packet_length": {}}') == "ax25"
+    assert tab._saved_kind(68795, None, "JS1YRU", None) == "ax25"
+    assert tab._load_saved_frames(68795) == 0

@@ -2173,13 +2173,29 @@ class TelemetryTab(QWidget):
         self._lbl_status.setStyleSheet("color: #27ae60;" if n else "color: #aaa;")
 
     @staticmethod
-    def _saved_kind(kind: str | None, callsign: str, raw_hex: str) -> str:
+    def _saved_kind(norad: int, kind: str | None, callsign: str, parsed_json: str | None) -> str:
         """Kind of a logged frame; rows from before the ``kind`` column are inferred."""
         if kind:
             return kind
         if not callsign:
             return "hdlc"
-        return "cw" if any(c.isspace() for c in raw_hex) else "ax25"
+        # A CW frame's hex text has no marker of its own, but the field names saved with
+        # it are the satellite's CW field names.
+        frames = load_cw_frames(norad)
+        if frames and parsed_json:
+            try:
+                saved = set(json.loads(parsed_json))
+            except (ValueError, TypeError):
+                return "ax25"
+            cw_names = {
+                str(f["name"])
+                for frame_def in frames.values()
+                for f in frame_def.get("fields", [])
+                if isinstance(f, dict) and "name" in f
+            }
+            if saved and saved <= cw_names:
+                return "cw"
+        return "ax25"
 
     def _load_saved_frames(self, norad: int) -> int:
         """Append the logged AX.25 / HDLC frames of *norad* to the table; returns how many.
@@ -2194,14 +2210,25 @@ class TelemetryTab(QWidget):
         shown = self._shown_log_ids()
         rows = self._conn.execute(
             "SELECT id, received_at, norad_cat_id, callsign, raw_hex, frame_hex, kind,"
-            " satnogs_uploaded_at, time_reliable FROM telemetry_log"
+            " satnogs_uploaded_at, time_reliable, parsed_json FROM telemetry_log"
             " WHERE norad_cat_id = ? OR norad_cat_id IS NULL ORDER BY received_at, id",
             (norad,),
         ).fetchall()
         name = self._satellite_name(norad)
         loaded = 0
         for r in rows:
-            log_id, received, row_norad, callsign, raw_hex, frame_hex, kind, uploaded, reliable = (
+            (
+                log_id,
+                received,
+                row_norad,
+                callsign,
+                raw_hex,
+                frame_hex,
+                kind,
+                uploaded,
+                reliable,
+                parsed_json,
+            ) = (
                 int(r[0]),
                 str(r[1]),
                 r[2],
@@ -2211,10 +2238,11 @@ class TelemetryTab(QWidget):
                 r[6],
                 r[7],
                 bool(r[8]),
+                r[9],
             )
             if log_id in shown:
                 continue
-            kind = self._saved_kind(kind, callsign, raw_hex)
+            kind = self._saved_kind(norad, kind, callsign, parsed_json)
             if kind == "cw":
                 continue
             if row_norad is None and (not callsign or self._callsign_to_norad(callsign) != norad):
