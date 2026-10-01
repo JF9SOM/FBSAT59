@@ -61,12 +61,13 @@ _BUFFER_SECONDS = 20
 # Decode every 5 s, but only when >= MIN_AUDIO_SECONDS of audio is buffered
 _DECODE_INTERVAL_MS = 5_000
 # Characters within this many seconds of the window's trailing edge are
-# still-revisable "pending" text (see reconcile_pending()). A reading is only
-# final once this much audio follows it: with the original 5 s the model
-# sometimes inserted a spurious character that a little more right-hand context
-# removes (replaying a strong OrigamiSat-2 pass, 2026-10-01), at the cost of
-# confirming text 3 s later.
-_PENDING_MARGIN_S = 8.0
+# still-revisable "pending" text (see reconcile_pending()) — matched to the
+# decode interval so a reading gets at least one extra decode cycle's worth
+# of trailing context before it is treated as final. (8 s was tried on
+# 2026-10-01 and was no better on a strong OrigamiSat-2 replay: with 7 window
+# alignments the first frame read correctly 6 times with 5 s but 5 with 8 s --
+# see docs/telemetry.md.)
+_PENDING_MARGIN_S = _DECODE_INTERVAL_MS / 1000.0
 # Decoder methods (stored in app_settings under _METHOD_KEY).
 _METHOD_AI = "ai"
 _METHOD_CLASSIC = "classic"
