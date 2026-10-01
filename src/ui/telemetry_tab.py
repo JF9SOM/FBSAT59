@@ -1005,6 +1005,10 @@ class TelemetryTab(QWidget):
 
     def _on_mode_changed(self, _index: int) -> None:
         self._pending_start = False
+        # The table lists one kind of frame (AX.25, gr-satellites or CW): a different mode
+        # starts it afresh. The frames are in the log; "Load saved" brings them back.
+        if self._table.rowCount():
+            self._on_clear()
         mode = self._current_mode()
         is_gr = mode == _MODE_GR
         is_cw = mode == _MODE_CW

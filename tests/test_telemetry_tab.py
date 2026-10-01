@@ -1051,3 +1051,16 @@ def test_first_selection_keeps_frames_already_received(
     tab._append_row(callsign="HS0K", sat_name="KNACKSAT-2", data="00 01", norad=67683)
     tab.set_satellite(67683, "KNACKSAT-2")  # nothing was chosen before: nothing to discard
     assert tab._table.rowCount() == 1
+
+
+def test_table_is_cleared_when_the_mode_changes(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab._append_row(callsign="JS1YSD", sat_name="ARICA-2", data="00 01", norad=68796)
+    assert tab._table.rowCount() == 1
+    cw = tab._combo_mode.findText(telemetry_tab_mod._MODE_CW)
+    tab._combo_mode.setCurrentIndex(cw)  # AX.25 -> CW TLM
+    assert tab._table.rowCount() == 0
+    tab._append_row(callsign="JS1YSD", sat_name="ARICA-2", data="[HK1] AA", norad=68796)
+    tab._combo_mode.setCurrentIndex(tab._combo_mode.findText(telemetry_tab_mod._MODE_AFSK))
+    assert tab._table.rowCount() == 0
