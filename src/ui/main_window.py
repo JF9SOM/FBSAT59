@@ -3471,6 +3471,10 @@ class MainWindow(QMainWindow):
         idx = self._tab_widget.addTab(tab, tab_label)
         self._add_tab_close_button(tab)
         self._tab_widget.setCurrentIndex(idx)
+        tab.satellite_requested.connect(self._on_comms_satellite_requested)
+        if tab.current_protocol() == "arica2":
+            # Reopened on ARICA-2: put the message-box transponder back on the rig.
+            tab.request_satellite()
 
     def _on_cw_model_help(self) -> None:
         """Open the Help > CW Model Installation… dialog."""

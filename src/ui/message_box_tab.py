@@ -17,7 +17,7 @@ import json
 import sqlite3
 from typing import Any
 
-from PySide6.QtCore import Slot
+from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QStackedWidget, QVBoxLayout, QWidget
 
 from i18n import _
@@ -27,10 +27,18 @@ from ui.ax100_digi_tab import Ax100DigiTab
 _SETTINGS_KEY = "message_box_tab_settings"
 _PROTOCOL_AX100 = "ax100"
 _PROTOCOL_ARICA2 = "arica2"
+# Catalog numbers the Quick Panel's satellite request is made with (MARMOTSat's
+# real, visible id; ARICA-2).
+_NORAD_BY_PROTOCOL = {_PROTOCOL_AX100: 69912, _PROTOCOL_ARICA2: 68796}
+_TAB_KEY = "ax100digi"
 
 
 class MessageBoxTab(QWidget):
     """Protocol selector over the AX100 digipeater and ARICA-2 panels."""
+
+    # (tab_key, norad): MainWindow selects the satellite and its matching
+    # transponder, same as the Comms Quick Panel's satellite combo.
+    satellite_requested: Signal = Signal(str, int)
 
     def __init__(
         self,
@@ -91,6 +99,11 @@ class MessageBoxTab(QWidget):
     def _on_protocol_changed(self, _index: int) -> None:
         self._apply_protocol()
         self._save_protocol()
+        self.request_satellite()
+
+    def request_satellite(self) -> None:
+        """Ask MainWindow to select the current protocol's satellite/transponder."""
+        self.satellite_requested.emit(_TAB_KEY, _NORAD_BY_PROTOCOL[self.current_protocol()])
 
     def _apply_protocol(self) -> None:
         """Show the chosen panel and move the input to it.

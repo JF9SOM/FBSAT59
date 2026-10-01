@@ -249,12 +249,17 @@ def test_message_box_tab_switches_protocol_and_hands_over_the_input(
     assert tab.current_protocol() == "ax100"
     assert engine.calls == []  # ARICA-2 panel idle while AX100 is shown
 
+    requests: list[tuple[str, int]] = []
+    tab.satellite_requested.connect(lambda key, norad: requests.append((key, norad)))
+
     tab._protocol_combo.setCurrentIndex(1)
     assert tab.current_protocol() == "arica2"
     assert engine.calls == ["sdr:4800:tx=True"]
+    assert requests == [("ax100digi", 68796)]  # ARICA-2's satellite is requested
 
     tab._protocol_combo.setCurrentIndex(0)
     assert engine.calls[-1] == "stop"
+    assert requests[-1] == ("ax100digi", 69912)  # back to MARMOTSat
 
     row = conn.execute(
         "SELECT value FROM app_settings WHERE key = 'message_box_tab_settings'"

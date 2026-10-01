@@ -3396,6 +3396,15 @@ GMSK ダウンリンクは数 kHz に広がるので線として立たない。
 公式でも Upload/Confirm/Parrot では欄が出るが**生成される 16 進に影響しない**（衛星が 1 コールサイン
 1 スロットを自動割当。Libre Space の投稿者の記述。公式の画面画像は未確認）。使うのは Download のみ。
 
+#### 衛星・トランスミッターの自動選択（2026-10-01）
+
+タブ内のプロトコルコンボを切り替える（および前回が ARICA-2 の状態でタブを開く）と、`MessageBoxTab.satellite_requested(tab_key, norad)`
+→ `MainWindow._on_comms_satellite_requested()`（Comms Quick Panel の衛星コンボと同じ経路）で衛星（ARICA-2 = 68796、
+AX100 = MARMOTSat 69912）とマッチするトランスミッターが Radio Control に入る。ARICA-2 の SATNOGS には
+436.830 MHz の GMSK 4800 が**2つ**あり（`Mode U - GMSK4k8 - AX.25` = テレメトリ・UL なし、`Mode U/U - Message Exchange + Camera Downlink`
+= UL あり）、`is_arica2_message_box_transmitter()` は説明に `MESSAGE` を含む後者だけに合わせる（先に前者が合うと
+最初の一致が選ばれて誤る。初版の不具合）。
+
 #### 手動/自動
 
 - **手動**: ボタンを押した瞬間に送信（窓が閉じていても送る。判断はユーザー）。

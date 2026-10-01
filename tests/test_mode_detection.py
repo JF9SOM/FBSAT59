@@ -422,18 +422,36 @@ def test_get_norads_matching_searches_the_db(conn: sqlite3.Connection) -> None:
     assert get_norads_matching(conn, is_cw_telemetry_transmitter) == [41847, 68796]
 
 
-def test_message_box_matcher_covers_ax100_and_arica2_gmsk() -> None:
+def test_message_box_matcher_covers_ax100_and_arica2_message_exchange() -> None:
     from comms.mode_detection import (
         is_arica2_message_box_transmitter,
         is_message_box_transmitter,
+        pick_preferred_transponder_index,
     )
 
-    gmsk = {"norad_cat_id": 68796, "description": "Mode U - GMSK4k8", "mode": "GMSK", "baud": 4800}
-    cw = {"norad_cat_id": 68796, "description": "Mode U - CW", "mode": "CW", "baud": None}
-    assert is_arica2_message_box_transmitter(gmsk)
+    telemetry = {
+        "norad_cat_id": 68796,
+        "description": "Mode U - GMSK4k8 - AX.25",
+        "mode": "GMSK",
+        "baud": 4800,
+    }
+    message = {
+        "norad_cat_id": 68796,
+        "description": "Mode U/U - Message Exchange + Camera Downlink",
+        "mode": "GMSK",
+        "baud": 4800,
+    }
+    cw = {"norad_cat_id": 68796, "description": "Mode U - CW", "mode": "CW", "baud": 20}
+    assert is_arica2_message_box_transmitter(message)
+    assert is_arica2_message_box_transmitter({**message, "norad_cat_id": 98329})
+    assert not is_arica2_message_box_transmitter(telemetry)  # no uplink: not the message box
     assert not is_arica2_message_box_transmitter(cw)
-    assert is_arica2_message_box_transmitter({**gmsk, "norad_cat_id": 98329})
-    assert not is_arica2_message_box_transmitter({**gmsk, "norad_cat_id": 12345})
-    assert is_message_box_transmitter(gmsk)
+    assert not is_arica2_message_box_transmitter({**message, "norad_cat_id": 12345})
+    assert is_message_box_transmitter(message)
     assert is_message_box_transmitter({"norad_cat_id": 69912, "description": "Mode V/V Digipeater"})
-    assert not is_message_box_transmitter(cw)
+    assert not is_message_box_transmitter(telemetry)
+
+    # The DB lists the telemetry transmitter first; the message box must still win.
+    assert (
+        pick_preferred_transponder_index([cw, telemetry, message], is_message_box_transmitter) == 2
+    )

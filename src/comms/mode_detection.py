@@ -181,15 +181,19 @@ _ARICA2_NORAD_IDS = frozenset({68796, 98329})
 
 
 def is_arica2_message_box_transmitter(xpdr: dict[str, Any]) -> bool:
-    """ARICA-2's 4800 baud GMSK message-box link (436.830 MHz).
+    """ARICA-2's message-box link: SATNOGS "Mode U/U - Message Exchange + Camera
+    Downlink" (4800 baud GMSK, 436.830 MHz up and down).
 
-    Matched by NORAD id plus a GMSK / 4800 baud marker so the satellite's CW
-    beacon transmitter, which shares the frequency, is not picked.
+    ARICA-2 carries several transmitters on 436.830 MHz: a CW beacon and a
+    separate "GMSK4k8 - AX.25" telemetry downlink with no uplink. Only the
+    "Message Exchange" one is the message box, and the quick-select picks the
+    first match, so the telemetry one must not match.
     """
     if xpdr.get("norad_cat_id") not in _ARICA2_NORAD_IDS:
         return False
-    text = f"{xpdr.get('description') or ''} {xpdr.get('mode') or ''}".upper()
-    return "GMSK" in text or xpdr.get("baud") == 4800
+    desc = (xpdr.get("description") or "").upper()
+    mode = (xpdr.get("mode") or "").upper()
+    return "MESSAGE" in desc and (mode == "GMSK" or xpdr.get("baud") == 4800)
 
 
 def is_message_box_transmitter(xpdr: dict[str, Any]) -> bool:
