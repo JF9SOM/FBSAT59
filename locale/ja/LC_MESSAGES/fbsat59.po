@@ -2756,12 +2756,12 @@ msgstr "選択分を送信"
 
 #: src/ui/telemetry_tab.py:563
 msgid ""
-"Send the CW frames selected in the table to the SatNOGS DB now,\n"
-"even if they were received only once and the Upload switch is off.\n"
+"Send the frames selected in the table to the SatNOGS DB now,\n"
+"even if the Upload switch is off (CW: even if received only once).\n"
 "Frames without a reliable time or already sent are skipped."
 msgstr ""
-"表で選択したCWフレームを、今すぐSatNOGS DBへ送ります。\n"
-"1回しか受信していなくても、アップロードのスイッチがOFFでも送ります。\n"
+"表で選択したフレームを、今すぐSatNOGS DBへ送ります。\n"
+"アップロードのスイッチがOFFでも送ります（CW: 1回しか受信していなくても送ります）。\n"
 "時刻が確実でないもの、送信済みのものは除きます。"
 
 #: src/ui/telemetry_tab.py:571
@@ -6827,3 +6827,21 @@ msgstr "（{shown}/{total}文字を表示、以下省略）"
 #~ msgid "%(count)d pass"
 #~ msgid_plural "%(count)d passes"
 #~ msgstr[0] "%(count)d パス"
+
+#: src/ui/telemetry_tab.py
+msgid "Select received AX.25 frames in the table first."
+msgstr "先に表で受信したAX.25フレームを選択してください。"
+
+#: src/ui/telemetry_tab.py
+msgid "Select the satellite these frames came from first."
+msgstr "先にこれらのフレームを受信した衛星を選択してください。"
+
+#: src/ui/telemetry_tab.py
+msgid ""
+"Send {n} frame(s) to the SatNOGS DB?\n"
+"\n"
+"{lines}"
+msgstr ""
+"{n}件のフレームをSatNOGS DBへ送信しますか？\n"
+"\n"
+"{lines}"

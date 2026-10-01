@@ -763,3 +763,88 @@ def test_running_decoder_follows_the_sdr_to_a_new_pipeline(
     assert started[-1] is replay_pipeline and len(started) == 2
     assert tab._afsk_source == "sdr_direwolf"
     assert tab._btn_stop.isEnabled()
+
+
+# Manual "Send selected" of AX.25 frames to the SatNOGS DB
+# ---------------------------------------------------------------------------
+
+
+def _configure_upload(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "INSERT INTO app_settings (key, value) VALUES ('satnogs_upload_settings', ?)",
+        ('{"enabled": false, "api_key": "k"}',),
+    )
+    conn.execute("INSERT INTO app_settings (key, value) VALUES ('callsign', 'JF9SOM')")
+    conn.execute(
+        "INSERT INTO app_settings (key, value) VALUES ('observer_location', ?)",
+        ('{"latitude_deg": 35.0, "longitude_deg": 139.0}',),
+    )
+    conn.commit()
+
+
+def test_callsign_maps_to_satellite_by_alt_names(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    conn.execute("ALTER TABLE satellites ADD COLUMN alt_names TEXT")
+    conn.execute(
+        "INSERT INTO satellites (norad_cat_id, name, is_hidden, alt_names)"
+        " VALUES (67683, 'KNACKSAT-2', 0, '[\"HS0K\"]')"
+    )
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    assert tab._callsign_to_norad("HS0K") == 67683
+    assert tab._callsign_to_norad("HS0K-1") == 67683
+    assert tab._callsign_to_norad("HS0X") is None
+    conn.execute(
+        "INSERT INTO satellites (norad_cat_id, name, is_hidden, alt_names)"
+        " VALUES (99999, 'OTHER', 0, '[\"HS0K\"]')"
+    )
+    assert tab._callsign_to_norad("HS0K") is None  # ambiguous
+
+
+def test_send_selected_sends_ax25_frame_under_selected_satellite(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _configure_upload(conn)
+
+    class _Uploader(_RecordingUploader):
+        def submit(self, conn, raw, norad, received_at, force=False, on_result=None) -> bool:  # noqa: ANN001
+            # like the real one: nothing is queued without a NORAD id or the switch
+            if norad is None or not (force or load_satnogs_upload_settings(conn)["enabled"]):
+                return False
+            return super().submit(conn, raw, norad, received_at, force, on_result)
+
+    rec = _Uploader()
+    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: rec)
+    monkeypatch.setattr(
+        telemetry_tab_mod.QMessageBox,
+        "question",
+        lambda *a, **k: telemetry_tab_mod.QMessageBox.StandardButton.Yes,
+    )
+    monkeypatch.setattr(
+        telemetry_tab_mod,
+        "decode_ax25",
+        lambda raw: types.SimpleNamespace(src="HS0K", payload=b"\x00\x11"),
+    )
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab._selected_norad = 67683
+    raw = bytes.fromhex("9c86aa8ea662e0a08a82a49886e103f000112233")
+    tab._on_ax25_frame(raw)  # callsign unknown, upload switch off: nothing sent
+    assert rec.calls == []
+    tab._table.selectRow(0)
+    tab._on_send_selected()
+    assert len(rec.calls) == 1
+    _c, c_raw, c_norad, _ts = rec.calls[0]
+    assert c_raw == raw
+    assert c_norad == 67683
+
+
+def test_send_selected_without_selection_asks_for_one(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rec = _RecordingUploader()
+    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: rec)
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab._on_send_selected()
+    assert rec.calls == []
+    assert "Select received AX.25 frames" in tab._lbl_status.text()

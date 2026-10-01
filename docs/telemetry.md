@@ -977,3 +977,24 @@ gr-satellites モードは、SDR からの入力では**これまで一度もデ
 `--udp_raw`、出力のバッファ、ブロックの区切り）、`tests/test_telemetry_clock.py`（AX.25/gr の
 再生時の時刻・記録・送信・仮の時刻・ライブ）。**IQ 録音の再生 → 実物の Direwolf / gr_satellites →
 Telemetry タブ**の通しの動作は合成 IQ で確認した。実信号（衛星）での確認は未実施。
+
+---
+
+## AX.25 フレームの SatNOGS 手動アップロード（2026-10-01）
+
+**背景**: KNACKSAT-2（NORAD 67683、コールサイン `HS0K`）の 9600 bps AX.25 を受信できたが、
+自動アップロードも手動アップロードもできなかった。原因は 2 つ:
+1. `_callsign_to_norad()` が衛星名の部分一致と `telemetry_formats` しか見ておらず、`HS0K` を
+   NORAD に対応付けられなかった → `norad=None` → `SatnogsUploader.submit()` が何もせず戻る。
+   SatNOGS DB は衛星の `names` フィールドにコールサインを持つ（KNACKSAT-2 → `"HS0K"`、
+   実 API で確認済み）。本アプリは `satellites.alt_names`（JSON 配列）に同じ値を保存しているので、
+   これを**曖昧でない（1 衛星だけ一致する）場合に限り**フォールバックとして引く。
+2. 「Send selected」ボタンは CW TLM モード専用だった。
+
+**実装**: AX.25（Direwolf）モードでも「Send selected」を表示（gr-satellites のみ非表示）。
+行ごとに `_Ax25Row`（**フル AX.25 フレーム**・時刻・NORAD・送信済み/送信中）を表の 1 列目の
+`_AX25_ROLE` に保持する。`telemetry_log.raw_hex` は **ペイロードのみ**を保存するため、DB からは
+SatNOGS が要求するフル フレームを再構成できない — **送信できるのは、そのセッションで表に残っている行だけ**
+（アプリ再起動後は不可）。NORAD が不明な行は画面で選択中の衛星に紐付け、送信前に衛星名＋件数を
+確認ダイアログで確認する（SatNOGS DB は公開のため）。自動アップロード済みの行は送信済みとして
+記録され、二重送信しない。

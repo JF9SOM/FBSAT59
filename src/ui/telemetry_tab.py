@@ -22,7 +22,9 @@ import csv
 import datetime
 import json
 import logging
+import sqlite3
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -94,6 +96,7 @@ from comms.telemetry.satnogs_uploader import (
     get_station_latlon,
     load_satnogs_upload_settings,
     save_satnogs_upload_settings,
+    upload_blocker,
 )
 from i18n import _
 from ui.sat_search_dialog import SatSearchDialog
@@ -158,6 +161,26 @@ def format_frame_hex(raw: bytes) -> str:
 
 # Item role marking a Received Frames row as a rejected candidate (drawn muted).
 _DIM_ROLE = Qt.ItemDataRole.UserRole + 1
+# Row role holding the _Ax25Row of a received AX.25 frame (for "Send selected").
+_AX25_ROLE = Qt.ItemDataRole.UserRole + 2
+
+
+@dataclass
+class _Ax25Row:
+    """A received AX.25 frame as shown in the table, kept for a manual SatNOGS send.
+
+    *raw* is the full frame (FCS already stripped) -- exactly what SatNOGS wants;
+    the logged ``telemetry_log.raw_hex`` holds only the payload. *norad* is None
+    when the source callsign could not be mapped to a satellite.
+    """
+
+    raw: bytes
+    when: datetime.datetime
+    reliable: bool
+    norad: int | None
+    sent: bool = False  # SatNOGS accepted it
+    pending: bool = False  # handed to the uploader, no answer yet
+    manual: bool = False  # the user asked for this send
 
 
 class _DimRowDelegate(QStyledItemDelegate):
@@ -253,6 +276,7 @@ class TelemetryTab(QWidget):
     # SatNOGS's answer to one upload, emitted from the uploader's thread (delivered on the
     # GUI thread): (telemetry_log id or None for an AX.25 frame, accepted, HTTP status, body).
     _upload_result = Signal(object, bool, int, str)
+    _ax25_send_result = Signal(object, bool, int, str)
 
     def __init__(
         self,
@@ -304,6 +328,7 @@ class TelemetryTab(QWidget):
         self._upload_pending: set[int] = set()
         self._warned_upload_failure = False
         self._upload_result.connect(self._on_upload_result)
+        self._ax25_send_result.connect(self._on_ax25_send_result)
 
         self._frame_count = 0
         self._direwolf_log_window: _ProcessLogDialog | None = None
@@ -556,12 +581,12 @@ class TelemetryTab(QWidget):
         self._btn_satnogs_link.clicked.connect(self._on_open_satnogs)
         footer.addWidget(self._btn_satnogs_link)
 
-        # CW TLM mode only: send frames by hand, or the ones a repeat has confirmed.
+        # Send frames by hand (AX.25 and CW TLM modes); "Send unsent" is CW TLM only.
         self._btn_satnogs_send = QPushButton(_("Send selected"))
         self._btn_satnogs_send.setToolTip(
             _(
-                "Send the CW frames selected in the table to the SatNOGS DB now,\n"
-                "even if they were received only once and the Upload switch is off.\n"
+                "Send the frames selected in the table to the SatNOGS DB now,\n"
+                "even if the Upload switch is off (CW: even if received only once).\n"
                 "Frames without a reliable time or already sent are skipped."
             )
         )
@@ -964,7 +989,7 @@ class TelemetryTab(QWidget):
         # neither (its text is in the CW Decoder tab).
         for widget in (self._lbl_baud, self._baud_combo, self._btn_backend_log):
             widget.setVisible(not is_cw)
-        self._btn_satnogs_send.setVisible(is_cw)
+        self._btn_satnogs_send.setVisible(not is_gr)
         self._btn_satnogs_send_unsent.setVisible(is_cw)
         # gr-satellites already turns each frame into human-readable text
         # itself (see _on_gr_telemetry()'s "-> Packet from" parsing), so the
@@ -1300,6 +1325,9 @@ class TelemetryTab(QWidget):
         return ids
 
     def _on_send_selected(self) -> None:
+        if self._current_mode() != _MODE_CW:
+            self._send_selected_ax25()
+            return
         norad = self._active_norad()
         ids = self._selected_log_ids()
         if norad is None or not ids:
@@ -1316,6 +1344,103 @@ class TelemetryTab(QWidget):
             pending=self._upload_pending,
         )
         self._show_send_report(report)
+
+    def _selected_ax25_rows(self) -> list[_Ax25Row]:
+        rows: list[_Ax25Row] = []
+        selection = self._table.selectionModel()
+        for index in selection.selectedRows() if selection is not None else []:
+            item = self._table.item(index.row(), 0)
+            value = item.data(_AX25_ROLE) if item is not None else None
+            if isinstance(value, _Ax25Row):
+                rows.append(value)
+        return rows
+
+    def _satellite_label(self, norad: int) -> str:
+        name = ""
+        if hasattr(self._conn, "execute"):
+            row = self._conn.execute(
+                "SELECT name FROM satellites WHERE norad_cat_id = ?", (norad,)
+            ).fetchone()
+            name = str(row[0]) if row else ""
+        return f"{name} (NORAD {norad})" if name else f"NORAD {norad}"
+
+    def _send_selected_ax25(self) -> None:
+        """Send the selected AX.25 frames to the SatNOGS DB by hand.
+
+        A frame whose satellite could not be worked out from its callsign is
+        filed under the satellite selected in this tab; the user confirms the
+        target first, since the SatNOGS DB is public.
+        """
+        rows = self._selected_ax25_rows()
+        if not rows:
+            self._set_error(_("Select received AX.25 frames in the table first."))
+            return
+        report = SendReport(blocker=upload_blocker(self._conn, force=True))
+        if report.blocker is not None:
+            self._show_send_report(report)
+            return
+        fallback = self._active_norad()
+        todo: list[tuple[_Ax25Row, int]] = []
+        for row in rows:
+            if row.sent:
+                report.duplicates += 1
+            elif row.pending:
+                report.pending += 1
+            elif not row.reliable:
+                report.unreliable += 1
+            else:
+                norad = row.norad if row.norad is not None else fallback
+                if norad is None:
+                    self._set_error(_("Select the satellite these frames came from first."))
+                    return
+                todo.append((row, norad))
+        if todo:
+            counts: dict[int, int] = {}
+            for _row, norad in todo:
+                counts[norad] = counts.get(norad, 0) + 1
+            lines = "\n".join(
+                f"{self._satellite_label(norad)}: {n}" for norad, n in sorted(counts.items())
+            )
+            answer = QMessageBox.question(
+                self,
+                _("Send to SatNOGS"),
+                _("Send {n} frame(s) to the SatNOGS DB?\n\n{lines}").format(
+                    n=len(todo), lines=lines
+                ),
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        uploader = get_satnogs_uploader()
+        for row, norad in todo:
+            row.manual = True
+            row.pending = True
+
+            def _result(accepted: bool, status: int, body: str, r: _Ax25Row = row) -> None:
+                self._ax25_send_result.emit(r, accepted, status, body)
+
+            if uploader.submit(self._conn, row.raw, norad, row.when, force=True, on_result=_result):
+                report.queued += 1
+            else:
+                row.pending = False
+        self._show_send_report(report)
+
+    def _on_ax25_send_result(self, row: object, accepted: bool, status: int, body: str) -> None:
+        """GUI thread: SatNOGS answered the upload of one AX.25 frame."""
+        if not isinstance(row, _Ax25Row):
+            return
+        row.pending = False
+        if accepted:
+            row.sent = True
+            if row.manual:
+                self._lbl_status.setText(
+                    _("SatNOGS accepted the frame (HTTP {n})").format(n=status)
+                )
+                self._lbl_status.setStyleSheet("color: #27ae60;")
+            return
+        if row.manual:
+            self._set_error(self._upload_failure_text(status, body))
+        else:
+            self._on_upload_result(None, False, status, body)
 
     def _on_send_unsent(self) -> None:
         norad = self._active_norad()
@@ -1630,6 +1755,7 @@ class TelemetryTab(QWidget):
         norad = self._callsign_to_norad(frame.src)
         tf = decode_telemetry(frame.src, frame.payload, norad)
         when, reliable = self._frame_time()
+        ax25_row = _Ax25Row(raw=raw, when=when, reliable=reliable, norad=norad)
         # The Data column shows the whole received frame as hex bytes -- the
         # same form as SatNOGS Network's "Data" tab, so it can be compared with
         # other stations' frames and the bytes copied out (image data, say).
@@ -1640,13 +1766,14 @@ class TelemetryTab(QWidget):
             data=format_frame_hex(raw),
             norad=tf.norad,
             ts=when,
+            ax25_row=ax25_row,
         )
         self._update_decode_tab(tf)
         self._persist_frame(tf, when, reliable)
         # Forward the raw frame (full AX.25 frame, FCS already stripped by the
         # demodulator / KISS) to the SatNOGS DB. No-op unless the footer
         # toggle is on and callsign / location / API key are all set.
-        self._submit_raw_frame(raw, norad, when, reliable)
+        self._submit_raw_frame(raw, norad, when, reliable, ax25_row)
 
     def _on_non_ax25_frame(self, raw: bytes) -> None:
         """Show and log a CRC-valid HDLC frame that is not an AX.25 frame.
@@ -1686,7 +1813,12 @@ class TelemetryTab(QWidget):
         return signal_time(self._sdr_pipeline)
 
     def _submit_raw_frame(
-        self, raw: bytes, norad: int | None, when: datetime.datetime, reliable: bool
+        self,
+        raw: bytes,
+        norad: int | None,
+        when: datetime.datetime,
+        reliable: bool,
+        ax25_row: _Ax25Row | None = None,
     ) -> None:
         """Queue *raw* for the SatNOGS DB with its real reception time.
 
@@ -1695,6 +1827,19 @@ class TelemetryTab(QWidget):
         told once per run.
         """
         if reliable:
+            if ax25_row is not None:
+                # Reported per row so a frame the automatic upload already
+                # delivered is not sent a second time by "Send selected".
+                row = ax25_row
+
+                def _result(accepted: bool, status: int, body: str) -> None:
+                    self._ax25_send_result.emit(row, accepted, status, body)
+
+                queued = get_satnogs_uploader().submit(
+                    self._conn, raw, norad, when, on_result=_result
+                )
+                row.pending = queued
+                return
             get_satnogs_uploader().submit(
                 self._conn,
                 raw,
@@ -1724,7 +1869,24 @@ class TelemetryTab(QWidget):
             "SELECT norad_cat_id FROM satellites WHERE name LIKE ?",
             (f"%{call_upper}%",),
         ).fetchone()
-        return int(row["norad_cat_id"]) if row else None
+        if row:
+            return int(row["norad_cat_id"])
+        # The SatNOGS DB lists a satellite's callsign among its alternative names
+        # (KNACKSAT-2 -> "HS0K"); accept a match only if it is unambiguous.
+        matches: list[int] = []
+        try:
+            candidates = self._conn.execute(
+                "SELECT norad_cat_id, alt_names FROM satellites WHERE alt_names LIKE ?",
+                (f'%"{call_upper}"%',),
+            ).fetchall()
+        except sqlite3.Error:
+            return None
+        for cand in candidates:
+            with contextlib.suppress(ValueError, TypeError):
+                names = json.loads(str(cand["alt_names"]))
+                if isinstance(names, list) and call_upper in (str(n).upper() for n in names):
+                    matches.append(int(cand["norad_cat_id"]))
+        return matches[0] if len(matches) == 1 else None
 
     # ------------------------------------------------------------------ #
     # Table helpers
@@ -1740,6 +1902,7 @@ class TelemetryTab(QWidget):
         ts: datetime.datetime | None = None,
         dim: bool = False,
         log_id: int | None = None,
+        ax25_row: _Ax25Row | None = None,
     ) -> None:
         """Add a row to the Received Frames table.
 
@@ -1747,7 +1910,8 @@ class TelemetryTab(QWidget):
         can be from any day); the default is now. *dim* mutes the row (italic, a
         theme-relative colour -- see _DimRowDelegate) and leaves it out of the
         frame count (a rejected CW candidate). *log_id* is the frame's
-        ``telemetry_log`` id, kept on the row for "Send selected".
+        ``telemetry_log`` id, kept on the row for "Send selected" (CW); *ax25_row*
+        is the same for a received AX.25 frame.
         """
         when = ts if ts is not None else datetime.datetime.now(datetime.UTC)
         row = self._table.rowCount()
@@ -1762,6 +1926,8 @@ class TelemetryTab(QWidget):
                 item.setData(_DIM_ROLE, True)
             if column == 0 and log_id is not None:
                 item.setData(Qt.ItemDataRole.UserRole, log_id)
+            if column == 0 and ax25_row is not None:
+                item.setData(_AX25_ROLE, ax25_row)
             self._table.setItem(row, column, item)
         self._table.scrollToBottom()
         if not dim:
