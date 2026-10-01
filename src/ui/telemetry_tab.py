@@ -72,7 +72,6 @@ from comms.telemetry.cw_frames import (
 from comms.telemetry.cw_upload import (
     SendReport,
     auto_send,
-    eligible_unsent,
     ensure_columns,
     mark_uploaded,
     reset_unconfirmed_marks,
@@ -594,7 +593,7 @@ class TelemetryTab(QWidget):
         self._btn_satnogs_link.clicked.connect(self._on_open_satnogs)
         footer.addWidget(self._btn_satnogs_link)
 
-        # Send frames by hand (AX.25 and CW TLM modes); "Send unsent" is CW TLM only.
+        # Send frames by hand (AX.25 and CW TLM modes).
         self._btn_satnogs_send = QPushButton(_("Send selected"))
         self._btn_satnogs_send.setToolTip(
             _(
@@ -607,17 +606,6 @@ class TelemetryTab(QWidget):
         # _on_mode_changed() only runs on a mode *change*, so set the start-up state here.
         self._btn_satnogs_send.setVisible(self._current_mode() != _MODE_GR)
         footer.addWidget(self._btn_satnogs_send)
-        self._btn_satnogs_send_unsent = QPushButton(_("Send unsent…"))
-        self._btn_satnogs_send_unsent.setToolTip(
-            _(
-                "Send the logged CW frames of this satellite that were not sent yet\n"
-                "and were received at least twice (a single reading may be a\n"
-                "mis-read digit) with a reliable time."
-            )
-        )
-        self._btn_satnogs_send_unsent.clicked.connect(self._on_send_unsent)
-        self._btn_satnogs_send_unsent.setVisible(False)
-        footer.addWidget(self._btn_satnogs_send_unsent)
 
         footer.addStretch()
 
@@ -1024,7 +1012,6 @@ class TelemetryTab(QWidget):
         for widget in (self._lbl_baud, self._baud_combo, self._btn_backend_log):
             widget.setVisible(not is_cw)
         self._btn_satnogs_send.setVisible(not is_gr)
-        self._btn_satnogs_send_unsent.setVisible(is_cw)
         # gr-satellites already turns each frame into human-readable text
         # itself (see _on_gr_telemetry()'s "-> Packet from" parsing), so the
         # "Decoded Fields" sub-tab — built from this project's own
@@ -1479,43 +1466,6 @@ class TelemetryTab(QWidget):
             self._set_error(self._upload_failure_text(status, body))
         else:
             self._on_upload_result(None, False, status, body)
-
-    def _on_send_unsent(self) -> None:
-        norad = self._active_norad()
-        if norad is None:
-            self._set_error(_("Select a satellite first."))
-            return
-        frames = eligible_unsent(self._conn, norad)
-        if not frames:
-            self._lbl_status.setText(
-                _(
-                    "Nothing ready to send: a frame needs a second reception and a "
-                    "reliable time, and must not be sent already."
-                )
-            )
-            self._lbl_status.setStyleSheet("color: #aaa;")
-            return
-        question = _(
-            "Send {n} logged frame(s) ({m} different) of {name} to the SatNOGS DB?\n\n"
-            "Only frames received at least twice, with a reliable time, that were "
-            "not sent before are included."
-        ).format(
-            n=len(frames), m=len({f.raw_hex for f in frames}), name=self._selected_name or norad
-        )
-        answer = QMessageBox.question(self, _("Send to SatNOGS"), question)
-        if answer != QMessageBox.StandardButton.Yes:
-            return
-        report = send_frames(
-            self._conn,
-            get_satnogs_uploader(),
-            norad,
-            [f.id for f in frames],
-            force=True,
-            require_repeat=True,
-            on_result=self._on_cw_frame_result,
-            pending=self._upload_pending,
-        )
-        self._show_send_report(report)
 
     def _on_cw_frame_result(self, frame_id: int, accepted: bool, status: int, body: str) -> None:
         """Uploader thread: SatNOGS answered the upload of CW frame *frame_id*."""

@@ -605,77 +605,15 @@ class TestManualSend:
         assert uploader.sent == []
         assert "API key" in tab._lbl_status.text()
 
-    def test_send_unsent_asks_and_sends_the_confirmed_frames(
-        self,
-        qtbot: QtBot,
-        cw_conn: sqlite3.Connection,
-        uploader: _FakeUploader,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        # Received while the switch was off, so nothing was sent then.
-        _configure_upload(cw_conn, enabled=False)
-        tab = _running_with(qtbot, cw_conn)
-        tab._on_cw_block(HK1, START, END)
-        tab._on_cw_block(HK1, START + timedelta(seconds=125), END + timedelta(seconds=125))
-        tab._on_cw_block(
-            HK3, START + timedelta(seconds=300), END + timedelta(seconds=300)
-        )  # single reading
-        assert uploader.sent == []
-        asked: list[str] = []
-
-        def yes(_parent: object, _title: str, text: str) -> Any:
-            from PySide6.QtWidgets import QMessageBox
-
-            asked.append(text)
-            return QMessageBox.StandardButton.Yes
-
-        monkeypatch.setattr("ui.telemetry_tab.QMessageBox.question", yes)
-
-        tab._on_send_unsent()
-
-        assert "2 logged frame(s) (1 different)" in asked[0]
-        assert len(uploader.sent) == 2  # HK1 twice; the single HK3 reading stays
-
-    def test_send_unsent_does_nothing_when_the_user_says_no(
-        self,
-        qtbot: QtBot,
-        cw_conn: sqlite3.Connection,
-        uploader: _FakeUploader,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        from PySide6.QtWidgets import QMessageBox
-
-        _configure_upload(cw_conn, enabled=False)
-        tab = _running_with(qtbot, cw_conn)
-        tab._on_cw_block(HK1, START, END)
-        tab._on_cw_block(HK1, START + timedelta(seconds=125), END + timedelta(seconds=125))
-        monkeypatch.setattr(
-            "ui.telemetry_tab.QMessageBox.question", lambda *a, **k: QMessageBox.StandardButton.No
-        )
-        tab._on_send_unsent()
-        assert uploader.sent == []
-
-    def test_send_unsent_with_nothing_ready_says_so(
-        self, qtbot: QtBot, cw_conn: sqlite3.Connection, uploader: _FakeUploader
-    ) -> None:
-        _configure_upload(cw_conn)
-        tab = _running_with(qtbot, cw_conn)
-        tab._on_cw_block(HK1, START, END)  # a single reading
-        tab._on_send_unsent()
-        assert uploader.sent == []
-        assert "Nothing ready" in tab._lbl_status.text()
-
-    def test_send_unsent_exists_only_in_cw_tlm_mode(
+    def test_send_selected_exists_in_both_modes_and_send_unsent_is_gone(
         self, qtbot: QtBot, cw_conn: sqlite3.Connection
     ) -> None:
         tab = _make_tab(qtbot, cw_conn)
         tab.show()
-        # "Send selected" also serves AX.25 frames; "Send unsent" is CW TLM only.
-        assert tab._btn_satnogs_send.isVisible()
-        assert not tab._btn_satnogs_send_unsent.isVisible()
+        assert tab._btn_satnogs_send.isVisible()  # "Send selected" also serves AX.25 frames
         _select_cw_mode(tab)
         assert tab._btn_satnogs_send.isVisible()
-        assert tab._btn_satnogs_send_unsent.isVisible()
+        assert not hasattr(tab, "_btn_satnogs_send_unsent")
 
 
 class TestSatnogsAnswer:

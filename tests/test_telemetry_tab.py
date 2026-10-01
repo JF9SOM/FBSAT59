@@ -858,7 +858,6 @@ def test_send_selected_button_is_visible_at_startup_in_ax25_mode(
     qtbot.addWidget(tab)
     tab.show()
     assert tab._btn_satnogs_send.isVisible()
-    assert not tab._btn_satnogs_send_unsent.isVisible()  # CW TLM only
 
 
 def test_knacksat2_beacon_fills_the_decoded_fields_tab(
