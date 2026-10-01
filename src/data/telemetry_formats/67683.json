@@ -8,6 +8,7 @@
     "offset": 0,
     "hex": "0000"
   },
+  "beacon_label": "ビーコン（HK）",
   "document": "Layout from the SatNOGS decoder knacksat2.ksy (MIT, EmOne / Anol P.): https://gitlab.com/librespacefoundation/satnogs/satnogs-decoders/-/blob/master/ksy/knacksat2.ksy",
   "note": "Beacon frame (payload starts 00 00, 149 bytes, little-endian floats). Units are inferred from the ksy field names and checked against received frames (battery ~8.2 V, ~12.5 degC, MPPT current x voltage = power); the ksy states none. The *_res_* fields are the CSP-header bytes of each block, shown as the ksy decodes them. Other frame types (e.g. file-name replies, payload starts 40 5A) are not decoded.",
   "fields": [

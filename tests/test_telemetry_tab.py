@@ -858,3 +858,23 @@ def test_send_selected_button_is_visible_at_startup_in_ax25_mode(
     tab.show()
     assert tab._btn_satnogs_send.isVisible()
     assert not tab._btn_satnogs_send_unsent.isVisible()  # CW TLM only
+
+
+def test_knacksat2_beacon_fills_the_decoded_fields_tab(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.test_telemetry_knacksat2 import BEACON  # noqa: PLC0415
+
+    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: _RecordingUploader())
+    monkeypatch.setattr(
+        telemetry_tab_mod,
+        "decode_ax25",
+        lambda raw: types.SimpleNamespace(src="HS0K", payload=BEACON),
+    )
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab.set_satellite(67683, "KNACKSAT-2")
+    tab._on_ax25_frame(b"\x00" * 20)
+    table = tab._decode_tables["beacon"]
+    row = tab._decode_field_rows["beacon"]["batt_vout"]
+    assert table.item(row, 1).text().startswith("8.23")

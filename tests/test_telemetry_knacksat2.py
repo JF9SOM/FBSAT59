@@ -44,3 +44,13 @@ def test_other_frame_types_are_not_decoded_as_a_beacon() -> None:
 
 def test_format_maps_callsign_to_satellite() -> None:
     assert any(f["callsign"] == "HS0K" and f["norad"] == 67683 for f in list_formats())
+
+
+def test_beacon_has_a_decoded_fields_sub_tab() -> None:
+    from comms.telemetry.decoder import BEACON_ID, get_telemetry_id_defs  # noqa: PLC0415
+
+    defs = get_telemetry_id_defs(67683)
+    assert defs is not None
+    assert list(defs) == [BEACON_ID]
+    assert len(defs[BEACON_ID]["fields"]) == 49
+    assert decode_telemetry("HS0K", BEACON, 67683).telemetry_id == BEACON_ID

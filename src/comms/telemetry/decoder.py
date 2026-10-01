@@ -263,6 +263,10 @@ def _decode_csv_field(tokens: list[str], field_def: dict[str, Any]) -> Telemetry
 # ---------------------------------------------------------------------------
 
 
+# Sub-tab key of a flat ``fields`` list restricted by ``match`` (see _payload_matches()).
+BEACON_ID = "beacon"
+
+
 def get_telemetry_id_defs(norad: int | None) -> dict[str, Any] | None:
     """Return the per-telemetry-ID mapping from *norad*'s format file, if any.
 
@@ -293,6 +297,11 @@ def get_telemetry_id_defs(norad: int | None) -> dict[str, Any] | None:
         if isinstance(candidate, dict) and candidate:
             defs = dict(candidate)
             break
+
+    # A flat ``fields`` list with a ``match`` pattern is one beacon type among
+    # several frame types: give it its own "Decoded Fields" sub-tab.
+    if not defs and fmt.get("match") and fmt.get("fields"):
+        defs = {BEACON_ID: {"label": fmt.get("beacon_label", "Beacon"), "fields": fmt["fields"]}}
 
     cw_frames = fmt.get("cw_frames")
     if isinstance(cw_frames, dict) and cw_frames:
@@ -379,6 +388,9 @@ def decode_telemetry(
                 if result is not None:
                     decoded_fields.append(result)
     elif fmt and fmt.get("fields") and _payload_matches(fmt.get("match"), payload):
+        if fmt.get("match"):
+            telemetry_id = BEACON_ID
+            telemetry_label = fmt.get("beacon_label", "Beacon")
         for fd in fmt["fields"]:
             result = _decode_field(payload, fd)
             if result is not None:
