@@ -125,9 +125,15 @@ def match_frame_key(norad: int | None, text: str) -> str | None:
     return matched[0] if matched else None
 
 
+# A block this many digits off a frame's length (a dropped or inserted character, or two) is
+# still shown as a rejected candidate. A strong OrigamiSat-2 pass (2026-10-01) lost the two
+# digits "3E" of a 56-digit frame and so was never listed at all.
+_NEAR_MISS_LENGTH_DIFF = 2
+
+
 def is_near_miss(norad: int | None, text: str) -> bool:
     """True if *text* looks like a frame that was mis-read: a length off by one
-    digit from a known frame (a dropped or inserted character) or a frame-length
+    digit (up to two) from a known frame (a dropped or inserted character) or a frame-length
     block holding a few non-hex characters. For a frame with an ``id_prefix``,
     this only looks past an *exactly* matched prefix -- a garbled prefix (e.g. a
     dropped letter in the callsign) is not chased any further, same rigor as
@@ -147,7 +153,7 @@ def is_near_miss(norad: int | None, text: str) -> bool:
         if len(candidate) == n:
             if not _HEX_RE.match(candidate):
                 return True
-        elif abs(len(candidate) - n) == 1:
+        elif abs(len(candidate) - n) <= _NEAR_MISS_LENGTH_DIFF:
             return True
     return False
 

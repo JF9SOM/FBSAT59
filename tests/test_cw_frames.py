@@ -176,6 +176,8 @@ class TestBlockClassification:
         assert is_near_miss(ARICA2, "2FFE8594EB88012")  # one digit dropped
         assert is_near_miss(ARICA2, "2FFE8594EB8801245")  # one digit inserted
         assert is_near_miss(ARICA2, "2FFE8594EB88012O")  # right length, one non-hex character
+        assert is_near_miss(ARICA2, "2FFE8594EB8801")  # two digits dropped
+        assert is_near_miss(ORIGAMISAT2, "JS1YRUORIGAMI2" + "81" * 27)  # 54 of 56 digits
         assert not is_near_miss(ARICA2, "DE JS1YSD ARICA2")  # the ID text is not a frame
         assert not is_near_miss(ARICA2, "2FFE8594")
 
