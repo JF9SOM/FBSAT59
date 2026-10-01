@@ -665,12 +665,14 @@ class TestManualSend:
         assert uploader.sent == []
         assert "Nothing ready" in tab._lbl_status.text()
 
-    def test_the_send_buttons_exist_only_in_cw_tlm_mode(
+    def test_send_unsent_exists_only_in_cw_tlm_mode(
         self, qtbot: QtBot, cw_conn: sqlite3.Connection
     ) -> None:
         tab = _make_tab(qtbot, cw_conn)
         tab.show()
-        assert not tab._btn_satnogs_send.isVisible()
+        # "Send selected" also serves AX.25 frames; "Send unsent" is CW TLM only.
+        assert tab._btn_satnogs_send.isVisible()
+        assert not tab._btn_satnogs_send_unsent.isVisible()
         _select_cw_mode(tab)
         assert tab._btn_satnogs_send.isVisible()
         assert tab._btn_satnogs_send_unsent.isVisible()
