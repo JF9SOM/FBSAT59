@@ -176,6 +176,27 @@ class CommsTabConfig:
     show_rig_buttons: bool = True
 
 
+# ARICA-2 is catalogued as 68796 and (in SATNOGS DB) as 98329.
+_ARICA2_NORAD_IDS = frozenset({68796, 98329})
+
+
+def is_arica2_message_box_transmitter(xpdr: dict[str, Any]) -> bool:
+    """ARICA-2's 4800 baud GMSK message-box link (436.830 MHz).
+
+    Matched by NORAD id plus a GMSK / 4800 baud marker so the satellite's CW
+    beacon transmitter, which shares the frequency, is not picked.
+    """
+    if xpdr.get("norad_cat_id") not in _ARICA2_NORAD_IDS:
+        return False
+    text = f"{xpdr.get('description') or ''} {xpdr.get('mode') or ''}".upper()
+    return "GMSK" in text or xpdr.get("baud") == 4800
+
+
+def is_message_box_transmitter(xpdr: dict[str, Any]) -> bool:
+    """Satellites the Message Box/Digipeater tab serves (AX100 digipeater, ARICA-2)."""
+    return is_ax100_digi_transmitter(xpdr) or is_arica2_message_box_transmitter(xpdr)
+
+
 COMMS_TAB_CONFIG: dict[str, CommsTabConfig] = {
     "ft4": CommsTabConfig(
         show_input_source=True, freq_source="radio_control", matcher=is_ft4_transmitter
@@ -199,7 +220,7 @@ COMMS_TAB_CONFIG: dict[str, CommsTabConfig] = {
     # SDR Control (a resident tab): same box as Telemetry, no satellite combo.
     "sdr": CommsTabConfig(show_input_source=False, freq_source="radio_control"),
     "ax100digi": CommsTabConfig(
-        show_input_source=True, freq_source="radio_control", matcher=is_ax100_digi_transmitter
+        show_input_source=True, freq_source="radio_control", matcher=is_message_box_transmitter
     ),
 }
 

@@ -420,3 +420,20 @@ def test_get_norads_matching_searches_the_db(conn: sqlite3.Connection) -> None:
 
     # dead transmitter (alive=0), hidden satellite and non-CW-telemetry ones are excluded
     assert get_norads_matching(conn, is_cw_telemetry_transmitter) == [41847, 68796]
+
+
+def test_message_box_matcher_covers_ax100_and_arica2_gmsk() -> None:
+    from comms.mode_detection import (
+        is_arica2_message_box_transmitter,
+        is_message_box_transmitter,
+    )
+
+    gmsk = {"norad_cat_id": 68796, "description": "Mode U - GMSK4k8", "mode": "GMSK", "baud": 4800}
+    cw = {"norad_cat_id": 68796, "description": "Mode U - CW", "mode": "CW", "baud": None}
+    assert is_arica2_message_box_transmitter(gmsk)
+    assert not is_arica2_message_box_transmitter(cw)
+    assert is_arica2_message_box_transmitter({**gmsk, "norad_cat_id": 98329})
+    assert not is_arica2_message_box_transmitter({**gmsk, "norad_cat_id": 12345})
+    assert is_message_box_transmitter(gmsk)
+    assert is_message_box_transmitter({"norad_cat_id": 69912, "description": "Mode V/V Digipeater"})
+    assert not is_message_box_transmitter(cw)

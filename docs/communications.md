@@ -3319,3 +3319,91 @@ narrowing を行う方式に変更して解決。**この関連コードを修�
   ヘッダーデフォルト値（`DEFAULT_CSP_HEADER`）は実運用で調整が必要になる可能性が高い
 - 手動スケルチスライダーの適正なデフォルト値・実際の弱信号でのRS要求フィルタとの
   兼ね合いは実機・実パスでの検証待ち
+
+---
+
+### Message Box/Digipeater タブと ARICA-2 メッセージボックス（2026-10-01 実装）
+
+**未実機検証**。フレーム形式は公式非公開で、JI1IZR 氏の公式 Windows ツール（.NET）を
+逆アセンブルした [N6RFM/ARICA2-linux-groundstation](https://github.com/N6RFM/ARICA2-linux-groundstation)
+の記述を元にしている（公式ツールはバイナリのみ公開、ソース・仕様書なし。JAMSAT の
+ページから配布。運用 2026-09-29〜10-13、後フェーズで画像伝送の予定）。仕様が変わる／
+公式仕様が出たら `src/comms/arica2/message_box.py` の定数を突き合わせること。
+
+#### 構成
+
+| 部品 | 内容 |
+|---|---|
+| メニュー Communications > Message Box/Digipeater | 旧「AX100 Digi」を改名（**表示名のみ**。内部キー `ax100digi`・DB `ax100_digi_log`・`ax100_digi_tab.py` はそのまま） |
+| `ui/message_box_tab.py` `MessageBoxTab` | プロトコルコンボ（AX100 / ARICA-2）＋`QStackedWidget`。入力（音声/SDR）を切替時に片方へ寄せる。`set_use_utc`/`refresh_sdr_pipeline` を転送。設定 `message_box_tab_settings` |
+| `ui/arica2_panel.py` `Arica2Panel` | 受信ログ・アップリンクウィンドウ表示・送信モード（手動/自動）・Upload/Confirm/Parrot/Download・設定 `arica2_settings`・DB `arica2_log` |
+| `comms/arica2/message_box.py` | `build_command()`（19 バイトのペイロード）/`parse_downlink()` |
+| `comms/arica2/window_detector.py` | `BeaconWindowDetector`（SDR の生 IQ から CW ビーコンの終了を検出） |
+| `AprsEngine`（`comms/aprs/engine.py`） | `start_sdr_direwolf(..., tx=True)`（SDR 受信＋サウンドカード送信）・`send_raw()`・`can_transmit` を追加 |
+| `mode_detection.is_message_box_transmitter` | AX100 マッチャー＋ARICA-2（NORAD 68796/98329 かつ GMSK/4800）。CW ビーコン送信機は除外 |
+
+#### プロトコル（逆解析、未検証）
+
+436.830 MHz、**4800 baud G3RUH GMSK**（アップ・ダウン同一周波数）。20 スロット、1 件 8 文字、
+48 時間保存、**1 コールサイン 1 スロット**（衛星が割り当てる）。アップリンクが通るのは
+**CW ビーコン直後の約 15 秒**。
+
+アップリンクのペイロード（Direwolf の KISS に渡す 19 バイト。HDLC フラグ・FCS は Direwolf、
+FEND・コマンドバイトは KISS が付ける。N6RFM の「22 バイトフレーム」＝ FEND＋`00`＋19＋FEND）:
+
+```
+42 F8 BD | 種別2バイト | コールサイン6(NUL埋め) | メッセージ8(NUL埋め)
+種別: Download = 0x40+(slot//2), (slot%2)*128 ／ Upload = 50 00 ／ Confirm = 60 00 ／ Parrot = 70 00
+```
+
+ダウンリンク（Direwolf の KISS で届く形、FCS 除去済み）は AX.25 UI フレーム**もどき**で、
+宛先アドレスが 5 バイトしかない: `宛先5(ASCII<<1) | 送信元6(ASCII<<1) | SSID 1 | 03 | F0 | 平文 ASCII`。
+Direwolf は `(Not AX.25)` と表示するが KISS には出す（N6RFM が実機で確認と記載）。**宛先が 5 文字
+以外のコールサインで 5 バイト幅が成り立つかは N6RFM も未確認**（6 文字局は要実機確認）。
+
+#### 入出力と制約
+
+- **送信はサウンドカード（Direwolf）経由のみ**。SDR は送信できない。
+- 「SDR（送信は無線機）」: SDR が受信＋ビーコン検出、無線機が送信。`DirewolfManager.start()` /
+  `AudioBridge` は元々 SDR 入力と出力デバイスの同時指定に対応しており、`AprsEngine` に
+  `tx=True` を足しただけ（`_sdr_tx` フラグ。ボーレート再同期・既存受信専用セッションの再起動でも維持）。
+- 「Rig Soundcard」: 受信も送信もサウンドカード。ビーコン検出なし → **手動のみ**（自動は無効化）。
+- Direwolf は `AprsEngine` のプロセス共有シングルトン。Message Box は owner `"ARICA-2 Message Box"`。
+  MODEM は 4800 固定（`MODEM 4800 G3RUH`、`ARATE 48000`）。APRS/Telemetry タブが別ボーレートで
+  動いていると奪い合いになる（`sync_sdr_baud`/`restart_if_modem_changed` が 4800 へ再起動する）。
+- 無線機側は 4800/9600 の FM データ端子（DATA/9600 ポート）が要る。SSB 経路では G3RUH は通らない。
+- `send_raw()` の待ち時間は既定 `_TX_AUDIO_S=0.6` 秒（TXDELAY 300ms＋約 25 バイト＋TXTAIL）。
+
+#### アップリンクウィンドウ検出（`window_detector.py`）
+
+CW ビーコンは無変調キャリアのキーイングなので、**CW をデコードせず**「同調周波数付近（±3 kHz、
+DC ±250 Hz 除外）の狭帯域スペクトル線が一定時間続いた後に消えた」ことで終了を検出する。
+粗い箱型間引きで約 24 kHz にし、2048 点 FFT（約 85 ms）の**最大ビン／中央値**を見る。
+GMSK ダウンリンクは数 kHz に広がるので線として立たない。
+
+- 閾値 **14 dB**（既定）。純ノイズでも最大ビンは中央値の約 8 dB 上、10 dB 超えが約 8 フレームに 1 回
+  あるため 10 dB だと終了判定が毎回リセットされる（初版の不具合。合成信号テストで発覚）。
+- `gap_s=1.5` 秒無信号で終了、`min_burst_s=3.0` 秒未満の線は無視、`window_s=15.0`。
+  イベントの `remaining_s` ＝ 15 秒 − gap（検出に要した無音時間）。**これらは全て仮の値で、
+  ビーコンの実際の周期・窓の起点（各項目の後か、全体の後か）は未確認**。実機で要調整。
+- 時刻は入力サンプル数で数える（壁時計に依存しない）。呼び出し側がイベント受信時刻から期限を作る。
+- 検出器は SDR パイプラインの `subscribe()`（Doppler/Offset 補正後の生 IQ）で受け、イベントは
+  Qt シグナルでメインスレッドへ渡す。
+
+#### 手動/自動
+
+- **手動**: ボタンを押した瞬間に送信（窓が閉じていても送る。判断はユーザー）。
+- **自動**: 押すと「待機中」にし、窓が開いたら 0.5 秒後に送信（残り 2.5 秒未満なら見送り）。
+  窓が既に開いていて残り十分なら即送信。「待機取消」ボタンあり。SDR 入力のみ。
+
+#### テスト
+
+`tests/test_arica2_message_box.py`・`test_arica2_window_detector.py`（合成 IQ。scipy 不要）・
+`test_arica2_panel.py`（`AprsEngine` を偽物に差替え、`qtbot` 使用）・`test_aprs_engine.py`（`tx=True`・
+`send_raw`）・`test_mode_detection.py`。
+
+#### 未解決・今後
+
+- 実機でのアップリンク成否（特に 6 文字コールサイン、`42 F8 BD` 固定部、TXDELAY）。
+- ビーコン周期と窓の起点の確認、閾値・`gap_s` の調整。
+- 公式仕様（運用ソフト・パケット仕様は公式サイトで後日公開予定とのアナウンスあり）が出たら突き合わせ。

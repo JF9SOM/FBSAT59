@@ -1437,7 +1437,7 @@ class MainWindow(QMainWindow):
             comm_menu.addAction(_("FT4"), self._on_open_ft4)
             comm_menu.addAction(_("Q65"), self._on_open_q65)
             comm_menu.addAction(_("CW Decoder"), self._on_open_cw)
-            comm_menu.addAction(_("AX100 Digi"), self._on_open_ax100_digi)
+            comm_menu.addAction(_("Message Box/Digipeater"), self._on_open_ax100_digi)
             comm_menu.addSeparator()
             comm_menu.addAction(_("METEOR / HRPT"), self._on_open_meteor)
 
@@ -3448,23 +3448,25 @@ class MainWindow(QMainWindow):
         self._on_open_cw()
 
     def _on_open_ax100_digi(self) -> None:
-        """Open the AX100 Digipeater tab (Communications > AX100 Digipeater).
+        """Open the Message Box/Digipeater tab (Communications menu).
 
-        GreenCube (IO-117) / MARMOTSat-compatible GMSK "ASM+Golay" receiver.
+        Hosts the AX100 digipeater panel (GreenCube (IO-117) / MARMOTSat-compatible
+        GMSK "ASM+Golay" receiver) and the ARICA-2 message box; the internal tab
+        key stays "ax100digi".
         No transponder-selection auto-open wiring yet — this tab is opened
         from the menu. is_ax100_digi_transmitter() (norad 69912 / 98272 +
         "Mode V"/"Digipeater") identifies MARMOTSat's digipeater for the
         Comms Quick Panel filter, but nothing emits an open-tab signal for
         it the way ...transponder_selected does for APRS/FT4/SSTV."""
-        tab_label = _("AX100 Digi")
+        tab_label = _("Message Box/Digipeater")
         for i in range(self._tab_widget.count()):
             if self._tab_widget.tabText(i) == tab_label:
                 self._tab_widget.setCurrentIndex(i)
                 return
 
-        from ui.ax100_digi_tab import Ax100DigiTab
+        from ui.message_box_tab import MessageBoxTab
 
-        tab = Ax100DigiTab(self._conn, self._radio_control, parent=self)
+        tab = MessageBoxTab(self._conn, self._radio_control, parent=self)
         self._comms_tab_keys[tab] = "ax100digi"
         idx = self._tab_widget.addTab(tab, tab_label)
         self._add_tab_close_button(tab)
