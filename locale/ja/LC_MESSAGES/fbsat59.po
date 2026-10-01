@@ -6861,3 +6861,25 @@ msgstr ""
 #: src/ui/telemetry_tab.py
 msgid "Loaded {n} saved frame(s)"
 msgstr "保存済みフレームを{n}件読み込みました"
+
+#: src/ui/cw_tab.py
+msgid "Method:"
+msgstr "方式:"
+
+#: src/ui/cw_tab.py
+msgid "AI model (DeepCW)"
+msgstr "AIモデル（DeepCW）"
+
+#: src/ui/cw_tab.py
+msgid "Classical (timing)"
+msgstr "古典的（タイミング解析）"
+
+#: src/ui/cw_tab.py
+msgid ""
+"AI model: DeepCW neural network (needs the model installed).\n"
+"Classical: reads the carrier's on/off timing; needs no model and is\n"
+"more exact on a strong, clean carrier, but fails on a weak one."
+msgstr ""
+"AIモデル: DeepCWニューラルネットワーク（モデルのインストールが必要）。\n"
+"古典的: 搬送波のON/OFFのタイミングを読みます。モデルは不要で、\n"
+"強くきれいな信号では正確ですが、弱い信号には向きません。"

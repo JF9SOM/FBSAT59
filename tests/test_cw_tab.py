@@ -17,7 +17,7 @@ import numpy as np
 from PySide6.QtCore import QObject, Signal
 
 from comms.cw.codec import DecodeResult
-from ui.cw_tab import CwTab
+from ui.cw_tab import _PENDING_MARGIN_S, CwTab
 
 _EMPTY_ENERGY = np.zeros(0, dtype=np.float32)
 
@@ -314,9 +314,10 @@ class TestFrameBlocks:
     def test_a_block_spanning_two_decodes_is_one_block(self, qtbot: Any) -> None:
         tab, got = self._tab(qtbot)
         text = "2FFE8594EB880124"
-        chars = [(c, 10.0 + i * 0.4) for i, c in enumerate(text)]  # 10.0 .. 16.0
+        cutoff = 20.0 - _PENDING_MARGIN_S
+        chars = [(c, cutoff - 5.0 + i * 0.4) for i, c in enumerate(text)]  # ends past the cutoff
 
-        # Only characters up to t = 15 (window 20 s minus the 5 s pending margin) are final.
+        # Only characters up to the cutoff (window 20 s minus the pending margin) are final.
         tab._reconcile_decode(
             DecodeResult(
                 offsets=chars,
@@ -387,8 +388,10 @@ class TestControlApi:
         tab.frame_block_ready.connect(lambda t, a, b: got.append(t))
         tab.start_decoding()
         tab._snapshot_time = datetime(2026, 9, 20, 7, 0, 20, tzinfo=UTC)
-        # All final (t <= 15) and the last one just before the confirmed edge: block still open.
-        chars = [(c, 8.6 + i * 0.4) for i, c in enumerate("2FFE8594EB880124")]
+        # All final (before the cutoff) and the last one just before the confirmed edge:
+        # block still open.
+        first = 20.0 - _PENDING_MARGIN_S - 6.4
+        chars = [(c, first + i * 0.4) for i, c in enumerate("2FFE8594EB880124")]
         tab._reconcile_decode(
             DecodeResult(offsets=chars, window_duration=20.0, frame_energy=_EMPTY_ENERGY)
         )

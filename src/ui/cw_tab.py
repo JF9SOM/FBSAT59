@@ -18,6 +18,7 @@ import logging
 import re
 import sqlite3
 from collections import deque
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -26,6 +27,7 @@ from numpy.typing import NDArray
 from PySide6.QtCore import Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QFont, QTextCursor
 from PySide6.QtWidgets import (
+    QComboBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -39,6 +41,7 @@ from PySide6.QtWidgets import (
 
 from comms.audio_device_manager import get_audio_device_manager
 from comms.cw.block_extractor import CwBlockExtractor
+from comms.cw.classic import decode_classic
 from comms.cw.codec import HOP_LENGTH, MIN_AUDIO_SECONDS, SAMPLE_RATE, CwDecoder, DecodeResult
 from comms.cw.model_info import is_onnxruntime_available, is_ready
 from comms.cw.sdr_demod import SDR_AUDIO_RATE, CwSdrDemod
@@ -58,10 +61,16 @@ _BUFFER_SECONDS = 20
 # Decode every 5 s, but only when >= MIN_AUDIO_SECONDS of audio is buffered
 _DECODE_INTERVAL_MS = 5_000
 # Characters within this many seconds of the window's trailing edge are
-# still-revisable "pending" text (see reconcile_pending()) — matched to the
-# decode interval so a reading gets at least one extra decode cycle's worth
-# of trailing context before it is treated as final.
-_PENDING_MARGIN_S = _DECODE_INTERVAL_MS / 1000.0
+# still-revisable "pending" text (see reconcile_pending()). A reading is only
+# final once this much audio follows it: with the original 5 s the model
+# sometimes inserted a spurious character that a little more right-hand context
+# removes (replaying a strong OrigamiSat-2 pass, 2026-10-01), at the cost of
+# confirming text 3 s later.
+_PENDING_MARGIN_S = 8.0
+# Decoder methods (stored in app_settings under _METHOD_KEY).
+_METHOD_AI = "ai"
+_METHOD_CLASSIC = "classic"
+_METHOD_KEY = "cw_decoder_method"
 # A real pause between transmissions produces no decoded characters at all
 # (see comms.cw.transcript.insert_gap_markers) — bridge it with an explicit
 # separator instead of running unrelated messages together.
@@ -78,18 +87,23 @@ _FRAME_DURATION_S = HOP_LENGTH / SAMPLE_RATE
 
 
 class _DecodeWorker(QThread):
-    """Runs CwDecoder.decode_with_offsets() off the UI thread."""
+    """Runs one decode (the AI model or the classical decoder) off the UI thread."""
 
     result_ready = Signal(object)
 
-    def __init__(self, decoder: CwDecoder, audio: NDArray[np.float32], sample_rate: int) -> None:
+    def __init__(
+        self,
+        decode: Callable[[NDArray[np.float32], int], DecodeResult],
+        audio: NDArray[np.float32],
+        sample_rate: int,
+    ) -> None:
         super().__init__()
-        self._decoder = decoder
+        self._decode = decode
         self._audio = audio
         self._sample_rate = sample_rate
 
     def run(self) -> None:
-        result = self._decoder.decode_with_offsets(self._audio, self._sample_rate)
+        result = self._decode(self._audio, self._sample_rate)
         self.result_ready.emit(result)
 
 
@@ -157,6 +171,7 @@ class CwTab(QWidget):
         self._snapshot_dropped = 0
 
         self._setup_ui()
+        self._load_method_setting()
         self._load_sound_card_device()
 
         self._decode_timer = QTimer(self)
@@ -199,6 +214,21 @@ class CwTab(QWidget):
         cl.addWidget(self._rb_sdr)
         cl.addWidget(self._rb_sd)
         self._rb_sdr.toggled.connect(self._on_source_changed)
+
+        cl.addSpacing(16)
+        cl.addWidget(QLabel(_("Method:")))
+        self._method_combo = QComboBox()
+        self._method_combo.addItem(_("AI model (DeepCW)"), _METHOD_AI)
+        self._method_combo.addItem(_("Classical (timing)"), _METHOD_CLASSIC)
+        self._method_combo.setToolTip(
+            _(
+                "AI model: DeepCW neural network (needs the model installed).\n"
+                "Classical: reads the carrier's on/off timing; needs no model and is\n"
+                "more exact on a strong, clean carrier, but fails on a weak one."
+            )
+        )
+        self._method_combo.currentIndexChanged.connect(self._on_method_changed)
+        cl.addWidget(self._method_combo)
 
         cl.addStretch()
 
@@ -245,7 +275,44 @@ class CwTab(QWidget):
     # Model status
     # ------------------------------------------------------------------ #
 
+    def _method(self) -> str:
+        data = self._method_combo.currentData()
+        return _METHOD_CLASSIC if data == _METHOD_CLASSIC else _METHOD_AI
+
+    def _load_method_setting(self) -> None:
+        """Select the saved decoder method (default: the AI model)."""
+        try:
+            row = self._conn.execute(
+                "SELECT value FROM app_settings WHERE key = ?", (_METHOD_KEY,)
+            ).fetchone()
+        except Exception:  # noqa: BLE001 -- no app_settings table (tests, fresh db)
+            return
+        value = row[0] if row else None
+        index = self._method_combo.findData(value)
+        if index >= 0:
+            self._method_combo.blockSignals(True)
+            self._method_combo.setCurrentIndex(index)
+            self._method_combo.blockSignals(False)
+
+    @Slot()
+    def _on_method_changed(self) -> None:
+        try:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value, updated_at)"
+                " VALUES (?, ?, CURRENT_TIMESTAMP)",
+                (_METHOD_KEY, self._method()),
+            )
+            self._conn.commit()
+        except Exception:  # noqa: BLE001
+            logger.exception("CW Decoder: could not save the decoder method")
+        self._refresh_model_status()
+
     def _refresh_model_status(self) -> None:
+        if self._method() == _METHOD_CLASSIC:
+            # The classical decoder needs neither onnxruntime nor the model.
+            self._banner.setVisible(False)
+            self._start_btn.setEnabled(True)
+            return
         if not is_onnxruntime_available():
             self._banner.setText(_("onnxruntime not installed — use Help > CW Model Installation…"))
             self._banner.setVisible(True)
@@ -271,12 +338,13 @@ class CwTab(QWidget):
             self._stop()
 
     def _start(self) -> None:
-        if self._decoder is None:
-            self._decoder = CwDecoder()
-        if not self._decoder.is_ready:
-            self._status_label.setText(_("Model not ready — use Help > CW Model Installation…"))
-            self._start_btn.setChecked(False)
-            return
+        if self._method() == _METHOD_AI:
+            if self._decoder is None:
+                self._decoder = CwDecoder()
+            if not self._decoder.is_ready:
+                self._status_label.setText(_("Model not ready — use Help > CW Model Installation…"))
+                self._start_btn.setChecked(False)
+                return
 
         self._running = True
         self._rx_buffer.clear()
@@ -487,7 +555,8 @@ class CwTab(QWidget):
     def _trigger_decode(self) -> None:
         if self._decoding or not self._running:
             return
-        if self._decoder is None or not self._decoder.is_ready:
+        decode = self._decode_function()
+        if decode is None:
             return
         audio = self._get_audio_snapshot()
         if audio is None:
@@ -501,10 +570,18 @@ class CwTab(QWidget):
         self._snapshot_time = self._signal_time_now()
         self._snapshot_dropped = self._samples_dropped_total
         self._decoding = True
-        self._worker = _DecodeWorker(self._decoder, audio, self._rx_sample_rate)
+        self._worker = _DecodeWorker(decode, audio, self._rx_sample_rate)
         self._worker.result_ready.connect(self._on_decode_result)
         self._worker.finished.connect(self._on_worker_finished)
         self._worker.start()
+
+    def _decode_function(self) -> Callable[[NDArray[np.float32], int], DecodeResult] | None:
+        """The decode function of the selected method, or None if it is not usable yet."""
+        if self._method() == _METHOD_CLASSIC:
+            return decode_classic
+        if self._decoder is None or not self._decoder.is_ready:
+            return None
+        return self._decoder.decode_with_offsets
 
     @Slot(object)
     def _on_decode_result(self, result: DecodeResult) -> None:
