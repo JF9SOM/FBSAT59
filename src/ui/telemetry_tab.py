@@ -66,6 +66,7 @@ from comms.telemetry.cw_frames import (
     fields_from_saved,
     is_near_miss,
     load_cw_frames,
+    near_miss_hex,
     normalize_block,
 )
 from comms.telemetry.cw_upload import (
@@ -1266,7 +1267,7 @@ class TelemetryTab(QWidget):
                 self._append_row(
                     callsign=callsign,
                     sat_name=sat_name,
-                    data=f"[?] {normalize_block(text)}  ({note})",
+                    data=f"[?] {near_miss_hex(norad, text) or normalize_block(text)}  ({note})",
                     norad=norad,
                     ts=ts,
                     dim=True,

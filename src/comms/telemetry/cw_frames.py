@@ -131,17 +131,17 @@ def match_frame_key(norad: int | None, text: str) -> str | None:
 _NEAR_MISS_LENGTH_DIFF = 2
 
 
-def is_near_miss(norad: int | None, text: str) -> bool:
-    """True if *text* looks like a frame that was mis-read: a length off by one
-    digit (up to two) from a known frame (a dropped or inserted character) or a frame-length
-    block holding a few non-hex characters. For a frame with an ``id_prefix``,
-    this only looks past an *exactly* matched prefix -- a garbled prefix (e.g. a
-    dropped letter in the callsign) is not chased any further, same rigor as
-    everywhere else here."""
+def near_miss_hex(norad: int | None, text: str) -> str | None:
+    """The hex part of *text* if it is a near miss of a known frame (see is_near_miss()).
+
+    The frame's ``id_prefix`` (callsign and name, e.g. ``JS1YRUORIGAMI2``) is left out, so a
+    rejected candidate is shown like an accepted frame: just the digits. None if *text* is
+    not a near miss.
+    """
     frames = load_cw_frames(norad)
     block = normalize_block(text)
     if not frames or not block:
-        return False
+        return None
     for frame_def in frames.values():
         candidate = _hex_part(frame_def, block)
         if not candidate:
@@ -152,10 +152,20 @@ def is_near_miss(norad: int | None, text: str) -> bool:
         n = int(frame_def["hex_digits"])
         if len(candidate) == n:
             if not _HEX_RE.match(candidate):
-                return True
+                return candidate
         elif abs(len(candidate) - n) <= _NEAR_MISS_LENGTH_DIFF:
-            return True
-    return False
+            return candidate
+    return None
+
+
+def is_near_miss(norad: int | None, text: str) -> bool:
+    """True if *text* looks like a frame that was mis-read: a length off by one
+    digit (up to two) from a known frame (a dropped or inserted character) or a
+    frame-length block holding a few non-hex characters. For a frame with an
+    ``id_prefix``, this only looks past an *exactly* matched prefix -- a garbled
+    prefix (e.g. a dropped letter in the callsign) is not chased any further, same
+    rigor as everywhere else here."""
+    return near_miss_hex(norad, text) is not None
 
 
 def build_satnogs_frame(norad: int | None, text: str) -> bytes | None:

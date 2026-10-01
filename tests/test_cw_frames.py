@@ -19,6 +19,7 @@ from comms.telemetry.cw_frames import (
     is_near_miss,
     load_cw_frames,
     match_frame_key,
+    near_miss_hex,
     normalize_block,
 )
 from comms.telemetry.decoder import get_telemetry_id_defs
@@ -275,6 +276,11 @@ class TestOrigamiSat2:
         assert result.key == "TLM"
         assert result.valid
         assert result.hex_text == OSAT2_BLOCK_CLEAN[14:]
+
+    def test_near_miss_is_shown_without_the_id_prefix(self) -> None:
+        assert near_miss_hex(ORIGAMISAT2, OSAT2_BLOCK_GARBLED) == OSAT2_BLOCK_GARBLED[14:]
+        assert near_miss_hex(ARICA2, "2FFE8594EB88012") == "2FFE8594EB88012"  # no prefix
+        assert near_miss_hex(ARICA2, "DE JS1YSD ARICA2") is None
 
     def test_garbled_block_is_a_near_miss_not_a_decode(self) -> None:
         # The '?' (14th hex digit) makes this real block fail decode entirely --
