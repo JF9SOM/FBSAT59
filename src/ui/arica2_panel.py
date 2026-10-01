@@ -252,10 +252,12 @@ class Arica2Panel(QWidget):
         self._parrot_btn = QPushButton(_("Parrot"))
         self._parrot_btn.setToolTip(_("The satellite echoes the message straight back"))
         self._download_btn = QPushButton(_("Download"))
-        self._download_btn.setToolTip(_("Read back the message in the chosen slot"))
+        self._download_btn.setToolTip(
+            _("Read back the message with this ID (1-20). Only Download uses it")
+        )
         self._slot_spin = QSpinBox()
         self._slot_spin.setRange(1, MAX_SLOT)
-        self._slot_spin.setPrefix(_("Slot "))
+        self._slot_spin.setPrefix(_("Message ID "))
         self._cancel_btn = QPushButton(_("Cancel armed"))
         self._cancel_btn.setEnabled(False)
 
@@ -530,7 +532,7 @@ class Arica2Panel(QWidget):
             return
         text = command.value + (f" {message}" if message else "")
         if slot is not None:
-            text += f" slot {slot}"
+            text += f" message ID {slot}"
         self._tx_status_label.setText(_("TX: ") + text)
         self._append_row(my_call, "JS1YSD", "→ " + text, payload, persist=False)
 

@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-01 20:17+0900\n"
+"POT-Creation-Date: 2026-10-01 20:27+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -4712,11 +4712,11 @@ msgid "Download"
 msgstr ""
 
 #: src/ui/arica2_panel.py:255
-msgid "Read back the message in the chosen slot"
+msgid "Read back the message with this ID (1-20). Only Download uses it"
 msgstr ""
 
 #: src/ui/arica2_panel.py:258
-msgid "Slot "
+msgid "Message ID "
 msgstr ""
 
 #: src/ui/arica2_panel.py:259

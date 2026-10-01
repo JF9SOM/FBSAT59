@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-01 20:17+0900\n"
+"POT-Creation-Date: 2026-10-01 20:27+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -5084,7 +5084,11 @@ msgid ""
 "characters each, kept for 48 hours. Uplink works only for about 15 seconds "
 "right after the CW beacon stops. Frame format is reverse engineered from the "
 "official Windows tool and is not officially documented."
-msgstr "436.830 MHz、4800 baud G3RUH GMSK（アップリンク・ダウンリンク共通）。20スロット、1件8文字、48時間保存。アップリンクはCWビーコンが止まった直後の約15秒間だけ有効です。フレーム形式は公式Windowsツールの逆解析によるもので、公式には公開されていません。"
+msgstr ""
+"436.830 MHz、4800 baud G3RUH GMSK（アップリンク・ダウンリンク共通）。20スロッ"
+"ト、1件8文字、48時間保存。アップリンクはCWビーコンが止まった直後の約15秒間だ"
+"け有効です。フレーム形式は公式Windowsツールの逆解析によるもので、公式には公開"
+"されていません。"
 
 #: src/ui/arica2_panel.py:186
 msgid "Receive:"
@@ -5127,7 +5131,9 @@ msgid ""
 "Manual sends the moment you press a button. Auto holds the command and sends "
 "it as soon as the beacon ends (needs the SDR input, which watches the "
 "beacon)."
-msgstr "手動はボタンを押した瞬間に送信します。自動はコマンドを保留し、ビーコンが終わった直後に送信します（ビーコンを監視するSDR入力が必要）。"
+msgstr ""
+"手動はボタンを押した瞬間に送信します。自動はコマンドを保留し、ビーコンが終"
+"わった直後に送信します（ビーコンを監視するSDR入力が必要）。"
 
 #: src/ui/arica2_panel.py:232
 msgid "Message box"
@@ -5166,12 +5172,12 @@ msgid "Download"
 msgstr "ダウンロード"
 
 #: src/ui/arica2_panel.py:255
-msgid "Read back the message in the chosen slot"
-msgstr "選んだスロットのメッセージを読み出します"
+msgid "Read back the message with this ID (1-20). Only Download uses it"
+msgstr "このID（1〜20）のメッセージを読み出します。使うのはDownloadだけです"
 
 #: src/ui/arica2_panel.py:258
-msgid "Slot "
-msgstr "スロット "
+msgid "Message ID "
+msgstr "メッセージID "
 
 #: src/ui/arica2_panel.py:259
 msgid "Cancel armed"
@@ -5198,7 +5204,9 @@ msgstr "入力: SDR接続中（4800 baud）、送信は無線機"
 #: src/ui/arica2_panel.py:370
 msgid ""
 "Input: Rig Soundcard + Direwolf (4800 baud). No beacon detection: manual only"
-msgstr "入力: 無線機サウンドカード + Direwolf（4800 baud）。ビーコン検出なし: 手動のみ"
+msgstr ""
+"入力: 無線機サウンドカード + Direwolf（4800 baud）。ビーコン検出なし: 手動の"
+"み"
 
 #: src/ui/arica2_panel.py:431
 #, python-brace-format
@@ -6531,6 +6539,9 @@ msgstr "ステータス: 「{text}」"
 #, python-brace-format
 msgid "({shown}/{total} hex chars — rest omitted)"
 msgstr "（{shown}/{total}文字を表示、以下省略）"
+
+#~ msgid "Slot "
+#~ msgstr "スロット "
 
 #~ msgid "AX100 Digi"
 #~ msgstr "AX100 Digi"
