@@ -1008,3 +1008,8 @@ SatNOGS が要求するフル フレームを再構成できない — **送信�
 全ペイロードをデコード）。float は **リトルエンディアン**なので型 `float32_le` を追加。
 単位は ksy に無く、フィールド名と実フレーム（バッテリー約8.2 V・約12.5 ℃・MPPT 電流×電圧＝電力）から
 推定した。`*_res_*` は各ブロック先頭の CSP ヘッダー 5 バイトで、意味は未確認。
+
+**訂正（同日）**: 当初の 67683.json は flat `fields` のみで、「Decoded Fields」タブ
+（`_rebuild_decode_tabs()`）は flat 形式の衛星では無効になるため値が表示されなかった。
+`match` 付き flat リストは `get_telemetry_id_defs()` で単一サブタブ `BEACON_ID`（`"beacon"`、
+ラベルは `beacon_label`）として扱うよう修正。`match` の無い従来の flat 形式の挙動は変えていない。
