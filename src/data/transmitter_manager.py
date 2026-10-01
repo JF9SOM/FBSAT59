@@ -249,8 +249,38 @@ class TransmitterManager:
                 )
                 stats["inserted"] += 1
 
+            self._seed_community_offsets(xpdr_uuid, entry)
+
         self._conn.commit()
         return stats
+
+    def _seed_community_offsets(self, xpdr_uuid: str, entry: dict[str, Any]) -> None:
+        """Apply a community entry's default rx_offset_hz / ul_offset_hz once.
+
+        Runs a single time per transmitter UUID (tracked by an app_settings
+        marker) and only fills offsets that are still 0/NULL, so a value the
+        operator later changes -- even back to 0 -- is never overwritten by a
+        subsequent launch. Works for both freshly inserted rows and rows
+        that already existed before the JSON gained an offset.
+        """
+        defaults = {
+            col: float(entry[col]) for col in ("rx_offset_hz", "ul_offset_hz") if entry.get(col)
+        }
+        if not defaults:
+            return
+        marker = f"community_offset_seeded:{xpdr_uuid}"
+        if self._conn.execute("SELECT 1 FROM app_settings WHERE key = ?", (marker,)).fetchone():
+            return
+        for col, value in defaults.items():
+            self._conn.execute(
+                f"UPDATE transmitters SET {col} = ? WHERE uuid = ? AND COALESCE({col}, 0) = 0",
+                (value, xpdr_uuid),
+            )
+        self._conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value, updated_at)"
+            " VALUES (?, '1', CURRENT_TIMESTAMP)",
+            (marker,),
+        )
 
     # ------------------------------------------------------------------ #
     # Manual add / edit / delete
@@ -273,6 +303,8 @@ class TransmitterManager:
         notes: str = "",
         xpdr_type: str = "Transponder",
         manual_override: bool = True,
+        rx_offset_hz: float = 0.0,
+        ul_offset_hz: float = 0.0,
     ) -> str:
         """
         Manually add a transponder.
@@ -297,13 +329,14 @@ class TransmitterManager:
                 uplink_low, uplink_high, downlink_low, downlink_high,
                 mode, invert, baud,
                 ctcss_tone, ctcss_tone_type,
-                alive, source, manual_override, notes, updated_at
+                alive, source, manual_override, notes, rx_offset_hz, ul_offset_hz,
+                updated_at
             ) VALUES (
                 ?, ?, ?, ?,
                 ?, ?, ?, ?,
                 ?, ?, ?,
                 ?, ?,
-                1, 'manual', ?, ?, ?
+                1, 'manual', ?, ?, ?, ?, ?
             )
         """,
             (
@@ -322,6 +355,8 @@ class TransmitterManager:
                 ctcss_tone_type,
                 int(manual_override),
                 notes,
+                rx_offset_hz,
+                ul_offset_hz,
                 now,
             ),
         )

@@ -810,3 +810,103 @@ class TestFetchSatnogsTransmitter:
             mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
             with pytest.raises(httpx.ConnectError):
                 asyncio.run(mgr.fetch_satnogs_transmitter("abc"))
+
+
+class TestUlOffsetPersistence:
+    """ul_offset_hz (UL twin of rx_offset_hz): manual add, SATNOGS-sync
+    survival, and the one-shot community default seeding."""
+
+    def test_add_manual_transmitter_stores_both_offsets(self, db: sqlite3.Connection) -> None:
+        mgr = TransmitterManager(db)
+        xpdr_uuid = mgr.add_manual_transmitter(
+            norad_cat_id=44909,
+            description="RS-44 FT4",
+            downlink_low=435612000,
+            mode="USB-D",
+            uplink_low=145993000,
+            rx_offset_hz=100.0,
+            ul_offset_hz=-2400.0,
+        )
+        row = mgr.get_transmitters(44909)[0]
+        assert row["uuid"] == xpdr_uuid
+        assert row["rx_offset_hz"] == 100.0
+        assert row["ul_offset_hz"] == -2400.0
+
+    def test_offsets_survive_real_satnogs_sync(self, db: sqlite3.Connection) -> None:
+        """Run the real sync_from_satnogs() over an existing SATNOGS row that
+        carries offsets: frequencies are refreshed, offsets are untouched."""
+        db.execute("INSERT INTO satellites (norad_cat_id, name) VALUES (44909, 'RS-44')")
+        db.execute(
+            "INSERT INTO transmitters (uuid, norad_cat_id, description, uplink_low,"
+            " downlink_low, source, rx_offset_hz, ul_offset_hz)"
+            " VALUES ('sn-1', 44909, 'old', 145900000, 435500000, 'satnogs', 55.0, -2400.0)"
+        )
+        db.commit()
+        mgr = TransmitterManager(db)
+        resp = MagicMock()
+        resp.json.return_value = [
+            {
+                "uuid": "sn-1",
+                "norad_cat_id": 44909,
+                "description": "new",
+                "type": "Transponder",
+                "uplink_low": 145920000,
+                "downlink_low": 435640000,
+                "mode": "SSB",
+                "invert": True,
+                "alive": True,
+                "status": "active",
+            }
+        ]
+        resp.raise_for_status.return_value = None
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=resp)
+        with patch("data.transmitter_manager.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+            asyncio.run(mgr.sync_from_satnogs())
+        row = db.execute(
+            "SELECT description, downlink_low, rx_offset_hz, ul_offset_hz"
+            " FROM transmitters WHERE uuid = 'sn-1'"
+        ).fetchone()
+        assert row["description"] == "new"
+        assert row["downlink_low"] == 435640000
+        assert row["rx_offset_hz"] == 55.0
+        assert row["ul_offset_hz"] == -2400.0
+
+    def test_community_default_seeded_once_and_user_change_kept(
+        self, db: sqlite3.Connection
+    ) -> None:
+        mgr = TransmitterManager(db)
+        mgr.load_community_transmitters()
+        row = db.execute(
+            "SELECT uplink_low, ul_offset_hz FROM transmitters WHERE uuid = 'community-rs44-ft4'"
+        ).fetchone()
+        assert row["uplink_low"] == 145993000
+        assert row["ul_offset_hz"] == -2400.0
+
+        # Operator edits the value; later launches must not reseed it, even
+        # when set back to 0.
+        for value in (-1800.0, 0.0):
+            mgr.update_transmitter("community-rs44-ft4", ul_offset_hz=value)
+            mgr.load_community_transmitters()
+            row = db.execute(
+                "SELECT ul_offset_hz FROM transmitters WHERE uuid = 'community-rs44-ft4'"
+            ).fetchone()
+            assert row["ul_offset_hz"] == value
+
+    def test_community_default_seeds_existing_row_with_zero_offset(
+        self, db: sqlite3.Connection
+    ) -> None:
+        """A pre-existing install (row already present, offset 0) gets the
+        default on its first launch with the new JSON."""
+        mgr = TransmitterManager(db)
+        mgr.load_community_transmitters()
+        db.execute("DELETE FROM app_settings WHERE key LIKE 'community_offset_seeded:%'")
+        db.execute("UPDATE transmitters SET ul_offset_hz = 0")
+        db.commit()
+        mgr.load_community_transmitters()
+        row = db.execute(
+            "SELECT ul_offset_hz FROM transmitters WHERE uuid = 'community-rs44-ft4'"
+        ).fetchone()
+        assert row["ul_offset_hz"] == -2400.0

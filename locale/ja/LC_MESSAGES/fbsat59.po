@@ -6579,3 +6579,19 @@ msgstr "このリグはSDRです。キーイングする送信機がありませ
 #: src/ui/ptt_panel.py
 msgid "Rig 2 is disabled (see the Rig 2 tab)."
 msgstr "Rig 2は無効です（Rig 2タブを参照）。"
+
+#: src/ui/transmitter_dialog.py
+msgid "Downlink Offset:"
+msgstr "ダウンリンク オフセット:"
+
+#: src/ui/transmitter_dialog.py
+msgid "Uplink Offset:"
+msgstr "アップリンク オフセット:"
+
+#: src/ui/transmitter_dialog.py
+msgid "Effective Downlink:"
+msgstr "実効ダウンリンク:"
+
+#: src/ui/transmitter_dialog.py
+msgid "Effective Uplink:"
+msgstr "実効アップリンク:"

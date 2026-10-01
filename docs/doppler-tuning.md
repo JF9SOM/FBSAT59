@@ -97,8 +97,23 @@ RS-44 の FT4 アップリンクを 145.993→145.9906 MHz に変更した（09-
 - コミュニティ同期（`load_community_transmitters`）の UPDATE は列を明示指定しているため
   `ul_offset_hz` を上書きしない
 - RS-44 FT4（`community-rs44-ft4`）: カタログ UL を 145.993 MHz に戻し、運用者の DB で
-  `ul_offset_hz = -2400`（実効 145.9906 MHz）を設定。**出荷データ側にはオフセットを持たせて
-  いない**（他ユーザーの DB は 145.993 / オフセット0 になる）
+  `ul_offset_hz = -2400`（実効 145.9906 MHz）を設定。出荷データ（community JSON）にも
+  同じ `ul_offset_hz: -2400` を持たせており、全ユーザーに一度だけ反映される（次節）
+
+#### 続き（2026-10-01）— コミュニティ既定値・SATNOGS 同期耐性・トランスミッターダイアログ
+
+- **SATNOGS 同期でオフセットは消えない**: `sync_from_satnogs()` の UPDATE/INSERT は列を明示指定しており
+  `rx_offset_hz`/`ul_offset_hz` を一切触らない（実同期を通すテスト `test_offsets_survive_real_satnogs_sync`）
+- **コミュニティ JSON の既定オフセット**: エントリに `"ul_offset_hz"`（および `"rx_offset_hz"`）を書ける。
+  `TransmitterManager._seed_community_offsets()` が **UUID ごとに一度だけ**（`app_settings` の
+  `community_offset_seeded:<uuid>` マーカー）、値がまだ 0/NULL の列にだけ書き込む。新規 INSERT 行にも、
+  すでに存在する既存ユーザーの行にも同じ経路で効く。運用者が後から変更した値（0 に戻した場合も）は
+  再起動で上書きされない。RS-44 FT4 は `ul_offset_hz: -2400`（UL 145.993 MHz）
+- **Satellite > Add/Edit Transmitter（`TransmitterDialog`）**: Frequency 枠に「Downlink Offset」「Uplink
+  Offset」（±10000Hz・10Hz刻み）と、読み取り専用の「Effective Downlink / Uplink」（帯域上端があれば
+  中心、なければ下端 + オフセット。アプリが実際にドップラー補正前の公称値とする値と同じ。UL 未設定時は
+  `-`）を追加。編集時は保存値を表示し、「Reset to SatNOGS Official Value」はオフセットに触れない
+  （SATNOGS のデータではないため）。追加時は `add_manual_transmitter(rx_offset_hz=, ul_offset_hz=)`
 
 ### バグ修正 — 衛星を切り替えて戻るとOffsetが消える（v0.3.7実運用で発覚・修正済み、2026-08-12）
 

@@ -11,6 +11,7 @@
     "description": "FT4 Calling — community standard (V/U inverting transponder)",
     "type": "Transponder",
     "uplink_low":   145993000,
+    "ul_offset_hz": -2400,
     "uplink_high":  null,
     "downlink_low": 435612000,
     "downlink_high": null,
@@ -18,7 +19,7 @@
     "invert": true,
     "baud": null,
     "ctcss_tone": null,
-    "notes": "Community FT4 calling frequency within the V/U inverting transponder passband. Rx 435.612 / Tx 145.9906. Catalog uplink is 145.993; many JA stations use 145.9906 (2026-09-30), reached via the per-transponder UL Offset (-2400 Hz) rather than by editing this value. Matches the value many JA stations actually use (Rymansat Satellite Tracker's bundled default, github.com/RymansatSatelliteTracker/RST, satellite_data/frequency.json uplink3 -- traced back to PR #182's source table). Not in SATNOGS. Original ref: JH1NHK https://x.com/JH1NHK/status/1882598594924212321"
+    "notes": "Community FT4 calling frequency within the V/U inverting transponder passband. Rx 435.612 / Tx 145.9906. Catalog uplink is 145.993; many JA stations use 145.9906 (2026-09-30), reached via the default per-transponder UL Offset (ul_offset_hz = -2400, seeded once per install; user changes are kept) rather than by editing this value. Matches the value many JA stations actually use (Rymansat Satellite Tracker's bundled default, github.com/RymansatSatelliteTracker/RST, satellite_data/frequency.json uplink3 -- traced back to PR #182's source table). Not in SATNOGS. Original ref: JH1NHK https://x.com/JH1NHK/status/1882598594924212321"
   },
   {
     "uuid": "community-jo97-ft4",

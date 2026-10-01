@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
+    QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
@@ -44,6 +45,10 @@ _MODES: list[str] = [
 ]
 _TYPES: list[str] = ["Transmitter", "Transponder", "Transceiver", "Beacon"]
 _CTCSS_TYPES: list[str] = ["", "CTCSS", "DCS"]
+
+# Same range/step as the Radio Control Offset spinboxes.
+_OFFSET_RANGE_HZ = 10000
+_OFFSET_STEP_HZ = 10
 
 
 class TransmitterDialog(QDialog):
@@ -132,6 +137,36 @@ class TransmitterDialog(QDialog):
         self._ul_high_spin.setSpecialValueText(_("(none)"))
         freq_form.addRow(_("Uplink High (MHz):"), self._ul_high_spin)
 
+        # Persistent per-transponder offsets (Hz), applied by the app before
+        # Doppler correction. See docs/doppler-tuning.md.
+        self._dl_offset_spin = QSpinBox()
+        self._dl_offset_spin.setRange(-_OFFSET_RANGE_HZ, _OFFSET_RANGE_HZ)
+        self._dl_offset_spin.setSingleStep(_OFFSET_STEP_HZ)
+        self._dl_offset_spin.setSuffix(" Hz")
+        freq_form.addRow(_("Downlink Offset:"), self._dl_offset_spin)
+
+        self._ul_offset_spin = QSpinBox()
+        self._ul_offset_spin.setRange(-_OFFSET_RANGE_HZ, _OFFSET_RANGE_HZ)
+        self._ul_offset_spin.setSingleStep(_OFFSET_STEP_HZ)
+        self._ul_offset_spin.setSuffix(" Hz")
+        freq_form.addRow(_("Uplink Offset:"), self._ul_offset_spin)
+
+        self._eff_dl_label = QLabel()
+        freq_form.addRow(_("Effective Downlink:"), self._eff_dl_label)
+        self._eff_ul_label = QLabel()
+        freq_form.addRow(_("Effective Uplink:"), self._eff_ul_label)
+
+        for spin in (
+            self._dl_spin,
+            self._dl_high_spin,
+            self._ul_spin,
+            self._ul_high_spin,
+        ):
+            spin.valueChanged.connect(self._update_effective_labels)
+        self._dl_offset_spin.valueChanged.connect(self._update_effective_labels)
+        self._ul_offset_spin.valueChanged.connect(self._update_effective_labels)
+        self._update_effective_labels()
+
         layout.addWidget(freq_group)
 
         # Mode and type
@@ -218,12 +253,31 @@ class TransmitterDialog(QDialog):
             return 0.0
         return hz / 1_000_000
 
+    def _update_effective_labels(self) -> None:
+        """Show the offset-corrected nominal frequencies (band centre when a
+        high edge is set, matching what the app tunes to before Doppler)."""
+        for label, low, high, offset in (
+            (self._eff_dl_label, self._dl_spin, self._dl_high_spin, self._dl_offset_spin),
+            (self._eff_ul_label, self._ul_spin, self._ul_high_spin, self._ul_offset_spin),
+        ):
+            low_hz = self._mhz_to_hz(low.value())
+            if low_hz is None:
+                label.setText("-")
+                continue
+            high_hz = self._mhz_to_hz(high.value())
+            nominal = (low_hz + high_hz) / 2 if high_hz is not None else float(low_hz)
+            label.setText(f"{(nominal + offset.value()) / 1_000_000:.6f} MHz")
+
     def _prefill(self, rec: dict[str, Any]) -> None:
         """Populate widgets with values from an existing record (edit mode)."""
         self._norad_spin.setValue(rec.get("norad_cat_id", 25544))
         self._norad_spin.setEnabled(False)
         self._satnogs_norad_spin.setEnabled(False)
         self._apply_satnogs_fields(rec)
+        # Offsets are the operator's own saved corrections, not SatNOGS data,
+        # so they are populated here and not by _apply_satnogs_fields().
+        self._dl_offset_spin.setValue(int(rec.get("rx_offset_hz") or 0))
+        self._ul_offset_spin.setValue(int(rec.get("ul_offset_hz") or 0))
         self._notes_edit.setText(rec.get("notes") or "")
         self._overwrite_check.setChecked(bool(rec.get("manual_override", 1)))
 
@@ -314,6 +368,8 @@ class TransmitterDialog(QDialog):
                     ctcss_tone_type=ctcss_type_str,
                     notes=notes,
                     manual_override=manual_override,
+                    rx_offset_hz=float(self._dl_offset_spin.value()),
+                    ul_offset_hz=float(self._ul_offset_spin.value()),
                 )
             else:
                 self._tm.add_manual_transmitter(
@@ -330,6 +386,8 @@ class TransmitterDialog(QDialog):
                     notes=notes,
                     xpdr_type=xpdr_type,
                     manual_override=bool(manual_override),
+                    rx_offset_hz=float(self._dl_offset_spin.value()),
+                    ul_offset_hz=float(self._ul_offset_spin.value()),
                 )
             self.accept()
         except Exception as exc:
