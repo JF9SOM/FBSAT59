@@ -167,6 +167,11 @@ _TX_BLOCK_SIZE = 3000
 # margin over a normal transmission while still guaranteeing PTT comes
 # back off before the *next* period would otherwise try to key up again.
 _TX_WATCHDOG_S = 7.0
+# Tune (continuous test tone for adjusting TX level / ALC): safety cap on how
+# long a single Tune may hold PTT if the operator forgets to switch it off.
+_TUNE_MAX_S = 60.0
+# Short fade-in so keying the tone does not click.
+_TUNE_FADE_IN_S = 0.02
 
 # How often to poll the TX rig's is_connected while TX Enable is on (see
 # _check_tx_rig_connection()). A few seconds is plenty for a UI-visible
@@ -205,12 +210,19 @@ class _TxWorker(QObject):
         rig: Any,
         get_gain: Callable[[], float],
         parent: QObject | None = None,
+        watchdog_s: float = _TX_WATCHDOG_S,
+        timeout_is_normal: bool = False,
     ) -> None:
         super().__init__(parent)
         self._audio = audio
         self._out_device = out_device
         self._rig = rig
         self._get_gain = get_gain
+        # Tune sends a long tone that is meant to be cut short by the
+        # operator or by this cap, so reaching the cap is a normal end
+        # there rather than a stalled-audio watchdog event.
+        self._watchdog_s = watchdog_s
+        self._timeout_is_normal = timeout_is_normal
         # Guards _active_stream, which is written from run()'s thread and
         # read from abort() (called from the Qt main thread by Halt TX /
         # closeEvent) — see abort()'s docstring.
@@ -391,7 +403,11 @@ class _TxWorker(QObject):
                 log.info("tx stream_started duration=%.3fs", stream_started_at - t0)
                 mgr.pin_active_output(_AUDIO_OWNER)
                 t0 = time.monotonic()
-                finished_naturally = done.wait(timeout=_TX_WATCHDOG_S)
+                finished_naturally = done.wait(timeout=self._watchdog_s)
+                if not finished_naturally and self._timeout_is_normal:
+                    with contextlib.suppress(Exception):
+                        stream.abort()
+                    finished_naturally = True
                 if not finished_naturally:
                     # The audio thread never signalled completion within
                     # the watchdog window -- cut it short exactly like an
@@ -403,7 +419,7 @@ class _TxWorker(QObject):
                     log.warning(
                         "tx watchdog FIRED after %.1fs — forcing PTT off "
                         "(audio pipeline did not signal completion)",
-                        _TX_WATCHDOG_S,
+                        self._watchdog_s,
                     )
                     with contextlib.suppress(Exception):
                         stream.abort()
@@ -445,7 +461,7 @@ class _TxWorker(QObject):
                 # completing normally -- PTT is already back off by now.
                 self.error.emit(
                     _("TX watchdog: forced PTT off after {s:.0f}s (audio stalled)").format(
-                        s=_TX_WATCHDOG_S
+                        s=self._watchdog_s
                     )
                 )
         except Exception as exc:
@@ -578,6 +594,7 @@ class Ft4Tab(QWidget):
         self._tx_worker: _TxWorker | None = None
         self._tx_enabled: bool = False
         self._tx_in_progress: bool = False
+        self._tuning: bool = False
         self._last_level_emit: float = 0.0
         self._waterfall_dialog: Ft4WaterfallDialog | None = None
         self._decode_busy: bool = False
@@ -836,6 +853,21 @@ class Ft4Tab(QWidget):
         btn_row.addWidget(self._tx_slot_combo)
 
         btn_row.addStretch()
+
+        self._tune_btn = QPushButton(_("Tune"))
+        self._tune_btn.setCheckable(True)
+        self._tune_btn.setToolTip(
+            _(
+                "Transmit a continuous test tone at the TX Audio frequency so you can\n"
+                "adjust the TX Level while watching the rig's power / ALC meter.\n"
+                "Press again (or Halt TX) to stop. Stops by itself after 60 seconds."
+            )
+        )
+        self._tune_btn.setStyleSheet(
+            "QPushButton:checked{background:#cc6600;color:white;font-weight:bold;}"
+        )
+        self._tune_btn.toggled.connect(self._on_tune_toggled)
+        btn_row.addWidget(self._tune_btn)
 
         self._tx_enable_btn = QPushButton(_("TX Enable"))
         self._tx_enable_btn.setCheckable(True)
@@ -1429,6 +1461,9 @@ class Ft4Tab(QWidget):
         """Start TX in a daemon thread."""
         if not self._codec.is_available:
             return
+        if self._tuning:
+            self._status_label.setText(_("Tune is active — stop it before transmitting"))
+            return
         msg = self._tx_edit.text().strip().upper()
         if not msg:
             qso = self._qso
@@ -1485,6 +1520,83 @@ class Ft4Tab(QWidget):
         self._tx_thread = t
         t.start()
         self._status_label.setText(_("TX: ") + msg)
+
+    @Slot(bool)
+    def _on_tune_toggled(self, checked: bool) -> None:
+        """Start or stop the continuous Tune test tone."""
+        if not checked:
+            worker = self._tx_worker
+            if self._tuning and worker is not None:
+                worker.abort()
+                self._status_label.setText(_("Tune: stopping"))
+            return
+        if self._tx_in_progress:
+            self._reset_tune_button()
+            self._status_label.setText(_("Tune unavailable: transmission in progress"))
+            return
+        if self._out_device is None:
+            self._reset_tune_button()
+            self._status_label.setText(
+                _("Sound Card not configured — open Rig Settings > Sound Card")
+            )
+            return
+        try:
+            audio_freq = float(self._audio_freq_edit.text())
+        except ValueError:
+            audio_freq = _DEFAULT_AUDIO_FREQ
+        n = int(_TUNE_MAX_S * SAMPLE_RATE)
+        t = np.arange(n, dtype=np.float64) / SAMPLE_RATE
+        tone = np.sin(2.0 * np.pi * audio_freq * t).astype(np.float32)
+        fade = int(_TUNE_FADE_IN_S * SAMPLE_RATE)
+        tone[:fade] *= np.linspace(0.0, 1.0, fade, dtype=np.float32)
+
+        rig = self._tx_rig()
+        get_ft4_decode_logger().info("tune start freq=%.0f", audio_freq)
+        worker = _TxWorker(
+            tone,
+            self._out_device,
+            rig,
+            get_gain=lambda: db_to_gain(self._tx_level_db),
+            watchdog_s=_TUNE_MAX_S,
+            timeout_is_normal=True,
+        )
+        worker.finished.connect(self._on_tune_finished)
+        worker.error.connect(self._on_tune_error)
+        self._tx_worker = worker
+        self._tx_in_progress = True
+        self._tuning = True
+        t_thread = threading.Thread(target=worker.run, daemon=True)
+        self._tx_thread = t_thread
+        t_thread.start()
+        self._status_label.setText(
+            _("Tune: transmitting {f:.0f} Hz test tone — press Tune again to stop").format(
+                f=audio_freq
+            )
+        )
+
+    def _reset_tune_button(self) -> None:
+        """Un-press the Tune button without re-triggering its toggled handler."""
+        self._tune_btn.blockSignals(True)
+        self._tune_btn.setChecked(False)
+        self._tune_btn.blockSignals(False)
+
+    @Slot()
+    def _on_tune_finished(self) -> None:
+        get_ft4_decode_logger().info("tune stop")
+        self._tuning = False
+        self._tx_in_progress = False
+        self._tx_worker = None
+        self._reset_tune_button()
+        self._status_label.setText(_("Tune stopped"))
+
+    @Slot(str)
+    def _on_tune_error(self, msg: str) -> None:
+        get_ft4_decode_logger().info("tune stop (error) %s", msg)
+        self._tuning = False
+        self._tx_in_progress = False
+        self._tx_worker = None
+        self._reset_tune_button()
+        self._status_label.setText(_("TX error: ") + msg)
 
     @Slot()
     def _on_tx_finished(self) -> None:

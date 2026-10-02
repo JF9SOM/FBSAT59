@@ -6784,9 +6784,6 @@ msgstr "（{shown}/{total}文字を表示、以下省略）"
 #~ "チューン: 左に表示されている周波数にSDRを合わせます。トランスポンダーが未"
 #~ "選択のとき、またはLock（L）がONのときのみ有効です。"
 
-#~ msgid "Tune"
-#~ msgstr "チューン"
-
 #~ msgid "SDR — Bell 202 AFSK (receive only)"
 #~ msgstr "SDR — Bell 202 AFSK（受信のみ）"
 
@@ -6904,3 +6901,37 @@ msgstr "（{shown}/{total}文字を表示、以下省略）"
 #~ msgid "%(count)d pass"
 #~ msgid_plural "%(count)d passes"
 #~ msgstr[0] "%(count)d パス"
+
+#: src/ui/ft4_tab.py
+msgid "Tune"
+msgstr "チューン"
+
+#: src/ui/ft4_tab.py
+msgid ""
+"Transmit a continuous test tone at the TX Audio frequency so you can\n"
+"adjust the TX Level while watching the rig's power / ALC meter.\n"
+"Press again (or Halt TX) to stop. Stops by itself after 60 seconds."
+msgstr ""
+"TX音声の周波数で連続テストトーンを送信します。リグの出力計・ALC\n"
+"メーターを見ながらTXレベルを調整できます。\n"
+"もう一度押す（またはTX停止）と止まります。60秒で自動的に停止します。"
+
+#: src/ui/ft4_tab.py
+msgid "Tune: stopping"
+msgstr "チューン: 停止中"
+
+#: src/ui/ft4_tab.py
+msgid "Tune unavailable: transmission in progress"
+msgstr "チューンは使用できません: 送信中です"
+
+#: src/ui/ft4_tab.py
+msgid "Tune: transmitting {f:.0f} Hz test tone — press Tune again to stop"
+msgstr "チューン: {f:.0f} Hzのテストトーンを送信中 — 止めるにはもう一度チューンを押してください"
+
+#: src/ui/ft4_tab.py
+msgid "Tune stopped"
+msgstr "チューンを停止しました"
+
+#: src/ui/ft4_tab.py
+msgid "Tune is active — stop it before transmitting"
+msgstr "チューン中です — 送信する前に停止してください"
