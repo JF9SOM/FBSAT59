@@ -51,6 +51,13 @@ from comms.q65.qso import Q65QsoManager, Q65QsoState, format_report
 from comms.q65.scheduler import Q65Scheduler
 from core.clock_offset import corrected_time
 from i18n import _
+from ui.tx_level import (
+    TX_LEVEL_MAX_DB,
+    TX_LEVEL_MIN_DB,
+    db_to_gain,
+    format_db,
+    load_level_db,
+)
 
 # ---------------------------------------------------------------------------
 # Table column indices
@@ -122,7 +129,7 @@ class Q65Tab(QWidget):
         self._tx_slot: str = _TX_SLOT_EVEN
         self._tx_thread: threading.Thread | None = None
         self._out_device: int | None = None
-        self._tx_level_pct: float = 100.0  # % of full-scale TX audio amplitude
+        self._tx_level_db: int = TX_LEVEL_MAX_DB  # TX audio level, dB below full scale
 
         # QSO manager (created after UI so callbacks can update labels)
         self._qso: Q65QsoManager | None = None
@@ -315,23 +322,19 @@ class Q65Tab(QWidget):
 
         qso_row.addWidget(QLabel(_("TX Level:")))
         self._tx_level_slider = QSlider(Qt.Orientation.Horizontal)
-        self._tx_level_slider.setRange(1, 100)
-        self._tx_level_slider.setValue(int(self._tx_level_pct))
+        self._tx_level_slider.setRange(TX_LEVEL_MIN_DB, TX_LEVEL_MAX_DB)
+        self._tx_level_slider.setValue(self._tx_level_db)
         self._tx_level_slider.setFixedWidth(80)
         self._tx_level_slider.setToolTip(
             _(
-                # See the matching tooltip in ft4_tab.py for why this avoids
-                # "(% of" and "100% here" — xgettext would otherwise treat the
-                # string as python-format and msgfmt --check would reject the
-                # Japanese translation's literal "%".
-                "TX audio output level (percentage of full scale).\n"
+                "TX audio output level in dB below full scale.\n"
                 "Lower this if the rig's ALC is triggered or the transmit\n"
                 "audio sounds distorted — Q65 audio is generated at full\n"
-                "scale and some rigs/sound cards need well under 100%."
+                "scale and some rigs/sound cards need 20 dB or more of reduction."
             )
         )
-        self._tx_level_label = QLabel(f"{int(self._tx_level_pct)}%")
-        self._tx_level_label.setFixedWidth(34)
+        self._tx_level_label = QLabel(format_db(self._tx_level_db))
+        self._tx_level_label.setFixedWidth(46)
         self._tx_level_slider.valueChanged.connect(self._on_tx_level_changed)
         qso_row.addWidget(self._tx_level_slider)
         qso_row.addWidget(self._tx_level_label)
@@ -425,9 +428,9 @@ class Q65Tab(QWidget):
             idx = self._slot_combo.findText(d["tx_slot"])
             if idx >= 0:
                 self._slot_combo.setCurrentIndex(idx)
-        self._tx_level_pct = float(d.get("tx_level_pct", 100.0))
-        self._tx_level_slider.setValue(int(self._tx_level_pct))
-        self._tx_level_label.setText(f"{int(self._tx_level_pct)}%")
+        self._tx_level_db = load_level_db(d)
+        self._tx_level_slider.setValue(self._tx_level_db)
+        self._tx_level_label.setText(format_db(self._tx_level_db))
 
         # Load output device index from shared soundcard_settings
         row2 = self._conn.execute(
@@ -448,7 +451,7 @@ class Q65Tab(QWidget):
                 "mode": self._mode_combo.currentText(),
                 "rx_input": self._input_combo.currentText(),
                 "tx_slot": self._slot_combo.currentText(),
-                "tx_level_pct": self._tx_level_pct,
+                "tx_level_db": self._tx_level_db,
             }
         )
         self._conn.execute(
@@ -477,8 +480,8 @@ class Q65Tab(QWidget):
             self._audio_buffer.clear()
 
     def _on_tx_level_changed(self, value: int) -> None:
-        self._tx_level_pct = float(value)
-        self._tx_level_label.setText(f"{value}%")
+        self._tx_level_db = value
+        self._tx_level_label.setText(format_db(value))
         self._save_settings()
 
     # ------------------------------------------------------------------
@@ -903,7 +906,7 @@ class Q65Tab(QWidget):
 
             n = len(audio)
             idx = 0
-            last_gain = self._tx_level_pct / 100.0
+            last_gain = db_to_gain(self._tx_level_db)
             done = threading.Event()
 
             def _callback(
@@ -913,7 +916,7 @@ class Q65Tab(QWidget):
                 remaining = n - idx
                 take = min(frames, remaining)
                 if take > 0:
-                    gain_now = self._tx_level_pct / 100.0
+                    gain_now = db_to_gain(self._tx_level_db)
                     ramp = np.linspace(last_gain, gain_now, take, dtype=np.float32)
                     outdata[:take, 0] = audio[idx : idx + take] * ramp
                     last_gain = gain_now

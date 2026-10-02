@@ -62,6 +62,13 @@ from comms.ft4.scheduler import Ft4Scheduler
 from i18n import _
 from rig.controller import select_tx_rig
 from ui.ft4_waterfall_dialog import Ft4WaterfallDialog
+from ui.tx_level import (
+    TX_LEVEL_MAX_DB,
+    TX_LEVEL_MIN_DB,
+    db_to_gain,
+    format_db,
+    load_level_db,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -622,7 +629,7 @@ class Ft4Tab(QWidget):
         self._sdr_connected: bool = False
         self._sdr_pipeline: Any | None = None
         self._sdr_tap: Any | None = None  # sdr.usb_audio.SdrUsbAudioTap while attached
-        self._tx_level_pct: float = 100.0  # % of full-scale TX audio amplitude
+        self._tx_level_db: int = TX_LEVEL_MAX_DB  # TX audio level, dB below full scale
 
         self._load_settings()
         self._ensure_table()
@@ -863,25 +870,19 @@ class Ft4Tab(QWidget):
 
         qso_row.addWidget(QLabel(_("TX Level:")))
         self._tx_level_slider = QSlider(Qt.Orientation.Horizontal)
-        self._tx_level_slider.setRange(1, 100)
-        self._tx_level_slider.setValue(int(self._tx_level_pct))
+        self._tx_level_slider.setRange(TX_LEVEL_MIN_DB, TX_LEVEL_MAX_DB)
+        self._tx_level_slider.setValue(self._tx_level_db)
         self._tx_level_slider.setFixedWidth(80)
         self._tx_level_slider.setToolTip(
             _(
-                # "(percentage of" rather than "(% of", and no "100% here":
-                # xgettext reads "% o"/"% h" as printf directives and marks
-                # the whole string python-format, which then makes msgfmt
-                # --check reject any translation whose own "%" is followed by
-                # something that is not a conversion specifier. A "%" ending
-                # a sentence ("100%.") is not misread, so it can stay.
-                "TX audio output level (percentage of full scale).\n"
+                "TX audio output level in dB below full scale.\n"
                 "Lower this if the rig's ALC is triggered or the transmit\n"
                 "audio sounds distorted — FT4 audio is generated at full\n"
-                "scale and some rigs/sound cards need well under 100%."
+                "scale and some rigs/sound cards need 20 dB or more of reduction."
             )
         )
-        self._tx_level_label = QLabel(f"{int(self._tx_level_pct)}%")
-        self._tx_level_label.setFixedWidth(34)
+        self._tx_level_label = QLabel(format_db(self._tx_level_db))
+        self._tx_level_label.setFixedWidth(46)
         self._tx_level_slider.valueChanged.connect(self._on_tx_level_changed)
         qso_row.addWidget(self._tx_level_slider)
         qso_row.addWidget(self._tx_level_label)
@@ -1018,7 +1019,7 @@ class Ft4Tab(QWidget):
             self._rx_source = data.get("rx_source", "soundcard")
             self._tx_slot_mode = data.get("tx_slot_mode", "auto")
             self._auto_progress = bool(data.get("auto_progress", False))
-            self._tx_level_pct = float(data.get("tx_level_pct", 100.0))
+            self._tx_level_db = load_level_db(data)
         # Fall back to global callsign / grid from Set QTH if not yet set per-tab
         if not self._my_call:
             r = self._conn.execute(
@@ -1050,7 +1051,7 @@ class Ft4Tab(QWidget):
                 "rx_source": self._rx_source,
                 "tx_slot_mode": self._tx_slot_mode,
                 "auto_progress": self._auto_progress,
-                "tx_level_pct": self._tx_level_pct,
+                "tx_level_db": self._tx_level_db,
             }
         )
         self._conn.execute(
@@ -1473,7 +1474,7 @@ class Ft4Tab(QWidget):
         # transmitting, to avoid rig ALC action / distortion (Issue #16).
         # `rig` was already fetched above to build doppler_offset_fn.
         worker = _TxWorker(
-            audio, self._out_device, rig, get_gain=lambda: self._tx_level_pct / 100.0
+            audio, self._out_device, rig, get_gain=lambda: db_to_gain(self._tx_level_db)
         )
         worker.finished.connect(self._on_tx_finished)
         worker.error.connect(self._on_tx_error)
@@ -1865,8 +1866,8 @@ class Ft4Tab(QWidget):
 
     @Slot(int)
     def _on_tx_level_changed(self, value: int) -> None:
-        self._tx_level_pct = float(value)
-        self._tx_level_label.setText(f"{value}%")
+        self._tx_level_db = value
+        self._tx_level_label.setText(format_db(value))
         self._save_settings()
 
     def _resolve_tx_even(self, auto_is_even: bool) -> bool:

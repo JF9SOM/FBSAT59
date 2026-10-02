@@ -196,15 +196,15 @@ msgstr "TXレベル:"
 
 #: src/ui/ft4_tab.py:877
 msgid ""
-"TX audio output level (percentage of full scale).\n"
+"TX audio output level in dB below full scale.\n"
 "Lower this if the rig's ALC is triggered or the transmit\n"
 "audio sounds distorted — FT4 audio is generated at full\n"
-"scale and some rigs/sound cards need well under 100%."
+"scale and some rigs/sound cards need 20 dB or more of reduction."
 msgstr ""
-"TX音声の出力レベル（フルスケールに対する割合）。\n"
+"TX音声の出力レベル（フルスケールからのdB）。\n"
 "リグのALCが働いたり、送信音声が歪んだりする場合は下げてください —\n"
-"FT4音声はフルスケールで生成されるため、リグやサウンドカードに\n"
-"よっては100%よりかなり低い値が必要になることがあります。"
+"FT4音声はフルスケールで生成され、リグやサウンドカードによっては\n"
+"20 dB以上の減衰が必要です。"
 
 #: src/ui/ft4_tab.py:889 src/ui/ft4_tab.py:973 src/ui/meteor_tab.py:228
 #: src/ui/cw_tab.py:260 src/ui/q65_tab.py:376
@@ -4779,15 +4779,15 @@ msgstr "上のテキストを1回限りの自由メッセージとして送信"
 
 #: src/ui/q65_tab.py:327
 msgid ""
-"TX audio output level (percentage of full scale).\n"
+"TX audio output level in dB below full scale.\n"
 "Lower this if the rig's ALC is triggered or the transmit\n"
 "audio sounds distorted — Q65 audio is generated at full\n"
-"scale and some rigs/sound cards need well under 100%."
+"scale and some rigs/sound cards need 20 dB or more of reduction."
 msgstr ""
-"TX音声の出力レベル（フルスケールに対する割合）。\n"
+"TX音声の出力レベル（フルスケールからのdB）。\n"
 "リグのALCが働いたり、送信音声が歪んだりする場合は下げてください —\n"
-"Q65音声はフルスケールで生成されるため、リグやサウンドカードに\n"
-"よっては100%よりかなり低い値が必要になることがあります。"
+"Q65音声はフルスケールで生成され、リグやサウンドカードによっては\n"
+"20 dB以上の減衰が必要です。"
 
 #: src/ui/q65_tab.py:339
 msgid "DX: —"
