@@ -890,6 +890,14 @@ class Ft4Tab(QWidget):
         self._tx_edit = QLineEdit()
         self._tx_edit.setPlaceholderText(_("FT4 message (auto-filled by state machine)"))
         tx_msg_row.addWidget(self._tx_edit, stretch=1)
+        # Sits at the right end of the TX line (not beside Log QSO) so it is
+        # not mistaken for a "clear message history" button.
+        self._clear_btn = QPushButton(_("Clear"))
+        self._clear_btn.setToolTip(
+            _("Clear the current QSO and the TX message (the message history is not cleared).")
+        )
+        self._clear_btn.clicked.connect(self._on_clear_qso)
+        tx_msg_row.addWidget(self._clear_btn)
         tx_lay.addLayout(tx_msg_row)
 
         # QSO state row
@@ -918,10 +926,6 @@ class Ft4Tab(QWidget):
         self._tx_level_slider.valueChanged.connect(self._on_tx_level_changed)
         qso_row.addWidget(self._tx_level_slider)
         qso_row.addWidget(self._tx_level_label)
-
-        self._clear_btn = QPushButton(_("Clear"))
-        self._clear_btn.clicked.connect(self._on_clear_qso)
-        qso_row.addWidget(self._clear_btn)
 
         self._log_btn = QPushButton(_("Log QSO"))
         self._log_btn.setEnabled(False)

@@ -6935,3 +6935,7 @@ msgstr "チューンを停止しました"
 #: src/ui/ft4_tab.py
 msgid "Tune is active — stop it before transmitting"
 msgstr "チューン中です — 送信する前に停止してください"
+
+#: src/ui/ft4_tab.py
+msgid "Clear the current QSO and the TX message (the message history is not cleared)."
+msgstr "現在のQSOとTXメッセージをクリアします（メッセージ履歴は消えません）。"
