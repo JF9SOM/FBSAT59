@@ -54,14 +54,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from comms.aprs.engine import (
-    AX25_BAUD_MODE_CHOICES,
-    AX25_BAUD_SETTING_KEY,
-    get_aprs_engine,
-    resolve_ax25_modem,
-)
+from comms.aprs.engine import get_aprs_engine
 from comms.aprs.parser import decode_ax25
 from comms.signal_clock import signal_time
+from comms.telemetry.baud_detect import (
+    BAUD_CHOICES,
+    detect_baud_from_satyaml,
+    detect_baud_from_transmitter,
+)
 from comms.telemetry.cw_frames import (
     decode_cw_frame,
     fields_from_saved,
@@ -120,6 +120,9 @@ _PENDING_START_TIMEOUT_S = 30.0
 # The APRS tab shares the same engine under its own "aprs" tag so closing
 # one tab doesn't stop the other's reception.
 _ENGINE_OWNER = "telemetry"
+# Own setting (not the APRS tab's shared ax25_baud_mode): this combo now follows
+# the selected satellite/transponder instead of an Auto mode.
+_BAUD_SETTING_KEY = "telemetry_ax25_baud"
 
 
 class _SatnogsApiKeyDialog(QDialog):
@@ -442,17 +445,16 @@ class TelemetryTab(QWidget):
 
         row1.addSpacing(12)
         self._baud_combo = QComboBox()
-        self._baud_combo.addItem(_("Auto"), "auto")
         self._baud_combo.addItem("1200", "1200")
         self._baud_combo.addItem("4800", "4800")
         self._baud_combo.addItem("9600", "9600")
         self._baud_combo.setToolTip(
             _(
                 "AX.25 baud rate for Direwolf (AX.25) mode's Rig + Sound\n"
-                "Card (Direwolf) or SDR reception. Auto reads the selected\n"
-                "transponder's baud rate from SATNOGS (defaults to 1200 if\n"
-                "unknown). Shared with the APRS tab — has no effect on\n"
-                "gr-satellites mode."
+                "Card (Direwolf) or SDR reception. Selecting a satellite\n"
+                "or transponder sets this automatically from the baud rate\n"
+                "in its name (e.g. 1k2 / 9k6); you can still change it by\n"
+                "hand. Has no effect on gr-satellites decoding."
             )
         )
         self._baud_combo.currentIndexChanged.connect(self._on_baud_mode_changed)
@@ -1049,6 +1051,21 @@ class TelemetryTab(QWidget):
         norad = self._combo_gr_sat.currentData()
         if norad is not None:
             self.satellite_selected.emit(int(norad), "gr")
+            self._set_baud_from_satyaml(int(norad))
+
+    def _set_baud_from_satyaml(self, norad: int) -> None:
+        """Set the Baud combo from the gr-satellites satyaml for ``norad``."""
+        info = get_satellite_info(self._gr_catalog_ids.get(norad, norad))
+        if info is None:
+            return
+        names = info.get("transmitters")
+        rates = info.get("baudrates")
+        self._set_baud_combo(
+            detect_baud_from_satyaml(
+                names if isinstance(names, list) else [],
+                rates if isinstance(rates, list) else [],
+            )
+        )
 
     def _on_cw_sat_changed(self, _index: int) -> None:
         norad = self._combo_cw_sat.currentData()
@@ -1097,14 +1114,14 @@ class TelemetryTab(QWidget):
     # ------------------------------------------------------------------ #
 
     def _load_baud_mode(self) -> None:
-        """Restore the Auto/1200/4800/9600 selection from app_settings."""
-        mode = "auto"
+        """Restore the 1200/4800/9600 selection from app_settings."""
+        mode = "1200"
         if hasattr(self._conn, "execute"):
             row = self._conn.execute(
                 "SELECT value FROM app_settings WHERE key = ?",
-                (AX25_BAUD_SETTING_KEY,),
+                (_BAUD_SETTING_KEY,),
             ).fetchone()
-            if row and row["value"] in AX25_BAUD_MODE_CHOICES:
+            if row and row["value"] in BAUD_CHOICES:
                 mode = row["value"]
         idx = self._baud_combo.findData(mode)
         self._baud_combo.blockSignals(True)
@@ -1112,13 +1129,13 @@ class TelemetryTab(QWidget):
         self._baud_combo.blockSignals(False)
 
     def _on_baud_mode_changed(self, _index: int) -> None:
-        """Persist the Auto/1200/4800/9600 selection and apply it immediately."""
+        """Persist the 1200/4800/9600 selection and apply it immediately."""
         mode = self._baud_combo.currentData()
         if hasattr(self._conn, "execute"):
             self._conn.execute(
                 "INSERT OR REPLACE INTO app_settings (key, value, updated_at) "
                 "VALUES (?, ?, CURRENT_TIMESTAMP)",
-                (AX25_BAUD_SETTING_KEY, mode),
+                (_BAUD_SETTING_KEY, mode),
             )
             self._conn.commit()
         self._apply_baud_change()
@@ -1153,8 +1170,33 @@ class TelemetryTab(QWidget):
         window.raise_()
         window.activateWindow()
 
-    def _on_transmitter_changed(self, _xpdr: object) -> None:
-        """Restart the AX.25 pipeline if the newly selected transponder's baud differs."""
+    def _current_modem(self) -> str:
+        """Return the Direwolf MODEM value ("1200"/"4800"/"9600") from the Baud combo."""
+        data = self._baud_combo.currentData()
+        return str(data) if data in BAUD_CHOICES else "1200"
+
+    def _set_baud_combo(self, baud: str | None) -> bool:
+        """Select ``baud`` in the combo (firing the change handler); True if it changed."""
+        if baud is None:
+            return False
+        idx = self._baud_combo.findData(baud)
+        if idx < 0 or idx == self._baud_combo.currentIndex():
+            return False
+        self._baud_combo.setCurrentIndex(idx)
+        return True
+
+    def _on_transmitter_changed(self, xpdr: object) -> None:
+        """Follow the selected transponder's baud, then restart AX.25 if it changed.
+
+        gr-satellites mode takes its baud from the satyaml instead (see
+        _on_gr_sat_changed()), so the DB transponder is ignored there.
+        """
+        if (
+            self._current_mode() != _MODE_GR
+            and isinstance(xpdr, dict)
+            and self._set_baud_combo(detect_baud_from_transmitter(xpdr))
+        ):
+            return  # the combo's change handler already applied it
         self._apply_baud_change()
 
     def _apply_baud_change(self) -> None:
@@ -1166,7 +1208,7 @@ class TelemetryTab(QWidget):
         own, so calling both unconditionally is safe — whichever doesn't
         apply is a no-op.
         """
-        modem = resolve_ax25_modem(self._conn, self._radio_control)
+        modem = self._current_modem()
         self._engine.restart_if_modem_changed(modem)
         if self._sdr_pipeline is not None:
             self._engine.sync_sdr_baud(self._sdr_pipeline, modem, satellite=True)
@@ -1782,7 +1824,7 @@ class TelemetryTab(QWidget):
                 self._btn_stop.setEnabled(False)
 
     def _try_start_direwolf(self) -> None:
-        modem = resolve_ax25_modem(self._conn, self._radio_control)
+        modem = self._current_modem()
         ok, err = self._engine.start_rig(_ENGINE_OWNER, "N0CALL", 0, "", modem=modem)
         if not ok:
             self._set_error(f"⚠ {err}")
@@ -1799,7 +1841,7 @@ class TelemetryTab(QWidget):
         actual demod, fed by SDR-derived audio — see
         AprsEngine.start_sdr_direwolf().
         """
-        modem = resolve_ax25_modem(self._conn, self._radio_control)
+        modem = self._current_modem()
         ok, err = self._engine.start_sdr_direwolf(
             _ENGINE_OWNER, pipeline, modem=modem, satellite=True
         )

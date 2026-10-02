@@ -250,10 +250,14 @@ def get_satellite_info(norad: int) -> dict[str, object] | None:
                         if isinstance(v, dict) and v.get("frequency")
                     }
                 )
+                baudrates = [
+                    v["baudrate"] for v in txs.values() if isinstance(v, dict) and v.get("baudrate")
+                ]
                 return {
                     "name": str(data.get("name", "")),
                     "transmitters": tx_names,
                     "frequencies": freqs,
+                    "baudrates": baudrates,
                 }
         except Exception:
             pass
