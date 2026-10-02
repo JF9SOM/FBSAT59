@@ -172,6 +172,7 @@ _DIM_ROLE = Qt.ItemDataRole.UserRole + 1
 _AX25_ROLE = Qt.ItemDataRole.UserRole + 2
 # Row role holding the ``telemetry_log`` id of a logged AX.25/HDLC row (no duplicates on load).
 _LOGGED_ROLE = Qt.ItemDataRole.UserRole + 3
+_DECODED_ROLE = Qt.ItemDataRole.UserRole + 4  # a CW row's decoded TelemetryFrame
 # gr-satellites prints a decoded packet and, on its KISS port, the same frame; the two reach
 # the GUI separately. A row and a frame arriving within this many seconds are one packet.
 _GR_PAIR_WINDOW_S = 5.0
@@ -1419,6 +1420,7 @@ class TelemetryTab(QWidget):
             norad=norad,
             ts=ts,
             log_id=log_id,
+            decoded=tf,
         )
         self._update_decode_tab(tf)
         if log_id is not None:
@@ -2089,6 +2091,7 @@ class TelemetryTab(QWidget):
         dim: bool = False,
         log_id: int | None = None,
         ax25_row: _Ax25Row | None = None,
+        decoded: TelemetryFrame | None = None,
     ) -> None:
         """Add a row to the Received Frames table.
 
@@ -2097,7 +2100,8 @@ class TelemetryTab(QWidget):
         theme-relative colour -- see _DimRowDelegate) and leaves it out of the
         frame count (a rejected CW candidate). *log_id* is the frame's
         ``telemetry_log`` id, kept on the row for "Send selected" (CW); *ax25_row*
-        is the same for a received AX.25 frame.
+        is the same for a received AX.25 frame. *decoded* is a CW frame's decoded
+        fields, shown in the "Decoded Fields" tab when the row is selected.
         """
         when = ts if ts is not None else datetime.datetime.now(datetime.UTC)
         row = self._table.rowCount()
@@ -2115,6 +2119,8 @@ class TelemetryTab(QWidget):
                 item.setData(_LOGGED_ROLE, log_id)
             if column == 0 and ax25_row is not None:
                 item.setData(_AX25_ROLE, ax25_row)
+            if column == 0 and decoded is not None:
+                item.setData(_DECODED_ROLE, decoded)
             self._table.setItem(row, column, item)
         self._table.scrollToBottom()
         if not dim:
@@ -2168,35 +2174,43 @@ class TelemetryTab(QWidget):
             self._decode_id_tabs.addTab(table, id_def.get("label", f"ID{id_str}"))
 
     def _on_table_selection_changed(self) -> None:
-        """Show the selected AX.25 row's decoded fields in the "Decoded Fields" tab.
+        """Show the selected row's decoded fields in the "Decoded Fields" tab.
 
         The tab otherwise holds only the newest frame of each telemetry ID, so an
         earlier frame could not be read once a later one of the same ID arrived.
-        Rows that are not AX.25 frames (CW, gr-satellites, HDLC) are left alone.
+        AX.25 rows are decoded again from their payload; CW rows carry their decoded
+        fields. Other rows (gr-satellites, HDLC, rejected CW candidates) are left alone.
         """
         rows = self._table.selectionModel().selectedRows()
         if not rows:
             return
         item = self._table.item(rows[0].row(), 0)
-        value = item.data(_AX25_ROLE) if item is not None else None
-        if not isinstance(value, _Ax25Row) or value.norad is None:
+        if item is None:
             return
+        tf = item.data(_DECODED_ROLE)
+        if not isinstance(tf, TelemetryFrame):
+            tf = self._decode_ax25_row(item.data(_AX25_ROLE), rows[0].row())
+        if tf is None or not tf.has_fields or tf.norad != self._decode_tabs_norad:
+            return
+        self._update_decode_tab(tf)
+        table = self._decode_tables.get(str(tf.telemetry_id))
+        if table is not None:
+            self._decode_id_tabs.setCurrentWidget(table)
+
+    def _decode_ax25_row(self, value: object, row: int) -> TelemetryFrame | None:
+        """Decode a received AX.25 row again (None if *value* is not one)."""
+        if not isinstance(value, _Ax25Row) or value.norad is None:
+            return None
         payload = value.payload
-        callsign = ""
         if not payload and value.raw:
             parsed = decode_ax25(value.raw)
             if parsed is not None:
                 payload = parsed.payload
         if not payload:
-            return
-        callsign_item = self._table.item(rows[0].row(), 1)
-        if callsign_item is not None:
-            callsign = callsign_item.text()
-        tf = decode_telemetry(callsign, payload, value.norad)
-        self._update_decode_tab(tf)
-        table = self._decode_tables.get(str(tf.telemetry_id))
-        if table is not None and tf.has_fields and tf.norad == self._decode_tabs_norad:
-            self._decode_id_tabs.setCurrentWidget(table)
+            return None
+        callsign_item = self._table.item(row, 1)
+        callsign = callsign_item.text() if callsign_item is not None else ""
+        return decode_telemetry(callsign, payload, value.norad)
 
     def _update_decode_tab(self, tf: TelemetryFrame) -> None:
         """Push *tf*'s decoded field values into its "Decoded Fields" sub-tab.
@@ -2566,6 +2580,7 @@ class TelemetryTab(QWidget):
             norad=norad,
             ts=when,
             log_id=log_id,
+            decoded=tf,
         )
         self._update_decode_tab(tf)
         return True

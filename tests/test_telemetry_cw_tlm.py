@@ -694,3 +694,30 @@ class TestSatnogsAnswer:
         cb(False, 401, '{"detail":"Invalid token."}')
         qtbot.wait(100)
         assert tab._lbl_status.text() == "cleared"  # not repeated for every frame
+
+
+class TestSelectingARow:
+    def test_selecting_a_cw_row_shows_its_decoded_fields(
+        self, qtbot: QtBot, cw_conn: sqlite3.Connection
+    ) -> None:
+        tab = _running_tab(qtbot, cw_conn)
+        tab._on_cw_block(HK1, START, END)
+        tab._on_cw_block(HK3, START, END)
+        # stand in for a later HK1 frame having replaced the tab's values
+        table = tab._decode_tables["HK1"]
+        for row in range(table.rowCount()):
+            table.item(row, 1).setText("—")
+        assert _decode_value(tab, "HK1", "SBD error") == "—"
+
+        tab._table.selectRow(0)  # the HK1 row
+
+        assert _decode_value(tab, "HK1", "SBD error") == "Abnormal"
+        assert tab._decode_id_tabs.currentWidget() is table
+
+    def test_selecting_a_greyed_out_candidate_changes_nothing(
+        self, qtbot: QtBot, cw_conn: sqlite3.Connection
+    ) -> None:
+        tab = _running_tab(qtbot, cw_conn)
+        tab._on_cw_block(HK1[:-1], START, END)  # a dropped digit: shown greyed out
+        tab._table.selectRow(0)
+        assert _decode_value(tab, "HK1", "SBD error") == "—"
