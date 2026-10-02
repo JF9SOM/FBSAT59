@@ -129,7 +129,7 @@ rig_dialog.py のカスタムリストでは 1036 = FT-991A として登録。`_
     1=LSB 2=USB 3=CW 4=FM 5=AM 6=RTTY-LSB 7=CW-R 8=DATA-LSB 9=RTTY-USB **A=DATA-FM** B=FM-N C=DATA-USB。
     他衛星の `GMSK`（9k6 テレメトリ等）も DATA-FM になる。`AFSK` 等は従来どおり FM
   - **FM パケットのメニュー（FT-991A 取扱説明書 p.124 で確認、2026-10-02）**:
-    074 FM MIC SELECT（MIC/REAR、既定 MIC。**REAR にしないと DATA/USB からの入力が効かない**）、
+    074 FM MIC SELECT（MIC/REAR、既定 MIC。通常の FM モードのマイク入力端子の選択で、説明書の 077 の解説は「074=REAR の際の入力端子」とする。**DATA-FM で 074=REAR が必要かは未確認**。ユーザー報告: ISS の 1200 bps APRS は 074 を変えずに運用できていた）、
     075 FM OUT LEVEL（RTTY/DATA 端子の FM 受信出力 0〜100、既定 50）、
     076 FM PKT PTT SELECT（DAKY=DATA 端子 pin 3 / RTS / DTR=USB 仮想 COM、既定 DAKY）、
     077 FM PKT PORT SELECT（DATA/USB、既定 DATA。074=REAR 時の入力端子。**9600 でも USB を選べる**）、
