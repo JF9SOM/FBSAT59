@@ -619,7 +619,8 @@ class TelemetryTab(QWidget):
         self._btn_load.setToolTip(
             _(
                 "Show the frames saved earlier for the selected satellite again\n"
-                "(the current mode's: AX.25, gr-satellites or CW TLM), without replaying a recording."
+                "(the current mode's: AX.25, gr-satellites or CW TLM),\n"
+                "without replaying a recording."
             )
         )
         self._btn_load.clicked.connect(self._on_load_saved)
