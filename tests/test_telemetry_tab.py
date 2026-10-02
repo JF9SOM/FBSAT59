@@ -1063,3 +1063,105 @@ def test_table_is_cleared_when_the_mode_changes(qtbot: QtBot, conn: sqlite3.Conn
     tab._append_row(callsign="JS1YSD", sat_name="ARICA-2", data="[HK1] AA", norad=68796)
     tab._combo_mode.setCurrentIndex(tab._combo_mode.findText(telemetry_tab_mod._MODE_AFSK))
     assert tab._table.rowCount() == 0
+
+
+# gr-satellites: "Send selected" pairs a table row with its frame
+# ---------------------------------------------------------------------------
+
+_GR_TEXT = "-> Packet from JY1SAT\n  Container:\n    battery = 7.5"
+_GR_FRAME_1 = bytes.fromhex("9c86aa8ea662e0a08a82a49886e103f00011")
+_GR_FRAME_2 = bytes.fromhex("9c86aa8ea662e0a08a82a49886e103f00022")
+
+
+class _SendableUploader(_RecordingUploader):
+    def submit(self, conn, raw, norad, received_at, force=False, on_result=None) -> bool:  # noqa: ANN001
+        if norad is None or not (force or load_satnogs_upload_settings(conn)["enabled"]):
+            return False
+        return super().submit(conn, raw, norad, received_at, force, on_result)
+
+
+def _gr_tab(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> tuple[TelemetryTab, _SendableUploader]:
+    _configure_upload(conn)
+    rec = _SendableUploader()
+    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: rec)
+    monkeypatch.setattr(
+        telemetry_tab_mod.QMessageBox,
+        "question",
+        lambda *a, **k: telemetry_tab_mod.QMessageBox.StandardButton.Yes,
+    )
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    monkeypatch.setattr(type(tab._gr_backend), "started_norad", property(lambda self: 25544))
+    return tab, rec
+
+
+def _row_data(tab: TelemetryTab, row: int) -> telemetry_tab_mod._Ax25Row:
+    return tab._table.item(row, 0).data(telemetry_tab_mod._AX25_ROLE)
+
+
+def test_gr_send_button_is_visible_in_gr_mode(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab.show()
+    tab._combo_mode.setCurrentIndex(tab._combo_mode.findText(telemetry_tab_mod._MODE_GR))
+    assert tab._btn_satnogs_send.isVisible()
+
+
+def test_gr_row_then_frame_are_paired_and_sendable(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, rec = _gr_tab(qtbot, conn, monkeypatch)
+    tab._on_gr_telemetry(_GR_TEXT)
+    assert _row_data(tab, 0).raw == b""
+    tab._on_gr_raw_frame(_GR_FRAME_1)  # the upload switch is off: only paired
+    assert _row_data(tab, 0).raw == _GR_FRAME_1
+    assert rec.calls == []
+    tab._table.selectRow(0)
+    tab._on_send_selected()
+    assert [c[1] for c in rec.calls] == [_GR_FRAME_1]
+    assert rec.calls[0][2] == 25544
+
+
+def test_gr_frame_then_row_are_paired_in_order(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, _rec = _gr_tab(qtbot, conn, monkeypatch)
+    tab._on_gr_raw_frame(_GR_FRAME_1)
+    tab._on_gr_raw_frame(_GR_FRAME_2)
+    tab._on_gr_telemetry(_GR_TEXT)
+    tab._on_gr_telemetry(_GR_TEXT)
+    assert [_row_data(tab, r).raw for r in range(2)] == [_GR_FRAME_1, _GR_FRAME_2]
+
+
+def test_gr_row_without_a_frame_is_not_sent(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, rec = _gr_tab(qtbot, conn, monkeypatch)
+    tab._on_gr_telemetry(_GR_TEXT)
+    tab._table.selectRow(0)
+    tab._on_send_selected()
+    assert rec.calls == []
+    assert "without a SatNOGS format" in tab._lbl_status.text()
+
+
+def test_gr_waiting_row_and_frame_expire(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, _rec = _gr_tab(qtbot, conn, monkeypatch)
+    tab._on_gr_telemetry(_GR_TEXT)
+    tab._gr_rows[0] = (tab._gr_rows[0][0] - 60.0, tab._gr_rows[0][1])  # waited a minute
+    tab._on_gr_raw_frame(_GR_FRAME_1)
+    assert _row_data(tab, 0).raw == b""  # too late: not this row's frame
+    assert len(tab._gr_frames) == 1
+
+
+def test_gr_clear_forgets_waiting_partners(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, _rec = _gr_tab(qtbot, conn, monkeypatch)
+    tab._on_gr_telemetry(_GR_TEXT)
+    tab._on_clear()
+    tab._on_gr_raw_frame(_GR_FRAME_1)
+    assert len(tab._gr_frames) == 1 and not tab._gr_rows

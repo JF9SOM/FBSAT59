@@ -24,6 +24,7 @@ import json
 import logging
 import sqlite3
 import time
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -166,6 +167,9 @@ _DIM_ROLE = Qt.ItemDataRole.UserRole + 1
 _AX25_ROLE = Qt.ItemDataRole.UserRole + 2
 # Row role holding the ``telemetry_log`` id of a logged AX.25/HDLC row (no duplicates on load).
 _LOGGED_ROLE = Qt.ItemDataRole.UserRole + 3
+# gr-satellites prints a decoded packet and, on its KISS port, the same frame; the two reach
+# the GUI separately. A row and a frame arriving within this many seconds are one packet.
+_GR_PAIR_WINDOW_S = 5.0
 
 
 @dataclass
@@ -321,6 +325,9 @@ class TelemetryTab(QWidget):
         self._selected_norad: int | None = None
         # The satellite the Received Frames table currently shows (None: not chosen yet).
         self._table_norad: int | None = None
+        # gr-satellites rows still waiting for their frame, and frames for their row (FIFO).
+        self._gr_rows: deque[tuple[float, _Ax25Row]] = deque()
+        self._gr_frames: deque[tuple[float, _Ax25Row]] = deque()
         self._selected_name: str = ""
 
         # CW TLM mode: the CW Decoder tab feeding this one (attach_cw_tab()) and the
@@ -593,7 +600,7 @@ class TelemetryTab(QWidget):
         self._btn_satnogs_link.clicked.connect(self._on_open_satnogs)
         footer.addWidget(self._btn_satnogs_link)
 
-        # Send frames by hand (AX.25 and CW TLM modes).
+        # Send frames by hand (every mode).
         self._btn_satnogs_send = QPushButton(_("Send selected"))
         self._btn_satnogs_send.setToolTip(
             _(
@@ -603,8 +610,7 @@ class TelemetryTab(QWidget):
             )
         )
         self._btn_satnogs_send.clicked.connect(self._on_send_selected)
-        # _on_mode_changed() only runs on a mode *change*, so set the start-up state here.
-        self._btn_satnogs_send.setVisible(self._current_mode() != _MODE_GR)
+        self._btn_satnogs_send.setVisible(True)
         footer.addWidget(self._btn_satnogs_send)
 
         footer.addStretch()
@@ -1011,7 +1017,7 @@ class TelemetryTab(QWidget):
         # neither (its text is in the CW Decoder tab).
         for widget in (self._lbl_baud, self._baud_combo, self._btn_backend_log):
             widget.setVisible(not is_cw)
-        self._btn_satnogs_send.setVisible(not is_gr)
+        self._btn_satnogs_send.setVisible(True)
         # gr-satellites already turns each frame into human-readable text
         # itself (see _on_gr_telemetry()'s "-> Packet from" parsing), so the
         # "Decoded Fields" sub-tab — built from this project's own
@@ -1645,12 +1651,23 @@ class TelemetryTab(QWidget):
             sat_name = str(info.get("name", "")) if info else ""
         data_text = "  |  ".join(data_lines) if data_lines else text[:120]
 
+        when, reliable = self._frame_time()
+        self._gr_prune()
+        if self._gr_frames:
+            # the packet's frame arrived first
+            row_data = self._gr_frames.popleft()[1]
+        else:
+            row_data = _Ax25Row(
+                raw=b"", when=when, reliable=reliable, norad=self._gr_backend.started_norad
+            )
+            self._gr_rows.append((time.monotonic(), row_data))
         self._append_row(
             callsign=callsign or sat_name or "—",
             sat_name=sat_name or "—",
             data=data_text,
             norad=self._selected_norad,
-            ts=self._frame_time()[0],
+            ts=when,
+            ax25_row=row_data,
         )
 
     def _on_gr_raw_frame(self, raw: bytes) -> None:
@@ -1666,7 +1683,39 @@ class TelemetryTab(QWidget):
         if norad is None:
             return
         when, reliable = self._frame_time()
-        self._submit_raw_frame(raw, norad, when, reliable)
+        frame = _Ax25Row(raw=raw, when=when, reliable=reliable, norad=norad)
+        self._pair_gr_frame(frame)
+        self._submit_raw_frame(raw, norad, when, reliable, frame)
+
+    def _gr_prune(self) -> None:
+        """Drop rows and frames that waited too long for their partner."""
+        horizon = time.monotonic() - _GR_PAIR_WINDOW_S
+        for waiting in (self._gr_rows, self._gr_frames):
+            while waiting and waiting[0][0] < horizon:
+                waiting.popleft()
+
+    def _pair_gr_frame(self, frame: _Ax25Row) -> None:
+        """Give *frame* to the oldest table row still waiting for one, else keep it waiting.
+
+        The row then carries the frame (and, from the automatic upload, whether SatNOGS has
+        it), which is what "Send selected" sends.
+        """
+        self._gr_prune()
+        while self._gr_rows:
+            placeholder = self._gr_rows.popleft()[1]
+            item = self._find_ax25_item(placeholder)
+            if item is not None:
+                item.setData(_AX25_ROLE, frame)
+                return
+            # that row was cleared from the table meanwhile
+        self._gr_frames.append((time.monotonic(), frame))
+
+    def _find_ax25_item(self, row_data: _Ax25Row) -> QTableWidgetItem | None:
+        for r in range(self._table.rowCount()):
+            item = self._table.item(r, 0)
+            if item is not None and item.data(_AX25_ROLE) is row_data:
+                return item
+        return None
 
     # ------------------------------------------------------------------ #
     # AFSK lifecycle (Bell 202)
@@ -2305,6 +2354,8 @@ class TelemetryTab(QWidget):
         return str(row[0]) if row else ""
 
     def _on_clear(self) -> None:
+        self._gr_rows.clear()
+        self._gr_frames.clear()
         self._table.setRowCount(0)
         self._frame_count = 0
         self._lbl_count.setText(_("Frames: 0 received"))
