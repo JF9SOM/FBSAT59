@@ -147,6 +147,15 @@ class AprsEngine(QObject):
         """Return True when a direwolf binary can be located."""
         return find_direwolf() is not None
 
+    def set_tx_gain(self, gain: float) -> None:
+        """Set the TX audio gain (0..1) for the Direwolf session; 1.0 is full level.
+
+        Direwolf has no output level of its own, so this scales its audio on the
+        way to the sound card. Applies to every transmission through this engine
+        (APRS too), so a caller that lowers it should restore 1.0 when done.
+        """
+        self._mgr.set_tx_gain(gain)
+
     def set_rig(self, rig: Any | None) -> None:
         """Set the RigController used for CAT PTT during transmission.
 

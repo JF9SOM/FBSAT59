@@ -28,7 +28,7 @@ from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
-from PySide6.QtCore import QTimer, Signal, Slot
+from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QComboBox,
     QGroupBox,
@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QRadioButton,
+    QSlider,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -139,6 +140,7 @@ class Arica2Panel(QWidget):
         self._rx_source = "soundcard" if data.get("rx_source") == "soundcard" else "sdr"
         self._send_mode = _MODE_AUTO if data.get("send_mode") == _MODE_AUTO else _MODE_MANUAL
         self._last_message = str(data.get("last_message", ""))
+        self._tx_level = min(100, max(0, int(data.get("tx_level", 100))))
 
         tz = self._conn.execute(
             "SELECT value FROM app_settings WHERE key = 'time_zone_mode'"
@@ -151,6 +153,7 @@ class Arica2Panel(QWidget):
                 "rx_source": "soundcard" if self._rb_soundcard.isChecked() else "sdr",
                 "send_mode": self._mode_combo.currentData(),
                 "last_message": self._message_edit.text(),
+                "tx_level": self._level_slider.value(),
             }
         )
         self._conn.execute(
@@ -242,6 +245,22 @@ class Arica2Panel(QWidget):
         self._call_label = QLabel()
         row.addWidget(self._call_label)
         row.addStretch(1)
+        row.addWidget(QLabel(_("TX Level:")))
+        self._level_slider = QSlider(Qt.Orientation.Horizontal)
+        self._level_slider.setRange(0, 100)
+        self._level_slider.setValue(self._tx_level)
+        self._level_slider.setFixedWidth(140)
+        self._level_slider.setToolTip(
+            _(
+                "Transmit audio level sent to the radio (Direwolf has no level of its "
+                "own). Too high a level over-deviates the FM transmitter. Combine with "
+                "the radio's data input gain and keep the Mac output volume fixed."
+            )
+        )
+        self._level_label = QLabel(f"{self._tx_level}%")
+        self._level_slider.valueChanged.connect(self._on_level_changed)
+        row.addWidget(self._level_slider)
+        row.addWidget(self._level_label)
         v.addLayout(row)
 
         buttons = QHBoxLayout()
@@ -353,6 +372,7 @@ class Arica2Panel(QWidget):
             return
         self._engine.sync_sdr_baud(pipeline, _MODEM)
         self._engine.set_rig(self._tx_rig())
+        self._engine.set_tx_gain(self._level_slider.value() / 100.0)
         self._sdr_pipeline = pipeline
         self._detector = detector
         pipeline.subscribe(self._on_iq_chunk)
@@ -367,6 +387,7 @@ class Arica2Panel(QWidget):
             return
         self._engine.restart_if_modem_changed(_MODEM)
         self._engine.set_rig(self._tx_rig())
+        self._engine.set_tx_gain(self._level_slider.value() / 100.0)
         self._engine_active = True
         self._status_label.setText(
             _("Input: Rig Soundcard + Direwolf (4800 baud). No beacon detection: manual only")
@@ -379,6 +400,8 @@ class Arica2Panel(QWidget):
         self._sdr_pipeline = None
         self._detector = None
         if self._engine_active:
+            # The gain is engine-wide (APRS shares it): put it back to full.
+            self._engine.set_tx_gain(1.0)
             self._engine.stop(_OWNER)
         self._engine_active = False
         self._window_deadline = None
@@ -401,6 +424,12 @@ class Arica2Panel(QWidget):
             return
         for event in detector.push_samples(iq):
             self._window_event.emit(event.burst_s, event.remaining_s)
+
+    @Slot(int)
+    def _on_level_changed(self, value: int) -> None:
+        self._level_label.setText(f"{value}%")
+        if self._engine_active:
+            self._engine.set_tx_gain(value / 100.0)
 
     @Slot(str)
     def _on_engine_error(self, msg: str) -> None:

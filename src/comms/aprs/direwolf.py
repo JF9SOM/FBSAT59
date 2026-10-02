@@ -307,6 +307,19 @@ class AudioBridge(QThread):
         # afsk_audio_demod.AfskAudioSdrDemod).
         self._sdr_satellite = sdr_satellite
         self._stop_event = threading.Event()
+        # Linear gain (0..1) applied to Direwolf's TX audio before it reaches
+        # the sound card. Direwolf has no output level setting of its own; the
+        # level at the radio is otherwise set by the OS volume alone.
+        self._tx_gain: float = 1.0
+
+    @property
+    def tx_gain(self) -> float:
+        """Linear TX audio gain, 0.0 to 1.0 (attenuation only)."""
+        return self._tx_gain
+
+    @tx_gain.setter
+    def tx_gain(self, value: float) -> None:
+        self._tx_gain = min(1.0, max(0.0, float(value)))
 
     _SAMPLE_RATE = 48000
     _BLOCK_SIZE = 2048  # samples per read
@@ -422,6 +435,8 @@ class AudioBridge(QThread):
                     if not chunk:
                         break
                     pcm = np.frombuffer(chunk, dtype="int16").astype("float32") / 32768.0
+                    pcm *= np.float32(self._tx_gain)
+                    self._log_tx_peak(pcm)
                     sd.play(
                         pcm,
                         samplerate=self._SAMPLE_RATE,
@@ -440,6 +455,33 @@ class AudioBridge(QThread):
                 sdr_demod.stop()
             else:
                 mgr.release_input(_AUDIO_OWNER, self._in_device)
+
+    # Chunks quieter than this (linear, after gain) count as silence.
+    _TX_LOG_THRESHOLD = 0.01
+
+    def _log_tx_peak(self, pcm: Any) -> None:
+        """Log the peak level of each burst of TX audio (once per burst).
+
+        Lets the level actually sent to the radio be checked afterwards: a
+        burst is a run of non-silent chunks; its peak and the gain in effect
+        are written when the next silent chunk ends it.
+        """
+        peak = float(abs(pcm).max()) if len(pcm) else 0.0
+        if peak >= self._TX_LOG_THRESHOLD:
+            self._burst_peak = max(getattr(self, "_burst_peak", 0.0), peak)
+            return
+        burst = getattr(self, "_burst_peak", 0.0)
+        if burst > 0.0:
+            import math
+
+            from comms.aprs.direwolf_log import get_direwolf_logger
+
+            get_direwolf_logger().info(
+                "TX audio peak %.1f dBFS (gain %.2f)",
+                20.0 * math.log10(burst),
+                self._tx_gain,
+            )
+            self._burst_peak = 0.0
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -470,6 +512,18 @@ class DirewolfManager:
         self._kiss: KissClient | None = None
         self._audio: AudioBridge | None = None
         self._out_device: int | None = None
+        self._tx_gain: float = 1.0
+
+    @property
+    def tx_gain(self) -> float:
+        """Linear TX audio gain (0..1) applied to the running and future sessions."""
+        return self._tx_gain
+
+    def set_tx_gain(self, gain: float) -> None:
+        """Set the TX audio gain; takes effect immediately on a running session."""
+        self._tx_gain = min(1.0, max(0.0, float(gain)))
+        if self._audio is not None:
+            self._audio.tx_gain = self._tx_gain
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -571,6 +625,7 @@ class DirewolfManager:
             modem=modem,
             sdr_satellite=sdr_satellite,
         )
+        self._audio.tx_gain = self._tx_gain
         self._audio.start()
 
         # KISS client: connect after a brief delay for Direwolf to init

@@ -74,6 +74,9 @@ class _FakeDirewolfManager:
     def stop(self) -> None:
         self.stop_calls += 1
 
+    def set_tx_gain(self, gain: float) -> None:
+        self.tx_gain = gain
+
 
 class _FakePipeline:
     class _Device:
@@ -603,3 +606,8 @@ def test_send_raw_refuses_without_rig_or_kiss(engine: AprsEngine) -> None:
     assert not engine.send_raw(b"x")  # no kiss
     engine._mgr.kiss_client = _FakeKiss()  # type: ignore[assignment]
     assert not engine.send_raw(b"x")  # no rig
+
+
+def test_set_tx_gain_reaches_the_direwolf_manager(engine: AprsEngine) -> None:
+    engine.set_tx_gain(0.25)
+    assert engine._mgr.tx_gain == 0.25  # type: ignore[attr-defined]

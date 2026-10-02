@@ -27,6 +27,7 @@ class _FakeEngine(QObject):
         self.sent: list[bytes] = []
         self.calls: list[str] = []
         self.can_transmit = True
+        self.gains: list[float] = []
 
     def start_sdr_direwolf(self, owner: str, pipeline: Any, modem: str = "1200", **kw: Any) -> Any:
         self.calls.append(f"sdr:{modem}:tx={kw.get('tx')}")
@@ -51,6 +52,9 @@ class _FakeEngine(QObject):
 
     def stop(self, owner: str) -> None:
         self.calls.append("stop")
+
+    def set_tx_gain(self, gain: float) -> None:
+        self.gains.append(gain)
 
 
 class _FakeRig:
@@ -265,3 +269,17 @@ def test_message_box_tab_switches_protocol_and_hands_over_the_input(
         "SELECT value FROM app_settings WHERE key = 'message_box_tab_settings'"
     ).fetchone()
     assert "ax100" in row[0]
+
+
+def test_tx_level_slider_sets_the_engine_gain_and_is_restored(
+    qtbot: QtBot, conn: sqlite3.Connection, engine: _FakeEngine
+) -> None:
+    p = _make(qtbot, conn)
+    assert engine.gains[-1] == 1.0  # default level on start
+    p._level_slider.setValue(30)
+    assert engine.gains[-1] == 0.3
+    assert p._level_label.text() == "30%"
+    p.shutdown()
+    assert engine.gains[-1] == 1.0  # engine-wide gain put back for APRS
+    saved = conn.execute("SELECT value FROM app_settings WHERE key = 'arica2_settings'").fetchone()
+    assert '"tx_level": 30' in saved[0]
