@@ -611,3 +611,13 @@ def test_send_raw_refuses_without_rig_or_kiss(engine: AprsEngine) -> None:
 def test_set_tx_gain_reaches_the_direwolf_manager(engine: AprsEngine) -> None:
     engine.set_tx_gain(0.25)
     assert engine._mgr.tx_gain == 0.25  # type: ignore[attr-defined]
+
+
+def test_resolve_detects_baud_from_transmitter_description(conn: sqlite3.Connection) -> None:
+    rc = _FakeRadioControl({"description": "9k6 FSK AX25", "baud": None})
+    assert resolve_ax25_modem(conn, rc) == "9600"
+
+
+def test_resolve_legacy_auto_value_is_ignored(conn: sqlite3.Connection) -> None:
+    conn.execute("INSERT INTO app_settings (key, value) VALUES ('ax25_baud_mode', 'auto')")
+    assert resolve_ax25_modem(conn, _FakeRadioControl({"description": "4k8 GMSK"})) == "4800"

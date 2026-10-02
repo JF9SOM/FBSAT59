@@ -648,42 +648,43 @@ def get_aprs_engine(conn: Any) -> AprsEngine:
 
 AX25_BAUD_SETTING_KEY = "ax25_baud_mode"
 
-# Valid ax25_baud_mode values ("auto" + every Direwolf-supported baud this
-# app exposes). Shared with aprs_tab.py/telemetry_tab.py so the Baud combo
-# and this module's own validation never drift apart.
-AX25_BAUD_MODE_CHOICES = ("auto", "1200", "4800", "9600")
+# Valid ax25_baud_mode values: every Direwolf-supported baud this app exposes.
+# Shared with aprs_tab.py so the Baud combo and this module's own validation
+# never drift apart.
+AX25_BAUD_MODE_CHOICES = ("1200", "4800", "9600")
+
+
+def detect_modem_for_transmitter(xpdr: dict[str, Any] | None) -> str:
+    """Return the Direwolf MODEM value ("1200"/"4800"/"9600") a transmitter implies.
+
+    Looks for a baud marker (1k2 / 4k8 / 9k6 / 1200 / 4800 / 9600) in the
+    description first, then the ``baud`` column; 1200 when neither says.
+    """
+    from comms.telemetry.baud_detect import detect_baud_from_transmitter
+
+    return detect_baud_from_transmitter(xpdr) or "1200"
 
 
 def resolve_ax25_modem(conn: Any, radio_control: Any) -> str:
     """Return the Direwolf MODEM value ("1200"/"4800"/"9600") to use right now.
 
-    Reads the ``ax25_baud_mode`` app_settings value (one of
-    AX25_BAUD_MODE_CHOICES, defaulting to "auto"). In "auto" mode, looks at
-    the ``baud`` column of the transponder currently selected in Radio
-    Control (RadioControlWidget.current_transmitter()) — 9600 -> "9600",
-    4800 -> "4800", anything else (1200, NULL/unset, no transponder
-    selected) -> "1200" as a safe default. Manual mode ("1200"/"4800"/
-    "9600") is returned as-is regardless of the selected transponder.
+    Returns the ``ax25_baud_mode`` app_settings value (one of
+    AX25_BAUD_MODE_CHOICES), which the APRS tab's Baud combo keeps in step
+    with the selected transponder. When nothing valid is stored (first run, or
+    the removed legacy "auto" value), derives it from the transponder
+    currently selected in Radio Control
+    (RadioControlWidget.current_transmitter()), defaulting to 1200.
     """
-    mode = "auto"
     if hasattr(conn, "execute"):
         row = conn.execute(
             "SELECT value FROM app_settings WHERE key = ?",
             (AX25_BAUD_SETTING_KEY,),
         ).fetchone()
         if row and row["value"] in AX25_BAUD_MODE_CHOICES:
-            mode = row["value"]
-    if mode != "auto":
-        return mode
+            return str(row["value"])
     current_transmitter = getattr(radio_control, "current_transmitter", None)
     xpdr = current_transmitter() if callable(current_transmitter) else None
-    if xpdr is not None:
-        baud = xpdr.get("baud")
-        if baud == 9600:
-            return "9600"
-        if baud == 4800:
-            return "4800"
-    return "1200"
+    return detect_modem_for_transmitter(xpdr)
 
 
 # ---------------------------------------------------------------------------

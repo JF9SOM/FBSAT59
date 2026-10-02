@@ -246,15 +246,15 @@ class AprsTab(QWidget):
 
         row1.addSpacing(12)
         self._baud_combo = QComboBox()
-        self._baud_combo.addItem(_("Auto"), "auto")
         self._baud_combo.addItem("1200", "1200")
         self._baud_combo.addItem("4800", "4800")
         self._baud_combo.addItem("9600", "9600")
         self._baud_combo.setToolTip(
             _(
                 "AX.25 baud rate for Direwolf (Rig + Sound Card reception).\n"
-                "Auto reads the selected transponder's baud rate from SATNOGS\n"
-                "(defaults to 1200 if unknown). Only applies to Rig + Sound\n"
+                "Selecting a satellite or transponder sets this from the baud\n"
+                "rate in its name (e.g. 1k2 / 9k6); 1200 if it names none.\n"
+                "You can still change it by hand. Only applies to Rig + Sound\n"
                 "Card reception — SDR-only reception is always 1200 baud AFSK."
             )
         )
@@ -797,28 +797,21 @@ class AprsTab(QWidget):
         self._conn.commit()
 
     # ------------------------------------------------------------------ #
-    # AX.25 baud mode (shared with the Telemetry tab's Direwolf (AX.25) mode)
+    # AX.25 baud mode (also read by the SSDV mode of the SSTV tab)
     # ------------------------------------------------------------------ #
 
     def _load_baud_mode(self) -> None:
-        """Restore the Auto/1200/4800/9600 selection from app_settings."""
-        from comms.aprs.engine import AX25_BAUD_MODE_CHOICES, AX25_BAUD_SETTING_KEY
+        """Restore the 1200/4800/9600 selection (stored value, else from the transponder)."""
+        from comms.aprs.engine import resolve_ax25_modem
 
-        mode = "auto"
-        if hasattr(self._conn, "execute"):
-            row = self._conn.execute(
-                "SELECT value FROM app_settings WHERE key = ?",
-                (AX25_BAUD_SETTING_KEY,),
-            ).fetchone()
-            if row and row["value"] in AX25_BAUD_MODE_CHOICES:
-                mode = row["value"]
+        mode = resolve_ax25_modem(self._conn, self._radio_control)
         idx = self._baud_combo.findData(mode)
         self._baud_combo.blockSignals(True)
         self._baud_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self._baud_combo.blockSignals(False)
 
     def _on_baud_mode_changed(self, _index: int) -> None:
-        """Persist the Auto/1200/4800/9600 selection and apply it immediately."""
+        """Persist the 1200/4800/9600 selection and apply it immediately."""
         from comms.aprs.engine import AX25_BAUD_SETTING_KEY
 
         mode = self._baud_combo.currentData()
@@ -831,8 +824,19 @@ class AprsTab(QWidget):
             self._conn.commit()
         self._apply_baud_change()
 
-    def _on_transmitter_changed(self, _xpdr: object) -> None:
-        """Restart the AX.25 pipeline if the newly selected transponder's baud differs."""
+    def _on_transmitter_changed(self, xpdr: object) -> None:
+        """Follow the selected transponder's baud (1200 if it names none).
+
+        Setting the combo fires _on_baud_mode_changed(), which persists the
+        value and restarts the AX.25 pipeline if the baud differs.
+        """
+        from comms.aprs.engine import detect_modem_for_transmitter
+
+        modem = detect_modem_for_transmitter(xpdr if isinstance(xpdr, dict) else None)
+        idx = self._baud_combo.findData(modem)
+        if idx >= 0 and idx != self._baud_combo.currentIndex():
+            self._baud_combo.setCurrentIndex(idx)
+            return
         self._apply_baud_change()
 
     def _apply_baud_change(self) -> None:
