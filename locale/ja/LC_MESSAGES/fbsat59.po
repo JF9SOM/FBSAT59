@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-02 16:29+0900\n"
+"POT-Creation-Date: 2026-10-02 20:17+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -16,43 +16,43 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
 
-#: src/ui/ft4_tab.py:254 src/ui/ax100_digi_tab.py:118 src/ui/q65_tab.py:879
+#: src/ui/ft4_tab.py:273 src/ui/ax100_digi_tab.py:118 src/ui/q65_tab.py:882
 msgid "another tab"
 msgstr "別のタブ"
 
-#: src/ui/ft4_tab.py:255 src/ui/ax100_digi_tab.py:119 src/ui/q65_tab.py:881
+#: src/ui/ft4_tab.py:274 src/ui/ax100_digi_tab.py:119 src/ui/q65_tab.py:884
 #, python-brace-format
 msgid "Sound card output is in use by {other}"
 msgstr "サウンドカード出力は{other}が使用中です"
 
-#: src/ui/ft4_tab.py:286 src/ui/ax100_digi_tab.py:128 src/ui/q65_tab.py:896
+#: src/ui/ft4_tab.py:305 src/ui/ax100_digi_tab.py:128 src/ui/q65_tab.py:899
 msgid "PTT command failed — check Rig 1 connection"
 msgstr "PTTコマンドが失敗しました — Rig 1の接続を確認してください"
 
-#: src/ui/ft4_tab.py:430 src/ui/q65_tab.py:944
+#: src/ui/ft4_tab.py:453 src/ui/q65_tab.py:947
 msgid "PTT OFF failed — the radio may still be transmitting. Check the radio!"
 msgstr ""
 "PTT OFFに失敗しました — 無線機が送信し続けている可能性があります。無線機を確"
 "認してください！"
 
-#: src/ui/ft4_tab.py:440
+#: src/ui/ft4_tab.py:463
 #, python-brace-format
 msgid "TX watchdog: forced PTT off after {s:.0f}s (audio stalled)"
 msgstr ""
 
-#: src/ui/ft4_tab.py:689 src/ui/rig_dialog.py:1142 src/ui/q65_tab.py:183
+#: src/ui/ft4_tab.py:713 src/ui/rig_dialog.py:1142 src/ui/q65_tab.py:190
 msgid "Configuration"
 msgstr "設定"
 
-#: src/ui/ft4_tab.py:693 src/ui/aprs_tab.py:211 src/ui/q65_tab.py:187
+#: src/ui/ft4_tab.py:717 src/ui/aprs_tab.py:211 src/ui/q65_tab.py:194
 msgid "My Call:"
 msgstr "コールサイン:"
 
-#: src/ui/ft4_tab.py:700 src/ui/q65_tab.py:193
+#: src/ui/ft4_tab.py:724 src/ui/q65_tab.py:200
 msgid "Grid:"
 msgstr "グリッド:"
 
-#: src/ui/ft4_tab.py:708
+#: src/ui/ft4_tab.py:732
 msgid ""
 "Audio tone frequency of your transmission. Reception is not affected: the "
 "whole passband is always decoded."
@@ -60,42 +60,42 @@ msgstr ""
 "送信するオーディオトーンの周波数です。受信には影響しません（通過帯域全体を常"
 "にデコードします）。"
 
-#: src/ui/ft4_tab.py:711
+#: src/ui/ft4_tab.py:735
 msgid "TX Audio:"
 msgstr "送信音声:"
 
-#: src/ui/ft4_tab.py:720 src/ui/ft4_tab.py:949 src/ui/q65_tab.py:362
+#: src/ui/ft4_tab.py:744 src/ui/ft4_tab.py:986 src/ui/q65_tab.py:365
 msgid "Hz"
 msgstr "Hz"
 
-#: src/ui/ft4_tab.py:722 src/ui/q65_tab.py:212
+#: src/ui/ft4_tab.py:746 src/ui/q65_tab.py:219
 msgid "RX:"
 msgstr "RX:"
 
-#: src/ui/ft4_tab.py:724 src/ui/ax100_digi_tab.py:440 src/ui/q65_tab.py:214
-#: src/ui/arica2_panel.py:191
+#: src/ui/ft4_tab.py:748 src/ui/ax100_digi_tab.py:440 src/ui/q65_tab.py:221
+#: src/ui/arica2_panel.py:199
 msgid "Rig Soundcard"
 msgstr "無線機サウンドカード"
 
-#: src/ui/ft4_tab.py:725 src/ui/rig_dialog.py:392 src/ui/cw_tab.py:218
-#: src/ui/q65_tab.py:215 src/ui/q65_tab.py:583
+#: src/ui/ft4_tab.py:749 src/ui/rig_dialog.py:392 src/ui/cw_tab.py:218
+#: src/ui/q65_tab.py:222 src/ui/q65_tab.py:586
 msgid "SDR"
 msgstr "SDR"
 
-#: src/ui/ft4_tab.py:732 src/ui/rig_dialog.py:2021
+#: src/ui/ft4_tab.py:756 src/ui/rig_dialog.py:2021
 msgid "RX Level:"
 msgstr "RXレベル:"
 
-#: src/ui/ft4_tab.py:739 src/ui/ft4_tab.py:1257 src/ui/rig_dialog.py:2018
+#: src/ui/ft4_tab.py:763 src/ui/ft4_tab.py:1294 src/ui/rig_dialog.py:2018
 #: src/ui/rig_dialog.py:2191
 msgid "-- dBFS"
 msgstr "-- dBFS"
 
-#: src/ui/ft4_tab.py:742 src/ui/meteor_tab.py:467
+#: src/ui/ft4_tab.py:766 src/ui/meteor_tab.py:467
 msgid "Waterfall"
 msgstr ""
 
-#: src/ui/ft4_tab.py:745
+#: src/ui/ft4_tab.py:769
 msgid ""
 "Open a popup showing the last RX period's audio as a spectrogram, to check "
 "whether real FT4 signals are visible in the passband even when nothing "
@@ -104,61 +104,61 @@ msgstr ""
 "直前のRX期間の音声をスペクトログラムとして表示するポップアップを開きます。\n"
 "何もデコードされない場合でも、実際のFT4信号が帯域内に見えるかを確認できます。"
 
-#: src/ui/ft4_tab.py:778 src/ui/q65_tab.py:234
+#: src/ui/ft4_tab.py:802 src/ui/q65_tab.py:241
 msgid "● RX"
 msgstr "● RX"
 
-#: src/ui/ft4_tab.py:782 src/ui/q65_tab.py:238
+#: src/ui/ft4_tab.py:806 src/ui/q65_tab.py:245
 msgid "● TX"
 msgstr "● TX"
 
 # --- Transmitter panel ---
-#: src/ui/ft4_tab.py:789 src/ui/q65_tab.py:245
+#: src/ui/ft4_tab.py:813 src/ui/q65_tab.py:252
 msgid "Transmit"
 msgstr "送信"
 
-#: src/ui/ft4_tab.py:796
+#: src/ui/ft4_tab.py:820
 msgid "Call CQ"
 msgstr "CQを出す"
 
-#: src/ui/ft4_tab.py:800
+#: src/ui/ft4_tab.py:824
 msgid "Answer with our grid — the standard opening exchange"
 msgstr "自局グリッドで応答する（標準の交信開始手順）"
 
-#: src/ui/ft4_tab.py:802
+#: src/ui/ft4_tab.py:826
 msgid "Answer with a signal report, skipping the grid"
 msgstr "グリッドを省略してレポートで応答する"
 
-#: src/ui/ft4_tab.py:803
+#: src/ui/ft4_tab.py:827
 msgid "Acknowledge and report (R + report)"
 msgstr "受信確認＋レポート（R+レポート）"
 
-#: src/ui/ft4_tab.py:804
+#: src/ui/ft4_tab.py:828
 msgid "Confirm the exchange"
 msgstr "交信内容を確認する（RR73）"
 
-#: src/ui/ft4_tab.py:805
+#: src/ui/ft4_tab.py:829
 msgid "Sign off"
 msgstr "交信を終える（73）"
 
-#: src/ui/ft4_tab.py:812 src/ui/q65_tab.py:206
+#: src/ui/ft4_tab.py:836 src/ui/q65_tab.py:213
 msgid "TX Slot:"
 msgstr "TX Slot:"
 
-#: src/ui/ft4_tab.py:814 src/ui/rig_dialog.py:1183 src/ui/telemetry_tab.py:438
+#: src/ui/ft4_tab.py:838 src/ui/rig_dialog.py:1183 src/ui/telemetry_tab.py:438
 #: src/ui/aprs_tab.py:249
 msgid "Auto"
 msgstr "自動"
 
-#: src/ui/ft4_tab.py:815 src/ui/q65_tab.py:208
+#: src/ui/ft4_tab.py:839 src/ui/q65_tab.py:215
 msgid "Even"
 msgstr "偶数"
 
-#: src/ui/ft4_tab.py:816 src/ui/q65_tab.py:209
+#: src/ui/ft4_tab.py:840 src/ui/q65_tab.py:216
 msgid "Odd"
 msgstr "奇数"
 
-#: src/ui/ft4_tab.py:823
+#: src/ui/ft4_tab.py:847
 msgid ""
 "Which slot to transmit in when calling CQ / enabling TX.\n"
 "Auto: whichever slot is current when you press CQ / TX Enable.\n"
@@ -170,31 +170,56 @@ msgstr ""
 "デコードされたCQへの応答は、この設定に関わらず\n"
 "常に正しい逆スロットを自動的に使用します。"
 
-#: src/ui/ft4_tab.py:833 src/ui/q65_tab.py:276
+#: src/ui/ft4_tab.py:857
+msgid "Tune"
+msgstr "チューン"
+
+#: src/ui/ft4_tab.py:861
+msgid ""
+"Transmit a continuous test tone at the TX Audio frequency so you can\n"
+"adjust the TX Level while watching the rig's power / ALC meter.\n"
+"Press again (or Halt TX) to stop. Stops by itself after 60 seconds."
+msgstr ""
+"TX音声の周波数で連続テストトーンを送信します。リグの出力計・ALC\n"
+"メーターを見ながらTXレベルを調整できます。\n"
+"もう一度押す（またはTX停止）と止まります。60秒で自動的に停止します。"
+
+#: src/ui/ft4_tab.py:872 src/ui/q65_tab.py:283
 msgid "TX Enable"
 msgstr "TX有効化"
 
-#: src/ui/ft4_tab.py:841 src/ui/q65_tab.py:284
+#: src/ui/ft4_tab.py:880 src/ui/q65_tab.py:291
 msgid "Halt TX"
 msgstr "TX停止"
 
-#: src/ui/ft4_tab.py:850 src/ui/main_window.py:397 src/ui/q65_tab.py:293
+#: src/ui/ft4_tab.py:889 src/ui/main_window.py:397 src/ui/q65_tab.py:300
 msgid "TX:"
 msgstr "TX:"
 
-#: src/ui/ft4_tab.py:852
+#: src/ui/ft4_tab.py:891
 msgid "FT4 message (auto-filled by state machine)"
 msgstr "FT4メッセージ（ステートマシンが自動入力）"
 
-#: src/ui/ft4_tab.py:858 src/ui/ft4_tab.py:1136 src/ui/q65_tab.py:310
+#: src/ui/ft4_tab.py:895 src/ui/ft4_tab.py:1010 src/ui/meteor_tab.py:228
+#: src/ui/cw_tab.py:260 src/ui/q65_tab.py:379
+msgid "Clear"
+msgstr "クリア"
+
+#: src/ui/ft4_tab.py:897
+msgid ""
+"Clear the current QSO and the TX message (the message history is not "
+"cleared)."
+msgstr "現在のQSOとTXメッセージをクリアします（メッセージ履歴は消えません）。"
+
+#: src/ui/ft4_tab.py:905 src/ui/ft4_tab.py:1173 src/ui/q65_tab.py:317
 msgid "State: IDLE"
 msgstr "状態: IDLE"
 
-#: src/ui/ft4_tab.py:864 src/ui/q65_tab.py:316 src/ui/arica2_panel.py:248
+#: src/ui/ft4_tab.py:911 src/ui/q65_tab.py:323 src/ui/arica2_panel.py:256
 msgid "TX Level:"
 msgstr "TXレベル:"
 
-#: src/ui/ft4_tab.py:877
+#: src/ui/ft4_tab.py:918
 msgid ""
 "TX audio output level in dB below full scale.\n"
 "Lower this if the rig's ALC is triggered or the transmit\n"
@@ -206,33 +231,28 @@ msgstr ""
 "FT4音声はフルスケールで生成され、リグやサウンドカードによっては\n"
 "20 dB以上の減衰が必要です。"
 
-#: src/ui/ft4_tab.py:889 src/ui/ft4_tab.py:973 src/ui/meteor_tab.py:228
-#: src/ui/cw_tab.py:260 src/ui/q65_tab.py:376
-msgid "Clear"
-msgstr "クリア"
-
-#: src/ui/ft4_tab.py:893 src/ui/q65_tab.py:342
+#: src/ui/ft4_tab.py:930 src/ui/q65_tab.py:345
 msgid "Log QSO"
 msgstr "QSOを記録"
 
-#: src/ui/ft4_tab.py:898 src/ui/ax100_digi_tab.py:485 src/ui/aprs_tab.py:388
-#: src/ui/q65_tab.py:347
+#: src/ui/ft4_tab.py:935 src/ui/ax100_digi_tab.py:485 src/ui/aprs_tab.py:388
+#: src/ui/q65_tab.py:350
 msgid "Export ADIF…"
 msgstr "ADIFエクスポート"
 
-#: src/ui/ft4_tab.py:903
+#: src/ui/ft4_tab.py:940
 msgid "Auto-progress:"
 msgstr "自動進行:"
 
-#: src/ui/ft4_tab.py:905
+#: src/ui/ft4_tab.py:942
 msgid "No"
 msgstr "しない"
 
-#: src/ui/ft4_tab.py:906
+#: src/ui/ft4_tab.py:943
 msgid "Yes"
 msgstr "する"
 
-#: src/ui/ft4_tab.py:910
+#: src/ui/ft4_tab.py:947
 msgid ""
 "When another station calls us while no QSO is running, start\n"
 "one automatically and prepare the reply. First caller wins if\n"
@@ -242,19 +262,19 @@ msgstr ""
 "応答メッセージを用意します。同時に複数局から呼ばれた場合は先着順。\n"
 "実際に送信するには TX Enable が必要です。"
 
-#: src/ui/ft4_tab.py:928 src/ui/q65_tab.py:360
+#: src/ui/ft4_tab.py:965 src/ui/q65_tab.py:363
 msgid "Decoded Messages"
 msgstr "デコードされたメッセージ"
 
-#: src/ui/ft4_tab.py:929
+#: src/ui/ft4_tab.py:966
 msgid "even"
 msgstr "偶数"
 
-#: src/ui/ft4_tab.py:930
+#: src/ui/ft4_tab.py:967
 msgid "odd"
 msgstr "奇数"
 
-#: src/ui/ft4_tab.py:940
+#: src/ui/ft4_tab.py:977
 msgid ""
 "Blue text: the other station transmitted in an even-parity slot. Orange "
 "text: odd-parity slot. Our own TX rows keep their fixed highlight colour "
@@ -263,25 +283,25 @@ msgstr ""
 "青文字: 相手局は偶数パリティのスロットで送信しています。橙文字: 奇数パリティ"
 "のスロットです。自局のTX行は専用のハイライト色のまま変わりません。"
 
-#: src/ui/ft4_tab.py:949 src/ui/q65_tab.py:362
+#: src/ui/ft4_tab.py:986 src/ui/q65_tab.py:365
 msgid "UTC"
 msgstr "UTC"
 
-#: src/ui/ft4_tab.py:949 src/ui/q65_tab.py:362
+#: src/ui/ft4_tab.py:986 src/ui/q65_tab.py:365
 msgid "dB"
 msgstr "dB"
 
-#: src/ui/ft4_tab.py:949 src/ui/q65_tab.py:362
+#: src/ui/ft4_tab.py:986 src/ui/q65_tab.py:365
 msgid "DT"
 msgstr "DT"
 
-#: src/ui/ft4_tab.py:949 src/ui/ax100_digi_tab.py:496
-#: src/ui/ax100_digi_tab.py:848 src/ui/q65_tab.py:362
-#: src/ui/arica2_panel.py:204
+#: src/ui/ft4_tab.py:986 src/ui/ax100_digi_tab.py:496
+#: src/ui/ax100_digi_tab.py:848 src/ui/q65_tab.py:365
+#: src/ui/arica2_panel.py:212
 msgid "Message"
 msgstr "メッセージ"
 
-#: src/ui/ft4_tab.py:1087
+#: src/ui/ft4_tab.py:1124
 #, python-brace-format
 msgid ""
 "Use Help > ft8lib Installation… (Recommended), or build ft8_lib (github.com/"
@@ -290,11 +310,11 @@ msgstr ""
 "Help > ft8lib Installation… を使う（推奨）か、ft8_lib（github.com/kgoba/"
 "ft8_lib）を手動でビルドして、共有ライブラリを {dir} に配置してください"
 
-#: src/ui/ft4_tab.py:1092
+#: src/ui/ft4_tab.py:1129
 msgid "ft8lib is not installed — FT4 TX/RX is disabled.\n"
 msgstr "ft8libがインストールされていません — FT4の送受信は無効です。\n"
 
-#: src/ui/ft4_tab.py:1100
+#: src/ui/ft4_tab.py:1137
 msgid ""
 "ft8lib found but decode API is unavailable — TX only.\n"
 "Update ft8_lib to ≥ v0.4 for RX decode support."
@@ -302,7 +322,7 @@ msgstr ""
 "ft8libは見つかりましたが、デコードAPIが利用できません — 送信のみ可能です。\n"
 "受信デコードに対応するには ft8_lib を v0.4 以降に更新してください。"
 
-#: src/ui/ft4_tab.py:1109
+#: src/ui/ft4_tab.py:1146
 msgid ""
 "Using lightweight FT4 decoder — may miss weak or overlapping stations in a "
 "crowded pass.\n"
@@ -312,107 +332,130 @@ msgstr ""
 "見逃す可能性があります。WSJT-X相当のデコード精度にするには\n"
 "Help > FT4 Enhanced Decoder Installation… を参照してください。"
 
-#: src/ui/ft4_tab.py:1127
+#: src/ui/ft4_tab.py:1164
 msgid "Set My Call before operating"
 msgstr "運用前にコールサインを設定してください"
 
-#: src/ui/ft4_tab.py:1235 src/ui/ax100_digi_tab.py:659 src/ui/cw_tab.py:558
+#: src/ui/ft4_tab.py:1272 src/ui/ax100_digi_tab.py:659 src/ui/cw_tab.py:558
 #: src/ui/sstv_tab.py:545
 msgid "sounddevice not installed — pip install sounddevice"
 msgstr "sounddeviceがインストールされていません — pip install sounddevice"
 
-#: src/ui/ft4_tab.py:1239 src/ui/ax100_digi_tab.py:653 src/ui/cw_tab.py:562
-#: src/ui/radio_control_widget.py:1445
+#: src/ui/ft4_tab.py:1276 src/ui/ft4_tab.py:1544 src/ui/ax100_digi_tab.py:653
+#: src/ui/cw_tab.py:562 src/ui/radio_control_widget.py:1445
 msgid "Sound Card not configured — open Rig Settings > Sound Card"
 msgstr ""
 "サウンドカードが未設定です — Rig Settings > Sound Card を開いてください"
 
-#: src/ui/ft4_tab.py:1281 src/ui/ax100_digi_tab.py:406
+#: src/ui/ft4_tab.py:1318 src/ui/ax100_digi_tab.py:406
 #: src/ui/rig_dialog.py:2210
 #, python-brace-format
 msgid "{db:.0f} dBFS"
 msgstr "{db:.0f} dBFS"
 
-#: src/ui/ft4_tab.py:1450
+#: src/ui/ft4_tab.py:1469
+msgid "Tune is active — stop it before transmitting"
+msgstr "チューン中です — 送信する前に停止してください"
+
+#: src/ui/ft4_tab.py:1490
 msgid "Invalid FT4 message: "
 msgstr "無効なFT4メッセージ: "
 
-#: src/ui/ft4_tab.py:1486 src/ui/ax100_digi_tab.py:814
-#: src/ui/arica2_panel.py:565
+#: src/ui/ft4_tab.py:1526 src/ui/ax100_digi_tab.py:814
+#: src/ui/arica2_panel.py:575
 msgid "TX: "
 msgstr "TX: "
 
-#: src/ui/ft4_tab.py:1492
-msgid "TX done — waiting for next period"
-msgstr "TX完了 — 次の周期を待機中"
+#: src/ui/ft4_tab.py:1535
+msgid "Tune: stopping"
+msgstr "チューン: 停止中"
 
-#: src/ui/ft4_tab.py:1498 src/ui/ax100_digi_tab.py:826
+#: src/ui/ft4_tab.py:1539
+msgid "Tune unavailable: transmission in progress"
+msgstr "チューンは使用できません: 送信中です"
+
+#: src/ui/ft4_tab.py:1576
+#, python-brace-format
+msgid "Tune: transmitting {f:.0f} Hz test tone — press Tune again to stop"
+msgstr ""
+"チューン: {f:.0f} Hzのテストトーンを送信中 — 止めるにはもう一度チューンを押し"
+"てください"
+
+#: src/ui/ft4_tab.py:1594
+msgid "Tune stopped"
+msgstr "チューンを停止しました"
+
+#: src/ui/ft4_tab.py:1603 src/ui/ft4_tab.py:1615 src/ui/ax100_digi_tab.py:826
 msgid "TX error: "
 msgstr "TXエラー: "
 
-#: src/ui/ft4_tab.py:1606
+#: src/ui/ft4_tab.py:1609
+msgid "TX done — waiting for next period"
+msgstr "TX完了 — 次の周期を待機中"
+
+#: src/ui/ft4_tab.py:1723
 #, python-brace-format
 msgid "Auto-answering {call}"
 msgstr "{call} に自動応答中"
 
-#: src/ui/ft4_tab.py:1628
+#: src/ui/ft4_tab.py:1745
 #, python-brace-format
 msgid "QSO with {call} complete — TX stopped, press Log QSO to save"
 msgstr "{call} との交信完了 — 送信を停止しました。Log QSOで記録できます"
 
-#: src/ui/ft4_tab.py:1721 src/ui/q65_tab.py:742
+#: src/ui/ft4_tab.py:1838 src/ui/q65_tab.py:745
 msgid "Double-click a decoded station first"
 msgstr "先にデコード一覧で相手局をダブルクリックしてください"
 
-#: src/ui/ft4_tab.py:1897
+#: src/ui/ft4_tab.py:2014
 msgid "Set My Call before enabling TX"
 msgstr "TXを有効にする前にコールサインを設定してください"
 
-#: src/ui/ft4_tab.py:1903
+#: src/ui/ft4_tab.py:2020
 msgid "TX enabled — waiting for next period"
 msgstr "TXを有効化しました — 次の周期を待機中"
 
-#: src/ui/ft4_tab.py:1908
+#: src/ui/ft4_tab.py:2025
 msgid "TX disabled"
 msgstr "TXを無効化しました"
 
-#: src/ui/ft4_tab.py:1950
+#: src/ui/ft4_tab.py:2067
 msgid "Rig connection lost — reconnecting…"
 msgstr "無線機接続が失われました — 再接続しています…"
 
-#: src/ui/ft4_tab.py:1969
+#: src/ui/ft4_tab.py:2086
 msgid "TX halted — stopping current transmission"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1971
+#: src/ui/ft4_tab.py:2088
 msgid "TX halted"
 msgstr "TXを停止しました"
 
-#: src/ui/ft4_tab.py:1980
+#: src/ui/ft4_tab.py:2097
 msgid "Rig connected — ready"
 msgstr "無線機接続済み — 準備完了"
 
-#: src/ui/ft4_tab.py:1991
+#: src/ui/ft4_tab.py:2108
 msgid "Rig disconnected"
 msgstr "無線機未接続"
 
-#: src/ui/ft4_tab.py:2001 src/ui/q65_tab.py:514
+#: src/ui/ft4_tab.py:2118 src/ui/q65_tab.py:517
 msgid "Input: Rig connected"
 msgstr "入力: 無線機接続中"
 
-#: src/ui/ft4_tab.py:2004
+#: src/ui/ft4_tab.py:2121
 msgid "Input: Rig not connected"
 msgstr "入力: 無線機未接続"
 
-#: src/ui/ft4_tab.py:2023
+#: src/ui/ft4_tab.py:2140
 msgid "TX: EVEN"
 msgstr "TX: 偶数"
 
-#: src/ui/ft4_tab.py:2023
+#: src/ui/ft4_tab.py:2140
 msgid "TX: ODD"
 msgstr "TX: 奇数"
 
-#: src/ui/ft4_tab.py:2035
+#: src/ui/ft4_tab.py:2152
 msgid "QSOs logged: "
 msgstr "記録済みQSO数: "
 
@@ -1774,7 +1817,7 @@ msgstr "入出力:"
 msgid "SDR (receive only)"
 msgstr "SDR（受信のみ）"
 
-#: src/ui/ax100_digi_tab.py:452 src/ui/arica2_panel.py:198
+#: src/ui/ax100_digi_tab.py:452 src/ui/arica2_panel.py:206
 msgid "Input: not connected"
 msgstr "入力: 未接続"
 
@@ -1877,12 +1920,12 @@ msgstr ""
 "ax100digi/tx.py を参照してください。"
 
 #: src/ui/ax100_digi_tab.py:591 src/ui/telemetry_tab.py:512
-#: src/ui/pass_chart.py:440 src/ui/pass_chart.py:799 src/ui/arica2_panel.py:313
+#: src/ui/pass_chart.py:440 src/ui/pass_chart.py:799 src/ui/arica2_panel.py:323
 msgid "Time (UTC)"
 msgstr "時刻 (UTC)"
 
 #: src/ui/ax100_digi_tab.py:591 src/ui/pass_chart.py:440
-#: src/ui/pass_chart.py:799 src/ui/arica2_panel.py:313
+#: src/ui/pass_chart.py:799 src/ui/arica2_panel.py:323
 msgid "Time (Local)"
 msgstr "時刻 (Local)"
 
@@ -1895,11 +1938,11 @@ msgstr "入力: 無線機サウンドカード接続中"
 msgid "Audio open error: {exc}"
 msgstr "オーディオを開けません: {exc}"
 
-#: src/ui/ax100_digi_tab.py:710 src/ui/arica2_panel.py:361
+#: src/ui/ax100_digi_tab.py:710 src/ui/arica2_panel.py:371
 msgid "Input: SDR not connected"
 msgstr "入力: SDR未接続"
 
-#: src/ui/ax100_digi_tab.py:714 src/ui/arica2_panel.py:367
+#: src/ui/ax100_digi_tab.py:714 src/ui/arica2_panel.py:377
 msgid "Input: cannot determine SDR sample rate"
 msgstr "入力: SDRのサンプルレートを判定できません"
 
@@ -1907,12 +1950,12 @@ msgstr "入力: SDRのサンプルレートを判定できません"
 msgid "Input: SDR connected (receive only)"
 msgstr "入力: SDR接続中（受信のみ）"
 
-#: src/ui/ax100_digi_tab.py:748 src/ui/arica2_panel.py:416
+#: src/ui/ax100_digi_tab.py:748 src/ui/arica2_panel.py:426
 msgid "Input: SDR disconnected"
 msgstr "入力: SDR切断"
 
 #: src/ui/ax100_digi_tab.py:771 src/ui/ax100_digi_tab.py:865
-#: src/ui/arica2_panel.py:530
+#: src/ui/arica2_panel.py:540
 msgid "My Call not set — configure it in File > Set QTH"
 msgstr "コールサインが未設定です — ファイル > Set QTH で設定してください"
 
@@ -1924,7 +1967,7 @@ msgstr "宛先・本文は必須です"
 msgid "Switch Input/Output to Rig Soundcard to send"
 msgstr "送信するには入出力を無線機サウンドカードに切り替えてください"
 
-#: src/ui/ax100_digi_tab.py:788 src/ui/arica2_panel.py:551
+#: src/ui/ax100_digi_tab.py:788 src/ui/arica2_panel.py:561
 msgid "TX rig not connected"
 msgstr "送信側リグ未接続"
 
@@ -2641,7 +2684,7 @@ msgid "Input Source"
 msgstr "入力ソース"
 
 #: src/ui/telemetry_tab.py:397 src/ui/radio_control_widget.py:361
-#: src/ui/q65_tab.py:199 src/ui/sstv_tab.py:218
+#: src/ui/q65_tab.py:206 src/ui/sstv_tab.py:218
 #: src/ui/sdr_control_widget.py:680
 msgid "Mode:"
 msgstr "モード:"
@@ -3065,7 +3108,7 @@ msgstr "入力: —"
 msgid "Received Packets"
 msgstr "受信パケット"
 
-#: src/ui/aprs_tab.py:331 src/ui/arica2_panel.py:239
+#: src/ui/aprs_tab.py:331 src/ui/arica2_panel.py:247
 msgid "Message:"
 msgstr "メッセージ:"
 
@@ -4721,11 +4764,11 @@ msgstr "このファイルを再生できません: {exc}"
 msgid "Pause"
 msgstr "一時停止"
 
-#: src/ui/q65_tab.py:166 src/ui/q65_tab.py:517
+#: src/ui/q65_tab.py:173 src/ui/q65_tab.py:520
 msgid "Input: No audio source — connect Rig in Radio Control"
 msgstr "入力: 音声ソースなし — 無線機コントロールで無線機を接続してください"
 
-#: src/ui/q65_tab.py:174
+#: src/ui/q65_tab.py:181
 msgid ""
 "libq65 not installed — RX decoding disabled.\n"
 "TX encoding uses pure Python and works without libq65."
@@ -4733,51 +4776,51 @@ msgstr ""
 "libq65がインストールされていません — 受信デコードは無効です。\n"
 "送信エンコードは純Python実装のため、libq65がなくても動作します。"
 
-#: src/ui/q65_tab.py:251
+#: src/ui/q65_tab.py:258
 msgid "CQ"
 msgstr ""
 
-#: src/ui/q65_tab.py:252
+#: src/ui/q65_tab.py:259
 msgid "Start calling CQ"
 msgstr "CQ送信を開始"
 
-#: src/ui/q65_tab.py:256
+#: src/ui/q65_tab.py:263
 msgid "RST"
 msgstr ""
 
-#: src/ui/q65_tab.py:257
+#: src/ui/q65_tab.py:264
 msgid "Send signal report"
 msgstr "信号レポートを送信"
 
-#: src/ui/q65_tab.py:261
+#: src/ui/q65_tab.py:268
 msgid "R+RST"
 msgstr ""
 
-#: src/ui/q65_tab.py:262
+#: src/ui/q65_tab.py:269
 msgid "Send R + signal report (confirm received)"
 msgstr "R + 信号レポートを送信（受信確認）"
 
-#: src/ui/q65_tab.py:266
+#: src/ui/q65_tab.py:273
 msgid "RR73"
 msgstr ""
 
-#: src/ui/q65_tab.py:270
+#: src/ui/q65_tab.py:277
 msgid "73"
 msgstr ""
 
-#: src/ui/q65_tab.py:296
+#: src/ui/q65_tab.py:303
 msgid "Message to transmit (auto-filled by state machine)"
 msgstr "送信メッセージ（ステートマシンが自動入力）"
 
-#: src/ui/q65_tab.py:301
+#: src/ui/q65_tab.py:308
 msgid "Send Once"
 msgstr "1回送信"
 
-#: src/ui/q65_tab.py:302
+#: src/ui/q65_tab.py:309
 msgid "Send the text above as a one-shot free message"
 msgstr "上のテキストを1回限りの自由メッセージとして送信"
 
-#: src/ui/q65_tab.py:327
+#: src/ui/q65_tab.py:330
 msgid ""
 "TX audio output level in dB below full scale.\n"
 "Lower this if the rig's ALC is triggered or the transmit\n"
@@ -4789,29 +4832,29 @@ msgstr ""
 "Q65音声はフルスケールで生成され、リグやサウンドカードによっては\n"
 "20 dB以上の減衰が必要です。"
 
-#: src/ui/q65_tab.py:339
+#: src/ui/q65_tab.py:342
 msgid "DX: —"
 msgstr "DX: —"
 
-#: src/ui/q65_tab.py:381
+#: src/ui/q65_tab.py:384
 msgid "Waiting for period boundary…"
 msgstr "周期境界を待機中…"
 
-#: src/ui/q65_tab.py:631
+#: src/ui/q65_tab.py:634
 msgid "No audio in last period"
 msgstr "直前の周期に音声がありません"
 
-#: src/ui/q65_tab.py:657
+#: src/ui/q65_tab.py:660
 #, python-brace-format
 msgid "Period {utc}: no decodes"
 msgstr "周期 {utc}: デコードなし"
 
-#: src/ui/q65_tab.py:660
+#: src/ui/q65_tab.py:663
 #, python-brace-format
 msgid "Period {utc}: {n} decode(s)"
 msgstr "周期 {utc}: {n}件デコード"
 
-#: src/ui/q65_tab.py:833
+#: src/ui/q65_tab.py:836
 msgid "QSO logged"
 msgstr "QSOを記録しました"
 
@@ -5114,11 +5157,11 @@ msgstr "ADIFログを保存"
 msgid "Exported {n} QSOs to {f}"
 msgstr "{n}件のQSOを{f}にエクスポートしました"
 
-#: src/ui/arica2_panel.py:177
+#: src/ui/arica2_panel.py:185
 msgid "ARICA-2 (JS1YSD) message box ℹ"
 msgstr "ARICA-2（JS1YSD）メッセージボックス ℹ"
 
-#: src/ui/arica2_panel.py:180
+#: src/ui/arica2_panel.py:188
 msgid ""
 "436.830 MHz, 4800 baud G3RUH GMSK (uplink and downlink). 20 slots, 8 "
 "characters each, kept for 48 hours. Uplink works only for about 15 seconds "
@@ -5130,43 +5173,43 @@ msgstr ""
 "け有効です。フレーム形式は公式Windowsツールの逆解析によるもので、公式には公開"
 "されていません。"
 
-#: src/ui/arica2_panel.py:189
+#: src/ui/arica2_panel.py:197
 msgid "Receive:"
 msgstr "受信:"
 
-#: src/ui/arica2_panel.py:190
+#: src/ui/arica2_panel.py:198
 msgid "SDR (transmit via rig)"
 msgstr "SDR（送信は無線機）"
 
-#: src/ui/arica2_panel.py:204
+#: src/ui/arica2_panel.py:212
 msgid "From"
 msgstr "送信元"
 
-#: src/ui/arica2_panel.py:204
+#: src/ui/arica2_panel.py:212
 msgid "To"
 msgstr "宛先"
 
-#: src/ui/arica2_panel.py:214
+#: src/ui/arica2_panel.py:222
 msgid "Uplink window"
 msgstr "アップリンクウィンドウ"
 
-#: src/ui/arica2_panel.py:216
+#: src/ui/arica2_panel.py:224
 msgid "Window: no beacon seen yet"
 msgstr "ウィンドウ: ビーコン未検出"
 
-#: src/ui/arica2_panel.py:218
+#: src/ui/arica2_panel.py:226
 msgid "Send mode:"
 msgstr "送信モード:"
 
-#: src/ui/arica2_panel.py:220
+#: src/ui/arica2_panel.py:228
 msgid "Manual (send now)"
 msgstr "手動（すぐ送信）"
 
-#: src/ui/arica2_panel.py:221
+#: src/ui/arica2_panel.py:229
 msgid "Auto (send at next window)"
 msgstr "自動（次のウィンドウで送信）"
 
-#: src/ui/arica2_panel.py:225
+#: src/ui/arica2_panel.py:233
 msgid ""
 "Manual sends the moment you press a button. Auto holds the command and sends "
 "it as soon as the beacon ends (needs the SDR input, which watches the "
@@ -5175,135 +5218,136 @@ msgstr ""
 "手動はボタンを押した瞬間に送信します。自動はコマンドを保留し、ビーコンが終"
 "わった直後に送信します（ビーコンを監視するSDR入力が必要）。"
 
-#: src/ui/arica2_panel.py:235
+#: src/ui/arica2_panel.py:243
 msgid "Message box"
 msgstr "メッセージボックス"
 
-#: src/ui/arica2_panel.py:243
+#: src/ui/arica2_panel.py:251
 msgid "max 8 chars"
 msgstr "最大8文字"
 
-#: src/ui/arica2_panel.py:255
+#: src/ui/arica2_panel.py:263
 msgid ""
-"Transmit audio level sent to the radio (Direwolf has no level of its own). "
-"Too high a level over-deviates the FM transmitter. Combine with the radio's "
+"TX audio level in dB below full scale (Direwolf has no level of its own).\n"
+"Too high a level over-deviates the FM transmitter; rigs with a sensitive "
+"data input can need 20 dB or more of reduction. Combine with the radio's "
 "data input gain and keep the Mac output volume fixed."
-msgstr "無線機へ送る送信音声のレベルです（Direwolf自体にはレベル設定がありません）。大きすぎるとFM送信機が過偏移になります。無線機のデータ入力ゲインと併用し、Macの出力音量は固定してください。"
+msgstr "送信音声のレベル（フルスケールからのdB。Direwolf自体にはレベル設定がありません）。\n大きすぎるとFM送信機が過偏移になります。データ入力が敏感な無線機では20 dB以上絞る必要があることもあります。無線機のデータ入力ゲインと併用し、Macの出力音量は固定してください。"
 
-#: src/ui/arica2_panel.py:267
+#: src/ui/arica2_panel.py:277
 msgid "Upload"
 msgstr "アップロード"
 
-#: src/ui/arica2_panel.py:268
+#: src/ui/arica2_panel.py:278
 msgid "Store the message in the next free slot"
 msgstr "空いている次のスロットにメッセージを保存します"
 
-#: src/ui/arica2_panel.py:269
+#: src/ui/arica2_panel.py:279
 msgid "Confirm"
 msgstr "確認"
 
-#: src/ui/arica2_panel.py:270
+#: src/ui/arica2_panel.py:280
 msgid "List the occupied slots"
 msgstr "使用中のスロットを一覧します"
 
-#: src/ui/arica2_panel.py:271
+#: src/ui/arica2_panel.py:281
 msgid "Parrot"
 msgstr "オウム返し"
 
-#: src/ui/arica2_panel.py:272
+#: src/ui/arica2_panel.py:282
 msgid "The satellite echoes the message straight back"
 msgstr "衛星がメッセージをそのまま返送します"
 
-#: src/ui/arica2_panel.py:273 src/ui/settings_dialog.py:294
+#: src/ui/arica2_panel.py:283 src/ui/settings_dialog.py:294
 msgid "Download"
 msgstr "ダウンロード"
 
-#: src/ui/arica2_panel.py:275
+#: src/ui/arica2_panel.py:285
 msgid "Read back the message with this ID (1-20). Only Download uses it"
 msgstr "このID（1〜20）のメッセージを読み出します。使うのはDownloadだけです"
 
-#: src/ui/arica2_panel.py:279
+#: src/ui/arica2_panel.py:289
 msgid "Message ID "
 msgstr "メッセージID "
 
-#: src/ui/arica2_panel.py:280
+#: src/ui/arica2_panel.py:290
 msgid "Cancel armed"
 msgstr "待機中を取消"
 
-#: src/ui/arica2_panel.py:309
+#: src/ui/arica2_panel.py:319
 #, python-brace-format
 msgid "From: {call}"
 msgstr "送信元: {call}"
 
-#: src/ui/arica2_panel.py:309
+#: src/ui/arica2_panel.py:319
 msgid "From: (set in File > Set QTH)"
 msgstr "送信元: （File > Set QTH で設定）"
 
-#: src/ui/arica2_panel.py:371 src/ui/arica2_panel.py:386
+#: src/ui/arica2_panel.py:381 src/ui/arica2_panel.py:396
 #, python-brace-format
 msgid "Direwolf error: {err}"
 msgstr "Direwolfエラー: {err}"
 
-#: src/ui/arica2_panel.py:380
+#: src/ui/arica2_panel.py:390
 msgid "Input: SDR connected (4800 baud), transmit via rig"
 msgstr "入力: SDR接続中（4800 baud）、送信は無線機"
 
-#: src/ui/arica2_panel.py:393
+#: src/ui/arica2_panel.py:403
 msgid ""
 "Input: Rig Soundcard + Direwolf (4800 baud). No beacon detection: manual only"
 msgstr ""
 "入力: 無線機サウンドカード + Direwolf（4800 baud）。ビーコン検出なし: 手動の"
 "み"
 
-#: src/ui/arica2_panel.py:462
+#: src/ui/arica2_panel.py:472
 #, python-brace-format
 msgid "Window OPEN: {s:.0f} s left"
 msgstr "ウィンドウ開放中: 残り {s:.0f} 秒"
 
-#: src/ui/arica2_panel.py:463 src/ui/arica2_panel.py:472
+#: src/ui/arica2_panel.py:473 src/ui/arica2_panel.py:482
 msgid " (armed command waiting)"
 msgstr "（コマンド待機中）"
 
-#: src/ui/arica2_panel.py:467
+#: src/ui/arica2_panel.py:477
 msgid "Beacon on air: wait for it to stop"
 msgstr "ビーコン送信中: 終了を待ってください"
 
-#: src/ui/arica2_panel.py:470
+#: src/ui/arica2_panel.py:480
 msgid "Window closed: waiting for the next beacon"
 msgstr "ウィンドウ閉: 次のビーコンを待機中"
 
-#: src/ui/arica2_panel.py:476
+#: src/ui/arica2_panel.py:486
 msgid "Window: no beacon detection (manual only)"
 msgstr "ウィンドウ: ビーコン検出なし（手動のみ）"
 
-#: src/ui/arica2_panel.py:506
+#: src/ui/arica2_panel.py:516
 msgid "Message is required"
 msgstr "メッセージを入力してください"
 
-#: src/ui/arica2_panel.py:522
+#: src/ui/arica2_panel.py:532
 #, python-brace-format
 msgid "Armed: {cmd} will be sent when the beacon ends"
 msgstr "待機中: ビーコン終了時に {cmd} を送信します"
 
-#: src/ui/arica2_panel.py:532
+#: src/ui/arica2_panel.py:542
 #, python-brace-format
 msgid "Callsign must be at most {n} characters"
 msgstr "コールサインは{n}文字以内にしてください"
 
-#: src/ui/arica2_panel.py:534
+#: src/ui/arica2_panel.py:544
 #, python-brace-format
 msgid "Message must be ASCII, at most {n} characters"
 msgstr "メッセージは{n}文字以内のASCIIにしてください"
 
-#: src/ui/arica2_panel.py:540
+#: src/ui/arica2_panel.py:550
 msgid "Armed command cancelled"
 msgstr "待機中のコマンドを取り消しました"
 
-#: src/ui/arica2_panel.py:556
+#: src/ui/arica2_panel.py:566
 msgid "Cannot transmit: check the Sound Card output in Rig Settings"
 msgstr "送信できません: Rig SettingsのSound Card出力を確認してください"
 
-#: src/ui/arica2_panel.py:560
+#: src/ui/arica2_panel.py:570
 msgid "Direwolf is not running"
 msgstr "Direwolfが動作していません"
 
@@ -6901,41 +6945,3 @@ msgstr "（{shown}/{total}文字を表示、以下省略）"
 #~ msgid "%(count)d pass"
 #~ msgid_plural "%(count)d passes"
 #~ msgstr[0] "%(count)d パス"
-
-#: src/ui/ft4_tab.py
-msgid "Tune"
-msgstr "チューン"
-
-#: src/ui/ft4_tab.py
-msgid ""
-"Transmit a continuous test tone at the TX Audio frequency so you can\n"
-"adjust the TX Level while watching the rig's power / ALC meter.\n"
-"Press again (or Halt TX) to stop. Stops by itself after 60 seconds."
-msgstr ""
-"TX音声の周波数で連続テストトーンを送信します。リグの出力計・ALC\n"
-"メーターを見ながらTXレベルを調整できます。\n"
-"もう一度押す（またはTX停止）と止まります。60秒で自動的に停止します。"
-
-#: src/ui/ft4_tab.py
-msgid "Tune: stopping"
-msgstr "チューン: 停止中"
-
-#: src/ui/ft4_tab.py
-msgid "Tune unavailable: transmission in progress"
-msgstr "チューンは使用できません: 送信中です"
-
-#: src/ui/ft4_tab.py
-msgid "Tune: transmitting {f:.0f} Hz test tone — press Tune again to stop"
-msgstr "チューン: {f:.0f} Hzのテストトーンを送信中 — 止めるにはもう一度チューンを押してください"
-
-#: src/ui/ft4_tab.py
-msgid "Tune stopped"
-msgstr "チューンを停止しました"
-
-#: src/ui/ft4_tab.py
-msgid "Tune is active — stop it before transmitting"
-msgstr "チューン中です — 送信する前に停止してください"
-
-#: src/ui/ft4_tab.py
-msgid "Clear the current QSO and the TX message (the message history is not cleared)."
-msgstr "現在のQSOとTXメッセージをクリアします（メッセージ履歴は消えません）。"

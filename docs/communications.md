@@ -3417,7 +3417,7 @@ AX100 = MARMOTSat 69912）とマッチするトランスミッターが Radio Co
 
 - `AudioBridge.tx_gain`（0..1、減衰のみ）を Direwolf の標準出力 PCM に掛けてからサウンドカードへ渡す。
   `DirewolfManager.set_tx_gain()` → `AprsEngine.set_tx_gain()` で実行中にも即時反映。
-- ARICA-2 パネルに **TX Level スライダー**（0〜100%、既定 100%、`arica2_settings.tx_level` に保存）。
+- ARICA-2 パネルに **TX Level スライダー**（**dB 単位**、-60〜0 dB、既定 0 dB。FT4/Q65 と共通の `ui/tx_level.py` を使用、`arica2_settings.tx_level_db` に保存。初版はリニア %（`tx_level`）で作ったが、FT-991A のようにデータ入力が敏感な無線機は -25 dB 付近が適正で、リニアでは下の数 % に押し込まれて効かないため dB に変更。旧キー `tx_level` は dB へ移行）。
   ゲインは**エンジン共通**（APRS も同じ Direwolf）なので、パネルが入力を止める/閉じるときに 1.0 へ戻す。
 - 送信音声のピークを **`direwolf.log` に 1 バーストごと**（`TX audio peak -x.x dBFS (gain n.nn)`）記録。
   実際に出ているレベルを後から確認できる。

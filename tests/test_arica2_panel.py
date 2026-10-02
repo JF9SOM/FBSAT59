@@ -271,15 +271,26 @@ def test_message_box_tab_switches_protocol_and_hands_over_the_input(
     assert "ax100" in row[0]
 
 
-def test_tx_level_slider_sets_the_engine_gain_and_is_restored(
+def test_tx_level_slider_is_in_db_sets_the_engine_gain_and_is_restored(
     qtbot: QtBot, conn: sqlite3.Connection, engine: _FakeEngine
 ) -> None:
     p = _make(qtbot, conn)
-    assert engine.gains[-1] == 1.0  # default level on start
-    p._level_slider.setValue(30)
-    assert engine.gains[-1] == 0.3
-    assert p._level_label.text() == "30%"
+    assert engine.gains[-1] == 1.0  # default 0 dB on start
+    p._level_slider.setValue(-20)
+    assert engine.gains[-1] == pytest.approx(0.1)
+    assert p._level_label.text() == "-20 dB"
     p.shutdown()
     assert engine.gains[-1] == 1.0  # engine-wide gain put back for APRS
     saved = conn.execute("SELECT value FROM app_settings WHERE key = 'arica2_settings'").fetchone()
-    assert '"tx_level": 30' in saved[0]
+    assert '"tx_level_db": -20' in saved[0]
+
+
+def test_legacy_percent_level_setting_is_migrated_to_db(
+    qtbot: QtBot, conn: sqlite3.Connection, engine: _FakeEngine
+) -> None:
+    conn.execute(
+        "INSERT INTO app_settings (key, value) VALUES ('arica2_settings', '{\"tx_level\": 10}')"
+    )
+    p = _make(qtbot, conn)
+    assert p._level_slider.value() == -20  # 10 % == -20 dB
+    assert engine.gains[-1] == pytest.approx(0.1)

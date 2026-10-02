@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-02 16:29+0900\n"
+"POT-Creation-Date: 2026-10-02 20:17+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,142 +17,142 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: src/ui/ft4_tab.py:254 src/ui/ax100_digi_tab.py:118 src/ui/q65_tab.py:879
+#: src/ui/ft4_tab.py:273 src/ui/ax100_digi_tab.py:118 src/ui/q65_tab.py:882
 msgid "another tab"
 msgstr ""
 
-#: src/ui/ft4_tab.py:255 src/ui/ax100_digi_tab.py:119 src/ui/q65_tab.py:881
+#: src/ui/ft4_tab.py:274 src/ui/ax100_digi_tab.py:119 src/ui/q65_tab.py:884
 #, python-brace-format
 msgid "Sound card output is in use by {other}"
 msgstr ""
 
-#: src/ui/ft4_tab.py:286 src/ui/ax100_digi_tab.py:128 src/ui/q65_tab.py:896
+#: src/ui/ft4_tab.py:305 src/ui/ax100_digi_tab.py:128 src/ui/q65_tab.py:899
 msgid "PTT command failed — check Rig 1 connection"
 msgstr ""
 
-#: src/ui/ft4_tab.py:430 src/ui/q65_tab.py:944
+#: src/ui/ft4_tab.py:453 src/ui/q65_tab.py:947
 msgid "PTT OFF failed — the radio may still be transmitting. Check the radio!"
 msgstr ""
 
-#: src/ui/ft4_tab.py:440
+#: src/ui/ft4_tab.py:463
 #, python-brace-format
 msgid "TX watchdog: forced PTT off after {s:.0f}s (audio stalled)"
 msgstr ""
 
-#: src/ui/ft4_tab.py:689 src/ui/rig_dialog.py:1142 src/ui/q65_tab.py:183
+#: src/ui/ft4_tab.py:713 src/ui/rig_dialog.py:1142 src/ui/q65_tab.py:190
 msgid "Configuration"
 msgstr ""
 
-#: src/ui/ft4_tab.py:693 src/ui/aprs_tab.py:211 src/ui/q65_tab.py:187
+#: src/ui/ft4_tab.py:717 src/ui/aprs_tab.py:211 src/ui/q65_tab.py:194
 msgid "My Call:"
 msgstr ""
 
-#: src/ui/ft4_tab.py:700 src/ui/q65_tab.py:193
+#: src/ui/ft4_tab.py:724 src/ui/q65_tab.py:200
 msgid "Grid:"
 msgstr ""
 
-#: src/ui/ft4_tab.py:708
+#: src/ui/ft4_tab.py:732
 msgid ""
 "Audio tone frequency of your transmission. Reception is not affected: the "
 "whole passband is always decoded."
 msgstr ""
 
-#: src/ui/ft4_tab.py:711
+#: src/ui/ft4_tab.py:735
 msgid "TX Audio:"
 msgstr ""
 
-#: src/ui/ft4_tab.py:720 src/ui/ft4_tab.py:949 src/ui/q65_tab.py:362
+#: src/ui/ft4_tab.py:744 src/ui/ft4_tab.py:986 src/ui/q65_tab.py:365
 msgid "Hz"
 msgstr ""
 
-#: src/ui/ft4_tab.py:722 src/ui/q65_tab.py:212
+#: src/ui/ft4_tab.py:746 src/ui/q65_tab.py:219
 msgid "RX:"
 msgstr ""
 
-#: src/ui/ft4_tab.py:724 src/ui/ax100_digi_tab.py:440 src/ui/q65_tab.py:214
-#: src/ui/arica2_panel.py:191
+#: src/ui/ft4_tab.py:748 src/ui/ax100_digi_tab.py:440 src/ui/q65_tab.py:221
+#: src/ui/arica2_panel.py:199
 msgid "Rig Soundcard"
 msgstr ""
 
-#: src/ui/ft4_tab.py:725 src/ui/rig_dialog.py:392 src/ui/cw_tab.py:218
-#: src/ui/q65_tab.py:215 src/ui/q65_tab.py:583
+#: src/ui/ft4_tab.py:749 src/ui/rig_dialog.py:392 src/ui/cw_tab.py:218
+#: src/ui/q65_tab.py:222 src/ui/q65_tab.py:586
 msgid "SDR"
 msgstr ""
 
-#: src/ui/ft4_tab.py:732 src/ui/rig_dialog.py:2021
+#: src/ui/ft4_tab.py:756 src/ui/rig_dialog.py:2021
 msgid "RX Level:"
 msgstr ""
 
-#: src/ui/ft4_tab.py:739 src/ui/ft4_tab.py:1257 src/ui/rig_dialog.py:2018
+#: src/ui/ft4_tab.py:763 src/ui/ft4_tab.py:1294 src/ui/rig_dialog.py:2018
 #: src/ui/rig_dialog.py:2191
 msgid "-- dBFS"
 msgstr ""
 
-#: src/ui/ft4_tab.py:742 src/ui/meteor_tab.py:467
+#: src/ui/ft4_tab.py:766 src/ui/meteor_tab.py:467
 msgid "Waterfall"
 msgstr ""
 
-#: src/ui/ft4_tab.py:745
+#: src/ui/ft4_tab.py:769
 msgid ""
 "Open a popup showing the last RX period's audio as a spectrogram, to check "
 "whether real FT4 signals are visible in the passband even when nothing "
 "decodes."
 msgstr ""
 
-#: src/ui/ft4_tab.py:778 src/ui/q65_tab.py:234
+#: src/ui/ft4_tab.py:802 src/ui/q65_tab.py:241
 msgid "● RX"
 msgstr ""
 
-#: src/ui/ft4_tab.py:782 src/ui/q65_tab.py:238
+#: src/ui/ft4_tab.py:806 src/ui/q65_tab.py:245
 msgid "● TX"
 msgstr ""
 
-#: src/ui/ft4_tab.py:789 src/ui/q65_tab.py:245
+#: src/ui/ft4_tab.py:813 src/ui/q65_tab.py:252
 msgid "Transmit"
 msgstr ""
 
-#: src/ui/ft4_tab.py:796
+#: src/ui/ft4_tab.py:820
 msgid "Call CQ"
 msgstr ""
 
-#: src/ui/ft4_tab.py:800
+#: src/ui/ft4_tab.py:824
 msgid "Answer with our grid — the standard opening exchange"
 msgstr ""
 
-#: src/ui/ft4_tab.py:802
+#: src/ui/ft4_tab.py:826
 msgid "Answer with a signal report, skipping the grid"
 msgstr ""
 
-#: src/ui/ft4_tab.py:803
+#: src/ui/ft4_tab.py:827
 msgid "Acknowledge and report (R + report)"
 msgstr ""
 
-#: src/ui/ft4_tab.py:804
+#: src/ui/ft4_tab.py:828
 msgid "Confirm the exchange"
 msgstr ""
 
-#: src/ui/ft4_tab.py:805
+#: src/ui/ft4_tab.py:829
 msgid "Sign off"
 msgstr ""
 
-#: src/ui/ft4_tab.py:812 src/ui/q65_tab.py:206
+#: src/ui/ft4_tab.py:836 src/ui/q65_tab.py:213
 msgid "TX Slot:"
 msgstr ""
 
-#: src/ui/ft4_tab.py:814 src/ui/rig_dialog.py:1183 src/ui/telemetry_tab.py:438
+#: src/ui/ft4_tab.py:838 src/ui/rig_dialog.py:1183 src/ui/telemetry_tab.py:438
 #: src/ui/aprs_tab.py:249
 msgid "Auto"
 msgstr ""
 
-#: src/ui/ft4_tab.py:815 src/ui/q65_tab.py:208
+#: src/ui/ft4_tab.py:839 src/ui/q65_tab.py:215
 msgid "Even"
 msgstr ""
 
-#: src/ui/ft4_tab.py:816 src/ui/q65_tab.py:209
+#: src/ui/ft4_tab.py:840 src/ui/q65_tab.py:216
 msgid "Odd"
 msgstr ""
 
-#: src/ui/ft4_tab.py:823
+#: src/ui/ft4_tab.py:847
 msgid ""
 "Which slot to transmit in when calling CQ / enabling TX.\n"
 "Auto: whichever slot is current when you press CQ / TX Enable.\n"
@@ -160,232 +160,270 @@ msgid ""
 "slot regardless of this setting."
 msgstr ""
 
-#: src/ui/ft4_tab.py:833 src/ui/q65_tab.py:276
+#: src/ui/ft4_tab.py:857
+msgid "Tune"
+msgstr ""
+
+#: src/ui/ft4_tab.py:861
+msgid ""
+"Transmit a continuous test tone at the TX Audio frequency so you can\n"
+"adjust the TX Level while watching the rig's power / ALC meter.\n"
+"Press again (or Halt TX) to stop. Stops by itself after 60 seconds."
+msgstr ""
+
+#: src/ui/ft4_tab.py:872 src/ui/q65_tab.py:283
 msgid "TX Enable"
 msgstr ""
 
-#: src/ui/ft4_tab.py:841 src/ui/q65_tab.py:284
+#: src/ui/ft4_tab.py:880 src/ui/q65_tab.py:291
 msgid "Halt TX"
 msgstr ""
 
-#: src/ui/ft4_tab.py:850 src/ui/main_window.py:397 src/ui/q65_tab.py:293
+#: src/ui/ft4_tab.py:889 src/ui/main_window.py:397 src/ui/q65_tab.py:300
 msgid "TX:"
 msgstr ""
 
-#: src/ui/ft4_tab.py:852
+#: src/ui/ft4_tab.py:891
 msgid "FT4 message (auto-filled by state machine)"
 msgstr ""
 
-#: src/ui/ft4_tab.py:858 src/ui/ft4_tab.py:1136 src/ui/q65_tab.py:310
-msgid "State: IDLE"
-msgstr ""
-
-#: src/ui/ft4_tab.py:864 src/ui/q65_tab.py:316 src/ui/arica2_panel.py:248
-msgid "TX Level:"
-msgstr ""
-
-#: src/ui/ft4_tab.py:877
-msgid ""
-"TX audio output level (percentage of full scale).\n"
-"Lower this if the rig's ALC is triggered or the transmit\n"
-"audio sounds distorted — FT4 audio is generated at full\n"
-"scale and some rigs/sound cards need well under 100%."
-msgstr ""
-
-#: src/ui/ft4_tab.py:889 src/ui/ft4_tab.py:973 src/ui/meteor_tab.py:228
-#: src/ui/cw_tab.py:260 src/ui/q65_tab.py:376
+#: src/ui/ft4_tab.py:895 src/ui/ft4_tab.py:1010 src/ui/meteor_tab.py:228
+#: src/ui/cw_tab.py:260 src/ui/q65_tab.py:379
 msgid "Clear"
 msgstr ""
 
-#: src/ui/ft4_tab.py:893 src/ui/q65_tab.py:342
+#: src/ui/ft4_tab.py:897
+msgid ""
+"Clear the current QSO and the TX message (the message history is not "
+"cleared)."
+msgstr ""
+
+#: src/ui/ft4_tab.py:905 src/ui/ft4_tab.py:1173 src/ui/q65_tab.py:317
+msgid "State: IDLE"
+msgstr ""
+
+#: src/ui/ft4_tab.py:911 src/ui/q65_tab.py:323 src/ui/arica2_panel.py:256
+msgid "TX Level:"
+msgstr ""
+
+#: src/ui/ft4_tab.py:918
+msgid ""
+"TX audio output level in dB below full scale.\n"
+"Lower this if the rig's ALC is triggered or the transmit\n"
+"audio sounds distorted — FT4 audio is generated at full\n"
+"scale and some rigs/sound cards need 20 dB or more of reduction."
+msgstr ""
+
+#: src/ui/ft4_tab.py:930 src/ui/q65_tab.py:345
 msgid "Log QSO"
 msgstr ""
 
-#: src/ui/ft4_tab.py:898 src/ui/ax100_digi_tab.py:485 src/ui/aprs_tab.py:388
-#: src/ui/q65_tab.py:347
+#: src/ui/ft4_tab.py:935 src/ui/ax100_digi_tab.py:485 src/ui/aprs_tab.py:388
+#: src/ui/q65_tab.py:350
 msgid "Export ADIF…"
 msgstr ""
 
-#: src/ui/ft4_tab.py:903
+#: src/ui/ft4_tab.py:940
 msgid "Auto-progress:"
 msgstr ""
 
-#: src/ui/ft4_tab.py:905
+#: src/ui/ft4_tab.py:942
 msgid "No"
 msgstr ""
 
-#: src/ui/ft4_tab.py:906
+#: src/ui/ft4_tab.py:943
 msgid "Yes"
 msgstr ""
 
-#: src/ui/ft4_tab.py:910
+#: src/ui/ft4_tab.py:947
 msgid ""
 "When another station calls us while no QSO is running, start\n"
 "one automatically and prepare the reply. First caller wins if\n"
 "several answer at once. Transmitting still requires TX Enable."
 msgstr ""
 
-#: src/ui/ft4_tab.py:928 src/ui/q65_tab.py:360
+#: src/ui/ft4_tab.py:965 src/ui/q65_tab.py:363
 msgid "Decoded Messages"
 msgstr ""
 
-#: src/ui/ft4_tab.py:929
+#: src/ui/ft4_tab.py:966
 msgid "even"
 msgstr ""
 
-#: src/ui/ft4_tab.py:930
+#: src/ui/ft4_tab.py:967
 msgid "odd"
 msgstr ""
 
-#: src/ui/ft4_tab.py:940
+#: src/ui/ft4_tab.py:977
 msgid ""
 "Blue text: the other station transmitted in an even-parity slot. Orange "
 "text: odd-parity slot. Our own TX rows keep their fixed highlight colour "
 "instead."
 msgstr ""
 
-#: src/ui/ft4_tab.py:949 src/ui/q65_tab.py:362
+#: src/ui/ft4_tab.py:986 src/ui/q65_tab.py:365
 msgid "UTC"
 msgstr ""
 
-#: src/ui/ft4_tab.py:949 src/ui/q65_tab.py:362
+#: src/ui/ft4_tab.py:986 src/ui/q65_tab.py:365
 msgid "dB"
 msgstr ""
 
-#: src/ui/ft4_tab.py:949 src/ui/q65_tab.py:362
+#: src/ui/ft4_tab.py:986 src/ui/q65_tab.py:365
 msgid "DT"
 msgstr ""
 
-#: src/ui/ft4_tab.py:949 src/ui/ax100_digi_tab.py:496
-#: src/ui/ax100_digi_tab.py:848 src/ui/q65_tab.py:362
-#: src/ui/arica2_panel.py:204
+#: src/ui/ft4_tab.py:986 src/ui/ax100_digi_tab.py:496
+#: src/ui/ax100_digi_tab.py:848 src/ui/q65_tab.py:365
+#: src/ui/arica2_panel.py:212
 msgid "Message"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1087
+#: src/ui/ft4_tab.py:1124
 #, python-brace-format
 msgid ""
 "Use Help > ft8lib Installation… (Recommended), or build ft8_lib (github.com/"
 "kgoba/ft8_lib) manually and place the shared library in {dir}"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1092
+#: src/ui/ft4_tab.py:1129
 msgid "ft8lib is not installed — FT4 TX/RX is disabled.\n"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1100
+#: src/ui/ft4_tab.py:1137
 msgid ""
 "ft8lib found but decode API is unavailable — TX only.\n"
 "Update ft8_lib to ≥ v0.4 for RX decode support."
 msgstr ""
 
-#: src/ui/ft4_tab.py:1109
+#: src/ui/ft4_tab.py:1146
 msgid ""
 "Using lightweight FT4 decoder — may miss weak or overlapping stations in a "
 "crowded pass.\n"
 "Help > FT4 Enhanced Decoder Installation… for WSJT-X-grade decoding."
 msgstr ""
 
-#: src/ui/ft4_tab.py:1127
+#: src/ui/ft4_tab.py:1164
 msgid "Set My Call before operating"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1235 src/ui/ax100_digi_tab.py:659 src/ui/cw_tab.py:558
+#: src/ui/ft4_tab.py:1272 src/ui/ax100_digi_tab.py:659 src/ui/cw_tab.py:558
 #: src/ui/sstv_tab.py:545
 msgid "sounddevice not installed — pip install sounddevice"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1239 src/ui/ax100_digi_tab.py:653 src/ui/cw_tab.py:562
-#: src/ui/radio_control_widget.py:1445
+#: src/ui/ft4_tab.py:1276 src/ui/ft4_tab.py:1544 src/ui/ax100_digi_tab.py:653
+#: src/ui/cw_tab.py:562 src/ui/radio_control_widget.py:1445
 msgid "Sound Card not configured — open Rig Settings > Sound Card"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1281 src/ui/ax100_digi_tab.py:406
+#: src/ui/ft4_tab.py:1318 src/ui/ax100_digi_tab.py:406
 #: src/ui/rig_dialog.py:2210
 #, python-brace-format
 msgid "{db:.0f} dBFS"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1450
+#: src/ui/ft4_tab.py:1469
+msgid "Tune is active — stop it before transmitting"
+msgstr ""
+
+#: src/ui/ft4_tab.py:1490
 msgid "Invalid FT4 message: "
 msgstr ""
 
-#: src/ui/ft4_tab.py:1486 src/ui/ax100_digi_tab.py:814
-#: src/ui/arica2_panel.py:565
+#: src/ui/ft4_tab.py:1526 src/ui/ax100_digi_tab.py:814
+#: src/ui/arica2_panel.py:575
 msgid "TX: "
 msgstr ""
 
-#: src/ui/ft4_tab.py:1492
-msgid "TX done — waiting for next period"
+#: src/ui/ft4_tab.py:1535
+msgid "Tune: stopping"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1498 src/ui/ax100_digi_tab.py:826
+#: src/ui/ft4_tab.py:1539
+msgid "Tune unavailable: transmission in progress"
+msgstr ""
+
+#: src/ui/ft4_tab.py:1576
+#, python-brace-format
+msgid "Tune: transmitting {f:.0f} Hz test tone — press Tune again to stop"
+msgstr ""
+
+#: src/ui/ft4_tab.py:1594
+msgid "Tune stopped"
+msgstr ""
+
+#: src/ui/ft4_tab.py:1603 src/ui/ft4_tab.py:1615 src/ui/ax100_digi_tab.py:826
 msgid "TX error: "
 msgstr ""
 
-#: src/ui/ft4_tab.py:1606
+#: src/ui/ft4_tab.py:1609
+msgid "TX done — waiting for next period"
+msgstr ""
+
+#: src/ui/ft4_tab.py:1723
 #, python-brace-format
 msgid "Auto-answering {call}"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1628
+#: src/ui/ft4_tab.py:1745
 #, python-brace-format
 msgid "QSO with {call} complete — TX stopped, press Log QSO to save"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1721 src/ui/q65_tab.py:742
+#: src/ui/ft4_tab.py:1838 src/ui/q65_tab.py:745
 msgid "Double-click a decoded station first"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1897
+#: src/ui/ft4_tab.py:2014
 msgid "Set My Call before enabling TX"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1903
+#: src/ui/ft4_tab.py:2020
 msgid "TX enabled — waiting for next period"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1908
+#: src/ui/ft4_tab.py:2025
 msgid "TX disabled"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1950
+#: src/ui/ft4_tab.py:2067
 msgid "Rig connection lost — reconnecting…"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1969
+#: src/ui/ft4_tab.py:2086
 msgid "TX halted — stopping current transmission"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1971
+#: src/ui/ft4_tab.py:2088
 msgid "TX halted"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1980
+#: src/ui/ft4_tab.py:2097
 msgid "Rig connected — ready"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1991
+#: src/ui/ft4_tab.py:2108
 msgid "Rig disconnected"
 msgstr ""
 
-#: src/ui/ft4_tab.py:2001 src/ui/q65_tab.py:514
+#: src/ui/ft4_tab.py:2118 src/ui/q65_tab.py:517
 msgid "Input: Rig connected"
 msgstr ""
 
-#: src/ui/ft4_tab.py:2004
+#: src/ui/ft4_tab.py:2121
 msgid "Input: Rig not connected"
 msgstr ""
 
-#: src/ui/ft4_tab.py:2023
+#: src/ui/ft4_tab.py:2140
 msgid "TX: EVEN"
 msgstr ""
 
-#: src/ui/ft4_tab.py:2023
+#: src/ui/ft4_tab.py:2140
 msgid "TX: ODD"
 msgstr ""
 
-#: src/ui/ft4_tab.py:2035
+#: src/ui/ft4_tab.py:2152
 msgid "QSOs logged: "
 msgstr ""
 
@@ -1639,7 +1677,7 @@ msgstr ""
 msgid "SDR (receive only)"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:452 src/ui/arica2_panel.py:198
+#: src/ui/ax100_digi_tab.py:452 src/ui/arica2_panel.py:206
 msgid "Input: not connected"
 msgstr ""
 
@@ -1736,12 +1774,12 @@ msgid ""
 msgstr ""
 
 #: src/ui/ax100_digi_tab.py:591 src/ui/telemetry_tab.py:512
-#: src/ui/pass_chart.py:440 src/ui/pass_chart.py:799 src/ui/arica2_panel.py:313
+#: src/ui/pass_chart.py:440 src/ui/pass_chart.py:799 src/ui/arica2_panel.py:323
 msgid "Time (UTC)"
 msgstr ""
 
 #: src/ui/ax100_digi_tab.py:591 src/ui/pass_chart.py:440
-#: src/ui/pass_chart.py:799 src/ui/arica2_panel.py:313
+#: src/ui/pass_chart.py:799 src/ui/arica2_panel.py:323
 msgid "Time (Local)"
 msgstr ""
 
@@ -1754,11 +1792,11 @@ msgstr ""
 msgid "Audio open error: {exc}"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:710 src/ui/arica2_panel.py:361
+#: src/ui/ax100_digi_tab.py:710 src/ui/arica2_panel.py:371
 msgid "Input: SDR not connected"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:714 src/ui/arica2_panel.py:367
+#: src/ui/ax100_digi_tab.py:714 src/ui/arica2_panel.py:377
 msgid "Input: cannot determine SDR sample rate"
 msgstr ""
 
@@ -1766,12 +1804,12 @@ msgstr ""
 msgid "Input: SDR connected (receive only)"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:748 src/ui/arica2_panel.py:416
+#: src/ui/ax100_digi_tab.py:748 src/ui/arica2_panel.py:426
 msgid "Input: SDR disconnected"
 msgstr ""
 
 #: src/ui/ax100_digi_tab.py:771 src/ui/ax100_digi_tab.py:865
-#: src/ui/arica2_panel.py:530
+#: src/ui/arica2_panel.py:540
 msgid "My Call not set — configure it in File > Set QTH"
 msgstr ""
 
@@ -1783,7 +1821,7 @@ msgstr ""
 msgid "Switch Input/Output to Rig Soundcard to send"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:788 src/ui/arica2_panel.py:551
+#: src/ui/ax100_digi_tab.py:788 src/ui/arica2_panel.py:561
 msgid "TX rig not connected"
 msgstr ""
 
@@ -2468,7 +2506,7 @@ msgid "Input Source"
 msgstr ""
 
 #: src/ui/telemetry_tab.py:397 src/ui/radio_control_widget.py:361
-#: src/ui/q65_tab.py:199 src/ui/sstv_tab.py:218
+#: src/ui/q65_tab.py:206 src/ui/sstv_tab.py:218
 #: src/ui/sdr_control_widget.py:680
 msgid "Mode:"
 msgstr ""
@@ -2853,7 +2891,7 @@ msgstr ""
 msgid "Received Packets"
 msgstr ""
 
-#: src/ui/aprs_tab.py:331 src/ui/arica2_panel.py:239
+#: src/ui/aprs_tab.py:331 src/ui/arica2_panel.py:247
 msgid "Message:"
 msgstr ""
 
@@ -4297,91 +4335,91 @@ msgstr ""
 msgid "Pause"
 msgstr ""
 
-#: src/ui/q65_tab.py:166 src/ui/q65_tab.py:517
+#: src/ui/q65_tab.py:173 src/ui/q65_tab.py:520
 msgid "Input: No audio source — connect Rig in Radio Control"
 msgstr ""
 
-#: src/ui/q65_tab.py:174
+#: src/ui/q65_tab.py:181
 msgid ""
 "libq65 not installed — RX decoding disabled.\n"
 "TX encoding uses pure Python and works without libq65."
 msgstr ""
 
-#: src/ui/q65_tab.py:251
+#: src/ui/q65_tab.py:258
 msgid "CQ"
 msgstr ""
 
-#: src/ui/q65_tab.py:252
+#: src/ui/q65_tab.py:259
 msgid "Start calling CQ"
 msgstr ""
 
-#: src/ui/q65_tab.py:256
+#: src/ui/q65_tab.py:263
 msgid "RST"
 msgstr ""
 
-#: src/ui/q65_tab.py:257
+#: src/ui/q65_tab.py:264
 msgid "Send signal report"
 msgstr ""
 
-#: src/ui/q65_tab.py:261
+#: src/ui/q65_tab.py:268
 msgid "R+RST"
 msgstr ""
 
-#: src/ui/q65_tab.py:262
+#: src/ui/q65_tab.py:269
 msgid "Send R + signal report (confirm received)"
 msgstr ""
 
-#: src/ui/q65_tab.py:266
+#: src/ui/q65_tab.py:273
 msgid "RR73"
 msgstr ""
 
-#: src/ui/q65_tab.py:270
+#: src/ui/q65_tab.py:277
 msgid "73"
 msgstr ""
 
-#: src/ui/q65_tab.py:296
+#: src/ui/q65_tab.py:303
 msgid "Message to transmit (auto-filled by state machine)"
 msgstr ""
 
-#: src/ui/q65_tab.py:301
+#: src/ui/q65_tab.py:308
 msgid "Send Once"
 msgstr ""
 
-#: src/ui/q65_tab.py:302
+#: src/ui/q65_tab.py:309
 msgid "Send the text above as a one-shot free message"
 msgstr ""
 
-#: src/ui/q65_tab.py:327
+#: src/ui/q65_tab.py:330
 msgid ""
-"TX audio output level (percentage of full scale).\n"
+"TX audio output level in dB below full scale.\n"
 "Lower this if the rig's ALC is triggered or the transmit\n"
 "audio sounds distorted — Q65 audio is generated at full\n"
-"scale and some rigs/sound cards need well under 100%."
+"scale and some rigs/sound cards need 20 dB or more of reduction."
 msgstr ""
 
-#: src/ui/q65_tab.py:339
+#: src/ui/q65_tab.py:342
 msgid "DX: —"
 msgstr ""
 
-#: src/ui/q65_tab.py:381
+#: src/ui/q65_tab.py:384
 msgid "Waiting for period boundary…"
 msgstr ""
 
-#: src/ui/q65_tab.py:631
+#: src/ui/q65_tab.py:634
 msgid "No audio in last period"
-msgstr ""
-
-#: src/ui/q65_tab.py:657
-#, python-brace-format
-msgid "Period {utc}: no decodes"
 msgstr ""
 
 #: src/ui/q65_tab.py:660
 #, python-brace-format
+msgid "Period {utc}: no decodes"
+msgstr ""
+
+#: src/ui/q65_tab.py:663
+#, python-brace-format
 msgid "Period {utc}: {n} decode(s)"
 msgstr ""
 
-#: src/ui/q65_tab.py:833
+#: src/ui/q65_tab.py:836
 msgid "QSO logged"
 msgstr ""
 
@@ -4655,11 +4693,11 @@ msgstr ""
 msgid "Exported {n} QSOs to {f}"
 msgstr ""
 
-#: src/ui/arica2_panel.py:177
+#: src/ui/arica2_panel.py:185
 msgid "ARICA-2 (JS1YSD) message box ℹ"
 msgstr ""
 
-#: src/ui/arica2_panel.py:180
+#: src/ui/arica2_panel.py:188
 msgid ""
 "436.830 MHz, 4800 baud G3RUH GMSK (uplink and downlink). 20 slots, 8 "
 "characters each, kept for 48 hours. Uplink works only for about 15 seconds "
@@ -4667,176 +4705,177 @@ msgid ""
 "official Windows tool and is not officially documented."
 msgstr ""
 
-#: src/ui/arica2_panel.py:189
+#: src/ui/arica2_panel.py:197
 msgid "Receive:"
 msgstr ""
 
-#: src/ui/arica2_panel.py:190
+#: src/ui/arica2_panel.py:198
 msgid "SDR (transmit via rig)"
 msgstr ""
 
-#: src/ui/arica2_panel.py:204
+#: src/ui/arica2_panel.py:212
 msgid "From"
 msgstr ""
 
-#: src/ui/arica2_panel.py:204
+#: src/ui/arica2_panel.py:212
 msgid "To"
 msgstr ""
 
-#: src/ui/arica2_panel.py:214
+#: src/ui/arica2_panel.py:222
 msgid "Uplink window"
 msgstr ""
 
-#: src/ui/arica2_panel.py:216
+#: src/ui/arica2_panel.py:224
 msgid "Window: no beacon seen yet"
 msgstr ""
 
-#: src/ui/arica2_panel.py:218
+#: src/ui/arica2_panel.py:226
 msgid "Send mode:"
 msgstr ""
 
-#: src/ui/arica2_panel.py:220
+#: src/ui/arica2_panel.py:228
 msgid "Manual (send now)"
 msgstr ""
 
-#: src/ui/arica2_panel.py:221
+#: src/ui/arica2_panel.py:229
 msgid "Auto (send at next window)"
 msgstr ""
 
-#: src/ui/arica2_panel.py:225
+#: src/ui/arica2_panel.py:233
 msgid ""
 "Manual sends the moment you press a button. Auto holds the command and sends "
 "it as soon as the beacon ends (needs the SDR input, which watches the "
 "beacon)."
 msgstr ""
 
-#: src/ui/arica2_panel.py:235
+#: src/ui/arica2_panel.py:243
 msgid "Message box"
 msgstr ""
 
-#: src/ui/arica2_panel.py:243
+#: src/ui/arica2_panel.py:251
 msgid "max 8 chars"
 msgstr ""
 
-#: src/ui/arica2_panel.py:255
+#: src/ui/arica2_panel.py:263
 msgid ""
-"Transmit audio level sent to the radio (Direwolf has no level of its own). "
-"Too high a level over-deviates the FM transmitter. Combine with the radio's "
+"TX audio level in dB below full scale (Direwolf has no level of its own).\n"
+"Too high a level over-deviates the FM transmitter; rigs with a sensitive "
+"data input can need 20 dB or more of reduction. Combine with the radio's "
 "data input gain and keep the Mac output volume fixed."
 msgstr ""
 
-#: src/ui/arica2_panel.py:267
+#: src/ui/arica2_panel.py:277
 msgid "Upload"
 msgstr ""
 
-#: src/ui/arica2_panel.py:268
+#: src/ui/arica2_panel.py:278
 msgid "Store the message in the next free slot"
 msgstr ""
 
-#: src/ui/arica2_panel.py:269
+#: src/ui/arica2_panel.py:279
 msgid "Confirm"
 msgstr ""
 
-#: src/ui/arica2_panel.py:270
+#: src/ui/arica2_panel.py:280
 msgid "List the occupied slots"
 msgstr ""
 
-#: src/ui/arica2_panel.py:271
+#: src/ui/arica2_panel.py:281
 msgid "Parrot"
 msgstr ""
 
-#: src/ui/arica2_panel.py:272
+#: src/ui/arica2_panel.py:282
 msgid "The satellite echoes the message straight back"
 msgstr ""
 
-#: src/ui/arica2_panel.py:273 src/ui/settings_dialog.py:294
+#: src/ui/arica2_panel.py:283 src/ui/settings_dialog.py:294
 msgid "Download"
 msgstr ""
 
-#: src/ui/arica2_panel.py:275
+#: src/ui/arica2_panel.py:285
 msgid "Read back the message with this ID (1-20). Only Download uses it"
 msgstr ""
 
-#: src/ui/arica2_panel.py:279
+#: src/ui/arica2_panel.py:289
 msgid "Message ID "
 msgstr ""
 
-#: src/ui/arica2_panel.py:280
+#: src/ui/arica2_panel.py:290
 msgid "Cancel armed"
 msgstr ""
 
-#: src/ui/arica2_panel.py:309
+#: src/ui/arica2_panel.py:319
 #, python-brace-format
 msgid "From: {call}"
 msgstr ""
 
-#: src/ui/arica2_panel.py:309
+#: src/ui/arica2_panel.py:319
 msgid "From: (set in File > Set QTH)"
 msgstr ""
 
-#: src/ui/arica2_panel.py:371 src/ui/arica2_panel.py:386
+#: src/ui/arica2_panel.py:381 src/ui/arica2_panel.py:396
 #, python-brace-format
 msgid "Direwolf error: {err}"
 msgstr ""
 
-#: src/ui/arica2_panel.py:380
+#: src/ui/arica2_panel.py:390
 msgid "Input: SDR connected (4800 baud), transmit via rig"
 msgstr ""
 
-#: src/ui/arica2_panel.py:393
+#: src/ui/arica2_panel.py:403
 msgid ""
 "Input: Rig Soundcard + Direwolf (4800 baud). No beacon detection: manual only"
 msgstr ""
 
-#: src/ui/arica2_panel.py:462
+#: src/ui/arica2_panel.py:472
 #, python-brace-format
 msgid "Window OPEN: {s:.0f} s left"
 msgstr ""
 
-#: src/ui/arica2_panel.py:463 src/ui/arica2_panel.py:472
+#: src/ui/arica2_panel.py:473 src/ui/arica2_panel.py:482
 msgid " (armed command waiting)"
 msgstr ""
 
-#: src/ui/arica2_panel.py:467
+#: src/ui/arica2_panel.py:477
 msgid "Beacon on air: wait for it to stop"
 msgstr ""
 
-#: src/ui/arica2_panel.py:470
+#: src/ui/arica2_panel.py:480
 msgid "Window closed: waiting for the next beacon"
 msgstr ""
 
-#: src/ui/arica2_panel.py:476
+#: src/ui/arica2_panel.py:486
 msgid "Window: no beacon detection (manual only)"
 msgstr ""
 
-#: src/ui/arica2_panel.py:506
+#: src/ui/arica2_panel.py:516
 msgid "Message is required"
-msgstr ""
-
-#: src/ui/arica2_panel.py:522
-#, python-brace-format
-msgid "Armed: {cmd} will be sent when the beacon ends"
 msgstr ""
 
 #: src/ui/arica2_panel.py:532
 #, python-brace-format
+msgid "Armed: {cmd} will be sent when the beacon ends"
+msgstr ""
+
+#: src/ui/arica2_panel.py:542
+#, python-brace-format
 msgid "Callsign must be at most {n} characters"
 msgstr ""
 
-#: src/ui/arica2_panel.py:534
+#: src/ui/arica2_panel.py:544
 #, python-brace-format
 msgid "Message must be ASCII, at most {n} characters"
 msgstr ""
 
-#: src/ui/arica2_panel.py:540
+#: src/ui/arica2_panel.py:550
 msgid "Armed command cancelled"
 msgstr ""
 
-#: src/ui/arica2_panel.py:556
+#: src/ui/arica2_panel.py:566
 msgid "Cannot transmit: check the Sound Card output in Rig Settings"
 msgstr ""
 
-#: src/ui/arica2_panel.py:560
+#: src/ui/arica2_panel.py:570
 msgid "Direwolf is not running"
 msgstr ""
 

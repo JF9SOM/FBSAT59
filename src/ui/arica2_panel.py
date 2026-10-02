@@ -58,6 +58,13 @@ from comms.arica2.message_box import (
 from comms.arica2.window_detector import BeaconWindowDetector
 from i18n import _
 from rig.controller import select_tx_rig
+from ui.tx_level import (
+    TX_LEVEL_MAX_DB,
+    TX_LEVEL_MIN_DB,
+    db_to_gain,
+    format_db,
+    load_level_db,
+)
 
 _OWNER = "ARICA-2 Message Box"
 _SETTINGS_KEY = "arica2_settings"
@@ -140,7 +147,8 @@ class Arica2Panel(QWidget):
         self._rx_source = "soundcard" if data.get("rx_source") == "soundcard" else "sdr"
         self._send_mode = _MODE_AUTO if data.get("send_mode") == _MODE_AUTO else _MODE_MANUAL
         self._last_message = str(data.get("last_message", ""))
-        self._tx_level = min(100, max(0, int(data.get("tx_level", 100))))
+        # "tx_level" (a linear percentage) was the first version of this setting.
+        self._tx_level_db = load_level_db({**data, "tx_level_pct": data.get("tx_level")})
 
         tz = self._conn.execute(
             "SELECT value FROM app_settings WHERE key = 'time_zone_mode'"
@@ -153,7 +161,7 @@ class Arica2Panel(QWidget):
                 "rx_source": "soundcard" if self._rb_soundcard.isChecked() else "sdr",
                 "send_mode": self._mode_combo.currentData(),
                 "last_message": self._message_edit.text(),
-                "tx_level": self._level_slider.value(),
+                "tx_level_db": self._level_slider.value(),
             }
         )
         self._conn.execute(
@@ -247,17 +255,19 @@ class Arica2Panel(QWidget):
         row.addStretch(1)
         row.addWidget(QLabel(_("TX Level:")))
         self._level_slider = QSlider(Qt.Orientation.Horizontal)
-        self._level_slider.setRange(0, 100)
-        self._level_slider.setValue(self._tx_level)
-        self._level_slider.setFixedWidth(140)
+        self._level_slider.setRange(TX_LEVEL_MIN_DB, TX_LEVEL_MAX_DB)
+        self._level_slider.setValue(self._tx_level_db)
+        self._level_slider.setFixedWidth(120)
         self._level_slider.setToolTip(
             _(
-                "Transmit audio level sent to the radio (Direwolf has no level of its "
-                "own). Too high a level over-deviates the FM transmitter. Combine with "
+                "TX audio level in dB below full scale (Direwolf has no level of its "
+                "own).\nToo high a level over-deviates the FM transmitter; rigs with a "
+                "sensitive data input can need 20 dB or more of reduction. Combine with "
                 "the radio's data input gain and keep the Mac output volume fixed."
             )
         )
-        self._level_label = QLabel(f"{self._tx_level}%")
+        self._level_label = QLabel(format_db(self._tx_level_db))
+        self._level_label.setFixedWidth(46)
         self._level_slider.valueChanged.connect(self._on_level_changed)
         row.addWidget(self._level_slider)
         row.addWidget(self._level_label)
@@ -372,7 +382,7 @@ class Arica2Panel(QWidget):
             return
         self._engine.sync_sdr_baud(pipeline, _MODEM)
         self._engine.set_rig(self._tx_rig())
-        self._engine.set_tx_gain(self._level_slider.value() / 100.0)
+        self._engine.set_tx_gain(db_to_gain(self._level_slider.value()))
         self._sdr_pipeline = pipeline
         self._detector = detector
         pipeline.subscribe(self._on_iq_chunk)
@@ -387,7 +397,7 @@ class Arica2Panel(QWidget):
             return
         self._engine.restart_if_modem_changed(_MODEM)
         self._engine.set_rig(self._tx_rig())
-        self._engine.set_tx_gain(self._level_slider.value() / 100.0)
+        self._engine.set_tx_gain(db_to_gain(self._level_slider.value()))
         self._engine_active = True
         self._status_label.setText(
             _("Input: Rig Soundcard + Direwolf (4800 baud). No beacon detection: manual only")
@@ -427,9 +437,9 @@ class Arica2Panel(QWidget):
 
     @Slot(int)
     def _on_level_changed(self, value: int) -> None:
-        self._level_label.setText(f"{value}%")
+        self._level_label.setText(format_db(value))
         if self._engine_active:
-            self._engine.set_tx_gain(value / 100.0)
+            self._engine.set_tx_gain(db_to_gain(value))
 
     @Slot(str)
     def _on_engine_error(self, msg: str) -> None:
