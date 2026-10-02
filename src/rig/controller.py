@@ -3270,6 +3270,9 @@ _FT991_MODE_MAP: dict[str, str] = {
     "LSB-D": "8",  # DATA-LSB (data mode, e.g. FT4 calling freqs)
     "FM-N": "B",
     "USB-D": "C",  # DATA-USB
+    # SATNOGS "GMSK" (e.g. ARICA-2's 4800 baud message box, 9k6 telemetry) is a
+    # data signal: DATA-FM selects the rig's packet/data audio path instead of FM.
+    "GMSK": "A",  # DATA-FM
 }
 
 

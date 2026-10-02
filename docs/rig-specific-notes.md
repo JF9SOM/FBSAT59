@@ -124,6 +124,13 @@ rig_dialog.py のカスタムリストでは 1036 = FT-991A として登録。`_
 - 書き込みは **pyserial** を使用（`os.open()` と異なり termios / ボーレートを正しく設定）
 - `_port_lock` を取得して `connect()` との競合を防ぐ
 - `_FT991_MODE_MAP`（`HamlibNetController` と共用）を使用してモードコードを引く
+  - **`"GMSK"` → `"A"`（DATA-FM）**（2026-10-02）: 表に無いモードは既定の FM（`"4"`）になるため、ARICA-2 の
+    Message Exchange（SATNOGS モード `GMSK`）を選ぶと FM になっていた。FT-991 の `MD` コードは
+    1=LSB 2=USB 3=CW 4=FM 5=AM 6=RTTY-LSB 7=CW-R 8=DATA-LSB 9=RTTY-USB **A=DATA-FM** B=FM-N C=DATA-USB。
+    他衛星の `GMSK`（9k6 テレメトリ等）も DATA-FM になる。`AFSK` 等は従来どおり FM
+  - 4800/9600 baud の FM データは DATA ジャック経由（USB オーディオは送信不可）。メニュー: 079 FM PKT MODE=9600、
+    076 FM PKT PTT SELECT（DAKY/DTR 等）、077（FM PKT PORT SELECT。9600 では無関係とする資料あり）。出典は
+    fldigi の FT-991A 9600 bps ページ。4800 baud 自体を直接確認した資料は無い
 - main_window.py では `_FTX1_MODEL_IDS | _FT991_DIRECT_MODEL_IDS` をまとめて同一ブランチで処理
 - **TX中のDL/UL周波数書き込みをスキップ**（2026-09-29、`set_vfo_frequencies()`の
   generic分岐）: rigctld（NETモード）でFT-991がTX中のCAT周波数変更を無視することが
