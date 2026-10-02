@@ -76,3 +76,34 @@ def test_parse_downlink_rejects_other_frames() -> None:
     assert parse_downlink(b"short") is None
     not_ui = _shifted("N6RFM", 5) + _shifted("JS1YSD", 6) + bytes([0x61, 0x13, 0xF0]) + b"x"
     assert parse_downlink(not_ui) is None
+
+
+# A frame captured over the air on 2026-10-02: JS1YSD's reply to JI1IZR's upload.
+_CAPTURED = bytes.fromhex(
+    "94926292b4a46094a662b2a688e103f073617665642027444c374e445237332720617420626f783a2031"
+)
+
+
+def test_parse_captured_standard_ax25_downlink() -> None:
+    parsed = parse_downlink(_CAPTURED)
+    assert parsed is not None
+    assert parsed.dest == "JI1IZR"
+    assert parsed.source == "JS1YSD"
+    assert parsed.text == "saved 'DL7NDR73' at box: 1"
+
+
+def test_standard_frame_shows_a_nonzero_ssid() -> None:
+    payload = bytearray(_CAPTURED)
+    payload[6] = 0x60 | (3 << 1)  # destination SSID 3
+    parsed = parse_downlink(bytes(payload))
+    assert parsed is not None
+    assert parsed.dest == "JI1IZR-3"
+
+
+def test_standard_frame_with_bad_control_or_address_is_not_parsed() -> None:
+    bad_control = bytearray(_CAPTURED)
+    bad_control[14] = 0x13
+    assert parse_downlink(bytes(bad_control)) is None
+    not_shifted = bytearray(_CAPTURED)
+    not_shifted[0] |= 1  # address byte with the end-of-address bit set too early
+    assert parse_downlink(bytes(not_shifted)) is None

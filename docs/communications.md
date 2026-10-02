@@ -3356,10 +3356,12 @@ FEND・コマンドバイトは KISS が付ける。N6RFM の「22 バイトフ�
 種別: Download = 0x40+(slot//2), (slot%2)*128 ／ Upload = 50 00 ／ Confirm = 60 00 ／ Parrot = 70 00
 ```
 
-ダウンリンク（Direwolf の KISS で届く形、FCS 除去済み）は AX.25 UI フレーム**もどき**で、
-宛先アドレスが 5 バイトしかない: `宛先5(ASCII<<1) | 送信元6(ASCII<<1) | SSID 1 | 03 | F0 | 平文 ASCII`。
-Direwolf は `(Not AX.25)` と表示するが KISS には出す（N6RFM が実機で確認と記載）。**宛先が 5 文字
-以外のコールサインで 5 バイト幅が成り立つかは N6RFM も未確認**（6 文字局は要実機確認）。
+ダウンリンク（Direwolf の KISS で届く形、FCS 除去済み）は**標準的な AX.25 UI フレーム**:
+`宛先6(ASCII<<1)+SSID | 送信元6(ASCII<<1)+SSID | 03 | F0 | 平文 ASCII`。2026-10-02 の実パス
+（16:03:49 JST）で傍受した `JS1YSD > JI1IZR : saved 'DL7NDR73' at box: 1`（公式ツール作者 JI1IZR 局の
+Upload への応答）で確認した。N6RFM の「宛先 5 バイト」は 6 文字コールサインでは成り立たず（初版の
+`parse_downlink()` はこれで `?` 表示になった）、`parse_downlink()` は標準形式を先に試し、5 バイト宛先形を
+フォールバックにする。**他局宛の応答も傍受できる**（受信ログの「To」が他局になる）。
 
 #### 入出力と制約
 

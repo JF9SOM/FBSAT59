@@ -15,11 +15,16 @@ HDLC flags and FCS, KISS adds the FEND/command bytes)::
 
     42 F8 BD | type1 type2 | callsign (6, NUL padded) | message (8, NUL padded)
 
-Downlink payloads (as delivered by Direwolf's KISS port, FCS stripped) look
-like AX.25 UI frames, but the destination address is only 5 bytes::
+Downlink payloads (as delivered by Direwolf's KISS port, FCS stripped) are
+AX.25 UI frames with a plain ASCII text. A real over-the-air capture
+(2026-10-02, a response to JI1IZR's upload) is a standard frame::
 
-    dest (5, ASCII << 1) | source (6, ASCII << 1) | source SSID octet |
-    0x03 | 0xF0 | plain ASCII text
+    dest (6, ASCII << 1) | SSID octet | source (6, ASCII << 1) | SSID octet |
+    0x03 | 0xF0 | "saved 'DL7NDR73' at box: 1"
+
+The reverse engineering notes describe a variant whose destination is only 5
+bytes (``dest (5) | source (6) | SSID octet | 03 | F0 | text``); it is kept as a
+fallback because it was seen for a 5-character operator callsign.
 """
 
 from __future__ import annotations
@@ -36,6 +41,8 @@ _DEST_LEN = 5
 _SRC_LEN = 6
 # dest + source + SSID octet + control + PID.
 _HEADER_LEN = _DEST_LEN + _SRC_LEN + 1 + 2
+# Standard AX.25 UI frame: two 7-byte addresses + control + PID.
+_STD_HEADER_LEN = 16
 _CONTROL_UI = 0x03
 _PID_NONE = 0xF0
 
@@ -106,14 +113,48 @@ def _unshift(data: bytes) -> str:
     return "".join(chr(b >> 1) for b in data).rstrip()
 
 
-def parse_downlink(payload: bytes) -> Downlink | None:
-    """Parse a downlink frame; None if it does not have the expected shape."""
+def _with_ssid(call: str, ssid_octet: int) -> str:
+    ssid = (ssid_octet >> 1) & 0x0F
+    return f"{call}-{ssid}" if ssid else call
+
+
+def _text(payload: bytes) -> str:
+    return payload.decode("ascii", errors="replace").strip("\x00\r\n ")
+
+
+def _parse_standard(payload: bytes) -> Downlink | None:
+    """Standard AX.25 UI frame: two 7-byte addresses, control 03, PID F0."""
+    if len(payload) < _STD_HEADER_LEN:
+        return None
+    # Address bytes have bit 0 clear, except the last SSID octet which ends the field.
+    if any(b & 1 for b in payload[:6]) or any(b & 1 for b in payload[7:13]):
+        return None
+    if payload[6] & 1 or not payload[13] & 1:
+        return None
+    if payload[14] != _CONTROL_UI or payload[15] != _PID_NONE:
+        return None
+    return Downlink(
+        dest=_with_ssid(_unshift(payload[:6]), payload[6]),
+        source=_with_ssid(_unshift(payload[7:13]), payload[13]),
+        ssid_octet=payload[13],
+        text=_text(payload[_STD_HEADER_LEN:]),
+    )
+
+
+def _parse_short_dest(payload: bytes) -> Downlink | None:
+    """Variant with a 5-byte destination (from the reverse engineering notes)."""
     if len(payload) < _HEADER_LEN:
         return None
     if payload[_HEADER_LEN - 2] != _CONTROL_UI or payload[_HEADER_LEN - 1] != _PID_NONE:
         return None
-    dest = _unshift(payload[:_DEST_LEN])
-    source = _unshift(payload[_DEST_LEN : _DEST_LEN + _SRC_LEN])
-    ssid_octet = payload[_DEST_LEN + _SRC_LEN]
-    text = payload[_HEADER_LEN:].decode("ascii", errors="replace").strip("\x00\r\n ")
-    return Downlink(dest=dest, source=source, ssid_octet=ssid_octet, text=text)
+    return Downlink(
+        dest=_unshift(payload[:_DEST_LEN]),
+        source=_unshift(payload[_DEST_LEN : _DEST_LEN + _SRC_LEN]),
+        ssid_octet=payload[_DEST_LEN + _SRC_LEN],
+        text=_text(payload[_HEADER_LEN:]),
+    )
+
+
+def parse_downlink(payload: bytes) -> Downlink | None:
+    """Parse a downlink frame; None if it matches neither known layout."""
+    return _parse_standard(payload) or _parse_short_dest(payload)
