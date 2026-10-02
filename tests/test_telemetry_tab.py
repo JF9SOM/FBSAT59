@@ -1267,3 +1267,32 @@ def test_selecting_a_row_shows_its_decoded_fields(
     assert table.item(row, 1).text() == "2026-10-02 06:56:25 UTC"
     tab._table.selectRow(1)
     assert table.item(row, 1).text() == "2026-07-28 17:44:34 UTC"
+
+
+def test_selecting_a_gr_row_shows_its_full_decoded_text(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, _rec = _gr_tab(qtbot, conn, monkeypatch)
+    tab._on_gr_telemetry(
+        "-> Packet from FOO\nContainer:\n    a = 1\n    b = Container:\n        c = 2"
+    )
+    tab._on_gr_telemetry("-> Packet from FOO\nContainer:\n    a = 9")
+
+    tab._table.selectRow(0)
+    assert tab._gr_detail.toPlainText() == (
+        "-> Packet from FOO\n    a = 1\n    b = Container:\n        c = 2"
+    )
+    tab._table.selectRow(1)
+    assert tab._gr_detail.toPlainText() == "-> Packet from FOO\n    a = 9"
+
+
+def test_a_saved_gr_row_shows_its_text_again_when_selected(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, _rec = _gr_tab(qtbot, conn, monkeypatch)
+    tab._on_gr_telemetry("-> Packet from FOO\nContainer:\n    a = 1\n    b = 2")
+    saved_text = tab._gr_detail
+    tab._on_clear()
+    assert tab._load_saved_frames(25544, gr=True) == 1
+    tab._table.selectRow(0)
+    assert saved_text.toPlainText() == "-> Packet from FOO\n    a = 1\n    b = 2"

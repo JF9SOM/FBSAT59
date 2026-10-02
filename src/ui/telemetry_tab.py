@@ -173,6 +173,7 @@ _AX25_ROLE = Qt.ItemDataRole.UserRole + 2
 # Row role holding the ``telemetry_log`` id of a logged AX.25/HDLC row (no duplicates on load).
 _LOGGED_ROLE = Qt.ItemDataRole.UserRole + 3
 _DECODED_ROLE = Qt.ItemDataRole.UserRole + 4  # a CW row's decoded TelemetryFrame
+_GR_TEXT_ROLE = Qt.ItemDataRole.UserRole + 5  # a gr-satellites row's full decoded text
 # gr-satellites prints a decoded packet and, on its KISS port, the same frame; the two reach
 # the GUI separately. A row and a frame arriving within this many seconds are one packet.
 _GR_PAIR_WINDOW_S = 5.0
@@ -560,6 +561,15 @@ class TelemetryTab(QWidget):
         self._table.horizontalHeader().setFont(_header_font)
         self._table.verticalHeader().setFont(_header_font)
         raw_page_layout.addWidget(self._table)
+        # gr-satellites mode has no "Decoded Fields" tab (the tab bar is hidden), so the
+        # full decoded text of the selected row -- one field per line, as gr-satellites
+        # prints it -- is shown here instead.
+        self._gr_detail = QPlainTextEdit()
+        self._gr_detail.setReadOnly(True)
+        self._gr_detail.setMaximumHeight(220)
+        self._gr_detail.setPlaceholderText(_("Select a frame to see all its decoded fields."))
+        self._gr_detail.setVisible(False)
+        raw_page_layout.addWidget(self._gr_detail)
         self._log_tabs.addTab(self._raw_page, _("Received Frames"))
 
         # "Decoded Fields" page: one inner sub-tab per telemetry ID, built
@@ -1085,6 +1095,7 @@ class TelemetryTab(QWidget):
         # than just disabling the tab, so it reads as a single plain table
         # like before this feature existed.
         self._log_tabs.tabBar().setVisible(not is_gr)
+        self._gr_detail.setVisible(is_gr)
         if is_gr:
             self._log_tabs.setCurrentWidget(self._raw_page)
         if is_cw and self._combo_cw_sat.count():
@@ -1753,6 +1764,11 @@ class TelemetryTab(QWidget):
             )
             sat_name = str(info.get("name", "")) if info else ""
         data_text = "  |  ".join(data_lines) if data_lines else text[:120]
+        full_text = "\n".join(
+            line.rstrip()
+            for line in text.splitlines()
+            if line.strip() and line.strip() != "Container:"
+        )
 
         when, reliable = self._frame_time()
         self._gr_prune()
@@ -1771,8 +1787,9 @@ class TelemetryTab(QWidget):
             norad=self._selected_norad,
             ts=when,
             ax25_row=row_data,
+            gr_text=full_text,
         )
-        row_data.log_id = self._persist_gr_row(callsign, sat_name, data_text, row_data)
+        row_data.log_id = self._persist_gr_row(callsign, sat_name, data_text, row_data, full_text)
         self._mark_row_logged(self._table.rowCount() - 1, row_data.log_id)
 
     def _on_gr_raw_frame(self, raw: bytes) -> None:
@@ -1793,7 +1810,12 @@ class TelemetryTab(QWidget):
         self._submit_raw_frame(raw, norad, when, reliable, frame)
 
     def _persist_gr_row(
-        self, callsign: str, sat_name: str, data_text: str, row_data: _Ax25Row
+        self,
+        callsign: str,
+        sat_name: str,
+        data_text: str,
+        row_data: _Ax25Row,
+        full_text: str = "",
     ) -> int | None:
         """Log a gr-satellites row (its text, and its frame once it has one) for "Load saved"."""
         if not hasattr(self._conn, "execute"):
@@ -1809,7 +1831,7 @@ class TelemetryTab(QWidget):
                 norad,
                 callsign,
                 row_data.raw.hex(),
-                json.dumps({"text": data_text, "sat": sat_name}),
+                json.dumps({"text": data_text, "sat": sat_name, "full": full_text}),
                 int(row_data.reliable),
                 row_data.raw.hex() or None,
                 datetime.datetime.now(datetime.UTC).isoformat() if row_data.sent else None,
@@ -2092,6 +2114,7 @@ class TelemetryTab(QWidget):
         log_id: int | None = None,
         ax25_row: _Ax25Row | None = None,
         decoded: TelemetryFrame | None = None,
+        gr_text: str | None = None,
     ) -> None:
         """Add a row to the Received Frames table.
 
@@ -2101,7 +2124,8 @@ class TelemetryTab(QWidget):
         frame count (a rejected CW candidate). *log_id* is the frame's
         ``telemetry_log`` id, kept on the row for "Send selected" (CW); *ax25_row*
         is the same for a received AX.25 frame. *decoded* is a CW frame's decoded
-        fields, shown in the "Decoded Fields" tab when the row is selected.
+        fields, shown in the "Decoded Fields" tab when the row is selected; *gr_text* is a
+        gr-satellites row's full decoded text, shown below the table when it is selected.
         """
         when = ts if ts is not None else datetime.datetime.now(datetime.UTC)
         row = self._table.rowCount()
@@ -2121,6 +2145,8 @@ class TelemetryTab(QWidget):
                 item.setData(_AX25_ROLE, ax25_row)
             if column == 0 and decoded is not None:
                 item.setData(_DECODED_ROLE, decoded)
+            if column == 0 and gr_text is not None:
+                item.setData(_GR_TEXT_ROLE, gr_text)
             self._table.setItem(row, column, item)
         self._table.scrollToBottom()
         if not dim:
@@ -2179,13 +2205,18 @@ class TelemetryTab(QWidget):
         The tab otherwise holds only the newest frame of each telemetry ID, so an
         earlier frame could not be read once a later one of the same ID arrived.
         AX.25 rows are decoded again from their payload; CW rows carry their decoded
-        fields. Other rows (gr-satellites, HDLC, rejected CW candidates) are left alone.
+        fields; a gr-satellites row's full text goes to the pane under the table. Other
+        rows (HDLC, rejected CW candidates) are left alone.
         """
         rows = self._table.selectionModel().selectedRows()
         if not rows:
             return
         item = self._table.item(rows[0].row(), 0)
         if item is None:
+            return
+        gr_text = item.data(_GR_TEXT_ROLE)
+        if isinstance(gr_text, str):
+            self._gr_detail.setPlainText(gr_text)
             return
         tf = item.data(_DECODED_ROLE)
         if not isinstance(tf, TelemetryFrame):
@@ -2543,6 +2574,8 @@ class TelemetryTab(QWidget):
             norad=norad,
             ts=when,
             ax25_row=row_data,
+            # rows logged before the full text was kept: the one-line text, a field per line
+            gr_text=str(saved.get("full") or str(saved.get("text", "")).replace("  |  ", "\n")),
         )
         self._mark_row_logged(self._table.rowCount() - 1, log_id)
 

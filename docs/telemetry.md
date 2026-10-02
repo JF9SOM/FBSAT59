@@ -460,7 +460,12 @@ ID01 は本体部の仕様矛盾（上記）が未解決のため、**ヘッダ�
 （`_on_table_selection_changed`）で、その行の AX.25 ペイロード（`_Ax25Row.payload`、無ければ
 `raw` から `decode_ax25`）を再デコードして該当 ID のタブへ表示する。**CW TLM の行も対応済み**
 （行が復号済みの `TelemetryFrame` を `_DECODED_ROLE` に持ち、保存済み行の再表示でも同じ）。灰色の
-不採用候補は対象外。**gr-satellites の行は未対応**（同じ仕組みにする予定）。
+不採用候補は対象外。
+**gr-satellites の行**は「Decoded Fields」タブ自体が無い（gr モードはタブバーを隠す）ため、
+表の下の読み取り専用ペイン（`_gr_detail`、gr モードのみ表示）に、選んだ行の gr-satellites 出力の全文
+（`Container:` 行を除きインデント保持）を表示する。全文は `telemetry_log.parsed_json` の `full` に保存し、
+`full` を持たない旧い保存行は 1 行テキストを項目ごとに改行して表示する。実データでの見え方は未確認
+（手元の DB に gr 行が無く、テストは合成テキスト）。
 
 ### テスト
 
