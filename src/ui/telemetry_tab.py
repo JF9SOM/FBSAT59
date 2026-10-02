@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPalette, QStandardItemModel
 from PySide6.QtWidgets import (
     QComboBox,
@@ -123,6 +123,8 @@ _ENGINE_OWNER = "telemetry"
 # Own setting (not the APRS tab's shared ax25_baud_mode): this combo now follows
 # the selected satellite/transponder instead of an Auto mode.
 _BAUD_SETTING_KEY = "telemetry_ax25_baud"
+# app_settings key prefix for the last satellite picked per mode ("afsk"/"gr"/"cw_tlm").
+_LAST_SAT_KEY_PREFIX = "telemetry_last_sat_"
 
 
 class _SatnogsApiKeyDialog(QDialog):
@@ -359,6 +361,7 @@ class TelemetryTab(QWidget):
         if detect_gr_satellites():
             self._gr_sat_list = list_gr_satellites_with_names()
             self._populate_gr_combo()
+        self._restore_last_satellites()
         self._detect_already_connected()
         self._refresh_input_combo()
         self._refresh_status()
@@ -662,12 +665,13 @@ class TelemetryTab(QWidget):
         self._selected_name = name
         self._rebuild_decode_tabs(norad)
         if norad:
-            for combo in (self._combo_afsk_sat, self._combo_gr_sat, self._combo_cw_sat):
+            for kind, combo in self._sat_combos():
                 for i in range(combo.count()):
                     if combo.itemData(i) == norad:
                         combo.blockSignals(True)
                         combo.setCurrentIndex(i)
                         combo.blockSignals(False)
+                        self._save_last_satellite(kind, norad)
                         break
         self._refresh_input_combo()
         self._update_satnogs_link_enabled()
@@ -784,6 +788,55 @@ class TelemetryTab(QWidget):
     # ------------------------------------------------------------------ #
     # Input combo helpers
     # ------------------------------------------------------------------ #
+
+    def _sat_combos(self) -> list[tuple[str, QComboBox]]:
+        """Return (mode key, satellite combo) pairs; keys match satellite_selected."""
+        return [
+            ("afsk", self._combo_afsk_sat),
+            ("gr", self._combo_gr_sat),
+            ("cw_tlm", self._combo_cw_sat),
+        ]
+
+    def _save_last_satellite(self, kind: str, norad: int) -> None:
+        """Remember the satellite picked for ``kind`` so the next launch restores it."""
+        if not hasattr(self._conn, "execute"):
+            return
+        with contextlib.suppress(Exception):
+            self._conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value, updated_at) "
+                "VALUES (?, ?, CURRENT_TIMESTAMP)",
+                (_LAST_SAT_KEY_PREFIX + kind, str(int(norad))),
+            )
+            self._conn.commit()
+
+    def _restore_last_satellites(self) -> None:
+        """Re-select the last satellite of each mode (silently), then announce the active one."""
+        if not hasattr(self._conn, "execute"):
+            return
+        for kind, combo in self._sat_combos():
+            with contextlib.suppress(Exception):
+                row = self._conn.execute(
+                    "SELECT value FROM app_settings WHERE key = ?",
+                    (_LAST_SAT_KEY_PREFIX + kind,),
+                ).fetchone()
+                if not row:
+                    continue
+                idx = combo.findData(int(row["value"]))
+                if idx >= 0:
+                    combo.blockSignals(True)
+                    combo.setCurrentIndex(idx)
+                    combo.blockSignals(False)
+        # Let MainWindow (which connects satellite_selected after construction)
+        # follow the restored pick, as if the user had chosen it.
+        QTimer.singleShot(0, self._announce_restored_satellite)
+
+    def _announce_restored_satellite(self) -> None:
+        mode = self._current_mode()
+        active = "gr" if mode == _MODE_GR else "cw_tlm" if mode == _MODE_CW else "afsk"
+        for kind, combo in self._sat_combos():
+            norad = combo.currentData()
+            if kind == active and norad is not None:
+                self.satellite_selected.emit(int(norad), kind)
 
     def _populate_afsk_combo(self) -> None:
         """Fill the AFSK/Direwolf satellite combo from this app's own DB.
@@ -1045,11 +1098,13 @@ class TelemetryTab(QWidget):
         norad = self._combo_afsk_sat.currentData()
         self._update_satnogs_link_enabled()
         if norad is not None:
+            self._save_last_satellite("afsk", int(norad))
             self.satellite_selected.emit(int(norad), "afsk")
 
     def _on_gr_sat_changed(self, _index: int) -> None:
         norad = self._combo_gr_sat.currentData()
         if norad is not None:
+            self._save_last_satellite("gr", int(norad))
             self.satellite_selected.emit(int(norad), "gr")
             self._set_baud_from_satyaml(int(norad))
 
@@ -1071,6 +1126,7 @@ class TelemetryTab(QWidget):
         norad = self._combo_cw_sat.currentData()
         self._update_satnogs_link_enabled()
         if norad is not None:
+            self._save_last_satellite("cw_tlm", int(norad))
             self.satellite_selected.emit(int(norad), "cw_tlm")
 
     def _on_cw_sat_search_clicked(self) -> None:
