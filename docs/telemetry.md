@@ -1108,3 +1108,11 @@ CW TLM へ切り替えても AX.25 の行が残る、という紛らわしさを
 として数えられ送られない。**対応が順番と時刻だけの推定**なので、標準出力にあってフレームが
 出ない（またはその逆の）パケットがあると、その後の対応が 1 つずれうる。送信前の確認ダイアログで
 件数を確かめること。
+
+**gr-satellites の保存と再表示（2026-10-02）**: gr-satellites の行も `telemetry_log` に自動保存し、
+gr-satellites モードの **Load saved** で戻せる。`kind='gr'`、`callsign`、`parsed_json` に
+`{"text": 表の文字列, "sat": 衛星名}`、`frame_hex`/`raw_hex` に対応づけた生フレーム
+（`_persist_gr_row()`）。フレームが後から対応づいたときは同じ行を UPDATE する
+（`_save_gr_frame()`）。送信済みは `satnogs_uploaded_at` に記録し、再表示後も二重送信しない。
+フレームが対応しなかった行も文字列だけは戻るが送信はできない。AX.25 / CW の Load saved には
+gr の行は混ざらない（`kind` で分ける）。

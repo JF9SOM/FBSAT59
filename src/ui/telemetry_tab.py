@@ -619,7 +619,7 @@ class TelemetryTab(QWidget):
         self._btn_load.setToolTip(
             _(
                 "Show the frames saved earlier for the selected satellite again\n"
-                "(the current mode's: AX.25 or CW TLM), without replaying a recording."
+                "(the current mode's: AX.25, gr-satellites or CW TLM), without replaying a recording."
             )
         )
         self._btn_load.clicked.connect(self._on_load_saved)
@@ -1669,6 +1669,8 @@ class TelemetryTab(QWidget):
             ts=when,
             ax25_row=row_data,
         )
+        row_data.log_id = self._persist_gr_row(callsign, sat_name, data_text, row_data)
+        self._mark_row_logged(self._table.rowCount() - 1, row_data.log_id)
 
     def _on_gr_raw_frame(self, raw: bytes) -> None:
         """Forward a gr-satellites --kiss_server data frame to SatNOGS DB.
@@ -1686,6 +1688,47 @@ class TelemetryTab(QWidget):
         frame = _Ax25Row(raw=raw, when=when, reliable=reliable, norad=norad)
         self._pair_gr_frame(frame)
         self._submit_raw_frame(raw, norad, when, reliable, frame)
+
+    def _persist_gr_row(
+        self, callsign: str, sat_name: str, data_text: str, row_data: _Ax25Row
+    ) -> int | None:
+        """Log a gr-satellites row (its text, and its frame once it has one) for "Load saved"."""
+        if not hasattr(self._conn, "execute"):
+            return None
+        norad = row_data.norad if row_data.norad is not None else self._selected_norad
+        cursor = self._conn.execute(
+            """INSERT INTO telemetry_log
+               (received_at, norad_cat_id, callsign, raw_hex, parsed_json, time_reliable,
+                frame_hex, kind, satnogs_uploaded_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'gr', ?)""",
+            (
+                row_data.when.isoformat(),
+                norad,
+                callsign,
+                row_data.raw.hex(),
+                json.dumps({"text": data_text, "sat": sat_name}),
+                int(row_data.reliable),
+                row_data.raw.hex() or None,
+                datetime.datetime.now(datetime.UTC).isoformat() if row_data.sent else None,
+            ),
+        )
+        self._conn.commit()
+        row_id = cursor.lastrowid
+        return int(row_id) if row_id is not None else None
+
+    def _save_gr_frame(self, frame: _Ax25Row) -> None:
+        """A logged gr-satellites row has just been given its frame: record it."""
+        if frame.log_id is None or not hasattr(self._conn, "execute"):
+            return
+        self._conn.execute(
+            "UPDATE telemetry_log SET frame_hex = ?, raw_hex = ?, received_at = ?,"
+            " time_reliable = ? WHERE id = ?",
+            (frame.raw.hex(), frame.raw.hex(), frame.when.isoformat(), int(frame.reliable),
+             frame.log_id),
+        )  # fmt: skip
+        self._conn.commit()
+        if frame.sent:
+            mark_uploaded(self._conn, frame.log_id)
 
     def _gr_prune(self) -> None:
         """Drop rows and frames that waited too long for their partner."""
@@ -1706,6 +1749,8 @@ class TelemetryTab(QWidget):
             item = self._find_ax25_item(placeholder)
             if item is not None:
                 item.setData(_AX25_ROLE, frame)
+                frame.log_id = placeholder.log_id
+                self._save_gr_frame(frame)
                 return
             # that row was cleared from the table meanwhile
         self._gr_frames.append((time.monotonic(), frame))
@@ -2180,7 +2225,8 @@ class TelemetryTab(QWidget):
         if norad is None:
             self._set_error(_("Select a satellite first."))
             return
-        n = self._load_saved_frames(norad, cw=self._current_mode() == _MODE_CW)
+        mode = self._current_mode()
+        n = self._load_saved_frames(norad, cw=mode == _MODE_CW, gr=mode == _MODE_GR)
         self._lbl_status.setText(_("Loaded {n} saved frame(s)").format(n=n))
         self._lbl_status.setStyleSheet("color: #27ae60;" if n else "color: #aaa;")
 
@@ -2209,10 +2255,11 @@ class TelemetryTab(QWidget):
                 return "cw"
         return "ax25"
 
-    def _load_saved_frames(self, norad: int, cw: bool = False) -> int:
+    def _load_saved_frames(self, norad: int, cw: bool = False, gr: bool = False) -> int:
         """Append the logged frames of *norad* to the table; returns how many.
 
-        *cw*: the CW TLM frames (CW mode), else the AX.25 / HDLC frames.
+        *cw*: the CW TLM frames (CW mode); *gr*: the gr-satellites rows (gr-satellites mode);
+        else the AX.25 / HDLC frames.
 
         A frame logged before its callsign was known (``norad_cat_id`` NULL) is
         included when its callsign now maps to *norad*. Frames already shown are
@@ -2257,7 +2304,7 @@ class TelemetryTab(QWidget):
             if log_id in shown:
                 continue
             kind = self._saved_kind(norad, kind, callsign, parsed_json)
-            if (kind == "cw") != cw:
+            if (kind == "cw") != cw or (kind == "gr") != gr:
                 continue
             if row_norad is None and (not callsign or self._callsign_to_norad(callsign) != norad):
                 continue
@@ -2269,6 +2316,12 @@ class TelemetryTab(QWidget):
                 continue
             if when.tzinfo is None:
                 when = when.replace(tzinfo=datetime.UTC)
+            if kind == "gr":
+                self._load_saved_gr(
+                    norad, callsign, parsed_json, when, whole, uploaded, reliable, log_id
+                )
+                loaded += 1
+                continue
             if kind == "cw":
                 if self._load_saved_cw(norad, callsign, raw_hex, parsed_json, when, log_id):
                     loaded += 1
@@ -2306,6 +2359,43 @@ class TelemetryTab(QWidget):
             self._update_decode_tab(tf)
             loaded += 1
         return loaded
+
+    def _load_saved_gr(
+        self,
+        norad: int,
+        callsign: str,
+        parsed_json: str | None,
+        when: datetime.datetime,
+        whole: bytes,
+        uploaded: object,
+        reliable: bool,
+        log_id: int,
+    ) -> None:
+        """Show one logged gr-satellites row again; its frame makes it sendable."""
+        try:
+            saved = json.loads(parsed_json) if parsed_json else {}
+        except (ValueError, TypeError):
+            saved = {}
+        if not isinstance(saved, dict):
+            saved = {}
+        row_data = _Ax25Row(
+            raw=whole,
+            when=when,
+            reliable=reliable,
+            norad=norad,
+            sent=uploaded is not None,
+            log_id=log_id,
+        )
+        sat_name = str(saved.get("sat") or self._satellite_name(norad))
+        self._append_row(
+            callsign=callsign or sat_name or "—",
+            sat_name=sat_name or "—",
+            data=str(saved.get("text", "")),
+            norad=norad,
+            ts=when,
+            ax25_row=row_data,
+        )
+        self._mark_row_logged(self._table.rowCount() - 1, log_id)
 
     def _load_saved_cw(
         self,

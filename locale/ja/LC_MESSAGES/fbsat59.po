@@ -2815,10 +2815,10 @@ msgstr "保存済みを読込"
 #: src/ui/telemetry_tab.py:615
 msgid ""
 "Show the frames saved earlier for the selected satellite again\n"
-"(the current mode's: AX.25 or CW TLM), without replaying a recording."
+"(the current mode's: AX.25, gr-satellites or CW TLM), without replaying a recording."
 msgstr ""
 "選択中の衛星について、以前に保存したフレームを再表示します\n"
-"（現在のモード（AX.25またはCW TLM）の分。録音の再生は不要です）。"
+"（現在のモード（AX.25、gr-satellitesまたはCW TLM）の分。録音の再生は不要です）。"
 
 #: src/ui/telemetry_tab.py:621
 msgid "Clear Log"

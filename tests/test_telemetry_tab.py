@@ -1165,3 +1165,75 @@ def test_gr_clear_forgets_waiting_partners(
     tab._on_clear()
     tab._on_gr_raw_frame(_GR_FRAME_1)
     assert len(tab._gr_frames) == 1 and not tab._gr_rows
+
+
+# gr-satellites: logged and reloaded by "Load saved"
+# ---------------------------------------------------------------------------
+
+
+def _log_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT id, kind, callsign, norad_cat_id, frame_hex, raw_hex, parsed_json,"
+        " satnogs_uploaded_at FROM telemetry_log ORDER BY id"
+    ).fetchall()
+
+
+def test_gr_row_is_logged_and_gets_its_frame_when_paired(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, _rec = _gr_tab(qtbot, conn, monkeypatch)
+    tab._on_gr_telemetry(_GR_TEXT)
+    (row,) = _log_rows(conn)
+    assert (row["kind"], row["callsign"], row["norad_cat_id"]) == ("gr", "JY1SAT", 25544)
+    assert row["frame_hex"] is None  # no frame yet
+    assert "battery = 7.5" in row["parsed_json"]
+    tab._on_gr_raw_frame(_GR_FRAME_1)
+    (row,) = _log_rows(conn)
+    assert row["frame_hex"] == _GR_FRAME_1.hex()
+
+
+def test_gr_frame_before_its_row_is_logged_with_the_row(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, _rec = _gr_tab(qtbot, conn, monkeypatch)
+    tab._on_gr_raw_frame(_GR_FRAME_1)
+    tab._on_gr_telemetry(_GR_TEXT)
+    (row,) = _log_rows(conn)
+    assert row["frame_hex"] == _GR_FRAME_1.hex()
+
+
+def test_gr_load_saved_brings_back_rows_with_their_frames(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, rec = _gr_tab(qtbot, conn, monkeypatch)
+    tab._on_gr_telemetry(_GR_TEXT)
+    tab._on_gr_raw_frame(_GR_FRAME_1)
+    tab._on_gr_telemetry(_GR_TEXT)  # a row whose frame never came
+    tab._on_clear()
+    assert tab._load_saved_frames(25544, gr=True) == 2
+    assert tab._load_saved_frames(25544, gr=True) == 0  # nothing twice
+    assert tab._load_saved_frames(25544) == 0  # AX.25 mode does not show gr rows
+    assert "battery = 7.5" in tab._table.item(0, 3).text()
+    assert _row_data(tab, 0).raw == _GR_FRAME_1
+    assert _row_data(tab, 1).raw == b""
+    # a reloaded row can be sent
+    tab._table.selectRow(0)
+    tab._on_send_selected()
+    assert [c[1] for c in rec.calls] == [_GR_FRAME_1]
+
+
+def test_gr_sent_state_survives_a_reload(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, rec = _gr_tab(qtbot, conn, monkeypatch)
+    tab._on_gr_telemetry(_GR_TEXT)
+    tab._on_gr_raw_frame(_GR_FRAME_1)
+    row_data = _row_data(tab, 0)
+    tab._on_ax25_send_result(row_data, True, 201, "")  # SatNOGS accepted it
+    assert _log_rows(conn)[0]["satnogs_uploaded_at"]
+    tab._on_clear()
+    tab._load_saved_frames(25544, gr=True)
+    assert _row_data(tab, 0).sent
+    tab._table.selectRow(0)
+    tab._on_send_selected()
+    assert rec.calls == []  # already sent: not sent again
