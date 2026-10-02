@@ -1237,3 +1237,33 @@ def test_gr_sent_state_survives_a_reload(
     tab._table.selectRow(0)
     tab._on_send_selected()
     assert rec.calls == []  # already sent: not sent again
+
+
+# ---------------------------------------------------------------------------
+# Selecting a received row shows that frame in the "Decoded Fields" tab
+# ---------------------------------------------------------------------------
+
+_AX25_HEADER = "94a662b29caa6094a662b2a4aae103f0"  # JS1YRU>JS1YNU, UI, PID F0
+_ID01_PAYLOAD_JULY = "72fe01236a68ea829000000104000001000120d0fe010c44"  # 2026-07-28 17:44:34
+_ID01_PAYLOAD_TODAY = "72ff01046abf55999000000104000001000120d0fe010c44"  # 2026-10-02 06:56:25
+
+
+def test_selecting_a_row_shows_its_decoded_fields(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: _RecordingUploader())
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    monkeypatch.setattr(tab, "_callsign_to_norad", lambda src: 68795)
+    tab.set_satellite(68795, "OrigamiSat-2")
+    tab._on_ax25_frame(bytes.fromhex(_AX25_HEADER + _ID01_PAYLOAD_TODAY))
+    tab._on_ax25_frame(bytes.fromhex(_AX25_HEADER + _ID01_PAYLOAD_JULY))
+
+    table = tab._decode_tables["1"]
+    row = tab._decode_field_rows["1"]["onboard_unix_time"]
+    assert table.item(row, 1).text() == "2026-07-28 17:44:34 UTC"  # the newest frame
+
+    tab._table.selectRow(0)  # the first frame, received earlier
+    assert table.item(row, 1).text() == "2026-10-02 06:56:25 UTC"
+    tab._table.selectRow(1)
+    assert table.item(row, 1).text() == "2026-07-28 17:44:34 UTC"

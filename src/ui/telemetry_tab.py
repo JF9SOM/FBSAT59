@@ -194,6 +194,7 @@ class _Ax25Row:
     pending: bool = False  # handed to the uploader, no answer yet
     manual: bool = False  # the user asked for this send
     log_id: int | None = None  # its ``telemetry_log`` row
+    payload: bytes = b""  # the AX.25 info field; re-decoded when the row is selected
 
 
 class _DimRowDelegate(QStyledItemDelegate):
@@ -536,6 +537,7 @@ class TelemetryTab(QWidget):
         self._table.setWordWrap(True)
         self._table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._table.itemSelectionChanged.connect(self._on_table_selection_changed)
         # Enlarge the frame-log font ~1.5x to match the APRS Received Packets
         # list; the decoded data column is dense and hard to read at the
         # default size. setFont() on the table also propagates to the header
@@ -1936,7 +1938,9 @@ class TelemetryTab(QWidget):
         norad = self._callsign_to_norad(frame.src)
         tf = decode_telemetry(frame.src, frame.payload, norad)
         when, reliable = self._frame_time()
-        ax25_row = _Ax25Row(raw=raw, when=when, reliable=reliable, norad=norad)
+        ax25_row = _Ax25Row(
+            raw=raw, when=when, reliable=reliable, norad=norad, payload=frame.payload
+        )
         # The Data column shows the whole received frame as hex bytes -- the
         # same form as SatNOGS Network's "Data" tab, so it can be compared with
         # other stations' frames and the bytes copied out (image data, say).
@@ -2162,6 +2166,37 @@ class TelemetryTab(QWidget):
             self._decode_tables[id_str] = table
             self._decode_field_rows[id_str] = row_map
             self._decode_id_tabs.addTab(table, id_def.get("label", f"ID{id_str}"))
+
+    def _on_table_selection_changed(self) -> None:
+        """Show the selected AX.25 row's decoded fields in the "Decoded Fields" tab.
+
+        The tab otherwise holds only the newest frame of each telemetry ID, so an
+        earlier frame could not be read once a later one of the same ID arrived.
+        Rows that are not AX.25 frames (CW, gr-satellites, HDLC) are left alone.
+        """
+        rows = self._table.selectionModel().selectedRows()
+        if not rows:
+            return
+        item = self._table.item(rows[0].row(), 0)
+        value = item.data(_AX25_ROLE) if item is not None else None
+        if not isinstance(value, _Ax25Row) or value.norad is None:
+            return
+        payload = value.payload
+        callsign = ""
+        if not payload and value.raw:
+            parsed = decode_ax25(value.raw)
+            if parsed is not None:
+                payload = parsed.payload
+        if not payload:
+            return
+        callsign_item = self._table.item(rows[0].row(), 1)
+        if callsign_item is not None:
+            callsign = callsign_item.text()
+        tf = decode_telemetry(callsign, payload, value.norad)
+        self._update_decode_tab(tf)
+        table = self._decode_tables.get(str(tf.telemetry_id))
+        if table is not None and tf.has_fields and tf.norad == self._decode_tabs_norad:
+            self._decode_id_tabs.setCurrentWidget(table)
 
     def _update_decode_tab(self, tf: TelemetryFrame) -> None:
         """Push *tf*'s decoded field values into its "Decoded Fields" sub-tab.
@@ -2445,6 +2480,7 @@ class TelemetryTab(QWidget):
                 norad=norad,
                 sent=uploaded is not None,
                 log_id=log_id,
+                payload=payload,
             )
             self._append_row(
                 callsign=tf.callsign,
