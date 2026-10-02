@@ -128,9 +128,16 @@ rig_dialog.py のカスタムリストでは 1036 = FT-991A として登録。`_
     Message Exchange（SATNOGS モード `GMSK`）を選ぶと FM になっていた。FT-991 の `MD` コードは
     1=LSB 2=USB 3=CW 4=FM 5=AM 6=RTTY-LSB 7=CW-R 8=DATA-LSB 9=RTTY-USB **A=DATA-FM** B=FM-N C=DATA-USB。
     他衛星の `GMSK`（9k6 テレメトリ等）も DATA-FM になる。`AFSK` 等は従来どおり FM
-  - 4800/9600 baud の FM データは DATA ジャック経由（USB オーディオは送信不可）。メニュー: 079 FM PKT MODE=9600、
-    076 FM PKT PTT SELECT（DAKY/DTR 等）、077（FM PKT PORT SELECT。9600 では無関係とする資料あり）。出典は
-    fldigi の FT-991A 9600 bps ページ。4800 baud 自体を直接確認した資料は無い
+  - **FM パケットのメニュー（FT-991A 取扱説明書 p.124 で確認、2026-10-02）**:
+    074 FM MIC SELECT（MIC/REAR、既定 MIC。**REAR にしないと DATA/USB からの入力が効かない**）、
+    075 FM OUT LEVEL（RTTY/DATA 端子の FM 受信出力 0〜100、既定 50）、
+    076 FM PKT PTT SELECT（DAKY=DATA 端子 pin 3 / RTS / DTR=USB 仮想 COM、既定 DAKY）、
+    077 FM PKT PORT SELECT（DATA/USB、既定 DATA。074=REAR 時の入力端子。**9600 でも USB を選べる**）、
+    078 FM PKT TX GAIN（0〜100、既定 50。FM では偏移を決める）、079 FM PKT MODE（1200/9600、既定 1200）。
+  - 4800/9600 baud の FM データの送信入力: DATA ジャックが基本。fldigi の FT-991A 9600 bps ページは「USB オーディオは
+    D/A 直後に LPF を通るので 9600 の送信には使えない」とするが、メニュー上は USB も選べる（077）ので、
+    4800 baud でどうかは実機で試すしかない（直接確認した資料は無い）。受信は USB オーディオでも可。
+  - FT4 の USB-D（SSB）の TX レベル（ALC 基準で -25 dB 付近）は、FM-D（レベル＝偏移）の目安にならない
 - main_window.py では `_FTX1_MODEL_IDS | _FT991_DIRECT_MODEL_IDS` をまとめて同一ブランチで処理
 - **TX中のDL/UL周波数書き込みをスキップ**（2026-09-29、`set_vfo_frequencies()`の
   generic分岐）: rigctld（NETモード）でFT-991がTX中のCAT周波数変更を無視することが
