@@ -8,6 +8,16 @@
   "document": "ORI-2-0027-OPR OrigamiSat-2 FMダウンリンク通信データフォーマット ver.2026-04-21 (Institute of Science Tokyo)",
   "document_cw": "ORI-2-0027e-OPR OrigamiSat-2 CW Downlink Communication Data Format ver.1.1 (Institute of Science Tokyo), http://www.origami.titech.ac.jp/wp/wp-content/uploads/2026/04/ORI-2-0027e-OPR_OrigamiSat-2_CW_Downlink_Communication_Data_Format_ver1.1.pdf",
   "telemetry_ids": {
+    "1": {
+      "label": "ID01 (MOBC HK・ヘッダー部のみ)",
+      "fields": [
+        {"name": "onboard_unix_time", "offset": 4, "length": 4, "type": "unix_time", "label": "衛星内部時刻(UTC)"},
+        {"name": "telemetry_count", "offset": 3, "length": 1, "type": "uint8", "label": "テレメトリ送信数"},
+        {"name": "packet_length", "offset": 0, "length": 1, "type": "uint8", "label": "パケット長"},
+        {"name": "gen_timing", "offset": 1, "length": 1, "type": "uint8", "label": "生成タイミング"},
+        {"name": "telemetry_id", "offset": 2, "length": 1, "type": "uint8", "label": "テレメトリID"}
+      ]
+    },
     "65": {
       "label": "ID65 (RasPi/カメラ制御 HK)",
       "fields": [
@@ -43,8 +53,8 @@
           "name": "onboard_unix_time",
           "offset": 4,
           "length": 4,
-          "type": "uint32_be",
-          "label": "衛星内部時刻(UNIX秒)"
+          "type": "unix_time",
+          "label": "衛星内部時刻(UTC)"
         },
         {
           "name": "cmd_id",
@@ -194,8 +204,8 @@
           "name": "onboard_unix_time",
           "offset": 4,
           "length": 4,
-          "type": "uint32_be",
-          "label": "衛星内部時刻(UNIX秒)"
+          "type": "unix_time",
+          "label": "衛星内部時刻(UTC)"
         },
         {
           "name": "cmd_id",
@@ -319,8 +329,8 @@
           "name": "onboard_unix_time",
           "offset": 4,
           "length": 4,
-          "type": "uint32_be",
-          "label": "衛星内部時刻(UNIX秒)"
+          "type": "unix_time",
+          "label": "衛星内部時刻(UTC)"
         },
         {
           "name": "cmd_id",

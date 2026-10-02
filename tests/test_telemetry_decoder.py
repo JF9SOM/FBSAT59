@@ -30,7 +30,7 @@ def test_get_telemetry_id_defs_origamisat2() -> None:
     # came in on.
     id_defs = get_telemetry_id_defs(68795)
     assert id_defs is not None
-    assert set(id_defs.keys()) == {"65", "100", "130", "TLM"}
+    assert set(id_defs.keys()) == {"1", "65", "100", "130", "TLM"}
 
 
 def test_get_telemetry_id_defs_missing_norad_returns_none() -> None:
@@ -74,11 +74,11 @@ def test_decode_origamisat2_id130_frame() -> None:
 
 
 def test_decode_unknown_telemetry_id_falls_back_to_raw() -> None:
-    # First 3 bytes: packet length, gen timing, telemetry ID=1 (not defined
+    # First 3 bytes: packet length, gen timing, telemetry ID=2 (not defined
     # for OrigamiSat-2 in the current format file).
-    payload = bytes([0x00, 0xFF, 0x01]) + b"\x00" * 10
+    payload = bytes([0x00, 0xFF, 0x02]) + b"\x00" * 10
     tf = decode_telemetry("JS1YRU", payload, norad=68795)
-    assert tf.telemetry_id == 1
+    assert tf.telemetry_id == 2
     assert not tf.has_fields
 
 
@@ -87,11 +87,11 @@ def test_raw_summary_flags_truncation_when_payload_exceeds_preview() -> None:
     # preview summary() shows, so the truncation note must appear with the
     # actual shown/total hex-char counts (not a hardcoded satellite-specific
     # number).
-    payload = bytes([0x00, 0xFF, 0x01]) + b"\x00" * 30
+    payload = bytes([0x00, 0xFF, 0x02]) + b"\x00" * 30
     tf = decode_telemetry("JS1YRU", payload, norad=68795)
     assert (
         tf.summary()
-        == "[raw] 00ff010000000000000000000000000000000000 (40/66 hex chars — rest omitted)"
+        == "[raw] 00ff020000000000000000000000000000000000 (40/66 hex chars — rest omitted)"
     )
 
 
@@ -164,3 +164,16 @@ def test_decode_marina_unrecognized_prefix_falls_back_to_raw() -> None:
     tf = decode_telemetry("OM9MAR", b"XYZ,1,2,3", norad=69920)
     assert tf.telemetry_id is None
     assert not tf.has_fields
+
+
+def test_decode_origamisat2_onboard_time_shown_as_date() -> None:
+    # ID01 frame received 2026-10-02: onboard_unix_time 0x6A68EA82 is the
+    # satellite's own clock (2026-07-28 17:44:34 UTC), not the reception time.
+    payload = bytes.fromhex("72fe01236a68ea829000000104000001000120d0fe010c44")
+    tf = decode_telemetry("JS1YRU", payload, norad=68795)
+
+    assert tf.telemetry_id == 1
+    by_name = {f.name: f for f in tf.fields}
+    assert by_name["onboard_unix_time"].is_string
+    assert by_name["onboard_unix_time"].unit == "2026-07-28 17:44:34 UTC"
+    assert by_name["telemetry_count"].scaled_value == 0x23

@@ -12,6 +12,7 @@ import json
 import struct
 import sys
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -166,6 +167,24 @@ def _decode_field(payload: bytes, field_def: dict[str, Any]) -> TelemetryField |
             raw_value=raw_val,
             scaled_value=0.0,
             unit=scaled,
+            is_string=True,
+        )
+
+    if ftype == "unix_time":
+        # Big-endian uint32 seconds since 1970-01-01 UTC, shown as a date.
+        # This is the satellite's own clock, not the reception time.
+        (seconds,) = struct.unpack_from(">I", chunk)
+        try:
+            shown = datetime.fromtimestamp(seconds, tz=UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+        except (OverflowError, OSError, ValueError):
+            shown = str(seconds)
+        return TelemetryField(
+            name=field_def["name"],
+            label=label,
+            raw_value=seconds,
+            scaled_value=float(seconds),
+            unit=shown,
+            is_integer=True,
             is_string=True,
         )
 
