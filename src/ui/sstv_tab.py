@@ -902,7 +902,7 @@ class SstvTab(QWidget):
         path, _filter = QFileDialog.getOpenFileName(
             self,
             _("Open SSTV Image"),
-            str(self._image_save_dir()),
+            str(self._image_save_dir(self._mode_combo.currentText())),
             _("Images (*.png *.jpg *.jpeg *.bmp)"),
         )
         if not path:
@@ -970,19 +970,21 @@ class SstvTab(QWidget):
         self._conn.commit()
 
     @staticmethod
-    def _image_save_dir() -> Path:
-        """Default folder for saved SSTV images (<Pictures>/GPredict-SSTV)."""
+    def _image_save_dir(mode: str = "SSTV") -> Path:
+        """Default folder for saved images: <Pictures>/FBSAT59-SSTV, or
+        <Pictures>/FBSAT59-SSDV for SSDV images."""
         pics = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.PicturesLocation)
-        return Path(pics) / "GPredict-SSTV"
+        return Path(pics) / ("FBSAT59-SSDV" if mode == "SSDV" else "FBSAT59-SSTV")
 
     def _auto_save_image(
         self, qimg: QImage, mode: str, ts: datetime, sat_name: str | None = None
     ) -> str | None:
         """Save image to the user Pictures directory. Returns saved path or None."""
         name = sat_name if sat_name is not None else self._sat_name
-        save_dir = self._image_save_dir()
+        save_dir = self._image_save_dir(mode)
         save_dir.mkdir(parents=True, exist_ok=True)
-        filename = f"SSTV_{name or 'image'}_{ts.strftime('%Y%m%d_%H%M%S')}.png"
+        prefix = "SSDV" if mode == "SSDV" else "SSTV"
+        filename = f"{prefix}_{name or 'image'}_{ts.strftime('%Y%m%d_%H%M%S')}.png"
         path = str(save_dir / filename)
         qimg.save(path)
         return path
