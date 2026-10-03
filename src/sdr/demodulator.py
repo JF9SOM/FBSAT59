@@ -281,7 +281,7 @@ class DemodMode(str, Enum):  # noqa: UP042
     def from_satnogs(cls, mode: str) -> DemodMode:
         """Map a SATNOGS mode string to the closest DemodMode."""
         m = mode.upper()
-        if m in ("FM", "DIGITALVOICE", "AFSK"):
+        if m in ("FM", "DIGITALVOICE", "AFSK", "SSTV"):
             return cls.NFM
         if m in ("SSB", "USB", "BPSK"):
             return cls.USB

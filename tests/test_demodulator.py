@@ -226,3 +226,9 @@ def test_ssb_bandwidth_setting_moves_the_upper_edge() -> None:
 @pytest.mark.parametrize("rate", [960_000.0, 2_400_000.0])
 def test_usb_pitch_is_true_at_other_sample_rates(rate: float) -> None:
     assert _tone_hz(_ssb_tone(DemodMode.USB, 2_000.0, rate=rate)) == pytest.approx(2_000.0, abs=2.0)
+
+
+@pytest.mark.parametrize("mode", ["SSTV", "sstv", "FM", "AFSK"])
+def test_fm_based_satnogs_modes_map_to_nfm(mode: str) -> None:
+    """SSTV is FM audio; it must not fall through to the USB default."""
+    assert DemodMode.from_satnogs(mode) is DemodMode.NFM
