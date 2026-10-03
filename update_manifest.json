@@ -1,8 +1,8 @@
 {
   "latest_version": "0.3.60",
-  "minimum_supported_version": "0.3.58",
-  "critical": false,
-  "message_ja": "v0.3.59 は Quick Comms パネルの使い勝手の改善です。衛星選択とその記憶、「Others」項目、オスカー番号表示、Rig/Rotator 接続状態の色表示、SDR Control タブへの表示を追加しました。",
-  "message_en": "Version 0.3.59 improves the Quick Comms panel: satellite selection is now remembered, an 'Others' entry, Oscar designators in the list, colour-coded Rig/Rotator connection buttons, and the panel is now shown on the SDR Control tab.",
+  "minimum_supported_version": "0.3.61",
+  "critical": true,
+  "message_ja": "v0.3.61 は重要な修正です。SDR で SSTV（ISS の画像など）を受信しても FM 復調されず画像が出なかった問題を修正しました。あわせて SSTV タブに「画像を開く」、Quick Comms の ISS (V)/(U) 分割、FT4 送信音声の改善を含みます。",
+  "message_en": "Version 0.3.61 is a critical fix: SDR reception of SSTV (e.g. ISS images) was demodulated as USB instead of FM, so no image appeared. It also adds Open Image in the SSTV tab, ISS (V)/(U) in Quick Comms, and FT4 TX audio improvements.",
   "_comment": "Bump latest_version on every release. Raise minimum_supported_version and set critical=true only when older versions genuinely misbehave and every user must update; otherwise keep critical=false. See docs/app-update.md."
 }
