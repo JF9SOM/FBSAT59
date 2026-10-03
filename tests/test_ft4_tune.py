@@ -11,7 +11,7 @@ from pytestqt.qtbot import QtBot
 
 pytest.importorskip("scipy")
 
-from comms.ft4.codec import SAMPLE_RATE  # noqa: E402 -- must follow importorskip above
+from comms.ft4.codec import TX_SAMPLE_RATE  # noqa: E402 -- must follow importorskip above
 from data.database import SCHEMA_SQL  # noqa: E402
 from ui.ft4_tab import _TUNE_MAX_S, Ft4Tab  # noqa: E402
 
@@ -36,8 +36,8 @@ def test_tune_on_starts_tone_worker_at_audio_freq_and_off_aborts(qtbot: QtBot) -
         assert tab._tuning and tab._tx_in_progress
         args, kwargs = worker_cls.call_args
         tone = args[0]
-        assert len(tone) == int(_TUNE_MAX_S * SAMPLE_RATE)
-        spectrum = np.abs(np.fft.rfft(tone[SAMPLE_RATE : 2 * SAMPLE_RATE]))
+        assert len(tone) == int(_TUNE_MAX_S * TX_SAMPLE_RATE)
+        spectrum = np.abs(np.fft.rfft(tone[TX_SAMPLE_RATE : 2 * TX_SAMPLE_RATE]))
         assert np.argmax(spectrum) == 1200  # 1 s window -> 1 Hz bins
         assert kwargs["timeout_is_normal"] is True
         assert kwargs["watchdog_s"] == _TUNE_MAX_S

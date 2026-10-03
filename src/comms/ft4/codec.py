@@ -54,6 +54,10 @@ FT4_TONE_COUNT: int = 4
 # hard-coding their own copy, which is exactly how the previous wrong value
 # went unnoticed for so long (GitHub Issue #16).
 FT4_PERIOD: float = 7.5
+# TX audio is synthesised and played at 48 kHz, as WSJT-X does (its FT4
+# wave is generated with fsample=48000 and output as 48 kHz 16-bit mono),
+# instead of 12 kHz with the OS resampling it. RX/decode stays at 12 kHz.
+TX_SAMPLE_RATE: int = 48_000
 FT4_TX_OFFSET: float = 0.5  # TX starts 0.5 s into the period
 _FT4_GFSK_BT: float = 1.0  # Gaussian pulse bandwidth-time product (WSJT-X FT4)
 FT4_TX_DURATION: float = FT4_SYMBOL_COUNT * FT4_SAMPLES_PER_SYM / SAMPLE_RATE  # ≈ 5.04 s
@@ -460,7 +464,8 @@ def symbols_to_audio(
     # WSJT-X's gen_ft4wave.f90 / ft8_lib's synth_gfsk(). Hard tone steps
     # would spread the spectrum and mismatch the receiver's GFSK model.
     k_const = np.pi * np.sqrt(2.0 / np.log(2.0))
-    t = np.arange(3 * spf, dtype=np.float64) / spf - 1.5
+    # 1-based index as in the Fortran loop: tt = (i - 1.5*nsps) / nsps, i = 1..3*nsps.
+    t = np.arange(1, 3 * spf + 1, dtype=np.float64) / spf - 1.5
     pulse = (
         np.array([math.erf(k_const * _FT4_GFSK_BT * (x + 0.5)) for x in t])
         - np.array([math.erf(k_const * _FT4_GFSK_BT * (x - 0.5)) for x in t])
@@ -484,11 +489,11 @@ def symbols_to_audio(
     phase = np.concatenate(([0.0], np.cumsum(dphi[spf : spf + n_wave - 1])))
     audio = np.sin(phase)
 
-    # Raised-cosine ramps over the first and last n_spsym/8 samples.
-    n_ramp = spf // 8
-    env = (1.0 - np.cos(2.0 * np.pi * np.arange(n_ramp) / (2 * n_ramp))) / 2.0
-    audio[:n_ramp] *= env
-    audio[n_wave - n_ramp :] *= env[::-1]
+    # Full-symbol raised-cosine ramps on the first and last symbol slots
+    # (gen_ft4wave.f90: wave(1:nsps) and wave(k1:k1+nsps-1)).
+    ramp = np.arange(spf) / (2.0 * spf)
+    audio[:spf] *= (1.0 - np.cos(2.0 * np.pi * ramp)) / 2.0
+    audio[n_wave - spf :] *= (1.0 + np.cos(2.0 * np.pi * ramp)) / 2.0
     return audio.astype(np.float32)
 
 

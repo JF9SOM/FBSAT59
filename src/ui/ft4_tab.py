@@ -52,6 +52,7 @@ from comms.ft4.codec import (
     FT4_TX_DURATION,
     FT4_TX_OFFSET,
     SAMPLE_RATE,
+    TX_SAMPLE_RATE,
     Ft4Codec,
     Ft4Message,
     get_user_ft8lib_dir,
@@ -157,7 +158,7 @@ _DOPPLER_TX_SAMPLES = 6
 # if underflow reappears, raise it back up; if the ~1.5s stretch
 # persists, it may need to come down further or the writes throttled
 # more aggressively still.
-_TX_BLOCK_SIZE = 3000
+_TX_BLOCK_SIZE = 12000  # 250 ms at TX_SAMPLE_RATE (was 3000 frames at 12 kHz)
 # GitHub Issue #26: a hard ceiling on how long a single transmission is
 # allowed to hold PTT, independent of whatever _TxWorker's own audio
 # stream thinks is going on. done.wait() below normally unblocks once our
@@ -304,7 +305,7 @@ class _TxWorker(QObject):
         try:
             import sounddevice as sd  # optional dep
 
-            validate_output_device(self._out_device, SAMPLE_RATE, channels=1)
+            validate_output_device(self._out_device, TX_SAMPLE_RATE, channels=1)
 
             if self._rig is not None:
                 # freeze_doppler=False: an FT4 transmission is ~5 s, far too
@@ -399,7 +400,7 @@ class _TxWorker(QObject):
             # ones, as a safety net until the root cause is found.
             t0 = time.monotonic()
             stream = sd.OutputStream(
-                samplerate=SAMPLE_RATE,
+                samplerate=TX_SAMPLE_RATE,
                 device=self._out_device,
                 channels=1,
                 dtype="float32",
@@ -1505,7 +1506,10 @@ class Ft4Tab(QWidget):
         rig = self._tx_rig()
         doppler_offset_fn, doppler_residual_hz = self._build_tx_doppler_offset_fn(rig)
         audio = self._codec.encode_audio(
-            msg, base_freq=audio_freq, freq_offset_hz=doppler_offset_fn
+            msg,
+            base_freq=audio_freq,
+            sample_rate=TX_SAMPLE_RATE,
+            freq_offset_hz=doppler_offset_fn,
         )
         if audio is None:
             self._status_label.setText(_("Invalid FT4 message: ") + msg)
@@ -1579,10 +1583,10 @@ class Ft4Tab(QWidget):
             audio_freq = float(self._audio_freq_edit.text())
         except ValueError:
             audio_freq = _DEFAULT_AUDIO_FREQ
-        n = int(_TUNE_MAX_S * SAMPLE_RATE)
-        t = np.arange(n, dtype=np.float64) / SAMPLE_RATE
+        n = int(_TUNE_MAX_S * TX_SAMPLE_RATE)
+        t = np.arange(n, dtype=np.float64) / TX_SAMPLE_RATE
         tone = np.sin(2.0 * np.pi * audio_freq * t).astype(np.float32)
-        fade = int(_TUNE_FADE_IN_S * SAMPLE_RATE)
+        fade = int(_TUNE_FADE_IN_S * TX_SAMPLE_RATE)
         tone[:fade] *= np.linspace(0.0, 1.0, fade, dtype=np.float32)
 
         rig = self._tx_rig()
