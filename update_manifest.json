@@ -1,5 +1,5 @@
 {
-  "latest_version": "0.3.60",
+  "latest_version": "0.3.61",
   "minimum_supported_version": "0.3.61",
   "critical": true,
   "message_ja": "v0.3.61 は重要な修正です。SDR で SSTV（ISS の画像など）を受信しても FM 復調されず画像が出なかった問題を修正しました。あわせて SSTV タブに「画像を開く」、Quick Comms の ISS (V)/(U) 分割、FT4 送信音声の改善を含みます。",
