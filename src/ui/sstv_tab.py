@@ -346,6 +346,12 @@ class SstvTab(QWidget):
         self._save_btn.clicked.connect(self._on_save_png)
         bottom.addWidget(self._save_btn)
 
+        self._open_image_btn = QPushButton(_("🖼 Open Image…"))
+        self._open_image_btn.setFixedHeight(30)
+        self._open_image_btn.setStyleSheet(_bottom_btn_style)
+        self._open_image_btn.clicked.connect(self._on_open_image)
+        bottom.addWidget(self._open_image_btn)
+
         self._decode_file_btn = QPushButton(_("📂 Decode Recording…"))
         self._decode_file_btn.setEnabled(SOUNDFILE_AVAILABLE)
         self._decode_file_btn.setFixedHeight(30)
@@ -891,6 +897,32 @@ class SstvTab(QWidget):
             self._current_image.save(path)
             self._status_label.setText(_("Saved: ") + os.path.basename(path))
 
+    def _on_open_image(self) -> None:
+        """Open a saved image file and show it in the main view (and the history)."""
+        path, _filter = QFileDialog.getOpenFileName(
+            self,
+            _("Open SSTV Image"),
+            str(self._image_save_dir()),
+            _("Images (*.png *.jpg *.jpeg *.bmp)"),
+        )
+        if not path:
+            return
+        qimg = QImage(path)
+        if qimg.isNull():
+            QMessageBox.warning(self, _("Open SSTV Image"), _("Could not read the image file."))
+            return
+        self._current_image = qimg
+        self._save_btn.setEnabled(True)
+        self._history_list.addItem(_ThumbnailItem(qimg, Path(path).stem))
+        pix = QPixmap.fromImage(qimg).scaled(
+            self._image_label.width(),
+            self._image_label.height(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self._image_label.setPixmap(pix)
+        self._status_label.setText(_("Opened: ") + os.path.basename(path))
+
     def _on_clear(self) -> None:
         """Clear the live image display."""
         self._ssdv_pending = None
@@ -937,13 +969,18 @@ class SstvTab(QWidget):
         )
         self._conn.commit()
 
+    @staticmethod
+    def _image_save_dir() -> Path:
+        """Default folder for saved SSTV images (<Pictures>/GPredict-SSTV)."""
+        pics = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.PicturesLocation)
+        return Path(pics) / "GPredict-SSTV"
+
     def _auto_save_image(
         self, qimg: QImage, mode: str, ts: datetime, sat_name: str | None = None
     ) -> str | None:
         """Save image to the user Pictures directory. Returns saved path or None."""
         name = sat_name if sat_name is not None else self._sat_name
-        pics = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.PicturesLocation)
-        save_dir = Path(pics) / "GPredict-SSTV"
+        save_dir = self._image_save_dir()
         save_dir.mkdir(parents=True, exist_ok=True)
         filename = f"SSTV_{name or 'image'}_{ts.strftime('%Y%m%d_%H%M%S')}.png"
         path = str(save_dir / filename)

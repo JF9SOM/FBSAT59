@@ -498,3 +498,19 @@ def test_disconnecting_the_sdr_stops_the_audio_feed(tab: SstvTab, rc: _FakeRadio
     _connect_sdr_with(rc, pipeline)
     rc.sdr_disconnected.emit()
     assert pipeline.released == ["SSTV/SSDV"]
+
+
+def test_open_image_loads_saved_png(
+    tab: SstvTab, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    img = QImage(40, 30, QImage.Format.Format_RGB32)
+    img.fill(QColor("red"))
+    path = tmp_path / "SSTV_ISS_test.png"
+    assert img.save(str(path))
+    monkeypatch.setattr("ui.sstv_tab.QFileDialog.getOpenFileName", lambda *a, **k: (str(path), ""))
+    before = tab._history_list.count()
+    tab._open_image_btn.click()
+    assert tab._current_image is not None
+    assert tab._current_image.width() == 40
+    assert tab._save_btn.isEnabled()
+    assert tab._history_list.count() == before + 1
