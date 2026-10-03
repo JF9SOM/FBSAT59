@@ -85,6 +85,8 @@ class TestFt4DataModeMapping:
         assert _FT991_MODE_MAP["USB-D"] == "C"  # DATA-USB
         assert _FT991_MODE_MAP["LSB-D"] == "8"  # DATA-LSB
         assert _FT991_MODE_MAP["GMSK"] == "A"  # DATA-FM (not plain FM)
+        assert _FT991_MODE_MAP["FSK"] == "A"
+        assert _FT991_MODE_MAP["GFSK"] == "A"
 
     def test_satnogs_to_rigctld_mode_has_data_modes(self) -> None:
         assert _SATNOGS_TO_RIGCTLD_MODE["USB-D"] == "PKTUSB"

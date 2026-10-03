@@ -3273,6 +3273,9 @@ _FT991_MODE_MAP: dict[str, str] = {
     # SATNOGS "GMSK" (e.g. ARICA-2's 4800 baud message box, 9k6 telemetry) is a
     # data signal: DATA-FM selects the rig's packet/data audio path instead of FM.
     "GMSK": "A",  # DATA-FM
+    # SATNOGS "FSK"/"GFSK" (e.g. KNACKSAT-2's 9k6 G3RUH) are data signals too.
+    "FSK": "A",  # DATA-FM
+    "GFSK": "A",  # DATA-FM
 }
 
 
