@@ -17,6 +17,7 @@ import contextlib
 import ctypes
 import ctypes.util
 import logging
+import math
 import os
 import sys
 from collections.abc import Callable
@@ -54,6 +55,7 @@ FT4_TONE_COUNT: int = 4
 # went unnoticed for so long (GitHub Issue #16).
 FT4_PERIOD: float = 7.5
 FT4_TX_OFFSET: float = 0.5  # TX starts 0.5 s into the period
+_FT4_GFSK_BT: float = 1.0  # Gaussian pulse bandwidth-time product (WSJT-X FT4)
 FT4_TX_DURATION: float = FT4_SYMBOL_COUNT * FT4_SAMPLES_PER_SYM / SAMPLE_RATE  # ≈ 5.04 s
 
 _PAYLOAD_BYTES: int = 10  # FTX_PAYLOAD_LENGTH_BYTES: 77 bits padded to 10 bytes
@@ -432,7 +434,7 @@ def symbols_to_audio(
     sample_rate: int = SAMPLE_RATE,
     freq_offset_hz: Callable[[float], float] | None = None,
 ) -> NDArray[np.float32]:
-    """Generate phase-continuous 4-FSK audio from a FT4 tone array.
+    """Generate Gaussian-shaped (GFSK, BT=1.0) FT4 audio from a tone array.
 
     Args:
         tones: Sequence of tone values (0-3), typically 105 bytes.
@@ -450,22 +452,44 @@ def symbols_to_audio(
         Float32 audio array of length len(tones) * samples_per_symbol.
     """
     spf = int(round(sample_rate / FT4_SYMBOL_RATE))
-    total = len(tones) * spf
-    audio = np.empty(total, dtype=np.float32)
-    phase = 0.0
-    pos = 0
+    n_sym = len(tones)
+    n_wave = n_sym * spf
     symbol_dur = spf / sample_rate
-    for i, tone in enumerate(tones):
-        freq = base_freq + tone * FT4_TONE_SPACING
-        if freq_offset_hz is not None:
-            freq += freq_offset_hz(i * symbol_dur)
-        n = spf
-        delta_phi = 2.0 * np.pi * freq / sample_rate
-        phases = phase + delta_phi * np.arange(1, n + 1, dtype=np.float64)
-        audio[pos : pos + n] = np.sin(phases).astype(np.float32)
-        phase = float(phases[-1] % (2.0 * np.pi))
-        pos += n
-    return audio
+
+    # Gaussian frequency pulse (BT = 1.0) spanning three symbols, as in
+    # WSJT-X's gen_ft4wave.f90 / ft8_lib's synth_gfsk(). Hard tone steps
+    # would spread the spectrum and mismatch the receiver's GFSK model.
+    k_const = np.pi * np.sqrt(2.0 / np.log(2.0))
+    t = np.arange(3 * spf, dtype=np.float64) / spf - 1.5
+    pulse = (
+        np.array([math.erf(k_const * _FT4_GFSK_BT * (x + 0.5)) for x in t])
+        - np.array([math.erf(k_const * _FT4_GFSK_BT * (x - 0.5)) for x in t])
+    ) / 2.0
+
+    # Per-symbol carrier frequency (tone 0 plus optional Doppler residual).
+    carrier = np.full(n_sym, base_freq, dtype=np.float64)
+    if freq_offset_hz is not None:
+        carrier += np.array([freq_offset_hz(i * symbol_dur) for i in range(n_sym)])
+    dphi = np.zeros(n_wave + 2 * spf, dtype=np.float64)
+    dphi[spf : spf + n_wave] = np.repeat(2.0 * np.pi * carrier / sample_rate, spf)
+    # Tone-step phase increments, smoothed by the pulse; first and last
+    # symbols are extended by dummy half-pulses (same tone value).
+    dphi_peak = 2.0 * np.pi / spf
+    tone_arr = np.asarray(list(tones), dtype=np.float64)
+    for i in range(n_sym):
+        dphi[i * spf : i * spf + 3 * spf] += dphi_peak * tone_arr[i] * pulse
+    dphi[: 2 * spf] += dphi_peak * tone_arr[0] * pulse[spf:]
+    dphi[n_wave : n_wave + 2 * spf] += dphi_peak * tone_arr[-1] * pulse[: 2 * spf]
+    # Phase before sample k = sum of dphi[spf : spf + k].
+    phase = np.concatenate(([0.0], np.cumsum(dphi[spf : spf + n_wave - 1])))
+    audio = np.sin(phase)
+
+    # Raised-cosine ramps over the first and last n_spsym/8 samples.
+    n_ramp = spf // 8
+    env = (1.0 - np.cos(2.0 * np.pi * np.arange(n_ramp) / (2 * n_ramp))) / 2.0
+    audio[:n_ramp] *= env
+    audio[n_wave - n_ramp :] *= env[::-1]
+    return audio.astype(np.float32)
 
 
 def compute_waterfall(

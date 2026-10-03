@@ -66,3 +66,14 @@ def test_offset_respects_tone_spacing() -> None:
     measured = _dominant_freq_hz(audio)
     expected = base_freq + 2 * FT4_TONE_SPACING + offset_hz
     assert abs(measured - expected) < 25.0
+
+
+def test_audio_is_gfsk_shaped_with_ramps() -> None:
+    """Output has the full burst length, unit peak, and faded-in/out edges."""
+    tones = bytes([0, 1, 2, 3] * 26 + [0])  # 105 symbols
+    audio = symbols_to_audio(tones, base_freq=1500.0)
+    assert len(audio) == 105 * FT4_SAMPLES_PER_SYM
+    assert abs(float(np.max(np.abs(audio))) - 1.0) < 0.01
+    assert abs(float(audio[0])) < 1e-6
+    assert float(np.max(np.abs(audio[:10]))) < 0.05
+    assert float(np.max(np.abs(audio[-10:]))) < 0.05

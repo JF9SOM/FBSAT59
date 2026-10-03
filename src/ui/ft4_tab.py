@@ -50,6 +50,7 @@ from comms.audio_device_manager import get_audio_device_manager, validate_output
 from comms.ft4.codec import (
     FT4_PERIOD,
     FT4_TX_DURATION,
+    FT4_TX_OFFSET,
     SAMPLE_RATE,
     Ft4Codec,
     Ft4Message,
@@ -59,6 +60,7 @@ from comms.ft4.decode_log import get_ft4_decode_logger
 from comms.ft4.qso import Ft4QsoManager, QsoState, format_report
 from comms.ft4.rx_capture import Ft4RxCaptureWorker
 from comms.ft4.scheduler import Ft4Scheduler
+from core.clock_offset import corrected_time
 from i18n import _
 from rig.controller import select_tx_rig
 from ui.ft4_waterfall_dialog import Ft4WaterfallDialog
@@ -167,6 +169,13 @@ _TX_BLOCK_SIZE = 3000
 # margin over a normal transmission while still guaranteeing PTT comes
 # back off before the *next* period would otherwise try to key up again.
 _TX_WATCHDOG_S = 7.0
+# Estimated delay between stream.start() being called and the first sample
+# reaching the sound card: start() itself (~0.05 s) plus the first callback
+# lag (~0.06 s), both measured in ft4_decode.log ("tx stream_started",
+# "tx callback_stats first_cb_lag"). Used to start the stream early enough
+# that the audio begins FT4_TX_OFFSET (0.5 s) after the slot boundary, as
+# WSJT-X does. Tune from the "tx audio_start" log line if it is off.
+_TX_AUDIO_START_LATENCY_S = 0.11
 # Tune (continuous test tone for adjusting TX level / ALC): safety cap on how
 # long a single Tune may hold PTT if the operator forgets to switch it off.
 _TUNE_MAX_S = 60.0
@@ -212,8 +221,12 @@ class _TxWorker(QObject):
         parent: QObject | None = None,
         watchdog_s: float = _TX_WATCHDOG_S,
         timeout_is_normal: bool = False,
+        start_at: float | None = None,
     ) -> None:
         super().__init__(parent)
+        # corrected_time() at which the first audio sample should reach the
+        # sound card (None: start as soon as possible, e.g. Tune).
+        self._start_at = start_at
         self._audio = audio
         self._out_device = out_device
         self._rig = rig
@@ -397,6 +410,14 @@ class _TxWorker(QObject):
             with self._stream_lock:
                 self._active_stream = stream
             log.info("tx stream_open duration=%.3fs", time.monotonic() - t0)
+            if self._start_at is not None:
+                wait_s = self._start_at - _TX_AUDIO_START_LATENCY_S - corrected_time()
+                if wait_s > 0:
+                    time.sleep(min(wait_s, FT4_TX_OFFSET))
+                log.info(
+                    "tx audio_start expected_offset=%.3fs",
+                    corrected_time() + _TX_AUDIO_START_LATENCY_S - (self._start_at - FT4_TX_OFFSET),
+                )
             t0 = time.monotonic()
             with stream:
                 stream_started_at = time.monotonic()
@@ -1512,8 +1533,18 @@ class Ft4Tab(QWidget):
         # output level (and hear the effect immediately) even while actively
         # transmitting, to avoid rig ALC action / distortion (Issue #16).
         # `rig` was already fetched above to build doppler_offset_fn.
+        # Start the audio FT4_TX_OFFSET (0.5 s) after the slot boundary like
+        # WSJT-X, so receivers see DT ~ 0. If we are called well past the
+        # boundary (stalled UI thread), start immediately instead.
+        now = corrected_time()
+        slot_start = (now // FT4_PERIOD) * FT4_PERIOD
+        start_at = slot_start + FT4_TX_OFFSET if now - slot_start < FT4_TX_OFFSET else None
         worker = _TxWorker(
-            audio, self._out_device, rig, get_gain=lambda: db_to_gain(self._tx_level_db)
+            audio,
+            self._out_device,
+            rig,
+            get_gain=lambda: db_to_gain(self._tx_level_db),
+            start_at=start_at,
         )
         worker.finished.connect(self._on_tx_finished)
         worker.error.connect(self._on_tx_error)
