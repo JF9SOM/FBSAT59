@@ -6946,3 +6946,23 @@ msgstr "（{shown}/{total}文字を表示、以下省略）"
 #~ msgid "%(count)d pass"
 #~ msgid_plural "%(count)d passes"
 #~ msgstr[0] "%(count)d パス"
+
+#: src/ui/sstv_tab.py
+msgid "🖼 Open Image…"
+msgstr "🖼 画像を開く…"
+
+#: src/ui/sstv_tab.py
+msgid "Open SSTV Image"
+msgstr "SSTV画像を開く"
+
+#: src/ui/sstv_tab.py
+msgid "Images (*.png *.jpg *.jpeg *.bmp)"
+msgstr "画像 (*.png *.jpg *.jpeg *.bmp)"
+
+#: src/ui/sstv_tab.py
+msgid "Could not read the image file."
+msgstr "画像ファイルを読み込めませんでした。"
+
+#: src/ui/sstv_tab.py
+msgid "Opened: "
+msgstr "開きました: "
