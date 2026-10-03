@@ -51,3 +51,7 @@ q65lib-bundle/
 
 # setuptools-scm generated version file
 src/fbsat59/_version.py
+
+# Files written to the working directory by the libq65 decoder
+fort.17
+q65_decodes.txt
