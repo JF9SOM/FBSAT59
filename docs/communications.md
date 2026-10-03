@@ -992,6 +992,15 @@ mode=AFSK 単独で全 AFSK1k2 機を拾う（こちらはそれが正しい）�
 TLE自動クリーンアップや仮ID移行で `is_hidden=2` になった衛星の残存トランスミッタ行が
 Input Source コンボに混入する（2026-07-04、CAS-11 で発覚・修正済み）。
 
+#### SSTV タブの Input Source 帯域分割（2026-10-03）
+
+`COMMS_TAB_CONFIG["sstv"].split_by_band=True`。SSTV に一致するトランスミッターが VHF（144–148 MHz）と
+UHF（420–450 MHz）の両方にある衛星（ISS）は、Input Source が `ISS (V)` / `ISS (U)` の 2 項目になる
+（それまでは常に先頭一致の Mode V のみ。2026-10-03 の ISS SSTV は Mode U だった）。コンボの値は int のまま、
+U 項目は `norad + BAND_U_OFFSET(10_000_000)`（`band_input_value()`/`split_input_value()`）。素の NORAD は
+V/分割なしを意味するので、旧形式の保存設定もそのまま読める。`ISS (U)` は説明に "Robot" を含むもの
+（437.550 MHz）を優先（`pick_transponder_for_band()`）。他タブは分割しない。
+
 #### 衛星選択フロー（`MainWindow._on_comms_satellite_requested`）
 
 Telemetryタブの `_on_telemetry_satellite_requested()` と同型の汎用ハンドラ:

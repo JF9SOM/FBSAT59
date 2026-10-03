@@ -168,12 +168,75 @@ class CommsTabConfig:
         unrelated Hamlib/SDR slot and confuse users into thinking it drives
         SatDump). The Rotator button stays on regardless — antenna tracking
         still goes through the normal Rig 1/2 rotator plumbing.
+    split_by_band: a satellite whose matching transmitters span both the VHF
+        (2 m) and UHF (70 cm) bands gets two Input Source entries, "X (V)"
+        and "X (U)" (see band_input_value()). Off for every other tab.
     """
 
     show_input_source: bool
     freq_source: str | None
     matcher: Callable[[dict[str, Any]], bool] | None = None
     show_rig_buttons: bool = True
+    split_by_band: bool = False
+
+
+# Input Source combo values are plain NORAD ids; the UHF entry of a band-split
+# satellite adds this offset so the value stays an int (the saved per-tab
+# choice and the combo's findData() both rely on that). A plain NORAD id keeps
+# meaning "VHF / unsplit", which is also what older saved settings contain.
+BAND_U_OFFSET: int = 10_000_000
+
+
+def band_input_value(norad: int, band: str | None) -> int:
+    """Input Source combo value for *norad* restricted to *band* ("V"/"U"/None)."""
+    return norad + BAND_U_OFFSET if band == "U" else norad
+
+
+def split_input_value(value: int) -> tuple[int, str | None]:
+    """Inverse of band_input_value(): ``(norad, "U")`` for a UHF entry, else ``(value, None)``."""
+    if value >= BAND_U_OFFSET:
+        return value - BAND_U_OFFSET, "U"
+    return value, None
+
+
+def transponder_band(downlink_hz: int | None) -> str | None:
+    """ "V" for a 144-148 MHz downlink, "U" for 420-450 MHz, else None."""
+    if not downlink_hz:
+        return None
+    if 144_000_000 <= downlink_hz <= 148_000_000:
+        return "V"
+    if 420_000_000 <= downlink_hz <= 450_000_000:
+        return "U"
+    return None
+
+
+def pick_transponder_for_band(
+    transmitters: list[dict[str, Any]],
+    matcher: Callable[[dict[str, Any]], bool],
+    band: str | None,
+) -> int | None:
+    """Like pick_preferred_transponder_index(), but restricted to *band*.
+
+    Within the band a "Robot" (Robot-36) entry is preferred, since that is the
+    SSTV format the ISS event uses; otherwise the usual community-first rule.
+    ``band=None`` (plain/VHF entry) restricts to VHF only when the satellite
+    actually has a UHF match too, so unsplit satellites behave as before.
+    """
+    matches = [i for i, t in enumerate(transmitters) if matcher(t)]
+    bands = {transponder_band(transmitters[i].get("downlink_low")) for i in matches}
+    if band is None and "U" in bands and "V" in bands:
+        band = "V"
+    if band is not None:
+        matches = [
+            i for i in matches if transponder_band(transmitters[i].get("downlink_low")) == band
+        ]
+    if not matches:
+        return None
+    robot = [i for i in matches if "ROBOT" in (transmitters[i].get("description") or "").upper()]
+    if robot:
+        return robot[0]
+    best = pick_preferred_transponder_index([transmitters[i] for i in matches], lambda _t: True)
+    return matches[best or 0]
 
 
 # ARICA-2 is catalogued as 68796 and (in SATNOGS DB) as 98329.
@@ -209,7 +272,10 @@ COMMS_TAB_CONFIG: dict[str, CommsTabConfig] = {
         show_input_source=True, freq_source="radio_control", matcher=is_aprs_transmitter
     ),
     "sstv": CommsTabConfig(
-        show_input_source=True, freq_source="radio_control", matcher=is_sstv_transmitter
+        show_input_source=True,
+        freq_source="radio_control",
+        matcher=is_sstv_transmitter,
+        split_by_band=True,
     ),
     "cw": CommsTabConfig(show_input_source=False, freq_source="radio_control"),
     "q65": CommsTabConfig(show_input_source=False, freq_source=None),
@@ -304,3 +370,36 @@ def get_norads_matching(
         if matcher(xpdr):
             norads.add(int(row["norad_cat_id"]))
     return sorted(norads)
+
+
+def get_norad_bands_matching(
+    conn: sqlite3.Connection, matcher: Callable[[dict[str, Any]], bool]
+) -> dict[int, set[str]]:
+    """Bands ("V"/"U") of the matching alive transmitters, per visible satellite.
+
+    Same selection as get_norads_matching(); a matching transmitter whose
+    downlink is in neither band is ignored here (the satellite still appears
+    in get_norads_matching()).
+    """
+    rows = conn.execute(
+        """
+        SELECT t.norad_cat_id, t.description, t.mode, t.baud, t.downlink_low
+        FROM transmitters t
+        JOIN satellites s ON s.norad_cat_id = t.norad_cat_id
+        WHERE t.alive = 1 AND s.is_hidden = 0
+        """
+    ).fetchall()
+    bands: dict[int, set[str]] = {}
+    for row in rows:
+        xpdr = {
+            "description": row["description"],
+            "mode": row["mode"],
+            "baud": row["baud"],
+            "norad_cat_id": row["norad_cat_id"],
+        }
+        if not matcher(xpdr):
+            continue
+        band = transponder_band(row["downlink_low"])
+        if band is not None:
+            bands.setdefault(int(row["norad_cat_id"]), set()).add(band)
+    return bands

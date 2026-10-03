@@ -455,3 +455,83 @@ def test_message_box_matcher_covers_ax100_and_arica2_message_exchange() -> None:
     assert (
         pick_preferred_transponder_index([cw, telemetry, message], is_message_box_transmitter) == 2
     )
+
+
+# ---------------------------------------------------------------------------
+# SSTV band split (ISS (V) / ISS (U))
+# ---------------------------------------------------------------------------
+
+from comms.mode_detection import (  # noqa: E402
+    BAND_U_OFFSET,
+    COMMS_TAB_CONFIG,
+    band_input_value,
+    get_norad_bands_matching,
+    is_sstv_transmitter,
+    pick_transponder_for_band,
+    split_input_value,
+    transponder_band,
+)
+
+_ISS_SSTV = [
+    {"description": "Mode V Imaging", "downlink_low": 145_800_000, "source": "satnogs"},
+    {"description": "Mode U - SSTV", "downlink_low": 437_800_000, "source": "satnogs"},
+    {"description": "Mode U - SSTV - Robot-36", "downlink_low": 437_550_000, "source": "satnogs"},
+]
+
+
+def test_band_input_value_round_trip() -> None:
+    assert split_input_value(band_input_value(25544, "U")) == (25544, "U")
+    assert band_input_value(25544, "V") == 25544
+    assert split_input_value(25544) == (25544, None)
+    assert band_input_value(25544, "U") == 25544 + BAND_U_OFFSET
+
+
+def test_transponder_band() -> None:
+    assert transponder_band(145_800_000) == "V"
+    assert transponder_band(437_550_000) == "U"
+    assert transponder_band(29_410_000) is None
+    assert transponder_band(None) is None
+
+
+def test_only_sstv_tab_splits_by_band() -> None:
+    assert [k for k, c in COMMS_TAB_CONFIG.items() if c.split_by_band] == ["sstv"]
+
+
+def test_pick_u_prefers_robot36() -> None:
+    assert pick_transponder_for_band(_ISS_SSTV, is_sstv_transmitter, "U") == 2
+
+
+def test_pick_v_and_plain_choose_the_vhf_entry() -> None:
+    assert pick_transponder_for_band(_ISS_SSTV, is_sstv_transmitter, "V") == 0
+    assert pick_transponder_for_band(_ISS_SSTV, is_sstv_transmitter, None) == 0
+
+
+def test_pick_unsplit_satellite_unchanged() -> None:
+    only_u = _ISS_SSTV[1:]
+    assert pick_transponder_for_band(only_u, is_sstv_transmitter, None) == 1
+
+
+def test_get_norad_bands_matching() -> None:
+    c = sqlite3.connect(":memory:")
+    c.row_factory = sqlite3.Row
+    c.execute("CREATE TABLE satellites (norad_cat_id INTEGER PRIMARY KEY, is_hidden INTEGER)")
+    c.execute(
+        """CREATE TABLE transmitters (uuid TEXT, norad_cat_id INTEGER, description TEXT,
+        mode TEXT, baud INTEGER, alive INTEGER, downlink_low INTEGER)"""
+    )
+    c.execute("INSERT INTO satellites VALUES (25544, 0)")
+    c.execute("INSERT INTO satellites VALUES (99999, 0)")
+    for i, (n, d, f) in enumerate(
+        [
+            (25544, "Mode V Imaging", 145_800_000),
+            (25544, "Mode U - SSTV", 437_800_000),
+            (99999, "SSTV", 145_500_000),
+        ]
+    ):
+        c.execute(
+            "INSERT INTO transmitters VALUES (?, ?, ?, 'SSTV', NULL, 1, ?)", (str(i), n, d, f)
+        )
+    assert get_norad_bands_matching(c, is_sstv_transmitter) == {
+        25544: {"V", "U"},
+        99999: {"V"},
+    }

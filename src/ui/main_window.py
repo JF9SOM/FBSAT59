@@ -438,6 +438,15 @@ class SatDetailPanel(QWidget):
         # Follow the selection (e.g. a transponder picked in Radio Control)
         # in the Input combo without re-emitting comms_satellite_requested.
         if self._active_comms_tab is not None and not self._input_source_row.isHidden():
+            shown_now = self._input_source_combo.currentData()
+            if (
+                shown_now is not None
+                and shown_now >= 0
+                and mode_detection.split_input_value(int(shown_now))[0] == norad
+            ):
+                # Same satellite already shown (possibly its "(U)" band entry):
+                # keep it instead of snapping back to the plain/VHF entry.
+                return
             if not self._select_input_source(norad):
                 self._select_input_source(self.INPUT_SOURCE_OTHERS)
             shown = self._input_source_combo.currentData()
@@ -3280,6 +3289,7 @@ class MainWindow(QMainWindow):
         if norad < 0:
             # "Others": keep whatever satellite/transponder is selected now.
             return
+        norad, band = mode_detection.split_input_value(norad)
         all_text = "All Satellites"
         if self._filter_combo.currentText() != all_text:
             idx = self._filter_combo.findText(all_text)
@@ -3292,7 +3302,10 @@ class MainWindow(QMainWindow):
         transmitters = self._radio_control._transmitters
         if not transmitters or config is None or config.matcher is None:
             return
-        best_idx = mode_detection.pick_preferred_transponder_index(transmitters, config.matcher)
+        if config.split_by_band:
+            best_idx = mode_detection.pick_transponder_for_band(transmitters, config.matcher, band)
+        else:
+            best_idx = mode_detection.pick_preferred_transponder_index(transmitters, config.matcher)
         if best_idx is None:
             return
         self._radio_control.set_transmitters(transmitters, default_index=best_idx)
@@ -5146,6 +5159,10 @@ class MainWindow(QMainWindow):
         Oscar designator (e.g. "AO-73") when the satellite has one, else its
         name, sorted by label."""
         options: list[tuple[int, str]] = []
+        config = mode_detection.COMMS_TAB_CONFIG.get(tab_key)
+        bands: dict[int, set[str]] = {}
+        if config is not None and config.split_by_band and config.matcher is not None:
+            bands = mode_detection.get_norad_bands_matching(self._conn, config.matcher)
         for norad in mode_detection.get_norads_for_tab(self._conn, tab_key):
             name = self._sat_name_cache.get(norad, str(norad))
             try:
@@ -5154,7 +5171,12 @@ class MainWindow(QMainWindow):
                 ).fetchone()
             except sqlite3.Error:
                 row = None
-            options.append((norad, _oscar_label(name, row["alt_names"] if row else None)))
+            label = _oscar_label(name, row["alt_names"] if row else None)
+            if bands.get(norad) == {"V", "U"}:
+                options.append((norad, f"{label} (V)"))
+                options.append((mode_detection.band_input_value(norad, "U"), f"{label} (U)"))
+            else:
+                options.append((norad, label))
         options.sort(key=lambda o: o[1].lower())
         return options
 
