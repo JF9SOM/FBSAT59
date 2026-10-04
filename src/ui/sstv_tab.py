@@ -63,8 +63,8 @@ _ENGINE_OWNER = "sstv"
 # can demodulate (see comms.sstv.ssdv, "CCSDS / DSLWP path"). The mode runs
 # gr_satellites on the SDR's IQ and decodes the VC1 frames it outputs.
 _MODE_SSTV = "SSTV"
-_MODE_SSDV = "SSDV"
-_MODE_GR_SSDV = "gr-satellites SSDV"
+_MODE_SSDV = "SSDV (AX.25)"
+_MODE_GR_SSDV = "SSDV (gr-satellites)"
 _GR_SSDV_NORAD = 61781  # ASRTU-1 (AO-123)
 
 
@@ -674,7 +674,7 @@ class SstvTab(QWidget):
             self._ssdv_reception = False
 
     # ------------------------------------------------------------------ #
-    # gr-satellites SSDV mode (ASRTU-1)
+    # SSDV (gr-satellites) mode (ASRTU-1)
     # ------------------------------------------------------------------ #
 
     def _ensure_gr_decoder(self) -> Any:
@@ -711,7 +711,7 @@ class SstvTab(QWidget):
         pipeline = self._find_sdr_pipeline()
         if pipeline is None:
             self._status_label.setText(
-                _("gr-satellites SSDV: connect an SDR in Radio Control (pasting hex works)")
+                _("SSDV (gr-satellites): connect an SDR in Radio Control (pasting hex works)")
             )
             return
         try:
@@ -730,7 +730,7 @@ class SstvTab(QWidget):
             )
             backend.stop()
             return
-        self._status_label.setText(_("gr-satellites SSDV: waiting for ASRTU-1 frames…"))
+        self._status_label.setText(_("SSDV (gr-satellites): waiting for ASRTU-1 frames…"))
 
     def _stop_gr_ssdv_reception(self) -> None:
         """Stop the gr_satellites subprocess, if running."""
@@ -914,7 +914,7 @@ class SstvTab(QWidget):
     # ------------------------------------------------------------------ #
 
     def _on_mode_changed(self, mode_text: str) -> None:
-        """Switch between the SSTV, SSDV (AX.25) and gr-satellites SSDV (ASRTU-1) decoders."""
+        """Switch between the SSTV, SSDV (AX.25) and SSDV (gr-satellites, ASRTU-1) decoders."""
         self._stop_decoder()
         self._stop_ssdv()
         if mode_text == _MODE_SSTV:
@@ -1080,7 +1080,7 @@ class SstvTab(QWidget):
     @staticmethod
     def _save_mode_name(mode_text: str) -> str:
         """ "SSDV" for both SSDV modes (they share a folder), else "SSTV"."""
-        return _MODE_SSDV if mode_text in (_MODE_SSDV, _MODE_GR_SSDV) else _MODE_SSTV
+        return "SSDV" if mode_text in (_MODE_SSDV, _MODE_GR_SSDV) else "SSTV"
 
     @staticmethod
     def _image_save_dir(mode: str = "SSTV") -> Path:

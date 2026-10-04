@@ -178,7 +178,7 @@ def test_image_area_has_raw_packets_and_image_subtabs(tab: SstvTab) -> None:
 
 
 def test_switching_mode_selects_the_matching_subtab(tab: SstvTab) -> None:
-    tab._mode_combo.setCurrentText("SSDV")
+    tab._mode_combo.setCurrentText("SSDV (AX.25)")
     assert tab._view_tabs.currentWidget() is tab._raw_page
     tab._mode_combo.setCurrentText("SSTV")
     assert tab._view_tabs.currentWidget() is tab._image_page
@@ -191,7 +191,7 @@ def test_ssdv_mode_starts_sdr_reception_without_the_aprs_tab(
     tab: SstvTab, rc: _FakeRadioControl, engine: _FakeEngine
 ) -> None:
     _connect_sdr(rc)
-    tab._mode_combo.setCurrentText("SSDV")
+    tab._mode_combo.setCurrentText("SSDV (AX.25)")
     name, args, kwargs = engine.calls[-1]
     assert name == "start_sdr_direwolf"
     assert args[0] == "sstv"
@@ -204,7 +204,7 @@ def test_ssdv_mode_starts_sound_card_reception_with_a_rig(
     tab: SstvTab, rc: _FakeRadioControl, engine: _FakeEngine
 ) -> None:
     rc.rig_connected.emit()
-    tab._mode_combo.setCurrentText("SSDV")
+    tab._mode_combo.setCurrentText("SSDV (AX.25)")
     name, args, kwargs = engine.calls[-1]
     assert name == "start_rig"
     assert args[0] == "sstv"
@@ -214,7 +214,7 @@ def test_ssdv_mode_starts_sound_card_reception_with_a_rig(
 def test_ssdv_mode_without_an_input_says_so_and_never_asks_for_the_aprs_tab(
     tab: SstvTab, engine: _FakeEngine
 ) -> None:
-    tab._mode_combo.setCurrentText("SSDV")
+    tab._mode_combo.setCurrentText("SSDV (AX.25)")
     assert engine.calls == []
     text = tab._status_label.text()
     assert "no audio source" in text
@@ -224,7 +224,7 @@ def test_ssdv_mode_without_an_input_says_so_and_never_asks_for_the_aprs_tab(
 def test_connecting_an_input_after_entering_ssdv_mode_starts_reception(
     tab: SstvTab, rc: _FakeRadioControl, engine: _FakeEngine
 ) -> None:
-    tab._mode_combo.setCurrentText("SSDV")
+    tab._mode_combo.setCurrentText("SSDV (AX.25)")
     _connect_sdr(rc)
     assert engine.names() == ["start_sdr_direwolf"]
 
@@ -233,7 +233,7 @@ def test_disconnecting_the_input_releases_the_pipeline(
     tab: SstvTab, rc: _FakeRadioControl, engine: _FakeEngine
 ) -> None:
     _connect_sdr(rc)
-    tab._mode_combo.setCurrentText("SSDV")
+    tab._mode_combo.setCurrentText("SSDV (AX.25)")
     rc.sdr_disconnected.emit()
     assert engine.names() == ["start_sdr_direwolf", "stop"]
     assert engine.calls[-1][1] == ("sstv",)
@@ -243,7 +243,7 @@ def test_leaving_ssdv_mode_releases_the_pipeline_and_stops_listening(
     tab: SstvTab, rc: _FakeRadioControl, engine: _FakeEngine
 ) -> None:
     _connect_sdr(rc)
-    tab._mode_combo.setCurrentText("SSDV")
+    tab._mode_combo.setCurrentText("SSDV (AX.25)")
     tab._mode_combo.setCurrentText("SSTV")
     assert engine.names() == ["start_sdr_direwolf", "stop"]
     engine.raw_frame_received.emit(b"\x03")  # the engine no longer feeds this tab
@@ -254,7 +254,7 @@ def test_a_transponder_change_keeps_the_ax25_baud_in_step(
     tab: SstvTab, rc: _FakeRadioControl, engine: _FakeEngine
 ) -> None:
     _connect_sdr(rc)
-    tab._mode_combo.setCurrentText("SSDV")
+    tab._mode_combo.setCurrentText("SSDV (AX.25)")
     rc.transmitter_changed.emit({"description": "X"})
     assert engine.names()[-2:] == ["restart_if_modem_changed", "sync_sdr_baud"]
     assert engine.calls[-1][2] == {"satellite": True}
@@ -264,7 +264,7 @@ def test_a_transponder_change_keeps_the_ax25_baud_in_step(
 
 
 def test_live_frames_are_listed_as_hex_lines(tab: SstvTab, engine: _FakeEngine) -> None:
-    tab._mode_combo.setCurrentText("SSDV")
+    tab._mode_combo.setCurrentText("SSDV (AX.25)")
     engine.raw_frame_received.emit(bytes.fromhex("94a662b29caa60"))
     engine.raw_frame_received.emit(bytes.fromhex("76200de4"))
     assert tab._raw_edit.toPlainText().splitlines() == ["94 A6 62 B2 9C AA 60", "76 20 0D E4"]
@@ -276,7 +276,7 @@ def test_a_live_frame_with_an_ssdv_packet_feeds_the_decoder(
     qtbot: QtBot, tab: SstvTab, engine: _FakeEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _fake_ssdv_binary(monkeypatch)
-    tab._mode_combo.setCurrentText("SSDV")
+    tab._mode_combo.setCurrentText("SSDV (AX.25)")
     pkt = make_packet(size=100)
     engine.raw_frame_received.emit(AX25_HEADER + pkt)
     assert "SSDV packets: 1" in tab._raw_count_label.text()
@@ -345,7 +345,7 @@ def test_a_paste_rebuilds_from_live_and_pasted_lines_together(
     tab: SstvTab, engine: _FakeEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _fake_ssdv_binary(monkeypatch)
-    tab._mode_combo.setCurrentText("SSDV")
+    tab._mode_combo.setCurrentText("SSDV (AX.25)")
     live = make_packet(size=100, pid=0)
     engine.raw_frame_received.emit(AX25_HEADER + live)
     pasted = make_packet(size=100, pid=1)
@@ -357,7 +357,7 @@ def test_clear_packets_empties_the_text_and_the_buffer(
     tab: SstvTab, engine: _FakeEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _fake_ssdv_binary(monkeypatch)
-    tab._mode_combo.setCurrentText("SSDV")
+    tab._mode_combo.setCurrentText("SSDV (AX.25)")
     engine.raw_frame_received.emit(AX25_HEADER + make_packet(size=100))
     tab._clear_raw_btn.click()
     assert tab._raw_edit.toPlainText() == ""
@@ -369,7 +369,7 @@ def test_leaving_ssdv_mode_commits_the_current_image(
     qtbot: QtBot, tab: SstvTab, engine: _FakeEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _fake_ssdv_binary(monkeypatch)
-    tab._mode_combo.setCurrentText("SSDV")
+    tab._mode_combo.setCurrentText("SSDV (AX.25)")
     engine.raw_frame_received.emit(AX25_HEADER + make_packet(size=100))
     qtbot.waitUntil(lambda: bool(seen), timeout=3000)
     assert tab._history_list.count() == 0  # progressive updates are not history entries
@@ -572,13 +572,13 @@ def _connect_gr_sdr(rc: _FakeRadioControl) -> _FakeGrPipeline:
 def test_mode_combo_offers_the_gr_satellites_mode(tab: SstvTab) -> None:
     assert [tab._mode_combo.itemText(i) for i in range(tab._mode_combo.count())] == [
         "SSTV",
-        "SSDV",
-        "gr-satellites SSDV",
+        "SSDV (AX.25)",
+        "SSDV (gr-satellites)",
     ]
 
 
 def test_gr_mode_without_an_sdr_says_so(tab: SstvTab, fake_gr: type[_FakeGrBackend]) -> None:
-    tab._mode_combo.setCurrentText("gr-satellites SSDV")
+    tab._mode_combo.setCurrentText("SSDV (gr-satellites)")
     assert tab._view_tabs.currentWidget() is tab._raw_page
     assert "SDR" in tab._status_label.text()
     assert not any(b.running for b in fake_gr.instances)
@@ -588,7 +588,7 @@ def test_gr_mode_starts_gr_satellites_for_asrtu1(
     tab: SstvTab, rc: _FakeRadioControl, fake_gr: type[_FakeGrBackend], engine: _FakeEngine
 ) -> None:
     pipeline = _connect_gr_sdr(rc)
-    tab._mode_combo.setCurrentText("gr-satellites SSDV")
+    tab._mode_combo.setCurrentText("SSDV (gr-satellites)")
     backend = fake_gr.instances[0]
     assert backend.start_args == (61781, 250_000, pipeline)
     assert not any(name == "start_sdr_direwolf" for name, _a, _k in engine.calls)
@@ -597,7 +597,7 @@ def test_gr_mode_starts_gr_satellites_for_asrtu1(
 def test_gr_mode_starts_when_the_sdr_connects_later(
     tab: SstvTab, rc: _FakeRadioControl, fake_gr: type[_FakeGrBackend]
 ) -> None:
-    tab._mode_combo.setCurrentText("gr-satellites SSDV")
+    tab._mode_combo.setCurrentText("SSDV (gr-satellites)")
     _connect_gr_sdr(rc)
     assert fake_gr.instances[0].running
 
@@ -606,7 +606,7 @@ def test_leaving_gr_mode_stops_gr_satellites(
     tab: SstvTab, rc: _FakeRadioControl, fake_gr: type[_FakeGrBackend]
 ) -> None:
     _connect_gr_sdr(rc)
-    tab._mode_combo.setCurrentText("gr-satellites SSDV")
+    tab._mode_combo.setCurrentText("SSDV (gr-satellites)")
     tab._mode_combo.setCurrentText("SSTV")
     assert not fake_gr.instances[0].running
 
@@ -617,7 +617,7 @@ def test_gr_frames_show_as_hex_and_count_ssdv_packets(
     from tests.test_ssdv import make_ccsds_frame, make_dslwp_packet
 
     _connect_gr_sdr(rc)
-    tab._mode_combo.setCurrentText("gr-satellites SSDV")
+    tab._mode_combo.setCurrentText("SSDV (gr-satellites)")
     backend = fake_gr.instances[0]
     backend.raw_frame_received.emit(make_ccsds_frame(make_dslwp_packet(pid=0)))
     backend.raw_frame_received.emit(make_ccsds_frame(make_dslwp_packet(pid=1)))
@@ -634,7 +634,7 @@ def test_gr_mode_pasted_hex_uses_the_ccsds_finder(
 ) -> None:
     from tests.test_ssdv import make_ccsds_frame, make_dslwp_packet
 
-    tab._mode_combo.setCurrentText("gr-satellites SSDV")
+    tab._mode_combo.setCurrentText("SSDV (gr-satellites)")
     frame = make_ccsds_frame(make_dslwp_packet())
     tab._raw_edit.setPlainText(frame.hex(" ").upper())
     tab._on_hex_pasted()

@@ -3461,9 +3461,9 @@ AX100 = MARMOTSat 69912）とマッチするトランスミッターが Radio Co
 ファイル名は `SSDV_…`）。旧名 `GPredict-SSTV` から変更（既存ファイルは手動で移動。DB の `sstv_log.file_path` は
 旧パスのまま）。
 
-#### gr-satellites SSDV モード（ASRTU-1 / AO-123、2026-10-04 実装・実信号は未検証）
+#### SSDV (gr-satellites) モード（ASRTU-1 / AO-123、2026-10-04 実装・実信号は未検証）
 
-SSTV/SSDV タブの Mode に第 3 項目「gr-satellites SSDV」。ASRTU-1（NORAD 61781）の SSDV（436.210 MHz、
+SSTV/SSDV タブの Mode に第 3 項目「SSDV (gr-satellites)」（従来の「SSDV」は「SSDV (AX.25)」に改名、2026-10-04）。ASRTU-1（NORAD 61781）の SSDV（436.210 MHz、
 9k6 BPSK、**AX.25 ではなく CCSDS 連結符号**: 差動符号化・RS・223 バイト）用で、Direwolf 経路（SSDV モード）では
 受信できないため別モードにした。
 
