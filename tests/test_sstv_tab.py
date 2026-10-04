@@ -514,3 +514,129 @@ def test_open_image_loads_saved_png(
     assert tab._current_image.width() == 40
     assert tab._save_btn.isEnabled()
     assert tab._history_list.count() == before + 1
+
+
+# ----------------------------------------------- gr-satellites SSDV (ASRTU-1)
+
+
+class _FakeGrBackend(QObject):
+    raw_frame_received = Signal(bytes)
+    status_changed = Signal(str)
+    instances: list[_FakeGrBackend] = []
+
+    def __init__(self, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self.running = False
+        self.kiss_supported = True
+        self.start_args: tuple[Any, ...] | None = None
+        _FakeGrBackend.instances.append(self)
+
+    @property
+    def is_running(self) -> bool:
+        return self.running
+
+    def start(self, norad: int, samp_rate: int, pipeline: Any) -> tuple[bool, str]:
+        self.start_args = (norad, samp_rate, pipeline)
+        self.running = True
+        return True, ""
+
+    def stop(self) -> None:
+        self.running = False
+
+
+class _FakeGrPipeline(_FakePipeline):
+    class _Device:
+        sample_rate = 250_000
+
+    _device = _Device()
+
+
+@pytest.fixture
+def fake_gr(monkeypatch: pytest.MonkeyPatch) -> type[_FakeGrBackend]:
+    import comms.telemetry.gr_satellites_backend as backend_mod
+
+    _FakeGrBackend.instances = []
+    monkeypatch.setattr(backend_mod, "GrSatellitesBackend", _FakeGrBackend)
+    return _FakeGrBackend
+
+
+def _connect_gr_sdr(rc: _FakeRadioControl) -> _FakeGrPipeline:
+    pipeline = _FakeGrPipeline()
+    rig = _FakeRig()
+    rig._pipeline = pipeline  # type: ignore[assignment]
+    rc._rig1 = rig
+    rc.sdr_connected.emit()
+    return pipeline
+
+
+def test_mode_combo_offers_the_gr_satellites_mode(tab: SstvTab) -> None:
+    assert [tab._mode_combo.itemText(i) for i in range(tab._mode_combo.count())] == [
+        "SSTV",
+        "SSDV",
+        "gr-satellites SSDV",
+    ]
+
+
+def test_gr_mode_without_an_sdr_says_so(tab: SstvTab, fake_gr: type[_FakeGrBackend]) -> None:
+    tab._mode_combo.setCurrentText("gr-satellites SSDV")
+    assert tab._view_tabs.currentWidget() is tab._raw_page
+    assert "SDR" in tab._status_label.text()
+    assert not any(b.running for b in fake_gr.instances)
+
+
+def test_gr_mode_starts_gr_satellites_for_asrtu1(
+    tab: SstvTab, rc: _FakeRadioControl, fake_gr: type[_FakeGrBackend], engine: _FakeEngine
+) -> None:
+    pipeline = _connect_gr_sdr(rc)
+    tab._mode_combo.setCurrentText("gr-satellites SSDV")
+    backend = fake_gr.instances[0]
+    assert backend.start_args == (61781, 250_000, pipeline)
+    assert not any(name == "start_sdr_direwolf" for name, _a, _k in engine.calls)
+
+
+def test_gr_mode_starts_when_the_sdr_connects_later(
+    tab: SstvTab, rc: _FakeRadioControl, fake_gr: type[_FakeGrBackend]
+) -> None:
+    tab._mode_combo.setCurrentText("gr-satellites SSDV")
+    _connect_gr_sdr(rc)
+    assert fake_gr.instances[0].running
+
+
+def test_leaving_gr_mode_stops_gr_satellites(
+    tab: SstvTab, rc: _FakeRadioControl, fake_gr: type[_FakeGrBackend]
+) -> None:
+    _connect_gr_sdr(rc)
+    tab._mode_combo.setCurrentText("gr-satellites SSDV")
+    tab._mode_combo.setCurrentText("SSTV")
+    assert not fake_gr.instances[0].running
+
+
+def test_gr_frames_show_as_hex_and_count_ssdv_packets(
+    tab: SstvTab, rc: _FakeRadioControl, fake_gr: type[_FakeGrBackend]
+) -> None:
+    from tests.test_ssdv import make_ccsds_frame, make_dslwp_packet
+
+    _connect_gr_sdr(rc)
+    tab._mode_combo.setCurrentText("gr-satellites SSDV")
+    backend = fake_gr.instances[0]
+    backend.raw_frame_received.emit(make_ccsds_frame(make_dslwp_packet(pid=0)))
+    backend.raw_frame_received.emit(make_ccsds_frame(make_dslwp_packet(pid=1)))
+    backend.raw_frame_received.emit(make_ccsds_frame(make_dslwp_packet(), vc=0))  # telemetry
+    assert tab._raw_edit.toPlainText().count("\n") >= 2
+    assert tab._ssdv_frames == 3
+    assert tab._ssdv_packets == 2
+    assert tab._gr_ssdv_decoder is not None
+    assert tab._gr_ssdv_decoder.packet_count == 2
+
+
+def test_gr_mode_pasted_hex_uses_the_ccsds_finder(
+    tab: SstvTab, fake_gr: type[_FakeGrBackend]
+) -> None:
+    from tests.test_ssdv import make_ccsds_frame, make_dslwp_packet
+
+    tab._mode_combo.setCurrentText("gr-satellites SSDV")
+    frame = make_ccsds_frame(make_dslwp_packet())
+    tab._raw_edit.setPlainText(frame.hex(" ").upper())
+    tab._on_hex_pasted()
+    assert tab._gr_ssdv_decoder is not None
+    assert tab._gr_ssdv_decoder.packet_count == 1

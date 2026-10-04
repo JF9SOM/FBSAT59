@@ -381,3 +381,144 @@ def test_bundled_ssdv_is_ignored_when_not_frozen(
     monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
     monkeypatch.delattr(sys, "frozen", raising=False)
     assert ssdv_mod._bundled_ssdv() is None
+
+
+# --------------------------------------------------------------------------
+# CCSDS / DSLWP packets (ASRTU-1)
+# --------------------------------------------------------------------------
+
+from comms.sstv.ssdv import (  # noqa: E402
+    CCSDS_FRAME_SIZE,
+    DSLWP_PACKET_SIZE,
+    dslwp_image_id,
+    dslwp_packet_id,
+    find_dslwp_packet,
+    find_ssdv_dslwp,
+)
+
+
+def _crc32_bitwise(data: bytes, init: int) -> int:
+    """daniestevez/ssdv's crc32(): a plain CRC-32 whose register starts at *init*."""
+    crc = init
+    for byte in data:
+        x = (crc ^ byte) & 0xFF
+        for _ in range(8):
+            x = (x >> 1) ^ 0xEDB88320 if x & 1 else x >> 1
+        crc = (crc >> 8) ^ x
+    return crc ^ 0xFFFFFFFF
+
+
+def make_dslwp_packet(*, image: int = 3, pid: int = 7, good_crc: bool = True) -> bytes:
+    """A 218-byte DSLWP packet: 9-byte header, 205-byte payload, CRC-32 (init 0x4EE4FDE1)."""
+    header = bytes([image]) + pid.to_bytes(2, "big") + bytes([20, 16, 0x05, 0, 0, 0])[:6]
+    assert len(header) == 9
+    body = header + bytes((pid * 5 + i * 11) & 0xFF for i in range(205))
+    crc = _crc32_bitwise(body, 0x4EE4FDE1)
+    if not good_crc:
+        crc ^= 0xFF
+    return body + crc.to_bytes(4, "big")
+
+
+def make_ccsds_frame(packet: bytes, *, vc: int = 1) -> bytes:
+    """A 223-byte CCSDS short-header frame (5-byte header) around *packet*."""
+    word = (0x032 << 4) | (vc << 1)  # ASRTU-1: spacecraft id 0x32, 0x0322 for VC1
+    return word.to_bytes(2, "big") + bytes(3) + packet
+
+
+def test_dslwp_helper_crc_matches_the_reference_implementation() -> None:
+    pkt = make_dslwp_packet()
+    assert len(pkt) == DSLWP_PACKET_SIZE
+    assert find_dslwp_packet(make_ccsds_frame(pkt)) == pkt
+
+
+def test_dslwp_frame_header_is_asrtu1() -> None:
+    assert make_ccsds_frame(make_dslwp_packet())[:2] == bytes.fromhex("0322")
+
+
+def test_dslwp_packet_fields() -> None:
+    pkt = make_dslwp_packet(image=9, pid=0x0102)
+    assert dslwp_image_id(pkt) == 9
+    assert dslwp_packet_id(pkt) == 0x0102
+
+
+def test_dslwp_rejects_other_virtual_channels_bad_crc_and_wrong_sizes() -> None:
+    pkt = make_dslwp_packet()
+    assert find_dslwp_packet(make_ccsds_frame(pkt, vc=0)) is None
+    assert find_dslwp_packet(make_ccsds_frame(pkt, vc=2)) is None
+    assert find_dslwp_packet(make_ccsds_frame(make_dslwp_packet(good_crc=False))) is None
+    assert find_dslwp_packet(make_ccsds_frame(pkt)[:-1]) is None
+    assert find_dslwp_packet(b"") is None
+    assert len(make_ccsds_frame(pkt)) == CCSDS_FRAME_SIZE
+
+
+def test_dslwp_rejects_an_empty_image_size() -> None:
+    pkt = bytearray(make_dslwp_packet())
+    pkt[3] = 0  # width
+    body = bytes(pkt[:214])
+    pkt[214:] = _crc32_bitwise(body, 0x4EE4FDE1).to_bytes(4, "big")
+    assert find_dslwp_packet(make_ccsds_frame(bytes(pkt))) is None
+
+
+def test_standard_decoder_does_not_accept_dslwp_packets(qtbot: QtBot) -> None:
+    assert not SsdvDecoder().push_packet(make_dslwp_packet())
+
+
+def test_dslwp_decoder_accepts_only_valid_dslwp_packets(qtbot: QtBot) -> None:
+    dec = SsdvDecoder(dslwp=True)
+    assert dec.push_packet(make_dslwp_packet())
+    assert not dec.push_packet(make_dslwp_packet(good_crc=False))
+    assert not dec.push_packet(make_packet())  # a standard 256-byte packet
+    assert dec.packet_count == 1
+
+
+def test_dslwp_decode_passes_dash_d_and_orders_packets(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _FakeSsdv()
+    monkeypatch.setattr(ssdv_mod, "find_ssdv_dslwp", lambda: "/fake/ssdv-dslwp")
+    monkeypatch.setattr(ssdv_mod.subprocess, "run", fake)
+    dec = SsdvDecoder(dslwp=True)
+    for pid in (2, 0, 1):
+        dec.push_packet(make_dslwp_packet(pid=pid))
+    assert dec.decode_now()
+    argv, data = fake.calls[0]
+    assert argv[0] == "/fake/ssdv-dslwp"
+    assert argv[1:3] == ["-d", "-D"]
+    assert "-l" not in argv
+    assert [dslwp_packet_id(data[i : i + 218]) for i in range(0, len(data), 218)] == [0, 1, 2]
+
+
+def test_dslwp_missing_binary_names_the_fork(qtbot: QtBot, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ssdv_mod, "find_ssdv_dslwp", lambda: None)
+    dec = SsdvDecoder(dslwp=True)
+    errors: list[str] = []
+    dec.error_occurred.connect(errors.append)
+    dec.push_packet(make_dslwp_packet())
+    assert not dec.decode_now()
+    assert "daniestevez/ssdv" in errors[0]
+
+
+@pytest.mark.skipif(find_ssdv_dslwp() is None, reason="ssdv-dslwp (daniestevez/ssdv) not installed")
+def test_dslwp_end_to_end_with_the_real_fork_binary(qtbot: QtBot, tmp_path: Path) -> None:
+    pil = pytest.importorskip("PIL.Image")
+    jpeg = tmp_path / "in.jpg"
+    pil.new("RGB", (320, 256), (40, 80, 160)).save(jpeg, quality=80, subsampling=2)
+    binary = find_ssdv_dslwp()
+    assert binary is not None
+    packets_file = tmp_path / "p.bin"
+    subprocess.run(
+        [binary, "-e", "-D", "-i", "3", str(jpeg), str(packets_file)],
+        check=True,
+        capture_output=True,
+    )
+    raw = packets_file.read_bytes()
+    dec = SsdvDecoder(dslwp=True)
+    images: list[QImage] = []
+    dec.image_updated.connect(images.append)
+    for i in range(0, len(raw), DSLWP_PACKET_SIZE):
+        frame = make_ccsds_frame(raw[i : i + DSLWP_PACKET_SIZE])
+        packet = find_dslwp_packet(frame)
+        assert packet is not None
+        dec.push_packet(packet)
+    assert dec.decode_now()
+    assert (images[0].width(), images[0].height()) == (320, 256)

@@ -3460,3 +3460,30 @@ AX100 = MARMOTSat 69912）とマッチするトランスミッターが Radio Co
 自動保存・「Open Image…」の既定フォルダは `<Pictures>/FBSAT59-SSTV`（SSDV 画像は `<Pictures>/FBSAT59-SSDV`、
 ファイル名は `SSDV_…`）。旧名 `GPredict-SSTV` から変更（既存ファイルは手動で移動。DB の `sstv_log.file_path` は
 旧パスのまま）。
+
+#### gr-satellites SSDV モード（ASRTU-1 / AO-123、2026-10-04 実装・実信号は未検証）
+
+SSTV/SSDV タブの Mode に第 3 項目「gr-satellites SSDV」。ASRTU-1（NORAD 61781）の SSDV（436.210 MHz、
+9k6 BPSK、**AX.25 ではなく CCSDS 連結符号**: 差動符号化・RS・223 バイト）用で、Direwolf 経路（SSDV モード）では
+受信できないため別モードにした。
+
+- **経路**: SDR の IQ → `GrSatellitesBackend`（Telemetry タブと同じ。`gr_satellites 61781 --kiss_server`）→
+  `raw_frame_received`（デフレーマ出力＝全 VC の 223 バイトフレーム。`--kiss_server` はトランスポートの前から
+  取るので、YAML が `virtual_channels: [0, 2]` でも VC1 が来ることをコードで確認）→ `find_dslwp_packet()`（VC1、
+  先頭 5 バイトを除いた 218 バイト、CRC-32 検証）→ `SsdvDecoder(dslwp=True)` → **`ssdv-dslwp -d -D`**。
+- **パケット形式**（daniestevez/ssdv の DSLWP モード）: 同期バイト・コールサイン無し、ヘッダー 9 バイト
+  （画像 ID 1・パケット ID 2・幅/16・高さ/16・フラグ・MCU オフセット・MCU ID 2）、ペイロード 205、CRC-32
+  （**レジスタ初期値 0x4EE4FDE1**。zlib では開始値 `init ^ 0xFFFFFFFF`）。標準の ssdv（fsphil）には `-D` が無い。
+- **`ssdv-dslwp` バイナリ**: https://github.com/daniestevez/ssdv（GPL-3.0、2019 年から更新なし、`master` の
+  `8c726f5`）をビルドして `ssdv-dslwp` の名前で、`ssdv` と同じ探索順（ユーザー導入版→PATH→同梱）で使う
+  （`find_ssdv_dslwp()`）。**CI での同梱は未実装**（`build-ssdv.yml` へ追加＋`ci.yml`/spec の同梱が必要）。無い場合は
+  ステータスにビルド元を表示。
+- **要 SDR**（gr_satellites は IQ 入力）。HEX の貼り付けは SDR 無しでも可（このモードでは 223 バイトの CCSDS
+  フレームを探す。`SatNOGS` の Data タブの HEX など）。Telemetry タブの gr-satellites 受信と同時に使うと IQ の UDP
+  ポート（7356）が衝突する。
+- 画像は SSDV モードと同じ `~/Pictures/FBSAT59-SSDV` に保存。
+- **未検証**: 実信号（ASRTU-1 の録音がまだ無い）。検証済みは、fork の `-e -D` で作った合成パケットを CCSDS
+  フレームに包んで復元できること（`tests/test_ssdv.py`、`ssdv-dslwp` が無い環境ではその 1 件は skip）。
+  436.210 MHz が YAML（435.400 MHz）と違う点は IQ 入力では無関係のはずだが未確認。
+  参考: 公式受信ソフト https://github.com/BG7ZDQ/ASRTU_Series_Receiver（MIT、`libs/demod/ssdv_receiver.cpp` は
+  ASRTU-1 ヘッダー 0x0322 / BY-04 0x2052 / JAMX の別 CRC 初期値 0x6AAAC1C5 も扱う）。

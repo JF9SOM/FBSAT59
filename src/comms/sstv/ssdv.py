@@ -17,6 +17,12 @@ Reception paths:
     SatNOGS Network's "Data" tab ...). find_ssdv_packet() locates the packet in
     a frame, whatever header precedes it.
   - Audio path: SSDV packets as FM audio tones (some CubeSats), not implemented here.
+  - CCSDS / DSLWP path: ASRTU-1 (AO-123) sends SSDV in 223-byte CCSDS frames (9k6 BPSK,
+    virtual channel 1); the 218 bytes after the 5-byte frame header are one packet in
+    the "DSLWP" format of https://github.com/daniestevez/ssdv (no sync byte or callsign,
+    9-byte header, its own CRC-32 initial value). The frames come from gr-satellites;
+    find_dslwp_packet() extracts the packet and SsdvDecoder(dslwp=True) decodes with
+    ``ssdv -D``, which only that fork's binary (``ssdv-dslwp``) understands.
 
 SsdvDecoder groups packets by image id, drops duplicates, orders them by packet
 id and hands them to the ``ssdv`` binary. The binary ships with the app (built
@@ -50,6 +56,16 @@ _FEC_SIZE = 32
 # Shortest packets ssdv accepts: at least 2 payload bytes.
 MIN_PACKET_SIZE_NOFEC = _HEADER_SIZE + _CRC_SIZE + 2
 MIN_PACKET_SIZE_NORMAL = _HEADER_SIZE + _CRC_SIZE + _FEC_SIZE + 2
+
+# CCSDS / DSLWP packet format (see the module docstring)
+CCSDS_FRAME_SIZE = 223
+CCSDS_SHORT_HEADER_SIZE = 5
+DSLWP_PACKET_SIZE = 218
+_DSLWP_HEADER_SIZE = 9
+_DSLWP_CRC_OFFSET = DSLWP_PACKET_SIZE - _CRC_SIZE
+# CRC32_DSLWP_MAGIC_VALUE in daniestevez/ssdv: the CRC register's initial value.
+_DSLWP_CRC_INIT = 0x4EE4FDE1
+_DSLWP_VIRTUAL_CHANNEL = 1
 
 _HEX_PAIRS = re.compile(r"^(?:0x)?[0-9a-f]{2}(?:[\s,:;\-]*(?:0x)?[0-9a-f]{2})*$", re.IGNORECASE)
 _HEX_TOKEN = re.compile(r"[0-9a-f]{2}", re.IGNORECASE)
@@ -120,6 +136,45 @@ def find_ssdv_packet(frame: bytes) -> bytes | None:
     return fallback
 
 
+def _dslwp_crc_ok(packet: bytes) -> bool:
+    """True if a 218-byte DSLWP packet's CRC-32 (over its first 214 bytes) matches.
+
+    zlib.crc32() takes the running CRC *after* the final inversion as its start
+    value, so a register initial value of ``init`` is ``init ^ 0xFFFFFFFF``.
+    """
+    crc = zlib.crc32(packet[:_DSLWP_CRC_OFFSET], _DSLWP_CRC_INIT ^ 0xFFFFFFFF)
+    return crc == int.from_bytes(packet[_DSLWP_CRC_OFFSET:], "big")
+
+
+def find_dslwp_packet(frame: bytes) -> bytes | None:
+    """Return the DSLWP SSDV packet inside a 223-byte CCSDS frame, or None.
+
+    The frame must be on virtual channel 1 (the other channels carry telemetry),
+    and the 218 bytes after the 5-byte header must have a valid CRC-32 and a
+    non-empty image size.
+    """
+    if len(frame) != CCSDS_FRAME_SIZE:
+        return None
+    if ((int.from_bytes(frame[:2], "big") >> 1) & 0x07) != _DSLWP_VIRTUAL_CHANNEL:
+        return None
+    packet = frame[CCSDS_SHORT_HEADER_SIZE:]
+    if not _dslwp_crc_ok(packet):
+        return None
+    if packet[3] == 0 or packet[4] == 0:  # width / height in units of 16 pixels
+        return None
+    return packet
+
+
+def dslwp_image_id(packet: bytes) -> int:
+    """The image id of a DSLWP packet (its first byte)."""
+    return packet[0]
+
+
+def dslwp_packet_id(packet: bytes) -> int:
+    """The index of a DSLWP packet within its image."""
+    return (packet[1] << 8) | packet[2]
+
+
 def packet_image_id(packet: bytes) -> int:
     """The image id (0-255) an SSDV packet belongs to."""
     return packet[6]
@@ -130,8 +185,8 @@ def packet_id(packet: bytes) -> int:
     return (packet[7] << 8) | packet[8]
 
 
-def _exe_name() -> str:
-    return "ssdv.exe" if sys.platform == "win32" else "ssdv"
+def _exe_name(name: str = "ssdv") -> str:
+    return f"{name}.exe" if sys.platform == "win32" else name
 
 
 def _user_ssdv_dirs() -> list[Path]:
@@ -150,27 +205,32 @@ def _user_ssdv_dirs() -> list[Path]:
     return dirs
 
 
-def _bundled_ssdv() -> str | None:
+def _bundled_ssdv(name: str = "ssdv") -> str | None:
     """The ssdv binary shipped inside the frozen (PyInstaller) app, if any."""
     if not getattr(sys, "frozen", False):
         return None
-    candidate = Path(sys._MEIPASS) / _exe_name()  # type: ignore[attr-defined]
+    candidate = Path(sys._MEIPASS) / _exe_name(name)  # type: ignore[attr-defined]
     return str(candidate) if candidate.is_file() else None
 
 
-def find_ssdv() -> str | None:
-    """Return the path to the ssdv binary, or None if not found.
+def find_ssdv(name: str = "ssdv") -> str | None:
+    """Return the path to the ssdv binary called *name*, or None if not found.
 
     Priority: user-installed, PATH, then the copy bundled with the app.
     """
     for directory in _user_ssdv_dirs():
-        candidate = directory / _exe_name()
+        candidate = directory / _exe_name(name)
         if candidate.is_file():
             return str(candidate)
-    found = shutil.which("ssdv")
+    found = shutil.which(name)
     if found:
         return found
-    return _bundled_ssdv()
+    return _bundled_ssdv(name)
+
+
+def find_ssdv_dslwp() -> str | None:
+    """Path of the daniestevez/ssdv fork binary (``ssdv-dslwp``), which has ``-D``."""
+    return find_ssdv("ssdv-dslwp")
 
 
 class SsdvDecoder(QObject):
@@ -198,11 +258,14 @@ class SsdvDecoder(QObject):
     # Delay before a live decode: packets arrive in bursts, decode once per burst.
     _DECODE_DELAY_MS: int = 700
 
-    def __init__(self, parent: QObject | None = None) -> None:
+    def __init__(self, parent: QObject | None = None, dslwp: bool = False) -> None:
         super().__init__(parent)
+        # dslwp=True: packets are 218-byte CCSDS/DSLWP ones (ASRTU-1), decoded with
+        # the fork binary's ``-D``; otherwise standard 0x55-sync packets.
+        self._dslwp = dslwp
         # (image id, packet id) -> packet bytes; insertion order = arrival order
         self._packets: dict[tuple[int, int], bytes] = {}
-        self._ssdv_path: str | None = find_ssdv()
+        self._ssdv_path: str | None = find_ssdv_dslwp() if dslwp else find_ssdv()
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.setInterval(self._DECODE_DELAY_MS)
@@ -221,8 +284,15 @@ class SsdvDecoder(QObject):
     def push_packet(self, data: bytes) -> bool:
         """Buffer one SSDV packet (starting at its sync byte); returns False if it isn't one.
 
-        A live decode is scheduled shortly afterwards (see _DECODE_DELAY_MS).
+        A live decode is scheduled shortly afterwards (see _DECODE_DELAY_MS). In DSLWP
+        mode *data* is a whole 218-byte packet (see find_dslwp_packet()).
         """
+        if self._dslwp:
+            if len(data) != DSLWP_PACKET_SIZE or not _dslwp_crc_ok(data):
+                return False
+            self._packets[(dslwp_image_id(data), dslwp_packet_id(data))] = bytes(data)
+            self._timer.start()
+            return True
         if (
             len(data) < 2
             or data[0] != SYNC_BYTE
@@ -252,7 +322,13 @@ class SsdvDecoder(QObject):
         if not self._packets:
             return False
         if not self._ssdv_path:
-            self._ssdv_path = find_ssdv()
+            self._ssdv_path = find_ssdv_dslwp() if self._dslwp else find_ssdv()
+        if not self._ssdv_path and self._dslwp:
+            self.error_occurred.emit(
+                "ssdv-dslwp binary not found (needed for ASRTU-1 SSDV). Build "
+                "https://github.com/daniestevez/ssdv and put it on PATH as ssdv-dslwp."
+            )
+            return False
         if not self._ssdv_path:
             self.error_occurred.emit(
                 "ssdv binary not found. Installed apps bundle it; when running from source, "
@@ -265,6 +341,7 @@ class SsdvDecoder(QObject):
         lengths = Counter(len(p) for p in packets)
         length = lengths.most_common(1)[0][0]  # ssdv takes one packet length for the run
         packets = [p for p in packets if len(p) == length]
+        args = ["-d", "-D"] if self._dslwp else ["-d", "-l", str(length)]
         # Files, not stdin/stdout: ssdv reads and writes them in binary mode, whereas on
         # Windows its standard streams are text mode and would corrupt the packets.
         workdir = tempfile.mkdtemp(prefix="fbsat59_ssdv_")
@@ -273,7 +350,7 @@ class SsdvDecoder(QObject):
         try:
             Path(in_path).write_bytes(b"".join(packets))
             result = subprocess.run(  # noqa: S603
-                [self._ssdv_path, "-d", "-l", str(length), in_path, out_path],
+                [self._ssdv_path, *args, in_path, out_path],
                 capture_output=True,
                 timeout=10,
             )
@@ -303,4 +380,5 @@ class SsdvDecoder(QObject):
         for (image, _pid), pkt in self._packets.items():
             by_image.setdefault(image, []).append(pkt)
         best = max(by_image, key=lambda k: len(by_image[k]))
-        return best, sorted(by_image[best], key=packet_id)
+        order = dslwp_packet_id if self._dslwp else packet_id
+        return best, sorted(by_image[best], key=order)

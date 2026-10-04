@@ -41,7 +41,12 @@ from PySide6.QtWidgets import (
 
 from comms.aprs.engine import get_aprs_engine, resolve_ax25_modem
 from comms.sstv.file_decoder import SOUNDFILE_AVAILABLE, load_audio_mono
-from comms.sstv.ssdv import extract_hex_frames, find_ssdv_packet, format_hex_line
+from comms.sstv.ssdv import (
+    extract_hex_frames,
+    find_dslwp_packet,
+    find_ssdv_packet,
+    format_hex_line,
+)
 from i18n import _
 
 # Thumbnail size for history list
@@ -53,6 +58,14 @@ _THUMB_H = 90
 # tab) and registers as an owner so closing another tab never stops it, and this
 # tab closing never stops another tab's reception.
 _ENGINE_OWNER = "sstv"
+
+# Third mode: ASRTU-1 (AO-123) SSDV, a CCSDS 9k6 BPSK downlink that only gr-satellites
+# can demodulate (see comms.sstv.ssdv, "CCSDS / DSLWP path"). The mode runs
+# gr_satellites on the SDR's IQ and decodes the VC1 frames it outputs.
+_MODE_SSTV = "SSTV"
+_MODE_SSDV = "SSDV"
+_MODE_GR_SSDV = "gr-satellites SSDV"
+_GR_SSDV_NORAD = 61781  # ASRTU-1 (AO-123)
 
 
 class _ThumbnailItem(QListWidgetItem):
@@ -184,6 +197,8 @@ class SstvTab(QWidget):
         self._sdr_connected: bool = False
         self._decoder: Any | None = None  # SstvDecoder instance
         self._ssdv_decoder: Any | None = None  # SsdvDecoder (persistent across reconnects)
+        self._gr_ssdv_decoder: Any | None = None  # SsdvDecoder(dslwp=True) for the gr mode
+        self._gr_backend: Any | None = None  # GrSatellitesBackend (gr mode only)
         self._audio_active: bool = False  # soundcard RX subscribed via AudioDeviceManager
         self._audio_device: int | None = None  # device used for the active subscription
         self._current_image: QImage | None = None
@@ -217,8 +232,8 @@ class SstvTab(QWidget):
 
         top.addWidget(QLabel(_("Mode:")))
         self._mode_combo = QComboBox()
-        self._mode_combo.addItems(["SSTV", "SSDV"])
-        self._mode_combo.setFixedWidth(90)
+        self._mode_combo.addItems([_MODE_SSTV, _MODE_SSDV, _MODE_GR_SSDV])
+        self._mode_combo.setFixedWidth(150)
         self._mode_combo.currentTextChanged.connect(self._on_mode_changed)
         top.addWidget(self._mode_combo)
 
@@ -433,8 +448,11 @@ class SstvTab(QWidget):
 
     def _resume_ssdv_reception(self) -> None:
         """In SSDV mode, (re)start AX.25 reception when an input has just connected."""
-        if self._mode_combo.currentText() == "SSDV" and self._ssdv_engine_signals:
+        mode = self._mode_combo.currentText()
+        if mode == _MODE_SSDV and self._ssdv_engine_signals:
             self._start_ssdv_reception()
+        elif mode == _MODE_GR_SSDV:
+            self._start_gr_ssdv()
 
     def _on_transmitter_changed(self, xpdr: Any) -> None:
         """Update satellite name when transponder selection changes."""
@@ -649,13 +667,94 @@ class SstvTab(QWidget):
         self._status_label.setText(_("SSDV: waiting for AX.25 frames…"))
 
     def _stop_ssdv_reception(self) -> None:
-        """Release this tab's claim on the AX.25 pipeline."""
+        """Release this tab's claim on the AX.25 pipeline (and stop gr_satellites)."""
+        self._stop_gr_ssdv_reception()
         if self._ssdv_reception:
             self._engine().stop(_ENGINE_OWNER)
             self._ssdv_reception = False
 
+    # ------------------------------------------------------------------ #
+    # gr-satellites SSDV mode (ASRTU-1)
+    # ------------------------------------------------------------------ #
+
+    def _ensure_gr_decoder(self) -> Any:
+        """The DSLWP-mode SsdvDecoder for the gr-satellites mode, created on first use."""
+        from comms.sstv.ssdv import SsdvDecoder
+
+        if self._gr_ssdv_decoder is None:
+            self._gr_ssdv_decoder = SsdvDecoder(parent=self, dslwp=True)
+            self._gr_ssdv_decoder.image_updated.connect(self._on_ssdv_image)
+            self._gr_ssdv_decoder.status_changed.connect(self._status_label.setText)
+            self._gr_ssdv_decoder.error_occurred.connect(self._status_label.setText)
+        return self._gr_ssdv_decoder
+
+    def _ensure_gr_backend(self) -> Any:
+        """The gr_satellites subprocess manager, created on first use."""
+        from comms.telemetry.gr_satellites_backend import GrSatellitesBackend
+
+        if self._gr_backend is None:
+            self._gr_backend = GrSatellitesBackend(self)
+            self._gr_backend.raw_frame_received.connect(self._on_gr_frame)
+            self._gr_backend.status_changed.connect(self._status_label.setText)
+        return self._gr_backend
+
+    def _start_gr_ssdv(self) -> None:
+        """gr-satellites mode: run gr_satellites for ASRTU-1 on the SDR's IQ.
+
+        Needs an SDR (gr_satellites works on IQ) and the gr-satellites install; without
+        either the tab still decodes pasted hex frames.
+        """
+        self._ensure_gr_decoder()
+        backend = self._ensure_gr_backend()
+        if backend.is_running:
+            return
+        pipeline = self._find_sdr_pipeline()
+        if pipeline is None:
+            self._status_label.setText(
+                _("gr-satellites SSDV: connect an SDR in Radio Control (pasting hex works)")
+            )
+            return
+        try:
+            samp_rate = int(pipeline._device.sample_rate)
+        except AttributeError:
+            samp_rate = 2_400_000
+        self._ssdv_frames = 0
+        self._ssdv_packets = 0
+        ok, err = backend.start(_GR_SSDV_NORAD, samp_rate, pipeline)
+        if not ok:
+            self._status_label.setText(f"⚠ {err}")
+            return
+        if not backend.kiss_supported:
+            self._status_label.setText(
+                _("⚠ This gr_satellites build has no --kiss_server; SSDV frames cannot be read.")
+            )
+            backend.stop()
+            return
+        self._status_label.setText(_("gr-satellites SSDV: waiting for ASRTU-1 frames…"))
+
+    def _stop_gr_ssdv_reception(self) -> None:
+        """Stop the gr_satellites subprocess, if running."""
+        if self._gr_backend is not None and self._gr_backend.is_running:
+            self._gr_backend.stop()
+
+    def _on_gr_frame(self, raw: bytes) -> None:
+        """A frame from gr_satellites: show it as hex, feed any VC1 SSDV packet in it."""
+        self._raw_edit.append_frame(raw)
+        self._ssdv_frames += 1
+        packet = find_dslwp_packet(raw)
+        if (
+            packet is not None
+            and self._gr_ssdv_decoder is not None
+            and self._gr_ssdv_decoder.push_packet(packet)
+        ):
+            self._ssdv_packets += 1
+        self._update_raw_count()
+
     def _stop_ssdv(self) -> None:
         """Leave SSDV mode: disconnect from the AX.25 pipeline, decode what is buffered."""
+        self._stop_gr_ssdv_reception()
+        if self._gr_ssdv_decoder is not None:
+            self._gr_ssdv_decoder.flush()
         if self._aprs_engine is not None:
             if self._ssdv_engine_signals:
                 with contextlib.suppress(RuntimeError, TypeError):
@@ -694,19 +793,23 @@ class SstvTab(QWidget):
         if not frames:
             self._status_label.setText(_("No hex frames found in the text."))
             return
-        decoder = self._ensure_ssdv_decoder()
+        gr_mode = self._mode_combo.currentText() == _MODE_GR_SSDV
+        decoder = self._ensure_gr_decoder() if gr_mode else self._ensure_ssdv_decoder()
+        finder = find_dslwp_packet if gr_mode else find_ssdv_packet
         decoder.reset()
         packets = 0
         for frame in frames:
-            packet = find_ssdv_packet(frame)
+            packet = finder(frame)
             if packet is not None and decoder.push_packet(packet):
                 packets += 1
         if packets == 0:
+            hint = (
+                _("(223-byte CCSDS frames on virtual channel 1 with a valid CRC)")
+                if gr_mode
+                else _("(sync 55 66 / 55 67 and a valid CRC)")
+            )
             self._status_label.setText(
-                _(
-                    "{n} frames, but none contains an SSDV packet "
-                    "(sync 55 66 / 55 67 and a valid CRC)."
-                ).format(n=len(frames))
+                _("{n} frames, but none contains an SSDV packet ").format(n=len(frames)) + hint
             )
             return
         self._status_label.setText(
@@ -721,6 +824,8 @@ class SstvTab(QWidget):
         self._raw_edit.clear()
         if self._ssdv_decoder is not None:
             self._ssdv_decoder.reset()
+        if self._gr_ssdv_decoder is not None:
+            self._gr_ssdv_decoder.reset()
         self._ssdv_frames = 0
         self._ssdv_packets = 0
         self._raw_count_label.setText("")
@@ -809,12 +914,15 @@ class SstvTab(QWidget):
     # ------------------------------------------------------------------ #
 
     def _on_mode_changed(self, mode_text: str) -> None:
-        """Switch between SSTV and SSDV decoder."""
+        """Switch between the SSTV, SSDV (AX.25) and gr-satellites SSDV (ASRTU-1) decoders."""
         self._stop_decoder()
         self._stop_ssdv()
-        if mode_text == "SSTV":
+        if mode_text == _MODE_SSTV:
             self._view_tabs.setCurrentWidget(self._image_page)
             self._start_decoder()
+        elif mode_text == _MODE_GR_SSDV:
+            self._view_tabs.setCurrentWidget(self._raw_page)
+            self._start_gr_ssdv()
         else:
             self._view_tabs.setCurrentWidget(self._raw_page)
             self._start_ssdv()
@@ -902,7 +1010,7 @@ class SstvTab(QWidget):
         path, _filter = QFileDialog.getOpenFileName(
             self,
             _("Open SSTV Image"),
-            str(self._image_save_dir(self._mode_combo.currentText())),
+            str(self._image_save_dir(self._save_mode_name(self._mode_combo.currentText()))),
             _("Images (*.png *.jpg *.jpeg *.bmp)"),
         )
         if not path:
@@ -968,6 +1076,11 @@ class SstvTab(QWidget):
             (ts.isoformat(), mode, file_path, name or None),
         )
         self._conn.commit()
+
+    @staticmethod
+    def _save_mode_name(mode_text: str) -> str:
+        """ "SSDV" for both SSDV modes (they share a folder), else "SSTV"."""
+        return _MODE_SSDV if mode_text in (_MODE_SSDV, _MODE_GR_SSDV) else _MODE_SSTV
 
     @staticmethod
     def _image_save_dir(mode: str = "SSTV") -> Path:
