@@ -106,7 +106,8 @@ if _direwolf_dir.exists():
 # ssdv bundle (downloaded from the ssdv-bundle release by CI; see build-ssdv.yml)
 # The SSDV tab runs it as a separate program. Placed at _MEIPASS root so
 # find_ssdv() finds it as _MEIPASS/ssdv[.exe]. ssdv is GPL-3.0: its licence text
-# and source location ship next to it under licenses/ssdv/.
+# and source location ship next to it under licenses/ssdv/. The bundle also holds
+# ssdv-dslwp (daniestevez/ssdv fork, GPL-3.0; find_ssdv_dslwp(), ASRTU-1 SSDV).
 # --------------------------------------------------------------------------- #
 ssdv_binaries: list[tuple[str, str]] = []
 ssdv_datas: list[tuple[str, str]] = []
@@ -115,7 +116,10 @@ if _ssdv_dir.exists():
     _ssdv_exe = _ssdv_dir / ("ssdv.exe" if sys.platform == "win32" else "ssdv")
     if _ssdv_exe.exists():
         ssdv_binaries.append((str(_ssdv_exe), "."))
-        for _note in ("COPYING", "SOURCE.txt"):
+        _ssdv_dslwp_exe = _ssdv_dir / ("ssdv-dslwp.exe" if sys.platform == "win32" else "ssdv-dslwp")
+        if _ssdv_dslwp_exe.exists():
+            ssdv_binaries.append((str(_ssdv_dslwp_exe), "."))
+        for _note in ("COPYING", "COPYING-dslwp", "SOURCE.txt"):
             if (_ssdv_dir / _note).exists():
                 ssdv_datas.append((str(_ssdv_dir / _note), "licenses/ssdv"))
 

@@ -79,6 +79,8 @@ class Component:
     name: str
     subdir: str = ""
     key_file: str = ""  # relative to install_dir(); its presence means "installed"
+    # more files that must also be present (a bundle that gained a file later is re-fetched)
+    extra_key_files: tuple[str, ...] = ()
     release_tag: str | None = None  # None -> use the /releases/latest endpoint
     asset_name: str | None = None  # exact Windows asset file name
     repo: str = _DEFAULT_REPO
@@ -132,6 +134,7 @@ _COMPONENTS: tuple[Component, ...] = (
         name="ssdv",
         subdir="ssdv",
         key_file="ssdv.exe",
+        extra_key_files=("ssdv-dslwp.exe",),  # daniestevez/ssdv fork, for ASRTU-1 SSDV
         release_tag="ssdv-bundle",  # dedicated pre-release tag (CI: build-ssdv.yml)
         asset_name="ssdv-windows-x86_64.zip",
     ),
@@ -292,7 +295,7 @@ def _extract_flat(archive: Path, dest_dir: Path) -> None:
 def _install_release_component(comp: Component, *, force: bool, quiet: bool) -> str:
     install_dir = comp.install_dir()
     key = install_dir / comp.key_file
-    if key.exists() and not force:
+    if key.exists() and not force and all((install_dir / f).exists() for f in comp.extra_key_files):
         return "present"
 
     release = _resolve_release(comp)

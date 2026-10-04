@@ -307,6 +307,13 @@ jobs:
             tar -xzf /tmp/ssdv-dl/ssdv-linux-${ARCH}.tar.gz -C /tmp/ssdv-dl --strip-components=1
             cp /tmp/ssdv-dl/ssdv /tmp/ssdv-dl/COPYING /tmp/ssdv-dl/SOURCE.txt ssdv-bundle/
             chmod +x ssdv-bundle/ssdv
+            # ssdv-dslwp (ASRTU-1 SSDV) only exists in bundles built since 2026-10-04
+            if [ -f /tmp/ssdv-dl/ssdv-dslwp ]; then
+              cp /tmp/ssdv-dl/ssdv-dslwp /tmp/ssdv-dl/COPYING-dslwp ssdv-bundle/
+              chmod +x ssdv-bundle/ssdv-dslwp
+            else
+              echo "::warning::ssdv-dslwp is not in the ssdv bundle yet -- re-run the 'Build ssdv Bundle' workflow. The gr-satellites SSDV mode (ASRTU-1) will not decode images in this build."
+            fi
             echo "ssdv commit: $(cat /tmp/ssdv-dl/version.txt)"
           else
             echo "::warning::ssdv bundle not available yet -- run the 'Build ssdv Bundle' workflow. The SSDV tab will not decode images in this build."
@@ -1440,6 +1447,13 @@ jobs:
             tar -xzf /tmp/ssdv-dl/ssdv-macos-${ARCH}.tar.gz -C /tmp/ssdv-dl --strip-components=1
             cp /tmp/ssdv-dl/ssdv /tmp/ssdv-dl/COPYING /tmp/ssdv-dl/SOURCE.txt ssdv-bundle/
             chmod +x ssdv-bundle/ssdv
+            # ssdv-dslwp (ASRTU-1 SSDV) only exists in bundles built since 2026-10-04
+            if [ -f /tmp/ssdv-dl/ssdv-dslwp ]; then
+              cp /tmp/ssdv-dl/ssdv-dslwp /tmp/ssdv-dl/COPYING-dslwp ssdv-bundle/
+              chmod +x ssdv-bundle/ssdv-dslwp
+            else
+              echo "::warning::ssdv-dslwp is not in the ssdv bundle yet -- re-run the 'Build ssdv Bundle' workflow. The gr-satellites SSDV mode (ASRTU-1) will not decode images in this build."
+            fi
             echo "ssdv commit: $(cat /tmp/ssdv-dl/version.txt)"
           else
             echo "::warning::ssdv bundle not available yet -- run the 'Build ssdv Bundle' workflow. The SSDV tab will not decode images in this build."

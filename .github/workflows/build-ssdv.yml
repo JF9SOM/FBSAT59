@@ -10,6 +10,12 @@ name: Build ssdv Bundle
 # Upstream is archived (read-only since 2025-12), so the source is pinned to a
 # commit and there is no weekly version check like build-direwolf.yml has.
 # Run it manually (or edit this file) to rebuild.
+#
+# The same package also carries `ssdv-dslwp`, built from the fork
+# https://github.com/daniestevez/ssdv (GPL-3.0, last commit 2019-04, pinned too).
+# Only the fork understands `-D`, the packet format ASRTU-1 (AO-123) uses (see
+# comms/sstv/ssdv.py, "CCSDS / DSLWP path"); the SSDV tab's gr-satellites mode
+# runs it as a separate program, like `ssdv`.
 
 on:
   workflow_dispatch:
@@ -21,6 +27,8 @@ on:
 env:
   SSDV_REPO: https://github.com/fsphil/ssdv.git
   SSDV_COMMIT: d1ceda81b69f88741396f3e052b50c8ae40efb76
+  SSDV_DSLWP_REPO: https://github.com/daniestevez/ssdv.git
+  SSDV_DSLWP_COMMIT: 8c726f57ec60b1f35ee32d72b4c3ce2c790a41fa
 
 jobs:
   # ------------------------------------------------------------------ #
@@ -41,7 +49,7 @@ jobs:
           gh release create ssdv-bundle \
             --repo "${{ github.repository }}" \
             --title "ssdv Bundle" \
-            --notes "Pre-built ssdv (fsphil/ssdv, GPL-3.0) for the SSDV tab. Built from a pinned commit by build-ssdv.yml." \
+            --notes "Pre-built ssdv (fsphil/ssdv) and ssdv-dslwp (daniestevez/ssdv), both GPL-3.0, for the SSDV tab. Built from a pinned commit by build-ssdv.yml." \
             --prerelease
 
   # ------------------------------------------------------------------ #
@@ -60,16 +68,20 @@ jobs:
         run: |
           git clone "$SSDV_REPO" ssdv-src
           git -C ssdv-src checkout "$SSDV_COMMIT"
+          git clone "$SSDV_DSLWP_REPO" ssdv-dslwp-src
+          git -C ssdv-dslwp-src checkout "$SSDV_DSLWP_COMMIT"
 
       - name: Build
         run: |
           cd ssdv-src
           gcc -O2 -Wall -o ssdv main.c ssdv.c rs8.c
+          cd ../ssdv-dslwp-src
+          gcc -O2 -Wall -o ssdv-dslwp main.c ssdv.c rs8.c
 
       - name: Smoke test (encode + decode round trip)
         run: |
           python3 -m pip install --quiet pillow
-          bash scripts/ssdv_smoke_test.sh ssdv-src/ssdv
+          bash scripts/ssdv_smoke_test.sh ssdv-src/ssdv ssdv-dslwp-src/ssdv-dslwp
 
       - name: Package
         run: |
@@ -77,9 +89,14 @@ jobs:
           PKG_DIR=/tmp/ssdv-flat
           mkdir -p "$PKG_DIR"
           cp ssdv-src/ssdv "$PKG_DIR/"
+          cp ssdv-dslwp-src/ssdv-dslwp "$PKG_DIR/"
           cp ssdv-src/COPYING "$PKG_DIR/COPYING"
+          cp ssdv-dslwp-src/COPYING "$PKG_DIR/COPYING-dslwp"
           echo "$SSDV_COMMIT" > "$PKG_DIR/version.txt"
-          echo "Source: ${SSDV_REPO%.git} (commit $SSDV_COMMIT), GPL-3.0" > "$PKG_DIR/SOURCE.txt"
+          {
+            echo "ssdv: ${SSDV_REPO%.git} (commit $SSDV_COMMIT), GPL-3.0"
+            echo "ssdv-dslwp: ${SSDV_DSLWP_REPO%.git} (commit $SSDV_DSLWP_COMMIT), GPL-3.0"
+          } > "$PKG_DIR/SOURCE.txt"
           PKG_NAME="ssdv-linux-${ARCH}.tar.gz"
           tar -czf "/tmp/${PKG_NAME}" -C /tmp ssdv-flat
           echo "PKG=/tmp/${PKG_NAME}" >> "$GITHUB_ENV"
@@ -111,16 +128,20 @@ jobs:
         run: |
           git clone "$SSDV_REPO" ssdv-src
           git -C ssdv-src checkout "$SSDV_COMMIT"
+          git clone "$SSDV_DSLWP_REPO" ssdv-dslwp-src
+          git -C ssdv-dslwp-src checkout "$SSDV_DSLWP_COMMIT"
 
       - name: Build
         run: |
           cd ssdv-src
           cc -O2 -Wall -mmacosx-version-min=11.0 -o ssdv main.c ssdv.c rs8.c
+          cd ../ssdv-dslwp-src
+          cc -O2 -Wall -mmacosx-version-min=11.0 -o ssdv-dslwp main.c ssdv.c rs8.c
 
       - name: Smoke test (encode + decode round trip)
         run: |
           python3 -m pip install --quiet pillow
-          bash scripts/ssdv_smoke_test.sh ssdv-src/ssdv
+          bash scripts/ssdv_smoke_test.sh ssdv-src/ssdv ssdv-dslwp-src/ssdv-dslwp
 
       - name: Package
         run: |
@@ -128,9 +149,14 @@ jobs:
           PKG_DIR=/tmp/ssdv-flat
           mkdir -p "$PKG_DIR"
           cp ssdv-src/ssdv "$PKG_DIR/"
+          cp ssdv-dslwp-src/ssdv-dslwp "$PKG_DIR/"
           cp ssdv-src/COPYING "$PKG_DIR/COPYING"
+          cp ssdv-dslwp-src/COPYING "$PKG_DIR/COPYING-dslwp"
           echo "$SSDV_COMMIT" > "$PKG_DIR/version.txt"
-          echo "Source: ${SSDV_REPO%.git} (commit $SSDV_COMMIT), GPL-3.0" > "$PKG_DIR/SOURCE.txt"
+          {
+            echo "ssdv: ${SSDV_REPO%.git} (commit $SSDV_COMMIT), GPL-3.0"
+            echo "ssdv-dslwp: ${SSDV_DSLWP_REPO%.git} (commit $SSDV_DSLWP_COMMIT), GPL-3.0"
+          } > "$PKG_DIR/SOURCE.txt"
           PKG_NAME="ssdv-macos-${ARCH}.tar.gz"
           tar -czf "/tmp/${PKG_NAME}" -C /tmp ssdv-flat
           echo "PKG=/tmp/${PKG_NAME}" >> "$GITHUB_ENV"
@@ -160,26 +186,35 @@ jobs:
         run: |
           git clone "$SSDV_REPO" ssdv-src
           git -C ssdv-src checkout "$SSDV_COMMIT"
+          git clone "$SSDV_DSLWP_REPO" ssdv-dslwp-src
+          git -C ssdv-dslwp-src checkout "$SSDV_DSLWP_COMMIT"
 
       - name: Build
         run: |
           gcc --version | head -1
           cd ssdv-src
           gcc -O2 -Wall -static -o ssdv.exe main.c ssdv.c rs8.c
+          cd ../ssdv-dslwp-src
+          gcc -O2 -Wall -static -o ssdv-dslwp.exe main.c ssdv.c rs8.c
 
       - name: Smoke test (encode + decode round trip)
         run: |
           python -m pip install --quiet pillow
-          bash scripts/ssdv_smoke_test.sh ssdv-src/ssdv.exe
+          bash scripts/ssdv_smoke_test.sh ssdv-src/ssdv.exe ssdv-dslwp-src/ssdv-dslwp.exe
 
       - name: Package
         run: |
           PKG_DIR="$RUNNER_TEMP/ssdv-flat"
           mkdir -p "$PKG_DIR"
           cp ssdv-src/ssdv.exe "$PKG_DIR/"
+          cp ssdv-dslwp-src/ssdv-dslwp.exe "$PKG_DIR/"
           cp ssdv-src/COPYING "$PKG_DIR/COPYING"
+          cp ssdv-dslwp-src/COPYING "$PKG_DIR/COPYING-dslwp"
           echo "$SSDV_COMMIT" > "$PKG_DIR/version.txt"
-          echo "Source: ${SSDV_REPO%.git} (commit $SSDV_COMMIT), GPL-3.0" > "$PKG_DIR/SOURCE.txt"
+          {
+            echo "ssdv: ${SSDV_REPO%.git} (commit $SSDV_COMMIT), GPL-3.0"
+            echo "ssdv-dslwp: ${SSDV_DSLWP_REPO%.git} (commit $SSDV_DSLWP_COMMIT), GPL-3.0"
+          } > "$PKG_DIR/SOURCE.txt"
           cd "$RUNNER_TEMP"
           powershell -NoProfile -Command "Compress-Archive -Path ssdv-flat\* -DestinationPath ssdv-windows-x86_64.zip -Force"
           echo "PKG=$RUNNER_TEMP/ssdv-windows-x86_64.zip" >> "$GITHUB_ENV"

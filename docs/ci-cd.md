@@ -99,5 +99,12 @@ SSDV タブが使う `ssdv`（https://github.com/fsphil/ssdv、GPL-3.0）は、`
 3 プラットフォーム分をビルド・動作確認して `ssdv-bundle` リリースに公開し、`ci.yml` の各ビルドが取り込んで
 `scripts/fbsat59.spec` が同梱する（Direwolf と同じ流れ）。他のバンドルと違い**週次のバージョン確認は無い**
 （上流がアーカイブ済み）。再ビルドは `workflow_dispatch` か、`build-ssdv.yml` を main に push する。
+
+**`ssdv-dslwp` も同じパッケージ（2026-10-04 追加）**: ASRTU-1（AO-123）の SSDV 用に、daniestevez/ssdv の fork
+（GPL-3.0、最終更新 2019-04、コミット `8c726f57…` に固定）を `ssdv-dslwp[.exe]` としてビルドし、同じ `ssdv-bundle`
+の各アーカイブに入れる（`COPYING-dslwp`・`SOURCE.txt` も）。`-D`（DSLWP パケット）を持つのは fork だけ。
+`ci.yml` の取り込みは、`ssdv-dslwp` が無い旧バンドルでも失敗せず警告のみ。`bootstrap_natives.py` は
+`extra_key_files` で `ssdv-dslwp.exe` が無い既存インストールを再取得する。**公開済みの `ssdv-bundle` は
+`build-ssdv.yml` を再実行するまで `ssdv-dslwp` を含まない。**
 リリースが未作成でも本体ビルドは失敗しない（警告のみ）。詳細は [communications.md](communications.md) の
 「SSDV の受信・「生パケット」/「画像」サブタブ」。

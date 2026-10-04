@@ -2,11 +2,13 @@
 # Smoke test for a freshly built `ssdv`: encode a JPEG into SSDV packets, decode
 # them again and check a JPEG comes out. Used by .github/workflows/build-ssdv.yml.
 #
-# Usage: scripts/ssdv_smoke_test.sh <path to ssdv or ssdv.exe>
+# Usage: scripts/ssdv_smoke_test.sh <path to ssdv or ssdv.exe> [<path to ssdv-dslwp>]
+# The optional second binary (daniestevez/ssdv fork) is also round-tripped in -D mode.
 # Needs Python with Pillow (to make the test JPEG).
 set -euo pipefail
 
-SSDV="${1:?usage: ssdv_smoke_test.sh <ssdv binary>}"
+SSDV="${1:?usage: ssdv_smoke_test.sh <ssdv binary> [<ssdv-dslwp binary>]}"
+SSDV_DSLWP="${2:-}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -35,3 +37,18 @@ for mode in "" "-n" "-l 100"; do
     fi
     echo "ssdv smoke test OK (mode: '${mode:-default}'): $(wc -c < "$WORK/out.jpg") bytes"
 done
+
+if [ -n "$SSDV_DSLWP" ]; then
+    "$SSDV_DSLWP" -e -D -i 1 "$WORK/in.jpg" "$WORK/packets.bin"
+    # DSLWP packets are 218 bytes each
+    if [ $(( $(wc -c < "$WORK/packets.bin") % 218 )) -ne 0 ]; then
+        echo "ssdv-dslwp smoke test FAILED: packet file is not a multiple of 218 bytes" >&2
+        exit 1
+    fi
+    "$SSDV_DSLWP" -d -D "$WORK/packets.bin" "$WORK/out.jpg"
+    if [ "$(head -c 2 "$WORK/out.jpg" | od -An -tx1 | tr -d ' \n')" != "ffd8" ]; then
+        echo "ssdv-dslwp smoke test FAILED: output is not a JPEG" >&2
+        exit 1
+    fi
+    echo "ssdv-dslwp smoke test OK (-D): $(wc -c < "$WORK/out.jpg") bytes"
+fi
