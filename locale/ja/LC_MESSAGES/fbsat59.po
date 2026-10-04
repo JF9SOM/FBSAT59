@@ -6966,3 +6966,28 @@ msgstr "画像ファイルを読み込めませんでした。"
 #: src/ui/sstv_tab.py
 msgid "Opened: "
 msgstr "開きました: "
+
+#: src/ui/sstv_tab.py
+msgid "gr-satellites SSDV: connect an SDR in Radio Control (pasting hex works)"
+msgstr "gr-satellites SSDV: Radio Control で SDR を接続してください（HEX の貼り付けは使えます）"
+
+#: src/ui/sstv_tab.py
+msgid "⚠ This gr_satellites build has no --kiss_server; SSDV frames cannot be read."
+msgstr "⚠ この gr_satellites は --kiss_server に対応しておらず、SSDV フレームを読めません。"
+
+#: src/ui/sstv_tab.py
+msgid "gr-satellites SSDV: waiting for ASRTU-1 frames…"
+msgstr "gr-satellites SSDV: ASRTU-1 のフレームを待っています…"
+
+#: src/ui/sstv_tab.py
+#, python-brace-format
+msgid "{n} frames, but none contains an SSDV packet "
+msgstr "{n}フレームありますが、SSDVパケットを含むものがありません "
+
+#: src/ui/sstv_tab.py
+msgid "(223-byte CCSDS frames on virtual channel 1 with a valid CRC)"
+msgstr "（仮想チャンネル1の223バイトCCSDSフレームで、CRCが正しいもの）"
+
+#: src/ui/sstv_tab.py
+msgid "(sync 55 66 / 55 67 and a valid CRC)"
+msgstr "（同期 55 66 / 55 67 と正しいCRC）"
