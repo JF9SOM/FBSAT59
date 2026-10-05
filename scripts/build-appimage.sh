@@ -35,11 +35,43 @@ mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 # Copy PyInstaller output into AppDir
 cp -r "$COLLECT_DIR/." "$APPDIR/usr/bin/"
 
+# --------------------------------------------------------------------------- #
+# System libraries Qt Multimedia (FT4 TX audio output) needs at runtime.
+#
+# PySide6's libQt6Multimedia.so.6 links libpulse and libxkbcommon, which the
+# PySide6 wheel does not ship. They are copied into the AppImage (with their
+# own dependencies, e.g. libpulsecommon) so nothing has to be installed on the
+# user's machine. libGL/libEGL and glibc deliberately stay host-provided.
+# --------------------------------------------------------------------------- #
+bundle_system_lib() {
+    local soname="$1" path dep
+    path="$(ldconfig -p | awk -v n="$soname" '$1 == n && /x86-64/ {print $NF; exit}')"
+    if [[ -z "$path" ]]; then
+        echo "ERROR: $soname not found on the build machine (apt install the package providing it)" >&2
+        exit 1
+    fi
+    cp -L "$path" "$APPDIR/usr/lib/$soname"
+    # Dependencies that are neither glibc nor GL (libpulse -> libpulsecommon, ...).
+    while read -r dep; do
+        case "$(basename "$dep")" in
+            libpulsecommon-*)
+                mkdir -p "$APPDIR/usr/lib/pulseaudio"
+                cp -L "$dep" "$APPDIR/usr/lib/pulseaudio/"
+                cp -L "$dep" "$APPDIR/usr/lib/"
+                ;;
+        esac
+    done < <(ldd "$path" | awk '/=> \// {print $3}')
+}
+
+for lib in libpulse.so.0 libxkbcommon.so.0 libXext.so.6 libXrandr.so.2 libdrm.so.2; do
+    bundle_system_lib "$lib"
+done
+
 # AppRun entry point
 cat > "$APPDIR/AppRun" << 'EOF'
 #!/bin/bash
 HERE="$(dirname "$(readlink -f "$0")")"
-export LD_LIBRARY_PATH="$HERE/usr/bin:${LD_LIBRARY_PATH:-}"
+export LD_LIBRARY_PATH="$HERE/usr/bin:$HERE/usr/lib:${LD_LIBRARY_PATH:-}"
 exec "$HERE/usr/bin/fbsat59" "$@"
 EOF
 chmod +x "$APPDIR/AppRun"
@@ -78,6 +110,23 @@ img.save(str(out))
 PYEOF
     export APPDIR_ICON="$APPDIR/usr/share/icons/hicolor/256x256/apps/fbsat59.png"
     ln -sf usr/share/icons/hicolor/256x256/apps/fbsat59.png "$APPDIR/fbsat59.png"
+fi
+
+# --------------------------------------------------------------------------- #
+# Fail the build if Qt Multimedia would not load (a missing system library
+# would otherwise only show up as a TX error on the user's machine).
+# --------------------------------------------------------------------------- #
+QTMM="$(find "$APPDIR/usr/bin" -name 'libQt6Multimedia.so.6' | head -n 1)"
+if [[ -n "$QTMM" ]]; then
+    MISSING="$(LD_LIBRARY_PATH="$(dirname "$QTMM"):$APPDIR/usr/bin:$APPDIR/usr/lib" ldd "$QTMM" \
+        | grep 'not found' | grep -v -E 'libGL|libEGL' || true)"
+    if [[ -n "$MISSING" ]]; then
+        echo "ERROR: Qt Multimedia has unresolved libraries in the AppImage:" >&2
+        echo "$MISSING" >&2
+        exit 1
+    fi
+else
+    echo "WARNING: libQt6Multimedia.so.6 not found in the PyInstaller output" >&2
 fi
 
 # --------------------------------------------------------------------------- #

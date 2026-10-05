@@ -741,6 +741,7 @@ except ImportError:
 sudo apt install python3.11 python3.11-venv python3-pip \
     libhamlib-dev python3-hamlib \
     qt6-base-dev libqt6webkit6-dev \
+    libpulse0 libxkbcommon0 libxext6 libxrandr2 libdrm2 \
     pkg-config cmake
 
 # Python仮想環境

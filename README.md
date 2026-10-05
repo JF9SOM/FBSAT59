@@ -171,6 +171,7 @@ chmod +x FBSAT59-*.AppImage
 ```bash
 # 1. System packages
 sudo apt install python3.11 python3-pip libhamlib-dev python3-hamlib \
+                 libpulse0 libxkbcommon0 libxext6 libxrandr2 libdrm2 \
                  python3-soapysdr soapysdr-module-rtlsdr soapysdr-module-hackrf
 
 # 2. Clone

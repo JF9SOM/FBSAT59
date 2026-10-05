@@ -40,7 +40,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libhamlib-dev python3-hamlib \
-            libgl1 libegl1 xvfb
+            libgl1 libegl1 xvfb \
+            libpulse0 libxkbcommon0 libxext6 libxrandr2 libdrm2
 
       - name: Install Python dependencies
         run: |
@@ -154,6 +155,7 @@ jobs:
             autoconf automake libtool pkg-config \
             libusb-1.0-0-dev libxml2-dev swig python3.11-dev \
             libgl1 libegl1 libfuse2 \
+            libpulse0 libxkbcommon0 libxext6 libxrandr2 libdrm2 \
             binutils coreutils
 
       - name: Build Hamlib 4.7.2 from source

@@ -209,6 +209,8 @@ except Exception:
 # Hidden imports (dynamic loaders that PyInstaller cannot auto-detect)
 # --------------------------------------------------------------------------- #
 hidden_imports = [
+    # TX audio output (comms/qt_audio_out.py imports it lazily)
+    "PySide6.QtMultimedia",
     # uvicorn workers / reload
     "uvicorn.logging",
     "uvicorn.loops",

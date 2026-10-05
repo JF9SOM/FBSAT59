@@ -3518,3 +3518,15 @@ WSJT-X 本体の `jt9 --ft4` で復号可）・再生ログ（アンダーラン
 **差が残る点**: (a) WSJT-X は Qt 5.15、FBSAT59（PySide6）は Qt 6.11。(b) 時刻は WSJT-X が OS 時計、
 FBSAT59 は `corrected_time()`（NTP オフセット 0.1 秒未満は 0 に丸めるので、通常は OS 時計と同一）。
 (c) `ax100_digi_tab.py` の `_TxWorker` は未変更（PortAudio のまま）。**実機（USB コーデック）未検証。**
+
+**Linux で必要なライブラリ（2026-10-05）**: Qt Multimedia（上記の FT4 送信再生）は、PySide6 のホイールが
+同梱しない `libpulse.so.0`・`libxkbcommon.so.0`・`libXext`・`libXrandr`・`libdrm` を必要とする
+（PySide6 6.11.1 の manylinux ホイールの `libQt6Multimedia.so.6` / `libffmpegmediaplugin.so` の
+`DT_NEEDED` から確認）。CI の Ubuntu にこれが無く `ImportError: libpulse.so.0` でテストが全滅した。
+- **AppImage**: `scripts/build-appimage.sh` がビルド機のこれらのライブラリ（`libpulsecommon` を含む）を
+  AppDir の `usr/lib` に同梱し、`AppRun` の `LD_LIBRARY_PATH` に追加。ビルド末尾で `libQt6Multimedia.so.6`
+  を `ldd` し、未解決があればビルドを失敗させる（libGL/libEGL はホスト提供のまま）
+- **CI**: test / build-linux ジョブの `apt-get install` に追加
+- **ソースから実行する場合**: 上記パッケージを `apt install`（README・CLAUDE.md のセットアップ手順に追記）
+- QtMultimedia は遅延 import のため、無い環境でもアプリ自体は起動し、FT4 送信時に
+  「Qt Multimedia is not available」のエラーになる。**Linux 実機では未検証**
