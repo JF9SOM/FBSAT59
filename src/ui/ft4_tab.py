@@ -51,7 +51,6 @@ from comms.audio_device_manager import get_audio_device_manager, validate_output
 from comms.ft4.codec import (
     FT4_PERIOD,
     FT4_TX_DURATION,
-    FT4_TX_OFFSET,
     SAMPLE_RATE,
     TX_SAMPLE_RATE,
     Ft4Codec,
@@ -146,14 +145,20 @@ _DOPPLER_TX_SAMPLES = 6
 # margin over a normal transmission while still guaranteeing PTT comes
 # back off before the *next* period would otherwise try to key up again.
 _TX_WATCHDOG_S = 7.0
-# Estimated delay between play_burst() being called and the first sample
-# reaching the sound card. Measured on a built-in output: 0.033 s from the
-# request to QAudioSink reporting Active (the device's own latency is not
-# included); see the "tx qt_audio first_active_lag" log line and tune this
-# against real USB-codec passes. Used to start playback early enough that
-# the audio begins FT4_TX_OFFSET (0.5 s) after the slot boundary, as WSJT-X
-# does.
-_TX_AUDIO_START_LATENCY_S = 0.05
+# FT4 transmit timing, taken from WSJT-X (the values and the sequence are
+# copied from its source, see docs/communications.md):
+#  - Modulator.cpp: FT4 audio starts delay_ms = 300 ms into the T/R period,
+#    by prepending silent frames to the stream (or, for a late start,
+#    skipping the first frames of the wave).
+_TX_AUDIO_DELAY_MS = 300
+#  - mainwindow.cpp handle_transceiver_update(): for FT4 the audio starts
+#    20 ms after the rig reports PTT on.
+_TX_PTT_TO_AUDIO_S = 0.02
+#  - helper_functions.cpp tx_duration(): FT4 -> 1.0 + 105*576/12000 s; the
+#    transmit window ends there and PTT is dropped 200 ms later (stopTx()
+#    -> ptt0Timer.start(200)).
+_TX_WINDOW_S = 1.0 + 105 * 576 / 12000.0
+_TX_PTT_TAIL_S = 0.2
 # Tune (continuous test tone for adjusting TX level / ALC): safety cap on how
 # long a single Tune may hold PTT if the operator forgets to switch it off.
 _TUNE_MAX_S = 60.0
@@ -195,12 +200,14 @@ class _TxWorker(QObject):
         parent: QObject | None = None,
         watchdog_s: float = _TX_WATCHDOG_S,
         timeout_is_normal: bool = False,
-        start_at: float | None = None,
+        slot_start: float | None = None,
     ) -> None:
         super().__init__(parent)
-        # corrected_time() at which the first audio sample should reach the
-        # sound card (None: start as soon as possible, e.g. Tune).
-        self._start_at = start_at
+        # corrected_time() of the start of this transmission's T/R period
+        # (None: not slot-synchronised, e.g. Tune -- WSJT-X's Modulator also
+        # skips its start-delay logic while tuning).
+        self._slot_start = slot_start
+        self._abort_evt = threading.Event()
         self._audio = audio
         self._out_device = out_device
         self._rig = rig
@@ -224,6 +231,7 @@ class _TxWorker(QObject):
         player makes run()'s wait return within a fraction of a second, and
         its normal PTT-off / lock-release cleanup still runs.
         """
+        self._abort_evt.set()
         with self._stream_lock:
             job = self._active_job
         if job is not None:
@@ -284,31 +292,43 @@ class _TxWorker(QObject):
                 if not ptt_ok:
                     self.error.emit(_("PTT command failed — check Rig 1 connection"))
                     return
-                time.sleep(0.15)  # PTT lead time
+                time.sleep(_TX_PTT_TO_AUDIO_S)  # WSJT-X: 20 ms for FT4
 
+            # Modulator::start(): ms into the T/R period at this instant
+            # decides the leading silence (or the late-start skip).
+            silent_frames = 0
+            skip_frames = 0
+            if self._slot_start is not None:
+                mstr = int(corrected_time() * 1000) % int(FT4_PERIOD * 1000)
+                if mstr < _TX_AUDIO_DELAY_MS:
+                    silent_frames = (_TX_AUDIO_DELAY_MS - mstr) * TX_SAMPLE_RATE // 1000
+                else:
+                    skip_frames = (mstr - _TX_AUDIO_DELAY_MS) * TX_SAMPLE_RATE // 1000
+                log.info(
+                    "tx modulator_start mstr=%dms silent_frames=%d skip_frames=%d",
+                    mstr,
+                    silent_frames,
+                    skip_frames,
+                )
             job = qt_audio_out.PlayJob(
-                pcm=qt_audio_out.float_to_pcm16(self._audio),
-                duration_s=len(self._audio) / TX_SAMPLE_RATE + qt_audio_out.TAIL_SILENCE_S,
+                pcm=qt_audio_out.float_to_pcm16(self._audio, silent_frames, skip_frames),
+                duration_s=(len(self._audio) - skip_frames + silent_frames) / TX_SAMPLE_RATE,
                 device_name=device_name,
                 get_gain=self._get_gain,
             )
             with self._stream_lock:
                 self._active_job = job
-            if self._start_at is not None:
-                wait_s = self._start_at - _TX_AUDIO_START_LATENCY_S - corrected_time()
-                if wait_s > 0:
-                    time.sleep(min(wait_s, FT4_TX_OFFSET))
-                log.info(
-                    "tx audio_start expected_offset=%.3fs",
-                    corrected_time() + _TX_AUDIO_START_LATENCY_S - (self._start_at - FT4_TX_OFFSET),
-                )
             t0 = time.monotonic()
             qt_audio_out.play_burst(job)
             mgr.pin_active_output(_AUDIO_OWNER)
-            finished_naturally = job.done.wait(timeout=self._watchdog_s)
+            finished_naturally = job.audio_done.wait(timeout=self._watchdog_s)
+            if finished_naturally and self._slot_start is not None:
+                # WSJT-X keeps the transmitter keyed until the end of the
+                # transmit window (tx_duration) and drops PTT 200 ms later;
+                # the sink keeps running (idle) until then.
+                ptt_off_at = self._slot_start + _TX_WINDOW_S + _TX_PTT_TAIL_S
+                self._abort_evt.wait(timeout=max(0.0, ptt_off_at - corrected_time()))
             if not finished_naturally and self._timeout_is_normal:
-                qt_audio_out.abort_burst()
-                job.done.wait(1.0)
                 finished_naturally = True
             if not finished_naturally:
                 # The audio thread never signalled completion within the
@@ -320,8 +340,8 @@ class _TxWorker(QObject):
                     "(audio pipeline did not signal completion)",
                     self._watchdog_s,
                 )
-                qt_audio_out.abort_burst()
-                job.done.wait(1.0)
+            qt_audio_out.abort_burst()  # reset() + stop(), like SoundOutput::stop()
+            job.done.wait(1.0)
             log.info("tx playback_done duration=%.3fs", time.monotonic() - t0)
             first_lag = (
                 job.first_active_at - job.requested_at if job.first_active_at is not None else -1.0
@@ -338,7 +358,6 @@ class _TxWorker(QObject):
 
             ptt_off_ok = True
             if self._rig is not None:
-                time.sleep(0.10)  # PTT tail time
                 t0 = time.monotonic()
                 ptt_off_ok = self._release_ptt()
                 log.info("tx ptt_off ok=%s duration=%.3fs", ptt_off_ok, time.monotonic() - t0)
@@ -1424,18 +1443,16 @@ class Ft4Tab(QWidget):
         # output level (and hear the effect immediately) even while actively
         # transmitting, to avoid rig ALC action / distortion (Issue #16).
         # `rig` was already fetched above to build doppler_offset_fn.
-        # Start the audio FT4_TX_OFFSET (0.5 s) after the slot boundary like
-        # WSJT-X, so receivers see DT ~ 0. If we are called well past the
-        # boundary (stalled UI thread), start immediately instead.
+        # Slot timing (audio 300 ms into the period, PTT window) is handled
+        # in _TxWorker.run() exactly as WSJT-X's Modulator does.
         now = corrected_time()
         slot_start = (now // FT4_PERIOD) * FT4_PERIOD
-        start_at = slot_start + FT4_TX_OFFSET if now - slot_start < FT4_TX_OFFSET else None
         worker = _TxWorker(
             audio,
             self._out_device,
             rig,
             get_gain=lambda: db_to_gain(self._tx_level_db),
-            start_at=start_at,
+            slot_start=slot_start,
         )
         worker.finished.connect(self._on_tx_finished)
         worker.error.connect(self._on_tx_error)

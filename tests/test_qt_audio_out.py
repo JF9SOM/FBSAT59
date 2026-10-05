@@ -17,13 +17,24 @@ def _stop_audio_thread() -> object:
     qt_audio_out._shutdown()
 
 
-def test_float_to_pcm16_scales_to_int16_and_appends_silence() -> None:
+def test_float_to_pcm16_scales_to_int16() -> None:
     audio = np.array([0.0, 1.0, -1.0, 0.5], dtype=np.float32)
     pcm = np.frombuffer(qt_audio_out.float_to_pcm16(audio), dtype="<i2")
-    assert pcm[:4].tolist() == [0, 32767, -32767, 16384]
-    tail = int(qt_audio_out.TAIL_SILENCE_S * qt_audio_out.SAMPLE_RATE)
-    assert len(pcm) == 4 + tail
-    assert not pcm[4:].any()
+    assert pcm.tolist() == [0, 32767, -32767, 16384]
+
+
+def test_float_to_pcm16_prepends_silent_frames() -> None:
+    """Modulator's m_silentFrames: audio starts at the nominal time."""
+    audio = np.array([1.0, -1.0], dtype=np.float32)
+    pcm = np.frombuffer(qt_audio_out.float_to_pcm16(audio, silent_frames=3), dtype="<i2")
+    assert pcm.tolist() == [0, 0, 0, 32767, -32767]
+
+
+def test_float_to_pcm16_skips_frames_on_late_start() -> None:
+    """Modulator's m_ic: a late start drops the first frames of the wave."""
+    audio = np.array([1.0, 0.5, -1.0], dtype=np.float32)
+    pcm = np.frombuffer(qt_audio_out.float_to_pcm16(audio, skip_frames=2), dtype="<i2")
+    assert pcm.tolist() == [-32767]
 
 
 def test_float_to_pcm16_clips_overshoot() -> None:

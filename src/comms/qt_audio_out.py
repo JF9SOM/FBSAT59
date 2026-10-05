@@ -7,6 +7,10 @@ explicit buffer size (Qt/the OS decides; see ``default_tx_audio_buffer_frames
 This module reproduces exactly that, so the audio that reaches the rig's USB
 codec is produced by the same machinery as in WSJT-X instead of PortAudio.
 
+Like WSJT-X, the sink is created per burst from the device's preferred
+format, started with the leading silence already in the buffer, left running
+after the data ends, and finally stopped with reset()+stop().
+
 The whole burst lives in a ``QBuffer`` (a C++ QIODevice), so Qt's audio thread
 reads it without ever calling back into Python -- a blocking CAT call that
 holds the GIL cannot cause an underrun. Volume changes made while a burst is
@@ -42,12 +46,13 @@ from PySide6.QtMultimedia import QAudio, QAudioDevice, QAudioFormat, QAudioSink,
 logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 48_000
-# Silence appended after the burst so the last samples are never cut off by
-# the sink being stopped while its own buffer still holds them.
-TAIL_SILENCE_S = 0.3
 _POLL_INTERVAL_MS = 50
-# Hard stop for a job whose sink never reports the end of the data.
+# If the sink never reports the end of the data, the burst is treated as
+# played this long after its nominal duration; the caller still decides when
+# to stop the sink (as WSJT-X does, see TxWorker.run()).
 _FINISH_MARGIN_S = 1.5
+# Last-resort stop for a job nobody ever stopped.
+_HARD_STOP_MARGIN_S = 15.0
 
 
 @dataclass
@@ -58,6 +63,10 @@ class PlayJob:
     duration_s: float
     device_name: str | None
     get_gain: Callable[[], float]
+    # Set when the sink has consumed the whole buffer (QAudio::IdleState at
+    # EOF); the sink itself keeps running until stop is requested.
+    audio_done: threading.Event = field(default_factory=threading.Event)
+    # Set when the sink has been stopped and torn down.
     done: threading.Event = field(default_factory=threading.Event)
     error: str | None = None
     # Diagnostics (filled in by the player thread).
@@ -69,11 +78,19 @@ class PlayJob:
     finished_naturally: bool = False
 
 
-def float_to_pcm16(audio: NDArray[np.float32]) -> bytes:
-    """Full-scale float [-1, 1] -> little-endian int16 PCM (tail silence appended)."""
-    pcm = np.clip(np.rint(audio.astype(np.float64) * 32767.0), -32768, 32767).astype("<i2")
-    tail = np.zeros(int(TAIL_SILENCE_S * SAMPLE_RATE), dtype="<i2")
-    return bytes(np.concatenate([pcm, tail]).tobytes())
+def float_to_pcm16(
+    audio: NDArray[np.float32], silent_frames: int = 0, skip_frames: int = 0
+) -> bytes:
+    """Full-scale float [-1, 1] -> little-endian int16 PCM, WSJT-X style.
+
+    ``silent_frames`` of leading silence are prepended (Modulator's
+    ``m_silentFrames``: audio starts at the nominal time into the period);
+    ``skip_frames`` leading audio frames are dropped for a late start
+    (``m_ic``). Samples are ``qRound(32767 * wave)``.
+    """
+    pcm = np.clip(np.rint(audio[skip_frames:].astype(np.float64) * 32767.0), -32768, 32767)
+    lead = np.zeros(max(0, silent_frames), dtype=np.float64)
+    return bytes(np.concatenate([lead, pcm]).astype("<i2").tobytes())
 
 
 def find_output_device(name: str | None) -> QAudioDevice | None:
@@ -104,19 +121,24 @@ class _Player(QObject):
     def _on_play(self, job: PlayJob) -> None:
         if self._job is not None:
             job.error = "audio output busy"
+            job.audio_done.set()
             job.done.set()
             return
         device = find_output_device(job.device_name)
         if device is None:
             job.error = f"audio output device not found: {job.device_name!r}"
+            job.audio_done.set()
             job.done.set()
             return
-        fmt = QAudioFormat()
+        # Same as WSJT-X's SoundOutput::restart(): start from the device's
+        # preferred format, then force channel count, 48 kHz and signed 16 bit.
+        fmt = QAudioFormat(device.preferredFormat())
         fmt.setSampleRate(SAMPLE_RATE)
         fmt.setChannelCount(1)
         fmt.setSampleFormat(QAudioFormat.SampleFormat.Int16)
         if not device.isFormatSupported(fmt):
             job.error = f"{device.description()}: 48 kHz / 16-bit / mono output is not supported"
+            job.audio_done.set()
             job.done.set()
             return
         sink = QAudioSink(device, fmt, self)
@@ -146,7 +168,7 @@ class _Player(QObject):
             job.first_active_at = time.monotonic()
         elif state == QAudio.State.IdleState and buffer.atEnd():
             job.finished_naturally = True
-            self._finish(None)
+            job.audio_done.set()
 
     def _on_poll(self) -> None:
         job, sink = self._job, self._sink
@@ -155,9 +177,13 @@ class _Player(QObject):
         sink.setVolume(max(0.0, min(1.0, float(job.get_gain()))))
         if sink.error().name != "NoError":
             self._finish(f"audio sink error: {sink.error().name}")
-        elif time.monotonic() - job.started_at > job.duration_s + _FINISH_MARGIN_S:
-            job.finished_naturally = True
-            self._finish(None)
+        else:
+            elapsed = time.monotonic() - job.started_at
+            if elapsed > job.duration_s + _FINISH_MARGIN_S:
+                job.finished_naturally = True
+                job.audio_done.set()
+            if elapsed > job.duration_s + _HARD_STOP_MARGIN_S:
+                self._finish(None)
 
     def _on_abort(self) -> None:
         if self._job is not None:
@@ -171,6 +197,8 @@ class _Player(QObject):
             timer.deleteLater()
         if sink is not None:
             job_processed = sink.processedUSecs() / 1e6
+            # WSJT-X's SoundOutput::stop(): reset() then stop().
+            sink.reset()
             sink.stop()
             sink.deleteLater()
         else:
@@ -182,6 +210,7 @@ class _Player(QObject):
             job.processed_s = job_processed
             if error:
                 job.error = error
+            job.audio_done.set()
             job.done.set()
 
 

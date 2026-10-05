@@ -3488,25 +3488,33 @@ SSTV/SSDV タブの Mode に第 3 項目「SSDV (gr-satellites)」（従来の�
   参考: 公式受信ソフト https://github.com/BG7ZDQ/ASRTU_Series_Receiver（MIT、`libs/demod/ssdv_receiver.cpp` は
   ASRTU-1 ヘッダー 0x0322 / BY-04 0x2052 / JAMX の別 CRC 初期値 0x6AAAC1C5 も扱う）。
 
-#### FT4 送信音声の再生を WSJT-X と同じ Qt `QAudioSink` に変更（2026-10-05）
+#### FT4 送信を WSJT-X と同じ仕組みにした（2026-10-05）
 
 RS-44 実パスで FBSAT59 の FT4 送信だけが一度も QSO にならず、送信波形（`ft8code` とビット列一致・
 WSJT-X 本体の `jt9 --ft4` で復号可）・再生ログ（アンダーランなし）に問題が見つからなかったため、
-「音声が実際にコーデックへ届くまでの仕組み」を WSJT-X と一致させた（Issue #26 の経緯は破棄）。
+「音声が実際にコーデックへ届くまでの仕組みとタイミング」を WSJT-X のソース
+（`Modulator/Modulator.cpp`・`Audio/soundout.cpp`・`widgets/mainwindow.cpp`・
+`widgets/helper_functions.cpp`・`lib/ft4/gen_ft4wave.f90`）と一致させた（Issue #26 の経緯は破棄）。
 
-WSJT-X のソース（`widgets/mainwindow.cpp` / `Audio/soundout.cpp`）で確認した仕様:
-- バッファサイズは `WSJT_TX_AUDIO_BUFFER_FRAMES`（既定 `-1` = **Qt に任せる**。全プラットフォーム共通）
-- 出力は 48 kHz・16 ビット符号付き整数。`Mono` 設定ならチャンネル数 1（それ以外は 2）。
-  モノ→ステレオデバイスへの割り当ては Qt/OS が行う
-- Pwr スライダーは sink 側の音量
+**波形（変更なし・一致を確認）**: WSJT-X の `gen_ft4wave`（Fortran）を gfortran でビルドし、
+同じトーン列から生成した波形と `symbols_to_audio()` の出力を比較 → 最大差 0.002（float32 精度）。
 
-FBSAT59 側（`src/comms/qt_audio_out.py`、`ui/ft4_tab.py` の `_TxWorker`）:
-- `sounddevice.OutputStream`（PortAudio、`blocksize=12000`、float32）を廃止し、`QAudioSink`
-  （専用 `QThread` 上）を使用。形式は 48 kHz / Int16 / 1 チャンネル、バッファサイズは未指定
-- バースト全体を C++ の `QBuffer` に載せるため、Qt の音声スレッドは Python を呼ばない
-  （CAT 呼び出しが GIL を握っても再生は途切れない）。バースト末尾に 0.3 秒の無音を付加
-- TX Level は `sink.setVolume()`（50 ms ごとに `get_gain()` を読んで反映）
-- デバイスは PortAudio の index から名前を引き、Qt の出力デバイス（description 一致）に対応付ける
-- 内蔵スピーカーでの計測: Qt の既定バッファは 250 ms、要求→Active まで 0.033 秒。
-  `_TX_AUDIO_START_LATENCY_S` を 0.05 に変更。ログ `tx qt_audio ... first_active_lag` で実機の値を確認すること
-- `ax100_digi_tab.py` の `_TxWorker` は未変更（PortAudio のまま）。**実機（USB コーデック）未検証**
+**再生**（`src/comms/qt_audio_out.py`）:
+- PortAudio（`blocksize=12000`、float32）を廃止し Qt の `QAudioSink`（専用 `QThread`）。WSJT-X と同じく
+  デバイスの `preferredFormat()` を元に 48 kHz / 符号付き 16 ビット / 1 チャンネル（Mono 設定）にし、
+  バッファサイズは指定しない（`default_tx_audio_buffer_frames = -1` = Qt 任せ）
+- バースト全体を C++ の `QBuffer` に載せる（Qt の音声スレッドが Python を呼ばない＝GIL の影響なし）
+- TX Level は `sink.setVolume(10^(-dB/20))`（50 ms ごとに反映。WSJT-X の `setAttenuation` 相当）
+- バーストごとに sink を作り直し、終了は `reset()` + `stop()`（`SoundOutput::stop()` と同じ）
+
+**送信シーケンス**（`ui/ft4_tab.py` の `_TxWorker.run()`）:
+1. スロット先頭で PTT ON → **20 ms** 後に再生開始（`mainwindow.cpp`: FT4 は `ms_delay=20`）
+2. 開始時の「周期内 ms」`mstr` で、音声が周期の **300 ms** 地点（`Modulator.cpp`: FT4 `delay_ms=300`）に
+   来るよう先頭に無音を挿入（`m_silentFrames`）。遅れた場合は波形の先頭を読み飛ばす（`m_ic`）
+3. 音声は 5.04 秒。ストリームは終了後も止めず、送信ウィンドウ `tx_duration` =
+   **1.0 + 105×576/12000 = 6.04 秒** まで PTT を保持し、その **200 ms 後**に PTT OFF し、sink を停止
+4. 遅れ補償の定数（旧 `_TX_AUDIO_START_LATENCY_S`）は廃止（WSJT-X にも無い）
+
+**差が残る点**: (a) WSJT-X は Qt 5.15、FBSAT59（PySide6）は Qt 6.11。(b) 時刻は WSJT-X が OS 時計、
+FBSAT59 は `corrected_time()`（NTP オフセット 0.1 秒未満は 0 に丸めるので、通常は OS 時計と同一）。
+(c) `ax100_digi_tab.py` の `_TxWorker` は未変更（PortAudio のまま）。**実機（USB コーデック）未検証。**
