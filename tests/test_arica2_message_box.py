@@ -107,3 +107,9 @@ def test_standard_frame_with_bad_control_or_address_is_not_parsed() -> None:
     not_shifted = bytearray(_CAPTURED)
     not_shifted[0] |= 1  # address byte with the end-of-address bit set too early
     assert parse_downlink(bytes(not_shifted)) is None
+
+
+def test_short_callsign_is_space_padded_message_is_nul_padded() -> None:
+    frame = build_command(Command.UPLOAD, "jf9so", "ab")
+    assert frame[5:11] == b"JF9SO "  # official page: pad the callsign with 0x20
+    assert frame[11:] == b"AB" + b"\x00" * 6  # message: 0x00 padding

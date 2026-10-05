@@ -6,14 +6,17 @@ frequency): 20 slots, 8 characters per message, one slot per callsign.
 
 The frame layout is NOT officially published. It was reverse engineered from
 JI1IZR's Windows tool by https://github.com/N6RFM/ARICA2-linux-groundstation
-(2026-09) and confirmed there "byte for byte" against the official tool; it
-has been reported to work over the air. Treat every constant here as
-unverified against an official specification.
+(2026-09) and confirmed there "byte for byte" against the official tool. The
+lab's own page (sakamotolab.phys.aoyama.ac.jp/research/current_space/ARICA-2/
+amateur, 2026-10) now documents the frame: 21 bytes = 0x42 + 18-byte satellite
+frame + AX.25 FCS, callsign space padded, message NUL padded, with FCS-verified
+hex examples (Download ID 5 matches this module). Its Upload example uses type
+bytes 40 00 while its own type table implies 50 00 -- unresolved.
 
 Uplink payload handed to Direwolf's KISS port (19 bytes; Direwolf adds the
 HDLC flags and FCS, KISS adds the FEND/command bytes)::
 
-    42 F8 BD | type1 type2 | callsign (6, NUL padded) | message (8, NUL padded)
+    42 F8 BD | type1 type2 | callsign (6, space padded) | message (8, NUL padded)
 
 Downlink payloads (as delivered by Direwolf's KISS port, FCS stripped) are
 AX.25 UI frames with a plain ASCII text. A real over-the-air capture
@@ -56,14 +59,14 @@ class Command(enum.Enum):
     DOWNLOAD = "download"
 
 
-def _ascii_field(text: str, length: int, what: str) -> bytes:
-    """Encode *text* as upper-case ASCII, NUL padded to *length*."""
+def _ascii_field(text: str, length: int, what: str, pad: bytes = b"\x00") -> bytes:
+    """Encode *text* as upper-case ASCII, padded to *length* with *pad*."""
     value = text.strip().upper()
     if not value.isascii() or not value.isprintable():
         raise ValueError(f"{what} must be printable ASCII")
     if len(value) > length:
         raise ValueError(f"{what} is longer than {length} characters")
-    return value.encode("ascii").ljust(length, b"\x00")
+    return value.encode("ascii").ljust(length, pad)
 
 
 def _command_bytes(command: Command, slot: int | None) -> bytes:
@@ -94,7 +97,7 @@ def build_command(
     return (
         _PREFIX
         + _command_bytes(command, slot)
-        + _ascii_field(callsign, CALLSIGN_LEN, "callsign")
+        + _ascii_field(callsign, CALLSIGN_LEN, "callsign", pad=b" ")
         + _ascii_field(message, MESSAGE_LEN, "message")
     )
 
