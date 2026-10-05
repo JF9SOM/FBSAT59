@@ -3531,7 +3531,7 @@ WSJT-X 本体の `jt9 --ft4` で復号可）・再生ログ（アンダーラン
 - バーストごとに sink を作り直し、終了は `reset()` + `stop()`（`SoundOutput::stop()` と同じ）
 
 **送信シーケンス**（`ui/ft4_tab.py` の `_TxWorker.run()`）:
-1. スロット先頭で PTT ON → **20 ms** 後に再生開始（`mainwindow.cpp`: FT4 は `ms_delay=20`）
+1. スロット先頭で PTT ON → **100 ms** 待ち（`TransceiverBase.cpp` の `msleep(100)`：Rx→Tx の切り替え中は CAT を処理できない無線機があるため。PTT OFF の後にも同じ 100 ms がある）→ さらに **20 ms** 後に再生開始（`mainwindow.cpp`: FT4 は `ms_delay=20`）
 2. 開始時の「周期内 ms」`mstr` で、音声が周期の **300 ms** 地点（`Modulator.cpp`: FT4 `delay_ms=300`）に
    来るよう先頭に無音を挿入（`m_silentFrames`）。遅れた場合は波形の先頭を読み飛ばす（`m_ic`）
 3. 音声は 5.04 秒。ストリームは終了後も止めず、送信ウィンドウ `tx_duration` =

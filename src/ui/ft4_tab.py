@@ -151,8 +151,13 @@ _TX_WATCHDOG_S = 7.0
 #    by prepending silent frames to the stream (or, for a late start,
 #    skipping the first frames of the wave).
 _TX_AUDIO_DELAY_MS = 300
+#  - Transceiver/TransceiverBase.cpp set(): after PTT on (and after PTT off)
+#    the transceiver thread sleeps 100 ms ("some rigs cannot process CAT
+#    commands while switching from Rx to Tx / Tx to Rx") before the new PTT
+#    state is reported to the GUI.
+_TX_PTT_SETTLE_S = 0.1
 #  - mainwindow.cpp handle_transceiver_update(): for FT4 the audio starts
-#    20 ms after the rig reports PTT on.
+#    20 ms after that PTT-on report.
 _TX_PTT_TO_AUDIO_S = 0.02
 #  - helper_functions.cpp tx_duration(): FT4 -> 1.0 + 105*576/12000 s; the
 #    transmit window ends there and PTT is dropped 200 ms later (stopTx()
@@ -292,6 +297,7 @@ class _TxWorker(QObject):
                 if not ptt_ok:
                     self.error.emit(_("PTT command failed — check Rig 1 connection"))
                     return
+                time.sleep(_TX_PTT_SETTLE_S)  # WSJT-X: msleep(100) after PTT on
                 time.sleep(_TX_PTT_TO_AUDIO_S)  # WSJT-X: 20 ms for FT4
 
             # Modulator::start(): ms into the T/R period at this instant
@@ -361,6 +367,7 @@ class _TxWorker(QObject):
                 t0 = time.monotonic()
                 ptt_off_ok = self._release_ptt()
                 log.info("tx ptt_off ok=%s duration=%.3fs", ptt_off_ok, time.monotonic() - t0)
+                time.sleep(_TX_PTT_SETTLE_S)  # WSJT-X: msleep(100) after PTT off
 
             if not ptt_off_ok:
                 # Never report a normal finish while the rig may still be keyed

@@ -89,3 +89,13 @@ def test_missing_qt_multimedia_is_reported_as_error(
     assert job.done.wait(5.0)
     assert job.error is not None
     assert "not available" in job.error
+
+
+def test_state_slot_has_no_qt_type_annotation() -> None:
+    """PySide resolves slot annotations when connecting. QtMultimedia is imported
+    lazily, so a QAudio.State annotation on _on_state cannot be resolved and every
+    stateChanged emission failed with a TypeError (end of playback never detected)."""
+    import inspect
+
+    sig = inspect.signature(qt_audio_out._Player._on_state)
+    assert "QAudio" not in str(sig.parameters["state"].annotation)

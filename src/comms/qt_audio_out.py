@@ -44,7 +44,7 @@ from PySide6.QtCore import (
 )
 
 if TYPE_CHECKING:
-    from PySide6.QtMultimedia import QAudio, QAudioDevice, QAudioSink
+    from PySide6.QtMultimedia import QAudioDevice, QAudioSink
 
 # QtMultimedia is imported lazily (inside the functions below): on a Linux
 # machine without PulseAudio's libpulse the import itself raises ImportError,
@@ -130,7 +130,10 @@ class _Player(QObject):
 
     def _on_play(self, job: PlayJob) -> None:
         try:
-            from PySide6.QtMultimedia import QAudioFormat, QAudioSink
+            # QAudio is imported although unused here: loading its Python enum
+            # registration is what lets PySide convert QAudio::State arguments
+            # when stateChanged is delivered to _on_state.
+            from PySide6.QtMultimedia import QAudio, QAudioFormat, QAudioSink  # noqa: F401
         except ImportError as exc:
             job.error = f"Qt Multimedia is not available: {exc}"
             job.audio_done.set()
@@ -177,7 +180,10 @@ class _Player(QObject):
         if sink.error().name != "NoError":
             self._finish(f"audio sink error: {sink.error().name}")
 
-    def _on_state(self, state: QAudio.State) -> None:
+    def _on_state(self, state: object) -> None:
+        # Not annotated as QAudio.State on purpose: QtMultimedia is imported
+        # lazily, and PySide resolves slot annotations when connecting -- an
+        # unresolved name makes every stateChanged emission fail with a TypeError.
         from PySide6.QtMultimedia import QAudio
 
         job, buffer = self._job, self._buffer
