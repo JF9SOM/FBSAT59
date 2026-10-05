@@ -23,11 +23,18 @@ from data.database import SCHEMA_SQL  # noqa: E402 -- must follow importorskip a
 from ui.ft4_tab import Ft4Tab  # noqa: E402
 
 
-def _make_tab(qtbot: QtBot, tx_doppler_offsets_fn: object = None) -> Ft4Tab:
+def _make_tab(
+    qtbot: QtBot, tx_doppler_offsets_fn: object = None, tx_audio_sign_fn: object = None
+) -> Ft4Tab:
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA_SQL)
-    tab = Ft4Tab(conn, MagicMock(), tx_doppler_offsets_fn=tx_doppler_offsets_fn)  # type: ignore[arg-type]
+    tab = Ft4Tab(
+        conn,
+        MagicMock(),
+        tx_doppler_offsets_fn=tx_doppler_offsets_fn,  # type: ignore[arg-type]
+        tx_audio_sign_fn=tx_audio_sign_fn,  # type: ignore[arg-type]
+    )
     qtbot.addWidget(tab)
     return tab
 
@@ -103,3 +110,31 @@ def test_well_tracked_rig_yields_near_zero_residual(qtbot: QtBot) -> None:
     assert fn is not None
     assert abs(residual_at_start) < 1.0
     assert abs(fn(FT4_TX_DURATION)) < 2.0
+
+
+def test_lsb_uplink_flips_audio_correction_sign(qtbot: QtBot) -> None:
+    """On an LSB uplink RF = dial - audio, so a UL target that has drifted UP
+    must pull the audio tone DOWN (the old +residual doubled the drift)."""
+    last_ul = 145_900_000.0
+    targets = [last_ul + 40.0 * (i / 5.0) for i in range(6)]
+    tab = _make_tab(
+        qtbot,
+        tx_doppler_offsets_fn=MagicMock(return_value=targets),
+        tx_audio_sign_fn=lambda: -1.0,
+    )
+    fn, _ = tab._build_tx_doppler_offset_fn(MagicMock(last_ul_hz=last_ul))
+    assert fn is not None
+    assert fn(FT4_TX_DURATION) == pytest.approx(-40.0)
+
+
+def test_usb_uplink_keeps_audio_correction_sign(qtbot: QtBot) -> None:
+    last_ul = 145_900_000.0
+    targets = [last_ul + 40.0 * (i / 5.0) for i in range(6)]
+    tab = _make_tab(
+        qtbot,
+        tx_doppler_offsets_fn=MagicMock(return_value=targets),
+        tx_audio_sign_fn=lambda: 1.0,
+    )
+    fn, _ = tab._build_tx_doppler_offset_fn(MagicMock(last_ul_hz=last_ul))
+    assert fn is not None
+    assert fn(FT4_TX_DURATION) == pytest.approx(40.0)

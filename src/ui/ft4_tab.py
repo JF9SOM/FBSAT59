@@ -596,6 +596,7 @@ class Ft4Tab(QWidget):
         conn: sqlite3.Connection,
         radio_control: Any,
         tx_doppler_offsets_fn: Callable[[float, int], list[float] | None] | None = None,
+        tx_audio_sign_fn: Callable[[], float] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -606,6 +607,10 @@ class Ft4Tab(QWidget):
         # cycle (main_window.py already imports Ft4Tab). See
         # _build_tx_doppler_offset_fn() for how this is used.
         self._tx_doppler_offsets_fn = tx_doppler_offsets_fn
+        # MainWindow.get_ft4_tx_audio_sign: +1 for a USB uplink, -1 for LSB
+        # (a higher audio tone moves the RF *down* on LSB). Injected for the
+        # same import-cycle reason as above.
+        self._tx_audio_sign_fn = tx_audio_sign_fn
 
         self._codec = Ft4Codec()
         self._scheduler = Ft4Scheduler(self)
@@ -1476,7 +1481,12 @@ class Ft4Tab(QWidget):
         if not targets:
             return None, None
         sample_times = np.linspace(0.0, FT4_TX_DURATION, len(targets))
-        residual = np.asarray(targets, dtype=np.float64) - last_ul
+        # The gap is in RF/dial Hz, but it is corrected through the audio
+        # tone: on an LSB uplink (e.g. RS-44 via LSB-D) RF = dial - audio, so
+        # the tone must move the opposite way. Without this flip the
+        # correction doubled the in-burst drift instead of cancelling it.
+        sign = float(self._tx_audio_sign_fn()) if self._tx_audio_sign_fn is not None else 1.0
+        residual = sign * (np.asarray(targets, dtype=np.float64) - last_ul)
 
         def _offset(t: float) -> float:
             return float(np.interp(t, sample_times, residual))

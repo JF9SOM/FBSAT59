@@ -32,7 +32,7 @@ def test_check_system_clock_reports_zero_offset_when_synced() -> None:
 
     with (
         patch("core.ntp_check.socket.socket", return_value=fake_sock),
-        patch("core.ntp_check.time.time", side_effect=[now, now]),
+        patch("core.ntp_check.time.time", return_value=now),
     ):
         result = check_system_clock(servers=("fake.example",))
 
@@ -56,7 +56,7 @@ def test_check_system_clock_detects_large_drift() -> None:
 
     with (
         patch("core.ntp_check.socket.socket", return_value=fake_sock),
-        patch("core.ntp_check.time.time", side_effect=[local_now, local_now]),
+        patch("core.ntp_check.time.time", return_value=local_now),
     ):
         result = check_system_clock(servers=("fake.example",))
 
@@ -94,9 +94,65 @@ def test_check_system_clock_falls_back_to_second_server() -> None:
 
     with (
         patch("core.ntp_check.socket.socket", side_effect=[bad_sock, good_sock]),
-        patch("core.ntp_check.time.time", side_effect=[now, now, now]),
+        patch("core.ntp_check.time.time", return_value=now),
     ):
         result = check_system_clock(servers=("bad.example", "good.example"))
 
     assert result.reachable is True
     assert result.server == "good.example"
+
+
+def test_small_offset_is_snapped_to_zero() -> None:
+    """Offsets under the noise floor are measurement noise, not a clock error."""
+    local_now = 1_800_000_000.0
+    response = _build_ntp_response(recv_time=local_now + 0.04, xmit_time=local_now + 0.04)
+    fake_sock = MagicMock()
+    fake_sock.recvfrom.return_value = (response, ("1.2.3.4", 123))
+    fake_sock.__enter__.return_value = fake_sock
+    fake_sock.__exit__.return_value = False
+    with (
+        patch("core.ntp_check.socket.socket", return_value=fake_sock),
+        patch("core.ntp_check.time.time", return_value=local_now),
+    ):
+        result = check_system_clock(servers=("fake.example",))
+    assert result.offset_s is not None
+    assert result.offset_s == 0.0
+
+
+def test_median_across_servers_rejects_outlier() -> None:
+    """One server with a wildly different answer must not decide the offset."""
+    local_now = 1_800_000_000.0
+
+    def sock_for(offset: float) -> MagicMock:
+        sock = MagicMock()
+        sock.recvfrom.return_value = (
+            _build_ntp_response(local_now + offset, local_now + offset),
+            ("1.2.3.4", 123),
+        )
+        sock.__enter__.return_value = sock
+        sock.__exit__.return_value = False
+        return sock
+
+    socks = [sock_for(0.0)] * 4 + [sock_for(3.0)] * 4 + [sock_for(0.0)] * 4
+    with (
+        patch("core.ntp_check.socket.socket", side_effect=socks),
+        patch("core.ntp_check.time.time", return_value=local_now),
+    ):
+        result = check_system_clock(servers=("a.example", "b.example", "c.example"))
+    assert result.offset_s == 0.0
+
+
+def test_offset_above_noise_floor_is_kept() -> None:
+    local_now = 1_800_000_000.0
+    response = _build_ntp_response(recv_time=local_now + 0.3, xmit_time=local_now + 0.3)
+    fake_sock = MagicMock()
+    fake_sock.recvfrom.return_value = (response, ("1.2.3.4", 123))
+    fake_sock.__enter__.return_value = fake_sock
+    fake_sock.__exit__.return_value = False
+    with (
+        patch("core.ntp_check.socket.socket", return_value=fake_sock),
+        patch("core.ntp_check.time.time", return_value=local_now),
+    ):
+        result = check_system_clock(servers=("fake.example",))
+    assert result.offset_s is not None
+    assert abs(result.offset_s - 0.3) < 1e-3

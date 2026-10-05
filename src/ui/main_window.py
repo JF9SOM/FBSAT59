@@ -3231,6 +3231,7 @@ class MainWindow(QMainWindow):
             self._conn,
             self._radio_control,
             tx_doppler_offsets_fn=self.get_ft4_tx_doppler_offsets_hz,
+            tx_audio_sign_fn=self.get_ft4_tx_audio_sign,
             parent=self,
         )
         self._comms_tab_keys[tab] = "ft4"
@@ -4765,6 +4766,21 @@ class MainWindow(QMainWindow):
                 -self._dial_feedback_offset_hz if invert else self._dial_feedback_offset_hz
             )
         return float(ul_corr)
+
+    def get_ft4_tx_audio_sign(self) -> float:
+        """Direction in which a TX audio-tone shift moves the RF carrier.
+
+        +1.0 when the uplink sideband is USB-like, -1.0 when it is LSB-like
+        (RF = dial - audio). The uplink mode is the transponder mode, flipped
+        by _MODE_INVERT for inverting transponders -- the same derivation the
+        rig mode commands use. Defaults to +1.0 when nothing is selected.
+        """
+        tx = self._current_transmitter
+        if tx is None:
+            return 1.0
+        mode = str(tx.get("mode") or "")
+        ul_mode = _MODE_INVERT.get(mode, mode) if bool(tx.get("invert", False)) else mode
+        return -1.0 if ul_mode.upper() in ("LSB", "LSB-D") else 1.0
 
     def get_ft4_tx_doppler_offsets_hz(
         self, duration_s: float, n_samples: int = 6

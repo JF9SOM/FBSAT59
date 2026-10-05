@@ -20,6 +20,17 @@ _NTP_SERVERS: tuple[str, ...] = (
 _NTP_PORT = 123
 _NTP_EPOCH_OFFSET = 2208988800  # seconds between 1900-01-01 (NTP epoch) and 1970-01-01
 _QUERY_TIMEOUT_S = 4.0
+# A single SNTP exchange is only as accurate as the network path is symmetric:
+# observed single-shot results on one machine ranged 0.10-0.22 s from run to
+# run while the real clock error (agreed by three servers) was 0.035 s. So
+# several samples are taken per server and only the lowest round-trip one is
+# kept (the standard NTP clock-filter idea), then the median across servers.
+_SAMPLES_PER_SERVER = 4
+_MAX_SERVERS = 3
+# Offsets below this are indistinguishable from measurement noise on a
+# consumer network path, and FT4 tolerates this much timing error anyway, so
+# they are reported as exactly 0 instead of being "corrected" into the signal.
+_NOISE_FLOOR_S = 0.1
 
 
 @dataclass
@@ -34,8 +45,8 @@ class NtpCheckResult:
     error: str | None
 
 
-def _query_sntp(server: str, timeout: float = _QUERY_TIMEOUT_S) -> float:
-    """Query one SNTP server and return the clock offset in seconds.
+def _query_sntp(server: str, timeout: float = _QUERY_TIMEOUT_S) -> tuple[float, float]:
+    """Query one SNTP server and return (clock offset, round-trip delay) in seconds.
 
     Raises OSError / socket.timeout / struct.error on failure.
     """
@@ -60,21 +71,42 @@ def _query_sntp(server: str, timeout: float = _QUERY_TIMEOUT_S) -> float:
 
     # Standard SNTP clock offset formula (RFC 4330): positive means the local
     # clock is behind and should be advanced by this many seconds.
-    return ((t2 - t1) + (t3 - t4)) / 2.0
+    offset = ((t2 - t1) + (t3 - t4)) / 2.0
+    delay = max(0.0, (t4 - t1) - (t3 - t2))
+    return offset, delay
 
 
 def check_system_clock(servers: tuple[str, ...] = _NTP_SERVERS) -> NtpCheckResult:
-    """Query NTP servers in turn and return the first successful result.
+    """Estimate the local clock offset from several NTP servers.
 
-    Tries each server in `servers` until one responds; if none respond,
-    returns a result with reachable=False and the last error encountered.
+    Per server, the lowest-delay of several samples is kept; the result is the
+    median over up to _MAX_SERVERS responding servers, snapped to 0.0 when
+    smaller than _NOISE_FLOOR_S. A server that fails its first sample is
+    skipped immediately (no repeated timeouts). If none respond, returns
+    reachable=False with the last error encountered.
     """
     last_error: str | None = None
+    # (offset, delay, server) -- best sample of each responding server
+    best: list[tuple[float, float, str]] = []
     for server in servers:
-        try:
-            offset = _query_sntp(server)
-            return NtpCheckResult(reachable=True, offset_s=offset, server=server, error=None)
-        except Exception as exc:  # noqa: BLE001 - socket/struct errors all mean "unreachable" here
-            last_error = f"{type(exc).__name__}: {exc}"
-            continue
-    return NtpCheckResult(reachable=False, offset_s=None, server=None, error=last_error)
+        if len(best) >= _MAX_SERVERS:
+            break
+        samples: list[tuple[float, float]] = []
+        for _ in range(_SAMPLES_PER_SERVER):
+            try:
+                samples.append(_query_sntp(server))
+            except Exception as exc:  # noqa: BLE001 - socket/struct errors all mean "unreachable" here
+                last_error = f"{type(exc).__name__}: {exc}"
+                break
+        if samples:
+            offset, delay = min(samples, key=lambda x: x[1])
+            best.append((offset, delay, server))
+    if not best:
+        return NtpCheckResult(reachable=False, offset_s=None, server=None, error=last_error)
+    offsets = sorted(b[0] for b in best)
+    mid = len(offsets) // 2
+    median = offsets[mid] if len(offsets) % 2 else (offsets[mid - 1] + offsets[mid]) / 2.0
+    if abs(median) < _NOISE_FLOOR_S:
+        median = 0.0
+    server_name = min(best, key=lambda b: b[1])[2]
+    return NtpCheckResult(reachable=True, offset_s=median, server=server_name, error=None)
