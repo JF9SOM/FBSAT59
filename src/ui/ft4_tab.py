@@ -46,6 +46,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from comms import qt_audio_out
 from comms.audio_device_manager import get_audio_device_manager, validate_output_device
 from comms.ft4.codec import (
     FT4_PERIOD,
@@ -130,35 +131,10 @@ _AUDIO_OWNER = "FT4"
 # smooth on this timescale) but cheap since each sample is just a Skyfield
 # lookup, not a CAT round-trip.
 _DOPPLER_TX_SAMPLES = 6
-# 250ms @ 12000 Hz. Originally 240 (~20ms), sized only to bound the delay
-# before a TX Level slider change takes effect mid-transmission (GitHub
-# Issue #16). Raised to 6000 (500ms) for GitHub Issue #26: on IC-9700
-# satmode Direct, _tracking_through_tx()'s then-1-Hz UL threshold made
-# controller.py's set_freq() calls (which hold the GIL for their whole
-# blocking CAT round-trip -- Hamlib's Python binding is built without
-# SWIG's -threads option) fire almost back-to-back throughout TX, each
-# one taking ~200-400ms (measured; see "took=" lines added for this same
-# issue). At the old 20ms blocksize, PortAudio only ever had a sliver of
-# audio queued ahead of the hardware, so any single one of those stalls
-# caused an audible "output underflow" and stretched a ~5s transmission
-# out to 10-30+s.
-#
-# Once controller.py's UL write was throttled to a flat 1s floor (see
-# _TX_UL_MIN_INTERVAL_S there) the underflow was gone, but transmissions
-# still ran ~1.5s longer than the nominal ~5.04s and started with a
-# ~0.5-0.77s delay before the first audio callback -- confirmed via field
-# logs to be the 500ms block itself now costing its own scheduling
-# overhead per callback, no longer masked by the (much reduced) CAT
-# contention it was originally sized to survive. Lowered back down to
-# 3000 (250ms) now that DL is *also* throttled during TX (see
-# _TX_DL_MIN_INTERVAL_S in controller.py): 250ms still comfortably covers
-# one typical single CAT-call stall (~200-266ms measured in the field)
-# while roughly halving the added per-callback latency from the 500ms
-# block. Revisit (either direction) based on the next field test --
-# if underflow reappears, raise it back up; if the ~1.5s stretch
-# persists, it may need to come down further or the writes throttled
-# more aggressively still.
-_TX_BLOCK_SIZE = 12000  # 250 ms at TX_SAMPLE_RATE (was 3000 frames at 12 kHz)
+# TX audio is played exactly like WSJT-X does it (comms/qt_audio_out.py):
+# Qt's QAudioSink, 48 kHz / 16-bit signed / mono, with the buffer size left
+# to Qt and the TX Level applied as the sink's volume. No block size is set
+# anywhere; see that module's docstring.
 # GitHub Issue #26: a hard ceiling on how long a single transmission is
 # allowed to hold PTT, independent of whatever _TxWorker's own audio
 # stream thinks is going on. done.wait() below normally unblocks once our
@@ -170,13 +146,14 @@ _TX_BLOCK_SIZE = 12000  # 250 ms at TX_SAMPLE_RATE (was 3000 frames at 12 kHz)
 # margin over a normal transmission while still guaranteeing PTT comes
 # back off before the *next* period would otherwise try to key up again.
 _TX_WATCHDOG_S = 7.0
-# Estimated delay between stream.start() being called and the first sample
-# reaching the sound card: start() itself (~0.05 s) plus the first callback
-# lag (~0.06 s), both measured in ft4_decode.log ("tx stream_started",
-# "tx callback_stats first_cb_lag"). Used to start the stream early enough
-# that the audio begins FT4_TX_OFFSET (0.5 s) after the slot boundary, as
-# WSJT-X does. Tune from the "tx audio_start" log line if it is off.
-_TX_AUDIO_START_LATENCY_S = 0.11
+# Estimated delay between play_burst() being called and the first sample
+# reaching the sound card. Measured on a built-in output: 0.033 s from the
+# request to QAudioSink reporting Active (the device's own latency is not
+# included); see the "tx qt_audio first_active_lag" log line and tune this
+# against real USB-codec passes. Used to start playback early enough that
+# the audio begins FT4_TX_OFFSET (0.5 s) after the slot boundary, as WSJT-X
+# does.
+_TX_AUDIO_START_LATENCY_S = 0.05
 # Tune (continuous test tone for adjusting TX level / ALC): safety cap on how
 # long a single Tune may hold PTT if the operator forgets to switch it off.
 _TUNE_MAX_S = 60.0
@@ -195,19 +172,15 @@ _RIG_WATCH_INTERVAL_MS = 3000
 
 
 class _TxWorker(QObject):
-    """Plays FT4 audio through sounddevice and controls PTT.
+    """Plays FT4 audio through Qt's QAudioSink (as WSJT-X does) and controls PTT.
 
-    Streams audio via a sounddevice.OutputStream callback (rather than a
-    single sd.play() call) so the TX Level gain can be re-read every block
-    and take effect live during an active transmission, instead of only on
-    the next transmission (GitHub Issue #16). The gain is linearly ramped
-    across each block from the previous block's gain to the freshly-read
-    value, so a mid-transmission slider move never produces an abrupt
-    amplitude step (click) at a block boundary.
+    The TX Level gain is read live (every 50 ms) and applied as the sink's
+    volume, so a slider move takes effect during an active transmission.
 
     Lives in a plain Python thread (not QThread) because we block on a
-    threading.Event waiting for the stream to finish and do not need a Qt
-    event loop inside the worker.
+    threading.Event waiting for playback to finish and do not need a Qt event
+    loop inside the worker; the QAudioSink itself lives on the dedicated audio
+    thread of comms.qt_audio_out.
     """
 
     finished: Signal = Signal()
@@ -237,34 +210,24 @@ class _TxWorker(QObject):
         # there rather than a stalled-audio watchdog event.
         self._watchdog_s = watchdog_s
         self._timeout_is_normal = timeout_is_normal
-        # Guards _active_stream, which is written from run()'s thread and
+        # Guards _active_job, which is written from run()'s thread and
         # read from abort() (called from the Qt main thread by Halt TX /
         # closeEvent) — see abort()'s docstring.
         self._stream_lock = threading.Lock()
-        self._active_stream: Any | None = None
+        self._active_job: Any | None = None
 
     def abort(self) -> None:
         """Cut an in-progress transmission short (Halt TX / tab close).
 
-        GitHub Issue #26: previously Halt TX only cleared the "keep
-        transmitting" flag — a burst already playing ran to completion no
-        matter what, which was barely noticeable back when a burst took its
-        normal ~5s, but became a real "the button doesn't do anything"
-        complaint once the still-unresolved underrun issue above started
-        stretching some transmissions past 30s. Calling the stream's own
-        abort() (rather than the module-level sd.stop(), which affects
-        every stream process-wide) stops just this transmission immediately
-        without waiting for its queued audio to drain. PortAudio still
-        invokes finished_callback when a stream is aborted, so run()'s
-        done.wait() unblocks and its normal PTT-off / lock-release cleanup
-        still runs, just now within a fraction of a second instead of
-        however long was left to play.
+        GitHub Issue #26: Halt TX used to only clear the "keep transmitting"
+        flag, so a burst already playing ran to completion. Aborting the
+        player makes run()'s wait return within a fraction of a second, and
+        its normal PTT-off / lock-release cleanup still runs.
         """
         with self._stream_lock:
-            stream = self._active_stream
-        if stream is not None:
-            with contextlib.suppress(Exception):
-                stream.abort()
+            job = self._active_job
+        if job is not None:
+            qt_audio_out.abort_burst()
 
     def _release_ptt(self) -> bool:
         """Un-key the rig; try once more if the first attempt reports failure."""
@@ -303,9 +266,12 @@ class _TxWorker(QObject):
         # if this needs revisiting with an actual timeout.
         log = get_ft4_decode_logger()
         try:
-            import sounddevice as sd  # optional dep
+            import sounddevice as sd  # optional dep (device index -> name)
 
             validate_output_device(self._out_device, TX_SAMPLE_RATE, channels=1)
+            device_name: str | None = None
+            if self._out_device is not None:
+                device_name = str(sd.query_devices(self._out_device)["name"])
 
             if self._rig is not None:
                 # freeze_doppler=False: an FT4 transmission is ~5 s, far too
@@ -320,97 +286,14 @@ class _TxWorker(QObject):
                     return
                 time.sleep(0.15)  # PTT lead time
 
-            audio = self._audio
-            n = len(audio)
-            idx = 0
-            last_gain = float(self._get_gain())
-            done = threading.Event()
-
-            # GitHub Issue #26: with pause_input()/resume_input() confirmed
-            # engaging (rx_paused=True) and both fast, "tx playback_done"
-            # still took 26-30s instead of the ~5s the audio itself is —
-            # ruling out RX/TX concurrent-open as the cause of *this* span.
-            # `status` (PortAudio's own under/overrun report for this
-            # callback) was being silently discarded; cb_stats also tracks
-            # how many times the callback actually ran and the longest gap
-            # between two calls, to tell "many calls arriving late" apart
-            # from "wrong call count" once the next freeze is logged.
-            cb_stats: dict[str, Any] = {
-                "n_calls": 0,
-                "first_time": None,
-                "max_gap": 0.0,
-                "status_flags": set(),
-            }
-
-            def _callback(
-                outdata: NDArray[np.float32], frames: int, _time: Any, status: Any
-            ) -> None:
-                nonlocal idx, last_gain
-                now = time.monotonic()
-                cb_stats["n_calls"] += 1
-                if cb_stats["first_time"] is None:
-                    cb_stats["first_time"] = now
-                else:
-                    gap = now - cb_stats["prev_time"]
-                    if gap > cb_stats["max_gap"]:
-                        cb_stats["max_gap"] = gap
-                cb_stats["prev_time"] = now
-                if status:
-                    cb_stats["status_flags"].add(str(status))
-                remaining = n - idx
-                take = min(frames, remaining)
-                if take > 0:
-                    gain_now = float(self._get_gain())
-                    ramp = np.linspace(last_gain, gain_now, take, dtype=np.float32)
-                    outdata[:take, 0] = audio[idx : idx + take] * ramp
-                    last_gain = gain_now
-                    idx += take
-                if take < frames:
-                    outdata[take:, 0] = 0.0
-                if remaining <= frames:
-                    raise sd.CallbackStop()
-
-            # GitHub Issue #26: a report with pause_input()/set_ptt() both
-            # logging fine still ended in the whole app freezing solid right
-            # after "tx ptt_on" -- with a *different*, unrelated background
-            # thread (Doppler tracking) also going silent at the very same
-            # instant, which points to a GIL-blocking native call somewhere
-            # in opening/starting/playing this stream, not a lock deadlock
-            # between our own Python objects. These three checkpoints (spans
-            # not previously distinguished by any log line) narrow down
-            # which of open/start/playback it's actually stuck in.
-            # GitHub Issue #26: with the RX-pause dead end reverted,
-            # "tx callback_stats" finally logged real data — PortAudio was
-            # reporting output_underflow on every single transmission, with
-            # the callback's *count* exactly right (252, matching the
-            # audio length) but individual calls arriving up to ~300ms
-            # late instead of the expected ~20ms apart, stretching ~5s of
-            # audio out to 12-13s. Requesting latency="high" was tried next
-            # to give this device's driver more buffer headroom, but the
-            # next log round showed it made things measurably *worse* and
-            # escalating within the same session (26.9s, then 32.1s, then
-            # Halt TX unable to stop a transmission still running past
-            # 34s) — this specific USB codec's driver apparently mishandles
-            # PortAudio's "high" latency request rather than benefiting
-            # from it. Reverted back to leaving `latency` unset (PortAudio's
-            # own default) rather than guessing at another value with no
-            # data to back it. The underlying underrun is still
-            # unresolved — Halt TX (see abort(), below) now actually cuts
-            # an in-progress burst short instead of only preventing future
-            # ones, as a safety net until the root cause is found.
-            t0 = time.monotonic()
-            stream = sd.OutputStream(
-                samplerate=TX_SAMPLE_RATE,
-                device=self._out_device,
-                channels=1,
-                dtype="float32",
-                blocksize=_TX_BLOCK_SIZE,
-                callback=_callback,
-                finished_callback=done.set,
+            job = qt_audio_out.PlayJob(
+                pcm=qt_audio_out.float_to_pcm16(self._audio),
+                duration_s=len(self._audio) / TX_SAMPLE_RATE + qt_audio_out.TAIL_SILENCE_S,
+                device_name=device_name,
+                get_gain=self._get_gain,
             )
             with self._stream_lock:
-                self._active_stream = stream
-            log.info("tx stream_open duration=%.3fs", time.monotonic() - t0)
+                self._active_job = job
             if self._start_at is not None:
                 wait_s = self._start_at - _TX_AUDIO_START_LATENCY_S - corrected_time()
                 if wait_s > 0:
@@ -420,44 +303,38 @@ class _TxWorker(QObject):
                     corrected_time() + _TX_AUDIO_START_LATENCY_S - (self._start_at - FT4_TX_OFFSET),
                 )
             t0 = time.monotonic()
-            with stream:
-                stream_started_at = time.monotonic()
-                log.info("tx stream_started duration=%.3fs", stream_started_at - t0)
-                mgr.pin_active_output(_AUDIO_OWNER)
-                t0 = time.monotonic()
-                finished_naturally = done.wait(timeout=self._watchdog_s)
-                if not finished_naturally and self._timeout_is_normal:
-                    with contextlib.suppress(Exception):
-                        stream.abort()
-                    finished_naturally = True
-                if not finished_naturally:
-                    # The audio thread never signalled completion within
-                    # the watchdog window -- cut it short exactly like an
-                    # operator pressing Halt TX would (see abort()'s
-                    # docstring: PortAudio still invokes finished_callback
-                    # after abort(), so nothing further needs to be done
-                    # here to unblock; the PTT-off below still runs
-                    # unconditionally).
-                    log.warning(
-                        "tx watchdog FIRED after %.1fs — forcing PTT off "
-                        "(audio pipeline did not signal completion)",
-                        self._watchdog_s,
-                    )
-                    with contextlib.suppress(Exception):
-                        stream.abort()
-                log.info("tx playback_done duration=%.3fs", time.monotonic() - t0)
-                first_lag = (
-                    cb_stats["first_time"] - stream_started_at
-                    if cb_stats["first_time"] is not None
-                    else -1.0
+            qt_audio_out.play_burst(job)
+            mgr.pin_active_output(_AUDIO_OWNER)
+            finished_naturally = job.done.wait(timeout=self._watchdog_s)
+            if not finished_naturally and self._timeout_is_normal:
+                qt_audio_out.abort_burst()
+                job.done.wait(1.0)
+                finished_naturally = True
+            if not finished_naturally:
+                # The audio thread never signalled completion within the
+                # watchdog window -- cut it short exactly like an operator
+                # pressing Halt TX would; the PTT-off below still runs
+                # unconditionally.
+                log.warning(
+                    "tx watchdog FIRED after %.1fs — forcing PTT off "
+                    "(audio pipeline did not signal completion)",
+                    self._watchdog_s,
                 )
-                log.info(
-                    "tx callback_stats n_calls=%d first_cb_lag=%.3fs max_gap=%.3fs status_flags=%s",
-                    cb_stats["n_calls"],
-                    first_lag,
-                    cb_stats["max_gap"],
-                    sorted(cb_stats["status_flags"]) or ["none"],
-                )
+                qt_audio_out.abort_burst()
+                job.done.wait(1.0)
+            log.info("tx playback_done duration=%.3fs", time.monotonic() - t0)
+            first_lag = (
+                job.first_active_at - job.requested_at if job.first_active_at is not None else -1.0
+            )
+            log.info(
+                "tx qt_audio device=%r sink_buffer=%d B first_active_lag=%.3fs processed=%.3fs",
+                device_name,
+                job.buffer_bytes,
+                first_lag,
+                job.processed_s,
+            )
+            if job.error:
+                raise RuntimeError(job.error)
 
             ptt_off_ok = True
             if self._rig is not None:
@@ -493,7 +370,7 @@ class _TxWorker(QObject):
             self.error.emit(str(exc))
         finally:
             with self._stream_lock:
-                self._active_stream = None
+                self._active_job = None
             mgr.release_output(_AUDIO_OWNER, self._out_device)
 
 
