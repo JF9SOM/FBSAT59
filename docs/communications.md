@@ -3382,10 +3382,13 @@ Upload への応答）で確認した。N6RFM の「宛先 5 バイト」は 6 �
 - Download ID=5 = `42 F8 BD 42 80 ...` は本実装の式（`0x40+id//2`、`(id%2)*128`）と一致。
 - **コールサインは 6 文字固定で、足りなければ空白 0x20 埋め**（旧実装は NUL 埋めだった。6 文字局には影響なし）。
   メッセージは 8 バイト固定の 0x00 埋め。**メッセージ途中の 0x00 以降は保存されない**。
-- **未解決**: Upload の例は `42 F8 BD 40 00 ...`（種別バイト `40 00`）だが、同ページの種別表（00=Download, 01=Upload,
-  10=Confirm, 11=Parrot）からは Upload=`50 00`（本実装、N6RFM の逆解析と同じ）になる。例は表では Download の種別。
-  Confirm/Parrot の例は無い。ビット配置（例から）: サテライトフレームの bit14–17=モード(0101)、bit18–19=種別、
-  bit20–24=Message ID(5)、bit25–31=Packet ID(7)。研究室（arica2-ama@phys.aoyama.ac.jp）か JI1IZR 氏に確認、または実機で両方を試す。
+- **Upload の種別バイト（解決済み、2026-10-05）**: ページの Upload の例は `42 F8 BD 40 00 ...` だが、同ページの説明
+  （type: 0b00=Download, 0b01=Upload, 0b10=Confirm, 0b11=Parrot）では Upload=`50 00`。ページ下の**公式コマンド生成フォーム**
+  （type=Save message、call sign=JS1YSE、message=AAA、Message ID=1）の出力は `42F8BD50 80 4A5331595345 ...` で、
+  **種別バイトは `50`**（byte5 の `80` は Message ID=1 の最下位ビット。Upload では無視される）。本実装（Upload=`50 00`、
+  Confirm=`60 00`、Parrot=`70 00`）が正しく、**ページの例 `40 00` は誤記**。画像モードの例 `40 80` も Mode ビットが説明と合わない。
+  ビット配置（ページの表）: byte1=`42`、byte2=`F8`、byte3=`101111`+Mode 下位2bit、byte4=Mode 上位2bit+Type 2bit+Message ID 上位4bit、
+  byte5=Message ID 最下位1bit+Packet ID 7bit、byte6–11=コールサイン、byte12–19=メッセージ、byte20–21=FCS。Mode=0b0101（メッセージ）/0b0110（画像）。
 - ビーコンは **25 秒ごと**、**衛星は CW/GMSK 送信中はアップリンクを受け付けない**（「ビーコン後 15 秒」は公式の記述ではない）。
 - 運用の制限: 運用期間 2026-09-29〜10-13。**青山学院の運用が 16:00〜19:00 UTC のパスを通常使うので、アマチュアは送信しない**
   （アプリは警告しない。ユーザー判断で不要とした）。
