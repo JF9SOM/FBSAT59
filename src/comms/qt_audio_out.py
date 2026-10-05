@@ -28,6 +28,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
@@ -41,7 +42,14 @@ from PySide6.QtCore import (
     QTimer,
     Signal,
 )
-from PySide6.QtMultimedia import QAudio, QAudioDevice, QAudioFormat, QAudioSink, QMediaDevices
+
+if TYPE_CHECKING:
+    from PySide6.QtMultimedia import QAudio, QAudioDevice, QAudioSink
+
+# QtMultimedia is imported lazily (inside the functions below): on a Linux
+# machine without PulseAudio's libpulse the import itself raises ImportError,
+# which must not stop this module -- or ui.ft4_tab, which imports it -- from
+# loading. The failure is reported as a TX error when a burst is played.
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +103,8 @@ def float_to_pcm16(
 
 def find_output_device(name: str | None) -> QAudioDevice | None:
     """Qt output device whose description equals *name* (None: system default)."""
+    from PySide6.QtMultimedia import QMediaDevices
+
     if name is None:
         return QMediaDevices.defaultAudioOutput()
     for dev in QMediaDevices.audioOutputs():
@@ -119,6 +129,13 @@ class _Player(QObject):
         self.abort_requested.connect(self._on_abort)
 
     def _on_play(self, job: PlayJob) -> None:
+        try:
+            from PySide6.QtMultimedia import QAudioFormat, QAudioSink
+        except ImportError as exc:
+            job.error = f"Qt Multimedia is not available: {exc}"
+            job.audio_done.set()
+            job.done.set()
+            return
         if self._job is not None:
             job.error = "audio output busy"
             job.audio_done.set()
@@ -161,6 +178,8 @@ class _Player(QObject):
             self._finish(f"audio sink error: {sink.error().name}")
 
     def _on_state(self, state: QAudio.State) -> None:
+        from PySide6.QtMultimedia import QAudio
+
         job, buffer = self._job, self._buffer
         if job is None or buffer is None:
             return

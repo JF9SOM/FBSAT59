@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pytest
 from pytestqt.qtbot import QtBot
 
-pytest.importorskip("PySide6.QtMultimedia")
-
 from comms import qt_audio_out  # noqa: E402
+
+
+def _qt_multimedia_available() -> bool:
+    """QtMultimedia needs system libraries (e.g. libpulse) that CI may lack."""
+    try:
+        import PySide6.QtMultimedia  # noqa: F401
+    except ImportError:
+        return False
+    return True
 
 
 @pytest.fixture(autouse=True)
@@ -45,6 +54,7 @@ def test_float_to_pcm16_clips_overshoot() -> None:
     assert pcm[1] == -32768
 
 
+@pytest.mark.skipif(not _qt_multimedia_available(), reason="QtMultimedia unavailable")
 def test_missing_output_device_reports_error(qtbot: QtBot) -> None:
     job = qt_audio_out.PlayJob(
         pcm=b"\x00\x00" * 100,
@@ -56,3 +66,26 @@ def test_missing_output_device_reports_error(qtbot: QtBot) -> None:
     assert job.done.wait(5.0)
     assert job.error is not None
     assert "not found" in job.error
+
+
+def test_missing_qt_multimedia_is_reported_as_error(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without QtMultimedia the burst fails with a message instead of crashing."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "PySide6.QtMultimedia":
+            raise ImportError("libpulse.so.0: cannot open shared object file")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    job = qt_audio_out.PlayJob(
+        pcm=b"\x00\x00", duration_s=0.1, device_name=None, get_gain=lambda: 1.0
+    )
+    qt_audio_out.play_burst(job)
+    assert job.done.wait(5.0)
+    assert job.error is not None
+    assert "not available" in job.error
