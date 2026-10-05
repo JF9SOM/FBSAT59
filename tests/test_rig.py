@@ -573,6 +573,7 @@ class TestFt991DirectSkipsWritesWhileTransmitting:
         with patch("os.open"):
             ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0)  # skipped, see above
         ctrl.set_ptt(False)
+        ctrl._ptt_off_at -= 10.0  # the post-TX settle time has passed
         with (
             patch("os.open", return_value=7) as mock_open,
             patch("os.write") as mock_write,
@@ -2206,10 +2207,52 @@ class TestHamlibNetController:
         ctrl.set_ptt(True, freeze_doppler=False)
         with patch("rig.controller.socket.socket", return_value=sock):
             ctrl.set_ptt(False)
+        ctrl._ptt_off_at -= 10.0  # the post-TX settle time has passed
         ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0)
         sent = b"".join(c.args[0] for c in ctrl._sock.sendall.call_args_list)  # type: ignore[union-attr]
         assert b"F 435600000\n" in sent
         assert b"I 145900000\n" in sent
+
+    def test_ft991_holds_writes_right_after_ptt_off(self) -> None:
+        """The first F sent 0.13 s after PTT off hung rigctld for 10 s
+        (2026-10-05 pass): FT-991 writes stay suspended for a settle time."""
+        ctrl = self._make_connected_ctrl(ctcss_method="ft991")
+        ctrl._sock.recv.return_value = b"RPRT 0\n"  # type: ignore[union-attr]
+        sock, _ = self._fake_ptt_socket([b"RPRT 0\n"])
+        ctrl.set_ptt(True, freeze_doppler=False)
+        with patch("rig.controller.socket.socket", return_value=sock):
+            ctrl.set_ptt(False)
+        ctrl._sock.sendall.reset_mock()  # type: ignore[union-attr]
+        assert ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0) is True
+        ctrl._sock.sendall.assert_not_called()  # type: ignore[union-attr]
+        assert ctrl._last_dl_hz is None
+
+    def test_ft991_write_waiting_on_cmd_lock_is_dropped_if_tx_starts(self) -> None:
+        """A write that passed the guard and then waited behind the command
+        lock (a reconnect's "S 1 Main") must not go out once TX has begun."""
+        ctrl = self._make_connected_ctrl(ctcss_method="ft991")
+        ctrl._sock.recv.return_value = b"RPRT 0\n"  # type: ignore[union-attr]
+        ctrl._cmd_lock.acquire()
+        results: list[bool] = []
+        t = threading.Thread(
+            target=lambda: results.append(ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0))
+        )
+        t.start()
+        time.sleep(0.2)  # the write is now blocked on _cmd_lock, guard already passed
+        ctrl._ptt_active = True  # TX starts meanwhile
+        ctrl._doppler_frozen = False
+        ctrl._cmd_lock.release()
+        t.join(2.0)
+        assert results == [True]
+        ctrl._sock.sendall.assert_not_called()  # type: ignore[union-attr]
+
+    def test_non_ft991_not_held_after_ptt_off(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="hamlib")
+        ctrl._sock.recv.return_value = b"RPRT 0\n"  # type: ignore[union-attr]
+        ctrl._ptt_off_at = time.monotonic()  # PTT was just released
+        ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0)
+        sent = b"".join(c.args[0] for c in ctrl._sock.sendall.call_args_list)  # type: ignore[union-attr]
+        assert b"F 435600000\n" in sent
 
     def test_last_ul_hz_property_mirrors_internal_state(self) -> None:
         """RigController.last_ul_hz -- the public property FT4's TX-time
@@ -2225,6 +2268,7 @@ class TestHamlibNetController:
         sock, _ = self._fake_ptt_socket([b"RPRT 0\n"])
         with patch("rig.controller.socket.socket", return_value=sock):
             ctrl.set_ptt(False)
+        ctrl._ptt_off_at -= 10.0  # the post-TX settle time has passed
         ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0)
         assert ctrl.last_ul_hz == 145_900_000.0
 

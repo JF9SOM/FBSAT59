@@ -290,6 +290,13 @@ _TX_DL_MIN_INTERVAL_S = 3.0
 # FT-991 / FT-991A / FT-991AM (Hamlib model 1035) Direct mode raw CAT path.
 _FT991_DIRECT_MODEL_IDS: frozenset[int] = frozenset({1035})
 
+# FT-991/FT-991A do not answer CAT while transmitting, and not for a short
+# while after PTT is released either: in the 2026-10-05 RS-44 pass the first
+# F sent 0.13 s after PTT off hung for 10 s (rigctld waited out Hamlib's
+# 4 x 2 s retries), while writes resumed 0.5-0.6 s after PTT off went through.
+# Doppler writes to these rigs therefore stay suspended this long after PTT off.
+_FT991_POST_TX_SETTLE_S = 1.0
+
 # IC-705 (Hamlib model 3085): Hamlib's set_split_vfo() intermittently rejects
 # the call with "unsupported split" for this backend (confirmed live —
 # same class of SWIG/binding flakiness as send_raw() and get_func()
@@ -758,6 +765,8 @@ class RigController(ABC):
         # freeze_doppler=True (the default) is transmitting. Tone modes
         # (FT4/Q65) pass False and keep tracking during TX -- see set_ptt().
         self._doppler_frozen: bool = False
+        # time.monotonic() of the last set_ptt(False); see _ft991_cat_blocked().
+        self._ptt_off_at: float = float("-inf")
         # How this rig is keyed (see rig.ptt): CAT (default), RTS, DTR or VOX.
         self._ptt_method: str = PTT_CAT
         self._ptt_port: str = ""
@@ -942,6 +951,8 @@ class RigController(ABC):
         """
         self._ptt_active = enabled
         self._doppler_frozen = enabled and freeze_doppler
+        if not enabled:
+            self._ptt_off_at = time.monotonic()
         return False
 
     def _tracking_through_tx(self) -> bool:
@@ -952,6 +963,19 @@ class RigController(ABC):
         transmission, when the uplink is genuinely on the air.
         """
         return self._ptt_active and not self._doppler_frozen
+
+    def _ft991_cat_blocked(self) -> bool:
+        """True while an FT-991/FT-991A cannot be sent CAT writes.
+
+        Only the FT-991 branches call this (NET ``ctcss_method == "ft991"``,
+        Direct model 1035); every other rig keeps its own behaviour. Blocked
+        while transmitting with tracking, and for _FT991_POST_TX_SETTLE_S after
+        PTT is released.
+        """
+        return (
+            self._tracking_through_tx()
+            or time.monotonic() - self._ptt_off_at < _FT991_POST_TX_SETTLE_S
+        )
 
     # -- Utilities --
 
@@ -2071,7 +2095,7 @@ class HamlibDirectController(RigController):
                                 self._pending_mode_ctcss = False
                                 self._resend_mode_ctcss_via_rig()
 
-            elif self._model_id in _FT991_DIRECT_MODEL_IDS and self._tracking_through_tx():
+            elif self._model_id in _FT991_DIRECT_MODEL_IDS and self._ft991_cat_blocked():
                 # FT-991/FT-991A ignore a frequency write while transmitting --
                 # confirmed via rigctld (NET mode, see
                 # HamlibNetController.set_vfo_frequencies()), and the same
@@ -3741,7 +3765,7 @@ class HamlibNetController(RigController):
         # Skip it; _last_dl_hz/_last_ul_hz are untouched, so the first cycle
         # after PTT off writes the current values. Icom rigs do accept mid-TX
         # changes (GitHub Issue #16) and keep tracking.
-        if self._ctcss_method == "ft991" and self._tracking_through_tx():
+        if self._ctcss_method == "ft991" and self._ft991_cat_blocked():
             return True
 
         # A TX-only rig is plain simplex: the uplink is sent as its one
@@ -3752,6 +3776,12 @@ class HamlibNetController(RigController):
         send_tx = self._radio_type != "rx_only"
 
         with self._cmd_lock:
+            # The check above ran before this lock was free. A write that
+            # passed it and then waited here (e.g. behind a reconnect's
+            # "S 1 Main", up to 9 s) used to go out after a transmission had
+            # started -- 5 such F writes hung rigctld in the 2026-10-05 pass.
+            if self._ctcss_method == "ft991" and self._ft991_cat_blocked():
+                return True
             # RX cycle
             if send_rx and vfoa_hz is not None:
                 last_dl = self._last_dl_hz
