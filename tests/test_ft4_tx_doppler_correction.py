@@ -138,3 +138,27 @@ def test_usb_uplink_keeps_audio_correction_sign(qtbot: QtBot) -> None:
     fn, _ = tab._build_tx_doppler_offset_fn(MagicMock(last_ul_hz=last_ul))
     assert fn is not None
     assert fn(FT4_TX_DURATION) == pytest.approx(40.0)
+
+
+def test_switched_off_sends_fixed_tone(qtbot: QtBot) -> None:
+    """The TX Doppler checkbox off -> no correction function (WSJT-X-style fixed tone)."""
+    last_ul = 145_900_000.0
+    targets = [last_ul + 40.0 * (i / 5.0) for i in range(6)]
+    offsets_fn = MagicMock(return_value=targets)
+    tab = _make_tab(qtbot, tx_doppler_offsets_fn=offsets_fn, tx_audio_sign_fn=lambda: -1.0)
+    assert tab._tx_doppler_check.isChecked()  # on by default
+    tab._tx_doppler_check.setChecked(False)
+    fn, residual = tab._build_tx_doppler_offset_fn(MagicMock(last_ul_hz=last_ul))
+    assert fn is None
+    assert residual is None
+    offsets_fn.assert_not_called()
+    tab._tx_doppler_check.setChecked(True)
+    fn, _ = tab._build_tx_doppler_offset_fn(MagicMock(last_ul_hz=last_ul))
+    assert fn is not None
+
+
+def test_switch_state_is_saved(qtbot: QtBot) -> None:
+    tab = _make_tab(qtbot)
+    tab._tx_doppler_check.setChecked(False)
+    row = tab._conn.execute("SELECT value FROM app_settings WHERE key='ft4_settings'").fetchone()
+    assert '"tx_doppler_audio": false' in row[0]

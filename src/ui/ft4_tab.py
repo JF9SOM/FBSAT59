@@ -31,6 +31,7 @@ from numpy.typing import NDArray
 from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFrame,
     QGroupBox,
@@ -577,6 +578,10 @@ class Ft4Tab(QWidget):
         self._sdr_pipeline: Any | None = None
         self._sdr_tap: Any | None = None  # sdr.usb_audio.SdrUsbAudioTap while attached
         self._tx_level_db: int = TX_LEVEL_MAX_DB  # TX audio level, dB below full scale
+        # Follow Doppler with the TX audio tone during a burst (see
+        # _build_tx_doppler_offset_fn). Switchable for A/B tests against WSJT-X,
+        # which always sends a fixed tone.
+        self._tx_doppler_audio: bool = True
 
         self._load_settings()
         self._ensure_table()
@@ -838,6 +843,18 @@ class Ft4Tab(QWidget):
 
         qso_row.addStretch()
 
+        self._tx_doppler_check = QCheckBox(_("TX Doppler"))
+        self._tx_doppler_check.setChecked(self._tx_doppler_audio)
+        self._tx_doppler_check.setToolTip(
+            _(
+                "Shift the TX audio tone during each burst to follow the Doppler\n"
+                "drift the rig could not apply (FT-991 ignores CAT while keyed).\n"
+                "Turn off to send a fixed tone like WSJT-X does."
+            )
+        )
+        self._tx_doppler_check.toggled.connect(self._on_tx_doppler_toggled)
+        qso_row.addWidget(self._tx_doppler_check)
+
         qso_row.addWidget(QLabel(_("TX Level:")))
         self._tx_level_slider = QSlider(Qt.Orientation.Horizontal)
         self._tx_level_slider.setRange(TX_LEVEL_MIN_DB, TX_LEVEL_MAX_DB)
@@ -986,6 +1003,7 @@ class Ft4Tab(QWidget):
             self._tx_slot_mode = data.get("tx_slot_mode", "auto")
             self._auto_progress = bool(data.get("auto_progress", False))
             self._tx_level_db = load_level_db(data)
+            self._tx_doppler_audio = bool(data.get("tx_doppler_audio", True))
         # Fall back to global callsign / grid from Set QTH if not yet set per-tab
         if not self._my_call:
             r = self._conn.execute(
@@ -1018,6 +1036,7 @@ class Ft4Tab(QWidget):
                 "tx_slot_mode": self._tx_slot_mode,
                 "auto_progress": self._auto_progress,
                 "tx_level_db": self._tx_level_db,
+                "tx_doppler_audio": self._tx_doppler_audio,
             }
         )
         self._conn.execute(
@@ -1375,6 +1394,8 @@ class Ft4Tab(QWidget):
         the residual (Hz) at the very start of the burst, for diagnostics
         only (ft4_decode.log).
         """
+        if not self._tx_doppler_audio:
+            return None, None  # switched off: fixed tone, like WSJT-X
         if rig is None or self._tx_doppler_offsets_fn is None:
             return None, None
         last_ul = getattr(rig, "last_ul_hz", None)
@@ -1439,7 +1460,9 @@ class Ft4Tab(QWidget):
             "EVEN" if self._scheduler._tx_even else "ODD",
             audio_freq,
             msg,
-            f"{doppler_residual_hz:.1f}" if doppler_residual_hz is not None else "n/a",
+            "off"
+            if not self._tx_doppler_audio
+            else (f"{doppler_residual_hz:.1f}" if doppler_residual_hz is not None else "n/a"),
         )
         self._display_own_tx(msg, audio_freq)
         with self._tx_this_period_lock:
@@ -1927,6 +1950,11 @@ class Ft4Tab(QWidget):
         self._save_settings()
 
     @Slot(int)
+    def _on_tx_doppler_toggled(self, checked: bool) -> None:
+        """Enable/disable the TX audio Doppler tone shift (takes effect next burst)."""
+        self._tx_doppler_audio = checked
+        self._save_settings()
+
     def _on_tx_level_changed(self, value: int) -> None:
         self._tx_level_db = value
         self._tx_level_label.setText(format_db(value))

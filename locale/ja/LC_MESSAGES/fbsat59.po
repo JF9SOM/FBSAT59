@@ -6991,3 +6991,17 @@ msgstr "（仮想チャンネル1の223バイトCCSDSフレームで、CRCが正
 #: src/ui/sstv_tab.py
 msgid "(sync 55 66 / 55 67 and a valid CRC)"
 msgstr "（同期 55 66 / 55 67 と正しいCRC）"
+
+#: src/ui/ft4_tab.py
+msgid "TX Doppler"
+msgstr "送信ドップラー補正"
+
+#: src/ui/ft4_tab.py
+msgid ""
+"Shift the TX audio tone during each burst to follow the Doppler\n"
+"drift the rig could not apply (FT-991 ignores CAT while keyed).\n"
+"Turn off to send a fixed tone like WSJT-X does."
+msgstr ""
+"リグが反映できないドップラーのずれ（FT-991 は送信中の CAT を受け付けません）に\n"
+"合わせて、各バースト中に送信音声のトーンを動かします。\n"
+"オフにすると、WSJT-X と同じ固定トーンで送信します。"
