@@ -2349,6 +2349,68 @@ class TestHamlibNetController:
         assert b"F 435600000\n" in sent
         assert b"I 145900000\n" in sent
 
+    # -- slot-synchronous CAT (FT4 ADC RX) --
+
+    def _sent(self, ctrl: HamlibNetController) -> bytes:
+        return b"".join(c.args[0] for c in ctrl._sock.sendall.call_args_list)  # type: ignore[union-attr]
+
+    def test_slot_sync_silences_the_per_second_writes(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="ft991")
+        ctrl._sock.recv.return_value = b"RPRT 0\n"  # type: ignore[union-attr]
+        ctrl.set_slot_sync(True)
+        assert ctrl.slot_sync is True
+        assert ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0) is True
+        ctrl._sock.sendall.assert_not_called()  # type: ignore[union-attr]
+        ctrl.set_slot_sync(False)
+        ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0)
+        assert b"F 435600000\n" in self._sent(ctrl)
+
+    def test_slot_sync_is_refused_on_other_rigs(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="hamlib")
+        ctrl.set_slot_sync(True)
+        assert ctrl.slot_sync is False
+        assert ctrl.supports_slot_sync is False
+
+    def test_write_dl_and_ul_once(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="ft991")
+        ctrl._sock.recv.return_value = b"RPRT 0\n"  # type: ignore[union-attr]
+        assert ctrl.write_dl_hz(435_618_000.0) is True
+        assert ctrl.write_ul_hz(145_991_000.0) is True
+        sent = self._sent(ctrl)
+        assert b"F 435618000\n" in sent and b"I 145991000\n" in sent
+        assert ctrl.last_dl_hz == 435_618_000.0
+        assert ctrl.last_ul_hz == 145_991_000.0
+
+    def test_write_is_refused_while_keyed_and_just_after(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="ft991")
+        ctrl._sock.recv.return_value = b"RPRT 0\n"  # type: ignore[union-attr]
+        ctrl.set_ptt(True, freeze_doppler=False)
+        ctrl._sock.sendall.reset_mock()  # type: ignore[union-attr]
+        assert ctrl.cat_blocked is True
+        assert ctrl.write_dl_hz(435_618_000.0) is False
+        sock, _ = self._fake_ptt_socket([b"RPRT 0\n"])
+        with patch("rig.controller.socket.socket", return_value=sock):
+            ctrl.set_ptt(False)
+        assert ctrl.write_dl_hz(435_618_000.0) is False  # still inside the settle time
+        ctrl._ptt_off_at -= 10.0
+        assert ctrl.cat_blocked is False
+        assert ctrl.write_dl_hz(435_618_000.0) is True
+
+    def test_a_rejected_write_does_not_move_the_recorded_dial(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="ft991")
+        ctrl._sock.recv.return_value = b"RPRT -1\n"  # type: ignore[union-attr]
+        assert ctrl.write_dl_hz(435_618_000.0) is False
+        assert ctrl.last_dl_hz is None
+
+    def test_read_dial_returns_what_the_radio_reports(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="ft991")
+        ctrl._sock.recv.side_effect = [b"435618000\n", b"145991000\n"]  # type: ignore[union-attr]
+        assert ctrl.read_dial_hz() == (435_618_000.0, 145_991_000.0)
+        ctrl._sock.recv.side_effect = None  # type: ignore[union-attr]
+        ctrl._sock.recv.return_value = b"RPRT 0\n"  # type: ignore[union-attr]
+        ctrl.set_ptt(True, freeze_doppler=False)
+        assert ctrl.read_dial_hz() == (None, None)  # not while keyed
+
     # -- read_dl_ul_independent: Lock dial feedback --
 
     def test_read_dl_ul_independent_yaesu_cat_reads_both(self) -> None:

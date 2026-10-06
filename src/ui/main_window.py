@@ -3232,6 +3232,8 @@ class MainWindow(QMainWindow):
             self._radio_control,
             tx_doppler_offsets_fn=self.get_ft4_tx_doppler_offsets_hz,
             tx_audio_sign_fn=self.get_ft4_tx_audio_sign,
+            dl_target_fn=self.get_ft4_dl_target_hz,
+            ul_target_fn=self.get_ft4_ul_target_hz,
             parent=self,
         )
         self._comms_tab_keys[tab] = "ft4"
@@ -4766,6 +4768,41 @@ class MainWindow(QMainWindow):
                 -self._dial_feedback_offset_hz if invert else self._dial_feedback_offset_hz
             )
         return float(ul_corr)
+
+    def _dl_corr_at(self, at: datetime) -> float | None:
+        """DL Doppler-corrected dial frequency (Hz) for the current transponder at *at*.
+
+        The DL twin of _ul_corr_at(): band-centre nominal + the persistent RX
+        offset, Doppler-corrected for that instant, plus the dial-feedback
+        offset. Used by the FT4 tab's slot-synchronous writes and its RX audio
+        correction, which both need the ideal dial at times other than "now".
+        """
+        if self._selected_norad is None or self._selected_norad == MOON_ID:
+            return None
+        if self._engine is None or self._current_transmitter is None:
+            return None
+        obs = self._engine.observe(self._selected_norad, at=at)
+        if obs is None:
+            return None
+        dl_nom = _band_center_or_low(
+            self._current_transmitter.get("downlink_low"),
+            self._current_transmitter.get("downlink_high"),
+        )
+        if dl_nom is None:
+            return None
+        dl_nom = float(dl_nom) + float(self._current_transmitter.get("rx_offset_hz") or 0.0)
+        dl_corr, _dl_shift = DopplerCalculator.correct_downlink(float(dl_nom), obs.range_rate_km_s)
+        if dl_corr is None:
+            return None
+        return float(dl_corr) + self._dial_feedback_offset_hz
+
+    def get_ft4_dl_target_hz(self, t: float) -> float | None:
+        """Ideal DL dial at *t* (corrected-time seconds); see _dl_corr_at()."""
+        return self._dl_corr_at(datetime.fromtimestamp(t, UTC))
+
+    def get_ft4_ul_target_hz(self, t: float) -> float | None:
+        """Ideal UL dial at *t* (corrected-time seconds); see _ul_corr_at()."""
+        return self._ul_corr_at(datetime.fromtimestamp(t, UTC))
 
     def get_ft4_tx_audio_sign(self) -> float:
         """Direction in which a TX audio-tone shift moves the RF carrier.

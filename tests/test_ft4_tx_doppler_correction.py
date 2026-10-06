@@ -13,6 +13,7 @@ from __future__ import annotations
 import sqlite3
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 from pytestqt.qtbot import QtBot
 
@@ -146,19 +147,27 @@ def test_switched_off_sends_fixed_tone(qtbot: QtBot) -> None:
     targets = [last_ul + 40.0 * (i / 5.0) for i in range(6)]
     offsets_fn = MagicMock(return_value=targets)
     tab = _make_tab(qtbot, tx_doppler_offsets_fn=offsets_fn, tx_audio_sign_fn=lambda: -1.0)
-    assert tab._tx_doppler_check.isChecked()  # on by default
-    tab._tx_doppler_check.setChecked(False)
+    assert tab._adc_tx_check.isChecked()  # on by default
+    tab._adc_tx_check.setChecked(False)
     fn, residual = tab._build_tx_doppler_offset_fn(MagicMock(last_ul_hz=last_ul))
     assert fn is None
     assert residual is None
     offsets_fn.assert_not_called()
-    tab._tx_doppler_check.setChecked(True)
+    tab._adc_tx_check.setChecked(True)
     fn, _ = tab._build_tx_doppler_offset_fn(MagicMock(last_ul_hz=last_ul))
     assert fn is not None
 
 
 def test_switch_state_is_saved(qtbot: QtBot) -> None:
     tab = _make_tab(qtbot)
-    tab._tx_doppler_check.setChecked(False)
+    tab._adc_tx_check.setChecked(False)
     row = tab._conn.execute("SELECT value FROM app_settings WHERE key='ft4_settings'").fetchone()
     assert '"tx_doppler_audio": false' in row[0]
+
+
+def test_adc_rx_off_by_default_and_audio_untouched(qtbot: QtBot) -> None:
+    """ADC RX is opt-in; with it off the decoder gets the audio as received."""
+    tab = _make_tab(qtbot)
+    assert not tab._adc_rx_check.isChecked()
+    audio = np.zeros(12_000 * 7, dtype=np.float32)
+    assert tab._adc_rx_audio(audio) is audio

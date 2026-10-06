@@ -3611,3 +3611,19 @@ LoTW?」）を読んで合わせた。
   （古い行・トランスポンダー未選択）は従来どおり 2 m 上下（ISS は 145.825 MHz）とする（`adif_utils.aprs_band_fields()`）
 - **未確認**: 実際に TQSL/LoTW へアップロードしての受理は未検証
 
+
+## FT4 ADC RX（受信側の音声ドップラー残差補正、2026-10-06 追加・実機未検証）
+
+FT4 タブの `ADC: ☑TX ☐RX`。RX は既定 OFF、**rigctld 経由（NET モード）の FT-991 のみ**
+（`HamlibNetController.supports_slot_sync`）。高仰角 RS-44 の TCA 付近（DL 35〜57 Hz/s）では
+1 秒周期の CAT 追尾が鋸歯状の誤差（レート×1 s）を生み、デコードできなくなるため。
+
+- ON にすると NET コントローラーの毎秒ループが止まり（`set_slot_sync(True)`）、CAT は
+  周期同期で行う: 送信周期終了直後（PTT OFF から 1 s 後、`cat_blocked` 解除後）に DL を 1 回書き込み、
+  受信周期の静かな末尾（5.4〜7.2 s）にリグを読み戻して実際のダイヤルを確定（`DialTrack.confirm`）→
+  次周期が送信なら UL、受信なら DL を 1 回書く。**送信中は CAT なし、確認・再送なし。**
+- 書き込む値は周期中央（+2.8 s）の理想周波数。受信音声は `rx_doppler.apply_rx_correction` で
+  `dial(t) − target(t)` 分だけ解析信号ミキシングでシフトしてからデコード（波形表示は元音声）。
+- 補正量が ±1500 Hz を超える場合はダイヤル記録が古いとみなして補正しない。
+- ログは `ft4_decode.log` の `adc_rx ...` 行。設定キー `ft4_settings.adc_rx`。
+- オフライン実験（10-01/02 の録音）では補正で 8→10〜32 デコード。ただし 55 Hz/s 以上では限界あり。

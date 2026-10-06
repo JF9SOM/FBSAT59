@@ -3392,6 +3392,71 @@ class HamlibNetController(RigController):
         # RTS/DTR PTT: rigctld cannot be reconfigured from here, so the app
         # holds the PTT serial port itself (opened in connect()).
         self._ptt_line: SerialPttLine | None = None
+        # Slot-synchronous mode (FT4 "ADC RX", FT-991 only): the per-second
+        # Doppler writes are off and the FT4 tab writes DL/UL itself, once per
+        # period, through write_dl_hz()/write_ul_hz().
+        self._slot_sync: bool = False
+
+    # -- Slot-synchronous CAT (FT4 ADC RX) --
+
+    @property
+    def supports_slot_sync(self) -> bool:
+        """True for the one rig this mode was built for: an FT-991/FT-991A via rigctld."""
+        return self._ctcss_method == "ft991" and self._radio_type == "full_duplex"
+
+    @property
+    def slot_sync(self) -> bool:
+        """Whether the per-second Doppler writes are suspended for slot-synchronous writes."""
+        return self._slot_sync
+
+    def set_slot_sync(self, enabled: bool) -> None:
+        """Turn slot-synchronous mode on/off (ignored on rigs that do not support it)."""
+        enabled = enabled and self.supports_slot_sync
+        if enabled != self._slot_sync:
+            logger.info("RigNet: slot-synchronous CAT %s", "ON" if enabled else "OFF")
+        self._slot_sync = enabled
+
+    @property
+    def cat_blocked(self) -> bool:
+        """True while an FT-991 would not answer CAT (transmitting, or just after PTT off)."""
+        return self._ft991_cat_blocked()
+
+    def _write_once(self, command: str, hz: float) -> bool:
+        """Send one "F"/"I" write; False when blocked, disconnected or rejected."""
+        if not self.is_connected or self._ft991_cat_blocked():
+            return False
+        with self._cmd_lock:
+            if self._ft991_cat_blocked():
+                return False
+            resp = self._cmd_raw(f"{command} {int(hz)}")
+        ok = "RPRT 0" in resp
+        logger.info("RigNet: slot write %s %d -> %s", command, int(hz), "ok" if ok else repr(resp))
+        return ok
+
+    def write_dl_hz(self, hz: float) -> bool:
+        """Write the downlink (Main VFO) once. Returns True when rigctld accepted it."""
+        ok = self._write_once("F", hz)
+        if ok:
+            self._last_dl_hz = hz
+            with self._lock:
+                self._freq_state.freq_hz = hz
+        return ok
+
+    def write_ul_hz(self, hz: float) -> bool:
+        """Write the uplink (Sub VFO) once. Returns True when rigctld accepted it."""
+        ok = self._write_once("I", hz)
+        if ok:
+            self._last_ul_hz = hz
+            self._last_ul_update_time = time.monotonic()
+        return ok
+
+    def read_dial_hz(self) -> tuple[float | None, float | None]:
+        """(downlink, uplink) as the radio reports them now; None for one it did not answer."""
+        if not self.is_connected or self._ft991_cat_blocked():
+            return None, None
+        dl = self.get_frequency()
+        ul = self.get_split_frequency()
+        return (dl if dl > 0 else None), (ul if ul > 0 else None)
 
     # -- Connection management --
 
@@ -3773,6 +3838,10 @@ class HamlibNetController(RigController):
         # after PTT off writes the current values. Icom rigs do accept mid-TX
         # changes (GitHub Issue #16) and keep tracking.
         if self._ctcss_method == "ft991" and self._ft991_cat_blocked():
+            return True
+
+        # Slot-synchronous mode: the FT4 tab writes once per period instead.
+        if self._slot_sync:
             return True
 
         # A TX-only rig is plain simplex: the uplink is sent as its one

@@ -7019,3 +7019,37 @@ msgstr "この期間に QSO はありません（エクスポートする内容�
 #, python-brace-format
 msgid "LoTW does not accept these satellite names (they are not on its list): {names}"
 msgstr "次の衛星名は LoTW の一覧にないため、LoTW では受け付けられません: {names}"
+
+msgid "ADC:"
+msgstr "ADC:"
+
+msgid ""
+"Audio Doppler Correction: software correction, in the audio, of the\n"
+"Doppler error the rig cannot follow.\n"
+"TX: the transmit tone is moved during each burst.\n"
+"RX: (FT-991 via rigctld) the rig is written once per period and the\n"
+"received audio is shifted by the difference between that frequency\n"
+"and the ideal one, as it changes over the period, before decoding."
+msgstr ""
+"Audio Doppler Correction: リグが追従できないドップラー残差を、\n"
+"音声レベルでソフト的に補正する機能です。\n"
+"TX: 送信中、送信トーンを動かして補正します。\n"
+"RX: (rigctld経由のFT-991) 各周期の直前にリグへ一度だけ周波数を書き込み、\n"
+"受信音声を、その周波数と理想周波数の差（周期内で変化）の分だけ\n"
+"ずらしてからデコードします。"
+
+msgid "RX"
+msgstr "RX"
+
+msgid ""
+"FT-991 via rigctld only. Stops the per-second tuning: the rig's DL/UL are\n"
+"written once per period (right after a transmission, or late in a receive\n"
+"period), and the received audio is corrected for the difference between\n"
+"that frequency and the ideal Doppler-corrected one before it is decoded."
+msgstr ""
+"rigctld経由のFT-991のみ。毎秒のチューニングを止め、DL/ULを各周期に一度だけ\n"
+"（送信直後、または受信周期の終盤に）書き込み、受信音声をその周波数と\n"
+"理想のドップラー補正周波数との差で補正してからデコードします。"
+
+msgid "ADC RX needs an FT-991 connected through rigctld (NET mode)"
+msgstr "ADC RXにはrigctld経由(NETモード)で接続したFT-991が必要です"

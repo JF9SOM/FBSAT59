@@ -67,6 +67,7 @@ from comms.ft4.qso import (
     format_report,
 )
 from comms.ft4.rx_capture import Ft4RxCaptureWorker
+from comms.ft4.rx_doppler import DialTrack, apply_rx_correction
 from comms.ft4.scheduler import Ft4Scheduler
 from core.clock_offset import corrected_time
 from data.lotw_names import (
@@ -439,11 +440,14 @@ class _RxDecodeWorker(QObject):
         audio: NDArray[np.float32],
         my_call: str,
         parent: QObject | None = None,
+        display_audio: NDArray[np.float32] | None = None,
     ) -> None:
         super().__init__(parent)
         self._codec = codec
         self._audio = audio
         self._my_call = my_call
+        # What the waterfall shows (the audio as received, before ADC RX).
+        self._display_audio = display_audio if display_audio is not None else audio
 
     def run(self) -> None:
         t0 = time.monotonic()
@@ -476,7 +480,7 @@ class _RxDecodeWorker(QObject):
                 msg.freq_hz,
                 msg.text,
             )
-        self.done.emit(messages, self._audio)
+        self.done.emit(messages, self._display_audio)
 
 
 # ---------------------------------------------------------------------------
@@ -512,6 +516,8 @@ class Ft4Tab(QWidget):
         radio_control: Any,
         tx_doppler_offsets_fn: Callable[[float, int], list[float] | None] | None = None,
         tx_audio_sign_fn: Callable[[], float] | None = None,
+        dl_target_fn: Callable[[float], float | None] | None = None,
+        ul_target_fn: Callable[[float], float | None] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -526,6 +532,10 @@ class Ft4Tab(QWidget):
         # (a higher audio tone moves the RF *down* on LSB). Injected for the
         # same import-cycle reason as above.
         self._tx_audio_sign_fn = tx_audio_sign_fn
+        # MainWindow.get_ft4_dl_target_hz / get_ft4_ul_target_hz: the ideal dial
+        # at an arbitrary time (corrected-time seconds), for ADC RX.
+        self._dl_target_fn = dl_target_fn
+        self._ul_target_fn = ul_target_fn
 
         self._codec = Ft4Codec()
         self._scheduler = Ft4Scheduler(self)
@@ -593,6 +603,17 @@ class Ft4Tab(QWidget):
         # _build_tx_doppler_offset_fn). Switchable for A/B tests against WSJT-X,
         # which always sends a fixed tone.
         self._tx_doppler_audio: bool = True
+        # ADC RX (slot-synchronous CAT + audio-domain correction of the receive
+        # periods, FT-991 only). See _slot_sync_tick().
+        self._adc_rx: bool = False
+        self._dial_track = DialTrack()
+        self._cat_job_lock = threading.Lock()
+        self._dl_written_for_slot: float = -1.0
+        self._tail_slot: float = -1.0
+        self._tx_slot_start: float = -1.0
+        self._slot_sync_timer = QTimer(self)
+        self._slot_sync_timer.setInterval(100)
+        self._slot_sync_timer.timeout.connect(self._slot_sync_tick)
         self._last_tx_msg: str = ""  # text of the burst currently/last sent
 
         self._load_settings()
@@ -855,17 +876,41 @@ class Ft4Tab(QWidget):
 
         qso_row.addStretch()
 
-        self._tx_doppler_check = QCheckBox(_("TX Doppler"))
-        self._tx_doppler_check.setChecked(self._tx_doppler_audio)
-        self._tx_doppler_check.setToolTip(
+        adc_label = QLabel(_("ADC:"))
+        adc_label.setToolTip(
+            _(
+                "Audio Doppler Correction: software correction, in the audio, of the\n"
+                "Doppler error the rig cannot follow.\n"
+                "TX: the transmit tone is moved during each burst.\n"
+                "RX: (FT-991 via rigctld) the rig is written once per period and the\n"
+                "received audio is shifted by the difference between that frequency\n"
+                "and the ideal one, as it changes over the period, before decoding."
+            )
+        )
+        qso_row.addWidget(adc_label)
+        self._adc_tx_check = QCheckBox(_("TX"))
+        self._adc_tx_check.setChecked(self._tx_doppler_audio)
+        self._adc_tx_check.setToolTip(
             _(
                 "Shift the TX audio tone during each burst to follow the Doppler\n"
                 "drift the rig could not apply (FT-991 ignores CAT while keyed).\n"
                 "Turn off to send a fixed tone like WSJT-X does."
             )
         )
-        self._tx_doppler_check.toggled.connect(self._on_tx_doppler_toggled)
-        qso_row.addWidget(self._tx_doppler_check)
+        self._adc_tx_check.toggled.connect(self._on_tx_doppler_toggled)
+        qso_row.addWidget(self._adc_tx_check)
+        self._adc_rx_check = QCheckBox(_("RX"))
+        self._adc_rx_check.setChecked(self._adc_rx)
+        self._adc_rx_check.setToolTip(
+            _(
+                "FT-991 via rigctld only. Stops the per-second tuning: the rig's DL/UL are\n"
+                "written once per period (right after a transmission, or late in a receive\n"
+                "period), and the received audio is corrected for the difference between\n"
+                "that frequency and the ideal Doppler-corrected one before it is decoded."
+            )
+        )
+        self._adc_rx_check.toggled.connect(self._on_adc_rx_toggled)
+        qso_row.addWidget(self._adc_rx_check)
 
         qso_row.addWidget(QLabel(_("TX Level:")))
         self._tx_level_slider = QSlider(Qt.Orientation.Horizontal)
@@ -1016,6 +1061,7 @@ class Ft4Tab(QWidget):
             self._auto_progress = bool(data.get("auto_progress", False))
             self._tx_level_db = load_level_db(data)
             self._tx_doppler_audio = bool(data.get("tx_doppler_audio", True))
+            self._adc_rx = bool(data.get("adc_rx", False))
         # Fall back to global callsign / grid from Set QTH if not yet set per-tab
         if not self._my_call:
             r = self._conn.execute(
@@ -1049,6 +1095,7 @@ class Ft4Tab(QWidget):
                 "auto_progress": self._auto_progress,
                 "tx_level_db": self._tx_level_db,
                 "tx_doppler_audio": self._tx_doppler_audio,
+                "adc_rx": self._adc_rx,
             }
         )
         self._conn.execute(
@@ -1339,7 +1386,8 @@ class Ft4Tab(QWidget):
             self.period_skipped.emit(audio)
             return
         self._decode_busy = True
-        worker = _RxDecodeWorker(self._codec, audio, self._my_call)
+        decode_audio = self._adc_rx_audio(audio)
+        worker = _RxDecodeWorker(self._codec, decode_audio, self._my_call, display_audio=audio)
         worker.done.connect(self._on_decode_done)
         thread = threading.Thread(target=worker.run, daemon=True)
         self._decode_thread = thread
@@ -1477,6 +1525,7 @@ class Ft4Tab(QWidget):
         # in _TxWorker.run() exactly as WSJT-X's Modulator does.
         now = corrected_time()
         slot_start = (now // FT4_PERIOD) * FT4_PERIOD
+        self._tx_slot_start = slot_start
         worker = _TxWorker(
             audio,
             self._out_device,
@@ -2005,7 +2054,167 @@ class Ft4Tab(QWidget):
         self._auto_progress = bool(self._auto_progress_combo.currentData())
         self._save_settings()
 
-    @Slot(int)
+    # ------------------------------------------------------------------ #
+    # ADC RX: slot-synchronous CAT writes + audio-domain correction         #
+    # ------------------------------------------------------------------ #
+
+    # Where in a period the ideal frequency is taken: the middle of an FT4 signal
+    # (it starts ~0.3 s in and lasts ~5 s), so the error spreads evenly either side.
+    _ADC_TARGET_AT_S = 2.8
+    # The signal is over by ~5.0 s; from here to the end of the period is quiet,
+    # which is when the rig can be read back and written for the next period.
+    _ADC_TAIL_START_S = 5.4
+    _ADC_TAIL_END_S = 7.2
+    # A correction larger than this means the dial record is stale, not Doppler.
+    _ADC_MAX_PLAUSIBLE_SHIFT_HZ = 1500.0
+
+    def _slot_sync_rig(self) -> Any | None:
+        """The rig ADC RX drives, or None when it cannot (not FT-991/rigctld)."""
+        rig = self._tx_rig()
+        if rig is not None and getattr(rig, "supports_slot_sync", False):
+            return rig
+        return None
+
+    def _slot_is_tx(self, slot_start: float) -> bool:
+        """Whether *slot_start* is a period this station transmits in."""
+        slot_even = int(slot_start // FT4_PERIOD) % 2 == 0
+        return slot_even == self._scheduler._tx_even
+
+    def _on_adc_rx_toggled(self, checked: bool) -> None:
+        """ADC RX checkbox: switch slot-synchronous mode on or off."""
+        self._adc_rx = checked
+        self._save_settings()
+        self._apply_slot_sync()
+
+    def _apply_slot_sync(self) -> None:
+        rig = self._slot_sync_rig()
+        if self._adc_rx and rig is None:
+            self._status_label.setText(
+                _("ADC RX needs an FT-991 connected through rigctld (NET mode)")
+            )
+        if self._adc_rx and rig is not None:
+            self._dial_track = DialTrack()
+            self._dl_written_for_slot = -1.0
+            self._tail_slot = -1.0
+            rig.set_slot_sync(True)
+            self._slot_sync_timer.start()
+        else:
+            self._slot_sync_timer.stop()
+            if rig is not None:
+                rig.set_slot_sync(False)
+
+    def _run_cat_job(self, job: Callable[[], None]) -> bool:
+        """Run one CAT job on a worker thread; False if another is still running."""
+        if not self._cat_job_lock.acquire(blocking=False):
+            return False
+
+        def _run() -> None:
+            try:
+                job()
+            except Exception:
+                logger.exception("FT4: ADC RX CAT job failed")
+            finally:
+                self._cat_job_lock.release()
+
+        threading.Thread(target=_run, daemon=True).start()
+        return True
+
+    def _slot_sync_tick(self) -> None:
+        """Every 100 ms: decide whether a CAT write/read is due (never while keyed).
+
+        - The receive period that has no downlink written yet gets one write --
+          in the quiet tail of the previous period, or, right after a
+          transmission, as soon as the rig accepts CAT again.
+        - In the quiet tail of a receive period the rig is read back (what the
+          dial really is) and the next period is prepared: the uplink if it is a
+          transmit period, otherwise the downlink.
+        """
+        rig = self._slot_sync_rig()
+        if not self._adc_rx or rig is None or not rig.is_connected:
+            return
+        if not rig.slot_sync:  # the controller was rebuilt (Rig Settings OK / reconnect)
+            rig.set_slot_sync(True)
+        if self._tx_in_progress or rig.cat_blocked:
+            return
+        now = corrected_time()
+        slot = (now // FT4_PERIOD) * FT4_PERIOD
+        phase = now - slot
+        in_tx_slot = self._tx_slot_start == slot
+        # the period that still needs its downlink
+        dl_slot = slot + FT4_PERIOD if in_tx_slot else slot
+        if self._dl_written_for_slot != dl_slot and (in_tx_slot or phase < self._ADC_TAIL_START_S):
+            self._dl_written_for_slot = dl_slot
+            self._run_cat_job(lambda: self._job_write_dl(rig, dl_slot))
+            return
+        if (
+            not in_tx_slot
+            and self._ADC_TAIL_START_S <= phase < self._ADC_TAIL_END_S
+            and self._tail_slot != slot
+        ):
+            self._tail_slot = slot
+            self._run_cat_job(lambda: self._job_tail(rig, slot))
+
+    def _job_write_dl(self, rig: Any, slot_start: float) -> None:
+        """Write the downlink for period *slot_start* (ideal dial at mid-signal), once."""
+        if self._dl_target_fn is None:
+            return
+        hz = self._dl_target_fn(slot_start + self._ADC_TARGET_AT_S)
+        if hz is None:
+            return
+        ok = rig.write_dl_hz(hz)
+        if ok:
+            self._dial_track.add_write(corrected_time(), hz)
+        get_ft4_decode_logger().info(
+            "adc_rx write DL period=%.1f hz=%.0f ok=%s", slot_start % 60, hz, ok
+        )
+
+    def _job_tail(self, rig: Any, slot_start: float) -> None:
+        """Quiet tail of a receive period: read the rig back, prepare the next period."""
+        log = get_ft4_decode_logger()
+        dl, ul = rig.read_dial_hz()
+        if dl is not None and len(self._dial_track):
+            changed = self._dial_track.confirm(dl)
+            log.info(
+                "adc_rx read DL period=%.1f hz=%.0f%s",
+                slot_start % 60,
+                dl,
+                " (differs from what was written)" if changed else "",
+            )
+        nxt = slot_start + FT4_PERIOD
+        if self._tx_enabled and self._slot_is_tx(nxt) and self._ul_target_fn is not None:
+            ul_hz = self._ul_target_fn(nxt + self._ADC_TARGET_AT_S)
+            if ul_hz is not None:
+                ok = rig.write_ul_hz(ul_hz)
+                log.info("adc_rx write UL period=%.1f hz=%.0f ok=%s", nxt % 60, ul_hz, ok)
+        elif self._dl_target_fn is not None:
+            dl_hz = self._dl_target_fn(nxt + self._ADC_TARGET_AT_S)
+            if dl_hz is not None:
+                ok = rig.write_dl_hz(dl_hz)
+                if ok:
+                    self._dial_track.add_write(corrected_time(), dl_hz)
+                self._dl_written_for_slot = nxt
+                log.info("adc_rx write DL period=%.1f hz=%.0f ok=%s", nxt % 60, dl_hz, ok)
+
+    def _adc_rx_audio(self, audio: NDArray[np.float32]) -> NDArray[np.float32]:
+        """The period's audio with the dial-vs-ideal error removed (ADC RX), else as is."""
+        if not self._adc_rx or self._dl_target_fn is None or not len(self._dial_track):
+            return audio
+        rig = self._slot_sync_rig()
+        if rig is None or not rig.slot_sync:
+            return audio
+        t_end = (corrected_time() // FT4_PERIOD) * FT4_PERIOD  # the boundary that just passed
+        dl_fn = self._dl_target_fn
+        corrected, shift = apply_rx_correction(audio, t_end, self._dial_track, dl_fn)
+        log = get_ft4_decode_logger()
+        if shift is None:
+            return audio
+        if max(abs(shift[0]), abs(shift[1])) > self._ADC_MAX_PLAUSIBLE_SHIFT_HZ:
+            log.info("adc_rx correction SKIPPED (shift %.0f..%.0f Hz implausible)", *shift)
+            return audio
+        log.info("adc_rx correction applied shift=%.0f..%.0f Hz", shift[0], shift[1])
+        return corrected
+
+    @Slot(bool)
     def _on_tx_doppler_toggled(self, checked: bool) -> None:
         """Enable/disable the TX audio Doppler tone shift (takes effect next burst)."""
         self._tx_doppler_audio = checked
@@ -2207,6 +2416,10 @@ class Ft4Tab(QWidget):
                 if rig is not None:
                     with contextlib.suppress(Exception):
                         rig.set_ptt(False)
+        self._slot_sync_timer.stop()
+        rig = self._slot_sync_rig()
+        if rig is not None:
+            rig.set_slot_sync(False)  # hand tuning back to the per-second loop
         self._stop_audio_capture()
         self._disconnect_sdr_audio()
         self._scheduler.stop()
