@@ -146,9 +146,7 @@ rig_dialog.py のカスタムリストでは 1036 = FT-991A として登録。`_
   CTCSS ENC が送信に乗っていた可能性が高い（G3RUH の波形に低周波の偏移が加わる）。トーンなしのトランスポンダーでは
   `SV; MD0{ul}; CT00; SV; MD0{dl}; CT00;`（Direct）／`w SV; w CT00; w SV; w CT00;`（NET）と、**VFO-B を Main にした
   SV スワップの中でも `CT00;` を送る**。トーンありの場合・単独の送信専用リグ（`tx_only`）は従来どおり。
-  - **一時的な診断ログ `[CTCSS diag]`**: 送信後に `CT0;`（応答 `CT0<n>;`、n=0 OFF・2 ENC）で VFO-A/VFO-B の状態を
-    読み戻して INFO に出す（`HamlibDirectController._log_ft991_ctcss_readback`、
-    `HamlibNetController._log_ft991_ctcss_readback`）。**ENC が出なくなったことをユーザーが確認したら削除する**。
+  - 診断用の読み戻しログ（`CT0;`）は、ユーザーが ENC の消えたことを確認した 2026-10-06 に削除済み。
 - **TX中のDL/UL周波数書き込みをスキップ**（2026-09-29、`set_vfo_frequencies()`の
   generic分岐）: rigctld（NETモード）でFT-991がTX中のCAT周波数変更を無視することが
   確認されたのを受け、同じ物理無線機を駆動するDirectモードにも同じ挙動を仮定し、

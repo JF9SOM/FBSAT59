@@ -692,7 +692,6 @@ class TestFt991CtcssOffReachesBothVfos:
         ser = MagicMock()
         ser.__enter__.return_value = ser
         ser.write.side_effect = written.append
-        ser.read_until.return_value = b"CT00;"
         with patch("serial.Serial", return_value=ser), patch("rig.controller.time.sleep"):
             ctrl._apply_mode_and_ctcss_cat_ft991("GMSK", "GMSK", ctcss_hz)
         return written
@@ -713,17 +712,12 @@ class TestFt991CtcssOffReachesBothVfos:
         assert b"SV;" not in written
         assert written[:2] == [b"MD0A;", b"CT00;"]
 
-    def test_direct_readback_is_logged(self, caplog: pytest.LogCaptureFixture) -> None:
-        with caplog.at_level("INFO", logger="rig.controller"):
-            self._direct_commands(0.0)
-        assert any("[CTCSS diag] readback" in r.message for r in caplog.records)
-
     @staticmethod
     def _net_sent(tone_hz: float, radio_type: str = "full_duplex") -> list[str]:
         ctrl = HamlibNetController(radio_type=radio_type, ctcss_method="ft991")
         sent: list[str] = []
         sock = MagicMock()
-        sock.recv.return_value = b"CT00;"
+        sock.recv.return_value = b"RPRT 0\n"
         sock.sendall.side_effect = lambda b: sent.append(b.decode().strip())
         with patch("rig.controller.socket.socket", return_value=sock):
             ctrl.send_ctcss_cat(tone_hz, "CN00{tone:03d};CT02;", "CT00;")
@@ -731,11 +725,7 @@ class TestFt991CtcssOffReachesBothVfos:
 
     def test_net_off_goes_to_vfo_b_then_vfo_a(self) -> None:
         sent = self._net_sent(0.0)
-        assert sent[:4] == ["w SV;", "w CT00;", "w SV;", "w CT00;"]
-
-    def test_net_readback_follows_the_off_commands(self) -> None:
-        sent = self._net_sent(0.0)
-        assert sent[4:] == ["w CT0;", "w SV;", "w CT0;", "w SV;"]
+        assert sent == ["w SV;", "w CT00;", "w SV;", "w CT00;"]
 
     def test_net_with_a_tone_sends_no_swap(self) -> None:
         sent = self._net_sent(67.0)
