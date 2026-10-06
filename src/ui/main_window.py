@@ -75,7 +75,7 @@ from core.ntp_check import check_system_clock
 from data import favorites as favorites_db
 from data.amsat_status import AMSATStatusFetcher
 from data.amsat_upcoming import AMSATUpcomingFetcher
-from data.ctcss_db import get_ctcss
+from data.ctcss_db import resolve_ctcss
 from data.tle_manager import TLE_SOURCE_DISPLAY_NAMES, TLEManager
 from data.transmitter_manager import TransmitterManager
 from i18n import _
@@ -5721,17 +5721,9 @@ class MainWindow(QMainWindow):
             dl = self._current_transmitter.get("downlink_low")
             ul = self._current_transmitter.get("uplink_low")
             mode = self._current_transmitter.get("mode")
-            satnogs_tone = self._current_transmitter.get("ctcss_tone")
-            db_info = get_ctcss(self._selected_norad) if self._selected_norad else None
-            # SatNOGS ctcss_tone takes priority; DB tone is the fallback.
-            tone_hz: float | None = (
-                float(satnogs_tone)
-                if satnogs_tone
-                else (db_info["tone_hz"] if db_info and db_info.get("tone_hz") else None)
-            )
-            activation_hz: float | None = (
-                db_info["activation_hz"] if db_info and db_info.get("activation_hz") else None
-            )
+            # SatNOGS ctcss_tone takes priority; the satellite-wide table is only a
+            # fallback for cross-band transmitters with an uplink (see resolve_ctcss()).
+            tone_hz, activation_hz = resolve_ctcss(self._selected_norad, self._current_transmitter)
             self._ctcss_tone_hz = tone_hz
             self._ctcss_activation_hz = activation_hz
             self._radio_control.update_ctcss(tone_hz, activation_hz)
