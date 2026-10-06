@@ -3579,3 +3579,10 @@ FBSAT59 は `corrected_time()`（NTP オフセット 0.1 秒未満は 0 に丸�
   435000000。`band_freq_hz()`）。ログに必要なのはバンドのみというユーザー判断（2026-10-06）
 - 当日の 2 件（JF1PTU・JF6BCC）は `ft4_decode.log`/`fbsat59.log` から `ft4_log` へ復元した（衛星 RS-44 /
   NORAD 44909、上り 145000000・下り 435000000）。Q65/APRS のログの `SAT_NAME` は未対応（従来どおり DB 名）。実機未検証
+- **Q65・APRS も同じ対応（2026-10-06）**: Q65 のログは従来、衛星名・周波数とも常に空だった（`set_satellite`/`set_freq`
+  を呼ぶ箇所が無かった）。`Q65QsoManager` に `context_fn`（NORAD・LoTW 衛星名・バンド周波数を返す）を追加し、
+  Q65 タブが Radio Control の衛星とリグの上り周波数（無ければ下り）を MHz 切り捨てで渡す。ADIF エクスポート
+  （`log_export_dialog.py`）は FT4・Q65・APRS のすべてで、NORAD から `lotw_name_for_norad()` で LoTW 名に
+  変換して出力する（古い行の SATNOGS 名も変換される）。APRS の UDP ログ（`aprs_tab._broadcast_adif`）も同様。
+  APRS のログには周波数の列が無いため、周波数は従来どおり出力しない
+

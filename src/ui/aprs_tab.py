@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from data.lotw_names import lotw_name_for_norad
 from i18n import _
 
 # SSID range 0-15 per AX.25 spec
@@ -955,11 +956,7 @@ class AprsTab(QWidget):
         sat_name = ""
         if norad and hasattr(self._conn, "execute"):
             with contextlib.suppress(Exception):
-                row = self._conn.execute(
-                    "SELECT name FROM satellites WHERE norad_cat_id = ?", (norad,)
-                ).fetchone()
-                if row:
-                    sat_name = str(row["name"])
+                sat_name = lotw_name_for_norad(self._conn, norad)
 
         grid = _latlon_to_grid(float(lat), float(lon or 0)) if lat is not None else ""
 

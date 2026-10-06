@@ -69,7 +69,7 @@ from comms.ft4.qso import (
 from comms.ft4.rx_capture import Ft4RxCaptureWorker
 from comms.ft4.scheduler import Ft4Scheduler
 from core.clock_offset import corrected_time
-from data.lotw_names import band_freq_hz, lotw_sat_name
+from data.lotw_names import band_freq_hz, lotw_name_for_norad
 from i18n import _
 from rig.controller import select_tx_rig
 from ui.ft4_waterfall_dialog import Ft4WaterfallDialog
@@ -1900,27 +1900,13 @@ class Ft4Tab(QWidget):
             except AttributeError:
                 label = ""
             label = "" if label in ("—", "-") else label
-            session.sat_name = self._lotw_name(session.norad_cat_id, label)
+            session.sat_name = lotw_name_for_norad(self._conn, session.norad_cat_id, label)
         rig = self._tx_rig()
         if rig is not None:
             if not session.freq_hz:
                 session.freq_hz = band_freq_hz(getattr(rig, "last_ul_hz", None))
             if not session.freq_rx_hz:
                 session.freq_rx_hz = band_freq_hz(getattr(rig, "last_dl_hz", None))
-
-    def _lotw_name(self, norad: int | None, fallback: str) -> str:
-        """LoTW satellite name for *norad* (see data.lotw_names), else *fallback*."""
-        if norad is None:
-            return fallback
-        try:
-            row = self._conn.execute(
-                "SELECT name, alt_names FROM satellites WHERE norad_cat_id = ?", (norad,)
-            ).fetchone()
-        except sqlite3.Error:
-            row = None
-        if row is None:
-            return fallback
-        return lotw_sat_name(norad, str(row[0] or fallback), row[1])
 
     def _auto_log_qso(self) -> None:
         """Log the current QSO once its RR73 has been sent or received."""

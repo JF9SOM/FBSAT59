@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from comms.ft4.qso import ensure_ft4_log_schema
+from data.lotw_names import lotw_name_for_norad
 from i18n import _
 from ui.adif_utils import adif_write_or_append, build_adif_record
 
@@ -201,12 +202,25 @@ class LogExportDialog(QDialog):
                 ensure_ft4_log_schema(self._conn)  # older databases lack freq_rx_hz
                 rows = self._conn.execute(
                     "SELECT qso_date, time_on, time_off, call, gridsquare, "
-                    "rst_sent, rst_rcvd, freq_hz, sat_name, freq_rx_hz FROM ft4_log "
+                    "rst_sent, rst_rcvd, freq_hz, sat_name, freq_rx_hz, norad_cat_id FROM ft4_log "
                     "WHERE qso_date >= ? AND qso_date <= ? ORDER BY id ASC",
                     (from_d.replace("-", ""), to_d.replace("-", "")),
                 ).fetchall()
                 for r in rows:
-                    qso_date, time_on, time_off, call, grid, rst_s, rst_r, freq_hz, sat, rx = r
+                    (
+                        qso_date,
+                        time_on,
+                        time_off,
+                        call,
+                        grid,
+                        rst_s,
+                        rst_r,
+                        freq_hz,
+                        sat,
+                        rx,
+                        norad,
+                    ) = r
+                    sat = lotw_name_for_norad(self._conn, norad, sat or "")
                     iso = f"{qso_date[:4]}-{qso_date[4:6]}-{qso_date[6:]} {time_on}"
                     freq_mhz = f"{freq_hz / 1e6:.6f}" if freq_hz else ""
                     freq_rx_mhz = f"{rx / 1e6:.6f}" if rx else ""
@@ -235,12 +249,13 @@ class LogExportDialog(QDialog):
             try:
                 rows = self._conn.execute(
                     "SELECT qso_date, time_on, time_off, call, gridsquare, "
-                    "rst_sent, rst_rcvd, freq_hz, sat_name FROM q65_log "
+                    "rst_sent, rst_rcvd, freq_hz, sat_name, norad_cat_id FROM q65_log "
                     "WHERE qso_date >= ? AND qso_date <= ? ORDER BY qso_date, time_on",
                     (from_d.replace("-", ""), to_d.replace("-", "")),
                 ).fetchall()
                 for row in rows:
-                    qso_date, time_on, time_off, call, grid, rst_s, rst_r, freq_hz, sat = row
+                    qso_date, time_on, time_off, call, grid, rst_s, rst_r, freq_hz, sat, norad = row
+                    sat = lotw_name_for_norad(self._conn, norad, sat or "")
                     iso = f"{qso_date[:4]}-{qso_date[4:6]}-{qso_date[6:]} {time_on}"
                     freq_mhz = f"{freq_hz / 1e6:.6f}" if freq_hz else ""
                     record = build_adif_record(
@@ -282,17 +297,7 @@ class LogExportDialog(QDialog):
                     qso_date = dt.strftime("%Y%m%d")
                     time_on = dt.strftime("%H%M%S")
                     cs = str(callsign or "").split(">")[0].split("-")[0]
-                    sat_name = ""
-                    if norad_sat:
-                        try:
-                            sat_row = self._conn.execute(
-                                "SELECT name FROM satellites WHERE norad_cat_id = ?",
-                                (norad_sat,),
-                            ).fetchone()
-                            if sat_row:
-                                sat_name = str(sat_row[0])
-                        except sqlite3.OperationalError:
-                            pass
+                    sat_name = lotw_name_for_norad(self._conn, norad_sat) if norad_sat else ""
                     grid = ""
                     if lat_deg is not None:
                         grid = _latlon_to_grid(float(lat_deg), float(lon_deg or 0))

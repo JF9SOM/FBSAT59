@@ -50,7 +50,9 @@ from comms.q65.codec import (
 from comms.q65.qso import Q65QsoManager, Q65QsoState, format_report
 from comms.q65.scheduler import Q65Scheduler
 from core.clock_offset import corrected_time
+from data.lotw_names import band_freq_hz, lotw_name_for_norad
 from i18n import _
+from rig.controller import select_tx_rig
 from ui.tx_level import (
     TX_LEVEL_MAX_DB,
     TX_LEVEL_MIN_DB,
@@ -142,6 +144,7 @@ class Q65Tab(QWidget):
             my_grid=self._grid_edit.text().strip(),
             on_tx_msg=self._on_qso_tx_msg,
             on_state=self._on_qso_state,
+            context_fn=self._qso_log_context,
         )
 
         self._decoded_signal.connect(self._on_decoded)
@@ -463,6 +466,31 @@ class Q65Tab(QWidget):
     # ------------------------------------------------------------------
     # Slot: configuration changes
     # ------------------------------------------------------------------
+
+    def _qso_log_context(self) -> tuple[int | None, str, int]:
+        """(NORAD ID, LoTW satellite name, band frequency) to put in a QSO's log entry.
+
+        The satellite is the one selected in Radio Control; the frequency is
+        the uplink last written to the transmitting rig (else the downlink),
+        rounded down to the MHz -- the log only needs to show the band.
+        """
+        rc = self._radio_control
+        norad: int | None = None
+        try:
+            norad = int(getattr(rc, "_norad_label").text())  # noqa: B009
+        except (AttributeError, ValueError):
+            norad = None
+        label = ""
+        with contextlib.suppress(AttributeError):
+            label = str(getattr(rc, "_sat_name_label").text())  # noqa: B009
+        label = "" if label in ("—", "-") else label
+        rig = select_tx_rig(getattr(rc, "_rig1", None), getattr(rc, "_rig2", None))
+        freq = 0
+        if rig is not None:
+            freq = band_freq_hz(getattr(rig, "last_ul_hz", None)) or band_freq_hz(
+                getattr(rig, "last_dl_hz", None)
+            )
+        return norad, lotw_name_for_norad(self._conn, norad, label), freq
 
     def _on_call_changed(self) -> None:
         if self._qso:

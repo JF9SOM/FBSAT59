@@ -97,7 +97,8 @@ def test_auto_log_when_their_rr73_is_received(qtbot: QtBot) -> None:
     qso.advance("JF9SOM JA9DRP -08")  # their report; we answer with R-report
     assert qso.state == QsoState.RREPORT_SENT
     # their RR73 -> we send 73 and the QSO is complete; the tab logs it
-    tab._auto_advance_qso([SimpleNamespace(text="JF9SOM JA9DRP RR73", snr_db=-9.0)], True)  # type: ignore[list-item]
+    msgs: Any = [SimpleNamespace(text="JF9SOM JA9DRP RR73", snr_db=-9.0)]
+    tab._auto_advance_qso(msgs, True)
     assert qso.state.name == "LOGGED"
     assert [r["call"] for r in _rows(tab)] == ["JA9DRP"]
 
@@ -164,3 +165,47 @@ def test_band_freq_rounds_down_to_the_mhz() -> None:
     assert band_freq_hz(435_619_315.7) == 435_000_000
     assert band_freq_hz(None) == 0
     assert band_freq_hz(0) == 0
+
+
+def test_export_writes_lotw_satellite_names_for_every_mode(qtbot: QtBot) -> None:
+    """FT4/Q65/APRS rows all come out with the LoTW name, even older rows saved
+    with the SATNOGS name."""
+    from PySide6.QtCore import QDate
+
+    from ui.log_export_dialog import LogExportDialog
+
+    conn = _conn()
+    conn.execute(
+        "INSERT INTO satellites (norad_cat_id, name, alt_names) VALUES (44909, 'DOSAAF-85', ?)",
+        ('["RS-44"]',),
+    )
+    ensure_ft4_log_schema(conn)
+    conn.execute(
+        "CREATE TABLE q65_log (id INTEGER PRIMARY KEY, qso_date TEXT, time_on TEXT, time_off TEXT,"
+        " call TEXT, gridsquare TEXT, rst_sent TEXT, rst_rcvd TEXT, freq_hz INTEGER,"
+        " norad_cat_id INTEGER, sat_name TEXT)"
+    )
+    conn.execute(
+        "CREATE TABLE aprs_log (id INTEGER PRIMARY KEY, received_at TEXT, callsign TEXT, via TEXT,"
+        " latitude_deg REAL, longitude_deg REAL, comment TEXT, raw_frame TEXT, norad_sat INTEGER)"
+    )
+    conn.execute(
+        "INSERT INTO ft4_log (qso_date,time_on,call,norad_cat_id,sat_name)"
+        " VALUES ('20261006','080000','JA1AAA',44909,'DOSAAF-85')"
+    )
+    conn.execute(
+        "INSERT INTO q65_log (qso_date,time_on,call,norad_cat_id,sat_name)"
+        " VALUES ('20261006','081000','JA1BBB',44909,'DOSAAF-85')"
+    )
+    conn.execute(
+        "INSERT INTO aprs_log (received_at,callsign,norad_sat)"
+        " VALUES ('2026-10-06 08:20:00','JA1CCC>APRS',44909)"
+    )
+    conn.commit()
+    dlg = LogExportDialog(conn)
+    qtbot.addWidget(dlg)
+    dlg._from_edit.setDate(QDate(2026, 10, 6))
+    dlg._to_edit.setDate(QDate(2026, 10, 6))
+    records = [r for _, r in dlg._collect_records()]
+    assert len(records) == 3
+    assert all("<SAT_NAME:5>RS-44" in r for r in records)

@@ -61,6 +61,7 @@ class Q65QsoManager:
         freq_hz:    Current operating frequency (Hz, for logging).
         on_tx_msg:  Callback invoked with the next TX message string.
         on_state:   Callback invoked whenever the state changes.
+        context_fn: Callback returning (norad, satellite name, frequency Hz) for the log.
     """
 
     def __init__(
@@ -71,8 +72,12 @@ class Q65QsoManager:
         freq_hz: int = 0,
         on_tx_msg: Callable[[str], None] | None = None,
         on_state: Callable[[Q65QsoState, str], None] | None = None,
+        context_fn: Callable[[], tuple[int | None, str, int]] | None = None,
     ) -> None:
         self._conn = conn
+        # Returns (norad, LoTW satellite name, band frequency in Hz) as they are
+        # right now; asked when a QSO is logged to fill whatever is still empty.
+        self._context_fn = context_fn
         self.my_call = my_call.upper().strip()
         self.my_grid = my_grid.upper().strip()
         self.freq_hz = freq_hz
@@ -320,6 +325,17 @@ class Q65QsoManager:
         time_on = self._time_on or now.strftime("%H%M%S")
         rst_sent = self.rst_sent or "-05"
         rst_rcvd = self.rst_rcvd or "-05"
+        if self._context_fn is not None:
+            try:
+                norad, sat_name, freq_hz = self._context_fn()
+            except Exception:  # noqa: BLE001 -- logging must never fail on missing context
+                norad, sat_name, freq_hz = None, "", 0
+            if self._norad is None:
+                self._norad = norad
+            if not self._sat_name:
+                self._sat_name = sat_name
+            if not self.freq_hz:
+                self.freq_hz = freq_hz
         try:
             self._conn.execute(
                 "INSERT INTO q65_log "

@@ -120,3 +120,18 @@ class TestHalt:
         qso.halt()
         assert qso.state == Q65QsoState.IDLE
         assert qso.tx_enable is False
+
+
+def test_log_fills_satellite_and_band_from_context(conn: sqlite3.Connection) -> None:
+    """A QSO logged with no satellite/frequency set takes them from context_fn."""
+    mgr = Q65QsoManager(
+        conn,
+        "JF9SOM",
+        "PM86",
+        context_fn=lambda: (44909, "RS-44", 145_000_000),
+    )
+    mgr.dx_call = "JA1ABC"
+    mgr.dx_grid = "PM95"
+    mgr._log_qso()
+    row = conn.execute("SELECT call, freq_hz, norad_cat_id, sat_name FROM q65_log").fetchone()
+    assert tuple(row) == ("JA1ABC", 145_000_000, 44909, "RS-44")

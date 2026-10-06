@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 
 # NORAD IDs whose alternative names do not give the designator in a usable form.
 _OVERRIDES: dict[int, str] = {
@@ -45,3 +46,18 @@ def band_freq_hz(freq_hz: float | None) -> int:
     if not freq_hz or freq_hz <= 0:
         return 0
     return int(freq_hz // 1_000_000) * 1_000_000
+
+
+def lotw_name_for_norad(conn: sqlite3.Connection, norad: int | None, fallback: str = "") -> str:
+    """LoTW name of the satellite *norad* from the satellites table, else *fallback*."""
+    if norad is None:
+        return fallback
+    try:
+        row = conn.execute(
+            "SELECT name, alt_names FROM satellites WHERE norad_cat_id = ?", (norad,)
+        ).fetchone()
+    except sqlite3.Error:
+        return fallback
+    if row is None:
+        return fallback
+    return lotw_sat_name(norad, str(row[0] or fallback), row[1])
