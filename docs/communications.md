@@ -3604,8 +3604,10 @@ LoTW?」）を読んで合わせた。
   **Q65→`DATA`**（一覧に Q65 が無いため、汎用の `DATA` で出し `COMMENT` に `Q65` を残す）
 - **DB**: 起動時に `normalize_logged_satellite_names()` が `ft4_log`/`q65_log` の既存の衛星名を LoTW の ID に直す
   （冪等）。周波数は MHz 単位に切り捨てたバンド値のまま（ユーザー判断）
-- **APRS**: ログに周波数を持たないが、衛星経由の APRS は上り下りとも 2 m（ISS は 145.825 MHz）なので、
-  すべての APRS レコードに `BAND=2M`・`BAND_RX=2M`・`FREQ`/`FREQ_RX=145.000000` を付ける
-  （`adif_utils.aprs_band_fields()`、ユーザー提案 2026-10-06）。2 m 以外で運用される APRS 衛星があれば要変更
+- **APRS**: パケットを記録する時点で Radio Control で選ばれているトランスポンダーの周波数
+  （`uplink_*`/`downlink_*` の中央を MHz 切り捨て。`data/lotw_names.band_freqs_from_transmitter()`。説明文の文字は
+  書式が一定でないので使わない）を `aprs_log.freq_hz`/`freq_rx_hz` に保存し（`comms/aprs/log_db.py` が列を追加）、
+  ADIF の `BAND`/`BAND_RX`/`FREQ`/`FREQ_RX` にする（430 MHz 帯のデジピーターは `70CM`）。周波数を持たない行
+  （古い行・トランスポンダー未選択）は従来どおり 2 m 上下（ISS は 145.825 MHz）とする（`adif_utils.aprs_band_fields()`）
 - **未確認**: 実際に TQSL/LoTW へアップロードしての受理は未検証
 

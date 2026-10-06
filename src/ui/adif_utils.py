@@ -76,16 +76,28 @@ def adif_band(freq_hz: float | None) -> str:
     return ""
 
 
-# APRS through a satellite (ISS 145.825 MHz and the other APRS digipeaters) is 2 m both
-# ways. The APRS log keeps no frequency, so every APRS record is written as a 2 m QSO.
+# Default for an APRS record that has no frequency of its own: APRS through a satellite
+# (ISS 145.825 MHz and most other APRS digipeaters) is 2 m both ways.
 APRS_BAND_HZ = 145_000_000
 
 
-def aprs_band_fields() -> dict[str, str]:
-    """BAND/BAND_RX/FREQ/FREQ_RX for an APRS record: 2 m up and down."""
-    band = adif_band(APRS_BAND_HZ)
-    freq = f"{APRS_BAND_HZ / 1e6:.6f}"
-    return {"BAND": band, "BAND_RX": band, "FREQ": freq, "FREQ_RX": freq}
+def aprs_band_fields(
+    freq_hz: float | None = None, freq_rx_hz: float | None = None
+) -> dict[str, str]:
+    """BAND/BAND_RX/FREQ/FREQ_RX for an APRS record.
+
+    From the uplink/downlink frequencies logged with the packet (the transponder
+    selected at the time -- 2 m for most APRS digipeaters, 70 cm for some). Without
+    them, 2 m both ways, which is what the ISS and most APRS satellites use.
+    """
+    up = freq_hz or APRS_BAND_HZ
+    down = freq_rx_hz or freq_hz or APRS_BAND_HZ
+    return {
+        "BAND": adif_band(up),
+        "BAND_RX": adif_band(down),
+        "FREQ": _mhz(up),
+        "FREQ_RX": _mhz(down),
+    }
 
 
 def _mhz(freq_hz: float | None) -> str:

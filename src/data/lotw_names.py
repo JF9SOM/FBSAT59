@@ -92,6 +92,24 @@ def band_freq_hz(freq_hz: float | None) -> int:
     return int(freq_hz // 1_000_000) * 1_000_000
 
 
+def band_freqs_from_transmitter(tx: dict[str, object] | None) -> tuple[int, int]:
+    """(uplink, downlink) band frequencies in Hz for a transmitters-table record.
+
+    Taken from the record's frequency fields (the middle of the range when it has
+    both ends), rounded down to the MHz; 0 for a side the record does not have.
+    This beats reading the description text, which has no fixed format.
+    """
+    if not tx:
+        return 0, 0
+
+    def side(low_key: str, high_key: str) -> int:
+        low, high = tx.get(low_key), tx.get(high_key)
+        values = [float(v) for v in (low, high) if isinstance(v, (int, float)) and v]
+        return band_freq_hz(sum(values) / len(values)) if values else 0
+
+    return side("uplink_low", "uplink_high"), side("downlink_low", "downlink_high")
+
+
 def normalize_logged_satellite_names(conn: sqlite3.Connection) -> int:
     """Rewrite the satellite name of already-logged FT4/Q65 QSOs to the LoTW ID.
 

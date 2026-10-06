@@ -37,7 +37,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from data.lotw_names import lotw_name_for_norad
+from comms.aprs.log_db import ensure_aprs_log_schema
+from data.lotw_names import band_freqs_from_transmitter, lotw_name_for_norad
 from i18n import _
 
 # SSID range 0-15 per AX.25 spec
@@ -151,22 +152,7 @@ class AprsTab(QWidget):
         """Create aprs_log table if it does not yet exist."""
         if not hasattr(self._conn, "execute"):
             return
-        self._conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS aprs_log (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                received_at   DATETIME NOT NULL,
-                callsign      TEXT NOT NULL,
-                via           TEXT,
-                latitude_deg  REAL,
-                longitude_deg REAL,
-                comment       TEXT,
-                raw_frame     TEXT,
-                norad_sat     INTEGER
-            )
-            """
-        )
-        self._conn.commit()
+        ensure_aprs_log_schema(self._conn)
 
     def _load_log_from_db(self) -> None:
         """Populate the receive log with the most recent 200 entries."""
@@ -918,16 +904,26 @@ class AprsTab(QWidget):
         )
 
         if log and hasattr(self._conn, "execute"):
+            ul_hz, dl_hz = self._transponder_band_freqs()
             self._conn.execute(
                 "INSERT INTO aprs_log "
                 "(received_at, callsign, via, latitude_deg, longitude_deg, "
-                " comment, raw_frame, norad_sat) "
-                "VALUES (CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?)",
-                (callsign, via, lat, lon, comment, raw_frame, norad),
+                " comment, raw_frame, norad_sat, freq_hz, freq_rx_hz) "
+                "VALUES (CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (callsign, via, lat, lon, comment, raw_frame, norad, ul_hz, dl_hz),
             )
             self._conn.commit()
-            self._broadcast_adif(callsign, via, comment, lat, lon, norad)
+            self._broadcast_adif(callsign, via, comment, lat, lon, norad, ul_hz, dl_hz)
         self._refresh_qso_count()
+
+    def _transponder_band_freqs(self) -> tuple[int, int]:
+        """(uplink, downlink) band in Hz of the transponder selected in Radio Control."""
+        current = getattr(self._radio_control, "current_transmitter", None)
+        try:
+            tx = current() if callable(current) else None
+        except Exception:  # noqa: BLE001 -- logging must not fail on a missing selection
+            tx = None
+        return band_freqs_from_transmitter(tx)
 
     def _broadcast_adif(
         self,
@@ -937,6 +933,8 @@ class AprsTab(QWidget):
         lat: float | None,
         lon: float | None,
         norad: int | None,
+        ul_hz: int = 0,
+        dl_hz: int = 0,
     ) -> None:
         """Send this confirmed APRS QSO to the UDP log broadcaster.
 
@@ -964,7 +962,7 @@ class AprsTab(QWidget):
             "CALL": cs,
             "QSO_DATE": now.strftime("%Y%m%d"),
             "TIME_ON": now.strftime("%H%M%S"),
-            **aprs_band_fields(),
+            **aprs_band_fields(ul_hz, dl_hz),
             "MODE": "PACKET",
             "MY_CALL": my_station,
             "COMMENT": str(comment or ""),

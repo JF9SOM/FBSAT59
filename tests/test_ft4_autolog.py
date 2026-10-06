@@ -323,3 +323,55 @@ def test_old_log_rows_are_rewritten_to_lotw_names() -> None:
     assert normalize_logged_satellite_names(conn) == 0  # idempotent
     names = [r[0] for r in conn.execute("SELECT sat_name FROM ft4_log ORDER BY id")]
     assert names == ["RS-44", "Unknown"]
+
+
+def test_band_freqs_from_transmitter_fields() -> None:
+    from data.lotw_names import band_freqs_from_transmitter
+
+    iss = {"uplink_low": 145_825_000, "downlink_low": 145_825_000, "description": "APRS"}
+    assert band_freqs_from_transmitter(iss) == (145_000_000, 145_000_000)
+    uhf_digi = {"uplink_low": 145_900_000, "uplink_high": None, "downlink_low": 437_100_000}
+    assert band_freqs_from_transmitter(uhf_digi) == (145_000_000, 437_000_000)
+    assert band_freqs_from_transmitter(
+        {"downlink_low": 435_610_000, "downlink_high": 435_670_000}
+    ) == (
+        0,
+        435_000_000,
+    )
+    assert band_freqs_from_transmitter(None) == (0, 0)
+
+
+def test_aprs_band_follows_the_logged_frequencies() -> None:
+    from ui.adif_utils import aprs_band_fields
+
+    assert aprs_band_fields()["BAND"] == "2M"  # no frequency logged: 2 m both ways
+    uhf = aprs_band_fields(145_000_000, 437_000_000)
+    assert (uhf["BAND"], uhf["BAND_RX"]) == ("2M", "70CM")
+    assert aprs_band_fields(435_000_000, 435_000_000)["BAND"] == "70CM"
+
+
+def test_export_uses_the_aprs_row_frequencies(qtbot: QtBot) -> None:
+    from PySide6.QtCore import QDate
+
+    from comms.aprs.log_db import ensure_aprs_log_schema
+    from ui.log_export_dialog import LogExportDialog
+
+    conn = _conn()
+    ensure_aprs_log_schema(conn)
+    conn.execute(
+        "INSERT INTO aprs_log (received_at,callsign,norad_sat,freq_hz,freq_rx_hz)"
+        " VALUES ('2026-10-06 08:20:00','JA1CCC>APRS',NULL,145000000,437000000)"
+    )
+    conn.execute(
+        "INSERT INTO aprs_log (received_at,callsign) VALUES ('2026-10-06 08:30:00','JA1DDD>APRS')"
+    )
+    conn.commit()
+    dlg = LogExportDialog(conn)
+    qtbot.addWidget(dlg)
+    dlg._from_edit.setDate(QDate(2026, 10, 6))
+    dlg._to_edit.setDate(QDate(2026, 10, 6))
+    uhf, old = [r for _, r in dlg._collect_records()]
+    assert "<BAND:2>2M" in uhf
+    assert "<BAND_RX:4>70CM" in uhf
+    assert "<BAND:2>2M" in old
+    assert "<BAND_RX:2>2M" in old  # a row without frequencies falls back to 2 m

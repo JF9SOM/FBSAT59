@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from comms.aprs.log_db import ensure_aprs_log_schema
 from comms.ft4.qso import ensure_ft4_log_schema
 from data.lotw_names import is_lotw_satellite, lotw_name_for_norad
 from i18n import _
@@ -287,15 +288,18 @@ class LogExportDialog(QDialog):
         # APRS
         if self._chk_aprs.isChecked():
             try:
+                ensure_aprs_log_schema(self._conn)  # older databases lack the frequency columns
                 my_station = f"{self._my_call}-{self._my_ssid}" if self._my_ssid else self._my_call
                 rows = self._conn.execute(
                     "SELECT received_at, callsign, via, latitude_deg, longitude_deg, "
-                    "comment, norad_sat FROM aprs_log "
+                    "comment, norad_sat, freq_hz, freq_rx_hz FROM aprs_log "
                     "WHERE received_at >= ? AND received_at <= ? ORDER BY id ASC",
                     (from_d, to_dt),
                 ).fetchall()
                 for row in rows:
-                    ts_raw, callsign, via, lat_deg, lon_deg, comment, norad_sat = row
+                    ts_raw, callsign, via, lat_deg, lon_deg, comment, norad_sat, up_hz, down_hz = (
+                        row
+                    )
                     try:
                         dt = datetime.fromisoformat(str(ts_raw or "").replace(" ", "T"))
                     except ValueError:
@@ -316,7 +320,7 @@ class LogExportDialog(QDialog):
                         "CALL": cs,
                         "QSO_DATE": qso_date,
                         "TIME_ON": time_on,
-                        **aprs_band_fields(),
+                        **aprs_band_fields(up_hz, down_hz),
                         "MODE": "PACKET",
                         "MY_CALL": my_station,
                         "COMMENT": str(comment or ""),
