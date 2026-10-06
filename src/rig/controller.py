@@ -756,6 +756,9 @@ class RigController(ABC):
     Called from both the Qt UI thread and the tracking background thread.
     """
 
+    # Class-level default so subclasses that skip super().__init__() still work.
+    _hold_ul: bool = False
+
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._state = RigState.DISCONNECTED
@@ -767,6 +770,8 @@ class RigController(ABC):
         self._doppler_frozen: bool = False
         # time.monotonic() of the last set_ptt(False); see _ft991_cat_blocked().
         self._ptt_off_at: float = float("-inf")
+        # FT4 ADC TX: leave the uplink alone (see set_hold_ul()).
+        self._hold_ul: bool = False
         # How this rig is keyed (see rig.ptt): CAT (default), RTS, DTR or VOX.
         self._ptt_method: str = PTT_CAT
         self._ptt_port: str = ""
@@ -802,6 +807,36 @@ class RigController(ABC):
         docs/hamlib.md) as the baseline the rig's VFO is actually sitting at.
         """
         return self._last_ul_hz
+
+    @property
+    def hold_ul(self) -> bool:
+        """True while the uplink is deliberately left where it is (FT4 "ADC TX")."""
+        return self._hold_ul
+
+    def set_hold_ul(self, enabled: bool) -> None:
+        """Stop (or resume) writing the uplink frequency from the Doppler loop.
+
+        FT4's ADC TX corrects the Doppler drift over a burst in the audio tone,
+        relative to ``last_ul_hz`` as it was when the burst was built. A rig that
+        keeps tracking through TX (Icom, FTX-1F) would correct the same drift a
+        second time, so the FT4 tab holds the uplink from the start of a
+        transmission until the PTT is released. The downlink keeps tracking.
+        """
+        if enabled != self._hold_ul:
+            logger.info("Rig: uplink hold %s", "ON" if enabled else "OFF")
+        self._hold_ul = enabled
+
+    def _held_ul(self, vfob_hz: float | None) -> float | None:
+        """The uplink to write: the frozen last-written one while held, else *vfob_hz*.
+
+        Substituting the frozen value (instead of dropping the uplink) keeps
+        the caller's same-band / cross-band logic intact; the write thresholds
+        then see no change and skip it.
+        """
+        last_ul = getattr(self, "_last_ul_hz", None)
+        if self._hold_ul and vfob_hz is not None and last_ul is not None:
+            return float(last_ul)
+        return vfob_hz
 
     # -- Connection management --
 
@@ -1863,6 +1898,7 @@ class HamlibDirectController(RigController):
         vfob_hz: float | None,
     ) -> bool:
         """Inner implementation of set_vfo_frequencies; caller must hold _rig_cmd_lock."""
+        vfob_hz = self._held_ul(vfob_hz)
         try:
             if self._satmode:
                 # IC-9100/9700 satmode: satmode routes Main=RX(DL) and Sub=TX(UL).
@@ -3848,6 +3884,8 @@ class HamlibNetController(RigController):
         # frequency (F, VFOA) and no split TX frequency (I) is ever written.
         if self._radio_type == "tx_only":
             vfoa_hz, vfob_hz = vfob_hz, None
+        else:
+            vfob_hz = self._held_ul(vfob_hz)
         send_rx = True
         send_tx = self._radio_type != "rx_only"
 

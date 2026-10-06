@@ -611,6 +611,7 @@ class Ft4Tab(QWidget):
         self._dl_written_for_slot: float = -1.0
         self._tail_slot: float = -1.0
         self._tx_slot_start: float = -1.0
+        self._ul_hold_rig: Any | None = None  # rig whose uplink ADC TX is holding
         self._slot_sync_timer = QTimer(self)
         self._slot_sync_timer.setInterval(100)
         self._slot_sync_timer.timeout.connect(self._slot_sync_tick)
@@ -881,8 +882,8 @@ class Ft4Tab(QWidget):
             _(
                 "Audio Doppler Correction: software correction, in the audio, of the\n"
                 "Doppler error the rig cannot follow.\n"
-                "TX: (FT-991, which ignores CAT while keyed) the transmit tone is moved\n"
-                "during each burst.\n"
+                "TX: (all rigs) the uplink is held at the start of each burst and the\n"
+                "transmit tone is moved during it instead.\n"
                 "RX: (FT-991 via rigctld) the rig is written once per period and the\n"
                 "received audio is shifted by the difference between that frequency\n"
                 "and the ideal one, as it changes over the period, before decoding."
@@ -893,8 +894,8 @@ class Ft4Tab(QWidget):
         self._adc_tx_check.setChecked(self._tx_doppler_audio)
         self._adc_tx_check.setToolTip(
             _(
-                "Shift the TX audio tone during each burst to follow the Doppler\n"
-                "drift the rig could not apply (FT-991 ignores CAT while keyed).\n"
+                "Hold the uplink during each burst and shift the TX audio tone to follow\n"
+                "the Doppler drift instead (downlink tracking is unchanged).\n"
                 "Turn off to send a fixed tone like WSJT-X does."
             )
         )
@@ -1487,6 +1488,13 @@ class Ft4Tab(QWidget):
 
         self._last_tx_msg = msg
         rig = self._tx_rig()
+        # ADC TX corrects the drift over the burst in the audio, relative to the
+        # uplink the rig sits at now: hold the uplink there (any rig) so a rig
+        # that tracks through TX does not correct the same drift a second time.
+        self._release_ul_hold()
+        if self._tx_doppler_audio and rig is not None:
+            rig.set_hold_ul(True)
+            self._ul_hold_rig = rig
         doppler_offset_fn, doppler_residual_hz = self._build_tx_doppler_offset_fn(rig)
         audio = self._codec.encode_audio(
             msg,
@@ -1495,6 +1503,7 @@ class Ft4Tab(QWidget):
             freq_offset_hz=doppler_offset_fn,
         )
         if audio is None:
+            self._release_ul_hold()
             self._status_label.setText(_("Invalid FT4 message: ") + msg)
             return
 
@@ -1622,7 +1631,14 @@ class Ft4Tab(QWidget):
         self._status_label.setText(_("TX error: ") + msg)
 
     @Slot()
+    def _release_ul_hold(self) -> None:
+        """Let the Doppler loop write the uplink again (end of an ADC TX hold)."""
+        rig, self._ul_hold_rig = self._ul_hold_rig, None
+        if rig is not None:
+            rig.set_hold_ul(False)
+
     def _on_tx_finished(self) -> None:
+        self._release_ul_hold()
         self._tx_in_progress = False
         self._tx_worker = None
         self._status_label.setText(_("TX done — waiting for next period"))
@@ -1637,6 +1653,7 @@ class Ft4Tab(QWidget):
 
     @Slot(str)
     def _on_tx_error(self, msg: str) -> None:
+        self._release_ul_hold()
         self._tx_in_progress = False
         self._tx_worker = None
         self._status_label.setText(_("TX error: ") + msg)
@@ -2417,6 +2434,7 @@ class Ft4Tab(QWidget):
                 if rig is not None:
                     with contextlib.suppress(Exception):
                         rig.set_ptt(False)
+        self._release_ul_hold()
         self._slot_sync_timer.stop()
         rig = self._slot_sync_rig()
         if rig is not None:

@@ -3627,3 +3627,10 @@ FT4 タブの `ADC: ☑TX ☐RX`。RX は既定 OFF、**rigctld 経由（NET モ
 - 補正量が ±1500 Hz を超える場合はダイヤル記録が古いとみなして補正しない。
 - ログは `ft4_decode.log` の `adc_rx ...` 行。設定キー `ft4_settings.adc_rx`。
 - オフライン実験（10-01/02 の録音）では補正で 8→10〜32 デコード。ただし 55 Hz/s 以上では限界あり。
+
+**ADC TX の UL 保持（2026-10-06）**: ADC TX が ON の間は、送信開始（`_transmit_now`）から PTT OFF 後
+（`_on_tx_finished`/`_on_tx_error`）まで、**全リグ**で UL の CAT 書き込みを止める
+（`RigController.set_hold_ul()`／`_held_ul()`。UL を凍結済みの `last_ul_hz` に置換するので、
+同一バンド判定など既存ロジックは変わらず、書き込み閾値で自然にスキップされる）。送信中も CAT が通る
+Icom/FTX-1F ではリグの UL 追尾と音声補正が同じドリフトを二重に補正していたため。DL は従来どおり追尾
+（FT-991 で試験後に他リグへ拡大予定）。FT-991 は従来の `_ft991_cat_blocked()` も併用。

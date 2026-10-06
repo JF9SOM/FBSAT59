@@ -2349,6 +2349,30 @@ class TestHamlibNetController:
         assert b"F 435600000\n" in sent
         assert b"I 145900000\n" in sent
 
+    # -- uplink hold (FT4 ADC TX) --
+
+    def test_hold_ul_keeps_dl_tracking_but_freezes_ul(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="hamlib")
+        ctrl._sock.recv.return_value = b"RPRT 0\n"  # type: ignore[union-attr]
+        ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0)
+        ctrl.set_hold_ul(True)
+        ctrl.set_ptt(True, freeze_doppler=False)
+        ctrl.set_vfo_frequencies(435_600_500.0, 145_900_300.0)
+        sent = self._sent(ctrl)
+        assert b"F 435600500\n" in sent  # the downlink still tracks
+        assert b"I 145900300\n" not in sent
+        assert ctrl.last_ul_hz == 145_900_000.0
+        ctrl.set_hold_ul(False)
+        ctrl.set_vfo_frequencies(435_600_500.0, 145_900_300.0)
+        assert b"I 145900300\n" in self._sent(ctrl)
+
+    def test_hold_ul_before_any_uplink_write_changes_nothing(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="hamlib")
+        ctrl._sock.recv.return_value = b"RPRT 0\n"  # type: ignore[union-attr]
+        ctrl.set_hold_ul(True)
+        ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0)
+        assert b"I 145900000\n" in self._sent(ctrl)  # nothing to freeze yet
+
     # -- slot-synchronous CAT (FT4 ADC RX) --
 
     def _sent(self, ctrl: HamlibNetController) -> bytes:

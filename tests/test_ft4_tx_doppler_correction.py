@@ -171,3 +171,15 @@ def test_adc_rx_off_by_default_and_audio_untouched(qtbot: QtBot) -> None:
     assert not tab._adc_rx_check.isChecked()
     audio = np.zeros(12_000 * 7, dtype=np.float32)
     assert tab._adc_rx_audio(audio) is audio
+
+
+def test_adc_tx_holds_the_uplink_only_while_on(qtbot: QtBot) -> None:
+    """ADC TX holds the rig's uplink for a transmission and releases it afterwards."""
+    tab = _make_tab(qtbot)
+    rig = MagicMock()
+    tab._ul_hold_rig = rig
+    tab._release_ul_hold()
+    rig.set_hold_ul.assert_called_once_with(False)
+    assert tab._ul_hold_rig is None
+    tab._release_ul_hold()  # idempotent
+    rig.set_hold_ul.assert_called_once_with(False)
