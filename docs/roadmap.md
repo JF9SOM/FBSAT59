@@ -17,6 +17,20 @@
 4. ~~**Autotrack/Record メニューの実装**~~ **→ v0.1.0 以降で完了**（AutotrackRecordDialog・Autotrack Timer・AOS/LOS 自動接続・録音自動制御）
 1e. ~~**Tuneボタンがバンド中心ではなく`downlink_low`（下限）に固定されている疑い**~~ **→ 2026-08-13 実装完了** — `_refresh_radio_control()`の生SQLに`downlink_high`・`uplink_high`を追加。原因は列の見落としで確定していた（`_current_transmitter`にキー自体が存在せず`_on_tune_requested()`が常にバンド下限側へフォールバックしていた）
 
+1f. **Icom サットモード機（IC-9100/9700 等）で、トーンなしのトランスポンダーの CTCSS OFF が送信側 VFO に届かない問題（延期・実機待ち、2026-10-06 追加）** —
+    FT-991(A) で、ARICA-2（GMSK、トーンなし）を選ぶと PTT 時に無線機に `ENC` が出る不具合が見つかり、`CT00;` を
+    VFO-A（受信側）にしか送っておらず、スプリットの送信側 VFO-B に残った CTCSS ENC が原因と確定して修正した
+    （[docs/rig-specific-notes.md](rig-specific-notes.md)「CTCSS OFF は VFO-B（送信側）にも送る」）。同じ種類の欠陥が他機種の経路に
+    2 か所残っているが、**対象機が手元になく実機で確認できないため修正を延期した**:
+    (1) `HamlibDirectController._apply_mode_and_ctcss_hamlib()` の**同一バンド（V/V・U/U）分岐**は
+    「アップリンクにトーン不要」として CTCSS の処理を**丸ごとスキップ**する（`no-CTCSS`）ため、以前に別の衛星で設定した
+    トーンが送信 VFO に残る（IC-9100/9700 で U/U の ARICA-2 など）。トーンなしの場合は VFO-B と VFO-A に TONE OFF を送るべき。
+    (2) `HamlibDirectController.set_ctcss_tone()` の**接続中の非サットモード経路**は `RIG_VFO_CURR`（通常は受信側）にだけ
+    OFF を送る。トランスポンダー選択時は先に切断して VFO-B→VFO-A の順に送る別経路を通るので影響は小さい（手動の CTCSS 送信時のみ）。
+    他の経路（FTX-1F・汎用 NET・汎用 Direct 未接続・Icom サットモード別バンド）は送信側にも OFF が届くことをコードで確認済み。
+    **着手の条件: サットモード機（IC-9100/9700 等）を使うユーザーが判明した、または実機を借りられたとき**
+    （Claude はユーザーがサットモード機の使用を口にした時点でこの項目を思い出して知らせる。メモリ参照）
+
 ### モバイル・Web UI
 5. **スマホ・タブレット画面の継続確認** — Android 実機でのコンパス連動確認、各種ブラウザでの表示確認
 
