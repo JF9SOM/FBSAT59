@@ -881,7 +881,8 @@ class Ft4Tab(QWidget):
             _(
                 "Audio Doppler Correction: software correction, in the audio, of the\n"
                 "Doppler error the rig cannot follow.\n"
-                "TX: the transmit tone is moved during each burst.\n"
+                "TX: (FT-991, which ignores CAT while keyed) the transmit tone is moved\n"
+                "during each burst.\n"
                 "RX: (FT-991 via rigctld) the rig is written once per period and the\n"
                 "received audio is shifted by the difference between that frequency\n"
                 "and the ideal one, as it changes over the period, before decoding."
