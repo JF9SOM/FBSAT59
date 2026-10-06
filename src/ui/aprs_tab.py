@@ -945,7 +945,7 @@ class AprsTab(QWidget):
         design note).
         """
         from comms.log_broadcast import get_log_broadcaster
-        from ui.adif_utils import build_adif_record
+        from ui.adif_utils import aprs_band_fields, build_adif_record
 
         now = datetime.now(tz=UTC)
         cs = str(callsign or "").split(">")[0].split("-")[0]
@@ -964,6 +964,7 @@ class AprsTab(QWidget):
             "CALL": cs,
             "QSO_DATE": now.strftime("%Y%m%d"),
             "TIME_ON": now.strftime("%H%M%S"),
+            **aprs_band_fields(),
             "MODE": "PACKET",
             "MY_CALL": my_station,
             "COMMENT": str(comment or ""),

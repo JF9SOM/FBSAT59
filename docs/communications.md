@@ -3604,6 +3604,8 @@ LoTW?」）を読んで合わせた。
   **Q65→`DATA`**（一覧に Q65 が無いため、汎用の `DATA` で出し `COMMENT` に `Q65` を残す）
 - **DB**: 起動時に `normalize_logged_satellite_names()` が `ft4_log`/`q65_log` の既存の衛星名を LoTW の ID に直す
   （冪等）。周波数は MHz 単位に切り捨てたバンド値のまま（ユーザー判断）
-- **未確認**: 実際に TQSL/LoTW へアップロードしての受理は未検証。APRS のログには周波数が無いため `BAND` が
-  出ず、LoTW には上げられない
+- **APRS**: ログに周波数を持たないが、衛星経由の APRS は上り下りとも 2 m（ISS は 145.825 MHz）なので、
+  すべての APRS レコードに `BAND=2M`・`BAND_RX=2M`・`FREQ`/`FREQ_RX=145.000000` を付ける
+  （`adif_utils.aprs_band_fields()`、ユーザー提案 2026-10-06）。2 m 以外で運用される APRS 衛星があれば要変更
+- **未確認**: 実際に TQSL/LoTW へアップロードしての受理は未検証
 

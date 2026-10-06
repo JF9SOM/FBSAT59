@@ -76,6 +76,18 @@ def adif_band(freq_hz: float | None) -> str:
     return ""
 
 
+# APRS through a satellite (ISS 145.825 MHz and the other APRS digipeaters) is 2 m both
+# ways. The APRS log keeps no frequency, so every APRS record is written as a 2 m QSO.
+APRS_BAND_HZ = 145_000_000
+
+
+def aprs_band_fields() -> dict[str, str]:
+    """BAND/BAND_RX/FREQ/FREQ_RX for an APRS record: 2 m up and down."""
+    band = adif_band(APRS_BAND_HZ)
+    freq = f"{APRS_BAND_HZ / 1e6:.6f}"
+    return {"BAND": band, "BAND_RX": band, "FREQ": freq, "FREQ_RX": freq}
+
+
 def _mhz(freq_hz: float | None) -> str:
     return f"{freq_hz / 1e6:.6f}" if freq_hz else ""
 

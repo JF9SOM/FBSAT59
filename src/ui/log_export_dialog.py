@@ -31,7 +31,12 @@ from PySide6.QtWidgets import (
 from comms.ft4.qso import ensure_ft4_log_schema
 from data.lotw_names import is_lotw_satellite, lotw_name_for_norad
 from i18n import _
-from ui.adif_utils import adif_write_or_append, build_adif_record, build_satellite_record
+from ui.adif_utils import (
+    adif_write_or_append,
+    aprs_band_fields,
+    build_adif_record,
+    build_satellite_record,
+)
 
 
 def _latlon_to_grid(lat: float, lon: float) -> str:
@@ -311,6 +316,7 @@ class LogExportDialog(QDialog):
                         "CALL": cs,
                         "QSO_DATE": qso_date,
                         "TIME_ON": time_on,
+                        **aprs_band_fields(),
                         "MODE": "PACKET",
                         "MY_CALL": my_station,
                         "COMMENT": str(comment or ""),
