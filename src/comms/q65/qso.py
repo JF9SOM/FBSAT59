@@ -273,33 +273,27 @@ class Q65QsoManager:
         if not rows:
             return 0
 
-        def _field(tag: str, value: str) -> str:
-            return f"<{tag}:{len(value)}>{value}"
+        from ui.adif_utils import build_satellite_record  # noqa: PLC0415
 
         lines = ["<ADIF_VER:5>3.1.4", "<PROGRAMID:7>FBSAT59", "<EOH>", ""]
         for row in rows:
             qso_date, time_on, time_off, call, grid, rst_s, rst_r, freq_hz, sat = row
-            freq_mhz = f"{freq_hz / 1e6:.6f}" if freq_hz else ""
-            entry_parts = [
-                _field("CALL", call or ""),
-                _field("QSO_DATE", qso_date or ""),
-                _field("TIME_ON", time_on or ""),
-                _field("TIME_OFF", time_off or time_on or ""),
-                _field("MODE", "Q65"),
-                _field("PROP_MODE", "SAT"),
-            ]
-            if freq_mhz:
-                entry_parts.append(_field("FREQ", freq_mhz))
-            if sat:
-                entry_parts.append(_field("SAT_NAME", sat))
-            if rst_s:
-                entry_parts.append(_field("RST_SENT", rst_s))
-            if rst_r:
-                entry_parts.append(_field("RST_RCVD", rst_r))
-            if grid:
-                entry_parts.append(_field("GRIDSQUARE", grid))
-            entry_parts.append("<EOR>")
-            lines.append(" ".join(entry_parts))
+            # LoTW's mode list has no Q65; the generic DATA mode is accepted.
+            lines.append(
+                build_satellite_record(
+                    call=call or "",
+                    qso_date=qso_date or "",
+                    time_on=time_on or "",
+                    time_off=time_off or "",
+                    mode="DATA",
+                    sat_name=sat or "",
+                    freq_hz=freq_hz,
+                    rst_sent=rst_s or "",
+                    rst_rcvd=rst_r or "",
+                    gridsquare=grid or "",
+                    comment="Q65",
+                ).rstrip("\n")
+            )
             lines.append("")
 
         with open(path, "w", encoding="ascii") as fh:
@@ -365,23 +359,21 @@ class Q65QsoManager:
     ) -> None:
         """Send this QSO to the UDP log broadcaster (wavelog-gate / JT-Linker etc.)."""
         from comms.log_broadcast import get_log_broadcaster  # noqa: PLC0415
-        from ui.adif_utils import build_adif_record  # noqa: PLC0415
+        from ui.adif_utils import build_satellite_record  # noqa: PLC0415
 
-        freq_mhz = f"{self.freq_hz / 1e6:.6f}" if self.freq_hz else ""
-        record = build_adif_record(
-            {
-                "CALL": self.dx_call,
-                "QSO_DATE": qso_date,
-                "TIME_ON": time_on,
-                "TIME_OFF": time_off,
-                "MODE": "Q65",
-                "PROP_MODE": "SAT",
-                "FREQ": freq_mhz,
-                "SAT_NAME": self._sat_name,
-                "RST_SENT": rst_sent,
-                "RST_RCVD": rst_rcvd,
-                "GRIDSQUARE": self.dx_grid,
-            }
+        # LoTW's mode list has no Q65; the generic DATA mode is accepted.
+        record = build_satellite_record(
+            call=self.dx_call,
+            qso_date=qso_date,
+            time_on=time_on,
+            time_off=time_off,
+            mode="DATA",
+            sat_name=self._sat_name,
+            freq_hz=self.freq_hz,
+            rst_sent=rst_sent,
+            rst_rcvd=rst_rcvd,
+            gridsquare=self.dx_grid,
+            comment="Q65",
         )
         broadcaster = get_log_broadcaster()
         broadcaster.reload_settings(self._conn)
@@ -406,3 +398,6 @@ class Q65QsoManager:
             """
         )
         self._conn.commit()
+        from data.lotw_names import normalize_logged_satellite_names  # noqa: PLC0415
+
+        normalize_logged_satellite_names(self._conn)

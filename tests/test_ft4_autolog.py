@@ -150,9 +150,14 @@ def test_manager_never_logs_a_session_twice() -> None:
         (53106, "GREENCUBE", '["IO-117"]', "IO-117"),
         (43017, "FOX-1B", '["AO-91", "RADFXSAT"]', "AO-91"),
         (42761, "ZHUHAI-1 OVS-01", '["CAS 4A", "BJ1SK"]', "CAS-4A"),
-        (25544, "ISS", '["ZARYA", "RS0ISS", "NA1SS"]', "ISS"),
-        (43770, "FOX-1C", '["AO-95Fox-1Cliff"]', "AO-95"),
-        (44881, "CAS-6 (TO-108)", '["2019-093C"]', "CAS-6 (TO-108)"),  # nothing better known
+        (25544, "ISS", '["ZARYA", "RS0ISS", "NA1SS"]', "ARISS"),  # LoTW's ID for the ISS
+        (43770, "FOX-1C", '["AO-95Fox-1Cliff"]', "FOX-1C"),  # AO-95 is not on LoTW's list
+        (44881, "CAS-6 (TO-108)", '["2019-093C"]', "TO-108"),
+        (24278, "JAS-2", '["FO-29"]', "FO-29"),
+        (27607, "SAUDISAT 1C", '["SO-50"]', "SO-50"),
+        (7530, "OSCAR 7", '["AO-7", "AMSAT OSCAR 7"]', "AO-7"),
+        (39444, "FUNCUBE-1", '["AO-73"]', "AO-73"),
+        (42017, "NAYIF-1", '["EO-88", "FUNCUBE-5"]', "EO-88"),
         (12345, "NEWSAT", None, "NEWSAT"),
     ],
 )
@@ -209,3 +214,109 @@ def test_export_writes_lotw_satellite_names_for_every_mode(qtbot: QtBot) -> None
     records = [r for _, r in dlg._collect_records()]
     assert len(records) == 3
     assert all("<SAT_NAME:5>RS-44" in r for r in records)
+    ft4, q65, aprs = records
+    assert "<MODE:3>FT4" in ft4
+    assert "<MODE:4>DATA" in q65  # LoTW's list has no Q65
+    assert "<MODE:6>PACKET" in aprs  # LoTW's name for the packet mode
+    assert dlg._unlisted_satellites == set()
+
+
+def test_every_id_in_the_lotw_list_resolves_to_itself() -> None:
+    from data.lotw_satellites import LOTW_SATELLITES
+
+    assert len(LOTW_SATELLITES) >= 100
+    assert "RS-44" in LOTW_SATELLITES
+    for sat_id in LOTW_SATELLITES:
+        assert lotw_sat_name(None, "x", f'["{sat_id}"]') == sat_id
+
+
+def test_is_lotw_satellite_is_an_exact_match() -> None:
+    from data.lotw_names import is_lotw_satellite
+
+    assert is_lotw_satellite("AO-7")
+    assert not is_lotw_satellite("AO7")  # LoTW rejects this spelling
+    assert not is_lotw_satellite("DOSAAF-85")
+    assert not is_lotw_satellite("")
+
+
+@pytest.mark.parametrize(
+    ("hz", "band"),
+    [
+        (145_000_000, "2M"),
+        (145_992_560, "2M"),
+        (435_000_000, "70CM"),
+        (435_619_315, "70CM"),
+        (29_000_000, "10M"),
+        (1_269_000_000, "23CM"),
+        (2_400_000_000, "13CM"),
+        (0, ""),
+        (None, ""),
+        (7_500_000_000, ""),
+    ],
+)
+def test_adif_band(hz: float | None, band: str) -> None:
+    from ui.adif_utils import adif_band
+
+    assert adif_band(hz) == band
+
+
+def test_satellite_record_has_everything_lotw_needs() -> None:
+    from ui.adif_utils import build_satellite_record
+
+    rec = build_satellite_record(
+        call="JF1PTU",
+        qso_date="20261006",
+        time_on="080515",
+        time_off="080645",
+        mode="FT4",
+        sat_name="RS-44",
+        freq_hz=145_000_000,
+        freq_rx_hz=435_000_000,
+        rst_sent="-16",
+        rst_rcvd="-07",
+        gridsquare="PM95",
+    )
+    for needed in (
+        "<CALL:6>JF1PTU",
+        "<QSO_DATE:8>20261006",
+        "<TIME_ON:6>080515",
+        "<BAND:2>2M",
+        "<BAND_RX:4>70CM",
+        "<MODE:3>FT4",
+        "<PROP_MODE:3>SAT",
+        "<SAT_NAME:5>RS-44",
+    ):
+        assert needed in rec
+    assert rec.endswith("<EOR>\n")
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [("TEVEL2-4", "TEV2-4"), ("TEVEL2-9", "TEV2-9"), ("TEVEL-3", "TEVEL3"), ("UKUBE-1", "UKUBE1")],
+)
+def test_lotw_ids_with_irregular_spellings(name: str, expected: str) -> None:
+    assert lotw_sat_name(None, name, None) == expected
+
+
+def test_old_log_rows_are_rewritten_to_lotw_names() -> None:
+    from data.lotw_names import normalize_logged_satellite_names
+
+    conn = _conn()
+    conn.execute(
+        "INSERT INTO satellites (norad_cat_id, name, alt_names) VALUES (44909, 'DOSAAF-85', ?)",
+        ('["RS-44"]',),
+    )
+    ensure_ft4_log_schema(conn)
+    conn.execute(
+        "INSERT INTO ft4_log (qso_date,time_on,call,norad_cat_id,sat_name)"
+        " VALUES ('20261006','080000','JA1AAA',44909,'DOSAAF-85')"
+    )
+    conn.execute(
+        "INSERT INTO ft4_log (qso_date,time_on,call,norad_cat_id,sat_name)"
+        " VALUES ('20261006','090000','JA1BBB',NULL,'Unknown')"
+    )
+    conn.commit()
+    assert normalize_logged_satellite_names(conn) == 1
+    assert normalize_logged_satellite_names(conn) == 0  # idempotent
+    names = [r[0] for r in conn.execute("SELECT sat_name FROM ft4_log ORDER BY id")]
+    assert names == ["RS-44", "Unknown"]

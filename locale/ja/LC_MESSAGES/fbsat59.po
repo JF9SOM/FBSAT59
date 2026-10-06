@@ -7014,3 +7014,8 @@ msgstr "{call} との QSO を自動でログしました"
 #: src/ui/log_export_dialog.py
 msgid "No QSOs in this range - nothing to export"
 msgstr "この期間に QSO はありません（エクスポートする内容がありません）"
+
+#: src/ui/log_export_dialog.py
+#, python-brace-format
+msgid "LoTW does not accept these satellite names (they are not on its list): {names}"
+msgstr "次の衛星名は LoTW の一覧にないため、LoTW では受け付けられません: {names}"

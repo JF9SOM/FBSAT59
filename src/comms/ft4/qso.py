@@ -430,25 +430,20 @@ class Ft4QsoManager:
     ) -> None:
         """Send this QSO to the UDP log broadcaster (wavelog-gate / JT-Linker etc.)."""
         from comms.log_broadcast import get_log_broadcaster  # noqa: PLC0415
-        from ui.adif_utils import build_adif_record  # noqa: PLC0415
+        from ui.adif_utils import build_satellite_record  # noqa: PLC0415
 
-        freq_mhz = f"{sess.freq_hz / 1e6:.6f}" if sess.freq_hz else ""
-        freq_rx_mhz = f"{sess.freq_rx_hz / 1e6:.6f}" if sess.freq_rx_hz else ""
-        record = build_adif_record(
-            {
-                "CALL": sess.their_call,
-                "QSO_DATE": qso_date,
-                "TIME_ON": time_on,
-                "TIME_OFF": time_off,
-                "MODE": "FT4",
-                "PROP_MODE": "SAT",
-                "FREQ": freq_mhz,
-                "FREQ_RX": freq_rx_mhz,
-                "SAT_NAME": sess.sat_name,
-                "RST_SENT": sess.rst_sent,
-                "RST_RCVD": sess.rst_rcvd,
-                "GRIDSQUARE": sess.their_grid,
-            }
+        record = build_satellite_record(
+            call=sess.their_call,
+            qso_date=qso_date,
+            time_on=time_on,
+            time_off=time_off,
+            mode="FT4",
+            sat_name=sess.sat_name,
+            freq_hz=sess.freq_hz,
+            freq_rx_hz=sess.freq_rx_hz,
+            rst_sent=sess.rst_sent,
+            rst_rcvd=sess.rst_rcvd,
+            gridsquare=sess.their_grid,
         )
         broadcaster = get_log_broadcaster()
         broadcaster.reload_settings(conn)

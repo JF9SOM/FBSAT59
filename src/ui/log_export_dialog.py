@@ -29,9 +29,9 @@ from PySide6.QtWidgets import (
 )
 
 from comms.ft4.qso import ensure_ft4_log_schema
-from data.lotw_names import lotw_name_for_norad
+from data.lotw_names import is_lotw_satellite, lotw_name_for_norad
 from i18n import _
-from ui.adif_utils import adif_write_or_append, build_adif_record
+from ui.adif_utils import adif_write_or_append, build_adif_record, build_satellite_record
 
 
 def _latlon_to_grid(lat: float, lon: float) -> str:
@@ -66,6 +66,7 @@ class LogExportDialog(QDialog):
         self._conn = conn
         self._my_call = my_call
         self._my_ssid = my_ssid
+        self._unlisted_satellites: set[str] = set()
 
         self.setWindowTitle(_("Export Log (ADIF)"))
         self.setMinimumWidth(400)
@@ -188,8 +189,14 @@ class LogExportDialog(QDialog):
         # Keep Export enabled only when path is chosen and there are records
         self._export_btn.setEnabled(bool(self._path_edit.text()) and n > 0)
 
+    def _note_satellite(self, sat_name: str | None) -> None:
+        """Remember a satellite name LoTW would reject (not on its list)."""
+        if sat_name and not is_lotw_satellite(sat_name):
+            self._unlisted_satellites.add(sat_name)
+
     def _collect_records(self) -> list[tuple[str, str]]:
         """Return list of (iso_datetime, adif_record_str) sorted by time."""
+        self._unlisted_satellites = set()
         from_d, to_d = self._date_range()
         # to_d inclusive → compare against YYYY-MM-DD 23:59:59
         to_dt = to_d + " 23:59:59"
@@ -222,23 +229,19 @@ class LogExportDialog(QDialog):
                     ) = r
                     sat = lotw_name_for_norad(self._conn, norad, sat or "")
                     iso = f"{qso_date[:4]}-{qso_date[4:6]}-{qso_date[6:]} {time_on}"
-                    freq_mhz = f"{freq_hz / 1e6:.6f}" if freq_hz else ""
-                    freq_rx_mhz = f"{rx / 1e6:.6f}" if rx else ""
-                    record = build_adif_record(
-                        {
-                            "CALL": call or "",
-                            "QSO_DATE": qso_date or "",
-                            "TIME_ON": time_on or "",
-                            "TIME_OFF": time_off or time_on or "",
-                            "MODE": "FT4",
-                            "PROP_MODE": "SAT",
-                            "FREQ": freq_mhz,
-                            "FREQ_RX": freq_rx_mhz,
-                            "SAT_NAME": sat or "",
-                            "RST_SENT": rst_s or "",
-                            "RST_RCVD": rst_r or "",
-                            "GRIDSQUARE": grid or "",
-                        }
+                    self._note_satellite(sat)
+                    record = build_satellite_record(
+                        call=call or "",
+                        qso_date=qso_date or "",
+                        time_on=time_on or "",
+                        time_off=time_off or "",
+                        mode="FT4",
+                        sat_name=sat or "",
+                        freq_hz=freq_hz,
+                        freq_rx_hz=rx,
+                        rst_sent=rst_s or "",
+                        rst_rcvd=rst_r or "",
+                        gridsquare=grid or "",
                     )
                     records.append((iso, record))
             except sqlite3.OperationalError:
@@ -257,21 +260,20 @@ class LogExportDialog(QDialog):
                     qso_date, time_on, time_off, call, grid, rst_s, rst_r, freq_hz, sat, norad = row
                     sat = lotw_name_for_norad(self._conn, norad, sat or "")
                     iso = f"{qso_date[:4]}-{qso_date[4:6]}-{qso_date[6:]} {time_on}"
-                    freq_mhz = f"{freq_hz / 1e6:.6f}" if freq_hz else ""
-                    record = build_adif_record(
-                        {
-                            "CALL": call or "",
-                            "QSO_DATE": qso_date or "",
-                            "TIME_ON": time_on or "",
-                            "TIME_OFF": time_off or time_on or "",
-                            "MODE": "Q65",
-                            "PROP_MODE": "SAT",
-                            "FREQ": freq_mhz,
-                            "SAT_NAME": sat or "",
-                            "RST_SENT": rst_s or "",
-                            "RST_RCVD": rst_r or "",
-                            "GRIDSQUARE": grid or "",
-                        }
+                    self._note_satellite(sat)
+                    # LoTW's mode list has no Q65, but accepts the generic DATA mode.
+                    record = build_satellite_record(
+                        call=call or "",
+                        qso_date=qso_date or "",
+                        time_on=time_on or "",
+                        time_off=time_off or "",
+                        mode="DATA",
+                        sat_name=sat or "",
+                        freq_hz=freq_hz,
+                        rst_sent=rst_s or "",
+                        rst_rcvd=rst_r or "",
+                        gridsquare=grid or "",
+                        comment="Q65",
                     )
                     records.append((iso, record))
             except sqlite3.OperationalError:
@@ -298,6 +300,7 @@ class LogExportDialog(QDialog):
                     time_on = dt.strftime("%H%M%S")
                     cs = str(callsign or "").split(">")[0].split("-")[0]
                     sat_name = lotw_name_for_norad(self._conn, norad_sat) if norad_sat else ""
+                    self._note_satellite(sat_name)
                     grid = ""
                     if lat_deg is not None:
                         grid = _latlon_to_grid(float(lat_deg), float(lon_deg or 0))
@@ -308,7 +311,7 @@ class LogExportDialog(QDialog):
                         "CALL": cs,
                         "QSO_DATE": qso_date,
                         "TIME_ON": time_on,
-                        "MODE": "PKT",
+                        "MODE": "PACKET",
                         "MY_CALL": my_station,
                         "COMMENT": str(comment or ""),
                         "VIA": str(via or ""),
@@ -351,8 +354,9 @@ class LogExportDialog(QDialog):
             return
         adif_write_or_append(path, "".join(r for _, r in records))
         self.accept()
-        QMessageBox.information(
-            self,
-            _("Export"),
-            _("Exported {n} QSOs to {f}").format(n=len(records), f=path),
-        )
+        message = _("Exported {n} QSOs to {f}").format(n=len(records), f=path)
+        if self._unlisted_satellites:
+            message += "\n\n" + _(
+                "LoTW does not accept these satellite names (they are not on its list): {names}"
+            ).format(names=", ".join(sorted(self._unlisted_satellites)))
+        QMessageBox.information(self, _("Export"), message)

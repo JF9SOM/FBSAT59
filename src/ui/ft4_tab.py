@@ -69,7 +69,11 @@ from comms.ft4.qso import (
 from comms.ft4.rx_capture import Ft4RxCaptureWorker
 from comms.ft4.scheduler import Ft4Scheduler
 from core.clock_offset import corrected_time
-from data.lotw_names import band_freq_hz, lotw_name_for_norad
+from data.lotw_names import (
+    band_freq_hz,
+    lotw_name_for_norad,
+    normalize_logged_satellite_names,
+)
 from i18n import _
 from rig.controller import select_tx_rig
 from ui.ft4_waterfall_dialog import Ft4WaterfallDialog
@@ -1055,6 +1059,7 @@ class Ft4Tab(QWidget):
 
     def _ensure_table(self) -> None:
         ensure_ft4_log_schema(self._conn)
+        normalize_logged_satellite_names(self._conn)
 
     # ------------------------------------------------------------------ #
     # Codec status                                                         #

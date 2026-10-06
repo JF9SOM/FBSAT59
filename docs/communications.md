@@ -3586,3 +3586,24 @@ FBSAT59 は `corrected_time()`（NTP オフセット 0.1 秒未満は 0 に丸�
   変換して出力する（古い行の SATNOGS 名も変換される）。APRS の UDP ログ（`aprs_tab._broadcast_adif`）も同様。
   APRS のログには周波数の列が無いため、周波数は従来どおり出力しない
 
+#### LoTW が受け付ける ADIF にそろえた（2026-10-06）
+
+LoTW の公式ページ（[Satellite QSOs](https://lotw.arrl.org/lotw-help/satellite-qsos/)・
+[FAQ](https://lotw.arrl.org/lotw-help/frequently-asked-questions/) の「What satellites are supported by
+LoTW?」）を読んで合わせた。
+
+- **必須項目**: `CALL`・`QSO_DATE`・`TIME_ON`・**`BAND`**・`MODE`、衛星 QSO は `PROP_MODE=SAT` と
+  **一覧と完全一致する `SAT_NAME`**（`AO7` は不可、`AO-7` が正）。`FREQ`/`BAND_RX`/`FREQ_RX` は必須ではない。
+  従来の出力は `BAND` が無かった。`ui/adif_utils.build_satellite_record()` に一本化し、`BAND`（上り）・
+  `BAND_RX`（下り）を周波数から ADIF のバンド名（`2M`・`70CM` など。`adif_band()`）で出す
+- **SAT_NAME**: 一覧（110 件）を `data/lotw_satellites.py` に取り込み、`data/lotw_names.lotw_sat_id()` が
+  SATNOGS 名・別名・NORAD ID から一覧の ID を決める（`DOSAAF-85`→`RS-44`、`JY1Sat`→`JO-97`、
+  `GREENCUBE`→`IO-117`、`CAS-6 (TO-108)`→`TO-108`、`TEVEL2-4`→`TEV2-4`、ISS→`ARISS`）。
+  **一覧にない衛星（例: AO-95）は LoTW に受け付けられない**ので、エクスポート後に警告を表示する
+- **MODE**: LoTW の一覧にあるモード名のみ使う。FT4→`FT4`、APRS/AX.25→`PACKET`（`PKT` は一覧にない）、
+  **Q65→`DATA`**（一覧に Q65 が無いため、汎用の `DATA` で出し `COMMENT` に `Q65` を残す）
+- **DB**: 起動時に `normalize_logged_satellite_names()` が `ft4_log`/`q65_log` の既存の衛星名を LoTW の ID に直す
+  （冪等）。周波数は MHz 単位に切り捨てたバンド値のまま（ユーザー判断）
+- **未確認**: 実際に TQSL/LoTW へアップロードしての受理は未検証。APRS のログには周波数が無いため `BAND` が
+  出ず、LoTW には上げられない
+
