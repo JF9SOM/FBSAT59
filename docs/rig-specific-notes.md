@@ -141,6 +141,14 @@ rig_dialog.py のカスタムリストでは 1036 = FT-991A として登録。`_
     4800 baud でどうかは実機で試すしかない（直接確認した資料は無い）。受信は USB オーディオでも可。
   - FT4 の USB-D（SSB）の TX レベル（ALC 基準で -25 dB 付近）は、FM-D（レベル＝偏移）の目安にならない
 - main_window.py では `_FTX1_MODEL_IDS | _FT991_DIRECT_MODEL_IDS` をまとめて同一ブランチで処理
+- **CTCSS OFF は VFO-B（送信側）にも送る**（2026-10-06）: ARICA-2（DATA-FM、トーンなし）で PTT を入れると無線機に
+  `ENC` が出た。アプリは `CT00;` を送っていたが VFO-A（受信側）にしか届かず、スプリットの送信側 VFO-B に残った
+  CTCSS ENC が送信に乗っていた可能性が高い（G3RUH の波形に低周波の偏移が加わる）。トーンなしのトランスポンダーでは
+  `SV; MD0{ul}; CT00; SV; MD0{dl}; CT00;`（Direct）／`w SV; w CT00; w SV; w CT00;`（NET）と、**VFO-B を Main にした
+  SV スワップの中でも `CT00;` を送る**。トーンありの場合・単独の送信専用リグ（`tx_only`）は従来どおり。
+  - **一時的な診断ログ `[CTCSS diag]`**: 送信後に `CT0;`（応答 `CT0<n>;`、n=0 OFF・2 ENC）で VFO-A/VFO-B の状態を
+    読み戻して INFO に出す（`HamlibDirectController._log_ft991_ctcss_readback`、
+    `HamlibNetController._log_ft991_ctcss_readback`）。**ENC が出なくなったことをユーザーが確認したら削除する**。
 - **TX中のDL/UL周波数書き込みをスキップ**（2026-09-29、`set_vfo_frequencies()`の
   generic分岐）: rigctld（NETモード）でFT-991がTX中のCAT周波数変更を無視することが
   確認されたのを受け、同じ物理無線機を駆動するDirectモードにも同じ挙動を仮定し、

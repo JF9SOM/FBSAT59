@@ -678,6 +678,74 @@ class TestTxOnlySimplexNoSplit:
         assert written[0] == b"MD02;"  # USB code, on VFOA only
 
 
+class TestFt991CtcssOffReachesBothVfos:
+    """CTCSS OFF must be sent to VFO-B (TX in the satellite split) as well as VFO-A.
+
+    A tone left on VFO-B showed ENC on every transmission and added a sub-audible
+    tone to the G3RUH data; CT00 sent only on VFO-A did not clear it.
+    """
+
+    @staticmethod
+    def _direct_commands(ctcss_hz: float, radio_type: str = "full_duplex") -> list[bytes]:
+        ctrl = HamlibDirectController(model_id=1035, port="/dev/null", radio_type=radio_type)
+        written: list[bytes] = []
+        ser = MagicMock()
+        ser.__enter__.return_value = ser
+        ser.write.side_effect = written.append
+        ser.read_until.return_value = b"CT00;"
+        with patch("serial.Serial", return_value=ser), patch("rig.controller.time.sleep"):
+            ctrl._apply_mode_and_ctcss_cat_ft991("GMSK", "GMSK", ctcss_hz)
+        return written
+
+    def test_direct_off_inside_the_vfo_b_swap_and_on_vfo_a(self) -> None:
+        written = self._direct_commands(0.0)
+        # mode + CTCSS OFF on VFO-B inside the swap, then mode + OFF on VFO-A
+        assert written[:6] == [b"SV;", b"MD0A;", b"CT00;", b"SV;", b"MD0A;", b"CT00;"]
+
+    def test_direct_with_a_tone_is_unchanged(self) -> None:
+        written = self._direct_commands(67.0)
+        assert written[:4] == [b"SV;", b"MD0A;", b"SV;", b"MD0A;"]
+        assert b"CT02;" in written
+        assert b"CT00;" not in written[:6]
+
+    def test_direct_simplex_tx_rig_has_no_swap(self) -> None:
+        written = self._direct_commands(0.0, radio_type="tx_only")
+        assert b"SV;" not in written
+        assert written[:2] == [b"MD0A;", b"CT00;"]
+
+    def test_direct_readback_is_logged(self, caplog: pytest.LogCaptureFixture) -> None:
+        with caplog.at_level("INFO", logger="rig.controller"):
+            self._direct_commands(0.0)
+        assert any("[CTCSS diag] readback" in r.message for r in caplog.records)
+
+    @staticmethod
+    def _net_sent(tone_hz: float, radio_type: str = "full_duplex") -> list[str]:
+        ctrl = HamlibNetController(radio_type=radio_type, ctcss_method="ft991")
+        sent: list[str] = []
+        sock = MagicMock()
+        sock.recv.return_value = b"CT00;"
+        sock.sendall.side_effect = lambda b: sent.append(b.decode().strip())
+        with patch("rig.controller.socket.socket", return_value=sock):
+            ctrl.send_ctcss_cat(tone_hz, "CN00{tone:03d};CT02;", "CT00;")
+        return sent
+
+    def test_net_off_goes_to_vfo_b_then_vfo_a(self) -> None:
+        sent = self._net_sent(0.0)
+        assert sent[:4] == ["w SV;", "w CT00;", "w SV;", "w CT00;"]
+
+    def test_net_readback_follows_the_off_commands(self) -> None:
+        sent = self._net_sent(0.0)
+        assert sent[4:] == ["w CT0;", "w SV;", "w CT0;", "w SV;"]
+
+    def test_net_with_a_tone_sends_no_swap(self) -> None:
+        sent = self._net_sent(67.0)
+        assert "w SV;" not in sent
+        assert sent == ["w CN00000;", "w CT02;"]
+
+    def test_net_simplex_tx_rig_sends_a_single_off(self) -> None:
+        assert self._net_sent(0.0, radio_type="tx_only") == ["w CT00;"]
+
+
 class TestSelectTxRig:
     """select_tx_rig() picks the rig that keys PTT / receives CTCSS."""
 

@@ -2696,12 +2696,14 @@ class HamlibDirectController(RigController):
             # Simplex TX rig: one VFO, no SV swap.
             commands: list[bytes] = [f"MD0{dl_code};".encode()]
         else:
-            commands = [
-                b"SV;",
-                f"MD0{ul_code};".encode(),
-                b"SV;",
-                f"MD0{dl_code};".encode(),
-            ]
+            commands = [b"SV;", f"MD0{ul_code};".encode()]
+            if ctcss_hz <= 0:
+                # CTCSS OFF must reach the TX VFO (VFO-B in the split used for
+                # satellites) too, not just VFO-A: a tone left on VFO-B made
+                # the rig show ENC and add a sub-audible tone to every data
+                # transmission. Done inside the swap, where VFO-B is Main.
+                commands.append(b"CT00;")
+            commands += [b"SV;", f"MD0{dl_code};".encode()]
 
         if ctcss_hz > 0:
             tone_number = CTCSS_TABLE.get(ctcss_hz)
@@ -2729,8 +2731,32 @@ class HamlibDirectController(RigController):
                 for raw in commands:
                     ser.write(raw)
                     time.sleep(0.05)  # brief inter-command gap for FT-991 processing
+                if ctcss_hz <= 0 and self._radio_type != "tx_only":
+                    self._log_ft991_ctcss_readback(ser)  # [CTCSS diag]
         except Exception as exc:
             logger.error("RigDirect.ft991 CAT: %s", exc)
+
+    @staticmethod
+    def _log_ft991_ctcss_readback(ser: Any) -> None:
+        """[CTCSS diag] Log the rig's CTCSS state on VFO-A and VFO-B (temporary).
+
+        Queries ``CT0;`` (reply ``CT0<n>;``, n=0 OFF, 2 ENC) on VFO-A, then on
+        VFO-B inside an SV swap. Written to find out whether CT00 really
+        reached the TX VFO; remove once the ENC-on-transmit problem is closed.
+        """
+
+        def _ask() -> str:
+            ser.reset_input_buffer()
+            ser.write(b"CT0;")
+            return bytes(ser.read_until(b";")).decode(errors="replace")
+
+        vfo_a = _ask()
+        ser.write(b"SV;")
+        time.sleep(0.05)
+        vfo_b = _ask()
+        ser.write(b"SV;")
+        time.sleep(0.05)
+        logger.info("RigDirect.ft991 [CTCSS diag] readback VFO-A=%r VFO-B=%r", vfo_a, vfo_b)
 
     def _resend_mode_ctcss_via_rig(self) -> None:
         """Stage 2: re-apply mode and CTCSS via self._rig after first UL write.
@@ -4217,6 +4243,17 @@ class HamlibNetController(RigController):
         parts = [p.strip() for p in template.split(";") if p.strip()]
         if not parts:
             return
+        # CTCSS OFF must reach the TX VFO (VFO-B) as well as VFO-A: do it once
+        # inside an SV swap (VFO-B is Main there), then again on VFO-A. The
+        # caller has the rig disconnected, so the Doppler F/I writes cannot
+        # land on the swapped VFOs (same assumption as send_mode_only()).
+        off_both_vfos = (
+            self._ctcss_method == "ft991"
+            and self._radio_type != "tx_only"
+            and not (tone_hz > 0 and cat_on_template)
+        )
+        if off_both_vfos:
+            parts = ["SV", *parts, "SV", *parts]
         logger.info("RigNet.send_ctcss_cat: tone_hz=%s cmd=%r", tone_hz, template)
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -4232,9 +4269,34 @@ class HamlibNetController(RigController):
                 sock.sendall((cmd + "\n").encode())
                 with contextlib.suppress(OSError):
                     sock.recv(256)
+            if off_both_vfos:
+                self._log_ft991_ctcss_readback(sock)  # [CTCSS diag]
             sock.close()
         except Exception as exc:
             logger.error("RigNet.send_ctcss_cat: %s", exc)
+
+    @staticmethod
+    def _log_ft991_ctcss_readback(sock: socket.socket) -> None:
+        """[CTCSS diag] Log the rig's CTCSS state on VFO-A and VFO-B (temporary).
+
+        Same query as the Direct-mode helper, sent through rigctld's raw ``w``
+        command; whatever rigctld answers is logged verbatim (``CT0<n>;`` with
+        n=0 OFF, 2 ENC, or an error text). Remove once the ENC-on-transmit
+        problem is closed.
+        """
+
+        def _ask(cmd: str) -> str:
+            sock.sendall((cmd + "\n").encode())
+            try:
+                return sock.recv(256).decode(errors="replace").strip()
+            except OSError:
+                return ""
+
+        vfo_a = _ask("w CT0;")
+        _ask("w SV;")
+        vfo_b = _ask("w CT0;")
+        _ask("w SV;")
+        logger.info("RigNet.ft991 [CTCSS diag] readback VFO-A=%r VFO-B=%r", vfo_a, vfo_b)
 
     def send_mode_only(self, dl_mode: str, ul_mode: str) -> None:
         """Set mode on both VFOs via an independent TCP connection.
