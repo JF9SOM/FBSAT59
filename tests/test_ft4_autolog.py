@@ -13,6 +13,7 @@ pytest.importorskip("scipy")
 
 from comms.ft4.qso import Ft4QsoManager, QsoState, ensure_ft4_log_schema  # noqa: E402
 from data.database import SCHEMA_SQL  # noqa: E402 -- must follow importorskip above
+from data.lotw_names import band_freq_hz, lotw_sat_name  # noqa: E402
 from ui.ft4_tab import Ft4Tab  # noqa: E402
 
 
@@ -28,7 +29,12 @@ def _make_tab(qtbot: QtBot) -> Ft4Tab:
         _sat_name_label=SimpleNamespace(text=lambda: "RS-44 (DOSAAF-85)"),
         _norad_label=SimpleNamespace(text=lambda: "44909"),
     )
-    tab = Ft4Tab(_conn(), radio)
+    conn = _conn()
+    conn.execute(
+        "INSERT INTO satellites (norad_cat_id, name, alt_names) VALUES (44909, 'DOSAAF-85', ?)",
+        ('["RS-44"]',),
+    )
+    tab = Ft4Tab(conn, radio)
     qtbot.addWidget(tab)
     tab._my_call = "JF9SOM"
     tab._my_grid = "PM86"
@@ -74,8 +80,8 @@ def test_auto_log_when_our_rr73_has_been_sent(qtbot: QtBot) -> None:
         "-07",
         "PM95",
     )
-    assert (r["freq_hz"], r["freq_rx_hz"]) == (145_990_000, 435_610_000)
-    assert (r["sat_name"], r["norad_cat_id"]) == ("RS-44 (DOSAAF-85)", 44909)
+    assert (r["freq_hz"], r["freq_rx_hz"]) == (145_000_000, 435_000_000)  # band only
+    assert (r["sat_name"], r["norad_cat_id"]) == ("RS-44", 44909)  # LoTW name
     # the RR73 is repeated and their 73 arrives: still exactly one row
     tab._on_tx_finished()
     qso.advance("JF9SOM JF1PTU 73")
@@ -133,3 +139,28 @@ def test_manager_never_logs_a_session_twice() -> None:
     qso.log_qso(conn)
     qso.log_qso(conn)
     assert conn.execute("SELECT COUNT(*) FROM ft4_log").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize(
+    ("norad", "name", "alts", "expected"),
+    [
+        (44909, "DOSAAF-85", '["RS-44"]', "RS-44"),
+        (43803, "JY1Sat", '["JO-97", "Jordan-OSCAR 97"]', "JO-97"),
+        (53106, "GREENCUBE", '["IO-117"]', "IO-117"),
+        (43017, "FOX-1B", '["AO-91", "RADFXSAT"]', "AO-91"),
+        (42761, "ZHUHAI-1 OVS-01", '["CAS 4A", "BJ1SK"]', "CAS-4A"),
+        (25544, "ISS", '["ZARYA", "RS0ISS", "NA1SS"]', "ISS"),
+        (43770, "FOX-1C", '["AO-95Fox-1Cliff"]', "AO-95"),
+        (44881, "CAS-6 (TO-108)", '["2019-093C"]', "CAS-6 (TO-108)"),  # nothing better known
+        (12345, "NEWSAT", None, "NEWSAT"),
+    ],
+)
+def test_lotw_sat_name(norad: int, name: str, alts: str | None, expected: str) -> None:
+    assert lotw_sat_name(norad, name, alts) == expected
+
+
+def test_band_freq_rounds_down_to_the_mhz() -> None:
+    assert band_freq_hz(145_988_148.0) == 145_000_000
+    assert band_freq_hz(435_619_315.7) == 435_000_000
+    assert band_freq_hz(None) == 0
+    assert band_freq_hz(0) == 0

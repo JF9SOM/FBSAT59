@@ -69,6 +69,7 @@ from comms.ft4.qso import (
 from comms.ft4.rx_capture import Ft4RxCaptureWorker
 from comms.ft4.scheduler import Ft4Scheduler
 from core.clock_offset import corrected_time
+from data.lotw_names import band_freq_hz, lotw_sat_name
 from i18n import _
 from rig.controller import select_tx_rig
 from ui.ft4_waterfall_dialog import Ft4WaterfallDialog
@@ -1877,34 +1878,49 @@ class Ft4Tab(QWidget):
     # ------------------------------------------------------------------ #
 
     def _stamp_session(self, session: Ft4QsoSession) -> None:
-        """Fill the satellite name/NORAD ID and the uplink/downlink frequencies.
+        """Fill the satellite name/NORAD ID and the uplink/downlink bands.
 
-        Taken from the radio control (satellite labels, the frequencies last
-        written to the rig, Doppler-corrected). Existing values are kept, so
-        a QSO stamped when it happened is not overwritten by whatever is
-        selected later.
+        The satellite comes from the radio control; its name is stored as the
+        LoTW designator (``RS-44``, from the satellites table's alternative
+        names). Frequencies are the ones last written to the rig, rounded
+        down to the MHz -- the log only needs to show the band. Existing
+        values are kept, so a QSO stamped when it happened is not overwritten
+        by whatever is selected later.
         """
-        if not session.sat_name:
-            sat_text = getattr(self._radio_control, "_sat_name_label", None)
-            try:
-                name = sat_text.text() if sat_text else ""
-            except AttributeError:
-                name = ""
-            session.sat_name = "" if name in ("—", "-") else name
         if session.norad_cat_id is None:
             norad_text = getattr(self._radio_control, "_norad_label", None)
             try:
                 session.norad_cat_id = int(norad_text.text()) if norad_text else None
             except (ValueError, AttributeError):
                 session.norad_cat_id = None
+        if not session.sat_name:
+            sat_text = getattr(self._radio_control, "_sat_name_label", None)
+            try:
+                label = sat_text.text() if sat_text else ""
+            except AttributeError:
+                label = ""
+            label = "" if label in ("—", "-") else label
+            session.sat_name = self._lotw_name(session.norad_cat_id, label)
         rig = self._tx_rig()
         if rig is not None:
             if not session.freq_hz:
-                ul = getattr(rig, "last_ul_hz", None)
-                session.freq_hz = int(ul) if ul else 0
+                session.freq_hz = band_freq_hz(getattr(rig, "last_ul_hz", None))
             if not session.freq_rx_hz:
-                dl = getattr(rig, "last_dl_hz", None)
-                session.freq_rx_hz = int(dl) if dl else 0
+                session.freq_rx_hz = band_freq_hz(getattr(rig, "last_dl_hz", None))
+
+    def _lotw_name(self, norad: int | None, fallback: str) -> str:
+        """LoTW satellite name for *norad* (see data.lotw_names), else *fallback*."""
+        if norad is None:
+            return fallback
+        try:
+            row = self._conn.execute(
+                "SELECT name, alt_names FROM satellites WHERE norad_cat_id = ?", (norad,)
+            ).fetchone()
+        except sqlite3.Error:
+            row = None
+        if row is None:
+            return fallback
+        return lotw_sat_name(norad, str(row[0] or fallback), row[1])
 
     def _auto_log_qso(self) -> None:
         """Log the current QSO once its RR73 has been sent or received."""

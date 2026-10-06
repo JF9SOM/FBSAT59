@@ -3573,6 +3573,9 @@ FBSAT59 は `corrected_time()`（NTP オフセット 0.1 秒未満は 0 に丸�
   セッションへ記録し（`_stamp_session`）、`freq_hz` = 上り（ADIF FREQ）、新設の `freq_rx_hz` = 下り
   （ADIF FREQ_RX）として保存する。`ensure_ft4_log_schema()` が既存 DB へ列を追加する
 - **エクスポート**: 該当 0 件のときは「この期間に QSO はありません」と表示。FT4 の TIME_OFF・FREQ_RX も出力
-- 当日の 2 件（JF1PTU・JF6BCC）は `ft4_decode.log`/`fbsat59.log` から `ft4_log` へ復元した
-  （周波数は QSO 開始時の Doppler 補正後ダイヤル値、衛星は DOSAAF-85 / NORAD 44909）。
-  `SAT_NAME` は DB の衛星名（LoTW が要求する `RS-44` ではない）。実機未検証
+- **衛星名は LoTW の標準名で保存する**（`data/lotw_names.py` の `lotw_sat_name()`）: `satellites.alt_names` の
+  OSCAR 形式の別名（`RS-44`・`JO-97`・`IO-117`・`AO-91`、`CAS 4A`→`CAS-4A`）を採用し、`ISS`・`AO-95` だけは
+  NORAD ID で固定。該当が無ければ DB の名前のまま。**周波数は MHz 単位に切り捨てたバンド値**（145000000 /
+  435000000。`band_freq_hz()`）。ログに必要なのはバンドのみというユーザー判断（2026-10-06）
+- 当日の 2 件（JF1PTU・JF6BCC）は `ft4_decode.log`/`fbsat59.log` から `ft4_log` へ復元した（衛星 RS-44 /
+  NORAD 44909、上り 145000000・下り 435000000）。Q65/APRS のログの `SAT_NAME` は未対応（従来どおり DB 名）。実機未検証
