@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from comms.ft4.qso import ensure_ft4_log_schema
 from i18n import _
 from ui.adif_utils import adif_write_or_append, build_adif_record
 
@@ -177,7 +178,12 @@ class LogExportDialog(QDialog):
 
     def _refresh_count(self) -> None:
         n = len(self._collect_records())
-        self._count_label.setText(_("Matching QSOs: {n}").format(n=n))
+        if n == 0:
+            # Export stays disabled with nothing to write; say so instead of
+            # leaving a silent grey button.
+            self._count_label.setText(_("No QSOs in this range - nothing to export"))
+        else:
+            self._count_label.setText(_("Matching QSOs: {n}").format(n=n))
         # Keep Export enabled only when path is chosen and there are records
         self._export_btn.setEnabled(bool(self._path_edit.text()) and n > 0)
 
@@ -192,24 +198,28 @@ class LogExportDialog(QDialog):
         # FT4
         if self._chk_ft4.isChecked():
             try:
+                ensure_ft4_log_schema(self._conn)  # older databases lack freq_rx_hz
                 rows = self._conn.execute(
                     "SELECT qso_date, time_on, time_off, call, gridsquare, "
-                    "rst_sent, rst_rcvd, freq_hz, sat_name FROM ft4_log "
+                    "rst_sent, rst_rcvd, freq_hz, sat_name, freq_rx_hz FROM ft4_log "
                     "WHERE qso_date >= ? AND qso_date <= ? ORDER BY id ASC",
                     (from_d.replace("-", ""), to_d.replace("-", "")),
                 ).fetchall()
                 for r in rows:
-                    qso_date, time_on, time_off, call, grid, rst_s, rst_r, freq_hz, sat = r
+                    qso_date, time_on, time_off, call, grid, rst_s, rst_r, freq_hz, sat, rx = r
                     iso = f"{qso_date[:4]}-{qso_date[4:6]}-{qso_date[6:]} {time_on}"
                     freq_mhz = f"{freq_hz / 1e6:.6f}" if freq_hz else ""
+                    freq_rx_mhz = f"{rx / 1e6:.6f}" if rx else ""
                     record = build_adif_record(
                         {
                             "CALL": call or "",
                             "QSO_DATE": qso_date or "",
                             "TIME_ON": time_on or "",
+                            "TIME_OFF": time_off or time_on or "",
                             "MODE": "FT4",
                             "PROP_MODE": "SAT",
                             "FREQ": freq_mhz,
+                            "FREQ_RX": freq_rx_mhz,
                             "SAT_NAME": sat or "",
                             "RST_SENT": rst_s or "",
                             "RST_RCVD": rst_r or "",

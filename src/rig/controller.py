@@ -786,6 +786,11 @@ class RigController(ABC):
         return self._ptt_method
 
     @property
+    def last_dl_hz(self) -> float | None:
+        """The DL (downlink) frequency last written to the rig, or None before any write."""
+        return getattr(self, "_last_dl_hz", None)
+
+    @property
     def last_ul_hz(self) -> float | None:
         """The UL (uplink) frequency actually written to the rig via CAT.
 

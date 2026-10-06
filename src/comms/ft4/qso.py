@@ -70,9 +70,39 @@ class Ft4QsoSession:
     # so the report we send is the real thing rather than a placeholder.
     their_snr_db: float | None = None
     qso_start: datetime = field(default_factory=lambda: datetime.now(UTC))
-    freq_hz: int = 0
+    freq_hz: int = 0  # our uplink (TX) frequency, Hz -- ADIF FREQ
+    freq_rx_hz: int = 0  # downlink (RX) frequency, Hz -- ADIF FREQ_RX
     norad_cat_id: int | None = None
     sat_name: str = ""
+    logged: bool = False  # already written to ft4_log (never write it twice)
+
+
+def ensure_ft4_log_schema(conn: sqlite3.Connection) -> None:
+    """Create ft4_log, or add the columns an older database is missing.
+
+    freq_rx_hz (the downlink frequency, ADIF FREQ_RX) was added after the
+    table first shipped; ``freq_hz`` has always been the uplink frequency.
+    """
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS ft4_log (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            qso_date      TEXT    NOT NULL,
+            time_on       TEXT    NOT NULL,
+            time_off      TEXT,
+            call          TEXT    NOT NULL,
+            gridsquare    TEXT,
+            rst_sent      TEXT,
+            rst_rcvd      TEXT,
+            freq_hz       INTEGER,
+            freq_rx_hz    INTEGER,
+            norad_cat_id  INTEGER,
+            sat_name      TEXT
+        )"""
+    )
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(ft4_log)")}
+    if "freq_rx_hz" not in columns:
+        conn.execute("ALTER TABLE ft4_log ADD COLUMN freq_rx_hz INTEGER")
+    conn.commit()
 
 
 class Ft4QsoManager:
@@ -90,6 +120,9 @@ class Ft4QsoManager:
         self._state: QsoState = QsoState.IDLE
         self._session: Ft4QsoSession = Ft4QsoSession()
         self._pending_tx: str = ""
+        # The previous QSO, kept when a new one starts (or the QSO is cleared)
+        # before it was written to the log, so the operator can still log it.
+        self._unlogged_prev: Ft4QsoSession | None = None
 
     # ------------------------------------------------------------------ #
     # Properties                                                           #
@@ -102,6 +135,28 @@ class Ft4QsoManager:
     @property
     def session(self) -> Ft4QsoSession:
         return self._session
+
+    @property
+    def loggable_session(self) -> Ft4QsoSession | None:
+        """The QSO the "Log QSO" button would write, or None if nothing is pending.
+
+        The current QSO once it has a partner, has not been logged yet and its
+        exchange is complete (or there is no earlier QSO waiting); otherwise
+        the previous one that was replaced or cleared unlogged -- a QSO that
+        has only just started must not be written in its place.
+        """
+        cur = self._session
+        if cur.their_call and not cur.logged:
+            done = self._state in (QsoState.CONFIRM, QsoState.LOGGED)
+            if done or self._unlogged_prev is None:
+                return cur
+        return self._unlogged_prev
+
+    def _retire_session(self) -> None:
+        """Remember the session about to be replaced if it was never logged."""
+        cur = self._session
+        if cur.their_call and not cur.logged:
+            self._unlogged_prev = cur
 
     @property
     def pending_tx(self) -> str:
@@ -118,6 +173,7 @@ class Ft4QsoManager:
 
     def start_cq(self) -> str:
         """Send CQ — transitions to CALLING. Returns the TX message."""
+        self._retire_session()
         self._state = QsoState.CALLING
         self._session = Ft4QsoSession()
         msg = f"CQ {self._my_call} {self._my_grid}"
@@ -135,6 +191,7 @@ class Ft4QsoManager:
 
     def _begin_answer(self, their_call: str, their_grid: str, their_snr_db: float | None) -> None:
         """Shared setup for both ways of answering a station."""
+        self._retire_session()
         self._session = Ft4QsoSession()
         self._session.their_call = their_call.upper().strip()
         self._session.their_grid = their_grid.upper().strip()
@@ -311,7 +368,8 @@ class Ft4QsoManager:
         self._pending_tx = message.upper()[:22]
 
     def clear(self) -> None:
-        """Reset to IDLE, clearing all QSO data."""
+        """Reset to IDLE, clearing the current QSO (an unlogged one stays loggable)."""
+        self._retire_session()
         self._state = QsoState.IDLE
         self._session = Ft4QsoSession()
         self._pending_tx = ""
@@ -321,75 +379,75 @@ class Ft4QsoManager:
     # ------------------------------------------------------------------ #
 
     def ensure_table(self, conn: sqlite3.Connection) -> None:
-        """Create ft4_log table if it does not exist."""
-        conn.execute(
-            """CREATE TABLE IF NOT EXISTS ft4_log (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                qso_date      TEXT    NOT NULL,
-                time_on       TEXT    NOT NULL,
-                time_off      TEXT,
-                call          TEXT    NOT NULL,
-                gridsquare    TEXT,
-                rst_sent      TEXT,
-                rst_rcvd      TEXT,
-                freq_hz       INTEGER,
-                norad_cat_id  INTEGER,
-                sat_name      TEXT
-            )"""
-        )
-        conn.commit()
+        """Create / upgrade the ft4_log table."""
+        ensure_ft4_log_schema(conn)
 
-    def log_qso(self, conn: sqlite3.Connection) -> None:
-        """Write the current QSO to ft4_log. Call after state == LOGGED."""
-        if not self._session.their_call:
+    def log_qso(self, conn: sqlite3.Connection, session: Ft4QsoSession | None = None) -> None:
+        """Write a QSO to ft4_log (the current one unless *session* is given).
+
+        A session is written at most once (``session.logged``).
+        """
+        sess = session if session is not None else self._session
+        if not sess.their_call or sess.logged:
             return
         now = datetime.now(UTC)
         self.ensure_table(conn)
-        qso_date = self._session.qso_start.strftime("%Y%m%d")
-        time_on = self._session.qso_start.strftime("%H%M%S")
+        qso_date = sess.qso_start.strftime("%Y%m%d")
+        time_on = sess.qso_start.strftime("%H%M%S")
         time_off = now.strftime("%H%M%S")
         conn.execute(
             """INSERT INTO ft4_log
                (qso_date, time_on, time_off, call, gridsquare,
-                rst_sent, rst_rcvd, freq_hz, norad_cat_id, sat_name)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                rst_sent, rst_rcvd, freq_hz, freq_rx_hz, norad_cat_id, sat_name)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 qso_date,
                 time_on,
                 time_off,
-                self._session.their_call,
-                self._session.their_grid,
-                self._session.rst_sent,
-                self._session.rst_rcvd,
-                self._session.freq_hz,
-                self._session.norad_cat_id,
-                self._session.sat_name,
+                sess.their_call,
+                sess.their_grid,
+                sess.rst_sent,
+                sess.rst_rcvd,
+                sess.freq_hz,
+                sess.freq_rx_hz,
+                sess.norad_cat_id,
+                sess.sat_name,
             ),
         )
         conn.commit()
-        self._broadcast_adif(conn, qso_date, time_on, time_off)
+        sess.logged = True
+        if sess is self._unlogged_prev:
+            self._unlogged_prev = None
+        self._broadcast_adif(conn, sess, qso_date, time_on, time_off)
 
     def _broadcast_adif(
-        self, conn: sqlite3.Connection, qso_date: str, time_on: str, time_off: str
+        self,
+        conn: sqlite3.Connection,
+        sess: Ft4QsoSession,
+        qso_date: str,
+        time_on: str,
+        time_off: str,
     ) -> None:
         """Send this QSO to the UDP log broadcaster (wavelog-gate / JT-Linker etc.)."""
         from comms.log_broadcast import get_log_broadcaster  # noqa: PLC0415
         from ui.adif_utils import build_adif_record  # noqa: PLC0415
 
-        freq_mhz = f"{self._session.freq_hz / 1e6:.6f}" if self._session.freq_hz else ""
+        freq_mhz = f"{sess.freq_hz / 1e6:.6f}" if sess.freq_hz else ""
+        freq_rx_mhz = f"{sess.freq_rx_hz / 1e6:.6f}" if sess.freq_rx_hz else ""
         record = build_adif_record(
             {
-                "CALL": self._session.their_call,
+                "CALL": sess.their_call,
                 "QSO_DATE": qso_date,
                 "TIME_ON": time_on,
                 "TIME_OFF": time_off,
                 "MODE": "FT4",
                 "PROP_MODE": "SAT",
                 "FREQ": freq_mhz,
-                "SAT_NAME": self._session.sat_name,
-                "RST_SENT": self._session.rst_sent,
-                "RST_RCVD": self._session.rst_rcvd,
-                "GRIDSQUARE": self._session.their_grid,
+                "FREQ_RX": freq_rx_mhz,
+                "SAT_NAME": sess.sat_name,
+                "RST_SENT": sess.rst_sent,
+                "RST_RCVD": sess.rst_rcvd,
+                "GRIDSQUARE": sess.their_grid,
             }
         )
         broadcaster = get_log_broadcaster()

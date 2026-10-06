@@ -1,0 +1,135 @@
+"""FT4 QSO auto-logging at RR73, the always-available Log QSO button, ft4_log upgrade."""
+
+from __future__ import annotations
+
+import sqlite3
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+from pytestqt.qtbot import QtBot
+
+pytest.importorskip("scipy")
+
+from comms.ft4.qso import Ft4QsoManager, QsoState, ensure_ft4_log_schema  # noqa: E402
+from data.database import SCHEMA_SQL  # noqa: E402 -- must follow importorskip above
+from ui.ft4_tab import Ft4Tab  # noqa: E402
+
+
+def _conn() -> sqlite3.Connection:
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(SCHEMA_SQL)
+    return conn
+
+
+def _make_tab(qtbot: QtBot) -> Ft4Tab:
+    radio = SimpleNamespace(
+        _sat_name_label=SimpleNamespace(text=lambda: "RS-44 (DOSAAF-85)"),
+        _norad_label=SimpleNamespace(text=lambda: "44909"),
+    )
+    tab = Ft4Tab(_conn(), radio)
+    qtbot.addWidget(tab)
+    tab._my_call = "JF9SOM"
+    tab._my_grid = "PM86"
+    rig = SimpleNamespace(last_ul_hz=145_990_000.4, last_dl_hz=435_610_000.2)
+    setattr(tab, "_tx_rig", lambda: rig)  # noqa: B010 -- mypy forbids assigning a method
+    return tab
+
+
+def _rows(tab: Ft4Tab) -> list[Any]:
+    rows: list[Any] = tab._conn.execute("SELECT * FROM ft4_log").fetchall()
+    return rows
+
+
+def test_schema_upgrade_adds_downlink_column() -> None:
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE ft4_log (id INTEGER PRIMARY KEY, qso_date TEXT NOT NULL, "
+        "time_on TEXT NOT NULL, time_off TEXT, call TEXT NOT NULL, gridsquare TEXT, "
+        "rst_sent TEXT, rst_rcvd TEXT, freq_hz INTEGER, norad_cat_id INTEGER, sat_name TEXT)"
+    )
+    ensure_ft4_log_schema(conn)
+    assert "freq_rx_hz" in {r[1] for r in conn.execute("PRAGMA table_info(ft4_log)")}
+    ensure_ft4_log_schema(conn)  # idempotent
+
+
+def test_auto_log_when_our_rr73_has_been_sent(qtbot: QtBot) -> None:
+    tab = _make_tab(qtbot)
+    qso = tab._get_qso_manager()
+    assert qso is not None
+    qso.start_cq()
+    qso.advance("JF9SOM JF1PTU PM95", their_snr=-16)
+    qso.advance("JF9SOM JF1PTU R-07", their_snr=-11)
+    assert qso.state == QsoState.CONFIRM  # RR73 queued, not on the air yet
+    assert _rows(tab) == []
+    tab._last_tx_msg = "JF1PTU JF9SOM RR73"
+    tab._on_tx_finished()  # RR73 has now been transmitted
+    rows = _rows(tab)
+    assert len(rows) == 1
+    r = rows[0]
+    assert (r["call"], r["rst_sent"], r["rst_rcvd"], r["gridsquare"]) == (
+        "JF1PTU",
+        "-16",
+        "-07",
+        "PM95",
+    )
+    assert (r["freq_hz"], r["freq_rx_hz"]) == (145_990_000, 435_610_000)
+    assert (r["sat_name"], r["norad_cat_id"]) == ("RS-44 (DOSAAF-85)", 44909)
+    # the RR73 is repeated and their 73 arrives: still exactly one row
+    tab._on_tx_finished()
+    qso.advance("JF9SOM JF1PTU 73")
+    tab._auto_log_qso()
+    assert len(_rows(tab)) == 1
+
+
+def test_auto_log_when_their_rr73_is_received(qtbot: QtBot) -> None:
+    tab = _make_tab(qtbot)
+    qso = tab._get_qso_manager()
+    assert qso is not None
+    qso.respond_with_grid("JA9DRP", "PM86", their_snr_db=-10)
+    qso.advance("JF9SOM JA9DRP -08")  # their report; we answer with R-report
+    assert qso.state == QsoState.RREPORT_SENT
+    # their RR73 -> we send 73 and the QSO is complete; the tab logs it
+    tab._auto_advance_qso([SimpleNamespace(text="JF9SOM JA9DRP RR73", snr_db=-9.0)], True)  # type: ignore[list-item]
+    assert qso.state.name == "LOGGED"
+    assert [r["call"] for r in _rows(tab)] == ["JA9DRP"]
+
+
+def test_unlogged_qso_stays_loggable_after_the_next_one_starts(qtbot: QtBot) -> None:
+    tab = _make_tab(qtbot)
+    qso = tab._get_qso_manager()
+    assert qso is not None
+    qso.respond_with_grid("JF6BCC", "PM53", their_snr_db=-4)  # never reaches RR73
+    tab._update_qso_display()
+    assert tab._log_btn.isEnabled()
+    qso.start_cq()  # operator moves on
+    qso.advance("JF9SOM JH2LMH PM95", their_snr=-5)  # a new QSO is under way
+    tab._update_qso_display()
+    assert tab._log_btn.isEnabled()
+    tab._on_log_qso()  # logs the earlier QSO, not the running one
+    assert [r["call"] for r in _rows(tab)] == ["JF6BCC"]
+    assert qso.session.their_call == "JH2LMH"  # the running QSO was not cleared
+    assert qso.state == QsoState.EXCHANGE
+
+
+def test_log_button_available_from_idle_after_clear(qtbot: QtBot) -> None:
+    tab = _make_tab(qtbot)
+    qso = tab._get_qso_manager()
+    assert qso is not None
+    qso.respond_with_grid("JF6BCC", "PM53")
+    tab._on_clear_qso()
+    assert qso.state == QsoState.IDLE
+    assert tab._log_btn.isEnabled()
+    tab._on_log_qso()
+    assert [r["call"] for r in _rows(tab)] == ["JF6BCC"]
+    assert not tab._log_btn.isEnabled()  # nothing left to log
+
+
+def test_manager_never_logs_a_session_twice() -> None:
+    conn = _conn()
+    qso = Ft4QsoManager("JF9SOM", "PM86")
+    qso.respond_with_grid("JA9DRP", "PM86")
+    qso.log_qso(conn)
+    qso.log_qso(conn)
+    assert conn.execute("SELECT COUNT(*) FROM ft4_log").fetchone()[0] == 1

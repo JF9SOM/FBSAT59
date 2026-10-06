@@ -59,7 +59,13 @@ from comms.ft4.codec import (
     get_user_ft8lib_dir,
 )
 from comms.ft4.decode_log import get_ft4_decode_logger
-from comms.ft4.qso import Ft4QsoManager, QsoState, format_report
+from comms.ft4.qso import (
+    Ft4QsoManager,
+    Ft4QsoSession,
+    QsoState,
+    ensure_ft4_log_schema,
+    format_report,
+)
 from comms.ft4.rx_capture import Ft4RxCaptureWorker
 from comms.ft4.scheduler import Ft4Scheduler
 from core.clock_offset import corrected_time
@@ -582,6 +588,7 @@ class Ft4Tab(QWidget):
         # _build_tx_doppler_offset_fn). Switchable for A/B tests against WSJT-X,
         # which always sends a fixed tone.
         self._tx_doppler_audio: bool = True
+        self._last_tx_msg: str = ""  # text of the burst currently/last sent
 
         self._load_settings()
         self._ensure_table()
@@ -1046,22 +1053,7 @@ class Ft4Tab(QWidget):
         self._conn.commit()
 
     def _ensure_table(self) -> None:
-        self._conn.execute(
-            """CREATE TABLE IF NOT EXISTS ft4_log (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                qso_date      TEXT    NOT NULL,
-                time_on       TEXT    NOT NULL,
-                time_off      TEXT,
-                call          TEXT    NOT NULL,
-                gridsquare    TEXT,
-                rst_sent      TEXT,
-                rst_rcvd      TEXT,
-                freq_hz       INTEGER,
-                norad_cat_id  INTEGER,
-                sat_name      TEXT
-            )"""
-        )
-        self._conn.commit()
+        ensure_ft4_log_schema(self._conn)
 
     # ------------------------------------------------------------------ #
     # Codec status                                                         #
@@ -1120,7 +1112,8 @@ class Ft4Tab(QWidget):
         qso = self._qso
         if qso is None or qso.state == QsoState.IDLE:
             self._qso_label.setText(_("State: IDLE"))
-            self._log_btn.setEnabled(False)
+            # An unlogged previous QSO can still be logged from IDLE.
+            self._log_btn.setEnabled(qso is not None and qso.loggable_session is not None)
             return
         sess = qso.session
         state_str = qso.state.name
@@ -1128,7 +1121,7 @@ class Ft4Tab(QWidget):
             f"{sess.their_call}  [{state_str}]  "
             f"Sent: {sess.rst_sent or '—'}  Rcvd: {sess.rst_rcvd or '—'}"
         )
-        self._log_btn.setEnabled(qso.state == QsoState.LOGGED)
+        self._log_btn.setEnabled(qso.loggable_session is not None)
 
     # ------------------------------------------------------------------ #
     # Rig / audio                                                          #
@@ -1437,6 +1430,7 @@ class Ft4Tab(QWidget):
         except ValueError:
             audio_freq = _DEFAULT_AUDIO_FREQ
 
+        self._last_tx_msg = msg
         rig = self._tx_rig()
         doppler_offset_fn, doppler_residual_hz = self._build_tx_doppler_offset_fn(rig)
         audio = self._codec.encode_audio(
@@ -1576,6 +1570,14 @@ class Ft4Tab(QWidget):
         self._tx_in_progress = False
         self._tx_worker = None
         self._status_label.setText(_("TX done — waiting for next period"))
+        # RR73 sent: the exchange is complete on our side -- log it now.
+        qso = self._qso
+        if (
+            qso is not None
+            and self._last_tx_msg.upper().endswith(" RR73")
+            and qso.state in (QsoState.CONFIRM, QsoState.LOGGED)
+        ):
+            self._auto_log_qso()
 
     @Slot(str)
     def _on_tx_error(self, msg: str) -> None:
@@ -1682,6 +1684,7 @@ class Ft4Tab(QWidget):
             if next_tx is None:
                 continue
             self._tx_edit.setText(next_tx)
+            self._stamp_session(qso.session)  # satellite + frequencies while they are current
             self._update_qso_display()
             if was_idle:
                 # They called us in the period that just decoded; that
@@ -1694,6 +1697,7 @@ class Ft4Tab(QWidget):
             break
 
         if qso.state == QsoState.LOGGED:
+            self._auto_log_qso()
             self._on_qso_complete()
 
     def _on_qso_complete(self) -> None:
@@ -1872,25 +1876,70 @@ class Ft4Tab(QWidget):
     # QSO log / clear                                                      #
     # ------------------------------------------------------------------ #
 
+    def _stamp_session(self, session: Ft4QsoSession) -> None:
+        """Fill the satellite name/NORAD ID and the uplink/downlink frequencies.
+
+        Taken from the radio control (satellite labels, the frequencies last
+        written to the rig, Doppler-corrected). Existing values are kept, so
+        a QSO stamped when it happened is not overwritten by whatever is
+        selected later.
+        """
+        if not session.sat_name:
+            sat_text = getattr(self._radio_control, "_sat_name_label", None)
+            try:
+                name = sat_text.text() if sat_text else ""
+            except AttributeError:
+                name = ""
+            session.sat_name = "" if name in ("—", "-") else name
+        if session.norad_cat_id is None:
+            norad_text = getattr(self._radio_control, "_norad_label", None)
+            try:
+                session.norad_cat_id = int(norad_text.text()) if norad_text else None
+            except (ValueError, AttributeError):
+                session.norad_cat_id = None
+        rig = self._tx_rig()
+        if rig is not None:
+            if not session.freq_hz:
+                ul = getattr(rig, "last_ul_hz", None)
+                session.freq_hz = int(ul) if ul else 0
+            if not session.freq_rx_hz:
+                dl = getattr(rig, "last_dl_hz", None)
+                session.freq_rx_hz = int(dl) if dl else 0
+
+    def _auto_log_qso(self) -> None:
+        """Log the current QSO once its RR73 has been sent or received."""
+        qso = self._qso
+        if qso is None:
+            return
+        session = qso.session
+        if not session.their_call or session.logged:
+            return
+        self._stamp_session(session)
+        qso.log_qso(self._conn)
+        self._refresh_log_count()
+        self._update_qso_display()
+        self._status_label.setText(
+            _("QSO with {call} logged automatically").format(call=session.their_call)
+        )
+
     @Slot()
     def _on_log_qso(self) -> None:
         qso = self._qso
         if qso is None:
             return
-        # Attach satellite info from radio control
-        norad_text = getattr(self._radio_control, "_norad_label", None)
-        sat_text = getattr(self._radio_control, "_sat_name_label", None)
-        try:
-            qso.session.norad_cat_id = int(norad_text.text()) if norad_text else None
-        except (ValueError, AttributeError):
-            qso.session.norad_cat_id = None
-        try:
-            qso.session.sat_name = sat_text.text() if sat_text else ""
-        except AttributeError:
-            qso.session.sat_name = ""
-        qso.log_qso(self._conn)
+        session = qso.loggable_session
+        if session is None:
+            return
+        self._stamp_session(session)
+        was_current = session is qso.session
+        qso.log_qso(self._conn, session)
         self._refresh_log_count()
-        self._on_clear_qso()
+        # A finished (or earlier) QSO is cleared as before; one still in
+        # progress is left to complete.
+        if was_current and qso.state == QsoState.LOGGED:
+            self._on_clear_qso()
+        else:
+            self._update_qso_display()
 
     @Slot()
     def _on_clear_qso(self) -> None:

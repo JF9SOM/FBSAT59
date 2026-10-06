@@ -3553,3 +3553,26 @@ FBSAT59 は `corrected_time()`（NTP オフセット 0.1 秒未満は 0 に丸�
 - **ソースから実行する場合**: 上記パッケージを `apt install`（README・CLAUDE.md のセットアップ手順に追記）
 - QtMultimedia は遅延 import のため、無い環境でもアプリ自体は起動し、FT4 送信時に
   「Qt Multimedia is not available」のエラーになる。**Linux 実機では未検証**
+
+#### FT4 QSO の自動ログ・Log QSO ボタン・ADIF の周波数（2026-10-06）
+
+2026-10-06 の RS-44 パスで 2 QSO 成立したが、ADIF エクスポートがファイルを作らなかった。原因は
+`ft4_log` が **0 件**だったこと（QSO のログは「Log QSO」ボタンを押したときだけ書かれる仕様で、
+1 件目は押す前に次の CQ へ進み、2 件目は相手の 73 が来ず LOGGED に届かなかった）。エクスポートの
+ダイアログは該当 0 件だと Export ボタンが灰色のままで、何も表示されなかった。
+
+- **自動ログ**: RR73 の送受信が済んだ時点でログする。自局の RR73 は**送信完了時**（`_on_tx_finished`、
+  CONFIRM 状態）、相手の RR73/73 を受けた QSO は**受信時**（`_auto_advance_qso` が LOGGED を検出）。
+  `Ft4QsoSession.logged` で 1 QSO 1 回だけ書く（RR73 の再送や後続の 73 で二重にならない）。
+  自動ログ後も QSO はそのまま続き、相手の 73 で通常どおり完了する
+- **Log QSO ボタン**: 自動ログされていない直前の QSO があれば常に押せる（`Ft4QsoManager.loggable_session`）。
+  新しい QSO を始めたり Clear しても、ログされていない QSO は `_unlogged_prev` に残る。
+  進行中の QSO が完了前（CONFIRM/LOGGED でない）で、ログ待ちの前の QSO があるときは前の方を書く
+- **周波数・衛星**: これまで `freq_hz` は常に 0 で衛星名も取れていなかった。QSO の各遷移時に Radio Control の
+  衛星名/NORAD と、リグに最後に書いた周波数（ドップラー補正後。`RigController.last_ul_hz`/`last_dl_hz`）を
+  セッションへ記録し（`_stamp_session`）、`freq_hz` = 上り（ADIF FREQ）、新設の `freq_rx_hz` = 下り
+  （ADIF FREQ_RX）として保存する。`ensure_ft4_log_schema()` が既存 DB へ列を追加する
+- **エクスポート**: 該当 0 件のときは「この期間に QSO はありません」と表示。FT4 の TIME_OFF・FREQ_RX も出力
+- 当日の 2 件（JF1PTU・JF6BCC）は `ft4_decode.log`/`fbsat59.log` から `ft4_log` へ復元した
+  （周波数は QSO 開始時の Doppler 補正後ダイヤル値、衛星は DOSAAF-85 / NORAD 44909）。
+  `SAT_NAME` は DB の衛星名（LoTW が要求する `RS-44` ではない）。実機未検証

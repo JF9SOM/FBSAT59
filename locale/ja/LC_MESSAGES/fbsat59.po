@@ -7005,3 +7005,12 @@ msgstr ""
 "リグが反映できないドップラーのずれ（FT-991 は送信中の CAT を受け付けません）に\n"
 "合わせて、各バースト中に送信音声のトーンを動かします。\n"
 "オフにすると、WSJT-X と同じ固定トーンで送信します。"
+
+#: src/ui/ft4_tab.py
+#, python-brace-format
+msgid "QSO with {call} logged automatically"
+msgstr "{call} との QSO を自動でログしました"
+
+#: src/ui/log_export_dialog.py
+msgid "No QSOs in this range - nothing to export"
+msgstr "この期間に QSO はありません（エクスポートする内容がありません）"
