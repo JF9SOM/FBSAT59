@@ -23,12 +23,13 @@ import contextlib
 import datetime
 import json
 import sqlite3
+import threading
 import time
 from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
-from PySide6.QtCore import Qt, QTimer, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QComboBox,
     QGroupBox,
@@ -47,6 +48,7 @@ from PySide6.QtWidgets import (
 )
 
 from comms.aprs.engine import get_aprs_engine
+from comms.aprs.g3ruh_tx import build_g3ruh_audio
 from comms.arica2.message_box import (
     CALLSIGN_LEN,
     MAX_SLOT,
@@ -56,6 +58,7 @@ from comms.arica2.message_box import (
     parse_downlink,
 )
 from comms.arica2.window_detector import BeaconWindowDetector
+from comms.audio_device_manager import get_audio_device_manager
 from i18n import _
 from rig.controller import select_tx_rig
 from ui.tx_level import (
@@ -71,8 +74,12 @@ _SETTINGS_KEY = "arica2_settings"
 _MODEM = "4800"
 _MAX_LOG_ROWS = 500
 _UI_TICK_MS = 200
-# Direwolf TXDELAY (300 ms) + a ~25 byte frame + TXTAIL, with margin.
-_TX_AUDIO_S = 0.6
+_BAUD = 4800
+_AUDIO_RATE = 48_000
+# Time the PTT is up before the audio starts / stays after it ends (rig key-up and
+# the modulator settling; the audio itself begins with 300 ms of flags).
+_PTT_LEAD_S = 0.20
+_PTT_TAIL_S = 0.20
 # An armed command is sent this long after the window opens (rig/Doppler settle).
 _AUTO_SEND_DELAY_S = 0.5
 # Not worth sending when less of the window than this is left.
@@ -80,6 +87,52 @@ _MIN_REMAINING_S = 2.5
 
 _MODE_MANUAL = "manual"
 _MODE_AUTO = "auto"
+
+
+class _Arica2TxWorker(QObject):
+    """Plays one uplink's audio through the Sound Card and keys the rig's PTT.
+
+    Plain thread, not QThread (sounddevice's play/wait blocks and needs no Qt
+    event loop), same pattern as the FT4 and AX100 transmit workers. Emits
+    exactly one of ``finished`` or ``error``.
+    """
+
+    finished: Signal = Signal()
+    error: Signal = Signal(str)
+
+    def __init__(
+        self, audio: NDArray[np.float32], out_device: int | None, rig: Any, parent: Any = None
+    ) -> None:
+        super().__init__(parent)
+        self._audio = audio
+        self._out_device = out_device
+        self._rig = rig
+
+    def run(self) -> None:
+        mgr = get_audio_device_manager()
+        if not mgr.acquire_output(_OWNER, self._out_device):
+            other = mgr.output_owner(self._out_device) or _("another tab")
+            self.error.emit(_("Sound card output is in use by {other}").format(other=other))
+            return
+        try:
+            import sounddevice as sd  # optional dependency
+
+            if not self._rig.set_ptt(True):
+                self.error.emit(_("PTT command failed — check Rig 1 connection"))
+                return
+            time.sleep(_PTT_LEAD_S)
+            sd.play(self._audio, samplerate=_AUDIO_RATE, device=self._out_device, blocking=False)
+            mgr.pin_active_output(_OWNER)
+            sd.wait()
+            time.sleep(_PTT_TAIL_S)
+            self._rig.set_ptt(False)
+            self.finished.emit()
+        except Exception as exc:
+            with contextlib.suppress(Exception):
+                self._rig.set_ptt(False)
+            self.error.emit(str(exc))
+        finally:
+            mgr.release_output(_OWNER, self._out_device)
 
 
 class Arica2Panel(QWidget):
@@ -102,6 +155,9 @@ class Arica2Panel(QWidget):
         self._sdr_pipeline: Any = None
         self._detector: BeaconWindowDetector | None = None
         self._engine_active = False
+        self._tx_in_progress = False
+        self._tx_thread: threading.Thread | None = None
+        self._tx_worker: _Arica2TxWorker | None = None
         self._window_deadline: float | None = None
         self._armed: tuple[Command, str, int | None] | None = None
         self._use_utc = True
@@ -376,28 +432,26 @@ class Arica2Panel(QWidget):
         except (AttributeError, TypeError, ValueError):
             self._status_label.setText(_("Input: cannot determine SDR sample rate"))
             return
-        ok, err = self._engine.start_sdr_direwolf(_OWNER, pipeline, modem=_MODEM, tx=True)
+        ok, err = self._engine.start_sdr_direwolf(_OWNER, pipeline, modem=_MODEM)
         if not ok:
             self._status_label.setText(_("Direwolf error: {err}").format(err=err))
             return
         self._engine.sync_sdr_baud(pipeline, _MODEM)
-        self._engine.set_rig(self._tx_rig())
-        self._engine.set_tx_gain(db_to_gain(self._level_slider.value()))
         self._sdr_pipeline = pipeline
         self._detector = detector
         pipeline.subscribe(self._on_iq_chunk)
         self._engine_active = True
-        self._status_label.setText(_("Input: SDR connected (4800 baud), transmit via rig"))
+        self._status_label.setText(
+            _("Input: SDR connected (4800 baud); the rig transmits through the Sound Card")
+        )
 
     def _start_soundcard(self) -> None:
         call = self._get_my_call() or "N0CALL"
-        ok, err = self._engine.start_rig(_OWNER, call, 0, "", modem=_MODEM)
+        ok, err = self._engine.start_rig(_OWNER, call, 0, "", modem=_MODEM, transmit=False)
         if not ok:
             self._status_label.setText(_("Direwolf error: {err}").format(err=err))
             return
         self._engine.restart_if_modem_changed(_MODEM)
-        self._engine.set_rig(self._tx_rig())
-        self._engine.set_tx_gain(db_to_gain(self._level_slider.value()))
         self._engine_active = True
         self._status_label.setText(
             _("Input: Rig Soundcard + Direwolf (4800 baud). No beacon detection: manual only")
@@ -410,8 +464,6 @@ class Arica2Panel(QWidget):
         self._sdr_pipeline = None
         self._detector = None
         if self._engine_active:
-            # The gain is engine-wide (APRS shares it): put it back to full.
-            self._engine.set_tx_gain(1.0)
             self._engine.stop(_OWNER)
         self._engine_active = False
         self._window_deadline = None
@@ -438,8 +490,6 @@ class Arica2Panel(QWidget):
     @Slot(int)
     def _on_level_changed(self, value: int) -> None:
         self._level_label.setText(format_db(value))
-        if self._engine_active:
-            self._engine.set_tx_gain(db_to_gain(value))
 
     @Slot(str)
     def _on_engine_error(self, msg: str) -> None:
@@ -556,24 +606,56 @@ class Arica2Panel(QWidget):
         except ValueError as exc:
             self._tx_status_label.setText(self._describe_error(str(exc)))
             return
+        if self._tx_in_progress:
+            self._tx_status_label.setText(_("A transmission is already in progress"))
+            return
         rig = self._tx_rig()
         if rig is None or not getattr(rig, "is_connected", False):
             self._tx_status_label.setText(_("TX rig not connected"))
             return
-        self._engine.set_rig(rig)
-        if not self._engine.can_transmit:
+        out_device = self._output_device()
+        if out_device is None:
             self._tx_status_label.setText(
-                _("Cannot transmit: check the Sound Card output in Rig Settings")
+                _("Cannot transmit: set the Sound Card output in Rig Settings")
             )
             return
-        if not self._engine.send_raw(payload, audio_s=_TX_AUDIO_S):
-            self._tx_status_label.setText(_("Direwolf is not running"))
-            return
+        audio = build_g3ruh_audio(payload, baud=_BAUD, sample_rate=_AUDIO_RATE)
+        audio = (audio * np.float32(db_to_gain(self._level_slider.value()))).astype(np.float32)
+        worker = _Arica2TxWorker(audio, out_device, rig)
+        worker.finished.connect(self._on_tx_finished)
+        worker.error.connect(self._on_tx_error)
+        self._tx_worker = worker  # keep a reference: it emits from its thread
+        self._tx_in_progress = True
+        self._tx_thread = threading.Thread(target=worker.run, daemon=True)
+        self._tx_thread.start()
         text = command.value + (f" {message}" if message else "")
         if slot is not None:
             text += f" message ID {slot}"
         self._tx_status_label.setText(_("TX: ") + text)
         self._append_row(my_call, "JS1YSD", "→ " + text, payload, persist=False)
+
+    def _output_device(self) -> int | None:
+        """The Sound Card output device index from Rig Settings, or None."""
+        row = self._conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'soundcard_settings'"
+        ).fetchone()
+        if not row:
+            return None
+        try:
+            index = json.loads(row[0]).get("output_device_index")
+        except (ValueError, AttributeError):
+            return None
+        return int(index) if index is not None else None
+
+    @Slot()
+    def _on_tx_finished(self) -> None:
+        self._tx_in_progress = False
+        self._tx_status_label.setText(_("TX done"))
+
+    @Slot(str)
+    def _on_tx_error(self, msg: str) -> None:
+        self._tx_in_progress = False
+        self._tx_status_label.setText(_("TX error: ") + msg)
 
     # ------------------------------------------------------------------ #
     # RX
@@ -615,6 +697,14 @@ class Arica2Panel(QWidget):
         """Release the engine and the SDR subscription (tab closed)."""
         self._timer.stop()
         self._save_settings()
+        thread = self._tx_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=2.0)
+            if thread.is_alive():
+                rig = self._tx_rig()
+                if rig is not None:
+                    with contextlib.suppress(Exception):
+                        rig.set_ptt(False)
         with contextlib.suppress(Exception):
             self._engine.raw_frame_received.disconnect(self._on_raw_frame)
         with contextlib.suppress(Exception):

@@ -89,6 +89,9 @@ class AprsEngine(QObject):
         # Used by restart_if_modem_changed().
         self._current_modem: str | None = None
         self._last_rig_params: tuple[str, int, str] | None = None
+        # False when the Rig + Sound Card session was started receive-only, so that
+        # Direwolf never claims the sound card output (see start_rig(transmit=False)).
+        self._rig_transmit: bool = True
         # True only while running via start_sdr_direwolf() (SDR-derived
         # audio feeding Direwolf) — distinguishes that mechanism from a
         # Rig + Sound Card Direwolf session that could be at the same baud
@@ -106,10 +109,6 @@ class AprsEngine(QObject):
         # True when the SDR session uses the satellite-tuned 1200 baud front
         # end (Telemetry tab) rather than the terrestrial one (APRS tab).
         self._sdr_satellite: bool = False
-        # True when the SDR session also has the Sound Card output attached
-        # for transmission (SDR receives, the rig transmits -- e.g. ARICA-2's
-        # message box). Plain SDR sessions are receive only.
-        self._sdr_tx: bool = False
 
     @classmethod
     def instance(cls, conn: Any) -> AprsEngine:
@@ -147,15 +146,6 @@ class AprsEngine(QObject):
         """Return True when a direwolf binary can be located."""
         return find_direwolf() is not None
 
-    def set_tx_gain(self, gain: float) -> None:
-        """Set the TX audio gain (0..1) for the Direwolf session; 1.0 is full level.
-
-        Direwolf has no output level of its own, so this scales its audio on the
-        way to the sound card. Applies to every transmission through this engine
-        (APRS too), so a caller that lowers it should restore 1.0 when done.
-        """
-        self._mgr.set_tx_gain(gain)
-
     def set_rig(self, rig: Any | None) -> None:
         """Set the RigController used for CAT PTT during transmission.
 
@@ -182,6 +172,7 @@ class AprsEngine(QObject):
         ssid: int,
         via: str,
         modem: str = "1200",
+        transmit: bool = True,
     ) -> tuple[bool, str]:
         """Start Direwolf using the configured Sound Card audio devices.
 
@@ -191,16 +182,25 @@ class AprsEngine(QObject):
         has it running, this just adds `owner` and returns success without
         touching the running pipeline (use restart_if_modem_changed() to
         pick up a different *modem* on an already-running pipeline).
+
+        With ``transmit=False`` only the receive device is used and Direwolf does
+        not claim the sound card output, so a caller that transmits by itself
+        (the ARICA-2 panel generates its own G3RUH audio) can open that output.
+        Direwolf cannot play transmit audio into this app anyway: with
+        ``ADEVICE stdin stdout`` it never writes audio to stdout.
         """
         self._owners.add(owner)
         if self._running:
             return True, ""
+        self._rig_transmit = transmit
         return self._start_rig_pipeline(callsign, ssid, via, modem)
 
     def _start_rig_pipeline(
         self, callsign: str, ssid: int, via: str, modem: str
     ) -> tuple[bool, str]:
         in_dev, out_dev = self._load_soundcard_devices()
+        if not self._rig_transmit:
+            out_dev = None
         ok, err = self._mgr.start(
             callsign=callsign,
             ssid=ssid,
@@ -246,7 +246,6 @@ class AprsEngine(QObject):
         pipeline: Any,
         modem: str = "1200",
         satellite: bool = False,
-        tx: bool = False,
     ) -> tuple[bool, str]:
         """Start AX.25 reception on the SDR pipeline (receive only).
 
@@ -264,38 +263,25 @@ class AprsEngine(QObject):
           works for modulation index 0.5 (deviation = baud/4, e.g. GMSK); other
           deviations (a +/-3 kHz 9600 baud link, say) are left to Direwolf.
 
-        With *tx* the configured Sound Card output is attached to Direwolf as
-        well, so send_raw() can transmit through the rig while the SDR keeps
-        receiving. An already running receive-only SDR session is restarted
-        (owners untouched) when a caller needs *tx*.
-
         ``owner`` registers the caller's interest in the pipeline (see
         ``stop()``).
         """
         self._owners.add(owner)
         if self._running:
-            if tx and not self._sdr_tx and self._sdr_direwolf_active:
-                self._teardown_pipeline()
-                return self._start_sdr_direwolf_pipeline(pipeline, modem, satellite, tx)
             return True, ""
-        return self._start_sdr_direwolf_pipeline(pipeline, modem, satellite, tx)
+        return self._start_sdr_direwolf_pipeline(pipeline, modem, satellite)
 
     def _start_sdr_direwolf_pipeline(
-        self,
-        pipeline: Any,
-        modem: str = "1200",
-        satellite: bool = False,
-        tx: bool = False,
+        self, pipeline: Any, modem: str = "1200", satellite: bool = False
     ) -> tuple[bool, str]:
-        out_dev = self._load_soundcard_devices()[1] if tx else None
         if modem in ("4800", "9600"):
-            return self._start_sdr_coherent_pipeline(pipeline, modem, satellite, out_dev)
+            return self._start_sdr_coherent_pipeline(pipeline, modem, satellite)
         ok, err = self._mgr.start(
             callsign="N0CALL",
             ssid=0,
             via="",
             in_device=None,
-            out_device=out_dev,
+            out_device=None,
             modem=modem,
             sdr_pipeline=pipeline,
             sdr_satellite=satellite,
@@ -310,13 +296,11 @@ class AprsEngine(QObject):
         self._last_rig_params = None
         self._sdr_direwolf_active = True
         self._sdr_satellite = satellite
-        self._sdr_tx = out_dev is not None
-        how = "SDR receive, Sound Card transmit" if self._sdr_tx else "SDR — receive only"
-        self.status_changed.emit(f"Connected ({how}, Direwolf, {modem} baud)")
+        self.status_changed.emit(f"Connected (SDR — Direwolf, {modem} baud, receive only)")
         return True, ""
 
     def _start_sdr_coherent_pipeline(
-        self, pipeline: Any, modem: str, satellite: bool, out_dev: int | None = None
+        self, pipeline: Any, modem: str, satellite: bool
     ) -> tuple[bool, str]:
         """Start the 4800/9600 baud SDR session: coherent MSK decoder + Direwolf.
 
@@ -341,7 +325,7 @@ class AprsEngine(QObject):
             ssid=0,
             via="",
             in_device=None,
-            out_device=out_dev,
+            out_device=None,
             modem=modem,
             sdr_pipeline=pipeline,
             sdr_satellite=satellite,
@@ -363,10 +347,8 @@ class AprsEngine(QObject):
         self._last_rig_params = None
         self._sdr_direwolf_active = True
         self._sdr_satellite = satellite
-        self._sdr_tx = dw_ok and out_dev is not None
         how = "coherent MSK + Direwolf" if dw_ok else "coherent MSK"
-        mode = "Sound Card transmit" if self._sdr_tx else "receive only"
-        self.status_changed.emit(f"Connected (SDR — {how}, {modem} baud, {mode})")
+        self.status_changed.emit(f"Connected (SDR — {how}, {modem} baud, receive only)")
         return True, ""
 
     def sync_sdr_baud(self, pipeline: Any, target_modem: str, satellite: bool = False) -> None:
@@ -385,9 +367,8 @@ class AprsEngine(QObject):
         same_front_end = target_modem != "1200" or self._sdr_satellite == satellite
         if self._sdr_direwolf_active and self._current_modem == target_modem and same_front_end:
             return
-        tx = self._sdr_tx
         self._teardown_pipeline()
-        self._start_sdr_direwolf_pipeline(pipeline, target_modem, satellite, tx)
+        self._start_sdr_direwolf_pipeline(pipeline, target_modem, satellite)
 
     def stop(self, owner: str) -> None:
         """Release `owner`'s interest in the pipeline.
@@ -417,7 +398,6 @@ class AprsEngine(QObject):
         self._last_rig_params = None
         self._sdr_direwolf_active = False
         self._sdr_satellite = False
-        self._sdr_tx = False
         self.status_changed.emit("Stopped")
 
     def _stop_coherent(self) -> None:
@@ -504,32 +484,7 @@ class AprsEngine(QObject):
         else:
             kiss.send_frame(frame)
 
-    @property
-    def can_transmit(self) -> bool:
-        """True when a rig is registered and Direwolf has a Sound Card output.
-
-        A Rig + Sound Card session always has one; an SDR session only when it
-        was started with ``tx=True``.
-        """
-        if not self._running or self._rig is None:
-            return False
-        return self._last_rig_params is not None or self._sdr_tx
-
-    def send_raw(self, payload: bytes, audio_s: float | None = None) -> bool:
-        """Transmit *payload* (the AX.25 frame body, no FCS) with the PTT sequence.
-
-        For frames that are not APRS (mission-specific uplinks such as ARICA-2's
-        message box). *audio_s* is how long Direwolf's audio lasts (TXDELAY plus
-        the frame); it defaults to the APRS message estimate. Returns False,
-        sending nothing, when there is no rig or no Direwolf KISS connection.
-        """
-        kiss = self._mgr.kiss_client
-        if kiss is None or self._rig is None:
-            return False
-        threading.Thread(target=self._ptt_send, args=(payload, audio_s), daemon=True).start()
-        return True
-
-    def _ptt_send(self, frame: bytes, audio_s: float | None = None) -> None:
+    def _ptt_send(self, frame: bytes) -> None:
         """PTT sequence executed in a daemon thread."""
         rig = self._rig
         kiss = self._mgr.kiss_client
@@ -540,7 +495,7 @@ class AprsEngine(QObject):
             rig.set_ptt(True)
             time.sleep(self._PTT_LEAD_S)
             kiss.send_frame(frame)
-            time.sleep(self._TX_AUDIO_S if audio_s is None else audio_s)
+            time.sleep(self._TX_AUDIO_S)
             time.sleep(self._PTT_TAIL_S)
         finally:
             rig.set_ptt(False)

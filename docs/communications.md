@@ -3402,7 +3402,7 @@ Upload への応答）で確認した。N6RFM の「宛先 5 バイト」は 6 �
   `AudioBridge` は元々 SDR 入力と出力デバイスの同時指定に対応しており、`AprsEngine` に
   `tx=True` を足しただけ（`_sdr_tx` フラグ。ボーレート再同期・既存受信専用セッションの再起動でも維持）。
 - 「Rig Soundcard」: 受信も送信もサウンドカード。ビーコン検出なし → **手動のみ**（自動は無効化）。
-- Direwolf は `AprsEngine` のプロセス共有シングルトン。Message Box は owner `"ARICA-2 Message Box"`。
+- Direwolf は `AprsEngine` のプロセス共有シングルトン（**受信専用**）。Message Box は owner `"ARICA-2 Message Box"`。
   MODEM は 4800 固定（`MODEM 4800 G3RUH`、`ARATE 48000`）。APRS/Telemetry タブが別ボーレートで
   動いていると奪い合いになる（`sync_sdr_baud`/`restart_if_modem_changed` が 4800 へ再起動する）。
 - 無線機側は 4800/9600 の FM データ端子（DATA/9600 ポート）が要る。SSB 経路では G3RUH は通らない。
@@ -3439,26 +3439,42 @@ AX100 = MARMOTSat 69912）とマッチするトランスミッターが Radio Co
 = UL あり）、`is_arica2_message_box_transmitter()` は説明に `MESSAGE` を含む後者だけに合わせる（先に前者が合うと
 最初の一致が選ばれて誤る。初版の不具合）。
 
-#### TX Level スライダーと送信音声のピークログ（2026-10-02）
+#### 送信は Direwolf では行わない — 自前の G3RUH 送信音声（2026-10-07）
 
-実パス（2026-10-02 16:02〜）で Upload/Confirm/Download/Parrot を計 10 回送ったが応答が無かった。送信は出ていた
-（TX 中は Doppler の `F`/`I` 書き込みを意図的にスキップするため、送信時刻に fbsat59.log の書き込みが
-抜けている）。原因の候補: ①窓のタイミング／他局（JI1IZR 局）との衝突、②**送信音声が過大**（Mac の
-ヘッドホン出力は数百 mV〜1 V、FT-991A の DATA IN は数十 mV 想定で、FM では過偏移になる）。Direwolf には
-出力レベル設定が無く、アプリにも調整手段が無かったため、
+**重大な発見**: 初版（2026-10-01〜）は ARICA-2 の送信を `AprsEngine`/Direwolf の KISS で行っていたが、
+**Direwolf は送信音声を標準出力に書かない**。2026-10-02〜10-07 のパス（計 20 回超の送信）で応答が一度も無く、
+10-07 15:25 のパスの録音を調べて判明した:
 
-- `AudioBridge.tx_gain`（0..1、減衰のみ）を Direwolf の標準出力 PCM に掛けてからサウンドカードへ渡す。
-  `DirewolfManager.set_tx_gain()` → `AprsEngine.set_tx_gain()` で実行中にも即時反映。
-- ARICA-2 パネルに **TX Level スライダー**（**dB 単位**、-60〜0 dB、既定 0 dB。FT4/Q65 と共通の `ui/tx_level.py` を使用、`arica2_settings.tx_level_db` に保存。初版はリニア %（`tx_level`）で作ったが、FT-991A のようにデータ入力が敏感な無線機は -25 dB 付近が適正で、リニアでは下の数 % に押し込まれて効かないため dB に変更。旧キー `tx_level` は dB へ移行）。
-  ゲインは**エンジン共通**（APRS も同じ Direwolf）なので、パネルが入力を止める/閉じるときに 1.0 へ戻す。
-- 送信音声のピークを **`direwolf.log` に 1 バーストごと**（`TX audio peak -x.x dBFS (gain n.nn)`）記録。
-  実際に出ているレベルを後から確認できる。
-- Mac の出力音量は固定（100% 等）にし、アプリのスライダーと無線機側（FM PKT TX GAIN。メニュー番号は
-  資料では 078 だが未確認）で調整する。
+- Direwolf 1.6/1.7/1.8.1 のソース（`audio.c`/`audio_portaudio.c`）に **`stdout` という音声出力種別は無い**。音声入力は
+  サウンドカード・`stdin`・UDP の 3 種類だけで、出力は常に実サウンドデバイス。`ADEVICE stdin stdout` では
+  出力デバイスが開かれず（起動時に `audio_portaudio.c` の「出力バッファサイズ 0」警告が出る）、送信フレームを
+  受けても `[0L] ...` と表示するだけで波形は捨てられる。
+- 単体実験（アプリと同じ構成）: 1200・4800・9600 baud いずれも標準出力に流れるのは**文字のみで PCM は 0 バイト**。
+- したがって従来は、アプリが DTR で PTT だけ入れ、**無変調のキャリアを約 0.8 秒送っていた**。受信音声の録音には、
+  送信ごとに約 0.8 秒の無音（無線機が送信中に受信を止める）が出ていたので PTT 自体は入っていた。
+  `AudioBridge` の送信ループ（Direwolf の標準出力→サウンドカード）は、実際には起動バナー等の**ログ文字を音声として再生**していた。
+- **APRS タブの送信（`AprsEngine.send_message`/`send_position`）も同じ設計で、同様に動いていないはず**（未対応・要別件）。
 
-**注意（未確認）**: Direwolf は起動時の表示や送信ログ（`[0L] ...`）も音声と同じ標準出力に書く。送信経路は
-標準出力をそのまま音声として再生するので、送信の開始時に文字列がノイズとして混ざる可能性がある（影響は実機で未確認）。
-単体のハーネス（`ADEVICE stdin stdout`＋KISS ポート）では送信音声が出ず、4800 baud の出力振幅は実測できていない。
+**対処**: ARICA-2 パネルは Direwolf を**受信専用**にし（`start_rig(..., transmit=False)`、SDR は従来どおり受信専用）、
+送信音声を `comms/aprs/g3ruh_tx.py` で自前生成して、`_Arica2TxWorker`（FT4/AX100 と同じ素のスレッド方式）が
+サウンドカード出力へ再生しつつ `rig.set_ptt()`（DTR）で送信する。PTT は音声の 0.2 秒前に入れ、0.2 秒後に切る。
+
+`g3ruh_tx.py` は Direwolf 1.8.1 の `hdlc_send.c`/`gen_tone.c` の移植（`MODEM 4800 G3RUH`/`9600`）:
+フラグ（TXDELAY 300 ms 分）→ FCS（CRC-16/X.25、下位バイト先）付き・ビットスタッフィング・LSB 先頭 → NRZI（0 でトグル、
+1 で保持）→ G3RUH スクランブラー（x¹⁷+x¹²+1）→ 波形（スクランブル後のビットが前のビットと違うときだけ、その 1 ビット時間で
+半余弦のなだらかな遷移、同じなら一定。レベルは 0→+1、1→-1）→ フラグ（TXTAIL 100 ms 分）。
+**検証**: ① 独立のデコーダー（ビット末尾でサンプル→デスクランブル→NRZI→アンスタッフ→FCS）で往復一致、
+② **Direwolf 自身の 4800 G3RUH 受信（`stdin`）が、生成した音声から ARICA-2 のアップリンクフレームを読み戻した**
+（`tests/test_g3ruh_tx.py`。Direwolf が無い環境ではスキップ）。**実機（衛星）での送信は未確認**。
+
+`TX Level` スライダー（**dB 単位**、-60〜0 dB、既定 0 dB。FT4/Q65 と共通の `ui/tx_level.py`、`arica2_settings.tx_level_db`
+に保存。初版はリニア %（`tx_level`）で作ったが、データ入力が敏感な無線機ではリニアでは下の数 % に押し込まれて
+効かないため dB に変更。旧キー `tx_level` は dB へ移行）は、この自前音声の振幅（full scale = 0 dB）に掛かる。
+FM では送信レベルが**偏移**を決める（SSB/USB-D の ALC 基準の目安 -25 dB 付近は当てはまらない）。
+Mac の出力音量は固定し、アプリのスライダーと無線機の FM PKT TX GAIN（メニュー 078）で合わせる。
+`AprsEngine` に残る Direwolf 送信用の部品（`send_raw`・`tx=True` の SDR 送信・`set_tx_gain`、`AudioBridge` の
+ゲイン/ピークログ）は削除した。出力デバイスの排他: 他タブ（APRS の Direwolf など）が Sound Card 出力を握っていると
+`Sound card output is in use by ...` で送信できない。
 
 #### 手動/自動
 

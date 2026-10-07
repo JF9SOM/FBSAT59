@@ -1,20 +1,25 @@
 """Arica2Panel / MessageBoxTab: command sending, uplink-window arming, RX rows.
 
 Uses pytest-qt's qtbot (new QWidget tests must register widgets with
-qtbot.addWidget). The shared AprsEngine is replaced by a fake that records calls.
+qtbot.addWidget). The shared AprsEngine is replaced by a fake that records calls, and
+the transmit worker by one that records the audio it would play (the audio is decoded
+back with an independent G3RUH receiver, so the whole TX chain is checked).
 """
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from typing import Any
 
+import numpy as np
 import pytest
 from PySide6.QtCore import QObject, Signal
 from pytestqt.qtbot import QtBot
 
 import ui.arica2_panel as panel_mod
 from comms.arica2.message_box import Command, build_command
+from tests.test_g3ruh_tx import _decode
 from ui.arica2_panel import Arica2Panel
 
 
@@ -24,17 +29,22 @@ class _FakeEngine(QObject):
 
     def __init__(self) -> None:
         super().__init__()
-        self.sent: list[bytes] = []
         self.calls: list[str] = []
-        self.can_transmit = True
-        self.gains: list[float] = []
 
     def start_sdr_direwolf(self, owner: str, pipeline: Any, modem: str = "1200", **kw: Any) -> Any:
-        self.calls.append(f"sdr:{modem}:tx={kw.get('tx')}")
+        self.calls.append(f"sdr:{modem}")
         return True, ""
 
-    def start_rig(self, owner: str, call: str, ssid: int, via: str, modem: str = "1200") -> Any:
-        self.calls.append(f"rig:{modem}")
+    def start_rig(
+        self,
+        owner: str,
+        call: str,
+        ssid: int,
+        via: str,
+        modem: str = "1200",
+        transmit: bool = True,
+    ) -> Any:
+        self.calls.append(f"rig:{modem}:transmit={transmit}")
         return True, ""
 
     def sync_sdr_baud(self, pipeline: Any, modem: str) -> None:
@@ -43,18 +53,23 @@ class _FakeEngine(QObject):
     def restart_if_modem_changed(self, modem: str) -> None:
         pass
 
-    def set_rig(self, rig: Any) -> None:
-        pass
-
-    def send_raw(self, payload: bytes, audio_s: float | None = None) -> bool:
-        self.sent.append(payload)
-        return True
-
     def stop(self, owner: str) -> None:
         self.calls.append("stop")
 
-    def set_tx_gain(self, gain: float) -> None:
-        self.gains.append(gain)
+
+class _FakeTxWorker(QObject):
+    """Stands in for _Arica2TxWorker: records what would have been played."""
+
+    finished: Signal = Signal()
+    error: Signal = Signal(str)
+    played: list[tuple[Any, int | None, Any]] = []
+
+    def __init__(self, audio: Any, out_device: int | None, rig: Any, parent: Any = None) -> None:
+        super().__init__(parent)
+        _FakeTxWorker.played.append((audio, out_device, rig))
+
+    def run(self) -> None:
+        self.finished.emit()
 
 
 class _FakeRig:
@@ -90,6 +105,10 @@ def conn() -> sqlite3.Connection:
     c.row_factory = sqlite3.Row
     c.execute("CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)")
     c.execute("INSERT INTO app_settings (key, value) VALUES ('callsign', 'JF9SOM')")
+    c.execute(
+        "INSERT INTO app_settings (key, value) VALUES ('soundcard_settings', ?)",
+        (json.dumps({"input_device_index": 1, "output_device_index": 3}),),
+    )
     return c
 
 
@@ -97,7 +116,19 @@ def conn() -> sqlite3.Connection:
 def engine(monkeypatch: pytest.MonkeyPatch) -> _FakeEngine:
     fake = _FakeEngine()
     monkeypatch.setattr(panel_mod, "get_aprs_engine", lambda _conn: fake)
+    _FakeTxWorker.played = []
+    monkeypatch.setattr(panel_mod, "_Arica2TxWorker", _FakeTxWorker)
     return fake
+
+
+def _sent() -> list[bytes]:
+    """Payloads decoded back from the audio the panel handed to the TX worker."""
+    out: list[bytes] = []
+    for audio, _dev, _rig in _FakeTxWorker.played:
+        frames = _decode(audio)
+        assert len(frames) == 1
+        out.append(frames[0])
+    return out
 
 
 def _make(qtbot: QtBot, conn: sqlite3.Connection) -> Arica2Panel:
@@ -106,11 +137,11 @@ def _make(qtbot: QtBot, conn: sqlite3.Connection) -> Arica2Panel:
     return p
 
 
-def test_sdr_input_starts_4800_with_tx(
+def test_sdr_input_starts_4800_receive_only(
     qtbot: QtBot, conn: sqlite3.Connection, engine: _FakeEngine
 ) -> None:
     _make(qtbot, conn)
-    assert engine.calls == ["sdr:4800:tx=True"]
+    assert engine.calls == ["sdr:4800"]
 
 
 def test_manual_mode_sends_immediately(
@@ -119,7 +150,10 @@ def test_manual_mode_sends_immediately(
     p = _make(qtbot, conn)
     p._message_edit.setText("hello")
     p._upload_btn.click()
-    assert engine.sent == [build_command(Command.UPLOAD, "JF9SOM", "hello")]
+    assert _sent() == [build_command(Command.UPLOAD, "JF9SOM", "hello")]
+    _audio, device, rig = _FakeTxWorker.played[0]
+    assert device == 3  # the Sound Card output device from Rig Settings
+    assert isinstance(rig, _FakeRig)
     assert p._table.rowCount() == 1  # TX echo row
 
 
@@ -129,7 +163,7 @@ def test_download_uses_the_slot(
     p = _make(qtbot, conn)
     p._slot_spin.setValue(3)
     p._download_btn.click()
-    assert engine.sent == [build_command(Command.DOWNLOAD, "JF9SOM", slot=3)]
+    assert _sent() == [build_command(Command.DOWNLOAD, "JF9SOM", slot=3)]
 
 
 def test_upload_needs_a_message(
@@ -137,7 +171,7 @@ def test_upload_needs_a_message(
 ) -> None:
     p = _make(qtbot, conn)
     p._upload_btn.click()
-    assert engine.sent == []
+    assert _sent() == []
 
 
 def test_missing_callsign_is_reported(
@@ -147,7 +181,7 @@ def test_missing_callsign_is_reported(
     p = _make(qtbot, conn)
     p._message_edit.setText("hi")
     p._upload_btn.click()
-    assert engine.sent == []
+    assert _sent() == []
     assert "Set QTH" in p._tx_status_label.text()
 
 
@@ -158,12 +192,12 @@ def test_auto_mode_waits_for_the_window(
     p._mode_combo.setCurrentIndex(1)
     p._message_edit.setText("hello")
     p._upload_btn.click()
-    assert engine.sent == []
+    assert _sent() == []
     assert p._armed is not None
 
     p._window_event.emit(6.0, 12.0)
-    qtbot.waitUntil(lambda: len(engine.sent) == 1, timeout=3000)
-    assert engine.sent[0] == build_command(Command.UPLOAD, "JF9SOM", "hello")
+    qtbot.waitUntil(lambda: len(_FakeTxWorker.played) == 1, timeout=3000)
+    assert _sent()[0] == build_command(Command.UPLOAD, "JF9SOM", "hello")
     assert p._armed is None
 
 
@@ -175,7 +209,7 @@ def test_auto_mode_sends_at_once_when_the_window_is_already_open(
     p._window_event.emit(6.0, 12.0)
     p._message_edit.setText("hi")
     p._parrot_btn.click()
-    assert len(engine.sent) == 1
+    assert len(_FakeTxWorker.played) == 1
 
 
 def test_window_event_with_too_little_time_left_does_not_fire(
@@ -187,7 +221,7 @@ def test_window_event_with_too_little_time_left_does_not_fire(
     p._parrot_btn.click()
     p._window_event.emit(6.0, 1.0)
     qtbot.wait(800)
-    assert engine.sent == []
+    assert _sent() == []
     assert p._armed is not None
 
 
@@ -209,7 +243,8 @@ def test_soundcard_input_is_manual_only(
     p._mode_combo.setCurrentIndex(1)
     p._rb_soundcard.setChecked(True)
     assert p._mode_combo.currentData() == "manual"
-    assert "rig:4800" in engine.calls
+    # Direwolf only receives here; the panel transmits through its own audio.
+    assert "rig:4800:transmit=False" in engine.calls
 
 
 def test_received_frame_is_parsed_and_stored(
@@ -258,7 +293,7 @@ def test_message_box_tab_switches_protocol_and_hands_over_the_input(
 
     tab._protocol_combo.setCurrentIndex(1)
     assert tab.current_protocol() == "arica2"
-    assert engine.calls == ["sdr:4800:tx=True"]
+    assert engine.calls == ["sdr:4800"]
     assert requests == [("ax100digi", 68796)]  # ARICA-2's satellite is requested
 
     tab._protocol_combo.setCurrentIndex(0)
@@ -271,16 +306,24 @@ def test_message_box_tab_switches_protocol_and_hands_over_the_input(
     assert "ax100" in row[0]
 
 
-def test_tx_level_slider_is_in_db_sets_the_engine_gain_and_is_restored(
+def test_tx_level_slider_is_in_db_and_scales_the_audio(
     qtbot: QtBot, conn: sqlite3.Connection, engine: _FakeEngine
 ) -> None:
     p = _make(qtbot, conn)
-    assert engine.gains[-1] == 1.0  # default 0 dB on start
+    p._message_edit.setText("hi")
+    p._parrot_btn.click()
+    full = float(np.max(np.abs(_FakeTxWorker.played[0][0])))
+    assert full == pytest.approx(1.0, abs=1e-3)  # default 0 dB: full scale
+
     p._level_slider.setValue(-20)
-    assert engine.gains[-1] == pytest.approx(0.1)
     assert p._level_label.text() == "-20 dB"
+    qtbot.waitUntil(lambda: not p._tx_in_progress, timeout=3000)
+    p._parrot_btn.click()
+    quiet = float(np.max(np.abs(_FakeTxWorker.played[1][0])))
+    assert quiet == pytest.approx(0.1, abs=1e-3)
+    assert _sent()[0] == _sent()[1]  # the level changes the amplitude, not the data
+
     p.shutdown()
-    assert engine.gains[-1] == 1.0  # engine-wide gain put back for APRS
     saved = conn.execute("SELECT value FROM app_settings WHERE key = 'arica2_settings'").fetchone()
     assert '"tx_level_db": -20' in saved[0]
 
@@ -293,4 +336,30 @@ def test_legacy_percent_level_setting_is_migrated_to_db(
     )
     p = _make(qtbot, conn)
     assert p._level_slider.value() == -20  # 10 % == -20 dB
-    assert engine.gains[-1] == pytest.approx(0.1)
+
+
+def test_no_sound_card_output_means_no_transmission(
+    qtbot: QtBot, conn: sqlite3.Connection, engine: _FakeEngine
+) -> None:
+    conn.execute("DELETE FROM app_settings WHERE key = 'soundcard_settings'")
+    p = _make(qtbot, conn)
+    p._message_edit.setText("hi")
+    p._parrot_btn.click()
+    assert _FakeTxWorker.played == []
+    assert "Sound Card" in p._tx_status_label.text()
+
+
+def test_a_second_command_is_refused_while_one_is_transmitting(
+    qtbot: QtBot, conn: sqlite3.Connection, engine: _FakeEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class _Slow(_FakeTxWorker):
+        def run(self) -> None:  # never finishes
+            pass
+
+    monkeypatch.setattr(panel_mod, "_Arica2TxWorker", _Slow)
+    p = _make(qtbot, conn)
+    p._message_edit.setText("hi")
+    p._parrot_btn.click()
+    p._parrot_btn.click()
+    assert len(_FakeTxWorker.played) == 1
+    assert "already in progress" in p._tx_status_label.text()

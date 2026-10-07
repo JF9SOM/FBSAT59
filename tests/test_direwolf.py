@@ -72,18 +72,3 @@ def test_write_config_unknown_modem_falls_back_to_1200() -> None:
         assert _modem_line(path) == "MODEM 1200"
     finally:
         Path(path).unlink()
-
-
-def test_tx_gain_is_clamped_and_forwarded_to_the_audio_bridge() -> None:
-    from comms.aprs.direwolf import AudioBridge, DirewolfManager
-
-    mgr = DirewolfManager()
-    mgr.set_tx_gain(1.7)
-    assert mgr.tx_gain == 1.0
-    mgr.set_tx_gain(-1.0)
-    assert mgr.tx_gain == 0.0
-
-    bridge = AudioBridge(None, None, None)  # type: ignore[arg-type]
-    mgr._audio = bridge
-    mgr.set_tx_gain(0.4)
-    assert bridge.tx_gain == 0.4
