@@ -197,3 +197,81 @@ def test_display_mode_persists_to_app_settings(qtbot: QtBot, conn: sqlite3.Conne
     tab2 = AprsTab(conn, _FakeRadioControl())
     qtbot.addWidget(tab2)
     assert tab2._display_mode == "raw"
+
+
+# ---------------------------------------------------------------------------
+# Transmit: TX level slider and what happens when the engine cannot send
+# ---------------------------------------------------------------------------
+
+
+class _RecordingEngine:
+    """Replaces the tab's AprsEngine for the send tests."""
+
+    def __init__(self, result: bool) -> None:
+        self.result = result
+        self.levels: list[int] = []
+        self.messages: list[tuple[object, ...]] = []
+        self.positions: list[tuple[object, ...]] = []
+        self.is_running = True
+
+    def set_tx_level_db(self, db: int) -> None:
+        self.levels.append(db)
+
+    def send_message(self, *args: object) -> bool:
+        self.messages.append(args)
+        return self.result
+
+    def send_position(self, *args: object) -> bool:
+        self.positions.append(args)
+        return self.result
+
+
+def test_tx_level_slider_reaches_the_engine_and_is_saved(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _make_tab(qtbot, conn)
+    engine = _RecordingEngine(True)
+    tab._engine = engine  # type: ignore[assignment]
+    tab._tx_level_slider.setValue(-18)
+    assert engine.levels == [-18]
+    assert tab._tx_level_label.text() == "-18 dB"
+    saved = conn.execute("SELECT value FROM app_settings WHERE key = 'aprs_settings'").fetchone()
+    assert '"tx_level_db": -18' in saved["value"]
+
+
+def test_tx_level_is_restored_and_applied_at_start(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "INSERT INTO app_settings (key, value) VALUES ('aprs_settings', ?)",
+        ('{"callsign": "JF9SOM", "ssid": 0, "via": "ARISS", "tx_level_db": -25}',),
+    )
+    tab = _make_tab(qtbot, conn)
+    assert tab._tx_level_slider.value() == -25
+    assert tab._engine._tx_level_db == -25
+
+
+def test_a_message_that_could_not_be_sent_is_kept_and_not_logged(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _make_tab(qtbot, conn)
+    tab._engine = _RecordingEngine(False)  # type: ignore[assignment]
+    tab._callsign_edit.setText("JF9SOM")
+    tab._to_edit.setText("JA1XYZ")
+    tab._msg_edit.setText("hello")
+    tab._on_send()
+    assert tab._msg_edit.text() == "hello"  # still there, can be sent again
+    assert tab._log_list.count() == 0  # no "sent" echo for a packet that never went out
+    assert tab._pending_qso == set()
+
+
+def test_a_message_that_was_sent_is_logged_and_cleared(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _make_tab(qtbot, conn)
+    tab._engine = _RecordingEngine(True)  # type: ignore[assignment]
+    tab._callsign_edit.setText("JF9SOM")
+    tab._to_edit.setText("JA1XYZ")
+    tab._msg_edit.setText("hello")
+    tab._on_send()
+    assert tab._msg_edit.text() == ""
+    assert tab._log_list.count() == 1
+    assert tab._pending_qso == {"JA1XYZ"}

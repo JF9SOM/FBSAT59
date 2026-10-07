@@ -289,15 +289,15 @@ class AudioBridge(QThread):
         why these need different audio. Mutually exclusive with the
         soundcard input; *in_device* is ignored when *sdr_pipeline* is set.
 
-    Either way, reads from *proc.stdout* and plays the TX audio through the
-    configured output device (None for the SDR-fed receive-only path).
+    Either way, *proc.stdout* is read and logged line by line: Direwolf writes
+    only console text there (it has no transmit audio output -- transmitting is
+    done by comms.aprs.ax25_tx / comms.audio_tx).
     """
 
     def __init__(
         self,
         proc: subprocess.Popen[bytes],
         in_device: int | None,
-        out_device: int | None,
         sdr_pipeline: Any = None,
         modem: str = "1200",
         parent: Any = None,
@@ -306,7 +306,6 @@ class AudioBridge(QThread):
         super().__init__(parent)
         self._proc = proc
         self._in_device = in_device
-        self._out_device = out_device
         self._sdr_pipeline = sdr_pipeline
         self._modem = modem
         # 1200 baud only: use the satellite-tuned front end (see
@@ -320,11 +319,6 @@ class AudioBridge(QThread):
 
     def run(self) -> None:
         """Start audio capture and stdin writer."""
-        try:
-            import numpy as np
-            import sounddevice as sd
-        except ImportError:
-            return
 
         # RX: audio source → Direwolf stdin
         def _rx_callback(chunk: Any) -> None:
@@ -389,55 +383,30 @@ class AudioBridge(QThread):
             mgr.acquire_input(_AUDIO_OWNER, self._in_device, self._SAMPLE_RATE, _rx_callback)
 
         try:
-            if self._out_device is None:
-                # Receive-only bridge (the SDR-fed G3RUH/AFSK path always
-                # has no output device -- SDR can't transmit -- and a Rig +
-                # Sound Card session with no configured output falls here
-                # too). No real audio bytes are ever written to this
-                # stdout: TX never happens on a receive-only bridge (PTT
-                # NONE, nothing ever calls send_frame() to key up).
-                # Direwolf still writes its console output here though --
-                # startup banner, warnings, and a line per decoded AX.25
-                # frame with its own audio-level quality assessment --
-                # which was previously discarded unread, leaving no record
-                # of whether Direwolf ever even achieved bit sync on a
-                # given SDR reception attempt (2026-09-17, OrigamiSat-2
-                # zero-frame investigation; see direwolf_log.py). Read and
-                # log it line-by-line instead. Terminating the Direwolf
-                # process before setting stop_event (see
-                # DirewolfManager.stop()) closes this pipe and ends the
-                # loop promptly, the same assumption the TX-capable branch
-                # below already relies on for its blocking read().
-                from comms.aprs.direwolf_log import get_direwolf_logger
+            # No audio bytes are ever written to this stdout (Direwolf has no
+            # audio output here; see the module docstring).
+            # Direwolf still writes its console output here though --
+            # startup banner, warnings, and a line per decoded AX.25
+            # frame with its own audio-level quality assessment --
+            # which was previously discarded unread, leaving no record
+            # of whether Direwolf ever even achieved bit sync on a
+            # given SDR reception attempt (2026-09-17, OrigamiSat-2
+            # zero-frame investigation; see direwolf_log.py). Read and
+            # log it line-by-line instead. Terminating the Direwolf
+            # process before setting stop_event (see
+            # DirewolfManager.stop()) closes this pipe and ends the
+            # loop promptly.
+            from comms.aprs.direwolf_log import get_direwolf_logger
 
-                dw_logger = get_direwolf_logger()
-                stdout = self._proc.stdout
-                while not self._stop_event.is_set() and stdout is not None:
-                    raw_line = stdout.readline()
-                    if not raw_line:
-                        break  # EOF -- Direwolf exited
-                    line = raw_line.decode("utf-8", errors="replace").rstrip()
-                    if line:
-                        dw_logger.info(line)
-            else:
-                while not self._stop_event.is_set():
-                    # TX: Direwolf stdout → soundcard output (blocking read)
-                    chunk = self._proc.stdout.read(  # type: ignore[union-attr]
-                        self._BLOCK_SIZE * self._BYTES_PER_SAMPLE
-                    )
-                    if not chunk:
-                        break
-                    pcm = np.frombuffer(chunk, dtype="int16").astype("float32") / 32768.0
-                    sd.play(
-                        pcm,
-                        samplerate=self._SAMPLE_RATE,
-                        device=self._out_device,
-                        blocking=False,
-                    )
-                    # Only does real work once per bridge session — pops the
-                    # snapshot taken in acquire_output(), so later chunks are
-                    # a cheap no-op (see AudioDeviceManager.pin_active_output).
-                    mgr.pin_active_output(_AUDIO_OWNER)
+            dw_logger = get_direwolf_logger()
+            stdout = self._proc.stdout
+            while not self._stop_event.is_set() and stdout is not None:
+                raw_line = stdout.readline()
+                if not raw_line:
+                    break  # EOF -- Direwolf exited
+                line = raw_line.decode("utf-8", errors="replace").rstrip()
+                if line:
+                    dw_logger.info(line)
         except Exception:  # noqa: BLE001
             pass
         finally:
@@ -464,7 +433,7 @@ class DirewolfManager:
     -----
     mgr = DirewolfManager()
     ok, err = mgr.start(callsign="JF9SOM", ssid=9,
-                        in_device=0, out_device=1)
+                        in_device=0)
     kiss = mgr.kiss_client   # KissClient (QThread, already started)
     ...
     mgr.stop()
@@ -475,7 +444,6 @@ class DirewolfManager:
         self._conf_path: str | None = None
         self._kiss: KissClient | None = None
         self._audio: AudioBridge | None = None
-        self._out_device: int | None = None
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -497,7 +465,6 @@ class DirewolfManager:
         ssid: int,
         via: str = "ARISS",
         in_device: int | None = None,
-        out_device: int | None = None,
         modem: str = "1200",
         sdr_pipeline: Any = None,
         sdr_satellite: bool = False,
@@ -534,11 +501,6 @@ class DirewolfManager:
         if binary is None:
             return False, "Direwolf not found. Use Help > Direwolf… to install."
 
-        mgr = get_audio_device_manager()
-        if out_device is not None and not mgr.acquire_output(_AUDIO_OWNER, out_device):
-            other = mgr.output_owner(out_device) or "another tab"
-            return False, f"Sound card output is in use by {other}"
-
         conf_path = self._write_config(callsign, ssid, modem)
         # direwolf.exe is a console-subsystem executable; launched from this
         # windowed/console-less PyInstaller build it would otherwise pop up
@@ -561,18 +523,14 @@ class DirewolfManager:
                     stderr=subprocess.DEVNULL,
                 )
         except OSError as exc:
-            if out_device is not None:
-                mgr.release_output(_AUDIO_OWNER, out_device)
             return False, f"Failed to start Direwolf: {exc}"
 
-        self._out_device = out_device
         self._conf_path = conf_path
 
         # Audio bridge: soundcard (or SDR) ↔ Direwolf stdin/stdout
         self._audio = AudioBridge(
             self._proc,
             in_device,
-            out_device,
             sdr_pipeline=sdr_pipeline,
             modem=modem,
             sdr_satellite=sdr_satellite,
@@ -612,10 +570,6 @@ class DirewolfManager:
         if self._audio:
             self._audio.stop()
             self._audio = None
-
-        if self._out_device is not None:
-            get_audio_device_manager().release_output(_AUDIO_OWNER, self._out_device)
-            self._out_device = None
 
         if self._proc:
             try:

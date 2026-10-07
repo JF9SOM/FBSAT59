@@ -42,9 +42,8 @@ class _FakeEngine(QObject):
         ssid: int,
         via: str,
         modem: str = "1200",
-        transmit: bool = True,
     ) -> Any:
-        self.calls.append(f"rig:{modem}:transmit={transmit}")
+        self.calls.append(f"rig:{modem}")
         return True, ""
 
     def sync_sdr_baud(self, pipeline: Any, modem: str) -> None:
@@ -64,7 +63,9 @@ class _FakeTxWorker(QObject):
     error: Signal = Signal(str)
     played: list[tuple[Any, int | None, Any]] = []
 
-    def __init__(self, audio: Any, out_device: int | None, rig: Any, parent: Any = None) -> None:
+    def __init__(
+        self, owner: str, audio: Any, out_device: int | None, rig: Any, parent: Any = None
+    ) -> None:
         super().__init__(parent)
         _FakeTxWorker.played.append((audio, out_device, rig))
 
@@ -154,7 +155,7 @@ def engine(monkeypatch: pytest.MonkeyPatch) -> _FakeEngine:
     fake = _FakeEngine()
     monkeypatch.setattr(panel_mod, "get_aprs_engine", lambda _conn: fake)
     _FakeTxWorker.played = []
-    monkeypatch.setattr(panel_mod, "_Arica2TxWorker", _FakeTxWorker)
+    monkeypatch.setattr(panel_mod, "PttAudioTxWorker", _FakeTxWorker)
     _FakeBasebandThread.instances = []
     monkeypatch.setattr(panel_mod, "G3ruhBasebandRxThread", _FakeBasebandThread)
     manager = _FakeAudioManager()
@@ -285,8 +286,8 @@ def test_soundcard_input_is_manual_only(
     p._mode_combo.setCurrentIndex(1)
     p._rb_soundcard.setChecked(True)
     assert p._mode_combo.currentData() == "manual"
-    # Direwolf only receives here; the panel transmits through its own audio.
-    assert "rig:4800:transmit=False" in engine.calls
+    # Direwolf only receives; the panel transmits through its own audio.
+    assert "rig:4800" in engine.calls
 
 
 def test_received_frame_is_parsed_and_stored(
@@ -398,7 +399,7 @@ def test_a_second_command_is_refused_while_one_is_transmitting(
         def run(self) -> None:  # never finishes
             pass
 
-    monkeypatch.setattr(panel_mod, "_Arica2TxWorker", _Slow)
+    monkeypatch.setattr(panel_mod, "PttAudioTxWorker", _Slow)
     p = _make(qtbot, conn)
     p._message_edit.setText("hi")
     p._parrot_btn.click()

@@ -41,10 +41,16 @@ import threading
 import time
 from typing import Any
 
+import numpy as np
 from PySide6.QtCore import QObject, Signal
 
+from comms.aprs.ax25_tx import build_ax25_audio
 from comms.aprs.direwolf import DirewolfManager, find_direwolf
 from comms.aprs.parser import AprsPacket, Ax25Frame, decode_ax25, parse_aprs
+from comms.audio_tx import PttAudioTxWorker
+from i18n import _
+
+_TX_OWNER = "APRS"
 
 
 class AprsEngine(QObject):
@@ -65,13 +71,6 @@ class AprsEngine(QObject):
     status_changed: Signal = Signal(str)
     error_occurred: Signal = Signal(str)
 
-    # How long to wait after PTT ON before sending audio (rig key-up time)
-    _PTT_LEAD_S: float = 0.15
-    # Approximate duration of a typical APRS message packet audio at 1200 baud
-    _TX_AUDIO_S: float = 0.55
-    # How long to wait after audio ends before releasing PTT
-    _PTT_TAIL_S: float = 0.10
-
     _instance: AprsEngine | None = None
     _instance_lock = threading.Lock()
 
@@ -80,7 +79,9 @@ class AprsEngine(QObject):
         self._conn = conn
         self._mgr = DirewolfManager()
         self._rig: Any | None = None  # RigController for PTT
-        self._ptt_active: bool = False
+        self._tx_level_db: int = 0  # TX audio level, dB below full scale
+        self._tx_in_progress = False
+        self._tx_worker: PttAudioTxWorker | None = None
         self._running = False
         self._owners: set[str] = set()
         # AX.25 baud rate ("1200"/"4800"/"9600") Direwolf is currently
@@ -89,9 +90,6 @@ class AprsEngine(QObject):
         # Used by restart_if_modem_changed().
         self._current_modem: str | None = None
         self._last_rig_params: tuple[str, int, str] | None = None
-        # False when the Rig + Sound Card session was started receive-only, so that
-        # Direwolf never claims the sound card output (see start_rig(transmit=False)).
-        self._rig_transmit: bool = True
         # True only while running via start_sdr_direwolf() (SDR-derived
         # audio feeding Direwolf) — distinguishes that mechanism from a
         # Rig + Sound Card Direwolf session that could be at the same baud
@@ -172,9 +170,8 @@ class AprsEngine(QObject):
         ssid: int,
         via: str,
         modem: str = "1200",
-        transmit: bool = True,
     ) -> tuple[bool, str]:
-        """Start Direwolf using the configured Sound Card audio devices.
+        """Start Direwolf (receive only) on the configured Sound Card input.
 
         Reads ``soundcard_settings`` from the DB to pick the right
         input / output device indices. ``owner`` registers the caller's
@@ -182,31 +179,21 @@ class AprsEngine(QObject):
         has it running, this just adds `owner` and returns success without
         touching the running pipeline (use restart_if_modem_changed() to
         pick up a different *modem* on an already-running pipeline).
-
-        With ``transmit=False`` only the receive device is used and Direwolf does
-        not claim the sound card output, so a caller that transmits by itself
-        (the ARICA-2 panel generates its own G3RUH audio) can open that output.
-        Direwolf cannot play transmit audio into this app anyway: with
-        ``ADEVICE stdin stdout`` it never writes audio to stdout.
         """
         self._owners.add(owner)
         if self._running:
             return True, ""
-        self._rig_transmit = transmit
         return self._start_rig_pipeline(callsign, ssid, via, modem)
 
     def _start_rig_pipeline(
         self, callsign: str, ssid: int, via: str, modem: str
     ) -> tuple[bool, str]:
-        in_dev, out_dev = self._load_soundcard_devices()
-        if not self._rig_transmit:
-            out_dev = None
+        in_dev = self._load_soundcard_devices()[0]
         ok, err = self._mgr.start(
             callsign=callsign,
             ssid=ssid,
             via=via,
             in_device=in_dev,
-            out_device=out_dev,
             modem=modem,
         )
         if not ok:
@@ -281,7 +268,6 @@ class AprsEngine(QObject):
             ssid=0,
             via="",
             in_device=None,
-            out_device=None,
             modem=modem,
             sdr_pipeline=pipeline,
             sdr_satellite=satellite,
@@ -325,7 +311,6 @@ class AprsEngine(QObject):
             ssid=0,
             via="",
             in_device=None,
-            out_device=None,
             modem=modem,
             sdr_pipeline=pipeline,
             sdr_satellite=satellite,
@@ -411,6 +396,10 @@ class AprsEngine(QObject):
             pipeline.unsubscribe(demod.push_samples)
         demod.stop()
 
+    def set_tx_level_db(self, db: int) -> None:
+        """Set the transmit audio level in dB below full scale (-60..0)."""
+        self._tx_level_db = min(0, max(-60, int(db)))
+
     def send_message(
         self,
         src_callsign: str,
@@ -418,33 +407,10 @@ class AprsEngine(QObject):
         via: str,
         dest: str,
         message: str,
-    ) -> None:
-        """Build an APRS message packet and transmit it.
-
-        If a RigController is registered via set_rig(), the full PTT sequence
-        runs in a background thread so the Qt main thread is never blocked:
-            1. PTT ON  (CAT T 1)
-            2. Wait _PTT_LEAD_S  (rig key-up time)
-            3. Send KISS frame → Direwolf encodes and plays audio
-            4. Wait _TX_AUDIO_S  (audio duration estimate)
-            5. Wait _PTT_TAIL_S  (brief tail)
-            6. PTT OFF (CAT T 0)
-
-        Without a rig controller the frame is sent immediately (no PTT).
-        """
-        kiss = self._mgr.kiss_client
-        if kiss is None:
-            return
+    ) -> bool:
+        """Build an APRS message packet and transmit it. False if it was not sent."""
         frame = _build_aprs_message(src_callsign, src_ssid, via, dest, message)
-
-        if self._rig is not None:
-            threading.Thread(
-                target=self._ptt_send,
-                args=(frame,),
-                daemon=True,
-            ).start()
-        else:
-            kiss.send_frame(frame)
+        return self._transmit(frame)
 
     def send_position(
         self,
@@ -455,8 +421,8 @@ class AprsEngine(QObject):
         lon_deg: float,
         symbol: str = "/-",
         comment: str = "",
-    ) -> None:
-        """Build an APRS position packet and transmit it.
+    ) -> bool:
+        """Build an APRS position packet and transmit it. False if it was not sent.
 
         Uses the uncompressed position format (no timestamp, no messaging):
             !DDMM.hhN/DDDMM.hhES<comment>
@@ -471,35 +437,50 @@ class AprsEngine(QObject):
                           ``/-`` = house / fixed station.
             comment:      Free-text comment appended after the symbol.
         """
-        kiss = self._mgr.kiss_client
-        if kiss is None:
-            return
         frame = _build_aprs_position(src_callsign, src_ssid, via, lat_deg, lon_deg, symbol, comment)
-        if self._rig is not None:
-            threading.Thread(
-                target=self._ptt_send,
-                args=(frame,),
-                daemon=True,
-            ).start()
-        else:
-            kiss.send_frame(frame)
+        return self._transmit(frame)
 
-    def _ptt_send(self, frame: bytes) -> None:
-        """PTT sequence executed in a daemon thread."""
+    def _transmit(self, frame: bytes) -> bool:
+        """Build the audio for *frame* ourselves and send it with the rig's PTT.
+
+        Direwolf is receive-only here: it never writes transmit audio to stdout
+        (see comms/aprs/g3ruh_tx.py), so a frame handed to it over KISS used to be
+        dropped while the PTT was keyed -- an unmodulated carrier. The modulation
+        (Bell 202 at 1200 baud, G3RUH at 4800/9600) is generated by
+        comms.aprs.ax25_tx and played through the Sound Card output.
+
+        Runs in a background thread so the Qt main thread is never blocked. Reasons
+        for not transmitting are reported through ``error_occurred``.
+        """
         rig = self._rig
-        kiss = self._mgr.kiss_client
-        if rig is None or kiss is None:
-            return
-        try:
-            self._ptt_active = True
-            rig.set_ptt(True)
-            time.sleep(self._PTT_LEAD_S)
-            kiss.send_frame(frame)
-            time.sleep(self._TX_AUDIO_S)
-            time.sleep(self._PTT_TAIL_S)
-        finally:
-            rig.set_ptt(False)
-            self._ptt_active = False
+        if rig is None or not getattr(rig, "is_connected", False):
+            self.error_occurred.emit(_("TX rig not connected"))
+            return False
+        if self._tx_in_progress:
+            self.error_occurred.emit(_("A transmission is already in progress"))
+            return False
+        out_device = self._load_soundcard_devices()[1]
+        if out_device is None:
+            self.error_occurred.emit(
+                _("Cannot transmit: set the Sound Card output in Rig Settings")
+            )
+            return False
+        audio = build_ax25_audio(frame, self._current_modem or "1200")
+        gain = np.float32(10.0 ** (self._tx_level_db / 20.0))
+        worker = PttAudioTxWorker(_TX_OWNER, (audio * gain).astype(np.float32), out_device, rig)
+        worker.finished.connect(self._on_tx_finished)
+        worker.error.connect(self._on_tx_error)
+        self._tx_worker = worker  # keep a reference: it emits from its thread
+        self._tx_in_progress = True
+        threading.Thread(target=worker.run, daemon=True).start()
+        return True
+
+    def _on_tx_finished(self) -> None:
+        self._tx_in_progress = False
+
+    def _on_tx_error(self, msg: str) -> None:
+        self._tx_in_progress = False
+        self.error_occurred.emit(msg)
 
     # ------------------------------------------------------------------ #
     # Private helpers

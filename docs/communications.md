@@ -3453,7 +3453,7 @@ AX100 = MARMOTSat 69912）とマッチするトランスミッターが Radio Co
 - したがって従来は、アプリが DTR で PTT だけ入れ、**無変調のキャリアを約 0.8 秒送っていた**。受信音声の録音には、
   送信ごとに約 0.8 秒の無音（無線機が送信中に受信を止める）が出ていたので PTT 自体は入っていた。
   `AudioBridge` の送信ループ（Direwolf の標準出力→サウンドカード）は、実際には起動バナー等の**ログ文字を音声として再生**していた。
-- **APRS タブの送信（`AprsEngine.send_message`/`send_position`）も同じ設計で、同様に動いていないはず**（未対応・要別件）。
+- **APRS タブの送信（`AprsEngine.send_message`/`send_position`）も同じ設計で、同様に動いていなかった** → 2026-10-07 に下記「APRS タブの送信」で修正。
 
 **対処**: ARICA-2 パネルは Direwolf を**受信専用**にし（`start_rig(..., transmit=False)`、SDR は従来どおり受信専用）、
 送信音声を `comms/aprs/g3ruh_tx.py` で自前生成して、`_Arica2TxWorker`（FT4/AX100 と同じ素のスレッド方式）が
@@ -3475,6 +3475,30 @@ Mac の出力音量は固定し、アプリのスライダーと無線機の FM 
 `AprsEngine` に残る Direwolf 送信用の部品（`send_raw`・`tx=True` の SDR 送信・`set_tx_gain`、`AudioBridge` の
 ゲイン/ピークログ）は削除した。出力デバイスの排他: 他タブ（APRS の Direwolf など）が Sound Card 出力を握っていると
 `Sound card output is in use by ...` で送信できない。
+
+#### APRS タブの送信を自前の変調音声に変更（2026-10-07）
+
+ARICA-2 と同じ原因（Direwolf は送信音声を標準出力に書かない）で、APRS タブの送信（メッセージ・位置ビーコン）も
+**PTT だけ入って無変調だった**。`AprsEngine` は次のようにした:
+
+- `send_message()`/`send_position()` は AX.25 フレーム（既存の `_build_aprs_message/_position`）を作り、
+  `comms/aprs/ax25_tx.py::build_ax25_audio(frame, modem)` で**変調音声を自前生成**する。**1200 baud =
+  Bell 202 AFSK**（`afsk_tx.py`: mark 1200 Hz / space 2200 Hz、連続位相、NRZI の 1=mark）、**4800/9600 baud =
+  G3RUH**（`g3ruh_tx.py`）。HDLC/NRZI/FCS は共通（`hdlc_nrzi_bits`、Direwolf `hdlc_send.c` の移植）。
+  modem は `engine.current_modem`（Auto/1200/4800/9600 の選択結果）。
+- 音声の再生と PTT は共通ワーカー `comms/audio_tx.py::PttAudioTxWorker`（素のスレッド、PTT は 0.2 秒前に入れ 0.2 秒後に
+  切る。サウンドカード出力は `AudioDeviceManager` の owner `"APRS"` で排他取得）。ARICA-2 パネルも同じワーカーを使う。
+- **TX Level スライダー**（dB 単位、-60〜0 dB、既定 0 dB）を「Send Message」行に追加（`aprs_settings.tx_level_db` に保存、
+  `engine.set_tx_level_db()`）。音声はフルスケールで生成されるため、FM の偏移に合わせて下げる。
+- 送信できない理由（リグ未接続・サウンドカード出力未設定・送信中）は `error_occurred` で入力欄の下に出る。
+  **送れなかったときは、メッセージ欄の文字を残し、受信ログに「送信済み」エコーも出さず、QSO の待機にも入れない**
+  （以前は送れていなくても記録していた）。`send_message()`/`send_position()` は `bool` を返す。
+- **Direwolf は全面的に受信専用**にした: `AprsEngine.start_rig()` の出力デバイス取得、`AudioBridge` の送信ループ
+  （標準出力のログ文字を音声として再生していた）、`DirewolfManager` の `acquire_output` を削除。
+  Telemetry/SSTV タブは元から受信のみ。
+- **検証**: 独立の AFSK 受信機（ビットごとに mark/space のエネルギー比較→NRZI→HDLC→FCS）で往復一致、
+  **Direwolf 自身の `MODEM 1200` 受信が、生成した音声から APRS フレームを読み戻した**（`tests/test_afsk_tx.py`）。
+  **実機（衛星・無線機）での送信は未確認**。
 
 #### 受信感度: 無線機の音声には総当たりのベースバンド受信機を併走させる（2026-10-07）
 

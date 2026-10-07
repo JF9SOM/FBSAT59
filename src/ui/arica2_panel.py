@@ -29,7 +29,7 @@ from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
-from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
+from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QComboBox,
     QGroupBox,
@@ -60,6 +60,8 @@ from comms.arica2.message_box import (
 )
 from comms.arica2.window_detector import BeaconWindowDetector
 from comms.audio_device_manager import get_audio_device_manager
+from comms.audio_tx import AUDIO_RATE as _AUDIO_RATE
+from comms.audio_tx import PttAudioTxWorker
 from i18n import _
 from rig.controller import select_tx_rig
 from ui.tx_level import (
@@ -79,11 +81,6 @@ _MODEM = "4800"
 _MAX_LOG_ROWS = 500
 _UI_TICK_MS = 200
 _BAUD = 4800
-_AUDIO_RATE = 48_000
-# Time the PTT is up before the audio starts / stays after it ends (rig key-up and
-# the modulator settling; the audio itself begins with 300 ms of flags).
-_PTT_LEAD_S = 0.20
-_PTT_TAIL_S = 0.20
 # An armed command is sent this long after the window opens (rig/Doppler settle).
 _AUTO_SEND_DELAY_S = 0.5
 # Not worth sending when less of the window than this is left.
@@ -91,52 +88,6 @@ _MIN_REMAINING_S = 2.5
 
 _MODE_MANUAL = "manual"
 _MODE_AUTO = "auto"
-
-
-class _Arica2TxWorker(QObject):
-    """Plays one uplink's audio through the Sound Card and keys the rig's PTT.
-
-    Plain thread, not QThread (sounddevice's play/wait blocks and needs no Qt
-    event loop), same pattern as the FT4 and AX100 transmit workers. Emits
-    exactly one of ``finished`` or ``error``.
-    """
-
-    finished: Signal = Signal()
-    error: Signal = Signal(str)
-
-    def __init__(
-        self, audio: NDArray[np.float32], out_device: int | None, rig: Any, parent: Any = None
-    ) -> None:
-        super().__init__(parent)
-        self._audio = audio
-        self._out_device = out_device
-        self._rig = rig
-
-    def run(self) -> None:
-        mgr = get_audio_device_manager()
-        if not mgr.acquire_output(_OWNER, self._out_device):
-            other = mgr.output_owner(self._out_device) or _("another tab")
-            self.error.emit(_("Sound card output is in use by {other}").format(other=other))
-            return
-        try:
-            import sounddevice as sd  # optional dependency
-
-            if not self._rig.set_ptt(True):
-                self.error.emit(_("PTT command failed — check Rig 1 connection"))
-                return
-            time.sleep(_PTT_LEAD_S)
-            sd.play(self._audio, samplerate=_AUDIO_RATE, device=self._out_device, blocking=False)
-            mgr.pin_active_output(_OWNER)
-            sd.wait()
-            time.sleep(_PTT_TAIL_S)
-            self._rig.set_ptt(False)
-            self.finished.emit()
-        except Exception as exc:
-            with contextlib.suppress(Exception):
-                self._rig.set_ptt(False)
-            self.error.emit(str(exc))
-        finally:
-            mgr.release_output(_OWNER, self._out_device)
 
 
 class Arica2Panel(QWidget):
@@ -164,7 +115,7 @@ class Arica2Panel(QWidget):
         self._recent_frames: dict[bytes, float] = {}
         self._tx_in_progress = False
         self._tx_thread: threading.Thread | None = None
-        self._tx_worker: _Arica2TxWorker | None = None
+        self._tx_worker: PttAudioTxWorker | None = None
         self._window_deadline: float | None = None
         self._armed: tuple[Command, str, int | None] | None = None
         self._use_utc = True
@@ -454,7 +405,7 @@ class Arica2Panel(QWidget):
 
     def _start_soundcard(self) -> None:
         call = self._get_my_call() or "N0CALL"
-        ok, err = self._engine.start_rig(_OWNER, call, 0, "", modem=_MODEM, transmit=False)
+        ok, err = self._engine.start_rig(_OWNER, call, 0, "", modem=_MODEM)
         if not ok:
             self._status_label.setText(_("Direwolf error: {err}").format(err=err))
             return
@@ -665,7 +616,7 @@ class Arica2Panel(QWidget):
             return
         audio = build_g3ruh_audio(payload, baud=_BAUD, sample_rate=_AUDIO_RATE)
         audio = (audio * np.float32(db_to_gain(self._level_slider.value()))).astype(np.float32)
-        worker = _Arica2TxWorker(audio, out_device, rig)
+        worker = PttAudioTxWorker(_OWNER, audio, out_device, rig)
         worker.finished.connect(self._on_tx_finished)
         worker.error.connect(self._on_tx_error)
         self._tx_worker = worker  # keep a reference: it emits from its thread

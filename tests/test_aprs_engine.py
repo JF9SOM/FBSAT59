@@ -52,7 +52,6 @@ class _FakeDirewolfManager:
         ssid: int,
         via: str,
         in_device: int | None,
-        out_device: int | None,
         modem: str = "1200",
         sdr_pipeline: Any = None,
         sdr_satellite: bool = False,
@@ -63,7 +62,6 @@ class _FakeDirewolfManager:
                 "ssid": ssid,
                 "via": via,
                 "modem": modem,
-                "out_device": out_device,
                 "sdr_pipeline": sdr_pipeline,
                 "sdr_satellite": sdr_satellite,
             }
@@ -496,41 +494,123 @@ def test_sync_sdr_baud_noop_when_not_running(engine: AprsEngine) -> None:
 
 
 # ---------------------------------------------------------------------------
-# start_rig(transmit=False)
+# Transmit: the engine builds the audio itself (Direwolf cannot transmit here)
 # ---------------------------------------------------------------------------
 
 
-def _set_output_device(conn: sqlite3.Connection, index: int) -> None:
+class _FakeRig:
+    is_connected = True
+
+
+class _FakeWorker:
+    """Stands in for PttAudioTxWorker: records the audio it was given."""
+
+    played: list[tuple[Any, int | None, Any]] = []
+
+    def __init__(self, owner: str, audio: Any, out_device: int | None, rig: Any) -> None:
+        from PySide6.QtCore import QObject, Signal  # noqa: F401
+
+        _FakeWorker.played.append((audio, out_device, rig))
+        self.finished = _Sig()
+        self.error = _Sig()
+
+    def run(self) -> None:
+        pass
+
+
+class _Sig:
+    def connect(self, _slot: Any) -> None:
+        pass
+
+
+@pytest.fixture
+def tx_engine(
+    engine: AprsEngine, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> AprsEngine:
+    _FakeWorker.played = []
+    monkeypatch.setattr("comms.aprs.engine.PttAudioTxWorker", _FakeWorker)
     conn.execute(
         "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
-        ("soundcard_settings", json.dumps({"input_device_index": 1, "output_device_index": index})),
+        ("soundcard_settings", json.dumps({"input_device_index": 1, "output_device_index": 5})),
     )
     conn.commit()
+    engine.set_rig(_FakeRig())
+    engine._current_modem = "1200"
+    return engine
 
 
-def test_start_rig_claims_the_output_device_by_default(
-    engine: AprsEngine, conn: sqlite3.Connection
+def _decode_afsk(audio: Any) -> list[bytes]:
+    from tests.test_afsk_tx import decode_afsk
+
+    return decode_afsk(audio)
+
+
+def test_send_message_hands_modulated_audio_to_the_tx_worker(tx_engine: AprsEngine) -> None:
+    from comms.aprs.engine import _build_aprs_message
+
+    assert tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "hello")
+    audio, device, rig = _FakeWorker.played[0]
+    assert device == 5 and isinstance(rig, _FakeRig)
+    assert _build_aprs_message("JF9SOM", 0, "ARISS", "JA1XYZ", "hello") in _decode_afsk(audio)
+
+
+def test_send_position_transmits_too(tx_engine: AprsEngine) -> None:
+    from comms.aprs.engine import _build_aprs_position
+
+    assert tx_engine.send_position("JF9SOM", 9, "ARISS", 36.1, 136.4, "/-", "test")
+    frame = _build_aprs_position("JF9SOM", 9, "ARISS", 36.1, 136.4, "/-", "test")
+    assert frame in _decode_afsk(_FakeWorker.played[0][0])
+
+
+def test_tx_level_scales_the_audio(tx_engine: AprsEngine) -> None:
+    tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "hi")
+    tx_engine._tx_in_progress = False
+    tx_engine.set_tx_level_db(-20)
+    tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "hi")
+    loud = float(abs(_FakeWorker.played[0][0]).max())
+    quiet = float(abs(_FakeWorker.played[1][0]).max())
+    assert loud == pytest.approx(1.0, abs=1e-3)
+    assert quiet == pytest.approx(0.1, abs=1e-3)
+
+
+def test_tx_level_is_clamped(tx_engine: AprsEngine) -> None:
+    tx_engine.set_tx_level_db(10)
+    assert tx_engine._tx_level_db == 0
+    tx_engine.set_tx_level_db(-99)
+    assert tx_engine._tx_level_db == -60
+
+
+@pytest.mark.parametrize("modem", ["4800", "9600"])
+def test_high_speed_modems_use_the_g3ruh_audio(tx_engine: AprsEngine, modem: str) -> None:
+    tx_engine._current_modem = modem
+    assert tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "hi")
+    n = 48_000 // int(modem)
+    assert len(_FakeWorker.played[0][0]) % n == 0  # whole bits of baseband audio
+
+
+def test_no_transmission_without_a_connected_rig(tx_engine: AprsEngine, qtbot: Any) -> None:
+    tx_engine.set_rig(None)
+    errors: list[str] = []
+    tx_engine.error_occurred.connect(errors.append)
+    assert not tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "hi")
+    assert errors == ["TX rig not connected"]
+    assert _FakeWorker.played == []
+
+
+def test_no_transmission_without_a_sound_card_output(
+    tx_engine: AprsEngine, conn: sqlite3.Connection
 ) -> None:
-    _set_output_device(conn, 7)
-    engine.start_rig("aprs", "JF9SOM", 0, "", modem="1200")
-    try:
-        fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
-        assert fake_mgr.start_calls[-1]["out_device"] == 7
-    finally:
-        engine.stop("aprs")
+    conn.execute("DELETE FROM app_settings WHERE key = 'soundcard_settings'")
+    errors: list[str] = []
+    tx_engine.error_occurred.connect(errors.append)
+    assert not tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "hi")
+    assert "Sound Card output" in errors[0]
 
 
-def test_start_rig_receive_only_leaves_the_output_device_free(
-    engine: AprsEngine, conn: sqlite3.Connection
-) -> None:
-    _set_output_device(conn, 7)
-    engine.start_rig("msgbox", "JF9SOM", 0, "", modem="4800", transmit=False)
-    try:
-        fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
-        assert fake_mgr.start_calls[-1]["out_device"] is None
-        # A modem change restarts Direwolf and must keep it receive-only.
-        engine.restart_if_modem_changed("9600")
-        assert fake_mgr.start_calls[-1]["modem"] == "9600"
-        assert fake_mgr.start_calls[-1]["out_device"] is None
-    finally:
-        engine.stop("msgbox")
+def test_a_second_send_is_refused_while_one_is_in_progress(tx_engine: AprsEngine) -> None:
+    errors: list[str] = []
+    tx_engine.error_occurred.connect(errors.append)
+    assert tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "one")
+    assert not tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "two")
+    assert errors == ["A transmission is already in progress"]
+    assert len(_FakeWorker.played) == 1
