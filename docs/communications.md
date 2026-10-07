@@ -935,13 +935,16 @@ description文字列を見るため無関係）。`mode` 列だけ実際のリ�
 #### 地上系 APRS プリセット（2026-10-07）
 
 APRS を衛星ではなく地上（ハンディ機 ⇔ 自局の FT-991 など）で送受信確認するための、疑似衛星
-**「Terrestrial (地上系)」**（NORAD ID **-2** = `core.engine.TERRESTRIAL_ID`。Moon の -1 と同じ負数センチネル）。
+**「Terrestrial 1200 / 9600 (地上系)」**（NORAD ID **-2 / -3** = `core.engine.TERRESTRIAL_IDS`。Moon の -1 と同じ負数センチネル）。
+**周波数ごとに別の疑似衛星にしてある**: Quick Panel の Input Source は衛星単位で 1 項目しか出さず、最初に一致した
+トランスポンダーを選ぶため、1 衛星に 2 件だと 9600 が選べなかった（初版の不具合、同日修正）。タブの Baud コンボを
+手で変えても周波数は変わらない（baud→周波数の連動はしない）ので、周波数を変えるときは Input Source を切り替える。
 `community_transmitters.json` に 2 件:
 
 | uuid | 周波数（UL=DL のシンプレックス） | baud | mode |
 |---|---|---|---|
-| `community-terrestrial-aprs-1200` | 144.660 MHz | 1200 | `FM-D` |
-| `community-terrestrial-aprs-9600` | 144.640 MHz | 9600 | `FM-D` |
+| `community-terrestrial-aprs-1200`（-2） | 144.660 MHz | 1200 | `FM-D` |
+| `community-terrestrial-aprs-9600`（-3） | 144.640 MHz | 9600 | `FM-D` |
 
 - description に "APRS" を含むので APRS タブの Quick Panel Input Source に出て、baud 列から Auto が 1200/9600 を選ぶ。
 - **ドップラーなし**: TLE を持たないので、`SatelliteEngine.observe(-2)` は距離変化 0 の固定観測値（EL 0°/AZ 0°、

@@ -169,6 +169,21 @@ class TransmitterManager:
             xpdr_uuid: str = entry["uuid"]
             norad_cat_id: int = entry["norad_cat_id"]
 
+            # Ensure the satellite record exists (an entry may move to a new
+            # NORAD ID between releases, so this is not only for new rows).
+            self._conn.execute(
+                "INSERT OR IGNORE INTO satellites (norad_cat_id, name, updated_at)"
+                " VALUES (?, ?, ?)",
+                (norad_cat_id, entry.get("satellite_name", f"#{norad_cat_id}"), now),
+            )
+
+            if norad_cat_id < 0 and "satellite_name" in entry:
+                # Pseudo-satellites are ours alone: keep their name current.
+                self._conn.execute(
+                    "UPDATE satellites SET name = ? WHERE norad_cat_id = ?",
+                    (entry["satellite_name"], norad_cat_id),
+                )
+
             existing = self._conn.execute(
                 "SELECT source, manual_override FROM transmitters WHERE uuid = ?",
                 (xpdr_uuid,),
@@ -207,12 +222,6 @@ class TransmitterManager:
                 )
                 stats["updated"] += 1
             else:
-                # Ensure the satellite record exists
-                self._conn.execute(
-                    "INSERT OR IGNORE INTO satellites (norad_cat_id, name, updated_at)"
-                    " VALUES (?, ?, ?)",
-                    (norad_cat_id, entry.get("satellite_name", f"#{norad_cat_id}"), now),
-                )
                 self._conn.execute(
                     """
                     INSERT INTO transmitters (

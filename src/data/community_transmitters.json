@@ -88,7 +88,7 @@
   {
     "uuid": "community-terrestrial-aprs-1200",
     "norad_cat_id": -2,
-    "satellite_name": "Terrestrial (地上系)",
+    "satellite_name": "Terrestrial 1200 (地上系)",
     "description": "APRS terrestrial 1200 baud (144.660 MHz simplex)",
     "type": "Transceiver",
     "uplink_low":   144660000,
@@ -99,12 +99,12 @@
     "invert": false,
     "baud": 1200,
     "ctcss_tone": null,
-    "notes": "Ground-based simplex APRS (DATA-FM) for testing between handhelds and the base rig. Pseudo-satellite NORAD -2 (core.engine.TERRESTRIAL_ID): no TLE, no Doppler correction."
+    "notes": "Ground-based simplex APRS (DATA-FM) for testing between handhelds and the base rig. Pseudo-satellite NORAD -2 (core.engine.TERRESTRIAL_IDS): no TLE, no Doppler correction."
   },
   {
     "uuid": "community-terrestrial-aprs-9600",
-    "norad_cat_id": -2,
-    "satellite_name": "Terrestrial (地上系)",
+    "norad_cat_id": -3,
+    "satellite_name": "Terrestrial 9600 (地上系)",
     "description": "APRS terrestrial 9600 baud (144.640 MHz simplex)",
     "type": "Transceiver",
     "uplink_low":   144640000,
@@ -115,6 +115,6 @@
     "invert": false,
     "baud": 9600,
     "ctcss_tone": null,
-    "notes": "Ground-based simplex APRS (DATA-FM) for testing between handhelds and the base rig. Pseudo-satellite NORAD -2 (core.engine.TERRESTRIAL_ID): no TLE, no Doppler correction."
+    "notes": "Ground-based simplex APRS (DATA-FM) for testing between handhelds and the base rig. Pseudo-satellite NORAD -3 (core.engine.TERRESTRIAL_IDS): no TLE, no Doppler correction."
   }
 ]

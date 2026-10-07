@@ -30,6 +30,9 @@ _C_KM_S: float = 299_792.458
 # yields the nominal frequencies unchanged. Negative like core.celestial_engine.
 # MOON_ID (-1) so it stays clear of every real/provisional NORAD range.
 TERRESTRIAL_ID: int = -2
+# One pseudo-satellite per terrestrial frequency, because the Quick Panel's
+# Input Source offers one entry per satellite: -2 = 1200 baud, -3 = 9600 baud.
+TERRESTRIAL_IDS: frozenset[int] = frozenset({-2, -3})
 
 
 # ---------------------------------------------------------------------------
@@ -139,9 +142,9 @@ class SatelliteEngine:
         Returns:
             Observation, or None if the TLE does not exist.
         """
-        if norad_cat_id == TERRESTRIAL_ID:
+        if norad_cat_id in TERRESTRIAL_IDS:
             return Observation(
-                norad_cat_id=TERRESTRIAL_ID,
+                norad_cat_id=norad_cat_id,
                 timestamp=at if at is not None else datetime.now(UTC),
                 elevation_deg=0.0,
                 azimuth_deg=0.0,
