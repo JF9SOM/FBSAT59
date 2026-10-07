@@ -205,3 +205,29 @@ def test_tab_uses_the_frequency_clicked_on_the_waterfall(qtbot: QtBot) -> None:
     tab._on_waterfall_tx_freq(1812.0)
     assert tab._audio_freq_edit.text() == "1812"
     assert tab._audio_freq == 1812.0
+
+
+def test_waterfall_opens_docked_above_the_main_window(qtbot: QtBot) -> None:
+    from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+    main = QWidget()
+    qtbot.addWidget(main)
+    tab = _make_tab(qtbot)
+    lay = QVBoxLayout(main)
+    lay.addWidget(tab)  # re-parents the tab under `main`
+    main.resize(800, 500)
+    main.show()
+    main.move(300, 500)
+    tab._on_show_waterfall()
+    dlg = tab._waterfall_dialog
+    assert dlg is not None
+    avail = main.screen().availableGeometry()
+    want_x = min(max(main.frameGeometry().left(), avail.left()), avail.right() - dlg.width())
+    assert abs(dlg.frameGeometry().left() - want_x) <= 1  # left edges aligned (kept on screen)
+    # sits directly on top of the window (or at the screen top when there is no room)
+    assert dlg.frameGeometry().bottom() <= main.frameGeometry().top() + 1
+    # a second show keeps wherever the user put it
+    dlg.move(dlg.x() + 40, dlg.y())
+    x = dlg.x()
+    tab._on_show_waterfall()
+    assert dlg.x() == x

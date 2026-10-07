@@ -1319,13 +1319,36 @@ class Ft4Tab(QWidget):
 
     @Slot()
     def _on_show_waterfall(self) -> None:
+        first_time = self._waterfall_dialog is None
         if self._waterfall_dialog is None:
             self._waterfall_dialog = Ft4WaterfallDialog(self)
             self._waterfall_dialog.tx_freq_requested.connect(self._on_waterfall_tx_freq)
         self._waterfall_dialog.set_tx_freq_hz(self._audio_freq)
         self._waterfall_dialog.show()
+        if first_time:
+            # Later shows keep wherever the user moved it.
+            self._dock_waterfall_above_window(self._waterfall_dialog)
         self._waterfall_dialog.raise_()
         self._waterfall_dialog.activateWindow()
+
+    def _dock_waterfall_above_window(self, dialog: Ft4WaterfallDialog) -> None:
+        """Put the waterfall just above the main window, left edges aligned.
+
+        Like WSJT-X's Wide Graph sitting on top of the main window. Falls back to
+        the screen's top edge when there is no room above.
+        """
+        main = self.window()
+        if main is dialog or main is None:
+            return
+        frame = main.frameGeometry()
+        x = frame.left()
+        y = frame.top() - dialog.frameGeometry().height()
+        screen = main.screen()
+        if screen is not None:
+            avail = screen.availableGeometry()
+            y = max(y, avail.top())
+            x = min(max(x, avail.left()), max(avail.left(), avail.right() - dialog.width()))
+        dialog.move(x, y)
 
     # ------------------------------------------------------------------ #
     # Scheduler slots                                                      #
