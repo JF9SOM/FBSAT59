@@ -84,5 +84,37 @@
     "baud": null,
     "ctcss_tone": null,
     "notes": "GMSK ASM+Golay digipeater rides at a fixed audio offset inside an SSB passband (GreenCube's own approach), not a standard FM/AFSK transponder. SATNOGS now lists the real NORAD 69912 row as 'Mode V/V Digipeater' (mode 'FSK AX.100 Mode 5'); this override corrects it to USB, Up=Down=145.875 MHz. Re-pointed from the provisional id 98272 to 69912 on 2026-09-06 (load_community_transmitters keys on uuid and updates norad_cat_id in place). 2026-07."
+  },
+  {
+    "uuid": "community-terrestrial-aprs-1200",
+    "norad_cat_id": -2,
+    "satellite_name": "Terrestrial (地上系)",
+    "description": "APRS terrestrial 1200 baud (144.660 MHz simplex)",
+    "type": "Transceiver",
+    "uplink_low":   144660000,
+    "uplink_high":  null,
+    "downlink_low": 144660000,
+    "downlink_high": null,
+    "mode": "FM-D",
+    "invert": false,
+    "baud": 1200,
+    "ctcss_tone": null,
+    "notes": "Ground-based simplex APRS (DATA-FM) for testing between handhelds and the base rig. Pseudo-satellite NORAD -2 (core.engine.TERRESTRIAL_ID): no TLE, no Doppler correction."
+  },
+  {
+    "uuid": "community-terrestrial-aprs-9600",
+    "norad_cat_id": -2,
+    "satellite_name": "Terrestrial (地上系)",
+    "description": "APRS terrestrial 9600 baud (144.640 MHz simplex)",
+    "type": "Transceiver",
+    "uplink_low":   144640000,
+    "uplink_high":  null,
+    "downlink_low": 144640000,
+    "downlink_high": null,
+    "mode": "FM-D",
+    "invert": false,
+    "baud": 9600,
+    "ctcss_tone": null,
+    "notes": "Ground-based simplex APRS (DATA-FM) for testing between handhelds and the base rig. Pseudo-satellite NORAD -2 (core.engine.TERRESTRIAL_ID): no TLE, no Doppler correction."
   }
 ]

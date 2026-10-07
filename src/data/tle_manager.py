@@ -1478,7 +1478,7 @@ class TLEManager:
             """
             SELECT s.norad_cat_id, s.name FROM satellites s
             LEFT JOIN tle_data t ON s.norad_cat_id = t.norad_cat_id
-            WHERE s.norad_cat_id < 10000
+            WHERE s.norad_cat_id BETWEEN 1 AND 9999
               AND s.is_hidden = 0
               AND t.norad_cat_id IS NULL
             """

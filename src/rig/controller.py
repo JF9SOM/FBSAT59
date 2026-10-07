@@ -103,6 +103,7 @@ def _build_mode_map() -> dict[str, int]:
         "AM": 1,  # RIG_MODE_AM
         "USB-D": 2048,  # RIG_MODE_PKTUSB (data mode, e.g. FT4 calling freqs)
         "LSB-D": 1024,  # RIG_MODE_PKTLSB
+        "FM-D": 4096,  # RIG_MODE_PKTFM (data FM, e.g. terrestrial APRS)
     }
 
 
@@ -135,6 +136,7 @@ def _build_live_hamlib_mode_map(_H: Any) -> dict[str, int]:
         "BPSK": _H.RIG_MODE_PKTUSB,
         "USB-D": _H.RIG_MODE_PKTUSB,  # data mode, e.g. FT4 calling freqs
         "LSB-D": _H.RIG_MODE_PKTLSB,
+        "FM-D": _H.RIG_MODE_PKTFM,  # data FM, e.g. terrestrial APRS
     }
 
 
@@ -350,6 +352,7 @@ _ICOM_CIV_MODE_CODES: dict[str, tuple[int, bool]] = {
     "AM": (0x02, False),
     "USB-D": (0x01, True),  # DATA-USB (data mode, e.g. FT4 calling freqs)
     "LSB-D": (0x00, True),  # DATA-LSB
+    "FM-D": (0x05, True),  # DATA-FM (e.g. terrestrial APRS)
 }
 
 # ---------------------------------------------------------------------------
@@ -3337,6 +3340,7 @@ _FT991_MODE_MAP: dict[str, str] = {
     "LSB-D": "8",  # DATA-LSB (data mode, e.g. FT4 calling freqs)
     "FM-N": "B",
     "USB-D": "C",  # DATA-USB
+    "FM-D": "A",  # DATA-FM (e.g. terrestrial APRS)
     # SATNOGS "GMSK" (e.g. ARICA-2's 4800 baud message box, 9k6 telemetry) is a
     # data signal: DATA-FM selects the rig's packet/data audio path instead of FM.
     "GMSK": "A",  # DATA-FM
@@ -4847,6 +4851,7 @@ _SATNOGS_TO_RIGCTLD_MODE: dict[str, str] = {
     "AM": "AM",
     "USB-D": "PKTUSB",  # data mode, e.g. FT4 calling freqs
     "LSB-D": "PKTLSB",
+    "FM-D": "PKTFM",  # data FM, e.g. terrestrial APRS
 }
 _RIGCTLD_MODE_TO_SATNOGS: dict[str, str] = {v: k for k, v in _SATNOGS_TO_RIGCTLD_MODE.items()}
 

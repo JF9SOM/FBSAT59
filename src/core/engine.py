@@ -24,6 +24,13 @@ if TYPE_CHECKING:
 # Speed of light in km/s
 _C_KM_S: float = 299_792.458
 
+# Pseudo "satellite" for ground-based (terrestrial) operation, e.g. APRS on
+# 144.660 MHz between handhelds. It has no TLE and never moves, so observe()
+# returns a fixed observation with zero range rate: every Doppler path then
+# yields the nominal frequencies unchanged. Negative like core.celestial_engine.
+# MOON_ID (-1) so it stays clear of every real/provisional NORAD range.
+TERRESTRIAL_ID: int = -2
+
 
 # ---------------------------------------------------------------------------
 # Data classes (types for calculation results)
@@ -132,6 +139,17 @@ class SatelliteEngine:
         Returns:
             Observation, or None if the TLE does not exist.
         """
+        if norad_cat_id == TERRESTRIAL_ID:
+            return Observation(
+                norad_cat_id=TERRESTRIAL_ID,
+                timestamp=at if at is not None else datetime.now(UTC),
+                elevation_deg=0.0,
+                azimuth_deg=0.0,
+                range_km=0.0,
+                range_rate_km_s=0.0,
+                is_above_horizon=True,
+            )
+
         sat = self._get_satellite(norad_cat_id)
         if sat is None:
             return None

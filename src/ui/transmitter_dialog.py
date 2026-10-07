@@ -36,6 +36,7 @@ _MODES: list[str] = [
     "LSB",
     "USB-D",
     "LSB-D",
+    "FM-D",
     "CW",
     "CW-R",
     "DIGITALVOICE",

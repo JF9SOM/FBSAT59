@@ -932,6 +932,30 @@ description文字列を見るため無関係）。`mode` 列だけ実際のリ�
 ユーザー判断で、コミュニティ標準のUL値をRymansat Trackerに合わせて変更した。DL側
 （435.612MHz）は両者で完全一致しており変更なし。
 
+#### 地上系 APRS プリセット（2026-10-07）
+
+APRS を衛星ではなく地上（ハンディ機 ⇔ 自局の FT-991 など）で送受信確認するための、疑似衛星
+**「Terrestrial (地上系)」**（NORAD ID **-2** = `core.engine.TERRESTRIAL_ID`。Moon の -1 と同じ負数センチネル）。
+`community_transmitters.json` に 2 件:
+
+| uuid | 周波数（UL=DL のシンプレックス） | baud | mode |
+|---|---|---|---|
+| `community-terrestrial-aprs-1200` | 144.660 MHz | 1200 | `FM-D` |
+| `community-terrestrial-aprs-9600` | 144.640 MHz | 9600 | `FM-D` |
+
+- description に "APRS" を含むので APRS タブの Quick Panel Input Source に出て、baud 列から Auto が 1200/9600 を選ぶ。
+- **ドップラーなし**: TLE を持たないので、`SatelliteEngine.observe(-2)` は距離変化 0 の固定観測値（EL 0°/AZ 0°、
+  `is_above_horizon=True`）を返す。ドップラー系の経路（`_doppler_cycle`・`_ul_corr_at`・`_dl_corr_at` 等）は
+  `observe()` が None だと周波数を一切設定せず戻るため、この固定値で既存経路をそのまま通している（補正量は 0 Hz）。
+- **新モード `FM-D`（DATA-FM）**: FT-991 CAT `MD0A;`、Hamlib/rigctld は PKTFM、Icom は FM(0x05)+DATA フラグ。
+  FTX-1 のコード表には未追加（DATA-FM のコードが未確認のため。未登録モードの既定動作に落ちる）。
+  Edit Transmitter ダイアログのモード選択にも追加。
+- 古い衛星チェック `fetch_legacy_tles()`（旧 `norad_cat_id < 10000`）は負の ID を巻き込むため
+  `BETWEEN 1 AND 9999` に変更（これがないと -2 が「TLE なし→非表示」にされる）。他の TLE 自動処理は
+  10000〜89999 / 90000 以上の範囲指定なので -2 は対象外。
+- **既知の限界**: 衛星リストには TLE なしの行として並ぶ。ローテーターはこの疑似衛星では使わない前提（AZ0/EL0 を返す）。
+  GUI 上の表示・DATA-FM の実機動作は未確認。
+
 ### Comms Quick Panel 設計（src/comms/mode_detection.py, src/ui/main_window.py — 2026-07-04 実装）
 
 #### 概要
