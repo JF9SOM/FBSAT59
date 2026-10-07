@@ -326,14 +326,17 @@ class Ft4WaterfallDialog(QDialog):
         for k in range(1, n_periods + 1):
             y = _MARGIN_TOP + k * _PERIOD_HEIGHT
             painter.drawLine(_MARGIN_LEFT - 4, y, _MARGIN_LEFT, y)
-            painter.drawText(
-                0,
-                y - 7,
-                _MARGIN_LEFT - 6,
-                14,
-                Qt.AlignmentFlag.AlignRight,
-                f"{k * _TIME_TICK_STEP_S:.0f}s",
-            )
+            # Number only the whole-period pairs (15 s, 30 s): 7.5 s steps would
+            # have to be rounded (8, 22, 38) and read wrongly.
+            if k % 2 == 0:
+                painter.drawText(
+                    0,
+                    y - 7,
+                    _MARGIN_LEFT - 6,
+                    14,
+                    Qt.AlignmentFlag.AlignRight,
+                    f"{k * _TIME_TICK_STEP_S:.0f}s",
+                )
         painter.save()
         painter.translate(12, _MARGIN_TOP + _PLOT_HEIGHT / 2)
         painter.rotate(-90)
