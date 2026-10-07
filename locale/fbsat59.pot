@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-07 20:48+0900\n"
+"POT-Creation-Date: 2026-10-07 21:11+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,18 +18,18 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 
 #: src/ui/ft4_tab.py:276 src/ui/ax100_digi_tab.py:118 src/ui/q65_tab.py:910
-#: src/ui/arica2_panel.py:114
+#: src/ui/arica2_panel.py:118
 msgid "another tab"
 msgstr ""
 
 #: src/ui/ft4_tab.py:277 src/ui/ax100_digi_tab.py:119 src/ui/q65_tab.py:912
-#: src/ui/arica2_panel.py:115
+#: src/ui/arica2_panel.py:119
 #, python-brace-format
 msgid "Sound card output is in use by {other}"
 msgstr ""
 
 #: src/ui/ft4_tab.py:311 src/ui/ax100_digi_tab.py:128 src/ui/q65_tab.py:927
-#: src/ui/arica2_panel.py:121
+#: src/ui/arica2_panel.py:125
 msgid "PTT command failed — check Rig 1 connection"
 msgstr ""
 
@@ -73,7 +73,7 @@ msgid "RX:"
 msgstr ""
 
 #: src/ui/ft4_tab.py:720 src/ui/ax100_digi_tab.py:440 src/ui/q65_tab.py:224
-#: src/ui/arica2_panel.py:255
+#: src/ui/arica2_panel.py:262
 msgid "Rig Soundcard"
 msgstr ""
 
@@ -242,7 +242,7 @@ msgid ""
 "that frequency and the ideal Doppler-corrected one before it is decoded."
 msgstr ""
 
-#: src/ui/ft4_tab.py:920 src/ui/q65_tab.py:326 src/ui/arica2_panel.py:312
+#: src/ui/ft4_tab.py:920 src/ui/q65_tab.py:326 src/ui/arica2_panel.py:319
 msgid "TX Level:"
 msgstr ""
 
@@ -315,7 +315,7 @@ msgstr ""
 
 #: src/ui/ft4_tab.py:995 src/ui/ax100_digi_tab.py:496
 #: src/ui/ax100_digi_tab.py:848 src/ui/q65_tab.py:368
-#: src/ui/arica2_panel.py:268
+#: src/ui/arica2_panel.py:275
 msgid "Message"
 msgstr ""
 
@@ -372,7 +372,7 @@ msgid "Invalid FT4 message: "
 msgstr ""
 
 #: src/ui/ft4_tab.py:1581 src/ui/ax100_digi_tab.py:814
-#: src/ui/arica2_panel.py:634
+#: src/ui/arica2_panel.py:675
 msgid "TX: "
 msgstr ""
 
@@ -394,7 +394,7 @@ msgid "Tune stopped"
 msgstr ""
 
 #: src/ui/ft4_tab.py:1658 src/ui/ft4_tab.py:1686 src/ui/ax100_digi_tab.py:826
-#: src/ui/arica2_panel.py:658
+#: src/ui/arica2_panel.py:707
 msgid "TX error: "
 msgstr ""
 
@@ -1727,7 +1727,7 @@ msgstr ""
 msgid "SDR (receive only)"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:452 src/ui/arica2_panel.py:262
+#: src/ui/ax100_digi_tab.py:452 src/ui/arica2_panel.py:269
 msgid "Input: not connected"
 msgstr ""
 
@@ -1824,12 +1824,12 @@ msgid ""
 msgstr ""
 
 #: src/ui/ax100_digi_tab.py:591 src/ui/telemetry_tab.py:527
-#: src/ui/pass_chart.py:440 src/ui/pass_chart.py:799 src/ui/arica2_panel.py:379
+#: src/ui/pass_chart.py:440 src/ui/pass_chart.py:799 src/ui/arica2_panel.py:386
 msgid "Time (UTC)"
 msgstr ""
 
 #: src/ui/ax100_digi_tab.py:591 src/ui/pass_chart.py:440
-#: src/ui/pass_chart.py:799 src/ui/arica2_panel.py:379
+#: src/ui/pass_chart.py:799 src/ui/arica2_panel.py:386
 msgid "Time (Local)"
 msgstr ""
 
@@ -1838,15 +1838,16 @@ msgid "Input: Rig Soundcard connected"
 msgstr ""
 
 #: src/ui/ax100_digi_tab.py:672 src/ui/radio_control_widget.py:1453
+#: src/ui/arica2_panel.py:485
 #, python-brace-format
 msgid "Audio open error: {exc}"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:710 src/ui/arica2_panel.py:427
+#: src/ui/ax100_digi_tab.py:710 src/ui/arica2_panel.py:434
 msgid "Input: SDR not connected"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:714 src/ui/arica2_panel.py:433
+#: src/ui/ax100_digi_tab.py:714 src/ui/arica2_panel.py:440
 msgid "Input: cannot determine SDR sample rate"
 msgstr ""
 
@@ -1854,12 +1855,12 @@ msgstr ""
 msgid "Input: SDR connected (receive only)"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:748 src/ui/arica2_panel.py:478
+#: src/ui/ax100_digi_tab.py:748 src/ui/arica2_panel.py:519
 msgid "Input: SDR disconnected"
 msgstr ""
 
 #: src/ui/ax100_digi_tab.py:771 src/ui/ax100_digi_tab.py:865
-#: src/ui/arica2_panel.py:590
+#: src/ui/arica2_panel.py:631
 msgid "My Call not set — configure it in File > Set QTH"
 msgstr ""
 
@@ -1871,11 +1872,11 @@ msgstr ""
 msgid "Switch Input/Output to Rig Soundcard to send"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:788 src/ui/arica2_panel.py:614
+#: src/ui/ax100_digi_tab.py:788 src/ui/arica2_panel.py:655
 msgid "TX rig not connected"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:820 src/ui/arica2_panel.py:653
+#: src/ui/ax100_digi_tab.py:820 src/ui/arica2_panel.py:702
 msgid "TX done"
 msgstr ""
 
@@ -2947,7 +2948,7 @@ msgstr ""
 msgid "Received Packets"
 msgstr ""
 
-#: src/ui/aprs_tab.py:318 src/ui/arica2_panel.py:303
+#: src/ui/aprs_tab.py:318 src/ui/arica2_panel.py:310
 msgid "Message:"
 msgstr ""
 
@@ -4760,11 +4761,11 @@ msgid ""
 "{names}"
 msgstr ""
 
-#: src/ui/arica2_panel.py:241
+#: src/ui/arica2_panel.py:248
 msgid "ARICA-2 (JS1YSD) message box ℹ"
 msgstr ""
 
-#: src/ui/arica2_panel.py:244
+#: src/ui/arica2_panel.py:251
 msgid ""
 "436.830 MHz, 4800 baud G3RUH GMSK (uplink and downlink). 20 slots, 8 "
 "characters each, kept for 48 hours. Uplink works only for about 15 seconds "
@@ -4772,58 +4773,58 @@ msgid ""
 "official Windows tool and is not officially documented."
 msgstr ""
 
-#: src/ui/arica2_panel.py:253
+#: src/ui/arica2_panel.py:260
 msgid "Receive:"
 msgstr ""
 
-#: src/ui/arica2_panel.py:254
+#: src/ui/arica2_panel.py:261
 msgid "SDR (transmit via rig)"
 msgstr ""
 
-#: src/ui/arica2_panel.py:268
+#: src/ui/arica2_panel.py:275
 msgid "From"
 msgstr ""
 
-#: src/ui/arica2_panel.py:268
+#: src/ui/arica2_panel.py:275
 msgid "To"
 msgstr ""
 
-#: src/ui/arica2_panel.py:278
+#: src/ui/arica2_panel.py:285
 msgid "Uplink window"
 msgstr ""
 
-#: src/ui/arica2_panel.py:280
+#: src/ui/arica2_panel.py:287
 msgid "Window: no beacon seen yet"
 msgstr ""
 
-#: src/ui/arica2_panel.py:282
+#: src/ui/arica2_panel.py:289
 msgid "Send mode:"
 msgstr ""
 
-#: src/ui/arica2_panel.py:284
+#: src/ui/arica2_panel.py:291
 msgid "Manual (send now)"
 msgstr ""
 
-#: src/ui/arica2_panel.py:285
+#: src/ui/arica2_panel.py:292
 msgid "Auto (send at next window)"
 msgstr ""
 
-#: src/ui/arica2_panel.py:289
+#: src/ui/arica2_panel.py:296
 msgid ""
 "Manual sends the moment you press a button. Auto holds the command and sends "
 "it as soon as the beacon ends (needs the SDR input, which watches the "
 "beacon)."
 msgstr ""
 
-#: src/ui/arica2_panel.py:299
+#: src/ui/arica2_panel.py:306
 msgid "Message box"
 msgstr ""
 
-#: src/ui/arica2_panel.py:307
+#: src/ui/arica2_panel.py:314
 msgid "max 8 chars"
 msgstr ""
 
-#: src/ui/arica2_panel.py:319
+#: src/ui/arica2_panel.py:326
 msgid ""
 "TX audio level in dB below full scale (Direwolf has no level of its own).\n"
 "Too high a level over-deviates the FM transmitter; rigs with a sensitive "
@@ -4831,119 +4832,120 @@ msgid ""
 "data input gain and keep the Mac output volume fixed."
 msgstr ""
 
-#: src/ui/arica2_panel.py:333
+#: src/ui/arica2_panel.py:340
 msgid "Upload"
 msgstr ""
 
-#: src/ui/arica2_panel.py:334
+#: src/ui/arica2_panel.py:341
 msgid "Store the message in the next free slot"
 msgstr ""
 
-#: src/ui/arica2_panel.py:335
+#: src/ui/arica2_panel.py:342
 msgid "Confirm"
 msgstr ""
 
-#: src/ui/arica2_panel.py:336
+#: src/ui/arica2_panel.py:343
 msgid "List the occupied slots"
 msgstr ""
 
-#: src/ui/arica2_panel.py:337
+#: src/ui/arica2_panel.py:344
 msgid "Parrot"
 msgstr ""
 
-#: src/ui/arica2_panel.py:338
+#: src/ui/arica2_panel.py:345
 msgid "The satellite echoes the message straight back"
 msgstr ""
 
-#: src/ui/arica2_panel.py:339 src/ui/settings_dialog.py:294
+#: src/ui/arica2_panel.py:346 src/ui/settings_dialog.py:294
 msgid "Download"
 msgstr ""
 
-#: src/ui/arica2_panel.py:341
+#: src/ui/arica2_panel.py:348
 msgid "Read back the message with this ID (1-20). Only Download uses it"
 msgstr ""
 
-#: src/ui/arica2_panel.py:345
+#: src/ui/arica2_panel.py:352
 msgid "Message ID "
 msgstr ""
 
-#: src/ui/arica2_panel.py:346
+#: src/ui/arica2_panel.py:353
 msgid "Cancel armed"
 msgstr ""
 
-#: src/ui/arica2_panel.py:375
+#: src/ui/arica2_panel.py:382
 #, python-brace-format
 msgid "From: {call}"
 msgstr ""
 
-#: src/ui/arica2_panel.py:375
+#: src/ui/arica2_panel.py:382
 msgid "From: (set in File > Set QTH)"
 msgstr ""
 
-#: src/ui/arica2_panel.py:437 src/ui/arica2_panel.py:452
+#: src/ui/arica2_panel.py:444 src/ui/arica2_panel.py:459
 #, python-brace-format
 msgid "Direwolf error: {err}"
 msgstr ""
 
-#: src/ui/arica2_panel.py:445
+#: src/ui/arica2_panel.py:452
 msgid ""
 "Input: SDR connected (4800 baud); the rig transmits through the Sound Card"
 msgstr ""
 
-#: src/ui/arica2_panel.py:457
+#: src/ui/arica2_panel.py:466
 msgid ""
-"Input: Rig Soundcard + Direwolf (4800 baud). No beacon detection: manual only"
+"Input: Rig Soundcard + Direwolf + baseband decoder (4800 baud). No beacon "
+"detection: manual only"
 msgstr ""
 
-#: src/ui/arica2_panel.py:522
+#: src/ui/arica2_panel.py:563
 #, python-brace-format
 msgid "Window OPEN: {s:.0f} s left"
 msgstr ""
 
-#: src/ui/arica2_panel.py:523 src/ui/arica2_panel.py:532
+#: src/ui/arica2_panel.py:564 src/ui/arica2_panel.py:573
 msgid " (armed command waiting)"
 msgstr ""
 
-#: src/ui/arica2_panel.py:527
+#: src/ui/arica2_panel.py:568
 msgid "Beacon on air: wait for it to stop"
 msgstr ""
 
-#: src/ui/arica2_panel.py:530
+#: src/ui/arica2_panel.py:571
 msgid "Window closed: waiting for the next beacon"
 msgstr ""
 
-#: src/ui/arica2_panel.py:536
+#: src/ui/arica2_panel.py:577
 msgid "Window: no beacon detection (manual only)"
 msgstr ""
 
-#: src/ui/arica2_panel.py:566
+#: src/ui/arica2_panel.py:607
 msgid "Message is required"
 msgstr ""
 
-#: src/ui/arica2_panel.py:582
+#: src/ui/arica2_panel.py:623
 #, python-brace-format
 msgid "Armed: {cmd} will be sent when the beacon ends"
 msgstr ""
 
-#: src/ui/arica2_panel.py:592
+#: src/ui/arica2_panel.py:633
 #, python-brace-format
 msgid "Callsign must be at most {n} characters"
 msgstr ""
 
-#: src/ui/arica2_panel.py:594
+#: src/ui/arica2_panel.py:635
 #, python-brace-format
 msgid "Message must be ASCII, at most {n} characters"
 msgstr ""
 
-#: src/ui/arica2_panel.py:600
+#: src/ui/arica2_panel.py:641
 msgid "Armed command cancelled"
 msgstr ""
 
-#: src/ui/arica2_panel.py:610
+#: src/ui/arica2_panel.py:651
 msgid "A transmission is already in progress"
 msgstr ""
 
-#: src/ui/arica2_panel.py:619
+#: src/ui/arica2_panel.py:660
 msgid "Cannot transmit: set the Sound Card output in Rig Settings"
 msgstr ""
 

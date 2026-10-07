@@ -48,6 +48,7 @@ from PySide6.QtWidgets import (
 )
 
 from comms.aprs.engine import get_aprs_engine
+from comms.aprs.g3ruh_baseband_rx import G3ruhBasebandRxThread
 from comms.aprs.g3ruh_tx import build_g3ruh_audio
 from comms.arica2.message_box import (
     CALLSIGN_LEN,
@@ -70,6 +71,9 @@ from ui.tx_level import (
 )
 
 _OWNER = "ARICA-2 Message Box"
+_OWNER_BASEBAND = "ARICA-2 baseband decoder"
+# The same frame can come from Direwolf and from the baseband decoder; show it once.
+_DEDUPE_S = 10.0
 _SETTINGS_KEY = "arica2_settings"
 _MODEM = "4800"
 _MAX_LOG_ROWS = 500
@@ -155,6 +159,9 @@ class Arica2Panel(QWidget):
         self._sdr_pipeline: Any = None
         self._detector: BeaconWindowDetector | None = None
         self._engine_active = False
+        self._baseband: G3ruhBasebandRxThread | None = None
+        self._baseband_device: int | None = None
+        self._recent_frames: dict[bytes, float] = {}
         self._tx_in_progress = False
         self._tx_thread: threading.Thread | None = None
         self._tx_worker: _Arica2TxWorker | None = None
@@ -453,11 +460,48 @@ class Arica2Panel(QWidget):
             return
         self._engine.restart_if_modem_changed(_MODEM)
         self._engine_active = True
+        self._start_baseband_decoder()
         self._status_label.setText(
-            _("Input: Rig Soundcard + Direwolf (4800 baud). No beacon detection: manual only")
+            _(
+                "Input: Rig Soundcard + Direwolf + baseband decoder (4800 baud). "
+                "No beacon detection: manual only"
+            )
         )
 
+    def _start_baseband_decoder(self) -> None:
+        """Decode the same sound card audio a second way (see g3ruh_baseband_rx)."""
+        device = self._input_device()
+        if device is None:
+            return
+        # Weakly confirmed frames must also read as an ARICA-2 reply (AX.25 UI frame).
+        thread = G3ruhBasebandRxThread(
+            baud=_BAUD, validator=lambda frame: parse_downlink(frame) is not None
+        )
+        thread.frame_received.connect(self._on_raw_frame)
+        thread.start()
+        try:
+            get_audio_device_manager().acquire_input(
+                _OWNER_BASEBAND, device, _AUDIO_RATE, thread.push_samples
+            )
+        except Exception as exc:
+            thread.stop()
+            self._status_label.setText(_("Audio open error: {exc}").format(exc=exc))
+            return
+        self._baseband = thread
+        self._baseband_device = device
+
+    def _stop_baseband_decoder(self) -> None:
+        thread, device = self._baseband, self._baseband_device
+        self._baseband = None
+        self._baseband_device = None
+        if thread is None:
+            return
+        with contextlib.suppress(Exception):
+            get_audio_device_manager().release_input(_OWNER_BASEBAND, device)
+        thread.stop()
+
     def _stop_input(self) -> None:
+        self._stop_baseband_decoder()
         if self._sdr_pipeline is not None:
             with contextlib.suppress(Exception):
                 self._sdr_pipeline.unsubscribe(self._on_iq_chunk)
@@ -634,18 +678,26 @@ class Arica2Panel(QWidget):
         self._tx_status_label.setText(_("TX: ") + text)
         self._append_row(my_call, "JS1YSD", "→ " + text, payload, persist=False)
 
-    def _output_device(self) -> int | None:
-        """The Sound Card output device index from Rig Settings, or None."""
+    def _sound_card_device(self, key: str) -> int | None:
+        """A Sound Card device index (``input_``/``output_device_index``) from Rig Settings."""
         row = self._conn.execute(
             "SELECT value FROM app_settings WHERE key = 'soundcard_settings'"
         ).fetchone()
         if not row:
             return None
         try:
-            index = json.loads(row[0]).get("output_device_index")
+            index = json.loads(row[0]).get(key)
         except (ValueError, AttributeError):
             return None
         return int(index) if index is not None else None
+
+    def _output_device(self) -> int | None:
+        """The Sound Card output device index from Rig Settings, or None."""
+        return self._sound_card_device("output_device_index")
+
+    def _input_device(self) -> int | None:
+        """The Sound Card input device index from Rig Settings, or None."""
+        return self._sound_card_device("input_device_index")
 
     @Slot()
     def _on_tx_finished(self) -> None:
@@ -665,6 +717,11 @@ class Arica2Panel(QWidget):
     def _on_raw_frame(self, raw: bytes) -> None:
         if not self._engine_active:
             return
+        now = time.monotonic()
+        self._recent_frames = {f: t for f, t in self._recent_frames.items() if now - t < _DEDUPE_S}
+        if raw in self._recent_frames:
+            return
+        self._recent_frames[raw] = now
         parsed = parse_downlink(raw)
         if parsed is None:
             self._append_row("?", "", raw.hex(), raw)

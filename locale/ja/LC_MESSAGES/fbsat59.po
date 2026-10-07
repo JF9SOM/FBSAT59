@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-07 20:48+0900\n"
+"POT-Creation-Date: 2026-10-07 21:11+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -17,18 +17,18 @@ msgstr ""
 "Plural-Forms: nplurals=1; plural=0;\n"
 
 #: src/ui/ft4_tab.py:276 src/ui/ax100_digi_tab.py:118 src/ui/q65_tab.py:910
-#: src/ui/arica2_panel.py:114
+#: src/ui/arica2_panel.py:118
 msgid "another tab"
 msgstr "別のタブ"
 
 #: src/ui/ft4_tab.py:277 src/ui/ax100_digi_tab.py:119 src/ui/q65_tab.py:912
-#: src/ui/arica2_panel.py:115
+#: src/ui/arica2_panel.py:119
 #, python-brace-format
 msgid "Sound card output is in use by {other}"
 msgstr "サウンドカード出力は{other}が使用中です"
 
 #: src/ui/ft4_tab.py:311 src/ui/ax100_digi_tab.py:128 src/ui/q65_tab.py:927
-#: src/ui/arica2_panel.py:121
+#: src/ui/arica2_panel.py:125
 msgid "PTT command failed — check Rig 1 connection"
 msgstr "PTTコマンドが失敗しました — Rig 1の接続を確認してください"
 
@@ -76,7 +76,7 @@ msgid "RX:"
 msgstr "RX:"
 
 #: src/ui/ft4_tab.py:720 src/ui/ax100_digi_tab.py:440 src/ui/q65_tab.py:224
-#: src/ui/arica2_panel.py:255
+#: src/ui/arica2_panel.py:262
 msgid "Rig Soundcard"
 msgstr "無線機サウンドカード"
 
@@ -268,7 +268,7 @@ msgstr ""
 "（送信直後、または受信周期の終盤に）書き込み、受信音声をその周波数と\n"
 "理想のドップラー補正周波数との差で補正してからデコードします。"
 
-#: src/ui/ft4_tab.py:920 src/ui/q65_tab.py:326 src/ui/arica2_panel.py:312
+#: src/ui/ft4_tab.py:920 src/ui/q65_tab.py:326 src/ui/arica2_panel.py:319
 msgid "TX Level:"
 msgstr "TXレベル:"
 
@@ -350,7 +350,7 @@ msgstr "DT"
 
 #: src/ui/ft4_tab.py:995 src/ui/ax100_digi_tab.py:496
 #: src/ui/ax100_digi_tab.py:848 src/ui/q65_tab.py:368
-#: src/ui/arica2_panel.py:268
+#: src/ui/arica2_panel.py:275
 msgid "Message"
 msgstr "メッセージ"
 
@@ -415,7 +415,7 @@ msgid "Invalid FT4 message: "
 msgstr "無効なFT4メッセージ: "
 
 #: src/ui/ft4_tab.py:1581 src/ui/ax100_digi_tab.py:814
-#: src/ui/arica2_panel.py:634
+#: src/ui/arica2_panel.py:675
 msgid "TX: "
 msgstr "TX: "
 
@@ -439,7 +439,7 @@ msgid "Tune stopped"
 msgstr "チューンを停止しました"
 
 #: src/ui/ft4_tab.py:1658 src/ui/ft4_tab.py:1686 src/ui/ax100_digi_tab.py:826
-#: src/ui/arica2_panel.py:658
+#: src/ui/arica2_panel.py:707
 msgid "TX error: "
 msgstr "TXエラー: "
 
@@ -1880,7 +1880,7 @@ msgstr "入出力:"
 msgid "SDR (receive only)"
 msgstr "SDR（受信のみ）"
 
-#: src/ui/ax100_digi_tab.py:452 src/ui/arica2_panel.py:262
+#: src/ui/ax100_digi_tab.py:452 src/ui/arica2_panel.py:269
 msgid "Input: not connected"
 msgstr "入力: 未接続"
 
@@ -1983,12 +1983,12 @@ msgstr ""
 "ax100digi/tx.py を参照してください。"
 
 #: src/ui/ax100_digi_tab.py:591 src/ui/telemetry_tab.py:527
-#: src/ui/pass_chart.py:440 src/ui/pass_chart.py:799 src/ui/arica2_panel.py:379
+#: src/ui/pass_chart.py:440 src/ui/pass_chart.py:799 src/ui/arica2_panel.py:386
 msgid "Time (UTC)"
 msgstr "時刻 (UTC)"
 
 #: src/ui/ax100_digi_tab.py:591 src/ui/pass_chart.py:440
-#: src/ui/pass_chart.py:799 src/ui/arica2_panel.py:379
+#: src/ui/pass_chart.py:799 src/ui/arica2_panel.py:386
 msgid "Time (Local)"
 msgstr "時刻 (Local)"
 
@@ -1997,15 +1997,16 @@ msgid "Input: Rig Soundcard connected"
 msgstr "入力: 無線機サウンドカード接続中"
 
 #: src/ui/ax100_digi_tab.py:672 src/ui/radio_control_widget.py:1453
+#: src/ui/arica2_panel.py:485
 #, python-brace-format
 msgid "Audio open error: {exc}"
 msgstr "オーディオを開けません: {exc}"
 
-#: src/ui/ax100_digi_tab.py:710 src/ui/arica2_panel.py:427
+#: src/ui/ax100_digi_tab.py:710 src/ui/arica2_panel.py:434
 msgid "Input: SDR not connected"
 msgstr "入力: SDR未接続"
 
-#: src/ui/ax100_digi_tab.py:714 src/ui/arica2_panel.py:433
+#: src/ui/ax100_digi_tab.py:714 src/ui/arica2_panel.py:440
 msgid "Input: cannot determine SDR sample rate"
 msgstr "入力: SDRのサンプルレートを判定できません"
 
@@ -2013,12 +2014,12 @@ msgstr "入力: SDRのサンプルレートを判定できません"
 msgid "Input: SDR connected (receive only)"
 msgstr "入力: SDR接続中（受信のみ）"
 
-#: src/ui/ax100_digi_tab.py:748 src/ui/arica2_panel.py:478
+#: src/ui/ax100_digi_tab.py:748 src/ui/arica2_panel.py:519
 msgid "Input: SDR disconnected"
 msgstr "入力: SDR切断"
 
 #: src/ui/ax100_digi_tab.py:771 src/ui/ax100_digi_tab.py:865
-#: src/ui/arica2_panel.py:590
+#: src/ui/arica2_panel.py:631
 msgid "My Call not set — configure it in File > Set QTH"
 msgstr "コールサインが未設定です — ファイル > Set QTH で設定してください"
 
@@ -2030,11 +2031,11 @@ msgstr "宛先・本文は必須です"
 msgid "Switch Input/Output to Rig Soundcard to send"
 msgstr "送信するには入出力を無線機サウンドカードに切り替えてください"
 
-#: src/ui/ax100_digi_tab.py:788 src/ui/arica2_panel.py:614
+#: src/ui/ax100_digi_tab.py:788 src/ui/arica2_panel.py:655
 msgid "TX rig not connected"
 msgstr "送信側リグ未接続"
 
-#: src/ui/ax100_digi_tab.py:820 src/ui/arica2_panel.py:653
+#: src/ui/ax100_digi_tab.py:820 src/ui/arica2_panel.py:702
 msgid "TX done"
 msgstr "送信完了"
 
@@ -3181,7 +3182,7 @@ msgstr "入力: —"
 msgid "Received Packets"
 msgstr "受信パケット"
 
-#: src/ui/aprs_tab.py:318 src/ui/arica2_panel.py:303
+#: src/ui/aprs_tab.py:318 src/ui/arica2_panel.py:310
 msgid "Message:"
 msgstr "メッセージ:"
 
@@ -5242,11 +5243,11 @@ msgid ""
 msgstr ""
 "次の衛星名は LoTW の一覧にないため、LoTW では受け付けられません: {names}"
 
-#: src/ui/arica2_panel.py:241
+#: src/ui/arica2_panel.py:248
 msgid "ARICA-2 (JS1YSD) message box ℹ"
 msgstr "ARICA-2（JS1YSD）メッセージボックス ℹ"
 
-#: src/ui/arica2_panel.py:244
+#: src/ui/arica2_panel.py:251
 msgid ""
 "436.830 MHz, 4800 baud G3RUH GMSK (uplink and downlink). 20 slots, 8 "
 "characters each, kept for 48 hours. Uplink works only for about 15 seconds "
@@ -5258,43 +5259,43 @@ msgstr ""
 "け有効です。フレーム形式は公式Windowsツールの逆解析によるもので、公式には公開"
 "されていません。"
 
-#: src/ui/arica2_panel.py:253
+#: src/ui/arica2_panel.py:260
 msgid "Receive:"
 msgstr "受信:"
 
-#: src/ui/arica2_panel.py:254
+#: src/ui/arica2_panel.py:261
 msgid "SDR (transmit via rig)"
 msgstr "SDR（送信は無線機）"
 
-#: src/ui/arica2_panel.py:268
+#: src/ui/arica2_panel.py:275
 msgid "From"
 msgstr "送信元"
 
-#: src/ui/arica2_panel.py:268
+#: src/ui/arica2_panel.py:275
 msgid "To"
 msgstr "宛先"
 
-#: src/ui/arica2_panel.py:278
+#: src/ui/arica2_panel.py:285
 msgid "Uplink window"
 msgstr "アップリンクウィンドウ"
 
-#: src/ui/arica2_panel.py:280
+#: src/ui/arica2_panel.py:287
 msgid "Window: no beacon seen yet"
 msgstr "ウィンドウ: ビーコン未検出"
 
-#: src/ui/arica2_panel.py:282
+#: src/ui/arica2_panel.py:289
 msgid "Send mode:"
 msgstr "送信モード:"
 
-#: src/ui/arica2_panel.py:284
+#: src/ui/arica2_panel.py:291
 msgid "Manual (send now)"
 msgstr "手動（すぐ送信）"
 
-#: src/ui/arica2_panel.py:285
+#: src/ui/arica2_panel.py:292
 msgid "Auto (send at next window)"
 msgstr "自動（次のウィンドウで送信）"
 
-#: src/ui/arica2_panel.py:289
+#: src/ui/arica2_panel.py:296
 msgid ""
 "Manual sends the moment you press a button. Auto holds the command and sends "
 "it as soon as the beacon ends (needs the SDR input, which watches the "
@@ -5303,15 +5304,15 @@ msgstr ""
 "手動はボタンを押した瞬間に送信します。自動はコマンドを保留し、ビーコンが終"
 "わった直後に送信します（ビーコンを監視するSDR入力が必要）。"
 
-#: src/ui/arica2_panel.py:299
+#: src/ui/arica2_panel.py:306
 msgid "Message box"
 msgstr "メッセージボックス"
 
-#: src/ui/arica2_panel.py:307
+#: src/ui/arica2_panel.py:314
 msgid "max 8 chars"
 msgstr "最大8文字"
 
-#: src/ui/arica2_panel.py:319
+#: src/ui/arica2_panel.py:326
 msgid ""
 "TX audio level in dB below full scale (Direwolf has no level of its own).\n"
 "Too high a level over-deviates the FM transmitter; rigs with a sensitive "
@@ -5324,121 +5325,121 @@ msgstr ""
 "絞る必要があることもあります。無線機のデータ入力ゲインと併用し、Macの出力音量"
 "は固定してください。"
 
-#: src/ui/arica2_panel.py:333
+#: src/ui/arica2_panel.py:340
 msgid "Upload"
 msgstr "アップロード"
 
-#: src/ui/arica2_panel.py:334
+#: src/ui/arica2_panel.py:341
 msgid "Store the message in the next free slot"
 msgstr "空いている次のスロットにメッセージを保存します"
 
-#: src/ui/arica2_panel.py:335
+#: src/ui/arica2_panel.py:342
 msgid "Confirm"
 msgstr "確認"
 
-#: src/ui/arica2_panel.py:336
+#: src/ui/arica2_panel.py:343
 msgid "List the occupied slots"
 msgstr "使用中のスロットを一覧します"
 
-#: src/ui/arica2_panel.py:337
+#: src/ui/arica2_panel.py:344
 msgid "Parrot"
 msgstr "オウム返し"
 
-#: src/ui/arica2_panel.py:338
+#: src/ui/arica2_panel.py:345
 msgid "The satellite echoes the message straight back"
 msgstr "衛星がメッセージをそのまま返送します"
 
-#: src/ui/arica2_panel.py:339 src/ui/settings_dialog.py:294
+#: src/ui/arica2_panel.py:346 src/ui/settings_dialog.py:294
 msgid "Download"
 msgstr "ダウンロード"
 
-#: src/ui/arica2_panel.py:341
+#: src/ui/arica2_panel.py:348
 msgid "Read back the message with this ID (1-20). Only Download uses it"
 msgstr "このID（1〜20）のメッセージを読み出します。使うのはDownloadだけです"
 
-#: src/ui/arica2_panel.py:345
+#: src/ui/arica2_panel.py:352
 msgid "Message ID "
 msgstr "メッセージID "
 
-#: src/ui/arica2_panel.py:346
+#: src/ui/arica2_panel.py:353
 msgid "Cancel armed"
 msgstr "待機中を取消"
 
-#: src/ui/arica2_panel.py:375
+#: src/ui/arica2_panel.py:382
 #, python-brace-format
 msgid "From: {call}"
 msgstr "送信元: {call}"
 
-#: src/ui/arica2_panel.py:375
+#: src/ui/arica2_panel.py:382
 msgid "From: (set in File > Set QTH)"
 msgstr "送信元: （File > Set QTH で設定）"
 
-#: src/ui/arica2_panel.py:437 src/ui/arica2_panel.py:452
+#: src/ui/arica2_panel.py:444 src/ui/arica2_panel.py:459
 #, python-brace-format
 msgid "Direwolf error: {err}"
 msgstr "Direwolfエラー: {err}"
 
-#: src/ui/arica2_panel.py:445
+#: src/ui/arica2_panel.py:452
 msgid ""
 "Input: SDR connected (4800 baud); the rig transmits through the Sound Card"
 msgstr "入力: SDR接続中（4800 baud）。送信は無線機（サウンドカード）"
 
-#: src/ui/arica2_panel.py:457
+#: src/ui/arica2_panel.py:466
 msgid ""
-"Input: Rig Soundcard + Direwolf (4800 baud). No beacon detection: manual only"
+"Input: Rig Soundcard + Direwolf + baseband decoder (4800 baud). No beacon "
+"detection: manual only"
 msgstr ""
-"入力: 無線機サウンドカード + Direwolf（4800 baud）。ビーコン検出なし: 手動の"
-"み"
+"入力: 無線機サウンドカード + Direwolf + ベースバンド復調（4800 baud）。ビーコン検出なし: 手動のみ"
 
-#: src/ui/arica2_panel.py:522
+#: src/ui/arica2_panel.py:563
 #, python-brace-format
 msgid "Window OPEN: {s:.0f} s left"
 msgstr "ウィンドウ開放中: 残り {s:.0f} 秒"
 
-#: src/ui/arica2_panel.py:523 src/ui/arica2_panel.py:532
+#: src/ui/arica2_panel.py:564 src/ui/arica2_panel.py:573
 msgid " (armed command waiting)"
 msgstr "（コマンド待機中）"
 
-#: src/ui/arica2_panel.py:527
+#: src/ui/arica2_panel.py:568
 msgid "Beacon on air: wait for it to stop"
 msgstr "ビーコン送信中: 終了を待ってください"
 
-#: src/ui/arica2_panel.py:530
+#: src/ui/arica2_panel.py:571
 msgid "Window closed: waiting for the next beacon"
 msgstr "ウィンドウ閉: 次のビーコンを待機中"
 
-#: src/ui/arica2_panel.py:536
+#: src/ui/arica2_panel.py:577
 msgid "Window: no beacon detection (manual only)"
 msgstr "ウィンドウ: ビーコン検出なし（手動のみ）"
 
-#: src/ui/arica2_panel.py:566
+#: src/ui/arica2_panel.py:607
 msgid "Message is required"
 msgstr "メッセージを入力してください"
 
-#: src/ui/arica2_panel.py:582
+#: src/ui/arica2_panel.py:623
 #, python-brace-format
 msgid "Armed: {cmd} will be sent when the beacon ends"
 msgstr "待機中: ビーコン終了時に {cmd} を送信します"
 
-#: src/ui/arica2_panel.py:592
+#: src/ui/arica2_panel.py:633
 #, python-brace-format
 msgid "Callsign must be at most {n} characters"
 msgstr "コールサインは{n}文字以内にしてください"
 
-#: src/ui/arica2_panel.py:594
+#: src/ui/arica2_panel.py:635
 #, python-brace-format
 msgid "Message must be ASCII, at most {n} characters"
 msgstr "メッセージは{n}文字以内のASCIIにしてください"
 
-#: src/ui/arica2_panel.py:600
+#: src/ui/arica2_panel.py:641
 msgid "Armed command cancelled"
 msgstr "待機中のコマンドを取り消しました"
 
-#: src/ui/arica2_panel.py:610
+#: src/ui/arica2_panel.py:651
 msgid "A transmission is already in progress"
 msgstr "送信中です"
 
-#: src/ui/arica2_panel.py:619
+#: src/ui/arica2_panel.py:660
 msgid "Cannot transmit: set the Sound Card output in Rig Settings"
 msgstr "送信できません: Rig Settingsでサウンドカードの出力を設定してください"
 

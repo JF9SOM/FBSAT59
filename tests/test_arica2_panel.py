@@ -72,6 +72,43 @@ class _FakeTxWorker(QObject):
         self.finished.emit()
 
 
+class _FakeBasebandThread(QObject):
+    """Stands in for G3ruhBasebandRxThread: no thread, frames are injected by tests."""
+
+    frame_received: Signal = Signal(bytes)
+    instances: list[_FakeBasebandThread] = []
+
+    def __init__(self, baud: int = 4800, validator: Any = None, parent: Any = None) -> None:
+        super().__init__(parent)
+        self.baud = baud
+        self.validator = validator
+        self.started = False
+        self.stopped = False
+        self.pushed: list[Any] = []
+        _FakeBasebandThread.instances.append(self)
+
+    def start(self) -> None:
+        self.started = True
+
+    def stop(self) -> None:
+        self.stopped = True
+
+    def push_samples(self, audio: Any) -> None:
+        self.pushed.append(audio)
+
+
+class _FakeAudioManager:
+    def __init__(self) -> None:
+        self.inputs: list[tuple[str, int | None, int]] = []
+        self.released: list[tuple[str, int | None]] = []
+
+    def acquire_input(self, owner: str, device: int | None, rate: int, cb: Any) -> None:
+        self.inputs.append((owner, device, rate))
+
+    def release_input(self, owner: str, device: int | None) -> None:
+        self.released.append((owner, device))
+
+
 class _FakeRig:
     is_connected = True
 
@@ -118,6 +155,11 @@ def engine(monkeypatch: pytest.MonkeyPatch) -> _FakeEngine:
     monkeypatch.setattr(panel_mod, "get_aprs_engine", lambda _conn: fake)
     _FakeTxWorker.played = []
     monkeypatch.setattr(panel_mod, "_Arica2TxWorker", _FakeTxWorker)
+    _FakeBasebandThread.instances = []
+    monkeypatch.setattr(panel_mod, "G3ruhBasebandRxThread", _FakeBasebandThread)
+    manager = _FakeAudioManager()
+    monkeypatch.setattr(panel_mod, "get_audio_device_manager", lambda: manager)
+    fake.audio_manager = manager  # type: ignore[attr-defined]
     return fake
 
 
@@ -363,3 +405,64 @@ def test_a_second_command_is_refused_while_one_is_transmitting(
     p._parrot_btn.click()
     assert len(_FakeTxWorker.played) == 1
     assert "already in progress" in p._tx_status_label.text()
+
+
+def test_rig_sound_card_input_also_runs_the_baseband_decoder(
+    qtbot: QtBot, conn: sqlite3.Connection, engine: _FakeEngine
+) -> None:
+    p = _make(qtbot, conn)
+    assert _FakeBasebandThread.instances == []  # SDR input: the coherent detector is used
+    p._rb_soundcard.setChecked(True)
+    (thread,) = _FakeBasebandThread.instances
+    assert thread.started and thread.baud == 4800
+    manager = engine.audio_manager  # type: ignore[attr-defined]
+    assert manager.inputs == [("ARICA-2 baseband decoder", 1, 48_000)]
+
+    p._rb_sdr.setChecked(True)  # leaving the sound card releases the audio and the thread
+    assert thread.stopped
+    assert manager.released == [("ARICA-2 baseband decoder", 1)]
+
+
+def test_a_frame_seen_by_both_decoders_is_shown_once(
+    qtbot: QtBot, conn: sqlite3.Connection, engine: _FakeEngine
+) -> None:
+    p = _make(qtbot, conn)
+    p._rb_soundcard.setChecked(True)
+    (thread,) = _FakeBasebandThread.instances
+
+    def shifted(text: str) -> bytes:
+        return bytes(ord(c) << 1 for c in text.ljust(6))
+
+    frame = shifted("JI1IZR") + b"\x60" + shifted("JS1YSD") + b"\x61\x03\xf0" + b"JI1IZR:N6RFMr73"
+    engine.raw_frame_received.emit(frame)  # Direwolf
+    thread.frame_received.emit(frame)  # baseband decoder, same frame
+    assert p._table.rowCount() == 1
+    assert p._table.item(0, 3).text() == "JI1IZR:N6RFMr73"
+
+    other = frame[:-2] + b"99"  # a different frame is still shown
+    thread.frame_received.emit(other)
+    assert p._table.rowCount() == 2
+
+
+def test_no_sound_card_input_device_means_no_baseband_decoder(
+    qtbot: QtBot, conn: sqlite3.Connection, engine: _FakeEngine
+) -> None:
+    conn.execute(
+        "UPDATE app_settings SET value = ? WHERE key = 'soundcard_settings'",
+        (json.dumps({"output_device_index": 3}),),
+    )
+    p = _make(qtbot, conn)
+    p._rb_soundcard.setChecked(True)
+    assert _FakeBasebandThread.instances == []
+
+
+def test_baseband_decoder_validates_weak_frames_as_arica2_replies(
+    qtbot: QtBot, conn: sqlite3.Connection, engine: _FakeEngine
+) -> None:
+    p = _make(qtbot, conn)
+    p._rb_soundcard.setChecked(True)
+    (thread,) = _FakeBasebandThread.instances
+    assert thread.validator is not None
+    assert not thread.validator(b".l\x8a\x97\x12ob")  # the false frame seen in a real recording
+    reply = bytes(ord(c) << 1 for c in "JI1IZR") + b"\x60" + bytes(ord(c) << 1 for c in "JS1YSD")
+    assert thread.validator(reply + b"\x61\x03\xf0" + b"saved 'AAA' at box: 1")
