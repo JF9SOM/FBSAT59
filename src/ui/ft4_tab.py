@@ -615,6 +615,9 @@ class Ft4Tab(QWidget):
         self._slot_sync_timer = QTimer(self)
         self._slot_sync_timer.setInterval(100)
         self._slot_sync_timer.timeout.connect(self._slot_sync_tick)
+        # Always running: with "RX" restored as ticked from the saved settings, the
+        # tick is what switches slot-synchronous mode on once a rig connects.
+        self._slot_sync_timer.start()
         self._last_tx_msg: str = ""  # text of the burst currently/last sent
 
         self._load_settings()
@@ -2115,11 +2118,8 @@ class Ft4Tab(QWidget):
             self._dl_written_for_slot = -1.0
             self._tail_slot = -1.0
             rig.set_slot_sync(True)
-            self._slot_sync_timer.start()
-        else:
-            self._slot_sync_timer.stop()
-            if rig is not None:
-                rig.set_slot_sync(False)
+        elif rig is not None:
+            rig.set_slot_sync(False)
 
     def _run_cat_job(self, job: Callable[[], None]) -> bool:
         """Run one CAT job on a worker thread; False if another is still running."""
@@ -2150,7 +2150,12 @@ class Ft4Tab(QWidget):
         rig = self._slot_sync_rig()
         if not self._adc_rx or rig is None or not rig.is_connected:
             return
-        if not rig.slot_sync:  # the controller was rebuilt (Rig Settings OK / reconnect)
+        if not rig.slot_sync:
+            # First tick after the checkbox was restored ticked, or the controller
+            # was rebuilt (Rig Settings OK / reconnect): start from a clean slate.
+            self._dial_track = DialTrack()
+            self._dl_written_for_slot = -1.0
+            self._tail_slot = -1.0
             rig.set_slot_sync(True)
         if self._tx_in_progress or rig.cat_blocked:
             return

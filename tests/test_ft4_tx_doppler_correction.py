@@ -183,3 +183,18 @@ def test_adc_tx_holds_the_uplink_only_while_on(qtbot: QtBot) -> None:
     assert tab._ul_hold_rig is None
     tab._release_ul_hold()  # idempotent
     rig.set_hold_ul.assert_called_once_with(False)
+
+
+def test_adc_rx_restored_ticked_starts_once_a_rig_connects(qtbot: QtBot) -> None:
+    """Saved ADC RX = on: the first tick with a connected FT-991 turns slot sync on."""
+    tab = _make_tab(qtbot)
+    rig = MagicMock()
+    rig.supports_slot_sync = True
+    rig.slot_sync = False
+    rig.is_connected = True
+    rig.cat_blocked = True  # stop the tick right after switching the mode on
+    tab._adc_rx = True  # as loaded from ft4_settings, without the checkbox toggled
+    tab._slot_sync_rig = lambda: rig  # type: ignore[method-assign]
+    assert tab._slot_sync_timer.isActive()
+    tab._slot_sync_tick()
+    rig.set_slot_sync.assert_called_once_with(True)
