@@ -63,9 +63,14 @@ _PLOT_HEIGHT = 260
 
 # Margins reserved for axis ticks/labels
 _MARGIN_LEFT = 55
-_MARGIN_BOTTOM = 46
-_MARGIN_TOP = 24  # room for the TX "goal post" above the plot
+_MARGIN_BOTTOM = 10
+_MARGIN_TOP = 44  # frequency ruler (labels + ticks) and the TX "goal post", as in WSJT-X
 _MARGIN_RIGHT = 10
+
+# Each RX period occupies a band of fixed height, newest at the very top, so the
+# scale never changes as history builds up (the image used to be stretched to
+# fit however many periods existed, squeezing each one thinner every period).
+_PERIOD_HEIGHT = _PLOT_HEIGHT // _HISTORY_PERIODS
 
 _CANVAS_WIDTH = _MARGIN_LEFT + _PLOT_WIDTH + _MARGIN_RIGHT
 _CANVAS_HEIGHT = _MARGIN_TOP + _PLOT_HEIGHT + _MARGIN_BOTTOM
@@ -264,71 +269,68 @@ class Ft4WaterfallDialog(QDialog):
         if not self._history:
             return
 
-        # Newest period first (top of the image). Each period's own rows are
-        # reversed so age keeps increasing continuously going down even
-        # across period boundaries — without this, time would visibly
-        # "snap back" to 0 at the start of every new period.
+        # Newest period first, pinned to the top of the plot; older periods are
+        # pushed down by one band each. Each period's own rows are reversed so
+        # age keeps increasing continuously going down across period boundaries.
         ordered = list(reversed(self._history))
-        full = np.concatenate([np.flip(entry.spec, axis=0) for entry in ordered], axis=0)
-        total_frames, n_bins = full.shape
-        duration_total_s = total_frames * _HOP / SAMPLE_RATE
+        flipped = [np.flip(entry.spec, axis=0) for entry in ordered]
+        full = np.concatenate(flipped, axis=0)
 
         # Percentile normalization over the whole visible history (like
         # WSJT-X's auto waterfall level), recomputed fresh each period.
         lo = float(np.percentile(full, 5.0))
         hi = float(np.percentile(full, 99.5))
-        norm = (full - lo) / max(hi - lo, 1e-6)
-        rgb = np.ascontiguousarray(_color_map(norm.astype(np.float32)))
-        qimg = QImage(rgb.data, n_bins, total_frames, n_bins * 3, QImage.Format.Format_RGB888)
-        plot_pix = QPixmap.fromImage(qimg).scaled(
-            _PLOT_WIDTH,
-            _PLOT_HEIGHT,
-            Qt.AspectRatioMode.IgnoreAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
+        plot_pix = QPixmap(_PLOT_WIDTH, _PLOT_HEIGHT)
+        plot_pix.fill(QColor("#101010"))
+        plot_painter = QPainter(plot_pix)
+        for i, spec in enumerate(flipped):
+            norm = (spec - lo) / max(hi - lo, 1e-6)
+            rgb = np.ascontiguousarray(_color_map(norm.astype(np.float32)))
+            n_frames, n_bins = spec.shape
+            qimg = QImage(rgb.data, n_bins, n_frames, n_bins * 3, QImage.Format.Format_RGB888)
+            band = QPixmap.fromImage(qimg).scaled(
+                _PLOT_WIDTH,
+                _PERIOD_HEIGHT,
+                Qt.AspectRatioMode.IgnoreAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            plot_painter.drawPixmap(0, i * _PERIOD_HEIGHT, band)
+        plot_painter.end()
 
         canvas = QPixmap(_CANVAS_WIDTH, _CANVAS_HEIGHT)
         canvas.fill(QColor("#101010"))
         painter = QPainter(canvas)
         painter.drawPixmap(_MARGIN_LEFT, _MARGIN_TOP, plot_pix)
-        self._draw_axes(painter, self._freq_lo, self._freq_hi, duration_total_s)
-        self._draw_history_markers(painter, ordered, self._freq_lo, self._freq_hi, total_frames)
+        self._draw_axes(painter, self._freq_lo, self._freq_hi, len(ordered))
+        self._draw_history_markers(painter, ordered, self._freq_lo, self._freq_hi)
         self._draw_tx_marker(painter, self._freq_lo, self._freq_hi)
         painter.end()
 
         self._image_label.setPixmap(canvas)
 
-    def _draw_axes(
-        self, painter: QPainter, freq_lo: float, freq_hi: float, duration_s: float
-    ) -> None:
+    def _draw_axes(self, painter: QPainter, freq_lo: float, freq_hi: float, n_periods: int) -> None:
         painter.setPen(QPen(QColor("#cccccc"), 1))
         painter.setFont(QFont("Sans", 8))
-        plot_bottom = _MARGIN_TOP + _PLOT_HEIGHT
 
-        # Frequency ticks along the bottom (X axis)
+        # Frequency ruler along the top, like WSJT-X's Wide Graph: numbers, then
+        # tick marks just above the plot (the TX goal post sits below the numbers).
         for hz in _nice_ticks(freq_lo, freq_hi, _FREQ_TICK_STEP_HZ):
             x = _MARGIN_LEFT + int((hz - freq_lo) / (freq_hi - freq_lo) * _PLOT_WIDTH)
-            painter.drawLine(x, plot_bottom, x, plot_bottom + 4)
-            painter.drawText(
-                x - 18, plot_bottom + 6, 36, 14, Qt.AlignmentFlag.AlignHCenter, str(int(hz))
-            )
-        painter.drawText(
-            _MARGIN_LEFT,
-            plot_bottom + 24,
-            _PLOT_WIDTH,
-            14,
-            Qt.AlignmentFlag.AlignHCenter,
-            _("Frequency (Hz)"),
-        )
+            painter.drawLine(x, 17, x, _MARGIN_TOP)
+            painter.drawText(x - 18, 2, 36, 14, Qt.AlignmentFlag.AlignHCenter, str(int(hz)))
 
-        # Time ticks along the left (Y axis) — one per RX period boundary.
-        # "Now" (age 0) is the top edge itself, marked by the plot border,
-        # so the first gridline is at _TIME_TICK_STEP_S, not 0.
-        for sec in _nice_ticks(_TIME_TICK_STEP_S, duration_s, _TIME_TICK_STEP_S):
-            y = _MARGIN_TOP + int(sec / duration_s * _PLOT_HEIGHT)
+        # Time ticks along the left (Y axis) -- one per RX period boundary.
+        # "Now" (age 0) is the top edge itself, marked by the plot border.
+        for k in range(1, n_periods + 1):
+            y = _MARGIN_TOP + k * _PERIOD_HEIGHT
             painter.drawLine(_MARGIN_LEFT - 4, y, _MARGIN_LEFT, y)
             painter.drawText(
-                0, y - 7, _MARGIN_LEFT - 6, 14, Qt.AlignmentFlag.AlignRight, f"{sec:.0f}s"
+                0,
+                y - 7,
+                _MARGIN_LEFT - 6,
+                14,
+                Qt.AlignmentFlag.AlignRight,
+                f"{k * _TIME_TICK_STEP_S:.0f}s",
             )
         painter.save()
         painter.translate(12, _MARGIN_TOP + _PLOT_HEIGHT / 2)
@@ -345,23 +347,19 @@ class Ft4WaterfallDialog(QDialog):
         ordered_entries: list[_PeriodEntry],
         freq_lo: float,
         freq_hi: float,
-        total_frames: int,
     ) -> None:
         """Draw each period's decoded-frequency markers within that period's
         own vertical band only, not across the whole scroll history."""
-        if freq_hi <= freq_lo or total_frames <= 0:
+        if freq_hi <= freq_lo:
             return
         painter.setPen(QPen(QColor(255, 255, 255, 160), 1))
-        row_offset = 0
-        for entry in ordered_entries:
-            n = entry.spec.shape[0]
-            y_top = _MARGIN_TOP + int(row_offset / total_frames * _PLOT_HEIGHT)
-            y_bottom = _MARGIN_TOP + int((row_offset + n) / total_frames * _PLOT_HEIGHT)
+        for i, entry in enumerate(ordered_entries):
+            y_top = _MARGIN_TOP + i * _PERIOD_HEIGHT
+            y_bottom = y_top + _PERIOD_HEIGHT
             for msg in entry.decoded:
                 x = _MARGIN_LEFT + int((msg.freq_hz - freq_lo) / (freq_hi - freq_lo) * _PLOT_WIDTH)
                 painter.drawLine(x, y_top, x, y_bottom)
                 painter.drawText(x + 2, y_top + 10, f"{int(msg.freq_hz)}")
-            row_offset += n
 
     def _draw_tx_marker(self, painter: QPainter, freq_lo: float, freq_hi: float) -> None:
         """Draw the TX frequency as WSJT-X's red "goal post" above the plot.
@@ -382,7 +380,7 @@ class Ft4WaterfallDialog(QDialog):
 
         x1 = _x(self._tx_freq_hz)
         x2 = _x(self._tx_freq_hz + _FT4_BANDWIDTH_HZ)
-        top = 6
+        top = _MARGIN_TOP - 14
         painter.setPen(QPen(QColor(_TX_COLOR), 2))
         painter.drawLine(x1, top, x1, _MARGIN_TOP)
         painter.drawLine(x1, top, x2, top)
