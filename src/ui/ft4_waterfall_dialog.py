@@ -64,7 +64,7 @@ _PLOT_HEIGHT = 260
 # Margins reserved for axis ticks/labels
 _MARGIN_LEFT = 55
 _MARGIN_BOTTOM = 10
-_MARGIN_TOP = 48  # frequency ruler (labels + ticks) and the TX "goal post", as in WSJT-X
+_MARGIN_TOP = 36  # frequency ruler (labels + ticks) and the TX "goal post", as in WSJT-X
 _MARGIN_RIGHT = 10
 
 # Each RX period occupies a band of fixed height, newest at the very top, so the
@@ -317,7 +317,7 @@ class Ft4WaterfallDialog(QDialog):
         painter.setFont(QFont("Sans", 12))
         for hz in _nice_ticks(freq_lo, freq_hi, _FREQ_TICK_STEP_HZ):
             x = _MARGIN_LEFT + int((hz - freq_lo) / (freq_hi - freq_lo) * _PLOT_WIDTH)
-            painter.drawLine(x, 21, x, 34)
+            painter.drawLine(x, _MARGIN_TOP - 13, x, _MARGIN_TOP)
             painter.drawText(x - 26, 1, 52, 19, Qt.AlignmentFlag.AlignHCenter, str(int(hz)))
         painter.setFont(QFont("Sans", 8))
 
