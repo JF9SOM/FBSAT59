@@ -441,7 +441,7 @@ class SatDetailPanel(QWidget):
             shown_now = self._input_source_combo.currentData()
             if (
                 shown_now is not None
-                and shown_now >= 0
+                and int(shown_now) != self.INPUT_SOURCE_OTHERS
                 and mode_detection.split_input_value(int(shown_now))[0] == norad
             ):
                 # Same satellite already shown (possibly its "(U)" band entry):
@@ -3252,7 +3252,11 @@ class MainWindow(QMainWindow):
         if config is None or not config.show_input_source:
             return
         norad = self._detail_panel._last_input_source.get(tab_key)
-        if norad is None or norad < 0 or norad == self._selected_norad:
+        if (
+            norad is None
+            or norad == SatDetailPanel.INPUT_SOURCE_OTHERS
+            or norad == self._selected_norad
+        ):
             return
         if self._detail_panel._input_source_combo.findData(norad) < 0:
             return
@@ -3289,8 +3293,10 @@ class MainWindow(QMainWindow):
         every Communications tab that has show_input_source=True in
         COMMS_TAB_CONFIG (FT4 now; APRS/SSTV in a later phase).
         """
-        if norad < 0:
+        if norad == SatDetailPanel.INPUT_SOURCE_OTHERS:
             # "Others": keep whatever satellite/transponder is selected now.
+            # Only this exact sentinel: the terrestrial pseudo-satellites
+            # (-2, -3) are negative too but are real entries.
             return
         norad, band = mode_detection.split_input_value(norad)
         all_text = "All Satellites"

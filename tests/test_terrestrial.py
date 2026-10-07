@@ -84,3 +84,22 @@ def test_fm_d_maps_to_data_fm_everywhere() -> None:
     assert _FT991_MODE_MAP["FM-D"] == "A"
     assert _SATNOGS_TO_RIGCTLD_MODE["FM-D"] == "PKTFM"
     assert MODE_MAP["FM-D"] == 4096  # RIG_MODE_PKTFM
+
+
+def test_quick_panel_treats_only_the_others_sentinel_as_no_selection() -> None:
+    """-2/-3 are negative but real entries; only -1 ("Others") must be ignored."""
+    from unittest.mock import MagicMock
+
+    from ui.main_window import MainWindow, SatDetailPanel
+
+    for norad in (-2, -3):
+        fake = MagicMock()
+        fake._filter_combo.currentText.return_value = "All Satellites"
+        fake._radio_control._transmitters = []
+        MainWindow._on_comms_satellite_requested(fake, "aprs", norad)
+        fake._select_satellite_by_norad.assert_called_once_with(norad)
+        fake._refresh_radio_control.assert_called_once_with(norad)
+
+    fake = MagicMock()
+    MainWindow._on_comms_satellite_requested(fake, "aprs", SatDetailPanel.INPUT_SOURCE_OTHERS)
+    fake._select_satellite_by_norad.assert_not_called()

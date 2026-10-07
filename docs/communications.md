@@ -956,6 +956,9 @@ APRS を衛星ではなく地上（ハンディ機 ⇔ 自局の FT-991 など�
 - 古い衛星チェック `fetch_legacy_tles()`（旧 `norad_cat_id < 10000`）は負の ID を巻き込むため
   `BETWEEN 1 AND 9999` に変更（これがないと -2 が「TLE なし→非表示」にされる）。他の TLE 自動処理は
   10000〜89999 / 90000 以上の範囲指定なので -2 は対象外。
+- **Quick Panel の負 ID 判定（同日修正）**: Input Source の「Others」は値 -1（`SatDetailPanel.INPUT_SOURCE_OTHERS`）。
+  `_on_comms_satellite_requested` / `_restore_comms_satellite` が「負の値は全部 Others」と判定していたため、-2/-3 を選んでも
+  何も起きず周波数が出なかった。判定を -1 だけに限定した。**新しい負数センチネルを足すときはこの 2 箇所に注意**。
 - **既知の限界**: 衛星リストには TLE なしの行として並ぶ。ローテーターはこの疑似衛星では使わない前提（AZ0/EL0 を返す）。
   GUI 上の表示・DATA-FM の実機動作は未確認。
 
