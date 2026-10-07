@@ -3634,3 +3634,8 @@ FT4 タブの `ADC: ☑TX ☐RX`。RX は既定 OFF、**rigctld 経由（NET モ
 同一バンド判定など既存ロジックは変わらず、書き込み閾値で自然にスキップされる）。送信中も CAT が通る
 Icom/FTX-1F ではリグの UL 追尾と音声補正が同じドリフトを二重に補正していたため。DL は従来どおり追尾
 （FT-991 で試験後に他リグへ拡大予定）。FT-991 は従来の `_ft991_cat_blocked()` も併用。
+
+**FT4 Waterfall のクリックで送信周波数を変更（2026-10-07）**: `Ft4WaterfallDialog` の画像を左クリックすると、
+その位置の音声周波数が `Audio Hz`（TX 周波数）に入る（WSJT-X Wide Graph の Shift+クリック相当。
+QSO 中も即反映）。TX マーカーは Wide Graph と同じ赤の「ゴールポスト」（周波数〜+62.5 Hz）に変更。
+Rx 周波数の概念は FBSAT59 にないため Shift/Ctrl の使い分けはない。

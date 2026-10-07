@@ -27,8 +27,17 @@ from datetime import UTC, datetime
 
 import numpy as np
 from numpy.typing import NDArray
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QHideEvent, QImage, QPainter, QPen, QPixmap
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QHideEvent,
+    QImage,
+    QMouseEvent,
+    QPainter,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtWidgets import QDialog, QLabel, QVBoxLayout, QWidget
 
 from comms.ft4.codec import FT4_PERIOD, SAMPLE_RATE, Ft4Message
@@ -55,7 +64,7 @@ _PLOT_HEIGHT = 260
 # Margins reserved for axis ticks/labels
 _MARGIN_LEFT = 55
 _MARGIN_BOTTOM = 46
-_MARGIN_TOP = 8
+_MARGIN_TOP = 24  # room for the TX "goal post" above the plot
 _MARGIN_RIGHT = 10
 
 _CANVAS_WIDTH = _MARGIN_LEFT + _PLOT_WIDTH + _MARGIN_RIGHT
@@ -65,6 +74,10 @@ _FREQ_TICK_STEP_HZ = 500.0
 # One gridline per RX period boundary (FT4_PERIOD, 2*FT4_PERIOD, ...) rather
 # than every second — this is a multi-period scroll now, not a single period.
 _TIME_TICK_STEP_S = FT4_PERIOD
+
+# Width of an FT4 signal (3 tone spacings), as drawn by WSJT-X's Wide Graph.
+_FT4_BANDWIDTH_HZ = 3 * 12000.0 / 576.0
+_TX_COLOR = "#ff3030"
 
 # Simple black -> blue -> green -> yellow -> red palette, similar in spirit
 # to WSJT-X's own waterfall coloring.
@@ -138,6 +151,25 @@ def _nice_ticks(lo: float, hi: float, step: float) -> list[float]:
     return ticks
 
 
+def freq_from_plot_x(x: float, freq_lo: float, freq_hi: float) -> float:
+    """Audio frequency at pixel column *x* of the plot (0 = left edge of the plot)."""
+    x = min(max(x, 0.0), float(_PLOT_WIDTH))
+    return freq_lo + x / _PLOT_WIDTH * (freq_hi - freq_lo)
+
+
+class _ClickLabel(QLabel):
+    """QLabel that reports where it was left-clicked (like WSJT-X's Wide Graph)."""
+
+    clicked = Signal(int, int)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            pos = event.position().toPoint()
+            self.clicked.emit(pos.x(), pos.y())
+        else:
+            super().mouseReleaseEvent(event)
+
+
 class Ft4WaterfallDialog(QDialog):
     """Non-modal popup showing recent RX periods as a scrolling spectrogram.
 
@@ -146,14 +178,23 @@ class Ft4WaterfallDialog(QDialog):
     avoid wasted computation. History is cleared when the dialog is hidden
     so reopening it later (e.g. for a different pass) starts fresh instead
     of splicing unrelated audio together.
+
+    Clicking the waterfall asks for that audio frequency as the TX frequency
+    (``tx_freq_requested``), like a left click in WSJT-X's Wide Graph with
+    Shift held; the TX marker is the same red "goal post".
     """
+
+    tx_freq_requested = Signal(float)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(_("FT4 Waterfall"))
         self.setMinimumSize(_CANVAS_WIDTH + 20, _CANVAS_HEIGHT + 40)
         layout = QVBoxLayout(self)
-        self._image_label = QLabel(_("Waiting for the next RX period…"))
+        self._image_label = _ClickLabel(_("Waiting for the next RX period…"))
+        self._image_label.setCursor(Qt.CursorShape.CrossCursor)
+        self._image_label.setToolTip(_("Click to set the TX frequency"))
+        self._image_label.clicked.connect(self._on_plot_clicked)
         self._image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._image_label.setStyleSheet("background:#101010; color:#888;")
         self._image_label.setMinimumSize(_CANVAS_WIDTH, _CANVAS_HEIGHT)
@@ -174,6 +215,19 @@ class Ft4WaterfallDialog(QDialog):
         self._history.clear()
         self._image_label.setPixmap(QPixmap())
         self._image_label.setText(_("Waiting for the next RX period…"))
+
+    def _on_plot_clicked(self, x: int, _y: int) -> None:
+        """A click on the image: request the TX frequency under the pointer."""
+        pix = self._image_label.pixmap()
+        if pix.isNull() or self._freq_hi <= self._freq_lo:
+            return
+        # The pixmap is centred in the label.
+        x0 = (self._image_label.width() - pix.width()) // 2
+        px = x - x0 - _MARGIN_LEFT
+        if not (0 <= px <= _PLOT_WIDTH):
+            return
+        freq = freq_from_plot_x(px, self._freq_lo, self._freq_hi)
+        self.tx_freq_requested.emit(float(round(freq)))
 
     def set_tx_freq_hz(self, freq_hz: float | None) -> None:
         """Set (or clear, with None) the TX frequency marker and redraw.
@@ -310,20 +364,31 @@ class Ft4WaterfallDialog(QDialog):
             row_offset += n
 
     def _draw_tx_marker(self, painter: QPainter, freq_lo: float, freq_hi: float) -> None:
-        """Draw a full-height dashed line at our own TX audio frequency.
+        """Draw the TX frequency as WSJT-X's red "goal post" above the plot.
 
-        Unlike _draw_history_markers' white per-period decode markers, this
-        is not a decode result -- it is a fixed reference line for
-        Ft4Tab's own "Audio Hz" setting, so an operator can see whether it
-        lands in a clean part of the passband (GitHub Issue #16).
+        The post spans the width of an FT4 signal starting at our own TX audio
+        tone (Ft4Tab's "Audio Hz" field); thin dashed lines carry its two edges
+        down through the waterfall so an operator can see whether the tone lands
+        in a clean part of the passband (GitHub Issue #16).
         """
         if self._tx_freq_hz is None or freq_hi <= freq_lo:
             return
         if not (freq_lo <= self._tx_freq_hz <= freq_hi):
             return
-        x = _MARGIN_LEFT + int((self._tx_freq_hz - freq_lo) / (freq_hi - freq_lo) * _PLOT_WIDTH)
-        tx_color = QColor("#4fc3f7")
-        painter.setPen(QPen(tx_color, 1, Qt.PenStyle.DashLine))
-        painter.drawLine(x, _MARGIN_TOP, x, _MARGIN_TOP + _PLOT_HEIGHT)
-        painter.setPen(QPen(tx_color))
-        painter.drawText(x + 3, _MARGIN_TOP + 12, _("TX"))
+
+        def _x(f: float) -> int:
+            f = min(max(f, freq_lo), freq_hi)
+            return _MARGIN_LEFT + int((f - freq_lo) / (freq_hi - freq_lo) * _PLOT_WIDTH)
+
+        x1 = _x(self._tx_freq_hz)
+        x2 = _x(self._tx_freq_hz + _FT4_BANDWIDTH_HZ)
+        top = 6
+        painter.setPen(QPen(QColor(_TX_COLOR), 2))
+        painter.drawLine(x1, top, x1, _MARGIN_TOP)
+        painter.drawLine(x1, top, x2, top)
+        painter.drawLine(x2, top, x2, _MARGIN_TOP)
+        painter.setPen(QPen(QColor(_TX_COLOR), 1, Qt.PenStyle.DashLine))
+        painter.drawLine(x1, _MARGIN_TOP, x1, _MARGIN_TOP + _PLOT_HEIGHT)
+        painter.drawLine(x2, _MARGIN_TOP, x2, _MARGIN_TOP + _PLOT_HEIGHT)
+        painter.setPen(QPen(QColor(_TX_COLOR)))
+        painter.drawText(x2 + 4, top + 8, _("TX"))

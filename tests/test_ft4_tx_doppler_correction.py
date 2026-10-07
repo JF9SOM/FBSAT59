@@ -198,3 +198,10 @@ def test_adc_rx_restored_ticked_starts_once_a_rig_connects(qtbot: QtBot) -> None
     assert tab._slot_sync_timer.isActive()
     tab._slot_sync_tick()
     rig.set_slot_sync.assert_called_once_with(True)
+
+
+def test_tab_uses_the_frequency_clicked_on_the_waterfall(qtbot: QtBot) -> None:
+    tab = _make_tab(qtbot)
+    tab._on_waterfall_tx_freq(1812.0)
+    assert tab._audio_freq_edit.text() == "1812"
+    assert tab._audio_freq == 1812.0

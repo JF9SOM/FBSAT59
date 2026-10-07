@@ -1321,6 +1321,7 @@ class Ft4Tab(QWidget):
     def _on_show_waterfall(self) -> None:
         if self._waterfall_dialog is None:
             self._waterfall_dialog = Ft4WaterfallDialog(self)
+            self._waterfall_dialog.tx_freq_requested.connect(self._on_waterfall_tx_freq)
         self._waterfall_dialog.set_tx_freq_hz(self._audio_freq)
         self._waterfall_dialog.show()
         self._waterfall_dialog.raise_()
@@ -2039,6 +2040,11 @@ class Ft4Tab(QWidget):
                 self._waterfall_dialog.set_tx_freq_hz(self._audio_freq)
         self._qso = None  # reset manager so it picks up new callsign
         self._save_settings()
+
+    @Slot(float)
+    def _on_waterfall_tx_freq(self, freq_hz: float) -> None:
+        """A click on the waterfall: use that audio frequency for our next TX."""
+        self._audio_freq_edit.setText(str(int(freq_hz)))  # textChanged saves and redraws
 
     @Slot(int)
     def _on_rx_source_changed(self, _idx: int) -> None:

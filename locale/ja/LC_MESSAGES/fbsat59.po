@@ -7055,3 +7055,6 @@ msgstr ""
 
 msgid "ADC RX needs an FT-991 connected through rigctld (NET mode)"
 msgstr "ADC RXにはrigctld経由(NETモード)で接続したFT-991が必要です"
+
+msgid "Click to set the TX frequency"
+msgstr "クリックで送信周波数を設定"
