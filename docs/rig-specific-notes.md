@@ -1432,3 +1432,18 @@ PTT ON (CAT) → 150ms 待機 → KISS フレーム送信 → 550ms 待機 → 1
   （経緯・診断の詳細は[docs/communications.md](communications.md)参照）。9600bps G3RUH
   （`g3ruh_demod.py`）と同じ設計: SDRの生I/Qからde-emphasis付きNFM音声を復調し、
   Direwolfのstdinへ流し込む。2026-09-13、実受信でデコード成功を確認済み。
+
+## FT-991 NET モード: VFO A/B 入れ替え（SV）の取りこぼしで受信が反転する（2026-10-07 修正）
+
+`send_mode_only()` と `send_ctcss_cat()`（CTCSS OFF）は `SV`（VFO A/B 入れ替え）で UL 側 VFO を
+挟んで設定する（`SV … SV`）。2026-10-07 15:33、閉じ側の `SV` 書き込みが `[Errno 32] Broken pipe`
+で失敗して A/B が入れ替わったまま残り、DL に UL の LSB-D、UL に DL の USB-D が入った。
+結果、受信 FT4 の音声周波数が左右反転して**全くデコードできず**、送信も反転していた
+（RX 録音を周波数反転するとデコードできることで確認。DL を LSB で受けると 1500 Hz 程度の
+オフセットを入れないと聞こえなかったのも同じ原因）。
+
+対策: (1) `SV` を送った回数を数え、途中で失敗して奇数回なら `_ft991_restore_swap()` が
+新しい接続で不足分の `SV` を最大 3 回再送。(2) `send_mode_only()` の最後に
+`_ft991_verify_dl_sideband()` が `m` で受信 VFO のモードを読み、USB/LSB 側が期待と
+逆なら `SV` を 1 回送って再確認（ログは `RigNet: FT-991 receive mode ...`）。
+Direct モードは未対応（同種の手順があれば別途確認）。

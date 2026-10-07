@@ -4302,6 +4302,82 @@ class HamlibNetController(RigController):
         except Exception as exc:
             logger.error("RigNet._apply_ctcss_civ_direct: %s", exc)
 
+    def _ft991_restore_swap(self) -> None:
+        """Send the missing SV that undoes a half-finished VFO A/B swap (FT-991).
+
+        send_mode_only() and send_ctcss_cat() bracket their work in SV ... SV.
+        If the connection drops in between (2026-10-07: "Broken pipe" on the
+        closing SV) the rig is left with VFO A and B swapped -- the downlink
+        then sits in the uplink's LSB-D and every received FT4 tone is
+        mirrored. Retried on fresh connections because the first failure
+        usually means rigctld was busy or restarting.
+        """
+        for attempt in range(1, 4):
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(self._TIMEOUT)
+                sock.connect((self._host, self._port))
+                sock.settimeout(1.0)
+                sock.sendall(b"w SV;\n")
+                with contextlib.suppress(OSError):
+                    sock.recv(256)
+                sock.close()
+                logger.warning("RigNet: FT-991 VFO swap restored (attempt %d)", attempt)
+                return
+            except Exception as exc:
+                logger.warning(
+                    "RigNet: FT-991 VFO swap restore attempt %d failed: %s", attempt, exc
+                )
+                time.sleep(0.5)
+        logger.error("RigNet: FT-991 VFO swap could NOT be restored -- check VFO A/B on the rig")
+
+    def _ft991_read_mode(self) -> str | None:
+        """The mode rigctld reports for the receive VFO, or None when unreadable."""
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(self._TIMEOUT)
+            sock.connect((self._host, self._port))
+            sock.settimeout(2.0)
+            sock.sendall(b"m\n")
+            buf = b""
+            with contextlib.suppress(OSError):
+                while buf.count(b"\n") < 2 and b"RPRT" not in buf:
+                    chunk = sock.recv(256)
+                    if not chunk:
+                        break
+                    buf += chunk
+            sock.close()
+        except Exception as exc:
+            logger.warning("RigNet: FT-991 mode read-back failed: %s", exc)
+            return None
+        first = buf.decode(errors="replace").strip().split("\n")[0].strip()
+        return first or None
+
+    def _ft991_verify_dl_sideband(self, dl_mode: str) -> None:
+        """Check the receive VFO ended up on the intended sideband; fix a swapped pair.
+
+        Only the USB/LSB side is compared (the case that mirrors the received
+        audio). A mismatch is corrected once with an SV and re-read.
+        """
+        expected = _SATNOGS_TO_RIGCTLD_MODE.get(dl_mode)
+        sides = {"USB": "U", "PKTUSB": "U", "LSB": "L", "PKTLSB": "L"}
+        if expected not in sides:
+            return
+        got = self._ft991_read_mode()
+        if got is None or got not in sides:
+            return
+        if sides[got] == sides[expected]:
+            logger.info("RigNet: FT-991 receive mode verified: %s", got)
+            return
+        logger.warning(
+            "RigNet: FT-991 receive mode is %s, expected %s -- VFO A/B look swapped, swapping back",
+            got,
+            expected,
+        )
+        self._ft991_restore_swap()
+        again = self._ft991_read_mode()
+        logger.warning("RigNet: FT-991 receive mode after the fix: %s", again)
+
     def send_ctcss_cat(
         self,
         tone_hz: float,
@@ -4343,6 +4419,7 @@ class HamlibNetController(RigController):
         if off_both_vfos:
             parts = ["SV", *parts, "SV", *parts]
         logger.info("RigNet.send_ctcss_cat: tone_hz=%s cmd=%r", tone_hz, template)
+        swapped = False  # True while an odd number of SV (VFO A/B swap) has been sent
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(self._TIMEOUT)
@@ -4355,11 +4432,15 @@ class HamlibNetController(RigController):
                 cmd = f"w {part};"
                 logger.info("RigNet.send_ctcss_cat: sending %r", cmd)
                 sock.sendall((cmd + "\n").encode())
+                if part == "SV":
+                    swapped = not swapped
                 with contextlib.suppress(OSError):
                     sock.recv(256)
             sock.close()
         except Exception as exc:
             logger.error("RigNet.send_ctcss_cat: %s", exc)
+            if swapped:
+                self._ft991_restore_swap()
 
     def send_mode_only(self, dl_mode: str, ul_mode: str) -> None:
         """Set mode on both VFOs via an independent TCP connection.
@@ -4387,6 +4468,7 @@ class HamlibNetController(RigController):
             # CW-mode transponder, then switching to an APRS/SSTV one).
             dl_code = _FT991_MODE_MAP.get(dl_mode, "4")
             ul_code = _FT991_MODE_MAP.get(ul_mode, "4")
+            swapped = False  # True while an odd number of SV (VFO A/B swap) has been sent
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(self._TIMEOUT)
@@ -4406,13 +4488,19 @@ class HamlibNetController(RigController):
                 if dl_code:
                     _w(f"MD0{dl_code};")
                 if ul_code and self._radio_type != "tx_only":
+                    swapped = True
                     _w("SV;")
                     _w(f"MD0{ul_code};")
                     _w("SV;")
+                    swapped = False
                 sock.close()
                 logger.info("RigNet: FT-991 mode dl=%s ul=%s", dl_mode, ul_mode)
             except Exception as exc:
                 logger.warning("RigNet: FT-991 mode send failed: %s", exc)
+                if swapped:
+                    self._ft991_restore_swap()
+            if self._radio_type != "tx_only":
+                self._ft991_verify_dl_sideband(dl_mode)
             return
         # Default to FM for modes absent from _SATNOGS_TO_RIGCTLD_MODE (e.g.
         # SSTV, SSDV, DOKA, FSK) — see the ft991 branch above for why an

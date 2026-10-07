@@ -11,6 +11,7 @@ import socket
 import threading
 import time
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -2348,6 +2349,79 @@ class TestHamlibNetController:
         sent = b"".join(c.args[0] for c in ctrl._sock.sendall.call_args_list)  # type: ignore[union-attr]
         assert b"F 435600000\n" in sent
         assert b"I 145900000\n" in sent
+
+    # -- FT-991 VFO swap safety (2026-10-07: a lost closing SV mirrored the RX audio) --
+
+    @staticmethod
+    def _socket_factory(
+        scripts: list[list[bytes | Exception]],
+    ) -> tuple[Any, list[bytes]]:
+        """socket.socket replacement: each new socket follows the next script.
+
+        A script lists, per recv() call, the bytes to return (or an exception);
+        sendall() on a script entry that is an Exception at position 'send:N'
+        is not modelled -- use ``fail_send_at`` via the sent-counting wrapper.
+        """
+        sent: list[bytes] = []
+        it = iter(scripts)
+
+        def make(*_a: Any, **_k: Any) -> MagicMock:
+            sock = MagicMock()
+            script = next(it, [b"RPRT 0\n"] * 20)
+            sock.recv.side_effect = script
+            sock.sendall.side_effect = lambda data: sent.append(data)
+            return sock
+
+        return make, sent
+
+    def test_ctcss_off_restores_the_swap_when_the_closing_sv_fails(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="ft991")
+        sent: list[bytes] = []
+        socks: list[MagicMock] = []
+
+        def make(*_a: Any, **_k: Any) -> MagicMock:
+            sock = MagicMock()
+            sock.recv.return_value = b"RPRT 0\n"
+            first = not socks
+
+            def _send(data: bytes) -> None:
+                # the first connection dies when the closing SV is written
+                if first and data == b"w SV;\n" and sent.count(b"w SV;\n") == 1:
+                    raise BrokenPipeError(32, "Broken pipe")
+                sent.append(data)
+
+            sock.sendall.side_effect = _send
+            socks.append(sock)
+            return sock
+
+        with patch("rig.controller.socket.socket", side_effect=make):
+            ctrl.send_ctcss_cat(0.0, "CN00{tone:03d};CT02;", "CT00;")
+        # SV, CT00 on the first connection; the lost SV is re-sent on a new one.
+        assert sent.count(b"w SV;\n") == 2
+        assert len(socks) == 2
+
+    def test_mode_verify_swaps_back_when_rx_sideband_is_wrong(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="ft991")
+        factory, sent = self._socket_factory(
+            [
+                [b"RPRT 0\n"] * 6,  # send_mode_only: MD, SV, MD, SV
+                [b"PKTLSB\n2400\n"],  # read-back: wrong sideband
+                [b"RPRT 0\n"],  # the corrective SV
+                [b"PKTUSB\n2400\n"],  # read-back after the fix
+            ]
+        )
+        with patch("rig.controller.socket.socket", side_effect=factory):
+            ctrl.send_mode_only("USB-D", "LSB-D")
+        assert sent.count(b"m\n") == 2
+        assert sent.count(b"w SV;\n") == 3  # two bracketing the UL mode + the fix
+
+    def test_mode_verify_leaves_a_correct_rig_alone(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="ft991")
+        factory, sent = self._socket_factory([[b"RPRT 0\n"] * 6, [b"PKTUSB\n2400\n"]])
+        with patch("rig.controller.socket.socket", side_effect=factory):
+            ctrl.send_mode_only("USB-D", "LSB-D")
+        assert sent.count(b"m\n") == 1
+        assert sent.count(b"w SV;\n") == 2
 
     # -- uplink hold (FT4 ADC TX) --
 
