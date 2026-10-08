@@ -4118,6 +4118,14 @@ class HamlibNetController(RigController):
         if self._ptt_method in PTT_LINE_METHODS:
             line = self._ptt_line
             ok = self.is_connected and line is not None and line.key(True)
+            if not ok and self.is_connected:
+                # A USB serial bridge that dropped off the bus and came back
+                # leaves the open port dead ([Errno 6] Device not configured)
+                # while the device is fine again: reopen the port once.
+                logger.warning("RigNet: PTT line would not key; reopening %s", self._ptt_port)
+                self._open_ptt_line()
+                line = self._ptt_line
+                ok = line is not None and line.key(True)
         else:
             ok = self.is_connected and "RPRT 0" in self._cmd("T 1")
         if not ok:

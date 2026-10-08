@@ -2097,6 +2097,11 @@ class _SoundCardPanel(QWidget):
         if not self._sd_available:
             return
 
+        # query_devices() only reports the list PortAudio built at start-up, so a
+        # device that was replugged since looks unchanged. Rebuild the list first.
+        from comms.audio_device_manager import get_audio_device_manager
+
+        get_audio_device_manager().reinitialize_portaudio()
         try:
             devices = self._sd.query_devices()
         except Exception as exc:  # noqa: BLE001
@@ -2223,12 +2228,17 @@ class _SoundCardPanel(QWidget):
         try:
             import numpy as np
 
-            from comms.audio_device_manager import pin_output_stream, snapshot_output_streams
+            from comms.audio_device_manager import (
+                get_audio_device_manager,
+                pin_output_stream,
+                snapshot_output_streams,
+            )
 
             sr = 48000
             t = np.linspace(0, 0.5, int(sr * 0.5), endpoint=False)
             tone = (0.3 * np.sin(2 * math.pi * 1000 * t)).astype(np.float32)
             before = snapshot_output_streams() if pin_target else None
+            get_audio_device_manager().ensure_output_ready(out_idx, sr)
             self._sd.play(tone, samplerate=sr, device=out_idx, blocking=False)
             if pin_target and before is not None:
                 pin_output_stream(pin_target, before)

@@ -962,6 +962,33 @@ APRS を衛星ではなく地上（ハンディ機 ⇔ 自局の FT-991 など�
 - **既知の限界**: 衛星リストには TLE なしの行として並ぶ。ローテーターはこの疑似衛星では使わない前提（AZ0/EL0 を返す）。
   GUI 上の表示・DATA-FM の実機動作は未確認。
 
+#### USB 音声デバイス・PTT シリアルの再認識からの自動復帰（2026-10-08）
+
+FT-991A の USB（CP2105 のシリアル 2 本＋USB Audio CODEC）は、数分おきに丸ごと切断・再認識されることがある
+（原因は未特定。メニューや電波の回り込みとは無関係。macOS の `log show` で
+`AppleUSBHostPort::terminateDevice: destroying 0x10c4/ea70` が出る）。そのときアプリは起動時の状態のまま残り、
+送信が静かに失敗していた:
+
+- **PortAudio は起動時に一度だけデバイス一覧を作る**。再認識後も名前・番号は同じに見えるが、内部の識別が無効になり、
+  出力を開くと `Internal PortAudio error [PaErrorCode -9986]`、入力は無音（RX レベル -120 dBFS）になる。新しく起動した
+  プロセスは開ける（実験で確認: 長寿命プロセス FAIL / 新規プロセス OK、`device 0` の名前表示は変わらない）。
+  Rig Settings の「デバイスを更新」も `query_devices()` が同じキャッシュを返すだけで、何も更新していなかった。
+- **PTT シリアル（NET モードの DTR/RTS）** は接続時に開いたままなので、再認識後は `[Errno 6] Device not configured`
+  で PTT が入らない。
+
+対策:
+- `AudioDeviceManager.reinitialize_portaudio()` — 共有入力ストリームを閉じて購読者を保ったまま `sd._terminate()` →
+  `sd._initialize()` でデバイス一覧を作り直し、入力を開き直す。**PortAudio を終了すると、このクラスの管理外の
+  ストリーム（SDR の音声出力など）も閉じる**（SDR 出力は次のブロックで自分で開き直す）。壊れているデバイスにだけ使う。
+- `AudioDeviceManager.ensure_output_ready(device, rate)` — 無音の出力ストリームを開いて閉じ、失敗したら上記を 1 回行って
+  再試行（2 回目も失敗なら例外）。`PttAudioTxWorker`（APRS・ARICA-2）は **PTT を入れる前** にこれを呼ぶ（回復中に無変調
+  キャリアを出さないため）。
+- `HamlibNetController.set_ptt(True)` — RTS/DTR 線を入れられなかったら、ポートを開き直して 1 回だけ再試行。
+- Rig Settings > Sound Card: 「Refresh Devices」は先に PortAudio を作り直す。「Test」は出力を開けなければ同様に回復。
+- 未対応（同じ `sd.play()` を直接呼ぶ）: FT4・Q65・AX100 の送信。必要になれば `ensure_output_ready()` を前置きする。
+- 受信は、送信時の回復か「Refresh Devices」の押下で復帰する（常時監視はしていない）。
+- 送信ごとのログ（`TX[APRS]: start / PTT on / audio playback started / playback finished`）を `fbsat59.log` に出す。
+
 ### Comms Quick Panel 設計（src/comms/mode_detection.py, src/ui/main_window.py — 2026-07-04 実装）
 
 #### 概要

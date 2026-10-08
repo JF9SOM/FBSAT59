@@ -372,6 +372,35 @@ class _SharedInputStream:
                 stream.close()
         return True
 
+    def suspend(self) -> None:
+        """Close the hardware stream but keep the subscribers (see resume()).
+
+        Used while PortAudio is being re-initialised. Like remove_subscriber(),
+        the stream is claimed under the lock and stopped after releasing it,
+        because stop() waits for the audio callback, which needs the lock.
+        """
+        with self._lock:
+            stream, self._stream = self._stream, None
+        if stream is not None:
+            with contextlib.suppress(Exception):
+                stream.stop()
+            with contextlib.suppress(Exception):
+                stream.close()
+
+    def resume(self) -> bool:
+        """Reopen the hardware stream for the subscribers kept by suspend()."""
+        with self._lock:
+            if not self._subscribers or self._stream is not None:
+                return True
+            try:
+                self._open(schedule_settle_reopen=False)
+            except Exception:
+                logger.exception(
+                    "AudioDeviceManager: could not reopen input device %r", self._device
+                )
+                return False
+        return True
+
     def _open(self, schedule_settle_reopen: bool = True) -> None:
         import sounddevice as sd
 
@@ -496,6 +525,7 @@ class AudioDeviceManager(QObject):
         super().__init__()
         self._inputs: dict[int, _SharedInputStream] = {}
         self._inputs_lock = threading.Lock()
+        self._reinit_lock = threading.Lock()
         # Injected-audio (feed) sessions per device: nesting count and the one
         # owner that keeps receiving live audio meanwhile.
         self._feed_counts: dict[int, int] = {}
@@ -548,6 +578,82 @@ class AudioDeviceManager(QObject):
                 return
             if stream.remove_subscriber(owner):
                 del self._inputs[key]
+
+    # ------------------------------------------------------------------ #
+    # PortAudio recovery after a USB audio device was re-enumerated
+    # ------------------------------------------------------------------ #
+
+    def reinitialize_portaudio(self) -> bool:
+        """Rebuild PortAudio's device list and reopen every shared input stream.
+
+        PortAudio enumerates devices once, when it is initialised, and keeps
+        using that list. When a USB audio device drops off the bus and comes
+        back (the FT-991A's USB does this now and then), macOS gives it a new
+        identity while the old list still shows the same name and index, so
+        opening it fails with "Internal PortAudio error [-9986]" and a running
+        input stream goes silent -- until the process restarts. Terminating and
+        initialising PortAudio again picks up the current devices.
+
+        Terminating PortAudio closes every stream in the process, including ones
+        this class does not manage (e.g. the SDR audio output, which reopens
+        itself on its next block). The shared input streams are closed first and
+        reopened afterwards with their subscribers intact. Meant for a device
+        that is already failing, not for routine use.
+
+        Returns True when PortAudio came back up (input streams that could not
+        be reopened are logged).
+        """
+        with self._reinit_lock:
+            with self._inputs_lock:
+                inputs = list(self._inputs.values())
+            for stream in inputs:
+                stream.suspend()
+            try:
+                import sounddevice as sd
+
+                with contextlib.suppress(Exception):
+                    sd.stop()
+                sd._terminate()
+                sd._initialize()
+            except Exception:
+                logger.exception("AudioDeviceManager: PortAudio re-initialisation failed")
+                return False
+            reopened = [stream.resume() for stream in inputs]
+            logger.warning(
+                "AudioDeviceManager: PortAudio re-initialised (device list rebuilt); "
+                "%d/%d input stream(s) reopened",
+                sum(reopened),
+                len(inputs),
+            )
+            return True
+
+    def ensure_output_ready(self, device: int | None, samplerate: int) -> None:
+        """Make sure an output stream can be opened on *device*, recovering once if not.
+
+        Opens and closes a silent stream. When that fails, PortAudio is
+        re-initialised (see reinitialize_portaudio()) and the open is tried
+        again; a second failure raises. Call it before keying the PTT, so a
+        dead output never leaves the rig transmitting an unmodulated carrier
+        while recovery runs.
+        """
+        import sounddevice as sd
+
+        def _probe() -> None:
+            stream = sd.OutputStream(samplerate=samplerate, channels=1, device=device)
+            stream.close()
+
+        try:
+            _probe()
+        except Exception as exc:
+            logger.warning(
+                "AudioDeviceManager: output device %r would not open (%s); "
+                "re-initialising PortAudio",
+                device,
+                exc,
+            )
+            if not self.reinitialize_portaudio():
+                raise
+            _probe()
 
     # ------------------------------------------------------------------ #
     # RX — injected audio (recording playback fed to the decoder tabs)
