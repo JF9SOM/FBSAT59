@@ -926,6 +926,30 @@ msgstr "METEOR / HRPT"
 msgid "Autotrack/Record"
 msgstr "自動追尾/記録"
 
+msgid "Tools"
+msgstr "ツール"
+
+msgid "Name"
+msgstr "名前"
+
+msgid "URL"
+msgstr "URL"
+
+msgid "Move Up"
+msgstr "上へ"
+
+msgid "Move Down"
+msgstr "下へ"
+
+msgid "Reset to Defaults"
+msgstr "初期設定に戻す"
+
+msgid "(No sites registered)"
+msgstr "（登録サイトなし）"
+
+msgid "Web sites shown in the Tools menu. Double-click a cell to edit it."
+msgstr "ツールメニューに表示するWebサイトです。セルをダブルクリックして編集できます。"
+
 # --- Menu: View ---
 #: src/ui/main_window.py:1460
 msgid "View"
@@ -7014,10 +7038,6 @@ msgstr "（{shown}/{total}文字を表示、以下省略）"
 
 #~ msgid "Quit"
 #~ msgstr "終了"
-
-# --- Menu: Tools ---
-#~ msgid "Tools"
-#~ msgstr "ツール"
 
 #~ msgid "About GPredict-Improved"
 #~ msgstr "GPredict-Improved について"

@@ -1462,6 +1462,10 @@ class MainWindow(QMainWindow):
         # menubar action renders correctly everywhere.
         mb.addAction(_("Autotrack/Record"), self._on_open_autotrack_dialog)
 
+        # Tools (user-editable list of web sites; see File > Settings > Tools)
+        self._tools_menu = mb.addMenu(_("Tools"))
+        self._rebuild_tools_menu()
+
         # View
         view_menu = mb.addMenu(_("View"))
         if view_menu:
@@ -6792,6 +6796,21 @@ class MainWindow(QMainWindow):
         # Fallback: open with the system default browser
         QDesktopServices.openUrl(QUrl(url))
 
+    def _rebuild_tools_menu(self) -> None:
+        """Populate the Tools menu from the saved web site list."""
+        from data.tool_links import load_tool_links
+
+        menu = self._tools_menu
+        if menu is None:
+            return
+        menu.clear()
+        links = load_tool_links(self._conn)
+        if not links:
+            menu.addAction(_("(No sites registered)")).setEnabled(False)
+            return
+        for name, url in links:
+            menu.addAction(name, lambda _checked=False, u=url: self._open_url_app_mode(u))
+
     def _on_settings_accepted(self) -> None:
         """After Settings OK, sync the enabled TLE sources and redraw the satellite list."""
         # Rebuild filter combo so any group additions/renames/removals are reflected
@@ -6802,6 +6821,8 @@ class MainWindow(QMainWindow):
 
         # Reload autotrack lists (user may have added/removed lists in Settings)
         self._reload_autotrack_lists()
+
+        self._rebuild_tools_menu()
 
         self._apply_world_map()
 

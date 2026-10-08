@@ -205,3 +205,22 @@ rig_disconnect_requested # POST /api/rig/disconnect でセット → Qt が処�
 - `POST /api/rot/toggle` — ローテーター ON/OFF トグル
 
 ---
+
+---
+
+## Tools メニュー（2026-10-08 追加）
+
+メニューバーの `Autotrack/Record` と `View` の間に「Tools」（日本語: ツール）を置き、衛星通信に
+役立つ Web サイトを登録・起動できる。
+
+- 保存: `app_settings` の `tool_links` キーに JSON（`[{"name","url"}, ...]`）。未保存なら
+  既定の2件（Hams.at `https://hams.at/`、Sked Prediction `https://sat.fg8oj.com/sked.php`）。
+  読み書きは `src/data/tool_links.py`（`load_tool_links` / `save_tool_links` / `normalize_url`）。
+  空欄の行は保存時に除外、スキームの無い URL は `https://` を補完する。
+  ユーザーが全件削除した場合は空リストを保存し、既定値は復活しない（「Reset to Defaults」で戻す）。
+- メニュー: `MainWindow._rebuild_tools_menu()`。クリックで既存の `_open_url_app_mode()`
+  （Chrome 系アプリモード、無ければ既定ブラウザ）で開く。File > General Settings の OK 後
+  （`_on_settings_accepted`）に再構築されるので再起動不要。
+- 設定: General Settings の「Tools」タブ（`SettingsDialog._build_tools_tab`）。名前/URL の
+  2列テーブルをダブルクリックで直接編集。Add / Remove / Move Up / Move Down / Reset to Defaults。
+- テスト: `tests/test_tool_links.py`

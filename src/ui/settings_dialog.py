@@ -30,12 +30,15 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from data import favorites as favorites_db
+from data import tool_links
 from data.tle_manager import TLE_SOURCE_DISPLAY_NAMES, TLE_SOURCES
 from i18n import _
 
@@ -184,6 +187,8 @@ class SettingsDialog(QDialog):
         self._log_broadcast_cb: QCheckBox
         self._log_broadcast_host_edit: QLineEdit
         self._log_broadcast_port_spin: QSpinBox
+        # Tools tab state
+        self._tools_table: QTableWidget
         self._setup_ui()
         self._load_settings()
 
@@ -200,6 +205,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._build_groups_tab(), _("Custom Groups"))
         tabs.addTab(self._build_notifications_tab(), _("Notifications"))
         tabs.addTab(self._build_logging_tab(), _("Logging"))
+        tabs.addTab(self._build_tools_tab(), _("Tools"))
 
         layout.addWidget(tabs)
 
@@ -451,6 +457,90 @@ class SettingsDialog(QDialog):
 
         self._reload_groups_list()
         return tab
+
+    def _build_tools_tab(self) -> QWidget:
+        """Build the Tools tab: editable list of web sites for the Tools menu."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.addWidget(
+            QLabel(_("Web sites shown in the Tools menu. Double-click a cell to edit it."))
+        )
+        table = QTableWidget(0, 2)
+        table.setHorizontalHeaderLabels([_("Name"), _("URL")])
+        table.horizontalHeader().setStretchLastSection(True)
+        table.setColumnWidth(0, 200)
+        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self._tools_table = table
+        layout.addWidget(table)
+
+        btn_row = QHBoxLayout()
+        for label, slot in (
+            (_("Add"), self._on_tool_add),
+            (_("Remove"), self._on_tool_remove),
+            (_("Move Up"), lambda: self._on_tool_move(-1)),
+            (_("Move Down"), lambda: self._on_tool_move(1)),
+            (_("Reset to Defaults"), self._on_tool_reset),
+        ):
+            btn = QPushButton(label)
+            btn.clicked.connect(slot)
+            btn_row.addWidget(btn)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+        self._fill_tools_table(tool_links.load_tool_links(self._conn))
+        return tab
+
+    def _fill_tools_table(self, links: list[tuple[str, str]]) -> None:
+        """Replace the Tools table contents with *links*."""
+        self._tools_table.setRowCount(0)
+        for name, url in links:
+            self._append_tool_row(name, url)
+
+    def _append_tool_row(self, name: str, url: str) -> None:
+        row = self._tools_table.rowCount()
+        self._tools_table.insertRow(row)
+        self._tools_table.setItem(row, 0, QTableWidgetItem(name))
+        self._tools_table.setItem(row, 1, QTableWidgetItem(url))
+
+    def _tools_table_links(self) -> list[tuple[str, str]]:
+        """Read the (name, url) pairs currently shown in the Tools table."""
+        out: list[tuple[str, str]] = []
+        for row in range(self._tools_table.rowCount()):
+            n = self._tools_table.item(row, 0)
+            u = self._tools_table.item(row, 1)
+            out.append((n.text() if n else "", u.text() if u else ""))
+        return out
+
+    def _on_tool_add(self) -> None:
+        self._append_tool_row("", "")
+        row = self._tools_table.rowCount() - 1
+        self._tools_table.setCurrentCell(row, 0)
+        item = self._tools_table.item(row, 0)
+        if item:
+            self._tools_table.editItem(item)
+
+    def _on_tool_remove(self) -> None:
+        row = self._tools_table.currentRow()
+        if row >= 0:
+            self._tools_table.removeRow(row)
+
+    def _on_tool_move(self, delta: int) -> None:
+        links = self._tools_table_links()
+        row = self._tools_table.currentRow()
+        new = row + delta
+        if row < 0 or not 0 <= new < len(links):
+            return
+        links[row], links[new] = links[new], links[row]
+        self._fill_tools_table(links)
+        self._tools_table.setCurrentCell(new, 0)
+
+    def _on_tool_reset(self) -> None:
+        self._fill_tools_table(list(tool_links.DEFAULT_TOOL_LINKS))
+
+    def _save_tools_settings(self) -> None:
+        """Persist the Tools table."""
+        tool_links.save_tool_links(self._conn, self._tools_table_links())
 
     def _reload_groups_list(self) -> None:
         """Reload the groups list widget from the DB."""
@@ -768,6 +858,9 @@ class SettingsDialog(QDialog):
 
         # Logging
         self._save_logging_settings()
+
+        # Tools
+        self._save_tools_settings()
 
     # ------------------------------------------------------------------ #
     # Static helpers
