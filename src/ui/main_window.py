@@ -6796,6 +6796,14 @@ class MainWindow(QMainWindow):
         # Fallback: open with the system default browser
         QDesktopServices.openUrl(QUrl(url))
 
+    def _make_url_opener(self, url: str) -> Callable[[], None]:
+        """Return a no-argument callback that opens *url* in app mode."""
+
+        def _open() -> None:
+            self._open_url_app_mode(url)
+
+        return _open
+
     def _rebuild_tools_menu(self) -> None:
         """Populate the Tools menu from the saved web site list."""
         from data.tool_links import load_tool_links
@@ -6809,7 +6817,7 @@ class MainWindow(QMainWindow):
             menu.addAction(_("(No sites registered)")).setEnabled(False)
             return
         for name, url in links:
-            menu.addAction(name, lambda _checked=False, u=url: self._open_url_app_mode(u))
+            menu.addAction(name, self._make_url_opener(url))
 
     def _on_settings_accepted(self) -> None:
         """After Settings OK, sync the enabled TLE sources and redraw the satellite list."""
