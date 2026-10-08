@@ -135,7 +135,7 @@ rig_dialog.py のカスタムリストでは 1036 = FT-991A として登録。`_
     075 FM OUT LEVEL（RTTY/DATA 端子の FM 受信出力 0〜100、既定 50）、
     076 FM PKT PTT SELECT（DAKY=DATA 端子 pin 3 / RTS / DTR=USB 仮想 COM、既定 DAKY）、
     077 FM PKT PORT SELECT（DATA/USB、既定 DATA。074=REAR 時の入力端子。**9600 でも USB を選べる**）、
-    078 FM PKT TX GAIN（0〜100、既定 50。FM では偏移を決める）、079 FM PKT MODE（1200/9600、既定 1200）。
+    078 FM PKT TX GAIN（0〜100、既定 50。FM では偏移を決める）、079 FM PKT MODE（1200/9600、既定 1200。**送るパケットの速度と合わせる**: 9600 のまま 1200 baud AFSK を入れると、キャリアは出るが **変調が一切乗らない**。2026-10-08 に地上系 APRS 1200 の試験で実機確認: 079=1200 にしたら即座にハンディ機で APRS 音が聞こえた。9600 baud を送るときは 079=9600）。
   - 4800/9600 baud の FM データの送信入力: DATA ジャックが基本。fldigi の FT-991A 9600 bps ページは「USB オーディオは
     D/A 直後に LPF を通るので 9600 の送信には使えない」とするが、メニュー上は USB も選べる（077）ので、
     4800 baud でどうかは実機で試すしかない（直接確認した資料は無い）。受信は USB オーディオでも可。
