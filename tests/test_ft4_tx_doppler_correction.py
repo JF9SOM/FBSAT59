@@ -231,3 +231,30 @@ def test_waterfall_opens_docked_above_the_main_window(qtbot: QtBot) -> None:
     x = dlg.x()
     tab._on_show_waterfall()
     assert dlg.x() == x
+
+
+def test_tail_job_writes_the_uplink_first_and_stops_before_the_tx_period(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Before a transmission: UL first, nothing within 0.5 s of its start."""
+    import ui.ft4_tab as ft4_tab_mod
+
+    tab = _make_tab(qtbot)
+    tab._tx_enabled = True
+    tab._ul_target_fn = lambda t: 145_990_000.0
+    tab._dl_target_fn = lambda t: 435_610_000.0
+    slot = 7.5 * 1000
+    tab._scheduler._tx_even = (int(slot // 7.5) + 1) % 2 == 0  # the NEXT period transmits
+    calls: list[str] = []
+    rig = MagicMock()
+    rig.write_ul_hz.side_effect = lambda hz, ok: calls.append("ul") or True
+    rig.read_dial_hz.side_effect = lambda ok: calls.append("read") or (None, None)
+    rig.read_mode_name.return_value = "PKTUSB"
+    now = {"t": slot + 6.0}
+    monkeypatch.setattr(ft4_tab_mod, "corrected_time", lambda: now["t"])
+    tab._job_tail(rig, slot)
+    assert calls[:2] == ["ul", "read"]
+    safe = rig.write_ul_hz.call_args.args[1]
+    assert safe()  # 6.0 s into the period: still fine
+    now["t"] = slot + 7.5 - 0.3  # 0.3 s before the transmission starts
+    assert not safe()

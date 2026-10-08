@@ -2423,6 +2423,23 @@ class TestHamlibNetController:
         assert sent.count(b"m\n") == 1
         assert sent.count(b"w SV;\n") == 2
 
+    # -- slot windows (a late CAT command must never reach the rig) --
+
+    def test_late_write_never_reaches_the_rig(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="ft991")
+        ctrl._sock.recv.return_value = b"RPRT 0\n"  # type: ignore[union-attr]
+        assert ctrl.write_ul_hz(145_990_000.0, lambda: False) is False
+        ctrl._sock.sendall.assert_not_called()  # type: ignore[union-attr]
+        assert ctrl.last_ul_hz is None
+        assert ctrl.write_ul_hz(145_990_000.0, lambda: True) is True
+        assert ctrl.last_ul_hz == 145_990_000.0
+
+    def test_late_read_is_skipped(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="ft991")
+        ctrl._sock.recv.return_value = b"RPRT 0\n"  # type: ignore[union-attr]
+        assert ctrl.read_dial_hz(lambda: False) == (None, None)
+        ctrl._sock.sendall.assert_not_called()  # type: ignore[union-attr]
+
     # -- uplink hold (FT4 ADC TX) --
 
     def test_hold_ul_keeps_dl_tracking_but_freezes_ul(self) -> None:

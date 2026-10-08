@@ -375,3 +375,30 @@ def test_export_uses_the_aprs_row_frequencies(qtbot: QtBot) -> None:
     assert "<BAND_RX:4>70CM" in uhf
     assert "<BAND:2>2M" in old
     assert "<BAND_RX:2>2M" in old  # a row without frequencies falls back to 2 m
+
+
+def test_their_rr73_is_answered_with_73_before_tx_stops(qtbot: QtBot) -> None:
+    """RR73 from the partner -> keep TX on until our closing 73 has gone out."""
+    from comms.ft4.codec import Ft4Message
+
+    tab = _make_tab(qtbot)
+    qso = tab._get_qso_manager()
+    assert qso is not None
+    qso.respond_with_grid("JH1NHK", "PM95", -10)
+    qso.advance("JF9SOM JH1NHK -10", their_snr=-1)  # their report -> our R-report
+    assert qso.state == QsoState.RREPORT_SENT
+    tab._tx_enabled = True
+    tab._auto_advance_qso([Ft4Message("JF9SOM JH1NHK RR73", 980.0, 3.0, 0.1)], True)
+    assert qso.state == QsoState.LOGGED
+    assert tab._tx_edit.text() == "JH1NHK JF9SOM 73"
+    assert tab._tx_enabled  # TX must stay on for the 73
+    assert len(_rows(tab)) == 1  # ... and the QSO is logged already
+    # a burst that was already on the air (their report was R-01) must not end it
+    tab._last_tx_msg = "JH1NHK JF9SOM R-01"
+    tab._on_tx_finished()
+    assert tab._tx_enabled
+    # our 73 has now been sent: TX stops and the box is cleared
+    tab._last_tx_msg = "JH1NHK JF9SOM 73"
+    tab._on_tx_finished()
+    assert not tab._tx_enabled
+    assert tab._tx_edit.text() == ""

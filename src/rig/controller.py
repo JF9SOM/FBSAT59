@@ -3464,42 +3464,66 @@ class HamlibNetController(RigController):
         """True while an FT-991 would not answer CAT (transmitting, or just after PTT off)."""
         return self._ft991_cat_blocked()
 
-    def _write_once(self, command: str, hz: float) -> bool:
-        """Send one "F"/"I" write; False when blocked, disconnected or rejected."""
+    def _write_once(
+        self, command: str, hz: float, still_ok: Callable[[], bool] | None = None
+    ) -> bool:
+        """Send one "F"/"I" write; False when blocked, disconnected, late or rejected.
+
+        *still_ok* is evaluated under the command lock right before sending: a
+        job that was held up (a failed write makes rigctld retry for several
+        seconds) must not reach the rig once the window it was meant for has
+        closed -- on 2026-10-08 a late "I" went out as the PTT came on and the
+        rig was left on FM several times.
+        """
         if not self.is_connected or self._ft991_cat_blocked():
             return False
         with self._cmd_lock:
             if self._ft991_cat_blocked():
+                return False
+            if still_ok is not None and not still_ok():
+                logger.info("RigNet: slot write %s %d skipped (window closed)", command, int(hz))
                 return False
             resp = self._cmd_raw(f"{command} {int(hz)}")
         ok = "RPRT 0" in resp
         logger.info("RigNet: slot write %s %d -> %s", command, int(hz), "ok" if ok else repr(resp))
         return ok
 
-    def write_dl_hz(self, hz: float) -> bool:
+    def write_dl_hz(self, hz: float, still_ok: Callable[[], bool] | None = None) -> bool:
         """Write the downlink (Main VFO) once. Returns True when rigctld accepted it."""
-        ok = self._write_once("F", hz)
+        ok = self._write_once("F", hz, still_ok)
         if ok:
             self._last_dl_hz = hz
             with self._lock:
                 self._freq_state.freq_hz = hz
         return ok
 
-    def write_ul_hz(self, hz: float) -> bool:
+    def write_ul_hz(self, hz: float, still_ok: Callable[[], bool] | None = None) -> bool:
         """Write the uplink (Sub VFO) once. Returns True when rigctld accepted it."""
-        ok = self._write_once("I", hz)
+        ok = self._write_once("I", hz, still_ok)
         if ok:
             self._last_ul_hz = hz
             self._last_ul_update_time = time.monotonic()
         return ok
 
-    def read_dial_hz(self) -> tuple[float | None, float | None]:
+    def read_dial_hz(
+        self, still_ok: Callable[[], bool] | None = None
+    ) -> tuple[float | None, float | None]:
         """(downlink, uplink) as the radio reports them now; None for one it did not answer."""
         if not self.is_connected or self._ft991_cat_blocked():
             return None, None
+        if still_ok is not None and not still_ok():
+            return None, None
         dl = self.get_frequency()
+        if still_ok is not None and not still_ok():
+            return (dl if dl > 0 else None), None
         ul = self.get_split_frequency()
         return (dl if dl > 0 else None), (ul if ul > 0 else None)
+
+    def read_mode_name(self) -> str | None:
+        """The mode rigctld reports for the receive VFO (e.g. "PKTUSB"), or None."""
+        if not self.is_connected or self._ft991_cat_blocked():
+            return None
+        return self._ft991_read_mode()
 
     # -- Connection management --
 

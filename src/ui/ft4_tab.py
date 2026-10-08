@@ -612,6 +612,8 @@ class Ft4Tab(QWidget):
         self._tail_slot: float = -1.0
         self._tx_slot_start: float = -1.0
         self._ul_hold_rig: Any | None = None  # rig whose uplink ADC TX is holding
+        # Closing "<call> <me> 73" queued after their RR73; TX stops once it has gone out.
+        self._final_73: str = ""
         self._slot_sync_timer = QTimer(self)
         self._slot_sync_timer.setInterval(100)
         self._slot_sync_timer.timeout.connect(self._slot_sync_tick)
@@ -1416,7 +1418,9 @@ class Ft4Tab(QWidget):
             return
         self._decode_busy = True
         decode_audio = self._adc_rx_audio(audio)
-        worker = _RxDecodeWorker(self._codec, decode_audio, self._my_call, display_audio=audio)
+        # The waterfall shows the same audio the decoder gets, so with ADC RX on a
+        # straight trace there means the Doppler correction is working.
+        worker = _RxDecodeWorker(self._codec, decode_audio, self._my_call)
         worker.done.connect(self._on_decode_done)
         thread = threading.Thread(target=worker.run, daemon=True)
         self._decode_thread = thread
@@ -1666,6 +1670,13 @@ class Ft4Tab(QWidget):
 
     def _on_tx_finished(self) -> None:
         self._release_ul_hold()
+        final_73, self._final_73 = self._final_73, ""
+        if final_73 and self._last_tx_msg == final_73:
+            self._tx_in_progress = False
+            self._tx_worker = None
+            self._on_qso_complete()  # our closing 73 is on the air: the QSO is over
+            return
+        self._final_73 = final_73
         self._tx_in_progress = False
         self._tx_worker = None
         self._status_label.setText(_("TX done — waiting for next period"))
@@ -1777,6 +1788,7 @@ class Ft4Tab(QWidget):
             return
 
         was_idle = state_before == QsoState.IDLE
+        sent_tx = ""
         for msg in messages:
             next_tx = qso.advance(
                 msg.text, their_snr=msg.snr_db, allow_auto_start=self._auto_progress
@@ -1784,6 +1796,7 @@ class Ft4Tab(QWidget):
             if next_tx is None:
                 continue
             self._tx_edit.setText(next_tx)
+            sent_tx = next_tx
             self._stamp_session(qso.session)  # satellite + frequencies while they are current
             self._update_qso_display()
             if was_idle:
@@ -1798,7 +1811,16 @@ class Ft4Tab(QWidget):
 
         if qso.state == QsoState.LOGGED:
             self._auto_log_qso()
-            self._on_qso_complete()
+            if sent_tx.endswith(" 73") and self._tx_enabled:
+                # Their RR73 still has to be answered: keep transmitting until our
+                # 73 has gone out (_on_tx_finished then stops TX). Stopping here
+                # left partners repeating RR73 and the QSO unconfirmed on their side.
+                self._final_73 = sent_tx
+                self._status_label.setText(
+                    _("Sending 73 to {call}").format(call=qso.session.their_call)
+                )
+            else:
+                self._on_qso_complete()
 
     def _on_qso_complete(self) -> None:
         """Stop transmitting once the exchange is over.
@@ -1808,6 +1830,7 @@ class Ft4Tab(QWidget):
         Halt -- _transmit_now() reads that field, and nothing was clearing
         it (GitHub Issue #16).
         """
+        self._final_73 = ""
         self._tx_edit.clear()
         if self._tx_enabled:
             self._tx_enabled = False
@@ -2206,14 +2229,21 @@ class Ft4Tab(QWidget):
             self._tail_slot = slot
             self._run_cat_job(lambda: self._job_tail(rig, slot))
 
+    def _window_until(self, deadline: float) -> Callable[[], bool]:
+        """A check for the rig layer: True until corrected time passes *deadline*."""
+        return lambda: corrected_time() < deadline
+
     def _job_write_dl(self, rig: Any, slot_start: float) -> None:
-        """Write the downlink for period *slot_start* (ideal dial at mid-signal), once."""
+        """Write the downlink for period *slot_start* (ideal dial at mid-signal), once.
+
+        Only worth doing while the signal of that period has not ended yet.
+        """
         if self._dl_target_fn is None:
             return
         hz = self._dl_target_fn(slot_start + self._ADC_TARGET_AT_S)
         if hz is None:
             return
-        ok = rig.write_dl_hz(hz)
+        ok = rig.write_dl_hz(hz, self._window_until(slot_start + self._ADC_TAIL_START_S - 0.4))
         if ok:
             self._dial_track.add_write(corrected_time(), hz)
         get_ft4_decode_logger().info(
@@ -2221,31 +2251,56 @@ class Ft4Tab(QWidget):
         )
 
     def _job_tail(self, rig: Any, slot_start: float) -> None:
-        """Quiet tail of a receive period: read the rig back, prepare the next period."""
+        """Quiet tail of a receive period: prepare the next period and read the rig back.
+
+        When the next period is a transmission the uplink is written FIRST and
+        nothing is sent to the rig within 0.5 s of that period's start, however
+        long an earlier command took: a CAT command racing the PTT left the rig
+        on FM on 2026-10-08. When the next period is a reception, the dial of
+        this one is read back before the next downlink is written over it.
+        """
         log = get_ft4_decode_logger()
-        dl, ul = rig.read_dial_hz()
-        if dl is not None and len(self._dial_track):
-            changed = self._dial_track.confirm(dl)
-            log.info(
-                "adc_rx read DL period=%.1f hz=%.0f%s",
-                slot_start % 60,
-                dl,
-                " (differs from what was written)" if changed else "",
-            )
         nxt = slot_start + FT4_PERIOD
-        if self._tx_enabled and self._slot_is_tx(nxt) and self._ul_target_fn is not None:
+        next_is_tx = self._tx_enabled and self._slot_is_tx(nxt)
+        safe = self._window_until(nxt - 0.5 if next_is_tx else nxt)
+
+        def _read() -> None:
+            dl, _ul = rig.read_dial_hz(safe)
+            if dl is not None and len(self._dial_track):
+                changed = self._dial_track.confirm(dl)
+                log.info(
+                    "adc_rx read DL period=%.1f hz=%.0f%s",
+                    slot_start % 60,
+                    dl,
+                    " (differs from what was written)" if changed else "",
+                )
+            if safe():
+                mode = rig.read_mode_name()
+                if mode is not None:
+                    fm_like = mode.upper() in ("FM", "FMN", "WFM", "PKTFM", "AM")
+                    (log.warning if fm_like else log.info)(
+                        "adc_rx rx mode=%s period=%.1f%s",
+                        mode,
+                        slot_start % 60,
+                        " <- NOT a data-USB mode" if fm_like else "",
+                    )
+
+        if next_is_tx and self._ul_target_fn is not None:
             ul_hz = self._ul_target_fn(nxt + self._ADC_TARGET_AT_S)
             if ul_hz is not None:
-                ok = rig.write_ul_hz(ul_hz)
+                ok = rig.write_ul_hz(ul_hz, safe)
                 log.info("adc_rx write UL period=%.1f hz=%.0f ok=%s", nxt % 60, ul_hz, ok)
-        elif self._dl_target_fn is not None:
-            dl_hz = self._dl_target_fn(nxt + self._ADC_TARGET_AT_S)
-            if dl_hz is not None:
-                ok = rig.write_dl_hz(dl_hz)
-                if ok:
-                    self._dial_track.add_write(corrected_time(), dl_hz)
-                self._dl_written_for_slot = nxt
-                log.info("adc_rx write DL period=%.1f hz=%.0f ok=%s", nxt % 60, dl_hz, ok)
+            _read()
+        else:
+            _read()
+            if self._dl_target_fn is not None:
+                dl_hz = self._dl_target_fn(nxt + self._ADC_TARGET_AT_S)
+                if dl_hz is not None:
+                    ok = rig.write_dl_hz(dl_hz, safe)
+                    if ok:
+                        self._dial_track.add_write(corrected_time(), dl_hz)
+                    self._dl_written_for_slot = nxt
+                    log.info("adc_rx write DL period=%.1f hz=%.0f ok=%s", nxt % 60, dl_hz, ok)
 
     def _adc_rx_audio(self, audio: NDArray[np.float32]) -> NDArray[np.float32]:
         """The period's audio with the dial-vs-ideal error removed (ADC RX), else as is."""
