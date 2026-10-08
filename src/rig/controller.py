@@ -3414,6 +3414,9 @@ class HamlibNetController(RigController):
         self._cmd_lock = threading.Lock()  # serialise send+recv to prevent response misalignment
         self._satmode: bool = False
         self._is_same_band: bool = False  # True when DL and UL are on the same band (V/V or U/U)
+        # True for ground-based simplex operation (core.engine.TERRESTRIAL_IDS): TX and RX
+        # share one frequency on VFO-A, so split is switched off and no TX frequency is written.
+        self._simplex: bool = False
         self._current_dl_mode: str = ""  # updated by set_current_modes(); used for UL throttle
         self._current_ul_mode: str = (
             ""  # updated by set_current_modes() and apply_transponder_state
@@ -3526,6 +3529,18 @@ class HamlibNetController(RigController):
             ul_hz / 1e6,
             self._is_same_band,
         )
+
+    def set_simplex(self, simplex: bool) -> None:
+        """Run the rig simplex (split off, everything on VFO-A) for a terrestrial transmitter.
+
+        Hamlib's FT-991 split TX frequency write is unreliable (``Protocol error``,
+        out-of-sync replies, or a cached no-op), so a ground-based transmitter whose
+        uplink equals its downlink must not depend on it: with split off the rig
+        transmits on the very frequency it receives.
+        """
+        if simplex != self._simplex:
+            logger.info("RigNet: simplex operation %s", "ON (split off)" if simplex else "OFF")
+        self._simplex = simplex
 
     def set_current_modes(self, dl_mode: str, ul_mode: str) -> None:
         """Store current DL/UL modes so same-band UL throttle can pick the right threshold."""
@@ -3725,6 +3740,11 @@ class HamlibNetController(RigController):
         if self._radio_type == "tx_only":
             # Simplex TX rig: no split. (The \uplink reset below still applies.)
             logger.info("RigNet: TX-only rig runs simplex, split not enabled")
+        elif self._simplex:
+            resp = self._cmd("S 0 VFOA")
+            logger.info("RigNet: simplex transmitter, split off (S 0 VFOA) -> %r", resp.strip())
+            if "RPRT 0" not in resp:
+                logger.warning("RigNet: split off returned %r", resp)
         else:
             if (is_satmode_rig and self._is_same_band) or (not is_satmode_rig and not is_yaesu_cat):
                 resp = self._cmd("S 1 VFOB")
@@ -3888,6 +3908,8 @@ class HamlibNetController(RigController):
         # frequency (F, VFOA) and no split TX frequency (I) is ever written.
         if self._radio_type == "tx_only":
             vfoa_hz, vfob_hz = vfob_hz, None
+        elif self._simplex:
+            vfob_hz = None  # terrestrial: TX follows VFO-A, no split TX frequency
         else:
             vfob_hz = self._held_ul(vfob_hz)
         send_rx = True
@@ -4538,9 +4560,9 @@ class HamlibNetController(RigController):
                     logger.warning("RigNet.send_mode_only: %r -> %r", cmd, resp)
                 return resp
 
-            if self._radio_type == "tx_only":
-                # Simplex TX rig: set the mode once on its one VFO. No VFO
-                # switching and no split (re)initialisation.
+            if self._radio_type == "tx_only" or self._simplex:
+                # Simplex TX rig (or a terrestrial transmitter): set the mode once
+                # on its one VFO. No VFO switching and no split (re)initialisation.
                 if self._vfo_mode:
                     _send_recv(f"\\set_mode VFOA {rigctld_dl} 0")
                 else:
@@ -4654,7 +4676,7 @@ class HamlibNetController(RigController):
 
             if self._transponder_dl_hz:
                 _send_recv(f"F {int(self._transponder_dl_hz)}")
-            if self._transponder_ul_hz:
+            if self._transponder_ul_hz and not self._simplex:
                 _send_recv(f"I {int(self._transponder_ul_hz)}")
             if is_generic:
                 _send_recv("V VFOA")
@@ -4739,6 +4761,8 @@ class HamlibNetController(RigController):
         is_generic = not is_satmode_rig and not is_yaesu_cat
         use_vfob_split = (is_satmode_rig and self._is_same_band) or is_generic
         cmd = "S 1 VFOB" if use_vfob_split else "S 1 Main"
+        if self._simplex:
+            cmd = "S 0 VFOA"  # terrestrial: TX = RX on VFO-A, no split
         logger.info("RigNet: pre-connect split init (%s) via independent socket", cmd)
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

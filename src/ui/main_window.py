@@ -68,7 +68,13 @@ from core.autotrack import AutotrackManager
 from core.celestial_engine import MOON_ID, CelestialEngine
 from core.clock_offset import set_clock_offset
 from core.doppler_worker import DopplerWorker
-from core.engine import DopplerCalculator, Observation, PassPredictor, SatelliteEngine
+from core.engine import (
+    TERRESTRIAL_IDS,
+    DopplerCalculator,
+    Observation,
+    PassPredictor,
+    SatelliteEngine,
+)
 from core.location import LocationManager
 from core.notifier import PassNotifier
 from core.ntp_check import check_system_clock
@@ -5930,6 +5936,10 @@ class MainWindow(QMainWindow):
         # Notify NET rig of DL/UL frequencies (same-band detection) and
         # current mode (UL update throttle threshold).
         if isinstance(rig, HamlibNetController):
+            # Ground-based entries (APRS on 144.660/144.640 MHz) run simplex.
+            rig.set_simplex(
+                int(self._current_transmitter.get("norad_cat_id") or 0) in TERRESTRIAL_IDS
+            )
             rig.set_transponder_freqs(dl_hz, ul_hz)
             rig.set_current_modes(dl_mode, ul_mode)
 

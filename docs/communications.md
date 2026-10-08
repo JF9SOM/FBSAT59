@@ -959,6 +959,14 @@ APRS を衛星ではなく地上（ハンディ機 ⇔ 自局の FT-991 など�
 - **Quick Panel の負 ID 判定（同日修正）**: Input Source の「Others」は値 -1（`SatDetailPanel.INPUT_SOURCE_OTHERS`）。
   `_on_comms_satellite_requested` / `_restore_comms_satellite` が「負の値は全部 Others」と判定していたため、-2/-3 を選んでも
   何も起きず周波数が出なかった。判定を -1 だけに限定した。**新しい負数センチネルを足すときはこの 2 箇所に注意**。
+- **スプリットを使わず VFO-A 単一で運用（同日修正）**: 初版は UL=DL のスプリットで登録したが、FT-991A + rigctld（NET）では
+  スプリット TX 周波数の書き込み（`I`）が `Protocol error (-8)`（`'FT3;' != 'A144660000;'` のような応答ずれ）で多数失敗し、
+  成功扱いでも 0 ms で通信していない例があった（rigctld.log の直近で失敗 196 件・成功 19 件）。接続時の周波数プリセットは
+  応答を見ていないので失敗に気づけず、**TX が VFO-B の古い周波数のまま出て**、ハンディ機では「キャリアは出るが何も聞こえない」
+  になった（手動 PTT のテストトーンも同様）。対策として `HamlibNetController.set_simplex(True)`（`MainWindow` が
+  `norad_cat_id ∈ TERRESTRIAL_IDS` のときに設定）で、接続時・プリセット時に `S 0 VFOA`（スプリット OFF）、周波数は
+  `F`（DL）のみ・`I` は送らない、モードは VFO-A 単一（FT-991 は SV 往復で両 VFO）にした。衛星の動作は変えていない。
+  Direct 接続は未対応。
 - **既知の限界**: 衛星リストには TLE なしの行として並ぶ。ローテーターはこの疑似衛星では使わない前提（AZ0/EL0 を返す）。
   GUI 上の表示・DATA-FM の実機動作は未確認。
 

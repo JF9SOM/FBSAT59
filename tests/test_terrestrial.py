@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -12,7 +13,7 @@ from comms.mode_detection import is_aprs_transmitter
 from core.engine import TERRESTRIAL_ID, TERRESTRIAL_IDS, DopplerCalculator, SatelliteEngine
 from data.database import SCHEMA_SQL
 from data.transmitter_manager import TransmitterManager
-from rig.controller import _FT991_MODE_MAP, _SATNOGS_TO_RIGCTLD_MODE, MODE_MAP
+from rig.controller import _FT991_MODE_MAP, _SATNOGS_TO_RIGCTLD_MODE, MODE_MAP, HamlibNetController
 
 
 @pytest.fixture()
@@ -103,3 +104,79 @@ def test_quick_panel_treats_only_the_others_sentinel_as_no_selection() -> None:
     fake = MagicMock()
     MainWindow._on_comms_satellite_requested(fake, "aprs", SatDetailPanel.INPUT_SOURCE_OTHERS)
     fake._select_satellite_by_norad.assert_not_called()
+
+
+# -- NET controller: simplex (split off) for terrestrial transmitters -------------------
+
+
+def _net(simplex: bool = True) -> HamlibNetController:
+    ctrl = HamlibNetController(ctcss_method="ft991")
+    ctrl.set_simplex(simplex)
+    return ctrl
+
+
+def test_simplex_connect_turns_split_off_instead_of_on() -> None:
+    ctrl = _net()
+    sent: list[str] = []
+    ctrl._cmd = lambda c: sent.append(c) or "RPRT 0"  # type: ignore[method-assign]
+    ctrl._init_vfo()
+    assert "S 0 VFOA" in sent
+    assert not any(c.startswith("S 1") for c in sent)
+
+
+def test_satellite_connect_still_enables_split() -> None:
+    ctrl = _net(simplex=False)
+    sent: list[str] = []
+    ctrl._cmd = lambda c: sent.append(c) or "RPRT 0"  # type: ignore[method-assign]
+    ctrl._init_vfo()
+    assert "S 1 Main" in sent
+
+
+def _socket_sent(run: Any) -> list[str]:
+    from unittest.mock import patch
+
+    sent: list[str] = []
+    sock = MagicMock()
+    sock.recv.return_value = b"RPRT 0\n"
+    sock.sendall.side_effect = lambda b: sent.append(b.decode().strip())
+    with patch("rig.controller.socket.socket", return_value=sock):
+        run()
+    return sent
+
+
+def test_simplex_pre_connect_init_and_preset_never_enable_split_or_write_tx() -> None:
+    ctrl = _net()
+    ctrl.set_transponder_freqs(144_660_000.0, 144_660_000.0)
+    sent = _socket_sent(
+        lambda: (ctrl._send_split_init_independent(), ctrl._send_freq_preset_independent())
+    )
+    assert "S 0 VFOA" in sent
+    assert not any(c.startswith("S 1") for c in sent)
+    assert "F 144660000" in sent
+    assert not any(c.startswith("I ") for c in sent)
+
+
+def test_simplex_mode_is_set_once_on_the_single_vfo() -> None:
+    ctrl = HamlibNetController(ctcss_method="hamlib")
+    ctrl.set_simplex(True)
+    sent = _socket_sent(lambda: ctrl.send_mode_only("FM-D", "FM-D"))
+    assert sent == ["M PKTFM 0"]
+
+
+def test_ft991_simplex_mode_sets_data_fm_and_leaves_the_vfos_unswapped() -> None:
+    ctrl = _net()
+    sent = _socket_sent(lambda: ctrl.send_mode_only("FM-D", "FM-D"))
+    assert sent.count("w MD0A;") >= 1  # DATA-FM
+    assert sent.count("w SV;") % 2 == 0  # every VFO swap is undone
+
+
+def test_simplex_doppler_cycle_writes_only_the_receive_frequency() -> None:
+    from rig.controller import RigState
+
+    ctrl = _net()
+    ctrl._state = RigState.CONNECTED
+    ctrl._sock = MagicMock()
+    sent: list[str] = []
+    ctrl._cmd_raw = lambda c: sent.append(c) or "RPRT 0"  # type: ignore[method-assign]
+    ctrl.set_vfo_frequencies(144_660_000.0, 144_660_000.0)
+    assert sent == ["F 144660000"]
