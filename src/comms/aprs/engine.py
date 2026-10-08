@@ -37,6 +37,7 @@ decoder; the two decoders' frames are merged and de-duplicated
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 from typing import Any
@@ -49,6 +50,8 @@ from comms.aprs.direwolf import DirewolfManager, find_direwolf
 from comms.aprs.parser import AprsPacket, Ax25Frame, decode_ax25, parse_aprs
 from comms.audio_tx import PttAudioTxWorker
 from i18n import _
+
+logger = logging.getLogger(__name__)
 
 _TX_OWNER = "APRS"
 
@@ -453,6 +456,13 @@ class AprsEngine(QObject):
         for not transmitting are reported through ``error_occurred``.
         """
         rig = self._rig
+        logger.info(
+            "APRS TX: request modem=%s level=%d dB rig=%s connected=%s",
+            self._current_modem,
+            self._tx_level_db,
+            type(rig).__name__,
+            getattr(rig, "is_connected", None),
+        )
         if rig is None or not getattr(rig, "is_connected", False):
             self.error_occurred.emit(_("TX rig not connected"))
             return False
