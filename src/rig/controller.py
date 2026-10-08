@@ -4421,11 +4421,23 @@ class HamlibNetController(RigController):
         sides = {"USB": "U", "PKTUSB": "U", "LSB": "L", "PKTLSB": "L"}
         if expected not in sides:
             return
+        # The rig is still working through the SV/MD sequence when this starts: a
+        # read that comes too early can return the other VFO's mode (seen on
+        # 2026-10-08, where it caused a needless swap). Wait, and only act when
+        # two reads in a row agree that the sideband is wrong.
+        time.sleep(0.5)
         got = self._ft991_read_mode()
         if got is None or got not in sides:
             return
         if sides[got] == sides[expected]:
             logger.info("RigNet: FT-991 receive mode verified: %s", got)
+            return
+        time.sleep(0.5)
+        got = self._ft991_read_mode()
+        if got is None or got not in sides:
+            return
+        if sides[got] == sides[expected]:
+            logger.info("RigNet: FT-991 receive mode verified on re-read: %s", got)
             return
         logger.warning(
             "RigNet: FT-991 receive mode is %s, expected %s -- VFO A/B look swapped, swapping back",

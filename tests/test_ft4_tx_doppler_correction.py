@@ -258,3 +258,24 @@ def test_tail_job_writes_the_uplink_first_and_stops_before_the_tx_period(
     assert safe()  # 6.0 s into the period: still fine
     now["t"] = slot + 7.5 - 0.3  # 0.3 s before the transmission starts
     assert not safe()
+
+
+def test_tail_job_keeps_the_uplink_following_while_not_transmitting(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TX Enable off: the uplink is written every period, after the downlink."""
+    import ui.ft4_tab as ft4_tab_mod
+
+    tab = _make_tab(qtbot)
+    tab._tx_enabled = False
+    tab._ul_target_fn = lambda t: 145_990_000.0
+    tab._dl_target_fn = lambda t: 435_610_000.0
+    calls: list[str] = []
+    rig = MagicMock()
+    rig.write_ul_hz.side_effect = lambda hz, ok: calls.append("ul") or True
+    rig.write_dl_hz.side_effect = lambda hz, ok: calls.append("dl") or True
+    rig.read_dial_hz.side_effect = lambda ok: calls.append("read") or (None, None)
+    rig.read_mode_name.return_value = "PKTUSB"
+    monkeypatch.setattr(ft4_tab_mod, "corrected_time", lambda: 7500.0 + 6.0)
+    tab._job_tail(rig, 7500.0)
+    assert calls == ["read", "dl", "ul"]

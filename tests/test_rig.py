@@ -2406,19 +2406,39 @@ class TestHamlibNetController:
             [
                 [b"RPRT 0\n"] * 6,  # send_mode_only: MD, SV, MD, SV
                 [b"PKTLSB\n2400\n"],  # read-back: wrong sideband
+                [b"PKTLSB\n2400\n"],  # still wrong on the re-read
                 [b"RPRT 0\n"],  # the corrective SV
                 [b"PKTUSB\n2400\n"],  # read-back after the fix
             ]
         )
-        with patch("rig.controller.socket.socket", side_effect=factory):
+        with (
+            patch("rig.controller.socket.socket", side_effect=factory),
+            patch("rig.controller.time.sleep"),
+        ):
+            ctrl.send_mode_only("USB-D", "LSB-D")
+        assert sent.count(b"m\n") == 3
+        assert sent.count(b"w SV;\n") == 3  # two bracketing the UL mode + the fix
+
+    def test_mode_verify_ignores_a_read_that_was_too_early(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="ft991")
+        factory, sent = self._socket_factory(
+            [[b"RPRT 0\n"] * 6, [b"PKTLSB\n2400\n"], [b"PKTUSB\n2400\n"]]
+        )
+        with (
+            patch("rig.controller.socket.socket", side_effect=factory),
+            patch("rig.controller.time.sleep"),
+        ):
             ctrl.send_mode_only("USB-D", "LSB-D")
         assert sent.count(b"m\n") == 2
-        assert sent.count(b"w SV;\n") == 3  # two bracketing the UL mode + the fix
+        assert sent.count(b"w SV;\n") == 2  # no corrective swap
 
     def test_mode_verify_leaves_a_correct_rig_alone(self) -> None:
         ctrl = self._make_connected_ctrl(ctcss_method="ft991")
         factory, sent = self._socket_factory([[b"RPRT 0\n"] * 6, [b"PKTUSB\n2400\n"]])
-        with patch("rig.controller.socket.socket", side_effect=factory):
+        with (
+            patch("rig.controller.socket.socket", side_effect=factory),
+            patch("rig.controller.time.sleep"),
+        ):
             ctrl.send_mode_only("USB-D", "LSB-D")
         assert sent.count(b"m\n") == 1
         assert sent.count(b"w SV;\n") == 2

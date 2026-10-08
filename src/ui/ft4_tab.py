@@ -2301,6 +2301,13 @@ class Ft4Tab(QWidget):
                         self._dial_track.add_write(corrected_time(), dl_hz)
                     self._dl_written_for_slot = nxt
                     log.info("adc_rx write DL period=%.1f hz=%.0f ok=%s", nxt % 60, dl_hz, ok)
+            if not self._tx_enabled and self._ul_target_fn is not None:
+                # Not transmitting: keep the uplink following the Doppler too (once per
+                # period, like the downlink) so it is right when TX Enable is pressed.
+                ul_hz = self._ul_target_fn(nxt + self._ADC_TARGET_AT_S)
+                if ul_hz is not None:
+                    ok = rig.write_ul_hz(ul_hz, safe)
+                    log.info("adc_rx write UL period=%.1f hz=%.0f ok=%s", nxt % 60, ul_hz, ok)
 
     def _adc_rx_audio(self, audio: NDArray[np.float32]) -> NDArray[np.float32]:
         """The period's audio with the dial-vs-ideal error removed (ADC RX), else as is."""
