@@ -773,7 +773,9 @@ def main() -> int:
     app.setOrganizationName("FBSAT59")
 
     if sys.platform == "darwin":
-        app.setStyle("Fusion")
+        from ui.menu_style import VisibleSeparatorStyle
+
+        app.setStyle(VisibleSeparatorStyle("Fusion"))
 
     # Show a splash screen right away so the user gets immediate feedback
     # instead of a blank screen while the slow startup work below runs.
