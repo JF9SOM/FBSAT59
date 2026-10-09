@@ -233,10 +233,10 @@ def test_waterfall_opens_docked_above_the_main_window(qtbot: QtBot) -> None:
     assert dlg.x() == x
 
 
-def test_tail_job_writes_the_uplink_first_and_stops_before_the_tx_period(
+def test_tail_job_reads_first_and_stops_before_the_tx_period(
     qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Before a transmission: UL first, nothing within 0.5 s of its start."""
+    """Before a transmission: read the dial, then the UL; nothing within 0.5 s of its start."""
     import ui.ft4_tab as ft4_tab_mod
 
     tab = _make_tab(qtbot)
@@ -253,7 +253,7 @@ def test_tail_job_writes_the_uplink_first_and_stops_before_the_tx_period(
     now = {"t": slot + 6.0}
     monkeypatch.setattr(ft4_tab_mod, "corrected_time", lambda: now["t"])
     tab._job_tail(rig, slot)
-    assert calls[:2] == ["ul", "read"]
+    assert calls[:2] == ["read", "ul"]
     safe = rig.write_ul_hz.call_args.args[1]
     assert safe()  # 6.0 s into the period: still fine
     now["t"] = slot + 7.5 - 0.3  # 0.3 s before the transmission starts
@@ -279,3 +279,53 @@ def test_tail_job_keeps_the_uplink_following_while_not_transmitting(
     monkeypatch.setattr(ft4_tab_mod, "corrected_time", lambda: 7500.0 + 6.0)
     tab._job_tail(rig, 7500.0)
     assert calls == ["read", "dl", "ul"]
+
+
+def test_no_cat_at_all_in_a_transmit_period(qtbot: QtBot, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The first tick of a TX period must not start a downlink write (it raced the PTT)."""
+    import ui.ft4_tab as ft4_tab_mod
+
+    tab = _make_tab(qtbot)
+    tab._adc_rx = True
+    tab._tx_enabled = True
+    tab._dl_target_fn = lambda t: 435_610_000.0
+    slot = 7.5 * 1000
+    tab._scheduler._tx_even = int(slot // 7.5) % 2 == 0  # THIS period transmits
+    rig = MagicMock()
+    rig.is_connected = True
+    rig.slot_sync = True
+    rig.cat_blocked = False
+    tab._slot_sync_rig = lambda: rig  # type: ignore[method-assign]
+    jobs: list[str] = []
+    tab._run_cat_job = lambda job: jobs.append("job") or True  # type: ignore[method-assign]
+    monkeypatch.setattr(ft4_tab_mod, "corrected_time", lambda: slot + 0.05)
+    tab._slot_sync_tick()
+    assert jobs == []
+    tab._scheduler._tx_even = not tab._scheduler._tx_even  # a reception period
+    tab._slot_sync_tick()
+    assert jobs == ["job"]
+
+
+def test_a_read_back_from_the_other_vfo_is_not_adopted(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ui.ft4_tab as ft4_tab_mod
+
+    tab = _make_tab(qtbot)
+    tab._tx_enabled = False
+    tab._dl_target_fn = lambda t: 435_610_000.0
+    tab._dial_track.add_write(7400.0, 435_609_000.0)
+    rig = MagicMock()
+    rig.read_dial_hz.return_value = (145_988_129.0, None)  # the uplink, not the downlink
+    rig.read_mode_name.return_value = "PKTUSB"
+    monkeypatch.setattr(ft4_tab_mod, "corrected_time", lambda: 7500.0 + 6.0)
+    tab._job_tail(rig, 7500.0)
+    assert tab._dial_track.value_at(7600.0) != 145_988_129.0
+
+
+def test_rig_loss_does_not_stop_the_receive_chain(qtbot: QtBot) -> None:
+    tab = _make_tab(qtbot)
+    assert tab._scheduler._running
+    tab._on_rig_disconnected()
+    assert tab._scheduler._running  # decoding goes on without the CAT link
+    assert not tab._tx_enabled

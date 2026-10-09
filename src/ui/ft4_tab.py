@@ -2140,6 +2140,8 @@ class Ft4Tab(QWidget):
     _ADC_TAIL_END_S = 7.2
     # A correction larger than this means the dial record is stale, not Doppler.
     _ADC_MAX_PLAUSIBLE_SHIFT_HZ = 1500.0
+    # A read-back this far from the dial we set is another VFO's frequency, not ours.
+    _ADC_MAX_READ_DELTA_HZ = 200_000.0
 
     def _slot_sync_rig(self) -> Any | None:
         """The rig ADC RX drives, or None when it cannot (not FT-991/rigctld)."""
@@ -2209,23 +2211,22 @@ class Ft4Tab(QWidget):
             self._dl_written_for_slot = -1.0
             self._tail_slot = -1.0
             rig.set_slot_sync(True)
-        if self._tx_in_progress or rig.cat_blocked:
-            return
         now = corrected_time()
         slot = (now // FT4_PERIOD) * FT4_PERIOD
         phase = now - slot
-        in_tx_slot = self._tx_slot_start == slot
-        # the period that still needs its downlink
-        dl_slot = slot + FT4_PERIOD if in_tx_slot else slot
-        if self._dl_written_for_slot != dl_slot and (in_tx_slot or phase < self._ADC_TAIL_START_S):
-            self._dl_written_for_slot = dl_slot
-            self._run_cat_job(lambda: self._job_write_dl(rig, dl_slot))
+        # A transmit period gets no CAT at all -- not even the downlink write that
+        # follows a burst. FT-991A ignores CAT while keyed, and a command that
+        # slipped in around PTT-on (2026-10-09, +0.02 s) hung rigctld, which the
+        # launcher then killed, dropping the connection over and over.
+        if self._tx_enabled and self._slot_is_tx(slot):
             return
-        if (
-            not in_tx_slot
-            and self._ADC_TAIL_START_S <= phase < self._ADC_TAIL_END_S
-            and self._tail_slot != slot
-        ):
+        if self._tx_in_progress or rig.cat_blocked:
+            return
+        if self._dl_written_for_slot != slot and phase < self._ADC_TAIL_START_S:
+            self._dl_written_for_slot = slot
+            self._run_cat_job(lambda: self._job_write_dl(rig, slot))
+            return
+        if self._ADC_TAIL_START_S <= phase < self._ADC_TAIL_END_S and self._tail_slot != slot:
             self._tail_slot = slot
             self._run_cat_job(lambda: self._job_tail(rig, slot))
 
@@ -2253,11 +2254,10 @@ class Ft4Tab(QWidget):
     def _job_tail(self, rig: Any, slot_start: float) -> None:
         """Quiet tail of a receive period: prepare the next period and read the rig back.
 
-        When the next period is a transmission the uplink is written FIRST and
-        nothing is sent to the rig within 0.5 s of that period's start, however
+        Nothing is sent to the rig within 0.5 s of a transmission's start, however
         long an earlier command took: a CAT command racing the PTT left the rig
-        on FM on 2026-10-08. When the next period is a reception, the dial of
-        this one is read back before the next downlink is written over it.
+        on FM on 2026-10-08. The dial of this period is always read back before
+        anything is written over it.
         """
         log = get_ft4_decode_logger()
         nxt = slot_start + FT4_PERIOD
@@ -2266,6 +2266,15 @@ class Ft4Tab(QWidget):
 
         def _read() -> None:
             dl, _ul = rig.read_dial_hz(safe)
+            last = self._dial_track.last()
+            if (
+                dl is not None
+                and last is not None
+                and abs(dl - last[1]) > self._ADC_MAX_READ_DELTA_HZ
+            ):
+                # e.g. the uplink (145 MHz) returned for the downlink (435 MHz)
+                log.warning("adc_rx read DL ignored: %.0f is not near the dial %.0f", dl, last[1])
+                dl = None
             if dl is not None and len(self._dial_track):
                 changed = self._dial_track.confirm(dl)
                 log.info(
@@ -2285,14 +2294,15 @@ class Ft4Tab(QWidget):
                         " <- NOT a data-USB mode" if fm_like else "",
                     )
 
+        # The dial is read BEFORE anything is written: right after an uplink write
+        # Hamlib still points at the transmit VFO and "f" returns the uplink.
+        _read()
         if next_is_tx and self._ul_target_fn is not None:
             ul_hz = self._ul_target_fn(nxt + self._ADC_TARGET_AT_S)
             if ul_hz is not None:
                 ok = rig.write_ul_hz(ul_hz, safe)
                 log.info("adc_rx write UL period=%.1f hz=%.0f ok=%s", nxt % 60, ul_hz, ok)
-            _read()
         else:
-            _read()
             if self._dl_target_fn is not None:
                 dl_hz = self._dl_target_fn(nxt + self._ADC_TARGET_AT_S)
                 if dl_hz is not None:
@@ -2447,16 +2457,21 @@ class Ft4Tab(QWidget):
     @Slot()
     def _on_rig_connected(self) -> None:
         self._refresh_input_source(connected=True)
+        # make sure the receive chain is running (all of these are no-ops if it is)
+        self._start_scheduler(tx_even=self._scheduler._tx_even)
+        if self._rx_source != "sdr":
+            self._start_audio_capture()
         self._status_label.setText(_("Rig connected — ready"))
         # Re-read soundcard settings in case they were updated
         self._load_settings()
 
     @Slot()
     def _on_rig_disconnected(self) -> None:
+        # TX stops at once, but receiving does not: the sound card, the period
+        # clock and the decoder never needed the CAT link, and stopping them here
+        # (without restarting them on reconnect) left the tab deaf for good after
+        # the first drop on 2026-10-09.
         self._on_halt()
-        self._stop_audio_capture()
-        self._scheduler.stop()
-        self._rx_capture.stop()
         self._refresh_input_source(connected=False)
         self._status_label.setText(_("Rig disconnected"))
 
