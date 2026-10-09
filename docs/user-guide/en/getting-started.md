@@ -24,12 +24,13 @@ Later versions can be installed from Help > Check for Updates.
 
 ## 3. Connect a radio (Hamlib)
 
-1. **Radio > Rig Settings...** Select your radio model, serial port and baud rate
-   (CI-V address for Icom rigs). Choose Direct (built-in Hamlib) or NET Control
-   (an existing rigctld).
+1. **Radio > Rig Settings...** has one tab per rig (Rig 1, Rig 2) plus SDR Settings, Sound Card and PTT.
+   In the Rig 1 tab choose the connection type — **Direct (Hamlib built-in)**, **NET (rigctld compatible)**
+   for an existing rigctld, or **SDR** — then select your radio model, serial port and baud rate
+   (CI-V address for Icom rigs).
 2. Press OK. Closing the dialog keeps an existing connection.
 3. In the Radio Control tab press **Connect Rig 1**. The status shows a green
-   "Connected" on success and a red "Not connected" on failure.
+   "Connected: <radio model>" on success (cyan "SDR: Connected" for an SDR) and a red "Not connected" on failure.
 4. Select a satellite, then a transponder. Frequency, mode and tone are set and
    Doppler correction follows. Use the Cycle dropdown to change how often the rig is updated.
 5. Rig 2 works the same way (for example an SDR as Rig 2 for receiving).
@@ -67,7 +68,7 @@ Open from the **Communications** menu; each opens as a closable tab.
   ft8lib (FT4), FT4 Enhanced Decoder, Q65 Library, Direwolf (APRS/Telemetry with
   sound card), SatDump (METEOR/HRPT), gr-satellites (Telemetry, 330+ satellites),
   CW Model (CW Decoder).
-- Audio from a radio uses the sound card chosen in Rig Settings.
+- Audio from a radio uses the input/output chosen in the **Sound Card** tab of Rig Settings.
 
 ## 6. Autotrack/Record
 

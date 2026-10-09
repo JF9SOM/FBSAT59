@@ -19,9 +19,9 @@ https://github.com/JF9SOM/fbsat59/releases/latest からダウンロードしま
 
 ## 3. 無線機を接続する（Hamlib）
 
-1. **無線機 > 無線機設定...（Rig Settings）** で機種・シリアルポート・ボーレート（Icom は CI-V アドレスも）を選びます。接続方式は Direct（内蔵 Hamlib）か NET Control（既存の rigctld）。
+1. **無線機 > 無線機設定...（Rig Settings）** には Rig 1・Rig 2 のタブのほか、SDR Settings・Sound Card・PTT のタブがあります。Rig 1 タブで接続方式（**Direct (Hamlib built-in)**／既存の rigctld を使う **NET (rigctld compatible)**／**SDR**）を選び、機種・シリアルポート・ボーレート（Icom は CI-V アドレスも）を設定します。
 2. OK を押します。ダイアログを閉じても既存の接続は維持されます。
-3. 無線機コントロールタブの **Rig 1 に接続** を押します。成功すると緑の「接続」、失敗すると赤の「未接続」と表示されます。
+3. 無線機コントロールタブの **Rig 1 に接続** を押します。成功すると緑の「接続: 機種名」（SDR は水色の「SDR: 接続中」）、失敗すると赤の「未接続」と表示されます。
 4. 衛星、続いてトランスポンダーを選ぶと、周波数・モード・トーンが設定され、ドップラー補正が追従します。「Cycle」プルダウンでリグの更新間隔を変えられます。
 5. Rig 2 も同様です（例: 受信用に SDR を Rig 2 に割り当てる）。
 
@@ -45,7 +45,7 @@ OS ごとの注意:
 **通信（Communications）** メニューから開きます。それぞれ閉じられるタブです。
 
 - 追加コンポーネントが必要なものは **ヘルプ** メニューから導入します: ft8lib（FT4）、FT4 Enhanced Decoder、Q65 Library、Direwolf（サウンドカードでの APRS/テレメトリー）、SatDump（METEOR/HRPT）、gr-satellites（テレメトリー、330 以上の衛星）、CW Model（CW デコーダー）
-- 無線機からの音声は、無線機設定で選んだサウンドカードを使います。
+- 無線機からの音声は、無線機設定の **Sound Card** タブで選んだ入出力を使います。
 
 ## 6. 自動追尾/記録（Autotrack/Record）
 

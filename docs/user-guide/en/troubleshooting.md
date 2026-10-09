@@ -64,7 +64,7 @@ the target; this is normal.
 
 - Install the component from the Help menu (ft8lib, Q65 Library, Direwolf, SatDump,
   gr-satellites, CW Model) and restart if asked.
-- FT4/APRS/CW with a rig need audio routed to the sound card selected in Rig Settings
+- FT4/APRS/CW with a rig need audio routed to the sound card selected in the Sound Card tab of Rig Settings
   and a suitable signal level; check the radio's audio output and data/packet mode settings.
 - METEOR/HRPT: SatDump must be installed (Help > SatDump...). Set the gain manually;
   automatic gain (AGC) is not offered because it gives false locks. Weak signal or the
