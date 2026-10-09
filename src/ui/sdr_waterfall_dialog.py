@@ -115,6 +115,13 @@ _AUTO_SPAN_DB = 30.0
 # Per-frame smoothing of the live trace in normal mode (~10 fps -> ~0.4 s).
 _TRACE_AVG_ALPHA = 0.22
 
+# In Auto Range the trace's own Y axis follows the noise floor, matching the
+# SDR Control tab: [floor - 5 dB, floor + 40 dB], floor smoothed, 5 dB steps.
+_TRACE_BELOW_DB = 5.0
+_TRACE_ABOVE_DB = 40.0
+_TRACE_FLOOR_ALPHA = 0.1
+_TRACE_AXIS_STEP_DB = 5.0
+
 # Same palette family as ft4_waterfall_dialog.py for visual consistency
 # across the app's waterfall popups.
 _PALETTE = [
@@ -272,6 +279,7 @@ class SdrWaterfallDialog(QDialog):
         self._latest_powers: NDArray[np.float32] | None = None
         # Linear-power running average behind the live trace (normal mode).
         self._trace_avg: NDArray[np.float64] | None = None
+        self._trace_floor_db: float | None = None
         self._center_freq_hz: float | None = None
 
         # Burst mode state (see the module docstring). _row_meta runs
@@ -385,6 +393,7 @@ class SdrWaterfallDialog(QDialog):
         self._latest_freqs = None
         self._latest_powers = None
         self._trace_avg = None
+        self._trace_floor_db = None
         self._center_freq_hz = None
         if pipeline is not None:
             pipeline.spectrum_ready.connect(self._on_spectrum)
@@ -446,6 +455,7 @@ class SdrWaterfallDialog(QDialog):
     def _on_burst_toggled(self, checked: bool) -> None:
         # The two modes build their rows differently, so never mix them.
         self._trace_avg = None
+        self._trace_floor_db = None
         self._history.clear()
         self._reset_burst_state()
         if self._pipeline is not None:
@@ -515,6 +525,19 @@ class SdrWaterfallDialog(QDialog):
             return lo, lo + _AUTO_SPAN_DB
         return self._low_spin.value(), self._high_spin.value()
 
+    def _trace_range(self, lo_db: float, hi_db: float) -> tuple[float, float]:
+        """Y range of the top trace: noise-floor relative in Auto Range."""
+        if not self._auto_chk.isChecked() or self._latest_powers is None:
+            return lo_db, hi_db
+        floor = float(np.percentile(self._latest_powers, _AUTO_FLOOR_PERCENTILE))
+        if self._trace_floor_db is None:
+            self._trace_floor_db = floor
+        else:
+            self._trace_floor_db += _TRACE_FLOOR_ALPHA * (floor - self._trace_floor_db)
+        step = _TRACE_AXIS_STEP_DB
+        ymin = round((self._trace_floor_db - _TRACE_BELOW_DB) / step) * step
+        return ymin, ymin + _TRACE_BELOW_DB + _TRACE_ABOVE_DB
+
     def _redraw(self) -> None:
         if self._latest_freqs is None or self._latest_powers is None or not self._history:
             return
@@ -528,7 +551,8 @@ class SdrWaterfallDialog(QDialog):
         canvas.fill(QColor("#101010"))
         painter = QPainter(canvas)
 
-        self._draw_spectrum(painter, freq_lo, freq_hi, lo_db, hi_db)
+        trace_lo, trace_hi = self._trace_range(lo_db, hi_db)
+        self._draw_spectrum(painter, freq_lo, freq_hi, trace_lo, trace_hi)
         axis_y = _MARGIN_TOP + _SPECTRUM_HEIGHT
         self._draw_freq_axis(painter, freq_lo, freq_hi, axis_y)
         self._draw_waterfall(painter, lo_db, hi_db)
