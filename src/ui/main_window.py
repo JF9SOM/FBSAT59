@@ -5741,6 +5741,7 @@ class MainWindow(QMainWindow):
         self._detail_panel.set_satellite(norad, name)
         self._radio_control.set_satellite(norad, name)
         self._dashboard_view.set_satellite(norad, name)
+        self._sdr_control.set_satellite_info(norad, name)
         self._notify_telemetry_tab_satellite(norad, name)
 
         if norad == MOON_ID:
@@ -9351,6 +9352,12 @@ class MainWindow(QMainWindow):
         norad = self._autotrack_tracking_norad or 0
         if self._autotrack_iq_record:
             try:
+                # Autotrack may track a satellite other than the list selection,
+                # so name the file after the one actually being tracked.
+                if norad:
+                    self._sdr_control.set_satellite_info(
+                        norad, self._sat_name_cache.get(norad, str(norad))
+                    )
                 self._sdr_control.start_iq_recording_for_autotrack()
             except Exception as exc:
                 logger.warning("Autotrack IQ record start failed: %s", exc)
