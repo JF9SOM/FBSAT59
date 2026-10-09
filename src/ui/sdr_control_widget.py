@@ -71,7 +71,7 @@ _SPECTRUM_YMIN: float = -90.0
 _SPECTRUM_YMAX: float = 0.0
 _SPECTRUM_FLOOR_PERCENTILE: float = 10.0
 _SPECTRUM_BELOW_DB: float = 10.0
-_SPECTRUM_SPAN_DB: float = 50.0
+_SPECTRUM_SPAN_DB: float = 40.0
 # Exponential smoothing per frame (spectrum_ready is ~10 fps): ~0.4 s time
 # constant for the trace, slower for the floor so the axis does not jitter.
 _SPECTRUM_AVG_ALPHA: float = 0.22
