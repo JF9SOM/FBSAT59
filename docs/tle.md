@@ -18,7 +18,7 @@
 | `fetch_and_update('celestrak-earth-obs')` | CelesTrak RESOURCE | 地球観測 | 12時間ごと | `celestrak` | `earth-obs` |
 | `fetch_and_update('celestrak-science')` | CelesTrak SCIENCE | 科学衛星 | 12時間ごと | `celestrak` | `science` |
 | `fetch_active_tles()` | CelesTrak(複数グループ)+SATNOGS TLE API | 10000-89999・未収録 | 24時間ごと(起動時stale確認) | `celestrak` or `satnogs` | `amateur`(INSERT時) / 既存保持(UPDATE時) |
-| `fetch_provisional_tles()` | SATNOGS TLE API | NORAD ≥ 90000 | 12時間ごと | `satnogs` | `amateur` |
+| `fetch_provisional_tles()` | SATNOGS TLE API | NORAD 90000〜99999（仮 ID。100000 以上は正式番号で対象外） | 12時間ごと | `satnogs` | `amateur` |
 | `fetch_legacy_tles()` | CelesTrak 個別照会 | NORAD < 10000 | 起動時1回のみ | `celestrak` | `legacy` |
 | `add_manual_tle()` | ユーザー手動入力 | 任意 | 手動 | `manual` | `amateur` |
 
@@ -681,6 +681,43 @@ Update TLEボタンは**上記3つのみ**を呼ぶ設計であり、`fetch_lega
 - `SELECT *` は絶対に使用しないこと
 
 ---
+
+## 6桁 NORAD 番号（100000 以上）と OMM（JSON）取得（2026-10-09）
+
+### 背景（JAMX01 の IQ 録音で発覚）
+2026 年の中ごろから NORAD カタログ番号が 99999 を超えた。クラシックな TLE は番号が 5 桁なので、CelesTrak は
+6 桁の物体を **`FORMAT=TLE` では出さない**（グループ一覧からは**黙って欠落**、`CATNR=` は「No GP data found」）。
+OMM（`FORMAT=JSON`）でだけ出る。2026-10-09 時点で、STATIONS は 22 件中 3 件（SOYUZ-MS 29・PROGRESS-MS 35・
+CREW DRAGON 13）、AMATEUR は 1 件、WEATHER は 1 件が TLE 形式から欠けていた。
+
+### 実装（`src/data/omm.py`）
+- グループ取得（`TLE_SOURCES` の 6 グループ）と `fetch_single()` を `FORMAT=JSON` にし、
+  `celestrak_to_tle_text()` が OMM を**通常の 3 行 TLE テキストに変換**する。以降の処理（パース・DB 保存・
+  `EarthSatellite(line1, line2)`）は無変更。JSON 以外（TLE 本文・「No GP data found」等のエラー文）はそのまま通す。
+- 6 桁の番号は **Alpha-5**（先頭桁を英字に置換。A=10…、I と O は飛ばす。100470 → `A0470`）で TLE に書く。
+  python-sgp4 / Skyfield はこれを読める（`satnum` = 100470）。DB の `tle_data.line1/line2` にもこの形のまま保存。
+- **TLE の 1 行目から NORAD 番号を取り出す箇所は `int(line1[2:7])` ではなく `parse_tle_norad()` を使うこと**
+  （`tle_manager.py` の 4 か所と `manual_tle_dialog.py`）。`A0470` を `int()` すると ValueError になる。
+- **「90000 以上 = 仮 ID」ではなくなった**: 仮 ID は **90000〜99999**（`is_provisional_norad()`、
+  `PROVISIONAL_NORAD_MAX`）。`fetch_provisional_tles()` の対象を `<= 99999` に限った。限らないと、6 桁の
+  正式番号の衛星が SATNOGS のバルク TLE に無いため「TLE なし」扱いになり、猶予後に**自動で非表示**にされる。
+  `gr_satellites_backend.map_provisional_to_tracked()` も同じ範囲に限った。
+- 一回限りの DB 修復 `db_repair_satnogs_in_orbit_v1`（`database.py`）の `< 90000` は、実行済みの過去の
+  修復なので変更していない。
+
+### 実機での検証（2026-10-09、一時 DB に実際の CelesTrak 応答を取り込み）
+AMATEUR 96・STATIONS 22・WEATHER 73 件がエラー 0 で入り、6 桁の 5 件（SOYUZ-MS 29・JAMX01(195A)・MTG-I2・
+PROGRESS-MS 35・CREW DRAGON 13）がすべて追跡に使えた。`tests/test_omm.py`（27 件）。
+
+### 未解決: JAMX01 は「名前」と「実際の送信物体」が違う
+SATNOGS の JAMX01（仮 ID 98248）の TLE は **`2026-195E` ＝ BY70-4（NORAD 100469）** のもので、実際の JAMX01 より
+212 秒ずれていた。CelesTrak は名前 "JAMX01 (JING'AN DREAM STAR)" を **195A（100465）** に付けているが、2026-10-09 の
+IQ 録音（435.175 MHz の SSTV）の周波数の軌跡と一致したのは **195F（"OBJECT F"、100470、残差 0.24 kHz）**
+で、195A は見えない位置（仰角 −40°）だった。打ち上げ直後の物体は名前の割り当てが違うことがある。
+→ **名前一致での自動割り当ては信用できない**（仮 ID → 実 ID 移行パイプラインが名前で 100465 を選ぶと悪化する）。
+今は 98248 に 195F の TLE を「Satellite → Add Manual TLE」で手動登録するのが確実（`source='manual'` は
+自動同期で上書きされない）。将来、物体を手動指定する機能（「この衛星の TLE は CelesTrak の NORAD ○○」）を足すなら
+トリガー(C)（下の「未実装項目」）と合わせて検討する。
 
 ## 仮NORAD ID（90000番台）衛星のTLE・トランスポンダー管理
 

@@ -43,6 +43,7 @@ _SYSTEM_SATYAML_DIR = Path(_GR_PYTHONPATH) / "satellites" / "satyaml"
 # docs/tle.md); gr-satellites' catalog keeps some satellites under them long
 # after the satellite received its real catalog number.
 PROVISIONAL_NORAD_MIN = 90000
+PROVISIONAL_NORAD_MAX = 99999  # real catalogue numbers continue at 100000
 
 # UDP port used to send IQ from the SDR pipeline to gr_satellites
 _UDP_PORT = 7356
@@ -191,7 +192,7 @@ def map_provisional_to_tracked(
         by_name.setdefault(_normalize_sat_name(name), []).append(norad)
     mapping: dict[int, int] = {}
     for catalog_norad, name in catalog:
-        if catalog_norad < PROVISIONAL_NORAD_MIN:
+        if not PROVISIONAL_NORAD_MIN <= catalog_norad <= PROVISIONAL_NORAD_MAX:
             continue
         candidates = [n for n in by_name.get(_normalize_sat_name(name), []) if n != catalog_norad]
         if len(candidates) == 1:

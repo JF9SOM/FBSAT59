@@ -17,16 +17,21 @@ import httpx
 from skyfield.api import EarthSatellite, load
 
 from data.http_client import DEFAULT_HEADERS
+from data.omm import PROVISIONAL_NORAD_MAX, celestrak_to_tle_text, parse_tle_norad
 
 logger = logging.getLogger(__name__)
 
 # TLE source definitions (in priority order)
 # CelesTrak GP API: https://celestrak.org/NORAD/documentation/gp-data-formats.php
+# The groups are fetched as JSON (OMM), not TLE: since 2026 the catalogue numbers
+# exceed 99999 and CelesTrak's TLE output silently drops those objects. The
+# response is converted back to TLE text (6-digit numbers in Alpha-5 form) by
+# data.omm.celestrak_to_tle_text(), so everything downstream is unchanged.
 TLE_SOURCES: list[dict[str, Any]] = [
     {
         "name": "celestrak-stations",
         "url": "https://celestrak.org/NORAD/elements/gp.php",
-        "params": {"GROUP": "STATIONS", "FORMAT": "TLE"},
+        "params": {"GROUP": "STATIONS", "FORMAT": "JSON"},
         "group": "stations",
         "priority": 0,
         "update_interval_hours": 1,
@@ -34,7 +39,7 @@ TLE_SOURCES: list[dict[str, Any]] = [
     {
         "name": "celestrak-amateur",
         "url": "https://celestrak.org/NORAD/elements/gp.php",
-        "params": {"GROUP": "AMATEUR", "FORMAT": "TLE"},
+        "params": {"GROUP": "AMATEUR", "FORMAT": "JSON"},
         "group": "amateur",
         "priority": 1,
         "update_interval_hours": 2,
@@ -42,7 +47,7 @@ TLE_SOURCES: list[dict[str, Any]] = [
     {
         "name": "celestrak-cubesat",
         "url": "https://celestrak.org/NORAD/elements/gp.php",
-        "params": {"GROUP": "CUBESAT", "FORMAT": "TLE"},
+        "params": {"GROUP": "CUBESAT", "FORMAT": "JSON"},
         "group": "cubesat",
         "priority": 2,
         "update_interval_hours": 4,
@@ -50,7 +55,7 @@ TLE_SOURCES: list[dict[str, Any]] = [
     {
         "name": "celestrak-weather",
         "url": "https://celestrak.org/NORAD/elements/gp.php",
-        "params": {"GROUP": "WEATHER", "FORMAT": "TLE"},
+        "params": {"GROUP": "WEATHER", "FORMAT": "JSON"},
         "group": "weather",
         "priority": 3,
         "update_interval_hours": 6,
@@ -58,7 +63,7 @@ TLE_SOURCES: list[dict[str, Any]] = [
     {
         "name": "celestrak-earth-obs",
         "url": "https://celestrak.org/NORAD/elements/gp.php",
-        "params": {"GROUP": "resource", "FORMAT": "TLE"},
+        "params": {"GROUP": "resource", "FORMAT": "JSON"},
         "group": "earth-obs",
         "priority": 4,
         "update_interval_hours": 12,
@@ -66,7 +71,7 @@ TLE_SOURCES: list[dict[str, Any]] = [
     {
         "name": "celestrak-science",
         "url": "https://celestrak.org/NORAD/elements/gp.php",
-        "params": {"GROUP": "SCIENCE", "FORMAT": "TLE"},
+        "params": {"GROUP": "SCIENCE", "FORMAT": "JSON"},
         "group": "science",
         "priority": 5,
         "update_interval_hours": 12,
@@ -650,7 +655,7 @@ class TLEManager:
             async with httpx.AsyncClient(timeout=30.0, headers=DEFAULT_HEADERS) as client:
                 r = await client.get(source["url"], params=source.get("params", {}))
                 r.raise_for_status()
-                text = r.text
+                text = celestrak_to_tle_text(r.text)
         except httpx.HTTPStatusError as e:
             logger.warning(f"fetch error from {source_name}: {e}")
             self._celestrak_breaker.record_error(blocked=e.response.status_code == 403)
@@ -681,7 +686,7 @@ class TLEManager:
 
             try:
                 sat = EarthSatellite(line1, line2, name, self._ts)
-                norad = int(line1[2:7])
+                norad = parse_tle_norad(line1)
                 epoch_dt = sat.epoch.utc_datetime()
                 quality = _calc_quality(epoch_dt)
 
@@ -772,12 +777,14 @@ class TLEManager:
         (e.g. ORIGAMI-2 / NORAD 57168) and needs to be added individually.
         """
         url = "https://celestrak.org/NORAD/elements/gp.php"
-        params = {"CATNR": str(norad_cat_id), "FORMAT": "TLE"}
+        params = {"CATNR": str(norad_cat_id), "FORMAT": "JSON"}
         try:
             async with httpx.AsyncClient(timeout=15.0, headers=DEFAULT_HEADERS) as client:
                 r = await client.get(url, params=params)
                 r.raise_for_status()
-                lines = [ln.strip() for ln in r.text.splitlines() if ln.strip()]
+                lines = [
+                    ln.strip() for ln in celestrak_to_tle_text(r.text).splitlines() if ln.strip()
+                ]
                 if len(lines) >= 3:
                     name, line1, line2 = lines[0], lines[1], lines[2]
                     return self.add_manual_tle(norad_cat_id, name, line1, line2)
@@ -1104,7 +1111,7 @@ class TLEManager:
                     name, line1, line2 = lines[i], lines[i + 1], lines[i + 2]
                     i += 3
                     try:
-                        norad = int(line1[2:7])
+                        norad = parse_tle_norad(line1)
                     except (ValueError, IndexError):
                         continue
                     if norad not in wanted:
@@ -1718,13 +1725,15 @@ class TLEManager:
             """
             SELECT norad_cat_id, name, status, tle_no_result_since FROM satellites
             WHERE norad_cat_id >= 90000
+              AND norad_cat_id <= ?
               AND is_hidden IN (0, 2)
               AND status != 'dead'
               AND norad_cat_id NOT IN (
                   SELECT satnogs_source_id FROM satellites
                   WHERE satnogs_source_id IS NOT NULL
               )
-            """
+            """,
+            (PROVISIONAL_NORAD_MAX,),
         ).fetchall()
 
         stats: dict[str, int] = {
@@ -1782,7 +1791,7 @@ class TLEManager:
                 continue
 
             # Check whether the TLE line1 encodes a different (official) NORAD ID
-            tle_norad = int(line1[2:7])
+            tle_norad = parse_tle_norad(line1)
             migrated = False
             if tle_norad != fake_id:
                 # SATNOGS internally resolved this provisional ID to an official one.

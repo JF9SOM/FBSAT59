@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from data.omm import parse_tle_norad
 from data.tle_manager import TLEManager
 from i18n import _
 
@@ -167,7 +168,7 @@ class ManualTLEDialog(QDialog):
             )
             return
         try:
-            norad = int(line1[2:7])
+            norad = parse_tle_norad(line1)
         except ValueError:
             QMessageBox.warning(
                 self,
