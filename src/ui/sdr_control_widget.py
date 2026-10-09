@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 from PySide6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis
 from PySide6.QtCore import (
     QDate,
@@ -63,9 +64,19 @@ _CLIP_ALERT_AFTER_S = 10  # sustained clipping before the first alert
 _CLIP_REPEAT_S = 60  # re-alert interval while it continues
 _CLIP_RED_FRACTION = 0.05
 
-# Spectrum chart Y-axis range (dBFS)
+# Spectrum chart Y-axis range (dBFS). The axis follows the noise floor:
+# [floor - _SPECTRUM_BELOW_DB, floor + _SPECTRUM_SPAN_DB]; the fixed values
+# are only the initial range before the first spectrum arrives.
 _SPECTRUM_YMIN: float = -90.0
 _SPECTRUM_YMAX: float = 0.0
+_SPECTRUM_FLOOR_PERCENTILE: float = 10.0
+_SPECTRUM_BELOW_DB: float = 10.0
+_SPECTRUM_SPAN_DB: float = 50.0
+# Exponential smoothing per frame (spectrum_ready is ~10 fps): ~0.4 s time
+# constant for the trace, slower for the floor so the axis does not jitter.
+_SPECTRUM_AVG_ALPHA: float = 0.22
+_SPECTRUM_FLOOR_ALPHA: float = 0.1
+_SPECTRUM_AXIS_STEP_DB: float = 5.0
 
 # Passband tune step options (label, Hz)
 _TUNE_STEPS: list[tuple[str, int]] = [
@@ -419,6 +430,13 @@ class SdrControlWidget(QWidget):
         v = QVBoxLayout(grp)
 
         # QtCharts spectrum display
+        # Smoothing state (see _on_spectrum): linear-power running average,
+        # smoothed noise floor, current Y range and tuned centre in MHz.
+        self._spec_avg: np.ndarray | None = None
+        self._spec_floor_db: float | None = None
+        self._spec_ymin: float = _SPECTRUM_YMIN
+        self._spec_ymax: float = _SPECTRUM_YMAX
+        self._center_marker_mhz: float | None = None
         self._spectrum_series = QLineSeries()
         pen = QPen(QColor("#00dcff"))
         pen.setWidth(1)
@@ -847,14 +865,46 @@ class SdrControlWidget(QWidget):
         """Update the spectrum chart with new FFT data."""
         if not points:
             return
-        self._spectrum_series.clear()
-        # Convert Hz to MHz for the axis
-        pts = [(f / 1e6, p) for f, p in points]
-        # Use replace() for efficiency when series already has data
-        self._spectrum_series.replace([QPointF(f, p) for f, p in pts])
-        freqs = [f for f, _ in pts]
-        if freqs:
-            self._freq_axis.setRange(min(freqs), max(freqs))
+        freqs_hz = np.fromiter((f for f, _p in points), dtype=np.float64, count=len(points))
+        power_db = np.fromiter((p for _f, p in points), dtype=np.float64, count=len(points))
+        # Average in the linear power domain so noise flattens out while a
+        # real signal keeps its true height; a single FFT scatters the noise
+        # floor by several dB and buries weak peaks.
+        linear = np.power(10.0, power_db / 10.0)
+        if self._spec_avg is None or self._spec_avg.shape != linear.shape:
+            self._spec_avg = linear
+        else:
+            self._spec_avg += _SPECTRUM_AVG_ALPHA * (linear - self._spec_avg)
+        smooth_db = 10.0 * np.log10(self._spec_avg + 1e-20)
+
+        # Noise-floor-relative Y axis (same idea as the waterfall's Auto Range).
+        floor = float(np.percentile(smooth_db, _SPECTRUM_FLOOR_PERCENTILE))
+        if self._spec_floor_db is None:
+            self._spec_floor_db = floor
+        else:
+            self._spec_floor_db += _SPECTRUM_FLOOR_ALPHA * (floor - self._spec_floor_db)
+        step = _SPECTRUM_AXIS_STEP_DB
+        ymin = round((self._spec_floor_db - _SPECTRUM_BELOW_DB) / step) * step
+        ymax = ymin + _SPECTRUM_SPAN_DB + _SPECTRUM_BELOW_DB
+        if (ymin, ymax) != (self._spec_ymin, self._spec_ymax):
+            self._spec_ymin, self._spec_ymax = ymin, ymax
+            self._pwr_axis.setRange(ymin, ymax)
+            self._update_center_marker()
+
+        mhz = freqs_hz / 1e6
+        self._spectrum_series.replace(
+            [QPointF(float(f), float(p)) for f, p in zip(mhz, smooth_db, strict=True)]
+        )
+        self._freq_axis.setRange(float(mhz.min()), float(mhz.max()))
+
+    def _update_center_marker(self) -> None:
+        """Redraw the tuned-frequency marker across the current Y range."""
+        if self._center_marker_mhz is None:
+            return
+        mhz = self._center_marker_mhz
+        self._center_marker_series.replace(
+            [QPointF(mhz, self._spec_ymin), QPointF(mhz, self._spec_ymax)]
+        )
 
     @Slot(float)
     def _on_center_freq(self, freq_hz: float) -> None:
@@ -870,9 +920,8 @@ class SdrControlWidget(QWidget):
         (GitHub Issue #12 follow-up).
         """
         mhz = freq_hz / 1e6
-        self._center_marker_series.replace(
-            [QPointF(mhz, _SPECTRUM_YMIN), QPointF(mhz, _SPECTRUM_YMAX)]
-        )
+        self._center_marker_mhz = mhz
+        self._update_center_marker()
         # Skip while the user has the field focused (mid-edit): this fires at
         # ~10fps, so overwriting it unconditionally clobbered every keystroke
         # of a manual retune before editingFinished could ever see the typed
