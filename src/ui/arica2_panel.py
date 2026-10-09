@@ -10,8 +10,9 @@ Receive and transmit both go through the shared Direwolf session of
   - SDR: the SDR receives (and its I/Q also feeds the beacon-end detector that
     tells when the uplink window is open); the rig transmits through the Sound
     Card output.
-  - Rig Sound Card: receive and transmit through the sound card. There is no
-    beacon detection on this path, so uplinks are manual only.
+  - Rig Sound Card: receive and transmit through the sound card. The beacon end is
+    detected from the receive audio level (the keyed carrier quiets the receiver's
+    noise), less reliably than from I/Q; our own transmissions are masked out.
 
 Frame layouts come from a reverse-engineered third-party tool, see
 comms/arica2/message_box.py.
@@ -58,7 +59,7 @@ from comms.arica2.message_box import (
     build_command,
     parse_downlink,
 )
-from comms.arica2.window_detector import BeaconWindowDetector
+from comms.arica2.window_detector import AudioBeaconWindowDetector, BeaconWindowDetector
 from comms.audio_device_manager import get_audio_device_manager
 from comms.audio_tx import AUDIO_RATE as _AUDIO_RATE
 from comms.audio_tx import PttAudioTxWorker
@@ -74,6 +75,7 @@ from ui.tx_level import (
 
 _OWNER = "ARICA-2 Message Box"
 _OWNER_BASEBAND = "ARICA-2 baseband decoder"
+_OWNER_BEACON = "ARICA-2 beacon detector"
 # The same frame can come from Direwolf and from the baseband decoder; show it once.
 _DEDUPE_S = 10.0
 _SETTINGS_KEY = "arica2_settings"
@@ -108,7 +110,8 @@ class Arica2Panel(QWidget):
         self._radio_control = radio_control
         self._engine = get_aprs_engine(conn)
         self._sdr_pipeline: Any = None
-        self._detector: BeaconWindowDetector | None = None
+        self._detector: BeaconWindowDetector | AudioBeaconWindowDetector | None = None
+        self._beacon_device: int | None = None
         self._engine_active = False
         self._baseband: G3ruhBasebandRxThread | None = None
         self._baseband_device: int | None = None
@@ -245,8 +248,8 @@ class Arica2Panel(QWidget):
         self._mode_combo.setToolTip(
             _(
                 "Manual sends the moment you press a button. Auto holds the command "
-                "and sends it as soon as the beacon ends (needs the SDR input, which "
-                "watches the beacon)."
+                "and sends it as soon as the beacon ends (the beacon is watched through "
+                "the SDR input, or through the rig's receive audio level)."
             )
         )
         self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
@@ -412,12 +415,50 @@ class Arica2Panel(QWidget):
         self._engine.restart_if_modem_changed(_MODEM)
         self._engine_active = True
         self._start_baseband_decoder()
+        self._start_audio_beacon_detector()
         self._status_label.setText(
             _(
                 "Input: Rig Soundcard + Direwolf + baseband decoder (4800 baud). "
-                "No beacon detection: manual only"
+                "Beacon detection from the audio level"
             )
         )
+
+    def _start_audio_beacon_detector(self) -> None:
+        """Watch the rig's receive audio for the end of the CW beacon (no SDR needed)."""
+        device = self._input_device()
+        if device is None:
+            return
+        detector = AudioBeaconWindowDetector(_AUDIO_RATE)
+        try:
+            get_audio_device_manager().acquire_input(
+                _OWNER_BEACON, device, _AUDIO_RATE, self._on_audio_chunk
+            )
+        except Exception as exc:
+            self._status_label.setText(_("Audio open error: {exc}").format(exc=exc))
+            return
+        self._detector = detector
+        self._beacon_device = device
+
+    def _stop_audio_beacon_detector(self) -> None:
+        device, self._beacon_device = self._beacon_device, None
+        if device is None:
+            return
+        with contextlib.suppress(Exception):
+            get_audio_device_manager().release_input(_OWNER_BEACON, device)
+
+    def _on_audio_chunk(self, audio: NDArray[np.float32]) -> None:
+        """Audio callback thread: run the detector, hand events to the Qt thread."""
+        detector = self._detector
+        if not isinstance(detector, AudioBeaconWindowDetector):
+            return
+        for event in detector.push_samples(audio):
+            self._window_event.emit(event.burst_s, event.remaining_s)
+
+    def _mask_own_transmission(self, transmitting: bool) -> None:
+        """Our transmission mutes the receiver's audio, which must not look like the beacon."""
+        detector = self._detector
+        if isinstance(detector, AudioBeaconWindowDetector):
+            detector.set_transmitting(transmitting)
 
     def _start_baseband_decoder(self) -> None:
         """Decode the same sound card audio a second way (see g3ruh_baseband_rx)."""
@@ -453,6 +494,7 @@ class Arica2Panel(QWidget):
 
     def _stop_input(self) -> None:
         self._stop_baseband_decoder()
+        self._stop_audio_beacon_detector()
         if self._sdr_pipeline is not None:
             with contextlib.suppress(Exception):
                 self._sdr_pipeline.unsubscribe(self._on_iq_chunk)
@@ -477,7 +519,7 @@ class Arica2Panel(QWidget):
     def _on_iq_chunk(self, iq: NDArray[np.complex64]) -> None:
         """SDR pipeline thread: run the detector, hand events to the Qt thread."""
         detector = self._detector
-        if detector is None:
+        if not isinstance(detector, BeaconWindowDetector):
             return
         for event in detector.push_samples(iq):
             self._window_event.emit(event.burst_s, event.remaining_s)
@@ -533,8 +575,8 @@ class Arica2Panel(QWidget):
         self._cancel_btn.setEnabled(self._armed is not None)
 
     def _update_mode_enabled(self) -> None:
-        """Auto needs the beacon detector, i.e. the SDR input."""
-        auto_ok = self._rb_sdr.isChecked()
+        """Auto needs a beacon detector: the SDR's I/Q, or the rig's receive audio."""
+        auto_ok = self._rb_sdr.isChecked() or self._detector is not None
         model = self._mode_combo.model()
         item = getattr(model, "item", None)
         if item is not None:
@@ -621,6 +663,7 @@ class Arica2Panel(QWidget):
         worker.error.connect(self._on_tx_error)
         self._tx_worker = worker  # keep a reference: it emits from its thread
         self._tx_in_progress = True
+        self._mask_own_transmission(True)
         self._tx_thread = threading.Thread(target=worker.run, daemon=True)
         self._tx_thread.start()
         text = command.value + (f" {message}" if message else "")
@@ -653,11 +696,13 @@ class Arica2Panel(QWidget):
     @Slot()
     def _on_tx_finished(self) -> None:
         self._tx_in_progress = False
+        self._mask_own_transmission(False)
         self._tx_status_label.setText(_("TX done"))
 
     @Slot(str)
     def _on_tx_error(self, msg: str) -> None:
         self._tx_in_progress = False
+        self._mask_own_transmission(False)
         self._tx_status_label.setText(_("TX error: ") + msg)
 
     # ------------------------------------------------------------------ #

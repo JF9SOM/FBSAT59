@@ -6,7 +6,11 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-from comms.arica2.window_detector import BeaconEnded, BeaconWindowDetector
+from comms.arica2.window_detector import (
+    AudioBeaconWindowDetector,
+    BeaconEnded,
+    BeaconWindowDetector,
+)
 
 _RATE = 250_000.0
 _BLOCK = 16_384
@@ -121,3 +125,77 @@ def test_works_at_a_high_sample_rate_and_odd_block_sizes() -> None:
 def test_rejects_bad_sample_rate() -> None:
     with pytest.raises(ValueError):
         BeaconWindowDetector(0.0)
+
+
+# -- Detection from the rig's receive audio ------------------------------------------------
+
+
+_RATE = 48_000
+
+
+def _audio(quiet: list[tuple[float, float]], total_s: float, seed: int = 1) -> np.ndarray:
+    """Receiver noise; carrier keyed on (quieter noise) during the (start, end) stretches."""
+    rng = np.random.default_rng(seed)
+    audio = (rng.standard_normal(int(total_s * _RATE)) * 0.006).astype(np.float32)
+    for a, b in quiet:
+        audio[int(a * _RATE) : int(b * _RATE)] *= 0.3
+    return audio
+
+
+def _run(det: AudioBeaconWindowDetector, audio: np.ndarray) -> list:
+    events = []
+    for i in range(0, len(audio), 2400):
+        events.extend(det.push_samples(audio[i : i + 2400]))
+    return events
+
+
+def _cw(start: float, seconds: float = 20.0, pulse: float = 0.25, step: float = 0.5):
+    n = int(seconds / step)
+    return [(start + k * step, start + k * step + pulse) for k in range(n)]
+
+
+def test_audio_detector_reports_the_end_of_a_keyed_beacon() -> None:
+    det = AudioBeaconWindowDetector(_RATE)
+    events = _run(det, _audio(_cw(10.0), 40.0))
+    assert len(events) == 1
+    assert events[0].burst_s == pytest.approx(19.75, abs=1.0)
+    # The 3 s needed to be sure the beacon is over counts against the 15 s window.
+    assert events[0].remaining_s == pytest.approx(12.0, abs=0.3)
+
+
+def test_audio_detector_ignores_a_pause_inside_the_cw() -> None:
+    pulses = _cw(10.0, 8.0) + _cw(10.0 + 8.0 + 2.4, 8.0)  # a 2.4 s word gap in the middle
+    events = _run(AudioBeaconWindowDetector(_RATE), _audio(pulses, 40.0))
+    assert len(events) == 1  # one beacon item, not two
+
+
+def test_audio_detector_says_nothing_about_plain_noise() -> None:
+    for seed in range(5):
+        assert _run(AudioBeaconWindowDetector(_RATE), _audio([], 300.0, seed)) == []
+
+
+def test_audio_detector_ignores_a_short_dip() -> None:
+    assert _run(AudioBeaconWindowDetector(_RATE), _audio([(20.0, 21.0)], 40.0)) == []
+
+
+def test_audio_detector_ignores_our_own_muted_receive_audio() -> None:
+    det = AudioBeaconWindowDetector(_RATE)
+    audio = _audio([(20.0, 21.0)], 40.0)  # the receiver goes quiet while we transmit
+    events = []
+    for i in range(0, len(audio), 2400):
+        now = i / _RATE
+        det.set_transmitting(19.9 <= now <= 21.1)
+        events.extend(det.push_samples(audio[i : i + 2400]))
+    assert events == []
+    assert det.carrier_present is False
+
+
+def test_audio_detector_sees_two_beacons_in_a_row() -> None:
+    pulses = _cw(10.0) + _cw(10.0 + 42.0)
+    events = _run(AudioBeaconWindowDetector(_RATE), _audio(pulses, 80.0))
+    assert len(events) == 2
+
+
+def test_audio_detector_survives_signal_loss_of_the_noise_floor() -> None:
+    det = AudioBeaconWindowDetector(_RATE)
+    assert _run(det, np.zeros(10 * _RATE, dtype=np.float32)) == []  # muted audio: nothing to judge

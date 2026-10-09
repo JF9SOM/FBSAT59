@@ -4822,8 +4822,8 @@ msgstr ""
 #: src/ui/arica2_panel.py:247
 msgid ""
 "Manual sends the moment you press a button. Auto holds the command and sends "
-"it as soon as the beacon ends (needs the SDR input, which watches the "
-"beacon)."
+"it as soon as the beacon ends (the beacon is watched through the SDR input, "
+"or through the rig's receive audio level)."
 msgstr ""
 
 #: src/ui/arica2_panel.py:257
@@ -4903,8 +4903,8 @@ msgstr ""
 
 #: src/ui/arica2_panel.py:417
 msgid ""
-"Input: Rig Soundcard + Direwolf + baseband decoder (4800 baud). No beacon "
-"detection: manual only"
+"Input: Rig Soundcard + Direwolf + baseband decoder (4800 baud). Beacon "
+"detection from the audio level"
 msgstr ""
 
 #: src/ui/arica2_panel.py:517

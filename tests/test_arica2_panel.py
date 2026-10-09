@@ -19,6 +19,7 @@ from pytestqt.qtbot import QtBot
 
 import ui.arica2_panel as panel_mod
 from comms.arica2.message_box import Command, build_command
+from comms.arica2.window_detector import AudioBeaconWindowDetector
 from tests.test_g3ruh_tx import _decode
 from ui.arica2_panel import Arica2Panel
 
@@ -279,15 +280,72 @@ def test_cancel_clears_the_armed_command(
     assert p._armed is None
 
 
-def test_soundcard_input_is_manual_only(
+def test_soundcard_input_offers_auto_through_the_audio_beacon_detector(
     qtbot: QtBot, conn: sqlite3.Connection, engine: _FakeEngine
 ) -> None:
     p = _make(qtbot, conn)
-    p._mode_combo.setCurrentIndex(1)
     p._rb_soundcard.setChecked(True)
-    assert p._mode_combo.currentData() == "manual"
+    assert isinstance(p._detector, AudioBeaconWindowDetector)
+    p._mode_combo.setCurrentIndex(1)
+    assert p._mode_combo.currentData() == "auto"
     # Direwolf only receives; the panel transmits through its own audio.
     assert "rig:4800" in engine.calls
+
+
+def test_soundcard_without_an_input_device_is_manual_only(
+    qtbot: QtBot, conn: sqlite3.Connection, engine: _FakeEngine
+) -> None:
+    conn.execute(
+        "UPDATE app_settings SET value = ? WHERE key = 'soundcard_settings'",
+        (json.dumps({"output_device_index": 3}),),
+    )
+    p = _make(qtbot, conn)
+    p._mode_combo.setCurrentIndex(1)
+    p._rb_soundcard.setChecked(True)
+    assert p._detector is None
+    assert p._mode_combo.currentData() == "manual"
+
+
+def _beacon_audio(on_off: list[tuple[float, float]], total_s: float) -> np.ndarray:
+    """Receiver noise with quiet stretches (carrier keyed on) at the given (start, end) times."""
+    rate = 48_000
+    rng = np.random.default_rng(1)
+    audio = (rng.standard_normal(int(total_s * rate)) * 0.006).astype(np.float32)
+    for a, b in on_off:
+        audio[int(a * rate) : int(b * rate)] *= 0.3
+    return audio
+
+
+def test_audio_detector_events_arm_and_fire_a_command(
+    qtbot: QtBot, conn: sqlite3.Connection, engine: _FakeEngine
+) -> None:
+    p = _make(qtbot, conn)
+    p._rb_soundcard.setChecked(True)
+    p._mode_combo.setCurrentIndex(1)
+    p._message_edit.setText("CQ")
+    p._on_command(Command.UPLOAD)
+    assert p._armed is not None
+    # A 20 s keyed beacon (pulses of 0.25 s) that stops at 30 s.
+    pulses = [(10 + 0.5 * k, 10.25 + 0.5 * k) for k in range(40)]
+    audio = _beacon_audio(pulses, 36.0)
+    for i in range(0, len(audio), 4800):
+        p._on_audio_chunk(audio[i : i + 4800])
+    qtbot.waitUntil(lambda: p._armed is None, timeout=3000)
+    qtbot.waitUntil(lambda: len(_FakeTxWorker.played) == 1, timeout=3000)
+
+
+def test_our_own_transmission_is_masked_from_the_audio_detector(
+    qtbot: QtBot, conn: sqlite3.Connection, engine: _FakeEngine
+) -> None:
+    p = _make(qtbot, conn)
+    p._rb_soundcard.setChecked(True)
+    detector = p._detector
+    assert isinstance(detector, AudioBeaconWindowDetector)
+    p._message_edit.setText("CQ")
+    p._on_command(Command.UPLOAD)  # manual mode: transmits at once
+    assert detector._transmitting is True
+    p._on_tx_finished()
+    assert detector._transmitting is False
 
 
 def test_received_frame_is_parsed_and_stored(
@@ -417,11 +475,17 @@ def test_rig_sound_card_input_also_runs_the_baseband_decoder(
     (thread,) = _FakeBasebandThread.instances
     assert thread.started and thread.baud == 4800
     manager = engine.audio_manager  # type: ignore[attr-defined]
-    assert manager.inputs == [("ARICA-2 baseband decoder", 1, 48_000)]
+    assert manager.inputs == [
+        ("ARICA-2 baseband decoder", 1, 48_000),
+        ("ARICA-2 beacon detector", 1, 48_000),
+    ]
 
     p._rb_sdr.setChecked(True)  # leaving the sound card releases the audio and the thread
     assert thread.stopped
-    assert manager.released == [("ARICA-2 baseband decoder", 1)]
+    assert manager.released == [
+        ("ARICA-2 baseband decoder", 1),
+        ("ARICA-2 beacon detector", 1),
+    ]
 
 
 def test_a_frame_seen_by_both_decoders_is_shown_once(
