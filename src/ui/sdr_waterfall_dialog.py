@@ -112,6 +112,9 @@ _DEFAULT_HIGH_DB = 0.0
 _AUTO_FLOOR_PERCENTILE = 10.0
 _AUTO_SPAN_DB = 30.0
 
+# Per-frame smoothing of the live trace in normal mode (~10 fps -> ~0.4 s).
+_TRACE_AVG_ALPHA = 0.22
+
 # Same palette family as ft4_waterfall_dialog.py for visual consistency
 # across the app's waterfall popups.
 _PALETTE = [
@@ -267,6 +270,8 @@ class SdrWaterfallDialog(QDialog):
         self._history: deque[NDArray[np.float32]] = deque(maxlen=_WATERFALL_HEIGHT)
         self._latest_freqs: NDArray[np.float32] | None = None
         self._latest_powers: NDArray[np.float32] | None = None
+        # Linear-power running average behind the live trace (normal mode).
+        self._trace_avg: NDArray[np.float64] | None = None
         self._center_freq_hz: float | None = None
 
         # Burst mode state (see the module docstring). _row_meta runs
@@ -379,6 +384,7 @@ class SdrWaterfallDialog(QDialog):
         self._reset_burst_state()
         self._latest_freqs = None
         self._latest_powers = None
+        self._trace_avg = None
         self._center_freq_hz = None
         if pipeline is not None:
             pipeline.spectrum_ready.connect(self._on_spectrum)
@@ -426,12 +432,20 @@ class SdrWaterfallDialog(QDialog):
         if self._history and len(powers) != len(self._history[-1]):
             self._history.clear()
         self._history.append(powers)
+        # Waterfall rows stay raw (time resolution); the trace is smoothed in
+        # the linear power domain, like the burst mode's averaged rows.
+        linear = np.power(10.0, powers.astype(np.float64) / 10.0)
+        if self._trace_avg is None or self._trace_avg.shape != linear.shape:
+            self._trace_avg = linear
+        else:
+            self._trace_avg += _TRACE_AVG_ALPHA * (linear - self._trace_avg)
         self._latest_freqs = freqs
-        self._latest_powers = powers
+        self._latest_powers = (10.0 * np.log10(self._trace_avg + 1e-20)).astype(np.float32)
         self._redraw()
 
     def _on_burst_toggled(self, checked: bool) -> None:
         # The two modes build their rows differently, so never mix them.
+        self._trace_avg = None
         self._history.clear()
         self._reset_burst_state()
         if self._pipeline is not None:
