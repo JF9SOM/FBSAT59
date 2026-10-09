@@ -459,3 +459,117 @@ class TestDopplerCalculator:
         assert obs is not None
         _, shift = DopplerCalculator.correct_downlink(self._DL_HZ, obs.range_rate_km_s)
         assert shift > 1_000  # 接近中なのでシフトは正・大
+
+
+# ---------------------------------------------------------------------------
+# A TLE that changes in the DB is picked up without a restart (2026-10-09)
+# ---------------------------------------------------------------------------
+
+
+class TestTleChangeIsPickedUp:
+    """SatelliteEngine used to keep the first EarthSatellite of each NORAD for the whole
+    session, so an updated or manually added TLE only took effect after a restart."""
+
+    _AT = datetime(2024, 1, 2, 0, 36, 57, tzinfo=UTC)
+
+    @staticmethod
+    def _manager(signatures: list[object]) -> MagicMock:
+        ts = load.timescale()
+        mgr = MagicMock()
+        mgr.get_tle_signature.side_effect = lambda _n: signatures[0]
+        mgr.get_earth_satellite.side_effect = lambda _n: EarthSatellite(
+            _ISS_LINE1, _ISS_LINE2, "ISS", ts
+        )
+        return mgr
+
+    def test_unchanged_tle_is_not_rebuilt(self, monkeypatch) -> None:
+        import core.engine as engine_mod
+
+        monkeypatch.setattr(engine_mod, "_TLE_RECHECK_INTERVAL_S", 0.0)
+        mgr = self._manager([("a", "b")])
+        eng = SatelliteEngine(mgr, _LAT, _LON, _ALT_M)
+        eng.observe(_ISS_NORAD, at=self._AT)
+        eng.observe(_ISS_NORAD, at=self._AT)
+        eng.observe(_ISS_NORAD, at=self._AT)
+        assert mgr.get_earth_satellite.call_count == 1
+
+    def test_changed_tle_is_rebuilt(self, monkeypatch) -> None:
+        import core.engine as engine_mod
+
+        monkeypatch.setattr(engine_mod, "_TLE_RECHECK_INTERVAL_S", 0.0)
+        signatures: list[object] = [("a", "b")]
+        mgr = self._manager(signatures)
+        eng = SatelliteEngine(mgr, _LAT, _LON, _ALT_M)
+        eng.observe(_ISS_NORAD, at=self._AT)
+        signatures[0] = ("c", "d")
+        eng.observe(_ISS_NORAD, at=self._AT)
+        assert mgr.get_earth_satellite.call_count == 2
+        eng.observe(_ISS_NORAD, at=self._AT)
+        assert mgr.get_earth_satellite.call_count == 2  # and then stable again
+
+    def test_the_db_is_checked_at_most_once_per_interval(self, monkeypatch) -> None:
+        import core.engine as engine_mod
+
+        clock = [1000.0]
+        monkeypatch.setattr(engine_mod.time, "monotonic", lambda: clock[0])
+        mgr = self._manager([("a", "b")])
+        eng = SatelliteEngine(mgr, _LAT, _LON, _ALT_M)
+        eng.observe(_ISS_NORAD, at=self._AT)
+        checks_after_build = mgr.get_tle_signature.call_count
+        for _ in range(50):
+            clock[0] += 0.5  # 25 s in total: still inside the interval
+            eng.observe(_ISS_NORAD, at=self._AT)
+        assert mgr.get_tle_signature.call_count == checks_after_build
+        clock[0] += 10.0
+        eng.observe(_ISS_NORAD, at=self._AT)
+        assert mgr.get_tle_signature.call_count == checks_after_build + 1
+
+    def test_a_failing_recheck_keeps_using_the_cached_satellite(self, monkeypatch) -> None:
+        import core.engine as engine_mod
+
+        monkeypatch.setattr(engine_mod, "_TLE_RECHECK_INTERVAL_S", 0.0)
+        mgr = self._manager([("a", "b")])
+        eng = SatelliteEngine(mgr, _LAT, _LON, _ALT_M)
+        assert eng.observe(_ISS_NORAD, at=self._AT) is not None
+        mgr.get_tle_signature.side_effect = RuntimeError("database is locked")
+        assert eng.observe(_ISS_NORAD, at=self._AT) is not None
+
+    def test_a_removed_tle_stops_being_tracked(self, monkeypatch) -> None:
+        import core.engine as engine_mod
+
+        monkeypatch.setattr(engine_mod, "_TLE_RECHECK_INTERVAL_S", 0.0)
+        signatures: list[object] = [("a", "b")]
+        mgr = self._manager(signatures)
+        eng = SatelliteEngine(mgr, _LAT, _LON, _ALT_M)
+        assert eng.observe(_ISS_NORAD, at=self._AT) is not None
+        signatures[0] = None
+        mgr.get_earth_satellite.side_effect = lambda _n: None
+        assert eng.observe(_ISS_NORAD, at=self._AT) is None
+
+    def test_end_to_end_with_a_manual_tle_added_while_running(self, monkeypatch) -> None:
+        import sqlite3
+
+        import core.engine as engine_mod
+        from data.database import SCHEMA_SQL
+        from data.tle_manager import TLEManager
+
+        monkeypatch.setattr(engine_mod, "_TLE_RECHECK_INTERVAL_S", 0.0)
+        db = sqlite3.connect(":memory:", check_same_thread=False)
+        db.row_factory = sqlite3.Row
+        db.executescript(SCHEMA_SQL)
+        mgr = TLEManager(db)
+        assert mgr.get_tle_signature(_ISS_NORAD) is None
+        assert mgr.add_manual_tle(_ISS_NORAD, "ISS", _ISS_LINE1, _ISS_LINE2)
+        assert mgr.get_tle_signature(_ISS_NORAD) == (_ISS_LINE1, _ISS_LINE2)
+
+        eng = SatelliteEngine(mgr, _LAT, _LON, _ALT_M)
+        before = eng.observe(_ISS_NORAD, at=self._AT)
+        assert before is not None
+
+        # the same orbit 10 degrees further along (mean anomaly 273.1770 -> 283.1770)
+        line2 = _ISS_LINE2[:43] + "283.1770" + _ISS_LINE2[51:68]
+        checksum = sum(int(c) if c.isdigit() else (1 if c == "-" else 0) for c in line2) % 10
+        assert mgr.add_manual_tle(_ISS_NORAD, "ISS", _ISS_LINE1, line2 + str(checksum))
+        after = eng.observe(_ISS_NORAD, at=self._AT)
+        assert after is not None
+        assert after.range_km != pytest.approx(before.range_km, abs=1.0)

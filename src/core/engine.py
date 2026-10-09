@@ -11,6 +11,7 @@ Designed to be thread-safe because it is called from both the Qt UI and the Fast
 from __future__ import annotations
 
 import threading
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -20,6 +21,9 @@ from skyfield.api import EarthSatellite, Time, load, wgs84
 
 if TYPE_CHECKING:
     from data.tle_manager import TLEManager
+
+# How often a cached EarthSatellite is compared with the TLE in the DB (see _get_satellite()).
+_TLE_RECHECK_INTERVAL_S: float = 30.0
 
 # Speed of light in km/s
 _C_KM_S: float = 299_792.458
@@ -121,6 +125,9 @@ class SatelliteEngine:
 
         # Cache of norad_cat_id → EarthSatellite (protected by lock)
         self._sat_cache: dict[int, EarthSatellite] = {}
+        # norad_cat_id -> ((line1, line2) the cached object was built from, time.monotonic()
+        # of the last check against the DB). See _get_satellite().
+        self._sat_meta: dict[int, tuple[Any, float]] = {}
         self._cache_lock = threading.Lock()
 
     # ------------------------------------------------------------------ #
@@ -387,8 +394,10 @@ class SatelliteEngine:
         with self._cache_lock:
             if norad_cat_id is None:
                 self._sat_cache.clear()
+                self._sat_meta.clear()
             else:
                 self._sat_cache.pop(norad_cat_id, None)
+                self._sat_meta.pop(norad_cat_id, None)
 
     def update_observer(
         self,
@@ -405,25 +414,56 @@ class SatelliteEngine:
     # ------------------------------------------------------------------ #
 
     def _get_satellite(self, norad_cat_id: int) -> EarthSatellite | None:
+        """EarthSatellite for *norad_cat_id*, rebuilt when its TLE changes in the DB.
+
+        The cache used to be kept for the whole session and invalidate_cache() had
+        no caller, so a TLE updated by an automatic fetch or added by hand
+        (Satellite > Add Manual TLE) was ignored until the app was restarted --
+        pass predictions and Doppler kept using the elements loaded at startup
+        (found 2026-10-09 while correcting JAMX01's TLE). Every cached object
+        therefore remembers the (line1, line2) it was built from and is compared
+        with the DB at most once per _TLE_RECHECK_INTERVAL_S: one primary-key
+        lookup, not one per observe() call.
+        """
+        import logging as _logging
+
+        logger = _logging.getLogger(__name__)
+        now = time.monotonic()
         with self._cache_lock:
-            if norad_cat_id in self._sat_cache:
-                return self._sat_cache[norad_cat_id]
+            cached = self._sat_cache.get(norad_cat_id)
+            meta = self._sat_meta.get(norad_cat_id)
+        if cached is not None:
+            if meta is None or now - meta[1] < _TLE_RECHECK_INTERVAL_S:
+                return cached
+            try:
+                signature = self._tle_manager.get_tle_signature(norad_cat_id)
+            except Exception:
+                logger.exception("TLE re-check failed for NORAD %s", norad_cat_id)
+                return cached
+            if signature == meta[0]:
+                with self._cache_lock:
+                    self._sat_meta[norad_cat_id] = (meta[0], now)
+                return cached
+            logger.info("TLE for NORAD %s changed in the DB; reloading", norad_cat_id)
 
         try:
+            # Signature first: if the row changes while the object is being built, the
+            # next re-check sees the difference and rebuilds once more (harmless).
+            signature = self._tle_manager.get_tle_signature(norad_cat_id)
             sat = self._tle_manager.get_earth_satellite(norad_cat_id)
         except Exception:
-            import logging as _logging
-
-            _logging.getLogger(__name__).exception(
-                "Failed to build EarthSatellite for NORAD %s", norad_cat_id
-            )
+            logger.exception("Failed to build EarthSatellite for NORAD %s", norad_cat_id)
             return None
 
         if sat is None:
+            with self._cache_lock:
+                self._sat_cache.pop(norad_cat_id, None)
+                self._sat_meta.pop(norad_cat_id, None)
             return None
 
         with self._cache_lock:
             self._sat_cache[norad_cat_id] = sat
+            self._sat_meta[norad_cat_id] = (signature, now)
         return sat
 
     def _to_skyfield_time(self, dt: datetime | None) -> Time:

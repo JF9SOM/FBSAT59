@@ -378,6 +378,18 @@ class TLEManager:
         ).fetchone()
         return dict(row) if row else None
 
+    def get_tle_signature(self, norad_cat_id: int) -> tuple[str, str] | None:
+        """``(line1, line2)`` of the stored TLE, or None -- a cheap change marker.
+
+        SatelliteEngine compares it with the one its cached EarthSatellite was
+        built from, so a TLE updated in the DB is picked up without a restart.
+        """
+        row = self._conn.execute(
+            "SELECT line1, line2 FROM tle_data WHERE norad_cat_id = ?",
+            (norad_cat_id,),
+        ).fetchone()
+        return (str(row["line1"]), str(row["line2"])) if row else None
+
     def get_earth_satellite(self, norad_cat_id: int) -> EarthSatellite | None:
         """Return an EarthSatellite object usable with Skyfield"""
         tle = self.get_tle(norad_cat_id)

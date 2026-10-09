@@ -709,6 +709,15 @@ CREW DRAGON 13）、AMATEUR は 1 件、WEATHER は 1 件が TLE 形式から欠
 AMATEUR 96・STATIONS 22・WEATHER 73 件がエラー 0 で入り、6 桁の 5 件（SOYUZ-MS 29・JAMX01(195A)・MTG-I2・
 PROGRESS-MS 35・CREW DRAGON 13）がすべて追跡に使えた。`tests/test_omm.py`（27 件）。
 
+### 追跡エンジンが TLE の更新に追従していなかった不具合（2026-10-09 修正）
+`SatelliteEngine` は衛星ごとの `EarthSatellite` を**セッション中ずっと**キャッシュし、`invalidate_cache()` は
+どこからも呼ばれていなかった。そのため自動取得で更新された TLE も、「Satellite → Add Manual TLE」で入れた TLE も、
+**アプリを再起動するまで追跡（パス予測・ドップラー・Autotrack）に反映されなかった**（起動時の軌道要素のまま）。
+JAMX01 の TLE を差し替えようとして発覚。修正: キャッシュした各オブジェクトに「作成時の `(line1, line2)`」を持たせ、
+`TLEManager.get_tle_signature()`（主キー検索 1 回）と **30 秒に 1 回**（`_TLE_RECHECK_INTERVAL_S`）比べて、
+変わっていれば作り直す。どの経路で DB が書かれても（手動・各グループ・仮 ID・個別照会）効く。DB 読み取りに失敗した
+ときはキャッシュを使い続け、TLE が DB から消えたときは追跡対象から外れる。`invalidate_cache()` は従来どおり使える。
+
 ### 未解決: JAMX01 は「名前」と「実際の送信物体」が違う
 SATNOGS の JAMX01（仮 ID 98248）の TLE は **`2026-195E` ＝ BY70-4（NORAD 100469）** のもので、実際の JAMX01 より
 212 秒ずれていた。CelesTrak は名前 "JAMX01 (JING'AN DREAM STAR)" を **195A（100465）** に付けているが、2026-10-09 の
