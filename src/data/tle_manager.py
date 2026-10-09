@@ -111,6 +111,11 @@ _SOURCE_DB_VALUE: dict[str, str] = {
 # SATNOGS TLE API endpoint for per-satellite lookup
 SATNOGS_TLE_URL = "https://db.satnogs.org/api/tle/"
 
+# A manually entered TLE is never overwritten by an automatic update (that is the point of
+# entering one), so it also never gets replaced when it ages. Past this age (by its epoch)
+# the UI warns, and offers Satellite > Remove Manual TLE... (2026-10-09).
+MANUAL_TLE_STALE_DAYS: int = 14
+
 
 async def _probe_reachable(url: str, params: dict[str, Any]) -> bool:
     """Try a single GET request to check whether `url` is reachable right now.
@@ -803,6 +808,59 @@ class TLEManager:
         except httpx.HTTPError as e:
             logger.warning(f"fetch_single error: {e}")
         return False
+
+    def list_manual_tles(self) -> list[dict[str, Any]]:
+        """Every manually entered TLE, oldest epoch first.
+
+        Each dict has ``norad_cat_id``, ``name``, ``epoch`` (datetime, UTC),
+        ``age_days`` (float, by epoch) and ``stale`` (older than MANUAL_TLE_STALE_DAYS).
+        A row whose epoch cannot be read is listed as stale.
+        """
+        rows = self._conn.execute(
+            """
+            SELECT t.norad_cat_id, COALESCE(s.name, t.name) AS name, t.epoch
+            FROM tle_data t LEFT JOIN satellites s ON s.norad_cat_id = t.norad_cat_id
+            WHERE t.source = 'manual'
+            ORDER BY t.epoch
+            """
+        ).fetchall()
+        now = datetime.now(UTC)
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                epoch = datetime.fromisoformat(str(row["epoch"]))
+                if epoch.tzinfo is None:
+                    epoch = epoch.replace(tzinfo=UTC)
+                age_days = (now - epoch).total_seconds() / 86400.0
+            except (TypeError, ValueError):
+                epoch, age_days = None, float("inf")
+            result.append(
+                {
+                    "norad_cat_id": int(row["norad_cat_id"]),
+                    "name": str(row["name"] or row["norad_cat_id"]),
+                    "epoch": epoch,
+                    "age_days": age_days,
+                    "stale": age_days > MANUAL_TLE_STALE_DAYS,
+                }
+            )
+        return result
+
+    def remove_manual_tle(self, norad_cat_id: int) -> bool:
+        """Delete the manually entered TLE of *norad_cat_id* (a non-manual TLE is left alone).
+
+        The satellite goes back to automatic updates: until the next fetch it has no TLE
+        (the running tracker notices the change by itself, see SatelliteEngine). Returns
+        True if a manual TLE was removed.
+        """
+        cur = self._conn.execute(
+            "DELETE FROM tle_data WHERE norad_cat_id = ? AND source = 'manual'",
+            (norad_cat_id,),
+        )
+        self._conn.commit()
+        removed = cur.rowcount > 0
+        if removed:
+            logger.info("Manual TLE removed for NORAD %s", norad_cat_id)
+        return removed
 
     def add_manual_tle(
         self,

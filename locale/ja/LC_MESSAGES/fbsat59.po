@@ -7123,3 +7123,73 @@ msgstr "（{shown}/{total}文字を表示、以下省略）"
 
 #~ msgid "TX Doppler"
 #~ msgstr "送信ドップラー補正"
+
+#: src/ui/main_window.py
+msgid "Remove Manual TLE..."
+msgstr "手動TLEを削除..."
+
+#: src/ui/remove_manual_tle_dialog.py
+msgid "Remove Manual TLE"
+msgstr "手動TLEを削除"
+
+#: src/ui/remove_manual_tle_dialog.py
+msgid ""
+"A manually entered TLE is never replaced by an automatic update, so it ages. "
+"Removing it makes the satellite use automatic updates again. Remove it only "
+"once the automatic TLE is correct."
+msgstr ""
+"手動で入力したTLEは自動更新で置き換えられないため、古くなっていきます。削除す"
+"ると、その衛星は再び自動更新を使います。自動更新のTLEが正しいと確認できてから"
+"削除してください。"
+
+#: src/ui/remove_manual_tle_dialog.py
+msgid "NORAD"
+msgstr "NORAD"
+
+#: src/ui/remove_manual_tle_dialog.py
+msgid "TLE epoch (UTC)"
+msgstr "TLEエポック（UTC）"
+
+#: src/ui/remove_manual_tle_dialog.py
+msgid "Age"
+msgstr "経過"
+
+#: src/ui/remove_manual_tle_dialog.py
+msgid "Remove Selected"
+msgstr "選択を削除"
+
+#: src/ui/remove_manual_tle_dialog.py
+#, python-brace-format
+msgid "{n:.1f} days"
+msgstr "{n:.1f} 日"
+
+#: src/ui/remove_manual_tle_dialog.py
+msgid "There is no manually entered TLE."
+msgstr "手動で入力したTLEはありません。"
+
+#: src/ui/remove_manual_tle_dialog.py
+#, python-brace-format
+msgid "⚠ {n} older than {d} days (orange)."
+msgstr "⚠ {d}日より古いものが{n}件あります（オレンジ色）。"
+
+#: src/ui/remove_manual_tle_dialog.py
+#, python-brace-format
+msgid ""
+"Remove the manual TLE of {label}?\n"
+"\n"
+"The satellite will use the automatic TLE again. Check that the automatic TLE "
+"is correct first."
+msgstr ""
+"{label} の手動TLEを削除しますか？\n"
+"\n"
+"その衛星は再び自動更新のTLEを使います。先に、自動更新のTLEが正しいことを確認"
+"してください。"
+
+#: src/ui/main_window.py
+#, python-brace-format
+msgid ""
+"⚠ Manual TLE is old: {names}. Satellite > Remove Manual TLE… switches back "
+"to automatic updates."
+msgstr ""
+"⚠ 手動TLEが古くなっています: {names}。「衛星」→「手動TLEを削除…」で自動更新に"
+"戻せます。"

@@ -718,6 +718,20 @@ JAMX01 の TLE を差し替えようとして発覚。修正: キャッシュし
 変わっていれば作り直す。どの経路で DB が書かれても（手動・各グループ・仮 ID・個別照会）効く。DB 読み取りに失敗した
 ときはキャッシュを使い続け、TLE が DB から消えたときは追跡対象から外れる。`invalidate_cache()` は従来どおり使える。
 
+### 手動 TLE の削除と古さの警告（2026-10-09）
+手動 TLE（`source='manual'`）は自動更新で**上書きされない**ので、置き換わらずに古くなり、画面から取り消す手段も
+なかった。追加:
+- **Satellite → Remove Manual TLE…**（`ui/remove_manual_tle_dialog.py`）: 手動 TLE を一覧（衛星・NORAD・エポック・
+  経過日数）し、選んだものを確認の上で削除する。削除は `TLEManager.remove_manual_tle()`（`source='manual'` の行だけ
+  消す。自動 TLE は消さない）。削除後は `_load_satellites()` と `_fetch_all_tle_sources()` で、自動 TLE を
+  すぐ取り直す（追跡エンジンは TLE の変化を自分で検知する。上の節）。**自動更新の TLE が正しいと確認してから消すこと**
+  （SatNOGS の JAMX01 は、1 行目が `26195F` になれば直った印）。
+- **古さの警告**: エポックが `MANUAL_TLE_STALE_DAYS`（14 日）より古い手動 TLE を、起動 8 秒後と 6 時間ごとに
+  ステータスバーへ 30 秒表示（`MainWindow._warn_stale_manual_tles()`）。ダイアログでは該当行をオレンジ色＋⚠。
+  自動で消すことはしない（古い手動 TLE のほうが誤った自動 TLE より正しいことがあるため）。
+- `TLEManager.list_manual_tles()` は各手動 TLE の `age_days` / `stale` を返す。読めないエポックは stale 扱い。
+- テスト: `tests/test_manual_tle_management.py`。
+
 ### 未解決: JAMX01 は「名前」と「実際の送信物体」が違う
 SATNOGS の JAMX01（仮 ID 98248）の TLE は **`2026-195E` ＝ BY70-4（NORAD 100469）** のもので、実際の JAMX01 より
 212 秒ずれていた。CelesTrak は名前 "JAMX01 (JING'AN DREAM STAR)" を **195A（100465）** に付けているが、2026-10-09 の

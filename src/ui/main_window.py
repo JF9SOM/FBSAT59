@@ -1232,6 +1232,12 @@ class MainWindow(QMainWindow):
         self._update_check_worker: object | None = None
         self._update_check_shown = False
         QTimer.singleShot(5000, self._start_update_check)
+        # Warn about manually entered TLEs that have grown old (they are never replaced by an
+        # automatic update): once shortly after start, then every few hours.
+        QTimer.singleShot(8000, self._warn_stale_manual_tles)
+        self._stale_tle_timer = QTimer(self)
+        self._stale_tle_timer.timeout.connect(self._warn_stale_manual_tles)
+        self._stale_tle_timer.start(6 * 3600 * 1000)
 
     # ------------------------------------------------------------------ #
     # UI construction
@@ -1459,6 +1465,7 @@ class MainWindow(QMainWindow):
             sat_menu.addAction(_("Hide Satellite"), self._on_hide_satellite)
             sat_menu.addSeparator()
             sat_menu.addAction(_("Add Manual TLE..."), self._on_add_manual_tle)
+            sat_menu.addAction(_("Remove Manual TLE..."), self._on_remove_manual_tle)
             sat_menu.addAction(_("Update TLE"), self._on_update_tle)
             sat_menu.addAction(_("Fetch Transmitter Database"), self._on_sync_satnogs)
             sat_menu.addAction(_("Sync Satellite Names"), self._on_sync_satellite_names)
@@ -7164,6 +7171,48 @@ class MainWindow(QMainWindow):
                 _("Add Manual TLE"),
                 _("Satellite TLE added successfully (NORAD {n}).").format(n=dialog.added_norad),
             )
+
+    def _on_remove_manual_tle(self) -> None:
+        """Satellite > Remove Manual TLE... handler."""
+        from ui.remove_manual_tle_dialog import RemoveManualTLEDialog
+
+        dialog = RemoveManualTLEDialog(self._tle_manager, parent=self)
+        dialog.exec()
+        if dialog.removed_norads:
+            self._load_satellites()
+            # The satellite has no TLE until the next fetch: get one now rather than waiting
+            # for the schedule.
+            self._fetch_all_tle_sources()
+
+    def _warn_stale_manual_tles(self) -> None:
+        """Status-bar notice for manual TLEs older than MANUAL_TLE_STALE_DAYS.
+
+        A manual TLE is never overwritten by an automatic fetch, so it silently ages; this
+        points at Satellite > Remove Manual TLE... (or entering a fresh one).
+        """
+        try:
+            stale = [e for e in self._tle_manager.list_manual_tles() if e["stale"]]
+        except Exception:
+            logger.exception("Manual TLE age check failed")
+            return
+        if not stale:
+            return
+        sb = self.statusBar()
+        if sb is None:
+            return
+        names = ", ".join(
+            f"{e['name']} ({e['age_days']:.0f} d)" if e["age_days"] != float("inf") else e["name"]
+            for e in stale[:3]
+        )
+        if len(stale) > 3:
+            names += f" +{len(stale) - 3}"
+        sb.showMessage(
+            _(
+                "⚠ Manual TLE is old: {names}. Satellite > Remove Manual TLE… switches back "
+                "to automatic updates."
+            ).format(names=names),
+            30000,
+        )
 
     def _on_update_tle(self) -> None:
         """Satellite > Update TLE handler.
