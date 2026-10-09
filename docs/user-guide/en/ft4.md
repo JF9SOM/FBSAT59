@@ -8,7 +8,9 @@ FT4 transponder. FT4 encoding/decoding is built in; WSJT-X is not required.
 
 - The **ft8lib** component must be installed (Help > ft8lib Installation…). Without it
   the tab shows "ft8lib is not installed" and FT4 TX/RX is disabled.
-- Optional: Help > FT4 Enhanced Decoder Installation… adds a stronger decoder (receive only).
+- **Recommended**: install the FT4 Enhanced Decoder (Help > FT4 Enhanced Decoder Installation…). It is a stronger
+  decoder (receive only) that decodes weak and Doppler-affected signals better than the built-in one, and
+  it is used automatically once installed. Always install it for satellite operation.
 - Set **My Call** and **Grid** in the tab. TX is refused until My Call is set.
 - Choose the audio input: **Rig Soundcard** (set in Radio > Rig Settings > Sound Card) or **SDR**.
 - Connect Rig 1 and select the satellite and an FT4 transponder (frequencies are set for you
@@ -61,7 +63,7 @@ Use ADC when strong Doppler rate makes decoding fail. At very high Doppler rates
 
 ## Troubleshooting FT4
 
-- **Nothing decodes**: check the audio input level (RX Level), the radio's data/USB mode, that
+- **Nothing decodes or few messages decode**: install the FT4 Enhanced Decoder if you have not (recommended), then check the audio input level (RX Level), the radio's data/USB mode, that
   the PC clock is accurate (DT should be small), and that ft8lib is installed.
 - **ALC / distorted TX**: lower TX Level.
 - **PTT fails**: check the Rig 1 connection ("PTT command failed — check Rig 1 connection").
