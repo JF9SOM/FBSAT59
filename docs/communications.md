@@ -1071,6 +1071,17 @@ U 項目は `norad + BAND_U_OFFSET(10_000_000)`（`band_input_value()`/`split_in
 V/分割なしを意味するので、旧形式の保存設定もそのまま読める。`ISS (U)` は説明に "Robot" を含むもの
 （437.550 MHz）を優先（`pick_transponder_for_band()`）。他タブは分割しない。
 
+#### 通信タブを開いたときの入力元の再適用（2026-10-09 修正）
+
+通信タブ（Input Source コンボ付き）を表示するたびに、前回そのタブで選んだ衛星を再適用する
+`MainWindow._restore_comms_satellite()` があった。2026-10-09、JAMX01 の IQ 録音中（Autotrack）に SSTV/SSDV タブを
+開いたところ、保存されていた `"sstv": 61781`（ASRTU-1）へ**パスの途中で切り替わり**、ドップラー補正の対象が
+変わった（ログ上は「ASRTU-1 の既定トランスポンダー→『Mode U - SSDV』」が 2 回。同じ操作の 2 回目も同様）。
+修正: (1) 現在選択中の衛星がそのタブの Input Source に載っているなら再適用しない（パネルの初期表示も、
+現在の衛星を保存値より優先。同じ衛星の「ISS (U)」のような保存済み帯域項目は維持）。(2) Autotrack が追尾中
+（`_autotrack_enabled` かつ `_autotrack_tracking_norad` あり）は再適用しない。現在の衛星がタブの対象外で
+追尾中でもない場合は従来どおり保存値を適用。
+
 #### 衛星選択フロー（`MainWindow._on_comms_satellite_requested`）
 
 Telemetryタブの `_on_telemetry_satellite_requested()` と同型の汎用ハンドラ:

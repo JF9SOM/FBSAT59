@@ -5964,3 +5964,67 @@ class TestPassPanelAutoHide:
         other = QWidget()
         qtbot.addWidget(other)
         assert w._hides_pass_panel(other) is True
+
+
+# ---------------------------------------------------------------------------
+# Comms Quick Panel: opening a tab must not retarget the current satellite
+# ---------------------------------------------------------------------------
+
+
+class TestCommsInputRestore:
+    """The SSTV/SSDV tab used to re-apply its remembered satellite (ASRTU-1) when opened,
+    switching away from the JAMX01 pass Autotrack was recording (2026-10-09)."""
+
+    @staticmethod
+    def _panel(qtbot, options: list[tuple[int, str]], current: int | None, remembered: int):
+        panel = SatDetailPanel()
+        qtbot.addWidget(panel)
+        if current is not None:
+            panel.set_satellite(current, "x")
+        panel.set_last_input_sources({"sstv": remembered})
+        panel.set_active_comms_tab("sstv", options, tab_widget=None)
+        return panel
+
+    def test_panel_shows_the_current_satellite_not_the_remembered_one(self, qtbot) -> None:
+        panel = self._panel(qtbot, [(61781, "AO-123"), (98248, "JAMX01")], 98248, 61781)
+        assert panel._input_source_combo.currentData() == 98248
+
+    def test_panel_falls_back_to_remembered_when_current_is_not_listed(self, qtbot) -> None:
+        panel = self._panel(qtbot, [(61781, "AO-123")], 12345, 61781)
+        assert panel._input_source_combo.currentData() == 61781
+
+    def test_panel_keeps_a_remembered_band_entry_of_the_current_satellite(self, qtbot) -> None:
+        from comms.mode_detection import band_input_value
+
+        u = band_input_value(25544, "U")
+        panel = self._panel(qtbot, [(25544, "ISS (V)"), (u, "ISS (U)")], 25544, u)
+        assert panel._input_source_combo.currentData() == u
+
+    @staticmethod
+    def _fake_window(panel, selected: int | None, tracking: int | None, enabled: bool):
+        calls: list[tuple[str, int]] = []
+        fake = type("W", (), {})()
+        fake._detail_panel = panel
+        fake._selected_norad = selected
+        fake._autotrack_enabled = enabled
+        fake._autotrack_tracking_norad = tracking
+        fake._on_comms_satellite_requested = lambda tab, n: calls.append((tab, n))
+        return fake, calls
+
+    def test_restore_does_not_switch_away_from_a_listed_current_satellite(self, qtbot) -> None:
+        panel = self._panel(qtbot, [(61781, "AO-123"), (98248, "JAMX01")], 98248, 61781)
+        fake, calls = self._fake_window(panel, 98248, None, False)
+        MainWindow._restore_comms_satellite(fake, "sstv")
+        assert calls == []
+
+    def test_restore_does_not_switch_while_autotrack_is_tracking(self, qtbot) -> None:
+        panel = self._panel(qtbot, [(61781, "AO-123")], 12345, 61781)
+        fake, calls = self._fake_window(panel, 12345, 98248, True)
+        MainWindow._restore_comms_satellite(fake, "sstv")
+        assert calls == []
+
+    def test_restore_still_applies_the_remembered_satellite_otherwise(self, qtbot) -> None:
+        panel = self._panel(qtbot, [(61781, "AO-123")], 12345, 61781)
+        fake, calls = self._fake_window(panel, 12345, None, False)
+        MainWindow._restore_comms_satellite(fake, "sstv")
+        assert calls == [("sstv", 61781)]

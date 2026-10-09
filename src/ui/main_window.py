@@ -460,6 +460,28 @@ class SatDetailPanel(QWidget):
                 self._last_input_source[self._active_comms_tab] = int(shown)
                 self.input_source_remembered.emit()
 
+    def _initial_input_value(self, tab_key: str) -> int | None:
+        """Input combo value to show when *tab_key* is activated, or None.
+
+        The currently selected satellite wins when the tab lists it; if the
+        remembered choice is a band entry of that same satellite it is kept.
+        None means "fall back to the remembered choice".
+        """
+        current = self._current_norad
+        if current is None:
+            return None
+        remembered = self._last_input_source.get(tab_key)
+        if (
+            remembered is not None
+            and remembered != self.INPUT_SOURCE_OTHERS
+            and mode_detection.split_input_value(remembered)[0] == current
+            and self._input_source_combo.findData(remembered) >= 0
+        ):
+            return remembered
+        if self._input_source_combo.findData(current) >= 0:
+            return current
+        return None
+
     def set_last_input_sources(self, sources: dict[str, int]) -> None:
         """Restore the per-tab Input combo choices saved from a previous run."""
         self._last_input_source = dict(sources)
@@ -546,12 +568,16 @@ class SatDetailPanel(QWidget):
                 self._input_source_combo.addItem(name, norad)
             self._input_source_combo.addItem(_("Others"), self.INPUT_SOURCE_OTHERS)
             self._input_source_combo.blockSignals(False)
-            # Prefer the choice last made in this tab, then the satellite
-            # selected in the main window, else "Others" (a satellite this
-            # tab's list does not know about).
+            # Show the satellite selected in the main window when this tab can
+            # use it (keeping a remembered band choice such as "ISS (U)" for
+            # the same satellite); otherwise the choice last made in this
+            # tab, else "Others" (a satellite this tab's list does not know
+            # about). The remembered choice must not win over the current
+            # selection: opening the tab used to switch to it, silently
+            # retargeting Autotrack's pass in progress.
             if not (
-                self._select_input_source(self._last_input_source.get(tab_key))
-                or self._select_input_source(self._current_norad)
+                self._select_input_source(self._initial_input_value(tab_key))
+                or self._select_input_source(self._last_input_source.get(tab_key))
             ):
                 self._select_input_source(self.INPUT_SOURCE_OTHERS)
 
@@ -3258,10 +3284,27 @@ class MainWindow(QMainWindow):
         remembered in its Input combo (satellite, Radio Control transponder,
         Doppler) as if the user had picked it. "Others" leaves the current
         selection untouched.
+
+        Never overrides the current selection when this tab can use it, nor
+        while Autotrack is tracking a satellite: opening the SSTV/SSDV tab
+        during a JAMX01 pass used to switch to the remembered ASRTU-1
+        (2026-10-09), retargeting the Doppler correction of the pass being
+        recorded.
         """
         config = mode_detection.COMMS_TAB_CONFIG.get(tab_key)
         if config is None or not config.show_input_source:
             return
+        if self._autotrack_enabled and self._autotrack_tracking_norad is not None:
+            return
+        combo = self._detail_panel._input_source_combo
+        for i in range(combo.count()):
+            data = combo.itemData(i)
+            if (
+                data is not None
+                and data != SatDetailPanel.INPUT_SOURCE_OTHERS
+                and mode_detection.split_input_value(int(data))[0] == self._selected_norad
+            ):
+                return
         norad = self._detail_panel._last_input_source.get(tab_key)
         if (
             norad is None
