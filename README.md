@@ -51,6 +51,9 @@ it packs in major digital communication modes — FT4, APRS, image reception
 - **Autotrack/Record** — automatic sequential satellite tracking with scheduled timer (start/stop time), auto rig+rotator connect at AOS / disconnect at LOS, automatic SDR audio/IQ recording between AOS and LOS, and **METEOR / HRPT auto-reception** (starts SatDump at AOS, stops at LOS)
   - Satellite picker with live text-search filter (type to narrow down the full satellite list)
 - **AOS/LOS desktop notifications** (Linux: notify-send / macOS: osascript / Windows: PowerShell)
+- **Radio audio recording** — record the rig's receive audio to MP3 and play recordings back (optionally feeding them to the digital-mode tabs for decoding)
+- **Tools menu** — your own list of satellite-related web sites (default: Hams.at, Sked Prediction)
+- **AMSAT filters** — Operational, In Testing and TLM/Beacon-only satellite lists
 
 ### METEOR / HRPT Weather Satellite Reception
 Access via the **METEOR / HRPT** tab (opened from Radio Control when a matching transponder is selected, or manually from the menu).
@@ -60,7 +63,7 @@ Receives weather satellite imagery via [SatDump](https://github.com/SatDump/SatD
 | Satellite | Mode | Frequency | SDR required |
 |---|---|---|---|
 | METEOR-M N2-3 | LRPT | 137.9 MHz | RTL-SDR / HackRF |
-| METEOR-M N2-4 | LRPT | 137.1 MHz | RTL-SDR / HackRF |
+| METEOR-M N2-4 | LRPT | 137.9 MHz | RTL-SDR / HackRF |
 | METEOR-M N2-3 | HRPT | 1700.0 MHz | HackRF + dish + LNA |
 | METEOR-M N2-4 | HRPT | 1700.0 MHz | HackRF + dish + LNA |
 | NOAA 18 | HRPT | 1707.0 MHz | HackRF + dish + LNA |
@@ -69,6 +72,8 @@ Receives weather satellite imagery via [SatDump](https://github.com/SatDump/SatD
 | Metop-C | HRPT | 1701.3 MHz | HackRF + dish + LNA |
 
 - **[SDR Connect]** reads your SDR settings from Rig Settings and connects automatically
+- A dedicated **Gain** box in the METEOR tab sets the RF gain manually (automatic gain is not offered: it produces false locks)
+- Live waterfall during reception, and a viewer for past reception folders
 - **[📋 Log]** opens a floating log window showing SatDump stdout/stderr
 - **Autotrack integration** — enable "METEOR / HRPT Reception" in the Autotrack/Record dialog to start SatDump automatically at AOS and stop at LOS
   - The **satellite** in your Autotrack list must match the satellite you want to receive (determines AOS/LOS timing)
@@ -77,13 +82,14 @@ Receives weather satellite imagery via [SatDump](https://github.com/SatDump/SatD
 ### Communications (Digital Modes)
 Access via the **Communications** menu (between Radio and Autotrack/Record). Each mode opens as a closeable non-resident tab.
 
-- **APRS** — receive and decode AX.25/APRS packets via Direwolf (TCP KISS) with a Rig + sound card, or via the built-in Bell 202 AFSK demodulator when an SDR is connected. Send APRS messages and position beacons (PTT via CAT). Received position packets appear as cyan ▲ pins on the Dashboard map. Callsign, SSID, and via path are saved. ADIF export.
+- **APRS** — receive and decode AX.25/APRS packets (1200/4800/9600 baud) via Direwolf (TCP KISS) with a Rig + sound card, or via the built-in demodulators when an SDR is connected (including a coherent MSK detector for 4800/9600 baud GMSK satellites). The log can switch between plain-language and raw packet views. Send APRS messages and position beacons (PTT via CAT). Received position packets appear as cyan ▲ pins on the Dashboard map. Callsign, SSID, and via path are saved. ADIF export.
+- **Message Box/Digipeater** — AX100 digipeater (e.g. MARMOTSat) and the ARICA-2 message box (4800 baud GMSK: upload/confirm/parrot/download). SDR receive, rig + sound-card transmit, with an uplink-window helper that detects the end of the CW beacon.
 - **Telemetry** — receive and decode AX.25 telemetry frames from amateur satellites. Two receive modes:
   - **Bell 202 AFSK** — built-in 1200 baud demodulator (SDR) or Direwolf (rig + sound card). Satellite picker shows the 12 satellites with built-in binary format definitions (ISS, JO-97, RS-44, MO-122, etc.). Raw hex display for all others. SDR auto-connects on Start.
   - **gr-satellites** — if [gr-satellites](https://github.com/daniestevez/gr-satellites) is installed, forwards raw IQ from the SDR to a `gr_satellites` subprocess via UDP. Supports 330+ satellites. SDR auto-connects on Start.
   - Selecting a satellite in either picker automatically syncs the main satellite list and switches Radio Control to the correct telemetry/beacon transponder frequency. CSV export.
-- **SSTV / SSDV** — receive SSTV images (Robot36 and PD120 -- the modes satellites use; the HF modes Martin and Scottie are not supported) and SSDV packets from amateur satellites (e.g. ISS 145.800 MHz PD120 or 437.550 MHz Robot36). Works with SDR audio or a rig sound card. Auto-opens when a transponder description contains "SSTV", "SSDV", or "IMAGING".
-- **FT4** — encode and decode FT4 using the built-in ft8_lib (ctypes — no WSJT-X required). Transmit via Rig + PTT. Auto-opens for RS-44, JO-97, MO-122, and other FT4-active satellites. ADIF export.
+- **SSTV / SSDV** — receive SSTV images (Robot36 and PD120 -- the modes satellites use; the HF modes Martin and Scottie are not supported) and SSDV packets (AX.25 or gr-satellites modes) from amateur satellites (e.g. ISS 145.800 MHz PD120 or 437.550 MHz Robot36). Works with SDR audio or a rig sound card. Auto-opens when a transponder description contains "SSTV", "SSDV", or "IMAGING".
+- **FT4** — encode and decode FT4 using the built-in ft8_lib (ctypes — no WSJT-X required). Transmit via Rig + PTT, with a docked click-to-set-TX-frequency waterfall, TX/RX Doppler handling, TX level in dB and a tune tone. QSOs are auto-logged at RR73. Auto-opens for RS-44, JO-97, MO-122, and other FT4-active satellites. LoTW-compatible ADIF export.
 - **Q65** — EME (Earth-Moon-Earth) weak-signal digital mode. Decode via libq65 (built from WSJT-X source; pre-built bundles available via **Help → Q65 Library Installation**). Encode and transmit in pure Python — no libq65 required for TX. QSO state machine (IDLE→CALLING→EXCHANGE→CONFIRM→LOGGED) with PTT via CAT and Doppler freeze during transmission. Submodes A–E, periods 15/30/60 s. ADIF export.
 - **UDP log broadcast** — optionally sends one ADIF record per logged QSO (FT4, Q65, confirmed APRS message exchanges) to a configurable host:port (default `127.0.0.1:2333`) over UDP, compatible with lightweight log-relay tools such as wavelog-gate and JT-Linker (not the WSJT-X binary UDP protocol used by JTAlert/GridTracker). Enable and set the destination in **File → General Settings → Logging** — the host can be another machine on the LAN. APRS QSOs are logged with `MODE=PKT` and a nominal `599/599` signal report (APRS has no report exchange) for eQSL/LoTW compatibility.
 - **Help → Direwolf Installation…** — detect, install, or update Direwolf on all platforms
@@ -103,10 +109,10 @@ Access from any smartphone or tablet on your local network — no app install ne
 - NET Control mode (rigctld/rotctld compatible) for existing setups
 - Dual-rig: Rig 1 + Rig 2 independent control (e.g. IC-9700 + HackRF)
 - Inverted transponder support with passband tuning
-- Catch-up rotator tracking with configurable timeout resend
+- Rotator catch-up with predictive lead targeting, automatic slew-speed measurement, pre-positioning to the next AOS, and a selectable update cycle; a red "Not connected" is shown when the rotator does not answer
 
 ### Data Management
-- **SATNOGS** transmitter DB auto-sync (daily)
+- **SATNOGS** transmitter DB auto-sync (refreshed at startup when older than 7 days; **Satellite → Fetch Transmitter Database** to refresh on demand)
 - **Community frequency DB** — FT4 calling frequencies and other conventions not in SATNOGS
 - **TLE multi-source**: CelesTrak Amateur/CubeSat/Weather/Earth-Obs/Science/Stations, SATNOGS TLE API, manual entry
 - TLE quality scoring: excellent (<6 h) / good (<24 h) / fair (<72 h) / poor
@@ -129,10 +135,11 @@ Use manual sync only when you need the very latest data immediately (e.g. right 
 | Earth Observation / Science | every **12 hours** |
 | Provisional TLEs (NORAD ≥ 90000) | every **12 hours** |
 | Active TLE fallback (NORAD 10000–89999) | every **24 hours** |
-| AMSAT operational status | every **24 hours** |
+| AMSAT operational status / upcoming satellites | every **24 hours** |
+| SatNOGS transmitter database | when older than **7 days** (checked at startup) |
 
-SATNOGS transponder data is fetched automatically on first launch.
-After that, use **Satellite → Sync SATNOGS** to refresh manually if needed.
+SATNOGS transponder data is fetched automatically on first launch and again at startup when it is older than 7 days.
+Use **Satellite → Fetch Transmitter Database** to refresh it manually if needed.
 A summary is also available in the app under **Help → Auto Fetch Rules**.
 
 ### In-app Updaters
@@ -198,7 +205,7 @@ python -m src.main
 ## SDR Quick Start
 
 1. Connect your SDR device (HackRF One, RTL-SDR, etc.)
-2. Open **Settings → Rig Settings → SDR Settings**
+2. Open **Radio → Rig Settings → SDR Settings**
 3. Click **Enumerate** to detect devices
 4. Select your device, set sample rate and gain, assign to Rig 1 or Rig 2
 5. Click **Connect** — the **SDR Control** tab becomes active
@@ -330,6 +337,7 @@ msgfmt locale/ja/LC_MESSAGES/fbsat59.po \
 ```
 
 See [CLAUDE.md](CLAUDE.md) for the full architecture reference used during development.
+End-user documentation lives in [docs/user-guide/](docs/user-guide/en/index.md) (English) and [docs/user-guide/ja/](docs/user-guide/ja/index.md) (日本語).
 
 ---
 
@@ -387,9 +395,9 @@ Receivable with HackRF / RTL-SDR + appropriate LNA/filter. Open-source decoders 
 Each decoder will run as a subprocess with results displayed in a dedicated plugin panel inside the SDR Control tab. Offline re-analysis from saved IQ recordings is also planned.
 
 #### UI / UX
-- **Japanese UI** — translation files are already prepared; full JP mode coming in Phase 2
+- ~~**Japanese UI**~~ — **implemented** (View → Language; restart required)
 - **Observation log** — record, summarise, and export worked satellite passes
-- **SDR Device Installation dialog** — USB VID/PID scan, guided driver install for RTL-SDR / HackRF on all platforms
+- ~~**SDR Device Installation dialog**~~ — **implemented** (Help → SDR Device Installation…)
 
 #### Hardware
 - Real-world Doppler tests with TS-2000, FT-817ND, etc. (IC-9100/IC-9700 confirmed in v0.1.27)

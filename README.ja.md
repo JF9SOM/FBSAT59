@@ -49,6 +49,9 @@ FBSAT59 は、衛星追尾・ドップラー補正に加え、FT4、APRS、画�
 - **Autotrack/Record** — 衛星を順次自動追尾。タイマーで開始・停止時刻を設定可能。AOS時にリグ・ローテーターを自動接続、LOS時に自動切断。SDR Audio/IQ録音をAOS〜LOS間で自動制御。**METEOR / HRPT Reception** を有効にするとAOS時にSatDumpを自動起動、LOSで自動停止
   - 衛星追加ダイアログに文字検索欄を実装 — 衛星名またはNORAD IDで絞り込み可能
 - **AOS/LOSデスクトップ通知**（Linux: notify-send / macOS: osascript / Windows: PowerShell）
+- **無線機音声の録音** — リグの受信音声をMP3で録音・再生（再生音を各デジタルモードタブに入力してデコードすることも可能）
+- **Tools メニュー** — 衛星関連Webサイトを登録して起動（既定: Hams.at・Sked Prediction）
+- **AMSATフィルタ** — Operational / In Testing / TLM/Beacon only の衛星リスト
 
 ### METEOR / HRPT 気象衛星画像受信
 Radio Control でLRPT/HRPTトランスポンダーを選択すると自動オープン（またはメニューから手動で開くことも可能）。
@@ -58,7 +61,7 @@ Radio Control でLRPT/HRPTトランスポンダーを選択すると自動オー
 | 衛星 | モード | 周波数 | 必要なSDR |
 |---|---|---|---|
 | METEOR-M N2-3 | LRPT | 137.9 MHz | RTL-SDR / HackRF |
-| METEOR-M N2-4 | LRPT | 137.1 MHz | RTL-SDR / HackRF |
+| METEOR-M N2-4 | LRPT | 137.9 MHz | RTL-SDR / HackRF |
 | METEOR-M N2-3 | HRPT | 1700.0 MHz | HackRF + パラボラ + LNA |
 | METEOR-M N2-4 | HRPT | 1700.0 MHz | HackRF + パラボラ + LNA |
 | NOAA 18 | HRPT | 1707.0 MHz | HackRF + パラボラ + LNA |
@@ -67,6 +70,8 @@ Radio Control でLRPT/HRPTトランスポンダーを選択すると自動オー
 | Metop-C | HRPT | 1701.3 MHz | HackRF + パラボラ + LNA |
 
 - **[SDR Connect]** — Rig Settings の SDR 設定を読み込んで自動接続
+- METEOR タブ専用の **Gain** 欄で RF ゲインを手動設定（AGC は偽ロックの原因になるため選択肢なし）
+- 受信中のライブウォーターフォール表示、過去の受信フォルダの閲覧
 - **[📋 Log]** — SatDump の stdout/stderr を表示する浮動ログウィンドウを開く
 - **Autotrack 連携** — Autotrack/Record ダイアログの「METEOR / HRPT Reception」チェックを ON にすると、AOS 時に SatDump を自動起動、LOS で自動停止
   - Autotrack リストに登録する**衛星は受信対象と一致させること**（AOS/LOS 計算の基準になる）
@@ -75,13 +80,14 @@ Radio Control でLRPT/HRPTトランスポンダーを選択すると自動オー
 ### Communications（デジタル通信）
 メニューバーの **Communications**（Radio と Autotrack/Record の間）からアクセス。各機能は × で閉じられる非常駐タブとして開きます。
 
-- **APRS** — Rig + サウンドカード + Direwolf（TCP KISS）または SDR 内蔵の Bell 202 AFSK 復調器でAX.25/APRSパケットを受信・デコード。APRSメッセージ・位置ビーコンの送信にも対応（PTTはCAT制御）。受信した位置パケットはDashboardマップにシアン▲ピンで表示。コールサイン・SSID・Viaパスを保存。ADIF出力対応。
+- **APRS** — Rig + サウンドカード + Direwolf（TCP KISS）または SDR 内蔵の復調器（4800/9600 baud GMSK 衛星向けのコヒーレント MSK 検波を含む）でAX.25/APRSパケット（1200/4800/9600 baud）を受信・デコード。ログは平文表示と生パケット表示を切替可能。APRSメッセージ・位置ビーコンの送信にも対応（PTTはCAT制御）。受信した位置パケットはDashboardマップにシアン▲ピンで表示。コールサイン・SSID・Viaパスを保存。ADIF出力対応。
+- **Message Box/Digipeater** — AX100 デジピーター（MARMOTSat など）と ARICA-2 メッセージボックス（4800 baud GMSK: Upload/Confirm/Parrot/Download）に対応。SDR 受信＋リグ（サウンドカード）送信、CW ビーコン終了を検出するアップリンクウィンドウ補助つき。
 - **Telemetry** — アマチュア衛星の AX.25 テレメトリーフレームを受信・デコード。2 つの受信モードを搭載:
   - **Bell 202 AFSK** — 内蔵 1200 baud 復調器（SDR）または Direwolf（リグ + サウンドカード）。衛星コンボにはバイナリフォーマット定義済みの 12 機を表示（ISS・JO-97・RS-44・MO-122 等）。定義のない衛星は生 Hex 表示。Start 押下時 SDR を自動接続。
   - **gr-satellites** — [gr-satellites](https://github.com/daniestevez/gr-satellites) がインストール済みの場合のみ選択可。SDR の生 IQ を UDP で `gr_satellites` サブプロセスに転送。330 機以上に対応。Start 押下時 SDR を自動接続。
   - どちらのモードでも衛星コンボで選択するとメインの衛星リストが自動連動し、Radio Control がテレメトリー/ビーコン用トランスポンダー周波数に自動切り替わる。CSV 出力対応。
-- **SSTV / SSDV** — アマチュア衛星（例：ISS 145.800 MHz PD120・437.550 MHz Robot36）のSSTV画像（Robot36・PD120に対応。HFで使われるMartin・Scottieは非対応）とSSDVパケットを受信。SDR音声またはリグのサウンドカード入力に対応。トランスポンダー説明に「SSTV」「SSDV」「IMAGING」が含まれると自動オープン。
-- **FT4** — 内蔵 ft8_lib（ctypes）でFT4の送受信が可能（WSJT-X不要）。Rig + PTTで送信。RS-44・JO-97・MO-122 等のFT4運用衛星で自動オープン。ADIF出力対応。
+- **SSTV / SSDV** — アマチュア衛星（例：ISS 145.800 MHz PD120・437.550 MHz Robot36）のSSTV画像（Robot36・PD120に対応。HFで使われるMartin・Scottieは非対応）とSSDVパケット（AX.25 または gr-satellites モード）を受信。SDR音声またはリグのサウンドカード入力に対応。トランスポンダー説明に「SSTV」「SSDV」「IMAGING」が含まれると自動オープン。
+- **FT4** — 内蔵 ft8_lib（ctypes）でFT4の送受信が可能（WSJT-X不要）。Rig + PTTで送信。クリックで送信周波数を設定できるドッキング式ウォーターフォール、送受信ドップラー処理、dB 単位の送信レベル、チューンテスト音を搭載。RR73 でQSOを自動ログ。RS-44・JO-97・MO-122 等のFT4運用衛星で自動オープン。LoTW互換のADIF出力対応。
 - **Q65** — EME（地球-月-地球）弱信号デジタルモード。libq65（WSJT-X ソースからビルド）でデコード（**Help → Q65 Library Installation** でバンドル版を自動インストール）。送信（TX）は純 Python 実装のため libq65 なしでも動作。QSOステートマシン（IDLE→CALLING→EXCHANGE→CONFIRM→LOGGED）、PTTはCAT制御・送信中ドップラー凍結。サブモード A〜E、周期 15/30/60 秒。ADIF出力対応。
 - **UDP ログブロードキャスト** — FT4・Q65・APRS（双方向メッセージ交換が確定したもの）のQSOがログされるたびに、ADIFレコード1件を設定可能なホスト:ポート（デフォルト `127.0.0.1:2333`）へUDP送信するオプション機能。wavelog-gate・JT-Linkerなど軽量なログ中継ソフトと互換（JTAlert/GridTracker等が使うWSJT-Xバイナリ形式ではなく、プレーンなADIFテキスト）。**File → General Settings → Logging** で有効化・送信先を設定（LAN内の別マシンも指定可能）。APRSはAPRS自体に信号レポート交換の概念がないため、`MODE=PKT`・レポートは固定599/599でログされる（eQSL/LoTWとの互換性のため）。
 - **Help → Direwolf Installation…** — 全プラットフォームでDirewolfの検出・インストール・更新が可能
@@ -101,10 +107,10 @@ Radio Control でLRPT/HRPTトランスポンダーを選択すると自動オー
 - NET Controlモード（rigctld/rotctld互換）— 既存環境と併用可能
 - デュアルリグ：Rig 1 + Rig 2 独立制御（例：IC-9700 + HackRF）
 - 反転トランスポンダー対応、パスバンドチューニング
-- キャッチアップ追尾（タイムアウト再送信付き）
+- ローテーターのキャッチアップ追尾（軌道予測による先読み目標・スルー速度の自動計測・次回AOS地点への先回り・更新周期の選択）。ローテーターが応答しない場合は赤い「未接続」を表示
 
 ### データ管理
-- **SATNOGS** トランスポンダーDB 自動同期（日次）
+- **SATNOGS** トランスポンダーDB 自動同期（起動時に最終同期から7日以上経過していれば更新。随時更新は **Satellite → Fetch Transmitter Database**）
 - **コミュニティ周波数DB** — FT4コーリング周波数など、SANTOGSにない慣習周波数
 - **TLE複数ソース**: CelesTrak Amateur/CubeSat/Weather/Earth-Obs/Science/Stations、SATNOGS TLE API、手動入力
 - TLE品質スコアリング：excellent（6時間未満）/ good（24時間未満）/ fair（72時間未満）/ poor
@@ -127,10 +133,11 @@ FBSAT59はTLEおよびトランスポンダーデータをバックグラウン�
 | Earth Observation / Science（地球観測・科学衛星） | **12時間**ごと |
 | Provisional TLEs（NORAD ≥ 90000の仮ID衛星） | **12時間**ごと |
 | Active TLE fallback（NORAD 10000–89999） | **24時間**ごと |
-| AMSAT運用状況 | **24時間**ごと |
+| AMSAT運用状況・打ち上げ予定衛星 | **24時間**ごと |
+| SATNOGSトランスミッターDB | 起動時に最終同期から**7日**超過で更新 |
 
-SATNOGSトランスポンダーデータは初回起動時に自動取得されます。
-以降は必要に応じて **Satellite → Sync SATNOGS** で手動更新してください。
+SATNOGSトランスポンダーデータは初回起動時に自動取得され、以降も起動時に7日以上古ければ再取得されます。
+必要に応じて **Satellite → Fetch Transmitter Database** で手動更新してください。
 アプリ内では **Help → Auto Fetch Rules** でこのスケジュールを確認できます。
 
 ### アプリ内アップデーター
@@ -194,7 +201,7 @@ python -m src.main
 ## SDR クイックスタート
 
 1. SDRデバイス（HackRF One、RTL-SDR等）を接続
-2. **Settings → Rig Settings → SDR Settings** を開く
+2. **Radio → Rig Settings → SDR Settings** を開く
 3. **Enumerate** をクリックしてデバイスを検出
 4. デバイスを選択し、サンプルレート・ゲインを設定して Rig 1 または Rig 2 に割り当て
 5. **Connect** をクリック — **SDR Controlタブ** がアクティブになる
@@ -323,6 +330,7 @@ msgfmt locale/ja/LC_MESSAGES/fbsat59.po \
 ```
 
 Claude Code 向け開発指示書は [CLAUDE.md](CLAUDE.md) を参照してください。
+エンドユーザー向けドキュメントは [docs/user-guide/ja/](docs/user-guide/ja/index.md)（日本語）と [docs/user-guide/en/](docs/user-guide/en/index.md)（English）にあります。
 
 ---
 
@@ -369,9 +377,9 @@ HackRF / RTL-SDR + 適切な LNA・フィルターで受信可能な業務用衛
 各デコーダーはサブプロセスとして起動し、デコード結果を SDR Control タブの専用プラグインパネルに表示します。IQ録音ファイルからのオフライン再解析にも対応予定です。
 
 ### UI / UX
-- **日本語UI** — 翻訳ファイルはすでに準備済み。フェーズ2で正式対応予定
+- ~~**日本語UI**~~ — **実装済み**（View → Language。切替後に再起動が必要）
 - **観測ログ** — 運用した衛星パスの記録・集計・エクスポート
-- **SDRデバイスインストールダイアログ** — USB VID/PIDスキャン、RTL-SDR/HackRFのドライバーインストール誘導
+- ~~**SDRデバイスインストールダイアログ**~~ — **実装済み**（Help → SDR Device Installation…）
 
 ### ハードウェア
 - TS-2000・FT-817ND 等での実機ドップラー制御テスト（IC-9100・IC-9700 は v0.1.27 で確認済み）

@@ -146,7 +146,7 @@ CelesTrak     ┘                                           │
 | ASGIサーバー | uvicorn | >=0.27 |
 | HTTPクライアント | httpx | >=0.27 |
 | データベース | sqlite3 | 標準ライブラリ |
-| DBマイグレーション | alembic | >=1.13 |
+| DBマイグレーション | （alembic は依存に残るが未使用。実際は `database._apply_migrations()` の `ALTER TABLE` 追加方式） | — |
 | データモデル | pydantic | >=2.6 |
 | Hamlib制御 | Hamlib (python binding) | システム提供 |
 | QRコード生成 | qrcode | >=7.4 |
@@ -194,6 +194,10 @@ CREATE TABLE satellites (
     alt_names       TEXT,           -- JSON配列
     status          TEXT,           -- 'alive', 'dead', 'unknown'
     updated_at      DATETIME
+    -- 以下はマイグレーションで追加された実列（2026-10-09 時点の実DBに合わせて追記）:
+    -- is_favorite, is_hidden, satnogs_source_id（SATNOGS照会用の仮NORAD）,
+    -- tle_no_result_since（TLE未取得の開始日時。30日で自動非表示）,
+    -- favorite_group（0=なし, 1..N=custom_groups.id）, satnogs_uuid
 );
 ```
 
@@ -219,8 +223,12 @@ CREATE TABLE transmitters (
     notes           TEXT,           -- ユーザーメモ
     satnogs_status  TEXT,           -- 生のSATNOGS status: 'active'/'inactive'/'invalid'
                                      -- (manual/community は NULL。2026-07-11 追加)
+    rx_offset_hz    REAL DEFAULT 0, -- per-transponder DL(RX)オフセット（docs/doppler-tuning.md）
+    ul_offset_hz    REAL DEFAULT 0, -- per-transponder UL オフセット
     updated_at      DATETIME
 );
+-- source の実際の許容値は 'satnogs' / 'manual' / 'community'。
+-- type は 'Transmitter' / 'Transponder' / 'Beacon' / 'Transceiver'。
 ```
 
 **`alive` と `satnogs_status` の関係（2026-07-11 確定）**: `alive` は
@@ -238,7 +246,8 @@ CREATE TABLE tle_data (
     line1           TEXT NOT NULL,
     line2           TEXT NOT NULL,
     epoch           DATETIME,
-    source          TEXT,   -- 'celestrak', 'space-track', 'amsat', 'manual'
+    source          TEXT,   -- 'celestrak', 'space-track', 'amsat', 'manual', 'satnogs'
+    tle_group       TEXT DEFAULT 'amateur',  -- 'stations'/'amateur'/'cubesat'/'weather' 等
     fetched_at      DATETIME,
     quality_score   TEXT    -- 'excellent'(<6h), 'good'(<24h), 'fair'(<72h), 'poor'
 );
@@ -459,7 +468,9 @@ ngettext("%(n)d satellite", "%(n)d satellites", n)  # 複数形対応
 - レート制限: 緩やか（日次更新で十分）
 
 ### CelesTrak
-- `https://celestrak.org/SOCRATES/query.php?GROUP=amateur&FORMAT=tle`
+- `https://celestrak.org/NORAD/elements/gp.php?GROUP=amateur&FORMAT=JSON`（OMM/JSON で取得し、
+  `data.omm.celestrak_to_tle_text()` で TLE テキストへ変換する。6桁NORADをAlpha-5形式で扱うため。
+  ソース一覧は `src/data/tle_manager.py` の `TLE_SOURCES`）
 - 認証不要
 - アマチュア衛星: `amateur.txt`
 - ISSなど主要局: `stations.txt`
@@ -585,7 +596,12 @@ test(rig): add coverage for VFO sequence and timeout handling
 - TLE計算・ドップラー計算は既知の値でリグレッションテスト
 - CI（GitHub Actions）でLinux/Windows/macOS全プラットフォームでテスト実行
 
-### ローカル実行の注意（GPD MicroPC2）
+### ローカル実行の注意（旧開発機 GPD MicroPC2 での制約・2026-10-09 注記）
+
+> 以下は開発機が Ubuntu の GPD MicroPC2 だった時期の制約。2026-08-15 に開発機を Mac へ移行済み
+> （[docs/dev-environment-migration.md](docs/dev-environment-migration.md)）。Mac で `pytest tests/`
+> 全体や `test_main_window.py` が同様にフリーズするかは未確認のため、**確認が取れるまでは
+> 従来どおり `test_rig.py` のみをローカル実行する運用を維持する**。GPD 上で作業する場合は下記が必須。
 
 **`pytest tests/` による全テスト一括実行はシステムをフリーズさせる可能性がある。**
 `test_main_window.py` の実行も同様にフリーズする。
@@ -734,7 +750,7 @@ except ImportError:
 
 ---
 
-## 開発環境セットアップ（Ubuntu）
+## 開発環境セットアップ（Ubuntu。現在の主開発機は Mac — 移行記録は下記リンク参照）
 
 ```bash
 # システム依存パッケージ
@@ -787,7 +803,7 @@ sudo usermod -aG dialout $USER
 
 ---
 
-## 実装済み機能一覧（2026年6月30日時点・v0.2.6。FT4関連の追加修正は2026-07-03・v0.2.8まで反映）
+## 実装済み機能一覧（初版 2026年6月30日・v0.2.6 時点。以降の追加分は各項目に日付付きで追記。最新リリース v0.3.61・2026-10-09 時点で見直し）
 
 - 衛星追尾エンジン（Skyfield）
 - **Moon/EME追尾**（JPL DE421エフェメリス・CelestialEngine）— 詳細は「Moon/EME 追尾設計」セクション参照
@@ -873,8 +889,12 @@ sudo usermod -aG dialout $USER
 - **Open in SatNOGS（クロスプラットフォーム）**: 右クリックメニューから衛星の SatNOGS ページをアプリモードで開く。`_open_url_app_mode` に統一済み（Linux: `shutil.which` / macOS: `.app` 絶対パス / Windows: `Program Files` 絶対パス）。Chromium系が見つからない場合は `QDesktopServices.openUrl` にフォールバック。ネットワーク接続エラーと「本当に見つからない」を区別して表示（2026-07-04、`_satnogs_network_error` シグナル追加）
 - **Comms Quick Panel**（右側 Satellite Detail パネル下部）— Communicationsタブ表示中にミニレーダー・衛星クイック選択・周波数ミラー・Rig/Rotator接続ボタンを表示。詳細は「Comms Quick Panel 設計」セクション参照
 - **メニューバー構成**（v0.2.0 以降）
-  - File / Satellite / Radio / **Communications** / **Autotrack/Record** / View / Help
-  - **Communications**: サブメニュー APRS / Telemetry / SSTV・SSDV / FT4 / Q65 / **CW Decoder**（クリックで非常駐タブを開く。× で閉じる）
+  - File / Satellite / Radio / **Communications** / **Autotrack/Record** / **Tools** / View / Help
+  - **Communications**（2026-10 時点の並び。送信可能なタブが先）: APRS / Message Box/Digipeater / FT4 / Q65 / Telemetry / CW Decoder / SSTV・SSDV / METEOR・HRPT（クリックで非常駐タブを開く。× で閉じる）
+  - **Satellite**: Add/Edit/Delete Transmitter・Hide Satellite・Add/Remove Manual TLE・Update TLE・**Fetch Transmitter Database**・Sync Satellite Names
+  - **Radio**: Rig Settings / Rotator Settings（SDR Settings は Rig Settings 内）
+  - **Tools**: ユーザー登録の Web サイト一覧（General Settings > Tools で編集）
+  - **Help**: 自動取得ルール・更新確認・各種インストーラー（SDR・Hamlib・ft8lib・FT4 Enhanced Decoder・Q65・Direwolf・SatDump・gr-satellites・CW Model）・About・GitHub
   - **Autotrack/Record**: サブメニューなし。クリックで AutotrackRecordDialog を開く
   - **View メニュー**: Language（English / 日本語、チェック可能な `QActionGroup`。切替後は再起動が必要。詳細は「多言語化ロードマップ」参照）・Time Zone（UTC / Local Time）
   - Radar・Pass Chart エントリは削除済み（タブ直接選択で十分。Dashboard追加によるインデックスずれ問題を根本解決）
@@ -997,6 +1017,7 @@ sudo usermod -aG dialout $USER
 - **SSDV タブ**（2026-09-24、`src/ui/sstv_tab.py`・`src/comms/sstv/ssdv.py`）— SSDV モードは AX.25 受信を自分で開始（APRS タブ不要）。画像表示区域は「生パケット」（受信フレームをリアルタイム HEX 表示。**HEX を貼り付けると画像を生成**）と「画像」のサブタブ。フレーム内の `55 66`/`55 67`＋CRC-32 で SSDV パケットを検出（`ssdv -l` の短い長さにも対応）。**`ssdv` 実行ファイルは CI（`build-ssdv.yml`）でビルドして最初から同梱**（従来は未同梱で、SSDV タブは画像を復元できなかった）。詳細は [docs/communications.md](docs/communications.md)
 - **SSTV タブ（アナログ画像）の修正**（2026-09-24、`src/comms/sstv/decoder.py`）— それまで実質動いていなかった（起動バグ・SDR 音声 48 kHz を 44.1 kHz として処理・デコーダー自体が誤実装）。タブを開いた時点で起動し、入力源に合わせたサンプルレートで動く、VIS/同期パルス対応のストリーミングデコーダー（Robot36/PD120）に作り直し、pySSTV（エンコーダーのみ。テスト用の基準信号）の音声で検証。実信号での検証は未。詳細は [docs/communications.md](docs/communications.md)
 - **Message Box/Digipeater タブ**（2026-10-01、旧「AX100 Digi」を改名。内部キー `ax100digi` は不変）— AX100 デジピーターに加え **ARICA-2（JS1YSD）メッセージボックス**（4800 baud GMSK、Upload/Confirm/Parrot/Download）の送受信。SDR 受信＋無線機（サウンドカード）送信、CW ビーコン終了の自動検出による「アップリンクウィンドウ」（約15秒）の手動/自動送信。**送信は Direwolf ではなく自前の G3RUH 音声生成（`comms/aprs/g3ruh_tx.py`）**（Direwolf は標準出力に送信音声を出さないため。フレーム形式は公式ページで確認済み、実機の送信は未確認）。APRS タブの送信も同じ理由で動いていなかったため自前の変調音声（1200 = Bell 202 AFSK、4800/9600 = G3RUH）に変更（2026-10-07、実機未確認）。詳細は [docs/communications.md](docs/communications.md) 末尾の該当節
+- **ユーザー向けドキュメント**（2026-10-09）— [docs/user-guide/](docs/user-guide/en/index.md)（en/ja、index・getting-started・troubleshooting）。将来の「AIヘルプ」メニューの知識ベースを兼ねる。**リリース前に内容が現行UIと合っているか見直すこと**
 - CI緑（mypy strict + pytest）
 
 > 各機能の詳細設計・不具合調査履歴は下記「詳細ドキュメント索引」の該当ファイルを参照。
