@@ -8,6 +8,7 @@ from PySide6.QtGui import QGuiApplication
 from pytestqt.qtbot import QtBot
 
 from core.ai_help import (
+    GUIDE_FILES,
     MAX_URL_LENGTH,
     HelpEnvironment,
     IncludeOptions,
@@ -28,7 +29,7 @@ ENV = HelpEnvironment(
 
 def test_guide_urls_follow_language() -> None:
     ja = guide_urls("ja")
-    assert len(ja) == 3
+    assert len(ja) == len(GUIDE_FILES)
     assert all("/user-guide/ja/" in u for u in ja)
     assert all("/user-guide/en/" in u for u in guide_urls("en"))
     assert all("/user-guide/en/" in u for u in guide_urls("fr"))

@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from urllib.parse import quote
 
 GUIDE_BASE_URL = "https://raw.githubusercontent.com/JF9SOM/fbsat59/main/docs/user-guide"
-GUIDE_FILES: tuple[str, ...] = ("index.md", "getting-started.md", "troubleshooting.md")
+GUIDE_FILES: tuple[str, ...] = ("index.md", "getting-started.md", "ft4.md", "troubleshooting.md")
 ISSUES_URL = "https://github.com/JF9SOM/fbsat59/issues"
 CLAUDE_NEW_URL = "https://claude.ai/new"
 

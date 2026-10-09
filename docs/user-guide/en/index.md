@@ -72,4 +72,5 @@ Satellite > Fetch Transmitter Database only if you need fresh data right now
 ## Related guides
 
 - [getting-started.md](getting-started.md) — installation, first run, rig and SDR setup
+- [ft4.md](ft4.md) — FT4 operation and ADC (Audio Doppler Correction)
 - [troubleshooting.md](troubleshooting.md) — symptom-based fixes and how to report a problem

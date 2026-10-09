@@ -68,4 +68,5 @@ Windows（8.1 以降、10/11 推奨）・macOS・Linux で動きます。主な�
 ## 関連ガイド
 
 - [getting-started.md](getting-started.md) — インストール・初回起動・無線機/SDR の設定
+- [ft4.md](ft4.md) — FT4 の運用と ADC（音声ドップラー補正）
 - [troubleshooting.md](troubleshooting.md) — 症状別の対処と不具合の報告方法
