@@ -31,7 +31,7 @@ macOS and Linux. It provides:
 | Autotrack/Record | Opens the Autotrack/Record dialog |
 | Tools | Your registered web sites (editable in General Settings > Tools) |
 | View | Language (restart required), Time Zone (UTC/Local), Appearance |
-| Help | Auto Fetch Rules, Check for Updates, installers for SDR drivers, Hamlib update, ft8lib, Direwolf, SatDump, gr-satellites, CW model, About, GitHub |
+| Help | AI Help (ask Claude about FBSAT59), Auto Fetch Rules, Check for Updates, installers for SDR drivers, Hamlib update, ft8lib, Direwolf, SatDump, gr-satellites, CW model, About, GitHub |
 
 ## Typical workflow
 

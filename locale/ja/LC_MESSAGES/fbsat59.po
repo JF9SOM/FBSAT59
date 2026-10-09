@@ -7194,3 +7194,79 @@ msgid ""
 msgstr ""
 "⚠ 手動TLEが古くなっています: {names}。「衛星」→「手動TLEを削除…」で自動更新に"
 "戻せます。"
+
+#: src/ui/main_window.py
+msgid "AI Help…"
+msgstr "AIヘルプ…"
+
+#: src/ui/ai_help_dialog.py
+msgid "AI Help"
+msgstr "AIヘルプ"
+
+#: src/ui/ai_help_dialog.py
+msgid ""
+"Ask Claude about FBSAT59. Your browser opens claude.ai with a prompt that "
+"points Claude at the FBSAT59 user guide on GitHub. You need a Claude account; "
+"if Claude cannot read the guide, turn on web search in claude.ai. Nothing is "
+"sent until you press send in claude.ai."
+msgstr ""
+"FBSAT59 についてClaudeに質問できます。ブラウザで claude.ai が開き、GitHub上の"
+"FBSAT59ユーザーガイドを参照させるプロンプトが入力済みになります。Claudeのアカ"
+"ウントが必要です。Claudeがガイドを読めない場合は、claude.ai でウェブ検索をオン"
+"にしてください。claude.ai で送信するまで、何も送られません。"
+
+#: src/ui/ai_help_dialog.py
+msgid "Your question (optional):"
+msgstr "質問（任意）:"
+
+#: src/ui/ai_help_dialog.py
+msgid "e.g. My rig does not follow Doppler. What should I check?"
+msgstr "例: 無線機がドップラーに追従しません。何を確認すればよいですか？"
+
+#: src/ui/ai_help_dialog.py
+msgid "Information to attach"
+msgstr "添付する情報"
+
+#: src/ui/ai_help_dialog.py
+msgid "App version"
+msgstr "アプリのバージョン"
+
+#: src/ui/ai_help_dialog.py
+msgid "Operating system"
+msgstr "OS"
+
+#: src/ui/ai_help_dialog.py
+msgid "Interface language"
+msgstr "表示言語"
+
+#: src/ui/ai_help_dialog.py
+msgid "Connected rig / SDR types"
+msgstr "接続中の無線機/SDRの種類"
+
+#: src/ui/ai_help_dialog.py
+msgid "Log files, your location, callsign and IP address are never included."
+msgstr "ログファイル、自局位置、コールサイン、IPアドレスは一切含まれません。"
+
+#: src/ui/ai_help_dialog.py
+msgid "Prompt that will be used:"
+msgstr "使用されるプロンプト:"
+
+#: src/ui/ai_help_dialog.py
+msgid "Open in Claude"
+msgstr "Claudeで開く"
+
+#: src/ui/ai_help_dialog.py
+msgid "Copy Prompt"
+msgstr "プロンプトをコピー"
+
+#: src/ui/ai_help_dialog.py
+msgid "Copy the prompt, then paste it into claude.ai or the Claude app yourself."
+msgstr "プロンプトをコピーして、claude.ai またはClaudeアプリに自分で貼り付けます。"
+
+#: src/ui/ai_help_dialog.py
+msgid ""
+"Your question is too long for the link and will be shortened. Use Copy "
+"Prompt to keep it whole."
+msgstr ""
+"質問が長すぎるため、リンクでは短く切り詰められます。全文を使うには「プロンプト"
+"をコピー」を使ってください。"

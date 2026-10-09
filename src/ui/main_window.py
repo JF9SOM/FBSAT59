@@ -64,6 +64,7 @@ from comms import mode_detection
 from comms.audio_device_manager import get_audio_device_manager
 from comms.telemetry.decoder import load_format
 from core import ui_hang_watchdog
+from core.ai_help import HelpEnvironment, collect_os_name
 from core.autotrack import AutotrackManager
 from core.celestial_engine import MOON_ID, CelestialEngine
 from core.clock_offset import set_clock_offset
@@ -1578,6 +1579,8 @@ class MainWindow(QMainWindow):
         # Help
         help_menu = mb.addMenu(_("Help"))
         if help_menu:
+            help_menu.addAction(_("AI Help…"), self._on_ai_help)
+            help_menu.addSeparator()
             help_menu.addAction(_("Satellite/Transmitter Colors"), self._on_satellite_color)
             help_menu.addAction(_("Auto Fetch Rules"), self._on_auto_fetch_rules)
             help_menu.addAction(_("Clear TLE Sync History…"), self._on_clear_tle_sync_history)
@@ -3558,6 +3561,47 @@ class MainWindow(QMainWindow):
         if tab.current_protocol() == "arica2":
             # Reopened on ARICA-2: put the message-box transponder back on the rig.
             tab.request_satellite()
+
+    def _collect_ai_help_environment(self) -> HelpEnvironment:
+        """Gather the non-sensitive facts that Help > AI Help… may attach.
+
+        Only the app version, OS, UI language and the *type* of connected rigs
+        are read; logs, QTH, callsign and IP address are deliberately not.
+        """
+        from PySide6.QtWidgets import QApplication
+
+        from i18n import get_language
+
+        devices: list[str] = []
+        radio = self._radio_control
+        for label, rig in (
+            ("Rig 1", getattr(radio, "_rig1", None)),
+            ("Rig 2", getattr(radio, "_rig2", None)),
+        ):
+            if rig is None or not rig.is_connected:
+                continue
+            if getattr(rig, "is_sdr", False):
+                devices.append(f"{label}: SDR")
+                continue
+            info = rig.get_rig_info()
+            if info is not None:
+                devices.append(f"{label}: {info.model_name}")
+        rotator = getattr(radio, "_rotator", None)
+        if rotator is not None and rotator.is_connected:
+            devices.append("Rotator: connected")
+        return HelpEnvironment(
+            app_version=QApplication.applicationVersion() or "",
+            os_name=collect_os_name(),
+            language=get_language(),
+            devices=tuple(devices),
+        )
+
+    def _on_ai_help(self) -> None:
+        """Open the Help > AI Help… dialog."""
+        from ui.ai_help_dialog import AiHelpDialog
+
+        dlg = AiHelpDialog(self._collect_ai_help_environment(), self)
+        dlg.exec()
 
     def _on_cw_model_help(self) -> None:
         """Open the Help > CW Model Installation… dialog."""

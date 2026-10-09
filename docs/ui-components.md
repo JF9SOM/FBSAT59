@@ -224,3 +224,26 @@ rig_disconnect_requested # POST /api/rig/disconnect でセット → Qt が処�
 - 設定: General Settings の「Tools」タブ（`SettingsDialog._build_tools_tab`）。名前/URL の
   2列テーブルをダブルクリックで直接編集。Add / Remove / Move Up / Move Down / Reset to Defaults。
 - テスト: `tests/test_tool_links.py`
+
+---
+
+## Help > AI Help…（2026-10-09 追加）
+
+ヘルプメニュー先頭の「AI Help…」（日本語: AIヘルプ…）。ブラウザで `claude.ai/new?q=<プロンプト>`
+を開き、エンドユーザー向けガイド（[docs/user-guide/](user-guide/en/index.md)）を根拠に Claude が
+答えるようにする。**アプリ自身は一切通信しない**（ボタン押下時に既定ブラウザへ URL を渡すだけ）。
+
+- プロンプト生成: `src/core/ai_help.py`（Qt 非依存の純関数。`build_prompt` / `build_claude_url` /
+  `environment_text` / `guide_urls`）。ガイドは `main` ブランチの raw URL を参照するので、ガイドを
+  push すれば再配布なしで反映される。プロンプトは英語（URL エンコード後の長さを抑えるため）、
+  返信言語は UI 言語に合わせて指示。URL は `MAX_URL_LENGTH`（8000）を超える場合に**質問文だけ**を切り詰める
+- ダイアログ: `src/ui/ai_help_dialog.py`（質問欄・添付情報チェック4種・プロンプトのプレビュー・
+  「Open in Claude」「Copy Prompt」）。`claude.ai/new?q=` は公式仕様ではないため、壊れた場合の保険として
+  Copy Prompt（クリップボードへ全文。URL 長の制限を受けない）を併設
+- 添付できる情報は `HelpEnvironment` のフィールドのみ（アプリのバージョン・OS・UI 言語・接続中の
+  Rig/SDR の機種名）。ログ・QTH・コールサイン・IP は含めない。収集は
+  `MainWindow._collect_ai_help_environment()`
+- 質問内容は開発者側へは届かない（会話はユーザーの claude.ai 上）。課題の集約は、ユーザーが
+  AI 作成の Issue 用要約を GitHub Issue に貼る運用
+- ガイド側のルール（ガイドに無いことは推測しない・CLAUDE.md を根拠にしない）はプロンプトに埋め込み済み
+- テスト: `tests/test_ai_help.py`

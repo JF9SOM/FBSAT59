@@ -30,7 +30,7 @@ Windows（8.1 以降、10/11 推奨）・macOS・Linux で動きます。主な�
 | 自動追尾/記録（Autotrack/Record） | 自動追尾/記録ダイアログを開く |
 | ツール（Tools） | 登録した Web サイト（全般設定の Tools タブで編集） |
 | 表示（View） | 言語（切替後に再起動が必要）、タイムゾーン（UTC/ローカル）、外観 |
-| ヘルプ（Help） | 自動取得ルール、更新を確認、SDR ドライバー・Hamlib 更新・ft8lib・Direwolf・SatDump・gr-satellites・CW モデルの各インストール、バージョン情報、GitHub |
+| ヘルプ（Help） | AIヘルプ（Claudeに質問）、自動取得ルール、更新を確認、SDR ドライバー・Hamlib 更新・ft8lib・Direwolf・SatDump・gr-satellites・CW モデルの各インストール、バージョン情報、GitHub |
 
 ## 基本の流れ
 
