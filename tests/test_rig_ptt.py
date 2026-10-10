@@ -531,3 +531,28 @@ def test_waiting_for_the_rig_to_answer_gives_up_quickly() -> None:
         assert ctrl._await_cat_answer(still_ok=lambda: True) is False
     assert clock["t"] - 1000.0 <= 2.0
     assert probe.call_count <= 8
+
+
+def test_mode_read_sends_nothing_once_the_window_has_closed() -> None:
+    """The probe must not run on into the next transmission (a CAT command during TX)."""
+    ctrl = _net("dtr")
+    ctrl._cat_probe_due = True
+    with (
+        patch.object(ctrl, "_cat_answers", return_value=True) as probe,
+        patch.object(ctrl, "_ft991_read_mode", return_value="PKTUSB") as read,
+    ):
+        assert ctrl.read_mode_name(lambda: False) is None
+    probe.assert_not_called()
+    read.assert_not_called()
+
+
+def test_mode_read_stops_when_the_window_closes_during_the_probe() -> None:
+    ctrl = _net("dtr")
+    ctrl._cat_probe_due = True
+    window = iter([True, True, False])
+    with (
+        patch.object(ctrl, "_cat_answers", return_value=True),
+        patch.object(ctrl, "_ft991_read_mode", return_value="PKTUSB") as read,
+    ):
+        assert ctrl.read_mode_name(lambda: next(window, False)) is None
+    read.assert_not_called()

@@ -3518,7 +3518,7 @@ class HamlibNetController(RigController):
                 return False
             time.sleep(0.3)
 
-    def restore_rx_mode(self) -> str | None:
+    def restore_rx_mode(self, still_ok: Callable[[], bool] | None = None) -> str | None:
         """Put the receive VFO back on the data mode of the selected transponder.
 
         For an FT-991 left on FM after a transmission. Returns the mode read
@@ -3530,7 +3530,8 @@ class HamlibNetController(RigController):
             or not self._current_dl_mode.endswith("-D")
             or not self.is_connected
             or self._ft991_cat_blocked()
-            or not self._await_cat_answer()
+            or not self._await_cat_answer(still_ok)
+            or (still_ok is not None and not still_ok())
         ):
             return None
         try:
@@ -3606,15 +3607,28 @@ class HamlibNetController(RigController):
             return None, None
         if not self._await_cat_answer(still_ok):
             return None, None
+        if still_ok is not None and not still_ok():
+            return None, None
         dl = self.get_frequency()
         if still_ok is not None and not still_ok():
             return (dl if dl > 0 else None), None
         ul = self.get_split_frequency()
         return (dl if dl > 0 else None), (ul if ul > 0 else None)
 
-    def read_mode_name(self) -> str | None:
-        """The mode rigctld reports for the receive VFO (e.g. "PKTUSB"), or None."""
-        if not self.is_connected or self._ft991_cat_blocked() or not self._await_cat_answer():
+    def read_mode_name(self, still_ok: Callable[[], bool] | None = None) -> str | None:
+        """The mode rigctld reports for the receive VFO (e.g. "PKTUSB"), or None.
+
+        *still_ok* is the caller's window: nothing is sent once it has closed (a
+        probe that ran on into the next transmission put a CAT command on the air
+        period, 2026-10-10).
+        """
+        if not self.is_connected or self._ft991_cat_blocked():
+            return None
+        if still_ok is not None and not still_ok():
+            return None
+        if not self._await_cat_answer(still_ok):
+            return None
+        if still_ok is not None and not still_ok():
             return None
         return self._ft991_read_mode()
 

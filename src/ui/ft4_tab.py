@@ -2286,7 +2286,7 @@ class Ft4Tab(QWidget):
                     " (differs from what was written)" if changed else "",
                 )
             if safe():
-                mode = rig.read_mode_name()
+                mode = rig.read_mode_name(safe)
                 if mode is not None:
                     fm_like = mode.upper() in ("FM", "FMN", "WFM", "PKTFM", "AM")
                     (log.warning if fm_like else log.info)(
@@ -2298,7 +2298,7 @@ class Ft4Tab(QWidget):
                     if fm_like and hasattr(rig, "restore_rx_mode"):
                         # e.g. the rig fell back to FM after a transmission
                         # (2026-10-10): put the receive VFO back on the data mode.
-                        restored = rig.restore_rx_mode()
+                        restored = rig.restore_rx_mode(safe)
                         log.warning("adc_rx rx mode restore -> %s", restored)
 
         # The dial is read BEFORE anything is written: right after an uplink write
