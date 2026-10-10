@@ -2293,6 +2293,11 @@ class Ft4Tab(QWidget):
                         slot_start % 60,
                         " <- NOT a data-USB mode" if fm_like else "",
                     )
+                    if fm_like and hasattr(rig, "restore_rx_mode"):
+                        # e.g. the rig fell back to FM after a transmission
+                        # (2026-10-10): put the receive VFO back on the data mode.
+                        restored = rig.restore_rx_mode()
+                        log.warning("adc_rx rx mode restore -> %s", restored)
 
         # The dial is read BEFORE anything is written: right after an uplink write
         # Hamlib still points at the transmit VFO and "f" returns the uplink.

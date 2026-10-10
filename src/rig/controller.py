@@ -773,6 +773,7 @@ class RigController(ABC):
         self._doppler_frozen: bool = False
         # time.monotonic() of the last set_ptt(False); see _ft991_cat_blocked().
         self._ptt_off_at: float = float("-inf")
+        self._cat_probe_due: bool = False
         # FT4 ADC TX: leave the uplink alone (see set_hold_ul()).
         self._hold_ul: bool = False
         # How this rig is keyed (see rig.ptt): CAT (default), RTS, DTR or VOX.
@@ -996,6 +997,10 @@ class RigController(ABC):
         self._doppler_frozen = enabled and freeze_doppler
         if not enabled:
             self._ptt_off_at = time.monotonic()
+            # The rig may stay deaf to CAT for seconds after a transmission (seen
+            # 2026-10-10: rigctld timed out 3 s after PTT-off): the next slot-sync
+            # CAT access must first see it answer again.
+            self._cat_probe_due = True
         return False
 
     def _tracking_through_tx(self) -> bool:
@@ -3464,6 +3469,86 @@ class HamlibNetController(RigController):
         """True while an FT-991 would not answer CAT (transmitting, or just after PTT off)."""
         return self._ft991_cat_blocked()
 
+    # Longest we keep probing for an answer when the caller gave no window of its own.
+    _CAT_ANSWER_MAX_WAIT_S = 6.0
+
+    def _cat_answers(self) -> bool:
+        """True when the FT-991 answers a harmless raw CAT read ("ID;") right now."""
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(self._TIMEOUT)
+            sock.connect((self._host, self._port))
+            sock.settimeout(1.5)
+            sock.sendall(b"w ID;\n")
+            buf = b""
+            with contextlib.suppress(OSError):
+                while b"ID" not in buf and b"RPRT" not in buf and len(buf) < 64:
+                    chunk = sock.recv(64)
+                    if not chunk:
+                        break
+                    buf += chunk
+            sock.close()
+        except Exception:
+            return False
+        return b"ID0" in buf
+
+    def _await_cat_answer(self, still_ok: Callable[[], bool] | None = None) -> bool:
+        """After a transmission, wait until the rig answers CAT again (once per TX).
+
+        Hamlib answers a frequency write that finds the rig deaf by sending its
+        band-select command anyway, and the FT-991 then recalls that band's last
+        mode (FM) -- so nothing may be written before the rig has answered.
+        False when the caller's window closed (or the cap passed) first.
+        """
+        if not self._cat_probe_due:
+            return True
+        deadline = time.monotonic() + self._CAT_ANSWER_MAX_WAIT_S
+        while True:
+            if still_ok is not None and not still_ok():
+                return False
+            if self._cat_answers():
+                self._cat_probe_due = False
+                logger.info("RigNet: rig answers CAT again after the transmission")
+                return True
+            if time.monotonic() >= deadline:
+                logger.warning("RigNet: rig still not answering CAT -- skipping this access")
+                return False
+            time.sleep(0.4)
+
+    def restore_rx_mode(self) -> str | None:
+        """Put the receive VFO back on the data mode of the selected transponder.
+
+        For an FT-991 left on FM after a transmission. Returns the mode read
+        back afterwards, or None when there was nothing to restore / no answer.
+        """
+        code = _FT991_MODE_MAP.get(self._current_dl_mode)
+        if (
+            code is None
+            or not self._current_dl_mode.endswith("-D")
+            or not self.is_connected
+            or self._ft991_cat_blocked()
+            or not self._await_cat_answer()
+        ):
+            return None
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(self._TIMEOUT)
+            sock.connect((self._host, self._port))
+            sock.settimeout(1.0)
+            sock.sendall(f"w MD0{code};\n".encode())
+            with contextlib.suppress(OSError):
+                sock.recv(64)
+            sock.close()
+        except Exception as exc:
+            logger.warning("RigNet: could not restore the receive mode: %s", exc)
+            return None
+        time.sleep(0.3)
+        now = self._ft991_read_mode()
+        logger.warning(
+            "RigNet: receive mode restored to %s (read back: %s)", self._current_dl_mode, now
+        )
+        return now
+
     def _write_once(
         self, command: str, hz: float, still_ok: Callable[[], bool] | None = None
     ) -> bool:
@@ -3476,6 +3561,9 @@ class HamlibNetController(RigController):
         rig was left on FM several times.
         """
         if not self.is_connected or self._ft991_cat_blocked():
+            return False
+        if not self._await_cat_answer(still_ok):
+            logger.info("RigNet: slot write %s %d skipped (rig not answering)", command, int(hz))
             return False
         with self._cmd_lock:
             if self._ft991_cat_blocked():
@@ -3513,6 +3601,8 @@ class HamlibNetController(RigController):
             return None, None
         if still_ok is not None and not still_ok():
             return None, None
+        if not self._await_cat_answer(still_ok):
+            return None, None
         dl = self.get_frequency()
         if still_ok is not None and not still_ok():
             return (dl if dl > 0 else None), None
@@ -3521,7 +3611,7 @@ class HamlibNetController(RigController):
 
     def read_mode_name(self) -> str | None:
         """The mode rigctld reports for the receive VFO (e.g. "PKTUSB"), or None."""
-        if not self.is_connected or self._ft991_cat_blocked():
+        if not self.is_connected or self._ft991_cat_blocked() or not self._await_cat_answer():
             return None
         return self._ft991_read_mode()
 

@@ -455,3 +455,57 @@ def test_net_ptt_on_keeps_the_old_line_when_the_fresh_open_fails() -> None:
     old.key.assert_called_with(True)
     old.close.assert_not_called()
     assert ctrl._ptt_line is old
+
+
+# ---------------------------------------------------------------------------
+# After a transmission: wait for the rig to answer CAT, restore a stray mode
+# ---------------------------------------------------------------------------
+
+
+def test_slot_write_waits_for_the_rig_to_answer_after_a_transmission() -> None:
+    ctrl = _net("dtr")
+    ctrl._ptt_line = MagicMock()
+    ctrl._ptt_line.key.return_value = True
+    ctrl.set_ptt(True, freeze_doppler=False)
+    ctrl.set_ptt(False)
+    ctrl._ptt_off_at = float("-inf")  # past the fixed settle time
+    assert ctrl._cat_probe_due is True
+    answers = iter([False, True])
+    with (
+        patch.object(ctrl, "_cat_answers", side_effect=lambda: next(answers)),
+        patch("rig.controller.time.sleep"),
+        patch.object(ctrl, "_cmd_raw", return_value="RPRT 0"),
+    ):
+        assert ctrl.write_dl_hz(435_610_000.0) is True
+    assert ctrl._cat_probe_due is False
+
+
+def test_slot_write_is_skipped_when_the_rig_never_answers() -> None:
+    ctrl = _net("dtr")
+    ctrl._cat_probe_due = True
+    with (
+        patch.object(ctrl, "_cat_answers", return_value=False),
+        patch.object(ctrl, "_cmd_raw") as cmd,
+    ):
+        assert ctrl.write_dl_hz(435_610_000.0, still_ok=lambda: False) is False
+    cmd.assert_not_called()
+
+
+def test_restore_rx_mode_sends_the_data_mode_of_the_transponder() -> None:
+    ctrl = _net("dtr")
+    ctrl.set_current_modes("USB-D", "LSB-D")
+    ctrl._ptt_off_at = float("-inf")
+    sock = MagicMock()
+    with (
+        patch("rig.controller.socket.socket", return_value=sock),
+        patch.object(ctrl, "_ft991_read_mode", return_value="PKTUSB"),
+        patch("rig.controller.time.sleep"),
+    ):
+        assert ctrl.restore_rx_mode() == "PKTUSB"
+    sock.sendall.assert_called_with(b"w MD0C;\n")
+
+
+def test_restore_rx_mode_does_nothing_for_a_non_data_transponder() -> None:
+    ctrl = _net("dtr")
+    ctrl.set_current_modes("FM", "FM")
+    assert ctrl.restore_rx_mode() is None
