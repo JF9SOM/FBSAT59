@@ -2529,7 +2529,10 @@ class TestHamlibNetController:
         assert ctrl.write_dl_hz(435_618_000.0) is False  # still inside the settle time
         ctrl._ptt_off_at -= 10.0
         assert ctrl.cat_blocked is False
-        assert ctrl.write_dl_hz(435_618_000.0) is True
+        # After a transmission the write first waits for the rig to answer CAT
+        # (probed over a real socket, so it must not depend on a local rigctld here).
+        with patch.object(ctrl, "_cat_answers", return_value=True):
+            assert ctrl.write_dl_hz(435_618_000.0) is True
 
     def test_a_rejected_write_does_not_move_the_recorded_dial(self) -> None:
         ctrl = self._make_connected_ctrl(ctcss_method="ft991")
