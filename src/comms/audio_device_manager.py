@@ -46,6 +46,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 from collections.abc import Callable
 from typing import Any, cast
 
@@ -604,6 +605,10 @@ class AudioDeviceManager(QObject):
         be reopened are logged).
         """
         with self._reinit_lock:
+            caller = "".join(traceback.format_stack(limit=4)[:-1]).strip().replace("\n", " | ")
+            logger.warning(
+                "AudioDeviceManager: PortAudio re-initialisation requested by: %s", caller
+            )
             with self._inputs_lock:
                 inputs = list(self._inputs.values())
             for stream in inputs:
