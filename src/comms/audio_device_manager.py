@@ -627,6 +627,45 @@ class AudioDeviceManager(QObject):
             )
             return True
 
+    def output_busy(self) -> bool:
+        """True while some tab holds an output device for a transmission."""
+        with self._tx_lock:
+            return bool(self._tx_owners)
+
+    def validate_output_with_recovery(
+        self, device: int | None, samplerate: int, channels: int = 1
+    ) -> None:
+        """validate_output_device(), re-initialising PortAudio once if it fails.
+
+        PortAudio keeps the device list from start-up; when the FT-991A's USB drops
+        and comes back (2026-10-10, several times) the list is stale and every
+        transmission is refused with "cannot play at 48000 Hz" until something
+        re-initialises PortAudio (opening Rig Settings happened to). Do that here,
+        before the PTT is keyed, and check again; a second failure is raised.
+        """
+        try:
+            validate_output_device(device, samplerate, channels)
+            return
+        except RuntimeError as first:
+            logger.warning(
+                "AudioDeviceManager: output device %r refused (%s); re-initialising PortAudio",
+                device,
+                first,
+            )
+            if not self.reinitialize_portaudio():
+                raise
+        validate_output_device(device, samplerate, channels)
+
+    def refresh_devices_for_tab(self) -> bool:
+        """Re-initialise PortAudio when a transmit-capable tab is opened.
+
+        Skipped while a transmission is running (re-initialising closes every
+        PortAudio stream in the process). Returns True when it ran.
+        """
+        if self.output_busy():
+            return False
+        return self.reinitialize_portaudio()
+
     def ensure_output_ready(self, device: int | None, samplerate: int) -> None:
         """Make sure an output stream can be opened on *device*, recovering once if not.
 

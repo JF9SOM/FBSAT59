@@ -48,7 +48,7 @@ from PySide6.QtWidgets import (
 )
 
 from comms import qt_audio_out
-from comms.audio_device_manager import get_audio_device_manager, validate_output_device
+from comms.audio_device_manager import get_audio_device_manager
 from comms.ft4.codec import (
     FT4_PERIOD,
     FT4_TX_DURATION,
@@ -294,7 +294,9 @@ class _TxWorker(QObject):
         try:
             import sounddevice as sd  # optional dep (device index -> name)
 
-            validate_output_device(self._out_device, TX_SAMPLE_RATE, channels=1)
+            get_audio_device_manager().validate_output_with_recovery(
+                self._out_device, TX_SAMPLE_RATE, channels=1
+            )
             device_name: str | None = None
             if self._out_device is not None:
                 device_name = str(sd.query_devices(self._out_device)["name"])

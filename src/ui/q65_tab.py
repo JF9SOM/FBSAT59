@@ -913,6 +913,13 @@ class Q65Tab(QWidget):
             )
             return
 
+        try:
+            mgr.validate_output_with_recovery(self._out_device, SAMPLE_RATE, channels=1)
+        except Exception as exc:
+            self._status_label.setText(f"Audio error: {exc}")
+            mgr.release_output(_AUDIO_OWNER, self._out_device)
+            return
+
         rig = self._get_rig()
 
         # PTT ON. freeze_doppler=False: a Q65 transmission runs 15-60 s, so

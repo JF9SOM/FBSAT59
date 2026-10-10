@@ -140,3 +140,64 @@ def test_a_healthy_ptt_line_is_not_reopened(monkeypatch: pytest.MonkeyPatch) -> 
     rig = _net_rig(monkeypatch, good, spare)
     assert rig.set_ptt(True) is True
     assert spare.keyed == []
+
+
+# ---------------------------------------------------------------------------
+# validate_output_with_recovery / refresh_devices_for_tab
+# ---------------------------------------------------------------------------
+
+
+def test_validation_that_passes_does_not_reinitialise(
+    manager: AudioDeviceManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import comms.audio_device_manager as adm
+
+    monkeypatch.setattr(adm, "validate_output_device", lambda *a, **k: None)
+    called: list[str] = []
+    monkeypatch.setattr(manager, "reinitialize_portaudio", lambda: called.append("re") or True)
+    manager.validate_output_with_recovery(0, 48_000)
+    assert called == []
+
+
+def test_stale_device_list_is_reinitialised_and_checked_again(
+    manager: AudioDeviceManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import comms.audio_device_manager as adm
+
+    results = iter([RuntimeError("cannot play at 48000 Hz"), None])
+
+    def fake_validate(*a: Any, **k: Any) -> None:
+        r = next(results)
+        if r is not None:
+            raise r
+
+    monkeypatch.setattr(adm, "validate_output_device", fake_validate)
+    called: list[str] = []
+    monkeypatch.setattr(manager, "reinitialize_portaudio", lambda: called.append("re") or True)
+    manager.validate_output_with_recovery(0, 48_000)
+    assert called == ["re"]
+
+
+def test_a_device_that_stays_refused_still_raises(
+    manager: AudioDeviceManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import comms.audio_device_manager as adm
+
+    def always_fail(*a: Any, **k: Any) -> None:
+        raise RuntimeError("cannot play at 48000 Hz")
+
+    monkeypatch.setattr(adm, "validate_output_device", always_fail)
+    monkeypatch.setattr(manager, "reinitialize_portaudio", lambda: True)
+    with pytest.raises(RuntimeError):
+        manager.validate_output_with_recovery(0, 48_000)
+
+
+def test_tab_refresh_is_skipped_while_a_transmission_holds_the_output(
+    manager: AudioDeviceManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    called: list[str] = []
+    monkeypatch.setattr(manager, "reinitialize_portaudio", lambda: called.append("re") or True)
+    assert manager.refresh_devices_for_tab() is True
+    assert manager.acquire_output("FT4", 0) is True
+    assert manager.refresh_devices_for_tab() is False
+    assert called == ["re"]

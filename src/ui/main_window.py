@@ -3047,6 +3047,18 @@ class MainWindow(QMainWindow):
                     w.set_satellite(norad, name)
                 break
 
+    def _refresh_audio_devices_for_tab(self) -> None:
+        """Re-initialise PortAudio just before a transmit-capable tab is created.
+
+        The device list PortAudio holds goes stale when the radio's USB sound card
+        is re-enumerated; doing this once per tab open (not while transmitting)
+        gives the new tab a current list. Failures are only logged.
+        """
+        try:
+            get_audio_device_manager().refresh_devices_for_tab()
+        except Exception:
+            logger.exception("PortAudio refresh before opening a tab failed")
+
     def _on_open_aprs(self) -> None:
         """Open the APRS tab (Communications > APRS).
 
@@ -3061,6 +3073,7 @@ class MainWindow(QMainWindow):
                 self._tab_widget.setCurrentIndex(i)
                 return
 
+        self._refresh_audio_devices_for_tab()
         from ui.aprs_tab import AprsTab
 
         tab = AprsTab(self._conn, self._radio_control, parent=self)
@@ -3272,6 +3285,7 @@ class MainWindow(QMainWindow):
                 self._tab_widget.setCurrentIndex(i)
                 return
 
+        self._refresh_audio_devices_for_tab()
         from ui.ft4_tab import Ft4Tab
 
         tab = Ft4Tab(
@@ -3402,6 +3416,7 @@ class MainWindow(QMainWindow):
         # that left `from ui.q65_tab import Q65Tab` outside the try block
         # only caught failures from the constructor, not from the import,
         # and so still failed silently for an import-time crash.
+        self._refresh_audio_devices_for_tab()
         try:
             from ui.q65_tab import Q65Tab
 
@@ -3550,6 +3565,7 @@ class MainWindow(QMainWindow):
                 self._tab_widget.setCurrentIndex(i)
                 return
 
+        self._refresh_audio_devices_for_tab()
         from ui.message_box_tab import MessageBoxTab
 
         tab = MessageBoxTab(self._conn, self._radio_control, parent=self)
