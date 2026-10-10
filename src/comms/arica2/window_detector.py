@@ -44,6 +44,14 @@ DEFAULT_MIN_BURST_S = 3.0
 DEFAULT_WINDOW_S = 15.0
 
 
+# Meter value of the beacon's strength (0..1) is held at its recent peak and falls by this
+# much per second, so the dots and pauses of CW read as one steady level.
+_STRENGTH_DECAY_PER_S = 0.4
+# I/Q detector: peak-to-median line level (dB) mapped to 0..1. Pure noise already reaches ~8 dB.
+_IQ_STRENGTH_FLOOR_DB = 6.0
+_IQ_STRENGTH_SPAN_DB = 24.0
+
+
 @dataclass(frozen=True)
 class BeaconEnded:
     """The carrier has stopped; the uplink window is open.
@@ -55,6 +63,12 @@ class BeaconEnded:
 
     burst_s: float
     remaining_s: float
+
+
+def _hold(held: float, now: float, dt: float) -> float:
+    """Peak-hold with a linear fall, clamped to 0..1."""
+    now = min(1.0, max(0.0, now))
+    return max(now, held - _STRENGTH_DECAY_PER_S * dt, 0.0)
 
 
 class BeaconWindowDetector:
@@ -88,9 +102,12 @@ class BeaconWindowDetector:
         self._last_seen = 0.0
         self.last_level_db = 0.0
         self.carrier_present = False
+        #: Beacon strength 0..1 for a meter (peak-held, see _STRENGTH_DECAY_PER_S).
+        self.signal_strength = 0.0
 
     def reset(self) -> None:
         """Forget the buffered samples and any burst in progress."""
+        self.signal_strength = 0.0
         self._pending = np.zeros(0, dtype=np.complex64)
         self._frame_buf = np.zeros(0, dtype=np.complex64)
         self._burst_start = None
@@ -122,6 +139,8 @@ class BeaconWindowDetector:
         self.last_level_db = 10.0 * float(np.log10(float(band.max()) / floor + 1e-20))
         present = self.last_level_db >= self._threshold_db
         self.carrier_present = present
+        now_strength = (self.last_level_db - _IQ_STRENGTH_FLOOR_DB) / _IQ_STRENGTH_SPAN_DB
+        self.signal_strength = _hold(self.signal_strength, now_strength, _FRAME_LEN / self._rate)
 
         if present:
             if self._burst_start is None:
@@ -208,6 +227,9 @@ class AudioBeaconWindowDetector:
         self._transmitting = False
         self._mask_until = 0.0
         self.carrier_present = False
+        #: Beacon strength 0..1 for a meter: how far the receiver's noise drops while the
+        #: carrier is keyed on (0 = noise only, 1 = silent), peak-held.
+        self.signal_strength = 0.0
 
     def set_transmitting(self, transmitting: bool) -> None:
         """Ignore the audio while our own transmission mutes the receiver.
@@ -225,6 +247,7 @@ class AudioBeaconWindowDetector:
         self._pending = np.zeros(0, dtype=np.float32)
         self._burst_start = None
         self.carrier_present = False
+        self.signal_strength = 0.0
 
     def push_samples(self, audio: NDArray[np.float32]) -> list[BeaconEnded]:
         """Analyse a block of mono receive audio; return the beacon-end events it completed."""
@@ -242,6 +265,7 @@ class AudioBeaconWindowDetector:
 
     def _analyse(self, level: float) -> BeaconEnded | None:
         if self._transmitting or self._t < self._mask_until:
+            self.signal_strength = 0.0
             return None  # our own transmission: neither signal nor noise reference
         self._levels.append(level)
         if len(self._levels) > self._max_levels:
@@ -251,6 +275,8 @@ class AudioBeaconWindowDetector:
         reference = float(np.percentile(self._levels, _AUDIO_REF_PERCENTILE))
         present = reference > 0.0 and level < self._quiet_ratio * reference
         self.carrier_present = present
+        depth = 1.0 - level / reference if reference > 0.0 else 0.0
+        self.signal_strength = _hold(self.signal_strength, depth, _AUDIO_FRAME_S)
 
         if present:
             if self._burst_start is None:

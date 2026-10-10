@@ -7270,3 +7270,20 @@ msgid ""
 msgstr ""
 "質問が長すぎるため、リンクでは短く切り詰められます。全文を使うには「プロンプト"
 "をコピー」を使ってください。"
+
+#: src/ui/arica2_panel.py
+msgid "Signal:"
+msgstr "信号:"
+
+#: src/ui/arica2_panel.py
+msgid "No beacon detection"
+msgstr "ビーコン検出なし"
+
+#: src/ui/arica2_panel.py
+#, python-brace-format
+msgid ""
+"Beacon signal strength {pct:.0f}%. Not S-units: compare it with the "
+"rig's S meter. Uplinks need a clearly keyed beacon (about S1 or more)."
+msgstr ""
+"ビーコンの信号強度 "
+"{pct:.0f}%。Sメーターの目盛りではありません。無線機のSメーターと見比べてください。アップリンクには、はっきりキーイングされたビーコン（目安はS1以上）が必要です。"

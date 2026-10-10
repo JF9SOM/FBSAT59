@@ -6193,3 +6193,18 @@ msgstr ""
 #, python-brace-format
 msgid "({shown}/{total} hex chars — rest omitted)"
 msgstr ""
+
+#: src/ui/arica2_panel.py
+msgid "Signal:"
+msgstr ""
+
+#: src/ui/arica2_panel.py
+msgid "No beacon detection"
+msgstr ""
+
+#: src/ui/arica2_panel.py
+#, python-brace-format
+msgid ""
+"Beacon signal strength {pct:.0f}%. Not S-units: compare it with the "
+"rig's S meter. Uplinks need a clearly keyed beacon (about S1 or more)."
+msgstr ""

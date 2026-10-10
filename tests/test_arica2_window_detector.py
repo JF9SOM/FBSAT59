@@ -199,3 +199,48 @@ def test_audio_detector_sees_two_beacons_in_a_row() -> None:
 def test_audio_detector_survives_signal_loss_of_the_noise_floor() -> None:
     det = AudioBeaconWindowDetector(_RATE)
     assert _run(det, np.zeros(10 * _RATE, dtype=np.float32)) == []  # muted audio: nothing to judge
+
+
+def test_audio_detector_signal_strength_is_low_for_noise_and_high_for_the_beacon() -> None:
+    det = AudioBeaconWindowDetector(_RATE)
+    noise = _audio([], 30.0)
+    seen = []
+    for i in range(0, len(noise), 2400):
+        det.push_samples(noise[i : i + 2400])
+        seen.append(det.signal_strength)
+    assert max(seen[100:]) < 0.4  # a noise dip never reads as a strong beacon
+
+    det = AudioBeaconWindowDetector(_RATE)
+    audio = _audio(_cw(10.0), 25.0)
+    during = []
+    for i in range(0, len(audio), 2400):
+        det.push_samples(audio[i : i + 2400])
+        if 12.0 <= i / _RATE <= 28.0:
+            during.append(det.signal_strength)
+    assert sorted(during)[len(during) // 2] > 0.6  # the keyed carrier reads clearly
+
+
+def test_audio_detector_signal_strength_is_zero_while_we_transmit() -> None:
+    det = AudioBeaconWindowDetector(_RATE)
+    audio = _audio(_cw(5.0), 20.0)
+    det.push_samples(audio[: int(10 * _RATE)])
+    assert det.signal_strength > 0.3
+    det.set_transmitting(True)
+    det.push_samples(audio[int(10 * _RATE) : int(10.5 * _RATE)])
+    assert det.signal_strength == 0.0
+
+
+def test_iq_detector_signal_strength_rises_with_a_carrier() -> None:
+    rate = 250_000.0
+    n = int(rate * 2)
+    t = np.arange(n) / rate
+    rng = np.random.default_rng(0)
+    noise = (rng.standard_normal(n) + 1j * rng.standard_normal(n)).astype(np.complex64) * 0.01
+    tone = (0.05 * np.exp(2j * np.pi * 1000.0 * t)).astype(np.complex64)
+
+    quiet = BeaconWindowDetector(rate)
+    quiet.push_samples(noise)
+    loud = BeaconWindowDetector(rate)
+    loud.push_samples(noise + tone)
+    assert quiet.signal_strength < 0.3
+    assert loud.signal_strength > 0.6

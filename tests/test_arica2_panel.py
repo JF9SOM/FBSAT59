@@ -531,3 +531,44 @@ def test_baseband_decoder_validates_weak_frames_as_arica2_replies(
     assert not thread.validator(b".l\x8a\x97\x12ob")  # the false frame seen in a real recording
     reply = bytes(ord(c) << 1 for c in "JI1IZR") + b"\x60" + bytes(ord(c) << 1 for c in "JS1YSD")
     assert thread.validator(reply + b"\x61\x03\xf0" + b"saved 'AAA' at box: 1")
+
+
+def test_meters_show_the_beacon_strength_and_the_receive_level(
+    qtbot: QtBot, conn: sqlite3.Connection, engine: _FakeEngine
+) -> None:
+    p = _make(qtbot, conn)
+    p._rb_soundcard.setChecked(True)
+    detector = p._detector
+    assert isinstance(detector, AudioBeaconWindowDetector)
+
+    detector.signal_strength = 0.8  # a clearly keyed beacon
+    p._on_audio_chunk(np.full(480, 0.05, dtype=np.float32))  # about -26 dBFS
+    p._update_meters()
+    assert p._signal_bar.value() == 80
+    assert "2ecc71" in p._signal_bar.styleSheet()  # green
+    assert 50 <= p._rx_level_bar.value() <= 65
+    assert "dBFS" in p._rx_level_bar.toolTip()
+
+    detector.signal_strength = 0.1  # noise only
+    p._update_meters()
+    assert p._signal_bar.value() == 10
+    assert "e74c3c" in p._signal_bar.styleSheet()  # red
+    assert p._rx_level_bar.value() == 0  # no new audio since the last tick
+
+    detector.signal_strength = 0.5
+    p._update_meters()
+    assert "f1c40f" in p._signal_bar.styleSheet()  # yellow
+
+
+def test_meters_are_idle_without_a_beacon_detector(
+    qtbot: QtBot, conn: sqlite3.Connection, engine: _FakeEngine
+) -> None:
+    conn.execute(
+        "UPDATE app_settings SET value = ? WHERE key = 'soundcard_settings'",
+        (json.dumps({"output_device_index": 3}),),
+    )
+    p = _make(qtbot, conn)
+    p._rb_soundcard.setChecked(True)
+    assert p._detector is None
+    p._update_meters()
+    assert p._signal_bar.value() == 0

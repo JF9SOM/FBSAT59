@@ -23,6 +23,7 @@ from __future__ import annotations
 import contextlib
 import datetime
 import json
+import math
 import sqlite3
 import threading
 import time
@@ -38,6 +39,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QProgressBar,
     QPushButton,
     QRadioButton,
     QSlider,
@@ -91,6 +93,15 @@ _MIN_REMAINING_S = 2.5
 _MODE_MANUAL = "manual"
 _MODE_AUTO = "auto"
 
+# Signal meter colours (beacon strength 0..1; a provisional scale, to be calibrated against the
+# rig's S meter on real passes -- the ARICA-2 operators report that uplinks need roughly S1 or
+# more on the CW).
+_SIGNAL_WEAK = 0.40
+_SIGNAL_GOOD = 0.60
+_COLOR_RED = "#e74c3c"
+_COLOR_YELLOW = "#f1c40f"
+_COLOR_GREEN = "#2ecc71"
+
 
 class Arica2Panel(QWidget):
     """Send commands to and read responses from ARICA-2's message box."""
@@ -112,6 +123,7 @@ class Arica2Panel(QWidget):
         self._sdr_pipeline: Any = None
         self._detector: BeaconWindowDetector | AudioBeaconWindowDetector | None = None
         self._beacon_device: int | None = None
+        self._rx_peak = 0.0  # largest receive-audio sample since the last UI tick
         self._engine_active = False
         self._baseband: G3ruhBasebandRxThread | None = None
         self._baseband_device: int | None = None
@@ -240,6 +252,12 @@ class Arica2Panel(QWidget):
         row = QHBoxLayout(group)
         self._window_label = QLabel(_("Window: no beacon seen yet"))
         row.addWidget(self._window_label, stretch=1)
+        row.addWidget(QLabel(_("Signal:")))
+        self._signal_bar = self._make_meter(_("No beacon detection"))
+        row.addWidget(self._signal_bar)
+        row.addWidget(QLabel(_("RX Level:")))
+        self._rx_level_bar = self._make_meter(_("-- dBFS"))
+        row.addWidget(self._rx_level_bar)
         row.addWidget(QLabel(_("Send mode:")))
         self._mode_combo = QComboBox()
         self._mode_combo.addItem(_("Manual (send now)"), _MODE_MANUAL)
@@ -255,6 +273,56 @@ class Arica2Panel(QWidget):
         self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         row.addWidget(self._mode_combo)
         return group
+
+    @staticmethod
+    def _make_meter(tooltip: str) -> QProgressBar:
+        bar = QProgressBar()
+        bar.setRange(0, 100)
+        bar.setValue(0)
+        bar.setTextVisible(False)
+        bar.setFixedHeight(14)
+        bar.setFixedWidth(80)
+        bar.setToolTip(tooltip)
+        return bar
+
+    @staticmethod
+    def _paint_meter(bar: QProgressBar, fraction: float, color: str, tooltip: str) -> None:
+        bar.setValue(int(round(100.0 * min(1.0, max(0.0, fraction)))))
+        bar.setStyleSheet(f"QProgressBar::chunk {{ background-color: {color}; }}")
+        bar.setToolTip(tooltip)
+
+    def _update_meters(self) -> None:
+        """UI tick: show the beacon strength and the receive audio level."""
+        detector = self._detector
+        if detector is None:
+            self._paint_meter(self._signal_bar, 0.0, _COLOR_RED, _("No beacon detection"))
+        else:
+            strength = detector.signal_strength
+            color = (
+                _COLOR_RED
+                if strength < _SIGNAL_WEAK
+                else _COLOR_YELLOW
+                if strength < _SIGNAL_GOOD
+                else _COLOR_GREEN
+            )
+            self._paint_meter(
+                self._signal_bar,
+                strength,
+                color,
+                _(
+                    "Beacon signal strength {pct:.0f}%. Not S-units: compare it with the rig's "
+                    "S meter. Uplinks need a clearly keyed beacon (about S1 or more)."
+                ).format(pct=100.0 * strength),
+            )
+        peak, self._rx_peak = self._rx_peak, 0.0
+        if peak <= 0.0:
+            self._paint_meter(self._rx_level_bar, 0.0, _COLOR_GREEN, _("-- dBFS"))
+            return
+        dbfs = 20.0 * math.log10(max(peak, 1e-6))
+        color = _COLOR_GREEN if dbfs < -12.0 else _COLOR_YELLOW if dbfs < -3.0 else _COLOR_RED
+        self._paint_meter(
+            self._rx_level_bar, (dbfs + 60.0) / 60.0, color, _("{db:.0f} dBFS").format(db=dbfs)
+        )
 
     def _build_send_group(self) -> QGroupBox:
         group = QGroupBox(_("Message box"))
@@ -448,6 +516,8 @@ class Arica2Panel(QWidget):
 
     def _on_audio_chunk(self, audio: NDArray[np.float32]) -> None:
         """Audio callback thread: run the detector, hand events to the Qt thread."""
+        if len(audio):
+            self._rx_peak = max(self._rx_peak, float(np.max(np.abs(audio))))
         detector = self._detector
         if not isinstance(detector, AudioBeaconWindowDetector):
             return
@@ -552,6 +622,7 @@ class Arica2Panel(QWidget):
             )
 
     def _tick(self) -> None:
+        self._update_meters()
         remaining = self._window_remaining()
         detector = self._detector
         if remaining > 0.0:
