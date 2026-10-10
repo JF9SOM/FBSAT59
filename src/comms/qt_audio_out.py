@@ -165,7 +165,7 @@ class _Player(QObject):
             "qt_audio: open device=%r id=%r fmt=%d Hz/%dch/%s preferred=%d Hz/%dch/%s "
             "pcm=%d B duration=%.2fs",
             device.description(),
-            device.id().data(),
+            bytes(device.id()),
             fmt.sampleRate(),
             fmt.channelCount(),
             fmt.sampleFormat().name,
