@@ -161,20 +161,6 @@ class _Player(QObject):
             job.audio_done.set()
             job.done.set()
             return
-        logger.info(
-            "qt_audio: open device=%r id=%r fmt=%d Hz/%dch/%s preferred=%d Hz/%dch/%s "
-            "pcm=%d B duration=%.2fs",
-            device.description(),
-            bytes(device.id()),
-            fmt.sampleRate(),
-            fmt.channelCount(),
-            fmt.sampleFormat().name,
-            device.preferredFormat().sampleRate(),
-            device.preferredFormat().channelCount(),
-            device.preferredFormat().sampleFormat().name,
-            len(job.pcm),
-            job.duration_s,
-        )
         sink = QAudioSink(device, fmt, self)
         buffer = QBuffer(self)
         buffer.setData(QByteArray(job.pcm))
@@ -203,16 +189,6 @@ class _Player(QObject):
         job, buffer = self._job, self._buffer
         if job is None or buffer is None:
             return
-        sink = self._sink
-        logger.info(
-            "qt_audio: state=%s t=%.3fs processed=%.3fs buf_pos=%d/%d error=%s",
-            getattr(state, "name", state),
-            time.monotonic() - job.requested_at,
-            sink.processedUSecs() / 1e6 if sink is not None else -1.0,
-            buffer.pos(),
-            buffer.size(),
-            sink.error().name if sink is not None else "?",
-        )
         if state == QAudio.State.ActiveState and job.first_active_at is None:
             job.first_active_at = time.monotonic()
         elif state == QAudio.State.IdleState and buffer.atEnd():
@@ -240,16 +216,6 @@ class _Player(QObject):
 
     def _finish(self, error: str | None) -> None:
         job, sink, buffer, timer = self._job, self._sink, self._buffer, self._timer
-        if error and job is not None and sink is not None and buffer is not None:
-            logger.warning(
-                "qt_audio: %s at t=%.3fs processed=%.3fs buf_pos=%d/%d sink_state=%s",
-                error,
-                time.monotonic() - job.requested_at,
-                sink.processedUSecs() / 1e6,
-                buffer.pos(),
-                buffer.size(),
-                sink.state().name,
-            )
         self._job = self._sink = self._buffer = self._timer = None
         if timer is not None:
             timer.stop()
