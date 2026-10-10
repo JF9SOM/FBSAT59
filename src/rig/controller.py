@@ -3469,8 +3469,11 @@ class HamlibNetController(RigController):
         """True while an FT-991 would not answer CAT (transmitting, or just after PTT off)."""
         return self._ft991_cat_blocked()
 
-    # Longest we keep probing for an answer when the caller gave no window of its own.
-    _CAT_ANSWER_MAX_WAIT_S = 6.0
+    # Longest one CAT access keeps probing for an answer. Kept short on purpose: the
+    # probing runs inside the FT4 tab's CAT job, which holds the job slot, and the
+    # quiet-tail job that writes the uplink must not be starved of it (2026-10-10:
+    # a 6 s wait swallowed every uplink write while the rig stayed deaf after a TX).
+    _CAT_ANSWER_MAX_WAIT_S = 1.5
 
     def _cat_answers(self) -> bool:
         """True when the FT-991 answers a harmless raw CAT read ("ID;") right now."""
@@ -3511,9 +3514,9 @@ class HamlibNetController(RigController):
                 logger.info("RigNet: rig answers CAT again after the transmission")
                 return True
             if time.monotonic() >= deadline:
-                logger.warning("RigNet: rig still not answering CAT -- skipping this access")
+                logger.info("RigNet: rig still not answering CAT -- skipping this access")
                 return False
-            time.sleep(0.4)
+            time.sleep(0.3)
 
     def restore_rx_mode(self) -> str | None:
         """Put the receive VFO back on the data mode of the selected transponder.
