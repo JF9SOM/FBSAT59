@@ -382,6 +382,9 @@ class _SharedInputStream:
         """
         with self._lock:
             stream, self._stream = self._stream, None
+            # A stale timestamp would be reported as a stall once the stream
+            # is reopened.
+            self._cb_last_time = None
         if stream is not None:
             with contextlib.suppress(Exception):
                 stream.stop()
@@ -579,6 +582,27 @@ class AudioDeviceManager(QObject):
                 return
             if stream.remove_subscriber(owner):
                 del self._inputs[key]
+
+    def pause_input(self, device: int | None) -> bool:
+        """Close the hardware input stream of `device`, keeping its subscribers.
+
+        Used to transmit without a capture stream open on the same USB sound
+        card (see resume_input()). Returns False when nothing was open there.
+        """
+        key = self._key(device)
+        with self._inputs_lock:
+            stream = self._inputs.get(key)
+        if stream is None:
+            return False
+        stream.suspend()
+        return True
+
+    def resume_input(self, device: int | None) -> bool:
+        """Reopen the input stream closed by pause_input(); True when it is running."""
+        key = self._key(device)
+        with self._inputs_lock:
+            stream = self._inputs.get(key)
+        return stream.resume() if stream is not None else False
 
     # ------------------------------------------------------------------ #
     # PortAudio recovery after a USB audio device was re-enumerated

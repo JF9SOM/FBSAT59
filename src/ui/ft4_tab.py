@@ -547,6 +547,8 @@ class Ft4Tab(QWidget):
         self._tx_enabled: bool = False
         self._tx_in_progress: bool = False
         self._tuning: bool = False
+        # True while the soundcard capture stream is closed for a Tune transmission.
+        self._tune_input_paused: bool = False
         self._last_level_emit: float = 0.0
         self._waterfall_dialog: Ft4WaterfallDialog | None = None
         self._decode_busy: bool = False
@@ -1615,6 +1617,11 @@ class Ft4Tab(QWidget):
 
         rig = self._tx_rig()
         get_ft4_decode_logger().info("tune start freq=%.0f", audio_freq)
+        # Diagnostic: transmit with no capture stream open on the USB sound card.
+        # The shared input stream is reopened when Tune ends (_resume_tune_input).
+        if self._in_device is not None:
+            self._tune_input_paused = get_audio_device_manager().pause_input(self._in_device)
+            get_ft4_decode_logger().info("tune input paused=%s", self._tune_input_paused)
         worker = _TxWorker(
             tone,
             self._out_device,
@@ -1643,9 +1650,18 @@ class Ft4Tab(QWidget):
         self._tune_btn.setChecked(False)
         self._tune_btn.blockSignals(False)
 
+    def _resume_tune_input(self) -> None:
+        """Reopen the capture stream that was closed for a Tune transmission."""
+        if not self._tune_input_paused:
+            return
+        self._tune_input_paused = False
+        ok = get_audio_device_manager().resume_input(self._in_device)
+        get_ft4_decode_logger().info("tune input resumed=%s", ok)
+
     @Slot()
     def _on_tune_finished(self) -> None:
         get_ft4_decode_logger().info("tune stop")
+        self._resume_tune_input()
         self._tuning = False
         self._tx_in_progress = False
         self._tx_worker = None
@@ -1655,6 +1671,7 @@ class Ft4Tab(QWidget):
     @Slot(str)
     def _on_tune_error(self, msg: str) -> None:
         get_ft4_decode_logger().info("tune stop (error) %s", msg)
+        self._resume_tune_input()
         self._tuning = False
         self._tx_in_progress = False
         self._tx_worker = None
