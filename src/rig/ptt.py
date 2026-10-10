@@ -15,8 +15,13 @@ dict under ``ptt_method`` / ``ptt_port``:
 
 from __future__ import annotations
 
+import fcntl
 import logging
+import struct
+import subprocess
+import termios
 import threading
+import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -34,6 +39,40 @@ def normalize_ptt_method(value: Any) -> str:
     """Return a valid PTT method; anything unknown (or missing) means CAT."""
     method = str(value or "").strip().lower()
     return method if method in PTT_METHODS else PTT_CAT
+
+
+# TIOCMGET (read the modem control lines); not exported by the termios module on macOS.
+_TIOCMGET = 0x4004746A
+_MODEM_BITS: tuple[tuple[int, str], ...] = (
+    (termios.TIOCM_DTR, "DTR"),
+    (termios.TIOCM_RTS, "RTS"),
+    (termios.TIOCM_CTS, "CTS"),
+    (termios.TIOCM_DSR, "DSR"),
+    (termios.TIOCM_CAR, "CD"),
+    (termios.TIOCM_RNG, "RI"),
+)
+
+
+def _modem_lines(ser: Any) -> str:
+    """Names of the modem control lines currently high on *ser* (diagnostics only)."""
+    try:
+        raw = fcntl.ioctl(ser.fileno(), _TIOCMGET, struct.pack("I", 0))
+        value = struct.unpack("I", raw)[0]
+        high = [name for bit, name in _MODEM_BITS if value & bit]
+        return "+".join(high) if high else "none"
+    except Exception as exc:
+        return f"? ({exc})"
+
+
+def _port_holders(port: str) -> str:
+    """PIDs that have *port* open right now (diagnostics only; never raises)."""
+    try:
+        out = subprocess.run(
+            ["lsof", "-t", port], capture_output=True, text=True, timeout=2.0, check=False
+        ).stdout.split()
+        return ",".join(out) if out else "none"
+    except Exception as exc:
+        return f"? ({exc})"
 
 
 class SerialPttLine:
@@ -58,8 +97,14 @@ class SerialPttLine:
         with self._lock:
             return self._serial is not None
 
-    def open(self) -> bool:
-        """Open the port with RTS and DTR low. True when it is ready to key."""
+    def open(self, count_holders: bool = True) -> bool:
+        """Open the port with RTS and DTR low. True when it is ready to key.
+
+        Every open is logged with the modem lines seen right after it and, when
+        *count_holders* is set, the PIDs holding the port (a PTT test or another
+        program opening the same port shows up here) -- 2026-10-10 diagnostics for
+        the FT-991A USB drops at PTT-on.
+        """
         with self._lock:
             if self._serial is not None:
                 return True
@@ -74,8 +119,17 @@ class SerialPttLine:
                 # Set before open() so the lines are never raised by the open.
                 ser.rts = False
                 ser.dtr = False
+                t0 = time.monotonic()
                 ser.open()
                 self._serial = ser
+                logger.info(
+                    "PTT %s open %s: %.0f ms, lines=%s, holders=%s",
+                    self._line.upper(),
+                    self._port,
+                    (time.monotonic() - t0) * 1000.0,
+                    _modem_lines(ser),
+                    _port_holders(self._port) if count_holders else "-",
+                )
                 return True
             except Exception as exc:
                 logger.error("PTT %s: cannot open %s: %s", self._line.upper(), self._port, exc)
@@ -92,6 +146,12 @@ class SerialPttLine:
                     ser.rts = on
                 else:
                     ser.dtr = on
+                logger.info(
+                    "PTT %s %s: lines=%s",
+                    self._line.upper(),
+                    "on" if on else "off",
+                    _modem_lines(ser),
+                )
                 return True
             except Exception as exc:
                 logger.error("PTT %s %s failed: %s", self._line.upper(), "on" if on else "off", exc)

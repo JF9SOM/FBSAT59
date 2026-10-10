@@ -425,3 +425,33 @@ def test_dialog_old_settings_without_ptt_default_to_cat(qtbot: QtBot) -> None:
     dlg._save_settings()
     assert _saved(conn, "rig1_settings")["ptt_method"] == "cat"
     assert not dlg._ptt_panel._boxes[2]._method_combo.isEnabled()  # Rig 2 disabled
+
+
+def test_net_ptt_on_swaps_in_a_freshly_opened_line_and_closes_the_old_one() -> None:
+    ctrl = _net("dtr")
+    old = MagicMock()
+    old.key.return_value = True
+    ctrl._ptt_line = old
+    fresh = MagicMock()
+    fresh.open.return_value = True
+    fresh.key.return_value = True
+    with patch("rig.controller.SerialPttLine", return_value=fresh):
+        assert ctrl.set_ptt(True, freeze_doppler=False) is True
+    fresh.key.assert_called_with(True)
+    old.close.assert_called_once()
+    old.key.assert_not_called()
+    assert ctrl._ptt_line is fresh
+
+
+def test_net_ptt_on_keeps_the_old_line_when_the_fresh_open_fails() -> None:
+    ctrl = _net("dtr")
+    old = MagicMock()
+    old.key.return_value = True
+    ctrl._ptt_line = old
+    fresh = MagicMock()
+    fresh.open.return_value = False
+    with patch("rig.controller.SerialPttLine", return_value=fresh):
+        assert ctrl.set_ptt(True, freeze_doppler=False) is True
+    old.key.assert_called_with(True)
+    old.close.assert_not_called()
+    assert ctrl._ptt_line is old
