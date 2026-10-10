@@ -528,9 +528,28 @@ def test_waiting_for_the_rig_to_answer_gives_up_quickly() -> None:
         patch("rig.controller.time.monotonic", side_effect=fake_monotonic),
         patch("rig.controller.time.sleep", side_effect=fake_sleep),
     ):
-        assert ctrl._await_cat_answer(still_ok=lambda: True) is False
+        assert ctrl._await_cat_answer() is False  # no window of its own: short cap
     assert clock["t"] - 1000.0 <= 2.0
     assert probe.call_count <= 8
+
+
+def test_waiting_with_a_window_probes_until_the_window_closes() -> None:
+    ctrl = _net("dtr")
+    ctrl._cat_probe_due = True
+    clock = {"t": 1000.0}
+
+    def fake_sleep(s: float) -> None:
+        clock["t"] += s
+
+    # open for 4 s of (fake) time, and the rig answers on the 8th probe (~2.4 s)
+    answers = iter([False] * 7 + [True])
+    with (
+        patch.object(ctrl, "_cat_answers", side_effect=lambda: next(answers)),
+        patch("rig.controller.time.monotonic", side_effect=lambda: clock["t"]),
+        patch("rig.controller.time.sleep", side_effect=fake_sleep),
+    ):
+        assert ctrl._await_cat_answer(still_ok=lambda: clock["t"] < 1004.0) is True
+    assert ctrl._cat_probe_due is False
 
 
 def test_mode_read_sends_nothing_once_the_window_has_closed() -> None:

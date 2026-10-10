@@ -2224,13 +2224,20 @@ class Ft4Tab(QWidget):
             return
         if self._tx_in_progress or rig.cat_blocked:
             return
+        # A slot is marked done only when its job actually started: while another CAT
+        # job still holds the worker (e.g. one waiting for the rig to answer after a
+        # transmission) the next 100 ms tick tries again instead of losing the write.
         if self._dl_written_for_slot != slot and phase < self._ADC_TAIL_START_S:
-            self._dl_written_for_slot = slot
-            self._run_cat_job(lambda: self._job_write_dl(rig, slot))
+            if self._run_cat_job(lambda: self._job_write_dl(rig, slot)):
+                self._dl_written_for_slot = slot
             return
-        if self._ADC_TAIL_START_S <= phase < self._ADC_TAIL_END_S and self._tail_slot != slot:
+        in_tail = self._ADC_TAIL_START_S <= phase < self._ADC_TAIL_END_S
+        if (
+            in_tail
+            and self._tail_slot != slot
+            and self._run_cat_job(lambda: self._job_tail(rig, slot))
+        ):
             self._tail_slot = slot
-            self._run_cat_job(lambda: self._job_tail(rig, slot))
 
     def _window_until(self, deadline: float) -> Callable[[], bool]:
         """A check for the rig layer: True until corrected time passes *deadline*."""

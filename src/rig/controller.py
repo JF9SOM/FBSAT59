@@ -3469,11 +3469,15 @@ class HamlibNetController(RigController):
         """True while an FT-991 would not answer CAT (transmitting, or just after PTT off)."""
         return self._ft991_cat_blocked()
 
-    # Longest one CAT access keeps probing for an answer. Kept short on purpose: the
-    # probing runs inside the FT4 tab's CAT job, which holds the job slot, and the
-    # quiet-tail job that writes the uplink must not be starved of it (2026-10-10:
-    # a 6 s wait swallowed every uplink write while the rig stayed deaf after a TX).
+    # Longest a CAT access without a window of its own keeps probing for an answer.
     _CAT_ANSWER_MAX_WAIT_S = 1.5
+    # Safety cap for a caller that has a window: it probes until that window closes
+    # (the rig often needs 2-5 s after a transmission), never longer than this.
+    _CAT_ANSWER_WINDOW_CAP_S = 8.0
+    # One probe is short so that, when the window closes, the CAT job hands the
+    # worker back almost at once: the quiet-tail job that writes the uplink must not
+    # be starved of it (2026-10-10).
+    _CAT_PROBE_TIMEOUT_S = 0.8
 
     def _cat_answers(self) -> bool:
         """True when the FT-991 answers a harmless raw CAT read ("ID;") right now."""
@@ -3481,7 +3485,7 @@ class HamlibNetController(RigController):
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(self._TIMEOUT)
             sock.connect((self._host, self._port))
-            sock.settimeout(1.5)
+            sock.settimeout(self._CAT_PROBE_TIMEOUT_S)
             sock.sendall(b"w ID;\n")
             buf = b""
             with contextlib.suppress(OSError):
@@ -3505,7 +3509,8 @@ class HamlibNetController(RigController):
         """
         if not self._cat_probe_due:
             return True
-        deadline = time.monotonic() + self._CAT_ANSWER_MAX_WAIT_S
+        cap = self._CAT_ANSWER_MAX_WAIT_S if still_ok is None else self._CAT_ANSWER_WINDOW_CAP_S
+        deadline = time.monotonic() + cap
         while True:
             if still_ok is not None and not still_ok():
                 return False
