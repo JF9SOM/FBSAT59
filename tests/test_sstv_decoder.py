@@ -260,6 +260,37 @@ def test_a_signal_that_disappears_gives_the_partial_picture() -> None:
     assert got[140:].sum() == 0  # the noise lines were blanked, not kept
 
 
+def test_a_fade_in_the_middle_does_not_end_the_picture() -> None:
+    """A satellite pass fades for a second or two; the picture must carry on after it."""
+    rate = 48000
+    audio = sstv_audio("Robot36", rate)
+    first = int((0.7 + _HEADER_S + 100 * 0.150) * rate)
+    last = int((0.7 + _HEADER_S + 120 * 0.150) * rate)  # 20 lines = 3 s without sync pulses
+    rng = np.random.default_rng(7)
+    audio[first:last] = (rng.standard_normal(last - first) * 0.05).astype(np.float32)
+    run = Run(audio, rate)
+    assert len(run.images) == 1
+    assert max(run.lines) == 239  # every line was decoded, not just those before the fade
+    got = to_array(run.images[0][0])
+    ref = np.asarray(pattern(320, 240), dtype=float)
+    # the lines after the fade are in the right place (the line clock was carried across it)
+    assert np.abs(got[130:] - ref[130:]).mean() < 6.0
+
+
+def test_click_noise_on_a_weak_signal_still_gives_the_picture() -> None:
+    """Short strong spikes (an FM receiver near its threshold) must not wreck the picture."""
+    rate = 48000
+    audio = sstv_audio("Robot36", rate)
+    rng = np.random.default_rng(11)
+    spikes = rng.random(len(audio)) < 0.004  # ~190 clicks per second
+    audio[spikes] += (rng.standard_normal(int(spikes.sum())) * 4.0).astype(np.float32)
+    run = Run(add_noise(audio, 14.0), rate)
+    assert len(run.images) == 1
+    got = to_array(run.images[0][0])
+    ref = np.asarray(pattern(320, 240), dtype=float)
+    assert np.abs(got - ref).mean() < 12.0
+
+
 def test_silence_and_noise_never_produce_an_image() -> None:
     rng = np.random.default_rng(7)
     noise = (rng.standard_normal(90 * 48000) * 0.3).astype(np.float32)

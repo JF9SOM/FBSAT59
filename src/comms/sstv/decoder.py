@@ -23,9 +23,14 @@ How it works
 4. Colour: JFIF YCbCr, as pySSTV and most SSTV software use. Robot36 sends R-Y on
    even lines and B-Y on odd ones (half the vertical chroma resolution); PD120
    sends Y, R-Y, B-Y, Y for two picture rows per radio line.
-5. An image ends when its last line is decoded, or -- if the signal is lost -- after
-   several lines without a sync pulse (the picture so far is kept), or when the
-   decoder is stopped.
+5. A fade does not end an image: a line whose pulse cannot be found is placed by the
+   previous lines' timing (the sender's clock is steady), and a weaker second search
+   (lowest mean frequency over a pulse length) rescues pulses the threshold search
+   misses. The noise on a weak FM signal is clicks, so the audio goes through a short
+   median filter and the frequency estimates are clipped to the SSTV band.
+6. An image ends when its last line is decoded, or -- if the signal is lost -- after
+   about 6 s without a sync pulse (the picture so far is kept), or when the decoder
+   is stopped.
 """
 
 from __future__ import annotations
@@ -71,9 +76,19 @@ _MIN_LEADER_MS = 200.0
 # Lines
 _SYNC_SEARCH_BEFORE_MS = 12.0
 _SYNC_SEARCH_AFTER_MS = 20.0
-_MAX_MISSED_SYNCS = 8  # consecutive lines without a sync pulse before the image is given up
+# Time without a sync pulse before the image is given up. A fade of a second or two is common on
+# a satellite pass; the sender's line clock is steady, so the lines are placed by prediction and
+# the picture picks up again when the pulses return. Only a longer loss ends the image.
+_MAX_MISSED_SYNC_S = 6.0
 _MIN_PARTIAL_LINES = 5  # a lost/stopped image is kept only if at least this many lines came in
 _FALLBACK_PULSES = 5  # consecutive equally spaced sync pulses that start an image without a VIS
+
+# Noise handling: frequency estimates are clipped to this range (sync 1200 ... white 2300 Hz).
+_CLIP_LO_HZ = 1000.0
+_CLIP_HI_HZ = 2500.0
+# Weak-signal sync search (see SstvDecoder._locate_sync_weak)
+_WEAK_SYNC_MAX_MEAN_HZ = 1400.0  # a 1200 Hz pulse in noise; black picture is 1500 Hz
+_WEAK_SYNC_MAX_SHIFT_MS = 4.0  # sound-card clocks drift far less than this per line
 
 
 @dataclass(frozen=True)
@@ -132,11 +147,29 @@ class _FreqDemod:
         self._n = 0  # input samples seen (mixer phase)
         self._skip = self._delay  # leading outputs still to drop
         self._prev = 0j
+        # a 5-sample median (at 44.1/48 kHz) removes the clicks of a weak FM signal, which a
+        # low-pass would smear over many samples; below ~25 kHz it would blur the tones, so off
+        self._med = int(self._rate // 10000) | 1 if self._rate >= 25000.0 else 1
+        self._tail = np.zeros(0, dtype=np.float64)  # last med-1 input samples
+
+    def _despike(self, audio: np.ndarray) -> np.ndarray:
+        """Streaming median filter. Only samples with full context are returned, so the output
+        runs (med // 2) samples behind the input -- under 0.1 ms, far below SSTV timing."""
+        if self._med <= 1:
+            return audio
+        joined = np.concatenate((self._tail, audio))
+        self._tail = joined[-(self._med - 1) :]
+        if len(joined) < self._med:
+            return np.zeros(0, dtype=np.float64)
+        half = self._med // 2
+        out: np.ndarray = _sp.medfilt(joined, self._med)[half : len(joined) - half]
+        return out
 
     def process(self, audio: np.ndarray) -> np.ndarray:
+        audio = self._despike(audio.astype(np.float64))
         n = np.arange(self._n, self._n + len(audio))
         self._n += len(audio)
-        mixed = audio.astype(np.float64) * np.exp(-2j * np.pi * _MIX_HZ * n / self._rate)
+        mixed = audio * np.exp(-2j * np.pi * _MIX_HZ * n / self._rate)
         filtered, self._zi = _sp.lfilter(self._taps, [1.0], mixed, zi=self._zi)
         shifted = np.concatenate(([self._prev], filtered))
         self._prev = filtered[-1] if len(filtered) else self._prev
@@ -145,7 +178,9 @@ class _FreqDemod:
             drop = min(self._skip, len(freq))
             self._skip -= drop
             freq = freq[drop:]
-        result: np.ndarray = freq.astype(np.float32)
+        # Click noise on a weak signal gives estimates far outside the SSTV band; clipped, one
+        # spike no longer drags the average over a whole pixel or sync pulse.
+        result: np.ndarray = np.clip(freq, _CLIP_LO_HZ, _CLIP_HI_HZ).astype(np.float32)
         return result
 
 
@@ -461,7 +496,7 @@ class SstvDecoder(QObject):
             events.append(("image_complete", (self._qimage(), mode.name)))
             events.append(("status_changed", (f"{mode.name}: image received",)))
             self._end_image()
-        elif self._missed >= _MAX_MISSED_SYNCS:
+        elif self._missed >= max(8, int(_MAX_MISSED_SYNC_S * 1000.0 / mode.line_ms + 0.5)):
             # the lines since the last sync pulse are noise: blank them, keep the rest
             first_bad = self._line - self._missed
             self._rgb[(first_bad if mode is ROBOT36 else 2 * first_bad) :] = 0  # type: ignore[index]
@@ -495,7 +530,30 @@ class SstvDecoder(QObject):
             dist = abs(start - self._origin)
             if dist < best_dist:
                 best, best_dist = float(start), dist
+        if best is None:
+            best = self._locate_sync_weak(mode, freq, base)
         return best
+
+    def _locate_sync_weak(self, mode: _Mode, freq: np.ndarray, base: int) -> float | None:
+        """Sync pulse in a noisy line, found by the lowest mean frequency over a pulse length.
+
+        The threshold search above wants the 1200 Hz pulse to stay inside +-150 Hz for half its
+        length, which a weak signal often fails. Averaging over the whole pulse is far less
+        sensitive to noise, so the best-matching position is accepted when its mean is well
+        below the 1500 Hz black level and not far from where the previous line predicts it.
+        """
+        n = max(2, int(self._ms(mode.sync_ms)))
+        if len(freq) <= n:
+            return None
+        csum = np.concatenate(([0.0], np.cumsum(freq, dtype=np.float64)))
+        means = (csum[n:] - csum[:-n]) / n
+        i = int(np.argmin(means))
+        if means[i] > _WEAK_SYNC_MAX_MEAN_HZ:
+            return None
+        start = float(base + i)
+        if abs(start - self._origin) > self._ms(_WEAK_SYNC_MAX_SHIFT_MS):
+            return None
+        return start
 
     def _scan(self, sync: float, start_ms: float, dur_ms: float, pixels: int) -> np.ndarray:
         """Mean frequency of *pixels* equal slots covering [sync+start, +dur) (Hz)."""
