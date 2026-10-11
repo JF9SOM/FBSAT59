@@ -3472,6 +3472,8 @@ class HamlibNetController(RigController):
     rigctld setup. Uses the rigctld newline-delimited text protocol.
     """
 
+    # FT-991 raw "w" commands (mode, SV, CTCSS) get no reply; wait this long for one.
+    _FT991_CMD_WAIT_S = 0.3
     _TIMEOUT = 10.0  # seconds — allows for slow CAT backends such as FTX-1
     # PTT-off delivery (see _ptt_off_independent()): per-attempt socket timeout,
     # number of attempts, and the pause between them.
@@ -4745,7 +4747,9 @@ class HamlibNetController(RigController):
             # Use a short recv timeout: the w command may return "?;" (rig CAT error),
             # empty string, or RPRT 0. We only care that the bytes were sent, not the
             # rig's response, so drain the buffer without blocking on slow rigs.
-            sock.settimeout(1.0)
+            # FT-991: nothing comes back from these, so wait only briefly (1 s each
+            # made the CTCSS step take ~4 s). Other CAT rigs keep the 1 s wait.
+            sock.settimeout(self._FT991_CMD_WAIT_S if self._ctcss_method == "ft991" else 1.0)
             for part in parts:
                 cmd = f"w {part};"
                 logger.info("RigNet.send_ctcss_cat: sending %r", cmd)
@@ -4791,7 +4795,9 @@ class HamlibNetController(RigController):
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(self._TIMEOUT)
                 sock.connect((self._host, self._port))
-                sock.settimeout(2.0)  # short per-command timeout; SV may not send RPRT
+                # FT-991 never answers these set commands, so rigctld sends no RPRT: the wait
+                # is just a timeout. 2 s per command made a transponder change take ~8 s.
+                sock.settimeout(self._FT991_CMD_WAIT_S)
 
                 def _w(cmd: str) -> None:
                     sock.sendall(f"w {cmd}\n".encode())
