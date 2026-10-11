@@ -400,20 +400,23 @@ def test_a_paste_at_the_end_after_live_lines_keeps_every_frame_intact(tab: SstvT
 
 
 class _SignalPipeline(QObject):
-    """An SDR pipeline whose audio_ready is a real signal, so audio can be fed through it."""
-
-    audio_ready = Signal(object)
+    """An SDR pipeline that hands raw I/Q to its subscribers, like SDRPipeline.subscribe()."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.requested: list[str] = []
-        self.released: list[str] = []
+        self._device = types.SimpleNamespace(sample_rate=250_000)
+        self.subscribers: list[Any] = []
 
-    def request_audio(self, owner: str) -> None:
-        self.requested.append(owner)
+    def subscribe(self, callback: Any) -> None:
+        if callback not in self.subscribers:
+            self.subscribers.append(callback)
 
-    def release_audio(self, owner: str) -> None:
-        self.released.append(owner)
+    def unsubscribe(self, callback: Any) -> None:
+        self.subscribers = [c for c in self.subscribers if c != callback]
+
+    def emit_iq(self, iq: Any) -> None:
+        for callback in list(self.subscribers):
+            callback(iq)
 
 
 def _connect_sdr_with(rc: _FakeRadioControl, pipeline: _SignalPipeline) -> None:
@@ -430,16 +433,15 @@ def test_sstv_decoder_listens_as_soon_as_the_tab_opens(tab: SstvTab) -> None:
     assert tab._decoder._active
 
 
-def test_sdr_audio_is_decoded_at_the_sdr_audio_rate(tab: SstvTab, rc: _FakeRadioControl) -> None:
-    from sdr.demodulator import AUDIO_RATE
-
+def test_sdr_audio_is_decoded_at_the_demodulator_rate(tab: SstvTab, rc: _FakeRadioControl) -> None:
     pipeline = _SignalPipeline()
     _connect_sdr_with(rc, pipeline)
     assert tab._decoder is not None
-    assert (
-        tab._decoder.sample_rate == AUDIO_RATE
-    )  # not 44100: 48 kHz audio at 44.1 kHz decodes nothing
-    assert pipeline.requested == ["SSTV/SSDV"]
+    # the private demodulator's rate (50 kHz at a 250 kS/s SDR), not 44100: audio read at the
+    # wrong rate decodes nothing
+    assert tab._decoder.sample_rate == 50_000
+    assert len(pipeline.subscribers) == 1  # raw I/Q for the private demodulator
+    assert tab._sdr_demod is not None and tab._sdr_demod.output_rate == 50_000
 
 
 def test_sound_card_audio_is_decoded_at_44100(
@@ -468,27 +470,34 @@ def test_the_rate_follows_the_input_when_it_changes(
     assert tab._decoder is not None
     assert tab._decoder.sample_rate == 44100  # nothing connected: sound-card rate
     _connect_sdr_with(rc, _SignalPipeline())
-    assert tab._decoder.sample_rate == 48000
+    assert tab._decoder.sample_rate == 50_000
 
 
-def test_an_sstv_picture_arriving_through_the_sdr_audio_ends_up_in_the_history(
+def test_an_sstv_picture_arriving_as_sdr_iq_ends_up_in_the_history(
     qtbot: QtBot, tab: SstvTab, rc: _FakeRadioControl
 ) -> None:
-    """The whole path: SDR audio_ready -> decoder -> image tab and history."""
+    """The whole path: SDR I/Q -> private FM demodulator -> decoder -> image tab and history."""
     pytest.importorskip("scipy")
     pytest.importorskip("pysstv")
     import numpy as np
     from PIL import Image
     from pysstv.color import Robot36
+    from scipy import signal as sp_signal
 
     pipeline = _SignalPipeline()
     _connect_sdr_with(rc, pipeline)
     image = Image.new("RGB", (320, 240), (40, 80, 200))
     audio = np.array(list(Robot36(image, 48000, 16).gen_samples()), dtype=np.float32) / 32768.0
     audio = np.concatenate([np.zeros(48000, np.float32), audio, np.zeros(24000, np.float32)])
-    for i in range(0, len(audio), 4096):
-        pipeline.audio_ready.emit(audio[i : i + 4096])
-    qtbot.waitUntil(lambda: tab._history_list.count() == 1, timeout=5000)
+    up = sp_signal.resample_poly(audio, 250_000, 48_000)
+    iq = np.exp(2j * np.pi * 3_000.0 * np.cumsum(up) / 250_000).astype(np.complex64)
+    demod = tab._sdr_demod
+    assert demod is not None
+    for i in range(0, len(iq), 16384):
+        # the SDR delivers in real time; do not outrun the demodulator thread's bounded queue
+        qtbot.waitUntil(lambda: demod._q.qsize() < 32, timeout=10000)
+        pipeline.emit_iq(iq[i : i + 16384])
+    qtbot.waitUntil(lambda: tab._history_list.count() == 1, timeout=10000)
     assert tab._image_label.pixmap() is not None and not tab._image_label.pixmap().isNull()
     assert tab._save_btn.isEnabled()
 
@@ -496,8 +505,10 @@ def test_an_sstv_picture_arriving_through_the_sdr_audio_ends_up_in_the_history(
 def test_disconnecting_the_sdr_stops_the_audio_feed(tab: SstvTab, rc: _FakeRadioControl) -> None:
     pipeline = _SignalPipeline()
     _connect_sdr_with(rc, pipeline)
+    assert len(pipeline.subscribers) == 1
     rc.sdr_disconnected.emit()
-    assert pipeline.released == ["SSTV/SSDV"]
+    assert pipeline.subscribers == []
+    assert tab._sdr_demod is None
 
 
 def test_open_image_loads_saved_png(

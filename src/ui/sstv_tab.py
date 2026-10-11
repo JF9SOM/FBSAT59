@@ -14,6 +14,7 @@ saved as PNG files either manually or automatically.
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
 from datetime import UTC, datetime
 from pathlib import Path
@@ -41,6 +42,7 @@ from PySide6.QtWidgets import (
 
 from comms.aprs.engine import get_aprs_engine, resolve_ax25_modem
 from comms.sstv.file_decoder import SOUNDFILE_AVAILABLE, load_audio_mono
+from comms.sstv.sdr_demod import SstvSdrDemod, output_rate_for
 from comms.sstv.ssdv import (
     extract_hex_frames,
     find_dslwp_packet,
@@ -66,6 +68,9 @@ _MODE_SSTV = "SSTV"
 _MODE_SSDV = "SSDV (AX.25)"
 _MODE_GR_SSDV = "SSDV (gr-satellites)"
 _GR_SSDV_NORAD = 61781  # ASRTU-1 (AO-123)
+
+
+logger = logging.getLogger(__name__)
 
 
 class _ThumbnailItem(QListWidgetItem):
@@ -195,6 +200,8 @@ class SstvTab(QWidget):
 
         self._rig_connected: bool = False
         self._sdr_connected: bool = False
+        self._sdr_demod: SstvSdrDemod | None = None  # private FM demodulator on the SDR's I/Q
+        self._sdr_demod_pipeline: Any | None = None  # the pipeline it is subscribed to
         self._decoder: Any | None = None  # SstvDecoder instance
         self._ssdv_decoder: Any | None = None  # SsdvDecoder (persistent across reconnects)
         self._gr_ssdv_decoder: Any | None = None  # SsdvDecoder(dslwp=True) for the gr mode
@@ -505,16 +512,19 @@ class SstvTab(QWidget):
             self._decoder = None
 
     def _audio_rate(self) -> int:
-        """Sample rate of the audio the decoder is fed: SDR audio comes at the SDR
-        pipeline's audio rate (48 kHz), the shared sound-card input at 44.1 kHz.
+        """Sample rate of the audio the decoder is fed: the private SDR demodulator's output
+        rate (about 50 kHz, set by the SDR's sample rate), or 44.1 kHz for the shared
+        sound-card input.
 
         Decoding audio at the wrong rate scales every tone and every duration (48 kHz
         read as 44.1 kHz is 8.8 % off), so nothing would decode.
         """
-        if self._find_sdr_pipeline() is not None:
-            from sdr.demodulator import AUDIO_RATE
-
-            return int(AUDIO_RATE)
+        pipeline = self._find_sdr_pipeline()
+        if pipeline is not None:
+            try:
+                return output_rate_for(int(pipeline._device.sample_rate))
+            except Exception:
+                logger.exception("SSTV: could not read the SDR sample rate")
         return self._SOUNDCARD_SAMPLE_RATE
 
     def _connect_audio_source(self) -> None:
@@ -526,25 +536,50 @@ class SstvTab(QWidget):
             self._decoder.set_sample_rate(rate)
         pipeline = self._find_sdr_pipeline()
         if pipeline is not None:
-            with contextlib.suppress(RuntimeError):
-                pipeline.audio_ready.connect(self._decoder.push_samples)
-            # Without this, the pipeline never actually demodulates/emits
-            # audio_ready unless the user separately presses "Unmute"
-            # in SDR Control — an easy-to-miss, unrelated-looking button in
-            # a different tab (GitHub Issue #12 follow-up).
-            with contextlib.suppress(Exception):
-                pipeline.request_audio(self._AUDIO_OWNER)
+            self._attach_sdr_demod(pipeline)
         elif self._rig_connected:
             self._start_soundcard_capture()
 
+    def _attach_sdr_demod(self, pipeline: Any) -> None:
+        """Feed the decoder from a private FM demodulator on the pipeline's raw I/Q.
+
+        The pipeline's shared audio comes from the voice-tuned narrow-FM chain of the
+        listening path (loose IF filter, de-emphasis), which left a satellite SSTV picture
+        with a speckled lower half; this demodulator is built for the SSTV tones, runs
+        whether or not SDR Control is unmuted, and leaves every other consumer alone.
+        """
+        if self._decoder is None or self._sdr_demod is not None:
+            return
+        try:
+            demod = SstvSdrDemod(int(pipeline._device.sample_rate))
+            # DirectConnection: decode on the demodulator's thread, not the GUI thread
+            demod.audio_ready.connect(
+                self._decoder.push_samples, Qt.ConnectionType.DirectConnection
+            )
+            demod.start()
+            # Hold the demodulator before subscribing so a failure below is still cleaned up
+            self._sdr_demod = demod
+            pipeline.subscribe(demod.push_samples)
+            self._sdr_demod_pipeline = pipeline
+        except Exception:
+            logger.exception("SSTV: could not attach to the SDR pipeline")
+            self._detach_sdr_demod()
+
+    def _detach_sdr_demod(self) -> None:
+        """Undo _attach_sdr_demod() (no-op when nothing is attached)."""
+        if self._sdr_demod_pipeline is not None and self._sdr_demod is not None:
+            with contextlib.suppress(Exception):
+                self._sdr_demod_pipeline.unsubscribe(self._sdr_demod.push_samples)
+        self._sdr_demod_pipeline = None
+        if self._sdr_demod is not None:
+            with contextlib.suppress(Exception):
+                self._sdr_demod.audio_ready.disconnect()
+            self._sdr_demod.stop()
+            self._sdr_demod = None
+
     def _disconnect_audio_source(self) -> None:
         """Disconnect all audio sources from the decoder."""
-        pipeline = self._find_sdr_pipeline()
-        if pipeline is not None and self._decoder is not None:
-            with contextlib.suppress(RuntimeError):
-                pipeline.audio_ready.disconnect(self._decoder.push_samples)
-            with contextlib.suppress(Exception):
-                pipeline.release_audio(self._AUDIO_OWNER)
+        self._detach_sdr_demod()
         self._stop_soundcard_capture()
 
     def _find_sdr_pipeline(self) -> Any | None:
