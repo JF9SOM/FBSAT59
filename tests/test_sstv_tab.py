@@ -434,6 +434,7 @@ def test_sstv_decoder_listens_as_soon_as_the_tab_opens(tab: SstvTab) -> None:
 
 
 def test_sdr_audio_is_decoded_at_the_demodulator_rate(tab: SstvTab, rc: _FakeRadioControl) -> None:
+    pytest.importorskip("scipy")  # the private FM demodulator needs it (CI has none)
     pipeline = _SignalPipeline()
     _connect_sdr_with(rc, pipeline)
     assert tab._decoder is not None
@@ -503,6 +504,7 @@ def test_an_sstv_picture_arriving_as_sdr_iq_ends_up_in_the_history(
 
 
 def test_disconnecting_the_sdr_stops_the_audio_feed(tab: SstvTab, rc: _FakeRadioControl) -> None:
+    pytest.importorskip("scipy")  # the private FM demodulator needs it (CI has none)
     pipeline = _SignalPipeline()
     _connect_sdr_with(rc, pipeline)
     assert len(pipeline.subscribers) == 1
