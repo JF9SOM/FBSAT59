@@ -2267,7 +2267,8 @@ class TestHamlibNetController:
         with patch("rig.controller.socket.socket", return_value=sock):
             ctrl.set_ptt(False)
         ctrl._ptt_off_at -= 10.0  # the post-TX settle time has passed
-        ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0)
+        with patch.object(ctrl, "_cat_answers", return_value=True):  # rig answers again
+            ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0)
         sent = b"".join(c.args[0] for c in ctrl._sock.sendall.call_args_list)  # type: ignore[union-attr]
         assert b"F 435600000\n" in sent
         assert b"I 145900000\n" in sent
@@ -2328,7 +2329,8 @@ class TestHamlibNetController:
         with patch("rig.controller.socket.socket", return_value=sock):
             ctrl.set_ptt(False)
         ctrl._ptt_off_at -= 10.0  # the post-TX settle time has passed
-        ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0)
+        with patch.object(ctrl, "_cat_answers", return_value=True):  # rig answers again
+            ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0)
         assert ctrl.last_ul_hz == 145_900_000.0
 
     def test_failed_ptt_on_does_not_leave_doppler_suppressed(self) -> None:
