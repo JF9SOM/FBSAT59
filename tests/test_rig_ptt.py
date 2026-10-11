@@ -583,3 +583,25 @@ def test_mode_read_stops_when_the_window_closes_during_the_probe() -> None:
     ):
         assert ctrl.read_mode_name(lambda: next(window, False)) is None
     read.assert_not_called()
+
+
+def test_per_second_write_waits_until_the_rig_answers_after_a_transmission() -> None:
+    """ADC RX off: the 1 Hz Doppler write must not go into a deaf rig (10 s hang)."""
+    ctrl = _net("dtr")
+    ctrl._ptt_off_at = float("-inf")  # past the fixed settle time
+    ctrl._cat_probe_due = True
+    with (
+        patch.object(ctrl, "_cat_answers", return_value=False),
+        patch.object(ctrl, "_cmd_raw", return_value="RPRT 0") as cmd,
+    ):
+        assert ctrl.set_vfo_frequencies(435_619_544.0, 145_988_075.0) is True
+    cmd.assert_not_called()
+    assert ctrl._cat_probe_due is True  # still waiting; retried next second
+
+    with (
+        patch.object(ctrl, "_cat_answers", return_value=True),
+        patch.object(ctrl, "_cmd_raw", return_value="RPRT 0") as cmd,
+    ):
+        assert ctrl.set_vfo_frequencies(435_619_545.0, 145_988_075.0) is True
+    assert cmd.called
+    assert ctrl._cat_probe_due is False

@@ -4056,6 +4056,17 @@ class HamlibNetController(RigController):
         if self._slot_sync:
             return True
 
+        # After a transmission the FT-991 stays deaf to CAT for a few seconds, and a
+        # write sent into that silence is never answered: it holds the command lock
+        # for the whole 10 s timeout, straddles the next transmission and drops the
+        # shared connection (2026-10-11, 15:04). Write only once it answers a harmless
+        # read; until then skip this cycle -- the next one retries a second later.
+        if self._ctcss_method == "ft991" and self._cat_probe_due:
+            if not self._cat_answers():
+                return True
+            self._cat_probe_due = False
+            logger.info("RigNet: rig answers CAT again after the transmission")
+
         # A TX-only rig is plain simplex: the uplink is sent as its one
         # frequency (F, VFOA) and no split TX frequency (I) is ever written.
         if self._radio_type == "tx_only":
