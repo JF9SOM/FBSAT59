@@ -427,7 +427,7 @@ def test_dialog_old_settings_without_ptt_default_to_cat(qtbot: QtBot) -> None:
     assert not dlg._ptt_panel._boxes[2]._method_combo.isEnabled()  # Rig 2 disabled
 
 
-def test_net_ptt_on_swaps_in_a_freshly_opened_line_and_closes_the_old_one() -> None:
+def test_reopen_ptt_line_swaps_in_a_fresh_line_and_closes_the_old_one() -> None:
     ctrl = _net("dtr")
     old = MagicMock()
     old.key.return_value = True
@@ -436,14 +436,23 @@ def test_net_ptt_on_swaps_in_a_freshly_opened_line_and_closes_the_old_one() -> N
     fresh.open.return_value = True
     fresh.key.return_value = True
     with patch("rig.controller.SerialPttLine", return_value=fresh):
-        assert ctrl.set_ptt(True, freeze_doppler=False) is True
-    fresh.key.assert_called_with(True)
+        ctrl.reopen_ptt_line()
     old.close.assert_called_once()
-    old.key.assert_not_called()
     assert ctrl._ptt_line is fresh
 
 
-def test_net_ptt_on_keeps_the_old_line_when_the_fresh_open_fails() -> None:
+def test_keying_the_ptt_never_reopens_the_port() -> None:
+    ctrl = _net("dtr")
+    old = MagicMock()
+    old.key.return_value = True
+    ctrl._ptt_line = old
+    with patch("rig.controller.SerialPttLine") as cls:
+        assert ctrl.set_ptt(True, freeze_doppler=False) is True
+    cls.assert_not_called()
+    old.key.assert_called_with(True)
+
+
+def test_reopen_ptt_line_keeps_the_old_line_when_the_fresh_open_fails() -> None:
     ctrl = _net("dtr")
     old = MagicMock()
     old.key.return_value = True
@@ -451,8 +460,7 @@ def test_net_ptt_on_keeps_the_old_line_when_the_fresh_open_fails() -> None:
     fresh = MagicMock()
     fresh.open.return_value = False
     with patch("rig.controller.SerialPttLine", return_value=fresh):
-        assert ctrl.set_ptt(True, freeze_doppler=False) is True
-    old.key.assert_called_with(True)
+        ctrl.reopen_ptt_line()
     old.close.assert_not_called()
     assert ctrl._ptt_line is old
 

@@ -69,9 +69,6 @@ class PttAudioTxWorker(QObject):
         try:
             import sounddevice as sd  # optional dependency
 
-            # Before the PTT goes up: a stale PortAudio device list (USB re-enumerated)
-            # is re-initialised here instead of failing the transmission.
-            mgr.validate_output_with_recovery(self._out_device, AUDIO_RATE)
             logger.info(
                 "TX[%s]: PortAudio output device: %s", self._owner, _describe(sd, self._out_device)
             )

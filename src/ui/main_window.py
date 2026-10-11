@@ -3048,16 +3048,25 @@ class MainWindow(QMainWindow):
                 break
 
     def _refresh_audio_devices_for_tab(self) -> None:
-        """Re-initialise PortAudio just before a transmit-capable tab is created.
+        """Rebuild the audio device list and the PTT ports just before a transmit tab opens.
 
         The device list PortAudio holds goes stale when the radio's USB sound card
-        is re-enumerated; doing this once per tab open (not while transmitting)
-        gives the new tab a current list. Failures are only logged.
+        is re-enumerated; doing this once per tab open -- never while communicating --
+        gives the new tab a current list and fresh serial PTT ports. Failures are
+        only logged.
         """
         try:
             get_audio_device_manager().refresh_devices_for_tab()
         except Exception:
             logger.exception("PortAudio refresh before opening a tab failed")
+        for attr in ("_rig1", "_rig2"):
+            rig = getattr(self._radio_control, attr, None)
+            reopen = getattr(rig, "reopen_ptt_line", None)
+            if reopen is not None and getattr(rig, "is_connected", False):
+                try:
+                    reopen()
+                except Exception:
+                    logger.exception("Re-opening the PTT port before opening a tab failed")
 
     def _on_open_aprs(self) -> None:
         """Open the APRS tab (Communications > APRS).

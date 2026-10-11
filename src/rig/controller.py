@@ -3763,14 +3763,14 @@ class HamlibNetController(RigController):
             self._ptt_line = line
             logger.info("RigNet: PTT via %s on %s", self._ptt_method.upper(), self._ptt_port)
 
-    def _reprime_ptt_line(self) -> None:
-        """Swap in a freshly opened PTT port just before keying (best effort).
+    def reopen_ptt_line(self) -> None:
+        """Swap in a freshly opened PTT port (best effort); never while transmitting.
 
-        The new port is opened while the old one is still held and the old one
-        is closed only afterwards, so a failed open never costs us the line we
-        already have.
+        Called when a transmit tab is opened, never during communication. The new
+        port is opened while the old one is still held and the old one is closed
+        only afterwards, so a failed open never costs us the line we already have.
         """
-        if self._ptt_method not in PTT_LINE_METHODS or not self._ptt_port:
+        if self._ptt_method not in PTT_LINE_METHODS or not self._ptt_port or self._ptt_active:
             return
         fresh = SerialPttLine(self._ptt_port, self._ptt_method)
         if not fresh.open(count_holders=False):
@@ -4290,11 +4290,6 @@ class HamlibNetController(RigController):
                 return True
             return self._ptt_off_independent()
         if self._ptt_method in PTT_LINE_METHODS:
-            # Re-open the port right before keying, the same clean-up that Rig
-            # Settings' "Test PTT" happened to do: on 2026-10-10 the FT-991A's USB
-            # dropped ~0.4 s after PTT-on until a PTT test had been run.
-            if self.is_connected:
-                self._reprime_ptt_line()
             line = self._ptt_line
             ok = self.is_connected and line is not None and line.key(True)
             if not ok and self.is_connected:
