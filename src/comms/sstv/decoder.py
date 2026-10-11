@@ -27,7 +27,10 @@ How it works
    previous lines' timing (the sender's clock is steady), and a weaker second search
    (lowest mean frequency over a pulse length) rescues pulses the threshold search
    misses. The noise on a weak FM signal is clicks, so the audio goes through a short
-   median filter and the frequency estimates are clipped to the SSTV band.
+   median filter and the frequency estimates are clipped to the SSTV band. Lines are
+   placed on a straight line fitted through the recent sync pulses (the sender's clock
+   is steady), pixels are smoothed more the noisier the line is (the spread of the flat
+   sync pulse measures it), and the chroma of a noisy line is pulled towards neutral.
 6. An image ends when its last line is decoded, or -- if the signal is lost -- after
    about 6 s without a sync pulse (the picture so far is kept), or when the decoder
    is stopped.
@@ -86,6 +89,26 @@ _FALLBACK_PULSES = 5  # consecutive equally spaced sync pulses that start an ima
 # Noise handling: frequency estimates are clipped to this range (sync 1200 ... white 2300 Hz).
 _CLIP_LO_HZ = 1000.0
 _CLIP_HI_HZ = 2500.0
+# Line timing: every line is placed on a straight line fitted through the last _FIT_HISTORY
+# sync pulses (needs _FIT_MIN_PULSES of them over _FIT_MIN_SPAN_LINES lines); a pulse more than
+# _FIT_TOLERANCE_MS from that line is taken for noise.
+_FIT_HISTORY = 40
+_FIT_MIN_PULSES = 8
+_FIT_MIN_SPAN_LINES = 10
+_FIT_TOLERANCE_MS = 2.0
+# Pixel smoothing follows the noise. The sync pulse is a flat 1200 Hz, so its spread measures
+# the noise of each line (about 55 Hz on a clean signal, 100-350 Hz on a weak one); above
+# _NOISE_CLEAN_HZ the frequency estimates get a median filter of that much longer window, so a
+# strong signal keeps its sharpness and a weak one is smoothed instead of speckled.
+_NOISE_CLEAN_HZ = 70.0
+_MEDIAN_MS_PER_HZ = 0.02
+_PIXEL_MEDIAN_MAX_MS = 1.5
+_NOISE_SMOOTHING = 0.4  # weight of the newest line in the running noise estimate
+# Colour differences are the first thing noise ruins (a speckle of random hues). When a line is
+# noisy its chroma is pulled towards neutral: the gain is 1 on a clean line and falls with the
+# square of the excess noise, 1 / (1 + (excess / _CHROMA_NOISE_SCALE_HZ)^2), but not below this.
+_CHROMA_NOISE_SCALE_HZ = 150.0
+_CHROMA_MIN_GAIN = 0.3
 # Weak-signal sync search (see SstvDecoder._locate_sync_weak)
 _WEAK_SYNC_MAX_MEAN_HZ = 1400.0  # a 1200 Hz pulse in noise; black picture is 1500 Hz
 _WEAK_SYNC_MAX_SHIFT_MS = 4.0  # sound-card clocks drift far less than this per line
@@ -165,7 +188,8 @@ class _FreqDemod:
         out: np.ndarray = _sp.medfilt(joined, self._med)[half : len(joined) - half]
         return out
 
-    def process(self, audio: np.ndarray) -> np.ndarray:
+    def process(self, audio: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """(frequency in Hz, weight) per sample; the weight is the signal power there."""
         audio = self._despike(audio.astype(np.float64))
         n = np.arange(self._n, self._n + len(audio))
         self._n += len(audio)
@@ -173,15 +197,18 @@ class _FreqDemod:
         filtered, self._zi = _sp.lfilter(self._taps, [1.0], mixed, zi=self._zi)
         shifted = np.concatenate(([self._prev], filtered))
         self._prev = filtered[-1] if len(filtered) else self._prev
-        freq = _MIX_HZ + np.angle(shifted[1:] * np.conj(shifted[:-1])) * self._rate / (2 * np.pi)
+        step = shifted[1:] * np.conj(shifted[:-1])
+        freq = _MIX_HZ + np.angle(step) * self._rate / (2 * np.pi)
+        weight = np.abs(step)
         if self._skip:
             drop = min(self._skip, len(freq))
             self._skip -= drop
             freq = freq[drop:]
+            weight = weight[drop:]
         # Click noise on a weak signal gives estimates far outside the SSTV band; clipped, one
         # spike no longer drags the average over a whole pixel or sync pulse.
-        result: np.ndarray = np.clip(freq, _CLIP_LO_HZ, _CLIP_HI_HZ).astype(np.float32)
-        return result
+        clipped: np.ndarray = np.clip(freq, _CLIP_LO_HZ, _CLIP_HI_HZ).astype(np.float32)
+        return clipped, weight.astype(np.float32)
 
 
 class _FreqBuffer:
@@ -189,6 +216,7 @@ class _FreqBuffer:
 
     def __init__(self) -> None:
         self._data = np.zeros(1 << 16, dtype=np.float32)
+        self._wdata = np.zeros(1 << 16, dtype=np.float32)  # weight (signal power) per sample
         self._head = 0  # index in _data of the oldest kept sample
         self._len = 0  # kept samples
         self._base = 0  # absolute index of _data[_head]
@@ -203,19 +231,20 @@ class _FreqBuffer:
         """Absolute index of the oldest sample still held."""
         return self._base
 
-    def append(self, values: np.ndarray) -> None:
+    def append(self, values: np.ndarray, weights: np.ndarray) -> None:
         tail = self._head + self._len
         if tail + len(values) > len(self._data):
             # compact to the front, growing if the kept samples themselves need more room
             capacity = max(len(self._data), 2 * (self._len + len(values)))
-            grown = (
-                np.zeros(capacity, dtype=np.float32) if capacity != len(self._data) else self._data
-            )
-            grown[: self._len] = self._data[self._head : tail].copy()
-            self._data = grown
+            grown = np.zeros(capacity, dtype=np.float32)
+            grown[: self._len] = self._data[self._head : tail]
+            wgrown = np.zeros(capacity, dtype=np.float32)
+            wgrown[: self._len] = self._wdata[self._head : tail]
+            self._data, self._wdata = grown, wgrown
             self._head = 0
             tail = self._len
         self._data[tail : tail + len(values)] = values
+        self._wdata[tail : tail + len(values)] = weights
         self._len += len(values)
 
     def view(self, a: int, b: int) -> np.ndarray:
@@ -226,6 +255,15 @@ class _FreqBuffer:
             return np.zeros(0, dtype=np.float32)
         lo = self._head + (a - self._base)
         return self._data[lo : lo + (b - a)]
+
+    def weights(self, a: int, b: int) -> np.ndarray:
+        """Weights of samples [a, b), same clipping as view()."""
+        a = max(a, self._base)
+        b = min(b, self.end)
+        if b <= a:
+            return np.zeros(0, dtype=np.float32)
+        lo = self._head + (a - self._base)
+        return self._wdata[lo : lo + (b - a)]
 
     def trim(self, before: int) -> None:
         """Forget samples older than absolute index *before*."""
@@ -315,7 +353,7 @@ class SstvDecoder(QObject):
                 mono = mono.mean(axis=1)
             if len(mono) == 0:
                 return
-            self._buf.append(self._demod.process(mono))
+            self._buf.append(*self._demod.process(mono))
             self._advance(events)
         for name, args in events:
             getattr(self, name).emit(*args)
@@ -333,6 +371,8 @@ class SstvDecoder(QObject):
         self._line = 0
         self._missed = 0
         self._decoded = 0
+        self._noise_hz = 0.0  # running noise estimate of the picture being decoded
+        self._sync_history: list[tuple[int, float]] = []  # (line, sync position) of found pulses
         self._y: np.ndarray | None = None  # float (rows, width) luma
         self._cr: np.ndarray | None = None  # float (rows, width) chroma, neutral 128
         self._cb: np.ndarray | None = None
@@ -452,6 +492,8 @@ class SstvDecoder(QObject):
         self._line = 0
         self._missed = 0
         self._decoded = 0
+        self._noise_hz = 0.0
+        self._sync_history = []
         h, w = mode.height, mode.width
         self._y = np.zeros((h, w))
         self._cr = np.full((h, w), 128.0)
@@ -473,12 +515,31 @@ class SstvDecoder(QObject):
         if self._buf.end < self._origin + period + self._ms(_SYNC_SEARCH_AFTER_MS) + 8:
             return False
 
-        sync = self._locate_sync(mode)
-        if sync is None:
+        found = self._locate_sync(mode)
+        fitted = self._fitted_sync()
+        if (
+            found is not None
+            and fitted is not None
+            and abs(found - fitted) > self._ms(_FIT_TOLERANCE_MS)
+        ):
+            found = None  # a noise dip, not the pulse: the line clock says it is elsewhere
+        if found is None:
             self._missed += 1
-            sync = self._origin
         else:
             self._missed = 0
+            self._update_noise(found, mode)
+            self._sync_history.append((self._line, found))
+            del self._sync_history[:-_FIT_HISTORY]
+            fitted = self._fitted_sync()
+        # The sender's line clock is steady, so every line is placed on the straight line
+        # through the recent pulses: a single pulse found in noise is off by up to a pixel or
+        # two, which showed as ragged, shifted lines. Without a fit yet, use the pulse itself.
+        if fitted is not None:
+            sync = fitted
+        elif found is not None:
+            sync = found
+        else:
+            sync = self._origin
 
         if mode is ROBOT36:
             self._decode_robot36_line(sync)
@@ -555,23 +616,70 @@ class SstvDecoder(QObject):
             return None
         return start
 
+    def _fitted_sync(self) -> float | None:
+        """Sync position of the current line from a straight-line fit through recent pulses."""
+        hist = self._sync_history
+        if len(hist) < _FIT_MIN_PULSES or hist[-1][0] - hist[0][0] < _FIT_MIN_SPAN_LINES:
+            return None
+        lines = np.array([h[0] for h in hist], dtype=np.float64)
+        pos = np.array([h[1] for h in hist], dtype=np.float64)
+        slope, offset = np.polyfit(lines, pos, 1)
+        return float(slope * self._line + offset)
+
+    def _median_ms(self) -> float:
+        """Length of the median filter that the current noise level calls for."""
+        extra = (self._noise_hz - _NOISE_CLEAN_HZ) * _MEDIAN_MS_PER_HZ
+        return float(min(max(extra, 0.0), _PIXEL_MEDIAN_MAX_MS))
+
+    def _chroma_gain(self) -> float:
+        """How much of the received chroma to keep at the current noise level (0.3 .. 1)."""
+        excess = max(self._noise_hz - _NOISE_CLEAN_HZ, 0.0) / _CHROMA_NOISE_SCALE_HZ
+        return max(1.0 / (1.0 + excess * excess), _CHROMA_MIN_GAIN)
+
+    def _update_noise(self, sync: float, mode: _Mode) -> None:
+        """Fold the spread of this line's (flat) sync pulse into the running noise estimate."""
+        seg = self._buf.view(int(sync + self._ms(1.5)), int(sync + self._ms(mode.sync_ms * 0.9)))
+        if len(seg) < 8:
+            return
+        spread = float(np.median(np.abs(seg - np.median(seg))) * 1.4826)
+        self._noise_hz += _NOISE_SMOOTHING * (spread - self._noise_hz)
+
     def _scan(self, sync: float, start_ms: float, dur_ms: float, pixels: int) -> np.ndarray:
-        """Mean frequency of *pixels* equal slots covering [sync+start, +dur) (Hz)."""
-        a = sync + self._ms(start_ms)
-        n = self._ms(dur_ms)
-        seg = self._buf.view(int(round(a)), int(round(a + n)))
+        """Power-weighted mean frequency of *pixels* equal slots over [sync+start, +dur) (Hz).
+
+        A sample taken while the signal is faded or buried in noise carries a meaningless
+        frequency; weighting by the signal power there makes such samples count for little.
+        """
+        a = int(round(sync + self._ms(start_ms)))
+        b = int(round(sync + self._ms(start_ms + dur_ms)))
+        seg = self._buf.view(a, b)
         if len(seg) < pixels:
             return np.full(pixels, FREQ_BLACK)
-        csum = np.concatenate(([0.0], np.cumsum(seg, dtype=np.float64)))
+        w = self._buf.weights(a, b)
+        k = int(self._ms(self._median_ms())) | 1
+        if k >= 3:
+            # outlier-robust smoothing, with context from either side of the slot so that its
+            # ends are not distorted by the filter edge
+            pad = k // 2
+            wide = self._buf.view(a - pad, b + pad)
+            if len(wide) == len(seg) + 2 * pad:
+                seg = _sp.medfilt(wide, k)[pad : pad + len(seg)]
         edges = np.round(np.linspace(0, len(seg), pixels + 1)).astype(int)
+        fsum = np.concatenate(([0.0], np.cumsum(seg * w, dtype=np.float64)))
+        wsum = np.concatenate(([0.0], np.cumsum(w, dtype=np.float64)))
+        plain = np.concatenate(([0.0], np.cumsum(seg, dtype=np.float64)))
         widths = np.maximum(np.diff(edges), 1)
-        means: np.ndarray = (csum[edges[1:]] - csum[edges[:-1]]) / widths
+        wt = wsum[edges[1:]] - wsum[edges[:-1]]
+        weighted = (fsum[edges[1:]] - fsum[edges[:-1]]) / np.maximum(wt, 1e-12)
+        flat = (plain[edges[1:]] - plain[edges[:-1]]) / widths
+        means: np.ndarray = np.where(wt > 1e-12, weighted, flat)
         return means
 
     def _decode_robot36_line(self, sync: float) -> None:
         w = ROBOT36.width
         y = _to_pixel(self._scan(sync, _R36_Y_START_MS, _R36_Y_MS, w))
         c = _to_pixel(self._scan(sync, _R36_C_START_MS, _R36_C_MS, _R36_CHROMA_WIDTH))
+        c = 128.0 + (c - 128.0) * self._chroma_gain()
         chroma = np.repeat(c, w // _R36_CHROMA_WIDTH)
         row = self._line
         self._y[row] = y  # type: ignore[index]
@@ -589,6 +697,9 @@ class SstvDecoder(QObject):
         cr = _to_pixel(self._scan(sync, s + _PD_SCAN_MS, _PD_SCAN_MS, w))
         cb = _to_pixel(self._scan(sync, s + 2 * _PD_SCAN_MS, _PD_SCAN_MS, w))
         y1 = _to_pixel(self._scan(sync, s + 3 * _PD_SCAN_MS, _PD_SCAN_MS, w))
+        gain = self._chroma_gain()
+        cr = 128.0 + (cr - 128.0) * gain
+        cb = 128.0 + (cb - 128.0) * gain
         r0 = 2 * self._line
         self._y[r0] = y0  # type: ignore[index]
         self._y[r0 + 1] = y1  # type: ignore[index]

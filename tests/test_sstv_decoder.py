@@ -291,6 +291,40 @@ def test_click_noise_on_a_weak_signal_still_gives_the_picture() -> None:
     assert np.abs(got - ref).mean() < 12.0
 
 
+def test_smoothing_and_chroma_follow_the_noise_level() -> None:
+    """A clean line keeps full sharpness and colour; a noisy one is smoothed and desaturated."""
+    dec = SstvDecoder(48000)
+    dec._noise_hz = 0.0
+    assert dec._median_ms() == 0.0
+    assert dec._chroma_gain() == 1.0
+    levels = [100.0, 150.0, 250.0, 400.0]
+    medians = []
+    gains = []
+    for noise in levels:
+        dec._noise_hz = noise
+        medians.append(dec._median_ms())
+        gains.append(dec._chroma_gain())
+    assert medians == sorted(medians)
+    assert gains == sorted(gains, reverse=True)
+    assert medians[0] > 0.0
+    assert 0.0 < gains[-1] < gains[0] < 1.0
+
+
+def test_a_noisy_picture_keeps_straight_edges() -> None:
+    """Lines sit on the fitted line clock, so noise does not shear a vertical edge."""
+    rate = 48000
+    edge = Image.new("L", (320, 240), 20)
+    ImageDraw.Draw(edge).rectangle((160, 0, 319, 239), fill=235)
+    run = Run(add_noise(sstv_audio("Robot36", rate, edge.convert("RGB")), 5.0, seed=3), rate)
+    assert len(run.images) == 1
+    got = to_array(run.images[0][0]).mean(axis=2)
+    positions = []
+    for r0 in range(10, 230, 10):
+        row = got[r0 : r0 + 10].mean(axis=0)
+        positions.append(int(np.argmax(np.convolve(np.diff(row), np.ones(5), mode="same"))))
+    assert np.abs(np.array(positions) - 160).max() <= 6
+
+
 def test_silence_and_noise_never_produce_an_image() -> None:
     rng = np.random.default_rng(7)
     noise = (rng.standard_normal(90 * 48000) * 0.3).astype(np.float32)
