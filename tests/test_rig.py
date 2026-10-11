@@ -4199,3 +4199,78 @@ class TestSdrRigAdapterFilePlayback:
         assert adapter.file_playback_duration_s == 0.0
         assert adapter.file_playback_at_end is False
         adapter.seek_file(1.0)  # no-op, must not raise
+
+
+class TestFt991DirectSlotSync:
+    """FT4 ADC RX on an FT-991 in Direct mode: one write per period, nothing late."""
+
+    def _ctrl(self, model_id: int = 1035) -> HamlibDirectController:
+        ctrl = HamlibDirectController(model_id=model_id, port="/dev/null")
+        ctrl._rig = MagicMock(error_status=0)
+        fake = MagicMock()
+        fake.RIG_VFO_A = 101
+        fake.RIG_VFO_B = 102
+        fake.rig_strrmode.return_value = "PKTUSB"
+        ctrl._hamlib = fake
+        with ctrl._lock:
+            ctrl._state = RigState.CONNECTED
+        return ctrl
+
+    def test_only_an_ft991_supports_it(self) -> None:
+        assert self._ctrl(1035).supports_slot_sync
+        assert not self._ctrl(1051).supports_slot_sync  # FTX-1F
+        ctrl = self._ctrl(1051)
+        ctrl.set_slot_sync(True)
+        assert not ctrl.slot_sync
+
+    def test_slot_sync_silences_the_per_second_loop(self) -> None:
+        ctrl = self._ctrl()
+        ctrl.set_slot_sync(True)
+        assert ctrl.slot_sync
+        assert ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0) is True
+        ctrl._rig.set_freq.assert_not_called()
+        ctrl.set_slot_sync(False)
+        ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0)
+        ctrl._rig.set_freq.assert_called()
+
+    def test_downlink_write_goes_to_vfo_a_and_is_recorded(self) -> None:
+        ctrl = self._ctrl()
+        assert ctrl.write_dl_hz(435_618_000.0) is True
+        ctrl._rig.set_freq.assert_called_once_with(101, 435_618_000)
+        assert ctrl.last_dl_hz == 435_618_000.0
+
+    def test_late_write_never_reaches_the_rig(self) -> None:
+        ctrl = self._ctrl()
+        assert ctrl.write_dl_hz(435_618_000.0, lambda: False) is False
+        ctrl._rig.set_freq.assert_not_called()
+        assert ctrl.write_ul_hz(145_990_000.0, lambda: False) is False
+        assert ctrl.last_ul_hz is None
+
+    def test_uplink_is_sent_as_raw_fb(self) -> None:
+        ctrl = self._ctrl()
+        with (
+            patch("os.open", return_value=7) as op,
+            patch("os.write") as wr,
+            patch("os.close") as cl,
+        ):
+            assert ctrl.write_ul_hz(145_991_234.0) is True
+        op.assert_called_once()
+        wr.assert_called_once_with(7, b"FB145991234;")
+        cl.assert_called_once_with(7)
+        assert ctrl.last_ul_hz == 145_991_234.0
+
+    def test_nothing_is_sent_while_keyed(self) -> None:
+        ctrl = self._ctrl()
+        ctrl.set_ptt(True, freeze_doppler=False)
+        assert ctrl.cat_blocked
+        assert ctrl.write_dl_hz(435_618_000.0) is False
+        assert ctrl.read_dial_hz() == (None, None)
+        assert ctrl.read_mode_name() is None
+
+    def test_read_back_and_mode(self) -> None:
+        ctrl = self._ctrl()
+        ctrl._rig.get_freq.return_value = 435_618_010.0
+        ctrl._rig.get_mode.return_value = (2048, 3000)
+        assert ctrl.read_dial_hz() == (435_618_010.0, None)
+        assert ctrl.read_mode_name() == "PKTUSB"
+        assert ctrl.read_dial_hz(lambda: False) == (None, None)

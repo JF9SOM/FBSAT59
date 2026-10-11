@@ -1127,6 +1127,9 @@ class HamlibDirectController(RigController):
         # port -- see the public CAT-call methods below, all of which now
         # take this lock for that reason).
         self._rig_cmd_lock = threading.RLock()
+        # FT4 ADC RX: the per-second Doppler loop is replaced by writes made once
+        # per period (see set_slot_sync()). FT-991/FT-991A only.
+        self._slot_sync: bool = False
         # Prevents _apply_ctcss_civ (pyserial) and connect() (Hamlib rig.open())
         # from opening the serial port simultaneously.
         self._port_lock = threading.Lock()
@@ -1313,6 +1316,110 @@ class HamlibDirectController(RigController):
         except Exception as exc:
             logger.error("RigDirect.set_frequency: %s", exc)
             return False
+
+    # -- Slot-synchronous CAT (FT4 ADC RX) --
+
+    @property
+    def supports_slot_sync(self) -> bool:
+        """True for an FT-991/FT-991A (full duplex) driven in Direct mode."""
+        return self._model_id in _FT991_DIRECT_MODEL_IDS and self._radio_type == "full_duplex"
+
+    @property
+    def slot_sync(self) -> bool:
+        """Whether the per-second Doppler writes are suspended for slot-synchronous writes."""
+        return self._slot_sync
+
+    def set_slot_sync(self, enabled: bool) -> None:
+        """Turn slot-synchronous mode on/off (ignored on rigs that do not support it)."""
+        enabled = enabled and self.supports_slot_sync
+        if enabled != self._slot_sync:
+            logger.info("RigDirect: slot-synchronous CAT %s", "ON" if enabled else "OFF")
+        self._slot_sync = enabled
+
+    @property
+    def cat_blocked(self) -> bool:
+        """True while an FT-991 would not answer CAT (transmitting, or just after PTT off)."""
+        return self._ft991_cat_blocked()
+
+    def _write_once(
+        self, which: str, hz: float, still_ok: Callable[[], bool] | None = None
+    ) -> bool:
+        """One DL ("F", Hamlib set_freq on VFO-A) or UL ("I", raw FB) write.
+
+        False when blocked, disconnected, late (*still_ok* is evaluated under the
+        command lock right before sending) or rejected. The uplink goes out as the
+        raw CAT FB command, as in the per-second loop: Hamlib's set_split_freq is
+        not implemented for the FT-991 and a raw write has no acknowledgement.
+        """
+        if not self.is_connected or self._rig is None or self._ft991_cat_blocked():
+            return False
+        try:
+            with self._rig_cmd_lock:
+                if self._ft991_cat_blocked():
+                    return False
+                if still_ok is not None and not still_ok():
+                    logger.info(
+                        "RigDirect: slot write %s %d skipped (window closed)", which, int(hz)
+                    )
+                    return False
+                if which == "F":
+                    self._rig.set_freq(self._vfo_str_to_const("VFOA"), int(hz))
+                    _check_rig_ok(self._rig, "slot DL set_freq(VFOA)")
+                else:
+                    import os as _os
+
+                    fd = _os.open(self._port, _os.O_WRONLY | _os.O_NOCTTY | _os.O_NONBLOCK)
+                    try:
+                        _os.write(fd, f"FB{int(hz):09d};".encode())
+                    finally:
+                        _os.close(fd)
+        except Exception as exc:
+            logger.info("RigDirect: slot write %s %d failed: %s", which, int(hz), exc)
+            return False
+        logger.info("RigDirect: slot write %s %d -> ok", which, int(hz))
+        return True
+
+    def write_dl_hz(self, hz: float, still_ok: Callable[[], bool] | None = None) -> bool:
+        """Write the downlink (VFO-A) once. Returns True when Hamlib accepted it."""
+        ok = self._write_once("F", hz, still_ok)
+        if ok:
+            self._last_dl_hz = hz
+            with self._lock:
+                self._freq_state.freq_hz = hz
+        return ok
+
+    def write_ul_hz(self, hz: float, still_ok: Callable[[], bool] | None = None) -> bool:
+        """Write the uplink (VFO-B) once. Returns True when the command was sent."""
+        ok = self._write_once("I", hz, still_ok)
+        if ok:
+            self._last_ul_hz = hz
+            self._last_ul_update_time = time.monotonic()
+        return ok
+
+    def read_dial_hz(
+        self, still_ok: Callable[[], bool] | None = None
+    ) -> tuple[float | None, float | None]:
+        """(downlink, None): the dial as the radio reports it; the uplink is not read back."""
+        if not self.is_connected or self._ft991_cat_blocked():
+            return None, None
+        if still_ok is not None and not still_ok():
+            return None, None
+        dl = self.get_frequency("VFOA")
+        return (dl if dl > 0 else None), None
+
+    def read_mode_name(self) -> str | None:
+        """The receive VFO's mode as a Hamlib name (e.g. "PKTUSB"), or None."""
+        if not self.is_connected or self._rig is None or self._ft991_cat_blocked():
+            return None
+        try:
+            with self._rig_cmd_lock:
+                mode, _width = self._rig.get_mode(self._vfo_str_to_const("VFOA"))
+            hamlib = self._hamlib
+            name = hamlib.rig_strrmode(mode) if hamlib is not None else None
+            return str(name).strip() or None if name is not None else None
+        except Exception as exc:
+            logger.info("RigDirect: mode read-back failed: %s", exc)
+            return None
 
     def get_frequency(self, vfo: str = "VFOA") -> float:
         """Return the current frequency in Hz.
@@ -1859,7 +1966,7 @@ class HamlibDirectController(RigController):
         Best-effort: failures are logged and swallowed rather than blocking
         the PTT that is about to follow.
         """
-        if self._pending_ul_hz is None or self._rig is None:
+        if self._pending_ul_hz is None or self._rig is None or self._slot_sync:
             return
         try:
             with self._rig_cmd_lock:
@@ -1884,6 +1991,8 @@ class HamlibDirectController(RigController):
         """
         if not self.is_connected or self._rig is None:
             return False
+        if self._slot_sync:
+            return True  # the FT4 tab writes once per period instead
         # Split-rig roles: an RX-only rig never receives the uplink. A TX-only
         # rig is plain simplex: the uplink is its one frequency (VFOA), no split.
         if self._radio_type == "rx_only":
