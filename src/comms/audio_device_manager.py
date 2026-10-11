@@ -80,9 +80,10 @@ _HW_SAMPLE_RATE = 48_000
 # stall, not normal jitter.
 _CB_GAP_WARN_S = 0.5
 # RMS/peak level is logged at most this often (not every callback, which
-# would otherwise fire every ~10-40ms and flood the log) -- frequent enough
-# to correlate against rig.controller's own CAT timing logs by eye.
-_RMS_LOG_INTERVAL_S = 2.0
+# would otherwise fire every ~10-40ms and flood the log). Every 30 s is enough to
+# see that an input is alive or silent (rms=0); it was 2 s while the Direct-mode
+# RX interference was being chased and flooded the console.
+_RMS_LOG_INTERVAL_S = 30.0
 
 # Some USB audio interfaces (rig soundcards in particular) and/or PipeWire's
 # routing only settle into the real input level/target a moment after a

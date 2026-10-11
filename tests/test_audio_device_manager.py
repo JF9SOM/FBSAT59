@@ -396,7 +396,7 @@ class TestInputCallbackDiagnostics:
         stream = fake_sounddevice.instances[0]
 
         # First call at t=100 always logs (last-log-time starts at 0). Second
-        # call at t=100.1 is within _RMS_LOG_INTERVAL_S (2.0s) of the first
+        # call at t=100.1 is within _RMS_LOG_INTERVAL_S (30 s) of the first
         # and must NOT log again.
         times = iter([100.0, 100.1])
         monkeypatch.setattr(adm.time, "monotonic", lambda: next(times))
