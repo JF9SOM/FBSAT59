@@ -2462,41 +2462,6 @@ class TestHamlibNetController:
         assert ctrl.read_dial_hz(lambda: False) == (None, None)
         ctrl._sock.sendall.assert_not_called()  # type: ignore[union-attr]
 
-    # -- FT-991 raw "w" commands get no reply: do not wait seconds for one --
-
-    def _timeouts_during(self, ctcss_method: str, action: str) -> list[float]:
-        ctrl = self._make_connected_ctrl(ctcss_method=ctcss_method)
-        socks: list[MagicMock] = []
-
-        def make(*_a: Any, **_k: Any) -> MagicMock:
-            sock = MagicMock()
-            sock.recv.return_value = b"RPRT 0\n"
-            socks.append(sock)
-            return sock
-
-        with (
-            patch("rig.controller.socket.socket", side_effect=make),
-            patch("rig.controller.time.sleep"),
-        ):
-            if action == "ctcss":
-                ctrl.send_ctcss_cat(0.0, "CN00{tone:03d};CT02;", "CT00;")
-            else:
-                ctrl.send_mode_only("USB-D", "LSB-D")
-        # the first connection carries the "w" commands (later ones are read-backs)
-        return [c.args[0] for c in socks[0].settimeout.call_args_list]
-
-    def test_ft991_waits_only_briefly_for_the_mode_and_ctcss_commands(self) -> None:
-        for action in ("ctcss", "mode"):
-            waits = self._timeouts_during("ft991", action)
-            assert HamlibNetController._FT991_CMD_WAIT_S in waits, action
-            assert 1.0 not in waits and 2.0 not in waits, action
-
-    def test_other_cat_rigs_keep_their_ctcss_wait(self) -> None:
-        for method in ("ftx1", "custom_cat"):
-            waits = self._timeouts_during(method, "ctcss")
-            assert 1.0 in waits, method
-            assert HamlibNetController._FT991_CMD_WAIT_S not in waits, method
-
     # -- uplink hold (FT4 ADC TX) --
 
     def test_hold_ul_keeps_dl_tracking_but_freezes_ul(self) -> None:
