@@ -3894,3 +3894,15 @@ Rx 周波数の概念は FBSAT59 にないため Shift/Ctrl の使い分けは�
 - 昔の方式のエミュレーションは、送信中の CAT 失敗などを含まない。実際の昔の成績はこれより低いはず。
 - **TX 側の ADC は評価していない**（応答が少なかった原因とは言えない。相手が測った自局 SNR は −10〜−15 dB で、
   こちらが測った相手の SNR と同程度。当日はアクティビティ自体が少なかった）。当面、検証の予定なし。
+
+**ADC RX を FT-991 の Direct モードにも対応（2026-10-11、実機未検証）**: `HamlibDirectController` に NET モードと同じ
+スロット同期 API（`supports_slot_sync`／`set_slot_sync`／`write_dl_hz`／`write_ul_hz`／`read_dial_hz`／`read_mode_name`／
+`cat_blocked`、`still_ok` による締め切り）を追加。`_FT991_DIRECT_MODEL_IDS` かつ full_duplex のときだけ有効。
+- 有効中は `set_vfo_frequencies()`（毎秒ループ）と PTT ON 前の `_flush_pending_frequencies()` が何もしない。
+- DL は Hamlib `set_freq(VFOA)`（`_check_rig_ok` 付き）、UL は従来どおり生 CAT `FB`（確認応答なし。成功の判定は
+  書き込めたかどうかのみ）。いずれも `_rig_cmd_lock` の中で `still_ok` と TX 中ブロックを確認してから送る。
+- 読み戻しは DL のみ（`get_freq(VFOA)`）。UL は読み戻さない（Hamlib が FT-991 の split 周波数を読めないため）。
+  受信モードは `get_mode(VFOA)` → `rig_strrmode`（FM 系なら `ft4_decode.log` に警告）。
+- Direct の UL 書き込みは、Hamlib が開いている同じシリアルポートに別のファイルディスクリプタを開いて書く
+  （2026-09-30 の仮説どおり干渉の可能性あり）。ADC RX では 1 周期 1 回に減るので頻度は大きく下がるが、
+  実機で `ft4_decode.log` の `adc_rx write UL ... ok=` と受信音声の途切れを要確認。

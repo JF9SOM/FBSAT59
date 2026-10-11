@@ -910,9 +910,10 @@ class Ft4Tab(QWidget):
         self._adc_rx_check.setChecked(self._adc_rx)
         self._adc_rx_check.setToolTip(
             _(
-                "FT-991 only (NET or Direct mode). Stops the per-second tuning: the rig's DL/UL are\n"
-                "written once per period (right after a transmission, or late in a receive\n"
-                "period), and the received audio is corrected for the difference between\n"
+                "FT-991 only (NET or Direct mode). Stops the per-second tuning: the rig's\n"
+                "DL/UL are written once per period (right after a transmission, or late in\n"
+                "a receive period), and the received audio is corrected for the difference\n"
+                "between\n"
                 "that frequency and the ideal Doppler-corrected one before it is decoded."
             )
         )
