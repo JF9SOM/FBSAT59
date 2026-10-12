@@ -1068,6 +1068,31 @@ class RigController(ABC):
 # ---------------------------------------------------------------------------
 
 
+def release_superseded_direct(old: object, new: object) -> bool:
+    """Close a Hamlib Direct controller that a settings reload has replaced.
+
+    Rig Settings > OK builds a brand-new controller and reconnects it; the old one
+    used to be dropped still open. Python freed it later, and Hamlib's close then
+    wrote the serial port's ORIGINAL settings back onto the port the new controller
+    had just opened ("ser_close: restoring options"), so the new handle got no
+    answers and every CAT call blocked all threads for 26 s (2026-10-12). Closing the
+    old one first, before the new one connects, restores the port in the right order.
+
+    Returns True if *old* was closed here.
+    """
+    if old is None or old is new or not isinstance(old, HamlibDirectController):
+        return False
+    if not old.is_connected:
+        return False
+    logger.info("Closing the superseded Hamlib controller first: %s", old.diag_state())
+    try:
+        old.disconnect()
+    except Exception as exc:
+        logger.warning("Closing the superseded Hamlib controller failed: %s", exc)
+        return False
+    return True
+
+
 class HamlibDirectController(RigController):
     """
     Transceiver controller that connects directly to a serial port via python-hamlib.

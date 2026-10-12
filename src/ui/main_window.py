@@ -100,6 +100,7 @@ from rig.controller import (
     RigState,
     RotatorController,
     normalize_civ_addr,
+    release_superseded_direct,
     select_tx_rig,
 )
 from ui.dashboard_view import DashboardView
@@ -7710,6 +7711,10 @@ class MainWindow(QMainWindow):
             with contextlib.suppress(Exception):
                 old_rig1.disconnect()
 
+        # A Hamlib Direct controller that was just replaced must be closed BEFORE the
+        # new one connects (see release_superseded_direct()).
+        release_superseded_direct(old_rig1, self._rig_controller)
+
         if (
             was_rig1_connected
             and self._rig_controller is not None
@@ -7756,6 +7761,8 @@ class MainWindow(QMainWindow):
             logger.info("Rig2: releasing superseded SDR device before reconnect")
             with contextlib.suppress(Exception):
                 old_rig2.disconnect()
+
+        release_superseded_direct(old_rig2, self._rig2_controller)
 
         if (
             was_rig2_connected

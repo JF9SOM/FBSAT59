@@ -38,6 +38,7 @@ from rig.controller import (
     _MockRig,
     _open_rig_with_retry,
     normalize_civ_addr,
+    release_superseded_direct,
     select_tx_rig,
 )
 
@@ -4313,3 +4314,35 @@ class TestDirectHandleDiagnostics:
         a._diag_unregister_handle()
         b._diag_unregister_handle()
         assert "listed=False" in a.diag_state()
+
+
+class TestReleaseSupersededDirect:
+    """Rig Settings > OK replaces the controller: the old Direct one is closed first."""
+
+    def _connected(self) -> HamlibDirectController:
+        ctrl = HamlibDirectController(model_id=1035, port="/dev/cu.test-port-2")
+        ctrl._rig = MagicMock(error_status=0)
+        with ctrl._lock:
+            ctrl._state = RigState.CONNECTED
+        return ctrl
+
+    def test_old_connected_direct_controller_is_closed(self) -> None:
+        old, new = (
+            self._connected(),
+            HamlibDirectController(model_id=1035, port="/dev/cu.test-port-2"),
+        )
+        rig = old._rig
+        assert release_superseded_direct(old, new) is True
+        rig.close.assert_called_once()
+        assert not old.is_connected
+
+    def test_nothing_is_closed_when_it_is_still_the_live_controller(self) -> None:
+        ctrl = self._connected()
+        assert release_superseded_direct(ctrl, ctrl) is False
+        assert ctrl.is_connected
+
+    def test_a_controller_that_is_not_connected_or_not_direct_is_left_alone(self) -> None:
+        idle = HamlibDirectController(model_id=1035, port="/dev/cu.test-port-2")
+        assert release_superseded_direct(idle, object()) is False
+        assert release_superseded_direct(None, object()) is False
+        assert release_superseded_direct(MagicMock(), object()) is False

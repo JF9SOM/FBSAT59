@@ -1459,3 +1459,17 @@ GIL を手放さない）。ログの `AudioDeviceManager: input callback gap 26
   Hamlib のタイムスタンプを有効にし、fbsat59.log と時刻を突き合わせられる。
 - 再現手順: Connect → ADC ON → Rig Settings で OK（自動再接続）→ `fbsat59.log` の `RigDirect#` の行と
   `hamlib_trace.log`（失敗の瞬間の TX/RX バイト列）を確認。
+
+### 原因の確定と修正（2026-10-12 夕）
+
+診断ログ（`hamlib_trace.log`）で確定: Rig Settings > OK の再読み込みでは Rig 1 のコントローラーが毎回作り直され、
+旧い Hamlib Direct コントローラーは閉じられずに開いたまま残る。新しいコントローラーが同じシリアルポートを開いた
+**5 ms 後**に Python が旧いオブジェクトを片付け、Hamlib の `rig_close` が `ser_close: restoring options`
+（旧ハンドルを開いた時点のポート設定を**同じポートへ書き戻す**）を実行して、新ハンドルの通信設定を壊した。以降は
+新ハンドルの `IF;`/`FA;` に返事が一切返らず（`Communication timed out`、読み取りに不明な 1 バイトも混入）、
+Hamlib 呼び出しが GIL を保持したまま 26 秒ブロックして UI・音声が固まった。TX が始まらず Rig Settings の
+PTT テストも固まったのも同じ原因。
+
+修正: `rig.controller.release_superseded_direct(old, new)` を新設し、`_load_rig_settings()` で Rig 1/2 とも、
+新しいコントローラーを接続する**前に**旧い接続中の Direct コントローラーを明示的に `disconnect()` する
+（SDR と同じ扱い。NET コントローラーは対象外）。実機未検証（再現手順: Connect → ADC ON → Rig Settings で OK）。
