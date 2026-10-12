@@ -616,6 +616,7 @@ def test_mode_combo_offers_the_gr_satellites_mode(tab: SstvTab) -> None:
         "SSTV",
         "SSDV (AX.25)",
         "SSDV (gr-satellites)",
+        "SSDV (2FSK 800bps)",
     ]
 
 
@@ -682,3 +683,82 @@ def test_gr_mode_pasted_hex_uses_the_ccsds_finder(
     tab._on_hex_pasted()
     assert tab._gr_ssdv_decoder is not None
     assert tab._gr_ssdv_decoder.packet_count == 1
+
+
+# ---------------------------------------------------- 2FSK 800bps SSDV (HADES-SA)
+
+
+class _FskPipeline(_FakeGrPipeline):
+    def __init__(self) -> None:
+        self.subscribers: list[Any] = []
+
+    def subscribe(self, cb: Any) -> None:
+        self.subscribers.append(cb)
+
+    def unsubscribe(self, cb: Any) -> None:
+        self.subscribers.remove(cb)
+
+
+def _connect_fsk_sdr(rc: _FakeRadioControl) -> _FskPipeline:
+    pipeline = _FskPipeline()
+    rig = _FakeRig()
+    rig._pipeline = pipeline  # type: ignore[assignment]
+    rc._rig1 = rig
+    rc.sdr_connected.emit()
+    return pipeline
+
+
+def test_fsk_mode_without_an_sdr_says_so(tab: SstvTab) -> None:
+    tab._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
+    assert tab._view_tabs.currentWidget() is tab._raw_page
+    assert "SDR" in tab._status_label.text()
+    assert tab._fsk_demod is None
+
+
+def test_fsk_mode_subscribes_to_the_sdr_and_leaving_unsubscribes(
+    tab: SstvTab, rc: _FakeRadioControl
+) -> None:
+    pipeline = _connect_fsk_sdr(rc)
+    tab._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
+    demod = tab._fsk_demod
+    assert demod is not None
+    assert [cb for cb in pipeline.subscribers if cb.__self__ is demod] != []
+    tab._mode_combo.setCurrentText("SSTV")
+    assert tab._fsk_demod is None
+    assert [cb for cb in pipeline.subscribers if cb.__self__ is demod] == []
+
+
+def test_fsk_mode_starts_when_the_sdr_connects_later(tab: SstvTab, rc: _FakeRadioControl) -> None:
+    tab._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
+    pipeline = _connect_fsk_sdr(rc)
+    assert tab._fsk_demod is not None
+    assert [cb for cb in pipeline.subscribers if cb.__self__ is tab._fsk_demod] != []
+
+
+def test_fsk_packets_show_as_hex_and_reach_the_decoder(tab: SstvTab) -> None:
+    from tests.test_fsk_ssdv import hades_packet
+
+    tab._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
+    tab._on_fsk_packet(hades_packet(0), True)
+    tab._on_fsk_packet(hades_packet(1), True)
+    assert tab._ssdv_frames == 2
+    assert tab._ssdv_packets == 2
+    assert tab._ssdv_decoder is not None
+    assert tab._ssdv_decoder.packet_count == 2
+    assert tab._raw_edit.toPlainText().count("\n") >= 1
+
+
+def test_fsk_bit_errored_copy_never_replaces_a_valid_packet(tab: SstvTab) -> None:
+    from tests.test_fsk_ssdv import hades_packet
+
+    tab._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
+    good = hades_packet(4)
+    bad = bytearray(good)
+    bad[50] ^= 0xFF
+    tab._on_fsk_packet(good, True)
+    tab._on_fsk_packet(bytes(bad), False)
+    assert tab._ssdv_decoder is not None
+    assert list(tab._ssdv_decoder._packets.values()) == [good]
+    # an unverified packet with no valid copy is still handed to ssdv's RS decoder
+    tab._on_fsk_packet(bytes(bad[:6] + b"\x00\x09" + bad[8:]), False)
+    assert tab._ssdv_decoder.packet_count == 2

@@ -67,6 +67,8 @@ _ENGINE_OWNER = "sstv"
 _MODE_SSTV = "SSTV"
 _MODE_SSDV = "SSDV (AX.25)"
 _MODE_GR_SSDV = "SSDV (gr-satellites)"
+# Fourth mode: bare 800 baud 2FSK SSDV (HADES-SA), demodulated by comms.sstv.fsk_ssdv.
+_MODE_FSK_SSDV = "SSDV (2FSK 800bps)"
 _GR_SSDV_NORAD = 61781  # ASRTU-1 (AO-123)
 
 
@@ -206,6 +208,11 @@ class SstvTab(QWidget):
         self._ssdv_decoder: Any | None = None  # SsdvDecoder (persistent across reconnects)
         self._gr_ssdv_decoder: Any | None = None  # SsdvDecoder(dslwp=True) for the gr mode
         self._gr_backend: Any | None = None  # GrSatellitesBackend (gr mode only)
+        self._fsk_demod: Any | None = None  # FskSsdvSdrDemod (2FSK mode only)
+        self._fsk_demod_pipeline: Any | None = None  # the pipeline it is subscribed to
+        # (image id, packet id) of the 2FSK packets whose CRC was valid, so a later
+        # bit-errored copy never replaces a good one in the decoder
+        self._fsk_good_keys: set[tuple[int, int]] = set()
         self._audio_active: bool = False  # soundcard RX subscribed via AudioDeviceManager
         self._audio_device: int | None = None  # device used for the active subscription
         self._current_image: QImage | None = None
@@ -239,7 +246,7 @@ class SstvTab(QWidget):
 
         top.addWidget(QLabel(_("Mode:")))
         self._mode_combo = QComboBox()
-        self._mode_combo.addItems([_MODE_SSTV, _MODE_SSDV, _MODE_GR_SSDV])
+        self._mode_combo.addItems([_MODE_SSTV, _MODE_SSDV, _MODE_GR_SSDV, _MODE_FSK_SSDV])
         self._mode_combo.setFixedWidth(150)
         self._mode_combo.currentTextChanged.connect(self._on_mode_changed)
         top.addWidget(self._mode_combo)
@@ -473,6 +480,8 @@ class SstvTab(QWidget):
             self._start_ssdv_reception()
         elif mode == _MODE_GR_SSDV:
             self._start_gr_ssdv()
+        elif mode == _MODE_FSK_SSDV:
+            self._start_fsk_ssdv()
 
     def _on_transmitter_changed(self, xpdr: Any) -> None:
         """Update satellite name when transponder selection changes."""
@@ -717,6 +726,7 @@ class SstvTab(QWidget):
     def _stop_ssdv_reception(self) -> None:
         """Release this tab's claim on the AX.25 pipeline (and stop gr_satellites)."""
         self._stop_gr_ssdv_reception()
+        self._stop_fsk_ssdv_reception()
         if self._ssdv_reception:
             self._engine().stop(_ENGINE_OWNER)
             self._ssdv_reception = False
@@ -798,9 +808,73 @@ class SstvTab(QWidget):
             self._ssdv_packets += 1
         self._update_raw_count()
 
+    # ------------------------------------------------------------------ #
+    # SSDV (2FSK 800bps) mode (HADES-SA)
+    # ------------------------------------------------------------------ #
+
+    def _start_fsk_ssdv(self) -> None:
+        """2FSK mode: demodulate the SDR's I/Q with FskSsdvSdrDemod (needs an SDR)."""
+        if self._fsk_demod is not None:
+            return
+        self._ensure_ssdv_decoder()
+        pipeline = self._find_sdr_pipeline()
+        if pipeline is None:
+            self._status_label.setText(
+                _("SSDV (2FSK 800bps): connect an SDR in Radio Control (pasting hex works)")
+            )
+            return
+        from comms.sstv.fsk_ssdv import FskSsdvSdrDemod
+
+        try:
+            demod = FskSsdvSdrDemod(int(pipeline._device.sample_rate), parent=self)
+            demod.packet_received.connect(self._on_fsk_packet)
+            demod.start()
+            self._fsk_demod = demod  # held before subscribing so a failure is cleaned up
+            pipeline.subscribe(demod.push_samples)
+            self._fsk_demod_pipeline = pipeline
+        except Exception:
+            logger.exception("SSDV (2FSK): could not attach to the SDR pipeline")
+            self._stop_fsk_ssdv_reception()
+            self._status_label.setText(_("⚠ Could not start the 2FSK demodulator."))
+            return
+        self._ssdv_frames = 0
+        self._ssdv_packets = 0
+        self._update_raw_count()
+        self._status_label.setText(_("SSDV (2FSK 800bps): waiting for packets…"))
+
+    def _stop_fsk_ssdv_reception(self) -> None:
+        """Detach and stop the 2FSK demodulator, if running."""
+        if self._fsk_demod_pipeline is not None and self._fsk_demod is not None:
+            with contextlib.suppress(Exception):
+                self._fsk_demod_pipeline.unsubscribe(self._fsk_demod.push_samples)
+        self._fsk_demod_pipeline = None
+        if self._fsk_demod is not None:
+            with contextlib.suppress(Exception):
+                self._fsk_demod.packet_received.disconnect()
+            self._fsk_demod.stop()
+            self._fsk_demod = None
+
+    def _on_fsk_packet(self, packet: bytes, verified: bool) -> None:
+        """A 256-byte SSDV packet from the 2FSK demodulator: show it, feed the decoder."""
+        from comms.sstv.ssdv import packet_id, packet_image_id
+
+        self._raw_edit.append_frame(packet)
+        self._ssdv_frames += 1
+        key = (packet_image_id(packet), packet_id(packet))
+        if verified:
+            self._fsk_good_keys.add(key)
+        elif key in self._fsk_good_keys:
+            self._update_raw_count()
+            return  # keep the CRC-valid copy; ssdv would have to repair this one
+        decoder = self._ensure_ssdv_decoder()
+        if decoder.push_packet(packet):
+            self._ssdv_packets += 1
+        self._update_raw_count()
+
     def _stop_ssdv(self) -> None:
         """Leave SSDV mode: disconnect from the AX.25 pipeline, decode what is buffered."""
         self._stop_gr_ssdv_reception()
+        self._stop_fsk_ssdv_reception()
         if self._gr_ssdv_decoder is not None:
             self._gr_ssdv_decoder.flush()
         if self._aprs_engine is not None:
@@ -874,6 +948,7 @@ class SstvTab(QWidget):
             self._ssdv_decoder.reset()
         if self._gr_ssdv_decoder is not None:
             self._gr_ssdv_decoder.reset()
+        self._fsk_good_keys.clear()
         self._ssdv_frames = 0
         self._ssdv_packets = 0
         self._raw_count_label.setText("")
@@ -962,7 +1037,7 @@ class SstvTab(QWidget):
     # ------------------------------------------------------------------ #
 
     def _on_mode_changed(self, mode_text: str) -> None:
-        """Switch between the SSTV, SSDV (AX.25) and SSDV (gr-satellites, ASRTU-1) decoders."""
+        """Switch between the SSTV, SSDV (AX.25), SSDV (gr-satellites) and SSDV (2FSK) decoders."""
         self._stop_decoder()
         self._stop_ssdv()
         if mode_text == _MODE_SSTV:
@@ -971,6 +1046,9 @@ class SstvTab(QWidget):
         elif mode_text == _MODE_GR_SSDV:
             self._view_tabs.setCurrentWidget(self._raw_page)
             self._start_gr_ssdv()
+        elif mode_text == _MODE_FSK_SSDV:
+            self._view_tabs.setCurrentWidget(self._raw_page)
+            self._start_fsk_ssdv()
         else:
             self._view_tabs.setCurrentWidget(self._raw_page)
             self._start_ssdv()
@@ -1145,7 +1223,7 @@ class SstvTab(QWidget):
     @staticmethod
     def _save_mode_name(mode_text: str) -> str:
         """ "SSDV" for both SSDV modes (they share a folder), else "SSTV"."""
-        return "SSDV" if mode_text in (_MODE_SSDV, _MODE_GR_SSDV) else "SSTV"
+        return "SSDV" if mode_text in (_MODE_SSDV, _MODE_GR_SSDV, _MODE_FSK_SSDV) else "SSTV"
 
     @staticmethod
     def _image_save_dir(mode: str = "SSTV") -> Path:
