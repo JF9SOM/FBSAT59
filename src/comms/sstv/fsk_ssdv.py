@@ -14,9 +14,13 @@ Stream format (found by analysing a real pass on 2026-10-12)
   starts with ``BF 35``, which therefore doubles as the sync word. 252 bytes follow the
   sync word, then ``0x55`` filler. Rebuilding ``55 66 BF 35`` + 252 bytes gives a packet
   the stock ``ssdv`` tool decodes (the CRC-32 only checks out with that exact prefix).
-* The same stream also carries other frames that start with the same ``BF 35`` (38 bytes,
-  header ``25 B3`` + a counter, high-entropy contents; not SSDV and not AMSAT-EA Genesis
-  telemetry -- no CRC-16 variant fits). They are rejected by the CRC / header checks below.
+* This is AMSAT-EA's "Genesis" family framing, documented in "HADES-SA SpinnyONE
+  Transmissions Description" (V1.0, 2026-02-06): training ``AA..``, sync ``BF 35``, size,
+  type/address nibbles (address 3 = HADES-SA), data, CRC-16. SSDV is type 10 (size 251,
+  type/address ``A3``), so ``BF 35 FB A3`` is really sync + size + type/address, which the
+  SSDV tool reads as the callsign. The other packets of the cycle (telemetry types 1-5, 8,
+  9, 12, 14, 15, CODEC2 voice type 11, PN9 type 13) share the sync word and are not
+  SSDV; they are rejected by the CRC-32 / header checks below.
 
 Demodulation
 ------------
