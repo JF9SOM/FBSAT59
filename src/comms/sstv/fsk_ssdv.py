@@ -72,6 +72,9 @@ _SYNC_BITS = np.unpackbits(np.frombuffer(SYNC_WORD, dtype=np.uint8))
 _MAX_SYNC_ERRORS_VERIFIED = 2
 _MAX_SYNC_ERRORS_UNVERIFIED = 1
 _SYNC_MERGE_SYMBOLS = 40  # candidates closer than this are the same packet
+SAMPLES_PER_SYMBOL = WORK_RATE / BAUD
+# Per-packet timing refinement: offsets (in samples) tried around the window-wide phase.
+_REFINE_OFFSETS = tuple(np.arange(-2.0, 2.01, 0.5).tolist())
 # Decimator overlap-save margins, in units of `up` output samples / `down` input samples.
 _DROP_UNITS = 16
 _TAIL_UNITS = 32
@@ -164,30 +167,41 @@ def find_tones(seg: np.ndarray) -> tuple[float, float] | None:
     return float(freqs[best]), float(freqs[best + sep])
 
 
-def soft_symbols(seg: np.ndarray, f_low: float, f_high: float) -> np.ndarray:
-    """Per-symbol decision values (>0: the high tone) at the best timing phase."""
-    n = len(seg)
-    t = np.arange(n) / WORK_RATE
+def tone_sums(seg: np.ndarray, f_low: float, f_high: float) -> tuple[np.ndarray, np.ndarray]:
+    """Running sums of *seg* mixed with each tone (symbol energies are differences of these)."""
+    t = np.arange(len(seg)) / WORK_RATE
     c_high = np.concatenate([[0], np.cumsum(seg * np.exp(-2j * np.pi * f_high * t))])
     c_low = np.concatenate([[0], np.cumsum(seg * np.exp(-2j * np.pi * f_low * t))])
-    sps = WORK_RATE / BAUD
+    return c_high, c_low
+
+
+def symbol_energies(
+    c_high: np.ndarray, c_low: np.ndarray, start: float, count: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Per-symbol energy at each tone for *count* symbols starting at sample *start*."""
+    pos = start + np.arange(count + 1) * SAMPLES_PER_SYMBOL
+    grid = np.arange(len(c_high))
+    high = np.interp(pos, grid, c_high.real) + 1j * np.interp(pos, grid, c_high.imag)
+    low = np.interp(pos, grid, c_low.real) + 1j * np.interp(pos, grid, c_low.imag)
+    return np.abs(np.diff(high)) ** 2, np.abs(np.diff(low)) ** 2
+
+
+def best_phase(c_high: np.ndarray, c_low: np.ndarray) -> float:
+    """Symbol timing phase (in samples) with the largest average decision margin."""
+    n = len(c_high) - 1
     best_score = -1.0
-    best = np.zeros(0)
-    for phase in np.arange(0.0, sps, 0.5):
-        starts = phase + np.arange(int((n - phase) / sps) - 1) * sps
-        i0 = starts.astype(np.int64)
-        i1 = (starts + sps).astype(np.int64)
-        e_high = np.abs(c_high[i1] - c_high[i0]) ** 2
-        e_low = np.abs(c_low[i1] - c_low[i0]) ** 2
-        soft = (e_high - e_low) / (e_high + e_low + 1e-12)
-        score = float(np.sum(np.abs(soft)))
+    best = 0.0
+    for phase in np.arange(0.0, SAMPLES_PER_SYMBOL, 0.5):
+        count = int((n - phase) / SAMPLES_PER_SYMBOL) - 1
+        e_high, e_low = symbol_energies(c_high, c_low, phase, count)
+        score = float(np.sum(np.abs(e_high - e_low) / (e_high + e_low + 1e-12)))
         if score > best_score:
-            best_score, best = score, soft
+            best_score, best = score, float(phase)
     return best
 
 
-def sync_candidates(bits: np.ndarray) -> list[tuple[int, int, bytes]]:
-    """Find sync words in a 0/1 bit array; return ``(bit_index, sync_errors, body)`` tuples.
+def sync_candidates(bits: np.ndarray, limit: int | None = None) -> list[tuple[int, int]]:
+    """Positions ``(bit_index, sync_errors)`` where the sync word matches with few errors.
 
     Only positions in the first half window are taken (the second half is the first half
     of the next window), and only where a whole packet follows.
@@ -200,12 +214,30 @@ def sync_candidates(bits: np.ndarray) -> list[tuple[int, int, bytes]]:
     errors = np.zeros(count, dtype=np.int32)
     for k in range(16):
         errors += bits[k : k + count] != _SYNC_BITS[k]
-    limit = min(count, _STEP_SYMBOLS, n - need + 1)
-    out: list[tuple[int, int, bytes]] = []
-    for i in np.flatnonzero(errors[:limit] <= _MAX_SYNC_ERRORS_VERIFIED).tolist():
-        body = np.packbits(bits[i + 16 : i + need]).tobytes()
-        out.append((int(i), int(errors[i]), body))
-    return out
+    stop = min(count, _STEP_SYMBOLS, n - need + 1) if limit is None else limit
+    return [
+        (int(i), int(errors[i])) for i in np.flatnonzero(errors[:stop] <= _MAX_SYNC_ERRORS_VERIFIED)
+    ]
+
+
+def refine_packet(
+    c_high: np.ndarray, c_low: np.ndarray, start: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Re-time one packet: try small timing offsets, keep the one that captures most energy.
+
+    The window-wide timing phase is a compromise; locally a fraction of a symbol (or
+    more, after a deep fade) can be better. Returns the per-symbol energies at each tone.
+    """
+    count = 16 + 8 * BODY_BYTES
+    best_score = -1.0
+    best: tuple[np.ndarray, np.ndarray] | None = None
+    for offset in _REFINE_OFFSETS:
+        e_high, e_low = symbol_energies(c_high, c_low, start + offset, count)
+        score = float(np.sum(np.maximum(e_high, e_low)))
+        if score > best_score:
+            best_score, best = score, (e_high, e_low)
+    assert best is not None
+    return best
 
 
 def decode_window(seg: np.ndarray) -> list[FskSsdvPacket]:
@@ -213,22 +245,31 @@ def decode_window(seg: np.ndarray) -> list[FskSsdvPacket]:
     tones = find_tones(seg)
     if tones is None:
         return []
-    soft = soft_symbols(seg, tones[0], tones[1])
-    candidates: list[tuple[int, int, bytes]] = []
+    c_high, c_low = tone_sums(seg, tones[0], tones[1])
+    phase = best_phase(c_high, c_low)
+    n = len(c_high) - 1
+    e_high, e_low = symbol_energies(c_high, c_low, phase, int((n - phase) / SAMPLES_PER_SYMBOL) - 1)
+    margin = e_high - e_low
+    candidates: list[tuple[int, int, float]] = []
     for polarity in (-1.0, 1.0):  # bit 1 is the low tone, so the normal polarity is -1
-        bits = ((polarity * soft) > 0).astype(np.uint8)
-        candidates.extend(sync_candidates(bits))
+        bits = ((polarity * margin) > 0).astype(np.uint8)
+        candidates.extend((i, e, polarity) for i, e in sync_candidates(bits))
     # One packet can be found in both polarities or one bit apart: keep the best of each.
     candidates.sort(key=lambda c: (c[1], c[0]))
-    kept: list[tuple[int, int, bytes]] = []
+    kept: list[tuple[int, int, float]] = []
     for cand in candidates:
         if any(abs(cand[0] - k[0]) < _SYNC_MERGE_SYMBOLS for k in kept):
             continue
         kept.append(cand)
     kept.sort(key=lambda c: c[0])
     packets: list[FskSsdvPacket] = []
-    for _i, errors, body in kept:
-        packet = PACKET_PREFIX + body
+    for index, _errors, polarity in kept:
+        eh, el = refine_packet(c_high, c_low, phase + index * SAMPLES_PER_SYMBOL)
+        bits = ((polarity * (eh - el)) > 0).astype(np.uint8)
+        errors = int(np.count_nonzero(bits[:16] != _SYNC_BITS))
+        if errors > _MAX_SYNC_ERRORS_VERIFIED:
+            continue
+        packet = PACKET_PREFIX + np.packbits(bits[16:]).tobytes()
         if crc_ok(packet):
             packets.append(FskSsdvPacket(packet, True))
         elif errors <= _MAX_SYNC_ERRORS_UNVERIFIED and header_plausible(packet):
