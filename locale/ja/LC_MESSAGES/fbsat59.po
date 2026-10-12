@@ -456,6 +456,9 @@ msgstr "{call} に自動応答中"
 
 #: src/ui/ft4_tab.py:1818
 #, python-brace-format
+msgid "No reply from {call} after {n} tries — TX stopped"
+msgstr "{call} から応答がないまま{n}回送信しました — 送信を停止しました"
+
 msgid "QSO with {call} complete — TX stopped, press Log QSO to save"
 msgstr "{call} との交信完了 — 送信を停止しました。Log QSOで記録できます"
 

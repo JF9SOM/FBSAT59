@@ -151,3 +151,40 @@ class TestButtonStateOverride:
         qso.pending_tx = f"{THEIR_CALL} {MY_CALL} RR73"
         assert qso.advance(f"{MY_CALL} {THEIR_CALL} 73") is None
         assert qso.state == QsoState.LOGGED
+
+
+class TestAnswerMessage:
+    """answer_message picks the next step of the exchange for a clicked row."""
+
+    def _mgr(self) -> Ft4QsoManager:
+        return Ft4QsoManager("JF9SOM", "PM86")
+
+    def test_cq_gets_grid(self) -> None:
+        m = self._mgr()
+        assert m.answer_message("CQ", "RM9C", "MO07", -12) == "RM9C JF9SOM PM86"
+        assert m.state == QsoState.GRID_SENT
+
+    def test_grid_to_us_gets_report(self) -> None:
+        m = self._mgr()
+        assert m.answer_message("JF9SOM", "BH2VSQ", "OL79", -19) == "BH2VSQ JF9SOM -19"
+        assert m.state == QsoState.EXCHANGE
+
+    def test_report_to_us_gets_r_report(self) -> None:
+        m = self._mgr()
+        assert m.answer_message("JF9SOM", "HS1BJP", "-12", -16) == "HS1BJP JF9SOM R-16"
+        assert m.state == QsoState.RREPORT_SENT
+        assert m.session.rst_rcvd == "-12"
+
+    def test_r_report_to_us_gets_rr73(self) -> None:
+        m = self._mgr()
+        assert m.answer_message("JF9SOM", "X1ABC", "R-05", -9) == "X1ABC JF9SOM RR73"
+        assert m.state == QsoState.CONFIRM
+
+    def test_rr73_to_us_gets_73(self) -> None:
+        m = self._mgr()
+        assert m.answer_message("JF9SOM", "X1ABC", "RR73", -9) == "X1ABC JF9SOM 73"
+        assert m.state == QsoState.LOGGED
+
+    def test_message_between_others_gets_grid(self) -> None:
+        m = self._mgr()
+        assert m.answer_message("BA8AFK/P", "JL1SAM", "73", -13) == "JL1SAM JF9SOM PM86"

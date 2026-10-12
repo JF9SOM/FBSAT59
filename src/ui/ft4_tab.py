@@ -131,6 +131,8 @@ def _parse_cq_call_grid(words: list[str]) -> tuple[str, str]:
 
 
 _FT4_SETTINGS_KEY = "ft4_settings"
+# Unanswered repeats of one message before TX is switched off again.
+_MAX_UNANSWERED_TX = 5
 _DEFAULT_AUDIO_FREQ = 1500.0  # Hz — matches Q65's/WSJT-X's own default; see
 # GitHub Issue #16: 1000 Hz reports of "decodes fine but never heard on
 # PSKReporter" line up with narrow rig DATA/USB-D TX audio passbands that
@@ -614,6 +616,10 @@ class Ft4Tab(QWidget):
         self._ul_hold_rig: Any | None = None  # rig whose uplink ADC TX is holding
         # Closing "<call> <me> 73" queued after their RR73; TX stops once it has gone out.
         self._final_73: str = ""
+        # Consecutive identical non-CQ transmissions with no reply (see
+        # _MAX_UNANSWERED_TX): after that many, TX stops.
+        self._retry_msg: str = ""
+        self._retry_count: int = 0
         self._slot_sync_timer = QTimer(self)
         self._slot_sync_timer.setInterval(100)
         self._slot_sync_timer.timeout.connect(self._slot_sync_tick)
@@ -1498,6 +1504,20 @@ class Ft4Tab(QWidget):
 
         return _offset, float(residual[0])
 
+    def _log_qso_event(self, source: str, detail: str = "") -> None:
+        """Record a QSO state change in ft4_decode.log, with what caused it."""
+        qso = self._qso
+        if qso is None:
+            return
+        get_ft4_decode_logger().info(
+            'qso %s state=%s partner=%s tx="%s" %s',
+            source,
+            qso.state.name,
+            qso.session.their_call or "-",
+            self._tx_edit.text(),
+            detail,
+        )
+
     def _transmit_now(self) -> None:
         """Start TX in a daemon thread."""
         if not self._codec.is_available:
@@ -1519,6 +1539,12 @@ class Ft4Tab(QWidget):
             audio_freq = _DEFAULT_AUDIO_FREQ
 
         self._last_tx_msg = msg
+        if msg.startswith("CQ "):
+            self._retry_msg, self._retry_count = "", 0
+        elif msg == self._retry_msg:
+            self._retry_count += 1
+        else:
+            self._retry_msg, self._retry_count = msg, 1
         rig = self._tx_rig()
         # ADC TX corrects the drift over the burst in the audio, relative to the
         # uplink the rig sits at now: hold the uplink there (any rig) so a rig
@@ -1681,6 +1707,17 @@ class Ft4Tab(QWidget):
         self._tx_in_progress = False
         self._tx_worker = None
         self._status_label.setText(_("TX done — waiting for next period"))
+        if self._retry_msg and self._retry_count >= _MAX_UNANSWERED_TX and self._tx_enabled:
+            self._log_qso_event("no_reply_stop", f"tries={self._retry_count}")
+            call = self._qso.session.their_call if self._qso is not None else ""
+            self._retry_msg, self._retry_count = "", 0
+            self._tx_enable_btn.setChecked(False)  # stops TX; the message stays in the field
+            self._status_label.setText(
+                _("No reply from {call} after {n} tries — TX stopped").format(
+                    call=call, n=_MAX_UNANSWERED_TX
+                )
+            )
+            return
         # RR73 sent: the exchange is complete on our side -- log it now.
         qso = self._qso
         if (
@@ -1795,9 +1832,13 @@ class Ft4Tab(QWidget):
                 msg.text, their_snr=msg.snr_db, allow_auto_start=self._auto_progress
             )
             if next_tx is None:
+                if msg.text.upper().startswith(self._my_call.upper() + " "):
+                    self._log_qso_event("ignored", f'heard="{msg.text}" snr={msg.snr_db:+.0f}')
                 continue
             self._tx_edit.setText(next_tx)
             sent_tx = next_tx
+            self._retry_msg, self._retry_count = "", 0
+            self._log_qso_event("auto", f'heard="{msg.text}" snr={msg.snr_db:+.0f}')
             self._stamp_session(qso.session)  # satellite + frequencies while they are current
             self._update_qso_display()
             if was_idle:
@@ -1875,19 +1916,31 @@ class Ft4Tab(QWidget):
         if qso is None:
             return
 
+        my_call = self._my_call.upper()
+        snr = self._row_snr_db(row)
         if words[0] == "CQ":
             their_call, their_grid = _parse_cq_call_grid(words[1:])
+            if not their_call or their_call == my_call:
+                return
+            reply = qso.respond_with_grid(their_call, their_grid, snr)
         elif len(words) >= 2:
             to_call, from_call = words[0], words[1]
-            their_call = to_call if from_call == self._my_call.upper() else from_call
-            their_grid = words[2] if len(words) >= 3 and _GRID_RE.match(words[2]) else ""
+            payload = words[2] if len(words) >= 3 else ""
+            if from_call == my_call:
+                # One of our own rows: work the station we were addressing.
+                if not to_call or to_call == my_call:
+                    return
+                reply = qso.respond_with_grid(to_call, "", snr)
+            else:
+                # A message to us gets the next step of the exchange (report for
+                # their grid, ...); anything else is answered with our grid.
+                reply = qso.answer_message(to_call, from_call, payload, snr)
         else:
             return
-        if not their_call or their_call == self._my_call.upper():
-            return
-
-        reply = qso.respond_with_grid(their_call, their_grid, self._row_snr_db(row))
         self._tx_edit.setText(reply)
+        if qso.state == QsoState.LOGGED and reply.endswith(" 73"):
+            self._final_73 = reply  # their RR73 still has to be answered once
+        self._log_qso_event("doubleclick", f'row="{item.text()}"')
         self._update_qso_display()
         # Use the slot parity stamped on this row at decode time (see
         # _display_decoded), not whatever period happens to be current now.
@@ -1917,6 +1970,7 @@ class Ft4Tab(QWidget):
         msg = qso.start_cq()
         self._tx_edit.setText(msg)
         self._update_qso_display()
+        self._log_qso_event("button_cq")
         is_even, _pos = Ft4Scheduler.current_slot_info()
         self._start_scheduler(tx_even=self._resolve_tx_even(is_even))
 
@@ -1949,6 +2003,7 @@ class Ft4Tab(QWidget):
             qso.set_state(state)
         self._tx_edit.setText(msg)
         self._update_qso_display()
+        self._log_qso_event("button_message")
 
     def _on_btn_mygrid(self) -> None:
         qso = self._active_qso_for_button()
@@ -1958,6 +2013,7 @@ class Ft4Tab(QWidget):
         msg = qso.respond_with_grid(sess.their_call, sess.their_grid, sess.their_snr_db)
         self._tx_edit.setText(msg)
         self._update_qso_display()
+        self._log_qso_event("button_mygrid")
 
     def _on_btn_rst(self) -> None:
         qso = self._active_qso_for_button()
@@ -1967,6 +2023,7 @@ class Ft4Tab(QWidget):
         msg = qso.respond_with_report(sess.their_call, sess.their_grid, sess.their_snr_db)
         self._tx_edit.setText(msg)
         self._update_qso_display()
+        self._log_qso_event("button_rst")
 
     def _on_btn_rrst(self) -> None:
         qso = self._active_qso_for_button()
@@ -2385,6 +2442,9 @@ class Ft4Tab(QWidget):
     @Slot(bool)
     def _on_tx_enable_toggled(self, checked: bool) -> None:
         self._tx_enabled = checked
+        self._log_qso_event("tx_enable" if checked else "tx_disable")
+        if checked:
+            self._retry_msg, self._retry_count = "", 0
         if checked:
             if not self._codec.is_available:
                 self._tx_enable_btn.setChecked(False)
@@ -2450,6 +2510,7 @@ class Ft4Tab(QWidget):
 
     @Slot()
     def _on_halt(self) -> None:
+        self._log_qso_event("halt")
         self._tx_enabled = False
         # setChecked(False) below only emits toggled() -- which is what
         # normally stops _rig_watch_timer -- when the button's checked

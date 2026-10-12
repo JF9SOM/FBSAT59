@@ -229,6 +229,44 @@ class Ft4QsoManager:
         self._session.rst_sent = report
         return msg
 
+    def answer_message(
+        self,
+        to_call: str,
+        from_call: str,
+        payload: str,
+        their_snr_db: float | None = None,
+    ) -> str:
+        """Pick the correct reply to a clicked message, as WSJT-X does.
+
+        A CQ, or a message between two other stations, is answered with our
+        grid. A message addressed to us is the next step of the standard
+        exchange, so it gets the next message: their grid -> our report,
+        their report -> our R-report, their R-report -> RR73, their RR73 ->
+        73. Anything else (a bare 73, an unknown payload) falls back to the
+        grid. Returns the TX message and moves the state to match.
+        """
+        to_call, from_call, payload = to_call.upper(), from_call.upper(), payload.upper()
+        if to_call != self._my_call or from_call == self._my_call:
+            grid = payload if GRID_RE.match(payload) else ""
+            return self.respond_with_grid(from_call, grid, their_snr_db)
+        if payload in _ROGER_WORDS:
+            self._begin_answer(from_call, "", their_snr_db)
+            msg = f"{from_call} {self._my_call} 73"
+            self._pending_tx = msg
+            self._state = QsoState.LOGGED
+            return msg
+        if GRID_RE.match(payload):
+            return self.respond_with_report(from_call, payload, their_snr_db)
+        if _REPORT_RE.match(payload):
+            self._begin_answer(from_call, "", their_snr_db)
+            self._session.rst_rcvd = payload
+            return self._send_r_report(from_call, their_snr_db)
+        if _R_REPORT_RE.match(payload):
+            self._begin_answer(from_call, "", their_snr_db)
+            self._session.rst_rcvd = payload[1:]
+            return self._send_rr73(from_call)
+        return self.respond_with_grid(from_call, "", their_snr_db)
+
     # ------------------------------------------------------------------ #
     # State machine                                                        #
     # ------------------------------------------------------------------ #

@@ -4114,3 +4114,19 @@ Rx 周波数の概念は FBSAT59 にないため Shift/Ctrl の使い分けは�
 呼ぶようになったが、Direct 側は引数なしのままで毎周期 `TypeError` → 読み戻しの後ろにある UL 書き込みまで
 進まなかった（ログ: `FT4: ADC RX CAT job failed`、`slot write I` が出ない）。Direct 側にも `still_ok` を追加し、
 さらに読み戻しの失敗が UL/DL 書き込みを止めないよう `_read()` を例外で囲んだ。
+
+### FT4 QSO 自動シーケンスの修正と診断ログ（2026-10-12）
+
+17:31 の RS-44 パスの解析で、QSO が成立しなかった原因がシーケンス側にあると判明した
+（ADC・CAT・受信には問題なし）。
+
+- **ダブルクリックの返信を WSJT-X と同じにした**（`Ft4QsoManager.answer_message`）。CQ・他局同士の
+  メッセージにはグリッド、自分宛てのメッセージには次のステップ（相手のグリッド→こちらのレポート、
+  レポート→R レポート、R レポート→RR73、RR73→73）を返す。従来は常にグリッドを返したため、
+  相手がグリッドを送ってきているのにこちらもグリッドを返し、交換が進まなかった。
+- **再送上限 5 回**（`_MAX_UNANSWERED_TX`）。CQ 以外の同一メッセージを応答なしに 5 回送ると
+  TX Enable を外して停止する（メッセージは入力欄に残る）。
+- **診断ログ**: `ft4_decode.log` に `qso <source> state=… partner=… tx="…"` を出力。
+  source は `auto`（状態機械が進めた）/`doubleclick`/`button_*`/`ignored`（自分宛てだが
+  現状態では受け付けなかった）/`tx_enable`/`tx_disable`/`halt`/`no_reply_stop`。
+  手動操作と自動処理を後から区別するためのもの。
