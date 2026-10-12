@@ -4290,3 +4290,26 @@ def test_direct_mode_read_takes_the_callers_window() -> None:
     assert ctrl.read_mode_name(lambda: True) == "PKTUSB"
     assert ctrl.read_mode_name(lambda: False) is None
     assert ctrl.read_mode_name() == "PKTUSB"
+
+
+class TestDirectHandleDiagnostics:
+    """A second Hamlib handle on the same serial port must show up in the log."""
+
+    def test_second_handle_on_the_same_port_is_reported(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import logging
+
+        a = HamlibDirectController(model_id=1035, port="/dev/cu.test-port")
+        b = HamlibDirectController(model_id=1035, port="/dev/cu.test-port")
+        with caplog.at_level(logging.INFO, logger="rig.controller"):
+            a._diag_register_handle()
+            b._diag_register_handle()
+        msgs = [r.getMessage() for r in caplog.records]
+        assert any("other handles open on the same port: none" in m for m in msgs)
+        warn = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warn) == 1 and f"#{a._diag_id}" in warn[0].getMessage()
+        assert "listed=True" in b.diag_state()
+        a._diag_unregister_handle()
+        b._diag_unregister_handle()
+        assert "listed=False" in a.diag_state()

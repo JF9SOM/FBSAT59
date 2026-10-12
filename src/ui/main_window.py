@@ -7680,6 +7680,18 @@ class MainWindow(QMainWindow):
                         self._ctcss_cat_on,
                     )
                     self._radio_control.set_rig(self._rig_controller)
+                    # Diagnostics (2026-10-12): the superseded Hamlib controller is left
+                    # open on purpose; show what it still holds when the new one connects.
+                    old_diag = getattr(old_rig1, "diag_state", None)
+                    new_diag = getattr(self._rig_controller, "diag_state", None)
+                    if old_rig1 is not None and old_rig1 is not self._rig_controller:
+                        logger.info(
+                            "Rig1 reload: superseded controller: %s | new controller: %s",
+                            old_diag() if callable(old_diag) else type(old_rig1).__name__,
+                            new_diag()
+                            if callable(new_diag)
+                            else type(self._rig_controller).__name__,
+                        )
         except Exception as exc:
             logger.warning("Failed to load Rig 1 settings: %s", exc)
 

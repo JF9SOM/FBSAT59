@@ -476,6 +476,21 @@ def _log_cat_call_diag(duration_ms: float, msg: str, *args: object) -> None:
         logger.info(msg, *args)
 
 
+# Diagnostics for 2026-10-12's "rig stops answering after a settings reload": every
+# Direct controller that holds a Hamlib handle is listed here by port, so a second
+# handle on the same serial port shows up in the log the moment it is opened.
+_direct_handles_lock = threading.Lock()
+_direct_handles: dict[int, str] = {}
+_direct_next_id = 0
+
+
+def _next_direct_id() -> int:
+    global _direct_next_id
+    with _direct_handles_lock:
+        _direct_next_id += 1
+        return _direct_next_id
+
+
 _hamlib_trace_lock = threading.Lock()
 _hamlib_file_trace_enabled = False
 
@@ -595,6 +610,11 @@ def _hamlib_ensure_file_trace() -> None:
         trace_path = _hamlib_trace_log_path()
         if trace_path is None:
             return
+        # Hamlib truncates the file when it opens it: keep the previous run's trace
+        # (2026-10-12: the trace of a 26 s CAT stall was lost to the next start).
+        with contextlib.suppress(OSError):
+            if os.path.getsize(trace_path) > 0:
+                os.replace(trace_path, trace_path + ".prev")
         try:
             import ctypes
 
@@ -602,6 +622,8 @@ def _hamlib_ensure_file_trace() -> None:
                 import Hamlib as _H
 
                 _H.rig_set_debug(_H.RIG_DEBUG_TRACE)
+                # time stamps let the trace be lined up with fbsat59.log
+                _H.rig_set_debug_time_stamp(1)
 
             # Bare guessed names ("libhamlib-4.dll", "libhamlib.dll")
             # confirmed live (2026-07-21) to NOT match this project's
@@ -1130,6 +1152,7 @@ class HamlibDirectController(RigController):
         # FT4 ADC RX: the per-second Doppler loop is replaced by writes made once
         # per period (see set_slot_sync()). FT-991/FT-991A only.
         self._slot_sync: bool = False
+        self._diag_id = _next_direct_id()
         # Prevents _apply_ctcss_civ (pyserial) and connect() (Hamlib rig.open())
         # from opening the serial port simultaneously.
         self._port_lock = threading.Lock()
@@ -1268,6 +1291,7 @@ class HamlibDirectController(RigController):
             with self._lock:
                 self._state = RigState.CONNECTED
             logger.info("RigDirect: connected to %s (model %d)", self._port, self._model_id)
+            self._diag_register_handle()
             return True
 
         except Exception as exc:
@@ -1295,6 +1319,36 @@ class HamlibDirectController(RigController):
             self._last_written_vfo = None
             with self._lock:
                 self._state = RigState.DISCONNECTED
+            self._diag_unregister_handle()
+
+    # -- Diagnostics: who holds a Hamlib handle on the serial port --
+
+    def _diag_register_handle(self) -> None:
+        with _direct_handles_lock:
+            others = sorted(i for i, p in _direct_handles.items() if p == self._port)
+            _direct_handles[self._diag_id] = self._port
+        msg = "RigDirect#%d: Hamlib handle OPEN on %s; other handles open on the same port: %s"
+        (logger.warning if others else logger.info)(
+            msg, self._diag_id, self._port, [f"#{i}" for i in others] or "none"
+        )
+
+    def _diag_unregister_handle(self) -> None:
+        with _direct_handles_lock:
+            had = _direct_handles.pop(self._diag_id, None)
+        if had is not None:
+            logger.info("RigDirect#%d: Hamlib handle CLOSED on %s", self._diag_id, self._port)
+
+    def diag_state(self) -> str:
+        """One line describing this controller for the logs (identity, port, state)."""
+        with self._lock:
+            state = self._state.name
+        with _direct_handles_lock:
+            listed = self._diag_id in _direct_handles
+        return (
+            f"RigDirect#{self._diag_id} port={self._port} state={state} "
+            f"hamlib_handle_open={self._rig is not None} listed={listed} "
+            f"slot_sync={self._slot_sync}"
+        )
 
     # -- Frequency and mode --
 
@@ -1353,6 +1407,7 @@ class HamlibDirectController(RigController):
         """
         if not self.is_connected or self._rig is None or self._ft991_cat_blocked():
             return False
+        t0 = time.monotonic()
         try:
             with self._rig_cmd_lock:
                 if self._ft991_cat_blocked():
@@ -1362,6 +1417,7 @@ class HamlibDirectController(RigController):
                         "RigDirect: slot write %s %d skipped (window closed)", which, int(hz)
                     )
                     return False
+                t0 = time.monotonic()
                 if which == "F":
                     self._rig.set_freq(self._vfo_str_to_const("VFOA"), int(hz))
                     _check_rig_ok(self._rig, "slot DL set_freq(VFOA)")
@@ -1374,9 +1430,21 @@ class HamlibDirectController(RigController):
                     finally:
                         _os.close(fd)
         except Exception as exc:
-            logger.info("RigDirect: slot write %s %d failed: %s", which, int(hz), exc)
+            ms = (time.monotonic() - t0) * 1000.0
+            logger.warning(
+                "RigDirect#%d: slot write %s %d failed after %.0f ms: %s%s",
+                self._diag_id,
+                which,
+                int(hz),
+                ms,
+                exc,
+                " (every Python thread was blocked meanwhile)" if ms > 500 else "",
+            )
             return False
-        logger.info("RigDirect: slot write %s %d -> ok", which, int(hz))
+        ms = (time.monotonic() - t0) * 1000.0
+        (logger.warning if ms >= 300 else logger.info)(
+            "RigDirect#%d: slot write %s %d -> ok (%.0f ms)", self._diag_id, which, int(hz), ms
+        )
         return True
 
     def write_dl_hz(self, hz: float, still_ok: Callable[[], bool] | None = None) -> bool:
@@ -1404,7 +1472,13 @@ class HamlibDirectController(RigController):
             return None, None
         if still_ok is not None and not still_ok():
             return None, None
+        t0 = time.monotonic()
         dl = self.get_frequency("VFOA")
+        ms = (time.monotonic() - t0) * 1000.0
+        if ms >= 300 or dl <= 0:
+            logger.warning(
+                "RigDirect#%d: dial read-back took %.0f ms, result %.0f", self._diag_id, ms, dl
+            )
         return (dl if dl > 0 else None), None
 
     def read_mode_name(self, still_ok: Callable[[], bool] | None = None) -> str | None:
@@ -1420,7 +1494,11 @@ class HamlibDirectController(RigController):
             with self._rig_cmd_lock:
                 if still_ok is not None and not still_ok():
                     return None
+                t0 = time.monotonic()
                 mode, _width = self._rig.get_mode(self._vfo_str_to_const("VFOA"))
+                ms = (time.monotonic() - t0) * 1000.0
+                if ms >= 300:
+                    logger.warning("RigDirect#%d: mode read took %.0f ms", self._diag_id, ms)
             hamlib = self._hamlib
             name = hamlib.rig_strrmode(mode) if hamlib is not None else None
             return str(name).strip() or None if name is not None else None

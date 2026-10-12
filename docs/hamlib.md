@@ -1431,3 +1431,31 @@ Direct: モデル 1035）で直した。他機種の挙動は変えていない�
 **FBSAT59 では止められないもの**: WSJT-X の送信中の FBSAT59 の書き込み（FBSAT59 は自分の PTT しか知らない。
 今日のパスで 83 件）、WSJT-X のポーリング（`Polling=3`）、ctld-launcher の `f` 生存確認。WSJT-X 併用時は
 `Polling` を大きくすること。実機未検証。
+
+## Direct モードで CAT が 26 秒止まり、アプリ全体が固まる（2026-10-12 調査中）
+
+**確認済み**: 応答しない疑似シリアルポート（pty）に対して Hamlib（FT-991、model 1035）の `set_freq` を
+別スレッドから呼ぶと **26.29 秒**かかり、**その間ほかの Python スレッドも 26.29 秒止まる**（Hamlib の呼び出しは
+GIL を手放さない）。ログの `AudioDeviceManager: input callback gap 26.3s` と一致。ブロック時間は Hamlib の
+`timeout` のほぼ 8.3 倍（100 ms→0.89 s、200 ms→1.69 s、500 ms→4.09 s、既定→26.3 s）で、`retry=0` でもあまり
+変わらない。`rig.set_conf("timeout", ...)` は `open()` の後でも効く。再現スクリプトは作業用（未コミット）。
+
+**実機ログ（2026-10-12 15:28〜15:49）**: Direct の接続 9 回のうち、Rig Settings の OK による自動再接続
+（`Rig1: was connected before settings reload — reconnecting`）の 2 回（15:34:51・15:38:01）は、2 回とも直後から
+応答がなく、最初の書き込みが 26 秒かかって `Hamlib error -5`（15:34 は 3 回連続）。起動後に手で押した Connect
+（15:37:18・15:38:44・15:41:06・15:49:19 ほか）では起きていない。15:38:01 は再接続の直前（15:37:58）まで書き込み成功。
+
+**仮説（未確認）**: 設定再読み込みでは旧い Hamlib コントローラーが閉じられず（`main_window._load_rig_settings`
+の「Hamlib コントローラーは意図的にそのまま」）、新しいコントローラーが同じシリアルポートをもう一度開くため、
+リグの返事が取り合いになる。
+
+**診断ログ（動作は変えない）**
+- `fbsat59.log`: `RigDirect#N: Hamlib handle OPEN on <port>; other handles open on the same port: [...]`
+  （他のハンドルがあれば WARNING）、`... CLOSED`、設定再読み込み時の
+  `Rig1 reload: superseded controller: ... | new controller: ...`（`hamlib_handle_open`・`listed`・`slot_sync`）。
+- スロット同期の Hamlib 呼び出し（DL 書き込み・読み戻し・モード読み取り）の所要時間。300 ms 以上は WARNING、
+  失敗は `failed after N ms`（500 ms 超は「全スレッドが止まっていた」と明記）。
+- `hamlib_trace.log`: 起動時に前回分を `hamlib_trace.log.prev` へ退避（以前は起動のたびに消えていた）。
+  Hamlib のタイムスタンプを有効にし、fbsat59.log と時刻を突き合わせられる。
+- 再現手順: Connect → ADC ON → Rig Settings で OK（自動再接続）→ `fbsat59.log` の `RigDirect#` の行と
+  `hamlib_trace.log`（失敗の瞬間の TX/RX バイト列）を確認。
