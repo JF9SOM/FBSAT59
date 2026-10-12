@@ -1490,6 +1490,7 @@ class MainWindow(QMainWindow):
             comm_menu.addAction(_("Telemetry"), self._on_open_telemetry)
             comm_menu.addAction(_("CW Decoder"), self._on_open_cw)
             comm_menu.addAction(_("SSTV / SSDV"), self._on_open_sstv)
+            comm_menu.addAction(_("Digital Voice"), self._on_open_digital_voice)
             comm_menu.addAction(_("METEOR / HRPT"), self._on_open_meteor)
 
         # Autotrack / Record
@@ -3282,6 +3283,23 @@ class MainWindow(QMainWindow):
         # SSDV mode starts AX.25 reception itself (shared AprsEngine singleton)
         tab = SstvTab(self._conn, self._radio_control, parent=self)
         self._comms_tab_keys[tab] = "sstv"
+        idx = self._tab_widget.addTab(tab, tab_label)
+        self._add_tab_close_button(tab)
+        self._tab_widget.setCurrentIndex(idx)
+        self._notify_comms_tab_of_rig_state(tab)
+
+    def _on_open_digital_voice(self) -> None:
+        """Open the Digital Voice tab (Communications > Digital Voice)."""
+        tab_label = _("Digital Voice")
+        for i in range(self._tab_widget.count()):
+            if self._tab_widget.tabText(i) == tab_label:
+                self._tab_widget.setCurrentIndex(i)
+                return
+
+        from ui.digital_voice_tab import DigitalVoiceTab
+
+        tab = DigitalVoiceTab(self._conn, self._radio_control, parent=self)
+        self._comms_tab_keys[tab] = "voice"
         idx = self._tab_widget.addTab(tab, tab_label)
         self._add_tab_close_button(tab)
         self._tab_widget.setCurrentIndex(idx)

@@ -1364,6 +1364,46 @@ HEX にして貼り付け→全パケット検出→`ssdv -d` で元サイズの
 
 **未対応・今後**: 200 bps 版。
 
+#### Digital Voice タブ — HADES-SA の CODEC2 音声（2026-10-12 実装）
+
+**メニュー: Communications > Digital Voice**（`src/ui/digital_voice_tab.py`、`COMMS_TAB_CONFIG["voice"]`）。HADES-SA
+（NORAD 68446、436.875 MHz、800 baud 2FSK）が衛星の BBS から繰り返し送る CODEC2 700C の音声メッセージ（最大約 15 秒）を、
+SDR で受信して一覧・再生・MP3 保存する。入力は SDR のみ（サウンドカードは非対応）。SDR 接続で自動開始、「Decode IQ Recording…」
+（SSTV タブと同じ SDR Control の Open…）で録音も復号できる。名前は「デジトーカー」と呼ばれるカテゴリーに近いが、FM 音声ではなく
+CODEC2 のデジタル音声なので「Digital Voice」とした。
+
+**データ形式**（AMSAT-EA の仕様書 V1.0 ＋ 公式 Soundmodem `hadessa.dll` の逆アセンブルで確定。仕様書だけでは足りなかった）:
+- type 11 パケット = 同期 `BF35`、size `0x25`（37）、type/address `0xB3`、フレーム番号 1 バイト（メッセージ内で 0, 1, 2 …）、
+  データ 35 バイト（280 ビット＝CODEC2 700C 10 フレーム）。**CRC は無い**。1 パケット 0.4 秒。
+- **データ 35 バイトは固定の 35 バイトのマスクと XOR されている**（`comms/voice/hades_voice.py` の `MASK`。仕様書には
+  書かれておらず、`hadessa.dll` の `visualiza_codec2` に埋め込まれていた）。乗算型スクランブラーではない
+  （最初に試したスクランブル解除は誤り。マスクの XOR を外すまで、声のような音が出るのに聞き取れなかった）。
+- XOR を外したあと 28 ビットずつ 10 フレームに分け、各フレームを 4 バイトに（下位 4 ビットを 0 で）揃えたものが
+  `c2dec 700C` / libcodec2 の入力（公式の `add_padding_codec2` と同じ。モードは公式 `run_codec2.bat` でも 700C）。
+- 公式の結合ツールは、パケットごとの 40 バイトをフレーム番号順に並べ、欠けた番号は 40 バイトの 0 で埋め、
+  CODEC2 の `.c2` ヘッダー（`C0 DE C2 01 02 08 00`）を付ける。本アプリは同じことを PCM 上で行い、欠けたパケットは 0.4 秒の無音にする。
+
+**実装**:
+- `comms/voice/hades_voice.py`: `FskVoiceSdrDemod`（`pipeline.subscribe()` で生 IQ を購読）。2FSK の復調は SSDV の
+  `comms/sstv/fsk_ssdv.py`（間引き・トーン探索・シンボル判定・パケットごとのタイミング再調整）と共通。同期語の誤りは
+  1 ビットまで、size=37・type=11・番号 200 以下を満たすものだけ採用（CRC が無いので、この 32 ビット近い条件が唯一の関門）。
+  `VoiceMessageAssembler` は、番号が戻る／3 秒間パケットが無いときにメッセージを区切る。
+- `comms/voice/codec2.py`: libcodec2 を ctypes で読み込む（LGPL。リンクはしない）。探索順はユーザーデータの `codec2/`、
+  凍結アプリの同梱、**gr-satellites の環境**（Telemetry タブの導入物に libcodec2 が入っている）、システム。
+  **libcodec2 のアプリ同梱（CI でのビルド）はまだ**。見つからない場合は「libcodec2 not found」と表示する。
+- `comms/voice/mp3.py`: lameenc で MP3 化（8 kHz の MP3 は再生環境により聞けないので 16 kHz へ変換）。
+  自動保存は `<Music>/FBSAT59-Voice/Voice_YYYYMMDD_HHMMSS.mp3`（チェックボックスで切替、3 パケット以上のメッセージのみ）。
+- 再生は `sounddevice` でシステム既定の出力（無線機の送信音声には絶対に流さない）。
+
+**検証**: 実録音（2026-10-12 04:54Z、307〜320 秒の 14.8 秒、パケット 3〜36 のうち 30 個）で、ストリーミング復調が
+手作業の解析と同じパケットを返し（処理時間は 30 秒分で約 1 秒）、復号した音声は何語か分かる程度に聞こえる。Whisper `small` は
+スペイン語として認識し、断片が『ドン・キホーテ』第 1 章の見出し（"Que trata de la condición y ejercicio del famoso hidalgo
+don Quijote de la Mancha"）と一致した（衛星の既定メッセージとして『ドン・キホーテ』の一節が入っていると紹介されている）。
+`tests/test_hades_voice.py`（合成 2FSK・マスク・アセンブラー・タブの購読／一覧。復号とストリームは libcodec2／scipy が無ければ skip）。
+**ライブ受信の実機検証と、libcodec2 の同梱はまだ**。
+
+**未対応・今後**: BBS へのアップリンク（200 bps FSK）、テレメトリー（type 1〜5 など）、200 bps の下り、type 15（BBS 内容）の表示。
+
 #### SSTV デコーダーの作り直しと起動バグの修正（2026-09-24）
 
 **判明したこと（それまで SSTV タブは実質的に動いていなかった）**:

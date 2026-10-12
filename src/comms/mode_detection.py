@@ -56,6 +56,13 @@ def is_sstv_transmitter(xpdr: dict[str, Any]) -> bool:
     return "SSTV" in desc or "SSDV" in desc or "IMAGING" in desc
 
 
+def is_digital_voice_transmitter(xpdr: dict[str, Any]) -> bool:
+    """Transmitters the Digital Voice tab handles: CODEC2 voice (HADES-SA, NORAD 68446)."""
+    if xpdr.get("norad_cat_id") == 68446:
+        return True
+    return "CODEC2" in (xpdr.get("description") or "").upper().replace(" ", "")
+
+
 def is_cw_transmitter(xpdr: dict[str, Any]) -> bool:
     mode = (xpdr.get("mode") or "").upper()
     return mode in ("CW", "CW-R")
@@ -278,6 +285,11 @@ COMMS_TAB_CONFIG: dict[str, CommsTabConfig] = {
         split_by_band=True,
     ),
     "cw": CommsTabConfig(show_input_source=False, freq_source="radio_control"),
+    "voice": CommsTabConfig(
+        show_input_source=False,
+        freq_source="radio_control",
+        matcher=is_digital_voice_transmitter,
+    ),
     "q65": CommsTabConfig(show_input_source=False, freq_source=None),
     "meteor": CommsTabConfig(
         show_input_source=False, freq_source="satdump", show_rig_buttons=False
