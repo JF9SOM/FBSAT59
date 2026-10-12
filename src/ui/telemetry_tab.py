@@ -17,11 +17,13 @@ and can be exported as CSV.
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import csv
 import datetime
 import json
 import logging
+import re
 import sqlite3
 import time
 from collections import deque
@@ -164,6 +166,40 @@ class _SatnogsApiKeyDialog(QDialog):
 def format_frame_hex(raw: bytes) -> str:
     """*raw* as upper-case hex bytes separated by spaces (``94 A6 62 ...``)."""
     return raw.hex(" ").upper()
+
+
+def parse_gr_packet(text: str) -> tuple[list[str], bytes | None]:
+    """Pull the AX.25 addresses and the info field out of a gr-satellites packet printout.
+
+    gr-satellites prints a decoded AX.25 packet as a construct dump: one ``callsign = u'X'``
+    and ``ssid = N`` per address (destination, source, then digipeaters) and the payload as
+    ``info = b'...' (total N)``. Returns the addresses as ``CALL`` / ``CALL-N`` strings and
+    the info bytes; an empty list / None when the text has no such part (a non-AX.25 packet).
+    """
+    addresses: list[str] = []
+    ssids: list[int] = []
+    info: bytes | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        match = re.match(r"callsign = u?(['\"])(.*)\1", stripped)
+        if match:
+            addresses.append(match.group(2).strip())
+            ssids.append(0)
+            continue
+        match = re.fullmatch(r"ssid = (\d+)", stripped)
+        if match and ssids:
+            ssids[-1] = int(match.group(1))
+            continue
+        match = re.match(r"info = (b(['\"]).*\2)(?: \(total \d+\))?$", stripped)
+        if match:
+            try:
+                value = ast.literal_eval(match.group(1))
+            except (ValueError, SyntaxError):
+                continue
+            if isinstance(value, bytes):
+                info = value
+    labels = [f"{c}-{n}" if n else c for c, n in zip(addresses, ssids, strict=True)]
+    return labels, info
 
 
 # Item role marking a Received Frames row as a rejected candidate (drawn muted).
@@ -561,15 +597,12 @@ class TelemetryTab(QWidget):
         self._table.horizontalHeader().setFont(_header_font)
         self._table.verticalHeader().setFont(_header_font)
         raw_page_layout.addWidget(self._table)
-        # gr-satellites mode has no "Decoded Fields" tab (the tab bar is hidden), so the
-        # full decoded text of the selected row -- one field per line, as gr-satellites
-        # prints it -- is shown here instead.
+        # gr-satellites mode: the full decoded text of the selected row -- one field per
+        # line, as gr-satellites prints it -- is the last sub-tab of "Decoded Fields" (the only
+        # one for a satellite without a format file; see _rebuild_decode_tabs()).
         self._gr_detail = QPlainTextEdit()
         self._gr_detail.setReadOnly(True)
-        self._gr_detail.setMaximumHeight(220)
         self._gr_detail.setPlaceholderText(_("Select a frame to see all its decoded fields."))
-        self._gr_detail.setVisible(False)
-        raw_page_layout.addWidget(self._gr_detail)
         self._log_tabs.addTab(self._raw_page, _("Received Frames"))
 
         # "Decoded Fields" page: one inner sub-tab per telemetry ID, built
@@ -1087,17 +1120,11 @@ class TelemetryTab(QWidget):
         for widget in (self._lbl_baud, self._baud_combo, self._btn_backend_log):
             widget.setVisible(not is_cw)
         self._btn_satnogs_send.setVisible(True)
-        # gr-satellites already turns each frame into human-readable text
-        # itself (see _on_gr_telemetry()'s "-> Packet from" parsing), so the
-        # "Decoded Fields" sub-tab — built from this project's own
-        # telemetry_ids format files — only applies to Direwolf (AX.25)
-        # mode. Hide the sub-tab bar entirely in gr-satellites mode rather
-        # than just disabling the tab, so it reads as a single plain table
-        # like before this feature existed.
-        self._log_tabs.tabBar().setVisible(not is_gr)
-        self._gr_detail.setVisible(is_gr)
-        if is_gr:
-            self._log_tabs.setCurrentWidget(self._raw_page)
+        # Both sub-tabs exist in every mode. In gr-satellites mode "Decoded Fields" shows this
+        # project's own format file for the satellite when it has one, plus gr-satellites'
+        # own full text of the selected frame.
+        self._rebuild_decode_tabs(self._selected_norad)
+        self._log_tabs.setCurrentWidget(self._raw_page)
         if is_cw and self._combo_cw_sat.count():
             # Select the combo's satellite the way changing the combo would, so the
             # satellite list, Radio Control and the Decoded Fields tabs follow.
@@ -1764,6 +1791,13 @@ class TelemetryTab(QWidget):
             )
             sat_name = str(info.get("name", "")) if info else ""
         data_text = "  |  ".join(data_lines) if data_lines else text[:120]
+        addresses, info_bytes = parse_gr_packet(text)
+        if info_bytes is not None:
+            # like the AX.25 mode: the data column is the frame's bytes in HEX; the decoded
+            # fields are in the "Decoded Fields" tab
+            data_text = format_frame_hex(info_bytes)
+        if len(addresses) > 1:
+            callsign = addresses[1]  # the source address; the first is the destination
         full_text = "\n".join(
             line.rstrip()
             for line in text.splitlines()
@@ -1791,6 +1825,9 @@ class TelemetryTab(QWidget):
         )
         row_data.log_id = self._persist_gr_row(callsign, sat_name, data_text, row_data, full_text)
         self._mark_row_logged(self._table.rowCount() - 1, row_data.log_id)
+        tf = self._decode_gr_text(text)
+        if tf is not None and tf.has_fields:
+            self._update_decode_tab(tf)
 
     def _on_gr_raw_frame(self, raw: bytes) -> None:
         """Forward a gr-satellites --kiss_server data frame to SatNOGS DB.
@@ -2169,9 +2206,12 @@ class TelemetryTab(QWidget):
         self._decode_tabs_norad = norad
 
         id_defs = get_telemetry_id_defs(norad)
+        is_gr = self._current_mode() == _MODE_GR
         decode_tab_index = self._log_tabs.indexOf(self._decode_page)
-        self._log_tabs.setTabEnabled(decode_tab_index, bool(id_defs))
+        self._log_tabs.setTabEnabled(decode_tab_index, bool(id_defs) or is_gr)
         if not id_defs:
+            if is_gr:
+                self._decode_id_tabs.addTab(self._gr_detail, _("gr-satellites output"))
             return
 
         # Keys are either numeric (OrigamiSat-2's "65"/"100"/"130") or a
@@ -2198,6 +2238,8 @@ class TelemetryTab(QWidget):
             self._decode_tables[id_str] = table
             self._decode_field_rows[id_str] = row_map
             self._decode_id_tabs.addTab(table, id_def.get("label", f"ID{id_str}"))
+        if is_gr:
+            self._decode_id_tabs.addTab(self._gr_detail, _("gr-satellites output"))
 
     def _on_table_selection_changed(self) -> None:
         """Show the selected row's decoded fields in the "Decoded Fields" tab.
@@ -2217,6 +2259,12 @@ class TelemetryTab(QWidget):
         gr_text = item.data(_GR_TEXT_ROLE)
         if isinstance(gr_text, str):
             self._gr_detail.setPlainText(gr_text)
+            tf = self._decode_gr_text(gr_text)
+            if tf is not None and tf.has_fields:
+                self._update_decode_tab(tf)
+                table = self._decode_tables.get(str(tf.telemetry_id))
+                if table is not None:
+                    self._decode_id_tabs.setCurrentWidget(table)
             return
         tf = item.data(_DECODED_ROLE)
         if not isinstance(tf, TelemetryFrame):
@@ -2227,6 +2275,14 @@ class TelemetryTab(QWidget):
         table = self._decode_tables.get(str(tf.telemetry_id))
         if table is not None:
             self._decode_id_tabs.setCurrentWidget(table)
+
+    def _decode_gr_text(self, text: str) -> TelemetryFrame | None:
+        """Decode the info field of a gr-satellites packet with the satellite's format file."""
+        addresses, info = parse_gr_packet(text)
+        if not info or self._selected_norad is None:
+            return None
+        source = addresses[1] if len(addresses) > 1 else ""
+        return decode_telemetry(source, info, self._selected_norad)
 
     def _decode_ax25_row(self, value: object, row: int) -> TelemetryFrame | None:
         """Decode a received AX.25 row again (None if *value* is not one)."""
@@ -2253,11 +2309,18 @@ class TelemetryTab(QWidget):
         """
         if tf.telemetry_id is None or not tf.has_fields or tf.norad != self._decode_tabs_norad:
             return
-        id_str = str(tf.telemetry_id)
-        table = self._decode_tables.get(id_str)
-        row_map = self._decode_field_rows.get(id_str)
-        if table is None or row_map is None:
-            return
+        # A frame of several records feeds one sub-tab per record (field names are unique).
+        for id_str in tf.record_ids or [str(tf.telemetry_id)]:
+            table = self._decode_tables.get(id_str)
+            row_map = self._decode_field_rows.get(id_str)
+            if table is not None and row_map is not None:
+                self._fill_decode_table(table, row_map, tf)
+
+    @staticmethod
+    def _fill_decode_table(
+        table: QTableWidget, row_map: dict[str, int], tf: TelemetryFrame
+    ) -> None:
+        """Write the values of *tf*'s fields into the rows of one "Decoded Fields" table."""
         for f in tf.fields:
             row = row_map.get(f.name)
             if row is None:

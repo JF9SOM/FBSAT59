@@ -1,0 +1,334 @@
+{
+  "norad": 57172,
+  "name": "UmKA-1",
+  "callsign": "RS40S",
+  "modulation": "GFSK9k6",
+  "ax25_pid": "0xF0",
+  "reference": "https://gitlab.com/librespacefoundation/satnogs/satnogs-decoders/-/blob/master/ksy/sputnixusp.ksy",
+  "document": "SatNOGS decoders \"sputnixusp.ksy\" (Kaitai Struct), Sputnix Unified Protocol. Only the record types seen in a real 2026-10-12 recording (0x4246, 0xDE21) are defined.",
+  "records": {
+    "types": {
+      "4246": {
+        "id": "beacon_uhf",
+        "label": "UHFビーコン(0x4246)",
+        "fields": [
+          {
+            "name": "uhf_t_amp",
+            "offset": 0,
+            "length": 1,
+            "type": "int8",
+            "label": "UHFアンプ温度",
+            "unit": "℃"
+          },
+          {
+            "name": "uhf_t_uhf",
+            "offset": 1,
+            "length": 1,
+            "type": "int8",
+            "label": "UHF温度",
+            "unit": "℃"
+          },
+          {
+            "name": "uhf_rss_rx",
+            "offset": 2,
+            "length": 1,
+            "type": "uint8",
+            "label": "受信信号強度(RSSI、負値)",
+            "scale": -1.0,
+            "unit": "dBm"
+          },
+          {
+            "name": "uhf_rssi_idle",
+            "offset": 3,
+            "length": 1,
+            "type": "uint8",
+            "label": "アイドル時ノイズRSSI(負値)",
+            "scale": -1.0,
+            "unit": "dBm"
+          },
+          {
+            "name": "uhf_pf",
+            "offset": 4,
+            "length": 1,
+            "type": "int8",
+            "label": "進行波電力",
+            "unit": "dBm"
+          },
+          {
+            "name": "uhf_pb",
+            "offset": 5,
+            "length": 1,
+            "type": "int8",
+            "label": "反射波電力",
+            "unit": "dBm"
+          },
+          {
+            "name": "uhf_nres",
+            "offset": 6,
+            "length": 1,
+            "type": "uint8",
+            "label": "UHFリセット回数"
+          },
+          {
+            "name": "uhf_flags",
+            "offset": 7,
+            "length": 1,
+            "type": "uint8",
+            "label": "UHFサービスフラグ(生値)"
+          },
+          {
+            "name": "uhf_time",
+            "offset": 8,
+            "length": 4,
+            "type": "unix_time_le",
+            "label": "UHF時刻(UTC)"
+          },
+          {
+            "name": "uhf_uptime",
+            "offset": 12,
+            "length": 4,
+            "type": "uint32_le",
+            "label": "UHF稼働時間",
+            "unit": "s"
+          },
+          {
+            "name": "uhf_rxbitrate",
+            "offset": 16,
+            "length": 4,
+            "type": "uint32_le",
+            "label": "アップリンクビットレート",
+            "unit": "bps"
+          },
+          {
+            "name": "uhf_current",
+            "offset": 20,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "UHF消費電流",
+            "unit": "mA"
+          },
+          {
+            "name": "uhf_voltage",
+            "offset": 22,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "UHF電圧",
+            "unit": "mV"
+          },
+          {
+            "name": "uhf_sch_reserved",
+            "offset": 24,
+            "length": 1,
+            "type": "uint8",
+            "label": "(予約ビット)",
+            "mask": 128
+          },
+          {
+            "name": "uhf_backup_sch_active",
+            "offset": 24,
+            "length": 1,
+            "type": "uint8",
+            "label": "バックアップスケジュール実行中",
+            "mask": 64
+          },
+          {
+            "name": "uhf_reset_during_sch",
+            "offset": 24,
+            "length": 1,
+            "type": "uint8",
+            "label": "スケジュール実行中にリセット発生",
+            "mask": 32
+          },
+          {
+            "name": "uhf_num_active_schedules",
+            "offset": 24,
+            "length": 1,
+            "type": "uint8",
+            "label": "有効スケジュール数",
+            "mask": 31
+          }
+        ]
+      },
+      "DE21": {
+        "id": "telemetry_ps",
+        "label": "電源系(PS)定期テレメトリ(0xDE21)",
+        "fields": [
+          {
+            "name": "ps_usb1",
+            "offset": 0,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "太陽電池1電圧",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_usb2",
+            "offset": 2,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "太陽電池2電圧",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_usb3",
+            "offset": 4,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "太陽電池3電圧",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_isb1",
+            "offset": 6,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "太陽電池1電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_isb2",
+            "offset": 8,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "太陽電池2電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_isb3",
+            "offset": 10,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "太陽電池3電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_iab",
+            "offset": 12,
+            "length": 2,
+            "type": "int16_le",
+            "label": "バッテリー電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_ich1",
+            "offset": 14,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "チャンネル1電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_ich2",
+            "offset": 16,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "チャンネル2電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_ich3",
+            "offset": 18,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "チャンネル3電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_ich4",
+            "offset": 20,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "チャンネル4電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_t1",
+            "offset": 22,
+            "length": 2,
+            "type": "int16_le",
+            "label": "バッテリー温度1(生値・単位未確認)"
+          },
+          {
+            "name": "ps_t2",
+            "offset": 24,
+            "length": 2,
+            "type": "int16_le",
+            "label": "バッテリー温度2(生値・単位未確認)"
+          },
+          {
+            "name": "ps_t3",
+            "offset": 26,
+            "length": 2,
+            "type": "int16_le",
+            "label": "バッテリー温度3(生値・単位未確認)"
+          },
+          {
+            "name": "ps_t4",
+            "offset": 28,
+            "length": 2,
+            "type": "int16_le",
+            "label": "バッテリー温度4(生値・単位未確認)"
+          },
+          {
+            "name": "ps_flags1",
+            "offset": 30,
+            "length": 1,
+            "type": "uint8",
+            "label": "フラグ1(バッテリー/ヒーター・生値)"
+          },
+          {
+            "name": "ps_flags2",
+            "offset": 31,
+            "length": 1,
+            "type": "uint8",
+            "label": "フラグ2(チャンネル状態・生値)"
+          },
+          {
+            "name": "ps_flags3",
+            "offset": 32,
+            "length": 1,
+            "type": "uint8",
+            "label": "フラグ3(充電コネクタ電圧・生値)"
+          },
+          {
+            "name": "ps_uab",
+            "offset": 34,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "バッテリー電圧",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_reg_tel_id",
+            "offset": 36,
+            "length": 4,
+            "type": "uint32_le",
+            "label": "PSテレメトリ番号"
+          },
+          {
+            "name": "ps_time",
+            "offset": 40,
+            "length": 4,
+            "type": "uint32_le",
+            "label": "PS最終テレメトリ時刻(生値)",
+            "unit": "s"
+          },
+          {
+            "name": "ps_nres",
+            "offset": 44,
+            "length": 1,
+            "type": "uint8",
+            "label": "PSリセット回数"
+          },
+          {
+            "name": "ps_flags",
+            "offset": 45,
+            "length": 1,
+            "type": "uint8",
+            "label": "PSフラグ(生値)"
+          }
+        ]
+      }
+    }
+  }
+}

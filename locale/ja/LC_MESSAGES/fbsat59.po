@@ -7275,3 +7275,7 @@ msgstr "（{shown}/{total}文字を表示、以下省略）"
 
 #~ msgid "TX Doppler"
 #~ msgstr "送信ドップラー補正"
+
+#: src/ui/telemetry_tab.py
+msgid "gr-satellites output"
+msgstr "gr-satellites 出力"

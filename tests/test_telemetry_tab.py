@@ -1296,3 +1296,66 @@ def test_a_saved_gr_row_shows_its_text_again_when_selected(
     assert tab._load_saved_frames(25544, gr=True) == 1
     tab._table.selectRow(0)
     assert saved_text.toPlainText() == "-> Packet from FOO\n    a = 1\n    b = 2"
+
+
+_UMKA1_GR_TEXT = (
+    "-> Packet from 9k6 FSK USP downlink\n"
+    "Container:\n"
+    "    header = Container:\n"
+    "        addresses = ListContainer:\n"
+    "            Container:\n"
+    "                callsign = u'R3DDF' (total 5)\n"
+    "                ssid = Container:\n"
+    "                    ssid = 0\n"
+    "            Container:\n"
+    "                callsign = u'RS40S' (total 5)\n"
+    "                ssid = Container:\n"
+    "                    ssid = 1\n"
+    "    info = b'FB\\x02\\x00\\x01\\x00\\x19\\x00\\x05\\x04\\xffm!\\x13%\\x0e\"\\xcc\\xccjz-"
+    "\\x00\\x00\\x80%\\x00\\x00,\\x00,\\x1f\\x00' (total 33)"
+)
+
+
+def test_parse_gr_packet_reads_addresses_and_info() -> None:
+    addresses, info = telemetry_tab_mod.parse_gr_packet(_UMKA1_GR_TEXT)
+    assert addresses == ["R3DDF", "RS40S-1"]
+    assert info is not None and info.startswith(b"FB\x02\x00") and len(info) == 33
+
+
+def test_parse_gr_packet_without_ax25_parts() -> None:
+    assert telemetry_tab_mod.parse_gr_packet("-> Packet from X\n  a = 1") == ([], None)
+
+
+def test_gr_mode_has_both_sub_tabs_and_shows_the_source_callsign(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, _rec = _gr_tab(qtbot, conn, monkeypatch)
+    tab.show()
+    tab._combo_mode.setCurrentIndex(tab._combo_mode.findText(telemetry_tab_mod._MODE_GR))
+    assert tab._log_tabs.tabBar().isVisible()
+    assert tab._log_tabs.isTabEnabled(tab._log_tabs.indexOf(tab._decode_page))
+    # a satellite without a format file: the gr-satellites text is the only sub-tab
+    assert tab._decode_id_tabs.count() == 1
+    assert tab._decode_id_tabs.widget(0) is tab._gr_detail
+
+    tab._on_gr_telemetry(_UMKA1_GR_TEXT)
+    assert tab._table.item(0, 1).text() == "RS40S-1"
+    assert tab._table.item(0, 3).text().startswith("46 42 02 00 01 00 19 00")
+
+
+def test_gr_row_with_a_format_file_fills_the_decoded_fields(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, _rec = _gr_tab(qtbot, conn, monkeypatch)
+    tab._combo_mode.setCurrentIndex(tab._combo_mode.findText(telemetry_tab_mod._MODE_GR))
+    tab.set_satellite(57172, "UmKA-1")
+    labels = [tab._decode_id_tabs.tabText(i) for i in range(tab._decode_id_tabs.count())]
+    assert len(labels) == 3 and labels[-1] == "gr-satellites output"
+
+    tab._on_gr_telemetry(_UMKA1_GR_TEXT)
+    table = tab._decode_tables["beacon_uhf"]
+    row = tab._decode_field_rows["beacon_uhf"]["uhf_t_amp"]
+    assert table.item(row, 1).text() == "5 ℃"
+    # leaving gr mode takes the gr-satellites text tab away again
+    tab._combo_mode.setCurrentIndex(0)
+    assert tab._decode_id_tabs.count() == 2

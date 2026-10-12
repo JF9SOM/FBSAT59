@@ -395,11 +395,40 @@ ADCS内部時刻（ユリウス日）・衛星位置速度（ECEF、m/m/s）がd
   だけを最新値に上書きする（テーブルを作り直さない、ライブ更新）。`tf.norad`が
   `_rebuild_decode_tabs()`時点の衛星と一致しない場合（例: Favoriteグループ表示中に
   別衛星のフレームが紛れ込んだ場合）は無視する
-- **gr-satellitesモードでは常にサブタブ非表示**: gr-satellitesは自前で人間可読テキストに
-  変換して`_append_row()`に渡す設計（[telemetry_tab.py:793](../src/ui/telemetry_tab.py:793)
-  付近の`"-> Packet from"`パース）のため、この機能の対象外。`_on_mode_changed()`で
-  `self._log_tabs.tabBar().setVisible(not is_gr)`によりタブバー自体を隠し、gr-satellites
-  モードでは今まで通り単一テーブルに見えるようにしている
+- **gr-satellitesモードでもサブタブは出す（2026-10-12 変更）**: 以前は gr モードでサブタブ非表示・
+  表の下に全文ペイン（`_gr_detail`）だったが、UmKA-1 の gr-satellites 受信成功を機に AX.25 と同じ
+  2 サブタブにした。「受信フレーム」の表は `時刻 / コールサイン(送信元, 例 `RS40S-1`) / 衛星 / データ`
+  で、データ列は AX.25 モードと同じく info フィールドの HEX（`parse_gr_packet()` が gr-satellites の
+  `callsign = u'..'` / `ssid = N` / `info = b'..'` の出力を解析）。従来はコールサイン列に
+  `-> Packet from` の後ろ（送信機名 `9k6 FSK USP downlink`）が入り、データ列は 100 行超を `|` で
+  つないだ文字列で、行が数千 px になり他列が画面外へ出ていた（空欄に見えた原因）。
+  「全項目デコード結果」は、衛星に `telemetry_formats/{norad}.json` があればその内部タブ
+  （下記 `records` スキーマ等）、**最後の内部タブ「gr-satellites 出力」は常に**（選択行の gr-satellites
+  全文。定義の無い衛星ではこれだけ）。`_rebuild_decode_tabs()` はモード切替でも呼び直す。
+
+### UmKA-1（NORAD 57172）と `records` スキーマ（2026-10-12）
+
+UmKA-1（RS-40S）は Sputnix Unified Protocol（9k6 FSK USP、gr-satellites の送信機
+`9k6 FSK USP downlink`）。SatNOGS DB のデコーダーは `sputnixusp`（[sputnixusp.ksy](https://gitlab.com/librespacefoundation/satnogs/satnogs-decoders/-/raw/master/ksy/sputnixusp.ksy)）。
+AX.25 の info フィールドは `u16 type, u16, u16, u16 len`（リトルエンディアン）＋本体 `len` バイトの
+**レコードの繰り返し**で、1 フレームに複数レコードが入る。この形のため新スキーマ `records`
+（`decoder._decode_records()`）を追加した: `{"types": {"4246": {"id", "label", "fields"}}}`、
+`fields` のオフセットは**レコード本体先頭基準**。1 フレームで複数の内部タブが同時に更新される
+（`TelemetryFrame.record_ids`、フィールド名はレコードをまたいで一意にしておく）。フィールド型に
+`unix_time_le`、整数型のビット抽出 `mask` を追加。
+
+- **定義済みは実受信で確認した 2 種のみ**: `0x4246` UHF ビーコン（25 B）、`0xDE21` PS 定期テレメトリ
+  （46 B）。ksy にはさらに `0x4216`（general）・`0xED21`（5ch）・`0xDF25`（6U）があるが未実装
+  （実フレーム未確認。必要なら同じ要領で `57172.json` へ追加）。
+- **実データでの裏付け**: 2026-10-12 のパス（IQ 録音 11:57:38Z 開始）の 6 フレームで、UHF 時刻
+  `uhf_time` が 12:01:38〜12:04:08Z（バースト 220〜370 秒と一致）、`uhf_rxbitrate`=9600、
+  UHF 電圧と電池電圧が約 7.97〜7.98 V で一致、PS テレメトリ番号と UHF 稼働時間がともに約 1 秒刻み。
+- **未確認・要注意**: `ps_t1..4`（電池温度）は ksy では ℃ だが生値が 506〜575 で単位が不明なため
+  生値表示。`uhf_rss_rx` は常に 255（-255 dBm と表示。受信なしの値と**推測**）。`ps_time` は
+  2018 年の UNIX 時刻になり PS の時計が未同期とみられる（生値の秒数のまま表示）。各 `flags` は
+  ビット配置の確認が取れていないため生値。
+- **IQ 録音の解析**: 録音 682 秒に 30 秒周期のバーストが 220〜400 秒の 7 発（0 Hz 付近）。gr-satellites
+  は 6 フレーム復号。最後（400 秒、約 7.7 dB）が未復号なのかは未確認。
 
 ### rawプレビューの切り詰め表示（2026-09-13 追加）
 

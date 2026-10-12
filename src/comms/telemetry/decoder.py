@@ -94,6 +94,9 @@ class TelemetryFrame:
     signal_db: float | None = None
     telemetry_id: int | str | None = None
     telemetry_label: str = ""
+    # For a frame carrying several records (see the ``records`` schema), the id of every
+    # record found, in order; ``telemetry_id`` is then the first of them.
+    record_ids: list[str] = field(default_factory=list)
 
     @property
     def has_fields(self) -> bool:
@@ -170,10 +173,11 @@ def _decode_field(payload: bytes, field_def: dict[str, Any]) -> TelemetryField |
             is_string=True,
         )
 
-    if ftype == "unix_time":
-        # Big-endian uint32 seconds since 1970-01-01 UTC, shown as a date.
-        # This is the satellite's own clock, not the reception time.
-        (seconds,) = struct.unpack_from(">I", chunk)
+    if ftype in ("unix_time", "unix_time_le"):
+        # uint32 seconds since 1970-01-01 UTC (big-endian, or little-endian for
+        # "unix_time_le"), shown as a date. This is the satellite's own clock, not the
+        # reception time.
+        (seconds,) = struct.unpack_from(">I" if ftype == "unix_time" else "<I", chunk)
         try:
             shown = datetime.fromtimestamp(seconds, tz=UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
         except (OverflowError, OSError, ValueError):
@@ -197,6 +201,13 @@ def _decode_field(payload: bytes, field_def: dict[str, Any]) -> TelemetryField |
     except struct.error:
         return None
 
+    mask = field_def.get("mask")
+    if mask is not None and isinstance(raw, int):
+        # A bit field inside the integer: keep the masked bits, shifted down to bit 0.
+        mask = int(mask)
+        shift = (mask & -mask).bit_length() - 1 if mask else 0
+        raw = (raw & mask) >> shift
+
     return TelemetryField(
         name=field_def["name"],
         label=label,
@@ -208,7 +219,7 @@ def _decode_field(payload: bytes, field_def: dict[str, Any]) -> TelemetryField |
         # apart from a genuinely fractional measurement (e.g. a float32
         # voltage, or an integer scaled into physical units) so the UI can
         # skip pointless trailing zeros for the former.
-        is_integer=(ftype not in _FLOAT_TYPES and scale == 1.0),
+        is_integer=(ftype not in _FLOAT_TYPES and float(scale).is_integer()),
     )
 
 
@@ -322,6 +333,12 @@ def get_telemetry_id_defs(norad: int | None) -> dict[str, Any] | None:
     if not defs and fmt.get("match") and fmt.get("fields"):
         defs = {BEACON_ID: {"label": fmt.get("beacon_label", "Beacon"), "fields": fmt["fields"]}}
 
+    # A ``records`` schema (Sputnix Unified Protocol, e.g. UmKA-1): one sub-tab per record type.
+    records = fmt.get("records")
+    if isinstance(records, dict) and isinstance(records.get("types"), dict):
+        for rec in records["types"].values():
+            defs[str(rec["id"])] = {"label": rec.get("label", rec["id"]), "fields": rec["fields"]}
+
     cw_frames = fmt.get("cw_frames")
     if isinstance(cw_frames, dict) and cw_frames:
         for k, v in cw_frames.items():
@@ -350,6 +367,39 @@ def _payload_matches(match: dict[str, Any] | None, payload: bytes) -> bool:
     return payload[offset : offset + len(pattern)] == pattern
 
 
+# Record header of the ``records`` schema: u16 type, u16, u16, u16 body length (little-endian).
+_RECORD_HEADER = struct.Struct("<HHHH")
+
+
+def _decode_records(
+    records: dict[str, Any], payload: bytes
+) -> tuple[list[str], list[TelemetryField]]:
+    """Walk the records in *payload* and decode those the format file defines.
+
+    Each record is ``u16 type, u16, u16, u16 length`` (little-endian) followed by
+    *length* body bytes; the file's ``records.types`` maps the type (4 hex digits)
+    to ``{"id", "label", "fields"}`` whose field offsets are relative to the body.
+    Records of an unknown type are skipped. Returns the ids found and all fields.
+    """
+    types = records.get("types", {})
+    ids: list[str] = []
+    fields: list[TelemetryField] = []
+    pos = 0
+    while pos + _RECORD_HEADER.size <= len(payload):
+        rtype, _skip1, _skip2, length = _RECORD_HEADER.unpack_from(payload, pos)
+        body = payload[pos + _RECORD_HEADER.size : pos + _RECORD_HEADER.size + length]
+        pos += _RECORD_HEADER.size + length
+        rec = types.get(f"{rtype:04X}")
+        if rec is None or len(body) < length:
+            continue
+        ids.append(str(rec["id"]))
+        for fd in rec["fields"]:
+            result = _decode_field(body, fd)
+            if result is not None:
+                fields.append(result)
+    return ids, fields
+
+
 def decode_telemetry(
     callsign: str,
     payload: bytes,
@@ -368,6 +418,8 @@ def decode_telemetry(
       (``payload[2]`` in this project's common FM header layout), for
       satellites whose downlink carries several distinct *binary*
       structures (e.g. OrigamiSat-2); or
+    - a ``records`` schema (a sequence of typed, length-prefixed records in one
+      frame, e.g. UmKA-1's Sputnix Unified Protocol; see _decode_records());
     - a ``csv_messages`` mapping keyed by a text prefix (e.g. "OBC"), for
       satellites whose downlink is plain comma-separated ASCII text
       (e.g. Marina) — fields are located by token position, not byte
@@ -380,11 +432,17 @@ def decode_telemetry(
     decoded_fields: list[TelemetryField] = []
     telemetry_id: int | str | None = None
     telemetry_label = ""
+    record_ids: list[str] = []
 
     csv_messages = fmt.get("csv_messages") if fmt else None
     telemetry_ids = fmt.get("telemetry_ids") if fmt else None
+    records = fmt.get("records") if fmt else None
 
-    if csv_messages:
+    if isinstance(records, dict):
+        record_ids, decoded_fields = _decode_records(records, payload)
+        if record_ids:
+            telemetry_id = record_ids[0]
+    elif csv_messages:
         text = payload.decode("ascii", errors="ignore")
         for key, msg_def in csv_messages.items():
             if not text.startswith(f"{key},"):
@@ -423,4 +481,5 @@ def decode_telemetry(
         fields=decoded_fields,
         telemetry_id=telemetry_id,
         telemetry_label=telemetry_label,
+        record_ids=record_ids,
     )

@@ -177,3 +177,32 @@ def test_decode_origamisat2_onboard_time_shown_as_date() -> None:
     assert by_name["onboard_unix_time"].is_string
     assert by_name["onboard_unix_time"].unit == "2026-07-28 17:44:34 UTC"
     assert by_name["telemetry_count"].scaled_value == 0x23
+
+
+# A real UmKA-1 (NORAD 57172) frame info field (gr-satellites output of the 2026-10-12 pass
+# recording): a 0x4246 UHF beacon record followed by a 0xDE21 PS telemetry record.
+_UMKA1_INFO = bytes.fromhex(
+    "46420200010019000504ff6d2113250e22cccc6a7a2d0000802500002c002c1f0021de04"
+    "0001002e00070004000400000000000000dbff000024000000000038021f02fa013f0200"
+    "200000201f852d0000622a955aea04"
+)
+
+
+def test_umka1_records_are_decoded_with_the_sputnix_layout() -> None:
+    assert len(_UMKA1_INFO) == 87
+    tf = decode_telemetry("RS40S-1", _UMKA1_INFO, 57172)
+    assert tf.record_ids == ["beacon_uhf", "telemetry_ps"]
+    by_name = {f.name: f for f in tf.fields}
+    assert by_name["uhf_t_amp"].scaled_value == 5
+    assert by_name["uhf_rxbitrate"].scaled_value == 9600
+    assert by_name["uhf_time"].unit == "2026-10-12 12:01:38 UTC"
+    assert by_name["uhf_voltage"].scaled_value == 7980
+    assert by_name["ps_iab"].scaled_value == -37
+    assert by_name["ps_uab"].scaled_value == 7968
+    assert by_name["ps_reg_tel_id"].scaled_value == 11653
+
+
+def test_umka1_defs_have_one_sub_tab_per_record() -> None:
+    defs = get_telemetry_id_defs(57172)
+    assert defs is not None
+    assert list(defs) == ["beacon_uhf", "telemetry_ps"]
