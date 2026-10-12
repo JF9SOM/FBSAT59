@@ -69,6 +69,7 @@ _MODE_SSDV = "SSDV (AX.25)"
 _MODE_GR_SSDV = "SSDV (gr-satellites)"
 # Fourth mode: bare 800 baud 2FSK SSDV (HADES-SA), demodulated by comms.sstv.fsk_ssdv.
 _MODE_FSK_SSDV = "SSDV (2FSK 800bps)"
+_FSK_SSDV_NORAD = 68446  # HADES-SA
 _GR_SSDV_NORAD = 61781  # ASRTU-1 (AO-123)
 
 
@@ -487,6 +488,7 @@ class SstvTab(QWidget):
         """Update satellite name when transponder selection changes."""
         if xpdr and isinstance(xpdr, dict):
             self._sat_name = xpdr.get("description", "")
+            self._auto_select_ssdv_mode(xpdr.get("norad_cat_id"))
         if self._ssdv_reception:
             # a different transponder can mean a different AX.25 baud rate
             modem = resolve_ax25_modem(self._conn, self._radio_control)
@@ -495,6 +497,12 @@ class SstvTab(QWidget):
             pipeline = self._find_sdr_pipeline()
             if pipeline is not None:
                 engine.sync_sdr_baud(pipeline, modem, satellite=True)
+
+    def _auto_select_ssdv_mode(self, norad: Any) -> None:
+        """Pick the SSDV mode that matches a satellite known to need one (HADES-SA, ASRTU-1)."""
+        wanted = {_FSK_SSDV_NORAD: _MODE_FSK_SSDV, _GR_SSDV_NORAD: _MODE_GR_SSDV}.get(norad)
+        if wanted is not None and self._mode_combo.currentText() != wanted:
+            self._mode_combo.setCurrentText(wanted)
 
     def _refresh_input_source(self) -> None:
         if self._sdr_connected:

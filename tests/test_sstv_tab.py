@@ -762,3 +762,27 @@ def test_fsk_bit_errored_copy_never_replaces_a_valid_packet(tab: SstvTab) -> Non
     # an unverified packet with no valid copy is still handed to ssdv's RS decoder
     tab._on_fsk_packet(bytes(bad[:6] + b"\x00\x09" + bad[8:]), False)
     assert tab._ssdv_decoder.packet_count == 2
+
+
+# ------------------------------------------- automatic mode from the satellite
+
+
+def test_hades_sa_selects_the_2fsk_mode(tab: SstvTab, rc: _FakeRadioControl) -> None:
+    rc.transmitter_changed.emit({"description": "FSK 800 bps", "norad_cat_id": 68446})
+    assert tab._mode_combo.currentText() == "SSDV (2FSK 800bps)"
+    assert tab._view_tabs.currentWidget() is tab._raw_page
+
+
+def test_asrtu1_selects_the_gr_satellites_mode(
+    tab: SstvTab, rc: _FakeRadioControl, fake_gr: type[_FakeGrBackend]
+) -> None:
+    rc.transmitter_changed.emit({"description": "Mode U - SSDV", "norad_cat_id": 61781})
+    assert tab._mode_combo.currentText() == "SSDV (gr-satellites)"
+
+
+def test_other_satellites_leave_the_mode_alone(tab: SstvTab, rc: _FakeRadioControl) -> None:
+    tab._mode_combo.setCurrentText("SSDV (AX.25)")
+    rc.transmitter_changed.emit({"description": "Mode U", "norad_cat_id": 25544})
+    assert tab._mode_combo.currentText() == "SSDV (AX.25)"
+    rc.transmitter_changed.emit(None)
+    assert tab._mode_combo.currentText() == "SSDV (AX.25)"
