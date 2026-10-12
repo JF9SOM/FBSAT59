@@ -58,29 +58,40 @@ def test_parse_body_accepts_only_voice_packets() -> None:
 
 
 def test_assembler_groups_packets_and_splits_messages() -> None:
-    now = [0.0]
-    asm = VoiceMessageAssembler(clock=lambda: now[0])
+    asm = VoiceMessageAssembler()
     for n in (0, 1, 3):
-        now[0] += 0.4
-        msg, finished = asm.add(n, bytes(35))
+        msg, finished = asm.add(n, bytes(35), n * 0.4)
         assert finished is None
     assert msg.packet_count == 3 and msg.missing == [2]
-    now[0] += 0.4
-    msg2, finished = asm.add(0, bytes(35))  # numbering restarts
+    # the next slot, 10 s later, is a new message
+    msg2, finished = asm.add(0, bytes(35), 14.0)
     assert finished is msg and finished.complete
-    assert msg2 is not msg
-    now[0] += 10.0
-    assert asm.close_if_idle() is msg2 and msg2.complete
-    assert asm.close_if_idle() is None
+    assert msg2 is not msg and msg2.packet_count == 1
 
 
-def test_assembler_gap_starts_a_new_message() -> None:
+def test_assembler_repairs_a_corrupted_packet_number_from_the_timing() -> None:
+    asm = VoiceMessageAssembler()
+    for n in range(8):
+        number = 40 if n == 5 else n  # no CRC: one number has a bit error
+        msg, _f = asm.add(number, bytes([n] * 35), 10.0 + n * 0.4)
+    assert sorted(msg.packets) == list(range(8))
+    assert msg.packets[5] == bytes([5] * 35)
+
+
+def test_assembler_numbers_follow_the_arrival_times_across_losses() -> None:
+    asm = VoiceMessageAssembler()
+    for n in (4, 5, 8, 9):
+        msg, _f = asm.add(n, bytes(35), 100.0 + n * 0.4)
+    assert msg.missing == [0, 1, 2, 3, 6, 7]
+
+
+def test_assembler_idle_closes_the_message() -> None:
     now = [0.0]
     asm = VoiceMessageAssembler(clock=lambda: now[0])
-    first, _f = asm.add(4, bytes(35))
-    now[0] += 5.0
-    second, finished = asm.add(5, bytes(35))
-    assert finished is first and second is not first
+    msg, _f = asm.add(0, bytes(35))
+    now[0] += 10.0
+    assert asm.close_if_idle() is msg and msg.complete
+    assert asm.close_if_idle() is None
 
 
 def test_message_length_and_duration() -> None:
@@ -203,19 +214,19 @@ def test_tab_subscribes_to_the_sdr_and_unsubscribes(
 
 
 def test_tab_lists_messages_as_packets_arrive(tab: DigitalVoiceTab) -> None:
-    tab._on_packet(0, bytes(35))
-    tab._on_packet(1, bytes(35))
-    tab._on_packet(3, bytes(35))
+    tab._on_packet(0, bytes(35), 0.0)
+    tab._on_packet(1, bytes(35), 0.4)
+    tab._on_packet(3, bytes(35), 1.2)
     assert tab._list.count() == 1
     text = tab._list.item(0).text()
     assert "3/4 packets" in text and "1.6 s" in text
-    tab._on_packet(0, bytes(35))  # numbering restarts: a second message
+    tab._on_packet(0, bytes(35), 20.0)  # the next slot: a second message
     assert tab._list.count() == 2
     assert tab._save_btn.isEnabled()
 
 
 def test_idle_tick_completes_the_message(tab: DigitalVoiceTab) -> None:
-    tab._on_packet(0, bytes(35))
+    tab._on_packet(0, bytes(35), 0.0)
     tab._assembler.current.last_at -= 10.0  # type: ignore[union-attr]
     tab._on_idle_tick()
     assert "receiving" not in tab._list.item(0).text()
@@ -226,7 +237,7 @@ def test_tab_has_a_mode_box_with_the_2fsk_mode(tab: DigitalVoiceTab) -> None:
 
 
 def test_tab_shows_raw_packets_as_sent(tab: DigitalVoiceTab) -> None:
-    tab._on_packet(7, bytes(35))
+    tab._on_packet(7, bytes(35), 2.8)
     line = tab._raw_edit.toPlainText()
     assert "#07" in line and "25 B3 07" in line
     assert tab._view_tabs.tabText(0) == "Raw Packets"
@@ -235,7 +246,7 @@ def test_tab_shows_raw_packets_as_sent(tab: DigitalVoiceTab) -> None:
 
 
 def test_recognition_result_follows_the_selected_message(tab: DigitalVoiceTab) -> None:
-    tab._on_packet(0, bytes(35))
+    tab._on_packet(0, bytes(35), 0.0)
     item = tab._list.item(0)
     item.recognized = ("es", "En un lugar de la Mancha")  # type: ignore[union-attr]
     tab._on_selection_changed()

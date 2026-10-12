@@ -295,9 +295,11 @@ class DigitalVoiceTab(QWidget):
 
     def _start_reception(self) -> None:
         self._refresh_input_source()
-        if self._demod is not None:
-            return
         pipeline = self._find_sdr_pipeline()
+        if self._demod is not None:
+            if pipeline is self._demod_pipeline:
+                return
+            self._stop_reception()  # MainWindow built a new pipeline (reconnect / playback)
         if pipeline is None:
             return
         try:
@@ -329,12 +331,12 @@ class DigitalVoiceTab(QWidget):
     # Messages
     # ------------------------------------------------------------------ #
 
-    def _on_packet(self, number: int, data: bytes) -> None:
+    def _on_packet(self, number: int, data: bytes, t: float | None = None) -> None:
         raw = bytes([37, 0xB3, number]) + unmask(data)
         self._raw_edit.appendPlainText(
             f"{datetime.now(UTC):%H:%M:%S}  #{number:02d}  {raw.hex(' ').upper()}"
         )
-        message, finished = self._assembler.add(number, data)
+        message, finished = self._assembler.add(number, data, t)
         if finished is not None:
             self._finish(finished)
         item = self._items.get(id(message))

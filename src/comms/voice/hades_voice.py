@@ -41,14 +41,16 @@ _NEED_BITS = 16 + 8 * _BODY_BYTES
 _MAX_SYNC_ERRORS = 1
 _MAX_NUMBER = 200  # numbers beyond this are noise (a message is about 40 packets)
 # Packets 0.4 s apart: a silence longer than this ends a message.
-MESSAGE_GAP_S = 3.0
+MESSAGE_GAP_S = 4.0
 
 
 class VoicePacket(NamedTuple):
-    """One type-11 packet: its number in the message and its un-masked 35 data bytes."""
+    """One type-11 packet: its number in the message, its un-masked 35 data bytes and the
+    stream time (seconds from the first sample fed) at which it started."""
 
     number: int
     data: bytes
+    t: float = 0.0
 
 
 def unmask(data: bytes) -> bytes:
@@ -64,13 +66,13 @@ def codec2_frames(data: bytes) -> list[bytes]:
     return [raw[i : i + 4] for i in range(0, len(raw), 4)]
 
 
-def parse_body(body: bytes) -> VoicePacket | None:
+def parse_body(body: bytes, t: float = 0.0) -> VoicePacket | None:
     """A voice packet from the 38 bytes after the sync word, or None if it is not one."""
     if len(body) < _BODY_BYTES or body[0] != VOICE_SIZE or body[1] >> 4 != VOICE_TYPE:
         return None
     if body[2] > _MAX_NUMBER:
         return None
-    return VoicePacket(body[2], unmask(bytes(body[3 : 3 + DATA_BYTES])))
+    return VoicePacket(body[2], unmask(bytes(body[3 : 3 + DATA_BYTES])), t)
 
 
 def decode_window(seg: np.ndarray) -> list[VoicePacket]:
@@ -103,7 +105,8 @@ def decode_window(seg: np.ndarray) -> list[VoicePacket]:
         bits = ((polarity * (eh - el)) > 0).astype(np.uint8)
         if int(np.count_nonzero(bits[:16] != fsk.SYNC_BITS)) > _MAX_SYNC_ERRORS:
             continue
-        packet = parse_body(np.packbits(bits[16:]).tobytes())
+        start = (phase + index * fsk.SAMPLES_PER_SYMBOL) / fsk.WORK_RATE
+        packet = parse_body(np.packbits(bits[16:]).tobytes(), start)
         if packet is not None:
             out.append(packet)
     return out
@@ -116,6 +119,7 @@ class FskVoiceStream:
         self._rate = float(sample_rate)
         self._decimator = fsk.Decimator(self._rate)
         self._buf = np.zeros(0, dtype=np.complex64)
+        self._buf_start_s = 0.0  # stream time of self._buf[0]
 
     def feed(self, iq: np.ndarray) -> list[VoicePacket]:
         """Add I/Q samples; return the voice packets found in the completed windows."""
@@ -126,15 +130,19 @@ class FskVoiceStream:
             self._buf = np.concatenate([self._buf, y])
         out: list[VoicePacket] = []
         while len(self._buf) >= fsk._WINDOW:
-            out.extend(decode_window(self._buf[: fsk._WINDOW]))
+            out.extend(
+                p._replace(t=p.t + self._buf_start_s)
+                for p in decode_window(self._buf[: fsk._WINDOW])
+            )
             self._buf = self._buf[fsk._STEP :]
+            self._buf_start_s += fsk._STEP / fsk.WORK_RATE
         return out
 
 
 class FskVoiceSdrDemod(QThread):
     """Runs a FskVoiceStream on an SDR pipeline's raw I/Q in a worker thread."""
 
-    packet_received: Signal = Signal(int, bytes)  # number, 35 un-masked data bytes
+    packet_received: Signal = Signal(int, bytes, float)  # number, 35 data bytes, stream time
 
     def __init__(self, sample_rate: int, parent: Any = None) -> None:
         super().__init__(parent)
@@ -159,7 +167,7 @@ class FskVoiceSdrDemod(QThread):
             except queue.Empty:
                 continue
             for packet in self._stream.feed(iq):
-                self.packet_received.emit(packet.number, packet.data)
+                self.packet_received.emit(packet.number, packet.data, packet.t)
 
 
 class VoiceMessage:
@@ -170,6 +178,8 @@ class VoiceMessage:
         self.started_at = started_at
         self.last_at = started_at
         self.complete = False  # set when the message is closed
+        self.arrivals: list[tuple[int, bytes, float]] = []  # (number as sent, data, stream time)
+        self.last_t = 0.0
 
     @property
     def packet_count(self) -> int:
@@ -190,6 +200,24 @@ class VoiceMessage:
     def duration_s(self) -> float:
         """Audio length, counting missing packets as silence."""
         return self.length * PACKET_SECONDS
+
+    def renumber(self) -> None:
+        """Rebuild ``packets`` from the arrivals, repairing packet numbers from the timing.
+
+        A voice packet has no CRC, so its number can have a bit error. The packets are sent
+        0.4 s apart, so ``number - t / 0.4`` is the same for all of them; the median of that
+        offset is taken as the truth, and the number of a packet that disagrees is replaced
+        by the one its arrival time implies.
+        """
+        offsets = sorted(n - t / PACKET_SECONDS for n, _d, t in self.arrivals)
+        median = offsets[len(offsets) // 2]
+        packets: dict[int, bytes] = {}
+        for number, data, t in self.arrivals:
+            if abs(number - t / PACKET_SECONDS - median) > 0.6:
+                number = round(median + t / PACKET_SECONDS)
+            if number >= 0:
+                packets.setdefault(number, data)
+        self.packets = packets
 
     def to_pcm(self) -> np.ndarray:
         """Decode to 8 kHz int16 audio; missing packets are silence (needs libcodec2)."""
@@ -219,31 +247,36 @@ class VoiceMessage:
 class VoiceMessageAssembler:
     """Groups voice packets into messages.
 
-    A new message starts when the packet number goes back (the satellite restarts a message
-    at 0) or after MESSAGE_GAP_S without packets. ``add()`` returns ``(message, finished)``
-    where *finished* is the message that was just closed by this packet, if any.
+    The satellite sends a message in its own slot, so a message ends when no packet came for
+    MESSAGE_GAP_S of stream time (the next slot carries other packets). Packet numbers are
+    repaired from the arrival times (see VoiceMessage.renumber). ``add()`` returns
+    ``(message, finished)`` where *finished* is the message that was just closed, if any.
     """
 
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._clock = clock
         self.current: VoiceMessage | None = None
-        self._last_number = -1
 
-    def add(self, number: int, data: bytes) -> tuple[VoiceMessage, VoiceMessage | None]:
-        """Add one packet."""
+    def add(
+        self, number: int, data: bytes, t: float | None = None
+    ) -> tuple[VoiceMessage, VoiceMessage | None]:
+        """Add one packet; *t* is its stream time (default: the clock)."""
         now = self._clock()
+        if t is None:
+            t = now
         finished: VoiceMessage | None = None
         cur = self.current
-        if cur is not None and (number < self._last_number or now - cur.last_at > MESSAGE_GAP_S):
+        if cur is not None and t - cur.last_t > MESSAGE_GAP_S:
             cur.complete = True
             finished = cur
             cur = None
         if cur is None:
             cur = VoiceMessage(now)
             self.current = cur
-        cur.packets.setdefault(number, data)
+        cur.arrivals.append((number, data, t))
+        cur.last_t = t
         cur.last_at = now
-        self._last_number = number
+        cur.renumber()
         return cur, finished
 
     def close_if_idle(self) -> VoiceMessage | None:
@@ -252,6 +285,5 @@ class VoiceMessageAssembler:
         if cur is not None and self._clock() - cur.last_at > MESSAGE_GAP_S:
             cur.complete = True
             self.current = None
-            self._last_number = -1
             return cur
         return None
