@@ -96,6 +96,11 @@ _FIT_HISTORY = 40
 _FIT_MIN_PULSES = 8
 _FIT_MIN_SPAN_LINES = 10
 _FIT_TOLERANCE_MS = 2.0
+_FIT_INLIER_MS = 1.0  # points further than this from the fitted line are left out of it
+_FIT_MIN_INLIERS = 6
+# Before the fit exists, a found pulse is used only if it is this close to where the previous
+# line predicts it (the VIS stop bit, 1200 Hz like a pulse, is ~9 ms away from the real one).
+_EARLY_SYNC_TOLERANCE_MS = 3.0
 # Pixel smoothing follows the noise. The sync pulse is a flat 1200 Hz, so its spread measures
 # the noise of each line (about 55 Hz on a clean signal, 100-350 Hz on a weak one); above
 # _NOISE_CLEAN_HZ the frequency estimates get a median filter of that much longer window, so a
@@ -536,7 +541,7 @@ class SstvDecoder(QObject):
         # two, which showed as ragged, shifted lines. Without a fit yet, use the pulse itself.
         if fitted is not None:
             sync = fitted
-        elif found is not None:
+        elif found is not None and abs(found - self._origin) <= self._ms(_EARLY_SYNC_TOLERANCE_MS):
             sync = found
         else:
             sync = self._origin
@@ -617,13 +622,33 @@ class SstvDecoder(QObject):
         return start
 
     def _fitted_sync(self) -> float | None:
-        """Sync position of the current line from a straight-line fit through recent pulses."""
+        """Sync position of the current line from a robust straight-line fit through the pulses.
+
+        The first pulses of a picture are not always trustworthy: the VIS stop bit is also a
+        1200 Hz tone and can be taken for the first line's pulse, and noise gives stray ones.
+        The line is therefore started from medians (a few outliers cannot move them), the
+        points more than _FIT_INLIER_MS from it are dropped, and the rest are fitted.
+        """
         hist = self._sync_history
         if len(hist) < _FIT_MIN_PULSES or hist[-1][0] - hist[0][0] < _FIT_MIN_SPAN_LINES:
             return None
         lines = np.array([h[0] for h in hist], dtype=np.float64)
         pos = np.array([h[1] for h in hist], dtype=np.float64)
-        slope, offset = np.polyfit(lines, pos, 1)
+        step = np.diff(pos) / np.maximum(np.diff(lines), 1.0)
+        slope = float(np.median(step))
+        offset = float(np.median(pos - slope * lines))
+        for _ in range(3):
+            inliers = np.abs(pos - (slope * lines + offset)) <= self._ms(_FIT_INLIER_MS)
+            if int(inliers.sum()) < _FIT_MIN_INLIERS:
+                return None
+            if inliers.all():
+                break
+            slope, offset = np.polyfit(lines[inliers], pos[inliers], 1)
+        else:
+            inliers = np.abs(pos - (slope * lines + offset)) <= self._ms(_FIT_INLIER_MS)
+        if int(inliers.sum()) < _FIT_MIN_INLIERS:
+            return None
+        slope, offset = np.polyfit(lines[inliers], pos[inliers], 1)
         return float(slope * self._line + offset)
 
     def _median_ms(self) -> float:

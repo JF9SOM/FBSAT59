@@ -325,6 +325,28 @@ def test_a_noisy_picture_keeps_straight_edges() -> None:
     assert np.abs(np.array(positions) - 160).max() <= 6
 
 
+def test_the_line_clock_fit_ignores_stray_early_pulses() -> None:
+    """The VIS stop bit (1200 Hz) can be taken for the first line's pulse, and the second pulse
+    is then off the other way; those two must not tilt the first lines of the picture."""
+    rate = 48000
+    dec = SstvDecoder(rate)
+    period = 0.150 * rate
+    t0 = 1000.0
+    good = [(n, t0 + n * period) for n in range(2, 12)]
+    dec._sync_history = [(0, t0 - 0.0084 * rate), (1, t0 + period + 0.0089 * rate), *good]
+    dec._line = 12
+    fitted = dec._fitted_sync()
+    assert fitted is not None
+    assert abs(fitted - (t0 + 12 * period)) < 0.0002 * rate  # within 0.2 ms, not ~1 ms off
+
+
+def test_the_fit_waits_for_enough_consistent_pulses() -> None:
+    dec = SstvDecoder(48000)
+    dec._sync_history = [(n, 1000.0 + n * 7200.0) for n in range(5)]
+    dec._line = 5
+    assert dec._fitted_sync() is None  # too few pulses to trust a line yet
+
+
 def test_silence_and_noise_never_produce_an_image() -> None:
     rng = np.random.default_rng(7)
     noise = (rng.standard_normal(90 * 48000) * 0.3).astype(np.float32)
