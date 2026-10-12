@@ -15,7 +15,7 @@ the app can still start offline with whatever is already installed.
 
 Components: ``hamlib`` (rig control), ``ft8lib`` (FT8/FT4 decode), ``q65lib``
 (Q65), ``ft4wsjt`` (WSJT-X FT4 engine), ``direwolf`` (APRS), ``ssdv`` (SSDV
-tab), ``cwmodel`` (CW
+tab), ``codec2`` (libcodec2, Digital Voice tab), ``cwmodel`` (CW
 decoder ONNX model + ``onnxruntime``), ``lameenc`` (MP3 recording, pip only).
 
 Usage:
@@ -137,6 +137,13 @@ _COMPONENTS: tuple[Component, ...] = (
         extra_key_files=("ssdv-dslwp.exe",),  # daniestevez/ssdv fork, for ASRTU-1 SSDV
         release_tag="ssdv-bundle",  # dedicated pre-release tag (CI: build-ssdv.yml)
         asset_name="ssdv-windows-x86_64.zip",
+    ),
+    Component(
+        name="codec2",
+        subdir="codec2",
+        key_file="libcodec2.dll",
+        release_tag="codec2-bundle",  # dedicated pre-release tag (CI: build-codec2.yml)
+        asset_name="codec2-windows-x86_64.zip",
     ),
     # cwmodel is handled specially (pip + raw download); listed for --only/--skip.
     Component(

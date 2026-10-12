@@ -123,6 +123,21 @@ if _ssdv_dir.exists():
             if (_ssdv_dir / _note).exists():
                 ssdv_datas.append((str(_ssdv_dir / _note), "licenses/ssdv"))
 
+# --------------------------------------------------------------------------- #
+# libcodec2 bundle (downloaded from the codec2-bundle release by CI; see build-codec2.yml)
+# Loaded by comms/voice/codec2.py with ctypes from _MEIPASS (the Digital Voice tab).
+# libcodec2 is LGPL-2.1: its licence text and source location ship under licenses/codec2/.
+# --------------------------------------------------------------------------- #
+codec2_binaries: list[tuple[str, str]] = []
+codec2_datas: list[tuple[str, str]] = []
+_codec2_dir = ROOT / "codec2-bundle"
+if _codec2_dir.exists():
+    for _lib in _codec2_dir.glob("libcodec2*"):
+        codec2_binaries.append((str(_lib), "."))
+    for _note in ("COPYING", "SOURCE.txt"):
+        if (_codec2_dir / _note).exists():
+            codec2_datas.append((str(_codec2_dir / _note), "licenses/codec2"))
+
 q65lib_binaries: list[tuple[str, str]] = []
 _q65lib_dir = ROOT / "q65lib-bundle"
 if _q65lib_dir.exists():
@@ -288,10 +303,11 @@ a = Analysis(
     + soapy_binaries
     + direwolf_binaries
     + ssdv_binaries
+    + codec2_binaries
     + q65lib_binaries
     + ft8lib_binaries
     + extra_binaries,
-    datas=datas + extra_datas + ssdv_datas,
+    datas=datas + extra_datas + ssdv_datas + codec2_datas,
     hiddenimports=hidden_imports + extra_hidden,
     hookspath=[],
     hooksconfig={},

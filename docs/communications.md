@@ -1427,6 +1427,15 @@ don Quijote de la Mancha"）と一致した（衛星の既定メッセージと�
 - **開発環境に faster-whisper が入っていなかった**: `pyproject.toml` に足しただけで、既存の `.venv` には未導入だった
   （`pip install -e .` が必要）。音声認識は「利用できません」と出る。
 
+**libcodec2 の同梱（2026-10-12）**: インストール済みアプリでも音声化できるよう、libcodec2 をアプリに同梱する。
+`scripts/build_codec2_bundle.py` が conda-forge の事前ビルド済みパッケージ（`libcodec2-1.2.0`。ファイル名と SHA-256 を固定）から
+プラットフォームごとの共有ライブラリ・LGPL ライセンス・ソースの案内を取り出して 1 つの圧縮ファイルにし、
+ワークフロー `build-codec2.yml` がそれを `codec2-bundle` リリースへ公開する（コンパイルは不要で、Linux の 1 ジョブで 3 プラットフォーム分）。
+`ci.yml` の 3 つのビルドがそれをダウンロードして `codec2-bundle/` に置き、`scripts/fbsat59.spec` が PyInstaller のルート
+（`_MEIPASS`）へ同梱する（ライセンスは `licenses/codec2/`）。`comms/voice/codec2.py` は `_MEIPASS` を探す。ソース実行の Windows
+は `scripts/bootstrap_natives.py` の `codec2` コンポーネントが `user_data_dir/codec2/` に置く。リリースがまだ無くてもビルドは通る
+（警告のみで、その版では音声化できない）。
+
 **日本語化（2026-10-12）**: タブ・メニューの文字列は `locale/ja/LC_MESSAGES/fbsat59.po` に訳を追加した（メニュー名は「デジタル音声」）。
 `msgmerge` で fuzzy になっていた他機能の 4 件（IQ 飽和メッセージ・AX.25 ボーレートのツールチップ 2 件・フレーム選択の案内）も訳を直した。
 

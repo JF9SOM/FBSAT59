@@ -1,0 +1,55 @@
+name: Build codec2 Bundle
+
+# Packages libcodec2 (https://github.com/drowe67/codec2, LGPL-2.1), the CODEC2 speech codec,
+# for the Digital Voice tab (HADES-SA voice messages) and publishes it on the dedicated
+# "codec2-bundle" release. ci.yml downloads it and PyInstaller ships it inside the app, where
+# comms/voice/codec2.py loads it with ctypes (never linked into the app, which is why its
+# licence text and source location travel with it).
+#
+# The libraries are the pre-built conda-forge packages (pinned file names and SHA-256 in
+# scripts/build_codec2_bundle.py), so there is nothing to compile and no per-OS runner is
+# needed. To move to a newer libcodec2, update the pins in that script and run this workflow.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-codec2.yml"
+      - "scripts/build_codec2_bundle.py"
+
+jobs:
+  bundle:
+    name: Build and publish codec2 bundle
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Package libcodec2 for Linux, macOS and Windows
+        run: |
+          python -m pip install --quiet zstandard
+          python scripts/build_codec2_bundle.py /tmp/codec2-out
+          ls -l /tmp/codec2-out
+
+      - name: Create the release if missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view codec2-bundle --repo "${{ github.repository }}" 2>/dev/null || \
+          gh release create codec2-bundle \
+            --repo "${{ github.repository }}" \
+            --title "codec2 Bundle" \
+            --notes "libcodec2 1.2.0 (LGPL-2.1, https://github.com/drowe67/codec2) for the Digital Voice tab. Pre-built conda-forge packages repackaged by build-codec2.yml." \
+            --prerelease
+
+      - name: Upload to codec2-bundle release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload codec2-bundle --repo "${{ github.repository }}" --clobber /tmp/codec2-out/*

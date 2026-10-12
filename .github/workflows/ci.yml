@@ -296,6 +296,23 @@ jobs:
           chmod +x direwolf-bundle/direwolf
           echo "Direwolf version: $(cat /tmp/dw-dl/version.txt)"
 
+      - name: Download codec2 bundle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ARCH=$(uname -m)
+          mkdir -p codec2-bundle
+          if gh release download codec2-bundle \
+              --repo "${{ github.repository }}" \
+              --pattern "codec2-linux-${ARCH}.tar.gz" \
+              --dir /tmp/codec2-dl; then
+            tar -xzf /tmp/codec2-dl/codec2-linux-${ARCH}.tar.gz -C /tmp/codec2-dl --strip-components=1
+            cp /tmp/codec2-dl/libcodec2* /tmp/codec2-dl/COPYING /tmp/codec2-dl/SOURCE.txt codec2-bundle/
+            echo "libcodec2 version: $(cat /tmp/codec2-dl/version.txt)"
+          else
+            echo "::warning::codec2 bundle not available yet -- run the 'Build codec2 Bundle' workflow. The Digital Voice tab will not be able to decode voice in this build."
+          fi
+
       - name: Download ssdv bundle
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -860,6 +877,29 @@ jobs:
           Copy-Item "$extracted\*" direwolf-bundle\ -Force
           $ver = Get-Content "direwolf-bundle\version.txt" -ErrorAction SilentlyContinue
           Write-Host "Direwolf version: $ver"
+
+      - name: Download codec2 bundle
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          New-Item -ItemType Directory -Force -Path codec2-bundle | Out-Null
+          gh release download codec2-bundle `
+            --repo "${{ github.repository }}" `
+            --pattern "codec2-windows-x86_64.zip" `
+            --dir "$env:RUNNER_TEMP\codec2-dl"
+          if ($LASTEXITCODE -eq 0) {
+            Expand-Archive -Path "$env:RUNNER_TEMP\codec2-dl\codec2-windows-x86_64.zip" `
+              -DestinationPath "$env:RUNNER_TEMP\codec2-dl\extracted"
+            $extracted = "$env:RUNNER_TEMP\codec2-dl\extracted"
+            $sub = Get-ChildItem $extracted -Directory | Select-Object -First 1
+            if ($sub) { $extracted = $sub.FullName }
+            Copy-Item "$extracted\*" codec2-bundle\ -Force
+            Write-Host "libcodec2 version: $(Get-Content codec2-bundle\version.txt)"
+          } else {
+            Write-Host "::warning::codec2 bundle not available yet -- run the 'Build codec2 Bundle' workflow. The Digital Voice tab will not be able to decode voice in this build."
+            $global:LASTEXITCODE = 0
+          }
 
       - name: Download ssdv bundle
         shell: pwsh
@@ -1435,6 +1475,23 @@ jobs:
           cp /tmp/dw-dl/*.dylib direwolf-bundle/ 2>/dev/null || true
           chmod +x direwolf-bundle/direwolf
           echo "Direwolf version: $(cat /tmp/dw-dl/version.txt)"
+
+      - name: Download codec2 bundle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ARCH=$(uname -m)
+          mkdir -p codec2-bundle
+          if gh release download codec2-bundle \
+              --repo "${{ github.repository }}" \
+              --pattern "codec2-macos-${ARCH}.tar.gz" \
+              --dir /tmp/codec2-dl; then
+            tar -xzf /tmp/codec2-dl/codec2-macos-${ARCH}.tar.gz -C /tmp/codec2-dl --strip-components=1
+            cp /tmp/codec2-dl/libcodec2* /tmp/codec2-dl/COPYING /tmp/codec2-dl/SOURCE.txt codec2-bundle/
+            echo "libcodec2 version: $(cat /tmp/codec2-dl/version.txt)"
+          else
+            echo "::warning::codec2 bundle not available yet -- run the 'Build codec2 Bundle' workflow. The Digital Voice tab will not be able to decode voice in this build."
+          fi
 
       - name: Download ssdv bundle
         env:
