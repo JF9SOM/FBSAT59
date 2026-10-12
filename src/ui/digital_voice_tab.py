@@ -2,7 +2,8 @@
 
 Receives CODEC2 voice messages from satellites that send them as raw FSK (HADES-SA:
 800 baud 2FSK, CODEC2 700C). Input is an SDR (receive only); packets are gathered into
-messages, which are listed, played, and saved as MP3. See comms.voice.hades_voice.
+messages, which are listed, played, saved as MP3 and (optionally) recognised as text.
+See comms.voice.hades_voice.
 """
 
 from __future__ import annotations
@@ -13,40 +14,50 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QStandardPaths, QTimer
+import numpy as np
+from PySide6.QtCore import QStandardPaths, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
+    QSplitter,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from comms.voice import codec2
+from comms.voice import codec2, recognize
 from comms.voice.hades_voice import (
     FskVoiceSdrDemod,
     VoiceMessage,
     VoiceMessageAssembler,
+    unmask,
 )
 from comms.voice.mp3 import LAMEENC_AVAILABLE, save_mp3
 from i18n import _
 
 logger = logging.getLogger(__name__)
 
+_MODE_FSK = "2FSK 800bps"
 _IDLE_CHECK_MS = 1000
+_RAW_MAX_LINES = 5000
 
 
 class _MessageItem(QListWidgetItem):
-    """List item bound to one VoiceMessage."""
+    """List item bound to one VoiceMessage (and its recognised text, once there is one)."""
 
-    def __init__(self, message: VoiceMessage, label: str) -> None:
+    def __init__(self, message: VoiceMessage, stamp: str) -> None:
         super().__init__()
         self.message = message
-        self.stamp = label
+        self.stamp = stamp
+        self.recognized: tuple[str, str] | None = None  # (language, text)
         self.refresh()
 
     def refresh(self) -> None:
@@ -58,6 +69,25 @@ class _MessageItem(QListWidgetItem):
         if not m.complete:
             text += "   " + _("(receiving…)")
         self.setText(text)
+
+
+class _RecognizeWorker(QThread):
+    """Runs the speech recognition off the GUI thread (the first run downloads the model)."""
+
+    done: Signal = Signal(str, str)
+    failed: Signal = Signal(str)
+
+    def __init__(self, pcm: np.ndarray, parent: Any = None) -> None:
+        super().__init__(parent)
+        self._pcm = pcm
+
+    def run(self) -> None:
+        try:
+            language, text = recognize.transcribe(self._pcm)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+            return
+        self.done.emit(language, text)
 
 
 class DigitalVoiceTab(QWidget):
@@ -73,7 +103,8 @@ class DigitalVoiceTab(QWidget):
         self._items: dict[int, _MessageItem] = {}  # id(message) -> item
         self._demod: FskVoiceSdrDemod | None = None
         self._demod_pipeline: Any | None = None
-        self._sat_name = ""
+        self._player: Any | None = None  # AudioFilePlayer, created on first file playback
+        self._worker: _RecognizeWorker | None = None
         self._playing = False
 
         self._setup_ui()
@@ -94,6 +125,13 @@ class DigitalVoiceTab(QWidget):
         root.setSpacing(4)
 
         top = QHBoxLayout()
+        top.addWidget(QLabel(_("Mode:")))
+        self._mode_combo = QComboBox()
+        self._mode_combo.addItems([_MODE_FSK])
+        self._mode_combo.setFixedWidth(150)
+        self._mode_combo.currentTextChanged.connect(self._on_mode_changed)
+        top.addWidget(self._mode_combo)
+        top.addSpacing(16)
         self._source_label = QLabel("")
         top.addWidget(self._source_label)
         top.addStretch()
@@ -102,41 +140,97 @@ class DigitalVoiceTab(QWidget):
         top.addWidget(self._auto_save_cb)
         root.addLayout(top)
 
-        hint = QLabel(
+        splitter = QSplitter()
+
+        # Left: sub-tabs -- the raw packets, and the recognised speech
+        self._view_tabs = QTabWidget()
+        raw_page = QWidget()
+        raw_layout = QVBoxLayout(raw_page)
+        raw_layout.setContentsMargins(4, 4, 4, 4)
+        raw_hint = QLabel(
             _(
-                "CODEC2 700C voice messages sent as 800 baud 2FSK (HADES-SA, 436.875 MHz). "
-                "Needs an SDR connected in Radio Control; each pass of the voice slot "
-                "(about every 6-9 minutes) adds a message."
+                "Received voice packets, one per line, as sent (size, type/address, packet "
+                "number, then the 35 data bytes as transmitted, before un-masking). "
+                "HADES-SA: CODEC2 700C, packets 0.4 s apart."
             )
         )
-        hint.setWordWrap(True)
-        hint.setStyleSheet("color: #888;")
-        root.addWidget(hint)
+        raw_hint.setWordWrap(True)
+        raw_hint.setStyleSheet("color: #888;")
+        raw_layout.addWidget(raw_hint)
+        self._raw_edit = QPlainTextEdit()
+        self._raw_edit.setReadOnly(True)
+        self._raw_edit.setMaximumBlockCount(_RAW_MAX_LINES)
+        mono = self._raw_edit.font()
+        mono.setStyleHint(mono.StyleHint.Monospace)
+        mono.setFamily("Menlo")
+        self._raw_edit.setFont(mono)
+        raw_layout.addWidget(self._raw_edit, stretch=1)
+        self._raw_count_label = QLabel("")
+        self._raw_count_label.setStyleSheet("color: #888;")
+        raw_layout.addWidget(self._raw_count_label)
+        self._view_tabs.addTab(raw_page, _("Raw Packets"))
 
+        text_page = QWidget()
+        text_layout = QVBoxLayout(text_page)
+        text_layout.setContentsMargins(4, 4, 4, 4)
+        text_top = QHBoxLayout()
+        self._recognize_btn = QPushButton(_("🗣 Recognize"))
+        self._recognize_btn.setToolTip(
+            _(
+                "Speech recognition of the selected message (needs faster-whisper; the "
+                "model, about 460 MB, is downloaded on first use). CODEC2 700C is a very "
+                "low bit rate codec, so the text is approximate."
+            )
+        )
+        self._recognize_btn.clicked.connect(self._on_recognize)
+        text_top.addWidget(self._recognize_btn)
+        self._language_label = QLabel("")
+        text_top.addWidget(self._language_label)
+        text_top.addStretch()
+        text_layout.addLayout(text_top)
+        self._text_edit = QPlainTextEdit()
+        self._text_edit.setReadOnly(True)
+        self._text_edit.setPlaceholderText(_("Select a message and press Recognize."))
+        text_layout.addWidget(self._text_edit, stretch=1)
+        self._view_tabs.addTab(text_page, _("Speech-to-Text"))
+        splitter.addWidget(self._view_tabs)
+
+        # Right: received messages
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.addWidget(QLabel(_("Received Messages:")))
         self._list = QListWidget()
-        self._list.currentItemChanged.connect(lambda *_a: self._update_buttons())
-        self._list.itemDoubleClicked.connect(lambda _i: self._on_play())
-        root.addWidget(self._list, stretch=1)
+        self._list.currentItemChanged.connect(self._on_selection_changed)
+        self._list.itemDoubleClicked.connect(lambda _i: self._on_play_message())
+        right_layout.addWidget(self._list, stretch=1)
+        splitter.addWidget(right)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 2)
+        root.addWidget(splitter, stretch=1)
 
         buttons = QHBoxLayout()
-        self._play_btn = QPushButton(_("▶ Play"))
-        self._play_btn.clicked.connect(self._on_play)
-        buttons.addWidget(self._play_btn)
-        self._stop_btn = QPushButton(_("■ Stop"))
-        self._stop_btn.clicked.connect(self._on_stop)
-        buttons.addWidget(self._stop_btn)
-        self._save_btn = QPushButton(_("💾 Save MP3…"))
-        self._save_btn.clicked.connect(self._on_save)
-        buttons.addWidget(self._save_btn)
-        self._decode_iq_btn = QPushButton(_("📂 Decode IQ Recording…"))
+        self._decode_iq_btn = QPushButton(_("📂 IQ Recording…"))
         self._decode_iq_btn.setToolTip(
             _(
-                "Open an IQ recording the way SDR Control's Open… does; voice messages are "
+                "Open an IQ recording like SDR Control's Open… button: its whole-recording "
+                "spectrogram opens, click it to play from there; voice messages are "
                 "decoded as it plays."
             )
         )
         self._decode_iq_btn.clicked.connect(self._on_decode_iq)
         buttons.addWidget(self._decode_iq_btn)
+        self._play_btn = QPushButton(_("▶ Play…"))
+        self._play_btn.setToolTip(_("Choose an already decoded voice file (MP3/WAV) and play it."))
+        self._play_btn.clicked.connect(self._on_play_file)
+        buttons.addWidget(self._play_btn)
+        self._stop_btn = QPushButton(_("■ Stop"))
+        self._stop_btn.clicked.connect(self._on_stop)
+        buttons.addWidget(self._stop_btn)
+        self._save_btn = QPushButton(_("💾 Save MP3…"))
+        self._save_btn.setToolTip(_("Save the selected message as an MP3."))
+        self._save_btn.clicked.connect(self._on_save)
+        buttons.addWidget(self._save_btn)
         buttons.addStretch()
         root.addLayout(buttons)
 
@@ -149,9 +243,9 @@ class DigitalVoiceTab(QWidget):
     def _update_buttons(self) -> None:
         item = self._list.currentItem()
         have = isinstance(item, _MessageItem) and item.message.packet_count > 0
-        self._play_btn.setEnabled(have and not self._playing)
         self._stop_btn.setEnabled(self._playing)
         self._save_btn.setEnabled(have)
+        self._recognize_btn.setEnabled(have and self._worker is None)
 
     # ------------------------------------------------------------------ #
     # Radio Control wiring / SDR input
@@ -171,12 +265,10 @@ class DigitalVoiceTab(QWidget):
         ):
             if hasattr(rc, sig):
                 getattr(rc, sig).connect(slot)
-        if hasattr(rc, "transmitter_changed"):
-            rc.transmitter_changed.connect(self._on_transmitter_changed)
 
-    def _on_transmitter_changed(self, xpdr: Any) -> None:
-        if xpdr and isinstance(xpdr, dict):
-            self._sat_name = str(xpdr.get("description", ""))
+    def _on_mode_changed(self, _mode: str) -> None:
+        self._stop_reception()
+        self._start_reception()
 
     def _on_rig_connected(self) -> None:
         self._start_reception()
@@ -238,18 +330,23 @@ class DigitalVoiceTab(QWidget):
     # ------------------------------------------------------------------ #
 
     def _on_packet(self, number: int, data: bytes) -> None:
+        raw = bytes([37, 0xB3, number]) + unmask(data)
+        self._raw_edit.appendPlainText(
+            f"{datetime.now(UTC):%H:%M:%S}  #{number:02d}  {raw.hex(' ').upper()}"
+        )
         message, finished = self._assembler.add(number, data)
         if finished is not None:
             self._finish(finished)
         item = self._items.get(id(message))
         if item is None:
-            stamp = datetime.now(UTC).strftime("%H:%M:%S UTC")
-            item = _MessageItem(message, stamp)
+            item = _MessageItem(message, datetime.now(UTC).strftime("%H:%M:%S UTC"))
             self._items[id(message)] = item
             self._list.insertItem(0, item)
             if self._list.currentItem() is None:
                 self._list.setCurrentItem(item)
         item.refresh()
+        total = sum(i.message.packet_count for i in self._items.values())
+        self._raw_count_label.setText(_("Packets: ") + str(total))
         self._update_buttons()
 
     def _on_idle_tick(self) -> None:
@@ -288,12 +385,22 @@ class DigitalVoiceTab(QWidget):
         except Exception:
             logger.exception("Digital Voice: auto-save failed")
 
-    def _current_message(self) -> VoiceMessage | None:
+    def _current_item(self) -> _MessageItem | None:
         item = self._list.currentItem()
-        return item.message if isinstance(item, _MessageItem) else None
+        return item if isinstance(item, _MessageItem) else None
+
+    def _on_selection_changed(self, *_args: Any) -> None:
+        item = self._current_item()
+        if item is not None and item.recognized is not None:
+            self._language_label.setText(_("Language: ") + item.recognized[0])
+            self._text_edit.setPlainText(item.recognized[1])
+        else:
+            self._language_label.setText("")
+            self._text_edit.clear()
+        self._update_buttons()
 
     # ------------------------------------------------------------------ #
-    # User actions
+    # Speech recognition
     # ------------------------------------------------------------------ #
 
     def _decoded_pcm(self, message: VoiceMessage) -> Any | None:
@@ -304,11 +411,54 @@ class DigitalVoiceTab(QWidget):
             return None
         return message.to_pcm()
 
-    def _on_play(self) -> None:
-        message = self._current_message()
-        if message is None:
+    def _on_recognize(self) -> None:
+        item = self._current_item()
+        if item is None or self._worker is not None:
             return
-        pcm = self._decoded_pcm(message)
+        if not recognize.is_available():
+            self._status.setText(
+                _("⚠ Speech recognition needs faster-whisper: pip install faster-whisper")
+            )
+            return
+        pcm = self._decoded_pcm(item.message)
+        if pcm is None:
+            return
+        self._view_tabs.setCurrentIndex(1)
+        self._status.setText(
+            _("Recognizing… (the first run downloads the Whisper model, about 460 MB)")
+        )
+        self._worker = _RecognizeWorker(pcm, self)
+        self._worker.done.connect(lambda lang, text, it=item: self._on_recognized(it, lang, text))
+        self._worker.failed.connect(self._on_recognize_failed)
+        self._worker.finished.connect(self._on_worker_finished)
+        self._update_buttons()
+        self._worker.start()
+
+    def _on_recognized(self, item: _MessageItem, language: str, text: str) -> None:
+        item.recognized = (language, text)
+        self._status.setText(_("Recognition finished."))
+        if self._current_item() is item:
+            self._on_selection_changed()
+
+    def _on_recognize_failed(self, message: str) -> None:
+        self._status.setText(f"⚠ {message}")
+
+    def _on_worker_finished(self) -> None:
+        if self._worker is not None:
+            self._worker.deleteLater()
+            self._worker = None
+        self._update_buttons()
+
+    # ------------------------------------------------------------------ #
+    # Playback / saving
+    # ------------------------------------------------------------------ #
+
+    def _on_play_message(self) -> None:
+        """Play the selected received message (double-click in the list)."""
+        item = self._current_item()
+        if item is None:
+            return
+        pcm = self._decoded_pcm(item.message)
         if pcm is None:
             return
         try:
@@ -321,9 +471,35 @@ class DigitalVoiceTab(QWidget):
         except Exception as exc:
             self._status.setText(f"⚠ {exc}")
             return
-        self._playing = True
+        self._set_playing(True, item.message.duration_s)
+
+    def _on_play_file(self) -> None:
+        """Choose an already decoded voice file (MP3/WAV) and play it."""
+        folder = self._save_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        path, _filter = QFileDialog.getOpenFileName(
+            self, _("Play Voice File"), str(folder), _("Audio Files (*.mp3 *.wav)")
+        )
+        if not path:
+            return
+        try:
+            if self._player is None:
+                from comms.audio_player import AudioFilePlayer
+
+                self._player = AudioFilePlayer()
+            self._player.load(path)
+            self._player.play()
+        except Exception as exc:
+            self._status.setText(f"⚠ {exc}")
+            return
+        self._status.setText(_("Playing ") + Path(path).name)
+        self._set_playing(True, float(self._player.duration_s))
+
+    def _set_playing(self, playing: bool, duration_s: float = 0.0) -> None:
+        self._playing = playing
         self._update_buttons()
-        QTimer.singleShot(int(message.duration_s * 1000) + 300, self._on_play_finished)
+        if playing:
+            QTimer.singleShot(int(duration_s * 1000) + 300, self._on_play_finished)
 
     def _on_play_finished(self) -> None:
         self._playing = False
@@ -334,22 +510,23 @@ class DigitalVoiceTab(QWidget):
             import sounddevice as sd
 
             sd.stop()
+        if self._player is not None:
+            with contextlib.suppress(Exception):
+                self._player.pause()
         self._on_play_finished()
 
     def _on_save(self) -> None:
-        message = self._current_message()
-        if message is None:
+        item = self._current_item()
+        if item is None:
             return
         if not LAMEENC_AVAILABLE:
             self._status.setText(_("lameenc not installed — pip install lameenc"))
             return
-        pcm = self._decoded_pcm(message)
+        pcm = self._decoded_pcm(item.message)
         if pcm is None:
             return
-        from PySide6.QtWidgets import QFileDialog
-
         start = str(self._save_dir() / self._default_name())
-        path, _f = QFileDialog.getSaveFileName(self, _("Save MP3"), start, _("MP3 (*.mp3)"))
+        path, _filter = QFileDialog.getSaveFileName(self, _("Save MP3"), start, _("MP3 (*.mp3)"))
         if not path:
             return
         try:
@@ -359,19 +536,21 @@ class DigitalVoiceTab(QWidget):
             self._status.setText(f"⚠ {exc}")
 
     def _on_decode_iq(self) -> None:
+        """Same as SDR Control's Open…: file picker, spectrogram of the whole recording
+        (click to play from there), the recording is played into the demodulator."""
         sdr_ctrl = getattr(self._radio_control, "_sdr_control", None)
         if sdr_ctrl is None or not hasattr(sdr_ctrl, "open_recording"):
-            QMessageBox.information(
-                self, _("Decode IQ Recording"), _("SDR Control is not available.")
-            )
+            QMessageBox.information(self, _("IQ Recording"), _("SDR Control is not available."))
             return
         sdr_ctrl.open_recording()
 
     def closeEvent(self, event: Any) -> None:
         self._idle_timer.stop()
         self._on_stop()
+        if self._player is not None:
+            with contextlib.suppress(Exception):
+                self._player.close()
+        if self._worker is not None:
+            self._worker.wait(2000)
         self._stop_reception()
-        idle = self._assembler.current
-        if idle is not None:
-            idle.complete = True
         super().closeEvent(event)

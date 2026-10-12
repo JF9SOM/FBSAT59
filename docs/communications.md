@@ -1383,6 +1383,18 @@ CODEC2 のデジタル音声なので「Digital Voice」とした。
 - 公式の結合ツールは、パケットごとの 40 バイトをフレーム番号順に並べ、欠けた番号は 40 バイトの 0 で埋め、
   CODEC2 の `.c2` ヘッダー（`C0 DE C2 01 02 08 00`）を付ける。本アプリは同じことを PCM 上で行い、欠けたパケットは 0.4 秒の無音にする。
 
+**画面（2026-10-12 修正）**: SSTV タブと同じ構成。
+- 上部: **Mode** コンボ（今は `2FSK 800bps` のみ）、入力表示（SDR のみ）、Auto-save MP3。
+- 右側の **Quick Comms Control の入力コンボ**に、Digital Voice の送信トランスミッターがある衛星（今は HADES-SA だけ）が出る
+  （`COMMS_TAB_CONFIG["voice"]`、`is_digital_voice_transmitter`＝NORAD 68446 の **GENESIS FSK 800 bps** の下り）。選ぶとその
+  トランスミッターが Radio Control で選ばれる。
+- 左のサブタブ: **Raw Packets**（受信パケットを 1 行ずつ、送信されたままの形で 16 進表示）と **Speech-to-Text**（選択した
+  メッセージの音声認識結果。`🗣 Recognize` で実行。`faster-whisper` は任意の依存で、無ければ案内を出す。Whisper `small`
+  の約 460 MB は初回に自動ダウンロード）。右は受信メッセージの一覧（ダブルクリックで再生）。
+- 下部のボタン: **📂 IQ Recording…**（SDR Control の Open… と同じ。ファイル選択→録音全体のスペクトログラムが開き、
+  クリックした位置から再生→復調器に流れる）、**▶ Play…**（音声化済みの MP3/WAV を選んで再生。既定は
+  `<Music>/FBSAT59-Voice`）、■ Stop、💾 Save MP3…（選択中のメッセージ）。
+
 **実装**:
 - `comms/voice/hades_voice.py`: `FskVoiceSdrDemod`（`pipeline.subscribe()` で生 IQ を購読）。2FSK の復調は SSDV の
   `comms/sstv/fsk_ssdv.py`（間引き・トーン探索・シンボル判定・パケットごとのタイミング再調整）と共通。同期語の誤りは

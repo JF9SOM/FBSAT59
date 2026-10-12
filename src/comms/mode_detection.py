@@ -57,10 +57,10 @@ def is_sstv_transmitter(xpdr: dict[str, Any]) -> bool:
 
 
 def is_digital_voice_transmitter(xpdr: dict[str, Any]) -> bool:
-    """Transmitters the Digital Voice tab handles: CODEC2 voice (HADES-SA, NORAD 68446)."""
-    if xpdr.get("norad_cat_id") == 68446:
-        return True
-    return "CODEC2" in (xpdr.get("description") or "").upper().replace(" ", "")
+    """The transmitter the Digital Voice tab listens to: HADES-SA (NORAD 68446)'s 800 bps
+    GENESIS FSK downlink, which carries CODEC2 voice, SSDV and telemetry."""
+    mode = (xpdr.get("mode") or "").upper()
+    return xpdr.get("norad_cat_id") == 68446 and "GENESIS" in mode and xpdr.get("baud") == 800
 
 
 def is_cw_transmitter(xpdr: dict[str, Any]) -> bool:
@@ -286,7 +286,7 @@ COMMS_TAB_CONFIG: dict[str, CommsTabConfig] = {
     ),
     "cw": CommsTabConfig(show_input_source=False, freq_source="radio_control"),
     "voice": CommsTabConfig(
-        show_input_source=False,
+        show_input_source=True,
         freq_source="radio_control",
         matcher=is_digital_voice_transmitter,
     ),

@@ -219,3 +219,44 @@ def test_idle_tick_completes_the_message(tab: DigitalVoiceTab) -> None:
     tab._assembler.current.last_at -= 10.0  # type: ignore[union-attr]
     tab._on_idle_tick()
     assert "receiving" not in tab._list.item(0).text()
+
+
+def test_tab_has_a_mode_box_with_the_2fsk_mode(tab: DigitalVoiceTab) -> None:
+    assert [tab._mode_combo.itemText(i) for i in range(tab._mode_combo.count())] == ["2FSK 800bps"]
+
+
+def test_tab_shows_raw_packets_as_sent(tab: DigitalVoiceTab) -> None:
+    tab._on_packet(7, bytes(35))
+    line = tab._raw_edit.toPlainText()
+    assert "#07" in line and "25 B3 07" in line
+    assert tab._view_tabs.tabText(0) == "Raw Packets"
+    assert tab._view_tabs.tabText(1) == "Speech-to-Text"
+    assert "1" in tab._raw_count_label.text()
+
+
+def test_recognition_result_follows_the_selected_message(tab: DigitalVoiceTab) -> None:
+    tab._on_packet(0, bytes(35))
+    item = tab._list.item(0)
+    item.recognized = ("es", "En un lugar de la Mancha")  # type: ignore[union-attr]
+    tab._on_selection_changed()
+    assert tab._text_edit.toPlainText() == "En un lugar de la Mancha"
+    assert "es" in tab._language_label.text()
+
+
+def test_voice_matcher_picks_the_hades_sa_800_bps_downlink() -> None:
+    from comms.mode_detection import COMMS_TAB_CONFIG, is_digital_voice_transmitter
+
+    hades = {"norad_cat_id": 68446, "mode": "GENESIS FSK", "baud": 800}
+    assert is_digital_voice_transmitter(hades)
+    assert not is_digital_voice_transmitter({**hades, "baud": 200})
+    assert not is_digital_voice_transmitter({**hades, "norad_cat_id": 25544})
+    assert not is_digital_voice_transmitter({**hades, "mode": "SSDV"})
+    assert COMMS_TAB_CONFIG["voice"].show_input_source
+
+
+def test_whisper_audio_is_resampled_to_16k_float() -> None:
+    from comms.voice.recognize import to_whisper_audio
+
+    out = to_whisper_audio(np.array([0, 16384, -16384, 32767], dtype=np.int16))
+    assert out.dtype == np.float32 and len(out) == 8
+    assert out[2] == pytest.approx(0.5)
