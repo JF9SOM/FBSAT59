@@ -5104,7 +5104,7 @@ msgstr ""
 
 #: src/ui/sstv_tab.py:714
 msgid ""
-"SSDV (gr-satellites): connect an SDR in Radio Control (pasting hex works)"
+"SSDV (CCSDS BPSK 9k6): connect an SDR in Radio Control (pasting hex works)"
 msgstr ""
 
 #: src/ui/sstv_tab.py:729
@@ -5113,7 +5113,7 @@ msgid ""
 msgstr ""
 
 #: src/ui/sstv_tab.py:733
-msgid "SSDV (gr-satellites): waiting for ASRTU-1 frames…"
+msgid "SSDV (CCSDS BPSK 9k6): waiting for ASRTU-1 frames…"
 msgstr ""
 
 #: src/ui/sstv_tab.py:786

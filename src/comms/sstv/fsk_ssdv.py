@@ -4,7 +4,7 @@ Why this exists
 ---------------
 HADES-SA (NORAD 68446, 436.875 MHz, SatNOGS "FSK 800 bps 1600 Hz separation") sends
 SSDV images as bare 2FSK: no AX.25/HDLC and no CCSDS framing, so neither the
-"SSDV (AX.25)" mode (Direwolf) nor the "SSDV (gr-satellites)" mode (ASRTU-1) can see it.
+"SSDV (AX.25)" mode (Direwolf) nor the "SSDV (CCSDS BPSK 9k6)" mode (ASRTU-1) can see it.
 
 Stream format (found by analysing a real pass on 2026-10-12)
 ------------------------------------------------------------

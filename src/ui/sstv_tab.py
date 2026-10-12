@@ -66,7 +66,7 @@ _ENGINE_OWNER = "sstv"
 # gr_satellites on the SDR's IQ and decodes the VC1 frames it outputs.
 _MODE_SSTV = "SSTV"
 _MODE_SSDV = "SSDV (AX.25)"
-_MODE_GR_SSDV = "SSDV (gr-satellites)"
+_MODE_GR_SSDV = "SSDV (CCSDS BPSK 9k6)"
 # Fourth mode: bare 800 baud 2FSK SSDV (HADES-SA), demodulated by comms.sstv.fsk_ssdv.
 _MODE_FSK_SSDV = "SSDV (2FSK 800bps)"
 _FSK_SSDV_NORAD = 68446  # HADES-SA
@@ -248,7 +248,7 @@ class SstvTab(QWidget):
         top.addWidget(QLabel(_("Mode:")))
         self._mode_combo = QComboBox()
         self._mode_combo.addItems([_MODE_SSTV, _MODE_SSDV, _MODE_GR_SSDV, _MODE_FSK_SSDV])
-        self._mode_combo.setFixedWidth(150)
+        self._mode_combo.setFixedWidth(170)
         self._mode_combo.currentTextChanged.connect(self._on_mode_changed)
         top.addWidget(self._mode_combo)
 
@@ -740,7 +740,7 @@ class SstvTab(QWidget):
             self._ssdv_reception = False
 
     # ------------------------------------------------------------------ #
-    # SSDV (gr-satellites) mode (ASRTU-1)
+    # SSDV (CCSDS BPSK 9k6) mode (ASRTU-1)
     # ------------------------------------------------------------------ #
 
     def _ensure_gr_decoder(self) -> Any:
@@ -777,7 +777,7 @@ class SstvTab(QWidget):
         pipeline = self._find_sdr_pipeline()
         if pipeline is None:
             self._status_label.setText(
-                _("SSDV (gr-satellites): connect an SDR in Radio Control (pasting hex works)")
+                _("SSDV (CCSDS BPSK 9k6): connect an SDR in Radio Control (pasting hex works)")
             )
             return
         try:
@@ -796,7 +796,7 @@ class SstvTab(QWidget):
             )
             backend.stop()
             return
-        self._status_label.setText(_("SSDV (gr-satellites): waiting for ASRTU-1 frames…"))
+        self._status_label.setText(_("SSDV (CCSDS BPSK 9k6): waiting for ASRTU-1 frames…"))
 
     def _stop_gr_ssdv_reception(self) -> None:
         """Stop the gr_satellites subprocess, if running."""
@@ -1045,7 +1045,7 @@ class SstvTab(QWidget):
     # ------------------------------------------------------------------ #
 
     def _on_mode_changed(self, mode_text: str) -> None:
-        """Switch between the SSTV, SSDV (AX.25), SSDV (gr-satellites) and SSDV (2FSK) decoders."""
+        """Switch between the SSTV, SSDV (AX.25), SSDV (CCSDS BPSK 9k6) and SSDV (2FSK) decoders."""
         self._stop_decoder()
         self._stop_ssdv()
         if mode_text == _MODE_SSTV:

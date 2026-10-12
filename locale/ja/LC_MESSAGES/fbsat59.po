@@ -5639,9 +5639,9 @@ msgstr "SSDV: AX.25フレームを待機中…"
 
 #: src/ui/sstv_tab.py:714
 msgid ""
-"SSDV (gr-satellites): connect an SDR in Radio Control (pasting hex works)"
+"SSDV (CCSDS BPSK 9k6): connect an SDR in Radio Control (pasting hex works)"
 msgstr ""
-"SSDV (gr-satellites): Radio Control で SDR を接続してください（HEX の貼り付け"
+"SSDV (CCSDS BPSK 9k6): Radio Control で SDR を接続してください（HEX の貼り付け"
 "は使えます）"
 
 #: src/ui/sstv_tab.py:729
@@ -5652,8 +5652,8 @@ msgstr ""
 "せん。"
 
 #: src/ui/sstv_tab.py:733
-msgid "SSDV (gr-satellites): waiting for ASRTU-1 frames…"
-msgstr "SSDV (gr-satellites): ASRTU-1 のフレームを待っています…"
+msgid "SSDV (CCSDS BPSK 9k6): waiting for ASRTU-1 frames…"
+msgstr "SSDV (CCSDS BPSK 9k6): ASRTU-1 のフレームを待っています…"
 
 #: src/ui/sstv_tab.py:786
 msgid "SSDV packets: "

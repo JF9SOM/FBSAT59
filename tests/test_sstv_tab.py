@@ -615,13 +615,13 @@ def test_mode_combo_offers_the_gr_satellites_mode(tab: SstvTab) -> None:
     assert [tab._mode_combo.itemText(i) for i in range(tab._mode_combo.count())] == [
         "SSTV",
         "SSDV (AX.25)",
-        "SSDV (gr-satellites)",
+        "SSDV (CCSDS BPSK 9k6)",
         "SSDV (2FSK 800bps)",
     ]
 
 
 def test_gr_mode_without_an_sdr_says_so(tab: SstvTab, fake_gr: type[_FakeGrBackend]) -> None:
-    tab._mode_combo.setCurrentText("SSDV (gr-satellites)")
+    tab._mode_combo.setCurrentText("SSDV (CCSDS BPSK 9k6)")
     assert tab._view_tabs.currentWidget() is tab._raw_page
     assert "SDR" in tab._status_label.text()
     assert not any(b.running for b in fake_gr.instances)
@@ -631,7 +631,7 @@ def test_gr_mode_starts_gr_satellites_for_asrtu1(
     tab: SstvTab, rc: _FakeRadioControl, fake_gr: type[_FakeGrBackend], engine: _FakeEngine
 ) -> None:
     pipeline = _connect_gr_sdr(rc)
-    tab._mode_combo.setCurrentText("SSDV (gr-satellites)")
+    tab._mode_combo.setCurrentText("SSDV (CCSDS BPSK 9k6)")
     backend = fake_gr.instances[0]
     assert backend.start_args == (61781, 250_000, pipeline)
     assert not any(name == "start_sdr_direwolf" for name, _a, _k in engine.calls)
@@ -640,7 +640,7 @@ def test_gr_mode_starts_gr_satellites_for_asrtu1(
 def test_gr_mode_starts_when_the_sdr_connects_later(
     tab: SstvTab, rc: _FakeRadioControl, fake_gr: type[_FakeGrBackend]
 ) -> None:
-    tab._mode_combo.setCurrentText("SSDV (gr-satellites)")
+    tab._mode_combo.setCurrentText("SSDV (CCSDS BPSK 9k6)")
     _connect_gr_sdr(rc)
     assert fake_gr.instances[0].running
 
@@ -649,7 +649,7 @@ def test_leaving_gr_mode_stops_gr_satellites(
     tab: SstvTab, rc: _FakeRadioControl, fake_gr: type[_FakeGrBackend]
 ) -> None:
     _connect_gr_sdr(rc)
-    tab._mode_combo.setCurrentText("SSDV (gr-satellites)")
+    tab._mode_combo.setCurrentText("SSDV (CCSDS BPSK 9k6)")
     tab._mode_combo.setCurrentText("SSTV")
     assert not fake_gr.instances[0].running
 
@@ -660,7 +660,7 @@ def test_gr_frames_show_as_hex_and_count_ssdv_packets(
     from tests.test_ssdv import make_ccsds_frame, make_dslwp_packet
 
     _connect_gr_sdr(rc)
-    tab._mode_combo.setCurrentText("SSDV (gr-satellites)")
+    tab._mode_combo.setCurrentText("SSDV (CCSDS BPSK 9k6)")
     backend = fake_gr.instances[0]
     backend.raw_frame_received.emit(make_ccsds_frame(make_dslwp_packet(pid=0)))
     backend.raw_frame_received.emit(make_ccsds_frame(make_dslwp_packet(pid=1)))
@@ -677,7 +677,7 @@ def test_gr_mode_pasted_hex_uses_the_ccsds_finder(
 ) -> None:
     from tests.test_ssdv import make_ccsds_frame, make_dslwp_packet
 
-    tab._mode_combo.setCurrentText("SSDV (gr-satellites)")
+    tab._mode_combo.setCurrentText("SSDV (CCSDS BPSK 9k6)")
     frame = make_ccsds_frame(make_dslwp_packet())
     tab._raw_edit.setPlainText(frame.hex(" ").upper())
     tab._on_hex_pasted()
@@ -777,7 +777,7 @@ def test_asrtu1_selects_the_gr_satellites_mode(
     tab: SstvTab, rc: _FakeRadioControl, fake_gr: type[_FakeGrBackend]
 ) -> None:
     rc.transmitter_changed.emit({"description": "Mode U - SSDV", "norad_cat_id": 61781})
-    assert tab._mode_combo.currentText() == "SSDV (gr-satellites)"
+    assert tab._mode_combo.currentText() == "SSDV (CCSDS BPSK 9k6)"
 
 
 def test_other_satellites_leave_the_mode_alone(tab: SstvTab, rc: _FakeRadioControl) -> None:
