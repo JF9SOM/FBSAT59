@@ -1407,12 +1407,19 @@ class HamlibDirectController(RigController):
         dl = self.get_frequency("VFOA")
         return (dl if dl > 0 else None), None
 
-    def read_mode_name(self) -> str | None:
-        """The receive VFO's mode as a Hamlib name (e.g. "PKTUSB"), or None."""
+    def read_mode_name(self, still_ok: Callable[[], bool] | None = None) -> str | None:
+        """The receive VFO's mode as a Hamlib name (e.g. "PKTUSB"), or None.
+
+        *still_ok* is the caller's window: nothing is sent once it has closed.
+        """
         if not self.is_connected or self._rig is None or self._ft991_cat_blocked():
+            return None
+        if still_ok is not None and not still_ok():
             return None
         try:
             with self._rig_cmd_lock:
+                if still_ok is not None and not still_ok():
+                    return None
                 mode, _width = self._rig.get_mode(self._vfo_str_to_const("VFOA"))
             hamlib = self._hamlib
             name = hamlib.rig_strrmode(mode) if hamlib is not None else None

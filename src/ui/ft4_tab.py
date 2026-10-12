@@ -2307,7 +2307,12 @@ class Ft4Tab(QWidget):
 
         # The dial is read BEFORE anything is written: right after an uplink write
         # Hamlib still points at the transmit VFO and "f" returns the uplink.
-        _read()
+        # A failing read must not stop the writes below (2026-10-12: a TypeError in
+        # the Direct-mode mode read left the uplink unwritten for good).
+        try:
+            _read()
+        except Exception:
+            logger.exception("FT4: ADC RX read-back failed")
         if next_is_tx and self._ul_target_fn is not None:
             ul_hz = self._ul_target_fn(nxt + self._ADC_TARGET_AT_S)
             if ul_hz is not None:

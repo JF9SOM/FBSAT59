@@ -4108,3 +4108,9 @@ Rx 周波数の概念は FBSAT59 にないため Shift/Ctrl の使い分けは�
 - Direct の UL 書き込みは、Hamlib が開いている同じシリアルポートに別のファイルディスクリプタを開いて書く
   （2026-09-30 の仮説どおり干渉の可能性あり）。ADC RX では 1 周期 1 回に減るので頻度は大きく下がるが、
   実機で `ft4_decode.log` の `adc_rx write UL ... ok=` と受信音声の途切れを要確認。
+
+**2026-10-12 修正: Direct モード（FT-991）の ADC RX で UL が書かれない**: 別セッションで NET の
+`read_mode_name()` が `still_ok` 引数を取るようになり、周期ジョブ（`_job_tail`）が `rig.read_mode_name(safe)` と
+呼ぶようになったが、Direct 側は引数なしのままで毎周期 `TypeError` → 読み戻しの後ろにある UL 書き込みまで
+進まなかった（ログ: `FT4: ADC RX CAT job failed`、`slot write I` が出ない）。Direct 側にも `still_ok` を追加し、
+さらに読み戻しの失敗が UL/DL 書き込みを止めないよう `_read()` を例外で囲んだ。

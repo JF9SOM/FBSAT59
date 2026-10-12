@@ -4274,3 +4274,19 @@ class TestFt991DirectSlotSync:
         assert ctrl.read_dial_hz() == (435_618_010.0, None)
         assert ctrl.read_mode_name() == "PKTUSB"
         assert ctrl.read_dial_hz(lambda: False) == (None, None)
+
+
+def test_direct_mode_read_takes_the_callers_window() -> None:
+    """The FT4 tab passes its deadline check to read_mode_name() on every rig."""
+    ctrl = HamlibDirectController(model_id=1035, port="/dev/null")
+    ctrl._rig = MagicMock(error_status=0)
+    fake = MagicMock()
+    fake.RIG_VFO_A = 101
+    fake.rig_strrmode.return_value = "PKTUSB"
+    ctrl._hamlib = fake
+    ctrl._rig.get_mode.return_value = (2048, 3000)
+    with ctrl._lock:
+        ctrl._state = RigState.CONNECTED
+    assert ctrl.read_mode_name(lambda: True) == "PKTUSB"
+    assert ctrl.read_mode_name(lambda: False) is None
+    assert ctrl.read_mode_name() == "PKTUSB"

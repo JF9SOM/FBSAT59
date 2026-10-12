@@ -329,3 +329,22 @@ def test_rig_loss_does_not_stop_the_receive_chain(qtbot: QtBot) -> None:
     tab._on_rig_disconnected()
     assert tab._scheduler._running  # decoding goes on without the CAT link
     assert not tab._tx_enabled
+
+
+def test_a_failing_read_back_does_not_stop_the_uplink_write(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ui.ft4_tab as ft4_tab_mod
+
+    tab = _make_tab(qtbot)
+    tab._tx_enabled = False
+    tab._ul_target_fn = lambda t: 145_990_000.0
+    tab._dl_target_fn = lambda t: 435_610_000.0
+    rig = MagicMock()
+    rig.read_dial_hz.side_effect = TypeError("boom")
+    written: list[str] = []
+    rig.write_ul_hz.side_effect = lambda hz, ok: written.append("ul") or True
+    rig.write_dl_hz.side_effect = lambda hz, ok: written.append("dl") or True
+    monkeypatch.setattr(ft4_tab_mod, "corrected_time", lambda: 7500.0 + 6.0)
+    tab._job_tail(rig, 7500.0)
+    assert written == ["dl", "ul"]
