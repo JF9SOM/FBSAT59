@@ -5050,7 +5050,26 @@ msgid "🖼 Open Image…"
 msgstr ""
 
 #: src/ui/sstv_tab.py:370
-msgid "📂 Decode Recording…"
+msgid "📂 Decode MP3 Recording…"
+msgstr ""
+
+#: src/ui/sstv_tab.py
+msgid "📂 Decode IQ Recording…"
+msgstr ""
+
+#: src/ui/sstv_tab.py
+msgid ""
+"Open a recorded .iq.wav file and play it into the decoder (the same as SDR "
+"Control's Open…).\n"
+"A whole-recording spectrogram opens; click it to start from any point."
+msgstr ""
+
+#: src/ui/sstv_tab.py
+msgid "Decode IQ Recording"
+msgstr ""
+
+#: src/ui/sstv_tab.py
+msgid "SDR Control is not available."
 msgstr ""
 
 #: src/ui/sstv_tab.py:375 src/ui/sstv_tab.py:947

@@ -1024,6 +1024,10 @@ class SdrControlWidget(QWidget):
         self._playback_slider.setEnabled(enabled)
         self._update_playback_buttons()
 
+    def open_recording(self) -> None:
+        """The "📂 Open…" button's action, for other tabs (the SSTV/SSDV tab's IQ decode button)."""
+        self._on_open_clicked()
+
     def _on_open_clicked(self) -> None:
         """Pick a .iq.wav file and ask MainWindow to load it and start playing it.
 

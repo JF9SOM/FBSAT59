@@ -1390,6 +1390,17 @@ HEX にして貼り付け→全パケット検出→`ssdv -d` で元サイズの
 **未確認**: 実ライブ受信（アンテナ直結）での効果。音声の聴取（SDR Control）は従来のままなので、SSTV 受信中にスピーカーから聞こえる
 音は以前と同じ品質。
 
+#### SSTV/SSDV タブから IQ 録音を直接デコード（2026-10-12・`📂 Decode IQ Recording…`）
+
+従来、IQ 録音（`.iq.wav`）から画像を出すには SDR Control タブの「📂 Open…」で録音を開く必要があった。タブ下部に
+**`📂 Decode IQ Recording…`** を追加（`_on_decode_iq`）。押すと **SDR Control の Open… と同じ処理**
+（`SdrControlWidget.open_recording()` ＝ `_on_open_clicked()` の公開ラッパー）を呼ぶ: ファイル選択（既定 `~/iq_recordings`）→
+リプレイ SDR として Rig スロットに読み込み実時間で再生 → **録音全体のスペクトログラム（フローグラフ）が開き、クリックした位置から
+再生できる**。SSTV タブは通常の SDR 接続と同じく `sdr_connected` で拾って画像をデコードする（専用 FM 復調経由）。
+- 既存の `📂 Decode Recording…` は **`📂 Decode MP3 Recording…`**（ja: `MP3録音デコード…`）に改名（MP3/WAV 音声用であることを明確化。
+  内部属性 `_decode_file_btn` は不変）。ダイアログ見出し「Decode Recording」は据え置き。
+- SDR Control が無い場合（通常は無い）は情報ダイアログ。
+
 #### タブ UI 設計
 
 ```

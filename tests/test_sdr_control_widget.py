@@ -229,6 +229,21 @@ class TestOpenPlayStop:
             w._open_btn.click()
         assert blocker.args == ["/rec/0_unknown_20260920T065551Z.iq.wav"]
 
+    def test_open_recording_is_what_the_open_button_does(
+        self, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Other tabs (SSTV/SSDV "Decode IQ Recording…") start the same flow through this."""
+        w = SdrControlWidget()
+        qtbot.addWidget(w)
+        monkeypatch.setattr(
+            "ui.sdr_control_widget.QFileDialog.getOpenFileName",
+            lambda *a, **k: ("/rec/57172_UmKA-1_20261011T121721Z.iq.wav", ""),
+        )
+        monkeypatch.setattr(w, "_show_overview", lambda _path: None)
+        with qtbot.waitSignal(w.play_recording_requested) as blocker:
+            w.open_recording()
+        assert blocker.args == ["/rec/57172_UmKA-1_20261011T121721Z.iq.wav"]
+
     def test_cancelling_the_file_dialog_requests_nothing(
         self, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
     ) -> None:

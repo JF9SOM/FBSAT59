@@ -374,7 +374,7 @@ class SstvTab(QWidget):
         self._open_image_btn.clicked.connect(self._on_open_image)
         bottom.addWidget(self._open_image_btn)
 
-        self._decode_file_btn = QPushButton(_("📂 Decode Recording…"))
+        self._decode_file_btn = QPushButton(_("📂 Decode MP3 Recording…"))
         self._decode_file_btn.setEnabled(SOUNDFILE_AVAILABLE)
         self._decode_file_btn.setFixedHeight(30)
         self._decode_file_btn.setStyleSheet(_bottom_btn_style)
@@ -382,6 +382,19 @@ class SstvTab(QWidget):
             self._decode_file_btn.setToolTip(_("soundfile not installed — pip install soundfile"))
         self._decode_file_btn.clicked.connect(self._on_decode_file)
         bottom.addWidget(self._decode_file_btn)
+
+        self._decode_iq_btn = QPushButton(_("📂 Decode IQ Recording…"))
+        self._decode_iq_btn.setFixedHeight(30)
+        self._decode_iq_btn.setStyleSheet(_bottom_btn_style)
+        self._decode_iq_btn.setToolTip(
+            _(
+                "Open a recorded .iq.wav file and play it into the decoder (the same as "
+                "SDR Control's Open…).\nA whole-recording spectrogram opens; click it to "
+                "start from any point."
+            )
+        )
+        self._decode_iq_btn.clicked.connect(self._on_decode_iq)
+        bottom.addWidget(self._decode_iq_btn)
 
         self._clear_btn = QPushButton(_("🗑 Clear"))
         self._clear_btn.setFixedHeight(30)
@@ -961,6 +974,23 @@ class SstvTab(QWidget):
         else:
             self._view_tabs.setCurrentWidget(self._raw_page)
             self._start_ssdv()
+
+    def _on_decode_iq(self) -> None:
+        """Open an IQ recording exactly as SDR Control's "Open…" does.
+
+        The recording is loaded as a replay SDR in a rig slot and played in real time; the
+        tab picks it up like a live SDR (see _on_sdr_connected), so the picture is decoded as
+        it plays and the whole-recording spectrogram lets the user start from any point.
+        """
+        sdr_ctrl = getattr(self._radio_control, "_sdr_control", None)
+        if sdr_ctrl is None or not hasattr(sdr_ctrl, "open_recording"):
+            QMessageBox.information(
+                self,
+                _("Decode IQ Recording"),
+                _("SDR Control is not available."),
+            )
+            return
+        sdr_ctrl.open_recording()
 
     def _on_decode_file(self) -> None:
         """Batch-decode an SSTV image from a previously recorded MP3/WAV file."""

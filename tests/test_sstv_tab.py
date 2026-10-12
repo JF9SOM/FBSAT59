@@ -513,6 +513,35 @@ def test_disconnecting_the_sdr_stops_the_audio_feed(tab: SstvTab, rc: _FakeRadio
     assert tab._sdr_demod is None
 
 
+def test_the_recording_buttons_are_named_for_what_they_open(tab: SstvTab) -> None:
+    assert tab._decode_file_btn.text() == "📂 Decode MP3 Recording…"
+    assert tab._decode_iq_btn.text() == "📂 Decode IQ Recording…"
+
+
+def test_decode_iq_recording_runs_sdr_controls_open(tab: SstvTab, rc: _FakeRadioControl) -> None:
+    """The button is SDR Control's "Open…": file picker, replay, whole-recording spectrogram."""
+    calls: list[str] = []
+
+    class _SdrControl:
+        def open_recording(self) -> None:
+            calls.append("open")
+
+    rc._sdr_control = _SdrControl()  # type: ignore[attr-defined]
+    tab._decode_iq_btn.click()
+    assert calls == ["open"]
+
+
+def test_decode_iq_recording_without_sdr_control_tells_the_user(
+    tab: SstvTab, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    shown: list[str] = []
+    monkeypatch.setattr(
+        "ui.sstv_tab.QMessageBox.information", lambda _p, title, text: shown.append(text)
+    )
+    tab._decode_iq_btn.click()  # the fake radio control has no _sdr_control
+    assert shown == ["SDR Control is not available."]
+
+
 def test_open_image_loads_saved_png(
     tab: SstvTab, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
