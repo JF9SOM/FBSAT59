@@ -73,7 +73,7 @@ _STEP_SYMBOLS = int(_STEP_S * BAUD)  # sync hits are taken from the first half o
 _SEARCH_HZ = 5500.0
 _TONE_RATIO = 5.0
 _SPECTRUM_FFT = 1 << 17
-_SYNC_BITS = np.unpackbits(np.frombuffer(SYNC_WORD, dtype=np.uint8))
+SYNC_BITS = np.unpackbits(np.frombuffer(SYNC_WORD, dtype=np.uint8))
 _MAX_SYNC_ERRORS_VERIFIED = 2
 _MAX_SYNC_ERRORS_UNVERIFIED = 1
 _SYNC_MERGE_SYMBOLS = 40  # candidates closer than this are the same packet
@@ -111,7 +111,7 @@ def header_plausible(packet: bytes) -> bool:
     return 1 <= width <= 64 and 1 <= height <= 64
 
 
-class _Decimator:
+class Decimator:
     """Streaming I/Q decimation to WORK_RATE (overlap-save around scipy's resample_poly)."""
 
     def __init__(self, sample_rate: float) -> None:
@@ -205,35 +205,39 @@ def best_phase(c_high: np.ndarray, c_low: np.ndarray) -> float:
     return best
 
 
-def sync_candidates(bits: np.ndarray, limit: int | None = None) -> list[tuple[int, int]]:
+def sync_candidates(bits: np.ndarray, need: int | None = None) -> list[tuple[int, int]]:
     """Positions ``(bit_index, sync_errors)`` where the sync word matches with few errors.
 
     Only positions in the first half window are taken (the second half is the first half
-    of the next window), and only where a whole packet follows.
+    of the next window), and only where a whole packet follows (*need* bits from the
+    start of the sync word; default: an SSDV packet).
     """
     n = len(bits)
-    need = 16 + 8 * BODY_BYTES
+    if need is None:
+        need = 16 + 8 * BODY_BYTES
     if n < need:
         return []
     count = n - 15
     errors = np.zeros(count, dtype=np.int32)
     for k in range(16):
-        errors += bits[k : k + count] != _SYNC_BITS[k]
-    stop = min(count, _STEP_SYMBOLS, n - need + 1) if limit is None else limit
+        errors += bits[k : k + count] != SYNC_BITS[k]
+    stop = min(count, _STEP_SYMBOLS, n - need + 1)
     return [
         (int(i), int(errors[i])) for i in np.flatnonzero(errors[:stop] <= _MAX_SYNC_ERRORS_VERIFIED)
     ]
 
 
 def refine_packet(
-    c_high: np.ndarray, c_low: np.ndarray, start: float
+    c_high: np.ndarray, c_low: np.ndarray, start: float, count: int | None = None
 ) -> tuple[np.ndarray, np.ndarray]:
     """Re-time one packet: try small timing offsets, keep the one that captures most energy.
 
     The window-wide timing phase is a compromise; locally a fraction of a symbol (or
-    more, after a deep fade) can be better. Returns the per-symbol energies at each tone.
+    more, after a deep fade) can be better. *count* is the number of symbols after
+    the start (default: a whole SSDV packet). Returns the per-symbol energies at each tone.
     """
-    count = 16 + 8 * BODY_BYTES
+    if count is None:
+        count = 16 + 8 * BODY_BYTES
     best_score = -1.0
     best: tuple[np.ndarray, np.ndarray] | None = None
     for offset in _REFINE_OFFSETS:
@@ -271,7 +275,7 @@ def decode_window(seg: np.ndarray) -> list[FskSsdvPacket]:
     for index, _errors, polarity in kept:
         eh, el = refine_packet(c_high, c_low, phase + index * SAMPLES_PER_SYMBOL)
         bits = ((polarity * (eh - el)) > 0).astype(np.uint8)
-        errors = int(np.count_nonzero(bits[:16] != _SYNC_BITS))
+        errors = int(np.count_nonzero(bits[:16] != SYNC_BITS))
         if errors > _MAX_SYNC_ERRORS_VERIFIED:
             continue
         packet = PACKET_PREFIX + np.packbits(bits[16:]).tobytes()
@@ -287,13 +291,13 @@ class FskSsdvStream:
 
     def __init__(self, sample_rate: float) -> None:
         self._rate = float(sample_rate)
-        self._decimator = _Decimator(self._rate)
+        self._decimator = Decimator(self._rate)
         self._buf = np.zeros(0, dtype=np.complex64)
 
     def reset(self) -> None:
         """Forget buffered samples."""
         self._buf = np.zeros(0, dtype=np.complex64)
-        self._decimator = _Decimator(self._rate)
+        self._decimator = Decimator(self._rate)
 
     def feed(self, iq: np.ndarray) -> list[FskSsdvPacket]:
         """Add I/Q samples; return the SSDV packets found in the completed windows."""
