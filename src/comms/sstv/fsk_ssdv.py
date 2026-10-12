@@ -14,8 +14,9 @@ Stream format (found by analysing a real pass on 2026-10-12)
   starts with ``BF 35``, which therefore doubles as the sync word. 252 bytes follow the
   sync word, then ``0x55`` filler. Rebuilding ``55 66 BF 35`` + 252 bytes gives a packet
   the stock ``ssdv`` tool decodes (the CRC-32 only checks out with that exact prefix).
-* The same stream also carries AMSAT-EA "Genesis" telemetry packets (they start with the
-  same ``BF 35``); those are rejected by the CRC / header checks below.
+* The same stream also carries other frames that start with the same ``BF 35`` (38 bytes,
+  header ``25 B3`` + a counter, high-entropy contents; not SSDV and not AMSAT-EA Genesis
+  telemetry -- no CRC-16 variant fits). They are rejected by the CRC / header checks below.
 
 Demodulation
 ------------
