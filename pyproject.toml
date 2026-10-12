@@ -53,6 +53,7 @@ dependencies = [
     "pyserial>=3.5",            # CI-V serial communication for Icom satmode rigs
     "aprslib>=0.7.2",          # APRS packet parsing (MIC-E / compressed / message) for the APRS tab's Plain-text view
     "lameenc>=1.7",            # Pure-Python MP3 encoder for Radio Control audio recording
+    "faster-whisper>=1.0",     # Speech-to-text of Digital Voice messages (Whisper via CTranslate2; the model itself is downloaded on first use)
     "soundfile>=0.12",         # MP3/WAV decode for recording playback and SSTV "Decode Recording…" (libsndfile, no ffmpeg needed)
 ]
 

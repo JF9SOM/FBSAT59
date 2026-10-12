@@ -158,7 +158,18 @@ extra_datas: list[tuple[str, str]] = []
 extra_binaries: list[tuple[str, str]] = []
 extra_hidden: list[str] = []
 
-for _pkg in ("scipy", "sounddevice", "lameenc", "onnxruntime"):
+for _pkg in (
+    "scipy",
+    "sounddevice",
+    "lameenc",
+    "onnxruntime",
+    # Digital Voice speech-to-text (faster-whisper): CTranslate2 ships native libraries
+    "faster_whisper",
+    "ctranslate2",
+    "tokenizers",
+    "huggingface_hub",
+    "av",
+):
     try:
         _d, _b, _h = collect_all(_pkg)
         extra_datas += _d

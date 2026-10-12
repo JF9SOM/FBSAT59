@@ -1,8 +1,7 @@
 """Speech-to-text for decoded voice messages (optional: faster-whisper).
 
-faster-whisper is not a dependency of the app. When it is installed
-(``pip install faster-whisper``) the Digital Voice tab can recognise a message; the Whisper
-model (``small``, about 460 MB) is downloaded on first use into the user data folder.
+faster-whisper is a dependency of the app (bundled in the installers). The Whisper model
+(``small``, about 460 MB) is downloaded on first use into the user data folder.
 CODEC2 700C is a very low bit rate codec, so expect an approximate result.
 """
 
@@ -51,7 +50,7 @@ def transcribe(pcm: np.ndarray, language: str | None = None) -> tuple[str, str]:
     """
     global _model
     if not is_available():
-        raise RuntimeError("faster-whisper is not installed (pip install faster-whisper)")
+        raise RuntimeError("faster-whisper is not installed")
     from faster_whisper import WhisperModel
 
     if _model is None:

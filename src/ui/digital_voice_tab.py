@@ -177,9 +177,9 @@ class DigitalVoiceTab(QWidget):
         self._recognize_btn = QPushButton(_("🗣 Recognize"))
         self._recognize_btn.setToolTip(
             _(
-                "Speech recognition of the selected message (needs faster-whisper; the "
-                "model, about 460 MB, is downloaded on first use). CODEC2 700C is a very "
-                "low bit rate codec, so the text is approximate."
+                "Speech recognition of the selected message (the Whisper model, about "
+                "460 MB, is downloaded on first use). CODEC2 700C is a very low bit rate "
+                "codec, so the text is approximate."
             )
         )
         self._recognize_btn.clicked.connect(self._on_recognize)
@@ -417,7 +417,7 @@ class DigitalVoiceTab(QWidget):
             return
         if not recognize.is_available():
             self._status.setText(
-                _("⚠ Speech recognition needs faster-whisper: pip install faster-whisper")
+                _("⚠ Speech recognition is unavailable: faster-whisper is not installed.")
             )
             return
         pcm = self._decoded_pcm(item.message)

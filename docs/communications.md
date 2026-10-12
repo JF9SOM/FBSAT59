@@ -1389,8 +1389,9 @@ CODEC2 のデジタル音声なので「Digital Voice」とした。
   （`COMMS_TAB_CONFIG["voice"]`、`is_digital_voice_transmitter`＝NORAD 68446 の **GENESIS FSK 800 bps** の下り）。選ぶとその
   トランスミッターが Radio Control で選ばれる。
 - 左のサブタブ: **Raw Packets**（受信パケットを 1 行ずつ、送信されたままの形で 16 進表示）と **Speech-to-Text**（選択した
-  メッセージの音声認識結果。`🗣 Recognize` で実行。`faster-whisper` は任意の依存で、無ければ案内を出す。Whisper `small`
-  の約 460 MB は初回に自動ダウンロード）。右は受信メッセージの一覧（ダブルクリックで再生）。
+  メッセージの音声認識結果。`🗣 Recognize` で実行。`faster-whisper` は**必須の依存**（`pyproject.toml` の dependencies。PyInstaller は
+  `scripts/fbsat59.spec` で `faster_whisper`・`ctranslate2`・`tokenizers`・`huggingface_hub`・`av` を `collect_all` で同梱）。Whisper `small`
+  のモデル約 460 MB だけは大きいので同梱せず、初回の認識時にユーザーデータ（`whisper/`）へ自動ダウンロード）。右は受信メッセージの一覧（ダブルクリックで再生）。
 - 下部のボタン: **📂 IQ Recording…**（SDR Control の Open… と同じ。ファイル選択→録音全体のスペクトログラムが開き、
   クリックした位置から再生→復調器に流れる）、**▶ Play…**（音声化済みの MP3/WAV を選んで再生。既定は
   `<Music>/FBSAT59-Voice`）、■ Stop、💾 Save MP3…（選択中のメッセージ）。
@@ -1413,6 +1414,9 @@ CODEC2 のデジタル音声なので「Digital Voice」とした。
 don Quijote de la Mancha"）と一致した（衛星の既定メッセージとして『ドン・キホーテ』の一節が入っていると紹介されている）。
 `tests/test_hades_voice.py`（合成 2FSK・マスク・アセンブラー・タブの購読／一覧。復号とストリームは libcodec2／scipy が無ければ skip）。
 **ライブ受信の実機検証と、libcodec2 の同梱はまだ**。
+
+**日本語化（2026-10-12）**: タブ・メニューの文字列は `locale/ja/LC_MESSAGES/fbsat59.po` に訳を追加した（メニュー名は「デジタル音声」）。
+`msgmerge` で fuzzy になっていた他機能の 4 件（IQ 飽和メッセージ・AX.25 ボーレートのツールチップ 2 件・フレーム選択の案内）も訳を直した。
 
 **未対応・今後**: BBS へのアップリンク（200 bps FSK）、テレメトリー（type 1〜5 など）、200 bps の下り、type 15（BBS 内容）の表示。
 
