@@ -114,6 +114,11 @@ where = ["src"]
 
 [tool.setuptools_scm]
 write_to = "src/fbsat59/_version.py"
+# Only version tags (vX.Y.Z) count. The "*-bundle" tags (GitHub releases that hold the
+# pre-built native components; some contain a digit, e.g. codec2-bundle) used to be picked
+# as "the latest tag" whenever one sat nearer HEAD than the newest vX.Y.Z, which broke
+# `pip install -e .` with "tag ... does not parse as a version".
+git_describe_command = "git describe --dirty --tags --long --match v[0-9]*"
 
 # --- Ruff (リンター・フォーマッター) ---
 [tool.ruff]
