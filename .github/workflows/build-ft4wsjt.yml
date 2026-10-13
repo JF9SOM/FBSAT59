@@ -36,7 +36,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FORCE: ${{ github.event.inputs.force_build }}
         run: |
-          UPSTREAM=$(gh api repos/wsjtx/wsjtx/releases --jq '.[0].tag_name')
+          # Pinned: v3.3.0-beta1 reorganised lib/ (q65_callers, decoder_codec_context),
+          # which this build script's file lists do not cover. Bump only after
+          # updating scripts/build_*.sh for the new layout.
+          UPSTREAM="v3.2.0-rc1"
           echo "Upstream WSJT-X: $UPSTREAM"
           echo "wsjtx_tag=$UPSTREAM" >> "$GITHUB_OUTPUT"
 
