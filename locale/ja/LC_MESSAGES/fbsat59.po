@@ -473,8 +473,8 @@ msgid "QSO with {call} logged automatically"
 msgstr "{call} との QSO を自動でログしました"
 
 #: src/ui/ft4_tab.py:2225
-msgid "ADC RX needs an FT-991, FTX-1 or IC-705 (NET or Direct mode)"
-msgstr "ADC RXにはFT-991、FTX-1またはIC-705（NETまたはDirectモード）が必要です"
+msgid "ADC RX needs an FT-991, FTX-1, IC-705 or an Icom SAT-mode rig (cross-band)"
+msgstr "ADC RXにはFT-991、FTX-1、IC-705、またはIcomのSATモード機（クロスバンドの衛星）が必要です"
 
 #: src/ui/ft4_tab.py:2453
 msgid "Set My Call before enabling TX"

@@ -4279,3 +4279,23 @@ Python に触れないので、この循環待ちは起きない。PortAudio 側
 - **次にやる人へ**: IC-705 で試すときは `ft4_decode.log` の `adc_rx write DL/UL ... ok=True`、`adc_rx read DL`
   が書いた値に追従すること、**送信後に受信が VFO-B（UL 周波数）へ移っていない／送受信が入れ替わっていない**
   ことを最初に確認する。
+
+### ADC RX を Icom SAT モード機（NET、クロスバンドのみ）にも拡張（2026-10-13、実機未検証）
+
+IC-9100 / IC-9700 / IC-910H / IC-821H を rigctld（NET）で使う場合。**Direct モードは未対応**（次の段階。まず
+9100/910H/821H（UL=`RIG_VFO_TX`）、最後に 9700（UL=`RIG_VFO_SUB`、Sub の書き込みが重い、2 回目の
+`open` 後に追加の `set_func(SATMODE,1)` が必要）の順に進める予定）。
+
+- **対象**: Rig Settings の「Icom SAT mode rig」チェック（`is_satmode`）が付いていて、選択中のトランスポンダーが
+  **クロスバンド**（V/U・U/V）のとき。FT4 を使う衛星はクロスバンドだけなので、同一バンドの組は対象外で、
+  `slot_sync` が自動的に False になり毎秒追尾に戻る（`set_transponder_freqs()` で `_is_same_band` が変わった時点で
+  判定。クロスバンドに戻れば再び有効）。NET ではモデルが分からないので 9100 と 9700 の区別はない
+  （書くコマンドは毎秒追尾と同じ `F`＝Main、`I`＝Sub で、rigctld が機種差を吸収する）。
+- **送信中の CAT**: FT-991 と同様に、送信中・PTT オフ後 1 秒は出さない（`_slot_cat_blocked`）。
+- **接続後の再送（Stage-2）**: 毎秒追尾は最初の UL 書き込みの直後にモード+CTCSS を再送していた
+  （衛星切り替え時の VFO 割り当て逆転対策）。これは複数コマンド（`S 1 Main`・`V`・`M`…）で時間がかかるので、
+  スロット同期では UL 書き込みに含めず、`run_pending_setup()` として **FT4 タブが「次に送信が始まらない」
+  尾の時間にだけ**呼ぶ（TX Enable が ON で毎周期送信している間は呼ばれない。モード・CTCSS は接続前の
+  Stage 1 で設定済みなので保険が走らないだけ）。
+- **次にやる人へ**: 最初に確認するのは、`adc_rx write DL/UL ... ok=True`、送信後も Main が受信・Sub が送信の
+  ままか（VFO 割り当ての逆転がないか）、`RigNet: Stage-2 mode/CTCSS resent` が TX 停止中に一度出ること。

@@ -2529,7 +2529,57 @@ class TestHamlibNetController:
         assert ctrl.cat_blocked is True
         assert ctrl.write_dl_hz(435_618_000.0) is False
         ctrl._is_satmode_rig = True
-        assert ctrl.supports_slot_sync is False  # Icom SAT-mode rigs are not covered
+        assert ctrl.supports_slot_sync is True  # an Icom SAT-mode rig, cross-band
+        ctrl._is_same_band = True
+        assert ctrl.supports_slot_sync is False  # same-band pairs are not covered
+
+    # -- Icom SAT-mode rigs over rigctld (IC-9100/9700/910H/821H), cross-band --
+
+    def _satmode_ctrl(self) -> HamlibNetController:
+        ctrl = self._make_connected_ctrl(ctcss_method="hamlib")
+        ctrl._sock.recv.return_value = b"RPRT 0\n"  # type: ignore[union-attr]
+        ctrl._is_satmode_rig = True
+        ctrl.set_transponder_freqs(435_640_000.0, 145_940_000.0)  # RS-44: cross-band
+        return ctrl
+
+    def test_satmode_net_slot_writes_are_plain_f_and_i(self) -> None:
+        ctrl = self._satmode_ctrl()
+        assert ctrl.supports_slot_sync is True
+        ctrl.set_slot_sync(True)
+        assert ctrl.write_dl_hz(435_618_000.0) is True
+        assert ctrl.write_ul_hz(145_991_000.0) is True
+        sent = self._sent(ctrl)
+        assert b"F 435618000\n" in sent and b"I 145991000\n" in sent
+        assert ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0) is True  # silenced
+        assert b"F 435600000" not in self._sent(ctrl)
+
+    def test_satmode_net_stage2_waits_for_the_tab_to_ask(self) -> None:
+        ctrl = self._satmode_ctrl()
+        ctrl._pending_mode_net = True
+        ctrl.set_current_modes("USB", "LSB")
+        with (
+            patch.object(ctrl, "send_mode_only") as send_mode,
+            patch.object(ctrl, "_apply_ctcss_civ_direct"),
+        ):
+            ctrl.run_pending_setup()  # no uplink written yet: nothing to do
+            send_mode.assert_not_called()
+            ctrl.write_ul_hz(145_991_000.0)
+            send_mode.assert_not_called()  # the uplink write itself never runs it
+            ctrl.run_pending_setup(lambda: False)  # window closed: not now
+            send_mode.assert_not_called()
+            ctrl.run_pending_setup(lambda: True)
+            send_mode.assert_called_once_with("USB", "LSB")
+            ctrl.run_pending_setup()  # once only
+            send_mode.assert_called_once()
+
+    def test_satmode_net_falls_back_to_per_second_tracking_on_a_same_band_pair(self) -> None:
+        ctrl = self._satmode_ctrl()
+        ctrl.set_slot_sync(True)
+        assert ctrl.slot_sync is True
+        ctrl.set_transponder_freqs(145_825_000.0, 145_825_000.0)  # ISS APRS: same-band
+        assert ctrl.slot_sync is False
+        ctrl.set_vfo_frequencies(145_825_000.0, 145_825_000.0)
+        assert b"F 145825000\n" in self._sent(ctrl)
 
     def test_custom_cat_net_rig_is_not_supported(self) -> None:
         ctrl = self._make_connected_ctrl(ctcss_method="custom_cat")

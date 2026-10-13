@@ -1047,6 +1047,13 @@ class RigController(ABC):
             or time.monotonic() - self._ptt_off_at < _FT991_POST_TX_SETTLE_S
         )
 
+    def run_pending_setup(self, still_ok: Callable[[], bool] | None = None) -> None:
+        """Slot-synchronous mode: finish any set-up that waits for the first uplink write.
+
+        Only the Icom SAT-mode rigs over rigctld have such a step; a no-op elsewhere.
+        """
+        return None
+
     def _slot_cat_blocked(self) -> bool:
         """True while slot-synchronous CAT must not be sent to this rig.
 
@@ -3705,20 +3712,29 @@ class HamlibNetController(RigController):
     def supports_slot_sync(self) -> bool:
         """True for an FT-991/FT-991A, FTX-1F or a generic rig (IC-705) reached via rigctld.
 
-        The model cannot be read over rigctld, so a generic rig is recognised the
-        way the rest of this class does: "Hamlib standard" CTCSS method and not an
-        Icom SAT-mode rig (whose Main/Sub handling is different and not covered).
+        The model cannot be read over rigctld, so the rig is recognised the way the
+        rest of this class does: an Icom SAT-mode rig by its Rig Settings checkbox,
+        a generic rig (IC-705) by the "Hamlib standard" CTCSS method.
         """
         if self._radio_type != "full_duplex":
             return False
         if self._ctcss_method in ("ft991", "ftx1"):
             return True
-        return self._ctcss_method == "hamlib" and not (self._satmode or self._is_satmode_rig)
+        if self.is_satmode:
+            # Icom SAT-mode rigs: cross-band transponders only (the only ones FT4 is
+            # used on). A same-band pair makes the rig leave SAT mode, which is
+            # a different path.
+            return not self._is_same_band
+        return self._ctcss_method == "hamlib"
 
     @property
     def slot_sync(self) -> bool:
-        """Whether the per-second Doppler writes are suspended for slot-synchronous writes."""
-        return self._slot_sync
+        """Whether the per-second Doppler writes are suspended for slot-synchronous writes.
+
+        Also False as soon as the selected transponder is one this mode does not cover
+        (a SAT-mode rig switched to a same-band pair), so tracking is never left silent.
+        """
+        return self._slot_sync and self.supports_slot_sync
 
     def set_slot_sync(self, enabled: bool) -> None:
         """Turn slot-synchronous mode on/off (ignored on rigs that do not support it)."""
@@ -4322,7 +4338,7 @@ class HamlibNetController(RigController):
             return True
 
         # Slot-synchronous mode: the FT4 tab writes once per period instead.
-        if self._slot_sync:
+        if self.slot_sync:
             return True
 
         # After a transmission the FT-991 stays deaf to CAT for a few seconds, and a
@@ -4401,30 +4417,52 @@ class HamlibNetController(RigController):
                         raise RigControlError(f"set TX freq failed: {resp!r}")
                     self._last_ul_hz = vfob_hz
                     self._last_ul_update_time = now
-                    if was_first_ul and (
-                        self._pending_mode_net or self._pending_ctcss_hz is not None
-                    ):
-                        # Stage 2: SAT mode band assignment is now locked by the
-                        # first live frequency write — re-send modes and CTCSS.
-                        # send_mode_only and _apply_ctcss_civ_direct use independent
-                        # sockets and do not acquire _cmd_lock, so this is safe.
-                        _dl = self._current_dl_mode
-                        _ul = self._current_ul_mode
-                        _ctcss = self._pending_ctcss_hz
-                        self._pending_mode_net = False
-                        self._pending_ctcss_hz = None
-                        if _dl:
-                            self.send_mode_only(_dl, _ul)
-                        if _ctcss is not None and _ctcss > 0.0:
-                            self._apply_ctcss_civ_direct(_ctcss)
-                        logger.info(
-                            "RigNet: Stage-2 mode/CTCSS resent dl=%s ul=%s ctcss=%.1fHz",
-                            _dl,
-                            _ul,
-                            _ctcss or 0.0,
-                        )
+                    if was_first_ul:
+                        self._resend_stage2()
 
         return True
+
+    def _resend_stage2(self) -> None:
+        """Stage 2: SAT mode band assignment is locked by the first live frequency
+        write -- re-send modes and CTCSS (once; a no-op when nothing is pending).
+
+        send_mode_only and _apply_ctcss_civ_direct use independent sockets and do
+        not acquire _cmd_lock, so this is safe to call with or without it held.
+        """
+        if not (self._pending_mode_net or self._pending_ctcss_hz is not None):
+            return
+        _dl = self._current_dl_mode
+        _ul = self._current_ul_mode
+        _ctcss = self._pending_ctcss_hz
+        self._pending_mode_net = False
+        self._pending_ctcss_hz = None
+        if _dl:
+            self.send_mode_only(_dl, _ul)
+        if _ctcss is not None and _ctcss > 0.0:
+            self._apply_ctcss_civ_direct(_ctcss)
+        logger.info(
+            "RigNet: Stage-2 mode/CTCSS resent dl=%s ul=%s ctcss=%.1fHz",
+            _dl,
+            _ul,
+            _ctcss or 0.0,
+        )
+
+    def run_pending_setup(self, still_ok: Callable[[], bool] | None = None) -> None:
+        """Slot-synchronous mode: run the Stage-2 resend once the uplink has been written.
+
+        The per-second loop does this right after its first uplink write. In slot
+        mode the FT4 tab calls it only at a moment when no transmission is about
+        to start (it re-sends mode/CTCSS over several commands), so it is never
+        part of the uplink write itself.
+        """
+        if (
+            not self.is_satmode
+            or self._last_ul_hz is None
+            or self._slot_cat_blocked()
+            or (still_ok is not None and not still_ok())
+        ):
+            return
+        self._resend_stage2()
 
     def get_frequency(self, vfo: str = "VFOA") -> float:
         resp = self._cmd("f")
