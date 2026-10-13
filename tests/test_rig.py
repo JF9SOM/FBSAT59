@@ -2520,11 +2520,14 @@ class TestHamlibNetController:
         ctrl = self._make_connected_ctrl(ctcss_method="hamlib")
         ctrl._sock.recv.return_value = b"RPRT 0\n"  # type: ignore[union-attr]
         assert ctrl.supports_slot_sync is True  # e.g. IC-705
-        assert ctrl.cat_blocked is False
         ctrl.set_slot_sync(True)
         assert ctrl.write_dl_hz(435_618_000.0) is True
         assert ctrl.write_ul_hz(145_991_000.0) is True
         assert b"V VFO" not in self._sent(ctrl)  # no VFO select of our own
+        # CAT is assumed to be ignored while keyed, as on the FT-991
+        ctrl.set_ptt(True, freeze_doppler=False)
+        assert ctrl.cat_blocked is True
+        assert ctrl.write_dl_hz(435_618_000.0) is False
         ctrl._is_satmode_rig = True
         assert ctrl.supports_slot_sync is False  # Icom SAT-mode rigs are not covered
 
@@ -4378,11 +4381,14 @@ class TestIc705DirectSlotSync:
             ctrl._state = RigState.CONNECTED
         return ctrl
 
-    def test_supported_and_never_blocked(self) -> None:
+    def test_cat_is_assumed_blocked_while_keyed_like_the_ft991(self) -> None:
         ctrl = self._ctrl()
         assert ctrl.supports_slot_sync
-        ctrl.set_ptt(True, freeze_doppler=False)
         assert not ctrl.cat_blocked
+        ctrl.set_ptt(True, freeze_doppler=False)
+        assert ctrl.cat_blocked
+        assert ctrl.write_dl_hz(435_618_000.0) is False
+        ctrl._rig.set_freq.assert_not_called()
 
     def test_downlink_is_one_set_freq_on_vfo_a(self) -> None:
         ctrl = self._ctrl()

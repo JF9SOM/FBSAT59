@@ -4222,7 +4222,8 @@ FT-991 での ADC RX の確認が済んだので、第二のリグとして FTX-
 - **対象**: NET モードは CTCSS Method が `ftx1` のリグ、Direct モードは model 1051
   （いずれも `radio_type == "full_duplex"`）。`supports_slot_sync` で判定し、それ以外のリグは従来どおり
   ADC RX を断る（ステータス: 「ADC RX には FT-991 または FTX-1 が必要です」）。
-- **FT-991 固有の処理は共有しない**: CAT が送信中・送信直後に応答しない問題、送信後の「CAT が答えるまで待つ」
+- **FT-991 固有の処理は共有しない**（ただし「送信中・直後は CAT を出さない」は FTX-1 以外のリグ（IC-705 を含む汎用リグ）にも
+  適用する）: CAT が送信中・送信直後に応答しない問題、送信後の「CAT が答えるまで待つ」
   プローブ、FM に落ちたモードの復元（`restore_rx_mode`）は FT-991 だけ。FTX-1 は送信中も CAT に答える
   （2026-09-30 確認）ので `_slot_cat_blocked()`（基底は常に False、FT-991 だけが `_ft991_cat_blocked()` を返す）
   で分けた。FT4 タブは従来どおり送信周期には CAT を出さない。
@@ -4266,8 +4267,9 @@ Python に触れないので、この循環待ちは起きない。PortAudio 側
 - **Direct（model 3085）**: DL は `set_freq(VFOA)`、読み戻しは `get_freq(VFOA)`、モードは `get_mode(VFOA)`。
   UL は毎秒の追尾の汎用分岐と同じ「`set_freq(VFOB)` → 0.05 s → `set_vfo(VFOA)`」（Icom の Hamlib は UL 書き込み後に
   内部の選択 VFO が VFO-B に残り、受信が UL 側へ移る／送受信が入れ替わるため、VFO-A への復帰が必須）。
-  生の CI-V 書き込みは使わない（応答の読み捨てによるデシンクの前例があるため）。CAT は送信中も受け付けるので
-  `cat_blocked` は常に False（FT4 タブは従来どおり送信周期に CAT を出さない）。
+  生の CI-V 書き込みは使わない（応答の読み捨てによるデシンクの前例があるため）。**CAT は FT-991 と同様に
+  送信中・PTT オフ後 1 秒は受け付けないものとして扱う**（`cat_blocked`。2026-10-13 ユーザー指示。FTX-1 だけが
+  送信中も答える）。
 - **NET**: rigctld 経由ではモデルが取れないので、「CTCSS Method が Hamlib standard」かつ「Icom SAT モード機でない」
   汎用リグを対象にした（Rig Settings の設定が正しい前提。IC-705 以外の汎用リグにも及ぶが、ADC RX は
   チェックを入れたときだけの機能で、書き込むコマンドは毎秒追尾と同じ `F`/`I`）。SAT モード機（IC-9100/9700 等）、

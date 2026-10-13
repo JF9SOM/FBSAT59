@@ -1050,10 +1050,11 @@ class RigController(ABC):
     def _slot_cat_blocked(self) -> bool:
         """True while slot-synchronous CAT must not be sent to this rig.
 
-        Only the FT-991 ignores CAT while keyed and for a moment afterwards. The
-        FTX-1 keeps answering CAT through a transmission (confirmed 2026-09-30),
-        so for it nothing is blocked here -- the FT4 tab still leaves transmit
-        periods alone. Subclasses answer for the rigs they drive.
+        The FT-991 ignores CAT while keyed and for a moment afterwards, and the same
+        is assumed for the other rigs (IC-705 ...). Only the FTX-1 is known to keep
+        answering CAT through a transmission (confirmed 2026-09-30), so for it
+        nothing is blocked here -- the FT4 tab still leaves transmit periods alone.
+        Subclasses answer for the rigs they drive.
         """
         return False
 
@@ -1429,7 +1430,9 @@ class HamlibDirectController(RigController):
         self._slot_sync = enabled
 
     def _slot_cat_blocked(self) -> bool:
-        return self._model_id in _FT991_DIRECT_MODEL_IDS and self._ft991_cat_blocked()
+        # FT-991 ignores CAT while keyed; for every other rig except the FTX-1 the same
+        # is assumed (IC-705 included), as nothing says otherwise.
+        return self._model_id not in _FTX1_MODEL_IDS and self._ft991_cat_blocked()
 
     @property
     def cat_blocked(self) -> bool:
@@ -3725,7 +3728,9 @@ class HamlibNetController(RigController):
         self._slot_sync = enabled
 
     def _slot_cat_blocked(self) -> bool:
-        return self._ctcss_method == "ft991" and self._ft991_cat_blocked()
+        # FT-991 ignores CAT while keyed; the same is assumed for a generic rig
+        # (IC-705 etc.). Only the FTX-1 keeps answering.
+        return self._ctcss_method != "ftx1" and self._ft991_cat_blocked()
 
     @property
     def cat_blocked(self) -> bool:
