@@ -797,6 +797,8 @@
       "label": "CW Telemetry (28 bytes)",
       "hex_digits": 56,
       "id_prefix": "JS1YRUORIGAMI2",
+      "clock": {"field": "satellite_time", "tolerance_s": 180},
+      "known_digits": {"46": "4B42483E00"},
       "fields": [
         {
           "name": "uvc_enabled",

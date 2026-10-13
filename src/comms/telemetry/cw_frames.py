@@ -23,6 +23,18 @@ block: upper-case, no spaces -- see ``normalize_block()``) and checking the
 remainder's length, rather than the whole block. ARICA-2's beacon sends bare
 hex with no such prefix, so its frames simply omit the key.
 
+Two more optional keys help against misread digits (CW has no CRC):
+
+  clock         ``{"field": name, "tolerance_s": n}``: ``name`` is a UNIX-time field the
+                satellite stamps its frame with. When the time the frame was received
+                is known, a frame whose stamp is further than ``tolerance_s`` from it is
+                not valid, and unreadable digits in the stamp's upper bytes are filled
+                in from the clock (only if exactly one value fits).
+  known_digits  ``{"46": "4B42483E00"}``: digits that normally never change (settings),
+                keyed by their digit position. Only *unreadable* positions are filled in
+                (a readable digit is never overridden), and a frame cut short in the middle
+                of such a run is completed.
+
 Each entry of ``fields`` is consumed in order, MSB first. Kinds:
 
   flag      1 bit; ``labels`` maps "0"/"1" to the text shown.
@@ -47,6 +59,7 @@ operator's own published data tables. Nothing here guesses beyond that.
 
 from __future__ import annotations
 
+import datetime
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -177,6 +190,97 @@ def _hex_part(frame_def: dict[str, Any], block: str) -> str | None:
         return None
     following = _find_prefix(block, prefix, found[1])
     return block[found[1] : following[0] if following else len(block)]
+
+
+def _digit_offset(frame_def: dict[str, Any], name: str) -> int | None:
+    """Position (in hex digits) of field *name*'s first bit, or None if absent / unaligned."""
+    bits = 0
+    for fd in frame_def["fields"]:
+        if fd["name"] == name:
+            return bits // 4 if bits % 4 == 0 else None
+        bits += int(fd.get("bits") or 0)
+    return None
+
+
+def _epoch(when: datetime.datetime) -> float:
+    """POSIX seconds of *when* (a naive time is taken as UTC)."""
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=datetime.UTC)
+    return when.timestamp()
+
+
+def _clock_candidates(
+    cand: str, start: int, when: datetime.datetime, tolerance_s: float
+) -> str | None:
+    """*cand* with the unreadable digits among the 6 upper-byte digits of the 8-digit time
+    stamp at *start* filled in from the clock, or None if that does not give exactly one
+    answer. The two lowest digits (the second count) are never touched."""
+    stamp = list(cand[start : start + 6])
+    unknown = [i for i, ch in enumerate(stamp) if ch not in "0123456789ABCDEF"]
+    if not unknown or len(unknown) > 2:
+        return None
+    target = _epoch(when)
+    found: list[str] = []
+    for combo in range(16 ** len(unknown)):
+        digits = stamp[:]
+        for k, pos in enumerate(unknown):
+            digits[pos] = f"{(combo >> (4 * k)) & 0xF:X}"
+        top = int("".join(digits), 16) * 256
+        # does any second of this 256 s block fall within the tolerance of the clock?
+        if top - tolerance_s <= target <= top + 255 + tolerance_s:
+            found.append("".join(digits))
+    if len(found) != 1:
+        return None
+    return cand[:start] + found[0] + cand[start + 6 :]
+
+
+def _repair_digits(frame_def: dict[str, Any], cand: str, when: datetime.datetime | None) -> str:
+    """Fill in digits that could not be read, from what the frame definition knows."""
+    n = int(frame_def["hex_digits"])
+    for key, run in (frame_def.get("known_digits") or {}).items():
+        k = int(key)
+        # a frame cut short somewhere in the run: complete it (the run is a settings block, so
+        # the tail that did arrive must match it exactly)
+        if k <= len(cand) < n and run.startswith(cand[k:]):
+            cand += run[len(cand) - k :]
+        if len(cand) == n:
+            fixed = "".join(
+                run[i] if ch not in "0123456789ABCDEF" else ch for i, ch in enumerate(cand[k:])
+            )[: len(run)]
+            cand = cand[:k] + fixed + cand[k + len(run) :]
+    clock = frame_def.get("clock")
+    if when is not None and clock and len(cand) == n:
+        start = _digit_offset(frame_def, str(clock["field"]))
+        if start is not None:
+            repaired = _clock_candidates(cand, start, when, float(clock["tolerance_s"]))
+            if repaired is not None:
+                cand = repaired
+    return cand
+
+
+def repair_block(norad: int | None, text: str, when: datetime.datetime | None = None) -> str:
+    """*text* (one frame's block, normalized) with unreadable digits filled in where the
+    frame definition allows it (see ``known_digits`` / ``clock`` in the module docstring).
+
+    *when* is when the frame was received (None if that is not reliably known: the clock
+    repair is then skipped). A block that is not a frame, or needs no repair, comes back
+    normalized but otherwise unchanged. Never changes a readable digit.
+    """
+    block = normalize_block(text)
+    frames = load_cw_frames(norad) or {}
+    for frame_def in frames.values():
+        prefix = str(frame_def.get("id_prefix", ""))
+        if not prefix:
+            continue
+        found = _find_prefix(block, prefix)
+        if found is None:
+            continue
+        following = _find_prefix(block, prefix, found[1])
+        stop = following[0] if following else len(block)
+        cand = block[found[1] : stop]
+        fixed = _repair_digits(frame_def, cand, when)
+        return block[: found[1]] + fixed + block[stop:]
+    return block
 
 
 def _match(frames: dict[str, Any], block: str) -> tuple[str, dict[str, Any], str] | None:
@@ -341,8 +445,13 @@ def _angvel_text(code: int, bits: int, edges: list[float], axis: str) -> str:
     return f"-{_format_edge(hi)} ≦ {axis} ＜ {hi_text}"
 
 
-def decode_cw_frame(norad: int | None, text: str) -> CwFrameDecode | None:
+def decode_cw_frame(
+    norad: int | None, text: str, when: datetime.datetime | None = None
+) -> CwFrameDecode | None:
     """Decode *text* (hex digits) as one of *norad*'s CW frames.
+
+    *when* is when the frame was received; if the frame definition has a ``clock``
+    check, a time stamp too far from it makes the frame not valid.
 
     Returns None when the satellite has no ``cw_frames`` schema or the text is
     not exactly a frame's number of hex digits. Otherwise always returns a
@@ -370,6 +479,12 @@ def decode_cw_frame(norad: int | None, text: str) -> CwFrameDecode | None:
         pos += int(bits)
 
     result = CwFrameDecode(key=key, label=str(frame_def.get("label", key)), hex_text=hex_part)
+    clock = frame_def.get("clock")
+    if when is not None and clock and str(clock["field"]) in raw:
+        stamp = raw[str(clock["field"])]
+        off = stamp - _epoch(when)
+        if abs(off) > float(clock["tolerance_s"]):
+            result.problems.append(f"{clock['field']} is {off:+.0f} s from the receive time")
     for fd in frame_def["fields"]:
         problem = _check(fd, raw)
         if problem:

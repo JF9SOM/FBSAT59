@@ -71,6 +71,7 @@ from comms.telemetry.cw_frames import (
     load_cw_frames,
     near_miss_hex,
     normalize_block,
+    repair_block,
     split_frame_blocks,
 )
 from comms.telemetry.cw_upload import (
@@ -1455,7 +1456,11 @@ class TelemetryTab(QWidget):
         reliable_fn = getattr(self._cw_tab, "signal_time_reliable", None)
         reliable = bool(reliable_fn()) if callable(reliable_fn) else True
 
-        result = decode_cw_frame(norad, text)
+        # Fill in unreadable digits the frame definition can supply, and check the frame's
+        # own time stamp against the receive time -- only when that time is trustworthy.
+        when = ts if reliable else None
+        text = repair_block(norad, text, when)
+        result = decode_cw_frame(norad, text, when)
         if result is None:
             if is_near_miss(norad, text):
                 note = _("length or characters not valid, not used")

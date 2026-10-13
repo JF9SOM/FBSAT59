@@ -21,6 +21,7 @@ from comms.telemetry.cw_frames import (
     match_frame_key,
     near_miss_hex,
     normalize_block,
+    repair_block,
     split_frame_blocks,
 )
 from comms.telemetry.decoder import get_telemetry_id_defs
@@ -371,3 +372,55 @@ class TestOrigamiSat2RunTogetherFrames:
 
     def test_a_satellite_without_a_prefix_is_never_split(self) -> None:
         assert split_frame_blocks(68796, "2FFE8594EB880124") == [(0.0, "2FFE8594EB880124")]
+
+
+# OrigamiSat-2's frame A above carries the satellite time 06:43:57 UTC (0x6ACDD32D).
+OSAT2_WHEN = datetime(2026, 10, 13, 6, 44, 3, tzinfo=UTC)
+OSAT2_A_HEX = OSAT2_FRAME_A[14:]
+
+
+class TestOrigamiSat2ClockAndKnownDigits:
+    def test_a_frame_stamped_near_the_receive_time_is_valid(self) -> None:
+        result = decode_cw_frame(ORIGAMISAT2, OSAT2_FRAME_A, OSAT2_WHEN)
+        assert result is not None and result.valid
+
+    def test_a_frame_stamped_far_from_the_receive_time_is_not_valid(self) -> None:
+        later = datetime(2026, 10, 13, 7, 44, 3, tzinfo=UTC)
+        result = decode_cw_frame(ORIGAMISAT2, OSAT2_FRAME_A, later)
+        assert result is not None and not result.valid
+        assert "satellite_time" in result.problems[0]
+
+    def test_without_a_receive_time_the_clock_is_not_checked(self) -> None:
+        result = decode_cw_frame(ORIGAMISAT2, OSAT2_FRAME_A)
+        assert result is not None and result.valid
+
+    def test_an_unreadable_digit_in_the_time_stamp_is_filled_in_from_the_clock(self) -> None:
+        text = OSAT2_FRAME_A[:14] + OSAT2_A_HEX[:40] + "?" + OSAT2_A_HEX[41:]
+        assert repair_block(ORIGAMISAT2, text, OSAT2_WHEN) == OSAT2_FRAME_A
+        assert repair_block(ORIGAMISAT2, text, None) == text  # no trustworthy time: untouched
+
+    def test_two_time_stamp_digits_that_the_clock_cannot_tell_apart_stay_unreadable(self) -> None:
+        text = OSAT2_FRAME_A[:14] + OSAT2_A_HEX[:38] + "????" + OSAT2_A_HEX[42:]
+        assert repair_block(ORIGAMISAT2, text, OSAT2_WHEN) == text
+
+    def test_an_unreadable_digit_in_the_settings_run_is_filled_in(self) -> None:
+        text = OSAT2_FRAME_A[:-4] + "?E0?"
+        assert repair_block(ORIGAMISAT2, text, OSAT2_WHEN) == OSAT2_FRAME_A
+
+    def test_a_frame_cut_short_inside_the_settings_run_is_completed(self) -> None:
+        assert repair_block(ORIGAMISAT2, OSAT2_FRAME_A[:-4], OSAT2_WHEN) == OSAT2_FRAME_A
+
+    def test_a_frame_cut_short_before_the_run_is_not_completed(self) -> None:
+        text = OSAT2_FRAME_A[:-12]
+        assert repair_block(ORIGAMISAT2, text, OSAT2_WHEN) == text
+
+    def test_a_readable_digit_is_never_overridden(self) -> None:
+        changed = OSAT2_FRAME_A[:-2] + "01"  # e.g. a real fuse cut
+        assert repair_block(ORIGAMISAT2, changed, OSAT2_WHEN) == changed
+
+    def test_a_tail_that_differs_from_the_known_run_is_not_completed(self) -> None:
+        text = OSAT2_FRAME_A[:-4] + "9"  # a cut-short frame whose tail is not the usual one
+        assert repair_block(ORIGAMISAT2, text, OSAT2_WHEN) == text
+
+    def test_other_satellites_are_unaffected(self) -> None:
+        assert repair_block(68796, "2FFE8594EB88012?", OSAT2_WHEN) == "2FFE8594EB88012?"

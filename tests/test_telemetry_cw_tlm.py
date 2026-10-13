@@ -280,7 +280,11 @@ class TestReceivedBlocks:
         a = "JS1YRUORIGAMI2817E792B830E0580857F9000000000838391006ACDD32D4B42483E00"
         b = "JS1YRUORIGAMI2817E82DA8416057A86809000000000848491006ACDD4124B42483E00"
 
-        tab._on_cw_block("04B0WO483E003Y" + a + "JI1YRUORIGSMI2" + b[14:], START, END)
+        tab._on_cw_block(
+            "04B0WO483E003Y" + a + "JI1YRUORIGSMI2" + b[14:],
+            datetime(2026, 10, 13, 6, 43, 50, tzinfo=UTC),
+            datetime(2026, 10, 13, 6, 47, 40, tzinfo=UTC),
+        )
 
         assert tab._table.rowCount() == 2
         assert tab._frame_count == 2
