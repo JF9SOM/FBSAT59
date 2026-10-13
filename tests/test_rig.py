@@ -2516,13 +2516,29 @@ class TestHamlibNetController:
         sent = self._sent(ctrl)
         assert b"F 435618000\n" in sent and b"I 145991000\n" in sent
 
+    def test_generic_net_rig_supports_slot_sync_but_not_satmode_rigs(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="hamlib")
+        ctrl._sock.recv.return_value = b"RPRT 0\n"  # type: ignore[union-attr]
+        assert ctrl.supports_slot_sync is True  # e.g. IC-705
+        assert ctrl.cat_blocked is False
+        ctrl.set_slot_sync(True)
+        assert ctrl.write_dl_hz(435_618_000.0) is True
+        assert ctrl.write_ul_hz(145_991_000.0) is True
+        assert b"V VFO" not in self._sent(ctrl)  # no VFO select of our own
+        ctrl._is_satmode_rig = True
+        assert ctrl.supports_slot_sync is False  # Icom SAT-mode rigs are not covered
+
+    def test_custom_cat_net_rig_is_not_supported(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="custom_cat")
+        assert ctrl.supports_slot_sync is False
+
     def test_ftx1_net_has_no_ft991_mode_restore(self) -> None:
         ctrl = self._make_connected_ctrl(ctcss_method="ftx1")
         ctrl.set_current_modes("USB-D", "LSB-D")
         assert ctrl.restore_rx_mode() is None
 
     def test_slot_sync_is_refused_on_other_rigs(self) -> None:
-        ctrl = self._make_connected_ctrl(ctcss_method="hamlib")
+        ctrl = self._make_connected_ctrl(ctcss_method="custom_cat")
         ctrl.set_slot_sync(True)
         assert ctrl.slot_sync is False
         assert ctrl.supports_slot_sync is False
@@ -4345,6 +4361,58 @@ class TestFtx1DirectSlotSync:
         assert ctrl.slot_sync
         assert ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0) is True
         ctrl._rig.set_freq.assert_not_called()
+
+
+class TestIc705DirectSlotSync:
+    """FT4 ADC on an IC-705 in Direct mode: the proven generic write sequence, once per period."""
+
+    def _ctrl(self) -> HamlibDirectController:
+        ctrl = HamlibDirectController(model_id=3085, port="/dev/null")
+        ctrl._rig = MagicMock(error_status=0)
+        fake = MagicMock()
+        fake.RIG_VFO_A = 101
+        fake.RIG_VFO_B = 102
+        fake.rig_strrmode.return_value = "PKTUSB"
+        ctrl._hamlib = fake
+        with ctrl._lock:
+            ctrl._state = RigState.CONNECTED
+        return ctrl
+
+    def test_supported_and_never_blocked(self) -> None:
+        ctrl = self._ctrl()
+        assert ctrl.supports_slot_sync
+        ctrl.set_ptt(True, freeze_doppler=False)
+        assert not ctrl.cat_blocked
+
+    def test_downlink_is_one_set_freq_on_vfo_a(self) -> None:
+        ctrl = self._ctrl()
+        assert ctrl.write_dl_hz(435_618_000.0) is True
+        assert [c.args for c in ctrl._rig.set_freq.call_args_list] == [(101, 435_618_000)]
+        ctrl._rig.set_vfo.assert_not_called()
+
+    def test_uplink_write_reselects_vfo_a_afterwards(self) -> None:
+        ctrl = self._ctrl()
+        order: list[str] = []
+        ctrl._rig.set_freq.side_effect = lambda vfo, hz: order.append(f"freq{vfo}:{hz}")
+        ctrl._rig.set_vfo.side_effect = lambda vfo: order.append(f"vfo{vfo}")
+        with patch("rig.controller.time.sleep"):
+            assert ctrl.write_ul_hz(145_991_234.0) is True
+        # VFO-B is written, then VFO-A is selected again (otherwise the rig keeps
+        # receiving on the uplink or swaps TX/RX).
+        assert order == ["freq102:145991234", "vfo101"]
+        assert ctrl.last_ul_hz == 145_991_234.0
+
+    def test_no_raw_serial_write_is_made(self) -> None:
+        ctrl = self._ctrl()
+        with patch("os.open") as op, patch("rig.controller.time.sleep"):
+            ctrl.write_ul_hz(145_991_234.0)
+        op.assert_not_called()
+
+    def test_late_write_never_reaches_the_rig(self) -> None:
+        ctrl = self._ctrl()
+        assert ctrl.write_ul_hz(145_990_000.0, lambda: False) is False
+        ctrl._rig.set_freq.assert_not_called()
+        ctrl._rig.set_vfo.assert_not_called()
 
 
 def test_direct_mode_read_takes_the_callers_window() -> None:

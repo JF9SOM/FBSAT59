@@ -1410,9 +1410,9 @@ class HamlibDirectController(RigController):
 
     @property
     def supports_slot_sync(self) -> bool:
-        """True for an FT-991/FT-991A or FTX-1F (full duplex) driven in Direct mode."""
+        """True for an FT-991/FT-991A, FTX-1F or IC-705 (full duplex) driven in Direct mode."""
         return (
-            self._model_id in (_FT991_DIRECT_MODEL_IDS | _FTX1_MODEL_IDS)
+            self._model_id in (_FT991_DIRECT_MODEL_IDS | _FTX1_MODEL_IDS | _IC705_MODEL_IDS)
             and self._radio_type == "full_duplex"
         )
 
@@ -1468,6 +1468,16 @@ class HamlibDirectController(RigController):
                     # VFO select is ever sent (it would move TX back to Main).
                     self._rig.set_freq(self._vfo_str_to_const("VFOB"), int(hz))
                     _check_rig_ok(self._rig, "slot UL set_freq(VFOB)")
+                elif self._model_id in _IC705_MODEL_IDS:
+                    # Same sequence as the per-second loop's generic branch: the Icom
+                    # backend leaves its current VFO on VFO-B after this write, which
+                    # would move reception to the uplink (or swap TX/RX), so VFO-A is
+                    # selected again. The 0.05 s gap is there because Icom rigs drop
+                    # closely spaced CI-V frames.
+                    self._rig.set_freq(self._vfo_str_to_const("VFOB"), int(hz))
+                    _check_rig_ok(self._rig, "slot UL set_freq(VFOB)")
+                    time.sleep(0.05)
+                    self._rig.set_vfo(self._vfo_str_to_const("VFOA"))
                 else:
                     import os as _os
 
@@ -3690,8 +3700,17 @@ class HamlibNetController(RigController):
 
     @property
     def supports_slot_sync(self) -> bool:
-        """True for an FT-991/FT-991A or FTX-1F (full duplex) reached via rigctld."""
-        return self._ctcss_method in ("ft991", "ftx1") and self._radio_type == "full_duplex"
+        """True for an FT-991/FT-991A, FTX-1F or a generic rig (IC-705) reached via rigctld.
+
+        The model cannot be read over rigctld, so a generic rig is recognised the
+        way the rest of this class does: "Hamlib standard" CTCSS method and not an
+        Icom SAT-mode rig (whose Main/Sub handling is different and not covered).
+        """
+        if self._radio_type != "full_duplex":
+            return False
+        if self._ctcss_method in ("ft991", "ftx1"):
+            return True
+        return self._ctcss_method == "hamlib" and not (self._satmode or self._is_satmode_rig)
 
     @property
     def slot_sync(self) -> bool:
