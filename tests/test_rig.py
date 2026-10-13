@@ -2553,24 +2553,24 @@ class TestHamlibNetController:
         assert ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0) is True  # silenced
         assert b"F 435600000" not in self._sent(ctrl)
 
-    def test_satmode_net_stage2_waits_for_the_tab_to_ask(self) -> None:
+    def test_satmode_net_waits_for_stage2_before_slot_sync(self) -> None:
         ctrl = self._satmode_ctrl()
         ctrl._pending_mode_net = True
         ctrl.set_current_modes("USB", "LSB")
+        assert ctrl.supports_slot_sync is False  # Stage 2 still to come
+        ctrl.set_slot_sync(True)
+        assert ctrl.slot_sync is False  # per-second tracking carries on meanwhile
         with (
             patch.object(ctrl, "send_mode_only") as send_mode,
             patch.object(ctrl, "_apply_ctcss_civ_direct"),
         ):
-            ctrl.run_pending_setup()  # no uplink written yet: nothing to do
-            send_mode.assert_not_called()
-            ctrl.write_ul_hz(145_991_000.0)
-            send_mode.assert_not_called()  # the uplink write itself never runs it
-            ctrl.run_pending_setup(lambda: False)  # window closed: not now
-            send_mode.assert_not_called()
-            ctrl.run_pending_setup(lambda: True)
-            send_mode.assert_called_once_with("USB", "LSB")
-            ctrl.run_pending_setup()  # once only
-            send_mode.assert_called_once()
+            seen: list[bool] = []
+            send_mode.side_effect = lambda *a: seen.append(ctrl.supports_slot_sync)
+            ctrl._resend_stage2()
+        assert seen == [False]  # not even while the resend is running
+        assert ctrl.supports_slot_sync is True  # done: the FT4 tab may take over
+        ctrl.set_slot_sync(True)
+        assert ctrl.slot_sync is True
 
     def test_satmode_net_falls_back_to_per_second_tracking_on_a_same_band_pair(self) -> None:
         ctrl = self._satmode_ctrl()

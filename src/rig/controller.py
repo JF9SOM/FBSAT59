@@ -1047,13 +1047,6 @@ class RigController(ABC):
             or time.monotonic() - self._ptt_off_at < _FT991_POST_TX_SETTLE_S
         )
 
-    def run_pending_setup(self, still_ok: Callable[[], bool] | None = None) -> None:
-        """Slot-synchronous mode: finish any set-up that waits for the first uplink write.
-
-        Only the Icom SAT-mode rigs over rigctld have such a step; a no-op elsewhere.
-        """
-        return None
-
     def _slot_cat_blocked(self) -> bool:
         """True while slot-synchronous CAT must not be sent to this rig.
 
@@ -3698,6 +3691,8 @@ class HamlibNetController(RigController):
         # Stage-2 flag: after first I (UL) write post-connect, re-send mode/CTCSS
         # with the connection's send_mode_only and _apply_ctcss_civ_direct.
         self._pending_mode_net: bool = False
+        # True while the Stage-2 resend is running (see _resend_stage2()).
+        self._stage2_running: bool = False
         # RTS/DTR PTT: rigctld cannot be reconfigured from here, so the app
         # holds the PTT serial port itself (opened in connect()).
         self._ptt_line: SerialPttLine | None = None
@@ -3722,9 +3717,10 @@ class HamlibNetController(RigController):
             return True
         if self.is_satmode:
             # Icom SAT-mode rigs: cross-band transponders only (the only ones FT4 is
-            # used on). A same-band pair makes the rig leave SAT mode, which is
-            # a different path.
-            return not self._is_same_band
+            # used on; a same-band pair makes the rig leave SAT mode, a different path),
+            # and only once the Stage-2 mode/CTCSS resend, which the per-second loop
+            # runs after the first uplink write, has completed.
+            return not self._is_same_band and not self._stage2_pending()
         return self._ctcss_method == "hamlib"
 
     @property
@@ -4422,47 +4418,41 @@ class HamlibNetController(RigController):
 
         return True
 
+    def _stage2_pending(self) -> bool:
+        """True from transponder selection until the Stage-2 resend has completed."""
+        return self._pending_mode_net or self._pending_ctcss_hz is not None or self._stage2_running
+
     def _resend_stage2(self) -> None:
         """Stage 2: SAT mode band assignment is locked by the first live frequency
         write -- re-send modes and CTCSS (once; a no-op when nothing is pending).
 
         send_mode_only and _apply_ctcss_civ_direct use independent sockets and do
         not acquire _cmd_lock, so this is safe to call with or without it held.
+        _stage2_running is raised before the pending flags drop and lowered when
+        the resend is over, so slot-synchronous mode (which waits for Stage 2 to be
+        finished, see supports_slot_sync) never starts in the middle of it.
         """
         if not (self._pending_mode_net or self._pending_ctcss_hz is not None):
             return
-        _dl = self._current_dl_mode
-        _ul = self._current_ul_mode
-        _ctcss = self._pending_ctcss_hz
-        self._pending_mode_net = False
-        self._pending_ctcss_hz = None
-        if _dl:
-            self.send_mode_only(_dl, _ul)
-        if _ctcss is not None and _ctcss > 0.0:
-            self._apply_ctcss_civ_direct(_ctcss)
-        logger.info(
-            "RigNet: Stage-2 mode/CTCSS resent dl=%s ul=%s ctcss=%.1fHz",
-            _dl,
-            _ul,
-            _ctcss or 0.0,
-        )
-
-    def run_pending_setup(self, still_ok: Callable[[], bool] | None = None) -> None:
-        """Slot-synchronous mode: run the Stage-2 resend once the uplink has been written.
-
-        The per-second loop does this right after its first uplink write. In slot
-        mode the FT4 tab calls it only at a moment when no transmission is about
-        to start (it re-sends mode/CTCSS over several commands), so it is never
-        part of the uplink write itself.
-        """
-        if (
-            not self.is_satmode
-            or self._last_ul_hz is None
-            or self._slot_cat_blocked()
-            or (still_ok is not None and not still_ok())
-        ):
-            return
-        self._resend_stage2()
+        self._stage2_running = True
+        try:
+            _dl = self._current_dl_mode
+            _ul = self._current_ul_mode
+            _ctcss = self._pending_ctcss_hz
+            self._pending_mode_net = False
+            self._pending_ctcss_hz = None
+            if _dl:
+                self.send_mode_only(_dl, _ul)
+            if _ctcss is not None and _ctcss > 0.0:
+                self._apply_ctcss_civ_direct(_ctcss)
+            logger.info(
+                "RigNet: Stage-2 mode/CTCSS resent dl=%s ul=%s ctcss=%.1fHz",
+                _dl,
+                _ul,
+                _ctcss or 0.0,
+            )
+        finally:
+            self._stage2_running = False
 
     def get_frequency(self, vfo: str = "VFOA") -> float:
         resp = self._cmd("f")

@@ -2440,13 +2440,6 @@ class Ft4Tab(QWidget):
                 if ul_hz is not None:
                     ok = rig.write_ul_hz(ul_hz, safe)
                     log.info("adc_rx write UL period=%.1f hz=%.0f ok=%s", nxt % 60, ul_hz, ok)
-                    if ok:
-                        # Set-up that waits for the first uplink write (Icom SAT-mode
-                        # rigs): only here, where no transmission is about to start.
-                        try:
-                            rig.run_pending_setup(safe)
-                        except Exception:
-                            logger.exception("FT4: ADC RX pending set-up failed")
 
     def _adc_rx_audio(self, audio: NDArray[np.float32]) -> NDArray[np.float32]:
         """The period's audio with the dial-vs-ideal error removed (ADC RX), else as is."""
