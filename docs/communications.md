@@ -4299,3 +4299,20 @@ IC-9100 / IC-9700 / IC-910H / IC-821H を rigctld（NET）で使う場合。**Di
   Stage 1 で設定済みなので保険が走らないだけ）。
 - **次にやる人へ**: 最初に確認するのは、`adc_rx write DL/UL ... ok=True`、送信後も Main が受信・Sub が送信の
   ままか（VFO 割り当ての逆転がないか）、`RigNet: Stage-2 mode/CTCSS resent` が TX 停止中に一度出ること。
+
+### ADC RX の適用範囲を「FT4 用トランスポンダー かつ FT4 タブが前面」に限定（2026-10-13）
+
+**不具合**: ADC RX のチェックが入っていると、選択中の衛星・トランスポンダーを一切見ずに、FT4 以外の衛星
+（ISS など FM 系）でも毎秒追尾が止まり、DL/UL が 7.5 秒に 1 回しか書かれなくなっていた
+（FTX-1 の Direct で気づいた。ログ上は 145.799 MHz / 144.490 MHz への `slot write F/I` が 7.5 秒おき）。
+
+**修正**: `Ft4Tab._adc_rx_context_ok()`。次の両方を満たすときだけ、ADC のスロット同期書き込みに入る。
+1. 選択中のトランスポンダーが FT4 用（`MainWindow.is_ft4_transponder_selected()` →
+   `comms.mode_detection.is_ft4_transmitter`、説明文に "FT4" を含むもの。月は除く）。
+2. FT4 タブが開かれていて前面に表示されている（`isVisible()`）。
+
+満たさなくなった時点（0.1 秒周期のタイマーで判定）で `rig.set_slot_sync(False)` を呼び、毎秒追尾に戻す
+（`adc_rx paused (tab not in front / not an FT4 transponder)` を `ft4_decode.log` に記録）。自局の送信中は戻さない。
+条件が戻れば自動で再開する。ADC の ON/OFF（チェックボックス）の設定自体は変えない。
+FT4 タブが前面にないあいだも、受信キャプチャは動き続けるが、デコード音声の補正（`slot_sync` が True のときだけ
+行う）は止まる。ADC TX（UL 保持）は従来どおり全リグで有効。

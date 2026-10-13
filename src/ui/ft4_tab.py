@@ -520,6 +520,7 @@ class Ft4Tab(QWidget):
         tx_audio_sign_fn: Callable[[], float] | None = None,
         dl_target_fn: Callable[[float], float | None] | None = None,
         ul_target_fn: Callable[[float], float | None] | None = None,
+        adc_transponder_ok_fn: Callable[[], bool] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -538,6 +539,10 @@ class Ft4Tab(QWidget):
         # at an arbitrary time (corrected-time seconds), for ADC RX.
         self._dl_target_fn = dl_target_fn
         self._ul_target_fn = ul_target_fn
+        # MainWindow: True when the selected transponder is an FT4 one. ADC RX only
+        # takes over the rig's tuning for those (None: no restriction, e.g. tests).
+        self._adc_transponder_ok_fn = adc_transponder_ok_fn
+        self._adc_paused_reason: str = ""
 
         self._codec = Ft4Codec()
         self._scheduler = Ft4Scheduler(self)
@@ -2218,6 +2223,22 @@ class Ft4Tab(QWidget):
     # A read-back this far from the dial we set is another VFO's frequency, not ours.
     _ADC_MAX_READ_DELTA_HZ = 200_000.0
 
+    def _adc_rx_context_ok(self) -> bool:
+        """ADC RX may drive the rig only for an FT4 transponder while this tab is in front.
+
+        Slot-synchronous mode stops the per-second Doppler tracking, which every
+        other satellite (an FM one such as the ISS above all) still needs, so it
+        must never stay on once the operator has moved on.
+        """
+        if not self.isVisible():
+            self._adc_paused_reason = "tab not in front"
+            return False
+        if self._adc_transponder_ok_fn is not None and not self._adc_transponder_ok_fn():
+            self._adc_paused_reason = "not an FT4 transponder"
+            return False
+        self._adc_paused_reason = ""
+        return True
+
     def _slot_sync_rig(self) -> Any | None:
         """The rig ADC RX drives, or None (only FT-991 / FTX-1 / IC-705 qualify)."""
         rig = self._tx_rig()
@@ -2242,7 +2263,7 @@ class Ft4Tab(QWidget):
             self._status_label.setText(
                 _("ADC RX needs an FT-991, FTX-1, IC-705 or an Icom SAT-mode rig (cross-band)")
             )
-        if self._adc_rx and rig is not None:
+        if self._adc_rx and rig is not None and self._adc_rx_context_ok():
             self._dial_track = DialTrack()
             self._dl_written_for_slot = -1.0
             self._tail_slot = -1.0
@@ -2278,6 +2299,15 @@ class Ft4Tab(QWidget):
         """
         rig = self._slot_sync_rig()
         if not self._adc_rx or rig is None or not rig.is_connected:
+            return
+        if not self._adc_rx_context_ok():
+            # Another tab / another satellite: give the tuning back to the per-second
+            # loop (not in the middle of a burst of ours).
+            if rig.slot_sync and not self._tx_in_progress:
+                rig.set_slot_sync(False)
+                get_ft4_decode_logger().info(
+                    "adc_rx paused (%s): per-second tracking resumed", self._adc_paused_reason
+                )
             return
         if not rig.slot_sync:
             # First tick after the checkbox was restored ticked, or the controller

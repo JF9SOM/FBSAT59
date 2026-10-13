@@ -195,6 +195,7 @@ def test_adc_rx_restored_ticked_starts_once_a_rig_connects(qtbot: QtBot) -> None
     rig.cat_blocked = True  # stop the tick right after switching the mode on
     tab._adc_rx = True  # as loaded from ft4_settings, without the checkbox toggled
     tab._slot_sync_rig = lambda: rig  # type: ignore[method-assign]
+    tab._adc_rx_context_ok = lambda: True  # type: ignore[method-assign]
     assert tab._slot_sync_timer.isActive()
     tab._slot_sync_tick()
     rig.set_slot_sync.assert_called_once_with(True)
@@ -296,6 +297,7 @@ def test_no_cat_at_all_in_a_transmit_period(qtbot: QtBot, monkeypatch: pytest.Mo
     rig.slot_sync = True
     rig.cat_blocked = False
     tab._slot_sync_rig = lambda: rig  # type: ignore[method-assign]
+    tab._adc_rx_context_ok = lambda: True  # type: ignore[method-assign]
     jobs: list[str] = []
     tab._run_cat_job = lambda job: jobs.append("job") or True  # type: ignore[method-assign]
     monkeypatch.setattr(ft4_tab_mod, "corrected_time", lambda: slot + 0.05)
@@ -348,3 +350,49 @@ def test_a_failing_read_back_does_not_stop_the_uplink_write(
     monkeypatch.setattr(ft4_tab_mod, "corrected_time", lambda: 7500.0 + 6.0)
     tab._job_tail(rig, 7500.0)
     assert written == ["dl", "ul"]
+
+
+def test_adc_rx_pauses_and_hands_tuning_back_outside_an_ft4_context(qtbot: QtBot) -> None:
+    """Not an FT4 transponder, or tab not in front: slot sync is switched off at once."""
+    tab = _make_tab(qtbot)
+    rig = MagicMock()
+    rig.supports_slot_sync = True
+    rig.slot_sync = True
+    rig.is_connected = True
+    tab._adc_rx = True
+    tab._slot_sync_rig = lambda: rig  # type: ignore[method-assign]
+    tab._adc_transponder_ok_fn = lambda: False
+    tab.show()  # in front, but the selected transponder is e.g. an FM one
+    tab._slot_sync_tick()
+    rig.set_slot_sync.assert_called_once_with(False)
+    assert tab._adc_paused_reason == "not an FT4 transponder"
+    rig.set_slot_sync.reset_mock()
+    rig.slot_sync = False
+    tab._slot_sync_tick()  # stays off, nothing re-enables it
+    rig.set_slot_sync.assert_not_called()
+
+
+def test_adc_rx_context_needs_the_tab_in_front_and_an_ft4_transponder(qtbot: QtBot) -> None:
+    tab = _make_tab(qtbot)
+    tab._adc_transponder_ok_fn = lambda: True
+    assert tab._adc_rx_context_ok() is False  # not shown
+    assert tab._adc_paused_reason == "tab not in front"
+    tab.show()
+    assert tab._adc_rx_context_ok() is True
+    tab._adc_transponder_ok_fn = lambda: False
+    assert tab._adc_rx_context_ok() is False
+
+
+def test_adc_rx_is_not_switched_off_in_the_middle_of_a_burst(qtbot: QtBot) -> None:
+    tab = _make_tab(qtbot)
+    rig = MagicMock()
+    rig.supports_slot_sync = True
+    rig.slot_sync = True
+    rig.is_connected = True
+    tab._adc_rx = True
+    tab._slot_sync_rig = lambda: rig  # type: ignore[method-assign]
+    tab._adc_transponder_ok_fn = lambda: False
+    tab.show()
+    tab._tx_in_progress = True
+    tab._slot_sync_tick()
+    rig.set_slot_sync.assert_not_called()

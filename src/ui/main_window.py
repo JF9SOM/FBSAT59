@@ -3323,6 +3323,7 @@ class MainWindow(QMainWindow):
             tx_audio_sign_fn=self.get_ft4_tx_audio_sign,
             dl_target_fn=self.get_ft4_dl_target_hz,
             ul_target_fn=self.get_ft4_ul_target_hz,
+            adc_transponder_ok_fn=self.is_ft4_transponder_selected,
             parent=self,
         )
         self._comms_tab_keys[tab] = "ft4"
@@ -4950,6 +4951,13 @@ class MainWindow(QMainWindow):
         if dl_corr is None:
             return None
         return float(dl_corr) + self._dial_feedback_offset_hz
+
+    def is_ft4_transponder_selected(self) -> bool:
+        """True when the selected transponder is one of the FT4 ones (see is_ft4_transmitter)."""
+        tx = self._current_transmitter
+        if tx is None or self._selected_norad is None or self._selected_norad == MOON_ID:
+            return False
+        return mode_detection.is_ft4_transmitter(tx)
 
     def get_ft4_dl_target_hz(self, t: float) -> float | None:
         """Ideal DL dial at *t* (corrected-time seconds); see _dl_corr_at()."""
