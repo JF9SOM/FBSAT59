@@ -1835,13 +1835,20 @@ class Ft4Tab(QWidget):
 
         was_idle = state_before == QsoState.IDLE
         sent_tx = ""
+        was_finished = False
         for msg in messages:
             next_tx = qso.advance(
                 msg.text, their_snr=msg.snr_db, allow_auto_start=self._auto_progress
             )
             if next_tx is None:
                 if msg.text.upper().startswith(self._my_call.upper() + " "):
-                    self._log_qso_event("ignored", f'heard="{msg.text}" snr={msg.snr_db:+.0f}')
+                    # A closing 73/RR73 moves the state to LOGGED without a reply.
+                    finished = not was_finished and qso.state == QsoState.LOGGED
+                    self._log_qso_event(
+                        "finished" if finished else "ignored",
+                        f'heard="{msg.text}" snr={msg.snr_db:+.0f}',
+                    )
+                    was_finished = was_finished or finished
                 continue
             self._tx_edit.setText(next_tx)
             sent_tx = next_tx
