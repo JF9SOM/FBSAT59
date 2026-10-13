@@ -66,7 +66,9 @@ _DEFAULT_VIA = "ARISS"
 # (https://www.aprs.org/ariss.html) — "All APRS satellites and the ISS use
 # any of the three generic paths of ARISS or APRSAT or WIDE." The combo box
 # is editable so a satellite-specific path can still be typed in.
-_VIA_PATH_CHOICES = ("ARISS", "APRSAT", "WIDE")
+# DP0SNX is the SONATE-2 digipeater callsign; it is addressed directly (other
+# stations' digipeated frames show ``...,DP0SNX*``) rather than via an alias.
+_VIA_PATH_CHOICES = ("ARISS", "APRSAT", "WIDE", "DP0SNX")
 
 # app_settings key for user-typed Via values, persisted so they remain
 # selectable in the dropdown across sessions (see _load_via_choices()).
