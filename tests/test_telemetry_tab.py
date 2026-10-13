@@ -1362,3 +1362,17 @@ def test_gr_row_with_a_format_file_fills_the_decoded_fields(
     # leaving gr mode takes the gr-satellites text tab away again
     tab._combo_mode.setCurrentIndex(0)
     assert tab._decode_id_tabs.count() == 2
+
+
+def test_decode_iq_starts_only_after_overview_click(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    """The IQ button arms an auto-Start that fires on the spectrogram click, once."""
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    started: list[bool] = []
+    tab._on_start = lambda: started.append(True)  # type: ignore[method-assign]
+    tab._on_iq_seek_done(1.0)
+    assert started == []  # not armed: a click on another tab's recording does nothing
+    tab._start_on_iq_seek = True
+    tab._on_iq_seek_done(1.0)
+    tab._on_iq_seek_done(2.0)
+    assert started == [True]

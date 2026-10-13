@@ -141,6 +141,8 @@ class SdrControlWidget(QWidget):
     # set_pipeline() already handed this widget, so no round trip through
     # MainWindow is needed for those.
     play_recording_requested: Signal = Signal(str)
+    # A click on the recording overview moved the playback to this position (seconds).
+    overview_seek_done: Signal = Signal(float)
     # IQ recording input is overloaded (fraction 0..1): emitted once the
     # clipping has lasted _CLIP_ALERT_AFTER_S seconds, then every
     # _CLIP_REPEAT_S seconds while it continues.
@@ -1068,6 +1070,7 @@ class SdrControlWidget(QWidget):
             if start_stream is not None:
                 start_stream()
             self._update_playback_buttons()
+            self.overview_seek_done.emit(float(position_s))
 
     def _on_play_clicked(self) -> None:
         """Play the already loaded recording again, without asking for a file.

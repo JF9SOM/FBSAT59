@@ -7279,3 +7279,11 @@ msgstr "（{shown}/{total}文字を表示、以下省略）"
 #: src/ui/telemetry_tab.py
 msgid "gr-satellites output"
 msgstr "gr-satellites 出力"
+
+#: src/ui/telemetry_tab.py
+msgid ""
+"Open a recorded .iq.wav file and play it into the decoder. Click the "
+"spectrogram to play from there; decoding starts automatically."
+msgstr ""
+"録音した .iq.wav ファイルを開いてデコーダーに再生します。スペクトログラムを"
+"クリックするとその位置から再生され、デコードも自動的に開始されます。"

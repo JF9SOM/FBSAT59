@@ -351,6 +351,8 @@ class TelemetryTab(QWidget):
         # Start pressed while the SDR was still connecting: begin decoding as soon
         # as it is up (see _auto_connect_sdr / _resume_pending_start).
         self._pending_start = False
+        # Set by "Decode IQ Recording": start decoding once the user clicks the overview.
+        self._start_on_iq_seek = False
         self._pending_start_at = 0.0
         self._resuming_start = False
 
@@ -538,6 +540,16 @@ class TelemetryTab(QWidget):
         row2.addWidget(self._btn_start)
         row2.addWidget(self._btn_stop)
         row2.addWidget(self._lbl_status)
+        row2.addStretch()
+        self._btn_decode_iq = QPushButton(_("📂 Decode IQ Recording…"))
+        self._btn_decode_iq.setToolTip(
+            _(
+                "Open a recorded .iq.wav file and play it into the decoder. Click the "
+                "spectrogram to play from there; decoding starts automatically."
+            )
+        )
+        self._btn_decode_iq.clicked.connect(self._on_decode_iq)
+        row2.addWidget(self._btn_decode_iq)
         row2.addStretch()
         self._lbl_count = QLabel(_("Frames: 0 received"))
         row2.addWidget(self._lbl_count)
@@ -738,6 +750,28 @@ class TelemetryTab(QWidget):
                 self._sdr_pipeline = getattr(rig, "_pipeline", None)
             else:
                 self._rig_connected = True
+
+    def _on_decode_iq(self) -> None:
+        """Open an IQ recording as SDR Control's "Open…" does; Start on the spectrogram click."""
+        sdr_ctrl = getattr(self._radio_control, "_sdr_control", None)
+        if sdr_ctrl is None or not hasattr(sdr_ctrl, "open_recording"):
+            QMessageBox.information(
+                self, _("Decode IQ Recording"), _("SDR Control is not available.")
+            )
+            return
+        self._start_on_iq_seek = True
+        with contextlib.suppress(RuntimeError, TypeError):
+            sdr_ctrl.overview_seek_done.disconnect(self._on_iq_seek_done)
+        sdr_ctrl.overview_seek_done.connect(self._on_iq_seek_done)
+        sdr_ctrl.open_recording()
+
+    def _on_iq_seek_done(self, _position_s: float) -> None:
+        """The user clicked the recording overview: start decoding if not running yet."""
+        if not self._start_on_iq_seek:
+            return
+        self._start_on_iq_seek = False
+        if self._btn_start.isEnabled():
+            self._on_start()
 
     def _connect_signals(self) -> None:
         try:
