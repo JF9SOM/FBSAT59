@@ -92,6 +92,19 @@ _RMS_LOG_INTERVAL_S = 30.0
 # _SharedInputStream._open() and _settle_reopen_supported().
 _REOPEN_SETTLE_DELAY_S = 1.5
 
+# The input is read in blocking mode (a thread of ours pulls audio with
+# stream.read()) instead of through a PortAudio callback. A callback runs on
+# CoreAudio's own IO thread and needs the Python GIL; on 2026-10-13 that thread,
+# holding CoreAudio's device lock while waiting for the GIL, deadlocked against
+# QAudioSink.reset() (TX end), which holds the GIL while waiting for the same lock.
+# With a blocking read CoreAudio's thread never touches Python.
+_READ_FRAMES = 2400  # 50 ms at _HW_SAMPLE_RATE
+# Buffering PortAudio keeps for the reader (seconds): a Python thread that is
+# briefly starved of the GIL must not make the device overrun.
+_READ_LATENCY_S = 0.2
+# How long a closing stream waits for its reader thread before stopping anyway.
+_READER_JOIN_TIMEOUT_S = 1.0
+
 
 def _settle_reopen_supported() -> bool:
     """True on platforms where the post-open settle-reopen self-heal applies.
@@ -332,6 +345,8 @@ class _SharedInputStream:
         # withheld from every subscriber except keep_live_owner (see AudioDeviceManager.begin_feed).
         self._feed_state = feed_state
         self._stream: Any = None
+        # (thread, stop event) of the reader that pulls audio from _stream
+        self._reader: tuple[threading.Thread, threading.Event] | None = None
         self._subscribers: dict[str, tuple[int, AudioCallback]] = {}
         self._lock = threading.Lock()
         # Callback-health diagnostics (2026-09-30) -- see _CB_GAP_WARN_S/
@@ -367,10 +382,8 @@ class _SharedInputStream:
             if self._subscribers:
                 return False
             stream, self._stream = self._stream, None
-        if stream is not None:
-            with contextlib.suppress(Exception):
-                stream.stop()
-                stream.close()
+            reader, self._reader = self._reader, None
+        self._halt(stream, reader)
         return True
 
     def suspend(self) -> None:
@@ -382,6 +395,22 @@ class _SharedInputStream:
         """
         with self._lock:
             stream, self._stream = self._stream, None
+            reader, self._reader = self._reader, None
+        self._halt(stream, reader)
+
+    @staticmethod
+    def _halt(stream: Any, reader: tuple[threading.Thread, threading.Event] | None) -> None:
+        """Stop the reader thread, then stop and close the hardware stream.
+
+        Called without self._lock held: the reader needs that lock to deliver its
+        last block. The reader is stopped first so no read is in flight when the
+        stream is stopped.
+        """
+        if reader is not None:
+            thread, stop = reader
+            stop.set()
+            if thread is not threading.current_thread():
+                thread.join(_READER_JOIN_TIMEOUT_S)
         if stream is not None:
             with contextlib.suppress(Exception):
                 stream.stop()
@@ -415,10 +444,19 @@ class _SharedInputStream:
             channels=1,
             dtype="float32",
             device=self._device,
-            callback=self._on_audio,
+            latency=_READ_LATENCY_S,
         )
         stream.start()
         self._stream = stream
+        stop = threading.Event()
+        thread = threading.Thread(
+            target=self._read_loop,
+            args=(stream, stop),
+            name="fbsat59-rx-read",
+            daemon=True,
+        )
+        self._reader = (thread, stop)
+        thread.start()
 
         if in_target and before is not None:
             _pin_new_stream("source-outputs", "move-source-output", in_target, before)
@@ -445,13 +483,27 @@ class _SharedInputStream:
             if self._stream is not opened_stream or not self._subscribers:
                 return
             old_stream = self._stream
+            old_reader = self._reader
             self._stream = None
-        with contextlib.suppress(Exception):
-            old_stream.stop()
-            old_stream.close()
+            self._reader = None
+        self._halt(old_stream, old_reader)
         with self._lock:
             if self._subscribers and self._stream is None:
                 self._open(schedule_settle_reopen=False)
+
+    def _read_loop(self, stream: Any, stop: threading.Event) -> None:
+        """Pull audio from *stream* until told to stop (runs on the reader thread)."""
+        while not stop.is_set():
+            try:
+                data, overflowed = stream.read(_READ_FRAMES)
+            except Exception as exc:
+                if not stop.is_set():
+                    logger.warning(
+                        "AudioDeviceManager: input read failed on device %r: %s", self._device, exc
+                    )
+                return
+            if len(data):
+                self._on_audio(data, len(data), None, "input overflow" if overflowed else None)
 
     def _on_audio(
         self, indata: NDArray[np.float32], frames: int, time_info: Any, status: Any

@@ -4234,3 +4234,27 @@ FT-991 での ADC RX の確認が済んだので、第二のリグとして FTX-
 - **次回パスで確認すること**: `ft4_decode.log` の `adc_rx write DL/UL ... ok=True`、`adc_rx read DL` が書いた値に
   追従すること（`differs from what was written` が頻出しないか）、受信モードが `PKTUSB` のままか、
   送信（Main/Sub の入れ替わり）が起きないこと、Direct で書き込みに 300 ms 以上かかる警告がないこと。
+
+### 受信入力を PortAudio コールバックからブロッキング読み出しに変更（2026-10-13）
+
+**症状**: FTX-1（NET モード、`USB Audio Device`）で CQ を数回送ると、送信終了時にアプリ全体がフリーズし
+PTT が切れなくなった（2 回再現。1 回目は 3 回目の送信、2 回目は起動直後の 2 回目の送信）。
+
+**原因（macOS のハングレポートと `sample` で確認）**: 送信音声スレッド（`fbsat59-tx-audio`）が
+`QAudioSink.reset()`（送信終了の `reset()+stop()`）で CoreAudio の `StopIOProc` に入り、デバイスのロック
+（`HALB_Mutex`）を待つ。PySide のこの呼び出しは **GIL を握ったまま**。そのロックを握っているのが受信用
+PortAudio の **IO スレッド**で、Python のコールバック（`_SharedInputStream._on_audio`）を呼ぶために
+GIL を待つ。GIL を握った側がロックを待ち、ロックを握った側が GIL を待つ循環待ち。メインスレッドを含む
+全 Python スレッドが `take_gil` で止まり、ログも途切れる。PortAudio の再初期化（USB 再認識対策）とは
+無関係（再初期化はハングの 40〜80 秒前、受信ストリーム 0 本の状態でも起きた）。
+FT-991 では過去に一度も出ていない。FTX-1 の USB 音声デバイスで競合が起きやすい理由は未特定。
+
+**修正**: `_SharedInputStream` は `sd.InputStream` をコールバックなしで開き、専用スレッド
+（`fbsat59-rx-read`）が `stream.read(2400)`（50 ms）で音声を取りに行く。CoreAudio の IO スレッドは
+Python に触れないので、この循環待ちは起きない。PortAudio 側のバッファは `latency=0.2 s`（GIL 待ちで
+読み出しが遅れても overrun しないように）。停止順序は「リーダースレッドを止める→ストリームを stop/close」
+（ロックを持たずに行う）。`_on_audio` の診断ログ（コールバック間隔・レベル・status）はそのまま使う。
+`reinitialize_portaudio()` など呼び出し側の API は変更なし。
+
+**確認**: 実機のマイクで 1.5 秒の読み出しと停止（0.2 秒で閉じる）を確認済み。FTX-1 NET で CQ を
+10 回以上連続して送り、固まらないことを次回実機で確認する。

@@ -6,6 +6,7 @@ via sys.modules so these tests run in headless CI.
 
 from __future__ import annotations
 
+import queue
 import subprocess
 import sys
 import threading
@@ -25,7 +26,7 @@ from comms.audio_device_manager import AudioDeviceManager, _resample, validate_o
 
 
 class _FakeInputStream:
-    """Records lifecycle calls and lets tests push audio through the callback."""
+    """Records lifecycle calls; tests push audio that the reader thread pulls with read()."""
 
     instances: list[_FakeInputStream] = []
 
@@ -33,6 +34,8 @@ class _FakeInputStream:
         self.kwargs = kwargs
         self.started = False
         self.closed = False
+        self._q: queue.Queue[tuple[np.ndarray, bool]] = queue.Queue()
+        self._reading = False
         _FakeInputStream.instances.append(self)
 
     def start(self) -> None:
@@ -44,9 +47,23 @@ class _FakeInputStream:
     def close(self) -> None:
         self.closed = True
 
-    def push(self, mono_samples: np.ndarray) -> None:
+    def read(self, frames: int) -> tuple[np.ndarray, bool]:
+        """Block briefly for pushed audio; an empty block when idle (like a quiet device)."""
+        if self._reading:
+            self._q.task_done()  # the previous block has been fully processed
+            self._reading = False
+        try:
+            item = self._q.get(timeout=0.02)
+        except queue.Empty:
+            return np.zeros((0, 1), dtype=np.float32), False
+        self._reading = True
+        return item
+
+    def push(self, mono_samples: np.ndarray, overflowed: bool = False) -> None:
+        """Hand a block to the reader and wait until it has been processed."""
         indata = mono_samples.reshape(-1, 1).astype(np.float32)
-        self.kwargs["callback"](indata, len(mono_samples), None, None)
+        self._q.put((indata, overflowed))
+        self._q.join()
 
 
 @pytest.fixture
@@ -92,32 +109,33 @@ def _make_fake_sounddevice_for_output(
 
 
 class _FakeInputStreamBlockingStop(_FakeInputStream):
-    """Mimics real PortAudio: `stop()` blocks until its audio callback
-    thread — which needs the manager's internal lock, same as the real
-    `_on_audio` — has finished a pending invocation. Used to reproduce (and
-    guard against regressing) the deadlock where `remove_subscriber` used to
-    call `stream.stop()` while still holding that same lock."""
+    """Mimics real PortAudio: `stop()` blocks while a `read()` is still in flight.
+
+    The reader thread needs the manager's internal lock to deliver each block
+    (like the real `_on_audio`), so closing the stream while holding that lock,
+    or stopping it before the reader has finished, would hang. Guards the
+    ordering in `_SharedInputStream._halt`: reader first, then stop/close.
+    """
 
     instances: list[_FakeInputStream] = []
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         _FakeInputStreamBlockingStop.instances.append(self)
+        self.in_read = threading.Event()
+
+    def read(self, frames: int) -> tuple[np.ndarray, bool]:
+        self.in_read.set()
+        try:
+            return super().read(frames)
+        finally:
+            self.in_read.clear()
 
     def stop(self) -> None:
-        # No timeout here, deliberately: real PortAudio's Pa_StopStream()
-        # blocks forever until its callback thread returns, so the fake has
-        # to actually reproduce that to catch a real deadlock. The test
-        # bounds the *outer* release_input() call with its own timeout
-        # instead of relying on this join() to give up.
-        t = threading.Thread(
-            target=lambda: self.kwargs["callback"](
-                np.zeros((1, 1), dtype=np.float32), 1, None, None
-            ),
-            daemon=True,
-        )
-        t.start()
-        t.join()
+        deadline = time.monotonic() + 5.0
+        while self.in_read.is_set() and time.monotonic() < deadline:
+            time.sleep(0.001)
+        assert not self.in_read.is_set(), "stop() called while a read was in flight"
         super().stop()
 
 
@@ -295,10 +313,9 @@ class TestInputSharing:
     def test_release_does_not_deadlock_against_a_blocking_stream_stop(
         self, fake_sounddevice_blocking_stop: type[_FakeInputStreamBlockingStop]
     ) -> None:
-        """Regression test: `stream.stop()` (real PortAudio) blocks until its
-        callback thread returns, and that thread needs the manager's lock —
-        so releasing the last subscriber must not call `stop()` while still
-        holding that lock, or the two threads deadlock forever."""
+        """Regression test: releasing the last subscriber must stop the reader
+        thread before stopping the stream, and must not do either while holding
+        the manager's lock (the reader needs it to deliver its last block)."""
         mgr = AudioDeviceManager()
         mgr.acquire_input("cw", 5, 48_000, lambda c: None)
 
@@ -329,9 +346,7 @@ class TestInputCallbackDiagnostics:
         stream = fake_sounddevice.instances[0]
 
         with caplog.at_level("WARNING", logger="comms.audio_device_manager"):
-            stream.kwargs["callback"](
-                np.zeros((480, 1), dtype=np.float32), 480, None, "input overflow"
-            )
+            stream.push(np.zeros(480, dtype=np.float32), overflowed=True)
 
         assert any("status=input overflow" in r.message for r in caplog.records)
 
@@ -756,3 +771,48 @@ class TestPublicPinHelpers:
         monkeypatch.setattr(adm, "_pin_new_stream", lambda *a, **k: calls.append(a))
         adm.pin_output_stream("target-sink", before=set())
         assert calls == [("sink-inputs", "move-sink-input", "target-sink", set())]
+
+
+class TestBlockingRead:
+    """The input is read by our own thread, never through a PortAudio callback."""
+
+    def test_stream_is_opened_without_a_callback(
+        self, fake_sounddevice: type[_FakeInputStream]
+    ) -> None:
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("cw", 5, 48_000, lambda c: None)
+        assert "callback" not in fake_sounddevice.instances[0].kwargs
+
+    def test_reader_thread_ends_when_the_last_subscriber_leaves(
+        self, fake_sounddevice: type[_FakeInputStream]
+    ) -> None:
+        before = {t for t in threading.enumerate() if t.name == "fbsat59-rx-read"}
+        mgr = AudioDeviceManager()
+        mgr.acquire_input("cw", 5, 48_000, lambda c: None)
+        readers = [
+            t for t in threading.enumerate() if t.name == "fbsat59-rx-read" and t not in before
+        ]
+        assert len(readers) == 1
+        mgr.release_input("cw", 5)
+        readers[0].join(2.0)
+        assert not readers[0].is_alive()
+        assert fake_sounddevice.instances[0].closed is True
+
+    def test_a_failing_read_ends_the_reader_quietly(
+        self, fake_sounddevice: type[_FakeInputStream], caplog: pytest.LogCaptureFixture
+    ) -> None:
+        mgr = AudioDeviceManager()
+        with caplog.at_level("WARNING", logger="comms.audio_device_manager"):
+            mgr.acquire_input("cw", 5, 48_000, lambda c: None)
+            stream = fake_sounddevice.instances[0]
+
+            def _boom(frames: int) -> tuple[np.ndarray, bool]:
+                raise RuntimeError("device gone")
+
+            stream.read = _boom  # type: ignore[method-assign]
+            deadline = time.monotonic() + 2.0
+            while time.monotonic() < deadline and not any(
+                "input read failed" in r.message for r in caplog.records
+            ):
+                time.sleep(0.01)
+        assert any("input read failed" in r.message for r in caplog.records)
