@@ -31,7 +31,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from comms.telemetry.cw_frames import build_satnogs_frame
+from comms.telemetry.cw_frames import build_satnogs_frame, repeat_required
 from comms.telemetry.satnogs_uploader import SatnogsUploader, upload_blocker
 
 # (frame id, accepted, http status, body) -- the outcome of one frame's upload, see
@@ -144,7 +144,7 @@ def eligible_unsent(conn: sqlite3.Connection, norad: int) -> list[LoggedFrame]:
         for f in frames
         if not f.uploaded
         and f.reliable
-        and confirmed_by_repeat(f, frames)
+        and (not repeat_required(norad) or confirmed_by_repeat(f, frames))
         and not is_duplicate(f, frames)
         and build_satnogs_frame(norad, f.raw_hex) is not None
     ]
@@ -215,7 +215,7 @@ def send_frames(
             report.unreliable += 1
         elif is_duplicate(frame, frames):
             report.duplicates += 1
-        elif require_repeat and not confirmed_by_repeat(frame, frames):
+        elif require_repeat and repeat_required(norad) and not confirmed_by_repeat(frame, frames):
             report.waiting += 1
         else:
             wire = build_satnogs_frame(norad, frame.raw_hex)

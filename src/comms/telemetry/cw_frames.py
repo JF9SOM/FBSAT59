@@ -30,6 +30,10 @@ Two more optional keys help against misread digits (CW has no CRC):
                 is known, a frame whose stamp is further than ``tolerance_s`` from it is
                 not valid, and unreadable digits in the stamp's upper bytes are filled
                 in from the clock (only if exactly one value fits).
+  satnogs       how a frame is sent to the SatNOGS DB (see build_satnogs_frame()); with
+                ``"require_repeat": false`` an automatic upload does not wait for the
+                same frame to be received a second time (needed where every frame is
+                different, e.g. it carries a time stamp).
   known_digits  ``{"46": "4B42483E00"}``: digits that normally never change (settings),
                 keyed by their digit position. Only *unreadable* positions are filled in
                 (a readable digit is never overridden), and a frame cut short in the middle
@@ -351,24 +355,48 @@ def is_near_miss(norad: int | None, text: str) -> bool:
 def build_satnogs_frame(norad: int | None, text: str) -> bytes | None:
     """The frame as the SatNOGS DB expects a CW telemetry submission.
 
-    A frame definition's ``satnogs`` entry gives a callsign prefix and a beacon
-    type; the submission is ``prefix + type byte + the frame's bytes`` (for
-    ARICA-2 the layout arica2.ksy names cw1_form/cw2_form/cw3_form). None if
-    *text* is not exactly one of the satellite's frames or the satellite has no
-    ``satnogs`` entry.
+    A frame definition's ``satnogs`` entry says how it is sent:
+
+    * ``{"callsign": ..., "beacon_type": n}``: ``prefix + type byte + the frame's bytes``
+      (for ARICA-2 the layout arica2.ksy names cw1_form/cw2_form/cw3_form);
+    * ``{"raw": true}``: just the frame's bytes, as received. SatNOGS has no decoder
+      for the satellite, so everybody submits what they received (OrigamiSat-2).
+
+    *text* is a whole block or, as the telemetry log stores it, just the frame's hex
+    digits (without any ``id_prefix``). None if *text* is not exactly one of the
+    satellite's frames or the satellite has no ``satnogs`` entry.
     """
     frames = load_cw_frames(norad)
     if frames is None:
         return None
-    matched = _match(frames, normalize_block(text))
+    block = normalize_block(text)
+    matched = _match(frames, block)
+    if matched is None:
+        # the log keeps only the hex digits, without the id_prefix
+        for key, frame_def in frames.items():
+            if len(block) == int(frame_def["hex_digits"]) and _HEX_RE.match(block):
+                matched = (str(key), frame_def, block)
+                break
     if matched is None:
         return None
     _key, frame_def, hex_part = matched
     upload = frame_def.get("satnogs")
     if not upload or len(hex_part) % 2:
         return None
+    if upload.get("raw"):
+        return bytes.fromhex(hex_part)
     prefix = str(upload["callsign"]).encode("ascii")
     return prefix + bytes([int(upload["beacon_type"])]) + bytes.fromhex(hex_part)
+
+
+def repeat_required(norad: int | None) -> bool:
+    """False if the satellite's frames never repeat verbatim (``satnogs.require_repeat``
+    is false), so a repeat can not confirm a reading; True otherwise."""
+    for frame_def in (load_cw_frames(norad) or {}).values():
+        upload = frame_def.get("satnogs") or {}
+        if upload.get("require_repeat") is False:
+            return False
+    return True
 
 
 def fields_from_saved(

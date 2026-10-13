@@ -322,11 +322,14 @@ class TestOrigamiSat2:
         assert shown["予約コマンド数"] == "6.0000"
         assert shown["バス通信ヒューズカット回数"] == "0.0000"
 
-    def test_no_satnogs_wire_format_defined_yet(self) -> None:
-        """No confirmed SatNOGS submission layout exists for this satellite's CW
-        frame (unlike ARICA-2's arica2.ksy *_form), so build_satnogs_frame must not
-        guess one."""
-        assert build_satnogs_frame(ORIGAMISAT2, OSAT2_BLOCK_CLEAN) is None
+    def test_satnogs_gets_the_raw_frame_bytes(self) -> None:
+        """SatNOGS has no OrigamiSat-2 decoder: everyone submits the received bytes."""
+        raw = bytes.fromhex(OSAT2_BLOCK_CLEAN[14:])
+        assert build_satnogs_frame(ORIGAMISAT2, OSAT2_BLOCK_CLEAN) == raw
+        # the telemetry log keeps only the hex digits
+        assert build_satnogs_frame(ORIGAMISAT2, OSAT2_BLOCK_CLEAN[14:]) == raw
+        assert len(raw) == 28
+        assert build_satnogs_frame(ORIGAMISAT2, OSAT2_BLOCK_GARBLED) is None
 
     def test_hidden_helper_fields_are_not_listed(self) -> None:
         defs = get_telemetry_id_defs(ORIGAMISAT2)

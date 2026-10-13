@@ -76,13 +76,14 @@ def _log(
     *,
     reliable: bool = True,
     uploaded: bool = False,
+    norad: int = ARICA2,
 ) -> int:
     cur = conn.execute(
         "INSERT INTO telemetry_log (received_at, norad_cat_id, callsign, raw_hex, "
         "satnogs_uploaded_at, time_reliable) VALUES (?, ?, 'JS1YSD', ?, ?, ?)",
         (
             at.isoformat(),
-            ARICA2,
+            norad,
             hex_text,
             "2026-09-20T08:00:00+00:00" if uploaded else None,
             int(reliable),
@@ -357,3 +358,17 @@ def test_a_frame_first_sent_with_its_end_time_is_not_sent_again_with_its_start_t
     report = send_frames(conn, up, ARICA2, [again], force=True, require_repeat=False)  # type: ignore[arg-type]
 
     assert (report.queued, report.duplicates) == (0, 1)
+
+
+def test_origamisat2_frames_are_sent_raw_at_once_without_waiting_for_a_repeat(
+    conn: sqlite3.Connection,
+) -> None:
+    """Every OrigamiSat-2 frame differs (time stamp, sensors), so a repeat never comes;
+    SatNOGS has no decoder for it, so the received bytes go as they are."""
+    hex_text = "817E792B830E0580857F9000000000838391006ACDD32D4B42483E00"
+    fid = _log(conn, hex_text, T0, norad=68795)
+    up = _FakeUploader()
+    report = auto_send(conn, up, 68795, fid)  # type: ignore[arg-type]
+    assert (report.queued, report.waiting, report.unsupported) == (1, 0, 0)
+    assert up.sent[0][0] == bytes.fromhex(hex_text)
+    assert up.sent[0][1] == 68795

@@ -799,6 +799,7 @@
       "id_prefix": "JS1YRUORIGAMI2",
       "clock": {"field": "satellite_time", "tolerance_s": 180},
       "known_digits": {"46": "4B42483E00"},
+      "satnogs": {"raw": true, "require_repeat": false},
       "fields": [
         {
           "name": "uvc_enabled",
