@@ -272,6 +272,23 @@ class TestReceivedBlocks:
         assert tab._frame_count == 0
         assert cw_conn.execute("SELECT COUNT(*) FROM telemetry_log").fetchone()[0] == 0
 
+    def test_two_run_together_origamisat2_frames_become_two_rows(
+        self, qtbot: QtBot, cw_conn: sqlite3.Connection
+    ) -> None:
+        tab = _running_tab(qtbot, cw_conn)
+        tab._cw_tlm_norad = 68795
+        a = "JS1YRUORIGAMI2817E792B830E0580857F9000000000838391006ACDD32D4B42483E00"
+        b = "JS1YRUORIGAMI2817E82DA8416057A86809000000000848491006ACDD4124B42483E00"
+
+        tab._on_cw_block("04B0WO483E003Y" + a + "JI1YRUORIGSMI2" + b[14:], START, END)
+
+        assert tab._table.rowCount() == 2
+        assert tab._frame_count == 2
+        texts = [tab._table.item(r, 3).text() for r in range(2)]
+        assert texts == [f"[TLM] {a[14:]}", f"[TLM] {b[14:]}"]
+        # the second frame is timed later than the first, inside the block
+        assert tab._table.item(0, 0).text() <= tab._table.item(1, 0).text()
+
     def test_the_id_text_and_noise_are_ignored(
         self, qtbot: QtBot, cw_conn: sqlite3.Connection
     ) -> None:

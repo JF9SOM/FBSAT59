@@ -71,6 +71,7 @@ from comms.telemetry.cw_frames import (
     load_cw_frames,
     near_miss_hex,
     normalize_block,
+    split_frame_blocks,
 )
 from comms.telemetry.cw_upload import (
     SendReport,
@@ -1429,6 +1430,20 @@ class TelemetryTab(QWidget):
         norad = self._cw_tlm_norad
         if norad is None:
             return
+        # A block can hold the tail of the previous frame and/or several whole frames.
+        pieces = split_frame_blocks(norad, text)
+        for position, piece in pieces:
+            piece_start = start
+            if (
+                len(pieces) > 1
+                and isinstance(start, datetime.datetime)
+                and isinstance(end, datetime.datetime)
+            ):
+                piece_start = start + (end - start) * position
+            self._on_cw_frame(norad, piece, piece_start)
+
+    def _on_cw_frame(self, norad: int, text: str, start: Any) -> None:
+        """One frame's worth of CW text (see _on_cw_block())."""
         fmt = load_format(norad) or {}
         callsign = str(fmt.get("callsign", ""))
         sat_name = str(fmt.get("name", f"NORAD {norad}"))

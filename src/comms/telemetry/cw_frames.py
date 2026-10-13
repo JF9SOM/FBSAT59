@@ -91,16 +91,92 @@ def display_field_defs(frame_def: dict[str, Any]) -> list[dict[str, Any]]:
     return [fd for fd in frame_def.get("fields", []) if not fd.get("hidden")]
 
 
-def _hex_part(frame_def: dict[str, Any], block: str) -> str | None:
-    """*block* with *frame_def*'s ``id_prefix`` removed, or None if it isn't there.
+# How many edits (substitutions, drops, insertions) a callsign+name read may be off from the
+# frame's ``id_prefix`` and still count as that prefix. The digits that follow are checked
+# strictly anyway; the prefix only says where a frame starts.
+_PREFIX_MAX_EDITS = 3
 
-    Frames without an ``id_prefix`` (e.g. ARICA-2's bare-hex beacon) return
+
+def _edit_distance(a: str, b: str) -> int:
+    """Levenshtein distance of two short strings."""
+    row = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        prev, row[0] = row[0], i
+        for j, cb in enumerate(b, 1):
+            prev, row[j] = row[j], min(row[j] + 1, row[j - 1] + 1, prev + (ca != cb))
+    return row[-1]
+
+
+def _find_prefix(block: str, prefix: str, start: int = 0) -> tuple[int, int] | None:
+    """(begin, end) of the first read of *prefix* in *block* at or after *start*, else None.
+
+    An exact read wins; otherwise the closest read within _PREFIX_MAX_EDITS edits (a
+    garbled callsign or name -- the Morse decoder has no CRC to tell). Text before
+    *begin* is not part of this frame (the tail of the previous one).
+    """
+    exact = block.find(prefix, start)
+    if exact >= 0:
+        return exact, exact + len(prefix)
+    best: tuple[int, int, int] | None = None  # (distance, begin, end)
+    n = len(prefix)
+    for begin in range(start, len(block) - n + _PREFIX_MAX_EDITS + 1):
+        for length in range(n - _PREFIX_MAX_EDITS, n + _PREFIX_MAX_EDITS + 1):
+            if length <= 0 or begin + length > len(block):
+                continue
+            dist = _edit_distance(block[begin : begin + length], prefix)
+            if dist <= _PREFIX_MAX_EDITS and (best is None or dist < best[0]):
+                best = (dist, begin, begin + length)
+        if best is not None and best[0] <= 1:
+            break
+    return (best[1], best[2]) if best else None
+
+
+def split_frame_blocks(norad: int | None, text: str) -> list[tuple[float, str]]:
+    """Cut one block of CW text into the frames it holds: ``[(position 0..1, text)]``.
+
+    The beacon sends frames back to back, so the block extractor (it cuts on a pause)
+    often hands over the tail of one frame, then the next frame's ``id_prefix`` and
+    digits, or even several whole frames, as one block. Each returned piece starts at
+    an ``id_prefix`` read (see _find_prefix()); *position* is where in the block that is,
+    for timing it. A satellite without an ``id_prefix``, or a block with none in it, comes
+    back whole.
+    """
+    block = normalize_block(text)
+    frames = load_cw_frames(norad) or {}
+    prefixes = {str(f.get("id_prefix", "")) for f in frames.values()} - {""}
+    if len(prefixes) != 1 or not block:
+        return [(0.0, block)]
+    prefix = next(iter(prefixes))
+    spans: list[tuple[int, int]] = []
+    pos = 0
+    while (found := _find_prefix(block, prefix, pos)) is not None:
+        spans.append(found)
+        pos = found[1]
+    if not spans:
+        return [(0.0, block)]
+    pieces: list[tuple[float, str]] = []
+    for i, (begin, _end) in enumerate(spans):
+        stop = spans[i + 1][0] if i + 1 < len(spans) else len(block)
+        pieces.append((begin / len(block), block[begin:stop]))
+    return pieces
+
+
+def _hex_part(frame_def: dict[str, Any], block: str) -> str | None:
+    """The text after *frame_def*'s ``id_prefix`` in *block*, or None if it isn't there.
+
+    The prefix may follow some leftover text (the previous frame's tail) and may be
+    slightly misread; the text runs up to the next prefix, if the block holds several
+    frames. Frames without an ``id_prefix`` (e.g. ARICA-2's bare-hex beacon) return
     *block* unchanged.
     """
     prefix = str(frame_def.get("id_prefix", ""))
     if not prefix:
         return block
-    return block[len(prefix) :] if block.startswith(prefix) else None
+    found = _find_prefix(block, prefix)
+    if found is None:
+        return None
+    following = _find_prefix(block, prefix, found[1])
+    return block[found[1] : following[0] if following else len(block)]
 
 
 def _match(frames: dict[str, Any], block: str) -> tuple[str, dict[str, Any], str] | None:

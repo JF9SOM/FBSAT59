@@ -21,6 +21,7 @@ from comms.telemetry.cw_frames import (
     match_frame_key,
     near_miss_hex,
     normalize_block,
+    split_frame_blocks,
 )
 from comms.telemetry.decoder import get_telemetry_id_defs
 
@@ -332,3 +333,41 @@ class TestOrigamiSat2:
         assert "TLM" in defs
         names = {f["name"] for f in defs["TLM"]["fields"]}
         assert not {"pwrgen_reserved", "sw_no_use"} & names
+
+
+# Real blocks from the 2026-10-13 OrigamiSat-2 pass (the beacon sends frames back to back, so
+# the tail of the previous frame, or a misread callsign, came with them).
+OSAT2_FRAME_A = "JS1YRUORIGAMI2817E792B830E0580857F9000000000838391006ACDD32D4B42483E00"
+OSAT2_FRAME_B = "JS1YRUORIGAMI2817E82DA8416057A86809000000000848491006ACDD4124B42483E00"
+
+
+class TestOrigamiSat2RunTogetherFrames:
+    def test_leftover_text_before_the_prefix_is_dropped(self) -> None:
+        result = decode_cw_frame(ORIGAMISAT2, "04B0WO483E003Y" + OSAT2_FRAME_A)
+        assert result is not None and result.valid
+        assert result.hex_text == OSAT2_FRAME_A[14:]
+
+    def test_a_slightly_misread_prefix_is_accepted(self) -> None:
+        result = decode_cw_frame(ORIGAMISAT2, "RJI1YRUORIGSMI2" + OSAT2_FRAME_B[14:])
+        assert result is not None and result.valid
+        assert result.hex_text == OSAT2_FRAME_B[14:]
+
+    def test_a_dropped_digit_is_still_only_a_near_miss(self) -> None:
+        text = "04B0WO483E003Y" + OSAT2_FRAME_A[:-1]
+        assert decode_cw_frame(ORIGAMISAT2, text) is None
+        assert is_near_miss(ORIGAMISAT2, text)
+
+    def test_a_bare_hex_string_without_the_prefix_is_not_a_frame(self) -> None:
+        assert decode_cw_frame(ORIGAMISAT2, OSAT2_FRAME_A[14:]) is None
+        assert split_frame_blocks(ORIGAMISAT2, OSAT2_FRAME_A[14:]) == [(0.0, OSAT2_FRAME_A[14:])]
+
+    def test_two_frames_in_one_block_are_split(self) -> None:
+        pieces = split_frame_blocks(ORIGAMISAT2, "4B42483E00" + OSAT2_FRAME_A + OSAT2_FRAME_B)
+        assert [text for _pos, text in pieces] == [OSAT2_FRAME_A, OSAT2_FRAME_B]
+        assert pieces[0][0] < pieces[1][0]
+        for _pos, text in pieces:
+            result = decode_cw_frame(ORIGAMISAT2, text)
+            assert result is not None and result.valid
+
+    def test_a_satellite_without_a_prefix_is_never_split(self) -> None:
+        assert split_frame_blocks(68796, "2FFE8594EB880124") == [(0.0, "2FFE8594EB880124")]
