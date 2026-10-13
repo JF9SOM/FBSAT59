@@ -209,6 +209,8 @@ datas = [
     (str(ROOT / "assets"), "assets"),
     # Version file written by CI before pyinstaller runs (used by _get_version())
     (str(SRC / "version.txt"), "."),
+    # FBSAT59's own license (GPL-2.0), shipped next to the bundled libraries' notices
+    (str(ROOT / "LICENSE"), "licenses/fbsat59"),
 ]
 
 # Collect certifi CA bundle (cacert.pem) so httpx HTTPS works in the bundle.
