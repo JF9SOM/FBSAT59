@@ -89,7 +89,7 @@ Access via the **Communications** menu (between Radio and Autotrack/Record). Eac
   - **gr-satellites** — if [gr-satellites](https://github.com/daniestevez/gr-satellites) is installed, forwards raw IQ from the SDR to a `gr_satellites` subprocess via UDP. Supports 330+ satellites. SDR auto-connects on Start.
   - Selecting a satellite in either picker automatically syncs the main satellite list and switches Radio Control to the correct telemetry/beacon transponder frequency. CSV export.
 - **SSTV / SSDV** — receive SSTV images (Robot36 and PD120 -- the modes satellites use; the HF modes Martin and Scottie are not supported) and SSDV packets (AX.25 or gr-satellites modes) from amateur satellites (e.g. ISS 145.800 MHz PD120 or 437.550 MHz Robot36). Works with SDR audio or a rig sound card. Auto-opens when a transponder description contains "SSTV", "SSDV", or "IMAGING".
-- **FT4** — encode and decode FT4 using the built-in ft8_lib (ctypes — no WSJT-X required). Transmit via Rig + PTT, with a docked click-to-set-TX-frequency waterfall, TX/RX Doppler handling, TX level in dB and a tune tone. QSOs are auto-logged at RR73. Auto-opens for RS-44, JO-97, MO-122, and other FT4-active satellites. LoTW-compatible ADIF export.
+- **FT4** — encode and decode FT4 using the built-in ft8_lib (ctypes — no WSJT-X required). Transmit via Rig + PTT, with a docked click-to-set-TX-frequency waterfall, TX/RX Doppler handling (**ADC — Audio Doppler Correction**, see below), TX level in dB and a tune tone. QSOs are auto-logged at RR73. Auto-opens for RS-44, JO-97, MO-122, and other FT4-active satellites. LoTW-compatible ADIF export.
 - **Q65** — EME (Earth-Moon-Earth) weak-signal digital mode. Decode via libq65 (built from WSJT-X source; pre-built bundles available via **Help → Q65 Library Installation**). Encode and transmit in pure Python — no libq65 required for TX. QSO state machine (IDLE→CALLING→EXCHANGE→CONFIRM→LOGGED) with PTT via CAT and Doppler freeze during transmission. Submodes A–E, periods 15/30/60 s. ADIF export.
 - **UDP log broadcast** — optionally sends one ADIF record per logged QSO (FT4, Q65, confirmed APRS message exchanges) to a configurable host:port (default `127.0.0.1:2333`) over UDP, compatible with lightweight log-relay tools such as wavelog-gate and JT-Linker (not the WSJT-X binary UDP protocol used by JTAlert/GridTracker). Enable and set the destination in **File → General Settings → Logging** — the host can be another machine on the LAN. APRS QSOs are logged with `MODE=PKT` and a nominal `599/599` signal report (APRS has no report exchange) for eQSL/LoTW compatibility.
 - **Help → Direwolf Installation…** — detect, install, or update Direwolf on all platforms
@@ -359,6 +359,39 @@ End-user documentation lives in [docs/user-guide/](docs/user-guide/en/index.md) 
 
 \* Windows: both RTL-SDR and HackRF require a one-time WinUSB driver install via Zadig.
 SoapySDR is incompatible with WinUSB on Windows; RTL-SDR and HackRF bypass it via ctypes.
+
+### FT4 ADC (Audio Doppler Correction) — status by rig
+
+A transceiver cannot follow a satellite's Doppler shift fast enough for FT4's 7.5-second periods, so
+the FT4 tab can correct the remainder in software (the **ADC** checkboxes next to the TX level):
+
+- **ADC TX** (all rigs): the uplink is held for the length of each burst and the transmit audio tone
+  is moved instead, following the Doppler drift. Implemented for every rig; its effect on the
+  other station's decode rate has not been evaluated yet.
+- **ADC RX**: the per-second tuning is replaced by one downlink write per period (and one uplink write
+  in the quiet tail of a receive period), and the received audio is shifted by the difference between
+  the dial and the ideal Doppler-corrected frequency, as it changes over the period, before decoding.
+  It only takes over the rig while an **FT4 transponder is selected, the FT4 tab is in front and the RX
+  checkbox is on**; for any other satellite or tab the normal per-second tracking continues.
+  No CAT command is sent while transmitting or in the first second afterwards (except for the FTX-1).
+  Icom SAT-mode rigs are covered for cross-band transponders only, and only after their mode/CTCSS
+  set-up after Connect has finished. Uses Hamlib calls only (plus the FT-991's raw `FB` uplink write
+  in Direct mode, because Hamlib cannot write that VFO).
+
+| Rig | NET (rigctld) | Direct (built-in Hamlib) |
+|-----|---------------|--------------------------|
+| Yaesu FT-991A | ✓ verified on real passes (offline test: 71 decodes with ADC RX vs. almost none without) | ✓ verified on real passes |
+| Yaesu FTX-1F | ◐ CAT writes and 10 CQ transmissions tested; decode gain not yet measured on a pass | ◐ same as NET |
+| Icom IC-705 (generic rig) | ⚠ **not verified** (no rig available) | ⚠ **not verified** |
+| Icom IC-9100 / IC-910H / IC-821H (SAT mode) | ⚠ **not verified** | ⚠ **not verified** |
+| Icom IC-9700 (SAT mode) | ⚠ **not verified** | ⚠ **not verified** |
+
+**Not verified (please report results):** everything marked ⚠ was built from the proven per-second
+write sequences but has never run on a real rig. For the IC-705 check that reception does not move to
+the uplink frequency (VFO-B) and TX/RX are not swapped after a transmission; for the SAT-mode rigs
+check that Main stays the receiver and Sub the transmitter, and that ADC RX starts after the log line
+`Stage-2 mode/CTCSS resent`. The decode gain of FTX-1F on a real pass, the effect of ADC TX, and
+same-band (V/V, U/U) transponders (not covered) are open as well.
 
 ---
 
