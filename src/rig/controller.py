@@ -1047,6 +1047,16 @@ class RigController(ABC):
             or time.monotonic() - self._ptt_off_at < _FT991_POST_TX_SETTLE_S
         )
 
+    def _slot_cat_blocked(self) -> bool:
+        """True while slot-synchronous CAT must not be sent to this rig.
+
+        Only the FT-991 ignores CAT while keyed and for a moment afterwards. The
+        FTX-1 keeps answering CAT through a transmission (confirmed 2026-09-30),
+        so for it nothing is blocked here -- the FT4 tab still leaves transmit
+        periods alone. Subclasses answer for the rigs they drive.
+        """
+        return False
+
     # -- Utilities --
 
     @abstractmethod
@@ -1400,8 +1410,11 @@ class HamlibDirectController(RigController):
 
     @property
     def supports_slot_sync(self) -> bool:
-        """True for an FT-991/FT-991A (full duplex) driven in Direct mode."""
-        return self._model_id in _FT991_DIRECT_MODEL_IDS and self._radio_type == "full_duplex"
+        """True for an FT-991/FT-991A or FTX-1F (full duplex) driven in Direct mode."""
+        return (
+            self._model_id in (_FT991_DIRECT_MODEL_IDS | _FTX1_MODEL_IDS)
+            and self._radio_type == "full_duplex"
+        )
 
     @property
     def slot_sync(self) -> bool:
@@ -1415,27 +1428,31 @@ class HamlibDirectController(RigController):
             logger.info("RigDirect: slot-synchronous CAT %s", "ON" if enabled else "OFF")
         self._slot_sync = enabled
 
+    def _slot_cat_blocked(self) -> bool:
+        return self._model_id in _FT991_DIRECT_MODEL_IDS and self._ft991_cat_blocked()
+
     @property
     def cat_blocked(self) -> bool:
-        """True while an FT-991 would not answer CAT (transmitting, or just after PTT off)."""
-        return self._ft991_cat_blocked()
+        """True while the rig would not answer CAT (an FT-991 that is keyed or just was)."""
+        return self._slot_cat_blocked()
 
     def _write_once(
         self, which: str, hz: float, still_ok: Callable[[], bool] | None = None
     ) -> bool:
-        """One DL ("F", Hamlib set_freq on VFO-A) or UL ("I", raw FB) write.
+        """One DL ("F", Hamlib set_freq on VFO-A) or UL ("I") write.
 
         False when blocked, disconnected, late (*still_ok* is evaluated under the
-        command lock right before sending) or rejected. The uplink goes out as the
-        raw CAT FB command, as in the per-second loop: Hamlib's set_split_freq is
-        not implemented for the FT-991 and a raw write has no acknowledgement.
+        command lock right before sending) or rejected. The FT-991 uplink goes out
+        as the raw CAT FB command, as in the per-second loop (Hamlib's
+        set_split_freq is not implemented for it and a raw write has no
+        acknowledgement); the FTX-1 uplink is a Hamlib set_freq on VFO-B.
         """
-        if not self.is_connected or self._rig is None or self._ft991_cat_blocked():
+        if not self.is_connected or self._rig is None or self._slot_cat_blocked():
             return False
         t0 = time.monotonic()
         try:
             with self._rig_cmd_lock:
-                if self._ft991_cat_blocked():
+                if self._slot_cat_blocked():
                     return False
                 if still_ok is not None and not still_ok():
                     logger.info(
@@ -1446,6 +1463,11 @@ class HamlibDirectController(RigController):
                 if which == "F":
                     self._rig.set_freq(self._vfo_str_to_const("VFOA"), int(hz))
                     _check_rig_ok(self._rig, "slot DL set_freq(VFOA)")
+                elif self._model_id in _FTX1_MODEL_IDS:
+                    # Plain Hamlib write to VFO-B, as in the per-second loop; no
+                    # VFO select is ever sent (it would move TX back to Main).
+                    self._rig.set_freq(self._vfo_str_to_const("VFOB"), int(hz))
+                    _check_rig_ok(self._rig, "slot UL set_freq(VFOB)")
                 else:
                     import os as _os
 
@@ -1493,7 +1515,7 @@ class HamlibDirectController(RigController):
         self, still_ok: Callable[[], bool] | None = None
     ) -> tuple[float | None, float | None]:
         """(downlink, None): the dial as the radio reports it; the uplink is not read back."""
-        if not self.is_connected or self._ft991_cat_blocked():
+        if not self.is_connected or self._slot_cat_blocked():
             return None, None
         if still_ok is not None and not still_ok():
             return None, None
@@ -1511,7 +1533,7 @@ class HamlibDirectController(RigController):
 
         *still_ok* is the caller's window: nothing is sent once it has closed.
         """
-        if not self.is_connected or self._rig is None or self._ft991_cat_blocked():
+        if not self.is_connected or self._rig is None or self._slot_cat_blocked():
             return None
         if still_ok is not None and not still_ok():
             return None
@@ -3668,8 +3690,8 @@ class HamlibNetController(RigController):
 
     @property
     def supports_slot_sync(self) -> bool:
-        """True for the one rig this mode was built for: an FT-991/FT-991A via rigctld."""
-        return self._ctcss_method == "ft991" and self._radio_type == "full_duplex"
+        """True for an FT-991/FT-991A or FTX-1F (full duplex) reached via rigctld."""
+        return self._ctcss_method in ("ft991", "ftx1") and self._radio_type == "full_duplex"
 
     @property
     def slot_sync(self) -> bool:
@@ -3683,10 +3705,13 @@ class HamlibNetController(RigController):
             logger.info("RigNet: slot-synchronous CAT %s", "ON" if enabled else "OFF")
         self._slot_sync = enabled
 
+    def _slot_cat_blocked(self) -> bool:
+        return self._ctcss_method == "ft991" and self._ft991_cat_blocked()
+
     @property
     def cat_blocked(self) -> bool:
-        """True while an FT-991 would not answer CAT (transmitting, or just after PTT off)."""
-        return self._ft991_cat_blocked()
+        """True while the rig would not answer CAT (an FT-991 that is keyed or just was)."""
+        return self._slot_cat_blocked()
 
     # Longest a CAT access without a window of its own keeps probing for an answer.
     _CAT_ANSWER_MAX_WAIT_S = 1.5
@@ -3726,7 +3751,7 @@ class HamlibNetController(RigController):
         mode (FM) -- so nothing may be written before the rig has answered.
         False when the caller's window closed (or the cap passed) first.
         """
-        if not self._cat_probe_due:
+        if not self._cat_probe_due or self._ctcss_method != "ft991":
             return True
         cap = self._CAT_ANSWER_MAX_WAIT_S if still_ok is None else self._CAT_ANSWER_WINDOW_CAP_S
         deadline = time.monotonic() + cap
@@ -3750,10 +3775,11 @@ class HamlibNetController(RigController):
         """
         code = _FT991_MODE_MAP.get(self._current_dl_mode)
         if (
-            code is None
+            self._ctcss_method != "ft991"
+            or code is None
             or not self._current_dl_mode.endswith("-D")
             or not self.is_connected
-            or self._ft991_cat_blocked()
+            or self._slot_cat_blocked()
             or not self._await_cat_answer(still_ok)
             or (still_ok is not None and not still_ok())
         ):
@@ -3788,13 +3814,13 @@ class HamlibNetController(RigController):
         closed -- on 2026-10-08 a late "I" went out as the PTT came on and the
         rig was left on FM several times.
         """
-        if not self.is_connected or self._ft991_cat_blocked():
+        if not self.is_connected or self._slot_cat_blocked():
             return False
         if not self._await_cat_answer(still_ok):
             logger.info("RigNet: slot write %s %d skipped (rig not answering)", command, int(hz))
             return False
         with self._cmd_lock:
-            if self._ft991_cat_blocked():
+            if self._slot_cat_blocked():
                 return False
             if still_ok is not None and not still_ok():
                 logger.info("RigNet: slot write %s %d skipped (window closed)", command, int(hz))
@@ -3825,7 +3851,7 @@ class HamlibNetController(RigController):
         self, still_ok: Callable[[], bool] | None = None
     ) -> tuple[float | None, float | None]:
         """(downlink, uplink) as the radio reports them now; None for one it did not answer."""
-        if not self.is_connected or self._ft991_cat_blocked():
+        if not self.is_connected or self._slot_cat_blocked():
             return None, None
         if still_ok is not None and not still_ok():
             return None, None
@@ -3846,7 +3872,7 @@ class HamlibNetController(RigController):
         probe that ran on into the next transmission put a CAT command on the air
         period, 2026-10-10).
         """
-        if not self.is_connected or self._ft991_cat_blocked():
+        if not self.is_connected or self._slot_cat_blocked():
             return None
         if still_ok is not None and not still_ok():
             return None

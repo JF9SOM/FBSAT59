@@ -4214,3 +4214,23 @@ Rx 周波数の概念は FBSAT59 にないため Shift/Ctrl の使い分けは�
 「応答なし停止」が発動して新しい相手への送信まで止めてしまった（JA5BLZ、16:09:36）。
 入力欄のメッセージが最後に送ったものと同じ場合にだけ停止するよう修正。
 日本語の停止メッセージも整えた（「応答がないまま5回送信しました（コール）— 送信を停止しました」）。
+
+### ADC RX を FTX-1F にも拡張（NET / Direct、2026-10-13、実機未検証）
+
+FT-991 での ADC RX の確認が済んだので、第二のリグとして FTX-1F（Hamlib model 1051）に対応した。
+
+- **対象**: NET モードは CTCSS Method が `ftx1` のリグ、Direct モードは model 1051
+  （いずれも `radio_type == "full_duplex"`）。`supports_slot_sync` で判定し、それ以外のリグは従来どおり
+  ADC RX を断る（ステータス: 「ADC RX には FT-991 または FTX-1 が必要です」）。
+- **FT-991 固有の処理は共有しない**: CAT が送信中・送信直後に応答しない問題、送信後の「CAT が答えるまで待つ」
+  プローブ、FM に落ちたモードの復元（`restore_rx_mode`）は FT-991 だけ。FTX-1 は送信中も CAT に答える
+  （2026-09-30 確認）ので `_slot_cat_blocked()`（基底は常に False、FT-991 だけが `_ft991_cat_blocked()` を返す）
+  で分けた。FT4 タブは従来どおり送信周期には CAT を出さない。
+- **書き込み**: NET は rigctld の `F`（Main=DL）/`I`（Sub=UL）。Direct は Hamlib `set_freq(VFOA)`（DL）と
+  `set_freq(VFOB)`（UL）で、FT-991 のような生 `FB` 書き込みは使わない。VFO 切り替え（`VS`/`set_vfo`）は
+  送らない（TX が Main に戻るため。rig-specific-notes.md 参照）。
+- **読み戻し**: DL のみ（NET は `f`、Direct は `get_freq(VFOA)`）。モードは `m` / `get_mode`。
+- **ADC TX（UL 保持）**: 変更なし。全リグで有効。
+- **次回パスで確認すること**: `ft4_decode.log` の `adc_rx write DL/UL ... ok=True`、`adc_rx read DL` が書いた値に
+  追従すること（`differs from what was written` が頻出しないか）、受信モードが `PKTUSB` のままか、
+  送信（Main/Sub の入れ替わり）が起きないこと、Direct で書き込みに 300 ms 以上かかる警告がないこと。

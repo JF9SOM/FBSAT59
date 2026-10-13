@@ -2503,6 +2503,24 @@ class TestHamlibNetController:
         ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0)
         assert b"F 435600000\n" in self._sent(ctrl)
 
+    def test_ftx1_net_supports_slot_sync_and_is_never_blocked(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="ftx1")
+        ctrl._sock.recv.return_value = b"RPRT 0\n"  # type: ignore[union-attr]
+        assert ctrl.supports_slot_sync is True
+        ctrl.set_slot_sync(True)
+        assert ctrl.slot_sync is True
+        ctrl.set_ptt(True, freeze_doppler=False)
+        assert ctrl.cat_blocked is False
+        assert ctrl.write_dl_hz(435_618_000.0) is True  # no CAT-answer probe either
+        assert ctrl.write_ul_hz(145_991_000.0) is True
+        sent = self._sent(ctrl)
+        assert b"F 435618000\n" in sent and b"I 145991000\n" in sent
+
+    def test_ftx1_net_has_no_ft991_mode_restore(self) -> None:
+        ctrl = self._make_connected_ctrl(ctcss_method="ftx1")
+        ctrl.set_current_modes("USB-D", "LSB-D")
+        assert ctrl.restore_rx_mode() is None
+
     def test_slot_sync_is_refused_on_other_rigs(self) -> None:
         ctrl = self._make_connected_ctrl(ctcss_method="hamlib")
         ctrl.set_slot_sync(True)
@@ -4217,12 +4235,13 @@ class TestFt991DirectSlotSync:
             ctrl._state = RigState.CONNECTED
         return ctrl
 
-    def test_only_an_ft991_supports_it(self) -> None:
+    def test_only_ft991_and_ftx1_support_it(self) -> None:
         assert self._ctrl(1035).supports_slot_sync
-        assert not self._ctrl(1051).supports_slot_sync  # FTX-1F
-        ctrl = self._ctrl(1051)
+        assert self._ctrl(1051).supports_slot_sync  # FTX-1F
+        ctrl = self._ctrl(3073)  # any other model
         ctrl.set_slot_sync(True)
         assert not ctrl.slot_sync
+        assert not ctrl.supports_slot_sync
 
     def test_slot_sync_silences_the_per_second_loop(self) -> None:
         ctrl = self._ctrl()
@@ -4275,6 +4294,57 @@ class TestFt991DirectSlotSync:
         assert ctrl.read_dial_hz() == (435_618_010.0, None)
         assert ctrl.read_mode_name() == "PKTUSB"
         assert ctrl.read_dial_hz(lambda: False) == (None, None)
+
+
+class TestFtx1DirectSlotSync:
+    """FT4 ADC on an FTX-1F in Direct mode: plain Hamlib writes, CAT never blocked."""
+
+    def _ctrl(self) -> HamlibDirectController:
+        ctrl = HamlibDirectController(model_id=1051, port="/dev/null")
+        ctrl._rig = MagicMock(error_status=0)
+        fake = MagicMock()
+        fake.RIG_VFO_A = 101
+        fake.RIG_VFO_B = 102
+        fake.rig_strrmode.return_value = "PKTUSB"
+        ctrl._hamlib = fake
+        with ctrl._lock:
+            ctrl._state = RigState.CONNECTED
+        return ctrl
+
+    def test_downlink_and_uplink_are_hamlib_writes_to_vfo_a_and_b(self) -> None:
+        ctrl = self._ctrl()
+        assert ctrl.write_dl_hz(435_618_000.0) is True
+        assert ctrl.write_ul_hz(145_991_234.0) is True
+        calls = [c.args for c in ctrl._rig.set_freq.call_args_list]
+        assert calls == [(101, 435_618_000), (102, 145_991_234)]
+        assert ctrl.last_dl_hz == 435_618_000.0
+        assert ctrl.last_ul_hz == 145_991_234.0
+
+    def test_no_raw_serial_write_is_made(self) -> None:
+        ctrl = self._ctrl()
+        with patch("os.open") as op:
+            assert ctrl.write_ul_hz(145_991_234.0) is True
+        op.assert_not_called()
+
+    def test_cat_is_not_blocked_while_keyed(self) -> None:
+        ctrl = self._ctrl()
+        ctrl.set_ptt(True, freeze_doppler=False)
+        assert not ctrl.cat_blocked
+        assert ctrl.write_dl_hz(435_618_000.0) is True
+        ctrl._rig.get_freq.return_value = 435_618_010.0
+        assert ctrl.read_dial_hz() == (435_618_010.0, None)
+
+    def test_late_write_never_reaches_the_rig(self) -> None:
+        ctrl = self._ctrl()
+        assert ctrl.write_ul_hz(145_990_000.0, lambda: False) is False
+        ctrl._rig.set_freq.assert_not_called()
+
+    def test_slot_sync_silences_the_per_second_loop(self) -> None:
+        ctrl = self._ctrl()
+        ctrl.set_slot_sync(True)
+        assert ctrl.slot_sync
+        assert ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0) is True
+        ctrl._rig.set_freq.assert_not_called()
 
 
 def test_direct_mode_read_takes_the_callers_window() -> None:

@@ -895,9 +895,10 @@ class Ft4Tab(QWidget):
                 "Doppler error the rig cannot follow.\n"
                 "TX: (all rigs) the uplink is held at the start of each burst and the\n"
                 "transmit tone is moved during it instead.\n"
-                "RX: (FT-991, NET or Direct mode) the rig is written once per period and the\n"
-                "received audio is shifted by the difference between that frequency\n"
-                "and the ideal one, as it changes over the period, before decoding."
+                "RX: (FT-991 / FTX-1, NET or Direct mode) the rig is written\n"
+                "once per period and the received audio is shifted by the difference\n"
+                "between that frequency and the ideal one, as it changes over the\n"
+                "period, before decoding."
             )
         )
         qso_row.addWidget(adc_label)
@@ -916,7 +917,7 @@ class Ft4Tab(QWidget):
         self._adc_rx_check.setChecked(self._adc_rx)
         self._adc_rx_check.setToolTip(
             _(
-                "FT-991 only (NET or Direct mode). Stops the per-second tuning: the rig's\n"
+                "FT-991 / FTX-1 only (NET or Direct mode). Stops the per-second tuning: the rig's\n"
                 "DL/UL are written once per period (right after a transmission, or late in\n"
                 "a receive period), and the received audio is corrected for the difference\n"
                 "between\n"
@@ -2217,7 +2218,7 @@ class Ft4Tab(QWidget):
     _ADC_MAX_READ_DELTA_HZ = 200_000.0
 
     def _slot_sync_rig(self) -> Any | None:
-        """The rig ADC RX drives, or None when it cannot (not an FT-991 in NET or Direct mode)."""
+        """The rig ADC RX drives, or None (not an FT-991 / FTX-1 in NET or Direct mode)."""
         rig = self._tx_rig()
         if rig is not None and getattr(rig, "supports_slot_sync", False):
             return rig
@@ -2237,7 +2238,7 @@ class Ft4Tab(QWidget):
     def _apply_slot_sync(self) -> None:
         rig = self._slot_sync_rig()
         if self._adc_rx and rig is None:
-            self._status_label.setText(_("ADC RX needs an FT-991 (NET or Direct mode)"))
+            self._status_label.setText(_("ADC RX needs an FT-991 or FTX-1 (NET or Direct mode)"))
         if self._adc_rx and rig is not None:
             self._dial_track = DialTrack()
             self._dl_written_for_slot = -1.0
