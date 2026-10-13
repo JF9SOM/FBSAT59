@@ -4472,7 +4472,7 @@ class TestIc705DirectSlotSync:
 
 
 class TestIc9100DirectSlotSync:
-    """FT4 ADC on an IC-9100-family rig in Direct SAT mode (cross-band), plain Hamlib calls."""
+    """FT4 ADC on an Icom SAT-mode rig in Direct mode (cross-band), plain Hamlib calls."""
 
     def _ctrl(self, model_id: int = 3068) -> HamlibDirectController:
         ctrl = HamlibDirectController(model_id=model_id, port="/dev/null")
@@ -4492,10 +4492,16 @@ class TestIc9100DirectSlotSync:
         ctrl._transponder_ul_hz = 145_940_000.0
         return ctrl
 
-    def test_supported_for_the_9100_family_only(self) -> None:
-        for model in (3068, 3044, 3034):
+    def test_supported_for_the_sat_mode_rigs(self) -> None:
+        for model in (3068, 3044, 3034, 3081):
             assert self._ctrl(model).supports_slot_sync
-        assert not self._ctrl(3081).supports_slot_sync  # IC-9700: a later step
+
+    def test_the_ic9700_uplink_goes_to_vfo_sub(self) -> None:
+        ctrl = self._ctrl(3081)
+        assert ctrl.write_dl_hz(435_618_000.0) is True
+        assert ctrl.write_ul_hz(145_991_234.0) is True
+        calls = [c.args for c in ctrl._rig.set_freq.call_args_list]
+        assert calls == [(103, 435_618_000), (104, 145_991_234)]  # MAIN, then SUB (not TX)
 
     def test_same_band_pairs_and_inactive_satmode_are_not_covered(self) -> None:
         ctrl = self._ctrl()

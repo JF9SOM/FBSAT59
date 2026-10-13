@@ -1413,16 +1413,16 @@ class HamlibDirectController(RigController):
 
     @property
     def supports_slot_sync(self) -> bool:
-        """True for an FT-991/FT-991A, FTX-1F, IC-705 or IC-9100-family rig (full duplex)."""
+        """True for an FT-991/FT-991A, FTX-1F, IC-705 or an Icom SAT-mode rig (full duplex)."""
         if self._radio_type != "full_duplex":
             return False
         if self._model_id in (_FT991_DIRECT_MODEL_IDS | _FTX1_MODEL_IDS | _IC705_MODEL_IDS):
             return True
-        if self._model_id in _SATMODE_RIG_IDS - _SATMODE_USE_VFO_SUB:
-            # IC-9100 / IC-910H / IC-821H (the IC-9700 is not covered yet): cross-band
-            # SAT mode only (FT4 is not used on same-band pairs, which make the rig leave
-            # SAT mode -- a different path), and only once the Stage-2 mode/CTCSS resend
-            # that the per-second loop runs after the first uplink write has completed.
+        if self._model_id in _SATMODE_RIG_IDS:
+            # IC-9100 / IC-910H / IC-821H / IC-9700: cross-band SAT mode only (FT4 is
+            # not used on same-band pairs, which make the rig leave SAT mode -- a
+            # different path), and only once the Stage-2 mode/CTCSS resend that the
+            # per-second loop runs after the first uplink write has completed.
             return (
                 self._satmode
                 and self._satmode_active
