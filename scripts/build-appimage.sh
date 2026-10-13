@@ -63,7 +63,11 @@ bundle_system_lib() {
     done < <(ldd "$path" | awk '/=> \// {print $3}')
 }
 
-for lib in libpulse.so.0 libxkbcommon.so.0 libXext.so.6 libXrandr.so.2 libdrm.so.2; do
+# libxkbcommon-x11 and libxcb-cursor are required by Qt >= 6.5's xcb platform
+# plugin (libqxcb.so); without them the app exits at startup on machines that
+# do not have them installed ("no Qt platform plugin could be initialized").
+for lib in libpulse.so.0 libxkbcommon.so.0 libxkbcommon-x11.so.0 libxcb-cursor.so.0 \
+           libXext.so.6 libXrandr.so.2 libdrm.so.2; do
     bundle_system_lib "$lib"
 done
 
@@ -127,6 +131,21 @@ if [[ -n "$QTMM" ]]; then
     fi
 else
     echo "WARNING: libQt6Multimedia.so.6 not found in the PyInstaller output" >&2
+fi
+
+# Same check for the Qt xcb platform plugin: if one of its libraries is
+# unresolved the app cannot open any window.
+QXCB="$(find "$APPDIR/usr/bin" -name 'libqxcb.so' | head -n 1)"
+if [[ -n "$QXCB" ]]; then
+    MISSING="$(LD_LIBRARY_PATH="$(dirname "$QXCB")/../../lib:$APPDIR/usr/bin:$APPDIR/usr/lib" ldd "$QXCB" \
+        | grep 'not found' | grep -v -E 'libGL|libEGL' || true)"
+    if [[ -n "$MISSING" ]]; then
+        echo "ERROR: Qt xcb platform plugin has unresolved libraries in the AppImage:" >&2
+        echo "$MISSING" >&2
+        exit 1
+    fi
+else
+    echo "WARNING: libqxcb.so not found in the PyInstaller output" >&2
 fi
 
 # --------------------------------------------------------------------------- #
