@@ -67,6 +67,7 @@ bundle_system_lib() {
 # plugin (libqxcb.so); without them the app exits at startup on machines that
 # do not have them installed ("no Qt platform plugin could be initialized").
 for lib in libpulse.so.0 libxkbcommon.so.0 libxkbcommon-x11.so.0 libxcb-cursor.so.0 \
+           libxcb-icccm.so.4 libxcb-keysyms.so.1 libxcb-shape.so.0 \
            libXext.so.6 libXrandr.so.2 libdrm.so.2; do
     bundle_system_lib "$lib"
 done

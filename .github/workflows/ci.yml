@@ -156,6 +156,7 @@ jobs:
             libusb-1.0-0-dev libxml2-dev swig python3.11-dev \
             libgl1 libegl1 libfuse2 \
             libpulse0 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 \
+            libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 \
             libxext6 libxrandr2 libdrm2 \
             binutils coreutils
 
