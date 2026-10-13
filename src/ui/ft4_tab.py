@@ -1707,7 +1707,15 @@ class Ft4Tab(QWidget):
         self._tx_in_progress = False
         self._tx_worker = None
         self._status_label.setText(_("TX done — waiting for next period"))
-        if self._retry_msg and self._retry_count >= _MAX_UNANSWERED_TX and self._tx_enabled:
+        # Not when the operator has already picked another message/station while
+        # this burst was on the air (it belongs to the old attempt).
+        current = self._tx_edit.text().strip().upper()
+        if (
+            self._retry_msg
+            and self._retry_count >= _MAX_UNANSWERED_TX
+            and self._tx_enabled
+            and current == self._last_tx_msg
+        ):
             self._log_qso_event("no_reply_stop", f"tries={self._retry_count}")
             call = self._qso.session.their_call if self._qso is not None else ""
             self._retry_msg, self._retry_count = "", 0
