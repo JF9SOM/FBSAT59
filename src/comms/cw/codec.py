@@ -43,6 +43,15 @@ _BLANK_INDEX = 41
 MIN_AUDIO_SECONDS = 5.0  # model requires at least 5 s of audio
 MAX_AUDIO_SECONDS = 20.0  # clip to 20 s maximum
 
+# The model only sees 400-1200 Hz. A carrier outside [_OK_MIN_HZ, _OK_MAX_HZ] (a margin
+# inside the model range, so the keying sidebands stay in it) is shifted to _TARGET_HZ.
+_OK_MIN_HZ = 450.0
+_OK_MAX_HZ = 1_150.0
+_TARGET_HZ = 700.0
+# Where the carrier is searched for (the 3200 Hz audio has a 1600 Hz Nyquist).
+_SEARCH_MIN_HZ = 100.0
+_SEARCH_MAX_HZ = 1_500.0
+
 # Vocabulary (chars list from model.onnx.json, blank implicit at index 41)
 _VOCAB: list[str] = list(",./0123456789?ABCDEFGHIJKLMNOPQRSTUVWXYZ ")
 
@@ -82,6 +91,47 @@ def _resample(audio: NDArray[np.float32], src_rate: int) -> NDArray[np.float32]:
         frac = (src_pos - left).astype(np.float32)
         out = audio[left] * (1.0 - frac) + audio[right] * frac
         return out.astype(np.float32)
+
+
+# ---------------------------------------------------------------------------
+# Carrier centring
+# ---------------------------------------------------------------------------
+
+
+def _shift_frequency(audio: NDArray[np.float32], shift_hz: float) -> NDArray[np.float32]:
+    """Shift the real *audio* up by *shift_hz* (negative = down) via its analytic signal."""
+    n = len(audio)
+    spectrum = np.fft.fft(audio.astype(np.float64))
+    # Analytic signal: drop the negative frequencies, double the positive ones.
+    h = np.zeros(n)
+    h[0] = 1.0
+    if n % 2 == 0:
+        h[n // 2] = 1.0
+        h[1 : n // 2] = 2.0
+    else:
+        h[1 : (n + 1) // 2] = 2.0
+    analytic = np.fft.ifft(spectrum * h)
+    t = np.arange(n) / SAMPLE_RATE
+    shifted: NDArray[np.float32] = np.real(analytic * np.exp(2j * np.pi * shift_hz * t)).astype(
+        np.float32
+    )
+    return shifted
+
+
+def centre_carrier(audio: NDArray[np.float32]) -> NDArray[np.float32]:
+    """Move a CW carrier that lies outside the model's band into it.
+
+    *audio* is at SAMPLE_RATE. The carrier's pitch depends on where the receiver was
+    tuned (an SDR's CW carrier keeps its offset from the tuned frequency), so a carrier
+    at e.g. 300 Hz is invisible to the model. The audio is returned unchanged when no
+    clear carrier is found or when it is already inside the band.
+    """
+    from comms.cw.classic import find_tone  # lazy: classic imports this module
+
+    tone = find_tone(audio, SAMPLE_RATE, _SEARCH_MIN_HZ, _SEARCH_MAX_HZ)
+    if tone is None or _OK_MIN_HZ <= tone <= _OK_MAX_HZ:
+        return audio
+    return _shift_frequency(audio, _TARGET_HZ - tone)
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +291,7 @@ class CwDecoder:
             return empty
 
         resampled = _resample(audio, sample_rate)
+        resampled = centre_carrier(resampled[: int(MAX_AUDIO_SECONDS * SAMPLE_RATE)])
         spec, frame_energy = _compute_spectrogram_and_energy(resampled)
         if spec is None or frame_energy is None:
             return empty

@@ -80,8 +80,13 @@ _MORSE: dict[str, str] = {
 _UNKNOWN = "*"
 
 
-def find_tone(audio: NDArray[np.float32], sample_rate: int) -> float | None:
-    """Frequency (Hz) of the strongest narrow line in the CW band, or None if there is none."""
+def find_tone(
+    audio: NDArray[np.float32],
+    sample_rate: int,
+    min_hz: float = _MIN_TONE_HZ,
+    max_hz: float = _MAX_TONE_HZ,
+) -> float | None:
+    """Frequency (Hz) of the strongest narrow line in [min_hz, max_hz], or None if there is none."""
     n = min(len(audio), _TONE_FFT)
     if n < 1024:
         return None
@@ -97,7 +102,7 @@ def find_tone(audio: NDArray[np.float32], sample_rate: int) -> float | None:
     if count == 0:
         return None
     freqs = np.fft.rfftfreq(n, 1.0 / sample_rate)
-    band = (freqs >= _MIN_TONE_HZ) & (freqs <= _MAX_TONE_HZ)
+    band = (freqs >= min_hz) & (freqs <= max_hz)
     power = acc[band]
     if len(power) == 0:
         return None
