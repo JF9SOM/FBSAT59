@@ -4205,7 +4205,7 @@ Rx 周波数の概念は FBSAT59 にないため Shift/Ctrl の使い分けは�
   TX Enable を外して停止する（メッセージは入力欄に残る）。
 - **診断ログ**: `ft4_decode.log` に `qso <source> state=… partner=… tx="…"` を出力。
   source は `auto`（状態機械が進めた）/`doubleclick`/`button_*`/`ignored`（自分宛てだが
-  現状態では受け付けなかった）/`tx_enable`/`tx_disable`/`halt`/`no_reply_stop`。
+  現状態では受け付けなかった）/`finished`（相手の 73 を受けて QSO が LOGGED になった。2026-10-13 追加）/`tx_enable`/`tx_disable`/`halt`/`no_reply_stop`。
   手動操作と自動処理を後から区別するためのもの。
 
 2026-10-13 の RS-44 パス（16:00〜）の確認: CAT 書き込み 255 件すべて成功。auto/ignored/no_reply_stop のログから、
