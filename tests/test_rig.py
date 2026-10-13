@@ -4471,6 +4471,96 @@ class TestIc705DirectSlotSync:
         ctrl._rig.set_vfo.assert_not_called()
 
 
+class TestIc9100DirectSlotSync:
+    """FT4 ADC on an IC-9100-family rig in Direct SAT mode (cross-band), plain Hamlib calls."""
+
+    def _ctrl(self, model_id: int = 3068) -> HamlibDirectController:
+        ctrl = HamlibDirectController(model_id=model_id, port="/dev/null")
+        ctrl._rig = MagicMock(error_status=0)
+        fake = MagicMock()
+        fake.RIG_VFO_A = 101
+        fake.RIG_VFO_B = 102
+        fake.RIG_VFO_MAIN = 103
+        fake.RIG_VFO_SUB = 104
+        fake.RIG_VFO_TX = 105
+        fake.rig_strrmode.return_value = "PKTUSB"
+        ctrl._hamlib = fake
+        with ctrl._lock:
+            ctrl._state = RigState.CONNECTED
+        ctrl._satmode_active = True
+        ctrl._transponder_dl_hz = 435_640_000.0
+        ctrl._transponder_ul_hz = 145_940_000.0
+        return ctrl
+
+    def test_supported_for_the_9100_family_only(self) -> None:
+        for model in (3068, 3044, 3034):
+            assert self._ctrl(model).supports_slot_sync
+        assert not self._ctrl(3081).supports_slot_sync  # IC-9700: a later step
+
+    def test_same_band_pairs_and_inactive_satmode_are_not_covered(self) -> None:
+        ctrl = self._ctrl()
+        ctrl._transponder_ul_hz = 145_800_000.0
+        ctrl._transponder_dl_hz = 145_825_000.0
+        assert not ctrl.supports_slot_sync
+        ctrl = self._ctrl()
+        ctrl._satmode_active = False
+        assert not ctrl.supports_slot_sync
+
+    def test_waits_for_stage2_to_be_finished(self) -> None:
+        ctrl = self._ctrl()
+        ctrl._pending_mode_ctcss = True
+        assert not ctrl.supports_slot_sync
+        ctrl.set_slot_sync(True)
+        assert not ctrl.slot_sync
+        ctrl._pending_mode_ctcss = False
+        ctrl._stage2_running = True  # the resend itself is still going on
+        assert not ctrl.supports_slot_sync
+        ctrl._stage2_running = False
+        assert ctrl.supports_slot_sync
+        ctrl.set_slot_sync(True)
+        assert ctrl.slot_sync
+
+    def test_downlink_goes_to_main_and_uplink_to_vfo_tx(self) -> None:
+        ctrl = self._ctrl()
+        assert ctrl.write_dl_hz(435_618_000.0) is True
+        assert ctrl.last_written_vfo_is_main()
+        assert ctrl.write_ul_hz(145_991_234.0) is True
+        assert not ctrl.last_written_vfo_is_main()
+        calls = [c.args for c in ctrl._rig.set_freq.call_args_list]
+        assert calls == [(103, 435_618_000), (105, 145_991_234)]
+        ctrl._rig.set_vfo.assert_not_called()  # no VFO select of our own
+
+    def test_read_back_is_skipped_right_after_an_uplink_write(self) -> None:
+        ctrl = self._ctrl()
+        ctrl._rig.get_freq.return_value = 435_618_010.0
+        ctrl._rig.get_mode.return_value = (2048, 3000)
+        ctrl.write_ul_hz(145_991_234.0)
+        assert ctrl.read_dial_hz() == (None, None)
+        assert ctrl.read_mode_name() is None
+        ctrl._rig.get_freq.assert_not_called()
+        ctrl.write_dl_hz(435_618_000.0)
+        assert ctrl.read_dial_hz() == (435_618_010.0, None)
+        assert ctrl._rig.get_freq.call_args.args == (103,)  # Main
+        assert ctrl.read_mode_name() == "PKTUSB"
+
+    def test_uplink_is_written_first_so_the_rig_ends_on_main(self) -> None:
+        assert self._ctrl().slot_ul_before_dl is True
+        assert self._ctrl(1035).slot_ul_before_dl is False
+
+    def test_nothing_is_sent_while_keyed(self) -> None:
+        ctrl = self._ctrl()
+        ctrl.set_ptt(True, freeze_doppler=False)
+        assert ctrl.cat_blocked
+        assert ctrl.write_dl_hz(435_618_000.0) is False
+        ctrl._rig.set_freq.assert_not_called()
+
+    def test_slot_sync_silences_the_per_second_loop(self) -> None:
+        ctrl = self._ctrl()
+        ctrl.set_slot_sync(True)
+        assert ctrl.set_vfo_frequencies(435_600_000.0, 145_900_000.0) is True
+        ctrl._rig.set_freq.assert_not_called()
+
+
 def test_direct_mode_read_takes_the_callers_window() -> None:
     """The FT4 tab passes its deadline check to read_mode_name() on every rig."""
     ctrl = HamlibDirectController(model_id=1035, port="/dev/null")

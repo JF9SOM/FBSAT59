@@ -4316,3 +4316,24 @@ IC-9100 / IC-9700 / IC-910H / IC-821H を rigctld（NET）で使う場合。**Di
 条件が戻れば自動で再開する。ADC の ON/OFF（チェックボックス）の設定自体は変えない。
 FT4 タブが前面にないあいだも、受信キャプチャは動き続けるが、デコード音声の補正（`slot_sync` が True のときだけ
 行う）は止まる。ADC TX（UL 保持）は従来どおり全リグで有効。
+
+### ADC RX を IC-9100 系の Direct（SAT モード、クロスバンド）にも拡張（2026-10-13、実機未検証）
+
+IC-9100 / IC-910H / IC-821H（model 3068 / 3044 / 3034）。**IC-9700（3081）は対象外**（UL が `RIG_VFO_SUB` で、
+2 回目の `open` 後に追加の `set_func`、Sub の書き込みが重い、等の違いがあるため最後の段階）。
+
+- **対象**: SAT モードがクロスバンドで有効（`_satmode_active`）、選択中のトランスポンダーが同一バンドでない、
+  full duplex、かつ **Stage-2（モード+CTCSS の再送）が完全に終わっていること**（`_pending_mode_ctcss` と実行中の印
+  `_stage2_running` が両方空）。条件を外れると `slot_sync` が自動で False になり、毎秒追尾に戻る。
+- **書き込み（Hamlib のみ、生 CAT/CI-V なし）**: DL は `set_freq(MAIN)`、UL は `set_freq(RIG_VFO_TX)`、どちらも
+  `_check_rig_ok`。毎秒追尾の間引き（UL は 20 Hz / 15 秒など）は通らず、FT4 タブが決めた周期で書く。
+  書いた VFO を `_last_written_vfo`（Main / Sub）に記録する。
+- **読み戻し**: DL は `get_freq(MAIN)`、モードは `get_mode(MAIN)`。**直前の書き込みが UL（Sub）だった場合は
+  読まない**（Icom の Hamlib は、Sub を書いた直後に Main を要求すると内部で VFO を切り替え、2026-07-22 に
+  Lock の読み戻しでハングを再現した箇所。Lock と同じ規則）。
+- **書き込み順**: 次も受信の尾では **UL → DL の順**（最後が Main になり、次の読み戻しが安全）。次が送信なら UL のみ。
+  `slot_ul_before_dl`（SAT モード機だけ True）で FT4 タブが切り替える。
+- **送信中の CAT**: FT-991 と同様に、送信中・PTT オフ後 1 秒は出さない。
+- **次にやる人へ**: 最初に確認するのは、`Stage-2 mode/CTCSS resent` の後に `adc_rx write DL/UL ... ok=True` が始まること、
+  送信後も Main が受信・Sub が送信のままか（VFO 割り当ての逆転がないか）、`adc_rx read DL` が書いた値に追従する
+  こと（読み戻しが飛ばされる周期が一部あるのは仕様）、表示が UL 周波数のままにならないこと。

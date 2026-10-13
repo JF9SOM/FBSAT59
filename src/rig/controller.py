@@ -1201,6 +1201,8 @@ class HamlibDirectController(RigController):
         # Stage-2 flag: after first UL write post-connect, re-send mode/CTCSS to
         # confirm correct VFO assignment once SAT mode band anchor is locked.
         self._pending_mode_ctcss: bool = False
+        # True while the Stage-2 resend runs (see _set_vfo_frequencies_locked()).
+        self._stage2_running: bool = False
         # Specific reason the last _apply_mode_and_ctcss_hamlib() call failed
         # (set on exception, read by apply_transponder_state() so the
         # RigControlError it raises carries a useful message instead of a
@@ -1411,16 +1413,53 @@ class HamlibDirectController(RigController):
 
     @property
     def supports_slot_sync(self) -> bool:
-        """True for an FT-991/FT-991A, FTX-1F or IC-705 (full duplex) driven in Direct mode."""
+        """True for an FT-991/FT-991A, FTX-1F, IC-705 or IC-9100-family rig (full duplex)."""
+        if self._radio_type != "full_duplex":
+            return False
+        if self._model_id in (_FT991_DIRECT_MODEL_IDS | _FTX1_MODEL_IDS | _IC705_MODEL_IDS):
+            return True
+        if self._model_id in _SATMODE_RIG_IDS - _SATMODE_USE_VFO_SUB:
+            # IC-9100 / IC-910H / IC-821H (the IC-9700 is not covered yet): cross-band
+            # SAT mode only (FT4 is not used on same-band pairs, which make the rig leave
+            # SAT mode -- a different path), and only once the Stage-2 mode/CTCSS resend
+            # that the per-second loop runs after the first uplink write has completed.
+            return (
+                self._satmode
+                and self._satmode_active
+                and not self._transponder_is_same_band()
+                and not self._stage2_pending()
+            )
+        return False
+
+    def _transponder_is_same_band(self) -> bool:
+        """True when the selected transponder's DL and UL are in the same band."""
         return (
-            self._model_id in (_FT991_DIRECT_MODEL_IDS | _FTX1_MODEL_IDS | _IC705_MODEL_IDS)
-            and self._radio_type == "full_duplex"
+            self._transponder_dl_hz is not None
+            and self._transponder_ul_hz is not None
+            and self._freq_band(self._transponder_dl_hz) == self._freq_band(self._transponder_ul_hz)
         )
+
+    def _stage2_pending(self) -> bool:
+        """True from transponder selection until the Stage-2 resend has completed."""
+        return self._pending_mode_ctcss or self._stage2_running
+
+    @property
+    def slot_ul_before_dl(self) -> bool:
+        """SAT-mode rigs: write the uplink first so the last write leaves the rig on Main.
+
+        Reading Main right after a Sub write makes the Icom backend switch VFOs
+        internally, which hung the app once (see last_written_vfo_is_main()).
+        """
+        return self._satmode
 
     @property
     def slot_sync(self) -> bool:
-        """Whether the per-second Doppler writes are suspended for slot-synchronous writes."""
-        return self._slot_sync
+        """Whether the per-second Doppler writes are suspended for slot-synchronous writes.
+
+        Also False as soon as the rig no longer qualifies (a SAT-mode rig switched to a
+        same-band pair or reselected, so Stage 2 is due again): tracking is never left silent.
+        """
+        return self._slot_sync and self.supports_slot_sync
 
     def set_slot_sync(self, enabled: bool) -> None:
         """Turn slot-synchronous mode on/off (ignored on rigs that do not support it)."""
@@ -1463,9 +1502,21 @@ class HamlibDirectController(RigController):
                     )
                     return False
                 t0 = time.monotonic()
-                if which == "F":
+                if which == "F" and self._satmode:
+                    # Icom SAT mode, as in the per-second loop's cross-band branch.
+                    self._rig.set_freq(self._vfo_str_to_const("Main"), int(hz))
+                    _check_rig_ok(self._rig, "slot DL set_freq(MAIN)")
+                    self._last_written_vfo = "Main"
+                elif which == "F":
                     self._rig.set_freq(self._vfo_str_to_const("VFOA"), int(hz))
                     _check_rig_ok(self._rig, "slot DL set_freq(VFOA)")
+                elif self._satmode:
+                    # IC-9700 needs RIG_VFO_SUB, the others RIG_VFO_TX (see
+                    # _SATMODE_USE_VFO_SUB).
+                    vfo_name = "Sub" if self._model_id in _SATMODE_USE_VFO_SUB else "TX"
+                    self._rig.set_freq(self._vfo_str_to_const(vfo_name), int(hz))
+                    _check_rig_ok(self._rig, "slot UL set_freq(VFO_TX/SUB)")
+                    self._last_written_vfo = "Sub"
                 elif self._model_id in _FTX1_MODEL_IDS:
                     # Plain Hamlib write to VFO-B, as in the per-second loop; no
                     # VFO select is ever sent (it would move TX back to Main).
@@ -1532,8 +1583,12 @@ class HamlibDirectController(RigController):
             return None, None
         if still_ok is not None and not still_ok():
             return None, None
+        if self._satmode and not self.last_written_vfo_is_main():
+            # The Icom backend switches VFOs itself when asked for Main right after a
+            # Sub write -- the one place a hang was reproduced; skip this read.
+            return None, None
         t0 = time.monotonic()
-        dl = self.get_frequency("VFOA")
+        dl = self.get_frequency("Main" if self._satmode else "VFOA")
         ms = (time.monotonic() - t0) * 1000.0
         if ms >= 300 or dl <= 0:
             logger.warning(
@@ -1550,12 +1605,15 @@ class HamlibDirectController(RigController):
             return None
         if still_ok is not None and not still_ok():
             return None
+        if self._satmode and not self.last_written_vfo_is_main():
+            return None  # see read_dial_hz()
         try:
             with self._rig_cmd_lock:
                 if still_ok is not None and not still_ok():
                     return None
                 t0 = time.monotonic()
-                mode, _width = self._rig.get_mode(self._vfo_str_to_const("VFOA"))
+                rx_vfo = "Main" if self._satmode else "VFOA"
+                mode, _width = self._rig.get_mode(self._vfo_str_to_const(rx_vfo))
                 ms = (time.monotonic() - t0) * 1000.0
                 if ms >= 300:
                     logger.warning("RigDirect#%d: mode read took %.0f ms", self._diag_id, ms)
@@ -2111,7 +2169,7 @@ class HamlibDirectController(RigController):
         Best-effort: failures are logged and swallowed rather than blocking
         the PTT that is about to follow.
         """
-        if self._pending_ul_hz is None or self._rig is None or self._slot_sync:
+        if self._pending_ul_hz is None or self._rig is None or self.slot_sync:
             return
         try:
             with self._rig_cmd_lock:
@@ -2136,7 +2194,7 @@ class HamlibDirectController(RigController):
         """
         if not self.is_connected or self._rig is None:
             return False
-        if self._slot_sync:
+        if self.slot_sync:
             return True  # the FT4 tab writes once per period instead
         # Split-rig roles: an RX-only rig never receives the uplink. A TX-only
         # rig is plain simplex: the uplink is its one frequency (VFOA), no split.
@@ -2395,8 +2453,14 @@ class HamlibDirectController(RigController):
                             self._last_ul_update_time = now
                             self._last_written_vfo = "Sub"
                             if was_first_ul and self._pending_mode_ctcss:
-                                self._pending_mode_ctcss = False
-                                self._resend_mode_ctcss_via_rig()
+                                # Raised before the flag drops, lowered when the resend
+                                # is over: slot-synchronous mode waits for both.
+                                self._stage2_running = True
+                                try:
+                                    self._pending_mode_ctcss = False
+                                    self._resend_mode_ctcss_via_rig()
+                                finally:
+                                    self._stage2_running = False
 
             elif self._model_id in _FT991_DIRECT_MODEL_IDS and self._ft991_cat_blocked():
                 # FT-991/FT-991A ignore a frequency write while transmitting --
