@@ -1347,6 +1347,9 @@ def test_gr_row_with_a_format_file_fills_the_decoded_fields(
     qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     tab, _rec = _gr_tab(qtbot, conn, monkeypatch)
+    # set_satellite() drops back to AFSK mode when gr-satellites is unavailable (as on CI)
+    monkeypatch.setattr(telemetry_tab_mod, "detect_gr_satellites", lambda: True)
+    tab._gr_sat_list = [(57172, "UmKA-1")]
     tab._combo_mode.setCurrentIndex(tab._combo_mode.findText(telemetry_tab_mod._MODE_GR))
     tab.set_satellite(57172, "UmKA-1")
     labels = [tab._decode_id_tabs.tabText(i) for i in range(tab._decode_id_tabs.count())]
