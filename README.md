@@ -389,8 +389,9 @@ the FT4 tab can correct the remainder in software (the **ADC** checkboxes next t
 **Not verified (please report results):** everything marked ⚠ was built from the proven per-second
 write sequences but has never run on a real rig. For the IC-705 check that reception does not move to
 the uplink frequency (VFO-B) and TX/RX are not swapped after a transmission; for the SAT-mode rigs
-check that Main stays the receiver and Sub the transmitter, and that ADC RX starts after the log line
-`Stage-2 mode/CTCSS resent`. The decode gain of FTX-1F on a real pass, the effect of ADC TX, and
+check that Main stays the receiver and Sub the transmitter, and that ADC RX starts a few seconds after
+Connect (it waits until the rig's mode and CTCSS set-up for the selected transponder has finished, and
+until then the normal per-second tracking runs). The decode gain of FTX-1F on a real pass, the effect of ADC TX, and
 same-band (V/V, U/U) transponders (not covered) are open as well.
 
 ---
