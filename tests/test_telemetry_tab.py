@@ -367,6 +367,29 @@ def test_ax25_frame_forwards_raw_to_satnogs_uploader(
         tab.close()
 
 
+def test_ax25_frame_with_unknown_callsign_uploads_under_selected_satellite(
+    app: QApplication, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A callsign the app cannot map to a NORAD must not stop the upload."""
+    rec = _RecordingUploader()
+    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: rec)
+    monkeypatch.setattr(
+        telemetry_tab_mod,
+        "decode_ax25",
+        lambda raw: types.SimpleNamespace(src="ZZ9ZZZ", payload=b"\x00\x11\x22"),
+    )
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    try:
+        monkeypatch.setattr(tab, "_callsign_to_norad", lambda src: None)
+        monkeypatch.setattr(tab, "_active_norad", lambda: 99999)
+        raw = bytes.fromhex("9c86aa8ea662e0a08a82a49886e103f000112233")
+        tab._on_ax25_frame(raw)
+        assert len(rec.calls) == 1
+        assert rec.calls[0][1] == raw and rec.calls[0][2] == 99999
+    finally:
+        tab.close()
+
+
 def test_gr_raw_frame_forwards_to_satnogs_uploader_with_started_norad(
     app: QApplication, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:

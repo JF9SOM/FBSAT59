@@ -1192,3 +1192,13 @@ gr-satellites モードの **Load saved** で戻せる。`kind='gr'`、`callsign
 （`_save_gr_frame()`）。送信済みは `satnogs_uploaded_at` に記録し、再表示後も二重送信しない。
 フレームが対応しなかった行も文字列だけは戻るが送信はできない。AX.25 / CW の Load saved には
 gr の行は混ざらない（`kind` で分ける）。
+
+### コールサイン未対応の AX.25 フレームも選択衛星で SatNOGS へ送る（2026-10-14）
+
+T.Microsat-1 の IQ 録音を AX.25 モードで再生すると 92 フレームをデコードできたのに、SatNOGS へ
+1 件も送られなかった。原因は `_on_ax25_frame()` が NORAD をコールサインからしか決めておらず、
+アプリが知らないコールサインだと `norad=None` → `SatnogsUploader.submit()` が何もせず戻っていたこと。
+コールサインから決まらないときは `_active_norad()`（AX.25 モードで選択中の衛星）にフォールバックし、
+デコード（その衛星のフォーマット）・ログ・アップロードの全てをその衛星の NORAD で行う。
+非 AX.25 フレーム（`_on_non_ax25_frame`）と gr-satellites（`started_norad`）は元から選択衛星基準。
+これで Telemetry タブの全モード（AX.25 / 非 AX.25 / gr-satellites / CW）が自動アップロードの対象になった。

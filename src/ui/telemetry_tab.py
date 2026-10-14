@@ -2051,6 +2051,11 @@ class TelemetryTab(QWidget):
             self._on_non_ax25_frame(raw)
             return
         norad = self._callsign_to_norad(frame.src)
+        if norad is None:
+            # The callsign is not one the app knows (T.Microsat-1, say): the frame
+            # belongs to the satellite the user picked, so it is still decoded with
+            # that satellite's format, logged and uploaded under it.
+            norad = self._active_norad()
         tf = decode_telemetry(frame.src, frame.payload, norad)
         when, reliable = self._frame_time()
         ax25_row = _Ax25Row(
