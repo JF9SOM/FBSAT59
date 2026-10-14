@@ -779,9 +779,8 @@ class SstvTab(QWidget):
         elif self._rig_connected:
             ok, err = engine.start_rig(_ENGINE_OWNER, "N0CALL", 0, "", modem=modem)
         else:
-            self._status_label.setText(
-                _("SSDV: no audio source — connect Rig or SDR in Radio Control (pasting hex works)")
-            )
+            # The red "Input:" notice at the top already says this.
+            self._status_label.setText("")
             return
         if not ok:
             self._status_label.setText(f"⚠ {err}")

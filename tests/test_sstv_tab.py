@@ -255,9 +255,9 @@ def test_ssdv_mode_without_an_input_says_so_and_never_asks_for_the_aprs_tab(
 ) -> None:
     tab._mode_combo.setCurrentText("SSDV (AX.25)")
     assert engine.calls == []
-    text = tab._status_label.text()
-    assert "no audio source" in text
-    assert "open APRS tab" not in text
+    # The "no audio source" notice lives in the top "Input:" label only.
+    assert tab._status_label.text() == ""
+    assert "No audio source" in tab._source_label.text()
 
 
 def test_connecting_an_input_after_entering_ssdv_mode_starts_reception(
