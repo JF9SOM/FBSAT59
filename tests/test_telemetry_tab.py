@@ -632,7 +632,7 @@ def test_format_frame_hex() -> None:
     assert telemetry_tab_mod.format_frame_hex(bytes([0, 15, 255])) == "00 0F FF"
 
 
-def test_non_ax25_frame_is_shown_as_hex_and_logged_but_not_uploaded(
+def test_non_ax25_frame_is_shown_as_hex_logged_and_uploaded(
     qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """ARICA-2 style: HDLC/CRC like AX.25, but no AX.25 address field."""
@@ -652,7 +652,8 @@ def test_non_ax25_frame_is_shown_as_hex_and_logged_but_not_uploaded(
     assert tab._table.item(0, 0).data(Qt.ItemDataRole.UserRole) is not None  # logged
     logged = conn.execute("SELECT norad_cat_id, raw_hex FROM telemetry_log").fetchall()
     assert [(r["norad_cat_id"], r["raw_hex"]) for r in logged] == [(68796, raw.hex())]
-    assert rec.calls == []  # unknown format: not sent to SatNOGS automatically
+    assert len(rec.calls) == 1  # uploaded like an AX.25 frame
+    assert rec.calls[0][1] == raw and rec.calls[0][2] == 68796
 
 
 @pytest.mark.parametrize("mode", ["AX.25", "gr-satellites"])

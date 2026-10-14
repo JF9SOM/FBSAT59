@@ -2082,8 +2082,8 @@ class TelemetryTab(QWidget):
         Some satellites (ARICA-2, for one) use AX.25's framing but put their own
         data where the address field would be, so decode_ax25() rejects them.
         They are shown as hex like any other frame, attributed to the satellite
-        the user selected, and logged (so "Send selected" works). They are *not*
-        uploaded to SatNOGS automatically: nothing is known about their format.
+        the user selected, logged, and -- like AX.25 frames -- uploaded to SatNOGS
+        automatically (the frame is CRC-verified; SatNOGS takes the raw bytes).
         """
         norad = self._selected_norad
         name = ""
@@ -2095,6 +2095,7 @@ class TelemetryTab(QWidget):
         when, reliable = self._frame_time()
         tf = TelemetryFrame(norad=norad, callsign="", satellite_name=name, raw_hex=raw.hex())
         log_id = self._persist_frame(tf, when, reliable, raw.hex(), "hdlc")
+        ax25_row = _Ax25Row(raw=raw, when=when, reliable=reliable, norad=norad, log_id=log_id)
         self._append_row(
             callsign="—",
             sat_name=name or "—",
@@ -2102,7 +2103,9 @@ class TelemetryTab(QWidget):
             norad=norad,
             ts=when,
             log_id=log_id,
+            ax25_row=ax25_row,
         )
+        self._submit_raw_frame(raw, norad, when, reliable, ax25_row)
 
     def _frame_time(self) -> tuple[datetime.datetime, bool]:
         """(UTC time of the frame just decoded, time trustworthy?).
