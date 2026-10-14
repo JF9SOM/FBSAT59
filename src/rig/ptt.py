@@ -15,11 +15,9 @@ dict under ``ptt_method`` / ``ptt_port``:
 
 from __future__ import annotations
 
-import fcntl
 import logging
-import struct
 import subprocess
-import termios
+import sys
 import threading
 import time
 from typing import Any
@@ -43,22 +41,29 @@ def normalize_ptt_method(value: Any) -> str:
 
 # TIOCMGET (read the modem control lines); not exported by the termios module on macOS.
 _TIOCMGET = 0x4004746A
-_MODEM_BITS: tuple[tuple[int, str], ...] = (
-    (termios.TIOCM_DTR, "DTR"),
-    (termios.TIOCM_RTS, "RTS"),
-    (termios.TIOCM_CTS, "CTS"),
-    (termios.TIOCM_DSR, "DSR"),
-    (termios.TIOCM_CAR, "CD"),
-    (termios.TIOCM_RNG, "RI"),
-)
 
 
 def _modem_lines(ser: Any) -> str:
     """Names of the modem control lines currently high on *ser* (diagnostics only)."""
+    if sys.platform == "win32":
+        return "n/a"
     try:
+        # fcntl/termios are Unix-only; import lazily so Windows can import this module.
+        import fcntl
+        import struct
+        import termios
+
+        bits = (
+            (termios.TIOCM_DTR, "DTR"),
+            (termios.TIOCM_RTS, "RTS"),
+            (termios.TIOCM_CTS, "CTS"),
+            (termios.TIOCM_DSR, "DSR"),
+            (termios.TIOCM_CAR, "CD"),
+            (termios.TIOCM_RNG, "RI"),
+        )
         raw = fcntl.ioctl(ser.fileno(), _TIOCMGET, struct.pack("I", 0))
         value = struct.unpack("I", raw)[0]
-        high = [name for bit, name in _MODEM_BITS if value & bit]
+        high = [name for bit, name in bits if value & bit]
         return "+".join(high) if high else "none"
     except Exception as exc:
         return f"? ({exc})"

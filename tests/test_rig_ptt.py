@@ -605,3 +605,16 @@ def test_per_second_write_waits_until_the_rig_answers_after_a_transmission() -> 
         assert ctrl.set_vfo_frequencies(435_619_545.0, 145_988_075.0) is True
     assert cmd.called
     assert ctrl._cat_probe_due is False
+
+
+def test_ptt_module_imports_without_unix_only_modules(monkeypatch) -> None:
+    """rig.ptt must import on Windows, where fcntl and termios do not exist (issue #32)."""
+    import importlib
+    import sys
+
+    monkeypatch.setitem(sys.modules, "fcntl", None)
+    monkeypatch.setitem(sys.modules, "termios", None)
+    monkeypatch.delitem(sys.modules, "rig.ptt", raising=False)
+    mod = importlib.import_module("rig.ptt")
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert mod._modem_lines(object()) == "n/a"
