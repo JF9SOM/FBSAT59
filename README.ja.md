@@ -451,3 +451,7 @@ GPL-2.0-or-later（GPredict互換）
   GF(64) 符号化アルゴリズムは WSJT-X（GPL-2.0）から派生しています。
   FBSAT59 は WSJT-X 本体を同梱せず、libq65 のみ WSJT-X ソースツリーから別途コンパイルしています。
 - [deepcw-engine](https://github.com/e04/deepcw-engine) — e04 — CRNN + CTC アーキテクチャによるAIベースのCW（モールス符号）デコードモデル。FBSAT59 は事前学習済みの `model.onnx` を GitHub からダウンロードし、onnxruntime で推論を実行します。モデルは同梱していません。
+- [Codec 2](https://github.com/drowe67/codec2) — David Rowe VK5DGR — オープンソースの低ビットレート音声コーデック（LGPL-2.1）。Digital Voice タブは、HADES-SA の音声メッセージ（CODEC2 700C）を libcodec2 でデコードします。ライブラリは実行時に読み込み（リンクはしません）、[conda-forge](https://conda-forge.org/) のビルド済みライブラリをライセンス本文とともに同梱しています。
+- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — SYSTRAN（MIT）。[CTranslate2](https://github.com/OpenNMT/CTranslate2)（OpenNMT、MIT）と [Whisper](https://github.com/openai/whisper)（OpenAI、MIT）を利用 — Digital Voice タブで受信した音声メッセージの音声認識に使用。Whisper のモデルは初回使用時に Hugging Face からダウンロードします（同梱していません）。
+- [ssdv](https://github.com/fsphil/ssdv) — Philip Heron（fsphil）（GPL-3.0）— SSDV（Slow Scan Digital Video）パケットのエンコーダー／デコーダー。およびそのフォーク [daniestevez/ssdv](https://github.com/daniestevez/ssdv) — Daniel Estévez EA4GPZ（GPL-3.0、ASRTU-1 のパケット形式）。SSDV タブ（HADES-SA・ASRTU-1）が別プログラムとして同梱・起動します。
+- [AMSAT-EA](https://www.amsat-ea.org/) — AMSAT España — HADES-SA SpinnyONE の「Transmissions Description」（2FSK 下りの SSDV・CODEC2 音声・テレメトリーのパケット形式）と、HADES-SA 用の Soundmodem／ユーティリティ。音声パケットの形式の解明に使用しました。AMSAT-EA のコードは含んでいません。
