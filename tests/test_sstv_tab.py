@@ -184,6 +184,45 @@ def test_switching_mode_selects_the_matching_subtab(tab: SstvTab) -> None:
     assert tab._view_tabs.currentWidget() is tab._image_page
 
 
+# ------------------------------------------------------------------ baud
+
+
+def test_baud_combo_is_enabled_only_in_ssdv_ax25_mode(tab: SstvTab) -> None:
+    assert [tab._baud_combo.itemText(i) for i in range(tab._baud_combo.count())] == [
+        "1200",
+        "4800",
+        "9600",
+    ]
+    for mode, enabled in (
+        ("SSTV", False),
+        ("SSDV (AX.25)", True),
+        ("SSDV (CCSDS BPSK 9k6)", False),
+        ("SSDV (2FSK)", False),
+    ):
+        if tab._mode_combo.findText(mode) < 0:
+            continue
+        tab._mode_combo.setCurrentText(mode)
+        assert tab._baud_combo.isEnabled() is enabled, mode
+
+
+def test_choosing_a_baud_persists_it_and_restarts_a_running_session(
+    tab: SstvTab, rc: _FakeRadioControl, engine: _FakeEngine, conn: sqlite3.Connection
+) -> None:
+    _connect_sdr(rc)
+    tab._mode_combo.setCurrentText("SSDV (AX.25)")
+    tab._baud_combo.setCurrentIndex(tab._baud_combo.findData("4800"))
+    row = conn.execute("SELECT value FROM app_settings WHERE key = 'ax25_baud_mode'").fetchone()
+    assert row["value"] == "4800"
+    assert ("restart_if_modem_changed", ("4800",), {}) in engine.calls
+    assert any(n == "sync_sdr_baud" and a[1] == "4800" for n, a, _k in engine.calls)
+
+
+def test_following_a_transmitter_sets_the_baud_combo(tab: SstvTab) -> None:
+    tab._mode_combo.setCurrentText("SSDV (AX.25)")
+    tab._on_transmitter_changed({"description": "Mode U - GMSK 9k6 - AX.25", "norad_cat_id": 1})
+    assert tab._baud_combo.currentData() == "9600"
+
+
 # ------------------------------------------------- self-started reception
 
 

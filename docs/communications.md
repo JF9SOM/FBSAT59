@@ -4341,3 +4341,12 @@ IC-9100 / IC-910H / IC-821H（model 3068 / 3044 / 3034）に続き、**IC-9700�
 - **次にやる人へ**: 最初に確認するのは、`Stage-2 mode/CTCSS resent` の後に `adc_rx write DL/UL ... ok=True` が始まること、
   送信後も Main が受信・Sub が送信のままか（VFO 割り当ての逆転がないか）、`adc_rx read DL` が書いた値に追従する
   こと（読み戻しが飛ばされる周期が一部あるのは仕様）、表示が UL 周波数のままにならないこと。
+
+#### SSDV (AX.25) の Baud コンボ（2026-10-14）
+
+SSTV タブ上部の Mode の隣に「Baud: 1200/4800/9600」を追加。**SSDV (AX.25) モードのときだけ有効**で、
+SSTV・SSDV (CCSDS BPSK 9k6)・SSDV (2FSK) ではグレーアウト（SSDV 自体には固定速度がなく、衛星ごとに
+1200 AFSK / 4800・9600 GMSK / 800 2FSK などが使われるため）。値は APRS タブと**同じ `app_settings`
+`ax25_baud_mode` を共有**し、トランスミッター選択で説明文の `1k2`/`4k8`/`9k6` から自動設定される（無ければ
+1200）。手動変更は保存され、受信中なら `restart_if_modem_changed` / `sync_sdr_baud` で再起動する。
+実装: `SstvTab._on_baud_changed` / `_apply_ssdv_baud`。

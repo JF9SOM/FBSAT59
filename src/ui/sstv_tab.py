@@ -40,7 +40,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from comms.aprs.engine import get_aprs_engine, resolve_ax25_modem
+from comms.aprs.engine import (
+    AX25_BAUD_MODE_CHOICES,
+    AX25_BAUD_SETTING_KEY,
+    detect_modem_for_transmitter,
+    get_aprs_engine,
+    resolve_ax25_modem,
+)
 from comms.sstv.file_decoder import SOUNDFILE_AVAILABLE, load_audio_mono
 from comms.sstv.sdr_demod import SstvSdrDemod, output_rate_for
 from comms.sstv.ssdv import (
@@ -251,6 +257,27 @@ class SstvTab(QWidget):
         self._mode_combo.setFixedWidth(170)
         self._mode_combo.currentTextChanged.connect(self._on_mode_changed)
         top.addWidget(self._mode_combo)
+
+        # AX.25 baud for the SSDV (AX.25) mode only. Shares the APRS tab's
+        # stored setting (ax25_baud_mode), so both tabs stay in step.
+        top.addSpacing(8)
+        top.addWidget(QLabel(_("Baud:")))
+        self._baud_combo = QComboBox()
+        for baud in AX25_BAUD_MODE_CHOICES:
+            self._baud_combo.addItem(baud, baud)
+        self._baud_combo.setToolTip(
+            _(
+                "AX.25 baud rate for SSDV (AX.25) reception.\n"
+                "Selecting a satellite or transponder sets this from the baud\n"
+                "rate in its name (e.g. 1k2 / 4k8 / 9k6); 1200 if it names none.\n"
+                "You can still change it by hand. Shared with the APRS tab.\n"
+                "Not used by the other modes."
+            )
+        )
+        self._load_baud_combo()
+        self._baud_combo.currentIndexChanged.connect(self._on_baud_changed)
+        self._baud_combo.setEnabled(self._mode_combo.currentText() == _MODE_SSDV)
+        top.addWidget(self._baud_combo)
 
         top.addSpacing(16)
         self._source_label = QLabel(_("Input: —"))
@@ -484,19 +511,48 @@ class SstvTab(QWidget):
         elif mode == _MODE_FSK_SSDV:
             self._start_fsk_ssdv()
 
+    def _load_baud_combo(self) -> None:
+        """Show the stored / transmitter-derived baud without applying it."""
+        modem = resolve_ax25_modem(self._conn, self._radio_control)
+        idx = self._baud_combo.findData(modem)
+        self._baud_combo.blockSignals(True)
+        self._baud_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self._baud_combo.blockSignals(False)
+
+    def _on_baud_changed(self, _index: int) -> None:
+        """Persist the chosen baud (shared with the APRS tab) and apply it to a running session."""
+        if hasattr(self._conn, "execute"):
+            self._conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value, updated_at) "
+                "VALUES (?, ?, CURRENT_TIMESTAMP)",
+                (AX25_BAUD_SETTING_KEY, self._baud_combo.currentData()),
+            )
+            self._conn.commit()
+        self._apply_ssdv_baud()
+
+    def _apply_ssdv_baud(self) -> None:
+        """Restart a running SSDV (AX.25) session if its baud no longer matches."""
+        if not self._ssdv_reception:
+            return
+        modem = resolve_ax25_modem(self._conn, self._radio_control)
+        engine = self._engine()
+        engine.restart_if_modem_changed(modem)
+        pipeline = self._find_sdr_pipeline()
+        if pipeline is not None:
+            engine.sync_sdr_baud(pipeline, modem, satellite=True)
+
     def _on_transmitter_changed(self, xpdr: Any) -> None:
         """Update satellite name when transponder selection changes."""
         if xpdr and isinstance(xpdr, dict):
             self._sat_name = xpdr.get("description", "")
             self._auto_select_ssdv_mode(xpdr.get("norad_cat_id"))
-        if self._ssdv_reception:
-            # a different transponder can mean a different AX.25 baud rate
-            modem = resolve_ax25_modem(self._conn, self._radio_control)
-            engine = self._engine()
-            engine.restart_if_modem_changed(modem)
-            pipeline = self._find_sdr_pipeline()
-            if pipeline is not None:
-                engine.sync_sdr_baud(pipeline, modem, satellite=True)
+            # Follow the transmitter's baud (1200 if it names none); changing the
+            # combo persists it and restarts a running session via _on_baud_changed().
+            idx = self._baud_combo.findData(detect_modem_for_transmitter(xpdr))
+            if idx >= 0 and idx != self._baud_combo.currentIndex():
+                self._baud_combo.setCurrentIndex(idx)
+        # a different transponder can mean a different AX.25 baud rate
+        self._apply_ssdv_baud()
 
     def _auto_select_ssdv_mode(self, norad: Any) -> None:
         """Pick the SSDV mode that matches a satellite known to need one (HADES-SA, ASRTU-1)."""
@@ -1048,6 +1104,10 @@ class SstvTab(QWidget):
         """Switch between the SSTV, SSDV (AX.25), SSDV (CCSDS BPSK 9k6) and SSDV (2FSK) decoders."""
         self._stop_decoder()
         self._stop_ssdv()
+        # The baud only matters for SSDV (AX.25); grey it out for every other mode.
+        self._baud_combo.setEnabled(mode_text == _MODE_SSDV)
+        if mode_text == _MODE_SSDV:
+            self._load_baud_combo()
         if mode_text == _MODE_SSTV:
             self._view_tabs.setCurrentWidget(self._image_page)
             self._start_decoder()
