@@ -662,7 +662,7 @@ def test_mode_combo_offers_the_gr_satellites_mode(tab: SstvTab) -> None:
 def test_gr_mode_without_an_sdr_says_so(tab: SstvTab, fake_gr: type[_FakeGrBackend]) -> None:
     tab._mode_combo.setCurrentText("SSDV (CCSDS BPSK 9k6)")
     assert tab._view_tabs.currentWidget() is tab._raw_page
-    assert "SDR" in tab._status_label.text()
+    assert tab._status_label.text() == ""  # the top "Input:" label carries the notice
     assert not any(b.running for b in fake_gr.instances)
 
 
@@ -750,7 +750,7 @@ def _connect_fsk_sdr(rc: _FakeRadioControl) -> _FskPipeline:
 def test_fsk_mode_without_an_sdr_says_so(tab: SstvTab) -> None:
     tab._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
     assert tab._view_tabs.currentWidget() is tab._raw_page
-    assert "SDR" in tab._status_label.text()
+    assert tab._status_label.text() == ""  # the top "Input:" label carries the notice
     assert tab._fsk_demod is None
 
 

@@ -591,7 +591,7 @@ class SstvTab(QWidget):
         self._decoder.status_changed.connect(self._status_label.setText)
         self._decoder.start()
         self._connect_audio_source()
-        self._status_label.setText(_("Decoder started — listening for sync…"))
+        self._status_label.setText("")
 
     def _stop_decoder(self) -> None:
         self._disconnect_audio_source()
@@ -833,9 +833,8 @@ class SstvTab(QWidget):
             return
         pipeline = self._find_sdr_pipeline()
         if pipeline is None:
-            self._status_label.setText(
-                _("SSDV (CCSDS BPSK 9k6): connect an SDR in Radio Control (pasting hex works)")
-            )
+            # The red "Input:" notice at the top already says this.
+            self._status_label.setText("")
             return
         try:
             samp_rate = int(pipeline._device.sample_rate)
@@ -884,9 +883,8 @@ class SstvTab(QWidget):
         self._ensure_ssdv_decoder()
         pipeline = self._find_sdr_pipeline()
         if pipeline is None:
-            self._status_label.setText(
-                _("SSDV (2FSK 800bps): connect an SDR in Radio Control (pasting hex works)")
-            )
+            # The red "Input:" notice at the top already says this.
+            self._status_label.setText("")
             return
         from comms.sstv.fsk_ssdv import FskSsdvSdrDemod
 
