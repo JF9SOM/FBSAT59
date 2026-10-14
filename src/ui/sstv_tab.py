@@ -282,7 +282,9 @@ class SstvTab(QWidget):
         top.addSpacing(16)
         self._source_label = QLabel(_("Input: —"))
         self._source_label.setStyleSheet("color: gray;")
-        top.addWidget(self._source_label)
+        # Wrap a long message instead of widening the whole window.
+        self._source_label.setWordWrap(True)
+        top.addWidget(self._source_label, 1)
 
         _sstv_help = QLabel(" ? ")
         _sstv_help.setStyleSheet(
