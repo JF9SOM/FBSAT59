@@ -1,7 +1,7 @@
 {
   "latest_version": "0.3.63",
   "minimum_supported_version": "0.3.63",
-  "critical": true,
+  "critical": false,
   "message_ja": "v0.3.62 は Windows で起動できない不具合があります。v0.3.63 で修正しました。必ず更新してください。",
   "message_en": "Version 0.3.62 fails to start on Windows (missing fcntl module). Version 0.3.63 fixes this. Please update.",
   "_comment": "Bump latest_version on every release. Raise minimum_supported_version and set critical=true only when older versions genuinely misbehave and every user must update; otherwise keep critical=false. See docs/app-update.md."
