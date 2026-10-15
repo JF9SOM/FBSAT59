@@ -396,3 +396,36 @@ def test_adc_rx_is_not_switched_off_in_the_middle_of_a_burst(qtbot: QtBot) -> No
     tab._tx_in_progress = True
     tab._slot_sync_tick()
     rig.set_slot_sync.assert_not_called()
+
+
+def test_changing_the_tx_frequency_keeps_the_qso_state(qtbot: QtBot) -> None:
+    """The waterfall click edits the TX audio frequency mid-QSO; the QSO must survive it."""
+    from comms.ft4.qso import QsoState
+
+    tab = _make_tab(qtbot)
+    tab._call_edit.setText("JF9SOM")
+    tab._grid_edit.setText("PM86")
+    qso = tab._get_qso_manager()
+    assert qso is not None
+    qso.answer_message("JF9SOM", "JF1PTU", "PM95", -18)
+    assert qso.state == QsoState.EXCHANGE
+    tab._audio_freq_edit.setText("1379")
+    assert tab._qso is qso
+    assert tab._qso.state == QsoState.EXCHANGE
+    assert tab._qso.session.their_call == "JF1PTU"
+    tab._on_waterfall_tx_freq(1523.0)
+    assert tab._qso is qso
+
+
+def test_changing_the_callsign_or_grid_still_starts_a_new_manager(qtbot: QtBot) -> None:
+    tab = _make_tab(qtbot)
+    tab._call_edit.setText("JF9SOM")
+    tab._grid_edit.setText("PM86")
+    qso = tab._get_qso_manager()
+    assert qso is not None
+    tab._call_edit.setText("JA1ABC")
+    assert tab._qso is None
+    qso = tab._get_qso_manager()
+    assert qso is not None and qso.my_call == "JA1ABC"
+    tab._grid_edit.setText("PM95")
+    assert tab._qso is None

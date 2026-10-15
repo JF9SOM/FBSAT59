@@ -4350,3 +4350,17 @@ SSTV・SSDV (CCSDS BPSK 9k6)・SSDV (2FSK) ではグレーアウト（SSDV 自�
 `ax25_baud_mode` を共有**し、トランスミッター選択で説明文の `1k2`/`4k8`/`9k6` から自動設定される（無ければ
 1200）。手動変更は保存され、受信中なら `restart_if_modem_changed` / `sync_sdr_baud` で再起動する。
 実装: `SstvTab._on_baud_changed` / `_apply_ssdv_baud`。
+
+### TX 周波数の変更で QSO の状態が消える不具合の修正（2026-10-15）
+
+**症状**（1645 からの RS-44 パス、JF1PTU 局）: 相手の R レポートに自動で RR73 が返らず、RR73 ボタンも効かなかった
+（「Double-click a decoded station first」）。相手の行のクリックでようやく RR73。
+
+**原因**: `Ft4Tab._on_settings_changed` が、コールサイン・グリッド・**TX 音声周波数**のどれが変わっても
+`self._qso = None`（QSO の状態機械を捨てる）としていた。ウォーターフォールのクリック（QSO 中も即反映）は
+TX 音声周波数の欄を書き換えるので、そのたびに相手局とシーケンスの位置が消え、状態が `IDLE` に戻って自動進行が
+止まった（ログ: 周波数変更の直後から `qso ignored state=IDLE partner=-`）。RR73 ボタンは相手局が決まっている
+ことが前提なので、`IDLE` では何もしない。
+
+**修正**: 状態機械を作り直すのは、コールサインまたはグリッドが実際に変わったときだけ（`Ft4QsoManager.my_call` /
+`my_grid` と比較）。TX 周波数の変更では QSO の状態を保つ。

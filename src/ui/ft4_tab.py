@@ -2164,7 +2164,13 @@ class Ft4Tab(QWidget):
             self._audio_freq = float(self._audio_freq_edit.text())
             if self._waterfall_dialog is not None:
                 self._waterfall_dialog.set_tx_freq_hz(self._audio_freq)
-        self._qso = None  # reset manager so it picks up new callsign
+        # A new callsign/grid needs a new manager (it builds every message from them).
+        # Anything else -- the TX audio frequency above all, which the waterfall click
+        # changes in the middle of a QSO -- must leave the QSO state alone: dropping it
+        # lost the partner and stopped the automatic sequence (2026-10-15).
+        qso = self._qso
+        if qso is not None and (qso.my_call != self._my_call or qso.my_grid != self._my_grid[:4]):
+            self._qso = None
         self._save_settings()
 
     @Slot(float)

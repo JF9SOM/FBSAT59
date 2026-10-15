@@ -129,6 +129,16 @@ class Ft4QsoManager:
     # ------------------------------------------------------------------ #
 
     @property
+    def my_call(self) -> str:
+        """Our callsign as this manager sends it."""
+        return self._my_call
+
+    @property
+    def my_grid(self) -> str:
+        """Our 4-character grid as this manager sends it."""
+        return self._my_grid
+
+    @property
     def state(self) -> QsoState:
         return self._state
 
