@@ -70,6 +70,7 @@ def stub(monkeypatch: pytest.MonkeyPatch) -> Any:
         _satnogs_not_found=types.SimpleNamespace(emit=lambda: None),
         opened=opened,
         _open_url_app_mode=opened.append,
+        _fetch_satnogs_uuid_bg=lambda *a: None,
     )
 
 
