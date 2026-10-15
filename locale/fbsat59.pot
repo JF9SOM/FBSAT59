@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-12 20:12+0900\n"
+"POT-Creation-Date: 2026-10-15 20:28+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -42,120 +42,120 @@ msgstr ""
 msgid "TX watchdog: forced PTT off after {s:.0f}s (audio stalled)"
 msgstr ""
 
-#: src/ui/ft4_tab.py:693 src/ui/rig_dialog.py:1142 src/ui/q65_tab.py:193
+#: src/ui/ft4_tab.py:698 src/ui/rig_dialog.py:1142 src/ui/q65_tab.py:193
 msgid "Configuration"
 msgstr ""
 
-#: src/ui/ft4_tab.py:697 src/ui/aprs_tab.py:201 src/ui/q65_tab.py:197
+#: src/ui/ft4_tab.py:702 src/ui/aprs_tab.py:203 src/ui/q65_tab.py:197
 msgid "My Call:"
 msgstr ""
 
-#: src/ui/ft4_tab.py:704 src/ui/q65_tab.py:203
+#: src/ui/ft4_tab.py:709 src/ui/q65_tab.py:203
 msgid "Grid:"
 msgstr ""
 
-#: src/ui/ft4_tab.py:712
+#: src/ui/ft4_tab.py:717
 msgid ""
 "Audio tone frequency of your transmission. Reception is not affected: the "
 "whole passband is always decoded."
 msgstr ""
 
-#: src/ui/ft4_tab.py:715
+#: src/ui/ft4_tab.py:720
 msgid "TX Audio:"
 msgstr ""
 
-#: src/ui/ft4_tab.py:724 src/ui/ft4_tab.py:1004 src/ui/q65_tab.py:368
+#: src/ui/ft4_tab.py:729 src/ui/ft4_tab.py:1011 src/ui/q65_tab.py:368
 msgid "Hz"
 msgstr ""
 
-#: src/ui/ft4_tab.py:726 src/ui/q65_tab.py:222
+#: src/ui/ft4_tab.py:731 src/ui/q65_tab.py:222
 msgid "RX:"
 msgstr ""
 
-#: src/ui/ft4_tab.py:728 src/ui/ax100_digi_tab.py:440 src/ui/q65_tab.py:224
+#: src/ui/ft4_tab.py:733 src/ui/ax100_digi_tab.py:440 src/ui/q65_tab.py:224
 #: src/ui/arica2_panel.py:228
 msgid "Rig Soundcard"
 msgstr ""
 
-#: src/ui/ft4_tab.py:729 src/ui/rig_dialog.py:392 src/ui/cw_tab.py:218
+#: src/ui/ft4_tab.py:734 src/ui/rig_dialog.py:392 src/ui/cw_tab.py:218
 #: src/ui/q65_tab.py:225 src/ui/q65_tab.py:614
 msgid "SDR"
 msgstr ""
 
-#: src/ui/ft4_tab.py:736 src/ui/rig_dialog.py:2021 src/ui/arica2_panel.py:258
+#: src/ui/ft4_tab.py:741 src/ui/rig_dialog.py:2021 src/ui/arica2_panel.py:258
 msgid "RX Level:"
 msgstr ""
 
-#: src/ui/ft4_tab.py:743 src/ui/ft4_tab.py:1303 src/ui/rig_dialog.py:2018
+#: src/ui/ft4_tab.py:748 src/ui/ft4_tab.py:1310 src/ui/rig_dialog.py:2018
 #: src/ui/rig_dialog.py:2196 src/ui/arica2_panel.py:259
 #: src/ui/arica2_panel.py:319
 msgid "-- dBFS"
 msgstr ""
 
-#: src/ui/ft4_tab.py:746 src/ui/meteor_tab.py:467
+#: src/ui/ft4_tab.py:751 src/ui/meteor_tab.py:467
 msgid "Waterfall"
 msgstr ""
 
-#: src/ui/ft4_tab.py:749
+#: src/ui/ft4_tab.py:754
 msgid ""
 "Open a popup showing the last RX period's audio as a spectrogram, to check "
 "whether real FT4 signals are visible in the passband even when nothing "
 "decodes."
 msgstr ""
 
-#: src/ui/ft4_tab.py:782 src/ui/q65_tab.py:244
+#: src/ui/ft4_tab.py:787 src/ui/q65_tab.py:244
 msgid "● RX"
 msgstr ""
 
-#: src/ui/ft4_tab.py:786 src/ui/q65_tab.py:248
+#: src/ui/ft4_tab.py:791 src/ui/q65_tab.py:248
 msgid "● TX"
 msgstr ""
 
-#: src/ui/ft4_tab.py:793 src/ui/q65_tab.py:255
+#: src/ui/ft4_tab.py:798 src/ui/q65_tab.py:255
 msgid "Transmit"
 msgstr ""
 
-#: src/ui/ft4_tab.py:800
+#: src/ui/ft4_tab.py:805
 msgid "Call CQ"
 msgstr ""
 
-#: src/ui/ft4_tab.py:804
+#: src/ui/ft4_tab.py:809
 msgid "Answer with our grid — the standard opening exchange"
 msgstr ""
 
-#: src/ui/ft4_tab.py:806
+#: src/ui/ft4_tab.py:811
 msgid "Answer with a signal report, skipping the grid"
 msgstr ""
 
-#: src/ui/ft4_tab.py:807
+#: src/ui/ft4_tab.py:812
 msgid "Acknowledge and report (R + report)"
 msgstr ""
 
-#: src/ui/ft4_tab.py:808
+#: src/ui/ft4_tab.py:813
 msgid "Confirm the exchange"
 msgstr ""
 
-#: src/ui/ft4_tab.py:809
+#: src/ui/ft4_tab.py:814
 msgid "Sign off"
 msgstr ""
 
-#: src/ui/ft4_tab.py:816 src/ui/q65_tab.py:216
+#: src/ui/ft4_tab.py:821 src/ui/q65_tab.py:216
 msgid "TX Slot:"
 msgstr ""
 
-#: src/ui/ft4_tab.py:818 src/ui/rig_dialog.py:1183
+#: src/ui/ft4_tab.py:823 src/ui/rig_dialog.py:1183
 msgid "Auto"
 msgstr ""
 
-#: src/ui/ft4_tab.py:819 src/ui/q65_tab.py:218
+#: src/ui/ft4_tab.py:824 src/ui/q65_tab.py:218
 msgid "Even"
 msgstr ""
 
-#: src/ui/ft4_tab.py:820 src/ui/q65_tab.py:219
+#: src/ui/ft4_tab.py:825 src/ui/q65_tab.py:219
 msgid "Odd"
 msgstr ""
 
-#: src/ui/ft4_tab.py:827
+#: src/ui/ft4_tab.py:832
 msgid ""
 "Which slot to transmit in when calling CQ / enabling TX.\n"
 "Auto: whichever slot is current when you press CQ / TX Enable.\n"
@@ -163,93 +163,95 @@ msgid ""
 "slot regardless of this setting."
 msgstr ""
 
-#: src/ui/ft4_tab.py:837
+#: src/ui/ft4_tab.py:842
 msgid "Tune"
 msgstr ""
 
-#: src/ui/ft4_tab.py:841
+#: src/ui/ft4_tab.py:846
 msgid ""
 "Transmit a continuous test tone at the TX Audio frequency so you can\n"
 "adjust the TX Level while watching the rig's power / ALC meter.\n"
 "Press again (or Halt TX) to stop. Stops by itself after 60 seconds."
 msgstr ""
 
-#: src/ui/ft4_tab.py:852 src/ui/q65_tab.py:286
+#: src/ui/ft4_tab.py:857 src/ui/q65_tab.py:286
 msgid "TX Enable"
 msgstr ""
 
-#: src/ui/ft4_tab.py:860 src/ui/q65_tab.py:294
+#: src/ui/ft4_tab.py:865 src/ui/q65_tab.py:294
 msgid "Halt TX"
 msgstr ""
 
-#: src/ui/ft4_tab.py:869 src/ui/main_window.py:405 src/ui/q65_tab.py:303
+#: src/ui/ft4_tab.py:874 src/ui/main_window.py:405 src/ui/q65_tab.py:303
 msgid "TX:"
 msgstr ""
 
-#: src/ui/ft4_tab.py:871
+#: src/ui/ft4_tab.py:876
 msgid "FT4 message (auto-filled by state machine)"
 msgstr ""
 
-#: src/ui/ft4_tab.py:875 src/ui/ft4_tab.py:1028 src/ui/meteor_tab.py:228
+#: src/ui/ft4_tab.py:880 src/ui/ft4_tab.py:1035 src/ui/meteor_tab.py:228
 #: src/ui/cw_tab.py:260 src/ui/q65_tab.py:382
 msgid "Clear"
 msgstr ""
 
-#: src/ui/ft4_tab.py:877
+#: src/ui/ft4_tab.py:882
 msgid ""
 "Clear the current QSO and the TX message (the message history is not "
 "cleared)."
 msgstr ""
 
-#: src/ui/ft4_tab.py:885 src/ui/ft4_tab.py:1181 src/ui/q65_tab.py:320
+#: src/ui/ft4_tab.py:890 src/ui/ft4_tab.py:1188 src/ui/q65_tab.py:320
 msgid "State: IDLE"
 msgstr ""
 
-#: src/ui/ft4_tab.py:891
+#: src/ui/ft4_tab.py:896
 msgid "ADC:"
 msgstr ""
 
-#: src/ui/ft4_tab.py:894
+#: src/ui/ft4_tab.py:899
 msgid ""
 "Audio Doppler Correction: software correction, in the audio, of the\n"
 "Doppler error the rig cannot follow.\n"
 "TX: (all rigs) the uplink is held at the start of each burst and the\n"
 "transmit tone is moved during it instead.\n"
-"RX: (FT-991, NET or Direct mode) the rig is written once per period and the\n"
-"received audio is shifted by the difference between that frequency\n"
-"and the ideal one, as it changes over the period, before decoding."
+"RX: (FT-991 / FTX-1 / IC-705, NET or Direct mode) the rig is written\n"
+"once per period and the received audio is shifted by the difference\n"
+"between that frequency and the ideal one, as it changes over the\n"
+"period, before decoding."
 msgstr ""
 
-#: src/ui/ft4_tab.py:904 src/ui/ft4_waterfall_dialog.py:397
+#: src/ui/ft4_tab.py:910 src/ui/ft4_waterfall_dialog.py:397
 msgid "TX"
 msgstr ""
 
-#: src/ui/ft4_tab.py:908
+#: src/ui/ft4_tab.py:914
 msgid ""
 "Hold the uplink during each burst and shift the TX audio tone to follow\n"
 "the Doppler drift instead (downlink tracking is unchanged).\n"
 "Turn off to send a fixed tone like WSJT-X does."
 msgstr ""
 
-#: src/ui/ft4_tab.py:915
+#: src/ui/ft4_tab.py:921
 msgid "RX"
 msgstr ""
 
-#: src/ui/ft4_tab.py:919
+#: src/ui/ft4_tab.py:925
 msgid ""
-"FT-991 only (NET or Direct mode). Stops the per-second tuning: the rig's\n"
-"DL/UL are written once per period (right after a transmission, or late in\n"
+"FT-991 / FTX-1 / IC-705 only (NET or Direct mode). Stops the per-second\n"
+"tuning: the rig's DL/UL are written once per period (right after a\n"
+"transmission, or late in\n"
 "a receive period), and the received audio is corrected for the difference\n"
 "between\n"
 "that frequency and the ideal Doppler-corrected one before it is decoded."
 msgstr ""
 
-#: src/ui/ft4_tab.py:929 src/ui/aprs_tab.py:327 src/ui/q65_tab.py:326
+#: src/ui/ft4_tab.py:936 src/ui/aprs_tab.py:329 src/ui/q65_tab.py:326
 #: src/ui/arica2_panel.py:341
 msgid "TX Level:"
 msgstr ""
 
-#: src/ui/ft4_tab.py:936
+#: src/ui/ft4_tab.py:943
 msgid ""
 "TX audio output level in dB below full scale.\n"
 "Lower this if the rig's ALC is triggered or the transmit\n"
@@ -257,236 +259,237 @@ msgid ""
 "scale and some rigs/sound cards need 20 dB or more of reduction."
 msgstr ""
 
-#: src/ui/ft4_tab.py:948 src/ui/q65_tab.py:348
+#: src/ui/ft4_tab.py:955 src/ui/q65_tab.py:348
 msgid "Log QSO"
 msgstr ""
 
-#: src/ui/ft4_tab.py:953 src/ui/ax100_digi_tab.py:485 src/ui/aprs_tab.py:397
+#: src/ui/ft4_tab.py:960 src/ui/ax100_digi_tab.py:485 src/ui/aprs_tab.py:399
 #: src/ui/q65_tab.py:353
 msgid "Export ADIF…"
 msgstr ""
 
-#: src/ui/ft4_tab.py:958
+#: src/ui/ft4_tab.py:965
 msgid "Auto-progress:"
 msgstr ""
 
-#: src/ui/ft4_tab.py:960
+#: src/ui/ft4_tab.py:967
 msgid "No"
 msgstr ""
 
-#: src/ui/ft4_tab.py:961
+#: src/ui/ft4_tab.py:968
 msgid "Yes"
 msgstr ""
 
-#: src/ui/ft4_tab.py:965
+#: src/ui/ft4_tab.py:972
 msgid ""
 "When another station calls us while no QSO is running, start\n"
 "one automatically and prepare the reply. First caller wins if\n"
 "several answer at once. Transmitting still requires TX Enable."
 msgstr ""
 
-#: src/ui/ft4_tab.py:983 src/ui/q65_tab.py:366
+#: src/ui/ft4_tab.py:990 src/ui/q65_tab.py:366
 msgid "Decoded Messages"
 msgstr ""
 
-#: src/ui/ft4_tab.py:984
+#: src/ui/ft4_tab.py:991
 msgid "even"
 msgstr ""
 
-#: src/ui/ft4_tab.py:985
+#: src/ui/ft4_tab.py:992
 msgid "odd"
 msgstr ""
 
-#: src/ui/ft4_tab.py:995
+#: src/ui/ft4_tab.py:1002
 msgid ""
 "Blue text: the other station transmitted in an even-parity slot. Orange "
 "text: odd-parity slot. Our own TX rows keep their fixed highlight colour "
 "instead."
 msgstr ""
 
-#: src/ui/ft4_tab.py:1004 src/ui/q65_tab.py:368
+#: src/ui/ft4_tab.py:1011 src/ui/q65_tab.py:368
 msgid "UTC"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1004 src/ui/q65_tab.py:368
+#: src/ui/ft4_tab.py:1011 src/ui/q65_tab.py:368
 msgid "dB"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1004 src/ui/q65_tab.py:368
+#: src/ui/ft4_tab.py:1011 src/ui/q65_tab.py:368
 msgid "DT"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1004 src/ui/ax100_digi_tab.py:496
+#: src/ui/ft4_tab.py:1011 src/ui/ax100_digi_tab.py:496
 #: src/ui/ax100_digi_tab.py:848 src/ui/q65_tab.py:368
 #: src/ui/arica2_panel.py:241
 msgid "Message"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1132
+#: src/ui/ft4_tab.py:1139
 #, python-brace-format
 msgid ""
 "Use Help > ft8lib Installation… (Recommended), or build ft8_lib (github.com/"
 "kgoba/ft8_lib) manually and place the shared library in {dir}"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1137
+#: src/ui/ft4_tab.py:1144
 msgid "ft8lib is not installed — FT4 TX/RX is disabled.\n"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1145
+#: src/ui/ft4_tab.py:1152
 msgid ""
 "ft8lib found but decode API is unavailable — TX only.\n"
 "Update ft8_lib to ≥ v0.4 for RX decode support."
 msgstr ""
 
-#: src/ui/ft4_tab.py:1154
+#: src/ui/ft4_tab.py:1161
 msgid ""
 "Using lightweight FT4 decoder — may miss weak or overlapping stations in a "
 "crowded pass.\n"
 "Help > FT4 Enhanced Decoder Installation… for WSJT-X-grade decoding."
 msgstr ""
 
-#: src/ui/ft4_tab.py:1172
+#: src/ui/ft4_tab.py:1179
 msgid "Set My Call before operating"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1281 src/ui/ax100_digi_tab.py:659 src/ui/cw_tab.py:558
-#: src/ui/sstv_tab.py:634 src/ui/digital_voice_tab.py:467
+#: src/ui/ft4_tab.py:1288 src/ui/ax100_digi_tab.py:659 src/ui/cw_tab.py:558
+#: src/ui/sstv_tab.py:710 src/ui/digital_voice_tab.py:469
 msgid "sounddevice not installed — pip install sounddevice"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1285 src/ui/ft4_tab.py:1630 src/ui/ax100_digi_tab.py:653
+#: src/ui/ft4_tab.py:1292 src/ui/ft4_tab.py:1637 src/ui/ax100_digi_tab.py:653
 #: src/ui/cw_tab.py:562 src/ui/radio_control_widget.py:1445
 msgid "Sound Card not configured — open Rig Settings > Sound Card"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1327 src/ui/ax100_digi_tab.py:406
+#: src/ui/ft4_tab.py:1334 src/ui/ax100_digi_tab.py:406
 #: src/ui/rig_dialog.py:2215 src/ui/arica2_panel.py:324
 #, python-brace-format
 msgid "{db:.0f} dBFS"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1526
+#: src/ui/ft4_tab.py:1533
 msgid "Tune is active — stop it before transmitting"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1565
+#: src/ui/ft4_tab.py:1572
 msgid "Invalid FT4 message: "
 msgstr ""
 
-#: src/ui/ft4_tab.py:1612 src/ui/ax100_digi_tab.py:814
+#: src/ui/ft4_tab.py:1619 src/ui/ax100_digi_tab.py:814
 #: src/ui/arica2_panel.py:743
 msgid "TX: "
 msgstr ""
 
-#: src/ui/ft4_tab.py:1621
+#: src/ui/ft4_tab.py:1628
 msgid "Tune: stopping"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1625
+#: src/ui/ft4_tab.py:1632
 msgid "Tune unavailable: transmission in progress"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1662
+#: src/ui/ft4_tab.py:1669
 #, python-brace-format
 msgid "Tune: transmitting {f:.0f} Hz test tone — press Tune again to stop"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1680
+#: src/ui/ft4_tab.py:1687
 msgid "Tune stopped"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1689 src/ui/ft4_tab.py:1735 src/ui/ax100_digi_tab.py:826
+#: src/ui/ft4_tab.py:1696 src/ui/ft4_tab.py:1750 src/ui/ax100_digi_tab.py:826
 #: src/ui/arica2_panel.py:777
 msgid "TX error: "
 msgstr ""
 
-#: src/ui/ft4_tab.py:1709
+#: src/ui/ft4_tab.py:1716
 msgid "TX done — waiting for next period"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1716
+#: src/ui/ft4_tab.py:1731
 #, python-brace-format
 msgid "No reply from {call} after {n} tries — TX stopped"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1850
+#: src/ui/ft4_tab.py:1872
 #, python-brace-format
 msgid "Auto-answering {call}"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1862
+#: src/ui/ft4_tab.py:1884
 #, python-brace-format
 msgid "Sending 73 to {call}"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1883
+#: src/ui/ft4_tab.py:1905
 #, python-brace-format
 msgid "QSO with {call} complete — TX stopped, press Log QSO to save"
 msgstr ""
 
-#: src/ui/ft4_tab.py:1989 src/ui/q65_tab.py:773
+#: src/ui/ft4_tab.py:2011 src/ui/q65_tab.py:773
 msgid "Double-click a decoded station first"
 msgstr ""
 
-#: src/ui/ft4_tab.py:2104
+#: src/ui/ft4_tab.py:2126
 #, python-brace-format
 msgid "QSO with {call} logged automatically"
 msgstr ""
 
-#: src/ui/ft4_tab.py:2225
-msgid "ADC RX needs an FT-991 (NET or Direct mode)"
+#: src/ui/ft4_tab.py:2270
+msgid ""
+"ADC RX needs an FT-991, FTX-1, IC-705 or an Icom SAT-mode rig (cross-band)"
 msgstr ""
 
-#: src/ui/ft4_tab.py:2453
+#: src/ui/ft4_tab.py:2521
 msgid "Set My Call before enabling TX"
 msgstr ""
 
-#: src/ui/ft4_tab.py:2459
+#: src/ui/ft4_tab.py:2527
 msgid "TX enabled — waiting for next period"
 msgstr ""
 
-#: src/ui/ft4_tab.py:2464
+#: src/ui/ft4_tab.py:2532
 msgid "TX disabled"
 msgstr ""
 
-#: src/ui/ft4_tab.py:2506
+#: src/ui/ft4_tab.py:2574
 msgid "Rig connection lost — reconnecting…"
 msgstr ""
 
-#: src/ui/ft4_tab.py:2526
+#: src/ui/ft4_tab.py:2594
 msgid "TX halted — stopping current transmission"
 msgstr ""
 
-#: src/ui/ft4_tab.py:2528
+#: src/ui/ft4_tab.py:2596
 msgid "TX halted"
 msgstr ""
 
-#: src/ui/ft4_tab.py:2541
+#: src/ui/ft4_tab.py:2609
 msgid "Rig connected — ready"
 msgstr ""
 
-#: src/ui/ft4_tab.py:2553
+#: src/ui/ft4_tab.py:2621
 msgid "Rig disconnected"
 msgstr ""
 
-#: src/ui/ft4_tab.py:2563 src/ui/q65_tab.py:545
+#: src/ui/ft4_tab.py:2631 src/ui/q65_tab.py:545
 msgid "Input: Rig connected"
 msgstr ""
 
-#: src/ui/ft4_tab.py:2566
+#: src/ui/ft4_tab.py:2634
 msgid "Input: Rig not connected"
 msgstr ""
 
-#: src/ui/ft4_tab.py:2585
+#: src/ui/ft4_tab.py:2653
 msgid "TX: EVEN"
 msgstr ""
 
-#: src/ui/ft4_tab.py:2585
+#: src/ui/ft4_tab.py:2653
 msgid "TX: ODD"
 msgstr ""
 
-#: src/ui/ft4_tab.py:2597
+#: src/ui/ft4_tab.py:2665
 msgid "QSOs logged: "
 msgstr ""
 
@@ -780,7 +783,7 @@ msgstr ""
 msgid "Exit"
 msgstr ""
 
-#: src/ui/main_window.py:1462 src/ui/telemetry_tab.py:527
+#: src/ui/main_window.py:1462 src/ui/telemetry_tab.py:581
 #: src/ui/autotrack_record_dialog.py:280 src/ui/radio_control_widget.py:192
 #: src/ui/transmitter_dialog.py:93 src/ui/remove_manual_tle_dialog.py:74
 msgid "Satellite"
@@ -798,8 +801,8 @@ msgstr ""
 msgid "Delete Transmitter..."
 msgstr ""
 
-#: src/ui/main_window.py:1467 src/ui/main_window.py:5503
-#: src/ui/main_window.py:5758 src/ui/main_window.py:5764
+#: src/ui/main_window.py:1467 src/ui/main_window.py:5511
+#: src/ui/main_window.py:5762 src/ui/main_window.py:5768
 msgid "Hide Satellite"
 msgstr ""
 
@@ -811,7 +814,7 @@ msgstr ""
 msgid "Remove Manual TLE..."
 msgstr ""
 
-#: src/ui/main_window.py:1471 src/ui/main_window.py:7316
+#: src/ui/main_window.py:1471 src/ui/main_window.py:7320
 msgid "Update TLE"
 msgstr ""
 
@@ -844,7 +847,7 @@ msgstr ""
 msgid "APRS"
 msgstr ""
 
-#: src/ui/main_window.py:1485 src/ui/main_window.py:3590
+#: src/ui/main_window.py:1485 src/ui/main_window.py:3591
 msgid "Message Box/Digipeater"
 msgstr ""
 
@@ -852,7 +855,7 @@ msgstr ""
 msgid "FT4"
 msgstr ""
 
-#: src/ui/main_window.py:1487 src/ui/main_window.py:3430
+#: src/ui/main_window.py:1487 src/ui/main_window.py:3431
 msgid "Q65"
 msgstr ""
 
@@ -861,7 +864,7 @@ msgstr ""
 msgid "Telemetry"
 msgstr ""
 
-#: src/ui/main_window.py:1491 src/ui/main_window.py:3561 src/ui/cw_tab.py:214
+#: src/ui/main_window.py:1491 src/ui/main_window.py:3562 src/ui/cw_tab.py:214
 msgid "CW Decoder"
 msgstr ""
 
@@ -873,8 +876,8 @@ msgstr ""
 msgid "Digital Voice"
 msgstr ""
 
-#: src/ui/main_window.py:1494 src/ui/main_window.py:3474
-#: src/ui/main_window.py:9546 src/ui/main_window.py:9570
+#: src/ui/main_window.py:1494 src/ui/main_window.py:3475
+#: src/ui/main_window.py:9550 src/ui/main_window.py:9574
 msgid "METEOR / HRPT"
 msgstr ""
 
@@ -890,7 +893,7 @@ msgstr ""
 msgid "View"
 msgstr ""
 
-#: src/ui/main_window.py:1509 src/ui/main_window.py:8785
+#: src/ui/main_window.py:1509 src/ui/main_window.py:8789
 msgid "Language"
 msgstr ""
 
@@ -946,8 +949,8 @@ msgstr ""
 msgid "Satellite/Transmitter Colors"
 msgstr ""
 
-#: src/ui/main_window.py:1587 src/ui/main_window.py:9006
-#: src/ui/main_window.py:9039
+#: src/ui/main_window.py:1587 src/ui/main_window.py:9010
+#: src/ui/main_window.py:9043
 msgid "Auto Fetch Rules"
 msgstr ""
 
@@ -1008,12 +1011,12 @@ msgstr ""
 msgid "Show QR code for web access"
 msgstr ""
 
-#: src/ui/main_window.py:1645 src/ui/main_window.py:8581
+#: src/ui/main_window.py:1645 src/ui/main_window.py:8585
 msgid "RIG: Off"
 msgstr ""
 
-#: src/ui/main_window.py:1646 src/ui/main_window.py:8739
-#: src/ui/main_window.py:8743
+#: src/ui/main_window.py:1646 src/ui/main_window.py:8743
+#: src/ui/main_window.py:8747
 msgid "ROT: Off"
 msgstr ""
 
@@ -1029,12 +1032,12 @@ msgstr ""
 msgid "Moon"
 msgstr ""
 
-#: src/ui/main_window.py:2260 src/ui/main_window.py:7056
+#: src/ui/main_window.py:2260 src/ui/main_window.py:7060
 #, python-brace-format
 msgid "Cannot connect to {hosts}"
 msgstr ""
 
-#: src/ui/main_window.py:2444 src/ui/main_window.py:7074
+#: src/ui/main_window.py:2444 src/ui/main_window.py:7078
 msgid "Fetching group TLEs"
 msgstr ""
 
@@ -1062,392 +1065,392 @@ msgstr ""
 msgid "Close"
 msgstr ""
 
-#: src/ui/main_window.py:3457
+#: src/ui/main_window.py:3458
 #, python-brace-format
 msgid ""
 "Could not open the Q65 tab:\n"
 "{error}"
 msgstr ""
 
-#: src/ui/main_window.py:5488
+#: src/ui/main_window.py:5496
 msgid "Favorite Groups"
 msgstr ""
 
-#: src/ui/main_window.py:5499
+#: src/ui/main_window.py:5507
 msgid "Remove from Favorites"
 msgstr ""
 
-#: src/ui/main_window.py:5503
+#: src/ui/main_window.py:5511
 msgid "Unhide Satellite"
 msgstr ""
 
-#: src/ui/main_window.py:5505
+#: src/ui/main_window.py:5513
 msgid "Satellite Info..."
 msgstr ""
 
-#: src/ui/main_window.py:5506
+#: src/ui/main_window.py:5514
 msgid "Open in SatNOGS"
 msgstr ""
 
-#: src/ui/main_window.py:5517
+#: src/ui/main_window.py:5525
 msgid "Deselect Satellite"
 msgstr ""
 
-#: src/ui/main_window.py:5632
+#: src/ui/main_window.py:5636
 msgid ""
 "Could not reach db.satnogs.org — check your network connection.\n"
 "\n"
 msgstr ""
 
-#: src/ui/main_window.py:5664
+#: src/ui/main_window.py:5668
 msgid ""
 "Could not verify system clock accuracy — none of the NTP time servers could "
 "be reached. If FT4/Q65 decoding fails, check your network connection and "
 "system clock settings."
 msgstr ""
 
-#: src/ui/main_window.py:5681
+#: src/ui/main_window.py:5685
 #, python-brace-format
 msgid ""
 "System clock is off by {offset:.2f}s (checked against {server}) — "
 "compensated automatically for FT4/Q65 timing."
 msgstr ""
 
-#: src/ui/main_window.py:5688
+#: src/ui/main_window.py:5692
 msgid "Clock Sync Check"
 msgstr ""
 
-#: src/ui/main_window.py:5758 src/ui/main_window.py:7174
-#: src/ui/main_window.py:7210
+#: src/ui/main_window.py:5762 src/ui/main_window.py:7178
+#: src/ui/main_window.py:7214
 msgid "No satellite selected."
 msgstr ""
 
-#: src/ui/main_window.py:5765
+#: src/ui/main_window.py:5769
 #, python-brace-format
 msgid "Hide {name} (NORAD {n}) from the satellite list?"
 msgstr ""
 
-#: src/ui/main_window.py:5779
+#: src/ui/main_window.py:5783
 #, python-brace-format
 msgid "Name: {name}"
 msgstr ""
 
-#: src/ui/main_window.py:5780
+#: src/ui/main_window.py:5784
 #, python-brace-format
 msgid "NORAD: {norad}"
 msgstr ""
 
-#: src/ui/main_window.py:5783 src/ui/rig_dialog.py:708
+#: src/ui/main_window.py:5787 src/ui/rig_dialog.py:708
 msgid "N/A"
 msgstr ""
 
-#: src/ui/main_window.py:5785
+#: src/ui/main_window.py:5789
 #, python-brace-format
 msgid "TLE Epoch: {epoch} UTC"
 msgstr ""
 
-#: src/ui/main_window.py:5786
+#: src/ui/main_window.py:5790
 #, python-brace-format
 msgid "TLE Quality: {quality}"
 msgstr ""
 
-#: src/ui/main_window.py:5787
+#: src/ui/main_window.py:5791
 #, python-brace-format
 msgid "Source: {source}"
 msgstr ""
 
-#: src/ui/main_window.py:5788
+#: src/ui/main_window.py:5792
 #, python-brace-format
 msgid "Group: {group}"
 msgstr ""
 
-#: src/ui/main_window.py:5791
+#: src/ui/main_window.py:5795
 msgid "TLE: Not available"
 msgstr ""
 
-#: src/ui/main_window.py:5793
+#: src/ui/main_window.py:5797
 #, python-brace-format
 msgid "Satellite Info — {name}"
 msgstr ""
 
-#: src/ui/main_window.py:6665 src/ui/qth_dialog.py:110
+#: src/ui/main_window.py:6669 src/ui/qth_dialog.py:110
 msgid "Set QTH"
 msgstr ""
 
-#: src/ui/main_window.py:6665
+#: src/ui/main_window.py:6669
 msgid "Location manager not initialized."
 msgstr ""
 
-#: src/ui/main_window.py:6957
+#: src/ui/main_window.py:6961
 msgid "(No sites registered)"
 msgstr ""
 
-#: src/ui/main_window.py:7021
+#: src/ui/main_window.py:7025
 msgid "TLE update already in progress…"
 msgstr ""
 
-#: src/ui/main_window.py:7037
+#: src/ui/main_window.py:7041
 msgid "Updating TLEs…"
 msgstr ""
 
-#: src/ui/main_window.py:7164 src/ui/transmitter_dialog.py:76
+#: src/ui/main_window.py:7168 src/ui/transmitter_dialog.py:76
 msgid "Add Transmitter"
 msgstr ""
 
-#: src/ui/main_window.py:7165
+#: src/ui/main_window.py:7169
 msgid "Transmitter added successfully."
 msgstr ""
 
-#: src/ui/main_window.py:7174 src/ui/main_window.py:7184
-#: src/ui/main_window.py:7195 src/ui/transmitter_dialog.py:76
+#: src/ui/main_window.py:7178 src/ui/main_window.py:7188
+#: src/ui/main_window.py:7199 src/ui/transmitter_dialog.py:76
 msgid "Edit Transmitter"
 msgstr ""
 
-#: src/ui/main_window.py:7184 src/ui/main_window.py:7220
+#: src/ui/main_window.py:7188 src/ui/main_window.py:7224
 #: src/ui/autotrack_record_dialog.py:692
 msgid "No transmitters found for this satellite."
 msgstr ""
 
-#: src/ui/main_window.py:7195
+#: src/ui/main_window.py:7199
 msgid "Select transmitter to edit:"
 msgstr ""
 
-#: src/ui/main_window.py:7210 src/ui/main_window.py:7220
-#: src/ui/main_window.py:7231 src/ui/main_window.py:7240
+#: src/ui/main_window.py:7214 src/ui/main_window.py:7224
+#: src/ui/main_window.py:7235 src/ui/main_window.py:7244
 msgid "Delete Transmitter"
 msgstr ""
 
-#: src/ui/main_window.py:7231
+#: src/ui/main_window.py:7235
 msgid "Select transmitter to delete:"
 msgstr ""
 
-#: src/ui/main_window.py:7241
+#: src/ui/main_window.py:7245
 #, python-brace-format
 msgid "Delete transmitter '{desc}'?"
 msgstr ""
 
-#: src/ui/main_window.py:7260 src/ui/manual_tle_dialog.py:44
+#: src/ui/main_window.py:7264 src/ui/manual_tle_dialog.py:44
 msgid "Add Manual TLE"
 msgstr ""
 
-#: src/ui/main_window.py:7261
+#: src/ui/main_window.py:7265
 #, python-brace-format
 msgid "Satellite TLE added successfully (NORAD {n})."
 msgstr ""
 
-#: src/ui/main_window.py:7300
+#: src/ui/main_window.py:7304
 #, python-brace-format
 msgid ""
 "⚠ Manual TLE is old: {names}. Satellite > Remove Manual TLE… switches back "
 "to automatic updates."
 msgstr ""
 
-#: src/ui/main_window.py:7316
+#: src/ui/main_window.py:7320
 msgid "TLE update has been queued in the background."
 msgstr ""
 
-#: src/ui/main_window.py:7328
+#: src/ui/main_window.py:7332
 msgid "Syncing transmitter frequencies from SATNOGS..."
 msgstr ""
 
-#: src/ui/main_window.py:7446
+#: src/ui/main_window.py:7450
 #, python-brace-format
 msgid ""
 "{provider} blocked — retry in {hours}h ({unresolved} satellite(s) still "
 "unresolved)"
 msgstr ""
 
-#: src/ui/main_window.py:7451
+#: src/ui/main_window.py:7455
 #, python-brace-format
 msgid "{provider} blocked — retry in {hours}h"
 msgstr ""
 
-#: src/ui/main_window.py:7509 src/ui/main_window.py:7560
+#: src/ui/main_window.py:7513 src/ui/main_window.py:7564
 msgid "Cannot connect to SATNOGS"
 msgstr ""
 
-#: src/ui/main_window.py:7516
+#: src/ui/main_window.py:7520
 #, python-brace-format
 msgid "SATNOGS sync: {ins} inserted, {upd} updated, {skp} skipped"
 msgstr ""
 
-#: src/ui/main_window.py:7523
+#: src/ui/main_window.py:7527
 #, python-brace-format
 msgid "SATNOGS sync failed: {etype}: {err}"
 msgstr ""
 
-#: src/ui/main_window.py:7552
+#: src/ui/main_window.py:7556
 msgid "Syncing satellite names from SATNOGS..."
 msgstr ""
 
-#: src/ui/main_window.py:7567
+#: src/ui/main_window.py:7571
 #, python-brace-format
 msgid "Satellite names sync: {upd} updated, {skp} skipped"
 msgstr ""
 
-#: src/ui/main_window.py:7574
+#: src/ui/main_window.py:7578
 #, python-brace-format
 msgid "Satellite names sync failed: {etype}: {err}"
 msgstr ""
 
-#: src/ui/main_window.py:7607
+#: src/ui/main_window.py:7611
 msgid "Restarting"
 msgstr ""
 
-#: src/ui/main_window.py:7608
+#: src/ui/main_window.py:7612
 msgid "FBSAT59 will now restart to apply the Remote SDR discovery setting."
 msgstr ""
 
-#: src/ui/main_window.py:7991
+#: src/ui/main_window.py:7995
 #, python-format, python-brace-format
 msgid ""
 "IQ recording: input is saturating ({pct:.0f}% clipped) — lower the SDR gain"
 msgstr ""
 
-#: src/ui/main_window.py:8062 src/ui/main_window.py:8158
-#: src/ui/main_window.py:8174 src/ui/sdr_control_widget.py:1041
+#: src/ui/main_window.py:8066 src/ui/main_window.py:8162
+#: src/ui/main_window.py:8178 src/ui/sdr_control_widget.py:1043
 msgid "Play IQ Recording"
 msgstr ""
 
-#: src/ui/main_window.py:8064 src/ui/main_window.py:8160
+#: src/ui/main_window.py:8068 src/ui/main_window.py:8164
 #, python-format
 msgid ""
 "Rig %d is currently connected to live hardware. Disconnect it and play back "
 "the recording instead?"
 msgstr ""
 
-#: src/ui/main_window.py:8174
+#: src/ui/main_window.py:8178
 #, python-format
 msgid ""
 "Failed to open recording:\n"
 "%s"
 msgstr ""
 
-#: src/ui/main_window.py:8561
+#: src/ui/main_window.py:8565
 #, python-brace-format
 msgid "🔊 TX: {owner}"
 msgstr ""
 
-#: src/ui/main_window.py:8575
+#: src/ui/main_window.py:8579
 msgid "RIG: 1+2"
 msgstr ""
 
-#: src/ui/main_window.py:8577
+#: src/ui/main_window.py:8581
 msgid "RIG: 1"
 msgstr ""
 
-#: src/ui/main_window.py:8579
+#: src/ui/main_window.py:8583
 msgid "RIG: 2"
 msgstr ""
 
-#: src/ui/main_window.py:8741
+#: src/ui/main_window.py:8745
 msgid "ROT: On"
 msgstr ""
 
-#: src/ui/main_window.py:8786
+#: src/ui/main_window.py:8790
 msgid "FBSAT59 will restart now to apply the language change."
 msgstr ""
 
-#: src/ui/main_window.py:8793
+#: src/ui/main_window.py:8797
 msgid "Satellite/Transmitter Color Legend"
 msgstr ""
 
-#: src/ui/main_window.py:8803
+#: src/ui/main_window.py:8807
 msgid "Green (bold)"
 msgstr ""
 
-#: src/ui/main_window.py:8804
+#: src/ui/main_window.py:8808
 msgid "AMSAT status: Operational — confirmed working by AMSAT."
 msgstr ""
 
-#: src/ui/main_window.py:8809
+#: src/ui/main_window.py:8813
 msgid "Yellow"
 msgstr ""
 
-#: src/ui/main_window.py:8810
+#: src/ui/main_window.py:8814
 msgid ""
 "AMSAT status: TLM/Beacon only — telemetry or beacon heard, primary mode not."
 msgstr ""
 
-#: src/ui/main_window.py:8815
+#: src/ui/main_window.py:8819
 msgid "Red"
 msgstr ""
 
-#: src/ui/main_window.py:8816
+#: src/ui/main_window.py:8820
 msgid "AMSAT status: Non-operational — confirmed failed by AMSAT."
 msgstr ""
 
-#: src/ui/main_window.py:8821
+#: src/ui/main_window.py:8825
 msgid "Orange"
 msgstr ""
 
-#: src/ui/main_window.py:8822
+#: src/ui/main_window.py:8826
 msgid "SATNOGS alive — reception reported, no AMSAT data available."
 msgstr ""
 
-#: src/ui/main_window.py:8827
+#: src/ui/main_window.py:8831
 msgid "Purple (italic)"
 msgstr ""
 
-#: src/ui/main_window.py:8829
+#: src/ui/main_window.py:8833
 msgid ""
 "TLE pending — alive satellite awaiting TLE assignment (provisional NORAD ≥ "
 "90000, within 30-day grace period). Position cannot be displayed yet."
 msgstr ""
 
-#: src/ui/main_window.py:8837
+#: src/ui/main_window.py:8841
 msgid "Gray"
 msgstr ""
 
-#: src/ui/main_window.py:8838
+#: src/ui/main_window.py:8842
 msgid "Status unknown — not confirmed operational by any source."
 msgstr ""
 
-#: src/ui/main_window.py:8843
+#: src/ui/main_window.py:8847
 msgid "Blue"
 msgstr ""
 
-#: src/ui/main_window.py:8844
+#: src/ui/main_window.py:8848
 msgid "Celestial Bodies (Moon etc.) — below the horizon."
 msgstr ""
 
-#: src/ui/main_window.py:8849
+#: src/ui/main_window.py:8853
 msgid "Blue (bold)"
 msgstr ""
 
-#: src/ui/main_window.py:8850
+#: src/ui/main_window.py:8854
 msgid "Celestial Bodies (Moon etc.) — above the horizon."
 msgstr ""
 
-#: src/ui/main_window.py:8860
+#: src/ui/main_window.py:8864
 msgid "Yellow background"
 msgstr ""
 
-#: src/ui/main_window.py:8862
+#: src/ui/main_window.py:8866
 msgid ""
 "SATNOGS status: Inactive — this transmitter is no longer operating. Shown "
 "only while the transponder dropdown is open."
 msgstr ""
 
-#: src/ui/main_window.py:8868
+#: src/ui/main_window.py:8872
 msgid "Red background"
 msgstr ""
 
-#: src/ui/main_window.py:8870
+#: src/ui/main_window.py:8874
 msgid ""
 "SATNOGS status: Invalid — this transmitter's data is known to be incorrect. "
 "Shown only while the transponder dropdown is open."
 msgstr ""
 
-#: src/ui/main_window.py:8894
+#: src/ui/main_window.py:8898
 msgid "Satellite List"
 msgstr ""
 
-#: src/ui/main_window.py:8910
+#: src/ui/main_window.py:8914
 msgid "Radio Control — Transmitter Selection"
 msgstr ""
 
-#: src/ui/main_window.py:8944
+#: src/ui/main_window.py:8948
 msgid ""
 "FBSAT59 automatically fetches and updates TLE orbital data and transmitter "
 "information in the background. Manual updates are normally not required. Use "
@@ -1455,7 +1458,7 @@ msgid ""
 "before a pass of a newly launched satellite)."
 msgstr ""
 
-#: src/ui/main_window.py:8950
+#: src/ui/main_window.py:8954
 msgid ""
 "<table border='0' cellspacing='4'><tr><td><b>Space Stations</b> (ISS, CSS…)</"
 "td><td>every <b>1 hour</b></td></tr><tr><td><b>Amateur Satellites</b></"
@@ -1466,7 +1469,7 @@ msgid ""
 "CelesTrak groups</b></td><td>every <b>12 hours</b></td></tr></table>"
 msgstr ""
 
-#: src/ui/main_window.py:8962
+#: src/ui/main_window.py:8966
 msgid ""
 "<table border='0' cellspacing='4'><tr><td><b>Active TLE fallback</b> (NORAD "
 "10000–89999)</td><td>every <b>24 hours</b></td></tr><tr><td><b>Provisional "
@@ -1478,7 +1481,7 @@ msgid ""
 "(SATNOGS)</b></td><td>every <b>7 days</b></td></tr></table>"
 msgstr ""
 
-#: src/ui/main_window.py:8976
+#: src/ui/main_window.py:8980
 msgid ""
 "Most TLE data comes from CelesTrak's curated group listings above. Two "
 "additional steps fall back to SATNOGS's own TLE database instead: <b>Active "
@@ -1489,7 +1492,7 @@ msgid ""
 "to refresh both immediately."
 msgstr ""
 
-#: src/ui/main_window.py:8985
+#: src/ui/main_window.py:8989
 msgid ""
 "A satellite's name and operational status (alive / dead / unknown) are "
 "separate from its TLE orbital data — a TLE only describes where a satellite "
@@ -1501,7 +1504,7 @@ msgid ""
 "official designation)."
 msgstr ""
 
-#: src/ui/main_window.py:8995
+#: src/ui/main_window.py:8999
 msgid ""
 "Transmitter data is fetched from SATNOGS automatically on first launch, then "
 "refreshed automatically every 7 days in the background. Use <b>Satellite → "
@@ -1510,42 +1513,42 @@ msgid ""
 "newly launched satellite registers its transmitter)."
 msgstr ""
 
-#: src/ui/main_window.py:9002
+#: src/ui/main_window.py:9006
 msgid ""
 "On each launch the app fetches any TLE sources whose cached data has "
 "expired, and refreshes satellite names/status and the transmitter database "
 "if their own caches have expired too (see above)."
 msgstr ""
 
-#: src/ui/main_window.py:9007
+#: src/ui/main_window.py:9011
 msgid "CelesTrak TLE"
 msgstr ""
 
-#: src/ui/main_window.py:9008
+#: src/ui/main_window.py:9012
 msgid "Other Than CelesTrak TLE"
 msgstr ""
 
-#: src/ui/main_window.py:9009
+#: src/ui/main_window.py:9013
 msgid "TLE Data from SATNOGS"
 msgstr ""
 
-#: src/ui/main_window.py:9010
+#: src/ui/main_window.py:9014
 msgid "Satellite Names / Status"
 msgstr ""
 
-#: src/ui/main_window.py:9011
+#: src/ui/main_window.py:9015
 msgid "Transmitter Database (SATNOGS)"
 msgstr ""
 
-#: src/ui/main_window.py:9012
+#: src/ui/main_window.py:9016
 msgid "At Startup"
 msgstr ""
 
-#: src/ui/main_window.py:9084 src/ui/main_window.py:9106
+#: src/ui/main_window.py:9088 src/ui/main_window.py:9110
 msgid "Clear TLE Sync History"
 msgstr ""
 
-#: src/ui/main_window.py:9086
+#: src/ui/main_window.py:9090
 msgid ""
 "This clears the record of when each TLE source was last fetched.\n"
 "\n"
@@ -1555,66 +1558,66 @@ msgid ""
 "never having been fetched and refresh all of them."
 msgstr ""
 
-#: src/ui/main_window.py:9107
+#: src/ui/main_window.py:9111
 #, python-brace-format
 msgid "Cleared {n} sync history record(s)."
 msgstr ""
 
-#: src/ui/main_window.py:9116
+#: src/ui/main_window.py:9120
 msgid "About FBSAT59"
 msgstr ""
 
-#: src/ui/main_window.py:9118
+#: src/ui/main_window.py:9122
 msgid "Modern satellite tracking software for amateur radio operators.\n"
 msgstr ""
 
-#: src/ui/main_window.py:9205
+#: src/ui/main_window.py:9209
 msgid "Important Update"
 msgstr ""
 
-#: src/ui/main_window.py:9207
+#: src/ui/main_window.py:9211
 msgid "An important update is available. Please update to the latest version."
 msgstr ""
 
-#: src/ui/main_window.py:9209
+#: src/ui/main_window.py:9213
 #, python-brace-format
 msgid "Latest version: {ver}"
 msgstr ""
 
-#: src/ui/main_window.py:9210
+#: src/ui/main_window.py:9214
 msgid "Update Now"
 msgstr ""
 
-#: src/ui/main_window.py:9211 src/ui/main_window.py:9224
+#: src/ui/main_window.py:9215 src/ui/main_window.py:9228
 msgid "Later"
 msgstr ""
 
-#: src/ui/main_window.py:9220
+#: src/ui/main_window.py:9224
 msgid "Update Available"
 msgstr ""
 
-#: src/ui/main_window.py:9221
+#: src/ui/main_window.py:9225
 #, python-brace-format
 msgid "A new version ({ver}) is available."
 msgstr ""
 
-#: src/ui/main_window.py:9222 src/ui/app_update_dialog.py:274
+#: src/ui/main_window.py:9226 src/ui/app_update_dialog.py:274
 msgid "Update"
 msgstr ""
 
-#: src/ui/main_window.py:9223
+#: src/ui/main_window.py:9227
 msgid "Skip This Version"
 msgstr ""
 
-#: src/ui/main_window.py:9580 src/ui/main_window.py:9598
+#: src/ui/main_window.py:9584 src/ui/main_window.py:9602
 msgid "QR Code"
 msgstr ""
 
-#: src/ui/main_window.py:9580
+#: src/ui/main_window.py:9584
 msgid "Web server is not running."
 msgstr ""
 
-#: src/ui/main_window.py:9598
+#: src/ui/main_window.py:9602
 msgid "Failed to generate QR code."
 msgstr ""
 
@@ -1830,7 +1833,7 @@ msgstr ""
 msgid "Input/Output:"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:441 src/ui/sstv_tab.py:509
+#: src/ui/ax100_digi_tab.py:441 src/ui/sstv_tab.py:585
 #: src/ui/digital_voice_tab.py:290
 msgid "SDR (receive only)"
 msgstr ""
@@ -1852,7 +1855,7 @@ msgid ""
 "weak signal."
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:481 src/ui/telemetry_tab.py:649
+#: src/ui/ax100_digi_tab.py:481 src/ui/telemetry_tab.py:700
 msgid "Export CSV…"
 msgstr ""
 
@@ -1873,12 +1876,12 @@ msgstr ""
 msgid "Sat"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:523 src/ui/aprs_tab.py:313
+#: src/ui/ax100_digi_tab.py:523 src/ui/aprs_tab.py:315
 msgid "Send Message"
 msgstr ""
 
 #: src/ui/ax100_digi_tab.py:527 src/ui/pass_panel.py:417
-#: src/ui/pass_panel.py:466 src/ui/aprs_tab.py:315
+#: src/ui/pass_panel.py:466 src/ui/aprs_tab.py:317
 #: src/ui/log_export_dialog.py:107
 msgid "To:"
 msgstr ""
@@ -1917,7 +1920,7 @@ msgstr ""
 msgid "Content:"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:568 src/ui/aprs_tab.py:345
+#: src/ui/ax100_digi_tab.py:568 src/ui/aprs_tab.py:347
 msgid "Send"
 msgstr ""
 
@@ -1931,7 +1934,7 @@ msgid ""
 "satellite — see comms/ax100digi/tx.py."
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:591 src/ui/telemetry_tab.py:527
+#: src/ui/ax100_digi_tab.py:591 src/ui/telemetry_tab.py:581
 #: src/ui/pass_chart.py:440 src/ui/pass_chart.py:799 src/ui/arica2_panel.py:408
 msgid "Time (UTC)"
 msgstr ""
@@ -2394,7 +2397,7 @@ msgstr ""
 msgid "Not assigned"
 msgstr ""
 
-#: src/ui/rig_dialog.py:1218 src/ui/digital_voice_tab.py:543
+#: src/ui/rig_dialog.py:1218 src/ui/digital_voice_tab.py:545
 msgid "IQ Recording"
 msgstr ""
 
@@ -2537,7 +2540,7 @@ msgstr ""
 msgid "SDR Settings"
 msgstr ""
 
-#: src/ui/rig_dialog.py:2374 src/ui/sstv_tab.py:512
+#: src/ui/rig_dialog.py:2374 src/ui/sstv_tab.py:588
 msgid "Sound Card"
 msgstr ""
 
@@ -2643,41 +2646,41 @@ msgstr ""
 msgid "{n} rotator models available"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:135
+#: src/ui/telemetry_tab.py:139
 msgid "SatNOGS DB API Key"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:140
+#: src/ui/telemetry_tab.py:144
 msgid ""
 "Log in at db.satnogs.org, open your account Settings, and copy the API Key "
 "shown there. It is required to upload telemetry frames to the SatNOGS "
 "database."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:149
+#: src/ui/telemetry_tab.py:153
 msgid "Paste your SatNOGS DB API key"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:257
+#: src/ui/telemetry_tab.py:299
 msgid "🔄 Refresh"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:409
+#: src/ui/telemetry_tab.py:453
 msgid "Input Source"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:413 src/ui/radio_control_widget.py:361
-#: src/ui/q65_tab.py:209 src/ui/sstv_tab.py:248
-#: src/ui/sdr_control_widget.py:698 src/ui/digital_voice_tab.py:128
+#: src/ui/telemetry_tab.py:457 src/ui/radio_control_widget.py:361
+#: src/ui/q65_tab.py:209 src/ui/sstv_tab.py:254
+#: src/ui/sdr_control_widget.py:700 src/ui/digital_voice_tab.py:128
 msgid "Mode:"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:425 src/ui/telemetry_tab.py:435
-#: src/ui/telemetry_tab.py:446
+#: src/ui/telemetry_tab.py:469 src/ui/telemetry_tab.py:479
+#: src/ui/telemetry_tab.py:490
 msgid "Search satellites…"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:459
+#: src/ui/telemetry_tab.py:503
 msgid ""
 "AX.25 baud rate for Direwolf (AX.25) mode's Rig + Sound\n"
 "Card (Direwolf) or SDR reception. Selecting a satellite\n"
@@ -2686,15 +2689,15 @@ msgid ""
 "hand. Has no effect on gr-satellites decoding."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:467 src/ui/aprs_tab.py:252
+#: src/ui/telemetry_tab.py:511 src/ui/aprs_tab.py:254 src/ui/sstv_tab.py:264
 msgid "Baud:"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:471 src/ui/meteor_tab.py:393
+#: src/ui/telemetry_tab.py:515 src/ui/meteor_tab.py:393
 msgid "📋 Log"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:474
+#: src/ui/telemetry_tab.py:518
 msgid ""
 "Show the active backend's own console output. Direwolf\n"
 "(AX.25) mode: startup messages and a line per decoded\n"
@@ -2705,134 +2708,153 @@ msgid ""
 "not shown anywhere else."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:490 src/ui/cw_tab.py:254 src/ui/cw_tab.py:429
+#: src/ui/telemetry_tab.py:534 src/ui/cw_tab.py:254 src/ui/cw_tab.py:429
 msgid "▶ Start"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:492 src/ui/cw_tab.py:406
-#: src/ui/sdr_control_widget.py:798 src/ui/digital_voice_tab.py:227
+#: src/ui/telemetry_tab.py:536 src/ui/cw_tab.py:406
+#: src/ui/sdr_control_widget.py:800 src/ui/digital_voice_tab.py:227
 msgid "■ Stop"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:495
+#: src/ui/telemetry_tab.py:539
 msgid "—"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:506 src/ui/telemetry_tab.py:2634
+#: src/ui/telemetry_tab.py:550 src/ui/sstv_tab.py:441
+msgid "📂 Decode IQ Recording…"
+msgstr ""
+
+#: src/ui/telemetry_tab.py:553
+msgid ""
+"Open a recorded .iq.wav file and play it into the decoder. Click the "
+"spectrogram to play from there; decoding starts automatically."
+msgstr ""
+
+#: src/ui/telemetry_tab.py:560 src/ui/telemetry_tab.py:2812
 msgid "Frames: 0 received"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:527
+#: src/ui/telemetry_tab.py:581
 msgid "Callsign"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:527
+#: src/ui/telemetry_tab.py:581
 msgid "Data"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:570
+#: src/ui/telemetry_tab.py:623
 msgid "Select a frame to see all its decoded fields."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:573
+#: src/ui/telemetry_tab.py:624
 msgid "Received Frames"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:585
+#: src/ui/telemetry_tab.py:636
 msgid "Decoded Fields"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:603
+#: src/ui/telemetry_tab.py:654
 msgid ""
 "Upload every decoded frame to the SatNOGS DB (SiDS).\n"
 "Needs a SatNOGS DB API key (API button) plus your callsign\n"
 "and station location (File → Set QTH)."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:611
+#: src/ui/telemetry_tab.py:662
 msgid "API"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:612
+#: src/ui/telemetry_tab.py:663
 msgid "Enter your SatNOGS DB API key"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:616
+#: src/ui/telemetry_tab.py:667
 msgid "SatNOGS ↗"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:617
+#: src/ui/telemetry_tab.py:668
 msgid "Open the selected satellite's page on db.satnogs.org"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:622
+#: src/ui/telemetry_tab.py:673
 msgid "Send selected"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:625
+#: src/ui/telemetry_tab.py:676
 msgid ""
 "Send the frames selected in the table to the SatNOGS DB now,\n"
 "even if the Upload switch is off (CW: even if received only once).\n"
 "Frames without a reliable time or already sent are skipped."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:636
+#: src/ui/telemetry_tab.py:687
 msgid "Load saved"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:639
+#: src/ui/telemetry_tab.py:690
 msgid ""
 "Show the frames saved earlier for the selected satellite again\n"
 "(the current mode's: AX.25, gr-satellites or CW TLM),\n"
 "without replaying a recording."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:646
+#: src/ui/telemetry_tab.py:697
 msgid "Clear Log"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1226
+#: src/ui/telemetry_tab.py:765 src/ui/sstv_tab.py:1152
+msgid "Decode IQ Recording"
+msgstr ""
+
+#: src/ui/telemetry_tab.py:765 src/ui/sstv_tab.py:1153
+#: src/ui/digital_voice_tab.py:545
+msgid "SDR Control is not available."
+msgstr ""
+
+#: src/ui/telemetry_tab.py:1293
 msgid "gr-satellites Log"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1235 src/ui/sdr_install_dialog.py:205
+#: src/ui/telemetry_tab.py:1302 src/ui/sdr_install_dialog.py:205
 #: src/ui/app_update_dialog.py:290 src/ui/hamlib_update_dialog.py:211
 msgid "Log"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1335 src/ui/telemetry_tab.py:2405
+#: src/ui/telemetry_tab.py:1402 src/ui/telemetry_tab.py:2583
 msgid "Select a satellite first."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1339
+#: src/ui/telemetry_tab.py:1406
 msgid "No CW telemetry frame format is defined for this satellite yet."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1346
+#: src/ui/telemetry_tab.py:1413
 msgid "CW TLM — decoding in the CW Decoder tab"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1385
+#: src/ui/telemetry_tab.py:1470
 msgid "length or characters not valid, not used"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1475
+#: src/ui/telemetry_tab.py:1560
 msgid "Select received CW frames in the table first."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1517
+#: src/ui/telemetry_tab.py:1602
 msgid "Select received AX.25 frames in the table first."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1537
+#: src/ui/telemetry_tab.py:1622
 msgid "Select the satellite these frames came from first."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1549
+#: src/ui/telemetry_tab.py:1634
 msgid "Send to SatNOGS"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1550
+#: src/ui/telemetry_tab.py:1635
 #, python-brace-format
 msgid ""
 "Send {n} frame(s) to the SatNOGS DB?\n"
@@ -2840,154 +2862,158 @@ msgid ""
 "{lines}"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1581 src/ui/telemetry_tab.py:1608
+#: src/ui/telemetry_tab.py:1666 src/ui/telemetry_tab.py:1693
 #, python-brace-format
 msgid "SatNOGS accepted the frame (HTTP {n})"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1628
+#: src/ui/telemetry_tab.py:1713
 #, python-brace-format
 msgid "SatNOGS upload failed: {detail}"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1629
+#: src/ui/telemetry_tab.py:1714
 #, python-brace-format
 msgid "SatNOGS rejected the upload (HTTP {status}): {detail}"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1633
+#: src/ui/telemetry_tab.py:1718
 msgid "check the API key (API button)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1641 src/ui/telemetry_tab.py:2701
+#: src/ui/telemetry_tab.py:1726 src/ui/telemetry_tab.py:2879
 msgid "API key"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1642 src/ui/telemetry_tab.py:2703
+#: src/ui/telemetry_tab.py:1727 src/ui/telemetry_tab.py:2881
 msgid "callsign"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1643 src/ui/telemetry_tab.py:2705
+#: src/ui/telemetry_tab.py:1728 src/ui/telemetry_tab.py:2883
 msgid "station location"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1646
+#: src/ui/telemetry_tab.py:1731
 msgid "SatNOGS upload not possible — missing: "
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1652
+#: src/ui/telemetry_tab.py:1737
 #, python-brace-format
 msgid "{n} queued for upload"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1654
+#: src/ui/telemetry_tab.py:1739
 #, python-brace-format
 msgid "{n} awaiting SatNOGS's reply"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1656
+#: src/ui/telemetry_tab.py:1741
 #, python-brace-format
 msgid "{n} already sent"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1658
+#: src/ui/telemetry_tab.py:1743
 #, python-brace-format
 msgid "{n} waiting for a second reception"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1660
+#: src/ui/telemetry_tab.py:1745
 #, python-brace-format
 msgid "{n} skipped: recording start time not set"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1662
+#: src/ui/telemetry_tab.py:1747
 #, python-brace-format
 msgid "{n} without a SatNOGS format"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1663
+#: src/ui/telemetry_tab.py:1748
 msgid "nothing to send"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1681
+#: src/ui/telemetry_tab.py:1766
 msgid "⚠ No satellite selected"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1722
+#: src/ui/telemetry_tab.py:1807
 msgid "⚠ SDR connected but not ready"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1728
+#: src/ui/telemetry_tab.py:1813
 msgid "Connecting SDR…"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1734
+#: src/ui/telemetry_tab.py:1819
 msgid "Connecting SDR… decoding starts once it is connected"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:1737
+#: src/ui/telemetry_tab.py:1822
 msgid "⚠ No SDR or rig connected"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:2068
+#: src/ui/telemetry_tab.py:2186
 msgid ""
 "SatNOGS upload skipped: set the recording's start time in SDR Control first."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:2154 src/ui/sstv_tab.py:913
+#: src/ui/telemetry_tab.py:2272 src/ui/sstv_tab.py:986
 msgid "Frames: "
 msgstr ""
 
-#: src/ui/telemetry_tab.py:2154
+#: src/ui/telemetry_tab.py:2272
 msgid " received"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:2185
+#: src/ui/telemetry_tab.py:2295 src/ui/telemetry_tab.py:2323
+msgid "gr-satellites output"
+msgstr ""
+
+#: src/ui/telemetry_tab.py:2306
 msgid "Field"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:2185
+#: src/ui/telemetry_tab.py:2306
 msgid "Value"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:2339
+#: src/ui/telemetry_tab.py:2517
 msgid "Rig + Direwolf (receiving)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:2344
+#: src/ui/telemetry_tab.py:2522
 msgid "SDR — AX.25 (receive only)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:2350
+#: src/ui/telemetry_tab.py:2528
 msgid "—  (connect SDR, then click ▶ Start)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:2353
+#: src/ui/telemetry_tab.py:2531
 msgid "—  (click ▶ Start; the CW Decoder tab opens automatically)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:2356
+#: src/ui/telemetry_tab.py:2534
 msgid "—  (connect Rig or SDR, then click ▶ Start)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:2409
+#: src/ui/telemetry_tab.py:2587
 #, python-brace-format
 msgid "Loaded {n} saved frame(s)"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:2642
+#: src/ui/telemetry_tab.py:2820
 msgid "Export Telemetry CSV"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:2669
+#: src/ui/telemetry_tab.py:2847
 msgid "SatNOGS Upload: ON"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:2669
+#: src/ui/telemetry_tab.py:2847
 msgid "SatNOGS Upload: OFF"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:2708
+#: src/ui/telemetry_tab.py:2886
 msgid "SatNOGS Upload is on but not sending — missing: "
 msgstr ""
 
@@ -3003,11 +3029,11 @@ msgstr ""
 msgid "ARICA-2 message box"
 msgstr ""
 
-#: src/ui/aprs_tab.py:191
+#: src/ui/aprs_tab.py:193
 msgid "Station Settings"
 msgstr ""
 
-#: src/ui/aprs_tab.py:220
+#: src/ui/aprs_tab.py:222
 msgid ""
 "Digipeater path. ARISS / APRSAT / WIDE are the generic\n"
 "aliases most APRS-capable satellite digipeaters (ISS and\n"
@@ -3018,11 +3044,11 @@ msgid ""
 "one to remove it."
 msgstr ""
 
-#: src/ui/aprs_tab.py:234
+#: src/ui/aprs_tab.py:236
 msgid "Via:"
 msgstr ""
 
-#: src/ui/aprs_tab.py:244
+#: src/ui/aprs_tab.py:246
 msgid ""
 "AX.25 baud rate for Direwolf (Rig + Sound Card reception).\n"
 "Selecting a satellite or transponder sets this from the baud\n"
@@ -3031,42 +3057,42 @@ msgid ""
 "Card reception — SDR-only reception is always 1200 baud AFSK."
 msgstr ""
 
-#: src/ui/aprs_tab.py:259
+#: src/ui/aprs_tab.py:261
 msgid "Plain"
 msgstr ""
 
-#: src/ui/aprs_tab.py:260
+#: src/ui/aprs_tab.py:262
 msgid "Raw packet"
 msgstr ""
 
-#: src/ui/aprs_tab.py:263
+#: src/ui/aprs_tab.py:265
 msgid ""
 "Plain: a human-readable summary of each packet (position,\n"
 "message, status…). Raw packet: the APRS information field\n"
 "exactly as received on the air."
 msgstr ""
 
-#: src/ui/aprs_tab.py:269
+#: src/ui/aprs_tab.py:271
 msgid "Show:"
 msgstr ""
 
-#: src/ui/aprs_tab.py:276 src/ui/sstv_tab.py:256
+#: src/ui/aprs_tab.py:278 src/ui/sstv_tab.py:283
 msgid "Input: —"
 msgstr ""
 
-#: src/ui/aprs_tab.py:293
+#: src/ui/aprs_tab.py:295
 msgid "Received Packets"
 msgstr ""
 
-#: src/ui/aprs_tab.py:321 src/ui/arica2_panel.py:332
+#: src/ui/aprs_tab.py:323 src/ui/arica2_panel.py:332
 msgid "Message:"
 msgstr ""
 
-#: src/ui/aprs_tab.py:323
+#: src/ui/aprs_tab.py:325
 msgid "Text message (max 67 chars)"
 msgstr ""
 
-#: src/ui/aprs_tab.py:334
+#: src/ui/aprs_tab.py:336
 msgid ""
 "Transmit audio level in dB below full scale. The app generates the packet "
 "audio at full scale; lower this until the radio's deviation (FM) is right. "
@@ -3074,94 +3100,94 @@ msgid ""
 "input gain."
 msgstr ""
 
-#: src/ui/aprs_tab.py:352
+#: src/ui/aprs_tab.py:354
 msgid "Send My Position"
 msgstr ""
 
-#: src/ui/aprs_tab.py:354
+#: src/ui/aprs_tab.py:356
 msgid "Auto-beacon every"
 msgstr ""
 
-#: src/ui/aprs_tab.py:361
+#: src/ui/aprs_tab.py:363
 msgid " min"
 msgstr ""
 
-#: src/ui/aprs_tab.py:365
+#: src/ui/aprs_tab.py:367
 msgid "Symbol:"
 msgstr ""
 
-#: src/ui/aprs_tab.py:369
+#: src/ui/aprs_tab.py:371
 msgid "Fixed Station  /-"
 msgstr ""
 
-#: src/ui/aprs_tab.py:370
+#: src/ui/aprs_tab.py:372
 msgid "Mobile  />"
 msgstr ""
 
-#: src/ui/aprs_tab.py:371
+#: src/ui/aprs_tab.py:373
 msgid "Balloon  /O"
 msgstr ""
 
-#: src/ui/aprs_tab.py:372
+#: src/ui/aprs_tab.py:374
 msgid "Antenna  /Y"
 msgstr ""
 
-#: src/ui/aprs_tab.py:373
+#: src/ui/aprs_tab.py:375
 msgid "Satellite  /S"
 msgstr ""
 
-#: src/ui/aprs_tab.py:380
+#: src/ui/aprs_tab.py:382
 msgid "Comment:"
 msgstr ""
 
-#: src/ui/aprs_tab.py:382
+#: src/ui/aprs_tab.py:384
 msgid "Optional free text"
 msgstr ""
 
-#: src/ui/aprs_tab.py:386
+#: src/ui/aprs_tab.py:388
 msgid "Send Now"
 msgstr ""
 
-#: src/ui/aprs_tab.py:390
+#: src/ui/aprs_tab.py:392
 msgid "QTH: —"
 msgstr ""
 
-#: src/ui/aprs_tab.py:501
+#: src/ui/aprs_tab.py:503
 msgid "Input: Sound Card + Direwolf  (send + receive)"
 msgstr ""
 
-#: src/ui/aprs_tab.py:507
+#: src/ui/aprs_tab.py:509
 #, python-brace-format
 msgid "Input: {dev}  (receive only — SDR)"
 msgstr ""
 
-#: src/ui/aprs_tab.py:512
+#: src/ui/aprs_tab.py:514
 msgid "Input: Sound Card + Direwolf  (receive only — Rig not connected)"
 msgstr ""
 
-#: src/ui/aprs_tab.py:518
+#: src/ui/aprs_tab.py:520
 msgid "Input: Sound Card not configured — open Rig Settings > Sound Card"
 msgstr ""
 
-#: src/ui/aprs_tab.py:524
+#: src/ui/aprs_tab.py:526
 msgid "Input: No audio source — connect Rig or SDR in Radio Control"
 msgstr ""
 
-#: src/ui/aprs_tab.py:741
+#: src/ui/aprs_tab.py:743
 #, python-brace-format
 msgid "Remove \"{value}\" from list"
 msgstr ""
 
-#: src/ui/aprs_tab.py:1088
+#: src/ui/aprs_tab.py:1090
 msgid "Open in Google Maps"
 msgstr ""
 
-#: src/ui/aprs_tab.py:1113
+#: src/ui/aprs_tab.py:1115
 #, python-brace-format
 msgid "QSOs logged: {n}"
 msgstr ""
 
-#: src/ui/aprs_tab.py:1179 src/ui/aprs_tab.py:1196
+#: src/ui/aprs_tab.py:1181 src/ui/aprs_tab.py:1198
 msgid "QTH: not set — configure in Settings"
 msgstr ""
 
@@ -3229,7 +3255,7 @@ msgstr ""
 msgid "No image received yet."
 msgstr ""
 
-#: src/ui/meteor_tab.py:465 src/ui/sstv_tab.py:330
+#: src/ui/meteor_tab.py:465 src/ui/sstv_tab.py:377
 msgid "Image"
 msgstr ""
 
@@ -3245,7 +3271,7 @@ msgstr ""
 msgid "Load a previous reception's images into the preview and history below."
 msgstr ""
 
-#: src/ui/meteor_tab.py:479 src/ui/sstv_tab.py:407
+#: src/ui/meteor_tab.py:479 src/ui/sstv_tab.py:454
 msgid "🗑 Clear"
 msgstr ""
 
@@ -3253,7 +3279,7 @@ msgstr ""
 msgid "Gain:"
 msgstr ""
 
-#: src/ui/meteor_tab.py:514 src/ui/sstv_tab.py:338
+#: src/ui/meteor_tab.py:514 src/ui/sstv_tab.py:385
 msgid "Received Images:"
 msgstr ""
 
@@ -3326,7 +3352,7 @@ msgstr ""
 msgid "Autotrack: reception stopped at LOS."
 msgstr ""
 
-#: src/ui/meteor_tab.py:920 src/ui/sstv_tab.py:1033
+#: src/ui/meteor_tab.py:920 src/ui/sstv_tab.py:1106
 msgid "Image received: "
 msgstr ""
 
@@ -3533,8 +3559,8 @@ msgstr ""
 msgid "No SDR devices detected."
 msgstr ""
 
-#: src/ui/sdr_install_dialog.py:358 src/ui/cw_tab.py:269 src/ui/sstv_tab.py:359
-#: src/ui/sstv_tab.py:1192
+#: src/ui/sdr_install_dialog.py:358 src/ui/cw_tab.py:269 src/ui/sstv_tab.py:406
+#: src/ui/sstv_tab.py:1269
 msgid "Ready"
 msgstr ""
 
@@ -3823,7 +3849,7 @@ msgid "Autotrack / Record"
 msgstr ""
 
 #: src/ui/autotrack_record_dialog.py:219 src/ui/autotrack_record_dialog.py:398
-#: src/ui/sdr_control_widget.py:814
+#: src/ui/sdr_control_widget.py:816
 msgid "Start (UTC):"
 msgstr ""
 
@@ -4162,7 +4188,7 @@ msgstr ""
 msgid "TLE validation failed. Please check the format."
 msgstr ""
 
-#: src/ui/radio_control_widget.py:209 src/ui/sdr_control_widget.py:805
+#: src/ui/radio_control_widget.py:209 src/ui/sdr_control_widget.py:807
 msgid "Offset:"
 msgstr ""
 
@@ -4198,7 +4224,7 @@ msgid ""
 "shifts the corrected frequency higher."
 msgstr ""
 
-#: src/ui/radio_control_widget.py:257 src/ui/sdr_control_widget.py:610
+#: src/ui/radio_control_widget.py:257 src/ui/sdr_control_widget.py:612
 msgid "T"
 msgstr ""
 
@@ -4206,7 +4232,7 @@ msgstr ""
 msgid "Tune: reset downlink/uplink to center of transmitter band"
 msgstr ""
 
-#: src/ui/radio_control_widget.py:264 src/ui/sdr_control_widget.py:622
+#: src/ui/radio_control_widget.py:264 src/ui/sdr_control_widget.py:624
 msgid "L"
 msgstr ""
 
@@ -4371,7 +4397,7 @@ msgstr ""
 msgid "Recording"
 msgstr ""
 
-#: src/ui/radio_control_widget.py:563 src/ui/sdr_control_widget.py:767
+#: src/ui/radio_control_widget.py:563 src/ui/sdr_control_widget.py:769
 msgid "● REC"
 msgstr ""
 
@@ -4379,7 +4405,7 @@ msgstr ""
 msgid "Start recording"
 msgstr ""
 
-#: src/ui/radio_control_widget.py:569 src/ui/digital_voice_tab.py:523
+#: src/ui/radio_control_widget.py:569 src/ui/digital_voice_tab.py:525
 msgid "lameenc not installed — pip install lameenc"
 msgstr ""
 
@@ -5134,199 +5160,204 @@ msgstr ""
 msgid "Please install Direwolf from your distribution's package manager."
 msgstr ""
 
-#: src/ui/sstv_tab.py:277
+#: src/ui/sstv_tab.py:270
+msgid ""
+"AX.25 baud rate for SSDV (AX.25) reception.\n"
+"Selecting a satellite or transponder sets this from the baud\n"
+"rate in its name (e.g. 1k2 / 4k8 / 9k6); 1200 if it names none.\n"
+"You can still change it by hand. Shared with the APRS tab.\n"
+"Not used by the other modes."
+msgstr ""
+
+#: src/ui/sstv_tab.py:295
+msgid ""
+"Receives images from amateur satellites. Pick the mode below, then the "
+"satellite in Radio Control (or the input box at the right).\n"
+"\n"
+"SSTV (analog picture over FM; Robot36 and PD120 only):\n"
+"  • ISS (NORAD 25544) 145.800 MHz FM — PD120 (Mode V)\n"
+"  • ISS 437.550 MHz FM — Robot36 (Mode U); events are announced at https://"
+"ariss.psnc.pl\n"
+"  • UmKA-1, JAMX01, AHMAT-1, GALAPAGOS-UTE-SWSU, TeikyoSat-4, SEEDS II, "
+"WREN, UTMN2, Monitor-3, QMR-KWT 2 … (Mode U, occasional)\n"
+"  Martin / Scottie / Robot72 are not supported (e.g. SONATE-2 Martin M1, "
+"VIZARD-meteo Robot72).\n"
+"\n"
+"SSDV (AX.25): 1200 / 4800 / 9600 baud AX.25 packets through Direwolf (Rig + "
+"sound card, or SDR). Listed with SSDV: ERMINAZ-2U (9k6 GMSK), LAPAN-A2 (1200 "
+"baud AFSK). Not yet verified with a real reception.\n"
+"\n"
+"SSDV (CCSDS BPSK 9k6): ASRTU-1 / AO-123 (NORAD 61781) 436.210 MHz, decoded "
+"by gr-satellites. Needs an SDR.\n"
+"\n"
+"SSDV (2FSK 800bps): HADES-SA / SO-127 (NORAD 68446) 436.875 MHz, raw 800 "
+"baud 2FSK (AMSAT-EA format). Needs an SDR.\n"
+"\n"
+"Selecting HADES-SA or ASRTU-1 switches the mode automatically."
+msgstr ""
+
+#: src/ui/sstv_tab.py:324
 msgid "Auto-save PNG"
 msgstr ""
 
-#: src/ui/sstv_tab.py:294
+#: src/ui/sstv_tab.py:341
 msgid ""
 "Received frames appear here live, one per line, as hex. Paste hex from "
 "another tab (Telemetry) or from SatNOGS Network to build the image from it."
 msgstr ""
 
-#: src/ui/sstv_tab.py:303
+#: src/ui/sstv_tab.py:350
 msgid "94 A6 62 B2 9C AA 60 …  (one frame per line)"
 msgstr ""
 
-#: src/ui/sstv_tab.py:311
+#: src/ui/sstv_tab.py:358
 msgid "Build image from hex"
 msgstr ""
 
-#: src/ui/sstv_tab.py:314
+#: src/ui/sstv_tab.py:361
 msgid "Clear packets"
 msgstr ""
 
-#: src/ui/sstv_tab.py:318 src/ui/digital_voice_tab.py:171
+#: src/ui/sstv_tab.py:365 src/ui/digital_voice_tab.py:171
 msgid "Raw Packets"
 msgstr ""
 
-#: src/ui/sstv_tab.py:327 src/ui/sstv_tab.py:1189
+#: src/ui/sstv_tab.py:374 src/ui/sstv_tab.py:1266
 msgid "Waiting for signal…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:372
+#: src/ui/sstv_tab.py:419
 msgid "💾 Save PNG"
 msgstr ""
 
-#: src/ui/sstv_tab.py:379
+#: src/ui/sstv_tab.py:426
 msgid "🖼 Open Image…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:385
+#: src/ui/sstv_tab.py:432
 msgid "📂 Decode MP3 Recording…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:390 src/ui/sstv_tab.py:1098
+#: src/ui/sstv_tab.py:437 src/ui/sstv_tab.py:1175
 msgid "soundfile not installed — pip install soundfile"
 msgstr ""
 
-#: src/ui/sstv_tab.py:394
-msgid "📂 Decode IQ Recording…"
-msgstr ""
-
-#: src/ui/sstv_tab.py:399
+#: src/ui/sstv_tab.py:446
 msgid ""
 "Open a recorded .iq.wav file and play it into the decoder (the same as SDR "
 "Control's Open…).\n"
 "A whole-recording spectrogram opens; click it to start from any point."
 msgstr ""
 
-#: src/ui/sstv_tab.py:515
+#: src/ui/sstv_tab.py:591
 msgid "No audio source — connect Rig or SDR in Radio Control"
 msgstr ""
 
-#: src/ui/sstv_tab.py:517 src/ui/digital_voice_tab.py:290
+#: src/ui/sstv_tab.py:593 src/ui/digital_voice_tab.py:290
 #: src/ui/digital_voice_tab.py:293
 msgid "Input: "
 msgstr ""
 
-#: src/ui/sstv_tab.py:536
-msgid "Decoder started — listening for sync…"
-msgstr ""
-
-#: src/ui/sstv_tab.py:652
+#: src/ui/sstv_tab.py:728
 msgid "Sound card error: "
 msgstr ""
 
-#: src/ui/sstv_tab.py:725
-msgid ""
-"SSDV: no audio source — connect Rig or SDR in Radio Control (pasting hex "
-"works)"
-msgstr ""
-
-#: src/ui/sstv_tab.py:732
+#: src/ui/sstv_tab.py:807
 msgid "SSDV: waiting for AX.25 frames…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:780
-msgid ""
-"SSDV (CCSDS BPSK 9k6): connect an SDR in Radio Control (pasting hex works)"
-msgstr ""
-
-#: src/ui/sstv_tab.py:795
+#: src/ui/sstv_tab.py:869
 msgid ""
 "⚠ This gr_satellites build has no --kiss_server; SSDV frames cannot be read."
 msgstr ""
 
-#: src/ui/sstv_tab.py:799
+#: src/ui/sstv_tab.py:873
 msgid "SSDV (CCSDS BPSK 9k6): waiting for ASRTU-1 frames…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:831
-msgid "SSDV (2FSK 800bps): connect an SDR in Radio Control (pasting hex works)"
-msgstr ""
-
-#: src/ui/sstv_tab.py:846 src/ui/digital_voice_tab.py:313
+#: src/ui/sstv_tab.py:919 src/ui/digital_voice_tab.py:315
 msgid "⚠ Could not start the 2FSK demodulator."
 msgstr ""
 
-#: src/ui/sstv_tab.py:851
+#: src/ui/sstv_tab.py:924
 msgid "SSDV (2FSK 800bps): waiting for packets…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:916
+#: src/ui/sstv_tab.py:989
 msgid "SSDV packets: "
 msgstr ""
 
-#: src/ui/sstv_tab.py:924
+#: src/ui/sstv_tab.py:997
 msgid "No hex frames found in the text."
 msgstr ""
 
-#: src/ui/sstv_tab.py:937
+#: src/ui/sstv_tab.py:1010
 msgid "(223-byte CCSDS frames on virtual channel 1 with a valid CRC)"
 msgstr ""
 
-#: src/ui/sstv_tab.py:939
+#: src/ui/sstv_tab.py:1012
 msgid "(sync 55 66 / 55 67 and a valid CRC)"
 msgstr ""
 
-#: src/ui/sstv_tab.py:942
+#: src/ui/sstv_tab.py:1015
 #, python-brace-format
 msgid "{n} frames, but none contains an SSDV packet "
 msgstr ""
 
-#: src/ui/sstv_tab.py:946
+#: src/ui/sstv_tab.py:1019
 #, python-brace-format
 msgid "{n} frames, {m} SSDV packets — decoding…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1036
+#: src/ui/sstv_tab.py:1109
 msgid "Mode detected: "
 msgstr ""
 
-#: src/ui/sstv_tab.py:1075
-msgid "Decode IQ Recording"
-msgstr ""
-
-#: src/ui/sstv_tab.py:1076 src/ui/digital_voice_tab.py:543
-msgid "SDR Control is not available."
-msgstr ""
-
-#: src/ui/sstv_tab.py:1088
+#: src/ui/sstv_tab.py:1165
 msgid "Select Recorded Audio"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1090 src/ui/digital_voice_tab.py:481
+#: src/ui/sstv_tab.py:1167 src/ui/digital_voice_tab.py:483
 msgid "Audio Files (*.mp3 *.wav)"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1097 src/ui/sstv_tab.py:1124
+#: src/ui/sstv_tab.py:1174 src/ui/sstv_tab.py:1201
 msgid "Decode Recording"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1112
+#: src/ui/sstv_tab.py:1189
 msgid "Decoding: "
 msgstr ""
 
-#: src/ui/sstv_tab.py:1125
+#: src/ui/sstv_tab.py:1202
 msgid "Decode failed"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1151
+#: src/ui/sstv_tab.py:1228
 msgid "Save SSTV Image"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1153
+#: src/ui/sstv_tab.py:1230
 msgid "PNG Images (*.png)"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1157
+#: src/ui/sstv_tab.py:1234
 msgid "Saved: "
 msgstr ""
 
-#: src/ui/sstv_tab.py:1163 src/ui/sstv_tab.py:1171
+#: src/ui/sstv_tab.py:1240 src/ui/sstv_tab.py:1248
 msgid "Open SSTV Image"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1165
+#: src/ui/sstv_tab.py:1242
 msgid "Images (*.png *.jpg *.jpeg *.bmp)"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1171
+#: src/ui/sstv_tab.py:1248
 msgid "Could not read the image file."
 msgstr ""
 
-#: src/ui/sstv_tab.py:1183
+#: src/ui/sstv_tab.py:1260
 msgid "Opened: "
 msgstr ""
 
@@ -5790,57 +5821,57 @@ msgstr ""
 msgid "This transmitter is no longer present in the SatNOGS database."
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:281
+#: src/ui/sdr_control_widget.py:283
 msgid "SDR Connected"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:297 src/ui/sdr_control_widget.py:391
+#: src/ui/sdr_control_widget.py:299 src/ui/sdr_control_widget.py:393
 msgid "SDR Disconnected"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:398
+#: src/ui/sdr_control_widget.py:400
 msgid ""
 "Total RX gain now applied. In Auto, HackRF's software AGC changes it in 6 dB "
 "steps."
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:401
+#: src/ui/sdr_control_widget.py:403
 msgid "🌊 Waterfall"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:403
+#: src/ui/sdr_control_widget.py:405
 msgid "Open a scrolling spectrum + waterfall popup for this SDR"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:429
+#: src/ui/sdr_control_widget.py:431
 msgid "Spectrum"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:471
+#: src/ui/sdr_control_widget.py:473
 msgid "Frequency (MHz)"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:477
+#: src/ui/sdr_control_widget.py:479
 msgid "Power (dBFS)"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:542
+#: src/ui/sdr_control_widget.py:544
 msgid "Passband Tune"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:547
+#: src/ui/sdr_control_widget.py:549
 msgid "Step:"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:560
+#: src/ui/sdr_control_widget.py:562
 msgid "Tune down ×10 step"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:567
+#: src/ui/sdr_control_widget.py:569
 msgid "Tune down"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:572
+#: src/ui/sdr_control_widget.py:574
 msgid ""
 "Freq: while a transponder is selected, tracks its Doppler-corrected centre "
 "frequency — use the arrows or type a value to move within its passband (kept "
@@ -5848,90 +5879,90 @@ msgid ""
 "any frequency directly."
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:578
+#: src/ui/sdr_control_widget.py:580
 msgid "Freq:"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:593
+#: src/ui/sdr_control_widget.py:595
 msgid "Tune up"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:600
+#: src/ui/sdr_control_widget.py:602
 msgid "Tune up ×10 step"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:614
+#: src/ui/sdr_control_widget.py:616
 msgid ""
 "T: reset to the transponder's Doppler-corrected centre frequency. Disabled "
 "when no transponder is selected."
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:626
+#: src/ui/sdr_control_widget.py:628
 msgid ""
 "SDR Lock: while on, Doppler correction stops retuning the SDR so you can "
 "freely use Passband Tune / Freq above; Doppler correction resumes from "
 "wherever you leave it once turned off"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:693
+#: src/ui/sdr_control_widget.py:695
 msgid "Demodulator"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:707
+#: src/ui/sdr_control_widget.py:709
 msgid "AGC On"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:709
+#: src/ui/sdr_control_widget.py:711
 msgid "AGC Off"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:718
+#: src/ui/sdr_control_widget.py:720
 msgid "Volume:"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:729
+#: src/ui/sdr_control_widget.py:731
 msgid "Speaker output"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:746
+#: src/ui/sdr_control_widget.py:748
 msgid "IQ Recorder"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:750
+#: src/ui/sdr_control_widget.py:752
 msgid "Record BW:"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:760
+#: src/ui/sdr_control_widget.py:762
 msgid "File:"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:769
+#: src/ui/sdr_control_widget.py:771
 msgid "■ STOP"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:779
+#: src/ui/sdr_control_widget.py:781
 msgid "The SDR input is at full scale, so weak signals are distorted or lost."
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:786
+#: src/ui/sdr_control_widget.py:788
 msgid "📂 Open…"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:787
+#: src/ui/sdr_control_widget.py:789
 msgid "Choose a recorded .iq.wav file and start playing it"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:789
+#: src/ui/sdr_control_widget.py:791
 msgid "▶ Play"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:792
+#: src/ui/sdr_control_widget.py:794
 msgid ""
 "Play the loaded recording again from where it stopped\n"
 "(from the start if it had reached the end)"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:825
+#: src/ui/sdr_control_widget.py:827
 msgid ""
 "UTC time of the recording's first sample. Read from the file name\n"
 "when it has one; otherwise it shows 00:00 and can be entered here.\n"
@@ -5939,28 +5970,28 @@ msgid ""
 "playback position."
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:962
+#: src/ui/sdr_control_widget.py:964
 msgid "🔇 Mute"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:962
+#: src/ui/sdr_control_widget.py:964
 msgid "🔊 Unmute"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:1043
+#: src/ui/sdr_control_widget.py:1045
 msgid "IQ recordings (*.iq.wav);;All files (*)"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:1229
+#: src/ui/sdr_control_widget.py:1232
 #, python-brace-format
 msgid "Gain: {value}"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:1230
+#: src/ui/sdr_control_widget.py:1233
 msgid "Gain: auto (set by the tuner)"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:1241
+#: src/ui/sdr_control_widget.py:1244
 #, python-brace-format
 msgid "⚠ Clipping {pct:.0f}% — lower the gain"
 msgstr ""
@@ -6039,56 +6070,56 @@ msgstr ""
 msgid "No SDR — connect an SDR in Radio Control"
 msgstr ""
 
-#: src/ui/digital_voice_tab.py:315
+#: src/ui/digital_voice_tab.py:317
 msgid "Listening for voice packets…"
 msgstr ""
 
-#: src/ui/digital_voice_tab.py:349
+#: src/ui/digital_voice_tab.py:351
 msgid "Packets: "
 msgstr ""
 
-#: src/ui/digital_voice_tab.py:362
+#: src/ui/digital_voice_tab.py:364
 #, python-brace-format
 msgid "Message received: {n} packets, {s:.1f} s"
 msgstr ""
 
-#: src/ui/digital_voice_tab.py:384 src/ui/digital_voice_tab.py:534
+#: src/ui/digital_voice_tab.py:386 src/ui/digital_voice_tab.py:536
 msgid "Saved "
 msgstr ""
 
-#: src/ui/digital_voice_tab.py:395
+#: src/ui/digital_voice_tab.py:397
 msgid "Language: "
 msgstr ""
 
-#: src/ui/digital_voice_tab.py:409
+#: src/ui/digital_voice_tab.py:411
 msgid "⚠ libcodec2 not found. Install gr-satellites (Help menu) or libcodec2."
 msgstr ""
 
-#: src/ui/digital_voice_tab.py:420
+#: src/ui/digital_voice_tab.py:422
 msgid "⚠ Speech recognition is unavailable: faster-whisper is not installed."
 msgstr ""
 
-#: src/ui/digital_voice_tab.py:428
+#: src/ui/digital_voice_tab.py:430
 msgid "Recognizing… (the first run downloads the Whisper model, about 460 MB)"
 msgstr ""
 
-#: src/ui/digital_voice_tab.py:439
+#: src/ui/digital_voice_tab.py:441
 msgid "Recognition finished."
 msgstr ""
 
-#: src/ui/digital_voice_tab.py:481
+#: src/ui/digital_voice_tab.py:483
 msgid "Play Voice File"
 msgstr ""
 
-#: src/ui/digital_voice_tab.py:495
+#: src/ui/digital_voice_tab.py:497
 msgid "Playing "
 msgstr ""
 
-#: src/ui/digital_voice_tab.py:529
+#: src/ui/digital_voice_tab.py:531
 msgid "Save MP3"
 msgstr ""
 
-#: src/ui/digital_voice_tab.py:529
+#: src/ui/digital_voice_tab.py:531
 msgid "MP3 (*.mp3)"
 msgstr ""
 
@@ -6197,28 +6228,28 @@ msgstr ""
 msgid "No samples received during measurement."
 msgstr ""
 
-#: src/comms/audio_device_manager.py:239
+#: src/comms/audio_device_manager.py:252
 #, python-brace-format
 msgid ""
 "Input device #{device} no longer exists (device list now has {count} "
 "entries) — reopen Rig Settings > Sound Card and re-select the input device."
 msgstr ""
 
-#: src/comms/audio_device_manager.py:247
+#: src/comms/audio_device_manager.py:260
 #, python-brace-format
 msgid ""
 "Input device #{device} ({name}) has no input channels — reopen Rig Settings "
 "> Sound Card and re-select the input device."
 msgstr ""
 
-#: src/comms/audio_device_manager.py:289
+#: src/comms/audio_device_manager.py:302
 #, python-brace-format
 msgid ""
 "Output device #{device} no longer exists (device list now has {count} "
 "entries) — reopen Rig Settings > Sound Card and re-select the output device."
 msgstr ""
 
-#: src/comms/audio_device_manager.py:299
+#: src/comms/audio_device_manager.py:312
 #, python-brace-format
 msgid ""
 "Output device #{device} ({name}) cannot play audio at {rate} Hz — reopen Rig "
@@ -6545,7 +6576,7 @@ msgstr ""
 msgid "Status: “{text}”"
 msgstr ""
 
-#: src/comms/telemetry/decoder.py:113
+#: src/comms/telemetry/decoder.py:116
 #, python-brace-format
 msgid "({shown}/{total} hex chars — rest omitted)"
 msgstr ""

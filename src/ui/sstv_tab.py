@@ -291,13 +291,31 @@ class SstvTab(QWidget):
             "color:white;background:#2980b9;border-radius:8px;font-weight:bold;padding:2px 6px;"
         )
         _sstv_help.setToolTip(
-            "SSTV / SSDV is available from:\n"
-            "  • ISS (NORAD 25544)  145.800 MHz FM  — PD120  (Mode V)\n"
-            "  • ISS (NORAD 25544)  437.550 MHz FM  — Robot36  (Mode U)\n"
-            "    (Events are announced at https://ariss.psnc.pl)\n"
-            "  • IO-86 (NORAD 39444)  435.880 MHz FM\n"
-            "    (Occasional SSDV experiments)\n\n"
-            "Select the satellite in Radio Control to get started."
+            _(
+                "Receives images from amateur satellites. Pick the mode below, then the "
+                "satellite in Radio Control (or the input box at the right).\n"
+                "\n"
+                "SSTV (analog picture over FM; Robot36 and PD120 only):\n"
+                "  • ISS (NORAD 25544) 145.800 MHz FM — PD120 (Mode V)\n"
+                "  • ISS 437.550 MHz FM — Robot36 (Mode U); events are announced at "
+                "https://ariss.psnc.pl\n"
+                "  • UmKA-1, JAMX01, AHMAT-1, GALAPAGOS-UTE-SWSU, TeikyoSat-4, SEEDS II, "
+                "WREN, UTMN2, Monitor-3, QMR-KWT 2 … (Mode U, occasional)\n"
+                "  Martin / Scottie / Robot72 are not supported (e.g. SONATE-2 Martin M1, "
+                "VIZARD-meteo Robot72).\n"
+                "\n"
+                "SSDV (AX.25): 1200 / 4800 / 9600 baud AX.25 packets through Direwolf "
+                "(Rig + sound card, or SDR). Listed with SSDV: ERMINAZ-2U (9k6 GMSK), "
+                "LAPAN-A2 (1200 baud AFSK). Not yet verified with a real reception.\n"
+                "\n"
+                "SSDV (CCSDS BPSK 9k6): ASRTU-1 / AO-123 (NORAD 61781) 436.210 MHz, "
+                "decoded by gr-satellites. Needs an SDR.\n"
+                "\n"
+                "SSDV (2FSK 800bps): HADES-SA / SO-127 (NORAD 68446) 436.875 MHz, raw "
+                "800 baud 2FSK (AMSAT-EA format). Needs an SDR.\n"
+                "\n"
+                "Selecting HADES-SA or ASRTU-1 switches the mode automatically."
+            )
         )
         top.addWidget(_sstv_help)
 
