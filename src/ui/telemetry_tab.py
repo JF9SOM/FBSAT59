@@ -58,7 +58,7 @@ from PySide6.QtWidgets import (
 
 from comms.aprs.engine import get_aprs_engine
 from comms.aprs.parser import decode_ax25
-from comms.signal_clock import signal_time
+from comms.signal_clock import replay_time, signal_time
 from comms.telemetry.baud_detect import (
     BAUD_CHOICES,
     detect_baud_from_satyaml,
@@ -215,6 +215,10 @@ _GR_TEXT_ROLE = Qt.ItemDataRole.UserRole + 5  # a gr-satellites row's full decod
 # gr-satellites prints a decoded packet and, on its KISS port, the same frame; the two reach
 # the GUI separately. A row and a frame arriving within this many seconds are one packet.
 _GR_PAIR_WINDOW_S = 5.0
+# Decoding the same recording twice logs the same frame again with a reception time that
+# differs by a fraction of a second (up to ~2 s measured); frames of equal content within
+# this many seconds are one reception, not two.
+_DUPLICATE_WINDOW_S = 5.0
 
 
 @dataclass
@@ -1912,6 +1916,10 @@ class TelemetryTab(QWidget):
         if not hasattr(self._conn, "execute"):
             return None
         norad = row_data.norad if row_data.norad is not None else self._selected_norad
+        parsed = json.dumps({"text": data_text, "sat": sat_name, "full": full_text})
+        known = self._find_logged_duplicate("parsed_json", parsed, norad, row_data.when, "gr")
+        if known is not None:
+            return known[0]
         cursor = self._conn.execute(
             """INSERT INTO telemetry_log
                (received_at, norad_cat_id, callsign, raw_hex, parsed_json, time_reliable,
@@ -1922,7 +1930,7 @@ class TelemetryTab(QWidget):
                 norad,
                 callsign,
                 row_data.raw.hex(),
-                json.dumps({"text": data_text, "sat": sat_name, "full": full_text}),
+                parsed,
                 int(row_data.reliable),
                 row_data.raw.hex() or None,
                 datetime.datetime.now(datetime.UTC).isoformat() if row_data.sent else None,
@@ -2136,6 +2144,17 @@ class TelemetryTab(QWidget):
         told once per run.
         """
         if reliable:
+            known = (
+                self._find_logged_duplicate("frame_hex", raw.hex(), norad, when)
+                if norad is not None
+                else None
+            )
+            if known is not None and known[1]:
+                # The same reception (an earlier run over the same recording) is already
+                # in the SatNOGS DB: do not send it a second time.
+                if ax25_row is not None:
+                    ax25_row.sent = True
+                return
             if ax25_row is not None:
                 # Reported per row so a frame the automatic upload already
                 # delivered is not sent a second time by "Send selected".
@@ -2407,6 +2426,36 @@ class TelemetryTab(QWidget):
                 table.setItem(row, 1, item)
             item.setText(text)
 
+    def _find_logged_duplicate(
+        self,
+        column: str,
+        value: str,
+        norad: int | None,
+        when: datetime.datetime,
+        kind: str | None = None,
+    ) -> tuple[int, bool] | None:
+        """The ``telemetry_log`` row already holding this reception, if any.
+
+        Same satellite, same *value* in *column* (``frame_hex`` or ``parsed_json``), same
+        *kind* (when given) and a reception time within ``_DUPLICATE_WINDOW_S``: replaying
+        a recording that was decoded before finds its earlier rows instead of adding
+        copies (live frames are never merged). Returns (log id, already sent to SatNOGS?).
+        """
+        if not hasattr(self._conn, "execute") or column not in ("frame_hex", "parsed_json"):
+            return None
+        if replay_time(self._sdr_pipeline) is None:
+            # Live reception: two equal frames are two receptions. Only a played-back
+            # recording can deliver the same reception twice.
+            return None
+        row = self._conn.execute(
+            f"SELECT id, satnogs_uploaded_at FROM telemetry_log WHERE {column} = ?"
+            " AND IFNULL(norad_cat_id, 0) = IFNULL(?, 0) AND (? IS NULL OR kind = ?)"
+            " AND ABS(julianday(received_at) - julianday(?)) * 86400 <= ?"
+            " ORDER BY id LIMIT 1",
+            (value, norad, kind, kind, when.isoformat(), _DUPLICATE_WINDOW_S),
+        ).fetchone()
+        return (int(row[0]), row[1] is not None) if row else None
+
     def _persist_frame(
         self,
         tf: TelemetryFrame,
@@ -2420,6 +2469,10 @@ class TelemetryTab(QWidget):
         comes from a placeholder recording start time (such frames are never sent)."""
         if not hasattr(self._conn, "execute"):
             return None
+        if frame_hex:
+            known = self._find_logged_duplicate("frame_hex", frame_hex, tf.norad, ts, kind)
+            if known is not None:
+                return known[0]
         parsed = (
             json.dumps({f.name: {"value": f.scaled_value, "unit": f.unit} for f in tf.fields})
             if tf.fields

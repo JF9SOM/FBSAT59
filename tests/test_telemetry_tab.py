@@ -390,6 +390,93 @@ def test_ax25_frame_with_unknown_callsign_uploads_under_selected_satellite(
         tab.close()
 
 
+def _replay_ax25(
+    tab: TelemetryTab, monkeypatch: pytest.MonkeyPatch, raw: bytes, when: object
+) -> None:
+    monkeypatch.setattr(tab, "_frame_time", lambda: (when, True))
+    tab._on_ax25_frame(raw)
+
+
+def _replaying(tab: TelemetryTab) -> None:
+    """Make the tab look as if it were decoding a played-back IQ recording."""
+    device = types.SimpleNamespace(
+        start_time_utc=datetime.datetime(2026, 10, 14, tzinfo=datetime.UTC), position_s=0.0
+    )
+    tab._sdr_pipeline = types.SimpleNamespace(_device=device)
+
+
+def test_live_ax25_frames_with_equal_content_are_not_merged(
+    app: QApplication, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rec = _RecordingUploader()
+    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: rec)
+    monkeypatch.setattr(
+        telemetry_tab_mod,
+        "decode_ax25",
+        lambda raw: types.SimpleNamespace(src="JY1SAT", payload=b"\x00"),
+    )
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    try:
+        monkeypatch.setattr(tab, "_callsign_to_norad", lambda src: 43803)
+        raw = bytes.fromhex("9c86aa8ea662e0a08a82a49886e103f000")
+        tab._on_ax25_frame(raw)
+        tab._on_ax25_frame(raw)  # live: a genuine second reception
+        assert conn.execute("SELECT COUNT(*) FROM telemetry_log").fetchone()[0] == 2
+    finally:
+        tab.close()
+
+
+def test_replayed_ax25_frame_is_logged_and_uploaded_once(
+    app: QApplication, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Decoding the same recording again must not add copies nor upload them again."""
+    rec = _RecordingUploader()
+    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: rec)
+    monkeypatch.setattr(
+        telemetry_tab_mod,
+        "decode_ax25",
+        lambda raw: types.SimpleNamespace(src="JY1SAT", payload=b"\x00\x11\x22"),
+    )
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    try:
+        monkeypatch.setattr(tab, "_callsign_to_norad", lambda src: 43803)
+        _replaying(tab)
+        raw = bytes.fromhex("9c86aa8ea662e0a08a82a49886e103f000112233")
+        t0 = datetime.datetime(2026, 10, 14, 12, 37, 38, tzinfo=datetime.UTC)
+        _replay_ax25(tab, monkeypatch, raw, t0)
+        # the first send is accepted
+        conn.execute("UPDATE telemetry_log SET satnogs_uploaded_at = 'x'")
+        # same recording decoded again: time differs by a fraction of a second
+        _replay_ax25(tab, monkeypatch, raw, t0 + datetime.timedelta(seconds=0.6))
+        assert conn.execute("SELECT COUNT(*) FROM telemetry_log").fetchone()[0] == 1
+        assert len(rec.calls) == 1
+        # the same bytes much later are a genuinely new reception
+        _replay_ax25(tab, monkeypatch, raw, t0 + datetime.timedelta(seconds=60))
+        assert conn.execute("SELECT COUNT(*) FROM telemetry_log").fetchone()[0] == 2
+        assert len(rec.calls) == 2
+    finally:
+        tab.close()
+
+
+def test_replayed_gr_row_is_logged_once(
+    app: QApplication, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    try:
+        _replaying(tab)
+        t0 = datetime.datetime(2026, 10, 14, 12, 37, 38, tzinfo=datetime.UTC)
+        first = telemetry_tab_mod._Ax25Row(raw=b"", when=t0, reliable=True, norad=25544)
+        again = telemetry_tab_mod._Ax25Row(
+            raw=b"", when=t0 + datetime.timedelta(seconds=1.2), reliable=True, norad=25544
+        )
+        a = tab._persist_gr_row("ISS", "ISS", "aa bb", first, "full text")
+        b = tab._persist_gr_row("ISS", "ISS", "aa bb", again, "full text")
+        assert a == b
+        assert conn.execute("SELECT COUNT(*) FROM telemetry_log").fetchone()[0] == 1
+    finally:
+        tab.close()
+
+
 def test_gr_raw_frame_forwards_to_satnogs_uploader_with_started_norad(
     app: QApplication, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
