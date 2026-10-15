@@ -320,7 +320,7 @@ class SstvTab(QWidget):
         raw_layout.setContentsMargins(4, 4, 4, 4)
         raw_hint = QLabel(
             _(
-                "Received AX.25 frames appear here live, one per line, as hex. Paste hex "
+                "Received frames appear here live, one per line, as hex. Paste hex "
                 "from another tab (Telemetry) or from SatNOGS Network to build the image "
                 "from it."
             )

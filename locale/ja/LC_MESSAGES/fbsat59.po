@@ -5504,10 +5504,10 @@ msgstr "PNGを自動保存"
 
 #: src/ui/sstv_tab.py:294
 msgid ""
-"Received AX.25 frames appear here live, one per line, as hex. Paste hex from"
+"Received frames appear here live, one per line, as hex. Paste hex from"
 " another tab (Telemetry) or from SatNOGS Network to build the image from it."
 msgstr ""
-"受信したAX.25フレームがここにリアルタイムで1行1フレームのHEXで表示されます。別のタブ（テレメトリー）やSatNOGS "
+"受信したフレームがここにリアルタイムで1行1フレームのHEXで表示されます。別のタブ（テレメトリー）やSatNOGS "
 "NetworkのHEXを貼り付けると、それから画像を生成します。"
 
 #: src/ui/sstv_tab.py:303

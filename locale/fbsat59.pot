@@ -5140,7 +5140,7 @@ msgstr ""
 
 #: src/ui/sstv_tab.py:294
 msgid ""
-"Received AX.25 frames appear here live, one per line, as hex. Paste hex from "
+"Received frames appear here live, one per line, as hex. Paste hex from "
 "another tab (Telemetry) or from SatNOGS Network to build the image from it."
 msgstr ""
 
