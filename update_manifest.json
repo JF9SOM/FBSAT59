@@ -1,5 +1,5 @@
 {
-  "latest_version": "0.3.63",
+  "latest_version": "0.3.64",
   "minimum_supported_version": "0.3.63",
   "critical": false,
   "message_ja": "v0.3.62 は Windows で起動できない不具合があります。v0.3.63 で修正しました。必ず更新してください。",
