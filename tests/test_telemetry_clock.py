@@ -154,6 +154,8 @@ class TestAx25Replay:
         _replay(tab, 4.0, confirmed=False)
 
         tab._on_ax25_frame(RAW)
+        # a later position: the same bytes at the same time would be a replayed duplicate
+        tab._sdr_pipeline._device.position_s = 40.0
         tab._on_ax25_frame(RAW)
 
         assert uploader.calls == []
