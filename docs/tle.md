@@ -1021,3 +1021,12 @@ curl -s -o /dev/null -w "%{http_code}\n" --max-time 5 "https://www.google.com"  
 CelesTrak/SATNOGS側の裁量）点に注意。
 
 ---
+
+### SatNOGS ページへのリンクは satnogs_source_id の項目を先に探す（2026-10-15）
+
+OPTISAT は SatNOGS DB に2つの項目がある: 実 NORAD 68418 の「Object C」（名前の無い項目）と、
+98370 の「OPTISAT」（`norad_follow_id`=68418、名前の付いた実際のページ）。リンク
+（`MainWindow._open_in_satnogs()` / `_fetch_satnogs_uuid_bg()`）は 68418 で先に検索して
+「Object C」を開き、そのページの UUID を `satellites.satnogs_uuid` にキャッシュしていた。
+`satnogs_source_id` がある衛星は、**そのIDを先に検索**し（アップロードの `satnogs_norad_candidates()`
+と同じ順序）、キャッシュは信用しない（旧キャッシュが誤った項目のため）。無い衛星は従来どおり。

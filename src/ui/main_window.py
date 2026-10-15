@@ -5543,10 +5543,14 @@ class MainWindow(QMainWindow):
     def _open_in_satnogs(self, norad: int, name: str) -> None:
         """Open the SatNOGS satellite page. Uses DB cache; fetches UUID in background if needed."""
         row = self._conn.execute(
-            "SELECT satnogs_uuid FROM satellites WHERE norad_cat_id = ?",
+            "SELECT satnogs_uuid, satnogs_source_id FROM satellites WHERE norad_cat_id = ?",
             (norad,),
         ).fetchone()
-        cached = row["satnogs_uuid"] if row else None
+        # A satellite SatNOGS lists under another NORAD id (satnogs_source_id) has two
+        # entries there: the bare "Object X" under the real id and the named page under the
+        # source id. The cache may hold the wrong one (saved before the source id was
+        # preferred), so it is not trusted for those; the lookup is one quick request.
+        cached = row["satnogs_uuid"] if row and not row["satnogs_source_id"] else None
         if cached:
             self._open_url_app_mode(f"https://db.satnogs.org/satellite/{cached}")
             return
@@ -5570,13 +5574,23 @@ class MainWindow(QMainWindow):
         network_error: str | None = None
         try:
             with httpx.Client(timeout=10.0) as client:
-                # Primary: look up by NORAD ID
-                r = client.get(_SATNOGS_SAT_API, params={"format": "json", "norad_cat_id": norad})
-                r.raise_for_status()
-                data = r.json()
-                results = data.get("results", data) if isinstance(data, dict) else data
-                if results:
-                    sat_id = str(results[0]["sat_id"])
+                # First: the id SatNOGS lists the satellite under (satnogs_source_id), whose
+                # entry is the named page; the real id may only have a bare "Object X".
+                row = self._conn.execute(
+                    "SELECT satnogs_source_id FROM satellites WHERE norad_cat_id = ?",
+                    (norad,),
+                ).fetchone()
+                for lookup_id in (row[0] if row else None, norad):
+                    if not lookup_id or sat_id:
+                        continue
+                    r = client.get(
+                        _SATNOGS_SAT_API, params={"format": "json", "norad_cat_id": lookup_id}
+                    )
+                    r.raise_for_status()
+                    data = r.json()
+                    results = data.get("results", data) if isinstance(data, dict) else data
+                    if results:
+                        sat_id = str(results[0]["sat_id"])
 
                 # Fallback: search by satellite name, only accept an exact name match
                 if not sat_id:
@@ -5591,24 +5605,6 @@ class MainWindow(QMainWindow):
                         if entry_name == name_lower or name_lower in alt_names.split(","):
                             sat_id = str(entry["sat_id"])
                             break
-
-                # Last resort: look up via provisional (satnogs_source_id) NORAD
-                if not sat_id:
-                    row = self._conn.execute(
-                        "SELECT satnogs_source_id FROM satellites WHERE norad_cat_id = ?",
-                        (norad,),
-                    ).fetchone()
-                    provisional = row[0] if row else None
-                    if provisional:
-                        r3 = client.get(
-                            _SATNOGS_SAT_API,
-                            params={"format": "json", "norad_cat_id": provisional},
-                        )
-                        r3.raise_for_status()
-                        data3 = r3.json()
-                        results3 = data3.get("results", data3) if isinstance(data3, dict) else data3
-                        if results3:
-                            sat_id = str(results3[0]["sat_id"])
         except httpx.HTTPError as exc:
             logger.warning(
                 "SatNOGS UUID fetch: could not reach SatNOGS for NORAD %s / name %r: %s",
