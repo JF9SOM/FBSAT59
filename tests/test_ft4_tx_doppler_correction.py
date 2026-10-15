@@ -165,10 +165,11 @@ def test_switch_state_is_saved(qtbot: QtBot) -> None:
     assert '"tx_doppler_audio": false' in row[0]
 
 
-def test_adc_rx_off_by_default_and_audio_untouched(qtbot: QtBot) -> None:
-    """ADC RX is opt-in; with it off the decoder gets the audio as received."""
+def test_adc_rx_on_by_default_and_audio_untouched_when_off(qtbot: QtBot) -> None:
+    """ADC RX defaults to on; with it off the decoder gets the audio as received."""
     tab = _make_tab(qtbot)
-    assert not tab._adc_rx_check.isChecked()
+    assert tab._adc_rx_check.isChecked()
+    tab._adc_rx_check.setChecked(False)
     audio = np.zeros(12_000 * 7, dtype=np.float32)
     assert tab._adc_rx_audio(audio) is audio
 

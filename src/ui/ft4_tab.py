@@ -612,7 +612,7 @@ class Ft4Tab(QWidget):
         self._tx_doppler_audio: bool = True
         # ADC RX (slot-synchronous CAT + audio-domain correction of the receive
         # periods, FT-991 only). See _slot_sync_tick().
-        self._adc_rx: bool = False
+        self._adc_rx: bool = True
         self._dial_track = DialTrack()
         self._cat_job_lock = threading.Lock()
         self._dl_written_for_slot: float = -1.0
@@ -1082,7 +1082,7 @@ class Ft4Tab(QWidget):
             self._auto_progress = bool(data.get("auto_progress", False))
             self._tx_level_db = load_level_db(data)
             self._tx_doppler_audio = bool(data.get("tx_doppler_audio", True))
-            self._adc_rx = bool(data.get("adc_rx", False))
+            self._adc_rx = bool(data.get("adc_rx", True))
         # Fall back to global callsign / grid from Set QTH if not yet set per-tab
         if not self._my_call:
             r = self._conn.execute(
