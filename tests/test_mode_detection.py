@@ -49,6 +49,14 @@ def test_4800_without_ax25_mention_does_not_match() -> None:
     assert not is_ax25_telemetry_transmitter(xpdr)
 
 
+def test_confirmed_satellite_matches_at_its_confirmed_baud_only() -> None:
+    """OPTISAT's SATNOGS entry has no "AX.25" in it, but a recording decoded as AX.25 at 4800."""
+    xpdr = {"mode": "GMSK", "baud": 4800, "description": "UHF 4k8 Telemetry", "norad_cat_id": 68418}
+    assert is_ax25_telemetry_transmitter(xpdr)
+    assert not is_ax25_telemetry_transmitter({**xpdr, "baud": 9600})
+    assert not is_ax25_telemetry_transmitter({**xpdr, "norad_cat_id": 12345})
+
+
 def test_1200_baud_without_afsk_mode_does_not_match() -> None:
     xpdr = {"mode": "FM", "baud": 1200, "description": "Some AX.25 beacon"}
     assert not is_ax25_telemetry_transmitter(xpdr)

@@ -126,6 +126,14 @@ def is_ax100_digi_transmitter(xpdr: dict[str, Any]) -> bool:
     return "MODE V" in desc or "DIGIPEATER" in desc
 
 
+# Satellites whose SATNOGS transmitter does not say "AX.25" but which are confirmed (by
+# decoding a recording with the Telemetry tab's AX.25 mode) to send G3RUH-style AX.25 at the
+# given baud rate: NORAD id -> baud rates.
+_CONFIRMED_AX25_BAUDS: dict[int, frozenset[int]] = {
+    68418: frozenset({4800}),  # OPTISAT, "UHF 4k8 Telemetry" (decoded 2026-10-15)
+}
+
+
 def is_ax25_telemetry_transmitter(xpdr: dict[str, Any]) -> bool:
     """AX.25-framed transmitters the Telemetry tab's Direwolf (AX.25) mode
     can decode: 1200 baud Bell 202 AFSK, or 4800/9600 baud G3RUH-style
@@ -139,13 +147,16 @@ def is_ax25_telemetry_transmitter(xpdr: dict[str, Any]) -> bool:
     those speeds either — some satellites run non-AX.25 protocols at the
     same rates — this also requires an explicit "AX.25" marker in the
     transmitter description (e.g. SATNOGS's own "GMSK4k8 - AX.25" for
-    ARICA-2).
+    ARICA-2). Satellites confirmed by an actual decode but lacking that marker are listed in
+    _CONFIRMED_AX25_BAUDS.
     """
     mode = (xpdr.get("mode") or "").upper()
     if mode == "AFSK":
         return True
     if xpdr.get("baud") not in (4800, 9600):
         return False
+    if xpdr.get("baud") in _CONFIRMED_AX25_BAUDS.get(xpdr.get("norad_cat_id") or 0, ()):
+        return True
     desc = (xpdr.get("description") or "").upper()
     return "AX.25" in desc or "AX25" in desc
 
