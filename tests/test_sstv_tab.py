@@ -787,7 +787,9 @@ def test_fsk_packets_show_as_hex_and_reach_the_decoder(tab: SstvTab) -> None:
     assert tab._raw_edit.toPlainText().count("\n") >= 1
 
 
-def test_fsk_bit_errored_copy_never_replaces_a_valid_packet(tab: SstvTab) -> None:
+def test_fsk_bit_errored_copy_is_repaired_and_never_replaces_a_valid_packet(
+    tab: SstvTab,
+) -> None:
     from tests.test_fsk_ssdv import hades_packet
 
     tab._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
@@ -795,12 +797,13 @@ def test_fsk_bit_errored_copy_never_replaces_a_valid_packet(tab: SstvTab) -> Non
     bad = bytearray(good)
     bad[50] ^= 0xFF
     tab._on_fsk_packet(good, True)
-    tab._on_fsk_packet(bytes(bad), False)
+    tab._on_fsk_packet(bytes(bad), False)  # Reed-Solomon repairs it back to the good packet
     assert tab._ssdv_decoder is not None
     assert list(tab._ssdv_decoder._packets.values()) == [good]
-    # an unverified packet with no valid copy is still handed to ssdv's RS decoder
-    tab._on_fsk_packet(bytes(bad[:6] + b"\x00\x09" + bad[8:]), False)
-    assert tab._ssdv_decoder.packet_count == 2
+    # too many errors to repair: dropped, never handed to the decoder
+    wrecked = bytes(good[:20]) + bytes(b ^ 0xFF for b in good[20:120]) + bytes(good[120:])
+    tab._on_fsk_packet(wrecked, False)
+    assert tab._ssdv_decoder.packet_count == 1
 
 
 # ------------------------------------------- automatic mode from the satellite
@@ -825,3 +828,114 @@ def test_other_satellites_leave_the_mode_alone(tab: SstvTab, rc: _FakeRadioContr
     assert tab._mode_combo.currentText() == "SSDV (AX.25)"
     rc.transmitter_changed.emit(None)
     assert tab._mode_combo.currentText() == "SSDV (AX.25)"
+
+
+# ------------------------------------------- packets kept across passes (all modes)
+
+
+def _second_tab(
+    qtbot: QtBot, conn: sqlite3.Connection, rc: _FakeRadioControl, engine: _FakeEngine
+) -> SstvTab:
+    t = SstvTab(conn, rc, aprs_engine=engine)
+    qtbot.addWidget(t)
+    return t
+
+
+def test_ax25_packets_of_two_passes_build_one_picture(
+    qtbot: QtBot,
+    tab: SstvTab,
+    conn: sqlite3.Connection,
+    rc: _FakeRadioControl,
+    engine: _FakeEngine,
+) -> None:
+    from tests.test_fsk_ssdv import hades_packet
+
+    tab._ensure_ssdv_decoder()
+    tab._on_ax25_frame(AX25_HEADER + hades_packet(0))
+    tab._on_ax25_frame(AX25_HEADER + hades_packet(1))
+    assert tab._store is not None and tab._store.groups()[0].packets == 2
+    # the next pass (a fresh tab: the app was restarted) adds packets 2 and 3
+    tab2 = _second_tab(qtbot, conn, rc, engine)
+    tab2._ensure_ssdv_decoder()
+    tab2._on_ax25_frame(AX25_HEADER + hades_packet(2))
+    tab2._on_ax25_frame(AX25_HEADER + hades_packet(3))
+    assert tab2._store is not None and len(tab2._store.groups()) == 1
+    assert tab2._store.groups()[0].packets == 4
+    assert tab2._ssdv_decoder is not None and tab2._ssdv_decoder.packet_count == 4
+
+
+def test_ccsds_dslwp_packets_are_kept_too(
+    qtbot: QtBot,
+    tab: SstvTab,
+    conn: sqlite3.Connection,
+    rc: _FakeRadioControl,
+    engine: _FakeEngine,
+    fake_gr: type[_FakeGrBackend],
+) -> None:
+    from tests.test_ssdv import make_ccsds_frame, make_dslwp_packet
+
+    tab._mode_combo.setCurrentText("SSDV (CCSDS BPSK 9k6)")
+    tab._on_gr_frame(make_ccsds_frame(make_dslwp_packet(pid=0)))
+    tab._on_gr_frame(make_ccsds_frame(make_dslwp_packet(pid=1)))
+    assert tab._store is not None
+    info = tab._store.groups()[0]
+    assert info.kind == "dslwp" and info.norad == 61781 and info.packets == 2
+    tab2 = _second_tab(qtbot, conn, rc, engine)
+    tab2._mode_combo.setCurrentText("SSDV (CCSDS BPSK 9k6)")
+    tab2._on_gr_frame(make_ccsds_frame(make_dslwp_packet(pid=2)))
+    assert tab2._gr_ssdv_decoder is not None and tab2._gr_ssdv_decoder.packet_count == 3
+
+
+def test_2fsk_packets_are_stored_for_hades_sa(tab: SstvTab) -> None:
+    from tests.test_fsk_ssdv import hades_packet
+
+    tab._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
+    tab._on_fsk_packet(hades_packet(0), True)
+    tab._on_fsk_packet(hades_packet(1), True)
+    assert tab._store is not None
+    info = tab._store.groups()[0]
+    assert info.norad == 68446 and info.kind == "std" and info.packets == 2
+
+
+def test_ax25_packets_are_stored_under_the_selected_satellite(
+    tab: SstvTab, rc: _FakeRadioControl
+) -> None:
+    from tests.test_fsk_ssdv import hades_packet
+
+    rc.transmitter_changed.emit({"description": "Mode U", "norad_cat_id": 98207})
+    tab._ensure_ssdv_decoder()
+    tab._on_ax25_frame(AX25_HEADER + hades_packet(0))
+    assert tab._store is not None and tab._store.groups()[0].norad == 98207
+
+
+def test_building_a_stored_picture_loads_all_its_packets(tab: SstvTab) -> None:
+    from tests.test_fsk_ssdv import hades_packet
+
+    tab._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
+    for n in range(3):
+        tab._on_fsk_packet(hades_packet(n), True)
+    assert tab._store is not None and tab._ssdv_decoder is not None
+    gid = tab._store.groups()[0].id
+    tab._ssdv_decoder.reset()
+    tab._on_build_stored(gid)
+    assert tab._ssdv_decoder.packet_count == 3
+
+
+def test_stored_images_dialog_lists_pictures(qtbot: QtBot, tab: SstvTab) -> None:
+    from tests.test_fsk_ssdv import hades_packet
+    from ui.ssdv_store_dialog import SsdvStoreDialog
+
+    tab._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
+    tab._on_fsk_packet(hades_packet(0, image=32), True)
+    tab._on_fsk_packet(hades_packet(1, image=32), True)
+    assert tab._store is not None
+    dialog = SsdvStoreDialog(tab._store, lambda n: f"sat{n}")
+    qtbot.addWidget(dialog)
+    assert dialog._table.rowCount() == 1
+    cells = [dialog._table.item(0, c).text() for c in range(5)]  # type: ignore[union-attr]
+    assert cells[0] == "sat68446" and cells[2] == "32" and cells[4] == "2"
+    got: list[int] = []
+    dialog.build_requested.connect(got.append)
+    dialog._table.selectRow(0)
+    dialog._on_build()
+    assert got == [tab._store.groups()[0].id]

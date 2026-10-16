@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-15 20:28+0900\n"
+"POT-Creation-Date: 2026-10-16 22:51+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -389,7 +389,7 @@ msgid "Set My Call before operating"
 msgstr "運用前にコールサインを設定してください"
 
 #: src/ui/ft4_tab.py:1288 src/ui/ax100_digi_tab.py:659 src/ui/cw_tab.py:558
-#: src/ui/sstv_tab.py:710 src/ui/digital_voice_tab.py:469
+#: src/ui/sstv_tab.py:734 src/ui/digital_voice_tab.py:469
 msgid "sounddevice not installed — pip install sounddevice"
 msgstr "sounddeviceがインストールされていません — pip install sounddevice"
 
@@ -832,9 +832,10 @@ msgstr "全般設定"
 msgid "Exit"
 msgstr "終了"
 
-#: src/ui/main_window.py:1462 src/ui/telemetry_tab.py:581
-#: src/ui/autotrack_record_dialog.py:280 src/ui/radio_control_widget.py:192
-#: src/ui/transmitter_dialog.py:93 src/ui/remove_manual_tle_dialog.py:74
+#: src/ui/main_window.py:1462 src/ui/ssdv_store_dialog.py:70
+#: src/ui/telemetry_tab.py:581 src/ui/autotrack_record_dialog.py:280
+#: src/ui/radio_control_widget.py:192 src/ui/transmitter_dialog.py:93
+#: src/ui/remove_manual_tle_dialog.py:74
 msgid "Satellite"
 msgstr "衛星"
 
@@ -1118,6 +1119,7 @@ msgid "Autotrack ready"
 msgstr "自動追尾の準備完了"
 
 #: src/ui/main_window.py:2980 src/ui/ai_help_dialog.py:106
+#: src/ui/ssdv_store_dialog.py:94
 msgid "Close"
 msgstr "閉じる"
 
@@ -1378,7 +1380,7 @@ msgid ""
 msgstr "IQ録音: 入力が飽和しています（{pct:.0f}% が振り切れ）— SDRのゲインを下げてください"
 
 #: src/ui/main_window.py:8066 src/ui/main_window.py:8162
-#: src/ui/main_window.py:8178 src/ui/sdr_control_widget.py:1043
+#: src/ui/main_window.py:8178 src/ui/sdr_control_widget.py:1045
 msgid "Play IQ Recording"
 msgstr "IQ録音を再生"
 
@@ -1878,6 +1880,62 @@ msgstr "質問が長すぎるため、リンクでは短く切り詰められま
 msgid "Copied!"
 msgstr "コピーしました！"
 
+#: src/ui/ssdv_store_dialog.py:52
+msgid "Stored SSDV Images"
+msgstr "保存済みSSDV画像"
+
+#: src/ui/ssdv_store_dialog.py:58
+msgid ""
+"Packets received in every SSDV mode are kept, so a picture can be built from"
+" several passes: select it and press Build Image. New packets of the same "
+"picture are added automatically."
+msgstr ""
+"すべてのSSDVモードで受信したパケットを保存しているので、複数回のパスで受信した分から1枚の画像を作れます。画像を選んで「画像を作成」を押してください。同じ画像の新しいパケットは自動で追加されます。"
+
+#: src/ui/ssdv_store_dialog.py:71
+msgid "Format"
+msgstr "形式"
+
+#: src/ui/ssdv_store_dialog.py:72
+msgid "Image ID"
+msgstr "画像ID"
+
+#: src/ui/ssdv_store_dialog.py:73
+msgid "Size"
+msgstr "サイズ"
+
+#: src/ui/ssdv_store_dialog.py:74
+msgid "Packets"
+msgstr "パケット数"
+
+#: src/ui/ssdv_store_dialog.py:75
+msgid "Last received"
+msgstr "最終受信"
+
+#: src/ui/ssdv_store_dialog.py:87
+msgid "🖼 Build Image"
+msgstr "🖼 画像を作成"
+
+#: src/ui/ssdv_store_dialog.py:90
+msgid "🗑 Delete"
+msgstr "🗑 削除"
+
+#: src/ui/ssdv_store_dialog.py:119
+msgid "CCSDS (DSLWP)"
+msgstr "CCSDS (DSLWP)"
+
+#: src/ui/ssdv_store_dialog.py:119
+msgid "Standard SSDV"
+msgstr "標準SSDV"
+
+#: src/ui/ssdv_store_dialog.py:150 src/ui/autotrack_record_dialog.py:267
+msgid "Delete"
+msgstr "削除"
+
+#: src/ui/ssdv_store_dialog.py:151
+msgid "Delete the stored packets of this picture?"
+msgstr "この画像の保存済みパケットを削除しますか？"
+
 #: src/ui/copyable_text.py:46 src/ui/copyable_text.py:108
 msgid "📋 Copy"
 msgstr "📋 コピー"
@@ -1955,7 +2013,7 @@ msgstr ""
 msgid "Input/Output:"
 msgstr "入出力:"
 
-#: src/ui/ax100_digi_tab.py:441 src/ui/sstv_tab.py:585
+#: src/ui/ax100_digi_tab.py:441 src/ui/sstv_tab.py:609
 #: src/ui/digital_voice_tab.py:290
 msgid "SDR (receive only)"
 msgstr "SDR（受信のみ）"
@@ -2690,7 +2748,7 @@ msgstr "無線機設定"
 msgid "SDR Settings"
 msgstr "SDR設定"
 
-#: src/ui/rig_dialog.py:2374 src/ui/sstv_tab.py:588
+#: src/ui/rig_dialog.py:2374 src/ui/sstv_tab.py:612
 msgid "Sound Card"
 msgstr "サウンドカード"
 
@@ -2824,8 +2882,8 @@ msgid "Input Source"
 msgstr "入力ソース"
 
 #: src/ui/telemetry_tab.py:457 src/ui/radio_control_widget.py:361
-#: src/ui/q65_tab.py:209 src/ui/sstv_tab.py:254
-#: src/ui/sdr_control_widget.py:700 src/ui/digital_voice_tab.py:128
+#: src/ui/q65_tab.py:209 src/ui/sstv_tab.py:264
+#: src/ui/sdr_control_widget.py:702 src/ui/digital_voice_tab.py:128
 msgid "Mode:"
 msgstr "モード:"
 
@@ -2846,7 +2904,7 @@ msgstr ""
 "サウンドカード（Direwolf）またはSDR受信用のAX.25ボーレート。衛星またはトランスポンダーを選ぶと、その名前に含まれるボーレート（1k2 /"
 " 9k6など）から自動で設定されます。手動で変更することもできます。gr-satellitesのデコードには影響しません。"
 
-#: src/ui/telemetry_tab.py:511 src/ui/aprs_tab.py:254 src/ui/sstv_tab.py:264
+#: src/ui/telemetry_tab.py:511 src/ui/aprs_tab.py:254 src/ui/sstv_tab.py:274
 msgid "Baud:"
 msgstr "ボーレート:"
 
@@ -2877,7 +2935,7 @@ msgid "▶ Start"
 msgstr "▶ 開始"
 
 #: src/ui/telemetry_tab.py:536 src/ui/cw_tab.py:406
-#: src/ui/sdr_control_widget.py:800 src/ui/digital_voice_tab.py:227
+#: src/ui/sdr_control_widget.py:802 src/ui/digital_voice_tab.py:227
 msgid "■ Stop"
 msgstr "■ 停止"
 
@@ -2885,7 +2943,7 @@ msgstr "■ 停止"
 msgid "—"
 msgstr "—"
 
-#: src/ui/telemetry_tab.py:550 src/ui/sstv_tab.py:441
+#: src/ui/telemetry_tab.py:550 src/ui/sstv_tab.py:464
 msgid "📂 Decode IQ Recording…"
 msgstr "📂 IQ録音デコード…"
 
@@ -2977,11 +3035,11 @@ msgstr ""
 msgid "Clear Log"
 msgstr "ログをクリア"
 
-#: src/ui/telemetry_tab.py:765 src/ui/sstv_tab.py:1152
+#: src/ui/telemetry_tab.py:765 src/ui/sstv_tab.py:1250
 msgid "Decode IQ Recording"
 msgstr "IQ録音のデコード"
 
-#: src/ui/telemetry_tab.py:765 src/ui/sstv_tab.py:1153
+#: src/ui/telemetry_tab.py:765 src/ui/sstv_tab.py:1251
 #: src/ui/digital_voice_tab.py:545
 msgid "SDR Control is not available."
 msgstr "SDRコントロールを利用できません。"
@@ -3133,7 +3191,7 @@ msgid ""
 "SatNOGS upload skipped: set the recording's start time in SDR Control first."
 msgstr "SatNOGSへの送信を見送りました: 先にSDRコントロールで録音の開始時刻を設定してください。"
 
-#: src/ui/telemetry_tab.py:2272 src/ui/sstv_tab.py:986
+#: src/ui/telemetry_tab.py:2272 src/ui/sstv_tab.py:1083
 msgid "Frames: "
 msgstr "フレーム: "
 
@@ -3264,7 +3322,7 @@ msgstr ""
 msgid "Show:"
 msgstr "表示:"
 
-#: src/ui/aprs_tab.py:278 src/ui/sstv_tab.py:283
+#: src/ui/aprs_tab.py:278 src/ui/sstv_tab.py:293
 msgid "Input: —"
 msgstr "入力: —"
 
@@ -3444,7 +3502,7 @@ msgstr "準備完了。パイプラインを選択してStartを押してくだ�
 msgid "No image received yet."
 msgstr "まだ画像を受信していません。"
 
-#: src/ui/meteor_tab.py:465 src/ui/sstv_tab.py:377
+#: src/ui/meteor_tab.py:465 src/ui/sstv_tab.py:387
 msgid "Image"
 msgstr "画像"
 
@@ -3460,7 +3518,7 @@ msgstr "📂 過去の画像を開く…"
 msgid "Load a previous reception's images into the preview and history below."
 msgstr "過去の受信フォルダの画像を、下のプレビュー・履歴に読み込みます。"
 
-#: src/ui/meteor_tab.py:479 src/ui/sstv_tab.py:454
+#: src/ui/meteor_tab.py:479 src/ui/sstv_tab.py:477
 msgid "🗑 Clear"
 msgstr "🗑 クリア"
 
@@ -3468,7 +3526,7 @@ msgstr "🗑 クリア"
 msgid "Gain:"
 msgstr "ゲイン:"
 
-#: src/ui/meteor_tab.py:514 src/ui/sstv_tab.py:385
+#: src/ui/meteor_tab.py:514 src/ui/sstv_tab.py:395
 msgid "Received Images:"
 msgstr "受信画像:"
 
@@ -3545,7 +3603,7 @@ msgstr "自動追尾: AOSで受信を開始しました。"
 msgid "Autotrack: reception stopped at LOS."
 msgstr "自動追尾: LOSで受信を停止しました。"
 
-#: src/ui/meteor_tab.py:920 src/ui/sstv_tab.py:1106
+#: src/ui/meteor_tab.py:920 src/ui/sstv_tab.py:1204
 msgid "Image received: "
 msgstr "画像受信: "
 
@@ -3791,7 +3849,7 @@ msgstr "SDRデバイスが検出されませんでした。"
 
 # --- Status bar ---
 #: src/ui/sdr_install_dialog.py:358 src/ui/cw_tab.py:269
-#: src/ui/sstv_tab.py:406 src/ui/sstv_tab.py:1269
+#: src/ui/sstv_tab.py:416 src/ui/sstv_tab.py:1367
 msgid "Ready"
 msgstr "準備完了"
 
@@ -4145,7 +4203,7 @@ msgid "Autotrack / Record"
 msgstr "自動追尾 / 記録"
 
 #: src/ui/autotrack_record_dialog.py:219 src/ui/autotrack_record_dialog.py:398
-#: src/ui/sdr_control_widget.py:816
+#: src/ui/sdr_control_widget.py:818
 msgid "Start (UTC):"
 msgstr "開始 (UTC):"
 
@@ -4168,10 +4226,6 @@ msgstr "追加"
 #: src/ui/autotrack_record_dialog.py:265
 msgid "Rename"
 msgstr "名前変更"
-
-#: src/ui/autotrack_record_dialog.py:267
-msgid "Delete"
-msgstr "削除"
 
 #: src/ui/autotrack_record_dialog.py:277
 msgid "Entries (satellite + transmitter):"
@@ -4500,7 +4554,7 @@ msgstr "Line 1からNORAD IDを解析できません。"
 msgid "TLE validation failed. Please check the format."
 msgstr "TLEの検証に失敗しました。形式を確認してください。"
 
-#: src/ui/radio_control_widget.py:209 src/ui/sdr_control_widget.py:807
+#: src/ui/radio_control_widget.py:209 src/ui/sdr_control_widget.py:809
 msgid "Offset:"
 msgstr "オフセット:"
 
@@ -4538,7 +4592,7 @@ msgid ""
 msgstr ""
 "このトランスポンダーに保存される、送信（アップリンク）側の永続的な補正値です。ドップラー補正を行う前に、このトランスポンダーのアップリンク中心周波数へ適用されます（一般に使われているアップリンク周波数がカタログ値と異なる場合など）。設定は今後のすべてのパスとTune（T）に引き継がれます。正の値にすると補正後の周波数はより高い方向にシフトします。"
 
-#: src/ui/radio_control_widget.py:257 src/ui/sdr_control_widget.py:612
+#: src/ui/radio_control_widget.py:257 src/ui/sdr_control_widget.py:614
 msgid "T"
 msgstr ""
 
@@ -4546,7 +4600,7 @@ msgstr ""
 msgid "Tune: reset downlink/uplink to center of transmitter band"
 msgstr "Tune: ダウンリンク/アップリンクをトランスミッター帯域の中心にリセット"
 
-#: src/ui/radio_control_widget.py:264 src/ui/sdr_control_widget.py:624
+#: src/ui/radio_control_widget.py:264 src/ui/sdr_control_widget.py:626
 msgid "L"
 msgstr ""
 
@@ -4717,7 +4771,7 @@ msgstr "オフ"
 msgid "Recording"
 msgstr "録音"
 
-#: src/ui/radio_control_widget.py:563 src/ui/sdr_control_widget.py:769
+#: src/ui/radio_control_widget.py:563 src/ui/sdr_control_widget.py:771
 msgid "● REC"
 msgstr "● 録音"
 
@@ -5523,7 +5577,7 @@ msgstr "Direwolfプロジェクトから Windows用インストーラーをダ�
 msgid "Please install Direwolf from your distribution's package manager."
 msgstr "ディストリビューションのパッケージマネージャーからDirewolfをインストールしてください。"
 
-#: src/ui/sstv_tab.py:270
+#: src/ui/sstv_tab.py:280
 msgid ""
 "AX.25 baud rate for SSDV (AX.25) reception.\n"
 "Selecting a satellite or transponder sets this from the baud\n"
@@ -5534,7 +5588,7 @@ msgstr ""
 "SSDV (AX.25)受信用のAX.25ボーレート。衛星またはトランスポンダーを選ぶと、名前に含まれるボーレート（1k2 / 4k8 / "
 "9k6など）から設定されます（含まれない場合は1200）。手動で変更することもできます。APRSタブと共有されます。他のモードでは使用しません。"
 
-#: src/ui/sstv_tab.py:295
+#: src/ui/sstv_tab.py:305
 msgid ""
 "Receives images from amateur satellites. Pick the mode below, then the satellite in Radio Control (or the input box at the right).\n"
 "\n"
@@ -5568,11 +5622,11 @@ msgstr ""
 "\n"
 "HADES-SAまたはASRTU-1を選ぶと、モードが自動で切り替わります。"
 
-#: src/ui/sstv_tab.py:324
+#: src/ui/sstv_tab.py:334
 msgid "Auto-save PNG"
 msgstr "PNGを自動保存"
 
-#: src/ui/sstv_tab.py:341
+#: src/ui/sstv_tab.py:351
 msgid ""
 "Received frames appear here live, one per line, as hex. Paste hex from "
 "another tab (Telemetry) or from SatNOGS Network to build the image from it."
@@ -5580,43 +5634,53 @@ msgstr ""
 "受信したフレームがここにリアルタイムで1行1フレームのHEXで表示されます。別のタブ（テレメトリー）やSatNOGS "
 "NetworkのHEXを貼り付けると、それから画像を生成します。"
 
-#: src/ui/sstv_tab.py:350
+#: src/ui/sstv_tab.py:360
 msgid "94 A6 62 B2 9C AA 60 …  (one frame per line)"
 msgstr "94 A6 62 B2 9C AA 60 …  （1行に1フレーム）"
 
-#: src/ui/sstv_tab.py:358
+#: src/ui/sstv_tab.py:368
 msgid "Build image from hex"
 msgstr "HEXから画像を生成"
 
-#: src/ui/sstv_tab.py:361
+#: src/ui/sstv_tab.py:371
 msgid "Clear packets"
 msgstr "パケットを消去"
 
-#: src/ui/sstv_tab.py:365 src/ui/digital_voice_tab.py:171
+#: src/ui/sstv_tab.py:375 src/ui/digital_voice_tab.py:171
 msgid "Raw Packets"
 msgstr "生パケット"
 
-#: src/ui/sstv_tab.py:374 src/ui/sstv_tab.py:1266
+#: src/ui/sstv_tab.py:384 src/ui/sstv_tab.py:1364
 msgid "Waiting for signal…"
 msgstr "信号待機中…"
 
-#: src/ui/sstv_tab.py:419
+#: src/ui/sstv_tab.py:429
+msgid "📚 Stored Images…"
+msgstr "📚 保存済み画像…"
+
+#: src/ui/sstv_tab.py:434
+msgid ""
+"SSDV packets of every mode are stored, so a picture can be built from "
+"several passes."
+msgstr "すべてのモードのSSDVパケットが保存されるため、複数回のパスで受信した分から1枚の画像を作れます。"
+
+#: src/ui/sstv_tab.py:442
 msgid "💾 Save PNG"
 msgstr "💾 PNGを保存"
 
-#: src/ui/sstv_tab.py:426
+#: src/ui/sstv_tab.py:449
 msgid "🖼 Open Image…"
 msgstr "🖼 画像を開く…"
 
-#: src/ui/sstv_tab.py:432
+#: src/ui/sstv_tab.py:455
 msgid "📂 Decode MP3 Recording…"
 msgstr "📂 MP3録音デコード…"
 
-#: src/ui/sstv_tab.py:437 src/ui/sstv_tab.py:1175
+#: src/ui/sstv_tab.py:460 src/ui/sstv_tab.py:1273
 msgid "soundfile not installed — pip install soundfile"
 msgstr "soundfileがインストールされていません — pip install soundfile"
 
-#: src/ui/sstv_tab.py:446
+#: src/ui/sstv_tab.py:469
 msgid ""
 "Open a recorded .iq.wav file and play it into the decoder (the same as SDR Control's Open…).\n"
 "A whole-recording spectrogram opens; click it to start from any point."
@@ -5624,115 +5688,124 @@ msgstr ""
 "録音した .iq.wav ファイルを開いてデコーダーに再生します（SDRコントロールの「開く…」と同じ）。\n"
 "録音全体のスペクトログラムが開くので、クリックした位置から再生できます。"
 
-#: src/ui/sstv_tab.py:591
+#: src/ui/sstv_tab.py:615
 msgid "No audio source — connect Rig or SDR in Radio Control"
 msgstr "音声ソースなし — 無線機コントロールで無線機またはSDRを接続してください"
 
-#: src/ui/sstv_tab.py:593 src/ui/digital_voice_tab.py:290
+#: src/ui/sstv_tab.py:617 src/ui/digital_voice_tab.py:290
 #: src/ui/digital_voice_tab.py:293
 msgid "Input: "
 msgstr "入力: "
 
-#: src/ui/sstv_tab.py:728
+#: src/ui/sstv_tab.py:752
 msgid "Sound card error: "
 msgstr "サウンドカードエラー: "
 
-#: src/ui/sstv_tab.py:807
+#: src/ui/sstv_tab.py:831
 msgid "SSDV: waiting for AX.25 frames…"
 msgstr "SSDV: AX.25フレームを待機中…"
 
-#: src/ui/sstv_tab.py:869
+#: src/ui/sstv_tab.py:893
 msgid ""
 "⚠ This gr_satellites build has no --kiss_server; SSDV frames cannot be read."
 msgstr "⚠ この gr_satellites は --kiss_server に対応しておらず、SSDV フレームを読めません。"
 
-#: src/ui/sstv_tab.py:873
+#: src/ui/sstv_tab.py:897
 msgid "SSDV (CCSDS BPSK 9k6): waiting for ASRTU-1 frames…"
 msgstr "SSDV (CCSDS BPSK 9k6): ASRTU-1 のフレームを待っています…"
 
-#: src/ui/sstv_tab.py:919 src/ui/digital_voice_tab.py:315
+#: src/ui/sstv_tab.py:943 src/ui/digital_voice_tab.py:315
 msgid "⚠ Could not start the 2FSK demodulator."
 msgstr ""
 
-#: src/ui/sstv_tab.py:924
+#: src/ui/sstv_tab.py:948
 msgid "SSDV (2FSK 800bps): waiting for packets…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:989
+#: src/ui/sstv_tab.py:1015
+msgid "Unknown"
+msgstr "不明"
+
+#: src/ui/sstv_tab.py:1044
+#, python-brace-format
+msgid "Stored image {i}: {n} packets built."
+msgstr "保存済み画像 {i}: {n}パケットから画像を作成しました。"
+
+#: src/ui/sstv_tab.py:1086
 msgid "SSDV packets: "
 msgstr "SSDVパケット: "
 
-#: src/ui/sstv_tab.py:997
+#: src/ui/sstv_tab.py:1094
 msgid "No hex frames found in the text."
 msgstr "テキストにHEXのフレームが見つかりません。"
 
-#: src/ui/sstv_tab.py:1010
+#: src/ui/sstv_tab.py:1108
 msgid "(223-byte CCSDS frames on virtual channel 1 with a valid CRC)"
 msgstr "（仮想チャンネル1の223バイトCCSDSフレームで、CRCが正しいもの）"
 
-#: src/ui/sstv_tab.py:1012
+#: src/ui/sstv_tab.py:1110
 msgid "(sync 55 66 / 55 67 and a valid CRC)"
 msgstr "（同期 55 66 / 55 67 と正しいCRC）"
 
-#: src/ui/sstv_tab.py:1015
+#: src/ui/sstv_tab.py:1113
 #, python-brace-format
 msgid "{n} frames, but none contains an SSDV packet "
 msgstr "{n}フレームありますが、SSDVパケットを含むものがありません "
 
-#: src/ui/sstv_tab.py:1019
+#: src/ui/sstv_tab.py:1117
 #, python-brace-format
 msgid "{n} frames, {m} SSDV packets — decoding…"
 msgstr "{n}フレーム、SSDVパケット{m}個 — デコード中…"
 
-#: src/ui/sstv_tab.py:1109
+#: src/ui/sstv_tab.py:1207
 msgid "Mode detected: "
 msgstr "検出モード: "
 
-#: src/ui/sstv_tab.py:1165
+#: src/ui/sstv_tab.py:1263
 msgid "Select Recorded Audio"
 msgstr "録音ファイルを選択"
 
-#: src/ui/sstv_tab.py:1167 src/ui/digital_voice_tab.py:483
+#: src/ui/sstv_tab.py:1265 src/ui/digital_voice_tab.py:483
 msgid "Audio Files (*.mp3 *.wav)"
 msgstr "音声ファイル (*.mp3 *.wav)"
 
-#: src/ui/sstv_tab.py:1174 src/ui/sstv_tab.py:1201
+#: src/ui/sstv_tab.py:1272 src/ui/sstv_tab.py:1299
 msgid "Decode Recording"
 msgstr "録音のデコード"
 
-#: src/ui/sstv_tab.py:1189
+#: src/ui/sstv_tab.py:1287
 msgid "Decoding: "
 msgstr "デコード中: "
 
-#: src/ui/sstv_tab.py:1202
+#: src/ui/sstv_tab.py:1300
 msgid "Decode failed"
 msgstr "デコードに失敗しました"
 
-#: src/ui/sstv_tab.py:1228
+#: src/ui/sstv_tab.py:1326
 msgid "Save SSTV Image"
 msgstr "SSTV画像を保存"
 
-#: src/ui/sstv_tab.py:1230
+#: src/ui/sstv_tab.py:1328
 msgid "PNG Images (*.png)"
 msgstr "PNG画像 (*.png)"
 
-#: src/ui/sstv_tab.py:1234
+#: src/ui/sstv_tab.py:1332
 msgid "Saved: "
 msgstr "保存済み: "
 
-#: src/ui/sstv_tab.py:1240 src/ui/sstv_tab.py:1248
+#: src/ui/sstv_tab.py:1338 src/ui/sstv_tab.py:1346
 msgid "Open SSTV Image"
 msgstr "SSTV画像を開く"
 
-#: src/ui/sstv_tab.py:1242
+#: src/ui/sstv_tab.py:1340
 msgid "Images (*.png *.jpg *.jpeg *.bmp)"
 msgstr "画像 (*.png *.jpg *.jpeg *.bmp)"
 
-#: src/ui/sstv_tab.py:1248
+#: src/ui/sstv_tab.py:1346
 msgid "Could not read the image file."
 msgstr "画像ファイルを読み込めませんでした。"
 
-#: src/ui/sstv_tab.py:1260
+#: src/ui/sstv_tab.py:1358
 msgid "Opened: "
 msgstr "開きました: "
 
@@ -6223,57 +6296,57 @@ msgstr "SatNOGSへリセット"
 msgid "This transmitter is no longer present in the SatNOGS database."
 msgstr "このトランスミッターはSatNOGSデータベースに存在しません。"
 
-#: src/ui/sdr_control_widget.py:283
+#: src/ui/sdr_control_widget.py:285
 msgid "SDR Connected"
 msgstr "SDR接続済み"
 
-#: src/ui/sdr_control_widget.py:299 src/ui/sdr_control_widget.py:393
+#: src/ui/sdr_control_widget.py:301 src/ui/sdr_control_widget.py:395
 msgid "SDR Disconnected"
 msgstr "SDR未接続"
 
-#: src/ui/sdr_control_widget.py:400
+#: src/ui/sdr_control_widget.py:402
 msgid ""
 "Total RX gain now applied. In Auto, HackRF's software AGC changes it in 6 dB"
 " steps."
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:403
+#: src/ui/sdr_control_widget.py:405
 msgid "🌊 Waterfall"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:405
+#: src/ui/sdr_control_widget.py:407
 msgid "Open a scrolling spectrum + waterfall popup for this SDR"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:431
+#: src/ui/sdr_control_widget.py:433
 msgid "Spectrum"
 msgstr "スペクトラム"
 
-#: src/ui/sdr_control_widget.py:473
+#: src/ui/sdr_control_widget.py:475
 msgid "Frequency (MHz)"
 msgstr "周波数 (MHz)"
 
-#: src/ui/sdr_control_widget.py:479
+#: src/ui/sdr_control_widget.py:481
 msgid "Power (dBFS)"
 msgstr "パワー (dBFS)"
 
-#: src/ui/sdr_control_widget.py:544
+#: src/ui/sdr_control_widget.py:546
 msgid "Passband Tune"
 msgstr "パスバンドチューン"
 
-#: src/ui/sdr_control_widget.py:549
+#: src/ui/sdr_control_widget.py:551
 msgid "Step:"
 msgstr "ステップ:"
 
-#: src/ui/sdr_control_widget.py:562
+#: src/ui/sdr_control_widget.py:564
 msgid "Tune down ×10 step"
 msgstr "×10ステップ下げる"
 
-#: src/ui/sdr_control_widget.py:569
+#: src/ui/sdr_control_widget.py:571
 msgid "Tune down"
 msgstr "1ステップ下げる"
 
-#: src/ui/sdr_control_widget.py:574
+#: src/ui/sdr_control_widget.py:576
 msgid ""
 "Freq: while a transponder is selected, tracks its Doppler-corrected centre "
 "frequency — use the arrows or type a value to move within its passband (kept"
@@ -6283,25 +6356,25 @@ msgstr ""
 "Freq: トランスポンダー選択中は、そのドップラー補正済み中心周波数を表示します — 矢印ボタンまたは直接入力でパスバンド内を移動できます（SDR "
 "Lockの状態に関わらず維持されます）。トランスポンダー未選択時は、SDRを任意の周波数に直接チューニングできます。"
 
-#: src/ui/sdr_control_widget.py:580
+#: src/ui/sdr_control_widget.py:582
 msgid "Freq:"
 msgstr "周波数:"
 
-#: src/ui/sdr_control_widget.py:595
+#: src/ui/sdr_control_widget.py:597
 msgid "Tune up"
 msgstr "1ステップ上げる"
 
-#: src/ui/sdr_control_widget.py:602
+#: src/ui/sdr_control_widget.py:604
 msgid "Tune up ×10 step"
 msgstr "×10ステップ上げる"
 
-#: src/ui/sdr_control_widget.py:616
+#: src/ui/sdr_control_widget.py:618
 msgid ""
 "T: reset to the transponder's Doppler-corrected centre frequency. Disabled "
 "when no transponder is selected."
 msgstr "T: トランスポンダーのドップラー補正済み中心周波数に戻します。トランスポンダー未選択時は押せません。"
 
-#: src/ui/sdr_control_widget.py:628
+#: src/ui/sdr_control_widget.py:630
 msgid ""
 "SDR Lock: while on, Doppler correction stops retuning the SDR so you can "
 "freely use Passband Tune / Freq above; Doppler correction resumes from "
@@ -6310,60 +6383,60 @@ msgstr ""
 "SDR Lock: ONの間はドップラー補正によるSDRの再チューニングを停止するため、上のPassband "
 "Tune／Freqを自由に使えます。OFFにすると、その時点の周波数からドップラー補正を再開します。"
 
-#: src/ui/sdr_control_widget.py:695
+#: src/ui/sdr_control_widget.py:697
 msgid "Demodulator"
 msgstr "復調器"
 
-#: src/ui/sdr_control_widget.py:709
+#: src/ui/sdr_control_widget.py:711
 msgid "AGC On"
 msgstr "AGC オン"
 
-#: src/ui/sdr_control_widget.py:711
+#: src/ui/sdr_control_widget.py:713
 msgid "AGC Off"
 msgstr "AGC オフ"
 
-#: src/ui/sdr_control_widget.py:720
+#: src/ui/sdr_control_widget.py:722
 msgid "Volume:"
 msgstr "音量:"
 
-#: src/ui/sdr_control_widget.py:731
+#: src/ui/sdr_control_widget.py:733
 msgid "Speaker output"
 msgstr "スピーカー出力"
 
-#: src/ui/sdr_control_widget.py:748
+#: src/ui/sdr_control_widget.py:750
 msgid "IQ Recorder"
 msgstr "IQレコーダー"
 
-#: src/ui/sdr_control_widget.py:752
+#: src/ui/sdr_control_widget.py:754
 msgid "Record BW:"
 msgstr "録音 BW:"
 
 # --- Menu: File ---
-#: src/ui/sdr_control_widget.py:762
+#: src/ui/sdr_control_widget.py:764
 msgid "File:"
 msgstr "ファイル:"
 
-#: src/ui/sdr_control_widget.py:771
+#: src/ui/sdr_control_widget.py:773
 msgid "■ STOP"
 msgstr "■ 停止"
 
-#: src/ui/sdr_control_widget.py:781
+#: src/ui/sdr_control_widget.py:783
 msgid "The SDR input is at full scale, so weak signals are distorted or lost."
 msgstr "SDR入力が満スケールに張り付いており、弱い信号が歪むか失われます。"
 
-#: src/ui/sdr_control_widget.py:788
+#: src/ui/sdr_control_widget.py:790
 msgid "📂 Open…"
 msgstr "📂 開く…"
 
-#: src/ui/sdr_control_widget.py:789
+#: src/ui/sdr_control_widget.py:791
 msgid "Choose a recorded .iq.wav file and start playing it"
 msgstr "録音した .iq.wav ファイルを選んで、再生を始めます"
 
-#: src/ui/sdr_control_widget.py:791
+#: src/ui/sdr_control_widget.py:793
 msgid "▶ Play"
 msgstr "▶ 再生"
 
-#: src/ui/sdr_control_widget.py:794
+#: src/ui/sdr_control_widget.py:796
 msgid ""
 "Play the loaded recording again from where it stopped\n"
 "(from the start if it had reached the end)"
@@ -6371,7 +6444,7 @@ msgstr ""
 "読み込み済みの録音を、停止した位置から再び再生します\n"
 "（最後まで再生した後は先頭から）"
 
-#: src/ui/sdr_control_widget.py:827
+#: src/ui/sdr_control_widget.py:829
 msgid ""
 "UTC time of the recording's first sample. Read from the file name\n"
 "when it has one; otherwise it shows 00:00 and can be entered here.\n"
@@ -6382,28 +6455,28 @@ msgstr ""
 "無い場合は00:00と表示されるので、ここで入力してください。\n"
 "デコードしたデータ（CW TLM）には、この時刻＋再生位置で時刻が付きます。"
 
-#: src/ui/sdr_control_widget.py:964
+#: src/ui/sdr_control_widget.py:966
 msgid "🔇 Mute"
 msgstr "🔇 ミュート"
 
-#: src/ui/sdr_control_widget.py:964
+#: src/ui/sdr_control_widget.py:966
 msgid "🔊 Unmute"
 msgstr "🔊 ミュート解除"
 
-#: src/ui/sdr_control_widget.py:1045
+#: src/ui/sdr_control_widget.py:1047
 msgid "IQ recordings (*.iq.wav);;All files (*)"
 msgstr "IQ録音 (*.iq.wav);;すべてのファイル (*)"
 
-#: src/ui/sdr_control_widget.py:1232
+#: src/ui/sdr_control_widget.py:1244
 #, python-brace-format
 msgid "Gain: {value}"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:1233
+#: src/ui/sdr_control_widget.py:1245
 msgid "Gain: auto (set by the tuner)"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:1244
+#: src/ui/sdr_control_widget.py:1256
 #, python-brace-format
 msgid "⚠ Clipping {pct:.0f}% — lower the gain"
 msgstr "⚠ 飽和 {pct:.0f}% — ゲインを下げてください"
@@ -6594,21 +6667,21 @@ msgstr ""
 "\n"
 "その衛星は再び自動更新のTLEを使います。先に、自動更新のTLEが正しいことを確認してください。"
 
-#: src/ui/sdr_overview_dialog.py:169
+#: src/ui/sdr_overview_dialog.py:184
 #, python-format
 msgid "Time %(t)s   Offset %(f).2f kHz"
 msgstr "時刻 %(t)s   オフセット %(f).2f kHz"
 
-#: src/ui/sdr_overview_dialog.py:184
+#: src/ui/sdr_overview_dialog.py:208
 #, python-format
 msgid "Pass Overview — %s"
 msgstr "パス全体表示 — %s"
 
-#: src/ui/sdr_overview_dialog.py:192
+#: src/ui/sdr_overview_dialog.py:216
 msgid "Remove background"
 msgstr "背景を除去"
 
-#: src/ui/sdr_overview_dialog.py:196
+#: src/ui/sdr_overview_dialog.py:220
 msgid ""
 "Subtract each frequency's typical level over the whole recording,\n"
 "so constant lines disappear and short bursts stand out."
@@ -6616,13 +6689,9 @@ msgstr ""
 "各周波数の録音全体での通常レベルを引き、\n"
 "常時出ている線を消して短いバーストを見やすくします。"
 
-#: src/ui/sdr_overview_dialog.py:201 src/ui/sdr_overview_dialog.py:265
+#: src/ui/sdr_overview_dialog.py:225 src/ui/sdr_overview_dialog.py:310
 msgid "Save PNG…"
 msgstr "PNGを保存…"
-
-#: src/ui/sdr_overview_dialog.py:215
-msgid "Click to jump the playback to that time"
-msgstr "クリックすると、その時刻へ再生位置をジャンプします"
 
 #: src/ui/sdr_overview_dialog.py:234
 msgid "On click:"
@@ -6636,7 +6705,11 @@ msgstr "クリック地点の開始時刻のみを読み込む"
 msgid "Load the start time and offset of the clicked point"
 msgstr "クリック地点の開始時刻とオフセットを読み込む"
 
-#: src/ui/sdr_overview_dialog.py:251
+#: src/ui/sdr_overview_dialog.py:255
+msgid "Click to jump the playback to that time"
+msgstr "クリックすると、その時刻へ再生位置をジャンプします"
+
+#: src/ui/sdr_overview_dialog.py:296
 #, python-format
 msgid "Could not read the recording: %s"
 msgstr "録音を読み込めませんでした: %s"

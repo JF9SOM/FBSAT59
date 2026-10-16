@@ -48,6 +48,12 @@ from comms.aprs.engine import (
     resolve_ax25_modem,
 )
 from comms.sstv.file_decoder import SOUNDFILE_AVAILABLE, load_audio_mono
+from comms.sstv.packet_store import (
+    KIND_DSLWP,
+    KIND_STANDARD,
+    SsdvPacketStore,
+    validate_packet,
+)
 from comms.sstv.sdr_demod import SstvSdrDemod, output_rate_for
 from comms.sstv.ssdv import (
     extract_hex_frames,
@@ -217,9 +223,13 @@ class SstvTab(QWidget):
         self._gr_backend: Any | None = None  # GrSatellitesBackend (gr mode only)
         self._fsk_demod: Any | None = None  # FskSsdvSdrDemod (2FSK mode only)
         self._fsk_demod_pipeline: Any | None = None  # the pipeline it is subscribed to
-        # (image id, packet id) of the 2FSK packets whose CRC was valid, so a later
-        # bit-errored copy never replaces a good one in the decoder
-        self._fsk_good_keys: set[tuple[int, int]] = set()
+        # Every valid SSDV packet of every mode is kept in the database, so a picture can
+        # be built from several passes (comms.sstv.packet_store).
+        self._store: SsdvPacketStore | None = (
+            SsdvPacketStore(conn) if hasattr(conn, "execute") else None
+        )
+        self._norad: int = 0  # satellite of the selected transmitter (0: unknown)
+        self._active_group: dict[str, int] = {}  # packet kind -> group the decoder holds
         self._audio_active: bool = False  # soundcard RX subscribed via AudioDeviceManager
         self._audio_device: int | None = None  # device used for the active subscription
         self._current_image: QImage | None = None
@@ -416,6 +426,19 @@ class SstvTab(QWidget):
         # default sizeHint varies a little with text/emoji glyph metrics).
         _bottom_btn_style = "padding: 4px 10px;"
 
+        self._stored_btn = QPushButton(_("📚 Stored Images…"))
+        self._stored_btn.setFixedHeight(30)
+        self._stored_btn.setStyleSheet(_bottom_btn_style)
+        self._stored_btn.setToolTip(
+            _(
+                "SSDV packets of every mode are stored, so a picture can be built from "
+                "several passes."
+            )
+        )
+        self._stored_btn.setEnabled(self._store is not None)
+        self._stored_btn.clicked.connect(self._on_stored_images)
+        bottom.addWidget(self._stored_btn)
+
         self._save_btn = QPushButton(_("💾 Save PNG"))
         self._save_btn.setEnabled(False)
         self._save_btn.setFixedHeight(30)
@@ -565,6 +588,7 @@ class SstvTab(QWidget):
         """Update satellite name when transponder selection changes."""
         if xpdr and isinstance(xpdr, dict):
             self._sat_name = xpdr.get("description", "")
+            self._norad = int(xpdr.get("norad_cat_id") or 0)
             self._auto_select_ssdv_mode(xpdr.get("norad_cat_id"))
             # Follow the transmitter's baud (1200 if it names none); changing the
             # combo persists it and restarts a running session via _on_baud_changed().
@@ -885,7 +909,7 @@ class SstvTab(QWidget):
         if (
             packet is not None
             and self._gr_ssdv_decoder is not None
-            and self._gr_ssdv_decoder.push_packet(packet)
+            and self._store_and_feed(KIND_DSLWP, packet, _GR_SSDV_NORAD, self._gr_ssdv_decoder)
         ):
             self._ssdv_packets += 1
         self._update_raw_count()
@@ -936,24 +960,93 @@ class SstvTab(QWidget):
             self._fsk_demod = None
 
     def _on_fsk_packet(self, packet: bytes, verified: bool) -> None:
-        """A 256-byte SSDV packet from the 2FSK demodulator: show it, feed the decoder."""
-        from comms.sstv.ssdv import packet_id, packet_image_id
+        """A 256-byte SSDV packet from the 2FSK demodulator: show it, keep it, feed the decoder.
 
+        Only packets that are good (CRC-32 right, or right after Reed-Solomon repair) are
+        used, so a bit-errored copy can never replace a good one.
+        """
         self._raw_edit.append_frame(packet)
         self._ssdv_frames += 1
-        key = (packet_image_id(packet), packet_id(packet))
-        if verified:
-            self._fsk_good_keys.add(key)
-        elif key in self._fsk_good_keys:
-            self._update_raw_count()
-            return  # keep the CRC-valid copy; ssdv would have to repair this one
-        decoder = self._ensure_ssdv_decoder()
-        if decoder.push_packet(packet):
+        valid = packet if verified else validate_packet(packet)
+        if valid is not None and self._store_and_feed(
+            KIND_STANDARD, valid, _FSK_SSDV_NORAD, self._ensure_ssdv_decoder()
+        ):
             self._ssdv_packets += 1
         self._update_raw_count()
 
+    # ------------------------------------------------------------------ #
+    # Stored packets (pictures built from several passes)
+    # ------------------------------------------------------------------ #
+
+    def _store_and_feed(self, kind: str, packet: bytes, norad: int, decoder: Any) -> bool:
+        """Keep a valid packet in the database and hand it to *decoder*.
+
+        The decoder always holds the whole stored picture the packet belongs to (packets of
+        earlier passes included): when the packet starts or joins a different group than
+        the one the decoder was given, the decoder is reloaded from the store.
+        """
+        if self._store is None:
+            return bool(decoder.push_packet(packet))
+        try:
+            result = self._store.add(norad, kind, packet)
+        except Exception:
+            logger.exception("SSDV: could not store a packet")
+            return bool(decoder.push_packet(packet))
+        if self._active_group.get(kind) != result.group_id:
+            decoder.reset()
+            decoder.load_packets(self._store.packets(result.group_id))
+            self._active_group[kind] = result.group_id
+        else:
+            decoder.push_packet(packet)
+        return True
+
+    def _satellite_name(self, norad: int) -> str:
+        """Name of a satellite for the Stored Images list."""
+        if norad:
+            try:
+                row = self._conn.execute(
+                    "SELECT name FROM satellites WHERE norad_cat_id = ?", (norad,)
+                ).fetchone()
+            except Exception:
+                row = None
+            if row:
+                return f"{row[0]} ({norad})"
+            return str(norad)
+        return _("Unknown")
+
+    def _on_stored_images(self) -> None:
+        """Open the list of stored pictures."""
+        if self._store is None:
+            return
+        from ui.ssdv_store_dialog import SsdvStoreDialog
+
+        dialog = SsdvStoreDialog(self._store, self._satellite_name, self)
+        dialog.build_requested.connect(self._on_build_stored)
+        dialog.exec()
+
+    def _on_build_stored(self, group_id: int) -> None:
+        """Build the picture of a stored group from all its packets."""
+        if self._store is None:
+            return
+        info = self._store.group(group_id)
+        if info is None:
+            return
+        packets = self._store.packets(group_id)
+        dslwp = info.kind == KIND_DSLWP
+        decoder = self._ensure_gr_decoder() if dslwp else self._ensure_ssdv_decoder()
+        decoder.reset()
+        decoder.load_packets(packets)
+        self._active_group[info.kind] = group_id
+        if decoder.decode_now():
+            self._commit_pending_ssdv()
+            self._view_tabs.setCurrentWidget(self._image_page)
+            self._status_label.setText(
+                _("Stored image {i}: {n} packets built.").format(i=info.image_id, n=len(packets))
+            )
+
     def _stop_ssdv(self) -> None:
         """Leave SSDV mode: disconnect from the AX.25 pipeline, decode what is buffered."""
+        self._active_group.clear()  # flush() empties the decoders below
         self._stop_gr_ssdv_reception()
         self._stop_fsk_ssdv_reception()
         if self._gr_ssdv_decoder is not None:
@@ -973,12 +1066,16 @@ class SstvTab(QWidget):
         self._raw_edit.append_frame(raw)
         self._ssdv_frames += 1
         packet = find_ssdv_packet(raw)
-        if (
-            packet is not None
-            and self._ssdv_decoder is not None
-            and self._ssdv_decoder.push_packet(packet)
-        ):
-            self._ssdv_packets += 1
+        if packet is not None and self._ssdv_decoder is not None:
+            valid = validate_packet(packet)
+            if valid is not None:
+                accepted = self._store_and_feed(
+                    KIND_STANDARD, valid, self._norad, self._ssdv_decoder
+                )
+            else:
+                accepted = self._ssdv_decoder.push_packet(packet)  # ssdv may still repair it
+            if accepted:
+                self._ssdv_packets += 1
         self._update_raw_count()
 
     def _update_raw_count(self) -> None:
@@ -1000,6 +1097,7 @@ class SstvTab(QWidget):
         decoder = self._ensure_gr_decoder() if gr_mode else self._ensure_ssdv_decoder()
         finder = find_dslwp_packet if gr_mode else find_ssdv_packet
         decoder.reset()
+        self._active_group.clear()
         packets = 0
         for frame in frames:
             packet = finder(frame)
@@ -1029,7 +1127,7 @@ class SstvTab(QWidget):
             self._ssdv_decoder.reset()
         if self._gr_ssdv_decoder is not None:
             self._gr_ssdv_decoder.reset()
-        self._fsk_good_keys.clear()
+        self._active_group.clear()
         self._ssdv_frames = 0
         self._ssdv_packets = 0
         self._raw_count_label.setText("")

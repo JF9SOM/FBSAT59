@@ -107,6 +107,11 @@ def _crc_ok(packet: bytes) -> bool:
     return zlib.crc32(packet[1:crc_end]) == int.from_bytes(packet[crc_end : crc_end + 4], "big")
 
 
+def crc_ok(packet: bytes) -> bool:
+    """True if a standard (0x55 sync) SSDV packet's CRC-32 matches."""
+    return _crc_ok(packet)
+
+
 def _plausible_length(packet_type: int, size: int) -> bool:
     minimum = MIN_PACKET_SIZE_NOFEC if packet_type == TYPE_NOFEC else MIN_PACKET_SIZE_NORMAL
     return minimum <= size <= PACKET_SIZE
@@ -303,6 +308,16 @@ class SsdvDecoder(QObject):
         self._packets[(packet_image_id(data), packet_id(data))] = bytes(data)
         self._timer.start()
         return True
+
+    def load_packets(self, packets: list[bytes]) -> None:
+        """Buffer already validated packets (Stored Images), then schedule a decode."""
+        for data in packets:
+            if self._dslwp:
+                self._packets[(dslwp_image_id(data), dslwp_packet_id(data))] = bytes(data)
+            else:
+                self._packets[(packet_image_id(data), packet_id(data))] = bytes(data)
+        if self._packets:
+            self._timer.start()
 
     def reset(self) -> None:
         """Forget every buffered packet."""

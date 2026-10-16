@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-15 20:28+0900\n"
+"POT-Creation-Date: 2026-10-16 22:51+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -353,7 +353,7 @@ msgid "Set My Call before operating"
 msgstr ""
 
 #: src/ui/ft4_tab.py:1288 src/ui/ax100_digi_tab.py:659 src/ui/cw_tab.py:558
-#: src/ui/sstv_tab.py:710 src/ui/digital_voice_tab.py:469
+#: src/ui/sstv_tab.py:734 src/ui/digital_voice_tab.py:469
 msgid "sounddevice not installed — pip install sounddevice"
 msgstr ""
 
@@ -783,9 +783,10 @@ msgstr ""
 msgid "Exit"
 msgstr ""
 
-#: src/ui/main_window.py:1462 src/ui/telemetry_tab.py:581
-#: src/ui/autotrack_record_dialog.py:280 src/ui/radio_control_widget.py:192
-#: src/ui/transmitter_dialog.py:93 src/ui/remove_manual_tle_dialog.py:74
+#: src/ui/main_window.py:1462 src/ui/ssdv_store_dialog.py:70
+#: src/ui/telemetry_tab.py:581 src/ui/autotrack_record_dialog.py:280
+#: src/ui/radio_control_widget.py:192 src/ui/transmitter_dialog.py:93
+#: src/ui/remove_manual_tle_dialog.py:74
 msgid "Satellite"
 msgstr ""
 
@@ -1062,6 +1063,7 @@ msgid "Autotrack ready"
 msgstr ""
 
 #: src/ui/main_window.py:2980 src/ui/ai_help_dialog.py:106
+#: src/ui/ssdv_store_dialog.py:94
 msgid "Close"
 msgstr ""
 
@@ -1308,7 +1310,7 @@ msgid ""
 msgstr ""
 
 #: src/ui/main_window.py:8066 src/ui/main_window.py:8162
-#: src/ui/main_window.py:8178 src/ui/sdr_control_widget.py:1043
+#: src/ui/main_window.py:8178 src/ui/sdr_control_widget.py:1045
 msgid "Play IQ Recording"
 msgstr ""
 
@@ -1761,6 +1763,61 @@ msgstr ""
 msgid "Copied!"
 msgstr ""
 
+#: src/ui/ssdv_store_dialog.py:52
+msgid "Stored SSDV Images"
+msgstr ""
+
+#: src/ui/ssdv_store_dialog.py:58
+msgid ""
+"Packets received in every SSDV mode are kept, so a picture can be built from "
+"several passes: select it and press Build Image. New packets of the same "
+"picture are added automatically."
+msgstr ""
+
+#: src/ui/ssdv_store_dialog.py:71
+msgid "Format"
+msgstr ""
+
+#: src/ui/ssdv_store_dialog.py:72
+msgid "Image ID"
+msgstr ""
+
+#: src/ui/ssdv_store_dialog.py:73
+msgid "Size"
+msgstr ""
+
+#: src/ui/ssdv_store_dialog.py:74
+msgid "Packets"
+msgstr ""
+
+#: src/ui/ssdv_store_dialog.py:75
+msgid "Last received"
+msgstr ""
+
+#: src/ui/ssdv_store_dialog.py:87
+msgid "🖼 Build Image"
+msgstr ""
+
+#: src/ui/ssdv_store_dialog.py:90
+msgid "🗑 Delete"
+msgstr ""
+
+#: src/ui/ssdv_store_dialog.py:119
+msgid "CCSDS (DSLWP)"
+msgstr ""
+
+#: src/ui/ssdv_store_dialog.py:119
+msgid "Standard SSDV"
+msgstr ""
+
+#: src/ui/ssdv_store_dialog.py:150 src/ui/autotrack_record_dialog.py:267
+msgid "Delete"
+msgstr ""
+
+#: src/ui/ssdv_store_dialog.py:151
+msgid "Delete the stored packets of this picture?"
+msgstr ""
+
 #: src/ui/copyable_text.py:46 src/ui/copyable_text.py:108
 msgid "📋 Copy"
 msgstr ""
@@ -1833,7 +1890,7 @@ msgstr ""
 msgid "Input/Output:"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:441 src/ui/sstv_tab.py:585
+#: src/ui/ax100_digi_tab.py:441 src/ui/sstv_tab.py:609
 #: src/ui/digital_voice_tab.py:290
 msgid "SDR (receive only)"
 msgstr ""
@@ -2540,7 +2597,7 @@ msgstr ""
 msgid "SDR Settings"
 msgstr ""
 
-#: src/ui/rig_dialog.py:2374 src/ui/sstv_tab.py:588
+#: src/ui/rig_dialog.py:2374 src/ui/sstv_tab.py:612
 msgid "Sound Card"
 msgstr ""
 
@@ -2670,8 +2727,8 @@ msgid "Input Source"
 msgstr ""
 
 #: src/ui/telemetry_tab.py:457 src/ui/radio_control_widget.py:361
-#: src/ui/q65_tab.py:209 src/ui/sstv_tab.py:254
-#: src/ui/sdr_control_widget.py:700 src/ui/digital_voice_tab.py:128
+#: src/ui/q65_tab.py:209 src/ui/sstv_tab.py:264
+#: src/ui/sdr_control_widget.py:702 src/ui/digital_voice_tab.py:128
 msgid "Mode:"
 msgstr ""
 
@@ -2689,7 +2746,7 @@ msgid ""
 "hand. Has no effect on gr-satellites decoding."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:511 src/ui/aprs_tab.py:254 src/ui/sstv_tab.py:264
+#: src/ui/telemetry_tab.py:511 src/ui/aprs_tab.py:254 src/ui/sstv_tab.py:274
 msgid "Baud:"
 msgstr ""
 
@@ -2713,7 +2770,7 @@ msgid "▶ Start"
 msgstr ""
 
 #: src/ui/telemetry_tab.py:536 src/ui/cw_tab.py:406
-#: src/ui/sdr_control_widget.py:800 src/ui/digital_voice_tab.py:227
+#: src/ui/sdr_control_widget.py:802 src/ui/digital_voice_tab.py:227
 msgid "■ Stop"
 msgstr ""
 
@@ -2721,7 +2778,7 @@ msgstr ""
 msgid "—"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:550 src/ui/sstv_tab.py:441
+#: src/ui/telemetry_tab.py:550 src/ui/sstv_tab.py:464
 msgid "📂 Decode IQ Recording…"
 msgstr ""
 
@@ -2804,11 +2861,11 @@ msgstr ""
 msgid "Clear Log"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:765 src/ui/sstv_tab.py:1152
+#: src/ui/telemetry_tab.py:765 src/ui/sstv_tab.py:1250
 msgid "Decode IQ Recording"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:765 src/ui/sstv_tab.py:1153
+#: src/ui/telemetry_tab.py:765 src/ui/sstv_tab.py:1251
 #: src/ui/digital_voice_tab.py:545
 msgid "SDR Control is not available."
 msgstr ""
@@ -2956,7 +3013,7 @@ msgid ""
 "SatNOGS upload skipped: set the recording's start time in SDR Control first."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:2272 src/ui/sstv_tab.py:986
+#: src/ui/telemetry_tab.py:2272 src/ui/sstv_tab.py:1083
 msgid "Frames: "
 msgstr ""
 
@@ -3076,7 +3133,7 @@ msgstr ""
 msgid "Show:"
 msgstr ""
 
-#: src/ui/aprs_tab.py:278 src/ui/sstv_tab.py:283
+#: src/ui/aprs_tab.py:278 src/ui/sstv_tab.py:293
 msgid "Input: —"
 msgstr ""
 
@@ -3255,7 +3312,7 @@ msgstr ""
 msgid "No image received yet."
 msgstr ""
 
-#: src/ui/meteor_tab.py:465 src/ui/sstv_tab.py:377
+#: src/ui/meteor_tab.py:465 src/ui/sstv_tab.py:387
 msgid "Image"
 msgstr ""
 
@@ -3271,7 +3328,7 @@ msgstr ""
 msgid "Load a previous reception's images into the preview and history below."
 msgstr ""
 
-#: src/ui/meteor_tab.py:479 src/ui/sstv_tab.py:454
+#: src/ui/meteor_tab.py:479 src/ui/sstv_tab.py:477
 msgid "🗑 Clear"
 msgstr ""
 
@@ -3279,7 +3336,7 @@ msgstr ""
 msgid "Gain:"
 msgstr ""
 
-#: src/ui/meteor_tab.py:514 src/ui/sstv_tab.py:385
+#: src/ui/meteor_tab.py:514 src/ui/sstv_tab.py:395
 msgid "Received Images:"
 msgstr ""
 
@@ -3352,7 +3409,7 @@ msgstr ""
 msgid "Autotrack: reception stopped at LOS."
 msgstr ""
 
-#: src/ui/meteor_tab.py:920 src/ui/sstv_tab.py:1106
+#: src/ui/meteor_tab.py:920 src/ui/sstv_tab.py:1204
 msgid "Image received: "
 msgstr ""
 
@@ -3559,8 +3616,8 @@ msgstr ""
 msgid "No SDR devices detected."
 msgstr ""
 
-#: src/ui/sdr_install_dialog.py:358 src/ui/cw_tab.py:269 src/ui/sstv_tab.py:406
-#: src/ui/sstv_tab.py:1269
+#: src/ui/sdr_install_dialog.py:358 src/ui/cw_tab.py:269 src/ui/sstv_tab.py:416
+#: src/ui/sstv_tab.py:1367
 msgid "Ready"
 msgstr ""
 
@@ -3849,7 +3906,7 @@ msgid "Autotrack / Record"
 msgstr ""
 
 #: src/ui/autotrack_record_dialog.py:219 src/ui/autotrack_record_dialog.py:398
-#: src/ui/sdr_control_widget.py:816
+#: src/ui/sdr_control_widget.py:818
 msgid "Start (UTC):"
 msgstr ""
 
@@ -3871,10 +3928,6 @@ msgstr ""
 
 #: src/ui/autotrack_record_dialog.py:265
 msgid "Rename"
-msgstr ""
-
-#: src/ui/autotrack_record_dialog.py:267
-msgid "Delete"
 msgstr ""
 
 #: src/ui/autotrack_record_dialog.py:277
@@ -4188,7 +4241,7 @@ msgstr ""
 msgid "TLE validation failed. Please check the format."
 msgstr ""
 
-#: src/ui/radio_control_widget.py:209 src/ui/sdr_control_widget.py:807
+#: src/ui/radio_control_widget.py:209 src/ui/sdr_control_widget.py:809
 msgid "Offset:"
 msgstr ""
 
@@ -4224,7 +4277,7 @@ msgid ""
 "shifts the corrected frequency higher."
 msgstr ""
 
-#: src/ui/radio_control_widget.py:257 src/ui/sdr_control_widget.py:612
+#: src/ui/radio_control_widget.py:257 src/ui/sdr_control_widget.py:614
 msgid "T"
 msgstr ""
 
@@ -4232,7 +4285,7 @@ msgstr ""
 msgid "Tune: reset downlink/uplink to center of transmitter band"
 msgstr ""
 
-#: src/ui/radio_control_widget.py:264 src/ui/sdr_control_widget.py:624
+#: src/ui/radio_control_widget.py:264 src/ui/sdr_control_widget.py:626
 msgid "L"
 msgstr ""
 
@@ -4397,7 +4450,7 @@ msgstr ""
 msgid "Recording"
 msgstr ""
 
-#: src/ui/radio_control_widget.py:563 src/ui/sdr_control_widget.py:769
+#: src/ui/radio_control_widget.py:563 src/ui/sdr_control_widget.py:771
 msgid "● REC"
 msgstr ""
 
@@ -5160,7 +5213,7 @@ msgstr ""
 msgid "Please install Direwolf from your distribution's package manager."
 msgstr ""
 
-#: src/ui/sstv_tab.py:270
+#: src/ui/sstv_tab.py:280
 msgid ""
 "AX.25 baud rate for SSDV (AX.25) reception.\n"
 "Selecting a satellite or transponder sets this from the baud\n"
@@ -5169,7 +5222,7 @@ msgid ""
 "Not used by the other modes."
 msgstr ""
 
-#: src/ui/sstv_tab.py:295
+#: src/ui/sstv_tab.py:305
 msgid ""
 "Receives images from amateur satellites. Pick the mode below, then the "
 "satellite in Radio Control (or the input box at the right).\n"
@@ -5196,168 +5249,187 @@ msgid ""
 "Selecting HADES-SA or ASRTU-1 switches the mode automatically."
 msgstr ""
 
-#: src/ui/sstv_tab.py:324
+#: src/ui/sstv_tab.py:334
 msgid "Auto-save PNG"
 msgstr ""
 
-#: src/ui/sstv_tab.py:341
+#: src/ui/sstv_tab.py:351
 msgid ""
 "Received frames appear here live, one per line, as hex. Paste hex from "
 "another tab (Telemetry) or from SatNOGS Network to build the image from it."
 msgstr ""
 
-#: src/ui/sstv_tab.py:350
+#: src/ui/sstv_tab.py:360
 msgid "94 A6 62 B2 9C AA 60 …  (one frame per line)"
 msgstr ""
 
-#: src/ui/sstv_tab.py:358
+#: src/ui/sstv_tab.py:368
 msgid "Build image from hex"
 msgstr ""
 
-#: src/ui/sstv_tab.py:361
+#: src/ui/sstv_tab.py:371
 msgid "Clear packets"
 msgstr ""
 
-#: src/ui/sstv_tab.py:365 src/ui/digital_voice_tab.py:171
+#: src/ui/sstv_tab.py:375 src/ui/digital_voice_tab.py:171
 msgid "Raw Packets"
 msgstr ""
 
-#: src/ui/sstv_tab.py:374 src/ui/sstv_tab.py:1266
+#: src/ui/sstv_tab.py:384 src/ui/sstv_tab.py:1364
 msgid "Waiting for signal…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:419
+#: src/ui/sstv_tab.py:429
+msgid "📚 Stored Images…"
+msgstr ""
+
+#: src/ui/sstv_tab.py:434
+msgid ""
+"SSDV packets of every mode are stored, so a picture can be built from "
+"several passes."
+msgstr ""
+
+#: src/ui/sstv_tab.py:442
 msgid "💾 Save PNG"
 msgstr ""
 
-#: src/ui/sstv_tab.py:426
+#: src/ui/sstv_tab.py:449
 msgid "🖼 Open Image…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:432
+#: src/ui/sstv_tab.py:455
 msgid "📂 Decode MP3 Recording…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:437 src/ui/sstv_tab.py:1175
+#: src/ui/sstv_tab.py:460 src/ui/sstv_tab.py:1273
 msgid "soundfile not installed — pip install soundfile"
 msgstr ""
 
-#: src/ui/sstv_tab.py:446
+#: src/ui/sstv_tab.py:469
 msgid ""
 "Open a recorded .iq.wav file and play it into the decoder (the same as SDR "
 "Control's Open…).\n"
 "A whole-recording spectrogram opens; click it to start from any point."
 msgstr ""
 
-#: src/ui/sstv_tab.py:591
+#: src/ui/sstv_tab.py:615
 msgid "No audio source — connect Rig or SDR in Radio Control"
 msgstr ""
 
-#: src/ui/sstv_tab.py:593 src/ui/digital_voice_tab.py:290
+#: src/ui/sstv_tab.py:617 src/ui/digital_voice_tab.py:290
 #: src/ui/digital_voice_tab.py:293
 msgid "Input: "
 msgstr ""
 
-#: src/ui/sstv_tab.py:728
+#: src/ui/sstv_tab.py:752
 msgid "Sound card error: "
 msgstr ""
 
-#: src/ui/sstv_tab.py:807
+#: src/ui/sstv_tab.py:831
 msgid "SSDV: waiting for AX.25 frames…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:869
+#: src/ui/sstv_tab.py:893
 msgid ""
 "⚠ This gr_satellites build has no --kiss_server; SSDV frames cannot be read."
 msgstr ""
 
-#: src/ui/sstv_tab.py:873
+#: src/ui/sstv_tab.py:897
 msgid "SSDV (CCSDS BPSK 9k6): waiting for ASRTU-1 frames…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:919 src/ui/digital_voice_tab.py:315
+#: src/ui/sstv_tab.py:943 src/ui/digital_voice_tab.py:315
 msgid "⚠ Could not start the 2FSK demodulator."
 msgstr ""
 
-#: src/ui/sstv_tab.py:924
+#: src/ui/sstv_tab.py:948
 msgid "SSDV (2FSK 800bps): waiting for packets…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:989
+#: src/ui/sstv_tab.py:1015
+msgid "Unknown"
+msgstr ""
+
+#: src/ui/sstv_tab.py:1044
+#, python-brace-format
+msgid "Stored image {i}: {n} packets built."
+msgstr ""
+
+#: src/ui/sstv_tab.py:1086
 msgid "SSDV packets: "
 msgstr ""
 
-#: src/ui/sstv_tab.py:997
+#: src/ui/sstv_tab.py:1094
 msgid "No hex frames found in the text."
 msgstr ""
 
-#: src/ui/sstv_tab.py:1010
+#: src/ui/sstv_tab.py:1108
 msgid "(223-byte CCSDS frames on virtual channel 1 with a valid CRC)"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1012
+#: src/ui/sstv_tab.py:1110
 msgid "(sync 55 66 / 55 67 and a valid CRC)"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1015
+#: src/ui/sstv_tab.py:1113
 #, python-brace-format
 msgid "{n} frames, but none contains an SSDV packet "
 msgstr ""
 
-#: src/ui/sstv_tab.py:1019
+#: src/ui/sstv_tab.py:1117
 #, python-brace-format
 msgid "{n} frames, {m} SSDV packets — decoding…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1109
+#: src/ui/sstv_tab.py:1207
 msgid "Mode detected: "
 msgstr ""
 
-#: src/ui/sstv_tab.py:1165
+#: src/ui/sstv_tab.py:1263
 msgid "Select Recorded Audio"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1167 src/ui/digital_voice_tab.py:483
+#: src/ui/sstv_tab.py:1265 src/ui/digital_voice_tab.py:483
 msgid "Audio Files (*.mp3 *.wav)"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1174 src/ui/sstv_tab.py:1201
+#: src/ui/sstv_tab.py:1272 src/ui/sstv_tab.py:1299
 msgid "Decode Recording"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1189
+#: src/ui/sstv_tab.py:1287
 msgid "Decoding: "
 msgstr ""
 
-#: src/ui/sstv_tab.py:1202
+#: src/ui/sstv_tab.py:1300
 msgid "Decode failed"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1228
+#: src/ui/sstv_tab.py:1326
 msgid "Save SSTV Image"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1230
+#: src/ui/sstv_tab.py:1328
 msgid "PNG Images (*.png)"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1234
+#: src/ui/sstv_tab.py:1332
 msgid "Saved: "
 msgstr ""
 
-#: src/ui/sstv_tab.py:1240 src/ui/sstv_tab.py:1248
+#: src/ui/sstv_tab.py:1338 src/ui/sstv_tab.py:1346
 msgid "Open SSTV Image"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1242
+#: src/ui/sstv_tab.py:1340
 msgid "Images (*.png *.jpg *.jpeg *.bmp)"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1248
+#: src/ui/sstv_tab.py:1346
 msgid "Could not read the image file."
 msgstr ""
 
-#: src/ui/sstv_tab.py:1260
+#: src/ui/sstv_tab.py:1358
 msgid "Opened: "
 msgstr ""
 
@@ -5821,57 +5893,57 @@ msgstr ""
 msgid "This transmitter is no longer present in the SatNOGS database."
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:283
+#: src/ui/sdr_control_widget.py:285
 msgid "SDR Connected"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:299 src/ui/sdr_control_widget.py:393
+#: src/ui/sdr_control_widget.py:301 src/ui/sdr_control_widget.py:395
 msgid "SDR Disconnected"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:400
+#: src/ui/sdr_control_widget.py:402
 msgid ""
 "Total RX gain now applied. In Auto, HackRF's software AGC changes it in 6 dB "
 "steps."
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:403
+#: src/ui/sdr_control_widget.py:405
 msgid "🌊 Waterfall"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:405
+#: src/ui/sdr_control_widget.py:407
 msgid "Open a scrolling spectrum + waterfall popup for this SDR"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:431
+#: src/ui/sdr_control_widget.py:433
 msgid "Spectrum"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:473
+#: src/ui/sdr_control_widget.py:475
 msgid "Frequency (MHz)"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:479
+#: src/ui/sdr_control_widget.py:481
 msgid "Power (dBFS)"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:544
+#: src/ui/sdr_control_widget.py:546
 msgid "Passband Tune"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:549
+#: src/ui/sdr_control_widget.py:551
 msgid "Step:"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:562
+#: src/ui/sdr_control_widget.py:564
 msgid "Tune down ×10 step"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:569
+#: src/ui/sdr_control_widget.py:571
 msgid "Tune down"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:574
+#: src/ui/sdr_control_widget.py:576
 msgid ""
 "Freq: while a transponder is selected, tracks its Doppler-corrected centre "
 "frequency — use the arrows or type a value to move within its passband (kept "
@@ -5879,90 +5951,90 @@ msgid ""
 "any frequency directly."
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:580
+#: src/ui/sdr_control_widget.py:582
 msgid "Freq:"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:595
+#: src/ui/sdr_control_widget.py:597
 msgid "Tune up"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:602
+#: src/ui/sdr_control_widget.py:604
 msgid "Tune up ×10 step"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:616
+#: src/ui/sdr_control_widget.py:618
 msgid ""
 "T: reset to the transponder's Doppler-corrected centre frequency. Disabled "
 "when no transponder is selected."
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:628
+#: src/ui/sdr_control_widget.py:630
 msgid ""
 "SDR Lock: while on, Doppler correction stops retuning the SDR so you can "
 "freely use Passband Tune / Freq above; Doppler correction resumes from "
 "wherever you leave it once turned off"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:695
+#: src/ui/sdr_control_widget.py:697
 msgid "Demodulator"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:709
+#: src/ui/sdr_control_widget.py:711
 msgid "AGC On"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:711
+#: src/ui/sdr_control_widget.py:713
 msgid "AGC Off"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:720
+#: src/ui/sdr_control_widget.py:722
 msgid "Volume:"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:731
+#: src/ui/sdr_control_widget.py:733
 msgid "Speaker output"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:748
+#: src/ui/sdr_control_widget.py:750
 msgid "IQ Recorder"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:752
+#: src/ui/sdr_control_widget.py:754
 msgid "Record BW:"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:762
+#: src/ui/sdr_control_widget.py:764
 msgid "File:"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:771
+#: src/ui/sdr_control_widget.py:773
 msgid "■ STOP"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:781
+#: src/ui/sdr_control_widget.py:783
 msgid "The SDR input is at full scale, so weak signals are distorted or lost."
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:788
+#: src/ui/sdr_control_widget.py:790
 msgid "📂 Open…"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:789
+#: src/ui/sdr_control_widget.py:791
 msgid "Choose a recorded .iq.wav file and start playing it"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:791
+#: src/ui/sdr_control_widget.py:793
 msgid "▶ Play"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:794
+#: src/ui/sdr_control_widget.py:796
 msgid ""
 "Play the loaded recording again from where it stopped\n"
 "(from the start if it had reached the end)"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:827
+#: src/ui/sdr_control_widget.py:829
 msgid ""
 "UTC time of the recording's first sample. Read from the file name\n"
 "when it has one; otherwise it shows 00:00 and can be entered here.\n"
@@ -5970,28 +6042,28 @@ msgid ""
 "playback position."
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:964
+#: src/ui/sdr_control_widget.py:966
 msgid "🔇 Mute"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:964
+#: src/ui/sdr_control_widget.py:966
 msgid "🔊 Unmute"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:1045
+#: src/ui/sdr_control_widget.py:1047
 msgid "IQ recordings (*.iq.wav);;All files (*)"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:1232
+#: src/ui/sdr_control_widget.py:1244
 #, python-brace-format
 msgid "Gain: {value}"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:1233
+#: src/ui/sdr_control_widget.py:1245
 msgid "Gain: auto (set by the tuner)"
 msgstr ""
 
-#: src/ui/sdr_control_widget.py:1244
+#: src/ui/sdr_control_widget.py:1256
 #, python-brace-format
 msgid "⚠ Clipping {pct:.0f}% — lower the gain"
 msgstr ""
@@ -6173,32 +6245,28 @@ msgid ""
 "is correct first."
 msgstr ""
 
-#: src/ui/sdr_overview_dialog.py:169
+#: src/ui/sdr_overview_dialog.py:184
 #, python-format
 msgid "Time %(t)s   Offset %(f).2f kHz"
 msgstr ""
 
-#: src/ui/sdr_overview_dialog.py:184
+#: src/ui/sdr_overview_dialog.py:208
 #, python-format
 msgid "Pass Overview — %s"
 msgstr ""
 
-#: src/ui/sdr_overview_dialog.py:192
+#: src/ui/sdr_overview_dialog.py:216
 msgid "Remove background"
 msgstr ""
 
-#: src/ui/sdr_overview_dialog.py:196
+#: src/ui/sdr_overview_dialog.py:220
 msgid ""
 "Subtract each frequency's typical level over the whole recording,\n"
 "so constant lines disappear and short bursts stand out."
 msgstr ""
 
-#: src/ui/sdr_overview_dialog.py:201 src/ui/sdr_overview_dialog.py:265
+#: src/ui/sdr_overview_dialog.py:225 src/ui/sdr_overview_dialog.py:310
 msgid "Save PNG…"
-msgstr ""
-
-#: src/ui/sdr_overview_dialog.py:215
-msgid "Click to jump the playback to that time"
 msgstr ""
 
 #: src/ui/sdr_overview_dialog.py:234
@@ -6213,7 +6281,11 @@ msgstr ""
 msgid "Load the start time and offset of the clicked point"
 msgstr ""
 
-#: src/ui/sdr_overview_dialog.py:251
+#: src/ui/sdr_overview_dialog.py:255
+msgid "Click to jump the playback to that time"
+msgstr ""
+
+#: src/ui/sdr_overview_dialog.py:296
 #, python-format
 msgid "Could not read the recording: %s"
 msgstr ""

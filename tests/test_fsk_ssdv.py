@@ -9,6 +9,7 @@ import pytest
 
 pytest.importorskip("scipy")
 
+from comms.sstv import rs_ssdv  # noqa: E402
 from comms.sstv.fsk_ssdv import (  # noqa: E402
     PACKET_PREFIX,
     FskSsdvStream,
@@ -28,7 +29,9 @@ def hades_packet(pid: int, image: int = 32) -> bytes:
     """A 256-byte SSDV packet with the HADES-SA callsign bytes (BF 35 FB A3) and a valid CRC."""
     pkt = bytearray(make_packet(image=image, pid=pid))
     pkt[2:6] = b"\xbf\x35\xfb\xa3"
+    pkt[11] = 0x18  # quality 7, not the last packet
     pkt[220:224] = zlib.crc32(bytes(pkt[1:220])).to_bytes(4, "big")
+    pkt[224:256] = rs_ssdv.encode(bytes(pkt[1:224]))  # real Reed-Solomon parity
     return bytes(pkt)
 
 
