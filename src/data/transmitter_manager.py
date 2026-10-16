@@ -74,6 +74,14 @@ def _is_placeholder_name(name: str) -> bool:
 # unrecognised value fell through to 'unknown', which silently flipped ~1700
 # in-orbit satellites (METEOR/NOAA/Metop included) to grey "status unknown" on
 # the first sync after the SatNOGS change (see database.py's one-time repair).
+# OSCAR designators AMSAT already uses but SATNOGS has not yet listed among a
+# satellite's alias names. Merged into alt_names on sync so the AMSAT Status
+# matching (name / alt_names / designator) finds them. Remove an entry once
+# SATNOGS carries the designator itself.
+_EXTRA_ALT_NAMES: dict[int, list[str]] = {
+    68446: ["SO-127"],  # HADES-SA
+}
+
 _SATNOGS_STATUS_MAP: dict[str, str] = {
     "alive": "alive",
     "in orbit": "alive",
@@ -923,10 +931,11 @@ class TransmitterManager:
 
                     # Parse alias names (e.g. "ORARI, IO-86, YB0X") into a JSON list
                     names_raw = str(sat.get("names", "") or "").strip()
-                    alt_names_json = json.dumps(
-                        [n.strip() for n in names_raw.split(",") if n.strip()],
-                        ensure_ascii=False,
-                    )
+                    alt_names_list = [n.strip() for n in names_raw.split(",") if n.strip()]
+                    for extra in _EXTRA_ALT_NAMES.get(norad, []):
+                        if extra.lower() not in {n.lower() for n in alt_names_list}:
+                            alt_names_list.append(extra)
+                    alt_names_json = json.dumps(alt_names_list, ensure_ascii=False)
 
                     # norad_follow_id differs from its own NORAD →
                     # this is a provisional-NORAD remnant satellite.
