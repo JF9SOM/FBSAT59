@@ -904,6 +904,17 @@ NTPサーバーに一切到達できなかった場合（オフセット自体�
 | RS-44 (NORAD 44909) | 435.612 MHz | 145.993 MHz（09-30に145.9906へ変更→10-01に145.993へ戻し、代わりにUL Offset −2400Hzで運用） | USB-D（invert=true→UL側はLSB-D） | true | JH1NHK→Rymansat Satellite Tracker |
 | JO-97 (NORAD 43803) | 145.857 MHz | 435.118 MHz | USB-D（invert=true→UL側はLSB-D） | **true**（2026-08-02修正） | JH1NHK |
 | MO-122 (NORAD 60209) | 435.812 MHz | 145.938 MHz | USB-D | false | JH1NHK |
+| REPLICATOR-2 (NORAD 69927) `community-replicator2-ax25-tlm` | 400.500 MHz | — | GMSK（baud 9600） | false | SV2HWM（GetKISS の AX.25 UI フレーム） |
+| REPLICATOR-2 (NORAD 69927) `community-replicator2-fm-music` | 400.500 MHz | — | FM | false | 2026-10-16 録音の解析・SV2HWM |
+
+**REPLICATOR-2（2026-10-16 追加）**: SATNOGS には「Mode U - Transmitter」（GFSK 9600）1 件しかなく、
+フレーミングが分からないため 2 件を追加した。`AX.25 9K6 TLM` は description の "AX.25" と baud 9600 で
+`is_ax25_telemetry_transmitter()` に一致し Telemetry タブの AX.25 モードに出る（**FBSAT59 自身での
+デコードは未確認**。SV2HWM の動画に映った GetKISS の KISS フレームが根拠）。`FM Music` は約 4.8 kHz
+離れた 2 周波 FSK を矩形波の音程で切り替えるメロディで、**狭帯域 FM 復調（±9 kHz IF）だけで
+そのまま聞こえる**（デジタルプロトコルなし、約 180 秒周期。ドップラー補正済みの IQ 録音で確認）。
+これらを追加したことでコミュニティ衛星が 7→8 件になり、`tests/test_main_window.py` の件数
+アサーション 3 箇所を更新した（CI で確認すること）。
 
 `description` は引き続き「FT4 Calling — community standard」のまま（FT4タブの自動オープン判定は
 description文字列を見るため無関係）。`mode` 列だけ実際のリグCATモードを表す `USB-D`/`LSB-D` に

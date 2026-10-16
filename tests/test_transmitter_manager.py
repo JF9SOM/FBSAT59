@@ -910,3 +910,32 @@ class TestUlOffsetPersistence:
             "SELECT ul_offset_hz FROM transmitters WHERE uuid = 'community-rs44-ft4'"
         ).fetchone()
         assert row["ul_offset_hz"] == -2400.0
+
+
+class TestReplicator2Community:
+    """REPLICATOR-2 (NORAD 69927): SATNOGS has only a bare GFSK 9600 entry."""
+
+    def test_ax25_tlm_and_fm_music_loaded(self, db: sqlite3.Connection) -> None:
+        from comms.mode_detection import (
+            is_aprs_transmitter,
+            is_ax25_telemetry_transmitter,
+        )
+
+        TransmitterManager(db).load_community_transmitters()
+        rows = {
+            r["uuid"]: dict(r)
+            for r in db.execute(
+                "SELECT * FROM transmitters WHERE norad_cat_id = 69927 AND source = 'community'"
+            )
+        }
+        assert set(rows) == {"community-replicator2-ax25-tlm", "community-replicator2-fm-music"}
+
+        tlm = rows["community-replicator2-ax25-tlm"]
+        assert (tlm["downlink_low"], tlm["mode"], tlm["baud"]) == (400500000, "GMSK", 9600)
+        assert is_ax25_telemetry_transmitter(tlm)
+        assert not is_aprs_transmitter(tlm)
+
+        music = rows["community-replicator2-fm-music"]
+        assert (music["downlink_low"], music["mode"]) == (400500000, "FM")
+        assert not is_ax25_telemetry_transmitter(music)
+        assert not is_aprs_transmitter(music)

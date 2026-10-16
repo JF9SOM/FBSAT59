@@ -116,5 +116,37 @@
     "baud": 9600,
     "ctcss_tone": null,
     "notes": "Ground-based simplex APRS (DATA-FM) for testing between handhelds and the base rig. Pseudo-satellite NORAD -3 (core.engine.TERRESTRIAL_IDS): no TLE, no Doppler correction."
+  },
+  {
+    "uuid": "community-replicator2-ax25-tlm",
+    "norad_cat_id": 69927,
+    "satellite_name": "REPLICATOR-2",
+    "description": "AX.25 9K6 TLM — community",
+    "type": "Transmitter",
+    "uplink_low":   null,
+    "uplink_high":  null,
+    "downlink_low": 400500000,
+    "downlink_high": null,
+    "mode": "GMSK",
+    "invert": false,
+    "baud": 9600,
+    "ctcss_tone": null,
+    "notes": "9600 baud GMSK AX.25 UI telemetry on 400.500 MHz. SATNOGS lists only a bare 'Mode U - Transmitter' (GFSK 9600) with no framing information. Framing taken from SV2HWM's 2026-07-09 reception (https://x.com/SV2HWM/status/2075203916862497153): GetKISS shows AX.25 UI frames (control 03, PID F0; addresses read as SP6KZ / SP5QNA, an 'Endurosat' text frame and binary telemetry). Not yet decoded by FBSAT59 itself. 2026-10."
+  },
+  {
+    "uuid": "community-replicator2-fm-music",
+    "norad_cat_id": 69927,
+    "satellite_name": "REPLICATOR-2",
+    "description": "FM Music — community",
+    "type": "Transmitter",
+    "uplink_low":   null,
+    "uplink_high":  null,
+    "downlink_low": 400500000,
+    "downlink_high": null,
+    "mode": "FM",
+    "invert": false,
+    "baud": null,
+    "ctcss_tone": null,
+    "notes": "Melody beacon on 400.500 MHz: a two-tone FSK pair about 4.8 kHz apart keyed by a square-wave note, so plain narrow FM demodulation plays it as a melody (no digital protocol). Repeats about every 180 s. Confirmed on a Doppler-corrected IQ recording of 2026-10-16 (NFM, +/-9 kHz IF) and on SV2HWM's 2026-07-09 recording (https://x.com/SV2HWM/status/2075203916862497153). Not in SATNOGS. 2026-10."
   }
 ]
