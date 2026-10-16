@@ -18,6 +18,7 @@ from PySide6.QtCore import QPoint, QRect, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialog,
     QFileDialog,
     QHBoxLayout,
@@ -47,6 +48,16 @@ def _fmt_time(seconds: float) -> str:
     return f"{s // 60}:{s % 60:02d}"
 
 
+def _offset_hz_at(x: int, plot: QRect, sample_rate: float) -> float:
+    """Baseband frequency (Hz, relative to the recording's centre) at pixel column *x*."""
+    return ((x - plot.left()) / max(1, plot.width()) - 0.5) * sample_rate
+
+
+# What a click in the image loads into the playback (the dialog's "On click" menu).
+CLICK_TIME_ONLY = 0
+CLICK_TIME_AND_OFFSET = 1
+
+
 def _nice_step(span: float, target: int) -> float:
     """A round tick step giving roughly *target* ticks over *span*."""
     raw = span / max(1, target)
@@ -61,7 +72,8 @@ class _OverviewCanvas(QWidget):
     """Draws the spectrogram image with time / frequency axes."""
 
     hovered = Signal(str)
-    clicked_at = Signal(float)  # seconds from the start of the recording
+    # (seconds from the start of the recording, offset in Hz from the centre)
+    clicked_at = Signal(float, float)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -144,7 +156,7 @@ class _OverviewCanvas(QWidget):
         p.end()
 
     def mousePressEvent(self, event: object) -> None:  # noqa: N802
-        """Report the clicked time (only for a left click inside the image)."""
+        """Report the clicked time and offset (only for a left click inside the image)."""
         if self._data is None or self._image is None:
             return
         if event.button() != Qt.MouseButton.LeftButton:  # type: ignore[attr-defined]
@@ -153,7 +165,10 @@ class _OverviewCanvas(QWidget):
         r = self._plot_rect(self.width(), self.height())
         if r.contains(pos):
             frac = (pos.y() - r.top()) / max(1, r.height())
-            self.clicked_at.emit(float(frac * self._data.duration_s))
+            self.clicked_at.emit(
+                float(frac * self._data.duration_s),
+                float(_offset_hz_at(pos.x(), r, self._data.sample_rate)),
+            )
 
     def mouseMoveEvent(self, event: object) -> None:  # noqa: N802
         if self._data is None or self._image is None:
@@ -165,7 +180,7 @@ class _OverviewCanvas(QWidget):
             return
         d = self._data
         t = (pos.y() - r.top()) / r.height() * d.duration_s
-        f = ((pos.x() - r.left()) / r.width() - 0.5) * d.sample_rate / 1000.0
+        f = _offset_hz_at(pos.x(), r, d.sample_rate) / 1000.0
         self.hovered.emit(_("Time %(t)s   Offset %(f).2f kHz") % {"t": _fmt_time(t), "f": f})
 
 
@@ -175,10 +190,19 @@ class SdrOverviewDialog(QDialog):
     _progress = Signal(int)
     _finished = Signal(object)  # OverviewData | None
     _failed = Signal(str)
-    # Emitted with the time (seconds) the user clicked in the image.
-    seek_requested = Signal(float)
+    # Emitted when the user clicks the image: the time (seconds), the offset (Hz from
+    # the recording's centre) and whether the offset is to be loaded as well (the
+    # "On click" menu).
+    seek_requested = Signal(float, float, bool)
+    # The "On click" menu was changed (CLICK_TIME_ONLY / CLICK_TIME_AND_OFFSET).
+    click_mode_changed = Signal(int)
 
-    def __init__(self, path: Path, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        path: Path,
+        parent: QWidget | None = None,
+        click_mode: int = CLICK_TIME_AND_OFFSET,
+    ) -> None:
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.setWindowTitle(_("Pass Overview — %s") % path.name)
@@ -206,12 +230,28 @@ class SdrOverviewDialog(QDialog):
         top.addWidget(self._save_btn)
         v.addLayout(top)
 
+        click_row = QHBoxLayout()
+        click_row.addWidget(QLabel(_("On click:")))
+        self._click_combo = QComboBox()
+        self._click_combo.addItem(
+            _("Load the start time of the clicked point only"), CLICK_TIME_ONLY
+        )
+        self._click_combo.addItem(
+            _("Load the start time and offset of the clicked point"), CLICK_TIME_AND_OFFSET
+        )
+        self._click_combo.setCurrentIndex(max(0, self._click_combo.findData(click_mode)))
+        self._click_combo.currentIndexChanged.connect(
+            lambda _i: self.click_mode_changed.emit(int(self._click_combo.currentData()))
+        )
+        click_row.addWidget(self._click_combo, 1)
+        v.addLayout(click_row)
+
         self._canvas = _OverviewCanvas()
         v.addWidget(self._canvas, 1)
         self._info = QLabel("")
         self._info.setStyleSheet("color: gray; font-size: 11px;")
         self._canvas.hovered.connect(self._info.setText)
-        self._canvas.clicked_at.connect(self.seek_requested)
+        self._canvas.clicked_at.connect(self._on_canvas_clicked)
         self._canvas.setToolTip(_("Click to jump the playback to that time"))
         self._bar = QProgressBar()
         self._bar.setRange(0, 100)
@@ -222,6 +262,11 @@ class SdrOverviewDialog(QDialog):
         self._finished.connect(self._on_finished)
         self._failed.connect(self._on_failed)
         threading.Thread(target=self._work, name="sdr-overview", daemon=True).start()
+
+    def _on_canvas_clicked(self, position_s: float, offset_hz: float) -> None:
+        """Forward a click, saying whether the offset is to be loaded as well."""
+        with_offset = self._click_combo.currentData() == CLICK_TIME_AND_OFFSET
+        self.seek_requested.emit(position_s, offset_hz, bool(with_offset))
 
     def _work(self) -> None:
         """Background thread: read the file and build the spectrogram."""

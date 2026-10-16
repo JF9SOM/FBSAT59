@@ -440,3 +440,86 @@ def test_gain_label_shows_the_applied_gain(qtbot: QtBot) -> None:
     assert "auto" in w._gain_label.text()
     w.set_pipeline(None)
     assert w._gain_label.text() == ""
+
+
+class TestOverviewClickOffset:
+    """A click in the Pass Overview loads the time, and (menu) the offset, into the playback."""
+
+    def test_time_only_leaves_the_offset_alone(self, qtbot: QtBot) -> None:
+        w, device = _make_widget(qtbot)
+        w._playback_offset_spin.setValue(1200)
+        w._on_overview_seek(42.0, -4000.0, False)
+        assert device.seeks == [42.0]
+        assert w._playback_offset_spin.value() == 1200
+
+    def test_time_and_offset_loads_both(self, qtbot: QtBot) -> None:
+        w, device = _make_widget(qtbot)
+        w._on_overview_seek(42.0, -3999.6, True)
+        assert device.seeks == [42.0]
+        assert w._playback_offset_spin.value() == -4000
+        w._pipeline.set_doppler_target.assert_called_with(-4000.0)
+
+    def test_offset_is_clamped_to_the_spinbox_range(self, qtbot: QtBot) -> None:
+        w, _device = _make_widget(qtbot)
+        w._on_overview_seek(1.0, 124_000.0, True)
+        assert w._playback_offset_spin.value() == 100_000
+        w._on_overview_seek(1.0, -124_000.0, True)
+        assert w._playback_offset_spin.value() == -100_000
+
+    def test_overview_window_gets_the_remembered_mode(
+        self, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from ui.sdr_overview_dialog import CLICK_TIME_ONLY
+
+        made: list[Any] = []
+
+        class _Dlg:
+            def __init__(self, _path: Path, _parent: Any, mode: int) -> None:
+                made.append(mode)
+                self.seek_requested = MagicMock()
+                self.click_mode_changed = MagicMock()
+                self.destroyed = MagicMock()
+
+            def show(self) -> None:
+                pass
+
+        monkeypatch.setattr("ui.sdr_control_widget.SdrOverviewDialog", _Dlg)
+        w, _device = _make_widget(qtbot)
+        w._overview_click_mode = CLICK_TIME_ONLY
+        w._show_overview("/rec/x.iq.wav")
+        assert made == [CLICK_TIME_ONLY]
+
+
+def test_overview_click_maps_x_to_offset_and_reports_the_menu_choice(qtbot: QtBot) -> None:
+    from PySide6.QtCore import QRect
+
+    from sdr.overview import OverviewData
+    from ui.sdr_overview_dialog import (
+        CLICK_TIME_AND_OFFSET,
+        CLICK_TIME_ONLY,
+        _offset_hz_at,
+        _OverviewCanvas,
+    )
+
+    plot = QRect(100, 0, 400, 100)
+    assert _offset_hz_at(100, plot, 250_000.0) == -125_000.0
+    assert _offset_hz_at(300, plot, 250_000.0) == 0.0
+    assert _offset_hz_at(500, plot, 250_000.0) == 125_000.0
+
+    canvas = _OverviewCanvas()
+    qtbot.addWidget(canvas)
+    rgb = np.zeros((10, 10, 3), dtype=np.uint8)
+    canvas.set_image(rgb, OverviewData(np.zeros((10, 10)), 250_000.0, 1.0, 10.0))
+    canvas.resize(600, 400)
+    r = canvas._plot_rect(canvas.width(), canvas.height())
+    with qtbot.waitSignal(canvas.clicked_at) as blocker:
+        QTest.mouseClick(
+            canvas,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+            QPoint(r.left() + r.width() // 2, r.top() + r.height() // 2),
+        )
+    t, f = blocker.args
+    assert abs(t - 5.0) < 0.1
+    assert abs(f) < 1000.0
+    assert CLICK_TIME_ONLY != CLICK_TIME_AND_OFFSET

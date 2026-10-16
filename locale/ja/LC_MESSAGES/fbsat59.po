@@ -6624,6 +6624,18 @@ msgstr "PNGを保存…"
 msgid "Click to jump the playback to that time"
 msgstr "クリックすると、その時刻へ再生位置をジャンプします"
 
+#: src/ui/sdr_overview_dialog.py:234
+msgid "On click:"
+msgstr "クリック時:"
+
+#: src/ui/sdr_overview_dialog.py:237
+msgid "Load the start time of the clicked point only"
+msgstr "クリック地点の開始時刻のみを読み込む"
+
+#: src/ui/sdr_overview_dialog.py:240
+msgid "Load the start time and offset of the clicked point"
+msgstr "クリック地点の開始時刻とオフセットを読み込む"
+
 #: src/ui/sdr_overview_dialog.py:251
 #, python-format
 msgid "Could not read the recording: %s"

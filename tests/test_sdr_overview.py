@@ -90,7 +90,21 @@ def test_click_in_overview_requests_seek(tmp_path: Path, qtbot: QtBot) -> None:
     qtbot.waitUntil(lambda: dlg._data is not None, timeout=10000)
     canvas = dlg._canvas
     r = canvas._plot_rect(canvas.width(), canvas.height())
-    got: list[float] = []
-    dlg.seek_requested.connect(got.append)
+    got: list[tuple[float, float, bool]] = []
+    dlg.seek_requested.connect(lambda t, f, with_offset: got.append((t, f, with_offset)))
     QTest.mouseClick(canvas, Qt.MouseButton.LeftButton, pos=QPoint(r.center().x(), r.center().y()))
-    assert len(got) == 1 and abs(got[0] - 5.0) < 0.2
+    assert len(got) == 1 and abs(got[0][0] - 5.0) < 0.2
+    # Horizontal middle of the image = the recording's centre frequency.
+    assert abs(got[0][1]) < 1000.0
+    # The "On click" menu starts on "time and offset".
+    assert got[0][2] is True
+
+    # Switching the menu to "time only" is reported with the click and as a signal.
+    from ui.sdr_overview_dialog import CLICK_TIME_ONLY
+
+    modes: list[int] = []
+    dlg.click_mode_changed.connect(modes.append)
+    dlg._click_combo.setCurrentIndex(dlg._click_combo.findData(CLICK_TIME_ONLY))
+    assert modes == [CLICK_TIME_ONLY]
+    QTest.mouseClick(canvas, Qt.MouseButton.LeftButton, pos=QPoint(r.center().x(), r.center().y()))
+    assert got[-1][2] is False

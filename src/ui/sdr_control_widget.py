@@ -52,7 +52,7 @@ from PySide6.QtWidgets import (
 from i18n import _
 from sdr import SOAPY_AVAILABLE
 from sdr.recorder import CLIP_WARN_FRACTION
-from ui.sdr_overview_dialog import SdrOverviewDialog
+from ui.sdr_overview_dialog import CLICK_TIME_AND_OFFSET, SdrOverviewDialog
 from ui.sdr_waterfall_dialog import SdrWaterfallDialog
 
 if SOAPY_AVAILABLE:
@@ -167,6 +167,8 @@ class SdrControlWidget(QWidget):
         self._transponder_active: bool = False
         # Spectrogram window of the recording last opened with "Open…" (or None).
         self._overview_dialog: SdrOverviewDialog | None = None
+        # The overview's "On click" menu, kept for the windows opened later.
+        self._overview_click_mode: int = CLICK_TIME_AND_OFFSET
         # True while self._pipeline is backed by a recorded .iq.wav file
         # rather than live hardware -- see set_pipeline()'s is_replay param.
         self._is_replay: bool = False
@@ -1052,17 +1054,27 @@ class SdrControlWidget(QWidget):
         """Show the whole-recording spectrogram of *path*; clicking it seeks the playback."""
         if self._overview_dialog is not None:
             self._overview_dialog.close()
-        dlg = SdrOverviewDialog(Path(path), self)
+        dlg = SdrOverviewDialog(Path(path), self, self._overview_click_mode)
         dlg.seek_requested.connect(self._on_overview_seek)
+        dlg.click_mode_changed.connect(lambda m: setattr(self, "_overview_click_mode", m))
         dlg.destroyed.connect(lambda *_a: setattr(self, "_overview_dialog", None))
         self._overview_dialog = dlg
         dlg.show()
 
-    def _on_overview_seek(self, position_s: float) -> None:
-        """Jump the loaded recording to the position clicked in the overview."""
+    def _on_overview_seek(
+        self, position_s: float, offset_hz: float = 0.0, with_offset: bool = False
+    ) -> None:
+        """Jump the loaded recording to the position clicked in the overview.
+
+        With *with_offset* the clicked frequency is also put into the Offset box
+        (clamped to its range), so the signal under the click is the one demodulated.
+        """
         device = self._playback_device() if self._is_replay else None
         seek = getattr(device, "seek", None)
         if seek is not None:
+            if with_offset:
+                lo, hi = self._playback_offset_spin.minimum(), self._playback_offset_spin.maximum()
+                self._playback_offset_spin.setValue(max(lo, min(hi, round(offset_hz))))
             # A click always plays on from there (also after Stop or at the end).
             seek(float(position_s))
             self._playback_pos_label.setText(_format_mmss(position_s))
