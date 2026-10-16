@@ -14,6 +14,7 @@ Startup sequence:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import importlib.util
 import logging
 import os
@@ -895,4 +896,12 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    _exit_code = main()
+    # Skip interpreter finalization: unloading cffi/PortAudio libraries while a
+    # daemon thread is still inside them can segfault at exit. Cleanup has
+    # already run in MainWindow.closeEvent(); only flush logs and stdio here.
+    logging.shutdown()
+    for _stream in (sys.stdout, sys.stderr):
+        with contextlib.suppress(Exception):
+            _stream.flush()
+    os._exit(_exit_code if isinstance(_exit_code, int) else 0)
