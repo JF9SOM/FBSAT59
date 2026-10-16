@@ -9771,6 +9771,10 @@ class MainWindow(QMainWindow):
         with contextlib.suppress(Exception):
             if self._rig2_controller is not None and self._rig2_controller.is_connected:
                 self._rig2_controller.disconnect()
+        # Stop the shared audio input reader thread: left running, it can call
+        # into PortAudio while the interpreter unloads it and segfault at exit.
+        with contextlib.suppress(Exception):
+            get_audio_device_manager().shutdown()
         # Signal background threads to exit before tearing down other resources.
         self._shutdown_flag.set()
         self._timer.stop()

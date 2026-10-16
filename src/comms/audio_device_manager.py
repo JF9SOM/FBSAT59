@@ -386,6 +386,18 @@ class _SharedInputStream:
         self._halt(stream, reader)
         return True
 
+    def shutdown(self) -> None:
+        """Drop every subscriber and stop the reader and hardware stream.
+
+        Used at application exit so the daemon reader thread is not still inside
+        PortAudio when the interpreter unloads the cffi library.
+        """
+        with self._lock:
+            self._subscribers.clear()
+            stream, self._stream = self._stream, None
+            reader, self._reader = self._reader, None
+        self._halt(stream, reader)
+
     def suspend(self) -> None:
         """Close the hardware stream but keep the subscribers (see resume()).
 
@@ -631,6 +643,19 @@ class AudioDeviceManager(QObject):
                 return
             if stream.remove_subscriber(owner):
                 del self._inputs[key]
+
+    def shutdown(self) -> None:
+        """Stop every shared input stream regardless of remaining subscribers.
+
+        Called from MainWindow.closeEvent() so no reader thread is left running
+        in PortAudio while the interpreter finalizes.
+        """
+        with self._inputs_lock:
+            streams = list(self._inputs.values())
+            self._inputs.clear()
+        for stream in streams:
+            with contextlib.suppress(Exception):
+                stream.shutdown()
 
     # ------------------------------------------------------------------ #
     # PortAudio recovery after a USB audio device was re-enumerated
