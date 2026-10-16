@@ -939,3 +939,29 @@ class TestReplicator2Community:
         assert (music["downlink_low"], music["mode"]) == (400500000, "FM")
         assert not is_ax25_telemetry_transmitter(music)
         assert not is_aprs_transmitter(music)
+
+
+@pytest.mark.parametrize(
+    ("uuid", "norad", "downlink_hz"),
+    [
+        ("community-replicator2-fm-music", 69927, 400500000),
+        ("community-otp2-fm-music", 63235, 400500000),
+        ("community-tmicrosat1-fm-music", 66766, 401025000),
+        ("community-optisat-fm-music", 68418, 400360000),
+    ],
+)
+def test_fm_music_community_entries(
+    db: sqlite3.Connection, uuid: str, norad: int, downlink_hz: int
+) -> None:
+    """Melody beacons are plain FM; SATNOGS has no FM entry for them."""
+    from comms.mode_detection import is_aprs_transmitter, is_ax25_telemetry_transmitter
+
+    TransmitterManager(db).load_community_transmitters()
+    row = db.execute("SELECT * FROM transmitters WHERE uuid = ?", (uuid,)).fetchone()
+    assert row is not None
+    xpdr = dict(row)
+    assert xpdr["norad_cat_id"] == norad
+    assert (xpdr["downlink_low"], xpdr["mode"], xpdr["source"]) == (downlink_hz, "FM", "community")
+    assert xpdr["description"] == "FM Music — community"
+    assert not is_ax25_telemetry_transmitter(xpdr)
+    assert not is_aprs_transmitter(xpdr)

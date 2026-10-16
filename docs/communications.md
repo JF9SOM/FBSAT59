@@ -906,6 +906,9 @@ NTPサーバーに一切到達できなかった場合（オフセット自体�
 | MO-122 (NORAD 60209) | 435.812 MHz | 145.938 MHz | USB-D | false | JH1NHK |
 | REPLICATOR-2 (NORAD 69927) `community-replicator2-ax25-tlm` | 400.500 MHz | — | GMSK（baud 9600） | false | SV2HWM（GetKISS の AX.25 UI フレーム） |
 | REPLICATOR-2 (NORAD 69927) `community-replicator2-fm-music` | 400.500 MHz | — | FM | false | 2026-10-16 録音の解析・SV2HWM |
+| OTP-2 (NORAD 63235) `community-otp2-fm-music` | 400.500 MHz | — | FM | false | ユーザー報告（2026-10-15） |
+| T.MicroSat-1 (NORAD 66766) `community-tmicrosat1-fm-music` | 401.025 MHz | — | FM | false | 2026-10-14 録音の解析・ユーザー報告 |
+| OPTISAT (NORAD 68418) `community-optisat-fm-music` | 400.360 MHz | — | FM | false | ユーザー報告（2026-10-15）。搬送波の位置は未計測 |
 
 **REPLICATOR-2（2026-10-16 追加）**: SATNOGS には「Mode U - Transmitter」（GFSK 9600）1 件しかなく、
 フレーミングが分からないため 2 件を追加した。`AX.25 9K6 TLM` は description の "AX.25" と baud 9600 で
@@ -913,8 +916,13 @@ NTPサーバーに一切到達できなかった場合（オフセット自体�
 デコードは未確認**。SV2HWM の動画に映った GetKISS の KISS フレームが根拠）。`FM Music` は約 4.8 kHz
 離れた 2 周波 FSK を矩形波の音程で切り替えるメロディで、**狭帯域 FM 復調（±9 kHz IF）だけで
 そのまま聞こえる**（デジタルプロトコルなし、約 180 秒周期。ドップラー補正済みの IQ 録音で確認）。
-これらを追加したことでコミュニティ衛星が 7→8 件になり、`tests/test_main_window.py` の件数
-アサーション 3 箇所を更新した（CI で確認すること）。
+**FM Music の水平展開（2026-10-16）**: AMSAT Status で Music と書かれた衛星は概ね FM でメロディを
+流していることがユーザーの確認で分かり、SATNOGS に FM のエントリがない OTP-2・T.MicroSat-1・OPTISAT
+にも同じ `FM Music — community` を追加した。周波数は各衛星の AX.25 テレメトリ（GFSK）と同じ（メロディ
+はテレメトリと同じ送信機で、T.MicroSat-1 の録音でもバーストと同じ帯域に出ていた。音程は 391〜586 Hz の
+階段状）。OPTISAT は SATNOGS に別の FM「Telemetry」行（400.356 MHz）があるが、メロディかは未確認。
+コミュニティ衛星は 7→8 件（REPLICATOR-2）→11 件（上記 3 衛星）になり、`tests/test_main_window.py` の
+件数アサーション 3 箇所を都度更新した（CI で確認すること）。
 
 `description` は引き続き「FT4 Calling — community standard」のまま（FT4タブの自動オープン判定は
 description文字列を見るため無関係）。`mode` 列だけ実際のリグCATモードを表す `USB-D`/`LSB-D` に

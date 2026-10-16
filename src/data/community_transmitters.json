@@ -148,5 +148,53 @@
     "baud": null,
     "ctcss_tone": null,
     "notes": "Melody beacon on 400.500 MHz: a two-tone FSK pair about 4.8 kHz apart keyed by a square-wave note, so plain narrow FM demodulation plays it as a melody (no digital protocol). Repeats about every 180 s. Confirmed on a Doppler-corrected IQ recording of 2026-10-16 (NFM, +/-9 kHz IF) and on SV2HWM's 2026-07-09 recording (https://x.com/SV2HWM/status/2075203916862497153). Not in SATNOGS. 2026-10."
+  },
+  {
+    "uuid": "community-otp2-fm-music",
+    "norad_cat_id": 63235,
+    "satellite_name": "OTP-2",
+    "description": "FM Music — community",
+    "type": "Transmitter",
+    "uplink_low":   null,
+    "uplink_high":  null,
+    "downlink_low": 400500000,
+    "downlink_high": null,
+    "mode": "FM",
+    "invert": false,
+    "baud": null,
+    "ctcss_tone": null,
+    "notes": "Melody beacon on the same frequency as the GFSK 4k8 AX.25 telemetry (400.500 MHz); plain narrow FM demodulation plays it. Reported as confirmed by the user (2026-10-15). Not in SATNOGS. 2026-10."
+  },
+  {
+    "uuid": "community-tmicrosat1-fm-music",
+    "norad_cat_id": 66766,
+    "satellite_name": "T.MicroSat-1",
+    "description": "FM Music — community",
+    "type": "Transmitter",
+    "uplink_low":   null,
+    "uplink_high":  null,
+    "downlink_low": 401025000,
+    "downlink_high": null,
+    "mode": "FM",
+    "invert": false,
+    "baud": null,
+    "ctcss_tone": null,
+    "notes": "Melody beacon on the same frequency as the GFSK 9k6 AX.25 telemetry (401.025 MHz); plain narrow FM demodulation plays it. Confirmed on the user's Doppler-corrected IQ recording of 2026-10-14 (a stepped tone sequence of 391-586 Hz notes after FM demodulation, in the same band as the 60 s telemetry bursts), and reported as confirmed by the user (2026-10-15). Not in SATNOGS. 2026-10."
+  },
+  {
+    "uuid": "community-optisat-fm-music",
+    "norad_cat_id": 68418,
+    "satellite_name": "OPTISAT",
+    "description": "FM Music — community",
+    "type": "Transmitter",
+    "uplink_low":   null,
+    "uplink_high":  null,
+    "downlink_low": 400360000,
+    "downlink_high": null,
+    "mode": "FM",
+    "invert": false,
+    "baud": null,
+    "ctcss_tone": null,
+    "notes": "Melody beacon near the UHF telemetry frequency (400.360 MHz, the GMSK 4k8 AX.25 entry); plain narrow FM demodulation plays it. Reported as confirmed by the user (2026-10-15). Its exact carrier relative to 400.360 MHz was not measured; the NFM +/-9 kHz IF tolerates a few kHz. SATNOGS has a separate FM 'Telemetry' row at 400.356 MHz. Not in SATNOGS as a music entry. 2026-10."
   }
 ]
