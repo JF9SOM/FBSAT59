@@ -392,9 +392,11 @@ the FT4 tab can correct the remainder in software (the **ADC** checkboxes next t
 | Yaesu FTX-1F | ◐ CAT writes and 10 CQ transmissions tested; decode gain not yet measured on a pass | ◐ same as NET |
 | Icom IC-705 (generic rig) | ⚠ **not verified** (no rig available) | ⚠ **not verified** |
 | Icom IC-9100 / IC-910H / IC-821H (SAT mode) | ⚠ **not verified** | ⚠ **not verified** |
-| Icom IC-9700 (SAT mode) | ⚠ **not verified** | ⚠ **not verified** |
+| Icom IC-9700 (SAT mode) | ✓ reported working on a real pass (see below) | ✓ reported working on a real pass (see below) |
 
-**Not verified (please report results):** everything marked ⚠ was built from the proven per-second
+**IC-9700:** one operator ran ADC (TX and RX both on) on a real pass with an IC-9700 and reported no hangs or freezes and good decoding around the maximum elevation; his decodes matched the developer's own for the same pass. The connection mode (NET or Direct) was not recorded, so reports from both are still welcome.
+
+**Not verified (please report results):** everything else marked ⚠ was built from the proven per-second
 write sequences but has never run on a real rig. For the IC-705 check that reception does not move to
 the uplink frequency (VFO-B) and TX/RX are not swapped after a transmission; for the SAT-mode rigs
 check that Main stays the receiver and Sub the transmitter, and that ADC RX starts a few seconds after
