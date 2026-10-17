@@ -7144,6 +7144,44 @@ msgstr ""
 "このフォルダーは現在使用できません（設定は保存されます。録音前にドライブを"
 "接続してください）:\n%(path)s\n%(err)s"
 
+msgid "Copy from default"
+msgstr "デフォルトからコピー"
+
+msgid "Move from default"
+msgstr "デフォルトから移動"
+
+msgid "Set a save folder first; the default folder is already in use."
+msgstr "先に保存フォルダーを設定してください。現在はデフォルトのフォルダーを使用中です。"
+
+#, python-format
+msgid "The folder is not available. Connect the drive first:\n%s"
+msgstr "フォルダーを使用できません。先にドライブを接続してください:\n%s"
+
+msgid "The folder must be different from the default folder."
+msgstr "デフォルトのフォルダーとは別のフォルダーを指定してください。"
+
+msgid "There are no files to transfer."
+msgstr "転送するファイルがありません。"
+
+#, python-format
+msgid "Move %(n)d file(s) to the new folder? The original files will be deleted."
+msgstr "%(n)d 個のファイルを新しいフォルダーへ移動します。元のファイルは削除されます。よろしいですか？"
+
+msgid "Transferring files…"
+msgstr "ファイルを転送中…"
+
+#, python-format
+msgid "Transferred %(done)d file(s)."
+msgstr "%(done)d 個のファイルを転送しました。"
+
+#, python-format
+msgid "%(failed)d file(s) failed; the originals were kept."
+msgstr "%(failed)d 個のファイルが失敗しました。元のファイルは残っています。"
+
+#, python-format
+msgid "Save folder not found (%(path)s); saving to the default folder instead."
+msgstr "保存フォルダーが見つかりません (%(path)s)。代わりにデフォルトのフォルダーに保存します。"
+
 #~ msgid "Decoder started — listening for sync…"
 #~ msgstr "デコーダー起動 — 同期信号を待機中…"
 

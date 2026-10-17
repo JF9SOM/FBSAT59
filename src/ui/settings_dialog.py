@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMessageBox,
+    QProgressDialog,
     QPushButton,
     QSpinBox,
     QSplitter,
@@ -161,6 +162,36 @@ class _DownloadThread(QThread):
 # ---------------------------------------------------------------------------
 
 
+class _TransferThread(QThread):
+    """Background copy/move of files from the default folder to the configured one."""
+
+    progress = Signal(int, int, str)
+    finished_counts = Signal(int, int)
+
+    def __init__(
+        self, source: Path, target: Path, move: bool, parent: QWidget | None = None
+    ) -> None:
+        super().__init__(parent)
+        self._source, self._target, self._move = source, target, move
+        self._cancel = False
+
+    def cancel(self) -> None:
+        """Request the transfer to stop after the current file."""
+        self._cancel = True
+
+    def run(self) -> None:
+        from core import data_paths  # noqa: PLC0415
+
+        done, failed = data_paths.transfer_files(
+            self._source,
+            self._target,
+            self._move,
+            progress=lambda i, n, name: self.progress.emit(i, n, name),
+            cancelled=lambda: self._cancel,
+        )
+        self.finished_counts.emit(done, failed)
+
+
 class SettingsDialog(QDialog):
     """File > Settings dialog.  Tabs: TLE Sources, World Map, Custom Groups."""
 
@@ -193,6 +224,7 @@ class SettingsDialog(QDialog):
         self._tools_table: QTableWidget
         # Data Locations tab state: kind -> path edit (empty text = default)
         self._data_dir_edits: dict[str, QLineEdit] = {}
+        self._transfer_thread: _TransferThread | None = None
         self._setup_ui()
         self._load_settings()
 
@@ -727,10 +759,16 @@ class SettingsDialog(QDialog):
             browse.clicked.connect(lambda _c=False, k=kind: self._on_browse_data_dir(k))
             reset = QPushButton(_("Reset to default"))
             reset.clicked.connect(lambda _c=False, k=kind: self._data_dir_edits[k].clear())
+            copy_btn = QPushButton(_("Copy from default"))
+            copy_btn.clicked.connect(lambda _c=False, k=kind: self._on_transfer(k, move=False))
+            move_btn = QPushButton(_("Move from default"))
+            move_btn.clicked.connect(lambda _c=False, k=kind: self._on_transfer(k, move=True))
             grid.addWidget(QLabel(label), row, 0)
             grid.addWidget(edit, row, 1)
             grid.addWidget(browse, row, 2)
             grid.addWidget(reset, row, 3)
+            grid.addWidget(copy_btn, row, 4)
+            grid.addWidget(move_btn, row, 5)
         grid.setColumnStretch(1, 1)
         layout.addWidget(group)
         layout.addStretch()
@@ -745,6 +783,68 @@ class SettingsDialog(QDialog):
         path = QFileDialog.getExistingDirectory(self, _("Select Folder"), start)
         if path:
             edit.setText(path)
+
+    def _on_transfer(self, kind: str, move: bool) -> None:
+        """Copy or move files from the default folder to the folder set for *kind*."""
+        from core import data_paths  # noqa: PLC0415
+
+        title = _("Data Locations")
+        text = self._data_dir_edits[kind].text().strip()
+        if not text:
+            QMessageBox.information(
+                self, title, _("Set a save folder first; the default folder is already in use.")
+            )
+            return
+        target = Path(text).expanduser()
+        source = data_paths.default_dir(kind)
+        if not data_paths.is_usable(target):
+            QMessageBox.warning(
+                self, title, _("The folder is not available. Connect the drive first:\n%s") % target
+            )
+            return
+        if data_paths.same_or_nested(source, target):
+            QMessageBox.warning(
+                self, title, _("The folder must be different from the default folder.")
+            )
+            return
+        files = data_paths.pending_files(source, target)
+        if not files:
+            QMessageBox.information(self, title, _("There are no files to transfer."))
+            return
+        if move:
+            answer = QMessageBox.question(
+                self,
+                title,
+                _("Move %(n)d file(s) to the new folder? The original files will be deleted.")
+                % {"n": len(files)},
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        progress = QProgressDialog(_("Transferring files…"), _("Cancel"), 0, len(files), self)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+        thread = _TransferThread(source, target, move, self)
+        self._transfer_thread = thread
+
+        def _on_progress(i: int, n: int, name: str) -> None:
+            progress.setMaximum(n)
+            progress.setValue(i)
+            progress.setLabelText(name)
+
+        thread.progress.connect(_on_progress)
+        progress.canceled.connect(thread.cancel)
+
+        def _finished(done: int, failed: int) -> None:
+            progress.close()
+            msg = _("Transferred %(done)d file(s).") % {"done": done}
+            if failed:
+                msg += "\n" + _("%(failed)d file(s) failed; the originals were kept.") % {
+                    "failed": failed
+                }
+            QMessageBox.information(self, title, msg)
+
+        thread.finished_counts.connect(_finished)
+        thread.start()
 
     def _load_data_locations(self) -> None:
         """Show the saved overrides (empty = default) in the Data Locations tab."""

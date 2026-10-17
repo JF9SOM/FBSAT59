@@ -7,8 +7,10 @@ Each data kind has a platform default and an optional user override stored in
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -74,10 +76,63 @@ def _read_override(kind: str) -> str:
         return ""
 
 
+def is_usable(path: Path) -> bool:
+    """Return True if *path* is (or can be made) a writable folder.
+
+    A folder under a missing macOS ``/Volumes/<name>`` mount point counts as
+    unusable even if it could technically be created, so a recording is never
+    silently written to a stale local folder when the drive is unplugged.
+    """
+    import os
+    import sys
+
+    try:
+        if sys.platform == "darwin" and len(path.parts) > 2 and path.parts[:2] == ("/", "Volumes"):
+            if not Path(*path.parts[:3]).exists():
+                return False
+        path.mkdir(parents=True, exist_ok=True)
+        return os.access(path, os.W_OK)
+    except OSError:
+        return False
+
+
+# Kinds currently saving to the default because the configured folder is unusable.
+_fallback_active: set[str] = set()
+_fallback_notifier: Callable[[str, Path, Path], None] | None = None
+
+
+def set_fallback_notifier(notifier: Callable[[str, Path, Path], None] | None) -> None:
+    """Register a callback ``(kind, configured, default)`` fired once per fallback episode."""
+    global _fallback_notifier
+    _fallback_notifier = notifier
+
+
 def get_dir(kind: str) -> Path:
-    """Return the effective folder for *kind* (user override, else default)."""
+    """Return the folder to save *kind* into now.
+
+    The user's folder when it is usable, otherwise the built-in default (the
+    user is told once, and files can be moved over later from Settings).
+    """
     override = _read_override(kind)
-    return Path(override).expanduser() if override else default_dir(kind)
+    if not override:
+        _fallback_active.discard(kind)
+        return default_dir(kind)
+    configured = Path(override).expanduser()
+    if is_usable(configured):
+        _fallback_active.discard(kind)
+        return configured
+    fallback = default_dir(kind)
+    if kind not in _fallback_active:
+        _fallback_active.add(kind)
+        logger.warning(
+            "data_paths: %s folder %s unusable, saving to %s", kind, configured, fallback
+        )
+        if _fallback_notifier is not None:
+            try:
+                _fallback_notifier(kind, configured, fallback)
+            except Exception:
+                logger.exception("data_paths: fallback notifier failed")
+    return fallback
 
 
 def get_override(kind: str) -> str:
@@ -134,3 +189,65 @@ def check_writable(path: Path) -> str | None:
     if not os.access(path, os.W_OK):
         return "Folder is not writable."
     return None
+
+
+def pending_files(source: Path, target: Path) -> list[Path]:
+    """Files under *source* (relative paths) that are not yet present under *target*."""
+    if not source.is_dir():
+        return []
+    out = []
+    for f in sorted(source.rglob("*")):
+        if f.is_file() and not (target / f.relative_to(source)).exists():
+            out.append(f.relative_to(source))
+    return out
+
+
+def same_or_nested(a: Path, b: Path) -> bool:
+    """True if *a* and *b* are the same folder or one contains the other."""
+    ra, rb = a.expanduser().resolve(), b.expanduser().resolve()
+    return ra == rb or ra in rb.parents or rb in ra.parents
+
+
+def transfer_files(
+    source: Path,
+    target: Path,
+    move: bool,
+    progress: Callable[[int, int, str], None] | None = None,
+    cancelled: Callable[[], bool] | None = None,
+) -> tuple[int, int]:
+    """Copy (or move) files from *source* to *target*, skipping names that already exist.
+
+    A move deletes each source file only after the copy's size matches, and
+    removes emptied source subfolders at the end.  Returns ``(done, failed)``.
+    """
+    import shutil
+
+    files = pending_files(source, target)
+    done = failed = 0
+    for i, rel in enumerate(files):
+        if cancelled is not None and cancelled():
+            break
+        if progress is not None:
+            progress(i, len(files), str(rel))
+        src, dst = source / rel, target / rel
+        part = dst.with_name(dst.name + ".part")
+        try:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, part)
+            if part.stat().st_size != src.stat().st_size:
+                raise OSError("size mismatch after copy")
+            part.replace(dst)
+            if move:
+                src.unlink()
+            done += 1
+        except OSError:
+            logger.exception("data_paths: transfer failed for %s", rel)
+            failed += 1
+            part.unlink(missing_ok=True)
+    if progress is not None:
+        progress(len(files), len(files), "")
+    if move:
+        for d in sorted((p for p in source.rglob("*") if p.is_dir()), reverse=True):
+            with contextlib.suppress(OSError):
+                d.rmdir()  # only succeeds when empty
+    return done, failed

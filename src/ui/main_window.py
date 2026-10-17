@@ -888,6 +888,9 @@ class MainWindow(QMainWindow):
         from core.data_paths import migrate_legacy_iq_dir
 
         migrate_legacy_iq_dir(conn)
+        from core import data_paths
+
+        data_paths.set_fallback_notifier(self._on_data_dir_fallback)
         self._tle_manager = tle_manager
         self._engine = engine
         self._pass_predictor = pass_predictor
@@ -8473,6 +8476,14 @@ class MainWindow(QMainWindow):
             self._conn.commit()
         except Exception as exc:
             logger.warning("Failed to save cycle setting: %s", exc)
+
+    def _on_data_dir_fallback(self, kind: str, configured: Path, default: Path) -> None:
+        """Tell the user a configured save folder is unavailable and the default is used."""
+        self.statusBar().showMessage(
+            _("Save folder not found (%(path)s); saving to the default folder instead.")
+            % {"path": configured},
+            15000,
+        )
 
     def _load_rotator_cycle_setting(self) -> None:
         """Load rotator_cycle_ms from the DB and apply it to self._rotator_timer and the UI.
