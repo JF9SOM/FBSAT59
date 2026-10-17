@@ -14,6 +14,14 @@ amateur radio operators. Alongside satellite tracking and Doppler correction,
 it packs in major digital communication modes — FT4, APRS, image reception
 (SSTV/SSDV, HRPT/LRPT), and more — all in one application.
 
+> ### 🌍 World's first: ADC — Audio Doppler Correction for FT4
+> FBSAT59 is the **world's first** satellite tracking application with **ADC (Audio Doppler Correction)**.
+> A CAT-controlled transceiver cannot follow a satellite's Doppler shift fast enough for FT4's 7.5-second
+> periods; ADC corrects the remainder in software on the audio itself, so FT4 satellite QSOs work with an
+> ordinary rig and a sound card — no SDR required. In an offline replay of a real RS-44 pass, ADC RX decoded
+> 71 messages where an uncorrected receiver decoded almost none. See
+> [FT4 ADC — status by rig](#ft4-adc-audio-doppler-correction--status-by-rig).
+
 ---
 
 | Feature | FBSAT59 |
