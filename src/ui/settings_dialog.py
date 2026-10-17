@@ -21,7 +21,6 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
-    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -199,7 +198,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self._conn = conn
         self.setWindowTitle(_("General Settings"))
-        self.resize(640, 480)
+        self.resize(760, 520)
         self._source_checks: dict[str, QCheckBox] = {}
         # World-map tab state
         self._map_list: QListWidget
@@ -750,11 +749,17 @@ class SettingsDialog(QDialog):
         layout.addWidget(note)
 
         group = QGroupBox(_("Save folders"))
-        grid = QGridLayout(group)
-        for row, (kind, label) in enumerate(self._data_location_labels().items()):
+        group_layout = QVBoxLayout(group)
+        for kind, label in self._data_location_labels().items():
             edit = QLineEdit()
             edit.setPlaceholderText(str(data_paths.default_dir(kind)))
             self._data_dir_edits[kind] = edit
+            name = QLabel(label)
+            name.setMinimumWidth(190)
+            path_row = QHBoxLayout()
+            path_row.addWidget(name)
+            path_row.addWidget(edit, 1)
+
             browse = QPushButton(_("Browse…"))
             browse.clicked.connect(lambda _c=False, k=kind: self._on_browse_data_dir(k))
             reset = QPushButton(_("Reset to default"))
@@ -763,13 +768,15 @@ class SettingsDialog(QDialog):
             copy_btn.clicked.connect(lambda _c=False, k=kind: self._on_transfer(k, move=False))
             move_btn = QPushButton(_("Move from default"))
             move_btn.clicked.connect(lambda _c=False, k=kind: self._on_transfer(k, move=True))
-            grid.addWidget(QLabel(label), row, 0)
-            grid.addWidget(edit, row, 1)
-            grid.addWidget(browse, row, 2)
-            grid.addWidget(reset, row, 3)
-            grid.addWidget(copy_btn, row, 4)
-            grid.addWidget(move_btn, row, 5)
-        grid.setColumnStretch(1, 1)
+            button_row = QHBoxLayout()
+            button_row.addSpacing(name.minimumWidth() + button_row.spacing())
+            for btn in (browse, reset, copy_btn, move_btn):
+                button_row.addWidget(btn)
+            button_row.addStretch(1)
+
+            group_layout.addLayout(path_row)
+            group_layout.addLayout(button_row)
+            group_layout.addSpacing(8)
         layout.addWidget(group)
         layout.addStretch()
         return tab
