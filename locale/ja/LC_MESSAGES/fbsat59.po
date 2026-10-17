@@ -7098,6 +7098,52 @@ msgstr "ステータス: 「{text}」"
 msgid "({shown}/{total} hex chars — rest omitted)"
 msgstr "（{shown}/{total}文字を表示、以下省略）"
 
+msgid "Data Locations"
+msgstr "データ保存先の変更"
+
+msgid "Save folders"
+msgstr "保存フォルダー"
+
+msgid "Reset to default"
+msgstr "デフォルトに戻す"
+
+msgid "Select Folder"
+msgstr "フォルダーを選択"
+
+msgid "IQ recordings"
+msgstr "IQ 録音"
+
+msgid "Audio recordings (MP3)"
+msgstr "音声録音 (MP3)"
+
+msgid "METEOR / HRPT images"
+msgstr "METEOR / HRPT 画像"
+
+msgid "SSTV images"
+msgstr "SSTV 画像"
+
+msgid "SSDV images"
+msgstr "SSDV 画像"
+
+msgid "Digital voice recordings"
+msgstr "デジタル音声の録音"
+
+msgid ""
+"Choose where received data is saved (for example an external SSD for large IQ "
+"recordings). Existing files are not moved; the new folder applies to new "
+"recordings."
+msgstr ""
+"受信データの保存先を選びます（例: 大きな IQ 録音を外付け SSD に保存）。"
+"既存のファイルは移動されません。新しいフォルダーは今後の録音から使われます。"
+
+#, python-format
+msgid ""
+"Cannot use this folder (it is saved anyway; connect the drive before "
+"recording):\n%(path)s\n%(err)s"
+msgstr ""
+"このフォルダーは現在使用できません（設定は保存されます。録音前にドライブを"
+"接続してください）:\n%(path)s\n%(err)s"
+
 #~ msgid "Decoder started — listening for sync…"
 #~ msgstr "デコーダー起動 — 同期信号を待機中…"
 

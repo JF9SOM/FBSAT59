@@ -119,12 +119,10 @@ def _image_priority(filename: str) -> int:
 
 
 def _default_output_dir() -> Path:
-    from PySide6.QtCore import QStandardPaths
+    from core.data_paths import KIND_METEOR, get_dir
 
-    pics = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.PicturesLocation)
-    base = Path(pics) if pics else Path.home() / "Pictures"
     ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-    return base / "fbsat59_meteor" / ts
+    return get_dir(KIND_METEOR) / ts
 
 
 def _load_sdr_settings() -> dict[str, Any]:
@@ -1173,14 +1171,14 @@ class MeteorTab(QWidget):
         current = self._history_list.currentItem()
         default_name = current.text() if isinstance(current, _ThumbItem) else "meteor_image.png"
         # Default to the reception's own folder (e.g.
-        # ~/Pictures/fbsat59_meteor/{timestamp}/MSU-MR/) rather than the
+        # configured METEOR folder/{timestamp}/MSU-MR/) rather than the
         # Desktop, so it lands alongside the rest of that pass's images —
         # requested on GitHub Issue #27 (a saved image on the Desktop was
         # unexpected when everything else SatDump writes goes to Pictures).
         if isinstance(current, _ThumbItem) and current.path is not None:
             default_dir = current.path.parent
         else:
-            default_dir = _default_output_dir().parent  # ~/Pictures/fbsat59_meteor
+            default_dir = _default_output_dir().parent  # configured METEOR folder
         default_path = str(default_dir / default_name)
         path, _filter = QFileDialog.getSaveFileName(
             self, _("Save Image"), default_path, "PNG (*.png)"
@@ -1262,7 +1260,7 @@ class MeteorTab(QWidget):
     # ------------------------------------------------------------------
 
     def _on_open_folder(self) -> None:
-        folder = self._output_dir or _default_output_dir().parent.parent
+        folder = self._output_dir or _default_output_dir().parent
         if not folder.exists():
             folder.mkdir(parents=True, exist_ok=True)
         if sys.platform == "win32":
@@ -1273,7 +1271,7 @@ class MeteorTab(QWidget):
             subprocess.Popen(["xdg-open", str(folder)])
 
     def _on_open_past(self) -> None:
-        base_dir = _default_output_dir().parent  # ~/Pictures/fbsat59_meteor
+        base_dir = _default_output_dir().parent  # configured METEOR folder
         base_dir.mkdir(parents=True, exist_ok=True)
         chosen = QFileDialog.getExistingDirectory(
             self,

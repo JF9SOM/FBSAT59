@@ -15,7 +15,6 @@ import sqlite3
 import subprocess
 import sys
 import threading
-from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt, QTimer, Signal
@@ -45,6 +44,7 @@ from comms.mode_detection import (
     is_ft4_transmitter,
     is_sstv_transmitter,
 )
+from core.data_paths import KIND_AUDIO, get_dir
 from i18n import _
 from rig.controller import (
     HamlibDirectController,
@@ -162,8 +162,8 @@ class RadioControlWidget(QWidget):
         # Rig-audio (MP3) recording — shares the AudioRecorder used by SDR
         # Control, but the PCM source here is the Sound Card input device
         # (rig AF output) via AudioDeviceManager, not an SDR pipeline.
-        self._audio_save_dir: Path = Path.home() / "audio_recordings"
-        self._audio_recorder: AudioRecorder = AudioRecorder(self._audio_save_dir)
+        # Save folder is resolved from Settings > Data Locations at each use.
+        self._audio_recorder: AudioRecorder = AudioRecorder(get_dir(KIND_AUDIO))
         self._rec_in_device: int | None = None
         self._rec_audio_active: bool = False
         self._audio_rec_timer = QTimer(self)
@@ -1463,6 +1463,7 @@ class RadioControlWidget(QWidget):
         if sat_name in ("", "—"):
             sat_name = "unknown"
 
+        self._audio_recorder.set_save_dir(get_dir(KIND_AUDIO))
         file_path = self._audio_recorder.start(norad=norad, sat_name=sat_name)
         self._audio_rec_btn.setEnabled(False)
         self._audio_stop_rec_btn.setEnabled(True)
@@ -1500,7 +1501,7 @@ class RadioControlWidget(QWidget):
         path, _filter = QFileDialog.getOpenFileName(
             self,
             _("Play Audio Recording"),
-            str(self._audio_save_dir),
+            str(get_dir(KIND_AUDIO)),
             _("Audio recordings (*.mp3 *.wav *.flac *.ogg);;All files (*)"),
         )
         if not path:

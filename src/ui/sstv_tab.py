@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QStandardPaths, Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QFontDatabase, QImage, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -1257,7 +1257,9 @@ class SstvTab(QWidget):
         """Batch-decode an SSTV image from a previously recorded MP3/WAV file."""
         if self._file_decode_worker is not None:
             return
-        start_dir = str(Path.home() / "audio_recordings")
+        from core.data_paths import KIND_AUDIO, get_dir
+
+        start_dir = str(get_dir(KIND_AUDIO))
         path, _filter = QFileDialog.getOpenFileName(
             self,
             _("Select Recorded Audio"),
@@ -1412,8 +1414,9 @@ class SstvTab(QWidget):
     def _image_save_dir(mode: str = "SSTV") -> Path:
         """Default folder for saved images: <Pictures>/FBSAT59-SSTV, or
         <Pictures>/FBSAT59-SSDV for SSDV images."""
-        pics = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.PicturesLocation)
-        return Path(pics) / ("FBSAT59-SSDV" if mode == "SSDV" else "FBSAT59-SSTV")
+        from core.data_paths import KIND_SSDV, KIND_SSTV, get_dir
+
+        return get_dir(KIND_SSDV if mode == "SSDV" else KIND_SSTV)
 
     def _auto_save_image(
         self, qimg: QImage, mode: str, ts: datetime, sat_name: str | None = None

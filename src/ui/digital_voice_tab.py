@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from PySide6.QtCore import QStandardPaths, QThread, QTimer, Signal
+from PySide6.QtCore import QThread, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -370,8 +370,9 @@ class DigitalVoiceTab(QWidget):
 
     @staticmethod
     def _save_dir() -> Path:
-        music = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.MusicLocation)
-        return Path(music) / "FBSAT59-Voice"
+        from core.data_paths import KIND_VOICE, get_dir
+
+        return get_dir(KIND_VOICE)
 
     @staticmethod
     def _default_name() -> str:

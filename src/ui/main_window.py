@@ -884,6 +884,10 @@ class MainWindow(QMainWindow):
         """
         super().__init__()
         self._conn = conn
+        # One-time carry-over of the old Rig Settings IQ folder (see core.data_paths).
+        from core.data_paths import migrate_legacy_iq_dir
+
+        migrate_legacy_iq_dir(conn)
         self._tle_manager = tle_manager
         self._engine = engine
         self._pass_predictor = pass_predictor
@@ -9304,20 +9308,6 @@ class MainWindow(QMainWindow):
         device = rig.sdr_device
         if device is None:
             return
-
-        # Load IQ save dir from settings
-        try:
-            row = self._conn.execute(
-                "SELECT value FROM app_settings WHERE key='sdr_settings'"
-            ).fetchone()
-            import json as _json
-
-            sdr_cfg = _json.loads(row["value"]) if row and row["value"] else {}
-        except Exception:
-            sdr_cfg = {}
-
-        iq_dir = sdr_cfg.get("iq_save_dir", "")
-        self._sdr_control.set_iq_save_dir(str(iq_dir))
 
         from sdr.pipeline import SDRPipeline
 

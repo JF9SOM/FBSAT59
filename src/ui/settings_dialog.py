@@ -19,7 +19,9 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -189,6 +191,8 @@ class SettingsDialog(QDialog):
         self._log_broadcast_port_spin: QSpinBox
         # Tools tab state
         self._tools_table: QTableWidget
+        # Data Locations tab state: kind -> path edit (empty text = default)
+        self._data_dir_edits: dict[str, QLineEdit] = {}
         self._setup_ui()
         self._load_settings()
 
@@ -206,6 +210,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._build_notifications_tab(), _("Notifications"))
         tabs.addTab(self._build_logging_tab(), _("Logging"))
         tabs.addTab(self._build_tools_tab(), _("Tools"))
+        tabs.addTab(self._build_data_locations_tab(), _("Data Locations"))
 
         layout.addWidget(tabs)
 
@@ -685,6 +690,89 @@ class SettingsDialog(QDialog):
         layout.addStretch()
         return tab
 
+    def _data_location_labels(self) -> dict[str, str]:
+        """Display names of the configurable data kinds."""
+        return {
+            "iq": _("IQ recordings"),
+            "audio": _("Audio recordings (MP3)"),
+            "meteor": _("METEOR / HRPT images"),
+            "sstv": _("SSTV images"),
+            "ssdv": _("SSDV images"),
+            "voice": _("Digital voice recordings"),
+        }
+
+    def _build_data_locations_tab(self) -> QWidget:
+        """Build the Data Locations tab: where received data is saved."""
+        from core import data_paths  # noqa: PLC0415
+
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        note = QLabel(
+            _(
+                "Choose where received data is saved (for example an external SSD for "
+                "large IQ recordings). Existing files are not moved; the new folder "
+                "applies to new recordings."
+            )
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        group = QGroupBox(_("Save folders"))
+        grid = QGridLayout(group)
+        for row, (kind, label) in enumerate(self._data_location_labels().items()):
+            edit = QLineEdit()
+            edit.setPlaceholderText(str(data_paths.default_dir(kind)))
+            self._data_dir_edits[kind] = edit
+            browse = QPushButton(_("Browse…"))
+            browse.clicked.connect(lambda _c=False, k=kind: self._on_browse_data_dir(k))
+            reset = QPushButton(_("Reset to default"))
+            reset.clicked.connect(lambda _c=False, k=kind: self._data_dir_edits[k].clear())
+            grid.addWidget(QLabel(label), row, 0)
+            grid.addWidget(edit, row, 1)
+            grid.addWidget(browse, row, 2)
+            grid.addWidget(reset, row, 3)
+        grid.setColumnStretch(1, 1)
+        layout.addWidget(group)
+        layout.addStretch()
+        return tab
+
+    def _on_browse_data_dir(self, kind: str) -> None:
+        """Pick a folder for *kind* and show it in the tab."""
+        from core import data_paths  # noqa: PLC0415
+
+        edit = self._data_dir_edits[kind]
+        start = edit.text().strip() or str(data_paths.default_dir(kind))
+        path = QFileDialog.getExistingDirectory(self, _("Select Folder"), start)
+        if path:
+            edit.setText(path)
+
+    def _load_data_locations(self) -> None:
+        """Show the saved overrides (empty = default) in the Data Locations tab."""
+        from core import data_paths  # noqa: PLC0415
+
+        for kind, edit in self._data_dir_edits.items():
+            edit.setText(data_paths.get_override(kind))
+
+    def _save_data_locations(self) -> None:
+        """Persist the Data Locations tab, warning about folders that cannot be written."""
+        from core import data_paths  # noqa: PLC0415
+
+        for kind, edit in self._data_dir_edits.items():
+            text = edit.text().strip()
+            if text:
+                err = data_paths.check_writable(Path(text).expanduser())
+                if err:
+                    QMessageBox.warning(
+                        self,
+                        _("Data Locations"),
+                        _(
+                            "Cannot use this folder (it is saved anyway; connect the drive "
+                            "before recording):\n%(path)s\n%(err)s"
+                        )
+                        % {"path": text, "err": err},
+                    )
+            data_paths.set_override(self._conn, kind, text)
+
     def _build_logging_tab(self) -> QWidget:
         """Build the Logging settings tab (UDP ADIF broadcast to log-relay software)."""
         tab = QWidget()
@@ -828,6 +916,9 @@ class SettingsDialog(QDialog):
         # Logging
         self._load_logging_settings()
 
+        # Data Locations
+        self._load_data_locations()
+
     def _save_settings(self) -> None:
         """Persist TLE source enablement and world map selection to the DB."""
         # TLE sources
@@ -861,6 +952,9 @@ class SettingsDialog(QDialog):
 
         # Tools
         self._save_tools_settings()
+
+        # Data Locations
+        self._save_data_locations()
 
     # ------------------------------------------------------------------ #
     # Static helpers

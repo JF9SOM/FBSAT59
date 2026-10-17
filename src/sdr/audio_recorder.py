@@ -61,6 +61,10 @@ class AudioRecorder:
     def bytes_written(self) -> int:
         return self._bytes_written
 
+    def set_save_dir(self, save_dir: Path) -> None:
+        """Change the folder used by the next recording."""
+        self._save_dir = save_dir
+
     def start(self, norad: int, sat_name: str) -> Path:
         """Open a new MP3 file and begin recording. Returns the file path."""
         if not LAMEENC_AVAILABLE or _lameenc is None:

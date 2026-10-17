@@ -1214,20 +1214,6 @@ class _SdrSettingsPanel(QWidget):
         assign_layout.addWidget(self._rig_none_rb)
         layout.addWidget(assign_group)
 
-        # -- IQ save directory --
-        iq_group = QGroupBox(_("IQ Recording"))
-        iq_form = QFormLayout(iq_group)
-        iq_row = QHBoxLayout()
-        self._iq_dir_edit = QLineEdit()
-        self._iq_dir_edit.setPlaceholderText(str(QWidget().fontMetrics()))  # overwritten below
-        self._iq_dir_edit.setText(str(__import__("pathlib").Path.home() / "iq_recordings"))
-        iq_browse_btn = QPushButton(_("Browse…"))
-        iq_browse_btn.clicked.connect(self._on_browse_iq_dir)
-        iq_row.addWidget(self._iq_dir_edit)
-        iq_row.addWidget(iq_browse_btn)
-        iq_form.addRow(_("Save directory:"), iq_row)
-        layout.addWidget(iq_group)
-
         layout.addStretch()
 
         # Enumerate on first show (in background to avoid UI freeze on Windows)
@@ -1763,15 +1749,6 @@ class _SdrSettingsPanel(QWidget):
             self._ppm_progress = None
         QMessageBox.warning(self, _("Measure PPM"), message)
 
-    def _on_browse_iq_dir(self) -> None:
-        from PySide6.QtWidgets import QFileDialog
-
-        path = QFileDialog.getExistingDirectory(
-            self, _("Select IQ Recording Directory"), self._iq_dir_edit.text()
-        )
-        if path:
-            self._iq_dir_edit.setText(path)
-
     # ------------------------------------------------------------------ #
     # Persistence
     # ------------------------------------------------------------------ #
@@ -1823,7 +1800,6 @@ class _SdrSettingsPanel(QWidget):
             # look like a fresh pick and reset gain_db back to the max.
             "device_identity": device_identity,
             "bias_tee": self._bias_tee_chk.isChecked() if hasattr(self, "_bias_tee_chk") else False,
-            "iq_save_dir": self._iq_dir_edit.text() if hasattr(self, "_iq_dir_edit") else "",
             "remote_hosts": self._remote_hosts,
             "enable_remote_discovery": (
                 self._remote_discovery_chk.isChecked()
@@ -1896,10 +1872,6 @@ class _SdrSettingsPanel(QWidget):
             self._rig2_rb.setChecked(True)
         else:
             self._rig_none_rb.setChecked(True)
-
-        iq_dir = str(data.get("iq_save_dir", ""))
-        if iq_dir:
-            self._iq_dir_edit.setText(iq_dir)
 
         raw_remote_hosts = data.get("remote_hosts") or []
         if isinstance(raw_remote_hosts, list):

@@ -247,3 +247,16 @@ rig_disconnect_requested # POST /api/rig/disconnect でセット → Qt が処�
   AI 作成の Issue 用要約を GitHub Issue に貼る運用
 - ガイド側のルール（ガイドに無いことは推測しない・CLAUDE.md を根拠にしない）はプロンプトに埋め込み済み
 - テスト: `tests/test_ai_help.py`
+
+---
+
+## データ保存先の変更（File > General Settings > Data Locations、2026-10-17）
+
+IQ録音・音声録音(MP3)・METEOR画像・SSTV画像・SSDV画像・デジタル音声の保存先をユーザーが変更でき、
+「Reset to default」で既定に戻せる。実体は `src/core/data_paths.py`（`app_settings` の
+`data_dir_<kind>` キー。空/未設定＝既定）。各所は録音/保存の開始時に `get_dir(kind)` で解決する。
+既存ファイルは移動しない。旧 Rig Settings の `iq_save_dir` は初回起動時に一度だけ引き継ぎ
+（`data_dir_migrated_v1` フラグで再実行を防止）、Rig Settings 側の欄は削除した。
+なお旧実装では `iq_save_dir` が IQRecorder に渡っておらず再生ダイアログの開始位置にしか効いて
+いなかった（録音は常に `~/iq_recordings`）。テレメトリー/SSDVパケットはDB内のため対象外
+（CSV自動書き出しは未実装）。

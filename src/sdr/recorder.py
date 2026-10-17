@@ -161,7 +161,7 @@ class IQRecorder:
     """
 
     def __init__(self, save_dir: Path | None = None) -> None:
-        self._save_dir = save_dir or Path.home() / "iq_recordings"
+        self._save_dir = save_dir
         self._queue: queue.Queue[np.ndarray | None] = queue.Queue(maxsize=_QUEUE_MAXSIZE)
         self._thread: threading.Thread | None = None
         self._recording = False
@@ -270,7 +270,10 @@ class IQRecorder:
         if self._recording:
             raise RuntimeError("IQRecorder is already recording")
 
-        self._save_dir.mkdir(parents=True, exist_ok=True)
+        from core.data_paths import KIND_IQ, get_dir
+
+        save_dir = self._save_dir or get_dir(KIND_IQ)
+        save_dir.mkdir(parents=True, exist_ok=True)
         factor = 1
         if input_rate and input_rate > sample_rate:
             factor = max(1, int(input_rate // sample_rate))
@@ -287,7 +290,7 @@ class IQRecorder:
         ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in sat_name)
         fname = f"{norad}_{safe_name}_{ts}.iq.wav"
-        self._file_path = self._save_dir / fname
+        self._file_path = save_dir / fname
 
         self._recording = True
         self._thread = threading.Thread(

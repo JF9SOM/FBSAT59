@@ -49,6 +49,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.data_paths import KIND_IQ, get_dir
 from i18n import _
 from sdr import SOAPY_AVAILABLE
 from sdr.recorder import CLIP_WARN_FRACTION
@@ -362,10 +363,6 @@ class SdrControlWidget(QWidget):
         if self._recording:
             self._stop_recording()
 
-    def set_iq_save_dir(self, path: str) -> None:
-        """Update the IQ recording save directory (from SDR settings)."""
-        self._iq_save_dir = Path(path) if path else Path.home() / "iq_recordings"
-
     def set_satellite_info(self, norad: int, name: str) -> None:
         """Store satellite info used to name IQ recordings."""
         self._sat_norad = norad
@@ -425,7 +422,6 @@ class SdrControlWidget(QWidget):
         layout.addStretch()
 
         # Private state
-        self._iq_save_dir = Path.home() / "iq_recordings"
         self._sat_norad = 0
         self._sat_name = "unknown"
 
@@ -1043,7 +1039,7 @@ class SdrControlWidget(QWidget):
         path, _filter = QFileDialog.getOpenFileName(
             self,
             _("Play IQ Recording"),
-            str(self._iq_save_dir),
+            str(get_dir(KIND_IQ)),
             _("IQ recordings (*.iq.wav);;All files (*)"),
         )
         if path:
