@@ -384,7 +384,7 @@ def test_pasting_hex_builds_the_image_and_shows_the_image_tab(
     assert tab._view_tabs.currentWidget() is tab._image_page
     assert not tab._image_label.pixmap().isNull()
     assert tab._history_list.count() == 1  # committed once
-    assert tab._save_btn.isEnabled()
+    assert tab._current_image is not None
 
 
 def test_pasting_satnogs_style_text_works(tab: SstvTab, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -585,7 +585,7 @@ def test_an_sstv_picture_arriving_as_sdr_iq_ends_up_in_the_history(
         pipeline.emit_iq(iq[i : i + 16384])
     qtbot.waitUntil(lambda: tab._history_list.count() == 1, timeout=10000)
     assert tab._image_label.pixmap() is not None and not tab._image_label.pixmap().isNull()
-    assert tab._save_btn.isEnabled()
+    assert tab._current_image is not None
 
 
 def test_disconnecting_the_sdr_stops_the_audio_feed(tab: SstvTab, rc: _FakeRadioControl) -> None:
@@ -639,7 +639,7 @@ def test_open_image_loads_saved_png(
     tab._open_image_btn.click()
     assert tab._current_image is not None
     assert tab._current_image.width() == 40
-    assert tab._save_btn.isEnabled()
+    assert tab._current_image is not None
     assert tab._history_list.count() == before + 1
 
 
@@ -985,3 +985,123 @@ def test_stored_images_dialog_lists_pictures(qtbot: QtBot, tab: SstvTab) -> None
     dialog._table.selectRow(0)
     dialog._on_build()
     assert got == [tab._store.groups()[0].id]
+
+
+# ------------------------------------------------- bottom bar and CSV import
+
+
+def _bottom_buttons(tab: SstvTab) -> list[str]:
+    """Texts of the bottom-row buttons, left to right."""
+    from PySide6.QtWidgets import QPushButton
+
+    row = [b for b in tab.findChildren(QPushButton) if b.maximumHeight() == 30]
+    return [b.text() for b in sorted(row, key=lambda b: b.geometry().x())]
+
+
+def test_bottom_row_has_no_status_text_or_save_png_and_csv_sits_before_clear(
+    tab: SstvTab,
+) -> None:
+    from PySide6.QtWidgets import QLabel, QPushButton
+
+    tab.resize(1100, 600)
+    tab.show()
+    texts = _bottom_buttons(tab)
+    assert not any("Save PNG" in t for t in texts)
+    assert not hasattr(tab, "_save_btn")
+    iq = next(i for i, t in enumerate(texts) if "IQ Recording" in t)
+    csv_i = texts.index("📥 Import CSV…")
+    clear = next(i for i, t in enumerate(texts) if "Clear" in t)
+    assert iq + 1 == csv_i and csv_i + 1 == clear
+    # the status line exists for the code but is not shown
+    assert not tab._status_label.isVisible()
+    visible = [w for w in tab.findChildren(QLabel) if w is tab._status_label and w.isVisible()]
+    assert visible == []
+    # the buttons are packed at the left edge
+    buttons = [b for b in tab.findChildren(QPushButton) if b.maximumHeight() == 30]
+    assert min(b.geometry().x() for b in buttons) < 20
+
+
+def test_warnings_reach_the_main_window_status_bar(
+    qtbot: QtBot, conn: sqlite3.Connection, rc: _FakeRadioControl, engine: _FakeEngine
+) -> None:
+    from PySide6.QtWidgets import QMainWindow
+
+    window = QMainWindow()
+    qtbot.addWidget(window)
+    t = SstvTab(conn, rc, aprs_engine=engine, parent=window)
+    window.setCentralWidget(t)
+    qtbot.wait(50)  # let the tab's start-up timers run
+    t._status_label.setText("fine")
+    assert window.statusBar().currentMessage() == ""
+    t._status_label.setText("⚠ something broke")
+    assert window.statusBar().currentMessage() == "⚠ something broke"
+
+
+def _csv_lines() -> str:
+    from tests.test_fsk_ssdv import hades_packet
+
+    lines = []
+    # newest first, like SatNOGS DB; one frame is damaged beyond repair, one is not SSDV
+    for n, ts in (
+        (2, "2026-10-17 10:00:02"),
+        (1, "2026-10-17 10:00:01"),
+        (0, "2026-10-17 10:00:00"),
+    ):
+        lines.append(f"{ts}|{hades_packet(n)[5:].hex().upper()}||KM7DOS-CN87xi")
+    bad = bytearray(hades_packet(3)[5:])
+    for i in range(20, 120):
+        bad[i] ^= 0xFF
+    lines.append(f"2026-10-17 10:00:03|{bytes(bad).hex().upper()}||KM7DOS-CN87xi")
+    lines.append("2026-10-17 10:00:04|B316F17A71B55CCD||KM7DOS-CN87xi")  # a CODEC2 frame
+    lines.append("not a frame line")
+    return "\n".join(lines) + "\n"
+
+
+def test_csv_extraction_finds_valid_packets_oldest_first(tmp_path: Path) -> None:
+    from comms.sstv.csv_import import extract_from_csv
+
+    path = tmp_path / "frames.csv"
+    path.write_text(_csv_lines())
+    result = extract_from_csv(path)
+    assert result.frames == 5 and result.invalid == 1
+    assert [p.packet[8] for p in result.packets] == [0, 1, 2]
+    assert all(p.norad == 68446 and p.kind == "std" for p in result.packets)
+    assert result.packets[0].when < result.packets[-1].when
+
+
+def test_csv_import_adds_pictures_to_the_store(
+    tab: SstvTab, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from PySide6.QtWidgets import QMessageBox
+
+    from comms.sstv.csv_import import extract_from_csv
+
+    shown: list[str] = []
+    monkeypatch.setattr(
+        QMessageBox, "information", staticmethod(lambda *a, **k: shown.append(a[2]) or 0)
+    )
+    monkeypatch.setattr(SstvTab, "_on_stored_images", lambda self: shown.append("dialog"))
+    path = tmp_path / "frames.csv"
+    path.write_text(_csv_lines())
+    tab._on_csv_extracted(extract_from_csv(path))
+    assert tab._store is not None
+    info = tab._store.groups()[0]
+    assert info.norad == 68446 and info.packets == 3
+    assert "3 valid SSDV packets (3 new)" in shown[0] and shown[-1] == "dialog"
+    # importing the same file again adds nothing new
+    shown.clear()
+    tab._on_csv_extracted(extract_from_csv(path))
+    assert "(0 new)" in shown[0] and tab._store.groups()[0].packets == 3
+
+
+def test_csv_without_ssdv_says_so(tab: SstvTab, monkeypatch: pytest.MonkeyPatch) -> None:
+    from PySide6.QtWidgets import QMessageBox
+
+    from comms.sstv.csv_import import CsvExtract
+
+    shown: list[str] = []
+    monkeypatch.setattr(
+        QMessageBox, "information", staticmethod(lambda *a, **k: shown.append(a[2]) or 0)
+    )
+    tab._on_csv_extracted(CsvExtract(10, 10, [], 0))
+    assert "No SSDV packets" in shown[0]

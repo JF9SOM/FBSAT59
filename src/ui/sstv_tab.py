@@ -48,6 +48,7 @@ from comms.aprs.engine import (
     get_aprs_engine,
     resolve_ax25_modem,
 )
+from comms.sstv.csv_import import CsvExtract, extract_from_csv
 from comms.sstv.file_decoder import SOUNDFILE_AVAILABLE, load_audio_mono
 from comms.sstv.packet_store import (
     KIND_DSLWP,
@@ -196,6 +197,40 @@ class _FileDecodeWorker(QThread):
         self.finished_ok.emit()
 
 
+class _StatusSink(QLabel):
+    """The tab's status line: no longer shown (the bottom bar needs the room), but the code
+    still reports through it. Warnings and errors (text starting with a warning sign) go to
+    the main window's status bar so they are not lost."""
+
+    def setText(self, text: str) -> None:
+        super().setText(text)
+        if text.startswith("⚠"):
+            window = self.window()
+            status_bar = getattr(window, "statusBar", None)
+            if callable(status_bar):
+                bar = status_bar()
+                if bar is not None:
+                    bar.showMessage(text, 10_000)
+
+
+class _CsvExtractWorker(QThread):
+    """Reads a SatNOGS frames CSV off the GUI thread (CRC / Reed-Solomon checks take a while)."""
+
+    done: Signal = Signal(object)
+    failed: Signal = Signal(str)
+
+    def __init__(self, path: str, default_norad: int, parent: Any = None) -> None:
+        super().__init__(parent)
+        self._path = path
+        self._norad = default_norad
+
+    def run(self) -> None:
+        try:
+            self.done.emit(extract_from_csv(self._path, self._norad))
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
 class SstvTab(QWidget):
     """Non-resident tab opened from Communications > SSTV / SSDV.
 
@@ -239,6 +274,7 @@ class SstvTab(QWidget):
             SsdvPacketStore(conn) if hasattr(conn, "execute") else None
         )
         self._norad: int = 0  # satellite of the selected transmitter (0: unknown)
+        self._csv_worker: _CsvExtractWorker | None = None
         self._active_group: dict[str, int] = {}  # packet kind -> group the decoder holds
         self._audio_active: bool = False  # soundcard RX subscribed via AudioDeviceManager
         self._audio_device: int | None = None  # device used for the active subscription
@@ -443,13 +479,9 @@ class SstvTab(QWidget):
         # ── bottom bar ───────────────────────────────────────────────────
         bottom = QHBoxLayout()
 
-        self._status_label = QLabel(_("Ready"))
-        self._status_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        # Without word wrap, a long error string (e.g. a sound-card
-        # exception message) forces QLabel's minimumSizeHint to fit the
-        # whole line, widening the window and blocking shrinking it back.
-        self._status_label.setWordWrap(True)
-        bottom.addWidget(self._status_label)
+        # The status line is not shown any more (see _StatusSink)
+        self._status_label = _StatusSink(self)
+        self._status_label.hide()
 
         # Fixed height + matching padding so these three differently-worded
         # buttons don't end up with slightly different vertical sizes (Qt's
@@ -468,13 +500,6 @@ class SstvTab(QWidget):
         self._stored_btn.setEnabled(self._store is not None)
         self._stored_btn.clicked.connect(self._on_stored_images)
         bottom.addWidget(self._stored_btn)
-
-        self._save_btn = QPushButton(_("💾 Save PNG"))
-        self._save_btn.setEnabled(False)
-        self._save_btn.setFixedHeight(30)
-        self._save_btn.setStyleSheet(_bottom_btn_style)
-        self._save_btn.clicked.connect(self._on_save_png)
-        bottom.addWidget(self._save_btn)
 
         self._open_image_btn = QPushButton(_("🖼 Open Image…"))
         self._open_image_btn.setFixedHeight(30)
@@ -504,6 +529,20 @@ class SstvTab(QWidget):
         self._decode_iq_btn.clicked.connect(self._on_decode_iq)
         bottom.addWidget(self._decode_iq_btn)
 
+        self._import_csv_btn = QPushButton(_("📥 Import CSV…"))
+        self._import_csv_btn.setFixedHeight(30)
+        self._import_csv_btn.setStyleSheet(_bottom_btn_style)
+        self._import_csv_btn.setToolTip(
+            _(
+                "Extract SSDV pictures from a CSV of frames downloaded from SatNOGS DB "
+                "(the satellite page's frame download). The packets are added to the "
+                "Stored Images."
+            )
+        )
+        self._import_csv_btn.setEnabled(self._store is not None)
+        self._import_csv_btn.clicked.connect(self._on_import_csv)
+        bottom.addWidget(self._import_csv_btn)
+
         self._clear_btn = QPushButton(_("🗑 Clear"))
         self._clear_btn.setFixedHeight(30)
         # The 🗑 glyph itself renders with a taller bounding box than 💾/📂
@@ -514,6 +553,7 @@ class SstvTab(QWidget):
         self._clear_btn.setStyleSheet("padding: 7px 10px 1px 10px;")
         self._clear_btn.clicked.connect(self._on_clear)
         bottom.addWidget(self._clear_btn)
+        bottom.addStretch()  # the buttons sit at the left edge
 
         root.addLayout(bottom)
 
@@ -1200,6 +1240,70 @@ class SstvTab(QWidget):
                 _("Stored image {i}: {n} packets built.").format(i=info.image_id, n=len(packets))
             )
 
+    def _on_import_csv(self) -> None:
+        """Extract SSDV pictures from a CSV downloaded from SatNOGS DB."""
+        if self._store is None or self._csv_worker is not None:
+            return
+        start = Path.home() / "Downloads"
+        path, _filter = QFileDialog.getOpenFileName(
+            self,
+            _("Import SatNOGS CSV"),
+            str(start if start.is_dir() else Path.home()),
+            _("CSV files (*.csv);;All files (*)"),
+        )
+        if not path:
+            return
+        self._import_csv_btn.setEnabled(False)
+        self._csv_worker = _CsvExtractWorker(path, self._norad, self)
+        self._csv_worker.done.connect(self._on_csv_extracted)
+        self._csv_worker.failed.connect(self._on_csv_failed)
+        self._csv_worker.finished.connect(self._on_csv_worker_finished)
+        self._csv_worker.start()
+        self._status_label.setText(_("Reading the CSV…"))
+
+    def _on_csv_failed(self, message: str) -> None:
+        QMessageBox.warning(self, _("Import SatNOGS CSV"), message)
+
+    def _on_csv_worker_finished(self) -> None:
+        if self._csv_worker is not None:
+            self._csv_worker.deleteLater()
+            self._csv_worker = None
+        self._import_csv_btn.setEnabled(self._store is not None)
+
+    def _on_csv_extracted(self, extract: CsvExtract) -> None:
+        """Add the CSV's valid packets to the store, then show the Stored Images."""
+        if self._store is None:
+            return
+        if not extract.packets:
+            QMessageBox.information(
+                self,
+                _("Import SatNOGS CSV"),
+                _("No SSDV packets were found in this file ({n} frames).").format(n=extract.frames),
+            )
+            return
+        new = 0
+        groups: set[int] = set()
+        for item in extract.packets:
+            result = self._store.add(item.norad, item.kind, item.packet, item.when, commit=False)
+            groups.add(result.group_id)
+            new += int(result.is_new)
+        self._store.commit()
+        self._active_group.clear()  # the decoders reload from the store on the next packet
+        QMessageBox.information(
+            self,
+            _("Import SatNOGS CSV"),
+            _(
+                "{frames} frames read: {packets} valid SSDV packets ({new} new), "
+                "{pictures} pictures. Select one in the list and press Build Image."
+            ).format(
+                frames=extract.frames,
+                packets=len(extract.packets),
+                new=new,
+                pictures=len(groups),
+            ),
+        )
+        self._on_stored_images()
+
     def _stop_ssdv(self) -> None:
         """Leave SSDV mode: disconnect from the AX.25 pipeline, decode what is buffered."""
         self._active_group.clear()  # flush() empties the decoders below
@@ -1292,7 +1396,6 @@ class SstvTab(QWidget):
         """Show the (progressively better) SSDV image; it enters the history on commit."""
         self._ssdv_pending = qimg
         self._current_image = qimg
-        self._save_btn.setEnabled(True)
         self._show_scaled(qimg)
 
     def _commit_pending_ssdv(self) -> None:
@@ -1343,7 +1446,6 @@ class SstvTab(QWidget):
         self, qimg: QImage, mode: str, sat_name_override: str | None = None
     ) -> None:
         self._current_image = qimg
-        self._save_btn.setEnabled(True)
         self._current_mode = mode
         sat_name = sat_name_override if sat_name_override is not None else self._sat_name
 
@@ -1471,7 +1573,6 @@ class SstvTab(QWidget):
         if not isinstance(item, _ThumbnailItem):
             return
         self._current_image = item.full_image
-        self._save_btn.setEnabled(True)
         pix = QPixmap.fromImage(item.full_image).scaled(
             self._image_label.width(),
             self._image_label.height(),
@@ -1479,22 +1580,6 @@ class SstvTab(QWidget):
             Qt.TransformationMode.SmoothTransformation,
         )
         self._image_label.setPixmap(pix)
-
-    def _on_save_png(self) -> None:
-        """Save current image to a user-selected PNG file."""
-        if self._current_image is None:
-            return
-        now = datetime.now(UTC)
-        default_name = f"SSTV_{self._sat_name or 'image'}_{now.strftime('%Y%m%d_%H%M%S')}.png"
-        path, _filter = QFileDialog.getSaveFileName(
-            self,
-            _("Save SSTV Image"),
-            default_name,
-            _("PNG Images (*.png)"),
-        )
-        if path:
-            self._current_image.save(path)
-            self._status_label.setText(_("Saved: ") + os.path.basename(path))
 
     def _on_open_image(self) -> None:
         """Open a saved image file and show it in the main view (and the history)."""
@@ -1511,7 +1596,6 @@ class SstvTab(QWidget):
             QMessageBox.warning(self, _("Open SSTV Image"), _("Could not read the image file."))
             return
         self._current_image = qimg
-        self._save_btn.setEnabled(True)
         self._history_list.addItem(_ThumbnailItem(qimg, Path(path).stem))
         pix = QPixmap.fromImage(qimg).scaled(
             self._image_label.width(),
@@ -1528,7 +1612,6 @@ class SstvTab(QWidget):
         self._image_label.setPixmap(QPixmap())
         self._image_label.setText(_("Waiting for signal…"))
         self._current_image = None
-        self._save_btn.setEnabled(False)
         self._status_label.setText(_("Ready"))
 
     # ------------------------------------------------------------------ #
@@ -1601,6 +1684,8 @@ class SstvTab(QWidget):
     def closeEvent(self, event: Any) -> None:
         self._stop_decoder()  # also calls _disconnect_audio_source -> _stop_soundcard_capture
         self._stop_ssdv()
+        if self._csv_worker is not None:
+            self._csv_worker.wait(5000)
         if self._file_decode_worker is not None:
             # Batch file-decode is a short, self-contained CPU job (no rig/
             # subprocess/hardware to release) — just wait for it rather than

@@ -115,8 +115,18 @@ class SsdvPacketStore:
         )
         self._conn.commit()
 
-    def add(self, norad: int, kind: str, packet: bytes, when: datetime | None = None) -> AddResult:
-        """Store a valid packet (see validate_packet() / find_dslwp_packet())."""
+    def add(
+        self,
+        norad: int,
+        kind: str,
+        packet: bytes,
+        when: datetime | None = None,
+        commit: bool = True,
+    ) -> AddResult:
+        """Store a valid packet (see validate_packet() / find_dslwp_packet()).
+
+        ``commit=False`` leaves the transaction open for a batch; call commit() afterwards.
+        """
         stamp = (when or datetime.now(UTC)).isoformat()
         image_id, pid, width, height = _header(kind, packet)
         row = self._conn.execute(
@@ -147,8 +157,13 @@ class SsdvPacketStore:
             (gid, pid, packet, stamp),
         )
         self._conn.execute("UPDATE ssdv_groups SET updated_at=? WHERE id=?", (stamp, gid))
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
         return AddResult(gid, True, new_group)
+
+    def commit(self) -> None:
+        """Commit a batch of add(..., commit=False)."""
+        self._conn.commit()
 
     def packets(self, group_id: int) -> list[bytes]:
         """The group's packets, in packet-number order."""
