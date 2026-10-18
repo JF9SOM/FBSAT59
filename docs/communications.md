@@ -4413,5 +4413,5 @@ TX 音声周波数の欄を書き換えるので、そのたびに相手局と�
 
 An operator ran ADC (TX and RX on) on a real pass with an IC-9700 (Linux, built from source, v0.3.63
 dev). No hangs or freezes; decoding worked around the maximum elevation and matched the developer's own
-decodes for the same pass. The connection mode (NET/Direct) was not recorded. README en/ja now list the
-IC-9700 as reported working; IC-705 and IC-9100/910H/821H remain unverified.
+decodes for the same pass. The connection mode was NET (confirmed afterwards); Direct is still unverified. README en/ja list
+the IC-9700 NET column as reported working; IC-705 and IC-9100/910H/821H remain unverified.
