@@ -476,6 +476,13 @@ class AprsEngine(QObject):
             )
             return False
         audio = build_ax25_audio(frame, self._current_modem or "1200")
+        logger.info(
+            "APRS TX: frame %s (%d bytes, %d audio samples, %s)",
+            describe_ax25_frame(frame),
+            len(frame),
+            len(audio),
+            self._current_modem or "1200",
+        )
         gain = np.float32(10.0 ** (self._tx_level_db / 20.0))
         worker = PttAudioTxWorker(_TX_OWNER, (audio * gain).astype(np.float32), out_device, rig)
         worker.finished.connect(self._on_tx_finished)
@@ -636,6 +643,30 @@ def resolve_ax25_modem(conn: Any, radio_control: Any) -> str:
 # ---------------------------------------------------------------------------
 # AX.25 frame builder for APRS message packets
 # ---------------------------------------------------------------------------
+
+
+def describe_ax25_frame(frame: bytes) -> str:
+    """Return a one-line readable form of a raw AX.25 UI frame for diagnostics.
+
+    Shows ``SRC>DEST,DIGI...`` decoded from the address fields (each callsign
+    with its SSID) followed by the info text and the frame as hex, so a log shows
+    exactly what was put on the air.
+    """
+    addrs: list[str] = []
+    i = 0
+    while i + 7 <= len(frame):
+        field = frame[i : i + 7]
+        call = "".join(chr(b >> 1) for b in field[:6]).strip()
+        ssid = (field[6] >> 1) & 0x0F
+        addrs.append(f"{call}-{ssid}" if ssid else call)
+        i += 7
+        if field[6] & 0x01:
+            break
+    path = ""
+    if len(addrs) >= 2:
+        path = f"{addrs[1]}>{addrs[0]}" + "".join(f",{a}" for a in addrs[2:])
+    info = frame[i + 2 :].decode("ascii", errors="replace")
+    return f"{path} info={info!r} hex={frame.hex()}"
 
 
 def _encode_addr(callsign: str, ssid: int, last: bool = False) -> bytes:

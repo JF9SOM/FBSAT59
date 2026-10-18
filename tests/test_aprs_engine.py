@@ -14,7 +14,12 @@ from typing import Any
 
 import pytest
 
-from comms.aprs.engine import AprsEngine, resolve_ax25_modem
+from comms.aprs.engine import (
+    AprsEngine,
+    _build_aprs_position,
+    describe_ax25_frame,
+    resolve_ax25_modem,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -614,3 +619,15 @@ def test_a_second_send_is_refused_while_one_is_in_progress(tx_engine: AprsEngine
     assert not tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "two")
     assert errors == ["A transmission is already in progress"]
     assert len(_FakeWorker.played) == 1
+
+
+def test_describe_ax25_frame_shows_path_and_info() -> None:
+    frame = _build_aprs_position("JF9SOM", 0, "ARISS", 36.1, 136.4, "/-", "hi")
+    text = describe_ax25_frame(frame)
+    assert text.startswith("JF9SOM>APRS,ARISS info=")
+    assert "hex=" + frame.hex() in text
+
+
+def test_describe_ax25_frame_shows_ssid() -> None:
+    frame = _build_aprs_position("JF9SOM", 7, "RS0ISS", 36.1, 136.4, "/-", "")
+    assert describe_ax25_frame(frame).startswith("JF9SOM-7>APRS,RS0ISS")
