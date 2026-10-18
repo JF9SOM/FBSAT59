@@ -123,6 +123,8 @@ _MODE_CW = "CW TLM"
 _MODE_HADES = "HADES FSK"
 # How long a Start waits for the SDR to finish connecting before it is dropped.
 _PENDING_START_TIMEOUT_S = 30.0
+# app_settings key for the "Speed:" choice of Decode IQ Recording in HADES FSK mode.
+_DECODE_SPEED_KEY = "telemetry_decode_speed"
 
 # Owner tag for the shared AprsEngine singleton (see comms.aprs.engine).
 # The APRS tab shares the same engine under its own "aprs" tag so closing
@@ -391,6 +393,11 @@ class TelemetryTab(QWidget):
         self._hades_demod: Any | None = None
         self._hades_demod_pipeline: Any | None = None
         self._hades_norad: int | None = None
+        # HADES FSK "Fast" decode of a recording file (no SDR pipeline): the worker thread,
+        # the recording's start time and whether that time is known (read from its file name).
+        self._fast_job: Any | None = None
+        self._fast_start: datetime.datetime = datetime.datetime.now(datetime.UTC)
+        self._fast_time_known = False
 
         # CW TLM mode: the CW Decoder tab feeding this one (attach_cw_tab()) and the
         # satellite whose frames are being collected while it runs.
@@ -420,6 +427,7 @@ class TelemetryTab(QWidget):
             self._gr_sat_list = list_gr_satellites_with_names()
             self._populate_gr_combo()
         self._restore_last_satellites()
+        self._load_decode_speed()
         self._detect_already_connected()
         self._refresh_input_combo()
         self._refresh_status()
@@ -579,6 +587,23 @@ class TelemetryTab(QWidget):
         )
         self._btn_decode_iq.clicked.connect(self._on_decode_iq)
         row2.addWidget(self._btn_decode_iq)
+        # HADES FSK mode only: decode the recording at once instead of playing it in real time.
+        self._lbl_decode_speed = QLabel(_("Speed:"))
+        self._combo_decode_speed = QComboBox()
+        self._combo_decode_speed.addItem(_("Normal (real time)"), "normal")
+        self._combo_decode_speed.addItem(_("Fast"), "fast")
+        self._combo_decode_speed.setToolTip(
+            _(
+                "Normal: play the recording through the SDR like a live reception and\n"
+                "decode it as it goes (pick the start on the spectrogram).\n"
+                "Fast: decode the whole recording file at once, in seconds."
+            )
+        )
+        self._combo_decode_speed.currentIndexChanged.connect(self._on_decode_speed_changed)
+        row2.addWidget(self._lbl_decode_speed)
+        row2.addWidget(self._combo_decode_speed)
+        self._lbl_decode_speed.setVisible(False)
+        self._combo_decode_speed.setVisible(False)
         row2.addStretch()
         self._lbl_count = QLabel(_("Frames: 0 received"))
         row2.addWidget(self._lbl_count)
@@ -781,7 +806,13 @@ class TelemetryTab(QWidget):
                 self._rig_connected = True
 
     def _on_decode_iq(self) -> None:
-        """Open an IQ recording as SDR Control's "Open…" does; Start on the spectrogram click."""
+        """Open an IQ recording as SDR Control's "Open…" does; Start on the spectrogram click.
+
+        HADES FSK mode with Speed "Fast": ask for a file and decode all of it at once instead.
+        """
+        if self._current_mode() == _MODE_HADES and self._combo_decode_speed.currentData() == "fast":
+            self._on_fast_decode()
+            return
         sdr_ctrl = getattr(self._radio_control, "_sdr_control", None)
         if sdr_ctrl is None or not hasattr(sdr_ctrl, "open_recording"):
             QMessageBox.information(
@@ -1222,6 +1253,9 @@ class TelemetryTab(QWidget):
         self._btn_cw_sat_search.setVisible(is_cw)
         self._combo_hades_sat.setVisible(is_hades)
         self._btn_hades_sat_search.setVisible(is_hades)
+        self._lbl_decode_speed.setVisible(is_hades)
+        self._combo_decode_speed.setVisible(is_hades)
+        self._stop_fast_decode()
         # Baud and the backend log are Direwolf / gr-satellites matters; CW TLM has
         # neither (its text is in the CW Decoder tab) and HADES FSK has a fixed baud and
         # no backend process.
@@ -1459,6 +1493,7 @@ class TelemetryTab(QWidget):
         self._pending_start = False
         self._stop_gr_satellites()
         self._stop_hades()
+        self._stop_fast_decode()
         self._stop_engine()
         self._stop_cw_tlm()
         self._btn_start.setEnabled(True)
@@ -1980,6 +2015,17 @@ class TelemetryTab(QWidget):
             return
         when, reliable = self._frame_time()
         when -= datetime.timedelta(seconds=float(age_s))
+        self._add_hades_frame(frame, norad, when, reliable)
+
+    def _add_hades_frame(
+        self,
+        frame: Any,
+        norad: int,
+        when: datetime.datetime,
+        reliable: bool,
+        submit: bool = True,
+    ) -> None:
+        """Show, log and (when verified, *submit* and the switch is on) upload one frame."""
         sat_name = self._satellite_name(norad) or self._selected_name or "—"
         text = self._hades_row_text(frame)
         payload = bytes(frame.payload)
@@ -2001,8 +2047,143 @@ class TelemetryTab(QWidget):
             ax25_row=ax25_row,
         )
         self._mark_row_logged(self._table.rowCount() - 1, log_id)
-        if ax25_row is not None:
+        if ax25_row is not None and submit:
             self._submit_raw_frame(payload, norad, when, reliable, ax25_row)
+
+    # -- Fast decode of a recording file (HADES FSK, no SDR pipeline) ---------------------- #
+
+    def _load_decode_speed(self) -> None:
+        """Restore the Speed choice (Normal / Fast) from app_settings."""
+        if not hasattr(self._conn, "execute"):
+            return
+        with contextlib.suppress(Exception):
+            row = self._conn.execute(
+                "SELECT value FROM app_settings WHERE key = ?", (_DECODE_SPEED_KEY,)
+            ).fetchone()
+            if row:
+                idx = self._combo_decode_speed.findData(str(row["value"]))
+                if idx >= 0:
+                    self._combo_decode_speed.blockSignals(True)
+                    self._combo_decode_speed.setCurrentIndex(idx)
+                    self._combo_decode_speed.blockSignals(False)
+
+    def _on_decode_speed_changed(self, _index: int) -> None:
+        if not hasattr(self._conn, "execute"):
+            return
+        with contextlib.suppress(Exception):
+            self._conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value, updated_at) "
+                "VALUES (?, ?, CURRENT_TIMESTAMP)",
+                (_DECODE_SPEED_KEY, str(self._combo_decode_speed.currentData())),
+            )
+            self._conn.commit()
+
+    def _on_fast_decode(self) -> None:
+        """Ask for a recording file and decode all of it at once."""
+        start_dir = Path.home() / "iq_recordings"
+        path, _filter = QFileDialog.getOpenFileName(
+            self,
+            _("Decode IQ Recording"),
+            str(start_dir if start_dir.is_dir() else Path.home()),
+            "IQ WAV (*.wav);;All files (*)",
+        )
+        if path:
+            self._start_fast_decode(Path(path))
+
+    def _start_fast_decode(self, path: Path) -> bool:
+        """Start decoding *path* in a worker thread; False (reason on screen) if it cannot."""
+        if self._fast_job is not None or self._hades_demod is not None:
+            self._set_error("⚠ " + _("Stop the running decoder first."))
+            return False
+        norad = self._combo_hades_sat.currentData()
+        if not isinstance(norad, int):
+            self._set_error("⚠ " + _("Select a satellite first."))
+            return False
+        from comms.telemetry.hades_fsk_sdr import HadesFileDecoder
+        from sdr.file_device import parse_start_time_from_filename
+
+        start = parse_start_time_from_filename(path.name)
+        self._fast_time_known = start is not None
+        self._fast_start = start or datetime.datetime.now(datetime.UTC)
+        self._hades_norad = norad
+        if self._decode_tabs_norad != norad:
+            self._rebuild_decode_tabs(norad)
+        job = HadesFileDecoder(path, parent=self)
+        job.frame_found.connect(self._on_fast_frame)
+        job.progress.connect(self._on_fast_progress)
+        job.decoded.connect(self._on_fast_done)
+        job.failed.connect(self._on_fast_failed)
+        self._fast_job = job
+        self._btn_start.setEnabled(False)
+        self._btn_stop.setEnabled(True)
+        self._btn_decode_iq.setEnabled(False)
+        self._lbl_status.setText(_("Fast decode: starting…"))
+        self._lbl_status.setStyleSheet("color: #27ae60;")
+        job.start()
+        return True
+
+    def _on_fast_frame(self, frame: Any, seconds: float) -> None:
+        norad = self._hades_norad
+        if norad is None or self._fast_job is None:
+            return
+        when = self._fast_start + datetime.timedelta(seconds=float(seconds))
+        # A recording whose start time is not in its file name has no trustworthy time:
+        # its frames are shown and logged, never sent.
+        self._add_hades_frame(
+            frame, norad, when, self._fast_time_known, submit=self._fast_time_known
+        )
+
+    def _on_fast_progress(self, fraction: float, frames: int) -> None:
+        if self._fast_job is None:
+            return
+        self._lbl_status.setText(
+            _("Fast decode: {pct}% — {n} frame(s)").format(pct=int(fraction * 100), n=frames)
+        )
+
+    def _on_fast_done(self, duration_s: float, elapsed_s: float, frames: int) -> None:
+        note = (
+            ""
+            if self._fast_time_known
+            else "  ⚠ " + _("No start time in the file name: not sent to SatNOGS.")
+        )
+        self._finish_fast_decode()
+        self._lbl_status.setText(
+            _("Decoded {dur} s of recording in {el} s — {n} frame(s)").format(
+                dur=round(duration_s), el=round(elapsed_s, 1), n=frames
+            )
+            + note
+        )
+        self._lbl_status.setStyleSheet(
+            "color: #27ae60;" if self._fast_time_known else "color: #f39c12;"
+        )
+
+    def _on_fast_failed(self, message: str) -> None:
+        self._finish_fast_decode()
+        self._set_error("⚠ " + _("Could not decode the recording: ") + message)
+
+    def _finish_fast_decode(self) -> None:
+        """The worker is done (or gone): release it and restore the buttons."""
+        job = self._fast_job
+        self._fast_job = None
+        if job is not None:
+            for signal in (job.frame_found, job.progress, job.decoded, job.failed):
+                with contextlib.suppress(Exception):
+                    signal.disconnect()
+            job.wait(3000)
+        if self._hades_demod is None:
+            self._hades_norad = None
+        self._btn_start.setEnabled(True)
+        self._btn_stop.setEnabled(False)
+        self._btn_decode_iq.setEnabled(True)
+
+    def _stop_fast_decode(self) -> None:
+        """Cancel a running fast decode (Stop, mode change, close)."""
+        if self._fast_job is None:
+            return
+        self._fast_job.cancel()
+        self._finish_fast_decode()
+        self._lbl_status.setText(_("Fast decode stopped"))
+        self._lbl_status.setStyleSheet("color: #aaa;")
 
     def _persist_hades_row(
         self,
@@ -2700,9 +2881,9 @@ class TelemetryTab(QWidget):
         """
         if not hasattr(self._conn, "execute") or column not in ("frame_hex", "parsed_json"):
             return None
-        if replay_time(self._sdr_pipeline) is None:
+        if replay_time(self._sdr_pipeline) is None and self._fast_job is None:
             # Live reception: two equal frames are two receptions. Only a played-back
-            # recording can deliver the same reception twice.
+            # (or fast-decoded) recording can deliver the same reception twice.
             return None
         row = self._conn.execute(
             f"SELECT id, satnogs_uploaded_at FROM telemetry_log WHERE {column} = ?"
@@ -2768,8 +2949,8 @@ class TelemetryTab(QWidget):
             return  # managed by _on_gr_status
         if self._cw_tlm_norad is not None:
             return  # CW TLM is running; _start_cw_tlm() set the status
-        if self._hades_demod is not None:
-            return  # HADES FSK is running; _start_hades() / _on_hades_frame() set the status
+        if self._hades_demod is not None or self._fast_job is not None:
+            return  # HADES FSK is running; _start_hades() / the fast decode set the status
         if self._afsk_source == "direwolf" and self._engine.is_running:
             modem = self._engine.current_modem
             suffix = f"  [{modem} baud]" if modem else ""

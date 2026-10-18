@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import queue
 import threading
+import time
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 from PySide6.QtCore import QThread, Signal
 
 from comms.telemetry.hades_fsk import HadesFskStream
+from comms.telemetry.iq_wav import WavError, iter_iq_blocks, read_wav_info
 
 
 class HadesFskSdrDemod(QThread):
@@ -81,3 +84,72 @@ class HadesFskSdrDemod(QThread):
             self._fed += len(iq)
             for frame in frames:
                 self.frame_received.emit(frame, (self._fed - frame.sample_index) / self._rate)
+
+
+class HadesFileDecoder(QThread):
+    """Decode a whole I/Q recording much faster than real time, without the SDR pipeline.
+
+    The file is read block by block and fed to a :class:`HadesFskStream`, so a 7.5 minute
+    recording takes seconds. A frame is reported with its time in seconds from the start of
+    the recording (the caller adds the recording's start time).
+
+    Usage
+    -----
+    job = HadesFileDecoder(path)
+    job.frame_found.connect(consumer)   # (HadesFrame, float: seconds from the file start)
+    job.progress.connect(show)          # (float 0..1, int frames so far)
+    job.decoded.connect(done)           # (float: recording seconds, float: elapsed, int frames)
+    job.failed.connect(error)           # (str)
+    job.start()
+    ...
+    job.cancel()                        # stops early; decoded is then not emitted
+    """
+
+    frame_found: Signal = Signal(object, float)
+    progress: Signal = Signal(float, int)
+    decoded: Signal = Signal(float, float, int)
+    failed: Signal = Signal(str)
+
+    _PROGRESS_INTERVAL_S = 0.25
+
+    def __init__(self, path: Path, parent: Any = None) -> None:
+        super().__init__(parent)
+        self._path = Path(path)
+        self._cancel = threading.Event()
+
+    def cancel(self) -> None:
+        """Ask the worker to stop at the next block and wait for it."""
+        self._cancel.set()
+        self.wait(5000)
+
+    def run(self) -> None:
+        try:
+            info = read_wav_info(self._path)
+            stream = HadesFskStream(info.sample_rate)
+        except (WavError, ValueError) as exc:
+            self.failed.emit(str(exc))
+            return
+        started = time.monotonic()
+        last_report = started
+        frames = 0
+        done = 0
+        try:
+            for block in iter_iq_blocks(self._path, info):
+                if self._cancel.is_set():
+                    return
+                for frame in stream.feed(block):
+                    frames += 1
+                    self.frame_found.emit(frame, frame.sample_index / info.sample_rate)
+                done += len(block)
+                now = time.monotonic()
+                if now - last_report >= self._PROGRESS_INTERVAL_S:
+                    last_report = now
+                    self.progress.emit(done / max(info.frames, 1), frames)
+            for frame in stream.flush():
+                frames += 1
+                self.frame_found.emit(frame, frame.sample_index / info.sample_rate)
+        except OSError as exc:
+            self.failed.emit(str(exc))
+            return
+        self.progress.emit(1.0, frames)
+        self.decoded.emit(info.duration_s, time.monotonic() - started, frames)

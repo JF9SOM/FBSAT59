@@ -7198,6 +7198,56 @@ msgstr "修復済み・未検証"
 msgid "uptime"
 msgstr "稼働時間"
 
+#: src/ui/telemetry_tab.py
+msgid "Speed:"
+msgstr "速度:"
+
+#: src/ui/telemetry_tab.py
+msgid "Normal (real time)"
+msgstr "通常（実時間）"
+
+#: src/ui/telemetry_tab.py
+msgid "Fast"
+msgstr "高速"
+
+#: src/ui/telemetry_tab.py
+msgid ""
+"Normal: play the recording through the SDR like a live reception and\n"
+"decode it as it goes (pick the start on the spectrogram).\n"
+"Fast: decode the whole recording file at once, in seconds."
+msgstr ""
+"通常: 録音を実際の受信と同じようにSDR経由で再生し、再生しながらデコードします\n"
+"（開始位置はスペクトログラムで選びます）。\n"
+"高速: 録音ファイル全体を一度に、数秒でデコードします。"
+
+#: src/ui/telemetry_tab.py
+msgid "Stop the running decoder first."
+msgstr "先に実行中のデコーダーを停止してください。"
+
+#: src/ui/telemetry_tab.py
+msgid "Fast decode: starting…"
+msgstr "高速デコード: 開始しています…"
+
+#: src/ui/telemetry_tab.py
+msgid "Fast decode: {pct}% — {n} frame(s)"
+msgstr "高速デコード: {pct}% — {n} フレーム"
+
+#: src/ui/telemetry_tab.py
+msgid "No start time in the file name: not sent to SatNOGS."
+msgstr "ファイル名に開始時刻がないため、SatNOGS へは送信しません。"
+
+#: src/ui/telemetry_tab.py
+msgid "Decoded {dur} s of recording in {el} s — {n} frame(s)"
+msgstr "録音 {dur} 秒分を {el} 秒でデコードしました — {n} フレーム"
+
+#: src/ui/telemetry_tab.py
+msgid "Could not decode the recording: "
+msgstr "録音をデコードできませんでした: "
+
+#: src/ui/telemetry_tab.py
+msgid "Fast decode stopped"
+msgstr "高速デコードを停止しました"
+
 #~ msgid "Decoder started — listening for sync…"
 #~ msgstr "デコーダー起動 — 同期信号を待機中…"
 
