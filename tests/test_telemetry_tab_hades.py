@@ -332,3 +332,112 @@ def test_manual_send_uses_the_uploader_with_force(
     tab._table.selectRow(0)
     tab._on_send_selected()
     assert sent == [False, True]
+
+
+# ---- the "Decoded Fields" tab ---------------------------------------------------------- #
+
+
+def _hades_tab(qtbot: QtBot, conn: sqlite3.Connection) -> TelemetryTab:
+    tab = _tab(qtbot, conn)
+    _select_hades_mode(tab)
+    return tab
+
+
+def _decode_text(tab: TelemetryTab, type_id: str, field: str) -> str:
+    table = tab._decode_tables[type_id]
+    item = table.item(tab._decode_field_rows[type_id][field], 1)
+    assert item is not None
+    return item.text()
+
+
+def test_decoded_fields_tab_has_a_sub_tab_per_packet_type(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _hades_tab(qtbot, conn)
+    tab._rebuild_decode_tabs(UNNE1B)
+    assert tab._log_tabs.isTabEnabled(tab._log_tabs.indexOf(tab._decode_page))
+    assert sorted(tab._decode_tables, key=int) == [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "8",
+        "9",
+        "10",
+        "12",
+        "14",
+    ]
+    assert tab._decode_id_tabs.tabText(0) == "1  Power"
+    assert _decode_text(tab, "1", "vbat1") == "—"  # waiting for a frame
+
+
+def test_decoded_fields_tab_is_not_used_in_other_modes(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _tab(qtbot, conn)  # AX.25 mode
+    tab._rebuild_decode_tabs(UNNE1B)
+    assert tab._decode_tables == {}
+    assert not tab._log_tabs.isTabEnabled(tab._log_tabs.indexOf(tab._decode_page))
+
+
+def test_a_frame_fills_its_sub_tab(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    tab = _hades_tab(qtbot, conn)
+    tab._rebuild_decode_tabs(UNNE1B)
+    tab._hades_norad = UNNE1B
+    tab._on_hades_frame(_frame(), 0.0)
+    assert _decode_text(tab, "1", "vbat1") == "4,130 mV"
+    assert _decode_text(tab, "1", "ibat") == "-57 mA"
+    assert _decode_text(tab, "1", "sclock").startswith("1,310,074 s")
+
+
+def test_selecting_an_older_row_shows_its_values(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    tab = _hades_tab(qtbot, conn)
+    tab._rebuild_decode_tabs(UNNE1B)
+    tab._hades_norad = UNNE1B
+    dark = bytes.fromhex("1c2e6a02000000000000007bb66d73f573733f00f60122011000000000")
+    tab._on_hades_frame(_frame(), 0.0)
+    tab._on_hades_frame(HadesFrame(0, 0.0, -3000.0, 10.0, 1, 12, dark, False), 0.0)
+    assert _decode_text(tab, "1", "ibat") == "34 mA"  # the newest
+    tab._table.selectRow(0)
+    assert _decode_text(tab, "1", "ibat") == "-57 mA"  # the first row's own values
+    assert tab._decode_id_tabs.currentWidget() is tab._decode_tables["1"]
+
+
+def test_a_repaired_frame_does_not_overwrite_the_verified_values(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _hades_tab(qtbot, conn)
+    tab._rebuild_decode_tabs(UNNE1B)
+    tab._hades_norad = UNNE1B
+    tab._on_hades_frame(_frame(), 0.0)
+    dark = bytes.fromhex("1c2e6a02000000000000007bb66d73f573733f00f60122011000000000")
+    tab._on_hades_frame(HadesFrame(0, 0.0, -3000.0, 10.0, 1, 12, dark, True), 0.0)
+    assert _decode_text(tab, "1", "ibat") == "-57 mA"  # unchanged by the repaired frame
+    tab._table.selectRow(1)  # ...but it can be looked at on purpose
+    assert _decode_text(tab, "1", "ibat") == "34 mA"
+
+
+def test_loaded_frames_fill_the_tab_again(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    tab = _hades_tab(qtbot, conn)
+    tab._rebuild_decode_tabs(UNNE1B)
+    tab._hades_norad = UNNE1B
+    tab._on_hades_frame(_frame(), 0.0)
+    tab._on_clear()
+    tab._rebuild_decode_tabs(UNNE1B)
+    assert _decode_text(tab, "1", "vbat1") == "—"
+    tab._on_load_saved()
+    assert _decode_text(tab, "1", "vbat1") == "4,130 mV"
+
+
+def test_a_packet_type_without_a_definition_is_shown_but_not_decoded(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _hades_tab(qtbot, conn)
+    tab._rebuild_decode_tabs(UNNE1B)
+    tab._hades_norad = UNNE1B
+    odd = HadesFrame(0, 0.0, 0.0, 9.0, 15, 12, bytes([0xFC]) + bytes(38), False)
+    tab._on_hades_frame(odd, 0.0)
+    assert tab._table.rowCount() == 1
+    assert tab._table.item(0, 3).text().startswith("[BBS data]")
+    tab._table.selectRow(0)  # nothing to decode: must not raise

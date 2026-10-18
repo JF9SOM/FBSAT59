@@ -96,6 +96,8 @@ from comms.telemetry.gr_satellites_backend import (
     list_gr_satellites_with_names,
     map_provisional_to_tracked,
 )
+from comms.telemetry.hades_fields import telemetry_frame as hades_telemetry_frame
+from comms.telemetry.hades_fields import type_tabs as hades_type_tabs
 from comms.telemetry.satnogs_uploader import (
     get_satnogs_uploader,
     get_station_callsign,
@@ -2037,6 +2039,7 @@ class TelemetryTab(QWidget):
             if frame.repaired
             else _Ax25Row(raw=payload, when=when, reliable=reliable, norad=norad, log_id=log_id)
         )
+        decoded = hades_telemetry_frame(payload, norad, sat_name)
         self._append_row(
             callsign="HADES",
             sat_name=sat_name,
@@ -2045,8 +2048,11 @@ class TelemetryTab(QWidget):
             ts=when,
             dim=bool(frame.repaired),
             ax25_row=ax25_row,
+            decoded=decoded,
         )
         self._mark_row_logged(self._table.rowCount() - 1, log_id)
+        if decoded is not None and not frame.repaired:
+            self._update_decode_tab(decoded)  # the newest verified frame of each type
         if ax25_row is not None and submit:
             self._submit_raw_frame(payload, norad, when, reliable, ax25_row)
 
@@ -2253,6 +2259,7 @@ class TelemetryTab(QWidget):
                 log_id=log_id,
             )
         )
+        decoded = hades_telemetry_frame(whole, norad, sat_name) if whole else None
         self._append_row(
             callsign="HADES",
             sat_name=sat_name or "—",
@@ -2261,7 +2268,10 @@ class TelemetryTab(QWidget):
             ts=when,
             dim=repaired,
             ax25_row=ax25_row,
+            decoded=decoded,
         )
+        if decoded is not None and not repaired:
+            self._update_decode_tab(decoded)
         self._mark_row_logged(self._table.rowCount() - 1, log_id)
 
     def _on_gr_status(self, msg: str) -> None:
@@ -2724,7 +2734,12 @@ class TelemetryTab(QWidget):
         self._decode_field_rows = {}
         self._decode_tabs_norad = norad
 
-        id_defs = get_telemetry_id_defs(norad)
+        from comms.mode_detection import HADES_FSK_NORADS
+
+        if self._current_mode() == _MODE_HADES and norad in HADES_FSK_NORADS:
+            id_defs: dict[str, Any] | None = hades_type_tabs()  # one sub-tab per packet type
+        else:
+            id_defs = get_telemetry_id_defs(norad)
         is_gr = self._current_mode() == _MODE_GR
         decode_tab_index = self._log_tabs.indexOf(self._decode_page)
         self._log_tabs.setTabEnabled(decode_tab_index, bool(id_defs) or is_gr)
