@@ -1239,6 +1239,12 @@ class SstvTab(QWidget):
         decoder.reset()
         decoder.load_packets(packets)
         self._active_group[info.kind] = group_id
+        # the Raw Packets tab shows the picture's packets too, in packet-number order
+        self._raw_edit.clear()
+        for packet in packets:
+            self._raw_edit.append_frame(packet)
+        self._ssdv_frames = self._ssdv_packets = len(packets)
+        self._update_raw_count()
         if decoder.decode_now():
             self._commit_pending_ssdv(f"{self._satellite_name(info.norad)} image {info.image_id}")
             self._view_tabs.setCurrentWidget(self._image_page)

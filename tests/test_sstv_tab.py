@@ -1216,3 +1216,19 @@ def test_auto_save_checkbox_off_writes_no_file_and_on_writes_exactly_one(
     assert len(list(tmp_path.rglob("*.png"))) == 1
     row = conn.execute("SELECT file_path FROM sstv_log ORDER BY id DESC LIMIT 1").fetchone()
     assert row[0] and Path(row[0]).exists()
+
+
+def test_building_a_stored_picture_also_shows_its_hex_packets(tab: SstvTab) -> None:
+    from tests.test_fsk_ssdv import hades_packet
+
+    tab._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
+    for n in (2, 0, 1):
+        tab._on_fsk_packet(hades_packet(n), True)
+    tab._raw_edit.appendPlainText("a live line that must go away")
+    assert tab._store is not None
+    tab._on_build_stored(tab._store.groups()[0].id)
+    lines = tab._raw_edit.toPlainText().splitlines()
+    assert len(lines) == 3 and all(line.startswith("55 66 BF 35 FB A3") for line in lines)
+    # in packet-number order: the packet id is bytes 7-8 of each packet (hex tokens 7 and 8)
+    assert [int(line.split()[8], 16) for line in lines] == [0, 1, 2]
+    assert "3" in tab._raw_count_label.text()
