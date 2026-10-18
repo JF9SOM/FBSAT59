@@ -122,8 +122,10 @@ def test_mode_switch_shows_hades_widgets_and_hides_the_rest(
     assert tab._btn_hades_sat_search.isVisible()
     assert not tab._combo_afsk_sat.isVisible()
     assert not tab._baud_combo.isVisible()
-    assert not tab._btn_satnogs_toggle.isVisible()
-    assert not tab._btn_satnogs_send.isVisible()
+    # the SatNOGS upload controls stay available: HADES FSK frames are uploaded too
+    assert tab._btn_satnogs_toggle.isVisible()
+    assert tab._btn_satnogs_api.isVisible()
+    assert tab._btn_satnogs_send.isVisible()
     tab._combo_mode.setCurrentIndex(0)  # back to AX.25
     assert tab._combo_afsk_sat.isVisible()
     assert tab._btn_satnogs_toggle.isVisible()
@@ -232,3 +234,101 @@ def test_hades_rows_do_not_leak_into_other_modes(qtbot: QtBot, conn: sqlite3.Con
     assert tab._load_saved_frames(UNNE1B) == 0  # AX.25 / HDLC rows only
     assert tab._load_saved_frames(UNNE1B, gr=True) == 0
     assert tab._load_saved_frames(UNNE1B, hades=True) == 1
+
+
+class _RecordingUploader:
+    def __init__(self) -> None:
+        self.calls: list[tuple[Any, bytes, int, Any]] = []
+
+    def submit(
+        self,
+        conn: Any,
+        raw: bytes,
+        norad: int | None,
+        received_at: Any,
+        force: bool = False,
+        on_result: Any = None,
+    ) -> bool:
+        assert norad is not None
+        self.calls.append((conn, raw, norad, received_at))
+        return True
+
+
+def test_verified_frame_is_forwarded_to_the_uploader(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rec = _RecordingUploader()
+    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: rec)
+    tab = _tab(qtbot, conn)
+    tab._hades_norad = UNNE1B
+    tab._on_hades_frame(_frame(), 3.0)
+    assert len(rec.calls) == 1
+    c_conn, c_raw, c_norad, c_when = rec.calls[0]
+    assert c_conn is conn
+    assert c_raw == TYPE1_PAYLOAD  # descrambled, no CRC: what SatNOGS Network shows
+    assert c_norad == UNNE1B
+    assert c_when.tzinfo is not None
+    row = tab._table.item(0, 0).data(telemetry_tab_mod._AX25_ROLE)
+    assert row.raw == TYPE1_PAYLOAD and row.norad == UNNE1B and row.log_id is not None
+    assert row.pending is True  # handed to the uploader, SatNOGS has not answered yet
+
+
+def test_repaired_frame_is_never_uploaded_or_sendable(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rec = _RecordingUploader()
+    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: rec)
+    tab = _tab(qtbot, conn)
+    tab._hades_norad = UNNE1B
+    tab._on_hades_frame(_frame(repaired=True), 0.0)
+    assert rec.calls == []
+    assert tab._table.item(0, 0).data(telemetry_tab_mod._AX25_ROLE) is None
+    tab._table.selectRow(0)
+    assert tab._selected_ax25_rows() == []
+
+
+def test_loaded_frame_keeps_its_bytes_and_sent_state(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: _RecordingUploader())
+    tab = _tab(qtbot, conn)
+    tab._hades_norad = UNNE1B
+    tab._on_hades_frame(_frame(), 0.0)
+    tab._on_clear()
+    _select_hades_mode(tab)
+    tab._on_load_saved()
+    row = tab._table.item(0, 0).data(telemetry_tab_mod._AX25_ROLE)
+    assert row.raw == TYPE1_PAYLOAD and row.sent is False
+    conn.execute("UPDATE telemetry_log SET satnogs_uploaded_at = '2026-10-18T00:00:00+00:00'")
+    tab._on_clear()
+    tab._on_load_saved()
+    assert tab._table.item(0, 0).data(telemetry_tab_mod._AX25_ROLE).sent is True
+
+
+def test_manual_send_uses_the_uploader_with_force(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ "Send selected" works on HADES FSK rows like on AX.25 ones (the user confirms first)."""
+    from PySide6.QtWidgets import QMessageBox
+
+    sent: list[bool] = []
+
+    class _Uploader(_RecordingUploader):
+        """Declines the automatic upload (switch off) and accepts a forced one."""
+
+        def submit(self, conn, raw, norad, received_at, force=False, on_result=None) -> bool:  # type: ignore[no-untyped-def]  # noqa: ANN001
+            sent.append(force)
+            super().submit(conn, raw, norad, received_at, force, on_result)
+            return force
+
+    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: _Uploader())
+    monkeypatch.setattr(telemetry_tab_mod, "upload_blocker", lambda conn, force=False: None)
+    monkeypatch.setattr(
+        QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)
+    )
+    tab = _tab(qtbot, conn)
+    tab._hades_norad = UNNE1B
+    tab._on_hades_frame(_frame(), 0.0)  # automatic path: not forced
+    tab._table.selectRow(0)
+    tab._on_send_selected()
+    assert sent == [False, True]

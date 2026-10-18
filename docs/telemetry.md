@@ -1254,13 +1254,21 @@ CRC 一致で復号して確認した（type 3・4・10・1・5・3。バイト 
   `kind='hades'`（`frame_hex`＝デスクランブル済みペイロード・CRC なし）で保存する（「Load saved」で再表示、IQ 録音の
   再生では同じ受信を重複登録しない）。受信時刻は「処理完了時刻 − バーストからの遅れ」（窓が閉じるまで最大約 10 秒遅れる
   ため）。1 ビット修復フレームは薄い表示で「修復済み・未検証」と明記し、件数に数えない。
-  AX.25 用の Baud / ログボタンと SatNOGS 投稿のボタン（Upload / API / Send selected）はこのモードでは隠す
-  （**投稿は段階 3 で接続する。現状 HADES FSK のフレームは SatNOGS へ送られない**）。
+  AX.25 用の Baud / ログボタンはこのモードでは隠す。SatNOGS 投稿のボタン（Upload / API / Send selected）は
+  他モードと同じに出す（下記「SatNOGS 投稿」）。
   `main_window._select_telemetry_satellite()` の `mode == "hades"` 分岐で、Radio Control の送信機も 200 baud FSK の
   ものに合わせる。`hades_fsk.py` のデシメーションは多段（各段 10 以下）のポリフェーズ FIR で、2.4 Msps のような高い
   レートでも軽い。実録音を `SdrFileDevice` ＋ `SDRPipeline` ＋ タブで再生して、2 フレームが正しい時刻で表に出て DB に
   保存されることを確認した（2026-10-18）。
-- **未実装**: SatNOGS 投稿の接続（段階 3。API キーとユーザーの了承が必要）、種別ごとのフィールド解釈（「Decoded
+- **SatNOGS 投稿（段階 3、2026-10-18 実装）**: CRC 一致のフレームだけを `_submit_raw_frame()`（他モードと同じ経路・同じ
+  フッターの Upload スイッチ／API キー／コールサイン／座標の条件）で SatNOGS DB へ送る。送る `frame` は
+  **デスクランブル済み・CRC 除去済みのペイロード**（SatNOGS Network の「Data」と同じ形）。1 ビット修復フレームは
+  表示のみで投稿せず、「Send selected」の対象にもならない（行に `_Ax25Row` を付けない）。「Send selected」は
+  AX.25 と同じく確認ダイアログの後 `force=True` で送る。保存済みフレームを「Load saved」で戻しても、
+  生バイトと送信済みの状態が残る（`frame_hex`・`satnogs_uploaded_at`）。IQ 録音の再生で同じ受信を
+  二重に送らない（既存の `_find_logged_duplicate()`）。**ユーザーが Upload を ON にして API キーを入れない限り何も送られない**
+  （既定 OFF）。
+- **未実装**: 種別ごとのフィールド解釈（「Decoded
   Fields」。AMSAT-EA の仕様書が要る）。弱いバースト（バンド SNR 5〜8 dB）と約 215 秒以降（低仰角）は取れていない。
 - **解析の落とし穴（2026-10-18 に発覚）**: レコーダーの `.iq.wav` には `fact` チャンクがありデータは 56 バイト目から
   （44 バイト固定で読むと I/Q が入れ替わり周波数の符号が鏡像になる）。最初の解析はこれで「+3〜+12 kHz・約 68 秒遅れ」と

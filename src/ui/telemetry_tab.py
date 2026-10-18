@@ -118,7 +118,8 @@ _MODE_GR = "gr-satellites"
 # (see telemetry_formats/{norad}.json's "cw_frames"; ARICA-2, OrigamiSat-2).
 _MODE_CW = "CW TLM"
 # 200 baud 2FSK bursts of the AMSAT-EA "Genesis" family (UNNE-1B), demodulated from the SDR's
-# I/Q by comms.telemetry.hades_fsk. The SatNOGS upload of these frames is not connected yet.
+# I/Q by comms.telemetry.hades_fsk. Verified frames are uploaded to the SatNOGS DB like the
+# other modes' (the descrambled payload without its CRC, the form SatNOGS Network shows).
 _MODE_HADES = "HADES FSK"
 # How long a Start waits for the SDR to finish connecting before it is dropped.
 _PENDING_START_TIMEOUT_S = 30.0
@@ -1226,10 +1227,7 @@ class TelemetryTab(QWidget):
         # no backend process.
         for widget in (self._lbl_baud, self._baud_combo, self._btn_backend_log):
             widget.setVisible(not is_cw and not is_hades)
-        # The SatNOGS upload of HADES FSK frames is not connected yet: its controls stay
-        # hidden there rather than offering a switch that would do nothing.
-        for widget in (self._btn_satnogs_toggle, self._btn_satnogs_api, self._btn_satnogs_send):
-            widget.setVisible(not is_hades)
+        self._btn_satnogs_send.setVisible(True)
         # Both sub-tabs exist in every mode. In gr-satellites mode "Decoded Fields" shows this
         # project's own format file for the satellite when it has one, plus gr-satellites'
         # own full text of the selected frame.
@@ -1984,7 +1982,15 @@ class TelemetryTab(QWidget):
         when -= datetime.timedelta(seconds=float(age_s))
         sat_name = self._satellite_name(norad) or self._selected_name or "—"
         text = self._hades_row_text(frame)
+        payload = bytes(frame.payload)
         log_id = self._persist_hades_row(frame, norad, sat_name, text, when, reliable)
+        # Only a CRC-verified frame can be sent to the SatNOGS DB; a bit-repaired one is shown
+        # (muted) but never published.
+        ax25_row = (
+            None
+            if frame.repaired
+            else _Ax25Row(raw=payload, when=when, reliable=reliable, norad=norad, log_id=log_id)
+        )
         self._append_row(
             callsign="HADES",
             sat_name=sat_name,
@@ -1992,8 +1998,11 @@ class TelemetryTab(QWidget):
             norad=norad,
             ts=when,
             dim=bool(frame.repaired),
+            ax25_row=ax25_row,
         )
         self._mark_row_logged(self._table.rowCount() - 1, log_id)
+        if ax25_row is not None:
+            self._submit_raw_frame(payload, norad, when, reliable, ax25_row)
 
     def _persist_hades_row(
         self,
@@ -2033,9 +2042,16 @@ class TelemetryTab(QWidget):
         return int(row_id) if row_id is not None else None
 
     def _load_saved_hades(
-        self, norad: int, parsed_json: str | None, when: datetime.datetime, log_id: int
+        self,
+        norad: int,
+        parsed_json: str | None,
+        when: datetime.datetime,
+        log_id: int,
+        whole: bytes,
+        uploaded: object,
+        reliable: bool,
     ) -> None:
-        """Show one logged HADES FSK frame again."""
+        """Show one logged HADES FSK frame again; a verified one stays sendable."""
         try:
             saved = json.loads(parsed_json) if parsed_json else {}
         except (ValueError, TypeError):
@@ -2043,13 +2059,27 @@ class TelemetryTab(QWidget):
         if not isinstance(saved, dict):
             saved = {}
         sat_name = str(saved.get("sat") or self._satellite_name(norad))
+        repaired = bool(saved.get("repaired"))
+        ax25_row = (
+            None
+            if repaired or not whole
+            else _Ax25Row(
+                raw=whole,
+                when=when,
+                reliable=reliable,
+                norad=norad,
+                sent=uploaded is not None,
+                log_id=log_id,
+            )
+        )
         self._append_row(
             callsign="HADES",
             sat_name=sat_name or "—",
             data=str(saved.get("text", "")),
             norad=norad,
             ts=when,
-            dim=bool(saved.get("repaired")),
+            dim=repaired,
+            ax25_row=ax25_row,
         )
         self._mark_row_logged(self._table.rowCount() - 1, log_id)
 
@@ -2907,7 +2937,7 @@ class TelemetryTab(QWidget):
             if when.tzinfo is None:
                 when = when.replace(tzinfo=datetime.UTC)
             if kind == "hades":
-                self._load_saved_hades(norad, parsed_json, when, log_id)
+                self._load_saved_hades(norad, parsed_json, when, log_id, whole, uploaded, reliable)
                 loaded += 1
                 continue
             if kind == "gr":
