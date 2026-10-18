@@ -1105,3 +1105,91 @@ def test_csv_without_ssdv_says_so(tab: SstvTab, monkeypatch: pytest.MonkeyPatch)
     )
     tab._on_csv_extracted(CsvExtract(10, 10, [], 0))
     assert "No SSDV packets" in shown[0]
+
+
+# ------------------------------------------------- saving pictures (auto and by hand)
+
+
+def test_safe_name_replaces_characters_a_file_name_cannot_hold() -> None:
+    name = "Mode V/U - 200 bps UP, 800 bps DOWN - TLM, SSDV, Codec 2, BBS"
+    assert "/" not in SstvTab._safe_name(name)
+    assert SstvTab._safe_name("a:b*c?d") == "a-b-c-d"
+    assert SstvTab._safe_name("日本語/テスト") == "日本語-テスト"
+    assert SstvTab._safe_name("  ..x.. ") == "x"
+    assert len(SstvTab._safe_name("x" * 300)) == 80
+
+
+def _real_save_tab(
+    qtbot: QtBot,
+    conn: sqlite3.Connection,
+    rc: _FakeRadioControl,
+    engine: _FakeEngine,
+    folder: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> SstvTab:
+    """A tab that really writes pictures (the shared fixture stubs the auto-save out)."""
+    monkeypatch.setattr(SstvTab, "_image_save_dir", staticmethod(lambda mode="SSTV": folder / mode))
+    t = SstvTab(conn, rc, aprs_engine=engine)
+    qtbot.addWidget(t)
+    return t
+
+
+def test_auto_save_works_when_the_transmitter_name_has_a_slash(
+    qtbot: QtBot,
+    conn: sqlite3.Connection,
+    rc: _FakeRadioControl,
+    engine: _FakeEngine,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    t = _real_save_tab(qtbot, conn, rc, engine, tmp_path, monkeypatch)
+    rc.transmitter_changed.emit(
+        {"description": "Mode V/U - 200 bps UP, TLM, SSDV", "norad_cat_id": 68446}
+    )
+    img = QImage(20, 20, QImage.Format.Format_RGB32)
+    img.fill(QColor("red"))
+    t._record_completed_image(img, "SSDV")
+    saved = list((tmp_path / "SSDV").glob("*.png"))
+    assert len(saved) == 1 and "/" not in saved[0].name and "Mode V-U" in saved[0].name
+
+
+def test_a_failed_save_is_reported(
+    qtbot: QtBot,
+    conn: sqlite3.Connection,
+    rc: _FakeRadioControl,
+    engine: _FakeEngine,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    t = _real_save_tab(qtbot, conn, rc, engine, tmp_path, monkeypatch)
+    img = QImage(10, 10, QImage.Format.Format_RGB32)
+    assert not t._save_image_to(img, str(tmp_path / "no_such_folder" / "x.png"))
+    assert t._status_label.text().startswith("⚠ Could not save the image")
+
+
+def test_stored_picture_is_saved_under_its_satellite_and_image_id(
+    qtbot: QtBot,
+    conn: sqlite3.Connection,
+    rc: _FakeRadioControl,
+    engine: _FakeEngine,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    t = _real_save_tab(qtbot, conn, rc, engine, tmp_path, monkeypatch)
+    t._ssdv_pending = QImage(10, 10, QImage.Format.Format_RGB32)
+    t._ssdv_pending.fill(QColor("blue"))
+    t._commit_pending_ssdv("HADES-SA (68446) image 48")
+    names = [p.name for p in (tmp_path / "SSDV").glob("*.png")]
+    assert len(names) == 1 and names[0].startswith("SSDV_HADES-SA (68446) image 48_")
+
+
+def test_right_click_menu_saves_a_picture_by_hand(tab: SstvTab, tmp_path: Path) -> None:
+    img = QImage(30, 20, QImage.Format.Format_RGB32)
+    img.fill(QColor("green"))
+    menu = tab._image_menu(img)
+    actions = menu.actions()
+    assert len(actions) == 1 and actions[0].text() == "💾 Save Image As…"
+    assert actions[0].isEnabled()
+    assert not tab._image_menu(None).actions()[0].isEnabled()
+    target = tmp_path / "manual.png"
+    assert tab._save_image_to(img, str(target)) and QImage(str(target)).width() == 30

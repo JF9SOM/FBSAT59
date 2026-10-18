@@ -16,6 +16,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -447,6 +449,8 @@ class SstvTab(QWidget):
         self._image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._image_label.setMinimumSize(320, 240)
         self._image_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._image_label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._image_label.customContextMenuRequested.connect(self._on_image_context_menu)
         self._image_label.setText(_("Waiting for signal…"))
         self._image_label.setStyleSheet("background: #111; border: 1px solid #444; color: #666;")
         image_layout.addWidget(self._image_label)
@@ -469,6 +473,8 @@ class SstvTab(QWidget):
         self._history_list.setMovement(QListWidget.Movement.Static)
         self._history_list.setMinimumWidth(140)
         self._history_list.itemClicked.connect(self._on_history_clicked)
+        self._history_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._history_list.customContextMenuRequested.connect(self._on_history_context_menu)
         right_layout.addWidget(self._history_list)
         splitter.addWidget(right_widget)
 
@@ -1234,7 +1240,7 @@ class SstvTab(QWidget):
         decoder.load_packets(packets)
         self._active_group[info.kind] = group_id
         if decoder.decode_now():
-            self._commit_pending_ssdv()
+            self._commit_pending_ssdv(f"{self._satellite_name(info.norad)} image {info.image_id}")
             self._view_tabs.setCurrentWidget(self._image_page)
             self._status_label.setText(
                 _("Stored image {i}: {n} packets built.").format(i=info.image_id, n=len(packets))
@@ -1398,11 +1404,18 @@ class SstvTab(QWidget):
         self._current_image = qimg
         self._show_scaled(qimg)
 
-    def _commit_pending_ssdv(self) -> None:
-        """Put the latest SSDV image into the history / DB / auto-save, once."""
+    def _commit_pending_ssdv(self, sat_name: str | None = None) -> None:
+        """Put the latest SSDV image into the history / DB / auto-save, once.
+
+        *sat_name* names the picture when it is not the one the selected transmitter is for
+        (a stored picture built from the Stored Images list).
+        """
         if self._ssdv_pending is not None:
             qimg, self._ssdv_pending = self._ssdv_pending, None
-            self._on_image_complete(qimg, "SSDV")
+            if sat_name is None:
+                self._on_image_complete(qimg, "SSDV")
+            else:
+                self._record_completed_image(qimg, "SSDV", sat_name_override=sat_name)
 
     def _show_scaled(self, qimg: QImage) -> None:
         self._image_label.setPixmap(
@@ -1568,6 +1581,45 @@ class SstvTab(QWidget):
         self._decode_file_btn.setEnabled(SOUNDFILE_AVAILABLE)
         self._file_decode_worker = None
 
+    def _image_menu(self, qimg: QImage | None) -> QMenu:
+        """The right-click menu of a picture: save it by hand."""
+        menu = QMenu(self)
+        action = menu.addAction(_("💾 Save Image As…"))
+        action.setEnabled(qimg is not None)
+        if qimg is not None:
+            action.triggered.connect(lambda _checked=False, img=qimg: self._save_image_as(img))
+        return menu
+
+    def _on_image_context_menu(self, pos: Any) -> None:
+        self._image_menu(self._current_image).exec(self._image_label.mapToGlobal(pos))
+
+    def _on_history_context_menu(self, pos: Any) -> None:
+        item = self._history_list.itemAt(pos)
+        image = item.full_image if isinstance(item, _ThumbnailItem) else None
+        self._image_menu(image).exec(self._history_list.viewport().mapToGlobal(pos))
+
+    def _save_image_as(self, qimg: QImage) -> None:
+        """Ask for a file name and save *qimg* as a PNG (default: the image save folder)."""
+        mode = self._save_mode_name(self._mode_combo.currentText())
+        folder = self._image_save_dir(mode)
+        with contextlib.suppress(OSError):
+            folder.mkdir(parents=True, exist_ok=True)
+        name = self._safe_name(self._sat_name) or "image"
+        default = folder / f"{mode}_{name}_{datetime.now(UTC):%Y%m%d_%H%M%S}.png"
+        path, _filter = QFileDialog.getSaveFileName(
+            self, _("Save Image"), str(default), _("PNG Images (*.png)")
+        )
+        if path:
+            self._save_image_to(qimg, path)
+
+    def _save_image_to(self, qimg: QImage, path: str) -> bool:
+        """Write *qimg* to *path*; a failure is reported in the status bar."""
+        if not qimg.save(path):
+            self._status_label.setText(_("⚠ Could not save the image: {path}").format(path=path))
+            return False
+        self._status_label.setText(_("Saved: ") + os.path.basename(path))
+        return True
+
     def _on_history_clicked(self, item: QListWidgetItem) -> None:
         """Show clicked thumbnail at full size in the main view."""
         if not isinstance(item, _ThumbnailItem):
@@ -1664,17 +1716,31 @@ class SstvTab(QWidget):
 
         return get_dir(KIND_SSDV if mode == "SSDV" else KIND_SSTV)
 
+    @staticmethod
+    def _safe_name(name: str) -> str:
+        """*name* made fit for a file name: characters that are not allowed (a transmitter
+        called "Mode V/U ..." would otherwise name a folder that does not exist) become "-"."""
+        cleaned = re.sub(r'[\\/:*?"<>|\r\n\t]+', "-", name)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip(" .-")
+        return cleaned[:80]
+
     def _auto_save_image(
         self, qimg: QImage, mode: str, ts: datetime, sat_name: str | None = None
     ) -> str | None:
         """Save image to the user Pictures directory. Returns saved path or None."""
-        name = sat_name if sat_name is not None else self._sat_name
+        name = self._safe_name(sat_name if sat_name is not None else self._sat_name)
         save_dir = self._image_save_dir(mode)
-        save_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            save_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            self._status_label.setText(f"⚠ {exc}")
+            return None
         prefix = "SSDV" if mode == "SSDV" else "SSTV"
         filename = f"{prefix}_{name or 'image'}_{ts.strftime('%Y%m%d_%H%M%S')}.png"
         path = str(save_dir / filename)
-        qimg.save(path)
+        if not qimg.save(path):
+            self._status_label.setText(_("⚠ Could not save the image: {path}").format(path=path))
+            return None
         return path
 
     # ------------------------------------------------------------------ #

@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-18 21:59+0900\n"
+"POT-Creation-Date: 2026-10-18 22:10+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -353,7 +353,7 @@ msgid "Set My Call before operating"
 msgstr ""
 
 #: src/ui/ft4_tab.py:1288 src/ui/ax100_digi_tab.py:659 src/ui/cw_tab.py:558
-#: src/ui/sstv_tab.py:930 src/ui/digital_voice_tab.py:480
+#: src/ui/sstv_tab.py:936 src/ui/digital_voice_tab.py:480
 msgid "sounddevice not installed — pip install sounddevice"
 msgstr ""
 
@@ -1895,7 +1895,7 @@ msgstr ""
 msgid "Input/Output:"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:441 src/ui/sstv_tab.py:805
+#: src/ui/ax100_digi_tab.py:441 src/ui/sstv_tab.py:811
 #: src/ui/digital_voice_tab.py:290
 msgid "SDR (receive only)"
 msgstr ""
@@ -2586,7 +2586,7 @@ msgstr ""
 msgid "SDR Settings"
 msgstr ""
 
-#: src/ui/rig_dialog.py:2346 src/ui/sstv_tab.py:808
+#: src/ui/rig_dialog.py:2346 src/ui/sstv_tab.py:814
 msgid "Sound Card"
 msgstr ""
 
@@ -2716,14 +2716,14 @@ msgid "Input Source"
 msgstr ""
 
 #: src/ui/telemetry_tab.py:484 src/ui/radio_control_widget.py:361
-#: src/ui/q65_tab.py:209 src/ui/sstv_tab.py:317
+#: src/ui/q65_tab.py:209 src/ui/sstv_tab.py:319
 #: src/ui/sdr_control_widget.py:698 src/ui/digital_voice_tab.py:128
 msgid "Mode:"
 msgstr ""
 
 #: src/ui/telemetry_tab.py:497 src/ui/telemetry_tab.py:507
 #: src/ui/telemetry_tab.py:518 src/ui/telemetry_tab.py:529
-#: src/ui/sstv_tab.py:337
+#: src/ui/sstv_tab.py:339
 msgid "Search satellites…"
 msgstr ""
 
@@ -2736,7 +2736,7 @@ msgid ""
 "hand. Has no effect on gr-satellites decoding."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:550 src/ui/aprs_tab.py:254 src/ui/sstv_tab.py:345
+#: src/ui/telemetry_tab.py:550 src/ui/aprs_tab.py:254 src/ui/sstv_tab.py:347
 msgid "Baud:"
 msgstr ""
 
@@ -2768,7 +2768,7 @@ msgstr ""
 msgid "—"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:589 src/ui/sstv_tab.py:519
+#: src/ui/telemetry_tab.py:589 src/ui/sstv_tab.py:525
 msgid "📂 Decode IQ Recording…"
 msgstr ""
 
@@ -2871,11 +2871,11 @@ msgid "Clear Log"
 msgstr ""
 
 #: src/ui/telemetry_tab.py:827 src/ui/telemetry_tab.py:2106
-#: src/ui/sstv_tab.py:1515
+#: src/ui/sstv_tab.py:1528
 msgid "Decode IQ Recording"
 msgstr ""
 
-#: src/ui/telemetry_tab.py:827 src/ui/sstv_tab.py:1516
+#: src/ui/telemetry_tab.py:827 src/ui/sstv_tab.py:1529
 #: src/ui/digital_voice_tab.py:556
 msgid "SDR Control is not available."
 msgstr ""
@@ -3074,7 +3074,7 @@ msgid ""
 "SatNOGS upload skipped: set the recording's start time in SDR Control first."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:2759 src/ui/sstv_tab.py:1343
+#: src/ui/telemetry_tab.py:2759 src/ui/sstv_tab.py:1349
 msgid "Frames: "
 msgstr ""
 
@@ -3194,7 +3194,7 @@ msgstr ""
 msgid "Show:"
 msgstr ""
 
-#: src/ui/aprs_tab.py:278 src/ui/sstv_tab.py:308
+#: src/ui/aprs_tab.py:278 src/ui/sstv_tab.py:310
 msgid "Input: —"
 msgstr ""
 
@@ -3373,7 +3373,7 @@ msgstr ""
 msgid "No image received yet."
 msgstr ""
 
-#: src/ui/meteor_tab.py:463 src/ui/sstv_tab.py:453
+#: src/ui/meteor_tab.py:463 src/ui/sstv_tab.py:457
 msgid "Image"
 msgstr ""
 
@@ -3389,7 +3389,7 @@ msgstr ""
 msgid "Load a previous reception's images into the preview and history below."
 msgstr ""
 
-#: src/ui/meteor_tab.py:477 src/ui/sstv_tab.py:546
+#: src/ui/meteor_tab.py:477 src/ui/sstv_tab.py:552
 msgid "🗑 Clear"
 msgstr ""
 
@@ -3397,7 +3397,7 @@ msgstr ""
 msgid "Gain:"
 msgstr ""
 
-#: src/ui/meteor_tab.py:512 src/ui/sstv_tab.py:461
+#: src/ui/meteor_tab.py:512 src/ui/sstv_tab.py:465
 msgid "Received Images:"
 msgstr ""
 
@@ -3470,11 +3470,11 @@ msgstr ""
 msgid "Autotrack: reception stopped at LOS."
 msgstr ""
 
-#: src/ui/meteor_tab.py:918 src/ui/sstv_tab.py:1462
+#: src/ui/meteor_tab.py:918 src/ui/sstv_tab.py:1475
 msgid "Image received: "
 msgstr ""
 
-#: src/ui/meteor_tab.py:1109
+#: src/ui/meteor_tab.py:1109 src/ui/sstv_tab.py:1587
 msgid "💾 Save Image As…"
 msgstr ""
 
@@ -3494,7 +3494,7 @@ msgstr ""
 msgid "↕ Fit Height"
 msgstr ""
 
-#: src/ui/meteor_tab.py:1184
+#: src/ui/meteor_tab.py:1184 src/ui/sstv_tab.py:1610
 msgid "Save Image"
 msgstr ""
 
@@ -3678,7 +3678,7 @@ msgid "No SDR devices detected."
 msgstr ""
 
 #: src/ui/sdr_install_dialog.py:358 src/ui/cw_tab.py:269
-#: src/ui/sstv_tab.py:1615
+#: src/ui/sstv_tab.py:1667
 msgid "Ready"
 msgstr ""
 
@@ -5278,13 +5278,13 @@ msgstr ""
 msgid "Please install Direwolf from your distribution's package manager."
 msgstr ""
 
-#: src/ui/sstv_tab.py:330
+#: src/ui/sstv_tab.py:332
 msgid ""
 "Satellites that send SSTV / SSDV. Selecting one also selects it in Radio "
 "Control."
 msgstr ""
 
-#: src/ui/sstv_tab.py:351
+#: src/ui/sstv_tab.py:353
 msgid ""
 "AX.25 baud rate for SSDV (AX.25) reception.\n"
 "Selecting a satellite or transponder sets this from the baud\n"
@@ -5293,7 +5293,7 @@ msgid ""
 "Not used by the other modes."
 msgstr ""
 
-#: src/ui/sstv_tab.py:371
+#: src/ui/sstv_tab.py:373
 msgid ""
 "Receives images from amateur satellites. Pick the mode below, then the "
 "satellite in Radio Control (or the input box at the right).\n"
@@ -5320,206 +5320,219 @@ msgid ""
 "Selecting HADES-SA or ASRTU-1 switches the mode automatically."
 msgstr ""
 
-#: src/ui/sstv_tab.py:400
+#: src/ui/sstv_tab.py:402
 msgid "Auto-save PNG"
 msgstr ""
 
-#: src/ui/sstv_tab.py:417
+#: src/ui/sstv_tab.py:419
 msgid ""
 "Received frames appear here live, one per line, as hex. Paste hex from "
 "another tab (Telemetry) or from SatNOGS Network to build the image from it."
 msgstr ""
 
-#: src/ui/sstv_tab.py:426
+#: src/ui/sstv_tab.py:428
 msgid "94 A6 62 B2 9C AA 60 …  (one frame per line)"
 msgstr ""
 
-#: src/ui/sstv_tab.py:434
+#: src/ui/sstv_tab.py:436
 msgid "Build image from hex"
 msgstr ""
 
-#: src/ui/sstv_tab.py:437
+#: src/ui/sstv_tab.py:439
 msgid "Clear packets"
 msgstr ""
 
-#: src/ui/sstv_tab.py:441 src/ui/digital_voice_tab.py:171
+#: src/ui/sstv_tab.py:443 src/ui/digital_voice_tab.py:171
 msgid "Raw Packets"
 msgstr ""
 
-#: src/ui/sstv_tab.py:450 src/ui/sstv_tab.py:1613
+#: src/ui/sstv_tab.py:454 src/ui/sstv_tab.py:1665
 msgid "Waiting for signal…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:491
+#: src/ui/sstv_tab.py:497
 msgid "📚 Stored Images…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:496
+#: src/ui/sstv_tab.py:502
 msgid ""
 "SSDV packets of every mode are stored, so a picture can be built from "
 "several passes."
 msgstr ""
 
-#: src/ui/sstv_tab.py:504
+#: src/ui/sstv_tab.py:510
 msgid "🖼 Open Image…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:510
+#: src/ui/sstv_tab.py:516
 msgid "📂 Decode MP3 Recording…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:515 src/ui/sstv_tab.py:1540
+#: src/ui/sstv_tab.py:521 src/ui/sstv_tab.py:1553
 msgid "soundfile not installed — pip install soundfile"
 msgstr ""
 
-#: src/ui/sstv_tab.py:524
+#: src/ui/sstv_tab.py:530
 msgid ""
 "Open a recorded .iq.wav file and play it into the decoder (the same as SDR "
 "Control's Open…).\n"
 "A whole-recording spectrogram opens; click it to start from any point."
 msgstr ""
 
-#: src/ui/sstv_tab.py:532
+#: src/ui/sstv_tab.py:538
 msgid "📥 Import CSV…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:537
+#: src/ui/sstv_tab.py:543
 msgid ""
 "Extract SSDV pictures from a CSV of frames downloaded from SatNOGS DB (the "
 "satellite page's frame download). The packets are added to the Stored Images."
 msgstr ""
 
-#: src/ui/sstv_tab.py:811
+#: src/ui/sstv_tab.py:817
 msgid "No audio source — connect Rig or SDR in Radio Control"
 msgstr ""
 
-#: src/ui/sstv_tab.py:813 src/ui/digital_voice_tab.py:290
+#: src/ui/sstv_tab.py:819 src/ui/digital_voice_tab.py:290
 #: src/ui/digital_voice_tab.py:293
 msgid "Input: "
 msgstr ""
 
-#: src/ui/sstv_tab.py:948
+#: src/ui/sstv_tab.py:954
 msgid "Sound card error: "
 msgstr ""
 
-#: src/ui/sstv_tab.py:1027
+#: src/ui/sstv_tab.py:1033
 msgid "SSDV: waiting for AX.25 frames…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1089
+#: src/ui/sstv_tab.py:1095
 msgid ""
 "⚠ This gr_satellites build has no --kiss_server; SSDV frames cannot be read."
 msgstr ""
 
-#: src/ui/sstv_tab.py:1093
+#: src/ui/sstv_tab.py:1099
 msgid "SSDV (CCSDS BPSK 9k6): waiting for ASRTU-1 frames…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1139 src/ui/digital_voice_tab.py:315
+#: src/ui/sstv_tab.py:1145 src/ui/digital_voice_tab.py:315
 msgid "⚠ Could not start the 2FSK demodulator."
 msgstr ""
 
-#: src/ui/sstv_tab.py:1144
+#: src/ui/sstv_tab.py:1150
 msgid "SSDV (2FSK 800bps): waiting for packets…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1211
+#: src/ui/sstv_tab.py:1217
 msgid "Unknown"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1240
+#: src/ui/sstv_tab.py:1246
 #, python-brace-format
 msgid "Stored image {i}: {n} packets built."
 msgstr ""
 
-#: src/ui/sstv_tab.py:1250 src/ui/sstv_tab.py:1265 src/ui/sstv_tab.py:1280
-#: src/ui/sstv_tab.py:1294
+#: src/ui/sstv_tab.py:1256 src/ui/sstv_tab.py:1271 src/ui/sstv_tab.py:1286
+#: src/ui/sstv_tab.py:1300
 msgid "Import SatNOGS CSV"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1252
+#: src/ui/sstv_tab.py:1258
 msgid "CSV files (*.csv);;All files (*)"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1262
+#: src/ui/sstv_tab.py:1268
 msgid "Reading the CSV…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1281
+#: src/ui/sstv_tab.py:1287
 #, python-brace-format
 msgid "No SSDV packets were found in this file ({n} frames)."
 msgstr ""
 
-#: src/ui/sstv_tab.py:1296
+#: src/ui/sstv_tab.py:1302
 #, python-brace-format
 msgid ""
 "{frames} frames read: {packets} valid SSDV packets ({new} new), {pictures} "
 "pictures. Select one in the list and press Build Image."
 msgstr ""
 
-#: src/ui/sstv_tab.py:1346
+#: src/ui/sstv_tab.py:1352
 msgid "SSDV packets: "
 msgstr ""
 
-#: src/ui/sstv_tab.py:1354
+#: src/ui/sstv_tab.py:1360
 msgid "No hex frames found in the text."
 msgstr ""
 
-#: src/ui/sstv_tab.py:1368
+#: src/ui/sstv_tab.py:1374
 msgid "(223-byte CCSDS frames on virtual channel 1 with a valid CRC)"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1370
+#: src/ui/sstv_tab.py:1376
 msgid "(sync 55 66 / 55 67 and a valid CRC)"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1373
+#: src/ui/sstv_tab.py:1379
 #, python-brace-format
 msgid "{n} frames, but none contains an SSDV packet "
 msgstr ""
 
-#: src/ui/sstv_tab.py:1377
+#: src/ui/sstv_tab.py:1383
 #, python-brace-format
 msgid "{n} frames, {m} SSDV packets — decoding…"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1465
+#: src/ui/sstv_tab.py:1478
 msgid "Mode detected: "
 msgstr ""
 
-#: src/ui/sstv_tab.py:1530
+#: src/ui/sstv_tab.py:1543
 msgid "Select Recorded Audio"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1532 src/ui/digital_voice_tab.py:494
+#: src/ui/sstv_tab.py:1545 src/ui/digital_voice_tab.py:494
 msgid "Audio Files (*.mp3 *.wav)"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1539 src/ui/sstv_tab.py:1566
+#: src/ui/sstv_tab.py:1552 src/ui/sstv_tab.py:1579
 msgid "Decode Recording"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1554
+#: src/ui/sstv_tab.py:1567
 msgid "Decoding: "
 msgstr ""
 
-#: src/ui/sstv_tab.py:1567
+#: src/ui/sstv_tab.py:1580
 msgid "Decode failed"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1588 src/ui/sstv_tab.py:1596
+#: src/ui/sstv_tab.py:1610
+msgid "PNG Images (*.png)"
+msgstr ""
+
+#: src/ui/sstv_tab.py:1618 src/ui/sstv_tab.py:1742
+#, python-brace-format
+msgid "⚠ Could not save the image: {path}"
+msgstr ""
+
+#: src/ui/sstv_tab.py:1620
+msgid "Saved: "
+msgstr ""
+
+#: src/ui/sstv_tab.py:1640 src/ui/sstv_tab.py:1648
 msgid "Open SSTV Image"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1590
+#: src/ui/sstv_tab.py:1642
 msgid "Images (*.png *.jpg *.jpeg *.bmp)"
 msgstr ""
 
-#: src/ui/sstv_tab.py:1596
+#: src/ui/sstv_tab.py:1648
 msgid "Could not read the image file."
 msgstr ""
 
-#: src/ui/sstv_tab.py:1607
+#: src/ui/sstv_tab.py:1659
 msgid "Opened: "
 msgstr ""
 
