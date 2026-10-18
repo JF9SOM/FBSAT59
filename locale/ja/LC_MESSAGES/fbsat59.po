@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-18 22:10+0900\n"
+"POT-Creation-Date: 2026-10-18 23:09+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -199,8 +199,8 @@ msgstr "TX:"
 msgid "FT4 message (auto-filled by state machine)"
 msgstr "FT4メッセージ（ステートマシンが自動入力）"
 
-#: src/ui/ft4_tab.py:880 src/ui/ft4_tab.py:1035 src/ui/meteor_tab.py:226
-#: src/ui/cw_tab.py:260 src/ui/q65_tab.py:382
+#: src/ui/ft4_tab.py:880 src/ui/ft4_tab.py:1035 src/ui/telemetry_tab.py:769
+#: src/ui/meteor_tab.py:226 src/ui/cw_tab.py:260 src/ui/q65_tab.py:382
 msgid "Clear"
 msgstr "クリア"
 
@@ -833,7 +833,7 @@ msgid "Exit"
 msgstr "終了"
 
 #: src/ui/main_window.py:1469 src/ui/ssdv_store_dialog.py:70
-#: src/ui/telemetry_tab.py:637 src/ui/autotrack_record_dialog.py:280
+#: src/ui/telemetry_tab.py:643 src/ui/autotrack_record_dialog.py:280
 #: src/ui/radio_control_widget.py:192 src/ui/transmitter_dialog.py:93
 #: src/ui/remove_manual_tle_dialog.py:74
 msgid "Satellite"
@@ -2043,7 +2043,7 @@ msgstr ""
 "フレームデコードを試みるために必要な最小入力レベルです。左端＝オフ（全て処理する、デフォルト — "
 "実信号を誤って弾くことはありません）。何もない周波数でログにノイズが溜まるのを見てから、そのノイズフロアを目安に引き上げてください。高くしすぎると弱い実信号までブロックする可能性があります。"
 
-#: src/ui/ax100_digi_tab.py:481 src/ui/telemetry_tab.py:756
+#: src/ui/ax100_digi_tab.py:481
 msgid "Export CSV…"
 msgstr "CSVエクスポート…"
 
@@ -2122,7 +2122,7 @@ msgid ""
 "satellite — see comms/ax100digi/tx.py."
 msgstr "送信フレームのCSPアドレス指定は実際の衛星での確認が取れていません — comms/ax100digi/tx.py を参照してください。"
 
-#: src/ui/ax100_digi_tab.py:591 src/ui/telemetry_tab.py:637
+#: src/ui/ax100_digi_tab.py:591 src/ui/telemetry_tab.py:643
 #: src/ui/pass_chart.py:440 src/ui/pass_chart.py:799
 #: src/ui/arica2_panel.py:408
 msgid "Time (UTC)"
@@ -2867,23 +2867,23 @@ msgstr "SatNOGS DB の API キーを貼り付け"
 msgid "🔄 Refresh"
 msgstr "更新"
 
-#: src/ui/telemetry_tab.py:480
+#: src/ui/telemetry_tab.py:486
 msgid "Input Source"
 msgstr "入力ソース"
 
-#: src/ui/telemetry_tab.py:484 src/ui/radio_control_widget.py:361
+#: src/ui/telemetry_tab.py:490 src/ui/radio_control_widget.py:361
 #: src/ui/q65_tab.py:209 src/ui/sstv_tab.py:319
 #: src/ui/sdr_control_widget.py:698 src/ui/digital_voice_tab.py:128
 msgid "Mode:"
 msgstr "モード:"
 
-#: src/ui/telemetry_tab.py:497 src/ui/telemetry_tab.py:507
-#: src/ui/telemetry_tab.py:518 src/ui/telemetry_tab.py:529
+#: src/ui/telemetry_tab.py:503 src/ui/telemetry_tab.py:513
+#: src/ui/telemetry_tab.py:524 src/ui/telemetry_tab.py:535
 #: src/ui/sstv_tab.py:339
 msgid "Search satellites…"
 msgstr "衛星を検索…"
 
-#: src/ui/telemetry_tab.py:542
+#: src/ui/telemetry_tab.py:548
 msgid ""
 "AX.25 baud rate for Direwolf (AX.25) mode's Rig + Sound\n"
 "Card (Direwolf) or SDR reception. Selecting a satellite\n"
@@ -2895,15 +2895,15 @@ msgstr ""
 "サウンドカード（Direwolf）またはSDR受信用のAX.25ボーレート。衛星またはトランスポンダーを選ぶと、その名前に含まれるボーレート（1k2 /"
 " 9k6など）から自動で設定されます。手動で変更することもできます。gr-satellitesのデコードには影響しません。"
 
-#: src/ui/telemetry_tab.py:550 src/ui/aprs_tab.py:254 src/ui/sstv_tab.py:347
+#: src/ui/telemetry_tab.py:556 src/ui/aprs_tab.py:254 src/ui/sstv_tab.py:347
 msgid "Baud:"
 msgstr "ボーレート:"
 
-#: src/ui/telemetry_tab.py:554 src/ui/meteor_tab.py:391
+#: src/ui/telemetry_tab.py:560 src/ui/meteor_tab.py:391
 msgid "📋 Log"
 msgstr "📋 ログ"
 
-#: src/ui/telemetry_tab.py:557
+#: src/ui/telemetry_tab.py:563
 msgid ""
 "Show the active backend's own console output. Direwolf\n"
 "(AX.25) mode: startup messages and a line per decoded\n"
@@ -2921,43 +2921,43 @@ msgstr ""
 "gr-satellitesモード: その標準出力・標準エラー出力（他の画面には\n"
 "表示されないエラーを含みます）。"
 
-#: src/ui/telemetry_tab.py:573 src/ui/cw_tab.py:254 src/ui/cw_tab.py:429
+#: src/ui/telemetry_tab.py:579 src/ui/cw_tab.py:254 src/ui/cw_tab.py:429
 msgid "▶ Start"
 msgstr "▶ 開始"
 
-#: src/ui/telemetry_tab.py:575 src/ui/cw_tab.py:406
+#: src/ui/telemetry_tab.py:581 src/ui/cw_tab.py:406
 #: src/ui/sdr_control_widget.py:798 src/ui/digital_voice_tab.py:227
 msgid "■ Stop"
 msgstr "■ 停止"
 
-#: src/ui/telemetry_tab.py:578
+#: src/ui/telemetry_tab.py:584
 msgid "—"
 msgstr "—"
 
-#: src/ui/telemetry_tab.py:589 src/ui/sstv_tab.py:525
+#: src/ui/telemetry_tab.py:595 src/ui/sstv_tab.py:525
 msgid "📂 Decode IQ Recording…"
 msgstr "📂 IQ録音デコード…"
 
-#: src/ui/telemetry_tab.py:592
+#: src/ui/telemetry_tab.py:598
 msgid ""
 "Open a recorded .iq.wav file and play it into the decoder. Click the "
 "spectrogram to play from there; decoding starts automatically."
 msgstr ""
 "録音した .iq.wav ファイルを開いてデコーダーに再生します。スペクトログラムをクリックするとその位置から再生され、デコードも自動的に開始されます。"
 
-#: src/ui/telemetry_tab.py:599
+#: src/ui/telemetry_tab.py:605
 msgid "Speed:"
 msgstr "速度:"
 
-#: src/ui/telemetry_tab.py:601
+#: src/ui/telemetry_tab.py:607
 msgid "Normal (real time)"
 msgstr "通常（実時間）"
 
-#: src/ui/telemetry_tab.py:602
+#: src/ui/telemetry_tab.py:608
 msgid "Fast"
 msgstr "高速"
 
-#: src/ui/telemetry_tab.py:605
+#: src/ui/telemetry_tab.py:611
 msgid ""
 "Normal: play the recording through the SDR like a live reception and\n"
 "decode it as it goes (pick the start on the spectrogram).\n"
@@ -2967,31 +2967,31 @@ msgstr ""
 "（開始位置はスペクトログラムで選びます）。\n"
 "高速: 録音ファイル全体を一度に、数秒でデコードします。"
 
-#: src/ui/telemetry_tab.py:616 src/ui/telemetry_tab.py:3314
+#: src/ui/telemetry_tab.py:622 src/ui/telemetry_tab.py:3474
 msgid "Frames: 0 received"
 msgstr "フレーム: 0件受信"
 
-#: src/ui/telemetry_tab.py:637
+#: src/ui/telemetry_tab.py:643
 msgid "Callsign"
 msgstr "コールサイン"
 
-#: src/ui/telemetry_tab.py:637
+#: src/ui/telemetry_tab.py:643
 msgid "Data"
 msgstr "データ"
 
-#: src/ui/telemetry_tab.py:679
+#: src/ui/telemetry_tab.py:685
 msgid "Select a frame to see all its decoded fields."
 msgstr "フレームを選択すると、デコードされた全フィールドを表示します。"
 
-#: src/ui/telemetry_tab.py:680
+#: src/ui/telemetry_tab.py:686
 msgid "Received Frames"
 msgstr "受信フレーム"
 
-#: src/ui/telemetry_tab.py:692
+#: src/ui/telemetry_tab.py:698
 msgid "Decoded Fields"
 msgstr "全項目デコード結果"
 
-#: src/ui/telemetry_tab.py:710
+#: src/ui/telemetry_tab.py:716
 msgid ""
 "Upload every decoded frame to the SatNOGS DB (SiDS).\n"
 "Needs a SatNOGS DB API key (API button) plus your callsign\n"
@@ -3001,27 +3001,27 @@ msgstr ""
 "SatNOGS DB の API キー（API ボタン）と、コールサイン・\n"
 "観測地点（File → Set QTH）の設定が必要です。"
 
-#: src/ui/telemetry_tab.py:718
+#: src/ui/telemetry_tab.py:724
 msgid "API"
 msgstr "API"
 
-#: src/ui/telemetry_tab.py:719
+#: src/ui/telemetry_tab.py:725
 msgid "Enter your SatNOGS DB API key"
 msgstr "SatNOGS DB の API キーを入力"
 
-#: src/ui/telemetry_tab.py:723
+#: src/ui/telemetry_tab.py:729
 msgid "SatNOGS ↗"
 msgstr "SatNOGS ↗"
 
-#: src/ui/telemetry_tab.py:724
+#: src/ui/telemetry_tab.py:730
 msgid "Open the selected satellite's page on db.satnogs.org"
 msgstr "選択中の衛星の db.satnogs.org ページを開く"
 
-#: src/ui/telemetry_tab.py:729
+#: src/ui/telemetry_tab.py:735
 msgid "Send selected"
 msgstr "選択分を送信"
 
-#: src/ui/telemetry_tab.py:732
+#: src/ui/telemetry_tab.py:738
 msgid ""
 "Send the frames selected in the table to the SatNOGS DB now,\n"
 "even if the Upload switch is off (CW: even if received only once).\n"
@@ -3031,11 +3031,11 @@ msgstr ""
 "アップロードのスイッチがOFFでも送ります（CW: 1回しか受信していなくても送ります）。\n"
 "時刻が確実でないもの、送信済みのものは除きます。"
 
-#: src/ui/telemetry_tab.py:743
+#: src/ui/telemetry_tab.py:749
 msgid "Load saved"
 msgstr "保存済みを読込"
 
-#: src/ui/telemetry_tab.py:746
+#: src/ui/telemetry_tab.py:752
 msgid ""
 "Show the frames saved earlier for the selected satellite again\n"
 "(the current mode's: AX.25, gr-satellites or CW TLM),\n"
@@ -3044,64 +3044,74 @@ msgstr ""
 "選択中の衛星について、以前に保存したフレームを再表示します\n"
 "（現在のモード（AX.25、gr-satellitesまたはCW TLM）の分。録音の再生は不要です）。"
 
-#: src/ui/telemetry_tab.py:753
-msgid "Clear Log"
-msgstr "ログをクリア"
+#: src/ui/telemetry_tab.py:759
+msgid "Import CSV…"
+msgstr "CSV取込…"
 
-#: src/ui/telemetry_tab.py:827 src/ui/telemetry_tab.py:2106
-#: src/ui/sstv_tab.py:1528
+#: src/ui/telemetry_tab.py:762
+msgid ""
+"Add the frames of a CSV downloaded from SatNOGS DB (the satellite page's\n"
+"frame download) to the table and the log, for the selected satellite.\n"
+"AX.25 and HADES FSK modes; frames are never sent back to SatNOGS."
+msgstr ""
+"SatNOGS DB（衛星ページのフレームのダウンロード）から取得したCSVのフレームを、選択中の衛星の表とログに追加します。\n"
+"AX.25とHADES FSKのモードで使えます。フレームをSatNOGSへ送り返すことはありません。"
+
+#: src/ui/telemetry_tab.py:840 src/ui/telemetry_tab.py:2130
+#: src/ui/sstv_tab.py:1531
 msgid "Decode IQ Recording"
 msgstr "IQ録音のデコード"
 
-#: src/ui/telemetry_tab.py:827 src/ui/sstv_tab.py:1529
+#: src/ui/telemetry_tab.py:840 src/ui/sstv_tab.py:1532
 #: src/ui/digital_voice_tab.py:556
 msgid "SDR Control is not available."
 msgstr "SDRコントロールを利用できません。"
 
 # --- Plural forms (日本語は単複同形) ---
-#: src/ui/telemetry_tab.py:1415
+#: src/ui/telemetry_tab.py:1428
 msgid "gr-satellites Log"
 msgstr "gr-satellitesログ"
 
-#: src/ui/telemetry_tab.py:1424 src/ui/sdr_install_dialog.py:205
+#: src/ui/telemetry_tab.py:1437 src/ui/sdr_install_dialog.py:205
 #: src/ui/app_update_dialog.py:290 src/ui/hamlib_update_dialog.py:211
 msgid "Log"
 msgstr "ログ"
 
-#: src/ui/telemetry_tab.py:1529 src/ui/telemetry_tab.py:1966
-#: src/ui/telemetry_tab.py:2120 src/ui/telemetry_tab.py:3077
+#: src/ui/telemetry_tab.py:1542 src/ui/telemetry_tab.py:1979
+#: src/ui/telemetry_tab.py:2144 src/ui/telemetry_tab.py:3118
+#: src/ui/telemetry_tab.py:3356
 msgid "Select a satellite first."
 msgstr "先に衛星を選択してください。"
 
-#: src/ui/telemetry_tab.py:1533
+#: src/ui/telemetry_tab.py:1546
 msgid "No CW telemetry frame format is defined for this satellite yet."
 msgstr "この衛星のCWテレメトリーのフレーム形式はまだ定義されていません。"
 
-#: src/ui/telemetry_tab.py:1540
+#: src/ui/telemetry_tab.py:1553
 msgid "CW TLM — decoding in the CW Decoder tab"
 msgstr "CW TLM — CWデコーダータブでデコード中"
 
-#: src/ui/telemetry_tab.py:1597
+#: src/ui/telemetry_tab.py:1610
 msgid "length or characters not valid, not used"
 msgstr "長さまたは文字が不正のため不使用"
 
-#: src/ui/telemetry_tab.py:1687
+#: src/ui/telemetry_tab.py:1700
 msgid "Select received CW frames in the table first."
 msgstr "先に表で受信したCWフレームを選択してください。"
 
-#: src/ui/telemetry_tab.py:1729
+#: src/ui/telemetry_tab.py:1742
 msgid "Select received AX.25 frames in the table first."
 msgstr "先に表で受信したAX.25フレームを選択してください。"
 
-#: src/ui/telemetry_tab.py:1749
+#: src/ui/telemetry_tab.py:1762
 msgid "Select the satellite these frames came from first."
 msgstr "先にこれらのフレームを受信した衛星を選択してください。"
 
-#: src/ui/telemetry_tab.py:1761
+#: src/ui/telemetry_tab.py:1774
 msgid "Send to SatNOGS"
 msgstr "SatNOGSへ送信"
 
-#: src/ui/telemetry_tab.py:1762
+#: src/ui/telemetry_tab.py:1775
 #, python-brace-format
 msgid ""
 "Send {n} frame(s) to the SatNOGS DB?\n"
@@ -3112,208 +3122,226 @@ msgstr ""
 "\n"
 "{lines}"
 
-#: src/ui/telemetry_tab.py:1793 src/ui/telemetry_tab.py:1820
+#: src/ui/telemetry_tab.py:1806 src/ui/telemetry_tab.py:1833
 #, python-brace-format
 msgid "SatNOGS accepted the frame (HTTP {n})"
 msgstr "SatNOGSがフレームを受理しました（HTTP {n}）"
 
-#: src/ui/telemetry_tab.py:1840
+#: src/ui/telemetry_tab.py:1853
 #, python-brace-format
 msgid "SatNOGS upload failed: {detail}"
 msgstr "SatNOGSへの送信に失敗しました: {detail}"
 
-#: src/ui/telemetry_tab.py:1841
+#: src/ui/telemetry_tab.py:1854
 #, python-brace-format
 msgid "SatNOGS rejected the upload (HTTP {status}): {detail}"
 msgstr "SatNOGSが送信を拒否しました（HTTP {status}）: {detail}"
 
-#: src/ui/telemetry_tab.py:1845
+#: src/ui/telemetry_tab.py:1858
 msgid "check the API key (API button)"
 msgstr "APIキーを確認してください（APIボタン）"
 
-#: src/ui/telemetry_tab.py:1853 src/ui/telemetry_tab.py:3381
+#: src/ui/telemetry_tab.py:1866 src/ui/telemetry_tab.py:3520
 msgid "API key"
 msgstr "APIキー"
 
-#: src/ui/telemetry_tab.py:1854 src/ui/telemetry_tab.py:3383
+#: src/ui/telemetry_tab.py:1867 src/ui/telemetry_tab.py:3522
 msgid "callsign"
 msgstr "コールサイン"
 
-#: src/ui/telemetry_tab.py:1855 src/ui/telemetry_tab.py:3385
+#: src/ui/telemetry_tab.py:1868 src/ui/telemetry_tab.py:3524
 msgid "station location"
 msgstr "観測地点"
 
-#: src/ui/telemetry_tab.py:1858
+#: src/ui/telemetry_tab.py:1871
 msgid "SatNOGS upload not possible — missing: "
 msgstr "SatNOGSへ送信できません — 未設定: "
 
-#: src/ui/telemetry_tab.py:1864
+#: src/ui/telemetry_tab.py:1877
 #, python-brace-format
 msgid "{n} queued for upload"
 msgstr "{n}件を送信待ちに追加"
 
-#: src/ui/telemetry_tab.py:1866
+#: src/ui/telemetry_tab.py:1879
 #, python-brace-format
 msgid "{n} awaiting SatNOGS's reply"
 msgstr "{n}件はSatNOGSの応答待ち"
 
-#: src/ui/telemetry_tab.py:1868
+#: src/ui/telemetry_tab.py:1881
 #, python-brace-format
 msgid "{n} already sent"
 msgstr "{n}件は送信済み"
 
-#: src/ui/telemetry_tab.py:1870
+#: src/ui/telemetry_tab.py:1883
 #, python-brace-format
 msgid "{n} waiting for a second reception"
 msgstr "{n}件は2回目の受信待ち"
 
-#: src/ui/telemetry_tab.py:1872
+#: src/ui/telemetry_tab.py:1885
 #, python-brace-format
 msgid "{n} skipped: recording start time not set"
 msgstr "{n}件は録音の開始時刻が未設定のため保留"
 
-#: src/ui/telemetry_tab.py:1874
+#: src/ui/telemetry_tab.py:1887
 #, python-brace-format
 msgid "{n} without a SatNOGS format"
 msgstr "{n}件はSatNOGS形式なし"
 
-#: src/ui/telemetry_tab.py:1875
+#: src/ui/telemetry_tab.py:1888
 msgid "nothing to send"
 msgstr "送信するものなし"
 
-#: src/ui/telemetry_tab.py:1893
+#: src/ui/telemetry_tab.py:1906
 msgid "⚠ No satellite selected"
 msgstr "⚠ 衛星が選択されていません"
 
-#: src/ui/telemetry_tab.py:1934
+#: src/ui/telemetry_tab.py:1947
 msgid "⚠ SDR connected but not ready"
 msgstr "⚠ SDRは接続済みですが準備ができていません"
 
-#: src/ui/telemetry_tab.py:1940
+#: src/ui/telemetry_tab.py:1953
 msgid "Connecting SDR…"
 msgstr "SDR接続中…"
 
-#: src/ui/telemetry_tab.py:1946
+#: src/ui/telemetry_tab.py:1959
 msgid "Connecting SDR… decoding starts once it is connected"
 msgstr "SDRに接続中… 接続後に自動でデコードを開始します"
 
-#: src/ui/telemetry_tab.py:1949
+#: src/ui/telemetry_tab.py:1962
 msgid "⚠ No SDR or rig connected"
 msgstr "⚠ SDRまたは無線機が接続されていません"
 
-#: src/ui/telemetry_tab.py:1985
+#: src/ui/telemetry_tab.py:2002
 msgid "Could not start the HADES FSK demodulator."
 msgstr "HADES FSK 復調器を起動できませんでした。"
 
-#: src/ui/telemetry_tab.py:1991
+#: src/ui/telemetry_tab.py:2009
+msgid "HADES FSK — listening for HADES-SA (800 baud 2FSK)"
+msgstr "HADES FSK — HADES-SA（800 baud 2FSK）を待機中"
+
+#: src/ui/telemetry_tab.py:2011
 msgid "HADES FSK — listening for 200 baud bursts (±20 kHz)"
 msgstr "HADES FSK — 200 baud のバーストを待っています（±20 kHz）"
 
-#: src/ui/telemetry_tab.py:2013
+#: src/ui/telemetry_tab.py:2033
 msgid "repaired, not verified"
 msgstr "修復済み・未検証"
 
-#: src/ui/telemetry_tab.py:2015
+#: src/ui/telemetry_tab.py:2035
 msgid "uptime"
 msgstr "稼働時間"
 
-#: src/ui/telemetry_tab.py:2116
+#: src/ui/telemetry_tab.py:2140
 msgid "Stop the running decoder first."
 msgstr "先に実行中のデコーダーを停止してください。"
 
-#: src/ui/telemetry_tab.py:2141
+#: src/ui/telemetry_tab.py:2165
 msgid "Fast decode: starting…"
 msgstr "高速デコード: 開始しています…"
 
-#: src/ui/telemetry_tab.py:2166
+#: src/ui/telemetry_tab.py:2190
 #, python-brace-format
 msgid "Fast decode: {pct}% — {n} frame(s)"
 msgstr "高速デコード: {pct}% — {n} フレーム"
 
-#: src/ui/telemetry_tab.py:2173
+#: src/ui/telemetry_tab.py:2197
 msgid "No start time in the file name: not sent to SatNOGS."
 msgstr "ファイル名に開始時刻がないため、SatNOGS へは送信しません。"
 
-#: src/ui/telemetry_tab.py:2177
+#: src/ui/telemetry_tab.py:2201
 #, python-brace-format
 msgid "Decoded {dur} s of recording in {el} s — {n} frame(s)"
 msgstr "録音 {dur} 秒分を {el} 秒でデコードしました — {n} フレーム"
 
-#: src/ui/telemetry_tab.py:2188
+#: src/ui/telemetry_tab.py:2212
 msgid "Could not decode the recording: "
 msgstr "録音をデコードできませんでした: "
 
-#: src/ui/telemetry_tab.py:2211
+#: src/ui/telemetry_tab.py:2235
 msgid "Fast decode stopped"
 msgstr "高速デコードを停止しました"
 
-#: src/ui/telemetry_tab.py:2229
+#: src/ui/telemetry_tab.py:2253
 msgid "Voice packets are sent to the Digital Voice tab."
 msgstr "音声パケットはデジタル音声タブへ送っています。"
 
-#: src/ui/telemetry_tab.py:2673
+#: src/ui/telemetry_tab.py:2707
 msgid ""
 "SatNOGS upload skipped: set the recording's start time in SDR Control first."
 msgstr "SatNOGSへの送信を見送りました: 先にSDRコントロールで録音の開始時刻を設定してください。"
 
-#: src/ui/telemetry_tab.py:2759 src/ui/sstv_tab.py:1349
+#: src/ui/telemetry_tab.py:2793 src/ui/sstv_tab.py:1355
 msgid "Frames: "
 msgstr "フレーム: "
 
-#: src/ui/telemetry_tab.py:2759
+#: src/ui/telemetry_tab.py:2793
 msgid " received"
 msgstr "件受信"
 
-#: src/ui/telemetry_tab.py:2787 src/ui/telemetry_tab.py:2815
+#: src/ui/telemetry_tab.py:2822 src/ui/telemetry_tab.py:2850
 msgid "gr-satellites output"
 msgstr "gr-satellites 出力"
 
-#: src/ui/telemetry_tab.py:2798
+#: src/ui/telemetry_tab.py:2833
 msgid "Field"
 msgstr "項目"
 
-#: src/ui/telemetry_tab.py:2798
+#: src/ui/telemetry_tab.py:2833
 msgid "Value"
 msgstr "値"
 
-#: src/ui/telemetry_tab.py:3011
+#: src/ui/telemetry_tab.py:3052
 msgid "Rig + Direwolf (receiving)"
 msgstr "無線機 + Direwolf（受信中）"
 
-#: src/ui/telemetry_tab.py:3016
+#: src/ui/telemetry_tab.py:3057
 msgid "SDR — AX.25 (receive only)"
 msgstr "SDR — AX.25（受信のみ）"
 
-#: src/ui/telemetry_tab.py:3022
+#: src/ui/telemetry_tab.py:3063
 msgid "—  (connect SDR, then click ▶ Start)"
 msgstr "—  （SDRを接続後、▶ 開始をクリック）"
 
-#: src/ui/telemetry_tab.py:3025
+#: src/ui/telemetry_tab.py:3066
 msgid "—  (click ▶ Start; the CW Decoder tab opens automatically)"
 msgstr "—  (▶ 開始を押すとCWデコーダータブが自動で開きます)"
 
-#: src/ui/telemetry_tab.py:3028
+#: src/ui/telemetry_tab.py:3069
 msgid "—  (connect Rig or SDR, then click ▶ Start)"
 msgstr "—  （無線機またはSDRを接続後、▶ 開始をクリック）"
 
-#: src/ui/telemetry_tab.py:3083
+#: src/ui/telemetry_tab.py:3124
 #, python-brace-format
 msgid "Loaded {n} saved frame(s)"
 msgstr "保存済みフレームを{n}件読み込みました"
 
-#: src/ui/telemetry_tab.py:3322
-msgid "Export Telemetry CSV"
-msgstr "テレメトリーCSVエクスポート"
+#: src/ui/telemetry_tab.py:3360
+msgid "Import CSV works in the AX.25 and HADES FSK modes."
+msgstr "CSV取込は、AX.25とHADES FSKのモードで使えます。"
 
-#: src/ui/telemetry_tab.py:3349
+#: src/ui/telemetry_tab.py:3365 src/ui/sstv_tab.py:1262
+#: src/ui/sstv_tab.py:1277 src/ui/sstv_tab.py:1292 src/ui/sstv_tab.py:1306
+msgid "Import SatNOGS CSV"
+msgstr "SatNOGSのCSVを取り込み"
+
+#: src/ui/telemetry_tab.py:3367 src/ui/sstv_tab.py:1264
+msgid "CSV files (*.csv);;All files (*)"
+msgstr "CSVファイル (*.csv);;すべてのファイル (*)"
+
+#: src/ui/telemetry_tab.py:3403
+#, python-brace-format
+msgid "CSV: {frames} frames read, {added} added to the table."
+msgstr "CSV: {frames}フレームを読み込み、表に{added}行を追加しました。"
+
+#: src/ui/telemetry_tab.py:3488
 msgid "SatNOGS Upload: ON"
 msgstr "SatNOGSアップロード: ON"
 
-#: src/ui/telemetry_tab.py:3349
+#: src/ui/telemetry_tab.py:3488
 msgid "SatNOGS Upload: OFF"
 msgstr "SatNOGSアップロード: OFF"
 
-#: src/ui/telemetry_tab.py:3388
+#: src/ui/telemetry_tab.py:3527
 msgid "SatNOGS Upload is on but not sending — missing: "
 msgstr "SatNOGS アップロードは ON ですが送信されていません — 未設定: "
 
@@ -3668,11 +3696,11 @@ msgstr "自動追尾: AOSで受信を開始しました。"
 msgid "Autotrack: reception stopped at LOS."
 msgstr "自動追尾: LOSで受信を停止しました。"
 
-#: src/ui/meteor_tab.py:918 src/ui/sstv_tab.py:1475
+#: src/ui/meteor_tab.py:918 src/ui/sstv_tab.py:1478
 msgid "Image received: "
 msgstr "画像受信: "
 
-#: src/ui/meteor_tab.py:1109 src/ui/sstv_tab.py:1587
+#: src/ui/meteor_tab.py:1109 src/ui/sstv_tab.py:1590
 msgid "💾 Save Image As…"
 msgstr "💾 名前を付けて保存…"
 
@@ -3692,7 +3720,7 @@ msgstr ""
 msgid "↕ Fit Height"
 msgstr ""
 
-#: src/ui/meteor_tab.py:1184 src/ui/sstv_tab.py:1610
+#: src/ui/meteor_tab.py:1184 src/ui/sstv_tab.py:1613
 msgid "Save Image"
 msgstr "画像を保存"
 
@@ -3914,7 +3942,7 @@ msgstr "SDRデバイスが検出されませんでした。"
 
 # --- Status bar ---
 #: src/ui/sdr_install_dialog.py:358 src/ui/cw_tab.py:269
-#: src/ui/sstv_tab.py:1667
+#: src/ui/sstv_tab.py:1670
 msgid "Ready"
 msgstr "準備完了"
 
@@ -5725,7 +5753,7 @@ msgstr "パケットを消去"
 msgid "Raw Packets"
 msgstr "生パケット"
 
-#: src/ui/sstv_tab.py:454 src/ui/sstv_tab.py:1665
+#: src/ui/sstv_tab.py:454 src/ui/sstv_tab.py:1668
 msgid "Waiting for signal…"
 msgstr "信号待機中…"
 
@@ -5747,7 +5775,7 @@ msgstr "🖼 画像を開く…"
 msgid "📂 Decode MP3 Recording…"
 msgstr "📂 MP3録音デコード…"
 
-#: src/ui/sstv_tab.py:521 src/ui/sstv_tab.py:1553
+#: src/ui/sstv_tab.py:521 src/ui/sstv_tab.py:1556
 msgid "soundfile not installed — pip install soundfile"
 msgstr "soundfileがインストールされていません — pip install soundfile"
 
@@ -5810,30 +5838,21 @@ msgstr ""
 msgid "Unknown"
 msgstr "不明"
 
-#: src/ui/sstv_tab.py:1246
+#: src/ui/sstv_tab.py:1252
 #, python-brace-format
 msgid "Stored image {i}: {n} packets built."
 msgstr "保存済み画像 {i}: {n}パケットから画像を作成しました。"
 
-#: src/ui/sstv_tab.py:1256 src/ui/sstv_tab.py:1271 src/ui/sstv_tab.py:1286
-#: src/ui/sstv_tab.py:1300
-msgid "Import SatNOGS CSV"
-msgstr "SatNOGSのCSVを取り込み"
-
-#: src/ui/sstv_tab.py:1258
-msgid "CSV files (*.csv);;All files (*)"
-msgstr "CSVファイル (*.csv);;すべてのファイル (*)"
-
-#: src/ui/sstv_tab.py:1268
+#: src/ui/sstv_tab.py:1274
 msgid "Reading the CSV…"
 msgstr "CSVを読み込み中…"
 
-#: src/ui/sstv_tab.py:1287
+#: src/ui/sstv_tab.py:1293
 #, python-brace-format
 msgid "No SSDV packets were found in this file ({n} frames)."
 msgstr "このファイルにSSDVパケットは見つかりませんでした（{n}フレーム）。"
 
-#: src/ui/sstv_tab.py:1302
+#: src/ui/sstv_tab.py:1308
 #, python-brace-format
 msgid ""
 "{frames} frames read: {packets} valid SSDV packets ({new} new), {pictures} "
@@ -5842,82 +5861,82 @@ msgstr ""
 "{frames}フレームを読み込みました: "
 "有効なSSDVパケット{packets}個（新規{new}個）、画像{pictures}枚。一覧で画像を選んで「画像を作成」を押してください。"
 
-#: src/ui/sstv_tab.py:1352
+#: src/ui/sstv_tab.py:1358
 msgid "SSDV packets: "
 msgstr "SSDVパケット: "
 
-#: src/ui/sstv_tab.py:1360
+#: src/ui/sstv_tab.py:1366
 msgid "No hex frames found in the text."
 msgstr "テキストにHEXのフレームが見つかりません。"
 
-#: src/ui/sstv_tab.py:1374
+#: src/ui/sstv_tab.py:1380
 msgid "(223-byte CCSDS frames on virtual channel 1 with a valid CRC)"
 msgstr "（仮想チャンネル1の223バイトCCSDSフレームで、CRCが正しいもの）"
 
-#: src/ui/sstv_tab.py:1376
+#: src/ui/sstv_tab.py:1382
 msgid "(sync 55 66 / 55 67 and a valid CRC)"
 msgstr "（同期 55 66 / 55 67 と正しいCRC）"
 
-#: src/ui/sstv_tab.py:1379
+#: src/ui/sstv_tab.py:1385
 #, python-brace-format
 msgid "{n} frames, but none contains an SSDV packet "
 msgstr "{n}フレームありますが、SSDVパケットを含むものがありません "
 
-#: src/ui/sstv_tab.py:1383
+#: src/ui/sstv_tab.py:1389
 #, python-brace-format
 msgid "{n} frames, {m} SSDV packets — decoding…"
 msgstr "{n}フレーム、SSDVパケット{m}個 — デコード中…"
 
-#: src/ui/sstv_tab.py:1478
+#: src/ui/sstv_tab.py:1481
 msgid "Mode detected: "
 msgstr "検出モード: "
 
-#: src/ui/sstv_tab.py:1543
+#: src/ui/sstv_tab.py:1546
 msgid "Select Recorded Audio"
 msgstr "録音ファイルを選択"
 
-#: src/ui/sstv_tab.py:1545 src/ui/digital_voice_tab.py:494
+#: src/ui/sstv_tab.py:1548 src/ui/digital_voice_tab.py:494
 msgid "Audio Files (*.mp3 *.wav)"
 msgstr "音声ファイル (*.mp3 *.wav)"
 
-#: src/ui/sstv_tab.py:1552 src/ui/sstv_tab.py:1579
+#: src/ui/sstv_tab.py:1555 src/ui/sstv_tab.py:1582
 msgid "Decode Recording"
 msgstr "録音のデコード"
 
-#: src/ui/sstv_tab.py:1567
+#: src/ui/sstv_tab.py:1570
 msgid "Decoding: "
 msgstr "デコード中: "
 
-#: src/ui/sstv_tab.py:1580
+#: src/ui/sstv_tab.py:1583
 msgid "Decode failed"
 msgstr "デコードに失敗しました"
 
-#: src/ui/sstv_tab.py:1610
+#: src/ui/sstv_tab.py:1613
 msgid "PNG Images (*.png)"
 msgstr "PNG画像 (*.png)"
 
-#: src/ui/sstv_tab.py:1618 src/ui/sstv_tab.py:1742
+#: src/ui/sstv_tab.py:1621 src/ui/sstv_tab.py:1750
 #, python-brace-format
 msgid "⚠ Could not save the image: {path}"
 msgstr "⚠ 画像を保存できませんでした: {path}"
 
-#: src/ui/sstv_tab.py:1620
+#: src/ui/sstv_tab.py:1623
 msgid "Saved: "
 msgstr "保存済み: "
 
-#: src/ui/sstv_tab.py:1640 src/ui/sstv_tab.py:1648
+#: src/ui/sstv_tab.py:1643 src/ui/sstv_tab.py:1651
 msgid "Open SSTV Image"
 msgstr "SSTV画像を開く"
 
-#: src/ui/sstv_tab.py:1642
+#: src/ui/sstv_tab.py:1645
 msgid "Images (*.png *.jpg *.jpeg *.bmp)"
 msgstr "画像 (*.png *.jpg *.jpeg *.bmp)"
 
-#: src/ui/sstv_tab.py:1648
+#: src/ui/sstv_tab.py:1651
 msgid "Could not read the image file."
 msgstr "画像ファイルを読み込めませんでした。"
 
-#: src/ui/sstv_tab.py:1659
+#: src/ui/sstv_tab.py:1662
 msgid "Opened: "
 msgstr "開きました: "
 
@@ -7323,6 +7342,12 @@ msgstr "ステータス: 「{text}」"
 #, python-brace-format
 msgid "({shown}/{total} hex chars — rest omitted)"
 msgstr "（{shown}/{total}文字を表示、以下省略）"
+
+#~ msgid "Clear Log"
+#~ msgstr "ログをクリア"
+
+#~ msgid "Export Telemetry CSV"
+#~ msgstr "テレメトリーCSVエクスポート"
 
 #~ msgid "Save directory:"
 #~ msgstr "保存先ディレクトリ:"

@@ -472,24 +472,6 @@ class TestDateInTheTable:
         tab._on_cw_block(HK1, START, END)
         assert tab._table.item(0, 0).text() == "2026-09-20 07:01:31"
 
-    def test_the_csv_export_has_the_date(
-        self,
-        qtbot: QtBot,
-        cw_conn: sqlite3.Connection,
-        tmp_path: Any,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        tab = _running_tab(qtbot, cw_conn)
-        tab._on_cw_block(HK1, START, END)
-        target = tmp_path / "out.csv"
-        monkeypatch.setattr(
-            "ui.telemetry_tab.QFileDialog.getSaveFileName", lambda *a, **k: (str(target), "")
-        )
-
-        tab._on_export_csv()
-
-        assert "2026-09-20 07:01:31" in target.read_text(encoding="utf-8")
-
 
 class TestClockOfARecording:
     def _replaying(self, tab: TelemetryTab, confirmed: bool) -> None:

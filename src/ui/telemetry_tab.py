@@ -19,10 +19,10 @@ from __future__ import annotations
 
 import ast
 import contextlib
-import csv
 import datetime
 import json
 import logging
+import math
 import re
 import sqlite3
 import time
@@ -400,6 +400,12 @@ class TelemetryTab(QWidget):
         self._hades_demod: Any | None = None
         self._hades_demod_pipeline: Any | None = None
         self._hades_norad: int | None = None
+        # "Import CSV…": frames from SatNOGS DB are being added (their times come from the
+        # file, they are never sent back, and the log is checked for copies).
+        self._importing = False
+        self._import_time: datetime.datetime | None = None
+        self._import_shown: set[int] = set()  # log ids already in the table during an import
+        self._import_log_ids: list[int] = []
         self._voice_tab_asked = False  # voice_tab_requested was emitted in this run
         # HADES FSK "Fast" decode of a recording file (no SDR pipeline): the worker thread,
         # the recording's start time and whether that time is known (read from its file name).
@@ -699,7 +705,7 @@ class TelemetryTab(QWidget):
 
         # --- Footer ---
         # Left cluster: SatNOGS DB upload toggle + API-key popup + a link to
-        # the selected satellite's SatNOGS page. Right cluster: Clear / Export.
+        # the selected satellite's SatNOGS page. Right cluster: Load saved / Import CSV / Clear.
         # Kept to a single row (no extra height) at the user's request.
         footer = QHBoxLayout()
 
@@ -750,12 +756,19 @@ class TelemetryTab(QWidget):
         )
         self._btn_load.clicked.connect(self._on_load_saved)
         footer.addWidget(self._btn_load)
-        self._btn_clear = QPushButton(_("Clear Log"))
+        self._btn_import = QPushButton(_("Import CSV…"))
+        self._btn_import.setToolTip(
+            _(
+                "Add the frames of a CSV downloaded from SatNOGS DB (the satellite page's\n"
+                "frame download) to the table and the log, for the selected satellite.\n"
+                "AX.25 and HADES FSK modes; frames are never sent back to SatNOGS."
+            )
+        )
+        self._btn_import.clicked.connect(self._on_import_csv)
+        footer.addWidget(self._btn_import)
+        self._btn_clear = QPushButton(_("Clear"))
         self._btn_clear.clicked.connect(self._on_clear)
         footer.addWidget(self._btn_clear)
-        self._btn_export = QPushButton(_("Export CSV…"))
-        self._btn_export.clicked.connect(self._on_export_csv)
-        footer.addWidget(self._btn_export)
         root.addLayout(footer)
 
         self._refresh_satnogs_toggle()
@@ -2021,7 +2034,7 @@ class TelemetryTab(QWidget):
         uptime = frame.uptime_s
         uptime_label = _("uptime")  # not inside the f-string: xgettext cannot see it there
         extra = f"  {uptime_label} {uptime} s" if uptime is not None else ""
-        carrier = f"  {frame.carrier_hz / 1000:+.1f} kHz"
+        carrier = "" if math.isnan(frame.carrier_hz) else f"  {frame.carrier_hz / 1000:+.1f} kHz"
         return f"{head}{extra}{carrier}  {format_frame_hex(frame.payload)}"
 
     def _on_hades_frame(self, frame: Any, age_s: float) -> None:
@@ -2041,8 +2054,12 @@ class TelemetryTab(QWidget):
         reliable: bool,
         submit: bool = True,
         stream_time: float = 0.0,
+        imported: bool = False,
     ) -> None:
         """Show, log and (when verified, *submit* and the switch is on) upload one frame.
+
+        *imported*: the frame comes from a SatNOGS DB CSV, so it is never sent back and is not
+        given to the Digital Voice tab.
 
         *stream_time*: seconds since the stream (or the recording file) started, which a voice
         packet carries to the Digital Voice tab to tell one message from the next.
@@ -2074,7 +2091,7 @@ class TelemetryTab(QWidget):
             self._update_decode_tab(decoded)  # the newest verified frame of each type
         if ax25_row is not None and submit:
             self._submit_raw_frame(payload, norad, when, reliable, ax25_row)
-        if not frame.repaired:
+        if not frame.repaired and not imported:
             self._forward_voice_packet(payload, stream_time)
 
     # -- Fast decode of a recording file (HADES FSK, no SDR pipeline) ---------------------- #
@@ -2259,7 +2276,9 @@ class TelemetryTab(QWidget):
                 "sat": sat_name,
                 "type": frame.packet_type,
                 "uptime": frame.uptime_s,
-                "carrier_hz": round(float(frame.carrier_hz)),
+                "carrier_hz": None
+                if math.isnan(float(frame.carrier_hz))
+                else round(float(frame.carrier_hz)),
                 "repaired": bool(frame.repaired),
             }
         )
@@ -2272,6 +2291,8 @@ class TelemetryTab(QWidget):
         )
         self._conn.commit()
         row_id = cursor.lastrowid
+        if self._importing and row_id is not None:
+            self._import_log_ids.append(int(row_id))
         return int(row_id) if row_id is not None else None
 
     def _load_saved_hades(
@@ -2621,6 +2642,8 @@ class TelemetryTab(QWidget):
         time plus the playback position (comms.signal_clock). A recording whose
         start time is only a placeholder gives an untrustworthy time.
         """
+        if self._import_time is not None:
+            return self._import_time, True
         return signal_time(self._sdr_pipeline)
 
     def _submit_raw_frame(
@@ -2637,6 +2660,10 @@ class TelemetryTab(QWidget):
         yet) is not sent -- it would be published with a wrong time. The user is
         told once per run.
         """
+        if self._importing:
+            if ax25_row is not None:
+                ax25_row.sent = True  # it comes from SatNOGS DB: never send it back
+            return
         if reliable:
             known = (
                 self._find_logged_duplicate("frame_hex", raw.hex(), norad, when)
@@ -2943,7 +2970,11 @@ class TelemetryTab(QWidget):
         """
         if not hasattr(self._conn, "execute") or column not in ("frame_hex", "parsed_json"):
             return None
-        if replay_time(self._sdr_pipeline) is None and self._fast_job is None:
+        if (
+            replay_time(self._sdr_pipeline) is None
+            and self._fast_job is None
+            and not self._importing
+        ):
             # Live reception: two equal frames are two receptions. Only a played-back
             # (or fast-decoded) recording can deliver the same reception twice.
             return None
@@ -2996,6 +3027,8 @@ class TelemetryTab(QWidget):
         )
         self._conn.commit()
         row_id = cursor.lastrowid
+        if self._importing and row_id is not None:
+            self._import_log_ids.append(int(row_id))
         return int(row_id) if row_id is not None else None
 
     # ------------------------------------------------------------------ #
@@ -3314,33 +3347,131 @@ class TelemetryTab(QWidget):
         ).fetchone()
         return str(row[0]) if row else ""
 
+    # -- Import CSV (frames other stations sent to SatNOGS DB) ------------------------------- #
+
+    def _on_import_csv(self) -> None:
+        """Add the frames of a SatNOGS DB CSV (AX.25 or HADES FSK mode) to the table and log."""
+        norad = self._active_norad()
+        if norad is None:
+            self._set_error(_("Select a satellite first."))
+            return
+        mode = self._current_mode()
+        if mode not in (_MODE_HADES, _MODE_AFSK):
+            self._set_error(_("Import CSV works in the AX.25 and HADES FSK modes."))
+            return
+        downloads = Path.home() / "Downloads"
+        path, _filter = QFileDialog.getOpenFileName(
+            self,
+            _("Import SatNOGS CSV"),
+            str(downloads if downloads.is_dir() else Path.home()),
+            _("CSV files (*.csv);;All files (*)"),
+        )
+        if path:
+            self.import_csv_file(Path(path), norad, mode)
+
+    def import_csv_file(self, path: Path, norad: int, mode: str) -> tuple[int, int]:
+        """Import *path* for satellite *norad*; returns ``(frames read, rows added)``."""
+        from comms.telemetry.csv_import import read_frames, unique_frames
+
+        try:
+            _lines, frames = read_frames(path)
+        except OSError as exc:
+            self._set_error(f"⚠ {exc}")
+            return 0, 0
+        before = self._table.rowCount()
+        self._importing = True
+        self._import_log_ids = []
+        self._import_shown = self._shown_log_ids()
+        self._table.setUpdatesEnabled(False)
+        try:
+            for item in unique_frames(frames):
+                self._import_time = item.when
+                if self._import_already_shown(item.frame, item.when):
+                    continue
+                if mode == _MODE_HADES:
+                    self._import_hades_frame(item.frame, norad, item.when)
+                else:
+                    self._on_ax25_frame(item.frame)
+                self._import_note_new_row()
+        finally:
+            self._import_time = None
+            self._importing = False
+            self._table.setUpdatesEnabled(True)
+        self._mark_imported_as_public()
+        added = self._table.rowCount() - before
+        self._lbl_status.setText(
+            _("CSV: {frames} frames read, {added} added to the table.").format(
+                frames=len(frames), added=added
+            )
+        )
+        self._lbl_status.setStyleSheet("color: #27ae60;" if added else "color: #aaa;")
+        return len(frames), added
+
+    def _import_already_shown(self, frame: bytes, when: datetime.datetime) -> bool:
+        """True if this reception is already in the table (an earlier import of the same CSV)."""
+        if not self._import_shown or not hasattr(self._conn, "execute"):
+            return False
+        rows = self._conn.execute(
+            "SELECT id FROM telemetry_log WHERE frame_hex = ?"
+            " AND ABS(julianday(received_at) - julianday(?)) * 86400 <= ?",
+            (frame.hex(), when.isoformat(), _DUPLICATE_WINDOW_S),
+        ).fetchall()
+        return any(int(r[0]) in self._import_shown for r in rows)
+
+    def _import_note_new_row(self) -> None:
+        """Remember the log id of the row just added, so a copy later in the file is skipped."""
+        last = self._table.rowCount() - 1
+        item = self._table.item(last, 0) if last >= 0 else None
+        value = item.data(_LOGGED_ROLE) if item is not None else None
+        if isinstance(value, int):
+            self._import_shown.add(value)
+
+    def _import_hades_frame(self, frame: bytes, norad: int, when: datetime.datetime) -> None:
+        """One CSV frame of a HADES-family satellite: telemetry packets only.
+
+        SatNOGS DB holds the descrambled payload without its CRC, so a frame is accepted when
+        its address belongs to the satellite and its length is the packet length minus the CRC.
+        """
+        from comms.telemetry.hades_fsk import HADES_SA_ADDRESS, UNNE1B_ADDRESS, HadesFrame
+        from comms.telemetry.hades_fsk import packet_lengths as hades_packet_lengths
+
+        address = HADES_SA_ADDRESS if norad == 68446 else UNNE1B_ADDRESS
+        if not frame or frame[0] & 15 != address:
+            return
+        packet_type = frame[0] >> 4
+        length = hades_packet_lengths(address).get(packet_type)
+        if length is None or len(frame) != length - 2:
+            return
+        if address == UNNE1B_ADDRESS and packet_type == 15:
+            return  # UNNE-1B's voice: the Digital Voice tab's business
+        self._add_hades_frame(
+            HadesFrame(0, 0.0, float("nan"), 0.0, packet_type, address, frame, False),
+            norad,
+            when,
+            True,
+            submit=False,
+            imported=True,
+        )
+
+    def _mark_imported_as_public(self) -> None:
+        """Rows imported from SatNOGS DB count as already sent (never offered for upload)."""
+        ids = self._import_log_ids
+        self._import_log_ids = []
+        if not ids or not hasattr(self._conn, "execute"):
+            return
+        now = datetime.datetime.now(datetime.UTC).isoformat()
+        self._conn.executemany(
+            "UPDATE telemetry_log SET satnogs_uploaded_at = ? WHERE id = ?",
+            [(now, i) for i in ids],
+        )
+        self._conn.commit()
+
     def _on_clear(self) -> None:
         self._gr_rows.clear()
         self._gr_frames.clear()
         self._table.setRowCount(0)
         self._frame_count = 0
         self._lbl_count.setText(_("Frames: 0 received"))
-
-    def _on_export_csv(self) -> None:
-        default_name = (
-            "telemetry_" + datetime.datetime.now(datetime.UTC).strftime("%Y%m%d") + ".csv"
-        )
-        path, _filter = QFileDialog.getSaveFileName(
-            self,
-            _("Export Telemetry CSV"),
-            str(Path.home() / default_name),
-            "CSV (*.csv)",
-        )
-        if not path:
-            return
-        rows_count = self._table.rowCount()
-        with open(path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow(["Time (UTC)", "Callsign", "Satellite", "Data"])
-            for r in range(rows_count):
-                writer.writerow(
-                    [(item.text() if (item := self._table.item(r, c)) else "") for c in range(4)]
-                )
 
     # ------------------------------------------------------------------ #
     # SatNOGS DB upload (footer controls)
