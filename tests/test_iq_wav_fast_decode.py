@@ -298,3 +298,17 @@ def test_decode_button_in_fast_mode_asks_for_a_file(
     assert tab._fast_job is not None
     qtbot.waitUntil(lambda: tab._fast_job is None, timeout=60_000)
     assert tab._table.rowCount() == 3
+
+
+def test_fast_decode_hands_voice_packets_on_with_their_file_time(
+    qtbot: QtBot, conn: sqlite3.Connection, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: _RecordingUploader())
+    voices = [bytes([0xFC, n]) + bytes([n] * 35) for n in (0, 1)]
+    path = tmp_path / "98205_UNNE-1B_20261018T012021Z.iq.wav"
+    _write_wav(path, _stream(voices, [4_000.0, -9_000.0], gap_s=10.0))
+    tab = _tab(qtbot, conn)
+    got: list[tuple[int, float]] = []
+    tab.voice_packet_ready.connect(lambda n, d, t: got.append((n, round(t))))
+    _run_fast(qtbot, tab, path)
+    assert got == [(0, 2), (1, 12)]

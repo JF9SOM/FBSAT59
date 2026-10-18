@@ -6727,3 +6727,7 @@ msgstr ""
 #: src/ui/telemetry_tab.py
 msgid "Fast decode stopped"
 msgstr ""
+
+#: src/ui/telemetry_tab.py
+msgid "Voice packets are sent to the Digital Voice tab."
+msgstr ""

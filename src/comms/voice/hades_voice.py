@@ -178,6 +178,9 @@ class VoiceMessage:
         self.started_at = started_at
         self.last_at = started_at
         self.complete = False  # set when the message is closed
+        # True when the packets come from a CRC-checked source (UNNE-1B's type 15 through the
+        # Telemetry tab): their numbers are right as sent and need no repair from the timing.
+        self.trusted = False
         self.arrivals: list[tuple[int, bytes, float]] = []  # (number as sent, data, stream time)
         self.last_t = 0.0
 
@@ -208,7 +211,14 @@ class VoiceMessage:
         0.4 s apart, so ``number - t / 0.4`` is the same for all of them; the median of that
         offset is taken as the truth, and the number of a packet that disagrees is replaced
         by the one its arrival time implies.
+
+        A ``trusted`` message (CRC-checked packets, not sent 0.4 s apart) keeps its numbers.
         """
+        if self.trusted:
+            self.packets = {}
+            for number, data, _t in self.arrivals:
+                self.packets.setdefault(number, data)
+            return
         offsets = sorted(n - t / PACKET_SECONDS for n, _d, t in self.arrivals)
         median = offsets[len(offsets) // 2]
         packets: dict[int, bytes] = {}
@@ -258,20 +268,25 @@ class VoiceMessageAssembler:
         self.current: VoiceMessage | None = None
 
     def add(
-        self, number: int, data: bytes, t: float | None = None
+        self, number: int, data: bytes, t: float | None = None, trusted: bool = False
     ) -> tuple[VoiceMessage, VoiceMessage | None]:
-        """Add one packet; *t* is its stream time (default: the clock)."""
+        """Add one packet; *t* is its stream time (default: the clock).
+
+        *trusted*: the packet's number is certain (see VoiceMessage.trusted). Packets of the two
+        kinds never share a message.
+        """
         now = self._clock()
         if t is None:
             t = now
         finished: VoiceMessage | None = None
         cur = self.current
-        if cur is not None and t - cur.last_t > MESSAGE_GAP_S:
+        if cur is not None and (t - cur.last_t > MESSAGE_GAP_S or cur.trusted != trusted):
             cur.complete = True
             finished = cur
             cur = None
         if cur is None:
             cur = VoiceMessage(now)
+            cur.trusted = trusted
             self.current = cur
         cur.arrivals.append((number, data, t))
         cur.last_t = t

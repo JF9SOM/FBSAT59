@@ -331,12 +331,22 @@ class DigitalVoiceTab(QWidget):
     # Messages
     # ------------------------------------------------------------------ #
 
-    def _on_packet(self, number: int, data: bytes, t: float | None = None) -> None:
-        raw = bytes([37, 0xB3, number]) + unmask(data)
+    def add_external_packet(self, number: int, data: bytes, t: float) -> None:
+        """A CRC-checked voice packet from another tab (UNNE-1B's type 15 via the Telemetry tab).
+
+        *data* is the 35 CODEC2 bytes with the mask already removed, *t* the stream time in
+        seconds. Its number is trusted (no timing repair), see VoiceMessage.trusted.
+        """
+        self._on_packet(number, data, t, trusted=True)
+
+    def _on_packet(
+        self, number: int, data: bytes, t: float | None = None, trusted: bool = False
+    ) -> None:
+        raw = bytes([37, 0xFC if trusted else 0xB3, number]) + unmask(data)
         self._raw_edit.appendPlainText(
             f"{datetime.now(UTC):%H:%M:%S}  #{number:02d}  {raw.hex(' ').upper()}"
         )
-        message, finished = self._assembler.add(number, data, t)
+        message, finished = self._assembler.add(number, data, t, trusted)
         if finished is not None:
             self._finish(finished)
         item = self._items.get(id(message))

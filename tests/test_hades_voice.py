@@ -271,3 +271,90 @@ def test_whisper_audio_is_resampled_to_16k_float() -> None:
     out = to_whisper_audio(np.array([0, 16384, -16384, 32767], dtype=np.int16))
     assert out.dtype == np.float32 and len(out) == 8
     assert out[2] == pytest.approx(0.5)
+
+
+# ---- CRC-checked packets from another tab (UNNE-1B voice via the Telemetry tab) ----------- #
+
+
+def test_trusted_message_keeps_its_numbers_at_any_spacing() -> None:
+    """UNNE-1B sends a packet every 1.5 s, not every 0.4 s: no timing repair for them."""
+    a = VoiceMessageAssembler()
+    for n in range(6):
+        a.add(n, bytes([n]) * 35, 1.5 * n, trusted=True)
+    assert a.current is not None
+    assert sorted(a.current.packets) == [0, 1, 2, 3, 4, 5]
+    assert a.current.packets[3] == bytes([3]) * 35
+    # the same packets without trust are renumbered from the timing (0.4 s per packet)
+    b = VoiceMessageAssembler()
+    for n in range(6):
+        b.add(n, bytes([n]) * 35, 1.5 * n)
+    assert b.current is not None
+    assert sorted(b.current.packets) != [0, 1, 2, 3, 4, 5]
+
+
+def test_trusted_message_fills_gaps_from_the_next_cycle() -> None:
+    """The satellite repeats the 37 packets; the first copy of each number is kept."""
+    a = VoiceMessageAssembler()
+    a.add(0, b"A" * 35, 0.0, trusted=True)
+    a.add(2, b"C" * 35, 3.0, trusted=True)  # packet 1 lost
+    a.add(1, b"B" * 35, 4.5, trusted=True)  # ...and heard in the next cycle
+    a.add(2, b"X" * 35, 6.0, trusted=True)  # a repeat does not replace the first copy
+    m = a.current
+    assert m is not None
+    assert m.packets == {0: b"A" * 35, 1: b"B" * 35, 2: b"C" * 35}
+    assert m.missing == []
+
+
+def test_trusted_and_untrusted_packets_never_share_a_message() -> None:
+    a = VoiceMessageAssembler()
+    a.add(0, bytes(35), 0.0)
+    _msg, finished = a.add(0, bytes(35), 1.0, trusted=True)
+    assert finished is not None and not finished.trusted
+    assert a.current is not None and a.current.trusted
+
+
+def test_tab_takes_a_trusted_packet_from_outside(tab: DigitalVoiceTab) -> None:
+    for n in (0, 1, 2, 4):
+        tab.add_external_packet(n, bytes(35), 1.5 * n)
+    assert tab._list.count() == 1
+    text = tab._list.item(0).text()
+    assert "4/5 packets" in text  # numbers 0..4, one missing
+    assert " fc " in tab._raw_edit.toPlainText().lower()  # logged with UNNE-1's type/address
+
+
+def test_main_window_opens_the_voice_tab_behind_and_forwards_packets(
+    qtbot: QtBot, rc: _FakeRadioControl
+) -> None:
+    """MainWindow's slots for the Telemetry tab's voice signals (host stubbed, no full window)."""
+    from PySide6.QtWidgets import QTabWidget
+
+    from ui.main_window import MainWindow
+
+    tabs = QTabWidget()
+    qtbot.addWidget(tabs)
+    tabs.addTab(QWidget(), "Telemetry")
+    host: Any = QWidget()  # the tab's parent must be a real widget
+    qtbot.addWidget(host)
+    host._tab_widget = tabs
+    host._conn = sqlite3.connect(":memory:")
+    host._radio_control = rc
+    host._comms_tab_keys = {}
+    host._add_tab_close_button = lambda tab: None
+    host._notify_comms_tab_of_rig_state = lambda tab: None
+    host._find_comms_tab = lambda key: MainWindow._find_comms_tab(host, key)  # type: ignore[arg-type]
+    host._open_digital_voice_tab = lambda activate: MainWindow._open_digital_voice_tab(  # type: ignore[arg-type]
+        host, activate
+    )
+    MainWindow._on_telemetry_voice_packet(host, 0, bytes(35), 0.0)  # type: ignore[arg-type]
+    assert tabs.count() == 1  # no tab yet: the packet is dropped, nothing opens by itself
+    MainWindow._on_telemetry_voice_tab_requested(host)  # type: ignore[arg-type]
+    assert tabs.count() == 2 and tabs.currentIndex() == 0  # opened behind the current tab
+    voice = tabs.widget(1)
+    assert isinstance(voice, DigitalVoiceTab)
+    voice._auto_save_cb.setChecked(False)
+    MainWindow._on_telemetry_voice_tab_requested(host)  # type: ignore[arg-type]
+    assert tabs.count() == 2  # asking again does not open a second one
+    MainWindow._on_telemetry_voice_packet(host, 3, bytes(35), 4.5)  # type: ignore[arg-type]
+    assert voice._list.count() == 1 and "1/4 packets" in voice._list.item(0).text()
+    MainWindow._on_open_digital_voice(host)  # type: ignore[arg-type]
+    assert tabs.currentIndex() == 1  # the menu entry still brings it to the front

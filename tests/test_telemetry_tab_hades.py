@@ -456,3 +456,49 @@ def test_a_packet_type_without_a_definition_is_shown_but_not_decoded(
     assert tab._table.rowCount() == 1
     assert tab._table.item(0, 3).text().startswith("[Type 7]")
     tab._table.selectRow(0)  # nothing to decode: must not raise
+
+
+# ---- UNNE-1B voice (type 15) goes to the Digital Voice tab ----------------------------- #
+
+
+def _voice_frame(number: int, repaired: bool = False, address: int = 12) -> HadesFrame:
+    payload = bytes([0xF0 | address, number]) + bytes(range(35))
+    return HadesFrame(0, 0.0, 0.0, 9.0, 15, address, payload, repaired)
+
+
+def test_voice_packets_are_handed_on_and_the_tab_is_asked_once(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    from comms.voice.hades_voice import MASK
+
+    tab = _hades_tab(qtbot, conn)
+    tab._hades_norad = UNNE1B
+    asked: list[int] = []
+    packets: list[tuple[int, bytes, float]] = []
+    tab.voice_tab_requested.connect(lambda: asked.append(1))
+    tab.voice_packet_ready.connect(lambda n, d, t: packets.append((n, d, t)))
+    for number in (4, 5):
+        frame = _voice_frame(number)
+        tab._on_hades_frame(frame._replace(sample_index=0, time_s=1.5 * number), 0.0)
+    assert asked == [1]  # the Digital Voice tab is asked for once per run
+    assert [p[0] for p in packets] == [4, 5]
+    assert packets[0][1] == bytes(a ^ b for a, b in zip(bytes(range(35)), MASK, strict=True))
+    assert packets[1][2] == 7.5  # stream time, from the frame
+    assert "Digital Voice" in tab._lbl_status.text()
+    tab._voice_tab_asked = False  # a new run asks again
+    tab._on_hades_frame(_voice_frame(6), 0.0)
+    assert asked == [1, 1]
+
+
+def test_only_verified_unne1_voice_packets_are_handed_on(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _hades_tab(qtbot, conn)
+    tab._hades_norad = UNNE1B
+    packets: list[int] = []
+    tab.voice_packet_ready.connect(lambda n, d, t: packets.append(n))
+    tab._on_hades_frame(_voice_frame(1, repaired=True), 0.0)  # bit-repaired: not verified
+    tab._on_hades_frame(_voice_frame(2, address=13), 0.0)  # another satellite's packet 15
+    tab._on_hades_frame(_frame(), 0.0)  # a power packet
+    assert packets == []
+    assert tab._voice_tab_asked is False

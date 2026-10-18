@@ -3116,6 +3116,8 @@ class MainWindow(QMainWindow):
         tab.open_satnogs_requested.connect(self._open_in_satnogs)
         tab.cw_tlm_start_requested.connect(lambda t=tab: self._on_telemetry_cw_tlm_start(t))
         tab.cw_tlm_stop_requested.connect(self._on_telemetry_cw_tlm_stop)
+        tab.voice_tab_requested.connect(self._on_telemetry_voice_tab_requested)
+        tab.voice_packet_ready.connect(self._on_telemetry_voice_packet)
         self._comms_tab_keys[tab] = "telemetry"
         idx = self._tab_widget.addTab(tab, _("Telemetry"))
         self._add_tab_close_button(tab)
@@ -3304,10 +3306,15 @@ class MainWindow(QMainWindow):
 
     def _on_open_digital_voice(self) -> None:
         """Open the Digital Voice tab (Communications > Digital Voice)."""
+        self._open_digital_voice_tab(activate=True)
+
+    def _open_digital_voice_tab(self, activate: bool) -> None:
+        """Open the Digital Voice tab; *activate* False leaves the current tab in front."""
         tab_label = _("Digital Voice")
         for i in range(self._tab_widget.count()):
             if self._tab_widget.tabText(i) == tab_label:
-                self._tab_widget.setCurrentIndex(i)
+                if activate:
+                    self._tab_widget.setCurrentIndex(i)
                 return
 
         from ui.digital_voice_tab import DigitalVoiceTab
@@ -3316,8 +3323,19 @@ class MainWindow(QMainWindow):
         self._comms_tab_keys[tab] = "voice"
         idx = self._tab_widget.addTab(tab, tab_label)
         self._add_tab_close_button(tab)
-        self._tab_widget.setCurrentIndex(idx)
+        if activate:
+            self._tab_widget.setCurrentIndex(idx)
         self._notify_comms_tab_of_rig_state(tab)
+
+    def _on_telemetry_voice_tab_requested(self) -> None:
+        """Telemetry tab (HADES FSK): voice packets are arriving, open Digital Voice behind it."""
+        self._open_digital_voice_tab(activate=False)
+
+    def _on_telemetry_voice_packet(self, number: int, data: bytes, t: float) -> None:
+        """Hand one voice packet of the Telemetry tab to the Digital Voice tab, if it is open."""
+        voice_tab = self._find_comms_tab("voice")
+        if voice_tab is not None:
+            voice_tab.add_external_packet(number, data, t)  # type: ignore[attr-defined]
 
     def _on_open_ft4(self) -> None:
         """Open the FT4 tab (Communications > FT4)."""

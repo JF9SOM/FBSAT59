@@ -339,6 +339,11 @@ class TelemetryTab(QWidget):
     # attach_cw_tab() and starts / stops its decoding.
     cw_tlm_start_requested = Signal()
     cw_tlm_stop_requested = Signal()
+    # HADES FSK mode, UNNE-1B voice (type 15): the first packet of a run asks MainWindow to open
+    # the Digital Voice tab (behind this one); every verified packet is then handed to it as
+    # (packet number, the 35 CODEC2 bytes with the mask removed, stream time in seconds).
+    voice_tab_requested = Signal()
+    voice_packet_ready = Signal(int, bytes, float)
     # SatNOGS's answer to one upload, emitted from the uploader's thread (delivered on the
     # GUI thread): (telemetry_log id or None for an AX.25 frame, accepted, HTTP status, body).
     _upload_result = Signal(object, bool, int, str)
@@ -395,6 +400,7 @@ class TelemetryTab(QWidget):
         self._hades_demod: Any | None = None
         self._hades_demod_pipeline: Any | None = None
         self._hades_norad: int | None = None
+        self._voice_tab_asked = False  # voice_tab_requested was emitted in this run
         # HADES FSK "Fast" decode of a recording file (no SDR pipeline): the worker thread,
         # the recording's start time and whether that time is known (read from its file name).
         self._fast_job: Any | None = None
@@ -1979,6 +1985,7 @@ class TelemetryTab(QWidget):
             self._set_error("⚠ " + _("Could not start the HADES FSK demodulator."))
             return False
         self._hades_norad = norad
+        self._voice_tab_asked = False
         if self._decode_tabs_norad != norad:
             self._rebuild_decode_tabs(norad)
         self._lbl_status.setText(_("HADES FSK — listening for 200 baud bursts (±20 kHz)"))
@@ -2017,7 +2024,7 @@ class TelemetryTab(QWidget):
             return
         when, reliable = self._frame_time()
         when -= datetime.timedelta(seconds=float(age_s))
-        self._add_hades_frame(frame, norad, when, reliable)
+        self._add_hades_frame(frame, norad, when, reliable, stream_time=float(frame.time_s))
 
     def _add_hades_frame(
         self,
@@ -2026,8 +2033,13 @@ class TelemetryTab(QWidget):
         when: datetime.datetime,
         reliable: bool,
         submit: bool = True,
+        stream_time: float = 0.0,
     ) -> None:
-        """Show, log and (when verified, *submit* and the switch is on) upload one frame."""
+        """Show, log and (when verified, *submit* and the switch is on) upload one frame.
+
+        *stream_time*: seconds since the stream (or the recording file) started, which a voice
+        packet carries to the Digital Voice tab to tell one message from the next.
+        """
         sat_name = self._satellite_name(norad) or self._selected_name or "—"
         text = self._hades_row_text(frame)
         payload = bytes(frame.payload)
@@ -2055,6 +2067,8 @@ class TelemetryTab(QWidget):
             self._update_decode_tab(decoded)  # the newest verified frame of each type
         if ax25_row is not None and submit:
             self._submit_raw_frame(payload, norad, when, reliable, ax25_row)
+        if not frame.repaired:
+            self._forward_voice_packet(payload, stream_time)
 
     # -- Fast decode of a recording file (HADES FSK, no SDR pipeline) ---------------------- #
 
@@ -2112,6 +2126,7 @@ class TelemetryTab(QWidget):
         self._fast_time_known = start is not None
         self._fast_start = start or datetime.datetime.now(datetime.UTC)
         self._hades_norad = norad
+        self._voice_tab_asked = False
         if self._decode_tabs_norad != norad:
             self._rebuild_decode_tabs(norad)
         job = HadesFileDecoder(path, parent=self)
@@ -2136,7 +2151,12 @@ class TelemetryTab(QWidget):
         # A recording whose start time is not in its file name has no trustworthy time:
         # its frames are shown and logged, never sent.
         self._add_hades_frame(
-            frame, norad, when, self._fast_time_known, submit=self._fast_time_known
+            frame,
+            norad,
+            when,
+            self._fast_time_known,
+            submit=self._fast_time_known,
+            stream_time=float(seconds),
         )
 
     def _on_fast_progress(self, fraction: float, frames: int) -> None:
@@ -2190,6 +2210,25 @@ class TelemetryTab(QWidget):
         self._finish_fast_decode()
         self._lbl_status.setText(_("Fast decode stopped"))
         self._lbl_status.setStyleSheet("color: #aaa;")
+
+    def _forward_voice_packet(self, payload: bytes, stream_time: float) -> None:
+        """Hand a verified UNNE-1B voice packet (type 15) to the Digital Voice tab.
+
+        The tab is opened behind this one on the first packet of a run. A packet is
+        ``type/address, packet number, 35 XOR-masked CODEC2 bytes``.
+        """
+        from comms.telemetry.hades_fsk import UNNE1B_ADDRESS
+
+        if len(payload) < 37 or payload[0] != 0xF0 | UNNE1B_ADDRESS:
+            return
+        from comms.voice.hades_voice import unmask
+
+        if not self._voice_tab_asked:
+            self._voice_tab_asked = True
+            self.voice_tab_requested.emit()
+            self._lbl_status.setText(_("Voice packets are sent to the Digital Voice tab."))
+            self._lbl_status.setStyleSheet("color: #27ae60;")
+        self.voice_packet_ready.emit(payload[1], unmask(bytes(payload[2:37])), float(stream_time))
 
     def _persist_hades_row(
         self,

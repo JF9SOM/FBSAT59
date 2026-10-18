@@ -7248,6 +7248,10 @@ msgstr "録音をデコードできませんでした: "
 msgid "Fast decode stopped"
 msgstr "高速デコードを停止しました"
 
+#: src/ui/telemetry_tab.py
+msgid "Voice packets are sent to the Digital Voice tab."
+msgstr "音声パケットはデジタル音声タブへ送っています。"
+
 #~ msgid "Decoder started — listening for sync…"
 #~ msgstr "デコーダー起動 — 同期信号を待機中…"
 
