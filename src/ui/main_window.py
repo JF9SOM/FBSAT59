@@ -3055,6 +3055,9 @@ class MainWindow(QMainWindow):
                 if w is not None and hasattr(w, "set_satellite"):
                     w.set_satellite(norad, name)
                 break
+        sstv_tab = self._find_comms_tab("sstv")
+        if sstv_tab is not None and hasattr(sstv_tab, "set_satellite"):
+            sstv_tab.set_satellite(norad, name)
 
     def _refresh_audio_devices_for_tab(self) -> None:
         """Rebuild the audio device list and the PTT ports just before a transmit tab opens.
@@ -3249,6 +3252,13 @@ class MainWindow(QMainWindow):
                 )
             if picked is not None:
                 best_idx = picked
+        elif mode == "sstv":
+            # SSTV / SSDV tab: the satellite's image transmitter (SSTV / SSDV / imaging).
+            picked = mode_detection.pick_preferred_transponder_index(
+                transmitters, mode_detection.is_sstv_transmitter
+            )
+            if picked is not None:
+                best_idx = picked
         elif mode == "hades":
             # HADES FSK: the satellite's 200 baud FSK telemetry transmitter.
             picked = mode_detection.pick_preferred_transponder_index(
@@ -3298,11 +3308,18 @@ class MainWindow(QMainWindow):
 
         # SSDV mode starts AX.25 reception itself (shared AprsEngine singleton)
         tab = SstvTab(self._conn, self._radio_control, parent=self)
+        tab.satellite_selected.connect(self._on_sstv_satellite_requested)
         self._comms_tab_keys[tab] = "sstv"
         idx = self._tab_widget.addTab(tab, tab_label)
         self._add_tab_close_button(tab)
         self._tab_widget.setCurrentIndex(idx)
         self._notify_comms_tab_of_rig_state(tab)
+        if self._selected_norad is not None:
+            tab.set_satellite(self._selected_norad)
+
+    def _on_sstv_satellite_requested(self, norad: int) -> None:
+        """SSTV / SSDV tab satellite combo changed: select it and pick its image transmitter."""
+        self._select_telemetry_satellite(norad, "sstv")
 
     def _on_open_digital_voice(self) -> None:
         """Open the Digital Voice tab (Communications > Digital Voice)."""

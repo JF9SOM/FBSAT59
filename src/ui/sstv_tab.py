@@ -20,11 +20,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QFontDatabase, QImage, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDialog,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -62,6 +63,7 @@ from comms.sstv.ssdv import (
     format_hex_line,
 )
 from i18n import _
+from ui.sat_search_dialog import SatSearchDialog
 
 # Thumbnail size for history list
 _THUMB_W = 120
@@ -83,6 +85,11 @@ _MODE_GR_SSDV = "SSDV (CCSDS BPSK 9k6)"
 _MODE_FSK_SSDV = "SSDV (2FSK 800bps)"
 _FSK_SSDV_NORAD = 68446  # HADES-SA
 _GR_SSDV_NORAD = 61781  # ASRTU-1 (AO-123)
+# Satellites always offered in the satellite combo: their SSDV downlinks are not (or not
+# reliably) described as SSDV in the SatNOGS transmitter list the combo is built from.
+_ALWAYS_LISTED_NORADS = (_FSK_SSDV_NORAD, _GR_SSDV_NORAD)
+# app_settings key of the satellite picked last (restored at the next launch)
+_LAST_SAT_KEY = "sstv_last_satellite"
 
 
 logger = logging.getLogger(__name__)
@@ -196,6 +203,9 @@ class SstvTab(QWidget):
     saved automatically to the user's Pictures folder.
     """
 
+    # Emitted when the user picks a satellite in the satellite combo.
+    satellite_selected = Signal(int)
+
     def __init__(
         self,
         conn: Any,
@@ -258,6 +268,13 @@ class SstvTab(QWidget):
         root.setContentsMargins(6, 6, 6, 6)
         root.setSpacing(4)
 
+        # ── input source notice (own row above the top bar) ──────────────
+        self._source_label = QLabel(_("Input: —"))
+        self._source_label.setStyleSheet("color: gray;")
+        # Wrap a long message instead of widening the whole window.
+        self._source_label.setWordWrap(True)
+        root.addWidget(self._source_label)
+
         # ── top bar ──────────────────────────────────────────────────────
         top = QHBoxLayout()
 
@@ -267,6 +284,23 @@ class SstvTab(QWidget):
         self._mode_combo.setFixedWidth(170)
         self._mode_combo.currentTextChanged.connect(self._on_mode_changed)
         top.addWidget(self._mode_combo)
+
+        # Satellite picker (same idea as the Telemetry tab's): picking one selects it in
+        # the satellite list and Radio Control, so it is clear who sends SSTV / SSDV.
+        top.addSpacing(8)
+        self._sat_combo = QComboBox()
+        self._sat_combo.setMinimumWidth(280)
+        self._sat_combo.setToolTip(
+            _("Satellites that send SSTV / SSDV. Selecting one also selects it in Radio Control.")
+        )
+        self._populate_sat_combo()
+        self._sat_combo.currentIndexChanged.connect(self._on_sat_changed)
+        top.addWidget(self._sat_combo)
+        self._sat_search_btn = QPushButton("🔍")
+        self._sat_search_btn.setToolTip(_("Search satellites…"))
+        self._sat_search_btn.setFixedWidth(28)
+        self._sat_search_btn.clicked.connect(self._on_sat_search_clicked)
+        top.addWidget(self._sat_search_btn)
 
         # AX.25 baud for the SSDV (AX.25) mode only. Shares the APRS tab's
         # stored setting (ax25_baud_mode), so both tabs stay in step.
@@ -290,11 +324,6 @@ class SstvTab(QWidget):
         top.addWidget(self._baud_combo)
 
         top.addSpacing(16)
-        self._source_label = QLabel(_("Input: —"))
-        self._source_label.setStyleSheet("color: gray;")
-        # Wrap a long message instead of widening the whole window.
-        self._source_label.setWordWrap(True)
-        top.addWidget(self._source_label, 1)
 
         _sstv_help = QLabel(" ? ")
         _sstv_help.setStyleSheet(
@@ -603,6 +632,103 @@ class SstvTab(QWidget):
         wanted = {_FSK_SSDV_NORAD: _MODE_FSK_SSDV, _GR_SSDV_NORAD: _MODE_GR_SSDV}.get(norad)
         if wanted is not None and self._mode_combo.currentText() != wanted:
             self._mode_combo.setCurrentText(wanted)
+
+    # ------------------------------------------------------------------ #
+    # Satellite combo
+    # ------------------------------------------------------------------ #
+
+    def _populate_sat_combo(self) -> None:
+        """Fill the satellite combo: satellites with an SSTV / SSDV transmitter in the DB.
+
+        HADES-SA and ASRTU-1 are always listed (when the DB knows them), since their
+        SatNOGS transmitter descriptions do not reliably say SSDV.
+        """
+        self._sat_combo.blockSignals(True)
+        self._sat_combo.clear()
+        entries: dict[int, str] = {}
+        if hasattr(self._conn, "execute"):
+            with contextlib.suppress(Exception):
+                from comms.mode_detection import get_norads_for_tab
+
+                norads = set(get_norads_for_tab(self._conn, "sstv"))
+                norads.update(_ALWAYS_LISTED_NORADS)
+                placeholders = ",".join("?" * len(norads))
+                rows = self._conn.execute(
+                    f"SELECT norad_cat_id, name FROM satellites "
+                    f"WHERE norad_cat_id IN ({placeholders})",
+                    tuple(sorted(norads)),
+                ).fetchall()
+                for row in rows:
+                    entries[int(row["norad_cat_id"])] = str(row["name"])
+        for norad, name in sorted(entries.items(), key=lambda kv: kv[1].upper()):
+            self._sat_combo.addItem(f"{name}  ({norad})", userData=norad)
+        self._restore_last_satellite()
+        self._sat_combo.blockSignals(False)
+
+    def _restore_last_satellite(self) -> None:
+        """Re-select the satellite picked last time (silently)."""
+        if not hasattr(self._conn, "execute"):
+            return
+        with contextlib.suppress(Exception):
+            row = self._conn.execute(
+                "SELECT value FROM app_settings WHERE key = ?", (_LAST_SAT_KEY,)
+            ).fetchone()
+            if row:
+                idx = self._sat_combo.findData(int(row["value"]))
+                if idx >= 0:
+                    self._sat_combo.setCurrentIndex(idx)
+        # MainWindow connects satellite_selected after construction: announce then.
+        QTimer.singleShot(0, self._announce_restored_satellite)
+
+    def _announce_restored_satellite(self) -> None:
+        norad = self._sat_combo.currentData()
+        if norad is not None:
+            self.satellite_selected.emit(int(norad))
+
+    def _save_last_satellite(self, norad: int) -> None:
+        """Remember the picked satellite for the next launch."""
+        if not hasattr(self._conn, "execute"):
+            return
+        with contextlib.suppress(Exception):
+            self._conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value, updated_at) "
+                "VALUES (?, ?, CURRENT_TIMESTAMP)",
+                (_LAST_SAT_KEY, str(int(norad))),
+            )
+            self._conn.commit()
+
+    def _on_sat_changed(self, _index: int) -> None:
+        norad = self._sat_combo.currentData()
+        if norad is not None:
+            self._save_last_satellite(int(norad))
+            self.satellite_selected.emit(int(norad))
+
+    def _on_sat_search_clicked(self) -> None:
+        """Pick a satellite from a searchable list of what the combo offers."""
+        entries = []
+        for i in range(self._sat_combo.count()):
+            norad = int(self._sat_combo.itemData(i))
+            name = self._sat_combo.itemText(i).rsplit(f"({norad})", 1)[0].strip()
+            entries.append((norad, name))
+        if not entries:
+            return
+        dlg = SatSearchDialog(entries, parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted or dlg.selected_norad is None:
+            return
+        idx = self._sat_combo.findData(dlg.selected_norad)
+        if idx >= 0:
+            self._sat_combo.setCurrentIndex(idx)
+
+    def set_satellite(self, norad: int | None, name: str = "") -> None:
+        """Follow the satellite chosen elsewhere (satellite list): show it in the combo."""
+        if not norad:
+            return
+        idx = self._sat_combo.findData(norad)
+        if idx >= 0 and idx != self._sat_combo.currentIndex():
+            self._sat_combo.blockSignals(True)
+            self._sat_combo.setCurrentIndex(idx)
+            self._sat_combo.blockSignals(False)
+            self._save_last_satellite(norad)
 
     def _refresh_input_source(self) -> None:
         if self._sdr_connected:

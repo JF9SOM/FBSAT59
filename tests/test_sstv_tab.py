@@ -184,6 +184,35 @@ def test_switching_mode_selects_the_matching_subtab(tab: SstvTab) -> None:
     assert tab._view_tabs.currentWidget() is tab._image_page
 
 
+# ------------------------------------------------------------ satellite combo
+
+
+def test_satellite_combo_lists_sstv_and_always_listed_satellites(
+    qtbot: QtBot,
+    conn: sqlite3.Connection,
+    rc: _FakeRadioControl,
+    engine: _FakeEngine,
+) -> None:
+    conn.execute("CREATE TABLE satellites (norad_cat_id INTEGER, name TEXT, is_hidden INTEGER)")
+    conn.execute(
+        "CREATE TABLE transmitters (norad_cat_id INTEGER, description TEXT, mode TEXT, "
+        "baud INTEGER, alive INTEGER)"
+    )
+    conn.executemany(
+        "INSERT INTO satellites VALUES (?, ?, 0)",
+        [(25544, "ISS"), (68446, "HADES-SA"), (61781, "ASRTU-1"), (1, "OTHER")],
+    )
+    conn.execute("INSERT INTO transmitters VALUES (25544, 'SSTV Mode U', 'FM', NULL, 1)")
+    conn.execute("INSERT INTO transmitters VALUES (1, 'Beacon', 'CW', NULL, 1)")
+    t = SstvTab(conn, rc, aprs_engine=engine)
+    qtbot.addWidget(t)
+    norads = {t._sat_combo.itemData(i) for i in range(t._sat_combo.count())}
+    assert norads == {25544, 68446, 61781}
+    with qtbot.waitSignal(t.satellite_selected) as blocker:
+        t._sat_combo.setCurrentIndex(t._sat_combo.findData(61781))
+    assert blocker.args == [61781]
+
+
 # ------------------------------------------------------------------ baud
 
 
