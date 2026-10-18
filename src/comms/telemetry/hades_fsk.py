@@ -23,8 +23,8 @@ Frame format (checked on a real UNNE-1B pass on 2026-10-18, five frames CRC-veri
 
 Why a carrier search
 --------------------
-The TLE of a freshly launched satellite can be far off (UNNE-1B's was about 68 s of
-along-track error, which put the signal 3-12 kHz away from the Doppler-corrected centre),
+The TLE of a freshly launched satellite can be far off (UNNE-1B's was about 80 s of
+along-track error, which put the signal 3-11 kHz below the Doppler-corrected centre),
 and SatNOGS stations that only demodulate a narrow band around the predicted frequency
 miss it. Here the I/Q is wide, so every burst is first *located*: the strongest 3.5 kHz
 band within ``search_hz`` of the centre is taken as the carrier, then demodulated.
@@ -72,6 +72,21 @@ UNNE1B_ADDRESS = 12
 # Types whose bytes 1-4 were observed to be the little-endian uptime counter in seconds.
 _COUNTER_TYPES = frozenset({1, 3, 4, 5, 10})
 
+# Packet types named in AMSAT-EA's HADES-SA description (UNNE-1B's types 1, 3, 4 and 5 carry
+# the same kind of data; the rest are shown as "Type N").
+TYPE_NAMES: dict[int, str] = {
+    1: "Power",
+    2: "Temperature",
+    3: "Status",
+    4: "Power range",
+    5: "Temperature range",
+    8: "Deployment",
+    9: "Extended power",
+    12: "Orbital elements",
+    14: "Time series",
+    15: "BBS data",
+}
+
 _TARGET_RATE = 50_000.0  # decimated rate is the first integer division at or above this
 _STFT_N = 512
 _STFT_HOP_S = 0.01
@@ -101,6 +116,11 @@ class HadesFrame(NamedTuple):
     address: int
     payload: bytes  # descrambled, CRC removed, starts with the type/address byte
     repaired: bool  # a single bit flip made the CRC valid: not verified
+
+    @property
+    def type_name(self) -> str:
+        """Short name of the packet type ("Status", "Type 10", ...)."""
+        return TYPE_NAMES.get(self.packet_type, f"Type {self.packet_type}")
 
     @property
     def uptime_s(self) -> int | None:
@@ -234,6 +254,34 @@ def _design_lowpass(rate: float, cutoff_hz: float, taps: int) -> np.ndarray:
     return taps_normalised
 
 
+def _split_factor(factor: int) -> list[int]:
+    """Split a decimation factor into stages of at most 10 (largest divisors first)."""
+    stages: list[int] = []
+    remaining = factor
+    while remaining > 1:
+        stage = next((d for d in range(10, 1, -1) if remaining % d == 0), remaining)
+        stages.append(stage)
+        remaining //= stage
+    return stages
+
+
+def _decimate_stage(x: np.ndarray, taps: np.ndarray, decim: int) -> tuple[np.ndarray, np.ndarray]:
+    """FIR-filter and decimate ``x``; returns ``(output, samples to keep for the next call)``.
+
+    ``taps`` is symmetric (linear phase), so the correlation below equals the convolution.
+    Only the kept outputs are computed (one strided multiply-add per tap), which is far
+    cheaper than convolving at the full rate when ``decim`` is large.
+    """
+    count = len(taps)
+    if len(x) < count:
+        return np.zeros(0, dtype=np.complex64), x
+    n_out = (len(x) - count) // decim + 1
+    y = np.zeros(n_out, dtype=np.complex64)
+    for k in range(count):
+        y += taps[k] * x[k : k + (n_out - 1) * decim + 1 : decim]
+    return y, x[n_out * decim :]
+
+
 def _slice_bits(z: np.ndarray, rate: float, baud: float) -> list[str]:
     """Slice an instantaneous-frequency trace into bits, in a few variants.
 
@@ -292,38 +340,37 @@ class HadesFskStream:
         self._input_rate = float(sample_rate)
         self._factor = max(1, int(sample_rate // _TARGET_RATE))
         self._rate = self._input_rate / self._factor
+        # Cascade of low-pass + decimate stages; the last one sets the final band edge.
+        self._stages: list[tuple[int, np.ndarray]] = []
+        rate_in = self._input_rate
+        stage_factors = _split_factor(self._factor)
+        for i, decim in enumerate(stage_factors):
+            rate_out = rate_in / decim
+            last = i == len(stage_factors) - 1
+            taps = (32 if last else 8) * decim + 1
+            self._stages.append((decim, _design_lowpass(rate_in, 0.45 * rate_out, taps)))
+            rate_in = rate_out
         if search_hz > self._rate / 2 - _BAND_HZ / 2 - 500:
             search_hz = self._rate / 2 - _BAND_HZ / 2 - 500
         self._search_hz = search_hz
         self._address = address
         self._allow_repair = allow_repair
         self._baud = baud
-        taps = 4 * self._factor * 8 + 1 if self._factor > 1 else 1
-        self._fir = _design_lowpass(self._input_rate, 0.45 * self._rate, taps)
         self.reset()
 
     def reset(self) -> None:
         """Forget all buffered samples (e.g. after a retune)."""
-        self._tail = np.zeros(0, dtype=np.complex64)
-        self._skip = 0  # input samples to drop before the next decimated one
+        self._rests = [np.zeros(0, dtype=np.complex64) for _ in self._stages]
         self._buf = np.zeros(0, dtype=np.complex64)
         self._buf_start = 0  # decimated index of self._buf[0]
         self._recent: list[int] = []  # decimated starts of the bursts already reported
         self._first_window = True
 
     def _decimate(self, iq: np.ndarray) -> np.ndarray:
-        if self._factor == 1:
-            return iq.astype(np.complex64)
-        x = np.concatenate([self._tail, iq.astype(np.complex64)])
-        taps = len(self._fir)
-        if len(x) < taps:
-            self._tail = x
-            return np.zeros(0, dtype=np.complex64)
-        y = np.convolve(x, self._fir, mode="valid")
-        out = y[self._skip :: self._factor]
-        self._skip = (self._skip - len(y)) % self._factor
-        self._tail = x[-(taps - 1) :]
-        return out.astype(np.complex64)
+        x = iq.astype(np.complex64)
+        for i, (decim, taps) in enumerate(self._stages):
+            x, self._rests[i] = _decimate_stage(np.concatenate([self._rests[i], x]), taps, decim)
+        return x
 
     def feed(self, iq: np.ndarray) -> list[HadesFrame]:
         """Add a chunk of complex I/Q; return the frames completed by it."""

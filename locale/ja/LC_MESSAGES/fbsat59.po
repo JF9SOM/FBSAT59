@@ -7182,6 +7182,22 @@ msgstr "%(failed)d 個のファイルが失敗しました。元のファイル�
 msgid "Save folder not found (%(path)s); saving to the default folder instead."
 msgstr "保存フォルダーが見つかりません (%(path)s)。代わりにデフォルトのフォルダーに保存します。"
 
+#: src/ui/telemetry_tab.py
+msgid "HADES FSK — listening for 200 baud bursts (±20 kHz)"
+msgstr "HADES FSK — 200 baud のバーストを待っています（±20 kHz）"
+
+#: src/ui/telemetry_tab.py
+msgid "Could not start the HADES FSK demodulator."
+msgstr "HADES FSK 復調器を起動できませんでした。"
+
+#: src/ui/telemetry_tab.py
+msgid "repaired, not verified"
+msgstr "修復済み・未検証"
+
+#: src/ui/telemetry_tab.py
+msgid "uptime"
+msgstr "稼働時間"
+
 #~ msgid "Decoder started — listening for sync…"
 #~ msgstr "デコーダー起動 — 同期信号を待機中…"
 

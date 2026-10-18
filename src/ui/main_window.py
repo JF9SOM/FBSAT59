@@ -3247,6 +3247,13 @@ class MainWindow(QMainWindow):
                 )
             if picked is not None:
                 best_idx = picked
+        elif mode == "hades":
+            # HADES FSK: the satellite's 200 baud FSK telemetry transmitter.
+            picked = mode_detection.pick_preferred_transponder_index(
+                transmitters, mode_detection.is_hades_fsk_transmitter
+            )
+            if picked is not None:
+                best_idx = picked
         else:
             # gr-satellites: TLM/Telemetry description first, then YAML frequency proximity
             tlm_idx: int | None = None

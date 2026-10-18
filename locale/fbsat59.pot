@@ -6664,3 +6664,19 @@ msgstr ""
 #, python-brace-format
 msgid "({shown}/{total} hex chars — rest omitted)"
 msgstr ""
+
+#: src/ui/telemetry_tab.py
+msgid "HADES FSK — listening for 200 baud bursts (±20 kHz)"
+msgstr ""
+
+#: src/ui/telemetry_tab.py
+msgid "Could not start the HADES FSK demodulator."
+msgstr ""
+
+#: src/ui/telemetry_tab.py
+msgid "repaired, not verified"
+msgstr ""
+
+#: src/ui/telemetry_tab.py
+msgid "uptime"
+msgstr ""

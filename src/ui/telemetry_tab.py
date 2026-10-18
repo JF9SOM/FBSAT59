@@ -117,6 +117,9 @@ _MODE_GR = "gr-satellites"
 # Housekeeping frames sent as Morse-coded hex, decoded by the CW Decoder tab
 # (see telemetry_formats/{norad}.json's "cw_frames"; ARICA-2, OrigamiSat-2).
 _MODE_CW = "CW TLM"
+# 200 baud 2FSK bursts of the AMSAT-EA "Genesis" family (UNNE-1B), demodulated from the SDR's
+# I/Q by comms.telemetry.hades_fsk. The SatNOGS upload of these frames is not connected yet.
+_MODE_HADES = "HADES FSK"
 # How long a Start waits for the SDR to finish connecting before it is dropped.
 _PENDING_START_TIMEOUT_S = 30.0
 
@@ -382,6 +385,12 @@ class TelemetryTab(QWidget):
         self._gr_frames: deque[tuple[float, _Ax25Row]] = deque()
         self._selected_name: str = ""
 
+        # HADES FSK mode: the demodulator thread, the pipeline it is subscribed to and the
+        # satellite its frames belong to while it runs.
+        self._hades_demod: Any | None = None
+        self._hades_demod_pipeline: Any | None = None
+        self._hades_norad: int | None = None
+
         # CW TLM mode: the CW Decoder tab feeding this one (attach_cw_tab()) and the
         # satellite whose frames are being collected while it runs.
         self._cw_tab: Any = None
@@ -405,6 +414,7 @@ class TelemetryTab(QWidget):
         self._connect_signals()
         self._populate_afsk_combo()
         self._populate_cw_combo()
+        self._populate_hades_combo()
         if detect_gr_satellites():
             self._gr_sat_list = list_gr_satellites_with_names()
             self._populate_gr_combo()
@@ -459,6 +469,7 @@ class TelemetryTab(QWidget):
         self._combo_mode.addItem(_MODE_AFSK)
         self._combo_mode.addItem(_MODE_GR)
         self._combo_mode.addItem(_MODE_CW)
+        self._combo_mode.addItem(_MODE_HADES)
         self._combo_mode.currentIndexChanged.connect(self._on_mode_changed)
         row1.addWidget(self._combo_mode)
         self._combo_afsk_sat = QComboBox()
@@ -492,6 +503,17 @@ class TelemetryTab(QWidget):
         self._btn_cw_sat_search.setVisible(False)
         self._btn_cw_sat_search.clicked.connect(self._on_cw_sat_search_clicked)
         row1.addWidget(self._btn_cw_sat_search)
+        self._combo_hades_sat = QComboBox()
+        self._combo_hades_sat.setMinimumWidth(280)
+        self._combo_hades_sat.setVisible(False)
+        self._combo_hades_sat.currentIndexChanged.connect(self._on_hades_sat_changed)
+        row1.addWidget(self._combo_hades_sat)
+        self._btn_hades_sat_search = QPushButton("🔍")
+        self._btn_hades_sat_search.setToolTip(_("Search satellites…"))
+        self._btn_hades_sat_search.setFixedWidth(28)
+        self._btn_hades_sat_search.setVisible(False)
+        self._btn_hades_sat_search.clicked.connect(self._on_hades_sat_search_clicked)
+        row1.addWidget(self._btn_hades_sat_search)
 
         row1.addSpacing(12)
         self._baud_combo = QComboBox()
@@ -813,7 +835,11 @@ class TelemetryTab(QWidget):
         new_pipeline = self._sdr_pipeline
         if new_pipeline is None or new_pipeline is old_pipeline:
             return
-        if self._afsk_source != "sdr_direwolf" and not self._gr_backend.is_running:
+        if (
+            self._afsk_source != "sdr_direwolf"
+            and not self._gr_backend.is_running
+            and self._hades_demod is None
+        ):
             return
         self._on_stop()
         self._on_start()
@@ -881,6 +907,7 @@ class TelemetryTab(QWidget):
             ("afsk", self._combo_afsk_sat),
             ("gr", self._combo_gr_sat),
             ("cw_tlm", self._combo_cw_sat),
+            ("hades", self._combo_hades_sat),
         ]
 
     def _save_last_satellite(self, kind: str, norad: int) -> None:
@@ -918,7 +945,15 @@ class TelemetryTab(QWidget):
 
     def _announce_restored_satellite(self) -> None:
         mode = self._current_mode()
-        active = "gr" if mode == _MODE_GR else "cw_tlm" if mode == _MODE_CW else "afsk"
+        active = (
+            "gr"
+            if mode == _MODE_GR
+            else "cw_tlm"
+            if mode == _MODE_CW
+            else "hades"
+            if mode == _MODE_HADES
+            else "afsk"
+        )
         for kind, combo in self._sat_combos():
             norad = combo.currentData()
             if kind == active and norad is not None:
@@ -1008,6 +1043,34 @@ class TelemetryTab(QWidget):
         for norad, name in sorted(entries.items(), key=sort_key):
             self._combo_cw_sat.addItem(f"{name}  ({norad})", userData=norad)
         self._combo_cw_sat.blockSignals(False)
+
+    def _populate_hades_combo(self) -> None:
+        """Fill the HADES FSK satellite combo: satellites with a 200 baud FSK transmitter.
+
+        Found by mode_detection.is_hades_fsk_transmitter() in this app's own DB, so a
+        satellite appears only once its SatNOGS transmitters are synced (the same rule as
+        the other combos, which avoids entries that select nothing).
+        """
+        self._combo_hades_sat.blockSignals(True)
+        self._combo_hades_sat.clear()
+        entries: dict[int, str] = {}
+        if hasattr(self._conn, "execute"):
+            with contextlib.suppress(Exception):
+                from comms.mode_detection import get_norads_matching, is_hades_fsk_transmitter
+
+                norads = get_norads_matching(self._conn, is_hades_fsk_transmitter)
+                if norads:
+                    placeholders = ",".join("?" * len(norads))
+                    rows = self._conn.execute(
+                        f"SELECT norad_cat_id, name FROM satellites "
+                        f"WHERE norad_cat_id IN ({placeholders})",
+                        tuple(norads),
+                    ).fetchall()
+                    for row in rows:
+                        entries[int(row["norad_cat_id"])] = str(row["name"])
+        for norad, name in sorted(entries.items(), key=lambda kv: kv[1].upper()):
+            self._combo_hades_sat.addItem(f"{name}  ({norad})", userData=norad)
+        self._combo_hades_sat.blockSignals(False)
 
     def _hidden_norads(self) -> set[int]:
         """NORAD ids satellites.is_hidden marks as no longer tracked.
@@ -1148,18 +1211,25 @@ class TelemetryTab(QWidget):
         mode = self._current_mode()
         is_gr = mode == _MODE_GR
         is_cw = mode == _MODE_CW
-        is_afsk = not is_gr and not is_cw
+        is_hades = mode == _MODE_HADES
+        is_afsk = not is_gr and not is_cw and not is_hades
         self._combo_afsk_sat.setVisible(is_afsk)
         self._btn_afsk_sat_search.setVisible(is_afsk)
         self._combo_gr_sat.setVisible(is_gr)
         self._btn_gr_sat_search.setVisible(is_gr)
         self._combo_cw_sat.setVisible(is_cw)
         self._btn_cw_sat_search.setVisible(is_cw)
+        self._combo_hades_sat.setVisible(is_hades)
+        self._btn_hades_sat_search.setVisible(is_hades)
         # Baud and the backend log are Direwolf / gr-satellites matters; CW TLM has
-        # neither (its text is in the CW Decoder tab).
+        # neither (its text is in the CW Decoder tab) and HADES FSK has a fixed baud and
+        # no backend process.
         for widget in (self._lbl_baud, self._baud_combo, self._btn_backend_log):
-            widget.setVisible(not is_cw)
-        self._btn_satnogs_send.setVisible(True)
+            widget.setVisible(not is_cw and not is_hades)
+        # The SatNOGS upload of HADES FSK frames is not connected yet: its controls stay
+        # hidden there rather than offering a switch that would do nothing.
+        for widget in (self._btn_satnogs_toggle, self._btn_satnogs_api, self._btn_satnogs_send):
+            widget.setVisible(not is_hades)
         # Both sub-tabs exist in every mode. In gr-satellites mode "Decoded Fields" shows this
         # project's own format file for the satellite when it has one, plus gr-satellites'
         # own full text of the selected frame.
@@ -1169,6 +1239,8 @@ class TelemetryTab(QWidget):
             # Select the combo's satellite the way changing the combo would, so the
             # satellite list, Radio Control and the Decoded Fields tabs follow.
             self._on_cw_sat_changed(self._combo_cw_sat.currentIndex())
+        if is_hades and self._combo_hades_sat.count():
+            self._on_hades_sat_changed(self._combo_hades_sat.currentIndex())
         # SatNOGS DB upload now covers both paths (Phase 2 added the
         # gr-satellites --kiss_server raw-frame route; see
         # _on_gr_raw_frame()), so the upload cluster stays visible in
@@ -1209,6 +1281,16 @@ class TelemetryTab(QWidget):
         if norad is not None:
             self._save_last_satellite("cw_tlm", int(norad))
             self.satellite_selected.emit(int(norad), "cw_tlm")
+
+    def _on_hades_sat_changed(self, _index: int) -> None:
+        norad = self._combo_hades_sat.currentData()
+        self._update_satnogs_link_enabled()
+        if norad is not None:
+            self._save_last_satellite("hades", int(norad))
+            self.satellite_selected.emit(int(norad), "hades")
+
+    def _on_hades_sat_search_clicked(self) -> None:
+        self._open_sat_search(self._combo_hades_sat)
 
     def _on_cw_sat_search_clicked(self) -> None:
         self._open_sat_search(self._combo_cw_sat)
@@ -1329,7 +1411,7 @@ class TelemetryTab(QWidget):
         _on_gr_sat_changed()), so the DB transponder is ignored there.
         """
         if (
-            self._current_mode() != _MODE_GR
+            self._current_mode() not in (_MODE_GR, _MODE_HADES)
             and isinstance(xpdr, dict)
             and self._set_baud_combo(detect_baud_from_transmitter(xpdr))
         ):
@@ -1365,6 +1447,9 @@ class TelemetryTab(QWidget):
         elif mode == _MODE_GR:
             if not self._start_gr_satellites():
                 return  # Start stays pressable; the reason is in the status label
+        elif mode == _MODE_HADES:
+            if not self._start_hades():
+                return
         else:
             self._try_start_afsk()
             if self._afsk_source is None:
@@ -1375,6 +1460,7 @@ class TelemetryTab(QWidget):
     def _on_stop(self) -> None:
         self._pending_start = False
         self._stop_gr_satellites()
+        self._stop_hades()
         self._stop_engine()
         self._stop_cw_tlm()
         self._btn_start.setEnabled(True)
@@ -1825,6 +1911,147 @@ class TelemetryTab(QWidget):
     def _stop_gr_satellites(self) -> None:
         if self._gr_backend.is_running:
             self._gr_backend.stop()
+
+    # ------------------------------------------------------------------ #
+    # HADES FSK (200 baud 2FSK bursts demodulated from the SDR's I/Q)
+    # ------------------------------------------------------------------ #
+
+    def _start_hades(self) -> bool:
+        """Subscribe a HadesFskSdrDemod to the SDR pipeline; False (reason on screen) if not."""
+        if self._hades_demod is not None:
+            return True
+        norad = self._combo_hades_sat.currentData()
+        if not isinstance(norad, int):
+            self._set_error("⚠ " + _("Select a satellite first."))
+            return False
+        pipeline = self._sdr_pipeline
+        if pipeline is None:
+            pipeline = self._auto_connect_sdr()
+            if pipeline is None:
+                return False
+        from comms.telemetry.hades_fsk_sdr import HadesFskSdrDemod
+
+        try:
+            demod = HadesFskSdrDemod(int(pipeline._device.sample_rate), parent=self)  # type: ignore[attr-defined]
+            demod.frame_received.connect(self._on_hades_frame)
+            demod.start()
+            self._hades_demod = demod  # held before subscribing so a failure is cleaned up
+            pipeline.subscribe(demod.push_samples)  # type: ignore[attr-defined]
+            self._hades_demod_pipeline = pipeline
+        except Exception:
+            logger.exception("HADES FSK: could not attach to the SDR pipeline")
+            self._stop_hades()
+            self._set_error("⚠ " + _("Could not start the HADES FSK demodulator."))
+            return False
+        self._hades_norad = norad
+        if self._decode_tabs_norad != norad:
+            self._rebuild_decode_tabs(norad)
+        self._lbl_status.setText(_("HADES FSK — listening for 200 baud bursts (±20 kHz)"))
+        self._lbl_status.setStyleSheet("color: #27ae60;")
+        return True
+
+    def _stop_hades(self) -> None:
+        """Detach and stop the HADES FSK demodulator, if running."""
+        if self._hades_demod_pipeline is not None and self._hades_demod is not None:
+            with contextlib.suppress(Exception):
+                self._hades_demod_pipeline.unsubscribe(self._hades_demod.push_samples)
+        self._hades_demod_pipeline = None
+        if self._hades_demod is not None:
+            with contextlib.suppress(Exception):
+                self._hades_demod.frame_received.disconnect()
+            self._hades_demod.stop()
+            self._hades_demod = None
+        self._hades_norad = None
+
+    @staticmethod
+    def _hades_row_text(frame: Any) -> str:
+        """The Data column of a HADES FSK row: type, uptime, carrier offset, then the bytes."""
+        head = f"[{frame.type_name}]"
+        if frame.repaired:
+            head += " (" + _("repaired, not verified") + ")"
+        uptime = frame.uptime_s
+        uptime_label = _("uptime")  # not inside the f-string: xgettext cannot see it there
+        extra = f"  {uptime_label} {uptime} s" if uptime is not None else ""
+        carrier = f"  {frame.carrier_hz / 1000:+.1f} kHz"
+        return f"{head}{extra}{carrier}  {format_frame_hex(frame.payload)}"
+
+    def _on_hades_frame(self, frame: Any, age_s: float) -> None:
+        """A packet from the HADES FSK demodulator: show it and log it for "Load saved"."""
+        norad = self._hades_norad
+        if norad is None:
+            return
+        when, reliable = self._frame_time()
+        when -= datetime.timedelta(seconds=float(age_s))
+        sat_name = self._satellite_name(norad) or self._selected_name or "—"
+        text = self._hades_row_text(frame)
+        log_id = self._persist_hades_row(frame, norad, sat_name, text, when, reliable)
+        self._append_row(
+            callsign="HADES",
+            sat_name=sat_name,
+            data=text,
+            norad=norad,
+            ts=when,
+            dim=bool(frame.repaired),
+        )
+        self._mark_row_logged(self._table.rowCount() - 1, log_id)
+
+    def _persist_hades_row(
+        self,
+        frame: Any,
+        norad: int,
+        sat_name: str,
+        text: str,
+        when: datetime.datetime,
+        reliable: bool,
+    ) -> int | None:
+        """Log a HADES FSK frame (its descrambled payload, no CRC) with kind "hades"."""
+        if not hasattr(self._conn, "execute"):
+            return None
+        payload_hex = bytes(frame.payload).hex()
+        known = self._find_logged_duplicate("frame_hex", payload_hex, norad, when, "hades")
+        if known is not None:
+            return known[0]
+        parsed = json.dumps(
+            {
+                "text": text,
+                "sat": sat_name,
+                "type": frame.packet_type,
+                "uptime": frame.uptime_s,
+                "carrier_hz": round(float(frame.carrier_hz)),
+                "repaired": bool(frame.repaired),
+            }
+        )
+        cursor = self._conn.execute(
+            """INSERT INTO telemetry_log
+               (received_at, norad_cat_id, callsign, raw_hex, parsed_json, time_reliable,
+                frame_hex, kind)
+               VALUES (?, ?, 'HADES', ?, ?, ?, ?, 'hades')""",
+            (when.isoformat(), norad, payload_hex, parsed, int(reliable), payload_hex),
+        )
+        self._conn.commit()
+        row_id = cursor.lastrowid
+        return int(row_id) if row_id is not None else None
+
+    def _load_saved_hades(
+        self, norad: int, parsed_json: str | None, when: datetime.datetime, log_id: int
+    ) -> None:
+        """Show one logged HADES FSK frame again."""
+        try:
+            saved = json.loads(parsed_json) if parsed_json else {}
+        except (ValueError, TypeError):
+            saved = {}
+        if not isinstance(saved, dict):
+            saved = {}
+        sat_name = str(saved.get("sat") or self._satellite_name(norad))
+        self._append_row(
+            callsign="HADES",
+            sat_name=sat_name or "—",
+            data=str(saved.get("text", "")),
+            norad=norad,
+            ts=when,
+            dim=bool(saved.get("repaired")),
+        )
+        self._mark_row_logged(self._table.rowCount() - 1, log_id)
 
     def _on_gr_status(self, msg: str) -> None:
         self._lbl_status.setText(msg)
@@ -2511,6 +2738,8 @@ class TelemetryTab(QWidget):
             return  # managed by _on_gr_status
         if self._cw_tlm_norad is not None:
             return  # CW TLM is running; _start_cw_tlm() set the status
+        if self._hades_demod is not None:
+            return  # HADES FSK is running; _start_hades() / _on_hades_frame() set the status
         if self._afsk_source == "direwolf" and self._engine.is_running:
             modem = self._engine.current_modem
             suffix = f"  [{modem} baud]" if modem else ""
@@ -2524,7 +2753,7 @@ class TelemetryTab(QWidget):
         else:
             # gr-satellites is SDR-only (no Rig + Sound Card path, unlike
             # Direwolf mode above), so its idle hint must not mention Rig.
-            if self._current_mode() == _MODE_GR:
+            if self._current_mode() in (_MODE_GR, _MODE_HADES):
                 self._lbl_status.setText(_("—  (connect SDR, then click ▶ Start)"))
             elif self._current_mode() == _MODE_CW:
                 self._lbl_status.setText(
@@ -2583,7 +2812,9 @@ class TelemetryTab(QWidget):
             self._set_error(_("Select a satellite first."))
             return
         mode = self._current_mode()
-        n = self._load_saved_frames(norad, cw=mode == _MODE_CW, gr=mode == _MODE_GR)
+        n = self._load_saved_frames(
+            norad, cw=mode == _MODE_CW, gr=mode == _MODE_GR, hades=mode == _MODE_HADES
+        )
         self._lbl_status.setText(_("Loaded {n} saved frame(s)").format(n=n))
         self._lbl_status.setStyleSheet("color: #27ae60;" if n else "color: #aaa;")
 
@@ -2612,11 +2843,13 @@ class TelemetryTab(QWidget):
                 return "cw"
         return "ax25"
 
-    def _load_saved_frames(self, norad: int, cw: bool = False, gr: bool = False) -> int:
+    def _load_saved_frames(
+        self, norad: int, cw: bool = False, gr: bool = False, hades: bool = False
+    ) -> int:
         """Append the logged frames of *norad* to the table; returns how many.
 
         *cw*: the CW TLM frames (CW mode); *gr*: the gr-satellites rows (gr-satellites mode);
-        else the AX.25 / HDLC frames.
+        *hades*: the HADES FSK frames; else the AX.25 / HDLC frames.
 
         A frame logged before its callsign was known (``norad_cat_id`` NULL) is
         included when its callsign now maps to *norad*. Frames already shown are
@@ -2661,7 +2894,7 @@ class TelemetryTab(QWidget):
             if log_id in shown:
                 continue
             kind = self._saved_kind(norad, kind, callsign, parsed_json)
-            if (kind == "cw") != cw or (kind == "gr") != gr:
+            if (kind == "cw") != cw or (kind == "gr") != gr or (kind == "hades") != hades:
                 continue
             if row_norad is None and (not callsign or self._callsign_to_norad(callsign) != norad):
                 continue
@@ -2673,6 +2906,10 @@ class TelemetryTab(QWidget):
                 continue
             if when.tzinfo is None:
                 when = when.replace(tzinfo=datetime.UTC)
+            if kind == "hades":
+                self._load_saved_hades(norad, parsed_json, when, log_id)
+                loaded += 1
+                continue
             if kind == "gr":
                 self._load_saved_gr(
                     norad, callsign, parsed_json, when, whole, uploaded, reliable, log_id
@@ -2895,6 +3132,8 @@ class TelemetryTab(QWidget):
             if mode == _MODE_GR
             else self._combo_cw_sat
             if mode == _MODE_CW
+            else self._combo_hades_sat
+            if mode == _MODE_HADES
             else self._combo_afsk_sat
         )
         data = combo.currentData()

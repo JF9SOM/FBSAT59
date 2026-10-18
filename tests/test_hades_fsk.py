@@ -161,3 +161,34 @@ def test_stream_rejects_too_low_a_sample_rate() -> None:
     except ValueError:
         return
     raise AssertionError("expected ValueError")
+
+
+def test_decimate_stage_matches_convolution() -> None:
+    rng = np.random.default_rng(5)
+    x = (rng.standard_normal(1000) + 1j * rng.standard_normal(1000)).astype(np.complex64)
+    taps = hf._design_lowpass(250_000.0, 22_500.0, 81)
+    out, rest = hf._decimate_stage(x, taps, 5)
+    reference = np.convolve(x, taps, mode="valid")[::5]
+    assert np.allclose(out, reference[: len(out)], atol=1e-5)
+    assert len(out) == len(reference)
+    # Feeding the stream in two pieces gives the same samples as feeding it whole.
+    first, rest1 = hf._decimate_stage(x[:437], taps, 5)
+    second, _ = hf._decimate_stage(np.concatenate([rest1, x[437:]]), taps, 5)
+    assert np.allclose(np.concatenate([first, second]), out, atol=1e-5)
+    assert len(rest) < len(taps) + 5
+
+
+def test_split_factor() -> None:
+    assert hf._split_factor(1) == []
+    assert hf._split_factor(5) == [5]
+    assert hf._split_factor(48) == [8, 6]
+    assert np.prod(hf._split_factor(12)) == 12
+    assert hf._split_factor(11) == [11]
+
+
+def test_stream_high_sample_rate_uses_cascade() -> None:
+    """A 600 kHz stream (decimation 12 in two stages) decodes like a 250 kHz one."""
+    iq = _stream(REAL_PAYLOADS[:1], [-7_500.0], rate=600_000.0, gap_s=0.0)
+    frames = hf.decode_iq(iq, 600_000.0)
+    assert [f.payload for f in frames] == REAL_PAYLOADS[:1]
+    assert abs(frames[0].carrier_hz + 7_500.0) < 1_500
