@@ -441,6 +441,11 @@ HackRF / RTL-SDR + 適切な LNA・フィルターで受信可能な業務用衛
 
 GPL-2.0-or-later（GPredict互換）
 
+FBSAT59 はフリーソフトウェアです。Free Software Foundation が公表する GNU General Public License のバージョン 2、
+または（あなたの選択により）それ以降のいずれかのバージョンの条件の下で、再配布および改変ができます。
+バージョン 2 の全文は [LICENSE](LICENSE) にあります。「それ以降」の許諾があるため、WSJT-X から作ったライブラリ
+などの GPL-3.0 の部品と組み合わせて配布できます（謝辞の項を参照）。
+
 ---
 
 ## 謝辞
