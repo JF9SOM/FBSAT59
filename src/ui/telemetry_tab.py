@@ -1973,7 +1973,11 @@ class TelemetryTab(QWidget):
         from comms.telemetry.hades_fsk_sdr import HadesFskSdrDemod
 
         try:
-            demod = HadesFskSdrDemod(int(pipeline._device.sample_rate), parent=self)  # type: ignore[attr-defined]
+            demod = HadesFskSdrDemod(
+                int(pipeline._device.sample_rate),  # type: ignore[attr-defined]
+                parent=self,
+                norad=norad,
+            )
             demod.frame_received.connect(self._on_hades_frame)
             demod.start()
             self._hades_demod = demod  # held before subscribing so a failure is cleaned up
@@ -1988,7 +1992,10 @@ class TelemetryTab(QWidget):
         self._voice_tab_asked = False
         if self._decode_tabs_norad != norad:
             self._rebuild_decode_tabs(norad)
-        self._lbl_status.setText(_("HADES FSK — listening for 200 baud bursts (±20 kHz)"))
+        if norad == 68446:
+            self._lbl_status.setText(_("HADES FSK — listening for HADES-SA (800 baud 2FSK)"))
+        else:
+            self._lbl_status.setText(_("HADES FSK — listening for 200 baud bursts (±20 kHz)"))
         self._lbl_status.setStyleSheet("color: #27ae60;")
         return True
 
@@ -2129,7 +2136,7 @@ class TelemetryTab(QWidget):
         self._voice_tab_asked = False
         if self._decode_tabs_norad != norad:
             self._rebuild_decode_tabs(norad)
-        job = HadesFileDecoder(path, parent=self)
+        job = HadesFileDecoder(path, parent=self, norad=norad)
         job.frame_found.connect(self._on_fast_frame)
         job.progress.connect(self._on_fast_progress)
         job.decoded.connect(self._on_fast_done)
@@ -2776,7 +2783,8 @@ class TelemetryTab(QWidget):
         from comms.mode_detection import HADES_FSK_NORADS
 
         if self._current_mode() == _MODE_HADES and norad in HADES_FSK_NORADS:
-            id_defs: dict[str, Any] | None = hades_type_tabs()  # one sub-tab per packet type
+            # one sub-tab per packet type (HADES-SA has its own status and BBS layouts)
+            id_defs: dict[str, Any] | None = hades_type_tabs(3 if norad == 68446 else None)
         else:
             id_defs = get_telemetry_id_defs(norad)
         is_gr = self._current_mode() == _MODE_GR

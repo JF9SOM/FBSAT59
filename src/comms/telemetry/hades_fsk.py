@@ -75,8 +75,29 @@ UNNE1B_ADDRESS = 12
 UNNE1_LENGTHS: dict[int, int] = {**HADES_R_LENGTHS, 15: 39}
 
 
+HADES_SA_ADDRESS = 3
+# HADES-SA (SpinnyONE) telemetry packets, from AMSAT-EA's "HADES-SA SpinnyONE Transmissions
+# Description" V1.0 (the ``size`` field of each packet table: type/address byte + data + CRC).
+# They differ from HADES-R's for type 3 (status, longer) and type 15 (BBS data). Types 10
+# (SSDV), 11 (CODEC2 voice, no CRC) and 13 (PN9 link test) are not telemetry and not listed.
+HADES_SA_LENGTHS: dict[int, int] = {
+    1: 31,
+    2: 17,
+    3: 41,
+    4: 35,
+    5: 27,
+    8: 31,
+    9: 123,
+    12: 64,
+    14: 38,
+    15: 73,
+}
+
+
 def packet_lengths(address: int | None) -> dict[int, int]:
     """Length table (CRC included) for the satellite with this source ``address``."""
+    if address == HADES_SA_ADDRESS:
+        return HADES_SA_LENGTHS
     return UNNE1_LENGTHS if address == UNNE1B_ADDRESS else HADES_R_LENGTHS
 
 

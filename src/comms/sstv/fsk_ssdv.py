@@ -141,7 +141,7 @@ class Decimator:
         return y[drop : max(drop, len(y) - hold)]
 
 
-def find_tones(seg: np.ndarray) -> tuple[float, float] | None:
+def find_tones(seg: np.ndarray, ratio: float = _TONE_RATIO) -> tuple[float, float] | None:
     """Frequencies (Hz, low and high) of the FSK tone pair in *seg*, or None if absent."""
     n = len(seg)
     if n < WORK_RATE:
@@ -167,7 +167,7 @@ def find_tones(seg: np.ndarray) -> tuple[float, float] | None:
         return None
     score = smooth[first] * smooth[first + sep]
     best = int(first[int(np.argmax(score))])
-    if smooth[best] < _TONE_RATIO * floor or smooth[best + sep] < _TONE_RATIO * floor:
+    if smooth[best] < ratio * floor or smooth[best + sep] < ratio * floor:
         return None
     return float(freqs[best]), float(freqs[best + sep])
 

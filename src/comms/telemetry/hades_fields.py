@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 from comms.telemetry.decoder import TelemetryField, TelemetryFrame
+from comms.telemetry.hades_fsk import HADES_SA_ADDRESS as _HADES_SA_ADDRESS
 
 # --- low-level readers ----------------------------------------------------------------- #
 
@@ -499,6 +500,104 @@ _TIME_SERIES = TypeDef(
     ),
 )
 
+# --- HADES-SA (SpinnyONE): status (type 3) and BBS data (type 15) ----------------------- #
+# The other telemetry types of HADES-SA have the layouts of the HADES-R family above (checked
+# against the 49 + 31 + 28 + 23 + 23 + 21 + 21 + 38 + 20 frames SatNOGS Network collected from
+# HADES-SA, 2026-10-11..18: voltages agree with each other, temperatures are plausible).
+# Status is longer, and BBS data replaces the experiment packet. AMSAT-EA's "HADES-SA SpinnyONE
+# Transmissions Description" V1.0 gives the fields; in the real data the camera fields agree
+# with the SSDV downlink (payload_frames = 34 while image 48 was sent, which has 34 packets;
+# current_image_id follows the SSDV image id: 48, then 64 ... 67).
+
+_SA_STATUS = TypeDef(
+    3,
+    "Status",
+    39,
+    (
+        _field("sclock", "System clock", "", _clock(1)),
+        _field("uptime", "Uptime", "", _clock(5)),
+        _count("nrun", "CPU runs", _word(9)),
+        _count("npayload", "Payload (camera) starts", _byte(11)),
+        _count("nwire", "Antenna deployment attempts", _byte(12)),
+        _count("ntransponder", "Transponder activations (not used)", _byte(13)),
+        _count("npayloadfails", "Payload communication errors", _nibble(14, True)),
+        _count("lstrst", "Last reset cause (code)", _nibble(14, False)),
+        _count("bate", "Battery state machine (0-6)", _nibble(15, True)),
+        _count("mote", "Mode (not used)", _nibble(15, False)),
+        _field("systems_status", "Subsystems status", "", _hex_byte(16)),
+        _count("ntasksnotexecuted", "Tasks lost by the scheduler", _byte(17)),
+        _field("antennadeployed", "Antenna", "", _named(18, _ANTENNA)),
+        _count("nexteepromerrors", "EEPROM checksum failures (recoverable)", _byte(19)),
+        _field("failedtaskid", "Last failed task id", "", _hex_byte(20)),
+        _count("messaging", "Messaging enabled", _byte(21)),
+        _field("strfwd0", "Store & forward: last id", "", _hex_byte(22)),
+        _field("strfwd1", "Store & forward: last command", "", _hex_byte(23, 2)),
+        _field("strfwd2", "Store & forward: last value", "", _hex_byte(25, 2)),
+        _count("strfwd3", "Store & forward: commands executed", _byte(27)),
+        _count("rx_percentage", "Time receiving", _byte(28), "%"),
+        _count("telemetry_percentage", "Time sending telemetry", _byte(29), "%"),
+        _count("transponder_percentage", "Time as transponder", _byte(30), "%"),
+        _count("ptt_hp_percentage", "Time transmitting, high power", _byte(31), "%"),
+        _count("ptt_lp_percentage", "Time transmitting, low power", _byte(32), "%"),
+        _count("ple_percentage", "ple", _byte(33), "%"),
+        _count("bwe_percentage", "bwe", _byte(34), "%"),
+        _count(
+            "vbat_higher_than_vbus", "Time the battery is above the bus voltage", _byte(35), "%"
+        ),
+        _count("payload_frames", "Camera frames (packets) of this picture", _byte(36)),
+        _count("payload_params", "Configured camera parameters", _byte(37)),
+        _count("current_image_id", "Current SSDV image id", _byte(38)),
+    ),
+)
+
+_BBS_ENTRIES = 5
+_BBS_CALL = 6
+_BBS_TEXT = 7
+
+
+def _bbs_text(offset: int, size: int) -> Callable[[bytes], Value]:
+    def read(d: bytes) -> Value:
+        raw = d[offset : offset + size]
+        return "".join(chr(c) if 32 <= c < 127 else "·" for c in raw).rstrip("·").rstrip() or "—"
+
+    return read
+
+
+# BBS data (type 15): five callsigns (6 characters), five messages (7 characters) and five
+# CODEC2 frame counts, each as a block. The document's table lists them entry by entry, but the
+# real packets (every one seen so far has an empty BBS: "------" / "No data" / 0) are blocks.
+_BBS = TypeDef(
+    15,
+    "BBS data",
+    71,
+    tuple(
+        fd
+        for i in range(_BBS_ENTRIES)
+        for fd in (
+            _field(
+                f"callsign{i}",
+                f"Callsign {i}",
+                "",
+                _bbs_text(1 + i * _BBS_CALL, _BBS_CALL),
+            ),
+            _field(
+                f"message{i}",
+                f"Message {i}",
+                "",
+                _bbs_text(1 + _BBS_ENTRIES * _BBS_CALL + i * _BBS_TEXT, _BBS_TEXT),
+            ),
+            _count(
+                f"codec2frames{i}",
+                f"CODEC2 frames {i}",
+                _byte(1 + _BBS_ENTRIES * (_BBS_CALL + _BBS_TEXT) + i),
+            ),
+        )
+    ),
+)
+
+# The table of a HADES-SA packet: the family's, with its own status and BBS data.
+TYPES_SA: dict[int, TypeDef] = {}  # filled below, after TYPES
+
 TYPES: dict[int, TypeDef] = {
     t.number: t
     for t in (
@@ -518,6 +617,9 @@ TYPES: dict[int, TypeDef] = {
 }
 
 
+TYPES_SA.update({n: t for n, t in TYPES.items() if n not in (6, 7, 10, 15)})
+TYPES_SA.update({3: _SA_STATUS, 15: _BBS})
+
 # --- decoding -------------------------------------------------------------------------- #
 
 
@@ -535,7 +637,8 @@ def decode_payload(payload: bytes) -> tuple[TypeDef, list[DecodedField]] | None:
     """Decode a packet payload; ``None`` for a type without a definition or a short payload."""
     if not payload:
         return None
-    definition = TYPES.get(payload[0] >> 4)
+    table = TYPES_SA if payload[0] & 15 == _HADES_SA_ADDRESS else TYPES
+    definition = table.get(payload[0] >> 4)
     if definition is None or len(payload) < definition.length:
         return None
     fields: list[DecodedField] = []
@@ -548,14 +651,18 @@ def decode_payload(payload: bytes) -> tuple[TypeDef, list[DecodedField]] | None:
     return definition, fields
 
 
-def type_tabs() -> dict[str, dict[str, object]]:
-    """The "Decoded Fields" sub-tab skeleton, in the shape of ``get_telemetry_id_defs()``."""
+def type_tabs(address: int | None = None) -> dict[str, dict[str, object]]:
+    """The "Decoded Fields" sub-tab skeleton, in the shape of ``get_telemetry_id_defs()``.
+
+    ``address`` 3 gives HADES-SA's tabs; anything else the HADES-R family's (UNNE-1B).
+    """
+    table = TYPES_SA if address == _HADES_SA_ADDRESS else TYPES
     return {
         str(number): {
             "label": f"{number}  {definition.name}",
             "fields": [{"name": f.name, "label": f.label} for f in definition.fields],
         }
-        for number, definition in TYPES.items()
+        for number, definition in table.items()
     }
 
 

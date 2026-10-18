@@ -66,15 +66,23 @@ def is_digital_voice_transmitter(xpdr: dict[str, Any]) -> bool:
 # Satellites whose 200 baud 2FSK downlink the Telemetry tab's "HADES FSK" mode decodes
 # (comms.telemetry.hades_fsk). Only a satellite whose frames were actually decoded is listed:
 # UNNE-1B (98205, HADES-E2), CRC-verified on a real pass on 2026-10-18.
-HADES_FSK_NORADS = frozenset({98205})
+# HADES-SA (68446) joined on 2026-10-18: its 800 baud telemetry is decoded by
+# comms.telemetry.hades_sa_fsk and was checked against the 5 SatNOGS frame sets and a real pass.
+HADES_FSK_NORADS = frozenset({98205, 68446})
+HADES_SA_NORAD = 68446
 
 
 def is_hades_fsk_transmitter(xpdr: dict[str, Any]) -> bool:
-    """The 200 baud FSK telemetry transmitter of a satellite the HADES FSK mode decodes."""
+    """The FSK telemetry transmitter of a satellite the HADES FSK mode decodes.
+
+    UNNE-1B (98205): 200 baud FSK. HADES-SA (68446): the 800 baud GENESIS FSK downlink (the
+    same one the Digital Voice tab uses; it carries telemetry, SSDV and CODEC2 voice).
+    """
     mode = (xpdr.get("mode") or "").upper()
-    return (
-        xpdr.get("norad_cat_id") in HADES_FSK_NORADS and "FSK" in mode and xpdr.get("baud") == 200
-    )
+    norad = xpdr.get("norad_cat_id")
+    if norad == HADES_SA_NORAD:
+        return "GENESIS" in mode and xpdr.get("baud") == 800
+    return norad in HADES_FSK_NORADS and "FSK" in mode and xpdr.get("baud") == 200
 
 
 def is_cw_transmitter(xpdr: dict[str, Any]) -> bool:

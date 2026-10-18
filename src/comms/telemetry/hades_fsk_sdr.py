@@ -17,7 +17,17 @@ import numpy as np
 from PySide6.QtCore import QThread, Signal
 
 from comms.telemetry.hades_fsk import HadesFskStream
+from comms.telemetry.hades_sa_fsk import HadesSaFskStream
 from comms.telemetry.iq_wav import WavError, iter_iq_blocks, read_wav_info
+
+HADES_SA_NORAD = 68446
+
+
+def make_stream(sample_rate: float, norad: int | None = None) -> HadesFskStream | HadesSaFskStream:
+    """The demodulator for a satellite: HADES-SA's 800 baud stream, else the 200 baud one."""
+    if norad == HADES_SA_NORAD:
+        return HadesSaFskStream(sample_rate)
+    return HadesFskStream(sample_rate)
 
 
 class HadesFskSdrDemod(QThread):
@@ -40,10 +50,10 @@ class HadesFskSdrDemod(QThread):
 
     frame_received: Signal = Signal(object, float)
 
-    def __init__(self, sample_rate: int, parent: Any = None) -> None:
+    def __init__(self, sample_rate: int, parent: Any = None, norad: int | None = None) -> None:
         super().__init__(parent)
         self._rate = float(sample_rate)
-        self._stream = HadesFskStream(self._rate)
+        self._stream = make_stream(self._rate, norad)
         self._q: queue.Queue[np.ndarray] = queue.Queue(maxsize=256)
         self._stop_event = threading.Event()
         self._fed = 0  # input samples handed to the stream so far
@@ -112,9 +122,10 @@ class HadesFileDecoder(QThread):
 
     _PROGRESS_INTERVAL_S = 0.25
 
-    def __init__(self, path: Path, parent: Any = None) -> None:
+    def __init__(self, path: Path, parent: Any = None, norad: int | None = None) -> None:
         super().__init__(parent)
         self._path = Path(path)
+        self._norad = norad
         self._cancel = threading.Event()
 
     def cancel(self) -> None:
@@ -125,7 +136,7 @@ class HadesFileDecoder(QThread):
     def run(self) -> None:
         try:
             info = read_wav_info(self._path)
-            stream = HadesFskStream(info.sample_rate)
+            stream = make_stream(info.sample_rate, self._norad)
         except (WavError, ValueError) as exc:
             self.failed.emit(str(exc))
             return

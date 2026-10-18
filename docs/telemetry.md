@@ -1319,6 +1319,33 @@ CRC 一致で復号して確認した（type 3・4・10・1・5・3。バイト 
     生の値、種別 12（軌道要素）は符号化の記述がなく UNNE-1B は今のところ 0 しか送っていないので生の 16 進。
     統計（種別 4）の最小 ipl は衛星が 1 mA のまま更新しない（最大より大きい）実データの癖があり、そのまま表示する。
   - 初期の確認で、仕様書が「Sclock」とする 32 ビットが実は稼働秒そのもの（Status では Uptime と同じ値）だと分かった。
+- **HADES-SA（68446）を HADES FSK モードに追加（2026-10-18）**: UNNE-1B と同じ「HADES FSK」モードの衛星コンボに HADES-SA
+  が出る（`HADES_FSK_NORADS`＝{98205, 68446}。HADES-SA の送信機は SatNOGS の「FSK 800 bps 1600 Hz separation」＝モード
+  `GENESIS FSK`・800 baud。Digital Voice タブが使うものと同じ。Radio Control の送信機も自動でそれに合う）。UNNE-1B は 200 baud の
+  バースト、HADES-SA は **800 baud・トーン間隔 1600 Hz の連続信号**で、フレーム形式も違うため、復調器は別:
+  - **復調**: `comms/telemetry/hades_sa_fsk.py` の `HadesSaFskStream`（`HadesFskStream` と同じ `feed()`/`flush()`/`reset()`
+    で `HadesFrame` を返す）。SSDV モードと同じ 2FSK の前段（`comms/sstv/fsk_ssdv.py`: 12.5 kHz への間引き・トーン対の探索・
+    シンボルごとのトーンのエネルギー・パケットごとのタイミング再調整）を使う。6 秒窓・3 秒送り。短いバーストは窓の中で
+    トーンが弱く見えるので、トーン探索の閾値は SSDV（5 倍）より低い 3 倍。`HadesFskSdrDemod` / `HadesFileDecoder` は
+    `norad` を受け取り `make_stream()` で選ぶ（68446 なら HADES-SA、それ以外は 200 baud）。タブは `_start_hades()` /
+    `_start_fast_decode()` で衛星の NORAD ID を渡す。
+  - **フレーム**: 同期語 `BF35` の次に **size バイト**があり、その後が type/address（UNNE-1B の形式では size が無く、同期語の直後が
+    type/address）。size は type ごとの固定値（`HADES_SA_LENGTHS`、CRC 込み。type 3 は 41、15 は 73 で HADES-R と違う）。
+    スクランブラー・CRC は HADES-R と同じ（`parse_packet(raw[1:], 3)`）。type 10（SSDV）・11（CODEC2 音声）・13（PN9）は
+    テレメトリーではないので対象外（それぞれ SSTV/SSDV・Digital Voice タブの担当）。
+  - **全項目デコード結果**（`hades_fields.py`）: `TYPES_SA`（address 3 で選ぶ）。種別 1・2・4・5・8・9・12・14 は HADES-R 系と
+    同じ表で、SatNOGS Network の HADES-SA のフレーム（2026-10-11〜18 の 1 週間: 全 266 フレーム）で、電圧が互いに 3.9 V 台で一致、
+    充電電流は負、温度が妥当、時系列の 6 種の変数が妥当、を確認した。**種別 3（状態、39 バイト）と 15（BBS）は HADES-SA 専用**:
+    状態は仕様書の順（sclock・uptime・nrun・npayload・nwire・ntransponder・4 つのニブル・systems_status・…・
+    payload_frames・payload_params・current_image_id）。実データでは `current_image_id`（48、その後 64〜67）が SSDV の
+    画像 ID と、`payload_frames`（image 48 のとき 34）がその画像のパケット数（34）と一致した。**BBS（種別 15）は仕様書の表では
+    1 件ずつ（コールサイン・メッセージ・フレーム数）だが、実際のパケットはブロック**: コールサイン 5×6 文字、メッセージ 5×7 文字、
+    CODEC2 フレーム数 5×1 バイト（見えたものはすべて空の BBS ＝「------」「No data」・0。埋まった BBS のレイアウトは未確認）。
+    「全項目デコード結果」のタブには SSDV（10）も UNNE-1B の音声（15 Voice）も出ない（`type_tabs(3)`）。
+  - **実受信**: 2026-10-12 の録音（671 秒）の Fast デコードで、526.1 秒の BBS データ 1 パケットを CRC 一致で復号（12 秒。
+    手元の別解析と同じ）。**HADES-SA の電圧・温度などのテレメトリーが入った録音はまだ無い**ので、種別 1〜5・12・14 の
+    復調は合成 I/Q と SatNOGS のフレームでの確認まで。
+  - テスト: `tests/test_hades_sa.py`（実フレームの項目・BBS・長さ表・合成 I/Q）、`tests/test_telemetry_tab_hades_sa.py`。
 - **解析の落とし穴（2026-10-18 に発覚）**: レコーダーの `.iq.wav` には `fact` チャンクがありデータは 56 バイト目から
   （44 バイト固定で読むと I/Q が入れ替わり周波数の符号が鏡像になる）。最初の解析はこれで「+3〜+12 kHz・約 68 秒遅れ」と
   誤っていた。正しくは **−3〜−11 kHz・衛星が TLE より約 80 秒進んでいる**。
