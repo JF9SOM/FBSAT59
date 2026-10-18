@@ -1469,9 +1469,6 @@ class SstvTab(QWidget):
 
         self._persist_to_db(qimg, mode, now, sat_name=sat_name)
 
-        if self._auto_save_cb.isChecked():
-            self._auto_save_image(qimg, mode, now, sat_name=sat_name)
-
         self._status_label.setText(_("Image received: ") + f"{mode} {now.strftime('%H:%M:%S UTC')}")
 
     def _on_mode_detected(self, mode: str) -> None:
@@ -1693,7 +1690,12 @@ class SstvTab(QWidget):
         if not hasattr(self._conn, "execute"):
             return
         name = sat_name if sat_name is not None else self._sat_name
-        file_path = self._auto_save_image(qimg, mode, ts, sat_name=name) if True else None
+        # "Auto-save PNG" off: the picture is logged but no file is written
+        file_path = (
+            self._auto_save_image(qimg, mode, ts, sat_name=name)
+            if self._auto_save_cb.isChecked()
+            else None
+        )
         self._conn.execute(
             """
             INSERT INTO sstv_log (received_at, mode, file_path, callsign)

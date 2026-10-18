@@ -1193,3 +1193,26 @@ def test_right_click_menu_saves_a_picture_by_hand(tab: SstvTab, tmp_path: Path) 
     assert not tab._image_menu(None).actions()[0].isEnabled()
     target = tmp_path / "manual.png"
     assert tab._save_image_to(img, str(target)) and QImage(str(target)).width() == 30
+
+
+def test_auto_save_checkbox_off_writes_no_file_and_on_writes_exactly_one(
+    qtbot: QtBot,
+    conn: sqlite3.Connection,
+    rc: _FakeRadioControl,
+    engine: _FakeEngine,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    t = _real_save_tab(qtbot, conn, rc, engine, tmp_path, monkeypatch)
+    img = QImage(10, 10, QImage.Format.Format_RGB32)
+    img.fill(QColor("red"))
+    t._auto_save_cb.setChecked(False)
+    t._record_completed_image(img, "SSDV")
+    assert not list(tmp_path.rglob("*.png"))
+    row = conn.execute("SELECT file_path FROM sstv_log ORDER BY id DESC LIMIT 1").fetchone()
+    assert row[0] is None  # still logged, without a file
+    t._auto_save_cb.setChecked(True)
+    t._record_completed_image(img, "SSDV")
+    assert len(list(tmp_path.rglob("*.png"))) == 1
+    row = conn.execute("SELECT file_path FROM sstv_log ORDER BY id DESC LIMIT 1").fetchone()
+    assert row[0] and Path(row[0]).exists()
