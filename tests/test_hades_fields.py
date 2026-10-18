@@ -28,6 +28,10 @@ EXT_POWER = bytes.fromhex(
     "03000000000000000000000000d80fefffa3ffd80f13004d00d40f8cfbf8e7d40f74040b12"
 )
 EPHEMERIS_EMPTY = bytes.fromhex("cc" + "00" * 61)
+# Real type 15 (voice) packet number 6 and a type 6 (sun sensors) packet from SatNOGS Network.
+VOICE_PACKET = bytes.fromhex(
+    "fc06063961ef0f0bed608463214a01f43be22360d3e1635d0dacd89a559a0db7645bae33db"
+)
 # From the 2026-10-18 recording: the type 3 frame at 01:20:22Z.
 RECORDED_STATUS = bytes.fromhex("3c20fd130020fd13000100ff0a00050000010000ffffffffffff00")
 
@@ -153,8 +157,9 @@ def test_game_deploy_extended_and_empty_ephemeris() -> None:
 def test_undecodable_payloads_give_none() -> None:
     assert hf.decode_payload(b"") is None
     assert hf.decode_payload(POWER_SUN[:20]) is None  # shorter than the type needs
-    assert hf.decode_payload(bytes([0xFC]) + bytes(38)) is None  # type 15: not decoded
-    assert hf.decode_payload(bytes([0x6C]) + bytes(132)) is None  # type 6: not decoded
+    assert hf.decode_payload(bytes([0xFC]) + bytes(20)) is None  # a voice packet is 37 bytes
+    assert hf.decode_payload(bytes([0x6C]) + bytes(100)) is None  # a sun-sensor packet is 133
+    assert hf.decode_payload(bytes([0x7C]) + bytes(100)) is None  # type 7: not on UNNE-1B
     assert hf.telemetry_frame(b"\x6c", 98205) is None
 
 
@@ -178,3 +183,26 @@ def test_packed_helper_swaps_byte_pairs_msb_first() -> None:
     assert hf._packed(data, 0, 5, 12, 12) == 0xD12
     assert hf._packed(data, 0, 5, 24, 12) == 0x345
     assert hf._packed(data, 0, 5, 36, 4) == 0x6
+
+
+def test_voice_packet_fields() -> None:
+    v = _values(VOICE_PACKET)
+    assert v["number"] == 6 and abs(v["time"] - 2.4) < 1e-9  # type: ignore[operator]
+    from comms.voice.hades_voice import MASK
+
+    assert (
+        v["data"]
+        == bytes(a ^ b for a, b in zip(VOICE_PACKET[2:37], MASK, strict=True)).hex(" ").upper()
+    )
+    assert hf.telemetry_frame(VOICE_PACKET, 98205).telemetry_id == "15"  # type: ignore[union-attr]
+
+
+def test_sun_sensor_words_are_high_byte_first() -> None:
+    packet = bytearray([0x6C]) + bytearray(132)
+    packet[1:3] = bytes([0x00, 0x80])  # td0 = 128 s
+    packet[13:15] = bytes([0xFF, 0xEF])  # sensor 0, sample 0
+    packet[109 + 2 * 3 : 109 + 2 * 3 + 2] = bytes([0x01, 0x02])  # sensor 3 peak
+    packet[125 + 2] = 92  # sensor 2 error code
+    v = _values(bytes(packet))
+    assert v["td0"] == 128 and v["v0_0"] == 0xFFEF and v["p3"] == 0x0102 and v["err2"] == 92
+    assert len(v) == 6 + 48 + 8 + 8

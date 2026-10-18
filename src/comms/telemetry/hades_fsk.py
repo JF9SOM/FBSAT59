@@ -69,6 +69,17 @@ HADES_R_LENGTHS: dict[int, int] = {
     15: 41,
 }
 UNNE1B_ADDRESS = 12
+# UNNE-1 (address 12) sends type 15 as a CODEC2 voice packet of 39 bytes (packet number + 35 data
+# bytes + CRC) instead of HADES-R's 41-byte experiment packet; the lengths of the 325 voice frames
+# SatNOGS Network collected from UNNE-1B (37-byte payloads) fix it.
+UNNE1_LENGTHS: dict[int, int] = {**HADES_R_LENGTHS, 15: 39}
+
+
+def packet_lengths(address: int | None) -> dict[int, int]:
+    """Length table (CRC included) for the satellite with this source ``address``."""
+    return UNNE1_LENGTHS if address == UNNE1B_ADDRESS else HADES_R_LENGTHS
+
+
 # Types whose bytes 1-4 were observed to be the little-endian uptime counter in seconds.
 _COUNTER_TYPES = frozenset({1, 3, 4, 5, 10})
 
@@ -86,6 +97,8 @@ TYPE_NAMES: dict[int, str] = {
     14: "Time series",
     15: "BBS data",
 }
+# UNNE-1 reuses type 15 for CODEC2 voice (the HADES-SA document lists it as BBS data).
+_UNNE1_TYPE_NAMES: dict[int, str] = {**TYPE_NAMES, 15: "Voice"}
 
 _TARGET_RATE = 50_000.0  # decimated rate is the first integer division at or above this
 _STFT_N = 512
@@ -120,7 +133,8 @@ class HadesFrame(NamedTuple):
     @property
     def type_name(self) -> str:
         """Short name of the packet type ("Status", "Type 10", ...)."""
-        return TYPE_NAMES.get(self.packet_type, f"Type {self.packet_type}")
+        names = _UNNE1_TYPE_NAMES if self.address == UNNE1B_ADDRESS else TYPE_NAMES
+        return names.get(self.packet_type, f"Type {self.packet_type}")
 
     @property
     def uptime_s(self) -> int | None:
@@ -198,7 +212,7 @@ def parse_packet(
     if not raw:
         return None
     packet_type = raw[0] >> 4
-    length = HADES_R_LENGTHS.get(packet_type)
+    length = packet_lengths(raw[0] & 15 if address is None else address).get(packet_type)
     if length is None or len(raw) < length:
         return None
     if address is not None and (raw[0] & 15) != address:

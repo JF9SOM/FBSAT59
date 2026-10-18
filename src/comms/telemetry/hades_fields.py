@@ -13,11 +13,16 @@ agree with the SatNOGS decoder ``hadesr.ksy``.
 A packet's *payload* is what :mod:`comms.telemetry.hades_fsk` hands out: the type/address byte,
 the data, no CRC, already descrambled.
 
-Not decoded (shown as raw numbers or not at all): the units of the deployment packet (type 8)
-and of the extended power packet (type 9) are not stated in the document, the TLE elements and
-position of the ephemeris packet (type 12) have no stated encoding (UNNE-1B has only sent zeros
-so far), and the sun-sensor packet (type 6) and packet 15 are left out: the latter carries
-other data on UNNE-1B than the document says.
+Shown as raw numbers: the units of the deployment packet (type 8) and of the extended power
+packet (type 9) are not stated in the document, nor are the encoding of the TLE elements and
+position of the ephemeris packet (type 12) (UNNE-1B has only sent zeros so far) or the meaning of
+the sun-sensor values (type 6; its 16-bit words are sent high byte first, the other packets send
+them low byte first).
+
+Packet type 15 is not the "SMART-IR experiment" of the document on UNNE-1B: it is a CODEC2 700C
+voice message, in the same form as HADES-SA's type 11 (a packet number, then 35 bytes XOR-masked
+with the fixed mask of comms.voice.hades_voice; 37 packets, about 15 s). Decoded from the 325
+frames SatNOGS collected, it is a Spanish reading of the first chapter of Don Quixote.
 """
 
 from __future__ import annotations
@@ -314,6 +319,64 @@ _TEMP_STATS = TypeDef(
     ),
 )
 
+
+def _word_be(offset: int) -> Callable[[bytes], Value]:
+    """A 16-bit value sent high byte first (the sun-sensor packet)."""
+    return lambda d: int.from_bytes(d[offset : offset + 2], "big")
+
+
+_SUN_SENSORS = 8
+_SUN_SAMPLES = 6
+_SUN = TypeDef(
+    6,
+    "Sun sensors",
+    133,
+    (
+        *(
+            _count(f"td{i}", f"Seconds before sample {i}", _word_be(1 + 2 * i), "s")
+            for i in range(_SUN_SAMPLES)
+        ),
+        *(
+            _count(
+                f"v{sensor}_{i}",
+                f"Sensor {sensor} light, sample {i} (raw)",
+                _word_be(13 + 2 * (_SUN_SAMPLES * sensor + i)),
+            )
+            for sensor in range(_SUN_SENSORS)
+            for i in range(_SUN_SAMPLES)
+        ),
+        *(
+            _count(f"p{sensor}", f"Sensor {sensor} peak (raw)", _word_be(109 + 2 * sensor))
+            for sensor in range(_SUN_SENSORS)
+        ),
+        *(
+            _count(f"err{sensor}", f"Sensor {sensor} error code (0: ok)", _byte(125 + sensor))
+            for sensor in range(_SUN_SENSORS)
+        ),
+    ),
+)
+
+_VOICE_PACKET_S = 0.4  # ten CODEC2 700C frames of 40 ms
+
+
+def _voice_data(d: bytes) -> Value:
+    """The 35 voice bytes with the satellite's fixed XOR mask taken off (the CODEC2 data)."""
+    from comms.voice.hades_voice import unmask
+
+    return unmask(bytes(d[2:37])).hex(" ").upper()
+
+
+_VOICE = TypeDef(
+    15,
+    "Voice",
+    37,
+    (
+        _count("number", "Packet number in the message", _byte(1)),
+        _field("time", "Start within the message", "s", lambda d: _u(d, 1, 1) * _VOICE_PACKET_S),
+        _field("data", "CODEC2 700C data (mask removed)", "", _voice_data),
+    ),
+)
+
 _DEPLOY_WORDS = ("v1oc", "v1", "i1", "i1pk", "r1", "v2oc", "v2", "r2")
 _DEPLOY_BYTES = ("state_begin", "state_end", "state_now", "enable", "counter", "tmp")
 _DEPLOY = TypeDef(
@@ -444,11 +507,13 @@ TYPES: dict[int, TypeDef] = {
         _STATUS,
         _POWER_STATS,
         _TEMP_STATS,
+        _SUN,
         _DEPLOY,
         _EXT_POWER,
         _GAME,
         _EPHEMERIS,
         _TIME_SERIES,
+        _VOICE,
     )
 }
 

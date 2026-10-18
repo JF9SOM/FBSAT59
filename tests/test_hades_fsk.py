@@ -101,6 +101,8 @@ def test_uptime_counter_property() -> None:
     assert frame.uptime_s == 0x0013FD7A
     other = hf.HadesFrame(0, 0.0, 0.0, 0.0, 15, 12, bytes([0xFC] + [0] * 38), False)
     assert other.uptime_s is None
+    assert other.type_name == "Voice"  # UNNE-1 sends voice as type 15
+    assert hf.HadesFrame(0, 0.0, 0.0, 0.0, 15, 13, b"", False).type_name == "BBS data"
 
 
 def test_frames_from_bits_finds_packet_with_a_sync_bit_error() -> None:
@@ -192,3 +194,22 @@ def test_stream_high_sample_rate_uses_cascade() -> None:
     frames = hf.decode_iq(iq, 600_000.0)
     assert [f.payload for f in frames] == REAL_PAYLOADS[:1]
     assert abs(frames[0].carrier_hz + 7_500.0) < 1_500
+
+
+def test_unne1_voice_packet_has_39_bytes_hades_r_41() -> None:
+    voice = bytes([0xFC, 7]) + bytes(range(35))
+    packet = hf.build_packet(voice)
+    assert len(packet) == 39
+    assert hf.parse_packet(packet) == (voice, False)  # address 12 (UNNE-1)
+    assert hf.parse_packet(packet, address=None) == (voice, False)
+    assert hf.packet_lengths(12)[15] == 39 and hf.packet_lengths(13)[15] == 41
+    assert hf.packet_lengths(None)[15] == 41
+    other = bytes([0xFD, 7]) + bytes(range(37))  # HADES-R (address 13): 41 bytes
+    assert hf.parse_packet(hf.build_packet(other), address=13) == (other, False)
+    assert hf.parse_packet(hf.build_packet(other), address=None) == (other, False)
+
+
+def test_stream_decodes_a_voice_packet() -> None:
+    voice = bytes([0xFC, 3]) + bytes(range(100, 135))
+    iq = _stream([voice], [-6_000.0])
+    assert [f.payload for f in hf.decode_iq(iq, 250_000.0)] == [voice]

@@ -362,11 +362,13 @@ def test_decoded_fields_tab_has_a_sub_tab_per_packet_type(
         "3",
         "4",
         "5",
+        "6",
         "8",
         "9",
         "10",
         "12",
         "14",
+        "15",
     ]
     assert tab._decode_id_tabs.tabText(0) == "1  Power"
     assert _decode_text(tab, "1", "vbat1") == "—"  # waiting for a frame
@@ -430,14 +432,27 @@ def test_loaded_frames_fill_the_tab_again(qtbot: QtBot, conn: sqlite3.Connection
     assert _decode_text(tab, "1", "vbat1") == "4,130 mV"
 
 
+def test_a_voice_packet_has_its_own_sub_tab(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    tab = _hades_tab(qtbot, conn)
+    tab._rebuild_decode_tabs(UNNE1B)
+    assert "15" in tab._decode_tables and "6" in tab._decode_tables
+    tab._hades_norad = UNNE1B
+    tab._on_hades_frame(
+        HadesFrame(0, 0.0, 0.0, 9.0, 15, 12, bytes([0xFC, 9]) + bytes(35), False), 0.0
+    )
+    assert tab._table.item(0, 3).text().startswith("[Voice]")
+    assert _decode_text(tab, "15", "number") == "9"
+    assert _decode_text(tab, "15", "time") == "3.6 s"
+
+
 def test_a_packet_type_without_a_definition_is_shown_but_not_decoded(
     qtbot: QtBot, conn: sqlite3.Connection
 ) -> None:
     tab = _hades_tab(qtbot, conn)
     tab._rebuild_decode_tabs(UNNE1B)
     tab._hades_norad = UNNE1B
-    odd = HadesFrame(0, 0.0, 0.0, 9.0, 15, 12, bytes([0xFC]) + bytes(38), False)
+    odd = HadesFrame(0, 0.0, 0.0, 9.0, 7, 12, bytes([0x7C]) + bytes(100), False)
     tab._on_hades_frame(odd, 0.0)
     assert tab._table.rowCount() == 1
-    assert tab._table.item(0, 3).text().startswith("[BBS data]")
+    assert tab._table.item(0, 3).text().startswith("[Type 7]")
     tab._table.selectRow(0)  # nothing to decode: must not raise
