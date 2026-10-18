@@ -501,8 +501,20 @@ def test_transponder_band() -> None:
     assert transponder_band(None) is None
 
 
-def test_only_sstv_tab_splits_by_band() -> None:
-    assert [k for k, c in COMMS_TAB_CONFIG.items() if c.split_by_band] == ["sstv"]
+def test_only_sstv_and_aprs_tabs_split_by_band() -> None:
+    assert [k for k, c in COMMS_TAB_CONFIG.items() if c.split_by_band] == ["aprs", "sstv"]
+
+
+_ISS_APRS = [
+    {"description": "Mode V APRS", "downlink_low": 145_825_000, "alive": True},
+    {"description": "Mode U APRS Digi", "downlink_low": 437_550_000, "alive": False},
+    {"description": "Mode U APRS test", "downlink_low": 437_825_000, "alive": True},
+]
+
+
+def test_pick_aprs_u_skips_inactive_entry() -> None:
+    assert pick_transponder_for_band(_ISS_APRS, is_aprs_transmitter, "U") == 2
+    assert pick_transponder_for_band(_ISS_APRS, is_aprs_transmitter, "V") == 0
 
 
 def test_pick_u_prefers_robot36() -> None:

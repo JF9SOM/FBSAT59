@@ -235,8 +235,9 @@ def pick_transponder_for_band(
 ) -> int | None:
     """Like pick_preferred_transponder_index(), but restricted to *band*.
 
-    Within the band a "Robot" (Robot-36) entry is preferred, since that is the
-    SSTV format the ISS event uses; otherwise the usual community-first rule.
+    Alive entries are preferred over inactive ones. Within the band a "Robot"
+    (Robot-36) entry is preferred, since that is the SSTV format the ISS event
+    uses; otherwise the usual community-first rule.
     ``band=None`` (plain/VHF entry) restricts to VHF only when the satellite
     actually has a UHF match too, so unsplit satellites behave as before.
     """
@@ -250,6 +251,9 @@ def pick_transponder_for_band(
         ]
     if not matches:
         return None
+    # Radio Control also lists inactive entries; prefer the alive ones.
+    alive = [i for i in matches if transmitters[i].get("alive", True)]
+    matches = alive or matches
     robot = [i for i in matches if "ROBOT" in (transmitters[i].get("description") or "").upper()]
     if robot:
         return robot[0]
@@ -287,7 +291,10 @@ COMMS_TAB_CONFIG: dict[str, CommsTabConfig] = {
         show_input_source=True, freq_source="radio_control", matcher=is_ft4_transmitter
     ),
     "aprs": CommsTabConfig(
-        show_input_source=True, freq_source="radio_control", matcher=is_aprs_transmitter
+        show_input_source=True,
+        freq_source="radio_control",
+        matcher=is_aprs_transmitter,
+        split_by_band=True,
     ),
     "sstv": CommsTabConfig(
         show_input_source=True,
