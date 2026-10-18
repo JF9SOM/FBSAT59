@@ -424,7 +424,22 @@ class _Ft8LibBindings:
                             dt_sec=float(status.time),
                         )
                     )
-        return results
+        return _dedupe_messages(results)
+
+
+def _dedupe_messages(messages: list[Ft4Message]) -> list[Ft4Message]:
+    """Collapse repeated decodes of the same text from one period.
+
+    Neighbouring sync candidates of a single signal each decode to the same
+    message; keep the strongest one, in order of first appearance (as the
+    ft8_lib demo decoder does).
+    """
+    best: dict[str, Ft4Message] = {}
+    for msg in messages:
+        kept = best.get(msg.text)
+        if kept is None or msg.snr_db > kept.snr_db:
+            best[msg.text] = msg
+    return list(best.values())
 
 
 # ---------------------------------------------------------------------------

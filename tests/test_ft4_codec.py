@@ -10,7 +10,14 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from comms.ft4.codec import FT4_PERIOD, SAMPLE_RATE, Ft4Codec, compute_waterfall
+from comms.ft4.codec import (
+    FT4_PERIOD,
+    SAMPLE_RATE,
+    Ft4Codec,
+    Ft4Message,
+    _dedupe_messages,
+    compute_waterfall,
+)
 
 _codec = Ft4Codec()
 
@@ -59,3 +66,17 @@ def test_compute_waterfall_shape() -> None:
     assert num_blocks == len(buf) // 576
     assert mag.shape == (num_blocks, 2 * 2 * num_bins)  # time_osr=2, freq_osr=2
     assert bin_hz > 0
+
+
+def test_dedupe_messages_keeps_strongest_of_same_text() -> None:
+    """Neighbouring candidates of one signal collapse to the strongest decode."""
+    msgs = [
+        Ft4Message(text="BD2LA JA1CPA +01", freq_hz=1865.0, snr_db=7.0, dt_sec=0.0),
+        Ft4Message(text="BA7KIB JF1PTU -09", freq_hz=2000.0, snr_db=8.0, dt_sec=0.0),
+        Ft4Message(text="BD2LA JA1CPA +01", freq_hz=1865.0, snr_db=8.0, dt_sec=0.0),
+        Ft4Message(text="BA7KIB JF1PTU -09", freq_hz=2010.0, snr_db=6.0, dt_sec=0.0),
+    ]
+    out = _dedupe_messages(msgs)
+    assert [m.text for m in out] == ["BD2LA JA1CPA +01", "BA7KIB JF1PTU -09"]
+    assert [m.snr_db for m in out] == [8.0, 8.0]
+    assert out[1].freq_hz == 2000.0
