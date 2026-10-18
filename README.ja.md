@@ -451,14 +451,14 @@ GPL-2.0-or-later（GPredict互換）
 - [SATNOGS](https://satnogs.org/) — Libre Space Foundation
 - [SoapySDR](https://github.com/pothosware/SoapySDR) — Pothosware
 - [Direwolf](https://github.com/wb2osz/direwolf) — WB2OSZ（John Langner）— AX.25 / APRS / KISS ソフトウェアTNC
-- [ft8_lib](https://github.com/kgoba/ft8_lib) — Kārlis Goba YL3JG — FT4/FT8コーデック（C ライブラリ、GPL-2.0）
+- [ft8_lib](https://github.com/kgoba/ft8_lib) — Kārlis Goba YL3JG — FT4/FT8コーデック（C ライブラリ、MIT）
 - [pySSTV](https://github.com/dholm/pySSTV) — Dominik Heidler DL2DH — SSTVエンコーダー（テストでのみ使用。デコーダーの検証用に基準のSSTV音声を生成）
 - [gr-satellites](https://github.com/daniestevez/gr-satellites) — Daniel Estévez EA4GPZ — アマチュア衛星テレメトリーデコーダー
 - [SatDump](https://github.com/SatDump/SatDump) — SatDump コントリビューター — 気象衛星画像デコーダー（METEOR LRPT/HRPT・NOAA HRPT・Metop HRPT）。FBSAT59 は SatDump をサブプロセスとして起動します。同梱はしていません。
 - [WSJT-X](https://wsjt.sourceforge.io/) — Joe Taylor K1JT および WSJT-X 開発チーム —
   Q65 プロトコル、libq65 ソースコード（`lib/qra/q65/`）、および `src/comms/q65/encoder.py` に実装した
-  GF(64) 符号化アルゴリズムは WSJT-X（GPL-2.0）から派生しています。
-  FBSAT59 は WSJT-X 本体を同梱せず、libq65 のみ WSJT-X ソースツリーから別途コンパイルしています。
+  GF(64) 符号化アルゴリズムは WSJT-X（GPL-3.0）から派生しています。
+  FBSAT59 は WSJT-X 本体を同梱せず、libq65 と libft4wsjt（オプションの FT4 拡張デコーダー）を WSJT-X ソースツリーから別途コンパイルしています。
 - [deepcw-engine](https://github.com/e04/deepcw-engine) — e04 — CRNN + CTC アーキテクチャによるAIベースのCW（モールス符号）デコードモデル。FBSAT59 は事前学習済みの `model.onnx` を GitHub からダウンロードし、onnxruntime で推論を実行します。モデルは同梱していません。
 - [Codec 2](https://github.com/drowe67/codec2) — David Rowe VK5DGR — オープンソースの低ビットレート音声コーデック（LGPL-2.1）。Digital Voice タブは、HADES-SA の音声メッセージ（CODEC2 700C）を libcodec2 でデコードします。ライブラリは実行時に読み込み（リンクはしません）、[conda-forge](https://conda-forge.org/) のビルド済みライブラリをライセンス本文とともに同梱しています。
 - [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — SYSTRAN（MIT）。[CTranslate2](https://github.com/OpenNMT/CTranslate2)（OpenNMT、MIT）と [Whisper](https://github.com/openai/whisper)（OpenAI、MIT）を利用 — Digital Voice タブで受信した音声メッセージの音声認識に使用。Whisper のモデルは初回使用時に Hugging Face からダウンロードします（同梱していません）。

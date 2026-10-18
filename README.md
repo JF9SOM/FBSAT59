@@ -465,14 +465,14 @@ GPL-2.0-or-later (compatible with GPredict)
 - [SATNOGS](https://satnogs.org/) — Libre Space Foundation
 - [SoapySDR](https://github.com/pothosware/SoapySDR) — Pothosware
 - [Direwolf](https://github.com/wb2osz/direwolf) — WB2OSZ (John Langner) — AX.25 / APRS / KISS software TNC
-- [ft8_lib](https://github.com/kgoba/ft8_lib) — Kārlis Goba YL3JG — FT4/FT8 codec (C library, GPL-2.0)
+- [ft8_lib](https://github.com/kgoba/ft8_lib) — Kārlis Goba YL3JG — FT4/FT8 codec (C library, MIT)
 - [pySSTV](https://github.com/dholm/pySSTV) — Dominik Heidler DL2DH — SSTV encoder (used only in the tests, to generate reference SSTV audio for the decoder)
 - [gr-satellites](https://github.com/daniestevez/gr-satellites) — Daniel Estévez EA4GPZ — amateur satellite telemetry decoders
 - [SatDump](https://github.com/SatDump/SatDump) — the SatDump Contributors — weather satellite imagery decoder (METEOR LRPT/HRPT, NOAA HRPT, Metop HRPT). FBSAT59 launches SatDump as a subprocess; it is not bundled.
 - [WSJT-X](https://wsjt.sourceforge.io/) — Joe Taylor K1JT and the WSJT-X Development Group —
   The Q65 protocol, libq65 source code (`lib/qra/q65/`), and the GF(64) encoding algorithm implemented
-  in `src/comms/q65/encoder.py` are derived from WSJT-X (GPL-2.0).
-  FBSAT59 does not bundle WSJT-X; libq65 is compiled separately from the WSJT-X source tree.
+  in `src/comms/q65/encoder.py` are derived from WSJT-X (GPL-3.0).
+  FBSAT59 does not bundle WSJT-X; libq65 and libft4wsjt (the optional FT4 enhanced decoder) are compiled separately from the WSJT-X source tree.
 - [deepcw-engine](https://github.com/e04/deepcw-engine) — e04 — CRNN + CTC model for AI-based CW (Morse code) decoding from audio spectrograms. FBSAT59 downloads the pre-trained `model.onnx` from GitHub and runs inference via onnxruntime; the model is not bundled.
 - [Codec 2](https://github.com/drowe67/codec2) — David Rowe VK5DGR — open-source low bit rate speech codec (LGPL-2.1). The Digital Voice tab decodes HADES-SA voice messages (CODEC2 700C) with libcodec2, loaded at run time (never linked); pre-built libraries from [conda-forge](https://conda-forge.org/) are bundled with the license text.
 - [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — SYSTRAN (MIT), built on [CTranslate2](https://github.com/OpenNMT/CTranslate2) — OpenNMT (MIT) — and [Whisper](https://github.com/openai/whisper) — OpenAI (MIT): speech recognition of received voice messages in the Digital Voice tab. The Whisper model is downloaded on first use (Hugging Face); it is not bundled.
