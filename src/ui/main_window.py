@@ -3387,7 +3387,8 @@ class MainWindow(QMainWindow):
         Doppler) as if the user had picked it. "Others" leaves the current
         selection untouched.
 
-        Never overrides the current selection when this tab can use it, nor
+        Never overrides the current satellite when this tab can use it (the FT4
+        tab only moves Radio Control to that satellite's FT4 transponder), nor
         while Autotrack is tracking a satellite: opening the SSTV/SSDV tab
         during a JAMX01 pass used to switch to the remembered ASRTU-1
         (2026-10-09), retargeting the Doppler correction of the pass being
@@ -3406,6 +3407,8 @@ class MainWindow(QMainWindow):
                 and data != SatDetailPanel.INPUT_SOURCE_OTHERS
                 and mode_detection.split_input_value(int(data))[0] == self._selected_norad
             ):
+                if tab_key == "ft4":
+                    self._select_ft4_transponder_if_needed()
                 return
         norad = self._detail_panel._last_input_source.get(tab_key)
         if (
@@ -3417,6 +3420,29 @@ class MainWindow(QMainWindow):
         if self._detail_panel._input_source_combo.findData(norad) < 0:
             return
         self._on_comms_satellite_requested(tab_key, norad)
+
+    def _select_ft4_transponder_if_needed(self) -> None:
+        """Switch Radio Control to the satellite's FT4 transponder.
+
+        Called when the FT4 tab is shown while the selected satellite is
+        already one the tab can use: without this the previously selected
+        general (e.g. SATNOGS SSB) transponder stayed active and the operator
+        had to re-pick the satellite in Quick Comms to reach the community FT4
+        calling frequency. No-op if the current transponder is already FT4 or
+        the satellite has no FT4 entry.
+        """
+        current = self._current_transmitter
+        if current is not None and mode_detection.is_ft4_transmitter(current):
+            return
+        transmitters = self._radio_control._transmitters
+        if not transmitters:
+            return
+        best_idx = mode_detection.pick_preferred_transponder_index(
+            transmitters, mode_detection.is_ft4_transmitter
+        )
+        if best_idx is None:
+            return
+        self._radio_control.set_transmitters(transmitters, default_index=best_idx)
 
     def _load_comms_input_sources(self) -> dict[str, int]:
         """Load the per-tab Quick Comms Input choices saved in app_settings."""
