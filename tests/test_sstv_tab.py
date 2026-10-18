@@ -187,7 +187,7 @@ def test_switching_mode_selects_the_matching_subtab(tab: SstvTab) -> None:
 # ------------------------------------------------------------ satellite combo
 
 
-def test_satellite_combo_lists_sstv_and_always_listed_satellites(
+def test_satellite_combo_lists_the_satellites_of_each_mode(
     qtbot: QtBot,
     conn: sqlite3.Connection,
     rc: _FakeRadioControl,
@@ -200,17 +200,34 @@ def test_satellite_combo_lists_sstv_and_always_listed_satellites(
     )
     conn.executemany(
         "INSERT INTO satellites VALUES (?, ?, 0)",
-        [(25544, "ISS"), (68446, "HADES-SA"), (61781, "ASRTU-1"), (1, "OTHER")],
+        [(25544, "ISS"), (68446, "HADES-SA"), (61781, "ASRTU-1"), (7, "LAPAN"), (1, "OTHER")],
     )
-    conn.execute("INSERT INTO transmitters VALUES (25544, 'SSTV Mode U', 'FM', NULL, 1)")
-    conn.execute("INSERT INTO transmitters VALUES (1, 'Beacon', 'CW', NULL, 1)")
+    conn.executemany(
+        "INSERT INTO transmitters VALUES (?, ?, 'FM', NULL, 1)",
+        [
+            (25544, "SSTV Mode U"),
+            (7, "AX.25 SSDV 1200"),
+            (68446, "SSDV 800 baud"),
+            (61781, "SSDV BPSK"),
+            (1, "Beacon"),
+        ],
+    )
     t = SstvTab(conn, rc, aprs_engine=engine)
     qtbot.addWidget(t)
-    norads = {t._sat_combo.itemData(i) for i in range(t._sat_combo.count())}
-    assert norads == {25544, 68446, 61781}
+
+    def listed() -> set[int]:
+        return {t._sat_combo.itemData(i) for i in range(t._sat_combo.count())}
+
+    assert listed() == {25544}
+    t._mode_combo.setCurrentText("SSDV (AX.25)")
+    assert listed() == {7}
+    t._mode_combo.setCurrentText("SSDV (CCSDS BPSK 9k6)")
+    assert listed() == {61781}
+    t._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
+    assert listed() == {68446}
     with qtbot.waitSignal(t.satellite_selected) as blocker:
-        t._sat_combo.setCurrentIndex(t._sat_combo.findData(61781))
-    assert blocker.args == [61781]
+        t._mode_combo.setCurrentText("SSTV")
+    assert blocker.args == [25544]
 
 
 # ------------------------------------------------------------------ baud

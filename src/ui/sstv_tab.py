@@ -294,6 +294,7 @@ class SstvTab(QWidget):
             _("Satellites that send SSTV / SSDV. Selecting one also selects it in Radio Control.")
         )
         self._populate_sat_combo()
+        QTimer.singleShot(0, self._announce_restored_satellite)
         self._sat_combo.currentIndexChanged.connect(self._on_sat_changed)
         top.addWidget(self._sat_combo)
         self._sat_search_btn = QPushButton("🔍")
@@ -637,21 +638,49 @@ class SstvTab(QWidget):
     # Satellite combo
     # ------------------------------------------------------------------ #
 
-    def _populate_sat_combo(self) -> None:
-        """Fill the satellite combo: satellites with an SSTV / SSDV transmitter in the DB.
+    def _mode_norads(self, mode: str) -> set[int]:
+        """NORAD ids of the satellites that provide *mode*.
 
-        HADES-SA and ASRTU-1 are always listed (when the DB knows them), since their
-        SatNOGS transmitter descriptions do not reliably say SSDV.
+        SSTV / SSDV (AX.25) are found from the transmitter descriptions in the DB; the
+        CCSDS BPSK and 2FSK modes each belong to exactly one satellite (ASRTU-1, HADES-SA).
         """
+        if mode == _MODE_GR_SSDV:
+            return {_GR_SSDV_NORAD}
+        if mode == _MODE_FSK_SSDV:
+            return {_FSK_SSDV_NORAD}
+        if not hasattr(self._conn, "execute"):
+            return set()
+        keyword = "SSTV" if mode == _MODE_SSTV else "SSDV"
+
+        def matches(xpdr: dict[str, Any]) -> bool:
+            desc = str(xpdr.get("description") or "").upper()
+            return keyword in desc or (
+                mode == _MODE_SSTV and str(xpdr.get("mode") or "").upper() == "SSTV"
+            )
+
+        norads: set[int] = set()
+        with contextlib.suppress(Exception):
+            from comms.mode_detection import get_norads_matching
+
+            norads = set(get_norads_matching(self._conn, matches))
+        if mode == _MODE_SSDV:
+            # These two have their own modes
+            norads -= {_GR_SSDV_NORAD, _FSK_SSDV_NORAD}
+        return norads
+
+    def _populate_sat_combo(self, prefer_norad: int = 0) -> None:
+        """Fill the satellite combo with the satellites that provide the current mode.
+
+        The previous pick for this mode (or *prefer_norad*, when it is in the list) is
+        selected silently.
+        """
+        mode = self._mode_combo.currentText()
         self._sat_combo.blockSignals(True)
         self._sat_combo.clear()
         entries: dict[int, str] = {}
-        if hasattr(self._conn, "execute"):
+        norads = self._mode_norads(mode)
+        if norads and hasattr(self._conn, "execute"):
             with contextlib.suppress(Exception):
-                from comms.mode_detection import get_norads_for_tab
-
-                norads = set(get_norads_for_tab(self._conn, "sstv"))
-                norads.update(_ALWAYS_LISTED_NORADS)
                 placeholders = ",".join("?" * len(norads))
                 rows = self._conn.execute(
                     f"SELECT norad_cat_id, name FROM satellites "
@@ -662,23 +691,24 @@ class SstvTab(QWidget):
                     entries[int(row["norad_cat_id"])] = str(row["name"])
         for norad, name in sorted(entries.items(), key=lambda kv: kv[1].upper()):
             self._sat_combo.addItem(f"{name}  ({norad})", userData=norad)
-        self._restore_last_satellite()
+        idx = self._sat_combo.findData(prefer_norad) if prefer_norad else -1
+        if idx < 0:
+            idx = self._sat_combo.findData(self._load_last_satellite(mode))
+        if idx >= 0:
+            self._sat_combo.setCurrentIndex(idx)
         self._sat_combo.blockSignals(False)
 
-    def _restore_last_satellite(self) -> None:
-        """Re-select the satellite picked last time (silently)."""
+    def _load_last_satellite(self, mode: str) -> int:
+        """The satellite picked last time in *mode* (0: none)."""
         if not hasattr(self._conn, "execute"):
-            return
+            return 0
         with contextlib.suppress(Exception):
             row = self._conn.execute(
-                "SELECT value FROM app_settings WHERE key = ?", (_LAST_SAT_KEY,)
+                "SELECT value FROM app_settings WHERE key = ?", (f"{_LAST_SAT_KEY}:{mode}",)
             ).fetchone()
             if row:
-                idx = self._sat_combo.findData(int(row["value"]))
-                if idx >= 0:
-                    self._sat_combo.setCurrentIndex(idx)
-        # MainWindow connects satellite_selected after construction: announce then.
-        QTimer.singleShot(0, self._announce_restored_satellite)
+                return int(row["value"])
+        return 0
 
     def _announce_restored_satellite(self) -> None:
         norad = self._sat_combo.currentData()
@@ -686,14 +716,14 @@ class SstvTab(QWidget):
             self.satellite_selected.emit(int(norad))
 
     def _save_last_satellite(self, norad: int) -> None:
-        """Remember the picked satellite for the next launch."""
+        """Remember the picked satellite of the current mode for the next launch."""
         if not hasattr(self._conn, "execute"):
             return
         with contextlib.suppress(Exception):
             self._conn.execute(
                 "INSERT OR REPLACE INTO app_settings (key, value, updated_at) "
                 "VALUES (?, ?, CURRENT_TIMESTAMP)",
-                (_LAST_SAT_KEY, str(int(norad))),
+                (f"{_LAST_SAT_KEY}:{self._mode_combo.currentText()}", str(int(norad))),
             )
             self._conn.commit()
 
@@ -1349,6 +1379,13 @@ class SstvTab(QWidget):
         self._baud_combo.setEnabled(mode_text == _MODE_SSDV)
         if mode_text == _MODE_SSDV:
             self._load_baud_combo()
+        # Each mode has its own satellites; show them and follow the new pick
+        # (unless the mode change came from selecting that satellite's transmitter)
+        previous = self._sat_combo.currentData()
+        self._populate_sat_combo(prefer_norad=self._norad)
+        now = self._sat_combo.currentData()
+        if now is not None and now != previous and now != self._norad:
+            self._announce_restored_satellite()
         if mode_text == _MODE_SSTV:
             self._view_tabs.setCurrentWidget(self._image_page)
             self._start_decoder()
