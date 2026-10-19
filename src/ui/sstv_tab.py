@@ -87,6 +87,8 @@ _MODE_GR_SSDV = "SSDV (CCSDS BPSK 9k6)"
 # Fourth mode: bare 800 baud 2FSK SSDV (HADES-SA), demodulated by comms.sstv.fsk_ssdv.
 _MODE_FSK_SSDV = "SSDV (2FSK 800bps)"
 _FAST_DECODE_MODES = (_MODE_GR_SSDV, _MODE_FSK_SSDV)
+# SSDV (AX.25): only the G3RUH baud rates have a file decoder (the coherent MSK detector)
+_FAST_AX25_BAUDS = ("4800", "9600")
 _FSK_SSDV_NORAD = 68446  # HADES-SA
 _GR_SSDV_NORAD = 61781  # ASRTU-1 (AO-123)
 # Satellites always offered in the satellite combo: their SSDV downlinks are not (or not
@@ -671,6 +673,7 @@ class SstvTab(QWidget):
                 (AX25_BAUD_SETTING_KEY, self._baud_combo.currentData()),
             )
             self._conn.commit()
+        self._update_decode_speed_visibility(self._mode_combo.currentText())
         self._apply_ssdv_baud()
 
     def _apply_ssdv_baud(self) -> None:
@@ -1551,7 +1554,7 @@ class SstvTab(QWidget):
         it plays and the whole-recording spectrogram lets the user start from any point.
         """
         if (
-            self._mode_combo.currentText() in _FAST_DECODE_MODES
+            self._combo_decode_speed.isVisibleTo(self)
             and self._combo_decode_speed.currentData() == "fast"
         ):
             self._on_fast_decode()
@@ -1570,7 +1573,9 @@ class SstvTab(QWidget):
 
     def _update_decode_speed_visibility(self, mode_text: str) -> None:
         """Show the Speed choice only in the modes that can decode a file at once."""
-        visible = mode_text in _FAST_DECODE_MODES
+        visible = mode_text in _FAST_DECODE_MODES or (
+            mode_text == _MODE_SSDV and self._baud_combo.currentData() in _FAST_AX25_BAUDS
+        )
         self._lbl_decode_speed.setVisible(visible)
         self._combo_decode_speed.setVisible(visible)
 
@@ -1629,6 +1634,12 @@ class SstvTab(QWidget):
             self._ensure_gr_decoder()
             job: Any = GrFileDecoder(path, _GR_SSDV_NORAD, parent=self)
             job.frame_found.connect(self._on_gr_fast_frame)
+        elif self._mode_combo.currentText() == _MODE_SSDV:
+            from comms.aprs.coherent_msk import CoherentMskFileDecoder
+
+            self._ensure_ssdv_decoder()
+            job = CoherentMskFileDecoder(path, int(self._baud_combo.currentData()), parent=self)
+            job.frame_found.connect(self._on_ax25_fast_frame)
         else:
             from comms.sstv.fsk_ssdv import FskSsdvFileDecoder
 
@@ -1654,6 +1665,11 @@ class SstvTab(QWidget):
         """One frame of a gr_satellites fast decode (empty when its bytes were not paired)."""
         if self._fast_job is not None and raw:
             self._on_gr_frame(raw)
+
+    def _on_ax25_fast_frame(self, frame: bytes, _seconds: float) -> None:
+        """One HDLC frame of a coherent MSK fast decode: handled like a live AX.25 frame."""
+        if self._fast_job is not None:
+            self._on_ax25_frame(frame)
 
     def _on_fast_progress(self, fraction: float, frames: int) -> None:
         if self._fast_job is None:

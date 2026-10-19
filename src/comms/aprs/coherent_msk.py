@@ -379,3 +379,75 @@ class CoherentMskSdrDemod(QThread):
                 raise
             for frame in frames:
                 self.frame_received.emit(frame)
+
+
+class CoherentMskFileDecoder(QThread):
+    """Decode a whole I/Q recording file with CoherentMskStream, much faster than real time.
+
+    Usage
+    -----
+    job = CoherentMskFileDecoder(path, baud=4800)
+    job.frame_found.connect(consumer)   # (bytes: HDLC frame without CRC, float: seconds in)
+    job.progress.connect(show)          # (float 0..1, int frames so far)
+    job.decoded.connect(done)           # (float: recording seconds, float: elapsed, int frames)
+    job.failed.connect(error)           # (str)
+    job.start()
+    ...
+    job.cancel()                        # stops early; decoded is then not emitted
+    """
+
+    frame_found: Signal = Signal(bytes, float)
+    progress: Signal = Signal(float, int)
+    decoded: Signal = Signal(float, float, int)
+    failed: Signal = Signal(str)
+
+    _PROGRESS_INTERVAL_S = 0.25
+
+    def __init__(self, path: Any, baud: int, parent: Any = None) -> None:
+        super().__init__(parent)
+        self._path = path
+        self._baud = int(baud)
+        self._cancel = threading.Event()
+
+    def cancel(self) -> None:
+        """Ask the worker to stop at the next block and wait for it."""
+        self._cancel.set()
+        self.wait(5000)
+
+    def run(self) -> None:
+        import time
+
+        from comms.telemetry.iq_wav import WavError, iter_iq_blocks, read_wav_info
+
+        if not _SCIPY_AVAILABLE:
+            self.failed.emit("scipy is not installed")
+            return
+        try:
+            info = read_wav_info(self._path)
+        except (WavError, ValueError) as exc:
+            self.failed.emit(str(exc))
+            return
+        stream = CoherentMskStream(info.sample_rate, self._baud)
+        started = last_report = time.monotonic()
+        frames = 0
+        done = 0
+        try:
+            for block in iter_iq_blocks(self._path, info):
+                if self._cancel.is_set():
+                    return
+                for frame in stream.feed(block):
+                    frames += 1
+                    self.frame_found.emit(frame, done / info.sample_rate)
+                done += len(block)
+                now = time.monotonic()
+                if now - last_report >= self._PROGRESS_INTERVAL_S:
+                    last_report = now
+                    self.progress.emit(done / max(info.frames, 1), frames)
+            for frame in stream.flush():
+                frames += 1
+                self.frame_found.emit(frame, done / info.sample_rate)
+        except OSError as exc:
+            self.failed.emit(str(exc))
+            return
+        self.progress.emit(1.0, frames)
+        self.decoded.emit(info.duration_s, time.monotonic() - started, frames)

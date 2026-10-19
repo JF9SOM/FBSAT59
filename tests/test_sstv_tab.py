@@ -1232,3 +1232,11 @@ def test_building_a_stored_picture_also_shows_its_hex_packets(tab: SstvTab) -> N
     # in packet-number order: the packet id is bytes 7-8 of each packet (hex tokens 7 and 8)
     assert [int(line.split()[8], 16) for line in lines] == [0, 1, 2]
     assert "3" in tab._raw_count_label.text()
+
+
+def test_speed_choice_follows_the_ax25_baud(tab: SstvTab) -> None:
+    """Fast IQ decoding of SSDV (AX.25) exists for the G3RUH bauds (4800 / 9600) only."""
+    tab._mode_combo.setCurrentText("SSDV (AX.25)")
+    for baud, expected in (("1200", False), ("4800", True), ("9600", True)):
+        tab._baud_combo.setCurrentIndex(tab._baud_combo.findData(baud))
+        assert tab._combo_decode_speed.isVisibleTo(tab) is expected

@@ -205,3 +205,31 @@ def test_works_at_other_sdr_sample_rates() -> None:
         got += stream.feed(iq_2m4[i : i + 65536])
     got += stream.flush()
     assert sorted(got) == sorted(payloads)
+
+
+def test_file_decoder_finds_the_frames_of_a_recording(qtbot, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from comms.aprs.coherent_msk import CoherentMskFileDecoder
+    from tests.test_iq_wav_fast_decode import _write_wav
+
+    payloads = _payloads(6)
+    path = tmp_path / "rec.iq.wav"
+    _write_wav(path, _stream(payloads, 4800, ebn0_db=20.0), rate=FS)
+    job = CoherentMskFileDecoder(path, 4800)
+    found: list[bytes] = []
+    job.frame_found.connect(lambda frame, _t: found.append(frame))
+    with qtbot.waitSignal(job.decoded, timeout=60_000) as done:
+        job.start()
+    assert sorted(found) == sorted(payloads)
+    assert done.args[2] == len(payloads)
+    job.wait(3000)
+
+
+def test_file_decoder_reports_a_bad_file(qtbot, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from comms.aprs.coherent_msk import CoherentMskFileDecoder
+
+    bad = tmp_path / "x.wav"
+    bad.write_bytes(b"junk")
+    job = CoherentMskFileDecoder(bad, 4800)
+    with qtbot.waitSignal(job.failed, timeout=10_000):
+        job.start()
+    job.wait(3000)
