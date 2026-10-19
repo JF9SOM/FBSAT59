@@ -203,6 +203,8 @@ datas = [
     (str(ROOT / "locale"), "locale"),
     # Community frequency database
     (str(SRC / "data" / "community_transmitters.json"), "data"),
+    # Telemetry tab: per-satellite field definitions (decoder._formats_dir() looks here)
+    (str(SRC / "data" / "telemetry_formats"), "data/telemetry_formats"),
     # satyaml definitions for satellites gr-satellites' own catalog lacks (Telemetry tab)
     (str(SRC / "data" / "gr_satellites_extra"), "data/gr_satellites_extra"),
     # Offline GeoNames city extract for the APRS Plain view's "near <city>"
