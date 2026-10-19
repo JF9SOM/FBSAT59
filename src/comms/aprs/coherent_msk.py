@@ -70,7 +70,9 @@ _LOWPASS_HZ: dict[int, float] = {4800: 3500.0, 9600: 7000.0}
 # Window (in symbols, each side) of the carrier-phase averager, and the block
 # length (symbols) over which the residual carrier frequency is estimated.
 _PHASE_WINDOW = 12
-_FREQ_BLOCK = 128
+# 512 rather than 128: on a real ARICA-2 pass (2026-10-14) it decodes 42 frames instead of 19
+# and is ~1 dB more sensitive on synthetic frames; the plateau runs to ~1024 (2048 is worse).
+_FREQ_BLOCK = 512
 # Chunk geometry (seconds). The overlap must exceed the longest frame plus its
 # preamble; 1 s covers 1024 bytes at 9600 baud and 512 bytes at 4800 baud. A
 # frame is reported at most one chunk after it ends.
