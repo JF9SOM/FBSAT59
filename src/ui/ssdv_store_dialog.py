@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime
+from typing import Any
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -33,6 +34,19 @@ def format_stamp(iso: str) -> str:
         return datetime.fromisoformat(iso).astimezone().strftime("%Y-%m-%d %H:%M")
     except ValueError:
         return iso
+
+
+class _SortItem(QTableWidgetItem):
+    """A cell that sorts by a key (a number for Image ID / Packets) instead of its text."""
+
+    def __init__(self, text: str, key: Any) -> None:
+        super().__init__(text)
+        self._key = key
+
+    def __lt__(self, other: QTableWidgetItem) -> bool:
+        if isinstance(other, _SortItem):
+            return bool(self._key < other._key)
+        return super().__lt__(other)
 
 
 class SsdvStoreDialog(QDialog):
@@ -79,6 +93,9 @@ class SsdvStoreDialog(QDialog):
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.horizontalHeader().setStretchLastSection(True)
+        # Click a column header to sort by it (the list starts newest first, unsorted).
+        self._table.horizontalHeader().setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
+        self._table.setSortingEnabled(True)
         self._table.itemSelectionChanged.connect(self._update_buttons)
         self._table.itemDoubleClicked.connect(lambda _i: self._on_build())
         root.addWidget(self._table, stretch=1)
@@ -96,22 +113,25 @@ class SsdvStoreDialog(QDialog):
         buttons.addWidget(close)
         root.addLayout(buttons)
 
-        self._ids: list[int] = []
         self.refresh()
 
     def refresh(self) -> None:
         """Reload the list from the store."""
         groups = self._store.groups()
-        self._ids = [g.id for g in groups]
+        self._table.setSortingEnabled(False)  # rows must not move while they are filled
         self._table.setRowCount(len(groups))
         for row, g in enumerate(groups):
+            keys = (None, None, g.image_id, g.width * g.height, g.packets, g.updated_at)
             for col, text in enumerate(self._cells(g)):
-                item = QTableWidgetItem(text)
+                item = _SortItem(text, text if keys[col] is None else keys[col])
+                if col == 0:
+                    item.setData(Qt.ItemDataRole.UserRole, g.id)
                 if col in (2, 4):
                     item.setTextAlignment(
                         Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
                     )
                 self._table.setItem(row, col, item)
+        self._table.setSortingEnabled(True)  # re-applies the column the user chose
         self._table.resizeColumnsToContents()
         self._update_buttons()
 
@@ -129,7 +149,10 @@ class SsdvStoreDialog(QDialog):
 
     def _selected_id(self) -> int | None:
         rows = self._table.selectionModel().selectedRows()
-        return self._ids[rows[0].row()] if rows else None
+        if not rows:
+            return None
+        item = self._table.item(rows[0].row(), 0)
+        return int(item.data(Qt.ItemDataRole.UserRole)) if item is not None else None
 
     def _update_buttons(self) -> None:
         have = self._selected_id() is not None

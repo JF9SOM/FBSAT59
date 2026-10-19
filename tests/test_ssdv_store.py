@@ -208,3 +208,24 @@ def test_merge_is_skipped_without_app_settings() -> None:
     conn = sqlite3.connect(":memory:")
     store = SsdvPacketStore(conn)
     assert store.merge_split_groups() == 0
+
+
+def test_store_dialog_sorts_by_image_id_and_keeps_the_selection(qtbot) -> None:  # type: ignore[no-untyped-def]
+    from PySide6.QtCore import Qt
+
+    from ui.ssdv_store_dialog import SsdvStoreDialog
+
+    store = SsdvPacketStore(sqlite3.connect(":memory:"))
+    ids = {}
+    for image in (9, 100, 48):  # 100 sorts before 9 as text, not as a number
+        ids[image] = store.add(1, KIND_STANDARD, real_packet(image=image, pid=0)).group_id
+    dialog = SsdvStoreDialog(store, lambda n: str(n))
+    qtbot.addWidget(dialog)
+    dialog._table.sortItems(2, Qt.SortOrder.AscendingOrder)
+    column = [dialog._table.item(r, 2).text() for r in range(3)]
+    assert column == ["9", "48", "100"]
+    dialog._table.selectRow(2)
+    assert dialog._selected_id() == ids[100]
+    dialog._table.sortItems(2, Qt.SortOrder.DescendingOrder)
+    dialog._table.selectRow(0)
+    assert dialog._selected_id() == ids[100]
