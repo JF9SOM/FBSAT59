@@ -599,7 +599,7 @@ def test_disconnecting_the_sdr_stops_the_audio_feed(tab: SstvTab, rc: _FakeRadio
 
 
 def test_the_recording_buttons_are_named_for_what_they_open(tab: SstvTab) -> None:
-    assert tab._decode_file_btn.text() == "📂 Decode MP3 Recording…"
+    assert tab._decode_file_btn.text() == "📂 Decode MP3…"
     assert tab._decode_iq_btn.text() == "📂 Decode IQ Recording…"
 
 

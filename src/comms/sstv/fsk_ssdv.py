@@ -370,3 +370,76 @@ class FskSsdvSdrDemod(QThread):
                 raise
             for packet in packets:
                 self.packet_received.emit(packet.data, packet.verified)
+
+
+class FskSsdvFileDecoder(QThread):
+    """Decode a whole I/Q recording file with FskSsdvStream, much faster than real time.
+
+    Usage
+    -----
+    job = FskSsdvFileDecoder(path)
+    job.progress.connect(show)          # (float 0..1, int packets so far)
+    job.packet_found.connect(consumer)  # (bytes: 256-byte packet, bool: CRC valid)
+    job.decoded.connect(done)           # (float: recording seconds, float: elapsed, int packets)
+    job.failed.connect(error)           # (str)
+    job.start()
+    ...
+    job.cancel()                        # stops early; decoded is then not emitted
+    """
+
+    packet_found: Signal = Signal(bytes, bool)
+    progress: Signal = Signal(float, int)
+    decoded: Signal = Signal(float, float, int)
+    failed: Signal = Signal(str)
+
+    _PROGRESS_INTERVAL_S = 0.25
+
+    def __init__(self, path: Any, parent: Any = None) -> None:
+        super().__init__(parent)
+        self._path = path
+        self._cancel = threading.Event()
+
+    def cancel(self) -> None:
+        """Ask the worker to stop at the next block and wait for it."""
+        self._cancel.set()
+        self.wait(5000)
+
+    def run(self) -> None:
+        import time
+
+        from comms.telemetry.iq_wav import WavError, iter_iq_blocks, read_wav_info
+
+        if not _SCIPY_AVAILABLE:
+            self.failed.emit("scipy is not installed")
+            return
+        try:
+            info = read_wav_info(self._path)
+        except (WavError, ValueError) as exc:
+            self.failed.emit(str(exc))
+            return
+        stream = FskSsdvStream(info.sample_rate)
+        started = last_report = time.monotonic()
+        packets = 0
+        done = 0
+        try:
+            for block in iter_iq_blocks(self._path, info):
+                if self._cancel.is_set():
+                    return
+                for packet in stream.feed(block):
+                    packets += 1
+                    self.packet_found.emit(packet.data, packet.verified)
+                done += len(block)
+                now = time.monotonic()
+                if now - last_report >= self._PROGRESS_INTERVAL_S:
+                    last_report = now
+                    self.progress.emit(done / max(info.frames, 1), packets)
+            # Silence completes the last window, so a packet at the very end is not lost.
+            silence = np.zeros(int(8 * info.sample_rate), dtype=np.complex64)
+            for packet in stream.feed(silence):
+                packets += 1
+                self.packet_found.emit(packet.data, packet.verified)
+        except OSError as exc:
+            self.failed.emit(str(exc))
+            return
+        self.progress.emit(1.0, packets)
+        self.decoded.emit(info.duration_s, time.monotonic() - started, packets)

@@ -5768,12 +5768,12 @@ msgid ""
 msgstr "すべてのモードのSSDVパケットが保存されるため、複数回のパスで受信した分から1枚の画像を作れます。"
 
 #: src/ui/sstv_tab.py:510
-msgid "🖼 Open Image…"
-msgstr "🖼 画像を開く…"
+msgid "🖼 Open…"
+msgstr "🖼 開く…"
 
 #: src/ui/sstv_tab.py:516
-msgid "📂 Decode MP3 Recording…"
-msgstr "📂 MP3録音デコード…"
+msgid "📂 Decode MP3…"
+msgstr "📂 MP3デコード…"
 
 #: src/ui/sstv_tab.py:521 src/ui/sstv_tab.py:1556
 msgid "soundfile not installed — pip install soundfile"

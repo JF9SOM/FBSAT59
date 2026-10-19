@@ -124,3 +124,31 @@ def test_noise_only_gives_no_packets() -> None:
     rng = np.random.default_rng(5)
     iq = (rng.standard_normal(12 * FS) + 1j * rng.standard_normal(12 * FS)).astype(np.complex64)
     assert _run(iq) == []
+
+
+def test_file_decoder_finds_the_packets_of_a_recording(qtbot, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from comms.sstv.fsk_ssdv import FskSsdvFileDecoder
+    from tests.test_iq_wav_fast_decode import _write_wav
+
+    packets = [hades_packet(i) for i in range(3)]
+    path = tmp_path / "rec.iq.wav"
+    _write_wav(path, fsk_iq(packets), rate=FS)
+    job = FskSsdvFileDecoder(path)
+    found: list[bytes] = []
+    job.packet_found.connect(lambda data, _ok: found.append(data))
+    with qtbot.waitSignal(job.decoded, timeout=60_000) as done:
+        job.start()
+    assert found == packets
+    assert done.args[2] == 3
+    job.wait(3000)
+
+
+def test_file_decoder_reports_a_bad_file(qtbot, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from comms.sstv.fsk_ssdv import FskSsdvFileDecoder
+
+    bad = tmp_path / "x.wav"
+    bad.write_bytes(b"junk")
+    job = FskSsdvFileDecoder(bad)
+    with qtbot.waitSignal(job.failed, timeout=10_000):
+        job.start()
+    job.wait(3000)

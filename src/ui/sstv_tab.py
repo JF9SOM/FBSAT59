@@ -86,6 +86,7 @@ _MODE_SSDV = "SSDV (AX.25)"
 _MODE_GR_SSDV = "SSDV (CCSDS BPSK 9k6)"
 # Fourth mode: bare 800 baud 2FSK SSDV (HADES-SA), demodulated by comms.sstv.fsk_ssdv.
 _MODE_FSK_SSDV = "SSDV (2FSK 800bps)"
+_FAST_DECODE_MODES = (_MODE_GR_SSDV, _MODE_FSK_SSDV)
 _FSK_SSDV_NORAD = 68446  # HADES-SA
 _GR_SSDV_NORAD = 61781  # ASRTU-1 (AO-123)
 # Satellites always offered in the satellite combo: their SSDV downlinks are not (or not
@@ -93,6 +94,8 @@ _GR_SSDV_NORAD = 61781  # ASRTU-1 (AO-123)
 _ALWAYS_LISTED_NORADS = (_FSK_SSDV_NORAD, _GR_SSDV_NORAD)
 # app_settings key of the satellite picked last (restored at the next launch)
 _LAST_SAT_KEY = "sstv_last_satellite"
+# app_settings key of the Speed choice (Normal / Fast) for IQ recordings
+_DECODE_SPEED_KEY = "sstv_decode_speed"
 
 
 logger = logging.getLogger(__name__)
@@ -277,6 +280,7 @@ class SstvTab(QWidget):
         )
         self._norad: int = 0  # satellite of the selected transmitter (0: unknown)
         self._csv_worker: _CsvExtractWorker | None = None
+        self._fast_job: Any | None = None  # IQ-file decode worker (Speed "Fast")
         self._active_group: dict[str, int] = {}  # packet kind -> group the decoder holds
         self._audio_active: bool = False  # soundcard RX subscribed via AudioDeviceManager
         self._audio_device: int | None = None  # device used for the active subscription
@@ -507,13 +511,13 @@ class SstvTab(QWidget):
         self._stored_btn.clicked.connect(self._on_stored_images)
         bottom.addWidget(self._stored_btn)
 
-        self._open_image_btn = QPushButton(_("🖼 Open Image…"))
+        self._open_image_btn = QPushButton(_("🖼 Open…"))
         self._open_image_btn.setFixedHeight(30)
         self._open_image_btn.setStyleSheet(_bottom_btn_style)
         self._open_image_btn.clicked.connect(self._on_open_image)
         bottom.addWidget(self._open_image_btn)
 
-        self._decode_file_btn = QPushButton(_("📂 Decode MP3 Recording…"))
+        self._decode_file_btn = QPushButton(_("📂 Decode MP3…"))
         self._decode_file_btn.setEnabled(SOUNDFILE_AVAILABLE)
         self._decode_file_btn.setFixedHeight(30)
         self._decode_file_btn.setStyleSheet(_bottom_btn_style)
@@ -534,6 +538,26 @@ class SstvTab(QWidget):
         )
         self._decode_iq_btn.clicked.connect(self._on_decode_iq)
         bottom.addWidget(self._decode_iq_btn)
+
+        # SSDV (CCSDS BPSK 9k6) / (2FSK) only: decode the IQ recording at once instead of
+        # playing it in real time.
+        self._lbl_decode_speed = QLabel(_("Speed:"))
+        self._combo_decode_speed = QComboBox()
+        self._combo_decode_speed.addItem(_("Normal (real time)"), "normal")
+        self._combo_decode_speed.addItem(_("Fast"), "fast")
+        self._combo_decode_speed.setFixedHeight(30)
+        self._combo_decode_speed.setToolTip(
+            _(
+                "Normal: play the recording through the SDR like a live reception and\n"
+                "decode it as it goes (pick the start on the spectrogram).\n"
+                "Fast: decode the whole recording file at once, in seconds."
+            )
+        )
+        self._load_decode_speed()
+        self._combo_decode_speed.currentIndexChanged.connect(self._on_decode_speed_changed)
+        bottom.addWidget(self._lbl_decode_speed)
+        bottom.addWidget(self._combo_decode_speed)
+        self._update_decode_speed_visibility(self._mode_combo.currentText())
 
         self._import_csv_btn = QPushButton(_("📥 Import CSV…"))
         self._import_csv_btn.setFixedHeight(30)
@@ -1318,6 +1342,7 @@ class SstvTab(QWidget):
 
     def _stop_ssdv(self) -> None:
         """Leave SSDV mode: disconnect from the AX.25 pipeline, decode what is buffered."""
+        self._stop_fast_decode()
         self._active_group.clear()  # flush() empties the decoders below
         self._stop_gr_ssdv_reception()
         self._stop_fsk_ssdv_reception()
@@ -1493,6 +1518,7 @@ class SstvTab(QWidget):
         """Switch between the SSTV, SSDV (AX.25), SSDV (CCSDS BPSK 9k6) and SSDV (2FSK) decoders."""
         self._stop_decoder()
         self._stop_ssdv()
+        self._update_decode_speed_visibility(mode_text)
         # The baud only matters for SSDV (AX.25); grey it out for every other mode.
         self._baud_combo.setEnabled(mode_text == _MODE_SSDV)
         if mode_text == _MODE_SSDV:
@@ -1524,6 +1550,12 @@ class SstvTab(QWidget):
         tab picks it up like a live SDR (see _on_sdr_connected), so the picture is decoded as
         it plays and the whole-recording spectrogram lets the user start from any point.
         """
+        if (
+            self._mode_combo.currentText() in _FAST_DECODE_MODES
+            and self._combo_decode_speed.currentData() == "fast"
+        ):
+            self._on_fast_decode()
+            return
         sdr_ctrl = getattr(self._radio_control, "_sdr_control", None)
         if sdr_ctrl is None or not hasattr(sdr_ctrl, "open_recording"):
             QMessageBox.information(
@@ -1533,6 +1565,142 @@ class SstvTab(QWidget):
             )
             return
         sdr_ctrl.open_recording()
+
+    # -- Fast decode of an IQ recording file (CCSDS BPSK 9k6 / 2FSK, no SDR pipeline) ---- #
+
+    def _update_decode_speed_visibility(self, mode_text: str) -> None:
+        """Show the Speed choice only in the modes that can decode a file at once."""
+        visible = mode_text in _FAST_DECODE_MODES
+        self._lbl_decode_speed.setVisible(visible)
+        self._combo_decode_speed.setVisible(visible)
+
+    def _load_decode_speed(self) -> None:
+        """Restore the Speed choice (Normal / Fast) from app_settings."""
+        if not hasattr(self._conn, "execute"):
+            return
+        with contextlib.suppress(Exception):
+            row = self._conn.execute(
+                "SELECT value FROM app_settings WHERE key = ?", (_DECODE_SPEED_KEY,)
+            ).fetchone()
+            if row:
+                idx = self._combo_decode_speed.findData(str(row["value"]))
+                if idx >= 0:
+                    self._combo_decode_speed.setCurrentIndex(idx)
+
+    def _on_decode_speed_changed(self, _index: int) -> None:
+        if not hasattr(self._conn, "execute"):
+            return
+        with contextlib.suppress(Exception):
+            self._conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value, updated_at) "
+                "VALUES (?, ?, CURRENT_TIMESTAMP)",
+                (_DECODE_SPEED_KEY, str(self._combo_decode_speed.currentData())),
+            )
+            self._conn.commit()
+
+    def _on_fast_decode(self) -> None:
+        """Ask for an IQ recording and decode all of it at once."""
+        if self._fast_job is not None:
+            return
+        start_dir = Path.home() / "iq_recordings"
+        path, _filter = QFileDialog.getOpenFileName(
+            self,
+            _("Decode IQ Recording"),
+            str(start_dir if start_dir.is_dir() else Path.home()),
+            "IQ WAV (*.wav);;All files (*)",
+        )
+        if path:
+            self._start_fast_decode(Path(path))
+
+    def _start_fast_decode(self, path: Path) -> bool:
+        """Start decoding *path* in a worker thread; False (reason on screen) if it cannot."""
+        if self._mode_combo.currentText() == _MODE_GR_SSDV:
+            from comms.telemetry.gr_satellites_backend import detect_gr_satellites
+            from comms.telemetry.gr_satellites_file import GrFileDecoder
+
+            if self._gr_backend is not None and self._gr_backend.is_running:
+                self._status_label.setText("⚠ " + _("Stop the running decoder first."))
+                return False
+            if not detect_gr_satellites():
+                self._status_label.setText(
+                    "⚠ " + _("gr-satellites is not installed — see Help > gr-satellites…")
+                )
+                return False
+            self._ensure_gr_decoder()
+            job: Any = GrFileDecoder(path, _GR_SSDV_NORAD, parent=self)
+            job.frame_found.connect(self._on_gr_fast_frame)
+        else:
+            from comms.sstv.fsk_ssdv import FskSsdvFileDecoder
+
+            if self._fsk_demod is not None:
+                self._status_label.setText("⚠ " + _("Stop the running decoder first."))
+                return False
+            self._ensure_ssdv_decoder()
+            job = FskSsdvFileDecoder(path, parent=self)
+            job.packet_found.connect(self._on_fsk_packet)
+        job.progress.connect(self._on_fast_progress)
+        job.decoded.connect(self._on_fast_done)
+        job.failed.connect(self._on_fast_failed)
+        self._fast_job = job
+        self._ssdv_frames = 0
+        self._ssdv_packets = 0
+        self._decode_iq_btn.setEnabled(False)
+        self._combo_decode_speed.setEnabled(False)
+        self._status_label.setText(_("Fast decode: starting…"))
+        job.start()
+        return True
+
+    def _on_gr_fast_frame(self, _text: str, _seconds: float, raw: bytes) -> None:
+        """One frame of a gr_satellites fast decode (empty when its bytes were not paired)."""
+        if self._fast_job is not None and raw:
+            self._on_gr_frame(raw)
+
+    def _on_fast_progress(self, fraction: float, frames: int) -> None:
+        if self._fast_job is None:
+            return
+        if fraction < 0:
+            self._status_label.setText(_("Fast decode: running — {n} frame(s)").format(n=frames))
+            return
+        self._status_label.setText(
+            _("Fast decode: {pct}% — {n} frame(s)").format(pct=int(fraction * 100), n=frames)
+        )
+
+    def _on_fast_done(self, duration_s: float, elapsed_s: float, frames: int) -> None:
+        self._finish_fast_decode()
+        for decoder in (self._gr_ssdv_decoder, self._ssdv_decoder):
+            if decoder is not None:
+                decoder.flush()  # decode what is buffered
+        self._active_group.clear()
+        self._status_label.setText(
+            _("Decoded {dur} s of recording in {el} s — {n} frame(s)").format(
+                dur=round(duration_s), el=round(elapsed_s, 1), n=frames
+            )
+        )
+
+    def _on_fast_failed(self, message: str) -> None:
+        self._finish_fast_decode()
+        self._status_label.setText("⚠ " + _("Could not decode the recording: ") + message)
+
+    def _finish_fast_decode(self) -> None:
+        """The worker is done (or gone): release it and restore the buttons."""
+        job = self._fast_job
+        self._fast_job = None
+        if job is not None:
+            for signal in (job.progress, job.decoded, job.failed):
+                with contextlib.suppress(Exception):
+                    signal.disconnect()
+            with contextlib.suppress(Exception):
+                (job.frame_found if hasattr(job, "frame_found") else job.packet_found).disconnect()
+            job.wait(3000)
+        self._decode_iq_btn.setEnabled(True)
+        self._combo_decode_speed.setEnabled(True)
+
+    def _stop_fast_decode(self) -> None:
+        """Cancel a running fast decode (mode change, close)."""
+        if self._fast_job is None:
+            return
+        self._fast_job.cancel()
+        self._finish_fast_decode()
 
     def _on_decode_file(self) -> None:
         """Batch-decode an SSTV image from a previously recorded MP3/WAV file."""
