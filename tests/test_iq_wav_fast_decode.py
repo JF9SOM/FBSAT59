@@ -312,3 +312,53 @@ def test_fast_decode_hands_voice_packets_on_with_their_file_time(
     tab.voice_packet_ready.connect(lambda n, d, t: got.append((n, round(t))))
     _run_fast(qtbot, tab, path)
     assert got == [(0, 2), (1, 12)]
+
+
+# ---- AX.25 mode: coherent MSK fast decode (4800 / 9600 baud) ---------------------------- #
+
+
+def _ax25_frame(text: str) -> bytes:
+    def addr(call: str, last: bool) -> bytes:
+        return bytes(ord(c) << 1 for c in call.ljust(6)) + bytes([0x60 | (1 if last else 0)])
+
+    return addr("APRS", False) + addr("JF9SOM", True) + b"\x03\xf0" + text.encode()
+
+
+def _ax25_tab(qtbot: QtBot, conn: sqlite3.Connection, baud: str) -> TelemetryTab:
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab._combo_mode.setCurrentIndex(tab._combo_mode.findText(telemetry_tab_mod._MODE_AFSK))
+    tab._baud_combo.setCurrentIndex(tab._baud_combo.findData(baud))
+    return tab
+
+
+def test_speed_choice_follows_the_ax25_baud(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    tab = _ax25_tab(qtbot, conn, "1200")
+    tab.show()
+    assert not tab._combo_decode_speed.isVisible()  # no file decoder for 1200 baud
+    for baud in ("4800", "9600"):
+        tab._baud_combo.setCurrentIndex(tab._baud_combo.findData(baud))
+        assert tab._combo_decode_speed.isVisible()
+
+
+def test_ax25_fast_decode_adds_frames_with_their_time_in_the_recording(
+    qtbot: QtBot, conn: sqlite3.Connection, tmp_path: Path
+) -> None:
+    from tests.test_coherent_msk import FS, _stream
+
+    texts = [f"hello {i}" for i in range(4)]
+    frames = [_ax25_frame(t) for t in texts]
+    path = tmp_path / "98205_UNNE-1B_20261018T012021Z.iq.wav"
+    _write_wav(path, _stream(frames, 4800, ebn0_db=20.0, gap_s=2.5), rate=FS)
+    tab = _ax25_tab(qtbot, conn, "4800")
+    _run_fast(qtbot, tab, path)
+    assert tab._table.rowCount() == 4
+    assert "4 frame(s)" in tab._lbl_status.text()
+    start = datetime.datetime(2026, 10, 18, 1, 20, 21, tzinfo=datetime.UTC)
+    times = [
+        datetime.datetime.fromisoformat(r[0])
+        for r in conn.execute("SELECT received_at FROM telemetry_log ORDER BY id")
+    ]
+    gaps = [(b - a).total_seconds() for a, b in zip(times, times[1:], strict=False)]
+    assert all(2.5 < g < 3.5 for g in gaps)  # the real spacing of the frames, not the wall clock
+    assert 2.0 < (times[0] - start).total_seconds() < 4.0

@@ -280,6 +280,8 @@ class CoherentMskStream:
         self._buf = np.zeros(0, dtype=np.complex64)
         self._buf_start = 0  # absolute sample index of _buf[0]
         self._recent: dict[bytes, float] = {}  # frame -> absolute time (s)
+        # time (s from the first sample) of each frame the last feed()/flush() returned
+        self.last_frame_times: list[float] = []
 
     def reset(self) -> None:
         self._buf = np.zeros(0, dtype=np.complex64)
@@ -290,6 +292,7 @@ class CoherentMskStream:
         """Add I/Q samples; return newly decoded (de-duplicated) frames."""
         self._buf = np.concatenate([self._buf, np.asarray(iq, dtype=np.complex64)])
         out: list[bytes] = []
+        self.last_frame_times = []
         while len(self._buf) >= self._chunk:
             out.extend(self._decode_buffer())
             drop = len(self._buf) - self._overlap
@@ -299,6 +302,7 @@ class CoherentMskStream:
 
     def flush(self) -> list[bytes]:
         """Decode whatever is buffered (end of stream / tests)."""
+        self.last_frame_times = []
         out = self._decode_buffer() if len(self._buf) >= 2048 else []
         self._buf = np.zeros(0, dtype=np.complex64)
         return out
@@ -316,6 +320,7 @@ class CoherentMskStream:
                 continue
             self._recent[frame] = t_abs
             fresh.append(frame)
+            self.last_frame_times.append(t_abs)
         # forget frames older than two chunks
         horizon = t0 - 2 * _CHUNK_S
         for key in [k for k, v in self._recent.items() if v < horizon]:
@@ -435,17 +440,17 @@ class CoherentMskFileDecoder(QThread):
             for block in iter_iq_blocks(self._path, info):
                 if self._cancel.is_set():
                     return
-                for frame in stream.feed(block):
+                for frame, when in zip(stream.feed(block), stream.last_frame_times, strict=True):
                     frames += 1
-                    self.frame_found.emit(frame, done / info.sample_rate)
+                    self.frame_found.emit(frame, when)
                 done += len(block)
                 now = time.monotonic()
                 if now - last_report >= self._PROGRESS_INTERVAL_S:
                     last_report = now
                     self.progress.emit(done / max(info.frames, 1), frames)
-            for frame in stream.flush():
+            for frame, when in zip(stream.flush(), stream.last_frame_times, strict=True):
                 frames += 1
-                self.frame_found.emit(frame, done / info.sample_rate)
+                self.frame_found.emit(frame, when)
         except OSError as exc:
             self.failed.emit(str(exc))
             return

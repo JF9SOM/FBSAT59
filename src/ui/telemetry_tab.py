@@ -127,6 +127,8 @@ _MODE_HADES = "HADES FSK"
 _PENDING_START_TIMEOUT_S = 30.0
 # app_settings key for the "Speed:" choice of Decode IQ Recording in HADES FSK mode.
 _DECODE_SPEED_KEY = "telemetry_decode_speed"
+# AX.25 bauds with a file decoder (the coherent MSK detector); 1200 baud has none
+_FAST_AX25_BAUDS = ("4800", "9600")
 
 # Owner tag for the shared AprsEngine singleton (see comms.aprs.engine).
 # The APRS tab shares the same engine under its own "aprs" tag so closing
@@ -432,6 +434,8 @@ class TelemetryTab(QWidget):
         self._gr_fast_when: datetime.datetime | None = None
         self._fast_start: datetime.datetime = datetime.datetime.now(datetime.UTC)
         self._fast_time_known = False
+        # time of the frame a coherent MSK fast decode is adding (exact, unlike _gr_fast_when)
+        self._fast_frame_when: datetime.datetime | None = None
 
         # CW TLM mode: the CW Decoder tab feeding this one (attach_cw_tab()) and the
         # satellite whose frames are being collected while it runs.
@@ -858,7 +862,7 @@ class TelemetryTab(QWidget):
         once instead.
         """
         if (
-            self._current_mode() in (_MODE_HADES, _MODE_GR)
+            self._combo_decode_speed.isVisibleTo(self)
             and self._combo_decode_speed.currentData() == "fast"
         ):
             self._on_fast_decode()
@@ -1303,8 +1307,7 @@ class TelemetryTab(QWidget):
         self._btn_cw_sat_search.setVisible(is_cw)
         self._combo_hades_sat.setVisible(is_hades)
         self._btn_hades_sat_search.setVisible(is_hades)
-        self._lbl_decode_speed.setVisible(is_hades or is_gr)
-        self._combo_decode_speed.setVisible(is_hades or is_gr)
+        self._update_decode_speed_visibility()
         self._stop_fast_decode()
         # Baud and the backend log are Direwolf / gr-satellites matters; CW TLM has
         # neither (its text is in the CW Decoder tab) and HADES FSK has a fixed baud and
@@ -1410,6 +1413,19 @@ class TelemetryTab(QWidget):
     def _current_mode(self) -> str:
         return self._combo_mode.currentText()
 
+    def _update_decode_speed_visibility(self) -> None:
+        """Show the Speed choice where a recording can be decoded at once.
+
+        HADES FSK and gr-satellites always; AX.25 only at the G3RUH bauds (4800 / 9600),
+        which the coherent MSK detector decodes (there is no file decoder for 1200 baud).
+        """
+        mode = self._current_mode()
+        visible = mode in (_MODE_GR, _MODE_HADES) or (
+            mode == _MODE_AFSK and self._baud_combo.currentData() in _FAST_AX25_BAUDS
+        )
+        self._lbl_decode_speed.setVisible(visible)
+        self._combo_decode_speed.setVisible(visible)
+
     # ------------------------------------------------------------------ #
     # AX.25 baud mode (shared with the APRS tab)
     # ------------------------------------------------------------------ #
@@ -1439,6 +1455,7 @@ class TelemetryTab(QWidget):
                 (_BAUD_SETTING_KEY, mode),
             )
             self._conn.commit()
+        self._update_decode_speed_visibility()
         self._apply_baud_change()
 
     def _on_backend_log_clicked(self) -> None:
@@ -2167,6 +2184,8 @@ class TelemetryTab(QWidget):
         """Start decoding *path* in a worker thread; False (reason on screen) if it cannot."""
         if self._current_mode() == _MODE_GR:
             return self._start_gr_fast_decode(path)
+        if self._current_mode() == _MODE_AFSK:
+            return self._start_ax25_fast_decode(path)
         if self._fast_job is not None or self._hades_demod is not None:
             self._set_error("⚠ " + _("Stop the running decoder first."))
             return False
@@ -2230,6 +2249,41 @@ class TelemetryTab(QWidget):
         self._lbl_status.setStyleSheet("color: #27ae60;")
         job.start()
         return True
+
+    def _start_ax25_fast_decode(self, path: Path) -> bool:
+        """Decode *path* with the coherent MSK detector at once (AX.25, 4800 / 9600 baud)."""
+        if self._fast_job is not None or self._engine.is_running:
+            self._set_error("⚠ " + _("Stop the running decoder first."))
+            return False
+        from comms.aprs.coherent_msk import CoherentMskFileDecoder
+        from sdr.file_device import parse_start_time_from_filename
+
+        start = parse_start_time_from_filename(path.name)
+        self._fast_time_known = start is not None
+        self._fast_start = start or datetime.datetime.now(datetime.UTC)
+        job = CoherentMskFileDecoder(path, int(self._current_modem()), parent=self)
+        job.frame_found.connect(self._on_ax25_fast_frame)
+        job.progress.connect(self._on_fast_progress)
+        job.decoded.connect(self._on_fast_done)
+        job.failed.connect(self._on_fast_failed)
+        self._fast_job = job
+        self._btn_start.setEnabled(False)
+        self._btn_stop.setEnabled(True)
+        self._btn_decode_iq.setEnabled(False)
+        self._lbl_status.setText(_("Fast decode: starting…"))
+        self._lbl_status.setStyleSheet("color: #27ae60;")
+        job.start()
+        return True
+
+    def _on_ax25_fast_frame(self, raw: bytes, seconds: float) -> None:
+        """One frame of a coherent MSK fast decode, with its time in the recording."""
+        if self._fast_job is None:
+            return
+        self._fast_frame_when = self._fast_start + datetime.timedelta(seconds=float(seconds))
+        try:
+            self._on_ax25_frame(raw)
+        finally:
+            self._fast_frame_when = None
 
     def _on_gr_fast_frame(self, text: str, seconds: float, raw: bytes) -> None:
         """One frame of a fast decode: add it with its estimated time.
@@ -2762,6 +2816,9 @@ class TelemetryTab(QWidget):
         """
         if self._import_time is not None:
             return self._import_time, True
+        if self._fast_frame_when is not None:
+            # a frame of a coherent MSK fast decode: its position in the recording is exact
+            return self._fast_frame_when, self._fast_time_known
         if self._gr_fast_when is not None:
             # estimated from the output's timing; the recording's own start must be known
             return self._gr_fast_when, self._fast_time_known
