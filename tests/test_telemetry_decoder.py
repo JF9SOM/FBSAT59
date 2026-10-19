@@ -206,3 +206,87 @@ def test_umka1_defs_have_one_sub_tab_per_record() -> None:
     defs = get_telemetry_id_defs(57172)
     assert defs is not None
     assert list(defs) == ["beacon_uhf", "telemetry_ps"]
+
+
+# Real Lobachevsky (NORAD 67284) frames from the IQ recording of 2026-10-19 (decoded by
+# gr-satellites' GEOSCAN framing, 72 bytes each). The layout matches SatNOGS' geoscan16u
+# decoder; the values were checked for physical plausibility (orbit radius, speed,
+# quaternion norm, satellite time against the reception time).
+_LOB = {
+    "GNSS-42": (
+        "12984635bd42c710d151a10100000f6699cab55a71c9efde8b4aa25ea1c54bc4a1435c83aec5f0"
+        "40883ee7b76dbd6586bbbe0ac763bf0000010000006717933ee2d1243ebbac713f"
+    ),
+    "GNSS-46": (
+        "12984635bd46870000004850d56a79d275ffaecd9b00f9f8fbfb4ee47200060df2ff3e6aeeff48"
+        "50d56a79d275ffaecd9b00f9f8fbfb4ee47200060df2ff3e6aeeffc30024dcc900"
+    ),
+    "EPS": (
+        "12982d29bd52c50001234008811b0017250212063e104b1043107fb558003a88ff0f7f7f7f7f7f"
+        "7f7f7f7f7f7f7f7f00000000000000000000000000000000000000000000000000"
+    ),
+    "BEACON": (
+        "848a82869e9c60a4a67066a600e103f001027301c601be301b0707f70f3a881a0102e501c80133"
+        "301b7f7f7f7f3a88c500000000000000000c1e30f6029590d2d989010015000000"
+    ),
+}
+
+
+def _lob(kind: str) -> dict[str, object]:
+    tf = decode_telemetry("", bytes.fromhex(_LOB[kind]), 67284)
+    assert tf.telemetry_id == kind
+    return {f.name: f for f in tf.fields}
+
+
+def test_lobachevsky_frame_types_are_listed_for_the_decoded_fields_tabs() -> None:
+    defs = get_telemetry_id_defs(67284)
+    assert defs is not None
+    assert set(defs) == {"BEACON", "EPS", "GNSS-42", "GNSS-43", "GNSS-46"}
+
+
+def test_lobachevsky_gnss_42_is_a_plausible_state_vector() -> None:
+    import math
+
+    f = _lob("GNSS-42")
+    assert f["posix_time"].unit == "2026-10-19 01:40:18.247 UTC"  # type: ignore[attr-defined]
+    pos = [f[f"coord_{a}"].scaled_value for a in "xyz"]  # type: ignore[attr-defined]
+    assert math.hypot(*pos) == __import__("pytest").approx(6.874e6, rel=1e-3)
+    q = [f[f"q{i}"].scaled_value for i in range(4)]  # type: ignore[attr-defined]
+    assert math.hypot(*q) == __import__("pytest").approx(1.0, abs=1e-3)
+
+
+def test_lobachevsky_gnss_46_has_a_record_number_time_and_scaled_state() -> None:
+    import math
+
+    f = _lob("GNSS-46")
+    assert f["num"].raw_value == 135  # type: ignore[attr-defined]
+    assert f["a_time"].unit == "2026-10-18 23:03:36 UTC"  # type: ignore[attr-defined]
+    pos = [f[f"a_x_{a}"].scaled_value for a in "xyz"]  # type: ignore[attr-defined]
+    vel = [f[f"a_x_v{a}"].scaled_value for a in "xyz"]  # type: ignore[attr-defined]
+    assert 6.8e6 < math.hypot(*pos) < 6.9e6  # an orbit radius, in metres (0.1 m units)
+    assert 7.5 < math.hypot(*vel) / 1000 < 7.9  # an orbital speed in km/s
+
+
+def test_lobachevsky_eps_beacon_values() -> None:
+    f = _lob("EPS")
+    assert [f[f"cell{i}_voltage"].scaled_value for i in (1, 2, 3)] == [4158, 4171, 4163]  # type: ignore[attr-defined]
+    assert f["int_devices_mask"].raw_value == 0x0FFF  # type: ignore[attr-defined]
+    assert f["ext_timekeeper"].raw_value == 1  # type: ignore[attr-defined]
+    assert f["base_eps_mod"].raw_value == 2 and f["base_self_addr"].raw_value == 10  # type: ignore[attr-defined]
+    assert f["temp_eps_battery"].raw_value == 127  # type: ignore[attr-defined]
+
+
+def test_lobachevsky_ax25_beacon_values() -> None:
+    f = _lob("BEACON")
+    assert f["pid"].raw_value == 0xF0  # type: ignore[attr-defined]
+    assert f["eps1_consumption_current"].raw_value == 371  # type: ignore[attr-defined]
+    assert f["eps1_cell_voltage_full"].raw_value == 12478  # type: ignore[attr-defined]
+    assert f["eps1_battery_temp"].raw_value == 27  # type: ignore[attr-defined]
+    assert f["eps1_boot_count"].raw_value == 282  # type: ignore[attr-defined]
+    assert f["comm_rssi"].raw_value == -107  # type: ignore[attr-defined]
+
+
+def test_lobachevsky_unknown_system_stays_raw() -> None:
+    raw = bytes.fromhex("12982d25bd4a1a01") + bytes(64)  # system 0xBD25 is not defined
+    tf = decode_telemetry("", raw, 67284)
+    assert tf.telemetry_id is None and not tf.has_fields

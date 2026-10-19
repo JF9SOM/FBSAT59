@@ -262,6 +262,39 @@ Lobachevsky）が **約 26 秒**（実時間再生の「通常」は録音の長
   `tests/test_gr_satellites_backend.py` の `TestFrameBlocks`、`tests/test_telemetry_tab.py` の gr 高速デコード系。
   **GUI（実アプリのファイル選択から表示まで）での確認は未実施**。
 
+### Lobachevsky の「全項目デコード結果」（`frame_types` スキーマ、2026-10-19）
+
+SatNOGS の `geoscan16u.ksy`（Geoscan 16U プラットフォーム）と、実録音の 25 フレームの並びが一致したので、
+[`src/data/telemetry_formats/67284.json`](../src/data/telemetry_formats/67284.json) に全項目の定義を作った
+（ksy を写さず、実フレームで確認した並びから自前で書いた）。フレームは 72 バイトで、5 種類:
+
+| id | 判別（`match`） | 内容 |
+|---|---|---|
+| `GNSS-42` | offset 3 に `35bd42` | 衛星時刻(ms)、位置・速度(float, m・m/s)、姿勢クォータニオン、ADCS モード |
+| `GNSS-43` | offset 3 に `35bd43` | 上記＋角速度（実フレーム未確認） |
+| `GNSS-46` | offset 3 に `35bd46` | 記録番号＋時刻つきの位置・速度 2 サンプル（蓄積データの再送。約 23 分間隔） |
+| `EPS` | offset 3 に `29bd` | バッテリー・電流・セル電圧・クーロンカウンタ・各種マスク・温度 |
+| `BEACON` | offset 0 に `848a` | AX.25 形式の BEACON（EPS×2・ADCS・通信系、約 80 項目） |
+
+先頭 3 バイトは `パケット ID(u16 LE) ＋ サイズ(u8)`、続く 2 バイトが system ID（`0xBD35` GNSS/ADCS、`0xBD29` EPS）。
+
+**デコーダーの拡張**（`comms/telemetry/decoder.py`）: 新スキーマ `frame_types`（順に `match` を試し、最初に合った
+定義の `fields` で読む。offset はペイロード先頭から）、型 `int32_le` / `uint64_le` / `unix_time_ms_le`。
+gr-satellites モードの行は、`parse_gr_packet()` が空なら `parse_gr_pdu_dump()` の全フレームを渡す
+（`_decode_gr_text()`）。行を選ぶと保存済みの全文から再デコードする（既存の仕組みのまま）。
+
+**実フレームでの裏付け**: 衛星時刻 01:40:18.247 UTC が受信時刻（高速デコードの推定 01:40:19）と一致、位置の大きさ
+約 6874 km、速度 約 7.6〜7.7 km/s、クォータニオンの大きさ 1.000、EPS のセル電圧 約 4.16 V×3（BEACON の
+バッテリー電圧 12.478 V と整合）、システムマスク `0x883a` が EPS と BEACON で一致。
+**単位が文書に無く推定のもの**: `GNSS-46` の位置は 0.1 m、速度は mm/s（大きさが軌道として合う）。EPS・BEACON の電流
+(mA)・電圧(mV)も推定。ラベルに「(inferred unit)」と付けてある。温度 127 は「無効」と見られる（全チャンネルが 127 の
+フレームがある）。**未対応**: 通信系ヘッダー（AX.25 の呼出符号。ksy は ror(1) で読むが本定義は SSID バイトまで）。
+- **system `0xBD25`（定義なし）**: 2026-10-19 の録音に 1 フレームあり、ksy にも無い。構造は EPS（`0xBD29`）と同じに見え
+  （温度が 28/26/26/24/n・a/34/36/36/35/7/8/24/27 ℃と妥当）、**もう一つの EPS ユニットの可能性**があるが、
+  確証が無いので定義していない（生バイトのまま）。次の録音で出れば同じ並びで追加できる。
+- テスト: `tests/test_telemetry_decoder.py`（実フレーム 4 種の値）、`tests/test_telemetry_tab.py`
+  （PDU ダンプの行が「全項目デコード結果」を埋める）。**GUI（実アプリでの見え方）は未確認**。
+
 ---
 
 ## ゴーストエントリ問題（症状のパターンと発見済みの実例、2026-09-05）

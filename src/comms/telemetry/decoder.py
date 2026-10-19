@@ -138,6 +138,8 @@ _STRUCT_MAP: dict[str, str] = {
     "int16_le": "<h",
     "uint32_be": ">I",
     "uint32_le": "<I",
+    "int32_le": "<i",
+    "uint64_le": "<Q",
     "float32_be": ">f",
     "float32_le": "<f",
     "float64_be": ">d",
@@ -187,6 +189,26 @@ def _decode_field(payload: bytes, field_def: dict[str, Any]) -> TelemetryField |
             label=label,
             raw_value=seconds,
             scaled_value=float(seconds),
+            unit=shown,
+            is_integer=True,
+            is_string=True,
+        )
+
+    if ftype == "unix_time_ms_le":
+        # uint64 milliseconds since 1970-01-01 UTC, little-endian: the satellite's own clock.
+        (millis,) = struct.unpack_from("<Q", chunk)
+        try:
+            shown = (
+                datetime.fromtimestamp(millis / 1000, tz=UTC).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                + " UTC"
+            )
+        except (OverflowError, OSError, ValueError):
+            shown = str(millis)
+        return TelemetryField(
+            name=field_def["name"],
+            label=label,
+            raw_value=millis,
+            scaled_value=float(millis),
             unit=shown,
             is_integer=True,
             is_string=True,
@@ -333,6 +355,12 @@ def get_telemetry_id_defs(norad: int | None) -> dict[str, Any] | None:
     if not defs and fmt.get("match") and fmt.get("fields"):
         defs = {BEACON_ID: {"label": fmt.get("beacon_label", "Beacon"), "fields": fmt["fields"]}}
 
+    # A ``frame_types`` schema (e.g. Lobachevsky): one sub-tab per frame type.
+    frame_types = fmt.get("frame_types")
+    if isinstance(frame_types, list):
+        for ft in frame_types:
+            defs[str(ft["id"])] = {"label": ft.get("label", ft["id"]), "fields": ft["fields"]}
+
     # A ``records`` schema (Sputnix Unified Protocol, e.g. UmKA-1): one sub-tab per record type.
     records = fmt.get("records")
     if isinstance(records, dict) and isinstance(records.get("types"), dict):
@@ -418,6 +446,9 @@ def decode_telemetry(
       (``payload[2]`` in this project's common FM header layout), for
       satellites whose downlink carries several distinct *binary*
       structures (e.g. OrigamiSat-2); or
+    - a ``frame_types`` list (e.g. Lobachevsky): each entry has an ``id``, a ``label``,
+      a ``match`` ({"offset", "hex"}, see _payload_matches()) and its own ``fields``
+      (offsets from the start of the payload); the first entry that matches decodes it;
     - a ``records`` schema (a sequence of typed, length-prefixed records in one
       frame, e.g. UmKA-1's Sputnix Unified Protocol; see _decode_records());
     - a ``csv_messages`` mapping keyed by a text prefix (e.g. "OBC"), for
@@ -437,8 +468,20 @@ def decode_telemetry(
     csv_messages = fmt.get("csv_messages") if fmt else None
     telemetry_ids = fmt.get("telemetry_ids") if fmt else None
     records = fmt.get("records") if fmt else None
+    frame_types = fmt.get("frame_types") if fmt else None
 
-    if isinstance(records, dict):
+    if isinstance(frame_types, list) and frame_types:
+        for ft in frame_types:
+            if not _payload_matches(ft.get("match"), payload):
+                continue
+            telemetry_id = str(ft["id"])
+            telemetry_label = ft.get("label", "")
+            for fd in ft["fields"]:
+                result = _decode_field(payload, fd)
+                if result is not None:
+                    decoded_fields.append(result)
+            break
+    elif isinstance(records, dict):
         record_ids, decoded_fields = _decode_records(records, payload)
         if record_ids:
             telemetry_id = record_ids[0]

@@ -1588,3 +1588,33 @@ def test_decode_speed_choice_is_offered_in_gr_mode(qtbot: QtBot, conn: sqlite3.C
     assert tab._combo_decode_speed.isVisible()
     tab._combo_mode.setCurrentIndex(0)
     assert not tab._combo_decode_speed.isVisible()
+
+
+_LOB_GNSS46 = (
+    "12984635bd46870000004850d56a79d275ffaecd9b00f9f8fbfb4ee47200060df2ff3e6aeeff48"
+    "50d56a79d275ffaecd9b00f9f8fbfb4ee47200060df2ff3e6aeeffc30024dcc900"
+)
+
+
+def _pdu_text(raw: bytes) -> str:
+    lines = ["***** VERBOSE PDU DEBUG PRINT ******", f"pdu length = {len(raw)} bytes"]
+    lines.append("pdu vector contents = ")
+    for i in range(0, len(raw), 16):
+        lines.append(f"{i:04x}: " + " ".join(f"{b:02x}" for b in raw[i : i + 16]) + " ")
+    lines.append("************************************")
+    return "\n".join(lines)
+
+
+def test_gr_pdu_frame_fills_the_decoded_fields_tab(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, _rec = _gr_tab(qtbot, conn, monkeypatch)
+    tab._combo_mode.setCurrentIndex(tab._combo_mode.findText(telemetry_tab_mod._MODE_GR))
+    tab.set_satellite(67284, "Lobachevsky")
+    assert {"BEACON", "EPS", "GNSS-42", "GNSS-43", "GNSS-46"} <= set(tab._decode_tables)
+    tab._on_gr_telemetry(_pdu_text(bytes.fromhex(_LOB_GNSS46)))
+    table = tab._decode_tables["GNSS-46"]
+    row = tab._decode_field_rows["GNSS-46"]["num"]
+    assert table.item(row, 1).text() == "135"
+    time_row = tab._decode_field_rows["GNSS-46"]["a_time"]
+    assert table.item(time_row, 1).text() == "2026-10-18 23:03:36 UTC"

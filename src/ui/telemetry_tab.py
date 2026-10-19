@@ -3016,8 +3016,10 @@ class TelemetryTab(QWidget):
             self._decode_id_tabs.setCurrentWidget(table)
 
     def _decode_gr_text(self, text: str) -> TelemetryFrame | None:
-        """Decode the info field of a gr-satellites packet with the satellite's format file."""
+        """Decode a gr-satellites packet (info field, or PDU dump) with the satellite's format."""
         addresses, info = parse_gr_packet(text)
+        if not info:
+            info = parse_gr_pdu_dump(text)  # a framing gr-satellites cannot parse: the whole frame
         if not info or self._selected_norad is None:
             return None
         source = addresses[1] if len(addresses) > 1 else ""

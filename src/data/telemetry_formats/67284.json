@@ -1,0 +1,1891 @@
+{
+  "norad": 67284,
+  "name": "Lobachevsky",
+  "callsign": "RS83S",
+  "modulation": "GFSK9600",
+  "reference": "https://db.satnogs.org/satellite/JXLH-6916-5606-6524-3299",
+  "note": "Field layout checked against 25 frames of a real IQ recording (2026-10-19): the layout matches the SatNOGS geoscan16u decoder and the values are physically plausible (orbit radius ~6874 km, speed ~7.7 km/s, unit quaternion, satellite time = reception time). Units of the 0x46 GNSS records and of the EPS currents/voltages are inferred, not documented. System 0xBD25 frames are not defined and show as raw hex.",
+  "frame_types": [
+    {
+      "id": "BEACON",
+      "label": "Beacon (AX.25 BEACON frame)",
+      "match": {
+        "offset": 0,
+        "hex": "848a"
+      },
+      "fields": [
+        {
+          "name": "dest_ssid",
+          "offset": 6,
+          "length": 1,
+          "type": "uint8",
+          "label": "Destination SSID byte (raw)"
+        },
+        {
+          "name": "src_ssid",
+          "offset": 13,
+          "length": 1,
+          "type": "uint8",
+          "label": "Source SSID byte (raw)"
+        },
+        {
+          "name": "ctl",
+          "offset": 14,
+          "length": 1,
+          "type": "uint8",
+          "label": "AX.25 control"
+        },
+        {
+          "name": "pid",
+          "offset": 15,
+          "length": 1,
+          "type": "uint8",
+          "label": "AX.25 PID"
+        },
+        {
+          "name": "beacon_id",
+          "offset": 16,
+          "length": 1,
+          "type": "uint8",
+          "label": "Beacon ID"
+        },
+        {
+          "name": "eps1_mode",
+          "offset": 17,
+          "length": 1,
+          "type": "uint8",
+          "label": "EPS 1 mode"
+        },
+        {
+          "name": "eps1_consumption_current",
+          "offset": 18,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 1 consumption current (inferred unit)",
+          "unit": "mA"
+        },
+        {
+          "name": "eps1_solar_current",
+          "offset": 20,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 1 solar cells current (inferred unit)",
+          "unit": "mA"
+        },
+        {
+          "name": "eps1_cell_voltage_full",
+          "offset": 22,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 1 battery voltage (inferred unit)",
+          "unit": "mV"
+        },
+        {
+          "name": "eps1_battery_temp",
+          "offset": 24,
+          "length": 1,
+          "type": "int8",
+          "label": "EPS 1 battery temperature",
+          "unit": "°C"
+        },
+        {
+          "name": "eps1_temp_sp_y_pos",
+          "offset": 25,
+          "length": 1,
+          "type": "int8",
+          "label": "EPS 1 solar panel Y+ temperature",
+          "unit": "°C"
+        },
+        {
+          "name": "eps1_temp_sp_y_neg",
+          "offset": 26,
+          "length": 1,
+          "type": "int8",
+          "label": "EPS 1 solar panel Y- temperature",
+          "unit": "°C"
+        },
+        {
+          "name": "eps1_temp_sp_x_pos",
+          "offset": 27,
+          "length": 1,
+          "type": "int8",
+          "label": "EPS 1 solar panel X+ temperature",
+          "unit": "°C"
+        },
+        {
+          "name": "eps1_temp_sp_x_neg",
+          "offset": 28,
+          "length": 1,
+          "type": "int8",
+          "label": "EPS 1 solar panel X- temperature",
+          "unit": "°C"
+        },
+        {
+          "name": "eps1_systems_status",
+          "offset": 29,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 1 systems status (raw)"
+        },
+        {
+          "name": "eps1_boot_count",
+          "offset": 31,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 1 boot count"
+        },
+        {
+          "name": "eps1_mcu1ch1_obc",
+          "offset": 29,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 1 MCU1 ch1 OBC",
+          "mask": 1
+        },
+        {
+          "name": "eps1_mcu1ch2_commu1",
+          "offset": 29,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 1 MCU1 ch2 COMMU1",
+          "mask": 2
+        },
+        {
+          "name": "eps1_mcu2ch1_comms_plasgu",
+          "offset": 29,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 1 MCU2 ch1 COMMS PLASGU",
+          "mask": 4
+        },
+        {
+          "name": "eps1_mcu2ch2_commu2",
+          "offset": 29,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 1 MCU2 ch2 COMMU2",
+          "mask": 8
+        },
+        {
+          "name": "eps1_mcu3ch1_adcs1",
+          "offset": 29,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 1 MCU3 ch1 ADCS1",
+          "mask": 16
+        },
+        {
+          "name": "eps1_mcu3ch2_starsns1",
+          "offset": 29,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 1 MCU3 ch2 star sensor 1",
+          "mask": 32
+        },
+        {
+          "name": "eps1_mcu4ch1_payload3_lepton_bridge",
+          "offset": 29,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 1 MCU4 ch1 payload 3 / Lepton bridge",
+          "mask": 64
+        },
+        {
+          "name": "eps1_mcu4ch2_commx",
+          "offset": 29,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 1 MCU4 ch2 COMMX",
+          "mask": 128
+        },
+        {
+          "name": "eps1_mcu5ch1_gyro1",
+          "offset": 29,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 1 MCU5 ch1 gyro 1",
+          "mask": 256
+        },
+        {
+          "name": "eps1_mcu6ch1_adcs2",
+          "offset": 29,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 1 MCU6 ch1 ADCS2",
+          "mask": 512
+        },
+        {
+          "name": "eps1_mcu6ch2_starsns2",
+          "offset": 29,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 1 MCU6 ch2 star sensor 2",
+          "mask": 1024
+        },
+        {
+          "name": "eps1_mcu7ch1_rws",
+          "offset": 29,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 1 MCU7 ch1 reaction wheels",
+          "mask": 2048
+        },
+        {
+          "name": "eps1_mcu7ch2_fecu_rtr",
+          "offset": 29,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 1 MCU7 ch2 FECU / RTR",
+          "mask": 4096
+        },
+        {
+          "name": "eps1_mcu8ch1_payload1_heater",
+          "offset": 29,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 1 MCU8 ch1 payload 1 heater",
+          "mask": 8192
+        },
+        {
+          "name": "eps1_mcu8ch2_payload2_camera_heater",
+          "offset": 29,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 1 MCU8 ch2 payload 2 / camera heater",
+          "mask": 16384
+        },
+        {
+          "name": "eps1_timekeeper",
+          "offset": 29,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 1 Timekeeper",
+          "mask": 32768
+        },
+        {
+          "name": "eps2_mode",
+          "offset": 33,
+          "length": 1,
+          "type": "uint8",
+          "label": "EPS 2 mode"
+        },
+        {
+          "name": "eps2_consumption_current",
+          "offset": 34,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 2 consumption current (inferred unit)",
+          "unit": "mA"
+        },
+        {
+          "name": "eps2_solar_current",
+          "offset": 36,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 2 solar cells current (inferred unit)",
+          "unit": "mA"
+        },
+        {
+          "name": "eps2_cell_voltage_full",
+          "offset": 38,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 2 battery voltage (inferred unit)",
+          "unit": "mV"
+        },
+        {
+          "name": "eps2_battery_temp",
+          "offset": 40,
+          "length": 1,
+          "type": "int8",
+          "label": "EPS 2 battery temperature",
+          "unit": "°C"
+        },
+        {
+          "name": "eps2_temp_sp_y_pos",
+          "offset": 41,
+          "length": 1,
+          "type": "int8",
+          "label": "EPS 2 solar panel Y+ temperature",
+          "unit": "°C"
+        },
+        {
+          "name": "eps2_temp_sp_y_neg",
+          "offset": 42,
+          "length": 1,
+          "type": "int8",
+          "label": "EPS 2 solar panel Y- temperature",
+          "unit": "°C"
+        },
+        {
+          "name": "eps2_temp_sp_x_pos",
+          "offset": 43,
+          "length": 1,
+          "type": "int8",
+          "label": "EPS 2 solar panel X+ temperature",
+          "unit": "°C"
+        },
+        {
+          "name": "eps2_temp_sp_x_neg",
+          "offset": 44,
+          "length": 1,
+          "type": "int8",
+          "label": "EPS 2 solar panel X- temperature",
+          "unit": "°C"
+        },
+        {
+          "name": "eps2_systems_status",
+          "offset": 45,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 2 systems status (raw)"
+        },
+        {
+          "name": "eps2_boot_count",
+          "offset": 47,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 2 boot count"
+        },
+        {
+          "name": "eps2_mcu1ch1_obc",
+          "offset": 45,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 2 MCU1 ch1 OBC",
+          "mask": 1
+        },
+        {
+          "name": "eps2_mcu1ch2_commu1",
+          "offset": 45,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 2 MCU1 ch2 COMMU1",
+          "mask": 2
+        },
+        {
+          "name": "eps2_mcu2ch1_comms_plasgu",
+          "offset": 45,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 2 MCU2 ch1 COMMS PLASGU",
+          "mask": 4
+        },
+        {
+          "name": "eps2_mcu2ch2_commu2",
+          "offset": 45,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 2 MCU2 ch2 COMMU2",
+          "mask": 8
+        },
+        {
+          "name": "eps2_mcu3ch1_adcs1",
+          "offset": 45,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 2 MCU3 ch1 ADCS1",
+          "mask": 16
+        },
+        {
+          "name": "eps2_mcu3ch2_starsns1",
+          "offset": 45,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 2 MCU3 ch2 star sensor 1",
+          "mask": 32
+        },
+        {
+          "name": "eps2_mcu4ch1_payload3_lepton_bridge",
+          "offset": 45,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 2 MCU4 ch1 payload 3 / Lepton bridge",
+          "mask": 64
+        },
+        {
+          "name": "eps2_mcu4ch2_commx",
+          "offset": 45,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 2 MCU4 ch2 COMMX",
+          "mask": 128
+        },
+        {
+          "name": "eps2_mcu5ch1_gyro1",
+          "offset": 45,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 2 MCU5 ch1 gyro 1",
+          "mask": 256
+        },
+        {
+          "name": "eps2_mcu6ch1_adcs2",
+          "offset": 45,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 2 MCU6 ch1 ADCS2",
+          "mask": 512
+        },
+        {
+          "name": "eps2_mcu6ch2_starsns2",
+          "offset": 45,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 2 MCU6 ch2 star sensor 2",
+          "mask": 1024
+        },
+        {
+          "name": "eps2_mcu7ch1_rws",
+          "offset": 45,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 2 MCU7 ch1 reaction wheels",
+          "mask": 2048
+        },
+        {
+          "name": "eps2_mcu7ch2_fecu_rtr",
+          "offset": 45,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 2 MCU7 ch2 FECU / RTR",
+          "mask": 4096
+        },
+        {
+          "name": "eps2_mcu8ch1_payload1_heater",
+          "offset": 45,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 2 MCU8 ch1 payload 1 heater",
+          "mask": 8192
+        },
+        {
+          "name": "eps2_mcu8ch2_payload2_camera_heater",
+          "offset": 45,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 2 MCU8 ch2 payload 2 / camera heater",
+          "mask": 16384
+        },
+        {
+          "name": "eps2_timekeeper",
+          "offset": 45,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS 2 Timekeeper",
+          "mask": 32768
+        },
+        {
+          "name": "adcs_mt_mode",
+          "offset": 49,
+          "length": 1,
+          "type": "uint8",
+          "label": "ADCS magnetorquer mode"
+        },
+        {
+          "name": "adcs_rm_mode",
+          "offset": 50,
+          "length": 1,
+          "type": "uint8",
+          "label": "ADCS reference motion mode"
+        },
+        {
+          "name": "adcs_kf_mode",
+          "offset": 51,
+          "length": 1,
+          "type": "uint8",
+          "label": "ADCS Kalman filter mode"
+        },
+        {
+          "name": "adcs_filter_reset_count",
+          "offset": 52,
+          "length": 1,
+          "type": "uint8",
+          "label": "ADCS filter reset count"
+        },
+        {
+          "name": "adcs_sensors_state",
+          "offset": 53,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "ADCS sensors state (raw)"
+        },
+        {
+          "name": "adcs_flywheel_state",
+          "offset": 55,
+          "length": 1,
+          "type": "uint8",
+          "label": "ADCS flywheel state"
+        },
+        {
+          "name": "comm_type",
+          "offset": 56,
+          "length": 1,
+          "type": "uint8",
+          "label": "COMM type"
+        },
+        {
+          "name": "comm_vbus_voltage",
+          "offset": 57,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "COMM bus voltage (raw)"
+        },
+        {
+          "name": "comm_boot_count",
+          "offset": 59,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "COMM boot count"
+        },
+        {
+          "name": "comm_rssi",
+          "offset": 61,
+          "length": 1,
+          "type": "int8",
+          "label": "COMM RSSI"
+        },
+        {
+          "name": "comm_rssi_minimal",
+          "offset": 62,
+          "length": 1,
+          "type": "int8",
+          "label": "COMM RSSI minimal"
+        },
+        {
+          "name": "comm_rx_valid",
+          "offset": 63,
+          "length": 1,
+          "type": "uint8",
+          "label": "COMM received valid packets"
+        },
+        {
+          "name": "comm_rx_invalid",
+          "offset": 64,
+          "length": 1,
+          "type": "uint8",
+          "label": "COMM received invalid packets"
+        },
+        {
+          "name": "comm_sent",
+          "offset": 65,
+          "length": 1,
+          "type": "uint8",
+          "label": "COMM sent packets"
+        },
+        {
+          "name": "comm_status",
+          "offset": 66,
+          "length": 1,
+          "type": "uint8",
+          "label": "COMM status (raw)"
+        },
+        {
+          "name": "comm_antenna_detector",
+          "offset": 66,
+          "length": 1,
+          "type": "uint8",
+          "label": "COMM antenna detector",
+          "mask": 1
+        },
+        {
+          "name": "comm_mode_correct",
+          "offset": 66,
+          "length": 1,
+          "type": "uint8",
+          "label": "COMM mode correct",
+          "mask": 2
+        },
+        {
+          "name": "comm_fec_on",
+          "offset": 66,
+          "length": 1,
+          "type": "uint8",
+          "label": "COMM FEC on",
+          "mask": 4
+        },
+        {
+          "name": "comm_mode",
+          "offset": 67,
+          "length": 1,
+          "type": "uint8",
+          "label": "COMM mode"
+        },
+        {
+          "name": "comm_amp_temperature",
+          "offset": 68,
+          "length": 1,
+          "type": "int8",
+          "label": "COMM amplifier temperature",
+          "unit": "°C"
+        },
+        {
+          "name": "comm_reserved1",
+          "offset": 69,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "COMM reserved 1"
+        },
+        {
+          "name": "comm_reserved2",
+          "offset": 71,
+          "length": 1,
+          "type": "uint8",
+          "label": "COMM reserved 2"
+        }
+      ]
+    },
+    {
+      "id": "EPS",
+      "label": "EPS beacon (system 0xBD29)",
+      "match": {
+        "offset": 3,
+        "hex": "29bd"
+      },
+      "fields": [
+        {
+          "name": "packet_id",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Packet ID"
+        },
+        {
+          "name": "packet_size",
+          "offset": 2,
+          "length": 1,
+          "type": "uint8",
+          "label": "Packet size"
+        },
+        {
+          "name": "system",
+          "offset": 3,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "System ID (0xBD35 = GNSS/ADCS, 0xBD29 = EPS)"
+        },
+        {
+          "name": "base_info",
+          "offset": 5,
+          "length": 1,
+          "type": "uint8",
+          "label": "Base info (raw)"
+        },
+        {
+          "name": "base_eps_mod",
+          "offset": 5,
+          "length": 1,
+          "type": "uint8",
+          "label": "EPS module",
+          "mask": 7
+        },
+        {
+          "name": "base_self_addr",
+          "offset": 5,
+          "length": 1,
+          "type": "uint8",
+          "label": "Own address",
+          "mask": 248
+        },
+        {
+          "name": "reboot_count",
+          "offset": 6,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Reboot count"
+        },
+        {
+          "name": "firmware_image",
+          "offset": 8,
+          "length": 1,
+          "type": "uint8",
+          "label": "Firmware image"
+        },
+        {
+          "name": "switcher_info",
+          "offset": 9,
+          "length": 1,
+          "type": "uint8",
+          "label": "Switcher info (raw)"
+        },
+        {
+          "name": "switcher_current_commu",
+          "offset": 9,
+          "length": 1,
+          "type": "uint8",
+          "label": "Current COMMU",
+          "mask": 1
+        },
+        {
+          "name": "switcher_state",
+          "offset": 9,
+          "length": 1,
+          "type": "uint8",
+          "label": "State",
+          "mask": 6
+        },
+        {
+          "name": "switcher_switching_state",
+          "offset": 9,
+          "length": 1,
+          "type": "uint8",
+          "label": "Switching state",
+          "mask": 24
+        },
+        {
+          "name": "switcher_relay_error",
+          "offset": 9,
+          "length": 1,
+          "type": "uint8",
+          "label": "Relay switch error",
+          "mask": 32
+        },
+        {
+          "name": "switcher_read_error",
+          "offset": 9,
+          "length": 1,
+          "type": "uint8",
+          "label": "Read data error",
+          "mask": 64
+        },
+        {
+          "name": "balancer_info",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Balancer info (raw)"
+        },
+        {
+          "name": "balancer_state",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "State",
+          "mask": 3
+        },
+        {
+          "name": "balancer_error",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Error",
+          "mask": 4
+        },
+        {
+          "name": "balancer_is_balancing",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Balancing",
+          "mask": 8
+        },
+        {
+          "name": "balancer_active",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Active balancer",
+          "mask": 48
+        },
+        {
+          "name": "balancer_cell",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Balancing cell",
+          "mask": 192
+        },
+        {
+          "name": "deployer_info",
+          "offset": 11,
+          "length": 1,
+          "type": "uint8",
+          "label": "Deployer info (raw)"
+        },
+        {
+          "name": "deployer_state",
+          "offset": 11,
+          "length": 1,
+          "type": "uint8",
+          "label": "State",
+          "mask": 3
+        },
+        {
+          "name": "deployer_storage_error",
+          "offset": 11,
+          "length": 1,
+          "type": "uint8",
+          "label": "Storage error",
+          "mask": 4
+        },
+        {
+          "name": "deployer_deployed_mask",
+          "offset": 11,
+          "length": 1,
+          "type": "uint8",
+          "label": "Deployed channels mask",
+          "mask": 240
+        },
+        {
+          "name": "heater_info1",
+          "offset": 12,
+          "length": 1,
+          "type": "uint8",
+          "label": "Heater info 1 (raw)"
+        },
+        {
+          "name": "heater_mode",
+          "offset": 12,
+          "length": 1,
+          "type": "uint8",
+          "label": "Mode",
+          "mask": 3
+        },
+        {
+          "name": "heater_active_mask",
+          "offset": 12,
+          "length": 1,
+          "type": "uint8",
+          "label": "Active heater mask",
+          "mask": 12
+        },
+        {
+          "name": "heater_tmp_src_mask",
+          "offset": 12,
+          "length": 1,
+          "type": "uint8",
+          "label": "Temperature source mask",
+          "mask": 240
+        },
+        {
+          "name": "heater_info2",
+          "offset": 13,
+          "length": 1,
+          "type": "uint8",
+          "label": "Heater info 2 (raw)"
+        },
+        {
+          "name": "error_mask1",
+          "offset": 14,
+          "length": 1,
+          "type": "uint8",
+          "label": "Error mask 1 (raw)"
+        },
+        {
+          "name": "error_mask2",
+          "offset": 15,
+          "length": 1,
+          "type": "uint8",
+          "label": "Error mask 2 (raw)"
+        },
+        {
+          "name": "err_i2c_bat_monitor",
+          "offset": 14,
+          "length": 1,
+          "type": "uint8",
+          "label": "I2C battery monitor error",
+          "mask": 1
+        },
+        {
+          "name": "err_spi_bat_monitor",
+          "offset": 14,
+          "length": 1,
+          "type": "uint8",
+          "label": "SPI battery monitor error",
+          "mask": 2
+        },
+        {
+          "name": "err_spi_fram",
+          "offset": 14,
+          "length": 1,
+          "type": "uint8",
+          "label": "SPI FRAM error",
+          "mask": 4
+        },
+        {
+          "name": "err_i2c_fram1",
+          "offset": 14,
+          "length": 1,
+          "type": "uint8",
+          "label": "I2C FRAM 1 error",
+          "mask": 8
+        },
+        {
+          "name": "err_i2c_fram2",
+          "offset": 14,
+          "length": 1,
+          "type": "uint8",
+          "label": "I2C FRAM 2 error",
+          "mask": 16
+        },
+        {
+          "name": "err_mcu1_i2c",
+          "offset": 14,
+          "length": 1,
+          "type": "uint8",
+          "label": "MCU1 I2C error",
+          "mask": 32
+        },
+        {
+          "name": "err_mcu2_i2c",
+          "offset": 14,
+          "length": 1,
+          "type": "uint8",
+          "label": "MCU2 I2C error",
+          "mask": 64
+        },
+        {
+          "name": "err_mcu3_i2c",
+          "offset": 14,
+          "length": 1,
+          "type": "uint8",
+          "label": "MCU3 I2C error",
+          "mask": 128
+        },
+        {
+          "name": "err2_mcu4_i2c",
+          "offset": 15,
+          "length": 1,
+          "type": "uint8",
+          "label": "MCU4 I2C error",
+          "mask": 1
+        },
+        {
+          "name": "err2_mcu5_i2c",
+          "offset": 15,
+          "length": 1,
+          "type": "uint8",
+          "label": "MCU5 I2C error",
+          "mask": 2
+        },
+        {
+          "name": "err2_mcu6_i2c",
+          "offset": 15,
+          "length": 1,
+          "type": "uint8",
+          "label": "MCU6 I2C error",
+          "mask": 4
+        },
+        {
+          "name": "err2_mcu7_i2c",
+          "offset": 15,
+          "length": 1,
+          "type": "uint8",
+          "label": "MCU7 I2C error",
+          "mask": 8
+        },
+        {
+          "name": "err2_mcu8_i2c",
+          "offset": 15,
+          "length": 1,
+          "type": "uint8",
+          "label": "MCU8 I2C error",
+          "mask": 16
+        },
+        {
+          "name": "load_current",
+          "offset": 16,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Load current (inferred unit)",
+          "unit": "mA"
+        },
+        {
+          "name": "solar_current",
+          "offset": 18,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Solar current (inferred unit)",
+          "unit": "mA"
+        },
+        {
+          "name": "cell1_voltage",
+          "offset": 20,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Cell 1 voltage (inferred unit)",
+          "unit": "mV"
+        },
+        {
+          "name": "cell2_voltage",
+          "offset": 22,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Cell 2 voltage (inferred unit)",
+          "unit": "mV"
+        },
+        {
+          "name": "cell3_voltage",
+          "offset": 24,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Cell 3 voltage (inferred unit)",
+          "unit": "mV"
+        },
+        {
+          "name": "coulomb_counter",
+          "offset": 26,
+          "length": 4,
+          "type": "int32_le",
+          "label": "Coulomb counter (raw)"
+        },
+        {
+          "name": "ext_devices_mask",
+          "offset": 30,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Enabled external devices (raw)"
+        },
+        {
+          "name": "int_devices_mask",
+          "offset": 32,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Enabled internal devices (raw)"
+        },
+        {
+          "name": "ext_mcu1ch1",
+          "offset": 30,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "MCU1 ch1",
+          "mask": 1
+        },
+        {
+          "name": "ext_mcu1ch2",
+          "offset": 30,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "MCU1 ch2",
+          "mask": 2
+        },
+        {
+          "name": "ext_mcu2ch1",
+          "offset": 30,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "MCU2 ch1",
+          "mask": 4
+        },
+        {
+          "name": "ext_mcu2ch2",
+          "offset": 30,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "MCU2 ch2",
+          "mask": 8
+        },
+        {
+          "name": "ext_mcu3ch1",
+          "offset": 30,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "MCU3 ch1",
+          "mask": 16
+        },
+        {
+          "name": "ext_mcu3ch2",
+          "offset": 30,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "MCU3 ch2",
+          "mask": 32
+        },
+        {
+          "name": "ext_mcu4ch1",
+          "offset": 30,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "MCU4 ch1",
+          "mask": 64
+        },
+        {
+          "name": "ext_mcu4ch2",
+          "offset": 30,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "MCU4 ch2",
+          "mask": 128
+        },
+        {
+          "name": "ext_mcu5ch1",
+          "offset": 30,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "MCU5 ch1",
+          "mask": 256
+        },
+        {
+          "name": "ext_mcu6ch1",
+          "offset": 30,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "MCU6 ch1",
+          "mask": 512
+        },
+        {
+          "name": "ext_mcu6ch2",
+          "offset": 30,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "MCU6 ch2",
+          "mask": 1024
+        },
+        {
+          "name": "ext_mcu7ch1",
+          "offset": 30,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "MCU7 ch1",
+          "mask": 2048
+        },
+        {
+          "name": "ext_mcu7ch2",
+          "offset": 30,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "MCU7 ch2",
+          "mask": 4096
+        },
+        {
+          "name": "ext_mcu8ch1",
+          "offset": 30,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "MCU8 ch1",
+          "mask": 8192
+        },
+        {
+          "name": "ext_mcu8ch2",
+          "offset": 30,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "MCU8 ch2",
+          "mask": 16384
+        },
+        {
+          "name": "ext_timekeeper",
+          "offset": 30,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Timekeeper",
+          "mask": 32768
+        },
+        {
+          "name": "int_mcu_pwr1",
+          "offset": 32,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "MCU power 1",
+          "mask": 1
+        },
+        {
+          "name": "int_mcu_pwr2",
+          "offset": 32,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "MCU power 2",
+          "mask": 2
+        },
+        {
+          "name": "int_ds_bus1",
+          "offset": 32,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "DS bus 1",
+          "mask": 4
+        },
+        {
+          "name": "int_ds_bus2",
+          "offset": 32,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "DS bus 2",
+          "mask": 8
+        },
+        {
+          "name": "int_can1",
+          "offset": 32,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "CAN 1",
+          "mask": 16
+        },
+        {
+          "name": "int_can2",
+          "offset": 32,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "CAN 2",
+          "mask": 32
+        },
+        {
+          "name": "int_timebus",
+          "offset": 32,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Time bus",
+          "mask": 64
+        },
+        {
+          "name": "int_buxbus",
+          "offset": 32,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Bux bus",
+          "mask": 128
+        },
+        {
+          "name": "int_fram1",
+          "offset": 32,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "FRAM 1",
+          "mask": 256
+        },
+        {
+          "name": "int_fram2",
+          "offset": 32,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "FRAM 2",
+          "mask": 512
+        },
+        {
+          "name": "int_bat_balancer1",
+          "offset": 32,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Battery balancer 1",
+          "mask": 1024
+        },
+        {
+          "name": "int_bat_balancer2",
+          "offset": 32,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Battery balancer 2",
+          "mask": 2048
+        },
+        {
+          "name": "temp_eps_battery",
+          "offset": 34,
+          "length": 1,
+          "type": "int8",
+          "label": "Temperature EPS battery (127 = n/a)",
+          "unit": "°C"
+        },
+        {
+          "name": "temp_eps_main",
+          "offset": 35,
+          "length": 1,
+          "type": "int8",
+          "label": "Temperature EPS main (127 = n/a)",
+          "unit": "°C"
+        },
+        {
+          "name": "temp_commu",
+          "offset": 36,
+          "length": 1,
+          "type": "int8",
+          "label": "Temperature COMMU (127 = n/a)",
+          "unit": "°C"
+        },
+        {
+          "name": "temp_commx",
+          "offset": 37,
+          "length": 1,
+          "type": "int8",
+          "label": "Temperature COMMX (127 = n/a)",
+          "unit": "°C"
+        },
+        {
+          "name": "temp_plasgu",
+          "offset": 38,
+          "length": 1,
+          "type": "int8",
+          "label": "Temperature PLASGU (127 = n/a)",
+          "unit": "°C"
+        },
+        {
+          "name": "temp_rws0",
+          "offset": 39,
+          "length": 1,
+          "type": "int8",
+          "label": "Temperature RWS 0 (127 = n/a)",
+          "unit": "°C"
+        },
+        {
+          "name": "temp_rws1",
+          "offset": 40,
+          "length": 1,
+          "type": "int8",
+          "label": "Temperature RWS 1 (127 = n/a)",
+          "unit": "°C"
+        },
+        {
+          "name": "temp_rws2",
+          "offset": 41,
+          "length": 1,
+          "type": "int8",
+          "label": "Temperature RWS 2 (127 = n/a)",
+          "unit": "°C"
+        },
+        {
+          "name": "temp_rws3",
+          "offset": 42,
+          "length": 1,
+          "type": "int8",
+          "label": "Temperature RWS 3 (127 = n/a)",
+          "unit": "°C"
+        },
+        {
+          "name": "temp_solar_wing_y_pos",
+          "offset": 43,
+          "length": 1,
+          "type": "int8",
+          "label": "Temperature Solar wing Y+ (127 = n/a)",
+          "unit": "°C"
+        },
+        {
+          "name": "temp_solar_wing_y_neg",
+          "offset": 44,
+          "length": 1,
+          "type": "int8",
+          "label": "Temperature Solar wing Y- (127 = n/a)",
+          "unit": "°C"
+        },
+        {
+          "name": "temp_camera_internal",
+          "offset": 45,
+          "length": 1,
+          "type": "int8",
+          "label": "Temperature Camera internal (127 = n/a)",
+          "unit": "°C"
+        },
+        {
+          "name": "temp_camera_heater_plate",
+          "offset": 46,
+          "length": 1,
+          "type": "int8",
+          "label": "Temperature Camera heater plate (127 = n/a)",
+          "unit": "°C"
+        }
+      ]
+    },
+    {
+      "id": "GNSS-42",
+      "label": "GNSS/ADCS 0x42 (position, velocity, attitude)",
+      "match": {
+        "offset": 3,
+        "hex": "35bd42"
+      },
+      "fields": [
+        {
+          "name": "packet_id",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Packet ID"
+        },
+        {
+          "name": "packet_size",
+          "offset": 2,
+          "length": 1,
+          "type": "uint8",
+          "label": "Packet size"
+        },
+        {
+          "name": "system",
+          "offset": 3,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "System ID (0xBD35 = GNSS/ADCS, 0xBD29 = EPS)"
+        },
+        {
+          "name": "gnss_type",
+          "offset": 5,
+          "length": 1,
+          "type": "uint8",
+          "label": "GNSS record type"
+        },
+        {
+          "name": "posix_time",
+          "offset": 6,
+          "length": 8,
+          "type": "unix_time_ms_le",
+          "label": "Satellite time"
+        },
+        {
+          "name": "coord_x",
+          "offset": 14,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Position X",
+          "unit": "m"
+        },
+        {
+          "name": "coord_y",
+          "offset": 18,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Position Y",
+          "unit": "m"
+        },
+        {
+          "name": "coord_z",
+          "offset": 22,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Position Z",
+          "unit": "m"
+        },
+        {
+          "name": "vel_x",
+          "offset": 26,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Velocity X",
+          "unit": "m/s"
+        },
+        {
+          "name": "vel_y",
+          "offset": 30,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Velocity Y",
+          "unit": "m/s"
+        },
+        {
+          "name": "vel_z",
+          "offset": 34,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Velocity Z",
+          "unit": "m/s"
+        },
+        {
+          "name": "q0",
+          "offset": 38,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Quaternion q0"
+        },
+        {
+          "name": "q1",
+          "offset": 42,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Quaternion q1"
+        },
+        {
+          "name": "q2",
+          "offset": 46,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Quaternion q2"
+        },
+        {
+          "name": "q3",
+          "offset": 50,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Quaternion q3"
+        },
+        {
+          "name": "ref_motion_mode",
+          "offset": 54,
+          "length": 1,
+          "type": "uint8",
+          "label": "Reference motion mode"
+        },
+        {
+          "name": "mag_torquer_mode",
+          "offset": 55,
+          "length": 1,
+          "type": "uint8",
+          "label": "Magnetorquer mode"
+        },
+        {
+          "name": "filter_type",
+          "offset": 56,
+          "length": 1,
+          "type": "uint8",
+          "label": "Filter type"
+        },
+        {
+          "name": "orientation_status",
+          "offset": 57,
+          "length": 1,
+          "type": "uint8",
+          "label": "Orientation system status"
+        },
+        {
+          "name": "reserved",
+          "offset": 58,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Reserved"
+        },
+        {
+          "name": "azdk_q1",
+          "offset": 60,
+          "length": 4,
+          "type": "float32_le",
+          "label": "AZDK quaternion q1"
+        },
+        {
+          "name": "azdk_q2",
+          "offset": 64,
+          "length": 4,
+          "type": "float32_le",
+          "label": "AZDK quaternion q2"
+        },
+        {
+          "name": "azdk_q3",
+          "offset": 68,
+          "length": 4,
+          "type": "float32_le",
+          "label": "AZDK quaternion q3"
+        }
+      ]
+    },
+    {
+      "id": "GNSS-43",
+      "label": "GNSS/ADCS 0x43 (position, velocity, attitude, rate)",
+      "match": {
+        "offset": 3,
+        "hex": "35bd43"
+      },
+      "fields": [
+        {
+          "name": "packet_id",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Packet ID"
+        },
+        {
+          "name": "packet_size",
+          "offset": 2,
+          "length": 1,
+          "type": "uint8",
+          "label": "Packet size"
+        },
+        {
+          "name": "system",
+          "offset": 3,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "System ID (0xBD35 = GNSS/ADCS, 0xBD29 = EPS)"
+        },
+        {
+          "name": "gnss_type",
+          "offset": 5,
+          "length": 1,
+          "type": "uint8",
+          "label": "GNSS record type"
+        },
+        {
+          "name": "posix_time",
+          "offset": 6,
+          "length": 4,
+          "type": "unix_time_le",
+          "label": "Satellite time"
+        },
+        {
+          "name": "coord_x",
+          "offset": 10,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Position X",
+          "unit": "m"
+        },
+        {
+          "name": "coord_y",
+          "offset": 14,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Position Y",
+          "unit": "m"
+        },
+        {
+          "name": "coord_z",
+          "offset": 18,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Position Z",
+          "unit": "m"
+        },
+        {
+          "name": "vel_x",
+          "offset": 22,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Velocity X",
+          "unit": "m/s"
+        },
+        {
+          "name": "vel_y",
+          "offset": 26,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Velocity Y",
+          "unit": "m/s"
+        },
+        {
+          "name": "vel_z",
+          "offset": 30,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Velocity Z",
+          "unit": "m/s"
+        },
+        {
+          "name": "q0",
+          "offset": 34,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Quaternion q0"
+        },
+        {
+          "name": "q1",
+          "offset": 38,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Quaternion q1"
+        },
+        {
+          "name": "q2",
+          "offset": 42,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Quaternion q2"
+        },
+        {
+          "name": "q3",
+          "offset": 46,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Quaternion q3"
+        },
+        {
+          "name": "w_x",
+          "offset": 50,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Angular velocity X"
+        },
+        {
+          "name": "w_y",
+          "offset": 54,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Angular velocity Y"
+        },
+        {
+          "name": "w_z",
+          "offset": 58,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Angular velocity Z"
+        },
+        {
+          "name": "reserved0",
+          "offset": 62,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Reserved 0"
+        },
+        {
+          "name": "reserved1",
+          "offset": 64,
+          "length": 8,
+          "type": "uint64_le",
+          "label": "Reserved 1"
+        }
+      ]
+    },
+    {
+      "id": "GNSS-46",
+      "label": "GNSS 0x46 (stored position/velocity samples)",
+      "match": {
+        "offset": 3,
+        "hex": "35bd46"
+      },
+      "fields": [
+        {
+          "name": "packet_id",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Packet ID"
+        },
+        {
+          "name": "packet_size",
+          "offset": 2,
+          "length": 1,
+          "type": "uint8",
+          "label": "Packet size"
+        },
+        {
+          "name": "system",
+          "offset": 3,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "System ID (0xBD35 = GNSS/ADCS, 0xBD29 = EPS)"
+        },
+        {
+          "name": "gnss_type",
+          "offset": 5,
+          "length": 1,
+          "type": "uint8",
+          "label": "GNSS record type"
+        },
+        {
+          "name": "num",
+          "offset": 6,
+          "length": 4,
+          "type": "uint32_le",
+          "label": "Record number"
+        },
+        {
+          "name": "a_time",
+          "offset": 10,
+          "length": 4,
+          "type": "unix_time_le",
+          "label": "Sample 1 time"
+        },
+        {
+          "name": "a_x_x",
+          "offset": 14,
+          "length": 4,
+          "type": "int32_le",
+          "label": "Position X (inferred unit) (1)",
+          "unit": "m",
+          "scale": 0.1
+        },
+        {
+          "name": "a_x_y",
+          "offset": 18,
+          "length": 4,
+          "type": "int32_le",
+          "label": "Position Y (inferred unit) (1)",
+          "unit": "m",
+          "scale": 0.1
+        },
+        {
+          "name": "a_x_z",
+          "offset": 22,
+          "length": 4,
+          "type": "int32_le",
+          "label": "Position Z (inferred unit) (1)",
+          "unit": "m",
+          "scale": 0.1
+        },
+        {
+          "name": "a_x_vx",
+          "offset": 26,
+          "length": 4,
+          "type": "int32_le",
+          "label": "Velocity X (inferred unit) (1)",
+          "unit": "m/s",
+          "scale": 0.001
+        },
+        {
+          "name": "a_x_vy",
+          "offset": 30,
+          "length": 4,
+          "type": "int32_le",
+          "label": "Velocity Y (inferred unit) (1)",
+          "unit": "m/s",
+          "scale": 0.001
+        },
+        {
+          "name": "a_x_vz",
+          "offset": 34,
+          "length": 4,
+          "type": "int32_le",
+          "label": "Velocity Z (inferred unit) (1)",
+          "unit": "m/s",
+          "scale": 0.001
+        },
+        {
+          "name": "b_time",
+          "offset": 38,
+          "length": 4,
+          "type": "unix_time_le",
+          "label": "Sample 2 time"
+        },
+        {
+          "name": "b_x_x",
+          "offset": 42,
+          "length": 4,
+          "type": "int32_le",
+          "label": "Position X (inferred unit) (2)",
+          "unit": "m",
+          "scale": 0.1
+        },
+        {
+          "name": "b_x_y",
+          "offset": 46,
+          "length": 4,
+          "type": "int32_le",
+          "label": "Position Y (inferred unit) (2)",
+          "unit": "m",
+          "scale": 0.1
+        },
+        {
+          "name": "b_x_z",
+          "offset": 50,
+          "length": 4,
+          "type": "int32_le",
+          "label": "Position Z (inferred unit) (2)",
+          "unit": "m",
+          "scale": 0.1
+        },
+        {
+          "name": "b_x_vx",
+          "offset": 54,
+          "length": 4,
+          "type": "int32_le",
+          "label": "Velocity X (inferred unit) (2)",
+          "unit": "m/s",
+          "scale": 0.001
+        },
+        {
+          "name": "b_x_vy",
+          "offset": 58,
+          "length": 4,
+          "type": "int32_le",
+          "label": "Velocity Y (inferred unit) (2)",
+          "unit": "m/s",
+          "scale": 0.001
+        },
+        {
+          "name": "b_x_vz",
+          "offset": 62,
+          "length": 4,
+          "type": "int32_le",
+          "label": "Velocity Z (inferred unit) (2)",
+          "unit": "m/s",
+          "scale": 0.001
+        },
+        {
+          "name": "reserved0",
+          "offset": 66,
+          "length": 4,
+          "type": "uint32_le",
+          "label": "Reserved 0"
+        },
+        {
+          "name": "reserved1",
+          "offset": 70,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Reserved 1"
+        }
+      ]
+    }
+  ]
+}
