@@ -279,6 +279,91 @@ def get_satellite_info(norad: int) -> dict[str, object] | None:
     return None
 
 
+# gr_satellites prints a frame either as "-> Packet from ..." (a telemetry format it knows)
+# or, for a framing whose payload it cannot parse, as a hex dump between two star lines:
+#   ***** VERBOSE PDU DEBUG PRINT ******   ...   ************************************
+_PDU_DUMP_HEADER = "***** VERBOSE PDU DEBUG PRINT"
+
+
+def starts_frame_block(line: str) -> bool:
+    """True if *line* is the first line of a decoded frame's text."""
+    return line.startswith("-> Packet from") or line.startswith(_PDU_DUMP_HEADER)
+
+
+def ends_frame_block(line: str) -> bool:
+    """True if *line* is the closing star line of a PDU dump."""
+    return len(line) >= 20 and not line.strip("*")
+
+
+def is_frame_block(block: list[str]) -> bool:
+    """True if *block* holds a decoded frame (rather than a warning or progress message)."""
+    return any(starts_frame_block(line) for line in block)
+
+
+class FrameBlockCollector:
+    """Cut gr_satellites' stdout into one text block per decoded frame.
+
+    Feed every line with the time it arrived; a finished block comes back as
+    ``(text, time its first line arrived)``. Lines outside a frame (warnings, progress
+    messages) are dropped.
+    """
+
+    def __init__(self) -> None:
+        self._lines: list[str] = []
+        self._started_at: float | None = None
+
+    def _take(self) -> tuple[str, float] | None:
+        if not self._lines or self._started_at is None:
+            self._lines = []
+            self._started_at = None
+            return None
+        block = ("\n".join(self._lines), self._started_at)
+        self._lines = []
+        self._started_at = None
+        return block
+
+    def feed(self, raw_line: str, now: float) -> tuple[str, float] | None:
+        """Add one line; return the block it completed, if any."""
+        line = raw_line.rstrip()
+        done: tuple[str, float] | None = None
+        if starts_frame_block(line):
+            done = self._take()
+            self._started_at = now
+        if self._started_at is None:
+            return done
+        if not line:
+            return done or self._take()
+        self._lines.append(line)
+        if ends_frame_block(line):
+            return done or self._take()
+        return done
+
+    def finish(self) -> tuple[str, float] | None:
+        """Return the block still open at the end of the output."""
+        return self._take()
+
+
+def build_gr_env(is_bundled: bool) -> dict[str, str]:
+    """Environment for a gr_satellites subprocess."""
+    env = os.environ.copy()
+    if not is_bundled:
+        # System (e.g. apt) install: needs the NumPy 1.x PYTHONPATH hack.
+        # The bundled conda-pack environment is self-contained and needs
+        # no such workaround.
+        env["PYTHONPATH"] = _GR_PYTHONPATH + os.pathsep + env.get("PYTHONPATH", "")
+    # gr_satellites is a Python program whose stdout is a pipe here, so Python block-buffers
+    # it: a decoded frame's text only appears once ~8 KiB have accumulated (or at exit),
+    # i.e. with sparse frames the table would not show them.
+    env["PYTHONUNBUFFERED"] = "1"
+    return env
+
+
+def satellite_argument(norad: int) -> str:
+    """What to pass gr_satellites for *norad*: this app's own satyaml path, else the NORAD id."""
+    extra_yml = extra_satyaml_path(norad)
+    return str(extra_yml) if extra_yml is not None else str(norad)
+
+
 class _UdpIqForwarder:
     """Sends IQ chunks from the SDR pipeline to gr_satellites via UDP."""
 
@@ -451,26 +536,14 @@ class GrSatellitesBackend(QObject):
             return False, "gr_satellites not found — install via Help > gr-satellites…"
         argv_prefix, is_bundled = resolved
 
-        env = os.environ.copy()
-        if not is_bundled:
-            # System (e.g. apt) install: needs the NumPy 1.x PYTHONPATH hack.
-            # The bundled conda-pack environment is self-contained and needs
-            # no such workaround.
-            env["PYTHONPATH"] = _GR_PYTHONPATH + os.pathsep + env.get("PYTHONPATH", "")
-
-        # gr_satellites is a Python program whose stdout is a pipe here, so Python block-buffers
-        # it: a decoded frame's text only appears once ~8 KiB have accumulated (or at exit),
-        # i.e. with sparse frames the table would not show them.
-        env["PYTHONUNBUFFERED"] = "1"
+        env = build_gr_env(is_bundled)
 
         self._kiss_supported = _supports_kiss_server(argv_prefix, env)
         kiss_port: int | None = None
         if self._kiss_supported:
             kiss_port = find_free_port()
 
-        sat_id = catalog_norad if catalog_norad is not None else norad
-        extra_yml = extra_satyaml_path(sat_id)
-        target = str(extra_yml) if extra_yml is not None else str(sat_id)
+        target = satellite_argument(catalog_norad if catalog_norad is not None else norad)
 
         cmd = [
             *argv_prefix,
@@ -614,7 +687,7 @@ class GrSatellitesBackend(QObject):
                 buf.clear()
             # Only a decoded frame is a table row. gr_satellites' own warnings and
             # progress messages ("udp_source :warning: ...") stay in gr_satellites.log.
-            if any(line.startswith("-> Packet from") for line in block):
+            if is_frame_block(block):
                 self.telemetry_received.emit("\n".join(block))
 
         for raw_line in self._proc.stdout:
@@ -628,10 +701,12 @@ class GrSatellitesBackend(QObject):
             # A frame's text is not followed by a blank line in every gr_satellites build
             # (the one bundled here prints none), so the next frame's "-> Packet from"
             # heading also ends the previous block ...
-            if line.startswith("-> Packet from"):
+            if starts_frame_block(line):
                 flush()
             with lock:
                 buf.append(line)
+            if ends_frame_block(line):
+                flush()  # a PDU dump is complete at its closing star line
             # ... and a block is sent once the output goes quiet, so the newest frame
             # shows up when it arrives instead of when the next one does.
             idle = threading.Timer(_STDOUT_BLOCK_IDLE_S, flush)

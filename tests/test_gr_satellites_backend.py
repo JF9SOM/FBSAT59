@@ -701,3 +701,56 @@ class TestReadStdoutBlocks:
         # the two start-up lines are dropped; the last line belongs to the frame's block
         assert len(blocks) == 1
         assert blocks[0].startswith("-> Packet from 9k6 FSK downlink")
+
+
+_PDU_DUMP = [
+    "***** VERBOSE PDU DEBUG PRINT ******\n",
+    "((transmitter . 9k6 FSK downlink))\n",
+    "pdu length =         4 bytes\n",
+    "pdu vector contents = \n",
+    "0000: 12 98 46 35 \n",
+    "************************************\n",
+]
+
+
+class TestFrameBlocks:
+    """A framing gr_satellites cannot parse is printed as a PDU hex dump, not "-> Packet from"."""
+
+    def test_the_live_reader_sends_a_pdu_dump_as_one_block_per_frame(self) -> None:
+        reader = TestReadStdoutBlocks()
+        blocks = reader._run([*_PDU_DUMP, "udp_source :warning: x\n", *_PDU_DUMP])
+        assert len(blocks) == 2
+        assert blocks[0].startswith("***** VERBOSE PDU DEBUG PRINT")
+        assert blocks[0].endswith("************************************")
+        assert "0000: 12 98 46 35" in blocks[0]
+
+    def test_collector_returns_blocks_with_the_arrival_time_of_their_first_line(self) -> None:
+        collector = backend.FrameBlockCollector()
+        out = []
+        for i, line in enumerate(
+            ["noise\n", *_PDU_DUMP, "-> Packet from A\n", "x = 1\n", "-> Packet from A\n"]
+        ):
+            block = collector.feed(line, float(i))
+            if block is not None:
+                out.append(block)
+        last = collector.finish()
+        assert last is not None
+        out.append(last)
+        assert [t for _, t in out] == [1.0, 7.0, 9.0]
+        assert out[1][0] == "-> Packet from A\nx = 1"
+
+    def test_collector_ignores_lines_outside_a_frame(self) -> None:
+        collector = backend.FrameBlockCollector()
+        assert collector.feed("udp_source :warning: x\n", 0.0) is None
+        assert collector.finish() is None
+
+
+class TestSatelliteArgument:
+    def test_a_catalog_satellite_is_passed_by_norad(self) -> None:
+        with patch.object(backend, "extra_satyaml_path", return_value=None):
+            assert backend.satellite_argument(25544) == "25544"
+
+    def test_an_extra_satellite_is_passed_by_path(self, tmp_path: Path) -> None:
+        yml = tmp_path / "x.yml"
+        with patch.object(backend, "extra_satyaml_path", return_value=yml):
+            assert backend.satellite_argument(67284) == str(yml)

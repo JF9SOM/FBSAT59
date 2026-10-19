@@ -7675,3 +7675,16 @@ msgstr "（{shown}/{total}文字を表示、以下省略）"
 
 #~ msgid "TX Doppler"
 #~ msgstr "送信ドップラー補正"
+
+#: src/ui/telemetry_tab.py
+msgid "gr-satellites is not installed — see Help > gr-satellites…"
+msgstr "gr-satellites がインストールされていません — ヘルプ > gr-satellites… を参照してください"
+
+#: src/ui/telemetry_tab.py
+#, python-brace-format
+msgid "Fast decode: running — {n} frame(s)"
+msgstr "高速デコード: 実行中 — {n} フレーム"
+
+#: src/ui/telemetry_tab.py
+msgid "Frame times are estimated (a few seconds off); not sent to SatNOGS."
+msgstr "フレームの時刻は推定値です（数秒ずれることがあります）。SatNOGS へは送信しません。"

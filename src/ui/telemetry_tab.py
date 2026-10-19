@@ -178,6 +178,20 @@ def format_frame_hex(raw: bytes) -> str:
     return raw.hex(" ").upper()
 
 
+def parse_gr_pdu_dump(text: str) -> bytes | None:
+    """The frame's bytes from a gr-satellites "VERBOSE PDU DEBUG PRINT" hex dump, else None.
+
+    gr-satellites prints a frame whose telemetry format it does not know as a dump, one
+    ``0000: 12 98 46 ...`` line per 16 bytes, instead of a decoded packet.
+    """
+    data = bytearray()
+    for line in text.splitlines():
+        match = re.fullmatch(r"[0-9a-fA-F]{4}:((?: [0-9a-fA-F]{2})+) ?", line.strip())
+        if match:
+            data += bytes.fromhex(match.group(1).replace(" ", ""))
+    return bytes(data) if data else None
+
+
 def parse_gr_packet(text: str) -> tuple[list[str], bytes | None]:
     """Pull the AX.25 addresses and the info field out of a gr-satellites packet printout.
 
@@ -227,6 +241,9 @@ _GR_PAIR_WINDOW_S = 5.0
 # differs by a fraction of a second (up to ~2 s measured); frames of equal content within
 # this many seconds are one reception, not two.
 _DUPLICATE_WINDOW_S = 5.0
+# A gr-satellites fast decode only estimates a frame's time (a few seconds off, more on a long
+# recording), so the same frame from two runs over one recording is up to this far apart.
+_GR_FAST_DUPLICATE_WINDOW_S = 60.0
 
 
 @dataclass
@@ -410,6 +427,9 @@ class TelemetryTab(QWidget):
         # HADES FSK "Fast" decode of a recording file (no SDR pipeline): the worker thread,
         # the recording's start time and whether that time is known (read from its file name).
         self._fast_job: Any | None = None
+        # Estimated time of the gr-satellites frame being added by a fast decode (see
+        # comms.telemetry.gr_satellites_file); None otherwise.
+        self._gr_fast_when: datetime.datetime | None = None
         self._fast_start: datetime.datetime = datetime.datetime.now(datetime.UTC)
         self._fast_time_known = False
 
@@ -829,9 +849,13 @@ class TelemetryTab(QWidget):
     def _on_decode_iq(self) -> None:
         """Open an IQ recording as SDR Control's "Open…" does; Start on the spectrogram click.
 
-        HADES FSK mode with Speed "Fast": ask for a file and decode all of it at once instead.
+        HADES FSK / gr-satellites mode with Speed "Fast": ask for a file and decode all of it at
+        once instead.
         """
-        if self._current_mode() == _MODE_HADES and self._combo_decode_speed.currentData() == "fast":
+        if (
+            self._current_mode() in (_MODE_HADES, _MODE_GR)
+            and self._combo_decode_speed.currentData() == "fast"
+        ):
             self._on_fast_decode()
             return
         sdr_ctrl = getattr(self._radio_control, "_sdr_control", None)
@@ -1274,8 +1298,8 @@ class TelemetryTab(QWidget):
         self._btn_cw_sat_search.setVisible(is_cw)
         self._combo_hades_sat.setVisible(is_hades)
         self._btn_hades_sat_search.setVisible(is_hades)
-        self._lbl_decode_speed.setVisible(is_hades)
-        self._combo_decode_speed.setVisible(is_hades)
+        self._lbl_decode_speed.setVisible(is_hades or is_gr)
+        self._combo_decode_speed.setVisible(is_hades or is_gr)
         self._stop_fast_decode()
         # Baud and the backend log are Direwolf / gr-satellites matters; CW TLM has
         # neither (its text is in the CW Decoder tab) and HADES FSK has a fixed baud and
@@ -2136,6 +2160,8 @@ class TelemetryTab(QWidget):
 
     def _start_fast_decode(self, path: Path) -> bool:
         """Start decoding *path* in a worker thread; False (reason on screen) if it cannot."""
+        if self._current_mode() == _MODE_GR:
+            return self._start_gr_fast_decode(path)
         if self._fast_job is not None or self._hades_demod is not None:
             self._set_error("⚠ " + _("Stop the running decoder first."))
             return False
@@ -2167,6 +2193,60 @@ class TelemetryTab(QWidget):
         job.start()
         return True
 
+    def _start_gr_fast_decode(self, path: Path) -> bool:
+        """Decode *path* with gr_satellites at once; False (reason on screen) if it cannot."""
+        if self._fast_job is not None or self._gr_backend.is_running:
+            self._set_error("⚠ " + _("Stop the running decoder first."))
+            return False
+        norad = self._combo_gr_sat.currentData()
+        if not isinstance(norad, int):
+            self._set_error("⚠ " + _("Select a satellite first."))
+            return False
+        if not detect_gr_satellites():
+            self._set_error("⚠ " + _("gr-satellites is not installed — see Help > gr-satellites…"))
+            return False
+        from comms.telemetry.gr_satellites_file import GrFileDecoder
+        from sdr.file_device import parse_start_time_from_filename
+
+        start = parse_start_time_from_filename(path.name)
+        self._fast_time_known = start is not None
+        self._fast_start = start or datetime.datetime.now(datetime.UTC)
+        self._selected_norad = norad
+        job = GrFileDecoder(path, norad, catalog_norad=self._gr_catalog_ids.get(norad), parent=self)
+        job.frame_found.connect(self._on_gr_fast_frame)
+        job.progress.connect(self._on_fast_progress)
+        job.decoded.connect(self._on_gr_fast_done)
+        job.failed.connect(self._on_fast_failed)
+        self._fast_job = job
+        self._btn_start.setEnabled(False)
+        self._btn_stop.setEnabled(True)
+        self._btn_decode_iq.setEnabled(False)
+        self._lbl_status.setText(_("Fast decode: starting…"))
+        self._lbl_status.setStyleSheet("color: #27ae60;")
+        job.start()
+        return True
+
+    def _on_gr_fast_frame(self, text: str, seconds: float) -> None:
+        """One frame of a fast decode: add it with its estimated time (never sent on)."""
+        if self._fast_job is None:
+            return
+        self._gr_fast_when = self._fast_start + datetime.timedelta(seconds=float(seconds))
+        try:
+            self._on_gr_telemetry(text)
+        finally:
+            self._gr_fast_when = None
+
+    def _on_gr_fast_done(self, duration_s: float, elapsed_s: float, frames: int) -> None:
+        self._finish_fast_decode()
+        self._lbl_status.setText(
+            _("Decoded {dur} s of recording in {el} s — {n} frame(s)").format(
+                dur=round(duration_s), el=round(elapsed_s, 1), n=frames
+            )
+            + "  ⚠ "
+            + _("Frame times are estimated (a few seconds off); not sent to SatNOGS.")
+        )
+        self._lbl_status.setStyleSheet("color: #f39c12;")
+
     def _on_fast_frame(self, frame: Any, seconds: float) -> None:
         norad = self._hades_norad
         if norad is None or self._fast_job is None:
@@ -2185,6 +2265,9 @@ class TelemetryTab(QWidget):
 
     def _on_fast_progress(self, fraction: float, frames: int) -> None:
         if self._fast_job is None:
+            return
+        if fraction < 0:
+            self._lbl_status.setText(_("Fast decode: running — {n} frame(s)").format(n=frames))
             return
         self._lbl_status.setText(
             _("Fast decode: {pct}% — {n} frame(s)").format(pct=int(fraction * 100), n=frames)
@@ -2365,6 +2448,8 @@ class TelemetryTab(QWidget):
             sat_name = str(info.get("name", "")) if info else ""
         data_text = "  |  ".join(data_lines) if data_lines else text[:120]
         addresses, info_bytes = parse_gr_packet(text)
+        if info_bytes is None:
+            info_bytes = parse_gr_pdu_dump(text)  # a framing gr-satellites cannot parse
         if info_bytes is not None:
             # like the AX.25 mode: the data column is the frame's bytes in HEX; the decoded
             # fields are in the "Decoded Fields" tab
@@ -2384,7 +2469,10 @@ class TelemetryTab(QWidget):
             row_data = self._gr_frames.popleft()[1]
         else:
             row_data = _Ax25Row(
-                raw=b"", when=when, reliable=reliable, norad=self._gr_backend.started_norad
+                raw=b"",
+                when=when,
+                reliable=reliable,
+                norad=self._gr_backend.started_norad or self._selected_norad,
             )
             self._gr_rows.append((time.monotonic(), row_data))
         self._append_row(
@@ -2432,7 +2520,19 @@ class TelemetryTab(QWidget):
             return None
         norad = row_data.norad if row_data.norad is not None else self._selected_norad
         parsed = json.dumps({"text": data_text, "sat": sat_name, "full": full_text})
-        known = self._find_logged_duplicate("parsed_json", parsed, norad, row_data.when, "gr")
+        known = self._find_logged_duplicate(
+            "parsed_json",
+            parsed,
+            norad,
+            row_data.when,
+            "gr",
+            # a fast decode's times are estimates that differ by seconds between runs
+            window_s=(
+                _GR_FAST_DUPLICATE_WINDOW_S
+                if self._gr_fast_when is not None
+                else _DUPLICATE_WINDOW_S
+            ),
+        )
         if known is not None:
             return known[0]
         cursor = self._conn.execute(
@@ -2644,6 +2744,8 @@ class TelemetryTab(QWidget):
         """
         if self._import_time is not None:
             return self._import_time, True
+        if self._gr_fast_when is not None:
+            return self._gr_fast_when, False  # estimated from the output's timing
         return signal_time(self._sdr_pipeline)
 
     def _submit_raw_frame(
@@ -2960,6 +3062,7 @@ class TelemetryTab(QWidget):
         norad: int | None,
         when: datetime.datetime,
         kind: str | None = None,
+        window_s: float = _DUPLICATE_WINDOW_S,
     ) -> tuple[int, bool] | None:
         """The ``telemetry_log`` row already holding this reception, if any.
 
@@ -2983,7 +3086,7 @@ class TelemetryTab(QWidget):
             " AND IFNULL(norad_cat_id, 0) = IFNULL(?, 0) AND (? IS NULL OR kind = ?)"
             " AND ABS(julianday(received_at) - julianday(?)) * 86400 <= ?"
             " ORDER BY id LIMIT 1",
-            (value, norad, kind, kind, when.isoformat(), _DUPLICATE_WINDOW_S),
+            (value, norad, kind, kind, when.isoformat(), window_s),
         ).fetchone()
         return (int(row[0]), row[1] is not None) if row else None
 

@@ -1487,3 +1487,66 @@ def test_decode_iq_starts_only_after_overview_click(qtbot: QtBot, conn: sqlite3.
     tab._on_iq_seek_done(1.0)
     tab._on_iq_seek_done(2.0)
     assert started == [True]
+
+
+_GR_PDU_TEXT = (
+    "***** VERBOSE PDU DEBUG PRINT ******\n"
+    "((transmitter . 9k6 FSK downlink))\n"
+    "pdu length =         4 bytes\n"
+    "pdu vector contents = \n"
+    "0000: 12 98 46 35 \n"
+    "************************************"
+)
+
+
+def test_parse_gr_pdu_dump_reads_the_hex_lines() -> None:
+    assert telemetry_tab_mod.parse_gr_pdu_dump(_GR_PDU_TEXT) == bytes.fromhex("12984635")
+    assert telemetry_tab_mod.parse_gr_pdu_dump("-> Packet from A\n  x = 1") is None
+
+
+def test_gr_pdu_dump_frame_is_a_row_with_its_bytes_in_hex(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, _rec = _gr_tab(qtbot, conn, monkeypatch)
+    tab._on_gr_telemetry(_GR_PDU_TEXT)
+    assert tab._table.rowCount() == 1
+    assert "12 98 46 35" in tab._table.item(0, 3).text()
+
+
+class _FakeJob:
+    def cancel(self) -> None:
+        pass
+
+    def wait(self, _ms: int = 0) -> bool:
+        return True
+
+
+def test_gr_fast_decode_frames_carry_an_estimated_time_and_are_not_sent(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import datetime
+
+    tab, rec = _gr_tab(qtbot, conn, monkeypatch)
+    tab._fast_job = _FakeJob()  # type: ignore[assignment]
+    tab._fast_start = datetime.datetime(2026, 10, 19, 1, 36, 23, tzinfo=datetime.UTC)
+    tab._selected_norad = 67284
+    tab._on_gr_fast_frame(_GR_PDU_TEXT, 100.0)
+    row = _row_data(tab, 0)
+    assert row.when == tab._fast_start + datetime.timedelta(seconds=100)
+    assert row.reliable is False
+    assert tab._gr_fast_when is None
+    assert rec.calls == []
+    # the same recording decoded again, its estimated time a few seconds off: one reception
+    tab._on_gr_fast_frame(_GR_PDU_TEXT, 104.0)
+    count = conn.execute("SELECT COUNT(*) FROM telemetry_log WHERE kind = 'gr'").fetchone()[0]
+    assert count == 1
+
+
+def test_decode_speed_choice_is_offered_in_gr_mode(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab.show()
+    tab._combo_mode.setCurrentIndex(tab._combo_mode.findText(telemetry_tab_mod._MODE_GR))
+    assert tab._combo_decode_speed.isVisible()
+    tab._combo_mode.setCurrentIndex(0)
+    assert not tab._combo_decode_speed.isVisible()

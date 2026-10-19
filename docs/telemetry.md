@@ -227,6 +227,36 @@ gr-satellites 自体が未インストールなら従来どおり何も出ない
 - テスト: `tests/test_gr_satellites_backend.py` の `TestExtraSatyaml`（同梱 yml の定義、パス渡し、
   カタログ優先）。実フレームでのデコード自体は手元の gr_satellites での手動確認のみ。
 
+### gr-satellites モードの「Fast」デコード（2026-10-19）
+
+HADES FSK と同じ「速度: 通常／高速」プルダウンと「📂 Decode IQ Recording…」が gr-satellites モードでも出る
+（選択は同じ `telemetry_decode_speed`）。「高速」はファイルを選ぶと `GrFileDecoder`
+（`src/comms/telemetry/gr_satellites_file.py`）が `gr_satellites <衛星> --wavfile <ファイル> --iq` を
+サブプロセスで走らせ、SDR パイプラインを通さず録音全体を一度に処理する。実録音（671 秒・1.3 GB、
+Lobachevsky）が **約 26 秒**（実時間再生の「通常」は録音の長さそのもの）。■ Stop・モード切替で中止（プロセスを kill）。
+
+- **フレームの時刻は推定値**: gr_satellites は復号したフレームに録音上の位置を出さない。ファイルは一定の速さで
+  読まれるので、**フレームの文字列が出力に現れた時刻に比例**すると見なす
+  （`estimate_frame_seconds()`）。起動・終了のオーバーヘッドは、先に録音冒頭 1 秒だけで gr_satellites を走らせて
+  測り（`_measure_overhead()`）、起動と終了で半々とする。実録音で確認: 実際のバースト 235／283／404〜405 秒に
+  対し推定 235.8／283.8／406 前後（誤差は数秒。起動時間を丸ごと差し引くと 10〜20 秒早く出た）。
+  このためフレームは**時刻を確定できない扱い**（`reliable=False`）で、**SatNOGS へは送らない**
+  （ステータスに明記）。出力のタイミングが処理速度に依存するため、フレームは全部終わってから推定時刻つきで
+  まとめて表に出る（実行中は件数だけ表示）。
+- **重複**: 推定時刻は実行ごとに数秒ずれるので、同じ録音の再処理で `telemetry_log` が二重にならないよう、
+  高速デコード中の gr 行の重複判定窓は 60 秒（`_GR_FAST_DUPLICATE_WINDOW_S`。通常は 5 秒）。
+- **録音の開始時刻**はファイル名から（無ければ現在時刻）。WAV は `comms/telemetry/iq_wav.py` で検証し、
+  gr_satellites にはファイルをそのまま渡す（`fact` チャンクのある録音も正しく読めることを実録音で確認）。
+- **PDU ダンプ形式のフレームを表に出すように修正（同日）**: gr-satellites は、形式を知らない衛星（例:
+  Lobachevsky の `Telemetry: unknown`）のフレームを `-> Packet from …` ではなく
+  `***** VERBOSE PDU DEBUG PRINT ******` から `************************************` までの 16 進ダンプで出す。
+  従来のライブ側は `-> Packet from` を含む塊だけを行にしていたため、**この形式のフレームは表に一行も出なかった**。
+  `starts_frame_block()` / `ends_frame_block()` / `FrameBlockCollector`（`gr_satellites_backend.py`）で
+  どちらの形式も 1 フレームの塊として扱い、データ列には `parse_gr_pdu_dump()` で取り出したバイト列を HEX 表示する。
+- テスト: `tests/test_gr_satellites_file.py`（疑似 gr_satellites で通し、時刻推定、WAV 書き出し）、
+  `tests/test_gr_satellites_backend.py` の `TestFrameBlocks`、`tests/test_telemetry_tab.py` の gr 高速デコード系。
+  **GUI（実アプリのファイル選択から表示まで）での確認は未実施**。
+
 ---
 
 ## ゴーストエントリ問題（症状のパターンと発見済みの実例、2026-09-05）
@@ -1299,8 +1329,8 @@ CRC 一致で復号して確認した（type 3・4・10・1・5・3。バイト 
   `_find_logged_duplicate()` を高速デコード中も有効にした）。■ Stop で中止、実行中は ▶ Start と Decode ボタンを無効にする。
   **WAV の読み方**（`comms/telemetry/iq_wav.py`）: チャンクを順にたどる（`fact` があるとデータは 56 バイト目から。
   44 固定にすると I/Q が入れ替わる）。float32 ステレオと 16 ビット PCM ステレオに対応。通常再生が実時間なのは、
-  他のデコーダー（Direwolf など）が実時間を前提にするため。**他のモードの高速化は未対応**（gr-satellites は
-  `--rawfile` で IQ ファイルを直接読めるので、将来やるなら最も容易）。
+  他のデコーダー（Direwolf など）が実時間を前提にするため。**gr-satellites モードの高速化は 2026-10-19 に実装**
+  （下の「gr-satellites モードの Fast デコード」節）。
 - **「全項目デコード結果」タブ（2026-10-18 実装）**: `src/comms/telemetry/hades_fields.py`。AMSAT-EA の仕様書
   「MARIA-G, UNNE-1, HADES-R, HADES-ICM — Description of transmissions」V1.04（2025-01-06、
   https://www.amsat-ea.org/app/download/13945587/AMSAT+EA+-+Transmissions+description+for+MARIA-G_UNNE-1_HADES-R_HADES-ICM.pdf）
