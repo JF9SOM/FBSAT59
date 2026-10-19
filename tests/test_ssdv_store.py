@@ -142,3 +142,69 @@ def test_store_survives_reopening_the_database() -> None:
     conn = sqlite3.connect(":memory:")
     SsdvPacketStore(conn).add(1, KIND_STANDARD, real_packet(image=3, pid=0))
     assert SsdvPacketStore(conn).groups()[0].packets == 1
+
+
+def _with_bad_parity(pkt: bytes) -> bytes:
+    """The same packet received with bit errors in the (CRC-uncovered) parity bytes."""
+    bad = bytearray(pkt)
+    bad[231] ^= 0x10
+    bad[255] ^= 0x01
+    return bytes(bad)
+
+
+def test_a_packet_differing_only_in_parity_is_the_same_packet(store: SsdvPacketStore) -> None:
+    pkt = real_packet(image=48, pid=7)
+    first = store.add(1, KIND_STANDARD, pkt)
+    again = store.add(1, KIND_STANDARD, _with_bad_parity(pkt))
+    assert again.group_id == first.group_id and not again.is_new and not again.new_group
+    assert len(store.groups()) == 1
+
+
+def _split_groups(conn: sqlite3.Connection) -> None:
+    """Three groups of one picture as the old parity-sensitive comparison left them, plus a
+    genuinely different picture that reuses the image id."""
+    conn.execute("CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT, updated_at)")
+    store = SsdvPacketStore(conn)  # nothing to merge yet; marks the merge as done
+    conn.execute("DELETE FROM app_settings")
+    pkts = [real_packet(image=48, pid=n) for n in range(4)]
+    other = real_packet(image=48, pid=1)
+    other = other[:20] + bytes(b ^ 0xFF for b in other[20:100]) + other[100:]  # other content
+    layout = [
+        (0, "2026-10-14T01:00:00+00:00", [pkts[0], pkts[1]]),
+        (1, "2026-10-15T01:00:00+00:00", [_with_bad_parity(pkts[1]), pkts[2]]),
+        (2, "2026-10-16T01:00:00+00:00", [pkts[3]]),
+        (3, "2026-10-17T01:00:00+00:00", [other]),
+    ]
+    for _n, stamp, group in layout:
+        cur = conn.execute(
+            "INSERT INTO ssdv_groups (norad, kind, image_id, width, height, created_at, "
+            "updated_at) VALUES (1, ?, 48, 20, 15, ?, ?)",
+            (KIND_STANDARD, stamp, stamp),
+        )
+        for p in group:
+            conn.execute(
+                "INSERT INTO ssdv_packets VALUES (?, ?, ?, ?)",
+                (cur.lastrowid, (p[7] << 8) | p[8], p, stamp),
+            )
+    conn.commit()
+    del store
+
+
+def test_split_groups_are_merged_once_with_a_backup(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    db = tmp_path / "fbsat59.db"
+    conn = sqlite3.connect(db)
+    _split_groups(conn)
+    store = SsdvPacketStore(conn)
+    groups = store.groups()
+    assert [g.packets for g in groups] == [1, 4]  # the different picture stays apart
+    merged = next(g for g in groups if g.packets == 4)
+    assert merged.created_at.startswith("2026-10-14") and merged.updated_at.startswith("2026-10-16")
+    assert (tmp_path / "fbsat59.db.before_ssdv_merge").exists()
+    assert store.merge_split_groups() == 0  # runs once
+    conn.close()
+
+
+def test_merge_is_skipped_without_app_settings() -> None:
+    conn = sqlite3.connect(":memory:")
+    store = SsdvPacketStore(conn)
+    assert store.merge_split_groups() == 0

@@ -13,6 +13,8 @@ is right, or one that Reed-Solomon repair turns into such a packet.
 
 from __future__ import annotations
 
+import logging
+import shutil
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -21,9 +23,14 @@ from typing import Any
 from comms.sstv import rs_ssdv
 from comms.sstv.ssdv import SYNC_BYTE, TYPE_NORMAL, crc_ok
 
+logger = logging.getLogger(__name__)
+
 KIND_STANDARD = "std"  # 0x55 0x66/0x67 packets (AX.25 and 2FSK modes)
 KIND_DSLWP = "dslwp"  # 218-byte CCSDS / DSLWP packets (ASRTU-1)
 _MIN_RS_PACKET = 40
+_FEC_SIZE = 32  # Reed-Solomon parity bytes at the end of a 0x66 packet
+# app_settings key set once the groups split by the old parity comparison have been merged
+_MERGE_DONE_KEY = "ssdv_groups_merged_v1"
 
 
 def validate_packet(packet: bytes) -> bytes | None:
@@ -48,6 +55,18 @@ def _header(kind: str, packet: bytes) -> tuple[int, int, int, int]:
     if kind == KIND_DSLWP:
         return packet[0], (packet[1] << 8) | packet[2], packet[3], packet[4]
     return packet[6], (packet[7] << 8) | packet[8], packet[9], packet[10]
+
+
+def _content(kind: str, packet: bytes) -> bytes:
+    """The part of a packet that identifies its content.
+
+    The Reed-Solomon parity of a standard packet is not covered by the CRC-32, so a packet
+    whose parity has bit errors is still "valid" and differs from the clean copy only there.
+    Such copies are the same packet and must not be told apart.
+    """
+    if kind == KIND_STANDARD and len(packet) > 1 and packet[1] == TYPE_NORMAL:
+        return packet[:-_FEC_SIZE]
+    return packet
 
 
 def _is_last(kind: str, packet: bytes) -> bool:
@@ -114,6 +133,96 @@ class SsdvPacketStore:
             """
         )
         self._conn.commit()
+        try:
+            self.merge_split_groups()
+        except Exception:
+            logger.exception("SSDV: could not merge the split groups")
+
+    def _backup_database(self) -> None:
+        """Copy the database file next to itself before the one-off merge (if file-based)."""
+        row = self._conn.execute("PRAGMA database_list").fetchone()
+        path = str(row[2]) if row is not None and row[2] else ""
+        if path:
+            self._conn.commit()
+            self._conn.execute("PRAGMA wal_checkpoint(FULL)")
+            shutil.copyfile(path, path + ".before_ssdv_merge")
+
+    def merge_split_groups(self) -> int:
+        """Merge the groups the old parity-sensitive comparison split; return groups removed.
+
+        Runs once (marked in app_settings; skipped when there is no such table). Groups of the
+        same satellite, format, image id and size are merged when none of the packet numbers
+        they share holds different content. The oldest group of each merge keeps its id.
+        """
+        try:
+            done = self._conn.execute(
+                "SELECT 1 FROM app_settings WHERE key=?", (_MERGE_DONE_KEY,)
+            ).fetchone()
+        except sqlite3.Error:
+            return 0  # no app_settings table: nothing to record the run in
+        if done is not None:
+            return 0
+        rows = self._conn.execute(
+            "SELECT id, norad, kind, image_id, width, height, created_at, updated_at "
+            "FROM ssdv_groups ORDER BY created_at, id"
+        ).fetchall()
+        by_key: dict[tuple[int, str, int, int, int], list[Any]] = {}
+        for r in rows:
+            by_key.setdefault((r[1], r[2], r[3], r[4], r[5]), []).append(r)
+        removed = 0
+        backed_up = False
+        for key, groups in by_key.items():
+            if len(groups) < 2:
+                continue
+            kind = key[1]
+            # each cluster: [kept group id, {packet id: content}, [(group id, row)...]]
+            clusters: list[tuple[int, dict[int, bytes], list[Any]]] = []
+            for g in groups:
+                packets = {
+                    int(pid): _content(kind, bytes(data))
+                    for pid, data in self._conn.execute(
+                        "SELECT packet_id, data FROM ssdv_packets WHERE group_id=?", (g[0],)
+                    )
+                }
+                for _kept, merged, members in clusters:
+                    if all(merged.get(pid, content) == content for pid, content in packets.items()):
+                        merged.update(packets)
+                        members.append(g)
+                        break
+                else:
+                    clusters.append((int(g[0]), dict(packets), [g]))
+            for kept, _merged, members in clusters:
+                if len(members) < 2:
+                    continue
+                if not backed_up:
+                    self._backup_database()
+                    backed_up = True
+                for g in members[1:]:
+                    self._conn.execute(
+                        "INSERT OR IGNORE INTO ssdv_packets (group_id, packet_id, data, "
+                        "received_at) SELECT ?, packet_id, data, received_at FROM ssdv_packets "
+                        "WHERE group_id=?",
+                        (kept, g[0]),
+                    )
+                    self._conn.execute("DELETE FROM ssdv_packets WHERE group_id=?", (g[0],))
+                    self._conn.execute("DELETE FROM ssdv_groups WHERE id=?", (g[0],))
+                    removed += 1
+                self._conn.execute(
+                    "UPDATE ssdv_groups SET created_at=?, updated_at=? WHERE id=?",
+                    (
+                        min(g[6] for g in members),
+                        max(g[7] for g in members),
+                        kept,
+                    ),
+                )
+        self._conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value, updated_at) "
+            "VALUES (?, '1', CURRENT_TIMESTAMP)",
+            (_MERGE_DONE_KEY,),
+        )
+        self._conn.commit()
+        logger.info("SSDV: merged %d split group(s)", removed)
+        return removed
 
     def add(
         self,
@@ -141,7 +250,7 @@ class SsdvPacketStore:
                 "SELECT data FROM ssdv_packets WHERE group_id=? AND packet_id=?", (gid, pid)
             ).fetchone()
             if have is not None:
-                if bytes(have[0]) == packet:
+                if _content(kind, bytes(have[0])) == _content(kind, packet):
                     return AddResult(gid, False, False)
                 row = None  # same number, different packet: the image id was reused
         if row is None:
