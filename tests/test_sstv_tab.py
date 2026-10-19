@@ -200,7 +200,14 @@ def test_satellite_combo_lists_the_satellites_of_each_mode(
     )
     conn.executemany(
         "INSERT INTO satellites VALUES (?, ?, 0)",
-        [(25544, "ISS"), (68446, "HADES-SA"), (61781, "ASRTU-1"), (7, "LAPAN"), (1, "OTHER")],
+        [
+            (25544, "ISS"),
+            (68446, "HADES-SA"),
+            (61781, "ASRTU-1"),
+            (7, "LAPAN"),
+            (1, "OTHER"),
+            (68796, "ARICA-2"),
+        ],
     )
     conn.executemany(
         "INSERT INTO transmitters VALUES (?, ?, 'FM', NULL, 1)",
@@ -220,7 +227,7 @@ def test_satellite_combo_lists_the_satellites_of_each_mode(
 
     assert listed() == {25544}
     t._mode_combo.setCurrentText("SSDV (AX.25)")
-    assert listed() == {7}
+    assert listed() == {7, 68796}  # ARICA-2 is always offered here
     t._mode_combo.setCurrentText("SSDV (CCSDS BPSK 9k6)")
     assert listed() == {61781}
     t._mode_combo.setCurrentText("SSDV (2FSK 800bps)")

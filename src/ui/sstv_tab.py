@@ -91,6 +91,9 @@ _FAST_DECODE_MODES = (_MODE_GR_SSDV, _MODE_FSK_SSDV)
 _FAST_AX25_BAUDS = ("4800", "9600")
 _FSK_SSDV_NORAD = 68446  # HADES-SA
 _GR_SSDV_NORAD = 61781  # ASRTU-1 (AO-123)
+# Listed in SSDV (AX.25) mode although SatNOGS does not describe its downlink as SSDV: its
+# 4800 baud G3RUH frames are received and stored here like any other AX.25 SSDV source.
+_ARICA2_NORAD = 68796  # ARICA-2
 # Satellites always offered in the satellite combo: their SSDV downlinks are not (or not
 # reliably) described as SSDV in the SatNOGS transmitter list the combo is built from.
 _ALWAYS_LISTED_NORADS = (_FSK_SSDV_NORAD, _GR_SSDV_NORAD)
@@ -739,6 +742,7 @@ class SstvTab(QWidget):
         if mode == _MODE_SSDV:
             # These two have their own modes
             norads -= {_GR_SSDV_NORAD, _FSK_SSDV_NORAD}
+            norads.add(_ARICA2_NORAD)
         return norads
 
     def _populate_sat_combo(self, prefer_norad: int = 0) -> None:
