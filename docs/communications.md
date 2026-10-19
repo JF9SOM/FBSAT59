@@ -1290,6 +1290,28 @@ HEX にして貼り付け→全パケット検出→`ssdv -d` で元サイズの
 **OrigamiSat-2 のフレームには SSDV パケットが見つからなかった**（`55 66`/`55 67` 無し。約 50 バイトの
 別形式）。ARICA-2 の 100 バイトフレームも標準の SSDV ではなさそう。標準外の形式は未対応。
 
+#### SSDV (GEOSCAN 9k6) モード — Lobachevsky（2026-10-19 実装・SSDV の実受信は未確認）
+
+SSDV タブの Mode の 5 番目。Lobachevsky（NORAD 67284、Geoscan 16U）専用。以前は DB の送信機名「Mode U - SSDV」に
+"SSDV" が含まれるだけで「SSDV (AX.25)」に入っていたが、**この衛星は AX.25 ではない**（9k6 GFSK、Geoscan 独自の
+CC1125 フレーミング＝同期語 `0x930B51DE`・PN9・CC11xx CRC16、1 フレーム 74 バイト）。AX.25 モード（Direwolf）では
+フレームが 1 つも出なかった。
+
+- **デコーダーは Telemetry タブの gr-satellites モードと同じ**: 同梱の `src/data/gr_satellites_extra/Lobachevsky.yml`
+  で gr_satellites を動かし（`GrSatellitesBackend`、高速は `GrFileDecoder`。詳細は [telemetry.md](telemetry.md)）、
+  `--kiss_server` で得た生フレームを `_on_gr_frame()` が HEX 表示し、`find_ssdv_packet()`（フレーム内の
+  `55 66` / `55 67` ＋ CRC-32）で**通常の SSDV パケット**を探して標準の `SsdvDecoder` へ渡す（CCSDS/DSLWP 用の
+  `_gr_ssdv_decoder` は使わない）。共通化したのは `_feed_standard_ssdv()`（AX.25 モードのフレーム処理と同じ関数）。
+- ライブ（SDR 必須）と、「速度: 高速」の IQ 録音一括デコードに対応（`_GR_MODES` / `_FAST_DECODE_MODES`）。
+  Lobachevsky の送信機を選ぶとモードが自動で切り替わる（`_auto_select_ssdv_mode()`）。衛星コンボは Lobachevsky だけで、
+  「SSDV (AX.25)」の一覧からは外した（`_mode_norads()`）。ボーレート欄は AX.25 専用のままグレーアウト。
+- **未確認**: 2026-10-19 の録音（25 フレーム）は全てテレメトリー（GNSS・EPS・ビーコン）で SSDV は 0 件。SSDV を送る
+  時の実際のフレーム形式は不明で、**フレームサイズが 74 バイト固定**のため、256 バイトの SSDV パケットが別サイズ／
+  複数フレームに分割されて送られるなら、このままでは画像にならない（その場合は SSDV が出た録音で調整する）。
+  通常のテレメトリーのフレームも「受信フレーム」に出るが、SSDV パケットとしては数えない。
+- モード名は英語のみ（翻訳対象外）。ツールチップとステータス文は日本語訳あり。
+- テスト: `tests/test_sstv_tab.py` の「GEOSCAN 9k6 SSDV」節（自動選択・衛星一覧・起動・フレームの供給・高速デコード）。
+
 #### SSDV (2FSK 800bps) モード — HADES-SA（2026-10-12 実装）
 
 **きっかけ**: 2026-10-12 12:54 JST の HADES-SA（NORAD 68446、436.875 MHz）の IQ 録音で、TCA 付近に SSDV らしき波形が

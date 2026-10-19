@@ -7688,3 +7688,23 @@ msgstr "高速デコード: 実行中 — {n} フレーム"
 #: src/ui/telemetry_tab.py
 msgid "Frame times are estimated (a few seconds off)."
 msgstr "フレームの時刻は推定値です（数秒ずれることがあります）。"
+
+#: src/ui/sstv_tab.py
+msgid ""
+"\n"
+"\n"
+"SSDV (GEOSCAN 9k6): Lobachevsky (NORAD 67284) 436.320 MHz, 9k6 GFSK in "
+"Geoscan's own framing (not AX.25), decoded by gr-satellites like the "
+"Telemetry tab. Needs an SDR. No SSDV frame has been received yet. Selecting "
+"Lobachevsky switches the mode automatically."
+msgstr ""
+"\n"
+"\n"
+"SSDV (GEOSCAN 9k6): Lobachevsky（NORAD 67284）436.320 MHz。Geoscan 独自のフレーミング"
+"（AX.25 ではない）の 9k6 GFSK を、テレメトリータブと同じ gr-satellites でデコードします。"
+"SDR が必要です。SSDV フレームの実受信はまだありません。Lobachevsky を選ぶとモードが"
+"自動で切り替わります。"
+
+#: src/ui/sstv_tab.py
+msgid "SSDV (GEOSCAN 9k6): waiting for Lobachevsky frames…"
+msgstr "SSDV (GEOSCAN 9k6): Lobachevsky のフレームを待っています…"

@@ -86,7 +86,13 @@ _MODE_SSDV = "SSDV (AX.25)"
 _MODE_GR_SSDV = "SSDV (CCSDS BPSK 9k6)"
 # Fourth mode: bare 800 baud 2FSK SSDV (HADES-SA), demodulated by comms.sstv.fsk_ssdv.
 _MODE_FSK_SSDV = "SSDV (2FSK 800bps)"
-_FAST_DECODE_MODES = (_MODE_GR_SSDV, _MODE_FSK_SSDV)
+# Fifth mode: Lobachevsky (Geoscan 16U), 9k6 GFSK in Geoscan's own CC1125 framing (not AX.25).
+# It runs the same gr_satellites decoder as the Telemetry tab and looks for ordinary SSDV
+# packets (sync 55 66 / 55 67 + CRC-32) in the frames. No SSDV frame has been received yet.
+_MODE_GEOSCAN_SSDV = "SSDV (GEOSCAN 9k6)"
+_GEOSCAN_SSDV_NORAD = 67284  # Lobachevsky
+_GR_MODES = (_MODE_GR_SSDV, _MODE_GEOSCAN_SSDV)  # the modes that run gr_satellites
+_FAST_DECODE_MODES = (_MODE_GR_SSDV, _MODE_GEOSCAN_SSDV, _MODE_FSK_SSDV)
 # SSDV (AX.25): only the G3RUH baud rates have a file decoder (the coherent MSK detector)
 _FAST_AX25_BAUDS = ("4800", "9600")
 _FSK_SSDV_NORAD = 68446  # HADES-SA
@@ -96,7 +102,7 @@ _GR_SSDV_NORAD = 61781  # ASRTU-1 (AO-123)
 _ARICA2_NORAD = 68796  # ARICA-2
 # Satellites always offered in the satellite combo: their SSDV downlinks are not (or not
 # reliably) described as SSDV in the SatNOGS transmitter list the combo is built from.
-_ALWAYS_LISTED_NORADS = (_FSK_SSDV_NORAD, _GR_SSDV_NORAD)
+_ALWAYS_LISTED_NORADS = (_FSK_SSDV_NORAD, _GR_SSDV_NORAD, _GEOSCAN_SSDV_NORAD)
 # app_settings key of the satellite picked last (restored at the next launch)
 _LAST_SAT_KEY = "sstv_last_satellite"
 # app_settings key of the Speed choice (Normal / Fast) for IQ recordings
@@ -327,7 +333,9 @@ class SstvTab(QWidget):
 
         top.addWidget(QLabel(_("Mode:")))
         self._mode_combo = QComboBox()
-        self._mode_combo.addItems([_MODE_SSTV, _MODE_SSDV, _MODE_GR_SSDV, _MODE_FSK_SSDV])
+        self._mode_combo.addItems(
+            [_MODE_SSTV, _MODE_SSDV, _MODE_GR_SSDV, _MODE_GEOSCAN_SSDV, _MODE_FSK_SSDV]
+        )
         self._mode_combo.setFixedWidth(170)
         self._mode_combo.currentTextChanged.connect(self._on_mode_changed)
         top.addWidget(self._mode_combo)
@@ -402,6 +410,12 @@ class SstvTab(QWidget):
                 "800 baud 2FSK (AMSAT-EA format). Needs an SDR.\n"
                 "\n"
                 "Selecting HADES-SA or ASRTU-1 switches the mode automatically."
+            )
+            + _(
+                "\n\nSSDV (GEOSCAN 9k6): Lobachevsky (NORAD 67284) 436.320 MHz, 9k6 GFSK in "
+                "Geoscan's own framing (not AX.25), decoded by gr-satellites like the "
+                "Telemetry tab. Needs an SDR. No SSDV frame has been received yet. Selecting "
+                "Lobachevsky switches the mode automatically."
             )
         )
         top.addWidget(_sstv_help)
@@ -654,7 +668,7 @@ class SstvTab(QWidget):
         mode = self._mode_combo.currentText()
         if mode == _MODE_SSDV and self._ssdv_engine_signals:
             self._start_ssdv_reception()
-        elif mode == _MODE_GR_SSDV:
+        elif mode in _GR_MODES:
             self._start_gr_ssdv()
         elif mode == _MODE_FSK_SSDV:
             self._start_fsk_ssdv()
@@ -705,8 +719,12 @@ class SstvTab(QWidget):
         self._apply_ssdv_baud()
 
     def _auto_select_ssdv_mode(self, norad: Any) -> None:
-        """Pick the SSDV mode that matches a satellite known to need one (HADES-SA, ASRTU-1)."""
-        wanted = {_FSK_SSDV_NORAD: _MODE_FSK_SSDV, _GR_SSDV_NORAD: _MODE_GR_SSDV}.get(norad)
+        """Pick the SSDV mode that matches a satellite known to need one."""
+        wanted = {
+            _FSK_SSDV_NORAD: _MODE_FSK_SSDV,
+            _GR_SSDV_NORAD: _MODE_GR_SSDV,
+            _GEOSCAN_SSDV_NORAD: _MODE_GEOSCAN_SSDV,
+        }.get(norad)
         if wanted is not None and self._mode_combo.currentText() != wanted:
             self._mode_combo.setCurrentText(wanted)
 
@@ -718,10 +736,13 @@ class SstvTab(QWidget):
         """NORAD ids of the satellites that provide *mode*.
 
         SSTV / SSDV (AX.25) are found from the transmitter descriptions in the DB; the
-        CCSDS BPSK and 2FSK modes each belong to exactly one satellite (ASRTU-1, HADES-SA).
+        CCSDS BPSK, GEOSCAN and 2FSK modes each belong to exactly one satellite (ASRTU-1,
+        Lobachevsky, HADES-SA).
         """
         if mode == _MODE_GR_SSDV:
             return {_GR_SSDV_NORAD}
+        if mode == _MODE_GEOSCAN_SSDV:
+            return {_GEOSCAN_SSDV_NORAD}
         if mode == _MODE_FSK_SSDV:
             return {_FSK_SSDV_NORAD}
         if not hasattr(self._conn, "execute"):
@@ -740,8 +761,8 @@ class SstvTab(QWidget):
 
             norads = set(get_norads_matching(self._conn, matches))
         if mode == _MODE_SSDV:
-            # These two have their own modes
-            norads -= {_GR_SSDV_NORAD, _FSK_SSDV_NORAD}
+            # These have their own modes (Lobachevsky is not AX.25 at all)
+            norads -= {_GR_SSDV_NORAD, _FSK_SSDV_NORAD, _GEOSCAN_SSDV_NORAD}
             norads.add(_ARICA2_NORAD)
         return norads
 
@@ -1096,13 +1117,23 @@ class SstvTab(QWidget):
             self._gr_backend.status_changed.connect(self._status_label.setText)
         return self._gr_backend
 
+    def _gr_mode_norad(self) -> int:
+        """The satellite the current gr_satellites mode decodes."""
+        if self._mode_combo.currentText() == _MODE_GEOSCAN_SSDV:
+            return _GEOSCAN_SSDV_NORAD
+        return _GR_SSDV_NORAD
+
     def _start_gr_ssdv(self) -> None:
-        """gr-satellites mode: run gr_satellites for ASRTU-1 on the SDR's IQ.
+        """gr-satellites modes: run gr_satellites on the SDR's IQ (ASRTU-1 or Lobachevsky).
 
         Needs an SDR (gr_satellites works on IQ) and the gr-satellites install; without
         either the tab still decodes pasted hex frames.
         """
-        self._ensure_gr_decoder()
+        geoscan = self._mode_combo.currentText() == _MODE_GEOSCAN_SSDV
+        if geoscan:
+            self._ensure_ssdv_decoder()
+        else:
+            self._ensure_gr_decoder()
         backend = self._ensure_gr_backend()
         if backend.is_running:
             return
@@ -1117,7 +1148,7 @@ class SstvTab(QWidget):
             samp_rate = 2_400_000
         self._ssdv_frames = 0
         self._ssdv_packets = 0
-        ok, err = backend.start(_GR_SSDV_NORAD, samp_rate, pipeline)
+        ok, err = backend.start(self._gr_mode_norad(), samp_rate, pipeline)
         if not ok:
             self._status_label.setText(f"⚠ {err}")
             return
@@ -1127,7 +1158,11 @@ class SstvTab(QWidget):
             )
             backend.stop()
             return
-        self._status_label.setText(_("SSDV (CCSDS BPSK 9k6): waiting for ASRTU-1 frames…"))
+        self._status_label.setText(
+            _("SSDV (GEOSCAN 9k6): waiting for Lobachevsky frames…")
+            if geoscan
+            else _("SSDV (CCSDS BPSK 9k6): waiting for ASRTU-1 frames…")
+        )
 
     def _stop_gr_ssdv_reception(self) -> None:
         """Stop the gr_satellites subprocess, if running."""
@@ -1138,6 +1173,10 @@ class SstvTab(QWidget):
         """A frame from gr_satellites: show it as hex, feed any VC1 SSDV packet in it."""
         self._raw_edit.append_frame(raw)
         self._ssdv_frames += 1
+        if self._mode_combo.currentText() == _MODE_GEOSCAN_SSDV:
+            self._feed_standard_ssdv(raw, _GEOSCAN_SSDV_NORAD)
+            self._update_raw_count()
+            return
         packet = find_dslwp_packet(raw)
         if (
             packet is not None
@@ -1369,18 +1408,21 @@ class SstvTab(QWidget):
         """A live AX.25 (or bare HDLC) frame: show it as hex, feed any SSDV packet in it."""
         self._raw_edit.append_frame(raw)
         self._ssdv_frames += 1
-        packet = find_ssdv_packet(raw)
-        if packet is not None and self._ssdv_decoder is not None:
-            valid = validate_packet(packet)
-            if valid is not None:
-                accepted = self._store_and_feed(
-                    KIND_STANDARD, valid, self._norad, self._ssdv_decoder
-                )
-            else:
-                accepted = self._ssdv_decoder.push_packet(packet)  # ssdv may still repair it
-            if accepted:
-                self._ssdv_packets += 1
+        self._feed_standard_ssdv(raw, self._norad)
         self._update_raw_count()
+
+    def _feed_standard_ssdv(self, raw: bytes, norad: int) -> None:
+        """Feed the ordinary SSDV packet in *raw* (if any) to the standard decoder."""
+        packet = find_ssdv_packet(raw)
+        if packet is None or self._ssdv_decoder is None:
+            return
+        valid = validate_packet(packet)
+        if valid is not None:
+            accepted = self._store_and_feed(KIND_STANDARD, valid, norad, self._ssdv_decoder)
+        else:
+            accepted = self._ssdv_decoder.push_packet(packet)  # ssdv may still repair it
+        if accepted:
+            self._ssdv_packets += 1
 
     def _update_raw_count(self) -> None:
         self._raw_count_label.setText(
@@ -1540,7 +1582,7 @@ class SstvTab(QWidget):
         if mode_text == _MODE_SSTV:
             self._view_tabs.setCurrentWidget(self._image_page)
             self._start_decoder()
-        elif mode_text == _MODE_GR_SSDV:
+        elif mode_text in _GR_MODES:
             self._view_tabs.setCurrentWidget(self._raw_page)
             self._start_gr_ssdv()
         elif mode_text == _MODE_FSK_SSDV:
@@ -1623,7 +1665,7 @@ class SstvTab(QWidget):
 
     def _start_fast_decode(self, path: Path) -> bool:
         """Start decoding *path* in a worker thread; False (reason on screen) if it cannot."""
-        if self._mode_combo.currentText() == _MODE_GR_SSDV:
+        if self._mode_combo.currentText() in _GR_MODES:
             from comms.telemetry.gr_satellites_backend import detect_gr_satellites
             from comms.telemetry.gr_satellites_file import GrFileDecoder
 
@@ -1635,8 +1677,11 @@ class SstvTab(QWidget):
                     "⚠ " + _("gr-satellites is not installed — see Help > gr-satellites…")
                 )
                 return False
-            self._ensure_gr_decoder()
-            job: Any = GrFileDecoder(path, _GR_SSDV_NORAD, parent=self)
+            if self._mode_combo.currentText() == _MODE_GEOSCAN_SSDV:
+                self._ensure_ssdv_decoder()
+            else:
+                self._ensure_gr_decoder()
+            job: Any = GrFileDecoder(path, self._gr_mode_norad(), parent=self)
             job.frame_found.connect(self._on_gr_fast_frame)
         elif self._mode_combo.currentText() == _MODE_SSDV:
             from comms.aprs.coherent_msk import CoherentMskFileDecoder
@@ -1902,7 +1947,8 @@ class SstvTab(QWidget):
     @staticmethod
     def _save_mode_name(mode_text: str) -> str:
         """ "SSDV" for both SSDV modes (they share a folder), else "SSTV"."""
-        return "SSDV" if mode_text in (_MODE_SSDV, _MODE_GR_SSDV, _MODE_FSK_SSDV) else "SSTV"
+        ssdv_modes = (_MODE_SSDV, _MODE_GR_SSDV, _MODE_GEOSCAN_SSDV, _MODE_FSK_SSDV)
+        return "SSDV" if mode_text in ssdv_modes else "SSTV"
 
     @staticmethod
     def _image_save_dir(mode: str = "SSTV") -> Path:

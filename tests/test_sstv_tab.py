@@ -708,6 +708,7 @@ def test_mode_combo_offers_the_gr_satellites_mode(tab: SstvTab) -> None:
         "SSTV",
         "SSDV (AX.25)",
         "SSDV (CCSDS BPSK 9k6)",
+        "SSDV (GEOSCAN 9k6)",
         "SSDV (2FSK 800bps)",
     ]
 
@@ -1247,3 +1248,96 @@ def test_speed_choice_follows_the_ax25_baud(tab: SstvTab) -> None:
     for baud, expected in (("1200", False), ("4800", True), ("9600", True)):
         tab._baud_combo.setCurrentIndex(tab._baud_combo.findData(baud))
         assert tab._combo_decode_speed.isVisibleTo(tab) is expected
+
+
+# ------------------------------------------------ GEOSCAN 9k6 SSDV (Lobachevsky)
+
+
+def test_lobachevsky_selects_the_geoscan_mode(
+    tab: SstvTab, rc: _FakeRadioControl, fake_gr: type[_FakeGrBackend]
+) -> None:
+    rc.transmitter_changed.emit({"description": "Mode U - SSDV", "norad_cat_id": 67284})
+    assert tab._mode_combo.currentText() == "SSDV (GEOSCAN 9k6)"
+    assert tab._view_tabs.currentWidget() is tab._raw_page
+
+
+def test_lobachevsky_is_listed_only_in_the_geoscan_mode(
+    tab: SstvTab, conn: sqlite3.Connection
+) -> None:
+    conn.execute("CREATE TABLE satellites (norad_cat_id INTEGER PRIMARY KEY, name TEXT)")
+    conn.execute(
+        "CREATE TABLE transmitters (uuid TEXT, norad_cat_id INTEGER, description TEXT,"
+        " mode TEXT, baud INTEGER, alive INTEGER)"
+    )
+    conn.execute("INSERT INTO satellites VALUES (67284, 'Lobachevsky')")
+    conn.execute("INSERT INTO transmitters VALUES ('u', 67284, 'Mode U - SSDV', 'SSDV', NULL, 1)")
+    conn.commit()
+    assert 67284 not in tab._mode_norads("SSDV (AX.25)")
+    assert tab._mode_norads("SSDV (GEOSCAN 9k6)") == {67284}
+
+
+def test_geoscan_mode_starts_gr_satellites_for_lobachevsky(
+    tab: SstvTab, rc: _FakeRadioControl, fake_gr: type[_FakeGrBackend], engine: _FakeEngine
+) -> None:
+    pipeline = _connect_gr_sdr(rc)
+    tab._mode_combo.setCurrentText("SSDV (GEOSCAN 9k6)")
+    assert fake_gr.instances[0].start_args == (67284, 250_000, pipeline)
+    assert not any(name == "start_sdr_direwolf" for name, _a, _k in engine.calls)
+    assert "Lobachevsky" in tab._status_label.text()
+
+
+def test_geoscan_frames_feed_the_standard_ssdv_decoder(
+    tab: SstvTab, rc: _FakeRadioControl, fake_gr: type[_FakeGrBackend]
+) -> None:
+    _connect_gr_sdr(rc)
+    tab._mode_combo.setCurrentText("SSDV (GEOSCAN 9k6)")
+    backend = fake_gr.instances[0]
+    backend.raw_frame_received.emit(make_packet(size=100, pid=0))
+    backend.raw_frame_received.emit(make_packet(size=100, pid=1))
+    backend.raw_frame_received.emit(bytes.fromhex("12984635bd46870000004850d56a"))  # telemetry
+    assert tab._ssdv_frames == 3
+    assert tab._ssdv_packets == 2
+    assert tab._ssdv_decoder is not None
+    assert tab._ssdv_decoder.packet_count == 2
+    assert tab._gr_ssdv_decoder is None  # the CCSDS decoder is not used
+
+
+class _FakeFileJob(QObject):
+    frame_found = Signal(str, float, bytes)
+    progress = Signal(float, int)
+    decoded = Signal(float, float, int)
+    failed = Signal(str)
+    created: list[_FakeFileJob] = []
+
+    def __init__(self, path: Path, norad: int, catalog_norad: Any = None, parent: Any = None):
+        super().__init__(parent)
+        self.args = (path, norad)
+        _FakeFileJob.created.append(self)
+
+    def start(self) -> None:
+        pass
+
+    def cancel(self) -> None:
+        pass
+
+    def wait(self, _ms: int = 0) -> bool:
+        return True
+
+
+def test_geoscan_fast_decode_runs_the_telemetry_tabs_decoder(
+    tab: SstvTab, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import comms.telemetry.gr_satellites_backend as backend_mod
+    import comms.telemetry.gr_satellites_file as file_mod
+
+    _FakeFileJob.created.clear()
+    monkeypatch.setattr(file_mod, "GrFileDecoder", _FakeFileJob)
+    monkeypatch.setattr(backend_mod, "detect_gr_satellites", lambda: True)
+    tab._mode_combo.setCurrentText("SSDV (GEOSCAN 9k6)")
+    assert tab._start_fast_decode(tmp_path / "rec.iq.wav") is True
+    job = _FakeFileJob.created[0]
+    assert job.args[1] == 67284
+    job.frame_found.emit("", 1.0, make_packet(size=100, pid=0))
+    job.frame_found.emit("", 2.0, bytes.fromhex("12984635bd46870000004850d56a"))
+    assert tab._ssdv_frames == 2
+    assert tab._ssdv_packets == 1
