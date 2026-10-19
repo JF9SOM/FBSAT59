@@ -45,6 +45,14 @@ _SYSTEM_SATYAML_DIR = Path(_GR_PYTHONPATH) / "satellites" / "satyaml"
 PROVISIONAL_NORAD_MIN = 90000
 PROVISIONAL_NORAD_MAX = 99999  # real catalogue numbers continue at 100000
 
+# satyaml files this app ships for satellites gr-satellites' own catalog lacks (or has wrong).
+# In a PyInstaller bundle the directory is collected to data/ under _MEIPASS.
+_EXTRA_SATYAML_DIR = (
+    Path(sys._MEIPASS) / "data" / "gr_satellites_extra"  # type: ignore[attr-defined]
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parents[2] / "data" / "gr_satellites_extra"
+)
+
 # UDP port used to send IQ from the SDR pipeline to gr_satellites
 _UDP_PORT = 7356
 # Payload of one UDP datagram carrying IQ. macOS refuses loopback datagrams larger than
@@ -144,25 +152,55 @@ def _satyaml_dir() -> Path | None:
     return _SYSTEM_SATYAML_DIR if _SYSTEM_SATYAML_DIR.exists() else None
 
 
-def list_gr_satellites_norads() -> set[int]:
-    """Return the set of NORAD IDs supported by the installed gr-satellites."""
+def _catalog_entries() -> list[tuple[Path, dict[str, object]]]:
+    """Return (file, parsed satyaml) for the active catalog plus this app's extra files.
+
+    An extra file is skipped when the catalog already has an entry for the same NORAD id,
+    so a satellite gr-satellites adds later is served by its own, maintained definition.
+    Empty when no gr-satellites install (or PyYAML) is available.
+    """
     satyaml_dir = _satyaml_dir()
     if satyaml_dir is None:
-        return set()
+        return []
     try:
         import yaml
     except ImportError:
-        return set()
-    norads: set[int] = set()
-    for yml in satyaml_dir.glob("*.yml"):
-        try:
-            with open(yml) as fh:
-                data = yaml.safe_load(fh)
-            if isinstance(data, dict) and isinstance(data.get("norad"), int):
-                norads.add(int(data["norad"]))
-        except Exception:
-            pass
-    return norads
+        return []
+    entries: list[tuple[Path, dict[str, object]]] = []
+    seen: set[int] = set()
+    for directory in (satyaml_dir, _EXTRA_SATYAML_DIR):
+        if not directory.is_dir():
+            continue
+        for yml in directory.glob("*.yml"):
+            try:
+                with open(yml) as fh:
+                    data = yaml.safe_load(fh)
+            except Exception:
+                continue
+            if not isinstance(data, dict) or not isinstance(data.get("norad"), int):
+                continue
+            if directory is _EXTRA_SATYAML_DIR and int(data["norad"]) in seen:
+                continue
+            if directory is satyaml_dir:
+                seen.add(int(data["norad"]))
+            entries.append((yml, data))
+    return entries
+
+
+def extra_satyaml_path(norad: int) -> Path | None:
+    """Return this app's own satyaml for *norad* when the catalog has none, else None.
+
+    gr_satellites accepts a satyaml path wherever it takes a NORAD id.
+    """
+    for yml, data in _catalog_entries():
+        if data.get("norad") == norad and yml.parent == _EXTRA_SATYAML_DIR:
+            return yml
+    return None
+
+
+def list_gr_satellites_norads() -> set[int]:
+    """Return the set of NORAD IDs supported by the installed gr-satellites."""
+    return {int(str(data["norad"])) for _, data in _catalog_entries()}
 
 
 def _normalize_sat_name(name: str) -> str:
@@ -202,24 +240,10 @@ def map_provisional_to_tracked(
 
 def list_gr_satellites_with_names() -> list[tuple[int, str]]:
     """Return sorted list of (norad, name) for all gr-satellites supported satellites."""
-    satyaml_dir = _satyaml_dir()
-    if satyaml_dir is None:
-        return []
-    try:
-        import yaml
-    except ImportError:
-        return []
-    result: list[tuple[int, str]] = []
-    for yml in satyaml_dir.glob("*.yml"):
-        try:
-            with open(yml) as fh:
-                data = yaml.safe_load(fh)
-            if isinstance(data, dict) and isinstance(data.get("norad"), int):
-                norad = int(data["norad"])
-                name = str(data.get("name", str(norad)))
-                result.append((norad, name))
-        except Exception:
-            pass
+    result = [
+        (int(str(data["norad"])), str(data.get("name", str(data["norad"]))))
+        for _, data in _catalog_entries()
+    ]
     result.sort(key=lambda t: t[1].upper())
     return result
 
@@ -230,38 +254,28 @@ def get_satellite_info(norad: int) -> dict[str, object] | None:
     'frequencies' is a sorted list of unique downlink frequencies (Hz) found in the YAML.
     Returns None if the satellite is not found.
     """
-    satyaml_dir = _satyaml_dir()
-    if satyaml_dir is None:
-        return None
-    try:
-        import yaml
-    except ImportError:
-        return None
-    for yml in satyaml_dir.glob("*.yml"):
-        try:
-            with open(yml) as fh:
-                data = yaml.safe_load(fh)
-            if isinstance(data, dict) and data.get("norad") == norad:
-                txs = data.get("transmitters", {})
-                tx_names = list(txs.keys())
-                freqs: list[int] = sorted(
-                    {
-                        int(v["frequency"])
-                        for v in txs.values()
-                        if isinstance(v, dict) and v.get("frequency")
-                    }
-                )
-                baudrates = [
-                    v["baudrate"] for v in txs.values() if isinstance(v, dict) and v.get("baudrate")
-                ]
-                return {
-                    "name": str(data.get("name", "")),
-                    "transmitters": tx_names,
-                    "frequencies": freqs,
-                    "baudrates": baudrates,
-                }
-        except Exception:
-            pass
+    for _, data in _catalog_entries():
+        if data.get("norad") != norad:
+            continue
+        txs = data.get("transmitters", {})
+        if not isinstance(txs, dict):
+            txs = {}
+        freqs: list[int] = sorted(
+            {
+                int(v["frequency"])
+                for v in txs.values()
+                if isinstance(v, dict) and v.get("frequency")
+            }
+        )
+        baudrates = [
+            v["baudrate"] for v in txs.values() if isinstance(v, dict) and v.get("baudrate")
+        ]
+        return {
+            "name": str(data.get("name", "")),
+            "transmitters": list(txs.keys()),
+            "frequencies": freqs,
+            "baudrates": baudrates,
+        }
     return None
 
 
@@ -454,9 +468,13 @@ class GrSatellitesBackend(QObject):
         if self._kiss_supported:
             kiss_port = find_free_port()
 
+        sat_id = catalog_norad if catalog_norad is not None else norad
+        extra_yml = extra_satyaml_path(sat_id)
+        target = str(extra_yml) if extra_yml is not None else str(sat_id)
+
         cmd = [
             *argv_prefix,
-            str(catalog_norad if catalog_norad is not None else norad),
+            target,
             "--udp",
             "--udp_port",
             str(_UDP_PORT),

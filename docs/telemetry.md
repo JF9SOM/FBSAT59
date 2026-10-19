@@ -206,6 +206,27 @@ DB の生存中・非表示でない衛星を探す（`gr_satellites_backend.map
 **Foresail-1p の注意**: フレーミングは GomSpace AX100（ASM）で AX.25 G3RUH ではないため、
 Direwolf 経路では S/N が十分でも復調できない。gr-satellites 経路のみ有効。
 
+### カタログに無い衛星用の同梱 satyaml（2026-10-19、Lobachevsky）
+
+gr-satellites 本体のカタログに無い衛星は、`src/data/gr_satellites_extra/*.yml`（PyInstaller では
+`data/gr_satellites_extra/`、`scripts/fbsat59.spec` の `datas`）に自前の satyaml を置く。
+`gr_satellites_backend._catalog_entries()` がカタログ本体とこのディレクトリを合わせて走査し、
+衛星コンボ・`get_satellite_info()` に反映する。**同じ NORAD がカタログ本体にあれば本体を優先**
+（上流が追加した後は上流の定義に自動で切り替わる）。起動時は、同梱分に限り NORAD ではなく
+yml のパスを `gr_satellites` に渡す（`extra_satyaml_path()`。gr_satellites は衛星引数にパスを受け付ける）。
+gr-satellites 自体が未インストールなら従来どおり何も出ない。
+
+- **Lobachevsky（RS83S、NORAD 67284、Geoscan 16U）**: 9k6 FSK、フレーミングは gr-satellites の
+  `GEOSCAN`（CC1125、同期語 `0x930B51DE`、PN9、CC11xx CRC16）だが、**`frame size` は 74**
+  （GEOSCAN-EDELVEIS の 66 では 1 フレームも出ない）。2026-10-19 の実 IQ 録音（250 kHz、約 11 分）の
+  404〜405 秒のバーストで同期語が 727 ビット間隔で並び、CRC 合格を確認。gr_satellites 実行で
+  400〜410 秒の切り出しから 17 PDU を復号。ペイロード先頭は `12 98 46 35 bd 46 xx`（末尾の `xx` が連番）。
+  **72 バイトの中身（センサー値）は未解読**で、受信・表示のみ。
+- 同梱 yml が実在の他の Geoscan 衛星（Geoscan-1〜6 等）にも 74 バイトで当てはまるかは未確認。
+- 0 kHz 付近のバースト（約 283 秒・404〜405 秒）が対象。−70 kHz 付近の別信号は未調査。
+- テスト: `tests/test_gr_satellites_backend.py` の `TestExtraSatyaml`（同梱 yml の定義、パス渡し、
+  カタログ優先）。実フレームでのデコード自体は手元の gr_satellites での手動確認のみ。
+
 ---
 
 ## ゴーストエントリ問題（症状のパターンと発見済みの実例、2026-09-05）

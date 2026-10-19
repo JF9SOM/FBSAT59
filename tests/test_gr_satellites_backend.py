@@ -214,6 +214,87 @@ class TestSatyamlDirFallback:
             assert backend._satyaml_dir() is None
 
 
+@pytest.fixture(autouse=True)
+def _no_extra_satyaml(tmp_path: Path, request: pytest.FixtureRequest) -> Iterator[None]:
+    """Keep the shipped extra satyaml files out of tests that fake the catalog."""
+    if request.cls is not None and request.cls.__name__ == "TestExtraSatyaml":
+        yield
+        return
+    empty = tmp_path / "no_extra"
+    empty.mkdir()
+    with patch.object(backend, "_EXTRA_SATYAML_DIR", empty):
+        yield
+
+
+class TestExtraSatyaml:
+    """This app's own satyaml files for satellites the gr-satellites catalog lacks."""
+
+    def _catalog(self, tmp_path: Path, extra: Path) -> Path:
+        catalog = tmp_path / "satyaml"
+        catalog.mkdir()
+        (catalog / "iss.yml").write_text("norad: 25544\nname: ISS\n")
+        return catalog
+
+    def test_extra_entry_is_listed_and_served_by_path(self, tmp_path: Path) -> None:
+        extra = tmp_path / "extra"
+        extra.mkdir()
+        (extra / "lob.yml").write_text("norad: 67284\nname: Lobachevsky\n")
+        catalog = self._catalog(tmp_path, extra)
+        with (
+            patch.object(backend, "_satyaml_dir", return_value=catalog),
+            patch.object(backend, "_EXTRA_SATYAML_DIR", extra),
+        ):
+            assert backend.list_gr_satellites_norads() == {25544, 67284}
+            assert backend.extra_satyaml_path(67284) == extra / "lob.yml"
+            assert backend.extra_satyaml_path(25544) is None
+
+    def test_catalog_entry_wins_over_an_extra_with_the_same_norad(self, tmp_path: Path) -> None:
+        extra = tmp_path / "extra"
+        extra.mkdir()
+        (extra / "iss.yml").write_text("norad: 25544\nname: Mine\n")
+        catalog = self._catalog(tmp_path, extra)
+        with (
+            patch.object(backend, "_satyaml_dir", return_value=catalog),
+            patch.object(backend, "_EXTRA_SATYAML_DIR", extra),
+        ):
+            assert backend.extra_satyaml_path(25544) is None
+            info = backend.get_satellite_info(25544)
+        assert info is not None and info["name"] == "ISS"
+
+    def test_start_passes_the_yml_path_for_an_extra_satellite(self, tmp_path: Path) -> None:
+        extra = tmp_path / "extra"
+        extra.mkdir()
+        (extra / "lob.yml").write_text("norad: 67284\nname: Lobachevsky\n")
+        catalog = self._catalog(tmp_path, extra)
+        b = backend.GrSatellitesBackend()
+        with (
+            patch.object(backend, "_satyaml_dir", return_value=catalog),
+            patch.object(backend, "_EXTRA_SATYAML_DIR", extra),
+            patch.object(
+                backend,
+                "resolve_gr_satellites_command",
+                return_value=(["/usr/bin/gr_satellites"], False),
+            ),
+            patch.object(backend, "_supports_kiss_server", return_value=False),
+            patch.object(backend, "_supports_udp_raw", return_value=True),
+            patch.object(backend.subprocess, "Popen", return_value=_FakeProc()) as mock_popen,
+        ):
+            b.start(67284, 250000, MagicMock())
+        assert mock_popen.call_args[0][0][1] == str(extra / "lob.yml")
+        b.stop()
+
+    def test_shipped_lobachevsky_definition(self) -> None:
+        import yaml
+
+        path = backend._EXTRA_SATYAML_DIR / "Lobachevsky.yml"
+        data = yaml.safe_load(path.read_text())
+        tx = data["transmitters"]["9k6 FSK downlink"]
+        assert data["norad"] == 67284
+        assert tx["framing"] == "GEOSCAN"
+        assert tx["frame size"] == 74
+        assert tx["baudrate"] == 9600
+
+
 class TestListSatellitesUsesResolvedDir:
     def test_list_norads_reads_from_resolved_dir(self, tmp_path: Path) -> None:
         satyaml = tmp_path / "satyaml"

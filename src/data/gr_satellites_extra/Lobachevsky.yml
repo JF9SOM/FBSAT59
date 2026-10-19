@@ -1,0 +1,20 @@
+# Lobachevsky (RS83S), a Geoscan 16U CubeSat. gr-satellites' own catalog has no entry for it.
+# Verified on a real IQ recording (2026-10-19): the 9k6 FSK bursts use the same CC1125 framing
+# as GEOSCAN-EDELVEIS (sync word 0x930B51DE, PN9 whitening, CC11xx CRC16) but each frame is
+# 74 bytes (72 data + 2 CRC) instead of 66.
+name: Lobachevsky
+alternative_names:
+   - RS83S
+norad: 67284
+data:
+   &tlm Telemetry:
+     unknown
+transmitters:
+   9k6 FSK downlink:
+     frequency: 436.320e+6
+     modulation: FSK
+     baudrate: 9600
+     framing: GEOSCAN
+     frame size: 74
+     data:
+     - *tlm
