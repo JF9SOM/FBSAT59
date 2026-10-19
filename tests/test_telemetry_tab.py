@@ -1521,25 +1521,63 @@ class _FakeJob:
         return True
 
 
-def test_gr_fast_decode_frames_carry_an_estimated_time_and_are_not_sent(
+def test_gr_fast_decode_frames_carry_an_estimated_time_and_are_uploaded(
     qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import datetime
 
     tab, rec = _gr_tab(qtbot, conn, monkeypatch)
+    conn.execute(
+        "UPDATE app_settings SET value = ? WHERE key = 'satnogs_upload_settings'",
+        ('{"enabled": true, "api_key": "k"}',),
+    )
+    monkeypatch.setattr(type(tab._gr_backend), "started_norad", property(lambda self: None))
     tab._fast_job = _FakeJob()  # type: ignore[assignment]
     tab._fast_start = datetime.datetime(2026, 10, 19, 1, 36, 23, tzinfo=datetime.UTC)
+    tab._fast_time_known = True
     tab._selected_norad = 67284
-    tab._on_gr_fast_frame(_GR_PDU_TEXT, 100.0)
+    tab._on_gr_fast_frame(_GR_PDU_TEXT, 100.0, bytes.fromhex("12984635"))
     row = _row_data(tab, 0)
     assert row.when == tab._fast_start + datetime.timedelta(seconds=100)
-    assert row.reliable is False
+    assert row.raw == bytes.fromhex("12984635")
+    assert row.reliable is True
     assert tab._gr_fast_when is None
-    assert rec.calls == []
-    # the same recording decoded again, its estimated time a few seconds off: one reception
-    tab._on_gr_fast_frame(_GR_PDU_TEXT, 104.0)
+    # the upload switch is on: the frame goes to SatNOGS with its estimated time
+    assert [(c[1], c[2]) for c in rec.calls] == [(bytes.fromhex("12984635"), 67284)]
+    # the same recording decoded again, its estimated time a few seconds off: one log row
+    tab._on_gr_fast_frame(_GR_PDU_TEXT, 104.0, bytes.fromhex("12984635"))
     count = conn.execute("SELECT COUNT(*) FROM telemetry_log WHERE kind = 'gr'").fetchone()[0]
     assert count == 1
+    tab._fast_job = None
+
+
+def test_gr_fast_decode_without_a_start_time_is_not_uploaded(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import datetime
+
+    tab, rec = _gr_tab(qtbot, conn, monkeypatch)
+    monkeypatch.setattr(type(tab._gr_backend), "started_norad", property(lambda self: None))
+    tab._fast_job = _FakeJob()  # type: ignore[assignment]
+    tab._fast_start = datetime.datetime.now(datetime.UTC)
+    tab._fast_time_known = False
+    tab._selected_norad = 67284
+    tab._on_gr_fast_frame(_GR_PDU_TEXT, 10.0, bytes.fromhex("12984635"))
+    assert _row_data(tab, 0).reliable is False
+    assert rec.calls == []
+    tab._fast_job = None
+
+
+def test_the_time_satellite_and_callsign_columns_are_narrow(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab.resize(1200, 600)
+    tab.show()
+    widths = [tab._table.columnWidth(i) for i in range(4)]
+    assert max(widths[:3]) < widths[3] / 2
+    assert tab._table.horizontalHeader().sectionResizeMode(0).name == "Interactive"
 
 
 def test_decode_speed_choice_is_offered_in_gr_mode(qtbot: QtBot, conn: sqlite3.Connection) -> None:

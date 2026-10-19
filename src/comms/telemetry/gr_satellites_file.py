@@ -24,8 +24,10 @@ from typing import Any
 import numpy as np
 from PySide6.QtCore import QThread, Signal
 
+from comms.aprs.direwolf import _kiss_decode_frames
 from comms.telemetry.gr_satellites_backend import (
     FrameBlockCollector,
+    _supports_kiss_server,
     build_gr_env,
     satellite_argument,
 )
@@ -68,7 +70,7 @@ class GrFileDecoder(QThread):
     Usage
     -----
     job = GrFileDecoder(path, norad)
-    job.frame_found.connect(consumer)   # (str: the frame's text, float: estimated seconds in)
+    job.frame_found.connect(consumer)   # (str: text, float: estimated seconds in, bytes: frame)
     job.progress.connect(show)          # (-1.0: unknown, int frames so far)
     job.decoded.connect(done)           # (float: recording seconds, float: elapsed, int frames)
     job.failed.connect(error)           # (str)
@@ -76,10 +78,12 @@ class GrFileDecoder(QThread):
     ...
     job.cancel()                        # stops early; decoded is then not emitted
 
-    The frames are reported together at the end, once their times can be estimated.
+    The frames are reported together at the end, once their times can be estimated. The
+    bytes are the deframed frame as gr_satellites writes it with ``--kiss_out`` (what SatNOGS
+    takes), empty when that could not be paired with the text.
     """
 
-    frame_found: Signal = Signal(str, float)
+    frame_found: Signal = Signal(str, float, bytes)
     progress: Signal = Signal(float, int)
     decoded: Signal = Signal(float, float, int)
     failed: Signal = Signal(str)
@@ -107,14 +111,17 @@ class GrFileDecoder(QThread):
         self.wait(5000)
 
     def _run_gr(
-        self, wav: Path, collector: FrameBlockCollector | None
+        self, wav: Path, collector: FrameBlockCollector | None, kiss_out: Path | None = None
     ) -> tuple[list[tuple[str, float]], float, int, list[str]]:
         """Run gr_satellites on *wav*; return (frame blocks, seconds taken, exit code, tail)."""
         resolved = resolve_gr_satellites_command()
         if resolved is None:
             raise OSError("gr_satellites not found — install via Help > gr-satellites…")
         argv_prefix, is_bundled = resolved
+        env = build_gr_env(is_bundled)
         cmd = [*argv_prefix, self._sat_arg, "--wavfile", str(wav), "--iq"]
+        if kiss_out is not None and _supports_kiss_server(argv_prefix, env):
+            cmd += ["--kiss_out", str(kiss_out)]
         kwargs: dict[str, Any] = {}
         if sys.platform == "win32":
             kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
@@ -126,7 +133,7 @@ class GrFileDecoder(QThread):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            env=build_gr_env(is_bundled),
+            env=env,
             **kwargs,
         )
         blocks: list[tuple[str, float]] = []
@@ -164,6 +171,14 @@ class GrFileDecoder(QThread):
             _blocks, elapsed, _code, _tail = self._run_gr(wav, None)
         return elapsed
 
+    @staticmethod
+    def _read_kiss(path: Path) -> list[bytes]:
+        """The data frames gr_satellites wrote to its ``--kiss_out`` file (none if absent)."""
+        try:
+            return _kiss_decode_frames(bytearray(path.read_bytes()))
+        except OSError:
+            return []
+
     def run(self) -> None:
         try:
             info = read_wav_info(self._path)
@@ -175,7 +190,12 @@ class GrFileDecoder(QThread):
             overhead = self._measure_overhead(info.sample_rate)
             if self._cancel.is_set():
                 return
-            blocks, total, code, tail = self._run_gr(self._path, FrameBlockCollector())
+            with tempfile.TemporaryDirectory() as tmp:
+                kiss_path = Path(tmp) / "frames.kiss"
+                blocks, total, code, tail = self._run_gr(
+                    self._path, FrameBlockCollector(), kiss_path
+                )
+                frames = self._read_kiss(kiss_path)
         except OSError as exc:
             self.failed.emit(str(exc))
             return
@@ -185,9 +205,14 @@ class GrFileDecoder(QThread):
             self.failed.emit(" | ".join(tail) or f"gr_satellites exited with code {code}")
             return
         overhead = min(overhead, total / 2)
-        for text, arrival in blocks:
+        # The text blocks and the KISS frames come in the same order; only pair them when
+        # there are as many of each.
+        paired = len(frames) == len(blocks)
+        for i, (text, arrival) in enumerate(blocks):
             self.frame_found.emit(
-                text, estimate_frame_seconds(arrival, total, overhead, info.duration_s)
+                text,
+                estimate_frame_seconds(arrival, total, overhead, info.duration_s),
+                frames[i] if paired else b"",
             )
         self.progress.emit(1.0, len(blocks))
         self.decoded.emit(info.duration_s, time.monotonic() - started, len(blocks))

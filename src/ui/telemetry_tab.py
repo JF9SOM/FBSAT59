@@ -663,9 +663,10 @@ class TelemetryTab(QWidget):
             [_("Time (UTC)"), _("Callsign"), _("Satellite"), _("Data")]
         )
         hdr = self._table.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        # The first three columns are narrow and wrap (the time at its space, a name at
+        # its spaces) so the data column gets the width; drag a header edge to change them.
+        for column in range(3):
+            hdr.setSectionResizeMode(column, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setItemDelegate(_DimRowDelegate(self._table))
@@ -696,6 +697,10 @@ class TelemetryTab(QWidget):
         self._table.setFont(_big_font)
         self._table.horizontalHeader().setFont(_header_font)
         self._table.verticalHeader().setFont(_header_font)
+        metrics = self._table.fontMetrics()
+        self._table.setColumnWidth(0, metrics.horizontalAdvance("2026-10-19") + 24)
+        self._table.setColumnWidth(1, metrics.horizontalAdvance("★ Lobachevsky ") + 24)
+        self._table.setColumnWidth(2, metrics.horizontalAdvance("★ Lobachevsky ") + 24)
         raw_page_layout.addWidget(self._table)
         # gr-satellites mode: the full decoded text of the selected row -- one field per
         # line, as gr-satellites prints it -- is the last sub-tab of "Decoded Fields" (the only
@@ -2226,24 +2231,35 @@ class TelemetryTab(QWidget):
         job.start()
         return True
 
-    def _on_gr_fast_frame(self, text: str, seconds: float) -> None:
-        """One frame of a fast decode: add it with its estimated time (never sent on)."""
+    def _on_gr_fast_frame(self, text: str, seconds: float, raw: bytes) -> None:
+        """One frame of a fast decode: add it with its estimated time.
+
+        The frame comes first, as it does live, so the row finds it and "Send selected" and
+        the automatic SatNOGS upload have its bytes. The time is only an estimate (a few
+        seconds off) and is trusted only when the recording's start time is known.
+        """
         if self._fast_job is None:
             return
         self._gr_fast_when = self._fast_start + datetime.timedelta(seconds=float(seconds))
         try:
+            if raw:
+                self._on_gr_raw_frame(raw)
             self._on_gr_telemetry(text)
         finally:
             self._gr_fast_when = None
 
     def _on_gr_fast_done(self, duration_s: float, elapsed_s: float, frames: int) -> None:
+        note = (
+            "  ⚠ " + _("Frame times are estimated (a few seconds off).")
+            if self._fast_time_known
+            else "  ⚠ " + _("No start time in the file name: not sent to SatNOGS.")
+        )
         self._finish_fast_decode()
         self._lbl_status.setText(
             _("Decoded {dur} s of recording in {el} s — {n} frame(s)").format(
                 dur=round(duration_s), el=round(elapsed_s, 1), n=frames
             )
-            + "  ⚠ "
-            + _("Frame times are estimated (a few seconds off); not sent to SatNOGS.")
+            + note
         )
         self._lbl_status.setStyleSheet("color: #f39c12;")
 
@@ -2500,6 +2516,8 @@ class TelemetryTab(QWidget):
         _on_ax25_frame()'s forwarding for the AFSK/Direwolf path.
         """
         norad = self._gr_backend.started_norad
+        if norad is None and self._gr_fast_when is not None:
+            norad = self._selected_norad  # a fast decode runs no backend process
         if norad is None:
             return
         when, reliable = self._frame_time()
@@ -2745,7 +2763,8 @@ class TelemetryTab(QWidget):
         if self._import_time is not None:
             return self._import_time, True
         if self._gr_fast_when is not None:
-            return self._gr_fast_when, False  # estimated from the output's timing
+            # estimated from the output's timing; the recording's own start must be known
+            return self._gr_fast_when, self._fast_time_known
         return signal_time(self._sdr_pipeline)
 
     def _submit_raw_frame(
@@ -2768,7 +2787,17 @@ class TelemetryTab(QWidget):
             return
         if reliable:
             known = (
-                self._find_logged_duplicate("frame_hex", raw.hex(), norad, when)
+                self._find_logged_duplicate(
+                    "frame_hex",
+                    raw.hex(),
+                    norad,
+                    when,
+                    window_s=(
+                        _GR_FAST_DUPLICATE_WINDOW_S
+                        if self._gr_fast_when is not None
+                        else _DUPLICATE_WINDOW_S
+                    ),
+                )
                 if norad is not None
                 else None
             )

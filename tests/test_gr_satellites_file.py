@@ -17,6 +17,11 @@ from comms.telemetry.iq_wav import iter_iq_blocks, read_wav_info
 
 _FAKE_GR = """
 import sys, time
+if "--kiss_out" in sys.argv:
+    with open(sys.argv[sys.argv.index("--kiss_out") + 1], "wb") as f:
+        for i in range(3):
+            f.write(b"\\xc0\\x09\\x00\\x00" + b"\\xc0")  # a timestamp control frame
+            f.write(b"\\xc0\\x00\\x12" + bytes([i]) + b"\\xc0")
 for i in range(3):
     print("***** VERBOSE PDU DEBUG PRINT ******")
     print("pdu length = 2 bytes")
@@ -49,10 +54,12 @@ def test_estimate_frame_seconds_maps_arrival_to_position() -> None:
     assert gr_file.estimate_frame_seconds(30.0, 22.0, 2.0, 600.0) == 600.0
 
 
-def _decode(path: Path, tmp_path: Path) -> tuple[list[tuple[str, float]], list[str], list[tuple]]:
+def _decode(
+    path: Path, tmp_path: Path
+) -> tuple[list[tuple[str, float, bytes]], list[str], list[tuple]]:
     script = tmp_path / "fake_gr.py"
     script.write_text(_FAKE_GR)
-    frames: list[tuple[str, float]] = []
+    frames: list[tuple[str, float, bytes]] = []
     failures: list[str] = []
     done: list[tuple] = []
     with (
@@ -62,9 +69,10 @@ def _decode(path: Path, tmp_path: Path) -> tuple[list[tuple[str, float]], list[s
             return_value=([sys.executable, str(script)], True),
         ),
         patch.object(gr_file, "satellite_argument", return_value="67284") as arg,
+        patch.object(gr_file, "_supports_kiss_server", return_value=True),
     ):
         job = gr_file.GrFileDecoder(path, 67284)
-        job.frame_found.connect(lambda t, s: frames.append((t, s)))
+        job.frame_found.connect(lambda t, s, r: frames.append((t, s, r)))
         job.failed.connect(failures.append)
         job.decoded.connect(lambda d, e, n: done.append((d, e, n)))
         job.run()
@@ -78,7 +86,8 @@ def test_decodes_a_recording_and_times_the_frames_inside_it(tmp_path: Path) -> N
     assert failures == []
     assert len(frames) == 3
     assert "0000: 12 01" in frames[1][0]
-    seconds = [s for _, s in frames]
+    assert [r for _, _, r in frames] == [bytes([0x12, i]) for i in range(3)]
+    seconds = [s for _, s, _r in frames]
     assert seconds == sorted(seconds)
     assert all(0.0 <= s <= 2.0 for s in seconds)
     assert done[0][0] == pytest.approx(2.0)

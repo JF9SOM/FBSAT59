@@ -7686,5 +7686,5 @@ msgid "Fast decode: running — {n} frame(s)"
 msgstr "高速デコード: 実行中 — {n} フレーム"
 
 #: src/ui/telemetry_tab.py
-msgid "Frame times are estimated (a few seconds off); not sent to SatNOGS."
-msgstr "フレームの時刻は推定値です（数秒ずれることがあります）。SatNOGS へは送信しません。"
+msgid "Frame times are estimated (a few seconds off)."
+msgstr "フレームの時刻は推定値です（数秒ずれることがあります）。"
