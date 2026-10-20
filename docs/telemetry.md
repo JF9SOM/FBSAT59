@@ -1010,6 +1010,9 @@ CW Decoder タブの **「📂 Decode IQ Recording…」**と、Telemetry タブ
   ■ Stop（Telemetry の Stop も `stop_decoding()` 経由）は途中までの結果を残して中止する。
 - Telemetry ↔ CW タブ: `cw_tlm_fast_requested(path)` → `MainWindow._on_telemetry_cw_tlm_fast()` →
   `CwTab.start_fast_decode()`。終了は `CwTab.fast_decode_finished(要約)`、進捗は `fast_decode_progress`。
+- CW タブ単体にも「速度」プルダウン（`telemetry_decode_speed` を Telemetry タブと共用）。通常は SDR Control で
+  録音を開いて実時間再生し、オーバービューのクリックで `CwTab` が開始（`_open_recording_for_replay()` /
+  `_on_iq_seek_done()`）。高速は上記の一括デコード。初期値は通常。
 - テスト: `tests/test_cw_file_decoder.py`（デモジュレーターをスタブ化＝CI に scipy 無し）、
   `tests/test_telemetry_cw_tlm.py` の `TestFastDecode`。
 - 速度: ARICA-2 の実録音（`68796_ARICA-2_20261014T065853Z.iq.wav`、706 秒・1.4 GB）の DeepCW 高速デコードが
