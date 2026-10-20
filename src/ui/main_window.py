@@ -3691,8 +3691,8 @@ class MainWindow(QMainWindow):
         self._add_tab_close_button(tab)
         self._tab_widget.setCurrentIndex(idx)
         tab.satellite_requested.connect(self._on_comms_satellite_requested)
-        if tab.current_protocol() == "arica2":
-            # Reopened on ARICA-2: put the message-box transponder back on the rig.
+        if tab.current_protocol() in ("arica2", "foresail1p"):
+            # Reopened on ARICA-2 / Foresail-1p: put its transponder back on the rig.
             tab.request_satellite()
 
     def _collect_ai_help_environment(self) -> HelpEnvironment:

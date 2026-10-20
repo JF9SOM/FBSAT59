@@ -303,9 +303,25 @@ def is_arica2_message_box_transmitter(xpdr: dict[str, Any]) -> bool:
     return "MESSAGE" in desc and (mode == "GMSK" or xpdr.get("baud") == 4800)
 
 
+# Foresail-1p is catalogued as 66778 and (in gr-satellites / SATNOGS provisional) as 98467.
+_FORESAIL1P_NORAD_IDS = frozenset({66778, 98467})
+
+
+def is_foresail1p_digipeater_transmitter(xpdr: dict[str, Any]) -> bool:
+    """Foresail-1p's amateur packet repeater: SATNOGS "Mode U/U - GMSK9k6 - Digipeater -
+    Skylink" (437.125 MHz up and down). Its other transmitter is the telemetry downlink."""
+    if xpdr.get("norad_cat_id") not in _FORESAIL1P_NORAD_IDS:
+        return False
+    return "DIGIPEATER" in (xpdr.get("description") or "").upper()
+
+
 def is_message_box_transmitter(xpdr: dict[str, Any]) -> bool:
-    """Satellites the Message Box/Digipeater tab serves (AX100 digipeater, ARICA-2)."""
-    return is_ax100_digi_transmitter(xpdr) or is_arica2_message_box_transmitter(xpdr)
+    """Satellites the Message Box/Digipeater tab serves (AX100 digipeater, ARICA-2, Foresail-1p)."""
+    return (
+        is_ax100_digi_transmitter(xpdr)
+        or is_arica2_message_box_transmitter(xpdr)
+        or is_foresail1p_digipeater_transmitter(xpdr)
+    )
 
 
 COMMS_TAB_CONFIG: dict[str, CommsTabConfig] = {

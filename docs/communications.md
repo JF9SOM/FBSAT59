@@ -4470,3 +4470,45 @@ AX.25 UI の汎用デジピーター（436.925 MHz、アップ/ダウン同一�
   "APRS"）を追加。これで APRS タブの Quick Panel Input Source に LASARsat が出て、Baud が 9600 になる。
 - **未確認**: 実機の送信（9600 baud の APRS 送信自体が未確認）、受信ログへのテレメトリー（`OBC,…` 等 APRS でないフレーム）の
   混入の見え方。
+
+### Foresail-1p（NORAD 66778）の Skylink デジピーター（2026-10-20）
+
+Message Box/Digipeater タブのプロトコル「Foresail-1p digipeater (Skylink)」（`src/ui/foresail1p_panel.py`
+＋ `src/comms/foresail/`）。437.125 MHz・9600 baud GMSK の上り下り同一周波数。SATNOGS の送信機
+`Mode U/U - GMSK9k6 - Digipeater - Skylink`（`is_foresail1p_digipeater_transmitter()`。NORAD 66778/98467）で選ばれる。
+**受信は SDR の I/Q、送信はリグのサウンドカード出力**（ARICA-2 と同じ分担。サウンドカード受信は未対応）。
+
+**仕様の出典**: ICD「FS1p Space/Ground Interface Control Sheet」V2（2026-02-23）第 4 章、SatNOGS `foresail1p.ksy`、
+Aalto の公開ソース（github.com/aaltosatellite/skylink の `repeater_frame_bytes.py` / `repeater_frame_wav.py` / `src/`）。
+
+- **経路**: AX.25 UI フレーム → Skylink フレーム（VC 3・認証なし）→ AX100 の ASM+Golay フレーム（`ax100digi.frame`
+  を流用）→ NRZ GMSK。VC 0〜2 は認証付きで他局は使えない。
+- **非標準な AX.25（衛星側の修正不能バグ）**: HDLC フラグ 0x7E なし・ビットスタッフィングなし、FCS は CRC-16/X.25 の
+  **MSB が先**、衛星の再送は FCS の**第 2 バイトだけ**正しい、Skylink のフレーム CRC フラグ付きで送ると受理されない
+  （衛星からの再送には付く。CRC-32、BE）。宛先は `OH2F1S / APRS / ALL* / BEACON / CQ*`、制御 0x03・PID 0xF0、全体 128 B 以内。
+- **PHY（実フレームで確認）**: 同期語 `0x1ACFFC1D`、Golay の 12 bit は**長さのみ**（フラグ bit は 0）、CCSDS スクランブラ、
+  **従来基底**の RS(255,223)（libfec の `decode_rs_8`。`reed-solomon-ccsds` の `dual_basis=False`。既存の AX100 は
+  `dual_basis=True` が既定）。`ax100digi.frame` に `syncword` / `forced_flags`（フラグを強制）/ `rs_dual_basis` /
+  `decode_frame_at()` を追加した（既定は従来どおり）。
+- **受信（`comms/foresail/rx.py`）**: `coherent_msk` のコヒーレント MSK 検波（`raw_bit_streams()` を追加）の生ビットから
+  同期語を探し、Golay・スクランブラ・RS で復号。0.4 秒ごとに直近 1.6 秒を処理（遅延は約 0.4 秒）。極性は両方試す。
+  **実録音（2026-10-18 01:32 UTC・S/N 約 11 dB）で、gr-satellites が読んだ 2 フレームに加え、gr-satellites が読めない
+  フレームを含む計 4 フレーム（最強バースト）と、gr-satellites が 0 だった別バーストの 3 フレームを復号**。
+- **送信（`comms/foresail/tx.py`）**: 16×0xAA のプリアンブル → ASM → Golay → スクランブル → RS、NRZ（1 = 正）を
+  ガウシアン整形（BT 0.5）した音声（G3RUH スクランブラは使わない）。受信器と **gr-satellites（`--use_agc` が必要）の両方で
+  逆変換できることをテストで確認**（`tests/test_foresail_rx_tx.py`）。**電波では未検証**。
+- **TDD（`comms/foresail/tdd.py`）**: 衛星の全フレームの拡張ヘッダ `44 <window u16> <remaining u16>`（ms）から窓の終わりを
+  求める。実録音では窓の終わり = **フレーム先頭時刻 + remaining**（4 ms 以内で一致）、次の窓は約 1.02 秒後（窓 250 ms・
+  ギャップ+テール 約 518 ms）、ビーコンは約 60 秒ごと。Auto は窓の終わり + ガード（既定 300 ms）後に送る。
+
+**未確認・後で調整する点**: ①ガード時間（窓の後どのくらいで衛星が受信状態になるか非公開）②拡張ヘッダなし（TDD 拡張を付けない）
+で衛星が受け付けるか。付けると衛星の窓の信念が更新される ③地上局識別子（既定 `PyGS`＝Aalto のテストツールと同じ。
+衛星の識別子 `OH2F1S` と同じものは受信側が捨てる）④音声の極性・レベル・整形（リグの FM データ入力で 9600 baud の偏移
+±2.4 kHz になるように TX Level を調整）⑤衛星が実際に中継するタイミング（「次の空き窓」）⑥VC 3 の下りの実フレームは未受信
+（フレーム CRC-32 の検証は仕様どおりだが未確認）。
+
+**ICD と実フレームの食い違い**: ICD は UHF=(3,5)・ADCS=(3,4) と書くが、実フレームは UHF=(3,4)・ADCS=(3,5)（ksy と一致、
+`telemetry_formats/66778.json`）。
+
+テスト: `tests/test_foresail_skylink.py`・`test_foresail_tdd.py`・`test_foresail_rx_tx.py`（scipy と
+`reed-solomon-ccsds` が無い環境ではスキップ）・`test_foresail1p_panel.py`。

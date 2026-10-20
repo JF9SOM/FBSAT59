@@ -2,10 +2,10 @@
 
 One tab for the satellites that store and relay short messages. A protocol
 combo switches between the existing AX100 panel (MARMOTSat/GreenCube
-digipeaters, ``Ax100DigiTab``, unchanged) and the ARICA-2 message box
-(``Arica2Panel``). Both panels stay alive while the other is shown; only the
-visible one's input is meant to be used, so switching stops the hidden panel's
-receive path.
+digipeaters, ``Ax100DigiTab``, unchanged), the ARICA-2 message box
+(``Arica2Panel``) and the Foresail-1p Skylink digipeater (``Foresail1pPanel``).
+All panels stay alive while another is shown; only the visible one's input is
+meant to be used, so switching stops the hidden panels' receive path.
 
 MainWindow's duck-typed hooks (``set_use_utc``, ``refresh_sdr_pipeline``) are
 forwarded to both panels.
@@ -23,18 +23,24 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QStackedWidget, QV
 from i18n import _
 from ui.arica2_panel import Arica2Panel
 from ui.ax100_digi_tab import Ax100DigiTab
+from ui.foresail1p_panel import Foresail1pPanel
 
 _SETTINGS_KEY = "message_box_tab_settings"
 _PROTOCOL_AX100 = "ax100"
 _PROTOCOL_ARICA2 = "arica2"
+_PROTOCOL_FORESAIL1P = "foresail1p"
 # Catalog numbers the Quick Panel's satellite request is made with (MARMOTSat's
-# real, visible id; ARICA-2).
-_NORAD_BY_PROTOCOL = {_PROTOCOL_AX100: 69912, _PROTOCOL_ARICA2: 68796}
+# real, visible id; ARICA-2; Foresail-1p).
+_NORAD_BY_PROTOCOL = {
+    _PROTOCOL_AX100: 69912,
+    _PROTOCOL_ARICA2: 68796,
+    _PROTOCOL_FORESAIL1P: 66778,
+}
 _TAB_KEY = "ax100digi"
 
 
 class MessageBoxTab(QWidget):
-    """Protocol selector over the AX100 digipeater and ARICA-2 panels."""
+    """Protocol selector over the AX100 digipeater, ARICA-2 and Foresail-1p panels."""
 
     # (tab_key, norad): MainWindow selects the satellite and its matching
     # transponder, same as the Comms Quick Panel's satellite combo.
@@ -55,6 +61,7 @@ class MessageBoxTab(QWidget):
         self._protocol_combo = QComboBox()
         self._protocol_combo.addItem(_("AX100 digipeater (MARMOTSat)"), _PROTOCOL_AX100)
         self._protocol_combo.addItem(_("ARICA-2 message box"), _PROTOCOL_ARICA2)
+        self._protocol_combo.addItem(_("Foresail-1p digipeater (Skylink)"), _PROTOCOL_FORESAIL1P)
         row.addWidget(self._protocol_combo)
         row.addStretch(1)
         layout.addLayout(row)
@@ -63,7 +70,9 @@ class MessageBoxTab(QWidget):
         self._ax100 = Ax100DigiTab(conn, radio_control, parent=self)
         self._arica2 = Arica2Panel(conn, radio_control, parent=self, autostart=False)
         self._stack.addWidget(self._ax100)
+        self._foresail = Foresail1pPanel(conn, radio_control, parent=self, autostart=False)
         self._stack.addWidget(self._arica2)
+        self._stack.addWidget(self._foresail)
         layout.addWidget(self._stack)
 
         saved = self._load_protocol()
@@ -92,7 +101,7 @@ class MessageBoxTab(QWidget):
         self._conn.commit()
 
     def current_protocol(self) -> str:
-        """The selected protocol key (``"ax100"`` or ``"arica2"``)."""
+        """The selected protocol key (``"ax100"``, ``"arica2"`` or ``"foresail1p"``)."""
         return str(self._protocol_combo.currentData())
 
     @Slot(int)
@@ -111,14 +120,23 @@ class MessageBoxTab(QWidget):
         The panels must not both hold the audio/SDR input, so the one being
         hidden is released first and the shown one (re)starts its own.
         """
-        if self.current_protocol() == _PROTOCOL_ARICA2:
+        protocol = self.current_protocol()
+        if protocol != _PROTOCOL_ARICA2:
+            self._arica2.stop_input()
+        if protocol != _PROTOCOL_FORESAIL1P:
+            self._foresail.stop_input()
+        if protocol == _PROTOCOL_ARICA2:
             self._stack.setCurrentWidget(self._arica2)
             self._ax100._disconnect_sdr_audio()
             self._ax100._disconnect_soundcard_audio()
             self._arica2.start_input()
+        elif protocol == _PROTOCOL_FORESAIL1P:
+            self._stack.setCurrentWidget(self._foresail)
+            self._ax100._disconnect_sdr_audio()
+            self._ax100._disconnect_soundcard_audio()
+            self._foresail.start_input()
         else:
             self._stack.setCurrentWidget(self._ax100)
-            self._arica2.stop_input()
             self._ax100._disconnect_sdr_audio()
             self._ax100._disconnect_soundcard_audio()
             self._ax100._apply_input_source()
@@ -128,18 +146,23 @@ class MessageBoxTab(QWidget):
     # ------------------------------------------------------------------ #
 
     def set_use_utc(self, use_utc: bool) -> None:
-        """Forward View > Time Zone changes to both panels."""
+        """Forward View > Time Zone changes to every panel."""
         self._ax100.set_use_utc(use_utc)
         self._arica2.set_use_utc(use_utc)
+        self._foresail.set_use_utc(use_utc)
 
     def refresh_sdr_pipeline(self, pipeline: Any) -> None:
         """Forward SDR (re)connects to the panel that is showing."""
-        if self.current_protocol() == _PROTOCOL_ARICA2:
+        protocol = self.current_protocol()
+        if protocol == _PROTOCOL_ARICA2:
             self._arica2.refresh_sdr_pipeline(pipeline)
+        elif protocol == _PROTOCOL_FORESAIL1P:
+            self._foresail.refresh_sdr_pipeline(pipeline)
         else:
             self._ax100.refresh_sdr_pipeline(pipeline)
 
     def closeEvent(self, event: Any) -> None:
         self._arica2.shutdown()
+        self._foresail.shutdown()
         self._ax100.close()
         super().closeEvent(event)

@@ -7729,3 +7729,150 @@ msgid ""
 msgstr ""
 "録音した .iq.wav ファイルを開き、含まれる CW を一括でデコードします（録音時間の"
 "何分の一かで完了。ライブ受信と同じデコードで、時刻はファイル名の開始時刻を使います）。"
+
+#: src/ui/message_box_tab.py
+msgid "Foresail-1p digipeater (Skylink)"
+msgstr "Foresail-1p デジピーター（Skylink）"
+
+#: src/ui/foresail1p_panel.py
+msgid "Repeater (VC 3)"
+msgstr "リピーター（VC 3）"
+
+#: src/ui/foresail1p_panel.py
+#, python-brace-format
+msgid "service {a},{b}"
+msgstr "サービス {a},{b}"
+
+#: src/ui/foresail1p_panel.py
+#, python-brace-format
+msgid "Telemetry (VC {vc})"
+msgstr "テレメトリー（VC {vc}）"
+
+#: src/ui/foresail1p_panel.py
+#, python-brace-format
+msgid "VC {vc}"
+msgstr "VC {vc}"
+
+#: src/ui/foresail1p_panel.py
+msgid "Foresail-1p (OH2F1S) digipeater ℹ"
+msgstr "Foresail-1p（OH2F1S）デジピーター ℹ"
+
+#: src/ui/foresail1p_panel.py
+msgid "437.125 MHz, 9600 baud GMSK, Skylink protocol. Virtual channel 3 is the amateur packet repeater: AX.25 UI frames (APRS or any text) sent to the satellite are repeated back with the satellite added as a digipeater (kept in memory and repeated 4 times every 4 minutes). Receive with the SDR; the rig transmits through the Sound Card. The satellite is only heard during its beacon every minute or so, and its transmit windows must be avoided."
+msgstr "437.125 MHz、9600 baud GMSK、Skylink プロトコル。仮想チャンネル 3 がアマチュアパケットリピーターで、衛星に送った AX.25 UI フレーム（APRS や任意のテキスト）は、衛星がデジピーターとして加わった形で送り返されます（メモリに保存され、4 分ごとに 4 回繰り返されます）。受信は SDR、送信はリグがサウンドカード経由で行います。衛星が聞こえるのは 1 分ほどごとのビーコンの間だけで、衛星の送信窓を避けて送る必要があります。"
+
+#: src/ui/foresail1p_panel.py
+msgid "Show telemetry frames (VC 0/1)"
+msgstr "テレメトリーフレーム（VC 0/1）を表示"
+
+#: src/ui/foresail1p_panel.py
+msgid "Type"
+msgstr "種別"
+
+#: src/ui/foresail1p_panel.py
+msgid "Via"
+msgstr "経由"
+
+#: src/ui/foresail1p_panel.py
+msgid "Satellite windows"
+msgstr "衛星の送信窓"
+
+#: src/ui/foresail1p_panel.py
+msgid "Satellite: not heard yet"
+msgstr "衛星：まだ聞こえていません"
+
+#: src/ui/foresail1p_panel.py
+msgid "Auto (between satellite windows)"
+msgstr "自動（衛星の窓の合間に送信）"
+
+#: src/ui/foresail1p_panel.py
+msgid "Manual sends the moment you press Send. Auto holds the message until the satellite's current transmit window (read from its frames) has ended and the next one is not about to start."
+msgstr "手動は Send を押した瞬間に送信します。自動は、衛星の現在の送信窓（衛星のフレームから読み取ります）が終わり、次の窓がまだ始まらないタイミングまでメッセージを保持します。"
+
+#: src/ui/foresail1p_panel.py
+msgid "Guard:"
+msgstr "ガード："
+
+#: src/ui/foresail1p_panel.py
+msgid "Wait this long after a satellite window ends before transmitting. How soon after its window the satellite listens is not published: tune it on real passes."
+msgstr "衛星の窓が終わってから、この時間だけ待って送信します。窓の後どのくらいで衛星が受信状態になるかは公開されていないので、実際のパスで調整してください。"
+
+#: src/ui/foresail1p_panel.py
+msgid "Repeater message"
+msgstr "リピーターメッセージ"
+
+#: src/ui/foresail1p_panel.py
+msgid "The satellite repeats frames addressed to OH2F1S, APRS, ALL*, BEACON or CQ* (* = any characters)."
+msgstr "衛星は、宛先が OH2F1S、APRS、ALL*、BEACON、CQ*（* は任意の文字）のフレームを中継します。"
+
+#: src/ui/foresail1p_panel.py
+msgid "optional, comma separated"
+msgstr "省略可、カンマ区切り"
+
+#: src/ui/foresail1p_panel.py
+msgid "Up to 8 digipeater callsigns. The satellite adds itself."
+msgstr "デジピーターのコールサインは最大 8 個。衛星が自分を追加します。"
+
+#: src/ui/foresail1p_panel.py
+msgid "Skylink ID:"
+msgstr "Skylink ID："
+
+#: src/ui/foresail1p_panel.py
+msgid "Identity of this ground station in the Skylink header (1-7 characters, not OH2F1S). The Aalto test tools use PyGS."
+msgstr "Skylink ヘッダーに入れる、この地上局の識別子（1〜7 文字、OH2F1S 以外）。Aalto のテストツールは PyGS を使います。"
+
+#: src/ui/foresail1p_panel.py
+msgid "APRS data or any text (first character = APRS data type)"
+msgstr "APRS データまたは任意のテキスト（先頭の 1 文字が APRS のデータタイプ）"
+
+#: src/ui/foresail1p_panel.py
+msgid "TX audio level in dB below full scale. Set it so the FM data deviation is right for 9600 baud; combine with the radio's data input gain."
+msgstr "TX 音声レベル（フルスケールからの dB）。FM データの偏移が 9600 baud に合うように設定し、無線機のデータ入力ゲインと組み合わせて調整してください。"
+
+#: src/ui/foresail1p_panel.py
+msgid "Input: SDR connected (9600 baud GMSK); the rig transmits through the Sound Card"
+msgstr "入力：SDR 接続中（9600 baud GMSK）。送信はリグがサウンドカード経由で行います"
+
+#: src/ui/foresail1p_panel.py
+#, python-brace-format
+msgid "frames {n} (repeater {r})"
+msgstr "フレーム {n}（リピーター {r}）"
+
+#: src/ui/foresail1p_panel.py
+msgid "Satellite TRANSMITTING — wait"
+msgstr "衛星が送信中 — 待機"
+
+#: src/ui/foresail1p_panel.py
+#, python-brace-format
+msgid "last window {s:.1f} s ago"
+msgstr "直近の窓は {s:.1f} 秒前"
+
+#: src/ui/foresail1p_panel.py
+#, python-brace-format
+msgid "Satellite heard — {ago}"
+msgstr "衛星を受信 — {ago}"
+
+#: src/ui/foresail1p_panel.py
+msgid "Satellite quiet"
+msgstr "衛星は静か"
+
+#: src/ui/foresail1p_panel.py
+msgid "Message must be ASCII"
+msgstr "メッセージは ASCII のみです"
+
+#: src/ui/foresail1p_panel.py
+#, python-brace-format
+msgid "Armed: will be sent between satellite windows ({s:.2f} s of audio)"
+msgstr "送信待機中：衛星の窓の合間に送信します（音声 {s:.2f} 秒）"
+
+#: src/ui/foresail1p_panel.py
+msgid "Armed message cancelled"
+msgstr "待機中のメッセージを取り消しました"
+
+#: src/ui/foresail1p_panel.py
+msgid "Sent"
+msgstr "送信"
+
+#: src/ui/foresail1p_panel.py
+msgid "TX done — watch for the repeated frame"
+msgstr "送信完了 — 中継されたフレームを待ちます"
