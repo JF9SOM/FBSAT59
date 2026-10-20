@@ -73,7 +73,7 @@ _VIA_PATH_CHOICES = ("ARISS", "APRSAT", "WIDE", "DP0SNX", "OK0LSR")
 
 # Satellites whose digipeater is addressed by callsign: selecting one of their transponders
 # sets the Via field to this value (and restores the previous Via when another is selected).
-_SATELLITE_VIA: dict[int, str] = {62391: "OK0LSR"}
+_SATELLITE_VIA: dict[int, str] = {62391: "OK0LSR", 59112: "DP0SNX"}  # LASARsat, SONATE-2
 
 # app_settings key for user-typed Via values, persisted so they remain
 # selectable in the dropdown across sessions (see _load_via_choices()).

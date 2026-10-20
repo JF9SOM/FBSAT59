@@ -290,6 +290,18 @@ def test_lasarsat_selects_its_digipeater_in_via_and_restores_it(
     assert tab._saved_via() == "WIDE"
 
 
+def test_sonate2_selects_its_digipeater_in_via_and_restores_it(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _make_tab(qtbot, conn)
+    tab._via_edit.setCurrentText("ARISS")
+    tab._on_transmitter_changed({"norad_cat_id": 59112, "baud": 1200})
+    assert tab._via_edit.currentText() == "DP0SNX"
+    assert tab._saved_via() == "ARISS"
+    tab._on_transmitter_changed({"norad_cat_id": 25544, "baud": 1200})
+    assert tab._via_edit.currentText() == "ARISS"
+
+
 def test_via_typed_by_hand_is_kept_when_leaving_lasarsat(
     qtbot: QtBot, conn: sqlite3.Connection
 ) -> None:
