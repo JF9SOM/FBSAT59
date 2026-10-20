@@ -41,6 +41,9 @@ from .randomizer import ccsds_xor_sequence
 # reversed (the AX100 modem's over-the-air bit order convention).
 SYNCWORD: str = "10010011000010110101000111011110"
 SYNCWORD_LEN: int = len(SYNCWORD)
+# The CCSDS ASM 0x1ACFFC1D (MSB first) that Skylink (Foresail-1p) and gr-satellites'
+# ``FORESAIL-1`` framing use with the same Golay + CCSDS scrambler + RS(255,223) stack.
+SKYLINK_SYNCWORD: str = "00011010110011111111110000011101"
 DEFAULT_SYNC_THRESHOLD: int = 4
 
 _GOLAY_FIELD_BITS = 24
@@ -65,8 +68,8 @@ class Ax100Frame:
     bit_offset: int  # index in the input bit array where the sync word started
 
 
-def _syncword_bits() -> NDArray[np.uint8]:
-    return np.array([int(c) for c in SYNCWORD], dtype=np.uint8)
+def _syncword_bits(syncword: str = SYNCWORD) -> NDArray[np.uint8]:
+    return np.array([int(c) for c in syncword], dtype=np.uint8)
 
 
 def _bits_to_bytes(bits: NDArray[np.uint8]) -> bytes:
@@ -86,6 +89,9 @@ def find_frames(
     *,
     sync_threshold: int = DEFAULT_SYNC_THRESHOLD,
     require_rs: bool = True,
+    syncword: str = SYNCWORD,
+    forced_flags: tuple[bool, bool] | None = None,
+    rs_dual_basis: bool = True,
 ) -> Iterator[Ax100Frame]:
     """Search an unpacked-bit array (values 0/1) for AX100 ASM+Golay frames.
 
@@ -107,26 +113,47 @@ def find_frames(
     documented stack always uses RS, so this doesn't reject any real
     frame from this satellite family; pass require_rs=False only to
     decode/test an RS-disabled configuration on purpose.
+
+    *syncword* is the unpacked sync word to look for (``SKYLINK_SYNCWORD`` for
+    Foresail-1p). *forced_flags* = ``(scrambler, rs)`` ignores the flag bits of the Golay
+    field and uses those settings instead: Skylink transmits only the length there (the other
+    bits are zero), and gr-satellites' ``u482c`` decoder is configured the same way.
+    *rs_dual_basis* False selects the conventional-basis RS(255,223) that libfec's
+    ``decode_rs_8`` (and so Skylink / Foresail-1p) uses; the default is the dual-basis CCSDS form.
     """
-    sync = _syncword_bits()
+    sync = _syncword_bits(syncword)
+    sync_len = len(sync)
     n = len(bits)
     i = 0
-    while i <= n - SYNCWORD_LEN:
-        window = bits[i : i + SYNCWORD_LEN]
+    while i <= n - sync_len:
+        window = bits[i : i + sync_len]
         errors = int(np.count_nonzero(window != sync))
         if errors <= sync_threshold:
-            frame = _try_decode_at(bits, i, require_rs=require_rs)
+            frame = _try_decode_at(
+                bits,
+                i,
+                require_rs=require_rs,
+                sync_len=sync_len,
+                forced_flags=forced_flags,
+                rs_dual_basis=rs_dual_basis,
+            )
             if frame is not None:
                 yield frame
-                i += SYNCWORD_LEN + _GOLAY_FIELD_BITS + frame.frame_len * 8
+                i += sync_len + _GOLAY_FIELD_BITS + frame.frame_len * 8
                 continue
         i += 1
 
 
 def _try_decode_at(
-    bits: NDArray[np.uint8], sync_start: int, *, require_rs: bool = True
+    bits: NDArray[np.uint8],
+    sync_start: int,
+    *,
+    require_rs: bool = True,
+    sync_len: int = SYNCWORD_LEN,
+    forced_flags: tuple[bool, bool] | None = None,
+    rs_dual_basis: bool = True,
 ) -> Ax100Frame | None:
-    golay_start = sync_start + SYNCWORD_LEN
+    golay_start = sync_start + sync_len
     if golay_start + _GOLAY_FIELD_BITS > len(bits):
         return None
 
@@ -145,6 +172,9 @@ def _try_decode_at(
     viterbi_flag = bool(data12 & 0x100)
     scrambler_flag = bool(data12 & 0x200)
     rs_flag = bool(data12 & 0x400)
+    if forced_flags is not None:
+        viterbi_flag = False
+        scrambler_flag, rs_flag = forced_flags
 
     if viterbi_flag:
         # Convolutional coding is not implemented (not used by GreenCube/
@@ -172,7 +202,9 @@ def _try_decode_at(
         if rx_len < _RS_PARITY_LEN:
             return None
         try:
-            rs_bytes_corrected, message = rs_ccsds.decode_shortened(bytes(packet[:rx_len]))
+            rs_bytes_corrected, message = rs_ccsds.decode_shortened(
+                bytes(packet[:rx_len]), dual_basis=rs_dual_basis
+            )
         except (rs_ccsds.RsUnavailableError, rs_ccsds.RsUncorrectableError):
             return None
         payload = message
@@ -191,16 +223,48 @@ def _try_decode_at(
     )
 
 
-def encode_frame(payload: bytes, *, scrambler: bool = True, rs: bool = True) -> NDArray[np.uint8]:
+def decode_frame_at(
+    bits: NDArray[np.uint8],
+    sync_start: int,
+    *,
+    syncword: str = SYNCWORD,
+    forced_flags: tuple[bool, bool] | None = None,
+    rs_dual_basis: bool = True,
+) -> Ax100Frame | None:
+    """Decode the frame whose sync word starts at *sync_start* in *bits*, or None.
+
+    For callers that find candidate sync positions themselves (a vectorized search), where
+    ``find_frames()``'s bit-by-bit scan would be too slow.
+    """
+    return _try_decode_at(
+        bits,
+        sync_start,
+        sync_len=len(syncword),
+        forced_flags=forced_flags,
+        rs_dual_basis=rs_dual_basis,
+    )
+
+
+def encode_frame(
+    payload: bytes,
+    *,
+    scrambler: bool = True,
+    rs: bool = True,
+    syncword: str = SYNCWORD,
+    golay_flags: bool = True,
+    rs_dual_basis: bool = True,
+) -> NDArray[np.uint8]:
     """Build an on-air unpacked-bit array (sync word + Golay length + data)
     for `payload` (a CSP packet), for use by a future TX path.
 
-    Convolutional coding is never applied (viterbi_flag is always 0).
+    Convolutional coding is never applied (viterbi_flag is always 0). With
+    ``golay_flags=False`` the Golay field carries only the length (Skylink), not the
+    scrambler/RS flag bits.
     """
     packet = bytearray(payload)
 
     if rs:
-        codeword = rs_ccsds.encode_shortened(bytes(packet))
+        codeword = rs_ccsds.encode_shortened(bytes(packet), dual_basis=rs_dual_basis)
         packet = bytearray(codeword)
 
     if scrambler:
@@ -210,10 +274,12 @@ def encode_frame(payload: bytes, *, scrambler: bool = True, rs: bool = True) -> 
     if frame_len > 255:
         raise ValueError(f"encoded frame too long ({frame_len} bytes, max 255)")
 
-    data12 = (frame_len & 0xFF) | (0x200 if scrambler else 0) | (0x400 if rs else 0)
+    data12 = frame_len & 0xFF
+    if golay_flags:
+        data12 |= (0x200 if scrambler else 0) | (0x400 if rs else 0)
     codeword24 = golay.encode_golay24(data12)
 
     golay_bits = np.array([(codeword24 >> (23 - i)) & 1 for i in range(24)], dtype=np.uint8)
     packet_bits = _bytes_to_bits(bytes(packet))
 
-    return np.concatenate([_syncword_bits(), golay_bits, packet_bits])
+    return np.concatenate([_syncword_bits(syncword), golay_bits, packet_bits])

@@ -233,6 +233,25 @@ class CoherentMskDecoder:
         floor = np.median(p[(np.abs(f) > lo) & (np.abs(f) < hi)])
         return bool(inband > _GATE_RATIO * floor)
 
+    def raw_bit_streams(self, iq: np.ndarray) -> list[tuple[int, np.ndarray]]:
+        """The coherently detected raw bits at each of the 8 symbol timing phases.
+
+        For a framing that is not G3RUH/NRZI/HDLC (e.g. Foresail-1p's Skylink, which sends
+        the frame bits as plain NRZ GMSK). Returns ``(phase, bits)`` pairs; the bit at index
+        ``k`` starts at ``(phase + k * SAMPLES_PER_SYMBOL)`` samples of the symbol-rate signal,
+        i.e. ``(phase / 8 + k) / baud`` seconds from the start of *iq*. The bit polarity is not
+        known (the caller tries both).
+        """
+        if not _SCIPY_AVAILABLE or len(iq) < 2048:
+            return []
+        y = self._to_symbol_rate(iq)
+        streams: list[tuple[int, np.ndarray]] = []
+        for phase in range(SAMPLES_PER_SYMBOL):
+            raw = _coherent_bits(y, phase)
+            if len(raw) >= 64:
+                streams.append((phase, raw))
+        return streams
+
     def decode(self, iq: np.ndarray) -> list[tuple[bytes, float]]:
         """Decode one chunk. Returns ``(frame, seconds_from_chunk_start)`` tuples.
 
