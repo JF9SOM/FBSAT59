@@ -1013,6 +1013,13 @@ CW Decoder タブの **「📂 Decode IQ Recording…」**と、Telemetry タブ
 - CW タブ単体にも「速度」プルダウン（`telemetry_decode_speed` を Telemetry タブと共用）。通常は SDR Control で
   録音を開いて実時間再生し、オーバービューのクリックで `CwTab` が開始（`_open_recording_for_replay()` /
   `_on_iq_seek_done()`）。高速は上記の一括デコード。初期値は通常。
+- **搬送波の自動オフセット（2026-10-20）**: CW モード `Demodulator` は IQ の**実部**だけを 300〜3000 Hz のバンドパスに
+  通すため、録音の中心（0 Hz）に乗った CW は直流として消え、何も読めなかった（ドップラー補正済みの自動録音は
+  信号がほぼ 0 Hz に来る。LASARsat `DE OK0LSR … THIS IS LASARSAT` で確認）。`find_cw_carrier_hz()` が録音を 1 回走査
+  （0.25 秒フレームごとにスペクトルを自身の中央値と比較し、10 dB 超を「オン」と数える）し、**断続する最強の狭帯域線**
+  （全フレームの 80% 超でオンの定常スパーと、オン 4 フレーム未満は除外）を選ぶ。`CwFileDecoder.run()` はその線が
+  `CW_TARGET_PITCH_HZ`（700 Hz）に来るよう各ブロックを位相連続の複素ミキサーで移動してから復調する。線が無ければ
+  そのまま。ドップラー追従はしない（補正済み録音前提。ゆっくりした残差だけを想定）。通常（実時間）再生は対象外。
 - テスト: `tests/test_cw_file_decoder.py`（デモジュレーターをスタブ化＝CI に scipy 無し）、
   `tests/test_telemetry_cw_tlm.py` の `TestFastDecode`。
 - 速度: ARICA-2 の実録音（`68796_ARICA-2_20261014T065853Z.iq.wav`、706 秒・1.4 GB）の DeepCW 高速デコードが

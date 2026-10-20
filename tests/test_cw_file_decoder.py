@@ -18,7 +18,8 @@ from pytestqt.qtbot import QtBot
 
 import comms.cw.file_decoder as file_decoder
 from comms.cw.codec import DecodeResult
-from comms.cw.file_decoder import CwFileDecoder
+from comms.cw.file_decoder import CwFileDecoder, find_cw_carrier_hz
+from comms.telemetry.iq_wav import read_wav_info
 from ui.cw_tab import CwTab
 
 RATE = 48_000
@@ -32,6 +33,8 @@ class _StubDemod:
 @pytest.fixture(autouse=True)
 def _stub_demod(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(file_decoder, "_make_demodulator", lambda _rate: _StubDemod())
+    # The recordings below are ramps, not signals: no carrier search (it has its own tests).
+    monkeypatch.setattr(file_decoder, "find_cw_carrier_hz", lambda _path, _info: None)
 
 
 def _write_wav(path: Path, seconds: float) -> None:
@@ -224,3 +227,76 @@ def test_tab_speed_choice_decides_between_replay_and_file_dialog(
     tab._speed_combo.setCurrentIndex(tab._speed_combo.findData("fast"))
     tab._fast_btn.click()
     assert dialogs and radio._sdr_control.opened == 1
+
+
+def _write_iq(path: Path, iq: np.ndarray, rate: int) -> None:
+    pairs = np.stack([iq.real, iq.imag], axis=1).astype("<f4")
+    data = pairs.tobytes()
+    fmt = struct.pack("<HHIIHH", 3, 2, rate, rate * 8, 8, 32)
+    chunks = b"fmt " + struct.pack("<I", len(fmt)) + fmt
+    chunks += b"data" + struct.pack("<I", len(data))
+    path.write_bytes(
+        b"RIFF" + struct.pack("<I", 4 + len(chunks) + len(data)) + b"WAVE" + chunks + data
+    )
+
+
+def _keyed_tone(rate: int, seconds: float, freq: float, steady_hz: float | None = None) -> Any:
+    """Noise plus a tone keyed 0.4 s on / 0.4 s off (and optionally a constant spur)."""
+    rng = np.random.default_rng(1)
+    n = int(rate * seconds)
+    t = np.arange(n) / rate
+    iq = 0.02 * (rng.standard_normal(n) + 1j * rng.standard_normal(n))
+    key = (np.floor(t / 0.4) % 2 == 0).astype(np.float64)
+    iq = iq + 0.3 * key * np.exp(2j * np.pi * freq * t)
+    if steady_hz is not None:
+        iq = iq + 0.3 * np.exp(2j * np.pi * steady_hz * t)
+    return iq.astype(np.complex64)
+
+
+@pytest.mark.parametrize("freq", [0.0, 2500.0, -37000.0])
+def test_find_carrier_locates_keyed_line_and_ignores_constant_spur(
+    tmp_path: Path, freq: float
+) -> None:
+    rate = 250_000
+    path = tmp_path / "c.iq.wav"
+    _write_iq(path, _keyed_tone(rate, 12.0, freq, steady_hz=60_000.0), rate)
+    found = find_cw_carrier_hz(path, read_wav_info(path))
+    assert found is not None
+    assert abs(found - freq) < 80.0
+
+
+def test_find_carrier_returns_none_for_noise_only(tmp_path: Path) -> None:
+    rate = 250_000
+    path = tmp_path / "n.iq.wav"
+    rng = np.random.default_rng(2)
+    n = rate * 6
+    _write_iq(
+        path, (rng.standard_normal(n) + 1j * rng.standard_normal(n)).astype(np.complex64), rate
+    )
+    assert find_cw_carrier_hz(path, read_wav_info(path)) is None
+
+
+def test_fast_decode_moves_the_found_line_to_the_target_pitch(
+    qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rate = 48_000
+    path = tmp_path / "s.iq.wav"
+    n = rate * 8
+    t = np.arange(n) / rate
+    _write_iq(path, np.exp(2j * np.pi * 0.0 * t).astype(np.complex64), rate)  # DC "line"
+    monkeypatch.setattr(file_decoder, "find_cw_carrier_hz", lambda _path, _info: 0.0)
+    seen: list[np.ndarray] = []
+
+    def decode(audio: np.ndarray, _rate: int) -> DecodeResult:
+        seen.append(audio.copy())
+        return _result(audio)
+
+    job = CwFileDecoder(path, decode)
+    with qtbot.waitSignal(job.decoded, timeout=20000):
+        job.start()
+    job.wait(2000)
+    assert seen
+    audio = seen[0]
+    spectrum = np.abs(np.fft.rfft(audio * np.hanning(len(audio))))
+    peak_hz = float(np.argmax(spectrum)) * RATE / len(audio)
+    assert abs(peak_hz - file_decoder.CW_TARGET_PITCH_HZ) < 5.0
