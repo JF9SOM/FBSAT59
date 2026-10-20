@@ -350,6 +350,14 @@ def get_telemetry_id_defs(norad: int | None) -> dict[str, Any] | None:
             defs = dict(candidate)
             break
 
+    # A ``text_message`` entry (free-text frames, e.g. LASARsat) gets its own sub-tab.
+    text_def = fmt.get("text_message")
+    if defs and isinstance(text_def, dict):
+        defs[str(text_def.get("id", "MSG"))] = {
+            "label": text_def.get("label", ""),
+            "fields": [{"name": "text_message", "label": text_def.get("field_label", "Message")}],
+        }
+
     # A flat ``fields`` list with a ``match`` pattern is one beacon type among
     # several frame types: give it its own "Decoded Fields" sub-tab.
     if not defs and fmt.get("match") and fmt.get("fields"):
@@ -486,7 +494,8 @@ def decode_telemetry(
         if record_ids:
             telemetry_id = record_ids[0]
     elif csv_messages:
-        text = payload.decode("ascii", errors="ignore")
+        # Some satellites (e.g. LASARsat) NUL-terminate the last field.
+        text = payload.decode("ascii", errors="ignore").rstrip("\x00")
         for key, msg_def in csv_messages.items():
             if not text.startswith(f"{key},"):
                 continue
@@ -498,6 +507,23 @@ def decode_telemetry(
                 if result is not None:
                     decoded_fields.append(result)
             break
+        else:
+            # Free-text frames (e.g. LASARsat's greetings and digipeated messages)
+            # fall through to the format's optional "text_message" definition.
+            text_def = fmt.get("text_message") if fmt else None
+            if text_def and text.strip() and all(c.isprintable() for c in text):
+                telemetry_id = str(text_def.get("id", "MSG"))
+                telemetry_label = text_def.get("label", "")
+                decoded_fields.append(
+                    TelemetryField(
+                        name="text_message",
+                        label=text_def.get("field_label", "Message"),
+                        raw_value=0,
+                        scaled_value=0.0,
+                        unit=text.strip(),
+                        is_string=True,
+                    )
+                )
     elif telemetry_ids and len(payload) >= 3:
         telemetry_id = payload[2]
         id_def = telemetry_ids.get(str(telemetry_id))

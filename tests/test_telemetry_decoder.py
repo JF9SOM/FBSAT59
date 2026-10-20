@@ -290,3 +290,60 @@ def test_lobachevsky_unknown_system_stays_raw() -> None:
     raw = bytes.fromhex("12982d25bd4a1a01") + bytes(64)  # system 0xBD25 is not defined
     tf = decode_telemetry("", raw, 67284)
     assert tf.telemetry_id is None and not tf.has_fields
+
+
+# -- LASARsat (NORAD 62391): comma-separated ASCII telemetry (SatNOGS lasarsat.ksy) --
+# DOS / NAV / greeting frames are real ones from the IQ recording of 2026-10-19.
+_LASAR_DOS = b"DOS,80,0,0,0,-1537,415,-570,86,256,35,119,119,116,114,169,857\x00"
+_LASAR_NAV = b"NAV,9,9582244,4290989321,1537870,3403880,-10485,-12629,-9500,0,0,18,168,0\x00"
+
+
+def test_lasarsat_defs_list_every_message_type() -> None:
+    defs = get_telemetry_id_defs(62391)
+    assert defs is not None
+    assert set(defs) == {"OBC", "PSU", "SOL", "MGS", "DOS", "NAV", "U", "V", "MSG"}
+
+
+def test_lasarsat_dos_keeps_the_last_nul_terminated_field() -> None:
+    tf = decode_telemetry("OK0LSR", _LASAR_DOS, norad=62391)
+    assert tf.telemetry_id == "DOS"
+    by_name = {f.name: f for f in tf.fields}
+    assert len(by_name) == 16
+    assert by_name["dos_mag_x"].raw_value == -1537
+    assert by_name["dos_uptime"].raw_value == 857
+
+
+def test_lasarsat_nav_has_all_thirteen_fields() -> None:
+    tf = decode_telemetry("OK0LSR", _LASAR_NAV, norad=62391)
+    assert tf.telemetry_id == "NAV"
+    assert len(tf.fields) == 13
+    assert {f.name: f.raw_value for f in tf.fields}["nav_time"] == 9582244
+
+
+def test_lasarsat_psu_channel_bits_and_sol_nan() -> None:
+    psu = decode_telemetry("OK0LSR", b"PSU,44,33937,178475,8172,3065,2815,1,111,7f,1,29\x00", 62391)
+    by_name = {f.name: f.raw_value for f in psu.fields}
+    assert by_name["psu_ch_state_num"] == 0x7F
+    assert all(by_name[f"psu_ch{i}_state"] == 1 for i in range(7))
+    assert by_name["psu_gnd_wdt"] == 29
+    sol = decode_telemetry(
+        "OK0LSR", b"SOL,2812,2831,2812,nan,2806,2806,134,136,136,nan,134,nan\x00", 62391
+    )
+    sol_by_name = {f.name: f.raw_value for f in sol.fields}
+    assert len(sol_by_name) == 12
+    assert sol_by_name["sol_temp_zn"] == -32768
+
+
+def test_lasarsat_u_with_empty_last_digipeater() -> None:
+    tf = decode_telemetry(
+        "OK0LSR", b"U,33792,166657,40,0,3217,3161,3081,0,,7577,387,89,60\x00", 62391
+    )
+    by_name = {f.name: f for f in tf.fields}
+    assert len(by_name) == 13
+    assert by_name["uhf_rx_cnt"].raw_value == 7577
+
+
+def test_lasarsat_free_text_goes_to_the_message_tab() -> None:
+    tf = decode_telemetry("OK0LSR", b"Celebrating 10 000 orbits!", norad=62391)
+    assert tf.telemetry_id == "MSG"
+    assert tf.fields[0].unit == "Celebrating 10 000 orbits!"

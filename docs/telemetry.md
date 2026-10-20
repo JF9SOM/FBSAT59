@@ -1461,3 +1461,15 @@ CRC 一致で復号して確認した（type 3・4・10・1・5・3。バイト 
 なった）。3 列を `Interactive`（ヘッダーの境界をドラッグで変更可）にし、初期幅は「`2026-10-19`」「`★ Lobachevsky `」
 の文字幅＋余白にした。時刻はスペースで 2 行、衛星名・コールサインも空白で折り返り、データ列（Stretch）が
 残りの幅を使う。全モード共通（AX.25・gr-satellites・CW・HADES）。
+
+### LASARsat（NORAD 62391）の AX.25 テレメトリー（2026-10-20）
+
+SatNOGS の `lasarsat.ksy` に従い、`src/data/telemetry_formats/62391.json` を Marina と同じ `csv_messages` 形式で追加した。
+先頭タグ `OBC`/`PSU`/`SOL`/`MGS`/`DOS`/`NAV`/`U`/`V` の全項目（PSU のチャンネルビット・SOL の `nan`=-32768 を含む）。
+ksy の `to_i` と同じく符号なしで読むので、NAV の位置の負値は 4290989321 のような大きな数になる（ksy 通り）。
+- 最後の項目が NUL 終端のため `decode_telemetry()` の csv 経路で末尾 `\x00` を除く（これが無いと最後の項目が欠ける）。
+- 上のどれでもないフリーテキスト（"Celebrating 10 000 orbits!" や他局のデジピートメッセージ）は、形式ファイルの
+  `text_message` 定義で `MSG` サブタブに入る。
+- 実録音（2026-10-19 16:12 UTC、9600 baud）の Fast デコードで 3 フレーム（MSG・DOS・NAV）を項目に分解できた。
+  項目の単位は ksy に無いので「(生値)」と表示。CW ビーコン（`de ok0lsr = u…`）は別途 CW 側で対応する。
+- テスト: `tests/test_telemetry_decoder.py`（`test_lasarsat_*`）。
