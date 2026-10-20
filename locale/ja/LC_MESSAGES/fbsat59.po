@@ -7708,3 +7708,24 @@ msgstr ""
 #: src/ui/sstv_tab.py
 msgid "SSDV (GEOSCAN 9k6): waiting for Lobachevsky frames…"
 msgstr "SSDV (GEOSCAN 9k6): Lobachevsky のフレームを待っています…"
+
+#: src/ui/cw_tab.py
+msgid "Fast decode: {pct}%"
+msgstr "高速デコード: {pct}%"
+
+#: src/ui/cw_tab.py
+msgid "Decoded {dur} s of recording in {el} s"
+msgstr "録音 {dur} 秒を {el} 秒でデコードしました"
+
+#: src/ui/main_window.py
+msgid "CW Decoder tab is not available."
+msgstr "CW デコーダータブを開けません。"
+
+#: src/ui/cw_tab.py
+msgid ""
+"Open a recorded .iq.wav file and decode all of its CW at once, in a fraction "
+"of the recording's length (the same decoding as a live reception, with the "
+"file's start time from its name)."
+msgstr ""
+"録音した .iq.wav ファイルを開き、含まれる CW を一括でデコードします（録音時間の"
+"何分の一かで完了。ライブ受信と同じデコードで、時刻はファイル名の開始時刻を使います）。"

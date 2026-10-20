@@ -39,6 +39,8 @@ class _FakeRadioControl(QWidget):
 
 class _FakeCwTab(QObject):
     frame_block_ready = Signal(str, object, object)
+    fast_decode_progress = Signal(float)
+    fast_decode_finished = Signal(str)
 
 
 @pytest.fixture
@@ -724,3 +726,39 @@ class TestSelectingARow:
         tab._on_cw_block(HK1[:-1], START, END)  # a dropped digit: shown greyed out
         tab._table.selectRow(0)
         assert _decode_value(tab, "HK1", "SBD error") == "—"
+
+
+class TestFastDecode:
+    def test_cw_mode_shows_the_speed_choice(
+        self, qtbot: QtBot, cw_conn: sqlite3.Connection
+    ) -> None:
+        tab = _make_tab(qtbot, cw_conn)
+        _select_cw_mode(tab)
+        assert not tab._combo_decode_speed.isHidden()
+
+    def test_fast_decode_hands_the_file_to_the_cw_tab_and_finishes(
+        self, qtbot: QtBot, cw_conn: sqlite3.Connection, tmp_path: Any
+    ) -> None:
+        tab = _make_tab(qtbot, cw_conn)
+        _select_cw_mode(tab)
+        tab._combo_cw_sat.setCurrentIndex(tab._combo_cw_sat.findData(68796))
+        fake = _FakeCwTab()
+        tab.attach_cw_tab(fake)
+        path = tmp_path / "x.iq.wav"
+        with qtbot.waitSignal(tab.cw_tlm_fast_requested) as blocker:
+            assert tab._start_fast_decode(path)
+        assert blocker.args == [path]
+        assert tab._cw_tlm_norad == 68796
+        assert not tab._btn_decode_iq.isEnabled()
+
+        fake.fast_decode_finished.emit("Decoded 60 s of recording in 3 s")
+        assert tab._cw_tlm_norad is None
+        assert tab._btn_start.isEnabled()
+        assert tab._btn_decode_iq.isEnabled()
+        assert "Decoded 60 s" in tab._lbl_status.text()
+
+    def test_fast_decode_is_refused_while_cw_tlm_runs(
+        self, qtbot: QtBot, cw_conn: sqlite3.Connection, tmp_path: Any
+    ) -> None:
+        tab = _running_tab(qtbot, cw_conn)
+        assert not tab._start_fast_decode(tmp_path / "x.iq.wav")

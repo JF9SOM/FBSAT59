@@ -991,6 +991,30 @@ WAV には時刻情報が無い。`IQRecorder` は `{norad}_{name}_{YYYYMMDDTHHM
 今日の 00:00:00 を表示**して、その値をデバイスへも渡す（表示 = 実際に使われる値）。修正すると
 `SdrFileDevice.set_start_time_utc()` に反映される。再生中の録音がある時だけ有効。
 
+### 「Fast」デコード（IQ 録音を一括で、2026-10-20 追加）
+
+CW Decoder タブの **「📂 Decode IQ Recording…」**と、Telemetry タブ CW TLM モードの
+**「速度: 通常（実時間）／高速」**＋「📂 Decode IQ Recording…」（`telemetry_decode_speed` を他モードと共用）。
+通常は従来どおり SDR Control で録音を実時間再生する。「高速」はファイルを選ぶだけ。
+
+- `comms/cw/file_decoder.py` の `CwFileDecoder`（QThread）が `iter_iq_blocks()` で読み、ライブと同じ
+  CW モード `Demodulator`（48 kHz 音声）に通し、**音声 5 秒ごとに「その時点までの最後の 20 秒」**を
+  デコード関数へ渡す（ライブの `_DECODE_INTERVAL_MS` 5 秒・`MAX_AUDIO_SECONDS` 20 秒と同じ窓の切り方）。
+  最後の端数（1 秒以上）も 1 窓として処理する。窓は `window_ready(result, 開始s, 終了s)` で 1 つずつ通知。
+- `CwTab.start_fast_decode(path)` が受けた窓を**ライブと同じ** `_reconcile_decode()`（確定/保留テキスト）→
+  `_feed_block_extractor()`（多数決・ブロック抽出）へ流すので、読み方は実時間再生と一致する。
+  `frame_block_ready` も同様に出るため Telemetry タブ側（`_on_cw_block`）は変更なし。窓の時刻は
+  ファイル名の開始時刻（`parse_start_time_from_filename`）＋音声位置。ファイル名に時刻が無い録音は
+  表示・保存はするが `signal_time_reliable()` が False（SatNOGS へは送らない）。
+- 完了/中止時に `_flush_votes()` と `CwBlockExtractor.flush()` で作りかけの文字・ブロックを吐き出す。
+  ■ Stop（Telemetry の Stop も `stop_decoding()` 経由）は途中までの結果を残して中止する。
+- Telemetry ↔ CW タブ: `cw_tlm_fast_requested(path)` → `MainWindow._on_telemetry_cw_tlm_fast()` →
+  `CwTab.start_fast_decode()`。終了は `CwTab.fast_decode_finished(要約)`、進捗は `fast_decode_progress`。
+- テスト: `tests/test_cw_file_decoder.py`（デモジュレーターをスタブ化＝CI に scipy 無し）、
+  `tests/test_telemetry_cw_tlm.py` の `TestFastDecode`。
+- 速度: ARICA-2 の実録音（`68796_ARICA-2_20261014T065853Z.iq.wav`、706 秒・1.4 GB）の DeepCW 高速デコードが
+  **22.9 秒（約 31 倍速、142 窓）**（Mac、2026-10-20）。復調は数秒で、大半はモデル推論。
+
 ### テスト
 
 `tests/test_cw_frames.py`（実フレームの全項目・HK2 の合成・妥当性検査・角速度表）、

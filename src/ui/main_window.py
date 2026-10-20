@@ -3119,6 +3119,7 @@ class MainWindow(QMainWindow):
         tab.open_satnogs_requested.connect(self._open_in_satnogs)
         tab.cw_tlm_start_requested.connect(lambda t=tab: self._on_telemetry_cw_tlm_start(t))
         tab.cw_tlm_stop_requested.connect(self._on_telemetry_cw_tlm_stop)
+        tab.cw_tlm_fast_requested.connect(lambda p, t=tab: self._on_telemetry_cw_tlm_fast(t, p))
         tab.voice_tab_requested.connect(self._on_telemetry_voice_tab_requested)
         tab.voice_packet_ready.connect(self._on_telemetry_voice_packet)
         self._comms_tab_keys[tab] = "telemetry"
@@ -3157,6 +3158,18 @@ class MainWindow(QMainWindow):
         if cw_tab is not None:
             telemetry_tab.attach_cw_tab(cw_tab)
             cw_tab.start_decoding()  # type: ignore[attr-defined]
+        self._tab_widget.setCurrentWidget(telemetry_tab)
+
+    def _on_telemetry_cw_tlm_fast(self, telemetry_tab: Any, path: Any) -> None:
+        """Telemetry tab's CW TLM fast decode: open the CW Decoder tab, feed this tab
+        from it, and decode the recording at once. The Telemetry tab stays in front."""
+        self._on_open_cw()
+        cw_tab = self._find_comms_tab("cw")
+        if cw_tab is None:
+            telemetry_tab._on_cw_fast_finished(_("CW Decoder tab is not available."))
+            return
+        telemetry_tab.attach_cw_tab(cw_tab)
+        cw_tab.start_fast_decode(Path(path))  # type: ignore[attr-defined]
         self._tab_widget.setCurrentWidget(telemetry_tab)
 
     def _on_telemetry_cw_tlm_stop(self) -> None:

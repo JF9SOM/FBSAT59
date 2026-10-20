@@ -358,6 +358,9 @@ class TelemetryTab(QWidget):
     # attach_cw_tab() and starts / stops its decoding.
     cw_tlm_start_requested = Signal()
     cw_tlm_stop_requested = Signal()
+    # Fast decode of an IQ recording in CW TLM mode: MainWindow opens the CW Decoder tab
+    # and hands it the file (a pathlib.Path).
+    cw_tlm_fast_requested = Signal(object)
     # HADES FSK mode, UNNE-1B voice (type 15): the first packet of a run asks MainWindow to open
     # the Digital Voice tab (behind this one); every verified packet is then handed to it as
     # (packet number, the 35 CODEC2 bytes with the mask removed, stream time in seconds).
@@ -1416,11 +1419,11 @@ class TelemetryTab(QWidget):
     def _update_decode_speed_visibility(self) -> None:
         """Show the Speed choice where a recording can be decoded at once.
 
-        HADES FSK and gr-satellites always; AX.25 only at the G3RUH bauds (4800 / 9600),
+        HADES FSK, gr-satellites and CW TLM always; AX.25 only at the G3RUH bauds (4800 / 9600),
         which the coherent MSK detector decodes (there is no file decoder for 1200 baud).
         """
         mode = self._current_mode()
-        visible = mode in (_MODE_GR, _MODE_HADES) or (
+        visible = mode in (_MODE_GR, _MODE_HADES, _MODE_CW) or (
             mode == _MODE_AFSK and self._baud_combo.currentData() in _FAST_AX25_BAUDS
         )
         self._lbl_decode_speed.setVisible(visible)
@@ -1578,8 +1581,12 @@ class TelemetryTab(QWidget):
         if self._cw_tab is not None:
             with contextlib.suppress(RuntimeError, TypeError):
                 self._cw_tab.frame_block_ready.disconnect(self._on_cw_block)
+                self._cw_tab.fast_decode_progress.disconnect(self._on_cw_fast_progress)
+                self._cw_tab.fast_decode_finished.disconnect(self._on_cw_fast_finished)
         self._cw_tab = cw_tab
         cw_tab.frame_block_ready.connect(self._on_cw_block)
+        cw_tab.fast_decode_progress.connect(self._on_cw_fast_progress)
+        cw_tab.fast_decode_finished.connect(self._on_cw_fast_finished)
 
     def _start_cw_tlm(self) -> bool:
         """Ask MainWindow to open and start the CW Decoder tab. False if it cannot be done."""
@@ -1599,6 +1606,45 @@ class TelemetryTab(QWidget):
         self._lbl_status.setText(_("CW TLM — decoding in the CW Decoder tab"))
         self._lbl_status.setStyleSheet("color: #27ae60;")
         return True
+
+    def _start_cw_fast_decode(self, path: Path) -> bool:
+        """Decode *path* at once in the CW Decoder tab; False (reason on screen) if it cannot."""
+        if self._cw_tlm_norad is not None:
+            self._set_error("⚠ " + _("Stop the running decoder first."))
+            return False
+        norad = self._combo_cw_sat.currentData()
+        if not isinstance(norad, int):
+            self._set_error("⚠ " + _("Select a satellite first."))
+            return False
+        if load_cw_frames(norad) is None:
+            self._set_error(
+                "⚠ " + _("No CW telemetry frame format is defined for this satellite yet.")
+            )
+            return False
+        if self._decode_tabs_norad != norad:
+            self._rebuild_decode_tabs(norad)
+        self._cw_tlm_norad = norad
+        self._btn_start.setEnabled(False)
+        self._btn_stop.setEnabled(True)
+        self._btn_decode_iq.setEnabled(False)
+        self._lbl_status.setText(_("Fast decode: starting…"))
+        self._lbl_status.setStyleSheet("color: #27ae60;")
+        self.cw_tlm_fast_requested.emit(path)
+        return True
+
+    def _on_cw_fast_progress(self, fraction: float) -> None:
+        if self._cw_tlm_norad is None:
+            return
+        self._lbl_status.setText(_("Fast decode: {pct}%").format(pct=int(fraction * 100)))
+
+    def _on_cw_fast_finished(self, message: str) -> None:
+        """The CW Decoder tab finished (or could not start) a fast decode."""
+        self._cw_tlm_norad = None
+        self._btn_start.setEnabled(True)
+        self._btn_stop.setEnabled(False)
+        self._btn_decode_iq.setEnabled(True)
+        self._lbl_status.setText(message)
+        self._lbl_status.setStyleSheet("color: #27ae60;")
 
     def _stop_cw_tlm(self) -> None:
         if self._cw_tlm_norad is None:
@@ -2182,6 +2228,8 @@ class TelemetryTab(QWidget):
 
     def _start_fast_decode(self, path: Path) -> bool:
         """Start decoding *path* in a worker thread; False (reason on screen) if it cannot."""
+        if self._current_mode() == _MODE_CW:
+            return self._start_cw_fast_decode(path)
         if self._current_mode() == _MODE_GR:
             return self._start_gr_fast_decode(path)
         if self._current_mode() == _MODE_AFSK:

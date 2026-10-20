@@ -20,6 +20,7 @@ import sqlite3
 from collections import deque
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -29,6 +30,7 @@ from PySide6.QtGui import QFont, QTextCursor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -44,6 +46,7 @@ from comms.audio_device_manager import get_audio_device_manager
 from comms.cw.block_extractor import CwBlockExtractor
 from comms.cw.classic import decode_classic
 from comms.cw.codec import HOP_LENGTH, MIN_AUDIO_SECONDS, SAMPLE_RATE, CwDecoder, DecodeResult
+from comms.cw.file_decoder import CwFileDecoder
 from comms.cw.model_info import is_onnxruntime_available, is_ready
 from comms.cw.sdr_demod import SDR_AUDIO_RATE, CwSdrDemod
 from comms.cw.transcript import (
@@ -128,6 +131,10 @@ class CwTab(QWidget):
     """
 
     frame_block_ready = Signal(str, object, object)
+    # Fast decode of an IQ recording (the Telemetry tab's CW TLM mode watches these):
+    # progress 0..1, and the end with a one-line summary (or the reason it failed).
+    fast_decode_progress = Signal(float)
+    fast_decode_finished = Signal(str)
 
     def __init__(
         self,
@@ -176,6 +183,11 @@ class CwTab(QWidget):
         # buffer has moved on.
         self._snapshot_time: datetime | None = None
         self._snapshot_dropped = 0
+        # Fast decode of an IQ recording (see start_fast_decode()).
+        self._fast_job: CwFileDecoder | None = None
+        self._fast_start: datetime = datetime.now(UTC)
+        self._fast_time_known = False
+        self._fast_windows = 0
 
         self._setup_ui()
         self._load_method_setting()
@@ -256,6 +268,17 @@ class CwTab(QWidget):
         self._start_btn.setFixedWidth(90)
         self._start_btn.toggled.connect(self._on_start_stop)
         cl.addWidget(self._start_btn)
+
+        self._fast_btn = QPushButton(_("📂 Decode IQ Recording…"))
+        self._fast_btn.setToolTip(
+            _(
+                "Open a recorded .iq.wav file and decode all of its CW at once, in a "
+                "fraction of the recording's length (the same decoding as a live "
+                "reception, with the file's start time from its name)."
+            )
+        )
+        self._fast_btn.clicked.connect(self._on_fast_button)
+        cl.addWidget(self._fast_btn)
 
         self._clear_btn = QPushButton(_("Clear"))
         self._clear_btn.setFixedWidth(72)
@@ -470,9 +493,172 @@ class CwTab(QWidget):
             self._start_btn.setChecked(True)
 
     def stop_decoding(self) -> None:
-        """Stop decoding, as if the user had pressed Stop (no-op if not running)."""
+        """Stop decoding, as if the user had pressed Stop (no-op if not running).
+
+        Also cancels a running fast decode of an IQ recording.
+        """
+        if self._fast_job is not None:
+            self._cancel_fast_decode()
         if self._running:
             self._start_btn.setChecked(False)
+
+    # ------------------------------------------------------------------ #
+    # Fast decode of an IQ recording
+    # ------------------------------------------------------------------ #
+
+    @property
+    def is_fast_decoding(self) -> bool:
+        """True while a recording is being decoded at once."""
+        return self._fast_job is not None
+
+    @Slot()
+    def _on_fast_button(self) -> None:
+        if self._fast_job is not None:
+            self._cancel_fast_decode()
+            return
+        start_dir = Path.home() / "iq_recordings"
+        path, _filter = QFileDialog.getOpenFileName(
+            self,
+            _("Decode IQ Recording"),
+            str(start_dir if start_dir.is_dir() else Path.home()),
+            "IQ WAV (*.wav);;All files (*)",
+        )
+        if path:
+            self.start_fast_decode(Path(path))
+
+    def start_fast_decode(self, path: Path) -> bool:
+        """Decode the whole IQ recording *path* at once; False (reason on screen) if it cannot.
+
+        Windows are decoded exactly as live ones (the audio is cut every 5 s into the
+        last 20 s) and go through the same transcript, majority vote and block
+        extractor, so ``frame_block_ready`` is emitted as in a live reception with the
+        times of the recording (start time from the file name plus the position). A
+        recording without a time in its name is decoded and shown, but its blocks are
+        stamped as unreliable (``signal_time_reliable()`` is False).
+        """
+        if self._fast_job is not None or self._running:
+            message = _("Stop the running decoder first.")
+            self._status_label.setText(message)
+            self.fast_decode_finished.emit(message)
+            return False
+        if self._method() == _METHOD_AI:
+            if self._decoder is None:
+                self._decoder = CwDecoder()
+            if not self._decoder.is_ready:
+                message = _("Model not ready — use Help > CW Model Installation…")
+                self._status_label.setText(message)
+                self.fast_decode_finished.emit(message)
+                return False
+        decode = self._decode_function()
+        if decode is None:
+            return False
+
+        from sdr.file_device import parse_start_time_from_filename
+
+        start = parse_start_time_from_filename(path.name)
+        self._fast_time_known = start is not None
+        self._fast_start = start or datetime.now(UTC)
+        self._fast_windows = 0
+        self._rx_buffer.clear()
+        self._confirmed_text = ""
+        self._pending_text = ""
+        self._confirmed_up_to_abs = 0.0
+        self._samples_dropped_total = 0
+        self._last_char_abs_time = None
+        self._block_extractor.reset()
+        self._block_up_to_abs = 0.0
+        self._voter.reset()
+        self._vote_map = None
+        self._rx_sample_rate = SDR_AUDIO_RATE
+        self._text_edit.clear()
+
+        job = CwFileDecoder(path, decode, parent=self)
+        job.window_ready.connect(self._on_fast_window)
+        job.progress.connect(self._on_fast_progress)
+        job.decoded.connect(self._on_fast_done)
+        job.failed.connect(self._on_fast_failed)
+        self._fast_job = job
+        self._start_btn.setEnabled(False)
+        self._fast_btn.setText(_("■ Stop"))
+        self._status_label.setText(_("Fast decode: starting…"))
+        job.start()
+        return True
+
+    @Slot(object, float, float)
+    def _on_fast_window(self, result: DecodeResult, start_s: float, end_s: float) -> None:
+        if self._fast_job is None or result.window_duration <= 0.0:
+            return
+        self._fast_windows += 1
+        start_samples = int(round(start_s * SDR_AUDIO_RATE))
+        self._samples_dropped_total = start_samples
+        self._snapshot_dropped = start_samples
+        self._snapshot_time = self._fast_start + timedelta(seconds=end_s)
+        self._reconcile_decode(result)
+
+    @Slot(float)
+    def _on_fast_progress(self, fraction: float) -> None:
+        if self._fast_job is None:
+            return
+        self._status_label.setText(_("Fast decode: {pct}%").format(pct=int(fraction * 100)))
+        self.fast_decode_progress.emit(fraction)
+
+    @Slot(float, float, int)
+    def _on_fast_done(self, duration_s: float, elapsed_s: float, windows: int) -> None:
+        if self._fast_job is None:
+            return
+        self._finish_fast_decode()
+        note = (
+            ""
+            if self._fast_time_known
+            else "  ⚠ " + _("No start time in the file name: not sent to SatNOGS.")
+        )
+        message = (
+            _("Decoded {dur} s of recording in {el} s").format(
+                dur=round(duration_s), el=round(elapsed_s, 1)
+            )
+            + note
+        )
+        self._status_label.setText(message)
+        self.fast_decode_finished.emit(message)
+
+    @Slot(str)
+    def _on_fast_failed(self, message: str) -> None:
+        if self._fast_job is None:
+            return
+        self._finish_fast_decode()
+        text = _("Could not decode the recording: ") + message
+        self._status_label.setText(text)
+        self.fast_decode_finished.emit(text)
+
+    def _cancel_fast_decode(self) -> None:
+        """Stop a running fast decode; what was decoded so far is still handed on."""
+        job = self._fast_job
+        if job is None:
+            return
+        job.cancel()
+        self._finish_fast_decode()
+        self._status_label.setText(_("Fast decode stopped"))
+        self.fast_decode_finished.emit(_("Fast decode stopped"))
+
+    def _finish_fast_decode(self) -> None:
+        """Hand on the characters and block still held back, release the worker, restore the UI.
+
+        The recording's time stays valid (``signal_time_reliable()``) until this has run,
+        as the blocks flushed here are stamped with it.
+        """
+        job = self._fast_job
+        if job is None:
+            return
+        self._flush_votes()
+        for block in self._block_extractor.flush():
+            self.frame_block_ready.emit(block.text, block.start_utc, block.end_utc)
+        self._fast_job = None
+        for signal in (job.window_ready, job.progress, job.decoded, job.failed):
+            with contextlib.suppress(Exception):
+                signal.disconnect()
+        job.wait(3000)
+        self._start_btn.setEnabled(True)
+        self._fast_btn.setText(_("📂 Decode IQ Recording…"))
 
     # ------------------------------------------------------------------ #
     # SDR audio
@@ -758,6 +944,8 @@ class CwTab(QWidget):
 
         Data stamped with an unreliable time must not be published anywhere.
         """
+        if self._fast_job is not None:
+            return self._fast_time_known
         return signal_time(self._sdr_pipeline)[1]
 
     def _feed_block_extractor(self, result: DecodeResult) -> None:
@@ -914,5 +1102,7 @@ class CwTab(QWidget):
     # ------------------------------------------------------------------ #
 
     def closeEvent(self, event: Any) -> None:
+        if self._fast_job is not None:
+            self._cancel_fast_decode()
         self._stop()
         super().closeEvent(event)
