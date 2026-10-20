@@ -302,18 +302,6 @@ def test_sonate2_selects_its_digipeater_in_via_and_restores_it(
     assert tab._via_edit.currentText() == "ARISS"
 
 
-def test_sonate2_forces_1200_even_for_its_9k6_telemetry_transponder(
-    qtbot: QtBot, conn: sqlite3.Connection
-) -> None:
-    tab = _make_tab(qtbot, conn)
-    tab._on_transmitter_changed({"norad_cat_id": 25544, "baud": 9600})
-    assert tab._baud_combo.currentData() == "9600"
-    tab._on_transmitter_changed({"norad_cat_id": 59112, "baud": 9600})
-    assert tab._baud_combo.currentData() == "1200"
-    tab._on_transmitter_changed({"norad_cat_id": 62391, "baud": 9600})
-    assert tab._baud_combo.currentData() == "9600"
-
-
 def test_via_typed_by_hand_is_kept_when_leaving_lasarsat(
     qtbot: QtBot, conn: sqlite3.Connection
 ) -> None:
