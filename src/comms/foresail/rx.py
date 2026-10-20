@@ -14,6 +14,7 @@ gr-satellites decodes and a third that gr-satellites misses.
 from __future__ import annotations
 
 import contextlib
+import math
 import queue
 import threading
 import time
@@ -26,6 +27,14 @@ from PySide6.QtCore import QThread, Signal
 
 from comms.aprs.coherent_msk import CoherentMskDecoder
 from comms.ax100digi import frame as ax100_frame
+
+try:
+    from scipy import signal as sp_signal
+
+    _SCIPY_AVAILABLE: bool = True
+except ImportError:
+    sp_signal = None
+    _SCIPY_AVAILABLE = False
 
 BAUD = 9600
 _SYNC = ax100_frame._syncword_bits(ax100_frame.SKYLINK_SYNCWORD)
@@ -64,15 +73,71 @@ def _candidate_positions(bits: NDArray[np.uint8]) -> list[tuple[int, bool]]:
     return found
 
 
-class ForesailRxStream:
-    """Feeds arbitrary I/Q blocks and returns newly decoded frames (de-duplicated)."""
+AUDIO_RATE = 48_000
+# Low-pass cut-offs (Hz) tried on the rig's audio (None = none); the radio's own filtering
+# differs from rig to rig, so several are run side by side.
+_AUDIO_CUTOFFS_HZ: tuple[float | None, ...] = (None, 6500.0, 4800.0)
+_AUDIO_HIGHPASS_HZ = 40.0
+_AUDIO_SPS = 8  # samples per symbol after resampling (the same grid as the I/Q detector)
 
-    def __init__(self, sample_rate: float) -> None:
+
+class AudioBitSource:
+    """Raw bits from the rig's receive audio (the FM discriminator output of a 9600 baud data port).
+
+    The audio is the GMSK baseband: Gaussian-shaped NRZ, positive = bit 1 on most rigs (the
+    caller tries both polarities). It is high-passed to drop DC and drift, optionally low-passed,
+    resampled to 8 samples per symbol and sliced at each of the 8 timing phases. It mirrors
+    ``CoherentMskDecoder.raw_bit_streams`` so ``ForesailRxStream`` can use either.
+    """
+
+    def __init__(self, sample_rate: float = AUDIO_RATE) -> None:
+        self.sample_rate = float(sample_rate)
+        if not _SCIPY_AVAILABLE:
+            self._hp = None
+            self._lps: list[Any] = []
+            return
+        nyq = self.sample_rate / 2.0
+        self._hp = sp_signal.butter(2, _AUDIO_HIGHPASS_HZ / nyq, "highpass", output="sos")
+        self._lps = [
+            None if c is None else sp_signal.butter(4, c / nyq, "lowpass", output="sos")
+            for c in _AUDIO_CUTOFFS_HZ
+        ]
+
+    def signal_present(self, audio: NDArray[np.float32]) -> bool:
+        """Cheap gate: skip windows of digital silence."""
+        return len(audio) >= 2048 and float(np.max(np.abs(audio))) > 1e-4
+
+    def raw_bit_streams(self, audio: NDArray[np.float32]) -> list[tuple[int, NDArray[np.uint8]]]:
+        if not _SCIPY_AVAILABLE or len(audio) < 2048:
+            return []
+        x = np.asarray(audio, dtype=np.float64)
+        x = sp_signal.sosfiltfilt(self._hp, x - float(np.mean(x)))
+        target = int(round(BAUD * _AUDIO_SPS))
+        divisor = math.gcd(int(round(self.sample_rate)), target)
+        up, down = target // divisor, int(round(self.sample_rate)) // divisor
+        streams: list[tuple[int, NDArray[np.uint8]]] = []
+        for lp in self._lps:
+            y = x if lp is None else sp_signal.sosfiltfilt(lp, x)
+            y = sp_signal.resample_poly(y, up, down)
+            for phase in range(_AUDIO_SPS):
+                bits = (y[phase::_AUDIO_SPS] > 0.0).astype(np.uint8)
+                if len(bits) >= 64:
+                    streams.append((phase, bits))
+        return streams
+
+
+class ForesailRxStream:
+    """Feeds arbitrary I/Q (or audio) blocks and returns newly decoded frames (de-duplicated)."""
+
+    def __init__(self, sample_rate: float, *, audio: bool = False) -> None:
         self._rate = float(sample_rate)
-        self._decoder = CoherentMskDecoder(self._rate, BAUD)
+        self._decoder: CoherentMskDecoder | AudioBitSource = (
+            AudioBitSource(self._rate) if audio else CoherentMskDecoder(self._rate, BAUD)
+        )
         self._window = int(_WINDOW_S * self._rate)
         self._hop = int(_HOP_S * self._rate)
-        self._buf = np.zeros(0, dtype=np.complex64)
+        self._dtype = np.float32 if audio else np.complex64
+        self._buf: NDArray[Any] = np.zeros(0, dtype=self._dtype)
         self._buf_start = 0  # absolute index of _buf[0]
         self._since_decode = 0
         self._recent: dict[bytes, float] = {}
@@ -82,14 +147,14 @@ class ForesailRxStream:
         return self._rate
 
     def reset(self) -> None:
-        self._buf = np.zeros(0, dtype=np.complex64)
+        self._buf = np.zeros(0, dtype=self._dtype)
         self._buf_start = 0
         self._since_decode = 0
         self._recent.clear()
 
-    def feed(self, iq: NDArray[np.complex64]) -> list[ForesailRxFrame]:
-        """Add I/Q samples; return the frames found since the last call."""
-        block = np.asarray(iq, dtype=np.complex64)
+    def feed(self, iq: NDArray[Any]) -> list[ForesailRxFrame]:
+        """Add I/Q (or audio) samples; return the frames found since the last call."""
+        block = np.asarray(iq, dtype=self._dtype)
         self._buf = np.concatenate([self._buf, block])
         self._since_decode += len(block)
         out: list[ForesailRxFrame] = []
@@ -105,7 +170,7 @@ class ForesailRxStream:
     def flush(self) -> list[ForesailRxFrame]:
         """Decode what is buffered (end of a recording / tests)."""
         out = self._decode_buffer() if len(self._buf) >= 2048 else []
-        self._buf = np.zeros(0, dtype=np.complex64)
+        self._buf = np.zeros(0, dtype=self._dtype)
         return out
 
     def _decode_buffer(self) -> list[ForesailRxFrame]:
@@ -147,9 +212,11 @@ class ForesailRxStream:
         return fresh
 
 
-def decode_iq(iq: NDArray[np.complex64], sample_rate: float) -> list[ForesailRxFrame]:
-    """Decode a whole recording (or any I/Q array) in one go."""
-    stream = ForesailRxStream(sample_rate)
+def decode_iq(
+    iq: NDArray[Any], sample_rate: float, *, audio: bool = False
+) -> list[ForesailRxFrame]:
+    """Decode a whole recording (or any I/Q array; ``audio=True``: real audio) in one go."""
+    stream = ForesailRxStream(sample_rate, audio=audio)
     frames = stream.feed(iq)
     frames.extend(stream.flush())
     # The flush window may repeat frames the hops already found: the stream de-duplicates.
@@ -172,20 +239,21 @@ class ForesailSdrDemod(QThread):
 
     frame_received: Signal = Signal(object, float)  # (ForesailRxFrame, monotonic end time)
 
-    def __init__(self, sample_rate: int, parent: Any = None) -> None:
+    def __init__(self, sample_rate: int, parent: Any = None, *, audio: bool = False) -> None:
         super().__init__(parent)
-        self._stream = ForesailRxStream(sample_rate)
-        self._q: queue.Queue[NDArray[np.complex64]] = queue.Queue(maxsize=256)
+        self._stream = ForesailRxStream(sample_rate, audio=audio)
+        self._dtype = np.float32 if audio else np.complex64
+        self._q: queue.Queue[NDArray[Any]] = queue.Queue(maxsize=256)
         self._stop_event = threading.Event()
         self._t0: float | None = None  # monotonic time of the first sample
 
-    def push_samples(self, iq: NDArray[np.complex64]) -> None:
+    def push_samples(self, iq: NDArray[Any]) -> None:
         """Receive one I/Q block from SDRPipeline.subscribe() (any thread)."""
         if self._t0 is None:
             self._t0 = time.monotonic() - len(iq) / self._stream.sample_rate
         # A full queue means the decoder fell behind: dropping a block only costs its frames.
         with contextlib.suppress(queue.Full):
-            self._q.put_nowait(iq.astype(np.complex64))
+            self._q.put_nowait(np.asarray(iq).astype(self._dtype))
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -200,3 +268,18 @@ class ForesailSdrDemod(QThread):
             t0 = self._t0 if self._t0 is not None else time.monotonic()
             for frame in self._stream.feed(iq):
                 self.frame_received.emit(frame, t0 + frame.end_s)
+
+
+class ForesailAudioDemod(ForesailSdrDemod):
+    """The same worker for the rig's receive audio (48 kHz mono float, from the sound card).
+
+    ::
+
+        demod = ForesailAudioDemod()
+        demod.frame_received.connect(consumer)
+        demod.start()
+        get_audio_device_manager().acquire_input(owner, device, 48000, demod.push_samples)
+    """
+
+    def __init__(self, sample_rate: int = AUDIO_RATE, parent: Any = None) -> None:
+        super().__init__(sample_rate, parent, audio=True)

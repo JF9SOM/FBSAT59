@@ -88,3 +88,19 @@ def test_noise_alone_decodes_nothing() -> None:
     rng = np.random.default_rng(7)
     noise = (rng.standard_normal(FS * 2) + 1j * rng.standard_normal(FS * 2)).astype(np.complex64)
     assert decode_iq(noise, FS) == []
+
+
+def test_receiver_decodes_the_uplink_from_rig_audio() -> None:
+    skylink, audio = build_uplink("CQ", "N0CALL", b"audio path")
+    rng = np.random.default_rng(2)
+    sound = np.concatenate([np.zeros(24_000), audio, np.zeros(24_000)])
+    sound = (sound + rng.standard_normal(len(sound)) * 0.15).astype(np.float32)
+    frames = decode_iq(sound, AUDIO_RATE, audio=True)
+    assert [f.payload for f in frames] == [skylink]
+    # The same audio with the polarity flipped (a rig that inverts its data output).
+    inverted = decode_iq(-sound, AUDIO_RATE, audio=True)
+    assert [f.payload for f in inverted] == [skylink]
+
+
+def test_silent_audio_decodes_nothing() -> None:
+    assert decode_iq(np.zeros(AUDIO_RATE * 2, dtype=np.float32), AUDIO_RATE, audio=True) == []

@@ -7876,3 +7876,19 @@ msgstr "送信"
 #: src/ui/foresail1p_panel.py
 msgid "TX done — watch for the repeated frame"
 msgstr "送信完了 — 中継されたフレームを待ちます"
+
+#: src/ui/foresail1p_panel.py
+msgid "437.125 MHz, 9600 baud GMSK, Skylink protocol. Virtual channel 3 is the amateur packet repeater: AX.25 UI frames (APRS or any text) sent to the satellite are repeated back with the satellite added as a digipeater (kept in memory and repeated 4 times every 4 minutes). Receive with the SDR (more sensitive) or the rig's Sound Card; the rig always transmits through the Sound Card. The satellite is only heard during its beacon every minute or so, and its transmit windows must be avoided."
+msgstr "437.125 MHz、9600 baud GMSK、Skylink プロトコル。仮想チャンネル 3 がアマチュアパケットリピーターで、衛星に送った AX.25 UI フレーム（APRS や任意のテキスト）は、衛星がデジピーターとして加わった形で送り返されます（メモリに保存され、4 分ごとに 4 回繰り返されます）。受信は SDR（高感度）か無線機のサウンドカードを選べます。送信は常にリグがサウンドカード経由で行います。衛星が聞こえるのは 1 分ほどごとのビーコンの間だけで、衛星の送信窓を避けて送る必要があります。"
+
+#: src/ui/foresail1p_panel.py
+msgid "Input: set the Sound Card input in Rig Settings (9600 baud data output)"
+msgstr "入力：Rig Settings でサウンドカード入力（9600 baud データ出力）を設定してください"
+
+#: src/ui/foresail1p_panel.py
+msgid "Input: Rig Soundcard (9600 baud data output, 48 kHz). The SDR input is more sensitive on weak passes"
+msgstr "入力：無線機のサウンドカード（9600 baud データ出力、48 kHz）。弱いパスでは SDR 入力のほうが高感度です"
+
+#: src/ui/foresail1p_panel.py
+msgid "Reed-Solomon library (reed-solomon-ccsds) not installed"
+msgstr "Reed-Solomon ライブラリ（reed-solomon-ccsds）がインストールされていません"

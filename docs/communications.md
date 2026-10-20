@@ -4476,7 +4476,7 @@ AX.25 UI の汎用デジピーター（436.925 MHz、アップ/ダウン同一�
 Message Box/Digipeater タブのプロトコル「Foresail-1p digipeater (Skylink)」（`src/ui/foresail1p_panel.py`
 ＋ `src/comms/foresail/`）。437.125 MHz・9600 baud GMSK の上り下り同一周波数。SATNOGS の送信機
 `Mode U/U - GMSK9k6 - Digipeater - Skylink`（`is_foresail1p_digipeater_transmitter()`。NORAD 66778/98467）で選ばれる。
-**受信は SDR の I/Q、送信はリグのサウンドカード出力**（ARICA-2 と同じ分担。サウンドカード受信は未対応）。
+**受信は SDR の I/Q か無線機のサウンドカード（パネル上部のラジオボタン、ARICA-2 と同じ。設定 `rx_source`）、送信はリグのサウンドカード出力**。
 
 **仕様の出典**: ICD「FS1p Space/Ground Interface Control Sheet」V2（2026-02-23）第 4 章、SatNOGS `foresail1p.ksy`、
 Aalto の公開ソース（github.com/aaltosatellite/skylink の `repeater_frame_bytes.py` / `repeater_frame_wav.py` / `src/`）。
@@ -4494,6 +4494,11 @@ Aalto の公開ソース（github.com/aaltosatellite/skylink の `repeater_frame
   同期語を探し、Golay・スクランブラ・RS で復号。0.4 秒ごとに直近 1.6 秒を処理（遅延は約 0.4 秒）。極性は両方試す。
   **実録音（2026-10-18 01:32 UTC・S/N 約 11 dB）で、gr-satellites が読んだ 2 フレームに加え、gr-satellites が読めない
   フレームを含む計 4 フレーム（最強バースト）と、gr-satellites が 0 だった別バーストの 3 フレームを復号**。
+- **サウンドカード受信（`AudioBitSource`・`ForesailAudioDemod`）**: リグの 9600 baud データ出力（FM 検波音声、48 kHz）を
+  40 Hz のハイパス（＋ローパス 3 通り）→ 8 sps へリサンプル → 8 位相でスライスして、同じ同期語探索・Golay・RS へ渡す（極性は
+  両方試す）。RS が検証するので誤検出の心配はほぼ無い。**実録音の I/Q を FM 検波して作った音声で、最強バーストは I/Q と同じ 4 フレーム、
+  弱いバースト（I/Q のコヒーレント検波では読めた）は 0 フレーム** — 弱い信号では SDR 入力のほうが高感度。入力デバイスは Rig Settings の
+  Sound Card 入力。
 - **送信（`comms/foresail/tx.py`）**: 16×0xAA のプリアンブル → ASM → Golay → スクランブル → RS、NRZ（1 = 正）を
   ガウシアン整形（BT 0.5）した音声（G3RUH スクランブラは使わない）。受信器と **gr-satellites（`--use_agc` が必要）の両方で
   逆変換できることをテストで確認**（`tests/test_foresail_rx_tx.py`）。**電波では未検証**。

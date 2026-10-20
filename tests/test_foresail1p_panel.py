@@ -140,3 +140,43 @@ def test_armed_message_waits_for_the_satellite_window_to_end(
     assert sent == [] and panel._armed is not None  # inside the window: keep waiting
     panel._try_armed(101.0)  # well after the guard
     assert len(sent) == 1 and panel._armed is None
+
+
+def test_receive_source_is_saved_and_soundcard_needs_an_input_device(qtbot: QtBot) -> None:
+    conn = _conn()
+    panel = Foresail1pPanel(conn, None, autostart=False)
+    qtbot.addWidget(panel)
+    assert panel._rb_sdr.isChecked()
+    panel._rb_soundcard.setChecked(True)  # toggled -> restart input and save
+    assert "Sound Card input" in panel._status_label.text()
+    saved = conn.execute("SELECT value FROM app_settings WHERE key = 'foresail1p_settings'")
+    assert '"rx_source": "soundcard"' in saved.fetchone()[0]
+    reopened = Foresail1pPanel(conn, None, autostart=False)
+    qtbot.addWidget(reopened)
+    assert reopened._rb_soundcard.isChecked()
+
+
+def test_soundcard_input_subscribes_to_the_rig_audio(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    conn = _conn()
+    conn.execute(
+        "INSERT INTO app_settings VALUES ('soundcard_settings', '{\"input_device_index\": 3}')"
+    )
+    calls: list[tuple[str, object]] = []
+
+    class _Manager:
+        def acquire_input(self, owner: str, device: int, rate: int, callback: object) -> None:
+            calls.append(("acquire", (owner, device, rate)))
+
+        def release_input(self, owner: str, device: int) -> None:
+            calls.append(("release", (owner, device)))
+
+    monkeypatch.setattr("ui.foresail1p_panel.get_audio_device_manager", lambda: _Manager())
+    panel = Foresail1pPanel(conn, None, autostart=False)
+    qtbot.addWidget(panel)
+    panel._rb_soundcard.setChecked(True)
+    assert calls == [("acquire", ("Foresail-1p receiver", 3, 48_000))]
+    panel.stop_input()
+    assert calls[-1] == ("release", ("Foresail-1p receiver", 3))
+    assert panel._demod is None

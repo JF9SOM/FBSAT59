@@ -4,9 +4,11 @@ Foresail-1p (OH2F1S, NORAD 66778) carries an amateur packet repeater on Skylink 
 channel 3: AX.25 UI frames (APRS or anything else) sent to it are repeated back with the
 satellite as a digipeater. Both directions use 437.125 MHz, 9600 baud GMSK.
 
-  - Receive: the SDR's raw I/Q goes to ``comms.foresail.rx`` (a coherent GMSK detector plus the
-    Skylink ASM / Golay / RS stack). Every satellite frame also feeds a ``TddTracker``, which
-    follows the satellite's transmit windows.
+  - Receive (selectable, as in the ARICA-2 panel): the SDR's raw I/Q goes to
+    ``comms.foresail.rx`` (a coherent GMSK detector plus the Skylink ASM / Golay / RS stack;
+    the more sensitive input), or the rig's Sound Card audio (the 9600 baud data port's
+    discriminator output) goes to the same stack through a baseband slicer. Every satellite
+    frame also feeds a ``TddTracker``, which follows the satellite's transmit windows.
   - Transmit: the rig transmits through the Sound Card output (the radio does the FSK
     modulation). *Manual* sends at once; *Auto* waits until the satellite's windows leave room.
 
@@ -35,6 +37,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QRadioButton,
     QSlider,
     QSpinBox,
     QTableWidget,
@@ -43,10 +46,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from comms.audio_device_manager import get_audio_device_manager
 from comms.audio_tx import AUDIO_RATE as _AUDIO_RATE
 from comms.audio_tx import PTT_LEAD_S, PttAudioTxWorker
 from comms.ax100digi.rs_ccsds import RsUnavailableError
-from comms.foresail.rx import ForesailRxFrame, ForesailSdrDemod
+from comms.foresail.rx import ForesailAudioDemod, ForesailRxFrame, ForesailSdrDemod
 from comms.foresail.skylink import (
     ACCEPTED_DESTINATIONS,
     VC_REPEATER,
@@ -68,6 +72,7 @@ from ui.tx_level import (
 )
 
 _SETTINGS_KEY = "foresail1p_settings"
+_OWNER_AUDIO = "Foresail-1p receiver"
 _MAX_LOG_ROWS = 500
 _UI_TICK_MS = 100
 _MODE_MANUAL = "manual"
@@ -129,6 +134,7 @@ class Foresail1pPanel(QWidget):
         self._radio_control = radio_control
         self._sdr_pipeline: Any = None
         self._demod: ForesailSdrDemod | None = None
+        self._audio_device: int | None = None
         self._tdd = TddTracker()
         self._tx_in_progress = False
         self._tx_thread: threading.Thread | None = None
@@ -175,6 +181,7 @@ class Foresail1pPanel(QWidget):
             "SELECT value FROM app_settings WHERE key = ?", (_SETTINGS_KEY,)
         ).fetchone()
         data: dict[str, Any] = json.loads(row[0]) if row else {}
+        self._rx_source = "soundcard" if data.get("rx_source") == "soundcard" else "sdr"
         self._dest = str(data.get("dest", "APRS"))
         self._via = str(data.get("via", ""))
         self._last_message = str(data.get("last_message", ""))
@@ -191,6 +198,7 @@ class Foresail1pPanel(QWidget):
     def _save_settings(self) -> None:
         data = json.dumps(
             {
+                "rx_source": "soundcard" if self._rb_soundcard.isChecked() else "sdr",
                 "dest": self._dest_combo.currentText().strip(),
                 "via": self._via_edit.text().strip(),
                 "last_message": self._message_edit.text(),
@@ -225,13 +233,21 @@ class Foresail1pPanel(QWidget):
                 "437.125 MHz, 9600 baud GMSK, Skylink protocol. Virtual channel 3 is the "
                 "amateur packet repeater: AX.25 UI frames (APRS or any text) sent to the "
                 "satellite are repeated back with the satellite added as a digipeater (kept "
-                "in memory and repeated 4 times every 4 minutes). Receive with the SDR; the "
-                "rig transmits through the Sound Card. The satellite is only heard during "
-                "its beacon every minute or so, and its transmit windows must be avoided."
+                "in memory and repeated 4 times every 4 minutes). Receive with the SDR (more "
+                "sensitive) or the rig's Sound Card; the rig always transmits through the "
+                "Sound Card. The satellite is only heard during its beacon every minute or "
+                "so, and its transmit windows must be avoided."
             )
         )
         top.addWidget(info)
         top.addStretch(1)
+        top.addWidget(QLabel(_("Receive:")))
+        self._rb_sdr = QRadioButton(_("SDR (transmit via rig)"))
+        self._rb_soundcard = QRadioButton(_("Rig Soundcard"))
+        (self._rb_soundcard if self._rx_source == "soundcard" else self._rb_sdr).setChecked(True)
+        top.addWidget(self._rb_sdr)
+        top.addWidget(self._rb_soundcard)
+        self._rb_soundcard.toggled.connect(self._on_source_changed)
         self._telemetry_check = QCheckBox(_("Show telemetry frames (VC 0/1)"))
         self._telemetry_check.setChecked(self._show_telemetry)
         self._telemetry_check.toggled.connect(lambda _c: self._save_settings())
@@ -422,9 +438,33 @@ class Foresail1pPanel(QWidget):
         sdr_ctrl = getattr(self._radio_control, "_sdr_control", None)
         return getattr(sdr_ctrl, "_pipeline", None)
 
+    @Slot(bool)
+    def _on_source_changed(self, _checked: bool) -> None:
+        self.start_input()
+        self._save_settings()
+
+    def _input_device(self) -> int | None:
+        """The Sound Card input device index from Rig Settings, or None."""
+        row = self._conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'soundcard_settings'"
+        ).fetchone()
+        if not row:
+            return None
+        try:
+            index = json.loads(row[0]).get("input_device_index")
+        except (ValueError, AttributeError):
+            return None
+        return int(index) if index is not None else None
+
     def start_input(self) -> None:
-        """(Re)start receiving from the SDR."""
+        """(Re)start receiving with the selected input source."""
         self.stop_input()
+        if self._rb_soundcard.isChecked():
+            self._start_soundcard()
+        else:
+            self._start_sdr()
+
+    def _start_sdr(self) -> None:
         pipeline = self._get_sdr_pipeline()
         if pipeline is None:
             self._status_label.setText(_("Input: SDR not connected"))
@@ -444,13 +484,44 @@ class Foresail1pPanel(QWidget):
             _("Input: SDR connected (9600 baud GMSK); the rig transmits through the Sound Card")
         )
 
+    def _start_soundcard(self) -> None:
+        device = self._input_device()
+        if device is None:
+            self._status_label.setText(
+                _("Input: set the Sound Card input in Rig Settings (9600 baud data output)")
+            )
+            return
+        demod = ForesailAudioDemod(parent=self)
+        demod.frame_received.connect(self._on_frame)
+        demod.start()
+        try:
+            get_audio_device_manager().acquire_input(
+                _OWNER_AUDIO, device, _AUDIO_RATE, demod.push_samples
+            )
+        except Exception as exc:
+            demod.stop()
+            self._status_label.setText(_("Audio open error: {exc}").format(exc=exc))
+            return
+        self._demod = demod
+        self._audio_device = device
+        self._status_label.setText(
+            _(
+                "Input: Rig Soundcard (9600 baud data output, 48 kHz). The SDR input is more "
+                "sensitive on weak passes"
+            )
+        )
+
     def stop_input(self) -> None:
-        """Release the SDR subscription."""
+        """Release the SDR subscription / the sound card input."""
         demod, self._demod = self._demod, None
         if self._sdr_pipeline is not None and demod is not None:
             with contextlib.suppress(Exception):
                 self._sdr_pipeline.unsubscribe(demod.push_samples)
         self._sdr_pipeline = None
+        device, self._audio_device = self._audio_device, None
+        if device is not None:
+            with contextlib.suppress(Exception):
+                get_audio_device_manager().release_input(_OWNER_AUDIO, device)
         if demod is not None:
             demod.stop()
         self._tdd.reset()
@@ -458,6 +529,8 @@ class Foresail1pPanel(QWidget):
 
     def refresh_sdr_pipeline(self, pipeline: Any) -> None:
         """MainWindow calls this whenever the SDR (re)connects or disconnects."""
+        if not self._rb_sdr.isChecked():
+            return
         self.stop_input()
         if pipeline is None:
             self._status_label.setText(_("Input: SDR disconnected"))
