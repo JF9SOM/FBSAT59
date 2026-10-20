@@ -1482,3 +1482,7 @@ ksy の `to_i` と同じく符号なしで読むので、NAV の位置の負値�
 なし（`satnogs` キーを書いていない）。ksy は読めない桁を `.` にして続行するが、こちらは正規表現に合わない読みを
 `near_regex` で「棄却候補（グレー行・?）」にするだけでデータには使わない。実機の CW 受信では未確認（IQ 録音には
 CW ビーコンが無かった）。テスト: `tests/test_cw_frames.py`（`test_lasarsat_cw_*`）。
+
+LASARsat の `MSG` サブタブ（デジピートを含むフリーテキスト）には、AX.25 ヘッダー（宛先・送信元・経由局（`*` は中継済み）・PID）を
+先に表示する（形式ファイルの `text_message.header_fields`。`decode_telemetry(..., ax25=Ax25Frame)` を受信時・行の再デコード・
+保存済み読込の 3 経路から渡す）。ksy は経由局の ssid/hbit を別項目にするが、ここでは `OK0LSR*` の 1 文字列にまとめた。

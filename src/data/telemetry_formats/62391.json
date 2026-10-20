@@ -673,7 +673,8 @@
   "text_message": {
     "id": "MSG",
     "label": "MSG（フリーテキスト/デジピートメッセージ）",
-    "field_label": "メッセージ"
+    "field_label": "メッセージ",
+    "header_fields": true
   },
   "cw_frames": {
     "BEACON": {

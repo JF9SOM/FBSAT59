@@ -245,6 +245,36 @@ def _decode_field(payload: bytes, field_def: dict[str, Any]) -> TelemetryField |
     )
 
 
+# (name, label) of the AX.25 header fields a ``text_message`` with ``header_fields`` shows.
+AX25_HEADER_FIELDS: tuple[tuple[str, str], ...] = (
+    ("ax25_dest", "Destination"),
+    ("ax25_src", "Source"),
+    ("ax25_via", "Digipeater path (* = already repeated)"),
+    ("ax25_pid", "PID"),
+)
+
+
+def _ax25_header_fields(ax25: Any) -> list[TelemetryField]:
+    """The AX.25 header of *ax25* (an ``Ax25Frame``) as text fields."""
+    values = (
+        str(ax25.dest),
+        str(ax25.src),
+        ",".join(ax25.via) or "—",
+        f"0x{int(ax25.pid):02X}",
+    )
+    return [
+        TelemetryField(
+            name=name,
+            label=label,
+            raw_value=0,
+            scaled_value=0.0,
+            unit=value,
+            is_string=True,
+        )
+        for (name, label), value in zip(AX25_HEADER_FIELDS, values, strict=True)
+    ]
+
+
 def _decode_csv_field(tokens: list[str], field_def: dict[str, Any]) -> TelemetryField | None:
     """Decode one field from a comma-split ASCII telemetry message.
 
@@ -355,7 +385,12 @@ def get_telemetry_id_defs(norad: int | None) -> dict[str, Any] | None:
     if defs and isinstance(text_def, dict):
         defs[str(text_def.get("id", "MSG"))] = {
             "label": text_def.get("label", ""),
-            "fields": [{"name": "text_message", "label": text_def.get("field_label", "Message")}],
+            "fields": (
+                [{"name": n, "label": label} for n, label in AX25_HEADER_FIELDS]
+                if text_def.get("header_fields")
+                else []
+            )
+            + [{"name": "text_message", "label": text_def.get("field_label", "Message")}],
         }
 
     # A flat ``fields`` list with a ``match`` pattern is one beacon type among
@@ -440,6 +475,7 @@ def decode_telemetry(
     callsign: str,
     payload: bytes,
     norad: int | None = None,
+    ax25: Any = None,
 ) -> TelemetryFrame:
     """Decode *payload* bytes using the JSON definition for *norad*.
 
@@ -459,6 +495,9 @@ def decode_telemetry(
       (offsets from the start of the payload); the first entry that matches decodes it;
     - a ``records`` schema (a sequence of typed, length-prefixed records in one
       frame, e.g. UmKA-1's Sputnix Unified Protocol; see _decode_records());
+    - a ``text_message`` entry with ``header_fields``: a free-text frame also shows its
+      AX.25 header (destination, source, digipeater path, PID) taken from *ax25* (an
+      ``Ax25Frame``; e.g. LASARsat's digipeated messages);
     - a ``csv_messages`` mapping keyed by a text prefix (e.g. "OBC"), for
       satellites whose downlink is plain comma-separated ASCII text
       (e.g. Marina) — fields are located by token position, not byte
@@ -514,6 +553,8 @@ def decode_telemetry(
             if text_def and text.strip() and all(c.isprintable() for c in text):
                 telemetry_id = str(text_def.get("id", "MSG"))
                 telemetry_label = text_def.get("label", "")
+                if text_def.get("header_fields") and ax25 is not None:
+                    decoded_fields.extend(_ax25_header_fields(ax25))
                 decoded_fields.append(
                     TelemetryField(
                         name="text_message",

@@ -347,3 +347,24 @@ def test_lasarsat_free_text_goes_to_the_message_tab() -> None:
     tf = decode_telemetry("OK0LSR", b"Celebrating 10 000 orbits!", norad=62391)
     assert tf.telemetry_id == "MSG"
     assert tf.fields[0].unit == "Celebrating 10 000 orbits!"
+
+
+def test_lasarsat_digipeated_message_shows_the_ax25_header() -> None:
+    from comms.aprs.parser import Ax25Frame
+
+    frame = Ax25Frame(
+        dest="CQ", src="OK0ABC", via=["OK0LSR*"], pid=0xF0, payload=b"Hello from the ground"
+    )
+    tf = decode_telemetry("OK0ABC", frame.payload, norad=62391, ax25=frame)
+    assert tf.telemetry_id == "MSG"
+    shown = {f.name: f.unit for f in tf.fields}
+    assert shown == {
+        "ax25_dest": "CQ",
+        "ax25_src": "OK0ABC",
+        "ax25_via": "OK0LSR*",
+        "ax25_pid": "0xF0",
+        "text_message": "Hello from the ground",
+    }
+    defs = get_telemetry_id_defs(62391)
+    assert defs is not None
+    assert [f["name"] for f in defs["MSG"]["fields"]][:2] == ["ax25_dest", "ax25_src"]

@@ -2751,7 +2751,7 @@ class TelemetryTab(QWidget):
             # belongs to the satellite the user picked, so it is still decoded with
             # that satellite's format, logged and uploaded under it.
             norad = self._active_norad()
-        tf = decode_telemetry(frame.src, frame.payload, norad)
+        tf = decode_telemetry(frame.src, frame.payload, norad, ax25=frame)
         when, reliable = self._frame_time()
         ax25_row = _Ax25Row(
             raw=raw, when=when, reliable=reliable, norad=norad, payload=frame.payload
@@ -3087,15 +3087,14 @@ class TelemetryTab(QWidget):
         if not isinstance(value, _Ax25Row) or value.norad is None:
             return None
         payload = value.payload
-        if not payload and value.raw:
-            parsed = decode_ax25(value.raw)
-            if parsed is not None:
-                payload = parsed.payload
+        parsed = decode_ax25(value.raw) if value.raw else None
+        if not payload and parsed is not None:
+            payload = parsed.payload
         if not payload:
             return None
         callsign_item = self._table.item(row, 1)
         callsign = callsign_item.text() if callsign_item is not None else ""
-        return decode_telemetry(callsign, payload, value.norad)
+        return decode_telemetry(callsign, payload, value.norad, ax25=parsed)
 
     def _update_decode_tab(self, tf: TelemetryFrame) -> None:
         """Push *tf*'s decoded field values into its "Decoded Fields" sub-tab.
@@ -3429,7 +3428,9 @@ class TelemetryTab(QWidget):
                 self._mark_row_logged(self._table.rowCount() - 1, log_id)
                 loaded += 1
                 continue
-            tf = decode_telemetry(callsign, payload, norad)
+            tf = decode_telemetry(
+                callsign, payload, norad, ax25=decode_ax25(whole) if whole else None
+            )
             ax25_row = _Ax25Row(
                 raw=whole,
                 when=when,
