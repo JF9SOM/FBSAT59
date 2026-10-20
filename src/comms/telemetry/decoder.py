@@ -8,7 +8,9 @@ For satellites with no definition file the raw payload is returned as hex.
 
 from __future__ import annotations
 
+import base64
 import json
+import math
 import struct
 import sys
 from dataclasses import dataclass, field
@@ -139,6 +141,7 @@ _STRUCT_MAP: dict[str, str] = {
     "uint32_be": ">I",
     "uint32_le": "<I",
     "int32_le": "<i",
+    "int32_be": ">i",
     "uint64_le": "<Q",
     "float32_be": ">f",
     "float32_le": "<f",
@@ -148,18 +151,86 @@ _STRUCT_MAP: dict[str, str] = {
 _FLOAT_TYPES = {"float32_be", "float32_le", "float64_be"}
 
 
+def _text_field(field_def: dict[str, Any], label: str, text: str) -> TelemetryField:
+    """A textual field: the display string lives in ``unit`` (see TelemetryField.is_string)."""
+    return TelemetryField(
+        name=field_def["name"],
+        label=label,
+        raw_value=0,
+        scaled_value=0.0,
+        unit=text,
+        is_string=True,
+    )
+
+
+# A 12-bit quantized quaternion component covers [-1/sqrt(2), +1/sqrt(2)].
+_QUAT_HALF_RANGE = 1.0 / math.sqrt(2.0)
+
+
+def _decode_quat5(chunk: bytes, field_def: dict[str, Any], label: str) -> TelemetryField | None:
+    """One value of a 5-byte "smallest three" compressed quaternion (FORESAIL-1p's ADCS).
+
+    Bytes 0-3 are a little-endian u32 ``low`` and byte 4 is ``high``; the 40-bit number
+    ``(low << 8) | high`` holds three 12-bit components (bits 39-28, 27-16, 15-4) and a 4-bit
+    tail: bits 3-2 = index of the omitted (largest) component, bit 1 = its sign (1 = negative).
+    ``field_def["component"]`` picks ``q1``/``q2``/``q3`` (each mapped from 0..4095 onto
+    +-1/sqrt(2)), ``index``, ``sign`` or ``largest`` (the omitted component, computed so the
+    quaternion has unit length). This is the SatNOGS ``foresail1p.ksy`` layout.
+    """
+    if len(chunk) < 5:
+        return None
+    combined = (int.from_bytes(chunk[:4], "little") << 8) | chunk[4]
+    raws = [(combined >> 28) & 0xFFF, (combined >> 16) & 0xFFF, (combined >> 4) & 0xFFF]
+    values = [(r / 4095.0 * 2.0 - 1.0) * _QUAT_HALF_RANGE for r in raws]
+    component = str(field_def.get("component", ""))
+    name = field_def["name"]
+    unit = str(field_def.get("unit", ""))
+    if component in ("q1", "q2", "q3"):
+        i = int(component[1]) - 1
+        return TelemetryField(name, label, raws[i], values[i], unit)
+    meta = combined & 0xF
+    if component == "index":
+        return TelemetryField(name, label, (meta >> 2) & 0x3, float((meta >> 2) & 0x3), unit, True)
+    if component == "sign":
+        return TelemetryField(name, label, (meta >> 1) & 0x1, float((meta >> 1) & 0x1), unit, True)
+    if component == "largest":
+        magnitude = math.sqrt(max(0.0, 1.0 - sum(v * v for v in values)))
+        value = -magnitude if (meta >> 1) & 0x1 else magnitude
+        return TelemetryField(name, label, 0, value, unit)
+    return None
+
+
 def _decode_field(payload: bytes, field_def: dict[str, Any]) -> TelemetryField | None:
     offset: int = field_def["offset"]
-    length: int = field_def["length"]
     ftype: str = field_def["type"]
     scale: float = field_def.get("scale", 1.0)
     unit: str = field_def.get("unit", "")
     label: str = field_def.get("label", field_def["name"])
+    length: int = field_def.get("length", 0)
+    if field_def.get("to_end"):
+        # Runs to the end of the payload, less ``trim_end`` trailing bytes (e.g. a CRC).
+        length = len(payload) - offset - int(field_def.get("trim_end", 0))
+        if length < 0:
+            return None
 
     if offset + length > len(payload):
         return None
 
     chunk = payload[offset : offset + length]
+
+    if ftype == "hex":
+        return _text_field(field_def, label, chunk.hex(" "))
+
+    if ftype == "base64":
+        return _text_field(field_def, label, base64.b64encode(chunk).decode("ascii"))
+
+    if ftype == "ax25_call":
+        # An AX.25 address: every byte is the ASCII character shifted left by one bit.
+        call = bytes(b >> 1 for b in chunk).decode("ascii", errors="replace").strip()
+        return _text_field(field_def, label, call)
+
+    if ftype == "quat5":
+        return _decode_quat5(chunk, field_def, label)
 
     if ftype == "ascii":
         raw_val: int | float = 0
@@ -426,16 +497,26 @@ def _payload_matches(match: dict[str, Any] | None, payload: bytes) -> bool:
 
     A satellite with several frame types and no telemetry-ID byte can tell the
     beacon by a fixed byte pattern: ``"match": {"offset": 0, "hex": "0000"}``.
-    No ``match`` means every payload is decoded with the list.
+    No ``match`` means every payload is decoded with the list. An optional ``mask`` (hex,
+    as long as ``hex``) restricts the comparison to the bits set in it.
     """
     if not match:
         return True
     try:
         pattern = bytes.fromhex(str(match["hex"]))
         offset = int(match["offset"])
+        mask = bytes.fromhex(str(match["mask"])) if "mask" in match else None
     except (KeyError, ValueError, TypeError):
         return True
-    return payload[offset : offset + len(pattern)] == pattern
+    chunk = payload[offset : offset + len(pattern)]
+    if len(chunk) < len(pattern):
+        return False
+    if mask is not None:
+        if len(mask) != len(pattern):
+            return True
+        # Only the bits set in ``mask`` are compared (e.g. a 2-bit field inside a flags byte).
+        return all((c & m) == (p & m) for c, p, m in zip(chunk, pattern, mask, strict=True))
+    return chunk == pattern
 
 
 # Record header of the ``records`` schema: u16 type, u16, u16, u16 body length (little-endian).

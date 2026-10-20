@@ -7,7 +7,14 @@ JSON format files already checked into src/data/telemetry_formats/.
 
 from __future__ import annotations
 
-from comms.telemetry.decoder import decode_telemetry, get_telemetry_id_defs
+import pytest
+
+from comms.telemetry.decoder import (
+    TelemetryField,
+    TelemetryFrame,
+    decode_telemetry,
+    get_telemetry_id_defs,
+)
 
 # A real OrigamiSat-2 (NORAD 68795) ID130 frame received 2026-09-13, stored
 # in the telemetry_log table. Values below were cross-checked against a
@@ -368,3 +375,131 @@ def test_lasarsat_digipeated_message_shows_the_ax25_header() -> None:
     defs = get_telemetry_id_defs(62391)
     assert defs is not None
     assert [f["name"] for f in defs["MSG"]["fields"]][:2] == ["ax25_dest", "ax25_src"]
+
+
+# --- Foresail-1p (66778): Skylink + CCSDS PUS, layout from the SatNOGS foresail1p.ksy ----------
+
+# Two frames decoded from a real IQ recording (2026-10-18 01:32 UTC).
+_FORESAIL_ADCS = bytes.fromhex(
+    "664f48324631530985a6054400fa008c"
+    "0b340b3400561003056ad42186000010"
+    "936f4700000000000000000000000000"
+    "0000000000000000000000800008800c"
+    "00000000000000000000000000000000"
+    "0000f401090064000900c1effd17c023"
+    "19000b000d000000000000004a484e4c"
+)
+_FORESAIL_UHF = bytes.fromhex(
+    "664f48324631530985a7054400fa0002"
+    "0b340b34003f1003046ad42186fa6800"
+    "00900005010000000000ff0700000000"
+    "0000000000000000000068526b520101"
+    "01fa000000fa0000000b000600c9ff08"
+    "0000000000fe6fd9a4"
+)
+
+
+def _by_name(frame: TelemetryFrame) -> dict[str, TelemetryField]:
+    return {f.name: f for f in frame.fields}
+
+
+def test_foresail1p_defs_have_one_sub_tab_per_frame_type() -> None:
+    defs = get_telemetry_id_defs(66778)
+    assert defs is not None
+    assert set(defs) == {
+        "REPEATER",
+        "OBC_HK",
+        "EPS_HK",
+        "UHF_HK",
+        "ADCS_HK",
+        "EVENT_1",
+        "EVENT_2",
+        "EVENT_3",
+        "EVENT_4",
+    }
+
+
+def test_foresail1p_uhf_housekeeping_real_frame() -> None:
+    frame = decode_telemetry("OH2F1S", _FORESAIL_UHF, 66778)
+    assert frame.telemetry_id == "UHF_HK"
+    f = _by_name(frame)
+    assert f["identity"].unit == "OH2F1S"
+    assert f["frame_sequence"].raw_value == 0x85A7
+    assert f["service_type"].raw_value == 3 and f["service_subtype"].raw_value == 4
+    assert f["timestamp"].unit == "2026-10-18 01:31:50 UTC"
+    assert f["uptime"].raw_value == 26874
+    assert f["total_tx_frames"].raw_value == 2047
+    assert f["hardware_side_a_bootcount"].raw_value == 107
+    assert f["hardware_side_b_bootcount"].raw_value == 82
+    assert f["symbol_rate_rx"].raw_value == 1 and f["symbol_rate_tx"].raw_value == 1
+    assert f["my_window_length"].raw_value == 250 and f["peer_window_length"].raw_value == 250
+    assert f["mcu_temperature"].scaled_value == pytest.approx(1.1)
+    assert f["background_rssi"].raw_value == -55
+
+
+def test_foresail1p_adcs_housekeeping_real_frame() -> None:
+    frame = decode_telemetry("OH2F1S", _FORESAIL_ADCS, 66778)
+    assert frame.telemetry_id == "ADCS_HK"
+    f = _by_name(frame)
+    assert f["mjd"].raw_value == pytest.approx(61331.0625)
+    # The ADCS was off: the compressed quaternion is the identity (0, 0, 0, 1) with the
+    # omitted component at index 3.
+    for name in ("q1", "q2", "q3"):
+        assert abs(f[f"attitude_quaternion_{name}"].scaled_value) < 1e-3
+    assert f["attitude_quaternion_index"].raw_value == 3
+    assert f["attitude_quaternion_largest"].scaled_value == pytest.approx(1.0, abs=1e-3)
+    assert f["magnetometer_measurement_y"].raw_value == 6141
+    assert f["attitude_variance"].scaled_value == pytest.approx(0.5)
+
+
+def test_foresail1p_unknown_service_stays_raw() -> None:
+    frame = decode_telemetry("OH2F1S", _FORESAIL_UHF[:23] + b"\x09\x09" + _FORESAIL_UHF[25:], 66778)
+    assert frame.telemetry_id is None and not frame.fields
+
+
+def test_foresail1p_repeater_frame_is_matched_by_the_virtual_channel_bits() -> None:
+    # Flags byte 0x13 = VC 3 with the frame-CRC bit; AX.25 header, then the message.
+    def call(text: str) -> bytes:
+        return bytes(ord(c) << 1 for c in text.ljust(6))
+
+    frame_bytes = (
+        bytes.fromhex("664f48324631531300000a")
+        + bytes(5)
+        + call("CQ")
+        + b"\x60"
+        + call("OH2XYZ")
+        + b"\x61"
+        + b"\x03\xf0"
+        + b"HELLO"
+        + bytes(6)
+    )
+    frame = decode_telemetry("", frame_bytes, 66778)
+    assert frame.telemetry_id == "REPEATER"
+    f = _by_name(frame)
+    assert f["dest_callsign"].unit == "CQ"
+    assert f["src_callsign"].unit == "OH2XYZ"
+    assert f["payload"].unit == "HELLO"
+
+
+def test_foresail1p_event_info_runs_to_the_end_less_the_tag() -> None:
+    frame_bytes = (
+        bytes.fromhex("664f48324631530985a6054400fa008c0b340b3400071004016ad42186")
+        + bytes.fromhex("1234")
+        + b"AB"
+        + bytes.fromhex("deadbeef")
+    )
+    frame = decode_telemetry("OH2F1S", frame_bytes, 66778)
+    assert frame.telemetry_id == "EVENT_1"
+    f = _by_name(frame)
+    assert f["rid"].raw_value == 0x3412
+    assert f["info"].unit == "QUI="  # base64 of b"AB"
+
+
+def test_payload_match_mask_compares_only_the_masked_bits() -> None:
+    from comms.telemetry.decoder import _payload_matches
+
+    match = {"offset": 1, "hex": "03", "mask": "03"}
+    assert _payload_matches(match, bytes([0, 0x13]))
+    assert _payload_matches(match, bytes([0, 0xFF]))
+    assert not _payload_matches(match, bytes([0, 0x11]))
+    assert not _payload_matches(match, bytes([0]))  # too short

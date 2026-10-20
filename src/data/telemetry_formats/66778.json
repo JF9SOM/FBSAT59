@@ -1,0 +1,2488 @@
+{
+  "norad": 66778,
+  "name": "Foresail-1p",
+  "callsign": "OH2F1S",
+  "modulation": "GFSK9600",
+  "reference": "https://gitlab.com/librespacefoundation/satnogs/satnogs-decoders/-/blob/master/ksy/foresail1p.ksy",
+  "note": "Skylink frame carrying CCSDS PUS packets (AX100 ASM framing, decoded by gr-satellites). Layout from the SatNOGS foresail1p.ksy; offsets assume the 5-byte Skylink extension seen in every recorded frame. Verified on two real frames (UHF and ADCS housekeeping); the other frame types are untested.",
+  "frame_types": [
+    {
+      "id": "REPEATER",
+      "label": "Repeater frame (VC 3, AX.25)",
+      "match": {
+        "offset": 7,
+        "hex": "03",
+        "mask": "03"
+      },
+      "note": "Per SatNOGS ksy only; not seen in a recording. Assumes no digipeater addresses and a 6-byte tail (FCS + frame CRC).",
+      "fields": [
+        {
+          "name": "skylink_version",
+          "offset": 0,
+          "length": 1,
+          "type": "uint8",
+          "mask": 248,
+          "label": "Skylink version"
+        },
+        {
+          "name": "identity",
+          "offset": 1,
+          "length": 6,
+          "type": "ascii",
+          "label": "Skylink identity"
+        },
+        {
+          "name": "vc",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 3,
+          "label": "Virtual channel (0/1 = PUS, 3 = repeater)"
+        },
+        {
+          "name": "is_arq_on",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 4,
+          "label": "ARQ on"
+        },
+        {
+          "name": "is_authenticated",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 8,
+          "label": "Authenticated (4-byte tag at the end)"
+        },
+        {
+          "name": "is_crced",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 16,
+          "label": "Frame CRC present"
+        },
+        {
+          "name": "sequence_control",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 96,
+          "label": "Sequence control"
+        },
+        {
+          "name": "frame_sequence",
+          "offset": 8,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Skylink frame sequence"
+        },
+        {
+          "name": "extension_length",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Extension length (bytes)"
+        },
+        {
+          "name": "extensions",
+          "offset": 11,
+          "length": 5,
+          "type": "hex",
+          "label": "Skylink extension (not decoded)"
+        },
+        {
+          "name": "dest_callsign",
+          "offset": 16,
+          "length": 6,
+          "type": "ax25_call",
+          "label": "AX.25 destination"
+        },
+        {
+          "name": "dest_ssid",
+          "offset": 22,
+          "length": 1,
+          "type": "uint8",
+          "mask": 14,
+          "label": "AX.25 destination SSID"
+        },
+        {
+          "name": "src_callsign",
+          "offset": 23,
+          "length": 6,
+          "type": "ax25_call",
+          "label": "AX.25 source"
+        },
+        {
+          "name": "src_ssid",
+          "offset": 29,
+          "length": 1,
+          "type": "uint8",
+          "mask": 14,
+          "label": "AX.25 source SSID"
+        },
+        {
+          "name": "ctl",
+          "offset": 30,
+          "length": 1,
+          "type": "uint8",
+          "label": "AX.25 control"
+        },
+        {
+          "name": "pid",
+          "offset": 31,
+          "length": 1,
+          "type": "uint8",
+          "label": "AX.25 PID"
+        },
+        {
+          "name": "payload",
+          "offset": 32,
+          "length": 0,
+          "to_end": true,
+          "trim_end": 6,
+          "type": "ascii",
+          "label": "Repeated message"
+        }
+      ]
+    },
+    {
+      "id": "OBC_HK",
+      "label": "OBC housekeeping (PUS 3,2)",
+      "match": {
+        "offset": 23,
+        "hex": "0302"
+      },
+      "fields": [
+        {
+          "name": "skylink_version",
+          "offset": 0,
+          "length": 1,
+          "type": "uint8",
+          "mask": 248,
+          "label": "Skylink version"
+        },
+        {
+          "name": "identity",
+          "offset": 1,
+          "length": 6,
+          "type": "ascii",
+          "label": "Skylink identity"
+        },
+        {
+          "name": "vc",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 3,
+          "label": "Virtual channel (0/1 = PUS, 3 = repeater)"
+        },
+        {
+          "name": "is_arq_on",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 4,
+          "label": "ARQ on"
+        },
+        {
+          "name": "is_authenticated",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 8,
+          "label": "Authenticated (4-byte tag at the end)"
+        },
+        {
+          "name": "is_crced",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 16,
+          "label": "Frame CRC present"
+        },
+        {
+          "name": "sequence_control",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 96,
+          "label": "Sequence control"
+        },
+        {
+          "name": "frame_sequence",
+          "offset": 8,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Skylink frame sequence"
+        },
+        {
+          "name": "extension_length",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Extension length (bytes)"
+        },
+        {
+          "name": "extensions",
+          "offset": 11,
+          "length": 5,
+          "type": "hex",
+          "label": "Skylink extension (not decoded)"
+        },
+        {
+          "name": "packet_id",
+          "offset": 16,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS packet ID"
+        },
+        {
+          "name": "sequence",
+          "offset": 18,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS sequence"
+        },
+        {
+          "name": "length",
+          "offset": 20,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS length"
+        },
+        {
+          "name": "secondary_header",
+          "offset": 22,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS secondary header"
+        },
+        {
+          "name": "service_type",
+          "offset": 23,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS service type"
+        },
+        {
+          "name": "service_subtype",
+          "offset": 24,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS service subtype"
+        },
+        {
+          "name": "timestamp",
+          "offset": 25,
+          "length": 4,
+          "type": "unix_time",
+          "label": "Satellite time"
+        },
+        {
+          "name": "side",
+          "offset": 29,
+          "length": 1,
+          "type": "uint8",
+          "label": "OBC redundancy side (0=A, 1=B, 2=A recovery, 3=B recovery)"
+        },
+        {
+          "name": "fdir_mode",
+          "offset": 30,
+          "length": 1,
+          "type": "uint8",
+          "label": "FDIR mode (0=nominal, 1=safe: recovery, 2=safe: unstable, 3=safe: low battery, 9=safe: rebooting)"
+        },
+        {
+          "name": "sys_watchdog_counter",
+          "offset": 31,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Sys watchdog counter"
+        },
+        {
+          "name": "scheduler",
+          "offset": 33,
+          "length": 1,
+          "type": "uint8",
+          "label": "Scheduler"
+        },
+        {
+          "name": "software_revision",
+          "offset": 34,
+          "length": 1,
+          "type": "uint8",
+          "label": "Software revision"
+        },
+        {
+          "name": "uptime",
+          "offset": 35,
+          "length": 4,
+          "type": "uint32_le",
+          "label": "Uptime",
+          "unit": "s"
+        },
+        {
+          "name": "heap_free",
+          "offset": 39,
+          "length": 1,
+          "type": "uint8",
+          "label": "Heap free",
+          "unit": "%",
+          "scale": 0.39215686274509803
+        },
+        {
+          "name": "cpu_load",
+          "offset": 40,
+          "length": 1,
+          "type": "uint8",
+          "label": "CPU load",
+          "unit": "%",
+          "scale": 0.39215686274509803
+        },
+        {
+          "name": "fs_free_space",
+          "offset": 41,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "File system free space (ksy: 4 x raw)",
+          "unit": "kB",
+          "scale": 4
+        },
+        {
+          "name": "arbiter_uptime",
+          "offset": 43,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Arbiter uptime",
+          "unit": "s"
+        },
+        {
+          "name": "arbiter_age",
+          "offset": 45,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Arbiter age"
+        },
+        {
+          "name": "arbiter_bootcount",
+          "offset": 47,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Arbiter bootcount"
+        },
+        {
+          "name": "arbiter_temperature",
+          "offset": 49,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Arbiter temperature",
+          "unit": "°C",
+          "scale": 0.1
+        },
+        {
+          "name": "side_a_bootcount",
+          "offset": 51,
+          "length": 1,
+          "type": "uint8",
+          "label": "Side a bootcount"
+        },
+        {
+          "name": "side_a_heartbeat",
+          "offset": 52,
+          "length": 1,
+          "type": "uint8",
+          "label": "Side a heartbeat"
+        },
+        {
+          "name": "side_a_fail_counter",
+          "offset": 53,
+          "length": 1,
+          "type": "uint8",
+          "label": "Side a fail counter"
+        },
+        {
+          "name": "side_a_fail_reason",
+          "offset": 54,
+          "length": 1,
+          "type": "uint8",
+          "label": "Side a fail reason"
+        },
+        {
+          "name": "side_b_bootcount",
+          "offset": 55,
+          "length": 1,
+          "type": "uint8",
+          "label": "Side b bootcount"
+        },
+        {
+          "name": "side_b_heartbeat",
+          "offset": 56,
+          "length": 1,
+          "type": "uint8",
+          "label": "Side b heartbeat"
+        },
+        {
+          "name": "side_b_fail_counter",
+          "offset": 57,
+          "length": 1,
+          "type": "uint8",
+          "label": "Side b fail counter"
+        },
+        {
+          "name": "side_b_fail_reason",
+          "offset": 58,
+          "length": 1,
+          "type": "uint8",
+          "label": "Side b fail reason"
+        },
+        {
+          "name": "arbiter_log_1",
+          "offset": 59,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Arbiter log 1"
+        },
+        {
+          "name": "arbiter_log_2",
+          "offset": 61,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Arbiter log 2"
+        },
+        {
+          "name": "arbiter_log_3",
+          "offset": 63,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Arbiter log 3"
+        },
+        {
+          "name": "arbiter_log_4",
+          "offset": 65,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Arbiter log 4"
+        }
+      ],
+      "note": "Layout from the SatNOGS ksy only; not seen in a recording."
+    },
+    {
+      "id": "EPS_HK",
+      "label": "EPS housekeeping (PUS 3,3)",
+      "match": {
+        "offset": 23,
+        "hex": "0303"
+      },
+      "fields": [
+        {
+          "name": "skylink_version",
+          "offset": 0,
+          "length": 1,
+          "type": "uint8",
+          "mask": 248,
+          "label": "Skylink version"
+        },
+        {
+          "name": "identity",
+          "offset": 1,
+          "length": 6,
+          "type": "ascii",
+          "label": "Skylink identity"
+        },
+        {
+          "name": "vc",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 3,
+          "label": "Virtual channel (0/1 = PUS, 3 = repeater)"
+        },
+        {
+          "name": "is_arq_on",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 4,
+          "label": "ARQ on"
+        },
+        {
+          "name": "is_authenticated",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 8,
+          "label": "Authenticated (4-byte tag at the end)"
+        },
+        {
+          "name": "is_crced",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 16,
+          "label": "Frame CRC present"
+        },
+        {
+          "name": "sequence_control",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 96,
+          "label": "Sequence control"
+        },
+        {
+          "name": "frame_sequence",
+          "offset": 8,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Skylink frame sequence"
+        },
+        {
+          "name": "extension_length",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Extension length (bytes)"
+        },
+        {
+          "name": "extensions",
+          "offset": 11,
+          "length": 5,
+          "type": "hex",
+          "label": "Skylink extension (not decoded)"
+        },
+        {
+          "name": "packet_id",
+          "offset": 16,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS packet ID"
+        },
+        {
+          "name": "sequence",
+          "offset": 18,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS sequence"
+        },
+        {
+          "name": "length",
+          "offset": 20,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS length"
+        },
+        {
+          "name": "secondary_header",
+          "offset": 22,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS secondary header"
+        },
+        {
+          "name": "service_type",
+          "offset": 23,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS service type"
+        },
+        {
+          "name": "service_subtype",
+          "offset": 24,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS service subtype"
+        },
+        {
+          "name": "timestamp",
+          "offset": 25,
+          "length": 4,
+          "type": "unix_time",
+          "label": "Satellite time"
+        },
+        {
+          "name": "pcdu_uptime",
+          "offset": 29,
+          "length": 4,
+          "type": "uint32_le",
+          "label": "Pcdu uptime (PCDU uptime in seconds)",
+          "unit": "s"
+        },
+        {
+          "name": "pcdu_boot_count",
+          "offset": 33,
+          "length": 1,
+          "type": "uint8",
+          "label": "Pcdu boot count"
+        },
+        {
+          "name": "bb_boot_count",
+          "offset": 34,
+          "length": 1,
+          "type": "uint8",
+          "label": "Bb boot count (Battery Board Boot Count)"
+        },
+        {
+          "name": "apr_boot_count",
+          "offset": 35,
+          "length": 1,
+          "type": "uint8",
+          "label": "Apr boot count"
+        },
+        {
+          "name": "pdm_expected",
+          "offset": 36,
+          "length": 1,
+          "type": "uint8",
+          "label": "PDM switches expected on (bit0 PATE_BATT, 1 PB_BATT, 2 PB_3V6, 3 CAM_3V6, 4 MAG_3V6, 5 OBC_3V6, 6 UHF_3V6, 7 ADCS_3V6)"
+        },
+        {
+          "name": "pdm_faulted",
+          "offset": 37,
+          "length": 1,
+          "type": "uint8",
+          "label": "PDM switches faulted (bit0 PATE_BATT, 1 PB_BATT, 2 PB_3V6, 3 CAM_3V6, 4 MAG_3V6, 5 OBC_3V6, 6 UHF_3V6, 7 ADCS_3V6)"
+        },
+        {
+          "name": "padding_byte",
+          "offset": 38,
+          "length": 1,
+          "type": "uint8",
+          "label": "Padding byte"
+        },
+        {
+          "name": "eps_subsystem_state",
+          "offset": 39,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "EPS subsystem state (raw bitmask)"
+        },
+        {
+          "name": "eps_bb_on",
+          "offset": 39,
+          "length": 2,
+          "type": "uint16_le",
+          "mask": 1,
+          "label": "EPS: battery board (1 = on)"
+        },
+        {
+          "name": "eps_heater",
+          "offset": 39,
+          "length": 2,
+          "type": "uint16_le",
+          "mask": 14,
+          "label": "EPS: heater (0=off, 1=on, 2=force on)"
+        },
+        {
+          "name": "eps_balancer",
+          "offset": 39,
+          "length": 2,
+          "type": "uint16_le",
+          "mask": 112,
+          "label": "EPS: balancer (0=off, 1=discharging lower cells, 2=discharging upper cells)"
+        },
+        {
+          "name": "eps_apr_on",
+          "offset": 39,
+          "length": 2,
+          "type": "uint16_le",
+          "mask": 128,
+          "label": "EPS: APR (1 = on)"
+        },
+        {
+          "name": "eps_apr_x_mode",
+          "offset": 39,
+          "length": 2,
+          "type": "uint16_le",
+          "mask": 768,
+          "label": "EPS: APR X mode (0=MPPT, 1=manual, 2=MPPT)"
+        },
+        {
+          "name": "eps_apr_y_mode",
+          "offset": 39,
+          "length": 2,
+          "type": "uint16_le",
+          "mask": 3072,
+          "label": "EPS: APR Y mode (0=MPPT, 1=manual, 2=MPPT)"
+        },
+        {
+          "name": "eps_scope",
+          "offset": 39,
+          "length": 2,
+          "type": "uint16_le",
+          "mask": 12288,
+          "label": "EPS: scope (0=idle, 1=scan, 2=trace)"
+        },
+        {
+          "name": "eps_scope_mem_busy",
+          "offset": 39,
+          "length": 2,
+          "type": "uint16_le",
+          "mask": 16384,
+          "label": "EPS: scope memory (1 = busy)"
+        },
+        {
+          "name": "heater_pwm_on_time",
+          "offset": 41,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Heater pwm on time"
+        },
+        {
+          "name": "current_apr_x",
+          "offset": 43,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current apr x"
+        },
+        {
+          "name": "current_apr_y",
+          "offset": 45,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current apr y"
+        },
+        {
+          "name": "voltage_apr_x",
+          "offset": 47,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Voltage apr x"
+        },
+        {
+          "name": "voltage_apr_y",
+          "offset": 49,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Voltage apr y"
+        },
+        {
+          "name": "current_apr_x_at_mpp",
+          "offset": 51,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current apr x at mpp (X+ Charger Max Current)"
+        },
+        {
+          "name": "voltage_apr_x_at_mpp",
+          "offset": 53,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Voltage apr x at mpp (X+ Panel Max Voltage)"
+        },
+        {
+          "name": "current_apr_y_at_mpp",
+          "offset": 55,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current apr y at mpp (Y+ Charger Max Current)"
+        },
+        {
+          "name": "voltage_apr_y_at_mpp",
+          "offset": 57,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Voltage apr y at mpp (Y+ Panel Max Voltage)"
+        },
+        {
+          "name": "voltage_battery",
+          "offset": 59,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Voltage battery (Battery Pack Voltage)"
+        },
+        {
+          "name": "voltage_battery_lower",
+          "offset": 61,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Voltage battery lower (Battery Pack Lower Cell Voltage)"
+        },
+        {
+          "name": "voltage_payloads",
+          "offset": 63,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Voltage payloads (Payload Buck Output Voltage)"
+        },
+        {
+          "name": "voltage_obc_adcs",
+          "offset": 65,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Voltage obc adcs (OBC/ADCS Buck Output Voltage)"
+        },
+        {
+          "name": "voltage_uhf",
+          "offset": 67,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Voltage uhf"
+        },
+        {
+          "name": "temperature_mcu_pcdu",
+          "offset": 69,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Temperature mcu pcdu",
+          "unit": "°C",
+          "scale": 0.1
+        },
+        {
+          "name": "temperature_mcu_bb",
+          "offset": 71,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Temperature mcu bb",
+          "unit": "°C",
+          "scale": 0.1
+        },
+        {
+          "name": "temperature_mcu_apr",
+          "offset": 73,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Temperature mcu apr",
+          "unit": "°C",
+          "scale": 0.1
+        },
+        {
+          "name": "temperature_battery",
+          "offset": 75,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Temperature battery",
+          "unit": "°C",
+          "scale": 0.1
+        },
+        {
+          "name": "temperature_sp_x_minus",
+          "offset": 77,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Temperature sp x minus",
+          "unit": "°C",
+          "scale": 0.1
+        },
+        {
+          "name": "temperature_sp_x_plus",
+          "offset": 79,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Temperature sp x plus",
+          "unit": "°C",
+          "scale": 0.1
+        },
+        {
+          "name": "temperature_sp_y_minus",
+          "offset": 81,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Temperature sp y minus",
+          "unit": "°C",
+          "scale": 0.1
+        },
+        {
+          "name": "temperature_sp_y_plus",
+          "offset": 83,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Temperature sp y plus",
+          "unit": "°C",
+          "scale": 0.1
+        },
+        {
+          "name": "current_battery",
+          "offset": 85,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current battery",
+          "unit": "mA"
+        },
+        {
+          "name": "current_battery_min",
+          "offset": 87,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current battery min",
+          "unit": "mA"
+        },
+        {
+          "name": "current_battery_max",
+          "offset": 89,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current battery max",
+          "unit": "mA"
+        },
+        {
+          "name": "current_pate_batt",
+          "offset": 91,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current pate batt",
+          "unit": "mA"
+        },
+        {
+          "name": "current_pb_batt",
+          "offset": 93,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current pb batt",
+          "unit": "mA"
+        },
+        {
+          "name": "current_pb_3v6",
+          "offset": 95,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current pb 3v6",
+          "unit": "mA"
+        },
+        {
+          "name": "current_cam_3v6",
+          "offset": 97,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current cam 3v6",
+          "unit": "mA"
+        },
+        {
+          "name": "current_mag_3v6",
+          "offset": 99,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current mag 3v6",
+          "unit": "mA"
+        },
+        {
+          "name": "current_obc_3v6",
+          "offset": 101,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current obc 3v6",
+          "unit": "mA"
+        },
+        {
+          "name": "current_uhf_3v6",
+          "offset": 103,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current uhf 3v6",
+          "unit": "mA"
+        },
+        {
+          "name": "current_adcs_3v6",
+          "offset": 105,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current adcs 3v6",
+          "unit": "mA"
+        },
+        {
+          "name": "current_min_pate",
+          "offset": 107,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current min pate",
+          "unit": "mA"
+        },
+        {
+          "name": "current_min_pb_batt",
+          "offset": 109,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current min pb batt",
+          "unit": "mA"
+        },
+        {
+          "name": "current_min_pb_3v6",
+          "offset": 111,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current min pb 3v6",
+          "unit": "mA"
+        },
+        {
+          "name": "current_min_cam_3v6",
+          "offset": 113,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current min cam 3v6",
+          "unit": "mA"
+        },
+        {
+          "name": "current_min_mag_3v6",
+          "offset": 115,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current min mag 3v6",
+          "unit": "mA"
+        },
+        {
+          "name": "current_min_obc_3v6",
+          "offset": 117,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current min obc 3v6",
+          "unit": "mA"
+        },
+        {
+          "name": "current_min_uhf_3v6",
+          "offset": 119,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current min uhf 3v6",
+          "unit": "mA"
+        },
+        {
+          "name": "current_min_adcs_3v6",
+          "offset": 121,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current min adcs 3v6",
+          "unit": "mA"
+        },
+        {
+          "name": "current_max_pate",
+          "offset": 123,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current max pate",
+          "unit": "mA"
+        },
+        {
+          "name": "current_max_pb_batt",
+          "offset": 125,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current max pb batt",
+          "unit": "mA"
+        },
+        {
+          "name": "current_max_pb_3v6",
+          "offset": 127,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current max pb 3v6",
+          "unit": "mA"
+        },
+        {
+          "name": "current_max_cam_3v6",
+          "offset": 129,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current max cam 3v6",
+          "unit": "mA"
+        },
+        {
+          "name": "current_max_mag_3v6",
+          "offset": 131,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current max mag 3v6",
+          "unit": "mA"
+        },
+        {
+          "name": "current_max_obc_3v6",
+          "offset": 133,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current max obc 3v6",
+          "unit": "mA"
+        },
+        {
+          "name": "current_max_uhf_3v6",
+          "offset": 135,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current max uhf 3v6",
+          "unit": "mA"
+        },
+        {
+          "name": "current_max_adcs_3v6",
+          "offset": 137,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Current max adcs 3v6",
+          "unit": "mA"
+        }
+      ],
+      "note": "Layout from the SatNOGS ksy only; not seen in a recording. Voltage/current units that the ksy does not state are left raw."
+    },
+    {
+      "id": "UHF_HK",
+      "label": "UHF housekeeping (PUS 3,4)",
+      "match": {
+        "offset": 23,
+        "hex": "0304"
+      },
+      "fields": [
+        {
+          "name": "skylink_version",
+          "offset": 0,
+          "length": 1,
+          "type": "uint8",
+          "mask": 248,
+          "label": "Skylink version"
+        },
+        {
+          "name": "identity",
+          "offset": 1,
+          "length": 6,
+          "type": "ascii",
+          "label": "Skylink identity"
+        },
+        {
+          "name": "vc",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 3,
+          "label": "Virtual channel (0/1 = PUS, 3 = repeater)"
+        },
+        {
+          "name": "is_arq_on",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 4,
+          "label": "ARQ on"
+        },
+        {
+          "name": "is_authenticated",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 8,
+          "label": "Authenticated (4-byte tag at the end)"
+        },
+        {
+          "name": "is_crced",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 16,
+          "label": "Frame CRC present"
+        },
+        {
+          "name": "sequence_control",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 96,
+          "label": "Sequence control"
+        },
+        {
+          "name": "frame_sequence",
+          "offset": 8,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Skylink frame sequence"
+        },
+        {
+          "name": "extension_length",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Extension length (bytes)"
+        },
+        {
+          "name": "extensions",
+          "offset": 11,
+          "length": 5,
+          "type": "hex",
+          "label": "Skylink extension (not decoded)"
+        },
+        {
+          "name": "packet_id",
+          "offset": 16,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS packet ID"
+        },
+        {
+          "name": "sequence",
+          "offset": 18,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS sequence"
+        },
+        {
+          "name": "length",
+          "offset": 20,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS length"
+        },
+        {
+          "name": "secondary_header",
+          "offset": 22,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS secondary header"
+        },
+        {
+          "name": "service_type",
+          "offset": 23,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS service type"
+        },
+        {
+          "name": "service_subtype",
+          "offset": 24,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS service subtype"
+        },
+        {
+          "name": "timestamp",
+          "offset": 25,
+          "length": 4,
+          "type": "unix_time",
+          "label": "Satellite time"
+        },
+        {
+          "name": "uptime",
+          "offset": 29,
+          "length": 4,
+          "type": "uint32_le",
+          "label": "Uptime",
+          "unit": "s"
+        },
+        {
+          "name": "bootcount",
+          "offset": 33,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Bootcount"
+        },
+        {
+          "name": "fdir_counter",
+          "offset": 35,
+          "length": 1,
+          "type": "uint8",
+          "label": "Fdir counter (UHF FDIR Reset Counter)"
+        },
+        {
+          "name": "mcu_wd_reset_count",
+          "offset": 36,
+          "length": 1,
+          "type": "uint8",
+          "label": "Mcu wd reset count (MCU Watchdog Reset Count)"
+        },
+        {
+          "name": "mbe_count",
+          "offset": 37,
+          "length": 1,
+          "type": "uint8",
+          "label": "Mbe count (Memory Boot Error Count)"
+        },
+        {
+          "name": "bus_sync_errors",
+          "offset": 38,
+          "length": 1,
+          "type": "uint8",
+          "label": "Bus sync errors"
+        },
+        {
+          "name": "bus_len_errors",
+          "offset": 39,
+          "length": 1,
+          "type": "uint8",
+          "label": "Bus len errors"
+        },
+        {
+          "name": "bus_crc_errors",
+          "offset": 40,
+          "length": 1,
+          "type": "uint8",
+          "label": "Bus crc errors"
+        },
+        {
+          "name": "bus_receive_timeouts",
+          "offset": 41,
+          "length": 1,
+          "type": "uint8",
+          "label": "Bus receive timeouts"
+        },
+        {
+          "name": "total_tx_frames",
+          "offset": 42,
+          "length": 4,
+          "type": "uint32_le",
+          "label": "Total tx frames"
+        },
+        {
+          "name": "total_rx_frames",
+          "offset": 46,
+          "length": 4,
+          "type": "uint32_le",
+          "label": "Total rx frames"
+        },
+        {
+          "name": "total_ham_tx_frames",
+          "offset": 50,
+          "length": 4,
+          "type": "uint32_le",
+          "label": "Total ham tx frames"
+        },
+        {
+          "name": "total_ham_rx_frames",
+          "offset": 54,
+          "length": 4,
+          "type": "uint32_le",
+          "label": "Total ham rx frames"
+        },
+        {
+          "name": "unknown_u16_after_ham_rx",
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Not in the SatNOGS ksy: 2 bytes between ham RX frames and hardware side A boot count (seen in a real frame)",
+          "offset": 58
+        },
+        {
+          "name": "hardware_side_a_bootcount",
+          "offset": 60,
+          "length": 1,
+          "type": "uint8",
+          "label": "Hardware side a bootcount (Hardware Side A Boot Count)"
+        },
+        {
+          "name": "hardware_side_b_bootcount",
+          "offset": 61,
+          "length": 1,
+          "type": "uint8",
+          "label": "Hardware side b bootcount (Hardware Side B Boot Count)"
+        },
+        {
+          "name": "side",
+          "offset": 62,
+          "length": 1,
+          "type": "uint8",
+          "label": "UHF redundancy side (0=A, 1=B)"
+        },
+        {
+          "name": "symbol_rate_rx",
+          "offset": 63,
+          "length": 1,
+          "type": "uint8",
+          "label": "UHF RX mode (0=GFSK 4800, 1=GFSK 9600, 2=GFSK 19200, 3=GFSK 38400)"
+        },
+        {
+          "name": "symbol_rate_tx",
+          "offset": 64,
+          "length": 1,
+          "type": "uint8",
+          "label": "UHF TX mode (0=GFSK 4800, 1=GFSK 9600, 2=GFSK 19200, 3=GFSK 38400)"
+        },
+        {
+          "name": "my_window_length",
+          "offset": 65,
+          "length": 4,
+          "type": "uint32_le",
+          "label": "My window length",
+          "unit": "ms"
+        },
+        {
+          "name": "peer_window_length",
+          "offset": 69,
+          "length": 4,
+          "type": "uint32_le",
+          "label": "Peer window length",
+          "unit": "ms"
+        },
+        {
+          "name": "mcu_temperature",
+          "offset": 73,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Mcu temperature",
+          "unit": "°C",
+          "scale": 0.1
+        },
+        {
+          "name": "pa_temperature",
+          "offset": 75,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Pa temperature",
+          "unit": "°C",
+          "scale": 0.1
+        },
+        {
+          "name": "background_rssi",
+          "offset": 77,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Background rssi",
+          "unit": "dBm"
+        },
+        {
+          "name": "background_max_rssi",
+          "offset": 79,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Background max rssi",
+          "unit": "dBm"
+        },
+        {
+          "name": "last_rssi",
+          "offset": 81,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Last rssi",
+          "unit": "dBm"
+        },
+        {
+          "name": "last_freq_offset",
+          "offset": 83,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Last freq offset",
+          "unit": "Hz"
+        }
+      ],
+      "note": "Checked against a real frame (2026-10-18): timestamp, uptime, boot counts, hardware side, GFSK 9600 modes and the 250 ms Skylink windows are plausible. The real frame has 2 bytes the SatNOGS ksy lacks after the ham RX frame counter (shown as unknown_u16_after_ham_rx). The RSSI values (-55, 8, 0 dBm) looked implausible in the one frame seen."
+    },
+    {
+      "id": "ADCS_HK",
+      "label": "ADCS housekeeping (PUS 3,5)",
+      "match": {
+        "offset": 23,
+        "hex": "0305"
+      },
+      "fields": [
+        {
+          "name": "skylink_version",
+          "offset": 0,
+          "length": 1,
+          "type": "uint8",
+          "mask": 248,
+          "label": "Skylink version"
+        },
+        {
+          "name": "identity",
+          "offset": 1,
+          "length": 6,
+          "type": "ascii",
+          "label": "Skylink identity"
+        },
+        {
+          "name": "vc",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 3,
+          "label": "Virtual channel (0/1 = PUS, 3 = repeater)"
+        },
+        {
+          "name": "is_arq_on",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 4,
+          "label": "ARQ on"
+        },
+        {
+          "name": "is_authenticated",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 8,
+          "label": "Authenticated (4-byte tag at the end)"
+        },
+        {
+          "name": "is_crced",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 16,
+          "label": "Frame CRC present"
+        },
+        {
+          "name": "sequence_control",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 96,
+          "label": "Sequence control"
+        },
+        {
+          "name": "frame_sequence",
+          "offset": 8,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Skylink frame sequence"
+        },
+        {
+          "name": "extension_length",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Extension length (bytes)"
+        },
+        {
+          "name": "extensions",
+          "offset": 11,
+          "length": 5,
+          "type": "hex",
+          "label": "Skylink extension (not decoded)"
+        },
+        {
+          "name": "packet_id",
+          "offset": 16,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS packet ID"
+        },
+        {
+          "name": "sequence",
+          "offset": 18,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS sequence"
+        },
+        {
+          "name": "length",
+          "offset": 20,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS length"
+        },
+        {
+          "name": "secondary_header",
+          "offset": 22,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS secondary header"
+        },
+        {
+          "name": "service_type",
+          "offset": 23,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS service type"
+        },
+        {
+          "name": "service_subtype",
+          "offset": 24,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS service subtype"
+        },
+        {
+          "name": "timestamp",
+          "offset": 25,
+          "length": 4,
+          "type": "unix_time",
+          "label": "Satellite time"
+        },
+        {
+          "name": "determination_mode",
+          "offset": 29,
+          "length": 1,
+          "type": "uint8",
+          "label": "ADCS determination algorithm (0=off, 1=TRIAD, 2=Kalman)"
+        },
+        {
+          "name": "control_mode",
+          "offset": 30,
+          "length": 1,
+          "type": "uint8",
+          "label": "ADCS control algorithm (0=off, 1=B-dot, 2=Ruiter, 3=attitude PD)"
+        },
+        {
+          "name": "mjd",
+          "offset": 31,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Mjd (Modified Julian Date)"
+        },
+        {
+          "name": "position_x",
+          "offset": 35,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Position x",
+          "unit": "km"
+        },
+        {
+          "name": "position_y",
+          "offset": 39,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Position y",
+          "unit": "km"
+        },
+        {
+          "name": "position_z",
+          "offset": 43,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Position z",
+          "unit": "km"
+        },
+        {
+          "name": "velocity_x",
+          "offset": 47,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Velocity x",
+          "unit": "km/s"
+        },
+        {
+          "name": "velocity_y",
+          "offset": 51,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Velocity y",
+          "unit": "km/s"
+        },
+        {
+          "name": "velocity_z",
+          "offset": 55,
+          "length": 4,
+          "type": "float32_le",
+          "label": "Velocity z",
+          "unit": "km/s"
+        },
+        {
+          "name": "attitude_quaternion_q1",
+          "offset": 59,
+          "length": 5,
+          "type": "quat5",
+          "component": "q1",
+          "label": "Attitude quaternion component 1 (12-bit, mapped to +-0.7071)"
+        },
+        {
+          "name": "attitude_quaternion_q2",
+          "offset": 59,
+          "length": 5,
+          "type": "quat5",
+          "component": "q2",
+          "label": "Attitude quaternion component 2"
+        },
+        {
+          "name": "attitude_quaternion_q3",
+          "offset": 59,
+          "length": 5,
+          "type": "quat5",
+          "component": "q3",
+          "label": "Attitude quaternion component 3"
+        },
+        {
+          "name": "attitude_quaternion_index",
+          "offset": 59,
+          "length": 5,
+          "type": "quat5",
+          "component": "index",
+          "label": "Attitude quaternion: index of the omitted largest component"
+        },
+        {
+          "name": "attitude_quaternion_sign",
+          "offset": 59,
+          "length": 5,
+          "type": "quat5",
+          "component": "sign",
+          "label": "Attitude quaternion: sign of the omitted component (1 = negative)"
+        },
+        {
+          "name": "attitude_quaternion_largest",
+          "offset": 59,
+          "length": 5,
+          "type": "quat5",
+          "component": "largest",
+          "label": "Attitude quaternion: omitted largest component (computed from the other three)"
+        },
+        {
+          "name": "estimated_angular_rate_x",
+          "offset": 64,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Estimated angular rate x",
+          "unit": "mrad/s"
+        },
+        {
+          "name": "estimated_angular_rate_y",
+          "offset": 66,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Estimated angular rate y",
+          "unit": "mrad/s"
+        },
+        {
+          "name": "estimated_angular_rate_z",
+          "offset": 68,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Estimated angular rate z",
+          "unit": "mrad/s"
+        },
+        {
+          "name": "estimated_magnetometer_bias_x",
+          "offset": 70,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Estimated magnetometer bias x",
+          "unit": "µT"
+        },
+        {
+          "name": "estimated_magnetometer_bias_y",
+          "offset": 72,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Estimated magnetometer bias y",
+          "unit": "µT"
+        },
+        {
+          "name": "estimated_magnetometer_bias_z",
+          "offset": 74,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Estimated magnetometer bias z",
+          "unit": "µT"
+        },
+        {
+          "name": "estimated_gyro_bias_x",
+          "offset": 76,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Estimated gyro bias x",
+          "unit": "mrad/s"
+        },
+        {
+          "name": "estimated_gyro_bias_y",
+          "offset": 78,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Estimated gyro bias y",
+          "unit": "mrad/s"
+        },
+        {
+          "name": "estimated_gyro_bias_z",
+          "offset": 80,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Estimated gyro bias z",
+          "unit": "mrad/s"
+        },
+        {
+          "name": "attitude_variance",
+          "offset": 82,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Attitude variance",
+          "scale": 0.001
+        },
+        {
+          "name": "angular_velocity_variance",
+          "offset": 84,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Angular velocity variance",
+          "scale": 0.001
+        },
+        {
+          "name": "mag_bias_variance",
+          "offset": 86,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Mag bias variance",
+          "scale": 0.001
+        },
+        {
+          "name": "gyro_bias_variance",
+          "offset": 88,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Gyro bias variance",
+          "scale": 0.001
+        },
+        {
+          "name": "magnetometer_measurement_x",
+          "offset": 90,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Magnetometer measurement x",
+          "unit": "µT"
+        },
+        {
+          "name": "magnetometer_measurement_y",
+          "offset": 92,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Magnetometer measurement y",
+          "unit": "µT"
+        },
+        {
+          "name": "magnetometer_measurement_z",
+          "offset": 94,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Magnetometer measurement z",
+          "unit": "µT"
+        },
+        {
+          "name": "gyroscope_measurement_x",
+          "offset": 96,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Gyroscope measurement x",
+          "unit": "mrad/s"
+        },
+        {
+          "name": "gyroscope_measurement_y",
+          "offset": 98,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Gyroscope measurement y",
+          "unit": "mrad/s"
+        },
+        {
+          "name": "gyroscope_measurement_z",
+          "offset": 100,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Gyroscope measurement z",
+          "unit": "mrad/s"
+        },
+        {
+          "name": "sun_vector_measurement_x",
+          "offset": 102,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Sun vector measurement x",
+          "scale": 0.01
+        },
+        {
+          "name": "sun_vector_measurement_y",
+          "offset": 104,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Sun vector measurement y",
+          "scale": 0.01
+        },
+        {
+          "name": "sun_vector_measurement_z",
+          "offset": 106,
+          "length": 2,
+          "type": "int16_le",
+          "label": "Sun vector measurement z",
+          "scale": 0.01
+        }
+      ],
+      "note": "Checked against a real frame (2026-10-18): length and MJD (61331.0625 = 2026-10-18 01:30 UTC) match; the ADCS was off (zero position/velocity, identity quaternion). The magnetometer measurement (about 12000 raw) is far above the Earth field if the ksy unit (microtesla) is right, so that unit is doubtful."
+    },
+    {
+      "id": "EVENT_1",
+      "label": "Event (PUS 4,1)",
+      "match": {
+        "offset": 23,
+        "hex": "0401"
+      },
+      "fields": [
+        {
+          "name": "skylink_version",
+          "offset": 0,
+          "length": 1,
+          "type": "uint8",
+          "mask": 248,
+          "label": "Skylink version"
+        },
+        {
+          "name": "identity",
+          "offset": 1,
+          "length": 6,
+          "type": "ascii",
+          "label": "Skylink identity"
+        },
+        {
+          "name": "vc",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 3,
+          "label": "Virtual channel (0/1 = PUS, 3 = repeater)"
+        },
+        {
+          "name": "is_arq_on",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 4,
+          "label": "ARQ on"
+        },
+        {
+          "name": "is_authenticated",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 8,
+          "label": "Authenticated (4-byte tag at the end)"
+        },
+        {
+          "name": "is_crced",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 16,
+          "label": "Frame CRC present"
+        },
+        {
+          "name": "sequence_control",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 96,
+          "label": "Sequence control"
+        },
+        {
+          "name": "frame_sequence",
+          "offset": 8,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Skylink frame sequence"
+        },
+        {
+          "name": "extension_length",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Extension length (bytes)"
+        },
+        {
+          "name": "extensions",
+          "offset": 11,
+          "length": 5,
+          "type": "hex",
+          "label": "Skylink extension (not decoded)"
+        },
+        {
+          "name": "packet_id",
+          "offset": 16,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS packet ID"
+        },
+        {
+          "name": "sequence",
+          "offset": 18,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS sequence"
+        },
+        {
+          "name": "length",
+          "offset": 20,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS length"
+        },
+        {
+          "name": "secondary_header",
+          "offset": 22,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS secondary header"
+        },
+        {
+          "name": "service_type",
+          "offset": 23,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS service type"
+        },
+        {
+          "name": "service_subtype",
+          "offset": 24,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS service subtype"
+        },
+        {
+          "name": "timestamp",
+          "offset": 25,
+          "length": 4,
+          "type": "unix_time",
+          "label": "Satellite time"
+        },
+        {
+          "name": "rid",
+          "offset": 29,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Event RID"
+        },
+        {
+          "name": "info",
+          "offset": 31,
+          "length": 0,
+          "to_end": true,
+          "trim_end": 4,
+          "type": "base64",
+          "label": "Event info (base64)"
+        }
+      ],
+      "note": "Layout from the SatNOGS ksy only; not seen in a recording."
+    },
+    {
+      "id": "EVENT_2",
+      "label": "Event (PUS 4,2)",
+      "match": {
+        "offset": 23,
+        "hex": "0402"
+      },
+      "fields": [
+        {
+          "name": "skylink_version",
+          "offset": 0,
+          "length": 1,
+          "type": "uint8",
+          "mask": 248,
+          "label": "Skylink version"
+        },
+        {
+          "name": "identity",
+          "offset": 1,
+          "length": 6,
+          "type": "ascii",
+          "label": "Skylink identity"
+        },
+        {
+          "name": "vc",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 3,
+          "label": "Virtual channel (0/1 = PUS, 3 = repeater)"
+        },
+        {
+          "name": "is_arq_on",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 4,
+          "label": "ARQ on"
+        },
+        {
+          "name": "is_authenticated",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 8,
+          "label": "Authenticated (4-byte tag at the end)"
+        },
+        {
+          "name": "is_crced",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 16,
+          "label": "Frame CRC present"
+        },
+        {
+          "name": "sequence_control",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 96,
+          "label": "Sequence control"
+        },
+        {
+          "name": "frame_sequence",
+          "offset": 8,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Skylink frame sequence"
+        },
+        {
+          "name": "extension_length",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Extension length (bytes)"
+        },
+        {
+          "name": "extensions",
+          "offset": 11,
+          "length": 5,
+          "type": "hex",
+          "label": "Skylink extension (not decoded)"
+        },
+        {
+          "name": "packet_id",
+          "offset": 16,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS packet ID"
+        },
+        {
+          "name": "sequence",
+          "offset": 18,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS sequence"
+        },
+        {
+          "name": "length",
+          "offset": 20,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS length"
+        },
+        {
+          "name": "secondary_header",
+          "offset": 22,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS secondary header"
+        },
+        {
+          "name": "service_type",
+          "offset": 23,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS service type"
+        },
+        {
+          "name": "service_subtype",
+          "offset": 24,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS service subtype"
+        },
+        {
+          "name": "timestamp",
+          "offset": 25,
+          "length": 4,
+          "type": "unix_time",
+          "label": "Satellite time"
+        },
+        {
+          "name": "rid",
+          "offset": 29,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Event RID"
+        },
+        {
+          "name": "info",
+          "offset": 31,
+          "length": 0,
+          "to_end": true,
+          "trim_end": 4,
+          "type": "base64",
+          "label": "Event info (base64)"
+        }
+      ],
+      "note": "Layout from the SatNOGS ksy only; not seen in a recording."
+    },
+    {
+      "id": "EVENT_3",
+      "label": "Event (PUS 4,3)",
+      "match": {
+        "offset": 23,
+        "hex": "0403"
+      },
+      "fields": [
+        {
+          "name": "skylink_version",
+          "offset": 0,
+          "length": 1,
+          "type": "uint8",
+          "mask": 248,
+          "label": "Skylink version"
+        },
+        {
+          "name": "identity",
+          "offset": 1,
+          "length": 6,
+          "type": "ascii",
+          "label": "Skylink identity"
+        },
+        {
+          "name": "vc",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 3,
+          "label": "Virtual channel (0/1 = PUS, 3 = repeater)"
+        },
+        {
+          "name": "is_arq_on",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 4,
+          "label": "ARQ on"
+        },
+        {
+          "name": "is_authenticated",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 8,
+          "label": "Authenticated (4-byte tag at the end)"
+        },
+        {
+          "name": "is_crced",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 16,
+          "label": "Frame CRC present"
+        },
+        {
+          "name": "sequence_control",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 96,
+          "label": "Sequence control"
+        },
+        {
+          "name": "frame_sequence",
+          "offset": 8,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Skylink frame sequence"
+        },
+        {
+          "name": "extension_length",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Extension length (bytes)"
+        },
+        {
+          "name": "extensions",
+          "offset": 11,
+          "length": 5,
+          "type": "hex",
+          "label": "Skylink extension (not decoded)"
+        },
+        {
+          "name": "packet_id",
+          "offset": 16,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS packet ID"
+        },
+        {
+          "name": "sequence",
+          "offset": 18,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS sequence"
+        },
+        {
+          "name": "length",
+          "offset": 20,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS length"
+        },
+        {
+          "name": "secondary_header",
+          "offset": 22,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS secondary header"
+        },
+        {
+          "name": "service_type",
+          "offset": 23,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS service type"
+        },
+        {
+          "name": "service_subtype",
+          "offset": 24,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS service subtype"
+        },
+        {
+          "name": "timestamp",
+          "offset": 25,
+          "length": 4,
+          "type": "unix_time",
+          "label": "Satellite time"
+        },
+        {
+          "name": "rid",
+          "offset": 29,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Event RID"
+        },
+        {
+          "name": "info",
+          "offset": 31,
+          "length": 0,
+          "to_end": true,
+          "trim_end": 4,
+          "type": "base64",
+          "label": "Event info (base64)"
+        }
+      ],
+      "note": "Layout from the SatNOGS ksy only; not seen in a recording."
+    },
+    {
+      "id": "EVENT_4",
+      "label": "Event (PUS 4,4)",
+      "match": {
+        "offset": 23,
+        "hex": "0404"
+      },
+      "fields": [
+        {
+          "name": "skylink_version",
+          "offset": 0,
+          "length": 1,
+          "type": "uint8",
+          "mask": 248,
+          "label": "Skylink version"
+        },
+        {
+          "name": "identity",
+          "offset": 1,
+          "length": 6,
+          "type": "ascii",
+          "label": "Skylink identity"
+        },
+        {
+          "name": "vc",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 3,
+          "label": "Virtual channel (0/1 = PUS, 3 = repeater)"
+        },
+        {
+          "name": "is_arq_on",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 4,
+          "label": "ARQ on"
+        },
+        {
+          "name": "is_authenticated",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 8,
+          "label": "Authenticated (4-byte tag at the end)"
+        },
+        {
+          "name": "is_crced",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 16,
+          "label": "Frame CRC present"
+        },
+        {
+          "name": "sequence_control",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "mask": 96,
+          "label": "Sequence control"
+        },
+        {
+          "name": "frame_sequence",
+          "offset": 8,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Skylink frame sequence"
+        },
+        {
+          "name": "extension_length",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Extension length (bytes)"
+        },
+        {
+          "name": "extensions",
+          "offset": 11,
+          "length": 5,
+          "type": "hex",
+          "label": "Skylink extension (not decoded)"
+        },
+        {
+          "name": "packet_id",
+          "offset": 16,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS packet ID"
+        },
+        {
+          "name": "sequence",
+          "offset": 18,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS sequence"
+        },
+        {
+          "name": "length",
+          "offset": 20,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "PUS length"
+        },
+        {
+          "name": "secondary_header",
+          "offset": 22,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS secondary header"
+        },
+        {
+          "name": "service_type",
+          "offset": 23,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS service type"
+        },
+        {
+          "name": "service_subtype",
+          "offset": 24,
+          "length": 1,
+          "type": "uint8",
+          "label": "PUS service subtype"
+        },
+        {
+          "name": "timestamp",
+          "offset": 25,
+          "length": 4,
+          "type": "unix_time",
+          "label": "Satellite time"
+        },
+        {
+          "name": "rid",
+          "offset": 29,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "Event RID"
+        },
+        {
+          "name": "info",
+          "offset": 31,
+          "length": 0,
+          "to_end": true,
+          "trim_end": 4,
+          "type": "base64",
+          "label": "Event info (base64)"
+        }
+      ],
+      "note": "Layout from the SatNOGS ksy only; not seen in a recording."
+    }
+  ]
+}

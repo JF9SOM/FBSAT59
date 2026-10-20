@@ -1520,3 +1520,31 @@ CW ビーコンが無かった）。テスト: `tests/test_cw_frames.py`（`test
 LASARsat の `MSG` サブタブ（デジピートを含むフリーテキスト）には、AX.25 ヘッダー（宛先・送信元・経由局（`*` は中継済み）・PID）を
 先に表示する（形式ファイルの `text_message.header_fields`。`decode_telemetry(..., ax25=Ax25Frame)` を受信時・行の再デコード・
 保存済み読込の 3 経路から渡す）。ksy は経由局の ssid/hbit を別項目にするが、ここでは `OK0LSR*` の 1 文字列にまとめた。
+
+### Foresail-1p（NORAD 66778）の Skylink/PUS テレメトリー（2026-10-20）
+
+9k6 GFSK・AX100 の ASM フレーム（CCSDS スクランブラ）を gr-satellites（`FORESAIL-1P`・仮 NORAD 98467）が出す
+PDU ダンプ（`VERBOSE PDU DEBUG PRINT`）を、SatNOGS の `foresail1p.ksy` どおりに全項目へ分解する
+（`src/data/telemetry_formats/66778.json`、`frame_types` 形式・9 種）。ダンプ全体（認証タグ 4 B まで）が
+`decode_telemetry(…, norad=66778)` に渡る（`_decode_gr_text()` → `parse_gr_pdu_dump()`）。
+
+- フレーム構造: Skylink ヘッダー（識別子 `OH2F1S`・フラグ・連番・拡張 5 B）→ CCSDS PUS ヘッダー（9 B）→ 本体。
+  本体の先頭の時刻は**ビッグエンディアン**の UNIX 秒、以降は**リトルエンディアン**（ksy の `meta: endian`）。
+  `frame_types` は PUS のサービス種別（オフセット 23 の 2 バイト）で選ぶ: OBC `0302`・EPS `0303`・UHF `0304`・
+  ADCS `0305`・イベント `0401`〜`0404`。VC 3 の中継フレーム（AX.25）はフラグ byte の下位 2 bit で選ぶ（`REPEATER`）。
+- **オフセット固定の前提**: Skylink 拡張長は録音した全フレームで 5 B。長さが違うフレームは一致せず生 HEX になる。
+- **エンジンへの追加**（`decoder.py`）: `match` に `mask`（指定ビットだけ比較）、フィールドに `to_end`/`trim_end`
+  （末尾の認証タグ等を除いて最後まで）、型 `hex`・`base64`・`ax25_call`（各バイトを 1 ビット右シフトして ASCII）・
+  `quat5`（5 B の「最小 3 成分」圧縮クォータニオン。`component` = q1/q2/q3/index/sign/largest。q は 12 bit を ±1/√2 に
+  写像し、largest は他 3 成分から単位長になるよう計算）・`int32_be`。
+- **実フレームでの検証（2026-10-18 01:32 UTC の録音・2 フレーム）**: ADCS（本体 83 B がぴったり・MJD 61331.0625
+  = 2026-10-18 01:30 UTC・ADCS オフで位置/速度 0・クォータニオンは単位）と UHF（9600 baud・窓 250 ms・
+  ブート回数など妥当）。**UHF は ksy にない 2 バイトが `total_ham_rx_frames` と `hardware_side_a_bootcount` の間にある**
+  （実フレームの長さ 60 B ＝ ksy 58 B ＋ 2。`unknown_u16_after_ham_rx` として表示。値 21096）。
+- **疑わしい値**: UHF の RSSI（-55/8/0 dBm）、ADCS の磁気センサー（約 12000、ksy の単位 µT なら地磁気の桁違い）。単位は ksy
+  どおり表示するが信用しないこと。EPS の電圧・電流のうち ksy に単位が無いものは単位なし（生値）。
+- OBC・EPS・イベント・REPEATER は実フレーム無し（ksy のみ・JSON の `note` に明記）。
+- テスト: `tests/test_telemetry_decoder.py`（`test_foresail1p_*`・`test_payload_match_mask_*`）。
+- **背景**: GPD で Foresail-1p が読めなかった原因は、アプリが使う gr-satellites が apt 版（NumPy 不整合で起動せず、
+  `FORESAIL-1P` 定義も無い）だったこと。Help > gr-satellites Installation… で同梱版（`~/.local/share/fbsat59/
+  gr-satellites-env/`）を入れると読める。
