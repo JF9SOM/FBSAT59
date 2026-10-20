@@ -1473,3 +1473,12 @@ ksy の `to_i` と同じく符号なしで読むので、NAV の位置の負値�
 - 実録音（2026-10-19 16:12 UTC、9600 baud）の Fast デコードで 3 フレーム（MSG・DOS・NAV）を項目に分解できた。
   項目の単位は ksy に無いので「(生値)」と表示。CW ビーコン（`de ok0lsr = u…`）は別途 CW 側で対応する。
 - テスト: `tests/test_telemetry_decoder.py`（`test_lasarsat_*`）。
+
+#### LASARsat の CW ビーコン（2026-10-20）
+
+`de ok0lsr = u<累積稼働時間>r<リセット回数>t<MCU温度>p<PA温度> ar`（`lasarsat.ksy` の `cw_message`）。16進ではなく
+**10進テキスト**なので、`cw_frames` に `text_regex`（`id_prefix` の後ろ全体に fullmatch。正規化後は大文字・空白なし）と
+フィールドごとの `group` を使う形を追加した（`cw_frames._decode_text_frame()`）。桁修復・SatNOGS アップロードは
+なし（`satnogs` キーを書いていない）。ksy は読めない桁を `.` にして続行するが、こちらは正規表現に合わない読みを
+`near_regex` で「棄却候補（グレー行・?）」にするだけでデータには使わない。実機の CW 受信では未確認（IQ 録音には
+CW ビーコンが無かった）。テスト: `tests/test_cw_frames.py`（`test_lasarsat_cw_*`）。

@@ -55,6 +55,12 @@ plausibility checks: CW has no CRC and the Morse decode of a weak signal is
 error-prone, so a frame that breaks them is reported as *not valid* and must
 not be shown as measured data.
 
+A frame may instead be decimal *text* (LASARsat's "de ok0lsr = u<up>r<rst>t<mcu>p<pa> ar"):
+give it ``text_regex`` (matched against the whole part after ``id_prefix`` of the normalized,
+upper-case, space-free block) instead of ``hex_digits``, and put ``"group": n`` (regex group)
+on each field instead of ``bits``. An optional ``near_regex`` marks a rejected-candidate
+look-alike. Such frames have no digit repair and no SatNOGS upload.
+
 The hex text must have exactly ``hex_digits`` digits. Which fields exist, their
 order/width and the conversions come from the public arica2.ksy of the SatNOGS
 decoders; the wording of the labels and the flag/range texts follow the
@@ -240,6 +246,8 @@ def _clock_candidates(
 
 def _repair_digits(frame_def: dict[str, Any], cand: str, when: datetime.datetime | None) -> str:
     """Fill in digits that could not be read, from what the frame definition knows."""
+    if "text_regex" in frame_def:
+        return cand
     n = int(frame_def["hex_digits"])
     for key, run in (frame_def.get("known_digits") or {}).items():
         k = int(key)
@@ -291,6 +299,10 @@ def _match(frames: dict[str, Any], block: str) -> tuple[str, dict[str, Any], str
     """(key, frame_def, hex_part) of the frame *block* matches exactly, else None."""
     for key, frame_def in frames.items():
         candidate = _hex_part(frame_def, block)
+        if candidate is not None and "text_regex" in frame_def:
+            if re.fullmatch(str(frame_def["text_regex"]), candidate):
+                return str(key), frame_def, candidate
+            continue
         if (
             candidate is not None
             and len(candidate) == int(frame_def["hex_digits"])
@@ -329,6 +341,11 @@ def near_miss_hex(norad: int | None, text: str) -> str | None:
     for frame_def in frames.values():
         candidate = _hex_part(frame_def, block)
         if not candidate:
+            continue
+        if "text_regex" in frame_def:
+            near = frame_def.get("near_regex")
+            if near and re.fullmatch(str(near), candidate):
+                return candidate
             continue
         hex_chars = sum(1 for c in candidate if c in "0123456789ABCDEF")
         if hex_chars < 0.75 * len(candidate):
@@ -374,7 +391,11 @@ def build_satnogs_frame(norad: int | None, text: str) -> bytes | None:
     if matched is None:
         # the log keeps only the hex digits, without the id_prefix
         for key, frame_def in frames.items():
-            if len(block) == int(frame_def["hex_digits"]) and _HEX_RE.match(block):
+            if (
+                "hex_digits" in frame_def
+                and len(block) == int(frame_def["hex_digits"])
+                and _HEX_RE.match(block)
+            ):
                 matched = (str(key), frame_def, block)
                 break
     if matched is None:
@@ -495,6 +516,8 @@ def decode_cw_frame(
     fmt = load_format(norad) if norad is not None else None
     assert fmt is not None
     tables: dict[str, Any] = fmt.get("tables", {})
+    if "text_regex" in frame_def:
+        return _decode_text_frame(key, frame_def, hex_part)
     bitstring = bin(int(hex_part, 16))[2:].zfill(4 * len(hex_part))
 
     raw: dict[str, int] = {}
@@ -520,6 +543,32 @@ def decode_cw_frame(
         if fd.get("hidden"):
             continue
         result.fields.append(_build_field(fd, raw, tables))
+    return result
+
+
+def _decode_text_frame(key: str, frame_def: dict[str, Any], text: str) -> CwFrameDecode:
+    """Decode a decimal-text frame (``text_regex`` + a ``group`` per field)."""
+    m = re.fullmatch(str(frame_def["text_regex"]), text)
+    assert m is not None
+    result = CwFrameDecode(key=key, label=str(frame_def.get("label", key)), hex_text=text)
+    for fd in frame_def["fields"]:
+        value = int(m.group(int(fd["group"])))
+        name = str(fd["name"])
+        if "range" in fd:
+            lo, hi = fd["range"]
+            if not lo <= value <= hi:
+                result.problems.append(f"{name}={value} (outside {lo}..{hi})")
+        scale = float(fd.get("scale", 1.0))
+        result.fields.append(
+            TelemetryField(
+                name=name,
+                label=str(fd.get("label", name)),
+                raw_value=value,
+                scaled_value=value * scale + float(fd.get("add", 0.0)),
+                unit=str(fd.get("unit", "")),
+                is_integer=scale == 1.0 and float(fd.get("add", 0.0)) == 0.0,
+            )
+        )
     return result
 
 

@@ -674,5 +674,35 @@
     "id": "MSG",
     "label": "MSG（フリーテキスト/デジピートメッセージ）",
     "field_label": "メッセージ"
+  },
+  "cw_frames": {
+    "BEACON": {
+      "label": "CWビーコン（de ok0lsr = u…r…t…p…）",
+      "id_prefix": "DEOK0LSR=",
+      "text_regex": "U(\\d{1,9})R(\\d{1,9})T(-?\\d{1,9})P(-?\\d{1,9})AR",
+      "near_regex": "U[0-9O.]*R[0-9O.-]*T[0-9O.-]*P[0-9O.-]*(AR)?",
+      "fields": [
+        {
+          "name": "uptime_total",
+          "group": 1,
+          "label": "累積稼働時間(生値)"
+        },
+        {
+          "name": "reset_number",
+          "group": 2,
+          "label": "リセット回数"
+        },
+        {
+          "name": "temp_mcu",
+          "group": 3,
+          "label": "MCU温度(生値)"
+        },
+        {
+          "name": "temp_pa",
+          "group": 4,
+          "label": "PA温度(生値)"
+        }
+      ]
+    }
   }
 }

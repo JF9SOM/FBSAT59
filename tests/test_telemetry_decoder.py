@@ -301,7 +301,7 @@ _LASAR_NAV = b"NAV,9,9582244,4290989321,1537870,3403880,-10485,-12629,-9500,0,0,
 def test_lasarsat_defs_list_every_message_type() -> None:
     defs = get_telemetry_id_defs(62391)
     assert defs is not None
-    assert set(defs) == {"OBC", "PSU", "SOL", "MGS", "DOS", "NAV", "U", "V", "MSG"}
+    assert set(defs) == {"OBC", "PSU", "SOL", "MGS", "DOS", "NAV", "U", "V", "MSG", "BEACON"}
 
 
 def test_lasarsat_dos_keeps_the_last_nul_terminated_field() -> None:

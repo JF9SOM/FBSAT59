@@ -427,3 +427,31 @@ class TestOrigamiSat2ClockAndKnownDigits:
 
     def test_other_satellites_are_unaffected(self) -> None:
         assert repair_block(68796, "2FFE8594EB88012?", OSAT2_WHEN) == "2FFE8594EB88012?"
+
+
+# -- LASARsat (NORAD 62391): decimal-text CW beacon "de ok0lsr = u<up>r<rst>t<mcu>p<pa> ar" --
+
+
+def test_lasarsat_cw_beacon_is_decoded() -> None:
+    result = decode_cw_frame(62391, "de ok0lsr = u12587r10t30p-4 ar")
+    assert result is not None
+    assert result.valid
+    assert result.key == "BEACON"
+    values = {f.name: f.raw_value for f in result.fields}
+    assert values == {"uptime_total": 12587, "reset_number": 10, "temp_mcu": 30, "temp_pa": -4}
+
+
+def test_lasarsat_cw_beacon_is_cut_out_of_a_longer_block() -> None:
+    pieces = split_frame_blocks(62391, "TAIL DE OK0LSR = U1R2T3P4 AR DE OK0LSR = U5R6T7P8 AR")
+    assert [text for _pos, text in pieces] == [
+        "DEOK0LSR=U1R2T3P4AR",
+        "DEOK0LSR=U5R6T7P8AR",
+    ]
+    assert match_frame_key(62391, "de ok0lsr u99r1t2p3 ar") == "BEACON"
+
+
+def test_lasarsat_cw_misread_beacon_is_a_near_miss_not_a_frame() -> None:
+    text = "de ok0lsr = u12.87r10t30p4 ar"
+    assert decode_cw_frame(62391, text) is None
+    assert is_near_miss(62391, text)
+    assert build_satnogs_frame(62391, "de ok0lsr = u1r2t3p4 ar") is None
