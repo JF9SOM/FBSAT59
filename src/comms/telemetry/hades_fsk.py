@@ -391,6 +391,10 @@ class HadesFskStream:
         self._address = address
         self._allow_repair = allow_repair
         self._baud = baud
+        # The burst locator's sliding mean length and detection threshold: a subclass for a
+        # satellite with shorter bursts can lower them.
+        self._burst_window_s = _BURST_WINDOW_S
+        self._min_snr_db = _MIN_SNR_DB
         self.reset()
 
     def reset(self) -> None:
@@ -441,7 +445,7 @@ class HadesFskStream:
         freqs = np.fft.fftshift(np.fft.fftfreq(_STFT_N, 1 / rate))
         centres = freqs[: band.shape[1]] + (bins - 1) / 2 * (rate / _STFT_N)
         usable = np.abs(centres) <= self._search_hz
-        frames_per_window = int(round(_BURST_WINDOW_S / (hop / rate)))
+        frames_per_window = int(round(self._burst_window_s / (hop / rate)))
         if band.shape[0] <= frames_per_window or not usable.any():
             return []
         csum = np.cumsum(np.pad(band, ((1, 0), (0, 0))), axis=0)
@@ -452,7 +456,7 @@ class HadesFskStream:
         for _ in range(_MAX_BURSTS_PER_WINDOW):
             row, col = np.unravel_index(int(np.argmax(mean)), mean.shape)
             snr = 10 * np.log10(max(mean[row, col], 1e-12))
-            if snr < _MIN_SNR_DB:
+            if snr < self._min_snr_db:
                 break
             found.append((float(row * hop / rate), float(centres[col]), float(snr)))
             lo = max(0, int(row - _WINDOW_S / 2 / (hop / rate) * 0.6))

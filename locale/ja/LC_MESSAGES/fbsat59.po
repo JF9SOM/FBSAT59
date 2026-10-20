@@ -7892,3 +7892,7 @@ msgstr "入力：無線機のサウンドカード（9600 baud データ出力�
 #: src/ui/foresail1p_panel.py
 msgid "Reed-Solomon library (reed-solomon-ccsds) not installed"
 msgstr "Reed-Solomon ライブラリ（reed-solomon-ccsds）がインストールされていません"
+
+#: src/ui/telemetry_tab.py
+msgid "HADES FSK — listening for HADES-L (800 baud 2FSK bursts, ±20 kHz)"
+msgstr "HADES FSK — HADES-L（800 baud 2FSK バースト、±20 kHz）を待機中"

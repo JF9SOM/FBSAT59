@@ -2099,6 +2099,10 @@ class TelemetryTab(QWidget):
             self._rebuild_decode_tabs(norad)
         if norad == 68446:
             self._lbl_status.setText(_("HADES FSK — listening for HADES-SA (800 baud 2FSK)"))
+        elif norad == 98206:
+            self._lbl_status.setText(
+                _("HADES FSK — listening for HADES-L (800 baud 2FSK bursts, ±20 kHz)")
+            )
         else:
             self._lbl_status.setText(_("HADES FSK — listening for 200 baud bursts (±20 kHz)"))
         self._lbl_status.setStyleSheet("color: #27ae60;")
@@ -3672,16 +3676,36 @@ class TelemetryTab(QWidget):
         SatNOGS DB holds the descrambled payload without its CRC, so a frame is accepted when
         its address belongs to the satellite and its length is the packet length minus the CRC.
         """
-        from comms.telemetry.hades_fsk import HADES_SA_ADDRESS, UNNE1B_ADDRESS, HadesFrame
+        from comms.telemetry.hades_fsk import (
+            HADES_R_LENGTHS,
+            HADES_SA_ADDRESS,
+            HADES_SA_LENGTHS,
+            UNNE1B_ADDRESS,
+            HadesFrame,
+        )
         from comms.telemetry.hades_fsk import packet_lengths as hades_packet_lengths
+        from comms.telemetry.hades_l_fsk import HADES_L_ADDRESS
 
-        address = HADES_SA_ADDRESS if norad == 68446 else UNNE1B_ADDRESS
+        address = (
+            HADES_SA_ADDRESS
+            if norad == 68446
+            else HADES_L_ADDRESS
+            if norad == 98206
+            else UNNE1B_ADDRESS
+        )
         if not frame or frame[0] & 15 != address:
             return
         packet_type = frame[0] >> 4
-        length = hades_packet_lengths(address).get(packet_type)
-        if length is None or len(frame) != length - 2:
-            return
+        if address == HADES_L_ADDRESS:
+            # HADES-L's length table is not known apart from the types seen: accept either
+            # family's (a wrong length would still have to match a CRC-checked upload).
+            lengths = {HADES_R_LENGTHS.get(packet_type), HADES_SA_LENGTHS.get(packet_type)}
+            if len(frame) + 2 not in lengths:
+                return
+        else:
+            length = hades_packet_lengths(address).get(packet_type)
+            if length is None or len(frame) != length - 2:
+                return
         if address == UNNE1B_ADDRESS and packet_type == 15:
             return  # UNNE-1B's voice: the Digital Voice tab's business
         self._add_hades_frame(

@@ -17,16 +17,23 @@ import numpy as np
 from PySide6.QtCore import QThread, Signal
 
 from comms.telemetry.hades_fsk import HadesFskStream
+from comms.telemetry.hades_l_fsk import HadesLFskStream
 from comms.telemetry.hades_sa_fsk import HadesSaFskStream
 from comms.telemetry.iq_wav import WavError, iter_iq_blocks, read_wav_info
 
 HADES_SA_NORAD = 68446
+HADES_L_NORAD = 98206
 
 
-def make_stream(sample_rate: float, norad: int | None = None) -> HadesFskStream | HadesSaFskStream:
-    """The demodulator for a satellite: HADES-SA's 800 baud stream, else the 200 baud one."""
+def make_stream(
+    sample_rate: float, norad: int | None = None
+) -> HadesFskStream | HadesSaFskStream | HadesLFskStream:
+    """The demodulator for a satellite: HADES-SA's and HADES-L's 800 baud streams, else the
+    200 baud one."""
     if norad == HADES_SA_NORAD:
         return HadesSaFskStream(sample_rate)
+    if norad == HADES_L_NORAD:
+        return HadesLFskStream(sample_rate)
     return HadesFskStream(sample_rate)
 
 
