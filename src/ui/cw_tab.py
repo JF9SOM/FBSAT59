@@ -78,6 +78,8 @@ _METHOD_AI = "ai"
 _METHOD_CLASSIC = "classic"
 _METHOD_KEY = "cw_decoder_method"
 _VOTE_KEY = "cw_vote"
+# Normal / Fast choice for an IQ recording; shared with the Telemetry tab.
+_SPEED_KEY = "telemetry_decode_speed"
 # A real pause between transmissions produces no decoded characters at all
 # (see comms.cw.transcript.insert_gap_markers) — bridge it with an explicit
 # separator instead of running unrelated messages together.
@@ -188,6 +190,7 @@ class CwTab(QWidget):
         self._fast_start: datetime = datetime.now(UTC)
         self._fast_time_known = False
         self._fast_windows = 0
+        self._start_on_iq_seek = False
 
         self._setup_ui()
         self._load_method_setting()
@@ -272,13 +275,20 @@ class CwTab(QWidget):
         self._fast_btn = QPushButton(_("📂 Decode IQ Recording…"))
         self._fast_btn.setToolTip(
             _(
-                "Open a recorded .iq.wav file and decode all of its CW at once, in a "
-                "fraction of the recording's length (the same decoding as a live "
-                "reception, with the file's start time from its name)."
+                "Open a recorded .iq.wav file and decode its CW.\n"
+                "Normal: play it through the SDR like a live reception (pick the start "
+                "on the spectrogram).\n"
+                "Fast: decode the whole file at once, in a fraction of its length."
             )
         )
         self._fast_btn.clicked.connect(self._on_fast_button)
         cl.addWidget(self._fast_btn)
+        cl.addWidget(QLabel(_("Speed:")))
+        self._speed_combo = QComboBox()
+        self._speed_combo.addItem(_("Normal (real time)"), "normal")
+        self._speed_combo.addItem(_("Fast"), "fast")
+        self._speed_combo.currentIndexChanged.connect(self._on_speed_changed)
+        cl.addWidget(self._speed_combo)
 
         self._clear_btn = QPushButton(_("Clear"))
         self._clear_btn.setFixedWidth(72)
@@ -345,6 +355,29 @@ class CwTab(QWidget):
             self._vote_check.blockSignals(True)
             self._vote_check.setChecked(False)
             self._vote_check.blockSignals(False)
+        try:
+            speed = self._conn.execute(
+                "SELECT value FROM app_settings WHERE key = ?", (_SPEED_KEY,)
+            ).fetchone()
+        except Exception:  # noqa: BLE001
+            return
+        index = self._speed_combo.findData(str(speed[0])) if speed else -1
+        if index >= 0:
+            self._speed_combo.blockSignals(True)
+            self._speed_combo.setCurrentIndex(index)
+            self._speed_combo.blockSignals(False)
+
+    @Slot()
+    def _on_speed_changed(self) -> None:
+        try:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value, updated_at)"
+                " VALUES (?, ?, CURRENT_TIMESTAMP)",
+                (_SPEED_KEY, str(self._speed_combo.currentData())),
+            )
+            self._conn.commit()
+        except Exception:  # noqa: BLE001
+            logger.exception("CW Decoder: could not save the decode speed")
 
     @Slot(bool)
     def _on_vote_toggled(self, _checked: bool) -> None:
@@ -516,6 +549,9 @@ class CwTab(QWidget):
         if self._fast_job is not None:
             self._cancel_fast_decode()
             return
+        if self._speed_combo.currentData() != "fast":
+            self._open_recording_for_replay()
+            return
         start_dir = Path.home() / "iq_recordings"
         path, _filter = QFileDialog.getOpenFileName(
             self,
@@ -525,6 +561,27 @@ class CwTab(QWidget):
         )
         if path:
             self.start_fast_decode(Path(path))
+
+    def _open_recording_for_replay(self) -> None:
+        """Normal speed: open the recording in SDR Control; start decoding on the overview click."""
+        sdr_ctrl = getattr(self._radio_control, "_sdr_control", None)
+        if sdr_ctrl is None or not hasattr(sdr_ctrl, "open_recording"):
+            self._status_label.setText(_("SDR Control is not available."))
+            return
+        self._rb_sdr.setChecked(True)
+        self._start_on_iq_seek = True
+        with contextlib.suppress(RuntimeError, TypeError):
+            sdr_ctrl.overview_seek_done.disconnect(self._on_iq_seek_done)
+        sdr_ctrl.overview_seek_done.connect(self._on_iq_seek_done)
+        sdr_ctrl.open_recording()
+
+    def _on_iq_seek_done(self, _position_s: float) -> None:
+        """The user clicked the recording overview: start decoding if not running yet."""
+        if not self._start_on_iq_seek:
+            return
+        self._start_on_iq_seek = False
+        if not self._running and self._fast_job is None:
+            self._start_btn.setChecked(True)
 
     def start_fast_decode(self, path: Path) -> bool:
         """Decode the whole IQ recording *path* at once; False (reason on screen) if it cannot.

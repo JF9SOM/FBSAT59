@@ -185,3 +185,42 @@ def test_tab_fast_decode_can_be_cancelled(
     assert not tab.is_fast_decoding
     assert tab._start_btn.isEnabled()
     assert messages
+
+
+def test_tab_speed_choice_decides_between_replay_and_file_dialog(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from PySide6.QtCore import QObject, Signal
+
+    class _Sdr(QObject):
+        overview_seek_done = Signal(float)
+        opened = 0
+
+        def open_recording(self) -> None:
+            self.opened += 1
+
+    class _Radio(QObject):
+        def __init__(self) -> None:
+            super().__init__()
+            self._sdr_control = _Sdr()
+
+    radio = _Radio()
+    tab = CwTab(sqlite3.connect(":memory:"), radio)
+    qtbot.addWidget(tab)
+    monkeypatch.setattr(tab, "_start", lambda: None)
+    dialogs: list[int] = []
+    monkeypatch.setattr(
+        "ui.cw_tab.QFileDialog.getOpenFileName",
+        lambda *a, **k: (dialogs.append(1), "")[1:] and ("", ""),
+    )
+    # Normal: SDR Control opens the file; decoding starts when the overview is clicked.
+    assert tab._speed_combo.currentData() == "normal"
+    tab._fast_btn.click()
+    assert radio._sdr_control.opened == 1 and not dialogs
+    radio._sdr_control.overview_seek_done.emit(10.0)
+    assert tab._start_btn.isChecked()
+    tab._start_btn.setChecked(False)
+    # Fast: our own file dialog.
+    tab._speed_combo.setCurrentIndex(tab._speed_combo.findData("fast"))
+    tab._fast_btn.click()
+    assert dialogs and radio._sdr_control.opened == 1
