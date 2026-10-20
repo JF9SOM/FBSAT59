@@ -196,5 +196,21 @@
     "baud": null,
     "ctcss_tone": null,
     "notes": "Melody beacon near the UHF telemetry frequency (400.360 MHz, the GMSK 4k8 AX.25 entry); plain narrow FM demodulation plays it. Reported as confirmed by the user (2026-10-15). Its exact carrier relative to 400.360 MHz was not measured; the NFM +/-9 kHz IF tolerates a few kHz. SATNOGS has a separate FM 'Telemetry' row at 400.356 MHz. Not in SATNOGS as a music entry. 2026-10."
+  },
+  {
+    "uuid": "community-lasarsat-aprs-digipeater",
+    "norad_cat_id": 62391,
+    "satellite_name": "LASARsat",
+    "description": "APRS digipeater OK0LSR 9k6 GFSK AX.25 G3RUH (half duplex, same frequency)",
+    "type": "Transceiver",
+    "uplink_low": 436925000,
+    "uplink_high": null,
+    "downlink_low": 436925000,
+    "downlink_high": null,
+    "mode": "FM-D",
+    "invert": false,
+    "baud": 9600,
+    "ctcss_tone": null,
+    "notes": "LASARsat digipeater: uplink and downlink are both 436.925 MHz, half duplex; the satellite repeats a packet shortly after hearing it. Put OK0LSR in the digipeater path. Source: https://lasar.io/lasarsat and the Libre Space Community thread \"AX25 software/hardware\" (dl7ndr). Rules of use not published."
   }
 ]

@@ -68,7 +68,12 @@ _DEFAULT_VIA = "ARISS"
 # is editable so a satellite-specific path can still be typed in.
 # DP0SNX is the SONATE-2 digipeater callsign; it is addressed directly (other
 # stations' digipeated frames show ``...,DP0SNX*``) rather than via an alias.
-_VIA_PATH_CHOICES = ("ARISS", "APRSAT", "WIDE", "DP0SNX")
+# OK0LSR is LASARsat's digipeater (9k6, half duplex on 436.925 MHz): put it in the path.
+_VIA_PATH_CHOICES = ("ARISS", "APRSAT", "WIDE", "DP0SNX", "OK0LSR")
+
+# Satellites whose digipeater is addressed by callsign: selecting one of their transponders
+# sets the Via field to this value (and restores the previous Via when another is selected).
+_SATELLITE_VIA: dict[int, str] = {62391: "OK0LSR"}
 
 # app_settings key for user-typed Via values, persisted so they remain
 # selectable in the dropdown across sessions (see _load_via_choices()).
@@ -133,6 +138,7 @@ class AprsTab(QWidget):
         self._engine.status_changed.connect(self._on_engine_status)
         self._engine.error_occurred.connect(self._on_engine_error)
 
+        self._via_before_satellite: str | None = None
         self._ensure_db_table()
         self._setup_ui()
         self._load_via_choices()
@@ -140,6 +146,8 @@ class AprsTab(QWidget):
         self._load_settings()
         self._engine.set_tx_level_db(self._tx_level_slider.value())
         self._load_baud_mode()
+        current = getattr(self._radio_control, "current_transmitter", None)
+        self._apply_satellite_via(current() if callable(current) else None)
         self._connect_signals()
         self._refresh_input_source()
 
@@ -794,6 +802,13 @@ class AprsTab(QWidget):
             self._tx_level_slider.setValue(clamp_db(float(raw_level)))
         self._load_log_from_db()
 
+    def _saved_via(self) -> str:
+        """The Via to persist: the user's own, not one set for a satellite's digipeater."""
+        current = self._via_edit.currentText().strip()
+        if self._via_before_satellite is not None and current in _SATELLITE_VIA.values():
+            return self._via_before_satellite
+        return current
+
     def _save_settings(self) -> None:
         """Persist callsign / SSID / via to app_settings."""
         if not hasattr(self._conn, "execute"):
@@ -801,7 +816,7 @@ class AprsTab(QWidget):
         data = {
             "callsign": self._callsign_edit.text().strip().upper(),
             "ssid": self._ssid_spin.value(),
-            "via": self._via_edit.currentText().strip(),
+            "via": self._saved_via(),
             "tx_level_db": self._tx_level_slider.value(),
         }
         self._conn.execute(
@@ -839,6 +854,25 @@ class AprsTab(QWidget):
             self._conn.commit()
         self._apply_baud_change()
 
+    def _apply_satellite_via(self, xpdr: dict[str, Any] | None) -> None:
+        """Set Via to the selected satellite's own digipeater (see _SATELLITE_VIA).
+
+        The Via typed before is remembered and put back once a satellite without
+        its own digipeater is selected (and it is not saved in place of it).
+        """
+        norad = (xpdr or {}).get("norad_cat_id")
+        wanted = _SATELLITE_VIA.get(norad) if isinstance(norad, int) else None
+        current = self._via_edit.currentText().strip()
+        if wanted is not None:
+            if self._via_before_satellite is None and current != wanted:
+                self._via_before_satellite = current
+            if current != wanted:
+                self._via_edit.setCurrentText(wanted)
+        elif self._via_before_satellite is not None:
+            if current in _SATELLITE_VIA.values():
+                self._via_edit.setCurrentText(self._via_before_satellite)
+            self._via_before_satellite = None
+
     def _on_transmitter_changed(self, xpdr: object) -> None:
         """Follow the selected transponder's baud (1200 if it names none).
 
@@ -847,6 +881,7 @@ class AprsTab(QWidget):
         """
         from comms.aprs.engine import detect_modem_for_transmitter
 
+        self._apply_satellite_via(xpdr if isinstance(xpdr, dict) else None)
         modem = detect_modem_for_transmitter(xpdr if isinstance(xpdr, dict) else None)
         idx = self._baud_combo.findData(modem)
         if idx >= 0 and idx != self._baud_combo.currentIndex():

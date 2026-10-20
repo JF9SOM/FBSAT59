@@ -4458,3 +4458,15 @@ An operator ran ADC (TX and RX on) on a real pass with an IC-9700 (Linux, built 
 dev). No hangs or freezes; decoding worked around the maximum elevation and matched the developer's own
 decodes for the same pass. The connection mode was NET (confirmed afterwards); Direct is still unverified. README en/ja list
 the IC-9700 NET column as reported working; IC-705 and IC-9100/910H/821H remain unverified.
+
+#### LASARsat（NORAD 62391）の 9k6 デジピーター（2026-10-20）
+
+AX.25 UI の汎用デジピーター（436.925 MHz、アップ/ダウン同一周波数の半二重、GFSK 9600 baud G3RUH。衛星は受信した少し後に
+再送する）。使い方は経由局に `OK0LSR` を入れる（運用者のフォーラム投稿。公式の使用規則は無い）。
+- APRS タブの Via 候補に `OK0LSR` を追加。`_SATELLITE_VIA = {62391: "OK0LSR"}`: LASARsat のトランスポンダーを選ぶと Via が
+  `OK0LSR` になり、他の衛星を選ぶと元の Via に戻る（戻す対象は自動設定された値のときだけ。手で変えた値は残す）。保存される Via
+  はユーザー自身の値（`_saved_via()`）で、衛星用の値は保存しない。
+- `community_transmitters.json` に `community-lasarsat-aprs-digipeater`（UL=DL=436.925 MHz、`FM-D`、baud 9600、description に
+  "APRS"）を追加。これで APRS タブの Quick Panel Input Source に LASARsat が出て、Baud が 9600 になる。
+- **未確認**: 実機の送信（9600 baud の APRS 送信自体が未確認）、受信ログへのテレメトリー（`OBC,…` 等 APRS でないフレーム）の
+  混入の見え方。

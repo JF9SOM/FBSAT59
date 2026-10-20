@@ -275,3 +275,26 @@ def test_a_message_that_was_sent_is_logged_and_cleared(
     assert tab._msg_edit.text() == ""
     assert tab._log_list.count() == 1
     assert tab._pending_qso == {"JA1XYZ"}
+
+
+def test_lasarsat_selects_its_digipeater_in_via_and_restores_it(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _make_tab(qtbot, conn)
+    tab._via_edit.setCurrentText("WIDE")
+    tab._on_transmitter_changed({"norad_cat_id": 62391, "baud": 9600})
+    assert tab._via_edit.currentText() == "OK0LSR"
+    assert tab._saved_via() == "WIDE"  # the user's own Via is what gets persisted
+    tab._on_transmitter_changed({"norad_cat_id": 25544, "baud": 1200})
+    assert tab._via_edit.currentText() == "WIDE"
+    assert tab._saved_via() == "WIDE"
+
+
+def test_via_typed_by_hand_is_kept_when_leaving_lasarsat(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _make_tab(qtbot, conn)
+    tab._on_transmitter_changed({"norad_cat_id": 62391, "baud": 9600})
+    tab._via_edit.setCurrentText("APRSAT")  # changed by hand while on LASARsat
+    tab._on_transmitter_changed({"norad_cat_id": 25544, "baud": 1200})
+    assert tab._via_edit.currentText() == "APRSAT"

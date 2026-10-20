@@ -965,3 +965,23 @@ def test_fm_music_community_entries(
     assert xpdr["description"] == "FM Music — community"
     assert not is_ax25_telemetry_transmitter(xpdr)
     assert not is_aprs_transmitter(xpdr)
+
+
+def test_lasarsat_aprs_digipeater_community_entry(db: sqlite3.Connection) -> None:
+    """LASARsat's 9k6 digipeater is listed in the APRS tab's Quick Panel Input Source."""
+    from comms.mode_detection import get_norads_for_tab, is_aprs_transmitter
+
+    TransmitterManager(db).load_community_transmitters()
+    row = db.execute(
+        "SELECT * FROM transmitters WHERE uuid = 'community-lasarsat-aprs-digipeater'"
+    ).fetchone()
+    assert row is not None
+    xpdr = dict(row)
+    assert (xpdr["norad_cat_id"], xpdr["downlink_low"], xpdr["uplink_low"]) == (
+        62391,
+        436925000,
+        436925000,
+    )
+    assert xpdr["baud"] == 9600
+    assert is_aprs_transmitter(xpdr)
+    assert 62391 in get_norads_for_tab(db, "aprs")
