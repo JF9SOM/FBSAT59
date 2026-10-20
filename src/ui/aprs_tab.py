@@ -75,6 +75,10 @@ _VIA_PATH_CHOICES = ("ARISS", "APRSAT", "WIDE", "DP0SNX", "OK0LSR")
 # sets the Via field to this value (and restores the previous Via when another is selected).
 _SATELLITE_VIA: dict[int, str] = {62391: "OK0LSR", 59112: "DP0SNX"}  # LASARsat, SONATE-2
 
+# Satellites whose APRS digipeater runs at a fixed modem whichever of their transponders is
+# selected (SONATE-2 also has a 9k6 telemetry transponder, but its digipeater is 1200 AFSK).
+_SATELLITE_MODEM: dict[int, str] = {59112: "1200"}
+
 # app_settings key for user-typed Via values, persisted so they remain
 # selectable in the dropdown across sessions (see _load_via_choices()).
 _VIA_CUSTOM_SETTING_KEY = "aprs_custom_via_paths"
@@ -883,6 +887,8 @@ class AprsTab(QWidget):
 
         self._apply_satellite_via(xpdr if isinstance(xpdr, dict) else None)
         modem = detect_modem_for_transmitter(xpdr if isinstance(xpdr, dict) else None)
+        norad = xpdr.get("norad_cat_id") if isinstance(xpdr, dict) else None
+        modem = _SATELLITE_MODEM.get(norad, modem) if isinstance(norad, int) else modem
         idx = self._baud_combo.findData(modem)
         if idx >= 0 and idx != self._baud_combo.currentIndex():
             self._baud_combo.setCurrentIndex(idx)
