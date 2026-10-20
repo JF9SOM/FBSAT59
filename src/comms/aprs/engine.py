@@ -669,11 +669,18 @@ def describe_ax25_frame(frame: bytes) -> str:
     return f"{path} info={info!r} hex={frame.hex()}"
 
 
-def _encode_addr(callsign: str, ssid: int, last: bool = False) -> bytes:
-    """Encode one AX.25 address field (7 bytes)."""
+def _encode_addr(callsign: str, ssid: int, last: bool = False, c_bit: bool = False) -> bytes:
+    """Encode one AX.25 address field (7 bytes).
+
+    *c_bit* sets the command/response bit (0x80). Direwolf sends both the destination
+    and the source of an APRS UI frame with it set ("cc=11", SSID byte 0xE0 for SSID 0).
+    For a digipeater field the same bit is the has-been-repeated flag and stays clear.
+    """
     cs = callsign.upper().ljust(6)[:6]
     addr = bytes(ord(c) << 1 for c in cs)
     ssid_byte = ((ssid & 0x0F) << 1) | 0x60
+    if c_bit:
+        ssid_byte |= 0x80
     if last:
         ssid_byte |= 0x01
     return addr + bytes([ssid_byte])
@@ -694,8 +701,8 @@ def _build_aprs_message(
     via_call = via.strip().upper() or "ARISS"
     via_ssid = 0
 
-    dest_field = _encode_addr("APRS", 0)
-    src_field = _encode_addr(src_call, src_ssid)
+    dest_field = _encode_addr("APRS", 0, c_bit=True)
+    src_field = _encode_addr(src_call, src_ssid, c_bit=True)
     via_field = _encode_addr(via_call, via_ssid, last=True)
 
     # Pad destination callsign to 6 chars in APRS info
@@ -750,8 +757,8 @@ def _build_aprs_position(
     sym_table = symbol[0] if len(symbol) >= 1 else "/"
     sym_code = symbol[1] if len(symbol) >= 2 else "-"
 
-    dest_field = _encode_addr("APRS", 0)
-    src_field = _encode_addr(src_call, src_ssid)
+    dest_field = _encode_addr("APRS", 0, c_bit=True)
+    src_field = _encode_addr(src_call, src_ssid, c_bit=True)
     via_field = _encode_addr(via_call, 0, last=True)
 
     lat_str, lon_str = _latlon_to_aprs(lat_deg, lon_deg)
