@@ -980,6 +980,7 @@ sudo usermod -aG dialout $USER
       `📁 Open Folder`/`📂 Open Past Reception…`/`🗑 Clear`ボタン付き）
       ＋ 受信履歴サムネイル（右）の水平スプリッター（`📂 Open Past
       Reception…`の詳細は「過去の受信フォルダをタブ内で見返す機能」参照）
+  - **IQ録音のオフラインデコード**（2026-10-21）: 最下行の `📂 Decode IQ Recording…` ＋ `Speed:`（標準/高速）で、録音した `.iq.wav`（LRPTのみ。ドップラー補正済みのため補正なし）を `satdump … baseband` でデコード。CelesTrak ブロック対策に `--tle_override` を付ける。**実録音で画像まで通ることは未確認**（詳細は [docs/meteor-satdump.md](docs/meteor-satdump.md) 末尾）
   - **[SDR Connect]**: Rig Settings > SDR Settings で設定済みの SDR に自動接続（`get_db_path()` でDBパスを正確に参照）
   - **[📋 Log]**: SatDump の stdout/stderr を表示する浮動ログウィンドウ（`_LogWindow`）を開く。× で閉じてもログ内容は保持
   - **Autotrack 連携**:

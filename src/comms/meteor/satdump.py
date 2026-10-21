@@ -7,10 +7,13 @@ stdout/stderr are forwarded as Qt signals so the UI can display them.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import IO
 
@@ -235,6 +238,81 @@ def _send_graceful_stop_windows(pid: int) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Offline decoding of a recorded IQ file
+# ---------------------------------------------------------------------------
+
+# Narrowest recording that still holds an LRPT signal (72k symbols QPSK is ~120 kHz wide).
+MIN_LRPT_IQ_SAMPLE_RATE = 150_000
+
+_CONVERT_CHUNK_BYTES = 8 * 1024 * 1024
+
+
+class IqWavError(ValueError):
+    """The file is not an IQ WAV recording this feature can decode."""
+
+
+def parse_iq_wav(path: Path) -> tuple[int, int, int]:
+    """Return ``(sample_rate, data_offset, data_bytes)`` of an app IQ recording.
+
+    The recorder writes float32 stereo WAV (I = left, Q = right), which is a cf32 stream
+    once the header is skipped. The ``data`` chunk size field is not trusted (a recording
+    that was cut short can leave it wrong); the length comes from the file size.
+    """
+    size = path.stat().st_size
+    with path.open("rb") as f:
+        head = f.read(12)
+        if len(head) < 12 or head[:4] != b"RIFF" or head[8:12] != b"WAVE":
+            raise IqWavError("not a WAV file")
+        fmt: tuple[int, int, int, int] | None = None
+        pos = 12
+        while pos + 8 <= size:
+            f.seek(pos)
+            chunk_id, chunk_size = struct.unpack("<4sI", f.read(8))
+            body = pos + 8
+            if chunk_id == b"fmt ":
+                raw = f.read(min(chunk_size, 16))
+                if len(raw) < 16:
+                    raise IqWavError("truncated fmt chunk")
+                tag, channels, rate, _byte_rate, _align, bits = struct.unpack("<HHIIHH", raw)
+                fmt = (tag, channels, rate, bits)
+            elif chunk_id == b"data":
+                if fmt is None:
+                    raise IqWavError("data chunk before fmt chunk")
+                tag, channels, rate, bits = fmt
+                if tag != 3 or channels != 2 or bits != 32:
+                    raise IqWavError(
+                        "expected float32 stereo IQ, "
+                        f"got format={tag} channels={channels} bits={bits}"
+                    )
+                data_bytes = (size - body) // 8 * 8
+                if data_bytes <= 0:
+                    raise IqWavError("no samples")
+                return rate, body, data_bytes
+            pos = body + chunk_size + (chunk_size & 1)
+    raise IqWavError("no data chunk")
+
+
+def find_satdump_tle_file() -> Path:
+    """Return SatDump's own TLE database file, or a path that does not exist.
+
+    Passing ``--tle_override <file>`` makes SatDump load that file and skip its start-up
+    download from CelesTrak (which stalls for minutes when CelesTrak is unreachable).
+    A missing file only logs an error line; decoding still runs.
+    """
+    candidates = [Path.home() / ".config" / "satdump" / "satdump_tles.txt"]
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        candidates.append(Path(appdata) / "satdump" / "satdump_tles.txt")
+    sd = find_satdump()
+    if sd is not None:
+        candidates.append(sd.parent / "satdump_tles.txt")
+    for c in candidates:
+        if c.is_file():
+            return c
+    return candidates[0]
+
+
+# ---------------------------------------------------------------------------
 # Background worker
 # ---------------------------------------------------------------------------
 
@@ -274,8 +352,14 @@ class SatDumpProcess(QThread):
         agc: bool = False,
         fft_http_port: int | None = None,
         parent: object | None = None,
+        input_wav: Path | None = None,
+        convert_to_cf32: bool = False,
     ) -> None:
         super().__init__(parent)  # type: ignore[arg-type]
+        # Offline mode: decode a recorded IQ WAV instead of a live SDR (see _build_file_cmd).
+        self._input_wav = input_wav
+        self._convert_to_cf32 = convert_to_cf32
+        self._temp_dir: Path | None = None
         self._pipeline = pipeline
         self._source = source
         self._frequency = frequency
@@ -290,6 +374,12 @@ class SatDumpProcess(QThread):
     # ------------------------------------------------------------------
 
     def run(self) -> None:
+        try:
+            self._run()
+        finally:
+            self._cleanup_temp()
+
+    def _run(self) -> None:
         satdump = find_satdump()
         if satdump is None:
             self.finished_err.emit(
@@ -301,69 +391,13 @@ class SatDumpProcess(QThread):
 
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
-        # SatDump's `live` CLI takes the output directory as a *positional*
-        # argument (argv[3], right after the pipeline id) -- there is no
-        # --output flag. Passing it as a flag shifts every subsequent
-        # positional/flag pairing, so e.g. `parameters["source"]` ends up
-        # unset and SatDump aborts with a JSON type error.
-        cmd = [
-            str(satdump),
-            "live",
-            self._pipeline,
-            str(self._output_dir),
-            "--source",
-            self._source,
-            "--samplerate",
-            str(self._samplerate),
-            "--frequency",
-            str(self._frequency),
-        ]
-        if self._agc:
-            # rtlsdr_sdr.cpp reads "agc" as a plain bool switch (default
-            # false -- confirmed against a real run's "Set RTL-SDR AGC to 0"
-            # log line when this flag was never sent). When AGC is enabled
-            # the tuner's own hardware AGC drives gain, so a manual --gain
-            # value would just be ignored -- omit it entirely rather than
-            # send a number that has no effect.
-            cmd += ["--agc", "true"]
+        if self._input_wav is not None:
+            file_cmd = self._build_file_cmd(satdump)
+            if file_cmd is None:
+                return
+            cmd = file_cmd
         else:
-            cmd += ["--gain", str(self._gain)]
-        if self._ppm:
-            # Corrects RTL-SDR local-oscillator drift (commonly tens of ppm
-            # on cheap dongles). At 137.9 MHz an uncorrected 50 ppm drift is
-            # ~6.9 kHz off-frequency -- easily enough to push the LRPT
-            # carrier outside psk_demod's narrow PLL capture range
-            # (pll_bw: 0.002) even though the same drift is imperceptible
-            # for wideband FM broadcast reception.
-            cmd += ["--ppm_correction", str(self._ppm)]
-        # Pipelines like meteor_m2-x_lrpt have a "products" work stage
-        # (e.g. meteor_msumr_lrpt) *after* the cadu-writing stage that
-        # actually turns decoded frames into the MSU-MR PNG(s) -- but SatDump
-        # only runs it on a graceful stop if --finish_processing is passed
-        # (default false). Without this flag, `live` happily records a
-        # perfectly locked, well-decoded .cadu file and then exits without
-        # ever producing an image, no matter how the process is stopped.
-        cmd += ["--finish_processing", "true"]
-        # meteor_m2-x_lrpt's "products" stage can interpolate over black
-        # lines caused by interference/signal drop-outs (writes a separate
-        # "MSU-MR (Filled)" folder alongside the normal output). Defaults to
-        # false upstream; there's no reason not to always ask for it here.
-        cmd += ["--fill_missing", "true"]
-        if self._fft_http_port is not None:
-            # SatDump's own live-processing splitter can feed a local HTTP
-            # API with periodic FFT snapshots without disturbing its
-            # exclusive hold on the SDR -- see comms.meteor.fft_waterfall,
-            # which polls this to drive the METEOR tab's Waterfall view.
-            cmd += [
-                "--fft_enable",
-                "true",
-                "--fft_size",
-                str(_FFT_SIZE),
-                "--fft_rate",
-                str(_FFT_RATE),
-                "--http_server",
-                f"127.0.0.1:{self._fft_http_port}",
-            ]
+            cmd = self._build_live_cmd(satdump)
 
         self.log_line.emit("$ " + " ".join(cmd))
 
@@ -428,6 +462,159 @@ class SatDumpProcess(QThread):
         else:
             self.finished_err.emit(f"satdump exited with code {rc}")
 
+    def _build_live_cmd(self, satdump: Path) -> list[str]:
+        """Command line for ``satdump live`` (SDR reception)."""
+        # SatDump's `live` CLI takes the output directory as a *positional*
+        # argument (argv[3], right after the pipeline id) -- there is no
+        # --output flag. Passing it as a flag shifts every subsequent
+        # positional/flag pairing, so e.g. `parameters["source"]` ends up
+        # unset and SatDump aborts with a JSON type error.
+        cmd = [
+            str(satdump),
+            "live",
+            self._pipeline,
+            str(self._output_dir),
+            "--source",
+            self._source,
+            "--samplerate",
+            str(self._samplerate),
+            "--frequency",
+            str(self._frequency),
+        ]
+        if self._agc:
+            # rtlsdr_sdr.cpp reads "agc" as a plain bool switch (default
+            # false -- confirmed against a real run's "Set RTL-SDR AGC to 0"
+            # log line when this flag was never sent). When AGC is enabled
+            # the tuner's own hardware AGC drives gain, so a manual --gain
+            # value would just be ignored -- omit it entirely rather than
+            # send a number that has no effect.
+            cmd += ["--agc", "true"]
+        else:
+            cmd += ["--gain", str(self._gain)]
+        if self._ppm:
+            # Corrects RTL-SDR local-oscillator drift (commonly tens of ppm
+            # on cheap dongles). At 137.9 MHz an uncorrected 50 ppm drift is
+            # ~6.9 kHz off-frequency -- easily enough to push the LRPT
+            # carrier outside psk_demod's narrow PLL capture range
+            # (pll_bw: 0.002) even though the same drift is imperceptible
+            # for wideband FM broadcast reception.
+            cmd += ["--ppm_correction", str(self._ppm)]
+        # Pipelines like meteor_m2-x_lrpt have a "products" work stage
+        # (e.g. meteor_msumr_lrpt) *after* the cadu-writing stage that
+        # actually turns decoded frames into the MSU-MR PNG(s) -- but SatDump
+        # only runs it on a graceful stop if --finish_processing is passed
+        # (default false). Without this flag, `live` happily records a
+        # perfectly locked, well-decoded .cadu file and then exits without
+        # ever producing an image, no matter how the process is stopped.
+        cmd += ["--finish_processing", "true"]
+        # meteor_m2-x_lrpt's "products" stage can interpolate over black
+        # lines caused by interference/signal drop-outs (writes a separate
+        # "MSU-MR (Filled)" folder alongside the normal output). Defaults to
+        # false upstream; there's no reason not to always ask for it here.
+        cmd += ["--fill_missing", "true"]
+        if self._fft_http_port is not None:
+            # SatDump's own live-processing splitter can feed a local HTTP
+            # API with periodic FFT snapshots without disturbing its
+            # exclusive hold on the SDR -- see comms.meteor.fft_waterfall,
+            # which polls this to drive the METEOR tab's Waterfall view.
+            cmd += [
+                "--fft_enable",
+                "true",
+                "--fft_size",
+                str(_FFT_SIZE),
+                "--fft_rate",
+                str(_FFT_RATE),
+                "--http_server",
+                f"127.0.0.1:{self._fft_http_port}",
+            ]
+
+        return cmd
+
+    def _build_file_cmd(self, satdump: Path) -> list[str] | None:
+        """Command line for ``satdump <pipeline> baseband <file>`` (recorded IQ).
+
+        No Doppler option is passed: the app's recordings are already Doppler corrected.
+        Returns None (after emitting finished_err) if the file cannot be used.
+        """
+        assert self._input_wav is not None
+        try:
+            rate, offset, nbytes = parse_iq_wav(self._input_wav)
+        except (OSError, IqWavError) as exc:
+            self.finished_err.emit(f"Cannot read IQ recording: {exc}")
+            return None
+        if rate < MIN_LRPT_IQ_SAMPLE_RATE:
+            self.finished_err.emit(
+                f"Recording sample rate {rate} Hz is too low for LRPT "
+                f"(needs at least {MIN_LRPT_IQ_SAMPLE_RATE} Hz)."
+            )
+            return None
+        source = self._input_wav
+        if self._convert_to_cf32:
+            converted = self._convert(offset, nbytes)
+            if converted is None:
+                return None
+            source = converted
+        cmd = [
+            str(satdump),
+            self._pipeline,
+            "baseband",
+            str(source),
+            str(self._output_dir),
+            "--samplerate",
+            str(rate),
+            "--baseband_format",
+            "cf32",
+            "--tle_override",
+            str(find_satdump_tle_file()),
+            "--finish_processing",
+            "true",
+            "--fill_missing",
+            "true",
+        ]
+        return cmd
+
+    def _convert(self, offset: int, nbytes: int) -> Path | None:
+        """Copy the IQ samples of the WAV into a raw cf32 temp file (header skipped)."""
+        assert self._input_wav is not None
+        tmp_root = Path(tempfile.gettempdir())
+        free = shutil.disk_usage(tmp_root).free
+        if free < nbytes + (256 << 20):
+            self.finished_err.emit(
+                f"Not enough free disk space in {tmp_root} for the converted file "
+                f"({nbytes >> 20} MB needed, {free >> 20} MB free). Use Speed: Normal."
+            )
+            return None
+        self._temp_dir = Path(tempfile.mkdtemp(prefix="fbsat59_iq_", dir=tmp_root))
+        dst = self._temp_dir / (self._input_wav.stem + ".cf32")
+        self.log_line.emit(f"Converting {self._input_wav.name} to raw cf32 ({nbytes >> 20} MB)…")
+        done = 0
+        last_pct = -1
+        try:
+            with self._input_wav.open("rb") as fin, dst.open("wb") as fout:
+                fin.seek(offset)
+                while done < nbytes:
+                    if self.isInterruptionRequested():
+                        self.finished_ok.emit()
+                        return None
+                    buf = fin.read(min(_CONVERT_CHUNK_BYTES, nbytes - done))
+                    if not buf:
+                        break
+                    fout.write(buf)
+                    done += len(buf)
+                    pct = done * 100 // nbytes
+                    if pct != last_pct:
+                        last_pct = pct
+                        self.log_line.emit(f"Converting… {pct}%")
+        except OSError as exc:
+            self.finished_err.emit(f"Failed to convert the IQ recording: {exc}")
+            return None
+        return dst
+
+    def _cleanup_temp(self) -> None:
+        if self._temp_dir is not None:
+            shutil.rmtree(self._temp_dir, ignore_errors=True)
+            self._temp_dir = None
+
     def stop(self, force: bool = False) -> None:
         """Request the satdump process to terminate.
 
@@ -475,6 +662,11 @@ class SatDumpProcess(QThread):
             self.lock_status.emit(m.group(1) == "synced")
 
         # Progress: look for percentage patterns like "  45%"
+        # Offline (baseband file) runs print "Progress 5.300000%, SNR : ..." instead.
+        m3 = re.search(r"progress\s+(\d{1,3})(?:\.\d+)?\s*%", lower)
+        if m3:
+            self.progress.emit(min(100, int(m3.group(1))))
+            return
         m2 = re.search(r"\b(\d{1,3})\s*%", line)
         if m2:
             pct = int(m2.group(1))

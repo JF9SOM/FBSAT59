@@ -433,3 +433,55 @@ class TestSaveImageAsDefaultPath:
         default_path = mock_dialog.call_args.args[2]
         assert "fbsat59_meteor" in default_path
         assert "Desktop" not in default_path
+
+
+class TestDecodeIqRecording:
+    """Bottom-row "Decode IQ Recording…" button + Speed selector."""
+
+    def test_controls_exist_with_both_speeds(self, qtbot: QtBot) -> None:
+        w = _make_tab(qtbot)
+        assert w._btn_decode_iq.text()
+        speeds = [w._combo_decode_speed.itemData(i) for i in range(w._combo_decode_speed.count())]
+        assert speeds == ["normal", "fast"]
+
+    def test_hrpt_pipeline_is_refused_with_a_message(self, qtbot: QtBot) -> None:
+        w = _make_tab(qtbot)
+        idx = next(
+            i
+            for i in range(w._combo_sat.count())
+            if "hrpt" in str(w._combo_sat.itemData(i)["pipeline"]).lower()
+        )
+        w._combo_sat.setCurrentIndex(idx)
+        with (
+            patch("ui.meteor_tab.QMessageBox.information") as info,
+            patch("ui.meteor_tab.QFileDialog.getOpenFileName") as dialog,
+        ):
+            w._on_decode_iq()
+        info.assert_called_once()
+        dialog.assert_not_called()
+
+    def test_start_launches_offline_decode_and_locks_controls(
+        self, qtbot: QtBot, tmp_path: Path
+    ) -> None:
+        from tests.test_meteor_satdump import _write_iq_wav
+
+        wav = tmp_path / "a.iq.wav"
+        _write_iq_wav(wav)
+        w = _make_tab(qtbot)
+        w._combo_decode_speed.setCurrentIndex(1)  # Fast
+        fake = MagicMock()
+        with (
+            patch("ui.meteor_tab.SatDumpProcess", return_value=fake) as cls,
+            patch("ui.meteor_tab.ImageWatcher"),
+            patch("ui.meteor_tab._default_output_dir", return_value=tmp_path / "out"),
+        ):
+            assert w._start_iq_decode(wav, w._combo_sat.currentData())
+        kwargs = cls.call_args.kwargs
+        assert kwargs["input_wav"] == wav
+        assert kwargs["convert_to_cf32"] is True
+        assert kwargs["samplerate"] == 250_000
+        fake.start.assert_called_once()
+        assert not w._btn_decode_iq.isEnabled()
+        assert not w._btn_start.isEnabled()
+        w._reset_controls()
+        assert not w._decoding_iq

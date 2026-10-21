@@ -129,3 +129,133 @@ class TestSendGracefulStopWindows:
         monkeypatch.setattr(ctypes, "WINFUNCTYPE", lambda *a, **k: lambda fn: fn, raising=False)
 
         assert _send_graceful_stop_windows(1234) is False
+
+
+def _write_iq_wav(path: Path, samples: int = 1000, rate: int = 250_000, fmt_tag: int = 3) -> bytes:
+    """Write a float32-stereo WAV like sdr.recorder does; return the raw IQ payload."""
+    import struct
+
+    import numpy as np
+
+    payload = np.arange(samples * 2, dtype=np.float32).tobytes()
+    fmt = struct.pack("<HHIIHH", fmt_tag, 2, rate, rate * 8, 8, 32)
+    header = (
+        b"RIFF"
+        + struct.pack("<I", 0)
+        + b"WAVE"
+        + b"fmt "
+        + struct.pack("<I", 16)
+        + fmt
+        + b"fact"
+        + struct.pack("<I", 4)
+        + struct.pack("<I", samples)
+        + b"data"
+        + struct.pack("<I", 0)  # bogus size: the length must come from the file size
+    )
+    path.write_bytes(header + payload)
+    return payload
+
+
+class TestParseIqWav:
+    def test_returns_rate_offset_and_length_from_file_size(self, tmp_path: Path) -> None:
+        from comms.meteor.satdump import parse_iq_wav
+
+        wav = tmp_path / "a.iq.wav"
+        payload = _write_iq_wav(wav)
+        rate, offset, nbytes = parse_iq_wav(wav)
+        assert rate == 250_000
+        assert offset == 56
+        assert nbytes == len(payload)
+
+    def test_partial_trailing_sample_is_dropped(self, tmp_path: Path) -> None:
+        from comms.meteor.satdump import parse_iq_wav
+
+        wav = tmp_path / "a.iq.wav"
+        _write_iq_wav(wav)
+        with wav.open("ab") as f:
+            f.write(b"\x00" * 3)
+        assert parse_iq_wav(wav)[2] % 8 == 0
+
+    def test_rejects_non_float_wav(self, tmp_path: Path) -> None:
+        from comms.meteor.satdump import IqWavError, parse_iq_wav
+
+        wav = tmp_path / "a.wav"
+        _write_iq_wav(wav, fmt_tag=1)
+        with pytest.raises(IqWavError):
+            parse_iq_wav(wav)
+
+    def test_rejects_non_wav(self, tmp_path: Path) -> None:
+        from comms.meteor.satdump import IqWavError, parse_iq_wav
+
+        bad = tmp_path / "x.wav"
+        bad.write_bytes(b"not a wav file at all")
+        with pytest.raises(IqWavError):
+            parse_iq_wav(bad)
+
+
+class TestOfflineDecodeCommand:
+    def _proc(self, tmp_path: Path, qtbot: QtBot, fast: bool) -> Any:
+        from comms.meteor.satdump import SatDumpProcess
+
+        wav = tmp_path / "a.iq.wav"
+        _write_iq_wav(wav)
+        return SatDumpProcess(
+            pipeline="meteor_m2-x_lrpt",
+            source="",
+            frequency=137_900_000,
+            samplerate=250_000,
+            output_dir=tmp_path / "out",
+            input_wav=wav,
+            convert_to_cf32=fast,
+        )
+
+    def test_normal_mode_passes_the_wav_with_baseband_input_level(
+        self, tmp_path: Path, qtbot: QtBot
+    ) -> None:
+        proc = self._proc(tmp_path, qtbot, fast=False)
+        cmd = proc._build_file_cmd(Path("/x/satdump"))
+        assert cmd is not None
+        assert cmd[1:3] == ["meteor_m2-x_lrpt", "baseband"]
+        assert cmd[3] == str(tmp_path / "a.iq.wav")
+        assert cmd[cmd.index("--samplerate") + 1] == "250000"
+        assert cmd[cmd.index("--baseband_format") + 1] == "cf32"
+        assert "--tle_override" in cmd  # skips the CelesTrak download
+        assert not any("doppler" in c.lower() for c in cmd)
+        assert "live" not in cmd
+
+    def test_fast_mode_converts_to_raw_cf32_without_the_header(
+        self, tmp_path: Path, qtbot: QtBot
+    ) -> None:
+        proc = self._proc(tmp_path, qtbot, fast=True)
+        cmd = proc._build_file_cmd(Path("/x/satdump"))
+        assert cmd is not None
+        raw = Path(cmd[3])
+        assert raw.suffix == ".cf32"
+        assert raw.read_bytes() == (tmp_path / "a.iq.wav").read_bytes()[56:]
+        proc._cleanup_temp()
+        assert not raw.exists()
+
+    def test_too_low_sample_rate_is_rejected(self, tmp_path: Path, qtbot: QtBot) -> None:
+        from comms.meteor.satdump import SatDumpProcess
+
+        wav = tmp_path / "low.iq.wav"
+        _write_iq_wav(wav, rate=48_000)
+        proc = SatDumpProcess(
+            pipeline="meteor_m2-x_lrpt",
+            source="",
+            frequency=137_900_000,
+            samplerate=48_000,
+            output_dir=tmp_path / "out",
+            input_wav=wav,
+        )
+        errors: list[str] = []
+        proc.finished_err.connect(errors.append)
+        assert proc._build_file_cmd(Path("/x/satdump")) is None
+        assert errors and "too low" in errors[0]
+
+    def test_baseband_progress_line_is_parsed(self, tmp_path: Path, qtbot: QtBot) -> None:
+        proc = self._proc(tmp_path, qtbot, fast=False)
+        seen: list[int] = []
+        proc.progress.connect(seen.append)
+        proc._parse_line("(I) Progress 5.300000%, SNR : 0.000000dB, Peak SNR: 0.000000dB")
+        assert seen == [5]

@@ -3605,7 +3605,7 @@ msgstr "📁 フォルダを開く"
 
 #: src/ui/meteor_tab.py:472
 msgid "📂 Open Past Reception…"
-msgstr "📂 過去の画像を開く…"
+msgstr "📂 画像を開く…"
 
 #: src/ui/meteor_tab.py:474
 msgid "Load a previous reception's images into the preview and history below."
@@ -3764,7 +3764,7 @@ msgstr ""
 
 #: src/ui/meteor_tab.py:1278
 msgid "Open Past Reception"
-msgstr "過去の画像を開く"
+msgstr "画像を開く"
 
 #: src/ui/meteor_tab.py:1296
 msgid "No Images Found"
@@ -7896,3 +7896,35 @@ msgstr "Reed-Solomon ライブラリ（reed-solomon-ccsds）がインストー�
 #: src/ui/telemetry_tab.py
 msgid "HADES FSK — listening for HADES-L (800 baud 2FSK bursts, ±20 kHz)"
 msgstr "HADES FSK — HADES-L（800 baud 2FSK バースト、±20 kHz）を待機中"
+
+#: src/ui/meteor_tab.py
+msgid "Normal"
+msgstr "標準"
+
+#: src/ui/meteor_tab.py
+msgid "Decode a recorded .iq.wav file with SatDump (LRPT only). The recording is already Doppler corrected, so no correction is applied."
+msgstr "録音した .iq.wav を SatDump でデコードします（LRPT のみ）。録音はドップラー補正済みのため、補正は行いません。"
+
+#: src/ui/meteor_tab.py
+msgid "Normal: SatDump reads the WAV file as it is.\nFast: first copy the samples to a raw temporary file (needs free disk space as large as the recording), which SatDump decodes much faster."
+msgstr "標準: SatDump が WAV ファイルをそのまま読みます。\n高速: 先にサンプルを生データの一時ファイルへコピーします（録音と同じ大きさの空き容量が必要）。SatDump のデコードがはるかに速くなります。"
+
+#: src/ui/meteor_tab.py
+msgid "Only LRPT can be decoded from an IQ recording. HRPT needs about 3 Msps, wider than the recordings made by this app. Select an LRPT pipeline."
+msgstr "IQ録音からデコードできるのは LRPT のみです。HRPT は約 3 Msps が必要で、このアプリの録音では帯域が足りません。LRPT のパイプラインを選んでください。"
+
+#: src/ui/meteor_tab.py
+msgid "Cannot read this IQ recording:\n{err}"
+msgstr "このIQ録音を読み込めません:\n{err}"
+
+#: src/ui/meteor_tab.py
+msgid "The recording's sample rate ({rate} Hz) is too low for LRPT (at least {need} Hz is needed)."
+msgstr "録音のサンプルレート（{rate} Hz）は LRPT には低すぎます（{need} Hz 以上が必要です）。"
+
+#: src/ui/meteor_tab.py
+msgid "Decoding {name}…"
+msgstr "{name} をデコード中…"
+
+#: src/ui/meteor_tab.py
+msgid "IQ decode finished."
+msgstr "IQデコードが完了しました。"

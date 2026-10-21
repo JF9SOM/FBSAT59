@@ -68,7 +68,14 @@ from PySide6.QtWidgets import (
 from comms.meteor.cities_overlay import CitiesOverlayProcess, find_product_cbor
 from comms.meteor.fft_waterfall import SatDumpFftPoller, find_free_port
 from comms.meteor.image_watcher import ImageWatcher
-from comms.meteor.satdump import METEOR_PIPELINES, SatDumpProcess, find_satdump
+from comms.meteor.satdump import (
+    METEOR_PIPELINES,
+    MIN_LRPT_IQ_SAMPLE_RATE,
+    IqWavError,
+    SatDumpProcess,
+    find_satdump,
+    parse_iq_wav,
+)
 from i18n import _
 from ui.meteor_waterfall import MeteorWaterfallWidget
 
@@ -333,6 +340,8 @@ class MeteorTab(QWidget):
         self._panning: bool = False
         self._pan_last: QPoint = QPoint()
         self._cities_overlay_process: CitiesOverlayProcess | None = None
+        # True while SatDump is decoding a recorded IQ file instead of receiving live.
+        self._decoding_iq: bool = False
         self._setup_ui()
         self._fft_frame_received.connect(self._waterfall_widget.add_frame)
         self._fft_unavailable.connect(self._waterfall_widget.show_unavailable)
@@ -496,6 +505,33 @@ class MeteorTab(QWidget):
         btn_row2.addWidget(self._gain_spin)
         self._load_gain_settings()
 
+        # Offline decode of a recorded .iq.wav (LRPT only: HRPT needs ~3 Msps, far wider
+        # than the app's recordings). Same wording as the Telemetry tab's button.
+        btn_row2.addSpacing(12)
+        self._btn_decode_iq = QPushButton(_("📂 Decode IQ Recording…"))
+        self._btn_decode_iq.setToolTip(
+            _(
+                "Decode a recorded .iq.wav file with SatDump (LRPT only). The recording is "
+                "already Doppler corrected, so no correction is applied."
+            )
+        )
+        self._btn_decode_iq.clicked.connect(self._on_decode_iq)
+        btn_row2.addWidget(self._btn_decode_iq)
+        btn_row2.addWidget(QLabel(_("Speed:")))
+        self._combo_decode_speed = QComboBox()
+        self._combo_decode_speed.addItem(_("Normal"), "normal")
+        self._combo_decode_speed.addItem(_("Fast"), "fast")
+        self._combo_decode_speed.setToolTip(
+            _(
+                "Normal: SatDump reads the WAV file as it is.\n"
+                "Fast: first copy the samples to a raw temporary file (needs free disk "
+                "space as large as the recording), which SatDump decodes much faster."
+            )
+        )
+        self._combo_decode_speed.currentIndexChanged.connect(self._on_decode_speed_changed)
+        btn_row2.addWidget(self._combo_decode_speed)
+        self._load_decode_speed()
+
         btn_row2.addStretch()
         image_layout.addLayout(btn_row2)
         h_split.addWidget(image_widget)
@@ -560,13 +596,113 @@ class MeteorTab(QWidget):
         self._gain_spin.setValue(gain_db)
         self._gain_spin.blockSignals(False)
 
+    # ------------------------------------------------------------------
+    # Decode a recorded IQ file
+    # ------------------------------------------------------------------
+
+    def _load_decode_speed(self) -> None:
+        """Restore the Speed choice (Normal / Fast) saved in meteor_settings."""
+        idx = self._combo_decode_speed.findData(_load_meteor_settings().get("decode_speed"))
+        if idx >= 0:
+            self._combo_decode_speed.blockSignals(True)
+            self._combo_decode_speed.setCurrentIndex(idx)
+            self._combo_decode_speed.blockSignals(False)
+
+    def _on_decode_speed_changed(self) -> None:
+        settings = _load_meteor_settings()
+        settings["decode_speed"] = str(self._combo_decode_speed.currentData())
+        _save_meteor_settings(settings)
+
     def _on_gain_setting_changed(self) -> None:
-        _save_meteor_settings(
-            {
-                "gain_auto": False,
-                "gain_db": self._gain_spin.value(),
-            }
+        settings = _load_meteor_settings()
+        settings.update({"gain_auto": False, "gain_db": self._gain_spin.value()})
+        _save_meteor_settings(settings)
+
+    def _on_decode_iq(self) -> None:
+        """Ask for a recorded IQ WAV and decode it with the selected LRPT pipeline."""
+        from core.data_paths import KIND_IQ, get_dir
+
+        pipeline_data: dict[str, Any] = self._combo_sat.currentData()
+        if "lrpt" not in str(pipeline_data["pipeline"]).lower():
+            QMessageBox.information(
+                self,
+                _("Decode IQ Recording"),
+                _(
+                    "Only LRPT can be decoded from an IQ recording. HRPT needs about 3 Msps, "
+                    "wider than the recordings made by this app. Select an LRPT pipeline."
+                ),
+            )
+            return
+        try:
+            start_dir = get_dir(KIND_IQ)
+        except Exception:
+            start_dir = Path.home()
+        path, _filter = QFileDialog.getOpenFileName(
+            self,
+            _("Decode IQ Recording"),
+            str(start_dir if start_dir.is_dir() else Path.home()),
+            "IQ WAV (*.wav);;All files (*)",
         )
+        if path:
+            self._start_iq_decode(Path(path), pipeline_data)
+
+    def _start_iq_decode(self, path: Path, pipeline_data: dict[str, Any]) -> bool:
+        """Start SatDump on *path*; False (reason shown) if the file cannot be used."""
+        try:
+            rate, _offset, _nbytes = parse_iq_wav(path)
+        except (OSError, IqWavError) as exc:
+            QMessageBox.warning(
+                self,
+                _("Decode IQ Recording"),
+                _("Cannot read this IQ recording:\n{err}").format(err=exc),
+            )
+            return False
+        if rate < MIN_LRPT_IQ_SAMPLE_RATE:
+            QMessageBox.warning(
+                self,
+                _("Decode IQ Recording"),
+                _(
+                    "The recording's sample rate ({rate} Hz) is too low for LRPT "
+                    "(at least {need} Hz is needed)."
+                ).format(rate=rate, need=MIN_LRPT_IQ_SAMPLE_RATE),
+            )
+            return False
+
+        self._decoding_iq = True
+        self._output_dir = _default_output_dir()
+        self._process = SatDumpProcess(
+            pipeline=str(pipeline_data["pipeline"]),
+            source="",
+            frequency=int(pipeline_data["frequency"]),
+            samplerate=rate,
+            output_dir=self._output_dir,
+            parent=self,
+            input_wav=path,
+            convert_to_cf32=self._combo_decode_speed.currentData() == "fast",
+        )
+        self._process.log_line.connect(self._on_log_line)
+        self._process.progress.connect(self._on_progress)
+        self._process.lock_status.connect(self._on_lock_status)
+        self._process.finished_ok.connect(self._on_finished_ok)
+        self._process.finished_err.connect(self._on_finished_err)
+        self._process.start()
+
+        self._watcher = ImageWatcher(self._output_dir, parent=self)
+        self._watcher.new_image.connect(self._on_new_image)
+        self._watcher.start()
+
+        self._preview_priority = -1
+        self._btn_start.setEnabled(False)
+        self._btn_stop.setEnabled(True)
+        self._btn_sdr_connect.setEnabled(False)
+        self._btn_open_past.setEnabled(False)
+        self._btn_decode_iq.setEnabled(False)
+        self._combo_sat.setEnabled(False)
+        self._progress.setValue(0)
+        self._progress.setVisible(True)
+        self._lbl_status.setText(_("Decoding {name}…").format(name=path.name))
+        self._lbl_lock.setText(_("Lock: —"))
+        return True
 
     # ------------------------------------------------------------------
     # SatDump availability check
@@ -582,9 +718,11 @@ class MeteorTab(QWidget):
             )
             self._banner.setVisible(True)
             self._btn_start.setEnabled(False)
+            self._btn_decode_iq.setEnabled(False)
         else:
             self._banner.setVisible(False)
             self._btn_start.setEnabled(True)
+            self._btn_decode_iq.setEnabled(True)
 
     # ------------------------------------------------------------------
     # Pipeline combo → Radio Control sync
@@ -725,6 +863,7 @@ class MeteorTab(QWidget):
         self._btn_stop.setEnabled(True)
         self._btn_sdr_connect.setEnabled(False)
         self._btn_open_past.setEnabled(False)
+        self._btn_decode_iq.setEnabled(False)
         self._combo_sat.setEnabled(False)
         self._progress.setValue(0)
         self._progress.setVisible(True)
@@ -806,7 +945,10 @@ class MeteorTab(QWidget):
         self._lbl_lock.setTextFormat(Qt.TextFormat.RichText)
 
     def _on_finished_ok(self) -> None:
-        self._lbl_status.setText(_("Reception finished."))
+        if self._decoding_iq:
+            self._lbl_status.setText(_("IQ decode finished."))
+        else:
+            self._lbl_status.setText(_("Reception finished."))
         self._progress.setVisible(False)
         self._stop_watcher_after_final_poll()
         self._stop_fft_poller()
@@ -852,6 +994,8 @@ class MeteorTab(QWidget):
             self._watcher.stop()
 
     def _reset_controls(self) -> None:
+        self._decoding_iq = False
+        self._btn_decode_iq.setEnabled(find_satdump() is not None)
         self._btn_start.setEnabled(find_satdump() is not None)
         self._btn_stop.setEnabled(False)
         self._btn_sdr_connect.setEnabled(True)
