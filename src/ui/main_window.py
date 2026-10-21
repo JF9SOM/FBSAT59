@@ -242,6 +242,9 @@ def _band_center_or_low(low: float | None, high: float | None) -> float | None:
 # Oscar designator prefixes (e.g. AO-7, FO-29, IO-86, QO-100, RS-44, RS95S)
 # Hyphen is optional to handle SatNOGS alt_names stored without it (e.g. "RS95S").
 # Two capturing groups: (prefix, number+suffix) so the display can normalise to "RS-95S".
+# Filter-combo prefix for the read-only per-Autotrack-list satellite views
+_AUTOTRACK_FILTER_PREFIX = "Autotrack: "
+
 _OSCAR_RE = re.compile(
     r"\b((?:AO|BO|CO|DO|EO|FO|GO|HO|IO|JO|KO|LO|MO|NO|PO|QO|RS|SO|TO|UO|VO|XO|ZO))"
     r"-?(\d+[A-Z]?)\b",
@@ -1834,6 +1837,13 @@ class MainWindow(QMainWindow):
             count += 1
             # Moon is not included in filtered_sats (no pass prediction in Phase 1)
 
+        # Read-only "Autotrack: <list>" filter — NORAD IDs registered in that list
+        autotrack_norads: set[int] | None = None
+        if filter_text.startswith(_AUTOTRACK_FILTER_PREFIX):
+            autotrack_norads = self._autotrack_list_norads(
+                filter_text[len(_AUTOTRACK_FILTER_PREFIX) :]
+            )
+
         for d in self._all_sat_data:
             # Skip regular satellites when Celestial Bodies filter is active
             if filter_text == "Celestial Bodies":
@@ -1860,6 +1870,8 @@ class MainWindow(QMainWindow):
                 ).fetchone()
                 if grp_row is None or grp_row["id"] not in d["favorite_groups"]:
                     continue
+            if autotrack_norads is not None and d["norad"] not in autotrack_norads:
+                continue
             if filter_text == "Amateur" and d["tle_group"] != "amateur":
                 continue
             if filter_text == "CubeSat" and d["tle_group"] != "cubesat":
@@ -1988,7 +2000,7 @@ class MainWindow(QMainWindow):
             "Operational (AMSAT)",
             "In Testing (AMSAT)",
             "TLM/Beacon only (AMSAT)",
-        ) or filter_text.startswith("★ ")
+        ) or filter_text.startswith(("★ ", _AUTOTRACK_FILTER_PREFIX))
 
     def _run_group_auto_search(self) -> None:
         """Fire the debounced Group-tab auto-search (see _apply_filter()).
@@ -2954,6 +2966,10 @@ class MainWindow(QMainWindow):
         """
         lists = AutotrackManager.get_all_lists(self._conn)
         self._radio_control.populate_autotrack_lists(lists)
+        # Keep the read-only "Autotrack: <list>" filter entries in sync
+        self._rebuild_filter_combo()
+        if self._filter_combo.currentText().startswith(_AUTOTRACK_FILTER_PREFIX):
+            self._apply_filter()
         self._start_autotrack_warmup(silent_if_empty=True)
 
     def _on_open_autotrack_dialog(self) -> None:
@@ -5582,6 +5598,10 @@ class MainWindow(QMainWindow):
 
         menu = QMenu(self)
         fav_menu = menu.addMenu("★ " + _("Favorite Groups"))
+        # The "Autotrack: <list>" filter is a read-only view; favorites stay editable elsewhere
+        fav_menu.setEnabled(
+            not self._filter_combo.currentText().startswith(_AUTOTRACK_FILTER_PREFIX)
+        )
         fav_actions: dict[int, QAction] = {}
         for grp in groups:
             grp_id = int(grp["id"])
@@ -5797,6 +5817,15 @@ class MainWindow(QMainWindow):
         self._conn.commit()
         self._load_satellites()
 
+    def _autotrack_list_norads(self, list_name: str) -> set[int]:
+        """Return the NORAD IDs registered in the Autotrack list with this name."""
+        norads: set[int] = set()
+        for at_list in AutotrackManager.get_all_lists(self._conn):
+            if str(at_list["name"]) == list_name:
+                for entry in AutotrackManager.get_entries(self._conn, int(at_list["id"])):
+                    norads.add(int(entry["norad_cat_id"] or 0))
+        return norads
+
     def _rebuild_filter_combo(self) -> None:
         """Rebuild the filter combo from DB custom_groups + fixed entries.
 
@@ -5813,6 +5842,8 @@ class MainWindow(QMainWindow):
         items = ["All Satellites"]
         for grp in groups:
             items.append(f"★ {grp['name']}")
+        for at_list in AutotrackManager.get_all_lists(self._conn):
+            items.append(f"{_AUTOTRACK_FILTER_PREFIX}{at_list['name']}")
         items += [
             "Amateur",
             "CubeSat",
