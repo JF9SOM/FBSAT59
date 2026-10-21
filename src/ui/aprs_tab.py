@@ -548,7 +548,7 @@ class AprsTab(QWidget):
     def _try_start_engine(self) -> None:
         """Start Direwolf engine whenever Sound Card is configured.
 
-        Direwolf runs in ADEVICE stdin stdout / PTT NONE mode, so it needs no
+        Direwolf runs in ADEVICE stdin null / PTT NONE mode, so it needs no
         rig at all to receive. Rig 1 is only required later for PTT (send);
         see can_tx in _refresh_input_source().
         """

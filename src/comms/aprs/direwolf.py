@@ -4,7 +4,7 @@ Architecture
 ------------
 DirewolfManager
   - Finds the direwolf binary (user-installed → system PATH → bundled)
-  - Writes a temporary direwolf.conf (ADEVICE stdin stdout, PTT NONE,
+  - Writes a temporary direwolf.conf (ADEVICE stdin null, PTT NONE,
     KISSPORT 8001, no audio library dependency)
   - Launches direwolf as a subprocess
   - Owns the AudioBridge and KissClient instances
@@ -17,9 +17,13 @@ AudioBridge (QThread)
     NOTE (2026-10-06): this never carries audio. Direwolf (1.6-1.8.1) has no
     "stdout" audio output: ``ADEVICE stdin stdout`` only takes receive audio from
     stdin, opens no output device, and discards the transmit waveform, so
-    stdout holds nothing but console text. Transmitting through this bridge
-    keys the PTT with no modulation. ARICA-2 therefore builds its own audio
-    (comms/aprs/g3ruh_tx.py); the APRS tab's send path still has this problem.
+    stdout holds nothing but console text. (Since 2026-10-21 the config says
+    ``ADEVICE stdin null`` instead: Direwolf 1.7, the apt package on Ubuntu, does not
+    know ``stdout`` as an output device and exits with "Could not open audio device
+    stdout"; ``null`` behaves the same here and works in 1.7 and 1.8.1.)
+    Transmitting through this bridge keys the PTT with no modulation. ARICA-2 therefore
+    builds its own audio (comms/aprs/g3ruh_tx.py); the APRS tab's send path still has this
+    problem.
     DirewolfManager.start() claims the output device exclusively through
     AudioDeviceManager for the lifetime of the bridge, since two tabs
     transmitting to the same output device at once would just garble the
@@ -594,7 +598,9 @@ class DirewolfManager:
         modem_line = _MODEM_LINES.get(modem, _MODEM_LINES["1200"])
         conf = (
             f"MYCALL {station}\n"
-            "ADEVICE stdin stdout\n"
+            # "null", not "stdout": Direwolf 1.7 (Ubuntu's apt package) refuses "stdout" as an
+            # output device; nothing is ever transmitted through Direwolf's audio output here.
+            "ADEVICE stdin null\n"
             # AudioBridge/G3ruhSdrDemod always feed stdin at 48kHz; without
             # this, direwolf falls back to guessing the rate from a WAV
             # header it never gets over a raw pipe, which broke 4800 G3RUH

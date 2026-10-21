@@ -33,6 +33,19 @@ def test_write_config_always_declares_arate_48000() -> None:
         Path(path).unlink()
 
 
+def test_write_config_output_device_is_null_not_stdout() -> None:
+    """Direwolf 1.7 (Ubuntu's apt package, e.g. the GPD) stops with "Could not open audio device
+    stdout" on ``ADEVICE stdin stdout``; ``null`` works in 1.7 and in 1.8.1."""
+    mgr = DirewolfManager()
+    path = mgr._write_config("JF9SOM", 9, modem="1200")
+    try:
+        lines = Path(path).read_text().splitlines()
+    finally:
+        Path(path).unlink()
+    assert "ADEVICE stdin null" in lines
+    assert not any("stdout" in line for line in lines)
+
+
 def test_write_config_1200_default() -> None:
     mgr = DirewolfManager()
     path = mgr._write_config("JF9SOM", 9, modem="1200")
