@@ -192,7 +192,7 @@ def _run_fast(qtbot: QtBot, tab: TelemetryTab, path: Path) -> None:
     qtbot.waitUntil(lambda: tab._fast_job is None, timeout=60_000)
 
 
-def test_speed_combo_is_only_shown_in_hades_mode_and_remembered(
+def test_speed_combo_is_shown_in_every_mode_and_remembered(
     qtbot: QtBot, conn: sqlite3.Connection
 ) -> None:
     tab = _tab(qtbot, conn)
@@ -202,9 +202,11 @@ def test_speed_combo_is_only_shown_in_hades_mode_and_remembered(
     tab._combo_decode_speed.setCurrentIndex(1)
     row = conn.execute("SELECT value FROM app_settings WHERE key = 'telemetry_decode_speed'")
     assert row.fetchone()["value"] == "fast"
+    # AX.25 mode has a file decoder at every baud now (1200 through Direwolf, 4800 / 9600 through
+    # the coherent MSK detector), so the choice is offered there too.
     tab._combo_mode.setCurrentIndex(0)
-    assert not tab._combo_decode_speed.isVisible()
-    assert not tab._lbl_decode_speed.isVisible()
+    assert tab._combo_decode_speed.isVisible()
+    assert tab._lbl_decode_speed.isVisible()
     again = _tab(qtbot, conn)
     assert again._combo_decode_speed.currentData() == "fast"
 
@@ -335,8 +337,8 @@ def _ax25_tab(qtbot: QtBot, conn: sqlite3.Connection, baud: str) -> TelemetryTab
 def test_speed_choice_follows_the_ax25_baud(qtbot: QtBot, conn: sqlite3.Connection) -> None:
     tab = _ax25_tab(qtbot, conn, "1200")
     tab.show()
-    assert not tab._combo_decode_speed.isVisible()  # no file decoder for 1200 baud
-    for baud in ("4800", "9600"):
+    assert tab._combo_decode_speed.isVisible()  # 1200 baud has a file decoder too (Direwolf)
+    for baud in ("1200", "4800", "9600"):
         tab._baud_combo.setCurrentIndex(tab._baud_combo.findData(baud))
         assert tab._combo_decode_speed.isVisible()
 

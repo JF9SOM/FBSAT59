@@ -470,6 +470,7 @@ class TelemetryTab(QWidget):
             self._populate_gr_combo()
         self._restore_last_satellites()
         self._load_decode_speed()
+        self._update_decode_speed_visibility()
         self._detect_already_connected()
         self._refresh_input_combo()
         self._refresh_status()
