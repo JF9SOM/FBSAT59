@@ -1108,6 +1108,7 @@ class MainWindow(QMainWindow):
         self._on_autotrack_list_changed(self._at_dialog.current_list_id())
         if restored_autotrack_enabled:
             self._autotrack_enabled = True
+            self._refresh_autotrack_filter_highlight()
             self._at_dialog.set_autotrack_enabled(True)
             self._radio_control.set_autotrack_indicator(True)
             self._start_autotrack_warmup(silent_if_empty=True)
@@ -2646,6 +2647,7 @@ class MainWindow(QMainWindow):
                 # Timer expired — disable autotrack
                 self._autotrack_on_los()
                 self._autotrack_enabled = False
+                self._refresh_autotrack_filter_highlight()
                 self._autotrack.reset()
                 self._at_dialog.set_autotrack_enabled(False)
                 self._radio_control.set_autotrack_indicator(False)
@@ -2674,6 +2676,7 @@ class MainWindow(QMainWindow):
             elif self._autotrack_timer_armed:
                 self._autotrack_timer_armed = False
                 self._autotrack_enabled = True
+                self._refresh_autotrack_filter_highlight()
                 self._at_dialog.set_autotrack_enabled(True)
                 self._radio_control.set_autotrack_indicator(True)
 
@@ -2859,6 +2862,7 @@ class MainWindow(QMainWindow):
     def _on_autotrack_toggled(self, enabled: bool) -> None:
         """Called when the user toggles the Autotrack checkbox."""
         self._autotrack_enabled = enabled
+        self._refresh_autotrack_filter_highlight()
         self._radio_control.set_autotrack_indicator(enabled)
         if not enabled:
             self._invalidate_autotrack_warmup()
@@ -2879,6 +2883,7 @@ class MainWindow(QMainWindow):
         self._invalidate_autotrack_warmup()
         self._autotrack.set_list(lid)
         self._autotrack_enabled = False
+        self._refresh_autotrack_filter_highlight()
         self._autotrack_timer_armed = False
         self._at_dialog.set_autotrack_enabled(False)
         self._at_dialog.set_autotrack_status("—")
@@ -5835,6 +5840,25 @@ class MainWindow(QMainWindow):
         self._conn.commit()
         self._load_satellites()
 
+    def _refresh_autotrack_filter_highlight(self) -> None:
+        """Highlight (yellow) the filter entry of the list Autotrack is enabled on."""
+        combo = getattr(self, "_filter_combo", None)
+        if combo is None:
+            return
+        active_name: str | None = None
+        if self._autotrack_enabled:
+            list_id = self._at_dialog.current_list_id()
+            if list_id is not None:
+                active_name = self._autotrack_filter_names.get(list_id)
+        active_text = f"{_AUTOTRACK_FILTER_PREFIX}{active_name}" if active_name else None
+        for i in range(combo.count()):
+            if active_text is not None and combo.itemText(i) == active_text:
+                combo.setItemData(i, QColor("#f1c40f"), Qt.ItemDataRole.BackgroundRole)
+                combo.setItemData(i, QColor("#000000"), Qt.ItemDataRole.ForegroundRole)
+            else:
+                combo.setItemData(i, None, Qt.ItemDataRole.BackgroundRole)
+                combo.setItemData(i, None, Qt.ItemDataRole.ForegroundRole)
+
     def _autotrack_list_norads(self, list_name: str) -> set[int]:
         """Return the NORAD IDs registered in the Autotrack list with this name."""
         norads: set[int] = set()
@@ -5884,6 +5908,7 @@ class MainWindow(QMainWindow):
             self._filter_combo.setCurrentIndex(idx)
 
         self._filter_combo.blockSignals(False)
+        self._refresh_autotrack_filter_highlight()
 
     def _set_hidden(self, norad: int, hidden: bool) -> None:
         """Save the satellite hidden state to the DB and reload the satellite list."""
