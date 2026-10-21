@@ -90,6 +90,16 @@ def test_pcm_conversion_matches_the_live_path_and_clips() -> None:
     assert pcm.tolist() == [0, 16383, -16383, 32767, -32767]
 
 
+def test_config_uses_a_null_output_device_that_direwolf_1_7_accepts() -> None:
+    path = afd._write_config(25000)
+    try:
+        text = Path(path).read_text()
+    finally:
+        Path(path).unlink()
+    assert "ADEVICE stdin null" in text and "stdout" not in text
+    assert "MODEM 1200" in text and "KISSPORT 25000" in text
+
+
 def test_free_port_is_in_the_range_direwolf_accepts() -> None:
     for _ in range(20):
         assert 1024 <= _free_port() <= 49151

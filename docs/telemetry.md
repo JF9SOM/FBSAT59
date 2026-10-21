@@ -1589,6 +1589,11 @@ AX.25（Direwolf）モードの「Speed:」プルダウンと「Decode IQ Record
   音声を標準入力へ**実時間のペースを付けずに**流す（stdin の raw PCM は渡した速さで処理される）。KISS ポートはジョブ専用
   （ライブのセッションと衝突しない）。**Direwolf の KISSPORT は 49151 以下しか受け付けず**（超えると「Invalid TCP port」で
   既定の 8001 に戻る）、OS が割り当てる一時ポートは通常それを超えるので、20000〜40000 から空きを選ぶ。
+- **出力デバイスは `null`**（`ADEVICE stdin null`）: GPD の Direwolf は apt の 1.7 で、ライブ経路が使う `ADEVICE stdin stdout` を
+  受け付けず「Could not open audio device stdout」で止まり、KISS ポートも開かない（UI は「Direwolf did not open its KISS port」）。
+  `null` は 1.7 でも macOS の 1.8.1 でも動く（送信はしないので出力は不要）。実機 GPD で合成 FM-AFSK 4/4・実録音（702 秒）を 44 秒で処理。
+  **注意: ライブの `DirewolfManager._write_config()` は今も `stdin stdout`** なので、GPD の apt 版 Direwolf ではライブ受信も同じ理由で
+  失敗する可能性がある（未確認・未修正）。
 - **フレームの時刻**: Direwolf が KISS で報告した時点までに流した音声の長さ。パイプのバッファ分（1 秒未満）遅れるので **約 1 秒の精度**
   （コヒーレント検波のような厳密な時刻ではない。ファイル名の開始時刻があれば受信時刻の目安として使える）。音声の後ろに 2 秒の無音を
   足して録音の最後のフレームも出す。Direwolf が見つからなければ「Direwolf not found. Use Help > Direwolf… to install.」。

@@ -69,15 +69,19 @@ def _free_port() -> int:
 
 
 def _write_config(port: int) -> str:
-    """A minimal direwolf.conf for 1200 baud on stdin with its own KISS port."""
+    """A minimal direwolf.conf for 1200 baud on stdin with its own KISS port.
+
+    The output device is ``null`` (nothing is transmitted): Direwolf 1.7, the apt package on
+    Ubuntu, does not know ``stdout`` as an output device and stops with "Could not open audio
+    device stdout"; ``null`` works in 1.7 and in the 1.8.1 the app installs.
+    """
     conf = (
         "MYCALL N0CALL\n"
-        "ADEVICE stdin stdout\n"
+        "ADEVICE stdin null\n"
         f"ARATE {_AUDIO_RATE}\n"
         "ACHANNELS 1\n"
         "CHANNEL 0\n"
         "MODEM 1200\n"
-        "PTT NONE\n"
         f"KISSPORT {port}\n"
     )
     fd, path = tempfile.mkstemp(prefix="direwolf_fast_", suffix=".conf")
