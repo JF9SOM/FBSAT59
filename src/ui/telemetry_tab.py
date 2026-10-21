@@ -127,8 +127,9 @@ _MODE_HADES = "HADES FSK"
 _PENDING_START_TIMEOUT_S = 30.0
 # app_settings key for the "Speed:" choice of Decode IQ Recording in HADES FSK mode.
 _DECODE_SPEED_KEY = "telemetry_decode_speed"
-# AX.25 bauds with a file decoder (the coherent MSK detector); 1200 baud has none
-_FAST_AX25_BAUDS = ("4800", "9600")
+# AX.25 bauds with a file decoder: the coherent MSK detector at 4800 / 9600, Direwolf fed with the
+# SDR audio front end's output at 1200
+_FAST_AX25_BAUDS = ("1200", "4800", "9600")
 
 # Owner tag for the shared AprsEngine singleton (see comms.aprs.engine).
 # The APRS tab shares the same engine under its own "aprs" tag so closing
@@ -1419,8 +1420,8 @@ class TelemetryTab(QWidget):
     def _update_decode_speed_visibility(self) -> None:
         """Show the Speed choice where a recording can be decoded at once.
 
-        HADES FSK, gr-satellites and CW TLM always; AX.25 only at the G3RUH bauds (4800 / 9600),
-        which the coherent MSK detector decodes (there is no file decoder for 1200 baud).
+        HADES FSK, gr-satellites and CW TLM always; AX.25 at every baud: the coherent MSK
+        detector at 4800 / 9600, Direwolf fed with the satellite AFSK front end at 1200.
         """
         mode = self._current_mode()
         visible = mode in (_MODE_GR, _MODE_HADES, _MODE_CW) or (
@@ -2303,17 +2304,25 @@ class TelemetryTab(QWidget):
         return True
 
     def _start_ax25_fast_decode(self, path: Path) -> bool:
-        """Decode *path* with the coherent MSK detector at once (AX.25, 4800 / 9600 baud)."""
+        """Decode *path* at once (AX.25): the coherent MSK detector at 4800 / 9600 baud, Direwolf
+        fed with the satellite AFSK front end's audio at 1200 baud."""
         if self._fast_job is not None or self._engine.is_running:
             self._set_error("⚠ " + _("Stop the running decoder first."))
             return False
-        from comms.aprs.coherent_msk import CoherentMskFileDecoder
         from sdr.file_device import parse_start_time_from_filename
 
         start = parse_start_time_from_filename(path.name)
         self._fast_time_known = start is not None
         self._fast_start = start or datetime.datetime.now(datetime.UTC)
-        job = CoherentMskFileDecoder(path, int(self._current_modem()), parent=self)
+        job: Any
+        if self._current_modem() == "1200":
+            from comms.aprs.afsk_file_decoder import Afsk1200FileDecoder
+
+            job = Afsk1200FileDecoder(path, parent=self)
+        else:
+            from comms.aprs.coherent_msk import CoherentMskFileDecoder
+
+            job = CoherentMskFileDecoder(path, int(self._current_modem()), parent=self)
         job.frame_found.connect(self._on_ax25_fast_frame)
         job.progress.connect(self._on_fast_progress)
         job.decoded.connect(self._on_fast_done)

@@ -1574,3 +1574,29 @@ PDU ダンプ（`VERBOSE PDU DEBUG PRINT`）を、SatNOGS の `foresail1p.ksy` �
 - **背景**: GPD で Foresail-1p が読めなかった原因は、アプリが使う gr-satellites が apt 版（NumPy 不整合で起動せず、
   `FORESAIL-1P` 定義も無い）だったこと。Help > gr-satellites Installation… で同梱版（`~/.local/share/fbsat59/
   gr-satellites-env/`）を入れると読める。
+
+### AX.25 モードの 1200 baud「Fast」デコード（2026-10-21）
+
+AX.25（Direwolf）モードの「Speed:」プルダウンと「Decode IQ Recording…」は、4800 / 9600 baud（コヒーレント MSK 検波）に加えて
+**1200 baud でも出る**（`_FAST_AX25_BAUDS`＝1200/4800/9600）。UI は 4800/9600・gr-satellites モードと同じ（Fast でファイルを
+選ぶと全体を一括デコード、Normal は SDR Control で実時間再生）。実装は `comms/aprs/afsk_file_decoder.py` の
+`Afsk1200FileDecoder`（`CoherentMskFileDecoder` と同じシグナル `frame_found(bytes, 秒)` / `progress` / `decoded` / `failed`）:
+
+- **前段**: ライブの SDR 経路と同じ `AfskAudioDiscriminator(satellite=True)`（衛星用 1200 baud 前段: IF ±5 kHz・弁別器 50 kHz・
+  包絡線の谷で出力を絞る・±2.5 kHz クランプ・ディエンファシスなし。実録音 OrigamiSat-2 で従来 0〜1 → 20 フレーム）で I/Q を
+  48 kHz 音声にする。PCM への変換もライブと同じ（`float × 32767` の 16 bit）。
+- **復号は Direwolf**（実績のある復号器を使う方針）: このジョブ専用の Direwolf を起動し（`ADEVICE stdin stdout`・MODEM 1200）、
+  音声を標準入力へ**実時間のペースを付けずに**流す（stdin の raw PCM は渡した速さで処理される）。KISS ポートはジョブ専用
+  （ライブのセッションと衝突しない）。**Direwolf の KISSPORT は 49151 以下しか受け付けず**（超えると「Invalid TCP port」で
+  既定の 8001 に戻る）、OS が割り当てる一時ポートは通常それを超えるので、20000〜40000 から空きを選ぶ。
+- **フレームの時刻**: Direwolf が KISS で報告した時点までに流した音声の長さ。パイプのバッファ分（1 秒未満）遅れるので **約 1 秒の精度**
+  （コヒーレント検波のような厳密な時刻ではない。ファイル名の開始時刻があれば受信時刻の目安として使える）。音声の後ろに 2 秒の無音を
+  足して録音の最後のフレームも出す。Direwolf が見つからなければ「Direwolf not found. Use Help > Direwolf… to install.」。
+- **速度**: 合成 FM-AFSK（250 kS/s・9 秒）で約 1.4 秒。合成 4 フレームは 25 dB・15 dB とも 4/4（実 Direwolf、macOS）。
+- **限界（実測）**: 2026-10-21 の OrigamiSat-2 の録音（14:24 JST 開始）は、この前段＋Direwolf でも 0 フレーム。キャリアとサイドバンドの
+  電力から求めた 1 シンボルあたりの Es/N0 が平均 2〜3 dB・最良でも 5〜6 dB（非同期 FSK で誤りなしに取れるのは約 10 dB 以上）で、
+  方式の問題ではなく信号が弱すぎる。もう一つの録音（16:09 終了）は変調のない搬送波だけでデータが乗っていない。
+- **SatNOGS クライアントには同種の高速デコードは無い**（調査 2026-10-21）: `satnogs_afsk1200_ax25.py` は SDR 入力の実時間
+  フローグラフ（FM 復調 → 1700 Hz 中心の 2 回目の弁別 → M&M クロック再生）、`grsat.py` も観測中に IQ を UDP で渡す実時間処理。
+- テスト: `tests/test_afsk_file_decoder.py`（Direwolf の代役でのジョブの配管・取消・Direwolf 不在・読めないファイル、Direwolf があれば
+  合成 FM-AFSK の実デコード）、`tests/test_telemetry_tab.py`（1200 でも Speed が出る・1200 は Direwolf、それ以上はコヒーレント）。

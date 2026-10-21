@@ -19,10 +19,11 @@ from __future__ import annotations
 import datetime
 import sqlite3
 import types
+from pathlib import Path
 from typing import Any
 
 import pytest
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication, QStyle, QStyleOptionViewItem, QWidget
 from pytestqt.qtbot import QtBot
@@ -1586,8 +1587,55 @@ def test_decode_speed_choice_is_offered_in_gr_mode(qtbot: QtBot, conn: sqlite3.C
     tab.show()
     tab._combo_mode.setCurrentIndex(tab._combo_mode.findText(telemetry_tab_mod._MODE_GR))
     assert tab._combo_decode_speed.isVisible()
+    # AX.25 mode offers it at every baud now: the coherent MSK detector at 4800 / 9600 and
+    # Direwolf fed with the satellite AFSK front end at 1200.
     tab._combo_mode.setCurrentIndex(0)
-    assert not tab._combo_decode_speed.isVisible()
+    for baud in ("1200", "4800", "9600"):
+        tab._baud_combo.setCurrentIndex(tab._baud_combo.findData(baud))
+        assert tab._combo_decode_speed.isVisible(), baud
+
+
+def test_ax25_fast_decode_uses_direwolf_at_1200_and_the_coherent_detector_above(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    started: list[tuple[str, object]] = []
+
+    class _Job(QObject):
+        frame_found = Signal(bytes, float)
+        progress = Signal(float, int)
+        decoded = Signal(float, float, int)
+        failed = Signal(str)
+
+        def __init__(self, name: str, *args: object, **kwargs: object) -> None:
+            super().__init__(kwargs.get("parent"))  # type: ignore[arg-type]
+            started.append((name, args))
+
+        def start(self) -> None:
+            pass
+
+        def cancel(self) -> None:
+            pass
+
+        def wait(self, _ms: int) -> None:
+            pass
+
+    monkeypatch.setattr(
+        "comms.aprs.afsk_file_decoder.Afsk1200FileDecoder",
+        lambda path, parent=None: _Job("afsk1200", path, parent=parent),
+    )
+    monkeypatch.setattr(
+        "comms.aprs.coherent_msk.CoherentMskFileDecoder",
+        lambda path, baud, parent=None: _Job("coherent", path, baud, parent=parent),
+    )
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab._combo_mode.setCurrentIndex(0)
+    recording = tmp_path / "rec_20261021T052427Z.iq.wav"
+    for baud, expected in (("1200", "afsk1200"), ("9600", "coherent")):
+        tab._baud_combo.setCurrentIndex(tab._baud_combo.findData(baud))
+        assert tab._start_ax25_fast_decode(recording)
+        assert started[-1][0] == expected
+        tab._stop_fast_decode()
 
 
 _LOB_GNSS46 = (
