@@ -1277,6 +1277,8 @@ class MainWindow(QMainWindow):
         sat_header.setContentsMargins(6, 0, 0, 0)
         left_layout.addWidget(sat_header)
 
+        # Autotrack list id -> name, as shown in the filter combo (see _rebuild_filter_combo)
+        self._autotrack_filter_names: dict[int, str] = {}
         self._filter_combo = QComboBox()
         self._rebuild_filter_combo()
         self._filter_combo.currentTextChanged.connect(self._on_filter_changed)
@@ -2966,9 +2968,25 @@ class MainWindow(QMainWindow):
         """
         lists = AutotrackManager.get_all_lists(self._conn)
         self._radio_control.populate_autotrack_lists(lists)
-        # Keep the read-only "Autotrack: <list>" filter entries in sync
+        # Keep the read-only "Autotrack: <list>" filter entries in sync. If the
+        # list being viewed was renamed, follow it to its new name.
+        prev_text = self._filter_combo.currentText()
+        followed_id = next(
+            (
+                lid
+                for lid, lname in self._autotrack_filter_names.items()
+                if prev_text == f"{_AUTOTRACK_FILTER_PREFIX}{lname}"
+            ),
+            None,
+        )
         self._rebuild_filter_combo()
-        if self._filter_combo.currentText().startswith(_AUTOTRACK_FILTER_PREFIX):
+        new_name = self._autotrack_filter_names.get(followed_id) if followed_id else None
+        if new_name is not None and f"{_AUTOTRACK_FILTER_PREFIX}{new_name}" != prev_text:
+            idx = self._filter_combo.findText(f"{_AUTOTRACK_FILTER_PREFIX}{new_name}")
+            if idx >= 0:
+                # Signals are live here, so the list redraws via _on_filter_changed
+                self._filter_combo.setCurrentIndex(idx)
+        elif self._filter_combo.currentText().startswith(_AUTOTRACK_FILTER_PREFIX):
             self._apply_filter()
         self._start_autotrack_warmup(silent_if_empty=True)
 
@@ -5842,7 +5860,9 @@ class MainWindow(QMainWindow):
         items = ["All Satellites"]
         for grp in groups:
             items.append(f"★ {grp['name']}")
+        self._autotrack_filter_names = {}
         for at_list in AutotrackManager.get_all_lists(self._conn):
+            self._autotrack_filter_names[int(at_list["id"])] = str(at_list["name"])
             items.append(f"{_AUTOTRACK_FILTER_PREFIX}{at_list['name']}")
         items += [
             "Amateur",
