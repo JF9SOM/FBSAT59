@@ -1095,6 +1095,22 @@ CW にはCRCが無く、検査を通っても桁を間違えていることが�
   `ALTER TABLE`）。`SatnogsUploader.submit()` / `build_submission()` に `force`、`upload_blocker()`
   （送れない理由: `disabled`/`no_api_key`/`no_callsign`/`no_location`）を追加。
 
+### 検証なしで全部送る（2026-10-22 変更）
+
+SatNOGS Upload が ON のとき、フレームの検証結果にかかわらず**受信したものは全部送る**。
+SatNOGS の仕組み（satnogs-client は `data*` ファイルを無検証でそのまま Network へ送り、
+satnogs-db の `TelemetryViewSet.create` も `frame` を検証せず保存する）に合わせ、間違った
+データでも多数集まるほど誤りを見つけやすく、受信の証拠にもなるというユーザー判断による。
+上の CW の規則表のうち「**2回以上受信**」は**廃止**した（自動送信・「未送信を送信…」とも）。
+「時刻が確実」「一度だけ」は残っている。追加で次も送る:
+
+- HADES の修復済み（未検証）フレーム（表示は淡色のまま）。
+- CW の妥当性検査に通らない `[?]` フレーム（ログにも保存し、通常の CW フレームと同じに送る）。
+- CW の長さ違い（近似）ブロック: `cw_frames.build_lenient_satnogs_frame()` が、長さが最も近い
+  フレーム定義の接頭辞・種別バイトに、受信した桁をそのまま（奇数桁は末尾に `0` を足して）付ける。
+  16進以外の文字を含むものは送れない。この経路はログに保存しないので、同じ録音を再生し直すと
+  重複して送られうる。
+
 ### SatNOGS DB が衛星を登録している NORAD ID（2026-09-21）
 
 SatNOGS DB の受信側（`satnogs-db` の `TelemetryViewSet.create`）は、投稿の `noradID` を

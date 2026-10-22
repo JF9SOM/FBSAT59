@@ -249,7 +249,7 @@ class TestReceivedBlocks:
         assert _decode_value(tab, "HK3", "Battery Voltage").startswith("8.2009")
         assert _decode_value(tab, "HK3", "Power Flow Status") == "charge"
 
-    def test_a_frame_that_fails_the_plausibility_checks_is_greyed_out_and_not_used(
+    def test_a_frame_that_fails_the_plausibility_checks_is_greyed_out_but_logged(
         self, qtbot: QtBot, cw_conn: sqlite3.Connection
     ) -> None:
         tab = _running_tab(qtbot, cw_conn)
@@ -263,7 +263,7 @@ class TestReceivedBlocks:
         assert tab._table.item(0, 3).text().startswith(f"[?] HK1 {bad}")
         assert tab._frame_count == 0  # not counted
         assert _decode_value(tab, "HK1", "SBD error") == "—"  # Decoded Fields untouched
-        assert cw_conn.execute("SELECT COUNT(*) FROM telemetry_log").fetchone()[0] == 0
+        assert cw_conn.execute("SELECT COUNT(*) FROM telemetry_log").fetchone()[0] == 1
 
     def test_a_misread_frame_length_is_listed_as_a_candidate_only(
         self, qtbot: QtBot, cw_conn: sqlite3.Connection
@@ -522,19 +522,18 @@ class TestClockOfARecording:
 
 
 class TestAutomaticUpload:
-    def test_a_frame_is_sent_only_once_a_repeat_confirms_it(
+    def test_every_reading_is_sent_at_once(
         self, qtbot: QtBot, cw_conn: sqlite3.Connection, uploader: _FakeUploader
     ) -> None:
         _configure_upload(cw_conn)
         tab = _running_with(qtbot, cw_conn)
 
         tab._on_cw_block(HK1, START, END)
-        assert uploader.sent == []  # one reading: could be a mis-read digit
+        assert [s[2] for s in uploader.sent] == [START]  # no repeat is waited for
 
         tab._on_cw_block(HK1, START + timedelta(seconds=125), END + timedelta(seconds=125))
         assert [s[0] for s in uploader.sent] == [b"arica-2\x01" + bytes.fromhex(HK1)] * 2
         assert [s[2] for s in uploader.sent] == [START, START + timedelta(seconds=125)]
-        assert "2 queued" in tab._lbl_status.text()
 
     def test_nothing_is_sent_with_the_switch_off(
         self, qtbot: QtBot, cw_conn: sqlite3.Connection, uploader: _FakeUploader
@@ -591,8 +590,9 @@ class TestManualSend:
         _configure_upload(cw_conn)
         tab = _running_with(qtbot, cw_conn)
         tab._on_cw_block(HK1, START, END)
+        before = len(uploader.sent)  # the automatic upload already sent it
         tab._on_send_selected()
-        assert uploader.sent == []
+        assert len(uploader.sent) == before
 
     def test_send_selected_reports_a_missing_api_key(
         self, qtbot: QtBot, cw_conn: sqlite3.Connection, uploader: _FakeUploader

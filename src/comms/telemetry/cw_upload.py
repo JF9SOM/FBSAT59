@@ -136,15 +136,14 @@ def is_duplicate(frame: LoggedFrame, frames: list[LoggedFrame]) -> bool:
 
 
 def eligible_unsent(conn: sqlite3.Connection, norad: int) -> list[LoggedFrame]:
-    """Unsent frames of *norad* that may be sent: reliable time, confirmed by a
-    repeat, not a duplicate of one already sent."""
+    """Unsent frames of *norad* that may be sent: reliable time, not a duplicate of one
+    already sent. No repeat is needed: every reception goes to the SatNOGS DB."""
     frames = logged_frames(conn, norad)
     return [
         f
         for f in frames
         if not f.uploaded
         and f.reliable
-        and (not repeat_required(norad) or confirmed_by_repeat(f, frames))
         and not is_duplicate(f, frames)
         and build_satnogs_frame(norad, f.raw_hex) is not None
     ]
@@ -254,8 +253,8 @@ def auto_send(
 ) -> SendReport:
     """Automatic upload after frame *frame_id* was logged (footer switch on).
 
-    A frame is only sent once a repeat confirms it; receiving the repeat also
-    releases the earlier reading(s) of the same frame that were waiting.
+    Every reading is sent at once (no repeat is waited for); readings of the same
+    frame that were still unsent are sent with it.
     """
     frames = logged_frames(conn, norad)
     this = next((f for f in frames if f.id == frame_id), None)
@@ -268,7 +267,7 @@ def auto_send(
         norad,
         group,
         force=False,
-        require_repeat=True,
+        require_repeat=False,
         on_result=on_result,
         pending=pending,
     )

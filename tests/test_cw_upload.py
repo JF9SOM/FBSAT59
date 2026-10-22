@@ -112,54 +112,30 @@ class TestSchema:
         assert {"satnogs_uploaded_at", "time_reliable"} <= names
 
 
-class TestRepeatRule:
-    def test_a_single_reading_is_not_sent(self, conn: sqlite3.Connection) -> None:
+class TestNoRepeatNeeded:
+    def test_a_single_reading_is_sent_at_once(self, conn: sqlite3.Connection) -> None:
         fid = _log(conn, HK1, T0)
         up = _FakeUploader()
         report = auto_send(conn, up, ARICA2, fid)  # type: ignore[arg-type]
-        assert (report.queued, report.waiting) == (0, 1)
-        assert up.sent == []
-        assert not _uploaded(conn, fid)
+        assert (report.queued, report.waiting) == (1, 0)
+        assert len(up.sent) == 1
+        assert not _uploaded(conn, fid)  # marked only once SatNOGS accepts it
 
-    def test_a_repeat_sends_both_readings(self, conn: sqlite3.Connection) -> None:
-        first = _log(conn, HK1, T0)
+    def test_every_reading_is_sent_with_its_own_time(self, conn: sqlite3.Connection) -> None:
+        _log(conn, HK1, T0)
         second = _log(conn, HK1, T0 + timedelta(seconds=125))
         up = _FakeUploader()
-
         report = auto_send(conn, up, ARICA2, second)  # type: ignore[arg-type]
-
         assert report.queued == 2
-        assert [s[2] for s in up.sent] == [
-            T0,
-            T0 + timedelta(seconds=125),
-        ]  # each with its own time
-        # Queued only: nothing counts as sent until SatNOGS accepted it.
-        assert not _uploaded(conn, first) and not _uploaded(conn, second)
+        assert [s[2] for s in up.sent] == [T0, T0 + timedelta(seconds=125)]
         assert all(not s[3] for s in up.sent)  # automatic: the switch must be on
 
-    def test_the_same_transmission_decoded_twice_does_not_confirm_itself(
-        self, conn: sqlite3.Connection
-    ) -> None:
-        _log(conn, HK1, T0)
-        second = _log(conn, HK1, T0 + timedelta(seconds=2))
-        report = auto_send(conn, _FakeUploader(), ARICA2, second)  # type: ignore[arg-type]
-        assert report.queued == 0
-        assert report.waiting == 2
-
-    def test_a_recurrence_a_day_later_confirms_nothing(self, conn: sqlite3.Connection) -> None:
-        _log(conn, HK1, T0)
-        later = _log(conn, HK1, T0 + timedelta(days=1))
-        assert auto_send(conn, _FakeUploader(), ARICA2, later).queued == 0  # type: ignore[arg-type]
-
-    def test_different_frames_do_not_confirm_each_other(self, conn: sqlite3.Connection) -> None:
-        _log(conn, HK1, T0)
+    def test_different_and_misread_frames_are_sent_too(self, conn: sqlite3.Connection) -> None:
         other = _log(conn, HK3, T0 + timedelta(seconds=60))
-        assert auto_send(conn, _FakeUploader(), ARICA2, other).queued == 0  # type: ignore[arg-type]
-
-    def test_a_one_digit_difference_is_a_different_frame(self, conn: sqlite3.Connection) -> None:
-        _log(conn, HK1, T0)
         misread = _log(conn, "3FFE8594EB880124", T0 + timedelta(seconds=90))
-        assert auto_send(conn, _FakeUploader(), ARICA2, misread).queued == 0  # type: ignore[arg-type]
+        up = _FakeUploader()
+        assert auto_send(conn, up, ARICA2, other).queued == 1  # type: ignore[arg-type]
+        assert auto_send(conn, up, ARICA2, misread).queued == 1  # type: ignore[arg-type]
 
 
 class TestReliableTime:
@@ -232,16 +208,16 @@ class TestManualSend:
 
 
 class TestSendUnsent:
-    def test_lists_only_confirmed_reliable_unsent_frames(self, conn: sqlite3.Connection) -> None:
+    def test_lists_only_reliable_unsent_frames(self, conn: sqlite3.Connection) -> None:
         a = _log(conn, HK1, T0)
         b = _log(conn, HK1, T0 + timedelta(seconds=90))
-        _log(conn, HK3, T0 + timedelta(seconds=30))  # single reading
+        c = _log(conn, HK3, T0 + timedelta(seconds=30))  # single reading
         _log(conn, HK1, T0 + timedelta(seconds=180), reliable=False)  # placeholder time
         done = _log(conn, HK1, T0 + timedelta(seconds=270), uploaded=True)
 
         ids = {f.id for f in eligible_unsent(conn, ARICA2)}
 
-        assert ids == {a, b}
+        assert ids == {a, b, c}
         assert done not in ids
 
     def test_frames_of_other_satellites_are_not_listed(self, conn: sqlite3.Connection) -> None:

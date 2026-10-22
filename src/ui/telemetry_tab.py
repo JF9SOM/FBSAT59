@@ -65,6 +65,7 @@ from comms.telemetry.baud_detect import (
     detect_baud_from_transmitter,
 )
 from comms.telemetry.cw_frames import (
+    build_lenient_satnogs_frame,
     decode_cw_frame,
     fields_from_saved,
     is_near_miss,
@@ -1779,6 +1780,10 @@ class TelemetryTab(QWidget):
                     ts=ts,
                     dim=True,
                 )
+                # Sent to the SatNOGS DB all the same: the operator can tell a wrong frame.
+                wire = build_lenient_satnogs_frame(norad, text)
+                if wire is not None and load_satnogs_upload_settings(self._conn).get("enabled"):
+                    self._submit_raw_frame(wire, norad, ts, reliable)
             else:
                 # Not a frame-length hex block and not a near-miss either (e.g. the
                 # beacon's callsign/name text, or a block where the name and the hex
@@ -1792,16 +1797,6 @@ class TelemetryTab(QWidget):
                     normalize_block(text),
                 )
             return
-        if not result.valid:
-            self._append_row(
-                callsign=callsign,
-                sat_name=sat_name,
-                data=f"[?] {result.key} {result.hex_text}  ({'; '.join(result.problems)})",
-                norad=norad,
-                ts=ts,
-                dim=True,
-            )
-            return
         tf = TelemetryFrame(
             norad=norad,
             callsign=callsign,
@@ -1812,16 +1807,28 @@ class TelemetryTab(QWidget):
             telemetry_label=result.label,
         )
         log_id = self._persist_frame(tf, ts, reliable, kind="cw")
-        self._append_row(
-            callsign=callsign,
-            sat_name=sat_name,
-            data=f"[{result.key}] {result.hex_text}",
-            norad=norad,
-            ts=ts,
-            log_id=log_id,
-            decoded=tf,
-        )
-        self._update_decode_tab(tf)
+        if not result.valid:
+            # Implausible readings are shown muted but logged and sent like any other.
+            self._append_row(
+                callsign=callsign,
+                sat_name=sat_name,
+                data=f"[?] {result.key} {result.hex_text}  ({'; '.join(result.problems)})",
+                norad=norad,
+                ts=ts,
+                dim=True,
+                log_id=log_id,
+            )
+        else:
+            self._append_row(
+                callsign=callsign,
+                sat_name=sat_name,
+                data=f"[{result.key}] {result.hex_text}",
+                norad=norad,
+                ts=ts,
+                log_id=log_id,
+                decoded=tf,
+            )
+            self._update_decode_tab(tf)
         if log_id is not None:
             self._auto_send_cw(norad, log_id)
 
@@ -2221,7 +2228,7 @@ class TelemetryTab(QWidget):
         stream_time: float = 0.0,
         imported: bool = False,
     ) -> None:
-        """Show, log and (when verified, *submit* and the switch is on) upload one frame.
+        """Show, log and (when *submit* and the switch is on) upload one frame.
 
         *imported*: the frame comes from a SatNOGS DB CSV, so it is never sent back and is not
         given to the Digital Voice tab.
@@ -2233,13 +2240,8 @@ class TelemetryTab(QWidget):
         text = self._hades_row_text(frame)
         payload = bytes(frame.payload)
         log_id = self._persist_hades_row(frame, norad, sat_name, text, when, reliable)
-        # Only a CRC-verified frame can be sent to the SatNOGS DB; a bit-repaired one is shown
-        # (muted) but never published.
-        ax25_row = (
-            None
-            if frame.repaired
-            else _Ax25Row(raw=payload, when=when, reliable=reliable, norad=norad, log_id=log_id)
-        )
+        # Every frame is sent to the SatNOGS DB, a bit-repaired one too (shown muted).
+        ax25_row = _Ax25Row(raw=payload, when=when, reliable=reliable, norad=norad, log_id=log_id)
         decoded = hades_telemetry_frame(payload, norad, sat_name)
         self._append_row(
             callsign="HADES",
@@ -2254,7 +2256,7 @@ class TelemetryTab(QWidget):
         self._mark_row_logged(self._table.rowCount() - 1, log_id)
         if decoded is not None and not frame.repaired:
             self._update_decode_tab(decoded)  # the newest verified frame of each type
-        if ax25_row is not None and submit:
+        if submit:
             self._submit_raw_frame(payload, norad, when, reliable, ax25_row)
         if not frame.repaired and not imported:
             self._forward_voice_packet(payload, stream_time)
@@ -2605,7 +2607,7 @@ class TelemetryTab(QWidget):
         repaired = bool(saved.get("repaired"))
         ax25_row = (
             None
-            if repaired or not whole
+            if not whole
             else _Ax25Row(
                 raw=whole,
                 when=when,

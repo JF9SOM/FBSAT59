@@ -295,7 +295,7 @@ def test_verified_frame_is_forwarded_to_the_uploader(
     assert row.pending is True  # handed to the uploader, SatNOGS has not answered yet
 
 
-def test_repaired_frame_is_never_uploaded_or_sendable(
+def test_repaired_frame_is_uploaded_like_any_other(
     qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     rec = _RecordingUploader()
@@ -303,10 +303,8 @@ def test_repaired_frame_is_never_uploaded_or_sendable(
     tab = _tab(qtbot, conn)
     tab._hades_norad = UNNE1B
     tab._on_hades_frame(_frame(repaired=True), 0.0)
-    assert rec.calls == []
-    assert tab._table.item(0, 0).data(telemetry_tab_mod._AX25_ROLE) is None
-    tab._table.selectRow(0)
-    assert tab._selected_ax25_rows() == []
+    assert len(rec.calls) == 1
+    assert tab._table.item(0, 0).data(telemetry_tab_mod._AX25_ROLE) is not None
 
 
 def test_loaded_frame_keeps_its_bytes_and_sent_state(
