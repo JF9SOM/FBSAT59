@@ -3008,7 +3008,7 @@ class TelemetryTab(QWidget):
 
     def _submit_raw_frame(
         self,
-        raw: bytes,
+        raw: bytes | str,
         norad: int | None,
         when: datetime.datetime,
         reliable: bool,
@@ -3028,7 +3028,7 @@ class TelemetryTab(QWidget):
             known = (
                 self._find_logged_duplicate(
                     "frame_hex",
-                    raw.hex(),
+                    (raw if isinstance(raw, str) else raw.hex()),
                     norad,
                     when,
                     window_s=(

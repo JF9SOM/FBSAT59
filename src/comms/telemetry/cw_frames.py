@@ -410,12 +410,12 @@ def build_satnogs_frame(norad: int | None, text: str) -> bytes | None:
     return prefix + bytes([int(upload["beacon_type"])]) + bytes.fromhex(hex_part)
 
 
-def build_lenient_satnogs_frame(norad: int | None, text: str) -> bytes | None:
+def build_lenient_satnogs_frame(norad: int | None, text: str) -> bytes | str | None:
     """Like build_satnogs_frame(), for a block of the wrong length (a near miss).
 
     The frame definition whose length is closest is used for the prefix and type byte, and
-    the digits received are sent exactly as they are, nothing added. None if they cannot
-    make whole bytes (an odd count or a non-hex character) or no definition can send it.
+    the digits received are sent exactly as they are, nothing added (an odd count comes back
+    as a hex ``str``). None if there is a non-hex character or no definition can send it.
     """
     frames = load_cw_frames(norad)
     block = normalize_block(text)
@@ -432,13 +432,17 @@ def build_lenient_satnogs_frame(norad: int | None, text: str) -> bytes | None:
     if best is None:
         return None
     _diff, frame_def, digits = best
-    if not digits or len(digits) % 2 or any(c not in "0123456789ABCDEFabcdef" for c in digits):
+    if not digits or any(c not in "0123456789ABCDEFabcdef" for c in digits):
         return None
     upload = frame_def["satnogs"]
-    body = bytes.fromhex(digits)
     if upload.get("raw"):
-        return body
-    return str(upload["callsign"]).encode("ascii") + bytes([int(upload["beacon_type"])]) + body
+        head = b""
+    else:
+        head = str(upload["callsign"]).encode("ascii") + bytes([int(upload["beacon_type"])])
+    if len(digits) % 2:
+        # not whole bytes: send the hex text as received (SatNOGS stores it as it is)
+        return head.hex() + digits.lower()
+    return head + bytes.fromhex(digits)
 
 
 def repeat_required(norad: int | None) -> bool:

@@ -173,7 +173,7 @@ def upload_blocker(conn: sqlite3.Connection, force: bool = False) -> str | None:
 
 def build_submission(
     conn: sqlite3.Connection,
-    raw_frame: bytes,
+    raw_frame: bytes | str,
     norad: int,
     received_at: datetime,
     force: bool = False,
@@ -186,7 +186,8 @@ def build_submission(
     written to a log line.
 
     *raw_frame* is the frame as received (full AX.25 frame without the FCS);
-    it is hex-encoded into the ``frame`` field. *received_at* is coerced to
+    it is hex-encoded into the ``frame`` field (a ``str`` is already hex digits and is sent
+    as it is, e.g. a CW block of an odd digit count). *received_at* is coerced to
     UTC for the ``timestamp`` field.
     """
     if upload_blocker(conn, force) is not None:
@@ -206,7 +207,7 @@ def build_submission(
         "longitude": f"{abs(lon):.4f}{'E' if lon >= 0 else 'W'}",
         "latitude": f"{abs(lat):.4f}{'N' if lat >= 0 else 'S'}",
         "timestamp": ts.strftime("%Y-%m-%dT%H:%M:%S.") + f"{ts.microsecond // 1000:03d}Z",
-        "frame": raw_frame.hex(),
+        "frame": raw_frame if isinstance(raw_frame, str) else raw_frame.hex(),
         "version": _client_version(),
     }
     return api_key, fields
@@ -271,7 +272,7 @@ class SatnogsUploader:
     def submit(
         self,
         conn: sqlite3.Connection,
-        raw_frame: bytes,
+        raw_frame: bytes | str,
         norad: int | None,
         received_at: datetime,
         force: bool = False,

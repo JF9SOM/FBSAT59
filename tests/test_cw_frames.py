@@ -472,7 +472,8 @@ def test_lenient_satnogs_frame_sends_a_wrong_length_block_as_received() -> None:
 
     exact = build_satnogs_frame(68796, "2FFE8594EB880124")
     assert exact is not None
-    assert build_lenient_satnogs_frame(68796, "2FFE8594EB88012") is None  # odd: no bytes
+    odd = build_lenient_satnogs_frame(68796, "2FFE8594EB88012")  # one digit lost: sent as text
+    assert odd == b"arica-2\x01".hex() + "2ffe8594eb88012"
     longer = build_lenient_satnogs_frame(68796, "2FFE8594EB88012400")
     assert longer is not None and longer[8:] == bytes.fromhex("2FFE8594EB88012400")
     assert build_lenient_satnogs_frame(68796, "2FFE8594EBZZ0124") is None
