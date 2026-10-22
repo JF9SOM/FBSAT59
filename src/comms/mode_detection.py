@@ -159,6 +159,7 @@ def is_ax100_digi_transmitter(xpdr: dict[str, Any]) -> bool:
 # given baud rate: NORAD id -> baud rates.
 _CONFIRMED_AX25_BAUDS: dict[int, frozenset[int]] = {
     68418: frozenset({4800}),  # OPTISAT, "UHF 4k8 Telemetry" (decoded 2026-10-15)
+    68635: frozenset({9600}),  # CANVAS, "AstroDev Li-2" (4 beacons CRC-verified 2026-10-22)
 }
 
 

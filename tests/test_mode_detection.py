@@ -57,6 +57,12 @@ def test_confirmed_satellite_matches_at_its_confirmed_baud_only() -> None:
     assert not is_ax25_telemetry_transmitter({**xpdr, "norad_cat_id": 12345})
 
 
+def test_canvas_li2_matches_at_9600_only() -> None:
+    li2 = {"mode": "GMSK", "baud": 9600, "description": "AstroDev Li-2", "norad_cat_id": 68635}
+    assert is_ax25_telemetry_transmitter(li2)
+    assert not is_ax25_telemetry_transmitter({**li2, "baud": 5000000, "mode": "OQPSK"})
+
+
 def test_1200_baud_without_afsk_mode_does_not_match() -> None:
     xpdr = {"mode": "FM", "baud": 1200, "description": "Some AX.25 beacon"}
     assert not is_ax25_telemetry_transmitter(xpdr)
