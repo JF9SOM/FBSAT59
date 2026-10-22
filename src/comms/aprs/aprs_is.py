@@ -111,7 +111,8 @@ class AprsIsClient(QObject):
 
     Signals (emitted from the worker thread; Qt queues them to the GUI thread):
         line_received(str): one packet line (server comments are not forwarded)
-        status_changed(str): "connecting" / "connected" / "disconnected" / "error: ..."
+        status_changed(str): "connecting" / "connected" (login accepted by the server) /
+            "disconnected" / "error: ..."
     """
 
     line_received: Signal = Signal(str)
@@ -182,7 +183,6 @@ class AprsIsClient(QObject):
             if filter_text.strip():
                 login += f" filter {filter_text.strip()}"
             sock.sendall((login + "\r\n").encode("ascii", errors="replace"))
-            self.status_changed.emit("connected")
             buf = b""
             idle = 0.0
             while not stop.is_set():
@@ -201,7 +201,9 @@ class AprsIsClient(QObject):
                 while b"\n" in buf:
                     raw, buf = buf.split(b"\n", 1)
                     text = raw.decode("ascii", errors="replace").strip()
-                    if text and not text.startswith("#"):
+                    if text.startswith("# logresp"):
+                        self.status_changed.emit("connected")  # the server accepted the login
+                    elif text and not text.startswith("#"):
                         self.line_received.emit(text)
         except OSError as exc:
             if not stop.is_set():

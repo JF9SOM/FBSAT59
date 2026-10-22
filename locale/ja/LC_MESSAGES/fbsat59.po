@@ -8006,7 +8006,7 @@ msgstr "衛星を1つ以上選ぶか、フィルターを入力してくださ�
 
 #: src/ui/aprs_is_window.py
 msgid "Connected — {server}"
-msgstr "接続中 — {server}"
+msgstr "接続済み — {server}"
 
 #: src/ui/aprs_is_window.py
 msgid "Connecting…"

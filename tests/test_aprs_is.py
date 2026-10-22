@@ -64,18 +64,24 @@ def test_client_logs_in_read_only_with_filter_and_forwards_packets(qtbot: QtBot)
         conn, _ = srv.accept()
         conn.sendall(b"# aprsc test\r\n")
         received_login.append(conn.makefile("rb").readline().decode().strip())
-        conn.sendall(b"# keepalive\r\n" + _DIGIPEATED.encode() + b"\r\n")
+        conn.sendall(
+            b"# logresp JF9SOM unverified, server TEST\r\n"
+            b"# keepalive\r\n" + _DIGIPEATED.encode() + b"\r\n"
+        )
         ready.set()
         conn.close()
 
     threading.Thread(target=serve, daemon=True).start()
     client = AprsIsClient()
     lines: list[str] = []
+    statuses: list[str] = []
     client.line_received.connect(lines.append)
+    client.status_changed.connect(statuses.append)
     client.start("127.0.0.1", port, "JF9SOM", "d/DP0SNX")
     qtbot.waitUntil(lambda: bool(lines), timeout=5000)
     client.stop()
     srv.close()
+    assert statuses[:2] == ["connecting", "connected"]  # "connected" only after the logresp
     assert received_login == ["user JF9SOM pass -1 vers FBSAT59 1.0 filter d/DP0SNX"]
     assert lines == [_DIGIPEATED]  # the "#" comment lines are not forwarded
 
