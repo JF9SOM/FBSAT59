@@ -1656,3 +1656,15 @@ AX.25（Direwolf）モードの「Speed:」プルダウンと「Decode IQ Record
   バイナリ PSU テレメトリーと CW ビーコンは未定義。
 - 実ビーコン（JJ1WTK のログ）でのデコードを `tests/test_telemetry_decoder.py` に追加。
 
+### Telemetry タブの「ASCII変換」サブタブ（貼り付け専用・2026-10-22）
+
+- 「Received Frames」「Decoded Fields」に続く 3 つ目のサブタブ（`ui/telemetry_paste.py` の `AsciiPasteWidget`）。
+  他局のログ（JJ1WTK の衛星ログなど）の文字列テレメトリーを貼り付けると、1 行ずつ衛星の定義で解読して全項目を
+  木表示する。**貼り付けた内容は保存しない**（受信ログ・SatNOGS 投稿には一切入らない）。
+- 受け付ける行: `[0 2026-10-20 23:07:35 UTC] OK0KST>CQ:U,9008906,...<0x00>`（`SRC>DEST[,PATH]:` ヘッダー付き。
+  先頭の `[...]` の時刻は表示に使う。`<0xNN>` はそのバイトに戻す）、またはヘッダーなしのペイロードのみの行。
+- 衛星は、ヘッダーの送信元コールサインを `telemetry_formats/*.json` の `callsign` と照合して自動判別する。
+  ヘッダーのない行はタブで選択中の衛星、または上部のコンボで選んだ衛星の定義で読む（コンボが優先）。
+- 対象は ASCII（`csv_messages`・`text_message`）の定義を持つ衛星。バイナリのテレメトリーの HEX 貼り付けは未対応。
+- 実ログ（JJ1WTK の 2026-10 の 40 行：LASARsat・KOSTKA・MARINA が混在）が全行解読できることを確認済み。
+

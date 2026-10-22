@@ -8059,3 +8059,39 @@ msgstr "設定に保存した自局の位置を使います"
 #: src/ui/aprs_is_window.py
 msgid "Station position is not set — configure it in Settings"
 msgstr "自局の位置が未設定です — 設定で入力してください"
+
+#: src/ui/telemetry_paste.py
+msgid "ASCII Decode"
+msgstr "ASCII変換"
+
+#: src/ui/telemetry_paste.py
+msgid "Auto (from the callsign in each line)"
+msgstr "自動（各行のコールサインから判別）"
+
+#: src/ui/telemetry_paste.py
+msgid "Paste telemetry lines here, e.g. a satellite log with lines like\n[0 2026-10-20 23:07:35 UTC] OK0KST>CQ:U,9008906,9008995,1,0,...\nNothing pasted here is saved."
+msgstr "テレメトリーの行をここに貼り付けてください。例: 衛星ログの\n[0 2026-10-20 23:07:35 UTC] OK0KST>CQ:U,9008906,9008995,1,0,...\nここに貼り付けた内容は保存されません。"
+
+#: src/ui/telemetry_paste.py
+msgid "Line / Field"
+msgstr "行 / 項目"
+
+#: src/ui/telemetry_paste.py
+msgid "{ok} of {n} lines decoded"
+msgstr "{n} 行中 {ok} 行を解読"
+
+#: src/ui/telemetry_paste.py
+msgid " (only the first {n} lines are used)"
+msgstr "（先頭の {n} 行のみ使用）"
+
+#: src/ui/telemetry_paste.py
+msgid "no satellite definition for {call}"
+msgstr "{call} の衛星定義がありません"
+
+#: src/ui/telemetry_paste.py
+msgid "select a satellite"
+msgstr "衛星を選んでください"
+
+#: src/ui/telemetry_paste.py
+msgid "not decodable with this satellite's definition"
+msgstr "この衛星の定義では解読できません"

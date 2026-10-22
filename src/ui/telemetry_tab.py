@@ -108,6 +108,7 @@ from comms.telemetry.satnogs_uploader import (
 )
 from i18n import _
 from ui.sat_search_dialog import SatSearchDialog
+from ui.telemetry_paste import AsciiPasteWidget
 
 logger = logging.getLogger(__name__)
 
@@ -757,6 +758,10 @@ class TelemetryTab(QWidget):
         self._decode_id_tabs = QTabWidget()
         decode_page_layout.addWidget(self._decode_id_tabs)
         self._log_tabs.addTab(self._decode_page, _("Decoded Fields"))
+        # "ASCII Decode": paste lines copied from another station's log and list every field.
+        # Paste only -- nothing typed here is logged or uploaded.
+        self._ascii_paste = AsciiPasteWidget()
+        self._log_tabs.addTab(self._ascii_paste, _("ASCII Decode"))
         self._decode_tables: dict[str, QTableWidget] = {}
         self._decode_field_rows: dict[str, dict[str, int]] = {}
         self._decode_tabs_norad: int | None = None
@@ -3134,6 +3139,7 @@ class TelemetryTab(QWidget):
         self._decode_tables = {}
         self._decode_field_rows = {}
         self._decode_tabs_norad = norad
+        self._ascii_paste.set_default_norad(norad)
 
         from comms.mode_detection import HADES_FSK_NORADS
 
