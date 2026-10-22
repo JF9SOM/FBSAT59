@@ -1776,3 +1776,34 @@ def test_gr_pdu_frame_fills_the_decoded_fields_tab(
     assert table.item(row, 1).text() == "135"
     time_row = tab._decode_field_rows["GNSS-46"]["a_time"]
     assert table.item(time_row, 1).text() == "2026-10-18 23:03:36 UTC"
+
+
+def test_the_mode_is_remembered_across_restarts(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    first = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(first)
+    assert first._current_mode() == telemetry_tab_mod._MODE_AFSK  # the default
+    first._combo_mode.setCurrentIndex(first._combo_mode.findText(telemetry_tab_mod._MODE_HADES))
+    second = TelemetryTab(conn, _FakeRadioControl())  # "a restart"
+    qtbot.addWidget(second)
+    assert second._current_mode() == telemetry_tab_mod._MODE_HADES
+    assert second._combo_hades_sat.isVisibleTo(second)
+    # going back to AX.25 is remembered too
+    second._combo_mode.setCurrentIndex(0)
+    third = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(third)
+    assert third._current_mode() == telemetry_tab_mod._MODE_AFSK
+
+
+def test_building_the_tab_does_not_overwrite_the_saved_mode(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value, updated_at) "
+        "VALUES ('telemetry_mode', ?, CURRENT_TIMESTAMP)",
+        (telemetry_tab_mod._MODE_CW,),
+    )
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    assert tab._current_mode() == telemetry_tab_mod._MODE_CW
+    saved = conn.execute("SELECT value FROM app_settings WHERE key = 'telemetry_mode'").fetchone()
+    assert saved["value"] == telemetry_tab_mod._MODE_CW

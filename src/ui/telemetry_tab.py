@@ -139,6 +139,8 @@ _ENGINE_OWNER = "telemetry"
 # Own setting (not the APRS tab's shared ax25_baud_mode): this combo now follows
 # the selected satellite/transponder instead of an Auto mode.
 _BAUD_SETTING_KEY = "telemetry_ax25_baud"
+# app_settings key of the mode (AX.25 / gr-satellites / CW TLM / HADES FSK) the tab was left in.
+_MODE_SETTING_KEY = "telemetry_mode"
 # app_settings key prefix for the last satellite picked per mode ("afsk"/"gr"/"cw_tlm").
 _LAST_SAT_KEY_PREFIX = "telemetry_last_sat_"
 
@@ -489,6 +491,9 @@ class TelemetryTab(QWidget):
         self._direwolf_log_window: _ProcessLogDialog | None = None
         self._gr_log_window: _ProcessLogDialog | None = None
 
+        # Off while the tab is being built: the mode it restores or is forced into must not be
+        # saved as the user's own choice.
+        self._persist_mode = False
         self._ensure_db_table()
         self._setup_ui()
         self._load_baud_mode()
@@ -500,11 +505,13 @@ class TelemetryTab(QWidget):
             self._gr_sat_list = list_gr_satellites_with_names()
             self._populate_gr_combo()
         self._restore_last_satellites()
+        self._restore_mode()
         self._load_decode_speed()
         self._update_decode_speed_visibility()
         self._detect_already_connected()
         self._refresh_input_combo()
         self._refresh_status()
+        self._persist_mode = True
 
     # ------------------------------------------------------------------ #
     # DB
@@ -1048,6 +1055,31 @@ class TelemetryTab(QWidget):
             )
             self._conn.commit()
 
+    def _restore_mode(self) -> None:
+        """Put the mode combo back to the mode the tab was left in (if it is still offered)."""
+        if not hasattr(self._conn, "execute"):
+            return
+        with contextlib.suppress(Exception):
+            row = self._conn.execute(
+                "SELECT value FROM app_settings WHERE key = ?", (_MODE_SETTING_KEY,)
+            ).fetchone()
+            idx = self._combo_mode.findText(str(row["value"])) if row else -1
+            model = self._combo_mode.model()
+            item = model.item(idx) if isinstance(model, QStandardItemModel) and idx >= 0 else None
+            if idx > 0 and (item is None or item.isEnabled()):
+                self._combo_mode.setCurrentIndex(idx)  # runs _on_mode_changed()
+
+    def _save_mode(self, mode: str) -> None:
+        if not hasattr(self._conn, "execute"):
+            return
+        with contextlib.suppress(Exception):
+            self._conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value, updated_at) "
+                "VALUES (?, ?, CURRENT_TIMESTAMP)",
+                (_MODE_SETTING_KEY, mode),
+            )
+            self._conn.commit()
+
     def _restore_last_satellites(self) -> None:
         """Re-select the last satellite of each mode (silently), then announce the active one."""
         if not hasattr(self._conn, "execute"):
@@ -1366,6 +1398,8 @@ class TelemetryTab(QWidget):
             self._on_cw_sat_changed(self._combo_cw_sat.currentIndex())
         if is_hades and self._combo_hades_sat.count():
             self._on_hades_sat_changed(self._combo_hades_sat.currentIndex())
+        if self._persist_mode:
+            self._save_mode(mode)
         # SatNOGS DB upload now covers both paths (Phase 2 added the
         # gr-satellites --kiss_server raw-frame route; see
         # _on_gr_raw_frame()), so the upload cluster stays visible in
