@@ -1385,26 +1385,6 @@ def test_selecting_a_row_shows_its_decoded_fields(
     assert table.item(row, 1).text() == "2026-07-28 17:44:34 UTC"
 
 
-def test_frame_with_an_undefined_telemetry_id_is_flagged_in_red(
-    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: _RecordingUploader())
-    tab = TelemetryTab(conn, _FakeRadioControl())
-    qtbot.addWidget(tab)
-    monkeypatch.setattr(tab, "_callsign_to_norad", lambda src: 68795)
-    tab.set_satellite(68795, "OrigamiSat-2")
-    assert tab._undefined_id_note.isHidden()
-    # ID 0x0A (10): seen on 2026-10-22, not in the satellite's format file
-    undefined = "d4fe0a5c6aa1eed99000000101060000" + "00" * 8
-    tab._on_ax25_frame(bytes.fromhex(_AX25_HEADER + undefined))
-    assert not tab._undefined_id_note.isHidden()
-    assert "10" in tab._undefined_id_note.text()
-    tab._on_ax25_frame(bytes.fromhex(_AX25_HEADER + _ID01_PAYLOAD_TODAY))
-    assert tab._undefined_id_note.isHidden()
-    tab._table.selectRow(0)  # back to the undefined-ID frame
-    assert not tab._undefined_id_note.isHidden()
-
-
 def test_selecting_a_gr_row_shows_its_full_decoded_text(
     qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
