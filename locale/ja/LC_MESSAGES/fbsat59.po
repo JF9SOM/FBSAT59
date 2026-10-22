@@ -7946,3 +7946,20 @@ msgid ""
 msgstr ""
 "さらに{k}件のフレームを雑音（AX.25ヘッダー不正）として無視しました："
 "表示せず、ログにも記録せず、SatNOGSにも送信しません。"
+
+#: src/ui/autotrack_record_dialog.py
+msgid "Lock the satellite being recorded"
+msgstr "録音中の衛星をロックする"
+
+#: src/ui/autotrack_record_dialog.py
+msgid ""
+"While Autotrack is recording, ignore changes to the\n"
+"selected satellite so the recording target cannot be\n"
+"changed by accident."
+msgstr ""
+"自動追尾による録音中は、選択中の衛星の変更を無視して、\n"
+"録音対象が誤って切り替わらないようにします。"
+
+#: src/ui/main_window.py
+msgid "Satellite is locked while recording (Autotrack/Record settings)"
+msgstr "録音中は衛星がロックされています（自動追尾・録音の設定）"

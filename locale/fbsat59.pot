@@ -6892,3 +6892,18 @@ msgstr ""
 #, python-brace-format
 msgid "({shown}/{total} hex chars — rest omitted)"
 msgstr ""
+
+#: src/ui/autotrack_record_dialog.py
+msgid "Lock the satellite being recorded"
+msgstr ""
+
+#: src/ui/autotrack_record_dialog.py
+msgid ""
+"While Autotrack is recording, ignore changes to the\n"
+"selected satellite so the recording target cannot be\n"
+"changed by accident."
+msgstr ""
+
+#: src/ui/main_window.py
+msgid "Satellite is locked while recording (Autotrack/Record settings)"
+msgstr ""
