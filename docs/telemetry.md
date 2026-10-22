@@ -1668,3 +1668,23 @@ AX.25（Direwolf）モードの「Speed:」プルダウンと「Decode IQ Record
 - 対象は ASCII（`csv_messages`・`text_message`）の定義を持つ衛星。バイナリのテレメトリーの HEX 貼り付けは未対応。
 - 実ログ（JJ1WTK の 2026-10 の 40 行：LASARsat・KOSTKA・MARINA が混在）が全行解読できることを確認済み。
 
+### 未定義だった部分の追加: KOSTKA/MARINA/GRBBeta の CW ビーコンと GRBBeta の電源バイナリ（2026-10-22）
+
+SatNOGS の ksy と JSON 定義を項目名で突き合わせ、ksy にあって定義に無かった**実データ部分**を追加した
+（残りの差は AX.25 ヘッダー項目＝`text_message` の `header_fields` で表示済み、`*_beacon_raw` などの再構成値、名前だけの違い）。
+**すべて ksy から書いたもので、実フレームでの確認はまだ**（後から確認する前提で先に入れた）。
+
+- **CW ビーコン（`cw_frames.BEACON`）**: KOSTKA（`de ok0kst = u…r…t…p… ar`）・MARINA（`de om9mar = …`）・GRBBeta
+  （`de ha2grb = …`、`ar` は任意）。LASARsat/CroCube と同形式。**GRBBeta の累積稼働時間は ksy が「分」なので ×60 で秒に換算**。
+  これで 3 衛星とも Telemetry タブの「CW TLM」モードの対象になる（`is_cw_telemetry_transmitter` は `cw_frames` を持つ衛星を拾う）。
+- **GRBBeta の PSU バイナリ（`frame_types.PSU`、75 バイト、50 項目）**: CSP ヘッダー（優先度・送信元/宛先・ポート・
+  フラグ。送信元 2・送信元ポート 9 を `match`+`mask` で判別）＋ `psu_hk_t`（リトルエンディアン）。電圧/電流/電力は ksy が
+  u2 で倍率を書いていないため**生値**、温度はケルビン（生値）。**先頭が CSP ヘッダーである前提**のオフセット
+  （AX.25 ヘッダー付きで渡される場合は ksy の `message_type4` と同様に別途判定が要る。実フレーム次第）。
+- **デコーダー**: これまで `frame_types` があると他のスキーマ（`csv_messages` 等）は使われなかった。`frame_types` の
+  どれにも合わないフレームは他のスキーマへ回すように変更（`decode_telemetry`）。GRBBeta は文字列の U/V ビーコンと
+  バイナリの PSU の両方を持つ。
+- **確認の手順（実フレーム受信後）**: GRBBeta の PSU は受信フレームの HEX を見て、先頭 4 バイトが CSP ヘッダー
+  （`b0 & 0x3E == 0x04`、`b2 & 0x3F == 0x09`）か、長さが 75 バイトか、時刻（RTC）が受信時刻と合うかを確かめる。
+  CW は実際の CW デコード出力で正規表現に合うかを確かめる。
+

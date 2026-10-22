@@ -637,10 +637,12 @@ def decode_telemetry(
     records = fmt.get("records") if fmt else None
     frame_types = fmt.get("frame_types") if fmt else None
 
+    frame_type_matched = False
     if isinstance(frame_types, list) and frame_types:
         for ft in frame_types:
             if not _payload_matches(ft.get("match"), payload):
                 continue
+            frame_type_matched = True
             telemetry_id = str(ft["id"])
             telemetry_label = ft.get("label", "")
             for fd in ft["fields"]:
@@ -648,6 +650,10 @@ def decode_telemetry(
                 if result is not None:
                     decoded_fields.append(result)
             break
+    # A frame no ``frame_types`` entry claims falls through to the other schemas, so a satellite
+    # can have binary frame types *and* ASCII ``csv_messages`` (e.g. GRBBeta).
+    if frame_type_matched:
+        pass
     elif isinstance(records, dict):
         record_ids, decoded_fields = _decode_records(records, payload)
         if record_ids:

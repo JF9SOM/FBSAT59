@@ -6,7 +6,7 @@
   "ax25_pid": "0xF0",
   "reference": "https://gitlab.com/librespacefoundation/satnogs/satnogs-decoders/-/blob/master/ksy/kostka.ksy",
   "document": "SatNOGS decoders \"kostka.ksy\" (Kaitai Struct). Fields checked against 2026-10 beacons in JJ1WTK's satellite log (https://www.jj1wtk.jp/).",
-  "note": "KOSTKA's beacons carry no message identifier except MRG (\"U,\"): OBC, SOL and EPS are told apart by their number of comma-separated fields (match_count 9 / 10 / 15). Units of the SOL temperatures (°C) and voltages (V) are inferred from the ksy names and the values; temperatures and currents of MRG/EPS are raw values whose unit is not documented.",
+  "note": "KOSTKA's beacons carry no message identifier except MRG (\"U,\"): OBC, SOL and EPS are told apart by their number of comma-separated fields (match_count 9 / 10 / 15). Units of the SOL temperatures (°C) and voltages (V) are inferred from the ksy names and the values; temperatures and currents of MRG/EPS are raw values whose unit is not documented. The CW beacon (de ok0kst = u..r..t..p.. ar) is defined from kostka.ksy but has not been checked against a received CW frame.",
   "csv_messages": {
     "OBC": {
       "label": "OBC（搭載コンピュータ）",
@@ -339,5 +339,35 @@
     "label": "MSG（フリーテキスト/デジピートメッセージ）",
     "field_label": "メッセージ",
     "header_fields": true
+  },
+  "cw_frames": {
+    "BEACON": {
+      "label": "CWビーコン（de ok0kst = u…r…t…p…）",
+      "id_prefix": "DEOK0KST=",
+      "text_regex": "U(\\d{1,9})R(\\d{1,9})T(-?\\d{1,9})P(-?\\d{1,9})AR",
+      "near_regex": "U[0-9O.]*R[0-9O.-]*T[0-9O.-]*P[0-9O.-]*(AR)?",
+      "fields": [
+        {
+          "name": "uptime_total",
+          "group": 1,
+          "label": "累積稼働時間(生値)"
+        },
+        {
+          "name": "reset_number",
+          "group": 2,
+          "label": "リセット回数"
+        },
+        {
+          "name": "temp_mcu",
+          "group": 3,
+          "label": "MCU温度(生値)"
+        },
+        {
+          "name": "temp_pa",
+          "group": 4,
+          "label": "PA温度(生値)"
+        }
+      ]
+    }
   }
 }

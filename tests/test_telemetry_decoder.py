@@ -117,7 +117,7 @@ def test_raw_summary_no_truncation_note_for_short_payload() -> None:
 def test_get_telemetry_id_defs_marina() -> None:
     id_defs = get_telemetry_id_defs(69920)
     assert id_defs is not None
-    assert set(id_defs.keys()) == {"MGS", "OBC", "PSU", "SOL", "CLS", "LOD", "U", "V"}
+    assert set(id_defs.keys()) == {"MGS", "OBC", "PSU", "SOL", "CLS", "LOD", "U", "V", "BEACON"}
 
 
 def test_decode_marina_obc_message() -> None:
@@ -651,3 +651,78 @@ def test_grbbeta_uhf_beacon_uses_the_u_layout() -> None:
     by_name = {f.name: f for f in tf.fields}
     assert by_name["uhf_digipeater_cnt"].scaled_value == 806
     assert by_name["uhf_last_digipeater"].unit == "DL7NDR"
+
+
+# -- GRBBeta binary PSU housekeeping (CSP) and the CW beacons of KOSTKA / MARINA / GRBBeta --
+# These follow the SatNOGS ksy files; no real frame has been checked yet.
+
+
+def _grbbeta_psu_frame() -> bytes:
+    """A 75-byte CSP frame (source 2, source port 9) with known values, per psu_hk_t."""
+    import struct
+
+    header = (2 << 30) | (2 << 25) | (1 << 20) | (10 << 14) | (9 << 8) | 0x01
+    body = struct.pack(
+        "<IIIIHII" + "H" * 9 + "BBB" + "H" * 7 + "HHHHH",
+        1_792_000_000, 1000, 2000, 3, 4, 5, 6,
+        3300, 3301, 3302, 100, 101, 102, 5, 6, 7,
+        0b101, 0b0100101, 2,
+        11, 12, 13, 14, 15, 16, 17,
+        8100, 20, 30, 293, 295,
+    )  # fmt: skip
+    return struct.pack(">I", header) + body
+
+
+def test_grbbeta_binary_psu_frame_is_decoded_by_its_csp_header() -> None:
+    payload = _grbbeta_psu_frame()
+    assert len(payload) == 75
+    tf = decode_telemetry("HA2GRB", payload, 60237)
+    assert tf.telemetry_id == "PSU"
+    by_name = {f.name: f for f in tf.fields}
+    assert by_name["csp_source"].scaled_value == 2
+    assert by_name["csp_src_port"].scaled_value == 9
+    assert by_name["csp_dst_port"].scaled_value == 10
+    assert by_name["csp_crc"].scaled_value == 1
+    assert by_name["psu_utc_time_stamp_rtc"].unit.endswith("UTC")
+    assert by_name["psu_uptime_tot"].scaled_value == 2000
+    assert by_name["psu_pv_in_volt3"].scaled_value == 3302
+    assert by_name["psu_pv_in_power1"].scaled_value == 5
+    assert [by_name[f"psu_mppt_ch{i}_state"].scaled_value for i in (1, 2, 3)] == [1, 0, 1]
+    assert by_name["psu_channel_0_status"].scaled_value == 1
+    assert by_name["psu_channel_1_status"].scaled_value == 0
+    assert by_name["psu_channel_5_status"].scaled_value == 1
+    assert by_name["psu_system_state"].scaled_value == 2
+    assert by_name["psu_out_sys_bat_unreg_amp"].scaled_value == 17
+    assert by_name["psu_bat_volt"].scaled_value == 8100
+    assert by_name["psu_system_temp_kelvin"].scaled_value == 295
+    assert len(tf.fields) == 50
+
+
+def test_grbbeta_ascii_beacons_still_decode_next_to_the_binary_frame_type() -> None:
+    tf = decode_telemetry("HA2GRB", b"V,100,200,3,4,5,6,7,8,JA1HCB,10,11,12,13", 60237)
+    assert tf.telemetry_id == "V"
+    assert {f.name: f for f in tf.fields}["vhf_last_digipeater"].unit == "JA1HCB"
+
+
+def test_grbbeta_psu_tab_is_offered_next_to_the_ascii_ones() -> None:
+    defs = get_telemetry_id_defs(60237)
+    assert defs is not None
+    assert {"U", "V", "PSU", "MSG", "BEACON"} <= set(defs)
+
+
+def test_cw_beacons_of_kostka_marina_and_grbbeta_decode() -> None:
+    from comms.telemetry.cw_frames import decode_cw_frame
+
+    for norad, text in (
+        (69935, "DEOK0KST=U1234R2T295P301AR"),
+        (69920, "DEOM9MAR=U1234R2T295P301AR"),
+    ):
+        result = decode_cw_frame(norad, text)
+        assert result is not None
+        by_name = {f.name: f for f in result.fields}
+        assert by_name["uptime_total"].scaled_value == 1234
+        assert by_name["reset_number"].scaled_value == 2
+        assert by_name["temp_pa"].scaled_value == 301
+    grb = decode_cw_frame(60237, "DEHA2GRB=U10R2T295P301")  # no "ar" needed; uptime is in minutes
+    assert grb is not None
+    assert {f.name: f for f in grb.fields}["uptime_total"].scaled_value == 600

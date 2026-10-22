@@ -5,8 +5,8 @@
   "modulation": "GFSK9k6",
   "ax25_pid": "0xF0",
   "reference": "https://gitlab.com/librespacefoundation/satnogs/satnogs-decoders/-/blob/master/ksy/grbbeta.ksy",
-  "document": "SatNOGS decoders \"grbbeta.ksy\" (Kaitai Struct); https://grbbeta.tuke.sk/. The U (UHF) and V (VHF) beacons have the same 14-field layout as LASARsat's.",
-  "note": "Only the ASCII U/V radio beacons and the free-text/digipeated messages are decoded. The binary PSU housekeeping frames (CSP) and the CW beacon in grbbeta.ksy are not defined here.",
+  "document": "SatNOGS decoders \"grbbeta.ksy\" (Kaitai Struct); https://grbbeta.tuke.sk/. The U (UHF) and V (VHF) beacons have the same 14-field layout as LASARsat's. The PSU frame offsets are the field order of psu_hk_t in grbbeta.ksy (little-endian).",
+  "note": "Only the ASCII U/V radio beacons, the free-text/digipeated messages, the CW beacon and the binary PSU housekeeping frame (CSP header: source 2, source port 9; 75 bytes) are defined, from grbbeta.ksy. The PSU frame and the CW beacon have not been checked against a received frame; the PSU values are raw (the ksy gives volts/amperes/watts as u2 without a scale) and the byte offset assumes the payload handed to the decoder starts at the CSP header.",
   "csv_messages": {
     "U": {
       "label": "U（UHFトランシーバー）",
@@ -184,5 +184,423 @@
     "label": "MSG（フリーテキスト/デジピートメッセージ）",
     "field_label": "メッセージ",
     "header_fields": true
-  }
+  },
+  "cw_frames": {
+    "BEACON": {
+      "label": "CWビーコン（de ha2grb = u…r…t…p…）",
+      "id_prefix": "DEHA2GRB=",
+      "text_regex": "U(\\d{1,9})R(\\d{1,9})T(-?\\d{1,9})P(-?\\d{1,9})(?:AR)?",
+      "near_regex": "U[0-9O.]*R[0-9O.-]*T[0-9O.-]*P[0-9O.-]*(AR)?",
+      "fields": [
+        {
+          "name": "uptime_total",
+          "group": 1,
+          "label": "累積稼働時間（分を秒に換算）",
+          "scale": 60,
+          "unit": "s"
+        },
+        {
+          "name": "reset_number",
+          "group": 2,
+          "label": "無線機ブート回数"
+        },
+        {
+          "name": "temp_mcu",
+          "group": 3,
+          "label": "無線MCU温度(生値)"
+        },
+        {
+          "name": "temp_pa",
+          "group": 4,
+          "label": "RFパワーアンプ温度(生値)"
+        }
+      ]
+    }
+  },
+  "frame_types": [
+    {
+      "id": "PSU",
+      "label": "PSU（電源系・CSPバイナリ）",
+      "match": {
+        "offset": 0,
+        "hex": "040009",
+        "mask": "3E003F"
+      },
+      "fields": [
+        {
+          "name": "csp_priority",
+          "offset": 0,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "CSP 優先度",
+          "mask": 3221225472
+        },
+        {
+          "name": "csp_source",
+          "offset": 0,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "CSP 送信元アドレス",
+          "mask": 1040187392
+        },
+        {
+          "name": "csp_destination",
+          "offset": 0,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "CSP 宛先アドレス",
+          "mask": 32505856
+        },
+        {
+          "name": "csp_dst_port",
+          "offset": 0,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "CSP 宛先ポート",
+          "mask": 1032192
+        },
+        {
+          "name": "csp_src_port",
+          "offset": 0,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "CSP 送信元ポート",
+          "mask": 16128
+        },
+        {
+          "name": "csp_hmac",
+          "offset": 0,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "CSP HMAC",
+          "mask": 8
+        },
+        {
+          "name": "csp_xtea",
+          "offset": 0,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "CSP XTEA",
+          "mask": 4
+        },
+        {
+          "name": "csp_rdp",
+          "offset": 0,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "CSP RDP",
+          "mask": 2
+        },
+        {
+          "name": "csp_crc",
+          "offset": 0,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "CSP CRC",
+          "mask": 1
+        },
+        {
+          "name": "psu_utc_time_stamp_rtc",
+          "offset": 4,
+          "length": 4,
+          "type": "unix_time_le",
+          "label": "PSU 時刻（RTC・UTC）"
+        },
+        {
+          "name": "psu_uptime_rst",
+          "offset": 8,
+          "length": 4,
+          "type": "uint32_le",
+          "label": "PSU 稼働時間（今回起動から）",
+          "unit": "s"
+        },
+        {
+          "name": "psu_uptime_tot",
+          "offset": 12,
+          "length": 4,
+          "type": "uint32_le",
+          "label": "PSU 累積稼働時間",
+          "unit": "s"
+        },
+        {
+          "name": "psu_reset_cnt",
+          "offset": 16,
+          "length": 4,
+          "type": "uint32_le",
+          "label": "PSU リセット回数"
+        },
+        {
+          "name": "psu_last_rst_src",
+          "offset": 20,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "最後のリセット要因"
+        },
+        {
+          "name": "psu_packets_recvd_cnt",
+          "offset": 22,
+          "length": 4,
+          "type": "uint32_le",
+          "label": "受信パケット数"
+        },
+        {
+          "name": "psu_psu_error_count",
+          "offset": 26,
+          "length": 4,
+          "type": "uint32_le",
+          "label": "PSU エラー回数"
+        },
+        {
+          "name": "psu_pv_in_volt1",
+          "offset": 30,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "太陽電池入力1 電圧(生値)"
+        },
+        {
+          "name": "psu_pv_in_volt2",
+          "offset": 32,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "太陽電池入力2 電圧(生値)"
+        },
+        {
+          "name": "psu_pv_in_volt3",
+          "offset": 34,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "太陽電池入力3 電圧(生値)"
+        },
+        {
+          "name": "psu_pv_in_amp1",
+          "offset": 36,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "太陽電池入力1 電流(生値)"
+        },
+        {
+          "name": "psu_pv_in_amp2",
+          "offset": 38,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "太陽電池入力2 電流(生値)"
+        },
+        {
+          "name": "psu_pv_in_amp3",
+          "offset": 40,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "太陽電池入力3 電流(生値)"
+        },
+        {
+          "name": "psu_pv_in_power1",
+          "offset": 42,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "太陽電池入力1 電力(生値)"
+        },
+        {
+          "name": "psu_pv_in_power2",
+          "offset": 44,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "太陽電池入力2 電力(生値)"
+        },
+        {
+          "name": "psu_pv_in_power3",
+          "offset": 46,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "太陽電池入力3 電力(生値)"
+        },
+        {
+          "name": "psu_ppt_mode",
+          "offset": 48,
+          "length": 1,
+          "type": "uint8",
+          "label": "PPTモード（ビットマスク）"
+        },
+        {
+          "name": "psu_mppt_ch1_state",
+          "offset": 48,
+          "length": 1,
+          "type": "uint8",
+          "label": "MPPT1 状態(0=OFF,1=ON)",
+          "mask": 1
+        },
+        {
+          "name": "psu_mppt_ch2_state",
+          "offset": 48,
+          "length": 1,
+          "type": "uint8",
+          "label": "MPPT2 状態(0=OFF,1=ON)",
+          "mask": 2
+        },
+        {
+          "name": "psu_mppt_ch3_state",
+          "offset": 48,
+          "length": 1,
+          "type": "uint8",
+          "label": "MPPT3 状態(0=OFF,1=ON)",
+          "mask": 4
+        },
+        {
+          "name": "psu_channel_status",
+          "offset": 49,
+          "length": 1,
+          "type": "uint8",
+          "label": "チャンネル状態（ビットマスク）"
+        },
+        {
+          "name": "psu_channel_0_status",
+          "offset": 49,
+          "length": 1,
+          "type": "uint8",
+          "label": "チャンネル0 状態(0=OFF,1=ON)",
+          "mask": 1
+        },
+        {
+          "name": "psu_channel_1_status",
+          "offset": 49,
+          "length": 1,
+          "type": "uint8",
+          "label": "チャンネル1 状態(0=OFF,1=ON)",
+          "mask": 2
+        },
+        {
+          "name": "psu_channel_2_status",
+          "offset": 49,
+          "length": 1,
+          "type": "uint8",
+          "label": "チャンネル2 状態(0=OFF,1=ON)",
+          "mask": 4
+        },
+        {
+          "name": "psu_channel_3_status",
+          "offset": 49,
+          "length": 1,
+          "type": "uint8",
+          "label": "チャンネル3 状態(0=OFF,1=ON)",
+          "mask": 8
+        },
+        {
+          "name": "psu_channel_4_status",
+          "offset": 49,
+          "length": 1,
+          "type": "uint8",
+          "label": "チャンネル4 状態(0=OFF,1=ON)",
+          "mask": 16
+        },
+        {
+          "name": "psu_channel_5_status",
+          "offset": 49,
+          "length": 1,
+          "type": "uint8",
+          "label": "チャンネル5 状態(0=OFF,1=ON)",
+          "mask": 32
+        },
+        {
+          "name": "psu_channel_6_status",
+          "offset": 49,
+          "length": 1,
+          "type": "uint8",
+          "label": "チャンネル6 状態(0=OFF,1=ON)",
+          "mask": 64
+        },
+        {
+          "name": "psu_system_state",
+          "offset": 50,
+          "length": 1,
+          "type": "uint8",
+          "label": "電源系の状態"
+        },
+        {
+          "name": "psu_out_sys_ch_amp1",
+          "offset": 51,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "出力チャンネル1 電流(生値)"
+        },
+        {
+          "name": "psu_out_sys_ch_amp2",
+          "offset": 53,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "出力チャンネル2 電流(生値)"
+        },
+        {
+          "name": "psu_out_sys_ch_amp3",
+          "offset": 55,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "出力チャンネル3 電流(生値)"
+        },
+        {
+          "name": "psu_out_sys_ch_amp4",
+          "offset": 57,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "出力チャンネル4 電流(生値)"
+        },
+        {
+          "name": "psu_out_sys_ch_amp5",
+          "offset": 59,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "出力チャンネル5 電流(生値)"
+        },
+        {
+          "name": "psu_out_sys_ch_amp6",
+          "offset": 61,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "出力チャンネル6 電流(生値)"
+        },
+        {
+          "name": "psu_out_sys_bat_unreg_amp",
+          "offset": 63,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "バッテリー直結(非安定化) 出力電流(生値)"
+        },
+        {
+          "name": "psu_bat_volt",
+          "offset": 65,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "バッテリー電圧(生値)"
+        },
+        {
+          "name": "psu_bat_amp_charge",
+          "offset": 67,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "バッテリー充電電流(生値)"
+        },
+        {
+          "name": "psu_bat_amp_discharge",
+          "offset": 69,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "バッテリー放電電流(生値)"
+        },
+        {
+          "name": "psu_bat_temp_kelvin",
+          "offset": 71,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "バッテリー温度(生値)",
+          "unit": "K"
+        },
+        {
+          "name": "psu_system_temp_kelvin",
+          "offset": 73,
+          "length": 2,
+          "type": "uint16_le",
+          "label": "システム温度(生値)",
+          "unit": "K"
+        }
+      ]
+    }
+  ]
 }
