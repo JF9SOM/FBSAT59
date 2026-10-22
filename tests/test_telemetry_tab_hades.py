@@ -211,6 +211,28 @@ def test_repaired_frame_is_dimmed_without_a_label(qtbot: QtBot, conn: sqlite3.Co
     assert tab._frame_count == 0
 
 
+def test_load_saved_drops_the_old_repaired_label(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    import json
+
+    tab = _tab(qtbot, conn)
+    tab._hades_norad = UNNE1B
+    tab._on_hades_frame(_frame(repaired=True), 0.0)
+    for old in ("repaired, not verified", "修復済み・未検証"):
+        row = conn.execute(
+            "SELECT id, parsed_json FROM telemetry_log WHERE kind = 'hades'"
+        ).fetchone()
+        saved = json.loads(row["parsed_json"])
+        saved["text"] = saved["text"].replace("]", f"] ({old})", 1)  # as an older version saved it
+        conn.execute(
+            "UPDATE telemetry_log SET parsed_json = ? WHERE id = ?", (json.dumps(saved), row["id"])
+        )
+        tab._on_clear()
+        _select_hades_mode(tab)
+        tab._on_load_saved()
+        text = tab._table.item(0, 3).text()
+        assert old not in text and text.startswith("[")
+
+
 def test_load_saved_shows_the_logged_frames_again(qtbot: QtBot, conn: sqlite3.Connection) -> None:
     tab = _tab(qtbot, conn)
     tab._hades_norad = UNNE1B

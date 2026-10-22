@@ -230,6 +230,9 @@ def parse_gr_packet(text: str) -> tuple[list[str], bytes | None]:
     return labels, info
 
 
+# Rows logged before 2026-10-22 carry this label in their saved text (in the language of the
+# time); it is dropped when they are shown again.
+_HADES_REPAIRED_LABEL = re.compile(r" \((?:repaired, not verified|修復済み・未検証)\)")
 _AX25_ADDRESS = re.compile(r"[A-Z0-9]{1,6}")
 
 
@@ -2582,7 +2585,7 @@ class TelemetryTab(QWidget):
         self._append_row(
             callsign="HADES",
             sat_name=sat_name or "—",
-            data=str(saved.get("text", "")),
+            data=_HADES_REPAIRED_LABEL.sub("", str(saved.get("text", ""))),
             norad=norad,
             ts=when,
             dim=repaired,
