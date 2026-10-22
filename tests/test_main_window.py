@@ -5756,7 +5756,7 @@ class TestSdrPlaybackConnect:
 
         adapter = SdrRigAdapter()
 
-        def _fake_connect_from_file(wav_path) -> bool:
+        def _fake_connect_from_file(wav_path, start_paused: bool = False) -> bool:
             adapter.disconnect()
             adapter._sdr_device = MagicMock()
             adapter._is_replay = True
@@ -5838,7 +5838,7 @@ class TestSdrPlaybackBorrowsSlot:
     def _fake_playback(monkeypatch) -> None:
         from rig.controller import RigState, SdrRigAdapter
 
-        def _connect_from_file(self, wav_path) -> bool:
+        def _connect_from_file(self, wav_path, start_paused: bool = False) -> bool:
             self._sdr_device = MagicMock()
             self._is_replay = True
             self._state = RigState.CONNECTED
@@ -5928,7 +5928,9 @@ class TestSdrPlaybackBorrowsSlot:
 
         from rig.controller import SdrRigAdapter
 
-        monkeypatch.setattr(SdrRigAdapter, "connect_from_file", lambda self, wav_path: False)
+        monkeypatch.setattr(
+            SdrRigAdapter, "connect_from_file", lambda self, wav_path, start_paused=False: False
+        )
         w = self._make_window(qtbot, db, monkeypatch)
         rig2 = self._hamlib_rig()
         w._rig_controller = self._hamlib_rig()

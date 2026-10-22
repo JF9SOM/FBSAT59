@@ -239,7 +239,7 @@ class TestOpenPlayStop:
             "ui.sdr_control_widget.QFileDialog.getOpenFileName",
             lambda *a, **k: ("/rec/57172_UmKA-1_20261011T121721Z.iq.wav", ""),
         )
-        monkeypatch.setattr(w, "_show_overview", lambda _path: None)
+        monkeypatch.setattr(w, "_show_overview", lambda _path, show_play_hint=False: None)
         with qtbot.waitSignal(w.play_recording_requested) as blocker:
             w.open_recording()
         assert blocker.args == ["/rec/57172_UmKA-1_20261011T121721Z.iq.wav"]
@@ -474,7 +474,9 @@ class TestOverviewClickOffset:
         made: list[Any] = []
 
         class _Dlg:
-            def __init__(self, _path: Path, _parent: Any, mode: int) -> None:
+            def __init__(
+                self, _path: Path, _parent: Any, mode: int, _show_play_hint: bool = False
+            ) -> None:
                 made.append(mode)
                 self.seek_requested = MagicMock()
                 self.click_mode_changed = MagicMock()
