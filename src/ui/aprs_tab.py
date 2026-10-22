@@ -118,6 +118,9 @@ class AprsTab(QWidget):
         self._rig_label = ""
         self._sdr_label = ""
 
+        # APRS-IS monitor window (created on first use, closed with this tab)
+        self._is_window: Any = None
+
         # Callsigns we have sent a message to this session (base call, no SSID).
         # A QSO is logged only when the remote station replies with a real message.
         self._pending_qso: set[str] = set()
@@ -411,6 +414,12 @@ class AprsTab(QWidget):
         self._qso_count_label.setStyleSheet("color: #aaa;")
         footer.addWidget(self._qso_count_label)
         footer.addStretch()
+        self._is_monitor_btn = QPushButton(_("APRS-IS Monitor"))
+        self._is_monitor_btn.setToolTip(
+            _("Open a window listing satellite APRS packets other stations reported to APRS-IS")
+        )
+        self._is_monitor_btn.clicked.connect(self._on_open_is_monitor)
+        footer.addWidget(self._is_monitor_btn)
         root.addLayout(footer)
 
         self._refresh_qso_count()
@@ -907,9 +916,22 @@ class AprsTab(QWidget):
         if pipeline is not None:
             self._engine.sync_sdr_baud(pipeline, modem)
 
+    def _on_open_is_monitor(self) -> None:
+        """Open (or raise) the APRS-IS monitor window."""
+        from ui.aprs_is_window import AprsIsWindow
+
+        if self._is_window is None:
+            self._is_window = AprsIsWindow(self._callsign_edit.text())
+        self._is_window.show()
+        self._is_window.raise_()
+        self._is_window.activateWindow()
+
     def closeEvent(self, event: Any) -> None:
         """Stop engine, clear map pins, stop beacon timer, and save settings."""
         self._pos_timer.stop()
+        if self._is_window is not None:
+            self._is_window.close()
+            self._is_window = None
         # AprsEngine is a process-wide singleton (outlives this tab), so
         # explicitly disconnect rather than relying on Qt's auto-disconnect
         # on receiver destruction — otherwise a still-running engine could

@@ -7963,3 +7963,59 @@ msgstr ""
 #: src/ui/main_window.py
 msgid "Satellite is locked while recording (Autotrack/Record settings)"
 msgstr "録音中は衛星がロックされています（自動追尾・録音の設定）"
+
+#: src/ui/aprs_is_window.py
+msgid "APRS-IS Monitor"
+msgstr "APRS-IS モニター"
+
+#: src/ui/aprs_is_window.py
+msgid "Open a window listing satellite APRS packets other stations reported to APRS-IS"
+msgstr "他局が APRS-IS に報告した衛星の APRS パケット一覧を別ウィンドウで開きます"
+
+#: src/ui/aprs_is_window.py
+msgid "Server:"
+msgstr "サーバー:"
+
+#: src/ui/aprs_is_window.py
+msgid "Connect"
+msgstr "接続"
+
+#: src/ui/aprs_is_window.py
+msgid "Disconnect"
+msgstr "切断"
+
+#: src/ui/aprs_is_window.py
+msgid "Extra APRS-IS filter:"
+msgstr "追加の APRS-IS フィルター:"
+
+#: src/ui/aprs_is_window.py
+msgid "callsign or text"
+msgstr "コールサインまたは文字列"
+
+#: src/ui/aprs_is_window.py
+msgid "Path"
+msgstr "パス"
+
+#: src/ui/aprs_is_window.py
+msgid "Info"
+msgstr "内容"
+
+#: src/ui/aprs_is_window.py
+msgid "Select at least one satellite or enter a filter"
+msgstr "衛星を1つ以上選ぶか、フィルターを入力してください"
+
+#: src/ui/aprs_is_window.py
+msgid "Connected — {server}"
+msgstr "接続中 — {server}"
+
+#: src/ui/aprs_is_window.py
+msgid "Connecting…"
+msgstr "接続しています…"
+
+#: src/ui/aprs_is_window.py
+msgid "Connection failed: {err}"
+msgstr "接続に失敗しました: {err}"
+
+#: src/ui/aprs_is_window.py
+msgid "{n} packets"
+msgstr "{n} パケット"
