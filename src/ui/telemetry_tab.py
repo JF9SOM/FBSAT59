@@ -2159,8 +2159,6 @@ class TelemetryTab(QWidget):
     def _hades_row_text(frame: Any) -> str:
         """The Data column of a HADES FSK row: type, uptime, carrier offset, then the bytes."""
         head = f"[{frame.type_name}]"
-        if frame.repaired:
-            head += " (" + _("repaired, not verified") + ")"
         uptime = frame.uptime_s
         uptime_label = _("uptime")  # not inside the f-string: xgettext cannot see it there
         extra = f"  {uptime_label} {uptime} s" if uptime is not None else ""

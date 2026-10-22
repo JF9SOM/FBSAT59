@@ -200,12 +200,12 @@ def test_frame_is_ignored_when_not_running(qtbot: QtBot, conn: sqlite3.Connectio
     assert tab._table.rowCount() == 0
 
 
-def test_repaired_frame_is_marked_and_dimmed(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+def test_repaired_frame_is_dimmed_without_a_label(qtbot: QtBot, conn: sqlite3.Connection) -> None:
     tab = _tab(qtbot, conn)
     tab._hades_norad = UNNE1B
     tab._on_hades_frame(_frame(repaired=True), 0.0)
     item = tab._table.item(0, 3)
-    assert "repaired" in item.text()
+    assert "repaired" not in item.text() and "修復" not in item.text()
     assert item.data(telemetry_tab_mod._DIM_ROLE) is True
     # a repaired frame is not counted as received
     assert tab._frame_count == 0
