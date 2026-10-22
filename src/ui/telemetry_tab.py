@@ -757,6 +757,12 @@ class TelemetryTab(QWidget):
         decode_page_layout.setContentsMargins(0, 0, 0, 0)
         self._decode_id_tabs = QTabWidget()
         decode_page_layout.addWidget(self._decode_id_tabs)
+        # Shown (red) under the ID sub-tabs when the newest frame carries a telemetry ID
+        # the satellite's format file does not define.
+        self._undefined_id_note = QLabel()
+        self._undefined_id_note.setStyleSheet("color: #e74c3c; font-weight: bold;")
+        self._undefined_id_note.setVisible(False)
+        decode_page_layout.addWidget(self._undefined_id_note)
         self._log_tabs.addTab(self._decode_page, _("Decoded Fields"))
         # "ASCII Decode": paste lines copied from another station's log and list every field.
         # Paste only -- nothing typed here is logged or uploaded.
@@ -3136,6 +3142,7 @@ class TelemetryTab(QWidget):
         "Decoded Fields" tab disabled.
         """
         self._decode_id_tabs.clear()
+        self._undefined_id_note.setVisible(False)
         self._decode_tables = {}
         self._decode_field_rows = {}
         self._decode_tabs_norad = norad
@@ -3211,6 +3218,8 @@ class TelemetryTab(QWidget):
         tf = item.data(_DECODED_ROLE)
         if not isinstance(tf, TelemetryFrame):
             tf = self._decode_ax25_row(item.data(_AX25_ROLE), rows[0].row())
+        if tf is not None:
+            self._update_undefined_id_note(tf)
         if tf is None or not tf.has_fields or tf.norad != self._decode_tabs_norad:
             return
         self._update_decode_tab(tf)
@@ -3250,6 +3259,7 @@ class TelemetryTab(QWidget):
         called from set_satellite(), so this tracks the main satellite list
         selection, not necessarily the AFSK combo).
         """
+        self._update_undefined_id_note(tf)
         if tf.telemetry_id is None or not tf.has_fields or tf.norad != self._decode_tabs_norad:
             return
         # A frame of several records feeds one sub-tab per record (field names are unique).
@@ -3258,6 +3268,20 @@ class TelemetryTab(QWidget):
             row_map = self._decode_field_rows.get(id_str)
             if table is not None and row_map is not None:
                 self._fill_decode_table(table, row_map, tf)
+
+    def _update_undefined_id_note(self, tf: TelemetryFrame) -> None:
+        """Flag (in red) a frame whose telemetry ID has no definition in the format file."""
+        undefined = (
+            tf.telemetry_id is not None
+            and not tf.has_fields
+            and tf.norad is not None
+            and tf.norad == self._decode_tabs_norad
+            and bool(self._decode_tables)
+            and str(tf.telemetry_id) not in self._decode_tables
+        )
+        if undefined:
+            self._undefined_id_note.setText(_("ID %(id)s: no definition") % {"id": tf.telemetry_id})
+        self._undefined_id_note.setVisible(undefined)
 
     @staticmethod
     def _fill_decode_table(
