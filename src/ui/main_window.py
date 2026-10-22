@@ -1050,6 +1050,8 @@ class MainWindow(QMainWindow):
         # _load_rig_settings(): an unchanged config keeps the live adapter).
         self._sdr_adapter_cfg: dict[int, dict[str, Any] | None] = {1: None, 2: None}
         self._autotrack_meteor_record: bool = False
+        # True: ignore satellite-list selection changes while Autotrack is recording.
+        self._autotrack_lock_recording_sat: bool = False
         # False when Autotrack must leave the rotator alone (omnidirectional
         # antenna, no rotator): no auto-connect at AOS, no disconnect at LOS.
         self._autotrack_use_rotator: bool = True
@@ -1087,6 +1089,7 @@ class MainWindow(QMainWindow):
         self._at_dialog.iq_record_changed.connect(self._on_autotrack_iq_record_changed)
         self._at_dialog.meteor_record_changed.connect(self._on_autotrack_meteor_record_changed)
         self._at_dialog.use_rotator_changed.connect(self._on_autotrack_use_rotator_changed)
+        self._at_dialog.lock_recording_sat_changed.connect(self._on_autotrack_lock_sat_changed)
         self._at_dialog.lists_modified.connect(self._on_autotrack_lists_modified)
         # The dialog restores its IQ/METEOR checkboxes from app_settings
         # in its own __init__() (before the *_changed signals above were
@@ -1094,6 +1097,7 @@ class MainWindow(QMainWindow):
         # rather than relying on a signal that already fired unheard.
         self._autotrack_iq_record = self._at_dialog.is_iq_record_enabled()
         self._autotrack_meteor_record = self._at_dialog.is_meteor_record_enabled()
+        self._autotrack_lock_recording_sat = self._at_dialog.is_lock_recording_sat_enabled()
         self._on_autotrack_use_rotator_changed(self._at_dialog.is_use_rotator_enabled())
         # Likewise, the dialog's combo already selected a list in its own
         # __init__() (if any lists exist) before autotrack_list_changed was
@@ -2951,6 +2955,19 @@ class MainWindow(QMainWindow):
 
     def _on_autotrack_iq_record_changed(self, enabled: bool) -> None:
         self._autotrack_iq_record = enabled
+
+    def _on_autotrack_lock_sat_changed(self, enabled: bool) -> None:
+        self._autotrack_lock_recording_sat = enabled
+
+    def _recording_sat_locked_norad(self) -> int | None:
+        """NORAD of the satellite Autotrack is recording, if selection is locked."""
+        if (
+            self._autotrack_lock_recording_sat
+            and self._autotrack_aos_fired
+            and (self._autotrack_iq_record or self._autotrack_meteor_record)
+        ):
+            return self._autotrack_tracking_norad
+        return None
 
     def _on_autotrack_meteor_record_changed(self, enabled: bool) -> None:
         self._autotrack_meteor_record = enabled
@@ -5963,6 +5980,20 @@ class MainWindow(QMainWindow):
 
     def _on_sat_selected(self, row: int) -> None:
         """Callback invoked when the satellite list selection changes."""
+        locked = self._recording_sat_locked_norad()
+        if locked is not None:
+            item = self._sat_list.item(row) if row >= 0 else None
+            if item is None or int(item.data(Qt.ItemDataRole.UserRole)) != locked:
+                # Put the selection back on the satellite being recorded.
+                self._sat_list.blockSignals(True)
+                try:
+                    self._select_satellite_by_norad(locked)
+                finally:
+                    self._sat_list.blockSignals(False)
+                self.statusBar().showMessage(
+                    _("Satellite is locked while recording (Autotrack/Record settings)"), 4000
+                )
+                return
         # Changing (or clearing) the target ends any manual rotator hold —
         # the operator has moved on to a different satellite.
         self._clear_rotator_manual_hold()

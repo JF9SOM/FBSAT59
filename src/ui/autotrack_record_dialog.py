@@ -105,6 +105,7 @@ class AutotrackRecordDialog(QDialog):
     autotrack_list_changed: Signal = Signal(object)
     iq_record_changed: Signal = Signal(bool)
     meteor_record_changed: Signal = Signal(bool)
+    lock_recording_sat_changed: Signal = Signal(bool)
     use_rotator_changed: Signal = Signal(bool)
     lists_modified: Signal = Signal()
 
@@ -206,6 +207,10 @@ class AutotrackRecordDialog(QDialog):
 
     def is_iq_record_enabled(self) -> bool:
         return bool(self._iq_rec_cb.isChecked())
+
+    def is_lock_recording_sat_enabled(self) -> bool:
+        """Return whether the satellite list is frozen while a recording runs."""
+        return bool(self._lock_rec_sat_cb.isChecked())
 
     def set_use_utc(self, use_utc: bool) -> None:
         """Switch the timer start input between UTC and local time display."""
@@ -375,6 +380,17 @@ class AutotrackRecordDialog(QDialog):
         rec_layout.addStretch()
         outer.addWidget(rec_group)
 
+        self._lock_rec_sat_cb = QCheckBox(_("Lock the satellite being recorded"))
+        self._lock_rec_sat_cb.setToolTip(
+            _(
+                "While Autotrack is recording, ignore changes to the\n"
+                "selected satellite so the recording target cannot be\n"
+                "changed by accident."
+            )
+        )
+        self._lock_rec_sat_cb.toggled.connect(self._on_lock_rec_sat_toggled)
+        rec_layout.insertWidget(rec_layout.count() - 1, self._lock_rec_sat_cb)
+
         # ── Autotrack Timer ───────────────────────────────────────────
         timer_group = QGroupBox(_("Autotrack Timer"))
         timer_form = QFormLayout(timer_group)
@@ -522,6 +538,10 @@ class AutotrackRecordDialog(QDialog):
         self.iq_record_changed.emit(checked)
         self._save_recording_settings()
 
+    def _on_lock_rec_sat_toggled(self, checked: bool) -> None:
+        self.lock_recording_sat_changed.emit(checked)
+        self._save_recording_settings()
+
     def _on_meteor_rec_toggled(self, checked: bool) -> None:
         self.meteor_record_changed.emit(checked)
         self._save_recording_settings()
@@ -553,6 +573,7 @@ class AutotrackRecordDialog(QDialog):
         for checkbox, key in (
             (self._iq_rec_cb, "iq_record"),
             (self._meteor_rec_cb, "meteor_record"),
+            (self._lock_rec_sat_cb, "lock_recording_sat"),
         ):
             checkbox.blockSignals(True)
             checkbox.setChecked(bool(settings.get(key, False)))
@@ -562,6 +583,7 @@ class AutotrackRecordDialog(QDialog):
         settings = {
             "iq_record": self._iq_rec_cb.isChecked(),
             "meteor_record": self._meteor_rec_cb.isChecked(),
+            "lock_recording_sat": self._lock_rec_sat_cb.isChecked(),
         }
         self._conn.execute(
             "INSERT OR REPLACE INTO app_settings (key, value, updated_at)"
