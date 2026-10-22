@@ -492,6 +492,9 @@ def test_gr_raw_frame_forwards_to_satnogs_uploader_with_started_norad(
         monkeypatch.setattr(type(tab._gr_backend), "started_norad", property(lambda self: 25544))
         raw = b"\x9c\x86\xaa\x8e\xa6\x62\xe0\xa0\x8a\x82\xa4\x98\x86\xe1\x03\xf0\x00\x11\x22\x33"
         tab._on_gr_raw_frame(raw)
+        assert rec.calls == []  # held until its text shows it is not noise
+        tab._gr_frames[0] = (0.0, tab._gr_frames[0][1])  # its wait is over
+        tab._gr_prune()
         assert len(rec.calls) == 1
         c_conn, c_raw, c_norad, _c_ts = rec.calls[0]
         assert c_conn is conn
@@ -1551,6 +1554,81 @@ def test_gr_fast_decode_frames_carry_an_estimated_time_and_are_uploaded(
     count = conn.execute("SELECT COUNT(*) FROM telemetry_log WHERE kind = 'gr'").fetchone()[0]
     assert count == 1
     tab._fast_job = None
+
+
+_GR_NOISE_TEXT = (
+    "-> Packet from 9k6 FSK downlink\nContainer: \n    header = Container: \n"
+    "        addresses = ListContainer: \n            Container: \n"
+    "                callsign = u'|\\tF\\x1f^W' (total 6)\n"
+    "                ssid = Container: \n                    ch = False\n"
+    "                    ssid = 5\n                    extension = True\n"
+    "        control = 0x01\n        pid = 0xFA\n    info = b'p]' (total 2)\n"
+)
+_GR_GOOD_AX25 = (
+    "-> Packet from 9k6 FSK downlink\nContainer: \n    header = Container: \n"
+    "        addresses = ListContainer: \n"
+    "            Container: \n                callsign = u'CQ' (total 2)\n"
+    "                ssid = Container: \n                    ssid = 0\n"
+    "            Container: \n                callsign = u'9A0CC' (total 5)\n"
+    "                ssid = Container: \n                    ssid = 1\n"
+    "    info = b'OBC,1' (total 5)\n"
+)
+
+
+def test_gr_noise_packet_is_flagged_by_its_header() -> None:
+    assert telemetry_tab_mod.gr_packet_is_bogus(_GR_NOISE_TEXT)
+    assert not telemetry_tab_mod.gr_packet_is_bogus(_GR_GOOD_AX25)
+    assert not telemetry_tab_mod.gr_packet_is_bogus(_GR_PDU_TEXT)  # not an AX.25 printout
+
+
+def _enable_upload(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "UPDATE app_settings SET value = ? WHERE key = 'satnogs_upload_settings'",
+        ('{"enabled": true, "api_key": "k"}',),
+    )
+
+
+def test_gr_noise_text_then_frame_is_not_logged_or_uploaded(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, rec = _gr_tab(qtbot, conn, monkeypatch)
+    _enable_upload(conn)
+    tab._on_gr_telemetry(_GR_NOISE_TEXT)
+    tab._on_gr_raw_frame(bytes.fromhex("12984635"))
+    tab._gr_prune()
+    assert tab._table.rowCount() == 0
+    assert conn.execute("SELECT COUNT(*) FROM telemetry_log").fetchone()[0] == 0
+    assert rec.calls == []
+    assert "Ignored 1" in tab._lbl_status.text()
+
+
+def test_gr_noise_frame_then_text_is_not_logged_or_uploaded(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, rec = _gr_tab(qtbot, conn, monkeypatch)
+    _enable_upload(conn)
+    tab._on_gr_raw_frame(bytes.fromhex("12984635"))
+    assert rec.calls == []
+    tab._on_gr_telemetry(_GR_NOISE_TEXT)
+    assert tab._table.rowCount() == 0 and tab._gr_frames == type(tab._gr_frames)()
+    assert conn.execute("SELECT COUNT(*) FROM telemetry_log").fetchone()[0] == 0
+    assert rec.calls == []
+
+
+def test_gr_sound_frame_is_uploaded_once_its_text_arrives(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, rec = _gr_tab(qtbot, conn, monkeypatch)
+    _enable_upload(conn)
+    tab._on_gr_raw_frame(bytes.fromhex("12984635"))
+    assert rec.calls == []
+    tab._on_gr_telemetry(_GR_GOOD_AX25)
+    assert [c[1] for c in rec.calls] == [bytes.fromhex("12984635")]
+    assert tab._table.rowCount() == 1
+    # and the other order: the text first, the frame is sent at once
+    tab._on_gr_telemetry(_GR_GOOD_AX25.replace("9A0CC", "9A0CD"))
+    tab._on_gr_raw_frame(bytes.fromhex("12984636"))
+    assert [c[1] for c in rec.calls][-1] == bytes.fromhex("12984636")
 
 
 def test_gr_fast_decode_row_is_named_after_the_decoded_satellite(

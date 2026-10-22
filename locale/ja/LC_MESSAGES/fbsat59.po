@@ -7928,3 +7928,12 @@ msgstr "{name} をデコード中…"
 #: src/ui/meteor_tab.py
 msgid "IQ decode finished."
 msgstr "IQデコードが完了しました。"
+
+#: src/ui/telemetry_tab.py
+#, python-format
+msgid ""
+"Ignored %(n)d frame(s) whose AX.25 header is invalid (noise that passed the "
+"CRC): not logged, not sent to SatNOGS."
+msgstr ""
+"AX.25ヘッダーが不正なフレーム（CRCを偶然通過した雑音）を%(n)d件無視しました："
+"ログに記録せず、SatNOGSにも送信しません。"

@@ -229,6 +229,25 @@ def parse_gr_packet(text: str) -> tuple[list[str], bytes | None]:
     return labels, info
 
 
+_AX25_ADDRESS = re.compile(r"[A-Z0-9]{1,6}")
+
+
+def gr_packet_is_bogus(text: str) -> bool:
+    """True when a gr-satellites AX.25 printout cannot be a real frame (noise that passed the CRC).
+
+    A CRC-16 matches by chance about once in 65536 candidates, and noise holds tens of thousands
+    of flag-like patterns, so a long recording of nothing decodes the odd frame whose "addresses"
+    are binary junk. A real AX.25 header has a destination and a source made of A-Z / 0-9.
+    Output without any address (a framing gr-satellites does not parse as AX.25) is not judged.
+    """
+    addresses, _info = parse_gr_packet(text)
+    if not addresses and "callsign = " not in text:
+        return False
+    if len(addresses) < 2:
+        return True
+    return any(not _AX25_ADDRESS.fullmatch(a.split("-")[0]) for a in addresses)
+
+
 # Item role marking a Received Frames row as a rejected candidate (drawn muted).
 _DIM_ROLE = Qt.ItemDataRole.UserRole + 1
 # Row role holding the _Ax25Row of a received AX.25 frame (for "Send selected").
@@ -416,6 +435,9 @@ class TelemetryTab(QWidget):
         # gr-satellites rows still waiting for their frame, and frames for their row (FIFO).
         self._gr_rows: deque[tuple[float, _Ax25Row]] = deque()
         self._gr_frames: deque[tuple[float, _Ax25Row]] = deque()
+        # Times of gr-satellites packets rejected as noise whose frame has not arrived yet.
+        self._gr_bogus_pending: deque[float] = deque()
+        self._gr_bogus_count = 0
         self._selected_name: str = ""
 
         # HADES FSK mode: the demodulator thread, the pipeline it is subscribed to and the
@@ -2564,6 +2586,9 @@ class TelemetryTab(QWidget):
 
     def _on_gr_telemetry(self, text: str) -> None:
         """Parse a gr-satellites stdout block and add it to the table."""
+        if gr_packet_is_bogus(text):
+            self._reject_gr_noise_frame()
+            return
         callsign = ""
         data_lines: list[str] = []
         for line in text.splitlines():
@@ -2604,6 +2629,9 @@ class TelemetryTab(QWidget):
         if self._gr_frames:
             # the packet's frame arrived first
             row_data = self._gr_frames.popleft()[1]
+            self._submit_raw_frame(
+                row_data.raw, row_data.norad, row_data.when, row_data.reliable, row_data
+            )
         else:
             row_data = _Ax25Row(
                 raw=b"",
@@ -2641,10 +2669,25 @@ class TelemetryTab(QWidget):
             norad = self._selected_norad  # a fast decode runs no backend process
         if norad is None:
             return
+        horizon = time.monotonic() - _GR_PAIR_WINDOW_S
+        while self._gr_bogus_pending and self._gr_bogus_pending[0] < horizon:
+            self._gr_bogus_pending.popleft()
+        if self._gr_bogus_pending:
+            self._gr_bogus_pending.popleft()  # the text of this frame was rejected as noise
+            return
         when, reliable = self._frame_time()
         frame = _Ax25Row(raw=raw, when=when, reliable=reliable, norad=norad)
-        self._pair_gr_frame(frame)
-        self._submit_raw_frame(raw, norad, when, reliable, frame)
+        self._gr_prune()
+        if self._gr_rows:
+            # the packet's text came first and was sound: send now
+            self._submit_raw_frame(raw, norad, when, reliable, frame)
+            self._pair_gr_frame(frame)
+        else:
+            # Wait for the text: a noise frame is told apart by its header (see
+            # gr_packet_is_bogus()), so it must not reach SatNOGS before that is known. A frame
+            # whose text never comes is sent when its time is up (_gr_prune()).
+            self._pair_gr_frame(frame)
+            QTimer.singleShot(int(_GR_PAIR_WINDOW_S * 1000) + 250, self._gr_prune)
 
     def _persist_gr_row(
         self,
@@ -2708,12 +2751,31 @@ class TelemetryTab(QWidget):
         if frame.sent:
             mark_uploaded(self._conn, frame.log_id)
 
+    def _reject_gr_noise_frame(self) -> None:
+        """Drop a gr-satellites packet that is noise: no row, no log entry, no SatNOGS upload."""
+        self._gr_prune()
+        if self._gr_frames:
+            self._gr_frames.popleft()
+        else:
+            self._gr_bogus_pending.append(time.monotonic())
+        self._gr_bogus_count += 1
+        self._set_error(
+            "⚠ "
+            + _(
+                "Ignored %(n)d frame(s) whose AX.25 header is invalid (noise that passed the CRC):"
+                " not logged, not sent to SatNOGS."
+            )
+            % {"n": self._gr_bogus_count}
+        )
+
     def _gr_prune(self) -> None:
-        """Drop rows and frames that waited too long for their partner."""
+        """Drop rows that waited too long for their frame; send frames that waited for a row."""
         horizon = time.monotonic() - _GR_PAIR_WINDOW_S
-        for waiting in (self._gr_rows, self._gr_frames):
-            while waiting and waiting[0][0] < horizon:
-                waiting.popleft()
+        while self._gr_rows and self._gr_rows[0][0] < horizon:
+            self._gr_rows.popleft()
+        while self._gr_frames and self._gr_frames[0][0] < horizon:
+            frame = self._gr_frames.popleft()[1]
+            self._submit_raw_frame(frame.raw, frame.norad, frame.when, frame.reliable, frame)
 
     def _pair_gr_frame(self, frame: _Ax25Row) -> None:
         """Give *frame* to the oldest table row still waiting for one, else keep it waiting.
@@ -3748,6 +3810,8 @@ class TelemetryTab(QWidget):
     def _on_clear(self) -> None:
         self._gr_rows.clear()
         self._gr_frames.clear()
+        self._gr_bogus_pending.clear()
+        self._gr_bogus_count = 0
         self._table.setRowCount(0)
         self._frame_count = 0
         self._lbl_count.setText(_("Frames: 0 received"))
