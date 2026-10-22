@@ -555,3 +555,44 @@ def test_crocube_psu_channel_bits_and_free_text() -> None:
     assert by_name["psu_gnd_wdt"] == 7
     text = decode_telemetry("9A0CC", b"Hello CroCube", norad=62394)
     assert text.telemetry_id == "MSG"
+
+
+# -- CANVAS (NORAD 68635): CCSDS space packets in AX.25 (SatNOGS canvas.ksy) --
+
+
+def test_canvas_beacon_is_decoded_by_its_apid() -> None:
+    payload = bytearray(248)
+    payload[0:6] = bytes([0x08, 0x20, 0xC0, 0x05, 0x00, 0xF1])  # APID 0x20, sequence count 5
+    payload[6:10] = (845916710).to_bytes(4, "big")
+    payload[12:16] = bytes([1, 2, 3, 4])  # software version and image id
+    payload[28:32] = (1234).to_bytes(4, "big")  # MET seconds
+    payload[128:130] = (-7).to_bytes(2, "big", signed=True)  # battery current
+    payload[155] = 0b00000010  # payload alive state (low two bits)
+    payload[156] = 0b00010000  # UHF deploy
+    payload[157] = 0b10000001  # boom counter, UHF power
+    payload[244:248] = (0xDEADBEEF).to_bytes(4, "big")
+    tf = decode_telemetry("CANVAS", bytes(payload), norad=68635)
+    assert tf.telemetry_id == "BEACON"
+    by_name = {f.name: f.raw_value for f in tf.fields}
+    assert by_name["application_process_id"] == 0x20
+    assert by_name["sequence_count"] == 5
+    assert by_name["time_stamp_seconds"] == 845916710
+    assert (by_name["bcn_fsw_major_version"], by_name["bcn_fsw_image_id"]) == (1, 4)
+    assert by_name["bcn_des_met_time_sec"] == 1234
+    assert by_name["bcn_battery_curr"] == -7
+    assert by_name["bcn_pld_alive_state"] == 2
+    assert by_name["bcn_eps_uhf_dep"] == 1 and by_name["bcn_eps_boom_cnt"] == 1
+    assert by_name["bcn_eps_uhf_pwr"] == 1 and by_name["bcn_eps_sap1_dep"] == 0
+    assert by_name["checksum"] == 0xDEADBEEF
+
+
+def test_canvas_other_packet_shows_only_its_header() -> None:
+    # The first bytes of a frame received from the real satellite (2026-10-21, APID 5).
+    payload = bytes.fromhex("0805c09f00cd326baa2600050000005e")
+    tf = decode_telemetry("LASP", payload, norad=68635)
+    assert tf.telemetry_id == "CCSDS"
+    by_name = {f.name: f for f in tf.fields}
+    assert by_name["application_process_id"].raw_value == 5
+    assert by_name["sequence_count"].raw_value == 159
+    assert by_name["time_stamp_seconds"].raw_value == 845916710
+    assert by_name["packet_body"].unit == "00 00 00 5e"

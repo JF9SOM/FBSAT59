@@ -1,0 +1,1082 @@
+{
+  "norad": 68635,
+  "name": "CANVAS",
+  "callsign": "CANVAS",
+  "modulation": "GMSK9600",
+  "ax25_pid": "0xF0",
+  "reference": "https://gitlab.com/librespacefoundation/satnogs/satnogs-decoders/-/blob/master/ksy/canvas.ksy",
+  "note": "Layout from the SatNOGS canvas.ksy (offsets are from the start of the AX.25 info field, a CCSDS space packet). The ksy only defines the beacon (APID 0x20); no such frame has been received yet. The only frames seen so far (2026-10-21, header CANVAS-0 <- LASP-0, APID 5) are decoded as header only. Units are not in the ksy: raw values. The ksy's derived board temperatures are (raw >> 4) as a signed 12-bit value.",
+  "frame_types": [
+    {
+      "id": "BEACON",
+      "label": "Beacon (APID 0x20)",
+      "match": {
+        "offset": 0,
+        "hex": "0820",
+        "mask": "FBFF"
+      },
+      "fields": [
+        {
+          "name": "ccsds_version",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 57344,
+          "label": "CCSDS version"
+        },
+        {
+          "name": "packet_type",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 4096,
+          "label": "CCSDS packet type"
+        },
+        {
+          "name": "secondary_header_flag",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 2048,
+          "label": "Secondary header flag"
+        },
+        {
+          "name": "is_stored_data",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 1024,
+          "label": "Stored data (1) / real time (0)"
+        },
+        {
+          "name": "application_process_id",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 1023,
+          "label": "Application process ID (0x20 = beacon)"
+        },
+        {
+          "name": "grouping_flag",
+          "offset": 2,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 49152,
+          "label": "Grouping flag"
+        },
+        {
+          "name": "sequence_count",
+          "offset": 2,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 16383,
+          "label": "Packet sequence count"
+        },
+        {
+          "name": "packet_length",
+          "offset": 4,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Packet data length (bytes - 1)"
+        },
+        {
+          "name": "time_stamp_seconds",
+          "offset": 6,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Time stamp (s)",
+          "unit": "s"
+        },
+        {
+          "name": "sub_seconds",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Sub-seconds"
+        },
+        {
+          "name": "bcn_fsw_major_version",
+          "offset": 12,
+          "length": 1,
+          "type": "uint8",
+          "label": "Software Major Version"
+        },
+        {
+          "name": "bcn_fsw_minor_version",
+          "offset": 13,
+          "length": 1,
+          "type": "uint8",
+          "label": "Software Minor Version"
+        },
+        {
+          "name": "bcn_fsw_patch_version",
+          "offset": 14,
+          "length": 1,
+          "type": "uint8",
+          "label": "Software Patch Version"
+        },
+        {
+          "name": "bcn_fsw_image_id",
+          "offset": 15,
+          "length": 1,
+          "type": "uint8",
+          "label": "Software Image ID"
+        },
+        {
+          "name": "bcn_seq_state_auto",
+          "offset": 16,
+          "length": 1,
+          "type": "uint8",
+          "label": "State of the engine (Auto)"
+        },
+        {
+          "name": "bcn_seq_state_op",
+          "offset": 17,
+          "length": 1,
+          "type": "uint8",
+          "label": "State of the engine (Op)"
+        },
+        {
+          "name": "bcn_seq_exec_buf0_auto",
+          "offset": 18,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Buffer ID (Auto)"
+        },
+        {
+          "name": "bcn_seq_exec_buf0_op",
+          "offset": 20,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Buffer ID (Op)"
+        },
+        {
+          "name": "bcn_fp_resp_cnt",
+          "offset": 22,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Fault Protection Response Count"
+        },
+        {
+          "name": "bcn_fp_passive_cnt",
+          "offset": 24,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Fault Protection Passive Count"
+        },
+        {
+          "name": "bcn_fp_err_cnt",
+          "offset": 26,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Fault Protection Error Count"
+        },
+        {
+          "name": "bcn_des_met_time_sec",
+          "offset": 28,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Current MET Seconds"
+        },
+        {
+          "name": "bcn_des_cycle_cnt",
+          "offset": 32,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Number of Scheduled Cycles"
+        },
+        {
+          "name": "bcn_cmd_recv_cnt",
+          "offset": 34,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Number of Received Commands"
+        },
+        {
+          "name": "bcn_cmd_fmt_cnt",
+          "offset": 36,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Number of bad format Commands"
+        },
+        {
+          "name": "bcn_cmd_rjct_cnt",
+          "offset": 38,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Number of Rejected Commands"
+        },
+        {
+          "name": "bcn_cmd_succ_cnt",
+          "offset": 40,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Number of successful commands"
+        },
+        {
+          "name": "bcn_cmd_fail_code",
+          "offset": 46,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command failure code"
+        },
+        {
+          "name": "bcn_cmd_xsum_state",
+          "offset": 47,
+          "length": 1,
+          "type": "uint8",
+          "label": "Checksum checking state"
+        },
+        {
+          "name": "bcn_store_partition_write_misc",
+          "offset": 48,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Misc Partition Write Address"
+        },
+        {
+          "name": "bcn_store_partition_read_misc",
+          "offset": 52,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Misc Partition Read Address"
+        },
+        {
+          "name": "bcn_store_partition_pbk_misc",
+          "offset": 56,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Misc Partition Playback Address"
+        },
+        {
+          "name": "bcn_store_partition_write_sci",
+          "offset": 60,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Science Partition Write Address"
+        },
+        {
+          "name": "bcn_store_partition_read_sci",
+          "offset": 64,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Science Partition Read Address"
+        },
+        {
+          "name": "bcn_store_partition_pbk_sci",
+          "offset": 68,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Science Partition Playback Address"
+        },
+        {
+          "name": "bcn_log_msgid_hdr",
+          "offset": 72,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "ID of the message"
+        },
+        {
+          "name": "bcn_adcs_hk_pkt_cnt",
+          "offset": 74,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Number of HK Pkts Received from XACT"
+        },
+        {
+          "name": "bcn_adcs_alive",
+          "offset": 76,
+          "length": 1,
+          "type": "uint8",
+          "label": "ADCS Alive state of communication"
+        },
+        {
+          "name": "bcn_adcs_eclipse",
+          "offset": 77,
+          "length": 1,
+          "type": "uint8",
+          "label": "State of Eclipse"
+        },
+        {
+          "name": "bcn_adcs_msg_recv_cnt",
+          "offset": 78,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Number of ADCS Received Msgs"
+        },
+        {
+          "name": "bcn_adcs_msg_rjct_cnt",
+          "offset": 80,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Number of ADCS Rejected Msgs"
+        },
+        {
+          "name": "bcn_eps_batt1_temp",
+          "offset": 82,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Temperature of battery 1"
+        },
+        {
+          "name": "bcn_eps_batt2_temp",
+          "offset": 84,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Temperature of battery 2"
+        },
+        {
+          "name": "bcn_eps_batt_pcb_temp",
+          "offset": 86,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Temperature of battery PCB"
+        },
+        {
+          "name": "bcn_solar_panel1_temp",
+          "offset": 88,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Temperature from Solar Panel 1"
+        },
+        {
+          "name": "bcn_solar_panel2_temp",
+          "offset": 90,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Temperature from Solar Panel 2"
+        },
+        {
+          "name": "bcn_pwr_mntr1_all_pnl_curr",
+          "offset": 92,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power Monitor 1 All Panels Current"
+        },
+        {
+          "name": "bcn_pwr_mntr1_all_pnl_voltage",
+          "offset": 94,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power Monitor 1 All Panels Voltage"
+        },
+        {
+          "name": "bcn_pwr_mntr_pnl3_curr",
+          "offset": 96,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power Monitor 1 Solar Panel 3 Current"
+        },
+        {
+          "name": "bcn_pwr_mntr_pnl3_voltage",
+          "offset": 98,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power Monitor 1 Solar Panel 3 Voltage"
+        },
+        {
+          "name": "bcn_pwr_mntr1_xact_curr",
+          "offset": 100,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power Monitor 1 12VO_XACT Current"
+        },
+        {
+          "name": "bcn_pwr_mntr1_xact_voltage",
+          "offset": 102,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power Monitor 1 12VO_XACT Voltage"
+        },
+        {
+          "name": "bcn_pwr_mntr2_3v3_curr",
+          "offset": 104,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power Monitor 2 3v3 Current"
+        },
+        {
+          "name": "bcn_pwr_mntr2_3v3_voltage",
+          "offset": 106,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power Monitor 2 3v3 Voltage"
+        },
+        {
+          "name": "bcn_pwr_mntr2_pnl2_curr",
+          "offset": 108,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power Monitor 2 Solar Panel 2 Current"
+        },
+        {
+          "name": "bcn_pwr_mntr2_pnl2_voltage",
+          "offset": 110,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power Monitor 2 Solar Panel 2 Voltage"
+        },
+        {
+          "name": "bcn_pwr_mntr2_pnl1_curr",
+          "offset": 112,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power Monitor 2 Solar Panel 1 Current"
+        },
+        {
+          "name": "bcn_pwr_mntr2_pnl1_voltage",
+          "offset": 114,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power Monitor 2 Solar Panel 1 Voltage"
+        },
+        {
+          "name": "bcn_pwr_mntr3_main_bus_curr",
+          "offset": 116,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power Monitor 3 Main Bus Current"
+        },
+        {
+          "name": "bcn_pwr_mntr3_main_bus_voltage",
+          "offset": 118,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power Monitor 3 Main Bus Voltage"
+        },
+        {
+          "name": "bcn_pwr_mntr3_12vo_curr",
+          "offset": 120,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power Monitor 3 12VO Current"
+        },
+        {
+          "name": "bcn_pwr_mntr3_12vo_voltage",
+          "offset": 122,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power Monitor 3 12VO Voltage"
+        },
+        {
+          "name": "bcn_temp_12vo",
+          "offset": 124,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Temperature from 12VO Buck"
+        },
+        {
+          "name": "bcn_temp_3v3",
+          "offset": 126,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Temperature from 3v3 Buck"
+        },
+        {
+          "name": "bcn_battery_curr",
+          "offset": 128,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Battery Current"
+        },
+        {
+          "name": "bcn_eps_battery_soc",
+          "offset": 130,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Battery State of Charge"
+        },
+        {
+          "name": "bcn_battery_heater_status",
+          "offset": 132,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Battery Heater Status"
+        },
+        {
+          "name": "bcn_solar_panel1_ocv",
+          "offset": 134,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Open circuit Voltage from Solar Panel 1"
+        },
+        {
+          "name": "bcn_solar_panel2_ocv",
+          "offset": 136,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Open circuit Voltage from Solar Panel 2"
+        },
+        {
+          "name": "bcn_solar_panel3_ocv",
+          "offset": 138,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Open circuit Voltage from Solar Panel 3"
+        },
+        {
+          "name": "bcn_mode_clt_cnt",
+          "offset": 140,
+          "length": 1,
+          "type": "uint8",
+          "label": "CLT Count"
+        },
+        {
+          "name": "bcn_mode_system_mode",
+          "offset": 141,
+          "length": 1,
+          "type": "uint8",
+          "label": "System Mode"
+        },
+        {
+          "name": "bcn_adcs_cmd_tlm_cmd_acpt_cnt",
+          "offset": 142,
+          "length": 1,
+          "type": "uint8",
+          "label": "ADCS Command accept count"
+        },
+        {
+          "name": "bcn_adcs_cmd_tlm_cmd_rjct_cnt",
+          "offset": 143,
+          "length": 1,
+          "type": "uint8",
+          "label": "ADCS Command reject count"
+        },
+        {
+          "name": "bcn_eps_reg0_err_flags",
+          "offset": 144,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "EPS Error Flags Register 0"
+        },
+        {
+          "name": "bcn_eps_reg1_err_flags",
+          "offset": 148,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "EPS Error Flags Register 1"
+        },
+        {
+          "name": "bcn_sd0_state",
+          "offset": 152,
+          "length": 1,
+          "type": "uint8",
+          "label": "SD Card 0 or Number 1 State"
+        },
+        {
+          "name": "bcn_sd1_state",
+          "offset": 153,
+          "length": 1,
+          "type": "uint8",
+          "label": "SD Card 1 or Number 2 State"
+        },
+        {
+          "name": "bcn_sd2_state",
+          "offset": 154,
+          "length": 1,
+          "type": "uint8",
+          "label": "SD Card 2 or Number 3 State"
+        },
+        {
+          "name": "bcn_pld_pwr_cycle_req",
+          "offset": 155,
+          "length": 1,
+          "type": "uint8",
+          "mask": 32,
+          "label": "Power Cycle Request State"
+        },
+        {
+          "name": "bcn_pld_pwr_off_req",
+          "offset": 155,
+          "length": 1,
+          "type": "uint8",
+          "mask": 16,
+          "label": "Power Off Request State"
+        },
+        {
+          "name": "bcn_pld_stat_msg_state",
+          "offset": 155,
+          "length": 1,
+          "type": "uint8",
+          "mask": 8,
+          "label": "Status Message State"
+        },
+        {
+          "name": "bcn_pld_time_msg_state",
+          "offset": 155,
+          "length": 1,
+          "type": "uint8",
+          "mask": 4,
+          "label": "Time Message State"
+        },
+        {
+          "name": "bcn_pld_alive_state",
+          "offset": 155,
+          "length": 1,
+          "type": "uint8",
+          "mask": 3,
+          "label": "Aliveness State"
+        },
+        {
+          "name": "bcn_eps_uhf_dep",
+          "offset": 156,
+          "length": 1,
+          "type": "uint8",
+          "mask": 16,
+          "label": "UHF Deploy Status"
+        },
+        {
+          "name": "bcn_eps_ant1_dep",
+          "offset": 156,
+          "length": 1,
+          "type": "uint8",
+          "mask": 8,
+          "label": "Antenna 1 Deploy"
+        },
+        {
+          "name": "bcn_eps_sap1_dep",
+          "offset": 156,
+          "length": 1,
+          "type": "uint8",
+          "mask": 4,
+          "label": "Solar Array Panel 1 Deploy"
+        },
+        {
+          "name": "bcn_eps_boom_dep",
+          "offset": 156,
+          "length": 1,
+          "type": "uint8",
+          "mask": 2,
+          "label": "Boom Deploy"
+        },
+        {
+          "name": "bcn_eps_boom_enc",
+          "offset": 156,
+          "length": 1,
+          "type": "uint8",
+          "mask": 1,
+          "label": "Boom Encoder"
+        },
+        {
+          "name": "bcn_eps_boom_cnt",
+          "offset": 157,
+          "length": 1,
+          "type": "uint8",
+          "mask": 128,
+          "label": "Boom Counter"
+        },
+        {
+          "name": "bcn_eps_pld",
+          "offset": 157,
+          "length": 1,
+          "type": "uint8",
+          "mask": 64,
+          "label": "Payload Power Status"
+        },
+        {
+          "name": "bcn_eps_xact",
+          "offset": 157,
+          "length": 1,
+          "type": "uint8",
+          "mask": 32,
+          "label": "XACT Power Status"
+        },
+        {
+          "name": "bcn_eps_sband_tr",
+          "offset": 157,
+          "length": 1,
+          "type": "uint8",
+          "mask": 16,
+          "label": "SBAND Transmit Status"
+        },
+        {
+          "name": "bcn_eps_sband_reset",
+          "offset": 157,
+          "length": 1,
+          "type": "uint8",
+          "mask": 8,
+          "label": "SBAND Reset Status"
+        },
+        {
+          "name": "bcn_eps_sband_pwr",
+          "offset": 157,
+          "length": 1,
+          "type": "uint8",
+          "mask": 4,
+          "label": "SBAND Power Status"
+        },
+        {
+          "name": "bcn_eps_uhf_reset",
+          "offset": 157,
+          "length": 1,
+          "type": "uint8",
+          "mask": 2,
+          "label": "UHF Reset Status"
+        },
+        {
+          "name": "bcn_eps_uhf_pwr",
+          "offset": 157,
+          "length": 1,
+          "type": "uint8",
+          "mask": 1,
+          "label": "UHF Power Status"
+        },
+        {
+          "name": "bcn_temp_digital_raw",
+          "offset": 158,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Temperature of Payload Digital Board"
+        },
+        {
+          "name": "bcn_temp_ana_raw",
+          "offset": 160,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Temperature of Payload Analog Board"
+        },
+        {
+          "name": "bcn_temp_cdh_raw",
+          "offset": 162,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Temperature of CDH Board"
+        },
+        {
+          "name": "bcn_temp_backplane_raw",
+          "offset": 164,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Temperature of Backplane Board"
+        },
+        {
+          "name": "bcn_pld_digital_3p3_i",
+          "offset": 166,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Power Monitor DB 3.3V Current"
+        },
+        {
+          "name": "bcn_pld_digital_3p3_v",
+          "offset": 168,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Power Monitor DB 3.3V Voltage"
+        },
+        {
+          "name": "bcn_pld_digital_1p8_i",
+          "offset": 170,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Power Monitor DB 1.8V Current"
+        },
+        {
+          "name": "bcn_pld_digital_1p8_v",
+          "offset": 172,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Power Monitor DB 1.8V Voltage"
+        },
+        {
+          "name": "bcn_pld_digital_1p0_i",
+          "offset": 174,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Power Monitor DB 1.0V Current"
+        },
+        {
+          "name": "bcn_pld_digital_1p0_v",
+          "offset": 176,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Power Monitor DB 1.0V Voltage"
+        },
+        {
+          "name": "bcn_pld_ana_12p0_i",
+          "offset": 178,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Power Monitor AB 12V Current"
+        },
+        {
+          "name": "bcn_pld_ana_12p0_v",
+          "offset": 180,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Power Monitor AB 12V Voltage"
+        },
+        {
+          "name": "bcn_pld_ana_2p5_i",
+          "offset": 182,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Power Monitor AB 2.5V Current"
+        },
+        {
+          "name": "bcn_pld_ana_2p5_v",
+          "offset": 184,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Power Monitor AB 2.5V Voltage"
+        },
+        {
+          "name": "bcn_hstx_output_power",
+          "offset": 186,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "SBand RF output power"
+        },
+        {
+          "name": "bcn_hstx_pa_temp",
+          "offset": 188,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "SBand pre-amplifier temperature"
+        },
+        {
+          "name": "bcn_hstx_pa_curr",
+          "offset": 190,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "SBand pre-amplifier current"
+        },
+        {
+          "name": "bcn_mode_clt_threshold",
+          "offset": 192,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "CLT Threshold"
+        },
+        {
+          "name": "bcn_q_body_wrt_eci1",
+          "offset": 196,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Attitude Quaternion 1"
+        },
+        {
+          "name": "bcn_q_body_wrt_eci2",
+          "offset": 200,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Attitude Quaternion 2"
+        },
+        {
+          "name": "bcn_q_body_wrt_eci3",
+          "offset": 204,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Attitude Quaternion 3"
+        },
+        {
+          "name": "bcn_q_body_wrt_eci4",
+          "offset": 208,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Attitude Quaternion 4"
+        },
+        {
+          "name": "bcn_body_rate1",
+          "offset": 212,
+          "length": 4,
+          "type": "int32_be",
+          "label": "Body Frame Rate 1"
+        },
+        {
+          "name": "bcn_body_rate2",
+          "offset": 216,
+          "length": 4,
+          "type": "int32_be",
+          "label": "Body Frame Rate 2"
+        },
+        {
+          "name": "bcn_body_rate3",
+          "offset": 220,
+          "length": 4,
+          "type": "int32_be",
+          "label": "Body Frame Rate 3"
+        },
+        {
+          "name": "bcn_rw_fltr_spd_rpm1",
+          "offset": 224,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Wheel Number 1 Measured Speed"
+        },
+        {
+          "name": "bcn_rw_fltr_spd_rpm2",
+          "offset": 226,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Wheel Number 2 Measured Speed"
+        },
+        {
+          "name": "bcn_rw_fltr_spd_rpm3",
+          "offset": 228,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Wheel Number 3 Measured Speed"
+        },
+        {
+          "name": "bcn_sun_point_ang_err",
+          "offset": 230,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Sun Angle Point Error"
+        },
+        {
+          "name": "bcn_adcs_css_sun_vec_body1",
+          "offset": 232,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Measured Sun Body Vector X"
+        },
+        {
+          "name": "bcn_adcs_css_sun_vec_body2",
+          "offset": 234,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Measured Sun Body Vector Y"
+        },
+        {
+          "name": "bcn_adcs_css_sun_vec_body3",
+          "offset": 236,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Measured Sun Body Vector Z"
+        },
+        {
+          "name": "bcn_adcs_att_cmd_adcs_mode",
+          "offset": 238,
+          "length": 1,
+          "type": "uint8",
+          "label": "ADCS System Mode"
+        },
+        {
+          "name": "bcn_sun_point_state",
+          "offset": 239,
+          "length": 1,
+          "type": "uint8",
+          "label": "Sun Point State"
+        },
+        {
+          "name": "bcn_adcs_ana_det_temp",
+          "offset": 240,
+          "length": 2,
+          "type": "int16_be",
+          "label": "XACT Tracker Detector Temperature"
+        },
+        {
+          "name": "bcn_adcs_ana_motor1_temp",
+          "offset": 242,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Wheel 1 Temperature"
+        },
+        {
+          "name": "checksum",
+          "offset": 244,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "checksum"
+        }
+      ]
+    },
+    {
+      "id": "CCSDS",
+      "label": "Other CCSDS packet (header only)",
+      "match": {
+        "offset": 0,
+        "hex": "08",
+        "mask": "08"
+      },
+      "fields": [
+        {
+          "name": "ccsds_version",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 57344,
+          "label": "CCSDS version"
+        },
+        {
+          "name": "packet_type",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 4096,
+          "label": "CCSDS packet type"
+        },
+        {
+          "name": "secondary_header_flag",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 2048,
+          "label": "Secondary header flag"
+        },
+        {
+          "name": "is_stored_data",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 1024,
+          "label": "Stored data (1) / real time (0)"
+        },
+        {
+          "name": "application_process_id",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 1023,
+          "label": "Application process ID (0x20 = beacon)"
+        },
+        {
+          "name": "grouping_flag",
+          "offset": 2,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 49152,
+          "label": "Grouping flag"
+        },
+        {
+          "name": "sequence_count",
+          "offset": 2,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 16383,
+          "label": "Packet sequence count"
+        },
+        {
+          "name": "packet_length",
+          "offset": 4,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Packet data length (bytes - 1)"
+        },
+        {
+          "name": "time_stamp_seconds",
+          "offset": 6,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Time stamp (s)",
+          "unit": "s"
+        },
+        {
+          "name": "sub_seconds",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Sub-seconds"
+        },
+        {
+          "name": "packet_body",
+          "offset": 12,
+          "to_end": true,
+          "type": "hex",
+          "label": "Packet body (layout unknown)"
+        }
+      ]
+    }
+  ]
+}
