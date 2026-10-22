@@ -48,6 +48,7 @@ _RECORDING_SETTINGS_KEY = "autotrack_recording_settings"
 _AUTOTRACK_ENABLED_KEY = "autotrack_enabled"
 _USE_ROTATOR_KEY = "autotrack_use_rotator"
 _SELECTED_LIST_KEY = "autotrack_selected_list_id"
+_TIMER_DURATION_KEY = "autotrack_timer_duration_hours"
 
 
 _AUTOTRACK_HELP = (
@@ -120,6 +121,7 @@ class AutotrackRecordDialog(QDialog):
         self._setup_ui()
         self._reload_at_lists()
         self._load_recording_settings()
+        self._load_timer_duration()
         self._load_autotrack_enabled_state()
         self._load_use_rotator_state()
 
@@ -423,6 +425,7 @@ class AutotrackRecordDialog(QDialog):
             (_("24 hours"), 24),
         ]:
             self._timer_dur_combo.addItem(label, userData=hours)
+        self._timer_dur_combo.currentIndexChanged.connect(self._save_timer_duration)
         timer_form.addRow(_("Stop after:"), self._timer_dur_combo)
 
         outer.addWidget(timer_group)
@@ -578,6 +581,37 @@ class AutotrackRecordDialog(QDialog):
             checkbox.blockSignals(True)
             checkbox.setChecked(bool(settings.get(key, False)))
             checkbox.blockSignals(False)
+
+    def _load_timer_duration(self) -> None:
+        """Restore the Autotrack Timer "Stop after" selection from app_settings.
+
+        Falls back to the combo's first entry when nothing valid is saved.
+        Signals are blocked so the restore does not trigger a save.
+        """
+        row = self._conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?",
+            (_TIMER_DURATION_KEY,),
+        ).fetchone()
+        if not row:
+            return
+        try:
+            hours = int(row["value"])
+        except (TypeError, ValueError):
+            return
+        idx = self._timer_dur_combo.findData(hours)
+        if idx < 0:
+            return
+        self._timer_dur_combo.blockSignals(True)
+        self._timer_dur_combo.setCurrentIndex(idx)
+        self._timer_dur_combo.blockSignals(False)
+
+    def _save_timer_duration(self) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value, updated_at)"
+            " VALUES (?, ?, CURRENT_TIMESTAMP)",
+            (_TIMER_DURATION_KEY, str(self._timer_dur_combo.currentData())),
+        )
+        self._conn.commit()
 
     def _save_recording_settings(self) -> None:
         settings = {

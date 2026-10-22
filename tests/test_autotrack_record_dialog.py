@@ -40,6 +40,34 @@ def _no_background_sync(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(MainWindow, "_start_scheduler", lambda self: None)
 
 
+class TestTimerDurationPersistence:
+    def test_defaults_to_three_hours(self, qtbot: QtBot, db: sqlite3.Connection) -> None:
+        dlg = AutotrackRecordDialog(db)
+        qtbot.addWidget(dlg)
+        assert dlg._timer_dur_combo.currentData() == 3
+
+    def test_selection_survives_reopen(self, qtbot: QtBot, db: sqlite3.Connection) -> None:
+        dlg = AutotrackRecordDialog(db)
+        qtbot.addWidget(dlg)
+        dlg._timer_dur_combo.setCurrentIndex(dlg._timer_dur_combo.findData(12))
+
+        dlg2 = AutotrackRecordDialog(db)
+        qtbot.addWidget(dlg2)
+        assert dlg2._timer_dur_combo.currentData() == 12
+
+    def test_invalid_saved_value_falls_back_to_default(
+        self, qtbot: QtBot, db: sqlite3.Connection
+    ) -> None:
+        db.execute(
+            "INSERT INTO app_settings (key, value) VALUES (?, ?)",
+            ("autotrack_timer_duration_hours", "7"),
+        )
+        db.commit()
+        dlg = AutotrackRecordDialog(db)
+        qtbot.addWidget(dlg)
+        assert dlg._timer_dur_combo.currentData() == 3
+
+
 class TestRecordingSettingsPersistence:
     def test_defaults_to_all_unchecked_when_nothing_saved(
         self, qtbot: QtBot, db: sqlite3.Connection
