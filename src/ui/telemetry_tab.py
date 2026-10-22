@@ -2309,6 +2309,8 @@ class TelemetryTab(QWidget):
         from sdr.file_device import parse_start_time_from_filename
 
         start = parse_start_time_from_filename(path.name)
+        self._gr_bogus_count = 0
+        self._gr_bogus_pending.clear()
         self._fast_time_known = start is not None
         self._fast_start = start or datetime.datetime.now(datetime.UTC)
         self._selected_norad = norad
@@ -2394,12 +2396,16 @@ class TelemetryTab(QWidget):
             else "  ⚠ " + _("No start time in the file name: not sent to SatNOGS.")
         )
         self._finish_fast_decode()
-        self._lbl_status.setText(
-            _("Decoded {dur} s of recording in {el} s — {n} frame(s)").format(
-                dur=round(duration_s), el=round(elapsed_s, 1), n=frames
-            )
-            + note
+        noise = min(self._gr_bogus_count, frames)
+        text = _("Decoded {dur} s of recording in {el} s — {n} frame(s)").format(
+            dur=round(duration_s), el=round(elapsed_s, 1), n=frames - noise
         )
+        if noise:
+            text += "  ⚠ " + _(
+                "{k} more frame(s) ignored as noise (invalid AX.25 header): "
+                "not shown, not logged, not sent to SatNOGS."
+            ).format(k=noise)
+        self._lbl_status.setText(text + note)
         self._lbl_status.setStyleSheet("color: #f39c12;")
 
     def _on_fast_frame(self, frame: Any, seconds: float) -> None:

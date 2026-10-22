@@ -7937,3 +7937,12 @@ msgid ""
 msgstr ""
 "AX.25ヘッダーが不正なフレーム（CRCを偶然通過した雑音）を%(n)d件無視しました："
 "ログに記録せず、SatNOGSにも送信しません。"
+
+#: src/ui/telemetry_tab.py
+#, python-brace-format
+msgid ""
+"{k} more frame(s) ignored as noise (invalid AX.25 header): not shown, not "
+"logged, not sent to SatNOGS."
+msgstr ""
+"さらに{k}件のフレームを雑音（AX.25ヘッダー不正）として無視しました："
+"表示せず、ログにも記録せず、SatNOGSにも送信しません。"

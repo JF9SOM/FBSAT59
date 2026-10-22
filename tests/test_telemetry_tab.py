@@ -1602,6 +1602,17 @@ def test_gr_noise_text_then_frame_is_not_logged_or_uploaded(
     assert "Ignored 1" in tab._lbl_status.text()
 
 
+def test_gr_fast_decode_summary_says_how_many_frames_were_noise(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, _rec = _gr_tab(qtbot, conn, monkeypatch)
+    tab._on_gr_telemetry(_GR_NOISE_TEXT)
+    tab._on_gr_fast_done(523.0, 26.2, 1)
+    status = tab._lbl_status.text()
+    assert "0 frame(s)" in status
+    assert "1 more frame(s) ignored as noise" in status
+
+
 def test_gr_noise_frame_then_text_is_not_logged_or_uploaded(
     qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
