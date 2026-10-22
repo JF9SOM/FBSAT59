@@ -346,6 +346,29 @@ def _ax25_header_fields(ax25: Any) -> list[TelemetryField]:
     ]
 
 
+def _is_number(token: str) -> bool:
+    """True if *token* parses as a number (used to tell numeric CSV telemetry from free text)."""
+    try:
+        float(token)
+    except ValueError:
+        return False
+    return True
+
+
+def _csv_message_matches(text: str, key: str, msg_def: dict[str, Any]) -> bool:
+    """Whether *text* is the csv_messages entry *key*.
+
+    Normally the entry's key is a text prefix ("OBC," ...). An entry with ``match_count`` is
+    for satellites whose messages carry no identifier (e.g. KOSTKA): it matches a message
+    with exactly that many comma-separated fields, all of them numbers.
+    """
+    count = msg_def.get("match_count")
+    if count is None:
+        return text.startswith(f"{key},")
+    tokens = text.split(",")
+    return len(tokens) == count and all(_is_number(t.strip()) for t in tokens)
+
+
 def _decode_csv_field(tokens: list[str], field_def: dict[str, Any]) -> TelemetryField | None:
     """Decode one field from a comma-split ASCII telemetry message.
 
@@ -371,6 +394,20 @@ def _decode_csv_field(tokens: list[str], field_def: dict[str, Any]) -> Telemetry
             scaled_value=0.0,
             unit=token,
             is_string=True,
+        )
+
+    if ftype == "float":
+        try:
+            value = float(token)
+        except ValueError:
+            return None
+        return TelemetryField(
+            name=field_def["name"],
+            label=label,
+            raw_value=int(value),
+            scaled_value=value,
+            unit=unit,
+            is_integer=False,
         )
 
     raw: int
@@ -425,7 +462,8 @@ def get_telemetry_id_defs(norad: int | None) -> dict[str, Any] | None:
 
     Checks both the binary-offset ``telemetry_ids`` schema (keyed by a
     numeric telemetry-ID byte, e.g. OrigamiSat-2) and the ASCII/CSV
-    ``csv_messages`` schema (keyed by a text prefix, e.g. Marina's "OBC").
+    ``csv_messages`` schema (keyed by a text prefix, e.g. Marina's "OBC"; an entry with
+    ``match_count`` is matched by its number of fields instead, e.g. KOSTKA's OBC).
     Satellites with only the older single flat ``fields`` list return None
     here — only a per-ID schema gives each ID's own field layout up front,
     before any frame of that ID has actually been received.
@@ -582,7 +620,8 @@ def decode_telemetry(
     - a ``csv_messages`` mapping keyed by a text prefix (e.g. "OBC"), for
       satellites whose downlink is plain comma-separated ASCII text
       (e.g. Marina) — fields are located by token position, not byte
-      offset.
+      offset. An entry with ``match_count`` has no prefix: it matches a message of exactly
+      that many numeric fields (e.g. KOSTKA).
     """
     raw_hex = payload.hex()
     fmt = load_format(norad) if norad is not None else None
@@ -617,7 +656,7 @@ def decode_telemetry(
         # Some satellites (e.g. LASARsat) NUL-terminate the last field.
         text = payload.decode("ascii", errors="ignore").rstrip("\x00")
         for key, msg_def in csv_messages.items():
-            if not text.startswith(f"{key},"):
+            if not _csv_message_matches(text, key, msg_def):
                 continue
             telemetry_id = key
             telemetry_label = msg_def.get("label", "")

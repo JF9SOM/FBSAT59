@@ -1,0 +1,188 @@
+{
+  "norad": 60237,
+  "name": "GRBBeta",
+  "callsign": "HA2GRB",
+  "modulation": "GFSK9k6",
+  "ax25_pid": "0xF0",
+  "reference": "https://gitlab.com/librespacefoundation/satnogs/satnogs-decoders/-/blob/master/ksy/grbbeta.ksy",
+  "document": "SatNOGS decoders \"grbbeta.ksy\" (Kaitai Struct); https://grbbeta.tuke.sk/. The U (UHF) and V (VHF) beacons have the same 14-field layout as LASARsat's.",
+  "note": "Only the ASCII U/V radio beacons and the free-text/digipeated messages are decoded. The binary PSU housekeeping frames (CSP) and the CW beacon in grbbeta.ksy are not defined here.",
+  "csv_messages": {
+    "U": {
+      "label": "U（UHFトランシーバー）",
+      "fields": [
+        {
+          "name": "uhf_uptime",
+          "index": 1,
+          "type": "int",
+          "label": "UHF 稼働時間（今回起動から）",
+          "unit": "s"
+        },
+        {
+          "name": "uhf_uptime_tot",
+          "index": 2,
+          "type": "int",
+          "label": "UHF 累積稼働時間",
+          "unit": "s"
+        },
+        {
+          "name": "uhf_reset_cnt",
+          "index": 3,
+          "type": "int",
+          "label": "UHF リセット回数"
+        },
+        {
+          "name": "uhf_rf_reset_cnt",
+          "index": 4,
+          "type": "int",
+          "label": "UHF RFリセット回数"
+        },
+        {
+          "name": "uhf_trx_temp",
+          "index": 5,
+          "type": "int",
+          "label": "UHF TRX温度(生値)"
+        },
+        {
+          "name": "uhf_rf_temp",
+          "index": 6,
+          "type": "int",
+          "label": "UHF RF温度(生値)"
+        },
+        {
+          "name": "uhf_pa_temp",
+          "index": 7,
+          "type": "int",
+          "label": "UHF PA温度(生値)"
+        },
+        {
+          "name": "uhf_digipeater_cnt",
+          "index": 8,
+          "type": "int",
+          "label": "UHF デジピート回数"
+        },
+        {
+          "name": "uhf_last_digipeater",
+          "index": 9,
+          "type": "str",
+          "label": "UHF 最後にデジピートした局"
+        },
+        {
+          "name": "uhf_rx_cnt",
+          "index": 10,
+          "type": "int",
+          "label": "UHF 受信フレーム数"
+        },
+        {
+          "name": "uhf_tx_cnt",
+          "index": 11,
+          "type": "int",
+          "label": "UHF 送信フレーム数"
+        },
+        {
+          "name": "uhf_act_rssi_raw",
+          "index": 12,
+          "type": "int",
+          "label": "UHF アクティブRSSI(生値)"
+        },
+        {
+          "name": "uhf_dcd_rssi_raw",
+          "index": 13,
+          "type": "int",
+          "label": "UHF DCD RSSI(生値)"
+        }
+      ]
+    },
+    "V": {
+      "label": "V（VHFトランシーバー）",
+      "fields": [
+        {
+          "name": "vhf_uptime",
+          "index": 1,
+          "type": "int",
+          "label": "VHF 稼働時間（今回起動から）",
+          "unit": "s"
+        },
+        {
+          "name": "vhf_uptime_tot",
+          "index": 2,
+          "type": "int",
+          "label": "VHF 累積稼働時間",
+          "unit": "s"
+        },
+        {
+          "name": "vhf_reset_cnt",
+          "index": 3,
+          "type": "int",
+          "label": "VHF リセット回数"
+        },
+        {
+          "name": "vhf_rf_reset_cnt",
+          "index": 4,
+          "type": "int",
+          "label": "VHF RFリセット回数"
+        },
+        {
+          "name": "vhf_trx_temp",
+          "index": 5,
+          "type": "int",
+          "label": "VHF TRX温度(生値)"
+        },
+        {
+          "name": "vhf_rf_temp",
+          "index": 6,
+          "type": "int",
+          "label": "VHF RF温度(生値)"
+        },
+        {
+          "name": "vhf_pa_temp",
+          "index": 7,
+          "type": "int",
+          "label": "VHF PA温度(生値)"
+        },
+        {
+          "name": "vhf_digipeater_cnt",
+          "index": 8,
+          "type": "int",
+          "label": "VHF デジピート回数"
+        },
+        {
+          "name": "vhf_last_digipeater",
+          "index": 9,
+          "type": "str",
+          "label": "VHF 最後にデジピートした局"
+        },
+        {
+          "name": "vhf_rx_cnt",
+          "index": 10,
+          "type": "int",
+          "label": "VHF 受信フレーム数"
+        },
+        {
+          "name": "vhf_tx_cnt",
+          "index": 11,
+          "type": "int",
+          "label": "VHF 送信フレーム数"
+        },
+        {
+          "name": "vhf_act_rssi_raw",
+          "index": 12,
+          "type": "int",
+          "label": "VHF アクティブRSSI(生値)"
+        },
+        {
+          "name": "vhf_dcd_rssi_raw",
+          "index": 13,
+          "type": "int",
+          "label": "VHF DCD RSSI(生値)"
+        }
+      ]
+    }
+  },
+  "text_message": {
+    "id": "MSG",
+    "label": "MSG（フリーテキスト/デジピートメッセージ）",
+    "field_label": "メッセージ",
+    "header_fields": true
+  }
+}

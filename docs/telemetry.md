@@ -1639,3 +1639,20 @@ AX.25（Direwolf）モードの「Speed:」プルダウンと「Decode IQ Record
   フローグラフ（FM 復調 → 1700 Hz 中心の 2 回目の弁別 → M&M クロック再生）、`grsat.py` も観測中に IQ を UDP で渡す実時間処理。
 - テスト: `tests/test_afsk_file_decoder.py`（Direwolf の代役でのジョブの配管・取消・Direwolf 不在・読めないファイル、Direwolf があれば
   合成 FM-AFSK の実デコード）、`tests/test_telemetry_tab.py`（1200 でも Speed が出る・1200 は Direwolf、それ以上はコヒーレント）。
+
+### KOSTKA（69935）・GRBBeta（60237）の定義追加と `csv_messages` の拡張（2026-10-22）
+
+- `telemetry_formats/69935.json`（KOSTKA / OK0KST）と `60237.json`（GRBBeta / HA2GRB）を追加。どちらも SatNOGS の
+  `kostka.ksy` / `grbbeta.ksy`（Kaitai Struct）を参考に書いた（ksy を直接読み込むわけではない）。
+- KOSTKA のビーコンは識別子を持たず、**欄の数で見分ける**（9=OBC / 10=SOL / 15=EPS。14 欄で先頭が `U` のものは MRG）。
+  そのため `csv_messages` のエントリに `match_count`（全欄が数値であることも条件）を追加した
+  （`decoder._csv_message_matches`）。識別子のあるエントリは従来どおり先頭文字列で一致する。
+  数値でない 9 欄のテキストはフリーテキスト（MSG）に落ちる。
+- 小数の欄用に CSV の型 `float` を追加（KOSTKA の OBC 温度・SOL の温度/電圧）。
+- **MRG の `mrg_last_digipeater` は「最後にデジピートした局」**で、他局が実際にデジピートされたかの手掛かりになる。
+  2026-10-01〜22 の JJ1WTK ログでは KOSTKA は `digipeater_cnt=6`・最後の局 `JA1HCB` のまま変化なし。
+- 単位: SOL の温度（°C）・電圧（V）は ksy の名前と値からの推定。MRG/EPS の温度・電流は単位不明の生値。
+- GRBBeta: UHF の `U,` と VHF の `V,` ビーコン（LASARsat と同じ 14 欄）とフリーテキストのみ。ksy にある CSP の
+  バイナリ PSU テレメトリーと CW ビーコンは未定義。
+- 実ビーコン（JJ1WTK のログ）でのデコードを `tests/test_telemetry_decoder.py` に追加。
+

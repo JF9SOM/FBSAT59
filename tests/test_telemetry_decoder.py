@@ -596,3 +596,58 @@ def test_canvas_other_packet_shows_only_its_header() -> None:
     assert by_name["sequence_count"].raw_value == 159
     assert by_name["time_stamp_seconds"].raw_value == 845916710
     assert by_name["packet_body"].unit == "00 00 00 5e"
+
+
+# -- KOSTKA (69935, no message identifier: told apart by field count) and GRBBeta (60237) --
+# Beacons copied from JJ1WTK's satellite log (2026-10).
+
+
+def test_kostka_obc_is_told_apart_by_its_nine_numeric_fields() -> None:
+    tf = decode_telemetry("OK0KST", b"255,0,11,8660379,9117082,1792507744,0,22.20,12.39", 69935)
+    assert tf.telemetry_id == "OBC"
+    by_name = {f.name: f for f in tf.fields}
+    assert by_name["obc_cpu_load_perc"].scaled_value == 11
+    assert by_name["obc_temp_mcu"].scaled_value == pytest.approx(22.20)
+    assert by_name["obc_temp_ext"].unit == "°C"
+
+
+def test_kostka_mrg_reports_the_last_digipeated_station() -> None:
+    tf = decode_telemetry(
+        "OK0KST", b"U,9008906,9008995,1,0,1632,1537,1475,6,JA1HCB,8048,980794,98,120", 69935
+    )
+    assert tf.telemetry_id == "U"
+    by_name = {f.name: f for f in tf.fields}
+    assert by_name["mrg_digipeater_cnt"].scaled_value == 6
+    assert by_name["mrg_last_digipeater"].unit == "JA1HCB"
+    assert by_name["mrg_tx_packet_cnt"].scaled_value == 980794
+
+
+def test_kostka_sol_and_eps_are_told_apart_by_field_count() -> None:
+    sol = decode_telemetry(
+        "OK0KST", b"-5.12,-255.00,-12.50,-9.31,-23.06,3.35,3.35,3.35,3.35,3.35", 69935
+    )
+    assert sol.telemetry_id == "SOL"
+    assert {f.name: f for f in sol.fields}["sol_temp_xp"].scaled_value == pytest.approx(-5.12)
+    eps = decode_telemetry(
+        "OK0KST", b"9043136,9043238,1,36669,36376,6,16434,269,0,0,68,89,15,50,84", 69935
+    )
+    assert eps.telemetry_id == "EPS"
+    assert len(eps.fields) == 15
+
+
+def test_kostka_free_text_is_not_mistaken_for_numeric_telemetry() -> None:
+    tf = decode_telemetry("OK0KST", b"1,2,3,4,5,6,7,8,hello", 69935)  # nine fields, but not numbers
+    assert tf.telemetry_id == "MSG"
+    assert decode_telemetry("OK0KST", b"hello world", 69935).telemetry_id == "MSG"
+
+
+def test_grbbeta_uhf_beacon_uses_the_u_layout() -> None:
+    tf = decode_telemetry(
+        "HA2GRB",
+        b"U,6860489,71980801,68,2,2011,1976,1868,806,DL7NDR,30675,5635053,103,125\x00",
+        60237,
+    )
+    assert tf.telemetry_id == "U"
+    by_name = {f.name: f for f in tf.fields}
+    assert by_name["uhf_digipeater_cnt"].scaled_value == 806
+    assert by_name["uhf_last_digipeater"].unit == "DL7NDR"
