@@ -3316,6 +3316,25 @@ class TestLockDialFeedback:
         assert w._current_transmitter["rx_offset_hz"] == -1240.0
         assert w._radio_control._offset_spin.value() == -1240
 
+    def test_refresh_radio_control_surfaces_the_transmitter_baud(self, qtbot, db) -> None:
+        """The Telemetry tab picks its AX.25 baud from the selected transponder; a description
+        without a rate ("AstroDev Li-2", CANVAS) only works if ``baud`` reaches the dict, which
+        the explicit SELECT column list in _refresh_radio_control() once left out."""
+        from data.transmitter_manager import TransmitterManager
+
+        mgr = TransmitterManager(db)
+        w = self._make_window(qtbot, db)
+        mgr.add_manual_transmitter(
+            norad_cat_id=900002,
+            description="Test-Sat Li-2",
+            downlink_low=437_250_000,
+            mode="GMSK",
+            baud=9600,
+        )
+        w._refresh_radio_control(900002)
+        assert w._current_transmitter is not None
+        assert w._current_transmitter["baud"] == 9600
+
     # -- _apply_transponder_state_to_rig(): pre-Connect frequency preset
     # (GitHub Issue #20 follow-up) --
 

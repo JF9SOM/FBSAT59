@@ -6035,7 +6035,7 @@ class MainWindow(QMainWindow):
                    downlink_low, downlink_high, uplink_low, uplink_high,
                    mode, ctcss_tone, invert,
                    alive, satnogs_status, norad_cat_id, source, rx_offset_hz,
-                   ul_offset_hz
+                   ul_offset_hz, baud
             FROM transmitters
             WHERE norad_cat_id = ?
             ORDER BY
