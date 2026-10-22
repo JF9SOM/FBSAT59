@@ -191,6 +191,9 @@ class TestGrSatellitesReplay:
         monkeypatch.setattr(type(tab._gr_backend), "started_norad", property(lambda self: 60237))
 
         tab._on_gr_raw_frame(RAW)
+        assert uploader.calls == []  # held until its text shows it is not noise
+        tab._gr_frames[0] = (0.0, tab._gr_frames[0][1])  # its wait is over
+        tab._gr_prune()
 
         ((raw, norad, when),) = uploader.calls
         assert (raw, norad) == (RAW, 60237)
