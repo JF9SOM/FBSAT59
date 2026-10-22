@@ -414,8 +414,8 @@ def build_lenient_satnogs_frame(norad: int | None, text: str) -> bytes | None:
     """Like build_satnogs_frame(), for a block of the wrong length (a near miss).
 
     The frame definition whose length is closest is used for the prefix and type byte, and
-    the digits received are sent as they are (an odd count gets a trailing ``0`` nibble to
-    make whole bytes). None if the block has non-hex characters or no definition can send it.
+    the digits received are sent exactly as they are, nothing added. None if they cannot
+    make whole bytes (an odd count or a non-hex character) or no definition can send it.
     """
     frames = load_cw_frames(norad)
     block = normalize_block(text)
@@ -432,10 +432,8 @@ def build_lenient_satnogs_frame(norad: int | None, text: str) -> bytes | None:
     if best is None:
         return None
     _diff, frame_def, digits = best
-    if not digits or any(c not in "0123456789ABCDEFabcdef" for c in digits):
+    if not digits or len(digits) % 2 or any(c not in "0123456789ABCDEFabcdef" for c in digits):
         return None
-    if len(digits) % 2:
-        digits += "0"
     upload = frame_def["satnogs"]
     body = bytes.fromhex(digits)
     if upload.get("raw"):
