@@ -159,7 +159,7 @@ def test_undecodable_payloads_give_none() -> None:
     assert hf.decode_payload(POWER_SUN[:20]) is None  # shorter than the type needs
     assert hf.decode_payload(bytes([0xFC]) + bytes(20)) is None  # a voice packet is 37 bytes
     assert hf.decode_payload(bytes([0x6C]) + bytes(100)) is None  # a sun-sensor packet is 133
-    assert hf.decode_payload(bytes([0x7C]) + bytes(100)) is None  # type 7: not on UNNE-1B
+    assert hf.decode_payload(bytes([0xBC]) + bytes(100)) is None  # type 11: no fields in SatNOGS
     assert hf.telemetry_frame(b"\x6c", 98205) is None
 
 
@@ -206,3 +206,18 @@ def test_sun_sensor_words_are_high_byte_first() -> None:
     v = _values(bytes(packet))
     assert v["td0"] == 128 and v["v0_0"] == 0xFFEF and v["p3"] == 0x0102 and v["err2"] == 92
     assert len(v) == 6 + 48 + 8 + 8
+
+
+def test_icm_game_message_has_clock_number_and_text() -> None:
+    # SatNOGS hadesr.ksy icmgamemsg_frame: u4 sclock, u1 msg_num, UTF-8 text to the end.
+    text = b"Hello ICM 73"
+    payload = bytes([0x75]) + (90061).to_bytes(4, "little") + bytes([3]) + text.ljust(93, b"\x00")
+    assert len(payload) == 99
+    decoded = hf.decode_payload(payload)
+    assert decoded is not None and decoded[0].number == 7
+    values = {f.name: f.value for f in decoded[1]}
+    assert values["clock_tx"] == "90,061 s  (1 d 01:01:01)"
+    assert values["msg_num"] == 3
+    assert values["message"] == "Hello ICM 73"
+    assert hf.decode_payload(payload[:98]) is None  # shorter than the type needs
+    assert "7" in hf.type_tabs() and "7" not in hf.type_tabs(3)  # HADES-SA sends no game message

@@ -363,6 +363,7 @@ def test_decoded_fields_tab_has_a_sub_tab_per_packet_type(
         "4",
         "5",
         "6",
+        "7",
         "8",
         "9",
         "10",
@@ -451,10 +452,11 @@ def test_a_packet_type_without_a_definition_is_shown_but_not_decoded(
     tab = _hades_tab(qtbot, conn)
     tab._rebuild_decode_tabs(UNNE1B)
     tab._hades_norad = UNNE1B
-    odd = HadesFrame(0, 0.0, 0.0, 9.0, 7, 12, bytes([0x7C]) + bytes(100), False)
+    # type 11 (SatNOGS' "fraunhoferexp_frame" has no fields): shown, nothing to decode
+    odd = HadesFrame(0, 0.0, 0.0, 9.0, 11, 12, bytes([0xBC]) + bytes(100), False)
     tab._on_hades_frame(odd, 0.0)
     assert tab._table.rowCount() == 1
-    assert tab._table.item(0, 3).text().startswith("[Type 7]")
+    assert tab._table.item(0, 3).text().startswith("[Type 11]")
     tab._table.selectRow(0)  # nothing to decode: must not raise
 
 

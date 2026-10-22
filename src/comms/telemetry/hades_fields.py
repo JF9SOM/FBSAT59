@@ -424,6 +424,31 @@ _GAME = TypeDef(
     ),
 )
 
+
+def _text_to_end(offset: int) -> Callable[[bytes], Value]:
+    """The rest of the payload from *offset* as text (UTF-8; unreadable bytes shown as ``·``)."""
+
+    def read(d: bytes) -> Value:
+        text = d[offset:].decode("utf-8", errors="replace")
+        return "".join(c if c.isprintable() else "·" for c in text).rstrip("·").rstrip() or "—"
+
+    return read
+
+
+# ICM game message (type 7): SatNOGS hadesr.ksy / hadesicm.ksy ``icmgamemsg_frame`` -- a 32-bit
+# clock, a message number and the message text (UTF-8, to the end of the packet). 101 bytes with
+# the CRC, so 99 here.
+_ICM_GAME_MESSAGE = TypeDef(
+    7,
+    "ICM game message",
+    99,
+    (
+        _field("clock_tx", "System clock (sclock)", "", _clock(1)),
+        _count("msg_num", "Message number", _byte(5)),
+        _field("message", "Message", "", _text_to_end(6)),
+    ),
+)
+
 _EPHEMERIS = TypeDef(
     12,
     "Ephemeris",
@@ -607,6 +632,7 @@ TYPES: dict[int, TypeDef] = {
         _POWER_STATS,
         _TEMP_STATS,
         _SUN,
+        _ICM_GAME_MESSAGE,
         _DEPLOY,
         _EXT_POWER,
         _GAME,
