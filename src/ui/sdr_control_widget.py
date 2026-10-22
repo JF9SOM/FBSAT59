@@ -1057,13 +1057,13 @@ class SdrControlWidget(QWidget):
             self._start_paused_next = start_paused
             self.play_recording_requested.emit(path)
             self._start_paused_next = False
-            self._show_overview(path)
+            self._show_overview(path, show_play_hint=start_paused)
 
-    def _show_overview(self, path: str) -> None:
+    def _show_overview(self, path: str, show_play_hint: bool = False) -> None:
         """Show the whole-recording spectrogram of *path*; clicking it seeks the playback."""
         if self._overview_dialog is not None:
             self._overview_dialog.close()
-        dlg = SdrOverviewDialog(Path(path), self, self._overview_click_mode)
+        dlg = SdrOverviewDialog(Path(path), self, self._overview_click_mode, show_play_hint)
         dlg.seek_requested.connect(self._on_overview_seek)
         dlg.click_mode_changed.connect(lambda m: setattr(self, "_overview_click_mode", m))
         dlg.destroyed.connect(lambda *_a: setattr(self, "_overview_dialog", None))

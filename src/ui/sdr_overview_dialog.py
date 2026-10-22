@@ -202,6 +202,7 @@ class SdrOverviewDialog(QDialog):
         path: Path,
         parent: QWidget | None = None,
         click_mode: int = CLICK_TIME_AND_OFFSET,
+        show_play_hint: bool = False,
     ) -> None:
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
@@ -246,9 +247,10 @@ class SdrOverviewDialog(QDialog):
         click_row.addWidget(self._click_combo, 1)
         v.addLayout(click_row)
 
-        hint = QLabel(_("Click to start playback."))
-        hint.setStyleSheet("font-weight: bold;")
-        v.addWidget(hint)
+        if show_play_hint:
+            hint = QLabel(_("Click to start playback."))
+            hint.setStyleSheet("font-weight: bold;")
+            v.addWidget(hint)
         self._canvas = _OverviewCanvas()
         v.addWidget(self._canvas, 1)
         self._info = QLabel("")
