@@ -438,6 +438,11 @@ class TelemetryTab(QWidget):
         # Times of gr-satellites packets rejected as noise whose frame has not arrived yet.
         self._gr_bogus_pending: deque[float] = deque()
         self._gr_bogus_count = 0
+        # Owned by the tab so it dies with it (a bare QTimer.singleShot on a bound method
+        # fired after the widget was gone and crashed later tests).
+        self._gr_prune_timer = QTimer(self)
+        self._gr_prune_timer.setSingleShot(True)
+        self._gr_prune_timer.timeout.connect(self._gr_prune)
         self._selected_name: str = ""
 
         # HADES FSK mode: the demodulator thread, the pipeline it is subscribed to and the
@@ -2693,7 +2698,7 @@ class TelemetryTab(QWidget):
             # gr_packet_is_bogus()), so it must not reach SatNOGS before that is known. A frame
             # whose text never comes is sent when its time is up (_gr_prune()).
             self._pair_gr_frame(frame)
-            QTimer.singleShot(int(_GR_PAIR_WINDOW_S * 1000) + 250, self._gr_prune)
+            self._gr_prune_timer.start(int(_GR_PAIR_WINDOW_S * 1000) + 250)
 
     def _persist_gr_row(
         self,
