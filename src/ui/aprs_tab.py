@@ -69,11 +69,42 @@ _DEFAULT_VIA = "ARISS"
 # DP0SNX is the SONATE-2 digipeater callsign; it is addressed directly (other
 # stations' digipeated frames show ``...,DP0SNX*``) rather than via an alias.
 # OK0LSR is LASARsat's digipeater (9k6, half duplex on 436.925 MHz): put it in the path.
-_VIA_PATH_CHOICES = ("ARISS", "APRSAT", "WIDE", "DP0SNX", "OK0LSR")
+_VIA_PATH_CHOICES = (
+    "ARISS",
+    "APRSAT",
+    "WIDE",
+    "DP0SNX",
+    "OK0LSR",
+    "OK0KST",
+    "HA2GRB",
+    "OM9MAR",
+    "9A0CC",
+)
 
 # Satellites whose digipeater is addressed by callsign: selecting one of their transponders
 # sets the Via field to this value (and restores the previous Via when another is selected).
-_SATELLITE_VIA: dict[int, str] = {62391: "OK0LSR", 59112: "DP0SNX"}  # LASARsat, SONATE-2
+# Evidence per entry (2026-10):
+#   25544 ISS       ARISS      generic satellite alias (aprs.org/ariss.html); RS0ISS also works
+#   59112 SONATE-2  DP0SNX     official: "include DP0SNX in the APRS route" (uni-wuerzburg.de)
+#   62391 LASARsat  OK0LSR     SATNOGS "APRS digipeater OK0LSR"; confirmed on air
+#   69935 KOSTKA    OK0KST     SATNOGS name OK0KST; JJ1WTK logs its beacons as OK0KST>CQ
+#   60237 GRBBeta   HA2GRB     SATNOGS name HA2GRB; beacons seen as HA2GRB>CQ
+#   69920 MARINA    OM9MAR     SATNOGS name OM9MAR; beacons seen as OM9MAR>CQ
+#   62394 CroCube   9A0CC      SATNOGS name 9A0CC; beacons seen as 9A0CC>CQ
+# KOSTKA/GRBBeta/MARINA/CroCube follow the LASARsat/SONATE-2 pattern (the digipeater answers
+# to the satellite's own callsign) but no source states that path outright: unverified on air.
+# Satellites not listed (LAPAN-A2, ExseedSat-1, Tianhe, PARUS-T1, RIDU-Sat 1, UiTMSAT-2,
+# SCION-X, KOYO, GuaraniSat-2, LilacSat-2, PCSAT) publish no digipeater callsign that could be
+# confirmed, so their Via is left as the user set it.
+_SATELLITE_VIA: dict[int, str] = {
+    25544: "ARISS",
+    59112: "DP0SNX",
+    62391: "OK0LSR",
+    69935: "OK0KST",
+    60237: "HA2GRB",
+    69920: "OM9MAR",
+    62394: "9A0CC",
+}
 
 # app_settings key for user-typed Via values, persisted so they remain
 # selectable in the dropdown across sessions (see _load_via_choices()).

@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import time
 from typing import Any
@@ -686,6 +687,32 @@ def _encode_addr(callsign: str, ssid: int, last: bool = False, c_bit: bool = Fal
     return addr + bytes([ssid_byte])
 
 
+def parse_via_path(via: str) -> list[tuple[str, int]]:
+    """Split a digipeater path such as ``"WIDE1-1,WIDE2-1"`` or ``"W3ADO-1"`` into (call, ssid).
+
+    Separators are commas or spaces; a trailing ``*`` (has-been-repeated) is ignored, callsigns
+    are cut to 6 characters and SSIDs clamped to 0-15. An empty path means ``ARISS``; at most
+    8 digipeaters are kept (the AX.25 limit).
+    """
+    out: list[tuple[str, int]] = []
+    for token in re.split(r"[,\s]+", via.strip().upper()):
+        token = token.rstrip("*")
+        if not token:
+            continue
+        call, _sep, ssid_text = token.partition("-")
+        ssid = int(ssid_text) if ssid_text.isdigit() else 0
+        out.append((call[:6], min(15, max(0, ssid))))
+    return out[:8] or [("ARISS", 0)]
+
+
+def _encode_via_fields(via: str) -> bytes:
+    """AX.25 address fields for the digipeater path, the last one flagged as the final address."""
+    path = parse_via_path(via)
+    return b"".join(
+        _encode_addr(call, ssid, last=(i == len(path) - 1)) for i, (call, ssid) in enumerate(path)
+    )
+
+
 def _build_aprs_message(
     src_call: str,
     src_ssid: int,
@@ -695,15 +722,12 @@ def _build_aprs_message(
 ) -> bytes:
     """Build a raw AX.25 UI frame containing an APRS message packet.
 
-    The destination is set to ``APRS`` per convention.  The via path is
-    encoded as a single digipeater address (e.g. "ARISS").
+    The destination is set to ``APRS`` per convention.  The via path may list several
+    digipeaters, each with an optional SSID (see :func:`parse_via_path`).
     """
-    via_call = via.strip().upper() or "ARISS"
-    via_ssid = 0
-
     dest_field = _encode_addr("APRS", 0, c_bit=True)
     src_field = _encode_addr(src_call, src_ssid, c_bit=True)
-    via_field = _encode_addr(via_call, via_ssid, last=True)
+    via_field = _encode_via_fields(via)
 
     # Pad destination callsign to 6 chars in APRS info
     dest_padded = dest_call.upper().ljust(9)[:9]
@@ -753,13 +777,12 @@ def _build_aprs_position(
     Format: !DDmm.hhN/DDDmm.hhES<comment>
     where S is the two-character APRS symbol (table + code, default ``/-``).
     """
-    via_call = via.strip().upper() or "ARISS"
     sym_table = symbol[0] if len(symbol) >= 1 else "/"
     sym_code = symbol[1] if len(symbol) >= 2 else "-"
 
     dest_field = _encode_addr("APRS", 0, c_bit=True)
     src_field = _encode_addr(src_call, src_ssid, c_bit=True)
-    via_field = _encode_addr(via_call, 0, last=True)
+    via_field = _encode_via_fields(via)
 
     lat_str, lon_str = _latlon_to_aprs(lat_deg, lon_deg)
     info = f"!{lat_str}{sym_table}{lon_str}{sym_code}{comment}"

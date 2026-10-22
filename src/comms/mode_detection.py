@@ -28,6 +28,27 @@ def is_ft4_transmitter(xpdr: dict[str, Any]) -> bool:
     return "FT4" in desc
 
 
+# 9600 baud G3RUH AX.25 packet digipeaters seen by JJ1WTK's satellite APRS monitor (2026-10).
+# Their SATNOGS descriptions often omit the word "APRS" (KOSTKA "UHF Digipeater", MARINA
+# "Mode V/V - GFSK9k6 AX.25 G3RUH"), so they are matched by NORAD id: KOSTKA 69935,
+# GRBBeta 60237, MARINA 69920, CroCube 62394. (LASARsat's row already says "APRS digipeater".)
+APRS_9K6_DIGIPEATER_NORADS = frozenset({69935, 60237, 69920, 62394})
+
+
+def _is_9k6_aprs_digipeater(xpdr: dict[str, Any]) -> bool:
+    """The cross-band/same-band digipeater row of a satellite in APRS_9K6_DIGIPEATER_NORADS.
+
+    The telemetry-only rows of the same satellites ("... Telemetry", "... TLM", plain
+    "AX.25" downlinks) are not digipeaters and stay out.
+    """
+    if xpdr.get("norad_cat_id") not in APRS_9K6_DIGIPEATER_NORADS or xpdr.get("baud") != 9600:
+        return False
+    desc = (xpdr.get("description") or "").upper()
+    if "TELEMETRY" in desc or "TLM" in desc:
+        return False
+    return "DIGIPEATER" in desc or "V/V" in desc or "U/U" in desc
+
+
 def is_aprs_transmitter(xpdr: dict[str, Any]) -> bool:
     """Match APRS / AFSK1k2 packet-digipeater downlinks the APRS tab
     (Direwolf, Bell 202) can actually decode.
@@ -48,7 +69,9 @@ def is_aprs_transmitter(xpdr: dict[str, Any]) -> bool:
     """
     desc = (xpdr.get("description") or "").upper()
     mode = (xpdr.get("mode") or "").upper()
-    return "APRS" in desc or ("DIGIPEATER" in desc and mode == "AFSK")
+    return (
+        "APRS" in desc or ("DIGIPEATER" in desc and mode == "AFSK") or _is_9k6_aprs_digipeater(xpdr)
+    )
 
 
 def is_sstv_transmitter(xpdr: dict[str, Any]) -> bool:

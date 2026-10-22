@@ -4517,3 +4517,25 @@ Aalto の公開ソース（github.com/aaltosatellite/skylink の `repeater_frame
 
 テスト: `tests/test_foresail_skylink.py`・`test_foresail_tdd.py`・`test_foresail_rx_tx.py`（scipy と
 `reed-solomon-ccsds` が無い環境ではスキップ）・`test_foresail1p_panel.py`。
+
+### APRS タブ: 衛星ごとのデジピーター・パス自動選択と 9600bps デジピーターの Quick Panel 掲載（2026-10-22）
+
+- **Quick Panel の APRS 衛星リスト**（`is_aprs_transmitter`）に、説明文に "APRS" と書かれていない 9600bps
+  デジピーター（KOSTKA 69935 / GRBBeta 60237 / MARINA 69920 / CroCube 62394）を NORAD ID で追加
+  （`mode_detection.APRS_9K6_DIGIPEATER_NORADS`）。テレメトリー専用行（"Telemetry"/"TLM"・素の "AX.25"）は除外。
+  LASARsat は説明文に "APRS digipeater" とあるため従来から載っていた。JJ1WTK 局のページで受信が
+  確認できる UHF 衛星に合わせた。
+- **パスの自動選択**（`aprs_tab._SATELLITE_VIA`）: ISS=ARISS / SONATE-2=DP0SNX / LASARsat=OK0LSR /
+  KOSTKA=OK0KST / GRBBeta=HA2GRB / MARINA=OM9MAR / CroCube=9A0CC。各エントリの根拠は同ファイルのコメント。
+  **KOSTKA・GRBBeta・MARINA・CroCube は「衛星自身のコールサイン宛て」という LASARsat/SONATE-2 と同じ
+  パターンからの推定で、実機でデジピートされたことは未確認**。
+- **載せなかった衛星**（確認できるデジピーターのコールサインが見つからなかった）: LAPAN-A2（衛星の APRS コールは
+  YB0X-1 とする論文あり）、ExseedSat-1、CSS(Tianhe)、PARUS-T1（BN0TIT-11 とする情報あり。打ち上げ失敗の報も）、
+  RIDU-Sat 1（別名 YH1SUP）、UiTMSAT-2、SCION-X（別名 BN0SCX）、KOYO、GuaraniSat-2（ZP5XSN。未打ち上げ）、
+  LilacSat-2、PCSAT（W3ADO-1。ビーコン送信元としてのみ確認）。これらは Via を変更しない。
+- **パスの組み立て**（`engine.parse_via_path`）: これまで Via は「コールサイン＋SSID 0」の 1 段のみで、
+  `W3ADO-1` のような SSID 付きは 6 文字に切られて壊れていた。カンマ/空白区切りの複数段と SSID（0–15）に対応
+  （最大 8 段、`*` は無視、空は ARISS）。
+- **APRS-IS モニター**（`comms/aprs/aprs_is.py`・`ui/aprs_is_window.py`）: 受信専用（パスコード -1）。
+  `rotate.aprs2.net:14580`。衛星のコールサイン表は `SATELLITE_CALLSIGNS`。
+

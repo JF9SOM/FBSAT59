@@ -561,3 +561,22 @@ def test_get_norad_bands_matching() -> None:
         25544: {"V", "U"},
         99999: {"V"},
     }
+
+
+@pytest.mark.parametrize(
+    ("norad", "desc", "expected"),
+    [
+        (69935, "KOSTKA UHF Digipeater", True),
+        (69935, "KOSTKA UHF AX.25", False),
+        (60237, "Mode U/U - GFSK9k6 - Digipeater - AX.25", True),
+        (60237, "Mode V - GFSK9k6 - AX.25", False),
+        (69920, "Mode V/V - GFSK9k6 AX.25 G3RUH", True),
+        (69920, "Move V - GFSK9k6 - Telemetry - AX.25", False),
+        (62394, "Mode U/U - GFSK9k6 - Digipeater - AX.25", True),
+        (62394, "Mode U - GFSK9k6 - AX.25 G3RUH", False),
+        (12345, "Mode U/U - GFSK9k6 - Digipeater - AX.25", False),  # other satellites stay out
+    ],
+)
+def test_9k6_aprs_digipeaters_join_the_aprs_list(norad: int, desc: str, expected: bool) -> None:
+    xpdr = {"norad_cat_id": norad, "description": desc, "mode": "GFSK", "baud": 9600}
+    assert is_aprs_transmitter(xpdr) is expected

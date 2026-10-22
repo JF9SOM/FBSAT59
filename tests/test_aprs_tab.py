@@ -285,7 +285,7 @@ def test_lasarsat_selects_its_digipeater_in_via_and_restores_it(
     tab._on_transmitter_changed({"norad_cat_id": 62391, "baud": 9600})
     assert tab._via_edit.currentText() == "OK0LSR"
     assert tab._saved_via() == "WIDE"  # the user's own Via is what gets persisted
-    tab._on_transmitter_changed({"norad_cat_id": 25544, "baud": 1200})
+    tab._on_transmitter_changed({"norad_cat_id": 40931, "baud": 1200})
     assert tab._via_edit.currentText() == "WIDE"
     assert tab._saved_via() == "WIDE"
 
@@ -298,8 +298,21 @@ def test_sonate2_selects_its_digipeater_in_via_and_restores_it(
     tab._on_transmitter_changed({"norad_cat_id": 59112, "baud": 1200})
     assert tab._via_edit.currentText() == "DP0SNX"
     assert tab._saved_via() == "ARISS"
-    tab._on_transmitter_changed({"norad_cat_id": 25544, "baud": 1200})
+    tab._on_transmitter_changed({"norad_cat_id": 40931, "baud": 1200})
     assert tab._via_edit.currentText() == "ARISS"
+
+
+def test_every_listed_satellite_selects_its_own_via(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    from ui.aprs_tab import _SATELLITE_VIA
+
+    tab = _make_tab(qtbot, conn)
+    tab._via_edit.setCurrentText("WIDE")
+    for norad, call in _SATELLITE_VIA.items():
+        tab._on_transmitter_changed({"norad_cat_id": norad, "baud": 1200})
+        assert tab._via_edit.currentText() == call
+    tab._on_transmitter_changed({"norad_cat_id": 40931, "baud": 1200})  # LAPAN-A2: none known
+    assert tab._via_edit.currentText() == "WIDE"
+    assert tab._saved_via() == "WIDE"
 
 
 def test_via_typed_by_hand_is_kept_when_leaving_lasarsat(
@@ -308,5 +321,5 @@ def test_via_typed_by_hand_is_kept_when_leaving_lasarsat(
     tab = _make_tab(qtbot, conn)
     tab._on_transmitter_changed({"norad_cat_id": 62391, "baud": 9600})
     tab._via_edit.setCurrentText("APRSAT")  # changed by hand while on LASARsat
-    tab._on_transmitter_changed({"norad_cat_id": 25544, "baud": 1200})
+    tab._on_transmitter_changed({"norad_cat_id": 40931, "baud": 1200})
     assert tab._via_edit.currentText() == "APRSAT"

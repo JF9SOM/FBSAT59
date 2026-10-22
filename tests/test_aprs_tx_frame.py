@@ -11,7 +11,12 @@ import numpy as np
 import pytest
 
 from comms.aprs.afsk_tx import build_afsk_audio
-from comms.aprs.engine import _build_aprs_message, _build_aprs_position
+from comms.aprs.engine import (
+    _build_aprs_message,
+    _build_aprs_position,
+    describe_ax25_frame,
+    parse_via_path,
+)
 from comms.aprs.g3ruh_tx import build_g3ruh_audio
 
 # Frame of "JF9SOM>APRS,ARISS::JA1ABC   :hello world\n" as ``gen_packets`` / ``atest -h``
@@ -74,3 +79,20 @@ def test_audio_matches_direwolfs_gen_packets(baud: int, args: list[str], tmp_pat
     )
     assert abs(len(ref) - len(mine)) <= 2
     assert best < 0.1
+
+
+def test_parse_via_path_handles_ssid_lists_and_defaults() -> None:
+    assert parse_via_path("ARISS") == [("ARISS", 0)]
+    assert parse_via_path("W3ADO-1") == [("W3ADO", 1)]
+    assert parse_via_path("WIDE1-1, WIDE2-1") == [("WIDE1", 1), ("WIDE2", 1)]
+    assert parse_via_path("dp0snx*") == [("DP0SNX", 0)]
+    assert parse_via_path("") == [("ARISS", 0)]
+    assert parse_via_path("X-99") == [("X", 15)]
+    assert len(parse_via_path(",".join(f"D{i}" for i in range(12)))) == 8
+
+
+def test_via_ssid_and_several_digipeaters_reach_the_frame() -> None:
+    frame = _build_aprs_message("JF9SOM", 0, "WIDE1-1,WIDE2-2", "JA1ABC", "hi")
+    assert "JF9SOM>APRS,WIDE1-1,WIDE2-2 " in describe_ax25_frame(frame) + " "
+    assert frame[20] == 0x60 | (1 << 1)  # first digipeater: not the last address
+    assert frame[27] == 0x61 | (2 << 1)  # second digipeater: last address
