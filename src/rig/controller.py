@@ -6752,7 +6752,7 @@ class SdrRigAdapter(RigController):
         """
         return self._is_replay
 
-    def connect_from_file(self, wav_path: Path) -> bool:
+    def connect_from_file(self, wav_path: Path, start_paused: bool = False) -> bool:
         """Open a recorded .iq.wav file for playback instead of live hardware.
 
         Disconnects any existing connection first (live hardware or a
@@ -6762,13 +6762,14 @@ class SdrRigAdapter(RigController):
         MainWindow's job (_on_rig_slot_connected()), exactly like a live
         connect, so that code is not duplicated here. See is_replay's
         docstring for the one behavioral difference that matters
-        afterward.
+        afterward. With *start_paused* the file waits for the first play
+        request instead of playing as soon as the pipeline starts.
         """
         self.disconnect()
         try:
             from sdr.file_device import SdrFileDevice
 
-            self._sdr_device = SdrFileDevice(wav_path)
+            self._sdr_device = SdrFileDevice(wav_path, start_paused=start_paused)
             self._is_replay = True
             self._last_tuned_hz = None
             with self._lock:

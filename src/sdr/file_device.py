@@ -62,7 +62,7 @@ def parse_start_time_from_filename(name: str) -> datetime | None:
 class SdrFileDevice:
     """Duck-typed SdrDevice that replays a recorded .iq.wav file."""
 
-    def __init__(self, wav_path: Path) -> None:
+    def __init__(self, wav_path: Path, start_paused: bool = False) -> None:
         # Imported here, not at module level: scipy is an optional
         # dependency (see CLAUDE.md's optional-import notes) and every
         # other sdr.* module already avoids a hard import-time
@@ -78,6 +78,10 @@ class SdrFileDevice:
         self._lock = threading.Lock()
         self._pos: int = 0
         self._streaming = False
+        # One-shot: the first start_stream() (SDRPipeline.run() makes it when the
+        # pipeline thread starts) leaves the file paused, so a recording opened
+        # from SDR Control waits for the user's first click before it plays.
+        self._hold_first_start: bool = start_paused
         # Pacing reference for read_samples() -- see its docstring. Reset in
         # start_stream() and seek() so a pause/resume or a jump never leaves
         # a stale reference to catch up (or slow down) against.
@@ -117,6 +121,9 @@ class SdrFileDevice:
         return True
 
     def start_stream(self) -> bool:
+        if self._hold_first_start:
+            self._hold_first_start = False
+            return True
         with self._lock:
             self._pace_ref_mono = time.monotonic()
             self._pace_ref_pos = self._pos

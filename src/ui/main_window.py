@@ -8364,7 +8364,11 @@ class MainWindow(QMainWindow):
             if reply != QMessageBox.StandardButton.Yes:
                 return
 
-        if rig.connect_from_file(Path(path)):
+        if self._sdr_control.consume_start_paused():
+            loaded = rig.connect_from_file(Path(path), start_paused=True)
+        else:
+            loaded = rig.connect_from_file(Path(path))
+        if loaded:
             self._radio_control.notify_playback_connected(slot)
         else:
             if borrowed_now:

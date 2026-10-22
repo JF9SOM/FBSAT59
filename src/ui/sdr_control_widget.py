@@ -170,6 +170,8 @@ class SdrControlWidget(QWidget):
         self._overview_dialog: SdrOverviewDialog | None = None
         # The overview's "On click" menu, kept for the windows opened later.
         self._overview_click_mode: int = CLICK_TIME_AND_OFFSET
+        # Set only while play_recording_requested is being emitted.
+        self._start_paused_next: bool = False
         # True while self._pipeline is backed by a recorded .iq.wav file
         # rather than live hardware -- see set_pipeline()'s is_replay param.
         self._is_replay: bool = False
@@ -1026,9 +1028,18 @@ class SdrControlWidget(QWidget):
 
     def open_recording(self) -> None:
         """The "📂 Open…" button's action, for other tabs (the SSTV/SSDV tab's IQ decode button)."""
-        self._on_open_clicked()
+        self._pick_and_open(start_paused=False)
+
+    def consume_start_paused(self) -> bool:
+        """True once if the recording being loaded must wait for a click before playing."""
+        paused, self._start_paused_next = self._start_paused_next, False
+        return paused
 
     def _on_open_clicked(self) -> None:
+        """The Open button: the recording waits for a click on the spectrogram."""
+        self._pick_and_open(start_paused=True)
+
+    def _pick_and_open(self, start_paused: bool) -> None:
         """Pick a .iq.wav file and ask MainWindow to load it and start playing it.
 
         The recording's whole-recording spectrogram opens in its own window at the
@@ -1043,7 +1054,9 @@ class SdrControlWidget(QWidget):
             _("IQ recordings (*.iq.wav);;All files (*)"),
         )
         if path:
+            self._start_paused_next = start_paused
             self.play_recording_requested.emit(path)
+            self._start_paused_next = False
             self._show_overview(path)
 
     def _show_overview(self, path: str) -> None:

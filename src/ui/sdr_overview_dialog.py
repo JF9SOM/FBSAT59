@@ -246,6 +246,9 @@ class SdrOverviewDialog(QDialog):
         click_row.addWidget(self._click_combo, 1)
         v.addLayout(click_row)
 
+        hint = QLabel(_("Click to start playback."))
+        hint.setStyleSheet("font-weight: bold;")
+        v.addWidget(hint)
         self._canvas = _OverviewCanvas()
         v.addWidget(self._canvas, 1)
         self._info = QLabel("")
