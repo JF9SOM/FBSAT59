@@ -455,3 +455,13 @@ def test_lasarsat_cw_misread_beacon_is_a_near_miss_not_a_frame() -> None:
     assert decode_cw_frame(62391, text) is None
     assert is_near_miss(62391, text)
     assert build_satnogs_frame(62391, "de ok0lsr = u1r2t3p4 ar") is None
+
+
+# -- CroCube (NORAD 62394): "de 9a0cc = u<up>r<rst>t<mcu>p<pa> ar" --
+
+
+def test_crocube_cw_beacon_is_decoded() -> None:
+    result = decode_cw_frame(62394, "de 9a0cc = u1234r5t20p-3 ar")
+    assert result is not None and result.valid
+    values = {f.name: f.raw_value for f in result.fields}
+    assert values == {"uptime_total": 1234, "reset_number": 5, "temp_mcu": 20, "temp_pa": -3}

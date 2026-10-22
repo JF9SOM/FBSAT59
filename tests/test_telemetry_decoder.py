@@ -503,3 +503,55 @@ def test_payload_match_mask_compares_only_the_masked_bits() -> None:
     assert _payload_matches(match, bytes([0, 0xFF]))
     assert not _payload_matches(match, bytes([0, 0x11]))
     assert not _payload_matches(match, bytes([0]))  # too short
+
+
+# -- CroCube (NORAD 62394): comma-separated ASCII telemetry (SatNOGS crocube.ksy) --
+# The frame bodies follow the ksy's layout; no real CroCube telemetry frame is recorded yet.
+
+
+def test_crocube_defs_list_every_message_type() -> None:
+    defs = get_telemetry_id_defs(62394)
+    assert defs is not None
+    assert set(defs) == {"MGS", "OBC", "PSU", "SOL", "ATR", "U", "V", "MSG", "BEACON"}
+
+
+def test_crocube_obc_has_the_battery_field_lasarsat_lacks() -> None:
+    tf = decode_telemetry("9A0CC", b"OBC,3,120,5000,8100,25,4096", norad=62394)
+    assert tf.telemetry_id == "OBC"
+    by_name = {f.name: f.raw_value for f in tf.fields}
+    assert by_name == {
+        "obc_reset_cnt": 3,
+        "obc_uptime": 120,
+        "obc_uptime_tot": 5000,
+        "obc_bat": 8100,
+        "obc_temp_mcu": 25,
+        "obc_freemem": 4096,
+    }
+
+
+def test_crocube_mgs_has_sixteen_fields_and_atr_nine() -> None:
+    mgs = decode_telemetry("9A0CC", ("MGS," + ",".join(str(i) for i in range(16))).encode(), 62394)
+    names = [f.name for f in mgs.fields]
+    assert len(names) == 16 and names[-1] == "mgs_ext_gyr_z"
+    assert mgs.fields[-1].raw_value == 15
+    atr = decode_telemetry("9A0CC", b"ATR,1,0,2,3,4,5,6,7,99", 62394)
+    assert [f.raw_value for f in atr.fields] == [1, 0, 2, 3, 4, 5, 6, 7, 99]
+
+
+def test_crocube_vhf_and_uhf_beacons_use_their_own_names() -> None:
+    body = b",100,2000,3,4,25,26,27,8,9A0CC,50,60,70,80"
+    v = decode_telemetry("9A0CC", b"V" + body, 62394)
+    u = decode_telemetry("9A0CC", b"U" + body, 62394)
+    assert v.telemetry_id == "V" and u.telemetry_id == "U"
+    assert len(v.fields) == len(u.fields) == 13
+    assert v.fields[0].name == "vhf_uptime" and u.fields[0].name == "uhf_uptime"
+    assert {f.name: f for f in v.fields}["vhf_last_digipeater"].unit == "9A0CC"
+
+
+def test_crocube_psu_channel_bits_and_free_text() -> None:
+    psu = decode_telemetry("9A0CC", b"PSU,1,2,3,8000,10,11,12,13,5,1,7", norad=62394)
+    by_name = {f.name: f.raw_value for f in psu.fields}
+    assert by_name["psu_ch0_state"] == 1 and by_name["psu_ch1_state"] == 0
+    assert by_name["psu_gnd_wdt"] == 7
+    text = decode_telemetry("9A0CC", b"Hello CroCube", norad=62394)
+    assert text.telemetry_id == "MSG"

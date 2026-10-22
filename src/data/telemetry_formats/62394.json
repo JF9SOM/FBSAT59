@@ -1,0 +1,642 @@
+{
+  "norad": 62394,
+  "name": "CroCube",
+  "callsign": "9A0CC",
+  "modulation": "GFSK9k6",
+  "ax25_pid": "0xF0",
+  "reference": "https://gitlab.com/librespacefoundation/satnogs/satnogs-decoders/-/blob/master/ksy/crocube.ksy",
+  "document": "SatNOGS decoders \"crocube.ksy\" (Kaitai Struct); https://crocube.hr/wp-content/uploads/2022/12/CroCube_AmateurRadioInfo_2024-09-15.pdf",
+  "note": "Layout from the SatNOGS crocube.ksy; not yet checked against a real telemetry frame (the CroCube recordings so far held none). Units are not in the ksy, so raw values are shown.",
+  "csv_messages": {
+    "MGS": {
+      "label": "MGS（磁気・ジャイロセンサ）",
+      "fields": [
+        {
+          "name": "mgs_temp_int_mag",
+          "index": 1,
+          "type": "int",
+          "label": "内蔵磁気センサ温度(生値)"
+        },
+        {
+          "name": "mgs_temp_int_gyr",
+          "index": 2,
+          "type": "int",
+          "label": "内蔵ジャイロ温度(生値)"
+        },
+        {
+          "name": "mgs_int_mag_x",
+          "index": 3,
+          "type": "int",
+          "label": "内蔵磁気 X(生値)"
+        },
+        {
+          "name": "mgs_int_mag_y",
+          "index": 4,
+          "type": "int",
+          "label": "内蔵磁気 Y(生値)"
+        },
+        {
+          "name": "mgs_int_mag_z",
+          "index": 5,
+          "type": "int",
+          "label": "内蔵磁気 Z(生値)"
+        },
+        {
+          "name": "mgs_int_gyr_x",
+          "index": 6,
+          "type": "int",
+          "label": "内蔵ジャイロ X(生値)"
+        },
+        {
+          "name": "mgs_int_gyr_y",
+          "index": 7,
+          "type": "int",
+          "label": "内蔵ジャイロ Y(生値)"
+        },
+        {
+          "name": "mgs_int_gyr_z",
+          "index": 8,
+          "type": "int",
+          "label": "内蔵ジャイロ Z(生値)"
+        },
+        {
+          "name": "mgs_temp_ext_mag",
+          "index": 9,
+          "type": "int",
+          "label": "外部磁気センサ温度(生値)"
+        },
+        {
+          "name": "mgs_temp_ext_gyr",
+          "index": 10,
+          "type": "int",
+          "label": "外部ジャイロ温度(生値)"
+        },
+        {
+          "name": "mgs_ext_mag_x",
+          "index": 11,
+          "type": "int",
+          "label": "外部磁気 X(生値)"
+        },
+        {
+          "name": "mgs_ext_mag_y",
+          "index": 12,
+          "type": "int",
+          "label": "外部磁気 Y(生値)"
+        },
+        {
+          "name": "mgs_ext_mag_z",
+          "index": 13,
+          "type": "int",
+          "label": "外部磁気 Z(生値)"
+        },
+        {
+          "name": "mgs_ext_gyr_x",
+          "index": 14,
+          "type": "int",
+          "label": "外部ジャイロ X(生値)"
+        },
+        {
+          "name": "mgs_ext_gyr_y",
+          "index": 15,
+          "type": "int",
+          "label": "外部ジャイロ Y(生値)"
+        },
+        {
+          "name": "mgs_ext_gyr_z",
+          "index": 16,
+          "type": "int",
+          "label": "外部ジャイロ Z(生値)"
+        }
+      ]
+    },
+    "OBC": {
+      "label": "OBC（搭載コンピュータ）",
+      "fields": [
+        {
+          "name": "obc_reset_cnt",
+          "index": 1,
+          "type": "int",
+          "label": "OBCリセット回数"
+        },
+        {
+          "name": "obc_uptime",
+          "index": 2,
+          "type": "int",
+          "label": "OBC稼働時間（今回起動から）",
+          "unit": "s"
+        },
+        {
+          "name": "obc_uptime_tot",
+          "index": 3,
+          "type": "int",
+          "label": "OBC累積稼働時間",
+          "unit": "s"
+        },
+        {
+          "name": "obc_bat",
+          "index": 4,
+          "type": "int",
+          "label": "バッテリー電圧(生値)"
+        },
+        {
+          "name": "obc_temp_mcu",
+          "index": 5,
+          "type": "int",
+          "label": "MCU温度(生値)"
+        },
+        {
+          "name": "obc_freemem",
+          "index": 6,
+          "type": "int",
+          "label": "空きメモリ(生値)"
+        }
+      ]
+    },
+    "PSU": {
+      "label": "PSU（電源系）",
+      "fields": [
+        {
+          "name": "psu_reset_cnt",
+          "index": 1,
+          "type": "int",
+          "label": "PSUリセット回数"
+        },
+        {
+          "name": "psu_uptime",
+          "index": 2,
+          "type": "int",
+          "label": "PSU稼働時間（今回起動から）",
+          "unit": "s"
+        },
+        {
+          "name": "psu_uptime_tot",
+          "index": 3,
+          "type": "int",
+          "label": "PSU累積稼働時間",
+          "unit": "s"
+        },
+        {
+          "name": "psu_battery",
+          "index": 4,
+          "type": "int",
+          "label": "バッテリー電圧(生値)"
+        },
+        {
+          "name": "psu_temp_sys",
+          "index": 5,
+          "type": "int",
+          "label": "システム温度(生値)"
+        },
+        {
+          "name": "psu_temp_bat",
+          "index": 6,
+          "type": "int",
+          "label": "バッテリー温度(生値)"
+        },
+        {
+          "name": "psu_cur_in",
+          "index": 7,
+          "type": "int",
+          "label": "入力電流(生値)"
+        },
+        {
+          "name": "psu_cur_out",
+          "index": 8,
+          "type": "int",
+          "label": "出力電流(生値)"
+        },
+        {
+          "name": "psu_ch_state_num",
+          "index": 9,
+          "type": "hex_int",
+          "label": "チャンネル状態（16進ビットマスク）"
+        },
+        {
+          "name": "psu_ch0_state",
+          "index": 9,
+          "type": "bitflag",
+          "label": "PSU CH0電源状態(0=OFF,1=ON)",
+          "bit": 0,
+          "base": 16
+        },
+        {
+          "name": "psu_ch1_state",
+          "index": 9,
+          "type": "bitflag",
+          "label": "PSU CH1電源状態(0=OFF,1=ON)",
+          "bit": 1,
+          "base": 16
+        },
+        {
+          "name": "psu_ch2_state",
+          "index": 9,
+          "type": "bitflag",
+          "label": "PSU CH2電源状態(0=OFF,1=ON)",
+          "bit": 2,
+          "base": 16
+        },
+        {
+          "name": "psu_ch3_state",
+          "index": 9,
+          "type": "bitflag",
+          "label": "PSU CH3電源状態(0=OFF,1=ON)",
+          "bit": 3,
+          "base": 16
+        },
+        {
+          "name": "psu_ch4_state",
+          "index": 9,
+          "type": "bitflag",
+          "label": "PSU CH4電源状態(0=OFF,1=ON)",
+          "bit": 4,
+          "base": 16
+        },
+        {
+          "name": "psu_ch5_state",
+          "index": 9,
+          "type": "bitflag",
+          "label": "PSU CH5電源状態(0=OFF,1=ON)",
+          "bit": 5,
+          "base": 16
+        },
+        {
+          "name": "psu_ch6_state",
+          "index": 9,
+          "type": "bitflag",
+          "label": "PSU CH6電源状態(0=OFF,1=ON)",
+          "bit": 6,
+          "base": 16
+        },
+        {
+          "name": "psu_sys_state",
+          "index": 10,
+          "type": "int",
+          "label": "システム状態"
+        },
+        {
+          "name": "psu_gnd_wdt",
+          "index": 11,
+          "type": "int",
+          "label": "地上局ウォッチドッグ(生値)"
+        }
+      ]
+    },
+    "SOL": {
+      "label": "SOL（太陽電池パネル）",
+      "fields": [
+        {
+          "name": "sol_temp_zp",
+          "index": 1,
+          "type": "int",
+          "label": "太陽電池 ZP面 温度(生値)",
+          "nan_sentinel": -32768
+        },
+        {
+          "name": "sol_temp_xp",
+          "index": 2,
+          "type": "int",
+          "label": "太陽電池 XP面 温度(生値)",
+          "nan_sentinel": -32768
+        },
+        {
+          "name": "sol_temp_yp",
+          "index": 3,
+          "type": "int",
+          "label": "太陽電池 YP面 温度(生値)",
+          "nan_sentinel": -32768
+        },
+        {
+          "name": "sol_temp_zn",
+          "index": 4,
+          "type": "int",
+          "label": "太陽電池 ZN面 温度(生値)",
+          "nan_sentinel": -32768
+        },
+        {
+          "name": "sol_temp_xn",
+          "index": 5,
+          "type": "int",
+          "label": "太陽電池 XN面 温度(生値)",
+          "nan_sentinel": -32768
+        },
+        {
+          "name": "sol_temp_yn",
+          "index": 6,
+          "type": "int",
+          "label": "太陽電池 YN面 温度(生値)",
+          "nan_sentinel": -32768
+        },
+        {
+          "name": "sol_diode_zp",
+          "index": 7,
+          "type": "int",
+          "label": "太陽電池 ZP面 ダイオード(生値)",
+          "nan_sentinel": -32768
+        },
+        {
+          "name": "sol_diode_xp",
+          "index": 8,
+          "type": "int",
+          "label": "太陽電池 XP面 ダイオード(生値)",
+          "nan_sentinel": -32768
+        },
+        {
+          "name": "sol_diode_yp",
+          "index": 9,
+          "type": "int",
+          "label": "太陽電池 YP面 ダイオード(生値)",
+          "nan_sentinel": -32768
+        },
+        {
+          "name": "sol_diode_zn",
+          "index": 10,
+          "type": "int",
+          "label": "太陽電池 ZN面 ダイオード(生値)",
+          "nan_sentinel": -32768
+        },
+        {
+          "name": "sol_diode_xn",
+          "index": 11,
+          "type": "int",
+          "label": "太陽電池 XN面 ダイオード(生値)",
+          "nan_sentinel": -32768
+        },
+        {
+          "name": "sol_diode_yn",
+          "index": 12,
+          "type": "int",
+          "label": "太陽電池 YN面 ダイオード(生値)",
+          "nan_sentinel": -32768
+        }
+      ]
+    },
+    "ATR": {
+      "label": "ATR",
+      "fields": [
+        {
+          "name": "atr_master_id",
+          "index": 1,
+          "type": "int",
+          "label": "マスターID"
+        },
+        {
+          "name": "atr_defective_devices",
+          "index": 2,
+          "type": "int",
+          "label": "故障デバイス(生値)"
+        },
+        {
+          "name": "atr_device_reset_1",
+          "index": 3,
+          "type": "int",
+          "label": "デバイス1 リセット回数"
+        },
+        {
+          "name": "atr_device_reset_2",
+          "index": 4,
+          "type": "int",
+          "label": "デバイス2 リセット回数"
+        },
+        {
+          "name": "atr_device_reset_3",
+          "index": 5,
+          "type": "int",
+          "label": "デバイス3 リセット回数"
+        },
+        {
+          "name": "atr_device_uptime_1",
+          "index": 6,
+          "type": "int",
+          "label": "デバイス1 稼働時間",
+          "unit": "s"
+        },
+        {
+          "name": "atr_device_uptime_2",
+          "index": 7,
+          "type": "int",
+          "label": "デバイス2 稼働時間",
+          "unit": "s"
+        },
+        {
+          "name": "atr_device_uptime_3",
+          "index": 8,
+          "type": "int",
+          "label": "デバイス3 稼働時間",
+          "unit": "s"
+        },
+        {
+          "name": "atr_checksum",
+          "index": 9,
+          "type": "int",
+          "label": "チェックサム"
+        }
+      ]
+    },
+    "U": {
+      "label": "U（UHFトランシーバー）",
+      "fields": [
+        {
+          "name": "uhf_uptime",
+          "index": 1,
+          "type": "int",
+          "label": "UHF 稼働時間（今回起動から）",
+          "unit": "s"
+        },
+        {
+          "name": "uhf_uptime_tot",
+          "index": 2,
+          "type": "int",
+          "label": "UHF 累積稼働時間",
+          "unit": "s"
+        },
+        {
+          "name": "uhf_reset_cnt",
+          "index": 3,
+          "type": "int",
+          "label": "UHF リセット回数"
+        },
+        {
+          "name": "uhf_rf_reset_cnt",
+          "index": 4,
+          "type": "int",
+          "label": "UHF RFリセット回数"
+        },
+        {
+          "name": "uhf_trx_temp",
+          "index": 5,
+          "type": "int",
+          "label": "UHF TRX温度(生値)"
+        },
+        {
+          "name": "uhf_rf_temp",
+          "index": 6,
+          "type": "int",
+          "label": "UHF RF温度(生値)"
+        },
+        {
+          "name": "uhf_pa_temp",
+          "index": 7,
+          "type": "int",
+          "label": "UHF PA温度(生値)"
+        },
+        {
+          "name": "uhf_digipeater_cnt",
+          "index": 8,
+          "type": "int",
+          "label": "UHF デジピート回数"
+        },
+        {
+          "name": "uhf_last_digipeater",
+          "index": 9,
+          "type": "str",
+          "label": "UHF 最後にデジピートした局"
+        },
+        {
+          "name": "uhf_rx_cnt",
+          "index": 10,
+          "type": "int",
+          "label": "UHF 受信フレーム数"
+        },
+        {
+          "name": "uhf_tx_cnt",
+          "index": 11,
+          "type": "int",
+          "label": "UHF 送信フレーム数"
+        },
+        {
+          "name": "uhf_act_rssi_raw",
+          "index": 12,
+          "type": "int",
+          "label": "UHF アクティブRSSI(生値)"
+        },
+        {
+          "name": "uhf_dcd_rssi_raw",
+          "index": 13,
+          "type": "int",
+          "label": "UHF DCD RSSI(生値)"
+        }
+      ]
+    },
+    "V": {
+      "label": "V（VHFトランシーバー）",
+      "fields": [
+        {
+          "name": "vhf_uptime",
+          "index": 1,
+          "type": "int",
+          "label": "VHF 稼働時間（今回起動から）",
+          "unit": "s"
+        },
+        {
+          "name": "vhf_uptime_tot",
+          "index": 2,
+          "type": "int",
+          "label": "VHF 累積稼働時間",
+          "unit": "s"
+        },
+        {
+          "name": "vhf_reset_cnt",
+          "index": 3,
+          "type": "int",
+          "label": "VHF リセット回数"
+        },
+        {
+          "name": "vhf_rf_reset_cnt",
+          "index": 4,
+          "type": "int",
+          "label": "VHF RFリセット回数"
+        },
+        {
+          "name": "vhf_trx_temp",
+          "index": 5,
+          "type": "int",
+          "label": "VHF TRX温度(生値)"
+        },
+        {
+          "name": "vhf_rf_temp",
+          "index": 6,
+          "type": "int",
+          "label": "VHF RF温度(生値)"
+        },
+        {
+          "name": "vhf_pa_temp",
+          "index": 7,
+          "type": "int",
+          "label": "VHF PA温度(生値)"
+        },
+        {
+          "name": "vhf_digipeater_cnt",
+          "index": 8,
+          "type": "int",
+          "label": "VHF デジピート回数"
+        },
+        {
+          "name": "vhf_last_digipeater",
+          "index": 9,
+          "type": "str",
+          "label": "VHF 最後にデジピートした局"
+        },
+        {
+          "name": "vhf_rx_cnt",
+          "index": 10,
+          "type": "int",
+          "label": "VHF 受信フレーム数"
+        },
+        {
+          "name": "vhf_tx_cnt",
+          "index": 11,
+          "type": "int",
+          "label": "VHF 送信フレーム数"
+        },
+        {
+          "name": "vhf_act_rssi_raw",
+          "index": 12,
+          "type": "int",
+          "label": "VHF アクティブRSSI(生値)"
+        },
+        {
+          "name": "vhf_dcd_rssi_raw",
+          "index": 13,
+          "type": "int",
+          "label": "VHF DCD RSSI(生値)"
+        }
+      ]
+    }
+  },
+  "text_message": {
+    "id": "MSG",
+    "label": "MSG（フリーテキスト/デジピートメッセージ）",
+    "field_label": "メッセージ",
+    "header_fields": true
+  },
+  "cw_frames": {
+    "BEACON": {
+      "label": "CWビーコン（de 9a0cc = u…r…t…p…）",
+      "id_prefix": "DE9A0CC=",
+      "text_regex": "U(\\d{1,9})R(\\d{1,9})T(-?\\d{1,9})P(-?\\d{1,9})AR",
+      "near_regex": "U[0-9O.]*R[0-9O.-]*T[0-9O.-]*P[0-9O.-]*(AR)?",
+      "fields": [
+        {
+          "name": "uptime_total",
+          "group": 1,
+          "label": "累積稼働時間(生値)"
+        },
+        {
+          "name": "reset_number",
+          "group": 2,
+          "label": "リセット回数"
+        },
+        {
+          "name": "temp_mcu",
+          "group": 3,
+          "label": "MCU温度(生値)"
+        },
+        {
+          "name": "temp_pa",
+          "group": 4,
+          "label": "PA温度(生値)"
+        }
+      ]
+    }
+  }
+}

@@ -1534,6 +1534,15 @@ ksy の `to_i` と同じく符号なしで読むので、NAV の位置の負値�
   項目の単位は ksy に無いので「(生値)」と表示。CW ビーコン（`de ok0lsr = u…`）は別途 CW 側で対応する。
 - テスト: `tests/test_telemetry_decoder.py`（`test_lasarsat_*`）。
 
+### CroCube（NORAD 62394）の AX.25 テレメトリー（2026-10-22）
+
+SatNOGS の `crocube.ksy` に従い `src/data/telemetry_formats/62394.json` を LASARsat と同じ `csv_messages` 形式で追加した
+（MGS 16 項目・OBC 6・PSU 11＋チャンネルビット・SOL 12・ATR 9・U/V 各 13、フリーテキストは `MSG`、CW ビーコン
+`de 9a0cc = u…r…t…p… ar` は `cw_frames`）。単位は ksy に無いので「(生値)」表示。
+**実フレームでは未確認**: 手元の CroCube 録音 2 本（2026-10-21）で gr-satellites が出した各 1 フレームは、AX.25 の
+コールサイン欄が壊れており（`9A0CC`/`CQ` ではない）、ksy のどの型にも当てはまらない。テストは ksy の並びに沿った
+作り物のフレームで行っている。実機の正しいフレームが取れたら定義を突き合わせること。
+
 #### LASARsat の CW ビーコン（2026-10-20）
 
 `de ok0lsr = u<累積稼働時間>r<リセット回数>t<MCU温度>p<PA温度> ar`（`lasarsat.ksy` の `cw_message`）。16進ではなく
