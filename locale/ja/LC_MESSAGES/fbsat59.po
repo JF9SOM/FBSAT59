@@ -8095,7 +8095,3 @@ msgstr "衛星を選んでください"
 #: src/ui/telemetry_paste.py
 msgid "not decodable with this satellite's definition"
 msgstr "この衛星の定義では解読できません"
-
-#: src/ui/telemetry_tab.py
-msgid "No definition"
-msgstr "定義なし"

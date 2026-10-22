@@ -1385,28 +1385,6 @@ def test_selecting_a_row_shows_its_decoded_fields(
     assert table.item(row, 1).text() == "2026-07-28 17:44:34 UTC"
 
 
-def test_frame_no_format_decodes_is_marked_in_the_received_frames(
-    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from ui.telemetry_tab import _UNDEFINED_ROLE
-
-    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: _RecordingUploader())
-    tab = TelemetryTab(conn, _FakeRadioControl())
-    qtbot.addWidget(tab)
-    monkeypatch.setattr(tab, "_callsign_to_norad", lambda src: 68795)
-    tab.set_satellite(68795, "OrigamiSat-2")
-    # ID 0x0A (10) is not in the satellite's format file; ID 01 is
-    undefined = "d4fe0a5c6aa1eed99000000101060000" + "00" * 8
-    tab._on_ax25_frame(bytes.fromhex(_AX25_HEADER + undefined))
-    tab._on_ax25_frame(bytes.fromhex(_AX25_HEADER + _ID01_PAYLOAD_TODAY))
-    assert tab._table.item(0, 3).data(_UNDEFINED_ROLE)
-    assert not tab._table.item(1, 3).data(_UNDEFINED_ROLE)
-    # a satellite without any format file: every frame is undefined
-    monkeypatch.setattr(tab, "_callsign_to_norad", lambda src: 99999)
-    tab._on_ax25_frame(bytes.fromhex(_AX25_HEADER + _ID01_PAYLOAD_TODAY))
-    assert tab._table.item(2, 3).data(_UNDEFINED_ROLE)
-
-
 def test_selecting_a_gr_row_shows_its_full_decoded_text(
     qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
