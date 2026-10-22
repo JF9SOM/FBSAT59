@@ -23,6 +23,13 @@ DEFAULT_SERVER = "rotate.aprs2.net"
 DEFAULT_PORT = 14580
 SOFTWARE_NAME = "FBSAT59"
 
+# Satellite packets are rare, so silence is normal. While nothing arrives we send a keepalive
+# comment line every _RECV_TIMEOUT_S seconds; the link is declared dead only after
+# _IDLE_LIMIT_S seconds without a single byte from the server (servers send a comment line
+# about every 20 s, so that never happens on a healthy connection).
+_RECV_TIMEOUT_S = 30.0
+_IDLE_LIMIT_S = 180.0
+
 # Satellite name -> the callsigns it appears under in APRS-IS (as a digipeater in the path, or
 # as the source of its own beacons). ``ARISS`` is the generic alias the ISS digipeater answers to.
 SATELLITE_CALLSIGNS: dict[str, tuple[str, ...]] = {
@@ -164,23 +171,32 @@ class AprsIsClient(QObject):
         try:
             sock = socket.create_connection((host, port), timeout=10)
         except OSError as exc:
+            logger.warning("APRS-IS connect to %s:%d failed: %s", host, port, exc)
             self.status_changed.emit(f"error: {exc}")
             return
         with self._lock:
             self._sock = sock
         try:
-            # Servers send a keepalive comment about every 20 s; 90 s of silence is a dead link.
-            sock.settimeout(90)
+            sock.settimeout(_RECV_TIMEOUT_S)
             login = f"user {login_call} pass -1 vers {SOFTWARE_NAME} 1.0"
             if filter_text.strip():
                 login += f" filter {filter_text.strip()}"
             sock.sendall((login + "\r\n").encode("ascii", errors="replace"))
             self.status_changed.emit("connected")
             buf = b""
+            idle = 0.0
             while not stop.is_set():
-                data = sock.recv(4096)
+                try:
+                    data = sock.recv(4096)
+                except TimeoutError:
+                    idle += _RECV_TIMEOUT_S
+                    if idle >= _IDLE_LIMIT_S:
+                        raise
+                    sock.sendall(b"#\r\n")  # keepalive; also fails fast on a dead link
+                    continue
                 if not data:
                     break
+                idle = 0.0
                 buf += data
                 while b"\n" in buf:
                     raw, buf = buf.split(b"\n", 1)
@@ -189,6 +205,7 @@ class AprsIsClient(QObject):
                         self.line_received.emit(text)
         except OSError as exc:
             if not stop.is_set():
+                logger.warning("APRS-IS %s:%d: %s", host, port, exc)
                 self.status_changed.emit(f"error: {exc}")
                 return
         finally:

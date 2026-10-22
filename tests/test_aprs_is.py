@@ -5,6 +5,7 @@ from __future__ import annotations
 import socket
 import threading
 
+import pytest
 from pytestqt.qtbot import QtBot
 
 from comms.aprs.aprs_is import (
@@ -77,6 +78,40 @@ def test_client_logs_in_read_only_with_filter_and_forwards_packets(qtbot: QtBot)
     srv.close()
     assert received_login == ["user JF9SOM pass -1 vers FBSAT59 1.0 filter d/DP0SNX"]
     assert lines == [_DIGIPEATED]  # the "#" comment lines are not forwarded
+
+
+def test_client_survives_a_silent_server_by_sending_keepalives(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("comms.aprs.aprs_is._RECV_TIMEOUT_S", 0.2)
+    monkeypatch.setattr("comms.aprs.aprs_is._IDLE_LIMIT_S", 5.0)
+    keepalives: list[bytes] = []
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    port = srv.getsockname()[1]
+
+    def serve() -> None:
+        conn, _ = srv.accept()
+        f = conn.makefile("rb")
+        f.readline()  # login
+        keepalives.append(f.readline())  # first keepalive after the silence
+        keepalives.append(f.readline())
+        conn.sendall(_DIGIPEATED.encode() + b"\r\n")
+        conn.close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    client = AprsIsClient()
+    lines: list[str] = []
+    statuses: list[str] = []
+    client.line_received.connect(lines.append)
+    client.status_changed.connect(statuses.append)
+    client.start("127.0.0.1", port, "JF9SOM", "d/DP0SNX")
+    qtbot.waitUntil(lambda: bool(lines), timeout=5000)
+    client.stop()
+    srv.close()
+    assert keepalives == [b"#\r\n", b"#\r\n"]
+    assert not any(s.startswith("error") for s in statuses)
 
 
 def test_window_lists_packets_and_search_hides_rows(qtbot: QtBot) -> None:
