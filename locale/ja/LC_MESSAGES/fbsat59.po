@@ -8019,3 +8019,43 @@ msgstr "接続に失敗しました: {err}"
 #: src/ui/aprs_is_window.py
 msgid "{n} packets"
 msgstr "{n} パケット"
+
+#: src/ui/aprs_is_window.py
+msgid "Filter"
+msgstr "フィルター"
+
+#: src/ui/aprs_is_window.py
+msgid "Show everything (no filter — about 100 packets per second)"
+msgstr "すべて表示（絞り込みなし — 毎秒約100パケット）"
+
+#: src/ui/aprs_is_window.py
+msgid "Connect to the unfiltered full feed. The other filters are ignored."
+msgstr "絞り込みなしの全件配信に接続します。ほかのフィルターは無視されます。"
+
+#: src/ui/aprs_is_window.py
+msgid "Select all"
+msgstr "すべて選択"
+
+#: src/ui/aprs_is_window.py
+msgid "Select none"
+msgstr "すべて解除"
+
+#: src/ui/aprs_is_window.py
+msgid "Stations within"
+msgstr "範囲内の局:"
+
+#: src/ui/aprs_is_window.py
+msgid "of"
+msgstr "中心:"
+
+#: src/ui/aprs_is_window.py
+msgid "My QTH"
+msgstr "自局位置"
+
+#: src/ui/aprs_is_window.py
+msgid "Use the station position saved in the settings"
+msgstr "設定に保存した自局の位置を使います"
+
+#: src/ui/aprs_is_window.py
+msgid "Station position is not set — configure it in Settings"
+msgstr "自局の位置が未設定です — 設定で入力してください"

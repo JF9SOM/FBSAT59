@@ -21,6 +21,11 @@ logger = logging.getLogger(__name__)
 # rotate.aprs2.net:14580 is the public "user-defined filter" port of the APRS-IS core servers.
 DEFAULT_SERVER = "rotate.aprs2.net"
 DEFAULT_PORT = 14580
+# rotate.aprs2.net:10152 is the "full feed" port: every packet, no filter (about 100 packets/s).
+FULL_FEED_PORT = 10152
+# A filter that matches nothing: used when every filter term is switched off during a session
+# (an empty "#filter" would not say "nothing").
+NO_MATCH_FILTER = "b/NOMATCH-0"
 SOFTWARE_NAME = "FBSAT59"
 
 # Satellite packets are rare, so silence is normal. While nothing arrives we send a keepalive
@@ -91,16 +96,26 @@ def match_satellite(packet: IsPacket, names: list[str] | None = None) -> str | N
     return None
 
 
-def build_filter(names: list[str], extra: str = "") -> str:
-    """APRS-IS filter for the satellites in *names* plus an optional raw *extra* filter.
+def range_filter(lat: float, lon: float, km: int) -> str:
+    """APRS-IS range filter: packets from stations within *km* of (*lat*, *lon*)."""
+    return f"r/{lat:.4f}/{lon:.4f}/{int(km)}"
 
-    ``d/`` matches packets digipeated by a satellite, ``b/`` those the satellite sent itself.
+
+def build_filter(
+    names: list[str], extra: str = "", nearby: tuple[float, float, int] | None = None
+) -> str:
+    """APRS-IS filter for the satellites in *names*, a *nearby* range and a raw *extra* filter.
+
+    ``d/`` matches packets digipeated by a satellite, ``b/`` those the satellite sent itself,
+    ``r/`` stations within a radius of (lat, lon, km). APRS-IS ORs the terms of a filter.
     """
     calls = [c for n in names for c in SATELLITE_CALLSIGNS.get(n, ())]
     parts: list[str] = []
     if calls:
         parts.append("d/" + "/".join(calls))
         parts.append("b/" + "/".join(calls))
+    if nearby is not None:
+        parts.append(range_filter(*nearby))
     if extra.strip():
         parts.append(extra.strip())
     return " ".join(parts)
@@ -123,6 +138,7 @@ class AprsIsClient(QObject):
         self._sock: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
+        self._quiet = threading.Event()
         self._lock = threading.Lock()
 
     @property
@@ -132,11 +148,12 @@ class AprsIsClient(QObject):
 
     def start(self, host: str, port: int, login_call: str, filter_text: str) -> None:
         """Connect and start streaming. A running connection is stopped first."""
-        self.stop()
+        self.stop(quiet=True)  # its "disconnected" must not reach the new session's display
         self._stop = threading.Event()
+        self._quiet = threading.Event()
         self._thread = threading.Thread(
             target=self._run,
-            args=(host, port, login_call, filter_text, self._stop),
+            args=(host, port, login_call, filter_text, self._stop, self._quiet),
             daemon=True,
             name="aprs-is",
         )
@@ -150,8 +167,14 @@ class AprsIsClient(QObject):
             with contextlib.suppress(OSError):
                 sock.sendall(f"#filter {filter_text}\r\n".encode("ascii", errors="replace"))
 
-    def stop(self) -> None:
-        """Disconnect and wait briefly for the worker thread."""
+    def stop(self, quiet: bool = False) -> None:
+        """Disconnect and wait briefly for the worker thread.
+
+        With *quiet* the stopped session does not report "disconnected" (used when a new
+        session replaces it).
+        """
+        if quiet:
+            self._quiet.set()
         self._stop.set()
         with self._lock:
             sock = self._sock
@@ -166,7 +189,13 @@ class AprsIsClient(QObject):
         self._thread = None
 
     def _run(
-        self, host: str, port: int, login_call: str, filter_text: str, stop: threading.Event
+        self,
+        host: str,
+        port: int,
+        login_call: str,
+        filter_text: str,
+        stop: threading.Event,
+        quiet: threading.Event,
     ) -> None:
         self.status_changed.emit("connecting")
         try:
@@ -215,4 +244,5 @@ class AprsIsClient(QObject):
                 self._sock = None
             with contextlib.suppress(OSError):
                 sock.close()
-        self.status_changed.emit("disconnected")
+        if not quiet.is_set():
+            self.status_changed.emit("disconnected")

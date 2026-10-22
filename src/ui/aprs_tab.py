@@ -952,7 +952,7 @@ class AprsTab(QWidget):
         from ui.aprs_is_window import AprsIsWindow
 
         if self._is_window is None:
-            self._is_window = AprsIsWindow(self._callsign_edit.text())
+            self._is_window = AprsIsWindow(self._callsign_edit.text(), self._get_my_location)
         self._is_window.show()
         self._is_window.raise_()
         self._is_window.activateWindow()
