@@ -32,8 +32,9 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPalette, QStandardItemModel
+from PySide6.QtGui import QColor, QFont, QPalette, QStandardItemModel
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -257,6 +258,8 @@ _AX25_ROLE = Qt.ItemDataRole.UserRole + 2
 _LOGGED_ROLE = Qt.ItemDataRole.UserRole + 3
 _DECODED_ROLE = Qt.ItemDataRole.UserRole + 4  # a CW row's decoded TelemetryFrame
 _GR_TEXT_ROLE = Qt.ItemDataRole.UserRole + 5  # a gr-satellites row's full decoded text
+_UNDEFINED_ROLE = Qt.ItemDataRole.UserRole + 6  # set on a frame the format file cannot decode
+_UNDEFINED_COLOR = "#e74c3c"
 # gr-satellites prints a decoded packet and, on its KISS port, the same frame; the two reach
 # the GUI separately. A row and a frame arriving within this many seconds are one packet.
 _GR_PAIR_WINDOW_S = 5.0
@@ -300,6 +303,38 @@ class _DimRowDelegate(QStyledItemDelegate):
     """
 
     _TEXT_WEIGHT = 0.6  # share of the text colour in the muted colour
+
+    def paint(self, painter: Any, option: QStyleOptionViewItem, index: Any) -> None:
+        """Draw a frame no format definition decodes with a red "No definition" in front."""
+        if not index.data(_UNDEFINED_ROLE):
+            super().paint(painter, option, index)
+            return
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        text = opt.text
+        opt.text = ""
+        widget = opt.widget
+        style = widget.style() if widget is not None else QApplication.style()
+        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, widget)
+        label = str(index.data(_UNDEFINED_ROLE))
+        rect = opt.rect.adjusted(4, 0, -4, 0)
+        painter.save()
+        bold = QFont(opt.font)
+        bold.setBold(True)
+        painter.setFont(bold)
+        painter.setPen(QColor(_UNDEFINED_COLOR))
+        painter.drawText(rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, label)
+        label_w = painter.fontMetrics().horizontalAdvance(label) + 10
+        painter.setFont(opt.font)
+        selected = bool(opt.state & QStyle.StateFlag.State_Selected)
+        role = QPalette.ColorRole.HighlightedText if selected else QPalette.ColorRole.Text
+        painter.setPen(opt.palette.color(role))
+        rest = rect.adjusted(label_w, 0, 0, 0)
+        elided = painter.fontMetrics().elidedText(
+            text, Qt.TextElideMode.ElideRight, max(rest.width(), 0)
+        )
+        painter.drawText(rest, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, elided)
+        painter.restore()
 
     def initStyleOption(self, option: QStyleOptionViewItem, index: Any) -> None:  # noqa: N802
         super().initStyleOption(option, index)
@@ -2912,6 +2947,7 @@ class TelemetryTab(QWidget):
             norad=tf.norad,
             ts=when,
             ax25_row=ax25_row,
+            undefined=not tf.has_fields,
         )
         self._update_decode_tab(tf)
         ax25_row.log_id = self._persist_frame(tf, when, reliable, raw.hex(), "ax25")
@@ -3087,6 +3123,7 @@ class TelemetryTab(QWidget):
         ax25_row: _Ax25Row | None = None,
         decoded: TelemetryFrame | None = None,
         gr_text: str | None = None,
+        undefined: bool = False,
     ) -> None:
         """Add a row to the Received Frames table.
 
@@ -3098,6 +3135,8 @@ class TelemetryTab(QWidget):
         is the same for a received AX.25 frame. *decoded* is a CW frame's decoded
         fields, shown in the "Decoded Fields" tab when the row is selected; *gr_text* is a
         gr-satellites row's full decoded text, shown below the table when it is selected.
+        *undefined* marks a frame no format definition decodes: its data cell starts with a
+        red "No definition".
         """
         when = ts if ts is not None else datetime.datetime.now(datetime.UTC)
         row = self._table.rowCount()
@@ -3108,6 +3147,8 @@ class TelemetryTab(QWidget):
             item = QTableWidgetItem(text)
             if column == 3:
                 item.setToolTip(text)  # the column is elided when the frame is long
+                if undefined:
+                    item.setData(_UNDEFINED_ROLE, _("No definition"))
             if dim:
                 item.setData(_DIM_ROLE, True)
             if column == 0 and log_id is not None:
@@ -3593,6 +3634,7 @@ class TelemetryTab(QWidget):
                 norad=norad,
                 ts=when,
                 ax25_row=ax25_row,
+                undefined=not tf.has_fields,
             )
             self._mark_row_logged(self._table.rowCount() - 1, log_id)
             self._update_decode_tab(tf)
