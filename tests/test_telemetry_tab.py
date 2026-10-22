@@ -17,6 +17,7 @@ installation.
 from __future__ import annotations
 
 import datetime
+import json
 import sqlite3
 import types
 from pathlib import Path
@@ -1549,6 +1550,26 @@ def test_gr_fast_decode_frames_carry_an_estimated_time_and_are_uploaded(
     tab._on_gr_fast_frame(_GR_PDU_TEXT, 104.0, bytes.fromhex("12984635"))
     count = conn.execute("SELECT COUNT(*) FROM telemetry_log WHERE kind = 'gr'").fetchone()[0]
     assert count == 1
+    tab._fast_job = None
+
+
+def test_gr_fast_decode_row_is_named_after_the_decoded_satellite(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import datetime
+
+    tab, _rec = _gr_tab(qtbot, conn, monkeypatch)
+    conn.execute("INSERT OR REPLACE INTO satellites (norad_cat_id, name) VALUES (62394, 'CroCube')")
+    monkeypatch.setattr(type(tab._gr_backend), "started_norad", property(lambda self: None))
+    tab._fast_job = _FakeJob()  # type: ignore[assignment]
+    tab._fast_start = datetime.datetime.now(datetime.UTC)
+    tab._fast_time_known = False
+    # the main list still has another satellite selected
+    tab._selected_name = "PARUS-T2"
+    tab._selected_norad = 62394
+    tab._on_gr_fast_frame(_GR_PDU_TEXT, 10.0, bytes.fromhex("12984635"))
+    sat = conn.execute("SELECT parsed_json FROM telemetry_log WHERE kind = 'gr'").fetchone()[0]
+    assert json.loads(sat)["sat"] == "CroCube"
     tab._fast_job = None
 
 

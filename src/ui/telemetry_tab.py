@@ -2290,6 +2290,7 @@ class TelemetryTab(QWidget):
         self._fast_time_known = start is not None
         self._fast_start = start or datetime.datetime.now(datetime.UTC)
         self._selected_norad = norad
+        self._selected_name = self._satellite_name(norad) or self._selected_name
         job = GrFileDecoder(path, norad, catalog_norad=self._gr_catalog_ids.get(norad), parent=self)
         job.frame_found.connect(self._on_gr_fast_frame)
         job.progress.connect(self._on_fast_progress)
@@ -2572,11 +2573,15 @@ class TelemetryTab(QWidget):
             elif stripped and stripped != "Container:":
                 data_lines.append(stripped)
 
-        sat_name = self._selected_name
-        if not sat_name and self._selected_norad:
-            info = get_satellite_info(
-                self._gr_catalog_ids.get(self._selected_norad, self._selected_norad)
-            )
+        # The row belongs to the satellite being decoded, not to whatever is selected in the main
+        # list: a Fast decode of a recording leaves ``_selected_name`` at the earlier selection
+        # (a CroCube recording was listed as PARUS-T2).
+        decoded_norad = self._gr_backend.started_norad or self._selected_norad
+        sat_name = self._satellite_name(decoded_norad) if decoded_norad else ""
+        if not sat_name and decoded_norad == self._selected_norad:
+            sat_name = self._selected_name
+        if not sat_name and decoded_norad:
+            info = get_satellite_info(self._gr_catalog_ids.get(decoded_norad, decoded_norad))
             sat_name = str(info.get("name", "")) if info else ""
         data_text = "  |  ".join(data_lines) if data_lines else text[:120]
         addresses, info_bytes = parse_gr_packet(text)
