@@ -1092,6 +1092,10 @@ class MeteorTab(QWidget):
         p = _Path(str(path))
         image = QImage(str(p))
         if image.isNull():
+            # Most likely SatDump is still writing the file: ask the watcher to offer it
+            # again on a later poll instead of losing the image.
+            if self._watcher is not None:
+                self._watcher.retry(p)
             return
 
         label = p.name

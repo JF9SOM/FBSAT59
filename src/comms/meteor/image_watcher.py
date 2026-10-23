@@ -10,6 +10,11 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
+# How many times one file may be handed back by retry() before it is given up on.
+# At the default 2 s poll interval this is about a minute, longer than SatDump needs
+# to finish writing even the largest composite.
+_MAX_RETRIES = 30
+
 
 class ImageWatcher(QObject):
     """Polls *output_dir* every *interval_ms* milliseconds for new PNG files.
@@ -31,6 +36,7 @@ class ImageWatcher(QObject):
         super().__init__(parent)
         self._output_dir = output_dir
         self._seen: set[Path] = set()
+        self._retries: dict[Path, int] = {}
 
         self._timer = QTimer(self)
         self._timer.setInterval(interval_ms)
@@ -55,9 +61,23 @@ class ImageWatcher(QObject):
         """
         self._poll()
 
+    def retry(self, path: Path) -> None:
+        """Offer *path* again on a later poll, because the receiver could not read it yet.
+
+        SatDump creates a PNG before it has finished writing it, so the first read can
+        fail (libpng "Read Error"). Without this the file stays in the seen set and the
+        image is lost for good. A file that never becomes readable is dropped after
+        _MAX_RETRIES attempts so it cannot be retried forever.
+        """
+        count = self._retries.get(path, 0) + 1
+        self._retries[path] = count
+        if count <= _MAX_RETRIES:
+            self._seen.discard(path)
+
     def set_output_dir(self, path: Path) -> None:
         self._output_dir = path
         self._seen.clear()
+        self._retries.clear()
 
     # ------------------------------------------------------------------
 
