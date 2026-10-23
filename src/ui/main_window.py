@@ -108,6 +108,7 @@ from ui.pass_chart import GroupPassChartView, PassChartView
 from ui.pass_panel import PassPanel
 from ui.radar_view import SAT_COLORS, RadarView, SatTrackData
 from ui.radio_control_widget import RadioControlWidget
+from ui.window_geometry import restore_window_geometry, save_window_geometry
 from ui.world_map import WorldMapView
 
 logger = logging.getLogger(__name__)
@@ -1072,6 +1073,8 @@ class MainWindow(QMainWindow):
         _ver = QApplication.applicationVersion() or "0.1.0"
         self.setWindowTitle(f"FBSAT59  v{_ver}")
         self.resize(1280, 800)
+        # Reopen at the size/position/maximized state the window had when it was closed.
+        restore_window_geometry(self._conn, self)
         self._set_app_icon()
         self._sync_progress.connect(self._on_sync_progress)
         self._load_saved_language()
@@ -9930,6 +9933,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         """Stop the timer, web server, and scheduler when the window is closed."""
+        save_window_geometry(self._conn, self)
         ui_hang_watchdog.stop()
         # Communications tabs (APRS, Telemetry, FT4, Q65, SSTV, CW Decoder,
         # METEOR/HRPT) are child widgets of the tab bar, not top-level

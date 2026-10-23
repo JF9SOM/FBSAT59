@@ -266,3 +266,19 @@ IQ録音・音声録音(MP3)・METEOR画像・SSTV画像・SSDV画像・デジ�
 `/Volumes/<名前>` が無ければ使用不可と判定する。Data Locations タブの「Copy/Move from default」で
 既定フォルダーから設定フォルダーへ後から転送できる（同名は上書きしない・移動はサイズ一致確認後に
 元を削除・確認ダイアログあり・バックグラウンド実行）。
+
+## メインウィンドウのサイズ・位置・最大化の記憶（2026-10-23 追加）
+
+従来は `MainWindow.__init__` の `self.resize(1280, 800)` 固定で、手動で最大化しても次の起動で
+標準サイズに戻っていた（GPD で指摘）。`src/ui/window_geometry.py` に保存・復元をまとめた:
+
+- **保存**: `MainWindow.closeEvent()` の先頭で `save_window_geometry()`。Qt の `saveGeometry()`
+  （サイズ・位置・最大化/全画面・画面）を base64 にして `app_settings` のキー
+  `main_window_geometry` へ保存する。**正常終了時のみ**（強制終了なら前回の保存値のまま）。
+- **復元**: `resize(1280, 800)` の直後に `restore_window_geometry()`。保存値が無い・壊れている・
+  DB エラーのときは `False` を返すだけで、従来どおり 1280×800 で開く（例外は出さない）。
+- **画面外への対策は Qt 任せ**: `restoreGeometry()` は、保存時のモニター配置が無くなっていると
+  ウィンドウを今の画面内に収め、画面より大きい保存サイズは画面に収まる大きさへ縮める
+  （テストが小さい offscreen 画面で縮んで失敗した理由もこれ。`tests/test_window_geometry.py`）。
+- 対象はメインウィンドウのみ（ダイアログ・浮動ログウィンドウは対象外）。
+- 最大化の復元が GPD（Linux のウィンドウマネージャー）で効くかは、実機で要確認。
