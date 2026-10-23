@@ -1729,3 +1729,16 @@ SatNOGS の ksy と JSON 定義を項目名で突き合わせ、ksy にあって
   分→秒（×60）に修正した（marina.ksy には換算の記載が無く、実データで判明）。
 - もう一つの録音（`...T124129Z`・541 秒）は全帯域が平坦な雑音のみで信号なし。
 
+### CW TLM: デコーダーは `=` を「BT」と出力する（2026-10-23 修正）
+
+MARINA の実録音を CW TLM で解読したとき、CW Decoder タブでは `DEOM9MARBTU154448R15T24P22AR` と良好に出るのに、
+テレメトリータブの受信フレーム/全項目に反映されなかった（ログ: `CW block ignored (norad=69920, ...)`）。
+
+- **原因**: CW デコーダー（deepcw）はモールスの `=`（-...-）を **`BT`**（プロサイン）として出力する。`cw_frames` の
+  `id_prefix` は `DEOM9MAR=` なので、`_find_prefix()` が編集距離 1 の `DEOM9MARB` までを「接頭辞」と判定して
+  `T` が余り、`text_regex` が一致しなかった。**LASARsat・CroCube の既存の文字列ビーコン（`DEOK0LSR=` など）も同じ形なので、
+  実際の CW デコーダー出力では解読できていなかった**（テストは `=` 入りの文字列で書かれていたため通っていた）。
+- **修正**: `normalize_block()` が `BT` を `=` に戻す。16 進フレームに `T` は無いので他の衛星（ARICA-2・OrigamiSat-2）に影響しない。
+  実ログの文字列（MARINA・LASARsat）での解読とタブ経由のテストを追加。
+- 教訓: CW の文字列定義は、**テストの文字列ではなく CW Decoder の実出力（`fbsat59.log` の `CW block finished` 行）で確認する**こと。
+

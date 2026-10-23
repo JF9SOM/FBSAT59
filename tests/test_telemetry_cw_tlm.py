@@ -762,3 +762,54 @@ class TestFastDecode:
     ) -> None:
         tab = _running_tab(qtbot, cw_conn)
         assert not tab._start_fast_decode(tmp_path / "x.iq.wav")
+
+
+# -- The CW Decoder writes the "=" prosign as "BT". These strings are real CW Decoder output
+# from the 2026-10-22 recordings (see the "CW block finished" lines of the log).
+
+
+def test_beacons_with_the_decoders_bt_for_equals_are_decoded() -> None:
+    from comms.telemetry.cw_frames import decode_cw_frame, normalize_block
+
+    assert normalize_block("DE OM9MAR BT U154448") == "DEOM9MAR=U154448"
+    marina = decode_cw_frame(69920, "DEOM9MARBTU154448R15T24P22AR")
+    assert marina is not None
+    by_name = {f.name: f for f in marina.fields}
+    assert by_name["uptime_total"].scaled_value == 154448 * 60
+    assert by_name["reset_number"].scaled_value == 15
+    lasar = decode_cw_frame(62391, "DEOK0LSRBTU964898R4T23P21AR")
+    assert lasar is not None
+    assert {f.name: f for f in lasar.fields}["reset_number"].scaled_value == 4
+
+
+def test_a_greeting_with_bt_is_still_not_a_frame() -> None:
+    from comms.telemetry.cw_frames import decode_cw_frame
+
+    assert decode_cw_frame(62391, "DEOK0LSRBT73FROMLASARSATAR") is None
+
+
+def test_split_frame_blocks_keeps_a_bt_beacon_in_one_piece() -> None:
+    from comms.telemetry.cw_frames import split_frame_blocks
+
+    pieces = split_frame_blocks(69920, "DEOM9MARBTU154448R15T24P22AR")
+    assert [text for _pos, text in pieces] == ["DEOM9MAR=U154448R15T24P22AR"]
+
+
+class TestMarinaBeaconAsTheCwDecoderWritesIt:
+    """The CW Decoder's own text for the 2026-10-22 recording: "=" arrives as "BT"."""
+
+    def test_the_beacon_becomes_a_row_and_fills_the_decoded_fields_tab(
+        self, qtbot: QtBot, conn: sqlite3.Connection
+    ) -> None:
+        _add(conn, 69920, "Marina", "Mode U - CW")
+        tab = _make_tab(qtbot, conn)
+        _select_cw_mode(tab)
+        tab._combo_cw_sat.setCurrentIndex(tab._combo_cw_sat.findData(69920))
+        tab._on_start()
+
+        tab._on_cw_block("DEOM9MARBTU154448R15T24P22AR", START, END)
+
+        assert tab._table.rowCount() == 1
+        assert tab._table.item(0, 1).text() == "OM9MAR"
+        assert _decode_value(tab, "BEACON", "UHFリセット回数") == "15"
+        assert _decode_value(tab, "BEACON", "累積稼働時間（分を秒に換算）").startswith("9,266,880")

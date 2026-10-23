@@ -96,8 +96,13 @@ class CwFrameDecode:
 
 
 def normalize_block(text: str) -> str:
-    """Upper-case *text* and drop all whitespace (the Morse decoder adds spurious spaces)."""
-    return "".join(text.split()).upper()
+    """Upper-case *text* and drop all whitespace (the Morse decoder adds spurious spaces).
+
+    The Morse decoder writes the "=" prosign (-...-) as "BT" ("DE OM9MAR BT U154448 ..."),
+    so "BT" is turned back into "=" for the ``id_prefix`` match. No hex frame can contain a
+    "T", so this cannot damage a hex block.
+    """
+    return "".join(text.split()).upper().replace("BT", "=")
 
 
 def load_cw_frames(norad: int | None) -> dict[str, Any] | None:
