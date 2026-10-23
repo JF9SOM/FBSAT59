@@ -670,7 +670,7 @@
       ]
     }
   },
-  "note": "AX.25(GFSK 9600bps, VHF 145.925MHz / UHF 436.680MHz)のペイロードはバイナリではなく、\"OBC,1234,5678,...\"のようなカンマ区切りのASCIIテキストそのもの。satnogs-decodersのKaitai Struct定義(marina.ksy)を元に、先頭のタグ文字列(MGS/OBC/PSU/SOL/CLS/LOD/U/V)でメッセージ種別を判定し、カンマ区切りの何番目かでフィールドを特定している。RSSI変換式(値/2-134=dBm)・PSUチャンネル状態の16進ビットフラグ分解・SOLセンサの\"nan\"欠測値(-32768)処理はmarina.ksy記載の計算式をそのまま反映し確度が高い。一方、温度・電流・磁束密度・加速度・角速度等の多くはmarina.ksy自体がスケール変換式を持たない(整数値をそのまま使うだけの)ため、正しい物理単位への換算式は不明。ラベルに「(生値)」と付記したものは全てこれに該当し、単位は付与していない。CW(モールス)ビーコン・デジピーター中継メッセージは対象外（それぞれCW Decoderタブ・別経路の話であり、構造化されたHKテレメトリではない）。 The CW beacon is defined from marina.ksy but has not been checked against a received CW frame.",
+  "note": "AX.25(GFSK 9600bps, VHF 145.925MHz / UHF 436.680MHz)のペイロードはバイナリではなく、\"OBC,1234,5678,...\"のようなカンマ区切りのASCIIテキストそのもの。satnogs-decodersのKaitai Struct定義(marina.ksy)を元に、先頭のタグ文字列(MGS/OBC/PSU/SOL/CLS/LOD/U/V)でメッセージ種別を判定し、カンマ区切りの何番目かでフィールドを特定している。RSSI変換式(値/2-134=dBm)・PSUチャンネル状態の16進ビットフラグ分解・SOLセンサの\"nan\"欠測値(-32768)処理はmarina.ksy記載の計算式をそのまま反映し確度が高い。一方、温度・電流・磁束密度・加速度・角速度等の多くはmarina.ksy自体がスケール変換式を持たない(整数値をそのまま使うだけの)ため、正しい物理単位への換算式は不明。ラベルに「(生値)」と付記したものは全てこれに該当し、単位は付与していない。CW(モールス)ビーコン・デジピーター中継メッセージは対象外（それぞれCW Decoderタブ・別経路の話であり、構造化されたHKテレメトリではない）。 The CW beacon (de om9mar = u..r..t..p.. ar) was checked on a real recording (2026-10-22 pass): u is the total uptime in MINUTES (154448 = 9266857 s of the UHF radio / 60) and r is the UHF radio's reset count (15); t (24) matches the UHF transceiver temperature 2422/100.",
   "cw_frames": {
     "BEACON": {
       "label": "CWビーコン（de om9mar = u…r…t…p…）",
@@ -681,12 +681,14 @@
         {
           "name": "uptime_total",
           "group": 1,
-          "label": "累積稼働時間(生値)"
+          "label": "累積稼働時間（分を秒に換算）",
+          "scale": 60,
+          "unit": "s"
         },
         {
           "name": "reset_number",
           "group": 2,
-          "label": "リセット回数"
+          "label": "UHFリセット回数"
         },
         {
           "name": "temp_mcu",

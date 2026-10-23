@@ -713,16 +713,20 @@ def test_grbbeta_psu_tab_is_offered_next_to_the_ascii_ones() -> None:
 def test_cw_beacons_of_kostka_marina_and_grbbeta_decode() -> None:
     from comms.telemetry.cw_frames import decode_cw_frame
 
-    for norad, text in (
-        (69935, "DEOK0KST=U1234R2T295P301AR"),
-        (69920, "DEOM9MAR=U1234R2T295P301AR"),
-    ):
-        result = decode_cw_frame(norad, text)
-        assert result is not None
-        by_name = {f.name: f for f in result.fields}
-        assert by_name["uptime_total"].scaled_value == 1234
-        assert by_name["reset_number"].scaled_value == 2
-        assert by_name["temp_pa"].scaled_value == 301
+    kostka = decode_cw_frame(69935, "DEOK0KST=U1234R2T295P301AR")
+    assert kostka is not None
+    by_name = {f.name: f for f in kostka.fields}
+    assert by_name["uptime_total"].scaled_value == 1234
+    assert by_name["reset_number"].scaled_value == 2
+    assert by_name["temp_pa"].scaled_value == 301
+    # MARINA: read from a real recording (2026-10-22 pass); the uptime is in minutes.
+    marina = decode_cw_frame(69920, "DEOM9MAR=U154448R15T24P22AR")
+    assert marina is not None
+    by_name = {f.name: f for f in marina.fields}
+    assert by_name["uptime_total"].scaled_value == 154448 * 60
+    assert by_name["reset_number"].scaled_value == 15
+    assert by_name["temp_mcu"].scaled_value == 24
+    assert by_name["temp_pa"].scaled_value == 22
     grb = decode_cw_frame(60237, "DEHA2GRB=U10R2T295P301")  # no "ar" needed; uptime is in minutes
     assert grb is not None
     assert {f.name: f for f in grb.fields}["uptime_total"].scaled_value == 600
