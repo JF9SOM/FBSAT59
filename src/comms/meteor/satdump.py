@@ -7,6 +7,7 @@ stdout/stderr are forwarded as Qt signals so the UI can display them.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -14,6 +15,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import IO
 
@@ -310,6 +312,38 @@ def find_satdump_tle_file() -> Path:
         if c.is_file():
             return c
     return candidates[0]
+
+
+def make_no_tle_update_home() -> Path | None:
+    """Create a temporary HOME in which SatDump believes its TLEs are fresh.
+
+    ``satdump project`` (unlike ``baseband``) ignores ``--tle_override`` and, at start-up,
+    downloads TLEs from CelesTrak whenever ``tles_last_updated`` in its settings is old.
+    Where CelesTrak is unreachable that connection never completes, so the command hangs
+    until it is killed. SatDump's own config is copied into a throwaway HOME with that
+    timestamp set to now, which skips the download. The caller deletes the returned
+    directory. Returns None (run SatDump unchanged) when this cannot be done: Windows, or
+    no SatDump settings file to copy.
+    """
+    if sys.platform == "win32":
+        return None
+    cfg = Path.home() / ".config" / "satdump"
+    settings = cfg / "settings.json"
+    if not settings.is_file():
+        return None
+    try:
+        data = json.loads(settings.read_text(encoding="utf-8"))
+        data.setdefault("user", {})["tles_last_updated"] = int(time.time())
+        home = Path(tempfile.mkdtemp(prefix="fbsat59_satdump_home_"))
+        dst = home / ".config" / "satdump"
+        dst.mkdir(parents=True)
+        (dst / "settings.json").write_text(json.dumps(data, indent=4), encoding="utf-8")
+        for name in ("satdump_tles.txt", "main.db"):
+            if (cfg / name).is_file():
+                shutil.copy2(cfg / name, dst / name)
+    except (OSError, ValueError, AttributeError):
+        return None
+    return home
 
 
 # ---------------------------------------------------------------------------

@@ -200,3 +200,51 @@ class TestCitiesOverlayProcess:
         assert "--draw_cities_overlay" in cmd
         assert "--auto_mode" in cmd
         assert "--auto_scale_mode" in cmd
+        assert mod.CITIES_OVERLAY_COMPOSITE == "MCIR"  # AVHRR 221 is grey noise at night
+
+
+class TestCitiesOverlayAvoidsTleDownload:
+    """`satdump project` hangs forever where CelesTrak is unreachable (2026-10-23)."""
+
+    def test_runs_with_a_throwaway_home_that_is_removed_afterwards(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, qtbot: QtBot
+    ) -> None:
+        from comms.meteor import cities_overlay as mod
+
+        fake_home = tmp_path / "fake_home"
+        fake_home.mkdir()
+        monkeypatch.setattr(mod, "find_satdump", lambda: Path("/fake/satdump"))
+        monkeypatch.setattr(mod, "make_no_tle_update_home", lambda: fake_home)
+        output_path = tmp_path / "out.png"
+        seen: dict[str, Any] = {}
+
+        def _fake_run(cmd: list[str], **kwargs: Any) -> _subprocess.CompletedProcess[str]:
+            seen["home"] = kwargs["env"]["HOME"]
+            output_path.write_bytes(b"\x89PNG\r\n")
+            return _subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr(_subprocess, "run", _fake_run)
+        mod.CitiesOverlayProcess(tmp_path / "product.cbor", output_path).run()
+
+        assert seen["home"] == str(fake_home)
+        assert not fake_home.exists()
+
+    def test_runs_unchanged_when_no_home_can_be_made(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, qtbot: QtBot
+    ) -> None:
+        from comms.meteor import cities_overlay as mod
+
+        monkeypatch.setattr(mod, "find_satdump", lambda: Path("/fake/satdump"))
+        monkeypatch.setattr(mod, "make_no_tle_update_home", lambda: None)
+        output_path = tmp_path / "out.png"
+        seen: dict[str, Any] = {}
+
+        def _fake_run(cmd: list[str], **kwargs: Any) -> _subprocess.CompletedProcess[str]:
+            seen["env"] = kwargs["env"]
+            output_path.write_bytes(b"\x89PNG\r\n")
+            return _subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr(_subprocess, "run", _fake_run)
+        mod.CitiesOverlayProcess(tmp_path / "product.cbor", output_path).run()
+
+        assert seen["env"] is None

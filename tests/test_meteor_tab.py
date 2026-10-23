@@ -503,3 +503,49 @@ class TestImagePriority:
         from ui.meteor_tab import _image_priority
 
         assert _image_priority("rgb_MCIR_projected.png") == 0
+
+
+class TestIqDecodeLockIndicator:
+    """SatDump prints only 1-2 status lines for a decode that takes seconds, so Lock
+    follows the growth of the .cadu file (2026-10-23)."""
+
+    def _decoding_tab(self, qtbot: QtBot, out: Path) -> MeteorTab:
+        w = _make_tab(qtbot)
+        out.mkdir(parents=True, exist_ok=True)
+        w._output_dir = out
+        w._decoding_iq = True
+        return w
+
+    def test_green_while_the_cadu_file_grows_then_grey(self, qtbot: QtBot, tmp_path: Path) -> None:
+        w = self._decoding_tab(qtbot, tmp_path / "out")
+        cadu = tmp_path / "out" / "meteor_m2-x_lrpt.cadu"
+        cadu.write_bytes(b"\x00" * 2048)
+        w._poll_iq_decode_lock()
+        assert "Lock!" in w._lbl_lock.text()
+        w._lock_green_until = 0.0  # no growth for longer than the hold time
+        w._poll_iq_decode_lock()
+        assert "Lock!" not in w._lbl_lock.text()
+
+    def test_satdump_status_lines_are_ignored_during_an_iq_decode(
+        self, qtbot: QtBot, tmp_path: Path
+    ) -> None:
+        w = self._decoding_tab(qtbot, tmp_path / "out")
+        w._lbl_lock.setText("Lock: —")
+        w._on_lock_status(False)  # a stray NOSYNC line must not turn it red
+        assert w._lbl_lock.text() == "Lock: —"
+
+    def test_live_reception_still_follows_the_status_lines(self, qtbot: QtBot) -> None:
+        w = _make_tab(qtbot)
+        w._on_lock_status(True)
+        assert "Lock!" in w._lbl_lock.text()
+
+    def test_finish_reports_the_decoded_frame_count_and_stops_the_timer(
+        self, qtbot: QtBot, tmp_path: Path
+    ) -> None:
+        w = self._decoding_tab(qtbot, tmp_path / "out")
+        (tmp_path / "out" / "a.cadu").write_bytes(b"\x00" * 1024 * 7)
+        w._lock_timer.start()
+        w._on_finished_ok()
+        assert "7" in w._lbl_status.text()
+        assert not w._lock_timer.isActive()
+        assert not w._decoding_iq

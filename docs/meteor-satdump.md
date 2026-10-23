@@ -1235,3 +1235,23 @@ METEORタブ最下行（Gain の右）に、Telemetryタブと同じ名前のボ
   GPD の `~/Pictures/fbsat59_meteor/20261023_redecode_pll0004` に 0.004 版の出力が残っている（比較用）。
 - 「Filled」版（`MSU-MR (Filled)`）は短い欠損を補間するが、長い穴は灰色のブロックになる。
 - 未対応: 欠損そのものは信号の弱い区間でSatDumpが同期を失うためで、アプリ側では減らせない。
+
+#### City Overlay の停止・Lock 表示の不具合の修正（2026-10-23）
+
+- **City Overlay で固まった原因**: 実体の `satdump project` は、起動時に CelesTrak から TLE を取りに行き
+  （設定の `tles_last_updated` が古い場合）、CelesTrak に届かない環境では接続待ち（SYN-SENT）のまま
+  永久に進まない。**`baseband` と違い、`project` は `--tle_override` を付けても止まる**（GPDで実測）。
+  `_TIMEOUT_S`（120秒）まで「Generating cities overlay…」のまま待たされていた。
+  → `make_no_tle_update_home()`（`satdump.py`）が SatDump の設定（`~/.config/satdump` の
+  `settings.json`・`satdump_tles.txt`・`main.db`）を使い捨ての HOME にコピーし、`tles_last_updated`
+  を現在時刻にして、`CitiesOverlayProcess` がその HOME で `satdump project` を実行する（約6秒で完走）。
+  実際の設定は触らない。**Windows では何もしない**（設定の場所が未確認。従来どおり120秒で打ち切り）。
+  設定ファイルが無い場合も何もしない。
+- **City Overlay の合成画像を `AVHRR 221 False Color` → `MCIR` に変更**: 前者は可視光チャンネルが
+  必要で、夜間は灰色のノイズに都市名だけが載る。MCIR は赤外ベースで夜も実画像になる（実機で確認）。
+- **IQ デコード中に Lock が緑にならなかった原因**: 高速デコードは数秒で終わるため、SatDump が出す
+  `Deframer : SYNCED/NOSYNC` の行は1〜2行だけ（20:58 の実行は開始1秒後の `NOSYNC` の1行のみ、20:48 は
+  37.5%時点の `SYNCED` の1行のみ）。表示は運次第だった。
+  → オフラインデコード中は SatDump の状態行を無視し、**`.cadu` ファイルの増加**（0.3秒ごとに監視、
+  増えてから1秒間は緑「Lock!」）で表示する（`_poll_iq_decode_lock()`）。デコード中の `.cadu` は
+  約0.3秒ごとに増えることをGPDで確認済み。終了時は「IQデコードが完了しました（N フレーム）。」を表示。

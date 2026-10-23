@@ -8098,3 +8098,7 @@ msgstr "この衛星の定義では解読できません"
 
 msgid "Click to start playback."
 msgstr "クリックして再生を始めて下さい。"
+
+#: src/ui/meteor_tab.py
+msgid "IQ decode finished: {n} frames decoded."
+msgstr "IQデコードが完了しました（{n} フレーム）。"

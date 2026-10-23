@@ -12,7 +12,7 @@ the satellite's geometry/projection math itself.
 Confirmed against a real ``product.cbor`` from a past reception::
 
     satdump project \\
-        -layer --type product --file product.cbor --composite "AVHRR 221 False Color" \\
+        -layer --type product --file product.cbor --composite "MCIR" \\
         -target --file output.png --type equirec --auto_mode --auto_scale_mode \\
                 --draw_cities_overlay --cities_type 0 --cities_scale_rank 3
 
@@ -23,21 +23,23 @@ so no width/height needs to be guessed here.
 
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
-from comms.meteor.satdump import find_satdump
+from comms.meteor.satdump import find_satdump, make_no_tle_update_home
 
-# The composite SatDump's own preset already enables white_balance for
-# (see satdump_cfg.json's "AVHRR 221 False Color" entry) -- confirmed to
-# produce a natural-looking Earth image, which is what the cities overlay
-# is meant to be added on top of. Not user-selectable (yet): keeping this a
-# single well-tested combination avoids exposing SatDump's full composite
-# catalog (many entries need channels this satellite/pipeline may not emit).
-CITIES_OVERLAY_COMPOSITE = "AVHRR 221 False Color"
+# MCIR is built from the infrared channel, so it is a real picture on night passes
+# too. The "AVHRR 221 False Color" composite used before needs the visible channels,
+# which are black at night, and rendered as grey noise with only the city labels on it
+# (M2-4 night pass, 2026-10-23). Not user-selectable (yet): keeping this a single
+# well-tested combination avoids exposing SatDump's full composite catalog (many
+# entries need channels this satellite/pipeline may not emit).
+CITIES_OVERLAY_COMPOSITE = "MCIR"
 
 # GUI default (city_categories[0]) and a middle-of-the-road scale rank —
 # both settable in overlay_handler.cpp's drawUI(), mirrored here as fixed
@@ -119,6 +121,10 @@ class CitiesOverlayProcess(QThread):
             str(_CITIES_SCALE_RANK),
         ]
 
+        # `satdump project` downloads TLEs at start-up and hangs forever where CelesTrak is
+        # unreachable; run it against a throwaway HOME whose TLEs look fresh instead.
+        fake_home = make_no_tle_update_home()
+        env = {**os.environ, "HOME": str(fake_home)} if fake_home is not None else None
         try:
             # Same CREATE_NO_WINDOW reasoning as SatDumpProcess: satdump.exe
             # is a console-subsystem executable and would otherwise pop up a
@@ -132,6 +138,7 @@ class CitiesOverlayProcess(QThread):
                     capture_output=True,
                     text=True,
                     timeout=_TIMEOUT_S,
+                    env=env,
                     creationflags=subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
                 )
             else:
@@ -140,6 +147,7 @@ class CitiesOverlayProcess(QThread):
                     capture_output=True,
                     text=True,
                     timeout=_TIMEOUT_S,
+                    env=env,
                 )
         except subprocess.TimeoutExpired:
             self.finished_err.emit("satdump project timed out.")
@@ -147,6 +155,9 @@ class CitiesOverlayProcess(QThread):
         except OSError as exc:
             self.finished_err.emit(f"Failed to start satdump: {exc}")
             return
+        finally:
+            if fake_home is not None:
+                shutil.rmtree(fake_home, ignore_errors=True)
 
         if result.returncode != 0 or not self._output_path.is_file():
             detail = (result.stderr or result.stdout or "").strip()

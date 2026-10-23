@@ -260,3 +260,50 @@ class TestOfflineDecodeCommand:
         proc.progress.connect(seen.append)
         proc._parse_line("(I) Progress 5.300000%, SNR : 0.000000dB, Peak SNR: 0.000000dB")
         assert seen == [5]
+
+
+class TestNoTleUpdateHome:
+    def test_copies_the_config_with_a_fresh_tle_timestamp(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        import json
+        import time
+
+        from comms.meteor import satdump as mod
+
+        monkeypatch.setattr(sys, "platform", "linux")
+        cfg = tmp_path / "home" / ".config" / "satdump"
+        cfg.mkdir(parents=True)
+        (cfg / "settings.json").write_text(json.dumps({"user": {"tles_last_updated": 1}}))
+        (cfg / "satdump_tles.txt").write_text("TLES")
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
+
+        home = mod.make_no_tle_update_home()
+        try:
+            assert home is not None
+            copied = home / ".config" / "satdump"
+            stamp = json.loads((copied / "settings.json").read_text())["user"]["tles_last_updated"]
+            assert abs(stamp - time.time()) < 60
+            assert (copied / "satdump_tles.txt").read_text() == "TLES"
+            # The user's real settings are not touched.
+            assert json.loads((cfg / "settings.json").read_text())["user"]["tles_last_updated"] == 1
+        finally:
+            if home is not None:
+                import shutil
+
+                shutil.rmtree(home, ignore_errors=True)
+
+    def test_none_without_a_settings_file(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from comms.meteor import satdump as mod
+
+        monkeypatch.setattr(sys, "platform", "linux")
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+        assert mod.make_no_tle_update_home() is None
+
+    def test_none_on_windows(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from comms.meteor import satdump as mod
+
+        monkeypatch.setattr(sys, "platform", "win32")
+        assert mod.make_no_tle_update_home() is None

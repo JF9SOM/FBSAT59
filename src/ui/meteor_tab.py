@@ -27,12 +27,13 @@ import os
 import sqlite3
 import subprocess
 import sys
+import time
 from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -352,6 +353,14 @@ class MeteorTab(QWidget):
         self._cities_overlay_process: CitiesOverlayProcess | None = None
         # True while SatDump is decoding a recorded IQ file instead of receiving live.
         self._decoding_iq: bool = False
+        # Lock indicator for that offline decode: SatDump prints only one or two status
+        # lines for a decode that takes seconds, so the indicator follows the growth of
+        # the .cadu file (decoded frames) instead -- see _poll_iq_decode_lock().
+        self._lock_timer = QTimer(self)
+        self._lock_timer.setInterval(300)
+        self._lock_timer.timeout.connect(self._poll_iq_decode_lock)
+        self._cadu_last_size: int = 0
+        self._lock_green_until: float = 0.0
         self._setup_ui()
         self._fft_frame_received.connect(self._waterfall_widget.add_frame)
         self._fft_unavailable.connect(self._waterfall_widget.show_unavailable)
@@ -701,6 +710,9 @@ class MeteorTab(QWidget):
         self._watcher.new_image.connect(self._on_new_image)
         self._watcher.start()
 
+        self._cadu_last_size = 0
+        self._lock_green_until = 0.0
+        self._lock_timer.start()
         self._preview_priority = -1
         self._btn_start.setEnabled(False)
         self._btn_stop.setEnabled(True)
@@ -946,7 +958,33 @@ class MeteorTab(QWidget):
     def _on_progress(self, pct: int) -> None:
         self._progress.setValue(pct)
 
+    def _cadu_size(self) -> int:
+        """Size in bytes of the decoded-frames file of the current reception (0 if none)."""
+        if self._output_dir is None:
+            return 0
+        try:
+            return sum(p.stat().st_size for p in self._output_dir.glob("*.cadu"))
+        except OSError:
+            return 0
+
+    def _poll_iq_decode_lock(self) -> None:
+        """Green "Lock!" while an offline decode is writing frames, grey otherwise."""
+        size = self._cadu_size()
+        now = time.monotonic()
+        if size > self._cadu_last_size:
+            self._lock_green_until = now + 1.0
+        self._cadu_last_size = size
+        if now < self._lock_green_until:
+            self._set_lock_label(True)
+        else:
+            self._lbl_lock.setText(_("Lock: —"))
+
     def _on_lock_status(self, locked: bool) -> None:
+        if self._decoding_iq:
+            return  # offline decode: the indicator follows the .cadu file instead
+        self._set_lock_label(locked)
+
+    def _set_lock_label(self, locked: bool) -> None:
         if locked:
             lock_label = _("Lock!")
             self._lbl_lock.setText(f"<b style='color:#2ecc71'>{lock_label}</b>")
@@ -956,7 +994,9 @@ class MeteorTab(QWidget):
 
     def _on_finished_ok(self) -> None:
         if self._decoding_iq:
-            self._lbl_status.setText(_("IQ decode finished."))
+            self._lbl_status.setText(
+                _("IQ decode finished: {n} frames decoded.").format(n=self._cadu_size() // 1024)
+            )
         else:
             self._lbl_status.setText(_("Reception finished."))
         self._progress.setVisible(False)
@@ -1005,6 +1045,7 @@ class MeteorTab(QWidget):
 
     def _reset_controls(self) -> None:
         self._decoding_iq = False
+        self._lock_timer.stop()
         self._btn_decode_iq.setEnabled(find_satdump() is not None)
         self._btn_start.setEnabled(find_satdump() is not None)
         self._btn_stop.setEnabled(False)
