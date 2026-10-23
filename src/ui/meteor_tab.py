@@ -110,6 +110,12 @@ def _image_priority(filename: str) -> int:
     *_map* files match the plain swath size (e.g. 1568x1376), while
     *_projected* is a fixed whole-globe canvas (4096x2048) regardless of
     how much of it has real data.
+
+    "MCIR" composites rank above everything else: they are built from the
+    infrared channel, so they stay a real picture on night passes. The other
+    composites (MSA, 124, 221) need the visible channels, which are black
+    at night, and then render as pure noise -- confirmed on a night M2-4
+    pass, where MSA_corrected_map used to be picked as the preview.
     """
     lower = filename.lower()
     if "projected" in lower:
@@ -117,12 +123,16 @@ def _image_priority(filename: str) -> int:
     has_map = "_map" in lower
     has_corrected = "corrected" in lower
     if has_map and has_corrected:
-        return 4
-    if has_map:
-        return 3
-    if has_corrected:
-        return 2
-    return 1
+        rank = 4
+    elif has_map:
+        rank = 3
+    elif has_corrected:
+        rank = 2
+    else:
+        rank = 1
+    if "mcir" in lower:
+        rank += 10
+    return rank
 
 
 def _default_output_dir() -> Path:

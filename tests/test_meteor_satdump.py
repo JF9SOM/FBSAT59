@@ -220,6 +220,7 @@ class TestOfflineDecodeCommand:
         assert cmd[cmd.index("--samplerate") + 1] == "250000"
         assert cmd[cmd.index("--baseband_format") + 1] == "cf32"
         assert "--tle_override" in cmd  # skips the CelesTrak download
+        assert cmd[cmd.index("--pll_bw") + 1] == "0.004"
         assert not any("doppler" in c.lower() for c in cmd)
         assert "live" not in cmd
 

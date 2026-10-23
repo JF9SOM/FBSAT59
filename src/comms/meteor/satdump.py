@@ -246,6 +246,12 @@ MIN_LRPT_IQ_SAMPLE_RATE = 150_000
 
 _CONVERT_CHUNK_BYTES = 8 * 1024 * 1024
 
+# psk_demod loop bandwidth for decoding a recording (SatDump's default is 0.002).
+# On a strong, Doppler-corrected M2-4 recording (2026-10-22, SNR up to ~20 dB) 0.004
+# decoded 3103 frames against 2678 with the default (+16%); 0.001 and 0.008 were worse.
+# Tuned on that one recording, so it is only used for offline decoding, not for live reception.
+OFFLINE_PLL_BW = "0.004"
+
 
 class IqWavError(ValueError):
     """The file is not an IQ WAV recording this feature can decode."""
@@ -564,6 +570,8 @@ class SatDumpProcess(QThread):
             str(rate),
             "--baseband_format",
             "cf32",
+            "--pll_bw",
+            OFFLINE_PLL_BW,
             "--tle_override",
             str(find_satdump_tle_file()),
             "--finish_processing",

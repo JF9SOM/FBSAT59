@@ -485,3 +485,21 @@ class TestDecodeIqRecording:
         assert not w._btn_start.isEnabled()
         w._reset_controls()
         assert not w._decoding_iq
+
+
+class TestImagePriority:
+    def test_mcir_outranks_the_visible_channel_composites(self) -> None:
+        from ui.meteor_tab import _image_priority
+
+        mcir = _image_priority("msu_mr_rgb_MCIR_corrected_map.png")
+        for noisy_at_night in (
+            "msu_mr_rgb_MSA_corrected_map.png",
+            "msu_mr_rgb_MSU-MR_124_False_Color_corrected.png",
+            "msu_mr_rgb_AVHRR_221_False_Color.png",
+        ):
+            assert mcir > _image_priority(noisy_at_night)
+
+    def test_projected_stays_lowest(self) -> None:
+        from ui.meteor_tab import _image_priority
+
+        assert _image_priority("rgb_MCIR_projected.png") == 0
