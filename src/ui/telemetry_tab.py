@@ -837,6 +837,18 @@ class TelemetryTab(QWidget):
         )
         ascii_layout.addWidget(self._ascii_table)
         self._log_tabs.addTab(self._ascii_page, _("ASCII View"))
+        # Word-wrapped rows are measured with the column width of that moment. A table that has
+        # not been shown yet still has its narrow start-up widths, so its rows came out many lines
+        # tall and stayed so after the columns were stretched (seen on Linux the first time the
+        # ASCII View was opened). Measure again once the page is shown and whenever a column is
+        # resized.
+        self._fit_rows_timer = QTimer(self)
+        self._fit_rows_timer.setSingleShot(True)
+        self._fit_rows_timer.setInterval(30)
+        self._fit_rows_timer.timeout.connect(self._fit_visible_rows)
+        self._log_tabs.currentChanged.connect(lambda _i: self._fit_rows_timer.start())
+        for header in (self._table.horizontalHeader(), self._ascii_table.horizontalHeader()):
+            header.sectionResized.connect(lambda *_a: self._fit_rows_timer.start())
 
         # "Decoded Fields" page: one inner sub-tab per telemetry ID, built
         # from the satellite's telemetry_ids format definition (if any) and
@@ -3269,6 +3281,12 @@ class TelemetryTab(QWidget):
         if not dim:
             self._frame_count += 1
             self._lbl_count.setText(_("Frames: ") + str(self._frame_count) + _(" received"))
+
+    def _fit_visible_rows(self) -> None:
+        """Measure the rows of the frame tables that are on screen again (see _fit_rows_timer)."""
+        for table in (self._table, self._ascii_table):
+            if table.isVisible():
+                table.resizeRowsToContents()
 
     @staticmethod
     def _binary_summary(raw: bytes | None, callsign: str, norad: int | None) -> str | None:

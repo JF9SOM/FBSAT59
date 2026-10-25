@@ -172,3 +172,46 @@ def test_the_selected_decode_tab_is_tinted_with_the_selection_colour(
         return 1 - (abs(c.red() - highlight.red()) + abs(c.blue() - highlight.blue())) / 510
 
     assert blue_share(rect) > blue_share(other)
+
+
+def test_rows_are_measured_again_when_the_ascii_view_is_first_shown(
+    tab: TelemetryTab, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rows measured while the page was hidden (narrow columns) were many lines tall."""
+    from PySide6.QtWidgets import QTableWidget
+
+    tab.resize(1000, 500)
+    tab.show()
+    qtbot.waitExposed(tab)
+    _receive(tab, _OBC1)
+    measured: list[int] = []
+    real = QTableWidget.resizeRowsToContents
+    monkeypatch.setattr(
+        QTableWidget,
+        "resizeRowsToContents",
+        lambda self: (measured.append(id(self)), real(self))[1],
+    )
+    tab._log_tabs.setCurrentWidget(tab._ascii_page)
+    qtbot.waitUntil(lambda: id(tab._ascii_table) in measured, timeout=2000)
+
+
+def test_rows_are_measured_again_when_a_column_is_resized(
+    tab: TelemetryTab, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from PySide6.QtWidgets import QTableWidget
+
+    tab.resize(1000, 500)
+    tab.show()
+    qtbot.waitExposed(tab)
+    _receive(tab, _OBC1)
+    tab._log_tabs.setCurrentWidget(tab._ascii_page)
+    qtbot.wait(100)
+    measured: list[int] = []
+    real = QTableWidget.resizeRowsToContents
+    monkeypatch.setattr(
+        QTableWidget,
+        "resizeRowsToContents",
+        lambda self: (measured.append(id(self)), real(self))[1],
+    )
+    tab._ascii_table.setColumnWidth(0, tab._ascii_table.columnWidth(0) + 40)
+    qtbot.waitUntil(lambda: id(tab._ascii_table) in measured, timeout=2000)
