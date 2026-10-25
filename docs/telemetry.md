@@ -1751,4 +1751,7 @@ MARINA の実録音を CW TLM で解読したとき、CW Decoder タブでは `D
 - **AX.25 でないバイナリ**（HADES FSK・CSP など）: ヘキサダンプの ASCII 列と同じ形（印字できないバイトは `.`）。
 - **元のバイト列が取れない行**（CW の `[HK1] …` など）は「—」。行は「Received Frames」と同じ順で 1 対 1 に増え、Clear で一緒に消える。
 - 行を選んで Ctrl+C すると `[0 時刻 UTC] SRC>DEST:…` の形でコピーされ、そのまま Help > ASCII変換 に貼り付けられる。
+- **gr-satellites モードの行**: AX.25 として読めたパケットは、gr-satellites が分けて出す宛先・送信元・経路・info から
+  `SRC>DEST,DIGI:info` を組み立てる（`ascii_view.addressed_ascii`。デジピート済みの `*` は gr-satellites の出力に無いので付かない）。
+  AX.25 として読めない「PDU ダンプ」は `.` 付きのダンプ。元のバイト列を持たない行（`ax25_row.raw` が空）は、Data 列の HEX から作る。
 

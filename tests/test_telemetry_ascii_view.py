@@ -161,3 +161,33 @@ def test_copy_gives_log_lines_that_the_help_window_can_read(
     parsed = parse_pasted_line(text)
     assert parsed is not None and parsed.callsign == "OK0LSR"
     assert parsed.payload == b"DOS,80,0,0\x00"
+
+
+_GR_AX25 = (
+    "-> Packet from OK0KST\n"
+    "Container:\n"
+    "    callsign = u'CQ    '\n"
+    "    ssid = 0\n"
+    "    callsign = u'OK0KST'\n"
+    "    ssid = 0\n"
+    "    info = b'U,9008906,9008995,1,0,1632,1537,1475,6,JA1HCB,"
+    "8048,980794,98,120\\x00' (total 66)\n"
+)
+_GR_DUMP = "-> Packet from FOO\n0000: 04 00 09 48 41 32 47 52 42 ff\n"
+
+
+def test_gr_satellites_ax25_packet_shows_as_the_log_line(tab: TelemetryTab) -> None:
+    tab._on_gr_telemetry(_GR_AX25)
+    assert tab._table.rowCount() == tab._ascii_table.rowCount() == 1
+    assert tab._ascii_table.item(0, 3).text() == (  # type: ignore[union-attr]
+        "OK0KST>CQ:U,9008906,9008995,1,0,1632,1537,1475,6,JA1HCB,8048,980794,98,120<0x00>"
+    )
+
+
+def test_gr_satellites_non_ax25_dump_shows_as_a_dotted_dump(tab: TelemetryTab) -> None:
+    tab._on_gr_telemetry(_GR_DUMP)
+    assert tab._ascii_table.item(0, 3).text() == "...HA2GRB."  # type: ignore[union-attr]
+
+
+def test_a_row_that_kept_no_bytes_falls_back_to_its_hex_text() -> None:
+    assert row_ascii(b"", _GREETING_HEX) == "OK0LSR>CQ:Celebrating 10 000 orbits!"

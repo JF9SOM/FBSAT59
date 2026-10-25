@@ -60,7 +60,7 @@ from PySide6.QtWidgets import (
 from comms.aprs.engine import get_aprs_engine
 from comms.aprs.parser import decode_ax25
 from comms.signal_clock import replay_time, signal_time
-from comms.telemetry.ascii_view import row_ascii
+from comms.telemetry.ascii_view import addressed_ascii, dotted_ascii, row_ascii
 from comms.telemetry.baud_detect import (
     BAUD_CHOICES,
     detect_baud_from_satyaml,
@@ -2692,10 +2692,13 @@ class TelemetryTab(QWidget):
         addresses, info_bytes = parse_gr_packet(text)
         if info_bytes is None:
             info_bytes = parse_gr_pdu_dump(text)  # a framing gr-satellites cannot parse
+        ascii_text: str | None = None
         if info_bytes is not None:
             # like the AX.25 mode: the data column is the frame's bytes in HEX; the decoded
             # fields are in the "Decoded Fields" tab
             data_text = format_frame_hex(info_bytes)
+            # the "ASCII View" form: the log line for a parsed AX.25 packet, else a dotted dump
+            ascii_text = addressed_ascii(addresses, info_bytes) or dotted_ascii(info_bytes)
         if len(addresses) > 1:
             callsign = addresses[1]  # the source address; the first is the destination
         full_text = "\n".join(
@@ -2728,6 +2731,7 @@ class TelemetryTab(QWidget):
             ts=when,
             ax25_row=row_data,
             gr_text=full_text,
+            ascii_text=ascii_text,
         )
         row_data.log_id = self._persist_gr_row(callsign, sat_name, data_text, row_data, full_text)
         self._mark_row_logged(self._table.rowCount() - 1, row_data.log_id)
@@ -3151,6 +3155,7 @@ class TelemetryTab(QWidget):
         ax25_row: _Ax25Row | None = None,
         decoded: TelemetryFrame | None = None,
         gr_text: str | None = None,
+        ascii_text: str | None = None,
     ) -> None:
         """Add a row to the Received Frames table.
 
@@ -3162,6 +3167,9 @@ class TelemetryTab(QWidget):
         is the same for a received AX.25 frame. *decoded* is a CW frame's decoded
         fields, shown in the "Decoded Fields" tab when the row is selected; *gr_text* is a
         gr-satellites row's full decoded text, shown below the table when it is selected.
+        *ascii_text* is the row's text for the "ASCII View" tab when it is already known
+        (a gr-satellites packet whose addresses and info field were parsed); otherwise it is
+        made from the frame's bytes or the Data column.
         """
         when = ts if ts is not None else datetime.datetime.now(datetime.UTC)
         row = self._table.rowCount()
@@ -3189,7 +3197,9 @@ class TelemetryTab(QWidget):
             when,
             callsign,
             sat_name,
-            row_ascii(ax25_row.raw if ax25_row is not None else None, data),
+            ascii_text
+            if ascii_text is not None
+            else row_ascii(ax25_row.raw if ax25_row is not None else None, data),
             dim,
         )
         if not dim:

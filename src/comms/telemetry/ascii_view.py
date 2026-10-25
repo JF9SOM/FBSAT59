@@ -75,10 +75,22 @@ def row_ascii(raw: bytes | None, shown_text: str) -> str:
 
     *raw* is the frame's bytes when the row kept them; otherwise *shown_text* (the row's
     Data column) is used if it is a plain hex dump. Rows that are neither (a CW frame's
-    ``[HK1] ...`` text, gr-satellites output) show a dash.
+    ``[HK1] ...`` text) show a dash.
     """
-    if raw is None:
+    if not raw:  # None, or a row that kept no bytes (gr-satellites without a raw frame)
         raw = hex_text_to_bytes(shown_text)
     if not raw:
         return _NO_ASCII
     return frame_ascii(raw)
+
+
+def addressed_ascii(addresses: list[str], info: bytes) -> str | None:
+    """``SRC>DEST,DIGI:info`` from already-split addresses (destination first) and the info field.
+
+    gr-satellites prints a decoded AX.25 packet as separate addresses and info bytes; this
+    puts them back into the log form. None when there is no destination and source.
+    """
+    if len(addresses) < 2:
+        return None
+    path = "".join("," + a for a in addresses[2:])
+    return f"{addresses[1]}>{addresses[0]}{path}:{escaped_ascii(info)}"
