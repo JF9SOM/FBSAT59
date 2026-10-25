@@ -143,3 +143,32 @@ def test_clear_forgets_the_links(tab: TelemetryTab) -> None:
     assert not tab._row_type and not tab._latest_row and not tab._shown_row
     _receive(tab, _OBC2)
     assert _bold(tab, 0) == (True, True)
+
+
+def test_the_selected_decode_tab_is_tinted_with_the_selection_colour(
+    tab: TelemetryTab, qtbot: QtBot
+) -> None:
+    from PySide6.QtGui import QColor, QPalette
+
+    from ui.telemetry_tab import _HighlightTabBar
+
+    bar = tab._decode_id_tabs.tabBar()
+    assert isinstance(bar, _HighlightTabBar)
+    _receive(tab, _OBC1)
+    tab._table.selectRow(0)
+    tab._log_tabs.setCurrentWidget(tab._decode_page)
+    tab.resize(900, 500)
+    tab.show()
+    qtbot.waitExposed(tab)
+    image = bar.grab().toImage()
+    rect = bar.tabRect(bar.currentIndex())
+    other = bar.tabRect(0 if bar.currentIndex() != 0 else 1)
+    highlight = bar.palette().color(QPalette.ColorRole.Highlight)
+
+    def blue_share(r: object) -> float:
+        # how close the middle-left pixel of a tab is to the selection colour (0..1)
+        x, y = r.left() + 6, r.center().y()  # type: ignore[attr-defined]
+        c = QColor(image.pixel(x, y))
+        return 1 - (abs(c.red() - highlight.red()) + abs(c.blue() - highlight.blue())) / 510
+
+    assert blue_share(rect) > blue_share(other)

@@ -32,7 +32,15 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QKeySequence, QPalette, QShortcut, QStandardItemModel
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QKeySequence,
+    QPainter,
+    QPalette,
+    QShortcut,
+    QStandardItemModel,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -50,6 +58,7 @@ from PySide6.QtWidgets import (
     QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,
+    QTabBar,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -302,6 +311,37 @@ class _Ax25Row:
     manual: bool = False  # the user asked for this send
     log_id: int | None = None  # its ``telemetry_log`` row
     payload: bytes = b""  # the AX.25 info field; re-decoded when the row is selected
+
+
+class _HighlightTabBar(QTabBar):
+    """A tab bar that tints the selected tab with the theme's selection colour.
+
+    The default look of the selected tab differs only slightly from the others (hardly
+    visible in a dark theme), which made it hard to see which of a satellite's many
+    "Decoded Fields" sub-tabs is open. The tint is painted over the normal tab, so any style
+    works and the label stays readable.
+    """
+
+    _TINT_ALPHA = 110  # 0..255
+
+    def paintEvent(self, event: Any) -> None:  # noqa: N802
+        super().paintEvent(event)
+        index = self.currentIndex()
+        if index < 0:
+            return
+        tint = QColor(self.palette().color(QPalette.ColorRole.Highlight))
+        tint.setAlpha(self._TINT_ALPHA)
+        painter = QPainter(self)
+        painter.fillRect(self.tabRect(index).adjusted(1, 1, -1, 0), tint)
+        painter.end()
+
+
+class _DecodeTabs(QTabWidget):
+    """The "Decoded Fields" sub-tabs, with the selected one tinted (see _HighlightTabBar)."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setTabBar(_HighlightTabBar(self))
 
 
 class _DimRowDelegate(QStyledItemDelegate):
@@ -811,7 +851,7 @@ class TelemetryTab(QWidget):
         self._decode_banner.setStyleSheet("color: #e67e22;")
         self._decode_banner.setVisible(False)
         decode_page_layout.addWidget(self._decode_banner)
-        self._decode_id_tabs = QTabWidget()
+        self._decode_id_tabs = _DecodeTabs()
         self._decode_id_tabs.currentChanged.connect(self._refresh_decode_banner)
         decode_page_layout.addWidget(self._decode_id_tabs)
         self._log_tabs.addTab(self._decode_page, _("Decoded Fields"))
