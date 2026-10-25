@@ -844,6 +844,7 @@ class TelemetryTab(QWidget):
         # -- before the table is painted, so the stale heights are never seen -- and once more
         # shortly after a page switch as a backstop. A long table is measured after a short
         # pause instead, so dragging the window edge stays smooth.
+        self._row_fits = {"raw": 0, "ascii": 0}  # how often each table's rows were measured
         self._fit_rows_timer = QTimer(self)
         self._fit_rows_timer.setSingleShot(True)
         self._fit_rows_timer.setInterval(30)
@@ -3302,6 +3303,7 @@ class TelemetryTab(QWidget):
                 continue
             if force or table.rowCount() <= self._SYNC_FIT_ROWS:
                 table.resizeRowsToContents()
+                self._row_fits["ascii" if table is self._ascii_table else "raw"] += 1
             else:
                 pending = True
         if pending:
