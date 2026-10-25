@@ -1685,9 +1685,9 @@ AX.25（Direwolf）モードの「Speed:」プルダウンと「Decode IQ Record
   バイナリ PSU テレメトリーと CW ビーコンは未定義。
 - 実ビーコン（JJ1WTK のログ）でのデコードを `tests/test_telemetry_decoder.py` に追加。
 
-### Telemetry タブの「ASCII変換」サブタブ（貼り付け専用・2026-10-22）
+### 「ASCII変換」（貼り付け専用）— 2026-10-25 に Help メニューへ移動
 
-- 「Received Frames」「Decoded Fields」に続く 3 つ目のサブタブ（`ui/telemetry_paste.py` の `AsciiPasteWidget`）。
+- **Help > ASCII変換…**（`ui/telemetry_paste.py` の `AsciiDecodeWindow`＝`AsciiPasteWidget`。独立ウィンドウ。当初はテレメトリータブのサブタブだったが、2026-10-25 にヘルプメニューへ移した。ヘッダーのない行はメインウィンドウで選択中の衛星で読む）。
   他局のログ（JJ1WTK の衛星ログなど）の文字列テレメトリーを貼り付けると、1 行ずつ衛星の定義で解読して全項目を
   木表示する。**貼り付けた内容は保存しない**（受信ログ・SatNOGS 投稿には一切入らない）。
 - 受け付ける行: `[0 2026-10-20 23:07:35 UTC] OK0KST>CQ:U,9008906,...<0x00>`（`SRC>DEST[,PATH]:` ヘッダー付き。
@@ -1741,4 +1741,14 @@ MARINA の実録音を CW TLM で解読したとき、CW Decoder タブでは `D
 - **修正**: `normalize_block()` が `BT` を `=` に戻す。16 進フレームに `T` は無いので他の衛星（ARICA-2・OrigamiSat-2）に影響しない。
   実ログの文字列（MARINA・LASARsat）での解読とタブ経由のテストを追加。
 - 教訓: CW の文字列定義は、**テストの文字列ではなく CW Decoder の実出力（`fbsat59.log` の `CW block finished` 行）で確認する**こと。
+
+### 「ASCII表示」サブタブ（Received Frames と Decoded Fields の間・2026-10-25）
+
+- 受信フレーム（HEX）の各行を、衛星のログ（JJ1WTK のページ）と同じ形のテキストで一覧する（`comms/telemetry/ascii_view.py`）。
+  HEX では読みにくく、Decoded Fields では一覧性がない、その中間の表示。
+- **AX.25 の UI フレーム**: `SRC>DEST,DIGI*:ペイロード`（SSID は `-n`、デジピート済みは `*`、印字できないバイトは
+  `<0xNN>`。末尾の NUL は `<0x00>`）。例: `OK0LSR>CQ:Celebrating 10 000 orbits!`。
+- **AX.25 でないバイナリ**（HADES FSK・CSP など）: ヘキサダンプの ASCII 列と同じ形（印字できないバイトは `.`）。
+- **元のバイト列が取れない行**（CW の `[HK1] …` など）は「—」。行は「Received Frames」と同じ順で 1 対 1 に増え、Clear で一緒に消える。
+- 行を選んで Ctrl+C すると `[0 時刻 UTC] SRC>DEST:…` の形でコピーされ、そのまま Help > ASCII変換 に貼り付けられる。
 

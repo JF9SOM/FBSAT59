@@ -8102,3 +8102,15 @@ msgstr "クリックして再生を始めて下さい。"
 #: src/ui/meteor_tab.py
 msgid "IQ decode finished: {n} frames decoded."
 msgstr "IQデコードが完了しました（{n} フレーム）。"
+
+#: src/ui/telemetry_tab.py
+msgid "ASCII View"
+msgstr "ASCII表示"
+
+#: src/ui/telemetry_tab.py
+msgid "ASCII"
+msgstr "ASCII"
+
+#: src/ui/telemetry_tab.py
+msgid "ASCII Decode…"
+msgstr "ASCII変換…"

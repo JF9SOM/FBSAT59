@@ -108,6 +108,7 @@ from ui.pass_chart import GroupPassChartView, PassChartView
 from ui.pass_panel import PassPanel
 from ui.radar_view import SAT_COLORS, RadarView, SatTrackData
 from ui.radio_control_widget import RadioControlWidget
+from ui.telemetry_paste import AsciiDecodeWindow
 from ui.window_geometry import restore_window_geometry, save_window_geometry
 from ui.world_map import WorldMapView
 
@@ -943,6 +944,8 @@ class MainWindow(QMainWindow):
         # tab key (e.g. "ft4"), used by _on_tab_changed to drive the Comms
         # Quick Panel and to auto-resize the pass-prediction splitter.
         self._comms_tab_keys: dict[QWidget, str] = {}
+        # Help > ASCII Decode… window (created on first use)
+        self._ascii_decode_window: AsciiDecodeWindow | None = None
         # Pass-prediction splitter sizes saved just before shrinking it for a
         # Communications tab; restored when returning to a resident tab.
         self._pass_panel_saved_sizes: list[int] | None = None
@@ -1602,6 +1605,7 @@ class MainWindow(QMainWindow):
         help_menu = mb.addMenu(_("Help"))
         if help_menu:
             help_menu.addAction(_("AI Help…"), self._on_ai_help)
+            help_menu.addAction(_("ASCII Decode…"), self._on_ascii_decode)
             help_menu.addSeparator()
             help_menu.addAction(_("Satellite/Transmitter Colors"), self._on_satellite_color)
             help_menu.addAction(_("Auto Fetch Rules"), self._on_auto_fetch_rules)
@@ -3794,6 +3798,15 @@ class MainWindow(QMainWindow):
 
         dlg = AiHelpDialog(self._collect_ai_help_environment(), self)
         dlg.exec()
+
+    def _on_ascii_decode(self) -> None:
+        """Open (or raise) the Help > ASCII Decode… window."""
+        if self._ascii_decode_window is None:
+            self._ascii_decode_window = AsciiDecodeWindow()
+        self._ascii_decode_window.set_default_norad(self._selected_norad)
+        self._ascii_decode_window.show()
+        self._ascii_decode_window.raise_()
+        self._ascii_decode_window.activateWindow()
 
     def _on_cw_model_help(self) -> None:
         """Open the Help > CW Model Installation… dialog."""
@@ -9935,6 +9948,8 @@ class MainWindow(QMainWindow):
         """Stop the timer, web server, and scheduler when the window is closed."""
         save_window_geometry(self._conn, self)
         ui_hang_watchdog.stop()
+        if self._ascii_decode_window is not None:
+            self._ascii_decode_window.close()  # a free-standing window would keep the app alive
         # Communications tabs (APRS, Telemetry, FT4, Q65, SSTV, CW Decoder,
         # METEOR/HRPT) are child widgets of the tab bar, not top-level
         # windows, so Qt never auto-invokes their closeEvent() just because

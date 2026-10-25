@@ -1,4 +1,4 @@
-"""Paste-and-decode page of the Telemetry tab: ASCII telemetry lines pasted from elsewhere.
+"""Help > ASCII Decode: ASCII telemetry lines pasted from elsewhere.
 
 Other stations' logs (e.g. JJ1WTK's satellite log) list packets as text such as
 ``[0 2026-10-20 23:07:35 UTC] OK0KST>CQ:U,9008906,...,JA1HCB,...<0x00>``. The page decodes
@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -208,3 +208,19 @@ class AsciiPasteWidget(QWidget):
             child.setText(0, f.label)
             child.setText(1, format_field_value(f))
         return True
+
+
+class AsciiDecodeWindow(QWidget):
+    """The Help > ASCII Decode window: a free-standing :class:`AsciiPasteWidget`."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent, Qt.WindowType.Window)
+        self.setWindowTitle(_("ASCII Decode"))
+        self.resize(900, 640)
+        self._widget = AsciiPasteWidget()
+        layout = QVBoxLayout(self)
+        layout.addWidget(self._widget)
+
+    def set_default_norad(self, norad: int | None) -> None:
+        """The satellite used for lines without a callsign header (the selected one)."""
+        self._widget.set_default_norad(norad)

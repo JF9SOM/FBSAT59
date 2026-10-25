@@ -32,8 +32,9 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPalette, QStandardItemModel
+from PySide6.QtGui import QColor, QKeySequence, QPalette, QShortcut, QStandardItemModel
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -59,6 +60,7 @@ from PySide6.QtWidgets import (
 from comms.aprs.engine import get_aprs_engine
 from comms.aprs.parser import decode_ax25
 from comms.signal_clock import replay_time, signal_time
+from comms.telemetry.ascii_view import row_ascii
 from comms.telemetry.baud_detect import (
     BAUD_CHOICES,
     detect_baud_from_satyaml,
@@ -109,7 +111,6 @@ from comms.telemetry.satnogs_uploader import (
 )
 from i18n import _
 from ui.sat_search_dialog import SatSearchDialog
-from ui.telemetry_paste import AsciiPasteWidget
 
 logger = logging.getLogger(__name__)
 
@@ -758,6 +759,36 @@ class TelemetryTab(QWidget):
         self._gr_detail.setPlaceholderText(_("Select a frame to see all its decoded fields."))
         self._log_tabs.addTab(self._raw_page, _("Received Frames"))
 
+        # "ASCII View": every row of "Received Frames" as the text a satellite log lists
+        # (SRC>DEST,DIGI*:payload) -- between the hex and the per-field "Decoded Fields".
+        self._ascii_page = QWidget()
+        ascii_layout = QVBoxLayout(self._ascii_page)
+        ascii_layout.setContentsMargins(0, 0, 0, 0)
+        self._ascii_table = QTableWidget(0, 4)
+        self._ascii_table.setHorizontalHeaderLabels(
+            [_("Time (UTC)"), _("Callsign"), _("Satellite"), _("ASCII")]
+        )
+        ascii_header = self._ascii_table.horizontalHeader()
+        for column in range(3):
+            ascii_header.setSectionResizeMode(column, QHeaderView.ResizeMode.Interactive)
+            self._ascii_table.setColumnWidth(column, self._table.columnWidth(column))
+        ascii_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self._ascii_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._ascii_table.setItemDelegate(_DimRowDelegate(self._ascii_table))
+        self._ascii_table.setWordWrap(True)
+        self._ascii_table.verticalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.ResizeToContents
+        )
+        self._ascii_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._ascii_table.setFont(self._table.font())  # the same enlarged size as the hex table
+        self._ascii_table.horizontalHeader().setFont(self._table.horizontalHeader().font())
+        self._ascii_table.verticalHeader().setFont(self._table.verticalHeader().font())
+        QShortcut(QKeySequence.StandardKey.Copy, self._ascii_table).activated.connect(
+            self._copy_ascii_rows
+        )
+        ascii_layout.addWidget(self._ascii_table)
+        self._log_tabs.addTab(self._ascii_page, _("ASCII View"))
+
         # "Decoded Fields" page: one inner sub-tab per telemetry ID, built
         # from the satellite's telemetry_ids format definition (if any) and
         # updated live as matching frames arrive. Only satellites with the
@@ -769,10 +800,6 @@ class TelemetryTab(QWidget):
         self._decode_id_tabs = QTabWidget()
         decode_page_layout.addWidget(self._decode_id_tabs)
         self._log_tabs.addTab(self._decode_page, _("Decoded Fields"))
-        # "ASCII Decode": paste lines copied from another station's log and list every field.
-        # Paste only -- nothing typed here is logged or uploaded.
-        self._ascii_paste = AsciiPasteWidget()
-        self._log_tabs.addTab(self._ascii_paste, _("ASCII Decode"))
         self._decode_tables: dict[str, QTableWidget] = {}
         self._decode_field_rows: dict[str, dict[str, int]] = {}
         self._decode_tabs_norad: int | None = None
@@ -3158,9 +3185,49 @@ class TelemetryTab(QWidget):
                 item.setData(_GR_TEXT_ROLE, gr_text)
             self._table.setItem(row, column, item)
         self._table.scrollToBottom()
+        self._append_ascii_row(
+            when,
+            callsign,
+            sat_name,
+            row_ascii(ax25_row.raw if ax25_row is not None else None, data),
+            dim,
+        )
         if not dim:
             self._frame_count += 1
             self._lbl_count.setText(_("Frames: ") + str(self._frame_count) + _(" received"))
+
+    def _append_ascii_row(
+        self, when: datetime.datetime, callsign: str, sat_name: str, text: str, dim: bool
+    ) -> None:
+        """Add the "ASCII View" counterpart of a Received Frames row."""
+        row = self._ascii_table.rowCount()
+        self._ascii_table.insertRow(row)
+        for column, cell in enumerate(
+            (when.strftime("%Y-%m-%d %H:%M:%S"), callsign, sat_name, text)
+        ):
+            item = QTableWidgetItem(cell)
+            if column == 3:
+                item.setToolTip(cell)
+            if dim:
+                item.setData(_DIM_ROLE, True)
+            self._ascii_table.setItem(row, column, item)
+        self._ascii_table.scrollToBottom()
+
+    def _copy_ascii_rows(self) -> None:
+        """Copy the selected "ASCII View" rows as log lines (``[0 time UTC] SRC>DEST:...``).
+
+        That is the form of a satellite log's lines, so they can be pasted into
+        Help > ASCII Decode.
+        """
+        rows = sorted({index.row() for index in self._ascii_table.selectedIndexes()})
+        lines = []
+        for r in rows:
+            stamp = self._ascii_table.item(r, 0)
+            text = self._ascii_table.item(r, 3)
+            if stamp is not None and text is not None:
+                lines.append(f"[0 {stamp.text()} UTC] {text.text()}")
+        if lines:
+            QApplication.clipboard().setText("\n".join(lines))
 
     def _rebuild_decode_tabs(self, norad: int | None) -> None:
         """(Re)build the "Decoded Fields" sub-tabs for *norad*.
@@ -3176,7 +3243,6 @@ class TelemetryTab(QWidget):
         self._decode_tables = {}
         self._decode_field_rows = {}
         self._decode_tabs_norad = norad
-        self._ascii_paste.set_default_norad(norad)
 
         from comms.mode_detection import HADES_FSK_NORADS
 
@@ -3867,6 +3933,7 @@ class TelemetryTab(QWidget):
         self._gr_bogus_pending.clear()
         self._gr_bogus_count = 0
         self._table.setRowCount(0)
+        self._ascii_table.setRowCount(0)
         self._frame_count = 0
         self._lbl_count.setText(_("Frames: 0 received"))
 

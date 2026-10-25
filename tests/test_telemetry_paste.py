@@ -128,3 +128,15 @@ def test_format_field_value_matches_the_decoded_fields_tables() -> None:
     tf = decode_telemetry("OK0KST", b"255,0,11,8660379,9117082,1792507744,0,22.20,12.39", 69935)
     by_name = {f.name: f for f in tf.fields}
     assert format_field_value(by_name["obc_uptime"]) == "8,660,379 s"
+
+
+def test_the_help_window_wraps_the_paste_widget(qtbot: QtBot) -> None:
+    from ui.telemetry_paste import AsciiDecodeWindow
+
+    win = AsciiDecodeWindow()
+    qtbot.addWidget(win)
+    assert win.windowTitle() == "ASCII Decode"
+    win.set_default_norad(69935)
+    win._widget._input.setPlainText("255,0,11,8660379,9117082,1792507744,0,22.20,12.39")
+    win._widget.decode_text()
+    assert "OBC" in win._widget._tree.topLevelItem(0).text(0)  # type: ignore[union-attr]
