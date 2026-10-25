@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import sqlite3
 
 import pytest
@@ -195,17 +196,9 @@ def test_rows_are_measured_again_when_the_ascii_view_is_first_shown(
     qtbot.waitUntil(lambda: id(tab._ascii_table) in measured, timeout=2000)
 
 
-def test_rows_are_measured_again_when_a_column_is_resized(
-    tab: TelemetryTab, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def _count_row_measurements(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     from PySide6.QtWidgets import QTableWidget
 
-    tab.resize(1000, 500)
-    tab.show()
-    qtbot.waitExposed(tab)
-    _receive(tab, _OBC1)
-    tab._log_tabs.setCurrentWidget(tab._ascii_page)
-    qtbot.wait(100)
     measured: list[int] = []
     real = QTableWidget.resizeRowsToContents
     monkeypatch.setattr(
@@ -213,5 +206,35 @@ def test_rows_are_measured_again_when_a_column_is_resized(
         "resizeRowsToContents",
         lambda self: (measured.append(id(self)), real(self))[1],
     )
+    return measured
+
+
+def test_rows_are_measured_again_the_moment_a_column_is_resized(
+    tab: TelemetryTab, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Before the next paint, so stale heights are never drawn."""
+    tab.resize(1000, 500)
+    tab.show()
+    qtbot.waitExposed(tab)
+    _receive(tab, _OBC1)
+    tab._log_tabs.setCurrentWidget(tab._ascii_page)
+    qtbot.wait(100)
+    measured = _count_row_measurements(monkeypatch)
     tab._ascii_table.setColumnWidth(0, tab._ascii_table.columnWidth(0) + 40)
+    assert id(tab._ascii_table) in measured  # no waiting: it happened inside the resize
+
+
+def test_a_long_table_is_measured_after_a_short_pause_instead(
+    tab: TelemetryTab, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab.resize(1000, 500)
+    tab.show()
+    qtbot.waitExposed(tab)
+    tab._log_tabs.setCurrentWidget(tab._ascii_page)
+    for _ in range(TelemetryTab._SYNC_FIT_ROWS + 5):
+        tab._append_ascii_row(datetime.datetime.now(datetime.UTC), "X", "Y", "text", False)
+    qtbot.wait(100)
+    measured = _count_row_measurements(monkeypatch)
+    tab._ascii_table.setColumnWidth(0, tab._ascii_table.columnWidth(0) + 40)
+    assert id(tab._ascii_table) not in measured  # not inside the resize
     qtbot.waitUntil(lambda: id(tab._ascii_table) in measured, timeout=2000)

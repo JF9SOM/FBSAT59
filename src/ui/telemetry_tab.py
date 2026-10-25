@@ -840,15 +840,17 @@ class TelemetryTab(QWidget):
         # Word-wrapped rows are measured with the column width of that moment. A table that has
         # not been shown yet still has its narrow start-up widths, so its rows came out many lines
         # tall and stayed so after the columns were stretched (seen on Linux the first time the
-        # ASCII View was opened). Measure again once the page is shown and whenever a column is
-        # resized.
+        # ASCII View was opened). So the rows are measured again the moment a column is resized
+        # -- before the table is painted, so the stale heights are never seen -- and once more
+        # shortly after a page switch as a backstop. A long table is measured after a short
+        # pause instead, so dragging the window edge stays smooth.
         self._fit_rows_timer = QTimer(self)
         self._fit_rows_timer.setSingleShot(True)
         self._fit_rows_timer.setInterval(30)
-        self._fit_rows_timer.timeout.connect(self._fit_visible_rows)
-        self._log_tabs.currentChanged.connect(lambda _i: self._fit_rows_timer.start())
+        self._fit_rows_timer.timeout.connect(lambda: self._fit_visible_rows(force=True))
+        self._log_tabs.currentChanged.connect(lambda _i: self._on_log_page_changed())
         for header in (self._table.horizontalHeader(), self._ascii_table.horizontalHeader()):
-            header.sectionResized.connect(lambda *_a: self._fit_rows_timer.start())
+            header.sectionResized.connect(lambda *_a: self._fit_visible_rows())
 
         # "Decoded Fields" page: one inner sub-tab per telemetry ID, built
         # from the satellite's telemetry_ids format definition (if any) and
@@ -3282,11 +3284,28 @@ class TelemetryTab(QWidget):
             self._frame_count += 1
             self._lbl_count.setText(_("Frames: ") + str(self._frame_count) + _(" received"))
 
-    def _fit_visible_rows(self) -> None:
-        """Measure the rows of the frame tables that are on screen again (see _fit_rows_timer)."""
+    _SYNC_FIT_ROWS = 300  # up to this many rows are re-measured at once (about 10 ms)
+
+    def _on_log_page_changed(self) -> None:
+        """A sub-tab became current: fit its rows now and again after layout has settled."""
+        self._fit_visible_rows()
+        self._fit_rows_timer.start()
+
+    def _fit_visible_rows(self, force: bool = False) -> None:
+        """Measure the rows of the frame tables that are on screen again (see _fit_rows_timer).
+
+        A table with more than _SYNC_FIT_ROWS rows is left to the timer unless *force*.
+        """
+        pending = False
         for table in (self._table, self._ascii_table):
-            if table.isVisible():
+            if not table.isVisible():
+                continue
+            if force or table.rowCount() <= self._SYNC_FIT_ROWS:
                 table.resizeRowsToContents()
+            else:
+                pending = True
+        if pending:
+            self._fit_rows_timer.start()
 
     @staticmethod
     def _binary_summary(raw: bytes | None, callsign: str, norad: int | None) -> str | None:
