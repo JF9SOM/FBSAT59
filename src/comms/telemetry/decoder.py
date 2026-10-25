@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from i18n import _
+from i18n import _, get_language
 
 # ---------------------------------------------------------------------------
 # Format definition loader
@@ -34,29 +34,54 @@ def _formats_dir() -> Path:
     return base / "data" / "telemetry_formats"
 
 
+def _localize(node: Any, lang: str) -> Any:
+    """Pick the text of *lang* in a format definition.
+
+    A definition keeps its English text under the usual key (``label``) and the Japanese
+    text next to it under ``<key>_ja`` (``label_ja``). English is used everywhere except in
+    the Japanese UI, so the English UI can never show Japanese. The ``*_ja`` keys are
+    consumed here; the code that reads a definition never sees them.
+    """
+    if isinstance(node, dict):
+        out: dict[str, Any] = {}
+        for key, value in node.items():
+            if key.endswith("_ja"):
+                continue
+            twin = node.get(key + "_ja")
+            out[key] = _localize(twin if lang == "ja" and twin is not None else value, lang)
+        return out
+    if isinstance(node, list):
+        return [_localize(item, lang) for item in node]
+    return node
+
+
 def load_format(norad: int) -> dict[str, Any] | None:
-    """Load the JSON format definition for *norad*, or None if not found."""
+    """Load the JSON format definition for *norad*, or None if not found.
+
+    Texts are chosen for the current UI language (see _localize()).
+    """
     path = _formats_dir() / f"{norad}.json"
     if not path.exists():
         return None
     try:
         with path.open(encoding="utf-8") as f:
-            data: dict[str, Any] = json.load(f)
+            data: dict[str, Any] = _localize(json.load(f), get_language())
             return data
     except Exception:
         return None
 
 
 def list_formats() -> list[dict[str, Any]]:
-    """Return all available format definitions."""
+    """Return all available format definitions (texts for the current UI language)."""
     results: list[dict[str, Any]] = []
     fmt_dir = _formats_dir()
     if not fmt_dir.exists():
         return results
+    lang = get_language()
     for p in sorted(fmt_dir.glob("*.json")):
         try:
             with p.open(encoding="utf-8") as f:
-                results.append(json.load(f))
+                results.append(_localize(json.load(f), lang))
         except Exception:
             pass
     return results

@@ -525,13 +525,13 @@ def _angvel_text(code: int, bits: int, edges: list[float], axis: str) -> str:
     if mag >= known:
         lower = _format_edge(edges[-1])
         sign = "-" if negative else ""
-        op = "≧" if not negative else "≦"
+        op = "≥" if not negative else "≤"
         return f"|{axis}| {op} {sign}{lower} (range not confirmed)"
     lo, hi = edges[mag], edges[mag + 1]
     if not negative:
-        return f"{_format_edge(lo)} ≦ {axis} ＜ {_format_edge(hi)}"
+        return f"{_format_edge(lo)} ≤ {axis} < {_format_edge(hi)}"
     hi_text = "-0" if mag == 0 else f"-{_format_edge(lo)}"
-    return f"-{_format_edge(hi)} ≦ {axis} ＜ {hi_text}"
+    return f"-{_format_edge(hi)} ≤ {axis} < {hi_text}"
 
 
 def decode_cw_frame(

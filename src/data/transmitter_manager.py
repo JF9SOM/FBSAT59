@@ -21,6 +21,7 @@ import httpx
 
 from data.favorites import move_groups
 from data.http_client import DEFAULT_HEADERS
+from i18n import get_language
 
 logger = logging.getLogger(__name__)
 
@@ -176,20 +177,27 @@ class TransmitterManager:
 
             xpdr_uuid: str = entry["uuid"]
             norad_cat_id: int = entry["norad_cat_id"]
+            # A satellite name may carry a Japanese twin (satellite_name_ja); the English UI
+            # never shows it.
+            sat_name: str | None = (
+                entry.get("satellite_name_ja")
+                if get_language() == "ja" and entry.get("satellite_name_ja")
+                else entry.get("satellite_name")
+            )
 
             # Ensure the satellite record exists (an entry may move to a new
             # NORAD ID between releases, so this is not only for new rows).
             self._conn.execute(
                 "INSERT OR IGNORE INTO satellites (norad_cat_id, name, updated_at)"
                 " VALUES (?, ?, ?)",
-                (norad_cat_id, entry.get("satellite_name", f"#{norad_cat_id}"), now),
+                (norad_cat_id, sat_name or f"#{norad_cat_id}", now),
             )
 
-            if norad_cat_id < 0 and "satellite_name" in entry:
+            if norad_cat_id < 0 and sat_name:
                 # Pseudo-satellites are ours alone: keep their name current.
                 self._conn.execute(
                     "UPDATE satellites SET name = ? WHERE norad_cat_id = ?",
-                    (entry["satellite_name"], norad_cat_id),
+                    (sat_name, norad_cat_id),
                 )
 
             existing = self._conn.execute(

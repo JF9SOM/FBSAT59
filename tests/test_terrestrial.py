@@ -61,7 +61,25 @@ def test_an_old_row_moves_to_the_new_pseudo_satellite(db: sqlite3.Connection) ->
     ).fetchone()
     assert row["norad_cat_id"] == -3
     name = db.execute("SELECT name FROM satellites WHERE norad_cat_id = -2").fetchone()["name"]
-    assert name == "Terrestrial 1200 (地上系)"
+    assert name == "Terrestrial 1200 (ground)"  # the English UI never shows the Japanese name
+
+
+def test_the_japanese_ui_names_the_pseudo_satellites_in_japanese(
+    db: sqlite3.Connection,
+) -> None:
+    from i18n import get_language, set_language
+
+    previous = get_language()
+    set_language("ja")
+    try:
+        TransmitterManager(db).load_community_transmitters()
+    finally:
+        set_language(previous)
+    names = [
+        r["name"]
+        for r in db.execute("SELECT name FROM satellites WHERE norad_cat_id < 0 ORDER BY 1")
+    ]
+    assert names == ["Terrestrial 1200 (地上系)", "Terrestrial 9600 (地上系)"]
 
 
 def test_aprs_tab_matches_them_and_picks_the_right_baud(db: sqlite3.Connection) -> None:

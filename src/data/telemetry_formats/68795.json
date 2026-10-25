@@ -5,84 +5,131 @@
   "modulation": "AFSK1200",
   "ax25_pid": "0xF0",
   "reference": "http://www.origami.titech.ac.jp/archives/1958",
-  "document": "ORI-2-0027-OPR OrigamiSat-2 FMダウンリンク通信データフォーマット ver.2026-04-21 (Institute of Science Tokyo)",
+  "document": "ORI-2-0027-OPR OrigamiSat-2 FM downlink communication data format ver.2026-04-21 (Institute of Science Tokyo)",
+  "document_ja": "ORI-2-0027-OPR OrigamiSat-2 FMダウンリンク通信データフォーマット ver.2026-04-21 (Institute of Science Tokyo)",
   "document_cw": "ORI-2-0027e-OPR OrigamiSat-2 CW Downlink Communication Data Format ver.1.1 (Institute of Science Tokyo), http://www.origami.titech.ac.jp/wp/wp-content/uploads/2026/04/ORI-2-0027e-OPR_OrigamiSat-2_CW_Downlink_Communication_Data_Format_ver1.1.pdf",
   "telemetry_ids": {
     "1": {
-      "label": "ID01 (MOBC HK・ヘッダー部のみ)",
-      "fields": [
-        {"name": "onboard_unix_time", "offset": 4, "length": 4, "type": "unix_time", "label": "衛星内部時刻(UTC)"},
-        {"name": "telemetry_count", "offset": 3, "length": 1, "type": "uint8", "label": "テレメトリ送信数"},
-        {"name": "packet_length", "offset": 0, "length": 1, "type": "uint8", "label": "パケット長"},
-        {"name": "gen_timing", "offset": 1, "length": 1, "type": "uint8", "label": "生成タイミング"},
-        {"name": "telemetry_id", "offset": 2, "length": 1, "type": "uint8", "label": "テレメトリID"}
-      ]
-    },
-    "65": {
-      "label": "ID65 (RasPi/カメラ制御 HK)",
+      "label": "ID01 (MOBC HK, header only)",
+      "label_ja": "ID01 (MOBC HK・ヘッダー部のみ)",
       "fields": [
         {
-          "name": "packet_length",
-          "offset": 0,
-          "length": 1,
-          "type": "uint8",
-          "label": "パケット長"
-        },
-        {
-          "name": "gen_timing",
-          "offset": 1,
-          "length": 1,
-          "type": "uint8",
-          "label": "生成タイミング(0xFE=DR経由,0xFF=リアルタイム)"
-        },
-        {
-          "name": "telemetry_id",
-          "offset": 2,
-          "length": 1,
-          "type": "uint8",
-          "label": "テレメトリID"
+          "name": "onboard_unix_time",
+          "offset": 4,
+          "length": 4,
+          "type": "unix_time",
+          "label": "Satellite internal time (UTC)",
+          "label_ja": "衛星内部時刻(UTC)"
         },
         {
           "name": "telemetry_count",
           "offset": 3,
           "length": 1,
           "type": "uint8",
-          "label": "テレメトリ送信数"
+          "label": "Telemetry transmitted count",
+          "label_ja": "テレメトリ送信数"
+        },
+        {
+          "name": "packet_length",
+          "offset": 0,
+          "length": 1,
+          "type": "uint8",
+          "label": "Packet length",
+          "label_ja": "パケット長"
+        },
+        {
+          "name": "gen_timing",
+          "offset": 1,
+          "length": 1,
+          "type": "uint8",
+          "label": "Generation timing",
+          "label_ja": "生成タイミング"
+        },
+        {
+          "name": "telemetry_id",
+          "offset": 2,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry ID",
+          "label_ja": "テレメトリID"
+        }
+      ]
+    },
+    "65": {
+      "label": "ID65 (RasPi / camera control HK)",
+      "label_ja": "ID65 (RasPi/カメラ制御 HK)",
+      "fields": [
+        {
+          "name": "packet_length",
+          "offset": 0,
+          "length": 1,
+          "type": "uint8",
+          "label": "Packet length",
+          "label_ja": "パケット長"
+        },
+        {
+          "name": "gen_timing",
+          "offset": 1,
+          "length": 1,
+          "type": "uint8",
+          "label": "Generation timing (0xFE=via DR, 0xFF=real time)",
+          "label_ja": "生成タイミング(0xFE=DR経由,0xFF=リアルタイム)"
+        },
+        {
+          "name": "telemetry_id",
+          "offset": 2,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry ID",
+          "label_ja": "テレメトリID"
+        },
+        {
+          "name": "telemetry_count",
+          "offset": 3,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry transmitted count",
+          "label_ja": "テレメトリ送信数"
         },
         {
           "name": "onboard_unix_time",
           "offset": 4,
           "length": 4,
           "type": "unix_time",
-          "label": "衛星内部時刻(UTC)"
+          "label": "Satellite internal time (UTC)",
+          "label_ja": "衛星内部時刻(UTC)"
         },
         {
           "name": "cmd_id",
           "offset": 8,
           "length": 1,
           "type": "uint8",
-          "label": "受領コマンドID"
+          "label": "Received command ID",
+          "label_ja": "受領コマンドID"
         },
         {
           "name": "cmd_status",
           "offset": 9,
           "length": 1,
           "type": "uint8",
-          "label": "コマンド実行ステータス"
+          "label": "Command execution status",
+          "label_ja": "コマンド実行ステータス"
         },
         {
           "name": "cmd_error",
           "offset": 10,
           "length": 1,
           "type": "uint8",
-          "label": "コマンドエラーステータス"
+          "label": "Command error status",
+          "label_ja": "コマンドエラーステータス"
         },
         {
           "name": "cmd_recv_count",
           "offset": 11,
           "length": 1,
           "type": "uint8",
-          "label": "コマンド受領数"
+          "label": "Commands received",
+          "label_ja": "コマンド受領数"
         },
         {
           "name": "tlm_interval_s",
@@ -90,7 +137,8 @@
           "length": 4,
           "type": "uint32_be",
           "unit": "s",
-          "label": "テレメトリ送信間隔"
+          "label": "Telemetry transmit interval",
+          "label_ja": "テレメトリ送信間隔"
         },
         {
           "name": "raspi_ic_temp_c",
@@ -98,35 +146,40 @@
           "length": 1,
           "type": "uint8",
           "unit": "°C",
-          "label": "RasPi IC温度"
+          "label": "RasPi IC temperature",
+          "label_ja": "RasPi IC温度"
         },
         {
           "name": "throttle_status",
           "offset": 17,
           "length": 1,
           "type": "uint8",
-          "label": "スロットリング状態(0=通常,1=スロットリング)"
+          "label": "Throttling state (0=normal, 1=throttling)",
+          "label_ja": "スロットリング状態(0=通常,1=スロットリング)"
         },
         {
           "name": "sd_img_count",
           "offset": 18,
           "length": 2,
           "type": "uint16_be",
-          "label": "SDカード内画像ファイル数"
+          "label": "Image files on SD card",
+          "label_ja": "SDカード内画像ファイル数"
         },
         {
           "name": "sd_video_count",
           "offset": 20,
           "length": 2,
           "type": "uint16_be",
-          "label": "SDカード内動画ファイル数"
+          "label": "Video files on SD card",
+          "label_ja": "SDカード内動画ファイル数"
         },
         {
           "name": "sd_total_count",
           "offset": 22,
           "length": 2,
           "type": "uint16_be",
-          "label": "SDカード内画像・動画合計数"
+          "label": "Images and videos on SD card (total)",
+          "label_ja": "SDカード内画像・動画合計数"
         },
         {
           "name": "sd_free_mb",
@@ -134,7 +187,8 @@
           "length": 2,
           "type": "uint16_be",
           "unit": "MB",
-          "label": "SDカード空き容量(MB)"
+          "label": "SD card free space (MB)",
+          "label_ja": "SDカード空き容量(MB)"
         },
         {
           "name": "sd_free_kb",
@@ -142,7 +196,8 @@
           "length": 2,
           "type": "uint16_be",
           "unit": "KB",
-          "label": "SDカード空き容量(KB)"
+          "label": "SD card free space (KB)",
+          "label_ja": "SDカード空き容量(KB)"
         },
         {
           "name": "sd_total_size_mb",
@@ -150,7 +205,8 @@
           "length": 2,
           "type": "uint16_be",
           "unit": "MB",
-          "label": "SDカード内合計容量(MB)"
+          "label": "SD card total size (MB)",
+          "label_ja": "SDカード内合計容量(MB)"
         },
         {
           "name": "sd_total_size_kb",
@@ -158,103 +214,118 @@
           "length": 2,
           "type": "uint16_be",
           "unit": "KB",
-          "label": "SDカード内合計容量(KB)"
+          "label": "SD card total size (KB)",
+          "label_ja": "SDカード内合計容量(KB)"
         },
         {
           "name": "raspi_reboot_count",
           "offset": 32,
           "length": 2,
           "type": "uint16_be",
-          "label": "RasPi再起動回数"
+          "label": "RasPi restart count",
+          "label_ja": "RasPi再起動回数"
         }
       ]
     },
     "100": {
-      "label": "ID100 (ADCS基板 HK)",
+      "label": "ID100 (ADCS board HK)",
+      "label_ja": "ID100 (ADCS基板 HK)",
       "fields": [
         {
           "name": "packet_length",
           "offset": 0,
           "length": 1,
           "type": "uint8",
-          "label": "パケット長"
+          "label": "Packet length",
+          "label_ja": "パケット長"
         },
         {
           "name": "gen_timing",
           "offset": 1,
           "length": 1,
           "type": "uint8",
-          "label": "生成タイミング(0xFE=DR経由,0xFF=リアルタイム)"
+          "label": "Generation timing (0xFE=via DR, 0xFF=real time)",
+          "label_ja": "生成タイミング(0xFE=DR経由,0xFF=リアルタイム)"
         },
         {
           "name": "telemetry_id",
           "offset": 2,
           "length": 1,
           "type": "uint8",
-          "label": "テレメトリID"
+          "label": "Telemetry ID",
+          "label_ja": "テレメトリID"
         },
         {
           "name": "telemetry_count",
           "offset": 3,
           "length": 1,
           "type": "uint8",
-          "label": "テレメトリ送信数"
+          "label": "Telemetry transmitted count",
+          "label_ja": "テレメトリ送信数"
         },
         {
           "name": "onboard_unix_time",
           "offset": 4,
           "length": 4,
           "type": "unix_time",
-          "label": "衛星内部時刻(UTC)"
+          "label": "Satellite internal time (UTC)",
+          "label_ja": "衛星内部時刻(UTC)"
         },
         {
           "name": "cmd_id",
           "offset": 8,
           "length": 1,
           "type": "uint8",
-          "label": "受領コマンドID"
+          "label": "Received command ID",
+          "label_ja": "受領コマンドID"
         },
         {
           "name": "cmd_status",
           "offset": 9,
           "length": 1,
           "type": "uint8",
-          "label": "コマンド実行ステータス"
+          "label": "Command execution status",
+          "label_ja": "コマンド実行ステータス"
         },
         {
           "name": "cmd_error",
           "offset": 10,
           "length": 1,
           "type": "uint8",
-          "label": "コマンドエラーステータス"
+          "label": "Command error status",
+          "label_ja": "コマンドエラーステータス"
         },
         {
           "name": "cmd_recv_count",
           "offset": 11,
           "length": 1,
           "type": "uint8",
-          "label": "コマンド受領数"
+          "label": "Commands received",
+          "label_ja": "コマンド受領数"
         },
         {
           "name": "adcs_mode",
           "offset": 12,
           "length": 1,
           "type": "uint8",
-          "label": "ADCSモード"
+          "label": "ADCS mode",
+          "label_ja": "ADCSモード"
         },
         {
           "name": "adcs_mode_trans",
           "offset": 13,
           "length": 1,
           "type": "uint8",
-          "label": "ADCSモード遷移状態(0=遷移終了,1=遷移中)"
+          "label": "ADCS mode transition state (0=done, 1=in transition)",
+          "label_ja": "ADCSモード遷移状態(0=遷移終了,1=遷移中)"
         },
         {
           "name": "adcs_reboot_count",
           "offset": 14,
           "length": 1,
           "type": "uint8",
-          "label": "ADCS再起動回数"
+          "label": "ADCS restart count",
+          "label_ja": "ADCS再起動回数"
         },
         {
           "name": "att_prop_time",
@@ -262,124 +333,142 @@
           "length": 4,
           "type": "uint32_be",
           "unit": "s",
-          "label": "姿勢伝播時間"
+          "label": "Attitude propagation time",
+          "label_ja": "姿勢伝播時間"
         },
         {
           "name": "quat_x",
           "offset": 19,
           "length": 4,
           "type": "float32_be",
-          "label": "姿勢クォータニオンx"
+          "label": "Attitude quaternion x",
+          "label_ja": "姿勢クォータニオンx"
         },
         {
           "name": "quat_y",
           "offset": 23,
           "length": 4,
           "type": "float32_be",
-          "label": "姿勢クォータニオンy"
+          "label": "Attitude quaternion y",
+          "label_ja": "姿勢クォータニオンy"
         },
         {
           "name": "quat_z",
           "offset": 27,
           "length": 4,
           "type": "float32_be",
-          "label": "姿勢クォータニオンz"
+          "label": "Attitude quaternion z",
+          "label_ja": "姿勢クォータニオンz"
         },
         {
           "name": "quat_w",
           "offset": 31,
           "length": 4,
           "type": "float32_be",
-          "label": "姿勢クォータニオンw"
+          "label": "Attitude quaternion w",
+          "label_ja": "姿勢クォータニオンw"
         }
       ]
     },
     "130": {
-      "label": "ID130 (ADCS基板 HK詳細)",
+      "label": "ID130 (ADCS board HK, detailed)",
+      "label_ja": "ID130 (ADCS基板 HK詳細)",
       "fields": [
         {
           "name": "packet_length",
           "offset": 0,
           "length": 1,
           "type": "uint8",
-          "label": "パケット長"
+          "label": "Packet length",
+          "label_ja": "パケット長"
         },
         {
           "name": "gen_timing",
           "offset": 1,
           "length": 1,
           "type": "uint8",
-          "label": "生成タイミング(0xFE=DR経由,0xFF=リアルタイム)"
+          "label": "Generation timing (0xFE=via DR, 0xFF=real time)",
+          "label_ja": "生成タイミング(0xFE=DR経由,0xFF=リアルタイム)"
         },
         {
           "name": "telemetry_id",
           "offset": 2,
           "length": 1,
           "type": "uint8",
-          "label": "テレメトリID"
+          "label": "Telemetry ID",
+          "label_ja": "テレメトリID"
         },
         {
           "name": "telemetry_count",
           "offset": 3,
           "length": 1,
           "type": "uint8",
-          "label": "テレメトリ送信数"
+          "label": "Telemetry transmitted count",
+          "label_ja": "テレメトリ送信数"
         },
         {
           "name": "onboard_unix_time",
           "offset": 4,
           "length": 4,
           "type": "unix_time",
-          "label": "衛星内部時刻(UTC)"
+          "label": "Satellite internal time (UTC)",
+          "label_ja": "衛星内部時刻(UTC)"
         },
         {
           "name": "cmd_id",
           "offset": 8,
           "length": 1,
           "type": "uint8",
-          "label": "受領コマンドID"
+          "label": "Received command ID",
+          "label_ja": "受領コマンドID"
         },
         {
           "name": "cmd_status",
           "offset": 9,
           "length": 1,
           "type": "uint8",
-          "label": "コマンド実行ステータス"
+          "label": "Command execution status",
+          "label_ja": "コマンド実行ステータス"
         },
         {
           "name": "cmd_error",
           "offset": 10,
           "length": 1,
           "type": "uint8",
-          "label": "コマンドエラーステータス"
+          "label": "Command error status",
+          "label_ja": "コマンドエラーステータス"
         },
         {
           "name": "cmd_recv_count",
           "offset": 11,
           "length": 1,
           "type": "uint8",
-          "label": "コマンド受領数"
+          "label": "Commands received",
+          "label_ja": "コマンド受領数"
         },
         {
           "name": "adcs_mode",
           "offset": 12,
           "length": 1,
           "type": "uint8",
-          "label": "ADCSモード"
+          "label": "ADCS mode",
+          "label_ja": "ADCSモード"
         },
         {
           "name": "adcs_mode_trans",
           "offset": 13,
           "length": 1,
           "type": "uint8",
-          "label": "ADCSモード遷移状態(0=遷移終了,1=遷移中)"
+          "label": "ADCS mode transition state (0=done, 1=in transition)",
+          "label_ja": "ADCSモード遷移状態(0=遷移終了,1=遷移中)"
         },
         {
           "name": "prev_adcs_mode",
           "offset": 14,
           "length": 1,
           "type": "uint8",
-          "label": "前のADCSモード"
+          "label": "Previous ADCS mode",
+          "label_ja": "前のADCSモード"
         },
         {
           "name": "tdsp_id",
@@ -393,42 +482,48 @@
           "offset": 17,
           "length": 1,
           "type": "uint8",
-          "label": "ADCS再起動回数"
+          "label": "ADCS restart count",
+          "label_ja": "ADCS再起動回数"
         },
         {
           "name": "sunsensor_power",
           "offset": 18,
           "length": 1,
           "type": "uint8",
-          "label": "サンセンサ電源状態"
+          "label": "Sun sensor power state",
+          "label_ja": "サンセンサ電源状態"
         },
         {
           "name": "sens1_power",
           "offset": 19,
           "length": 1,
           "type": "uint8",
-          "label": "SENS1電源状態(0=OFF,1=ON)"
+          "label": "SENS1 power state (0=OFF, 1=ON)",
+          "label_ja": "SENS1電源状態(0=OFF,1=ON)"
         },
         {
           "name": "sens2_power",
           "offset": 20,
           "length": 1,
           "type": "uint8",
-          "label": "SENS2電源状態(0=OFF,1=ON)"
+          "label": "SENS2 power state (0=OFF, 1=ON)",
+          "label_ja": "SENS2電源状態(0=OFF,1=ON)"
         },
         {
           "name": "mtq_power",
           "offset": 21,
           "length": 1,
           "type": "uint8",
-          "label": "MTQ電源状態(0=OFF,1=ON)"
+          "label": "MTQ power state (0=OFF, 1=ON)",
+          "label_ja": "MTQ電源状態(0=OFF,1=ON)"
         },
         {
           "name": "adcs_time_jd",
           "offset": 22,
           "length": 8,
           "type": "float64_be",
-          "label": "ADCS内部時刻(ユリウス日)"
+          "label": "ADCS internal time (Julian date)",
+          "label_ja": "ADCS内部時刻(ユリウス日)"
         },
         {
           "name": "sens_current_ma",
@@ -436,7 +531,8 @@
           "length": 4,
           "type": "float32_be",
           "unit": "mA",
-          "label": "センサ系統電流"
+          "label": "Sensor line current",
+          "label_ja": "センサ系統電流"
         },
         {
           "name": "sens_voltage_v",
@@ -444,7 +540,8 @@
           "length": 4,
           "type": "float32_be",
           "unit": "V",
-          "label": "センサ系統電圧"
+          "label": "Sensor line voltage",
+          "label_ja": "センサ系統電圧"
         },
         {
           "name": "mtq_current_ma",
@@ -452,7 +549,8 @@
           "length": 4,
           "type": "float32_be",
           "unit": "mA",
-          "label": "MTQ電流"
+          "label": "MTQ current",
+          "label_ja": "MTQ電流"
         },
         {
           "name": "mtq_voltage_v",
@@ -460,7 +558,8 @@
           "length": 4,
           "type": "float32_be",
           "unit": "V",
-          "label": "MTQ電圧"
+          "label": "MTQ voltage",
+          "label_ja": "MTQ電圧"
         },
         {
           "name": "sens1_temp_c",
@@ -468,7 +567,8 @@
           "length": 4,
           "type": "float32_be",
           "unit": "°C",
-          "label": "9軸センサ温度(SENS1)"
+          "label": "9-axis sensor temperature (SENS1)",
+          "label_ja": "9軸センサ温度(SENS1)"
         },
         {
           "name": "sens2_temp_c",
@@ -476,7 +576,8 @@
           "length": 4,
           "type": "float32_be",
           "unit": "°C",
-          "label": "9軸センサ温度(SENS2)"
+          "label": "9-axis sensor temperature (SENS2)",
+          "label_ja": "9軸センサ温度(SENS2)"
         },
         {
           "name": "sunsensor_illum_x",
@@ -484,7 +585,8 @@
           "length": 1,
           "type": "uint8",
           "unit": "%",
-          "label": "サンセンサ受光量 X面"
+          "label": "Sun sensor light level X",
+          "label_ja": "サンセンサ受光量 X面"
         },
         {
           "name": "sunsensor_illum_y",
@@ -492,7 +594,8 @@
           "length": 1,
           "type": "uint8",
           "unit": "%",
-          "label": "サンセンサ受光量 Y面"
+          "label": "Sun sensor light level Y",
+          "label_ja": "サンセンサ受光量 Y面"
         },
         {
           "name": "sunsensor_illum_z",
@@ -500,21 +603,24 @@
           "length": 1,
           "type": "uint8",
           "unit": "%",
-          "label": "サンセンサ受光量 Z面"
+          "label": "Sun sensor light level Z",
+          "label_ja": "サンセンサ受光量 Z面"
         },
         {
           "name": "valid_mag_sensor",
           "offset": 57,
           "length": 1,
           "type": "uint8",
-          "label": "有効磁気センサ(0=HGAS1,1=HGAS2)"
+          "label": "Active magnetic sensor (0=HGAS1, 1=HGAS2)",
+          "label_ja": "有効磁気センサ(0=HGAS1,1=HGAS2)"
         },
         {
           "name": "valid_gyro_sensor",
           "offset": 58,
           "length": 1,
           "type": "uint8",
-          "label": "有効9軸センサ(0=GYRO1,1=GYRO2)"
+          "label": "Active 9-axis sensor (0=GYRO1, 1=GYRO2)",
+          "label_ja": "有効9軸センサ(0=GYRO1,1=GYRO2)"
         },
         {
           "name": "sunsensor_x_alpha",
@@ -522,7 +628,8 @@
           "length": 1,
           "type": "int8",
           "unit": "deg",
-          "label": "サンセンサ X面α角"
+          "label": "Sun sensor X alpha angle",
+          "label_ja": "サンセンサ X面α角"
         },
         {
           "name": "sunsensor_x_beta",
@@ -530,7 +637,8 @@
           "length": 1,
           "type": "int8",
           "unit": "deg",
-          "label": "サンセンサ X面β角"
+          "label": "Sun sensor X beta angle",
+          "label_ja": "サンセンサ X面β角"
         },
         {
           "name": "sunsensor_y_alpha",
@@ -538,7 +646,8 @@
           "length": 1,
           "type": "int8",
           "unit": "deg",
-          "label": "サンセンサ Y面α角"
+          "label": "Sun sensor Y alpha angle",
+          "label_ja": "サンセンサ Y面α角"
         },
         {
           "name": "sunsensor_y_beta",
@@ -546,7 +655,8 @@
           "length": 1,
           "type": "int8",
           "unit": "deg",
-          "label": "サンセンサ Y面β角"
+          "label": "Sun sensor Y beta angle",
+          "label_ja": "サンセンサ Y面β角"
         },
         {
           "name": "sunsensor_z_alpha",
@@ -554,7 +664,8 @@
           "length": 1,
           "type": "int8",
           "unit": "deg",
-          "label": "サンセンサ Z面α角"
+          "label": "Sun sensor Z alpha angle",
+          "label_ja": "サンセンサ Z面α角"
         },
         {
           "name": "sunsensor_z_beta",
@@ -562,7 +673,8 @@
           "length": 1,
           "type": "int8",
           "unit": "deg",
-          "label": "サンセンサ Z面β角"
+          "label": "Sun sensor Z beta angle",
+          "label_ja": "サンセンサ Z面β角"
         },
         {
           "name": "gyro_x_est",
@@ -570,7 +682,8 @@
           "length": 4,
           "type": "float32_be",
           "unit": "rad/s",
-          "label": "角速度推定値 X軸"
+          "label": "Angular velocity estimate X axis",
+          "label_ja": "角速度推定値 X軸"
         },
         {
           "name": "gyro_y_est",
@@ -578,7 +691,8 @@
           "length": 4,
           "type": "float32_be",
           "unit": "rad/s",
-          "label": "角速度推定値 Y軸"
+          "label": "Angular velocity estimate Y axis",
+          "label_ja": "角速度推定値 Y軸"
         },
         {
           "name": "gyro_z_est",
@@ -586,7 +700,8 @@
           "length": 4,
           "type": "float32_be",
           "unit": "rad/s",
-          "label": "角速度推定値 Z軸"
+          "label": "Angular velocity estimate Z axis",
+          "label_ja": "角速度推定値 Z軸"
         },
         {
           "name": "gyro_x_obs",
@@ -594,7 +709,8 @@
           "length": 4,
           "type": "float32_be",
           "unit": "rad/s",
-          "label": "角速度観測値 X軸"
+          "label": "Angular velocity measured X axis",
+          "label_ja": "角速度観測値 X軸"
         },
         {
           "name": "gyro_y_obs",
@@ -602,7 +718,8 @@
           "length": 4,
           "type": "float32_be",
           "unit": "rad/s",
-          "label": "角速度観測値 Y軸"
+          "label": "Angular velocity measured Y axis",
+          "label_ja": "角速度観測値 Y軸"
         },
         {
           "name": "gyro_z_obs",
@@ -610,7 +727,8 @@
           "length": 4,
           "type": "float32_be",
           "unit": "rad/s",
-          "label": "角速度観測値 Z軸"
+          "label": "Angular velocity measured Z axis",
+          "label_ja": "角速度観測値 Z軸"
         },
         {
           "name": "mag_x_est",
@@ -618,7 +736,8 @@
           "length": 4,
           "type": "float32_be",
           "unit": "nT",
-          "label": "磁束密度推定値 X軸"
+          "label": "Magnetic flux density estimate X axis",
+          "label_ja": "磁束密度推定値 X軸"
         },
         {
           "name": "mag_y_est",
@@ -626,7 +745,8 @@
           "length": 4,
           "type": "float32_be",
           "unit": "nT",
-          "label": "磁束密度推定値 Y軸"
+          "label": "Magnetic flux density estimate Y axis",
+          "label_ja": "磁束密度推定値 Y軸"
         },
         {
           "name": "mag_z_est",
@@ -634,7 +754,8 @@
           "length": 4,
           "type": "float32_be",
           "unit": "nT",
-          "label": "磁束密度推定値 Z軸"
+          "label": "Magnetic flux density estimate Z axis",
+          "label_ja": "磁束密度推定値 Z軸"
         },
         {
           "name": "mag_x_obs",
@@ -642,7 +763,8 @@
           "length": 4,
           "type": "float32_be",
           "unit": "nT",
-          "label": "磁束密度観測値 X軸"
+          "label": "Magnetic flux density measured X axis",
+          "label_ja": "磁束密度観測値 X軸"
         },
         {
           "name": "mag_y_obs",
@@ -650,7 +772,8 @@
           "length": 4,
           "type": "float32_be",
           "unit": "nT",
-          "label": "磁束密度観測値 Y軸"
+          "label": "Magnetic flux density measured Y axis",
+          "label_ja": "磁束密度観測値 Y軸"
         },
         {
           "name": "mag_z_obs",
@@ -658,63 +781,72 @@
           "length": 4,
           "type": "float32_be",
           "unit": "nT",
-          "label": "磁束密度観測値 Z軸"
+          "label": "Magnetic flux density measured Z axis",
+          "label_ja": "磁束密度観測値 Z軸"
         },
         {
           "name": "att_prop_time",
           "offset": 113,
           "length": 4,
           "type": "uint32_be",
-          "label": "姿勢伝播時間"
+          "label": "Attitude propagation time",
+          "label_ja": "姿勢伝播時間"
         },
         {
           "name": "quat_x",
           "offset": 117,
           "length": 4,
           "type": "float32_be",
-          "label": "姿勢クォータニオンx"
+          "label": "Attitude quaternion x",
+          "label_ja": "姿勢クォータニオンx"
         },
         {
           "name": "quat_y",
           "offset": 121,
           "length": 4,
           "type": "float32_be",
-          "label": "姿勢クォータニオンy"
+          "label": "Attitude quaternion y",
+          "label_ja": "姿勢クォータニオンy"
         },
         {
           "name": "quat_z",
           "offset": 125,
           "length": 4,
           "type": "float32_be",
-          "label": "姿勢クォータニオンz"
+          "label": "Attitude quaternion z",
+          "label_ja": "姿勢クォータニオンz"
         },
         {
           "name": "quat_w",
           "offset": 129,
           "length": 4,
           "type": "float32_be",
-          "label": "姿勢クォータニオンw"
+          "label": "Attitude quaternion w",
+          "label_ja": "姿勢クォータニオンw"
         },
         {
           "name": "sun_dir_x",
           "offset": 133,
           "length": 4,
           "type": "float32_be",
-          "label": "太陽方向 Body系X成分"
+          "label": "Sun direction, body frame X component",
+          "label_ja": "太陽方向 Body系X成分"
         },
         {
           "name": "sun_dir_y",
           "offset": 137,
           "length": 4,
           "type": "float32_be",
-          "label": "太陽方向 Body系Y成分"
+          "label": "Sun direction, body frame Y component",
+          "label_ja": "太陽方向 Body系Y成分"
         },
         {
           "name": "sun_dir_z",
           "offset": 141,
           "length": 4,
           "type": "float32_be",
-          "label": "太陽方向 Body系Z成分"
+          "label": "Sun direction, body frame Z component",
+          "label_ja": "太陽方向 Body系Z成分"
         },
         {
           "name": "pos_x",
@@ -722,7 +854,8 @@
           "length": 8,
           "type": "float64_be",
           "unit": "m",
-          "label": "衛星位置(ECEF) X成分"
+          "label": "Satellite position (ECEF) X component",
+          "label_ja": "衛星位置(ECEF) X成分"
         },
         {
           "name": "pos_y",
@@ -730,7 +863,8 @@
           "length": 8,
           "type": "float64_be",
           "unit": "m",
-          "label": "衛星位置(ECEF) Y成分"
+          "label": "Satellite position (ECEF) Y component",
+          "label_ja": "衛星位置(ECEF) Y成分"
         },
         {
           "name": "pos_z",
@@ -738,7 +872,8 @@
           "length": 8,
           "type": "float64_be",
           "unit": "m",
-          "label": "衛星位置(ECEF) Z成分"
+          "label": "Satellite position (ECEF) Z component",
+          "label_ja": "衛星位置(ECEF) Z成分"
         },
         {
           "name": "vel_x",
@@ -746,7 +881,8 @@
           "length": 8,
           "type": "float64_be",
           "unit": "m/s",
-          "label": "衛星速度(ECEF) X成分"
+          "label": "Satellite velocity (ECEF) X component",
+          "label_ja": "衛星速度(ECEF) X成分"
         },
         {
           "name": "vel_y",
@@ -754,7 +890,8 @@
           "length": 8,
           "type": "float64_be",
           "unit": "m/s",
-          "label": "衛星速度(ECEF) Y成分"
+          "label": "Satellite velocity (ECEF) Y component",
+          "label_ja": "衛星速度(ECEF) Y成分"
         },
         {
           "name": "vel_z",
@@ -762,7 +899,8 @@
           "length": 8,
           "type": "float64_be",
           "unit": "m/s",
-          "label": "衛星速度(ECEF) Z成分"
+          "label": "Satellite velocity (ECEF) Z component",
+          "label_ja": "衛星速度(ECEF) Z成分"
         },
         {
           "name": "rmm_x",
@@ -770,7 +908,8 @@
           "length": 4,
           "type": "float32_be",
           "unit": "Am^2",
-          "label": "残留磁気推定値 X軸"
+          "label": "Residual magnetism estimate X axis",
+          "label_ja": "残留磁気推定値 X軸"
         },
         {
           "name": "rmm_y",
@@ -778,7 +917,8 @@
           "length": 4,
           "type": "float32_be",
           "unit": "Am^2",
-          "label": "残留磁気推定値 Y軸"
+          "label": "Residual magnetism estimate Y axis",
+          "label_ja": "残留磁気推定値 Y軸"
         },
         {
           "name": "rmm_z",
@@ -786,20 +926,30 @@
           "length": 4,
           "type": "float32_be",
           "unit": "Am^2",
-          "label": "残留磁気推定値 Z軸"
+          "label": "Residual magnetism estimate Z axis",
+          "label_ja": "残留磁気推定値 Z軸"
         }
       ]
     }
   },
-  "note": "公式仕様書ORI-2-0027-OPR ver.2026-04-21に基づく。ID130は実受信フレーム(2026-09-13)で単位クォータニオンの大きさ・軌道半径・軌道速度が物理的に妥当な値になることを確認済み。ID65/ID100は仕様書通りだが実フレームでの検証はまだ。ID01(MOBC HK)は仕様書のbyteオフセット表に矛盾(byte24が「RXマイコン再起動回数」と「各機器電源状態」で二重定義され、byte22がどの項目にも割り当てられていない)があり、実受信フレームでの裏付けが取れるまで未実装。cw_frames(CW TLM)はORI-2-0027e-OPR ver.1.1(document_cw参照)の28バイト固定フォーマットに基づく。2026-09-22のCW実受信(コールサインJS1YRU、独立した2回のCWコピー)で手動デコードし、UVC閾値4バイトがFigure 3の例示電圧値(7.5V/7.2V/6.6V/6.2V)と完全一致・衛星内部UNIX時刻が受信当日の日付に変換され2回の受信間で73秒進んでいた(Normal Modeの3秒間隔ビーコンと矛盾しない)ことから、オフセット割り当ての正しさを確認済み。電流・角速度は2回の受信で値が大きく食い違った(値そのものが変動する項目であるため無矛盾)ため、アプリでの実受信によるフィールド単位の妥当性検証はまだ行っていない。id_prefix=\"JS1YRUORIGAMI2\"は、公式CW仕様書Table1の「call sign, satellite name, data section」の送信順を、コールサイン・衛星名の間に3秒を超える無音が無いままCWデコーダーのブロック抽出器(3秒閾値)へ渡すと1個のブロックに繋がってしまう実挙動(2026-09-22、fbsat59.logで確認)に合わせて追加した。詳細はdocs/telemetry.mdの「OrigamiSat-2のフレーム」節参照。",
+  "note": "Based on the official specification ORI-2-0027-OPR ver.2026-04-21. ID130 was checked on a real received frame (2026-09-13): the unit-quaternion norm, orbit radius and orbit velocity come out physically plausible. ID65/ID100 follow the specification but have not been checked against real frames yet. ID01 (MOBC HK) is not implemented: the specification's byte-offset table contradicts itself (byte 24 is defined twice, as 'RX microcontroller restart count' and 'power state of each device', and byte 22 is assigned to no item) and there is no real received frame to settle it. cw_frames (CW TLM) follows the fixed 28-byte format of ORI-2-0027e-OPR ver.1.1 (see document_cw). It was decoded by hand from a real CW reception on 2026-09-22 (callsign JS1YRU, two independent CW copies): the four UVC threshold bytes match the example voltages of Figure 3 (7.5 V / 7.2 V / 6.6 V / 6.2 V) exactly, and the satellite's internal UNIX time converts to the day of reception and advanced 73 s between the two copies (consistent with the 3 s beacon interval of Normal Mode), which confirms the offset assignment. The currents and angular velocities differed greatly between the two receptions (they are fluctuating quantities, so this is not a contradiction), so field-by-field plausibility has not been verified on real reception in the app yet. id_prefix=\"JS1YRUORIGAMI2\" was added because the order of Table 1 of the official CW specification ('call sign, satellite name, data section') reaches the CW decoder's block extractor (3 s threshold) as ONE block when there is no silence longer than 3 s between callsign and satellite name (seen on 2026-09-22 in fbsat59.log). See the 'OrigamiSat-2 frames' section of docs/telemetry.md.",
+  "note_ja": "公式仕様書ORI-2-0027-OPR ver.2026-04-21に基づく。ID130は実受信フレーム(2026-09-13)で単位クォータニオンの大きさ・軌道半径・軌道速度が物理的に妥当な値になることを確認済み。ID65/ID100は仕様書通りだが実フレームでの検証はまだ。ID01(MOBC HK)は仕様書のbyteオフセット表に矛盾(byte24が「RXマイコン再起動回数」と「各機器電源状態」で二重定義され、byte22がどの項目にも割り当てられていない)があり、実受信フレームでの裏付けが取れるまで未実装。cw_frames(CW TLM)はORI-2-0027e-OPR ver.1.1(document_cw参照)の28バイト固定フォーマットに基づく。2026-09-22のCW実受信(コールサインJS1YRU、独立した2回のCWコピー)で手動デコードし、UVC閾値4バイトがFigure 3の例示電圧値(7.5V/7.2V/6.6V/6.2V)と完全一致・衛星内部UNIX時刻が受信当日の日付に変換され2回の受信間で73秒進んでいた(Normal Modeの3秒間隔ビーコンと矛盾しない)ことから、オフセット割り当ての正しさを確認済み。電流・角速度は2回の受信で値が大きく食い違った(値そのものが変動する項目であるため無矛盾)ため、アプリでの実受信によるフィールド単位の妥当性検証はまだ行っていない。id_prefix=\"JS1YRUORIGAMI2\"は、公式CW仕様書Table1の「call sign, satellite name, data section」の送信順を、コールサイン・衛星名の間に3秒を超える無音が無いままCWデコーダーのブロック抽出器(3秒閾値)へ渡すと1個のブロックに繋がってしまう実挙動(2026-09-22、fbsat59.logで確認)に合わせて追加した。詳細はdocs/telemetry.mdの「OrigamiSat-2のフレーム」節参照。",
   "cw_frames": {
     "TLM": {
       "label": "CW Telemetry (28 bytes)",
       "hex_digits": 56,
       "id_prefix": "JS1YRUORIGAMI2",
-      "clock": {"field": "satellite_time", "tolerance_s": 180},
-      "known_digits": {"46": "4B42483E00"},
-      "satnogs": {"raw": true, "require_repeat": false},
+      "clock": {
+        "field": "satellite_time",
+        "tolerance_s": 180
+      },
+      "known_digits": {
+        "46": "4B42483E00"
+      },
+      "satnogs": {
+        "raw": true,
+        "require_repeat": false
+      },
       "fields": [
         {
           "name": "uvc_enabled",
@@ -830,6 +980,10 @@
           "bits": 1,
           "type": "flag",
           "labels": {
+            "0": "Transition complete",
+            "1": "In transition"
+          },
+          "labels_ja": {
             "0": "遷移完了",
             "1": "遷移中"
           }
@@ -881,57 +1035,83 @@
         },
         {
           "name": "sap_y",
-          "label": "SAP Y+,- 発電状況",
+          "label": "SAP Y+,- generation status",
+          "label_ja": "SAP Y+,- 発電状況",
           "bits": 1,
           "type": "flag",
           "labels": {
+            "0": "Not generating",
+            "1": "Generating"
+          },
+          "labels_ja": {
             "0": "非発電",
             "1": "発電中"
           }
         },
         {
           "name": "sap_x",
-          "label": "SAP X- 発電状況",
+          "label": "SAP X- generation status",
+          "label_ja": "SAP X- 発電状況",
           "bits": 1,
           "type": "flag",
           "labels": {
+            "0": "Not generating",
+            "1": "Generating"
+          },
+          "labels_ja": {
             "0": "非発電",
             "1": "発電中"
           }
         },
         {
           "name": "sap_z_minus",
-          "label": "SAP Z- 発電状況",
+          "label": "SAP Z- generation status",
+          "label_ja": "SAP Z- 発電状況",
           "bits": 1,
           "type": "flag",
           "labels": {
+            "0": "Not generating",
+            "1": "Generating"
+          },
+          "labels_ja": {
             "0": "非発電",
             "1": "発電中"
           }
         },
         {
           "name": "sap_z_plus",
-          "label": "SAP Z+ 発電状況",
+          "label": "SAP Z+ generation status",
+          "label_ja": "SAP Z+ 発電状況",
           "bits": 1,
           "type": "flag",
           "labels": {
+            "0": "Not generating",
+            "1": "Generating"
+          },
+          "labels_ja": {
             "0": "非発電",
             "1": "発電中"
           }
         },
         {
           "name": "thin_film_sap",
-          "label": "薄膜太陽電池 発電状況",
+          "label": "Thin-film solar cell generation status",
+          "label_ja": "薄膜太陽電池 発電状況",
           "bits": 1,
           "type": "flag",
           "labels": {
+            "0": "Not generating",
+            "1": "Generating"
+          },
+          "labels_ja": {
             "0": "非発電",
             "1": "発電中"
           }
         },
         {
           "name": "sw_cband_tx",
-          "label": "CBand送信機",
+          "label": "C-band transmitter",
+          "label_ja": "CBand送信機",
           "bits": 1,
           "type": "flag",
           "labels": {
@@ -941,7 +1121,8 @@
         },
         {
           "name": "sw_ext_mast",
-          "label": "伸展マスト",
+          "label": "Deployable mast",
+          "label_ja": "伸展マスト",
           "bits": 1,
           "type": "flag",
           "labels": {
@@ -961,7 +1142,8 @@
         },
         {
           "name": "sw_camera",
-          "label": "カメラ",
+          "label": "Camera",
+          "label_ja": "カメラ",
           "bits": 1,
           "type": "flag",
           "labels": {
@@ -971,7 +1153,8 @@
         },
         {
           "name": "sw_fuse_cuts",
-          "label": "バス通信ヒューズカット",
+          "label": "Bus communication fuse cut",
+          "label_ja": "バス通信ヒューズカット",
           "bits": 1,
           "type": "flag",
           "labels": {
@@ -981,7 +1164,8 @@
         },
         {
           "name": "sw_tfsc_iv",
-          "label": "薄膜太陽電池IV特性計測回路(TFSC_IV)",
+          "label": "Thin-film solar cell IV measurement circuit (TFSC_IV)",
+          "label_ja": "薄膜太陽電池IV特性計測回路(TFSC_IV)",
           "bits": 1,
           "type": "flag",
           "labels": {
@@ -1007,7 +1191,8 @@
         },
         {
           "name": "angvel_x",
-          "label": "角速度 X軸",
+          "label": "Angular velocity X axis",
+          "label_ja": "角速度 X軸",
           "bits": 8,
           "type": "uint",
           "scale": 0.1,
@@ -1016,7 +1201,8 @@
         },
         {
           "name": "angvel_y",
-          "label": "角速度 Y軸",
+          "label": "Angular velocity Y axis",
+          "label_ja": "角速度 Y軸",
           "bits": 8,
           "type": "uint",
           "scale": 0.1,
@@ -1025,7 +1211,8 @@
         },
         {
           "name": "angvel_z",
-          "label": "角速度 Z軸",
+          "label": "Angular velocity Z axis",
+          "label_ja": "角速度 Z軸",
           "bits": 8,
           "type": "uint",
           "scale": 0.1,
@@ -1034,25 +1221,29 @@
         },
         {
           "name": "cmd_id_obc",
-          "label": "OBCコマンド最終実行ID",
+          "label": "OBC last executed command ID",
+          "label_ja": "OBCコマンド最終実行ID",
           "bits": 8,
           "type": "uint"
         },
         {
           "name": "obc_cmd_result",
-          "label": "OBCコマンド実行結果(解釈方法非公開)",
+          "label": "OBC command result (meaning not published)",
+          "label_ja": "OBCコマンド実行結果(解釈方法非公開)",
           "bits": 8,
           "type": "uint"
         },
         {
           "name": "cmd_id_adcs",
-          "label": "ADCSコマンド最終実行ID",
+          "label": "ADCS last executed command ID",
+          "label_ja": "ADCSコマンド最終実行ID",
           "bits": 8,
           "type": "uint"
         },
         {
           "name": "adcs_mode",
-          "label": "ADCSモード",
+          "label": "ADCS mode",
+          "label_ja": "ADCSモード",
           "bits": 8,
           "type": "flag",
           "labels": {
@@ -1066,13 +1257,15 @@
         },
         {
           "name": "cmd_id_raspi",
-          "label": "Raspiコマンド最終実行ID",
+          "label": "RasPi last executed command ID",
+          "label_ja": "Raspiコマンド最終実行ID",
           "bits": 8,
           "type": "uint"
         },
         {
           "name": "bus_comm_temp",
-          "label": "バス通信部温度",
+          "label": "Bus communication section temperature",
+          "label_ja": "バス通信部温度",
           "bits": 8,
           "type": "uint",
           "scale": 1.0,
@@ -1081,7 +1274,8 @@
         },
         {
           "name": "cband_tx_temp",
-          "label": "CBand送信機温度",
+          "label": "C-band transmitter temperature",
+          "label_ja": "CBand送信機温度",
           "bits": 8,
           "type": "uint",
           "scale": 1.0,
@@ -1090,26 +1284,30 @@
         },
         {
           "name": "obc_startup_count",
-          "label": "OBC起動回数",
+          "label": "OBC boot count",
+          "label_ja": "OBC起動回数",
           "bits": 8,
           "type": "uint"
         },
         {
           "name": "reservation_cmd_count",
-          "label": "予約コマンド数",
+          "label": "Scheduled command count",
+          "label_ja": "予約コマンド数",
           "bits": 8,
           "type": "uint"
         },
         {
           "name": "satellite_time",
-          "label": "衛星内部時刻(UNIX秒)",
+          "label": "Satellite internal time (UNIX seconds)",
+          "label_ja": "衛星内部時刻(UNIX秒)",
           "bits": 32,
           "type": "uint",
           "unit": "s"
         },
         {
           "name": "uvc_threshold_normal",
-          "label": "UVC閾値: Normal Mode復帰",
+          "label": "UVC threshold : Normal Mode recovery",
+          "label_ja": "UVC閾値: Normal Mode復帰",
           "bits": 8,
           "type": "uint",
           "scale": 0.1,
@@ -1117,7 +1315,8 @@
         },
         {
           "name": "uvc_threshold_safe",
-          "label": "UVC閾値: Safe Mode移行",
+          "label": "UVC threshold : Safe Mode entry",
+          "label_ja": "UVC閾値: Safe Mode移行",
           "bits": 8,
           "type": "uint",
           "scale": 0.1,
@@ -1125,7 +1324,8 @@
         },
         {
           "name": "uvc_threshold_level1",
-          "label": "UVC閾値: Level 1",
+          "label": "UVC threshold : Level 1",
+          "label_ja": "UVC閾値: Level 1",
           "bits": 8,
           "type": "uint",
           "scale": 0.1,
@@ -1133,7 +1333,8 @@
         },
         {
           "name": "uvc_threshold_level2",
-          "label": "UVC閾値: Level 2",
+          "label": "UVC threshold : Level 2",
+          "label_ja": "UVC閾値: Level 2",
           "bits": 8,
           "type": "uint",
           "scale": 0.1,
@@ -1141,7 +1342,8 @@
         },
         {
           "name": "fuse_cut_count",
-          "label": "バス通信ヒューズカット回数",
+          "label": "Bus communication fuse cut count",
+          "label_ja": "バス通信ヒューズカット回数",
           "bits": 8,
           "type": "uint"
         }

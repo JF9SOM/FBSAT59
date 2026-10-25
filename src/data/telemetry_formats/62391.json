@@ -8,106 +8,123 @@
   "document": "SatNOGS decoders \"lasarsat.ksy\" (Kaitai Struct); https://lasar.info/lasarsat",
   "csv_messages": {
     "OBC": {
-      "label": "OBC（搭載コンピュータ）",
+      "label": "OBC (on-board computer)",
+      "label_ja": "OBC（搭載コンピュータ）",
       "fields": [
         {
           "name": "obc_reset_cnt",
           "index": 1,
           "type": "int",
-          "label": "OBCリセット回数"
+          "label": "OBC reset count",
+          "label_ja": "OBCリセット回数"
         },
         {
           "name": "obc_uptime",
           "index": 2,
           "type": "int",
-          "label": "OBC稼働時間（今回起動から）",
+          "label": "OBC uptime (since this boot)",
+          "label_ja": "OBC稼働時間（今回起動から）",
           "unit": "s"
         },
         {
           "name": "obc_uptime_tot",
           "index": 3,
           "type": "int",
-          "label": "OBC累積稼働時間",
+          "label": "OBC total uptime",
+          "label_ja": "OBC累積稼働時間",
           "unit": "s"
         },
         {
           "name": "obc_temp_mcu",
           "index": 4,
           "type": "int",
-          "label": "MCU温度(生値)"
+          "label": "MCU temperature (raw)",
+          "label_ja": "MCU温度(生値)"
         },
         {
           "name": "obc_freemem",
           "index": 5,
           "type": "int",
-          "label": "空きメモリ(生値)"
+          "label": "Free memory (raw)",
+          "label_ja": "空きメモリ(生値)"
         }
       ]
     },
     "PSU": {
-      "label": "PSU（電源系）",
+      "label": "PSU (power system)",
+      "label_ja": "PSU（電源系）",
       "fields": [
         {
           "name": "psu_reset_cnt",
           "index": 1,
           "type": "int",
-          "label": "PSUリセット回数"
+          "label": "PSU reset count",
+          "label_ja": "PSUリセット回数"
         },
         {
           "name": "psu_uptime",
           "index": 2,
           "type": "int",
-          "label": "PSU稼働時間（今回起動から）",
+          "label": "PSU uptime (since this boot)",
+          "label_ja": "PSU稼働時間（今回起動から）",
           "unit": "s"
         },
         {
           "name": "psu_uptime_tot",
           "index": 3,
           "type": "int",
-          "label": "PSU累積稼働時間",
+          "label": "PSU total uptime",
+          "label_ja": "PSU累積稼働時間",
           "unit": "s"
         },
         {
           "name": "psu_battery",
           "index": 4,
           "type": "int",
-          "label": "バッテリー電圧(生値)"
+          "label": "Battery voltage (raw)",
+          "label_ja": "バッテリー電圧(生値)"
         },
         {
           "name": "psu_temp_sys",
           "index": 5,
           "type": "int",
-          "label": "システム温度(生値)"
+          "label": "System temperature (raw)",
+          "label_ja": "システム温度(生値)"
         },
         {
           "name": "psu_temp_bat",
           "index": 6,
           "type": "int",
-          "label": "バッテリー温度(生値)"
+          "label": "Battery temperature (raw)",
+          "label_ja": "バッテリー温度(生値)"
         },
         {
           "name": "psu_cur_in",
           "index": 7,
           "type": "int",
-          "label": "入力電流(生値)"
+          "label": "Input current (raw)",
+          "label_ja": "入力電流(生値)"
         },
         {
           "name": "psu_cur_out",
           "index": 8,
           "type": "int",
-          "label": "出力電流(生値)"
+          "label": "Output current (raw)",
+          "label_ja": "出力電流(生値)"
         },
         {
           "name": "psu_ch_state_num",
           "index": 9,
           "type": "hex_int",
-          "label": "チャンネル状態（16進ビットマスク）"
+          "label": "Channel state (hex bit mask)",
+          "label_ja": "チャンネル状態（16進ビットマスク）"
         },
         {
           "name": "psu_ch0_state",
           "index": 9,
           "type": "bitflag",
-          "label": "PSU CH0電源状態(0=OFF,1=ON)",
+          "label": "PSU CH0 power state (0=OFF, 1=ON)",
+          "label_ja": "PSU CH0電源状態(0=OFF,1=ON)",
           "bit": 0,
           "base": 16
         },
@@ -115,7 +132,8 @@
           "name": "psu_ch1_state",
           "index": 9,
           "type": "bitflag",
-          "label": "PSU CH1電源状態(0=OFF,1=ON)",
+          "label": "PSU CH1 power state (0=OFF, 1=ON)",
+          "label_ja": "PSU CH1電源状態(0=OFF,1=ON)",
           "bit": 1,
           "base": 16
         },
@@ -123,7 +141,8 @@
           "name": "psu_ch2_state",
           "index": 9,
           "type": "bitflag",
-          "label": "PSU CH2電源状態(0=OFF,1=ON)",
+          "label": "PSU CH2 power state (0=OFF, 1=ON)",
+          "label_ja": "PSU CH2電源状態(0=OFF,1=ON)",
           "bit": 2,
           "base": 16
         },
@@ -131,7 +150,8 @@
           "name": "psu_ch3_state",
           "index": 9,
           "type": "bitflag",
-          "label": "PSU CH3電源状態(0=OFF,1=ON)",
+          "label": "PSU CH3 power state (0=OFF, 1=ON)",
+          "label_ja": "PSU CH3電源状態(0=OFF,1=ON)",
           "bit": 3,
           "base": 16
         },
@@ -139,7 +159,8 @@
           "name": "psu_ch4_state",
           "index": 9,
           "type": "bitflag",
-          "label": "PSU CH4電源状態(0=OFF,1=ON)",
+          "label": "PSU CH4 power state (0=OFF, 1=ON)",
+          "label_ja": "PSU CH4電源状態(0=OFF,1=ON)",
           "bit": 4,
           "base": 16
         },
@@ -147,7 +168,8 @@
           "name": "psu_ch5_state",
           "index": 9,
           "type": "bitflag",
-          "label": "PSU CH5電源状態(0=OFF,1=ON)",
+          "label": "PSU CH5 power state (0=OFF, 1=ON)",
+          "label_ja": "PSU CH5電源状態(0=OFF,1=ON)",
           "bit": 5,
           "base": 16
         },
@@ -155,7 +177,8 @@
           "name": "psu_ch6_state",
           "index": 9,
           "type": "bitflag",
-          "label": "PSU CH6電源状態(0=OFF,1=ON)",
+          "label": "PSU CH6 power state (0=OFF, 1=ON)",
+          "label_ja": "PSU CH6電源状態(0=OFF,1=ON)",
           "bit": 6,
           "base": 16
         },
@@ -163,522 +186,608 @@
           "name": "psu_sys_state",
           "index": 10,
           "type": "int",
-          "label": "システム状態"
+          "label": "System state",
+          "label_ja": "システム状態"
         },
         {
           "name": "psu_gnd_wdt",
           "index": 11,
           "type": "int",
-          "label": "地上局ウォッチドッグ(生値)"
+          "label": "Ground station watchdog (raw)",
+          "label_ja": "地上局ウォッチドッグ(生値)"
         }
       ]
     },
     "SOL": {
-      "label": "SOL（太陽電池パネル）",
+      "label": "SOL (solar panels)",
+      "label_ja": "SOL（太陽電池パネル）",
       "fields": [
         {
           "name": "sol_temp_zp",
           "index": 1,
           "type": "int",
-          "label": "太陽電池 ZP面 温度(生値)",
+          "label": "Solar panel ZP temperature (raw)",
+          "label_ja": "太陽電池 ZP面 温度(生値)",
           "nan_sentinel": -32768
         },
         {
           "name": "sol_temp_xp",
           "index": 2,
           "type": "int",
-          "label": "太陽電池 XP面 温度(生値)",
+          "label": "Solar panel XP temperature (raw)",
+          "label_ja": "太陽電池 XP面 温度(生値)",
           "nan_sentinel": -32768
         },
         {
           "name": "sol_temp_yp",
           "index": 3,
           "type": "int",
-          "label": "太陽電池 YP面 温度(生値)",
+          "label": "Solar panel YP temperature (raw)",
+          "label_ja": "太陽電池 YP面 温度(生値)",
           "nan_sentinel": -32768
         },
         {
           "name": "sol_temp_zn",
           "index": 4,
           "type": "int",
-          "label": "太陽電池 ZN面 温度(生値)",
+          "label": "Solar panel ZN temperature (raw)",
+          "label_ja": "太陽電池 ZN面 温度(生値)",
           "nan_sentinel": -32768
         },
         {
           "name": "sol_temp_xn",
           "index": 5,
           "type": "int",
-          "label": "太陽電池 XN面 温度(生値)",
+          "label": "Solar panel XN temperature (raw)",
+          "label_ja": "太陽電池 XN面 温度(生値)",
           "nan_sentinel": -32768
         },
         {
           "name": "sol_temp_yn",
           "index": 6,
           "type": "int",
-          "label": "太陽電池 YN面 温度(生値)",
+          "label": "Solar panel YN temperature (raw)",
+          "label_ja": "太陽電池 YN面 温度(生値)",
           "nan_sentinel": -32768
         },
         {
           "name": "sol_diode_zp",
           "index": 7,
           "type": "int",
-          "label": "太陽電池 ZP面 ダイオード(生値)",
+          "label": "Solar panel ZP diode (raw)",
+          "label_ja": "太陽電池 ZP面 ダイオード(生値)",
           "nan_sentinel": -32768
         },
         {
           "name": "sol_diode_xp",
           "index": 8,
           "type": "int",
-          "label": "太陽電池 XP面 ダイオード(生値)",
+          "label": "Solar panel XP diode (raw)",
+          "label_ja": "太陽電池 XP面 ダイオード(生値)",
           "nan_sentinel": -32768
         },
         {
           "name": "sol_diode_yp",
           "index": 9,
           "type": "int",
-          "label": "太陽電池 YP面 ダイオード(生値)",
+          "label": "Solar panel YP diode (raw)",
+          "label_ja": "太陽電池 YP面 ダイオード(生値)",
           "nan_sentinel": -32768
         },
         {
           "name": "sol_diode_zn",
           "index": 10,
           "type": "int",
-          "label": "太陽電池 ZN面 ダイオード(生値)",
+          "label": "Solar panel ZN diode (raw)",
+          "label_ja": "太陽電池 ZN面 ダイオード(生値)",
           "nan_sentinel": -32768
         },
         {
           "name": "sol_diode_xn",
           "index": 11,
           "type": "int",
-          "label": "太陽電池 XN面 ダイオード(生値)",
+          "label": "Solar panel XN diode (raw)",
+          "label_ja": "太陽電池 XN面 ダイオード(生値)",
           "nan_sentinel": -32768
         },
         {
           "name": "sol_diode_yn",
           "index": 12,
           "type": "int",
-          "label": "太陽電池 YN面 ダイオード(生値)",
+          "label": "Solar panel YN diode (raw)",
+          "label_ja": "太陽電池 YN面 ダイオード(生値)",
           "nan_sentinel": -32768
         }
       ]
     },
     "MGS": {
-      "label": "MGS（磁気/ジャイロセンサ）",
+      "label": "MGS (magnetic / gyro sensor)",
+      "label_ja": "MGS（磁気/ジャイロセンサ）",
       "fields": [
         {
           "name": "mgs_temp_int_mag",
           "index": 1,
           "type": "int",
-          "label": "内蔵磁気センサ温度(生値)"
+          "label": "Internal magnetic sensor temperature (raw)",
+          "label_ja": "内蔵磁気センサ温度(生値)"
         },
         {
           "name": "mgs_temp_int_gyr",
           "index": 2,
           "type": "int",
-          "label": "内蔵ジャイロ温度(生値)"
+          "label": "Internal gyro temperature (raw)",
+          "label_ja": "内蔵ジャイロ温度(生値)"
         },
         {
           "name": "mgs_int_mag_x",
           "index": 3,
           "type": "int",
-          "label": "内蔵磁束密度 X軸(生値)"
+          "label": "Internal magnetic flux density X axis (raw)",
+          "label_ja": "内蔵磁束密度 X軸(生値)"
         },
         {
           "name": "mgs_int_mag_y",
           "index": 4,
           "type": "int",
-          "label": "内蔵磁束密度 Y軸(生値)"
+          "label": "Internal magnetic flux density Y axis (raw)",
+          "label_ja": "内蔵磁束密度 Y軸(生値)"
         },
         {
           "name": "mgs_int_mag_z",
           "index": 5,
           "type": "int",
-          "label": "内蔵磁束密度 Z軸(生値)"
+          "label": "Internal magnetic flux density Z axis (raw)",
+          "label_ja": "内蔵磁束密度 Z軸(生値)"
         },
         {
           "name": "mgs_int_gyr_x",
           "index": 6,
           "type": "int",
-          "label": "内蔵角速度 X軸(生値)"
+          "label": "Internal angular velocity X axis (raw)",
+          "label_ja": "内蔵角速度 X軸(生値)"
         },
         {
           "name": "mgs_int_gyr_y",
           "index": 7,
           "type": "int",
-          "label": "内蔵角速度 Y軸(生値)"
+          "label": "Internal angular velocity Y axis (raw)",
+          "label_ja": "内蔵角速度 Y軸(生値)"
         },
         {
           "name": "mgs_int_gyr_z",
           "index": 8,
           "type": "int",
-          "label": "内蔵角速度 Z軸(生値)"
+          "label": "Internal angular velocity Z axis (raw)",
+          "label_ja": "内蔵角速度 Z軸(生値)"
         }
       ]
     },
     "DOS": {
-      "label": "DOS（ドジメータ/科学ペイロード）",
+      "label": "DOS (dosimeter / science payload)",
+      "label_ja": "DOS（ドジメータ/科学ペイロード）",
       "fields": [
         {
           "name": "dos_mode",
           "index": 1,
           "type": "int",
-          "label": "動作モード"
+          "label": "Operating mode",
+          "label_ja": "動作モード"
         },
         {
           "name": "dos_gyr_x",
           "index": 2,
           "type": "int",
-          "label": "ジャイロ X軸(生値)"
+          "label": "Gyro X axis (raw)",
+          "label_ja": "ジャイロ X軸(生値)"
         },
         {
           "name": "dos_gyr_y",
           "index": 3,
           "type": "int",
-          "label": "ジャイロ Y軸(生値)"
+          "label": "Gyro Y axis (raw)",
+          "label_ja": "ジャイロ Y軸(生値)"
         },
         {
           "name": "dos_gyr_z",
           "index": 4,
           "type": "int",
-          "label": "ジャイロ Z軸(生値)"
+          "label": "Gyro Z axis (raw)",
+          "label_ja": "ジャイロ Z軸(生値)"
         },
         {
           "name": "dos_mag_x",
           "index": 5,
           "type": "int",
-          "label": "磁束密度 X軸(生値)"
+          "label": "Magnetic flux density X axis (raw)",
+          "label_ja": "磁束密度 X軸(生値)"
         },
         {
           "name": "dos_mag_y",
           "index": 6,
           "type": "int",
-          "label": "磁束密度 Y軸(生値)"
+          "label": "Magnetic flux density Y axis (raw)",
+          "label_ja": "磁束密度 Y軸(生値)"
         },
         {
           "name": "dos_mag_z",
           "index": 7,
           "type": "int",
-          "label": "磁束密度 Z軸(生値)"
+          "label": "Magnetic flux density Z axis (raw)",
+          "label_ja": "磁束密度 Z軸(生値)"
         },
         {
           "name": "dos_plasma",
           "index": 8,
           "type": "int",
-          "label": "プラズマセンサ(生値)"
+          "label": "Plasma sensor (raw)",
+          "label_ja": "プラズマセンサ(生値)"
         },
         {
           "name": "dos_phd",
           "index": 9,
           "type": "int",
-          "label": "フォトダイオード(生値)"
+          "label": "Photodiode (raw)",
+          "label_ja": "フォトダイオード(生値)"
         },
         {
           "name": "dos_dozi",
           "index": 10,
           "type": "int",
-          "label": "線量計(生値)"
+          "label": "Dosimeter (raw)",
+          "label_ja": "線量計(生値)"
         },
         {
           "name": "dos_gyr_t",
           "index": 11,
           "type": "int",
-          "label": "ジャイロ温度(生値)"
+          "label": "Gyro temperature (raw)",
+          "label_ja": "ジャイロ温度(生値)"
         },
         {
           "name": "dos_mag_t",
           "index": 12,
           "type": "int",
-          "label": "磁気センサ温度(生値)"
+          "label": "Magnetic sensor temperature (raw)",
+          "label_ja": "磁気センサ温度(生値)"
         },
         {
           "name": "dos_lppa",
           "index": 13,
           "type": "int",
-          "label": "LPPA(生値)"
+          "label": "LPPA (raw)",
+          "label_ja": "LPPA(生値)"
         },
         {
           "name": "dos_bus_cur",
           "index": 14,
           "type": "int",
-          "label": "バス電流(生値)"
+          "label": "Bus current (raw)",
+          "label_ja": "バス電流(生値)"
         },
         {
           "name": "dos_bus_vol",
           "index": 15,
           "type": "int",
-          "label": "バス電圧(生値)"
+          "label": "Bus voltage (raw)",
+          "label_ja": "バス電圧(生値)"
         },
         {
           "name": "dos_uptime",
           "index": 16,
           "type": "int",
-          "label": "DOS稼働時間(生値)"
+          "label": "DOS uptime (raw)",
+          "label_ja": "DOS稼働時間(生値)"
         }
       ]
     },
     "NAV": {
-      "label": "NAV（GNSS）",
+      "label": "NAV (GNSS)",
+      "label_ja": "NAV（GNSS）",
       "fields": [
         {
           "name": "nav_week",
           "index": 1,
           "type": "int",
-          "label": "GNSS週番号"
+          "label": "GNSS week number",
+          "label_ja": "GNSS週番号"
         },
         {
           "name": "nav_time",
           "index": 2,
           "type": "int",
-          "label": "GNSS週内時刻(生値)"
+          "label": "GNSS time of week (raw)",
+          "label_ja": "GNSS週内時刻(生値)"
         },
         {
           "name": "nav_pos_x",
           "index": 3,
           "type": "int",
-          "label": "位置 X(生値)"
+          "label": "Position X (raw)",
+          "label_ja": "位置 X(生値)"
         },
         {
           "name": "nav_pos_y",
           "index": 4,
           "type": "int",
-          "label": "位置 Y(生値)"
+          "label": "Position Y (raw)",
+          "label_ja": "位置 Y(生値)"
         },
         {
           "name": "nav_pos_z",
           "index": 5,
           "type": "int",
-          "label": "位置 Z(生値)"
+          "label": "Position Z (raw)",
+          "label_ja": "位置 Z(生値)"
         },
         {
           "name": "nav_vel_x",
           "index": 6,
           "type": "int",
-          "label": "速度 X(生値)"
+          "label": "Velocity X (raw)",
+          "label_ja": "速度 X(生値)"
         },
         {
           "name": "nav_vel_y",
           "index": 7,
           "type": "int",
-          "label": "速度 Y(生値)"
+          "label": "Velocity Y (raw)",
+          "label_ja": "速度 Y(生値)"
         },
         {
           "name": "nav_vel_z",
           "index": 8,
           "type": "int",
-          "label": "速度 Z(生値)"
+          "label": "Velocity Z (raw)",
+          "label_ja": "速度 Z(生値)"
         },
         {
           "name": "nav_sats",
           "index": 9,
           "type": "int",
-          "label": "捕捉衛星数"
+          "label": "Satellites tracked",
+          "label_ja": "捕捉衛星数"
         },
         {
           "name": "nav_dop",
           "index": 10,
           "type": "int",
-          "label": "DOP(生値)"
+          "label": "DOP (raw)",
+          "label_ja": "DOP(生値)"
         },
         {
           "name": "nav_ant_cur",
           "index": 11,
           "type": "int",
-          "label": "アンテナ電流(生値)"
+          "label": "Antenna current (raw)",
+          "label_ja": "アンテナ電流(生値)"
         },
         {
           "name": "nav_volt",
           "index": 12,
           "type": "int",
-          "label": "GNSS電圧(生値)"
+          "label": "GNSS voltage (raw)",
+          "label_ja": "GNSS電圧(生値)"
         },
         {
           "name": "nav_max_snr",
           "index": 13,
           "type": "int",
-          "label": "最大SNR(生値)"
+          "label": "Maximum SNR (raw)",
+          "label_ja": "最大SNR(生値)"
         }
       ]
     },
     "U": {
-      "label": "U（UHFトランシーバー）",
+      "label": "U (UHF transceiver)",
+      "label_ja": "U（UHFトランシーバー）",
       "fields": [
         {
           "name": "uhf_uptime",
           "index": 1,
           "type": "int",
-          "label": "UHF 稼働時間（今回起動から）",
+          "label": "UHF uptime (since this boot)",
+          "label_ja": "UHF 稼働時間（今回起動から）",
           "unit": "s"
         },
         {
           "name": "uhf_uptime_tot",
           "index": 2,
           "type": "int",
-          "label": "UHF 累積稼働時間",
+          "label": "UHF total uptime",
+          "label_ja": "UHF 累積稼働時間",
           "unit": "s"
         },
         {
           "name": "uhf_reset_cnt",
           "index": 3,
           "type": "int",
-          "label": "UHF リセット回数"
+          "label": "UHF reset count",
+          "label_ja": "UHF リセット回数"
         },
         {
           "name": "uhf_rf_reset_cnt",
           "index": 4,
           "type": "int",
-          "label": "UHF RFリセット回数"
+          "label": "UHF RF reset count",
+          "label_ja": "UHF RFリセット回数"
         },
         {
           "name": "uhf_trx_temp",
           "index": 5,
           "type": "int",
-          "label": "UHF TRX温度(生値)"
+          "label": "UHF TRX temperature (raw)",
+          "label_ja": "UHF TRX温度(生値)"
         },
         {
           "name": "uhf_rf_temp",
           "index": 6,
           "type": "int",
-          "label": "UHF RF温度(生値)"
+          "label": "UHF RF temperature (raw)",
+          "label_ja": "UHF RF温度(生値)"
         },
         {
           "name": "uhf_pa_temp",
           "index": 7,
           "type": "int",
-          "label": "UHF PA温度(生値)"
+          "label": "UHF PA temperature (raw)",
+          "label_ja": "UHF PA温度(生値)"
         },
         {
           "name": "uhf_digipeater_cnt",
           "index": 8,
           "type": "int",
-          "label": "UHF デジピート回数"
+          "label": "UHF digipeated count",
+          "label_ja": "UHF デジピート回数"
         },
         {
           "name": "uhf_last_digipeater",
           "index": 9,
           "type": "str",
-          "label": "UHF 最後にデジピートした局"
+          "label": "UHF last digipeated station",
+          "label_ja": "UHF 最後にデジピートした局"
         },
         {
           "name": "uhf_rx_cnt",
           "index": 10,
           "type": "int",
-          "label": "UHF 受信フレーム数"
+          "label": "UHF received frames",
+          "label_ja": "UHF 受信フレーム数"
         },
         {
           "name": "uhf_tx_cnt",
           "index": 11,
           "type": "int",
-          "label": "UHF 送信フレーム数"
+          "label": "UHF transmitted frames",
+          "label_ja": "UHF 送信フレーム数"
         },
         {
           "name": "uhf_act_rssi_raw",
           "index": 12,
           "type": "int",
-          "label": "UHF アクティブRSSI(生値)"
+          "label": "UHF active RSSI (raw)",
+          "label_ja": "UHF アクティブRSSI(生値)"
         },
         {
           "name": "uhf_dcd_rssi_raw",
           "index": 13,
           "type": "int",
-          "label": "UHF DCD RSSI(生値)"
+          "label": "UHF DCD RSSI (raw)",
+          "label_ja": "UHF DCD RSSI(生値)"
         }
       ]
     },
     "V": {
-      "label": "V（VHFトランシーバー）",
+      "label": "V (VHF transceiver)",
+      "label_ja": "V（VHFトランシーバー）",
       "fields": [
         {
           "name": "vhf_uptime",
           "index": 1,
           "type": "int",
-          "label": "VHF 稼働時間（今回起動から）",
+          "label": "VHF uptime (since this boot)",
+          "label_ja": "VHF 稼働時間（今回起動から）",
           "unit": "s"
         },
         {
           "name": "vhf_uptime_tot",
           "index": 2,
           "type": "int",
-          "label": "VHF 累積稼働時間",
+          "label": "VHF total uptime",
+          "label_ja": "VHF 累積稼働時間",
           "unit": "s"
         },
         {
           "name": "vhf_reset_cnt",
           "index": 3,
           "type": "int",
-          "label": "VHF リセット回数"
+          "label": "VHF reset count",
+          "label_ja": "VHF リセット回数"
         },
         {
           "name": "vhf_rf_reset_cnt",
           "index": 4,
           "type": "int",
-          "label": "VHF RFリセット回数"
+          "label": "VHF RF reset count",
+          "label_ja": "VHF RFリセット回数"
         },
         {
           "name": "vhf_trx_temp",
           "index": 5,
           "type": "int",
-          "label": "VHF TRX温度(生値)"
+          "label": "VHF TRX temperature (raw)",
+          "label_ja": "VHF TRX温度(生値)"
         },
         {
           "name": "vhf_rf_temp",
           "index": 6,
           "type": "int",
-          "label": "VHF RF温度(生値)"
+          "label": "VHF RF temperature (raw)",
+          "label_ja": "VHF RF温度(生値)"
         },
         {
           "name": "vhf_pa_temp",
           "index": 7,
           "type": "int",
-          "label": "VHF PA温度(生値)"
+          "label": "VHF PA temperature (raw)",
+          "label_ja": "VHF PA温度(生値)"
         },
         {
           "name": "vhf_digipeater_cnt",
           "index": 8,
           "type": "int",
-          "label": "VHF デジピート回数"
+          "label": "VHF digipeated count",
+          "label_ja": "VHF デジピート回数"
         },
         {
           "name": "vhf_last_digipeater",
           "index": 9,
           "type": "str",
-          "label": "VHF 最後にデジピートした局"
+          "label": "VHF last digipeated station",
+          "label_ja": "VHF 最後にデジピートした局"
         },
         {
           "name": "vhf_rx_cnt",
           "index": 10,
           "type": "int",
-          "label": "VHF 受信フレーム数"
+          "label": "VHF received frames",
+          "label_ja": "VHF 受信フレーム数"
         },
         {
           "name": "vhf_tx_cnt",
           "index": 11,
           "type": "int",
-          "label": "VHF 送信フレーム数"
+          "label": "VHF transmitted frames",
+          "label_ja": "VHF 送信フレーム数"
         },
         {
           "name": "vhf_act_rssi_raw",
           "index": 12,
           "type": "int",
-          "label": "VHF アクティブRSSI(生値)"
+          "label": "VHF active RSSI (raw)",
+          "label_ja": "VHF アクティブRSSI(生値)"
         },
         {
           "name": "vhf_dcd_rssi_raw",
           "index": 13,
           "type": "int",
-          "label": "VHF DCD RSSI(生値)"
+          "label": "VHF DCD RSSI (raw)",
+          "label_ja": "VHF DCD RSSI(生値)"
         }
       ]
     }
   },
   "text_message": {
     "id": "MSG",
-    "label": "MSG（フリーテキスト/デジピートメッセージ）",
-    "field_label": "メッセージ",
+    "label": "MSG (free text / digipeated message)",
+    "label_ja": "MSG（フリーテキスト/デジピートメッセージ）",
+    "field_label": "Message",
+    "field_label_ja": "メッセージ",
     "header_fields": true
   },
   "cw_frames": {
     "BEACON": {
-      "label": "CWビーコン（de ok0lsr = u…r…t…p…）",
+      "label": "CW beacon (de ok0lsr = u…r…t…p…)",
+      "label_ja": "CWビーコン（de ok0lsr = u…r…t…p…）",
       "id_prefix": "DEOK0LSR=",
       "text_regex": "U(\\d{1,9})R(\\d{1,9})T(-?\\d{1,9})P(-?\\d{1,9})AR",
       "near_regex": "U[0-9O.]*R[0-9O.-]*T[0-9O.-]*P[0-9O.-]*(AR)?",
@@ -686,22 +795,26 @@
         {
           "name": "uptime_total",
           "group": 1,
-          "label": "累積稼働時間(生値)"
+          "label": "Total uptime (raw)",
+          "label_ja": "累積稼働時間(生値)"
         },
         {
           "name": "reset_number",
           "group": 2,
-          "label": "リセット回数"
+          "label": "Reset count",
+          "label_ja": "リセット回数"
         },
         {
           "name": "temp_mcu",
           "group": 3,
-          "label": "MCU温度(生値)"
+          "label": "MCU temperature (raw)",
+          "label_ja": "MCU温度(生値)"
         },
         {
           "name": "temp_pa",
           "group": 4,
-          "label": "PA温度(生値)"
+          "label": "PA temperature (raw)",
+          "label_ja": "PA温度(生値)"
         }
       ]
     }

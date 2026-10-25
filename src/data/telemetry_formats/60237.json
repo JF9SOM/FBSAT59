@@ -9,185 +9,216 @@
   "note": "Only the ASCII U/V radio beacons, the free-text/digipeated messages, the CW beacon and the binary PSU housekeeping frame (CSP header: source 2, source port 9; 75 bytes) are defined, from grbbeta.ksy. The PSU frame and the CW beacon have not been checked against a received frame; the PSU values are raw (the ksy gives volts/amperes/watts as u2 without a scale) and the byte offset assumes the payload handed to the decoder starts at the CSP header.",
   "csv_messages": {
     "U": {
-      "label": "U（UHFトランシーバー）",
+      "label": "U (UHF transceiver)",
+      "label_ja": "U（UHFトランシーバー）",
       "fields": [
         {
           "name": "uhf_uptime",
           "index": 1,
           "type": "int",
-          "label": "UHF 稼働時間（今回起動から）",
+          "label": "UHF uptime (since this boot)",
+          "label_ja": "UHF 稼働時間（今回起動から）",
           "unit": "s"
         },
         {
           "name": "uhf_uptime_tot",
           "index": 2,
           "type": "int",
-          "label": "UHF 累積稼働時間",
+          "label": "UHF total uptime",
+          "label_ja": "UHF 累積稼働時間",
           "unit": "s"
         },
         {
           "name": "uhf_reset_cnt",
           "index": 3,
           "type": "int",
-          "label": "UHF リセット回数"
+          "label": "UHF reset count",
+          "label_ja": "UHF リセット回数"
         },
         {
           "name": "uhf_rf_reset_cnt",
           "index": 4,
           "type": "int",
-          "label": "UHF RFリセット回数"
+          "label": "UHF RF reset count",
+          "label_ja": "UHF RFリセット回数"
         },
         {
           "name": "uhf_trx_temp",
           "index": 5,
           "type": "int",
-          "label": "UHF TRX温度(生値)"
+          "label": "UHF TRX temperature (raw)",
+          "label_ja": "UHF TRX温度(生値)"
         },
         {
           "name": "uhf_rf_temp",
           "index": 6,
           "type": "int",
-          "label": "UHF RF温度(生値)"
+          "label": "UHF RF temperature (raw)",
+          "label_ja": "UHF RF温度(生値)"
         },
         {
           "name": "uhf_pa_temp",
           "index": 7,
           "type": "int",
-          "label": "UHF PA温度(生値)"
+          "label": "UHF PA temperature (raw)",
+          "label_ja": "UHF PA温度(生値)"
         },
         {
           "name": "uhf_digipeater_cnt",
           "index": 8,
           "type": "int",
-          "label": "UHF デジピート回数"
+          "label": "UHF digipeated count",
+          "label_ja": "UHF デジピート回数"
         },
         {
           "name": "uhf_last_digipeater",
           "index": 9,
           "type": "str",
-          "label": "UHF 最後にデジピートした局"
+          "label": "UHF last digipeated station",
+          "label_ja": "UHF 最後にデジピートした局"
         },
         {
           "name": "uhf_rx_cnt",
           "index": 10,
           "type": "int",
-          "label": "UHF 受信フレーム数"
+          "label": "UHF received frames",
+          "label_ja": "UHF 受信フレーム数"
         },
         {
           "name": "uhf_tx_cnt",
           "index": 11,
           "type": "int",
-          "label": "UHF 送信フレーム数"
+          "label": "UHF transmitted frames",
+          "label_ja": "UHF 送信フレーム数"
         },
         {
           "name": "uhf_act_rssi_raw",
           "index": 12,
           "type": "int",
-          "label": "UHF アクティブRSSI(生値)"
+          "label": "UHF active RSSI (raw)",
+          "label_ja": "UHF アクティブRSSI(生値)"
         },
         {
           "name": "uhf_dcd_rssi_raw",
           "index": 13,
           "type": "int",
-          "label": "UHF DCD RSSI(生値)"
+          "label": "UHF DCD RSSI (raw)",
+          "label_ja": "UHF DCD RSSI(生値)"
         }
       ]
     },
     "V": {
-      "label": "V（VHFトランシーバー）",
+      "label": "V (VHF transceiver)",
+      "label_ja": "V（VHFトランシーバー）",
       "fields": [
         {
           "name": "vhf_uptime",
           "index": 1,
           "type": "int",
-          "label": "VHF 稼働時間（今回起動から）",
+          "label": "VHF uptime (since this boot)",
+          "label_ja": "VHF 稼働時間（今回起動から）",
           "unit": "s"
         },
         {
           "name": "vhf_uptime_tot",
           "index": 2,
           "type": "int",
-          "label": "VHF 累積稼働時間",
+          "label": "VHF total uptime",
+          "label_ja": "VHF 累積稼働時間",
           "unit": "s"
         },
         {
           "name": "vhf_reset_cnt",
           "index": 3,
           "type": "int",
-          "label": "VHF リセット回数"
+          "label": "VHF reset count",
+          "label_ja": "VHF リセット回数"
         },
         {
           "name": "vhf_rf_reset_cnt",
           "index": 4,
           "type": "int",
-          "label": "VHF RFリセット回数"
+          "label": "VHF RF reset count",
+          "label_ja": "VHF RFリセット回数"
         },
         {
           "name": "vhf_trx_temp",
           "index": 5,
           "type": "int",
-          "label": "VHF TRX温度(生値)"
+          "label": "VHF TRX temperature (raw)",
+          "label_ja": "VHF TRX温度(生値)"
         },
         {
           "name": "vhf_rf_temp",
           "index": 6,
           "type": "int",
-          "label": "VHF RF温度(生値)"
+          "label": "VHF RF temperature (raw)",
+          "label_ja": "VHF RF温度(生値)"
         },
         {
           "name": "vhf_pa_temp",
           "index": 7,
           "type": "int",
-          "label": "VHF PA温度(生値)"
+          "label": "VHF PA temperature (raw)",
+          "label_ja": "VHF PA温度(生値)"
         },
         {
           "name": "vhf_digipeater_cnt",
           "index": 8,
           "type": "int",
-          "label": "VHF デジピート回数"
+          "label": "VHF digipeated count",
+          "label_ja": "VHF デジピート回数"
         },
         {
           "name": "vhf_last_digipeater",
           "index": 9,
           "type": "str",
-          "label": "VHF 最後にデジピートした局"
+          "label": "VHF last digipeated station",
+          "label_ja": "VHF 最後にデジピートした局"
         },
         {
           "name": "vhf_rx_cnt",
           "index": 10,
           "type": "int",
-          "label": "VHF 受信フレーム数"
+          "label": "VHF received frames",
+          "label_ja": "VHF 受信フレーム数"
         },
         {
           "name": "vhf_tx_cnt",
           "index": 11,
           "type": "int",
-          "label": "VHF 送信フレーム数"
+          "label": "VHF transmitted frames",
+          "label_ja": "VHF 送信フレーム数"
         },
         {
           "name": "vhf_act_rssi_raw",
           "index": 12,
           "type": "int",
-          "label": "VHF アクティブRSSI(生値)"
+          "label": "VHF active RSSI (raw)",
+          "label_ja": "VHF アクティブRSSI(生値)"
         },
         {
           "name": "vhf_dcd_rssi_raw",
           "index": 13,
           "type": "int",
-          "label": "VHF DCD RSSI(生値)"
+          "label": "VHF DCD RSSI (raw)",
+          "label_ja": "VHF DCD RSSI(生値)"
         }
       ]
     }
   },
   "text_message": {
     "id": "MSG",
-    "label": "MSG（フリーテキスト/デジピートメッセージ）",
-    "field_label": "メッセージ",
+    "label": "MSG (free text / digipeated message)",
+    "label_ja": "MSG（フリーテキスト/デジピートメッセージ）",
+    "field_label": "Message",
+    "field_label_ja": "メッセージ",
     "header_fields": true
   },
   "cw_frames": {
     "BEACON": {
-      "label": "CWビーコン（de ha2grb = u…r…t…p…）",
+      "label": "CW beacon (de ha2grb = u…r…t…p…)",
+      "label_ja": "CWビーコン（de ha2grb = u…r…t…p…）",
       "id_prefix": "DEHA2GRB=",
       "text_regex": "U(\\d{1,9})R(\\d{1,9})T(-?\\d{1,9})P(-?\\d{1,9})(?:AR)?",
       "near_regex": "U[0-9O.]*R[0-9O.-]*T[0-9O.-]*P[0-9O.-]*(AR)?",
@@ -195,24 +226,28 @@
         {
           "name": "uptime_total",
           "group": 1,
-          "label": "累積稼働時間（分を秒に換算）",
+          "label": "Total uptime (minutes converted to seconds)",
+          "label_ja": "累積稼働時間（分を秒に換算）",
           "scale": 60,
           "unit": "s"
         },
         {
           "name": "reset_number",
           "group": 2,
-          "label": "無線機ブート回数"
+          "label": "Radio boot count",
+          "label_ja": "無線機ブート回数"
         },
         {
           "name": "temp_mcu",
           "group": 3,
-          "label": "無線MCU温度(生値)"
+          "label": "Radio MCU temperature (raw)",
+          "label_ja": "無線MCU温度(生値)"
         },
         {
           "name": "temp_pa",
           "group": 4,
-          "label": "RFパワーアンプ温度(生値)"
+          "label": "RF power amplifier temperature (raw)",
+          "label_ja": "RFパワーアンプ温度(生値)"
         }
       ]
     }
@@ -220,7 +255,8 @@
   "frame_types": [
     {
       "id": "PSU",
-      "label": "PSU（電源系・CSPバイナリ）",
+      "label": "PSU (power system, CSP binary)",
+      "label_ja": "PSU（電源系・CSPバイナリ）",
       "match": {
         "offset": 0,
         "hex": "040009",
@@ -232,7 +268,8 @@
           "offset": 0,
           "length": 4,
           "type": "uint32_be",
-          "label": "CSP 優先度",
+          "label": "CSP priority",
+          "label_ja": "CSP 優先度",
           "mask": 3221225472
         },
         {
@@ -240,7 +277,8 @@
           "offset": 0,
           "length": 4,
           "type": "uint32_be",
-          "label": "CSP 送信元アドレス",
+          "label": "CSP source address",
+          "label_ja": "CSP 送信元アドレス",
           "mask": 1040187392
         },
         {
@@ -248,7 +286,8 @@
           "offset": 0,
           "length": 4,
           "type": "uint32_be",
-          "label": "CSP 宛先アドレス",
+          "label": "CSP destination address",
+          "label_ja": "CSP 宛先アドレス",
           "mask": 32505856
         },
         {
@@ -256,7 +295,8 @@
           "offset": 0,
           "length": 4,
           "type": "uint32_be",
-          "label": "CSP 宛先ポート",
+          "label": "CSP destination port",
+          "label_ja": "CSP 宛先ポート",
           "mask": 1032192
         },
         {
@@ -264,7 +304,8 @@
           "offset": 0,
           "length": 4,
           "type": "uint32_be",
-          "label": "CSP 送信元ポート",
+          "label": "CSP source port",
+          "label_ja": "CSP 送信元ポート",
           "mask": 16128
         },
         {
@@ -304,14 +345,16 @@
           "offset": 4,
           "length": 4,
           "type": "unix_time_le",
-          "label": "PSU 時刻（RTC・UTC）"
+          "label": "PSU time (RTC, UTC)",
+          "label_ja": "PSU 時刻（RTC・UTC）"
         },
         {
           "name": "psu_uptime_rst",
           "offset": 8,
           "length": 4,
           "type": "uint32_le",
-          "label": "PSU 稼働時間（今回起動から）",
+          "label": "PSU uptime (since this boot)",
+          "label_ja": "PSU 稼働時間（今回起動から）",
           "unit": "s"
         },
         {
@@ -319,7 +362,8 @@
           "offset": 12,
           "length": 4,
           "type": "uint32_le",
-          "label": "PSU 累積稼働時間",
+          "label": "PSU total uptime",
+          "label_ja": "PSU 累積稼働時間",
           "unit": "s"
         },
         {
@@ -327,105 +371,120 @@
           "offset": 16,
           "length": 4,
           "type": "uint32_le",
-          "label": "PSU リセット回数"
+          "label": "PSU reset count",
+          "label_ja": "PSU リセット回数"
         },
         {
           "name": "psu_last_rst_src",
           "offset": 20,
           "length": 2,
           "type": "uint16_le",
-          "label": "最後のリセット要因"
+          "label": "Last reset cause",
+          "label_ja": "最後のリセット要因"
         },
         {
           "name": "psu_packets_recvd_cnt",
           "offset": 22,
           "length": 4,
           "type": "uint32_le",
-          "label": "受信パケット数"
+          "label": "Received packets",
+          "label_ja": "受信パケット数"
         },
         {
           "name": "psu_psu_error_count",
           "offset": 26,
           "length": 4,
           "type": "uint32_le",
-          "label": "PSU エラー回数"
+          "label": "PSU error count",
+          "label_ja": "PSU エラー回数"
         },
         {
           "name": "psu_pv_in_volt1",
           "offset": 30,
           "length": 2,
           "type": "uint16_le",
-          "label": "太陽電池入力1 電圧(生値)"
+          "label": "Solar input 1 voltage (raw)",
+          "label_ja": "太陽電池入力1 電圧(生値)"
         },
         {
           "name": "psu_pv_in_volt2",
           "offset": 32,
           "length": 2,
           "type": "uint16_le",
-          "label": "太陽電池入力2 電圧(生値)"
+          "label": "Solar input 2 voltage (raw)",
+          "label_ja": "太陽電池入力2 電圧(生値)"
         },
         {
           "name": "psu_pv_in_volt3",
           "offset": 34,
           "length": 2,
           "type": "uint16_le",
-          "label": "太陽電池入力3 電圧(生値)"
+          "label": "Solar input 3 voltage (raw)",
+          "label_ja": "太陽電池入力3 電圧(生値)"
         },
         {
           "name": "psu_pv_in_amp1",
           "offset": 36,
           "length": 2,
           "type": "uint16_le",
-          "label": "太陽電池入力1 電流(生値)"
+          "label": "Solar input 1 current (raw)",
+          "label_ja": "太陽電池入力1 電流(生値)"
         },
         {
           "name": "psu_pv_in_amp2",
           "offset": 38,
           "length": 2,
           "type": "uint16_le",
-          "label": "太陽電池入力2 電流(生値)"
+          "label": "Solar input 2 current (raw)",
+          "label_ja": "太陽電池入力2 電流(生値)"
         },
         {
           "name": "psu_pv_in_amp3",
           "offset": 40,
           "length": 2,
           "type": "uint16_le",
-          "label": "太陽電池入力3 電流(生値)"
+          "label": "Solar input 3 current (raw)",
+          "label_ja": "太陽電池入力3 電流(生値)"
         },
         {
           "name": "psu_pv_in_power1",
           "offset": 42,
           "length": 2,
           "type": "uint16_le",
-          "label": "太陽電池入力1 電力(生値)"
+          "label": "Solar input 1 power (raw)",
+          "label_ja": "太陽電池入力1 電力(生値)"
         },
         {
           "name": "psu_pv_in_power2",
           "offset": 44,
           "length": 2,
           "type": "uint16_le",
-          "label": "太陽電池入力2 電力(生値)"
+          "label": "Solar input 2 power (raw)",
+          "label_ja": "太陽電池入力2 電力(生値)"
         },
         {
           "name": "psu_pv_in_power3",
           "offset": 46,
           "length": 2,
           "type": "uint16_le",
-          "label": "太陽電池入力3 電力(生値)"
+          "label": "Solar input 3 power (raw)",
+          "label_ja": "太陽電池入力3 電力(生値)"
         },
         {
           "name": "psu_ppt_mode",
           "offset": 48,
           "length": 1,
           "type": "uint8",
-          "label": "PPTモード（ビットマスク）"
+          "label": "PPT mode (bit mask)",
+          "label_ja": "PPTモード（ビットマスク）"
         },
         {
           "name": "psu_mppt_ch1_state",
           "offset": 48,
           "length": 1,
           "type": "uint8",
-          "label": "MPPT1 状態(0=OFF,1=ON)",
+          "label": "MPPT1 state (0=OFF, 1=ON)",
+          "label_ja": "MPPT1 状態(0=OFF,1=ON)",
           "mask": 1
         },
         {
@@ -433,7 +492,8 @@
           "offset": 48,
           "length": 1,
           "type": "uint8",
-          "label": "MPPT2 状態(0=OFF,1=ON)",
+          "label": "MPPT2 state (0=OFF, 1=ON)",
+          "label_ja": "MPPT2 状態(0=OFF,1=ON)",
           "mask": 2
         },
         {
@@ -441,7 +501,8 @@
           "offset": 48,
           "length": 1,
           "type": "uint8",
-          "label": "MPPT3 状態(0=OFF,1=ON)",
+          "label": "MPPT3 state (0=OFF, 1=ON)",
+          "label_ja": "MPPT3 状態(0=OFF,1=ON)",
           "mask": 4
         },
         {
@@ -449,14 +510,16 @@
           "offset": 49,
           "length": 1,
           "type": "uint8",
-          "label": "チャンネル状態（ビットマスク）"
+          "label": "Channel state (bit mask)",
+          "label_ja": "チャンネル状態（ビットマスク）"
         },
         {
           "name": "psu_channel_0_status",
           "offset": 49,
           "length": 1,
           "type": "uint8",
-          "label": "チャンネル0 状態(0=OFF,1=ON)",
+          "label": "Channel 0 state (0=OFF, 1=ON)",
+          "label_ja": "チャンネル0 状態(0=OFF,1=ON)",
           "mask": 1
         },
         {
@@ -464,7 +527,8 @@
           "offset": 49,
           "length": 1,
           "type": "uint8",
-          "label": "チャンネル1 状態(0=OFF,1=ON)",
+          "label": "Channel 1 state (0=OFF, 1=ON)",
+          "label_ja": "チャンネル1 状態(0=OFF,1=ON)",
           "mask": 2
         },
         {
@@ -472,7 +536,8 @@
           "offset": 49,
           "length": 1,
           "type": "uint8",
-          "label": "チャンネル2 状態(0=OFF,1=ON)",
+          "label": "Channel 2 state (0=OFF, 1=ON)",
+          "label_ja": "チャンネル2 状態(0=OFF,1=ON)",
           "mask": 4
         },
         {
@@ -480,7 +545,8 @@
           "offset": 49,
           "length": 1,
           "type": "uint8",
-          "label": "チャンネル3 状態(0=OFF,1=ON)",
+          "label": "Channel 3 state (0=OFF, 1=ON)",
+          "label_ja": "チャンネル3 状態(0=OFF,1=ON)",
           "mask": 8
         },
         {
@@ -488,7 +554,8 @@
           "offset": 49,
           "length": 1,
           "type": "uint8",
-          "label": "チャンネル4 状態(0=OFF,1=ON)",
+          "label": "Channel 4 state (0=OFF, 1=ON)",
+          "label_ja": "チャンネル4 状態(0=OFF,1=ON)",
           "mask": 16
         },
         {
@@ -496,7 +563,8 @@
           "offset": 49,
           "length": 1,
           "type": "uint8",
-          "label": "チャンネル5 状態(0=OFF,1=ON)",
+          "label": "Channel 5 state (0=OFF, 1=ON)",
+          "label_ja": "チャンネル5 状態(0=OFF,1=ON)",
           "mask": 32
         },
         {
@@ -504,7 +572,8 @@
           "offset": 49,
           "length": 1,
           "type": "uint8",
-          "label": "チャンネル6 状態(0=OFF,1=ON)",
+          "label": "Channel 6 state (0=OFF, 1=ON)",
+          "label_ja": "チャンネル6 状態(0=OFF,1=ON)",
           "mask": 64
         },
         {
@@ -512,84 +581,96 @@
           "offset": 50,
           "length": 1,
           "type": "uint8",
-          "label": "電源系の状態"
+          "label": "Power system state",
+          "label_ja": "電源系の状態"
         },
         {
           "name": "psu_out_sys_ch_amp1",
           "offset": 51,
           "length": 2,
           "type": "uint16_le",
-          "label": "出力チャンネル1 電流(生値)"
+          "label": "Output channel 1 current (raw)",
+          "label_ja": "出力チャンネル1 電流(生値)"
         },
         {
           "name": "psu_out_sys_ch_amp2",
           "offset": 53,
           "length": 2,
           "type": "uint16_le",
-          "label": "出力チャンネル2 電流(生値)"
+          "label": "Output channel 2 current (raw)",
+          "label_ja": "出力チャンネル2 電流(生値)"
         },
         {
           "name": "psu_out_sys_ch_amp3",
           "offset": 55,
           "length": 2,
           "type": "uint16_le",
-          "label": "出力チャンネル3 電流(生値)"
+          "label": "Output channel 3 current (raw)",
+          "label_ja": "出力チャンネル3 電流(生値)"
         },
         {
           "name": "psu_out_sys_ch_amp4",
           "offset": 57,
           "length": 2,
           "type": "uint16_le",
-          "label": "出力チャンネル4 電流(生値)"
+          "label": "Output channel 4 current (raw)",
+          "label_ja": "出力チャンネル4 電流(生値)"
         },
         {
           "name": "psu_out_sys_ch_amp5",
           "offset": 59,
           "length": 2,
           "type": "uint16_le",
-          "label": "出力チャンネル5 電流(生値)"
+          "label": "Output channel 5 current (raw)",
+          "label_ja": "出力チャンネル5 電流(生値)"
         },
         {
           "name": "psu_out_sys_ch_amp6",
           "offset": 61,
           "length": 2,
           "type": "uint16_le",
-          "label": "出力チャンネル6 電流(生値)"
+          "label": "Output channel 6 current (raw)",
+          "label_ja": "出力チャンネル6 電流(生値)"
         },
         {
           "name": "psu_out_sys_bat_unreg_amp",
           "offset": 63,
           "length": 2,
           "type": "uint16_le",
-          "label": "バッテリー直結(非安定化) 出力電流(生値)"
+          "label": "Battery direct (unregulated) output current (raw)",
+          "label_ja": "バッテリー直結(非安定化) 出力電流(生値)"
         },
         {
           "name": "psu_bat_volt",
           "offset": 65,
           "length": 2,
           "type": "uint16_le",
-          "label": "バッテリー電圧(生値)"
+          "label": "Battery voltage (raw)",
+          "label_ja": "バッテリー電圧(生値)"
         },
         {
           "name": "psu_bat_amp_charge",
           "offset": 67,
           "length": 2,
           "type": "uint16_le",
-          "label": "バッテリー充電電流(生値)"
+          "label": "Battery charge current (raw)",
+          "label_ja": "バッテリー充電電流(生値)"
         },
         {
           "name": "psu_bat_amp_discharge",
           "offset": 69,
           "length": 2,
           "type": "uint16_le",
-          "label": "バッテリー放電電流(生値)"
+          "label": "Battery discharge current (raw)",
+          "label_ja": "バッテリー放電電流(生値)"
         },
         {
           "name": "psu_bat_temp_kelvin",
           "offset": 71,
           "length": 2,
           "type": "uint16_le",
-          "label": "バッテリー温度(生値)",
+          "label": "Battery temperature (raw)",
+          "label_ja": "バッテリー温度(生値)",
           "unit": "K"
         },
         {
@@ -597,7 +678,8 @@
           "offset": 73,
           "length": 2,
           "type": "uint16_le",
-          "label": "システム温度(生値)",
+          "label": "System temperature (raw)",
+          "label_ja": "システム温度(生値)",
           "unit": "K"
         }
       ]

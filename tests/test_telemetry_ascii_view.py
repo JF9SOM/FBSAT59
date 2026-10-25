@@ -97,8 +97,8 @@ def test_summary_lists_the_first_decoded_fields_and_skips_protocol_headers() -> 
     tf = decode_telemetry("HA2GRB", _grbbeta_psu_frame(), 60237)
     text = summary_text(tf)
     assert text is not None
-    assert text.startswith("[PSU（電源系・CSPバイナリ）] PSU 時刻（RTC・UTC）: 2026-")
-    assert "CSP 優先度" not in text and "CSP 送信元" not in text  # header fields are skipped
+    assert text.startswith("[PSU (power system, CSP binary)] PSU time (RTC, UTC): 2026-")
+    assert "CSP priority" not in text and "CSP 送信元" not in text  # header fields are skipped
     assert text.count(": ") == 4  # four fields, after the frame type in brackets
     assert summary_text(None) is None
     assert summary_text(decode_telemetry("X", b"\x00", 99999999)) is None
@@ -249,7 +249,7 @@ def test_a_binary_row_of_a_satellite_with_a_definition_shows_the_summary(
         norad=60237,
     )
     text = tab._ascii_table.item(0, 3).text()  # type: ignore[union-attr]
-    assert text.startswith("[PSU（電源系・CSPバイナリ）] PSU 時刻（RTC・UTC）: 2026-")
+    assert text.startswith("[PSU (power system, CSP binary)] PSU time (RTC, UTC): 2026-")
 
 
 def test_a_binary_row_without_a_definition_shows_its_size(tab: TelemetryTab) -> None:

@@ -9,340 +9,394 @@
   "note": "KOSTKA's beacons carry no message identifier except MRG (\"U,\"): OBC, SOL and EPS are told apart by their number of comma-separated fields (match_count 9 / 10 / 15). Units of the SOL temperatures (°C) and voltages (V) are inferred from the ksy names and the values; temperatures and currents of MRG/EPS are raw values whose unit is not documented. The CW beacon (de ok0kst = u..r..t..p.. ar) is defined from kostka.ksy but has not been checked against a received CW frame.",
   "csv_messages": {
     "OBC": {
-      "label": "OBC（搭載コンピュータ）",
+      "label": "OBC (on-board computer)",
+      "label_ja": "OBC（搭載コンピュータ）",
       "match_count": 9,
       "fields": [
         {
           "name": "obc_sys_stat",
           "index": 0,
           "type": "int",
-          "label": "OBCシステム状態"
+          "label": "OBC system state",
+          "label_ja": "OBCシステム状態"
         },
         {
           "name": "obc_sat_opmode",
           "index": 1,
           "type": "int",
-          "label": "衛星運用モード"
+          "label": "Satellite operating mode",
+          "label_ja": "衛星運用モード"
         },
         {
           "name": "obc_cpu_load_perc",
           "index": 2,
           "type": "int",
-          "label": "CPU負荷",
+          "label": "CPU load",
+          "label_ja": "CPU負荷",
           "unit": "%"
         },
         {
           "name": "obc_uptime",
           "index": 3,
           "type": "int",
-          "label": "OBC稼働時間（今回起動から）",
+          "label": "OBC uptime (since this boot)",
+          "label_ja": "OBC稼働時間（今回起動から）",
           "unit": "s"
         },
         {
           "name": "obc_uptime_tot",
           "index": 4,
           "type": "int",
-          "label": "OBC累積稼働時間",
+          "label": "OBC total uptime",
+          "label_ja": "OBC累積稼働時間",
           "unit": "s"
         },
         {
           "name": "obc_unix_time",
           "index": 5,
           "type": "int",
-          "label": "OBC時刻（UNIX時間）",
+          "label": "OBC time (UNIX time)",
+          "label_ja": "OBC時刻（UNIX時間）",
           "unit": "s"
         },
         {
           "name": "obc_last_err",
           "index": 6,
           "type": "int",
-          "label": "最後のエラー番号"
+          "label": "Last error number",
+          "label_ja": "最後のエラー番号"
         },
         {
           "name": "obc_temp_mcu",
           "index": 7,
           "type": "float",
-          "label": "MCU温度",
+          "label": "MCU temperature",
+          "label_ja": "MCU温度",
           "unit": "°C"
         },
         {
           "name": "obc_temp_ext",
           "index": 8,
           "type": "float",
-          "label": "外部温度",
+          "label": "External temperature",
+          "label_ja": "外部温度",
           "unit": "°C"
         }
       ]
     },
     "U": {
-      "label": "MRG（UHFモデム・デジピーター）",
+      "label": "MRG (UHF modem / digipeater)",
+      "label_ja": "MRG（UHFモデム・デジピーター）",
       "fields": [
         {
           "name": "mrg_uptime",
           "index": 1,
           "type": "int",
-          "label": "MRG稼働時間（今回起動から）",
+          "label": "MRG uptime (since this boot)",
+          "label_ja": "MRG稼働時間（今回起動から）",
           "unit": "s"
         },
         {
           "name": "mrg_uptime_tot",
           "index": 2,
           "type": "int",
-          "label": "MRG累積稼働時間",
+          "label": "MRG total uptime",
+          "label_ja": "MRG累積稼働時間",
           "unit": "s"
         },
         {
           "name": "mrg_reset_cnt",
           "index": 3,
           "type": "int",
-          "label": "MRGリセット回数"
+          "label": "MRG reset count",
+          "label_ja": "MRGリセット回数"
         },
         {
           "name": "mrg_rf_reset_cnt",
           "index": 4,
           "type": "int",
-          "label": "MRG RFリセット回数"
+          "label": "MRG RF reset count",
+          "label_ja": "MRG RFリセット回数"
         },
         {
           "name": "mrg_temp_mcu",
           "index": 5,
           "type": "int",
-          "label": "MRG MCU温度(生値)"
+          "label": "MRG MCU temperature (raw)",
+          "label_ja": "MRG MCU温度(生値)"
         },
         {
           "name": "mrg_temp_rf",
           "index": 6,
           "type": "int",
-          "label": "MRG RF温度(生値)"
+          "label": "MRG RF temperature (raw)",
+          "label_ja": "MRG RF温度(生値)"
         },
         {
           "name": "mrg_temp_pa",
           "index": 7,
           "type": "int",
-          "label": "MRG PA温度(生値)"
+          "label": "MRG PA temperature (raw)",
+          "label_ja": "MRG PA温度(生値)"
         },
         {
           "name": "mrg_digipeater_cnt",
           "index": 8,
           "type": "int",
-          "label": "デジピート回数"
+          "label": "Digipeated count",
+          "label_ja": "デジピート回数"
         },
         {
           "name": "mrg_last_digipeater",
           "index": 9,
           "type": "str",
-          "label": "最後にデジピートした局"
+          "label": "Last digipeated station",
+          "label_ja": "最後にデジピートした局"
         },
         {
           "name": "mrg_rx_packet_cnt",
           "index": 10,
           "type": "int",
-          "label": "受信パケット数"
+          "label": "Received packets",
+          "label_ja": "受信パケット数"
         },
         {
           "name": "mrg_tx_packet_cnt",
           "index": 11,
           "type": "int",
-          "label": "送信パケット数"
+          "label": "Transmitted packets",
+          "label_ja": "送信パケット数"
         },
         {
           "name": "mrg_act_rssi_raw",
           "index": 12,
           "type": "int",
-          "label": "アクティブRSSI(生値)"
+          "label": "Active RSSI (raw)",
+          "label_ja": "アクティブRSSI(生値)"
         },
         {
           "name": "mrg_dcd_rssi_raw",
           "index": 13,
           "type": "int",
-          "label": "DCD RSSI(生値)"
+          "label": "DCD RSSI (raw)",
+          "label_ja": "DCD RSSI(生値)"
         }
       ]
     },
     "SOL": {
-      "label": "SOL（太陽電池パネル）",
+      "label": "SOL (solar panels)",
+      "label_ja": "SOL（太陽電池パネル）",
       "match_count": 10,
       "fields": [
         {
           "name": "sol_temp_xp",
           "index": 0,
           "type": "float",
-          "label": "太陽電池 X+面 温度",
+          "label": "Solar panel X+ temperature",
+          "label_ja": "太陽電池 X+面 温度",
           "unit": "°C"
         },
         {
           "name": "sol_temp_xn",
           "index": 1,
           "type": "float",
-          "label": "太陽電池 X-面 温度",
+          "label": "Solar panel X- temperature",
+          "label_ja": "太陽電池 X-面 温度",
           "unit": "°C"
         },
         {
           "name": "sol_temp_yp",
           "index": 2,
           "type": "float",
-          "label": "太陽電池 Y+面 温度",
+          "label": "Solar panel Y+ temperature",
+          "label_ja": "太陽電池 Y+面 温度",
           "unit": "°C"
         },
         {
           "name": "sol_temp_yn",
           "index": 3,
           "type": "float",
-          "label": "太陽電池 Y-面 温度",
+          "label": "Solar panel Y- temperature",
+          "label_ja": "太陽電池 Y-面 温度",
           "unit": "°C"
         },
         {
           "name": "sol_temp_zp",
           "index": 4,
           "type": "float",
-          "label": "太陽電池 Z+面 温度",
+          "label": "Solar panel Z+ temperature",
+          "label_ja": "太陽電池 Z+面 温度",
           "unit": "°C"
         },
         {
           "name": "sol_volt_xp",
           "index": 5,
           "type": "float",
-          "label": "太陽電池 X+面 電圧",
+          "label": "Solar panel X+ voltage",
+          "label_ja": "太陽電池 X+面 電圧",
           "unit": "V"
         },
         {
           "name": "sol_volt_xn",
           "index": 6,
           "type": "float",
-          "label": "太陽電池 X-面 電圧",
+          "label": "Solar panel X- voltage",
+          "label_ja": "太陽電池 X-面 電圧",
           "unit": "V"
         },
         {
           "name": "sol_volt_yp",
           "index": 7,
           "type": "float",
-          "label": "太陽電池 Y+面 電圧",
+          "label": "Solar panel Y+ voltage",
+          "label_ja": "太陽電池 Y+面 電圧",
           "unit": "V"
         },
         {
           "name": "sol_volt_yn",
           "index": 8,
           "type": "float",
-          "label": "太陽電池 Y-面 電圧",
+          "label": "Solar panel Y- voltage",
+          "label_ja": "太陽電池 Y-面 電圧",
           "unit": "V"
         },
         {
           "name": "sol_volt_zp",
           "index": 9,
           "type": "float",
-          "label": "太陽電池 Z+面 電圧",
+          "label": "Solar panel Z+ voltage",
+          "label_ja": "太陽電池 Z+面 電圧",
           "unit": "V"
         }
       ]
     },
     "EPS": {
-      "label": "EPS（電源系）",
+      "label": "EPS (power system)",
+      "label_ja": "EPS（電源系）",
       "match_count": 15,
       "fields": [
         {
           "name": "eps_uptime",
           "index": 0,
           "type": "int",
-          "label": "EPS稼働時間（今回起動から）",
+          "label": "EPS uptime (since this boot)",
+          "label_ja": "EPS稼働時間（今回起動から）",
           "unit": "s"
         },
         {
           "name": "eps_uptime_tot",
           "index": 1,
           "type": "int",
-          "label": "EPS累積稼働時間",
+          "label": "EPS total uptime",
+          "label_ja": "EPS累積稼働時間",
           "unit": "s"
         },
         {
           "name": "eps_reset_cnt",
           "index": 2,
           "type": "int",
-          "label": "EPSリセット回数"
+          "label": "EPS reset count",
+          "label_ja": "EPSリセット回数"
         },
         {
           "name": "eps_temp_board",
           "index": 3,
           "type": "int",
-          "label": "EPS基板温度(生値)"
+          "label": "EPS board temperature (raw)",
+          "label_ja": "EPS基板温度(生値)"
         },
         {
           "name": "eps_temp_bat",
           "index": 4,
           "type": "int",
-          "label": "バッテリー温度(生値)"
+          "label": "Battery temperature (raw)",
+          "label_ja": "バッテリー温度(生値)"
         },
         {
           "name": "eps_bat_charge",
           "index": 5,
           "type": "int",
-          "label": "バッテリー充電量(生値)"
+          "label": "Battery charge (raw)",
+          "label_ja": "バッテリー充電量(生値)"
         },
         {
           "name": "eps_bat_in",
           "index": 6,
           "type": "int",
-          "label": "バッテリー入力(生値)"
+          "label": "Battery input (raw)",
+          "label_ja": "バッテリー入力(生値)"
         },
         {
           "name": "eps_bat_out",
           "index": 7,
           "type": "int",
-          "label": "バッテリー出力(生値)"
+          "label": "Battery output (raw)",
+          "label_ja": "バッテリー出力(生値)"
         },
         {
           "name": "eps_unreg",
           "index": 8,
           "type": "int",
-          "label": "非安定化電源(生値)"
+          "label": "Unregulated supply (raw)",
+          "label_ja": "非安定化電源(生値)"
         },
         {
           "name": "eps_ch1",
           "index": 9,
           "type": "int",
-          "label": "チャンネル1(生値)"
+          "label": "Channel 1 (raw)",
+          "label_ja": "チャンネル1(生値)"
         },
         {
           "name": "eps_ch2",
           "index": 10,
           "type": "int",
-          "label": "チャンネル2(生値)"
+          "label": "Channel 2 (raw)",
+          "label_ja": "チャンネル2(生値)"
         },
         {
           "name": "eps_ch3",
           "index": 11,
           "type": "int",
-          "label": "チャンネル3(生値)"
+          "label": "Channel 3 (raw)",
+          "label_ja": "チャンネル3(生値)"
         },
         {
           "name": "eps_ch4",
           "index": 12,
           "type": "int",
-          "label": "チャンネル4(生値)"
+          "label": "Channel 4 (raw)",
+          "label_ja": "チャンネル4(生値)"
         },
         {
           "name": "eps_ch5",
           "index": 13,
           "type": "int",
-          "label": "チャンネル5(生値)"
+          "label": "Channel 5 (raw)",
+          "label_ja": "チャンネル5(生値)"
         },
         {
           "name": "eps_ch6",
           "index": 14,
           "type": "int",
-          "label": "チャンネル6(生値)"
+          "label": "Channel 6 (raw)",
+          "label_ja": "チャンネル6(生値)"
         }
       ]
     }
   },
   "text_message": {
     "id": "MSG",
-    "label": "MSG（フリーテキスト/デジピートメッセージ）",
-    "field_label": "メッセージ",
+    "label": "MSG (free text / digipeated message)",
+    "label_ja": "MSG（フリーテキスト/デジピートメッセージ）",
+    "field_label": "Message",
+    "field_label_ja": "メッセージ",
     "header_fields": true
   },
   "cw_frames": {
     "BEACON": {
-      "label": "CWビーコン（de ok0kst = u…r…t…p…）",
+      "label": "CW beacon (de ok0kst = u…r…t…p…)",
+      "label_ja": "CWビーコン（de ok0kst = u…r…t…p…）",
       "id_prefix": "DEOK0KST=",
       "text_regex": "U(\\d{1,9})R(\\d{1,9})T(-?\\d{1,9})P(-?\\d{1,9})AR",
       "near_regex": "U[0-9O.]*R[0-9O.-]*T[0-9O.-]*P[0-9O.-]*(AR)?",
@@ -350,22 +404,26 @@
         {
           "name": "uptime_total",
           "group": 1,
-          "label": "累積稼働時間(生値)"
+          "label": "Total uptime (raw)",
+          "label_ja": "累積稼働時間(生値)"
         },
         {
           "name": "reset_number",
           "group": 2,
-          "label": "リセット回数"
+          "label": "Reset count",
+          "label_ja": "リセット回数"
         },
         {
           "name": "temp_mcu",
           "group": 3,
-          "label": "MCU温度(生値)"
+          "label": "MCU temperature (raw)",
+          "label_ja": "MCU温度(生値)"
         },
         {
           "name": "temp_pa",
           "group": 4,
-          "label": "PA温度(生値)"
+          "label": "PA temperature (raw)",
+          "label_ja": "PA温度(生値)"
         }
       ]
     }

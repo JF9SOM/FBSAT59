@@ -1776,3 +1776,10 @@ MARINA の実録音を CW TLM で解読したとき、CW Decoder タブでは `D
   暗いテーマでほとんど見えなかった。`_HighlightTabBar`（`_DecodeTabs` が使う）が、通常の描画の上から**テーマの選択色（Highlight）を
   半透明で重ねて**選択中のタブだけを色づける。スタイルに依存しないので明/暗どちらのテーマでも効く。
 
+### 定義 JSON の文字列は英語＋`*_ja`（2026-10-25）
+
+`telemetry_formats/*.json` の表示文字列（`label` など）は**英語が本体、日本語は `label_ja`**（詳細は [docs/i18n.md](i18n.md) の「英語モードに日本語を混ぜない」）。
+`load_format()` / `list_formats()` が UI の言語に合わせて選ぶ。**新しい定義を書くときは、英語の `label` を書き、日本語が要るなら `label_ja` を添える**
+（日本語だけを `label` に書くと `tests/test_no_japanese_in_english_ui.py` が落ちる）。保存済みの行は名前と値だけを持ち、項目名は表示のたびに
+定義から作るので、過去の行も言語に従って表示される。
+

@@ -18,6 +18,7 @@ import contextlib
 import importlib.util
 import logging
 import os
+import sqlite3
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -464,13 +465,13 @@ if sys.platform.startswith("linux"):
             os.environ.setdefault("XKB_CONFIG_ROOT", _xkb_path)
             break
 
-from PySide6.QtCore import QLockFile, Qt, QTimer
+from PySide6.QtCore import QLocale, QLockFile, Qt, QTimer
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QApplication, QMessageBox, QSplashScreen
 
 from core.engine import PassPredictor, SatelliteEngine
 from core.location import LocationManager, LocationSource
-from data.database import init_database
+from data.database import get_db_path, init_database
 from data.tle_manager import TLEManager
 from ui.main_window import MainWindow
 from ui.world_map import prefetch_land_data
@@ -672,6 +673,48 @@ def _get_version() -> str:
 APP_VERSION = _get_version()
 
 
+# Startup messages in each UI language (English first). Only the language of the UI is shown:
+# an English UI never shows Japanese text.
+_STARTUP_TEXT: dict[str, tuple[str, str]] = {
+    "starting": ("Starting FBSAT59…", "FBSAT59 を起動中…"),
+    "map": ("Loading map data…", "地図データ読み込み中…"),
+    "database": ("Initializing database…", "データベース初期化中…"),
+    "location": ("Detecting location…", "位置情報取得中…"),
+    "window": ("Building main window…", "メイン画面構築中…"),
+    "running": (
+        "FBSAT59 is already running or starting up.",
+        "FBSAT59 はすでに起動中です。",
+    ),
+}
+_startup_language = "en"
+
+
+def _detect_startup_language() -> str:
+    """The UI language before the main window exists: the saved choice, else the OS locale.
+
+    The choice (View > Language) is in the database, which is not open yet when the first
+    message is shown; it is read straight from the file, read-only. On a first launch (no
+    database or no choice) a Japanese OS locale gives Japanese, anything else English.
+    """
+    try:
+        db = sqlite3.connect(f"file:{get_db_path()}?mode=ro", uri=True)
+        try:
+            row = db.execute("SELECT value FROM app_settings WHERE key = 'ui_language'").fetchone()
+        finally:
+            db.close()
+        if row and row[0] in ("en", "ja"):
+            return str(row[0])
+    except (sqlite3.Error, OSError):
+        pass
+    return "ja" if QLocale.system().name().startswith("ja") else "en"
+
+
+def _startup_text(key: str) -> str:
+    """The startup message *key* in the UI language (see _detect_startup_language())."""
+    english, japanese = _STARTUP_TEXT[key]
+    return japanese if _startup_language == "ja" else english
+
+
 def _show_splash(app: QApplication) -> QSplashScreen | None:
     """Show a splash screen immediately so the user gets feedback right away.
 
@@ -681,6 +724,8 @@ def _show_splash(app: QApplication) -> QSplashScreen | None:
     is shown as the very first thing in main(), before any of that slow work
     begins, and closed once the main window is ready.
     """
+    global _startup_language
+    _startup_language = _detect_startup_language()
     if getattr(sys, "frozen", False):
         icon_path = Path(getattr(sys, "_MEIPASS", "")) / "assets" / "icon_256.png"
     else:
@@ -698,7 +743,7 @@ def _show_splash(app: QApplication) -> QSplashScreen | None:
 
     splash = QSplashScreen(pixmap, Qt.WindowType.WindowStaysOnTopHint)
     splash.showMessage(
-        "Starting FBSAT59… / 起動中…",
+        _startup_text("starting"),
         Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
         Qt.GlobalColor.white,
     )
@@ -794,7 +839,7 @@ def main() -> int:
         box = QMessageBox(
             QMessageBox.Icon.Information,
             "FBSAT59",
-            "FBSAT59 はすでに起動中です。\nFBSAT59 is already running or starting up.",
+            _startup_text("running"),
         )
         QTimer.singleShot(1500, box.close)
         box.exec()
@@ -805,11 +850,11 @@ def main() -> int:
     _migrate_legacy_data()
 
     # Prefetch Natural Earth map data (downloads on first run, uses cache thereafter)
-    _splash_message(splash, "Loading map data… / 地図データ読み込み中…")
+    _splash_message(splash, _startup_text("map"))
     prefetch_land_data()
 
     # Initialize SQLite DB
-    _splash_message(splash, "Initializing database… / データベース初期化中…")
+    _splash_message(splash, _startup_text("database"))
     conn = init_database()
 
     # Create core components
@@ -823,7 +868,7 @@ def main() -> int:
         LocationSource.GPS,
     )
     if not _skip_ip:
-        _splash_message(splash, "Detecting location… / 位置情報取得中…")
+        _splash_message(splash, _startup_text("location"))
         logger.info("No saved QTH (or IP-based) — trying IP geolocation...")
         try:
             ip_loc = asyncio.run(location_manager.from_ip())
@@ -878,7 +923,7 @@ def main() -> int:
     )
 
     # Show main window (web server and scheduler also start internally)
-    _splash_message(splash, "Building main window… / メイン画面構築中…")
+    _splash_message(splash, _startup_text("window"))
     window = MainWindow(
         conn=conn,
         tle_manager=tle_manager,

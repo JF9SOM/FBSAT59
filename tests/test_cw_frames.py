@@ -81,9 +81,9 @@ class TestHk1:
 
     def test_angular_velocity_shows_the_operators_ranges(self) -> None:
         shown = _shown(HK1_REAL)
-        assert shown["Angular Velocity X"] == "-2.591 ≦ Gx ＜ -2.061"
-        assert shown["Angular Velocity Y"] == "0.377 ≦ Gy ＜ 0.615"
-        assert shown["Angular Velocity Z"] == "0 ≦ Gz ＜ 0.173"
+        assert shown["Angular Velocity X"] == "-2.591 ≤ Gx < -2.061"
+        assert shown["Angular Velocity Y"] == "0.377 ≤ Gy < 0.615"
+        assert shown["Angular Velocity Z"] == "0 ≤ Gz < 0.173"
 
 
 class TestHk3:
@@ -194,14 +194,14 @@ class TestAngularVelocityText:
     EDGES = [0.0, 0.173, 0.377, 0.615, 0.895, 1.223, 1.609, 2.061, 2.591, 3.213, 3.943]
 
     def test_sign_magnitude_codes(self) -> None:
-        assert _angvel_text(0, 5, self.EDGES, "Gz") == "0 ≦ Gz ＜ 0.173"
-        assert _angvel_text(0b10000, 5, self.EDGES, "Gz") == "-0.173 ≦ Gz ＜ -0"
-        assert _angvel_text(0b10111, 5, self.EDGES, "Gx") == "-2.591 ≦ Gx ＜ -2.061"
-        assert _angvel_text(9, 5, self.EDGES, "Gx") == "3.213 ≦ Gx ＜ 3.943"
+        assert _angvel_text(0, 5, self.EDGES, "Gz") == "0 ≤ Gz < 0.173"
+        assert _angvel_text(0b10000, 5, self.EDGES, "Gz") == "-0.173 ≤ Gz < -0"
+        assert _angvel_text(0b10111, 5, self.EDGES, "Gx") == "-2.591 ≤ Gx < -2.061"
+        assert _angvel_text(9, 5, self.EDGES, "Gx") == "3.213 ≤ Gx < 3.943"
 
     def test_large_codes_only_show_a_lower_bound(self) -> None:
-        assert _angvel_text(10, 5, self.EDGES, "Gx") == "|Gx| ≧ 3.943 (range not confirmed)"
-        assert _angvel_text(0b11111, 5, self.EDGES, "Gx") == "|Gx| ≦ -3.943 (range not confirmed)"
+        assert _angvel_text(10, 5, self.EDGES, "Gx") == "|Gx| ≥ 3.943 (range not confirmed)"
+        assert _angvel_text(0b11111, 5, self.EDGES, "Gx") == "|Gx| ≤ -3.943 (range not confirmed)"
 
 
 class TestDecodedFieldsDefinition:
@@ -298,29 +298,29 @@ class TestOrigamiSat2:
 
     def test_uvc_thresholds_match_the_documents_own_example_figure(self) -> None:
         shown = _osat2_shown(OSAT2_BLOCK_CLEAN)
-        assert shown["UVC閾値: Normal Mode復帰"] == "7.5000"
-        assert shown["UVC閾値: Safe Mode移行"] == "6.6000"
-        assert shown["UVC閾値: Level 1"] == "7.2000"
-        assert shown["UVC閾値: Level 2"] == "6.2000"
+        assert shown["UVC threshold : Normal Mode recovery"] == "7.5000"
+        assert shown["UVC threshold : Safe Mode entry"] == "6.6000"
+        assert shown["UVC threshold : Level 1"] == "7.2000"
+        assert shown["UVC threshold : Level 2"] == "6.2000"
 
     def test_satellite_time_matches_the_reception_date(self) -> None:
         # 1790059967 -> 2026-09-22T06:52:47Z, the actual UTC date/time of this IQ
         # recording's pass (fbsat59.log: file 0_unknown_20260922T065218Z.iq.wav).
         shown = _osat2_shown(OSAT2_BLOCK_CLEAN)
-        t = float(shown["衛星内部時刻(UNIX秒)"])
+        t = float(shown["Satellite internal time (UNIX seconds)"])
         assert datetime.fromtimestamp(t, tz=UTC).date() == date(2026, 9, 22)
 
     def test_mode_and_static_fields(self) -> None:
         shown = _osat2_shown(OSAT2_BLOCK_CLEAN)
         assert shown["Operating Mode"] == "Normal Mode"
-        assert shown["Operating Mode Status"] == "遷移完了"
+        assert shown["Operating Mode Status"] == "Transition complete"
         assert shown["UVC Level"] == "UVC startup successful"
         assert shown["Battery Voltage"] == "7.9375"
         assert shown["Battery Temperature"] == "4.0000"
-        assert shown["ADCSモード"] == "START UP"
-        assert shown["OBC起動回数"] == "35.0000"
-        assert shown["予約コマンド数"] == "6.0000"
-        assert shown["バス通信ヒューズカット回数"] == "0.0000"
+        assert shown["ADCS mode"] == "START UP"
+        assert shown["OBC boot count"] == "35.0000"
+        assert shown["Scheduled command count"] == "6.0000"
+        assert shown["Bus communication fuse cut count"] == "0.0000"
 
     def test_satnogs_gets_the_raw_frame_bytes(self) -> None:
         """SatNOGS has no OrigamiSat-2 decoder: everyone submits the received bytes."""

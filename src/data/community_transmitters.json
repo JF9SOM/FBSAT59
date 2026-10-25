@@ -88,7 +88,8 @@
   {
     "uuid": "community-terrestrial-aprs-1200",
     "norad_cat_id": -2,
-    "satellite_name": "Terrestrial 1200 (地上系)",
+    "satellite_name": "Terrestrial 1200 (ground)",
+    "satellite_name_ja": "Terrestrial 1200 (地上系)",
     "description": "APRS terrestrial 1200 baud (144.660 MHz simplex)",
     "type": "Transceiver",
     "uplink_low":   144660000,
@@ -104,7 +105,8 @@
   {
     "uuid": "community-terrestrial-aprs-9600",
     "norad_cat_id": -3,
-    "satellite_name": "Terrestrial 9600 (地上系)",
+    "satellite_name": "Terrestrial 9600 (ground)",
+    "satellite_name_ja": "Terrestrial 9600 (地上系)",
     "description": "APRS terrestrial 9600 baud (144.640 MHz simplex)",
     "type": "Transceiver",
     "uplink_low":   144640000,

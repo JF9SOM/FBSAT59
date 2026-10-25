@@ -236,7 +236,7 @@ class TestReceivedBlocks:
         assert item(3) == f"[HK1] {HK1}"
         assert tab._frame_count == 1
         assert _decode_value(tab, "HK1", "SBD error") == "Abnormal"
-        assert _decode_value(tab, "HK1", "Angular Velocity X") == "-2.591 ≦ Gx ＜ -2.061"
+        assert _decode_value(tab, "HK1", "Angular Velocity X") == "-2.591 ≤ Gx < -2.061"
         row = cw_conn.execute(
             "SELECT received_at, norad_cat_id, raw_hex FROM telemetry_log"
         ).fetchone()
@@ -811,5 +811,7 @@ class TestMarinaBeaconAsTheCwDecoderWritesIt:
 
         assert tab._table.rowCount() == 1
         assert tab._table.item(0, 1).text() == "OM9MAR"
-        assert _decode_value(tab, "BEACON", "UHFリセット回数") == "15"
-        assert _decode_value(tab, "BEACON", "累積稼働時間（分を秒に換算）").startswith("9,266,880")
+        assert _decode_value(tab, "BEACON", "UHF reset count") == "15"
+        assert _decode_value(
+            tab, "BEACON", "Total uptime (minutes converted to seconds)"
+        ).startswith("9,266,880")

@@ -68,9 +68,9 @@ def test_pasted_lines_are_decoded_with_the_satellite_found_from_the_callsign(qtb
     assert "OBC" in titles[1]
     assert "GRBBeta" in titles[2]
     fields = dict(_texts(w))
-    assert fields["最後にデジピートした局"] == "JA1HCB"
-    assert fields["UHF 最後にデジピートした局"] == "DL7NDR"
-    assert fields["MCU温度"] == "22.2000 °C"
+    assert fields["Last digipeated station"] == "JA1HCB"
+    assert fields["UHF last digipeated station"] == "DL7NDR"
+    assert fields["MCU temperature"] == "22.2000 °C"
     assert "3 of 3" in w._status.text()
 
 
@@ -100,7 +100,7 @@ def test_free_text_lines_show_as_a_message(qtbot: QtBot) -> None:
     qtbot.addWidget(w)
     w._input.setPlainText("OK0KST>CQ:hello from space")
     w.decode_text()
-    assert ("メッセージ", "hello from space") in _texts(w)
+    assert ("Message", "hello from space") in _texts(w)
 
 
 def test_the_satellite_box_overrides_the_callsign(qtbot: QtBot) -> None:

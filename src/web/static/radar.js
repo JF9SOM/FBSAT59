@@ -79,7 +79,7 @@ class RadarView {
      */
     constructor(canvasId) {
         const canvas = document.getElementById(canvasId);
-        if (!canvas) throw new Error(`canvas#${canvasId} が見つかりません`);
+        if (!canvas) throw new Error(`canvas#${canvasId} not found`);
         /** @type {HTMLCanvasElement} */
         this._canvas = canvas;
         /** @type {CanvasRenderingContext2D} */

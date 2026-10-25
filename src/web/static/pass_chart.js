@@ -93,12 +93,12 @@ function buildPassDetailHTML(pass) {
     return `
         <table class="pass-detail-table">
             <tr><th>AOS</th><td>${fmtTime(pass.aos)}</td></tr>
-            <tr><th>最大仰角時刻</th><td>${fmtTime(pass.max_elevation_time || pass.tca)}</td></tr>
+            <tr><th>Time of max elevation</th><td>${fmtTime(pass.max_elevation_time || pass.tca)}</td></tr>
             <tr><th>LOS</th><td>${fmtTime(pass.los)}</td></tr>
-            <tr><th>最大仰角</th><td>${pass.max_elevation_deg.toFixed(1)}° <span class="quality-badge quality-${quality}">${quality}</span></td></tr>
-            <tr><th>継続時間</th><td>${mins}分${secs}秒</td></tr>
-            <tr><th>AOS方位角</th><td>${pass.aos_azimuth_deg.toFixed(1)}°</td></tr>
-            <tr><th>LOS方位角</th><td>${pass.los_azimuth_deg.toFixed(1)}°</td></tr>
+            <tr><th>Max elevation</th><td>${pass.max_elevation_deg.toFixed(1)}° <span class="quality-badge quality-${quality}">${quality}</span></td></tr>
+            <tr><th>Duration</th><td>${mins} min ${secs} s</td></tr>
+            <tr><th>AOS azimuth</th><td>${pass.aos_azimuth_deg.toFixed(1)}°</td></tr>
+            <tr><th>LOS azimuth</th><td>${pass.los_azimuth_deg.toFixed(1)}°</td></tr>
         </table>
     `.trim();
 }
@@ -158,7 +158,7 @@ function renderPassChart(canvasId, passes, satName = '') {
     // 現在時刻ライン
     const now = new Date();
     datasets.push({
-        label:           '現在時刻',
+        label:           'Current time',
         data:            [{ x: now, y: 0 }, { x: now, y: 90 }],
         borderColor:     'rgba(231, 76, 60, 0.9)',
         backgroundColor: 'transparent',
@@ -180,13 +180,13 @@ function renderPassChart(canvasId, passes, satName = '') {
             plugins: {
                 title: {
                     display: true,
-                    text:    satName ? `${satName} パス予測` : 'パス予測',
+                    text:    satName ? `${satName} pass prediction` : 'Pass prediction',
                     font:    { size: 16 },
                 },
                 legend: { position: 'bottom' },
                 tooltip: {
                     callbacks: {
-                        label: (ctx) => `仰角: ${ctx.parsed.y.toFixed(1)}°`,
+                        label: (ctx) => `Elevation: ${ctx.parsed.y.toFixed(1)}°`,
                         title: (items) => {
                             const d = items[0]?.parsed?.x;
                             return d ? new Date(d).toLocaleTimeString() : '';
@@ -202,12 +202,12 @@ function renderPassChart(canvasId, passes, satName = '') {
                         displayFormats: { minute: 'HH:mm' },
                         tooltipFormat:  'HH:mm:ss',
                     },
-                    title: { display: true, text: '時刻 (UTC)' },
+                    title: { display: true, text: 'Time (UTC)' },
                 },
                 y: {
                     min:   0,
                     max:   90,
-                    title: { display: true, text: '仰角 (度)' },
+                    title: { display: true, text: 'Elevation (deg)' },
                     ticks: { callback: (v) => `${v}°` },
                 },
             },
