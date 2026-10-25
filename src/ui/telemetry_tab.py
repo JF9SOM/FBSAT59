@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QKeySequence, QPalette, QShortcut, QStandardItemModel
+from PySide6.QtGui import QColor, QFont, QKeySequence, QPalette, QShortcut, QStandardItemModel
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -788,6 +788,7 @@ class TelemetryTab(QWidget):
             QHeaderView.ResizeMode.ResizeToContents
         )
         self._ascii_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._ascii_table.itemSelectionChanged.connect(self._on_ascii_selection_changed)
         self._ascii_table.setFont(self._table.font())  # the same enlarged size as the hex table
         self._ascii_table.horizontalHeader().setFont(self._table.horizontalHeader().font())
         self._ascii_table.verticalHeader().setFont(self._table.verticalHeader().font())
@@ -805,12 +806,24 @@ class TelemetryTab(QWidget):
         self._decode_page = QWidget()
         decode_page_layout = QVBoxLayout(self._decode_page)
         decode_page_layout.setContentsMargins(0, 0, 0, 0)
+        # Says so when a sub-tab shows an older frame than the newest of its type.
+        self._decode_banner = QLabel("")
+        self._decode_banner.setStyleSheet("color: #e67e22;")
+        self._decode_banner.setVisible(False)
+        decode_page_layout.addWidget(self._decode_banner)
         self._decode_id_tabs = QTabWidget()
+        self._decode_id_tabs.currentChanged.connect(self._refresh_decode_banner)
         decode_page_layout.addWidget(self._decode_id_tabs)
         self._log_tabs.addTab(self._decode_page, _("Decoded Fields"))
         self._decode_tables: dict[str, QTableWidget] = {}
         self._decode_field_rows: dict[str, dict[str, int]] = {}
         self._decode_tabs_norad: int | None = None
+        # Links between the three views: the frame type ("norad:id") of each decoded row, the
+        # newest row of each type (drawn bold), and the row each decode sub-tab shows.
+        self._row_type: dict[int, str] = {}
+        self._latest_row: dict[str, int] = {}
+        self._shown_row: dict[str, int] = {}
+        self._syncing_selection = False
         self._rebuild_decode_tabs(None)
 
         root.addWidget(log_box, 1)
@@ -3278,6 +3291,8 @@ class TelemetryTab(QWidget):
         self._decode_tables = {}
         self._decode_field_rows = {}
         self._decode_tabs_norad = norad
+        self._shown_row = {}
+        self._decode_banner.setVisible(False)
 
         from comms.mode_detection import HADES_FSK_NORADS
 
@@ -3315,6 +3330,9 @@ class TelemetryTab(QWidget):
                 table.setItem(row, 0, QTableWidgetItem(fd.get("label", fd["name"])))
                 table.setItem(row, 1, QTableWidgetItem("—"))
                 row_map[fd["name"]] = row
+            table.itemSelectionChanged.connect(
+                lambda i=id_str: self._on_decode_selection_changed(i)
+            )
             self._decode_tables[id_str] = table
             self._decode_field_rows[id_str] = row_map
             self._decode_id_tabs.addTab(table, id_def.get("label", f"ID{id_str}"))
@@ -3322,7 +3340,15 @@ class TelemetryTab(QWidget):
             self._decode_id_tabs.addTab(self._gr_detail, _("gr-satellites output"))
 
     def _on_table_selection_changed(self) -> None:
-        """Show the selected row's decoded fields in the "Decoded Fields" tab.
+        """A Received Frames row was clicked: select the same frame everywhere."""
+        if self._syncing_selection:
+            return
+        rows = self._table.selectionModel().selectedRows()
+        if rows:
+            self._select_frame(rows[0].row(), "raw")
+
+    def _show_row_in_decode_tab(self, row: int) -> None:
+        """Show row *row*'s decoded fields in the "Decoded Fields" tab, all highlighted.
 
         The tab otherwise holds only the newest frame of each telemetry ID, so an
         earlier frame could not be read once a later one of the same ID arrived.
@@ -3330,10 +3356,7 @@ class TelemetryTab(QWidget):
         fields; a gr-satellites row's full text goes to the pane under the table. Other
         rows (HDLC, rejected CW candidates) are left alone.
         """
-        rows = self._table.selectionModel().selectedRows()
-        if not rows:
-            return
-        item = self._table.item(rows[0].row(), 0)
+        item = self._table.item(row, 0)
         if item is None:
             return
         gr_text = item.data(_GR_TEXT_ROLE)
@@ -3341,20 +3364,22 @@ class TelemetryTab(QWidget):
             self._gr_detail.setPlainText(gr_text)
             tf = self._decode_gr_text(gr_text)
             if tf is not None and tf.has_fields:
-                self._update_decode_tab(tf)
-                table = self._decode_tables.get(str(tf.telemetry_id))
-                if table is not None:
-                    self._decode_id_tabs.setCurrentWidget(table)
+                self._show_frame_in_decode_tab(tf, row)
             return
         tf = item.data(_DECODED_ROLE)
         if not isinstance(tf, TelemetryFrame):
-            tf = self._decode_ax25_row(item.data(_AX25_ROLE), rows[0].row())
+            tf = self._decode_ax25_row(item.data(_AX25_ROLE), row)
         if tf is None or not tf.has_fields or tf.norad != self._decode_tabs_norad:
             return
-        self._update_decode_tab(tf)
+        self._show_frame_in_decode_tab(tf, row)
+
+    def _show_frame_in_decode_tab(self, tf: TelemetryFrame, row: int) -> None:
+        """Fill the sub-tab of *tf*'s type with the frame of *row*, bring it to the front."""
+        self._update_decode_tab(tf, row, select=True)
         table = self._decode_tables.get(str(tf.telemetry_id))
         if table is not None:
             self._decode_id_tabs.setCurrentWidget(table)
+        self._refresh_decode_banner()
 
     def _decode_gr_text(self, text: str) -> TelemetryFrame | None:
         """Decode a gr-satellites packet (info field, or PDU dump) with the satellite's format."""
@@ -3380,22 +3405,124 @@ class TelemetryTab(QWidget):
         callsign = callsign_item.text() if callsign_item is not None else ""
         return decode_telemetry(callsign, payload, value.norad, ax25=parsed)
 
-    def _update_decode_tab(self, tf: TelemetryFrame) -> None:
+    def _update_decode_tab(
+        self, tf: TelemetryFrame, row: int | None = None, *, select: bool = False
+    ) -> None:
         """Push *tf*'s decoded field values into its "Decoded Fields" sub-tab.
 
         No-op unless tf carries a recognized telemetry ID for the satellite
         the sub-tabs are currently built for (_rebuild_decode_tabs() is
         called from set_satellite(), so this tracks the main satellite list
         selection, not necessarily the AFSK combo).
+
+        Without *row* the frame has just arrived as the newest row of the Received Frames
+        table: it becomes the newest of its type (drawn bold). With *row* it is the frame of
+        that existing row, shown because the row was selected; *select* then highlights all
+        its fields.
         """
-        if tf.telemetry_id is None or not tf.has_fields or tf.norad != self._decode_tabs_norad:
+        if tf.telemetry_id is None or not tf.has_fields:
             return
+        if row is None:
+            row = self._table.rowCount() - 1
+            self._note_frame(row, f"{tf.norad}:{tf.telemetry_id}")
+        if tf.norad != self._decode_tabs_norad:
+            return
+        shown = tf.record_ids or [str(tf.telemetry_id)]
         # A frame of several records feeds one sub-tab per record (field names are unique).
-        for id_str in tf.record_ids or [str(tf.telemetry_id)]:
+        for id_str in shown:
             table = self._decode_tables.get(id_str)
             row_map = self._decode_field_rows.get(id_str)
             if table is not None and row_map is not None:
                 self._fill_decode_table(table, row_map, tf)
+                self._shown_row[id_str] = row
+        for id_str, table in self._decode_tables.items():
+            if select and id_str in shown:
+                table.selectAll()
+            else:
+                table.clearSelection()
+        self._refresh_decode_banner()
+
+    def _note_frame(self, row: int, key: str) -> None:
+        """*row* is the newest frame of type *key*: draw it bold, the one before it regular."""
+        previous = self._latest_row.get(key)
+        self._row_type[row] = key
+        self._latest_row[key] = row
+        if previous is not None and previous != row:
+            self._set_row_bold(previous, False)
+        self._set_row_bold(row, True)
+
+    def _set_row_bold(self, row: int, bold: bool) -> None:
+        """Draw a row of Received Frames and of the ASCII View bold (newest) or regular."""
+        for table in (self._table, self._ascii_table):
+            if row >= table.rowCount():
+                continue
+            for column in range(table.columnCount()):
+                item = table.item(row, column)
+                if item is None:
+                    continue
+                if bold:
+                    font = QFont(table.font())
+                    font.setBold(True)
+                    item.setFont(font)
+                else:
+                    item.setData(Qt.ItemDataRole.FontRole, None)
+
+    def _refresh_decode_banner(self, *_args: object) -> None:
+        """Warn above the visible sub-tab when it shows a frame older than the type's newest."""
+        current = self._decode_id_tabs.currentWidget()
+        id_str = next((i for i, t in self._decode_tables.items() if t is current), None)
+        row = self._shown_row.get(id_str) if id_str is not None else None
+        latest = self._latest_row.get(f"{self._decode_tabs_norad}:{id_str}")
+        if row is None or latest is None or row == latest:
+            self._decode_banner.setVisible(False)
+            return
+        stamp = self._table.item(row, 0)
+        self._decode_banner.setText(
+            _("Showing frame #{n} ({time}) — not the newest of its type").format(
+                n=row + 1, time=stamp.text() if stamp is not None else ""
+            )
+        )
+        self._decode_banner.setVisible(True)
+
+    def _on_decode_selection_changed(self, id_str: str) -> None:
+        """A field of a "Decoded Fields" sub-tab was clicked: select the frame it came from."""
+        if self._syncing_selection:
+            return
+        table = self._decode_tables.get(id_str)
+        row = self._shown_row.get(id_str)
+        if table is None or row is None or not table.selectedIndexes():
+            return
+        self._select_frame(row, "decode")
+
+    def _on_ascii_selection_changed(self) -> None:
+        """A row of the ASCII View was clicked: select the same frame everywhere."""
+        if self._syncing_selection:
+            return
+        rows = self._ascii_table.selectionModel().selectedRows()
+        if rows:
+            self._select_frame(rows[0].row(), "ascii")
+
+    def _select_frame(self, row: int, origin: str) -> None:
+        """Select frame *row* in the views other than *origin* ("raw", "ascii" or "decode").
+
+        The Received Frames and ASCII View rows are the same frame, so both are selected; the
+        "Decoded Fields" sub-tab of the frame's type then shows that frame (see
+        _show_row_in_decode_tab()), unless the click came from there.
+        """
+        self._syncing_selection = True
+        try:
+            if origin != "raw":
+                self._table.selectRow(row)
+            if origin != "ascii":
+                self._ascii_table.selectRow(row)
+            for table in (self._table, self._ascii_table):
+                item = table.item(row, 0)
+                if item is not None:
+                    table.scrollToItem(item)
+            if origin != "decode":
+                self._show_row_in_decode_tab(row)
+        finally:
+            self._syncing_selection = False
 
     @staticmethod
     def _fill_decode_table(
@@ -3969,6 +4096,10 @@ class TelemetryTab(QWidget):
         self._gr_bogus_count = 0
         self._table.setRowCount(0)
         self._ascii_table.setRowCount(0)
+        self._row_type.clear()
+        self._latest_row.clear()
+        self._shown_row.clear()
+        self._decode_banner.setVisible(False)
         self._frame_count = 0
         self._lbl_count.setText(_("Frames: 0 received"))
 

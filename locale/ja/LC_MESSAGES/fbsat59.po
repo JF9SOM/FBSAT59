@@ -8114,3 +8114,7 @@ msgstr "ASCII"
 #: src/ui/telemetry_tab.py
 msgid "ASCII Decode…"
 msgstr "ASCII変換…"
+
+#: src/ui/telemetry_tab.py
+msgid "Showing frame #{n} ({time}) — not the newest of its type"
+msgstr "フレーム #{n}（{time}）を表示中 — この種類の最新ではありません"
