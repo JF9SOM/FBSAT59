@@ -1748,10 +1748,14 @@ MARINA の実録音を CW TLM で解読したとき、CW Decoder タブでは `D
   HEX では読みにくく、Decoded Fields では一覧性がない、その中間の表示。
 - **AX.25 の UI フレーム**: `SRC>DEST,DIGI*:ペイロード`（SSID は `-n`、デジピート済みは `*`、印字できないバイトは
   `<0xNN>`。末尾の NUL は `<0x00>`）。例: `OK0LSR>CQ:Celebrating 10 000 orbits!`。
-- **AX.25 でないバイナリ**（HADES FSK・CSP など）: ヘキサダンプの ASCII 列と同じ形（印字できないバイトは `.`）。
+- **ペイロードがバイナリのフレーム**（HADES FSK・CSP・バイナリの AX.25 テレメトリーなど。印字できるバイトが 85% 未満）:
+  ダンプの ASCII は雑音にしかならないので（2026-10-25 に HADES-L の表示で指摘された）、**解読済みの主な 4 項目の 1 行要約**
+  `[Power stats] System clock: … Min VBUS1: 2,880 mV …` にする。定義が無く解読できないときは `(binary 33 bytes)`。
+  AX.25 の見出し（`SRC>DEST:`）は残す。CSP/AX.25 ヘッダーの項目は要約に入れない。文字列の項目は印字できる文字だけ・40 文字まで。
+  CW の行（`[HK1] …` で元のバイト列が無い）も、解読できていれば同じ要約になる。
 - **元のバイト列が取れない行**（CW の `[HK1] …` など）は「—」。行は「Received Frames」と同じ順で 1 対 1 に増え、Clear で一緒に消える。
 - 行を選んで Ctrl+C すると `[0 時刻 UTC] SRC>DEST:…` の形でコピーされ、そのまま Help > ASCII変換 に貼り付けられる。
 - **gr-satellites モードの行**: AX.25 として読めたパケットは、gr-satellites が分けて出す宛先・送信元・経路・info から
   `SRC>DEST,DIGI:info` を組み立てる（`ascii_view.addressed_ascii`。デジピート済みの `*` は gr-satellites の出力に無いので付かない）。
-  AX.25 として読めない「PDU ダンプ」は `.` 付きのダンプ。元のバイト列を持たない行（`ax25_row.raw` が空）は、Data 列の HEX から作る。
+  AX.25 として読めない「PDU ダンプ」は `(binary N bytes)` か要約。元のバイト列を持たない行（`ax25_row.raw` が空）は、Data 列の HEX から作る。
 

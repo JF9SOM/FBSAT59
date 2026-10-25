@@ -60,7 +60,15 @@ from PySide6.QtWidgets import (
 from comms.aprs.engine import get_aprs_engine
 from comms.aprs.parser import decode_ax25
 from comms.signal_clock import replay_time, signal_time
-from comms.telemetry.ascii_view import addressed_ascii, dotted_ascii, row_ascii
+from comms.telemetry.ascii_view import (
+    addressed_ascii,
+    ax25_split,
+    describe_parts,
+    hex_text_to_bytes,
+    looks_like_text,
+    row_ascii,
+    summary_text,
+)
 from comms.telemetry.baud_detect import (
     BAUD_CHOICES,
     detect_baud_from_satyaml,
@@ -2693,12 +2701,18 @@ class TelemetryTab(QWidget):
         if info_bytes is None:
             info_bytes = parse_gr_pdu_dump(text)  # a framing gr-satellites cannot parse
         ascii_text: str | None = None
+        gr_decoded = self._decode_gr_text(text)
+        gr_summary = summary_text(gr_decoded)
         if info_bytes is not None:
             # like the AX.25 mode: the data column is the frame's bytes in HEX; the decoded
             # fields are in the "Decoded Fields" tab
             data_text = format_frame_hex(info_bytes)
             # the "ASCII View" form: the log line for a parsed AX.25 packet, else a dotted dump
-            ascii_text = addressed_ascii(addresses, info_bytes) or dotted_ascii(info_bytes)
+            ascii_text = (
+                addressed_ascii(addresses, info_bytes, gr_summary)
+                if len(addresses) > 1
+                else describe_parts(None, info_bytes, gr_summary)
+            )
         if len(addresses) > 1:
             callsign = addresses[1]  # the source address; the first is the destination
         full_text = "\n".join(
@@ -2735,9 +2749,8 @@ class TelemetryTab(QWidget):
         )
         row_data.log_id = self._persist_gr_row(callsign, sat_name, data_text, row_data, full_text)
         self._mark_row_logged(self._table.rowCount() - 1, row_data.log_id)
-        tf = self._decode_gr_text(text)
-        if tf is not None and tf.has_fields:
-            self._update_decode_tab(tf)
+        if gr_decoded is not None and gr_decoded.has_fields:
+            self._update_decode_tab(gr_decoded)
 
     def _on_gr_raw_frame(self, raw: bytes) -> None:
         """Forward a gr-satellites --kiss_server data frame to SatNOGS DB.
@@ -3193,18 +3206,30 @@ class TelemetryTab(QWidget):
                 item.setData(_GR_TEXT_ROLE, gr_text)
             self._table.setItem(row, column, item)
         self._table.scrollToBottom()
-        self._append_ascii_row(
-            when,
-            callsign,
-            sat_name,
-            ascii_text
-            if ascii_text is not None
-            else row_ascii(ax25_row.raw if ax25_row is not None else None, data),
-            dim,
-        )
+        if ascii_text is None:
+            raw = ax25_row.raw if ax25_row is not None and ax25_row.raw else None
+            summary = summary_text(decoded) or self._binary_summary(
+                raw or hex_text_to_bytes(data), callsign, norad
+            )
+            ascii_text = row_ascii(raw, data, summary)
+        self._append_ascii_row(when, callsign, sat_name, ascii_text, dim)
         if not dim:
             self._frame_count += 1
             self._lbl_count.setText(_("Frames: ") + str(self._frame_count) + _(" received"))
+
+    @staticmethod
+    def _binary_summary(raw: bytes | None, callsign: str, norad: int | None) -> str | None:
+        """A decoded-fields summary for the "ASCII View" of a binary frame, if it can be decoded.
+
+        Text frames need none (they are listed as text), so nothing is decoded for them.
+        """
+        if not raw or norad is None:
+            return None
+        parts = ax25_split(raw)
+        info = parts[1] if parts is not None else raw
+        if looks_like_text(info):
+            return None
+        return summary_text(decode_telemetry(callsign, info, norad))
 
     def _append_ascii_row(
         self, when: datetime.datetime, callsign: str, sat_name: str, text: str, dim: bool

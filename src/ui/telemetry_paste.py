@@ -25,7 +25,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from comms.telemetry.decoder import TelemetryField, decode_telemetry, list_formats
+from comms.telemetry.ascii_view import format_field_value
+from comms.telemetry.decoder import decode_telemetry, list_formats
 from i18n import _
 
 # More than this many pasted lines are ignored (keeps the page responsive).
@@ -81,22 +82,6 @@ def norad_for_callsign(callsign: str) -> int | None:
         if str(fmt.get("callsign", "")).upper() == wanted and isinstance(fmt.get("norad"), int):
             return int(fmt["norad"])
     return None
-
-
-def format_field_value(f: TelemetryField) -> str:
-    """A decoded field's value as shown in the "Decoded Fields" tables."""
-    if f.is_string:
-        return f.unit
-    value = f.scaled_value
-    if f.is_integer:
-        text = f"{round(value):,}"
-    elif abs(value) >= 1000:
-        text = f"{value:,.2f}"
-    elif abs(value) >= 1:
-        text = f"{value:.4f}"
-    else:
-        text = f"{value:.6f}"
-    return f"{text} {f.unit}" if f.unit else text
 
 
 class AsciiPasteWidget(QWidget):
