@@ -11,7 +11,7 @@
   "telemetry_ids": {
     "1": {
       "label": "ID01 (MOBC HK)",
-      "label_ja": "ID01 (MOBC HK)",
+      "label_ja": "ID01 (MOBC ハウスキーピング)",
       "fields": [
         {
           "name": "packet_length",
