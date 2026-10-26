@@ -1,9 +1,9 @@
 # ERMINAZ-2U (DP0PQA, AMSAT-DL), not in gr-satellites' own catalog (it only has ERMINAZ-1U).
 # The downlink is a CCSDS TM transfer frame of 223 octets (RS(255,223) information block, SCID 102)
 # carrying one space packet; see src/data/telemetry_formats/98207.json and the SatNOGS erminaz2.ksy.
-# NOT yet verified on an IQ recording of ERMINAZ-2U: the framing follows the ERMINAZ-1U "new
-# framing" entry (CCSDS Reed-Solomon, conventional basis, CCSDS scrambler) with the 223-octet
-# frame size of the ksy, and the deviation is copied from it. Adjust if a recording shows otherwise.
+# Not verified on an IQ recording of our own, but DL7NDR's ground station (community.libre.space
+# /t/erminaz-2-digipeaters/15503) decodes ERMINAZ-2U with the same parameters (deviation 4800,
+# conventional RS, depth 1, CCSDS scrambler, frame size 223, sync word threshold 4).
 name: ERMINAZ-2U
 alternative_names:
    - DP0PQA
@@ -20,6 +20,8 @@ transmitters:
      framing: CCSDS Reed-Solomon
      frame size: 223
      RS basis: conventional
+     RS interleave depth: 1
      scrambler: CCSDS
+     syncword threshold: 4
      data:
      - *tlm

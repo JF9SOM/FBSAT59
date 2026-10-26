@@ -3,7 +3,8 @@
 One tab for the satellites that store and relay short messages. A protocol
 combo switches between the existing AX100 panel (MARMOTSat/GreenCube
 digipeaters, ``Ax100DigiTab``, unchanged), the ARICA-2 message box
-(``Arica2Panel``) and the Foresail-1p Skylink digipeater (``Foresail1pPanel``).
+(``Arica2Panel``), the Foresail-1p Skylink digipeater (``Foresail1pPanel``) and the
+ERMINAZ-2 digipeater (``ErminazPanel``).
 All panels stay alive while another is shown; only the visible one's input is
 meant to be used, so switching stops the hidden panels' receive path.
 
@@ -23,18 +24,21 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QStackedWidget, QV
 from i18n import _
 from ui.arica2_panel import Arica2Panel
 from ui.ax100_digi_tab import Ax100DigiTab
+from ui.erminaz_panel import ErminazPanel
 from ui.foresail1p_panel import Foresail1pPanel
 
 _SETTINGS_KEY = "message_box_tab_settings"
 _PROTOCOL_AX100 = "ax100"
 _PROTOCOL_ARICA2 = "arica2"
 _PROTOCOL_FORESAIL1P = "foresail1p"
+_PROTOCOL_ERMINAZ = "erminaz"
 # Catalog numbers the Quick Panel's satellite request is made with (MARMOTSat's
-# real, visible id; ARICA-2; Foresail-1p).
+# real, visible id; ARICA-2; Foresail-1p; ERMINAZ-2U, the selected ERMINAZ-2 follows its panel).
 _NORAD_BY_PROTOCOL = {
     _PROTOCOL_AX100: 69912,
     _PROTOCOL_ARICA2: 68796,
     _PROTOCOL_FORESAIL1P: 66778,
+    _PROTOCOL_ERMINAZ: 98207,
 }
 _TAB_KEY = "ax100digi"
 
@@ -62,6 +66,7 @@ class MessageBoxTab(QWidget):
         self._protocol_combo.addItem(_("AX100 digipeater (MARMOTSat)"), _PROTOCOL_AX100)
         self._protocol_combo.addItem(_("ARICA-2 message box"), _PROTOCOL_ARICA2)
         self._protocol_combo.addItem(_("Foresail-1p digipeater (Skylink)"), _PROTOCOL_FORESAIL1P)
+        self._protocol_combo.addItem(_("ERMINAZ-2 digipeater"), _PROTOCOL_ERMINAZ)
         row.addWidget(self._protocol_combo)
         row.addStretch(1)
         layout.addLayout(row)
@@ -73,6 +78,9 @@ class MessageBoxTab(QWidget):
         self._foresail = Foresail1pPanel(conn, radio_control, parent=self, autostart=False)
         self._stack.addWidget(self._arica2)
         self._stack.addWidget(self._foresail)
+        self._erminaz = ErminazPanel(conn, radio_control, parent=self, autostart=False)
+        self._stack.addWidget(self._erminaz)
+        self._erminaz.satellite_changed.connect(self._on_erminaz_satellite_changed)
         layout.addWidget(self._stack)
 
         saved = self._load_protocol()
@@ -101,7 +109,7 @@ class MessageBoxTab(QWidget):
         self._conn.commit()
 
     def current_protocol(self) -> str:
-        """The selected protocol key (``"ax100"``, ``"arica2"`` or ``"foresail1p"``)."""
+        """The selected protocol key (ax100, arica2, foresail1p or erminaz)."""
         return str(self._protocol_combo.currentData())
 
     @Slot(int)
@@ -112,7 +120,18 @@ class MessageBoxTab(QWidget):
 
     def request_satellite(self) -> None:
         """Ask MainWindow to select the current protocol's satellite/transponder."""
-        self.satellite_requested.emit(_TAB_KEY, _NORAD_BY_PROTOCOL[self.current_protocol()])
+        protocol = self.current_protocol()
+        norad = (
+            self._erminaz.current_norad()
+            if protocol == _PROTOCOL_ERMINAZ
+            else _NORAD_BY_PROTOCOL[protocol]
+        )
+        self.satellite_requested.emit(_TAB_KEY, norad)
+
+    @Slot()
+    def _on_erminaz_satellite_changed(self) -> None:
+        if self.current_protocol() == _PROTOCOL_ERMINAZ:
+            self.request_satellite()
 
     def _apply_protocol(self) -> None:
         """Show the chosen panel and move the input to it.
@@ -125,6 +144,8 @@ class MessageBoxTab(QWidget):
             self._arica2.stop_input()
         if protocol != _PROTOCOL_FORESAIL1P:
             self._foresail.stop_input()
+        if protocol != _PROTOCOL_ERMINAZ:
+            self._erminaz.stop_input()
         if protocol == _PROTOCOL_ARICA2:
             self._stack.setCurrentWidget(self._arica2)
             self._ax100._disconnect_sdr_audio()
@@ -135,6 +156,11 @@ class MessageBoxTab(QWidget):
             self._ax100._disconnect_sdr_audio()
             self._ax100._disconnect_soundcard_audio()
             self._foresail.start_input()
+        elif protocol == _PROTOCOL_ERMINAZ:
+            self._stack.setCurrentWidget(self._erminaz)
+            self._ax100._disconnect_sdr_audio()
+            self._ax100._disconnect_soundcard_audio()
+            self._erminaz.start_input()
         else:
             self._stack.setCurrentWidget(self._ax100)
             self._ax100._disconnect_sdr_audio()
@@ -150,6 +176,7 @@ class MessageBoxTab(QWidget):
         self._ax100.set_use_utc(use_utc)
         self._arica2.set_use_utc(use_utc)
         self._foresail.set_use_utc(use_utc)
+        self._erminaz.set_use_utc(use_utc)
 
     def refresh_sdr_pipeline(self, pipeline: Any) -> None:
         """Forward SDR (re)connects to the panel that is showing."""
@@ -158,11 +185,14 @@ class MessageBoxTab(QWidget):
             self._arica2.refresh_sdr_pipeline(pipeline)
         elif protocol == _PROTOCOL_FORESAIL1P:
             self._foresail.refresh_sdr_pipeline(pipeline)
+        elif protocol == _PROTOCOL_ERMINAZ:
+            self._erminaz.refresh_sdr_pipeline(pipeline)
         else:
             self._ax100.refresh_sdr_pipeline(pipeline)
 
     def closeEvent(self, event: Any) -> None:
         self._arica2.shutdown()
         self._foresail.shutdown()
+        self._erminaz.shutdown()
         self._ax100.close()
         super().closeEvent(event)

@@ -4539,3 +4539,33 @@ Aalto の公開ソース（github.com/aaltosatellite/skylink の `repeater_frame
 - **APRS-IS モニター**（`comms/aprs/aprs_is.py`・`ui/aprs_is_window.py`）: 受信専用（パスコード -1）。
   `rotate.aprs2.net:14580`。衛星のコールサイン表は `SATELLITE_CALLSIGNS`。
 
+
+### ERMINAZ-2 のデジピーター（2026-10-26、Message Box/Digipeater タブのプロトコル追加）
+
+ERMINAZ-2U / 2V / 2X（AMSAT-DL、DP0PQA / DP0PQB / DP0PQC、SCID 102 / 100 / 79、NORAD 98207 / 98208 / 98209）の
+デジピーターを「ERMINAZ-2 digipeater」として `ui/erminaz_panel.py` ＋ `comms/erminaz/`（`frames.py`・`tx.py`・`rx.py`）に実装した。
+**送信は電波では未検証**（アプリ自身の受信器で往復できることをテストで確認しただけ）。
+
+**仕様の出典**: DL7NDR の地上局（GNU Radio フローグラフ。community.libre.space/t/erminaz-2-digipeaters/15503 の添付 zip）、
+AMSAT-DL の衛星ファームウェア（gitlab.com/amsat-dl/erminaz/erminaz-comms-sw の `digipeater.c`・`telemetry.c`・`conf.h`）、
+SatNOGS `erminaz2.ksy`。フローグラフのコードを読んで組み立てを再現した。
+
+- **アップリンク**（TC フレーム、バイパス・VCID 1）: `20 <SCID> 04 <全長-1> 00 c6` ＋ スペースパケット（`12 58 c0 00 <長さ-1>`、APID 600）＋
+  データ `<ラジオ設定 u16> <宛先 6> <発信元 6> <本文> 00` ＋ CRC-16/CCITT-FALSE（全体）。コールサインは ASCII 6 文字、NUL 埋め（SSID なし）。
+  ラジオ設定 `0xA80C` = 衛星が再送するときの設定（PA ON・出力指数 5・FSK・RS・9600 baud）。本文は最大 66 文字（ファームの 81 バイトバッファ
+  − 設定 2 − コール 12 − NUL 1）。全体は 95 バイト以内（`OSDLP_MAX_TC_FRAME_SIZE`）。
+- **PHY**: TC フレーム → RS(255,223) **従来基底**（短縮）→ CCSDS スクランブラー → プリアンブル（0101…、既定 128 bit）＋ ASM `0x1ACFFC1D`
+  （Golay の長さフィールドなし）→ GMSK。リグの FM データ入力が変調するので、送信音声は Foresail-1p と同じガウシアン整形（BT 0.5）の NRZ。
+- **ダウンリンク**: 223 バイトの TM フレーム（RS 復号後）。APID 600 のスペースパケット（フレームの offset 6）の先頭が `<ラジオ設定> <宛先> <発信元> <本文>`。
+  衛星は `DIGIPEATER ON` のビーコンを 45 秒ごとに出す（`ALL` 宛、発信元は衛星のコール）。
+- **受信**: SDR は I/Q を FM 復調（48 kHz）、サウンドカードは FM 検波音声を、`comms/foresail/rx.py` と同じスライサー（8 タイミング位相・
+  ローパス 3 通り・両極性）に通す。**コヒーレント MSK 検波は使わない**（変調指数が 0.5 と分かっておらず、yml の偏移は 4800 Hz = h 1.0）。
+  テストで h = 0.5・1.0 の両方の I/Q と、両極性の音声から復号できることを確認。
+- **同梱 satyaml**（`gr_satellites_extra/ERMINAZ-2*.yml`）: DL7NDR の定義（偏移 4800・従来基底・深さ 1・同期語しきい値 4・フレーム 223）と一致
+  することを確認し、`RS interleave depth: 1` と `syncword threshold: 4` を追加した。
+- **翻訳**: 新しい UI 文字列は英語のまま（`.po` は未更新。既存の `.po` がすでに大きく古く、マージすると無関係な差分が 3600 行出るため）。
+
+**未確認**: ①アップリンクが衛星に受理されるか（電波で未送信）②ガード時間・送信タイミング（衛星が受信する条件は未確認）
+③実信号での受信感度（スライサー方式は SDR コヒーレント検波より弱信号に不利）④ SSDV・ファイル転送（APID 500・700/701）は未対応。
+
+テスト: `tests/test_erminaz_digipeater.py`（フレーム構造・CRC・往復）、`tests/test_erminaz_panel.py`。

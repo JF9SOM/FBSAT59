@@ -345,12 +345,24 @@ def is_foresail1p_digipeater_transmitter(xpdr: dict[str, Any]) -> bool:
     return "DIGIPEATER" in (xpdr.get("description") or "").upper()
 
 
+# ERMINAZ-2U / 2V / 2X (AMSAT-DL): the digipeater's transmitters (the CW beacon is excluded).
+_ERMINAZ_NORAD_IDS = frozenset({98207, 98208, 98209})
+
+
+def is_erminaz_digipeater_transmitter(xpdr: dict[str, Any]) -> bool:
+    """ERMINAZ-2's 9k6 transmitters whose SATNOGS description names the digipeater."""
+    if xpdr.get("norad_cat_id") not in _ERMINAZ_NORAD_IDS:
+        return False
+    return "DIGIPEATER" in (xpdr.get("description") or "").upper()
+
+
 def is_message_box_transmitter(xpdr: dict[str, Any]) -> bool:
-    """Satellites the Message Box/Digipeater tab serves (AX100 digipeater, ARICA-2, Foresail-1p)."""
+    """Satellites the Message Box/Digipeater tab serves (AX100, ARICA-2, Foresail-1p, ERMINAZ-2)."""
     return (
         is_ax100_digi_transmitter(xpdr)
         or is_arica2_message_box_transmitter(xpdr)
         or is_foresail1p_digipeater_transmitter(xpdr)
+        or is_erminaz_digipeater_transmitter(xpdr)
     )
 
 
