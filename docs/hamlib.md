@@ -1140,6 +1140,17 @@ CLAUDE.md参照、v0.1.19）。`rigctl -m 2`（Hamlib NET rigctlクライアン�
 | RTS/DTR | 接続時に Hamlib へ `ptt_type`=RTS/DTR・`ptt_pathname` を設定し、Hamlib が線を操作。**CAT と同じポートでも可**（Icom の USB で一般的なため）。ポート未指定なら接続失敗（ERROR） | アプリが自前の pyserial（`src/rig/ptt.py` の `SerialPttLine`）で線を操作。rigctld が使っていないポートが必要（Yaesu は別ポート）。接続時に開き、切断まで保持。開けなくても Rig 接続は維持し、`set_ptt(True)` だけ失敗（送信を中止） |
 | VOX | `set_ptt` は何も送らず True（Doppler の事前フラッシュだけ実行） | 同左 |
 
+- **Icom SAT モード機（IC-9100/9700/910H/821H）の Direct モードで、PTT ポートが CAT ポートと別の
+  RTS/DTR は、Hamlib ではなくアプリ自前の pyserial（`SerialPttLine`）で操作する（2026-10-26）**:
+  Windows の IC-9700（CAT=COM6、PTT=RTS on COM7）で、Hamlib に `ptt_type=RTS`/`ptt_pathname=COM7`
+  を渡すと `open()` が `Hamlib error -5` で繰り返し失敗し Rig 1 が接続できなかった一方、Test PTT
+  （pyserial）は同じ COM7 を問題なく開いて PTT を入れられた。ログに Hamlib 内部の詳細がなく原因は
+  未特定（他ソフトの競合ではない: 他アプリ未起動）。`HamlibDirectController._uses_pyserial_ptt()` が
+  該当条件（SAT モード機 かつ RTS/DTR かつ PTT ポート≠CAT ポート）を判定し、該当時は Hamlib に PTT
+  設定を渡さず、接続成功後に `_open_ptt_line()` で開いて切断まで保持、`set_ptt` は `_set_ptt_line()`
+  で線を操作する（NET モードと同じ方式）。PTT ポート＝CAT ポートの場合と他機種（FT-991A 等）は従来
+  どおり Hamlib。**実機未確認**（Windows の IC-9700 で RTS 接続と PTT が通るかは大澤さん待ち）。
+  別件: RTS→CAT に切り替えた後アプリ再起動まで PTT が入らない症状は原因未特定のまま。
 - `SerialPttLine.open()` は RTS/DTR を両方とも Low にしてから開く。`close()` は先に線を落とす。
 - NET の RTS/DTR では PTT OFF が rigctld に依存しない（`_ptt_off_independent()` が線を直接落とす）。
   共有ソケットが切れても送信中の PTT を強制解除しない（CAT 方式のときだけ緊急解除）。

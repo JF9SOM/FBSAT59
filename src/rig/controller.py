@@ -1170,6 +1170,9 @@ class HamlibDirectController(RigController):
         # A TX-only rig is treated as plain simplex even when the model has a
         # satmode (e.g. IC-9700 as the UL rig in a Rig 1 / Rig 2 split).
         self._satmode: bool = model_id in _SATMODE_RIG_IDS and radio_type != "tx_only"
+        # RTS/DTR keyed by the app's own pyserial line instead of Hamlib (see
+        # _uses_pyserial_ptt()); held open from connect() until disconnect().
+        self._ptt_line: SerialPttLine | None = None
         # True while IC-9100/9700 satmode is actually active on the rig.
         # Dynamically toggled: same-band pairs (V/V, U/U) use normal split
         # because IC-9100 satmode always assigns Main/Sub to different bands.
@@ -1273,13 +1276,21 @@ class HamlibDirectController(RigController):
                         with self._lock:
                             self._state = RigState.ERROR
                         return False
-                    # Hamlib drives the line itself. The port may be the CAT
-                    # port (typical for Icom USB) -- Hamlib shares it.
-                    rig.set_conf("ptt_type", "RTS" if self._ptt_method == PTT_RTS else "DTR")
-                    rig.set_conf("ptt_pathname", self._ptt_port)
-                    logger.info(
-                        "RigDirect: PTT via %s on %s", self._ptt_method.upper(), self._ptt_port
-                    )
+                    if self._uses_pyserial_ptt():
+                        # The app drives the line itself (opened after connect).
+                        logger.info(
+                            "RigDirect: PTT via %s on %s (pyserial)",
+                            self._ptt_method.upper(),
+                            self._ptt_port,
+                        )
+                    else:
+                        # Hamlib drives the line itself. The port may be the CAT
+                        # port (typical for Icom USB) -- Hamlib shares it.
+                        rig.set_conf("ptt_type", "RTS" if self._ptt_method == PTT_RTS else "DTR")
+                        rig.set_conf("ptt_pathname", self._ptt_port)
+                        logger.info(
+                            "RigDirect: PTT via %s on %s", self._ptt_method.upper(), self._ptt_port
+                        )
                 if self._civ_addr:
                     addr = normalize_civ_addr(self._civ_addr)
                     rig.set_conf("civaddr", addr)
@@ -1338,6 +1349,7 @@ class HamlibDirectController(RigController):
                 self._state = RigState.CONNECTED
             logger.info("RigDirect: connected to %s (model %d)", self._port, self._model_id)
             self._diag_register_handle()
+            self._open_ptt_line()
             return True
 
         except Exception as exc:
@@ -1357,11 +1369,53 @@ class HamlibDirectController(RigController):
                 logger.warning("RigDirect: %s", self.connect_hint)
             return False
 
+    def _uses_pyserial_ptt(self) -> bool:
+        """True when RTS/DTR PTT is keyed by our own pyserial line, not by Hamlib.
+
+        Only for Icom SAT-mode rigs (IC-9100/9700/910H/821H) whose PTT port is a
+        different port from CAT. On Windows an IC-9700 with PTT=RTS on its second
+        USB COM port never finished Hamlib's open() (error -5, GitHub report
+        2026-10) although the app's own Test PTT opened and keyed that same port
+        through pyserial. A PTT port equal to the CAT port cannot be opened
+        twice, so that case stays with Hamlib.
+        """
+        return (
+            self._ptt_method in PTT_LINE_METHODS
+            and self._satmode
+            and bool(self._ptt_port)
+            and self._ptt_port.strip().upper() != self._port.strip().upper()
+        )
+
+    def _open_ptt_line(self) -> None:
+        """Open the pyserial PTT port (no-op unless _uses_pyserial_ptt()).
+
+        A failure does not drop the rig connection (Doppler/RX keep working);
+        set_ptt(True) then fails, which aborts a transmission with a clear
+        "PTT command failed" message instead of transmitting unkeyed.
+        """
+        self._close_ptt_line()
+        if not self._uses_pyserial_ptt():
+            return
+        line = SerialPttLine(self._ptt_port, self._ptt_method)
+        if line.open(count_holders=False):
+            self._ptt_line = line
+        else:
+            self.connect_hint = busy_port_hint([self._ptt_port]) or self.connect_hint
+            if self.connect_hint:
+                logger.warning("RigDirect: %s", self.connect_hint)
+
+    def _close_ptt_line(self) -> None:
+        line, self._ptt_line = self._ptt_line, None
+        if line is not None:
+            line.close()
+
     def disconnect(self) -> None:
         """Disconnect from the serial port."""
         with self._lock:
             if self._state == RigState.DISCONNECTED:
+                self._close_ptt_line()
                 return
+        self._close_ptt_line()
         try:
             if self._rig is not None:
                 self._rig.close()
@@ -2120,6 +2174,8 @@ class HamlibDirectController(RigController):
         if self._ptt_method == PTT_VOX:
             # The rig's own VOX keys off the audio; nothing is sent from here.
             return True
+        if self._uses_pyserial_ptt():
+            return self._set_ptt_line(enabled)
         try:
             # GitHub Issue #26: this is the highest-risk unlocked call --
             # _TxWorker (FT4/Q65) fires it from its own thread right at TX
@@ -2145,6 +2201,29 @@ class HamlibDirectController(RigController):
             logger.error("RigDirect.set_ptt(%s): %s", enabled, exc)
             self._clear_tx_flags_if_keying(enabled)
             return False
+
+    def _set_ptt_line(self, enabled: bool) -> bool:
+        """Raise or drop the pyserial RTS/DTR line (key-off retried like NET mode)."""
+        line = self._ptt_line
+        if enabled:
+            ok = line is not None and line.key(True)
+            if not ok:
+                # A USB serial bridge that dropped off the bus and came back
+                # leaves the open port dead: reopen the port once.
+                logger.warning("RigDirect: PTT line would not key; reopening %s", self._ptt_port)
+                self._open_ptt_line()
+                line = self._ptt_line
+                ok = line is not None and line.key(True)
+            if not ok:
+                self._clear_tx_flags_if_keying(True)
+            return ok
+        for attempt in range(1, 4):
+            if line is not None and line.key(False):
+                return True
+            if attempt < 3:
+                time.sleep(0.2)
+        logger.error("RigDirect: PTT line off FAILED after 3 attempts")
+        return False
 
     def _clear_tx_flags_if_keying(self, enabled: bool) -> None:
         """Undo the TX-window flags when a key-up failed (the rig never keyed).

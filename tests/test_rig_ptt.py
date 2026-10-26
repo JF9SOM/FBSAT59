@@ -195,7 +195,7 @@ def test_direct_vox_sends_nothing() -> None:
 
 
 def test_direct_rts_still_goes_through_hamlib_set_ptt() -> None:
-    ctrl = _direct("rts")
+    ctrl = _direct("rts", port="/dev/cu.cat")  # same port as CAT: Hamlib shares it
     assert ctrl.set_ptt(True) is True
     ctrl._rig.set_ptt.assert_called_once()
 
@@ -244,6 +244,67 @@ def test_direct_cat_does_not_touch_hamlib_ptt_settings() -> None:
     ):
         ctrl.connect()
     assert "ptt_type" not in {c.args[0] for c in rig.set_conf.call_args_list}
+
+
+def _connect_direct(model_id: int, cat_port: str, method: str, ptt_port: str) -> tuple[Any, Any]:
+    """Connect a Direct controller against a fake Hamlib; return (controller, rig)."""
+    fake_hamlib = MagicMock()
+    rig = MagicMock(error_status=0)
+    fake_hamlib.Rig.return_value = rig
+    ctrl = HamlibDirectController(model_id=model_id, port=cat_port)
+    ctrl.set_ptt_config(method, ptt_port)
+    with (
+        patch("rig.controller.HAMLIB_AVAILABLE", True),
+        patch.dict(sys.modules, {"Hamlib": fake_hamlib}),
+        patch("rig.controller._open_rig_with_retry"),
+        patch.object(HamlibDirectController, "_init_split"),
+        patch("rig.controller.SerialPttLine") as line_cls,
+    ):
+        assert ctrl.connect() is True
+    ctrl._line_cls = line_cls  # type: ignore[attr-defined]
+    return ctrl, rig
+
+
+def test_icom_satmode_rts_on_a_separate_port_uses_pyserial_not_hamlib() -> None:
+    ctrl, rig = _connect_direct(3081, "COM6", "rts", "COM7")
+    assert "ptt_type" not in {c.args[0] for c in rig.set_conf.call_args_list}
+    ctrl._line_cls.assert_called_once_with("COM7", "rts")
+    ctrl._ptt_line.key.return_value = True
+    assert ctrl.set_ptt(True) is True
+    ctrl._ptt_line.key.assert_called_with(True)
+    rig.set_ptt.assert_not_called()
+
+
+def test_icom_satmode_rts_on_the_cat_port_stays_with_hamlib() -> None:
+    ctrl, rig = _connect_direct(3081, "COM6", "rts", "com6")
+    confs = {c.args[0]: c.args[1] for c in rig.set_conf.call_args_list}
+    assert confs["ptt_type"] == "RTS"
+    ctrl._line_cls.assert_not_called()
+
+
+def test_non_satmode_rig_rts_stays_with_hamlib() -> None:
+    ctrl, rig = _connect_direct(1035, "COM6", "dtr", "COM7")  # IC-7300-class, no SAT mode
+    confs = {c.args[0]: c.args[1] for c in rig.set_conf.call_args_list}
+    assert confs["ptt_type"] == "DTR"
+    ctrl._line_cls.assert_not_called()
+
+
+def test_pyserial_ptt_off_retries_and_disconnect_closes_the_line() -> None:
+    ctrl, _rig = _connect_direct(3081, "COM6", "rts", "COM7")
+    line = ctrl._ptt_line
+    line.key.side_effect = [False, True]
+    with patch("rig.controller.time.sleep"):
+        assert ctrl.set_ptt(False) is True
+    assert line.key.call_count == 2
+    ctrl.disconnect()
+    line.close.assert_called_once()
+    assert ctrl._ptt_line is None
+
+
+def test_pyserial_ptt_key_on_failure_reports_false() -> None:
+    ctrl, _rig = _connect_direct(3081, "COM6", "rts", "COM7")
+    ctrl._ptt_line.key.return_value = False
+    assert ctrl.set_ptt(True) is False
 
 
 # ---------------------------------------------------------------------------
