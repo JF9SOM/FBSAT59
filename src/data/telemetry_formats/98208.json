@@ -1,6 +1,7 @@
 {
   "norad": 98208,
   "name": "ERMINAZ-2V",
+  "callsign": "DP0PQB",
   "reference": "https://gitlab.com/librespacefoundation/satnogs/satnogs-decoders/-/raw/master/ksy/erminaz2.ksy",
   "note": "Same frame layout as ERMINAZ-2U (one SatNOGS erminaz2.ksy covers all three satellites), copied from 98207.json. Layout taken from the SatNOGS erminaz2.ksy decoder (CCSDS TM transfer frame, 223 octets, carrying one space packet), not yet checked against frames FBSAT59 received. The payload is the whole 223-octet frame as gr-satellites outputs it. Units are not documented, so values are raw. Offsets 0-5 are the frame header, the packet starts at 6 (6 octets of header) and its data at 12; the CLCW is the last 4 octets. The APID 600 message text is not decoded: it is NUL-terminated inside the packet, followed by idle octets (0xE0), and the decoder cannot stop at the NUL yet.",
   "frame_types": [
