@@ -305,6 +305,16 @@ class TestExtraSatyaml:
         assert tx["frame size"] == 223
         assert tx["baudrate"] == 9600
 
+    @pytest.mark.parametrize(("suffix", "norad"), [("2V", 98208), ("2X", 98209)])
+    def test_shipped_erminaz_vhf_definitions(self, suffix: str, norad: int) -> None:
+        import yaml
+
+        data = yaml.safe_load((backend._EXTRA_SATYAML_DIR / f"ERMINAZ-{suffix}.yml").read_text())
+        tx = data["transmitters"]["9k6 GMSK CCSDS downlink"]
+        assert data["norad"] == norad
+        assert tx["framing"] == "CCSDS Reed-Solomon"
+        assert tx["frame size"] == 223
+
 
 class TestListSatellitesUsesResolvedDir:
     def test_list_norads_reads_from_resolved_dir(self, tmp_path: Path) -> None:
