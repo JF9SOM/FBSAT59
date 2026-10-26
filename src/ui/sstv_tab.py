@@ -96,7 +96,7 @@ _ERMINAZ_SSDV_NORADS = (98207, 98208, 98209)  # ERMINAZ-2U, 2V, 2X
 _MODE_GEOSCAN_SSDV = "SSDV (GEOSCAN 9k6)"
 _GEOSCAN_SSDV_NORAD = 67284  # Lobachevsky
 _GR_MODES = (_MODE_GR_SSDV, _MODE_GEOSCAN_SSDV)  # the modes that run gr_satellites
-_FAST_DECODE_MODES = (_MODE_GR_SSDV, _MODE_GEOSCAN_SSDV, _MODE_FSK_SSDV)
+_FAST_DECODE_MODES = (_MODE_GR_SSDV, _MODE_GEOSCAN_SSDV, _MODE_FSK_SSDV, _MODE_ERMINAZ_SSDV)
 # SSDV (AX.25): only the G3RUH baud rates have a file decoder (the coherent MSK detector)
 _FAST_AX25_BAUDS = ("4800", "9600")
 _FSK_SSDV_NORAD = 68446  # HADES-SA
@@ -1323,12 +1323,16 @@ class SstvTab(QWidget):
         self._erminaz_reassembler = None
 
     def _on_erminaz_frame(self, rx: Any, _wall_end: float) -> None:
+        """A 223 octet TM frame from the live demodulator."""
+        self._on_erminaz_fast_frame(rx.payload)
+
+    def _on_erminaz_fast_frame(self, frame: bytes) -> None:
         """A 223 octet TM frame: join the space packets, use the SSDV ones (APID 500)."""
         from comms.erminaz.spp import TmReassembler, ssdv_packets
 
         if self._erminaz_reassembler is None:
             self._erminaz_reassembler = TmReassembler()
-        for packet in ssdv_packets(self._erminaz_reassembler.feed(rx.payload)):
+        for packet in ssdv_packets(self._erminaz_reassembler.feed(frame)):
             self._on_erminaz_packet(packet)
 
     def _on_erminaz_packet(self, packet: bytes) -> None:
@@ -1795,6 +1799,17 @@ class SstvTab(QWidget):
             self._ensure_ssdv_decoder()
             job = CoherentMskFileDecoder(path, int(self._baud_combo.currentData()), parent=self)
             job.frame_found.connect(self._on_ax25_fast_frame)
+        elif self._mode_combo.currentText() == _MODE_ERMINAZ_SSDV:
+            from comms.erminaz.rx import ErminazFileDecoder
+            from comms.erminaz.spp import TmReassembler
+
+            if self._erminaz_demod is not None:
+                self._status_label.setText("⚠ " + _("Stop the running decoder first."))
+                return False
+            self._ensure_ssdv_decoder()
+            self._erminaz_reassembler = TmReassembler()
+            job = ErminazFileDecoder(path, parent=self)
+            job.frame_found.connect(self._on_erminaz_fast_frame)
         else:
             from comms.sstv.fsk_ssdv import FskSsdvFileDecoder
 

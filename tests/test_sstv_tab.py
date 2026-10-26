@@ -1410,3 +1410,42 @@ def test_erminaz_frames_become_ssdv_packets(tab: SstvTab) -> None:
     assert tab._ssdv_frames == 2
     assert tab._ssdv_packets == 2
     assert tab._ssdv_decoder is not None and tab._ssdv_decoder.packet_count == 2
+
+
+class _FakeErminazJob(QObject):
+    frame_found = Signal(bytes)
+    progress = Signal(float, int)
+    decoded = Signal(float, float, int)
+    failed = Signal(str)
+    created: list[_FakeErminazJob] = []
+
+    def __init__(self, path: Path, parent: Any = None) -> None:
+        super().__init__(parent)
+        _FakeErminazJob.created.append(self)
+
+    def start(self) -> None:
+        pass
+
+    def cancel(self) -> None:
+        pass
+
+    def wait(self, _ms: int = 0) -> bool:
+        return True
+
+
+def test_erminaz_fast_decode_feeds_frames_to_the_ssdv_decoder(
+    tab: SstvTab, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import comms.erminaz.rx as rx_mod
+
+    _FakeErminazJob.created.clear()
+    monkeypatch.setattr(rx_mod, "ErminazFileDecoder", _FakeErminazJob)
+    tab._mode_combo.setCurrentText("SSDV (ERMINAZ-2 9k6)")
+    assert tab._combo_decode_speed.isVisibleTo(tab)
+    assert tab._start_fast_decode(tmp_path / "rec.iq.wav") is True
+    job = _FakeErminazJob.created[0]
+    for pid in (0, 1):
+        for frame in _erminaz_ssdv_frames(pid):
+            job.frame_found.emit(frame)
+    assert tab._ssdv_frames == 2
+    assert tab._ssdv_packets == 2

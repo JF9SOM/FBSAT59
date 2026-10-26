@@ -4580,7 +4580,8 @@ SatNOGS `erminaz2.ksy`。フローグラフのコードを読んで組み立て�
   先頭ヘッダー位置（FHP）= 0 が開始、続きのフレームは FHP = 続きの長さ（残りはアイドル `0xE0`）、データ部がすべて続きなら `0x7FF`、`0x7FE` は破棄。
   `comms/erminaz/spp.py` の `TmReassembler`（VCID ごと）が再構成し、`ssdv_packets()` が APID 500・256 バイトを取り出す。欠けた場合は破棄する。
 - **経路**: SDR の I/Q を `comms/erminaz/rx.py`（デジピーターと同じ FM 復調＋スライサー）で復号し、再構成して `validate_packet()` で CRC を確かめ、
-  既存の `SsdvDecoder`／パケット保管庫に渡す。**SDR 専用**（サウンドカード入力・Fast デコードは未対応。IQ 録音は「Decode IQ Recording…」の再生で使える）。
+  既存の `SsdvDecoder`／パケット保管庫に渡す。**SDR 専用**（サウンドカード入力は未対応）。**Fast デコード**（速度「高速」＋「Decode IQ Recording…」）は `ErminazFileDecoder`（`comms/erminaz/rx.py`）が
+  IQ 録音（WAV）を `ErminazRxStream` に流して全フレームを取り出し、再構成から先は通常と同じ（2026-10-26。合成 IQ の 3 パケット（6 フレーム）で確認。実録音は未確認）。
 - **UI**: モード「SSDV (ERMINAZ-2 9k6)」（2U/2V/2X）。衛星を選ぶとモードが自動で切り替わる。**AX.25 モードからは ERMINAZ-2 を外した**
   （フレームは AX.25 ではなく CCSDS で、受信できなかった）。
 - **未確認**: 実フレーム（SSDV がオンのときの受信）・TM フレームの分割規則（ライブラリのソースから読んだもの）・スタッフィング有効時の挙動。

@@ -11,10 +11,13 @@ slicer of ``comms.foresail.rx`` (8 timing phases, several low-pass cut-offs, bot
 from __future__ import annotations
 
 import math
+import threading
+import time
 from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
+from PySide6.QtCore import QThread, Signal
 
 from comms.ax100digi import rs_ccsds
 from comms.ax100digi.frame import SKYLINK_SYNCWORD, _bits_to_bytes, _syncword_bits
@@ -145,3 +148,72 @@ class ErminazAudioDemod(ErminazSdrDemod):
 
     def __init__(self, sample_rate: int = AUDIO_RATE, parent: Any = None) -> None:
         super().__init__(sample_rate, parent, audio=True)
+
+
+class ErminazFileDecoder(QThread):
+    """Decode a whole I/Q recording file with ErminazRxStream, much faster than real time.
+
+    ::
+
+        job = ErminazFileDecoder(path)
+        job.progress.connect(show)       # (float 0..1, int frames so far)
+        job.frame_found.connect(use)     # (bytes: a 223 octet TM frame)
+        job.decoded.connect(done)        # (recording seconds, elapsed seconds, frames)
+        job.failed.connect(error)        # (str)
+        job.start()
+        job.cancel()                     # stops early; decoded is then not emitted
+    """
+
+    frame_found: Signal = Signal(bytes)
+    progress: Signal = Signal(float, int)
+    decoded: Signal = Signal(float, float, int)
+    failed: Signal = Signal(str)
+
+    _PROGRESS_INTERVAL_S = 0.25
+
+    def __init__(self, path: Any, parent: Any = None) -> None:
+        super().__init__(parent)
+        self._path = path
+        self._cancel = threading.Event()
+
+    def cancel(self) -> None:
+        """Ask the worker to stop at the next block and wait for it."""
+        self._cancel.set()
+        self.wait(5000)
+
+    def run(self) -> None:
+        from comms.telemetry.iq_wav import WavError, iter_iq_blocks, read_wav_info
+
+        if not _SCIPY_AVAILABLE:
+            self.failed.emit("scipy is not installed")
+            return
+        try:
+            info = read_wav_info(self._path)
+        except (WavError, ValueError) as exc:
+            self.failed.emit(str(exc))
+            return
+        stream = ErminazRxStream(info.sample_rate)
+        started = last_report = time.monotonic()
+        frames = 0
+        done = 0
+        try:
+            for block in iter_iq_blocks(self._path, info):
+                if self._cancel.is_set():
+                    return
+                for frame in stream.feed(block):
+                    frames += 1
+                    self.frame_found.emit(frame.payload)
+                done += len(block)
+                now = time.monotonic()
+                if now - last_report >= self._PROGRESS_INTERVAL_S:
+                    last_report = now
+                    self.progress.emit(done / max(info.frames, 1), frames)
+            # Silence completes the last window, so a frame at the very end is not lost.
+            for frame in stream.feed(np.zeros(int(4 * info.sample_rate), dtype=np.complex64)):
+                frames += 1
+                self.frame_found.emit(frame.payload)
+        except (OSError, ValueError) as exc:
+            self.failed.emit(str(exc))
+            return
+        self.progress.emit(1.0, frames)
+        self.decoded.emit(info.duration_s, time.monotonic() - started, frames)
