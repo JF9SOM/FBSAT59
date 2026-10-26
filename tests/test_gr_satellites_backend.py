@@ -294,6 +294,17 @@ class TestExtraSatyaml:
         assert tx["frame size"] == 74
         assert tx["baudrate"] == 9600
 
+    def test_shipped_erminaz_2u_definition(self) -> None:
+        import yaml
+
+        path = backend._EXTRA_SATYAML_DIR / "ERMINAZ-2U.yml"
+        data = yaml.safe_load(path.read_text())
+        tx = data["transmitters"]["9k6 GMSK CCSDS downlink"]
+        assert data["norad"] == 98207
+        assert tx["framing"] == "CCSDS Reed-Solomon"
+        assert tx["frame size"] == 223
+        assert tx["baudrate"] == 9600
+
 
 class TestListSatellitesUsesResolvedDir:
     def test_list_norads_reads_from_resolved_dir(self, tmp_path: Path) -> None:
