@@ -618,3 +618,55 @@ def test_ptt_module_imports_without_unix_only_modules(monkeypatch) -> None:
     mod = importlib.import_module("rig.ptt")
     monkeypatch.setattr(sys, "platform", "win32")
     assert mod._modem_lines(object()) == "n/a"
+
+
+# ---------------------------------------------------------------------------
+# Busy-port diagnosis after a failed connect
+# ---------------------------------------------------------------------------
+
+
+def test_classify_port_open_error() -> None:
+    from rig.ptt import PORT_BUSY, PORT_MISSING, PORT_UNKNOWN, classify_port_open_error
+
+    busy = Exception(
+        "could not open port 'COM7': PermissionError(13, 'Access is denied.', None, 5)"
+    )
+    missing = Exception(
+        "could not open port 'COM9': FileNotFoundError(2, 'The system cannot find the file')"
+    )
+    assert classify_port_open_error(busy) == PORT_BUSY
+    assert classify_port_open_error(missing) == PORT_MISSING
+    assert classify_port_open_error(Exception("boom")) == PORT_UNKNOWN
+
+
+def test_busy_port_hint_names_only_the_busy_port() -> None:
+    from rig import ptt
+
+    statuses = {"COM6": ptt.PORT_FREE, "COM7": ptt.PORT_BUSY}
+    with patch.object(ptt, "probe_serial_port", side_effect=lambda p: statuses[p]):
+        hint = ptt.busy_port_hint(["COM6", "COM7", "COM7", ""])
+    assert "COM7 is in use by another program" in hint
+    assert "COM6" not in hint
+
+
+def test_busy_port_hint_empty_when_all_free() -> None:
+    from rig import ptt
+
+    with patch.object(ptt, "probe_serial_port", return_value=ptt.PORT_FREE):
+        assert ptt.busy_port_hint(["COM6"]) == ""
+
+
+def test_failed_direct_connect_sets_hint_for_busy_ptt_port() -> None:
+    ctrl = HamlibDirectController(port="COM6", model_id=3081)
+    ctrl.set_ptt_config("rts", "COM7")
+    fake_hamlib = MagicMock()
+    fake_hamlib.Rig.side_effect = RuntimeError("open failed")
+    with (
+        patch("rig.controller.HAMLIB_AVAILABLE", True),
+        patch.dict(sys.modules, {"Hamlib": fake_hamlib}),
+        patch("rig.controller.busy_port_hint", return_value="COM7 is in use") as hint,
+    ):
+        assert ctrl.connect() is False
+    hint.assert_called_once_with(["COM6", "COM7"])
+    assert ctrl.connect_hint == "COM7 is in use"
+    assert ctrl.state == RigState.ERROR

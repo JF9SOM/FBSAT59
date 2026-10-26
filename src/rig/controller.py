@@ -44,6 +44,7 @@ from rig.ptt import (
     PTT_RTS,
     PTT_VOX,
     SerialPttLine,
+    busy_port_hint,
     normalize_ptt_method,
 )
 from rig.rot_record_log import get_rotor_record_logger
@@ -752,6 +753,9 @@ def _open_rig_with_retry(
             with contextlib.suppress(Exception):
                 rig.close()
             time.sleep(retry_delay)
+    # Release whatever the failed open() left behind so the caller can probe the ports.
+    with contextlib.suppress(Exception):
+        rig.close()
     raise RigControlError(f"{what} failed after {attempts} attempts (Hamlib error {last_status})")
 
 
@@ -801,6 +805,9 @@ class RigController(ABC):
         # How this rig is keyed (see rig.ptt): CAT (default), RTS, DTR or VOX.
         self._ptt_method: str = PTT_CAT
         self._ptt_port: str = ""
+        # Why the last connect() failed, in words for the operator ("" when
+        # unknown or connected). Set by HamlibDirectController (busy serial port).
+        self.connect_hint: str = ""
         # UL frequency (Hz) most recently actually written via CAT. Redeclared
         # (same type) in each subclass's own __init__, which is where it is
         # actually maintained -- see the last_ul_hz property below.
@@ -1243,6 +1250,7 @@ class HamlibDirectController(RigController):
             if self._state == RigState.CONNECTED:
                 return True
             self._state = RigState.CONNECTING
+        self.connect_hint = ""
 
         try:
             if HAMLIB_AVAILABLE:
@@ -1336,6 +1344,17 @@ class HamlibDirectController(RigController):
             with self._lock:
                 self._state = RigState.ERROR
             logger.error("RigDirect: connect failed — %s", exc)
+            # Hamlib reports every open failure as the same I/O error; find out
+            # whether another program holds the CAT or the RTS/DTR PTT port.
+            ports = [self._port]
+            if self._ptt_method in PTT_LINE_METHODS:
+                ports.append(self._ptt_port)
+            try:
+                self.connect_hint = busy_port_hint(ports)
+            except Exception:
+                logger.exception("RigDirect: serial port probe failed")
+            if self.connect_hint:
+                logger.warning("RigDirect: %s", self.connect_hint)
             return False
 
     def disconnect(self) -> None:

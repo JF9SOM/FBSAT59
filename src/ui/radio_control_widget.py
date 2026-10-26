@@ -1225,6 +1225,10 @@ class RadioControlWidget(QWidget):
             elif self._pending_comms_tab == "ft4":
                 self.ft4_transponder_selected.emit()
             self._pending_comms_tab = None
+        else:
+            hint = getattr(self._rig1, "connect_hint", "") if self._rig1 is not None else ""
+            if hint:
+                QMessageBox.warning(self, _("Rig 1"), hint)
         self._update_rig1_status()
 
     def notify_playback_connected(self, slot: int) -> None:

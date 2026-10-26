@@ -179,3 +179,76 @@ class SerialPttLine:
             ser.close()
         except Exception as exc:
             logger.warning("PTT %s: close failed: %s", self._line.upper(), exc)
+
+
+PORT_FREE = "free"
+PORT_BUSY = "busy"
+PORT_MISSING = "missing"
+PORT_UNKNOWN = "unknown"
+
+
+def classify_port_open_error(exc: BaseException) -> str:
+    """Map a pyserial open() failure to PORT_BUSY / PORT_MISSING / PORT_UNKNOWN.
+
+    pyserial wraps the OS error in a SerialException whose text carries the
+    original class (Windows: PermissionError(13, 'Access is denied'); POSIX:
+    'Resource busy' / 'Permission denied'), so the text is matched too.
+    """
+    text = f"{type(exc).__name__}: {exc}".lower()
+    if "filenotfound" in text or "no such file" in text or "cannot find the file" in text:
+        return PORT_MISSING
+    if any(k in text for k in ("permissionerror", "access is denied", "resource busy", "busy")):
+        return PORT_BUSY
+    return PORT_UNKNOWN
+
+
+def probe_serial_port(port: str) -> str:
+    """Try to open and immediately close *port*; PORT_FREE when it opened.
+
+    Never raises. Used only after a rig connect failed and the rig's own
+    handle is closed, to tell "another program holds this port" apart from
+    other causes (Hamlib reports every open failure as the same error -5).
+    """
+    try:
+        import serial
+
+        ser = serial.Serial()
+        ser.port = port
+        ser.rts = False
+        ser.dtr = False
+        ser.open()
+        ser.close()
+        return PORT_FREE
+    except Exception as exc:
+        return classify_port_open_error(exc)
+
+
+def busy_port_hint(ports: list[str]) -> str:
+    """Human-readable warning naming the ports another program holds, or "".
+
+    Probes each distinct non-empty port in *ports* and logs every result so
+    the log shows which port was free, busy or missing at the failure.
+    """
+    busy: list[str] = []
+    missing: list[str] = []
+    seen: set[str] = set()
+    for port in ports:
+        if not port or port in seen:
+            continue
+        seen.add(port)
+        status = probe_serial_port(port)
+        logger.info("Serial port probe after connect failure: %s -> %s", port, status)
+        if status == PORT_BUSY:
+            busy.append(port)
+        elif status == PORT_MISSING:
+            missing.append(port)
+    parts: list[str] = []
+    if busy:
+        parts.append(
+            f"{', '.join(busy)} is in use by another program. "
+            "Close any other software using it (loggers, CI-V tools, WSJT-X, "
+            "the radio maker's software), then connect again."
+        )
+    if missing:
+        parts.append(f"{', '.join(missing)} was not found. Check the port in Rig Settings.")
+    return " ".join(parts)
