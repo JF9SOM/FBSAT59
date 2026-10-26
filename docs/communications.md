@@ -4569,3 +4569,19 @@ SatNOGS `erminaz2.ksy`。フローグラフのコードを読んで組み立て�
 ③実信号での受信感度（スライサー方式は SDR コヒーレント検波より弱信号に不利）④ SSDV・ファイル転送（APID 500・700/701）は未対応。
 
 テスト: `tests/test_erminaz_digipeater.py`（フレーム構造・CRC・往復）、`tests/test_erminaz_panel.py`。
+
+#### ERMINAZ-2 の SSDV（2026-10-26、SSDV タブのモード「SSDV (ERMINAZ-2 9k6)」）
+
+- **仕様の出典**: ファームウェア（`erminaz-comms-sw` の `ssdv.c`・`telemetry.c`・`conf.h`）と OSDLP ライブラリ（`osdlp_tm.c`）。
+  SSDV は **FEC なしの標準 SSDV（タイプ 0x67、256 バイト、ペイロード 237、CRC-32）**。コールサインは衛星のもの（DP0PQA/B/C）に書き換えて送られる。
+  1 パケット = スペースパケット（APID 500、VCID 1、データ 256 バイト）。`/PIC3` の画像を順に送り、画像の間に約 60 秒（既定 45 枚）、
+  SD が使えなければ AMSAT-DL のロゴ。開始は HMAC 認証付きコマンドなので**地上局は受信専用**（AMSAT-DL が SSDV をオンにしたときだけ送られる）。
+- **フレームをまたぐ**: スペースパケット 262 バイトは TM フレームのデータ部（223 − 6 − OCF 4 = 213 バイト）に入らず 2 フレームになる。
+  先頭ヘッダー位置（FHP）= 0 が開始、続きのフレームは FHP = 続きの長さ（残りはアイドル `0xE0`）、データ部がすべて続きなら `0x7FF`、`0x7FE` は破棄。
+  `comms/erminaz/spp.py` の `TmReassembler`（VCID ごと）が再構成し、`ssdv_packets()` が APID 500・256 バイトを取り出す。欠けた場合は破棄する。
+- **経路**: SDR の I/Q を `comms/erminaz/rx.py`（デジピーターと同じ FM 復調＋スライサー）で復号し、再構成して `validate_packet()` で CRC を確かめ、
+  既存の `SsdvDecoder`／パケット保管庫に渡す。**SDR 専用**（サウンドカード入力・Fast デコードは未対応。IQ 録音は「Decode IQ Recording…」の再生で使える）。
+- **UI**: モード「SSDV (ERMINAZ-2 9k6)」（2U/2V/2X）。衛星を選ぶとモードが自動で切り替わる。**AX.25 モードからは ERMINAZ-2 を外した**
+  （フレームは AX.25 ではなく CCSDS で、受信できなかった）。
+- **未確認**: 実フレーム（SSDV がオンのときの受信）・TM フレームの分割規則（ライブラリのソースから読んだもの）・スタッフィング有効時の挙動。
+- テスト: `tests/test_erminaz_spp.py`（分割・連続・スタッフィング・欠落）、`tests/test_sstv_tab.py`（モード・衛星・購読・パケット）。

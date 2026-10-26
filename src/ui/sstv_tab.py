@@ -86,6 +86,10 @@ _MODE_SSDV = "SSDV (AX.25)"
 _MODE_GR_SSDV = "SSDV (CCSDS BPSK 9k6)"
 # Fourth mode: bare 800 baud 2FSK SSDV (HADES-SA), demodulated by comms.sstv.fsk_ssdv.
 _MODE_FSK_SSDV = "SSDV (2FSK 800bps)"
+# Fifth mode: ERMINAZ-2U / 2V / 2X SSDV (APID 500 space packets over CCSDS TM frames, 9k6 GMSK),
+# received by this app's own demodulator (comms.erminaz) from an SDR's I/Q.
+_MODE_ERMINAZ_SSDV = "SSDV (ERMINAZ-2 9k6)"
+_ERMINAZ_SSDV_NORADS = (98207, 98208, 98209)  # ERMINAZ-2U, 2V, 2X
 # Fifth mode: Lobachevsky (Geoscan 16U), 9k6 GFSK in Geoscan's own CC1125 framing (not AX.25).
 # It runs the same gr_satellites decoder as the Telemetry tab and looks for ordinary SSDV
 # packets (sync 55 66 / 55 67 + CRC-32) in the frames. No SSDV frame has been received yet.
@@ -284,6 +288,9 @@ class SstvTab(QWidget):
         self._gr_backend: Any | None = None  # GrSatellitesBackend (gr mode only)
         self._fsk_demod: Any | None = None  # FskSsdvSdrDemod (2FSK mode only)
         self._fsk_demod_pipeline: Any | None = None  # the pipeline it is subscribed to
+        self._erminaz_demod: Any | None = None  # ErminazSdrDemod (ERMINAZ-2 mode only)
+        self._erminaz_pipeline: Any | None = None  # the pipeline it is subscribed to
+        self._erminaz_reassembler: Any | None = None  # TmReassembler (frames -> space packets)
         # Every valid SSDV packet of every mode is kept in the database, so a picture can
         # be built from several passes (comms.sstv.packet_store).
         self._store: SsdvPacketStore | None = (
@@ -334,7 +341,14 @@ class SstvTab(QWidget):
         top.addWidget(QLabel(_("Mode:")))
         self._mode_combo = QComboBox()
         self._mode_combo.addItems(
-            [_MODE_SSTV, _MODE_SSDV, _MODE_GR_SSDV, _MODE_GEOSCAN_SSDV, _MODE_FSK_SSDV]
+            [
+                _MODE_SSTV,
+                _MODE_SSDV,
+                _MODE_GR_SSDV,
+                _MODE_GEOSCAN_SSDV,
+                _MODE_FSK_SSDV,
+                _MODE_ERMINAZ_SSDV,
+            ]
         )
         self._mode_combo.setFixedWidth(170)
         self._mode_combo.currentTextChanged.connect(self._on_mode_changed)
@@ -400,8 +414,8 @@ class SstvTab(QWidget):
                 "VIZARD-meteo Robot72).\n"
                 "\n"
                 "SSDV (AX.25): 1200 / 4800 / 9600 baud AX.25 packets through Direwolf "
-                "(Rig + sound card, or SDR). Listed with SSDV: ERMINAZ-2U (9k6 GMSK), "
-                "LAPAN-A2 (1200 baud AFSK). Not yet verified with a real reception.\n"
+                "(Rig + sound card, or SDR). Listed with SSDV: LAPAN-A2 (1200 baud AFSK). "
+                "Not yet verified with a real reception.\n"
                 "\n"
                 "SSDV (CCSDS BPSK 9k6): ASRTU-1 / AO-123 (NORAD 61781) 436.210 MHz, "
                 "decoded by gr-satellites. Needs an SDR.\n"
@@ -416,6 +430,13 @@ class SstvTab(QWidget):
                 "Geoscan's own framing (not AX.25), decoded by gr-satellites like the "
                 "Telemetry tab. Needs an SDR. No SSDV frame has been received yet. Selecting "
                 "Lobachevsky switches the mode automatically."
+            )
+            + _(
+                "\n\nSSDV (ERMINAZ-2 9k6): ERMINAZ-2U (435.900 MHz) / 2V (145.920 MHz) / 2X "
+                "(145.960 MHz). CCSDS TM frames carrying SSDV space packets (APID 500), "
+                "demodulated by this app. Needs an SDR. The satellite sends SSDV only while "
+                "AMSAT-DL has switched it on. Not yet verified with a real reception. Selecting "
+                "one of them switches the mode automatically."
             )
         )
         top.addWidget(_sstv_help)
@@ -672,6 +693,8 @@ class SstvTab(QWidget):
             self._start_gr_ssdv()
         elif mode == _MODE_FSK_SSDV:
             self._start_fsk_ssdv()
+        elif mode == _MODE_ERMINAZ_SSDV:
+            self._start_erminaz_ssdv()
 
     def _load_baud_combo(self) -> None:
         """Show the stored / transmitter-derived baud without applying it."""
@@ -724,6 +747,7 @@ class SstvTab(QWidget):
             _FSK_SSDV_NORAD: _MODE_FSK_SSDV,
             _GR_SSDV_NORAD: _MODE_GR_SSDV,
             _GEOSCAN_SSDV_NORAD: _MODE_GEOSCAN_SSDV,
+            **dict.fromkeys(_ERMINAZ_SSDV_NORADS, _MODE_ERMINAZ_SSDV),
         }.get(norad)
         if wanted is not None and self._mode_combo.currentText() != wanted:
             self._mode_combo.setCurrentText(wanted)
@@ -745,6 +769,8 @@ class SstvTab(QWidget):
             return {_GEOSCAN_SSDV_NORAD}
         if mode == _MODE_FSK_SSDV:
             return {_FSK_SSDV_NORAD}
+        if mode == _MODE_ERMINAZ_SSDV:
+            return set(_ERMINAZ_SSDV_NORADS)
         if not hasattr(self._conn, "execute"):
             return set()
         keyword = "SSTV" if mode == _MODE_SSTV else "SSDV"
@@ -763,6 +789,7 @@ class SstvTab(QWidget):
         if mode == _MODE_SSDV:
             # These have their own modes (Lobachevsky is not AX.25 at all)
             norads -= {_GR_SSDV_NORAD, _FSK_SSDV_NORAD, _GEOSCAN_SSDV_NORAD}
+            norads -= set(_ERMINAZ_SSDV_NORADS)
             norads.add(_ARICA2_NORAD)
         return norads
 
@@ -1088,6 +1115,7 @@ class SstvTab(QWidget):
         """Release this tab's claim on the AX.25 pipeline (and stop gr_satellites)."""
         self._stop_gr_ssdv_reception()
         self._stop_fsk_ssdv_reception()
+        self._stop_erminaz_ssdv_reception()
         if self._ssdv_reception:
             self._engine().stop(_ENGINE_OWNER)
             self._ssdv_reception = False
@@ -1247,6 +1275,80 @@ class SstvTab(QWidget):
         self._update_raw_count()
 
     # ------------------------------------------------------------------ #
+    # SSDV (ERMINAZ-2 9k6) mode (ERMINAZ-2U / 2V / 2X)
+    # ------------------------------------------------------------------ #
+
+    def _start_erminaz_ssdv(self) -> None:
+        """ERMINAZ-2 mode: demodulate the SDR's I/Q with ErminazSdrDemod (needs an SDR)."""
+        if self._erminaz_demod is not None:
+            return
+        self._ensure_ssdv_decoder()
+        pipeline = self._find_sdr_pipeline()
+        if pipeline is None:
+            # The red "Input:" notice at the top already says this.
+            self._status_label.setText("")
+            return
+        from comms.erminaz.rx import ErminazSdrDemod
+        from comms.erminaz.spp import TmReassembler
+
+        try:
+            demod = ErminazSdrDemod(int(pipeline._device.sample_rate), parent=self)
+            demod.frame_received.connect(self._on_erminaz_frame)
+            demod.start()
+            self._erminaz_demod = demod  # held before subscribing so a failure is cleaned up
+            pipeline.subscribe(demod.push_samples)
+            self._erminaz_pipeline = pipeline
+        except Exception:
+            logger.exception("SSDV (ERMINAZ-2): could not attach to the SDR pipeline")
+            self._stop_erminaz_ssdv_reception()
+            self._status_label.setText(_("⚠ Could not start the ERMINAZ-2 demodulator."))
+            return
+        self._erminaz_reassembler = TmReassembler()
+        self._ssdv_frames = 0
+        self._ssdv_packets = 0
+        self._update_raw_count()
+        self._status_label.setText(_("SSDV (ERMINAZ-2 9k6): waiting for frames…"))
+
+    def _stop_erminaz_ssdv_reception(self) -> None:
+        """Detach and stop the ERMINAZ-2 demodulator, if running."""
+        if self._erminaz_pipeline is not None and self._erminaz_demod is not None:
+            with contextlib.suppress(Exception):
+                self._erminaz_pipeline.unsubscribe(self._erminaz_demod.push_samples)
+        self._erminaz_pipeline = None
+        if self._erminaz_demod is not None:
+            with contextlib.suppress(Exception):
+                self._erminaz_demod.frame_received.disconnect()
+            self._erminaz_demod.stop()
+            self._erminaz_demod = None
+        self._erminaz_reassembler = None
+
+    def _on_erminaz_frame(self, rx: Any, _wall_end: float) -> None:
+        """A 223 octet TM frame: join the space packets, use the SSDV ones (APID 500)."""
+        from comms.erminaz.spp import TmReassembler, ssdv_packets
+
+        if self._erminaz_reassembler is None:
+            self._erminaz_reassembler = TmReassembler()
+        for packet in ssdv_packets(self._erminaz_reassembler.feed(rx.payload)):
+            self._on_erminaz_packet(packet)
+
+    def _on_erminaz_packet(self, packet: bytes) -> None:
+        """A 256 octet SSDV packet of an ERMINAZ-2 satellite: show it, keep it, feed the decoder.
+
+        Only packets that are good (CRC-32 right) are kept, so a bit-errored copy can never
+        replace a good one.
+        """
+        self._raw_edit.append_frame(packet)
+        self._ssdv_frames += 1
+        valid = validate_packet(packet)
+        selected = self._sat_combo.currentData()
+        norad = int(selected) if selected in _ERMINAZ_SSDV_NORADS else _ERMINAZ_SSDV_NORADS[0]
+        if valid is not None and self._store_and_feed(
+            KIND_STANDARD, valid, norad, self._ensure_ssdv_decoder()
+        ):
+            self._ssdv_packets += 1
+        self._update_raw_count()
+
+    # ------------------------------------------------------------------ #
     # Stored packets (pictures built from several passes)
     # ------------------------------------------------------------------ #
 
@@ -1392,6 +1494,7 @@ class SstvTab(QWidget):
         self._active_group.clear()  # flush() empties the decoders below
         self._stop_gr_ssdv_reception()
         self._stop_fsk_ssdv_reception()
+        self._stop_erminaz_ssdv_reception()
         if self._gr_ssdv_decoder is not None:
             self._gr_ssdv_decoder.flush()
         if self._aprs_engine is not None:
@@ -1588,6 +1691,9 @@ class SstvTab(QWidget):
         elif mode_text == _MODE_FSK_SSDV:
             self._view_tabs.setCurrentWidget(self._raw_page)
             self._start_fsk_ssdv()
+        elif mode_text == _MODE_ERMINAZ_SSDV:
+            self._view_tabs.setCurrentWidget(self._raw_page)
+            self._start_erminaz_ssdv()
         else:
             self._view_tabs.setCurrentWidget(self._raw_page)
             self._start_ssdv()
@@ -1947,7 +2053,13 @@ class SstvTab(QWidget):
     @staticmethod
     def _save_mode_name(mode_text: str) -> str:
         """ "SSDV" for both SSDV modes (they share a folder), else "SSTV"."""
-        ssdv_modes = (_MODE_SSDV, _MODE_GR_SSDV, _MODE_GEOSCAN_SSDV, _MODE_FSK_SSDV)
+        ssdv_modes = (
+            _MODE_SSDV,
+            _MODE_GR_SSDV,
+            _MODE_GEOSCAN_SSDV,
+            _MODE_FSK_SSDV,
+            _MODE_ERMINAZ_SSDV,
+        )
         return "SSDV" if mode_text in ssdv_modes else "SSTV"
 
     @staticmethod

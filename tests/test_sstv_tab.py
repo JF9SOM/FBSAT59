@@ -710,6 +710,7 @@ def test_mode_combo_offers_the_gr_satellites_mode(tab: SstvTab) -> None:
         "SSDV (CCSDS BPSK 9k6)",
         "SSDV (GEOSCAN 9k6)",
         "SSDV (2FSK 800bps)",
+        "SSDV (ERMINAZ-2 9k6)",
     ]
 
 
@@ -1341,3 +1342,71 @@ def test_geoscan_fast_decode_runs_the_telemetry_tabs_decoder(
     job.frame_found.emit("", 2.0, bytes.fromhex("12984635bd46870000004850d56a"))
     assert tab._ssdv_frames == 2
     assert tab._ssdv_packets == 1
+
+
+# --------------------------------------------------------------------------
+# SSDV (ERMINAZ-2 9k6): APID 500 space packets in CCSDS TM frames
+# --------------------------------------------------------------------------
+
+
+def _erminaz_ssdv_frames(pid: int, image: int = 9) -> list[bytes]:
+    """The two TM frames the satellite sends for one 256 octet no-FEC SSDV packet."""
+    from tests.test_erminaz_spp import _frame, _space_packet
+    from tests.test_ssdv import make_packet
+
+    packet = make_packet(nofec=True, image=image, pid=pid)
+    sp = _space_packet(500, packet)
+    return [_frame(sp[:213], 0), _frame(sp[213:], len(sp) - 213)]
+
+
+def test_erminaz_mode_lists_the_three_satellites_and_not_ax25(
+    tab: SstvTab, conn: sqlite3.Connection
+) -> None:
+    conn.execute("CREATE TABLE satellites (norad_cat_id INTEGER PRIMARY KEY, name TEXT)")
+    conn.execute(
+        "CREATE TABLE transmitters (uuid TEXT, norad_cat_id INTEGER, description TEXT,"
+        " mode TEXT, baud INTEGER, alive INTEGER)"
+    )
+    conn.execute("INSERT INTO satellites VALUES (98207, 'ERMINAZ-2U')")
+    conn.execute(
+        "INSERT INTO transmitters VALUES ('u', 98207, 'Mode-U/U 9k6 GMSK Telemetry, SSDV', "
+        "'GMSK', 9600, 1)"
+    )
+    conn.commit()
+    assert tab._mode_norads("SSDV (ERMINAZ-2 9k6)") == {98207, 98208, 98209}
+    assert not {98207, 98208, 98209} & tab._mode_norads("SSDV (AX.25)")
+
+
+def test_selecting_an_erminaz_satellite_switches_to_its_mode(tab: SstvTab) -> None:
+    tab._auto_select_ssdv_mode(98208)
+    assert tab._mode_combo.currentText() == "SSDV (ERMINAZ-2 9k6)"
+
+
+def test_erminaz_mode_without_an_sdr_says_so(tab: SstvTab) -> None:
+    tab._mode_combo.setCurrentText("SSDV (ERMINAZ-2 9k6)")
+    assert tab._view_tabs.currentWidget() is tab._raw_page
+    assert tab._erminaz_demod is None
+
+
+def test_erminaz_mode_subscribes_to_the_sdr_and_stops_on_leaving(
+    tab: SstvTab, rc: _FakeRadioControl
+) -> None:
+    pipeline = _connect_fsk_sdr(rc)
+    tab._mode_combo.setCurrentText("SSDV (ERMINAZ-2 9k6)")
+    assert tab._erminaz_demod is not None
+    assert [cb for cb in pipeline.subscribers if cb.__self__ is tab._erminaz_demod] != []
+    tab._mode_combo.setCurrentText("SSDV (AX.25)")
+    assert tab._erminaz_demod is None
+    assert [cb for cb in pipeline.subscribers if "Erminaz" in type(cb.__self__).__name__] == []
+
+
+def test_erminaz_frames_become_ssdv_packets(tab: SstvTab) -> None:
+    from comms.erminaz.rx import ErminazRxFrame
+
+    tab._mode_combo.setCurrentText("SSDV (ERMINAZ-2 9k6)")
+    for pid in (0, 1):
+        for frame in _erminaz_ssdv_frames(pid):
+            tab._on_erminaz_frame(ErminazRxFrame(frame, 1.0, 1.3, 0, 0), 5.0)
+    assert tab._ssdv_frames == 2
+    assert tab._ssdv_packets == 2
+    assert tab._ssdv_decoder is not None and tab._ssdv_decoder.packet_count == 2
