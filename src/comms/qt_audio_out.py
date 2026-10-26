@@ -101,16 +101,31 @@ def float_to_pcm16(
     return bytes(np.concatenate([lead, pcm]).astype("<i2").tobytes())
 
 
+def match_output_description(name: str, descriptions: list[str]) -> int | None:
+    """Index of the Qt device description that *name* refers to.
+
+    Exact match first. PortAudio's MME host API truncates device names to 31
+    characters on Windows, so a long name such as "IC9700-TXIN (6- USB Audio
+    CODEC)" arrives without its closing ")" and never equals Qt's full
+    description. Fall back to a prefix match, accepted only when exactly one
+    device matches so two similarly named devices are never confused.
+    """
+    for i, desc in enumerate(descriptions):
+        if desc == name:
+            return i
+    prefixed = [i for i, desc in enumerate(descriptions) if name and desc.startswith(name)]
+    return prefixed[0] if len(prefixed) == 1 else None
+
+
 def find_output_device(name: str | None) -> QAudioDevice | None:
-    """Qt output device whose description equals *name* (None: system default)."""
+    """Qt output device whose description matches *name* (None: system default)."""
     from PySide6.QtMultimedia import QMediaDevices
 
     if name is None:
         return QMediaDevices.defaultAudioOutput()
-    for dev in QMediaDevices.audioOutputs():
-        if dev.description() == name:
-            return dev
-    return None
+    devices = list(QMediaDevices.audioOutputs())
+    idx = match_output_description(name, [dev.description() for dev in devices])
+    return devices[idx] if idx is not None else None
 
 
 class _Player(QObject):

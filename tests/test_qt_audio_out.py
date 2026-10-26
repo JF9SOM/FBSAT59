@@ -54,6 +54,29 @@ def test_float_to_pcm16_clips_overshoot() -> None:
     assert pcm[1] == -32768
 
 
+def test_match_output_description_exact_wins() -> None:
+    descs = ["Speakers", "IC9700-TX (USB Audio CODEC)", "IC9700-TX (USB Audio CODEC) 2"]
+    assert qt_audio_out.match_output_description("IC9700-TX (USB Audio CODEC)", descs) == 1
+
+
+def test_match_output_description_accepts_mme_truncated_name() -> None:
+    """MME cuts names at 31 chars: the closing ")" is lost (IC-9700 report)."""
+    full = "IC9700-TXIN (6- USB Audio CODEC)"
+    truncated = full[:31]
+    assert len(truncated) == 31
+    assert qt_audio_out.match_output_description(truncated, ["Speakers", full]) == 1
+
+
+def test_match_output_description_rejects_ambiguous_prefix() -> None:
+    descs = ["USB Audio CODEC (1)", "USB Audio CODEC (2)"]
+    assert qt_audio_out.match_output_description("USB Audio CODEC", descs) is None
+
+
+def test_match_output_description_no_match() -> None:
+    assert qt_audio_out.match_output_description("Nope", ["Speakers"]) is None
+    assert qt_audio_out.match_output_description("", ["Speakers"]) is None
+
+
 @pytest.mark.skipif(not _qt_multimedia_available(), reason="QtMultimedia unavailable")
 def test_missing_output_device_reports_error(qtbot: QtBot) -> None:
     job = qt_audio_out.PlayJob(
