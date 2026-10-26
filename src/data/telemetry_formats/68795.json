@@ -10,25 +10,9 @@
   "document_cw": "ORI-2-0027e-OPR OrigamiSat-2 CW Downlink Communication Data Format ver.1.1 (Institute of Science Tokyo), http://www.origami.titech.ac.jp/wp/wp-content/uploads/2026/04/ORI-2-0027e-OPR_OrigamiSat-2_CW_Downlink_Communication_Data_Format_ver1.1.pdf",
   "telemetry_ids": {
     "1": {
-      "label": "ID01 (MOBC HK, header only)",
-      "label_ja": "ID01 (MOBC HK・ヘッダー部のみ)",
+      "label": "ID01 (MOBC HK)",
+      "label_ja": "ID01 (MOBC HK)",
       "fields": [
-        {
-          "name": "onboard_unix_time",
-          "offset": 4,
-          "length": 4,
-          "type": "unix_time",
-          "label": "Satellite internal time (UTC)",
-          "label_ja": "衛星内部時刻(UTC)"
-        },
-        {
-          "name": "telemetry_count",
-          "offset": 3,
-          "length": 1,
-          "type": "uint8",
-          "label": "Telemetry transmitted count",
-          "label_ja": "テレメトリ送信数"
-        },
         {
           "name": "packet_length",
           "offset": 0,
@@ -42,8 +26,8 @@
           "offset": 1,
           "length": 1,
           "type": "uint8",
-          "label": "Generation timing",
-          "label_ja": "生成タイミング"
+          "label": "Generation timing (0xFE=via DR, 0xFF=real time)",
+          "label_ja": "生成タイミング(0xFE=DR経由,0xFF=リアルタイム)"
         },
         {
           "name": "telemetry_id",
@@ -52,6 +36,4493 @@
           "type": "uint8",
           "label": "Telemetry ID",
           "label_ja": "テレメトリID"
+        },
+        {
+          "name": "telemetry_count",
+          "offset": 3,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry transmitted count",
+          "label_ja": "テレメトリ送信数"
+        },
+        {
+          "name": "onboard_unix_time",
+          "offset": 4,
+          "length": 4,
+          "type": "unix_time",
+          "label": "Satellite internal time (UTC)",
+          "label_ja": "衛星内部時刻(UTC)"
+        },
+        {
+          "name": "cmd_id",
+          "offset": 8,
+          "length": 1,
+          "type": "uint8",
+          "label": "Received command ID",
+          "label_ja": "受領コマンドID"
+        },
+        {
+          "name": "cmd_status",
+          "offset": 9,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command execution status",
+          "label_ja": "コマンド実行ステータス"
+        },
+        {
+          "name": "cmd_error",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command error status",
+          "label_ja": "コマンドエラーステータス"
+        },
+        {
+          "name": "cmd_recv_count",
+          "offset": 11,
+          "length": 1,
+          "type": "uint8",
+          "label": "Commands received",
+          "label_ja": "コマンド受領数"
+        },
+        {
+          "name": "last_cmd_dest",
+          "offset": 12,
+          "length": 1,
+          "type": "uint8",
+          "label": "Destination of last received command (3=RasPi, 4=MOBC, 5=ADCS)",
+          "label_ja": "最終受信コマンドの宛先(3=RasPi,4=MOBC,5=ADCS)"
+        },
+        {
+          "name": "telemetry_kind",
+          "offset": 13,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry kind (0=normal, 1=response)",
+          "label_ja": "テレメトリ種別(0=通常,1=応答)"
+        },
+        {
+          "name": "mode_transition",
+          "offset": 14,
+          "length": 1,
+          "type": "uint8",
+          "label": "MOBC mode transition (0=done, 1=in progress)",
+          "label_ja": "MOBCモード遷移状態(0=終了,1=遷移中)"
+        },
+        {
+          "name": "mobc_mode",
+          "offset": 15,
+          "length": 1,
+          "type": "uint8",
+          "label": "MOBC mode (0=Safe, 1=Normal, 2=Survival, 6=Initial)",
+          "label_ja": "現在のMOBCモード(0=Safe,1=Normal,2=Survival,6=Initial)"
+        },
+        {
+          "name": "master_cycle",
+          "offset": 16,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Master cycle (s since last MOBC reset)",
+          "label_ja": "マスターサイクル(前回MOBCリセットからの秒数)"
+        },
+        {
+          "name": "mobc_reboot_count",
+          "offset": 20,
+          "length": 1,
+          "type": "uint8",
+          "label": "MOBC reboot count",
+          "label_ja": "MOBC再起動回数"
+        },
+        {
+          "name": "rx_mcu_reboot_count",
+          "offset": 21,
+          "length": 1,
+          "type": "uint8",
+          "label": "RX microcontroller reboot count",
+          "label_ja": "RXマイコン再起動回数"
+        },
+        {
+          "name": "pending_cmd_count",
+          "offset": 22,
+          "length": 1,
+          "type": "uint8",
+          "label": "Pending scheduled commands",
+          "label_ja": "実行待機予約コマンド数"
+        },
+        {
+          "name": "pwr_ctx",
+          "offset": 23,
+          "length": 1,
+          "type": "uint8",
+          "mask": 192,
+          "label": "Power state: C-band transmitter (0=OFF,1=ON,2=RESET,3=ERROR; digit order per specification, unconfirmed)",
+          "label_ja": "電源状態: C帯送信機(0=OFF,1=ON,2=RESET,3=ERROR。桁の対応は仕様書どおり・未確認)"
+        },
+        {
+          "name": "pwr_mast",
+          "offset": 23,
+          "length": 1,
+          "type": "uint8",
+          "mask": 48,
+          "label": "Power state: Extension MAST (0=OFF,1=ON,2=RESET,3=ERROR; digit order per specification, unconfirmed)",
+          "label_ja": "電源状態: 伸展MAST(0=OFF,1=ON,2=RESET,3=ERROR。桁の対応は仕様書どおり・未確認)"
+        },
+        {
+          "name": "pwr_adcs",
+          "offset": 23,
+          "length": 1,
+          "type": "uint8",
+          "mask": 12,
+          "label": "Power state: ADCS board (0=OFF,1=ON,2=RESET,3=ERROR; digit order per specification, unconfirmed)",
+          "label_ja": "電源状態: ADCS基板(0=OFF,1=ON,2=RESET,3=ERROR。桁の対応は仕様書どおり・未確認)"
+        },
+        {
+          "name": "pwr_raspi",
+          "offset": 23,
+          "length": 1,
+          "type": "uint8",
+          "mask": 3,
+          "label": "Power state: Camera RasPi (0=OFF,1=ON,2=RESET,3=ERROR; digit order per specification, unconfirmed)",
+          "label_ja": "電源状態: カメラ用RasPi(0=OFF,1=ON,2=RESET,3=ERROR。桁の対応は仕様書どおり・未確認)"
+        },
+        {
+          "name": "pwr_fuse",
+          "offset": 24,
+          "length": 1,
+          "type": "uint8",
+          "mask": 192,
+          "label": "Power state: Fuse system (0=OFF,1=ON,2=RESET,3=ERROR; digit order per specification, unconfirmed)",
+          "label_ja": "電源状態: 溶断系(0=OFF,1=ON,2=RESET,3=ERROR。桁の対応は仕様書どおり・未確認)"
+        },
+        {
+          "name": "pwr_ch_c",
+          "offset": 24,
+          "length": 1,
+          "type": "uint8",
+          "mask": 48,
+          "label": "Power state: CH_C (0=OFF,1=ON,2=RESET,3=ERROR; digit order per specification, unconfirmed)",
+          "label_ja": "電源状態: CH_C(0=OFF,1=ON,2=RESET,3=ERROR。桁の対応は仕様書どおり・未確認)"
+        },
+        {
+          "name": "pwr_ch_e",
+          "offset": 24,
+          "length": 1,
+          "type": "uint8",
+          "mask": 12,
+          "label": "Power state: CH_E (0=OFF,1=ON,2=RESET,3=ERROR; digit order per specification, unconfirmed)",
+          "label_ja": "電源状態: CH_E(0=OFF,1=ON,2=RESET,3=ERROR。桁の対応は仕様書どおり・未確認)"
+        },
+        {
+          "name": "pwr_rx",
+          "offset": 24,
+          "length": 1,
+          "type": "uint8",
+          "mask": 3,
+          "label": "Power state: Receiver (0=OFF,1=ON,2=RESET,3=ERROR; digit order per specification, unconfirmed)",
+          "label_ja": "電源状態: 受信機(0=OFF,1=ON,2=RESET,3=ERROR。桁の対応は仕様書どおり・未確認)"
+        },
+        {
+          "name": "pwr_bus_tx",
+          "offset": 25,
+          "length": 1,
+          "type": "uint8",
+          "mask": 192,
+          "label": "Power state: Bus transmitter (0=OFF,1=ON,2=RESET,3=ERROR; digit order per specification, unconfirmed)",
+          "label_ja": "電源状態: バス送信機(0=OFF,1=ON,2=RESET,3=ERROR。桁の対応は仕様書どおり・未確認)"
+        },
+        {
+          "name": "pwr_bus_if",
+          "offset": 25,
+          "length": 1,
+          "type": "uint8",
+          "mask": 48,
+          "label": "Power state: Bus comm interface (0=OFF,1=ON,2=RESET,3=ERROR; digit order per specification, unconfirmed)",
+          "label_ja": "電源状態: バス通信インターフェース(0=OFF,1=ON,2=RESET,3=ERROR。桁の対応は仕様書どおり・未確認)"
+        },
+        {
+          "name": "pwr_imu",
+          "offset": 25,
+          "length": 1,
+          "type": "uint8",
+          "mask": 12,
+          "label": "Power state: IMU (0=OFF,1=ON,2=RESET,3=ERROR; digit order per specification, unconfirmed)",
+          "label_ja": "電源状態: IMU(0=OFF,1=ON,2=RESET,3=ERROR。桁の対応は仕様書どおり・未確認)"
+        },
+        {
+          "name": "battery_voltage",
+          "offset": 26,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "V",
+          "label": "Battery voltage",
+          "label_ja": "バッテリ電圧"
+        },
+        {
+          "name": "battery_current",
+          "offset": 30,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "mA",
+          "label": "Battery current",
+          "label_ja": "バッテリ電流"
+        },
+        {
+          "name": "sap_current_y_pm",
+          "offset": 34,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.764,
+          "label": "SAP current Y+/Y- face",
+          "label_ja": "SAP電流 Y+面,Y-面"
+        },
+        {
+          "name": "sap_current_x_m",
+          "offset": 35,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.764,
+          "label": "SAP current X- face",
+          "label_ja": "SAP電流 X-面"
+        },
+        {
+          "name": "sap_current_z_p",
+          "offset": 36,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.764,
+          "label": "SAP current Z+ face",
+          "label_ja": "SAP電流 Z+面"
+        },
+        {
+          "name": "sap_current_z_m",
+          "offset": 37,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.764,
+          "label": "SAP current Z- face",
+          "label_ja": "SAP電流 Z-面"
+        },
+        {
+          "name": "sap_current_tfsc",
+          "offset": 38,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.764,
+          "label": "SAP current thin-film solar cell",
+          "label_ja": "SAP電流 薄膜太陽電池"
+        },
+        {
+          "name": "sap_voltage_y_x",
+          "offset": 39,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "SAP voltage Y+/Y-/X- faces",
+          "label_ja": "SAP電圧 Y+面,Y-面,X-面"
+        },
+        {
+          "name": "sap_voltage_z_pm",
+          "offset": 40,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "SAP voltage Z+/Z- faces",
+          "label_ja": "SAP電圧 Z±面"
+        },
+        {
+          "name": "sap_voltage_tfsc",
+          "offset": 41,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "SAP voltage thin-film solar cell",
+          "label_ja": "SAP電圧 薄膜太陽電池"
+        },
+        {
+          "name": "tfsc_mission_current",
+          "offset": 42,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 0.3906,
+          "label": "Thin-film solar cell current during mission",
+          "label_ja": "ミッション時薄膜太陽電池電流"
+        },
+        {
+          "name": "tfsc_mission_voltage",
+          "offset": 43,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.1172,
+          "label": "Thin-film solar cell voltage during mission",
+          "label_ja": "ミッション時薄膜太陽電池電圧"
+        },
+        {
+          "name": "ctx_current",
+          "offset": 44,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.765,
+          "label": "C-band transmitter current",
+          "label_ja": "C帯送信機電流"
+        },
+        {
+          "name": "ctx_voltage",
+          "offset": 45,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "C-band transmitter voltage",
+          "label_ja": "C帯送信機電圧"
+        },
+        {
+          "name": "mast_current",
+          "offset": 46,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.765,
+          "label": "Extension MAST current",
+          "label_ja": "伸展MAST電流"
+        },
+        {
+          "name": "mast_voltage",
+          "offset": 47,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "Extension MAST voltage",
+          "label_ja": "伸展MAST電圧"
+        },
+        {
+          "name": "adcs_current",
+          "offset": 48,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.765,
+          "label": "ADCS board current",
+          "label_ja": "ADCS基板電流"
+        },
+        {
+          "name": "adcs_voltage",
+          "offset": 49,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "ADCS board voltage",
+          "label_ja": "ADCS基板電圧"
+        },
+        {
+          "name": "msn_current",
+          "offset": 50,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.765,
+          "label": "MSN board current",
+          "label_ja": "MSN基板電流"
+        },
+        {
+          "name": "msn_voltage",
+          "offset": 51,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "MSN board voltage",
+          "label_ja": "MSN基板電圧"
+        },
+        {
+          "name": "fuse_current",
+          "offset": 52,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.765,
+          "label": "Fuse system current",
+          "label_ja": "溶断系統電流"
+        },
+        {
+          "name": "fuse_voltage",
+          "offset": 53,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "Fuse system voltage",
+          "label_ja": "溶断系統電圧"
+        },
+        {
+          "name": "ch_c_current",
+          "offset": 54,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.765,
+          "label": "CH_C current",
+          "label_ja": "CH_C電流"
+        },
+        {
+          "name": "ch_c_voltage",
+          "offset": 55,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "CH_C voltage",
+          "label_ja": "CH_C電圧"
+        },
+        {
+          "name": "bus_current",
+          "offset": 56,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.765,
+          "label": "Bus communication unit current",
+          "label_ja": "バス通信機電流"
+        },
+        {
+          "name": "bus_voltage",
+          "offset": 57,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "Bus communication unit voltage",
+          "label_ja": "バス通信機電圧"
+        },
+        {
+          "name": "unreg_line_current",
+          "offset": 58,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.765,
+          "label": "MOBC unregulated power line current",
+          "label_ja": "MOBC未安定化電源ライン電流"
+        },
+        {
+          "name": "dcdc5v_line_current",
+          "offset": 59,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.765,
+          "label": "DCDC 5V power line current",
+          "label_ja": "DCDC 5V電源ライン電流"
+        },
+        {
+          "name": "uvc_enabled",
+          "offset": 60,
+          "length": 1,
+          "type": "uint8",
+          "label": "UVC enabled (0=disabled, 1=enabled)",
+          "label_ja": "UVC有効化状態(0=無効,1=有効)"
+        },
+        {
+          "name": "uvc_level",
+          "offset": 61,
+          "length": 1,
+          "type": "uint8",
+          "label": "UVC level (0=normal, 1=level 1, 2=level 2, 3=normal recovery, 4=level 1 recovery)",
+          "label_ja": "UVCレベル(0=通常,1=レベル1,2=レベル2,3=通常復帰,4=レベル1復帰)"
+        },
+        {
+          "name": "uvc_threshold_1",
+          "offset": 62,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.1,
+          "label": "UVC threshold 1: recovery to normal-recovery state",
+          "label_ja": "UVC閾値1: 通常復帰状態へ回復"
+        },
+        {
+          "name": "uvc_threshold_2",
+          "offset": 63,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.1,
+          "label": "UVC threshold 2: recovery from level 2 to level-1 recovery",
+          "label_ja": "UVC閾値2: レベル2からレベル1復帰へ回復"
+        },
+        {
+          "name": "uvc_threshold_3",
+          "offset": 64,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.1,
+          "label": "UVC threshold 3: drop from normal to level 1",
+          "label_ja": "UVC閾値3: 通常からレベル1へ低下"
+        },
+        {
+          "name": "uvc_threshold_4",
+          "offset": 65,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.1,
+          "label": "UVC threshold 4: drop to level 2",
+          "label_ja": "UVC閾値4: レベル2へ低下"
+        },
+        {
+          "name": "pdu_system",
+          "offset": 66,
+          "length": 1,
+          "type": "uint8",
+          "label": "PDU power system (0=A, 1=B)",
+          "label_ja": "PDU電源系統(0=A系,1=B系)"
+        },
+        {
+          "name": "temp_structure_ym",
+          "offset": 67,
+          "length": 1,
+          "type": "uint8",
+          "label": "Temperature Structure Y- face (raw; the specification gives no conversion)",
+          "label_ja": "温度 衛星構体Y-面(生の値。仕様書に換算式の記載なし)"
+        },
+        {
+          "name": "temp_tfsc1",
+          "offset": 68,
+          "length": 1,
+          "type": "uint8",
+          "label": "Temperature Thin-film solar cell 1 (raw; the specification gives no conversion)",
+          "label_ja": "温度 膜状薄膜太陽電池1(生の値。仕様書に換算式の記載なし)"
+        },
+        {
+          "name": "temp_tfsc2",
+          "offset": 69,
+          "length": 1,
+          "type": "uint8",
+          "label": "Temperature Thin-film solar cell 2 (raw; the specification gives no conversion)",
+          "label_ja": "温度 膜状薄膜太陽電池2(生の値。仕様書に換算式の記載なし)"
+        },
+        {
+          "name": "temp_battery",
+          "offset": 70,
+          "length": 1,
+          "type": "uint8",
+          "label": "Temperature Battery (raw; the specification gives no conversion)",
+          "label_ja": "温度 バッテリ(生の値。仕様書に換算式の記載なし)"
+        },
+        {
+          "name": "temp_adcs",
+          "offset": 71,
+          "length": 1,
+          "type": "uint8",
+          "label": "Temperature ADCS board (raw; the specification gives no conversion)",
+          "label_ja": "温度 ADCS基板(生の値。仕様書に換算式の記載なし)"
+        },
+        {
+          "name": "temp_ctx",
+          "offset": 72,
+          "length": 1,
+          "type": "uint8",
+          "label": "Temperature C-band transmitter (raw; the specification gives no conversion)",
+          "label_ja": "温度 C帯送信機(生の値。仕様書に換算式の記載なし)"
+        },
+        {
+          "name": "temp_raspi",
+          "offset": 73,
+          "length": 1,
+          "type": "uint8",
+          "label": "Temperature RasPi (raw; the specification gives no conversion)",
+          "label_ja": "温度 RasPi(生の値。仕様書に換算式の記載なし)"
+        },
+        {
+          "name": "temp_msn",
+          "offset": 74,
+          "length": 1,
+          "type": "uint8",
+          "label": "Temperature Mission board (raw; the specification gives no conversion)",
+          "label_ja": "温度 ミッション基板(生の値。仕様書に換算式の記載なし)"
+        },
+        {
+          "name": "temp_mast_motor",
+          "offset": 75,
+          "length": 1,
+          "type": "uint8",
+          "label": "Temperature MAST motor (raw; the specification gives no conversion)",
+          "label_ja": "温度 MAST伸展用モータ(生の値。仕様書に換算式の記載なし)"
+        },
+        {
+          "name": "temp_uhf_tx",
+          "offset": 76,
+          "length": 1,
+          "type": "uint8",
+          "label": "Temperature UHF transmitter (raw; the specification gives no conversion)",
+          "label_ja": "温度 UHF送信機(生の値。仕様書に換算式の記載なし)"
+        },
+        {
+          "name": "temp_mobc1",
+          "offset": 77,
+          "length": 1,
+          "type": "uint8",
+          "label": "Temperature MOBC 1 (raw; the specification gives no conversion)",
+          "label_ja": "温度 MOBC1(生の値。仕様書に換算式の記載なし)"
+        },
+        {
+          "name": "temp_mobc2",
+          "offset": 78,
+          "length": 1,
+          "type": "uint8",
+          "label": "Temperature MOBC 2 (raw; the specification gives no conversion)",
+          "label_ja": "温度 MOBC2(生の値。仕様書に換算式の記載なし)"
+        },
+        {
+          "name": "temp_mobc_imu",
+          "offset": 79,
+          "length": 1,
+          "type": "uint8",
+          "label": "Temperature IMU on MOBC (raw; the specification gives no conversion)",
+          "label_ja": "温度 MOBC上のIMU(生の値。仕様書に換算式の記載なし)"
+        },
+        {
+          "name": "gyro_x",
+          "offset": 80,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Angular rate about X axis (MOBC IMU)",
+          "label_ja": "X軸周りの角速度(MOBC上のIMU)"
+        },
+        {
+          "name": "gyro_y",
+          "offset": 84,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Angular rate about Y axis (MOBC IMU)",
+          "label_ja": "Y軸周りの角速度(MOBC上のIMU)"
+        },
+        {
+          "name": "gyro_z",
+          "offset": 88,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Angular rate about Z axis (MOBC IMU)",
+          "label_ja": "Z軸周りの角速度(MOBC上のIMU)"
+        },
+        {
+          "name": "latitude_deg",
+          "offset": 92,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg",
+          "label": "Latitude (the specification text also calls it longitude)",
+          "label_ja": "緯度(仕様書の本文は『経度』とも記載)"
+        },
+        {
+          "name": "orbit_calc_enabled",
+          "offset": 96,
+          "length": 1,
+          "type": "uint8",
+          "label": "MOBC orbit calculation enabled (0=disabled, 1=enabled)",
+          "label_ja": "MOBC軌道計算有効化状態(0=無効,1=有効)"
+        },
+        {
+          "name": "rssi",
+          "offset": 97,
+          "length": 1,
+          "type": "uint8",
+          "label": "RSSI (relative, no unit)",
+          "label_ja": "RSSI(相対値・単位なし)"
+        },
+        {
+          "name": "ctx_tlm_count",
+          "offset": 98,
+          "length": 1,
+          "type": "uint8",
+          "label": "C-band telemetry packets sent",
+          "label_ja": "C帯テレメトリ送信数"
+        },
+        {
+          "name": "ctx_op_mode",
+          "offset": 99,
+          "length": 2,
+          "type": "hex",
+          "label": "C-band operation mode",
+          "label_ja": "C帯OPモード"
+        },
+        {
+          "name": "ctx_tx_power",
+          "offset": 101,
+          "length": 1,
+          "type": "uint8",
+          "label": "C-band TX power",
+          "label_ja": "C帯TXパワー"
+        },
+        {
+          "name": "ctx_tx_mode",
+          "offset": 102,
+          "length": 2,
+          "type": "hex",
+          "label": "C-band TX mode",
+          "label_ja": "C帯TXモード"
+        },
+        {
+          "name": "ctx_tlm_enabled",
+          "offset": 104,
+          "length": 1,
+          "type": "uint8",
+          "label": "C-band telemetry enabled (0=disabled, 1=enabled)",
+          "label_ja": "C帯テレメトリ有効化状態(0=無効,1=有効)"
+        },
+        {
+          "name": "mast_encoder",
+          "offset": 105,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Extension MAST encoder value",
+          "label_ja": "伸展MASTエンコーダ値"
+        },
+        {
+          "name": "fram_block_cmd_id",
+          "offset": 107,
+          "length": 1,
+          "type": "uint8",
+          "label": "FRAM block command ID",
+          "label_ja": "FRAMブロックコマンドID"
+        },
+        {
+          "name": "fram_block_cmd_pos",
+          "offset": 108,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command position in FRAM block command",
+          "label_ja": "FRAMブロックコマンド内のコマンド位置"
+        },
+        {
+          "name": "hk_dr_sector",
+          "offset": 109,
+          "length": 1,
+          "type": "uint8",
+          "label": "HK_DR write sector",
+          "label_ja": "HK_DR書き込みセクター"
+        },
+        {
+          "name": "hk_dr_packet",
+          "offset": 110,
+          "length": 1,
+          "type": "uint8",
+          "label": "HK_DR write packet",
+          "label_ja": "HK_DR書き込みパケット"
+        },
+        {
+          "name": "msn_dr_sector",
+          "offset": 111,
+          "length": 1,
+          "type": "uint8",
+          "label": "MSN_DR write sector",
+          "label_ja": "MSN_DR書き込みセクター"
+        },
+        {
+          "name": "msn_dr_packet",
+          "offset": 112,
+          "length": 1,
+          "type": "uint8",
+          "label": "MSN_DR write packet",
+          "label_ja": "MSN_DR書き込みパケット"
+        },
+        {
+          "name": "dr_delete_enabled",
+          "offset": 113,
+          "length": 1,
+          "type": "uint8",
+          "label": "DR delete enabled",
+          "label_ja": "DRの削除有効化状態"
+        },
+        {
+          "name": "dr_timetag_enabled",
+          "offset": 114,
+          "length": 1,
+          "type": "uint8",
+          "label": "DR time tag enabled",
+          "label_ja": "DRのタイムタグ有効化状態"
+        }
+      ]
+    },
+    "2": {
+      "label": "ID02 (scheduled command times)",
+      "label_ja": "ID02 (予約コマンド実行予定時刻)",
+      "fields": [
+        {
+          "name": "packet_length",
+          "offset": 0,
+          "length": 1,
+          "type": "uint8",
+          "label": "Packet length",
+          "label_ja": "パケット長"
+        },
+        {
+          "name": "gen_timing",
+          "offset": 1,
+          "length": 1,
+          "type": "uint8",
+          "label": "Generation timing (0xFE=via DR, 0xFF=real time)",
+          "label_ja": "生成タイミング(0xFE=DR経由,0xFF=リアルタイム)"
+        },
+        {
+          "name": "telemetry_id",
+          "offset": 2,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry ID",
+          "label_ja": "テレメトリID"
+        },
+        {
+          "name": "telemetry_count",
+          "offset": 3,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry transmitted count",
+          "label_ja": "テレメトリ送信数"
+        },
+        {
+          "name": "onboard_unix_time",
+          "offset": 4,
+          "length": 4,
+          "type": "unix_time",
+          "label": "Satellite internal time (UTC)",
+          "label_ja": "衛星内部時刻(UTC)"
+        },
+        {
+          "name": "cmd_id",
+          "offset": 8,
+          "length": 1,
+          "type": "uint8",
+          "label": "Received command ID",
+          "label_ja": "受領コマンドID"
+        },
+        {
+          "name": "cmd_status",
+          "offset": 9,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command execution status",
+          "label_ja": "コマンド実行ステータス"
+        },
+        {
+          "name": "cmd_error",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command error status",
+          "label_ja": "コマンドエラーステータス"
+        },
+        {
+          "name": "cmd_recv_count",
+          "offset": 11,
+          "length": 1,
+          "type": "uint8",
+          "label": "Commands received",
+          "label_ja": "コマンド受領数"
+        },
+        {
+          "name": "cmd_time_1",
+          "offset": 12,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 1 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド1の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_2",
+          "offset": 16,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 2 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド2の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_3",
+          "offset": 20,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 3 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド3の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_4",
+          "offset": 24,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 4 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド4の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_5",
+          "offset": 28,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 5 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド5の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_6",
+          "offset": 32,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 6 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド6の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_7",
+          "offset": 36,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 7 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド7の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_8",
+          "offset": 40,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 8 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド8の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_9",
+          "offset": 44,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 9 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド9の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_10",
+          "offset": 48,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 10 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド10の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_11",
+          "offset": 52,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 11 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド11の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_12",
+          "offset": 56,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 12 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド12の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_13",
+          "offset": 60,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 13 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド13の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_14",
+          "offset": 64,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 14 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド14の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_15",
+          "offset": 68,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 15 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド15の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_16",
+          "offset": 72,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 16 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド16の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_17",
+          "offset": 76,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 17 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド17の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_18",
+          "offset": 80,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 18 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド18の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_19",
+          "offset": 84,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 19 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド19の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_20",
+          "offset": 88,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 20 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド20の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_21",
+          "offset": 92,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 21 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド21の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_22",
+          "offset": 96,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 22 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド22の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_23",
+          "offset": 100,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 23 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド23の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_24",
+          "offset": 104,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 24 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド24の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_25",
+          "offset": 108,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 25 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド25の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_26",
+          "offset": 112,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 26 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド26の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_27",
+          "offset": 116,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 27 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド27の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_28",
+          "offset": 120,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 28 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド28の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_29",
+          "offset": 124,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 29 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド29の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_30",
+          "offset": 128,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 30 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド30の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_31",
+          "offset": 132,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 31 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド31の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_32",
+          "offset": 136,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 32 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド32の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_33",
+          "offset": 140,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 33 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド33の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_34",
+          "offset": 144,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 34 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド34の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_35",
+          "offset": 148,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 35 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド35の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_36",
+          "offset": 152,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 36 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド36の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_37",
+          "offset": 156,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 37 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド37の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_38",
+          "offset": 160,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 38 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド38の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_39",
+          "offset": 164,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 39 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド39の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_40",
+          "offset": 168,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 40 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド40の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_41",
+          "offset": 172,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 41 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド41の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_42",
+          "offset": 176,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 42 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド42の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_43",
+          "offset": 180,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 43 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド43の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_44",
+          "offset": 184,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 44 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド44の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_45",
+          "offset": 188,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 45 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド45の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_46",
+          "offset": 192,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 46 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド46の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_47",
+          "offset": 196,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 47 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド47の実行予定時刻(UNIX秒,0=未使用)"
+        },
+        {
+          "name": "cmd_time_48",
+          "offset": 200,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Scheduled command 48 execution time (UNIX s, 0 = unused)",
+          "label_ja": "予約コマンド48の実行予定時刻(UNIX秒,0=未使用)"
+        }
+      ]
+    },
+    "4": {
+      "label": "ID04 (FRAM block command detail 1)",
+      "label_ja": "ID04 (FRAMブロックコマンド詳細1)",
+      "fields": [
+        {
+          "name": "packet_length",
+          "offset": 0,
+          "length": 1,
+          "type": "uint8",
+          "label": "Packet length",
+          "label_ja": "パケット長"
+        },
+        {
+          "name": "gen_timing",
+          "offset": 1,
+          "length": 1,
+          "type": "uint8",
+          "label": "Generation timing (0xFE=via DR, 0xFF=real time)",
+          "label_ja": "生成タイミング(0xFE=DR経由,0xFF=リアルタイム)"
+        },
+        {
+          "name": "telemetry_id",
+          "offset": 2,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry ID",
+          "label_ja": "テレメトリID"
+        },
+        {
+          "name": "telemetry_count",
+          "offset": 3,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry transmitted count",
+          "label_ja": "テレメトリ送信数"
+        },
+        {
+          "name": "onboard_unix_time",
+          "offset": 4,
+          "length": 4,
+          "type": "unix_time",
+          "label": "Satellite internal time (UTC)",
+          "label_ja": "衛星内部時刻(UTC)"
+        },
+        {
+          "name": "cmd_id",
+          "offset": 8,
+          "length": 1,
+          "type": "uint8",
+          "label": "Received command ID",
+          "label_ja": "受領コマンドID"
+        },
+        {
+          "name": "cmd_status",
+          "offset": 9,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command execution status",
+          "label_ja": "コマンド実行ステータス"
+        },
+        {
+          "name": "cmd_error",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command error status",
+          "label_ja": "コマンドエラーステータス"
+        },
+        {
+          "name": "cmd_recv_count",
+          "offset": 11,
+          "length": 1,
+          "type": "uint8",
+          "label": "Commands received",
+          "label_ja": "コマンド受領数"
+        },
+        {
+          "name": "block_id",
+          "offset": 12,
+          "length": 1,
+          "type": "uint8",
+          "label": "Selected FRAM block command ID",
+          "label_ja": "選択したFRAMブロックコマンドID"
+        },
+        {
+          "name": "block_enabled",
+          "offset": 13,
+          "length": 1,
+          "type": "uint8",
+          "label": "Selected block command enabled",
+          "label_ja": "選択したFRAMブロックコマンドIDの有効化状態"
+        },
+        {
+          "name": "cmd1_dest",
+          "offset": 14,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 1 destination (1=RasPi, 4=OBC, 5=ADCS)",
+          "label_ja": "コマンド1の宛先(1=RasPi,4=OBC,5=ADCS)"
+        },
+        {
+          "name": "cmd1_id",
+          "offset": 15,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 1 ID",
+          "label_ja": "コマンド1のID"
+        },
+        {
+          "name": "cmd1_rel_time",
+          "offset": 16,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Command 1 time relative to block start",
+          "label_ja": "コマンド1のブロック展開からの相対時刻"
+        },
+        {
+          "name": "cmd2_dest",
+          "offset": 20,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 2 destination (1=RasPi, 4=OBC, 5=ADCS)",
+          "label_ja": "コマンド2の宛先(1=RasPi,4=OBC,5=ADCS)"
+        },
+        {
+          "name": "cmd2_id",
+          "offset": 21,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 2 ID",
+          "label_ja": "コマンド2のID"
+        },
+        {
+          "name": "cmd2_rel_time",
+          "offset": 22,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Command 2 time relative to block start",
+          "label_ja": "コマンド2のブロック展開からの相対時刻"
+        },
+        {
+          "name": "cmd3_dest",
+          "offset": 26,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 3 destination (1=RasPi, 4=OBC, 5=ADCS)",
+          "label_ja": "コマンド3の宛先(1=RasPi,4=OBC,5=ADCS)"
+        },
+        {
+          "name": "cmd3_id",
+          "offset": 27,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 3 ID",
+          "label_ja": "コマンド3のID"
+        },
+        {
+          "name": "cmd3_rel_time",
+          "offset": 28,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Command 3 time relative to block start",
+          "label_ja": "コマンド3のブロック展開からの相対時刻"
+        },
+        {
+          "name": "cmd4_dest",
+          "offset": 32,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 4 destination (1=RasPi, 4=OBC, 5=ADCS)",
+          "label_ja": "コマンド4の宛先(1=RasPi,4=OBC,5=ADCS)"
+        },
+        {
+          "name": "cmd4_id",
+          "offset": 33,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 4 ID",
+          "label_ja": "コマンド4のID"
+        },
+        {
+          "name": "cmd4_rel_time",
+          "offset": 34,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Command 4 time relative to block start",
+          "label_ja": "コマンド4のブロック展開からの相対時刻"
+        },
+        {
+          "name": "cmd5_dest",
+          "offset": 38,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 5 destination (1=RasPi, 4=OBC, 5=ADCS)",
+          "label_ja": "コマンド5の宛先(1=RasPi,4=OBC,5=ADCS)"
+        },
+        {
+          "name": "cmd5_id",
+          "offset": 39,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 5 ID",
+          "label_ja": "コマンド5のID"
+        },
+        {
+          "name": "cmd5_rel_time",
+          "offset": 40,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Command 5 time relative to block start",
+          "label_ja": "コマンド5のブロック展開からの相対時刻"
+        },
+        {
+          "name": "cmd6_dest",
+          "offset": 44,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 6 destination (1=RasPi, 4=OBC, 5=ADCS)",
+          "label_ja": "コマンド6の宛先(1=RasPi,4=OBC,5=ADCS)"
+        },
+        {
+          "name": "cmd6_id",
+          "offset": 45,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 6 ID",
+          "label_ja": "コマンド6のID"
+        },
+        {
+          "name": "cmd6_rel_time",
+          "offset": 46,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Command 6 time relative to block start",
+          "label_ja": "コマンド6のブロック展開からの相対時刻"
+        },
+        {
+          "name": "cmd7_dest",
+          "offset": 50,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 7 destination (1=RasPi, 4=OBC, 5=ADCS)",
+          "label_ja": "コマンド7の宛先(1=RasPi,4=OBC,5=ADCS)"
+        },
+        {
+          "name": "cmd7_id",
+          "offset": 51,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 7 ID",
+          "label_ja": "コマンド7のID"
+        },
+        {
+          "name": "cmd7_rel_time",
+          "offset": 52,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Command 7 time relative to block start",
+          "label_ja": "コマンド7のブロック展開からの相対時刻"
+        },
+        {
+          "name": "cmd8_dest",
+          "offset": 56,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 8 destination (1=RasPi, 4=OBC, 5=ADCS)",
+          "label_ja": "コマンド8の宛先(1=RasPi,4=OBC,5=ADCS)"
+        },
+        {
+          "name": "cmd8_id",
+          "offset": 57,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 8 ID",
+          "label_ja": "コマンド8のID"
+        },
+        {
+          "name": "cmd8_rel_time",
+          "offset": 58,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Command 8 time relative to block start",
+          "label_ja": "コマンド8のブロック展開からの相対時刻"
+        },
+        {
+          "name": "cmd9_dest",
+          "offset": 62,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 9 destination (1=RasPi, 4=OBC, 5=ADCS)",
+          "label_ja": "コマンド9の宛先(1=RasPi,4=OBC,5=ADCS)"
+        },
+        {
+          "name": "cmd9_id",
+          "offset": 63,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 9 ID",
+          "label_ja": "コマンド9のID"
+        },
+        {
+          "name": "cmd9_rel_time",
+          "offset": 64,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Command 9 time relative to block start",
+          "label_ja": "コマンド9のブロック展開からの相対時刻"
+        },
+        {
+          "name": "cmd10_dest",
+          "offset": 68,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 10 destination (1=RasPi, 4=OBC, 5=ADCS)",
+          "label_ja": "コマンド10の宛先(1=RasPi,4=OBC,5=ADCS)"
+        },
+        {
+          "name": "cmd10_id",
+          "offset": 69,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 10 ID",
+          "label_ja": "コマンド10のID"
+        },
+        {
+          "name": "cmd10_rel_time",
+          "offset": 70,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Command 10 time relative to block start",
+          "label_ja": "コマンド10のブロック展開からの相対時刻"
+        },
+        {
+          "name": "cmd11_dest",
+          "offset": 74,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 11 destination (1=RasPi, 4=OBC, 5=ADCS)",
+          "label_ja": "コマンド11の宛先(1=RasPi,4=OBC,5=ADCS)"
+        },
+        {
+          "name": "cmd11_id",
+          "offset": 75,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 11 ID",
+          "label_ja": "コマンド11のID"
+        },
+        {
+          "name": "cmd11_rel_time",
+          "offset": 76,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Command 11 time relative to block start",
+          "label_ja": "コマンド11のブロック展開からの相対時刻"
+        },
+        {
+          "name": "cmd12_dest",
+          "offset": 80,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 12 destination (1=RasPi, 4=OBC, 5=ADCS)",
+          "label_ja": "コマンド12の宛先(1=RasPi,4=OBC,5=ADCS)"
+        },
+        {
+          "name": "cmd12_id",
+          "offset": 81,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 12 ID",
+          "label_ja": "コマンド12のID"
+        },
+        {
+          "name": "cmd12_rel_time",
+          "offset": 82,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Command 12 time relative to block start",
+          "label_ja": "コマンド12のブロック展開からの相対時刻"
+        },
+        {
+          "name": "cmd13_dest",
+          "offset": 86,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 13 destination (1=RasPi, 4=OBC, 5=ADCS)",
+          "label_ja": "コマンド13の宛先(1=RasPi,4=OBC,5=ADCS)"
+        },
+        {
+          "name": "cmd13_id",
+          "offset": 87,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 13 ID",
+          "label_ja": "コマンド13のID"
+        },
+        {
+          "name": "cmd13_rel_time",
+          "offset": 88,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Command 13 time relative to block start",
+          "label_ja": "コマンド13のブロック展開からの相対時刻"
+        },
+        {
+          "name": "cmd14_dest",
+          "offset": 92,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 14 destination (1=RasPi, 4=OBC, 5=ADCS)",
+          "label_ja": "コマンド14の宛先(1=RasPi,4=OBC,5=ADCS)"
+        },
+        {
+          "name": "cmd14_id",
+          "offset": 93,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command 14 ID",
+          "label_ja": "コマンド14のID"
+        },
+        {
+          "name": "cmd14_rel_time",
+          "offset": 94,
+          "length": 4,
+          "type": "uint32_be",
+          "unit": "s",
+          "label": "Command 14 time relative to block start",
+          "label_ja": "コマンド14のブロック展開からの相対時刻"
+        }
+      ]
+    },
+    "5": {
+      "label": "ID05 (FRAM block command detail 2)",
+      "label_ja": "ID05 (FRAMブロックコマンド詳細2)",
+      "fields": [
+        {
+          "name": "packet_length",
+          "offset": 0,
+          "length": 1,
+          "type": "uint8",
+          "label": "Packet length",
+          "label_ja": "パケット長"
+        },
+        {
+          "name": "gen_timing",
+          "offset": 1,
+          "length": 1,
+          "type": "uint8",
+          "label": "Generation timing (0xFE=via DR, 0xFF=real time)",
+          "label_ja": "生成タイミング(0xFE=DR経由,0xFF=リアルタイム)"
+        },
+        {
+          "name": "telemetry_id",
+          "offset": 2,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry ID",
+          "label_ja": "テレメトリID"
+        },
+        {
+          "name": "telemetry_count",
+          "offset": 3,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry transmitted count",
+          "label_ja": "テレメトリ送信数"
+        },
+        {
+          "name": "onboard_unix_time",
+          "offset": 4,
+          "length": 4,
+          "type": "unix_time",
+          "label": "Satellite internal time (UTC)",
+          "label_ja": "衛星内部時刻(UTC)"
+        },
+        {
+          "name": "cmd_id",
+          "offset": 8,
+          "length": 1,
+          "type": "uint8",
+          "label": "Received command ID",
+          "label_ja": "受領コマンドID"
+        },
+        {
+          "name": "cmd_status",
+          "offset": 9,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command execution status",
+          "label_ja": "コマンド実行ステータス"
+        },
+        {
+          "name": "cmd_error",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command error status",
+          "label_ja": "コマンドエラーステータス"
+        },
+        {
+          "name": "cmd_recv_count",
+          "offset": 11,
+          "length": 1,
+          "type": "uint8",
+          "label": "Commands received",
+          "label_ja": "コマンド受領数"
+        },
+        {
+          "name": "block_id",
+          "offset": 12,
+          "length": 1,
+          "type": "uint8",
+          "label": "FRAM block command ID containing the command",
+          "label_ja": "指定したコマンドが含まれるFRAMブロックコマンドID"
+        },
+        {
+          "name": "cmd_pos",
+          "offset": 13,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command position in the block",
+          "label_ja": "ブロック内でのコマンドの位置"
+        },
+        {
+          "name": "cmd_params",
+          "offset": 14,
+          "length": 128,
+          "type": "hex",
+          "label": "Command parameters (layout depends on the command)",
+          "label_ja": "コマンドパラメータ(コマンドごとに異なる)"
+        }
+      ]
+    },
+    "7": {
+      "label": "ID07 (membrane deployment fuse data)",
+      "label_ja": "ID07 (膜展開部溶断時データ)",
+      "fields": [
+        {
+          "name": "packet_length",
+          "offset": 0,
+          "length": 1,
+          "type": "uint8",
+          "label": "Packet length",
+          "label_ja": "パケット長"
+        },
+        {
+          "name": "gen_timing",
+          "offset": 1,
+          "length": 1,
+          "type": "uint8",
+          "label": "Generation timing (0xFE=via DR, 0xFF=real time)",
+          "label_ja": "生成タイミング(0xFE=DR経由,0xFF=リアルタイム)"
+        },
+        {
+          "name": "telemetry_id",
+          "offset": 2,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry ID",
+          "label_ja": "テレメトリID"
+        },
+        {
+          "name": "telemetry_count",
+          "offset": 3,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry transmitted count",
+          "label_ja": "テレメトリ送信数"
+        },
+        {
+          "name": "onboard_unix_time",
+          "offset": 4,
+          "length": 4,
+          "type": "unix_time",
+          "label": "Satellite internal time (UTC)",
+          "label_ja": "衛星内部時刻(UTC)"
+        },
+        {
+          "name": "cmd_id",
+          "offset": 8,
+          "length": 1,
+          "type": "uint8",
+          "label": "Received command ID",
+          "label_ja": "受領コマンドID"
+        },
+        {
+          "name": "cmd_status",
+          "offset": 9,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command execution status",
+          "label_ja": "コマンド実行ステータス"
+        },
+        {
+          "name": "cmd_error",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command error status",
+          "label_ja": "コマンドエラーステータス"
+        },
+        {
+          "name": "cmd_recv_count",
+          "offset": 11,
+          "length": 1,
+          "type": "uint8",
+          "label": "Commands received",
+          "label_ja": "コマンド受領数"
+        },
+        {
+          "name": "packet_no",
+          "offset": 12,
+          "length": 1,
+          "type": "uint8",
+          "label": "Packet number",
+          "label_ja": "パケット番号"
+        },
+        {
+          "name": "total_packets",
+          "offset": 13,
+          "length": 1,
+          "type": "uint8",
+          "label": "Total packets",
+          "label_ja": "総パケット数"
+        },
+        {
+          "name": "s1_time_ms",
+          "offset": 14,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 1: time since fuse start",
+          "label_ja": "サンプル1: 溶断開始からの時間"
+        },
+        {
+          "name": "s1_fuse_current",
+          "offset": 16,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.718,
+          "label": "Sample 1: fuse system current",
+          "label_ja": "サンプル1: 溶断系統の電流"
+        },
+        {
+          "name": "s1_fuse_voltage",
+          "offset": 17,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "Sample 1: fuse system voltage",
+          "label_ja": "サンプル1: 溶断系統の電圧"
+        },
+        {
+          "name": "s1_gyro_x",
+          "offset": 18,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 1: angular rate X",
+          "label_ja": "サンプル1: X軸角速度"
+        },
+        {
+          "name": "s1_gyro_y",
+          "offset": 22,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 1: angular rate Y",
+          "label_ja": "サンプル1: Y軸角速度"
+        },
+        {
+          "name": "s1_gyro_z",
+          "offset": 26,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 1: angular rate Z",
+          "label_ja": "サンプル1: Z軸角速度"
+        },
+        {
+          "name": "s2_time_ms",
+          "offset": 30,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 2: time since fuse start",
+          "label_ja": "サンプル2: 溶断開始からの時間"
+        },
+        {
+          "name": "s2_fuse_current",
+          "offset": 32,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.718,
+          "label": "Sample 2: fuse system current",
+          "label_ja": "サンプル2: 溶断系統の電流"
+        },
+        {
+          "name": "s2_fuse_voltage",
+          "offset": 33,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "Sample 2: fuse system voltage",
+          "label_ja": "サンプル2: 溶断系統の電圧"
+        },
+        {
+          "name": "s2_gyro_x",
+          "offset": 34,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 2: angular rate X",
+          "label_ja": "サンプル2: X軸角速度"
+        },
+        {
+          "name": "s2_gyro_y",
+          "offset": 38,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 2: angular rate Y",
+          "label_ja": "サンプル2: Y軸角速度"
+        },
+        {
+          "name": "s2_gyro_z",
+          "offset": 42,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 2: angular rate Z",
+          "label_ja": "サンプル2: Z軸角速度"
+        },
+        {
+          "name": "s3_time_ms",
+          "offset": 46,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 3: time since fuse start",
+          "label_ja": "サンプル3: 溶断開始からの時間"
+        },
+        {
+          "name": "s3_fuse_current",
+          "offset": 48,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.718,
+          "label": "Sample 3: fuse system current",
+          "label_ja": "サンプル3: 溶断系統の電流"
+        },
+        {
+          "name": "s3_fuse_voltage",
+          "offset": 49,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "Sample 3: fuse system voltage",
+          "label_ja": "サンプル3: 溶断系統の電圧"
+        },
+        {
+          "name": "s3_gyro_x",
+          "offset": 50,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 3: angular rate X",
+          "label_ja": "サンプル3: X軸角速度"
+        },
+        {
+          "name": "s3_gyro_y",
+          "offset": 54,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 3: angular rate Y",
+          "label_ja": "サンプル3: Y軸角速度"
+        },
+        {
+          "name": "s3_gyro_z",
+          "offset": 58,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 3: angular rate Z",
+          "label_ja": "サンプル3: Z軸角速度"
+        },
+        {
+          "name": "s4_time_ms",
+          "offset": 62,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 4: time since fuse start",
+          "label_ja": "サンプル4: 溶断開始からの時間"
+        },
+        {
+          "name": "s4_fuse_current",
+          "offset": 64,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.718,
+          "label": "Sample 4: fuse system current",
+          "label_ja": "サンプル4: 溶断系統の電流"
+        },
+        {
+          "name": "s4_fuse_voltage",
+          "offset": 65,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "Sample 4: fuse system voltage",
+          "label_ja": "サンプル4: 溶断系統の電圧"
+        },
+        {
+          "name": "s4_gyro_x",
+          "offset": 66,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 4: angular rate X",
+          "label_ja": "サンプル4: X軸角速度"
+        },
+        {
+          "name": "s4_gyro_y",
+          "offset": 70,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 4: angular rate Y",
+          "label_ja": "サンプル4: Y軸角速度"
+        },
+        {
+          "name": "s4_gyro_z",
+          "offset": 74,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 4: angular rate Z",
+          "label_ja": "サンプル4: Z軸角速度"
+        },
+        {
+          "name": "s5_time_ms",
+          "offset": 78,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 5: time since fuse start",
+          "label_ja": "サンプル5: 溶断開始からの時間"
+        },
+        {
+          "name": "s5_fuse_current",
+          "offset": 80,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.718,
+          "label": "Sample 5: fuse system current",
+          "label_ja": "サンプル5: 溶断系統の電流"
+        },
+        {
+          "name": "s5_fuse_voltage",
+          "offset": 81,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "Sample 5: fuse system voltage",
+          "label_ja": "サンプル5: 溶断系統の電圧"
+        },
+        {
+          "name": "s5_gyro_x",
+          "offset": 82,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 5: angular rate X",
+          "label_ja": "サンプル5: X軸角速度"
+        },
+        {
+          "name": "s5_gyro_y",
+          "offset": 86,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 5: angular rate Y",
+          "label_ja": "サンプル5: Y軸角速度"
+        },
+        {
+          "name": "s5_gyro_z",
+          "offset": 90,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 5: angular rate Z",
+          "label_ja": "サンプル5: Z軸角速度"
+        },
+        {
+          "name": "s6_time_ms",
+          "offset": 94,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 6: time since fuse start",
+          "label_ja": "サンプル6: 溶断開始からの時間"
+        },
+        {
+          "name": "s6_fuse_current",
+          "offset": 96,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.718,
+          "label": "Sample 6: fuse system current",
+          "label_ja": "サンプル6: 溶断系統の電流"
+        },
+        {
+          "name": "s6_fuse_voltage",
+          "offset": 97,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "Sample 6: fuse system voltage",
+          "label_ja": "サンプル6: 溶断系統の電圧"
+        },
+        {
+          "name": "s6_gyro_x",
+          "offset": 98,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 6: angular rate X",
+          "label_ja": "サンプル6: X軸角速度"
+        },
+        {
+          "name": "s6_gyro_y",
+          "offset": 102,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 6: angular rate Y",
+          "label_ja": "サンプル6: Y軸角速度"
+        },
+        {
+          "name": "s6_gyro_z",
+          "offset": 106,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 6: angular rate Z",
+          "label_ja": "サンプル6: Z軸角速度"
+        },
+        {
+          "name": "s7_time_ms",
+          "offset": 110,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 7: time since fuse start",
+          "label_ja": "サンプル7: 溶断開始からの時間"
+        },
+        {
+          "name": "s7_fuse_current",
+          "offset": 112,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.718,
+          "label": "Sample 7: fuse system current",
+          "label_ja": "サンプル7: 溶断系統の電流"
+        },
+        {
+          "name": "s7_fuse_voltage",
+          "offset": 113,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "Sample 7: fuse system voltage",
+          "label_ja": "サンプル7: 溶断系統の電圧"
+        },
+        {
+          "name": "s7_gyro_x",
+          "offset": 114,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 7: angular rate X",
+          "label_ja": "サンプル7: X軸角速度"
+        },
+        {
+          "name": "s7_gyro_y",
+          "offset": 118,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 7: angular rate Y",
+          "label_ja": "サンプル7: Y軸角速度"
+        },
+        {
+          "name": "s7_gyro_z",
+          "offset": 122,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 7: angular rate Z",
+          "label_ja": "サンプル7: Z軸角速度"
+        },
+        {
+          "name": "s8_time_ms",
+          "offset": 126,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 8: time since fuse start",
+          "label_ja": "サンプル8: 溶断開始からの時間"
+        },
+        {
+          "name": "s8_fuse_current",
+          "offset": 128,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.718,
+          "label": "Sample 8: fuse system current",
+          "label_ja": "サンプル8: 溶断系統の電流"
+        },
+        {
+          "name": "s8_fuse_voltage",
+          "offset": 129,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "Sample 8: fuse system voltage",
+          "label_ja": "サンプル8: 溶断系統の電圧"
+        },
+        {
+          "name": "s8_gyro_x",
+          "offset": 130,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 8: angular rate X",
+          "label_ja": "サンプル8: X軸角速度"
+        },
+        {
+          "name": "s8_gyro_y",
+          "offset": 134,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 8: angular rate Y",
+          "label_ja": "サンプル8: Y軸角速度"
+        },
+        {
+          "name": "s8_gyro_z",
+          "offset": 138,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 8: angular rate Z",
+          "label_ja": "サンプル8: Z軸角速度"
+        },
+        {
+          "name": "s9_time_ms",
+          "offset": 142,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 9: time since fuse start",
+          "label_ja": "サンプル9: 溶断開始からの時間"
+        },
+        {
+          "name": "s9_fuse_current",
+          "offset": 144,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.718,
+          "label": "Sample 9: fuse system current",
+          "label_ja": "サンプル9: 溶断系統の電流"
+        },
+        {
+          "name": "s9_fuse_voltage",
+          "offset": 145,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "Sample 9: fuse system voltage",
+          "label_ja": "サンプル9: 溶断系統の電圧"
+        },
+        {
+          "name": "s9_gyro_x",
+          "offset": 146,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 9: angular rate X",
+          "label_ja": "サンプル9: X軸角速度"
+        },
+        {
+          "name": "s9_gyro_y",
+          "offset": 150,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 9: angular rate Y",
+          "label_ja": "サンプル9: Y軸角速度"
+        },
+        {
+          "name": "s9_gyro_z",
+          "offset": 154,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 9: angular rate Z",
+          "label_ja": "サンプル9: Z軸角速度"
+        },
+        {
+          "name": "s10_time_ms",
+          "offset": 158,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 10: time since fuse start",
+          "label_ja": "サンプル10: 溶断開始からの時間"
+        },
+        {
+          "name": "s10_fuse_current",
+          "offset": 160,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.718,
+          "label": "Sample 10: fuse system current",
+          "label_ja": "サンプル10: 溶断系統の電流"
+        },
+        {
+          "name": "s10_fuse_voltage",
+          "offset": 161,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "Sample 10: fuse system voltage",
+          "label_ja": "サンプル10: 溶断系統の電圧"
+        },
+        {
+          "name": "s10_gyro_x",
+          "offset": 162,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 10: angular rate X",
+          "label_ja": "サンプル10: X軸角速度"
+        },
+        {
+          "name": "s10_gyro_y",
+          "offset": 166,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 10: angular rate Y",
+          "label_ja": "サンプル10: Y軸角速度"
+        },
+        {
+          "name": "s10_gyro_z",
+          "offset": 170,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 10: angular rate Z",
+          "label_ja": "サンプル10: Z軸角速度"
+        },
+        {
+          "name": "s11_time_ms",
+          "offset": 174,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 11: time since fuse start",
+          "label_ja": "サンプル11: 溶断開始からの時間"
+        },
+        {
+          "name": "s11_fuse_current",
+          "offset": 176,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.718,
+          "label": "Sample 11: fuse system current",
+          "label_ja": "サンプル11: 溶断系統の電流"
+        },
+        {
+          "name": "s11_fuse_voltage",
+          "offset": 177,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "Sample 11: fuse system voltage",
+          "label_ja": "サンプル11: 溶断系統の電圧"
+        },
+        {
+          "name": "s11_gyro_x",
+          "offset": 178,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 11: angular rate X",
+          "label_ja": "サンプル11: X軸角速度"
+        },
+        {
+          "name": "s11_gyro_y",
+          "offset": 182,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 11: angular rate Y",
+          "label_ja": "サンプル11: Y軸角速度"
+        },
+        {
+          "name": "s11_gyro_z",
+          "offset": 186,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 11: angular rate Z",
+          "label_ja": "サンプル11: Z軸角速度"
+        },
+        {
+          "name": "s12_time_ms",
+          "offset": 190,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 12: time since fuse start",
+          "label_ja": "サンプル12: 溶断開始からの時間"
+        },
+        {
+          "name": "s12_fuse_current",
+          "offset": 192,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 11.718,
+          "label": "Sample 12: fuse system current",
+          "label_ja": "サンプル12: 溶断系統の電流"
+        },
+        {
+          "name": "s12_fuse_voltage",
+          "offset": 193,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 0.0625,
+          "label": "Sample 12: fuse system voltage",
+          "label_ja": "サンプル12: 溶断系統の電圧"
+        },
+        {
+          "name": "s12_gyro_x",
+          "offset": 194,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 12: angular rate X",
+          "label_ja": "サンプル12: X軸角速度"
+        },
+        {
+          "name": "s12_gyro_y",
+          "offset": 198,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 12: angular rate Y",
+          "label_ja": "サンプル12: Y軸角速度"
+        },
+        {
+          "name": "s12_gyro_z",
+          "offset": 202,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "deg/s",
+          "label": "Sample 12: angular rate Z",
+          "label_ja": "サンプル12: Z軸角速度"
+        }
+      ]
+    },
+    "8": {
+      "label": "ID08 (extension MAST fuse data)",
+      "label_ja": "ID08 (伸展MAST部溶断時データ)",
+      "fields": [
+        {
+          "name": "packet_length",
+          "offset": 0,
+          "length": 1,
+          "type": "uint8",
+          "label": "Packet length",
+          "label_ja": "パケット長"
+        },
+        {
+          "name": "gen_timing",
+          "offset": 1,
+          "length": 1,
+          "type": "uint8",
+          "label": "Generation timing (0xFE=via DR, 0xFF=real time)",
+          "label_ja": "生成タイミング(0xFE=DR経由,0xFF=リアルタイム)"
+        },
+        {
+          "name": "telemetry_id",
+          "offset": 2,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry ID",
+          "label_ja": "テレメトリID"
+        },
+        {
+          "name": "telemetry_count",
+          "offset": 3,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry transmitted count",
+          "label_ja": "テレメトリ送信数"
+        },
+        {
+          "name": "onboard_unix_time",
+          "offset": 4,
+          "length": 4,
+          "type": "unix_time",
+          "label": "Satellite internal time (UTC)",
+          "label_ja": "衛星内部時刻(UTC)"
+        },
+        {
+          "name": "cmd_id",
+          "offset": 8,
+          "length": 1,
+          "type": "uint8",
+          "label": "Received command ID",
+          "label_ja": "受領コマンドID"
+        },
+        {
+          "name": "cmd_status",
+          "offset": 9,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command execution status",
+          "label_ja": "コマンド実行ステータス"
+        },
+        {
+          "name": "cmd_error",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command error status",
+          "label_ja": "コマンドエラーステータス"
+        },
+        {
+          "name": "cmd_recv_count",
+          "offset": 11,
+          "length": 1,
+          "type": "uint8",
+          "label": "Commands received",
+          "label_ja": "コマンド受領数"
+        },
+        {
+          "name": "packet_no",
+          "offset": 12,
+          "length": 1,
+          "type": "uint8",
+          "label": "Packet number",
+          "label_ja": "パケット番号"
+        },
+        {
+          "name": "total_packets",
+          "offset": 13,
+          "length": 1,
+          "type": "uint8",
+          "label": "Total packets",
+          "label_ja": "総パケット数"
+        },
+        {
+          "name": "fuse_current",
+          "offset": 14,
+          "length": 1,
+          "type": "uint8",
+          "unit": "mA",
+          "scale": 4.0566,
+          "label": "Fuse system current (first 10 packets only)",
+          "label_ja": "溶断時の電流(最初の10パケットのみ)"
+        },
+        {
+          "name": "fuse_voltage",
+          "offset": 15,
+          "length": 1,
+          "type": "uint8",
+          "unit": "V",
+          "scale": 1.8918,
+          "label": "Fuse system voltage (first 10 packets only)",
+          "label_ja": "溶断時の電圧(最初の10パケットのみ)"
+        },
+        {
+          "name": "s1_time_ms",
+          "offset": 16,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 1: time since fuse start",
+          "label_ja": "サンプル1: 溶断開始からの時間"
+        },
+        {
+          "name": "s1_acc_x",
+          "offset": 18,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 1: acceleration X",
+          "label_ja": "サンプル1: X軸加速度"
+        },
+        {
+          "name": "s1_acc_y",
+          "offset": 22,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 1: acceleration Y",
+          "label_ja": "サンプル1: Y軸加速度"
+        },
+        {
+          "name": "s1_acc_z",
+          "offset": 26,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 1: acceleration Z",
+          "label_ja": "サンプル1: Z軸加速度"
+        },
+        {
+          "name": "s2_time_ms",
+          "offset": 30,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 2: time since fuse start",
+          "label_ja": "サンプル2: 溶断開始からの時間"
+        },
+        {
+          "name": "s2_acc_x",
+          "offset": 32,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 2: acceleration X",
+          "label_ja": "サンプル2: X軸加速度"
+        },
+        {
+          "name": "s2_acc_y",
+          "offset": 36,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 2: acceleration Y",
+          "label_ja": "サンプル2: Y軸加速度"
+        },
+        {
+          "name": "s2_acc_z",
+          "offset": 40,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 2: acceleration Z",
+          "label_ja": "サンプル2: Z軸加速度"
+        },
+        {
+          "name": "s3_time_ms",
+          "offset": 44,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 3: time since fuse start",
+          "label_ja": "サンプル3: 溶断開始からの時間"
+        },
+        {
+          "name": "s3_acc_x",
+          "offset": 46,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 3: acceleration X",
+          "label_ja": "サンプル3: X軸加速度"
+        },
+        {
+          "name": "s3_acc_y",
+          "offset": 50,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 3: acceleration Y",
+          "label_ja": "サンプル3: Y軸加速度"
+        },
+        {
+          "name": "s3_acc_z",
+          "offset": 54,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 3: acceleration Z",
+          "label_ja": "サンプル3: Z軸加速度"
+        },
+        {
+          "name": "s4_time_ms",
+          "offset": 58,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 4: time since fuse start",
+          "label_ja": "サンプル4: 溶断開始からの時間"
+        },
+        {
+          "name": "s4_acc_x",
+          "offset": 60,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 4: acceleration X",
+          "label_ja": "サンプル4: X軸加速度"
+        },
+        {
+          "name": "s4_acc_y",
+          "offset": 64,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 4: acceleration Y",
+          "label_ja": "サンプル4: Y軸加速度"
+        },
+        {
+          "name": "s4_acc_z",
+          "offset": 68,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 4: acceleration Z",
+          "label_ja": "サンプル4: Z軸加速度"
+        },
+        {
+          "name": "s5_time_ms",
+          "offset": 72,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 5: time since fuse start",
+          "label_ja": "サンプル5: 溶断開始からの時間"
+        },
+        {
+          "name": "s5_acc_x",
+          "offset": 74,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 5: acceleration X",
+          "label_ja": "サンプル5: X軸加速度"
+        },
+        {
+          "name": "s5_acc_y",
+          "offset": 78,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 5: acceleration Y",
+          "label_ja": "サンプル5: Y軸加速度"
+        },
+        {
+          "name": "s5_acc_z",
+          "offset": 82,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 5: acceleration Z",
+          "label_ja": "サンプル5: Z軸加速度"
+        },
+        {
+          "name": "s6_time_ms",
+          "offset": 86,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 6: time since fuse start",
+          "label_ja": "サンプル6: 溶断開始からの時間"
+        },
+        {
+          "name": "s6_acc_x",
+          "offset": 88,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 6: acceleration X",
+          "label_ja": "サンプル6: X軸加速度"
+        },
+        {
+          "name": "s6_acc_y",
+          "offset": 92,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 6: acceleration Y",
+          "label_ja": "サンプル6: Y軸加速度"
+        },
+        {
+          "name": "s6_acc_z",
+          "offset": 96,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 6: acceleration Z",
+          "label_ja": "サンプル6: Z軸加速度"
+        },
+        {
+          "name": "s7_time_ms",
+          "offset": 100,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 7: time since fuse start",
+          "label_ja": "サンプル7: 溶断開始からの時間"
+        },
+        {
+          "name": "s7_acc_x",
+          "offset": 102,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 7: acceleration X",
+          "label_ja": "サンプル7: X軸加速度"
+        },
+        {
+          "name": "s7_acc_y",
+          "offset": 106,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 7: acceleration Y",
+          "label_ja": "サンプル7: Y軸加速度"
+        },
+        {
+          "name": "s7_acc_z",
+          "offset": 110,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 7: acceleration Z",
+          "label_ja": "サンプル7: Z軸加速度"
+        },
+        {
+          "name": "s8_time_ms",
+          "offset": 114,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 8: time since fuse start",
+          "label_ja": "サンプル8: 溶断開始からの時間"
+        },
+        {
+          "name": "s8_acc_x",
+          "offset": 116,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 8: acceleration X",
+          "label_ja": "サンプル8: X軸加速度"
+        },
+        {
+          "name": "s8_acc_y",
+          "offset": 120,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 8: acceleration Y",
+          "label_ja": "サンプル8: Y軸加速度"
+        },
+        {
+          "name": "s8_acc_z",
+          "offset": 124,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 8: acceleration Z",
+          "label_ja": "サンプル8: Z軸加速度"
+        },
+        {
+          "name": "s9_time_ms",
+          "offset": 128,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 9: time since fuse start",
+          "label_ja": "サンプル9: 溶断開始からの時間"
+        },
+        {
+          "name": "s9_acc_x",
+          "offset": 130,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 9: acceleration X",
+          "label_ja": "サンプル9: X軸加速度"
+        },
+        {
+          "name": "s9_acc_y",
+          "offset": 134,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 9: acceleration Y",
+          "label_ja": "サンプル9: Y軸加速度"
+        },
+        {
+          "name": "s9_acc_z",
+          "offset": 138,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 9: acceleration Z",
+          "label_ja": "サンプル9: Z軸加速度"
+        },
+        {
+          "name": "s10_time_ms",
+          "offset": 142,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 10: time since fuse start",
+          "label_ja": "サンプル10: 溶断開始からの時間"
+        },
+        {
+          "name": "s10_acc_x",
+          "offset": 144,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 10: acceleration X",
+          "label_ja": "サンプル10: X軸加速度"
+        },
+        {
+          "name": "s10_acc_y",
+          "offset": 148,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 10: acceleration Y",
+          "label_ja": "サンプル10: Y軸加速度"
+        },
+        {
+          "name": "s10_acc_z",
+          "offset": 152,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 10: acceleration Z",
+          "label_ja": "サンプル10: Z軸加速度"
+        },
+        {
+          "name": "s11_time_ms",
+          "offset": 156,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 11: time since fuse start",
+          "label_ja": "サンプル11: 溶断開始からの時間"
+        },
+        {
+          "name": "s11_acc_x",
+          "offset": 158,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 11: acceleration X",
+          "label_ja": "サンプル11: X軸加速度"
+        },
+        {
+          "name": "s11_acc_y",
+          "offset": 162,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 11: acceleration Y",
+          "label_ja": "サンプル11: Y軸加速度"
+        },
+        {
+          "name": "s11_acc_z",
+          "offset": 166,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 11: acceleration Z",
+          "label_ja": "サンプル11: Z軸加速度"
+        },
+        {
+          "name": "s12_time_ms",
+          "offset": 170,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 12: time since fuse start",
+          "label_ja": "サンプル12: 溶断開始からの時間"
+        },
+        {
+          "name": "s12_acc_x",
+          "offset": 172,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 12: acceleration X",
+          "label_ja": "サンプル12: X軸加速度"
+        },
+        {
+          "name": "s12_acc_y",
+          "offset": 176,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 12: acceleration Y",
+          "label_ja": "サンプル12: Y軸加速度"
+        },
+        {
+          "name": "s12_acc_z",
+          "offset": 180,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 12: acceleration Z",
+          "label_ja": "サンプル12: Z軸加速度"
+        },
+        {
+          "name": "s13_time_ms",
+          "offset": 184,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 13: time since fuse start",
+          "label_ja": "サンプル13: 溶断開始からの時間"
+        },
+        {
+          "name": "s13_acc_x",
+          "offset": 186,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 13: acceleration X",
+          "label_ja": "サンプル13: X軸加速度"
+        },
+        {
+          "name": "s13_acc_y",
+          "offset": 190,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 13: acceleration Y",
+          "label_ja": "サンプル13: Y軸加速度"
+        },
+        {
+          "name": "s13_acc_z",
+          "offset": 194,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 13: acceleration Z",
+          "label_ja": "サンプル13: Z軸加速度"
+        },
+        {
+          "name": "s14_time_ms",
+          "offset": 198,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "ms",
+          "label": "Sample 14: time since fuse start",
+          "label_ja": "サンプル14: 溶断開始からの時間"
+        },
+        {
+          "name": "s14_acc_x",
+          "offset": 200,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 14: acceleration X",
+          "label_ja": "サンプル14: X軸加速度"
+        },
+        {
+          "name": "s14_acc_y",
+          "offset": 204,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 14: acceleration Y",
+          "label_ja": "サンプル14: Y軸加速度"
+        },
+        {
+          "name": "s14_acc_z",
+          "offset": 208,
+          "length": 4,
+          "type": "float32_be",
+          "unit": "m/s^2",
+          "label": "Sample 14: acceleration Z",
+          "label_ja": "サンプル14: Z軸加速度"
+        }
+      ]
+    },
+    "9": {
+      "label": "ID09 (extension MAST deployment data)",
+      "label_ja": "ID09 (伸展MAST部伸展時データ)",
+      "fields": [
+        {
+          "name": "packet_length",
+          "offset": 0,
+          "length": 1,
+          "type": "uint8",
+          "label": "Packet length",
+          "label_ja": "パケット長"
+        },
+        {
+          "name": "gen_timing",
+          "offset": 1,
+          "length": 1,
+          "type": "uint8",
+          "label": "Generation timing (0xFE=via DR, 0xFF=real time)",
+          "label_ja": "生成タイミング(0xFE=DR経由,0xFF=リアルタイム)"
+        },
+        {
+          "name": "telemetry_id",
+          "offset": 2,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry ID",
+          "label_ja": "テレメトリID"
+        },
+        {
+          "name": "telemetry_count",
+          "offset": 3,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry transmitted count",
+          "label_ja": "テレメトリ送信数"
+        },
+        {
+          "name": "onboard_unix_time",
+          "offset": 4,
+          "length": 4,
+          "type": "unix_time",
+          "label": "Satellite internal time (UTC)",
+          "label_ja": "衛星内部時刻(UTC)"
+        },
+        {
+          "name": "cmd_id",
+          "offset": 8,
+          "length": 1,
+          "type": "uint8",
+          "label": "Received command ID",
+          "label_ja": "受領コマンドID"
+        },
+        {
+          "name": "cmd_status",
+          "offset": 9,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command execution status",
+          "label_ja": "コマンド実行ステータス"
+        },
+        {
+          "name": "cmd_error",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command error status",
+          "label_ja": "コマンドエラーステータス"
+        },
+        {
+          "name": "cmd_recv_count",
+          "offset": 11,
+          "length": 1,
+          "type": "uint8",
+          "label": "Commands received",
+          "label_ja": "コマンド受領数"
+        },
+        {
+          "name": "packet_no",
+          "offset": 12,
+          "length": 1,
+          "type": "uint8",
+          "label": "Packet number",
+          "label_ja": "パケット番号"
+        },
+        {
+          "name": "total_packets",
+          "offset": 13,
+          "length": 1,
+          "type": "uint8",
+          "label": "Total packets",
+          "label_ja": "総パケット数"
+        },
+        {
+          "name": "deploy_data",
+          "offset": 14,
+          "length": 195,
+          "type": "hex",
+          "label": "Deployment data, raw (the specification's record layout is inconsistent, so it is not split)",
+          "label_ja": "伸展時データ(生。仕様書のレコード構成に矛盾があるため分解していない)"
+        }
+      ]
+    },
+    "10": {
+      "label": "ID10 (thin-film solar cell experiment)",
+      "label_ja": "ID10 (薄膜太陽電池実験データ)",
+      "fields": [
+        {
+          "name": "packet_length",
+          "offset": 0,
+          "length": 1,
+          "type": "uint8",
+          "label": "Packet length",
+          "label_ja": "パケット長"
+        },
+        {
+          "name": "gen_timing",
+          "offset": 1,
+          "length": 1,
+          "type": "uint8",
+          "label": "Generation timing (0xFE=via DR, 0xFF=real time)",
+          "label_ja": "生成タイミング(0xFE=DR経由,0xFF=リアルタイム)"
+        },
+        {
+          "name": "telemetry_id",
+          "offset": 2,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry ID",
+          "label_ja": "テレメトリID"
+        },
+        {
+          "name": "telemetry_count",
+          "offset": 3,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry transmitted count",
+          "label_ja": "テレメトリ送信数"
+        },
+        {
+          "name": "onboard_unix_time",
+          "offset": 4,
+          "length": 4,
+          "type": "unix_time",
+          "label": "Satellite internal time (UTC)",
+          "label_ja": "衛星内部時刻(UTC)"
+        },
+        {
+          "name": "cmd_id",
+          "offset": 8,
+          "length": 1,
+          "type": "uint8",
+          "label": "Received command ID",
+          "label_ja": "受領コマンドID"
+        },
+        {
+          "name": "cmd_status",
+          "offset": 9,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command execution status",
+          "label_ja": "コマンド実行ステータス"
+        },
+        {
+          "name": "cmd_error",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command error status",
+          "label_ja": "コマンドエラーステータス"
+        },
+        {
+          "name": "cmd_recv_count",
+          "offset": 11,
+          "length": 1,
+          "type": "uint8",
+          "label": "Commands received",
+          "label_ja": "コマンド受領数"
+        },
+        {
+          "name": "packet_no",
+          "offset": 12,
+          "length": 1,
+          "type": "uint8",
+          "label": "Packet number",
+          "label_ja": "パケット番号"
+        },
+        {
+          "name": "total_packets",
+          "offset": 13,
+          "length": 1,
+          "type": "uint8",
+          "label": "Total packets",
+          "label_ja": "総パケット数"
+        },
+        {
+          "name": "s1_current",
+          "offset": 14,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 1: current",
+          "label_ja": "IV点1: 電流"
+        },
+        {
+          "name": "s1_voltage",
+          "offset": 16,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 1: voltage",
+          "label_ja": "IV点1: 電圧"
+        },
+        {
+          "name": "s2_current",
+          "offset": 18,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 2: current",
+          "label_ja": "IV点2: 電流"
+        },
+        {
+          "name": "s2_voltage",
+          "offset": 20,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 2: voltage",
+          "label_ja": "IV点2: 電圧"
+        },
+        {
+          "name": "s3_current",
+          "offset": 22,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 3: current",
+          "label_ja": "IV点3: 電流"
+        },
+        {
+          "name": "s3_voltage",
+          "offset": 24,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 3: voltage",
+          "label_ja": "IV点3: 電圧"
+        },
+        {
+          "name": "s4_current",
+          "offset": 26,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 4: current",
+          "label_ja": "IV点4: 電流"
+        },
+        {
+          "name": "s4_voltage",
+          "offset": 28,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 4: voltage",
+          "label_ja": "IV点4: 電圧"
+        },
+        {
+          "name": "s5_current",
+          "offset": 30,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 5: current",
+          "label_ja": "IV点5: 電流"
+        },
+        {
+          "name": "s5_voltage",
+          "offset": 32,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 5: voltage",
+          "label_ja": "IV点5: 電圧"
+        },
+        {
+          "name": "s6_current",
+          "offset": 34,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 6: current",
+          "label_ja": "IV点6: 電流"
+        },
+        {
+          "name": "s6_voltage",
+          "offset": 36,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 6: voltage",
+          "label_ja": "IV点6: 電圧"
+        },
+        {
+          "name": "s7_current",
+          "offset": 38,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 7: current",
+          "label_ja": "IV点7: 電流"
+        },
+        {
+          "name": "s7_voltage",
+          "offset": 40,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 7: voltage",
+          "label_ja": "IV点7: 電圧"
+        },
+        {
+          "name": "s8_current",
+          "offset": 42,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 8: current",
+          "label_ja": "IV点8: 電流"
+        },
+        {
+          "name": "s8_voltage",
+          "offset": 44,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 8: voltage",
+          "label_ja": "IV点8: 電圧"
+        },
+        {
+          "name": "s9_current",
+          "offset": 46,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 9: current",
+          "label_ja": "IV点9: 電流"
+        },
+        {
+          "name": "s9_voltage",
+          "offset": 48,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 9: voltage",
+          "label_ja": "IV点9: 電圧"
+        },
+        {
+          "name": "s10_current",
+          "offset": 50,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 10: current",
+          "label_ja": "IV点10: 電流"
+        },
+        {
+          "name": "s10_voltage",
+          "offset": 52,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 10: voltage",
+          "label_ja": "IV点10: 電圧"
+        },
+        {
+          "name": "s11_current",
+          "offset": 54,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 11: current",
+          "label_ja": "IV点11: 電流"
+        },
+        {
+          "name": "s11_voltage",
+          "offset": 56,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 11: voltage",
+          "label_ja": "IV点11: 電圧"
+        },
+        {
+          "name": "s12_current",
+          "offset": 58,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 12: current",
+          "label_ja": "IV点12: 電流"
+        },
+        {
+          "name": "s12_voltage",
+          "offset": 60,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 12: voltage",
+          "label_ja": "IV点12: 電圧"
+        },
+        {
+          "name": "s13_current",
+          "offset": 62,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 13: current",
+          "label_ja": "IV点13: 電流"
+        },
+        {
+          "name": "s13_voltage",
+          "offset": 64,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 13: voltage",
+          "label_ja": "IV点13: 電圧"
+        },
+        {
+          "name": "s14_current",
+          "offset": 66,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 14: current",
+          "label_ja": "IV点14: 電流"
+        },
+        {
+          "name": "s14_voltage",
+          "offset": 68,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 14: voltage",
+          "label_ja": "IV点14: 電圧"
+        },
+        {
+          "name": "s15_current",
+          "offset": 70,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 15: current",
+          "label_ja": "IV点15: 電流"
+        },
+        {
+          "name": "s15_voltage",
+          "offset": 72,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 15: voltage",
+          "label_ja": "IV点15: 電圧"
+        },
+        {
+          "name": "s16_current",
+          "offset": 74,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 16: current",
+          "label_ja": "IV点16: 電流"
+        },
+        {
+          "name": "s16_voltage",
+          "offset": 76,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 16: voltage",
+          "label_ja": "IV点16: 電圧"
+        },
+        {
+          "name": "s17_current",
+          "offset": 78,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 17: current",
+          "label_ja": "IV点17: 電流"
+        },
+        {
+          "name": "s17_voltage",
+          "offset": 80,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 17: voltage",
+          "label_ja": "IV点17: 電圧"
+        },
+        {
+          "name": "s18_current",
+          "offset": 82,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 18: current",
+          "label_ja": "IV点18: 電流"
+        },
+        {
+          "name": "s18_voltage",
+          "offset": 84,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 18: voltage",
+          "label_ja": "IV点18: 電圧"
+        },
+        {
+          "name": "s19_current",
+          "offset": 86,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 19: current",
+          "label_ja": "IV点19: 電流"
+        },
+        {
+          "name": "s19_voltage",
+          "offset": 88,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 19: voltage",
+          "label_ja": "IV点19: 電圧"
+        },
+        {
+          "name": "s20_current",
+          "offset": 90,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 20: current",
+          "label_ja": "IV点20: 電流"
+        },
+        {
+          "name": "s20_voltage",
+          "offset": 92,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 20: voltage",
+          "label_ja": "IV点20: 電圧"
+        },
+        {
+          "name": "s21_current",
+          "offset": 94,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 21: current",
+          "label_ja": "IV点21: 電流"
+        },
+        {
+          "name": "s21_voltage",
+          "offset": 96,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 21: voltage",
+          "label_ja": "IV点21: 電圧"
+        },
+        {
+          "name": "s22_current",
+          "offset": 98,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 22: current",
+          "label_ja": "IV点22: 電流"
+        },
+        {
+          "name": "s22_voltage",
+          "offset": 100,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 22: voltage",
+          "label_ja": "IV点22: 電圧"
+        },
+        {
+          "name": "s23_current",
+          "offset": 102,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 23: current",
+          "label_ja": "IV点23: 電流"
+        },
+        {
+          "name": "s23_voltage",
+          "offset": 104,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 23: voltage",
+          "label_ja": "IV点23: 電圧"
+        },
+        {
+          "name": "s24_current",
+          "offset": 106,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 24: current",
+          "label_ja": "IV点24: 電流"
+        },
+        {
+          "name": "s24_voltage",
+          "offset": 108,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 24: voltage",
+          "label_ja": "IV点24: 電圧"
+        },
+        {
+          "name": "s25_current",
+          "offset": 110,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 25: current",
+          "label_ja": "IV点25: 電流"
+        },
+        {
+          "name": "s25_voltage",
+          "offset": 112,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 25: voltage",
+          "label_ja": "IV点25: 電圧"
+        },
+        {
+          "name": "s26_current",
+          "offset": 114,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 26: current",
+          "label_ja": "IV点26: 電流"
+        },
+        {
+          "name": "s26_voltage",
+          "offset": 116,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 26: voltage",
+          "label_ja": "IV点26: 電圧"
+        },
+        {
+          "name": "s27_current",
+          "offset": 118,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 27: current",
+          "label_ja": "IV点27: 電流"
+        },
+        {
+          "name": "s27_voltage",
+          "offset": 120,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 27: voltage",
+          "label_ja": "IV点27: 電圧"
+        },
+        {
+          "name": "s28_current",
+          "offset": 122,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 28: current",
+          "label_ja": "IV点28: 電流"
+        },
+        {
+          "name": "s28_voltage",
+          "offset": 124,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 28: voltage",
+          "label_ja": "IV点28: 電圧"
+        },
+        {
+          "name": "s29_current",
+          "offset": 126,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 29: current",
+          "label_ja": "IV点29: 電流"
+        },
+        {
+          "name": "s29_voltage",
+          "offset": 128,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 29: voltage",
+          "label_ja": "IV点29: 電圧"
+        },
+        {
+          "name": "s30_current",
+          "offset": 130,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 30: current",
+          "label_ja": "IV点30: 電流"
+        },
+        {
+          "name": "s30_voltage",
+          "offset": 132,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 30: voltage",
+          "label_ja": "IV点30: 電圧"
+        },
+        {
+          "name": "s31_current",
+          "offset": 134,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 31: current",
+          "label_ja": "IV点31: 電流"
+        },
+        {
+          "name": "s31_voltage",
+          "offset": 136,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 31: voltage",
+          "label_ja": "IV点31: 電圧"
+        },
+        {
+          "name": "s32_current",
+          "offset": 138,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 32: current",
+          "label_ja": "IV点32: 電流"
+        },
+        {
+          "name": "s32_voltage",
+          "offset": 140,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 32: voltage",
+          "label_ja": "IV点32: 電圧"
+        },
+        {
+          "name": "s33_current",
+          "offset": 142,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 33: current",
+          "label_ja": "IV点33: 電流"
+        },
+        {
+          "name": "s33_voltage",
+          "offset": 144,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 33: voltage",
+          "label_ja": "IV点33: 電圧"
+        },
+        {
+          "name": "s34_current",
+          "offset": 146,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 34: current",
+          "label_ja": "IV点34: 電流"
+        },
+        {
+          "name": "s34_voltage",
+          "offset": 148,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 34: voltage",
+          "label_ja": "IV点34: 電圧"
+        },
+        {
+          "name": "s35_current",
+          "offset": 150,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 35: current",
+          "label_ja": "IV点35: 電流"
+        },
+        {
+          "name": "s35_voltage",
+          "offset": 152,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 35: voltage",
+          "label_ja": "IV点35: 電圧"
+        },
+        {
+          "name": "s36_current",
+          "offset": 154,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 36: current",
+          "label_ja": "IV点36: 電流"
+        },
+        {
+          "name": "s36_voltage",
+          "offset": 156,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 36: voltage",
+          "label_ja": "IV点36: 電圧"
+        },
+        {
+          "name": "s37_current",
+          "offset": 158,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 37: current",
+          "label_ja": "IV点37: 電流"
+        },
+        {
+          "name": "s37_voltage",
+          "offset": 160,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 37: voltage",
+          "label_ja": "IV点37: 電圧"
+        },
+        {
+          "name": "s38_current",
+          "offset": 162,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 38: current",
+          "label_ja": "IV点38: 電流"
+        },
+        {
+          "name": "s38_voltage",
+          "offset": 164,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 38: voltage",
+          "label_ja": "IV点38: 電圧"
+        },
+        {
+          "name": "s39_current",
+          "offset": 166,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 39: current",
+          "label_ja": "IV点39: 電流"
+        },
+        {
+          "name": "s39_voltage",
+          "offset": 168,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 39: voltage",
+          "label_ja": "IV点39: 電圧"
+        },
+        {
+          "name": "s40_current",
+          "offset": 170,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 40: current",
+          "label_ja": "IV点40: 電流"
+        },
+        {
+          "name": "s40_voltage",
+          "offset": 172,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 40: voltage",
+          "label_ja": "IV点40: 電圧"
+        },
+        {
+          "name": "s41_current",
+          "offset": 174,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 41: current",
+          "label_ja": "IV点41: 電流"
+        },
+        {
+          "name": "s41_voltage",
+          "offset": 176,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 41: voltage",
+          "label_ja": "IV点41: 電圧"
+        },
+        {
+          "name": "s42_current",
+          "offset": 178,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 42: current",
+          "label_ja": "IV点42: 電流"
+        },
+        {
+          "name": "s42_voltage",
+          "offset": 180,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 42: voltage",
+          "label_ja": "IV点42: 電圧"
+        },
+        {
+          "name": "s43_current",
+          "offset": 182,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 43: current",
+          "label_ja": "IV点43: 電流"
+        },
+        {
+          "name": "s43_voltage",
+          "offset": 184,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 43: voltage",
+          "label_ja": "IV点43: 電圧"
+        },
+        {
+          "name": "s44_current",
+          "offset": 186,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 44: current",
+          "label_ja": "IV点44: 電流"
+        },
+        {
+          "name": "s44_voltage",
+          "offset": 188,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 44: voltage",
+          "label_ja": "IV点44: 電圧"
+        },
+        {
+          "name": "s45_current",
+          "offset": 190,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 45: current",
+          "label_ja": "IV点45: 電流"
+        },
+        {
+          "name": "s45_voltage",
+          "offset": 192,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 45: voltage",
+          "label_ja": "IV点45: 電圧"
+        },
+        {
+          "name": "s46_current",
+          "offset": 194,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 46: current",
+          "label_ja": "IV点46: 電流"
+        },
+        {
+          "name": "s46_voltage",
+          "offset": 196,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 46: voltage",
+          "label_ja": "IV点46: 電圧"
+        },
+        {
+          "name": "s47_current",
+          "offset": 198,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 47: current",
+          "label_ja": "IV点47: 電流"
+        },
+        {
+          "name": "s47_voltage",
+          "offset": 200,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 47: voltage",
+          "label_ja": "IV点47: 電圧"
+        },
+        {
+          "name": "s48_current",
+          "offset": 202,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 48: current",
+          "label_ja": "IV点48: 電流"
+        },
+        {
+          "name": "s48_voltage",
+          "offset": 204,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 48: voltage",
+          "label_ja": "IV点48: 電圧"
+        },
+        {
+          "name": "s49_current",
+          "offset": 206,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "mA",
+          "scale": 0.10415,
+          "add": -0.5014,
+          "label": "IV point 49: current",
+          "label_ja": "IV点49: 電流"
+        },
+        {
+          "name": "s49_voltage",
+          "offset": 208,
+          "length": 2,
+          "type": "uint16_be",
+          "unit": "V",
+          "scale": 0.01448,
+          "label": "IV point 49: voltage",
+          "label_ja": "IV点49: 電圧"
         }
       ]
     },
@@ -224,6 +4695,338 @@
           "type": "uint16_be",
           "label": "RasPi restart count",
           "label_ja": "RasPi再起動回数"
+        }
+      ]
+    },
+    "66": {
+      "label": "ID66 (RasPi throttling detail)",
+      "label_ja": "ID66 (RasPiスロットリング情報詳細)",
+      "fields": [
+        {
+          "name": "packet_length",
+          "offset": 0,
+          "length": 1,
+          "type": "uint8",
+          "label": "Packet length",
+          "label_ja": "パケット長"
+        },
+        {
+          "name": "gen_timing",
+          "offset": 1,
+          "length": 1,
+          "type": "uint8",
+          "label": "Generation timing (0xFE=via DR, 0xFF=real time)",
+          "label_ja": "生成タイミング(0xFE=DR経由,0xFF=リアルタイム)"
+        },
+        {
+          "name": "telemetry_id",
+          "offset": 2,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry ID",
+          "label_ja": "テレメトリID"
+        },
+        {
+          "name": "telemetry_count",
+          "offset": 3,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry transmitted count",
+          "label_ja": "テレメトリ送信数"
+        },
+        {
+          "name": "onboard_unix_time",
+          "offset": 4,
+          "length": 4,
+          "type": "unix_time",
+          "label": "Satellite internal time (UTC)",
+          "label_ja": "衛星内部時刻(UTC)"
+        },
+        {
+          "name": "cmd_id",
+          "offset": 8,
+          "length": 1,
+          "type": "uint8",
+          "label": "Received command ID",
+          "label_ja": "受領コマンドID"
+        },
+        {
+          "name": "cmd_status",
+          "offset": 9,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command execution status",
+          "label_ja": "コマンド実行ステータス"
+        },
+        {
+          "name": "cmd_error",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command error status",
+          "label_ja": "コマンドエラーステータス"
+        },
+        {
+          "name": "cmd_recv_count",
+          "offset": 11,
+          "length": 1,
+          "type": "uint8",
+          "label": "Commands received",
+          "label_ja": "コマンド受領数"
+        },
+        {
+          "name": "now_throttled",
+          "offset": 12,
+          "length": 1,
+          "type": "uint8",
+          "label": "Current: Throttling detected",
+          "label_ja": "現在のスロットリング状態検知"
+        },
+        {
+          "name": "now_undervoltage",
+          "offset": 13,
+          "length": 1,
+          "type": "uint8",
+          "label": "Current: Under-voltage detected",
+          "label_ja": "現在の電圧不足検知"
+        },
+        {
+          "name": "now_freq_capped",
+          "offset": 14,
+          "length": 1,
+          "type": "uint8",
+          "label": "Current: Frequency cap detected",
+          "label_ja": "現在の周波数上限キャップ検知"
+        },
+        {
+          "name": "now_temp_limited",
+          "offset": 15,
+          "length": 1,
+          "type": "uint8",
+          "label": "Current: Temperature limit detected",
+          "label_ja": "現在の温度制限状態検知"
+        },
+        {
+          "name": "hist_throttled",
+          "offset": 16,
+          "length": 1,
+          "type": "uint8",
+          "label": "History: Throttling seen since boot",
+          "label_ja": "スロットリング状態の履歴(起動後)"
+        },
+        {
+          "name": "hist_undervoltage",
+          "offset": 17,
+          "length": 1,
+          "type": "uint8",
+          "label": "History: Under-voltage seen since boot",
+          "label_ja": "電圧不足の履歴(起動後)"
+        },
+        {
+          "name": "hist_freq_capped",
+          "offset": 18,
+          "length": 1,
+          "type": "uint8",
+          "label": "History: Frequency cap seen since boot",
+          "label_ja": "周波数上限キャップの履歴(起動後)"
+        },
+        {
+          "name": "hist_temp_limited",
+          "offset": 19,
+          "length": 1,
+          "type": "uint8",
+          "label": "History: Temperature limit seen since boot",
+          "label_ja": "温度制限状態の履歴(起動後)"
+        }
+      ]
+    },
+    "67": {
+      "label": "ID67 (image/video file list)",
+      "label_ja": "ID67 (画像・動画リスト)",
+      "fields": [
+        {
+          "name": "packet_length",
+          "offset": 0,
+          "length": 1,
+          "type": "uint8",
+          "label": "Packet length",
+          "label_ja": "パケット長"
+        },
+        {
+          "name": "gen_timing",
+          "offset": 1,
+          "length": 1,
+          "type": "uint8",
+          "label": "Generation timing (0xFE=via DR, 0xFF=real time)",
+          "label_ja": "生成タイミング(0xFE=DR経由,0xFF=リアルタイム)"
+        },
+        {
+          "name": "telemetry_id",
+          "offset": 2,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry ID",
+          "label_ja": "テレメトリID"
+        },
+        {
+          "name": "telemetry_count",
+          "offset": 3,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry transmitted count",
+          "label_ja": "テレメトリ送信数"
+        },
+        {
+          "name": "onboard_unix_time",
+          "offset": 4,
+          "length": 4,
+          "type": "unix_time",
+          "label": "Satellite internal time (UTC)",
+          "label_ja": "衛星内部時刻(UTC)"
+        },
+        {
+          "name": "cmd_id",
+          "offset": 8,
+          "length": 1,
+          "type": "uint8",
+          "label": "Received command ID",
+          "label_ja": "受領コマンドID"
+        },
+        {
+          "name": "cmd_status",
+          "offset": 9,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command execution status",
+          "label_ja": "コマンド実行ステータス"
+        },
+        {
+          "name": "cmd_error",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command error status",
+          "label_ja": "コマンドエラーステータス"
+        },
+        {
+          "name": "cmd_recv_count",
+          "offset": 11,
+          "length": 1,
+          "type": "uint8",
+          "label": "Commands received",
+          "label_ja": "コマンド受領数"
+        },
+        {
+          "name": "file_list",
+          "offset": 12,
+          "length": 0,
+          "to_end": true,
+          "trim_end": 2,
+          "type": "ascii",
+          "label": "File names (ASCII)",
+          "label_ja": "ファイル名(ASCII)"
+        }
+      ]
+    },
+    "68": {
+      "label": "ID68 (image/video data)",
+      "label_ja": "ID68 (画像・動画データ)",
+      "fields": [
+        {
+          "name": "packet_length",
+          "offset": 0,
+          "length": 1,
+          "type": "uint8",
+          "label": "Packet length",
+          "label_ja": "パケット長"
+        },
+        {
+          "name": "gen_timing",
+          "offset": 1,
+          "length": 1,
+          "type": "uint8",
+          "label": "Generation timing (0xFE=via DR, 0xFF=real time)",
+          "label_ja": "生成タイミング(0xFE=DR経由,0xFF=リアルタイム)"
+        },
+        {
+          "name": "telemetry_id",
+          "offset": 2,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry ID",
+          "label_ja": "テレメトリID"
+        },
+        {
+          "name": "telemetry_count",
+          "offset": 3,
+          "length": 1,
+          "type": "uint8",
+          "label": "Telemetry transmitted count",
+          "label_ja": "テレメトリ送信数"
+        },
+        {
+          "name": "onboard_unix_time",
+          "offset": 4,
+          "length": 4,
+          "type": "unix_time",
+          "label": "Satellite internal time (UTC)",
+          "label_ja": "衛星内部時刻(UTC)"
+        },
+        {
+          "name": "cmd_id",
+          "offset": 8,
+          "length": 1,
+          "type": "uint8",
+          "label": "Received command ID",
+          "label_ja": "受領コマンドID"
+        },
+        {
+          "name": "cmd_status",
+          "offset": 9,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command execution status",
+          "label_ja": "コマンド実行ステータス"
+        },
+        {
+          "name": "cmd_error",
+          "offset": 10,
+          "length": 1,
+          "type": "uint8",
+          "label": "Command error status",
+          "label_ja": "コマンドエラーステータス"
+        },
+        {
+          "name": "cmd_recv_count",
+          "offset": 11,
+          "length": 1,
+          "type": "uint8",
+          "label": "Commands received",
+          "label_ja": "コマンド受領数"
+        },
+        {
+          "name": "packet_no",
+          "offset": 12,
+          "length": 1,
+          "type": "uint8",
+          "label": "Packet number",
+          "label_ja": "パケット番号"
+        },
+        {
+          "name": "total_packets",
+          "offset": 13,
+          "length": 1,
+          "type": "uint8",
+          "label": "Total packets",
+          "label_ja": "総パケット数"
+        },
+        {
+          "name": "data",
+          "offset": 14,
+          "length": 190,
+          "type": "hex",
+          "label": "Image/video data block",
+          "label_ja": "画像・動画データ"
         }
       ]
     },
@@ -932,8 +5735,8 @@
       ]
     }
   },
-  "note": "Based on the official specification ORI-2-0027-OPR ver.2026-04-21. ID130 was checked on a real received frame (2026-09-13): the unit-quaternion norm, orbit radius and orbit velocity come out physically plausible. ID65/ID100 follow the specification but have not been checked against real frames yet. ID01 (MOBC HK) is not implemented: the specification's byte-offset table contradicts itself (byte 24 is defined twice, as 'RX microcontroller restart count' and 'power state of each device', and byte 22 is assigned to no item) and there is no real received frame to settle it. cw_frames (CW TLM) follows the fixed 28-byte format of ORI-2-0027e-OPR ver.1.1 (see document_cw). It was decoded by hand from a real CW reception on 2026-09-22 (callsign JS1YRU, two independent CW copies): the four UVC threshold bytes match the example voltages of Figure 3 (7.5 V / 7.2 V / 6.6 V / 6.2 V) exactly, and the satellite's internal UNIX time converts to the day of reception and advanced 73 s between the two copies (consistent with the 3 s beacon interval of Normal Mode), which confirms the offset assignment. The currents and angular velocities differed greatly between the two receptions (they are fluctuating quantities, so this is not a contradiction), so field-by-field plausibility has not been verified on real reception in the app yet. id_prefix=\"JS1YRUORIGAMI2\" was added because the order of Table 1 of the official CW specification ('call sign, satellite name, data section') reaches the CW decoder's block extractor (3 s threshold) as ONE block when there is no silence longer than 3 s between callsign and satellite name (seen on 2026-09-22 in fbsat59.log). See the 'OrigamiSat-2 frames' section of docs/telemetry.md.",
-  "note_ja": "公式仕様書ORI-2-0027-OPR ver.2026-04-21に基づく。ID130は実受信フレーム(2026-09-13)で単位クォータニオンの大きさ・軌道半径・軌道速度が物理的に妥当な値になることを確認済み。ID65/ID100は仕様書通りだが実フレームでの検証はまだ。ID01(MOBC HK)は仕様書のbyteオフセット表に矛盾(byte24が「RXマイコン再起動回数」と「各機器電源状態」で二重定義され、byte22がどの項目にも割り当てられていない)があり、実受信フレームでの裏付けが取れるまで未実装。cw_frames(CW TLM)はORI-2-0027e-OPR ver.1.1(document_cw参照)の28バイト固定フォーマットに基づく。2026-09-22のCW実受信(コールサインJS1YRU、独立した2回のCWコピー)で手動デコードし、UVC閾値4バイトがFigure 3の例示電圧値(7.5V/7.2V/6.6V/6.2V)と完全一致・衛星内部UNIX時刻が受信当日の日付に変換され2回の受信間で73秒進んでいた(Normal Modeの3秒間隔ビーコンと矛盾しない)ことから、オフセット割り当ての正しさを確認済み。電流・角速度は2回の受信で値が大きく食い違った(値そのものが変動する項目であるため無矛盾)ため、アプリでの実受信によるフィールド単位の妥当性検証はまだ行っていない。id_prefix=\"JS1YRUORIGAMI2\"は、公式CW仕様書Table1の「call sign, satellite name, data section」の送信順を、コールサイン・衛星名の間に3秒を超える無音が無いままCWデコーダーのブロック抽出器(3秒閾値)へ渡すと1個のブロックに繋がってしまう実挙動(2026-09-22、fbsat59.logで確認)に合わせて追加した。詳細はdocs/telemetry.mdの「OrigamiSat-2のフレーム」節参照。",
+  "note": "Based on the official specification ORI-2-0027-OPR ver.2026-04-21. ID130, ID100 and ID01 were checked on real received frames: ID130 gives a unit quaternion and plausible orbit radius/velocity; all 38 ID100 frames and all 92 ID01 frames decode completely with physically plausible values, and the four UVC thresholds equal the nominal 75/66/72/62 of the specification. ID65 follows the specification but has not been checked against real frames. The mission-data IDs (02, 04, 05, 07, 08, 09, 10, 66, 67, 68) are defined from the specification only and are unverified. Specification errors found: the ID01 size of 119 bytes in the overview table is wrong (real frames are 117 bytes; the byte positions of Table 8 are right); item 7 (RX microcontroller reboot count) says byte 24 but is byte 22; the byte numbers of Table 19 (UVC thresholds) are an old numbering shifted by 2. ID01 temperatures have no conversion formula in the specification, so raw values are shown (observed 129-143). The mapping of the base-4 power-state digits to devices follows the specification but is unconfirmed (the receiver always reads 0 and the bus communication interface always reads 2=RESET even though frames are received). ID09 is shown raw because the specification's table contradicts itself; ID66 sums to 22 bytes from its items but the overview table says 26. The ID10 current is 0.10415 x DATA - 0.5014 (uses the 'add' offset). The specification says the MOBC resets every 4.5 hours, yet master_cycle was observed up to 289282 s. The last 2 bytes of every packet are a CRC-16/XMODEM over gen_timing to the end of the data; they are not decoded. cw_frames (CW TLM) follows the fixed 28-byte format of ORI-2-0027e-OPR ver.1.1 (see document_cw). It was decoded by hand from a real CW reception on 2026-09-22 (callsign JS1YRU, two independent CW copies): the four UVC threshold bytes match the example voltages of Figure 3 (7.5 V / 7.2 V / 6.6 V / 6.2 V) exactly, and the satellite's internal UNIX time converts to the day of reception and advanced 73 s between the two copies (consistent with the 3 s beacon interval of Normal Mode), which confirms the offset assignment. The currents and angular velocities differed greatly between the two receptions (they are fluctuating quantities, so this is not a contradiction), so field-by-field plausibility has not been verified on real reception in the app yet. id_prefix=\"JS1YRUORIGAMI2\" was added because the order of Table 1 of the official CW specification ('call sign, satellite name, data section') reaches the CW decoder's block extractor (3 s threshold) as ONE block when there is no silence longer than 3 s between callsign and satellite name (seen on 2026-09-22 in fbsat59.log). See the 'OrigamiSat-2 frames' section of docs/telemetry.md.",
+  "note_ja": "公式仕様書ORI-2-0027-OPR ver.2026-04-21に基づく。ID130・ID100・ID01は実受信フレームで検証済み(ID130は単位クォータニオン・軌道半径・軌道速度が妥当。ID100は38フレーム、ID01は92フレームの全項目がデコードでき値が物理的に妥当。UVC閾値は仕様書のノミナル値75/66/72/62と一致)。ID65は仕様書通りだが実フレームでの検証はまだ。ミッションデータID(02,04,05,07,08,09,10,66,67,68)は仕様書だけに基づく未検証の定義。仕様書の誤り: ID01の概要表の『119バイト』は誤りで実フレームは117バイト(Table 8のバイト位置が正しい)。項目7(RXマイコン再起動回数)の『24バイト目』は22バイト目の誤記。Table 19(UVC閾値)のバイト番号は2バイトずれた古い番号。ID01の温度は仕様書に換算式が無く生の値を表示(実測は129〜143)。電源状態(4進数の各桁)と機器の対応は仕様書どおりだが未確認(フレームを受信できているのに受信機が常に0、バス通信IFが常に2=RESETと出る)。ID09は表が自己矛盾のため分解せず生表示。ID66は項目から計算すると22バイトだが概要表は26バイト。ID10の電流は0.10415×DATA-0.5014(addオフセットを使用)。仕様書はMOBCが4時間半ごとにリセットとするが、master_cycleは最大289282秒を観測。全パケット末尾2バイトはCRC-16/XMODEM(gen_timingからデータ部末尾まで)でデコード対象外。cw_frames(CW TLM)はORI-2-0027e-OPR ver.1.1(document_cw参照)の28バイト固定フォーマットに基づく。2026-09-22のCW実受信(コールサインJS1YRU、独立した2回のCWコピー)で手動デコードし、UVC閾値4バイトがFigure 3の例示電圧値(7.5V/7.2V/6.6V/6.2V)と完全一致・衛星内部UNIX時刻が受信当日の日付に変換され2回の受信間で73秒進んでいた(Normal Modeの3秒間隔ビーコンと矛盾しない)ことから、オフセット割り当ての正しさを確認済み。電流・角速度は2回の受信で値が大きく食い違った(値そのものが変動する項目であるため無矛盾)ため、アプリでの実受信によるフィールド単位の妥当性検証はまだ行っていない。id_prefix=\"JS1YRUORIGAMI2\"は、公式CW仕様書Table1の「call sign, satellite name, data section」の送信順を、コールサイン・衛星名の間に3秒を超える無音が無いままCWデコーダーのブロック抽出器(3秒閾値)へ渡すと1個のブロックに繋がってしまう実挙動(2026-09-22、fbsat59.logで確認)に合わせて追加した。詳細はdocs/telemetry.mdの「OrigamiSat-2のフレーム」節参照。",
   "cw_frames": {
     "TLM": {
       "label": "CW Telemetry (28 bytes)",

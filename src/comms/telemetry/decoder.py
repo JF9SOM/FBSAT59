@@ -326,18 +326,19 @@ def _decode_field(payload: bytes, field_def: dict[str, Any]) -> TelemetryField |
         shift = (mask & -mask).bit_length() - 1 if mask else 0
         raw = (raw & mask) >> shift
 
+    add: float = field_def.get("add", 0.0)
     return TelemetryField(
         name=field_def["name"],
         label=label,
         raw_value=raw,
-        scaled_value=float(raw) * scale,
+        scaled_value=float(raw) * scale + add,
         unit=unit,
         # An integer-typed field with no scaling applied is still a whole
         # number after decoding (e.g. a uint8 status byte) — worth telling
         # apart from a genuinely fractional measurement (e.g. a float32
         # voltage, or an integer scaled into physical units) so the UI can
         # skip pointless trailing zeros for the former.
-        is_integer=(ftype not in _FLOAT_TYPES and float(scale).is_integer()),
+        is_integer=(ftype not in _FLOAT_TYPES and float(scale).is_integer() and add == 0.0),
     )
 
 

@@ -7,6 +7,9 @@ JSON format files already checked into src/data/telemetry_formats/.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from comms.telemetry.decoder import (
@@ -37,7 +40,23 @@ def test_get_telemetry_id_defs_origamisat2() -> None:
     # came in on.
     id_defs = get_telemetry_id_defs(68795)
     assert id_defs is not None
-    assert set(id_defs.keys()) == {"1", "65", "100", "130", "TLM"}
+    assert set(id_defs.keys()) == {
+        "1",
+        "2",
+        "4",
+        "5",
+        "7",
+        "8",
+        "9",
+        "10",
+        "65",
+        "66",
+        "67",
+        "68",
+        "100",
+        "130",
+        "TLM",
+    }
 
 
 def test_get_telemetry_id_defs_missing_norad_returns_none() -> None:
@@ -81,11 +100,11 @@ def test_decode_origamisat2_id130_frame() -> None:
 
 
 def test_decode_unknown_telemetry_id_falls_back_to_raw() -> None:
-    # First 3 bytes: packet length, gen timing, telemetry ID=2 (not defined
+    # First 3 bytes: packet length, gen timing, telemetry ID=3 (not defined
     # for OrigamiSat-2 in the current format file).
-    payload = bytes([0x00, 0xFF, 0x02]) + b"\x00" * 10
+    payload = bytes([0x00, 0xFF, 0x03]) + b"\x00" * 10
     tf = decode_telemetry("JS1YRU", payload, norad=68795)
-    assert tf.telemetry_id == 2
+    assert tf.telemetry_id == 3
     assert not tf.has_fields
 
 
@@ -94,11 +113,11 @@ def test_raw_summary_flags_truncation_when_payload_exceeds_preview() -> None:
     # preview summary() shows, so the truncation note must appear with the
     # actual shown/total hex-char counts (not a hardcoded satellite-specific
     # number).
-    payload = bytes([0x00, 0xFF, 0x02]) + b"\x00" * 30
+    payload = bytes([0x00, 0xFF, 0x03]) + b"\x00" * 30
     tf = decode_telemetry("JS1YRU", payload, norad=68795)
     assert (
         tf.summary()
-        == "[raw] 00ff020000000000000000000000000000000000 (40/66 hex chars — rest omitted)"
+        == "[raw] 00ff030000000000000000000000000000000000 (40/66 hex chars — rest omitted)"
     )
 
 
@@ -730,3 +749,132 @@ def test_cw_beacons_of_kostka_marina_and_grbbeta_decode() -> None:
     grb = decode_cw_frame(60237, "DEHA2GRB=U10R2T295P301")  # no "ar" needed; uptime is in minutes
     assert grb is not None
     assert {f.name: f for f in grb.fields}["uptime_total"].scaled_value == 600
+
+
+# -- OrigamiSat-2: every telemetry ID of the FM specification (ORI-2-0027-OPR) --
+
+# A real ID01 (MOBC HK) frame received 2026-09-22 and a real ID100 (ADCS HK) frame, both from the
+# user's telemetry_log. 92 ID01 and 38 ID100 frames from the log all decoded completely.
+_ORIGAMISAT2_ID01_HEX = (
+    "72ff01036ab2255390030c03040100010000a7ba23260000106440fe91a74110f2000200090000849d84008b"
+    "00090000000000010000007e037e060701004b42483e0184877a8684848585828487888d3ef6558a3d34b600"
+    "3f2d63190000000000660020f8e0ffff0000000000188d130c0003e3f1"
+)
+_ORIGAMISAT2_ID100_HEX = (
+    "22fe64576a6a39f9c600000801005500000940be7785483f4ea8e63e8aae76beee3f535fd5"
+)
+
+# Packet size from the specification, header + data + zero padding + 2-byte CRC footer. ID66 (the
+# specification's own overview table says 26 but its items add up to 22) and ID67 (variable
+# length) are left out.
+_ORIGAMISAT2_PACKET_SIZES = {
+    "1": 117,
+    "2": 206,
+    "4": 100,
+    "5": 144,
+    "7": 215,
+    "8": 215,
+    "9": 215,
+    "10": 215,
+    "65": 36,
+    "68": 206,
+    "100": 37,
+    "130": 207,
+}
+# Zero bytes the specification puts after the data of these IDs.
+_ORIGAMISAT2_ZERO_PADDING = {"7": 7, "8": 1, "9": 4, "10": 3}
+
+
+def test_origamisat2_definitions_match_the_specified_packet_sizes() -> None:
+    id_defs = get_telemetry_id_defs(68795)
+    assert id_defs is not None
+    for tid, size in _ORIGAMISAT2_PACKET_SIZES.items():
+        fields = id_defs[tid]["fields"]
+        end = max(f["offset"] + f["length"] for f in fields)
+        assert end + _ORIGAMISAT2_ZERO_PADDING.get(tid, 0) + 2 == size, f"ID{tid} ends at {end}"
+        # No field may overlap another, except bit fields sharing one byte (they carry a mask).
+        spans = sorted((f["offset"], f["offset"] + f["length"]) for f in fields if "mask" not in f)
+        assert all(a[1] <= b[0] for a, b in zip(spans, spans[1:], strict=False)), f"ID{tid} overlap"
+
+
+def test_origamisat2_every_field_has_english_and_japanese_labels() -> None:
+    # Read the raw file: the loader keeps only the label of the current language.
+    path = Path(__file__).resolve().parents[1] / "src/data/telemetry_formats/68795.json"
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    for tid, id_def in raw["telemetry_ids"].items():
+        # 65/100/130 predate this check (ID130's tdsp_id has no Japanese label yet).
+        if tid in ("65", "100", "130"):
+            continue
+        assert id_def["label"] and id_def["label_ja"]
+        for f in id_def["fields"]:
+            assert f["label"] and f["label_ja"], f"ID{tid} {f['name']}"
+
+
+def test_decode_origamisat2_id01_real_frame() -> None:
+    tf = decode_telemetry("JS1YRU", bytes.fromhex(_ORIGAMISAT2_ID01_HEX), norad=68795)
+    assert tf.telemetry_id == 1
+    values = {f.name: f.scaled_value for f in tf.fields}
+    assert len(tf.fields) == 96
+    assert values["packet_length"] == 114  # 117 bytes - length byte - 2-byte CRC
+    assert values["mobc_mode"] == 1  # Normal
+    assert values["master_cycle"] == 42938
+    assert values["mobc_reboot_count"] == 35
+    assert values["rx_mcu_reboot_count"] == 38
+    assert abs(values["battery_voltage"] - 7.9553) < 1e-3
+    # The four UVC thresholds are the nominal 7.5 / 6.6 / 7.2 / 6.2 V of the specification.
+    thresholds = [values[f"uvc_threshold_{k}"] for k in (1, 2, 3, 4)]
+    assert [round(t, 1) for t in thresholds] == [7.5, 6.6, 7.2, 6.2]
+
+
+def test_decode_origamisat2_id100_real_frame() -> None:
+    tf = decode_telemetry("JS1YRU", bytes.fromhex(_ORIGAMISAT2_ID100_HEX), norad=68795)
+    assert tf.telemetry_id == 100
+    values = {f.name: f.scaled_value for f in tf.fields}
+    assert len(tf.fields) == 17
+    assert values["adcs_mode"] == 1
+    quat_sq_sum = sum(values[f"quat_{ax}"] ** 2 for ax in "xyzw")
+    assert abs(quat_sq_sum - 1.0) < 1e-3
+
+
+def _origamisat2_packet(telemetry_id: int, data: bytes) -> bytes:
+    """Build a packet: 12-byte header, *data*, 2-byte CRC placeholder."""
+    return bytes([0, 0xFF, telemetry_id, 0]) + bytes(8) + data + b"\x00\x00"
+
+
+def test_decode_origamisat2_id10_applies_the_current_offset() -> None:
+    # current[mA] = 0.10415 * DATA - 0.5014 (the offset needs the decoder's 'add'),
+    # voltage[V] = 0.01448 * DATA.
+    data = bytes([0, 6]) + (1000).to_bytes(2, "big") + (500).to_bytes(2, "big") + bytes(192 + 3)
+    tf = decode_telemetry("JS1YRU", _origamisat2_packet(10, data), norad=68795)
+    by_name = {f.name: f for f in tf.fields}
+    assert abs(by_name["s1_current"].scaled_value - (0.10415 * 1000 - 0.5014)) < 1e-9
+    assert abs(by_name["s1_voltage"].scaled_value - 0.01448 * 500) < 1e-9
+    assert not by_name["s1_current"].is_integer
+    assert by_name["total_packets"].scaled_value == 6
+    assert len([f for f in tf.fields if f.name.endswith("_current")]) == 49
+
+
+def test_decode_origamisat2_id08_and_id07_scales() -> None:
+    id08 = bytes([3, 72, 10, 10]) + bytes(196 + 1)
+    by_name = {
+        f.name: f
+        for f in decode_telemetry("JS1YRU", _origamisat2_packet(8, id08), norad=68795).fields
+    }
+    assert abs(by_name["fuse_current"].scaled_value - 40.566) < 1e-9
+    assert abs(by_name["fuse_voltage"].scaled_value - 18.918) < 1e-9
+
+    id07 = bytes([0, 25]) + (100).to_bytes(2, "big") + bytes([10, 16]) + bytes(188 + 7)
+    by_name = {
+        f.name: f
+        for f in decode_telemetry("JS1YRU", _origamisat2_packet(7, id07), norad=68795).fields
+    }
+    assert by_name["s1_time_ms"].scaled_value == 100
+    assert abs(by_name["s1_fuse_current"].scaled_value - 117.18) < 1e-9
+    assert abs(by_name["s1_fuse_voltage"].scaled_value - 1.0) < 1e-9
+
+
+def test_decode_origamisat2_id67_file_list_is_text() -> None:
+    tf = decode_telemetry("JS1YRU", _origamisat2_packet(67, b"IMG_0001.JPG"), norad=68795)
+    assert tf.telemetry_id == 67
+    texts = [f.unit for f in tf.fields if f.name == "file_list"]
+    assert texts == ["IMG_0001.JPG"]
