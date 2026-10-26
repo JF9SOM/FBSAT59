@@ -1,0 +1,1494 @@
+{
+  "norad": 98209,
+  "name": "ERMINAZ-2X",
+  "reference": "https://gitlab.com/librespacefoundation/satnogs/satnogs-decoders/-/raw/master/ksy/erminaz2.ksy",
+  "note": "Same frame layout as ERMINAZ-2U (one SatNOGS erminaz2.ksy covers all three satellites), copied from 98207.json. Layout taken from the SatNOGS erminaz2.ksy decoder (CCSDS TM transfer frame, 223 octets, carrying one space packet), not yet checked against frames FBSAT59 received. The payload is the whole 223-octet frame as gr-satellites outputs it. Units are not documented, so values are raw. Offsets 0-5 are the frame header, the packet starts at 6 (6 octets of header) and its data at 12; the CLCW is the last 4 octets. The APID 600 message text is not decoded: it is NUL-terminated inside the packet, followed by idle octets (0xE0), and the decoder cannot stop at the NUL yet.",
+  "frame_types": [
+    {
+      "id": "APID300",
+      "label": "APID 300 (basic telemetry)",
+      "label_ja": "APID 300 (基本テレメトリー)",
+      "match": {
+        "offset": 6,
+        "hex": "012c"
+      },
+      "fields": [
+        {
+          "name": "tf_version",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 49152,
+          "label": "Transfer frame version"
+        },
+        {
+          "name": "spacecraft_id",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 16368,
+          "label": "Spacecraft ID"
+        },
+        {
+          "name": "virtual_channel_id",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 14,
+          "label": "Virtual channel ID"
+        },
+        {
+          "name": "mc_frame_count",
+          "offset": 2,
+          "length": 1,
+          "type": "uint8",
+          "label": "Master channel frame count"
+        },
+        {
+          "name": "vc_frame_count",
+          "offset": 3,
+          "length": 1,
+          "type": "uint8",
+          "label": "Virtual channel frame count"
+        },
+        {
+          "name": "first_header_pointer",
+          "offset": 4,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 2047,
+          "label": "First header pointer"
+        },
+        {
+          "name": "packet_apid",
+          "offset": 6,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 2047,
+          "label": "Space packet APID"
+        },
+        {
+          "name": "packet_group_flags",
+          "offset": 8,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 49152,
+          "label": "Space packet group flags"
+        },
+        {
+          "name": "packet_sequence_count",
+          "offset": 8,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 16383,
+          "label": "Space packet sequence count"
+        },
+        {
+          "name": "packet_length",
+          "offset": 10,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Space packet data length minus one"
+        },
+        {
+          "name": "pwr_current",
+          "offset": 12,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Power: Current"
+        },
+        {
+          "name": "pwr_voltage",
+          "offset": 14,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power: Voltage"
+        },
+        {
+          "name": "pwr_voltage_alt",
+          "offset": 16,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power: Voltage alt"
+        },
+        {
+          "name": "pwr_temperature_die",
+          "offset": 18,
+          "length": 1,
+          "type": "int8",
+          "label": "Power: Temperature die"
+        },
+        {
+          "name": "pwr_temperature",
+          "offset": 19,
+          "length": 1,
+          "type": "int8",
+          "label": "Power: Temperature"
+        },
+        {
+          "name": "pwr_current_min",
+          "offset": 20,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Power: Current min"
+        },
+        {
+          "name": "pwr_voltage_min",
+          "offset": 22,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power: Voltage min"
+        },
+        {
+          "name": "pwr_temperature_min",
+          "offset": 24,
+          "length": 1,
+          "type": "int8",
+          "label": "Power: Temperature min"
+        },
+        {
+          "name": "pwr_current_max",
+          "offset": 25,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Power: Current max"
+        },
+        {
+          "name": "pwr_voltage_max",
+          "offset": 27,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power: Voltage max"
+        },
+        {
+          "name": "pwr_temperature_max",
+          "offset": 29,
+          "length": 1,
+          "type": "int8",
+          "label": "Power: Temperature max"
+        },
+        {
+          "name": "pwr_current_avg",
+          "offset": 30,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Power: Current avg"
+        },
+        {
+          "name": "pwr_voltage_avg",
+          "offset": 32,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power: Voltage avg"
+        },
+        {
+          "name": "pwr_temperature_avg",
+          "offset": 34,
+          "length": 1,
+          "type": "int8",
+          "label": "Power: Temperature avg"
+        },
+        {
+          "name": "pwr_tte",
+          "offset": 35,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Power: Time to empty (raw)"
+        },
+        {
+          "name": "pwr_repcap",
+          "offset": 37,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Power: Reported capacity (raw)"
+        },
+        {
+          "name": "pwr_fullrepcap",
+          "offset": 39,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Power: Full reported capacity (raw)"
+        },
+        {
+          "name": "pwr_soc",
+          "offset": 41,
+          "length": 1,
+          "type": "int8",
+          "label": "Power: State of charge (raw)"
+        },
+        {
+          "name": "pwr_temp_mcu",
+          "offset": 42,
+          "length": 1,
+          "type": "int8",
+          "label": "Power: MCU temperature (raw)"
+        },
+        {
+          "name": "pwr_rtc_vbat",
+          "offset": 43,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Power: RTC battery voltage (raw)"
+        },
+        {
+          "name": "ant_deploy_test_voltage",
+          "offset": 45,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Antenna: Deploy test voltage"
+        },
+        {
+          "name": "ant_deploy_test_current",
+          "offset": 47,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Antenna: Deploy test current"
+        },
+        {
+          "name": "ant_deploy_test_result",
+          "offset": 49,
+          "length": 1,
+          "type": "uint8",
+          "label": "Antenna: Deploy test result"
+        },
+        {
+          "name": "ant_deploy_avg_voltage",
+          "offset": 50,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Antenna: Deploy avg voltage"
+        },
+        {
+          "name": "ant_deploy_avg_current",
+          "offset": 52,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Antenna: Deploy avg current"
+        },
+        {
+          "name": "ant_deploy_time",
+          "offset": 54,
+          "length": 1,
+          "type": "uint8",
+          "label": "Antenna: Deploy time"
+        },
+        {
+          "name": "ant_deploy_status",
+          "offset": 55,
+          "length": 1,
+          "type": "uint8",
+          "label": "Antenna: Deploy status"
+        },
+        {
+          "name": "ant_deploy_retry_count",
+          "offset": 56,
+          "length": 1,
+          "type": "uint8",
+          "label": "Antenna: Deploy retry count"
+        },
+        {
+          "name": "ant_ant_first_deploy",
+          "offset": 57,
+          "length": 1,
+          "type": "uint8",
+          "label": "Antenna: First deploy flag"
+        },
+        {
+          "name": "uptime",
+          "offset": 58,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Uptime (raw)"
+        },
+        {
+          "name": "ror",
+          "offset": 62,
+          "length": 1,
+          "type": "uint8",
+          "label": "Reasons of last reset (bit mask)"
+        },
+        {
+          "name": "set_first_deploy",
+          "offset": 63,
+          "length": 1,
+          "type": "uint8",
+          "label": "Settings: First deploy"
+        },
+        {
+          "name": "set_low_power_counter",
+          "offset": 64,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Settings: Low power counter"
+        },
+        {
+          "name": "set_iwdg_counter",
+          "offset": 66,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Settings: Independent watchdog counter"
+        },
+        {
+          "name": "set_swrst_counter",
+          "offset": 68,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Settings: Software reset counter"
+        },
+        {
+          "name": "set_brownout_counter",
+          "offset": 70,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Settings: Brownout counter"
+        },
+        {
+          "name": "set_trx_delay",
+          "offset": 72,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Settings: Transceiver delay"
+        },
+        {
+          "name": "st_power_safe",
+          "offset": 74,
+          "length": 1,
+          "type": "uint8",
+          "label": "Status: Power safe"
+        },
+        {
+          "name": "st_power_mon_fail",
+          "offset": 75,
+          "length": 1,
+          "type": "uint8",
+          "label": "Status: Power monitor fail"
+        },
+        {
+          "name": "st_clcw_vcid0",
+          "offset": 76,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Status: CLCW of VCID 0 (raw)"
+        },
+        {
+          "name": "st_clcw_vcid1",
+          "offset": 80,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Status: CLCW of VCID 1 (raw)"
+        },
+        {
+          "name": "st_fct_en",
+          "offset": 84,
+          "length": 1,
+          "type": "uint8",
+          "label": "Status: Enabled functions (bit mask: 1 digipeater, 2 SSDV, 4 sensor board, 8 CW, 16 beacon, 32 file transfer)"
+        },
+        {
+          "name": "st_ssdv_last_error",
+          "offset": 85,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Status: Ssdv last error"
+        },
+        {
+          "name": "st_ssdv_last_frame_count",
+          "offset": 87,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Status: Ssdv last frame count"
+        },
+        {
+          "name": "st_ssdv_file_number",
+          "offset": 89,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Status: Ssdv file number"
+        },
+        {
+          "name": "st_sd_state",
+          "offset": 91,
+          "length": 1,
+          "type": "uint8",
+          "label": "Status: SD state (0 unmounted, 1 mounted, 2 error)"
+        },
+        {
+          "name": "st_sd_last_error",
+          "offset": 92,
+          "length": 1,
+          "type": "uint8",
+          "label": "Status: Sd last error"
+        },
+        {
+          "name": "st_sb_cur_state",
+          "offset": 93,
+          "length": 1,
+          "type": "uint8",
+          "label": "Status: Sensor board state"
+        },
+        {
+          "name": "st_sb_last_error",
+          "offset": 94,
+          "length": 1,
+          "type": "uint8",
+          "label": "Status: Sensor board last error"
+        },
+        {
+          "name": "st_xfer_last_cmd",
+          "offset": 95,
+          "length": 1,
+          "type": "uint8",
+          "label": "Status: File transfer last command"
+        },
+        {
+          "name": "st_xfer_last_cmd_error",
+          "offset": 96,
+          "length": 1,
+          "type": "uint8",
+          "label": "Status: File transfer last command error"
+        },
+        {
+          "name": "st_xfer_rxfsm_cur_state",
+          "offset": 97,
+          "length": 1,
+          "type": "uint8",
+          "label": "Status: File transfer RX FSM state"
+        },
+        {
+          "name": "st_xfer_last_error_state",
+          "offset": 98,
+          "length": 1,
+          "type": "uint8",
+          "label": "Status: File transfer last error state"
+        },
+        {
+          "name": "st_xfer_last_rxfsm_error",
+          "offset": 99,
+          "length": 1,
+          "type": "uint8",
+          "label": "Status: File transfer last RX FSM error"
+        },
+        {
+          "name": "st_xfer_byte_stored",
+          "offset": 100,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Status: File transfer bytes stored"
+        },
+        {
+          "name": "st_xfer_rb_remaining",
+          "offset": 104,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Status: File transfer remaining blocks"
+        },
+        {
+          "name": "st_xfer_nak_count",
+          "offset": 106,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Status: File transfer NAK count"
+        },
+        {
+          "name": "rf_rx_frames_invalid",
+          "offset": 108,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Radio: Rx frames invalid"
+        },
+        {
+          "name": "rf_tx_frames",
+          "offset": 110,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Radio: Tx frames"
+        },
+        {
+          "name": "rf_rx_frames",
+          "offset": 112,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Radio: Rx frames"
+        },
+        {
+          "name": "rf_rx_corrected_bits",
+          "offset": 114,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Radio: Rx corrected bits"
+        },
+        {
+          "name": "rf_rssi",
+          "offset": 118,
+          "length": 1,
+          "type": "int8",
+          "label": "Radio: RSSI (raw)"
+        },
+        {
+          "name": "rf_freq_tracking",
+          "offset": 119,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Radio: Freq tracking"
+        },
+        {
+          "name": "rf_agc",
+          "offset": 121,
+          "length": 1,
+          "type": "int8",
+          "label": "Radio: AGC (raw)"
+        },
+        {
+          "name": "rf_datarate_tracking",
+          "offset": 122,
+          "length": 4,
+          "type": "int32_be",
+          "label": "Radio: Datarate tracking"
+        },
+        {
+          "name": "rf_phase_tracking",
+          "offset": 126,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Radio: Phase tracking"
+        },
+        {
+          "name": "rf_rf_freq_tracking",
+          "offset": 128,
+          "length": 4,
+          "type": "int32_be",
+          "label": "Radio: Rf freq tracking"
+        },
+        {
+          "name": "clcw_type",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 2147483648,
+          "label": "CLCW: control word type"
+        },
+        {
+          "name": "clcw_version",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 1610612736,
+          "label": "CLCW: version"
+        },
+        {
+          "name": "clcw_status_field",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 469762048,
+          "label": "CLCW: status field"
+        },
+        {
+          "name": "clcw_cop",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 50331648,
+          "label": "CLCW: COP in effect"
+        },
+        {
+          "name": "clcw_vcid",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 16515072,
+          "label": "CLCW: virtual channel"
+        },
+        {
+          "name": "clcw_no_rf",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 32768,
+          "label": "CLCW: no RF available"
+        },
+        {
+          "name": "clcw_no_bit_lock",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 16384,
+          "label": "CLCW: no bit lock"
+        },
+        {
+          "name": "clcw_lockout",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 8192,
+          "label": "CLCW: lockout"
+        },
+        {
+          "name": "clcw_wait",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 4096,
+          "label": "CLCW: wait"
+        },
+        {
+          "name": "clcw_retransmit",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 2048,
+          "label": "CLCW: retransmit"
+        },
+        {
+          "name": "clcw_farm_b",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 1536,
+          "label": "CLCW: FARM-B counter"
+        },
+        {
+          "name": "clcw_report",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 255,
+          "label": "CLCW: report value"
+        }
+      ]
+    },
+    {
+      "id": "APID400-EMPTY",
+      "label": "APID 400 (sensor board, no data)",
+      "label_ja": "APID 400 (センサーボード、データなし)",
+      "match": {
+        "offset": 6,
+        "hex": "01900000000000000000deadbeaf",
+        "mask": "ffff0000000000000000ffffffff"
+      },
+      "fields": [
+        {
+          "name": "tf_version",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 49152,
+          "label": "Transfer frame version"
+        },
+        {
+          "name": "spacecraft_id",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 16368,
+          "label": "Spacecraft ID"
+        },
+        {
+          "name": "virtual_channel_id",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 14,
+          "label": "Virtual channel ID"
+        },
+        {
+          "name": "mc_frame_count",
+          "offset": 2,
+          "length": 1,
+          "type": "uint8",
+          "label": "Master channel frame count"
+        },
+        {
+          "name": "vc_frame_count",
+          "offset": 3,
+          "length": 1,
+          "type": "uint8",
+          "label": "Virtual channel frame count"
+        },
+        {
+          "name": "first_header_pointer",
+          "offset": 4,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 2047,
+          "label": "First header pointer"
+        },
+        {
+          "name": "packet_apid",
+          "offset": 6,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 2047,
+          "label": "Space packet APID"
+        },
+        {
+          "name": "packet_group_flags",
+          "offset": 8,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 49152,
+          "label": "Space packet group flags"
+        },
+        {
+          "name": "packet_sequence_count",
+          "offset": 8,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 16383,
+          "label": "Space packet sequence count"
+        },
+        {
+          "name": "packet_length",
+          "offset": 10,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Space packet data length minus one"
+        },
+        {
+          "name": "clcw_type",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 2147483648,
+          "label": "CLCW: control word type"
+        },
+        {
+          "name": "clcw_version",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 1610612736,
+          "label": "CLCW: version"
+        },
+        {
+          "name": "clcw_status_field",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 469762048,
+          "label": "CLCW: status field"
+        },
+        {
+          "name": "clcw_cop",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 50331648,
+          "label": "CLCW: COP in effect"
+        },
+        {
+          "name": "clcw_vcid",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 16515072,
+          "label": "CLCW: virtual channel"
+        },
+        {
+          "name": "clcw_no_rf",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 32768,
+          "label": "CLCW: no RF available"
+        },
+        {
+          "name": "clcw_no_bit_lock",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 16384,
+          "label": "CLCW: no bit lock"
+        },
+        {
+          "name": "clcw_lockout",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 8192,
+          "label": "CLCW: lockout"
+        },
+        {
+          "name": "clcw_wait",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 4096,
+          "label": "CLCW: wait"
+        },
+        {
+          "name": "clcw_retransmit",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 2048,
+          "label": "CLCW: retransmit"
+        },
+        {
+          "name": "clcw_farm_b",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 1536,
+          "label": "CLCW: FARM-B counter"
+        },
+        {
+          "name": "clcw_report",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 255,
+          "label": "CLCW: report value"
+        }
+      ]
+    },
+    {
+      "id": "APID400",
+      "label": "APID 400 (sensor board telemetry)",
+      "label_ja": "APID 400 (センサーボードテレメトリー)",
+      "match": {
+        "offset": 6,
+        "hex": "0190"
+      },
+      "fields": [
+        {
+          "name": "tf_version",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 49152,
+          "label": "Transfer frame version"
+        },
+        {
+          "name": "spacecraft_id",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 16368,
+          "label": "Spacecraft ID"
+        },
+        {
+          "name": "virtual_channel_id",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 14,
+          "label": "Virtual channel ID"
+        },
+        {
+          "name": "mc_frame_count",
+          "offset": 2,
+          "length": 1,
+          "type": "uint8",
+          "label": "Master channel frame count"
+        },
+        {
+          "name": "vc_frame_count",
+          "offset": 3,
+          "length": 1,
+          "type": "uint8",
+          "label": "Virtual channel frame count"
+        },
+        {
+          "name": "first_header_pointer",
+          "offset": 4,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 2047,
+          "label": "First header pointer"
+        },
+        {
+          "name": "packet_apid",
+          "offset": 6,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 2047,
+          "label": "Space packet APID"
+        },
+        {
+          "name": "packet_group_flags",
+          "offset": 8,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 49152,
+          "label": "Space packet group flags"
+        },
+        {
+          "name": "packet_sequence_count",
+          "offset": 8,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 16383,
+          "label": "Space packet sequence count"
+        },
+        {
+          "name": "packet_length",
+          "offset": 10,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Space packet data length minus one"
+        },
+        {
+          "name": "timestamp",
+          "offset": 12,
+          "length": 8,
+          "type": "hex",
+          "label": "Sensor board timestamp (raw u64)"
+        },
+        {
+          "name": "rad_timestamp",
+          "offset": 20,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Radioactivity: timestamp"
+        },
+        {
+          "name": "rad_integration_time",
+          "offset": 24,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Radioactivity: integration time"
+        },
+        {
+          "name": "rad_counts",
+          "offset": 28,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Radioactivity: counts"
+        },
+        {
+          "name": "rad_doserate_raw",
+          "offset": 30,
+          "length": 4,
+          "type": "float32_be",
+          "label": "Radioactivity: dose rate as sent (float bit pattern sent as a number, not a dose rate)"
+        },
+        {
+          "name": "sb_temperature",
+          "offset": 34,
+          "length": 4,
+          "type": "float32_be",
+          "label": "Temperature"
+        },
+        {
+          "name": "rot_real",
+          "offset": 38,
+          "length": 4,
+          "type": "float32_be",
+          "label": "Rotation quaternion real"
+        },
+        {
+          "name": "rot_i",
+          "offset": 42,
+          "length": 4,
+          "type": "float32_be",
+          "label": "Rotation quaternion i"
+        },
+        {
+          "name": "rot_j",
+          "offset": 46,
+          "length": 4,
+          "type": "float32_be",
+          "label": "Rotation quaternion j"
+        },
+        {
+          "name": "rot_k",
+          "offset": 50,
+          "length": 4,
+          "type": "float32_be",
+          "label": "Rotation quaternion k"
+        },
+        {
+          "name": "rot_accuracy",
+          "offset": 54,
+          "length": 4,
+          "type": "float32_be",
+          "label": "Rotation estimated accuracy"
+        },
+        {
+          "name": "mag_x",
+          "offset": 58,
+          "length": 4,
+          "type": "float32_be",
+          "label": "Magnetic field X"
+        },
+        {
+          "name": "mag_y",
+          "offset": 62,
+          "length": 4,
+          "type": "float32_be",
+          "label": "Magnetic field Y"
+        },
+        {
+          "name": "mag_z",
+          "offset": 66,
+          "length": 4,
+          "type": "float32_be",
+          "label": "Magnetic field Z"
+        },
+        {
+          "name": "magraw_x",
+          "offset": 70,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Magnetic field raw X"
+        },
+        {
+          "name": "magraw_y",
+          "offset": 72,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Magnetic field raw Y"
+        },
+        {
+          "name": "magraw_z",
+          "offset": 74,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Magnetic field raw Z"
+        },
+        {
+          "name": "magraw_ts",
+          "offset": 76,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Magnetic field raw timestamp"
+        },
+        {
+          "name": "angvel_x",
+          "offset": 80,
+          "length": 4,
+          "type": "float32_be",
+          "label": "Angular velocity X"
+        },
+        {
+          "name": "angvel_y",
+          "offset": 84,
+          "length": 4,
+          "type": "float32_be",
+          "label": "Angular velocity Y"
+        },
+        {
+          "name": "angvel_z",
+          "offset": 88,
+          "length": 4,
+          "type": "float32_be",
+          "label": "Angular velocity Z"
+        },
+        {
+          "name": "angvel_real",
+          "offset": 92,
+          "length": 4,
+          "type": "float32_be",
+          "label": "Angular velocity quaternion real"
+        },
+        {
+          "name": "angvel_i",
+          "offset": 96,
+          "length": 4,
+          "type": "float32_be",
+          "label": "Angular velocity quaternion i"
+        },
+        {
+          "name": "angvel_j",
+          "offset": 100,
+          "length": 4,
+          "type": "float32_be",
+          "label": "Angular velocity quaternion j"
+        },
+        {
+          "name": "angvel_k",
+          "offset": 104,
+          "length": 4,
+          "type": "float32_be",
+          "label": "Angular velocity quaternion k"
+        },
+        {
+          "name": "angraw_x",
+          "offset": 108,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Angular velocity raw X"
+        },
+        {
+          "name": "angraw_y",
+          "offset": 110,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Angular velocity raw Y"
+        },
+        {
+          "name": "angraw_z",
+          "offset": 112,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Angular velocity raw Z"
+        },
+        {
+          "name": "angraw_temp",
+          "offset": 114,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Angular velocity raw temperature"
+        },
+        {
+          "name": "angraw_ts",
+          "offset": 116,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Angular velocity raw timestamp"
+        },
+        {
+          "name": "acc_x",
+          "offset": 120,
+          "length": 4,
+          "type": "float32_be",
+          "label": "Acceleration X"
+        },
+        {
+          "name": "acc_y",
+          "offset": 124,
+          "length": 4,
+          "type": "float32_be",
+          "label": "Acceleration Y"
+        },
+        {
+          "name": "acc_z",
+          "offset": 128,
+          "length": 4,
+          "type": "float32_be",
+          "label": "Acceleration Z"
+        },
+        {
+          "name": "accraw_x",
+          "offset": 132,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Acceleration raw X"
+        },
+        {
+          "name": "accraw_y",
+          "offset": 134,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Acceleration raw Y"
+        },
+        {
+          "name": "accraw_z",
+          "offset": 136,
+          "length": 2,
+          "type": "int16_be",
+          "label": "Acceleration raw Z"
+        },
+        {
+          "name": "accraw_ts",
+          "offset": 138,
+          "length": 4,
+          "type": "uint32_be",
+          "label": "Acceleration raw timestamp"
+        },
+        {
+          "name": "clcw_type",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 2147483648,
+          "label": "CLCW: control word type"
+        },
+        {
+          "name": "clcw_version",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 1610612736,
+          "label": "CLCW: version"
+        },
+        {
+          "name": "clcw_status_field",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 469762048,
+          "label": "CLCW: status field"
+        },
+        {
+          "name": "clcw_cop",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 50331648,
+          "label": "CLCW: COP in effect"
+        },
+        {
+          "name": "clcw_vcid",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 16515072,
+          "label": "CLCW: virtual channel"
+        },
+        {
+          "name": "clcw_no_rf",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 32768,
+          "label": "CLCW: no RF available"
+        },
+        {
+          "name": "clcw_no_bit_lock",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 16384,
+          "label": "CLCW: no bit lock"
+        },
+        {
+          "name": "clcw_lockout",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 8192,
+          "label": "CLCW: lockout"
+        },
+        {
+          "name": "clcw_wait",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 4096,
+          "label": "CLCW: wait"
+        },
+        {
+          "name": "clcw_retransmit",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 2048,
+          "label": "CLCW: retransmit"
+        },
+        {
+          "name": "clcw_farm_b",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 1536,
+          "label": "CLCW: FARM-B counter"
+        },
+        {
+          "name": "clcw_report",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 255,
+          "label": "CLCW: report value"
+        }
+      ]
+    },
+    {
+      "id": "APID600",
+      "label": "APID 600 (digipeater message)",
+      "label_ja": "APID 600 (デジピーターメッセージ)",
+      "match": {
+        "offset": 6,
+        "hex": "0258"
+      },
+      "fields": [
+        {
+          "name": "tf_version",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 49152,
+          "label": "Transfer frame version"
+        },
+        {
+          "name": "spacecraft_id",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 16368,
+          "label": "Spacecraft ID"
+        },
+        {
+          "name": "virtual_channel_id",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 14,
+          "label": "Virtual channel ID"
+        },
+        {
+          "name": "mc_frame_count",
+          "offset": 2,
+          "length": 1,
+          "type": "uint8",
+          "label": "Master channel frame count"
+        },
+        {
+          "name": "vc_frame_count",
+          "offset": 3,
+          "length": 1,
+          "type": "uint8",
+          "label": "Virtual channel frame count"
+        },
+        {
+          "name": "first_header_pointer",
+          "offset": 4,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 2047,
+          "label": "First header pointer"
+        },
+        {
+          "name": "packet_apid",
+          "offset": 6,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 2047,
+          "label": "Space packet APID"
+        },
+        {
+          "name": "packet_group_flags",
+          "offset": 8,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 49152,
+          "label": "Space packet group flags"
+        },
+        {
+          "name": "packet_sequence_count",
+          "offset": 8,
+          "length": 2,
+          "type": "uint16_be",
+          "mask": 16383,
+          "label": "Space packet sequence count"
+        },
+        {
+          "name": "packet_length",
+          "offset": 10,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Space packet data length minus one"
+        },
+        {
+          "name": "digi_radio_config",
+          "offset": 12,
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Digipeater: radio config"
+        },
+        {
+          "name": "digi_to",
+          "offset": 14,
+          "length": 6,
+          "type": "ascii",
+          "label": "Digipeater: to"
+        },
+        {
+          "name": "digi_from",
+          "offset": 20,
+          "length": 6,
+          "type": "ascii",
+          "label": "Digipeater: from"
+        },
+        {
+          "name": "clcw_type",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 2147483648,
+          "label": "CLCW: control word type"
+        },
+        {
+          "name": "clcw_version",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 1610612736,
+          "label": "CLCW: version"
+        },
+        {
+          "name": "clcw_status_field",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 469762048,
+          "label": "CLCW: status field"
+        },
+        {
+          "name": "clcw_cop",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 50331648,
+          "label": "CLCW: COP in effect"
+        },
+        {
+          "name": "clcw_vcid",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 16515072,
+          "label": "CLCW: virtual channel"
+        },
+        {
+          "name": "clcw_no_rf",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 32768,
+          "label": "CLCW: no RF available"
+        },
+        {
+          "name": "clcw_no_bit_lock",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 16384,
+          "label": "CLCW: no bit lock"
+        },
+        {
+          "name": "clcw_lockout",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 8192,
+          "label": "CLCW: lockout"
+        },
+        {
+          "name": "clcw_wait",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 4096,
+          "label": "CLCW: wait"
+        },
+        {
+          "name": "clcw_retransmit",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 2048,
+          "label": "CLCW: retransmit"
+        },
+        {
+          "name": "clcw_farm_b",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 1536,
+          "label": "CLCW: FARM-B counter"
+        },
+        {
+          "name": "clcw_report",
+          "offset": 219,
+          "length": 4,
+          "type": "uint32_be",
+          "mask": 255,
+          "label": "CLCW: report value"
+        }
+      ]
+    }
+  ]
+}
