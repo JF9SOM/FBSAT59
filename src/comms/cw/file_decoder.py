@@ -42,6 +42,11 @@ _SCAN_BIN_HZ = 30.0  # target FFT bin width
 _SCAN_LINE_DB = 10.0  # a bin this far above its frame's median is "on"
 _SCAN_MAX_DUTY = 0.8  # bins on in more of the frames are a constant spur, not keyed CW
 _SCAN_MIN_FRAMES = 4  # a line needs at least this many "on" frames
+# A recording made by Autotrack is Doppler-corrected, so the satellite's own beacon sits within a
+# few kHz of the centre. A strong keyed or drifting line far from the centre (a terrestrial
+# carrier that the correction smears across the band) must not win over it, so lines this close
+# to the centre are searched first and the whole band only when none of them qualifies.
+_SCAN_NEAR_HZ = 5000.0
 
 DecodeFunction = Callable[[NDArray[np.float32], int], DecodeResult]
 
@@ -60,8 +65,10 @@ def find_cw_carrier_hz(path: Path, info: WavInfo) -> float | None:
 
     The recording is scanned once in 0.25 s frames; per frame the spectrum is compared
     with its own median (the noise floor) and bins well above it count as "on". The line
-    that is on in some, but not almost all, frames with the largest excess wins. None
-    when no line stands out (then the recording is decoded as it is).
+    that is on in some, but not almost all, frames with the largest excess wins. Lines
+    within ``_SCAN_NEAR_HZ`` of the centre are preferred: the whole band is only used when
+    none of them qualifies. None when no line stands out (then the recording is decoded as
+    it is).
     """
     rate = float(info.sample_rate)
     nfft = 1 << max(8, int(np.ceil(np.log2(rate / _SCAN_BIN_HZ))))
@@ -93,9 +100,10 @@ def find_cw_carrier_hz(path: Path, info: WavInfo) -> float | None:
     usable = (on_frames >= _SCAN_MIN_FRAMES) & (on_frames <= _SCAN_MAX_DUTY * frames)
     if not usable.any():
         return None
-    best = int(np.argmax(np.where(usable, score, -1.0)))
-    freq = float(np.fft.fftfreq(nfft, 1.0 / rate)[best])
-    return freq
+    freqs = np.fft.fftfreq(nfft, 1.0 / rate)
+    near = usable & (np.abs(freqs) <= _SCAN_NEAR_HZ)
+    best = int(np.argmax(np.where(near if near.any() else usable, score, -1.0)))
+    return float(freqs[best])
 
 
 class CwFileDecoder(QThread):

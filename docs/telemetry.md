@@ -1117,6 +1117,14 @@ CW Decoder タブの **「📂 Decode IQ Recording…」**と、Telemetry タブ
   （全フレームの 80% 超でオンの定常スパーと、オン 4 フレーム未満は除外）を選ぶ。`CwFileDecoder.run()` はその線が
   `CW_TARGET_PITCH_HZ`（700 Hz）に来るよう各ブロックを位相連続の複素ミキサーで移動してから復調する。線が無ければ
   そのまま。ドップラー追従はしない（補正済み録音前提。ゆっくりした残差だけを想定）。通常（実時間）再生は対象外。
+- **探索は中心付近（±5 kHz）を優先（2026-10-27）**: 全帯域で「最強」を選ぶと、ERMINAZ-2U の録音
+  （`98207_ERMINAZ-2U_20261027T125936Z`）で**ビーコン（約 −260 Hz、12 秒・約 96 秒周期）ではなく約 −112 kHz の
+  地上の固定キャリア**が選ばれ、ビーコンが帯域外へ移って何も読めなかった（固定キャリアは自動録音のドップラー補正で
+  帯域内を流れて見え、スペクトルの各ビンでは断続する線に見える）。そこで `_SCAN_NEAR_HZ`（5000 Hz）以内の候補を先に
+  探し、**無い場合だけ全帯域**へ戻る（従来どおり −37 kHz の線も見つかる）。同じ録音は −274.7 Hz のビーコンを選ぶようになり、
+  アプリの AI デコーダーで `HI HI DE DP0PQA` が読める（周波数を −260 Hz に指定した実験で、約 285/380 秒の 2 回とも確認。
+  従来方式でも約 385 秒で読めた）。テスト: `test_find_carrier_prefers_a_line_near_the_centre_over_a_stronger_far_one`・
+  `test_find_carrier_falls_back_to_the_whole_band_when_none_is_near`。**アプリの GUI（CW タブの Fast）での確認は未実施**。
 - テスト: `tests/test_cw_file_decoder.py`（デモジュレーターをスタブ化＝CI に scipy 無し）、
   `tests/test_telemetry_cw_tlm.py` の `TestFastDecode`。
 - 速度: ARICA-2 の実録音（`68796_ARICA-2_20261014T065853Z.iq.wav`、706 秒・1.4 GB）の DeepCW 高速デコードが

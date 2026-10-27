@@ -265,6 +265,35 @@ def test_find_carrier_locates_keyed_line_and_ignores_constant_spur(
     assert abs(found - freq) < 80.0
 
 
+def test_find_carrier_prefers_a_line_near_the_centre_over_a_stronger_far_one(
+    tmp_path: Path,
+) -> None:
+    """A strong keyed line far from the centre (a smeared terrestrial carrier) must not win."""
+    rate = 250_000
+    path = tmp_path / "p.iq.wav"
+    n = rate * 12
+    t = np.arange(n) / rate
+    key = (np.floor(t / 0.4) % 2 == 0).astype(np.float64)
+    far = 0.6 * key * np.exp(2j * np.pi * -112_000.0 * t)  # stronger than the beacon
+    near = 0.2 * key * np.exp(2j * np.pi * -260.0 * t)  # the satellite's own beacon
+    rng = np.random.default_rng(3)
+    noise = 0.02 * (rng.standard_normal(n) + 1j * rng.standard_normal(n))
+    _write_iq(path, (noise + far + near).astype(np.complex64), rate)
+    found = find_cw_carrier_hz(path, read_wav_info(path))
+    assert found is not None
+    assert abs(found - -260.0) < 80.0
+
+
+def test_find_carrier_falls_back_to_the_whole_band_when_none_is_near(tmp_path: Path) -> None:
+    """With no qualifying line near the centre the far line is still found."""
+    rate = 250_000
+    path = tmp_path / "f.iq.wav"
+    _write_iq(path, _keyed_tone(rate, 12.0, -112_000.0), rate)
+    found = find_cw_carrier_hz(path, read_wav_info(path))
+    assert found is not None
+    assert abs(found - -112_000.0) < 80.0
+
+
 def test_find_carrier_returns_none_for_noise_only(tmp_path: Path) -> None:
     rate = 250_000
     path = tmp_path / "n.iq.wav"
