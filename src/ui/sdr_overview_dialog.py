@@ -76,6 +76,33 @@ def _nice_step(span: float, target: int) -> float:
     return float(10 * mag)
 
 
+def _max_pool_axis0(rgb: np.ndarray, n: int) -> np.ndarray:
+    """Reduce *rgb* (rows, cols, 3) to *n* rows, keeping the brightest pixel of each group.
+
+    Drawing a tall image into a smaller rectangle drops rows, which loses a burst that
+    is only one or two rows long. Brightness is the channel sum (the palette brightens
+    with level).
+    """
+    rows = rgb.shape[0]
+    if rows <= n:
+        return rgb
+    lum = rgb.astype(np.int16).sum(axis=2)
+    edges = np.linspace(0, rows, n + 1).astype(np.int64)
+    cols = np.arange(rgb.shape[1])
+    out = np.empty((n, rgb.shape[1], 3), dtype=rgb.dtype)
+    for i in range(n):
+        lo, hi = edges[i], max(edges[i + 1], edges[i] + 1)
+        out[i] = rgb[lo:hi][lum[lo:hi].argmax(axis=0), cols]
+    return out
+
+
+def _max_pool_rgb(rgb: np.ndarray, height: int, width: int) -> np.ndarray:
+    """Max-pool *rgb* down to at most *height* x *width* (see :func:`_max_pool_axis0`)."""
+    out = _max_pool_axis0(rgb, max(1, height))
+    out = _max_pool_axis0(out.transpose(1, 0, 2), max(1, width)).transpose(1, 0, 2)
+    return np.ascontiguousarray(out)
+
+
 class _OverviewCanvas(QWidget):
     """Draws the spectrogram image with time / frequency axes."""
 
@@ -87,6 +114,8 @@ class _OverviewCanvas(QWidget):
         super().__init__(parent)
         self._image: QImage | None = None
         self._rgb: np.ndarray | None = None  # keeps the QImage buffer alive
+        # The image reduced to the plot size (see _display_image) and its size key.
+        self._shown: tuple[int, int, np.ndarray, QImage] | None = None
         self._data: OverviewData | None = None
         self.setMinimumSize(520, 360)
         self.setMouseTracking(True)
@@ -97,6 +126,7 @@ class _OverviewCanvas(QWidget):
         h, w, _c = rgb.shape
         self._image = QImage(rgb.data, w, h, 3 * w, QImage.Format.Format_RGB888)
         self._data = data
+        self._shown = None
         self.update()
 
     def clear(self) -> None:
@@ -104,6 +134,7 @@ class _OverviewCanvas(QWidget):
         self._image = None
         self._rgb = None
         self._data = None
+        self._shown = None
         self.update()
 
     def image(self) -> QImage | None:
@@ -117,6 +148,19 @@ class _OverviewCanvas(QWidget):
         painter.end()
         return out
 
+    def _display_image(self, width: int, height: int) -> QImage:
+        """The image reduced (max-pooled) to the plot size so short bursts survive."""
+        assert self._rgb is not None and self._image is not None
+        rows, cols, _c = self._rgb.shape
+        if rows <= height and cols <= width:
+            return self._image
+        if self._shown is None or self._shown[:2] != (width, height):
+            small = _max_pool_rgb(self._rgb, height, width)
+            h, w, _c = small.shape
+            img = QImage(small.data, w, h, 3 * w, QImage.Format.Format_RGB888)
+            self._shown = (width, height, small, img)
+        return self._shown[3]
+
     def _plot_rect(self, w: int, h: int) -> QRect:
         return QRect(_MARGIN_L, _MARGIN_T, w - _MARGIN_L - _MARGIN_R, h - _MARGIN_T - _MARGIN_B)
 
@@ -125,7 +169,7 @@ class _OverviewCanvas(QWidget):
             return
         d = self._data
         r = self._plot_rect(w, h)
-        p.drawImage(r, self._image)
+        p.drawImage(r, self._display_image(r.width(), r.height()))
         p.setPen(fg)
         p.drawRect(r)
         # Frequency axis (kHz relative to the recording's centre).

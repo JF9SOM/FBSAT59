@@ -194,3 +194,37 @@ def test_mode_combo_switches_and_caches(tmp_path: Path, qtbot: QtBot) -> None:
     # Back to Standard comes from the cache, without a new read.
     dlg._mode_combo.setCurrentIndex(dlg._mode_combo.findData(MODE_STANDARD))
     assert dlg._data is standard
+
+
+def test_wide_colour_span_shows_a_2_db_burst() -> None:
+    """After averaging, noise is ~0.2 dB, so a +2 dB patch must fill about half the palette."""
+    rng = np.random.default_rng(5)
+    db = rng.normal(0.0, 0.2, (400, 300)).astype(np.float32)
+    db[200:210, 100:140] += 2.0
+    rgb = to_rgb(db, True, MODE_WIDE).astype(int)
+    patch = rgb[200:210, 100:140].reshape(-1, 3).mean(0)
+    quiet = rgb[20:100, 20:80].reshape(-1, 3).mean(0)
+    assert patch.sum() - quiet.sum() > 150  # clearly brighter than the noise background
+
+
+def test_wide_colour_span_ignores_one_strong_pixel() -> None:
+    """A single very strong outlier must not stretch the scale over the weak burst."""
+    rng = np.random.default_rng(6)
+    db = rng.normal(0.0, 0.2, (400, 300)).astype(np.float32)
+    db[200:210, 100:140] += 2.0
+    base = to_rgb(db, True, MODE_WIDE).astype(int)[200:210, 100:140].mean()
+    db[5, 5] = 80.0
+    with_outlier = to_rgb(db, True, MODE_WIDE).astype(int)[200:210, 100:140].mean()
+    assert abs(with_outlier - base) < 1.0
+
+
+def test_max_pool_keeps_a_single_bright_row() -> None:
+    from ui.sdr_overview_dialog import _max_pool_rgb
+
+    rgb = np.zeros((1000, 300, 3), dtype=np.uint8)
+    rgb[437, 120] = (250, 230, 40)  # one pixel in one row
+    small = _max_pool_rgb(rgb, 100, 100)
+    assert small.shape == (100, 100, 3)
+    assert small.reshape(-1, 3).max(0).tolist() == [250, 230, 40]
+    # A recording already smaller than the target is left alone.
+    assert _max_pool_rgb(rgb[:50, :60], 100, 100).shape == (50, 60, 3)

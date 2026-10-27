@@ -48,10 +48,18 @@ _WIDE_SMOOTH_BINS = 33
 _NARROW_FFT_SIZE = 16384
 _NARROW_MIN_ROW_S = 0.5
 # Colour span above the noise floor for the averaged modes (dB), and the percentile
-# of the image taken as the floor. Fixed spans keep strong signals / impulse noise
-# from stretching the scale over a weak signal.
+# of the image taken as the floor. The span never follows the strongest pixels, so a
+# strong signal / impulse noise cannot stretch the scale over a weak signal. NARROW
+# uses a fixed span. WIDE ties it to the measured pixel noise (a robust sigma that is
+# only ~0.2 dB after the averaging): span = _WIDE_SPAN_SIGMAS * sigma, kept within
+# [_WIDE_SPAN_MIN_DB, _WIDE_SPAN_MAX_DB], which lets a +2 dB burst fill half the palette.
 _SPAN_DB = {MODE_WIDE: 6.0, MODE_NARROW: 9.0}
 _FLOOR_PERCENTILE = {MODE_WIDE: 20.0, MODE_NARROW: 50.0}
+_WIDE_SPAN_SIGMAS = 15.0
+_WIDE_SPAN_MIN_DB = 3.0
+_WIDE_SPAN_MAX_DB = 6.0
+# WIDE rows are as short as 0.1 s (a 250 ms burst is not diluted into a long row).
+_WIDE_MAX_ROWS = 7000
 
 
 @dataclass
@@ -136,7 +144,8 @@ def _compute_averaged(
     duration = n_samples / rate
     fft_size = _NARROW_FFT_SIZE if mode == MODE_NARROW else FFT_SIZE
     min_row_s = _NARROW_MIN_ROW_S if mode == MODE_NARROW else MIN_ROW_S
-    hop = max(fft_size, int(max(min_row_s, duration / MAX_ROWS) * rate))
+    max_rows = _WIDE_MAX_ROWS if mode == MODE_WIDE else MAX_ROWS
+    hop = max(fft_size, int(max(min_row_s, duration / max_rows) * rate))
     n_rows = max(1, n_samples // hop)
     window = np.hanning(fft_size).astype(np.float32)
     pool = fft_size // DISPLAY_BINS
@@ -226,6 +235,14 @@ _STOPS = np.array(
 )
 
 
+def _span_db(power_db: np.ndarray, mode: str) -> float:
+    """Colour span (dB) above the floor for an averaged mode."""
+    if mode != MODE_WIDE:
+        return _SPAN_DB[mode]
+    sigma = 1.4826 * float(np.median(np.abs(power_db - np.median(power_db))))
+    return float(np.clip(_WIDE_SPAN_SIGMAS * sigma, _WIDE_SPAN_MIN_DB, _WIDE_SPAN_MAX_DB))
+
+
 def to_rgb(power_db: np.ndarray, background_removed: bool, mode: str = MODE_STANDARD) -> np.ndarray:
     """Map dB values to an (rows, cols, 3) uint8 image.
 
@@ -236,7 +253,7 @@ def to_rgb(power_db: np.ndarray, background_removed: bool, mode: str = MODE_STAN
     """
     if background_removed and mode in _SPAN_DB:
         lo = float(np.percentile(power_db, _FLOOR_PERCENTILE[mode]))
-        hi = lo + _SPAN_DB[mode]
+        hi = lo + _span_db(power_db, mode)
     else:
         lo_p, hi_p = (10.0, 99.95) if background_removed else (5.0, 99.8)
         lo, hi = np.percentile(power_db, [lo_p, hi_p])
