@@ -24,6 +24,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from comms.cw.model_info import find_model
+from comms.cw.word_space import insert_word_spaces
 
 if TYPE_CHECKING:
     import onnxruntime as ort
@@ -302,7 +303,10 @@ class CwDecoder:
         input_name = "spectrogram"
         output_name = "log_probs"
         outputs = self._session.run([output_name], {input_name: spec})
-        return DecodeResult(_ctc_decode_with_offsets(outputs[0]), window_duration, frame_energy)
+        offsets = insert_word_spaces(
+            _ctc_decode_with_offsets(outputs[0]), frame_energy, HOP_LENGTH / SAMPLE_RATE
+        )
+        return DecodeResult(offsets, window_duration, frame_energy)
 
     def decode(self, audio: NDArray[np.float32], sample_rate: int) -> str:
         """Decode *audio* (float32, mono) and return the CW text.

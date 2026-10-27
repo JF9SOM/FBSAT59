@@ -1125,6 +1125,21 @@ CW Decoder タブの **「📂 Decode IQ Recording…」**と、Telemetry タブ
   アプリの AI デコーダーで `HI HI DE DP0PQA` が読める（周波数を −260 Hz に指定した実験で、約 285/380 秒の 2 回とも確認。
   従来方式でも約 385 秒で読めた）。テスト: `test_find_carrier_prefers_a_line_near_the_centre_over_a_stronger_far_one`・
   `test_find_carrier_falls_back_to_the_whole_band_when_none_is_near`。**アプリの GUI（CW タブの Fast）での確認は未実施**。
+- **単語間が短いビーコンへスペースを補う（2026-10-28、`comms/cw/word_space.py`）**: DeepCW は**長い隙間（標準の
+  単語間 7 点）のときだけスペースを出す**。ERMINAZ-2U のビーコンは、文字間が約 3.0〜3.4 点、**単語間が約 3.6〜4.2 点**
+  （標準の 7 点ではない）で送られており、`HIHIDEDP0PQA`（スペース無し）と出た。信号自体が単語間を短く送っているため、
+  アプリの不具合ではなく、LASARsat や ARICA-2（標準の単語間隔）では以前からスペースが出ていた。
+  `CwDecoder.decode_with_offsets()` が `insert_word_spaces()` で、同じ窓の `frame_energy`（15 ms ごとのトーン
+  エネルギー）から文字と文字の間の隙間（点の長さ換算。点は ON 区間の長さの 15 パーセンタイル）を測り、**隙間が二つの
+  群にはっきり分かれるとき**だけ、長い群にスペースを足す。条件（どれか外れたら何もしない）: トーンが床の 3 倍以上、
+  点が 4 フレーム（60 ms）以上、窓に標準の単語間隔（5 点以上）が無い、モデルがスペースを出していない、隙間が 6 個以上、
+  二つの群（2-means）の中心が 0.45 点以上かつ 1.15 倍以上離れ、群内のばらつきの 2.5 倍以上、短い群が 2.4〜3.6 点。
+  **最も広い切れ目で分ける方式は不可**（隙間は 1〜2 フレーム＝約 0.2 点ばらつくため、同じ群の中の 3.0 と 3.2 の間で
+  割れて、全文字の間にスペースが入った。実録音の窓で確認して 2-means に変更）。実録音（`98207_ERMINAZ-2U_20261027T125936Z`）
+  の約 375 秒のビーコンで `. HI HI DE DP0PQAY AR` と区切られた（`HP0PQ AD` のような誤読位置のずれは残る）。
+  約 277 秒のビーコンは隙間が測りにくく（S/N が低い）**変更なし（安全側）**。通常のモールス（標準の単語間隔）は対象外。
+  従来方式（`classic.py`）は別の隙間判定を持つので**変更していない**。テスト: `tests/test_cw_word_space.py`。
+  **アプリの GUI での確認は未実施**。
 - テスト: `tests/test_cw_file_decoder.py`（デモジュレーターをスタブ化＝CI に scipy 無し）、
   `tests/test_telemetry_cw_tlm.py` の `TestFastDecode`。
 - 速度: ARICA-2 の実録音（`68796_ARICA-2_20261014T065853Z.iq.wav`、706 秒・1.4 GB）の DeepCW 高速デコードが
