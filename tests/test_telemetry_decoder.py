@@ -7,16 +7,21 @@ JSON format files already checked into src/data/telemetry_formats/.
 
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from comms.telemetry.decoder import (
     TelemetryField,
     TelemetryFrame,
+    _decode_binary_fields,
+    _parse_derived,
     decode_telemetry,
     get_telemetry_id_defs,
+    load_format,
 )
 
 # A real OrigamiSat-2 (NORAD 68795) ID130 frame received 2026-09-13, stored
@@ -878,3 +883,224 @@ def test_decode_origamisat2_id67_file_list_is_text() -> None:
     assert tf.telemetry_id == 67
     texts = [f.unit for f in tf.fields if f.name == "file_list"]
     assert texts == ["IMG_0001.JPG"]
+
+
+# -- Formats imported from SatNOGS ksy files (OPTISAT, GBSAT, SunCET, SPRITE, CPSAT) --
+# Their values were compared field by field with the Kaitai-compiled decoders on random frames when
+# the formats were generated; these tests pin the decoder features they rely on.
+
+
+def _fields_by_name(norad: int, payload: bytes) -> dict[str, TelemetryField]:
+    tf = decode_telemetry("X", payload, norad=norad)
+    return {f.name: f for f in tf.fields}
+
+
+def _format_fields(norad: int, frame_type: str | None = None) -> dict[str, dict[str, Any]]:
+    fmt = load_format(norad)
+    assert fmt is not None
+    if frame_type is None:
+        defs = fmt["fields"]
+    else:
+        defs = next(ft["fields"] for ft in fmt["frame_types"] if ft["id"] == frame_type)
+    return {d["name"]: d for d in defs}
+
+
+def _put(buf: bytearray, d: dict[str, Any], value: int) -> None:
+    """Write *value* into *buf* at the position a ``uint*``/``bits`` field definition names."""
+    if d["type"] == "bits":
+        total = d["length"] * 8
+        shift = total - d["bit_offset"] - d["bit_length"]
+        chunk = int.from_bytes(buf[d["offset"] : d["offset"] + d["length"]], "big")
+        chunk &= ~(((1 << d["bit_length"]) - 1) << shift)
+        chunk |= value << shift
+        buf[d["offset"] : d["offset"] + d["length"]] = chunk.to_bytes(d["length"], "big")
+        return
+    little = d["type"].endswith("_le")
+    signed = d["type"].startswith("int")
+    buf[d["offset"] : d["offset"] + d["length"]] = value.to_bytes(
+        d["length"], "little" if little else "big", signed=signed
+    )
+
+
+def test_derived_field_uses_raw_values_and_hides_on_false_condition() -> None:
+    defs = [
+        {"name": "raw", "offset": 0, "length": 1, "type": "uint8", "scale": 2},
+        {"name": "volts", "type": "derived", "expr": "0.5 * raw", "unit": "V"},
+        {"name": "present", "type": "derived", "expr": "raw", "if": "raw != 255"},
+        {"name": "ratio", "type": "derived", "expr": "raw / (raw - raw)"},
+        {"name": "needs_missing", "type": "derived", "expr": "nothere + 1"},
+        {"name": "signed", "type": "derived", "expr": "raw - 256 if raw >= 128 else raw"},
+    ]
+    fields = {f.name: f for f in _decode_binary_fields(bytes([200]), defs)}
+    assert fields["raw"].scaled_value == 400  # scale applies to the field, not to derived inputs
+    assert fields["volts"].scaled_value == 100.0 and fields["volts"].unit == "V"
+    assert fields["present"].scaled_value == 200
+    assert fields["signed"].scaled_value == -56
+    assert "ratio" not in fields  # division by zero hides the field
+    assert "needs_missing" not in fields  # a name that was never decoded hides it too
+    assert "present" not in {f.name for f in _decode_binary_fields(bytes([255]), defs)}
+
+
+@pytest.mark.parametrize(
+    "expr",
+    ["__import__('os').system('true')", "raw.real", "raw[0]", "(lambda: 1)()", "'text'"],
+)
+def test_derived_expression_rejects_anything_but_arithmetic(expr: str) -> None:
+    with pytest.raises(ValueError):
+        _parse_derived(expr)
+
+
+def test_bits_field_reads_an_unaligned_run_of_bits() -> None:
+    # 3 bits (0b101) + a 19-bit counter (0x5A5A5) + 2 bits (0b10): 24 bits = 3 bytes.
+    value = (0b101 << 21) | (0x5A5A5 << 2) | 0b10
+    payload = value.to_bytes(3, "big")
+    defs = [
+        {"name": "a", "offset": 0, "length": 1, "type": "bits", "bit_offset": 0, "bit_length": 3},
+        {"name": "n", "offset": 0, "length": 3, "type": "bits", "bit_offset": 3, "bit_length": 19},
+        {"name": "b", "offset": 2, "length": 1, "type": "bits", "bit_offset": 6, "bit_length": 2},
+        {
+            "name": "short",
+            "offset": 2,
+            "length": 2,
+            "type": "bits",
+            "bit_offset": 0,
+            "bit_length": 8,
+        },
+    ]
+    fields = {f.name: f.scaled_value for f in _decode_binary_fields(payload, defs)}
+    assert fields == {"a": 0b101, "n": 0x5A5A5, "b": 0b10}  # "short" runs past the payload: dropped
+
+
+def test_unix_time_epoch_offset_shifts_the_satellite_clock() -> None:
+    defs = [{"name": "t", "offset": 0, "length": 4, "type": "unix_time", "epoch_offset": 946684800}]
+    (field,) = _decode_binary_fields((86400).to_bytes(4, "big"), defs)
+    assert field.unit == "2000-01-02 00:00:00 UTC"
+    assert field.raw_value == 86400 and field.scaled_value == 946684800 + 86400
+
+
+def test_optisat_real_frame_decodes_the_leading_fields() -> None:
+    # A real OPTISAT frame (2026-10-15). The ksy's layout only fits some frames; the leading
+    # battery voltage, frame type and current are the part that looks right.
+    payload = bytes.fromhex(
+        "b5110133c905010100010b05e0240a000c0038000000060001164a582200ac00000e0000000001000001"
+        "000001aeff000700"
+    )
+    fields = _fields_by_name(68418, payload)
+    assert fields["battery_voltage_mv"].scaled_value == 4533
+    assert fields["frame_type"].scaled_value == 0x33
+    assert fields["current_ma"].scaled_value == 1481
+    assert decode_telemetry("X", payload, norad=68418).telemetry_id == "FULL"
+    # A frame of another type is not decoded with the full-telemetry layout.
+    assert decode_telemetry("X", payload[:3] + b"\x80" + payload[4:], norad=68418).fields == []
+
+
+def test_gbsat_converted_values() -> None:
+    d = _format_fields(98243)
+    buf = bytearray(68)
+    for name, value in {
+        "timestamp": 0,
+        "pos_x": -1000,
+        "adcs_gyro_x": -150,
+        "adcs_mag_y": 100,
+        "adcs_raw_acc_cg": -5,
+        "eps_raw_batt_voltage": 8100,
+        "eps_raw_batt_current": -250,
+        "tcs_cdh_temp": -20,
+    }.items():
+        _put(buf, d[name], value)
+    _put(buf, d["eps_solar_panel_power_dw_1"], 25)
+    f = _fields_by_name(98243, bytes(buf))
+    assert f["timestamp"].unit == "2024-01-01 00:00:00 UTC"  # the satellite clock counts from 2024
+    assert f["pos_x"].scaled_value == -1000
+    assert f["adcs_gyro_x_dps"].scaled_value == -1.5
+    assert f["adcs_mag_y_nt"].scaled_value == 1000
+    assert f["adcs_acc_g"].scaled_value == -0.05
+    assert f["eps_solar_panel_1_w"].scaled_value == pytest.approx(2.5)
+    assert f["eps_batt_voltage_v"].scaled_value == pytest.approx(8.1)
+    assert f["eps_batt_current_a"].scaled_value == pytest.approx(-0.25)
+    assert f["tcs_cdh_temp"].scaled_value == -20
+
+
+def test_suncet_beacon_needs_apid_1_and_converts() -> None:
+    d = _format_fields(98244)
+    buf = bytearray(252)
+    _put(buf, d["ccsds_primary_word"], 0x0801)
+    _put(buf, d["battery_1_voltage_raw"], 1000)
+    _put(buf, d["cdh_temp_raw"], 0)
+    _put(buf, d["eps_pwr_state_dsps_raw"], 1)
+    f = _fields_by_name(98244, bytes(buf))
+    assert f["ccsds_apid"].scaled_value == 1
+    assert f["spacecraft_time_seconds_since_2000"].unit == "2000-01-01 00:00:00 UTC"
+    assert f["battery_1_voltage"].scaled_value == pytest.approx(8.8623)
+    assert f["cdh_temp"].scaled_value == pytest.approx(125.55)  # the polynomial's constant term
+    assert f["eps_pwr_state_dsps"].scaled_value == 1
+    assert f["eps_pwr_state_csie"].scaled_value == 0
+    # Another APID is not the public beacon.
+    _put(buf, d["ccsds_primary_word"], 0x0802)
+    assert decode_telemetry("X", bytes(buf), norad=98244).fields == []
+
+
+def test_sprite_ccsds_header_bit_fields() -> None:
+    d = _format_fields(99299)
+    buf = bytearray(252)
+    _put(buf, d["ccsds_version"], 0)
+    _put(buf, d["secondary_header_flag"], 1)
+    _put(buf, d["application_process_id"], 1)
+    _put(buf, d["sequence_count"], 0x1234)
+    _put(buf, d["grouping_flag"], 3)
+    f = _fields_by_name(99299, bytes(buf))
+    assert (f["secondary_header_flag"].scaled_value, f["application_process_id"].scaled_value) == (
+        1,
+        1,
+    )
+    assert f["sequence_count"].scaled_value == 0x1234 and f["grouping_flag"].scaled_value == 3
+
+
+def test_cpsat_mode_selected_by_the_beacon_mode_byte() -> None:
+    d3 = _format_fields(98194, "MODE03")
+    buf = bytearray(112)
+    buf[16] = 3
+    _put(buf, d3["bat_motherboard_temperature"], 1000)
+    f = _fields_by_name(98194, bytes(buf))
+    assert f["bat_motherboard_temperature_converted"].scaled_value == pytest.approx(
+        0.372434 * 1000 - 273.15
+    )
+    assert decode_telemetry("X", bytes(buf), norad=98194).telemetry_id == "MODE03"
+    # Mode 9 packs 16- and 32-bit counters at arbitrary bit positions.
+    d9 = _format_fields(98194, "MODE09")
+    buf9 = bytearray(202)
+    buf9[16] = 9
+    _put(buf9, d9["last_capture_sec"], 0xDEADBEEF)
+    _put(buf9, d9["last_img_bytes"], 0x5A5A5)
+    f9 = _fields_by_name(98194, bytes(buf9))
+    assert f9["last_capture_sec"].scaled_value == 0xDEADBEEF
+    assert f9["last_img_bytes"].scaled_value == 0x5A5A5
+
+
+def test_imported_formats_are_well_formed() -> None:
+    """Every derived expression parses, only reads earlier fields, and offsets fit the frame."""
+    sizes = {
+        68418: ("frame_types", 63),
+        98243: ("fields", 68),
+        98244: ("fields", 252),
+        99299: ("fields", 252),
+        98194: ("frame_types", 17 + 215),
+    }
+    for norad, (kind, max_size) in sizes.items():
+        fmt = load_format(norad)
+        assert fmt is not None, norad
+        lists = [fmt["fields"]] if kind == "fields" else [ft["fields"] for ft in fmt["frame_types"]]
+        for defs in lists:
+            seen: set[str] = set()
+            for d in defs:
+                if d["type"] == "derived":
+                    tree = _parse_derived(d["expr"])
+                    cond = _parse_derived(d["if"]) if d.get("if") else None
+                    for node in [tree, cond] if cond else [tree]:
+                        for n in ast.walk(node):
+                            if isinstance(n, ast.Name):
+                                assert n.id in seen, f"{norad} {d['name']} reads unknown {n.id}"
+                else:
+                    assert d["offset"] + d["length"] <= max_size, f"{norad} {d['name']}"
+                assert d["name"] not in seen, f"{norad} duplicate {d['name']}"
+                seen.add(d["name"])

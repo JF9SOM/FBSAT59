@@ -1,0 +1,263 @@
+{
+  "norad": 68418,
+  "name": "OPTISAT",
+  "callsign": "ABCDEF",
+  "modulation": "GMSK4k8",
+  "reference": "https://gitlab.com/librespacefoundation/satnogs/satnogs-decoders/-/raw/master/ksy/optisat.ksy",
+  "document": "Layout from the SatNOGS decoder optisat.ksy, which is itself reverse-engineered from received frames (https://github.com/BramVH98/optisat-telemetry).",
+  "document_ja": "SatNOGS のデコーダー optisat.ksy のレイアウト（受信フレームからの解析で、公式資料ではない）。",
+  "note": "Imported from the SatNOGS decoder optisat.ksy, which is a community reverse-engineering (not an official format) and DOES NOT FIT MOST REAL FRAMES: in 29 full-length frames of type 0x33 that FBSAT59 received on 2026-10-15 the constants the ksy itself declares (the 0x3E markers, reserved blocks, the FE FF FF FF sentinel) held in only 1 frame, and the layout differs from frame to frame although the type byte is the same. Only the first fields look right (battery voltage 4533-4604 mV, current 1280-1535 mA); the remaining values, including the three temperatures, are often meaningless. Temperatures are raw: the ksy gives no conversion. Frame types other than 0x33 (0x80 identity beacon, 0x82/0x83 status frames) are not decoded. Offsets are counted from the AX.25 information field (after the 16-byte header).",
+  "note_ja": "SatNOGS のデコーダー optisat.ksy（コミュニティが受信フレームから解析したもので公式ではない）を取り込んだもので、**実フレームの大半に合わない**: 2026-10-15 に FBSAT59 が受信した種別 0x33 の全長 29 フレームのうち、ksy 自身が「定数」と書いている印(0x3E のマーカー、予約ブロック、FE FF FF FF の番兵値)が成り立ったのは 1 フレームだけで、種別バイトが同じでもフレームごとに並びが違う。先頭の項目だけは妥当に見える(バッテリー電圧 4533〜4604 mV、電流 1280〜1535 mA)が、温度 3 つを含む残りの値は意味を成さないことが多い。温度は ksy に換算式が無いので生の値。0x33 以外のフレーム種別(0x80 識別ビーコン、0x82/0x83 状態フレーム)はデコードしない。オフセットは AX.25 情報部(16 バイトのヘッダーの後)の先頭から数える。",
+  "frame_types": [
+    {
+      "id": "FULL",
+      "label": "Full telemetry (frame type 0x33)",
+      "label_ja": "全テレメトリ(フレーム種別 0x33)",
+      "match": {
+        "offset": 3,
+        "hex": "33"
+      },
+      "fields": [
+        {
+          "name": "battery_voltage_mv",
+          "offset": 0,
+          "length": 2,
+          "type": "uint16_le",
+          "unit": "mV",
+          "label": "Battery voltage mv (Battery/bus voltage in millivolts)",
+          "label_ja": "バッテリー／バス電圧"
+        },
+        {
+          "name": "unknown_const_a",
+          "offset": 2,
+          "length": 1,
+          "type": "uint8",
+          "label": "Unknown const a"
+        },
+        {
+          "name": "frame_type",
+          "offset": 3,
+          "length": 1,
+          "type": "uint8",
+          "label": "Frame type (0x33 = full telemetry, 0x80 = identity beacon (spells 'Endurosat'), 0x83 = sparse/status frame)",
+          "label_ja": "フレーム種別(0x33=全テレメトリ)"
+        },
+        {
+          "name": "current_ma",
+          "offset": 4,
+          "length": 2,
+          "type": "uint16_le",
+          "unit": "mA",
+          "label": "Current ma (Bus/subsystem current draw in milliamps)",
+          "label_ja": "バス／サブシステム電流"
+        },
+        {
+          "name": "unknown_const_b",
+          "offset": 6,
+          "length": 1,
+          "type": "uint8",
+          "label": "Unknown const b"
+        },
+        {
+          "name": "unknown_const_c",
+          "offset": 7,
+          "length": 1,
+          "type": "uint8",
+          "label": "Unknown const c"
+        },
+        {
+          "name": "reserved_block_1",
+          "offset": 8,
+          "length": 3,
+          "type": "hex",
+          "label": "Reserved block 1 (Constant 00 03 0D - possible tag/type marker, unconfirmed)"
+        },
+        {
+          "name": "padding_1",
+          "offset": 11,
+          "length": 13,
+          "type": "hex",
+          "label": "Padding 1 (Always zero)"
+        },
+        {
+          "name": "reserved_block_2",
+          "offset": 24,
+          "length": 4,
+          "type": "hex",
+          "label": "Reserved block 2 (Constant 59 00 01 0D - possible channel/tag ID, unconfirmed)"
+        },
+        {
+          "name": "sentinel_1",
+          "offset": 28,
+          "length": 4,
+          "type": "hex",
+          "label": "Sentinel 1 (Constant FE FF FF FF - possibly int32 -2, unconfirmed)"
+        },
+        {
+          "name": "unknown_a1",
+          "offset": 32,
+          "length": 1,
+          "type": "uint8",
+          "label": "Unknown a1 (Varies 7-219, weak correlation with temp_1 - meaning unknown)"
+        },
+        {
+          "name": "tag_marker_1",
+          "offset": 33,
+          "length": 1,
+          "type": "uint8",
+          "label": "Tag marker 1 (Always 0x3E - structural marker, meaning unknown)"
+        },
+        {
+          "name": "unknown_b1",
+          "offset": 34,
+          "length": 1,
+          "type": "uint8",
+          "label": "Unknown b1"
+        },
+        {
+          "name": "unknown_c1",
+          "offset": 35,
+          "length": 1,
+          "type": "uint8",
+          "label": "Unknown c1"
+        },
+        {
+          "name": "unknown_d1",
+          "offset": 36,
+          "length": 1,
+          "type": "uint8",
+          "label": "Unknown d1"
+        },
+        {
+          "name": "temp_1_raw",
+          "offset": 37,
+          "length": 1,
+          "type": "uint8",
+          "label": "Temp 1 raw (Temperature sensor 1, raw value (range 58-73))",
+          "label_ja": "温度センサー1(生の値)"
+        },
+        {
+          "name": "padding_2",
+          "offset": 38,
+          "length": 2,
+          "type": "hex",
+          "label": "Padding 2"
+        },
+        {
+          "name": "reserved_block_3",
+          "offset": 40,
+          "length": 5,
+          "type": "hex",
+          "label": "Reserved block 3 (Constant 03 5B 00 01 08 - possible channel/tag ID, unconfirmed)"
+        },
+        {
+          "name": "unknown_a2",
+          "offset": 45,
+          "length": 1,
+          "type": "uint8",
+          "label": "Unknown a2 (Structurally paired with unknown_a1)"
+        },
+        {
+          "name": "tag_marker_2",
+          "offset": 46,
+          "length": 1,
+          "type": "uint8",
+          "label": "Tag marker 2 (Always 0x3E, second occurrence)"
+        },
+        {
+          "name": "unknown_b2",
+          "offset": 47,
+          "length": 1,
+          "type": "uint8",
+          "label": "Unknown b2"
+        },
+        {
+          "name": "unknown_c2",
+          "offset": 48,
+          "length": 1,
+          "type": "uint8",
+          "label": "Unknown c2"
+        },
+        {
+          "name": "unknown_d2",
+          "offset": 49,
+          "length": 1,
+          "type": "uint8",
+          "label": "Unknown d2"
+        },
+        {
+          "name": "unknown_e2",
+          "offset": 50,
+          "length": 1,
+          "type": "uint8",
+          "label": "Unknown e2 (Extra byte present in this sub-block only - structural asymmetry, unexplained)"
+        },
+        {
+          "name": "temp_2_raw",
+          "offset": 51,
+          "length": 1,
+          "type": "uint8",
+          "label": "Temp 2 raw (Temperature sensor 2, raw value (range 160-201, corr=0.97 with temp_1))",
+          "label_ja": "温度センサー2(生の値)"
+        },
+        {
+          "name": "padding_3",
+          "offset": 52,
+          "length": 1,
+          "type": "hex",
+          "label": "Padding 3"
+        },
+        {
+          "name": "reserved_block_4",
+          "offset": 53,
+          "length": 4,
+          "type": "hex",
+          "label": "Reserved block 4 (Constant 5D 00 01 06 - possible channel/tag ID, unconfirmed)"
+        },
+        {
+          "name": "unknown_f1",
+          "offset": 57,
+          "length": 1,
+          "type": "uint8",
+          "label": "Unknown f1 (Range 11-239, weak correlation with temp_1 - meaning unknown)"
+        },
+        {
+          "name": "unknown_h1",
+          "offset": 58,
+          "length": 1,
+          "type": "uint8",
+          "label": "Unknown h1 (Two distinct values (0x3C/0x3D) - meaning unknown)"
+        },
+        {
+          "name": "unknown_g1",
+          "offset": 59,
+          "length": 1,
+          "type": "uint8",
+          "label": "Unknown g1 (Range 0-236, mostly zero - unconfirmed hypothesis: sun sensor (near-zero in eclipse, higher in sunlight))"
+        },
+        {
+          "name": "unknown_i1",
+          "offset": 60,
+          "length": 1,
+          "type": "uint8",
+          "label": "Unknown i1 (Two distinct values (0/1) - meaning unknown)"
+        },
+        {
+          "name": "temp_3_raw",
+          "offset": 61,
+          "length": 1,
+          "type": "uint8",
+          "label": "Temp 3 raw (Temperature sensor 3, raw value (range 86-129, corr=0.94 with temp_1))",
+          "label_ja": "温度センサー3(生の値)"
+        },
+        {
+          "name": "padding_end",
+          "offset": 62,
+          "length": 1,
+          "type": "hex",
+          "label": "Padding end"
+        }
+      ]
+    }
+  ]
+}

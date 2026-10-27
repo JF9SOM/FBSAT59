@@ -8,9 +8,12 @@ For satellites with no definition file the raw payload is returned as hex.
 
 from __future__ import annotations
 
+import ast
 import base64
+import functools
 import json
 import math
+import operator
 import struct
 import sys
 from dataclasses import dataclass, field
@@ -276,15 +279,18 @@ def _decode_field(payload: bytes, field_def: dict[str, Any]) -> TelemetryField |
         # "unix_time_le"), shown as a date. This is the satellite's own clock, not the
         # reception time.
         (seconds,) = struct.unpack_from(">I" if ftype == "unix_time" else "<I", chunk)
+        # ``epoch_offset`` is the number of seconds between 1970-01-01 and the satellite's own
+        # epoch (e.g. 946684800 for a clock counting from 2000-01-01).
+        unix_seconds = seconds + int(field_def.get("epoch_offset", 0))
         try:
-            shown = datetime.fromtimestamp(seconds, tz=UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+            shown = datetime.fromtimestamp(unix_seconds, tz=UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
         except (OverflowError, OSError, ValueError):
-            shown = str(seconds)
+            shown = str(unix_seconds)
         return TelemetryField(
             name=field_def["name"],
             label=label,
             raw_value=seconds,
-            scaled_value=float(seconds),
+            scaled_value=float(unix_seconds),
             unit=shown,
             is_integer=True,
             is_string=True,
@@ -308,6 +314,27 @@ def _decode_field(payload: bytes, field_def: dict[str, Any]) -> TelemetryField |
             unit=shown,
             is_integer=True,
             is_string=True,
+        )
+
+    if ftype == "bits":
+        # An unsigned big-endian bit field that need not start on a byte boundary: ``offset``
+        # and ``length`` cover the bytes it touches, ``bit_offset`` counts from the MSB of the
+        # first of them, ``bit_length`` is its width (e.g. a 19-bit counter packed after a
+        # 3-bit one).
+        bit_offset = int(field_def.get("bit_offset", 0))
+        bit_length = int(field_def["bit_length"])
+        if bit_offset + bit_length > len(chunk) * 8:
+            return None
+        shift = len(chunk) * 8 - bit_offset - bit_length
+        bits_raw = (int.from_bytes(chunk, "big") >> shift) & ((1 << bit_length) - 1)
+        bits_add: float = field_def.get("add", 0.0)
+        return TelemetryField(
+            name=field_def["name"],
+            label=label,
+            raw_value=bits_raw,
+            scaled_value=float(bits_raw) * scale + bits_add,
+            unit=unit,
+            is_integer=(float(scale).is_integer() and bits_add == 0.0),
         )
 
     fmt = _STRUCT_MAP.get(ftype)
@@ -349,6 +376,132 @@ AX25_HEADER_FIELDS: tuple[tuple[str, str], ...] = (
     ("ax25_via", "Digipeater path (* = already repeated)"),
     ("ax25_pid", "PID"),
 )
+
+
+_DERIVED_BINOPS: dict[type[ast.operator], Any] = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod,
+    ast.BitAnd: operator.and_,
+    ast.BitOr: operator.or_,
+    ast.BitXor: operator.xor,
+    ast.LShift: operator.lshift,
+    ast.RShift: operator.rshift,
+}
+_DERIVED_COMPARES: dict[type[ast.cmpop], Any] = {
+    ast.Eq: operator.eq,
+    ast.NotEq: operator.ne,
+    ast.Lt: operator.lt,
+    ast.LtE: operator.le,
+    ast.Gt: operator.gt,
+    ast.GtE: operator.ge,
+}
+
+
+@functools.lru_cache(maxsize=4096)
+def _parse_derived(expr: str) -> ast.expr:
+    """Parse a ``derived`` expression and reject anything but plain arithmetic.
+
+    Allowed: numbers, names of earlier fields, + - * / // % & | ^ << >>, unary - + ~ not,
+    comparisons, and/or, and ``a if cond else b``. No calls, attributes or subscripts.
+    """
+    tree = ast.parse(expr, mode="eval").body
+    for node in ast.walk(tree):
+        if not isinstance(
+            node,
+            (
+                ast.Constant, ast.Name, ast.Load, ast.BinOp, ast.UnaryOp, ast.Compare, ast.BoolOp,
+                ast.IfExp, ast.operator, ast.unaryop, ast.cmpop, ast.boolop,
+            ),
+        ):  # fmt: skip
+            raise ValueError(f"unsupported syntax in derived expression: {expr!r}")
+        if isinstance(node, ast.Constant) and not isinstance(node.value, (int, float)):
+            raise ValueError(f"unsupported constant in derived expression: {expr!r}")
+    return tree
+
+
+def _eval_derived_node(node: ast.expr, env: dict[str, float]) -> Any:
+    """Evaluate a node checked by _parse_derived(); a missing name raises KeyError."""
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.Name):
+        return env[node.id]
+    if isinstance(node, ast.BinOp):
+        return _DERIVED_BINOPS[type(node.op)](
+            _eval_derived_node(node.left, env), _eval_derived_node(node.right, env)
+        )
+    if isinstance(node, ast.UnaryOp):
+        value = _eval_derived_node(node.operand, env)
+        if isinstance(node.op, ast.Not):
+            return not value
+        if isinstance(node.op, ast.USub):
+            return -value
+        if isinstance(node.op, ast.UAdd):
+            return +value
+        return ~int(value)
+    if isinstance(node, ast.Compare):
+        left = _eval_derived_node(node.left, env)
+        for op, comparator in zip(node.ops, node.comparators, strict=True):
+            right = _eval_derived_node(comparator, env)
+            if not _DERIVED_COMPARES[type(op)](left, right):
+                return False
+            left = right
+        return True
+    if isinstance(node, ast.BoolOp):
+        values = (_eval_derived_node(v, env) for v in node.values)
+        return all(values) if isinstance(node.op, ast.And) else any(values)
+    if isinstance(node, ast.IfExp):
+        branch = node.body if _eval_derived_node(node.test, env) else node.orelse
+        return _eval_derived_node(branch, env)
+    raise ValueError("unsupported node")
+
+
+def _decode_derived(field_def: dict[str, Any], env: dict[str, float]) -> TelemetryField | None:
+    """A ``type: "derived"`` field: a value computed from fields decoded before it.
+
+    ``expr`` uses the *raw* values (after ``mask``, before ``scale``) of those fields by name; an
+    optional ``if`` expression hides the field when false (e.g. a sentinel value such as 0xFFFF).
+    Returns None when a name is missing (the source field was cut off), on a division by zero, or
+    when the ``if`` condition is false.
+    """
+    try:
+        condition = field_def.get("if")
+        if condition is not None and not _eval_derived_node(_parse_derived(str(condition)), env):
+            return None
+        value = _eval_derived_node(_parse_derived(str(field_def["expr"])), env)
+    except (KeyError, ZeroDivisionError, OverflowError, ValueError):
+        return None
+    value = int(value) if isinstance(value, bool) else value
+    return TelemetryField(
+        name=field_def["name"],
+        label=field_def.get("label", field_def["name"]),
+        raw_value=value,
+        scaled_value=float(value),
+        unit=field_def.get("unit", ""),
+        is_integer=isinstance(value, int),
+    )
+
+
+def _decode_binary_fields(payload: bytes, field_defs: list[dict[str, Any]]) -> list[TelemetryField]:
+    """Decode a list of binary field definitions; ``derived`` ones see the earlier raw values."""
+    decoded: list[TelemetryField] = []
+    env: dict[str, float] = {}
+    for fd in field_defs:
+        if fd.get("type") == "derived":
+            derived = _decode_derived(fd, env)
+            if derived is not None:
+                decoded.append(derived)
+                env[derived.name] = derived.raw_value
+            continue
+        result = _decode_field(payload, fd)
+        if result is not None:
+            decoded.append(result)
+            if not result.is_string:
+                env[result.name] = result.raw_value
+    return decoded
 
 
 def _ax25_header_fields(ax25: Any) -> list[TelemetryField]:
@@ -671,10 +824,7 @@ def decode_telemetry(
             frame_type_matched = True
             telemetry_id = str(ft["id"])
             telemetry_label = ft.get("label", "")
-            for fd in ft["fields"]:
-                result = _decode_field(payload, fd)
-                if result is not None:
-                    decoded_fields.append(result)
+            decoded_fields.extend(_decode_binary_fields(payload, ft["fields"]))
             break
     # A frame no ``frame_types`` entry claims falls through to the other schemas, so a satellite
     # can have binary frame types *and* ASCII ``csv_messages`` (e.g. GRBBeta).
@@ -722,18 +872,12 @@ def decode_telemetry(
         id_def = telemetry_ids.get(str(telemetry_id))
         if id_def:
             telemetry_label = id_def.get("label", "")
-            for fd in id_def.get("fields", []):
-                result = _decode_field(payload, fd)
-                if result is not None:
-                    decoded_fields.append(result)
+            decoded_fields.extend(_decode_binary_fields(payload, id_def.get("fields", [])))
     elif fmt and fmt.get("fields") and _payload_matches(fmt.get("match"), payload):
         if fmt.get("match"):
             telemetry_id = BEACON_ID
             telemetry_label = fmt.get("beacon_label", "Beacon")
-        for fd in fmt["fields"]:
-            result = _decode_field(payload, fd)
-            if result is not None:
-                decoded_fields.append(result)
+        decoded_fields.extend(_decode_binary_fields(payload, fmt["fields"]))
 
     return TelemetryFrame(
         norad=norad,

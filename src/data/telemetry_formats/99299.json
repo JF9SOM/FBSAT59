@@ -1,0 +1,1329 @@
+{
+  "norad": 99299,
+  "name": "SPRITE",
+  "callsign": "SPRITE",
+  "modulation": "GFSK9k6",
+  "reference": "https://gitlab.com/librespacefoundation/satnogs/satnogs-decoders/-/raw/master/ksy/sprite.ksy",
+  "document": "Layout from the SatNOGS decoder sprite.ksy (CU-LASP SPRITE 70 cm beacon): a CCSDS space packet inside an AX.25 UI frame.",
+  "match": {
+    "offset": 0,
+    "hex": "0801",
+    "mask": "0bff"
+  },
+  "beacon_label": "Beacon (CCSDS APID 1)",
+  "note": "Imported from the SatNOGS decoder sprite.ksy; not checked against frames FBSAT59 received (none yet). Only CCSDS packets with APID 1 and a secondary header are decoded (the ksy reads the 6-byte secondary header only when its flag is set; this definition assumes it is). The CCSDS primary-header bit fields and the many 1-bit state flags are shown as separate 0/1 fields. Offsets are counted from the AX.25 information field (after the 16-byte header).",
+  "fields": [
+    {
+      "name": "ccsds_version",
+      "offset": 0,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 0,
+      "bit_length": 3,
+      "label": "Ccsds version"
+    },
+    {
+      "name": "packet_type",
+      "offset": 0,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 3,
+      "bit_length": 1,
+      "label": "Packet type"
+    },
+    {
+      "name": "secondary_header_flag",
+      "offset": 0,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 4,
+      "bit_length": 1,
+      "label": "Secondary header flag"
+    },
+    {
+      "name": "is_stored_data",
+      "offset": 0,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 5,
+      "bit_length": 1,
+      "label": "Is stored data"
+    },
+    {
+      "name": "application_process_id",
+      "offset": 0,
+      "length": 2,
+      "type": "bits",
+      "bit_offset": 6,
+      "bit_length": 10,
+      "label": "Application process id"
+    },
+    {
+      "name": "grouping_flag",
+      "offset": 2,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 0,
+      "bit_length": 2,
+      "label": "Grouping flag"
+    },
+    {
+      "name": "sequence_count",
+      "offset": 2,
+      "length": 2,
+      "type": "bits",
+      "bit_offset": 2,
+      "bit_length": 14,
+      "label": "Sequence count"
+    },
+    {
+      "name": "packet_length",
+      "offset": 4,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "CCSDS packet data length"
+    },
+    {
+      "name": "time_stamp_seconds",
+      "offset": 6,
+      "length": 4,
+      "type": "uint32_be",
+      "label": "Time stamp seconds"
+    },
+    {
+      "name": "sub_seconds",
+      "offset": 10,
+      "length": 1,
+      "type": "uint8",
+      "label": "Sub seconds"
+    },
+    {
+      "name": "padding",
+      "offset": 11,
+      "length": 1,
+      "type": "uint8",
+      "label": "Padding"
+    },
+    {
+      "name": "sw_cmd_recv_cnt",
+      "offset": 12,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Number of received commands"
+    },
+    {
+      "name": "sw_cmd_fmt_cnt",
+      "offset": 14,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Number of bad format commands"
+    },
+    {
+      "name": "sw_cmd_rjct_cnt",
+      "offset": 16,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Number of rejected commands"
+    },
+    {
+      "name": "sw_cmd_succ_cnt",
+      "offset": 18,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Number of successful commands"
+    },
+    {
+      "name": "padding1",
+      "offset": 20,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "padding"
+    },
+    {
+      "name": "padding2",
+      "offset": 22,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "padding"
+    },
+    {
+      "name": "sw_cmd_fail_code",
+      "offset": 24,
+      "length": 1,
+      "type": "uint8",
+      "label": "Command failure code"
+    },
+    {
+      "name": "sw_cmd_xsum_state",
+      "offset": 25,
+      "length": 1,
+      "type": "uint8",
+      "label": "Checksum checking state Enumeration values: 0/DIS 1/ENA"
+    },
+    {
+      "name": "reusable_spare_1",
+      "offset": 26,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 0,
+      "bit_length": 1,
+      "label": "Reusable spare 1"
+    },
+    {
+      "name": "reusable_spare_2",
+      "offset": 26,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 1,
+      "bit_length": 1,
+      "label": "Reusable spare 2"
+    },
+    {
+      "name": "reusable_spare_3",
+      "offset": 26,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 2,
+      "bit_length": 1,
+      "label": "Reusable spare 3"
+    },
+    {
+      "name": "reusable_spare_4",
+      "offset": 26,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 3,
+      "bit_length": 1,
+      "label": "Reusable spare 4"
+    },
+    {
+      "name": "reusable_spare_5",
+      "offset": 26,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 4,
+      "bit_length": 1,
+      "label": "Reusable spare 5"
+    },
+    {
+      "name": "sw_cmd_arm_state_uhf",
+      "offset": 26,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 5,
+      "bit_length": 1,
+      "label": "Command arm state uhf Enumeration values: 0/OFF 1/ARMED"
+    },
+    {
+      "name": "sw_cmd_arm_state_seq",
+      "offset": 26,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 6,
+      "bit_length": 1,
+      "label": "Command arm state seq Enumeration values: 0/OFF 1/ARMED"
+    },
+    {
+      "name": "sw_cmd_arm_state_dbg",
+      "offset": 26,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 7,
+      "bit_length": 1,
+      "label": "Command arm state dbg Enumeration values: 0/OFF 1/ARMED"
+    },
+    {
+      "name": "sw_eps_pwr_state_htr2",
+      "offset": 27,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 0,
+      "bit_length": 1,
+      "label": "Power States htr2 Enumeration values: 0/OFF 1/ON"
+    },
+    {
+      "name": "sw_eps_pwr_state_hvps",
+      "offset": 27,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 1,
+      "bit_length": 1,
+      "label": "Power States hvps Enumeration values: 0/OFF 1/ON"
+    },
+    {
+      "name": "sw_eps_pwr_state_relay",
+      "offset": 27,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 2,
+      "bit_length": 1,
+      "label": "Power States relay Enumeration values: 0/OFF 1/ON"
+    },
+    {
+      "name": "sw_eps_pwr_state_det",
+      "offset": 27,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 3,
+      "bit_length": 1,
+      "label": "Power States det Enumeration values: 0/OFF 1/ON"
+    },
+    {
+      "name": "sw_eps_pwr_state_deploy",
+      "offset": 27,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 4,
+      "bit_length": 1,
+      "label": "Power States deploy Enumeration values: 0/OFF 1/ON"
+    },
+    {
+      "name": "sw_eps_pwr_state_sband",
+      "offset": 27,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 5,
+      "bit_length": 1,
+      "label": "Power States sband Enumeration values: 0/OFF 1/ON"
+    },
+    {
+      "name": "sw_eps_pwr_state_uhf",
+      "offset": 27,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 6,
+      "bit_length": 1,
+      "label": "Power States uhf Enumeration values: 0/OFF 1/ON"
+    },
+    {
+      "name": "sw_eps_pwr_state_adcs",
+      "offset": 27,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 7,
+      "bit_length": 1,
+      "label": "Power States adcs Enumeration values: 0/OFF 1/ON"
+    },
+    {
+      "name": "sw_time_since_rx",
+      "offset": 28,
+      "length": 4,
+      "type": "uint32_be",
+      "label": "Time since last packet received"
+    },
+    {
+      "name": "sw_bat_alive_state",
+      "offset": 32,
+      "length": 1,
+      "type": "uint8",
+      "label": "Battery State Enumeration values: 0/DEAD 1/ALIVE"
+    },
+    {
+      "name": "sw_mode_clt_cnt",
+      "offset": 33,
+      "length": 1,
+      "type": "uint8",
+      "label": "CLT Count"
+    },
+    {
+      "name": "sw_mode_system_mode",
+      "offset": 34,
+      "length": 1,
+      "type": "uint8",
+      "label": "System mode Enumeration values: 0/PHOENIX 1/SAFE 2/NOMINAL"
+    },
+    {
+      "name": "sw_sband_sync_state",
+      "offset": 35,
+      "length": 1,
+      "type": "uint8",
+      "label": "SBAND Sync State Enumeration values: 0/DIS 1/ENA"
+    },
+    {
+      "name": "sw_sband_timeout",
+      "offset": 36,
+      "length": 4,
+      "type": "uint32_be",
+      "label": "SBAND Sync Timeout Count"
+    },
+    {
+      "name": "reusable_spare_8",
+      "offset": 40,
+      "length": 1,
+      "type": "uint8",
+      "label": "Reusable spare 8"
+    },
+    {
+      "name": "sw_uhf_alive",
+      "offset": 41,
+      "length": 1,
+      "type": "uint8",
+      "label": "Indicates good communication with UHF"
+    },
+    {
+      "name": "sw_uhf_temp",
+      "offset": 42,
+      "length": 1,
+      "type": "int8",
+      "label": "UHF Temperature"
+    },
+    {
+      "name": "reusable_spare_9",
+      "offset": 43,
+      "length": 1,
+      "type": "uint8",
+      "label": "Reusable spare 9"
+    },
+    {
+      "name": "sw_seq_state_auto",
+      "offset": 44,
+      "length": 1,
+      "type": "uint8",
+      "label": "State of the engines auto Enumeration values: 0/IDLE 1/ACTIVE 2/SUSPEND 3/PAUSE 4/STALE"
+    },
+    {
+      "name": "sw_seq_state_op1",
+      "offset": 45,
+      "length": 1,
+      "type": "uint8",
+      "label": "State of the engines op1 Enumeration values: 0/IDLE 1/ACTIVE 2/SUSPEND 3/PAUSE 4/STALE"
+    },
+    {
+      "name": "sw_seq_state_op2",
+      "offset": 46,
+      "length": 1,
+      "type": "uint8",
+      "label": "State of the engines op2 Enumeration values: 0/IDLE 1/ACTIVE 2/SUSPEND 3/PAUSE 4/STALE"
+    },
+    {
+      "name": "sw_seq_state_op3",
+      "offset": 47,
+      "length": 1,
+      "type": "uint8",
+      "label": "State of the engines op3 Enumeration values: 0/IDLE 1/ACTIVE 2/SUSPEND 3/PAUSE 4/STALE"
+    },
+    {
+      "name": "sw_seq_stop_code_auto",
+      "offset": 48,
+      "length": 1,
+      "type": "uint8",
+      "label": "Reason for last termination auto"
+    },
+    {
+      "name": "sw_seq_stop_code_op1",
+      "offset": 49,
+      "length": 1,
+      "type": "uint8",
+      "label": "Reason for last termination op1"
+    },
+    {
+      "name": "sw_seq_stop_code_op2",
+      "offset": 50,
+      "length": 1,
+      "type": "uint8",
+      "label": "Reason for last termination op2"
+    },
+    {
+      "name": "sw_seq_stop_code_op3",
+      "offset": 51,
+      "length": 1,
+      "type": "uint8",
+      "label": "Reason for last termination op3"
+    },
+    {
+      "name": "sw_seq_exec_buf_auto",
+      "offset": 52,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Buffer ID of Top level sequence auto"
+    },
+    {
+      "name": "sw_seq_exec_buf_op1",
+      "offset": 54,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Buffer ID of Top level sequence op1"
+    },
+    {
+      "name": "sw_seq_exec_buf_op2",
+      "offset": 56,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Buffer ID of Top level sequence op2"
+    },
+    {
+      "name": "sw_seq_exec_buf_op3",
+      "offset": 58,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Buffer ID of Top level sequence op3"
+    },
+    {
+      "name": "sw_store_partition_write_misc",
+      "offset": 60,
+      "length": 4,
+      "type": "uint32_be",
+      "label": "Partition write address"
+    },
+    {
+      "name": "sw_store_partition_read_misc",
+      "offset": 64,
+      "length": 4,
+      "type": "uint32_be",
+      "label": "Partition read address"
+    },
+    {
+      "name": "sw_store_partition_write_adcs",
+      "offset": 68,
+      "length": 4,
+      "type": "uint32_be",
+      "label": "Partition write address"
+    },
+    {
+      "name": "sw_store_partition_read_adcs",
+      "offset": 72,
+      "length": 4,
+      "type": "uint32_be",
+      "label": "Partition read address"
+    },
+    {
+      "name": "sw_store_partition_write_beacon",
+      "offset": 76,
+      "length": 4,
+      "type": "uint32_be",
+      "label": "Partition write address"
+    },
+    {
+      "name": "sw_store_partition_read_beacon",
+      "offset": 80,
+      "length": 4,
+      "type": "uint32_be",
+      "label": "Partition read address"
+    },
+    {
+      "name": "sw_store_partition_write_log",
+      "offset": 84,
+      "length": 4,
+      "type": "uint32_be",
+      "label": "Partition write address"
+    },
+    {
+      "name": "sw_store_partition_read_log",
+      "offset": 88,
+      "length": 4,
+      "type": "uint32_be",
+      "label": "Partition read address"
+    },
+    {
+      "name": "sw_store_partition_write_sci",
+      "offset": 92,
+      "length": 4,
+      "type": "uint32_be",
+      "label": "Partition write address"
+    },
+    {
+      "name": "sw_store_partition_read_sci",
+      "offset": 96,
+      "length": 4,
+      "type": "uint32_be",
+      "label": "Partition read address"
+    },
+    {
+      "name": "sw_fp_resp_cnt",
+      "offset": 100,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "FP Response Count"
+    },
+    {
+      "name": "sw_ana_bus_v",
+      "offset": 102,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Bus Voltage"
+    },
+    {
+      "name": "sw_ana_3p3_v",
+      "offset": 104,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "3p3 Voltage"
+    },
+    {
+      "name": "sw_ana_2p5_v",
+      "offset": 106,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "2p5 Voltage"
+    },
+    {
+      "name": "sw_ana_1p8_v",
+      "offset": 108,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "1p8 Voltage"
+    },
+    {
+      "name": "sw_ana_1p0_v",
+      "offset": 110,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "1p0 Voltage"
+    },
+    {
+      "name": "sw_ana_3p3_i",
+      "offset": 112,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "3p3 Current"
+    },
+    {
+      "name": "sw_ana_1p8_i",
+      "offset": 114,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "1p8 Current"
+    },
+    {
+      "name": "sw_ana_1p0_i",
+      "offset": 116,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "1p0 Current"
+    },
+    {
+      "name": "sw_ana_cdh_temp",
+      "offset": 118,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "CDH Temperature"
+    },
+    {
+      "name": "sw_ana_cdh_3p3_ref",
+      "offset": 120,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "CDH 3.3 RefV"
+    },
+    {
+      "name": "sw_ana_sa12_v",
+      "offset": 122,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Solar Array 1 Voltage"
+    },
+    {
+      "name": "sw_ana_sa12_i",
+      "offset": 124,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Solar Array 1 Current"
+    },
+    {
+      "name": "sw_ana_sa34_v",
+      "offset": 126,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Solar Array 2 Voltage"
+    },
+    {
+      "name": "sw_ana_sa34_i",
+      "offset": 128,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Solar Array 2 Current"
+    },
+    {
+      "name": "sw_ana_bat1_v",
+      "offset": 130,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Battery 1 Voltage"
+    },
+    {
+      "name": "sw_ana_bat2_v",
+      "offset": 132,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Battery 2 Voltage"
+    },
+    {
+      "name": "sw_ana_eps_temp",
+      "offset": 134,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "EPS Board Temperature"
+    },
+    {
+      "name": "sw_ana_eps_3p3_ref",
+      "offset": 136,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "EPS Board 3.3V Ref"
+    },
+    {
+      "name": "sw_ana_eps_bus_v",
+      "offset": 138,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "EPS Bus Voltage"
+    },
+    {
+      "name": "sw_ana_eps_bus_i",
+      "offset": 140,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "EPS Bus Current"
+    },
+    {
+      "name": "sw_ana_xact_v",
+      "offset": 142,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "XACT Voltage"
+    },
+    {
+      "name": "sw_ana_xact_i",
+      "offset": 144,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "XACT Current"
+    },
+    {
+      "name": "sw_ana_uhf_v",
+      "offset": 146,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "UHF Voltage"
+    },
+    {
+      "name": "sw_ana_uhf_i",
+      "offset": 148,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "UHF Current"
+    },
+    {
+      "name": "sw_ana_sband_v",
+      "offset": 150,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "SBAND Voltage"
+    },
+    {
+      "name": "sw_ana_sband_i",
+      "offset": 152,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "SBAND Current"
+    },
+    {
+      "name": "sw_ana_inst_v",
+      "offset": 154,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Payload Voltage"
+    },
+    {
+      "name": "sw_ana_inst_i",
+      "offset": 156,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Payload Current"
+    },
+    {
+      "name": "sw_ana_ifb_v",
+      "offset": 158,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Interface Board Voltage"
+    },
+    {
+      "name": "sw_ana_ifb_i",
+      "offset": 160,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Interface Board Current"
+    },
+    {
+      "name": "sw_ana_ifb_temp",
+      "offset": 162,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Interface Board Temperature"
+    },
+    {
+      "name": "sw_adcs_alive",
+      "offset": 164,
+      "length": 1,
+      "type": "uint8",
+      "label": "Alive state of communication Enumeration values: 0/OFF 1/DEAD 2/ALIVE"
+    },
+    {
+      "name": "sw_adcs_ecl",
+      "offset": 165,
+      "length": 1,
+      "type": "uint8",
+      "label": "State of eclipse Enumeration values: 0/DAY 1/ECL"
+    },
+    {
+      "name": "sw_adcs_att_valid",
+      "offset": 166,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 0,
+      "bit_length": 1,
+      "label": "Attitude Valid Enumeration values: 0/NO 1/YES"
+    },
+    {
+      "name": "sw_adcs_ref_valid",
+      "offset": 166,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 1,
+      "bit_length": 1,
+      "label": "Refs Valid Enumeration values: 0/NO 1/YES"
+    },
+    {
+      "name": "sw_adcs_time_valid",
+      "offset": 166,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 2,
+      "bit_length": 1,
+      "label": "Time Valid Enumeration values: 0/NO 1/YES"
+    },
+    {
+      "name": "sw_adcs_mode",
+      "offset": 166,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 3,
+      "bit_length": 1,
+      "label": "ADCS Mode Enumeration values: 0/SUN_POINT 1/FINE_REF_POINT"
+    },
+    {
+      "name": "sw_adcs_recommend_sun_point",
+      "offset": 166,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 4,
+      "bit_length": 1,
+      "label": "Recommend Sun Point Enumeration values: 0/NO 1/YES"
+    },
+    {
+      "name": "sw_adcs_sun_point_state",
+      "offset": 166,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 5,
+      "bit_length": 3,
+      "label": "Sun Point State"
+    },
+    {
+      "name": "sw_fp_task_state",
+      "offset": 167,
+      "length": 1,
+      "type": "uint8",
+      "label": "Task State Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_adcs_ana_voltage_2p5",
+      "offset": 168,
+      "length": 1,
+      "type": "uint8",
+      "label": "Voltage_2p5"
+    },
+    {
+      "name": "sw_adcs_ana_voltage_1p8",
+      "offset": 169,
+      "length": 1,
+      "type": "uint8",
+      "label": "Voltage_1p8"
+    },
+    {
+      "name": "sw_adcs_ana_voltage_1p0",
+      "offset": 170,
+      "length": 1,
+      "type": "uint8",
+      "label": "Voltage_1p0"
+    },
+    {
+      "name": "sw_adcs_ana_det_temp",
+      "offset": 171,
+      "length": 1,
+      "type": "int8",
+      "label": "Tracker Detector temperature"
+    },
+    {
+      "name": "sw_adcs_ana_motor1_temp",
+      "offset": 172,
+      "length": 2,
+      "type": "int16_be",
+      "label": "Wheel 1 Temp"
+    },
+    {
+      "name": "sw_adcs_ana_motor2_temp",
+      "offset": 174,
+      "length": 2,
+      "type": "int16_be",
+      "label": "Wheel 2 Temp"
+    },
+    {
+      "name": "sw_adcs_ana_motor3_temp",
+      "offset": 176,
+      "length": 2,
+      "type": "int16_be",
+      "label": "Wheel 3 Temp"
+    },
+    {
+      "name": "sw_adcs_ana_motor4_temp",
+      "offset": 178,
+      "length": 2,
+      "type": "int16_be",
+      "label": "Wheel 4 Temp"
+    },
+    {
+      "name": "sw_adcs_ana_digital_bus_v",
+      "offset": 180,
+      "length": 2,
+      "type": "int16_be",
+      "label": "Digital Bus Voltage"
+    },
+    {
+      "name": "sw_adcs_cmd_acpt",
+      "offset": 182,
+      "length": 1,
+      "type": "uint8",
+      "label": "ADCS Command Accept Count"
+    },
+    {
+      "name": "sw_adcs_cmd_fail",
+      "offset": 183,
+      "length": 1,
+      "type": "uint8",
+      "label": "ADCS Command Reject Count"
+    },
+    {
+      "name": "sw_adcs_time",
+      "offset": 184,
+      "length": 4,
+      "type": "int32_be",
+      "label": "ADCS GPS Time"
+    },
+    {
+      "name": "sw_adcs_sun_vec1",
+      "offset": 188,
+      "length": 2,
+      "type": "int16_be",
+      "label": "ADCS Sun Vector 1"
+    },
+    {
+      "name": "sw_adcs_sun_vec2",
+      "offset": 190,
+      "length": 2,
+      "type": "int16_be",
+      "label": "ADCS Sun Vector 2"
+    },
+    {
+      "name": "sw_adcs_sun_vec3",
+      "offset": 192,
+      "length": 2,
+      "type": "int16_be",
+      "label": "ADCS Sun Vector 3"
+    },
+    {
+      "name": "sw_adcs_wheel_sp1",
+      "offset": 194,
+      "length": 2,
+      "type": "int16_be",
+      "label": "ADCS Wheel Speed 1"
+    },
+    {
+      "name": "sw_adcs_wheel_sp2",
+      "offset": 196,
+      "length": 2,
+      "type": "int16_be",
+      "label": "ADCS Wheel Speed 2"
+    },
+    {
+      "name": "sw_adcs_wheel_sp3",
+      "offset": 198,
+      "length": 2,
+      "type": "int16_be",
+      "label": "ADCS Wheel Speed 3"
+    },
+    {
+      "name": "sw_adcs_body_rt1",
+      "offset": 200,
+      "length": 4,
+      "type": "int32_be",
+      "label": "ADCS Body Frame Rate 1"
+    },
+    {
+      "name": "sw_adcs_body_rt2",
+      "offset": 204,
+      "length": 4,
+      "type": "int32_be",
+      "label": "ADCS Body Frame Rate 2"
+    },
+    {
+      "name": "sw_adcs_body_rt3",
+      "offset": 208,
+      "length": 4,
+      "type": "int32_be",
+      "label": "ADCS Body Frame Rate 3"
+    },
+    {
+      "name": "sw_adcs_body_quat1",
+      "offset": 212,
+      "length": 4,
+      "type": "int32_be",
+      "label": "ADCS Body Quat 1"
+    },
+    {
+      "name": "sw_adcs_body_quat2",
+      "offset": 216,
+      "length": 4,
+      "type": "int32_be",
+      "label": "ADCS Body Quat 2"
+    },
+    {
+      "name": "sw_adcs_body_quat3",
+      "offset": 220,
+      "length": 4,
+      "type": "int32_be",
+      "label": "ADCS Body Quat 3"
+    },
+    {
+      "name": "sw_adcs_body_quat4",
+      "offset": 224,
+      "length": 4,
+      "type": "int32_be",
+      "label": "ADCS Body Quat 4"
+    },
+    {
+      "name": "sw_spare_0",
+      "offset": 228,
+      "length": 4,
+      "type": "uint32_be",
+      "label": "Spare Telemetry"
+    },
+    {
+      "name": "sw_spare_1",
+      "offset": 232,
+      "length": 4,
+      "type": "uint32_be",
+      "label": "Spare Telemetry"
+    },
+    {
+      "name": "sw_fp_passive_count",
+      "offset": 236,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Passive Count"
+    },
+    {
+      "name": "sw_fp_err_count",
+      "offset": 238,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Error Count"
+    },
+    {
+      "name": "sw_fp_wp_state_wp31",
+      "offset": 240,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 0,
+      "bit_length": 2,
+      "label": "WP State wp31 Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp30",
+      "offset": 240,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 2,
+      "bit_length": 2,
+      "label": "WP State wp30 Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp29",
+      "offset": 240,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 4,
+      "bit_length": 2,
+      "label": "WP State wp29 Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp28",
+      "offset": 240,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 6,
+      "bit_length": 2,
+      "label": "WP State wp28 Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp27",
+      "offset": 241,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 0,
+      "bit_length": 2,
+      "label": "WP State wp27 Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp26",
+      "offset": 241,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 2,
+      "bit_length": 2,
+      "label": "WP State wp26 Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp25",
+      "offset": 241,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 4,
+      "bit_length": 2,
+      "label": "WP State wp25 Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp24",
+      "offset": 241,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 6,
+      "bit_length": 2,
+      "label": "WP State wp24 Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp23",
+      "offset": 242,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 0,
+      "bit_length": 2,
+      "label": "WP State wp23 Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp22",
+      "offset": 242,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 2,
+      "bit_length": 2,
+      "label": "WP State wp22 Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp21",
+      "offset": 242,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 4,
+      "bit_length": 2,
+      "label": "WP State wp21 Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp20",
+      "offset": 242,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 6,
+      "bit_length": 2,
+      "label": "WP State wp20 Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp19",
+      "offset": 243,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 0,
+      "bit_length": 2,
+      "label": "WP State wp19 (SBD ON 15MIN -> SBD OFF) Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp18",
+      "offset": 243,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 2,
+      "bit_length": 2,
+      "label": "WP State wp18 (SBD OV -> SBD OFF) Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp17",
+      "offset": 243,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 4,
+      "bit_length": 2,
+      "label": "WP State wp17 (3.3V OV -> CDH RESET) Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp16",
+      "offset": 243,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 6,
+      "bit_length": 2,
+      "label": "WP State wp16 (UHF OV -> UHF RESET) Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp15",
+      "offset": 244,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 0,
+      "bit_length": 2,
+      "label": "WP State wp15 (1.0V OC -> CDH RESET) Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp14",
+      "offset": 244,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 2,
+      "bit_length": 2,
+      "label": "WP State wp14 (1.8V OC -> CDH RESET) Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp13",
+      "offset": 244,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 4,
+      "bit_length": 2,
+      "label": "WP State wp13 (3.3V OC -> CDH RESET) Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp12",
+      "offset": 244,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 6,
+      "bit_length": 2,
+      "label": "WP State wp12 (HVPS T OOL (45C 5s) -> HVPS RAMP DAC + FIXED OFF THEN HVPS OFF)"
+    },
+    {
+      "name": "sw_fp_wp_state_wp11",
+      "offset": 245,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 0,
+      "bit_length": 2,
+      "label": "WP State wp11 (HVPS HIGH COUNTS -> HVPS STANDBY) Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp10",
+      "offset": 245,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 2,
+      "bit_length": 2,
+      "label": "WP State wp10 (HVPS 12V OC -> HVPS OFF) Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp9",
+      "offset": 245,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 4,
+      "bit_length": 2,
+      "label": "WP State wp9 (DET n6V OC -> DET OFF) Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp8",
+      "offset": 245,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 6,
+      "bit_length": 2,
+      "label": "WP State wp8 (DET p6V OC -> DET OFF) Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp7",
+      "offset": 246,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 0,
+      "bit_length": 2,
+      "label": "WP State wp7 (DET 3.3V OC -> DET OFF) Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp6",
+      "offset": 246,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 2,
+      "bit_length": 2,
+      "label": "WP State wp6 (HVPS OV -> HVPS OFF) Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp5",
+      "offset": 246,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 4,
+      "bit_length": 2,
+      "label": "WP State wp5 (HVPS OC -> HVPS OFF) Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp4",
+      "offset": 246,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 6,
+      "bit_length": 2,
+      "label": "WP State wp4 (SBD OC -> SBD OFF) Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp3",
+      "offset": 247,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 0,
+      "bit_length": 2,
+      "label": "WP State wp3 (UHF OC -> UHF RESET) Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp2",
+      "offset": 247,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 2,
+      "bit_length": 2,
+      "label": "WP State wp2 (XACT SUN_POINT -> CDH SAFE) Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp1",
+      "offset": 247,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 4,
+      "bit_length": 2,
+      "label": "WP State wp1 (XACT OC -> XACT RESET) Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "sw_fp_wp_state_wp0",
+      "offset": 247,
+      "length": 1,
+      "type": "bits",
+      "bit_offset": 6,
+      "bit_length": 2,
+      "label": "WP State wp0 (BUS OC -> CDH RESET) Enumeration values: 0/DIS 1/PASSIVE 2/ENA"
+    },
+    {
+      "name": "padding3",
+      "offset": 248,
+      "length": 4,
+      "type": "uint32_be",
+      "label": "Packet padding"
+    }
+  ]
+}

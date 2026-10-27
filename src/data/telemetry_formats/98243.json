@@ -1,0 +1,409 @@
+{
+  "norad": 98243,
+  "name": "GBSAT",
+  "callsign": "GBSAT0",
+  "modulation": "GFSK9k6",
+  "reference": "https://gitlab.com/librespacefoundation/satnogs/satnogs-decoders/-/raw/master/ksy/gbsat.ksy",
+  "document": "Layout from the SatNOGS decoder gbsat.ksy (the ksy cites no public protocol document).",
+  "note": "Imported from the SatNOGS decoder gbsat.ksy; not checked against frames FBSAT59 received (none yet). Little-endian. The 4-byte payload header is shown as raw bytes. The time is counted from 2024-01-01 00:00:00 UTC. Raw counts have a converted twin (gyro in deg/s, magnetometer in nT, acceleration in g, solar-panel power in W, battery in V and A).",
+  "fields": [
+    {
+      "name": "payload_header",
+      "offset": 0,
+      "length": 4,
+      "type": "hex",
+      "label": "GBSAT payload header"
+    },
+    {
+      "name": "timestamp",
+      "offset": 4,
+      "length": 4,
+      "type": "unix_time_le",
+      "label": "Time (seconds since 2024-01-01 00:00:00 UTC, shown as a date)",
+      "epoch_offset": 1704067200
+    },
+    {
+      "name": "pos_x",
+      "offset": 8,
+      "length": 4,
+      "type": "int32_le",
+      "unit": "m",
+      "label": "ECEF X position"
+    },
+    {
+      "name": "pos_y",
+      "offset": 12,
+      "length": 4,
+      "type": "int32_le",
+      "unit": "m",
+      "label": "ECEF Y position"
+    },
+    {
+      "name": "pos_z",
+      "offset": 16,
+      "length": 4,
+      "type": "int32_le",
+      "unit": "m",
+      "label": "ECEF Z position"
+    },
+    {
+      "name": "mode_now",
+      "offset": 20,
+      "length": 1,
+      "type": "uint8",
+      "label": "Current spacecraft operating mode"
+    },
+    {
+      "name": "startup_submode_now",
+      "offset": 21,
+      "length": 1,
+      "type": "uint8",
+      "label": "Current startup submode"
+    },
+    {
+      "name": "mode_before_curr_mode",
+      "offset": 22,
+      "length": 1,
+      "type": "uint8",
+      "label": "Operating mode before the current mode"
+    },
+    {
+      "name": "error_code",
+      "offset": 23,
+      "length": 2,
+      "type": "uint16_le",
+      "label": "Spacecraft error code"
+    },
+    {
+      "name": "last_command_received",
+      "offset": 25,
+      "length": 1,
+      "type": "uint8",
+      "label": "Last command received"
+    },
+    {
+      "name": "last_command_executed",
+      "offset": 26,
+      "length": 1,
+      "type": "uint8",
+      "label": "Last command executed"
+    },
+    {
+      "name": "mission_data_size",
+      "offset": 27,
+      "length": 2,
+      "type": "uint16_le",
+      "unit": "page",
+      "label": "Number of mission-data pages"
+    },
+    {
+      "name": "status_log_size",
+      "offset": 29,
+      "length": 2,
+      "type": "uint16_le",
+      "unit": "page",
+      "label": "Number of status-log pages"
+    },
+    {
+      "name": "inspection_report_size",
+      "offset": 31,
+      "length": 2,
+      "type": "uint16_le",
+      "unit": "page",
+      "label": "Number of inspection-report pages"
+    },
+    {
+      "name": "subsystem_status_flag",
+      "offset": 33,
+      "length": 1,
+      "type": "uint8",
+      "label": "Subsystem status flags"
+    },
+    {
+      "name": "adcs_gyro_x",
+      "offset": 34,
+      "length": 2,
+      "type": "int16_le",
+      "unit": "centi-deg/s",
+      "label": "Gyroscope X-axis angular rate"
+    },
+    {
+      "name": "adcs_gyro_y",
+      "offset": 36,
+      "length": 2,
+      "type": "int16_le",
+      "unit": "centi-deg/s",
+      "label": "Gyroscope Y-axis angular rate"
+    },
+    {
+      "name": "adcs_gyro_z",
+      "offset": 38,
+      "length": 2,
+      "type": "int16_le",
+      "unit": "centi-deg/s",
+      "label": "Adcs gyro z"
+    },
+    {
+      "name": "adcs_mag_x",
+      "offset": 40,
+      "length": 2,
+      "type": "int16_le",
+      "unit": "10 nT/count",
+      "label": "Magnetometer X-axis"
+    },
+    {
+      "name": "adcs_mag_y",
+      "offset": 42,
+      "length": 2,
+      "type": "int16_le",
+      "unit": "10 nT/count",
+      "label": "Magnetometer Y-axis"
+    },
+    {
+      "name": "adcs_mag_z",
+      "offset": 44,
+      "length": 2,
+      "type": "int16_le",
+      "unit": "10 nT/count",
+      "label": "Magnetometer Z-axis"
+    },
+    {
+      "name": "adcs_mtq_util",
+      "offset": 46,
+      "length": 1,
+      "type": "uint8",
+      "label": "Magnetorquer utilization/status data"
+    },
+    {
+      "name": "adcs_raw_acc_cg",
+      "offset": 47,
+      "length": 1,
+      "type": "int8",
+      "unit": "cG",
+      "label": "Acceleration, centi-g"
+    },
+    {
+      "name": "cs_stat",
+      "offset": 48,
+      "length": 2,
+      "type": "uint16_le",
+      "label": "Communication subsystem status"
+    },
+    {
+      "name": "last_cs_tx_stat",
+      "offset": 50,
+      "length": 1,
+      "type": "uint8",
+      "label": "Last communication subsystem TX status"
+    },
+    {
+      "name": "last_cs_rx_stat",
+      "offset": 51,
+      "length": 1,
+      "type": "uint8",
+      "label": "Last communication subsystem RX status"
+    },
+    {
+      "name": "eps_power_ch_stat",
+      "offset": 52,
+      "length": 1,
+      "type": "uint8",
+      "label": "EPS power-channel status"
+    },
+    {
+      "name": "eps_solar_panel_power_dw_0",
+      "offset": 53,
+      "length": 1,
+      "type": "uint8",
+      "unit": "dW",
+      "label": "Solar-panel power, 0.1 W per count"
+    },
+    {
+      "name": "eps_solar_panel_power_dw_1",
+      "offset": 54,
+      "length": 1,
+      "type": "uint8",
+      "unit": "dW",
+      "label": "Solar-panel power, 0.1 W per count"
+    },
+    {
+      "name": "eps_solar_panel_power_dw_2",
+      "offset": 55,
+      "length": 1,
+      "type": "uint8",
+      "unit": "dW",
+      "label": "Solar-panel power, 0.1 W per count"
+    },
+    {
+      "name": "eps_solar_panel_power_dw_3",
+      "offset": 56,
+      "length": 1,
+      "type": "uint8",
+      "unit": "dW",
+      "label": "Solar-panel power, 0.1 W per count"
+    },
+    {
+      "name": "eps_raw_batt_voltage",
+      "offset": 57,
+      "length": 2,
+      "type": "uint16_le",
+      "unit": "mV",
+      "label": "Battery voltage"
+    },
+    {
+      "name": "eps_raw_batt_current",
+      "offset": 59,
+      "length": 2,
+      "type": "int16_le",
+      "unit": "mA",
+      "label": "Battery current"
+    },
+    {
+      "name": "tcs_cs_temp",
+      "offset": 61,
+      "length": 1,
+      "type": "int8",
+      "unit": "degC",
+      "label": "Communication subsystem temperature"
+    },
+    {
+      "name": "tcs_eps_batt_temp",
+      "offset": 62,
+      "length": 1,
+      "type": "int8",
+      "unit": "degC",
+      "label": "EPS battery temperature"
+    },
+    {
+      "name": "tcs_cdh_temp",
+      "offset": 63,
+      "length": 1,
+      "type": "int8",
+      "unit": "degC",
+      "label": "CDH temperature"
+    },
+    {
+      "name": "tcs_gps_temp",
+      "offset": 64,
+      "length": 1,
+      "type": "int8",
+      "unit": "degC",
+      "label": "GPS temperature"
+    },
+    {
+      "name": "tcs_crdm_analog_temp",
+      "offset": 65,
+      "length": 1,
+      "type": "int8",
+      "unit": "degC",
+      "label": "CRDM analog temperature"
+    },
+    {
+      "name": "tcs_crdm_digital_temp",
+      "offset": 66,
+      "length": 1,
+      "type": "int8",
+      "unit": "degC",
+      "label": "CRDM digital temperature"
+    },
+    {
+      "name": "tcs_adcs_temp",
+      "offset": 67,
+      "length": 1,
+      "type": "int8",
+      "unit": "degC",
+      "label": "ADCS temperature"
+    },
+    {
+      "name": "adcs_gyro_x_dps",
+      "type": "derived",
+      "expr": "((adcs_gyro_x) / (100.0))",
+      "unit": "deg/s",
+      "label": "Gyroscope X-axis angular rate"
+    },
+    {
+      "name": "adcs_gyro_y_dps",
+      "type": "derived",
+      "expr": "((adcs_gyro_y) / (100.0))",
+      "unit": "deg/s",
+      "label": "Gyroscope Y-axis angular rate"
+    },
+    {
+      "name": "adcs_gyro_z_dps",
+      "type": "derived",
+      "expr": "((adcs_gyro_z) / (100.0))",
+      "unit": "deg/s",
+      "label": "Gyroscope Z-axis angular rate"
+    },
+    {
+      "name": "adcs_mag_x_nt",
+      "type": "derived",
+      "expr": "((adcs_mag_x) * (10))",
+      "unit": "nT",
+      "label": "Magnetometer X-axis"
+    },
+    {
+      "name": "adcs_mag_y_nt",
+      "type": "derived",
+      "expr": "((adcs_mag_y) * (10))",
+      "unit": "nT",
+      "label": "Magnetometer Y-axis"
+    },
+    {
+      "name": "adcs_mag_z_nt",
+      "type": "derived",
+      "expr": "((adcs_mag_z) * (10))",
+      "unit": "nT",
+      "label": "Magnetometer Z-axis"
+    },
+    {
+      "name": "adcs_acc_g",
+      "type": "derived",
+      "expr": "((adcs_raw_acc_cg) / (100.0))",
+      "unit": "g",
+      "label": "Acceleration"
+    },
+    {
+      "name": "eps_solar_panel_0_w",
+      "type": "derived",
+      "expr": "((eps_solar_panel_power_dw_0) * (0.1))",
+      "unit": "W",
+      "label": "Solar-panel channel 0 power"
+    },
+    {
+      "name": "eps_solar_panel_1_w",
+      "type": "derived",
+      "expr": "((eps_solar_panel_power_dw_1) * (0.1))",
+      "unit": "W",
+      "label": "Solar-panel channel 1 power"
+    },
+    {
+      "name": "eps_solar_panel_2_w",
+      "type": "derived",
+      "expr": "((eps_solar_panel_power_dw_2) * (0.1))",
+      "unit": "W",
+      "label": "Solar-panel channel 2 power"
+    },
+    {
+      "name": "eps_solar_panel_3_w",
+      "type": "derived",
+      "expr": "((eps_solar_panel_power_dw_3) * (0.1))",
+      "unit": "W",
+      "label": "Solar-panel channel 3 power"
+    },
+    {
+      "name": "eps_batt_voltage_v",
+      "type": "derived",
+      "expr": "((eps_raw_batt_voltage) / (1000.0))",
+      "unit": "V",
+      "label": "Battery voltage"
+    },
+    {
+      "name": "eps_batt_current_a",
+      "type": "derived",
+      "expr": "((eps_raw_batt_current) / (1000.0))",
+      "unit": "A",
+      "label": "Battery current"
+    }
+  ]
+}

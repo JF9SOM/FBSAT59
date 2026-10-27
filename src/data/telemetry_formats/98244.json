@@ -1,0 +1,1362 @@
+{
+  "norad": 98244,
+  "name": "SunCET",
+  "callsign": "SUN1",
+  "modulation": "GFSK9k6",
+  "reference": "https://gitlab.com/librespacefoundation/satnogs/satnogs-decoders/-/raw/master/ksy/suncet.ksy",
+  "document": "Layout from the SatNOGS decoder suncet.ksy: the public APID 1 beacon (CTDB 2.0.5), a CCSDS space packet inside an AX.25 UI frame.",
+  "match": {
+    "offset": 0,
+    "hex": "0001",
+    "mask": "07ff"
+  },
+  "beacon_label": "Public beacon (CCSDS APID 1)",
+  "note": "Imported from the SatNOGS decoder suncet.ksy; not checked against frames FBSAT59 received (none yet). Only packets with CCSDS APID 1 are decoded. The ksy also checks a Fletcher-32 checksum over the packet and the packet length; this decoder does not. Raw counts (*_raw) have a converted twin in engineering units; the bit-field state flags have a 0/1 twin. Fields the ksy leaves out (consumed opaquely) are skipped. The spacecraft time counts from 2000-01-01 00:00:00 UTC.",
+  "fields": [
+    {
+      "name": "ccsds_primary_word",
+      "offset": 0,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Packed CCSDS version/type/secondary-header/APID word."
+    },
+    {
+      "name": "ccsds_sequence_word",
+      "offset": 2,
+      "length": 2,
+      "type": "uint16_be",
+      "label": "Packed CCSDS sequence flags and sequence counter."
+    },
+    {
+      "name": "ccsds_packet_length_field",
+      "offset": 4,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "bytes",
+      "label": "CCSDS packet length field: bytes after the primary header minus one. Engineering units: bytes"
+    },
+    {
+      "name": "spacecraft_time_seconds_since_2000",
+      "offset": 6,
+      "length": 4,
+      "type": "unix_time",
+      "label": "Spacecraft time (seconds since 2000-01-01 00:00:00 UTC, shown as a date)",
+      "epoch_offset": 946684800
+    },
+    {
+      "name": "spacecraft_time_milliseconds",
+      "offset": 10,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "ms",
+      "label": "Integer milliseconds after the coarse whole second; valid values are 0 through 999."
+    },
+    {
+      "name": "partition_write_adcs",
+      "offset": 12,
+      "length": 4,
+      "type": "uint32_be",
+      "unit": "raw address",
+      "label": "Current write pointer in the NAND ADCS partition. Engineering units: raw address"
+    },
+    {
+      "name": "partition_read_adcs",
+      "offset": 16,
+      "length": 4,
+      "type": "uint32_be",
+      "unit": "raw address",
+      "label": "Current read pointer in the NAND ADCS partition. Engineering units: raw address"
+    },
+    {
+      "name": "partition_write_hk",
+      "offset": 20,
+      "length": 4,
+      "type": "uint32_be",
+      "unit": "raw address",
+      "label": "Current write pointer in the NAND housekeeping partition. Engineering units: raw address"
+    },
+    {
+      "name": "partition_read_hk",
+      "offset": 24,
+      "length": 4,
+      "type": "uint32_be",
+      "unit": "raw address",
+      "label": "Current read pointer in the NAND housekeeping partition. Engineering units: raw address"
+    },
+    {
+      "name": "partition_write_sci",
+      "offset": 28,
+      "length": 4,
+      "type": "uint32_be",
+      "unit": "raw address",
+      "label": "Current write pointer in the NAND science partition. Engineering units: raw address"
+    },
+    {
+      "name": "partition_read_sci",
+      "offset": 32,
+      "length": 4,
+      "type": "uint32_be",
+      "unit": "raw address",
+      "label": "Current read pointer in the NAND science partition. Engineering units: raw address"
+    },
+    {
+      "name": "partition_write_dsps",
+      "offset": 36,
+      "length": 4,
+      "type": "uint32_be",
+      "unit": "raw address",
+      "label": "Current write pointer in the NAND Dual-SPS partition. Engineering units: raw address"
+    },
+    {
+      "name": "partition_read_dsps",
+      "offset": 40,
+      "length": 4,
+      "type": "uint32_be",
+      "unit": "raw address",
+      "label": "Current read pointer in the NAND Dual-SPS partition. Engineering units: raw address"
+    },
+    {
+      "name": "store_partition_write_log",
+      "offset": 44,
+      "length": 4,
+      "type": "uint32_be",
+      "unit": "raw address",
+      "label": "Current write pointer in the NAND log partition. Engineering units: raw address"
+    },
+    {
+      "name": "csie_nand_sci_write_ptr",
+      "offset": 48,
+      "length": 4,
+      "type": "uint32_be",
+      "unit": "raw address",
+      "label": "Current write pointer in the NAND CSIE science-image partition. Engineering units: raw address"
+    },
+    {
+      "name": "time_since_boot",
+      "offset": 52,
+      "length": 4,
+      "type": "uint32_be",
+      "unit": "s",
+      "label": "Seconds since most recent boot Engineering units: s"
+    },
+    {
+      "name": "time_alive",
+      "offset": 56,
+      "length": 4,
+      "type": "uint32_be",
+      "unit": "s",
+      "label": "Number of seconds spent powered on and processing (i.e Alive) Engineering units: s"
+    },
+    {
+      "name": "time_mission_elapsed_time",
+      "offset": 60,
+      "length": 4,
+      "type": "uint32_be",
+      "unit": "s",
+      "label": "Time since Mission start Engineering units: s"
+    },
+    {
+      "name": "mode_seconds_since_mode_change",
+      "offset": 64,
+      "length": 4,
+      "type": "uint32_be",
+      "unit": "s",
+      "label": "Second since mode switch Engineering units: s"
+    },
+    {
+      "name": "dsps_flare_level_raw",
+      "offset": 68,
+      "length": 4,
+      "type": "float32_be",
+      "unit": "log10(XRS-B flux)",
+      "label": "Dual-SPS flare trigger threshold in log10 of estimated GOES XRS-B flux"
+    },
+    {
+      "name": "adcs_body_rate_1_raw",
+      "offset": 72,
+      "length": 4,
+      "type": "int32_be",
+      "unit": "rad/s\nConversion/status map: C0=0",
+      "label": "ADCS Body Frame Rate 1"
+    },
+    {
+      "name": "adcs_body_rate_2_raw",
+      "offset": 76,
+      "length": 4,
+      "type": "int32_be",
+      "unit": "rad/s\nConversion/status map: C0=0",
+      "label": "ADCS Body Frame Rate 2"
+    },
+    {
+      "name": "adcs_body_rate_3_raw",
+      "offset": 80,
+      "length": 4,
+      "type": "int32_be",
+      "unit": "rad/s\nConversion/status map: C0=0",
+      "label": "ADCS Body Frame Rate 3"
+    },
+    {
+      "name": "csie_img_hist_0",
+      "offset": 84,
+      "length": 4,
+      "type": "uint32_be",
+      "unit": "count",
+      "label": "CSIE pixel count in histogram bin 0; configurable DN range [offset, offset+width-1], default 0-31"
+    },
+    {
+      "name": "csie_img_hist_1",
+      "offset": 88,
+      "length": 4,
+      "type": "uint32_be",
+      "unit": "count",
+      "label": "Csie img hist 1"
+    },
+    {
+      "name": "csie_img_hist_2",
+      "offset": 92,
+      "length": 4,
+      "type": "uint32_be",
+      "unit": "count",
+      "label": "Csie img hist 2"
+    },
+    {
+      "name": "csie_img_hist_3",
+      "offset": 96,
+      "length": 4,
+      "type": "uint32_be",
+      "unit": "count",
+      "label": "Csie img hist 3"
+    },
+    {
+      "name": "csie_img_hist_4",
+      "offset": 100,
+      "length": 4,
+      "type": "uint32_be",
+      "unit": "count",
+      "label": "Csie img hist 4"
+    },
+    {
+      "name": "csie_img_hist_5",
+      "offset": 104,
+      "length": 4,
+      "type": "uint32_be",
+      "unit": "count",
+      "label": "Csie img hist 5"
+    },
+    {
+      "name": "adcs_wheel_speed_1_raw",
+      "offset": 108,
+      "length": 4,
+      "type": "int32_be",
+      "unit": "rpm\nConversion/status map: C0=0",
+      "label": "ADCS Wheel Speed 1 Engineering units: rpm Conversion/status map: C0=0.000000e+00 C1=2.000000e-03"
+    },
+    {
+      "name": "adcs_wheel_speed_2_raw",
+      "offset": 112,
+      "length": 4,
+      "type": "int32_be",
+      "unit": "rpm\nConversion/status map: C0=0",
+      "label": "ADCS Wheel Speed 2 Engineering units: rpm Conversion/status map: C0=0.000000e+00 C1=2.000000e-03"
+    },
+    {
+      "name": "adcs_wheel_speed_3_raw",
+      "offset": 116,
+      "length": 4,
+      "type": "int32_be",
+      "unit": "rpm\nConversion/status map: C0=0",
+      "label": "ADCS Wheel Speed 3 Engineering units: rpm Conversion/status map: C0=0.000000e+00 C1=2.000000e-03"
+    },
+    {
+      "name": "xband_pa_temp_raw",
+      "offset": 120,
+      "length": 4,
+      "type": "int32_be",
+      "unit": "degC (inferred)\nConversion/status map: C0=0",
+      "label": "XBAND Power Amplifier Temp"
+    },
+    {
+      "name": "xband_pa_current_raw",
+      "offset": 128,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "XBAND Power Amplifier current"
+    },
+    {
+      "name": "rail_3v3_voltage_raw",
+      "offset": 140,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "3p3 Voltage Engineering units: V (inferred) Conversion/status map: C0=0.000000e+00 C1=1.611300e-03"
+    },
+    {
+      "name": "rail_3v3_current_raw",
+      "offset": 142,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "3p3 Current Engineering units: A (inferred) Conversion/status map: C0=0.000000e+00 C1=8.056600e-05"
+    },
+    {
+      "name": "cdh_temp_raw",
+      "offset": 144,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "degC (inferred)\nConversion/status map: C0=1",
+      "label": "CDH Temperature"
+    },
+    {
+      "name": "cdh_3v3_reference_voltage_raw",
+      "offset": 146,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "CDH 3.3 V reference measurement."
+    },
+    {
+      "name": "solar_array_8_cell_string_voltage_raw",
+      "offset": 148,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "Solar Array 8-Cell String Voltage"
+    },
+    {
+      "name": "solar_array_8_cell_string_current_raw",
+      "offset": 150,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "Solar Array 8-Cell String Current"
+    },
+    {
+      "name": "solar_array_9_cell_string_voltage_raw",
+      "offset": 152,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "9-Cell String Solar Array Voltage"
+    },
+    {
+      "name": "solar_array_9_cell_string_current_raw",
+      "offset": 154,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "9-Cell String Solar Array Current"
+    },
+    {
+      "name": "battery_1_voltage_raw",
+      "offset": 156,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "Battery 1 Voltage"
+    },
+    {
+      "name": "battery_2_voltage_raw",
+      "offset": 158,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "Battery 2 Voltage"
+    },
+    {
+      "name": "eps_temp_raw",
+      "offset": 160,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "degC (inferred)\nConversion/status map: C0=1",
+      "label": "EPS Board Temperature"
+    },
+    {
+      "name": "eps_3v3_reference_voltage_raw",
+      "offset": 162,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "EPS 3.3 V reference measurement."
+    },
+    {
+      "name": "eps_bus_voltage_raw",
+      "offset": 164,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "EPS Bus Voltage"
+    },
+    {
+      "name": "eps_bus_current_raw",
+      "offset": 166,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "EPS Bus Current"
+    },
+    {
+      "name": "xact_voltage_raw",
+      "offset": 168,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "XACT Voltage Engineering units: V (inferred) Conversion/status map: C0=0.000000e+00 C1=8.862300e-03"
+    },
+    {
+      "name": "xact_current_raw",
+      "offset": 170,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "XACT Current Engineering units: A (inferred) Conversion/status map: C0=0.000000e+00 C1=2.014200e-03"
+    },
+    {
+      "name": "uhf_voltage_raw",
+      "offset": 172,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "UHF Voltage Engineering units: V (inferred) Conversion/status map: C0=0.000000e+00 C1=8.862300e-03"
+    },
+    {
+      "name": "uhf_current_raw",
+      "offset": 174,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "UHF Current Engineering units: A (inferred) Conversion/status map: C0=0.000000e+00 C1=2.014200e-03"
+    },
+    {
+      "name": "xband_voltage_raw",
+      "offset": 176,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "XBAND Voltage Engineering units: V (inferred) Conversion/status map: C0=0.000000e+00 C1=8.862300e-03"
+    },
+    {
+      "name": "xband_current_raw",
+      "offset": 178,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "XBAND Current Engineering units: A (inferred) Conversion/status map: C0=0.000000e+00 C1=2.014200e-03"
+    },
+    {
+      "name": "csie_voltage_raw",
+      "offset": 180,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "CSIE Voltage Engineering units: V (inferred) Conversion/status map: C0=0.000000e+00 C1=3.963900e-03"
+    },
+    {
+      "name": "csie_current_raw",
+      "offset": 182,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "CSIE Current Engineering units: A (inferred) Conversion/status map: C0=0.000000e+00 C1=1.220700e-03"
+    },
+    {
+      "name": "dsps_voltage_raw",
+      "offset": 184,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "DSPS Voltage Engineering units: V (inferred) Conversion/status map: C0=0.000000e+00 C1=3.963900e-03"
+    },
+    {
+      "name": "dsps_current_raw",
+      "offset": 186,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "DSPS Current Engineering units: A (inferred) Conversion/status map: C0=0.000000e+00 C1=1.220700e-03"
+    },
+    {
+      "name": "ifb_therm1_raw",
+      "offset": 188,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "degC (inferred)\nConversion/status map: C0=1",
+      "label": "Interface Board Temperature"
+    },
+    {
+      "name": "sa_minus_y_temp_raw",
+      "offset": 190,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "degC (inferred)\nConversion/status map: C0=1",
+      "label": "Solar Array 1 Temperature"
+    },
+    {
+      "name": "sa_plus_y_temp_raw",
+      "offset": 192,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "degC (inferred)\nConversion/status map: C0=1",
+      "label": "Solar Array 2 Temperature"
+    },
+    {
+      "name": "csie_temp_raw",
+      "offset": 194,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "degC (inferred)\nConversion/status map: C0=1",
+      "label": "CSIE Detector Temperature"
+    },
+    {
+      "name": "battery_1_temp_raw",
+      "offset": 196,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "degC (inferred)\nConversion/status map: C0=1",
+      "label": "Battery 1 Temperature"
+    },
+    {
+      "name": "batt_board_temp_raw",
+      "offset": 198,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "degC (inferred)\nConversion/status map: C0=1",
+      "label": "Battery Board Temperature"
+    },
+    {
+      "name": "battery_1_charge_current_raw",
+      "offset": 200,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "Battery 1 Charge Current"
+    },
+    {
+      "name": "battery_2_charge_current_raw",
+      "offset": 202,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "Battery 2 Charge Current"
+    },
+    {
+      "name": "dsps_visible_sps_sun_pos_x",
+      "offset": 204,
+      "length": 2,
+      "type": "int16_be",
+      "unit": "arcsec",
+      "label": "Visible DSPS Sun position x (arcsecs) Engineering units: arcsec"
+    },
+    {
+      "name": "dsps_visible_sps_sun_pos_y",
+      "offset": 206,
+      "length": 2,
+      "type": "int16_be",
+      "unit": "arcsec",
+      "label": "Visible DSPS Sun position y (arcsecs) Engineering units: arcsec"
+    },
+    {
+      "name": "dsps_x_ray_sps_sun_pos_x",
+      "offset": 208,
+      "length": 2,
+      "type": "int16_be",
+      "unit": "arcsec",
+      "label": "X-RAY DSPS Sun position x (arcsecs) Engineering units: arcsec"
+    },
+    {
+      "name": "dsps_x_ray_sps_sun_pos_y",
+      "offset": 210,
+      "length": 2,
+      "type": "int16_be",
+      "unit": "arcsec",
+      "label": "X-RAY DSPS Sun position y (arcsecs) Engineering units: arcsec"
+    },
+    {
+      "name": "dsps_sensor_board_temp_raw",
+      "offset": 212,
+      "length": 2,
+      "type": "int16_be",
+      "unit": "degC (inferred)\nConversion/status map: C0=0",
+      "label": "Dual-SPS Sensor Board Temperature"
+    },
+    {
+      "name": "adcs_ana_motor1_temp_raw",
+      "offset": 214,
+      "length": 2,
+      "type": "int16_be",
+      "unit": "degC (inferred)\nConversion/status map: C0=0",
+      "label": "Wheel 1 Temp"
+    },
+    {
+      "name": "adcs_sun_point_angle_error_raw",
+      "offset": 216,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "deg\nConversion/status map: C0=0",
+      "label": "Angle between the estimated and commanded Sun vectors."
+    },
+    {
+      "name": "num_sc_resets",
+      "offset": 218,
+      "length": 2,
+      "type": "uint16_be",
+      "unit": "count",
+      "label": "Number of Spacecraft Reboots Engineering units: count"
+    },
+    {
+      "name": "csie_capture_state",
+      "offset": 220,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless",
+      "bit_offset": 0,
+      "bit_length": 2,
+      "label": "CSIE image-capture state. Engineering units: dimensionless"
+    },
+    {
+      "name": "fault_protection_watchpoint_6_state",
+      "offset": 220,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 0/DISABLED 1/PASSIVE 2/ENABLED",
+      "bit_offset": 2,
+      "bit_length": 2,
+      "label": "WP State wp6 Engineering units: dimensionless Conversion/status map: 0/DISABLED 1/PASSIVE 2/ENABLED"
+    },
+    {
+      "name": "fault_protection_watchpoint_5_state",
+      "offset": 220,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 0/DISABLED 1/PASSIVE 2/ENABLED",
+      "bit_offset": 4,
+      "bit_length": 2,
+      "label": "WP State wp5 Engineering units: dimensionless Conversion/status map: 0/DISABLED 1/PASSIVE 2/ENABLED"
+    },
+    {
+      "name": "fault_protection_watchpoint_4_state",
+      "offset": 220,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 0/DISABLED 1/PASSIVE 2/ENABLED",
+      "bit_offset": 6,
+      "bit_length": 2,
+      "label": "WP State wp4 Engineering units: dimensionless Conversion/status map: 0/DISABLED 1/PASSIVE 2/ENABLED"
+    },
+    {
+      "name": "fault_protection_watchpoint_3_state",
+      "offset": 221,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 0/DISABLED 1/PASSIVE 2/ENABLED",
+      "bit_offset": 0,
+      "bit_length": 2,
+      "label": "WP State wp3 Engineering units: dimensionless Conversion/status map: 0/DISABLED 1/PASSIVE 2/ENABLED"
+    },
+    {
+      "name": "fault_protection_watchpoint_2_state",
+      "offset": 221,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 0/DISABLED 1/PASSIVE 2/ENABLED",
+      "bit_offset": 2,
+      "bit_length": 2,
+      "label": "WP State wp2 Engineering units: dimensionless Conversion/status map: 0/DISABLED 1/PASSIVE 2/ENABLED"
+    },
+    {
+      "name": "fault_protection_watchpoint_1_state",
+      "offset": 221,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 0/DISABLED 1/PASSIVE 2/ENABLED",
+      "bit_offset": 4,
+      "bit_length": 2,
+      "label": "WP State wp1 Engineering units: dimensionless Conversion/status map: 0/DISABLED 1/PASSIVE 2/ENABLED"
+    },
+    {
+      "name": "fault_protection_watchpoint_0_state",
+      "offset": 221,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 0/DISABLED 1/PASSIVE 2/ENABLED",
+      "bit_offset": 6,
+      "bit_length": 2,
+      "label": "WP State wp0 Engineering units: dimensionless Conversion/status map: 0/DISABLED 1/PASSIVE 2/ENABLED"
+    },
+    {
+      "name": "clt_hours_until_reboot",
+      "offset": 226,
+      "length": 1,
+      "type": "uint8",
+      "unit": "h",
+      "label": "Command Loss Timer time remaining until the spacecraft resets. Engineering units: h"
+    },
+    {
+      "name": "mode_system_mode",
+      "offset": 227,
+      "length": 1,
+      "type": "uint8",
+      "unit": "dimensionless\nConversion/status map: 0/PHOENIX 1/SAFE 2/SCIENCE 3/DOWNLINK",
+      "label": "System mode"
+    },
+    {
+      "name": "uhf_temp",
+      "offset": 228,
+      "length": 1,
+      "type": "int8",
+      "unit": "degC (inferred)",
+      "label": "UHF Temperature Engineering units: degC (inferred)"
+    },
+    {
+      "name": "fault_protection_task_state",
+      "offset": 233,
+      "length": 1,
+      "type": "uint8",
+      "unit": "dimensionless\nConversion/status map: 0/DISABLED 1/PASSIVE 2/ENABLED",
+      "label": "Fault-protection task state."
+    },
+    {
+      "name": "dsps_flare_magnitude",
+      "offset": 234,
+      "length": 1,
+      "type": "uint8",
+      "unit": "raw",
+      "label": "Dual-SPS flare magnitude as an unsigned raw value; CTDB 2.0.5 defines no engineering conversion."
+    },
+    {
+      "name": "dsps_flare_phase",
+      "offset": 235,
+      "length": 1,
+      "type": "uint8",
+      "unit": "dimensionless\nConversion/status map: 0/NOT_IN_SUN 1/FILLING_HISTORY 2/NOT_IN_FLARE 4/FLARE_START 24/DECLINING_FLARE 40/RISING_FLARE",
+      "label": "Dual-SPS flare-state bit flags"
+    },
+    {
+      "name": "battery_1_charging_state_raw",
+      "offset": 243,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 1/CHARGING 0/DISCHARGING",
+      "bit_offset": 2,
+      "bit_length": 1,
+      "label": "Charging State of the Battery"
+    },
+    {
+      "name": "eps_pwr_state_dsps_raw",
+      "offset": 243,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 0/OFF 1/ON",
+      "bit_offset": 3,
+      "bit_length": 1,
+      "label": "EPS Power state for Dual-SPS Engineering units: dimensionless Conversion/status map: 0/OFF 1/ON"
+    },
+    {
+      "name": "eps_pwr_state_csie_raw",
+      "offset": 243,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 0/OFF 1/ON",
+      "bit_offset": 4,
+      "bit_length": 1,
+      "label": "EPS Power state for CSIE Engineering units: dimensionless Conversion/status map: 0/OFF 1/ON"
+    },
+    {
+      "name": "eps_pwr_state_xband_raw",
+      "offset": 243,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 0/OFF 1/ON",
+      "bit_offset": 5,
+      "bit_length": 1,
+      "label": "EPS Power state for X-Band radio Engineering units: dimensionless Conversion/status map: 0/OFF 1/ON"
+    },
+    {
+      "name": "eps_pwr_state_uhf_raw",
+      "offset": 243,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 0/OFF 1/ON",
+      "bit_offset": 6,
+      "bit_length": 1,
+      "label": "EPS Power state for UHF radio Engineering units: dimensionless Conversion/status map: 0/OFF 1/ON"
+    },
+    {
+      "name": "eps_pwr_state_adcs_raw",
+      "offset": 243,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 0/OFF 1/ON",
+      "bit_offset": 7,
+      "bit_length": 1,
+      "label": "EPS Power state for ADCS/XACT Engineering units: dimensionless Conversion/status map: 0/OFF 1/ON"
+    },
+    {
+      "name": "telescope_door_pin_pulled_raw",
+      "offset": 244,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 1/ENGAGED 0/PULLED",
+      "bit_offset": 0,
+      "bit_length": 1,
+      "label": "Telescope Door Release Pin feedback"
+    },
+    {
+      "name": "csie_heater_enable_raw",
+      "offset": 244,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 0/NO 1/YES",
+      "bit_offset": 1,
+      "bit_length": 1,
+      "label": "CSIE Heater enable flag Engineering units: dimensionless Conversion/status map: 0/NO 1/YES"
+    },
+    {
+      "name": "battery2_heater_enable_raw",
+      "offset": 244,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 0/NO 1/YES",
+      "bit_offset": 2,
+      "bit_length": 1,
+      "label": "Battery 2 heater enable flag Engineering units: dimensionless Conversion/status map: 0/NO 1/YES"
+    },
+    {
+      "name": "battery1_heater_enable_raw",
+      "offset": 244,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 0/NO 1/YES",
+      "bit_offset": 3,
+      "bit_length": 1,
+      "label": "Battery 1 heater enable flag Engineering units: dimensionless Conversion/status map: 0/NO 1/YES"
+    },
+    {
+      "name": "uhf_alive",
+      "offset": 244,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 0/OFF 1/ALIVE 2/DEAD",
+      "bit_offset": 4,
+      "bit_length": 2,
+      "label": "UHF Aliveness flag Engineering units: dimensionless Conversion/status map: 0/OFF 1/ALIVE 2/DEAD"
+    },
+    {
+      "name": "adcs_alive",
+      "offset": 244,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless",
+      "bit_offset": 6,
+      "bit_length": 2,
+      "label": "ADCS Aliveness flag Engineering units: dimensionless"
+    },
+    {
+      "name": "adcs_att_valid_raw",
+      "offset": 245,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 0/NO 1/YES",
+      "bit_offset": 0,
+      "bit_length": 1,
+      "label": "Attitude Valid Engineering units: dimensionless Conversion/status map: 0/NO 1/YES"
+    },
+    {
+      "name": "adcs_ref_valid_raw",
+      "offset": 245,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 0/NO 1/YES",
+      "bit_offset": 1,
+      "bit_length": 1,
+      "label": "Refs Valid Engineering units: dimensionless Conversion/status map: 0/NO 1/YES"
+    },
+    {
+      "name": "adcs_time_valid_raw",
+      "offset": 245,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 1/YES 0/NO",
+      "bit_offset": 2,
+      "bit_length": 1,
+      "label": "Time Valid Engineering units: dimensionless Conversion/status map: 1/YES 0/NO"
+    },
+    {
+      "name": "adcs_mode_raw",
+      "offset": 245,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 0/SUN_POINT 1/FINE_REF_POINT",
+      "bit_offset": 3,
+      "bit_length": 1,
+      "label": "ADCS Mode Engineering units: dimensionless Conversion/status map: 0/SUN_POINT 1/FINE_REF_POINT"
+    },
+    {
+      "name": "battery_2_charging_state_raw",
+      "offset": 245,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 1/CHARGING 0/DISCHARGING",
+      "bit_offset": 4,
+      "bit_length": 1,
+      "label": "Charging State of the Battery"
+    },
+    {
+      "name": "adcs_sun_point_state",
+      "offset": 245,
+      "length": 1,
+      "type": "bits",
+      "unit": "dimensionless\nConversion/status map: 0/SUN_POINT 1/FINE_REF_POINT 2/SEARCH_INIT 3/SEARCHING 4/WAITING 5/CONVERGING 6/ON_SUN 7/NOT_ACTV",
+      "bit_offset": 5,
+      "bit_length": 3,
+      "label": "Sun Point State"
+    },
+    {
+      "name": "xband_data_source",
+      "offset": 246,
+      "length": 1,
+      "type": "uint8",
+      "unit": "dimensionless\nConversion/status map: 0/TEST_PAT 1/CDH",
+      "label": "Selected X-band data source."
+    },
+    {
+      "name": "ccsds_version",
+      "type": "derived",
+      "expr": "(((((ccsds_primary_word) >> (13)))) & (7))",
+      "unit": "dimensionless",
+      "label": "CCSDS Space Packet version number. Engineering units: dimensionless"
+    },
+    {
+      "name": "ccsds_packet_type",
+      "type": "derived",
+      "expr": "(((((ccsds_primary_word) >> (12)))) & (1))",
+      "unit": "dimensionless",
+      "label": "CCSDS packet type; telemetry is expected for the beacon. Engineering units: dimensionless"
+    },
+    {
+      "name": "ccsds_secondary_header_flag",
+      "type": "derived",
+      "expr": "(((((ccsds_primary_word) >> (11)))) & (1))",
+      "unit": "dimensionless",
+      "label": "Indicates presence of the SunCET secondary time header. Engineering units: dimensionless"
+    },
+    {
+      "name": "ccsds_apid",
+      "type": "derived",
+      "expr": "((ccsds_primary_word) & (2047))",
+      "unit": "dimensionless",
+      "label": "CCSDS application process identifier; expected value is 1. Engineering units: dimensionless"
+    },
+    {
+      "name": "ccsds_sequence_flags",
+      "type": "derived",
+      "expr": "(((((ccsds_sequence_word) >> (14)))) & (3))",
+      "unit": "dimensionless",
+      "label": "CCSDS packet sequence flags. Engineering units: dimensionless"
+    },
+    {
+      "name": "ccsds_sequence_count",
+      "type": "derived",
+      "expr": "((ccsds_sequence_word) & (16383))",
+      "unit": "count",
+      "label": "CCSDS packet sequence counter. Engineering units: count"
+    },
+    {
+      "name": "adcs_body_rate_1",
+      "type": "derived",
+      "expr": "(((0) + (((adcs_body_rate_1_raw) * (5e-09)))))",
+      "unit": "rad/s\nConversion/status map: C0=0",
+      "label": "ADCS Body Frame Rate 1"
+    },
+    {
+      "name": "adcs_body_rate_2",
+      "type": "derived",
+      "expr": "(((0) + (((adcs_body_rate_2_raw) * (5e-09)))))",
+      "unit": "rad/s\nConversion/status map: C0=0",
+      "label": "ADCS Body Frame Rate 2"
+    },
+    {
+      "name": "adcs_body_rate_3",
+      "type": "derived",
+      "expr": "(((0) + (((adcs_body_rate_3_raw) * (5e-09)))))",
+      "unit": "rad/s\nConversion/status map: C0=0",
+      "label": "ADCS Body Frame Rate 3"
+    },
+    {
+      "name": "adcs_wheel_speed_1",
+      "type": "derived",
+      "expr": "(((0) + (((adcs_wheel_speed_1_raw) * (0.002)))))",
+      "unit": "rpm\nConversion/status map: C0=0",
+      "label": "ADCS Wheel Speed 1 Engineering units: rpm Conversion/status map: C0=0.000000e+00 C1=2.000000e-03"
+    },
+    {
+      "name": "adcs_wheel_speed_2",
+      "type": "derived",
+      "expr": "(((0) + (((adcs_wheel_speed_2_raw) * (0.002)))))",
+      "unit": "rpm\nConversion/status map: C0=0",
+      "label": "ADCS Wheel Speed 2 Engineering units: rpm Conversion/status map: C0=0.000000e+00 C1=2.000000e-03"
+    },
+    {
+      "name": "adcs_wheel_speed_3",
+      "type": "derived",
+      "expr": "(((0) + (((adcs_wheel_speed_3_raw) * (0.002)))))",
+      "unit": "rpm\nConversion/status map: C0=0",
+      "label": "ADCS Wheel Speed 3 Engineering units: rpm Conversion/status map: C0=0.000000e+00 C1=2.000000e-03"
+    },
+    {
+      "name": "xband_pa_temp",
+      "type": "derived",
+      "expr": "(((0) + (((xband_pa_temp_raw) * (0.0009765625)))))",
+      "unit": "degC (inferred)\nConversion/status map: C0=0",
+      "label": "XBAND Power Amplifier Temp"
+    },
+    {
+      "name": "xband_pa_current",
+      "type": "derived",
+      "expr": "(((0) + (((xband_pa_current_raw) * (0.001654473)))))",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "XBAND Power Amplifier current"
+    },
+    {
+      "name": "rail_3v3_voltage",
+      "type": "derived",
+      "expr": "(((0) + (((rail_3v3_voltage_raw) * (0.0016113)))))",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "3p3 Voltage Engineering units: V (inferred) Conversion/status map: C0=0.000000e+00 C1=1.611300e-03"
+    },
+    {
+      "name": "rail_3v3_current",
+      "type": "derived",
+      "expr": "(((0) + (((rail_3v3_current_raw) * (8.0566e-05)))))",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "3p3 Current Engineering units: A (inferred) Conversion/status map: C0=0.000000e+00 C1=8.056600e-05"
+    },
+    {
+      "name": "cdh_temp",
+      "type": "derived",
+      "expr": "(((125.55) + (((cdh_temp_raw) * (((((-(0.13622))) + (((cdh_temp_raw) * ((((9.8611e-05) + (((cdh_temp_raw) * (((((-(4.4176e-08))) + (((cdh_temp_raw) * ((((1.0125e-11) + (((cdh_temp_raw) * ((-(9.3905e-16)))))))))))))))))))))))))))",
+      "unit": "degC (inferred)\nConversion/status map: C0=1",
+      "label": "CDH Temperature"
+    },
+    {
+      "name": "cdh_3v3_reference_voltage",
+      "type": "derived",
+      "expr": "(((0) + (((cdh_3v3_reference_voltage_raw) * (0.0016113)))))",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "CDH 3.3 V reference measurement."
+    },
+    {
+      "name": "solar_array_8_cell_string_voltage",
+      "type": "derived",
+      "expr": "(((0) + (((solar_array_8_cell_string_voltage_raw) * (0.0096592)))))",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "Solar Array 8-Cell String Voltage"
+    },
+    {
+      "name": "solar_array_8_cell_string_current",
+      "type": "derived",
+      "expr": "(((0) + (((solar_array_8_cell_string_current_raw) * (0.0020142)))))",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "Solar Array 8-Cell String Current"
+    },
+    {
+      "name": "solar_array_9_cell_string_voltage",
+      "type": "derived",
+      "expr": "(((0) + (((solar_array_9_cell_string_voltage_raw) * (0.0096592)))))",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "9-Cell String Solar Array Voltage"
+    },
+    {
+      "name": "solar_array_9_cell_string_current",
+      "type": "derived",
+      "expr": "(((0) + (((solar_array_9_cell_string_current_raw) * (0.0020142)))))",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "9-Cell String Solar Array Current"
+    },
+    {
+      "name": "battery_1_voltage",
+      "type": "derived",
+      "expr": "(((0) + (((battery_1_voltage_raw) * (0.0088623)))))",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "Battery 1 Voltage"
+    },
+    {
+      "name": "battery_2_voltage",
+      "type": "derived",
+      "expr": "(((0) + (((battery_2_voltage_raw) * (0.0088623)))))",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "Battery 2 Voltage"
+    },
+    {
+      "name": "eps_temp",
+      "type": "derived",
+      "expr": "(((125.55) + (((eps_temp_raw) * (((((-(0.13622))) + (((eps_temp_raw) * ((((9.8611e-05) + (((eps_temp_raw) * (((((-(4.4176e-08))) + (((eps_temp_raw) * ((((1.0125e-11) + (((eps_temp_raw) * ((-(9.3905e-16)))))))))))))))))))))))))))",
+      "unit": "degC (inferred)\nConversion/status map: C0=1",
+      "label": "EPS Board Temperature"
+    },
+    {
+      "name": "eps_3v3_reference_voltage",
+      "type": "derived",
+      "expr": "(((0) + (((eps_3v3_reference_voltage_raw) * (0.00161133)))))",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "EPS 3.3 V reference measurement."
+    },
+    {
+      "name": "eps_bus_voltage",
+      "type": "derived",
+      "expr": "(((0) + (((eps_bus_voltage_raw) * (0.0088623)))))",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "EPS Bus Voltage"
+    },
+    {
+      "name": "eps_bus_current",
+      "type": "derived",
+      "expr": "(((0) + (((eps_bus_current_raw) * (0.0012207)))))",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "EPS Bus Current"
+    },
+    {
+      "name": "xact_voltage",
+      "type": "derived",
+      "expr": "(((0) + (((xact_voltage_raw) * (0.0088623)))))",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "XACT Voltage Engineering units: V (inferred) Conversion/status map: C0=0.000000e+00 C1=8.862300e-03"
+    },
+    {
+      "name": "xact_current",
+      "type": "derived",
+      "expr": "(((0) + (((xact_current_raw) * (0.0020142)))))",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "XACT Current Engineering units: A (inferred) Conversion/status map: C0=0.000000e+00 C1=2.014200e-03"
+    },
+    {
+      "name": "uhf_voltage",
+      "type": "derived",
+      "expr": "(((0) + (((uhf_voltage_raw) * (0.0088623)))))",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "UHF Voltage Engineering units: V (inferred) Conversion/status map: C0=0.000000e+00 C1=8.862300e-03"
+    },
+    {
+      "name": "uhf_current",
+      "type": "derived",
+      "expr": "(((0) + (((uhf_current_raw) * (0.0020142)))))",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "UHF Current Engineering units: A (inferred) Conversion/status map: C0=0.000000e+00 C1=2.014200e-03"
+    },
+    {
+      "name": "xband_voltage",
+      "type": "derived",
+      "expr": "(((0) + (((xband_voltage_raw) * (0.0088623)))))",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "XBAND Voltage Engineering units: V (inferred) Conversion/status map: C0=0.000000e+00 C1=8.862300e-03"
+    },
+    {
+      "name": "xband_current",
+      "type": "derived",
+      "expr": "(((0) + (((xband_current_raw) * (0.0020142)))))",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "XBAND Current Engineering units: A (inferred) Conversion/status map: C0=0.000000e+00 C1=2.014200e-03"
+    },
+    {
+      "name": "csie_voltage",
+      "type": "derived",
+      "expr": "(((0) + (((csie_voltage_raw) * (0.0039639)))))",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "CSIE Voltage Engineering units: V (inferred) Conversion/status map: C0=0.000000e+00 C1=3.963900e-03"
+    },
+    {
+      "name": "csie_current",
+      "type": "derived",
+      "expr": "(((0) + (((csie_current_raw) * (0.0012207)))))",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "CSIE Current Engineering units: A (inferred) Conversion/status map: C0=0.000000e+00 C1=1.220700e-03"
+    },
+    {
+      "name": "dsps_voltage",
+      "type": "derived",
+      "expr": "(((0) + (((dsps_voltage_raw) * (0.0039639)))))",
+      "unit": "V (inferred)\nConversion/status map: C0=0",
+      "label": "DSPS Voltage Engineering units: V (inferred) Conversion/status map: C0=0.000000e+00 C1=3.963900e-03"
+    },
+    {
+      "name": "dsps_current",
+      "type": "derived",
+      "expr": "(((0) + (((dsps_current_raw) * (0.0012207)))))",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "DSPS Current Engineering units: A (inferred) Conversion/status map: C0=0.000000e+00 C1=1.220700e-03"
+    },
+    {
+      "name": "ifb_therm1",
+      "type": "derived",
+      "expr": "(((125.55) + (((ifb_therm1_raw) * (((((-(0.13622))) + (((ifb_therm1_raw) * ((((9.8611e-05) + (((ifb_therm1_raw) * (((((-(4.4176e-08))) + (((ifb_therm1_raw) * ((((1.0125e-11) + (((ifb_therm1_raw) * ((-(9.3905e-16)))))))))))))))))))))))))))",
+      "unit": "degC (inferred)\nConversion/status map: C0=1",
+      "label": "Interface Board Temperature"
+    },
+    {
+      "name": "sa_minus_y_temp",
+      "type": "derived",
+      "expr": "(((125.55) + (((sa_minus_y_temp_raw) * (((((-(0.13622))) + (((sa_minus_y_temp_raw) * ((((9.8611e-05) + (((sa_minus_y_temp_raw) * (((((-(4.4176e-08))) + (((sa_minus_y_temp_raw) * ((((1.0125e-11) + (((sa_minus_y_temp_raw) * ((-(9.3905e-16)))))))))))))))))))))))))))",
+      "unit": "degC (inferred)\nConversion/status map: C0=1",
+      "label": "Solar Array 1 Temperature"
+    },
+    {
+      "name": "sa_plus_y_temp",
+      "type": "derived",
+      "expr": "(((125.55) + (((sa_plus_y_temp_raw) * (((((-(0.13622))) + (((sa_plus_y_temp_raw) * ((((9.8611e-05) + (((sa_plus_y_temp_raw) * (((((-(4.4176e-08))) + (((sa_plus_y_temp_raw) * ((((1.0125e-11) + (((sa_plus_y_temp_raw) * ((-(9.3905e-16)))))))))))))))))))))))))))",
+      "unit": "degC (inferred)\nConversion/status map: C0=1",
+      "label": "Solar Array 2 Temperature"
+    },
+    {
+      "name": "csie_temp",
+      "type": "derived",
+      "expr": "(((125.55) + (((csie_temp_raw) * (((((-(0.13622))) + (((csie_temp_raw) * ((((9.8611e-05) + (((csie_temp_raw) * (((((-(4.4176e-08))) + (((csie_temp_raw) * ((((1.0125e-11) + (((csie_temp_raw) * ((-(9.3905e-16)))))))))))))))))))))))))))",
+      "unit": "degC (inferred)\nConversion/status map: C0=1",
+      "label": "CSIE Detector Temperature"
+    },
+    {
+      "name": "battery_1_temp",
+      "type": "derived",
+      "expr": "(((125.55) + (((battery_1_temp_raw) * (((((-(0.13622))) + (((battery_1_temp_raw) * ((((9.8611e-05) + (((battery_1_temp_raw) * (((((-(4.4176e-08))) + (((battery_1_temp_raw) * ((((1.0125e-11) + (((battery_1_temp_raw) * ((-(9.3905e-16)))))))))))))))))))))))))))",
+      "unit": "degC (inferred)\nConversion/status map: C0=1",
+      "label": "Battery 1 Temperature"
+    },
+    {
+      "name": "batt_board_temp",
+      "type": "derived",
+      "expr": "(((125.55) + (((batt_board_temp_raw) * (((((-(0.13622))) + (((batt_board_temp_raw) * ((((9.8611e-05) + (((batt_board_temp_raw) * (((((-(4.4176e-08))) + (((batt_board_temp_raw) * ((((1.0125e-11) + (((batt_board_temp_raw) * ((-(9.3905e-16)))))))))))))))))))))))))))",
+      "unit": "degC (inferred)\nConversion/status map: C0=1",
+      "label": "Battery Board Temperature"
+    },
+    {
+      "name": "battery_1_charge_current",
+      "type": "derived",
+      "expr": "(((0) + (((battery_1_charge_current_raw) * (0.0002366954)))))",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "Battery 1 Charge Current"
+    },
+    {
+      "name": "battery_2_charge_current",
+      "type": "derived",
+      "expr": "(((0) + (((battery_2_charge_current_raw) * (0.0002366954)))))",
+      "unit": "A (inferred)\nConversion/status map: C0=0",
+      "label": "Battery 2 Charge Current"
+    },
+    {
+      "name": "dsps_sensor_board_temp",
+      "type": "derived",
+      "expr": "(((0) + (((dsps_sensor_board_temp_raw) * (0.01)))))",
+      "unit": "degC (inferred)\nConversion/status map: C0=0",
+      "label": "Dual-SPS Sensor Board Temperature"
+    },
+    {
+      "name": "adcs_ana_motor1_temp",
+      "type": "derived",
+      "expr": "(((0) + (((adcs_ana_motor1_temp_raw) * (0.005)))))",
+      "unit": "degC (inferred)\nConversion/status map: C0=0",
+      "label": "Wheel 1 Temp"
+    },
+    {
+      "name": "adcs_sun_point_angle_error",
+      "type": "derived",
+      "expr": "(((0) + (((adcs_sun_point_angle_error_raw) * (0.003)))))",
+      "unit": "deg\nConversion/status map: C0=0",
+      "label": "Angle between the estimated and commanded Sun vectors."
+    },
+    {
+      "name": "dsps_flare_level",
+      "type": "derived",
+      "expr": "((dsps_flare_level_raw) if (((((dsps_flare_level_raw) >= ((-(3.4028234663852886e38))))) and (((dsps_flare_level_raw) <= (3.4028234663852886e38))))) else (((dsps_flare_level_raw) - (dsps_flare_level_raw))))",
+      "label": "Dsps flare level"
+    },
+    {
+      "name": "battery_1_charging_state",
+      "type": "derived",
+      "expr": "((1) if (battery_1_charging_state_raw) else (0))",
+      "label": "Battery 1 charging state"
+    },
+    {
+      "name": "eps_pwr_state_dsps",
+      "type": "derived",
+      "expr": "((1) if (eps_pwr_state_dsps_raw) else (0))",
+      "label": "Eps pwr state dsps"
+    },
+    {
+      "name": "eps_pwr_state_csie",
+      "type": "derived",
+      "expr": "((1) if (eps_pwr_state_csie_raw) else (0))",
+      "label": "Eps pwr state csie"
+    },
+    {
+      "name": "eps_pwr_state_xband",
+      "type": "derived",
+      "expr": "((1) if (eps_pwr_state_xband_raw) else (0))",
+      "label": "Eps pwr state xband"
+    },
+    {
+      "name": "eps_pwr_state_uhf",
+      "type": "derived",
+      "expr": "((1) if (eps_pwr_state_uhf_raw) else (0))",
+      "label": "Eps pwr state uhf"
+    },
+    {
+      "name": "eps_pwr_state_adcs",
+      "type": "derived",
+      "expr": "((1) if (eps_pwr_state_adcs_raw) else (0))",
+      "label": "Eps pwr state adcs"
+    },
+    {
+      "name": "telescope_door_pin_pulled",
+      "type": "derived",
+      "expr": "((1) if (telescope_door_pin_pulled_raw) else (0))",
+      "label": "Telescope door pin pulled"
+    },
+    {
+      "name": "csie_heater_enable",
+      "type": "derived",
+      "expr": "((1) if (csie_heater_enable_raw) else (0))",
+      "label": "Csie heater enable"
+    },
+    {
+      "name": "battery2_heater_enable",
+      "type": "derived",
+      "expr": "((1) if (battery2_heater_enable_raw) else (0))",
+      "label": "Battery2 heater enable"
+    },
+    {
+      "name": "battery1_heater_enable",
+      "type": "derived",
+      "expr": "((1) if (battery1_heater_enable_raw) else (0))",
+      "label": "Battery1 heater enable"
+    },
+    {
+      "name": "adcs_att_valid",
+      "type": "derived",
+      "expr": "((1) if (adcs_att_valid_raw) else (0))",
+      "label": "Adcs att valid"
+    },
+    {
+      "name": "adcs_ref_valid",
+      "type": "derived",
+      "expr": "((1) if (adcs_ref_valid_raw) else (0))",
+      "label": "Adcs ref valid"
+    },
+    {
+      "name": "adcs_time_valid",
+      "type": "derived",
+      "expr": "((1) if (adcs_time_valid_raw) else (0))",
+      "label": "Adcs time valid"
+    },
+    {
+      "name": "adcs_mode",
+      "type": "derived",
+      "expr": "((1) if (adcs_mode_raw) else (0))",
+      "label": "Adcs mode"
+    },
+    {
+      "name": "battery_2_charging_state",
+      "type": "derived",
+      "expr": "((1) if (battery_2_charging_state_raw) else (0))",
+      "label": "Battery 2 charging state"
+    }
+  ]
+}
