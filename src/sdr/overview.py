@@ -32,6 +32,28 @@ MAX_ROWS = 2000
 _BATCH_ROWS = 64
 
 
+# Display modes. STANDARD keeps the original one-FFT-per-row image. The other two
+# average every FFT inside a row (STANDARD only looks at ~8 ms of each 0.1 s row, so
+# a 200 ms burst at +5 dB S/N is lost in the per-bin noise scatter):
+#   WIDE   wideband signals (9k6 FSK bursts): rows are also smoothed across ~8 kHz.
+#   NARROW carriers / CW / Doppler-drifting lines: 15 Hz bins, peak-held when pooled.
+MODE_STANDARD = "standard"
+MODE_WIDE = "wide"
+MODE_NARROW = "narrow"
+MODES = (MODE_STANDARD, MODE_WIDE, MODE_NARROW)
+
+# WIDE: smoothing width in display bins (~8 kHz at 250 kHz / 1024 bins).
+_WIDE_SMOOTH_BINS = 33
+# NARROW: FFT length (15 Hz bins at 250 kHz) and the shortest row.
+_NARROW_FFT_SIZE = 16384
+_NARROW_MIN_ROW_S = 0.5
+# Colour span above the noise floor for the averaged modes (dB), and the percentile
+# of the image taken as the floor. Fixed spans keep strong signals / impulse noise
+# from stretching the scale over a weak signal.
+_SPAN_DB = {MODE_WIDE: 6.0, MODE_NARROW: 9.0}
+_FLOOR_PERCENTILE = {MODE_WIDE: 20.0, MODE_NARROW: 50.0}
+
+
 @dataclass
 class OverviewData:
     """Result of :func:`compute_overview`.
@@ -45,6 +67,7 @@ class OverviewData:
     sample_rate: float
     row_s: float
     duration_s: float
+    mode: str = MODE_STANDARD
 
 
 def _open_iq(path: Path) -> tuple[np.memmap, float]:
@@ -88,13 +111,67 @@ def _open_iq(path: Path) -> tuple[np.memmap, float]:
     return np.memmap(path, dtype=dtype, mode="r", offset=offset, shape=(n_items,)), float(rate)
 
 
+def _box_smooth(x: np.ndarray, width: int) -> np.ndarray:
+    """Moving average of *width* bins along the last axis (edges use the bins present)."""
+    half = width // 2
+    pad = np.pad(x, [(0, 0)] * (x.ndim - 1) + [(half + 1, half)])
+    cs = np.cumsum(pad, axis=-1, dtype=np.float64)
+    total = cs[..., width:] - cs[..., :-width]
+    ones = np.pad(np.ones(x.shape[-1]), (half + 1, half))
+    cnt = np.cumsum(ones)
+    count = cnt[width:] - cnt[:-width]
+    return np.asarray((total / count).astype(np.float32))
+
+
+def _compute_averaged(
+    mm: np.ndarray,
+    rate: float,
+    mode: str,
+    progress: Callable[[float], None] | None,
+    cancelled: Callable[[], bool] | None,
+) -> OverviewData | None:
+    """WIDE / NARROW image: every FFT inside a row is averaged (power domain)."""
+    scale = 1.0 if mm.dtype.kind == "f" else 1.0 / 32768.0
+    n_samples = len(mm) // 2
+    duration = n_samples / rate
+    fft_size = _NARROW_FFT_SIZE if mode == MODE_NARROW else FFT_SIZE
+    min_row_s = _NARROW_MIN_ROW_S if mode == MODE_NARROW else MIN_ROW_S
+    hop = max(fft_size, int(max(min_row_s, duration / MAX_ROWS) * rate))
+    n_rows = max(1, n_samples // hop)
+    window = np.hanning(fft_size).astype(np.float32)
+    pool = fft_size // DISPLAY_BINS
+    rows = np.empty((n_rows, DISPLAY_BINS), dtype=np.float32)
+    for r in range(n_rows):
+        if cancelled is not None and cancelled():
+            return None
+        a = np.asarray(mm[2 * r * hop : 2 * min((r + 1) * hop, n_samples)], dtype=np.float32)
+        iq = (a[0::2] + 1j * a[1::2]) * scale
+        k = max(1, len(iq) // fft_size)
+        if len(iq) < k * fft_size:
+            iq = np.pad(iq, (0, k * fft_size - len(iq)))
+        seg = iq[: k * fft_size].reshape(k, fft_size) * window
+        spec = np.fft.fftshift(np.fft.fft(seg, axis=1), axes=1)
+        p = (spec.real**2 + spec.imag**2).mean(axis=0).reshape(DISPLAY_BINS, pool)
+        # NARROW keeps the peak of each pooled group so a 15 Hz line is not diluted.
+        rows[r] = p.max(axis=1) if mode == MODE_NARROW else p.mean(axis=1)
+        if progress is not None and r % 16 == 0:
+            progress(min(1.0, (r + 1) / n_rows))
+    if mode == MODE_WIDE:
+        rows = _box_smooth(rows, _WIDE_SMOOTH_BINS)
+    rows = 10.0 * np.log10(rows + 1e-20)
+    return OverviewData(rows.astype(np.float32), rate, hop / rate, duration, mode)
+
+
 def compute_overview(
     path: Path,
     progress: Callable[[float], None] | None = None,
     cancelled: Callable[[], bool] | None = None,
+    mode: str = MODE_STANDARD,
 ) -> OverviewData | None:
     """Build the whole-recording spectrogram; None if *cancelled* returned True."""
     mm, rate = _open_iq(path)
+    if mode in (MODE_WIDE, MODE_NARROW):
+        return _compute_averaged(mm, rate, mode, progress, cancelled)
     scale = 1.0 if mm.dtype.kind == "f" else 1.0 / 32768.0
     n_samples = len(mm) // 2
     duration = n_samples / rate
@@ -124,9 +201,16 @@ def compute_overview(
     return OverviewData(rows, rate, hop / rate, duration)
 
 
-def remove_background(power_db: np.ndarray) -> np.ndarray:
-    """Subtract each frequency column's median over time (constant lines vanish)."""
-    return np.asarray(power_db - np.median(power_db, axis=0, keepdims=True))
+def remove_background(power_db: np.ndarray, mode: str = MODE_STANDARD) -> np.ndarray:
+    """Subtract each frequency column's median over time (constant lines vanish).
+
+    The averaged modes also subtract each row's median, which suppresses the
+    horizontal stripes that wideband impulse noise leaves across a whole row.
+    """
+    out = np.asarray(power_db - np.median(power_db, axis=0, keepdims=True))
+    if mode in (MODE_WIDE, MODE_NARROW):
+        out = out - np.median(out, axis=1, keepdims=True)
+    return np.asarray(out)
 
 
 # Anchor colours of a dark-blue -> teal -> green -> yellow map (viridis-like).
@@ -142,14 +226,20 @@ _STOPS = np.array(
 )
 
 
-def to_rgb(power_db: np.ndarray, background_removed: bool) -> np.ndarray:
+def to_rgb(power_db: np.ndarray, background_removed: bool, mode: str = MODE_STANDARD) -> np.ndarray:
     """Map dB values to an (rows, cols, 3) uint8 image.
 
     The colour range follows the data (low/high percentiles) so that weak
-    bursts stay visible whatever the absolute level of the recording is.
+    bursts stay visible whatever the absolute level of the recording is. The
+    averaged modes (with the background removed) anchor the low end at the
+    noise floor and use a fixed span above it instead of a high percentile.
     """
-    lo_p, hi_p = (10.0, 99.95) if background_removed else (5.0, 99.8)
-    lo, hi = np.percentile(power_db, [lo_p, hi_p])
+    if background_removed and mode in _SPAN_DB:
+        lo = float(np.percentile(power_db, _FLOOR_PERCENTILE[mode]))
+        hi = lo + _SPAN_DB[mode]
+    else:
+        lo_p, hi_p = (10.0, 99.95) if background_removed else (5.0, 99.8)
+        lo, hi = np.percentile(power_db, [lo_p, hi_p])
     if hi - lo < 1.0:
         hi = lo + 1.0
     t = np.clip((power_db - lo) / (hi - lo), 0.0, 1.0) * (len(_STOPS) - 1)

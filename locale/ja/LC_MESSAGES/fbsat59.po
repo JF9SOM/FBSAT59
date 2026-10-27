@@ -8118,3 +8118,29 @@ msgstr "ASCII変換…"
 #: src/ui/telemetry_tab.py
 msgid "Showing frame #{n} ({time}) — not the newest of its type"
 msgstr "フレーム #{n}（{time}）を表示中 — この種類の最新ではありません"
+
+#: src/ui/sdr_overview_dialog.py
+msgid "Standard"
+msgstr "Standard（標準）"
+
+#: src/ui/sdr_overview_dialog.py
+msgid "Wide (weak 9k6 bursts)"
+msgstr "Wide（弱い9k6バースト）"
+
+#: src/ui/sdr_overview_dialog.py
+msgid "Narrow (CW / carriers)"
+msgstr "Narrow（CW・キャリア）"
+
+#: src/ui/sdr_overview_dialog.py
+msgid ""
+"Standard: quick look, one short FFT per row.\n"
+"Wide: averages every FFT of a row and smooths across ~8 kHz, so weak\n"
+"wideband bursts (e.g. 9k6 FSK) show up. Reads the whole file (slower).\n"
+"Narrow: 15 Hz resolution, for CW beacons and carriers, including\n"
+"weak Doppler-drifting lines. Reads the whole file (slower)."
+msgstr ""
+"Standard: 簡易表示。1行につき短いFFTを1回だけ使います。\n"
+"Wide: 1行内のすべてのFFTを平均し、約8 kHzにわたってならすので、\n"
+"弱い広帯域バースト（9k6 FSKなど）が見えます。ファイル全体を読みます（やや遅い）。\n"
+"Narrow: 15 Hz分解能。CWビーコンやキャリア、ドップラーで流れる\n"
+"弱い線向けです。ファイル全体を読みます（やや遅い）。"

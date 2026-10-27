@@ -8,7 +8,15 @@ from pathlib import Path
 import numpy as np
 from pytestqt.qtbot import QtBot
 
-from sdr.overview import DISPLAY_BINS, compute_overview, remove_background, to_rgb
+from sdr.overview import (
+    DISPLAY_BINS,
+    MODE_NARROW,
+    MODE_STANDARD,
+    MODE_WIDE,
+    compute_overview,
+    remove_background,
+    to_rgb,
+)
 
 RATE = 50_000
 
@@ -108,3 +116,81 @@ def test_click_in_overview_requests_seek(tmp_path: Path, qtbot: QtBot) -> None:
     assert modes == [CLICK_TIME_ONLY]
     QTest.mouseClick(canvas, Qt.MouseButton.LeftButton, pos=QPoint(r.center().x(), r.center().y()))
     assert got[-1][2] is False
+
+
+def _weak_signal() -> np.ndarray:
+    """Noise + a weak 3 s wideband burst at -5 kHz (t=10 s) + a weak tone at +7 kHz (18-24 s)."""
+    rng = np.random.default_rng(3)
+    n = 30 * RATE
+    t = np.arange(n) / RATE
+    z = 0.01 * (rng.standard_normal(n) + 1j * rng.standard_normal(n))
+    b = (t >= 10) & (t < 13)
+    w = rng.standard_normal(int(b.sum())) + 1j * rng.standard_normal(int(b.sum()))
+    spec = np.fft.fft(w)
+    spec[np.abs(np.fft.fftfreq(len(w), 1 / RATE)) > 2000] = 0
+    w = np.fft.ifft(spec)
+    w *= np.sqrt(3.2e-5 / np.mean(np.abs(w) ** 2))
+    z[b] += w * np.exp(-2j * np.pi * 5000 * t[b])
+    c = (t >= 18) & (t < 24)
+    z[c] += 0.002 * np.exp(2j * np.pi * 7000 * t[c])
+    return z.astype(np.complex64)
+
+
+def _zscores(path: Path, mode: str) -> tuple[float, float]:
+    """(wideband burst, narrow tone) contrast over the quiet rows, in noise sigmas."""
+    data = compute_overview(path, mode=mode)
+    assert data is not None and data.mode == mode
+    clean = remove_background(data.power_db, mode)
+    quiet = slice(int(2 / data.row_s), int(8 / data.row_s))
+    burst = slice(int(10.3 / data.row_s), int(12.7 / data.row_s))
+    cols = slice(_col(-6000), _col(-4000))
+    zb = (clean[burst, cols].mean() - clean[quiet, cols].mean()) / clean[quiet, cols].mean(1).std()
+    tone = slice(int(18.5 / data.row_s), int(23.5 / data.row_s))
+    tc = slice(_col(7000) - 1, _col(7000) + 2)
+    zt = (clean[tone, tc].max(1).mean() - clean[quiet, tc].max(1).mean()) / clean[quiet, tc].max(
+        1
+    ).std()
+    return float(zb), float(zt)
+
+
+def test_averaged_modes_show_weak_signals_better(tmp_path: Path) -> None:
+    p = tmp_path / "w.iq.wav"
+    _write_wav(p, _weak_signal())
+    std_b, std_t = _zscores(p, MODE_STANDARD)
+    wide_b, _wide_t = _zscores(p, MODE_WIDE)
+    _nar_b, nar_t = _zscores(p, MODE_NARROW)
+    assert wide_b > std_b * 1.3  # the wideband burst stands out more
+    assert nar_t > std_t * 2.0  # the weak carrier stands out much more
+
+
+def test_averaged_modes_shape_and_rgb(tmp_path: Path) -> None:
+    p = tmp_path / "s.iq.wav"
+    _write_wav(p, _signal(6.0))
+    for mode in (MODE_WIDE, MODE_NARROW):
+        data = compute_overview(p, mode=mode)
+        assert data is not None
+        assert data.power_db.shape[1] == DISPLAY_BINS and np.isfinite(data.power_db).all()
+        assert abs(data.duration_s - 6.0) < 0.01
+        for bg in (True, False):
+            db = remove_background(data.power_db, mode) if bg else data.power_db
+            rgb = to_rgb(db, bg, mode)
+            assert rgb.shape == (*data.power_db.shape, 3) and rgb.dtype == np.uint8
+    assert compute_overview(p, cancelled=lambda: True, mode=MODE_WIDE) is None
+
+
+def test_mode_combo_switches_and_caches(tmp_path: Path, qtbot: QtBot) -> None:
+    from ui.sdr_overview_dialog import SdrOverviewDialog
+
+    p = tmp_path / "m.iq.wav"
+    _write_wav(p, _signal(6.0))
+    dlg = SdrOverviewDialog(p)
+    qtbot.addWidget(dlg)
+    dlg.show()
+    qtbot.waitUntil(lambda: dlg._data is not None, timeout=10000)
+    assert dlg._mode_combo.currentData() == MODE_STANDARD and dlg._data.mode == MODE_STANDARD
+    standard = dlg._data
+    dlg._mode_combo.setCurrentIndex(dlg._mode_combo.findData(MODE_NARROW))
+    qtbot.waitUntil(lambda: dlg._data is not None and dlg._data.mode == MODE_NARROW, timeout=10000)
+    # Back to Standard comes from the cache, without a new read.
+    dlg._mode_combo.setCurrentIndex(dlg._mode_combo.findData(MODE_STANDARD))
+    assert dlg._data is standard

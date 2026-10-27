@@ -30,7 +30,15 @@ from PySide6.QtWidgets import (
 )
 
 from i18n import _
-from sdr.overview import OverviewData, compute_overview, remove_background, to_rgb
+from sdr.overview import (
+    MODE_NARROW,
+    MODE_STANDARD,
+    MODE_WIDE,
+    OverviewData,
+    compute_overview,
+    remove_background,
+    to_rgb,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -210,10 +218,30 @@ class SdrOverviewDialog(QDialog):
         self.resize(760, 640)
         self._path = path
         self._data: OverviewData | None = None
+        # Computed images per display mode (switching back is instant) and the
+        # cancel flag of the read currently running.
+        self._cache: dict[str, OverviewData] = {}
+        self._mode = MODE_STANDARD
         self._cancel = threading.Event()
 
         v = QVBoxLayout(self)
         top = QHBoxLayout()
+        self._mode_combo = QComboBox()
+        self._mode_combo.addItem(_("Standard"), MODE_STANDARD)
+        self._mode_combo.addItem(_("Wide (weak 9k6 bursts)"), MODE_WIDE)
+        self._mode_combo.addItem(_("Narrow (CW / carriers)"), MODE_NARROW)
+        self._mode_combo.setToolTip(
+            _(
+                "Standard: quick look, one short FFT per row.\n"
+                "Wide: averages every FFT of a row and smooths across ~8 kHz, so weak\n"
+                "wideband bursts (e.g. 9k6 FSK) show up. Reads the whole file (slower).\n"
+                "Narrow: 15 Hz resolution, for CW beacons and carriers, including\n"
+                "weak Doppler-drifting lines. Reads the whole file (slower)."
+            )
+        )
+        self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        top.addWidget(QLabel(_("Mode:")))
+        top.addWidget(self._mode_combo)
         self._bg_check = QCheckBox(_("Remove background"))
         self._bg_check.setChecked(True)
         self._bg_check.setToolTip(
@@ -266,31 +294,62 @@ class SdrOverviewDialog(QDialog):
         self._progress.connect(self._bar.setValue)
         self._finished.connect(self._on_finished)
         self._failed.connect(self._on_failed)
-        threading.Thread(target=self._work, name="sdr-overview", daemon=True).start()
+        self._start_read(MODE_STANDARD)
+
+    def _start_read(self, mode: str) -> None:
+        """Read the file for *mode* in a background thread (stops any read still running)."""
+        self._cancel.set()
+        self._cancel = threading.Event()
+        self._mode = mode
+        self._bar.setValue(0)
+        self._bar.show()
+        threading.Thread(
+            target=self._work, args=(mode, self._cancel), name="sdr-overview", daemon=True
+        ).start()
+
+    def _on_mode_changed(self) -> None:
+        mode = str(self._mode_combo.currentData())
+        if mode == self._mode:
+            return
+        cached = self._cache.get(mode)
+        if cached is not None:
+            self._cancel.set()
+            self._mode = mode
+            self._data = cached
+            self._bar.hide()
+            self._redraw()
+            return
+        self._save_btn.setEnabled(False)
+        self._info.setText("")
+        self._start_read(mode)
 
     def _on_canvas_clicked(self, position_s: float, offset_hz: float) -> None:
         """Forward a click, saying whether the offset is to be loaded as well."""
         with_offset = self._click_combo.currentData() == CLICK_TIME_AND_OFFSET
         self.seek_requested.emit(position_s, offset_hz, bool(with_offset))
 
-    def _work(self) -> None:
+    def _work(self, mode: str, cancel: threading.Event) -> None:
         """Background thread: read the file and build the spectrogram."""
         try:
             data = compute_overview(
                 self._path,
-                progress=lambda f: self._progress.emit(int(f * 100)),
-                cancelled=self._cancel.is_set,
+                progress=lambda f: None if cancel.is_set() else self._progress.emit(int(f * 100)),
+                cancelled=cancel.is_set,
+                mode=mode,
             )
         except Exception as exc:
             logger.warning("SdrOverviewDialog: %s failed: %s", self._path, exc)
-            if not self._cancel.is_set():
+            if not cancel.is_set():
                 self._failed.emit(str(exc))
             return
-        if data is not None and not self._cancel.is_set():
+        if data is not None and not cancel.is_set():
             self._finished.emit(data)
 
     def _on_finished(self, data: object) -> None:
         assert isinstance(data, OverviewData)
+        self._cache[data.mode] = data
+        if data.mode != self._mode:
+            return
         self._data = data
         self._bar.hide()
         self._save_btn.setEnabled(True)
@@ -304,8 +363,9 @@ class SdrOverviewDialog(QDialog):
         if self._data is None:
             return
         bg = self._bg_check.isChecked()
-        db = remove_background(self._data.power_db) if bg else self._data.power_db
-        self._canvas.set_image(to_rgb(db, bg), self._data)
+        mode = self._data.mode
+        db = remove_background(self._data.power_db, mode) if bg else self._data.power_db
+        self._canvas.set_image(to_rgb(db, bg, mode), self._data)
 
     def _on_save(self) -> None:
         img = self._canvas.image()
