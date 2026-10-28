@@ -8144,3 +8144,69 @@ msgstr ""
 "弱い広帯域バースト（9k6 FSKなど）が見えます。ファイル全体を読みます（やや遅い）。\n"
 "Narrow: 15 Hz分解能。CWビーコンやキャリア、ドップラーで流れる\n"
 "弱い線向けです。ファイル全体を読みます（やや遅い）。"
+
+# --- Rotator Settings: stop point / flip / park (Issue #34) ---
+
+#: src/ui/rotator_dialog.py
+msgid "Stop Point / Flip / Park"
+msgstr "停止位置・フリップ・パーク"
+
+#: src/ui/rotator_dialog.py
+msgid "North"
+msgstr "北"
+
+#: src/ui/rotator_dialog.py
+msgid "South"
+msgstr "南"
+
+#: src/ui/rotator_dialog.py
+msgid "Rotator stop point:"
+msgstr "ローテーターの停止位置:"
+
+#: src/ui/rotator_dialog.py
+msgid "Where the rotator's mechanical stop is. Choose South for a rotator that turns through north without unwinding (north in the middle of its range)."
+msgstr "ローテーターの機械的な停止位置です。北が可動範囲の真ん中にあり、北を巻き戻しなしで通過できるローテーターでは「南」を選びます。"
+
+#: src/ui/rotator_dialog.py
+msgid "Auto flip for passes crossing the stop point"
+msgstr "停止位置をまたぐパスで自動フリップ"
+
+#: src/ui/rotator_dialog.py
+msgid "For a pass that crosses the stop point, add 180 degrees to the azimuth and send the elevation as 180 - elevation, so the antenna is turned over instead of the rotator unwinding. Needs an elevation rotator that can swing to 180 degrees. South Init is ignored while this or a South stop point is used."
+msgstr "停止位置をまたぐパスでは、方位に180度を足し、仰角を「180 − 仰角」で送って、ローテーターを巻き戻す代わりにアンテナを裏返します。180度まで振れる仰角ローテーターが必要です。これ、または停止位置「南」を使っている間は、South Init は無視されます。"
+
+#: src/ui/rotator_dialog.py
+msgid "Use park position"
+msgstr "パーク位置を使う"
+
+#: src/ui/rotator_dialog.py
+msgid "Used by the Park button instead of the rotator's own park command."
+msgstr "ローテーター自身のパークコマンドの代わりに、Park ボタンで使います。"
+
+#: src/ui/rotator_dialog.py
+msgid "Park position:"
+msgstr "パーク位置:"
+
+#: src/ui/rotator_dialog.py
+msgid "Move to the next AOS"
+msgstr "次の AOS へ移動する"
+
+#: src/ui/rotator_dialog.py
+msgid "Wait at the park position"
+msgstr "パーク位置で待機する"
+
+#: src/ui/rotator_dialog.py
+msgid "After a pass:"
+msgstr "パス終了後:"
+
+#: src/ui/rotator_dialog.py
+msgid "Move to the park position on disconnect"
+msgstr "切断時にパーク位置へ移動する"
+
+#: src/ui/rotator_dialog.py
+msgid "NET mode: works only if rotctld is driving a Yaesu GS-232 family controller or ST-2 (elevation up to 180 degrees)."
+msgstr "NET モード: rotctld が Yaesu GS-232 系コントローラーまたは ST-2（仰角180度まで）を動かしている場合のみ使えます。"
+
+#: src/ui/rotator_dialog.py
+msgid "Available only for Yaesu GS-232 family controllers and the ST-2."
+msgstr "Yaesu GS-232 系コントローラーと ST-2 でのみ使えます。"
