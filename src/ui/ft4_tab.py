@@ -1763,7 +1763,7 @@ class Ft4Tab(QWidget):
         "own TX period" branch there), so this row can't be duplicated or
         contradicted by a (possibly corrupted) decode of our own TX window.
         """
-        utc_str = datetime.now(UTC).strftime("%H%M")
+        utc_str = datetime.now(UTC).strftime("%H%M%S")
         row = self._table.rowCount()
         self._table.insertRow(row)
         self._table.setItem(row, _COL_UTC, QTableWidgetItem(utc_str))
@@ -1788,7 +1788,7 @@ class Ft4Tab(QWidget):
         # around to clicking (GitHub Issue #16: replies were going out on
         # the same slot as the calling station).
         reply_is_even, _pos = Ft4Scheduler.current_slot_info()
-        utc_str = datetime.now(UTC).strftime("%H%M")
+        utc_str = datetime.now(UTC).strftime("%H%M%S")
         for msg in messages:
             row = self._table.rowCount()
             self._table.insertRow(row)
