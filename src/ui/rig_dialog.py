@@ -540,6 +540,10 @@ class _RigPanel(QWidget):
         is_direct = self._radio_direct.isChecked()
         self._direct_group.setVisible(is_direct and not is_sdr)
         self._net_group.setVisible(not is_direct and not is_sdr)
+        # The status line reports port scans and model search — Direct-mode
+        # matters that mean nothing once NET is selected.
+        if hasattr(self, "_status_label"):
+            self._status_label.setVisible(is_direct)
         # Gray out Hamlib-specific groups when SDR is selected
         for grp in (self._direct_group, self._net_group):
             grp.setEnabled(not is_sdr)

@@ -412,6 +412,9 @@ class RotatorSettingsDialog(QDialog):
         is_direct = self._radio_direct.isChecked()
         self._direct_group.setVisible(is_direct)
         self._net_group.setVisible(not is_direct)
+        # The status line reports port scans, model search and connection
+        # tests — all Direct-mode matters.
+        self._status_label.setVisible(is_direct)
         self._update_baud_test_visibility()
         self._update_flip_availability()
 
