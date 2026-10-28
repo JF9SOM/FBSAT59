@@ -269,6 +269,10 @@ class RotatorSettingsDialog(QDialog):
         self._flip_note = QLabel("")
         self._flip_note.setWordWrap(True)
         self._flip_note.setStyleSheet("color: gray;")
+        # A word-wrapped label in a form row is laid out for a single line,
+        # so a longer note overlapped the rows below; reserve three lines.
+        self._flip_note.setMinimumHeight(self._flip_note.fontMetrics().lineSpacing() * 3)
+        self._flip_note.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         pose_form.addRow(self._flip_note)
 
         self._park_cb = QCheckBox(_("Use park position"))
@@ -423,6 +427,7 @@ class RotatorSettingsDialog(QDialog):
         self._stop_combo.setEnabled(enabled)
         self._flip_cb.setEnabled(enabled)
         self._flip_note.setText(note)
+        self._flip_note.setVisible(bool(note))
         if not enabled:
             self._stop_combo.setCurrentIndex(max(self._stop_combo.findData("north"), 0))
             self._flip_cb.setChecked(False)
