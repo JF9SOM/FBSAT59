@@ -1787,8 +1787,12 @@ class Ft4Tab(QWidget):
         # not whatever period happens to be current when the operator gets
         # around to clicking (GitHub Issue #16: replies were going out on
         # the same slot as the calling station).
-        reply_is_even, _pos = Ft4Scheduler.current_slot_info()
-        utc_str = datetime.now(UTC).strftime("%H%M%S")
+        reply_is_even, pos = Ft4Scheduler.current_slot_info()
+        # Show the start of the period the audio was received in (as WSJT-X
+        # does), not the moment decoding finished -- that is already the next
+        # period's boundary and would equal our own TX row's time.
+        slot_start = datetime.fromtimestamp(corrected_time() - pos - FT4_PERIOD + 0.05, UTC)
+        utc_str = slot_start.strftime("%H%M%S")
         for msg in messages:
             row = self._table.rowCount()
             self._table.insertRow(row)
