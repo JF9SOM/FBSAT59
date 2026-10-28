@@ -3569,6 +3569,113 @@ class TestHamlibRotatorController:
         assert ctrl._catching_up is True  # fresh initial jump entered
         assert ctrl._last_az == pytest.approx(78.0)
 
+    # -- stop point (seam), flip and park ------------------------------- #
+
+    @staticmethod
+    def _p_sent(ctrl: HamlibRotatorController) -> list[bytes]:
+        return [
+            c.args[0]
+            for c in ctrl._sock.sendall.call_args_list  # type: ignore[union-attr]
+            if c.args[0].startswith(b"P ")
+        ]
+
+    def test_default_frame_is_identity(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl._send_p(359.5, 12.0)
+        assert self._p_sent(ctrl) == [b"P 359.5 12.0\n"]
+
+    def test_south_stop_frame_converts_to_wire_and_back(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl.set_frame(180.0, False)
+        ctrl._send_p(10.0, 20.0)
+        assert self._p_sent(ctrl) == [b"P 190.0 20.0\n"]
+        # The rotator reports wire azimuth 190 -> controller frame 10.
+        ctrl._sock.recv.return_value = b"190.0\n20.0\nRPRT 0\n"  # type: ignore[union-attr]
+        state = ctrl.get_position()
+        assert state.azimuth_deg == pytest.approx(10.0)
+        assert state.elevation_deg == pytest.approx(20.0)
+        assert state.flipped is False
+
+    def test_flip_sends_reversed_elevation_and_reads_back_true_elevation(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl.set_frame(180.0, True)
+        ctrl.set_flip(True)
+        ctrl._send_p(150.0, 30.0)
+        # Controller-frame azimuth 150 on a south stop is wire azimuth 330;
+        # the flipped pose sends elevation 180 - 30.
+        assert self._p_sent(ctrl) == [b"P 330.0 150.0\n"]
+        ctrl._sock.recv.return_value = b"330.0\n150.0\nRPRT 0\n"  # type: ignore[union-attr]
+        state = ctrl.get_position()
+        assert state.azimuth_deg == pytest.approx(150.0)
+        assert state.elevation_deg == pytest.approx(30.0)
+        assert state.flipped is True
+
+    def test_flip_ignored_when_not_flip_capable(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl.set_flip(True)
+        ctrl._send_p(100.0, 30.0)
+        assert self._p_sent(ctrl) == [b"P 100.0 30.0\n"]
+
+    def test_goto_never_flips(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl.set_frame(0.0, True)
+        ctrl.set_flip(True)
+        assert ctrl.goto(90.0, 15.0)
+        assert self._p_sent(ctrl) == [b"P 90.0 15.0\n"]
+
+    def test_park_goes_to_configured_position(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl.set_park((0.0, 5.0))
+        assert ctrl.park()
+        assert self._p_sent(ctrl) == [b"P 0.0 5.0\n"]
+        # Not the rotator's own park command.
+        sent = [c.args[0] for c in ctrl._sock.sendall.call_args_list]  # type: ignore[union-attr]
+        assert b"K\n" not in sent
+
+    def test_park_after_pass_waits_at_park_position_at_los(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl.set_park((300.0, 0.0), after_pass=True)
+        ctrl.set_next_aos_predictor(lambda: 77.0)
+        ctrl._last_az = 120.0
+        ctrl._catching_up = False
+        assert ctrl.set_position(121.0, -1.0) is True  # LOS
+        assert self._p_sent(ctrl) == [b"P 300.0 0.0\n"]
+        assert ctrl._awaiting_aos is True
+
+    def test_park_after_pass_off_still_goes_to_next_aos(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl.set_park((300.0, 0.0), after_pass=False)
+        ctrl.set_next_aos_predictor(lambda: 77.0)
+        ctrl._last_az = 120.0
+        ctrl._catching_up = False
+        assert ctrl.set_position(121.0, -1.0) is True
+        assert self._p_sent(ctrl) == [b"P 77.0 0.0\n"]
+
+    def test_park_after_pass_ignores_flip_for_the_park_pose(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl.set_frame(0.0, True)
+        ctrl.set_flip(True)  # next pass is flipped
+        ctrl.set_park((300.0, 0.0), after_pass=True)
+        ctrl._last_az = 120.0
+        ctrl._catching_up = False
+        assert ctrl.set_position(121.0, -1.0) is True
+        assert self._p_sent(ctrl) == [b"P 300.0 0.0\n"]
+
+    def test_disconnect_moves_to_park_when_enabled(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl.set_park((0.0, 0.0), on_disconnect=True)
+        sock = ctrl._sock
+        ctrl.disconnect()
+        sent = [c.args[0] for c in sock.sendall.call_args_list]  # type: ignore[union-attr]
+        assert sent == [b"P 0.0 0.0\n"]
+
+    def test_disconnect_without_park_on_disconnect_sends_nothing(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl.set_park((0.0, 0.0), on_disconnect=False)
+        sock = ctrl._sock
+        ctrl.disconnect()
+        sock.sendall.assert_not_called()  # type: ignore[union-attr]
+
 
 class _FakeHamlibRot:
     """Stand-in for a Hamlib Rot handle.

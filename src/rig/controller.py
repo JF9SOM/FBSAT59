@@ -405,6 +405,10 @@ class RotatorState:
     azimuth_deg: float = 0.0
     elevation_deg: float = 0.0
     is_moving: bool = False
+    # True when the antenna is in the flipped pose (elevation > 90 deg on the
+    # wire, see RotatorController.set_flip()). azimuth_deg is then expressed
+    # in the controller's own frame, not the real-world bearing.
+    flipped: bool = False
 
 
 @dataclass
@@ -5569,6 +5573,64 @@ class RotatorController(ABC):
         # isinstance check; subclasses without this behavior simply never
         # read it.
         self._next_aos_predictor: Callable[[], float | None] | None = None
+        # Rotator frame. All the catch-up / wrap logic treats azimuth 0/360
+        # as the point the rotator cannot cross without unwinding. A rotator
+        # whose mechanical stop is elsewhere (e.g. a south-stop rotator, stop
+        # at 180) sets _seam_cmd_az so that this controller's own azimuth
+        # ("u") is measured from the stop: u = (wire azimuth - seam) mod 360.
+        # With the default seam of 0 every conversion is the identity, so
+        # ordinary rotators behave exactly as before.
+        self._seam_cmd_az: float = 0.0
+        # True when the elevation axis can swing to 180 deg so the antenna can
+        # be flipped over (az + 180, el -> 180 - el). See set_flip().
+        self._flip_capable: bool = False
+        self._flip: bool = False
+        # Park position as (u azimuth, elevation), or None for the rotator's
+        # own park command. See set_park().
+        self._park_target: tuple[float, float] | None = None
+        self._park_after_pass: bool = False
+        self._park_on_disconnect: bool = False
+
+    def set_frame(self, seam_cmd_az: float, flip_capable: bool) -> None:
+        """Declare where the rotator's mechanical stop is and whether it can flip."""
+        self._seam_cmd_az = seam_cmd_az % 360.0
+        self._flip_capable = flip_capable
+
+    def set_flip(self, flip: bool) -> None:
+        """Select the pose used for the following commands (flipped = az + 180,
+        elevation sent as 180 - el). Has no effect unless set_frame() declared
+        the rotator flip-capable."""
+        self._flip = flip
+
+    def set_park(
+        self,
+        target: tuple[float, float] | None,
+        *,
+        after_pass: bool = False,
+        on_disconnect: bool = False,
+    ) -> None:
+        """Configure the park position (u azimuth, elevation) or None to use the
+        rotator's own park command. after_pass: wait there between passes
+        instead of pre-positioning at the next AOS. on_disconnect: move there
+        before the connection is closed."""
+        self._park_target = target
+        self._park_after_pass = after_pass
+        self._park_on_disconnect = on_disconnect
+
+    def _to_wire(self, az_u: float, el: float, flip: bool | None = None) -> tuple[float, float]:
+        """Convert a controller-frame (azimuth, true elevation) to wire values."""
+        use_flip = self._flip if flip is None else flip
+        az = az_u if self._seam_cmd_az == 0.0 else (az_u + self._seam_cmd_az) % 360.0
+        if use_flip and self._flip_capable:
+            return az, 180.0 - el
+        return az, el
+
+    def _from_wire(self, az: float, el: float) -> tuple[float, float, bool]:
+        """Inverse of _to_wire(): returns (u azimuth, true elevation, flipped)."""
+        az_u = az if self._seam_cmd_az == 0.0 else (az - self._seam_cmd_az) % 360.0
+        if self._flip_capable and el > 90.0:
+            return az_u, 180.0 - el, True
+        return az_u, el, False
 
     def set_predictor(
         self, predictor: Callable[[float], tuple[float, float] | None] | None
@@ -5633,6 +5695,7 @@ class RotatorController(ABC):
                 azimuth_deg=self._rotor_state.azimuth_deg,
                 elevation_deg=self._rotor_state.elevation_deg,
                 is_moving=self._rotor_state.is_moving,
+                flipped=self._rotor_state.flipped,
             )
 
     @abstractmethod
@@ -5895,6 +5958,14 @@ class HamlibRotatorController(RotatorController):
     def disconnect(self) -> None:
         """Disconnect the rotator."""
         with self._io_lock:
+            if self._park_on_disconnect and self._park_target is not None and self.is_connected:
+                # Leave the antenna at the park position; the rotator keeps
+                # moving by itself once the command has been accepted.
+                try:
+                    self._send_p(*self._park_target, flip=False)
+                    logger.info("Rotator: moving to park position before disconnect")
+                except Exception as exc:
+                    logger.warning("Rotator: park before disconnect failed: %s", exc)
             try:
                 if self._net_mode and self._sock:
                     self._sock.close()
@@ -5966,12 +6037,17 @@ class HamlibRotatorController(RotatorController):
                     return int(line.split()[1]) < 0
         return False
 
-    def _send_p(self, az: float, el: float) -> None:
-        """Send the P command and check its outcome (NET: RPRT reply; Direct: error_status)."""
+    def _send_p(self, az: float, el: float, flip: bool | None = None) -> None:
+        """Send the P command and check its outcome (NET: RPRT reply; Direct: error_status).
+
+        az/el are in the controller frame (see set_frame()); flip overrides the
+        pose chosen with set_flip() for this one command.
+        """
+        wire_az, wire_el = self._to_wire(az, el, flip)
         with self._io_lock:
             if self._net_mode and self._sock:
                 try:
-                    self._sock.sendall(f"P {az:.1f} {el:.1f}\n".encode())
+                    self._sock.sendall(f"P {wire_az:.1f} {wire_el:.1f}\n".encode())
                 except OSError:
                     self._record_io_result(False, "P command")
                     raise
@@ -5982,16 +6058,19 @@ class HamlibRotatorController(RotatorController):
                     reply = self._sock.recv(256).decode(errors="replace")
                     failed = reply == "" or self._rprt_failed(reply)
                 if failed:
-                    logger.warning("Rotator: P %.1f %.1f rejected, reply=%r", az, el, reply)
+                    logger.warning(
+                        "Rotator: P %.1f %.1f rejected, reply=%r", wire_az, wire_el, reply
+                    )
                 self._record_io_result(not failed, "P command")
             elif self._rot is not None:
-                self._rot.set_position(az, el)
+                self._rot.set_position(wire_az, wire_el)
                 status = getattr(self._rot, "error_status", 0)
                 self._record_io_result(status == 0, f"set_position (Hamlib error {status})")
             with self._lock:
                 self._rotor_state.azimuth_deg = az
                 self._rotor_state.elevation_deg = el
                 self._rotor_state.is_moving = True
+                self._rotor_state.flipped = wire_el != el
 
     def _sane_origin_az(self, raw_az: float) -> float:
         """Treat an out-of-[0, 360) azimuth reading as the rotator's home position.
@@ -6046,17 +6125,25 @@ class HamlibRotatorController(RotatorController):
         registered or it couldn't produce an azimuth — the caller should
         fall back to its pre-existing behavior.
         """
-        if self._next_aos_predictor is None:
-            return False
-        try:
-            next_az = self._next_aos_predictor()
-        except Exception as exc:
-            logger.error("Rotator: next-AOS prediction failed: %s", exc)
-            return False
-        if next_az is None:
-            return False
+        park_wait = self._park_after_pass and self._park_target is not None
+        wait_el = 0.0
+        if park_wait and self._park_target is not None:
+            # Operator chose to wait at the park position between passes
+            # instead of pre-positioning at the next AOS.
+            next_az, wait_el = self._park_target
+        else:
+            if self._next_aos_predictor is None:
+                return False
+            try:
+                predicted_az = self._next_aos_predictor()
+            except Exception as exc:
+                logger.error("Rotator: next-AOS prediction failed: %s", exc)
+                return False
+            if predicted_az is None:
+                return False
+            next_az = predicted_az
 
-        self._send_p(next_az, 0.0)
+        self._send_p(next_az, wait_el, flip=False if park_wait else None)
         self._catching_up = True
         self._awaiting_aos = True
         self._catch_up_wrap_origin_az = None
@@ -6070,7 +6157,8 @@ class HamlibRotatorController(RotatorController):
             origin_az < 90 and next_az > 270
         )
         logger.info(
-            "Rotator: target below horizon, moving to next AOS az=%.1f (origin=%.1f)",
+            "Rotator: target below horizon, moving to %s az=%.1f (origin=%.1f)",
+            "park position" if park_wait else "next AOS",
             next_az,
             origin_az,
         )
@@ -6628,7 +6716,8 @@ class HamlibRotatorController(RotatorController):
         try:
             with self._io_lock:
                 el_cmd = max(0.0, min(90.0, elevation_deg))
-                self._send_p(azimuth_deg, el_cmd)
+                # Manual moves always use the normal (unflipped) pose.
+                self._send_p(azimuth_deg, el_cmd, flip=False)
                 self._last_az = None
                 self._catching_up = False
                 self._awaiting_aos = False
@@ -6658,9 +6747,11 @@ class HamlibRotatorController(RotatorController):
                             with contextlib.suppress(ValueError):
                                 values.append(float(line))
                     if len(values) >= 2:
+                        az_u, el_true, flipped = self._from_wire(values[0], values[1])
                         with self._lock:
-                            self._rotor_state.azimuth_deg = values[0]
-                            self._rotor_state.elevation_deg = values[1]
+                            self._rotor_state.azimuth_deg = az_u
+                            self._rotor_state.elevation_deg = el_true
+                            self._rotor_state.flipped = flipped
                         self._record_io_result(True, "get_position")
                     else:
                         # Empty reply (socket closed) or "RPRT <error>".
@@ -6672,9 +6763,11 @@ class HamlibRotatorController(RotatorController):
                     # tells them apart, so never publish a failed reading.
                     status = getattr(self._rot, "error_status", 0)
                     if status == 0:
+                        az_u, el_true, flipped = self._from_wire(float(az), float(el))
                         with self._lock:
-                            self._rotor_state.azimuth_deg = float(az)
-                            self._rotor_state.elevation_deg = float(el)
+                            self._rotor_state.azimuth_deg = az_u
+                            self._rotor_state.elevation_deg = el_true
+                            self._rotor_state.flipped = flipped
                         self._record_io_result(True, "get_position")
                     else:
                         self._record_io_result(False, f"get_position (Hamlib error {status})")
@@ -6687,6 +6780,7 @@ class HamlibRotatorController(RotatorController):
                     azimuth_deg=self._rotor_state.azimuth_deg,
                     elevation_deg=self._rotor_state.elevation_deg,
                     is_moving=self._rotor_state.is_moving,
+                    flipped=self._rotor_state.flipped,
                 )
 
     def stop(self) -> bool:
@@ -6707,9 +6801,18 @@ class HamlibRotatorController(RotatorController):
             return False
 
     def park(self) -> bool:
-        """Return to the home position (rotctld: K command)."""
+        """Return to the home position.
+
+        With a park position configured (see set_park()) this moves there with
+        an ordinary position command, which works on every rotator — many
+        backends (e.g. GS-232 / ST-2) do not implement Hamlib's own park and
+        fail silently. Otherwise falls back to the rotator's own park
+        (rotctld: K command).
+        """
         if not self.is_connected:
             return False
+        if self._park_target is not None:
+            return self.goto(*self._park_target)
         try:
             with self._io_lock:
                 if self._net_mode and self._sock:

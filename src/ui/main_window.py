@@ -73,12 +73,14 @@ from core.engine import (
     TERRESTRIAL_IDS,
     DopplerCalculator,
     Observation,
+    PassInfo,
     PassPredictor,
     SatelliteEngine,
 )
 from core.location import LocationManager
 from core.notifier import PassNotifier
 from core.ntp_check import check_system_clock
+from core.rotator_frame import path_crosses_azimuth, to_bearing, to_frame_az
 from data import favorites as favorites_db
 from data.amsat_status import AMSATStatusFetcher
 from data.amsat_upcoming import AMSATUpcomingFetcher
@@ -99,6 +101,7 @@ from rig.controller import (
     RigController,
     RigState,
     RotatorController,
+    RotatorState,
     normalize_civ_addr,
     release_superseded_direct,
     select_tx_rig,
@@ -999,6 +1002,21 @@ class MainWindow(QMainWindow):
         self._rot_busy_lock = threading.Lock()
         # When True, AZ sent to the rotator is offset by 180° (south-initialized rotator).
         self._rotator_south_init: bool = False
+        # Rotator frame (Rotator Settings > Stop point / Auto flip). The
+        # azimuth the rotator cannot cross without unwinding (0 = north stop,
+        # 180 = south stop) and whether passes crossing it are flown with the
+        # antenna flipped over (az + 180, elevation 180 - el). While either is
+        # active, South Init is ignored. See _rot_az() / _rot_flip_for().
+        self._rot_seam_az: float = 0.0
+        self._rot_auto_flip: bool = False
+        # (norad, pass, flip) of the pass the rotator is currently working
+        # towards (the one in progress, or the next one) — cached because
+        # finding it and sampling its path is far too heavy to repeat every
+        # tracking cycle. Touched from the rotator worker threads.
+        self._rot_flip_lock = threading.Lock()
+        self._rot_flip_cache: tuple[int, PassInfo, bool] | None = None
+        # Last-loaded rotator_settings (park / stop point / flip options).
+        self._rot_park_settings: dict[str, Any] = {}
         # When True, the operator is manually pointing the rotator (Radio
         # Control > Manual > Go/Park). Satellite tracking is suspended until
         # Resume Tracking, a satellite change, or Autotrack AOS (GitHub
@@ -5352,7 +5370,10 @@ class MainWindow(QMainWindow):
         # _apply_south_offset() call) — apply the same transform here so the
         # predicted azimuth is expressed in the same coordinate system the
         # az-diff comparison inside _lead_target() uses.
-        return self._apply_south_offset(obs.azimuth_deg), obs.elevation_deg
+        return (
+            self._rot_az(obs.azimuth_deg, self._rot_flip_cached(self._selected_norad)),
+            obs.elevation_deg,
+        )
 
     def _predict_next_aos_az(self) -> float | None:
         """Return the AZ (south-offset-adjusted) of the next AOS for the
@@ -5390,7 +5411,11 @@ class MainWindow(QMainWindow):
             return None
         if not passes:
             return None
-        return self._apply_south_offset(passes[0].aos_azimuth_deg)
+        next_pass = passes[0]
+        return self._rot_az(
+            next_pass.aos_azimuth_deg,
+            self._rot_flip_for_pass(self._selected_norad, next_pass),
+        )
 
     def _send_to_rotator(self, obs: Observation | None) -> None:
         """Send AZ/EL from obs to the rotator in a background thread (non-blocking)."""
@@ -5407,8 +5432,7 @@ class MainWindow(QMainWindow):
 
                 def _rot_poll() -> None:
                     try:
-                        pos = rot.get_position()
-                        self._rot_pos_updated.emit(pos.azimuth_deg, pos.elevation_deg)
+                        self._emit_rot_pos(rot.get_position())
                     except Exception as exc:
                         logger.error("Rotator: manual-hold poll error: %s", exc)
                     finally:
@@ -5424,21 +5448,29 @@ class MainWindow(QMainWindow):
         ):
             if self._rot_busy_lock.acquire(blocking=False):
                 rot = self._rotator_controller
-                az = self._apply_south_offset(obs.azimuth_deg)
+                norad = self._selected_norad
+                bearing = obs.azimuth_deg
                 el = obs.elevation_deg
 
                 def _rot_send() -> None:
                     try:
+                        # Decided here, off the UI thread: the first call for
+                        # a pass has to find it and sample its path.
+                        flip = self._rot_flip_for(norad, el > 0.0)
+                        rot.set_flip(flip)
+                        az = self._rot_az(bearing, flip)
                         rot.set_position(az, el)
                         pos = rot.get_position()
                         logger.info(
-                            "Rotator: set position az=%.1f el=%.1f (actual az=%.1f el=%.1f)",
+                            "Rotator: set position az=%.1f el=%.1f flip=%s "
+                            "(actual az=%.1f el=%.1f)",
                             az,
                             el,
+                            flip,
                             pos.azimuth_deg,
                             pos.elevation_deg,
                         )
-                        self._rot_pos_updated.emit(pos.azimuth_deg, pos.elevation_deg)
+                        self._emit_rot_pos(pos)
                     except Exception as exc:
                         logger.error("Rotator: set_position error: %s", exc)
                     finally:
@@ -5453,7 +5485,13 @@ class MainWindow(QMainWindow):
 
     def _on_rotator_pos_updated(self, rot_az: float, rot_el: float) -> None:
         """Update the radar rotator marker with the actual rotator position (UI thread)."""
-        display_az = (rot_az - 180.0) % 360.0 if self._rotator_south_init else rot_az
+        # In the flip/stop-point frame the position has already been converted
+        # back to a real-world bearing by _emit_rot_pos().
+        display_az = (
+            (rot_az - 180.0) % 360.0
+            if self._rotator_south_init and not self._rot_frame_active()
+            else rot_az
+        )
         self._radar_view.set_rotator_position(display_az, rot_el)
         self._dashboard_view._radar.set_rotator_position(display_az, rot_el)
         # Feed the real-world bearing to the manual AZ/EL spin boxes so they
@@ -8845,6 +8883,14 @@ class MainWindow(QMainWindow):
             self._rotator_controller.set_next_aos_predictor(self._predict_next_aos_az)
             self._rotator_controller.set_assumed_slew_speed(self._load_rotator_slew_speed_setting())
             self._rotator_controller.set_slew_speed_observer(self._on_rotator_slew_speed_measured)
+            self._rot_seam_az = (
+                180.0 if str(settings.get("stop_point", "north")) == "south" else 0.0
+            )
+            self._rot_auto_flip = bool(settings.get("auto_flip", False))
+            with self._rot_flip_lock:
+                self._rot_flip_cache = None
+            self._rotator_controller.set_frame(self._rot_seam_az, self._rot_auto_flip)
+            self._rot_park_settings = settings
             self._radio_control.set_rotator(self._rotator_controller)
             self._update_rot_label()
         except Exception as exc:
@@ -8858,6 +8904,32 @@ class MainWindow(QMainWindow):
             self._radio_control.set_south_init(checked)
         except Exception as exc:
             logger.warning("Failed to load rotator_south_init: %s", exc)
+        self._apply_rotator_park()
+
+    def _apply_rotator_park(self) -> None:
+        """Hand the park settings (Rotator Settings > Park) to the controller.
+
+        The park position is entered as a real-world bearing; converted here
+        because the conversion depends on South Init and the stop point.
+        """
+        rot = self._rotator_controller
+        if rot is None:
+            return
+        s = self._rot_park_settings
+        if not s.get("park_enabled"):
+            rot.set_park(None)
+            return
+        try:
+            park_az = float(s.get("park_az", 0.0))
+            park_el = float(s.get("park_el", 0.0))
+        except (TypeError, ValueError):
+            rot.set_park(None)
+            return
+        rot.set_park(
+            (self._rot_az(park_az), max(0.0, min(90.0, park_el))),
+            after_pass=str(s.get("after_pass", "next_aos")) == "park",
+            on_disconnect=bool(s.get("park_on_disconnect", False)),
+        )
 
     def _run_rotator_op(self, fn: Callable[[RotatorController], object]) -> None:
         """Run a one-shot rotator command in a background thread, guarded by
@@ -8874,8 +8946,7 @@ class MainWindow(QMainWindow):
         def _worker() -> None:
             try:
                 fn(rot)
-                pos = rot.get_position()
-                self._rot_pos_updated.emit(pos.azimuth_deg, pos.elevation_deg)
+                self._emit_rot_pos(rot.get_position())
             except Exception as exc:
                 logger.error("Rotator op error: %s", exc)
             finally:
@@ -8886,7 +8957,7 @@ class MainWindow(QMainWindow):
     def _on_rotator_manual_goto(self, az_deg: float, el_deg: float) -> None:
         """Manual rotator move to an operator-chosen real-world bearing."""
         self._rotator_manual_hold = True
-        send_az = self._apply_south_offset(az_deg)
+        send_az = self._rot_az(az_deg)
         self._run_rotator_op(lambda rot: rot.goto(send_az, el_deg))
         self._update_rot_label()
 
@@ -8932,9 +9003,16 @@ class MainWindow(QMainWindow):
             obs = self._engine.observe(self._selected_norad)
 
         if obs is not None:
-            az = self._apply_south_offset(obs.azimuth_deg)
+            norad = self._selected_norad
+            bearing = obs.azimuth_deg
             el = obs.elevation_deg
-            self._run_rotator_op(lambda rot: rot.set_position(az, el))
+
+            def _initial_jump(rot: RotatorController) -> None:
+                flip = self._rot_flip_for(norad, el > 0.0)
+                rot.set_flip(flip)
+                rot.set_position(self._rot_az(bearing, flip), el)
+
+            self._run_rotator_op(_initial_jump)
         else:
             # No satellite selected yet: just refresh the radar marker with the
             # rotator's real position (_run_rotator_op polls get_position after fn).
@@ -8948,6 +9026,105 @@ class MainWindow(QMainWindow):
             return az
         return (az + 180) % 360
 
+    # ------------------------------------------------------------------ #
+    # Rotator frame: stop point and auto flip
+    # ------------------------------------------------------------------ #
+
+    def _rot_frame_active(self) -> bool:
+        """True when the stop point is not north or auto flip is on."""
+        return self._rot_seam_az != 0.0 or self._rot_auto_flip
+
+    def _rot_az(self, bearing_deg: float, flip: bool = False) -> float:
+        """Real-world bearing -> azimuth in the rotator controller's frame.
+
+        The controller measures azimuth from the rotator's mechanical stop, so
+        that its unwind handling applies there. A flipped pose points the
+        antenna backwards, which the rotator reaches by turning 180 degrees
+        further. Without a frame this is just the South Init offset.
+        """
+        if not self._rot_frame_active():
+            return self._apply_south_offset(bearing_deg)
+        return to_frame_az(bearing_deg, flip, self._rot_seam_az)
+
+    def _emit_rot_pos(self, pos: RotatorState) -> None:
+        """Publish the rotator's actual position as a real-world bearing."""
+        az = pos.azimuth_deg
+        if self._rot_frame_active():
+            az = to_bearing(az, pos.flipped, self._rot_seam_az)
+        self._rot_pos_updated.emit(az, pos.elevation_deg)
+
+    def _pass_crosses_stop(self, norad: int, p: PassInfo) -> bool:
+        """Whether the pass's azimuth path goes through the rotator's stop point."""
+        if self._engine is None:
+            return False
+        steps = 16
+        span = (p.los - p.aos) / steps
+        azimuths: list[float] = []
+        for i in range(steps + 1):
+            obs = self._engine.observe(norad, at=p.aos + span * i)
+            if obs is None:
+                return False
+            azimuths.append(obs.azimuth_deg)
+        return path_crosses_azimuth(azimuths, self._rot_seam_az)
+
+    def _rot_flip_for_pass(self, norad: int | None, p: PassInfo) -> bool:
+        """Whether this pass is flown flipped (cached per pass)."""
+        if not self._rot_auto_flip or norad is None or norad == MOON_ID:
+            return False
+        with self._rot_flip_lock:
+            cached = self._rot_flip_cache
+        if cached is not None and cached[0] == norad and cached[1].aos == p.aos:
+            return cached[2]
+        flip = self._pass_crosses_stop(norad, p)
+        with self._rot_flip_lock:
+            self._rot_flip_cache = (norad, p, flip)
+        if flip:
+            logger.info("Rotator: pass %s crosses the stop point — flipping", p.aos)
+        return flip
+
+    def _rot_flip_cached(self, norad: int | None) -> bool:
+        """Flip decision already made for the pass being tracked (no computation)."""
+        with self._rot_flip_lock:
+            cached = self._rot_flip_cache
+        return cached is not None and cached[0] == norad and cached[2]
+
+    def _rot_flip_for(self, norad: int | None, above_horizon: bool) -> bool:
+        """Whether the pass being tracked — the one in progress, or the next one
+        while the satellite is below the horizon — is flown flipped."""
+        if (
+            not self._rot_auto_flip
+            or norad is None
+            or norad == MOON_ID
+            or self._pass_predictor is None
+        ):
+            return False
+        now = datetime.now(UTC)
+        with self._rot_flip_lock:
+            cached = self._rot_flip_cache
+        # In progress needs a pass that has started; otherwise a pass that has
+        # not yet started (not the one that just ended).
+        if (
+            cached is not None
+            and cached[0] == norad
+            and now <= cached[1].los
+            and (cached[1].aos <= now) == above_horizon
+        ):
+            return cached[2]
+        try:
+            if above_horizon:
+                p = self._pass_predictor.get_current_pass(norad, now)
+            else:
+                upcoming = self._pass_predictor.get_passes(
+                    norad, now, now + timedelta(hours=24), min_elevation_deg=0.0
+                )
+                p = upcoming[0] if upcoming else None
+        except Exception as exc:
+            logger.error("Rotator: flip pass search failed: %s", exc)
+            return False
+        if p is None:
+            return False
+        return self._rot_flip_for_pass(norad, p)
+
     def _on_south_init_changed(self, checked: bool) -> None:
         """Update state and persist south_init setting when the checkbox is toggled."""
         self._rotator_south_init = checked
@@ -8959,6 +9136,7 @@ class MainWindow(QMainWindow):
             self._conn.commit()
         except Exception as exc:
             logger.warning("Failed to save rotator_south_init: %s", exc)
+        self._apply_rotator_park()
 
     def _update_rot_label(self) -> None:
         """Update the ROT label in the status bar."""

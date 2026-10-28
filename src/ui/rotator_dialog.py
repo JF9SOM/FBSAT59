@@ -15,9 +15,11 @@ from typing import Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -231,6 +233,65 @@ class RotatorSettingsDialog(QDialog):
         layout.addWidget(self._net_group)
         self._net_group.setVisible(False)
 
+        # --- Antenna pose and park position ---
+        self._pose_group = QGroupBox(_("Stop Point / Flip / Park"))
+        pose_form = QFormLayout(self._pose_group)
+
+        self._stop_combo = QComboBox()
+        self._stop_combo.addItem(_("North"), "north")
+        self._stop_combo.addItem(_("South"), "south")
+        self._stop_combo.setToolTip(
+            _(
+                "Where the rotator's mechanical stop is. Choose South for a rotator that "
+                "turns through north without unwinding (north in the middle of its range)."
+            )
+        )
+        pose_form.addRow(_("Rotator stop point:"), self._stop_combo)
+
+        self._flip_cb = QCheckBox(_("Auto flip for passes crossing the stop point"))
+        self._flip_cb.setToolTip(
+            _(
+                "For a pass that crosses the stop point, add 180 degrees to the azimuth and "
+                "send the elevation as 180 - elevation, so the antenna is turned over instead "
+                "of the rotator unwinding. Needs an elevation rotator that can swing to 180 "
+                "degrees. South Init is ignored while this or a South stop point is used."
+            )
+        )
+        pose_form.addRow(self._flip_cb)
+
+        self._park_cb = QCheckBox(_("Use park position"))
+        self._park_cb.setToolTip(
+            _("Used by the Park button instead of the rotator's own park command.")
+        )
+        pose_form.addRow(self._park_cb)
+
+        park_row = QWidget()
+        park_layout = QHBoxLayout(park_row)
+        park_layout.setContentsMargins(0, 0, 0, 0)
+        self._park_az_spin = QDoubleSpinBox()
+        self._park_az_spin.setRange(0.0, 360.0)
+        self._park_az_spin.setDecimals(1)
+        self._park_el_spin = QDoubleSpinBox()
+        self._park_el_spin.setRange(0.0, 90.0)
+        self._park_el_spin.setDecimals(1)
+        park_layout.addWidget(QLabel(_("AZ:")))
+        park_layout.addWidget(self._park_az_spin)
+        park_layout.addWidget(QLabel(_("EL:")))
+        park_layout.addWidget(self._park_el_spin)
+        pose_form.addRow(_("Park position:"), park_row)
+
+        self._after_pass_combo = QComboBox()
+        self._after_pass_combo.addItem(_("Move to the next AOS"), "next_aos")
+        self._after_pass_combo.addItem(_("Wait at the park position"), "park")
+        pose_form.addRow(_("After a pass:"), self._after_pass_combo)
+
+        self._park_on_disconnect_cb = QCheckBox(_("Move to the park position on disconnect"))
+        pose_form.addRow(self._park_on_disconnect_cb)
+
+        self._park_cb.toggled.connect(self._on_park_toggled)
+        self._on_park_toggled(False)
+        layout.addWidget(self._pose_group)
+
         # --- Status + Hamlib version / update link ---
         self._status_label = QLabel("")
         self._status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -305,6 +366,16 @@ class RotatorSettingsDialog(QDialog):
     # ------------------------------------------------------------------ #
     # Port scan / mode toggle
     # ------------------------------------------------------------------ #
+
+    def _on_park_toggled(self, checked: bool) -> None:
+        """Park position fields only matter while the park position is in use."""
+        for w in (
+            self._park_az_spin,
+            self._park_el_spin,
+            self._after_pass_combo,
+            self._park_on_disconnect_cb,
+        ):
+            w.setEnabled(checked)
 
     def _on_mode_toggled(self, _checked: bool) -> None:
         is_direct = self._radio_direct.isChecked()
@@ -458,6 +529,17 @@ class RotatorSettingsDialog(QDialog):
         self._host_edit.setText(str(s.get("host", "localhost")))
         self._net_port_spin.setValue(int(s.get("net_port", 4533)))
 
+        idx = self._stop_combo.findData(str(s.get("stop_point", "north")))
+        self._stop_combo.setCurrentIndex(max(idx, 0))
+        self._flip_cb.setChecked(bool(s.get("auto_flip", False)))
+        self._park_cb.setChecked(bool(s.get("park_enabled", False)))
+        with contextlib.suppress(TypeError, ValueError):
+            self._park_az_spin.setValue(float(s.get("park_az", 0.0)))
+            self._park_el_spin.setValue(float(s.get("park_el", 0.0)))
+        idx = self._after_pass_combo.findData(str(s.get("after_pass", "next_aos")))
+        self._after_pass_combo.setCurrentIndex(max(idx, 0))
+        self._park_on_disconnect_cb.setChecked(bool(s.get("park_on_disconnect", False)))
+
     def _save_settings(self) -> None:
         """Save rotator settings to the database."""
         model_id: int = self._model_combo.currentData() or 1
@@ -468,6 +550,13 @@ class RotatorSettingsDialog(QDialog):
             "model_id": model_id,
             "host": self._host_edit.text(),
             "net_port": self._net_port_spin.value(),
+            "stop_point": self._stop_combo.currentData() or "north",
+            "auto_flip": self._flip_cb.isChecked(),
+            "park_enabled": self._park_cb.isChecked(),
+            "park_az": self._park_az_spin.value(),
+            "park_el": self._park_el_spin.value(),
+            "after_pass": self._after_pass_combo.currentData() or "next_aos",
+            "park_on_disconnect": self._park_on_disconnect_cb.isChecked(),
         }
         if hasattr(self._conn, "execute"):
             self._conn.execute(
