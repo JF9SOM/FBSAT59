@@ -8214,3 +8214,7 @@ msgstr "このモデルの最大仰角は{n}度であるため、フリップモ
 #: src/ui/rotator_dialog.py
 msgid "Available only for Yaesu GS-232 family controllers and the ST-2."
 msgstr "Yaesu GS-232 系コントローラーと ST-2 でのみ使えます。"
+
+#: src/ui/rotator_dialog.py
+msgid "Use this for a rotator whose maximum elevation is 90 degrees, when a pass crosses north."
+msgstr "最大仰角が90度のローテーターで北跨ぎのパスの場合に使用して下さい。"

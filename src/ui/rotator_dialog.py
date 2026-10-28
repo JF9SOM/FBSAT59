@@ -176,6 +176,7 @@ class RotatorSettingsDialog(QDialog):
         self._setup_ui()
         self._load_models()
         self._load_settings()
+        self._load_south_init()
         self._on_scan_ports()
         self._update_baud_test_visibility()
 
@@ -289,6 +290,29 @@ class RotatorSettingsDialog(QDialog):
         self._flip_note.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         pose_form.addRow(self._flip_note)
 
+        self._south_init_cb = QCheckBox(_("South Init"))
+        self._south_init_cb.setToolTip(
+            _(
+                "Rotator starts facing south (180°). "
+                "AZ is offset by 180° so the 0/360° wrap is avoided."
+            )
+        )
+        pose_form.addRow(self._south_init_cb)
+
+        self._south_init_note = QLabel(
+            _(
+                "Use this for a rotator whose maximum elevation is 90 degrees, "
+                "when a pass crosses north."
+            )
+        )
+        self._south_init_note.setWordWrap(True)
+        self._south_init_note.setStyleSheet("color: gray;")
+        self._south_init_note.setMinimumHeight(
+            self._south_init_note.fontMetrics().lineSpacing() * 2
+        )
+        self._south_init_note.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        pose_form.addRow(self._south_init_note)
+
         self._park_cb = QCheckBox(_("Use park position"))
         self._park_cb.setToolTip(
             _("Used by the Park button instead of the rotator's own park command.")
@@ -318,6 +342,8 @@ class RotatorSettingsDialog(QDialog):
         self._park_on_disconnect_cb = QCheckBox(_("Move to the park position on disconnect"))
         pose_form.addRow(self._park_on_disconnect_cb)
 
+        self._stop_combo.currentIndexChanged.connect(self._update_south_init_state)
+        self._flip_cb.toggled.connect(self._update_south_init_state)
         self._park_cb.toggled.connect(self._on_park_toggled)
         self._on_park_toggled(False)
         layout.addWidget(self._pose_group)
@@ -457,6 +483,29 @@ class RotatorSettingsDialog(QDialog):
         self._flip_note.setVisible(bool(note))
         if not flip_ok:
             self._flip_cb.setChecked(False)
+        # South Init is for rotators that cannot flip (maximum elevation 90
+        # degrees). In NET mode the model is unknown, so it stays available
+        # with a note.
+        self._south_init_net = self._radio_net.isChecked()
+        # Also kept visible when it is already on, so an existing setup can
+        # still see it and turn it off.
+        self._south_init_shown = (
+            self._south_init_net or not flip_ok or getattr(self, "_south_init_was_on", False)
+        )
+        self._update_south_init_state()
+
+    def _update_south_init_state(self, *_args: object) -> None:
+        """Show South Init where it applies; grey it out while a south stop
+        point or auto flip is chosen, since those make it redundant (the
+        controller ignores it then)."""
+        if not hasattr(self, "_south_init_shown"):
+            return  # signal fired before _update_flip_availability has run
+        blocked = self._stop_combo.currentData() == "south" or self._flip_cb.isChecked()
+        self._south_init_cb.setVisible(self._south_init_shown)
+        self._south_init_cb.setEnabled(not blocked)
+        self._south_init_note.setVisible(self._south_init_shown and self._south_init_net)
+        if blocked or not self._south_init_shown:
+            self._south_init_cb.setChecked(False)
 
     # ------------------------------------------------------------------ #
     # Direct-mode connection test (Baud Rate row)
@@ -618,6 +667,18 @@ class RotatorSettingsDialog(QDialog):
         # Saved values for a model that cannot use them are dropped here too.
         self._update_flip_availability()
 
+    def _load_south_init(self) -> None:
+        """Load the South Init flag (kept under its own app_settings key)."""
+        if not hasattr(self._conn, "execute"):
+            return
+        row = self._conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'rotator_south_init'"
+        ).fetchone()
+        with contextlib.suppress(TypeError, ValueError):
+            self._south_init_was_on = bool(row) and bool(int(row["value"]))
+            self._south_init_cb.setChecked(self._south_init_was_on)
+        self._update_flip_availability()
+
     def _save_settings(self) -> None:
         """Save rotator settings to the database."""
         model_id: int = self._model_combo.currentData() or 1
@@ -643,5 +704,12 @@ class RotatorSettingsDialog(QDialog):
                 VALUES ('rotator_settings', ?, CURRENT_TIMESTAMP)
                 """,
                 (json.dumps(s),),
+            )
+            self._conn.execute(
+                """
+                INSERT OR REPLACE INTO app_settings (key, value, updated_at)
+                VALUES ('rotator_south_init', ?, CURRENT_TIMESTAMP)
+                """,
+                ("1" if self._south_init_cb.isChecked() else "0",),
             )
             self._conn.commit()

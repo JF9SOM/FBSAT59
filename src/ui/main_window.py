@@ -1177,7 +1177,6 @@ class MainWindow(QMainWindow):
         self._radio_control.ctcss_send_requested.connect(self._on_ctcss_send)
         self._radio_control.ctcss_activate_requested.connect(self._on_ctcss_activate)
         self._radio_control.rotator_connected.connect(self._on_rotator_connected)
-        self._radio_control.south_init_changed.connect(self._on_south_init_changed)
         self._radio_control.rotator_cycle_changed.connect(self._on_rotator_cycle_changed)
         self._radio_control.rotator_manual_goto.connect(self._on_rotator_manual_goto)
         self._radio_control.rotator_manual_stop.connect(self._on_rotator_manual_stop)
@@ -8901,7 +8900,6 @@ class MainWindow(QMainWindow):
             ).fetchone()
             checked = bool(int(south_row["value"])) if south_row else False
             self._rotator_south_init = checked
-            self._radio_control.set_south_init(checked)
         except Exception as exc:
             logger.warning("Failed to load rotator_south_init: %s", exc)
         self._apply_rotator_park()
@@ -9124,19 +9122,6 @@ class MainWindow(QMainWindow):
         if p is None:
             return False
         return self._rot_flip_for_pass(norad, p)
-
-    def _on_south_init_changed(self, checked: bool) -> None:
-        """Update state and persist south_init setting when the checkbox is toggled."""
-        self._rotator_south_init = checked
-        try:
-            self._conn.execute(
-                "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('rotator_south_init', ?)",
-                ("1" if checked else "0",),
-            )
-            self._conn.commit()
-        except Exception as exc:
-            logger.warning("Failed to save rotator_south_init: %s", exc)
-        self._apply_rotator_park()
 
     def _update_rot_label(self) -> None:
         """Update the ROT label in the status bar."""

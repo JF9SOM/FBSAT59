@@ -100,7 +100,6 @@ class RadioControlWidget(QWidget):
     rig2_connected: Signal = Signal()
     rig2_disconnected: Signal = Signal()
     rotator_connected: Signal = Signal()
-    south_init_changed: Signal = Signal(bool)
     rotator_cycle_changed: Signal = Signal(int)  # ms
     # Manual rotator control (GitHub discussion #9): drive the rotator to an
     # operator-chosen AZ/EL without satellite tracking. goto/park put the
@@ -492,17 +491,9 @@ class RadioControlWidget(QWidget):
         cycle_box.addWidget(self._cycle_combo)
         status_grid.addLayout(cycle_box, 0, 2, 2, 1, Qt.AlignmentFlag.AlignVCenter)
 
-        # Row 2 — Rotator status + Connect Rotator + South Init
+        # Row 2 — Rotator status + Connect Rotator
         self._connect_rot_btn = QPushButton(_("Connect Rotator"))
         self._connect_rot_btn.clicked.connect(self._on_connect_rotator)
-        self._south_init_cb = QCheckBox(_("South Init"))
-        self._south_init_cb.setToolTip(
-            _(
-                "Rotator starts facing south (180°). "
-                "AZ is offset by 180° so the 0/360° wrap is avoided."
-            )
-        )
-        self._south_init_cb.toggled.connect(self.south_init_changed.emit)
         self._rotator_cycle_combo = QComboBox()
         self._rotator_cycle_combo.setToolTip(_("Rotator update interval"))
         for label, ms in (
@@ -523,7 +514,6 @@ class RadioControlWidget(QWidget):
         rot_ctrl_row.addStretch()
         rot_ctrl_row.addWidget(self._connect_rot_btn)
         rot_ctrl_row.addWidget(self._rotator_cycle_combo)
-        rot_ctrl_row.addWidget(self._south_init_cb)
         status_grid.addWidget(QLabel(_("Rotator:")), 2, 0)
         status_grid.addLayout(rot_ctrl_row, 2, 1, 1, 2)
 
@@ -856,12 +846,6 @@ class RadioControlWidget(QWidget):
         """Flip the Lock button's checked state, same as a real click (used
         by MainWindow's Ctrl+L hotkey -- see GitHub Issue #14)."""
         self._lock_btn.setChecked(not self._lock_btn.isChecked())
-
-    def set_south_init(self, checked: bool) -> None:
-        """Set the South Init checkbox without emitting south_init_changed."""
-        self._south_init_cb.blockSignals(True)
-        self._south_init_cb.setChecked(checked)
-        self._south_init_cb.blockSignals(False)
 
     def set_cycle(self, ms: int) -> None:
         """Set the Cycle combo box externally without emitting a signal."""
