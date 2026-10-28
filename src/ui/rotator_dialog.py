@@ -98,8 +98,11 @@ def _probe_rotator(model_id: int, port: str, baud: int) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Fallback rotator model list.
-# Hamlib 4.x removed the rotlist dict, so models are hard-coded here.
+# Rotator model list.
+# Hamlib 4.x removed the rotlist dict, so the list is built by asking Hamlib
+# for each model id in turn (about 20 ms for the whole range). That keeps it
+# in step with whatever Hamlib version is installed, including after Hamlib
+# Update. The hard-coded list below is only used when Hamlib cannot be loaded.
 # ---------------------------------------------------------------------------
 _FALLBACK_ROT_MODELS: list[tuple[int, str, str]] = [
     (1, "Hamlib", "Dummy"),
@@ -128,27 +131,55 @@ _FALLBACK_ROT_MODELS: list[tuple[int, str, str]] = [
     (2801, "SkyWatcher", "SkyWatcher"),
 ]
 
+# Hamlib rotator model ids are in the low thousands (highest in 4.7.2: 2801).
+_ROT_MODEL_ID_LIMIT: int = 5000
+
 
 def _load_from_hamlib_rot_api() -> list[tuple[int, str, str]]:
-    """Fetch rotator models from the Hamlib Python binding (Hamlib 3.x rotlist only).
+    """Fetch the rotator models of the installed Hamlib as (id, maker, name).
 
-    Hamlib 4.x removed rotlist; returns an empty list in that case.
+    Hamlib 3.x offered a ``rotlist`` dict. Hamlib 4.x does not, so each model
+    id is instantiated and its caps read instead. Returns an empty list when
+    Hamlib is not available.
     """
     try:
         import Hamlib as _H  # lazy — avoids Qt TLS collision at startup
     except ModuleNotFoundError:
         return []
-    if not hasattr(_H, "rotlist"):
-        return []
     models: list[tuple[int, str, str]] = []
+    if hasattr(_H, "rotlist"):
+        try:
+            for model_id, info in _H.rotlist.items():
+                name = str(getattr(info, "model_name", "") or "").strip()
+                mfg = str(getattr(info, "mfg_name", "") or "").strip()
+                if name:
+                    models.append((int(model_id), mfg, name))
+        except (AttributeError, TypeError):
+            pass
+        return models
+
+    # Creating a Rot logs its backend's init/cleanup at the app's debug level
+    # (a full trace, written to the Hamlib log), so silence it for the scan.
+    previous_level: int | None = None
+    with contextlib.suppress(Exception):
+        previous_level = int(_H.rig_get_debug())
+        _H.rig_set_debug(_H.RIG_DEBUG_NONE)
     try:
-        for model_id, info in _H.rotlist.items():
-            name = str(getattr(info, "model_name", "") or "").strip()
-            mfg = str(getattr(info, "mfg_name", "") or "").strip()
+        for model_id in range(1, _ROT_MODEL_ID_LIMIT):
+            try:
+                caps = _H.Rot(model_id).caps
+            except Exception:
+                continue
+            if caps is None:
+                continue
+            name = str(getattr(caps, "model_name", "") or "").strip()
+            mfg = str(getattr(caps, "mfg_name", "") or "").strip()
             if name:
-                models.append((int(model_id), mfg, name))
-    except (AttributeError, TypeError):
-        pass
+                models.append((model_id, mfg, name))
+    finally:
+        if previous_level is not None:
+            with contextlib.suppress(Exception):
+                _H.rig_set_debug(previous_level)
     return models
 
 

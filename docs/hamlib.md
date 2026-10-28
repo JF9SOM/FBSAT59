@@ -749,8 +749,12 @@ RT-21 等）や仰角なし（0）のモデルではチェックをグレーア�
 パーク位置の設定は全モデル共通。
 Hamlib 4.7.2 で最大仰角が180度以上のモデルは29個（GS-232 系・EasyComm・Fodtrack・SPID Rot2Prog・
 M2 RC2800 系・ARS RCI・IF-100・CNCTRK・Radant・SAEBRTrack・Celestron・iOptron・Sky-Watcher など）。
-なお設定ダイアログのモデル一覧（`_FALLBACK_ROT_MODELS`、Hamlib 4 に rotlist が無いため固定リスト）は
-Hamlib のモデルの一部しか含まず、KENPRO 向け GS-232（606）等が欠けている。
+設定ダイアログのモデル一覧は、以前は固定リスト（24個）だったが、Hamlib の全モデルから取るように
+変更した（2026-10-28）。Hamlib 4 に rotlist は無いので、モデルIDを1..4999まで `Hamlib.Rot(id).caps`
+で順に問い合わせて作る（全体で約20 ms なので、ダイアログを開くたびに実行し、キャッシュしない。
+Hamlib の更新にも自動で追従する）。走査中は Hamlib のデバッグレベルを一時的に NONE にして
+（アプリは TRACE をログへ出している）、終了後に戻す。Hamlib を読み込めないときだけ固定リスト
+`_FALLBACK_ROT_MODELS` を使う。表示名は Hamlib の宣言どおり（例: 「FoxDelta — GS232/ST2」）。
 
 **South Init の移動**（2026-10-28）: Radio Control タブのチェックボックスを廃止し、Rotator Settings の
 同じ枠に移した（保存キーは従来どおり `app_settings.rotator_south_init`）。フリップできない
