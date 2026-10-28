@@ -716,6 +716,11 @@ class RadioControlWidget(QWidget):
             self._rot_az_label.setText(f"{state.azimuth_deg:.1f}°")
             self._rot_el_label.setText(f"{state.elevation_deg:.1f}°")
 
+    def set_manual_el_max(self, max_deg: float) -> None:
+        """Set the largest manual elevation: 90, or 180 for a rotator that can
+        tip the antenna over (auto flip enabled)."""
+        self._manual_el_spin.setMaximum(max_deg)
+
     def set_manual_prefill(self, az_deg: float, el_deg: float) -> None:
         """Keep the manual AZ/EL spin boxes tracking the live rotator bearing.
 
@@ -729,7 +734,7 @@ class RadioControlWidget(QWidget):
             return
         for spin, value in (
             (self._manual_az_spin, az_deg % 360.0),
-            (self._manual_el_spin, max(0.0, min(90.0, el_deg))),
+            (self._manual_el_spin, max(0.0, min(self._manual_el_spin.maximum(), el_deg))),
         ):
             spin.blockSignals(True)
             spin.setValue(value)

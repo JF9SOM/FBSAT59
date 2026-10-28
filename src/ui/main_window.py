@@ -8889,6 +8889,7 @@ class MainWindow(QMainWindow):
             with self._rot_flip_lock:
                 self._rot_flip_cache = None
             self._rotator_controller.set_frame(self._rot_seam_az, self._rot_auto_flip)
+            self._radio_control.set_manual_el_max(180.0 if self._rot_auto_flip else 90.0)
             self._rot_park_settings = settings
             self._radio_control.set_rotator(self._rotator_controller)
             self._update_rot_label()

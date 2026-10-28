@@ -3616,6 +3616,22 @@ class TestHamlibRotatorController:
         ctrl._send_p(100.0, 30.0)
         assert self._p_sent(ctrl) == [b"P 100.0 30.0\n"]
 
+    def test_manual_goto_past_90_when_flip_capable(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl.set_frame(0.0, True)
+        assert ctrl.goto(180.0, 150.0)
+        assert self._p_sent(ctrl) == [b"P 180.0 150.0\n"]
+        # Reported back as the flipped pose: the antenna points at 30 deg.
+        state = ctrl.get_cached_position()
+        assert state.elevation_deg == pytest.approx(30.0)
+        assert state.flipped is True
+
+    def test_manual_goto_clamped_to_180(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl.set_frame(0.0, True)
+        assert ctrl.goto(10.0, 200.0)
+        assert self._p_sent(ctrl) == [b"P 10.0 180.0\n"]
+
     def test_goto_never_flips(self) -> None:
         ctrl = self._make_net_ctrl_connected()
         ctrl.set_frame(0.0, True)

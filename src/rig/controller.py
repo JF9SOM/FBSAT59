@@ -6066,11 +6066,14 @@ class HamlibRotatorController(RotatorController):
                 self._rot.set_position(wire_az, wire_el)
                 status = getattr(self._rot, "error_status", 0)
                 self._record_io_result(status == 0, f"set_position (Hamlib error {status})")
+            # Same frame get_position() reports (a wire elevation above 90 is
+            # the flipped pose, e.g. after a manual move past 90 degrees).
+            state_az, state_el, state_flipped = self._from_wire(wire_az, wire_el)
             with self._lock:
-                self._rotor_state.azimuth_deg = az
-                self._rotor_state.elevation_deg = el
+                self._rotor_state.azimuth_deg = state_az
+                self._rotor_state.elevation_deg = state_el
                 self._rotor_state.is_moving = True
-                self._rotor_state.flipped = wire_el != el
+                self._rotor_state.flipped = state_flipped
 
     def _sane_origin_az(self, raw_az: float) -> float:
         """Treat an out-of-[0, 360) azimuth reading as the rotator's home position.
@@ -6715,8 +6718,10 @@ class HamlibRotatorController(RotatorController):
             return False
         try:
             with self._io_lock:
-                el_cmd = max(0.0, min(90.0, elevation_deg))
-                # Manual moves always use the normal (unflipped) pose.
+                # Manual elevation is the elevation axis itself: a rotator that
+                # can flip may be sent past 90 degrees (antenna tipped over).
+                el_cmd = max(0.0, min(180.0 if self._flip_capable else 90.0, elevation_deg))
+                # Manual moves never use the automatic flip pose.
                 self._send_p(azimuth_deg, el_cmd, flip=False)
                 self._last_az = None
                 self._catching_up = False
