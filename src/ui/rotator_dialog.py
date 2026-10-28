@@ -14,7 +14,7 @@ import logging
 import threading
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -443,6 +443,17 @@ class RotatorSettingsDialog(QDialog):
         self._status_label.setVisible(is_direct)
         self._update_baud_test_visibility()
         self._update_flip_availability()
+        self._fit_to_contents()
+
+    def _fit_to_contents(self) -> None:
+        """Resize the dialog to what it now shows.
+
+        Switching between Direct and NET changes how much is visible, but a
+        dialog never shrinks by itself: after a visit to the taller layout the
+        spare height was shared out between the rows, spacing them far apart.
+        Deferred so the layout has seen the visibility changes first.
+        """
+        QTimer.singleShot(0, self.adjustSize)
 
     def _update_flip_availability(self) -> None:
         """Enable auto flip only where it can work, and say why when it cannot.
@@ -516,6 +527,7 @@ class RotatorSettingsDialog(QDialog):
         self._reset_baud_test_btn()
         self._update_baud_test_visibility()
         self._update_flip_availability()
+        self._fit_to_contents()
 
     def _reset_baud_test_btn(self, *_args: object) -> None:
         """Return the Test button to its neutral state (port/baud/model changed)."""
