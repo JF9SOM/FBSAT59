@@ -43,6 +43,13 @@ logger = logging.getLogger(__name__)
 # is meaningless (Dummy always "succeeds"; NET rotctl is not a serial device).
 _NON_TESTABLE_ROT_MODELS: frozenset[int] = frozenset({1, 2})
 
+# Models for which the stop point and auto flip make sense: Yaesu GS-232 family
+# controllers (G-5500 and similar) and the ST-2, which take true bearings and
+# swing the elevation axis to 180 degrees. Hamlib's own elevation limit is no
+# guide here — telescope mounts report 180 too but cannot turn an antenna
+# over. Extend this set when another rotator is confirmed to work.
+_FLIP_CAPABLE_ROT_MODELS: frozenset[int] = frozenset({601, 602, 603, 607, 608})
+
 
 def _probe_rotator(model_id: int, port: str, baud: int) -> bool:
     """Open the rotator via Hamlib at *baud* and return True iff it responds.
@@ -259,6 +266,11 @@ class RotatorSettingsDialog(QDialog):
         )
         pose_form.addRow(self._flip_cb)
 
+        self._flip_note = QLabel("")
+        self._flip_note.setWordWrap(True)
+        self._flip_note.setStyleSheet("color: gray;")
+        pose_form.addRow(self._flip_note)
+
         self._park_cb = QCheckBox(_("Use park position"))
         self._park_cb.setToolTip(
             _("Used by the Park button instead of the rotator's own park command.")
@@ -291,6 +303,7 @@ class RotatorSettingsDialog(QDialog):
         self._park_cb.toggled.connect(self._on_park_toggled)
         self._on_park_toggled(False)
         layout.addWidget(self._pose_group)
+        self._update_flip_availability()
 
         # --- Status + Hamlib version / update link ---
         self._status_label = QLabel("")
@@ -382,6 +395,37 @@ class RotatorSettingsDialog(QDialog):
         self._direct_group.setVisible(is_direct)
         self._net_group.setVisible(not is_direct)
         self._update_baud_test_visibility()
+        self._update_flip_availability()
+
+    def _update_flip_availability(self) -> None:
+        """Enable the stop point / auto flip only where they can work.
+
+        Direct mode: only for the Yaesu GS-232 family and ST-2. NET mode: the
+        rotator behind rotctld is unknown here, so the options stay available
+        and the operator is told what rotctld must be driving. Anything else
+        is greyed out and reset, so a stale choice cannot be saved.
+        """
+        if not hasattr(self, "_flip_note"):
+            return  # signal fired during _setup_ui before the widgets exist
+        if self._radio_net.isChecked():
+            enabled = True
+            note = _(
+                "NET mode: works only if rotctld is driving a Yaesu GS-232 family "
+                "controller or ST-2 (elevation up to 180 degrees)."
+            )
+        else:
+            enabled = self._model_combo.currentData() in _FLIP_CAPABLE_ROT_MODELS
+            note = (
+                ""
+                if enabled
+                else _("Available only for Yaesu GS-232 family controllers and the ST-2.")
+            )
+        self._stop_combo.setEnabled(enabled)
+        self._flip_cb.setEnabled(enabled)
+        self._flip_note.setText(note)
+        if not enabled:
+            self._stop_combo.setCurrentIndex(max(self._stop_combo.findData("north"), 0))
+            self._flip_cb.setChecked(False)
 
     # ------------------------------------------------------------------ #
     # Direct-mode connection test (Baud Rate row)
@@ -391,6 +435,7 @@ class RotatorSettingsDialog(QDialog):
         """Reset the Test button and refresh its visibility when the model changes."""
         self._reset_baud_test_btn()
         self._update_baud_test_visibility()
+        self._update_flip_availability()
 
     def _reset_baud_test_btn(self, *_args: object) -> None:
         """Return the Test button to its neutral state (port/baud/model changed)."""
@@ -539,6 +584,8 @@ class RotatorSettingsDialog(QDialog):
         idx = self._after_pass_combo.findData(str(s.get("after_pass", "next_aos")))
         self._after_pass_combo.setCurrentIndex(max(idx, 0))
         self._park_on_disconnect_cb.setChecked(bool(s.get("park_on_disconnect", False)))
+        # Saved values for a model that cannot use them are dropped here too.
+        self._update_flip_availability()
 
     def _save_settings(self) -> None:
         """Save rotator settings to the database."""
