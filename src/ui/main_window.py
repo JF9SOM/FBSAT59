@@ -10147,6 +10147,11 @@ class MainWindow(QMainWindow):
         with contextlib.suppress(Exception):
             if self._rig2_controller is not None and self._rig2_controller.is_connected:
                 self._rig2_controller.disconnect()
+        # Disconnect the rotator too, so "move to park position on disconnect"
+        # also applies when the app is closed while connected.
+        with contextlib.suppress(Exception):
+            if self._rotator_controller is not None and self._rotator_controller.is_connected:
+                self._rotator_controller.disconnect()
         # Stop the shared audio input reader thread: left running, it can call
         # into PortAudio while the interpreter unloads it and segfault at exit.
         with contextlib.suppress(Exception):
