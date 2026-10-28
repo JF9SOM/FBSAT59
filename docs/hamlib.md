@@ -736,14 +736,21 @@ LOS 後・水平線下接続時の「次のAOSへ先回り」（`_start_aos_wait
 （衛星が昇ってから初回jump＝先読みcatch-upで追いかける。AOS前の先行移動はしない）。
 `park_on_disconnect` が有効なら `disconnect()` の直前にパーク位置へ移動する。
 
-**対象モデルの制限**（`ui/rotator_dialog.py` の `_FLIP_CAPABLE_ROT_MODELS`）: 「リミット位置」と
-「自動フリップ」は Direct モードで Yaesu GS-232A/Generic/B・LVB Tracker・ST-2（モデル
-601/602/603/607/608）のときだけ有効で、それ以外はグレーアウトして値も初期化する。Hamlib の
-仰角上限（caps `max_el`）は判定に使えない（望遠鏡架台のモデルも180と答えるため）。NET モードは
-rotctld 側のモデルがアプリから分からないので有効のままにし、「rotctld が GS-232 系・ST-2 を
+**対象モデルの制限**（`ui/rotator_dialog.py` の `_model_max_el()`、2026-10-28 改訂）: 「自動フリップ」は
+仰角を「180−EL」で送るため、Direct モードでは Hamlib がそのモデルに宣言する最大仰角
+（`Hamlib.Rot(model).caps.max_el`）が180度以上のときだけ有効。90度以下（Meade・GRBL・Green Heron
+RT-21 等）や仰角なし（0）のモデルではチェックをグレーアウトして外し、「このモデルの最大仰角は
+{n}度であるため、フリップモードは使えません。」と表示する。caps が分かるのはモデルの宣言値までで、
+アンテナを物理的に裏返せるか（望遠鏡架台等）は設置する人の判断。Hamlib を読み込めない環境では
+従来の許可リスト `_FLIP_CAPABLE_ROT_MODELS`（601/602/603/607/608）にフォールバックする。
+「リミット位置」は方位だけの話なので Direct の全モデルで有効のまま。NET モードは rotctld 側の
+モデルがアプリから分からないので両方を有効にし、「rotctld が仰角180度まで届くローテーターを
 動かしている場合のみ」という注記を出す（NET でも `P` の変換はアプリ側で済むため動作はする）。
-パーク位置の設定は全モデル共通で、制限しない。別のローテーターで仰角180度が確認できたら
-この集合に追加する。
+パーク位置の設定は全モデル共通。
+Hamlib 4.7.2 で最大仰角が180度以上のモデルは29個（GS-232 系・EasyComm・Fodtrack・SPID Rot2Prog・
+M2 RC2800 系・ARS RCI・IF-100・CNCTRK・Radant・SAEBRTrack・Celestron・iOptron・Sky-Watcher など）。
+なお設定ダイアログのモデル一覧（`_FALLBACK_ROT_MODELS`、Hamlib 4 に rotlist が無いため固定リスト）は
+Hamlib のモデルの一部しか含まず、KENPRO 向け GS-232（606）等が欠けている。
 
 **未検証**: 実機（ST-2）でのフリップ動作、仰角180度の物理的な可動範囲、南またぎパス中の
 読み戻しは未確認。試験は Issue #34 の投稿者に依頼する前提。

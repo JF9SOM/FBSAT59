@@ -8,6 +8,7 @@ Supports Hamlib direct connection and NET (rotctld) connection.
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 import logging
 import threading
@@ -43,12 +44,25 @@ logger = logging.getLogger(__name__)
 # is meaningless (Dummy always "succeeds"; NET rotctl is not a serial device).
 _NON_TESTABLE_ROT_MODELS: frozenset[int] = frozenset({1, 2})
 
-# Models for which the stop point and auto flip make sense: Yaesu GS-232 family
-# controllers (G-5500 and similar) and the ST-2, which take true bearings and
-# swing the elevation axis to 180 degrees. Hamlib's own elevation limit is no
-# guide here — telescope mounts report 180 too but cannot turn an antenna
-# over. Extend this set when another rotator is confirmed to work.
+# Auto flip sends the elevation as 180 - el, so it needs a rotator model whose
+# elevation range reaches 180 degrees. Hamlib declares that per model
+# (caps.max_el); whether the antenna can physically be turned over is the
+# operator's call. Used only when Hamlib cannot be queried: the models known
+# to take 180 degrees (Yaesu GS-232 family and the ST-2).
 _FLIP_CAPABLE_ROT_MODELS: frozenset[int] = frozenset({601, 602, 603, 607, 608})
+_FLIP_MIN_EL_DEG: float = 180.0
+
+
+@functools.cache
+def _model_max_el(model_id: int) -> float | None:
+    """Hamlib's declared maximum elevation for a rotator model, or None if unknown."""
+    try:
+        import Hamlib as _H  # lazy — avoids Qt TLS collision at startup
+
+        caps = _H.Rot(model_id).caps
+        return float(caps.max_el)
+    except Exception:
+        return None
 
 
 def _probe_rotator(model_id: int, port: str, baud: int) -> bool:
@@ -402,34 +416,43 @@ class RotatorSettingsDialog(QDialog):
         self._update_flip_availability()
 
     def _update_flip_availability(self) -> None:
-        """Enable the stop point / auto flip only where they can work.
+        """Enable auto flip only where it can work, and say why when it cannot.
 
-        Direct mode: only for the Yaesu GS-232 family and ST-2. NET mode: the
-        rotator behind rotctld is unknown here, so the options stay available
-        and the operator is told what rotctld must be driving. Anything else
-        is greyed out and reset, so a stale choice cannot be saved.
+        Direct mode: Hamlib's declared maximum elevation for the model must
+        reach 180 degrees; otherwise the option is greyed out, reset, and
+        explained. The stop point is about azimuth only and stays available.
+        NET mode: the rotator behind rotctld is unknown here, so both stay
+        available and the operator is told what rotctld must be driving.
         """
         if not hasattr(self, "_flip_note"):
             return  # signal fired during _setup_ui before the widgets exist
+        flip_ok = True
         if self._radio_net.isChecked():
-            enabled = True
             note = _(
-                "NET mode: works only if rotctld is driving a Yaesu GS-232 family "
-                "controller or ST-2 (elevation up to 180 degrees)."
+                "NET mode: auto flip works only if rotctld is driving a rotator whose "
+                "elevation reaches 180 degrees (e.g. a Yaesu GS-232 family controller or ST-2)."
             )
         else:
-            enabled = self._model_combo.currentData() in _FLIP_CAPABLE_ROT_MODELS
-            note = (
-                ""
-                if enabled
-                else _("Available only for Yaesu GS-232 family controllers and the ST-2.")
-            )
-        self._stop_combo.setEnabled(enabled)
-        self._flip_cb.setEnabled(enabled)
+            model_id = self._model_combo.currentData()
+            max_el = _model_max_el(model_id) if isinstance(model_id, int) else None
+            if max_el is None:
+                flip_ok = model_id in _FLIP_CAPABLE_ROT_MODELS
+                note = (
+                    ""
+                    if flip_ok
+                    else _("Available only for Yaesu GS-232 family controllers and the ST-2.")
+                )
+            elif max_el >= _FLIP_MIN_EL_DEG:
+                note = ""
+            else:
+                flip_ok = False
+                note = _(
+                    "This model's maximum elevation is {n} degrees, so flip mode cannot be used."
+                ).format(n=f"{max_el:g}")
+        self._flip_cb.setEnabled(flip_ok)
         self._flip_note.setText(note)
         self._flip_note.setVisible(bool(note))
-        if not enabled:
-            self._stop_combo.setCurrentIndex(max(self._stop_combo.findData("north"), 0))
+        if not flip_ok:
             self._flip_cb.setChecked(False)
 
     # ------------------------------------------------------------------ #

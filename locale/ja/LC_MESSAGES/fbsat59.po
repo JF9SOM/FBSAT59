@@ -8204,8 +8204,12 @@ msgid "Move to the park position on disconnect"
 msgstr "切断時にパーク位置へ移動する"
 
 #: src/ui/rotator_dialog.py
-msgid "NET mode: works only if rotctld is driving a Yaesu GS-232 family controller or ST-2 (elevation up to 180 degrees)."
-msgstr "NET モード: rotctld が Yaesu GS-232 系コントローラーまたは ST-2（仰角180度まで）を動かしている場合のみ使えます。"
+msgid "NET mode: auto flip works only if rotctld is driving a rotator whose elevation reaches 180 degrees (e.g. a Yaesu GS-232 family controller or ST-2)."
+msgstr "NET モード: 自動フリップは、rotctld が仰角180度まで届くローテーター（Yaesu GS-232 系コントローラーや ST-2 など）を動かしている場合のみ使えます。"
+
+#: src/ui/rotator_dialog.py
+msgid "This model's maximum elevation is {n} degrees, so flip mode cannot be used."
+msgstr "このモデルの最大仰角は{n}度であるため、フリップモードは使えません。"
 
 #: src/ui/rotator_dialog.py
 msgid "Available only for Yaesu GS-232 family controllers and the ST-2."
