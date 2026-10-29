@@ -129,3 +129,25 @@ def test_outside_the_pass_there_is_no_target() -> None:
     plan = _plan(225.0, 40.0, seam=0.0)
     assert plan.target(plan.aos - timedelta(seconds=1)) is None
     assert plan.target(plan.los + timedelta(seconds=1)) is None
+
+
+def test_held_elevation_stays_close_to_the_real_elevation() -> None:
+    # Away from the zenith the in-plane elevation is practically the real one;
+    # it only departs (by at most the miss angle) within a few seconds of the top.
+    aos, tca, los, max_el, observe = _pass(225.0, 40.0)
+    plan = build_overhead_plan(aos, tca, los, max_el, 0.0, observe)  # type: ignore[arg-type]
+    assert plan is not None
+    worst_far = worst_near = 0.0
+    t = plan.t_in
+    while t <= plan.t_out:
+        tgt = plan.target(t)
+        real = observe(t)  # type: ignore[operator]
+        assert tgt is not None and real is not None
+        diff = abs(tgt[1] - real[1])
+        if abs((t - tca).total_seconds()) > 20.0:
+            worst_far = max(worst_far, diff)
+        else:
+            worst_near = max(worst_near, diff)
+        t += timedelta(seconds=1)
+    assert worst_far < 1.5
+    assert worst_near < 90.0 - max_el + 0.5

@@ -5,9 +5,10 @@ swing its azimuth by up to 180 degrees within a minute. A rotator whose
 elevation axis reaches 180 degrees can instead go over the top: below
 HOLD_START_EL the antenna follows the real azimuth and elevation, above it the
 azimuth is held (and only turned by the small difference between the two
-sides) while the elevation is moved to 90 degrees exactly at the time of
-closest approach, then continues down the far side in the opposite pose
-(az + 180, el sent as 180 - el), and follows the real azimuth and elevation
+sides) while the elevation follows the satellite's angle along the vertical
+plane of the pass, which is 90 degrees at the time of closest approach, then
+continues down the far side in the opposite pose (az + 180, el sent as
+180 - el), and follows the real azimuth and elevation
 again once the satellite is back below HOLD_START_EL.
 
 Azimuths here are in the controller frame ("u", measured from the rotator's
@@ -18,6 +19,7 @@ does not wrap through the stop.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from datetime import datetime, timedelta
 
@@ -59,6 +61,12 @@ class OverheadPlan:
         # Frame azimuths at the two ends of the held section.
         self.u_in = to_frame_az(az_in, flip_up, seam)
         self.u_out = to_frame_az(az_out, not flip_up, seam)
+        # Bearing of the vertical plane the antenna stays in: the average of
+        # the ascent bearing and the (reversed) descent bearing.
+        a, b = math.radians(az_in), math.radians(az_out + 180.0)
+        self._plane_bearing = math.degrees(
+            math.atan2(math.sin(a) + math.sin(b), math.cos(a) + math.cos(b))
+        )
 
     def target(self, t: datetime) -> tuple[float, float, bool] | None:
         """(controller-frame azimuth, true elevation, flipped) at t, or None
@@ -76,15 +84,18 @@ class OverheadPlan:
         span = (self.t_out - self.t_in).total_seconds()
         frac = (t - self.t_in).total_seconds() / span if span > 0.0 else 0.0
         az = self.u_in + (self.u_out - self.u_in) * frac
-        if t <= self.tca:
-            up = (self.tca - self.t_in).total_seconds()
-            f = (t - self.t_in).total_seconds() / up if up > 0.0 else 1.0
-            el = HOLD_START_EL_DEG + (90.0 - HOLD_START_EL_DEG) * f
-            return az, el, self.flip_up
-        down = (self.t_out - self.tca).total_seconds()
-        f = (t - self.tca).total_seconds() / down if down > 0.0 else 1.0
-        el = 90.0 - (90.0 - HOLD_START_EL_DEG) * f
-        return az, el, not self.flip_up
+        obs = self._observe(t)
+        if obs is None:
+            return None
+        # Angle of the satellite along the plane (tan x = tan(zenith angle) *
+        # cos(azimuth offset from the plane)): 90 - |x| is the elevation that
+        # keeps the antenna in the plane, and equals the real elevation except
+        # near the zenith, where it reaches exactly 90 at closest approach.
+        zenith = math.radians(90.0 - obs[1])
+        along = math.degrees(
+            math.atan(math.tan(zenith) * abs(math.cos(math.radians(obs[0] - self._plane_bearing))))
+        )
+        return az, 90.0 - along, self.flip_up if t <= self.tca else not self.flip_up
 
 
 def _cross_time(observe: Observe, early: datetime, late: datetime, rising: bool) -> datetime | None:
