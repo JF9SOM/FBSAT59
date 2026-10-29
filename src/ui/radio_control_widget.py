@@ -130,6 +130,8 @@ class RadioControlWidget(QWidget):
         # True while the operator is manually pointing the rotator (Go/Park);
         # MainWindow then suspends satellite tracking until Resume.
         self._rot_manual_hold: bool = False
+        # True once MainWindow feeds real-world bearings to the AZ/EL readout.
+        self._bearing_fed: bool = False
         # True while Autotrack is set not to use the rotator ("Use Rotator"
         # unchecked in the Autotrack/Record dialog): a disconnected rotator
         # then reads "Not used" instead of "Disconnected".
@@ -716,6 +718,16 @@ class RadioControlWidget(QWidget):
             self._rot_az_label.setText(f"{state.azimuth_deg:.1f}°")
             self._rot_el_label.setText(f"{state.elevation_deg:.1f}°")
 
+    def set_rotator_bearing(self, az_deg: float, el_deg: float) -> None:
+        """Show the rotator position as a real-world bearing and elevation.
+
+        Called by MainWindow after undoing the stop-point / flip frame, so the
+        AZ/EL readout matches where the antenna really points.
+        """
+        self._bearing_fed = True
+        self._rot_az_label.setText(f"{az_deg % 360.0:.1f}°")
+        self._rot_el_label.setText(f"{el_deg:.1f}°")
+
     def set_manual_el_max(self, max_deg: float) -> None:
         """Set the largest manual elevation: 90, or 180 for a rotator that can
         tip the antenna over (auto flip enabled)."""
@@ -878,7 +890,12 @@ class RadioControlWidget(QWidget):
         if self._rotator is not None and self._rotator.is_connected:
             # Cached value only: querying the rotator here would block the UI
             # thread on the controller's I/O lock whenever it stops answering.
-            self.update_rotator(self._rotator.get_cached_position())
+            # Once MainWindow feeds real-world bearings (set_rotator_bearing),
+            # the raw controller-frame value must not overwrite them.
+            if not self._bearing_fed:
+                self.update_rotator(self._rotator.get_cached_position())
+        else:
+            self._bearing_fed = False
 
     # ------------------------------------------------------------------ #
     # Internal helpers

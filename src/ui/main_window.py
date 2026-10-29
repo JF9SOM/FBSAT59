@@ -5507,6 +5507,10 @@ class MainWindow(QMainWindow):
         # Feed the real-world bearing to the manual AZ/EL spin boxes so they
         # follow the rotator until the operator takes manual control.
         self._radio_control.set_manual_prefill(display_az, rot_el)
+        if self._rot_frame_active():
+            # The readout would otherwise show the raw controller-frame
+            # azimuth, which is 180 degrees off while the antenna is flipped.
+            self._radio_control.set_rotator_bearing(display_az, rot_el)
 
     def _update_statusbar(self) -> None:
         """Update the QTH text and TLE last-updated timestamp in the status bar."""
