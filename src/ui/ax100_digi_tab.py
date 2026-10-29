@@ -896,7 +896,7 @@ class Ax100DigiTab(QWidget):
                 "CALL": row["source"],
                 "QSO_DATE": ts.strftime("%Y%m%d"),
                 "TIME_ON": ts.strftime("%H%M%S"),
-                "MODE": "PACKET",  # the packet mode name LoTW lists
+                "MODE": "PKT",  # same as the APRS log (user decision 2026-10-29)
                 "MY_CALL": my_call,
                 "COMMENT": row["content"] or "",
                 "SAT_NAME": row["sat_name"] or "",
