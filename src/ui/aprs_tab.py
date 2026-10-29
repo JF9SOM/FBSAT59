@@ -1135,7 +1135,7 @@ class AprsTab(QWidget):
             "QSO_DATE": now.strftime("%Y%m%d"),
             "TIME_ON": now.strftime("%H%M%S"),
             **aprs_band_fields(ul_hz, dl_hz),
-            "MODE": "PACKET",
+            "MODE": "PKT",
             "MY_CALL": my_station,
             "COMMENT": str(comment or ""),
             "VIA": str(via or ""),

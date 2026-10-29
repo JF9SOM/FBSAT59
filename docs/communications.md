@@ -4145,7 +4145,8 @@ LoTW?」）を読んで合わせた。
   SATNOGS 名・別名・NORAD ID から一覧の ID を決める（`DOSAAF-85`→`RS-44`、`JY1Sat`→`JO-97`、
   `GREENCUBE`→`IO-117`、`CAS-6 (TO-108)`→`TO-108`、`TEVEL2-4`→`TEV2-4`、ISS→`ARISS`）。
   **一覧にない衛星（例: AO-95）は LoTW に受け付けられない**ので、エクスポート後に警告を表示する
-- **MODE**: LoTW の一覧にあるモード名のみ使う。FT4→`FT4`、APRS/AX.25→`PACKET`（`PKT` は一覧にない）、
+- **MODE**: LoTW の一覧にあるモード名のみ使う。FT4→`FT4`、APRS→`PKT`（2026-10-29 にユーザー判断で `PACKET` から変更。LoTW の一覧に `PKT` が無い、との以前の調査結果があるので、
+  LoTW が拒否した場合は `PACKET` に戻す。AX100 Digi タブは `PACKET` のまま）、AX.25→`PACKET`、
   **Q65→`DATA`**（一覧に Q65 が無いため、汎用の `DATA` で出し `COMMENT` に `Q65` を残す）
 - **DB**: 起動時に `normalize_logged_satellite_names()` が `ft4_log`/`q65_log` の既存の衛星名を LoTW の ID に直す
   （冪等）。周波数は MHz 単位に切り捨てたバンド値のまま（ユーザー判断）

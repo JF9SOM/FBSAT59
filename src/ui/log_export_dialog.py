@@ -330,7 +330,7 @@ class LogExportDialog(QDialog):
                         "QSO_DATE": qso_date,
                         "TIME_ON": time_on,
                         **aprs_band_fields(up_hz, down_hz),
-                        "MODE": "PACKET",
+                        "MODE": "PKT",
                         "MY_CALL": my_station,
                         "COMMENT": str(comment or ""),
                         "VIA": str(via or ""),

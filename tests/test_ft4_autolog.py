@@ -217,7 +217,7 @@ def test_export_writes_lotw_satellite_names_for_every_mode(qtbot: QtBot) -> None
     ft4, q65, aprs = records
     assert "<MODE:3>FT4" in ft4
     assert "<MODE:4>DATA" in q65  # LoTW's list has no Q65
-    assert "<MODE:6>PACKET" in aprs  # LoTW's name for the packet mode
+    assert "<MODE:3>PKT" in aprs  # the APRS log mode (user decision 2026-10-29)
     # APRS via a satellite is 2 m up and down; LoTW needs a BAND on every record
     assert "<BAND:2>2M" in aprs
     assert "<BAND_RX:2>2M" in aprs
