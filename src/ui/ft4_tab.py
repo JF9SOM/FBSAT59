@@ -1777,6 +1777,31 @@ class Ft4Tab(QWidget):
                 item.setBackground(_OWN_TX_ROW_COLOR)
         self._table.scrollToBottom()
 
+    def _time_ordered_row(self, utc_str: str) -> int:
+        """Row index at which a row stamped utc_str keeps the table in time order.
+
+        An RX row carries its period's start time but is added only after
+        decoding, by which time our own TX row for the next period is already
+        in the table; it must go above that row. Equal stamps stay in arrival
+        order, and stamps 12 h or more apart are treated as a midnight wrap.
+        """
+
+        def secs(s: str) -> int:
+            return int(s[0:2]) * 3600 + int(s[2:4]) * 60 + int(s[4:6])
+
+        new = secs(utc_str)
+        row = self._table.rowCount()
+        while row > 0:
+            item = self._table.item(row - 1, _COL_UTC)
+            text = item.text() if item is not None else ""
+            if len(text) != 6 or not text.isdigit():
+                break
+            diff = secs(text) - new
+            if diff <= 0 or diff >= 43200:
+                break
+            row -= 1
+        return row
+
     def _display_decoded(self, messages: list[Ft4Message]) -> None:
         # The period we are in *right now* is already the one right after
         # the sender's, i.e. the opposite parity -- decoding takes well
@@ -1794,7 +1819,7 @@ class Ft4Tab(QWidget):
         slot_start = datetime.fromtimestamp(corrected_time() - pos - FT4_PERIOD + 0.05, UTC)
         utc_str = slot_start.strftime("%H%M%S")
         for msg in messages:
-            row = self._table.rowCount()
+            row = self._time_ordered_row(utc_str)
             self._table.insertRow(row)
             self._table.setItem(row, _COL_UTC, QTableWidgetItem(utc_str))
             self._table.setItem(row, _COL_DB, QTableWidgetItem(f"{msg.snr_db:+.0f}"))
