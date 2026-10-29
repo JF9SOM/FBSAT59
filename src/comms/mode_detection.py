@@ -95,6 +95,7 @@ def is_digital_voice_transmitter(xpdr: dict[str, Any]) -> bool:
 # packets decoded from a real pass.
 HADES_FSK_NORADS = frozenset({98205, 68446, 98206})
 HADES_SA_NORAD = 68446
+UNNE1B_NORAD = 98205
 HADES_L_NORAD = 98206
 
 
@@ -111,6 +112,9 @@ def is_hades_fsk_transmitter(xpdr: dict[str, Any]) -> bool:
         return "GENESIS" in mode and xpdr.get("baud") == 800
     if norad == HADES_L_NORAD:
         return "FSK" in mode and xpdr.get("baud") == 800
+    if norad == UNNE1B_NORAD:
+        # SatNOGS lists the 200 baud telemetry transmitter as "BPSK" although it is 2FSK.
+        return ("FSK" in mode or mode == "BPSK") and xpdr.get("baud") == 200
     return norad in HADES_FSK_NORADS and "FSK" in mode and xpdr.get("baud") == 200
 
 

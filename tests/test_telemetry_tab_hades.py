@@ -95,6 +95,9 @@ def test_transmitter_matcher() -> None:
     assert not mode_detection.is_hades_fsk_transmitter({**good, "baud": 800})
     assert not mode_detection.is_hades_fsk_transmitter({**good, "mode": "CW"})
     assert not mode_detection.is_hades_fsk_transmitter({**good, "norad_cat_id": 25544})
+    # SatNOGS lists UNNE-1B's 200 baud telemetry transmitter as BPSK (2026-10-29).
+    assert mode_detection.is_hades_fsk_transmitter({**good, "mode": "BPSK"})
+    assert not mode_detection.is_hades_fsk_transmitter({**good, "mode": "BPSK", "baud": 1200})
 
 
 def test_combo_lists_unne1b_from_db(qtbot: QtBot, conn: sqlite3.Connection) -> None:

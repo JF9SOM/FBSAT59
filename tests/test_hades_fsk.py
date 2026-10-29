@@ -136,6 +136,15 @@ def test_stream_decodes_bursts_with_a_large_carrier_offset() -> None:
     assert [round(f.time_s) for f in frames] == [2, 32, 62]
 
 
+def test_stream_decodes_a_burst_too_weak_for_a_frequency_discriminator() -> None:
+    """Tone-energy detection: a burst ~10 dB weaker than the other tests' (2026-10-28 UNNE-1B)."""
+    for seed in (1, 2, 3):
+        iq = _stream([REAL_PAYLOAD], [-1_200.0], amplitude=0.15, seed=seed)
+        frames = hf.decode_iq(iq, 250_000.0)
+        assert [f.payload for f in frames] == [REAL_PAYLOAD]
+        assert not frames[0].repaired
+
+
 def test_stream_reports_every_burst_once_for_any_chunk_size() -> None:
     iq = _stream(REAL_PAYLOADS[:2], [5_000.0, -4_000.0])
     reference = [f.payload for f in hf.decode_iq(iq, 250_000.0)]

@@ -135,6 +135,8 @@ _DEMOD_HALF_BW_HZ = 3000.0
 _MIN_SNR_DB = 3.0
 _MAX_BURSTS_PER_WINDOW = 3
 _MAX_SYNC_ERRORS = 2
+# Spacing of the two FSK tones that is accepted when they are looked for in a burst (Hz).
+_TONE_SPACING_HZ = (600.0, 2500.0)
 _DEDUP_S = 3.0
 _MIN_BITS = 140  # shorter than this cannot hold a sync word and the shortest packet
 
@@ -464,6 +466,63 @@ class HadesFskStream:
             mean[lo:hi, :] = 0.0
         return found
 
+    def _tone_energy_variants(
+        self, seg: np.ndarray, burst_at_s: float, carrier_hz: float
+    ) -> list[str]:
+        """Bit variants from the energy of each of the two tones (non-coherent detection).
+
+        A frequency discriminator sees the whole filter bandwidth's noise, so a burst that is
+        only ~7 dB above the noise in a few kHz comes out as random bits. Integrating each
+        tone over one symbol in a baud-wide filter keeps only the noise of those two narrow
+        bands (about 15 dB less), which still reads a burst the discriminator cannot. The
+        tone pair is taken from the burst's own spectrum, so any shift works. Only the few
+        symbol phases with the most contrast are returned (the CRC picks the right one).
+        """
+        rate = self._rate
+        first = max(0, int((burst_at_s - 0.2) * rate))
+        core = seg[first : first + int(2.4 * rate)]
+        if len(core) < int(0.5 * rate):
+            return []
+        nfft = 1 << int(np.ceil(np.log2(len(core))))
+        power = np.abs(np.fft.fft(core, nfft)) ** 2
+        freqs = np.fft.fftfreq(nfft, 1 / rate)
+        order = np.argsort(power)[::-1]
+        order = order[np.abs(freqs[order] - carrier_hz) <= _BAND_HZ / 2 + _TONE_SPACING_HZ[1] / 2]
+        if len(order) == 0:
+            return []
+        top = float(freqs[order[0]])
+        others = [
+            float(freqs[i])
+            for i in order[:4000]
+            if _TONE_SPACING_HZ[0] <= abs(freqs[i] - top) <= _TONE_SPACING_HZ[1]
+        ]
+        if not others:
+            return []
+        low, high = sorted((top, others[0]))
+        length = max(2, int(round(rate / self._baud)))
+        t = np.arange(len(seg)) / rate
+        csum = np.ones(length) / length
+
+        def energy(tone_hz: float) -> np.ndarray:
+            mixed = seg * np.exp(-2j * np.pi * tone_hz * t)
+            smooth = np.convolve(mixed, csum, mode="same")
+            return np.asarray(smooth.real**2 + smooth.imag**2)
+
+        diff = energy(high) - energy(low)
+        centres = np.arange(0, len(diff))
+        scored: list[tuple[float, int]] = []
+        for phase in range(0, length, 5):
+            idx = centres[phase + length // 2 :: length]
+            scored.append((float(np.sum(np.abs(diff[idx]))), phase))
+        scored.sort(reverse=True)
+        variants: list[str] = []
+        for _score, phase in scored[:5]:
+            idx = centres[phase + length // 2 :: length]
+            text = "".join("1" if v > 0 else "0" for v in diff[idx])
+            if text not in variants:
+                variants.append(text)
+        return variants
+
     def _demodulate(
         self, x: np.ndarray, start_s: float, carrier_hz: float
     ) -> tuple[list[str], int]:
@@ -474,6 +533,7 @@ class HadesFskStream:
         seg = x[lo:hi]
         if len(seg) < int(0.5 * rate):
             return [], lo
+        energy_variants = self._tone_energy_variants(seg, start_s - lo / rate, carrier_hz)
         spectrum = np.fft.fft(seg)
         freqs = np.fft.fftfreq(len(seg), 1 / rate)
         spectrum[np.abs(freqs - carrier_hz) > _DEMOD_HALF_BW_HZ] = 0
@@ -481,12 +541,13 @@ class HadesFskStream:
         env = np.convolve(np.abs(y) ** 2, np.ones(100) / 100, mode="same")
         active = np.flatnonzero(env > env.max() * 0.2)
         if len(active) < int(0.3 * rate):
-            return [], lo
+            return energy_variants, lo
         burst = y[active[0] : active[-1]]
         freq = np.angle(burst[1:] * np.conj(burst[:-1])) * rate / (2 * np.pi)
         freq = np.convolve(freq, np.ones(20) / 20, mode="same")
         decim = max(1, int(round(rate / 10_000)))
-        return _slice_bits(freq[::decim], rate / decim, self._baud), lo + int(active[0])
+        discriminator = _slice_bits(freq[::decim], rate / decim, self._baud)
+        return energy_variants + discriminator, lo + int(active[0])
 
     def _decode_variants(self, variants: list[str]) -> list[tuple[bytes, bool]]:
         """Packets from the first bit variant that holds a verified one.
