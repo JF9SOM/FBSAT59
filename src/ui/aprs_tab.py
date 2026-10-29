@@ -1400,9 +1400,9 @@ class AprsTab(QWidget):
         self._conn.execute(
             "INSERT INTO aprs_log "
             "(received_at, callsign, via, latitude_deg, longitude_deg, "
-            " comment, raw_frame, norad_sat, freq_hz, freq_rx_hz) "
-            "VALUES (CURRENT_TIMESTAMP, ?, ?, NULL, NULL, ?, '', ?, ?, ?)",
-            (base, via, comment, norad, ul_hz, dl_hz),
+            " comment, raw_frame, norad_sat, freq_hz, freq_rx_hz, gridsquare) "
+            "VALUES (CURRENT_TIMESTAMP, ?, ?, NULL, NULL, ?, '', ?, ?, ?, ?)",
+            (base, via, comment, norad, ul_hz, dl_hz, grid),
         )
         self._conn.commit()
         self._broadcast_adif(base, via, comment, None, None, norad, ul_hz, dl_hz, grid=grid)

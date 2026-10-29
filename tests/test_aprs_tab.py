@@ -464,6 +464,7 @@ def test_qso_is_logged_when_73_is_sent_after_599(qtbot: QtBot, conn: sqlite3.Con
     _send(tab, "JK4DHT", "73")
     rows = _rows(conn)
     assert [(r["callsign"], r["comment"]) for r in rows] == [("JK4DHT", "QSO PM54")]
+    assert conn.execute("SELECT gridsquare FROM aprs_log").fetchone()[0] == "PM54"
     _send(tab, "JK4DHT", "73")  # a repeated 73 does not log again
     assert len(_rows(conn)) == 1
 

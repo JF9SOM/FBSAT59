@@ -292,14 +292,23 @@ class LogExportDialog(QDialog):
                 my_station = f"{self._my_call}-{self._my_ssid}" if self._my_ssid else self._my_call
                 rows = self._conn.execute(
                     "SELECT received_at, callsign, via, latitude_deg, longitude_deg, "
-                    "comment, norad_sat, freq_hz, freq_rx_hz FROM aprs_log "
+                    "comment, norad_sat, freq_hz, freq_rx_hz, gridsquare FROM aprs_log "
                     "WHERE received_at >= ? AND received_at <= ? ORDER BY id ASC",
                     (from_d, to_dt),
                 ).fetchall()
                 for row in rows:
-                    ts_raw, callsign, via, lat_deg, lon_deg, comment, norad_sat, up_hz, down_hz = (
-                        row
-                    )
+                    (
+                        ts_raw,
+                        callsign,
+                        via,
+                        lat_deg,
+                        lon_deg,
+                        comment,
+                        norad_sat,
+                        up_hz,
+                        down_hz,
+                        stored_grid,
+                    ) = row
                     try:
                         dt = datetime.fromisoformat(str(ts_raw or "").replace(" ", "T"))
                     except ValueError:
@@ -310,8 +319,8 @@ class LogExportDialog(QDialog):
                     cs = str(callsign or "").split(">")[0].split("-")[0]
                     sat_name = lotw_name_for_norad(self._conn, norad_sat) if norad_sat else ""
                     self._note_satellite(sat_name)
-                    grid = ""
-                    if lat_deg is not None:
+                    grid = str(stored_grid or "")
+                    if not grid and lat_deg is not None:
                         grid = _latlon_to_grid(float(lat_deg), float(lon_deg or 0))
                     # APRS has no signal-report exchange, so a confirmed message
                     # exchange is logged as a nominal 599/599 report (see

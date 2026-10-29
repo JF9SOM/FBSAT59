@@ -25,7 +25,8 @@ def ensure_aprs_log_schema(conn: sqlite3.Connection) -> None:
             raw_frame     TEXT,
             norad_sat     INTEGER,
             freq_hz       INTEGER,
-            freq_rx_hz    INTEGER
+            freq_rx_hz    INTEGER,
+            gridsquare    TEXT
         )
         """
     )
@@ -33,4 +34,6 @@ def ensure_aprs_log_schema(conn: sqlite3.Connection) -> None:
     for name in ("freq_hz", "freq_rx_hz"):
         if name not in columns:
             conn.execute(f"ALTER TABLE aprs_log ADD COLUMN {name} INTEGER")  # noqa: S608 - fixed names
+    if "gridsquare" not in columns:  # the other station's locator, when the QSO gave one
+        conn.execute("ALTER TABLE aprs_log ADD COLUMN gridsquare TEXT")
     conn.commit()
