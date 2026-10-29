@@ -81,6 +81,7 @@ from core.location import LocationManager
 from core.notifier import PassNotifier
 from core.ntp_check import check_system_clock
 from core.rotator_frame import path_crosses_azimuth, to_bearing, to_frame_az
+from core.rotator_overhead import OverheadPlan, build_overhead_plan
 from data import favorites as favorites_db
 from data.amsat_status import AMSATStatusFetcher
 from data.amsat_upcoming import AMSATUpcomingFetcher
@@ -1015,6 +1016,9 @@ class MainWindow(QMainWindow):
         # tracking cycle. Touched from the rotator worker threads.
         self._rot_flip_lock = threading.Lock()
         self._rot_flip_cache: tuple[int, PassInfo, bool] | None = None
+        # Over-the-top plan (high-elevation pass on a rotator that can flip)
+        # for the cached pass: (norad, pass AOS, plan or None). Same lock.
+        self._rot_plan_cache: tuple[int, datetime, OverheadPlan | None] | None = None
         # Last-loaded rotator_settings (park / stop point / flip options).
         self._rot_park_settings: dict[str, Any] = {}
         # When True, the operator is manually pointing the rotator (Radio
@@ -5364,6 +5368,14 @@ class MainWindow(QMainWindow):
 
         if obs is None:
             return None
+        # On an over-the-top pass the commanded azimuth hardly moves, so the
+        # prediction must follow the plan, not the satellite's real azimuth
+        # (which swings ~180 degrees near the zenith).
+        plan = self._rot_active_plan(self._selected_norad, future)
+        if plan is not None:
+            tgt = plan.target(future)
+            if tgt is not None:
+                return tgt[0], tgt[1]
         # HamlibRotatorController.set_position() always receives an
         # already-south-offset-adjusted azimuth (see _send_to_rotator()'s
         # _apply_south_offset() call) — apply the same transform here so the
@@ -5455,16 +5467,15 @@ class MainWindow(QMainWindow):
                     try:
                         # Decided here, off the UI thread: the first call for
                         # a pass has to find it and sample its path.
-                        flip = self._rot_flip_for(norad, el > 0.0)
+                        az, el_cmd, flip = self._rot_target_for(norad, bearing, el)
                         rot.set_flip(flip)
-                        az = self._rot_az(bearing, flip)
-                        rot.set_position(az, el)
+                        rot.set_position(az, el_cmd)
                         pos = rot.get_position()
                         logger.info(
                             "Rotator: set position az=%.1f el=%.1f flip=%s "
                             "(actual az=%.1f el=%.1f)",
                             az,
-                            el,
+                            el_cmd,
                             flip,
                             pos.azimuth_deg,
                             pos.elevation_deg,
@@ -8888,6 +8899,7 @@ class MainWindow(QMainWindow):
             self._rot_auto_flip = bool(settings.get("auto_flip", False))
             with self._rot_flip_lock:
                 self._rot_flip_cache = None
+                self._rot_plan_cache = None
             self._rotator_controller.set_frame(self._rot_seam_az, self._rot_auto_flip)
             self._radio_control.set_manual_el_max(180.0 if self._rot_auto_flip else 90.0)
             self._rot_park_settings = settings
@@ -9007,9 +9019,9 @@ class MainWindow(QMainWindow):
             el = obs.elevation_deg
 
             def _initial_jump(rot: RotatorController) -> None:
-                flip = self._rot_flip_for(norad, el > 0.0)
+                az, el_cmd, flip = self._rot_target_for(norad, bearing, el)
                 rot.set_flip(flip)
-                rot.set_position(self._rot_az(bearing, flip), el)
+                rot.set_position(az, el_cmd)
 
             self._run_rotator_op(_initial_jump)
         else:
@@ -9074,12 +9086,70 @@ class MainWindow(QMainWindow):
             cached = self._rot_flip_cache
         if cached is not None and cached[0] == norad and cached[1].aos == p.aos:
             return cached[2]
-        flip = self._pass_crosses_stop(norad, p)
+        plan = self._build_rot_plan(norad, p)
+        if plan is not None:
+            flip = plan.flip_up
+            logger.info(
+                "Rotator: pass %s reaches %.0f deg — going over the top "
+                "(ascent flipped=%s, hold from %s to %s)",
+                p.aos,
+                p.max_elevation_deg,
+                flip,
+                plan.t_in,
+                plan.t_out,
+            )
+        else:
+            flip = self._pass_crosses_stop(norad, p)
+            if flip:
+                logger.info("Rotator: pass %s crosses the stop point — flipping", p.aos)
         with self._rot_flip_lock:
             self._rot_flip_cache = (norad, p, flip)
-        if flip:
-            logger.info("Rotator: pass %s crosses the stop point — flipping", p.aos)
+            self._rot_plan_cache = (norad, p.aos, plan)
         return flip
+
+    def _build_rot_plan(self, norad: int, p: PassInfo) -> OverheadPlan | None:
+        """Over-the-top plan for a high-elevation pass, or None."""
+        engine = self._engine
+        if engine is None:
+            return None
+
+        def observe(t: datetime) -> tuple[float, float] | None:
+            o = engine.observe(norad, at=t)
+            return None if o is None else (o.azimuth_deg, o.elevation_deg)
+
+        try:
+            return build_overhead_plan(
+                p.aos, p.tca, p.los, p.max_elevation_deg, self._rot_seam_az, observe
+            )
+        except Exception as exc:
+            logger.error("Rotator: over-the-top planning failed: %s", exc)
+            return None
+
+    def _rot_active_plan(self, norad: int | None, at: datetime) -> OverheadPlan | None:
+        """The cached over-the-top plan, if it covers `at` for this satellite."""
+        with self._rot_flip_lock:
+            cached = self._rot_plan_cache
+        if cached is None or cached[0] != norad or cached[2] is None:
+            return None
+        plan = cached[2]
+        return plan if plan.aos <= at <= plan.los else None
+
+    def _rot_target_for(
+        self, norad: int | None, bearing: float, el: float
+    ) -> tuple[float, float, bool]:
+        """(controller-frame azimuth, elevation, flipped) to command now.
+
+        Follows the over-the-top plan while one is running; otherwise the
+        satellite's real azimuth/elevation in the pass's pose.
+        """
+        flip = self._rot_flip_for(norad, el > 0.0)  # also warms the plan cache
+        now = datetime.now(UTC)
+        plan = self._rot_active_plan(norad, now)
+        if plan is not None:
+            tgt = plan.target(now)
+            if tgt is not None:
+                return tgt
+        return self._rot_az(bearing, flip), el, flip
 
     def _rot_flip_cached(self, norad: int | None) -> bool:
         """Flip decision already made for the pass being tracked (no computation)."""

@@ -1553,3 +1553,23 @@ PTT テストも固まったのも同じ原因。
 修正: `rig.controller.release_superseded_direct(old, new)` を新設し、`_load_rig_settings()` で Rig 1/2 とも、
 新しいコントローラーを接続する**前に**旧い接続中の Direct コントローラーを明示的に `disconnect()` する
 （SDR と同じ扱い。NET コントローラーは対象外）。実機未検証（再現手順: Connect → ADC ON → Rig Settings で OK）。
+
+## 高仰角パスの over-the-top 追尾（2026-10-29）
+
+自動フリップ有効（仰角 180° まで動かせるローテーター）で、**最大仰角 80° 以上**のパスは
+`core/rotator_overhead.py` の `OverheadPlan` で追尾する。天頂付近で方位が約 165° 急変する
+パス（2026-10-28 ISS で実測 27 秒の全速旋回）を、方位をほぼ動かさずに仰角を 180° まで振る動きに置き換える。
+しきい値は定数（`OVERHEAD_MIN_MAX_EL_DEG`=80、`HOLD_START_EL_DEG`=50。設定画面には出さない）。
+
+- 仰角 50° 以下: 実際の方位・仰角に追従（姿勢は上り側/下り側で逆）
+- 50° 超: 方位は `u_in`→`u_out` へ線形に（小さく）回すだけ、仰角は最大仰角の時刻（TCA）でちょうど 90° になるよう線形に
+- TCA で姿勢を切り替える（仰角 90° では両姿勢が同じ向きで、フレーム方位 `u` は連続）
+- 上りをどちらの姿勢にするかは、パスごとに「方位の総移動量（ラップなし）」が小さいほうを選ぶ。
+  これで北/南ストップをまたがない（例: AOS 3°・LOS 178° なら、フリップ姿勢で上り 183°→通常姿勢で下り 178°）
+- 既存の `_try_fast_pass_intercept`（先読み）は 80° 未満のパスで従来どおり働く。
+  先読みの予測値（`_predict_rotator_lead`）はプランに従う（実際の衛星方位を使うと誤発動するため）
+- MainWindow: `_build_rot_plan` / `_rot_active_plan` / `_rot_target_for`、キャッシュは `_rot_plan_cache`
+
+**実機未確認**。試験はダミー衛星で行う: `python scripts/make_dummy_pass_tle.py`（QTH は DB から読む。
+`--delay-min` `--max-el`）が数分後に天頂近くを通る TLE を出力するので、Satellite > Add Manual TLE で追加する
+（手動 TLE は自動更新で上書きされない）。使い終わったら Remove Manual TLE。リグには接続しない。
