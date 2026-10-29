@@ -415,6 +415,11 @@ class _TxWorker(QObject):
             mgr.release_output(_AUDIO_OWNER, self._out_device)
 
 
+# Longest a TX turn waits for the previous period's decode: the audio starts
+# 300 ms into the period, so waiting up to here costs nothing.
+_TX_DECODE_WAIT_MS = 300
+
+
 class _RxDecodeWorker(QObject):
     """Runs Ft4Codec.decode_audio() off the Qt main thread.
 
@@ -557,6 +562,8 @@ class Ft4Tab(QWidget):
         self._last_level_emit: float = 0.0
         self._waterfall_dialog: Ft4WaterfallDialog | None = None
         self._decode_busy: bool = False
+        # A TX turn that is waiting for the running decode (see _on_period_changed).
+        self._tx_deferred: bool = False
         self._decode_thread: threading.Thread | None = None
         # Set (by _transmit_now(), on the Qt main thread) when we actually
         # start transmitting in what will become "the current period" from
@@ -1387,6 +1394,22 @@ class Ft4Tab(QWidget):
         tied to TX/RX slot parity at all (every slot is captured and
         decoded regardless, see Ft4Scheduler's module docstring)."""
         if is_tx and self._tx_enabled and not self._tx_in_progress:
+            if self._decode_busy:
+                # The previous period's decode is still running and may advance
+                # the QSO (e.g. RR73 -> 73): transmitting now would send the
+                # message chosen before that reply was read. Wait for it, but
+                # not past the point where the audio has to start.
+                self._tx_deferred = True
+                QTimer.singleShot(_TX_DECODE_WAIT_MS, self._flush_deferred_tx)
+                return
+            self._transmit_now()
+
+    def _flush_deferred_tx(self) -> None:
+        """Start the TX that _on_period_changed() held back for a running decode."""
+        if not self._tx_deferred:
+            return
+        self._tx_deferred = False
+        if self._tx_enabled and not self._tx_in_progress:
             self._transmit_now()
 
     def _on_capture_period(self, audio: NDArray[np.float32]) -> None:
@@ -1456,6 +1479,7 @@ class Ft4Tab(QWidget):
         if messages:
             self._display_decoded(messages)
         self._update_waterfall_only(audio, messages)
+        self._flush_deferred_tx()
 
     # ------------------------------------------------------------------ #
     # Transmit path                                                        #

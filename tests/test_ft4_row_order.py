@@ -39,3 +39,39 @@ def test_rx_row_goes_above_the_tx_row_of_the_next_period(qtbot: QtBot) -> None:
 def test_midnight_wrap_is_not_reordered(qtbot: QtBot) -> None:
     tab = _make_tab(qtbot, ["235952", "235959"])
     assert tab._time_ordered_row("000007") == 2
+
+
+def test_tx_turn_waits_for_the_running_decode(qtbot: QtBot) -> None:
+    tab = _make_tab(qtbot, [])
+    tab._transmit_now = MagicMock()  # type: ignore[method-assign]
+    tab._tx_enabled = True
+    tab._decode_busy = True
+
+    tab._on_period_changed(True)
+    tab._transmit_now.assert_not_called()
+
+    tab._on_decode_done([], MagicMock())
+    tab._transmit_now.assert_called_once()
+
+    # The timer that was armed for the same turn must not transmit again.
+    tab._flush_deferred_tx()
+    tab._transmit_now.assert_called_once()
+
+
+def test_deferred_tx_starts_on_timeout_when_the_decode_is_slow(qtbot: QtBot) -> None:
+    tab = _make_tab(qtbot, [])
+    tab._transmit_now = MagicMock()  # type: ignore[method-assign]
+    tab._tx_enabled = True
+    tab._decode_busy = True
+
+    tab._on_period_changed(True)
+    qtbot.waitUntil(lambda: tab._transmit_now.call_count == 1, timeout=2000)
+
+
+def test_tx_turn_starts_at_once_when_no_decode_is_running(qtbot: QtBot) -> None:
+    tab = _make_tab(qtbot, [])
+    tab._transmit_now = MagicMock()  # type: ignore[method-assign]
+    tab._tx_enabled = True
+
+    tab._on_period_changed(True)
+    tab._transmit_now.assert_called_once()
