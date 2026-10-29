@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fbsat59\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-29 16:45+0900\n"
+"POT-Creation-Date: 2026-10-29 17:55+0900\n"
 "PO-Revision-Date: 2026-07-07 00:00+0000\n"
 "Last-Translator: FBSAT59 Contributors\n"
 "Language-Team: Japanese\n"
@@ -47,7 +47,7 @@ msgstr ""
 msgid "Configuration"
 msgstr "設定"
 
-#: src/ui/ft4_tab.py:702 src/ui/aprs_tab.py:252 src/ui/q65_tab.py:197
+#: src/ui/ft4_tab.py:702 src/ui/aprs_tab.py:256 src/ui/q65_tab.py:197
 msgid "My Call:"
 msgstr "コールサイン:"
 
@@ -276,7 +276,7 @@ msgstr ""
 "（送信直後、または受信周期の終盤に）書き込み、受信音声をその周波数と\n"
 "理想のドップラー補正周波数との差で補正してからデコードします。"
 
-#: src/ui/ft4_tab.py:936 src/ui/aprs_tab.py:392 src/ui/foresail1p_panel.py:359
+#: src/ui/ft4_tab.py:936 src/ui/aprs_tab.py:408 src/ui/foresail1p_panel.py:359
 #: src/ui/q65_tab.py:326 src/ui/arica2_panel.py:341 src/ui/erminaz_panel.py:251
 msgid "TX Level:"
 msgstr "TXレベル:"
@@ -297,7 +297,7 @@ msgstr ""
 msgid "Log QSO"
 msgstr "QSOを記録"
 
-#: src/ui/ft4_tab.py:960 src/ui/ax100_digi_tab.py:485 src/ui/aprs_tab.py:462
+#: src/ui/ft4_tab.py:960 src/ui/ax100_digi_tab.py:485 src/ui/aprs_tab.py:478
 #: src/ui/q65_tab.py:353
 msgid "Export ADIF…"
 msgstr "ADIFエクスポート"
@@ -2132,12 +2132,12 @@ msgstr "宛先"
 msgid "Sat"
 msgstr "衛星"
 
-#: src/ui/ax100_digi_tab.py:523 src/ui/aprs_tab.py:364
+#: src/ui/ax100_digi_tab.py:523 src/ui/aprs_tab.py:370
 msgid "Send Message"
 msgstr "メッセージ送信"
 
 #: src/ui/ax100_digi_tab.py:527 src/ui/pass_panel.py:417
-#: src/ui/pass_panel.py:466 src/ui/aprs_tab.py:366
+#: src/ui/pass_panel.py:466 src/ui/aprs_tab.py:382
 #: src/ui/foresail1p_panel.py:314 src/ui/log_export_dialog.py:107
 #: src/ui/erminaz_panel.py:242
 msgid "To:"
@@ -2178,7 +2178,7 @@ msgstr "記憶しているメッセージ本文をすべて削除します"
 msgid "Content:"
 msgstr "本文:"
 
-#: src/ui/ax100_digi_tab.py:568 src/ui/aprs_tab.py:410
+#: src/ui/ax100_digi_tab.py:568 src/ui/aprs_tab.py:426
 #: src/ui/foresail1p_panel.py:378 src/ui/erminaz_panel.py:278
 msgid "Send"
 msgstr "送信"
@@ -3099,7 +3099,7 @@ msgstr ""
 "レート（1k2 / 9k6など）から自動で設定されます。手動で変更することもできます。"
 "gr-satellitesのデコードには影響しません。"
 
-#: src/ui/telemetry_tab.py:673 src/ui/aprs_tab.py:303 src/ui/sstv_tab.py:378
+#: src/ui/telemetry_tab.py:673 src/ui/aprs_tab.py:307 src/ui/sstv_tab.py:378
 msgid "Baud:"
 msgstr "ボーレート:"
 
@@ -3642,11 +3642,11 @@ msgstr "Foresail-1p デジピーター（Skylink）"
 msgid "ERMINAZ-2 digipeater"
 msgstr "デジピーター"
 
-#: src/ui/aprs_tab.py:242
+#: src/ui/aprs_tab.py:246
 msgid "Station Settings"
 msgstr "局設定"
 
-#: src/ui/aprs_tab.py:271
+#: src/ui/aprs_tab.py:275
 msgid ""
 "Digipeater path. ARISS / APRSAT / WIDE are the generic\n"
 "aliases most APRS-capable satellite digipeaters (ISS and\n"
@@ -3662,11 +3662,11 @@ msgstr ""
 "別の値を入力してください。\n"
 "入力した値はプルダウンに記憶されます — 右クリックで削除できます。"
 
-#: src/ui/aprs_tab.py:285 src/ui/foresail1p_panel.py:328
+#: src/ui/aprs_tab.py:289 src/ui/foresail1p_panel.py:328
 msgid "Via:"
 msgstr "Via:"
 
-#: src/ui/aprs_tab.py:295
+#: src/ui/aprs_tab.py:299
 msgid ""
 "AX.25 baud rate for Direwolf (Rig + Sound Card reception).\n"
 "Selecting a satellite or transponder sets this from the baud\n"
@@ -3679,15 +3679,15 @@ msgstr ""
 "まれない場合は1200）。手動で変更することもできます。Rig + サウンドカード受信"
 "にのみ適用され、SDR単体受信は常に1200 baud AFSKです。"
 
-#: src/ui/aprs_tab.py:310
+#: src/ui/aprs_tab.py:314
 msgid "Plain"
 msgstr "平文"
 
-#: src/ui/aprs_tab.py:311
+#: src/ui/aprs_tab.py:315
 msgid "Raw packet"
 msgstr "生パケット"
 
-#: src/ui/aprs_tab.py:314
+#: src/ui/aprs_tab.py:318
 msgid ""
 "Plain: a human-readable summary of each packet (position,\n"
 "message, status…). Raw packet: the APRS information field\n"
@@ -3697,50 +3697,62 @@ msgstr ""
 "ステータス等）。生パケット: オンエアで受信した APRS 情報\n"
 "フィールドをそのまま表示。"
 
-#: src/ui/aprs_tab.py:320
+#: src/ui/aprs_tab.py:324
 msgid "Show:"
 msgstr "表示:"
 
-#: src/ui/aprs_tab.py:327 src/ui/sstv_tab.py:332
+#: src/ui/aprs_tab.py:331 src/ui/sstv_tab.py:332
 msgid "Input: —"
 msgstr "入力: —"
 
-#: src/ui/aprs_tab.py:344
+#: src/ui/aprs_tab.py:348
 msgid "Received Packets"
 msgstr "受信パケット"
 
-#: src/ui/aprs_tab.py:372 src/ui/foresail1p_panel.py:349
+#: src/ui/aprs_tab.py:372 src/ui/q65_tab.py:261
+msgid "CQ"
+msgstr "CQ"
+
+#: src/ui/aprs_tab.py:375
+msgid ""
+"Fill the form for a general call: To = CQ, message = your grid square, UISS "
+"style. Press Send to transmit."
+msgstr ""
+"CQ を出す入力を自動で入れます: 宛先 = CQ、メッセージ = 自局のグリッドスクウェア、"
+"UISS方式。送信するには「送信」を押してください。"
+
+#: src/ui/aprs_tab.py:388 src/ui/foresail1p_panel.py:349
 #: src/ui/arica2_panel.py:332 src/ui/erminaz_panel.py:270
 msgid "Message:"
 msgstr "メッセージ:"
 
-#: src/ui/aprs_tab.py:374
+#: src/ui/aprs_tab.py:390
 msgid "Text message (max 67 chars)"
 msgstr "テキストメッセージ（最大67文字）"
 
-#: src/ui/aprs_tab.py:378
+#: src/ui/aprs_tab.py:394
 msgid "Format:"
 msgstr "形式:"
 
-#: src/ui/aprs_tab.py:380
+#: src/ui/aprs_tab.py:396
 msgid "APRS message"
 msgstr "APRSメッセージ"
 
-#: src/ui/aprs_tab.py:381
+#: src/ui/aprs_tab.py:397
 msgid "UISS style"
 msgstr "UISS方式"
 
-#: src/ui/aprs_tab.py:384
+#: src/ui/aprs_tab.py:400
 msgid ""
 "APRS message: addressed inside the text (:CALL     :text) to APRS. UISS "
 "style: the addressee (CQ or a callsign) goes in the packet's destination "
 "field and the text is sent as is; use it with SONATE-2."
 msgstr ""
 "APRSメッセージ: 宛先は本文の中（:CALL     :text）に書き、パケットの宛先は "
-"APRS にします。UISS方式: 宛先（CQ またはコールサイン）をパケットの宛先欄に入れ、"
-"本文はそのまま送ります。SONATE-2 ではこちらを使います。"
+"APRS にします。UISS方式: 宛先（CQ またはコールサイン）をパケットの宛先欄に入"
+"れ、本文はそのまま送ります。SONATE-2 ではこちらを使います。"
 
-#: src/ui/aprs_tab.py:399
+#: src/ui/aprs_tab.py:415
 msgid ""
 "Transmit audio level in dB below full scale. The app generates the packet "
 "audio at full scale; lower this until the radio's deviation (FM) is right. "
@@ -3751,107 +3763,107 @@ msgstr ""
 "で作るので、無線機の偏移（FM）が適正になるまで下げてください。パソコンの出力"
 "音量は固定し、無線機のデータ入力ゲインと併せて調整します。"
 
-#: src/ui/aprs_tab.py:417
+#: src/ui/aprs_tab.py:433
 msgid "Send My Position"
 msgstr "自局位置を送信"
 
-#: src/ui/aprs_tab.py:419
+#: src/ui/aprs_tab.py:435
 msgid "Auto-beacon every"
 msgstr "自動ビーコン"
 
-#: src/ui/aprs_tab.py:426
+#: src/ui/aprs_tab.py:442
 msgid " min"
 msgstr " 分毎"
 
-#: src/ui/aprs_tab.py:430
+#: src/ui/aprs_tab.py:446
 msgid "Symbol:"
 msgstr "シンボル:"
 
-#: src/ui/aprs_tab.py:434
+#: src/ui/aprs_tab.py:450
 msgid "Fixed Station  /-"
 msgstr "固定局  /-"
 
-#: src/ui/aprs_tab.py:435
+#: src/ui/aprs_tab.py:451
 msgid "Mobile  />"
 msgstr "移動局  />"
 
-#: src/ui/aprs_tab.py:436
+#: src/ui/aprs_tab.py:452
 msgid "Balloon  /O"
 msgstr "気球  /O"
 
-#: src/ui/aprs_tab.py:437
+#: src/ui/aprs_tab.py:453
 msgid "Antenna  /Y"
 msgstr "アンテナ  /Y"
 
-#: src/ui/aprs_tab.py:438
+#: src/ui/aprs_tab.py:454
 msgid "Satellite  /S"
 msgstr "衛星  /S"
 
-#: src/ui/aprs_tab.py:445
+#: src/ui/aprs_tab.py:461
 msgid "Comment:"
 msgstr "コメント:"
 
-#: src/ui/aprs_tab.py:447
+#: src/ui/aprs_tab.py:463
 msgid "Optional free text"
 msgstr "任意の自由記述"
 
-#: src/ui/aprs_tab.py:451
+#: src/ui/aprs_tab.py:467
 msgid "Send Now"
 msgstr "今すぐ送信"
 
-#: src/ui/aprs_tab.py:455
+#: src/ui/aprs_tab.py:471
 msgid "QTH: —"
 msgstr "QTH: —"
 
-#: src/ui/aprs_tab.py:469 src/ui/aprs_is_window.py:69
+#: src/ui/aprs_tab.py:485 src/ui/aprs_is_window.py:69
 msgid "APRS-IS Monitor"
 msgstr "APRS-IS モニター"
 
-#: src/ui/aprs_tab.py:471
+#: src/ui/aprs_tab.py:487
 msgid ""
 "Open a window listing satellite APRS packets other stations reported to APRS-"
 "IS"
 msgstr ""
 "他局が APRS-IS に報告した衛星の APRS パケット一覧を別ウィンドウで開きます"
 
-#: src/ui/aprs_tab.py:572
+#: src/ui/aprs_tab.py:588
 msgid "Input: Sound Card + Direwolf  (send + receive)"
 msgstr "入力: サウンドカード + Direwolf（送受信）"
 
-#: src/ui/aprs_tab.py:578
+#: src/ui/aprs_tab.py:594
 #, python-brace-format
 msgid "Input: {dev}  (receive only — SDR)"
 msgstr "入力: {dev}（受信のみ — SDR）"
 
-#: src/ui/aprs_tab.py:583
+#: src/ui/aprs_tab.py:599
 msgid "Input: Sound Card + Direwolf  (receive only — Rig not connected)"
 msgstr "入力: サウンドカード + Direwolf（受信のみ — 無線機未接続）"
 
-#: src/ui/aprs_tab.py:589
+#: src/ui/aprs_tab.py:605
 msgid "Input: Sound Card not configured — open Rig Settings > Sound Card"
 msgstr ""
 "入力: サウンドカード未設定 — Rig Settings > Sound Card を開いてください"
 
-#: src/ui/aprs_tab.py:595
+#: src/ui/aprs_tab.py:611
 msgid "Input: No audio source — connect Rig or SDR in Radio Control"
 msgstr ""
 "入力: 音声ソースなし — 無線機コントロールで無線機またはSDRを接続してください"
 
-#: src/ui/aprs_tab.py:813
+#: src/ui/aprs_tab.py:830
 #, python-brace-format
 msgid "Remove \"{value}\" from list"
 msgstr "\"{value}\" をリストから削除"
 
-#: src/ui/aprs_tab.py:1214
+#: src/ui/aprs_tab.py:1239
 msgid "Open in Google Maps"
 msgstr "Google Map で開く"
 
-#: src/ui/aprs_tab.py:1239
+#: src/ui/aprs_tab.py:1264
 #, python-brace-format
 msgid "QSOs logged: {n}"
 msgstr "記録済みQSO数: {n}"
 
-#: src/ui/aprs_tab.py:1306 src/ui/aprs_tab.py:1323
+#: src/ui/aprs_tab.py:1376 src/ui/aprs_tab.py:1393
 msgid "QTH: not set — configure in Settings"
 msgstr "QTH: 未設定 — Settingsで設定してください"
 
@@ -5889,10 +5901,6 @@ msgid ""
 msgstr ""
 "libq65がインストールされていません — 受信デコードは無効です。\n"
 "送信エンコードは純Python実装のため、libq65がなくても動作します。"
-
-#: src/ui/q65_tab.py:261
-msgid "CQ"
-msgstr ""
 
 #: src/ui/q65_tab.py:262
 msgid "Start calling CQ"
@@ -8068,11 +8076,6 @@ msgstr ""
 "出力デバイス #{device}（{name}）は {rate} Hz で再生できません — Rig Settings "
 "> Sound Card を開き、出力デバイスを選び直してください。"
 
-#: src/comms/telemetry/decoder.py:146
-#, python-brace-format
-msgid "({shown}/{total} hex chars — rest omitted)"
-msgstr "（{shown}/{total}文字を表示、以下省略）"
-
 #: src/comms/aprs/humanize.py:52
 msgid "car"
 msgstr "車"
@@ -8392,6 +8395,11 @@ msgstr "（ビット {bits}）"
 #, python-brace-format
 msgid "Status: “{text}”"
 msgstr "ステータス: 「{text}」"
+
+#: src/comms/telemetry/decoder.py:146
+#, python-brace-format
+msgid "({shown}/{total} hex chars — rest omitted)"
+msgstr "（{shown}/{total}文字を表示、以下省略）"
 
 #~ msgid "repaired, not verified"
 #~ msgstr "修復済み・未検証"

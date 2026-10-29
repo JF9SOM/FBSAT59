@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-29 16:45+0900\n"
+"POT-Creation-Date: 2026-10-29 17:55+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -46,7 +46,7 @@ msgstr ""
 msgid "Configuration"
 msgstr ""
 
-#: src/ui/ft4_tab.py:702 src/ui/aprs_tab.py:252 src/ui/q65_tab.py:197
+#: src/ui/ft4_tab.py:702 src/ui/aprs_tab.py:256 src/ui/q65_tab.py:197
 msgid "My Call:"
 msgstr ""
 
@@ -248,7 +248,7 @@ msgid ""
 "that frequency and the ideal Doppler-corrected one before it is decoded."
 msgstr ""
 
-#: src/ui/ft4_tab.py:936 src/ui/aprs_tab.py:392 src/ui/foresail1p_panel.py:359
+#: src/ui/ft4_tab.py:936 src/ui/aprs_tab.py:408 src/ui/foresail1p_panel.py:359
 #: src/ui/q65_tab.py:326 src/ui/arica2_panel.py:341 src/ui/erminaz_panel.py:251
 msgid "TX Level:"
 msgstr ""
@@ -265,7 +265,7 @@ msgstr ""
 msgid "Log QSO"
 msgstr ""
 
-#: src/ui/ft4_tab.py:960 src/ui/ax100_digi_tab.py:485 src/ui/aprs_tab.py:462
+#: src/ui/ft4_tab.py:960 src/ui/ax100_digi_tab.py:485 src/ui/aprs_tab.py:478
 #: src/ui/q65_tab.py:353
 msgid "Export ADIF…"
 msgstr ""
@@ -1957,12 +1957,12 @@ msgstr ""
 msgid "Sat"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:523 src/ui/aprs_tab.py:364
+#: src/ui/ax100_digi_tab.py:523 src/ui/aprs_tab.py:370
 msgid "Send Message"
 msgstr ""
 
 #: src/ui/ax100_digi_tab.py:527 src/ui/pass_panel.py:417
-#: src/ui/pass_panel.py:466 src/ui/aprs_tab.py:366
+#: src/ui/pass_panel.py:466 src/ui/aprs_tab.py:382
 #: src/ui/foresail1p_panel.py:314 src/ui/log_export_dialog.py:107
 #: src/ui/erminaz_panel.py:242
 msgid "To:"
@@ -2003,7 +2003,7 @@ msgstr ""
 msgid "Content:"
 msgstr ""
 
-#: src/ui/ax100_digi_tab.py:568 src/ui/aprs_tab.py:410
+#: src/ui/ax100_digi_tab.py:568 src/ui/aprs_tab.py:426
 #: src/ui/foresail1p_panel.py:378 src/ui/erminaz_panel.py:278
 msgid "Send"
 msgstr ""
@@ -2875,7 +2875,7 @@ msgid ""
 "hand. Has no effect on gr-satellites decoding."
 msgstr ""
 
-#: src/ui/telemetry_tab.py:673 src/ui/aprs_tab.py:303 src/ui/sstv_tab.py:378
+#: src/ui/telemetry_tab.py:673 src/ui/aprs_tab.py:307 src/ui/sstv_tab.py:378
 msgid "Baud:"
 msgstr ""
 
@@ -3378,11 +3378,11 @@ msgstr ""
 msgid "ERMINAZ-2 digipeater"
 msgstr ""
 
-#: src/ui/aprs_tab.py:242
+#: src/ui/aprs_tab.py:246
 msgid "Station Settings"
 msgstr ""
 
-#: src/ui/aprs_tab.py:271
+#: src/ui/aprs_tab.py:275
 msgid ""
 "Digipeater path. ARISS / APRSAT / WIDE are the generic\n"
 "aliases most APRS-capable satellite digipeaters (ISS and\n"
@@ -3393,11 +3393,11 @@ msgid ""
 "one to remove it."
 msgstr ""
 
-#: src/ui/aprs_tab.py:285 src/ui/foresail1p_panel.py:328
+#: src/ui/aprs_tab.py:289 src/ui/foresail1p_panel.py:328
 msgid "Via:"
 msgstr ""
 
-#: src/ui/aprs_tab.py:295
+#: src/ui/aprs_tab.py:299
 msgid ""
 "AX.25 baud rate for Direwolf (Rig + Sound Card reception).\n"
 "Selecting a satellite or transponder sets this from the baud\n"
@@ -3406,62 +3406,72 @@ msgid ""
 "Card reception — SDR-only reception is always 1200 baud AFSK."
 msgstr ""
 
-#: src/ui/aprs_tab.py:310
+#: src/ui/aprs_tab.py:314
 msgid "Plain"
 msgstr ""
 
-#: src/ui/aprs_tab.py:311
+#: src/ui/aprs_tab.py:315
 msgid "Raw packet"
 msgstr ""
 
-#: src/ui/aprs_tab.py:314
+#: src/ui/aprs_tab.py:318
 msgid ""
 "Plain: a human-readable summary of each packet (position,\n"
 "message, status…). Raw packet: the APRS information field\n"
 "exactly as received on the air."
 msgstr ""
 
-#: src/ui/aprs_tab.py:320
+#: src/ui/aprs_tab.py:324
 msgid "Show:"
 msgstr ""
 
-#: src/ui/aprs_tab.py:327 src/ui/sstv_tab.py:332
+#: src/ui/aprs_tab.py:331 src/ui/sstv_tab.py:332
 msgid "Input: —"
 msgstr ""
 
-#: src/ui/aprs_tab.py:344
+#: src/ui/aprs_tab.py:348
 msgid "Received Packets"
 msgstr ""
 
-#: src/ui/aprs_tab.py:372 src/ui/foresail1p_panel.py:349
+#: src/ui/aprs_tab.py:372 src/ui/q65_tab.py:261
+msgid "CQ"
+msgstr ""
+
+#: src/ui/aprs_tab.py:375
+msgid ""
+"Fill the form for a general call: To = CQ, message = your grid square, UISS "
+"style. Press Send to transmit."
+msgstr ""
+
+#: src/ui/aprs_tab.py:388 src/ui/foresail1p_panel.py:349
 #: src/ui/arica2_panel.py:332 src/ui/erminaz_panel.py:270
 msgid "Message:"
 msgstr ""
 
-#: src/ui/aprs_tab.py:374
+#: src/ui/aprs_tab.py:390
 msgid "Text message (max 67 chars)"
 msgstr ""
 
-#: src/ui/aprs_tab.py:378
+#: src/ui/aprs_tab.py:394
 msgid "Format:"
 msgstr ""
 
-#: src/ui/aprs_tab.py:380
+#: src/ui/aprs_tab.py:396
 msgid "APRS message"
 msgstr ""
 
-#: src/ui/aprs_tab.py:381
+#: src/ui/aprs_tab.py:397
 msgid "UISS style"
 msgstr ""
 
-#: src/ui/aprs_tab.py:384
+#: src/ui/aprs_tab.py:400
 msgid ""
 "APRS message: addressed inside the text (:CALL     :text) to APRS. UISS "
 "style: the addressee (CQ or a callsign) goes in the packet's destination "
 "field and the text is sent as is; use it with SONATE-2."
 msgstr ""
 
-#: src/ui/aprs_tab.py:399
+#: src/ui/aprs_tab.py:415
 msgid ""
 "Transmit audio level in dB below full scale. The app generates the packet "
 "audio at full scale; lower this until the radio's deviation (FM) is right. "
@@ -3469,104 +3479,104 @@ msgid ""
 "input gain."
 msgstr ""
 
-#: src/ui/aprs_tab.py:417
+#: src/ui/aprs_tab.py:433
 msgid "Send My Position"
 msgstr ""
 
-#: src/ui/aprs_tab.py:419
+#: src/ui/aprs_tab.py:435
 msgid "Auto-beacon every"
 msgstr ""
 
-#: src/ui/aprs_tab.py:426
+#: src/ui/aprs_tab.py:442
 msgid " min"
 msgstr ""
 
-#: src/ui/aprs_tab.py:430
+#: src/ui/aprs_tab.py:446
 msgid "Symbol:"
 msgstr ""
 
-#: src/ui/aprs_tab.py:434
+#: src/ui/aprs_tab.py:450
 msgid "Fixed Station  /-"
 msgstr ""
 
-#: src/ui/aprs_tab.py:435
+#: src/ui/aprs_tab.py:451
 msgid "Mobile  />"
 msgstr ""
 
-#: src/ui/aprs_tab.py:436
+#: src/ui/aprs_tab.py:452
 msgid "Balloon  /O"
 msgstr ""
 
-#: src/ui/aprs_tab.py:437
+#: src/ui/aprs_tab.py:453
 msgid "Antenna  /Y"
 msgstr ""
 
-#: src/ui/aprs_tab.py:438
+#: src/ui/aprs_tab.py:454
 msgid "Satellite  /S"
 msgstr ""
 
-#: src/ui/aprs_tab.py:445
+#: src/ui/aprs_tab.py:461
 msgid "Comment:"
 msgstr ""
 
-#: src/ui/aprs_tab.py:447
+#: src/ui/aprs_tab.py:463
 msgid "Optional free text"
 msgstr ""
 
-#: src/ui/aprs_tab.py:451
+#: src/ui/aprs_tab.py:467
 msgid "Send Now"
 msgstr ""
 
-#: src/ui/aprs_tab.py:455
+#: src/ui/aprs_tab.py:471
 msgid "QTH: —"
 msgstr ""
 
-#: src/ui/aprs_tab.py:469 src/ui/aprs_is_window.py:69
+#: src/ui/aprs_tab.py:485 src/ui/aprs_is_window.py:69
 msgid "APRS-IS Monitor"
 msgstr ""
 
-#: src/ui/aprs_tab.py:471
+#: src/ui/aprs_tab.py:487
 msgid ""
 "Open a window listing satellite APRS packets other stations reported to APRS-"
 "IS"
 msgstr ""
 
-#: src/ui/aprs_tab.py:572
+#: src/ui/aprs_tab.py:588
 msgid "Input: Sound Card + Direwolf  (send + receive)"
 msgstr ""
 
-#: src/ui/aprs_tab.py:578
+#: src/ui/aprs_tab.py:594
 #, python-brace-format
 msgid "Input: {dev}  (receive only — SDR)"
 msgstr ""
 
-#: src/ui/aprs_tab.py:583
+#: src/ui/aprs_tab.py:599
 msgid "Input: Sound Card + Direwolf  (receive only — Rig not connected)"
 msgstr ""
 
-#: src/ui/aprs_tab.py:589
+#: src/ui/aprs_tab.py:605
 msgid "Input: Sound Card not configured — open Rig Settings > Sound Card"
 msgstr ""
 
-#: src/ui/aprs_tab.py:595
+#: src/ui/aprs_tab.py:611
 msgid "Input: No audio source — connect Rig or SDR in Radio Control"
 msgstr ""
 
-#: src/ui/aprs_tab.py:813
+#: src/ui/aprs_tab.py:830
 #, python-brace-format
 msgid "Remove \"{value}\" from list"
 msgstr ""
 
-#: src/ui/aprs_tab.py:1214
+#: src/ui/aprs_tab.py:1239
 msgid "Open in Google Maps"
 msgstr ""
 
-#: src/ui/aprs_tab.py:1239
+#: src/ui/aprs_tab.py:1264
 #, python-brace-format
 msgid "QSOs logged: {n}"
 msgstr ""
 
-#: src/ui/aprs_tab.py:1306 src/ui/aprs_tab.py:1323
+#: src/ui/aprs_tab.py:1376 src/ui/aprs_tab.py:1393
 msgid "QTH: not set — configure in Settings"
 msgstr ""
 
@@ -5348,10 +5358,6 @@ msgstr ""
 msgid ""
 "libq65 not installed — RX decoding disabled.\n"
 "TX encoding uses pure Python and works without libq65."
-msgstr ""
-
-#: src/ui/q65_tab.py:261
-msgid "CQ"
 msgstr ""
 
 #: src/ui/q65_tab.py:262
@@ -7305,11 +7311,6 @@ msgid ""
 "Settings > Sound Card and re-select the output device."
 msgstr ""
 
-#: src/comms/telemetry/decoder.py:146
-#, python-brace-format
-msgid "({shown}/{total} hex chars — rest omitted)"
-msgstr ""
-
 #: src/comms/aprs/humanize.py:52
 msgid "car"
 msgstr ""
@@ -7628,4 +7629,9 @@ msgstr ""
 #: src/comms/aprs/humanize.py:366
 #, python-brace-format
 msgid "Status: “{text}”"
+msgstr ""
+
+#: src/comms/telemetry/decoder.py:146
+#, python-brace-format
+msgid "({shown}/{total} hex chars — rest omitted)"
 msgstr ""

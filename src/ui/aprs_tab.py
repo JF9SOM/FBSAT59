@@ -52,6 +52,8 @@ _SSID_MAX = 15
 _ROLE_COORDS = int(Qt.ItemDataRole.UserRole)
 _ROLE_PLAIN = int(Qt.ItemDataRole.UserRole) + 1
 _ROLE_RAW = int(Qt.ItemDataRole.UserRole) + 2
+# (sender, destination, addressee, text) of a received packet, for click-to-fill.
+_ROLE_CALL_INFO = int(Qt.ItemDataRole.UserRole) + 3
 
 # app_settings key for the receive-log display toggle ("plain" | "raw").
 _DISPLAY_MODE_KEY = "aprs_display_mode"
@@ -162,6 +164,8 @@ class AprsTab(QWidget):
         # Callsigns we have sent a message to this session (base call, no SSID).
         # A QSO is logged only when the remote station replies with a real message.
         self._pending_qso: set[str] = set()
+        # Base calls we have already sent a "599" report to; calling them again fills "73".
+        self._sent_report: set[str] = set()
 
         # Receive-log display mode ("plain" | "raw"); restored in _load_display_mode().
         self._display_mode = "plain"
@@ -357,12 +361,24 @@ class AprsTab(QWidget):
         # Right-click a packet that carries a position → "Open in Google Maps"
         self._log_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._log_list.customContextMenuRequested.connect(self._on_log_context_menu)
+        # Click a CQ or a packet addressed to us → fill To / Message for the reply.
+        self._log_list.itemClicked.connect(self._on_log_item_clicked)
         log_layout.addWidget(self._log_list)
         root.addWidget(log_group, stretch=1)
 
         # -- Send form --
         send_group = QGroupBox(_("Send Message"))
         send_layout = QHBoxLayout(send_group)
+        self._cq_btn = QPushButton(_("CQ"))
+        self._cq_btn.setToolTip(
+            _(
+                "Fill the form for a general call: To = CQ, message = your grid square, "
+                "UISS style. Press Send to transmit."
+            )
+        )
+        self._cq_btn.clicked.connect(self._on_cq_clicked)
+        send_layout.addWidget(self._cq_btn)
+        send_layout.addSpacing(8)
         send_layout.addWidget(QLabel(_("To:")))
         self._to_edit = QLineEdit()
         self._to_edit.setPlaceholderText("JA1XYZ")
@@ -696,6 +712,7 @@ class AprsTab(QWidget):
             plain=packet.plain or packet.comment,
             plain_callsign=packet.plain_callsign,
             dest=packet.dest,
+            addressee=packet.message_addressee,
         )
 
     def _is_confirmed_reply(self, packet: object) -> bool:
@@ -1023,6 +1040,7 @@ class AprsTab(QWidget):
         plain: str | None = None,
         plain_callsign: str | None = None,
         dest: str | None = None,
+        addressee: str | None = None,
     ) -> None:
         """Add a decoded APRS packet to the receive log widget.
 
@@ -1050,6 +1068,8 @@ class AprsTab(QWidget):
             lon=lon,
             plain_callsign=plain_callsign,
             dest=dest,
+            addressee=addressee,
+            text=raw_frame,
         )
 
         if log and hasattr(self._conn, "execute"):
@@ -1141,8 +1161,11 @@ class AprsTab(QWidget):
         lon: float | None = None,
         plain_callsign: str | None = None,
         dest: str | None = None,
+        addressee: str | None = None,
+        text: str = "",
     ) -> None:
         via_str = f",{via}" if via else ""
+        source = callsign
         if dest:
             callsign = f"{callsign}>{dest}"
         raw_text = f"{ts}  {callsign}{via_str}: {raw}"
@@ -1160,6 +1183,8 @@ class AprsTab(QWidget):
         item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         item.setData(_ROLE_PLAIN, plain_text)
         item.setData(_ROLE_RAW, raw_text)
+        if dest:
+            item.setData(_ROLE_CALL_INFO, (source, dest, addressee or "", text))
         # Stash the position (if any) so the right-click menu can offer a map link.
         if lat is not None and lon is not None:
             item.setData(_ROLE_COORDS, (float(lat), float(lon)))
@@ -1269,6 +1294,10 @@ class AprsTab(QWidget):
 
         # Track outgoing message so a reply triggers QSO logging
         self._pending_qso.add(to_call.split("-")[0].upper())
+        if msg == "599":
+            self._sent_report.add(to_call.split("-")[0].upper())
+        elif msg == "73":
+            self._sent_report.discard(to_call.split("-")[0].upper())
 
         # Echo to receive log as sent marker
         src = f"{my_call}-{ssid}" if ssid else my_call
@@ -1279,6 +1308,47 @@ class AprsTab(QWidget):
             raw_frame="",
         )
         self._msg_edit.clear()
+
+    # ------------------------------------------------------------------ #
+    # QSO helpers: CQ button and click-to-fill
+    # ------------------------------------------------------------------ #
+
+    def _my_grid(self) -> str:
+        """Our 4-character grid square from the saved QTH ("" when none is set)."""
+        pos = self._get_my_location()
+        return _latlon_to_grid(pos[0], pos[1]) if pos else ""
+
+    def _on_cq_clicked(self) -> None:
+        """Fill the form for a general call: To = CQ, message = our grid, UISS style."""
+        self._format_combo.setCurrentIndex(self._format_combo.findData(_MSG_FORMAT_UISS))
+        self._to_edit.setText("CQ")
+        self._msg_edit.setText(self._my_grid())
+
+    def _on_log_item_clicked(self, item: QListWidgetItem) -> None:
+        """Fill To / Message for a reply to the clicked CQ or packet addressed to us.
+
+        CQ → the sender's call and our grid square; addressed to us → the sender's call
+        and "599", or "73" once a report has already gone to that station.
+        """
+        info = item.data(_ROLE_CALL_INFO)
+        if not info:
+            return
+        source, dest, addressee, _text = info
+        my_base = self._callsign_edit.text().strip().upper().split("-")[0]
+        sender_base = str(source).split("-")[0].upper()
+        if not sender_base or sender_base == my_base:
+            return
+        targets = {str(dest).split("-")[0].upper(), str(addressee).split("-")[0].upper()}
+        if sender_base in self._sent_report:
+            message = "73"
+        elif my_base and my_base in targets:
+            message = "599"
+        elif "CQ" in targets:
+            message = self._my_grid()
+        else:
+            return
+        self._to_edit.setText(str(source).upper())
+        self._msg_edit.setText(message)
 
     def _get_my_location(self) -> tuple[float, float] | None:
         """Return (lat_deg, lon_deg) from saved QTH, or None if not set."""

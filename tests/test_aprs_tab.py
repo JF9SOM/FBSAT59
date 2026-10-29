@@ -353,3 +353,59 @@ def test_uiss_format_is_passed_to_the_engine_and_echoed(
     assert "JF9SOM>CQ" in tab._log_list.item(tab._log_list.count() - 1).text()
     saved = conn.execute("SELECT value FROM app_settings WHERE key = 'aprs_settings'").fetchone()
     assert '"msg_format": "uiss"' in saved["value"]
+
+
+def _qso_tab(qtbot: QtBot, conn: sqlite3.Connection) -> AprsTab:
+    tab = _make_tab(qtbot, conn)
+    tab._callsign_edit.setText("JF9SOM")
+    tab._get_my_location = lambda: (36.1, 136.4)  # type: ignore[method-assign]
+    return tab
+
+
+def _rx(tab: AprsTab, src: str, dest: str, text: str) -> int:
+    tab.append_packet(callsign=src, via="DP0SNX*", comment=text, raw_frame=text, dest=dest)
+    return tab._log_list.count() - 1
+
+
+def test_cq_button_fills_cq_and_our_grid(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    tab = _qso_tab(qtbot, conn)
+    tab._cq_btn.click()
+    assert tab._to_edit.text() == "CQ"
+    assert tab._msg_edit.text() == "PM86"
+    assert tab._format_combo.currentData() == "uiss"
+
+
+def test_clicking_a_cq_fills_the_callsign_and_our_grid(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _qso_tab(qtbot, conn)
+    row = _rx(tab, "JK4DHT", "CQ", "PM54")
+    tab._on_log_item_clicked(tab._log_list.item(row))
+    assert tab._to_edit.text() == "JK4DHT"
+    assert tab._msg_edit.text() == "PM86"
+
+
+def test_clicking_a_call_to_us_fills_599_then_73(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    tab = _qso_tab(qtbot, conn)
+    tab._engine = _RecordingEngine(True)  # type: ignore[assignment]
+    row = _rx(tab, "JK4DHT", "JF9SOM", "UR599 PM54")
+    tab._on_log_item_clicked(tab._log_list.item(row))
+    assert (tab._to_edit.text(), tab._msg_edit.text()) == ("JK4DHT", "599")
+    tab._on_send()
+    # Calling the same station again now fills 73.
+    tab._on_log_item_clicked(tab._log_list.item(row))
+    assert tab._msg_edit.text() == "73"
+    tab._on_send()
+    tab._on_log_item_clicked(tab._log_list.item(row))
+    assert tab._msg_edit.text() == "599"
+
+
+def test_clicking_other_traffic_or_our_own_echo_changes_nothing(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _qso_tab(qtbot, conn)
+    row = _rx(tab, "JK4DHT", "JA1XYZ", "hello")
+    tab._on_log_item_clicked(tab._log_list.item(row))
+    own = _rx(tab, "JF9SOM", "CQ", "PM86")
+    tab._on_log_item_clicked(tab._log_list.item(own))
+    assert tab._to_edit.text() == "" and tab._msg_edit.text() == ""
