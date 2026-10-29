@@ -217,8 +217,8 @@ class _RecordingEngine:
     def set_tx_level_db(self, db: int) -> None:
         self.levels.append(db)
 
-    def send_message(self, *args: object) -> bool:
-        self.messages.append(args)
+    def send_message(self, *args: object, uiss_style: bool = False) -> bool:
+        self.messages.append((*args, uiss_style))
         return self.result
 
     def send_position(self, *args: object) -> bool:
@@ -323,3 +323,33 @@ def test_via_typed_by_hand_is_kept_when_leaving_lasarsat(
     tab._via_edit.setCurrentText("APRSAT")  # changed by hand while on LASARsat
     tab._on_transmitter_changed({"norad_cat_id": 40931, "baud": 1200})
     assert tab._via_edit.currentText() == "APRSAT"
+
+
+def test_receive_log_shows_the_destination(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    """A packet addressed to us (UISS style) must show who it was for."""
+    tab = _make_tab(qtbot, conn)
+    tab.append_packet(
+        callsign="JK4DHT",
+        via="DP0SNX*",
+        comment="UR599 PM54",
+        raw_frame="UR599 PM54",
+        dest="JF9SOM",
+    )
+    assert tab._log_list.item(0).text().endswith("JK4DHT>JF9SOM,DP0SNX*: UR599 PM54")
+
+
+def test_uiss_format_is_passed_to_the_engine_and_echoed(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _make_tab(qtbot, conn)
+    engine = _RecordingEngine(True)
+    tab._engine = engine  # type: ignore[assignment]
+    tab._callsign_edit.setText("JF9SOM")
+    tab._format_combo.setCurrentIndex(tab._format_combo.findData("uiss"))
+    tab._to_edit.setText("cq")
+    tab._msg_edit.setText("PM86")
+    tab._on_send()
+    assert engine.messages[0][-1] is True
+    assert "JF9SOM>CQ" in tab._log_list.item(tab._log_list.count() - 1).text()
+    saved = conn.execute("SELECT value FROM app_settings WHERE key = 'aprs_settings'").fetchone()
+    assert '"msg_format": "uiss"' in saved["value"]

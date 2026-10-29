@@ -14,6 +14,7 @@ from comms.aprs.afsk_tx import build_afsk_audio
 from comms.aprs.engine import (
     _build_aprs_message,
     _build_aprs_position,
+    _build_uiss_message,
     describe_ax25_frame,
     parse_via_path,
 )
@@ -30,6 +31,20 @@ _DIREWOLF_FRAME = bytes.fromhex(
 def test_message_frame_is_identical_to_direwolfs() -> None:
     frame = _build_aprs_message("JF9SOM", 0, "ARISS", "JA1ABC", "hello world\n")
     assert frame == _DIREWOLF_FRAME
+
+
+def test_uiss_message_puts_the_addressee_in_the_destination_field() -> None:
+    frame = _build_uiss_message("JF9SOM", 0, "DP0SNX", "JK4DHT", "UR599")
+    assert describe_ax25_frame(frame).startswith("JF9SOM>JK4DHT,DP0SNX info='UR599'")
+    assert frame[6] == 0xE0 and frame[13] == 0xE0 and frame[20] == 0x61
+    cq = _build_uiss_message("JF9SOM", 0, "DP0SNX", "cq", "PM86")
+    assert describe_ax25_frame(cq).startswith("JF9SOM>CQ,DP0SNX info='PM86'")
+
+
+def test_uiss_message_destination_may_carry_an_ssid() -> None:
+    frame = _build_uiss_message("JF9SOM", 0, "DP0SNX", "JK4DHT-1", "hi")
+    assert frame[6] == 0xE0 | (1 << 1)
+    assert describe_ax25_frame(frame).startswith("JF9SOM>JK4DHT-1,DP0SNX")
 
 
 def test_position_frame_sets_command_bits_like_direwolf() -> None:

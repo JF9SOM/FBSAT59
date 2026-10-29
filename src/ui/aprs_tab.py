@@ -59,6 +59,13 @@ _DISPLAY_MODE_KEY = "aprs_display_mode"
 # Default via path for ISS digipeater
 _DEFAULT_VIA = "ARISS"
 
+# Message formats for the Send Message form (see comms.aprs.engine.AprsEngine.send_message).
+_MSG_FORMAT_APRS = "aprs"
+_MSG_FORMAT_UISS = "uiss"
+# Satellites whose users run UISS (addressee in the AX.25 destination field): selecting one
+# switches the message format to UISS style.
+_UISS_SATELLITES = frozenset({59112})  # SONATE-2
+
 # Generic digipeater path aliases accepted by APRS-capable satellite
 # digipeaters (ISS/ARISS, and historically PCSAT/PCSAT2/PSAT) — all three
 # are configured on the same digipeaters, so any one works without
@@ -368,6 +375,20 @@ class AprsTab(QWidget):
         self._msg_edit.setMaxLength(67)
         send_layout.addWidget(self._msg_edit, stretch=1)
         send_layout.addSpacing(8)
+        send_layout.addWidget(QLabel(_("Format:")))
+        self._format_combo = QComboBox()
+        self._format_combo.addItem(_("APRS message"), _MSG_FORMAT_APRS)
+        self._format_combo.addItem(_("UISS style"), _MSG_FORMAT_UISS)
+        self._format_combo.setToolTip(
+            _(
+                "APRS message: addressed inside the text (:CALL     :text) to APRS. "
+                "UISS style: the addressee (CQ or a callsign) goes in the packet's "
+                "destination field and the text is sent as is; use it with SONATE-2."
+            )
+        )
+        self._format_combo.currentIndexChanged.connect(self._save_settings)
+        send_layout.addWidget(self._format_combo)
+        send_layout.addSpacing(8)
         send_layout.addWidget(QLabel(_("TX Level:")))
         self._tx_level_slider = QSlider(Qt.Orientation.Horizontal)
         self._tx_level_slider.setRange(TX_LEVEL_MIN_DB, TX_LEVEL_MAX_DB)
@@ -674,6 +695,7 @@ class AprsTab(QWidget):
             log=log_to_db,
             plain=packet.plain or packet.comment,
             plain_callsign=packet.plain_callsign,
+            dest=packet.dest,
         )
 
     def _is_confirmed_reply(self, packet: object) -> bool:
@@ -837,6 +859,9 @@ class AprsTab(QWidget):
         self._ssid_spin.setValue(int(data.get("ssid", 0)))
         if via := data.get("via"):
             self._via_edit.setCurrentText(str(via))
+        fmt_idx = self._format_combo.findData(data.get("msg_format"))
+        if fmt_idx >= 0:
+            self._format_combo.setCurrentIndex(fmt_idx)
         raw_level = data.get("tx_level_db")
         if isinstance(raw_level, (int, float)):
             self._tx_level_slider.setValue(clamp_db(float(raw_level)))
@@ -858,6 +883,7 @@ class AprsTab(QWidget):
             "ssid": self._ssid_spin.value(),
             "via": self._saved_via(),
             "tx_level_db": self._tx_level_slider.value(),
+            "msg_format": self._format_combo.currentData(),
         }
         self._conn.execute(
             "INSERT OR REPLACE INTO app_settings (key, value, updated_at) "
@@ -902,6 +928,8 @@ class AprsTab(QWidget):
         """
         norad = (xpdr or {}).get("norad_cat_id")
         wanted = _SATELLITE_VIA.get(norad) if isinstance(norad, int) else None
+        if isinstance(norad, int) and norad in _UISS_SATELLITES:
+            self._format_combo.setCurrentIndex(self._format_combo.findData(_MSG_FORMAT_UISS))
         current = self._via_edit.currentText().strip()
         if wanted is not None:
             if self._via_before_satellite is None and current != wanted:
@@ -994,8 +1022,12 @@ class AprsTab(QWidget):
         log: bool = False,
         plain: str | None = None,
         plain_callsign: str | None = None,
+        dest: str | None = None,
     ) -> None:
         """Add a decoded APRS packet to the receive log widget.
+
+        *dest* is the AX.25 destination; when given, rows read ``SRC>DEST,VIA`` so a
+        packet addressed to us (UISS style) shows who it was for.
 
         *comment* is the legacy short summary (still what gets persisted /
         exported). The receive log itself shows either *plain* (a full
@@ -1017,6 +1049,7 @@ class AprsTab(QWidget):
             lat=lat,
             lon=lon,
             plain_callsign=plain_callsign,
+            dest=dest,
         )
 
         if log and hasattr(self._conn, "execute"):
@@ -1107,8 +1140,11 @@ class AprsTab(QWidget):
         lat: float | None = None,
         lon: float | None = None,
         plain_callsign: str | None = None,
+        dest: str | None = None,
     ) -> None:
         via_str = f",{via}" if via else ""
+        if dest:
+            callsign = f"{callsign}>{dest}"
         raw_text = f"{ts}  {callsign}{via_str}: {raw}"
         # Raw always shows the on-air source (e.g. the relaying I-Gate). Plain
         # swaps in the originating station when this was a third-party /
@@ -1225,8 +1261,9 @@ class AprsTab(QWidget):
 
         # On failure the engine reports why (error_occurred -> status line); keep the
         # text so it can be sent again.
+        uiss = self._format_combo.currentData() == _MSG_FORMAT_UISS
         if not self._engine.is_running or not self._engine.send_message(
-            my_call, ssid, via, to_call, msg
+            my_call, ssid, via, to_call, msg, uiss_style=uiss
         ):
             return
 
@@ -1236,7 +1273,7 @@ class AprsTab(QWidget):
         # Echo to receive log as sent marker
         src = f"{my_call}-{ssid}" if ssid else my_call
         self.append_packet(
-            callsign=f"{src}>APRS",
+            callsign=f"{src}>{to_call if uiss else 'APRS'}",
             via=via,
             comment=f"[TX→{to_call}] {msg}",
             raw_frame="",

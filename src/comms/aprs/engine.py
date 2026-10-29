@@ -411,9 +411,18 @@ class AprsEngine(QObject):
         via: str,
         dest: str,
         message: str,
+        uiss_style: bool = False,
     ) -> bool:
-        """Build an APRS message packet and transmit it. False if it was not sent."""
-        frame = _build_aprs_message(src_callsign, src_ssid, via, dest, message)
+        """Build a message packet and transmit it. False if it was not sent.
+
+        By default this is an APRS message (``:DEST     :text`` to ``APRS``). With
+        *uiss_style* the addressee goes in the AX.25 destination field and the text is
+        sent as is, the way UISS (the usual SONATE-2 software) does it.
+        """
+        if uiss_style:
+            frame = _build_uiss_message(src_callsign, src_ssid, via, dest, message)
+        else:
+            frame = _build_aprs_message(src_callsign, src_ssid, via, dest, message)
         return self._transmit(frame)
 
     def send_position(
@@ -741,6 +750,33 @@ def _build_aprs_message(
         + info.encode("ascii", errors="replace")
     )
     return frame
+
+
+def _build_uiss_message(
+    src_call: str,
+    src_ssid: int,
+    via: str,
+    dest_call: str,
+    message: str,
+) -> bytes:
+    """Build a raw AX.25 UI frame in UISS style: addressee in the destination field.
+
+    ``JF9SOM>JK4DHT,DP0SNX:text`` (or ``>CQ`` for a general call). Other stations'
+    replies on SONATE-2 use the same layout (``JK4DHT>JF9SOM,DP0SNX*:UR599 PM54``). The
+    destination may carry an SSID (``JK4DHT-1``); callsigns are cut to 6 characters.
+    """
+    call, _sep, ssid_text = dest_call.strip().upper().partition("-")
+    dest_ssid = min(15, max(0, int(ssid_text))) if ssid_text.isdigit() else 0
+    dest_field = _encode_addr(call or "CQ", dest_ssid, c_bit=True)
+    src_field = _encode_addr(src_call, src_ssid, c_bit=True)
+    via_field = _encode_via_fields(via)
+    return (
+        dest_field
+        + src_field
+        + via_field
+        + bytes([0x03, 0xF0])
+        + message.encode("ascii", errors="replace")
+    )
 
 
 def _latlon_to_aprs(lat_deg: float, lon_deg: float) -> tuple[str, str]:
