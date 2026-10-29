@@ -222,28 +222,6 @@ class AprsTab(QWidget):
             return
         ensure_aprs_log_schema(self._conn)
 
-    def _load_log_from_db(self) -> None:
-        """Populate the receive log with the most recent 200 entries."""
-        if not hasattr(self._conn, "execute"):
-            return
-        self._log_list.clear()
-        rows = self._conn.execute(
-            "SELECT received_at, callsign, via, comment, raw_frame, "
-            "latitude_deg, longitude_deg "
-            "FROM aprs_log ORDER BY id DESC LIMIT 200"
-        ).fetchall()
-        for row in reversed(rows):
-            body = row["comment"] or row["raw_frame"] or ""
-            self._append_log_item(
-                ts=row["received_at"],
-                callsign=row["callsign"],
-                via=row["via"] or "",
-                plain=body,
-                raw=row["raw_frame"] or body,
-                lat=row["latitude_deg"],
-                lon=row["longitude_deg"],
-            )
-
     # ------------------------------------------------------------------ #
     # UI construction
     # ------------------------------------------------------------------ #
@@ -883,7 +861,6 @@ class AprsTab(QWidget):
             cs = str(r["value"]) if r else ""
             if cs:
                 self._callsign_edit.setText(cs.upper())
-            self._load_log_from_db()
             return
         try:
             data = json.loads(row["value"])
@@ -907,7 +884,6 @@ class AprsTab(QWidget):
         raw_level = data.get("tx_level_db")
         if isinstance(raw_level, (int, float)):
             self._tx_level_slider.setValue(clamp_db(float(raw_level)))
-        self._load_log_from_db()
 
     def _saved_via(self) -> str:
         """The Via to persist: the user's own, not one set for a satellite's digipeater."""

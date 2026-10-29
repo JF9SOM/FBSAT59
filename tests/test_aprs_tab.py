@@ -478,3 +478,20 @@ def test_73_without_a_call_from_them_or_a_599_is_not_logged(
     _rx(tab, "JA1XYZ", "JF9SOM", "hello")
     _send(tab, "JA1XYZ", "73")  # we never sent 599
     assert _rows(conn) == []
+
+
+def test_receive_log_starts_empty_even_with_logged_qsos(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    """Past QSOs live in the QSO log (export); the receive log shows live packets only."""
+    from comms.aprs.log_db import ensure_aprs_log_schema
+
+    ensure_aprs_log_schema(conn)
+    conn.execute(
+        "INSERT INTO aprs_log (received_at, callsign, comment) "
+        "VALUES ('2026-10-29 07:34:54', 'JK4DHT', 'QSO PM54')"
+    )
+    conn.commit()
+    tab = _make_tab(qtbot, conn)
+    assert tab._log_list.count() == 0
+    assert "1" in tab._qso_count_label.text()
