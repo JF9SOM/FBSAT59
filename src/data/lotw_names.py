@@ -17,6 +17,7 @@ from data.lotw_satellites import LOTW_SATELLITES
 # NORAD IDs whose names/alternative names never give the LoTW ID.
 _OVERRIDES: dict[int, str] = {
     25544: "ARISS",  # the ISS; LoTW's list calls it ARISS
+    59112: "SONATE",  # SONATE-2; LoTW's list has the ID "SONATE" (named "SONATE-2")
 }
 
 # Something that looks like a designator inside a longer name: "CAS 4A", "TO-108", "RS44".
