@@ -204,8 +204,22 @@ def test_display_mode_persists_to_app_settings(qtbot: QtBot, conn: sqlite3.Conne
 # ---------------------------------------------------------------------------
 
 
+class _NoSignal:
+    """Accepts connect()/disconnect() like a Qt signal."""
+
+    def connect(self, *_args: object) -> None:
+        return None
+
+    def disconnect(self, *_args: object) -> None:
+        return None
+
+
 class _RecordingEngine:
     """Replaces the tab's AprsEngine for the send tests."""
+
+    def __getattr__(self, name: str) -> _NoSignal:
+        # The tab disconnects the engine's signals when it closes.
+        return _NoSignal()
 
     def __init__(self, result: bool) -> None:
         self.result = result
@@ -363,7 +377,18 @@ def _qso_tab(qtbot: QtBot, conn: sqlite3.Connection) -> AprsTab:
 
 
 def _rx(tab: AprsTab, src: str, dest: str, text: str) -> int:
-    tab.append_packet(callsign=src, via="DP0SNX*", comment=text, raw_frame=text, dest=dest)
+    from comms.aprs.parser import AprsPacket
+
+    tab._on_packet_received(
+        AprsPacket(
+            callsign=src,
+            dest=dest,
+            via="DP0SNX*",
+            data_type=text[:1],
+            raw_info=text,
+            comment=text,
+        )
+    )
     return tab._log_list.count() - 1
 
 
@@ -409,3 +434,46 @@ def test_clicking_other_traffic_or_our_own_echo_changes_nothing(
     own = _rx(tab, "JF9SOM", "CQ", "PM86")
     tab._on_log_item_clicked(tab._log_list.item(own))
     assert tab._to_edit.text() == "" and tab._msg_edit.text() == ""
+
+
+def _aprs_log_tab(qtbot: QtBot, conn: sqlite3.Connection) -> AprsTab:
+    from comms.aprs.log_db import ensure_aprs_log_schema
+
+    ensure_aprs_log_schema(conn)
+    tab = _qso_tab(qtbot, conn)
+    tab._engine = _RecordingEngine(True)  # type: ignore[assignment]
+    tab._broadcast_adif = lambda *a, **k: None  # type: ignore[method-assign]
+    return tab
+
+
+def _rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return list(conn.execute("SELECT callsign, comment FROM aprs_log"))
+
+
+def _send(tab: AprsTab, to: str, msg: str) -> None:
+    tab._to_edit.setText(to)
+    tab._msg_edit.setText(msg)
+    tab._on_send()
+
+
+def test_qso_is_logged_when_73_is_sent_after_599(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    tab = _aprs_log_tab(qtbot, conn)
+    _rx(tab, "JK4DHT", "JF9SOM", "UR599 PM54")
+    _send(tab, "JK4DHT", "599")
+    assert _rows(conn) == []
+    _send(tab, "JK4DHT", "73")
+    rows = _rows(conn)
+    assert [(r["callsign"], r["comment"]) for r in rows] == [("JK4DHT", "QSO PM54")]
+    _send(tab, "JK4DHT", "73")  # a repeated 73 does not log again
+    assert len(_rows(conn)) == 1
+
+
+def test_73_without_a_call_from_them_or_a_599_is_not_logged(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _aprs_log_tab(qtbot, conn)
+    _send(tab, "JK4DHT", "599")
+    _send(tab, "JK4DHT", "73")  # they never called us
+    _rx(tab, "JA1XYZ", "JF9SOM", "hello")
+    _send(tab, "JA1XYZ", "73")  # we never sent 599
+    assert _rows(conn) == []

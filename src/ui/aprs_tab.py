@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -54,6 +55,9 @@ _ROLE_PLAIN = int(Qt.ItemDataRole.UserRole) + 1
 _ROLE_RAW = int(Qt.ItemDataRole.UserRole) + 2
 # (sender, destination, addressee, text) of a received packet, for click-to-fill.
 _ROLE_CALL_INFO = int(Qt.ItemDataRole.UserRole) + 3
+
+# Maidenhead locator (4 or 6 characters) inside a received text.
+_GRID_RE = re.compile(r"\b([A-R]{2}[0-9]{2}(?:[A-X]{2})?)\b", re.IGNORECASE)
 
 # app_settings key for the receive-log display toggle ("plain" | "raw").
 _DISPLAY_MODE_KEY = "aprs_display_mode"
@@ -166,6 +170,12 @@ class AprsTab(QWidget):
         self._pending_qso: set[str] = set()
         # Base calls we have already sent a "599" report to; calling them again fills "73".
         self._sent_report: set[str] = set()
+        # Base calls that sent us a CQ answer / a packet addressed to us, and the grid
+        # square each one gave; a "73" to such a station that also got our "599" is logged.
+        self._heard_to_me: set[str] = set()
+        self._their_grid: dict[str, str] = {}
+        # Base calls already logged by the APRS-message reply path (no second log at 73).
+        self._logged_calls: set[str] = set()
 
         # Receive-log display mode ("plain" | "raw"); restored in _load_display_mode().
         self._display_mode = "plain"
@@ -700,6 +710,9 @@ class AprsTab(QWidget):
         # Only log when the remote station sends us a real message text reply
         # after we have messaged them first (bidirectional QSO confirmation).
         log_to_db = self._is_confirmed_reply(packet)
+        self._note_heard(packet.callsign, packet.dest, packet.message_addressee, packet.raw_info)
+        if log_to_db:
+            self._logged_calls.add(packet.callsign.split("-")[0].upper())
 
         self.append_packet(
             callsign=packet.callsign,
@@ -714,6 +727,18 @@ class AprsTab(QWidget):
             dest=packet.dest,
             addressee=packet.message_addressee,
         )
+
+    def _note_heard(self, source: str, dest: str, addressee: str | None, text: str) -> None:
+        """Remember a station that called us (or CQ) and the grid square it gave."""
+        base = source.split("-")[0].upper()
+        my_base = self._callsign_edit.text().strip().upper().split("-")[0]
+        if not base or base == my_base:
+            return
+        targets = {dest.split("-")[0].upper(), (addressee or "").split("-")[0].upper()}
+        if my_base and my_base in targets:
+            self._heard_to_me.add(base)
+        if (my_base in targets or "CQ" in targets) and (match := _GRID_RE.search(text or "")):
+            self._their_grid[base] = match.group(1).upper()
 
     def _is_confirmed_reply(self, packet: object) -> bool:
         """Return True when *packet* completes a bidirectional QSO.
@@ -1104,6 +1129,7 @@ class AprsTab(QWidget):
         norad: int | None,
         ul_hz: int = 0,
         dl_hz: int = 0,
+        grid: str = "",
     ) -> None:
         """Send this confirmed APRS QSO to the UDP log broadcaster.
 
@@ -1125,7 +1151,8 @@ class AprsTab(QWidget):
             with contextlib.suppress(Exception):
                 sat_name = lotw_name_for_norad(self._conn, norad)
 
-        grid = _latlon_to_grid(float(lat), float(lon or 0)) if lat is not None else ""
+        if not grid and lat is not None:
+            grid = _latlon_to_grid(float(lat), float(lon or 0))
 
         fields: dict[str, str] = {
             "CALL": cs,
@@ -1297,7 +1324,7 @@ class AprsTab(QWidget):
         if msg == "599":
             self._sent_report.add(to_call.split("-")[0].upper())
         elif msg == "73":
-            self._sent_report.discard(to_call.split("-")[0].upper())
+            self._finish_qso(to_call.split("-")[0].upper())
 
         # Echo to receive log as sent marker
         src = f"{my_call}-{ssid}" if ssid else my_call
@@ -1349,6 +1376,47 @@ class AprsTab(QWidget):
             return
         self._to_edit.setText(str(source).upper())
         self._msg_edit.setText(message)
+
+    def _finish_qso(self, base: str) -> None:
+        """Log the QSO when we send "73" after a 599 to a station that called us.
+
+        APRS has no real report exchange, so it is logged as 599/599. A QSO already
+        logged by the APRS-message reply path is not logged a second time.
+        """
+        had_report = base in self._sent_report
+        self._sent_report.discard(base)
+        heard = base in self._heard_to_me
+        self._heard_to_me.discard(base)
+        grid = self._their_grid.pop(base, "")
+        if base in self._logged_calls:
+            self._logged_calls.discard(base)
+            return
+        if not (had_report and heard) or not hasattr(self._conn, "execute"):
+            return
+        ul_hz, dl_hz = self._transponder_band_freqs()
+        norad = self._selected_norad()
+        via = self._via_edit.currentText().strip()
+        comment = f"QSO {grid}".strip()
+        self._conn.execute(
+            "INSERT INTO aprs_log "
+            "(received_at, callsign, via, latitude_deg, longitude_deg, "
+            " comment, raw_frame, norad_sat, freq_hz, freq_rx_hz) "
+            "VALUES (CURRENT_TIMESTAMP, ?, ?, NULL, NULL, ?, '', ?, ?, ?)",
+            (base, via, comment, norad, ul_hz, dl_hz),
+        )
+        self._conn.commit()
+        self._broadcast_adif(base, via, comment, None, None, norad, ul_hz, dl_hz, grid=grid)
+        self._refresh_qso_count()
+
+    def _selected_norad(self) -> int | None:
+        """NORAD ID of the transponder selected in Radio Control (None when unknown)."""
+        current = getattr(self._radio_control, "current_transmitter", None)
+        try:
+            tx = current() if callable(current) else None
+        except Exception:  # noqa: BLE001 -- logging must not fail on a missing selection
+            return None
+        norad = (tx or {}).get("norad_cat_id") if isinstance(tx, dict) else None
+        return norad if isinstance(norad, int) else None
 
     def _get_my_location(self) -> tuple[float, float] | None:
         """Return (lat_deg, lon_deg) from saved QTH, or None if not set."""
