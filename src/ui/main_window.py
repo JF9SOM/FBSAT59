@@ -903,6 +903,9 @@ class MainWindow(QMainWindow):
         self._tle_manager = tle_manager
         self._engine = engine
         self._pass_predictor = pass_predictor
+        # Shared minimum pass elevation (the Min El boxes); loaded from the DB
+        # once the pass panel exists.
+        self._min_pass_el: float = 5.0
         self._location_manager = location_manager
         self._selected_norad: int | None = None
         self._all_norads: list[int] = []  # ALL non-hidden norads (for pass predictor)
@@ -1147,6 +1150,8 @@ class MainWindow(QMainWindow):
 
         # Connect PassPanel signals
         self._pass_list.target_search_requested.connect(self._on_target_search_requested)
+        self._pass_list.min_elevation_changed.connect(self._on_min_elevation_changed)
+        self._load_min_elevation_setting()
         self._pass_list.highlight_satellite.connect(self._on_highlight_satellite)
         self._pass_list.group_results_ready.connect(self._on_group_results_ready)
         self._pass_list.set_pass_predictor(self._pass_predictor)
@@ -2732,6 +2737,7 @@ class MainWindow(QMainWindow):
             self._pass_predictor,
             # METEOR/HRPT reception must wait for LOS so SatDump can release
             # the SDR before the next satellite's start opens it.
+            min_el=self._min_pass_el,
             early_handoff=not self._autotrack_meteor_record,
         )
         if result is None:
@@ -6952,6 +6958,7 @@ class MainWindow(QMainWindow):
                 self._pass_predictor = PassPredictor(
                     self._tle_manager, loc.latitude_deg, loc.longitude_deg, loc.elevation_m
                 )
+                self._pass_predictor.min_elevation_deg = self._min_pass_el
             self._pass_list.set_pass_predictor(self._pass_predictor)
             self._update_statusbar()
 
@@ -8763,6 +8770,41 @@ class MainWindow(QMainWindow):
         self._rotator_timer.setInterval(ms)
         self._radio_control.set_rotator_cycle(ms)
 
+    def _load_min_elevation_setting(self) -> None:
+        """Load the shared minimum pass elevation (default 5 deg) and apply it everywhere."""
+        value = 5.0
+        try:
+            row = self._conn.execute(
+                "SELECT value FROM app_settings WHERE key = 'min_pass_elevation_deg'"
+            ).fetchone()
+            if row is not None:
+                value = min(90.0, max(0.0, float(row["value"])))
+        except Exception as exc:
+            logger.warning("Failed to load min pass elevation setting: %s", exc)
+        self._apply_min_elevation(value)
+
+    def _apply_min_elevation(self, value: float) -> None:
+        self._min_pass_el = value
+        if self._pass_predictor is not None:
+            self._pass_predictor.min_elevation_deg = value
+        self._pass_list.set_min_elevation(value)
+
+    def _on_min_elevation_changed(self, value: float) -> None:
+        """The Min El box changed: apply it to every pass list, Autotrack and notifications."""
+        self._apply_min_elevation(value)
+        try:
+            self._conn.execute(
+                """
+                INSERT OR REPLACE INTO app_settings (key, value, updated_at)
+                VALUES ('min_pass_elevation_deg', ?, CURRENT_TIMESTAMP)
+                """,
+                (str(value),),
+            )
+            self._conn.commit()
+        except Exception as exc:
+            logger.warning("Failed to save min pass elevation setting: %s", exc)
+        self._refresh_passes()
+
     def _on_rotator_cycle_changed(self, ms: int) -> None:
         """Update self._rotator_timer's interval and save to DB when Rotator Cycle changes."""
         if ms not in _ROTATOR_CYCLE_CHOICES_MS:
@@ -9185,7 +9227,8 @@ class MainWindow(QMainWindow):
             return cached[2]
         try:
             if above_horizon:
-                p = self._pass_predictor.get_current_pass(norad, now)
+                # The rotator follows the pass whatever the pass lists hide.
+                p = self._pass_predictor.get_current_pass(norad, now, min_elevation_deg=0.0)
             else:
                 upcoming = self._pass_predictor.get_passes(
                     norad, now, now + timedelta(hours=24), min_elevation_deg=0.0

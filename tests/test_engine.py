@@ -333,6 +333,25 @@ class TestPassPredictor:
         passes_30 = predictor.get_passes(_ISS_NORAD, self._START, self._END, min_elevation_deg=30.0)
         assert len(passes_30) <= len(passes_5)
 
+    def test_aos_los_do_not_depend_on_min_elevation(self, predictor: PassPredictor) -> None:
+        # AOS/LOS are the horizon crossings; min elevation only filters passes.
+        all_passes = predictor.get_passes(_ISS_NORAD, self._START, self._END, min_elevation_deg=0.0)
+        some = predictor.get_passes(_ISS_NORAD, self._START, self._END, min_elevation_deg=20.0)
+        assert some
+        by_aos = {p.aos: p for p in all_passes}
+        for p in some:
+            assert p.aos in by_aos
+            assert by_aos[p.aos].los == p.los
+            assert p.max_elevation_deg >= 20.0
+        assert len(all_passes) > len(some)
+
+    def test_shared_min_elevation_is_the_default(self, predictor: PassPredictor) -> None:
+        predictor.min_elevation_deg = 30.0
+        default = predictor.get_passes(_ISS_NORAD, self._START, self._END)
+        explicit = predictor.get_passes(_ISS_NORAD, self._START, self._END, min_elevation_deg=30.0)
+        assert [p.aos for p in default] == [p.aos for p in explicit]
+        predictor.min_elevation_deg = 5.0
+
     def test_azimuth_in_range(self, predictor: PassPredictor) -> None:
         passes = predictor.get_passes(_ISS_NORAD, self._START, self._END)
         for p in passes:

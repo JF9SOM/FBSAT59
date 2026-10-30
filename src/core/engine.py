@@ -508,6 +508,20 @@ class PassPredictor:
         self._ts = load.timescale()
         self._ground_station = wgs84.latlon(latitude_deg, longitude_deg, elevation_m)
         self._engine = SatelliteEngine(tle_manager, latitude_deg, longitude_deg, elevation_m)
+        self._min_elevation_deg = 5.0
+
+    @property
+    def min_elevation_deg(self) -> float:
+        """Shared minimum max-elevation for a pass to be listed (degrees).
+
+        Used wherever a caller does not pass its own value, so one setting
+        drives the pass lists, Autotrack and notifications alike.
+        """
+        return self._min_elevation_deg
+
+    @min_elevation_deg.setter
+    def min_elevation_deg(self, value: float) -> None:
+        self._min_elevation_deg = float(value)
 
     def update_observer(
         self,
@@ -524,16 +538,20 @@ class PassPredictor:
         norad_cat_id: int,
         start: datetime,
         end: datetime,
-        min_elevation_deg: float = 5.0,
+        min_elevation_deg: float | None = None,
     ) -> list[PassInfo]:
         """
         Return the list of passes within the given time window.
+
+        AOS/LOS are always the times the satellite crosses the horizon (0 deg);
+        the minimum elevation only decides which passes are listed.
 
         Args:
             norad_cat_id: NORAD satellite number
             start: Search start time (UTC)
             end: Search end time (UTC)
-            min_elevation_deg: Only return passes above this elevation (default 5 degrees)
+            min_elevation_deg: Only return passes whose maximum elevation reaches
+                this value; None uses the shared ``min_elevation_deg`` (default 5)
 
         Returns:
             List of PassInfo sorted by AOS ascending. Empty list if TLE does not exist.
@@ -544,23 +562,29 @@ class PassPredictor:
 
         t0 = self._to_skyfield_time(start)
         t1 = self._to_skyfield_time(end)
+        min_el = self._min_elevation_deg if min_elevation_deg is None else min_elevation_deg
 
         try:
             times, events = sat.find_events(
                 self._ground_station,
                 t0,
                 t1,
-                altitude_degrees=min_elevation_deg,
+                altitude_degrees=0.0,
             )
         except Exception:
             return []
 
-        return self._group_events(norad_cat_id, sat, times, events)
+        return [
+            p
+            for p in self._group_events(norad_cat_id, sat, times, events)
+            if p.max_elevation_deg >= min_el
+        ]
 
     def get_current_pass(
         self,
         norad_cat_id: int,
         now: datetime | None = None,
+        min_elevation_deg: float | None = None,
     ) -> PassInfo | None:
         """Return the ongoing pass if the satellite is currently above the horizon.
 
@@ -594,7 +618,7 @@ class PassPredictor:
             norad_cat_id,
             search_start,
             search_end,
-            min_elevation_deg=0.0,
+            min_elevation_deg=min_elevation_deg,
         )
         for p in passes:
             if p.aos <= now <= p.los:

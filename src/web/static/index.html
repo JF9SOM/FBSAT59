@@ -958,7 +958,7 @@ function setPassRange(hours) {
 function loadPasses(norad) {
   const fromVal = document.getElementById('pass-from').value;
   const toVal = document.getElementById('pass-to').value;
-  let url = `/api/satellites/${norad}/passes?track=true&min_el=5`;
+  let url = `/api/satellites/${norad}/passes?track=true`;
   if (fromVal && toVal) {
     url += `&from_dt=${encodeURIComponent(fromVal)}&to_dt=${encodeURIComponent(toVal)}`;
   }

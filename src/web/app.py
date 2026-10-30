@@ -642,7 +642,12 @@ def create_app(
     async def get_passes(
         norad: int,
         hours: float = Query(default=24.0, gt=0, le=168, description="Prediction window (hours)"),
-        min_el: float = Query(default=5.0, ge=0, le=90, description="Minimum elevation (degrees)"),
+        min_el: float | None = Query(
+            default=None,
+            ge=0,
+            le=90,
+            description="Minimum elevation (degrees); defaults to the app's shared setting",
+        ),
         track: bool = Query(default=False, description="Include 15-second track points (az, el)"),
         from_dt: str | None = Query(default=None, description="Start datetime (ISO 8601)"),
         to_dt: str | None = Query(default=None, description="End datetime (ISO 8601)"),

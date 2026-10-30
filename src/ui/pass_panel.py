@@ -341,6 +341,9 @@ class PassPanel(QWidget):
     target_search_requested: Signal = Signal(object, object)  # (start: datetime, end: datetime)
     highlight_satellite: Signal = Signal(int)  # norad_cat_id
     group_results_ready: Signal = Signal(object)  # list[GroupPassResult]
+    # The Target and Group "Min El" boxes are one shared setting; emitted when
+    # the user changes either (not by set_min_elevation()).
+    min_elevation_changed: Signal = Signal(float)
 
     _PAGE_SIZE: int = 50
     _TARGET_COLS: tuple[str, ...] = (
@@ -399,6 +402,35 @@ class PassPanel(QWidget):
         self._tabs.addTab(self._build_group_tab(), _("Group"))
         layout.addWidget(self._tabs)
 
+    def _make_min_el_spin(self) -> QSpinBox:
+        """Min El box shared by the Target and Group tabs (kept in sync)."""
+        spin = QSpinBox()
+        spin.setRange(0, 90)
+        spin.setValue(5)
+        spin.setSuffix("°")
+        # The Windows 11 fluent style draws much larger up/down buttons than
+        # Fusion, so a tight width hides the value entirely there (56px and
+        # even 64px showed only the arrows). 90px matches the RX-offset spin
+        # box in Radio Control, which is known to render fine on Windows.
+        spin.setMinimumWidth(90)
+        spin.valueChanged.connect(self._on_min_el_edited)
+        return spin
+
+    def _on_min_el_edited(self, value: int) -> None:
+        self.set_min_elevation(value)
+        self.min_elevation_changed.emit(float(value))
+
+    def set_min_elevation(self, value: float) -> None:
+        """Set both Min El boxes without emitting min_elevation_changed."""
+        for spin in (self._target_min_el, self._group_min_el):
+            spin.blockSignals(True)
+            spin.setValue(int(round(value)))
+            spin.blockSignals(False)
+
+    def min_elevation(self) -> float:
+        """The shared minimum elevation (degrees)."""
+        return float(self._target_min_el.value())
+
     def _build_target_tab(self) -> QWidget:
         """Build the Target tab (single toolbar row + result table)."""
         w = QWidget()
@@ -426,6 +458,11 @@ class PassPanel(QWidget):
         self._target_quick_combo = _make_quick_combo()
         self._target_quick_combo.activated.connect(self._on_target_quick_combo)
         row.addWidget(self._target_quick_combo)
+
+        row.addSpacing(12)
+        row.addWidget(QLabel(_("Min El:")))
+        self._target_min_el = self._make_min_el_spin()
+        row.addWidget(self._target_min_el)
 
         row.addStretch()
 
@@ -476,15 +513,7 @@ class PassPanel(QWidget):
         # timezone label; also nudges everything to its right further right.
         row.addSpacing(12)
         row.addWidget(QLabel(_("Min El:")))
-        self._group_min_el = QSpinBox()
-        self._group_min_el.setRange(0, 90)
-        self._group_min_el.setValue(5)
-        self._group_min_el.setSuffix("°")
-        # The Windows 11 fluent style draws much larger up/down buttons than
-        # Fusion, so a tight width hides the value entirely there (56px and
-        # even 64px showed only the arrows). 90px matches the RX-offset spin
-        # box in Radio Control, which is known to render fine on Windows.
-        self._group_min_el.setMinimumWidth(90)
+        self._group_min_el = self._make_min_el_spin()
         row.addWidget(self._group_min_el)
 
         self._group_quick_combo = _make_quick_combo()

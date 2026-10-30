@@ -282,3 +282,20 @@ IQ録音・音声録音(MP3)・METEOR画像・SSTV画像・SSDV画像・デジ�
   （テストが小さい offscreen 画面で縮んで失敗した理由もこれ。`tests/test_window_geometry.py`）。
 - 対象はメインウィンドウのみ（ダイアログ・浮動ログウィンドウは対象外）。
 - 最大化の復元が GPD（Linux のウィンドウマネージャー）で効くかは、実機で要確認。
+
+## 最小仰角（Min El）の共有設定（2026-10-30）
+
+Issue #34（Ohsawa）の指摘で、AOS/LOS の定義と最小仰角を分離した。
+
+- **AOS/LOS は常に仰角 0 度の時刻**。`PassPredictor.get_passes()` は `find_events(altitude_degrees=0.0)`
+  で計算し、最大仰角が最小仰角に満たないパスを一覧から外すだけ（以前は最小仰角で AOS/LOS 自体が
+  決まり、既定 5 度だとパスの前後約 1 分が欠けて見えた）。
+- **最小仰角は 1 か所の設定**（既定 5 度、`app_settings` の `min_pass_elevation_deg`）。Target タブと
+  Group タブの「Min El」ボックスは同じ値で連動する（`PassPanel.min_elevation_changed`）。
+  `MainWindow._apply_min_elevation()` が `PassPredictor.min_elevation_deg`・Autotrack の
+  `check(min_el=...)`・パス一覧/チャート/レーダー/AOS・LOS 通知（一覧の絞り込みに従う）へ反映する。
+- `get_passes(min_elevation_deg=None)` / `get_current_pass(min_elevation_deg=None)` の `None` は
+  共有値を使う。ローテーターの先回り（next-AOS）・フリップ判定は、一覧で隠れる低いパスでも
+  ローテーターは追うため `0.0` を明示して絞り込みを受けない。
+- Web UI（`/api/satellites/{norad}/passes`）の `min_el` も省略時は共有値。
+- Group タブの結果は、ボックス変更後に Search を押すまで再計算されない（従来どおり）。
