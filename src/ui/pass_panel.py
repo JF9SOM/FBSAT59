@@ -455,20 +455,21 @@ class PassPanel(QWidget):
         self._tz_label_target = QLabel("(UTC)")
         row.addWidget(self._tz_label_target)
 
-        self._target_quick_combo = _make_quick_combo()
-        self._target_quick_combo.activated.connect(self._on_target_quick_combo)
-        row.addWidget(self._target_quick_combo)
-
+        # Same order as the Group tab: tz label, Min El, quick range, Search.
         row.addSpacing(12)
         row.addWidget(QLabel(_("Min El:")))
         self._target_min_el = self._make_min_el_spin()
         row.addWidget(self._target_min_el)
 
-        row.addStretch()
+        self._target_quick_combo = _make_quick_combo()
+        self._target_quick_combo.activated.connect(self._on_target_quick_combo)
+        row.addWidget(self._target_quick_combo)
 
         search_btn = QPushButton(_("Search"))
         search_btn.clicked.connect(self._on_target_search)
         row.addWidget(search_btn)
+
+        row.addStretch()
 
         vbox.addLayout(row)
 
