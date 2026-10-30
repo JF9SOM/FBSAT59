@@ -385,7 +385,7 @@ class RotatorSettingsDialog(QDialog):
                 "0 = off."
             )
         )
-        pose_form.addRow(_("Wait time before/after a pass:"), self._pass_margin_spin)
+        pose_form.addRow(_("Stand-by time before/after a pass:"), self._pass_margin_spin)
 
         self._stop_combo.currentIndexChanged.connect(self._update_south_init_state)
         self._flip_cb.toggled.connect(self._update_south_init_state)

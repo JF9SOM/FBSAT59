@@ -1577,7 +1577,7 @@ PTT テストも固まったのも同じ原因。
 `--delay-min` `--max-el`）が数分後に天頂近くを通る TLE を出力するので、Satellite > Add Manual TLE で追加する
 （手動 TLE は自動更新で上書きされない）。使い終わったら Remove Manual TLE。リグには接続しない。
 
-### パス前後待機時間（Rotator Settings > Wait time before/after a pass、2026-10-30）
+### パス前後待機時間（Rotator Settings > Stand-by time before/after a pass、2026-10-30）
 
 Issue #34（大澤さん）の要望: CALSAT32 のように、パークポジションからは AOS の約1分前に動き始め、
 LOS 後も TLE のずれに備えて約1分は追尾を続けたい。時間基準（秒）で `pose_group` に項目を追加
