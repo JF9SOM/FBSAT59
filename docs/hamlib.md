@@ -1577,17 +1577,17 @@ PTT テストも固まったのも同じ原因。
 `--delay-min` `--max-el`）が数分後に天頂近くを通る TLE を出力するので、Satellite > Add Manual TLE で追加する
 （手動 TLE は自動更新で上書きされない）。使い終わったら Remove Manual TLE。リグには接続しない。
 
-### パス前後の余裕時間（Rotator Settings > Margin before/after a pass、2026-10-30）
+### パス前後待機時間（Rotator Settings > Wait time before/after a pass、2026-10-30）
 
 Issue #34（大澤さん）の要望: CALSAT32 のように、パークポジションからは AOS の約1分前に動き始め、
 LOS 後も TLE のずれに備えて約1分は追尾を続けたい。時間基準（秒）で `pose_group` に項目を追加
 （`pass_margin_s`、`rotator_settings` JSON、既定 60、0 で無効）。
 
 - **LOS 後の延長**: `set_position()` の LOS ブロックで、`_los_time`（最初に EL≤0 になった時刻）
-  から余裕時間のあいだは `_start_aos_wait()` を呼ばず、生の（水平線下の）AZ を EL=0 で送り続ける。
+  から待機時間のあいだは `_start_aos_wait()` を呼ばず、生の（水平線下の）AZ を EL=0 で送り続ける。
 - **AOS 前の先行**: 「Wait at the park position」で待機中（`_awaiting_aos` かつ到着済み）に
   `set_next_aos_eta_predictor()`（`MainWindow._predict_next_aos_eta_s`）が返す AOS までの秒数が
-  余裕時間以内になったら、`_start_aos_wait(force_aos=True)` で AOS 地点の AZ へ移動
+  待機時間以内になったら、`_start_aos_wait(force_aos=True)` で AOS 地点の AZ へ移動
   （`_aos_lead_sent` で1回のみ）。「Move to the next AOS」では最初から AOS 地点にいるので影響なし。
 - `RotatorController` 基底に `set_pass_margin()` / `set_next_aos_eta_predictor()`。コントローラー単体の
   既定は 0（既存挙動）、MainWindow が設定値（既定 60）を `_apply_rotator_park()` で渡す。

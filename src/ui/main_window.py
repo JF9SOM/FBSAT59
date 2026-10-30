@@ -8990,7 +8990,7 @@ class MainWindow(QMainWindow):
         self._apply_rotator_park()
 
     def _pass_margin_seconds(self) -> float:
-        """Margin before/after a pass (Rotator Settings), 60 s by default."""
+        """Wait time before/after a pass (Rotator Settings), 60 s by default."""
         try:
             return float(self._rot_park_settings.get("pass_margin_s", 60))
         except (TypeError, ValueError):
