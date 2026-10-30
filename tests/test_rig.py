@@ -86,6 +86,13 @@ class TestFt4DataModeMapping:
             assert _FTX1_MODE_CODES[mode] == "A"  # DATA-FM (FTX-1 CAT manual, MD P2)
         assert _FTX1_MODE_CODES["FM"] == "4"
 
+    def test_rigctld_mode_names_send_data_signals_as_pktfm(self) -> None:
+        from rig.controller import _RIGCTLD_MODE_TO_SATNOGS, _SATNOGS_TO_RIGCTLD_MODE
+
+        for mode in ("AFSK", "GMSK", "FSK", "GFSK", "FM-D"):
+            assert _SATNOGS_TO_RIGCTLD_MODE[mode] == "PKTFM"
+        assert _RIGCTLD_MODE_TO_SATNOGS["PKTFM"] == "FM-D"
+
     def test_ft991_mode_map_has_data_modes(self) -> None:
         assert _FT991_MODE_MAP["USB-D"] == "C"  # DATA-USB
         assert _FT991_MODE_MAP["LSB-D"] == "8"  # DATA-LSB

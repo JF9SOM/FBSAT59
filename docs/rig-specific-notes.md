@@ -135,6 +135,11 @@ rig_dialog.py のカスタムリストでは 1036 = FT-991A として登録。`_
     `A`=DATA-FM・`B`=FM-N・`C`=DATA-U・`F`=DATA-FM-N。これまで FTX-1 の表には DATA-FM が無く、`AFSK` は FM、
     `GMSK`/`FSK`/`GFSK`/`FM-D` は表に無く既定の FM になっていた。`FM-D`・`AFSK`・`GMSK`・`FSK`・`GFSK` を `"A"` にした。
     **FTX-1 の DATA-FM 時の入力経路（メニュー）は未確認。実機未確認。**
+  - **NET（rigctld）のモード名の表 `_SATNOGS_TO_RIGCTLD_MODE` にも `GMSK`/`FSK`/`GFSK` → `PKTFM` を追加**（2026-10-30）:
+    FT-991 以外の NET 接続（FTX-1 など、rigctld の `M` でモードを送る経路）は、`AFSK`/`FM-D` は `PKTFM` だったが
+    `GMSK`/`FSK`/`GFSK` は表に無く FM になっていた。この表は全機種の NET 接続で共用なので、他機種の NET 接続の 9k6 データ信号も
+    PKTFM になる（機種ごとの Hamlib の対応次第。IC-9100 は PKTFM を無視してモードが変わらないという既存の記述があるので注意）。
+    逆引き `PKTFM`→`FM-D` は変わらない。
   - **`"FSK"` / `"GFSK"` → `"A"`（DATA-FM）**（2026-10-03）: KNACKSAT-2 の 9k6 ダウンリンク（SATNOGS モード
     `FSK` / `GFSK`）が FM になっていたため追加
   - **FM パケットのメニュー（FT-991A 取扱説明書 p.124 で確認、2026-10-02）**:

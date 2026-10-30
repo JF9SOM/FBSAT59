@@ -5530,6 +5530,11 @@ _SATNOGS_TO_RIGCTLD_MODE: dict[str, str] = {
     "AM": "AM",
     "USB-D": "PKTUSB",  # data mode, e.g. FT4 calling freqs
     "LSB-D": "PKTLSB",
+    # 4k8/9k6 data signals (SATNOGS GMSK / FSK / GFSK) are sent as data FM too, like AFSK.
+    # Listed before "FM-D" so the reverse map still turns PKTFM into "FM-D".
+    "GMSK": "PKTFM",
+    "FSK": "PKTFM",
+    "GFSK": "PKTFM",
     "FM-D": "PKTFM",  # data FM, e.g. terrestrial APRS
 }
 _RIGCTLD_MODE_TO_SATNOGS: dict[str, str] = {v: k for k, v in _SATNOGS_TO_RIGCTLD_MODE.items()}
