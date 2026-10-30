@@ -399,6 +399,14 @@ def test_cq_button_is_half_width_to_leave_room_for_the_message_box(
     assert tab._cq_btn.maximumWidth() == tab._cq_btn.sizeHint().width() // 2
 
 
+def test_to_box_and_tx_slider_widths_leave_room_for_the_message_box(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _make_tab(qtbot, conn)
+    assert tab._to_edit.maximumWidth() == 90
+    assert tab._tx_level_slider.maximumWidth() == 100
+
+
 def test_cq_button_fills_cq_and_our_grid(qtbot: QtBot, conn: sqlite3.Connection) -> None:
     tab = _qso_tab(qtbot, conn)
     tab._cq_btn.click()

@@ -372,7 +372,7 @@ class AprsTab(QWidget):
         send_layout.addWidget(QLabel(_("To:")))
         self._to_edit = QLineEdit()
         self._to_edit.setPlaceholderText("JA1XYZ")
-        self._to_edit.setFixedWidth(100)
+        self._to_edit.setFixedWidth(90)
         send_layout.addWidget(self._to_edit)
         send_layout.addSpacing(8)
         send_layout.addWidget(QLabel(_("Message:")))
@@ -399,7 +399,7 @@ class AprsTab(QWidget):
         self._tx_level_slider = QSlider(Qt.Orientation.Horizontal)
         self._tx_level_slider.setRange(TX_LEVEL_MIN_DB, TX_LEVEL_MAX_DB)
         self._tx_level_slider.setValue(TX_LEVEL_MAX_DB)
-        self._tx_level_slider.setFixedWidth(120)
+        self._tx_level_slider.setFixedWidth(100)
         self._tx_level_slider.setToolTip(
             _(
                 "Transmit audio level in dB below full scale. The app generates the "
