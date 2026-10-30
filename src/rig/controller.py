@@ -3772,6 +3772,9 @@ _FT991_MODE_MAP: dict[str, str] = {
     # SATNOGS "FSK"/"GFSK" (e.g. KNACKSAT-2's 9k6 G3RUH) are data signals too.
     "FSK": "A",  # DATA-FM
     "GFSK": "A",  # DATA-FM
+    # SATNOGS "AFSK" (1200 baud APRS digipeaters such as the ISS and SONATE-2) is a data
+    # signal too: DATA-FM, with the rig's FM PKT MODE menu (079) at 1200.
+    "AFSK": "A",  # DATA-FM
 }
 
 

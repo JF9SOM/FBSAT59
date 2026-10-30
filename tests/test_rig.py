@@ -89,6 +89,7 @@ class TestFt4DataModeMapping:
         assert _FT991_MODE_MAP["GMSK"] == "A"  # DATA-FM (not plain FM)
         assert _FT991_MODE_MAP["FSK"] == "A"
         assert _FT991_MODE_MAP["GFSK"] == "A"
+        assert _FT991_MODE_MAP["AFSK"] == "A"  # 1200 baud APRS digipeaters: DATA-FM
 
     def test_satnogs_to_rigctld_mode_has_data_modes(self) -> None:
         assert _SATNOGS_TO_RIGCTLD_MODE["USB-D"] == "PKTUSB"
@@ -2792,8 +2793,21 @@ class TestHamlibNetController:
 
     def test_send_mode_only_ft991_unknown_mode_falls_back_to_fm(self) -> None:
         """Same fallback, but for the ctcss_method == "ft991" raw-CAT branch
-        (e.g. an FTX-1F configured with ctcss_method="ft991"): AFSK/SSTV must
-        still send MD0 4; (FM) rather than skipping the CAT command."""
+        (e.g. an FTX-1F configured with ctcss_method="ft991"): a mode absent from
+        the map (SSTV here) must still send MD0 4; (FM) rather than skipping the CAT
+        command."""
+        ctrl = HamlibNetController(host="localhost", port=4532, ctcss_method="ft991")
+        sent: list[bytes] = []
+        mock_sock = MagicMock(spec=socket.socket)
+        mock_sock.recv.return_value = b"RPRT 0\n"
+        mock_sock.sendall.side_effect = lambda data: sent.append(data)
+        with patch("rig.controller.socket.socket", return_value=mock_sock):
+            ctrl.send_mode_only("SSTV", "SSTV")
+        data = b"".join(sent)
+        assert b"w MD04;\n" in data
+
+    def test_send_mode_only_ft991_afsk_is_data_fm(self) -> None:
+        """1200 baud APRS digipeaters (SATNOGS AFSK) go to DATA-FM, like the 9k6 ones."""
         ctrl = HamlibNetController(host="localhost", port=4532, ctcss_method="ft991")
         sent: list[bytes] = []
         mock_sock = MagicMock(spec=socket.socket)
@@ -2801,8 +2815,7 @@ class TestHamlibNetController:
         mock_sock.sendall.side_effect = lambda data: sent.append(data)
         with patch("rig.controller.socket.socket", return_value=mock_sock):
             ctrl.send_mode_only("AFSK", "AFSK")
-        data = b"".join(sent)
-        assert b"w MD04;\n" in data
+        assert b"w MD0A;\n" in b"".join(sent)
 
     def test_send_mode_only_ssb_maps_to_usb(self) -> None:
         """SSB は rigctld の USB として送信される。"""

@@ -128,6 +128,9 @@ rig_dialog.py のカスタムリストでは 1036 = FT-991A として登録。`_
     Message Exchange（SATNOGS モード `GMSK`）を選ぶと FM になっていた。FT-991 の `MD` コードは
     1=LSB 2=USB 3=CW 4=FM 5=AM 6=RTTY-LSB 7=CW-R 8=DATA-LSB 9=RTTY-USB **A=DATA-FM** B=FM-N C=DATA-USB。
     他衛星の `GMSK`（9k6 テレメトリ等）も DATA-FM になる。`AFSK` 等は従来どおり FM
+    （**`AFSK` も 2026-10-30 に `"A"`（DATA-FM）へ変更**: ISS・SONATE-2 など 1200 baud の APRS デジピーターを
+    9600 のものと同じく DATA-FM にするユーザー要望。FT-991 のみ。他の機種（IC-9100 等）は従来どおり FM。
+    DATA-FM では 079 FM PKT MODE=1200（既定）にしておくこと。AFSK の RX 専用テレメトリビーコンも DATA-FM になる）
   - **`"FSK"` / `"GFSK"` → `"A"`（DATA-FM）**（2026-10-03）: KNACKSAT-2 の 9k6 ダウンリンク（SATNOGS モード
     `FSK` / `GFSK`）が FM になっていたため追加
   - **FM パケットのメニュー（FT-991A 取扱説明書 p.124 で確認、2026-10-02）**:
