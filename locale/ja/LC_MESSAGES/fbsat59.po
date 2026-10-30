@@ -8790,3 +8790,20 @@ msgstr "（{shown}/{total}文字を表示、以下省略）"
 
 #~ msgid "IQ decode finished."
 #~ msgstr "IQデコードが完了しました。"
+
+#: src/ui/rotator_dialog.py
+msgid " s"
+msgstr " 秒"
+
+#: src/ui/rotator_dialog.py
+msgid "Margin before/after a pass:"
+msgstr "パス前後の余裕時間:"
+
+#: src/ui/rotator_dialog.py
+msgid ""
+"Start moving from the park position this long before AOS, and keep "
+"following the satellite this long after LOS (covers an outdated TLE). 0 = "
+"off."
+msgstr ""
+"AOS のこの時間前にパークポジションから動き始め、LOS 後もこの時間は衛星を追い続けます"
+"(TLE のずれ対策)。0 で無効。"

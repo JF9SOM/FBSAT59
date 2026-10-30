@@ -373,6 +373,20 @@ class RotatorSettingsDialog(QDialog):
         self._park_on_disconnect_cb = QCheckBox(_("Move to the park position on disconnect"))
         pose_form.addRow(self._park_on_disconnect_cb)
 
+        self._pass_margin_spin = QSpinBox()
+        self._pass_margin_spin.setRange(0, 600)
+        self._pass_margin_spin.setSingleStep(10)
+        self._pass_margin_spin.setSuffix(_(" s"))
+        self._pass_margin_spin.setValue(60)
+        self._pass_margin_spin.setToolTip(
+            _(
+                "Start moving from the park position this long before AOS, and keep "
+                "following the satellite this long after LOS (covers an outdated TLE). "
+                "0 = off."
+            )
+        )
+        pose_form.addRow(_("Margin before/after a pass:"), self._pass_margin_spin)
+
         self._stop_combo.currentIndexChanged.connect(self._update_south_init_state)
         self._flip_cb.toggled.connect(self._update_south_init_state)
         self._park_cb.toggled.connect(self._on_park_toggled)
@@ -707,6 +721,8 @@ class RotatorSettingsDialog(QDialog):
         idx = self._after_pass_combo.findData(str(s.get("after_pass", "next_aos")))
         self._after_pass_combo.setCurrentIndex(max(idx, 0))
         self._park_on_disconnect_cb.setChecked(bool(s.get("park_on_disconnect", False)))
+        with contextlib.suppress(TypeError, ValueError):
+            self._pass_margin_spin.setValue(int(s.get("pass_margin_s", 60)))
         # Saved values for a model that cannot use them are dropped here too.
         self._update_flip_availability()
 
@@ -739,6 +755,7 @@ class RotatorSettingsDialog(QDialog):
             "park_el": self._park_el_spin.value(),
             "after_pass": self._after_pass_combo.currentData() or "next_aos",
             "park_on_disconnect": self._park_on_disconnect_cb.isChecked(),
+            "pass_margin_s": self._pass_margin_spin.value(),
         }
         if hasattr(self._conn, "execute"):
             self._conn.execute(

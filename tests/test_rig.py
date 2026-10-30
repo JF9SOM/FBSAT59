@@ -3547,6 +3547,54 @@ class TestHamlibRotatorController:
         ]
         assert p_sent == [b"P 55.5 0.0\n"]
 
+    def test_los_within_pass_margin_keeps_tracking(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl._last_az = 100.0
+        ctrl._catching_up = False
+        ctrl.set_next_aos_predictor(lambda: 55.5)
+        ctrl.set_pass_margin(60.0)
+        ctrl._sock.sendall.reset_mock()  # type: ignore[union-attr]
+        assert ctrl.set_position(95.0, -2.0) is True  # just after LOS
+        assert ctrl._awaiting_aos is False
+        assert ctrl._last_az == pytest.approx(95.0)
+        p_sent = [
+            c.args[0]
+            for c in ctrl._sock.sendall.call_args_list  # type: ignore[union-attr]
+            if c.args[0].startswith(b"P ")
+        ]
+        assert p_sent == [b"P 95.0 0.0\n"]
+
+    def test_los_after_pass_margin_jumps_to_next_aos(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl._last_az = 100.0
+        ctrl._catching_up = False
+        ctrl.set_next_aos_predictor(lambda: 55.5)
+        ctrl.set_pass_margin(60.0)
+        assert ctrl.set_position(95.0, -2.0) is True
+        ctrl._los_time = time.monotonic() - 61.0  # margin elapsed
+        assert ctrl.set_position(94.0, -4.0) is True
+        assert ctrl._awaiting_aos is True
+        assert ctrl._last_az == pytest.approx(55.5)
+
+    def test_park_wait_leaves_early_when_aos_within_margin(self) -> None:
+        ctrl = self._make_net_ctrl_connected()
+        ctrl.set_park((10.0, 0.0), after_pass=True)
+        ctrl.set_next_aos_predictor(lambda: 77.0)
+        ctrl.set_pass_margin(60.0)
+        eta = {"s": 300.0}
+        ctrl.set_next_aos_eta_predictor(lambda: eta["s"])
+        ctrl._awaiting_aos = True  # already parked
+        ctrl._catching_up = False
+        ctrl._last_az = 10.0
+        ctrl._sock.sendall.reset_mock()  # type: ignore[union-attr]
+        assert ctrl.set_position(70.0, -10.0) is True  # AOS still 5 min away
+        assert ctrl._last_az == pytest.approx(10.0)
+        eta["s"] = 50.0
+        assert ctrl.set_position(70.0, -3.0) is True  # within the margin
+        assert ctrl._last_az == pytest.approx(77.0)
+        assert ctrl._catching_up is True
+        assert ctrl._awaiting_aos is True
+
     def test_los_during_tracking_without_next_aos_predictor_falls_back(self) -> None:
         ctrl = self._make_net_ctrl_connected()
         ctrl._last_az = 100.0

@@ -5434,6 +5434,31 @@ class MainWindow(QMainWindow):
             self._rot_flip_for_pass(self._selected_norad, next_pass),
         )
 
+    def _predict_next_aos_eta_s(self) -> float | None:
+        """Seconds until the selected satellite's next AOS, or None if unknown.
+
+        Called from the rotator's background send thread (plain attributes
+        only, like _predict_next_aos_az()).
+        """
+        if self._selected_norad is None or self._selected_norad == MOON_ID:
+            return None
+        if self._pass_predictor is None:
+            return None
+        now = datetime.now(UTC)
+        try:
+            passes = self._pass_predictor.get_passes(
+                self._selected_norad,
+                start=now,
+                end=now + timedelta(hours=24),
+                min_elevation_deg=0.0,
+            )
+        except Exception as exc:
+            logger.error("Rotator: next-AOS ETA search failed: %s", exc)
+            return None
+        if not passes:
+            return None
+        return max(0.0, (passes[0].aos - now).total_seconds())
+
     def _send_to_rotator(self, obs: Observation | None) -> None:
         """Send AZ/EL from obs to the rotator in a background thread (non-blocking)."""
         if (
@@ -8937,6 +8962,7 @@ class MainWindow(QMainWindow):
                 )
             self._rotator_controller.set_predictor(self._predict_rotator_lead)
             self._rotator_controller.set_next_aos_predictor(self._predict_next_aos_az)
+            self._rotator_controller.set_next_aos_eta_predictor(self._predict_next_aos_eta_s)
             self._rotator_controller.set_assumed_slew_speed(self._load_rotator_slew_speed_setting())
             self._rotator_controller.set_slew_speed_observer(self._on_rotator_slew_speed_measured)
             self._rot_seam_az = (
@@ -8963,6 +8989,13 @@ class MainWindow(QMainWindow):
             logger.warning("Failed to load rotator_south_init: %s", exc)
         self._apply_rotator_park()
 
+    def _pass_margin_seconds(self) -> float:
+        """Margin before/after a pass (Rotator Settings), 60 s by default."""
+        try:
+            return float(self._rot_park_settings.get("pass_margin_s", 60))
+        except (TypeError, ValueError):
+            return 60.0
+
     def _apply_rotator_park(self) -> None:
         """Hand the park settings (Rotator Settings > Park) to the controller.
 
@@ -8982,6 +9015,7 @@ class MainWindow(QMainWindow):
         except (TypeError, ValueError):
             rot.set_park(None)
             return
+        rot.set_pass_margin(self._pass_margin_seconds())
         rot.set_park(
             (self._rot_az(park_az), max(0.0, min(90.0, park_el))),
             after_pass=str(s.get("after_pass", "next_aos")) == "park",

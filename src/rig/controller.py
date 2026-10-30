@@ -5603,6 +5603,12 @@ class RotatorController(ABC):
         # isinstance check; subclasses without this behavior simply never
         # read it.
         self._next_aos_predictor: Callable[[], float | None] | None = None
+        # Optional callback returning the seconds until the current target's
+        # next AOS (None if unknown) and the margin (seconds) around a pass:
+        # start moving that long before AOS, keep tracking that long after
+        # LOS. See set_pass_margin() / set_next_aos_eta_predictor().
+        self._next_aos_eta_predictor: Callable[[], float | None] | None = None
+        self._pass_margin_s: float = 0.0
         # Rotator frame. All the catch-up / wrap logic treats azimuth 0/360
         # as the point the rotator cannot cross without unwinding. A rotator
         # whose mechanical stop is elsewhere (e.g. a south-stop rotator, stop
@@ -5671,6 +5677,19 @@ class RotatorController(ABC):
     def set_next_aos_predictor(self, predictor: Callable[[], float | None] | None) -> None:
         """Register the next-AOS azimuth predictor (or None to disable it)."""
         self._next_aos_predictor = predictor
+
+    def set_next_aos_eta_predictor(self, predictor: Callable[[], float | None] | None) -> None:
+        """Register the seconds-until-next-AOS predictor (or None to disable it)."""
+        self._next_aos_eta_predictor = predictor
+
+    def set_pass_margin(self, seconds: float) -> None:
+        """Set the margin around a pass in seconds (0 disables it).
+
+        Before AOS the rotator leaves the park position this long early;
+        after LOS it keeps following the satellite this long, so a stale TLE
+        does not leave the antenna pointing away from the real satellite.
+        """
+        self._pass_margin_s = max(0.0, float(seconds))
 
     def set_assumed_slew_speed(self, deg_per_s: float) -> None:
         """Set the assumed rotator slew speed (deg/s) used to size catch-up lead time."""
@@ -5814,6 +5833,12 @@ class HamlibRotatorController(RotatorController):
         # target's real elevation rises above 0 — see _start_aos_wait() and
         # set_position()'s handling of this flag.
         self._awaiting_aos: bool = False
+        # True once the early move from the park position toward the AOS
+        # point has been sent for the current wait (see set_pass_margin()).
+        self._aos_lead_sent: bool = False
+        # monotonic() time at which the tracked target first went below the
+        # horizon (LOS); None while it is above the horizon or not yet seen.
+        self._los_time: float | None = None
         # Rotator's real azimuth at the moment a 0-degree wrap re-entered
         # catch-up (None otherwise — including for the initial jump, which
         # doesn't need this gate). A wrap's start and target are always
@@ -5965,6 +5990,8 @@ class HamlibRotatorController(RotatorController):
                 self._last_az = None
                 self._catching_up = False
                 self._awaiting_aos = False
+                self._aos_lead_sent = False
+                self._los_time = None
                 self._catch_up_wrap_origin_az = None
                 self._catch_up_measure_start_time = None
                 self._catch_up_measure_start_az = None
@@ -6129,7 +6156,25 @@ class HamlibRotatorController(RotatorController):
             return 0.0
         return raw_az
 
-    def _start_aos_wait(self, origin_az: float) -> bool:
+    def _aos_lead_due(self) -> bool:
+        """True when waiting at the park position and the next AOS is within
+        the pass margin (and the early move has not been sent yet)."""
+        if (
+            self._aos_lead_sent
+            or self._pass_margin_s <= 0.0
+            or not self._park_after_pass
+            or self._park_target is None
+            or self._next_aos_eta_predictor is None
+        ):
+            return False
+        try:
+            eta = self._next_aos_eta_predictor()
+        except Exception as exc:
+            logger.error("Rotator: next-AOS ETA prediction failed: %s", exc)
+            return False
+        return eta is not None and eta <= self._pass_margin_s
+
+    def _start_aos_wait(self, origin_az: float, *, force_aos: bool = False) -> bool:
         """Jump toward the next AOS's azimuth instead of holding in place.
 
         Called wherever set_position() would otherwise just log and hold
@@ -6158,7 +6203,9 @@ class HamlibRotatorController(RotatorController):
         registered or it couldn't produce an azimuth — the caller should
         fall back to its pre-existing behavior.
         """
-        park_wait = self._park_after_pass and self._park_target is not None
+        # force_aos: leave the park position early for the AOS point (the
+        # pass margin before AOS), instead of waiting at the park position.
+        park_wait = self._park_after_pass and self._park_target is not None and not force_aos
         wait_el = 0.0
         if park_wait and self._park_target is not None:
             # Operator chose to wait at the park position between passes
@@ -6543,6 +6590,9 @@ class HamlibRotatorController(RotatorController):
             with self._io_lock:
                 el_cmd = max(0.0, min(90.0, elevation_deg))
 
+                if elevation_deg > 0.0:
+                    self._los_time = None
+
                 if self._awaiting_aos and not self._catching_up:
                     # Parked at a previously-computed next-AOS point (see
                     # _start_aos_wait()) and already arrived — stay put
@@ -6551,8 +6601,15 @@ class HamlibRotatorController(RotatorController):
                     # below-horizon) azimuth_deg this cycle would otherwise
                     # chase.
                     if elevation_deg <= 0.0:
+                        if self._aos_lead_due():
+                            # Parked and the AOS is within the pass margin:
+                            # head for the AOS point now.
+                            self._aos_lead_sent = True
+                            origin_az = self.get_position().azimuth_deg
+                            self._start_aos_wait(origin_az, force_aos=True)
                         return True
                     self._awaiting_aos = False
+                    self._aos_lead_sent = False
                     self._last_az = None  # force a fresh initial jump below
 
                 if self._last_az is None:
@@ -6720,6 +6777,15 @@ class HamlibRotatorController(RotatorController):
                     # azimuth the orbit currently predicts, try jumping
                     # ahead to the next pass's AOS point so the rotor is
                     # ready before the target rises again.
+                    if self._los_time is None:
+                        self._los_time = time.monotonic()
+                    if time.monotonic() - self._los_time < self._pass_margin_s:
+                        # Within the pass margin after LOS: keep following the
+                        # satellite (elevation clamped to 0) in case the TLE is
+                        # off, instead of leaving for the next AOS right away.
+                        self._last_az = azimuth_deg
+                        self._send_p(azimuth_deg, el_cmd)
+                        return True
                     origin_az = self.get_position().azimuth_deg
                     if self._start_aos_wait(origin_az):
                         return True
@@ -6756,6 +6822,8 @@ class HamlibRotatorController(RotatorController):
                 self._last_az = None
                 self._catching_up = False
                 self._awaiting_aos = False
+                self._aos_lead_sent = False
+                self._los_time = None
                 self._catch_up_wrap_origin_az = None
                 self._catch_up_measure_start_time = None
                 self._catch_up_measure_start_az = None
