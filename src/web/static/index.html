@@ -918,6 +918,7 @@ function resetTrackDisplay() {
     el.textContent = '—';
     el.className = 'info-value';
   });
+  lastPasses = [];
   currentPassTrack = [];
   currentPassAos = null;
   currentPassLos = null;
@@ -955,6 +956,30 @@ function setPassRange(hours) {
   if (selectedNorad) loadPasses(selectedNorad);
 }
 
+/* A finished pass stays on the radar for the rotator stand-by time after LOS
+   (same rule as the desktop radar), then the next pass takes over. */
+let lastPasses = [];
+let passStandbyMs = 60000;
+fetch('/api/pass_standby')
+  .then(r => r.json())
+  .then(d => { passStandbyMs = d.seconds * 1000; })
+  .catch(() => {});
+
+function pickDisplayPass() {
+  const now = Date.now();
+  const next = lastPasses.find(p => new Date(p.los).getTime() + passStandbyMs > now);
+  if (next) {
+    if (currentPassLos === next.los) return;
+    currentPassTrack = next.track_points || computePassTrack(next);
+    currentPassAos = next.aos;
+    currentPassLos = next.los;
+  } else {
+    currentPassTrack = [];
+    currentPassAos = null;
+    currentPassLos = null;
+  }
+}
+
 function loadPasses(norad) {
   const fromVal = document.getElementById('pass-from').value;
   const toVal = document.getElementById('pass-to').value;
@@ -968,17 +993,8 @@ function loadPasses(norad) {
     .then(r => r.json())
     .then(passes => {
       renderPasses(passes);
-      const now = Date.now();
-      const next = passes.find(p => new Date(p.los).getTime() > now);
-      if (next) {
-        currentPassTrack = next.track_points || computePassTrack(next);
-        currentPassAos = next.aos;
-        currentPassLos = next.los;
-      } else {
-        currentPassTrack = [];
-        currentPassAos = null;
-        currentPassLos = null;
-      }
+      lastPasses = passes;
+      pickDisplayPass();
     })
     .catch(() => {
       document.getElementById('pass-tbody').innerHTML =
@@ -1093,6 +1109,7 @@ function updateTracking(data) {
   const visEl = document.getElementById('val-vis');
   visEl.textContent = data.is_above_horizon ? 'Visible ▲' : 'Below horizon';
   visEl.className = 'info-value ' + (data.is_above_horizon ? 'visible' : 'hidden');
+  pickDisplayPass();
   if (radarView && selectedNorad !== null) {
     radarView.setTracks([{
       name: document.getElementById('sat-name').textContent,

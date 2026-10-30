@@ -4161,9 +4161,13 @@ class MainWindow(QMainWindow):
             name = item.text() if item else str(self._selected_norad)
 
             # Choose next pass info depending on whether a pass is currently active
+            # A finished pass stays on the radar for the rotator's stand-by
+            # time after LOS, then the display moves to the next pass (the
+            # same moment the rotator leaves for the next AOS).
             now = datetime.now(UTC)
+            standby = timedelta(seconds=self._pass_margin_seconds())
             next_pass = next(
-                (p for p in self._current_passes if p.los > now),
+                (p for p in self._current_passes if p.los + standby > now),
                 None,
             )
             aos_t = next_pass.aos if next_pass is not None else None

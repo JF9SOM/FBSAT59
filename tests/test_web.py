@@ -581,3 +581,18 @@ class TestApiAmsat:
         resp = c.get("/api/amsat")
         assert resp.status_code == 200
         assert resp.json() == {}
+
+
+def test_pass_standby_defaults_to_60(client: TestClient) -> None:
+    """Without a saved rotator setting the stand-by time is 60 s."""
+    assert client.get("/api/pass_standby").json() == {"seconds": 60.0}
+
+
+def test_pass_standby_reads_rotator_setting(client: TestClient, db: sqlite3.Connection) -> None:
+    """The stand-by time follows Rotator Settings (pass_margin_s)."""
+    db.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('rotator_settings', ?)",
+        ('{"pass_margin_s": 90}',),
+    )
+    db.commit()
+    assert client.get("/api/pass_standby").json() == {"seconds": 90.0}

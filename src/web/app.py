@@ -835,6 +835,26 @@ def create_app(
             uptime_s=(datetime.now(UTC) - _start).total_seconds(),
         )
 
+    @app.get("/api/pass_standby")
+    async def get_pass_standby(
+        db: sqlite3.Connection = Depends(get_conn),
+    ) -> dict[str, float]:
+        """Return the rotator stand-by time (s) before/after a pass.
+
+        The browser radar keeps showing a finished pass this long after LOS,
+        matching the desktop radar and the rotator (Rotator Settings).
+        """
+        seconds = 60.0
+        try:
+            row = db.execute(
+                "SELECT value FROM app_settings WHERE key = 'rotator_settings'"
+            ).fetchone()
+            if row is not None:
+                seconds = float(json.loads(row["value"]).get("pass_margin_s", 60))
+        except (sqlite3.Error, ValueError, TypeError, AttributeError):
+            pass
+        return {"seconds": max(0.0, seconds)}
+
     @app.get("/api/location", response_model=LocationOut)
     async def get_location() -> LocationOut:
         """Return the current observer (QTH) location. Returns 503 if not configured."""

@@ -299,3 +299,14 @@ Issue #34（Ohsawa）の指摘で、AOS/LOS の定義と最小仰角を分離し
   ローテーターは追うため `0.0` を明示して絞り込みを受けない。
 - Web UI（`/api/satellites/{norad}/passes`）の `min_el` も省略時は共有値。
 - Group タブの結果は、ボックス変更後に Search を押すまで再計算されない（従来どおり）。
+
+## レーダーに表示するパスの切り替え（2026-10-30）
+
+Issue #34（大澤さん）: LOS 直後にレーダーの軌道が次のパスへ切り替わっていたが、ローテーターは
+「パス前後待機時間」（Rotator Settings、`pass_margin_s`、既定 60 秒）のあいだ衛星を追い続けるため、
+表示もそれに合わせたい。レーダーに出すパスを「LOS＋待機時間がまだ来ていない最初のパス」に統一した。
+
+- デスクトップ: `MainWindow._update_selected_satellite()`（Radar タブと Dashboard は同じ `SatTrackData`）。
+- スマホ Web UI: `index.html` の `pickDisplayPass()`。待機時間は `GET /api/pass_standby`
+  （`rotator_settings` の `pass_margin_s`）から取得。取得済みのパス一覧を保持して毎回選び直す。
+- パスチャート・パス一覧は対象外（時刻の線や一覧であり、「表示中の1パス」を選ぶ処理ではない）。
