@@ -8792,10 +8792,6 @@ msgstr "（{shown}/{total}文字を表示、以下省略）"
 #~ msgstr "IQデコードが完了しました。"
 
 #: src/ui/rotator_dialog.py
-msgid " s"
-msgstr " 秒"
-
-#: src/ui/rotator_dialog.py
 msgid "Margin before/after a pass:"
 msgstr "パス前後の余裕時間:"
 
