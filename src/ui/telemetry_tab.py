@@ -3448,9 +3448,20 @@ class TelemetryTab(QWidget):
         tf = item.data(_DECODED_ROLE)
         if not isinstance(tf, TelemetryFrame):
             tf = self._decode_ax25_row(item.data(_AX25_ROLE), row)
-        if tf is None or not tf.has_fields or tf.norad != self._decode_tabs_norad:
+        if tf is None or not tf.has_fields:
             return
+        self._follow_frame_satellite(tf.norad)
         self._show_frame_in_decode_tab(tf, row)
+
+    def _follow_frame_satellite(self, norad: int | None) -> None:
+        """Rebuild the "Decoded Fields" sub-tabs when they belong to another satellite.
+
+        The sub-tabs are built from the left-list selection; if that state is stale
+        (e.g. left over from another satellite), frames of *norad* would otherwise
+        be silently dropped and every field would stay empty.
+        """
+        if norad is not None and norad != self._decode_tabs_norad:
+            self._rebuild_decode_tabs(norad)
 
     def _show_frame_in_decode_tab(self, tf: TelemetryFrame, row: int) -> None:
         """Fill the sub-tab of *tf*'s type with the frame of *row*, bring it to the front."""
@@ -3504,6 +3515,7 @@ class TelemetryTab(QWidget):
         if row is None:
             row = self._table.rowCount() - 1
             self._note_frame(row, f"{tf.norad}:{tf.telemetry_id}")
+        self._follow_frame_satellite(tf.norad)
         if tf.norad != self._decode_tabs_norad:
             return
         shown = tf.record_ids or [str(tf.telemetry_id)]

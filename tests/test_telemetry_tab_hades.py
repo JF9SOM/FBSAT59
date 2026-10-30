@@ -527,3 +527,17 @@ def test_only_verified_unne1_voice_packets_are_handed_on(
     tab._on_hades_frame(_frame(), 0.0)  # a power packet
     assert packets == []
     assert tab._voice_tab_asked is False
+
+
+def test_decoded_fields_follow_the_frames_satellite(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    """Sub-tabs built for another satellite are rebuilt when one of its frames arrives."""
+    from comms.telemetry.decoder import decode_telemetry
+
+    tab = _tab(qtbot, conn)
+    tab._rebuild_decode_tabs(57172)  # stale state: UmKA-1's tables
+    tf = decode_telemetry("OM9MAR", b"OBC,1,2,3,4,5,6,7,8,9,10", 69920)
+    if not tf.has_fields:
+        pytest.skip("sample Marina payload is not decodable")
+    tab._update_decode_tab(tf)
+    assert tab._decode_tabs_norad == 69920
+    assert "OBC" in tab._decode_tables
