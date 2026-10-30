@@ -365,6 +365,8 @@ class AprsTab(QWidget):
             )
         )
         self._cq_btn.clicked.connect(self._on_cq_clicked)
+        # Half the default width: the space goes to the message box, which stretches.
+        self._cq_btn.setFixedWidth(self._cq_btn.sizeHint().width() // 2)
         send_layout.addWidget(self._cq_btn)
         send_layout.addSpacing(8)
         send_layout.addWidget(QLabel(_("To:")))
