@@ -324,7 +324,6 @@ _IC9700_DEFAULT_CIV_ADDR = 0xA2
 _FTX1_MODE_CODES: dict[str, str] = {
     "FM": "4",
     "DIGITALVOICE": "4",
-    "AFSK": "4",
     "USB": "2",
     "SSB": "2",
     "BPSK": "2",
@@ -334,6 +333,13 @@ _FTX1_MODE_CODES: dict[str, str] = {
     "AM": "5",
     "USB-D": "C",  # DATA-USB (data mode, e.g. FT4 calling freqs)
     "LSB-D": "8",  # DATA-LSB
+    # DATA-FM is "A" in the FTX-1 CAT manual (MD P2: A = DATA-FM, F = DATA-FM-N), like the
+    # FT-991: terrestrial APRS, 1200 baud APRS digipeaters (AFSK) and 9k6/4k8 data signals.
+    "FM-D": "A",
+    "AFSK": "A",
+    "GMSK": "A",
+    "FSK": "A",
+    "GFSK": "A",
 }
 
 # Icom CI-V C_SET_MODE (0x06) mode bytes, and whether the mode implies the

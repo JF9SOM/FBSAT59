@@ -82,6 +82,9 @@ class TestFt4DataModeMapping:
     def test_ftx1_mode_codes_has_data_modes(self) -> None:
         assert _FTX1_MODE_CODES["USB-D"] == "C"  # DATA-USB
         assert _FTX1_MODE_CODES["LSB-D"] == "8"  # DATA-LSB
+        for mode in ("FM-D", "AFSK", "GMSK", "FSK", "GFSK"):
+            assert _FTX1_MODE_CODES[mode] == "A"  # DATA-FM (FTX-1 CAT manual, MD P2)
+        assert _FTX1_MODE_CODES["FM"] == "4"
 
     def test_ft991_mode_map_has_data_modes(self) -> None:
         assert _FT991_MODE_MAP["USB-D"] == "C"  # DATA-USB

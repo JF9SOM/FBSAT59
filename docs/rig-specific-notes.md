@@ -131,6 +131,10 @@ rig_dialog.py のカスタムリストでは 1036 = FT-991A として登録。`_
     （**`AFSK` も 2026-10-30 に `"A"`（DATA-FM）へ変更**: ISS・SONATE-2 など 1200 baud の APRS デジピーターを
     9600 のものと同じく DATA-FM にするユーザー要望。FT-991 のみ。他の機種（IC-9100 等）は従来どおり FM。
     DATA-FM では 079 FM PKT MODE=1200（既定）にしておくこと。AFSK の RX 専用テレメトリビーコンも DATA-FM になる）
+  - **FTX-1F も同日 DATA-FM に対応**（`_FTX1_MODE_CODES`）: Yaesu 公式の FTX-1 CAT マニュアル（2508-C）の `MD` の P2 は
+    `A`=DATA-FM・`B`=FM-N・`C`=DATA-U・`F`=DATA-FM-N。これまで FTX-1 の表には DATA-FM が無く、`AFSK` は FM、
+    `GMSK`/`FSK`/`GFSK`/`FM-D` は表に無く既定の FM になっていた。`FM-D`・`AFSK`・`GMSK`・`FSK`・`GFSK` を `"A"` にした。
+    **FTX-1 の DATA-FM 時の入力経路（メニュー）は未確認。実機未確認。**
   - **`"FSK"` / `"GFSK"` → `"A"`（DATA-FM）**（2026-10-03）: KNACKSAT-2 の 9k6 ダウンリンク（SATNOGS モード
     `FSK` / `GFSK`）が FM になっていたため追加
   - **FM パケットのメニュー（FT-991A 取扱説明書 p.124 で確認、2026-10-02）**:
