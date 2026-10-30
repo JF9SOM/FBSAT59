@@ -495,3 +495,16 @@ def test_receive_log_starts_empty_even_with_logged_qsos(
     tab = _make_tab(qtbot, conn)
     assert tab._log_list.count() == 0
     assert "1" in tab._qso_count_label.text()
+
+
+def test_cq_button_sends_the_call_when_transmitting_is_possible(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _qso_tab(qtbot, conn)
+    engine = _RecordingEngine(True)
+    tab._engine = engine  # type: ignore[assignment]
+    tab._send_btn.setEnabled(True)
+    tab._cq_btn.click()
+    assert [m[3:] for m in engine.messages] == [("CQ", "PM86", True)]
+    assert tab._msg_edit.text() == ""  # a sent message clears the box
+    assert "JF9SOM>CQ" in tab._log_list.item(tab._log_list.count() - 1).text()

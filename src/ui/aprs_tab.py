@@ -360,8 +360,8 @@ class AprsTab(QWidget):
         self._cq_btn = QPushButton(_("CQ"))
         self._cq_btn.setToolTip(
             _(
-                "Fill the form for a general call: To = CQ, message = your grid square, "
-                "UISS style. Press Send to transmit."
+                "Send a general call: To = CQ, message = your grid square, UISS style. "
+                "The form is filled in and transmitted at once."
             )
         )
         self._cq_btn.clicked.connect(self._on_cq_clicked)
@@ -1322,10 +1322,15 @@ class AprsTab(QWidget):
         return _latlon_to_grid(pos[0], pos[1]) if pos else ""
 
     def _on_cq_clicked(self) -> None:
-        """Fill the form for a general call: To = CQ, message = our grid, UISS style."""
+        """Fill the form for a general call (To = CQ, message = our grid, UISS style) and send it.
+
+        When transmitting is not possible (Send is disabled) the form is only filled in.
+        """
         self._format_combo.setCurrentIndex(self._format_combo.findData(_MSG_FORMAT_UISS))
         self._to_edit.setText("CQ")
         self._msg_edit.setText(self._my_grid())
+        if self._send_btn.isEnabled():
+            self._on_send()
 
     def _on_log_item_clicked(self, item: QListWidgetItem) -> None:
         """Fill To / Message for a reply to the clicked CQ or packet addressed to us.
