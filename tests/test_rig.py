@@ -86,6 +86,39 @@ class TestFt4DataModeMapping:
             assert _FTX1_MODE_CODES[mode] == "A"  # DATA-FM (FTX-1 CAT manual, MD P2)
         assert _FTX1_MODE_CODES["FM"] == "4"
 
+    def test_direct_mode_sends_data_fm_as_pktfm_except_on_rigs_that_ignore_it(self) -> None:
+        from types import SimpleNamespace
+
+        from rig.controller import _build_live_hamlib_mode_map
+
+        hl = SimpleNamespace(
+            RIG_MODE_FM=32,
+            RIG_MODE_PKTFM=4096,
+            RIG_MODE_USB=4,
+            RIG_MODE_LSB=8,
+            RIG_MODE_CW=2,
+            RIG_MODE_CWR=128,
+            RIG_MODE_AM=1,
+            RIG_MODE_PKTUSB=2048,
+            RIG_MODE_PKTLSB=1024,
+        )
+        ic9700 = _build_live_hamlib_mode_map(hl, 3081)
+        for mode in ("AFSK", "GMSK", "FSK", "GFSK", "FM-D"):
+            assert ic9700[mode] == 4096
+        assert ic9700["FM"] == 32
+        # IC-9100 / IC-910 / IC-821H ignore PKTFM: they keep plain FM.
+        for model in (3068, 3044, 3034):
+            old = _build_live_hamlib_mode_map(hl, model)
+            for mode in ("AFSK", "GMSK", "FSK", "GFSK", "FM-D"):
+                assert old[mode] == 32
+
+    def test_ic9700_sub_vfo_civ_sets_the_data_flag_for_data_fm(self) -> None:
+        from rig.controller import _ICOM_CIV_MODE_CODES
+
+        for mode in ("AFSK", "GMSK", "FSK", "GFSK", "FM-D"):
+            assert _ICOM_CIV_MODE_CODES[mode] == (0x05, True)
+        assert _ICOM_CIV_MODE_CODES["FM"] == (0x05, False)
+
     def test_rigctld_mode_names_send_data_signals_as_pktfm(self) -> None:
         from rig.controller import _RIGCTLD_MODE_TO_SATNOGS, _SATNOGS_TO_RIGCTLD_MODE
 

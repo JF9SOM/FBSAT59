@@ -111,7 +111,13 @@ def _build_mode_map() -> dict[str, int]:
 MODE_MAP: dict[str, int] = _build_mode_map()
 
 
-def _build_live_hamlib_mode_map(_H: Any) -> dict[str, int]:
+# Direct-mode rigs whose Hamlib backend ignores RIG_MODE_PKTFM (the rig stays in its previous
+# mode): IC-9100 (confirmed), and the older IC-910 / IC-821H, which have no data FM. They keep
+# plain FM for data-FM transmitters.
+_NO_PKTFM_MODEL_IDS: frozenset[int] = frozenset({3068, 3044, 3034})
+
+
+def _build_live_hamlib_mode_map(_H: Any, model_id: int | None = None) -> dict[str, int]:
     """SATNOGS mode string → live Hamlib RIG_MODE_* constant.
 
     Unlike MODE_MAP (built from stable public bitmask values so it can exist
@@ -120,14 +126,21 @@ def _build_live_hamlib_mode_map(_H: Any) -> dict[str, int]:
     set mode (send_mode_only, _apply_mode_and_ctcss_hamlib,
     _resend_mode_ctcss_via_rig) so a mode added in one path can't silently
     stay missing in another — the exact gap that let FT4 fall back to FM.
+
+    Data-FM transmitters (SATNOGS AFSK / GMSK / FSK / GFSK, and FM-D) map to
+    RIG_MODE_PKTFM, except on the rigs in _NO_PKTFM_MODEL_IDS, which get plain FM.
     """
+    data_fm = _H.RIG_MODE_FM if model_id in _NO_PKTFM_MODEL_IDS else _H.RIG_MODE_PKTFM
     return {
         "FM": _H.RIG_MODE_FM,
         "DIGITALVOICE": _H.RIG_MODE_FM,
-        # AFSK (e.g. APRS) is carried over FM; PKTFM is not universally
-        # supported (IC-9100 ignores it and leaves the rig in the previous
-        # mode).  Plain FM is the correct receiver mode for APRS monitoring.
-        "AFSK": _H.RIG_MODE_FM,
+        # AFSK (e.g. APRS) and 9k6 data signals are data FM (PKTFM); PKTFM is not
+        # universally supported (IC-9100 ignores it and leaves the rig in the previous
+        # mode), so those rigs get plain FM (see _NO_PKTFM_MODEL_IDS).
+        "AFSK": data_fm,
+        "GMSK": data_fm,
+        "FSK": data_fm,
+        "GFSK": data_fm,
         "USB": _H.RIG_MODE_USB,
         "SSB": _H.RIG_MODE_USB,
         "LSB": _H.RIG_MODE_LSB,
@@ -137,7 +150,7 @@ def _build_live_hamlib_mode_map(_H: Any) -> dict[str, int]:
         "BPSK": _H.RIG_MODE_PKTUSB,
         "USB-D": _H.RIG_MODE_PKTUSB,  # data mode, e.g. FT4 calling freqs
         "LSB-D": _H.RIG_MODE_PKTLSB,
-        "FM-D": _H.RIG_MODE_PKTFM,  # data FM, e.g. terrestrial APRS
+        "FM-D": data_fm,  # data FM, e.g. terrestrial APRS
     }
 
 
@@ -349,7 +362,10 @@ _FTX1_MODE_CODES: dict[str, str] = {
 _ICOM_CIV_MODE_CODES: dict[str, tuple[int, bool]] = {
     "FM": (0x05, False),
     "DIGITALVOICE": (0x05, False),
-    "AFSK": (0x05, False),
+    "AFSK": (0x05, True),  # DATA-FM: 1200 baud APRS digipeaters (IC-9700 Sub only)
+    "GMSK": (0x05, True),
+    "FSK": (0x05, True),
+    "GFSK": (0x05, True),
     "USB": (0x01, False),
     "SSB": (0x01, False),
     "BPSK": (0x01, False),
@@ -2746,7 +2762,7 @@ class HamlibDirectController(RigController):
 
             # Build mode map from real Hamlib constants (available after import).
             # Python binding: set_mode(mode, passband[, vfo]) — vfo is the last arg.
-            hamlib_mode: dict[str, int] = _build_live_hamlib_mode_map(_H)
+            hamlib_mode: dict[str, int] = _build_live_hamlib_mode_map(_H, self._model_id)
             dl_hamlib = hamlib_mode.get(dl_mode, _H.RIG_MODE_FM)
             ul_hamlib = hamlib_mode.get(ul_mode, _H.RIG_MODE_FM)
             # For satmode rigs: use Main/Sub VFOs only while satmode is active
@@ -2826,7 +2842,7 @@ class HamlibDirectController(RigController):
             logger.error("RigDirect._apply_mode_and_ctcss_hamlib: Hamlib not available")
             return False
 
-        hamlib_mode: dict[str, int] = _build_live_hamlib_mode_map(_H)
+        hamlib_mode: dict[str, int] = _build_live_hamlib_mode_map(_H, self._model_id)
         dl_hamlib = hamlib_mode.get(dl_mode, _H.RIG_MODE_FM)
         ul_hamlib = hamlib_mode.get(ul_mode, _H.RIG_MODE_FM)
         vfo_main = int(_H.RIG_VFO_MAIN)
@@ -3236,7 +3252,7 @@ class HamlibDirectController(RigController):
         try:
             import Hamlib as _H  # noqa: PLC0415
 
-            hamlib_mode: dict[str, int] = _build_live_hamlib_mode_map(_H)
+            hamlib_mode: dict[str, int] = _build_live_hamlib_mode_map(_H, self._model_id)
             dl_hamlib = hamlib_mode.get(self._current_dl_mode, _H.RIG_MODE_FM)
             vfo_main = int(_H.RIG_VFO_MAIN)
             vfo_sub = int(_H.RIG_VFO_SUB)

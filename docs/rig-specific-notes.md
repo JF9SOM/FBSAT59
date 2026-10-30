@@ -140,6 +140,12 @@ rig_dialog.py のカスタムリストでは 1036 = FT-991A として登録。`_
     `GMSK`/`FSK`/`GFSK` は表に無く FM になっていた。この表は全機種の NET 接続で共用なので、他機種の NET 接続の 9k6 データ信号も
     PKTFM になる（機種ごとの Hamlib の対応次第。IC-9100 は PKTFM を無視してモードが変わらないという既存の記述があるので注意）。
     逆引き `PKTFM`→`FM-D` は変わらない。
+  - **Direct 接続の他機種（IC-9700 など、Hamlib で `set_mode`）も PKTFM に**（2026-10-30）: `_build_live_hamlib_mode_map()`
+    が `AFSK`/`GMSK`/`FSK`/`GFSK`/`FM-D` を `RIG_MODE_PKTFM` にする（これまで `AFSK` は FM、`GMSK` 等は表に無く FM）。
+    **例外 `_NO_PKTFM_MODEL_IDS`（IC-9100=3068・IC-910=3044・IC-821H=3034）は従来どおり FM**: IC-9100 は PKTFM を無視して
+    モードが前のままになる（既存の記述）ので、この 3 機種は触らない。IC-9700 の satmode の Sub（UL）は Hamlib の
+    `set_mode` でなく CI-V 直接送信（`_send_sub_mode_civ_pyserial`）なので、`_ICOM_CIV_MODE_CODES` の `AFSK`/`GMSK`/
+    `FSK`/`GFSK` も DATA フラグ ON（`FM-D` と同じ）にした。**IC-9700 などの実機は未確認。**
   - **`"FSK"` / `"GFSK"` → `"A"`（DATA-FM）**（2026-10-03）: KNACKSAT-2 の 9k6 ダウンリンク（SATNOGS モード
     `FSK` / `GFSK`）が FM になっていたため追加
   - **FM パケットのメニュー（FT-991A 取扱説明書 p.124 で確認、2026-10-02）**:
