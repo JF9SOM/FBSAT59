@@ -54,6 +54,8 @@ _DECODE_SPEED_KEY = "voice_decode_speed"
 # app_settings keys of the translation target language and the auto-translate checkbox
 _TRANSLATE_TARGET_KEY = "voice_translate_target"
 _TRANSLATE_AUTO_KEY = "voice_translate_auto"
+# app_settings key of the language speech recognition is fixed to ("auto" = let Whisper detect)
+_RECOGNIZE_LANGUAGE_KEY = "voice_recognize_language"
 _IDLE_CHECK_MS = 1000
 _RAW_MAX_LINES = 5000
 
@@ -89,13 +91,14 @@ class _RecognizeWorker(QThread):
     done: Signal = Signal(str, str)
     failed: Signal = Signal(str)
 
-    def __init__(self, pcm: np.ndarray, parent: Any = None) -> None:
+    def __init__(self, pcm: np.ndarray, language: str | None = None, parent: Any = None) -> None:
         super().__init__(parent)
         self._pcm = pcm
+        self._language = language  # None: Whisper detects it
 
     def run(self) -> None:
         try:
-            language, text = recognize.transcribe(self._pcm)
+            language, text = recognize.transcribe(self._pcm, self._language)
         except Exception as exc:
             self.failed.emit(str(exc))
             return
@@ -226,6 +229,22 @@ class DigitalVoiceTab(QWidget):
         )
         self._recognize_btn.clicked.connect(self._on_recognize)
         text_top.addWidget(self._recognize_btn)
+        text_top.addWidget(QLabel(_("Recognition language:")))
+        self._recognize_language_combo = QComboBox()
+        self._recognize_language_combo.addItem(_("Auto"), "auto")
+        for code, name in translate.LANGUAGES:
+            self._recognize_language_combo.addItem(name, code.split("-")[0])  # Whisper: "zh"
+        self._recognize_language_combo.setToolTip(
+            _(
+                "Auto lets the speech recognition guess the language, which can be wrong for "
+                "a short or noisy message. Pick the language to fix it."
+            )
+        )
+        self._load_recognize_language()
+        self._recognize_language_combo.currentIndexChanged.connect(
+            self._on_recognize_language_changed
+        )
+        text_top.addWidget(self._recognize_language_combo)
         self._language_label = QLabel("")
         text_top.addWidget(self._language_label)
         text_top.addStretch()
@@ -559,7 +578,8 @@ class DigitalVoiceTab(QWidget):
         self._status.setText(
             _("Recognizing… (the first run downloads the Whisper model, about 460 MB)")
         )
-        self._worker = _RecognizeWorker(pcm, self)
+        language = str(self._recognize_language_combo.currentData())
+        self._worker = _RecognizeWorker(pcm, None if language == "auto" else language, self)
         self._worker.done.connect(lambda lang, text, it=item: self._on_recognized(it, lang, text))
         self._worker.failed.connect(self._on_recognize_failed)
         self._worker.finished.connect(self._on_worker_finished)
@@ -618,6 +638,24 @@ class DigitalVoiceTab(QWidget):
                 (key, value),
             )
             self._conn.commit()
+
+    def _load_recognize_language(self) -> None:
+        """Restore the recognition language (default: Auto) from app_settings."""
+        if not hasattr(self._conn, "execute"):
+            return
+        with contextlib.suppress(Exception):
+            row = self._conn.execute(
+                "SELECT value FROM app_settings WHERE key = ?", (_RECOGNIZE_LANGUAGE_KEY,)
+            ).fetchone()
+            if row:
+                idx = self._recognize_language_combo.findData(str(row["value"]))
+                if idx >= 0:
+                    self._recognize_language_combo.setCurrentIndex(idx)
+
+    def _on_recognize_language_changed(self, _index: int) -> None:
+        self._save_setting(
+            _RECOGNIZE_LANGUAGE_KEY, str(self._recognize_language_combo.currentData())
+        )
 
     def _target_language(self) -> str:
         return str(self._translate_combo.currentData())

@@ -1443,6 +1443,10 @@ SSDV や他のテレメトリーが載るかも未確認（この録音は音声
 `httpx` から呼ぶと、同じ回線の curl が 200 でも「Sorry…」の自動アクセス防止ページ（429）が返った。再試行では直らず、回避（UA 偽装等）は
 しない方針。恒久策が要るなら公式 Cloud Translation（API キー）への切り替え。
 
+**認識する言語（2026-10-31 追加）**: Recognize の隣の「Recognition language」コンボで、Whisper の言語を固定できる（既定 Auto＝判定させる。
+`app_settings` の `voice_recognize_language`）。短い・雑音のあるメッセージでは判定が割れる（同じ録音が IQ からは `es`、MP3 経由では
+`gl`＝ガリシア語になった。IQ 側も確率 0.52 の僅差）ので、HADES-SA のスペイン語朗読は Spanish に固定すると安定する。
+
 **画面（2026-10-12 修正）**: SSTV タブと同じ構成。
 - 上部: **Mode** コンボ（今は `2FSK 800bps` のみ）、入力表示（SDR のみ）、Auto-save MP3。
 - 右側の **Quick Comms Control の入力コンボ**に、Digital Voice の送信トランスミッターがある衛星（今は HADES-SA だけ）が出る

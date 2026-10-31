@@ -8881,3 +8881,11 @@ msgstr "音声ファイルを読み込めませんでした: "
 #: src/ui/digital_voice_tab.py
 msgid "Added "
 msgstr "追加しました: "
+
+#: src/ui/digital_voice_tab.py
+msgid "Recognition language:"
+msgstr "認識する言語:"
+
+#: src/ui/digital_voice_tab.py
+msgid "Auto lets the speech recognition guess the language, which can be wrong for a short or noisy message. Pick the language to fix it."
+msgstr "「自動」では音声認識が言語を推測するため、短い・雑音の多いメッセージでは外れることがあります。言語を選ぶと固定されます。"

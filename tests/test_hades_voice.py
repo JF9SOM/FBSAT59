@@ -714,3 +714,28 @@ def test_audio_file_becomes_a_message_that_can_be_recognised(
     qtbot.waitUntil(lambda: tab._worker is None, timeout=10_000)
     assert seen and abs(seen[0][0] - 16000) <= 2 and seen[0][1] == "int16"
     assert tab._text_edit.toPlainText() == "Hola mundo"
+
+
+def test_recognition_language_can_be_fixed(
+    tab: DigitalVoiceTab, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from comms.voice import recognize
+
+    used: list[str | None] = []
+
+    def fake(pcm: np.ndarray, language: str | None = None) -> tuple[str, str]:
+        used.append(language)
+        return language or "gl", "texto"
+
+    monkeypatch.setattr(recognize, "transcribe", fake)
+    monkeypatch.setattr(recognize, "is_available", lambda: True)
+    monkeypatch.setattr(codec2, "is_available", lambda: True)
+    tab._on_packet(0, bytes(35), 0.0)
+    for choice in ("auto", "es"):
+        tab._recognize_language_combo.setCurrentIndex(
+            tab._recognize_language_combo.findData(choice)
+        )
+        tab._recognize_btn.click()
+        qtbot.waitUntil(lambda: tab._worker is None, timeout=10_000)
+    assert used == [None, "es"]
+    assert tab._language_label.text().endswith("es")
