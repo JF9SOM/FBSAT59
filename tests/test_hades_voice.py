@@ -389,3 +389,66 @@ def test_main_window_opens_the_voice_tab_behind_and_forwards_packets(
     assert voice._list.count() == 1 and "1/4 packets" in voice._list.item(0).text()
     MainWindow._on_open_digital_voice(host)  # type: ignore[arg-type]
     assert tabs.currentIndex() == 1  # the menu entry still brings it to the front
+
+
+def test_file_decoder_decodes_a_recording_for_both_downlinks(tmp_path: Any) -> None:
+    pytest.importorskip("scipy")
+    from comms.voice.hades_voice import FskVoiceFileDecoder
+    from tests.test_iq_wav_fast_decode import _write_wav
+
+    for baud, shift, interval in ((800, 1600.0, 0.4), (200, 1170.0, 1.6)):
+        path = tmp_path / f"rec{baud}.iq.wav"
+        iq = np.concatenate(
+            [_fsk([make_body(n) for n in range(4)], baud=baud, shift=shift), _silence()]
+        )
+        _write_wav(path, iq, rate=FS)
+        job = FskVoiceFileDecoder(path)
+        got: list[tuple[int, float]] = []
+        done: list[int] = []
+        job.packet_found.connect(lambda n, _d, _t, i, got=got: got.append((n, i)))
+        job.decoded.connect(lambda _dur, _el, n, done=done: done.append(n))
+        job.run()  # in this thread: no event loop needed for direct connections
+        assert sorted(n for n, _i in got) == [0, 1, 2, 3]
+        assert {i for _n, i in got} == {interval}
+        assert done == [4]
+
+
+def _silence() -> np.ndarray:
+    return np.zeros(8 * FS, dtype=np.complex64)
+
+
+def test_file_decoder_reports_an_unreadable_file(tmp_path: Any) -> None:
+    from comms.voice.hades_voice import FskVoiceFileDecoder
+
+    bad = tmp_path / "x.wav"
+    bad.write_bytes(b"not a wav")
+    job = FskVoiceFileDecoder(bad)
+    errors: list[str] = []
+    job.failed.connect(errors.append)
+    job.run()
+    assert errors
+
+
+def test_assembler_close_current_ends_the_message() -> None:
+    asm = VoiceMessageAssembler()
+    msg, _f = asm.add(0, bytes(35), 0.0)
+    assert asm.close_current() is msg and msg.complete
+    assert asm.current is None and asm.close_current() is None
+
+
+def test_tab_fast_decode_fills_the_list(tab: DigitalVoiceTab, tmp_path: Any, qtbot: QtBot) -> None:
+    pytest.importorskip("scipy")
+    from tests.test_iq_wav_fast_decode import _write_wav
+
+    path = tmp_path / "rec.iq.wav"
+    iq = np.concatenate(
+        [_fsk([make_body(n) for n in range(5)], baud=200, shift=1170.0), _silence()]
+    )
+    _write_wav(path, iq, rate=FS)
+    tab._combo_decode_speed.setCurrentIndex(tab._combo_decode_speed.findData("fast"))
+    tab._start_fast_decode(path)
+    qtbot.waitUntil(lambda: tab._fast_job is None, timeout=60_000)
+    assert tab._list.count() == 1
+    assert "5/5 packets" in tab._list.item(0).text()
+    assert tab._decode_iq_btn.isEnabled()
+    assert "Decoded" in tab._status.text()

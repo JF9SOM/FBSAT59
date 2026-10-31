@@ -253,6 +253,71 @@ class FskVoiceSdrDemod(QThread):
                 self.packet_received.emit(packet.number, packet.data, packet.t, packet.interval_s)
 
 
+class FskVoiceFileDecoder(QThread):
+    """Decode a whole I/Q recording file with FskVoiceStream, much faster than real time.
+
+    Signals: ``packet_found(number, 35 data bytes, stream time, seconds between packets)``,
+    ``progress(fraction 0..1, packets so far)``, ``decoded(recording seconds, elapsed seconds,
+    packets)`` and ``failed(message)``. :meth:`cancel` stops early (``decoded`` is then not
+    emitted).
+    """
+
+    packet_found: Signal = Signal(int, bytes, float, float)
+    progress: Signal = Signal(float, int)
+    decoded: Signal = Signal(float, float, int)
+    failed: Signal = Signal(str)
+
+    _PROGRESS_INTERVAL_S = 0.25
+
+    def __init__(self, path: Any, parent: Any = None) -> None:
+        super().__init__(parent)
+        self._path = path
+        self._cancel = threading.Event()
+
+    def cancel(self) -> None:
+        """Ask the worker to stop at the next block and wait for it."""
+        self._cancel.set()
+        self.wait(5000)
+
+    def run(self) -> None:
+        from comms.telemetry.iq_wav import WavError, iter_iq_blocks, read_wav_info
+
+        if not fsk._SCIPY_AVAILABLE:
+            self.failed.emit("scipy is not installed")
+            return
+        try:
+            info = read_wav_info(self._path)
+        except (WavError, ValueError) as exc:
+            self.failed.emit(str(exc))
+            return
+        stream = FskVoiceStream(info.sample_rate)
+        started = last_report = time.monotonic()
+        packets = 0
+        done = 0
+        try:
+            for block in iter_iq_blocks(self._path, info):
+                if self._cancel.is_set():
+                    return
+                for packet in stream.feed(block):
+                    packets += 1
+                    self.packet_found.emit(packet.number, packet.data, packet.t, packet.interval_s)
+                done += len(block)
+                now = time.monotonic()
+                if now - last_report >= self._PROGRESS_INTERVAL_S:
+                    last_report = now
+                    self.progress.emit(done / max(info.frames, 1), packets)
+            # Silence completes the last window, so a packet at the very end is not lost.
+            silence = np.zeros(int(8 * info.sample_rate), dtype=np.complex64)
+            for packet in stream.feed(silence):
+                packets += 1
+                self.packet_found.emit(packet.number, packet.data, packet.t, packet.interval_s)
+        except OSError as exc:
+            self.failed.emit(str(exc))
+            return
+        self.progress.emit(1.0, packets)
+        self.decoded.emit(info.duration_s, time.monotonic() - started, packets)
+
+
 class VoiceMessage:
     """The packets of one voice message, by packet number."""
 
@@ -392,6 +457,14 @@ class VoiceMessageAssembler:
         cur.last_at = now
         cur.renumber()
         return cur, finished
+
+    def close_current(self) -> VoiceMessage | None:
+        """Close the current message now (e.g. the end of a recording); returns it."""
+        cur = self.current
+        if cur is not None:
+            cur.complete = True
+            self.current = None
+        return cur
 
     def close_if_idle(self) -> VoiceMessage | None:
         """Close the current message if no packet came for MESSAGE_GAP_S; returns it."""

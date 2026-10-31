@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 from comms.voice import codec2, recognize
 from comms.voice.hades_voice import (
     PACKET_SECONDS,
+    FskVoiceFileDecoder,
     FskVoiceSdrDemod,
     VoiceMessage,
     VoiceMessageAssembler,
@@ -47,6 +48,8 @@ from i18n import _
 logger = logging.getLogger(__name__)
 
 _MODE_FSK = "2FSK 800/200bps"
+# app_settings key of the Speed choice (Normal / Fast) for IQ recordings
+_DECODE_SPEED_KEY = "voice_decode_speed"
 _IDLE_CHECK_MS = 1000
 _RAW_MAX_LINES = 5000
 
@@ -104,6 +107,7 @@ class DigitalVoiceTab(QWidget):
         self._items: dict[int, _MessageItem] = {}  # id(message) -> item
         self._demod: FskVoiceSdrDemod | None = None
         self._demod_pipeline: Any | None = None
+        self._fast_job: FskVoiceFileDecoder | None = None  # IQ-file decode worker (Speed "Fast")
         self._player: Any | None = None  # AudioFilePlayer, created on first file playback
         self._worker: _RecognizeWorker | None = None
         self._playing = False
@@ -221,6 +225,20 @@ class DigitalVoiceTab(QWidget):
         )
         self._decode_iq_btn.clicked.connect(self._on_decode_iq)
         buttons.addWidget(self._decode_iq_btn)
+        self._combo_decode_speed = QComboBox()
+        self._combo_decode_speed.addItem(_("Normal (real time)"), "normal")
+        self._combo_decode_speed.addItem(_("Fast"), "fast")
+        self._combo_decode_speed.setToolTip(
+            _(
+                "Normal: play the recording through the SDR like a live reception and\n"
+                "decode it as it goes (pick the start on the spectrogram).\n"
+                "Fast: decode the whole recording file at once, in seconds."
+            )
+        )
+        self._load_decode_speed()
+        self._combo_decode_speed.currentIndexChanged.connect(self._on_decode_speed_changed)
+        buttons.addWidget(QLabel(_("Speed:")))
+        buttons.addWidget(self._combo_decode_speed)
         self._play_btn = QPushButton(_("▶ Play…"))
         self._play_btn.setToolTip(_("Choose an already decoded voice file (MP3/WAV) and play it."))
         self._play_btn.clicked.connect(self._on_play_file)
@@ -558,9 +576,110 @@ class DigitalVoiceTab(QWidget):
         except Exception as exc:
             self._status.setText(f"⚠ {exc}")
 
+    def _load_decode_speed(self) -> None:
+        """Restore the Speed choice (Normal / Fast) from app_settings."""
+        if not hasattr(self._conn, "execute"):
+            return
+        with contextlib.suppress(Exception):
+            row = self._conn.execute(
+                "SELECT value FROM app_settings WHERE key = ?", (_DECODE_SPEED_KEY,)
+            ).fetchone()
+            if row:
+                idx = self._combo_decode_speed.findData(str(row["value"]))
+                if idx >= 0:
+                    self._combo_decode_speed.setCurrentIndex(idx)
+
+    def _on_decode_speed_changed(self, _index: int) -> None:
+        if not hasattr(self._conn, "execute"):
+            return
+        with contextlib.suppress(Exception):
+            self._conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value, updated_at) "
+                "VALUES (?, ?, CURRENT_TIMESTAMP)",
+                (_DECODE_SPEED_KEY, str(self._combo_decode_speed.currentData())),
+            )
+            self._conn.commit()
+
+    def _on_fast_decode(self) -> None:
+        """Ask for an IQ recording and decode all of it at once."""
+        if self._fast_job is not None:
+            return
+        start_dir = Path.home() / "iq_recordings"
+        path, _filter = QFileDialog.getOpenFileName(
+            self,
+            _("Decode IQ Recording"),
+            str(start_dir if start_dir.is_dir() else Path.home()),
+            "IQ WAV (*.wav);;All files (*)",
+        )
+        if path:
+            self._start_fast_decode(Path(path))
+
+    def _start_fast_decode(self, path: Path) -> None:
+        """Decode *path* in a worker thread; its packets go through _on_packet() as live ones."""
+        finished = self._assembler.close_current()  # never mix with a live message
+        if finished is not None:
+            self._finish(finished)
+        job = FskVoiceFileDecoder(path, parent=self)
+        job.packet_found.connect(self._on_fast_packet)
+        job.progress.connect(self._on_fast_progress)
+        job.decoded.connect(self._on_fast_done)
+        job.failed.connect(self._on_fast_failed)
+        self._fast_job = job
+        self._decode_iq_btn.setEnabled(False)
+        self._combo_decode_speed.setEnabled(False)
+        self._status.setText(_("Fast decode: starting…"))
+        job.start()
+
+    def _on_fast_packet(self, number: int, data: bytes, t: float, interval_s: float) -> None:
+        if self._fast_job is not None:
+            self._on_demod_packet(number, data, t, interval_s)
+
+    def _on_fast_progress(self, fraction: float, packets: int) -> None:
+        if self._fast_job is not None:
+            self._status.setText(
+                _("Fast decode: {pct}% — {n} packet(s)").format(pct=int(fraction * 100), n=packets)
+            )
+
+    def _on_fast_done(self, duration_s: float, elapsed_s: float, packets: int) -> None:
+        self._finish_fast_decode()
+        finished = self._assembler.close_current()  # the end of the recording ends the message
+        if finished is not None:
+            self._finish(finished)
+        self._status.setText(
+            _("Decoded {dur} s of recording in {el} s — {n} packet(s)").format(
+                dur=round(duration_s), el=round(elapsed_s, 1), n=packets
+            )
+        )
+
+    def _on_fast_failed(self, message: str) -> None:
+        self._finish_fast_decode()
+        self._status.setText("⚠ " + _("Could not decode the recording: ") + message)
+
+    def _finish_fast_decode(self) -> None:
+        """The worker is done (or gone): release it and restore the buttons."""
+        job = self._fast_job
+        self._fast_job = None
+        if job is not None:
+            for signal in (job.packet_found, job.progress, job.decoded, job.failed):
+                with contextlib.suppress(Exception):
+                    signal.disconnect()
+            job.wait(3000)
+        self._decode_iq_btn.setEnabled(True)
+        self._combo_decode_speed.setEnabled(True)
+
+    def _stop_fast_decode(self) -> None:
+        """Cancel a running fast decode (close)."""
+        if self._fast_job is not None:
+            self._fast_job.cancel()
+            self._finish_fast_decode()
+
     def _on_decode_iq(self) -> None:
-        """Same as SDR Control's Open…: file picker, spectrogram of the whole recording
-        (click to play from there), the recording is played into the demodulator."""
+        """Fast: decode the whole recording at once. Normal: same as SDR Control's Open…
+        (file picker, spectrogram of the whole recording, click to play from there; the
+        recording is played into the demodulator)."""
+        if self._combo_decode_speed.currentData() == "fast":
+            self._on_fast_decode()
+            return
         sdr_ctrl = getattr(self._radio_control, "_sdr_control", None)
         if sdr_ctrl is None or not hasattr(sdr_ctrl, "open_recording"):
             QMessageBox.information(self, _("IQ Recording"), _("SDR Control is not available."))
@@ -569,6 +688,7 @@ class DigitalVoiceTab(QWidget):
 
     def closeEvent(self, event: Any) -> None:
         self._idle_timer.stop()
+        self._stop_fast_decode()
         self._on_stop()
         if self._player is not None:
             with contextlib.suppress(Exception):

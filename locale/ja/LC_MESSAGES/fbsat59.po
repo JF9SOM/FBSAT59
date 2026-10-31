@@ -8803,3 +8803,13 @@ msgid ""
 msgstr ""
 "AOS のこの時間前にパークポジションから動き始め、LOS 後もこの時間は衛星を追い続けます"
 "(TLE のずれ対策)。0 で無効。"
+
+#: src/ui/digital_voice_tab.py
+#, python-brace-format
+msgid "Fast decode: {pct}% — {n} packet(s)"
+msgstr "高速デコード: {pct}% — {n} パケット"
+
+#: src/ui/digital_voice_tab.py
+#, python-brace-format
+msgid "Decoded {dur} s of recording in {el} s — {n} packet(s)"
+msgstr "録音 {dur} 秒分を {el} 秒でデコードしました — {n} パケット"
