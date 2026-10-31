@@ -38,6 +38,7 @@ from comms.voice.hades_voice import (
     PACKET_SECONDS,
     FskVoiceFileDecoder,
     FskVoiceSdrDemod,
+    PcmMessage,
     VoiceMessage,
     VoiceMessageAssembler,
     unmask,
@@ -71,6 +72,9 @@ class _MessageItem(QListWidgetItem):
     def refresh(self) -> None:
         """Update the text from the message's current state."""
         m = self.message
+        if isinstance(m, PcmMessage):
+            self.setText(f"{self.stamp}   {m.duration_s:.1f} s   " + _("(audio file)"))
+            return
         text = f"{self.stamp}   {m.packet_count}/{m.length} packets   {m.duration_s:.1f} s"
         if m.missing:
             text += "   " + _("missing: {n}").format(n=len(m.missing))
@@ -308,6 +312,15 @@ class DigitalVoiceTab(QWidget):
         self._combo_decode_speed.currentIndexChanged.connect(self._on_decode_speed_changed)
         buttons.addWidget(QLabel(_("Speed:")))
         buttons.addWidget(self._combo_decode_speed)
+        self._file_recognize_btn = QPushButton(_("📂 Recognize File…"))
+        self._file_recognize_btn.setToolTip(
+            _(
+                "Add an audio file (MP3/WAV, for example a saved voice message) to the list, "
+                "to recognise and translate it."
+            )
+        )
+        self._file_recognize_btn.clicked.connect(self._on_add_audio_file)
+        buttons.addWidget(self._file_recognize_btn)
         self._play_btn = QPushButton(_("▶ Play…"))
         self._play_btn.setToolTip(_("Choose an already decoded voice file (MP3/WAV) and play it."))
         self._play_btn.clicked.connect(self._on_play_file)
@@ -331,8 +344,9 @@ class DigitalVoiceTab(QWidget):
     def _update_buttons(self) -> None:
         item = self._list.currentItem()
         have = isinstance(item, _MessageItem) and item.message.packet_count > 0
+        from_file = isinstance(item, _MessageItem) and isinstance(item.message, PcmMessage)
         self._stop_btn.setEnabled(self._playing)
-        self._save_btn.setEnabled(have)
+        self._save_btn.setEnabled(have and not from_file)  # a file is already saved audio
         self._recognize_btn.setEnabled(have and self._worker is None)
         recognized = isinstance(item, _MessageItem) and item.recognized is not None
         self._translate_btn.setEnabled(recognized and self._translate_worker is None)
@@ -517,6 +531,8 @@ class DigitalVoiceTab(QWidget):
     # ------------------------------------------------------------------ #
 
     def _decoded_pcm(self, message: VoiceMessage) -> Any | None:
+        if isinstance(message, PcmMessage):
+            return message.to_pcm()  # an audio file: no CODEC2 needed
         if not codec2.is_available():
             self._status.setText(
                 _("⚠ libcodec2 not found. Install gr-satellites (Help menu) or libcodec2.")
@@ -857,6 +873,33 @@ class DigitalVoiceTab(QWidget):
         if self._fast_job is not None:
             self._fast_job.cancel()
             self._finish_fast_decode()
+
+    def _on_add_audio_file(self) -> None:
+        """Choose an audio file and add it to the message list (as a recognisable message)."""
+        folder = self._save_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        path, _filter = QFileDialog.getOpenFileName(
+            self, _("Recognize File"), str(folder), _("Audio Files (*.mp3 *.wav)")
+        )
+        if path:
+            self.add_audio_file(Path(path))
+
+    def add_audio_file(self, path: Path) -> bool:
+        """Add *path* to the list as an audio-file message; False (reason shown) if unreadable."""
+        from comms.voice.audio_file import load_audio_file
+
+        try:
+            pcm = load_audio_file(path)
+        except Exception as exc:
+            self._status.setText("⚠ " + _("Could not read the audio file: ") + str(exc))
+            return False
+        item = _MessageItem(PcmMessage(pcm), path.name)
+        self._items[id(item.message)] = item
+        self._list.insertItem(0, item)
+        self._list.setCurrentItem(item)
+        self._status.setText(_("Added ") + path.name)
+        self._update_buttons()
+        return True
 
     def _on_decode_iq(self) -> None:
         """Fast: decode the whole recording at once. Normal: same as SDR Control's Open…

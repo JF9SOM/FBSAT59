@@ -409,6 +409,37 @@ class VoiceMessage:
         return np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.int16)
 
 
+class PcmMessage(VoiceMessage):
+    """A message that is a plain audio file (8 kHz int16 ``pcm``), not CODEC2 packets."""
+
+    def __init__(self, pcm: np.ndarray) -> None:
+        super().__init__(0.0)
+        self.pcm = pcm
+        self.complete = True
+
+    @property
+    def packet_count(self) -> int:
+        """One "packet": the whole file."""
+        return 1
+
+    @property
+    def length(self) -> int:
+        return 1
+
+    @property
+    def missing(self) -> list[int]:
+        return []
+
+    @property
+    def duration_s(self) -> float:
+        """Audio length in seconds."""
+        return len(self.pcm) / 8000.0
+
+    def to_pcm(self) -> np.ndarray:
+        """The audio of the file."""
+        return self.pcm
+
+
 class VoiceMessageAssembler:
     """Groups voice packets into messages.
 

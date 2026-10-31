@@ -8857,3 +8857,27 @@ msgstr "翻訳できませんでした: "
 #: src/ui/digital_voice_tab.py
 msgid "Google Translate is limiting requests; try again in a while (press Translate)."
 msgstr "Google 翻訳が一時的に要求を制限しています。しばらくしてから「翻訳」を押してください。"
+
+#: src/ui/digital_voice_tab.py
+msgid "(audio file)"
+msgstr "（音声ファイル）"
+
+#: src/ui/digital_voice_tab.py
+msgid "📂 Recognize File…"
+msgstr "📂 ファイルを認識…"
+
+#: src/ui/digital_voice_tab.py
+msgid "Add an audio file (MP3/WAV, for example a saved voice message) to the list, to recognise and translate it."
+msgstr "音声ファイル（MP3/WAV。保存した音声メッセージなど）を一覧に追加して、認識・翻訳します。"
+
+#: src/ui/digital_voice_tab.py
+msgid "Recognize File"
+msgstr "ファイルを認識"
+
+#: src/ui/digital_voice_tab.py
+msgid "Could not read the audio file: "
+msgstr "音声ファイルを読み込めませんでした: "
+
+#: src/ui/digital_voice_tab.py
+msgid "Added "
+msgstr "追加しました: "

@@ -623,3 +623,67 @@ def test_tab_shows_a_rate_limit_message(
     tab._translate_btn.click()
     qtbot.waitUntil(lambda: tab._translate_worker is None, timeout=10_000)
     assert "limiting" in tab._status.text() and "429" not in tab._status.text()
+
+
+def _write_audio(path: Any, rate: int, seconds: float = 1.0, channels: int = 1) -> None:
+    import soundfile as sf
+
+    t = np.arange(int(rate * seconds)) / rate
+    tone = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+    data = np.tile(tone[:, None], (1, channels)) if channels > 1 else tone
+    sf.write(str(path), data, rate)
+
+
+@pytest.mark.parametrize(("rate", "channels"), [(8000, 1), (16000, 1), (44100, 2)])
+def test_audio_file_is_loaded_as_8k_mono_int16(tmp_path: Any, rate: int, channels: int) -> None:
+    pytest.importorskip("soundfile")
+    from comms.voice.audio_file import load_audio_file
+
+    path = tmp_path / "a.wav"
+    _write_audio(path, rate, channels=channels)
+    pcm = load_audio_file(path)
+    assert pcm.dtype == np.int16 and pcm.ndim == 1
+    assert abs(len(pcm) - 8000) <= 2
+    assert 12000 < int(np.abs(pcm).max()) < 17000  # 0.5 of full scale, kept after resampling
+
+
+def test_audio_file_resampling_works_without_scipy(monkeypatch: pytest.MonkeyPatch) -> None:
+    from comms.voice import audio_file
+
+    monkeypatch.setattr(audio_file, "_SCIPY_AVAILABLE", False)
+    x = np.sin(2 * np.pi * 300 * np.arange(44100) / 44100).astype(np.float32)
+    out = audio_file.resample(x, 44100)
+    assert abs(len(out) - 8000) <= 2 and 0.8 < float(np.abs(out).max()) <= 1.01
+
+
+def test_unreadable_audio_file_is_reported(tab: DigitalVoiceTab, tmp_path: Any) -> None:
+    pytest.importorskip("soundfile")
+    bad = tmp_path / "x.wav"
+    bad.write_bytes(b"not audio")
+    assert not tab.add_audio_file(bad)
+    assert "Could not read" in tab._status.text() and tab._list.count() == 0
+
+
+def test_audio_file_becomes_a_message_that_can_be_recognised(
+    tab: DigitalVoiceTab, tmp_path: Any, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("soundfile")
+    from comms.voice import recognize
+
+    seen: list[tuple[int, str]] = []
+
+    def fake(pcm: np.ndarray, language: str | None = None) -> tuple[str, str]:
+        seen.append((len(pcm), str(pcm.dtype)))
+        return "es", "Hola mundo"
+
+    monkeypatch.setattr(recognize, "transcribe", fake)
+    monkeypatch.setattr(recognize, "is_available", lambda: True)
+    path = tmp_path / "msg.wav"
+    _write_audio(path, 16000, seconds=2.0)
+    assert tab.add_audio_file(path)
+    assert tab._list.count() == 1 and "msg.wav" in tab._list.item(0).text()
+    assert tab._recognize_btn.isEnabled() and not tab._save_btn.isEnabled()
+    tab._recognize_btn.click()
+    qtbot.waitUntil(lambda: tab._worker is None, timeout=10_000)
+    assert seen and abs(seen[0][0] - 16000) <= 2 and seen[0][1] == "int16"
+    assert tab._text_edit.toPlainText() == "Hola mundo"
