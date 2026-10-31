@@ -1122,6 +1122,8 @@ class MainWindow(QMainWindow):
         self._at_dialog.use_rotator_changed.connect(self._on_autotrack_use_rotator_changed)
         self._at_dialog.lock_recording_sat_changed.connect(self._on_autotrack_lock_sat_changed)
         self._at_dialog.lists_modified.connect(self._on_autotrack_lists_modified)
+        self._at_dialog.min_elevation_changed.connect(self._on_min_elevation_changed)
+        self._at_dialog.set_min_elevation(self._min_pass_el)
         # The dialog restores its IQ/METEOR checkboxes from app_settings
         # in its own __init__() (before the *_changed signals above were
         # connected), so pull its already-restored state now via the getters
@@ -8817,6 +8819,9 @@ class MainWindow(QMainWindow):
         if self._pass_predictor is not None:
             self._pass_predictor.min_elevation_deg = value
         self._pass_list.set_min_elevation(value)
+        at_dialog = getattr(self, "_at_dialog", None)
+        if at_dialog is not None:
+            at_dialog.set_min_elevation(value)
 
     def _on_min_elevation_changed(self, value: float) -> None:
         """The Min El box changed: apply it to every pass list, Autotrack and notifications."""

@@ -615,3 +615,17 @@ class TestMainWindowRestoresAutotrackEnabled:
         w._on_autotrack_toggled(False)
 
         assert w._autotrack_timer_armed is False
+
+
+def test_min_el_box_emits_and_set_min_elevation_is_silent(
+    db: sqlite3.Connection, qtbot: QtBot
+) -> None:
+    dlg = AutotrackRecordDialog(db)
+    qtbot.addWidget(dlg)
+    seen: list[float] = []
+    dlg.min_elevation_changed.connect(seen.append)
+
+    dlg._min_el_spin.setValue(25)
+    dlg.set_min_elevation(40)
+    assert dlg._min_el_spin.value() == 40
+    assert seen == [25.0]

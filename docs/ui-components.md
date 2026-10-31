@@ -292,6 +292,8 @@ Issue #34（Ohsawa）の指摘で、AOS/LOS の定義と最小仰角を分離し
   決まり、既定 5 度だとパスの前後約 1 分が欠けて見えた）。
 - **最小仰角は 1 か所の設定**（既定 5 度、`app_settings` の `min_pass_elevation_deg`）。Target タブと
   Group タブの「Min El」ボックスは同じ値で連動する（`PassPanel.min_elevation_changed`）。
+  Autotrack/Record ダイアログの Autotrack Control 枠（Enable Autotrack と同じ行の右半分）の
+  「Min El」ボックスも同じ値に連動する（`AutotrackRecordDialog.min_elevation_changed`）。
   `MainWindow._apply_min_elevation()` が `PassPredictor.min_elevation_deg`・Autotrack の
   `check(min_el=...)`・パス一覧/チャート/レーダー/AOS・LOS 通知（一覧の絞り込みに従う）へ反映する。
 - `get_passes(min_elevation_deg=None)` / `get_current_pass(min_elevation_deg=None)` の `None` は

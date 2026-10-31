@@ -30,6 +30,8 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
+    QSpinBox,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -97,6 +99,8 @@ class AutotrackRecordDialog(QDialog):
         Emitted when the IQ Record checkbox changes.
     use_rotator_changed(bool)
         Emitted when the Use Rotator checkbox changes.
+    min_elevation_changed(float)
+        Emitted when the user edits the Min El box (shared minimum elevation).
     lists_modified()
         Emitted when lists/entries are added, removed, or reordered
         (callers should reload their list combos).
@@ -108,6 +112,7 @@ class AutotrackRecordDialog(QDialog):
     meteor_record_changed: Signal = Signal(bool)
     lock_recording_sat_changed: Signal = Signal(bool)
     use_rotator_changed: Signal = Signal(bool)
+    min_elevation_changed: Signal = Signal(float)
     lists_modified: Signal = Signal()
 
     def __init__(self, conn: sqlite3.Connection, parent: QWidget | None = None) -> None:
@@ -199,6 +204,12 @@ class AutotrackRecordDialog(QDialog):
         self._at_status_label.setText(text)
         color = "#2ecc71" if ok else "#e74c3c"
         self._at_status_label.setStyleSheet(f"color: {color};")
+
+    def set_min_elevation(self, value: float) -> None:
+        """Set the Min El box without emitting min_elevation_changed."""
+        self._min_el_spin.blockSignals(True)
+        self._min_el_spin.setValue(int(round(value)))
+        self._min_el_spin.blockSignals(False)
 
     def is_use_rotator_enabled(self) -> bool:
         """Return whether Autotrack should connect/drive the rotator."""
@@ -323,12 +334,32 @@ class AutotrackRecordDialog(QDialog):
         self._at_sel_combo.currentIndexChanged.connect(self._on_sel_combo_changed)
         ctrl_form.addRow(_("List:"), self._at_sel_combo)
 
+        # Two equal halves so the "Min El:" label's left edge sits at the
+        # horizontal centre of the row (Ignored policy keeps size hints from
+        # skewing the 1:1 split).
         enable_row = QHBoxLayout()
+        left_half = QWidget()
+        left_half.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        left_layout = QHBoxLayout(left_half)
+        left_layout.setContentsMargins(0, 0, 0, 0)
         self._at_enable_cb = QCheckBox(_("Enable Autotrack"))
         self._at_enable_cb.setEnabled(False)
         self._at_enable_cb.toggled.connect(self._on_enable_toggled)
-        enable_row.addWidget(self._at_enable_cb)
-        enable_row.addStretch()
+        left_layout.addWidget(self._at_enable_cb)
+        left_layout.addStretch()
+        right_half = QWidget()
+        right_half.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        right_layout = QHBoxLayout(right_half)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.addWidget(QLabel(_("Min El:")))
+        self._min_el_spin = QSpinBox()
+        self._min_el_spin.setRange(0, 90)
+        self._min_el_spin.setValue(5)
+        self._min_el_spin.setSuffix("\u00b0")
+        self._min_el_spin.setMinimumWidth(90)
+        self._min_el_spin.valueChanged.connect(lambda v: self.min_elevation_changed.emit(float(v)))
+        right_layout.addWidget(self._min_el_spin)
+        right_layout.addStretch()
         help_btn = QPushButton("?")
         help_btn.setFixedSize(22, 22)
         help_btn.setFlat(True)
@@ -336,7 +367,9 @@ class AutotrackRecordDialog(QDialog):
         help_btn.setStyleSheet(
             "QPushButton { border: 1px solid gray; border-radius: 11px; font-weight: bold; }"
         )
-        enable_row.addWidget(help_btn)
+        right_layout.addWidget(help_btn)
+        enable_row.addWidget(left_half, 1)
+        enable_row.addWidget(right_half, 1)
         ctrl_form.addRow(enable_row)
 
         self._use_rot_cb = QCheckBox(_("Use Rotator"))
