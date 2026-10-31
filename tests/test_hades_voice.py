@@ -452,3 +452,113 @@ def test_tab_fast_decode_fills_the_list(tab: DigitalVoiceTab, tmp_path: Any, qtb
     assert "5/5 packets" in tab._list.item(0).text()
     assert tab._decode_iq_btn.isEnabled()
     assert "Decoded" in tab._status.text()
+
+
+def test_tab_fast_decode_leaves_recognize_enabled(
+    tab: DigitalVoiceTab, tmp_path: Any, qtbot: QtBot
+) -> None:
+    pytest.importorskip("scipy")
+    from tests.test_iq_wav_fast_decode import _write_wav
+
+    path = tmp_path / "rec.iq.wav"
+    iq = np.concatenate(
+        [_fsk([make_body(n) for n in range(5)], baud=200, shift=1170.0), _silence()]
+    )
+    _write_wav(path, iq, rate=FS)
+    tab._start_fast_decode(path)
+    qtbot.waitUntil(lambda: tab._fast_job is None, timeout=60_000)
+    assert tab._list.currentItem() is not None
+    assert tab._recognize_btn.isEnabled()
+
+
+def test_translate_parses_the_service_reply_and_splits_long_text() -> None:
+    from comms.voice import translate
+
+    reply = [[["Hola ", "Hello ", None], ["mundo", "world", None]], None, "en"]
+    assert translate.parse_response(reply) == ("en", "Hola mundo")
+    pieces = translate.chunks("One. Two. Three. " * 200, limit=100)
+    assert all(len(p) <= 100 for p in pieces) and len(pieces) > 1
+    assert " ".join(pieces).count("Three.") == 200
+    assert translate.chunks("x" * 250, limit=100) == ["x" * 100, "x" * 100, "x" * 50]
+
+
+def _recognized_item(tab: DigitalVoiceTab) -> Any:
+    tab._on_packet(0, bytes(35), 0.0)
+    item = tab._current_item()
+    assert item is not None
+    item.recognized = ("es", "Hola mundo")
+    tab._on_selection_changed()
+    return item
+
+
+def test_translate_button_translates_into_the_chosen_language(
+    tab: DigitalVoiceTab, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from comms.voice import translate
+
+    calls: list[tuple[str, str]] = []
+
+    def fake(text: str, target: str, source: str = "auto", timeout: float = 15.0) -> Any:
+        calls.append((text, target))
+        return "es", f"[{target}] {text}"
+
+    monkeypatch.setattr(translate, "translate", fake)
+    item = _recognized_item(tab)
+    tab._translate_combo.setCurrentIndex(tab._translate_combo.findData("en"))
+    assert tab._translate_btn.isEnabled()
+    tab._translate_btn.click()
+    qtbot.waitUntil(lambda: tab._translate_worker is None, timeout=10_000)
+    assert calls == [("Hola mundo", "en")]
+    assert item.translations == {"en": "[en] Hola mundo"}
+    assert tab._translation_edit.toPlainText() == "[en] Hola mundo"
+    # another language has no translation yet
+    tab._translate_combo.setCurrentIndex(tab._translate_combo.findData("ja"))
+    assert tab._translation_edit.toPlainText() == ""
+
+
+def test_auto_translate_runs_after_recognition(
+    tab: DigitalVoiceTab, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from comms.voice import translate
+
+    monkeypatch.setattr(translate, "translate", lambda text, target, **_k: ("es", "Hello world"))
+    item = _recognized_item(tab)
+    tab._translate_combo.setCurrentIndex(tab._translate_combo.findData("en"))
+    tab._auto_translate_cb.setChecked(True)
+    qtbot.waitUntil(
+        lambda: tab._translate_worker is None and bool(item.translations), timeout=10_000
+    )
+    assert tab._translation_edit.toPlainText() == "Hello world"
+
+
+def test_text_already_in_the_target_language_is_not_sent(
+    tab: DigitalVoiceTab, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from comms.voice import translate
+
+    def boom(*_a: Any, **_k: Any) -> Any:
+        raise AssertionError("must not be called")
+
+    monkeypatch.setattr(translate, "translate", boom)
+    item = _recognized_item(tab)
+    tab._translate_combo.setCurrentIndex(tab._translate_combo.findData("es"))
+    tab._translate_btn.click()
+    assert item.translations == {"es": "Hola mundo"}
+
+
+def test_translation_failure_keeps_the_recognised_text(
+    tab: DigitalVoiceTab, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from comms.voice import translate
+
+    def fail(*_a: Any, **_k: Any) -> Any:
+        raise OSError("offline")
+
+    monkeypatch.setattr(translate, "translate", fail)
+    item = _recognized_item(tab)
+    tab._translate_combo.setCurrentIndex(tab._translate_combo.findData("ja"))
+    tab._translate_btn.click()
+    qtbot.waitUntil(lambda: tab._translate_worker is None, timeout=10_000)
+    assert "offline" in tab._status.text()
+    assert item.recognized == ("es", "Hola mundo") and item.translations == {}
+    assert tab._text_edit.toPlainText() == "Hola mundo"

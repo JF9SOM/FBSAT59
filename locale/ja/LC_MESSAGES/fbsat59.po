@@ -8813,3 +8813,43 @@ msgstr "高速デコード: {pct}% — {n} パケット"
 #, python-brace-format
 msgid "Decoded {dur} s of recording in {el} s — {n} packet(s)"
 msgstr "録音 {dur} 秒分を {el} 秒でデコードしました — {n} パケット"
+
+#: src/ui/digital_voice_tab.py
+msgid "Translation:"
+msgstr "翻訳:"
+
+#: src/ui/digital_voice_tab.py
+msgid "The language to translate the recognised text into."
+msgstr "認識したテキストの翻訳先の言語です。"
+
+#: src/ui/digital_voice_tab.py
+msgid "🌐 Translate"
+msgstr "🌐 翻訳"
+
+#: src/ui/digital_voice_tab.py
+msgid "Translate the recognised text with Google Translate. The text is sent to Google over the internet."
+msgstr "認識したテキストを Google 翻訳で翻訳します。テキストはインターネット経由で Google に送られます。"
+
+#: src/ui/digital_voice_tab.py
+msgid "Auto-translate"
+msgstr "自動翻訳"
+
+#: src/ui/digital_voice_tab.py
+msgid "Translate each message as soon as it has been recognised."
+msgstr "メッセージを認識したらすぐに翻訳します。"
+
+#: src/ui/digital_voice_tab.py
+msgid "The translation appears here."
+msgstr "ここに翻訳が表示されます。"
+
+#: src/ui/digital_voice_tab.py
+msgid "Translating…"
+msgstr "翻訳しています…"
+
+#: src/ui/digital_voice_tab.py
+msgid "Translation finished."
+msgstr "翻訳が完了しました。"
+
+#: src/ui/digital_voice_tab.py
+msgid "Could not translate: "
+msgstr "翻訳できませんでした: "

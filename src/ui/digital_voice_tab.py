@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from PySide6.QtCore import QThread, QTimer, Signal
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from comms.voice import codec2, recognize
+from comms.voice import codec2, recognize, translate
 from comms.voice.hades_voice import (
     PACKET_SECONDS,
     FskVoiceFileDecoder,
@@ -50,6 +50,9 @@ logger = logging.getLogger(__name__)
 _MODE_FSK = "2FSK 800/200bps"
 # app_settings key of the Speed choice (Normal / Fast) for IQ recordings
 _DECODE_SPEED_KEY = "voice_decode_speed"
+# app_settings keys of the translation target language and the auto-translate checkbox
+_TRANSLATE_TARGET_KEY = "voice_translate_target"
+_TRANSLATE_AUTO_KEY = "voice_translate_auto"
 _IDLE_CHECK_MS = 1000
 _RAW_MAX_LINES = 5000
 
@@ -62,6 +65,7 @@ class _MessageItem(QListWidgetItem):
         self.message = message
         self.stamp = stamp
         self.recognized: tuple[str, str] | None = None  # (language, text)
+        self.translations: dict[str, str] = {}  # target language -> translated text
         self.refresh()
 
     def refresh(self) -> None:
@@ -94,6 +98,26 @@ class _RecognizeWorker(QThread):
         self.done.emit(language, text)
 
 
+class _TranslateWorker(QThread):
+    """Translates a recognised text off the GUI thread (a network request)."""
+
+    done: Signal = Signal(str, str)  # target language, translated text
+    failed: Signal = Signal(str)
+
+    def __init__(self, text: str, target: str, parent: Any = None) -> None:
+        super().__init__(parent)
+        self._text = text
+        self._target = target
+
+    def run(self) -> None:
+        try:
+            _detected, text = translate.translate(self._text, self._target)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+            return
+        self.done.emit(self._target, text)
+
+
 class DigitalVoiceTab(QWidget):
     """Non-resident tab opened from Communications > Digital Voice."""
 
@@ -110,6 +134,7 @@ class DigitalVoiceTab(QWidget):
         self._fast_job: FskVoiceFileDecoder | None = None  # IQ-file decode worker (Speed "Fast")
         self._player: Any | None = None  # AudioFilePlayer, created on first file playback
         self._worker: _RecognizeWorker | None = None
+        self._translate_worker: _TranslateWorker | None = None
         self._playing = False
 
         self._setup_ui()
@@ -193,10 +218,49 @@ class DigitalVoiceTab(QWidget):
         text_top.addWidget(self._language_label)
         text_top.addStretch()
         text_layout.addLayout(text_top)
+        text_split = QSplitter(Qt.Orientation.Vertical)
         self._text_edit = QPlainTextEdit()
         self._text_edit.setReadOnly(True)
         self._text_edit.setPlaceholderText(_("Select a message and press Recognize."))
-        text_layout.addWidget(self._text_edit, stretch=1)
+        text_split.addWidget(self._text_edit)
+
+        translation_page = QWidget()
+        translation_layout = QVBoxLayout(translation_page)
+        translation_layout.setContentsMargins(0, 0, 0, 0)
+        translate_top = QHBoxLayout()
+        translate_top.addWidget(QLabel(_("Translation:")))
+        self._translate_combo = QComboBox()
+        for code, name in translate.LANGUAGES:
+            self._translate_combo.addItem(name, code)
+        self._translate_combo.setToolTip(_("The language to translate the recognised text into."))
+        translate_top.addWidget(self._translate_combo)
+        self._translate_btn = QPushButton(_("🌐 Translate"))
+        self._translate_btn.setToolTip(
+            _(
+                "Translate the recognised text with Google Translate. The text is sent "
+                "to Google over the internet."
+            )
+        )
+        self._translate_btn.clicked.connect(self._on_translate)
+        translate_top.addWidget(self._translate_btn)
+        self._auto_translate_cb = QCheckBox(_("Auto-translate"))
+        self._auto_translate_cb.setToolTip(
+            _("Translate each message as soon as it has been recognised.")
+        )
+        translate_top.addWidget(self._auto_translate_cb)
+        translate_top.addStretch()
+        translation_layout.addLayout(translate_top)
+        self._translation_edit = QPlainTextEdit()
+        self._translation_edit.setReadOnly(True)
+        self._translation_edit.setPlaceholderText(_("The translation appears here."))
+        translation_layout.addWidget(self._translation_edit, stretch=1)
+        text_split.addWidget(translation_page)
+        text_split.setStretchFactor(0, 1)
+        text_split.setStretchFactor(1, 1)
+        text_layout.addWidget(text_split, stretch=1)
+        self._load_translate_settings()
+        self._translate_combo.currentIndexChanged.connect(self._on_translate_target_changed)
+        self._auto_translate_cb.toggled.connect(self._on_auto_translate_toggled)
         self._view_tabs.addTab(text_page, _("Speech-to-Text"))
         splitter.addWidget(self._view_tabs)
 
@@ -265,6 +329,8 @@ class DigitalVoiceTab(QWidget):
         self._stop_btn.setEnabled(self._playing)
         self._save_btn.setEnabled(have)
         self._recognize_btn.setEnabled(have and self._worker is None)
+        recognized = isinstance(item, _MessageItem) and item.recognized is not None
+        self._translate_btn.setEnabled(recognized and self._translate_worker is None)
 
     # ------------------------------------------------------------------ #
     # Radio Control wiring / SDR input
@@ -438,6 +504,7 @@ class DigitalVoiceTab(QWidget):
         else:
             self._language_label.setText("")
             self._text_edit.clear()
+        self._show_translation()
         self._update_buttons()
 
     # ------------------------------------------------------------------ #
@@ -480,6 +547,8 @@ class DigitalVoiceTab(QWidget):
         self._status.setText(_("Recognition finished."))
         if self._current_item() is item:
             self._on_selection_changed()
+        if self._auto_translate_cb.isChecked():
+            self._start_translation(item)
 
     def _on_recognize_failed(self, message: str) -> None:
         self._status.setText(f"⚠ {message}")
@@ -488,6 +557,117 @@ class DigitalVoiceTab(QWidget):
         if self._worker is not None:
             self._worker.deleteLater()
             self._worker = None
+        self._update_buttons()
+
+    # ------------------------------------------------------------------ #
+    # Translation
+    # ------------------------------------------------------------------ #
+
+    def _load_translate_settings(self) -> None:
+        """Restore the target language (default: the UI language) and Auto-translate."""
+        from i18n import get_language
+
+        index = self._translate_combo.findData(get_language())
+        auto = False
+        if hasattr(self._conn, "execute"):
+            with contextlib.suppress(Exception):
+                row = self._conn.execute(
+                    "SELECT value FROM app_settings WHERE key = ?", (_TRANSLATE_TARGET_KEY,)
+                ).fetchone()
+                if row and self._translate_combo.findData(str(row["value"])) >= 0:
+                    index = self._translate_combo.findData(str(row["value"]))
+            with contextlib.suppress(Exception):
+                row = self._conn.execute(
+                    "SELECT value FROM app_settings WHERE key = ?", (_TRANSLATE_AUTO_KEY,)
+                ).fetchone()
+                auto = bool(row) and str(row["value"]) == "1"
+        self._translate_combo.setCurrentIndex(max(index, 0))
+        self._auto_translate_cb.setChecked(auto)
+
+    def _save_setting(self, key: str, value: str) -> None:
+        if not hasattr(self._conn, "execute"):
+            return
+        with contextlib.suppress(Exception):
+            self._conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value, updated_at) "
+                "VALUES (?, ?, CURRENT_TIMESTAMP)",
+                (key, value),
+            )
+            self._conn.commit()
+
+    def _target_language(self) -> str:
+        return str(self._translate_combo.currentData())
+
+    def _show_translation(self) -> None:
+        """Show the selected message's translation into the chosen language, if it has one."""
+        item = self._current_item()
+        text = item.translations.get(self._target_language()) if item is not None else None
+        self._translation_edit.setPlainText(text or "")
+
+    def _on_translate_target_changed(self, _index: int) -> None:
+        self._save_setting(_TRANSLATE_TARGET_KEY, self._target_language())
+        self._show_translation()
+        item = self._current_item()
+        if (
+            self._auto_translate_cb.isChecked()
+            and item is not None
+            and item.recognized is not None
+            and self._target_language() not in item.translations
+        ):
+            self._start_translation(item)
+
+    def _on_auto_translate_toggled(self, checked: bool) -> None:
+        self._save_setting(_TRANSLATE_AUTO_KEY, "1" if checked else "0")
+        item = self._current_item()
+        if (
+            checked
+            and item is not None
+            and item.recognized is not None
+            and self._target_language() not in item.translations
+        ):
+            self._start_translation(item)
+
+    def _on_translate(self) -> None:
+        """The Translate button: translate again, even if a translation is already there."""
+        item = self._current_item()
+        if item is not None and item.recognized is not None:
+            item.translations.pop(self._target_language(), None)
+            self._start_translation(item)
+
+    def _start_translation(self, item: _MessageItem) -> None:
+        """Translate the recognised text of *item* into the chosen language."""
+        if self._translate_worker is not None or item.recognized is None:
+            return
+        language, text = item.recognized
+        target = self._target_language()
+        if not text.strip():
+            return
+        if language == target.split("-")[0]:
+            item.translations[target] = text  # already in that language
+            self._show_translation()
+            return
+        self._status.setText(_("Translating…"))
+        worker = _TranslateWorker(text, target, self)
+        worker.done.connect(lambda tgt, out, it=item: self._on_translated(it, tgt, out))
+        worker.failed.connect(self._on_translate_failed)
+        worker.finished.connect(self._on_translate_worker_finished)
+        self._translate_worker = worker
+        self._update_buttons()
+        worker.start()
+
+    def _on_translated(self, item: _MessageItem, target: str, text: str) -> None:
+        item.translations[target] = text
+        self._status.setText(_("Translation finished."))
+        if self._current_item() is item:
+            self._show_translation()
+
+    def _on_translate_failed(self, message: str) -> None:
+        self._status.setText("⚠ " + _("Could not translate: ") + message)
+
+    def _on_translate_worker_finished(self) -> None:
+        if self._translate_worker is not None:
+            self._translate_worker.deleteLater()
+            self._translate_worker = None
         self._update_buttons()
 
     # ------------------------------------------------------------------ #
@@ -695,5 +875,7 @@ class DigitalVoiceTab(QWidget):
                 self._player.close()
         if self._worker is not None:
             self._worker.wait(2000)
+        if self._translate_worker is not None:
+            self._translate_worker.wait(2000)
         self._stop_reception()
         super().closeEvent(event)

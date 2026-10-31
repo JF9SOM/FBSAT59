@@ -1432,6 +1432,13 @@ type 11 の音声パケット（`BF35` ＋ `25 B3 nn` ＋ 35 バイト）が、*
 区切り（`gap_s`）はこの間隔で行う。**音声（CODEC2）としての再生・文字起こしは実録音ではまだ確認していない**。200 bps の下りに
 SSDV や他のテレメトリーが載るかも未確認（この録音は音声だけ）。
 
+**翻訳（2026-10-31 追加）**: Speech-to-Text サブタブは上下 2 段で、下段に認識結果の翻訳を出す（`comms/voice/translate.py`）。
+翻訳先は下段のコンボで選ぶ（既定は UI 言語。`app_settings` の `voice_translate_target`）。**自動翻訳**チェック
+（`voice_translate_auto`）で認識直後に翻訳し、**🌐 Translate** ボタンで手動でもやり直せる。翻訳はメッセージごとに言語別に保持し、
+認識した言語と翻訳先が同じなら送らない。翻訳は Google 翻訳の**キー不要の Web 用窓口**
+（`translate.googleapis.com/translate_a/single?client=gtx`）を `httpx` で呼ぶ。非公式なので仕様変更・利用制限があり得る。
+**認識したテキストが Google に送られる**（ボタンの説明に明記）。失敗しても認識結果は残り、下段は空のまま状態表示に理由を出す。
+
 **画面（2026-10-12 修正）**: SSTV タブと同じ構成。
 - 上部: **Mode** コンボ（今は `2FSK 800bps` のみ）、入力表示（SDR のみ）、Auto-save MP3。
 - 右側の **Quick Comms Control の入力コンボ**に、Digital Voice の送信トランスミッターがある衛星（今は HADES-SA だけ）が出る
