@@ -49,6 +49,7 @@ from PySide6.QtCore import QObject, Signal
 from comms.aprs.ax25_tx import build_ax25_audio
 from comms.aprs.direwolf import DirewolfManager, find_direwolf
 from comms.aprs.parser import AprsPacket, Ax25Frame, decode_ax25, parse_aprs
+from comms.aprs.tx_audio_log import get_tx_audio_recorder
 from comms.audio_tx import PttAudioTxWorker
 from i18n import _
 
@@ -499,14 +500,17 @@ class AprsEngine(QObject):
         worker.error.connect(self._on_tx_error)
         self._tx_worker = worker  # keep a reference: it emits from its thread
         self._tx_in_progress = True
+        get_tx_audio_recorder().note_tx_start()
         threading.Thread(target=worker.run, daemon=True).start()
         return True
 
     def _on_tx_finished(self) -> None:
         self._tx_in_progress = False
+        get_tx_audio_recorder().note_tx_end()
 
     def _on_tx_error(self, msg: str) -> None:
         self._tx_in_progress = False
+        get_tx_audio_recorder().cancel_tx()
         self.error_occurred.emit(msg)
 
     # ------------------------------------------------------------------ #

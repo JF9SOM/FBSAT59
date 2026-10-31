@@ -4650,3 +4650,19 @@ SatNOGS `erminaz2.ksy`。フローグラフのコードを読んで組み立て�
 
 **CQ ボタンは入力と同時に送信（2026-10-30）**: CQ ボタンを押すと To=`CQ`・メッセージ=自局グリッド・UISS 方式を入力し、
 そのまま送信する（「送信」ボタンが有効なとき。無効＝送信できない状態では入力だけ）。
+
+### APRS 送信前後の受信音声の記録（2026-10-31、Issue #35 の診断用）
+
+ISS のデジピーター経由で APRS を送信したあと、自局パケットのエコーが受信できない、という報告
+（大澤さん・Issue #35。小池も SONATE-2 で同じ経験）の切り分け用。Direwolf は復号できたフレームしか報告しないため、
+エコーが「届いていない」のか「届いたが復号できなかった」のかが、従来のログでは区別できなかった。
+
+- `src/comms/aprs/tx_audio_log.py` の `TxAudioRecorder`: Direwolf へ流す受信音声（`AudioBridge._rx_callback`）を 12 kHz に
+  間引いて直近 60 秒だけ保持し、送信（`AprsEngine._transmit` → `_on_tx_finished`）ごとに **PTT 5 秒前〜PTT 切断 12 秒後**を
+  FLAC で `<Logs>/aprs_tx_audio/tx_<時刻>_on<秒>_off<秒>.flac` へ保存する（新しい 60 件のみ保持）。ファイル名の `on`/`off` は、
+  ファイル先頭から PTT 入/切までの秒数。保存結果は fbsat59.log に `TX audio log: saved ...` として残る。
+- 解析: FLAC を `soundfile` で WAV に変換し、Direwolf の `atest` で復号する（12 kHz でも復号可。WAV は 48 kHz へ変換しなくてよい）。
+- `AudioBridge` の Direwolf コンソール読み取りは、開始と終了（読んだ行数）を `direwolf.log` に残すようにした。soundcard 経路で
+  `direwolf.log` が空だった（Windows、Issue #35）原因が、stdout パイプのバッファリングなのかを切り分けるため。0 行なら、
+  復号は動いているのにコンソール出力だけがバッファに留まっている。
+- 送信前は何も録音しない（送信が無ければ保存されない）。ログの ZIP が大きくなりすぎないよう、1 回の送信で約 200 KB 程度。

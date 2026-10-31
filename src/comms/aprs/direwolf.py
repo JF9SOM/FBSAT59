@@ -51,6 +51,7 @@ from typing import Any
 
 from PySide6.QtCore import Qt, QThread, Signal
 
+from comms.aprs.tx_audio_log import get_tx_audio_recorder
 from comms.audio_device_manager import get_audio_device_manager
 
 _AUDIO_OWNER = "APRS/Direwolf"
@@ -328,6 +329,10 @@ class AudioBridge(QThread):
         def _rx_callback(chunk: Any) -> None:
             if self._stop_event.is_set():
                 return
+            # Diagnostic ring buffer: saved around each transmission (tx_audio_log.py).
+            # Diagnostics must never stop reception.
+            with contextlib.suppress(Exception):
+                get_tx_audio_recorder().feed(chunk)
             try:
                 pcm = (chunk * 32767).astype("int16").tobytes()
                 self._proc.stdin.write(pcm)  # type: ignore[union-attr]
@@ -403,14 +408,25 @@ class AudioBridge(QThread):
             from comms.aprs.direwolf_log import get_direwolf_logger
 
             dw_logger = get_direwolf_logger()
+            dw_logger.info("[fbsat59] Direwolf console reader started (modem %s)", self._modem)
             stdout = self._proc.stdout
-            while not self._stop_event.is_set() and stdout is not None:
-                raw_line = stdout.readline()
-                if not raw_line:
-                    break  # EOF -- Direwolf exited
-                line = raw_line.decode("utf-8", errors="replace").rstrip()
-                if line:
-                    dw_logger.info(line)
+            lines_read = 0
+            try:
+                while not self._stop_event.is_set() and stdout is not None:
+                    raw_line = stdout.readline()
+                    if not raw_line:
+                        break  # EOF -- Direwolf exited
+                    line = raw_line.decode("utf-8", errors="replace").rstrip()
+                    if line:
+                        lines_read += 1
+                        dw_logger.info(line)
+            finally:
+                # A stdout pipe is block-buffered by some C runtimes, so a session can
+                # end with decoded frames but no console lines at all (Issue #35,
+                # direwolf.log was empty). This line tells the two cases apart.
+                dw_logger.info(
+                    "[fbsat59] Direwolf console reader ended: %d line(s) read", lines_read
+                )
         except Exception:  # noqa: BLE001
             pass
         finally:
