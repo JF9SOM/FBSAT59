@@ -8853,3 +8853,7 @@ msgstr "翻訳が完了しました。"
 #: src/ui/digital_voice_tab.py
 msgid "Could not translate: "
 msgstr "翻訳できませんでした: "
+
+#: src/ui/digital_voice_tab.py
+msgid "Google Translate is limiting requests; try again in a while (press Translate)."
+msgstr "Google 翻訳が一時的に要求を制限しています。しばらくしてから「翻訳」を押してください。"

@@ -9,12 +9,22 @@ amateur-radio content), nothing else.
 from __future__ import annotations
 
 import re
+import time
+from collections.abc import Callable
 from typing import Any
 
 import httpx
 
 _URL = "https://translate.googleapis.com/translate_a/single"
 _MAX_CHARS = 1500  # one request carries at most this much text
+# Waits (s) before each retry after "429 Too Many Requests"; the endpoint limits requests per
+# IP address and the limit lifts after a short while.
+_RETRY_WAITS = (4.0, 10.0)
+
+
+class RateLimitedError(Exception):
+    """The service kept answering 429 Too Many Requests, even after the retries."""
+
 
 # (Google language code, name in its own language) offered as translation targets.
 LANGUAGES: tuple[tuple[str, str], ...] = (
@@ -58,26 +68,51 @@ def parse_response(data: Any) -> tuple[str, str]:
     return detected, translated
 
 
+def _get(
+    client: httpx.Client, params: dict[str, str], sleep: Callable[[float], None]
+) -> httpx.Response:
+    """GET one request; after a 429 wait and try again (the waits of ``_RETRY_WAITS``)."""
+    for wait in (*_RETRY_WAITS, None):
+        response = client.get(_URL, params=params)
+        if response.status_code != 429:
+            response.raise_for_status()
+            return response
+        if wait is None:
+            break
+        sleep(wait)
+    raise RateLimitedError(
+        "Google Translate is limiting requests from this connection; try again in a while"
+    )
+
+
 def translate(
-    text: str, target: str, source: str = "auto", timeout: float = 15.0
+    text: str,
+    target: str,
+    source: str = "auto",
+    timeout: float = 15.0,
+    client: httpx.Client | None = None,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> tuple[str, str]:
     """Translate *text* into *target*; returns ``(detected source language, translation)``.
 
-    Raises ``httpx.HTTPError`` (network, HTTP status) or ``ValueError`` (unexpected reply).
+    Raises ``RateLimitedError`` (429 even after retries), ``httpx.HTTPError`` (network, other
+    HTTP status) or ``ValueError`` (unexpected reply). *client* and *sleep* are for tests.
     """
     detected = ""
     parts: list[str] = []
-    with httpx.Client(timeout=timeout) as client:
+    own = client is None
+    http = client if client is not None else httpx.Client(timeout=timeout)
+    try:
         for piece in chunks(text):
-            response = client.get(
-                _URL,
-                params={"client": "gtx", "sl": source, "tl": target, "dt": "t", "q": piece},
-            )
-            response.raise_for_status()
+            params = {"client": "gtx", "sl": source, "tl": target, "dt": "t", "q": piece}
+            response = _get(http, params, sleep)
             try:
                 found, translated = parse_response(response.json())
             except (IndexError, KeyError, TypeError, ValueError) as exc:
                 raise ValueError("unexpected reply from the translation service") from exc
             detected = detected or found
             parts.append(translated)
+    finally:
+        if own:
+            http.close()
     return detected, " ".join(parts)

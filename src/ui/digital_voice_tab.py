@@ -112,8 +112,13 @@ class _TranslateWorker(QThread):
     def run(self) -> None:
         try:
             _detected, text = translate.translate(self._text, self._target)
+        except translate.RateLimitedError:
+            self.failed.emit(
+                _("Google Translate is limiting requests; try again in a while (press Translate).")
+            )
+            return
         except Exception as exc:
-            self.failed.emit(str(exc))
+            self.failed.emit(_("Could not translate: ") + str(exc))
             return
         self.done.emit(self._target, text)
 
@@ -662,7 +667,7 @@ class DigitalVoiceTab(QWidget):
             self._show_translation()
 
     def _on_translate_failed(self, message: str) -> None:
-        self._status.setText("⚠ " + _("Could not translate: ") + message)
+        self._status.setText("⚠ " + message)
 
     def _on_translate_worker_finished(self) -> None:
         if self._translate_worker is not None:

@@ -562,3 +562,64 @@ def test_translation_failure_keeps_the_recognised_text(
     assert "offline" in tab._status.text()
     assert item.recognized == ("es", "Hola mundo") and item.translations == {}
     assert tab._text_edit.toPlainText() == "Hola mundo"
+
+
+def _mock_client(statuses: list[int]) -> tuple[Any, list[int]]:
+    import httpx
+
+    seen: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        status = statuses[min(len(seen), len(statuses) - 1)]
+        seen.append(status)
+        if status == 200:
+            return httpx.Response(200, json=[[["Hello", "Hola", None]], None, "es"])
+        return httpx.Response(status)
+
+    return httpx.Client(transport=httpx.MockTransport(handler)), seen
+
+
+def test_translate_retries_after_429_and_then_succeeds() -> None:
+    from comms.voice import translate
+
+    client, seen = _mock_client([429, 429, 200])
+    waits: list[float] = []
+    assert translate.translate("Hola", "en", client=client, sleep=waits.append) == ("es", "Hello")
+    assert seen == [429, 429, 200] and waits == [4.0, 10.0]
+
+
+def test_translate_gives_up_with_a_clear_error_after_repeated_429() -> None:
+    from comms.voice import translate
+
+    client, seen = _mock_client([429])
+    waits: list[float] = []
+    with pytest.raises(translate.RateLimitedError):
+        translate.translate("Hola", "en", client=client, sleep=waits.append)
+    assert len(seen) == 3 and waits == [4.0, 10.0]
+
+
+def test_translate_does_not_retry_other_http_errors() -> None:
+    import httpx
+
+    from comms.voice import translate
+
+    client, seen = _mock_client([500])
+    with pytest.raises(httpx.HTTPStatusError):
+        translate.translate("Hola", "en", client=client, sleep=lambda _s: None)
+    assert seen == [500]
+
+
+def test_tab_shows_a_rate_limit_message(
+    tab: DigitalVoiceTab, qtbot: QtBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from comms.voice import translate
+
+    def limited(*_a: Any, **_k: Any) -> Any:
+        raise translate.RateLimitedError("x")
+
+    monkeypatch.setattr(translate, "translate", limited)
+    _recognized_item(tab)
+    tab._translate_combo.setCurrentIndex(tab._translate_combo.findData("ja"))
+    tab._translate_btn.click()
+    qtbot.waitUntil(lambda: tab._translate_worker is None, timeout=10_000)
+    assert "limiting" in tab._status.text() and "429" not in tab._status.text()
