@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 
 from comms.voice import codec2, recognize
 from comms.voice.hades_voice import (
+    PACKET_SECONDS,
     FskVoiceSdrDemod,
     VoiceMessage,
     VoiceMessageAssembler,
@@ -304,7 +305,7 @@ class DigitalVoiceTab(QWidget):
             return
         try:
             demod = FskVoiceSdrDemod(int(pipeline._device.sample_rate), parent=self)
-            demod.packet_received.connect(self._on_packet)
+            demod.packet_received.connect(self._on_demod_packet)
             demod.start()
             self._demod = demod  # held before subscribing so a failure is cleaned up
             pipeline.subscribe(demod.push_samples)
@@ -339,14 +340,23 @@ class DigitalVoiceTab(QWidget):
         """
         self._on_packet(number, data, t, trusted=True)
 
+    def _on_demod_packet(self, number: int, data: bytes, t: float, interval_s: float) -> None:
+        """A packet from the 2FSK demodulator (800 bps or 200 bps downlink)."""
+        self._on_packet(number, data, t, interval_s=interval_s)
+
     def _on_packet(
-        self, number: int, data: bytes, t: float | None = None, trusted: bool = False
+        self,
+        number: int,
+        data: bytes,
+        t: float | None = None,
+        trusted: bool = False,
+        interval_s: float = PACKET_SECONDS,
     ) -> None:
         raw = bytes([37, 0xFC if trusted else 0xB3, number]) + unmask(data)
         self._raw_edit.appendPlainText(
             f"{datetime.now(UTC):%H:%M:%S}  #{number:02d}  {raw.hex(' ').upper()}"
         )
-        message, finished = self._assembler.add(number, data, t, trusted)
+        message, finished = self._assembler.add(number, data, t, trusted, interval_s)
         if finished is not None:
             self._finish(finished)
         item = self._items.get(id(message))

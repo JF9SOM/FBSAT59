@@ -11,6 +11,9 @@ Soundmodem for HADES-SA, which the spec does not fully describe):
   each is padded with four zero bits to 4 bytes -- the form ``c2dec 700C`` / libcodec2 take.
 * A message is up to about 15 s (37 packets of 0.4 s); the satellite repeats stored messages
   in its 20 s voice slots.
+* The 200 bps downlink ("FSK 200 bps 1125 Hz separation") carries the same packets, four
+  times slower (one per 1.6 s). Seen on a real pass on 2026-10-30: sync every 320 bits,
+  ``25 B3 nn`` header, packet numbers counting up. Its tone spacing measured 1.15-1.19 kHz.
 
 The 2FSK front end is shared with the SSDV mode (comms.sstv.fsk_ssdv).
 """
@@ -44,13 +47,21 @@ _MAX_NUMBER = 200  # numbers beyond this are noise (a message is about 40 packet
 MESSAGE_GAP_S = 4.0
 
 
+SLOW_BAUD = 200
+# Tone spacings tried for the 200 bps downlink (nominal 1125 Hz; 1150-1190 Hz was measured).
+_SLOW_SEPARATIONS = tuple(float(v) for v in range(1050, 1260, 10))
+SLOW_PACKET_SECONDS = 1.6  # time on the air of one packet at 200 bps
+
+
 class VoicePacket(NamedTuple):
-    """One type-11 packet: its number in the message, its un-masked 35 data bytes and the
-    stream time (seconds from the first sample fed) at which it started."""
+    """One type-11 packet: its number in the message, its un-masked 35 data bytes, the
+    stream time (seconds from the first sample fed) at which it started and the time
+    between two packets on the air (0.4 s at 800 bps, 1.6 s at 200 bps)."""
 
     number: int
     data: bytes
     t: float = 0.0
+    interval_s: float = PACKET_SECONDS
 
 
 def unmask(data: bytes) -> bytes:
@@ -75,21 +86,79 @@ def parse_body(body: bytes, t: float = 0.0) -> VoicePacket | None:
     return VoicePacket(body[2], unmask(bytes(body[3 : 3 + DATA_BYTES])), t)
 
 
-def decode_window(seg: np.ndarray) -> list[VoicePacket]:
-    """Decode one window of I/Q at fsk.WORK_RATE into voice packets."""
-    tones = fsk.find_tones(seg)
+def _symbol_energies(
+    c_high: np.ndarray, c_low: np.ndarray, start: float, count: int, sps: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Per-symbol energy at each tone for *count* symbols of *sps* samples from *start*."""
+    pos = start + np.arange(count + 1) * sps
+    grid = np.arange(len(c_high))
+    high = np.interp(pos, grid, c_high.real) + 1j * np.interp(pos, grid, c_high.imag)
+    low = np.interp(pos, grid, c_low.real) + 1j * np.interp(pos, grid, c_low.imag)
+    return np.abs(np.diff(high)) ** 2, np.abs(np.diff(low)) ** 2
+
+
+def _best_phase(c_high: np.ndarray, c_low: np.ndarray, sps: float) -> float:
+    """Symbol timing phase (in samples) with the largest average decision margin."""
+    n = len(c_high) - 1
+    best_score = -1.0
+    best = 0.0
+    for phase in np.arange(0.0, sps, 0.5):
+        count = int((n - phase) / sps) - 1
+        e_high, e_low = _symbol_energies(c_high, c_low, phase, count, sps)
+        score = float(np.sum(np.abs(e_high - e_low) / (e_high + e_low + 1e-12)))
+        if score > best_score:
+            best_score, best = score, float(phase)
+    return best
+
+
+def _sync_candidates(bits: np.ndarray, step_symbols: int) -> list[tuple[int, int]]:
+    """Positions ``(bit_index, sync_errors)`` of the sync word in the first half window."""
+    n = len(bits)
+    if n < _NEED_BITS:
+        return []
+    count = n - 15
+    errors = np.zeros(count, dtype=np.int32)
+    for k in range(16):
+        errors += bits[k : k + count] != fsk.SYNC_BITS[k]
+    stop = min(count, step_symbols, n - _NEED_BITS + 1)
+    return [(int(i), int(errors[i])) for i in np.flatnonzero(errors[:stop] <= 2)]
+
+
+def _refine(
+    c_high: np.ndarray, c_low: np.ndarray, start: float, sps: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Re-time one packet: keep the small timing offset that captures the most energy."""
+    best_score = -1.0
+    best: tuple[np.ndarray, np.ndarray] | None = None
+    for offset in fsk._REFINE_OFFSETS:
+        e_high, e_low = _symbol_energies(c_high, c_low, start + offset, _NEED_BITS, sps)
+        score = float(np.sum(np.maximum(e_high, e_low)))
+        if score > best_score:
+            best_score, best = score, (e_high, e_low)
+    assert best is not None
+    return best
+
+
+def _decode(
+    seg: np.ndarray, baud: float, separations: tuple[float, ...] | None, interval_s: float
+) -> list[VoicePacket]:
+    """Decode one window of I/Q at fsk.WORK_RATE, 2FSK at *baud*, into voice packets."""
+    sps = fsk.WORK_RATE / baud
+    tones = fsk.find_tones(seg, separations=separations)
     if tones is None:
         return []
     c_high, c_low = fsk.tone_sums(seg, tones[0], tones[1])
-    phase = fsk.best_phase(c_high, c_low)
+    phase = _best_phase(c_high, c_low, sps)
     n = len(c_high) - 1
-    count = int((n - phase) / fsk.SAMPLES_PER_SYMBOL) - 1
-    e_high, e_low = fsk.symbol_energies(c_high, c_low, phase, count)
+    count = int((n - phase) / sps) - 1
+    e_high, e_low = _symbol_energies(c_high, c_low, phase, count, sps)
     margin = e_high - e_low
     candidates: list[tuple[int, int, float]] = []
     for polarity in (-1.0, 1.0):  # bit 1 is the low tone, so the normal polarity is -1
         bits = ((polarity * margin) > 0).astype(np.uint8)
-        candidates.extend((i, e, polarity) for i, e in fsk.sync_candidates(bits, _NEED_BITS))
+        candidates.extend(
+            (i, e, polarity) for i, e in _sync_candidates(bits, int(fsk._STEP_S * baud))
+        )
     candidates.sort(key=lambda c: (c[1], c[0]))
     kept: list[tuple[int, int, float]] = []
     for cand in candidates:
@@ -99,21 +168,33 @@ def decode_window(seg: np.ndarray) -> list[VoicePacket]:
     kept.sort(key=lambda c: c[0])
     out: list[VoicePacket] = []
     for index, _errors, polarity in kept:
-        eh, el = fsk.refine_packet(
-            c_high, c_low, phase + index * fsk.SAMPLES_PER_SYMBOL, count=_NEED_BITS
-        )
+        eh, el = _refine(c_high, c_low, phase + index * sps, sps)
         bits = ((polarity * (eh - el)) > 0).astype(np.uint8)
         if int(np.count_nonzero(bits[:16] != fsk.SYNC_BITS)) > _MAX_SYNC_ERRORS:
             continue
-        start = (phase + index * fsk.SAMPLES_PER_SYMBOL) / fsk.WORK_RATE
+        start = (phase + index * sps) / fsk.WORK_RATE
         packet = parse_body(np.packbits(bits[16:]).tobytes(), start)
         if packet is not None:
-            out.append(packet)
+            out.append(packet._replace(interval_s=interval_s))
     return out
 
 
+def decode_window(seg: np.ndarray) -> list[VoicePacket]:
+    """Decode one window of I/Q at fsk.WORK_RATE into voice packets (800 bps downlink)."""
+    return _decode(seg, fsk.BAUD, None, PACKET_SECONDS)
+
+
+def decode_window_slow(seg: np.ndarray) -> list[VoicePacket]:
+    """Decode one window of I/Q at fsk.WORK_RATE into voice packets (200 bps downlink)."""
+    return _decode(seg, SLOW_BAUD, _SLOW_SEPARATIONS, SLOW_PACKET_SECONDS)
+
+
 class FskVoiceStream:
-    """Feeds arbitrary I/Q blocks to the voice demodulator."""
+    """Feeds arbitrary I/Q blocks to the voice demodulator.
+
+    Both downlinks (800 bps and 200 bps) are tried on every window: only one of them is on
+    the air at a time, and a window without that signal yields nothing.
+    """
 
     def __init__(self, sample_rate: float) -> None:
         self._rate = float(sample_rate)
@@ -130,9 +211,10 @@ class FskVoiceStream:
             self._buf = np.concatenate([self._buf, y])
         out: list[VoicePacket] = []
         while len(self._buf) >= fsk._WINDOW:
+            window = self._buf[: fsk._WINDOW]
             out.extend(
                 p._replace(t=p.t + self._buf_start_s)
-                for p in decode_window(self._buf[: fsk._WINDOW])
+                for p in decode_window(window) + decode_window_slow(window)
             )
             self._buf = self._buf[fsk._STEP :]
             self._buf_start_s += fsk._STEP / fsk.WORK_RATE
@@ -142,7 +224,8 @@ class FskVoiceStream:
 class FskVoiceSdrDemod(QThread):
     """Runs a FskVoiceStream on an SDR pipeline's raw I/Q in a worker thread."""
 
-    packet_received: Signal = Signal(int, bytes, float)  # number, 35 data bytes, stream time
+    # number, 35 data bytes, stream time, seconds between two packets on the air
+    packet_received: Signal = Signal(int, bytes, float, float)
 
     def __init__(self, sample_rate: int, parent: Any = None) -> None:
         super().__init__(parent)
@@ -167,7 +250,7 @@ class FskVoiceSdrDemod(QThread):
             except queue.Empty:
                 continue
             for packet in self._stream.feed(iq):
-                self.packet_received.emit(packet.number, packet.data, packet.t)
+                self.packet_received.emit(packet.number, packet.data, packet.t, packet.interval_s)
 
 
 class VoiceMessage:
@@ -181,8 +264,15 @@ class VoiceMessage:
         # True when the packets come from a CRC-checked source (UNNE-1B's type 15 through the
         # Telemetry tab): their numbers are right as sent and need no repair from the timing.
         self.trusted = False
+        # Seconds between two packets on the air (1.6 s on the 200 bps downlink).
+        self.interval_s = PACKET_SECONDS
         self.arrivals: list[tuple[int, bytes, float]] = []  # (number as sent, data, stream time)
         self.last_t = 0.0
+
+    @property
+    def gap_s(self) -> float:
+        """Silence that ends the message."""
+        return max(MESSAGE_GAP_S, 3.5 * self.interval_s)
 
     @property
     def packet_count(self) -> int:
@@ -219,12 +309,12 @@ class VoiceMessage:
             for number, data, _t in self.arrivals:
                 self.packets.setdefault(number, data)
             return
-        offsets = sorted(n - t / PACKET_SECONDS for n, _d, t in self.arrivals)
+        offsets = sorted(n - t / self.interval_s for n, _d, t in self.arrivals)
         median = offsets[len(offsets) // 2]
         packets: dict[int, bytes] = {}
         for number, data, t in self.arrivals:
-            if abs(number - t / PACKET_SECONDS - median) > 0.6:
-                number = round(median + t / PACKET_SECONDS)
+            if abs(number - t / self.interval_s - median) > 0.6:
+                number = round(median + t / self.interval_s)
             if number >= 0:
                 packets.setdefault(number, data)
         self.packets = packets
@@ -268,25 +358,34 @@ class VoiceMessageAssembler:
         self.current: VoiceMessage | None = None
 
     def add(
-        self, number: int, data: bytes, t: float | None = None, trusted: bool = False
+        self,
+        number: int,
+        data: bytes,
+        t: float | None = None,
+        trusted: bool = False,
+        interval_s: float = PACKET_SECONDS,
     ) -> tuple[VoiceMessage, VoiceMessage | None]:
         """Add one packet; *t* is its stream time (default: the clock).
 
         *trusted*: the packet's number is certain (see VoiceMessage.trusted). Packets of the two
-        kinds never share a message.
+        kinds never share a message. *interval_s* is the time between two packets on the
+        air; packets sent at another rate never share a message either.
         """
         now = self._clock()
         if t is None:
             t = now
         finished: VoiceMessage | None = None
         cur = self.current
-        if cur is not None and (t - cur.last_t > MESSAGE_GAP_S or cur.trusted != trusted):
+        if cur is not None and (
+            t - cur.last_t > cur.gap_s or cur.trusted != trusted or cur.interval_s != interval_s
+        ):
             cur.complete = True
             finished = cur
             cur = None
         if cur is None:
             cur = VoiceMessage(now)
             cur.trusted = trusted
+            cur.interval_s = interval_s
             self.current = cur
         cur.arrivals.append((number, data, t))
         cur.last_t = t
@@ -297,7 +396,7 @@ class VoiceMessageAssembler:
     def close_if_idle(self) -> VoiceMessage | None:
         """Close the current message if no packet came for MESSAGE_GAP_S; returns it."""
         cur = self.current
-        if cur is not None and self._clock() - cur.last_at > MESSAGE_GAP_S:
+        if cur is not None and self._clock() - cur.last_at > cur.gap_s:
             cur.complete = True
             self.current = None
             return cur

@@ -80,10 +80,13 @@ def is_sstv_transmitter(xpdr: dict[str, Any]) -> bool:
 
 
 def is_digital_voice_transmitter(xpdr: dict[str, Any]) -> bool:
-    """The transmitter the Digital Voice tab listens to: HADES-SA (NORAD 68446)'s 800 bps
-    GENESIS FSK downlink, which carries CODEC2 voice, SSDV and telemetry."""
+    """The transmitters the Digital Voice tab listens to: HADES-SA (NORAD 68446)'s 800 bps
+    GENESIS FSK downlink (CODEC2 voice, SSDV and telemetry) and its 200 bps one (CODEC2 voice
+    packets seen on it, at a quarter of the speed)."""
     mode = (xpdr.get("mode") or "").upper()
-    return xpdr.get("norad_cat_id") == 68446 and "GENESIS" in mode and xpdr.get("baud") == 800
+    return (
+        xpdr.get("norad_cat_id") == 68446 and "GENESIS" in mode and xpdr.get("baud") in (200, 800)
+    )
 
 
 # Satellites whose 200 baud 2FSK downlink the Telemetry tab's "HADES FSK" mode decodes

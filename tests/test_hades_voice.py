@@ -112,16 +112,18 @@ def test_message_decodes_with_silence_for_missing_packets() -> None:
     assert not pcm[:3200].any() and not pcm[6400:9600].any()
 
 
-def _fsk(bodies: list[bytes], snr_db: float = 20.0) -> np.ndarray:
+def _fsk(
+    bodies: list[bytes], snr_db: float = 20.0, baud: int = BAUD, shift: float = 1600.0
+) -> np.ndarray:
     rng = np.random.default_rng(2)
     bits: list[int] = [1, 0] * 400
     for body in bodies:
         raw = b"\x55" * 4 + b"\xbf\x35" + body + b"\x55" * 2
         bits += [(b >> (7 - i)) & 1 for b in raw for i in range(8)]
     sym = np.array(bits)
-    n = int(len(sym) * FS / BAUD)
-    idx = (np.arange(n) * BAUD // FS).clip(max=len(sym) - 1)
-    freq = np.where(sym[idx] == 1, -650.0, 950.0) + 150.0
+    n = int(len(sym) * FS / baud)
+    idx = (np.arange(n) * baud // FS).clip(max=len(sym) - 1)
+    freq = np.where(sym[idx] == 1, -shift / 2, shift / 2) + 150.0
     sig = np.exp(2j * np.pi * np.cumsum(freq) / FS)
     sigma = 10 ** (-snr_db / 20) / np.sqrt(2)
     noise = sigma * (rng.standard_normal(n) + 1j * rng.standard_normal(n))
@@ -141,6 +143,32 @@ def test_stream_decodes_voice_packets_from_iq() -> None:
     assert {p.number for p in got} == set(range(6))
     for p in got:
         assert p.data == bytes((p.number * 7 + i * 3) & 0xFF for i in range(35))
+
+
+def test_stream_decodes_the_200_bps_downlink() -> None:
+    pytest.importorskip("scipy")
+    from comms.voice.hades_voice import SLOW_PACKET_SECONDS, FskVoiceStream
+
+    bodies = [make_body(n) for n in range(5)]
+    iq = np.concatenate(
+        [_fsk(bodies, baud=200, shift=1170.0), np.zeros(10 * FS, dtype=np.complex64)]
+    )
+    stream = FskVoiceStream(FS)
+    got = []
+    for a in range(0, len(iq), FS // 4):
+        got.extend(stream.feed(iq[a : a + FS // 4]))
+    assert {p.number for p in got} == set(range(5))
+    assert all(p.interval_s == SLOW_PACKET_SECONDS for p in got)
+
+
+def test_assembler_numbers_packets_of_the_slow_downlink_by_their_spacing() -> None:
+    asm = VoiceMessageAssembler()
+    for n in (0, 1, 2, 4):
+        number = 33 if n == 2 else n  # one number has a bit error
+        msg, finished = asm.add(number, bytes([n] * 35), 5.0 + n * 1.6, interval_s=1.6)
+        assert finished is None
+    assert sorted(msg.packets) == [0, 1, 2, 4]
+    assert msg.packets[2] == bytes([2] * 35)
 
 
 class _FakeRadioControl(QWidget):
@@ -259,7 +287,8 @@ def test_voice_matcher_picks_the_hades_sa_800_bps_downlink() -> None:
 
     hades = {"norad_cat_id": 68446, "mode": "GENESIS FSK", "baud": 800}
     assert is_digital_voice_transmitter(hades)
-    assert not is_digital_voice_transmitter({**hades, "baud": 200})
+    assert is_digital_voice_transmitter({**hades, "baud": 200})
+    assert not is_digital_voice_transmitter({**hades, "baud": 1200})
     assert not is_digital_voice_transmitter({**hades, "norad_cat_id": 25544})
     assert not is_digital_voice_transmitter({**hades, "mode": "SSDV"})
     assert COMMS_TAB_CONFIG["voice"].show_input_source

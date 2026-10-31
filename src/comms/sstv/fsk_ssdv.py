@@ -141,8 +141,16 @@ class Decimator:
         return y[drop : max(drop, len(y) - hold)]
 
 
-def find_tones(seg: np.ndarray, ratio: float = _TONE_RATIO) -> tuple[float, float] | None:
-    """Frequencies (Hz, low and high) of the FSK tone pair in *seg*, or None if absent."""
+def find_tones(
+    seg: np.ndarray,
+    ratio: float = _TONE_RATIO,
+    separations: tuple[float, ...] | None = None,
+) -> tuple[float, float] | None:
+    """Frequencies (Hz, low and high) of the FSK tone pair in *seg*, or None if absent.
+
+    *separations* are the tone spacings (Hz) to try (default: TONE_SEPARATION_HZ only); the
+    pair with the strongest lines wins.
+    """
     n = len(seg)
     if n < WORK_RATE:
         return None
@@ -161,12 +169,20 @@ def find_tones(seg: np.ndarray, ratio: float = _TONE_RATIO) -> tuple[float, floa
     floor = float(np.median(smooth[band]))
     if floor <= 0.0:
         return None
-    sep = int(round(TONE_SEPARATION_HZ / bin_hz))
-    first = np.flatnonzero(band & (freqs <= _SEARCH_HZ - TONE_SEPARATION_HZ))
-    if len(first) == 0:
+    best_score = 0.0
+    best_pair: tuple[int, int] | None = None
+    for separation in separations or (TONE_SEPARATION_HZ,):
+        sep = int(round(separation / bin_hz))
+        first = np.flatnonzero(band & (freqs <= _SEARCH_HZ - separation))
+        if len(first) == 0:
+            continue
+        score = smooth[first] * smooth[first + sep]
+        top = int(np.argmax(score))
+        if float(score[top]) > best_score:
+            best_score, best_pair = float(score[top]), (int(first[top]), sep)
+    if best_pair is None:
         return None
-    score = smooth[first] * smooth[first + sep]
-    best = int(first[int(np.argmax(score))])
+    best, sep = best_pair
     if smooth[best] < ratio * floor or smooth[best + sep] < ratio * floor:
         return None
     return float(freqs[best]), float(freqs[best + sep])
