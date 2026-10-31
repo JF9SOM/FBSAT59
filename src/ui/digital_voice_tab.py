@@ -118,7 +118,10 @@ class _TranslateWorker(QThread):
             _detected, text = translate.translate(self._text, self._target)
         except translate.RateLimitedError:
             self.failed.emit(
-                _("Google Translate is limiting requests; try again in a while (press Translate).")
+                _(
+                    "The free translation limit is reached for now; "
+                    "try again later (press Translate)."
+                )
             )
             return
         except Exception as exc:
@@ -246,8 +249,8 @@ class DigitalVoiceTab(QWidget):
         self._translate_btn = QPushButton(_("🌐 Translate"))
         self._translate_btn.setToolTip(
             _(
-                "Translate the recognised text with Google Translate. The text is sent "
-                "to Google over the internet."
+                "Translate the recognised text with MyMemory (free, about 5000 characters "
+                "a day). The text is sent to MyMemory over the internet."
             )
         )
         self._translate_btn.clicked.connect(self._on_translate)

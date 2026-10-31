@@ -474,12 +474,35 @@ def test_tab_fast_decode_leaves_recognize_enabled(
 def test_translate_parses_the_service_reply_and_splits_long_text() -> None:
     from comms.voice import translate
 
-    reply = [[["Hola ", "Hello ", None], ["mundo", "world", None]], None, "en"]
-    assert translate.parse_response(reply) == ("en", "Hola mundo")
+    reply = {
+        "responseStatus": 200,
+        "responseData": {"translatedText": "こんにちは", "detectedLanguage": "es"},
+    }
+    assert translate.parse_response(reply) == ("es", "こんにちは")
     pieces = translate.chunks("One. Two. Three. " * 200, limit=100)
     assert all(len(p) <= 100 for p in pieces) and len(pieces) > 1
     assert " ".join(pieces).count("Three.") == 200
     assert translate.chunks("x" * 250, limit=100) == ["x" * 100, "x" * 100, "x" * 50]
+    assert all(len(p) <= 450 for p in translate.chunks("palabra " * 300))
+
+
+def test_translate_reports_quota_and_service_errors() -> None:
+    from comms.voice import translate
+
+    quota = {
+        "responseStatus": 200,
+        "responseData": {
+            "translatedText": "MYMEMORY WARNING: YOU USED ALL AVAILABLE FREE TRANSLATIONS"
+        },
+    }
+    with pytest.raises(translate.RateLimitedError):
+        translate.parse_response(quota)
+    too_long = {
+        "responseStatus": 403,
+        "responseData": {"translatedText": "QUERY LENGTH LIMIT EXCEEDED"},
+    }
+    with pytest.raises(ValueError, match="QUERY LENGTH"):
+        translate.parse_response(too_long)
 
 
 def _recognized_item(tab: DigitalVoiceTab) -> Any:
@@ -564,49 +587,53 @@ def test_translation_failure_keeps_the_recognised_text(
     assert tab._text_edit.toPlainText() == "Hola mundo"
 
 
-def _mock_client(statuses: list[int]) -> tuple[Any, list[int]]:
+def _service_client(handler: Any) -> Any:
     import httpx
 
-    seen: list[int] = []
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_translate_sends_one_request_per_chunk_with_autodetect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import httpx
+
+    from comms.voice import translate
+
+    seen: list[dict[str, str]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        status = statuses[min(len(seen), len(statuses) - 1)]
-        seen.append(status)
-        if status == 200:
-            return httpx.Response(200, json=[[["Hello", "Hola", None]], None, "es"])
-        return httpx.Response(status)
+        seen.append(dict(request.url.params))
+        return httpx.Response(
+            200,
+            json={
+                "responseStatus": 200,
+                "responseData": {"translatedText": "ok", "detectedLanguage": "es"},
+            },
+        )
 
-    return httpx.Client(transport=httpx.MockTransport(handler)), seen
-
-
-def test_translate_retries_after_429_and_then_succeeds() -> None:
-    from comms.voice import translate
-
-    client, seen = _mock_client([429, 429, 200])
-    waits: list[float] = []
-    assert translate.translate("Hola", "en", client=client, sleep=waits.append) == ("es", "Hello")
-    assert seen == [429, 429, 200] and waits == [4.0, 10.0]
-
-
-def test_translate_gives_up_with_a_clear_error_after_repeated_429() -> None:
-    from comms.voice import translate
-
-    client, seen = _mock_client([429])
-    waits: list[float] = []
-    with pytest.raises(translate.RateLimitedError):
-        translate.translate("Hola", "en", client=client, sleep=waits.append)
-    assert len(seen) == 3 and waits == [4.0, 10.0]
+    real = httpx.Client
+    monkeypatch.setattr(
+        translate.httpx, "Client", lambda **_k: real(transport=httpx.MockTransport(handler))
+    )
+    assert translate.translate("Uno. " * 300, "ja") == ("es", " ".join(["ok"] * len(seen)))
+    assert len(seen) > 1
+    assert all(p["langpair"] == "Autodetect|ja" and len(p["q"]) <= 450 for p in seen)
 
 
-def test_translate_does_not_retry_other_http_errors() -> None:
+def test_translate_maps_http_429_to_rate_limited(monkeypatch: pytest.MonkeyPatch) -> None:
     import httpx
 
     from comms.voice import translate
 
-    client, seen = _mock_client([500])
-    with pytest.raises(httpx.HTTPStatusError):
-        translate.translate("Hola", "en", client=client, sleep=lambda _s: None)
-    assert seen == [500]
+    real = httpx.Client
+    monkeypatch.setattr(
+        translate.httpx,
+        "Client",
+        lambda **_k: real(transport=httpx.MockTransport(lambda _r: httpx.Response(429))),
+    )
+    with pytest.raises(translate.RateLimitedError):
+        translate.translate("Hola", "ja")
 
 
 def test_tab_shows_a_rate_limit_message(
@@ -622,7 +649,7 @@ def test_tab_shows_a_rate_limit_message(
     tab._translate_combo.setCurrentIndex(tab._translate_combo.findData("ja"))
     tab._translate_btn.click()
     qtbot.waitUntil(lambda: tab._translate_worker is None, timeout=10_000)
-    assert "limiting" in tab._status.text() and "429" not in tab._status.text()
+    assert "limit is reached" in tab._status.text() and "429" not in tab._status.text()
 
 
 def _write_audio(path: Any, rate: int, seconds: float = 1.0, channels: int = 1) -> None:

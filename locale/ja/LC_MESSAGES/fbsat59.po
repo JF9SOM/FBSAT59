@@ -8827,8 +8827,8 @@ msgid "🌐 Translate"
 msgstr "🌐 翻訳"
 
 #: src/ui/digital_voice_tab.py
-msgid "Translate the recognised text with Google Translate. The text is sent to Google over the internet."
-msgstr "認識したテキストを Google 翻訳で翻訳します。テキストはインターネット経由で Google に送られます。"
+msgid "Translate the recognised text with MyMemory (free, about 5000 characters a day). The text is sent to MyMemory over the internet."
+msgstr "認識したテキストを MyMemory（無料・1 日あたり約 5000 文字）で翻訳します。テキストはインターネット経由で MyMemory に送られます。"
 
 #: src/ui/digital_voice_tab.py
 msgid "Auto-translate"
@@ -8855,8 +8855,8 @@ msgid "Could not translate: "
 msgstr "翻訳できませんでした: "
 
 #: src/ui/digital_voice_tab.py
-msgid "Google Translate is limiting requests; try again in a while (press Translate)."
-msgstr "Google 翻訳が一時的に要求を制限しています。しばらくしてから「翻訳」を押してください。"
+msgid "The free translation limit is reached for now; try again later (press Translate)."
+msgstr "無料の翻訳の利用上限に達しています。しばらくしてから「翻訳」を押してください。"
 
 #: src/ui/digital_voice_tab.py
 msgid "(audio file)"

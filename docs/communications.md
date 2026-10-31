@@ -1435,16 +1435,13 @@ SSDV や他のテレメトリーが載るかも未確認（この録音は音声
 **翻訳（2026-10-31 追加）**: Speech-to-Text サブタブは上下 2 段で、下段に認識結果の翻訳を出す（`comms/voice/translate.py`）。
 翻訳先は下段のコンボで選ぶ（既定は UI 言語。`app_settings` の `voice_translate_target`）。**自動翻訳**チェック
 （`voice_translate_auto`）で認識直後に翻訳し、**🌐 Translate** ボタンで手動でもやり直せる。翻訳はメッセージごとに言語別に保持し、
-認識した言語と翻訳先が同じなら送らない。翻訳は Google 翻訳の**キー不要の Web 用窓口**
-（`translate.googleapis.com/translate_a/single?client=gtx`）を `httpx` で呼ぶ。非公式なので仕様変更・利用制限があり得る。
-**認識したテキストが Google に送られる**（ボタンの説明に明記）。失敗しても認識結果は残り、下段は空のまま状態表示に理由を出す。窓口は IP ごとの流量制限で **429** を返すことがある
-（2026-10-31 に GPD で実際に発生。数分で解消）ので、4 秒・10 秒待って最大 2 回再試行し、それでも駄目なら「しばらくしてから押してください」と出す。
-制限の回避（User-Agent の偽装など）はしない。恒久策が要るなら公式 Cloud Translation（API キー）への切り替え。
-
-**音声ファイルの認識（2026-10-31 追加）**: **📂 Recognize File…** で保存済みの MP3/WAV を選ぶと、一覧に「ファイル名（音声ファイル）」の
-項目（`PcmMessage`）として加わり、IQ 由来のメッセージと同じく認識・翻訳・再生ができる（IQ を再生し直す必要はない）。
-読み込みは `comms/voice/audio_file.py`（`soundfile` で読み、モノラル化して 8 kHz の int16 へ。scipy が無ければ線形補間）。
-CODEC2 に限らず任意の音声を受け付ける。保存（Save MP3）はファイル由来では無効。
+認識した言語と翻訳先が同じなら送らない。翻訳は **MyMemory**（`api.mymemory.translated.net`、キー不要の公開 API。無料枠は IP あたり約 5000 文字/日、1 リクエスト 500 文字まで）を
+`httpx` で呼ぶ（450 文字ごとに分割。原文の言語は `Autodetect`＝Whisper が誤判定した言語コード（実例: スペイン語を `gl` と判定）に引きずられない）。
+**認識したテキストが MyMemory に送られる**（ボタンの説明に明記）。失敗しても認識結果は残り、下段は空のまま状態表示に理由を出す。
+無料枠を使い切る（`MYMEMORY WARNING` / 429）と「しばらくしてから押してください」と出す。
+**Google 翻訳のキー不要窓口（`translate.googleapis.com/translate_a/single?client=gtx`）は使えない**: 2026-10-31 に GPD で
+`httpx` から呼ぶと、同じ回線の curl が 200 でも「Sorry…」の自動アクセス防止ページ（429）が返った。再試行では直らず、回避（UA 偽装等）は
+しない方針。恒久策が要るなら公式 Cloud Translation（API キー）への切り替え。
 
 **画面（2026-10-12 修正）**: SSTV タブと同じ構成。
 - 上部: **Mode** コンボ（今は `2FSK 800bps` のみ）、入力表示（SDR のみ）、Auto-save MP3。
