@@ -134,6 +134,11 @@ CREATE TABLE autotrack_entries (
    b. 可視衛星なし → AOS が最も近い衛星に切り替え（リスト順タイブレーク）
 3. パス途中は切り替えしない（LOS を待つ）
 
+**Min El と録音（2026-10-31）**: AOS 時の動作（録音・METEOR 受信・リグ/ローテーター自動接続）は、
+進行中のパスの最大仰角が Min El 以上のときだけ発火する（`MainWindow._autotrack_pass_meets_min_el()`、
+パス一覧に出るパスと同じ基準）。発火したパスの録音範囲は従来どおり AOS(0°)〜LOS(0°) の全体。
+低いパスは見送り、20 分間は再判定しない。
+
 #### 「Use Rotator」チェック（2026-09-19 追加）
 Autotrack/Record ダイアログの Autotrack Control 枠。OFF にすると AOS でのローテーター自動
 接続・LOS での切断をしない（無指向性アンテナ運用向け）。既定は ON（従来動作）。

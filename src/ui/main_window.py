@@ -1090,6 +1090,9 @@ class MainWindow(QMainWindow):
         # _check_autotrack() for why this is separate from "the satellite
         # became `current`" (GitHub Issue #27 follow-up, 2026-08-23).
         self._autotrack_aos_fired: bool = False
+        # (norad, LOS time) of the in-progress pass last judged to be below
+        # Min El, so the per-second tick does not recompute it.
+        self._autotrack_skipped_pass: tuple[int, datetime] | None = None
         # Background warm-up of pass predictions (see _start_autotrack_warmup)
         self._autotrack_warmup_worker: _AutotrackWarmupWorker | None = None
         self._autotrack_warmup_gen: int = 0
@@ -2768,8 +2771,10 @@ class MainWindow(QMainWindow):
                     # Already above the horizon and already fired earlier —
                     # currently tracking; leave the existing "Tracking:
                     # ..." status label as-is rather than overwriting it
-                    # with a "Next: ..." countdown below.
-                    return
+                    # with a "Next: ..." countdown below. (A pass skipped
+                    # for being below Min El falls through to the countdown.)
+                    if self._autotrack_aos_fired:
+                        return
 
             # Not tracking anything right now (or LOS just occurred above)
             # — show the next satellite's countdown.
@@ -2864,6 +2869,34 @@ class MainWindow(QMainWindow):
             idx = 0
         self._radio_control.set_transmitters(transmitters, default_index=idx)
 
+    def _autotrack_pass_meets_min_el(self, norad: int) -> bool:
+        """Whether the in-progress pass of *norad* peaks at or above Min El.
+
+        get_current_pass() with the shared Min El returns None for a pass that
+        the pass list hides, so such passes are not recorded either.
+        """
+        if self._pass_predictor is None:
+            return True
+        skipped = self._autotrack_skipped_pass
+        now = datetime.now(UTC)
+        if skipped is not None and skipped[0] == norad and now <= skipped[1]:
+            return False
+        try:
+            current = self._pass_predictor.get_current_pass(norad, now)
+        except Exception as exc:
+            logger.warning("Autotrack pass elevation check failed (norad=%s): %s", norad, exc)
+            return True
+        if current is not None:
+            return True
+        # Unknown LOS: hold the verdict for a typical LEO pass length.
+        self._autotrack_skipped_pass = (norad, now + timedelta(minutes=20))
+        logger.info(
+            "Autotrack skipping norad=%s: pass max elevation below Min El %.0f",
+            norad,
+            self._min_pass_el,
+        )
+        return False
+
     def _maybe_fire_autotrack_aos(self, norad: int, sat_name: str, el: float) -> bool:
         """Fire the Autotrack AOS actions for *norad* if it has genuinely
         cleared the true horizon and hasn't already triggered them this
@@ -2871,6 +2904,8 @@ class MainWindow(QMainWindow):
         case the caller should treat the status label as already set).
         """
         if self._autotrack_aos_fired or el < 0.0:
+            return False
+        if not self._autotrack_pass_meets_min_el(norad):
             return False
         self._autotrack_aos_fired = True
         logger.info(
