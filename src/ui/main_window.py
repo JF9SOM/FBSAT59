@@ -5425,7 +5425,7 @@ class MainWindow(QMainWindow):
                 self._selected_norad,
                 start=now,
                 end=now + timedelta(hours=24),
-                min_elevation_deg=0.0,
+                min_elevation_deg=None,  # shared Min El: skip passes hidden from the list
             )
         except Exception as exc:
             logger.error("Rotator: next-AOS pass search failed: %s", exc)
@@ -5454,7 +5454,7 @@ class MainWindow(QMainWindow):
                 self._selected_norad,
                 start=now,
                 end=now + timedelta(hours=24),
-                min_elevation_deg=0.0,
+                min_elevation_deg=None,  # shared Min El: skip passes hidden from the list
             )
         except Exception as exc:
             logger.error("Rotator: next-AOS ETA search failed: %s", exc)

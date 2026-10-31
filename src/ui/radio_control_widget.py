@@ -515,9 +515,39 @@ class RadioControlWidget(QWidget):
         rot_ctrl_row.addWidget(self._rot_status_label)
         rot_ctrl_row.addStretch()
         rot_ctrl_row.addWidget(self._connect_rot_btn)
-        rot_ctrl_row.addWidget(self._rotator_cycle_combo)
         status_grid.addWidget(QLabel(_("Rotator:")), 2, 0)
-        status_grid.addLayout(rot_ctrl_row, 2, 1, 1, 2)
+        status_grid.addLayout(rot_ctrl_row, 2, 1)
+
+        # Rotator Cycle — same look as the Rig Cycle above, in the same column
+        rot_cycle_box = QHBoxLayout()
+        rot_cycle_box.setSpacing(4)
+        rot_cycle_box.addWidget(QLabel(_("Cycle:")))
+        rot_cycle_box.addWidget(self._rotator_cycle_combo)
+        status_grid.addLayout(rot_cycle_box, 2, 2)
+
+        # Rig 1 / Rig 2 / Rotator connect buttons share one width (wide enough
+        # for the longest label either of them shows), and the two Cycle
+        # combos share another, so the three rows line up.
+        btn_w = max(
+            btn.fontMetrics().horizontalAdvance(text) + 28
+            for btn in (self._connect_rig1_btn, self._connect_rot_btn)
+            for text in (
+                _("Connect Rig 1"),
+                _("Connect Rig 2"),
+                _("Disconnect Rig 1"),
+                _("Disconnect Rig 2"),
+                _("Connect Rotator"),
+                _("Disconnect Rotator"),
+                _("Retry"),
+            )
+        )
+        for btn in (self._connect_rig1_btn, self._connect_rig2_btn, self._connect_rot_btn):
+            btn.setMinimumWidth(btn_w)
+        combo_w = max(
+            self._cycle_combo.sizeHint().width(), self._rotator_cycle_combo.sizeHint().width()
+        )
+        self._cycle_combo.setMinimumWidth(combo_w)
+        self._rotator_cycle_combo.setMinimumWidth(combo_w)
 
         layout.addWidget(status_group)
 

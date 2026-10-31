@@ -864,7 +864,8 @@ class Ft4Tab(QWidget):
         self._tx_enable_btn = QPushButton(_("TX Enable"))
         self._tx_enable_btn.setCheckable(True)
         self._tx_enable_btn.setStyleSheet(
-            "QPushButton:checked{background:#006600;color:white;font-weight:bold;}"
+            "QPushButton:checked{background:#4fc3f7;color:black;font-weight:bold;"
+            "border:3px solid #0d47a1;}"
         )
         self._tx_enable_btn.toggled.connect(self._on_tx_enable_toggled)
         btn_row.addWidget(self._tx_enable_btn)
