@@ -261,7 +261,9 @@ def test_idle_tick_completes_the_message(tab: DigitalVoiceTab) -> None:
 
 
 def test_tab_has_a_mode_box_with_the_2fsk_mode(tab: DigitalVoiceTab) -> None:
-    assert [tab._mode_combo.itemText(i) for i in range(tab._mode_combo.count())] == ["2FSK 800bps"]
+    assert [tab._mode_combo.itemText(i) for i in range(tab._mode_combo.count())] == [
+        "2FSK 800/200bps"
+    ]
 
 
 def test_tab_shows_raw_packets_as_sent(tab: DigitalVoiceTab) -> None:
