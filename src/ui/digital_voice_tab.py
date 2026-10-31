@@ -46,7 +46,7 @@ from i18n import _
 
 logger = logging.getLogger(__name__)
 
-_MODE_FSK = "2FSK 800bps"
+_MODE_FSK = "2FSK 800/200bps"
 _IDLE_CHECK_MS = 1000
 _RAW_MAX_LINES = 5000
 
