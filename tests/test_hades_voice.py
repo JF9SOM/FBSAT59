@@ -730,6 +730,8 @@ def test_recognition_language_can_be_fixed(
     monkeypatch.setattr(recognize, "transcribe", fake)
     monkeypatch.setattr(recognize, "is_available", lambda: True)
     monkeypatch.setattr(codec2, "is_available", lambda: True)
+    # The CODEC2 decode needs libcodec2, which CI does not have: hand over silence instead.
+    monkeypatch.setattr(tab, "_decoded_pcm", lambda message: np.zeros(8000, dtype=np.int16))
     tab._on_packet(0, bytes(35), 0.0)
     for choice in ("auto", "es"):
         tab._recognize_language_combo.setCurrentIndex(

@@ -99,6 +99,9 @@ _ALLOWED_JAPANESE = [
     ("main.py", "メイン画面構築中"),
     ("main.py", "FBSAT59 はすでに起動中です"),
     ("ui/main_window.py", "日本語"),  # View > Language: a language is named in itself
+    ("comms/voice/translate.py", "日本語"),  # a language is named in itself
+    ("comms/voice/translate.py", "简体中文"),
+    ("comms/voice/translate.py", "。！？"),  # sentence-end characters for splitting text
     ("ui/telemetry_tab.py", "修復済み・未検証"),  # matches the label of rows logged before 10-22
 ]
 
