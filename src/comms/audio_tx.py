@@ -85,10 +85,6 @@ class PttAudioTxWorker(QObject):
             time.sleep(PTT_TAIL_S)
             unkeyed = self._rig.set_ptt(False)
             logger.info("TX[%s]: playback finished, PTT off -> %s", self._owner, unkeyed)
-            # After the PTT is released so the file write cannot affect the timing.
-            from comms.aprs.tx_audio_log import save_sent_audio
-
-            save_sent_audio(self._owner, self._audio, AUDIO_RATE)
             self.finished.emit()
         except Exception as exc:
             logger.exception("TX[%s]: failed", self._owner)
