@@ -40,6 +40,7 @@ _RING_SECONDS = 60.0  # oldest audio kept while waiting for a transmission
 PRE_ROLL_S = 5.0  # audio kept from before the PTT went on
 POST_ROLL_S = 12.0  # audio kept after the PTT went off (digipeater echo window)
 _KEEP_FILES = 60
+SENT_PREFIX = "sent_"
 
 
 def tx_audio_dir() -> Path:
@@ -180,12 +181,50 @@ class TxAudioRecorder:
     @staticmethod
     def _prune(out_dir: Path) -> None:
         files = sorted(
-            [p for p in out_dir.iterdir() if p.suffix in (".flac", ".wav")],
+            [
+                p
+                for p in out_dir.iterdir()
+                if p.suffix in (".flac", ".wav") and not p.name.startswith(SENT_PREFIX)
+            ],
             key=lambda p: p.stat().st_mtime,
         )
         for old in files[:-_KEEP_FILES]:
             with contextlib.suppress(OSError):
                 old.unlink()
+
+
+def save_sent_audio(
+    owner: str, audio: Any, sample_rate: int, out_dir: Path | None = None
+) -> Path | None:
+    """Save the exact transmit audio handed to the sound card (FLAC, mono, 24-bit).
+
+    The receive recordings above never contain the operator's own transmission
+    (the radio mutes its receiver while keyed), so they cannot show what the
+    application actually played. This file is that audio, taken right before it
+    goes to the sound card: it can be decoded offline (Direwolf's ``atest``) to
+    check the frame, tones and level on the operator's own machine. It does not
+    include anything the operating system or the radio does afterwards.
+    Only the newest ``_KEEP_FILES`` are kept. Never raises.
+    """
+    try:
+        import soundfile as sf
+
+        samples = np.clip(np.asarray(audio, dtype=np.float32).reshape(-1), -1.0, 1.0)
+        target = out_dir if out_dir is not None else tx_audio_dir()
+        os.makedirs(target, exist_ok=True)
+        path = target / f"{SENT_PREFIX}{owner}_{time.strftime('%Y%m%d_%H%M%S')}.flac"
+        sf.write(str(path), samples, sample_rate, subtype="PCM_24", format="FLAC")
+        sent = sorted(
+            (p for p in target.iterdir() if p.name.startswith(SENT_PREFIX)),
+            key=lambda p: p.stat().st_mtime,
+        )
+        for old in sent[:-_KEEP_FILES]:
+            with contextlib.suppress(OSError):
+                old.unlink()
+        return path
+    except Exception:  # noqa: BLE001 - diagnostics must never disturb a transmission
+        logger.exception("TX audio log: saving the sent audio failed")
+        return None
 
 
 _recorder: TxAudioRecorder | None = None
