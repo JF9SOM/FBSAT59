@@ -402,8 +402,8 @@ class AprsTab(QWidget):
         self._tx_level_slider.setFixedWidth(100)
         self._tx_level_slider.setToolTip(
             _(
-                "Transmit audio level in dB below full scale. The app generates the "
-                "packet audio at full scale; lower this until the radio's deviation "
+                "Transmit audio level in dB. 0 dB is the amplitude Direwolf transmits "
+                "at (half of full scale); lower this until the radio's deviation "
                 "(FM) is right. Keep the computer's output volume fixed and combine "
                 "with the radio's data input gain."
             )
@@ -1273,7 +1273,7 @@ class AprsTab(QWidget):
     # ------------------------------------------------------------------ #
 
     def _on_tx_level_changed(self, db: int) -> None:
-        """Show and apply the transmit audio level (dB below full scale)."""
+        """Show and apply the transmit audio level (dB; 0 dB = Direwolf's amplitude)."""
         self._tx_level_label.setText(format_db(db))
         self._engine.set_tx_level_db(db)
         self._save_settings()

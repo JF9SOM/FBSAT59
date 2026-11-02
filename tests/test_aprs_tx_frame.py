@@ -111,3 +111,10 @@ def test_via_ssid_and_several_digipeaters_reach_the_frame() -> None:
     assert "JF9SOM>APRS,WIDE1-1,WIDE2-2 " in describe_ax25_frame(frame) + " "
     assert frame[20] == 0x60 | (1 << 1)  # first digipeater: not the last address
     assert frame[27] == 0x61 | (2 << 1)  # second digipeater: last address
+
+
+def test_tx_level_zero_db_is_direwolfs_amplitude() -> None:
+    from comms.aprs.engine import DIREWOLF_TX_PEAK, tx_gain
+
+    assert tx_gain(0) == DIREWOLF_TX_PEAK == 0.5
+    assert abs(tx_gain(-6.0206) - 0.25) < 1e-4

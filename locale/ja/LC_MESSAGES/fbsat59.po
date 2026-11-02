@@ -3754,14 +3754,14 @@ msgstr ""
 
 #: src/ui/aprs_tab.py:403
 msgid ""
-"Transmit audio level in dB below full scale. The app generates the packet "
-"audio at full scale; lower this until the radio's deviation (FM) is right. "
-"Keep the computer's output volume fixed and combine with the radio's data "
-"input gain."
+"Transmit audio level in dB. 0 dB is the amplitude Direwolf transmits at (half "
+"of full scale); lower this until the radio's deviation (FM) is right. Keep "
+"the computer's output volume fixed and combine with the radio's data input "
+"gain."
 msgstr ""
-"送信音声のレベル（フルスケールからのdB）。アプリはパケット音声をフルスケール"
-"で作るので、無線機の偏移（FM）が適正になるまで下げてください。パソコンの出力"
-"音量は固定し、無線機のデータ入力ゲインと併せて調整します。"
+"送信音声のレベル（dB）。0 dB は Direwolf が送信する振幅（フルスケールの半分）"
+"です。無線機の偏移（FM）が適正になるまで下げてください。パソコンの出力音量は"
+"固定し、無線機のデータ入力ゲインと併せて調整します。"
 
 #: src/ui/aprs_tab.py:421
 msgid "Send My Position"

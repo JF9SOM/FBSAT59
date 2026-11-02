@@ -84,7 +84,7 @@ class AprsEngine(QObject):
         self._conn = conn
         self._mgr = DirewolfManager()
         self._rig: Any | None = None  # RigController for PTT
-        self._tx_level_db: int = 0  # TX audio level, dB below full scale
+        self._tx_level_db: int = 0  # TX audio level in dB; 0 dB = Direwolf's TX amplitude
         self._tx_in_progress = False
         self._tx_worker: PttAudioTxWorker | None = None
         self._running = False
@@ -402,7 +402,7 @@ class AprsEngine(QObject):
         demod.stop()
 
     def set_tx_level_db(self, db: int) -> None:
-        """Set the transmit audio level in dB below full scale (-60..0)."""
+        """Set the transmit audio level in dB (-60..0); 0 dB is Direwolf's own TX amplitude."""
         self._tx_level_db = min(0, max(-60, int(db)))
 
     def send_message(
@@ -494,7 +494,7 @@ class AprsEngine(QObject):
             len(audio),
             self._current_modem or "1200",
         )
-        gain = np.float32(10.0 ** (self._tx_level_db / 20.0))
+        gain = np.float32(tx_gain(self._tx_level_db))
         worker = PttAudioTxWorker(_TX_OWNER, (audio * gain).astype(np.float32), out_device, rig)
         worker.finished.connect(self._on_tx_finished)
         worker.error.connect(self._on_tx_error)
@@ -698,6 +698,16 @@ def _encode_addr(callsign: str, ssid: int, last: bool = False, c_bit: bool = Fal
     if last:
         ssid_byte |= 0x01
     return addr + bytes([ssid_byte])
+
+
+# Direwolf's "100%" transmit amplitude is half of digital full scale (gen_tone.c; gen_packets
+# documents "-a 100% is half of full-scale"). 0 dB on the TX level slider matches it.
+DIREWOLF_TX_PEAK = 0.5
+
+
+def tx_gain(level_db: float) -> float:
+    """Linear gain applied to the full-scale packet audio for a TX level in dB."""
+    return float(DIREWOLF_TX_PEAK * 10.0 ** (level_db / 20.0))
 
 
 def parse_via_path(via: str) -> list[tuple[str, int]]:
