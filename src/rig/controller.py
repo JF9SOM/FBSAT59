@@ -2004,6 +2004,49 @@ class HamlibDirectController(RigController):
             logger.error("RigDirect._apply_ctcss_civ: %s", exc)
             return False
 
+    def _send_split_on_civ_pyserial(self) -> None:
+        """Turn the rig's split ON with a raw CI-V frame (0F 01) over pyserial.
+
+        Used for the IC-9700, whose Hamlib ``set_split_vfo()`` fails with error -1
+        in the pre-connect same-band preset (GitHub Issue #35). The caller must
+        have closed the Hamlib session on ``self._port`` first and must reopen one
+        afterwards. Expected to run while ``self._port_lock`` is held. Raises
+        ``RigControlError`` when the rig never ACKs.
+        """
+        import serial
+
+        if self._civ_addr:
+            civ = int(normalize_civ_addr(self._civ_addr), 16)
+        elif self._model_id in _SATMODE_USE_VFO_SUB:
+            civ = _IC9700_DEFAULT_CIV_ADDR
+        else:
+            civ = self._civ_addr_int()
+        frame = bytes([0xFE, 0xFE, civ, 0xE0, 0x0F, 0x01, 0xFD])
+        ser = serial.Serial(
+            self._port,
+            self._baud_rate,
+            bytesize=self._data_bits,
+            stopbits=self._stop_bits,
+            timeout=0.5,
+        )
+        try:
+            for attempt in range(3):
+                ser.write(frame)
+                ser.flush()
+                resp = bytes(ser.read_until(b"\xfd"))
+                if resp == frame:
+                    # USB CI-V interfaces may echo the frame before the real reply.
+                    resp = bytes(ser.read_until(b"\xfd"))
+                if resp.endswith(b"\xfb\xfd"):
+                    logger.info("RigDirect: split ON sent as raw CI-V (0F 01)")
+                    return
+                logger.warning(
+                    "RigDirect._send_split_on_civ_pyserial: no ACK (attempt %d/3)", attempt + 1
+                )
+            raise RigControlError(f"CI-V no ACK after 3 attempts: {frame.hex()}")
+        finally:
+            ser.close()
+
     def _send_sub_mode_civ_pyserial(self, ul_mode: str) -> tuple[int, int]:
         """Set the Sub (UL) VFO's mode + DATA flag via raw CI-V over pyserial,
         bypassing Hamlib's set_mode() for this one step (GitHub Issue #16).
@@ -2907,9 +2950,24 @@ class HamlibDirectController(RigController):
                     rig2.set_func(_H.RIG_FUNC_SATMODE, 0)
                     _check_rig_ok(rig2, "same-band: set_func(SATMODE,0)")
                     time.sleep(0.6)  # wait for IC-9100 normal-mode memory restore
-                    rig2.set_split_vfo(vfo_curr, 1, vfo_b)
-                    _check_rig_ok(rig2, "same-band: set_split_vfo")
-                    time.sleep(0.2)
+                    if self._model_id in _SATMODE_USE_VFO_SUB:
+                        # IC-9700: Hamlib's set_split_vfo() is rejected here (error -1,
+                        # GitHub Issue #35), which aborted the whole preset so the
+                        # rig stayed on its old frequency. Send split ON as a raw
+                        # CI-V frame instead: close the Hamlib session (pyserial
+                        # needs the port), send it, then reopen.
+                        rig2.close()
+                        rig2 = None
+                        time.sleep(0.5)
+                        self._send_split_on_civ_pyserial()
+                        time.sleep(0.3)
+                        rig2 = _make_rig()
+                        _open_rig_with_retry(rig2, "same-band: reopen after raw split ON")
+                        time.sleep(0.5)
+                    else:
+                        rig2.set_split_vfo(vfo_curr, 1, vfo_b)
+                        _check_rig_ok(rig2, "same-band: set_split_vfo")
+                        time.sleep(0.2)
                     # Write frequencies to anchor VFO-A/B band assignment
                     rig2.set_freq(vfo_a, int(self._transponder_dl_hz))  # type: ignore[arg-type]
                     _check_rig_ok(rig2, "same-band: set_freq(VFOA/DL)")

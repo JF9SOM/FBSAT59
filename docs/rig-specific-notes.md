@@ -1476,3 +1476,12 @@ Direct モードは未対応（同種の手順があれば別途確認）。
 `SV;`（VFO A/B 入れ替え）の直後の `MD0x;` が、間隔が短いと FT-991 に無視される（`SV` の処理中に届く）と
 推定される。再度短縮するなら `SV;` の後だけ長く待つ等を実機で確認してから。なお受信モード確認
 （`_ft991_verify_dl_sideband`）は VFO-A の USB/LSB しか見ず、FM などの値は警告なしで終わる（VFO-B は見ない）。
+
+#### IC-9700 接続前の同一バンド周波数プリセットが止まる（GitHub Issue #35、2026-11-02）
+
+Rig 未接続（Direct）で ISS / GRBBeta / KNACKSAT-2 など V/V・U/U のトランスポンダーを選ぶと、`_apply_mode_and_ctcss_hamlib()` の
+同一バンド枝で `set_split_vfo(RIG_VFO_CURR, 1, VFO_B)` が Hamlib error -1 になり、例外で処理全体が中断して周波数が一切書かれず、
+IC-9700 が 433 MHz メイン FM のまま残っていた（クロスバンドは影響なし。接続後の追尾は別経路で正常）。サテライトモードがオフになるのは
+同一バンドでは仕様。修正: IC-9700（`_SATMODE_USE_VFO_SUB`）に限り、SATMODE OFF の後に Hamlib セッションを閉じ、生 CI-V `0F 01`
+（`_send_split_on_civ_pyserial()`、エコー対応・ACK 確認）で split ON を送ってから Hamlib を開き直し、以降の周波数・モード設定を続ける。
+**実機（IC-9700）未確認。** -1 の根本原因（Hamlib 側）は未特定。

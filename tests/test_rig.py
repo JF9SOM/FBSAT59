@@ -893,6 +893,50 @@ class TestIc9700ScopeSelectRestore:
         assert scope_frames == []
 
 
+class TestIc9700SplitOnRawCiv:
+    """GitHub Issue #35: the IC-9700 pre-connect same-band preset used Hamlib's
+    set_split_vfo(), which fails with error -1 and left the rig on its old
+    frequency. Split ON is now a raw CI-V frame (0F 01)."""
+
+    def _run(self, replies: list[bytes]) -> list[bytes]:
+        ctrl = HamlibDirectController(model_id=3081, port="/dev/null")
+        written: list[bytes] = []
+        queue = list(replies)
+
+        class _Ser:
+            def write(self, data: bytes) -> None:
+                written.append(bytes(data))
+
+            def flush(self) -> None:
+                pass
+
+            def read_until(self, _t: bytes) -> bytes:
+                return queue.pop(0) if queue else b""
+
+            def close(self) -> None:
+                pass
+
+        fake = MagicMock()
+        fake.Serial.side_effect = lambda *a, **k: _Ser()
+        with patch.dict("sys.modules", {"serial": fake}):
+            ctrl._send_split_on_civ_pyserial()
+        return written
+
+    def test_sends_split_on_to_the_ic9700_default_address(self) -> None:
+        ack = bytes([0xFE, 0xFE, 0xE0, 0xA2, 0xFB, 0xFD])
+        written = self._run([ack])
+        assert written == [bytes([0xFE, 0xFE, 0xA2, 0xE0, 0x0F, 0x01, 0xFD])]
+
+    def test_skips_the_echo_before_the_ack(self) -> None:
+        echo = bytes([0xFE, 0xFE, 0xA2, 0xE0, 0x0F, 0x01, 0xFD])
+        ack = bytes([0xFE, 0xFE, 0xE0, 0xA2, 0xFB, 0xFD])
+        assert len(self._run([echo, ack])) == 1
+
+    def test_no_ack_raises(self) -> None:
+        with pytest.raises(RigControlError):
+            self._run([])
+
+
 class TestPttDopplerFreeze:
     """set_ptt(freeze_doppler=...) decides whether Doppler tracking continues
     through the TX window. Packet bursts (APRS, AX100 Digi) keep the default
