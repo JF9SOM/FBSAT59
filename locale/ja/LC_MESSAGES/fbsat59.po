@@ -8889,3 +8889,15 @@ msgstr "認識する言語:"
 #: src/ui/digital_voice_tab.py
 msgid "Auto lets the speech recognition guess the language, which can be wrong for a short or noisy message. Pick the language to fix it."
 msgstr "「自動」では音声認識が言語を推測するため、短い・雑音の多いメッセージでは外れることがあります。言語を選ぶと固定されます。"
+
+#: src/ui/rig_dialog.py
+msgid "input"
+msgstr "入力"
+
+#: src/ui/rig_dialog.py
+msgid "output"
+msgstr "出力"
+
+#: src/ui/rig_dialog.py
+msgid "The previously selected Sound Card {names} device was not found. Select the device again, then press OK."
+msgstr "以前選択したサウンドカードの{names}デバイスが見つかりません。デバイスを選び直して OK を押してください。"

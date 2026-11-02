@@ -41,6 +41,7 @@ import contextlib
 import functools
 import json
 import logging
+import re
 import shutil
 import subprocess
 import sys
@@ -330,6 +331,144 @@ def pin_output_stream(target: str, before: set[str]) -> None:
     """Move the sink-input that appeared after `before` was snapshotted to
     `target` — see `snapshot_output_streams()`."""
     _pin_new_stream("sink-inputs", "move-sink-input", target, before)
+
+
+_LABEL_PREFIX_RE = re.compile(r"^\s*\d+\s*:\s*")
+
+
+def _name_from_label(label: object) -> str | None:
+    """Strip the ``"<index>: "`` prefix Rig Settings puts on its device labels."""
+    if not isinstance(label, str):
+        return None
+    name = _LABEL_PREFIX_RE.sub("", label).strip()
+    return name or None
+
+
+def describe_device(index: int | None, sd_module: Any = None) -> tuple[str | None, str | None]:
+    """Return ``(name, host API name)`` of a PortAudio device, or ``(None, None)``."""
+    if index is None:
+        return None, None
+    try:
+        sd_mod: Any = sd_module
+        if sd_mod is None:
+            import sounddevice
+
+            sd_mod = sounddevice
+        dev = sd_mod.query_devices(index)
+        host = sd_mod.query_hostapis(dev["hostapi"])["name"]
+        return str(dev["name"]), str(host)
+    except Exception:
+        return None, None
+
+
+def resolve_device_index(
+    saved_index: int | None,
+    saved_name: str | None,
+    saved_hostapi: str | None,
+    kind: str,
+    devices: list[Any],
+    hostapi_names: list[str],
+) -> tuple[int | None, bool]:
+    """Find the current PortAudio index of the device the user picked earlier.
+
+    PortAudio indices are only a position in the list built at start-up, so they
+    move when USB audio devices come and go or the OS re-orders its host APIs;
+    the saved number can then point at a different device (e.g. the speakers
+    instead of the rig's USB audio, so the transmit audio never reaches the
+    radio). The device name (plus host API, when saved) is what identifies it.
+
+    ``kind`` is ``"input"`` or ``"output"``. Returns ``(index, found)``; when no
+    device of that name exists any more, the saved index is returned unchanged
+    with ``found=False``. With no saved name there is nothing to check
+    (``found=True``).
+    """
+    if not saved_name:
+        return saved_index, True
+    channels_key = "max_input_channels" if kind == "input" else "max_output_channels"
+    candidates = [
+        i
+        for i, dev in enumerate(devices)
+        if dev.get("name") == saved_name and dev.get(channels_key, 0) > 0
+    ]
+    if saved_hostapi:
+        same_api = [
+            i
+            for i in candidates
+            if 0 <= int(devices[i].get("hostapi", -1)) < len(hostapi_names)
+            and hostapi_names[int(devices[i]["hostapi"])] == saved_hostapi
+        ]
+        if same_api:
+            candidates = same_api
+    if not candidates:
+        return saved_index, False
+    if saved_index in candidates:
+        return saved_index, True
+    return candidates[0], True
+
+
+def heal_soundcard_settings(conn: Any, sd_module: Any = None) -> list[str]:
+    """Re-point the saved Sound Card indices at the devices the user chose.
+
+    Rewrites ``input_device_index`` / ``output_device_index`` in the
+    ``soundcard_settings`` row when the device list has been re-ordered since
+    they were saved (see ``resolve_device_index``). Settings saved before the
+    device name was stored are matched through the name in their label.
+
+    Returns the kinds (``"input"`` / ``"output"``) whose saved device no longer
+    exists at all; those settings are left untouched.
+    """
+    try:
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'soundcard_settings'"
+        ).fetchone()
+        if not row or not row[0]:
+            return []
+        data = json.loads(row[0])
+        if not data.get("configured"):
+            return []
+        sd_mod: Any = sd_module
+        if sd_mod is None:
+            import sounddevice
+
+            sd_mod = sounddevice
+        devices = list(sd_mod.query_devices())
+        hostapi_names = [str(h["name"]) for h in sd_mod.query_hostapis()]
+    except Exception:
+        return []
+
+    missing: list[str] = []
+    changed = False
+    for kind in ("input", "output"):
+        saved = data.get(f"{kind}_device_index")
+        if saved is None:
+            continue
+        name = data.get(f"{kind}_device_name") or _name_from_label(data.get(f"{kind}_device_label"))
+        new_index, found = resolve_device_index(
+            int(saved), name, data.get(f"{kind}_device_hostapi"), kind, devices, hostapi_names
+        )
+        if not found:
+            missing.append(kind)
+            logger.warning(
+                "Sound Card %s device %r (saved as #%s) is not present any more", kind, name, saved
+            )
+        elif new_index != saved:
+            logger.info(
+                "Sound Card %s device %r moved from #%s to #%s; updating the saved setting",
+                kind,
+                name,
+                saved,
+                new_index,
+            )
+            data[f"{kind}_device_index"] = new_index
+            changed = True
+    if changed:
+        conn.execute(
+            "UPDATE app_settings SET value = ?, updated_at = CURRENT_TIMESTAMP "
+            "WHERE key = 'soundcard_settings'",
+            (json.dumps(data),),
+        )
+        conn.commit()
+    return missing
 
 
 class _SharedInputStream:

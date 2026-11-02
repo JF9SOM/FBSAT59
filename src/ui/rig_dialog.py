@@ -2233,12 +2233,22 @@ class _SoundCardPanel(QWidget):
         if not self._sd_available or not hasattr(self, "_in_combo"):
             return {"configured": False}
 
+        from comms.audio_device_manager import describe_device
+
+        in_name, in_api = describe_device(self._in_combo.currentData(), self._sd)
+        out_name, out_api = describe_device(self._out_combo.currentData(), self._sd)
         return {
             "configured": True,
             "input_device_index": self._in_combo.currentData(),
             "input_device_label": self._in_combo.currentText(),
             "output_device_index": self._out_combo.currentData(),
             "output_device_label": self._out_combo.currentText(),
+            # The index alone is only a position in PortAudio's list and moves
+            # when USB audio devices come and go; the name identifies the device.
+            "input_device_name": in_name,
+            "input_device_hostapi": in_api,
+            "output_device_name": out_name,
+            "output_device_hostapi": out_api,
             "sample_rate_hz": 48000,
             "input_source_name": (
                 self._pin_in_combo.currentData() if self._pin_in_combo is not None else None
@@ -2247,6 +2257,19 @@ class _SoundCardPanel(QWidget):
                 self._pin_out_combo.currentData() if self._pin_out_combo is not None else None
             ),
         }
+
+    def show_missing_devices(self, kinds: list[str]) -> None:
+        """Warn that the saved input/output device is no longer present."""
+        if not kinds or not hasattr(self, "_status_label"):
+            return
+        names = " / ".join(_("input") if k == "input" else _("output") for k in kinds)
+        self._status_label.setText(
+            _(
+                "The previously selected Sound Card {names} device was not found. "
+                "Select the device again, then press OK."
+            ).format(names=names)
+        )
+        self._status_label.setStyleSheet("color: orange;")
 
     def load(self, data: dict[str, object]) -> None:
         """Restore settings from a previously saved dict."""
@@ -2519,12 +2542,22 @@ class RigSettingsDialog(QDialog):
         self._sync_ptt_panel()
 
         # --- Sound Card ---
+        # Re-point the saved device numbers at the devices picked earlier before
+        # they are shown (PortAudio numbers move when USB audio devices come and go).
+        from comms.audio_device_manager import heal_soundcard_settings
+
+        missing_sc = heal_soundcard_settings(self._conn)
         row_sc = self._conn.execute(
             "SELECT value FROM app_settings WHERE key = 'soundcard_settings'"
         ).fetchone()
         if row_sc and row_sc["value"]:
             with contextlib.suppress(json.JSONDecodeError, TypeError):
-                self._soundcard_panel.load(json.loads(row_sc["value"]))
+                sc_loaded = json.loads(row_sc["value"])
+                for kind in missing_sc:
+                    # Do not select whatever other device now has the old number.
+                    sc_loaded.pop(f"{kind}_device_index", None)
+                self._soundcard_panel.load(sc_loaded)
+                self._soundcard_panel.show_missing_devices(missing_sc)
 
     def _save_settings(self) -> None:
         """Save Rig 1 and Rig 2 settings to the DB.

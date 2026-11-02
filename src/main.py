@@ -857,6 +857,12 @@ def main() -> int:
     _splash_message(splash, _startup_text("database"))
     conn = init_database()
 
+    # PortAudio device numbers move when USB audio devices come and go, so the
+    # saved Sound Card numbers may point at another device; re-point them by name.
+    from comms.audio_device_manager import heal_soundcard_settings
+
+    heal_soundcard_settings(conn)
+
     # Create core components
     tle_manager = TLEManager(conn)
     location_manager = LocationManager(conn)
