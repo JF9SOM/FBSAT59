@@ -8901,3 +8901,21 @@ msgstr "出力"
 #: src/ui/rig_dialog.py
 msgid "The previously selected Sound Card {names} device was not found. Select the device again, then press OK."
 msgstr "以前選択したサウンドカードの{names}デバイスが見つかりません。デバイスを選び直して OK を押してください。"
+
+msgid "Choose a canned message to put in the Message box. It is not sent until you press Send."
+msgstr "定型メッセージを選ぶと Message 欄に入ります。Send を押すまで送信されません。"
+
+msgid "Presets"
+msgstr "定型文"
+
+msgid "Edit the canned messages"
+msgstr "定型メッセージを編集"
+
+msgid "Canned messages"
+msgstr "定型メッセージ"
+
+msgid "One message per line. {grid} is replaced by your own grid square."
+msgstr "1 行に 1 つ。{grid} は自局のグリッドロケーターに置き換わります。"
+
+msgid "Restore defaults"
+msgstr "初期値に戻す"

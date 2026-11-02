@@ -24,6 +24,8 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -31,6 +33,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QPlainTextEdit,
     QPushButton,
     QSizePolicy,
     QSlider,
@@ -42,6 +45,13 @@ from PySide6.QtWidgets import (
 from comms.aprs.log_db import ensure_aprs_log_schema
 from data.lotw_names import band_freqs_from_transmitter, lotw_name_for_norad
 from i18n import _
+from ui.aprs_presets import (
+    DEFAULT_PRESETS,
+    clean_presets,
+    expand_preset,
+    load_presets,
+    save_presets,
+)
 from ui.tx_level import TX_LEVEL_MAX_DB, TX_LEVEL_MIN_DB, clamp_db, format_db
 
 # SSID range 0-15 per AX.25 spec
@@ -380,6 +390,24 @@ class AprsTab(QWidget):
         self._msg_edit.setPlaceholderText(_("Text message (max 67 chars)"))
         self._msg_edit.setMaxLength(67)
         send_layout.addWidget(self._msg_edit, stretch=1)
+        # Canned messages: choosing one only fills the Message box (nothing is sent).
+        self._preset_combo = QComboBox()
+        self._preset_combo.setToolTip(
+            _(
+                "Choose a canned message to put in the Message box. "
+                "It is not sent until you press Send."
+            )
+        )
+        self._preset_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self._preset_combo.setMinimumWidth(110)
+        self._preset_combo.activated.connect(self._on_preset_chosen)
+        send_layout.addWidget(self._preset_combo)
+        self._preset_edit_btn = QPushButton("\u270e")
+        self._preset_edit_btn.setToolTip(_("Edit the canned messages"))
+        self._preset_edit_btn.setFixedWidth(28)
+        self._preset_edit_btn.clicked.connect(self._on_edit_presets)
+        send_layout.addWidget(self._preset_edit_btn)
+        self._reload_preset_combo()
         send_layout.addSpacing(8)
         send_layout.addWidget(QLabel(_("Format:")))
         self._format_combo = QComboBox()
@@ -1322,6 +1350,45 @@ class AprsTab(QWidget):
         """Our 4-character grid square from the saved QTH ("" when none is set)."""
         pos = self._get_my_location()
         return _latlon_to_grid(pos[0], pos[1]) if pos else ""
+
+    def _reload_preset_combo(self) -> None:
+        """Fill the canned-message drop-down from the saved list."""
+        self._preset_combo.clear()
+        for preset in load_presets(self._conn):
+            self._preset_combo.addItem(preset, preset)
+        self._preset_combo.setPlaceholderText(_("Presets"))
+        self._preset_combo.setCurrentIndex(-1)
+
+    def _on_preset_chosen(self, index: int) -> None:
+        """Put the chosen canned message in the Message box (it is not sent)."""
+        preset = self._preset_combo.itemData(index)
+        if preset:
+            self._msg_edit.setText(expand_preset(str(preset), self._my_grid()))
+            self._msg_edit.setFocus()
+        self._preset_combo.setCurrentIndex(-1)
+
+    def _on_edit_presets(self) -> None:
+        """Let the user edit the canned messages, one per line."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle(_("Canned messages"))
+        lay = QVBoxLayout(dlg)
+        lay.addWidget(
+            QLabel(_("One message per line. {grid} is replaced by your own grid square."))
+        )
+        box = QPlainTextEdit()
+        box.setPlainText("\n".join(load_presets(self._conn)))
+        lay.addWidget(box)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        reset = buttons.addButton(_("Restore defaults"), QDialogButtonBox.ButtonRole.ResetRole)
+        reset.clicked.connect(lambda: box.setPlainText("\n".join(DEFAULT_PRESETS)))
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        lay.addWidget(buttons)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            save_presets(self._conn, clean_presets(box.toPlainText().splitlines()))
+            self._reload_preset_combo()
 
     def _on_cq_clicked(self) -> None:
         """Fill the form for a general call (To = CQ, message = our grid, UISS style) and send it.

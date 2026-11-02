@@ -523,3 +523,18 @@ def test_cq_button_sends_the_call_when_transmitting_is_possible(
     assert [m[3:] for m in engine.messages] == [("CQ", "PM86", True)]
     assert tab._msg_edit.text() == ""  # a sent message clears the box
     assert "JF9SOM>CQ" in tab._log_list.item(tab._log_list.count() - 1).text()
+
+
+def test_choosing_a_preset_fills_the_message_without_sending(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab = _make_tab(qtbot, conn)
+    monkeypatch.setattr(tab, "_my_grid", lambda: "PM95")
+    sent: list[str] = []
+    monkeypatch.setattr(tab, "_on_send", lambda: sent.append("sent"))
+    idx = tab._preset_combo.findData("599 {grid}")
+    assert idx >= 0
+    tab._on_preset_chosen(idx)
+    assert tab._msg_edit.text() == "599 PM95"
+    assert sent == []
+    assert tab._preset_combo.currentIndex() == -1
