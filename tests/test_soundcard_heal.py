@@ -87,3 +87,33 @@ def test_heal_reports_missing_device_and_leaves_setting() -> None:
     conn = _conn({"configured": True, "output_device_index": 4, "output_device_name": "Gone"})
     assert heal_soundcard_settings(conn, _FakeSd([_dev("Speakers")])) == ["output"]
     assert _saved(conn)["output_device_index"] == 4
+
+
+def test_reinitialize_portaudio_repoints_saved_indices(monkeypatch: Any) -> None:
+    """A rebuilt device list renumbers devices; the saved numbers must follow."""
+    import sounddevice as sd
+
+    from comms.audio_device_manager import AudioDeviceManager
+
+    conn = _conn(
+        {
+            "configured": True,
+            "output_device_index": 15,
+            "output_device_name": "IC9700-TXIN",
+            "output_device_hostapi": "MME",
+        }
+    )
+    rebuilt = [_dev("Speakers"), _dev("x"), _dev("IC9700-TXIN", api=1)]
+    fake = _FakeSd(rebuilt)
+    monkeypatch.setattr(sd, "_terminate", lambda: None)
+    monkeypatch.setattr(sd, "_initialize", lambda: None)
+    monkeypatch.setattr(sd, "stop", lambda: None)
+    monkeypatch.setattr(sd, "query_devices", fake.query_devices)
+    monkeypatch.setattr(sd, "query_hostapis", fake.query_hostapis)
+
+    mgr = AudioDeviceManager()
+    mgr.set_heal_connection(conn)
+    assert mgr.reinitialize_portaudio() is True
+
+    row = conn.execute("SELECT value FROM app_settings").fetchone()
+    assert json.loads(row[0])["output_device_index"] == 2

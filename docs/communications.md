@@ -4674,3 +4674,15 @@ ISS のデジピーター経由で APRS を送信したあと、自局パケッ�
 （48 kHz・モノ・24 bit FLAC）を `aprs_tx_audio/sent_<owner>_<時刻>.flac` に保存する（最新 60 件）。Direwolf の `atest -B 1200`
 でオフライン復号して、フレーム・トーン・レベルを実機の環境で確認できる。OS の音量・USB オーディオ・無線機の変調処理は含まれない。
 実装: `comms/aprs/tx_audio_log.py:save_sent_audio()`。
+
+### PortAudio 再構築のたびに保存済みデバイス番号を直す（2026-11-02、Issue #35）
+
+アプリ自身が、送信タブを開くとき・Rig Settings を開くとき・出力が開けないとき
+`AudioDeviceManager.reinitialize_portaudio()` で PortAudio のデバイス一覧を作り直す。
+一覧が作り直されると番号が変わることがあり、起動時にしか番号を直さない対策では、
+起動後の再構築で DB の番号が古いままになる（大澤さんのログ: 起動55秒後の再構築で
+`device=15`＝入力用ドライバーを出力に使い送信失敗。Rig Settings を開き直すと復旧）。
+`main.py` が `set_heal_connection(conn)` で DB 接続を登録し、再構築成功のたびに
+`heal_soundcard_settings()` で名前から番号を探し直す。実機（Windows）では未確認。
+**未対応**: 再構築後に開き直す共有入力ストリームは、古い番号のままで開く
+（受信側は別途の確認が必要）。

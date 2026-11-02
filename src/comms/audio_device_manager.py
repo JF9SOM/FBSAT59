@@ -730,6 +730,9 @@ class AudioDeviceManager(QObject):
         self._inputs: dict[int, _SharedInputStream] = {}
         self._inputs_lock = threading.Lock()
         self._reinit_lock = threading.Lock()
+        # DB connection used to re-point the saved Sound Card indices after the
+        # device list is rebuilt (set once at start-up).
+        self._heal_conn: Any = None
         # Injected-audio (feed) sessions per device: nesting count and the one
         # owner that keeps receiving live audio meanwhile.
         self._feed_counts: dict[int, int] = {}
@@ -800,6 +803,15 @@ class AudioDeviceManager(QObject):
     # PortAudio recovery after a USB audio device was re-enumerated
     # ------------------------------------------------------------------ #
 
+    def set_heal_connection(self, conn: Any) -> None:
+        """Register the DB connection used to re-point saved device numbers.
+
+        Once set, every PortAudio re-initialisation also re-points the saved
+        Sound Card indices at the devices the user chose, since the rebuilt
+        list can number them differently.
+        """
+        self._heal_conn = conn
+
     def reinitialize_portaudio(self) -> bool:
         """Rebuild PortAudio's device list and reopen every shared input stream.
 
@@ -842,6 +854,11 @@ class AudioDeviceManager(QObject):
                 sum(reopened),
                 len(inputs),
             )
+            if self._heal_conn is not None:
+                try:
+                    heal_soundcard_settings(self._heal_conn)
+                except Exception:
+                    logger.exception("Could not re-point the saved Sound Card devices")
             return True
 
     def output_busy(self) -> bool:

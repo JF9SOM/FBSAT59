@@ -859,9 +859,12 @@ def main() -> int:
 
     # PortAudio device numbers move when USB audio devices come and go, so the
     # saved Sound Card numbers may point at another device; re-point them by name.
-    from comms.audio_device_manager import heal_soundcard_settings
+    from comms.audio_device_manager import get_audio_device_manager, heal_soundcard_settings
 
     heal_soundcard_settings(conn)
+    # The app rebuilds PortAudio's device list itself (e.g. when a transmit tab
+    # opens), which can renumber the devices again; heal after each rebuild too.
+    get_audio_device_manager().set_heal_connection(conn)
 
     # Create core components
     tle_manager = TLEManager(conn)
