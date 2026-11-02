@@ -91,7 +91,8 @@ def test_heal_reports_missing_device_and_leaves_setting() -> None:
 
 def test_reinitialize_portaudio_repoints_saved_indices(monkeypatch: Any) -> None:
     """A rebuilt device list renumbers devices; the saved numbers must follow."""
-    import sounddevice as sd
+    import sys
+    import types
 
     from comms.audio_device_manager import AudioDeviceManager
 
@@ -105,11 +106,15 @@ def test_reinitialize_portaudio_repoints_saved_indices(monkeypatch: Any) -> None
     )
     rebuilt = [_dev("Speakers"), _dev("x"), _dev("IC9700-TXIN", api=1)]
     fake = _FakeSd(rebuilt)
-    monkeypatch.setattr(sd, "_terminate", lambda: None)
-    monkeypatch.setattr(sd, "_initialize", lambda: None)
-    monkeypatch.setattr(sd, "stop", lambda: None)
-    monkeypatch.setattr(sd, "query_devices", fake.query_devices)
-    monkeypatch.setattr(sd, "query_hostapis", fake.query_hostapis)
+    # CI has no sounddevice, so stand in for the whole module.
+    stub = types.SimpleNamespace(
+        _terminate=lambda: None,
+        _initialize=lambda: None,
+        stop=lambda: None,
+        query_devices=fake.query_devices,
+        query_hostapis=fake.query_hostapis,
+    )
+    monkeypatch.setitem(sys.modules, "sounddevice", stub)
 
     mgr = AudioDeviceManager()
     mgr.set_heal_connection(conn)
