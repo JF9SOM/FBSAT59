@@ -549,6 +549,9 @@ class TestUdpIqForwarder:
 
     def test_a_pipeline_block_arrives_whole_over_loopback(self) -> None:
         receiver = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # The whole block is sent back to back before the first recv(); with a small
+        # default buffer (Linux counts per-datagram overhead) the tail is dropped.
+        receiver.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
         receiver.bind(("127.0.0.1", 0))
         receiver.settimeout(1.0)
         forwarder = backend._UdpIqForwarder(receiver.getsockname()[1])
@@ -566,7 +569,9 @@ class TestUdpIqForwarder:
                     received.extend(datagram)
             except TimeoutError:
                 pass
-            assert bytes(received) == block.tobytes()
+            assert bytes(received) == block.tobytes(), (
+                f"got {len(received)} of {block.nbytes} bytes in {len(sizes)} datagrams"
+            )
             assert max(sizes) <= 9216  # what macOS accepts by default
             assert all(n % 8 == 0 for n in sizes)  # never splits a complex64 sample
         finally:
