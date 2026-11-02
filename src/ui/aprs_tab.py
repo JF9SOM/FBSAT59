@@ -337,6 +337,25 @@ class AprsTab(QWidget):
         _input_row_l.setContentsMargins(0, 0, 0, 0)
         _input_row_l.setSpacing(6)
         _input_row_l.addWidget(self._input_label)
+        _input_row_l.addSpacing(18)
+        _input_row_l.addWidget(QLabel(_("TX Level:")))
+        self._tx_level_slider = QSlider(Qt.Orientation.Horizontal)
+        self._tx_level_slider.setRange(TX_LEVEL_MIN_DB, TX_LEVEL_MAX_DB)
+        self._tx_level_slider.setValue(TX_LEVEL_MAX_DB)
+        self._tx_level_slider.setFixedWidth(100)
+        self._tx_level_slider.setToolTip(
+            _(
+                "Transmit audio level in dB. 0 dB is the amplitude Direwolf transmits "
+                "at (half of full scale); lower this until the radio's deviation "
+                "(FM) is right. Keep the computer's output volume fixed and combine "
+                "with the radio's data input gain."
+            )
+        )
+        self._tx_level_label = QLabel(format_db(TX_LEVEL_MAX_DB))
+        self._tx_level_label.setFixedWidth(46)
+        self._tx_level_slider.valueChanged.connect(self._on_tx_level_changed)
+        _input_row_l.addWidget(self._tx_level_slider)
+        _input_row_l.addWidget(self._tx_level_label)
         _input_row_l.addStretch()
         settings_form.addRow(_input_row_w)
 
@@ -389,6 +408,7 @@ class AprsTab(QWidget):
         self._msg_edit = QLineEdit()
         self._msg_edit.setPlaceholderText(_("Text message (max 67 chars)"))
         self._msg_edit.setMaxLength(67)
+        self._msg_edit.setMinimumWidth(260)
         send_layout.addWidget(self._msg_edit, stretch=1)
         # Canned messages: choosing one only fills the Message box (nothing is sent).
         self._preset_combo = QComboBox()
@@ -399,7 +419,7 @@ class AprsTab(QWidget):
             )
         )
         self._preset_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
-        self._preset_combo.setMinimumWidth(110)
+        self._preset_combo.setMinimumWidth(90)
         self._preset_combo.activated.connect(self._on_preset_chosen)
         send_layout.addWidget(self._preset_combo)
         self._preset_edit_btn = QPushButton("\u270e")
@@ -422,25 +442,6 @@ class AprsTab(QWidget):
         )
         self._format_combo.currentIndexChanged.connect(self._save_settings)
         send_layout.addWidget(self._format_combo)
-        send_layout.addSpacing(8)
-        send_layout.addWidget(QLabel(_("TX Level:")))
-        self._tx_level_slider = QSlider(Qt.Orientation.Horizontal)
-        self._tx_level_slider.setRange(TX_LEVEL_MIN_DB, TX_LEVEL_MAX_DB)
-        self._tx_level_slider.setValue(TX_LEVEL_MAX_DB)
-        self._tx_level_slider.setFixedWidth(100)
-        self._tx_level_slider.setToolTip(
-            _(
-                "Transmit audio level in dB. 0 dB is the amplitude Direwolf transmits "
-                "at (half of full scale); lower this until the radio's deviation "
-                "(FM) is right. Keep the computer's output volume fixed and combine "
-                "with the radio's data input gain."
-            )
-        )
-        self._tx_level_label = QLabel(format_db(TX_LEVEL_MAX_DB))
-        self._tx_level_label.setFixedWidth(46)
-        self._tx_level_slider.valueChanged.connect(self._on_tx_level_changed)
-        send_layout.addWidget(self._tx_level_slider)
-        send_layout.addWidget(self._tx_level_label)
         self._send_btn = QPushButton(_("Send"))
         self._send_btn.setEnabled(False)
         self._send_btn.clicked.connect(self._on_send)
