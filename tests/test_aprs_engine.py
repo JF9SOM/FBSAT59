@@ -574,8 +574,8 @@ def test_tx_level_scales_the_audio(tx_engine: AprsEngine) -> None:
     tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "hi")
     loud = float(abs(_FakeWorker.played[0][0]).max())
     quiet = float(abs(_FakeWorker.played[1][0]).max())
-    assert loud == pytest.approx(1.0, abs=1e-3)
-    assert quiet == pytest.approx(0.1, abs=1e-3)
+    assert loud == pytest.approx(0.5, abs=1e-3)  # 0 dB = Direwolf's TX amplitude
+    assert quiet == pytest.approx(0.05, abs=1e-3)
 
 
 def test_tx_level_is_clamped(tx_engine: AprsEngine) -> None:
