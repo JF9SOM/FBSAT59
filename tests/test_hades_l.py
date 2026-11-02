@@ -20,6 +20,9 @@ from comms.telemetry.hades_l_fsk import (
 POWER_STATS = bytes.fromhex(
     "45d73517009b80701ff03f3f3f6d0800fcc5687a704142419 10c0002220000147e".replace(" ", "")
 )
+# A real ICM data packet (type 7, address 5, 23 bytes with the CRC), descrambled, no CRC: HADES-L,
+# I/Q recording of 2026-11-02 12:27:24 UTC at 452.0 s (the CRC was valid as received).
+ICM_DATA = bytes.fromhex("75800e29280009ed583b5967598bff7f0000000000")
 RATE = 250_000.0
 BAUD = 800.0
 
@@ -92,6 +95,19 @@ def test_real_packet_is_verified_and_its_fields_decode() -> None:
     values = {f.name: f.value for f in decoded[1]}
     assert "17 d 14:31:51" in str(values["sclock"])
     assert 3900 < float(str(values["minvbat1"])) < 4100
+
+
+def test_real_icm_packet_is_23_bytes_and_shown_raw() -> None:
+    raw = hades_fsk.build_packet(ICM_DATA)
+    assert len(raw) == 23  # the size byte of a real one is 0x17
+    # Two packets back to back, as in a real burst: the first must not swallow the second.
+    data = bytes([23]) + raw + b"\xaa" * 12 + bytes([0xBF, 0x35, 23]) + raw
+    assert _verified(data, HADES_L_ADDRESS) == ICM_DATA
+    decoded = hf.decode_payload(ICM_DATA)
+    assert decoded is not None and decoded[0].name == "ICM data"
+    assert decoded[1][0].value == "80 0E 29 28 00 09 ED 58 3B 59 67 59 8B FF 7F 00 00 00 00 00"
+    assert "7" in hf.type_tabs(HADES_L_ADDRESS)
+    assert hf.type_tabs(12)["7"]["label"].endswith("ICM game message")  # UNNE-1B keeps its table
 
 
 def test_a_burst_is_decoded_and_verified() -> None:

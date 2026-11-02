@@ -74,8 +74,18 @@ _MAX_PACKET_BITS = 8 * (1 + 123)  # size byte + the longest packet (type 9)
 _SYNC = np.array([int(c) for c in SYNC_BITS], dtype=np.int8)
 
 
+# Lengths (CRC included) seen on HADES-L that differ from the other satellites'. Type 7 (ICM
+# data) is 23 bytes, not HADES-R's 101: in five CRC-valid packets from the 2026-10-21, -22 and
+# -11-02 recordings the size byte after the sync word is 0x17 and the CRC is zero at 23 bytes.
+# With the table's 101 the decoder swallowed the training and the next packet and "repaired" it.
+HADES_L_LENGTHS: dict[int, int] = {7: 23}
+
+
 def _lengths_for(packet_type: int) -> list[int]:
-    """Packet lengths (CRC included) this type can have: HADES-R's and HADES-SA's."""
+    """Packet lengths (CRC included) this type can have: HADES-L's own, else HADES-R's and
+    HADES-SA's."""
+    if packet_type in HADES_L_LENGTHS:
+        return [HADES_L_LENGTHS[packet_type]]
     found = {HADES_R_LENGTHS.get(packet_type), HADES_SA_LENGTHS.get(packet_type)}
     return sorted(n for n in found if n is not None)
 

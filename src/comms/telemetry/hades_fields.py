@@ -449,6 +449,16 @@ _ICM_GAME_MESSAGE = TypeDef(
     ),
 )
 
+# HADES-L's type 7 is a short binary ICM record, not the 101-byte text message above: 23 bytes
+# with the CRC (21 here). Its layout is not known yet, so the bytes after the type/address byte
+# are shown raw. (Seen: byte 1 = 0x80, then a counter that grows between packets.)
+_ICM_DATA_RAW = TypeDef(
+    7,
+    "ICM data",
+    21,
+    (_field("raw", "Data (raw)", "", lambda d: d[1:21].hex(" ").upper()),),
+)
+
 _EPHEMERIS = TypeDef(
     12,
     "Ephemeris",
@@ -643,6 +653,10 @@ TYPES: dict[int, TypeDef] = {
 }
 
 
+# HADES-L (address 5): the family's table, with its own short type 7.
+TYPES_L: dict[int, TypeDef] = {**TYPES, 7: _ICM_DATA_RAW}
+_HADES_L_ADDRESS = 5
+
 TYPES_SA.update({n: t for n, t in TYPES.items() if n not in (6, 7, 10, 15)})
 TYPES_SA.update({3: _SA_STATUS, 15: _BBS})
 
@@ -659,11 +673,18 @@ class DecodedField(NamedTuple):
     integer: bool
 
 
+def _table_for(address: int | None) -> dict[int, TypeDef]:
+    """The type table of the satellite with this source address."""
+    if address == _HADES_SA_ADDRESS:
+        return TYPES_SA
+    return TYPES_L if address == _HADES_L_ADDRESS else TYPES
+
+
 def decode_payload(payload: bytes) -> tuple[TypeDef, list[DecodedField]] | None:
     """Decode a packet payload; ``None`` for a type without a definition or a short payload."""
     if not payload:
         return None
-    table = TYPES_SA if payload[0] & 15 == _HADES_SA_ADDRESS else TYPES
+    table = _table_for(payload[0] & 15)
     definition = table.get(payload[0] >> 4)
     if definition is None or len(payload) < definition.length:
         return None
@@ -680,9 +701,10 @@ def decode_payload(payload: bytes) -> tuple[TypeDef, list[DecodedField]] | None:
 def type_tabs(address: int | None = None) -> dict[str, dict[str, object]]:
     """The "Decoded Fields" sub-tab skeleton, in the shape of ``get_telemetry_id_defs()``.
 
-    ``address`` 3 gives HADES-SA's tabs; anything else the HADES-R family's (UNNE-1B).
+    ``address`` 3 gives HADES-SA's tabs, 5 HADES-L's; anything else the HADES-R family's
+    (UNNE-1B).
     """
-    table = TYPES_SA if address == _HADES_SA_ADDRESS else TYPES
+    table = _table_for(address)
     return {
         str(number): {
             "label": f"{number}  {definition.name}",

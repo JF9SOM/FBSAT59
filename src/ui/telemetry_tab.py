@@ -3379,7 +3379,9 @@ class TelemetryTab(QWidget):
 
         if self._current_mode() == _MODE_HADES and norad in HADES_FSK_NORADS:
             # one sub-tab per packet type (HADES-SA has its own status and BBS layouts)
-            id_defs: dict[str, Any] | None = hades_type_tabs(3 if norad == 68446 else None)
+            id_defs: dict[str, Any] | None = hades_type_tabs(
+                3 if norad == 68446 else 5 if norad == 98206 else None
+            )
         else:
             id_defs = get_telemetry_id_defs(norad)
         is_gr = self._current_mode() == _MODE_GR
@@ -4143,7 +4145,7 @@ class TelemetryTab(QWidget):
             HadesFrame,
         )
         from comms.telemetry.hades_fsk import packet_lengths as hades_packet_lengths
-        from comms.telemetry.hades_l_fsk import HADES_L_ADDRESS
+        from comms.telemetry.hades_l_fsk import HADES_L_ADDRESS, HADES_L_LENGTHS
 
         address = (
             HADES_SA_ADDRESS
@@ -4159,6 +4161,8 @@ class TelemetryTab(QWidget):
             # HADES-L's length table is not known apart from the types seen: accept either
             # family's (a wrong length would still have to match a CRC-checked upload).
             lengths = {HADES_R_LENGTHS.get(packet_type), HADES_SA_LENGTHS.get(packet_type)}
+            if packet_type in HADES_L_LENGTHS:
+                lengths = {HADES_L_LENGTHS[packet_type]}
             if len(frame) + 2 not in lengths:
                 return
         else:
