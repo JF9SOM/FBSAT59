@@ -2769,7 +2769,7 @@ class TelemetryTab(QWidget):
         if info_bytes is None:
             info_bytes = parse_gr_pdu_dump(text)  # a framing gr-satellites cannot parse
         ascii_text: str | None = None
-        gr_decoded = self._decode_gr_text(text)
+        gr_decoded = self._decode_gr_text(text, decoded_norad)
         gr_summary = summary_text(gr_decoded)
         if info_bytes is not None:
             # like the AX.25 mode: the data column is the frame's bytes in HEX; the decoded
@@ -2802,14 +2802,14 @@ class TelemetryTab(QWidget):
                 raw=b"",
                 when=when,
                 reliable=reliable,
-                norad=self._gr_backend.started_norad or self._selected_norad,
+                norad=decoded_norad,
             )
             self._gr_rows.append((time.monotonic(), row_data))
         self._append_row(
             callsign=callsign or sat_name or "—",
             sat_name=sat_name or "—",
             data=data_text,
-            norad=self._selected_norad,
+            norad=decoded_norad,
             ts=when,
             ax25_row=row_data,
             gr_text=full_text,
@@ -3443,7 +3443,9 @@ class TelemetryTab(QWidget):
         gr_text = item.data(_GR_TEXT_ROLE)
         if isinstance(gr_text, str):
             self._gr_detail.setPlainText(gr_text)
-            tf = self._decode_gr_text(gr_text)
+            row_info = item.data(_AX25_ROLE)
+            row_norad = row_info.norad if isinstance(row_info, _Ax25Row) else None
+            tf = self._decode_gr_text(gr_text, row_norad)
             if tf is not None and tf.has_fields:
                 self._show_frame_in_decode_tab(tf, row)
             return
@@ -3473,15 +3475,20 @@ class TelemetryTab(QWidget):
             self._decode_id_tabs.setCurrentWidget(table)
         self._refresh_decode_banner()
 
-    def _decode_gr_text(self, text: str) -> TelemetryFrame | None:
-        """Decode a gr-satellites packet (info field, or PDU dump) with the satellite's format."""
+    def _decode_gr_text(self, text: str, norad: int | None = None) -> TelemetryFrame | None:
+        """Decode a gr-satellites packet (info field, or PDU dump) with the satellite's format.
+
+        *norad* is the satellite the packet belongs to; the main-list selection is only the
+        fallback, as it can differ from the satellite that was decoded.
+        """
         addresses, info = parse_gr_packet(text)
         if not info:
             info = parse_gr_pdu_dump(text)  # a framing gr-satellites cannot parse: the whole frame
-        if not info or self._selected_norad is None:
+        norad = norad if norad is not None else self._selected_norad
+        if not info or norad is None:
             return None
         source = addresses[1] if len(addresses) > 1 else ""
-        return decode_telemetry(source, info, self._selected_norad)
+        return decode_telemetry(source, info, norad)
 
     def _decode_ax25_row(self, value: object, row: int) -> TelemetryFrame | None:
         """Decode a received AX.25 row again (None if *value* is not one)."""

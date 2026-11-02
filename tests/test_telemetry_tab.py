@@ -1250,6 +1250,20 @@ def test_gr_send_button_is_visible_in_gr_mode(qtbot: QtBot, conn: sqlite3.Connec
     assert tab._btn_satnogs_send.isVisible()
 
 
+def test_gr_row_follows_decoded_satellite_not_main_list(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The row's NORAD is the decoded satellite's, whatever the main list shows."""
+    tab, _rec = _gr_tab(qtbot, conn, monkeypatch)  # started_norad == 25544
+    tab._selected_norad = 57172
+    tab._on_gr_telemetry(_GR_TEXT)
+    assert _row_data(tab, 0).norad == 25544
+    seen: list[int | None] = []
+    monkeypatch.setattr(tab, "_decode_gr_text", lambda text, norad=None: seen.append(norad) or None)
+    tab._show_row_in_decode_tab(0)
+    assert seen == [25544]
+
+
 def test_gr_row_then_frame_are_paired_and_sendable(
     qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1491,6 +1505,7 @@ def test_gr_row_with_a_format_file_fills_the_decoded_fields(
     # set_satellite() drops back to AFSK mode when gr-satellites is unavailable (as on CI)
     monkeypatch.setattr(telemetry_tab_mod, "detect_gr_satellites", lambda: True)
     tab._gr_sat_list = [(57172, "UmKA-1")]
+    monkeypatch.setattr(type(tab._gr_backend), "started_norad", property(lambda self: 57172))
     tab._combo_mode.setCurrentIndex(tab._combo_mode.findText(telemetry_tab_mod._MODE_GR))
     tab.set_satellite(57172, "UmKA-1")
     labels = [tab._decode_id_tabs.tabText(i) for i in range(tab._decode_id_tabs.count())]
@@ -1792,6 +1807,7 @@ def test_gr_pdu_frame_fills_the_decoded_fields_tab(
     qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     tab, _rec = _gr_tab(qtbot, conn, monkeypatch)
+    monkeypatch.setattr(type(tab._gr_backend), "started_norad", property(lambda self: 67284))
     tab._combo_mode.setCurrentIndex(tab._combo_mode.findText(telemetry_tab_mod._MODE_GR))
     tab.set_satellite(67284, "Lobachevsky")
     assert {"BEACON", "EPS", "GNSS-42", "GNSS-43", "GNSS-46"} <= set(tab._decode_tables)
