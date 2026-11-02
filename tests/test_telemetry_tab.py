@@ -771,6 +771,31 @@ def test_non_ax25_frame_is_shown_as_hex_logged_and_uploaded(
     assert rec.calls[0][1] == raw and rec.calls[0][2] == 68796
 
 
+def test_non_ax25_frame_uses_combo_satellite_not_main_list_selection(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A recording decode must not file the frame under the main-list selection."""
+    rec = _RecordingUploader()
+    monkeypatch.setattr(telemetry_tab_mod, "get_satnogs_uploader", lambda: rec)
+    conn.execute(
+        "INSERT INTO satellites (norad_cat_id, name, is_hidden) VALUES (68795, 'OrigamiSat-2', 0)"
+    )
+    conn.execute(
+        "INSERT INTO satellites (norad_cat_id, name, is_hidden) VALUES (57172, 'UmKA-1', 0)"
+    )
+    tab = TelemetryTab(conn, _FakeRadioControl())
+    qtbot.addWidget(tab)
+    tab._combo_afsk_sat.addItem("OrigamiSat-2", 68795)
+    tab._combo_afsk_sat.setCurrentIndex(tab._combo_afsk_sat.count() - 1)
+    tab._selected_norad = 57172  # the main list shows another satellite
+    raw = bytes([0x65, 0x96, 0xCD, 0x55]) + bytes(range(60))
+    tab._on_ax25_frame(raw)
+    assert tab._table.item(0, 2).text() == "OrigamiSat-2"
+    logged = conn.execute("SELECT norad_cat_id FROM telemetry_log").fetchall()
+    assert [r["norad_cat_id"] for r in logged] == [68795]
+    assert rec.calls[0][2] == 68795
+
+
 @pytest.mark.parametrize("mode", ["AX.25", "gr-satellites"])
 def test_start_with_nothing_connected_says_so_and_stays_pressable(
     qtbot: QtBot, conn: sqlite3.Connection, mode: str

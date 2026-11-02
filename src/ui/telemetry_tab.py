@@ -3076,10 +3076,12 @@ class TelemetryTab(QWidget):
         Some satellites (ARICA-2, for one) use AX.25's framing but put their own
         data where the address field would be, so decode_ax25() rejects them.
         They are shown as hex like any other frame, attributed to the satellite
-        the user selected, logged, and -- like AX.25 frames -- uploaded to SatNOGS
-        automatically (the frame is CRC-verified; SatNOGS takes the raw bytes).
+        the user picked in the mode's combo (not the main-list selection, which a
+        recording decode leaves unrelated), logged, and -- like AX.25 frames --
+        uploaded to SatNOGS automatically (the frame is CRC-verified; SatNOGS takes
+        the raw bytes).
         """
-        norad = self._selected_norad
+        norad = self._active_norad()
         name = ""
         if norad is not None and hasattr(self._conn, "execute"):
             row = self._conn.execute(
