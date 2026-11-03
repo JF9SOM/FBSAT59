@@ -2087,6 +2087,10 @@ class _SoundCardPanel(QWidget):
 
         default_in = self._sd.default.device[0]
         default_out = self._sd.default.device[1]
+        try:
+            host_names = [str(h["name"]) for h in self._sd.query_hostapis()]
+        except Exception:  # noqa: BLE001
+            host_names = []
 
         self._in_combo.clear()
         self._out_combo.clear()
@@ -2096,6 +2100,10 @@ class _SoundCardPanel(QWidget):
 
         for idx, dev in enumerate(devices):
             name = f"{idx}: {dev['name']}"
+            host = int(dev.get("hostapi", -1))
+            if 0 <= host < len(host_names):
+                # The same device is listed once per host API; show which one.
+                name += f" [{host_names[host]}]"
             if dev["max_input_channels"] > 0:
                 self._in_combo.addItem(name, idx)
                 if idx == default_in:
