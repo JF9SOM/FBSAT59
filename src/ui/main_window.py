@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import json
 import logging
 import re
@@ -19,7 +20,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -814,6 +815,17 @@ class _AutotrackWarmupWorker(QObject):
 # ---------------------------------------------------------------------------
 
 
+def _hold_transmitter_changes(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Run a MainWindow method inside ``_held_transmitter_changes()``."""
+
+    @functools.wraps(func)
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+        with self._held_transmitter_changes():
+            return func(self, *args, **kwargs)
+
+    return wrapper
+
+
 class MainWindow(QMainWindow):
     """
     FBSAT59 main window.
@@ -943,6 +955,10 @@ class MainWindow(QMainWindow):
         # Latest elevations computed in _update_world_map, reused by _check_autotrack
         self._last_elevations: dict[int, float] = {}
         self._current_transmitter: dict[str, Any] | None = None
+        # While > 0, transmitter changes are held and only the last one is processed on
+        # exit (see _held_transmitter_changes()).
+        self._xpdr_hold_depth = 0
+        self._xpdr_held: tuple[Any] | None = None
         # Latest Doppler result from DopplerWorker's own thread (see
         # _doppler_cycle/_on_doppler_computed) — reset on transponder change
         # so a stale value from the previous selection is never shown.
@@ -3305,6 +3321,7 @@ class MainWindow(QMainWindow):
         if cw_tab is not None:
             cw_tab.stop_decoding()  # type: ignore[attr-defined]
 
+    @_hold_transmitter_changes
     def _select_telemetry_satellite(self, norad: int, mode: str = "afsk") -> None:
         """Telemetry tab combo changed — switch filter to All, select satellite, pick transponder.
 
@@ -3606,6 +3623,7 @@ class MainWindow(QMainWindow):
         )
         self._conn.commit()
 
+    @_hold_transmitter_changes
     def _on_comms_satellite_requested(self, tab_key: str, norad: int) -> None:
         """Comms Quick Panel's Input Source combo changed — switch filter to
         All Satellites, select the satellite, and auto-pick the first
@@ -3731,6 +3749,7 @@ class MainWindow(QMainWindow):
         """Radio Control selected a METEOR LRPT/HRPT transponder — open/sync METEOR tab."""
         self._on_open_meteor(norad=norad, downlink_hz=downlink_hz)
 
+    @_hold_transmitter_changes
     def _on_meteor_satellite_requested(self, norad: int, downlink_hz: int) -> None:
         """METEOR tab pipeline combo changed — sync satellite list and Radio Control.
 
@@ -6227,8 +6246,30 @@ class MainWindow(QMainWindow):
         # to update _current_transmitter
         self._radio_control.set_transmitters(transmitters)
 
+    @contextlib.contextmanager
+    def _held_transmitter_changes(self) -> Iterator[None]:
+        """Process only the last of the transmitter changes raised inside the block.
+
+        Selecting a satellite re-fills the Radio Control combo several times in a row
+        (default row first, then the row the caller wants). Each change used to run in
+        full, disconnecting the rig and starting a CAT thread, so a rig that had just been
+        connected was torn down under its own set-up thread.
+        """
+        self._xpdr_hold_depth += 1
+        try:
+            yield
+        finally:
+            self._xpdr_hold_depth -= 1
+            if self._xpdr_hold_depth == 0 and self._xpdr_held is not None:
+                held = self._xpdr_held[0]
+                self._xpdr_held = None
+                self._on_transmitter_changed(held)
+
     def _on_transmitter_changed(self, xpdr: Any) -> None:
         """Update _current_transmitter and refresh the display on transponder selection change."""
+        if self._xpdr_hold_depth > 0:
+            self._xpdr_held = (xpdr,)
+            return
         t0 = time.monotonic()
         logger.info(
             "Transmitter change: begin uuid=%s",
@@ -6265,7 +6306,21 @@ class MainWindow(QMainWindow):
             self._ctcss_activation_hz = None
             self._radio_control.update_ctcss(None, None)
             self._radio_control.update_doppler(None, None, None, None, None, None)
-        self._apply_transponder_state_to_rig(previous_transmitter)
+        # Re-selecting the transmitter that is already active (e.g. a comms tab opening and
+        # re-picking its satellite) must not tear down a rig that is connected to it.
+        rig = self._rig_controller
+        reselected = (
+            previous_transmitter is not None
+            and self._current_transmitter is not None
+            and bool(self._current_transmitter.get("uuid"))
+            and previous_transmitter.get("uuid") == self._current_transmitter.get("uuid")
+            and rig is not None
+            and rig.is_connected
+        )
+        if reselected:
+            logger.info("Transmitter change: same transmitter, rig connected — not re-applying")
+        else:
+            self._apply_transponder_state_to_rig(previous_transmitter)
         # Auto-select SDR demod mode from transponder; reset passband tune offset
         if self._current_transmitter:
             satnogs_mode = self._current_transmitter.get("mode") or ""

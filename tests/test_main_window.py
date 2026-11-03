@@ -6049,3 +6049,68 @@ class TestCommsInputRestore:
         fake, calls = self._fake_window(panel, 12345, None, False)
         MainWindow._restore_comms_satellite(fake, "sstv")
         assert calls == [("sstv", 61781)]
+
+
+class TestTransmitterChangeHandling:
+    """Re-selecting a satellite re-fills the transmitter combo several times; only the last
+    change may run, and re-picking the active transmitter must not tear down a connected rig."""
+
+    def _make_window(self, qtbot, db: sqlite3.Connection, tle_manager: TLEManager) -> MainWindow:
+        w = MainWindow(conn=db, tle_manager=tle_manager)
+        qtbot.addWidget(w)
+        return w
+
+    _A = {"uuid": "a", "description": "Mode V - APRS", "mode": "AFSK", "downlink_low": 145825000}
+    _B = {"uuid": "b", "description": "Mode V - SSTV", "mode": "SSTV", "downlink_low": 145880000}
+
+    def test_only_the_last_change_inside_a_hold_runs(self, qtbot, db, tle_manager) -> None:
+        from unittest.mock import MagicMock
+
+        w = self._make_window(qtbot, db, tle_manager)
+        impl = MagicMock()
+        w._on_transmitter_changed_impl = impl  # type: ignore[method-assign]
+        with w._held_transmitter_changes():
+            w._radio_control.set_transmitters([self._A, self._B], default_index=0)
+            w._radio_control.set_transmitters([self._A, self._B], default_index=1)
+            impl.assert_not_called()
+        impl.assert_called_once()
+        assert impl.call_args.args[0]["uuid"] == "b"
+
+    def test_changes_outside_a_hold_run_at_once(self, qtbot, db, tle_manager) -> None:
+        from unittest.mock import MagicMock
+
+        w = self._make_window(qtbot, db, tle_manager)
+        impl = MagicMock()
+        w._on_transmitter_changed_impl = impl  # type: ignore[method-assign]
+        w._radio_control.set_transmitters([self._A, self._B], default_index=0)
+        w._radio_control.set_transmitters([self._A, self._B], default_index=1)
+        assert impl.call_count == 2
+
+    def test_same_transmitter_with_a_connected_rig_is_not_reapplied(
+        self, qtbot, db, tle_manager
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        w = self._make_window(qtbot, db, tle_manager)
+        apply = MagicMock()
+        w._apply_transponder_state_to_rig = apply  # type: ignore[method-assign]
+        w._current_transmitter = dict(self._B)
+        w._rig_controller = MagicMock(is_connected=True)
+        w._on_transmitter_changed(dict(self._B))
+        apply.assert_not_called()
+
+    def test_a_different_transmitter_or_an_idle_rig_is_applied(
+        self, qtbot, db, tle_manager
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        w = self._make_window(qtbot, db, tle_manager)
+        apply = MagicMock()
+        w._apply_transponder_state_to_rig = apply  # type: ignore[method-assign]
+        w._current_transmitter = dict(self._A)
+        w._rig_controller = MagicMock(is_connected=True)
+        w._on_transmitter_changed(dict(self._B))
+        assert apply.call_count == 1
+        w._rig_controller = MagicMock(is_connected=False)
+        w._on_transmitter_changed(dict(self._B))
+        assert apply.call_count == 2
