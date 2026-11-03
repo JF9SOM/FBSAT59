@@ -151,7 +151,7 @@ def tab(qtbot: QtBot, conn: sqlite3.Connection) -> TelemetryTab:
 
 def test_the_ascii_view_sits_between_received_frames_and_decoded_fields(tab: TelemetryTab) -> None:
     titles = [tab._log_tabs.tabText(i) for i in range(tab._log_tabs.count())]
-    assert titles == ["Received Frames", "ASCII View", "Decoded Fields"]
+    assert titles == ["Received Frames", "ASCII View", "Decoded Fields", "Files"]
 
 
 def test_the_old_paste_tab_is_gone_from_the_telemetry_tab(tab: TelemetryTab) -> None:
