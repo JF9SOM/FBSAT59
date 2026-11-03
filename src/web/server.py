@@ -89,6 +89,9 @@ class WebServer:
             host=self._host,
             port=self._port,
             log_level=self._log_level,
+            # A windowed (no-console) build has no sys.stdout, which uvicorn's default
+            # log formatter calls isatty() on; the app's own logging handles the output.
+            log_config=None,
             loop="asyncio",
         )
         self._server = uvicorn.Server(config)

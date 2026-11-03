@@ -596,3 +596,17 @@ def test_pass_standby_reads_rotator_setting(client: TestClient, db: sqlite3.Conn
     )
     db.commit()
     assert client.get("/api/pass_standby").json() == {"seconds": 90.0}
+
+
+def test_web_server_starts_without_a_console(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A windowed build has no sys.stdout; uvicorn's default log config used to fail on it."""
+    import sys
+
+    from web.server import WebServer
+
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+    server = WebServer(lambda *a: None, port=0)
+    monkeypatch.setattr(server, "_run", lambda: None)
+    server.start()
+    server.stop(timeout=1.0)
