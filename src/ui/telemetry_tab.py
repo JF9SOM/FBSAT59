@@ -128,6 +128,7 @@ from comms.telemetry.satnogs_uploader import (
 )
 from i18n import _
 from ui.sat_search_dialog import SatSearchDialog
+from ui.telemetry_files_page import TelemetryFilesPage, file_transfer_def
 
 logger = logging.getLogger(__name__)
 
@@ -870,6 +871,10 @@ class TelemetryTab(QWidget):
         self._decode_id_tabs.currentChanged.connect(self._refresh_decode_banner)
         decode_page_layout.addWidget(self._decode_id_tabs)
         self._log_tabs.addTab(self._decode_page, _("Decoded Fields"))
+        # "Files": images/videos reassembled from numbered data blocks (OrigamiSat-2 ID68);
+        # the tab is enabled only for a satellite whose format file has "file_transfer".
+        self._files_page = TelemetryFilesPage()
+        self._log_tabs.addTab(self._files_page, _("Files"))
         self._decode_tables: dict[str, QTableWidget] = {}
         self._decode_field_rows: dict[str, dict[str, int]] = {}
         self._decode_tabs_norad: int | None = None
@@ -3293,6 +3298,8 @@ class TelemetryTab(QWidget):
         """A sub-tab became current: fit its rows now and again after layout has settled."""
         self._fit_visible_rows()
         self._fit_rows_timer.start()
+        if self._log_tabs.currentWidget() is self._files_page:
+            self._files_page.refresh(self._conn, self._selected_norad)
 
     def _fit_visible_rows(self, force: bool = False) -> None:
         """Measure the rows of the frame tables that are on screen again (see _fit_rows_timer).
@@ -3368,6 +3375,9 @@ class TelemetryTab(QWidget):
         (including old flat-``fields`` format files) get the whole
         "Decoded Fields" tab disabled.
         """
+        self._log_tabs.setTabEnabled(
+            self._log_tabs.indexOf(self._files_page), file_transfer_def(norad) is not None
+        )
         self._decode_id_tabs.clear()
         self._decode_tables = {}
         self._decode_field_rows = {}

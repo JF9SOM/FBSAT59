@@ -5005,20 +5005,12 @@
           "label_ja": "コマンド受領数"
         },
         {
-          "name": "packet_no",
+          "name": "block_no",
           "offset": 12,
-          "length": 1,
-          "type": "uint8",
-          "label": "Packet number",
-          "label_ja": "パケット番号"
-        },
-        {
-          "name": "total_packets",
-          "offset": 13,
-          "length": 1,
-          "type": "uint8",
-          "label": "Total packets",
-          "label_ja": "総パケット数"
+          "length": 2,
+          "type": "uint16_be",
+          "label": "Block number (16-bit; the specification's packet number and total packets do not fit real frames)",
+          "label_ja": "ブロック番号(16ビット。仕様書のパケット番号・総パケット数は実フレームと合わない)"
         },
         {
           "name": "data",
@@ -5737,6 +5729,13 @@
   },
   "note": "Based on the official specification ORI-2-0027-OPR ver.2026-04-21. ID130, ID100 and ID01 were checked on real received frames: ID130 gives a unit quaternion and plausible orbit radius/velocity; all 38 ID100 frames and all 92 ID01 frames decode completely with physically plausible values, and the four UVC thresholds equal the nominal 75/66/72/62 of the specification. ID65 follows the specification but has not been checked against real frames. The mission-data IDs (02, 04, 05, 07, 08, 09, 10, 66, 67, 68) are defined from the specification only and are unverified. Specification errors found: the ID01 size of 119 bytes in the overview table is wrong (real frames are 117 bytes; the byte positions of Table 8 are right); item 7 (RX microcontroller reboot count) says byte 24 but is byte 22; the byte numbers of Table 19 (UVC thresholds) are an old numbering shifted by 2. ID01 temperatures have no conversion formula in the specification, so raw values are shown (observed 129-143). The mapping of the base-4 power-state digits to devices follows the specification but is unconfirmed (the receiver always reads 0 and the bus communication interface always reads 2=RESET even though frames are received). ID09 is shown raw because the specification's table contradicts itself; ID66 sums to 22 bytes from its items but the overview table says 26. The ID10 current is 0.10415 x DATA - 0.5014 (uses the 'add' offset). The specification says the MOBC resets every 4.5 hours, yet master_cycle was observed up to 289282 s. The last 2 bytes of every packet are a CRC-16/XMODEM over gen_timing to the end of the data; they are not decoded. cw_frames (CW TLM) follows the fixed 28-byte format of ORI-2-0027e-OPR ver.1.1 (see document_cw). It was decoded by hand from a real CW reception on 2026-09-22 (callsign JS1YRU, two independent CW copies): the four UVC threshold bytes match the example voltages of Figure 3 (7.5 V / 7.2 V / 6.6 V / 6.2 V) exactly, and the satellite's internal UNIX time converts to the day of reception and advanced 73 s between the two copies (consistent with the 3 s beacon interval of Normal Mode), which confirms the offset assignment. The currents and angular velocities differed greatly between the two receptions (they are fluctuating quantities, so this is not a contradiction), so field-by-field plausibility has not been verified on real reception in the app yet. id_prefix=\"JS1YRUORIGAMI2\" was added because the order of Table 1 of the official CW specification ('call sign, satellite name, data section') reaches the CW decoder's block extractor (3 s threshold) as ONE block when there is no silence longer than 3 s between callsign and satellite name (seen on 2026-09-22 in fbsat59.log). See the 'OrigamiSat-2 frames' section of docs/telemetry.md.",
   "note_ja": "公式仕様書ORI-2-0027-OPR ver.2026-04-21に基づく。ID130・ID100・ID01は実受信フレームで検証済み(ID130は単位クォータニオン・軌道半径・軌道速度が妥当。ID100は38フレーム、ID01は92フレームの全項目がデコードでき値が物理的に妥当。UVC閾値は仕様書のノミナル値75/66/72/62と一致)。ID65は仕様書通りだが実フレームでの検証はまだ。ミッションデータID(02,04,05,07,08,09,10,66,67,68)は仕様書だけに基づく未検証の定義。仕様書の誤り: ID01の概要表の『119バイト』は誤りで実フレームは117バイト(Table 8のバイト位置が正しい)。項目7(RXマイコン再起動回数)の『24バイト目』は22バイト目の誤記。Table 19(UVC閾値)のバイト番号は2バイトずれた古い番号。ID01の温度は仕様書に換算式が無く生の値を表示(実測は129〜143)。電源状態(4進数の各桁)と機器の対応は仕様書どおりだが未確認(フレームを受信できているのに受信機が常に0、バス通信IFが常に2=RESETと出る)。ID09は表が自己矛盾のため分解せず生表示。ID66は項目から計算すると22バイトだが概要表は26バイト。ID10の電流は0.10415×DATA-0.5014(addオフセットを使用)。仕様書はMOBCが4時間半ごとにリセットとするが、master_cycleは最大289282秒を観測。全パケット末尾2バイトはCRC-16/XMODEM(gen_timingからデータ部末尾まで)でデコード対象外。cw_frames(CW TLM)はORI-2-0027e-OPR ver.1.1(document_cw参照)の28バイト固定フォーマットに基づく。2026-09-22のCW実受信(コールサインJS1YRU、独立した2回のCWコピー)で手動デコードし、UVC閾値4バイトがFigure 3の例示電圧値(7.5V/7.2V/6.6V/6.2V)と完全一致・衛星内部UNIX時刻が受信当日の日付に変換され2回の受信間で73秒進んでいた(Normal Modeの3秒間隔ビーコンと矛盾しない)ことから、オフセット割り当ての正しさを確認済み。電流・角速度は2回の受信で値が大きく食い違った(値そのものが変動する項目であるため無矛盾)ため、アプリでの実受信によるフィールド単位の妥当性検証はまだ行っていない。id_prefix=\"JS1YRUORIGAMI2\"は、公式CW仕様書Table1の「call sign, satellite name, data section」の送信順を、コールサイン・衛星名の間に3秒を超える無音が無いままCWデコーダーのブロック抽出器(3秒閾値)へ渡すと1個のブロックに繋がってしまう実挙動(2026-09-22、fbsat59.logで確認)に合わせて追加した。詳細はdocs/telemetry.mdの「OrigamiSat-2のフレーム」節参照。",
+  "file_transfer": {
+    "telemetry_id": 68,
+    "number_offset": 12,
+    "number_length": 2,
+    "data_offset": 14,
+    "data_length": 190
+  },
   "cw_frames": {
     "TLM": {
       "label": "CW Telemetry (28 bytes)",
