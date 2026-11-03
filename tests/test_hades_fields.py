@@ -211,7 +211,8 @@ def test_sun_sensor_words_are_high_byte_first() -> None:
 def test_icm_game_message_has_clock_number_and_text() -> None:
     # SatNOGS hadesr.ksy icmgamemsg_frame: u4 sclock, u1 msg_num, UTF-8 text to the end.
     text = b"Hello ICM 73"
-    payload = bytes([0x75]) + (90061).to_bytes(4, "little") + bytes([3]) + text.ljust(93, b"\x00")
+    # Address 1 (the HADES-R family): HADES-L (address 5) has its own short type 7.
+    payload = bytes([0x71]) + (90061).to_bytes(4, "little") + bytes([3]) + text.ljust(93, b"\x00")
     assert len(payload) == 99
     decoded = hf.decode_payload(payload)
     assert decoded is not None and decoded[0].number == 7
