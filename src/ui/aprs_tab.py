@@ -487,6 +487,7 @@ class AprsTab(QWidget):
         self._pos_comment_edit = QLineEdit()
         self._pos_comment_edit.setPlaceholderText(_("Optional free text"))
         self._pos_comment_edit.setMaxLength(43)
+        self._pos_comment_edit.setClearButtonEnabled(True)
         self._pos_comment_edit.setMinimumWidth(200)
         pos_layout.addWidget(self._pos_comment_edit, stretch=1)
         self._pos_send_btn = QPushButton(_("Send Now"))

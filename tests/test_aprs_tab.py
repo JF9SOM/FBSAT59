@@ -543,3 +543,4 @@ def test_to_and_message_fields_have_a_clear_button(qtbot: QtBot, conn: sqlite3.C
     tab = _make_tab(qtbot, conn)
     assert tab._to_edit.isClearButtonEnabled()
     assert tab._msg_edit.isClearButtonEnabled()
+    assert tab._pos_comment_edit.isClearButtonEnabled()
