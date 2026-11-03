@@ -3521,6 +3521,49 @@ class TestLockDialFeedback:
         tx.send_ctcss_cat.assert_called_once_with(74.4, on, off)
         tx.set_ctcss_tone.assert_not_called()
 
+    def _satmode_direct_rig(self, *, connected: bool, cross_band: bool):
+        from rig.controller import HamlibDirectController
+
+        rig = MagicMock(spec=HamlibDirectController)
+        rig._model_id = 3081  # IC-9700
+        rig._satmode = True
+        rig._satmode_active = cross_band
+        rig._current_dl_mode = "FM"
+        rig._current_ul_mode = "FM"
+        type(rig).is_connected = connected  # type: ignore[assignment]
+        rig.set_ctcss_tone.return_value = True
+        return rig
+
+    def test_ctcss_button_on_a_connected_cross_band_satmode_rig_does_not_disconnect(
+        self, qtbot, db
+    ) -> None:
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        rig = self._satmode_direct_rig(connected=True, cross_band=True)
+        w._rig_controller = rig
+        w._disconnect_rig = MagicMock()  # type: ignore[method-assign]
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._on_ctcss_send(74.4)
+        w._disconnect_rig.assert_not_called()
+        rig.apply_mode_ctcss_live.assert_called_once_with("FM", "FM", 74.4)
+        rig.set_ctcss_tone.assert_not_called()
+
+    def test_ctcss_button_on_a_same_band_satmode_rig_keeps_the_disconnect_path(
+        self, qtbot, db
+    ) -> None:
+        from unittest.mock import patch
+
+        w = self._make_window(qtbot, db)
+        rig = self._satmode_direct_rig(connected=True, cross_band=False)
+        w._rig_controller = rig
+        w._disconnect_rig = MagicMock()  # type: ignore[method-assign]
+        with patch("ui.main_window.threading.Thread", self._SyncThread):
+            w._on_ctcss_send(74.4)
+        w._disconnect_rig.assert_called_once()
+        rig.apply_mode_ctcss_live.assert_not_called()
+        rig.set_ctcss_tone.assert_called_once_with(74.4)
+
     def test_split_mode_toggle_routes_modes_by_side(self, qtbot, db) -> None:
         from unittest.mock import patch
 

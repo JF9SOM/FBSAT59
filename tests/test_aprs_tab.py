@@ -277,16 +277,15 @@ def test_a_message_that_could_not_be_sent_is_kept_and_not_logged(
     assert tab._pending_qso == set()
 
 
-def test_a_message_that_was_sent_is_logged_and_cleared(
-    qtbot: QtBot, conn: sqlite3.Connection
-) -> None:
+def test_a_message_that_was_sent_is_logged_and_kept(qtbot: QtBot, conn: sqlite3.Connection) -> None:
     tab = _make_tab(qtbot, conn)
     tab._engine = _RecordingEngine(True)  # type: ignore[assignment]
     tab._callsign_edit.setText("JF9SOM")
     tab._to_edit.setText("JA1XYZ")
     tab._msg_edit.setText("hello")
     tab._on_send()
-    assert tab._msg_edit.text() == ""
+    assert tab._msg_edit.text() == "hello"  # kept so it can be sent again
+    assert tab._to_edit.text() == "JA1XYZ"
     assert tab._log_list.count() == 1
     assert tab._pending_qso == {"JA1XYZ"}
 
@@ -521,7 +520,7 @@ def test_cq_button_sends_the_call_when_transmitting_is_possible(
     tab._send_btn.setEnabled(True)
     tab._cq_btn.click()
     assert [m[3:] for m in engine.messages] == [("CQ", "PM86", True)]
-    assert tab._msg_edit.text() == ""  # a sent message clears the box
+    assert tab._msg_edit.text() == "PM86"  # kept, so it can be sent again
     assert "JF9SOM>CQ" in tab._log_list.item(tab._log_list.count() - 1).text()
 
 
@@ -538,3 +537,9 @@ def test_choosing_a_preset_fills_the_message_without_sending(
     assert tab._msg_edit.text() == "599 PM95"
     assert sent == []
     assert tab._preset_combo.currentIndex() == -1
+
+
+def test_to_and_message_fields_have_a_clear_button(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    tab = _make_tab(qtbot, conn)
+    assert tab._to_edit.isClearButtonEnabled()
+    assert tab._msg_edit.isClearButtonEnabled()

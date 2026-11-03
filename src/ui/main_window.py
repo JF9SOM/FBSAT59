@@ -8756,6 +8756,32 @@ class MainWindow(QMainWindow):
         # serial port is not held by Hamlib.  When connected, disconnect first, send
         # CI-V tone, then reconnect.  This path is NEVER reached for FT-991A / FTX-1F
         # (handled by the raw-CAT branch above) or NET rigs (not HamlibDirectController).
+        if (
+            isinstance(rig, HamlibDirectController)
+            and rig._satmode
+            and rig.is_connected
+            and rig._satmode_active
+        ):
+            # Cross-band and connected: change the tone on the open connection, as the CW /
+            # DATA buttons do. Disconnecting here stopped the Doppler tracking for ~10 s and
+            # left the Connect button free to collide with the CI-V write.
+            transmitter = self._current_transmitter or {}
+            base_mode = str(transmitter.get("mode") or "")
+            invert = bool(transmitter.get("invert", False))
+            dl_mode = rig._current_dl_mode or base_mode
+            ul_mode = rig._current_ul_mode or (
+                _MODE_INVERT.get(base_mode, base_mode) if invert else base_mode
+            )
+
+            def _satmode_live_ctcss() -> None:
+                try:
+                    rig.apply_mode_ctcss_live(dl_mode, ul_mode, tone_hz)
+                except Exception as exc:
+                    self._rig_error.emit(f"CTCSS Error: {exc}")
+
+            threading.Thread(target=_satmode_live_ctcss, daemon=True).start()
+            return
+
         if isinstance(rig, HamlibDirectController) and rig._satmode and rig.is_connected:
             self._disconnect_rig()  # release serial port on UI thread
 

@@ -407,6 +407,7 @@ class AprsTab(QWidget):
         self._to_edit = QLineEdit()
         self._to_edit.setPlaceholderText("JA1XYZ")
         self._to_edit.setFixedWidth(90)
+        self._to_edit.setClearButtonEnabled(True)
         send_layout.addWidget(self._to_edit)
         send_layout.addSpacing(8)
         send_layout.addWidget(QLabel(_("Message:")))
@@ -414,6 +415,7 @@ class AprsTab(QWidget):
         self._msg_edit.setPlaceholderText(_("Text message (max 67 chars)"))
         self._msg_edit.setMaxLength(67)
         self._msg_edit.setMinimumWidth(260)
+        self._msg_edit.setClearButtonEnabled(True)
         send_layout.addWidget(self._msg_edit, stretch=1)
         # Canned messages: choosing one only fills the Message box (nothing is sent).
         self._preset_combo = QComboBox()
@@ -1345,7 +1347,8 @@ class AprsTab(QWidget):
             comment=f"[TX→{to_call}] {msg}",
             raw_frame="",
         )
-        self._msg_edit.clear()
+        # The text stays so an unanswered message can be sent again; the next preset, CQ
+        # or reply click overwrites it.
 
     # ------------------------------------------------------------------ #
     # QSO helpers: CQ button and click-to-fill
