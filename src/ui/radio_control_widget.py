@@ -698,6 +698,9 @@ class RadioControlWidget(QWidget):
             self._xpdr_combo.setCurrentIndex(idx)
         self._xpdr_combo.blockSignals(False)
         selected = transmitters[default_index] if transmitters else None
+        # The default selection raises no combo signal, so remember its comms tab here;
+        # otherwise a satellite whose default row is APRS never opens the APRS tab.
+        self._remember_pending_comms_tab(selected)
         self._sync_offset_display(selected)
         self.transmitter_changed.emit(selected)
 
@@ -1004,6 +1007,19 @@ class RadioControlWidget(QWidget):
     def _on_ul_offset_spin_changed(self, value: int) -> None:
         self.ul_offset_changed.emit(float(value))
 
+    def _remember_pending_comms_tab(self, xpdr: dict[str, Any] | None) -> None:
+        """Remember which comms tab to open once the rig connects (None if none)."""
+        if xpdr is None:
+            self._pending_comms_tab = None
+        elif is_sstv_transmitter(xpdr):
+            self._pending_comms_tab = "sstv"
+        elif is_aprs_transmitter(xpdr):
+            self._pending_comms_tab = "aprs"
+        elif is_ft4_transmitter(xpdr):
+            self._pending_comms_tab = "ft4"
+        else:
+            self._pending_comms_tab = None
+
     def _check_comms_auto_open(self, xpdr: Any) -> None:
         """Store the comms tab to open once the rig connects (not immediately).
 
@@ -1011,18 +1027,10 @@ class RadioControlWidget(QWidget):
         rules also drive the Comms Quick Panel's per-tab satellite filter.
         """
         mode = (xpdr.get("mode") or "").upper()
-        if is_sstv_transmitter(xpdr):
-            self._pending_comms_tab = "sstv"
-        elif is_aprs_transmitter(xpdr):
-            self._pending_comms_tab = "aprs"
-        elif is_ft4_transmitter(xpdr):
-            self._pending_comms_tab = "ft4"
-        elif is_cw_transmitter(xpdr):
+        self._remember_pending_comms_tab(xpdr)
+        if self._pending_comms_tab is None and is_cw_transmitter(xpdr):
             # CW is RX-only — emit immediately (no rig connection required)
             self.cw_transponder_selected.emit()
-            self._pending_comms_tab = None
-        else:
-            self._pending_comms_tab = None
 
         # METEOR LRPT/HRPT: emit immediately (no rig connection required)
         from comms.meteor.satdump import METEOR_NORAD_IDS
