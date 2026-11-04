@@ -50,6 +50,7 @@ from comms.aprs.ax25_tx import build_ax25_audio
 from comms.aprs.direwolf import DirewolfManager, find_direwolf
 from comms.aprs.parser import AprsPacket, Ax25Frame, decode_ax25, parse_aprs
 from comms.aprs.tx_audio_log import get_tx_audio_recorder
+from comms.aprs.tx_timing import load_tx_timing
 from comms.audio_tx import PttAudioTxWorker
 from i18n import _
 
@@ -486,7 +487,14 @@ class AprsEngine(QObject):
                 _("Cannot transmit: set the Sound Card output in Rig Settings")
             )
             return False
-        audio = build_ax25_audio(frame, self._current_modem or "1200")
+        timing = load_tx_timing(self._conn)
+        audio = build_ax25_audio(
+            frame,
+            self._current_modem or "1200",
+            txdelay_ms=timing.txdelay_ms,
+            txtail_ms=timing.txtail_ms,
+        )
+        logger.info("APRS TX: timing %s", timing)
         logger.info(
             "APRS TX: frame %s (%d bytes, %d audio samples, %s)",
             describe_ax25_frame(frame),
@@ -495,7 +503,14 @@ class AprsEngine(QObject):
             self._current_modem or "1200",
         )
         gain = np.float32(tx_gain(self._tx_level_db))
-        worker = PttAudioTxWorker(_TX_OWNER, (audio * gain).astype(np.float32), out_device, rig)
+        worker = PttAudioTxWorker(
+            _TX_OWNER,
+            (audio * gain).astype(np.float32),
+            out_device,
+            rig,
+            ptt_lead_s=timing.ptt_lead_ms / 1000.0,
+            ptt_tail_s=timing.ptt_tail_ms / 1000.0,
+        )
         worker.finished.connect(self._on_tx_finished)
         worker.error.connect(self._on_tx_error)
         self._tx_worker = worker  # keep a reference: it emits from its thread

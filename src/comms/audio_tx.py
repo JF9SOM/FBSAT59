@@ -42,8 +42,12 @@ class PttAudioTxWorker(QObject):
         out_device: int | None,
         rig: Any,
         parent: Any = None,
+        ptt_lead_s: float = PTT_LEAD_S,
+        ptt_tail_s: float = PTT_TAIL_S,
     ) -> None:
         super().__init__(parent)
+        self._ptt_lead_s = max(0.0, ptt_lead_s)
+        self._ptt_tail_s = max(0.0, ptt_tail_s)
         self._owner = owner
         self._audio = audio
         self._out_device = out_device
@@ -77,12 +81,12 @@ class PttAudioTxWorker(QObject):
             if not keyed:
                 self.error.emit(_("PTT command failed — check Rig 1 connection"))
                 return
-            time.sleep(PTT_LEAD_S)
+            time.sleep(self._ptt_lead_s)
             sd.play(self._audio, samplerate=AUDIO_RATE, device=self._out_device, blocking=False)
             logger.info("TX[%s]: audio playback started", self._owner)
             mgr.pin_active_output(self._owner)
             sd.wait()
-            time.sleep(PTT_TAIL_S)
+            time.sleep(self._ptt_tail_s)
             unkeyed = self._rig.set_ptt(False)
             logger.info("TX[%s]: playback finished, PTT off -> %s", self._owner, unkeyed)
             self.finished.emit()

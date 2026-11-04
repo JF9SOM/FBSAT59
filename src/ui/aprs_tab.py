@@ -43,6 +43,7 @@ from PySide6.QtWidgets import (
 )
 
 from comms.aprs.log_db import ensure_aprs_log_schema
+from comms.aprs.tx_timing import MAX_MS, TxTiming, load_tx_timing, save_tx_timing
 from data.lotw_names import band_freqs_from_transmitter, lotw_name_for_norad
 from i18n import _
 from ui.aprs_presets import (
@@ -323,6 +324,12 @@ class AprsTab(QWidget):
         row1.addWidget(self._display_combo)
 
         row1.addStretch()
+        self._tx_timing_btn = QPushButton(_("Settings"))
+        self._tx_timing_btn.setToolTip(
+            _("Transmit timing: TxDelay, TxTail and the PTT lead / hold times.")
+        )
+        self._tx_timing_btn.clicked.connect(self._on_tx_timing_settings)
+        row1.addWidget(self._tx_timing_btn)
         settings_form.addRow(row1)
 
         # Row 2: input source (read-only display)
@@ -1398,6 +1405,50 @@ class AprsTab(QWidget):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             save_presets(self._conn, clean_presets(box.toPlainText().splitlines()))
             self._reload_preset_combo()
+
+    def _on_tx_timing_settings(self) -> None:
+        """Let the user adjust the transmit timing (applies to the next transmission)."""
+        current = load_tx_timing(self._conn)
+        dlg = QDialog(self)
+        dlg.setWindowTitle(_("APRS transmit settings"))
+        lay = QVBoxLayout(dlg)
+        form = QFormLayout()
+        spins: dict[str, QSpinBox] = {}
+        rows = (
+            ("ptt_lead_ms", _("PTT lead (ms):"), _("PTT on to audio start (unmodulated carrier).")),
+            ("txdelay_ms", _("TxDelay (ms):"), _("Flags sent before the frame.")),
+            ("txtail_ms", _("TxTail (ms):"), _("Flags sent after the frame.")),
+            ("ptt_tail_ms", _("PTT hold (ms):"), _("Audio end to PTT off (unmodulated carrier).")),
+        )
+        for key, label, tip in rows:
+            spin = QSpinBox()
+            spin.setRange(0, MAX_MS)
+            spin.setSingleStep(10)
+            spin.setSuffix(" ms")
+            spin.setValue(int(getattr(current, key)))
+            spin.setToolTip(tip)
+            spins[key] = spin
+            form.addRow(label, spin)
+        lay.addLayout(form)
+        lay.addWidget(
+            QLabel(_("Defaults: 200 / 300 / 100 / 200 ms. Applies to the next transmission."))
+        )
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        reset = buttons.addButton(_("Restore defaults"), QDialogButtonBox.ButtonRole.ResetRole)
+
+        def _restore() -> None:
+            default = TxTiming()
+            for key, spin in spins.items():
+                spin.setValue(int(getattr(default, key)))
+
+        reset.clicked.connect(_restore)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        lay.addWidget(buttons)
+        if dlg.exec() == QDialog.DialogCode.Accepted and hasattr(self._conn, "execute"):
+            save_tx_timing(self._conn, TxTiming(**{k: s.value() for k, s in spins.items()}))
 
     def _on_cq_clicked(self) -> None:
         """Fill the form for a general call (To = CQ, message = our grid, UISS style) and send it.
