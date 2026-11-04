@@ -512,7 +512,15 @@ class _FakeWorker:
 
     played: list[tuple[Any, int | None, Any]] = []
 
-    def __init__(self, owner: str, audio: Any, out_device: int | None, rig: Any) -> None:
+    def __init__(
+        self,
+        owner: str,
+        audio: Any,
+        out_device: int | None,
+        rig: Any,
+        ptt_lead_s: float = 0.2,
+        ptt_tail_s: float = 0.2,
+    ) -> None:
         from PySide6.QtCore import QObject, Signal  # noqa: F401
 
         _FakeWorker.played.append((audio, out_device, rig))
