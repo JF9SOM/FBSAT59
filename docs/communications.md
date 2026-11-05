@@ -4696,6 +4696,12 @@ APRS タブの送信は **Direwolf が音声を作って再生する**方式に�
 無し）。Direwolf が無い・起動できない場合はエラー表示のみ。`g3ruh_tx.py` と `PttAudioTxWorker` は
 ARICA-2/Foresail-1p/ERMINAZ-2 パネルが使うので残してある。
 
+**ARICA-2 パネルの送信も同日 Direwolf に切り替えた**（payload 19 バイトを KISS で渡す。Direwolf は
+`(Not AX.25)` と表示するが任意バイト列をそのまま送信し、HDLC+FCS+G3RUH 4800 を付ける。Mac で
+旧生成器と同じ波形のビット幅分布になることを確認。実機・受信側デコードは未確認。TX Level スライダーも削除）。
+**Foresail-1p（Skylink）・ERMINAZ-2（CCSDS TC）・AX100 Digi（ASM+Golay）は HDLC ではないため KISS に入れられず、
+従来どおり自前生成のまま**。
+
 確定した事実（Mac で VB-Cable ループバック録音して確認）:
 - **RX 用 Direwolf（`ADEVICE stdin null`）では送信できない**。入力が `stdin` だと出力デバイスは
   開かれず、`[0L]` は出るが音は出ない。送信は**入力・出力とも実デバイスの別プロセス**を、

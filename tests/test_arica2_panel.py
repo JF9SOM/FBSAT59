@@ -20,7 +20,6 @@ from pytestqt.qtbot import QtBot
 import ui.arica2_panel as panel_mod
 from comms.arica2.message_box import Command, build_command
 from comms.arica2.window_detector import AudioBeaconWindowDetector
-from tests.test_g3ruh_tx import _decode
 from ui.arica2_panel import Arica2Panel
 
 
@@ -58,17 +57,19 @@ class _FakeEngine(QObject):
 
 
 class _FakeTxWorker(QObject):
-    """Stands in for _Arica2TxWorker: records what would have been played."""
+    """Stands in for DirewolfTxWorker: records what would have been transmitted."""
 
     finished: Signal = Signal()
     error: Signal = Signal(str)
-    played: list[tuple[Any, int | None, Any]] = []
+    played: list[tuple[bytes, int | None, Any]] = []
+    kwargs: list[dict[str, Any]] = []
 
     def __init__(
-        self, owner: str, audio: Any, out_device: int | None, rig: Any, parent: Any = None
+        self, owner: str, out_device: int | None, rig: Any, parent: Any = None, **kwargs: Any
     ) -> None:
         super().__init__(parent)
-        _FakeTxWorker.played.append((audio, out_device, rig))
+        _FakeTxWorker.played.append((kwargs["frame"], out_device, rig))
+        _FakeTxWorker.kwargs.append(kwargs)
 
     def run(self) -> None:
         self.finished.emit()
@@ -156,7 +157,9 @@ def engine(monkeypatch: pytest.MonkeyPatch) -> _FakeEngine:
     fake = _FakeEngine()
     monkeypatch.setattr(panel_mod, "get_aprs_engine", lambda _conn: fake)
     _FakeTxWorker.played = []
-    monkeypatch.setattr(panel_mod, "PttAudioTxWorker", _FakeTxWorker)
+    _FakeTxWorker.kwargs = []
+    monkeypatch.setattr(panel_mod, "DirewolfTxWorker", _FakeTxWorker)
+    monkeypatch.setattr(panel_mod, "find_direwolf", lambda: "/usr/bin/direwolf")
     _FakeBasebandThread.instances = []
     monkeypatch.setattr(panel_mod, "G3ruhBasebandRxThread", _FakeBasebandThread)
     manager = _FakeAudioManager()
@@ -166,13 +169,8 @@ def engine(monkeypatch: pytest.MonkeyPatch) -> _FakeEngine:
 
 
 def _sent() -> list[bytes]:
-    """Payloads decoded back from the audio the panel handed to the TX worker."""
-    out: list[bytes] = []
-    for audio, _dev, _rig in _FakeTxWorker.played:
-        frames = _decode(audio)
-        assert len(frames) == 1
-        out.append(frames[0])
-    return out
+    """Frames the panel handed to the Direwolf TX worker."""
+    return [frame for frame, _dev, _rig in _FakeTxWorker.played]
 
 
 def _make(qtbot: QtBot, conn: sqlite3.Connection) -> Arica2Panel:
@@ -195,7 +193,7 @@ def test_manual_mode_sends_immediately(
     p._message_edit.setText("hello")
     p._upload_btn.click()
     assert _sent() == [build_command(Command.UPLOAD, "JF9SOM", "hello")]
-    _audio, device, rig = _FakeTxWorker.played[0]
+    _frame, device, rig = _FakeTxWorker.played[0]
     assert device == 3  # the Sound Card output device from Rig Settings
     assert isinstance(rig, _FakeRig)
     assert p._table.rowCount() == 1  # TX echo row
@@ -407,36 +405,27 @@ def test_message_box_tab_switches_protocol_and_hands_over_the_input(
     assert "ax100" in row[0]
 
 
-def test_tx_level_slider_is_in_db_and_scales_the_audio(
+def test_transmission_is_4800_baud_through_direwolf_with_the_rig_sound_card(
     qtbot: QtBot, conn: sqlite3.Connection, engine: _FakeEngine
 ) -> None:
     p = _make(qtbot, conn)
     p._message_edit.setText("hi")
     p._parrot_btn.click()
-    full = float(np.max(np.abs(_FakeTxWorker.played[0][0])))
-    assert full == pytest.approx(1.0, abs=1e-3)  # default 0 dB: full scale
-
-    p._level_slider.setValue(-20)
-    assert p._level_label.text() == "-20 dB"
-    qtbot.waitUntil(lambda: not p._tx_in_progress, timeout=3000)
-    p._parrot_btn.click()
-    quiet = float(np.max(np.abs(_FakeTxWorker.played[1][0])))
-    assert quiet == pytest.approx(0.1, abs=1e-3)
-    assert _sent()[0] == _sent()[1]  # the level changes the amplitude, not the data
-
-    p.shutdown()
-    saved = conn.execute("SELECT value FROM app_settings WHERE key = 'arica2_settings'").fetchone()
-    assert '"tx_level_db": -20' in saved[0]
+    kw = _FakeTxWorker.kwargs[0]
+    assert kw["modem"] == "4800"
+    assert (kw["txdelay_ms"], kw["txtail_ms"]) == (300, 100)
+    assert kw["ptt_tail_s"] == 0.0  # no unmodulated carrier after the frame
 
 
-def test_legacy_percent_level_setting_is_migrated_to_db(
-    qtbot: QtBot, conn: sqlite3.Connection, engine: _FakeEngine
+def test_no_transmission_without_direwolf(
+    qtbot: QtBot, conn: sqlite3.Connection, engine: _FakeEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    conn.execute(
-        "INSERT INTO app_settings (key, value) VALUES ('arica2_settings', '{\"tx_level\": 10}')"
-    )
+    monkeypatch.setattr(panel_mod, "find_direwolf", lambda: None)
     p = _make(qtbot, conn)
-    assert p._level_slider.value() == -20  # 10 % == -20 dB
+    p._message_edit.setText("hi")
+    p._parrot_btn.click()
+    assert _FakeTxWorker.played == []
+    assert "Direwolf is not installed" in p._tx_status_label.text()
 
 
 def test_no_sound_card_output_means_no_transmission(
@@ -457,7 +446,7 @@ def test_a_second_command_is_refused_while_one_is_transmitting(
         def run(self) -> None:  # never finishes
             pass
 
-    monkeypatch.setattr(panel_mod, "PttAudioTxWorker", _Slow)
+    monkeypatch.setattr(panel_mod, "DirewolfTxWorker", _Slow)
     p = _make(qtbot, conn)
     p._message_edit.setText("hi")
     p._parrot_btn.click()

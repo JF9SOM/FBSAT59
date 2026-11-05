@@ -31,7 +31,7 @@ from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
-from PySide6.QtCore import Qt, QTimer, Signal, Slot
+from PySide6.QtCore import QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QComboBox,
     QGroupBox,
@@ -42,7 +42,6 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QRadioButton,
-    QSlider,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -50,9 +49,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from comms.aprs.direwolf import find_direwolf
+from comms.aprs.direwolf_tx import DirewolfTxWorker
 from comms.aprs.engine import get_aprs_engine
 from comms.aprs.g3ruh_baseband_rx import G3ruhBasebandRxThread
-from comms.aprs.g3ruh_tx import build_g3ruh_audio
+from comms.aprs.g3ruh_tx import DEFAULT_TXDELAY_MS, DEFAULT_TXTAIL_MS
 from comms.arica2.message_box import (
     CALLSIGN_LEN,
     MAX_SLOT,
@@ -64,16 +65,9 @@ from comms.arica2.message_box import (
 from comms.arica2.window_detector import AudioBeaconWindowDetector, BeaconWindowDetector
 from comms.audio_device_manager import get_audio_device_manager
 from comms.audio_tx import AUDIO_RATE as _AUDIO_RATE
-from comms.audio_tx import PttAudioTxWorker
+from comms.audio_tx import PTT_LEAD_S
 from i18n import _
 from rig.controller import select_tx_rig
-from ui.tx_level import (
-    TX_LEVEL_MAX_DB,
-    TX_LEVEL_MIN_DB,
-    db_to_gain,
-    format_db,
-    load_level_db,
-)
 
 _OWNER = "ARICA-2 Message Box"
 _OWNER_BASEBAND = "ARICA-2 baseband decoder"
@@ -130,7 +124,7 @@ class Arica2Panel(QWidget):
         self._recent_frames: dict[bytes, float] = {}
         self._tx_in_progress = False
         self._tx_thread: threading.Thread | None = None
-        self._tx_worker: PttAudioTxWorker | None = None
+        self._tx_worker: DirewolfTxWorker | None = None
         self._window_deadline: float | None = None
         self._armed: tuple[Command, str, int | None] | None = None
         self._use_utc = True
@@ -176,8 +170,6 @@ class Arica2Panel(QWidget):
         self._rx_source = "soundcard" if data.get("rx_source") == "soundcard" else "sdr"
         self._send_mode = _MODE_AUTO if data.get("send_mode") == _MODE_AUTO else _MODE_MANUAL
         self._last_message = str(data.get("last_message", ""))
-        # "tx_level" (a linear percentage) was the first version of this setting.
-        self._tx_level_db = load_level_db({**data, "tx_level_pct": data.get("tx_level")})
 
         tz = self._conn.execute(
             "SELECT value FROM app_settings WHERE key = 'time_zone_mode'"
@@ -190,7 +182,6 @@ class Arica2Panel(QWidget):
                 "rx_source": "soundcard" if self._rb_soundcard.isChecked() else "sdr",
                 "send_mode": self._mode_combo.currentData(),
                 "last_message": self._message_edit.text(),
-                "tx_level_db": self._level_slider.value(),
             }
         )
         self._conn.execute(
@@ -338,24 +329,6 @@ class Arica2Panel(QWidget):
         self._call_label = QLabel()
         row.addWidget(self._call_label)
         row.addStretch(1)
-        row.addWidget(QLabel(_("TX Level:")))
-        self._level_slider = QSlider(Qt.Orientation.Horizontal)
-        self._level_slider.setRange(TX_LEVEL_MIN_DB, TX_LEVEL_MAX_DB)
-        self._level_slider.setValue(self._tx_level_db)
-        self._level_slider.setFixedWidth(120)
-        self._level_slider.setToolTip(
-            _(
-                "TX audio level in dB below full scale (Direwolf has no level of its "
-                "own).\nToo high a level over-deviates the FM transmitter; rigs with a "
-                "sensitive data input can need 20 dB or more of reduction. Combine with "
-                "the radio's data input gain and keep the Mac output volume fixed."
-            )
-        )
-        self._level_label = QLabel(format_db(self._tx_level_db))
-        self._level_label.setFixedWidth(46)
-        self._level_slider.valueChanged.connect(self._on_level_changed)
-        row.addWidget(self._level_slider)
-        row.addWidget(self._level_label)
         v.addLayout(row)
 
         buttons = QHBoxLayout()
@@ -594,10 +567,6 @@ class Arica2Panel(QWidget):
         for event in detector.push_samples(iq):
             self._window_event.emit(event.burst_s, event.remaining_s)
 
-    @Slot(int)
-    def _on_level_changed(self, value: int) -> None:
-        self._level_label.setText(format_db(value))
-
     @Slot(str)
     def _on_engine_error(self, msg: str) -> None:
         self._status_label.setText(msg)
@@ -727,9 +696,29 @@ class Arica2Panel(QWidget):
                 _("Cannot transmit: set the Sound Card output in Rig Settings")
             )
             return
-        audio = build_g3ruh_audio(payload, baud=_BAUD, sample_rate=_AUDIO_RATE)
-        audio = (audio * np.float32(db_to_gain(self._level_slider.value()))).astype(np.float32)
-        worker = PttAudioTxWorker(_OWNER, audio, out_device, rig)
+        if find_direwolf() is None:
+            self._tx_status_label.setText(
+                _(
+                    "Cannot transmit: Direwolf is not installed. "
+                    "Install it from Help > Direwolf Installation…"
+                )
+            )
+            return
+        # Direwolf makes and plays the audio: HDLC + FCS + G3RUH at 4800 baud, the same
+        # frame the old built-in generator sent. It has no output gain, so there is no
+        # TX level control here; the PTT lead becomes extra TXDELAY flags.
+        worker = DirewolfTxWorker(
+            _OWNER,
+            out_device,
+            rig,
+            frame=payload,
+            modem=str(_BAUD),
+            txdelay_ms=round(DEFAULT_TXDELAY_MS),
+            txtail_ms=round(DEFAULT_TXTAIL_MS),
+            in_device=self._input_device(),
+            ptt_lead_s=PTT_LEAD_S,
+            ptt_tail_s=0.0,
+        )
         worker.finished.connect(self._on_tx_finished)
         worker.error.connect(self._on_tx_error)
         self._tx_worker = worker  # keep a reference: it emits from its thread
