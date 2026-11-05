@@ -12,6 +12,8 @@ Sub-commands
            (Windows, needs: pip install soundcard numpy).
   analyze  Print burst length, level and tone statistics of one or two WAV files
            (any OS, needs numpy).
+  run      Do record + send + trim + analyze in one go and save the table to a text
+           file (Windows). Compares with the test WAVs in docs/test-audio if found.
 
 Typical Windows session (SoundModem must be running, KISS server enabled, output device =
 the speakers whose loopback is recorded, PTT = NONE, mode AFSK AX.25 1200bd):
@@ -19,6 +21,10 @@ the speakers whose loopback is recorded, PTT = NONE, mode AFSK AX.25 1200bd):
   python soundmodem_tx_capture.py record --seconds 6 --out sm.wav
   (in a second window, within 2 s)  python soundmodem_tx_capture.py send
   python soundmodem_tx_capture.py analyze sm.wav other.wav
+
+One-shot version of the same session:
+
+  python soundmodem_tx_capture.py run
 """
 
 from __future__ import annotations
@@ -81,10 +87,31 @@ def cmd_send(args: argparse.Namespace) -> int:
     return 0
 
 
+def _write_wav(path: str, pcm: Any, rate: int) -> None:
+    """Write mono 16-bit little-endian *pcm* (numpy int16 array) to *path*."""
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(pcm.tobytes())
+
+
+def _record_loopback(seconds: float, rate: int) -> Any:
+    """Record the default output device (WASAPI loopback); returns int16 mono samples."""
+    import numpy as np
+    import soundcard as sc
+
+    speaker = sc.default_speaker()
+    mic = sc.get_microphone(speaker.name, include_loopback=True)
+    print(f"recording loopback of: {speaker.name} for {seconds} s")
+    with mic.recorder(samplerate=rate, channels=1) as rec:
+        data = rec.record(numframes=int(rate * seconds))
+    return (np.clip(data[:, 0], -1, 1) * 32767).astype("<i2")
+
+
 def cmd_record(args: argparse.Namespace) -> int:
     try:
-        import numpy as np
-        import soundcard as sc
+        pcm = _record_loopback(args.seconds, args.rate)
     except ImportError:
         print("record needs:  pip install soundcard numpy", file=sys.stderr)
         print(
@@ -93,17 +120,7 @@ def cmd_record(args: argparse.Namespace) -> int:
         )
         print("48000 Hz, mono, and save as WAV.", file=sys.stderr)
         return 2
-    speaker = sc.default_speaker()
-    mic = sc.get_microphone(speaker.name, include_loopback=True)
-    print(f"recording loopback of: {speaker.name} for {args.seconds} s")
-    with mic.recorder(samplerate=args.rate, channels=1) as rec:
-        data = rec.record(numframes=int(args.rate * args.seconds))
-    pcm = (np.clip(data[:, 0], -1, 1) * 32767).astype("<i2")
-    with wave.open(args.out, "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(args.rate)
-        w.writeframes(pcm.tobytes())
+    _write_wav(args.out, pcm, args.rate)
     print(f"saved {args.out}")
     return 0
 
@@ -155,8 +172,9 @@ def _stats(path: str) -> dict[str, float]:
     }
 
 
-def cmd_analyze(args: argparse.Namespace) -> int:
-    rows = [(p, _stats(p)) for p in args.files]
+def _table(files: list[str]) -> str:
+    """Comparison table (text) of the burst statistics of *files*."""
+    rows = [(p, _stats(p)) for p in files]
     names = [p.split("/")[-1].split("\\")[-1] for p, _ in rows]
     labels = [
         ("rate", "sample rate (Hz)"),
@@ -169,9 +187,74 @@ def cmd_analyze(args: argparse.Namespace) -> int:
         ("below_900_pct", "power below 900 Hz (%)"),
         ("dc_offset", "DC offset"),
     ]
-    print(f"{'':58}" + "".join(f"{n[:22]:>24}" for n in names))
+    lines = [f"{'':58}" + "".join(f"{n[:22]:>24}" for n in names)]
     for key, text in labels:
-        print(f"{text:58}" + "".join(f"{s[key]:>24.3f}" for _, s in rows))
+        lines.append(f"{text:58}" + "".join(f"{s[key]:>24.3f}" for _, s in rows))
+    return "\n".join(lines)
+
+
+def cmd_analyze(args: argparse.Namespace) -> int:
+    print(_table(args.files))
+    return 0
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    """Record the loopback, make SoundModem transmit once, trim, analyze, save."""
+    import os
+    import threading
+
+    import numpy as np
+
+    result: dict[str, Any] = {}
+
+    def _rec() -> None:
+        try:
+            result["pcm"] = _record_loopback(args.seconds, args.rate)
+        except Exception as exc:  # reported below
+            result["err"] = exc
+
+    t = threading.Thread(target=_rec)
+    t.start()
+    time.sleep(args.lead)
+    send_args = argparse.Namespace(**{**vars(args), "count": 1, "interval": 0.0})
+    try:
+        cmd_send(send_args)
+    except OSError as exc:
+        print(f"could not reach SoundModem KISS port {args.host}:{args.kiss_port}: {exc}")
+        print("(enable the KISS server in SoundModem: Settings > Devices / KISS)")
+    t.join()
+    if "err" in result:
+        print(f"record failed: {result['err']}  (pip install soundcard numpy)", file=sys.stderr)
+        return 2
+    pcm = result["pcm"]
+    peak = int(np.abs(pcm).max())
+    if peak < 50:
+        print("recording is silent: SoundModem did not play audio to the default speaker")
+        return 1
+    idx = np.where(np.abs(pcm) > peak * 0.0316)[0]
+    margin = int(0.3 * args.rate)
+    trimmed = pcm[max(0, idx[0] - margin) : idx[-1] + margin]
+    _write_wav(args.out, trimmed, args.rate)
+    print(f"saved {args.out} (burst {(idx[-1] - idx[0]) / args.rate:.3f} s)")
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(d, n)
+        for n in ("fbsat59_current_1200.wav", "direwolf_gen_packets_1200.wav")
+        for d in (os.getcwd(), here, os.path.join(here, "..", "docs", "test-audio"))
+    ]
+    seen: set[str] = set()
+    files = [args.out]
+    for c in candidates:
+        base = os.path.basename(c)
+        if os.path.exists(c) and base not in seen:
+            seen.add(base)
+            files.append(c)
+    table = _table(files)
+    print(table)
+    with open(args.result, "w", encoding="utf-8") as f:
+        f.write(table + "\n")
+    print(f"saved {args.result}")
     return 0
 
 
@@ -202,6 +285,21 @@ def main() -> int:
     a = sub.add_parser("analyze", help="print burst/level/tone statistics of WAV files")
     a.add_argument("files", nargs="+")
     a.set_defaults(func=cmd_analyze)
+
+    u = sub.add_parser("run", help="record + send + trim + analyze in one go")
+    u.add_argument("--host", default="127.0.0.1")
+    u.add_argument("--kiss-port", type=int, default=8100, help="SoundModem KISS server port")
+    u.add_argument("--port", type=int, default=0, help="KISS channel (0 = ch A)")
+    u.add_argument("--src", default="JF1PTU")
+    u.add_argument("--dest", default="CQ")
+    u.add_argument("--via", default="ARISS")
+    u.add_argument("--info", default="PM95")
+    u.add_argument("--seconds", type=float, default=8.0, help="recording length")
+    u.add_argument("--lead", type=float, default=2.0, help="seconds of recording before send")
+    u.add_argument("--rate", type=int, default=48000)
+    u.add_argument("--out", default="sm.wav")
+    u.add_argument("--result", default="sm_result.txt")
+    u.set_defaults(func=cmd_run)
 
     args = ap.parse_args()
     return int(args.func(args))
