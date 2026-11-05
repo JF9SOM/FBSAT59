@@ -45,6 +45,10 @@ _RATE = 48_000  # Hz; Direwolf's TX audio sample rate
 _TX_START_TIMEOUT_S = 6.0
 # Extra time allowed for the end of the transmission beyond the frame's length.
 _TX_END_MARGIN_S = 3.0
+# Direwolf prints "PTT 0 = 0" once it has handed the last samples to the sound device;
+# the device still plays its buffer for a moment. Killing Direwolf at once cut the end of
+# the frame (measured on macOS: the recording did not decode; with a 1.5 s wait it did).
+_DRAIN_S = 1.0
 # Windows (WinMM) device names are cut to this many characters.
 _WIN_NAME_MAX = 31
 
@@ -311,6 +315,7 @@ class DirewolfTxWorker(QObject):
                 with contextlib.suppress(Exception):
                     self._rig.set_ptt(False)
             if proc is not None:
+                time.sleep(_DRAIN_S)
                 with contextlib.suppress(Exception):
                     proc.terminate()
                     proc.wait(timeout=3)
