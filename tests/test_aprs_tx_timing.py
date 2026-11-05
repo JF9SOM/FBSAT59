@@ -1,10 +1,9 @@
-"""User-adjustable APRS transmit timing: persistence, audio length, dialog."""
+"""User-adjustable APRS transmit timing: persistence and clamping."""
 
 from __future__ import annotations
 
 import sqlite3
 
-from comms.aprs.ax25_tx import SAMPLE_RATE, build_ax25_audio
 from comms.aprs.tx_timing import MAX_MS, TxTiming, load_tx_timing, save_tx_timing
 
 
@@ -31,10 +30,3 @@ def test_bad_json_falls_back_to_defaults() -> None:
     conn = _conn()
     conn.execute("INSERT INTO app_settings (key, value) VALUES ('aprs_tx_timing', 'x')")
     assert load_tx_timing(conn) == TxTiming()
-
-
-def test_txdelay_and_txtail_change_audio_length() -> None:
-    frame = b"\x82" * 14 + b"\x03\xf0" + b"hi"
-    short = build_ax25_audio(frame, "1200", txdelay_ms=100, txtail_ms=0)
-    long = build_ax25_audio(frame, "1200", txdelay_ms=500, txtail_ms=300)
-    assert (len(long) - len(short)) / SAMPLE_RATE > 0.55

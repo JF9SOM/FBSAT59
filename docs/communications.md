@@ -4691,8 +4691,10 @@ Send フォームの Message 欄の右に、定型文のプルダウンと編集
 自前の AFSK/G3RUH 音声（`ax25_tx.py`）は Direwolf とバイト・スペクトルがほぼ同一だったが、
 SoundModem/UISS 受信側でデコードされない報告（大澤さん、IC-9700/IC-705）が解消しなかったため、
 APRS タブの送信は **Direwolf が音声を作って再生する**方式に変更した（`comms/aprs/direwolf_tx.py`、
-`DirewolfTxWorker`）。Direwolf が無い・起動できない場合は従来の自前生成（`PttAudioTxWorker`）へ
-自動フォールバック。環境変数 `FBSAT59_NO_DIREWOLF_TX=1` で Direwolf 送信を無効化できる。
+`DirewolfTxWorker`）。**自前生成（`ax25_tx.py` / `afsk_tx.py`）と APRS タブの TX Level スライダーは
+同日削除した**（試験を重ねても SoundModem 側で受信できず使い物にならなかったため。フォールバックも
+無し）。Direwolf が無い・起動できない場合はエラー表示のみ。`g3ruh_tx.py` と `PttAudioTxWorker` は
+ARICA-2/Foresail-1p/ERMINAZ-2 パネルが使うので残してある。
 
 確定した事実（Mac で VB-Cable ループバック録音して確認）:
 - **RX 用 Direwolf（`ADEVICE stdin null`）では送信できない**。入力が `stdin` だと出力デバイスは
@@ -4707,5 +4709,5 @@ APRS タブの送信は **Direwolf が音声を作って再生する**方式に�
   入れる/切る。PTT 開始は KISS 送信の約 0.3〜1 秒後でばらつくため、固定待ちにせず必ずこの行を待つ。
   `[0L]` は送信の途中で出るので終了の合図に使ってはいけない。無変調キャリアは出ない
   （「PTT lead」は Direwolf の TXDELAY に足してフラグに置き換える。「PTT hold」は PTT 0 = 0 の後に待つ）。
-- Direwolf に出力ゲイン設定は無く、APRS タブの **TX Level は Direwolf 送信では効かない**
-  （出力はほぼフルスケール）。レベル調整は無線機側/OS の音量で行う。
+- Direwolf に出力ゲイン設定は無いため APRS タブの TX Level スライダーは削除した（出力はほぼ
+  フルスケール）。レベル調整は無線機側のデータ入力ゲイン/OS の音量で行う。

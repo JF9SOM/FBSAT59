@@ -223,13 +223,9 @@ class _RecordingEngine:
 
     def __init__(self, result: bool) -> None:
         self.result = result
-        self.levels: list[int] = []
         self.messages: list[tuple[object, ...]] = []
         self.positions: list[tuple[object, ...]] = []
         self.is_running = True
-
-    def set_tx_level_db(self, db: int) -> None:
-        self.levels.append(db)
 
     def send_message(self, *args: object, uiss_style: bool = False) -> bool:
         self.messages.append((*args, uiss_style))
@@ -238,29 +234,6 @@ class _RecordingEngine:
     def send_position(self, *args: object) -> bool:
         self.positions.append(args)
         return self.result
-
-
-def test_tx_level_slider_reaches_the_engine_and_is_saved(
-    qtbot: QtBot, conn: sqlite3.Connection
-) -> None:
-    tab = _make_tab(qtbot, conn)
-    engine = _RecordingEngine(True)
-    tab._engine = engine  # type: ignore[assignment]
-    tab._tx_level_slider.setValue(-18)
-    assert engine.levels == [-18]
-    assert tab._tx_level_label.text() == "-18 dB"
-    saved = conn.execute("SELECT value FROM app_settings WHERE key = 'aprs_settings'").fetchone()
-    assert '"tx_level_db": -18' in saved["value"]
-
-
-def test_tx_level_is_restored_and_applied_at_start(qtbot: QtBot, conn: sqlite3.Connection) -> None:
-    conn.execute(
-        "INSERT INTO app_settings (key, value) VALUES ('aprs_settings', ?)",
-        ('{"callsign": "JF9SOM", "ssid": 0, "via": "ARISS", "tx_level_db": -25}',),
-    )
-    tab = _make_tab(qtbot, conn)
-    assert tab._tx_level_slider.value() == -25
-    assert tab._engine._tx_level_db == -25
 
 
 def test_a_message_that_could_not_be_sent_is_kept_and_not_logged(
@@ -398,12 +371,11 @@ def test_cq_button_is_half_width_to_leave_room_for_the_message_box(
     assert tab._cq_btn.maximumWidth() == tab._cq_btn.sizeHint().width() // 2
 
 
-def test_to_box_and_tx_slider_widths_leave_room_for_the_message_box(
+def test_to_box_width_leaves_room_for_the_message_box(
     qtbot: QtBot, conn: sqlite3.Connection
 ) -> None:
     tab = _make_tab(qtbot, conn)
     assert tab._to_edit.maximumWidth() == 90
-    assert tab._tx_level_slider.maximumWidth() == 100
 
 
 def test_cq_button_fills_cq_and_our_grid(qtbot: QtBot, conn: sqlite3.Connection) -> None:

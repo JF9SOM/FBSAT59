@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import numpy as np
 import pytest
 
 from comms.aprs import direwolf_tx
@@ -31,35 +30,27 @@ def test_free_port_is_in_direwolf_range() -> None:
     assert 1000 <= direwolf_tx._free_port() <= 10000
 
 
-def _worker() -> DirewolfTxWorker:
-    return DirewolfTxWorker(
-        "APRS",
-        np.zeros(100, dtype=np.float32),
-        1,
-        object(),
-        frame=b"x",
-        modem="1200",
-        txdelay_ms=300,
-        txtail_ms=100,
-    )
+def _worker(rig: Any = None) -> DirewolfTxWorker:
+    return DirewolfTxWorker("APRS", 1, rig, frame=b"x", modem="1200", txdelay_ms=300, txtail_ms=100)
 
 
-def test_falls_back_to_builtin_generator_when_direwolf_cannot_start(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    called: list[str] = []
-
+def test_start_failure_is_reported_as_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
     def boom(self: Any) -> None:
         raise DirewolfStartError("direwolf not found")
 
     monkeypatch.setattr(DirewolfTxWorker, "_run_direwolf", boom)
-    monkeypatch.setattr(
-        "comms.audio_tx.PttAudioTxWorker.run", lambda self: called.append("builtin")
-    )
-    _worker().run()
-    assert called == ["builtin"]
+    w = _worker()
+    errors: list[str] = []
+    done: list[bool] = []
+    w.error.connect(errors.append)
+    w.finished.connect(lambda: done.append(True))
+    w.run()
+    assert len(errors) == 1 and "direwolf not found" in errors[0]
+    assert done == []
 
 
-def test_unavailable_when_disabled_by_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("FBSAT59_NO_DIREWOLF_TX", "1")
-    assert direwolf_tx.direwolf_tx_available() is False
+def test_estimated_time_grows_with_delays_and_shrinks_with_baud() -> None:
+    slow = direwolf_tx._estimate_seconds(30, "1200", 300, 100)
+    fast = direwolf_tx._estimate_seconds(30, "9600", 300, 100)
+    assert slow > fast > 0.4
+    assert direwolf_tx._estimate_seconds(30, "1200", 600, 100) == pytest.approx(slow + 0.3)

@@ -499,7 +499,7 @@ def test_sync_sdr_baud_noop_when_not_running(engine: AprsEngine) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Transmit: the engine builds the audio itself (Direwolf cannot transmit here)
+# Transmit: a short-lived Direwolf makes and plays the audio
 # ---------------------------------------------------------------------------
 
 
@@ -508,22 +508,12 @@ class _FakeRig:
 
 
 class _FakeWorker:
-    """Stands in for PttAudioTxWorker: records the audio it was given."""
+    """Stands in for DirewolfTxWorker: records what it was asked to transmit."""
 
-    played: list[tuple[Any, int | None, Any]] = []
+    sent: list[dict[str, Any]] = []
 
-    def __init__(
-        self,
-        owner: str,
-        audio: Any,
-        out_device: int | None,
-        rig: Any,
-        ptt_lead_s: float = 0.2,
-        ptt_tail_s: float = 0.2,
-    ) -> None:
-        from PySide6.QtCore import QObject, Signal  # noqa: F401
-
-        _FakeWorker.played.append((audio, out_device, rig))
+    def __init__(self, owner: str, out_device: int | None, rig: Any, **kwargs: Any) -> None:
+        _FakeWorker.sent.append({"owner": owner, "out_device": out_device, "rig": rig, **kwargs})
         self.finished = _Sig()
         self.error = _Sig()
 
@@ -540,9 +530,9 @@ class _Sig:
 def tx_engine(
     engine: AprsEngine, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> AprsEngine:
-    _FakeWorker.played = []
-    monkeypatch.setattr("comms.aprs.engine.PttAudioTxWorker", _FakeWorker)
-    monkeypatch.setattr("comms.aprs.engine.direwolf_tx_available", lambda: False)
+    _FakeWorker.sent = []
+    monkeypatch.setattr("comms.aprs.engine.DirewolfTxWorker", _FakeWorker)
+    monkeypatch.setattr("comms.aprs.engine.find_direwolf", lambda: "/usr/bin/direwolf")
     conn.execute(
         "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
         ("soundcard_settings", json.dumps({"input_device_index": 1, "output_device_index": 5})),
@@ -553,19 +543,15 @@ def tx_engine(
     return engine
 
 
-def _decode_afsk(audio: Any) -> list[bytes]:
-    from tests.test_afsk_tx import decode_afsk
-
-    return decode_afsk(audio)
-
-
-def test_send_message_hands_modulated_audio_to_the_tx_worker(tx_engine: AprsEngine) -> None:
+def test_send_message_hands_the_frame_to_the_tx_worker(tx_engine: AprsEngine) -> None:
     from comms.aprs.engine import _build_aprs_message
 
     assert tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "hello")
-    audio, device, rig = _FakeWorker.played[0]
-    assert device == 5 and isinstance(rig, _FakeRig)
-    assert _build_aprs_message("JF9SOM", 0, "ARISS", "JA1XYZ", "hello") in _decode_afsk(audio)
+    sent = _FakeWorker.sent[0]
+    assert sent["out_device"] == 5 and sent["in_device"] == 1
+    assert isinstance(sent["rig"], _FakeRig)
+    assert sent["frame"] == _build_aprs_message("JF9SOM", 0, "ARISS", "JA1XYZ", "hello")
+    assert sent["modem"] == "1200"
 
 
 def test_send_position_transmits_too(tx_engine: AprsEngine) -> None:
@@ -573,33 +559,32 @@ def test_send_position_transmits_too(tx_engine: AprsEngine) -> None:
 
     assert tx_engine.send_position("JF9SOM", 9, "ARISS", 36.1, 136.4, "/-", "test")
     frame = _build_aprs_position("JF9SOM", 9, "ARISS", 36.1, 136.4, "/-", "test")
-    assert frame in _decode_afsk(_FakeWorker.played[0][0])
-
-
-def test_tx_level_scales_the_audio(tx_engine: AprsEngine) -> None:
-    tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "hi")
-    tx_engine._tx_in_progress = False
-    tx_engine.set_tx_level_db(-20)
-    tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "hi")
-    loud = float(abs(_FakeWorker.played[0][0]).max())
-    quiet = float(abs(_FakeWorker.played[1][0]).max())
-    assert loud == pytest.approx(0.5, abs=1e-3)  # 0 dB = Direwolf's TX amplitude
-    assert quiet == pytest.approx(0.05, abs=1e-3)
-
-
-def test_tx_level_is_clamped(tx_engine: AprsEngine) -> None:
-    tx_engine.set_tx_level_db(10)
-    assert tx_engine._tx_level_db == 0
-    tx_engine.set_tx_level_db(-99)
-    assert tx_engine._tx_level_db == -60
+    assert _FakeWorker.sent[0]["frame"] == frame
 
 
 @pytest.mark.parametrize("modem", ["4800", "9600"])
-def test_high_speed_modems_use_the_g3ruh_audio(tx_engine: AprsEngine, modem: str) -> None:
+def test_high_speed_modems_are_passed_to_direwolf(tx_engine: AprsEngine, modem: str) -> None:
     tx_engine._current_modem = modem
     assert tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "hi")
-    n = 48_000 // int(modem)
-    assert len(_FakeWorker.played[0][0]) % n == 0  # whole bits of baseband audio
+    assert _FakeWorker.sent[0]["modem"] == modem
+
+
+def test_timing_settings_are_passed_to_the_worker(tx_engine: AprsEngine) -> None:
+    assert tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "hi")
+    sent = _FakeWorker.sent[0]
+    assert (sent["txdelay_ms"], sent["txtail_ms"]) == (300, 100)
+    assert (sent["ptt_lead_s"], sent["ptt_tail_s"]) == (0.2, 0.2)
+
+
+def test_no_transmission_without_direwolf(
+    tx_engine: AprsEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("comms.aprs.engine.find_direwolf", lambda: None)
+    errors: list[str] = []
+    tx_engine.error_occurred.connect(errors.append)
+    assert not tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "hi")
+    assert "Direwolf is not installed" in errors[0]
+    assert _FakeWorker.sent == []
 
 
 def test_no_transmission_without_a_connected_rig(tx_engine: AprsEngine, qtbot: Any) -> None:
@@ -608,7 +593,7 @@ def test_no_transmission_without_a_connected_rig(tx_engine: AprsEngine, qtbot: A
     tx_engine.error_occurred.connect(errors.append)
     assert not tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "hi")
     assert errors == ["TX rig not connected"]
-    assert _FakeWorker.played == []
+    assert _FakeWorker.sent == []
 
 
 def test_no_transmission_without_a_sound_card_output(
@@ -627,7 +612,7 @@ def test_a_second_send_is_refused_while_one_is_in_progress(tx_engine: AprsEngine
     assert tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "one")
     assert not tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "two")
     assert errors == ["A transmission is already in progress"]
-    assert len(_FakeWorker.played) == 1
+    assert len(_FakeWorker.sent) == 1
 
 
 def test_describe_ax25_frame_shows_path_and_info() -> None:

@@ -11,16 +11,17 @@ audio comes out). So a second Direwolf is started per transmission with real inp
 output devices, the PTT is keyed through the rig (Hamlib, as before), the frame goes in
 over KISS, and Direwolf plays it (its own TXDELAY / TXTAIL flags around the frame).
 
-Direwolf has no output gain setting, so the APRS tab's TX level does not apply here.
-If Direwolf is missing or cannot open the audio devices, the transmission falls back
-to the built-in generator (``PttAudioTxWorker``), so a frame is never lost silently.
+Direwolf has no output gain setting, so there is no TX level control; set the level
+with the radio's data input gain and the computer's output volume.
+There is no other transmit path: the earlier built-in generator was removed because
+it never produced a signal the SoundModem receiver accepted. Failures are reported
+through the ``error`` signal.
 """
 
 from __future__ import annotations
 
 import contextlib
 import logging
-import os
 import queue
 import random
 import socket
@@ -32,15 +33,14 @@ import time
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-from numpy.typing import NDArray
+from PySide6.QtCore import QObject, Signal
 
 from comms.aprs.direwolf import _MODEM_LINES, _kiss_encode, find_direwolf
-from comms.audio_tx import AUDIO_RATE, PttAudioTxWorker
 
 logger = logging.getLogger(__name__)
 
 _READY_TIMEOUT_S = 10.0
+_RATE = 48_000  # Hz; Direwolf's TX audio sample rate
 # Direwolf starts the audio about 0.3 s after the KISS frame; allow a lot more.
 _TX_START_TIMEOUT_S = 6.0
 # Extra time allowed for the end of the transmission beyond the frame's length.
@@ -84,7 +84,7 @@ def build_config(
     return (
         "MYCALL N0CALL\n"
         f'ADEVICE "{in_name}" "{out_name}"\n'
-        f"ARATE {AUDIO_RATE}\n"
+        f"ARATE {_RATE}\n"
         "ACHANNELS 1\n"
         "CHANNEL 0\n"
         f"{modem_line}\n"
@@ -115,6 +115,16 @@ def _free_port() -> int:
     raise DirewolfStartError("no free KISS port")
 
 
+_BAUD = {"1200": 1200, "4800": 4800, "9600": 9600}
+
+
+def _estimate_seconds(frame_len: int, modem: str, txdelay_ms: int, txtail_ms: int) -> float:
+    """Rough transmit time: flags + frame with FCS and bit stuffing (a generous upper bound)."""
+    baud = _BAUD.get(modem, 1200)
+    bits = (frame_len + 2) * 8 * 1.25 + 16
+    return (txdelay_ms + txtail_ms) / 1000.0 + bits / baud
+
+
 def _connect_retry(port: int, timeout_s: float = 5.0) -> socket.socket:
     """Connect to Direwolf's KISS port; it listens a moment after it says "Ready"."""
     deadline = time.monotonic() + timeout_s
@@ -127,13 +137,18 @@ def _connect_retry(port: int, timeout_s: float = 5.0) -> socket.socket:
             time.sleep(0.1)
 
 
-class DirewolfTxWorker(PttAudioTxWorker):
-    """Like ``PttAudioTxWorker`` but Direwolf makes and plays the audio."""
+class DirewolfTxWorker(QObject):
+    """Keys the PTT and has Direwolf transmit one AX.25 frame.
+
+    Exactly one of ``finished`` or ``error`` is emitted per ``run()``.
+    """
+
+    finished: Signal = Signal()
+    error: Signal = Signal(str)
 
     def __init__(
         self,
         owner: str,
-        audio: NDArray[np.float32],
         out_device: int | None,
         rig: Any,
         *,
@@ -143,30 +158,31 @@ class DirewolfTxWorker(PttAudioTxWorker):
         txtail_ms: int,
         in_device: int | None = None,
         parent: Any = None,
-        ptt_lead_s: float = 0.2,
-        ptt_tail_s: float = 0.2,
+        ptt_lead_s: float = 0.0,
+        ptt_tail_s: float = 0.0,
     ) -> None:
-        super().__init__(
-            owner, audio, out_device, rig, parent, ptt_lead_s=ptt_lead_s, ptt_tail_s=ptt_tail_s
-        )
+        super().__init__(parent)
+        self._owner = owner
+        self._out_device = out_device
+        self._rig = rig
         self._frame = frame
         self._modem = modem
         self._txdelay_ms = txdelay_ms
         self._txtail_ms = txtail_ms
         self._in_device = in_device
+        self._ptt_lead_s = max(0.0, ptt_lead_s)
+        self._ptt_tail_s = max(0.0, ptt_tail_s)
         self._dw_lines: queue.Queue[str | None] = queue.Queue()
 
     def run(self) -> None:
-        """Transmit with Direwolf; on any start-up problem use the built-in generator."""
+        """Transmit with Direwolf; report any problem through ``error``."""
         try:
             self._run_direwolf()
         except DirewolfStartError as exc:
-            logger.warning(
-                "TX[%s]: Direwolf TX unavailable (%s); using the built-in generator",
-                self._owner,
-                exc,
-            )
-            super().run()
+            logger.error("TX[%s]: Direwolf TX failed to start: %s", self._owner, exc)
+            from i18n import _
+
+            self.error.emit(_("Direwolf could not transmit: {why}").format(why=exc))
 
     # ------------------------------------------------------------------ #
 
@@ -251,9 +267,11 @@ class DirewolfTxWorker(PttAudioTxWorker):
         try:
             with tempfile.TemporaryDirectory(prefix="fbsat59_dwtx_") as td:
                 proc, port = self._start_direwolf(exe, Path(td))
-                frame_s = len(self._audio) / AUDIO_RATE
+                frame_s = _estimate_seconds(
+                    len(self._frame), self._modem, self._txdelay_ms, self._txtail_ms
+                )
                 logger.info(
-                    "TX[%s]: Direwolf TX start (frame audio ~%.2f s, port %d)",
+                    "TX[%s]: Direwolf TX start (expected ~%.2f s, port %d)",
                     self._owner,
                     frame_s,
                     port,
@@ -324,10 +342,3 @@ class DirewolfTxWorker(PttAudioTxWorker):
                     logger.info("TX[%s]: Direwolf: %s", self._owner, line)
         except queue.Empty:
             pass
-
-
-def direwolf_tx_available() -> bool:
-    """True when a Direwolf binary can be found (and TX through it is not disabled)."""
-    if os.environ.get("FBSAT59_NO_DIREWOLF_TX"):
-        return False
-    return find_direwolf() is not None

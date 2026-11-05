@@ -3,14 +3,9 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
-import wave
-from pathlib import Path
 
-import numpy as np
 import pytest
 
-from comms.aprs.afsk_tx import build_afsk_audio
 from comms.aprs.engine import (
     _build_aprs_message,
     _build_aprs_position,
@@ -18,7 +13,6 @@ from comms.aprs.engine import (
     describe_ax25_frame,
     parse_via_path,
 )
-from comms.aprs.g3ruh_tx import build_g3ruh_audio
 
 # Frame of "JF9SOM>APRS,ARISS::JA1ABC   :hello world\n" as ``gen_packets`` / ``atest -h``
 # report it: both the destination and the source SSID byte are 0xE0 (C bits set, "cc=11"),
@@ -57,45 +51,6 @@ def test_position_frame_sets_command_bits_like_direwolf() -> None:
 @pytest.mark.skipif(
     shutil.which("gen_packets") is None, reason="Direwolf gen_packets not installed"
 )
-@pytest.mark.parametrize(
-    ("baud", "args"),
-    [(1200, ["-B", "1200"]), (4800, ["-g", "-b", "4800"]), (9600, ["-B", "9600"])],
-)
-def test_audio_matches_direwolfs_gen_packets(baud: int, args: list[str], tmp_path: Path) -> None:
-    text = tmp_path / "msg.txt"
-    text.write_text("JF9SOM>APRS,ARISS::JA1ABC   :hello world\n")
-    wav = tmp_path / "ref.wav"
-    # -a 200 is full scale; gen_packets sends 32 flags first and 2 after the frame.
-    subprocess.run(
-        ["gen_packets", "-a", "200", "-r", "48000", *args, "-o", str(wav), str(text)],
-        check=True,
-        capture_output=True,
-    )
-    with wave.open(str(wav)) as w:
-        ref = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2") / 32768.0
-    ref = ref[np.nonzero(np.abs(ref) > 1e-4)[0][0] :]
-
-    build = build_afsk_audio if baud == 1200 else build_g3ruh_audio
-    mine = build(
-        _DIREWOLF_FRAME,
-        baud=baud,
-        sample_rate=48_000,
-        txdelay_ms=32 * 8000 / baud,
-        txtail_ms=2 * 8000 / baud,
-    ).astype(np.float64)
-
-    # Direwolf rounds its phase through an 8-bit sine table and starts about one sample
-    # late, so allow a small shift and a small RMS error rather than exact equality.
-    best = min(
-        np.sqrt(
-            np.mean((ref[max(0, s) :][: len(mine) - 2] - mine[max(0, -s) :][: len(mine) - 2]) ** 2)
-        )
-        for s in range(-2, 3)
-    )
-    assert abs(len(ref) - len(mine)) <= 2
-    assert best < 0.1
-
-
 def test_parse_via_path_handles_ssid_lists_and_defaults() -> None:
     assert parse_via_path("ARISS") == [("ARISS", 0)]
     assert parse_via_path("W3ADO-1") == [("W3ADO", 1)]
@@ -111,10 +66,3 @@ def test_via_ssid_and_several_digipeaters_reach_the_frame() -> None:
     assert "JF9SOM>APRS,WIDE1-1,WIDE2-2 " in describe_ax25_frame(frame) + " "
     assert frame[20] == 0x60 | (1 << 1)  # first digipeater: not the last address
     assert frame[27] == 0x61 | (2 << 1)  # second digipeater: last address
-
-
-def test_tx_level_zero_db_is_direwolfs_amplitude() -> None:
-    from comms.aprs.engine import DIREWOLF_TX_PEAK, tx_gain
-
-    assert tx_gain(0) == DIREWOLF_TX_PEAK == 0.5
-    assert abs(tx_gain(-6.0206) - 0.25) < 1e-4

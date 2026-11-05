@@ -22,8 +22,8 @@ AudioBridge (QThread)
     know ``stdout`` as an output device and exits with "Could not open audio device
     stdout"; ``null`` behaves the same here and works in 1.7 and 1.8.1.)
     Transmitting through this bridge keys the PTT with no modulation. ARICA-2 therefore
-    builds its own audio (comms/aprs/g3ruh_tx.py); the APRS tab's send path still has this
-    problem.
+    builds its own audio (comms/aprs/g3ruh_tx.py). The APRS tab transmits through a
+    separate short-lived Direwolf with real devices (comms/aprs/direwolf_tx.py).
     DirewolfManager.start() claims the output device exclusively through
     AudioDeviceManager for the lifetime of the bridge, since two tabs
     transmitting to the same output device at once would just garble the
@@ -296,7 +296,7 @@ class AudioBridge(QThread):
 
     Either way, *proc.stdout* is read and logged line by line: Direwolf writes
     only console text there (it has no transmit audio output -- transmitting is
-    done by comms.aprs.ax25_tx / comms.audio_tx).
+    done by comms.aprs.direwolf_tx for the APRS tab).
     """
 
     def __init__(
