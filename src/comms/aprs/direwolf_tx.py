@@ -25,10 +25,8 @@ import logging
 import queue
 import random
 import socket
-import subprocess
 import sys
 import tempfile
-import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -36,6 +34,7 @@ from typing import Any
 from PySide6.QtCore import QObject, Signal
 
 from comms.aprs.direwolf import _MODEM_LINES, _kiss_encode, find_direwolf
+from comms.aprs.line_process import LineProcess, start_line_process
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +190,7 @@ class DirewolfTxWorker(QObject):
 
     # ------------------------------------------------------------------ #
 
-    def _start_direwolf(self, exe: Path, tmp: Path) -> tuple[subprocess.Popen[str], int]:
+    def _start_direwolf(self, exe: Path, tmp: Path) -> tuple[LineProcess, int]:
         """Start Direwolf, trying the device-name variants; returns (process, kiss_port)."""
         try:
             in_name, out_name = _device_names(self._in_device, self._out_device)
@@ -206,20 +205,9 @@ class DirewolfTxWorker(QObject):
                     build_config(in_v, out_v, self._modem, self._txdelay_ms, self._txtail_ms, port),
                     encoding="utf-8",
                 )
-                extra: dict[str, Any] = {}
-                if sys.platform == "win32":
-                    # Do not flash a console window on every transmission.
-                    extra["creationflags"] = subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
-                proc = subprocess.Popen(
+                proc = start_line_process(
                     [str(exe), "-c", conf.name, "-t", "0", "-d", "o"],  # -d o: log PTT edges
-                    cwd=tmp,
-                    # Kept open: Direwolf may quit when its stdin reaches EOF.
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    errors="replace",
-                    **extra,
+                    tmp,
                 )
                 ok, last = self._wait_ready(proc, port)
                 if ok:
@@ -231,33 +219,34 @@ class DirewolfTxWorker(QObject):
                     proc.kill()
         raise DirewolfStartError(last)
 
-    def _wait_ready(self, proc: subprocess.Popen[str], kiss_port: int) -> tuple[bool, str]:
-        """Wait until Direwolf accepts KISS clients; (False, reason) if it cannot."""
-        lines: queue.Queue[str | None] = queue.Queue()
+    def _wait_ready(self, proc: LineProcess, kiss_port: int) -> tuple[bool, str]:
+        """Wait until Direwolf accepts KISS clients; (False, reason) if it cannot.
 
-        def _pump() -> None:
-            assert proc.stdout is not None
-            for line in proc.stdout:
-                lines.put(line.rstrip())
-            lines.put(None)
-
-        threading.Thread(target=_pump, daemon=True).start()
-        self._dw_lines = lines
+        Readiness is judged by the KISS port itself (not only by the console
+        line), so a program whose output is delayed still counts as started.
+        """
+        self._dw_lines = proc.lines
         deadline = time.monotonic() + _READY_TIMEOUT_S
         last = "timeout"
         while time.monotonic() < deadline:
             try:
-                line = lines.get(timeout=0.2)
+                while True:
+                    line = proc.lines.get_nowait()
+                    if line is None:
+                        return False, last
+                    if line.strip():
+                        last = line.strip()
+                    if "not found" in line or "Pointless" in line:
+                        return False, last
             except queue.Empty:
-                continue
-            if line is None:
+                pass
+            if proc.poll() is not None:
                 return False, last
-            if line.strip():
-                last = line.strip()
-            if f"Ready to accept KISS TCP client application 0 on port {kiss_port}" in line:
+            try:
+                socket.create_connection(("127.0.0.1", kiss_port), timeout=0.3).close()
                 return True, last
-            if "not found" in line or "Pointless" in line:
-                return False, last
+            except OSError:
+                time.sleep(0.2)
         return False, last
 
     def _run_direwolf(self) -> None:
@@ -272,7 +261,7 @@ class DirewolfTxWorker(QObject):
             other = mgr.output_owner(self._out_device) or _("another tab")
             self.error.emit(_("Sound card output is in use by {other}").format(other=other))
             return
-        proc: subprocess.Popen[str] | None = None
+        proc: LineProcess | None = None
         keyed = False
         try:
             with tempfile.TemporaryDirectory(prefix="fbsat59_dwtx_") as td:
