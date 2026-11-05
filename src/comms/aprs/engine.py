@@ -477,7 +477,12 @@ class AprsEngine(QObject):
             )
             return False
         if find_direwolf() is None:
-            self.error_occurred.emit(_("Cannot transmit: Direwolf is not installed"))
+            self.error_occurred.emit(
+                _(
+                    "Cannot transmit: Direwolf is not installed. "
+                    "Install it from Help > Direwolf Installation…"
+                )
+            )
             return False
         timing = load_tx_timing(self._conn)
         logger.info("APRS TX: timing %s", timing)

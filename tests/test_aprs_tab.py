@@ -516,3 +516,16 @@ def test_to_and_message_fields_have_a_clear_button(qtbot: QtBot, conn: sqlite3.C
     assert tab._to_edit.isClearButtonEnabled()
     assert tab._msg_edit.isClearButtonEnabled()
     assert tab._pos_comment_edit.isClearButtonEnabled()
+
+
+def test_missing_direwolf_shows_install_hint_and_disables_sending(
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("comms.aprs.engine.find_direwolf", lambda: None)
+    tab = _make_tab(qtbot, conn)
+    tab._rig_connected = True
+    tab._refresh_input_source()
+    assert "Direwolf is not installed" in tab._input_label.text()
+    assert "Help > Direwolf Installation" in tab._input_label.text()
+    assert not tab._send_btn.isEnabled()
+    assert not tab._pos_send_btn.isEnabled()

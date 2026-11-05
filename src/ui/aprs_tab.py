@@ -588,7 +588,16 @@ class AprsTab(QWidget):
         baud_suffix = f"  [{modem} baud]" if modem else ""
 
         can_tx = self._rig_connected and sc_ok
-        if can_tx:
+        direwolf_ok = bool(getattr(self._engine, "direwolf_available", lambda: True)())
+        if not direwolf_ok:
+            # Direwolf both decodes and transmits; without it nothing works.
+            can_tx = False
+            self._input_label.setText(
+                _("Direwolf is not installed — install it from Help > Direwolf Installation…")
+            )
+            self._input_label.setStyleSheet("color: #f44336;")
+            self._send_btn.setEnabled(False)
+        elif can_tx:
             self._input_label.setText(
                 _("Input: Sound Card + Direwolf  (send + receive)") + baud_suffix
             )
