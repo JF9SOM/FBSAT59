@@ -67,6 +67,20 @@ def _device_names(in_device: int | None, out_device: int | None) -> tuple[str, s
     return str(sd.query_devices(in_device, "input")["name"]), out_name
 
 
+def _config_encoding() -> str:
+    """Encoding Direwolf reads its config with.
+
+    Windows Direwolf compares device names byte-wise with the ANSI (code page)
+    names of WinMM, e.g. cp932 on Japanese Windows; UTF-8 would never match a
+    name that contains non-ASCII characters.
+    """
+    if sys.platform == "win32":
+        import locale
+
+        return locale.getpreferredencoding(False)
+    return "utf-8"
+
+
 def _name_variants(name: str) -> list[str]:
     """Names to try for Direwolf: as is, and (Windows) cut to the WinMM length."""
     variants = [name]
@@ -203,7 +217,8 @@ class DirewolfTxWorker(QObject):
                 conf = tmp / "tx.conf"
                 conf.write_text(
                     build_config(in_v, out_v, self._modem, self._txdelay_ms, self._txtail_ms, port),
-                    encoding="utf-8",
+                    encoding=_config_encoding(),
+                    errors="replace",
                 )
                 proc = start_line_process(
                     [str(exe), "-c", conf.name, "-t", "0", "-d", "o"],  # -d o: log PTT edges

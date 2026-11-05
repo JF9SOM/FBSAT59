@@ -54,3 +54,17 @@ def test_estimated_time_grows_with_delays_and_shrinks_with_baud() -> None:
     fast = direwolf_tx._estimate_seconds(30, "9600", 300, 100)
     assert slow > fast > 0.4
     assert direwolf_tx._estimate_seconds(30, "1200", 600, 100) == pytest.approx(slow + 0.3)
+
+
+def test_config_encoding_is_ansi_on_windows_and_utf8_elsewhere(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import locale
+
+    from comms.aprs import direwolf_tx
+
+    monkeypatch.setattr(direwolf_tx.sys, "platform", "win32")
+    monkeypatch.setattr(locale, "getpreferredencoding", lambda do_setlocale=True: "cp932")
+    assert direwolf_tx._config_encoding() == "cp932"
+    monkeypatch.setattr(direwolf_tx.sys, "platform", "darwin")
+    assert direwolf_tx._config_encoding() == "utf-8"
