@@ -45,10 +45,11 @@ _RATE = 48_000  # Hz; Direwolf's TX audio sample rate
 _TX_START_TIMEOUT_S = 6.0
 # Extra time allowed for the end of the transmission beyond the frame's length.
 _TX_END_MARGIN_S = 3.0
-# Direwolf prints "PTT 0 = 0" once it has handed the last samples to the sound device;
-# the device still plays its buffer for a moment. Killing Direwolf at once cut the end of
-# the frame (measured on macOS: the recording did not decode; with a 1.5 s wait it did).
-_DRAIN_S = 1.0
+# Grace period before the TX Direwolf is stopped, after the PTT is released. Measured on
+# macOS (4800 baud, loopback recording): the audio ends before the PTT is released, and
+# the decode result did not depend on a wait of 0..0.8 s (the recording path itself is
+# noisy), so this is only a small safety margin; it never delays the PTT or reception.
+_DRAIN_S = 0.2
 # Windows (WinMM) device names are cut to this many characters.
 _WIN_NAME_MAX = 31
 
@@ -314,12 +315,12 @@ class DirewolfTxWorker(QObject):
             if keyed:
                 with contextlib.suppress(Exception):
                     self._rig.set_ptt(False)
+            mgr.release_output(self._owner, self._out_device)
             if proc is not None:
                 time.sleep(_DRAIN_S)
                 with contextlib.suppress(Exception):
                     proc.terminate()
                     proc.wait(timeout=3)
-            mgr.release_output(self._owner, self._out_device)
 
     def _wait_line(self, text: str, timeout_s: float) -> bool:
         """Wait for a Direwolf output line containing *text*; False on timeout or exit."""
