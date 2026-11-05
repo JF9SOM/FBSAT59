@@ -4685,3 +4685,27 @@ Send フォームの Message 欄の右に、定型文のプルダウンと編集
 （誤送信防止）。`{grid}` は自局の 4 文字グリッドに置き換わる。既定は `{grid}` / `599 {grid}` / `599` / `R TU 73` / `RR73` / `73`。
 編集ダイアログは 1 行 1 件で、「初期値に戻す」あり。保存先は `app_settings` の `aprs_message_presets`（JSON）。
 `599` と `73` を単独で送ると既存の QSO ログ処理（`_sent_report` / `_finish_qso`）が働く。実装: `ui/aprs_presets.py`。画面での目視確認は未実施。
+
+## APRS 送信を Direwolf 本体で行う（2026-11-05、Issue #35 対応）
+
+自前の AFSK/G3RUH 音声（`ax25_tx.py`）は Direwolf とバイト・スペクトルがほぼ同一だったが、
+SoundModem/UISS 受信側でデコードされない報告（大澤さん、IC-9700/IC-705）が解消しなかったため、
+APRS タブの送信は **Direwolf が音声を作って再生する**方式に変更した（`comms/aprs/direwolf_tx.py`、
+`DirewolfTxWorker`）。Direwolf が無い・起動できない場合は従来の自前生成（`PttAudioTxWorker`）へ
+自動フォールバック。環境変数 `FBSAT59_NO_DIREWOLF_TX=1` で Direwolf 送信を無効化できる。
+
+確定した事実（Mac で VB-Cable ループバック録音して確認）:
+- **RX 用 Direwolf（`ADEVICE stdin null`）では送信できない**。入力が `stdin` だと出力デバイスは
+  開かれず、`[0L]` は出るが音は出ない。送信は**入力・出力とも実デバイスの別プロセス**を、
+  1 フレームごとに起動して行う（入力は Sound Card 入力、未設定なら出力と同じデバイス）。
+- ADEVICE は**デバイス名**で指定（番号は不可、`not found`）。名前は PortAudio のもの。Windows は
+  WinMM の 31 文字切り詰めがあるため両方を試す（Windows 実機は未検証）。
+- conf の有効範囲: `KISSPORT` は 1000〜10000（`KISSPORT 0` を先に書くと既定 8001 を無効化。RX 側 Direwolf
+  と衝突しない）、`SLOTTIME` は 5 以上、`PERSIST 250`。`-c` はカレントからの短い相対名にする
+  （長い絶対パスは黙って無視される）。
+- PTT は Direwolf 自身の出力 `PTT 0 = 1` / `PTT 0 = 0`（起動引数 `-d o`）に合わせてリグ(Hamlib)を
+  入れる/切る。PTT 開始は KISS 送信の約 0.3〜1 秒後でばらつくため、固定待ちにせず必ずこの行を待つ。
+  `[0L]` は送信の途中で出るので終了の合図に使ってはいけない。無変調キャリアは出ない
+  （「PTT lead」は Direwolf の TXDELAY に足してフラグに置き換える。「PTT hold」は PTT 0 = 0 の後に待つ）。
+- Direwolf に出力ゲイン設定は無く、APRS タブの **TX Level は Direwolf 送信では効かない**
+  （出力はほぼフルスケール）。レベル調整は無線機側/OS の音量で行う。

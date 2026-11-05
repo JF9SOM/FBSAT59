@@ -542,6 +542,7 @@ def tx_engine(
 ) -> AprsEngine:
     _FakeWorker.played = []
     monkeypatch.setattr("comms.aprs.engine.PttAudioTxWorker", _FakeWorker)
+    monkeypatch.setattr("comms.aprs.engine.direwolf_tx_available", lambda: False)
     conn.execute(
         "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
         ("soundcard_settings", json.dumps({"input_device_index": 1, "output_device_index": 5})),

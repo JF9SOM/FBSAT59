@@ -48,6 +48,7 @@ from PySide6.QtCore import QObject, Signal
 
 from comms.aprs.ax25_tx import build_ax25_audio
 from comms.aprs.direwolf import DirewolfManager, find_direwolf
+from comms.aprs.direwolf_tx import DirewolfTxWorker, direwolf_tx_available
 from comms.aprs.parser import AprsPacket, Ax25Frame, decode_ax25, parse_aprs
 from comms.aprs.tx_audio_log import get_tx_audio_recorder
 from comms.aprs.tx_timing import load_tx_timing
@@ -503,14 +504,33 @@ class AprsEngine(QObject):
             self._current_modem or "1200",
         )
         gain = np.float32(tx_gain(self._tx_level_db))
-        worker = PttAudioTxWorker(
-            _TX_OWNER,
-            (audio * gain).astype(np.float32),
-            out_device,
-            rig,
-            ptt_lead_s=timing.ptt_lead_ms / 1000.0,
-            ptt_tail_s=timing.ptt_tail_ms / 1000.0,
-        )
+        worker: PttAudioTxWorker
+        if direwolf_tx_available():
+            # Direwolf itself makes and plays the audio (it has no output gain, so the
+            # TX level does not apply); the built-in generator is its fallback.
+            logger.info("APRS TX: using Direwolf for the transmit audio")
+            worker = DirewolfTxWorker(
+                _TX_OWNER,
+                (audio * gain).astype(np.float32),
+                out_device,
+                rig,
+                frame=frame,
+                modem=self._current_modem or "1200",
+                txdelay_ms=timing.txdelay_ms,
+                txtail_ms=timing.txtail_ms,
+                in_device=self._load_soundcard_devices()[0],
+                ptt_lead_s=timing.ptt_lead_ms / 1000.0,
+                ptt_tail_s=timing.ptt_tail_ms / 1000.0,
+            )
+        else:
+            worker = PttAudioTxWorker(
+                _TX_OWNER,
+                (audio * gain).astype(np.float32),
+                out_device,
+                rig,
+                ptt_lead_s=timing.ptt_lead_ms / 1000.0,
+                ptt_tail_s=timing.ptt_tail_ms / 1000.0,
+            )
         worker.finished.connect(self._on_tx_finished)
         worker.error.connect(self._on_tx_error)
         self._tx_worker = worker  # keep a reference: it emits from its thread
