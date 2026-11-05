@@ -206,6 +206,10 @@ class DirewolfTxWorker(QObject):
                     build_config(in_v, out_v, self._modem, self._txdelay_ms, self._txtail_ms, port),
                     encoding="utf-8",
                 )
+                extra: dict[str, Any] = {}
+                if sys.platform == "win32":
+                    # Do not flash a console window on every transmission.
+                    extra["creationflags"] = subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
                 proc = subprocess.Popen(
                     [str(exe), "-c", conf.name, "-t", "0", "-d", "o"],  # -d o: log PTT edges
                     cwd=tmp,
@@ -215,6 +219,7 @@ class DirewolfTxWorker(QObject):
                     stderr=subprocess.STDOUT,
                     text=True,
                     errors="replace",
+                    **extra,
                 )
                 ok, last = self._wait_ready(proc, port)
                 if ok:
