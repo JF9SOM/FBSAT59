@@ -11,6 +11,7 @@ Detection priority (mirrors find_direwolf()):
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import sys
 from pathlib import Path
@@ -33,13 +34,19 @@ from comms.aprs.direwolf import _user_direwolf_dir, find_direwolf
 from i18n import _
 from ui.copyable_text import CommandRow
 
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # Version detection helper
 # ---------------------------------------------------------------------------
 
 
 def _get_direwolf_version(path: Path) -> str:
-    """Run ``direwolf -h`` and extract the version string."""
+    """Run ``direwolf -h`` and extract the version string.
+
+    When no version can be read the reason is logged (the dialog only shows
+    "Unknown version"; on one Windows PC it stayed that way with no clue why).
+    """
     try:
         result = subprocess.run(
             [str(path), "-h"],
@@ -51,8 +58,21 @@ def _get_direwolf_version(path: Path) -> str:
         for line in output.splitlines():
             if "version" in line.lower() or "direwolf" in line.lower():
                 return line.strip()[:80]
+        logger.warning(
+            "Direwolf version unknown: no version line in the output of %s -h "
+            "(exit code %s, output %r)",
+            path,
+            result.returncode,
+            output[:300],
+        )
         return _("Unknown version")
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "Direwolf version unknown: running %s -h failed: %s: %s",
+            path,
+            type(exc).__name__,
+            exc,
+        )
         return _("Unknown version")
 
 
