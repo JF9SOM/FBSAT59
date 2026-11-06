@@ -435,7 +435,6 @@ class DirewolfTxWorker(QObject):
         txtail_ms: int,
         in_device: int | None = None,
         parent: Any = None,
-        ptt_lead_s: float = 0.0,
         ptt_tail_s: float = 0.0,
         session: DirewolfTxSession | None = None,
         close_first: DirewolfTxSession | None = None,
@@ -449,7 +448,6 @@ class DirewolfTxWorker(QObject):
         self._txdelay_ms = txdelay_ms
         self._txtail_ms = txtail_ms
         self._in_device = in_device
-        self._ptt_lead_s = max(0.0, ptt_lead_s)
         self._ptt_tail_s = max(0.0, ptt_tail_s)
         self._session = session
         self._close_first = close_first

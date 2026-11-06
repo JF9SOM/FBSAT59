@@ -1,14 +1,15 @@
 """User-adjustable APRS transmit timing, persisted in ``app_settings``.
 
-Four values shape what goes on the air around one frame:
+Three values shape what goes on the air around one frame:
 
-``ptt_lead_ms``  PTT up -> audio starts (unmodulated carrier)
 ``txdelay_ms``   flags sent before the frame (inside the audio)
 ``txtail_ms``    flags sent after the frame (inside the audio)
 ``ptt_tail_ms``  audio ends -> PTT released (unmodulated carrier)
 
-The defaults reproduce the previously hard-coded behaviour (Direwolf's
-TXDELAY 300 / TXTAIL 100 plus 200 ms PTT lead and tail).
+The rig is keyed when Direwolf starts the audio (not before), so there is no
+"PTT lead". The defaults are Direwolf's own TXDELAY 300 / TXTAIL 100 and no PTT hold,
+so the PTT is released as soon as the frame has been sent. A ``ptt_lead_ms`` value
+saved by an older version is ignored.
 """
 
 from __future__ import annotations
@@ -25,10 +26,9 @@ MAX_MS = 2000
 class TxTiming:
     """Transmit timing in milliseconds."""
 
-    ptt_lead_ms: int = 200
     txdelay_ms: int = 300
     txtail_ms: int = 100
-    ptt_tail_ms: int = 200
+    ptt_tail_ms: int = 0
 
     def clamped(self) -> TxTiming:
         """Copy with every value limited to 0..MAX_MS."""

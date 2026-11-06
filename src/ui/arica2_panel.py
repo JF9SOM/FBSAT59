@@ -65,7 +65,6 @@ from comms.arica2.message_box import (
 from comms.arica2.window_detector import AudioBeaconWindowDetector, BeaconWindowDetector
 from comms.audio_device_manager import get_audio_device_manager
 from comms.audio_tx import AUDIO_RATE as _AUDIO_RATE
-from comms.audio_tx import PTT_LEAD_S
 from i18n import _
 from rig.controller import select_tx_rig
 
@@ -706,7 +705,7 @@ class Arica2Panel(QWidget):
             return
         # Direwolf makes and plays the audio: HDLC + FCS + G3RUH at 4800 baud, the same
         # frame the old built-in generator sent. It has no output gain, so there is no
-        # TX level control here; the PTT lead becomes extra TXDELAY flags.
+        # TX level control here.
         worker = DirewolfTxWorker(
             _OWNER,
             out_device,
@@ -716,7 +715,6 @@ class Arica2Panel(QWidget):
             txdelay_ms=round(DEFAULT_TXDELAY_MS),
             txtail_ms=round(DEFAULT_TXTAIL_MS),
             in_device=self._input_device(),
-            ptt_lead_s=PTT_LEAD_S,
             ptt_tail_s=0.0,
         )
         worker.finished.connect(self._on_tx_finished)
