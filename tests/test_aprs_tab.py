@@ -529,3 +529,31 @@ def test_missing_direwolf_shows_install_hint_and_disables_sending(
     assert "Help > Direwolf Installation" in tab._input_label.text()
     assert not tab._send_btn.isEnabled()
     assert not tab._pos_send_btn.isEnabled()
+
+
+def test_sent_rows_are_coloured_like_ft4_own_transmissions(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    from PySide6.QtCore import Qt as _Qt
+    from PySide6.QtGui import QColor
+
+    tab = _make_tab(qtbot, conn)
+    tab.append_packet(
+        callsign="JF1PTU>CQ", via="ARISS", comment="[TX→CQ] PM95", raw_frame="", tx=True
+    )
+    tab.append_packet(callsign="JA1XYZ", via="", comment="hello", raw_frame="")
+    sent = tab._log_list.item(tab._log_list.count() - 2)
+    received = tab._log_list.item(tab._log_list.count() - 1)
+    assert sent.background().color() == QColor("#4fc3f7")
+    assert sent.foreground().color() == QColor("#000000")
+    # A received row keeps the default look (no background brush is set).
+    assert received.background().style() == _Qt.BrushStyle.NoBrush
+
+
+def test_sending_a_message_and_a_position_marks_the_rows_as_sent() -> None:
+    import inspect
+
+    import ui.aprs_tab as aprs_tab
+
+    source = inspect.getsource(aprs_tab.AprsTab)
+    assert source.count("tx=True") == 2  # message echo and position echo

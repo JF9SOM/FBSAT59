@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -64,6 +65,12 @@ _ROLE_PLAIN = int(Qt.ItemDataRole.UserRole) + 1
 _ROLE_RAW = int(Qt.ItemDataRole.UserRole) + 2
 # (sender, destination, addressee, text) of a received packet, for click-to-fill.
 _ROLE_CALL_INFO = int(Qt.ItemDataRole.UserRole) + 3
+
+# Row colour of a message / position we sent, in the receive log. The same light blue
+# as our own transmissions in the FT4 tab (ui/ft4_tab.py), so what we sent stands out
+# from what we received (GitHub Issue #35). Black text keeps it readable in any theme.
+_OWN_TX_ROW_COLOR = QColor("#4fc3f7")
+_OWN_TX_TEXT_COLOR = QColor("#000000")
 
 # Maidenhead locator (4 or 6 characters) inside a received text.
 _GRID_RE = re.compile(r"\b([A-R]{2}[0-9]{2}(?:[A-X]{2})?)\b", re.IGNORECASE)
@@ -1081,8 +1088,12 @@ class AprsTab(QWidget):
         plain_callsign: str | None = None,
         dest: str | None = None,
         addressee: str | None = None,
+        tx: bool = False,
     ) -> None:
         """Add a decoded APRS packet to the receive log widget.
+
+        *tx* marks a message or position we sent ourselves: the row is coloured like our
+        own transmissions in the FT4 tab.
 
         *dest* is the AX.25 destination; when given, rows read ``SRC>DEST,VIA`` so a
         packet addressed to us (UISS style) shows who it was for.
@@ -1110,6 +1121,7 @@ class AprsTab(QWidget):
             dest=dest,
             addressee=addressee,
             text=raw_frame,
+            tx=tx,
         )
 
         if log and hasattr(self._conn, "execute"):
@@ -1205,6 +1217,7 @@ class AprsTab(QWidget):
         dest: str | None = None,
         addressee: str | None = None,
         text: str = "",
+        tx: bool = False,
     ) -> None:
         via_str = f",{via}" if via else ""
         source = callsign
@@ -1230,6 +1243,9 @@ class AprsTab(QWidget):
         # Stash the position (if any) so the right-click menu can offer a map link.
         if lat is not None and lon is not None:
             item.setData(_ROLE_COORDS, (float(lat), float(lon)))
+        if tx:
+            item.setBackground(_OWN_TX_ROW_COLOR)
+            item.setForeground(_OWN_TX_TEXT_COLOR)
         self._log_list.addItem(item)
         self._log_list.scrollToBottom()
 
@@ -1342,6 +1358,7 @@ class AprsTab(QWidget):
             via=via,
             comment=f"[TX→{to_call}] {msg}",
             raw_frame="",
+            tx=True,
         )
         # The text stays so an unanswered message can be sent again; the next preset, CQ
         # or reply click overwrites it.
@@ -1583,6 +1600,7 @@ class AprsTab(QWidget):
             via=via,
             comment=f"[TX POS] {abs(lat):.4f}°{ns} {abs(lon):.4f}°{ew} {comment}".strip(),
             raw_frame="",
+            tx=True,
         )
 
     # ------------------------------------------------------------------ #
