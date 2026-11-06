@@ -358,9 +358,8 @@ class Ft4QsoManager:
             if payload == "73":
                 return self._finish()
 
-        elif self._state == QsoState.CONFIRM:
-            if payload == "73" or payload in _ROGER_WORDS:
-                return self._finish()
+        elif self._state == QsoState.CONFIRM and (payload == "73" or payload in _ROGER_WORDS):
+            return self._finish()
 
         return None
 

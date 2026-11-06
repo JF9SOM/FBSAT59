@@ -278,10 +278,11 @@ class AutotrackManager:
             if best_aos is None or aos < best_aos:
                 best_aos = aos
                 best_entry = entry
-            elif aos == best_aos:
+            elif aos == best_aos and (
+                best_entry is None or entry.sort_order < best_entry.sort_order
+            ):
                 # Tiebreak: list sort_order (entry already first due to ORDER BY)
-                if best_entry is None or entry.sort_order < best_entry.sort_order:
-                    best_entry = entry
+                best_entry = entry
 
         if best_entry is not None and best_entry.norad_cat_id != current:
             return self._commit_switch(best_entry)
