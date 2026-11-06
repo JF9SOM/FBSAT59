@@ -219,6 +219,7 @@ class AprsTab(QWidget):
         # reception can be tested with no rig at all. TX stays gated behind
         # can_tx in _refresh_input_source() (requires an actual rig for PTT).
         self._try_start_engine()
+        self._prepare_tx(enable=True)
 
     # ------------------------------------------------------------------ #
     # DB helpers
@@ -533,6 +534,7 @@ class AprsTab(QWidget):
             self._rig_connected = True
             self._engine.set_rig(rig1)
             self._try_start_engine()
+            self._prepare_tx()
         self._refresh_input_source()
 
     def _on_rig_disconnected(self) -> None:
@@ -561,6 +563,7 @@ class AprsTab(QWidget):
             self._rig_connected = True
             self._engine.set_rig(rig2)
             self._try_start_engine()
+            self._prepare_tx()
         self._refresh_input_source()
 
     def _on_rig2_disconnected(self) -> None:
@@ -635,6 +638,16 @@ class AprsTab(QWidget):
     def engine(self) -> Any:
         """Return the APRSEngine instance (for SSDV cross-tab wiring)."""
         return self._engine
+
+    def _prepare_tx(self, enable: bool = False) -> None:
+        """Keep the TX Direwolf open (or re-open it after a settings change).
+
+        While the APRS tab is open the transmit Direwolf stays running so a frame leaves
+        at once; it holds the transmit sound card, so other transmit tabs cannot use it.
+        """
+        method = getattr(self._engine, "enable_tx_session" if enable else "prepare_tx", None)
+        if method is not None:
+            method()
 
     def _try_start_engine(self) -> None:
         """Start Direwolf engine whenever Sound Card is configured.
@@ -1014,6 +1027,7 @@ class AprsTab(QWidget):
         pipeline = self._get_sdr_pipeline()
         if pipeline is not None:
             self._engine.sync_sdr_baud(pipeline, modem)
+        self._prepare_tx()
 
     def _on_open_is_monitor(self) -> None:
         """Open (or raise) the APRS-IS monitor window."""
@@ -1043,6 +1057,9 @@ class AprsTab(QWidget):
         with contextlib.suppress(RuntimeError, TypeError):
             self._engine.error_occurred.disconnect(self._on_engine_error)
         self._engine.stop(_ENGINE_OWNER)
+        disable = getattr(self._engine, "disable_tx_session", None)
+        if disable is not None:
+            disable()
         self._save_settings()
         super().closeEvent(event)
 
@@ -1420,6 +1437,7 @@ class AprsTab(QWidget):
         lay.addWidget(buttons)
         if dlg.exec() == QDialog.DialogCode.Accepted and hasattr(self._conn, "execute"):
             save_tx_timing(self._conn, TxTiming(**{k: s.value() for k, s in spins.items()}))
+            self._prepare_tx()
 
     def _on_cq_clicked(self) -> None:
         """Fill the form for a general call (To = CQ, message = our grid, UISS style) and send it.

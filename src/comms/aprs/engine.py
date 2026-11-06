@@ -36,6 +36,7 @@ decoder; the two decoders' frames are merged and de-duplicated
 
 from __future__ import annotations
 
+import atexit
 import json
 import logging
 import re
@@ -46,7 +47,7 @@ from typing import Any
 from PySide6.QtCore import QObject, Signal
 
 from comms.aprs.direwolf import DirewolfManager, find_direwolf
-from comms.aprs.direwolf_tx import DirewolfTxWorker
+from comms.aprs.direwolf_tx import DirewolfTxSession, DirewolfTxWorker
 from comms.aprs.parser import AprsPacket, Ax25Frame, decode_ax25, parse_aprs
 from comms.aprs.tx_audio_log import get_tx_audio_recorder
 from comms.aprs.tx_timing import load_tx_timing
@@ -85,6 +86,11 @@ class AprsEngine(QObject):
         self._rig: Any | None = None  # RigController for PTT
         self._tx_in_progress = False
         self._tx_worker: DirewolfTxWorker | None = None
+        # The TX Direwolf kept open while the APRS tab is open (see DirewolfTxSession):
+        # a frame then leaves at once instead of ~2 s after the button.
+        self._tx_resident = False
+        self._tx_session: DirewolfTxSession | None = None
+        self._tx_prepare_busy = False
         self._running = False
         self._owners: set[str] = set()
         # AX.25 baud rate ("1200"/"4800"/"9600") Direwolf is currently
@@ -448,6 +454,76 @@ class AprsEngine(QObject):
         frame = _build_aprs_position(src_callsign, src_ssid, via, lat_deg, lon_deg, symbol, comment)
         return self._transmit(frame)
 
+    # ------------------------------------------------------------------ #
+    # Kept-open TX Direwolf (APRS tab)
+    # ------------------------------------------------------------------ #
+
+    @property
+    def tx_session_open(self) -> bool:
+        """True while a kept-open TX Direwolf holds the sound card output."""
+        session = self._tx_session
+        return self._tx_resident and session is not None and session.is_open
+
+    def enable_tx_session(self) -> None:
+        """Keep a TX Direwolf open from now on (the APRS tab is open); starts it."""
+        if not self._tx_resident:
+            self._tx_resident = True
+            atexit.register(self.disable_tx_session)
+        self.prepare_tx()
+
+    def disable_tx_session(self) -> None:
+        """Close the kept-open TX Direwolf and give the sound card output back."""
+        self._tx_resident = False
+        session, self._tx_session = self._tx_session, None
+        if session is not None:
+            session.close()
+
+    def prepare_tx(self) -> None:
+        """Open (or reopen, if its settings changed) the kept-open TX Direwolf in the background.
+
+        Does nothing unless the APRS tab asked for it, a transmission is not running,
+        and the sound card output and Direwolf are available. Failures are only logged;
+        a real transmission reports its own error.
+        """
+        if not self._tx_resident or self._tx_in_progress or self._tx_prepare_busy:
+            return
+        out_device = self._load_soundcard_devices()[1]
+        if out_device is None or find_direwolf() is None:
+            return
+        session, stale = self._session_for_tx(out_device)
+        self._tx_prepare_busy = True
+
+        def _open() -> None:
+            try:
+                if stale is not None:
+                    stale.close()
+                session.open()
+            except Exception as exc:
+                logger.warning("APRS TX: could not open the kept-open Direwolf: %s", exc)
+            finally:
+                self._tx_prepare_busy = False
+
+        threading.Thread(target=_open, daemon=True).start()
+
+    def _session_for_tx(
+        self, out_device: int | None
+    ) -> tuple[DirewolfTxSession, DirewolfTxSession | None]:
+        """The kept-open session for the current settings, and an out-of-date one to close."""
+        timing = load_tx_timing(self._conn)
+        fresh = DirewolfTxSession(
+            _TX_OWNER,
+            out_device,
+            self._load_soundcard_devices()[0],
+            self._current_modem or "1200",
+            timing.txdelay_ms,
+            timing.txtail_ms,
+        )
+        current = self._tx_session
+        if current is not None and current.config_key == fresh.config_key:
+            return current, None
+        self._tx_session = fresh
+        return fresh, current
+
     def _transmit(self, frame: bytes) -> bool:
         """Transmit *frame* through Direwolf, keying the rig's PTT around it.
 
@@ -492,6 +568,9 @@ class AprsEngine(QObject):
             len(frame),
             self._current_modem or "1200",
         )
+        session, stale = (None, None)
+        if self._tx_resident:
+            session, stale = self._session_for_tx(out_device)
         worker = DirewolfTxWorker(
             _TX_OWNER,
             out_device,
@@ -503,6 +582,8 @@ class AprsEngine(QObject):
             in_device=self._load_soundcard_devices()[0],
             ptt_lead_s=timing.ptt_lead_ms / 1000.0,
             ptt_tail_s=timing.ptt_tail_ms / 1000.0,
+            session=session,
+            close_first=stale,
         )
         worker.finished.connect(self._on_tx_finished)
         worker.error.connect(self._on_tx_error)

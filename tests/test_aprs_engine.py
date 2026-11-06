@@ -625,3 +625,37 @@ def test_describe_ax25_frame_shows_path_and_info() -> None:
 def test_describe_ax25_frame_shows_ssid() -> None:
     frame = _build_aprs_position("JF9SOM", 7, "RS0ISS", 36.1, 136.4, "/-", "")
     assert describe_ax25_frame(frame).startswith("JF9SOM-7>APRS,RS0ISS")
+
+
+def test_no_kept_open_session_unless_the_aprs_tab_asked_for_one(tx_engine: AprsEngine) -> None:
+    assert tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "hi")
+    sent = _FakeWorker.sent[0]
+    assert sent["session"] is None and sent["close_first"] is None
+
+
+def test_kept_open_session_is_reused_and_replaced_when_settings_change(
+    tx_engine: AprsEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from comms.aprs.direwolf_tx import DirewolfTxSession
+
+    monkeypatch.setattr(DirewolfTxSession, "open", lambda self: None)
+    closed: list[DirewolfTxSession] = []
+    monkeypatch.setattr(DirewolfTxSession, "close", lambda self, drain=False: closed.append(self))
+    tx_engine._tx_resident = True
+    assert tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "one")
+    first = _FakeWorker.sent[0]["session"]
+    assert first is not None and _FakeWorker.sent[0]["close_first"] is None
+
+    tx_engine._tx_in_progress = False
+    assert tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "two")
+    assert _FakeWorker.sent[1]["session"] is first  # same settings: same Direwolf
+
+    tx_engine._tx_in_progress = False
+    tx_engine._current_modem = "4800"
+    assert tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "three")
+    third = _FakeWorker.sent[2]
+    assert third["session"] is not first and third["close_first"] is first
+
+    tx_engine.disable_tx_session()
+    assert closed == [third["session"]]
+    assert not tx_engine.tx_session_open

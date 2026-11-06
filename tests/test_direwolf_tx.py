@@ -68,3 +68,95 @@ def test_config_encoding_is_ansi_on_windows_and_utf8_elsewhere(
     assert direwolf_tx._config_encoding() == "cp932"
     monkeypatch.setattr(direwolf_tx.sys, "platform", "darwin")
     assert direwolf_tx._config_encoding() == "utf-8"
+
+
+class _FakeSession:
+    """Stands in for DirewolfTxSession: scripted failures, call counting."""
+
+    def __init__(self, fail_sends: int = 0, busy: str | None = None) -> None:
+        self.fail_sends = fail_sends
+        self.busy = busy
+        self.opened = 0
+        self.closed = 0
+        self.sent: list[bytes] = []
+        self._open = False
+
+    @property
+    def is_open(self) -> bool:
+        return self._open
+
+    def open(self) -> None:
+        if self.busy is not None:
+            raise direwolf_tx.OutputBusyError(self.busy)
+        self.opened += 1
+        self._open = True
+
+    def close(self, drain: bool = False) -> None:
+        self.closed += 1
+        self._open = False
+
+    def send(self, frame: bytes, rig: Any, ptt_tail_s: float = 0.0) -> bool:
+        if self.fail_sends > 0:
+            self.fail_sends -= 1
+            raise DirewolfStartError("connection lost")
+        self.sent.append(frame)
+        return True
+
+
+def _session_worker(session: Any) -> DirewolfTxWorker:
+    return DirewolfTxWorker(
+        "APRS",
+        1,
+        None,
+        frame=b"x",
+        modem="1200",
+        txdelay_ms=300,
+        txtail_ms=100,
+        session=session,
+    )
+
+
+def test_kept_open_session_is_used_and_left_open() -> None:
+    session = _FakeSession()
+    w = _session_worker(session)
+    done: list[bool] = []
+    w.finished.connect(lambda: done.append(True))
+    w.run()
+    assert done == [True]
+    assert session.sent == [b"x"] and session.opened == 1 and session.closed == 0
+
+
+def test_kept_open_session_that_fails_is_restarted_once() -> None:
+    session = _FakeSession(fail_sends=1)
+    w = _session_worker(session)
+    done: list[bool] = []
+    w.finished.connect(lambda: done.append(True))
+    w.run()
+    assert done == [True]
+    assert session.opened == 2 and session.closed == 1 and session.sent == [b"x"]
+
+
+def test_kept_open_session_that_keeps_failing_reports_an_error() -> None:
+    session = _FakeSession(fail_sends=2)
+    w = _session_worker(session)
+    errors: list[str] = []
+    w.error.connect(errors.append)
+    w.run()
+    assert len(errors) == 1 and "connection lost" in errors[0]
+    assert session.closed >= 1  # not trusted any more
+
+
+def test_busy_sound_card_names_the_other_owner() -> None:
+    w = _session_worker(_FakeSession(busy="FT4"))
+    errors: list[str] = []
+    w.error.connect(errors.append)
+    w.run()
+    assert errors == ["Sound card output is in use by FT4"]
+
+
+def test_session_config_key_changes_with_the_settings() -> None:
+    a = direwolf_tx.DirewolfTxSession("APRS", 1, 2, "1200", 300, 100)
+    assert a.config_key == direwolf_tx.DirewolfTxSession("APRS", 1, 2, "1200", 300, 100).config_key
+    assert a.config_key != direwolf_tx.DirewolfTxSession("APRS", 1, 2, "4800", 300, 100).config_key
+    assert a.config_key != direwolf_tx.DirewolfTxSession("APRS", 1, 2, "1200", 250, 100).config_key
+    assert not a.is_open

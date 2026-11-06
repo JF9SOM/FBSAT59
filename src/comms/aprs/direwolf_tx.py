@@ -1,4 +1,4 @@
-"""APRS transmit through Direwolf itself (one short-lived process per frame).
+"""APRS transmit through Direwolf itself (a TX Direwolf process, kept open or one-shot).
 
 Why: the audio of FBSAT59's own AFSK/G3RUH generator is, sample for sample, nearly the
 same as Direwolf's (frame bytes, tone levels and spectrum were compared), yet a
@@ -7,7 +7,7 @@ issue #35). Direwolf is a proven transmitter, so here it makes and plays the aud
 
 How: the RX Direwolf (``ADEVICE stdin null``) cannot transmit, because with a ``stdin``
 input it never opens a real output device (verified on macOS: the TX is logged but no
-audio comes out). So a second Direwolf is started per transmission with real input and
+audio comes out). So a second Direwolf is started with real input and
 output devices, the PTT is keyed through the rig (Hamlib, as before), the frame goes in
 over KISS, and Direwolf plays it (its own TXDELAY / TXTAIL flags around the frame).
 
@@ -24,9 +24,11 @@ import contextlib
 import logging
 import queue
 import random
+import shutil
 import socket
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -155,54 +157,173 @@ def _connect_retry(port: int, timeout_s: float = 5.0) -> socket.socket:
             time.sleep(0.1)
 
 
-class DirewolfTxWorker(QObject):
-    """Keys the PTT and has Direwolf transmit one AX.25 frame.
+class OutputBusyError(RuntimeError):
+    """The sound card output is held by another owner (e.g. another tab)."""
 
-    Exactly one of ``finished`` or ``error`` is emitted per ``run()``.
+    def __init__(self, other: str) -> None:
+        super().__init__(other)
+        self.other = other
+
+
+class DirewolfTxSession:
+    """A TX Direwolf process and its KISS connection.
+
+    Direwolf needs about a second after it starts before it sends its first frame
+    (a frame sent 3 s after the start went out within 0.05 s; one sent at once took
+    1 s), so the APRS tab keeps one session open while the tab is open and every
+    frame then leaves at once. A session also works one-shot (open, send, close).
+    While it is open it holds the sound card output (``acquire_output``).
     """
-
-    finished: Signal = Signal()
-    error: Signal = Signal(str)
 
     def __init__(
         self,
         owner: str,
         out_device: int | None,
-        rig: Any,
-        *,
-        frame: bytes,
+        in_device: int | None,
         modem: str,
         txdelay_ms: int,
         txtail_ms: int,
-        in_device: int | None = None,
-        parent: Any = None,
-        ptt_lead_s: float = 0.0,
-        ptt_tail_s: float = 0.0,
     ) -> None:
-        super().__init__(parent)
         self._owner = owner
         self._out_device = out_device
-        self._rig = rig
-        self._frame = frame
+        self._in_device = in_device
         self._modem = modem
         self._txdelay_ms = txdelay_ms
         self._txtail_ms = txtail_ms
-        self._in_device = in_device
-        self._ptt_lead_s = max(0.0, ptt_lead_s)
-        self._ptt_tail_s = max(0.0, ptt_tail_s)
-        self._dw_lines: queue.Queue[str | None] = queue.Queue()
+        self._lock = threading.RLock()
+        self._proc: LineProcess | None = None
+        self._sock: socket.socket | None = None
+        self._tmp: Path | None = None
+        self._holds_output = False
+        self._lines: queue.Queue[str | None] = queue.Queue()
 
-    def run(self) -> None:
-        """Transmit with Direwolf; report any problem through ``error``."""
-        try:
-            self._run_direwolf()
-        except DirewolfStartError as exc:
-            logger.error("TX[%s]: Direwolf TX failed to start: %s", self._owner, exc)
-            from i18n import _
+    @property
+    def config_key(self) -> tuple[Any, ...]:
+        """Everything that is fixed when Direwolf starts; a change needs a new session."""
+        return (
+            self._out_device,
+            self._in_device,
+            self._modem,
+            self._txdelay_ms,
+            self._txtail_ms,
+        )
 
-            self.error.emit(_("Direwolf could not transmit: {why}").format(why=exc))
+    @property
+    def is_open(self) -> bool:
+        """True while the Direwolf process is alive and the KISS port is connected."""
+        with self._lock:
+            return self._proc is not None and self._proc.poll() is None and self._sock is not None
+
+    def open(self) -> None:
+        """Start Direwolf and connect to it; no-op when already open.
+
+        Raises OutputBusyError or DirewolfStartError.
+        """
+        with self._lock:
+            if self.is_open:
+                return
+            self._teardown()
+            exe = find_direwolf()
+            if exe is None:
+                raise DirewolfStartError("direwolf not found")
+            from comms.audio_device_manager import get_audio_device_manager
+
+            mgr = get_audio_device_manager()
+            if not mgr.acquire_output(self._owner, self._out_device):
+                raise OutputBusyError(mgr.output_owner(self._out_device) or "")
+            self._holds_output = True
+            try:
+                tmp = Path(tempfile.mkdtemp(prefix="fbsat59_dwtx_"))
+                self._tmp = tmp
+                proc, port = self._start_direwolf(exe, tmp)
+                self._proc = proc
+                self._lines = proc.lines
+                self._sock = _connect_retry(port)
+                logger.info("TX[%s]: Direwolf TX ready (port %d)", self._owner, port)
+            except BaseException:
+                self._teardown()
+                raise
+
+    def close(self, drain: bool = False) -> None:
+        """Stop Direwolf and release the sound card output.
+
+        *drain* waits a moment first so the end of a frame that was just played is not
+        cut off; it never delays the PTT or reception.
+        """
+        with self._lock:
+            if drain and self._proc is not None:
+                time.sleep(_DRAIN_S)
+            self._teardown()
+
+    def _teardown(self) -> None:
+        sock, self._sock = self._sock, None
+        if sock is not None:
+            with contextlib.suppress(Exception):
+                sock.close()
+        proc, self._proc = self._proc, None
+        if proc is not None:
+            with contextlib.suppress(Exception):
+                proc.terminate()
+                proc.wait(timeout=3)
+        if self._holds_output:
+            self._holds_output = False
+            from comms.audio_device_manager import get_audio_device_manager
+
+            with contextlib.suppress(Exception):
+                get_audio_device_manager().release_output(self._owner, self._out_device)
+        tmp, self._tmp = self._tmp, None
+        if tmp is not None:
+            # Direwolf may still hold its working directory for a moment (Windows).
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def send(self, frame: bytes, rig: Any, ptt_tail_s: float = 0.0) -> bool:
+        """Transmit one frame, keying the rig on Direwolf's own PTT edges.
+
+        Returns False when the PTT command failed. Raises DirewolfStartError when
+        Direwolf is not running, the connection is lost or it never starts sending.
+        """
+        with self._lock:
+            if not self.is_open or self._sock is None:
+                raise DirewolfStartError("Direwolf is not running")
+            self._drain_lines()
+            frame_s = _estimate_seconds(len(frame), self._modem, self._txdelay_ms, self._txtail_ms)
+            keyed = False
+            try:
+                try:
+                    self._sock.sendall(_kiss_encode(frame))
+                except OSError as exc:
+                    raise DirewolfStartError(f"Direwolf connection lost: {exc}") from exc
+                logger.info("TX[%s]: KISS frame sent to Direwolf", self._owner)
+                # Direwolf reports its own PTT edges ("PTT 0 = 1" when the audio
+                # starts, "PTT 0 = 0" when it ends); the rig is keyed and released
+                # exactly on them, so there is no unmodulated carrier around the
+                # frame (the flags of TXDELAY / TXTAIL cover the rig's key-up).
+                if not self._wait_line("PTT 0 = 1", _TX_START_TIMEOUT_S):
+                    raise DirewolfStartError("Direwolf did not start transmitting")
+                keyed = bool(rig.set_ptt(True))
+                logger.info("TX[%s]: PTT on -> %s", self._owner, keyed)
+                if not keyed:
+                    return False
+                if not self._wait_line("PTT 0 = 0", frame_s + _TX_END_MARGIN_S):
+                    logger.warning("TX[%s]: Direwolf PTT-off line never came", self._owner)
+                time.sleep(max(0.0, ptt_tail_s))
+                unkeyed = rig.set_ptt(False)
+                keyed = False
+                logger.info("TX[%s]: playback finished, PTT off -> %s", self._owner, unkeyed)
+                self._log_direwolf_output()
+                return True
+            finally:
+                if keyed:
+                    with contextlib.suppress(Exception):
+                        rig.set_ptt(False)
 
     # ------------------------------------------------------------------ #
+
+    def _drain_lines(self) -> None:
+        """Drop console lines of earlier frames so only this frame's PTT edges count."""
+        with contextlib.suppress(queue.Empty):
+            while True:
+                self._lines.get_nowait()
 
     def _start_direwolf(self, exe: Path, tmp: Path) -> tuple[LineProcess, int]:
         """Start Direwolf, trying the device-name variants; returns (process, kiss_port)."""
@@ -240,7 +361,6 @@ class DirewolfTxWorker(QObject):
         Readiness is judged by the KISS port itself (not only by the console
         line), so a program whose output is delayed still counts as started.
         """
-        self._dw_lines = proc.lines
         deadline = time.monotonic() + _READY_TIMEOUT_S
         last = "timeout"
         while time.monotonic() < deadline:
@@ -264,79 +384,12 @@ class DirewolfTxWorker(QObject):
                 time.sleep(0.2)
         return False, last
 
-    def _run_direwolf(self) -> None:
-        exe = find_direwolf()
-        if exe is None:
-            raise DirewolfStartError("direwolf not found")
-        from comms.audio_device_manager import get_audio_device_manager
-        from i18n import _
-
-        mgr = get_audio_device_manager()
-        if not mgr.acquire_output(self._owner, self._out_device):
-            other = mgr.output_owner(self._out_device) or _("another tab")
-            self.error.emit(_("Sound card output is in use by {other}").format(other=other))
-            return
-        proc: LineProcess | None = None
-        keyed = False
-        try:
-            with tempfile.TemporaryDirectory(prefix="fbsat59_dwtx_") as td:
-                proc, port = self._start_direwolf(exe, Path(td))
-                frame_s = _estimate_seconds(
-                    len(self._frame), self._modem, self._txdelay_ms, self._txtail_ms
-                )
-                logger.info(
-                    "TX[%s]: Direwolf TX start (expected ~%.2f s, port %d)",
-                    self._owner,
-                    frame_s,
-                    port,
-                )
-                with _connect_retry(port) as sock:
-                    sock.sendall(_kiss_encode(self._frame))
-                    logger.info("TX[%s]: KISS frame sent to Direwolf", self._owner)
-                    # Direwolf reports its own PTT edges ("PTT 0 = 1" when the audio
-                    # starts, "PTT 0 = 0" when it ends); the rig is keyed and released
-                    # exactly on them, so there is no unmodulated carrier around the
-                    # frame (the flags of TXDELAY / TXTAIL cover the rig's key-up).
-                    if not self._wait_line("PTT 0 = 1", _TX_START_TIMEOUT_S):
-                        raise DirewolfStartError("Direwolf did not start transmitting")
-                    keyed = bool(self._rig.set_ptt(True))
-                    logger.info("TX[%s]: PTT on -> %s", self._owner, keyed)
-                    if not keyed:
-                        from i18n import _ as tr
-
-                        self.error.emit(tr("PTT command failed — check Rig 1 connection"))
-                        return
-                    ended = self._wait_line("PTT 0 = 0", frame_s + _TX_END_MARGIN_S)
-                    if not ended:
-                        logger.warning("TX[%s]: Direwolf PTT-off line never came", self._owner)
-                time.sleep(self._ptt_tail_s)
-                unkeyed = self._rig.set_ptt(False)
-                keyed = False
-                logger.info("TX[%s]: playback finished, PTT off -> %s", self._owner, unkeyed)
-                self._log_direwolf_output()
-                self.finished.emit()
-        except DirewolfStartError:
-            raise
-        except Exception as exc:
-            logger.exception("TX[%s]: Direwolf TX failed", self._owner)
-            self.error.emit(str(exc))
-        finally:
-            if keyed:
-                with contextlib.suppress(Exception):
-                    self._rig.set_ptt(False)
-            mgr.release_output(self._owner, self._out_device)
-            if proc is not None:
-                time.sleep(_DRAIN_S)
-                with contextlib.suppress(Exception):
-                    proc.terminate()
-                    proc.wait(timeout=3)
-
     def _wait_line(self, text: str, timeout_s: float) -> bool:
         """Wait for a Direwolf output line containing *text*; False on timeout or exit."""
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
             try:
-                line = self._dw_lines.get(timeout=0.05)
+                line = self._lines.get(timeout=0.05)
             except queue.Empty:
                 continue
             if line is None:
@@ -349,11 +402,116 @@ class DirewolfTxWorker(QObject):
 
     def _log_direwolf_output(self) -> None:
         """Log what Direwolf printed (its '[0L] ...' line confirms the transmission)."""
-        lines = self._dw_lines
         try:
             while True:
-                line = lines.get_nowait()
+                line = self._lines.get_nowait()
                 if line and line.startswith("["):
                     logger.info("TX[%s]: Direwolf: %s", self._owner, line)
         except queue.Empty:
             pass
+
+
+class DirewolfTxWorker(QObject):
+    """Keys the PTT and has Direwolf transmit one AX.25 frame.
+
+    Exactly one of ``finished`` or ``error`` is emitted per ``run()``. With a *session*
+    (the APRS tab's kept-open Direwolf) the frame goes out through it and the session
+    stays open; without one a short-lived Direwolf is started for this frame.
+    *close_first* is an out-of-date session to close before sending.
+    """
+
+    finished: Signal = Signal()
+    error: Signal = Signal(str)
+
+    def __init__(
+        self,
+        owner: str,
+        out_device: int | None,
+        rig: Any,
+        *,
+        frame: bytes,
+        modem: str,
+        txdelay_ms: int,
+        txtail_ms: int,
+        in_device: int | None = None,
+        parent: Any = None,
+        ptt_lead_s: float = 0.0,
+        ptt_tail_s: float = 0.0,
+        session: DirewolfTxSession | None = None,
+        close_first: DirewolfTxSession | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._owner = owner
+        self._out_device = out_device
+        self._rig = rig
+        self._frame = frame
+        self._modem = modem
+        self._txdelay_ms = txdelay_ms
+        self._txtail_ms = txtail_ms
+        self._in_device = in_device
+        self._ptt_lead_s = max(0.0, ptt_lead_s)
+        self._ptt_tail_s = max(0.0, ptt_tail_s)
+        self._session = session
+        self._close_first = close_first
+
+    def run(self) -> None:
+        """Transmit with Direwolf; report any problem through ``error``."""
+        from i18n import _
+
+        try:
+            self._run_direwolf()
+        except OutputBusyError as exc:
+            self.error.emit(
+                _("Sound card output is in use by {other}").format(
+                    other=exc.other or _("another tab")
+                )
+            )
+        except DirewolfStartError as exc:
+            logger.error("TX[%s]: Direwolf TX failed to start: %s", self._owner, exc)
+            self.error.emit(_("Direwolf could not transmit: {why}").format(why=exc))
+        except Exception as exc:
+            logger.exception("TX[%s]: Direwolf TX failed", self._owner)
+            self.error.emit(str(exc))
+
+    def _run_direwolf(self) -> None:
+        from i18n import _
+
+        own = self._session is None
+        session = self._session or DirewolfTxSession(
+            self._owner,
+            self._out_device,
+            self._in_device,
+            self._modem,
+            self._txdelay_ms,
+            self._txtail_ms,
+        )
+        if self._close_first is not None:
+            self._close_first.close()
+        try:
+            sent = self._send(session, retry=not own)
+            if not sent:
+                self.error.emit(_("PTT command failed — check Rig 1 connection"))
+                return
+            self.finished.emit()
+        except BaseException:
+            if not own:
+                # A kept-open session that failed is not trusted any more.
+                session.close()
+            raise
+        finally:
+            if own:
+                session.close(drain=True)
+
+    def _send(self, session: DirewolfTxSession, retry: bool) -> bool:
+        """Open the session if needed and send; a kept-open one is reopened once on failure."""
+        for attempt in (1, 2):
+            try:
+                if not session.is_open:
+                    session.open()
+                return session.send(self._frame, self._rig, self._ptt_tail_s)
+            except DirewolfStartError:
+                if not retry or attempt == 2:
+                    raise
+                logger.warning("TX[%s]: kept-open Direwolf failed, restarting it", self._owner)
+                session.close()
+        return False

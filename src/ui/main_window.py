@@ -3223,6 +3223,29 @@ class MainWindow(QMainWindow):
                 except Exception:
                     logger.exception("Re-opening the PTT port before opening a tab failed")
 
+    def _warn_if_aprs_holds_tx_output(self) -> None:
+        """Warn when the APRS tab's kept-open Direwolf holds the transmit sound card.
+
+        Called as a transmit tab (FT4, Q65, Message Box) opens: that tab cannot send
+        until the APRS tab is closed. The tab still opens (it can receive).
+        """
+        from comms.aprs.engine import get_aprs_engine
+
+        try:
+            holds = get_aprs_engine(self._conn).tx_session_open
+        except Exception:
+            logger.exception("APRS TX session check failed")
+            return
+        if holds:
+            QMessageBox.warning(
+                self,
+                _("Transmit sound card in use"),
+                _(
+                    "The APRS tab is holding the transmit sound card. "
+                    "Close the APRS tab to transmit from this tab."
+                ),
+            )
+
     def _on_open_aprs(self) -> None:
         """Open the APRS tab (Communications > APRS).
 
@@ -3520,6 +3543,7 @@ class MainWindow(QMainWindow):
                 return
 
         self._refresh_audio_devices_for_tab()
+        self._warn_if_aprs_holds_tx_output()
         from ui.ft4_tab import Ft4Tab
 
         tab = Ft4Tab(
@@ -3679,6 +3703,7 @@ class MainWindow(QMainWindow):
         # only caught failures from the constructor, not from the import,
         # and so still failed silently for an import-time crash.
         self._refresh_audio_devices_for_tab()
+        self._warn_if_aprs_holds_tx_output()
         try:
             from ui.q65_tab import Q65Tab
 
@@ -3829,6 +3854,7 @@ class MainWindow(QMainWindow):
                 return
 
         self._refresh_audio_devices_for_tab()
+        self._warn_if_aprs_holds_tx_output()
         from ui.message_box_tab import MessageBoxTab
 
         tab = MessageBoxTab(self._conn, self._radio_control, parent=self)

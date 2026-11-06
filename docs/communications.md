@@ -4723,3 +4723,28 @@ ARICA-2/Foresail-1p/ERMINAZ-2 パネルが使うので残してある。
   後に切れる（測定は概算）。PTT の解除と受信復帰は終了待ちとは無関係に先に行われ、出力デバイスの占有も待ちの前に解除する。
 - ループバック録音（VB-Cable + ffmpeg）自体も万能ではない: 正しい 1200 baud の WAV を往復させるとデコードできなかった
   （4800 は可）。録音のデコード可否だけで送信の良否を判断しないこと。
+
+### APRS 送信 Direwolf の常駐化（2026-11-06、Issue #35 続報）
+
+**Windows 実機の結果（大澤さん）**: v0.3.85 で APRS 送信が成功（IC-9700 の MON ON による
+折り返しの誤認は無線機側の設定）。残った不満は (1) CQ/送信ボタンから変調キャリアまで約 2 秒、
+(2) 黄色い `WinError 32`（一時フォルダ削除失敗）。
+
+**遅れの内訳（ログ＋Mac 実測）**: Direwolf の起動 約 0.65 s ＋ **起動直後の最初の 1 フレームだけ**
+Direwolf が送出を始めるまで約 1 s。CSMA 設定（PERSIST/FULLDUP）を変えても縮まない。起動から
+3 s 置いてから送ると 0.05 s で出る＝フレーム毎ではなくプロセス起動後のウォームアップ。
+
+**対策（案 A）**: `DirewolfTxSession`（`comms/aprs/direwolf_tx.py`）が TX Direwolf と KISS 接続を
+保持し、**APRS タブを開いている間は起動したまま**にする。Mac 実測: 送信ボタン→PTT が 約 2 s → 0.06 s。
+- `AprsEngine.enable_tx_session()`（タブ生成時）/ `prepare_tx()`（baud・タイミング・Sound Card 変更後）/
+  `disable_tx_session()`（タブの closeEvent）。設定（出力/入力デバイス・modem・TxDelay/TxTail）が変わると
+  `config_key` が変わり、古いセッションを閉じて作り直す（バックグラウンドスレッド）。
+- 常駐中は `acquire_output` で送信サウンドカード出力を**占有**する。FT4・Q65・Message Box/Digipeater
+  の各タブを開くとき、APRS 側が占有中なら「APRSタブが送信サウンドカードを占有しています。APRSタブを
+  閉じて下さい。」と警告（`MainWindow._warn_if_aprs_holds_tx_output()`）。タブ自体は開く（受信は可能）。
+- 常駐セッションの送信が失敗したら 1 回だけ再起動して再送。ARICA-2 など他の呼び出し元（`session` なし）は
+  従来どおり 1 フレームごとに起動・終了（ワンショット）。
+- `atexit` でも閉じる（アプリ終了で TX Direwolf を孤児にしない）。
+- 黄色い `WinError 32` は、Direwolf がまだ生きたまま一時フォルダを消していたのが原因。プロセスを
+  終了してから `shutil.rmtree(ignore_errors=True)` に変更（セッションの `_teardown`）。
+- **Windows 実機では未検証**（ConPTY 上の常駐・停止時の後始末）。
