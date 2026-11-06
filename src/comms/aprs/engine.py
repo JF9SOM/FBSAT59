@@ -588,7 +588,6 @@ class AprsEngine(QObject):
             txdelay_ms=timing.txdelay_ms,
             txtail_ms=timing.txtail_ms,
             in_device=self._load_soundcard_devices()[0],
-            ptt_tail_s=timing.ptt_tail_ms / 1000.0,
             session=session,
             close_first=stale,
         )

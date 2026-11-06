@@ -8923,3 +8923,27 @@ msgstr "初期値に戻す"
 msgid ""
 "The APRS tab was closed because this tab needs the transmit sound card."
 msgstr "このタブが送信サウンドカードを使うため、APRSタブを閉じました。"
+
+msgid "Settings"
+msgstr "設定"
+
+msgid "Transmit timing: TxDelay and TxTail."
+msgstr "送信タイミング: TxDelay と TxTail"
+
+msgid "APRS transmit settings"
+msgstr "APRS送信設定"
+
+msgid "TxDelay (ms):"
+msgstr "TxDelay (ms):"
+
+msgid "TxTail (ms):"
+msgstr "TxTail (ms):"
+
+msgid "Flags sent before the frame."
+msgstr "フレームの前に送るフラグの長さ"
+
+msgid "Flags sent after the frame."
+msgstr "フレームの後に送るフラグの長さ"
+
+msgid "Defaults: 300 / 100 ms. Applies to the next transmission."
+msgstr "初期値: 300 / 100 ms。次の送信から反映されます。"

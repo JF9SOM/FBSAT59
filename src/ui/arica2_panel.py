@@ -715,7 +715,6 @@ class Arica2Panel(QWidget):
             txdelay_ms=round(DEFAULT_TXDELAY_MS),
             txtail_ms=round(DEFAULT_TXTAIL_MS),
             in_device=self._input_device(),
-            ptt_tail_s=0.0,
         )
         worker.finished.connect(self._on_tx_finished)
         worker.error.connect(self._on_tx_error)

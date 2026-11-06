@@ -330,7 +330,7 @@ class AprsTab(QWidget):
 
         row1.addStretch()
         self._tx_timing_btn = QPushButton(_("Settings"))
-        self._tx_timing_btn.setToolTip(_("Transmit timing: TxDelay, TxTail and the PTT hold time."))
+        self._tx_timing_btn.setToolTip(_("Transmit timing: TxDelay and TxTail."))
         self._tx_timing_btn.clicked.connect(self._on_tx_timing_settings)
         row1.addWidget(self._tx_timing_btn)
         settings_form.addRow(row1)
@@ -1420,7 +1420,6 @@ class AprsTab(QWidget):
         rows = (
             ("txdelay_ms", _("TxDelay (ms):"), _("Flags sent before the frame.")),
             ("txtail_ms", _("TxTail (ms):"), _("Flags sent after the frame.")),
-            ("ptt_tail_ms", _("PTT hold (ms):"), _("Audio end to PTT off (unmodulated carrier).")),
         )
         for key, label, tip in rows:
             spin = QSpinBox()
@@ -1432,7 +1431,7 @@ class AprsTab(QWidget):
             spins[key] = spin
             form.addRow(label, spin)
         lay.addLayout(form)
-        lay.addWidget(QLabel(_("Defaults: 300 / 100 / 0 ms. Applies to the next transmission.")))
+        lay.addWidget(QLabel(_("Defaults: 300 / 100 ms. Applies to the next transmission.")))
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )

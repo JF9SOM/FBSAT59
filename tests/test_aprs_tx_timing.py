@@ -17,16 +17,16 @@ def _conn() -> sqlite3.Connection:
 
 
 def test_defaults_when_nothing_saved() -> None:
-    assert load_tx_timing(_conn()) == TxTiming(300, 100, 0)
+    assert load_tx_timing(_conn()) == TxTiming(300, 100)
 
 
 def test_save_and_load_round_trip_and_clamp() -> None:
     conn = _conn()
-    save_tx_timing(conn, TxTiming(250, 10, 5000))
-    assert load_tx_timing(conn) == TxTiming(250, 10, MAX_MS)
+    save_tx_timing(conn, TxTiming(250, 10000))
+    assert load_tx_timing(conn) == TxTiming(250, MAX_MS)
 
 
-def test_a_ptt_lead_saved_by_an_older_version_is_ignored() -> None:
+def test_ptt_lead_and_hold_saved_by_an_older_version_are_ignored() -> None:
     conn = _conn()
     conn.execute(
         "INSERT INTO app_settings (key, value) VALUES (?, ?)",
@@ -35,7 +35,7 @@ def test_a_ptt_lead_saved_by_an_older_version_is_ignored() -> None:
             '{"ptt_lead_ms": 200, "txdelay_ms": 250, "txtail_ms": 50, "ptt_tail_ms": 200}',
         ),
     )
-    assert load_tx_timing(conn) == TxTiming(250, 50, 200)
+    assert load_tx_timing(conn) == TxTiming(250, 50)
 
 
 def test_bad_json_falls_back_to_defaults() -> None:

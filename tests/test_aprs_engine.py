@@ -573,8 +573,7 @@ def test_timing_settings_are_passed_to_the_worker(tx_engine: AprsEngine) -> None
     assert tx_engine.send_message("JF9SOM", 0, "ARISS", "JA1XYZ", "hi")
     sent = _FakeWorker.sent[0]
     assert (sent["txdelay_ms"], sent["txtail_ms"]) == (300, 100)
-    assert sent["ptt_tail_s"] == 0.0
-    assert "ptt_lead_s" not in sent
+    assert "ptt_tail_s" not in sent and "ptt_lead_s" not in sent
 
 
 def test_no_transmission_without_direwolf(

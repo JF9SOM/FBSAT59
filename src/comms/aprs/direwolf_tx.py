@@ -276,7 +276,7 @@ class DirewolfTxSession:
             # Direwolf may still hold its working directory for a moment (Windows).
             shutil.rmtree(tmp, ignore_errors=True)
 
-    def send(self, frame: bytes, rig: Any, ptt_tail_s: float = 0.0) -> bool:
+    def send(self, frame: bytes, rig: Any) -> bool:
         """Transmit one frame, keying the rig on Direwolf's own PTT edges.
 
         Returns False when the PTT command failed. Raises DirewolfStartError when
@@ -306,7 +306,6 @@ class DirewolfTxSession:
                     return False
                 if not self._wait_line("PTT 0 = 0", frame_s + _TX_END_MARGIN_S):
                     logger.warning("TX[%s]: Direwolf PTT-off line never came", self._owner)
-                time.sleep(max(0.0, ptt_tail_s))
                 unkeyed = rig.set_ptt(False)
                 keyed = False
                 logger.info("TX[%s]: playback finished, PTT off -> %s", self._owner, unkeyed)
@@ -435,7 +434,6 @@ class DirewolfTxWorker(QObject):
         txtail_ms: int,
         in_device: int | None = None,
         parent: Any = None,
-        ptt_tail_s: float = 0.0,
         session: DirewolfTxSession | None = None,
         close_first: DirewolfTxSession | None = None,
     ) -> None:
@@ -448,7 +446,6 @@ class DirewolfTxWorker(QObject):
         self._txdelay_ms = txdelay_ms
         self._txtail_ms = txtail_ms
         self._in_device = in_device
-        self._ptt_tail_s = max(0.0, ptt_tail_s)
         self._session = session
         self._close_first = close_first
 
@@ -506,7 +503,7 @@ class DirewolfTxWorker(QObject):
             try:
                 if not session.is_open:
                     session.open()
-                return session.send(self._frame, self._rig, self._ptt_tail_s)
+                return session.send(self._frame, self._rig)
             except DirewolfStartError:
                 if not retry or attempt == 2:
                     raise

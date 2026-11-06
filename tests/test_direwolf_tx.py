@@ -95,7 +95,7 @@ class _FakeSession:
         self.closed += 1
         self._open = False
 
-    def send(self, frame: bytes, rig: Any, ptt_tail_s: float = 0.0) -> bool:
+    def send(self, frame: bytes, rig: Any) -> bool:
         if self.fail_sends > 0:
             self.fail_sends -= 1
             raise DirewolfStartError("connection lost")

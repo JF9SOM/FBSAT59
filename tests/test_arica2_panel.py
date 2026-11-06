@@ -414,7 +414,6 @@ def test_transmission_is_4800_baud_through_direwolf_with_the_rig_sound_card(
     kw = _FakeTxWorker.kwargs[0]
     assert kw["modem"] == "4800"
     assert (kw["txdelay_ms"], kw["txtail_ms"]) == (300, 100)
-    assert kw["ptt_tail_s"] == 0.0  # no unmodulated carrier after the frame
 
 
 def test_no_transmission_without_direwolf(
