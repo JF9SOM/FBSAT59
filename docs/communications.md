@@ -4743,8 +4743,13 @@ Direwolf が送出を始めるまで約 1 s。CSMA 設定（PERSIST/FULLDUP）�
   `disable_tx_session()`（タブの closeEvent）。設定（出力/入力デバイス・modem・TxDelay/TxTail）が変わると
   `config_key` が変わり、古いセッションを閉じて作り直す（バックグラウンドスレッド）。
 - 常駐中は `acquire_output` で送信サウンドカード出力を**占有**する。FT4・Q65・Message Box/Digipeater
-  の各タブを開くとき、APRS 側が占有中なら「APRSタブが送信サウンドカードを占有しています。APRSタブを
-  閉じて下さい。」と警告（`MainWindow._warn_if_aprs_holds_tx_output()`）。タブ自体は開く（受信は可能）。
+  の各タブを開くとき、APRS 側が占有中（または起動中）なら **APRS タブを強制的に閉じる**
+  （`MainWindow._release_tx_sound_card_from_aprs()`。タブの closeEvent で TX Direwolf も止まる）。
+  ステータスバーに「このタブが送信サウンドカードを使うため、APRSタブを閉じました。」を 10 秒表示。
+  当初は警告ダイアログだけだったが、警告だけでは送信できないままになるため 2026-11-06 に変更。
+  占有していない APRS タブ（SDR 受信のみ、サウンドカード未接続で TX Direwolf が開けなかった等）は閉じない。
+  `AprsEngine.tx_session_busy`（占有中 or 起動中）で判定。タブを閉じるのと起動が競合しても、
+  起動完了後に閉じ直す（孤児 Direwolf を残さない）。
 - 常駐セッションの送信が失敗したら 1 回だけ再起動して再送。ARICA-2 など他の呼び出し元（`session` なし）は
   従来どおり 1 フレームごとに起動・終了（ワンショット）。
 - `atexit` でも閉じる（アプリ終了で TX Direwolf を孤児にしない）。

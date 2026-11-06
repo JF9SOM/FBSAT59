@@ -3223,28 +3223,33 @@ class MainWindow(QMainWindow):
                 except Exception:
                     logger.exception("Re-opening the PTT port before opening a tab failed")
 
-    def _warn_if_aprs_holds_tx_output(self) -> None:
-        """Warn when the APRS tab's kept-open Direwolf holds the transmit sound card.
+    def _release_tx_sound_card_from_aprs(self) -> None:
+        """Close the APRS tab when its kept-open Direwolf holds the transmit sound card.
 
-        Called as a transmit tab (FT4, Q65, Message Box) opens: that tab cannot send
-        until the APRS tab is closed. The tab still opens (it can receive).
+        Called as a transmit tab (FT4, Q65, Message Box) opens: that tab could not send
+        while the APRS tab holds the sound card, so the APRS tab is closed (this also
+        stops its Direwolf). An APRS tab that holds nothing (e.g. SDR reception) stays.
         """
         from comms.aprs.engine import get_aprs_engine
 
         try:
-            holds = get_aprs_engine(self._conn).tx_session_open
+            engine = get_aprs_engine(self._conn)
+            if not engine.tx_session_busy:
+                return
+            tab = self._find_comms_tab("aprs")
+            if tab is None:
+                engine.disable_tx_session()
+            else:
+                idx = self._tab_widget.indexOf(tab)
+                if idx >= 0:
+                    self._on_tab_close_requested(idx)
         except Exception:
-            logger.exception("APRS TX session check failed")
+            logger.exception("Releasing the transmit sound card from the APRS tab failed")
             return
-        if holds:
-            QMessageBox.warning(
-                self,
-                _("Transmit sound card in use"),
-                _(
-                    "The APRS tab is holding the transmit sound card. "
-                    "Close the APRS tab to transmit from this tab."
-                ),
-            )
+        self.statusBar().showMessage(
+            _("The APRS tab was closed because this tab needs the transmit sound card."),
+            10_000,
+        )
 
     def _on_open_aprs(self) -> None:
         """Open the APRS tab (Communications > APRS).
@@ -3543,7 +3548,7 @@ class MainWindow(QMainWindow):
                 return
 
         self._refresh_audio_devices_for_tab()
-        self._warn_if_aprs_holds_tx_output()
+        self._release_tx_sound_card_from_aprs()
         from ui.ft4_tab import Ft4Tab
 
         tab = Ft4Tab(
@@ -3703,7 +3708,7 @@ class MainWindow(QMainWindow):
         # only caught failures from the constructor, not from the import,
         # and so still failed silently for an import-time crash.
         self._refresh_audio_devices_for_tab()
-        self._warn_if_aprs_holds_tx_output()
+        self._release_tx_sound_card_from_aprs()
         try:
             from ui.q65_tab import Q65Tab
 
@@ -3854,7 +3859,7 @@ class MainWindow(QMainWindow):
                 return
 
         self._refresh_audio_devices_for_tab()
-        self._warn_if_aprs_holds_tx_output()
+        self._release_tx_sound_card_from_aprs()
         from ui.message_box_tab import MessageBoxTab
 
         tab = MessageBoxTab(self._conn, self._radio_control, parent=self)

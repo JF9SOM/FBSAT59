@@ -8920,10 +8920,6 @@ msgstr "1 行に 1 つ。{grid} は自局のグリッドロケーターに置き
 msgid "Restore defaults"
 msgstr "初期値に戻す"
 
-msgid "Transmit sound card in use"
-msgstr "送信サウンドカード使用中"
-
 msgid ""
-"The APRS tab is holding the transmit sound card. Close the APRS tab to "
-"transmit from this tab."
-msgstr "APRSタブが送信サウンドカードを占有しています。APRSタブを閉じて下さい。"
+"The APRS tab was closed because this tab needs the transmit sound card."
+msgstr "このタブが送信サウンドカードを使うため、APRSタブを閉じました。"

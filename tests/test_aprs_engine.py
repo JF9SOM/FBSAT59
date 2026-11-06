@@ -660,3 +660,51 @@ def test_kept_open_session_is_reused_and_replaced_when_settings_change(
     tx_engine.disable_tx_session()
     assert closed == [third["session"]]
     assert not tx_engine.tx_session_open
+
+
+def test_tx_session_busy_while_open_or_opening(
+    tx_engine: AprsEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from comms.aprs.direwolf_tx import DirewolfTxSession
+
+    assert not tx_engine.tx_session_busy  # the APRS tab never asked for a session
+    tx_engine._tx_resident = True
+    tx_engine._tx_prepare_busy = True
+    assert tx_engine.tx_session_busy  # being started
+    tx_engine._tx_prepare_busy = False
+    assert not tx_engine.tx_session_busy  # not started (e.g. the sound card is missing)
+    session = DirewolfTxSession("APRS", 5, 1, "1200", 300, 100)
+    monkeypatch.setattr(DirewolfTxSession, "is_open", property(lambda self: True))
+    tx_engine._tx_session = session
+    assert tx_engine.tx_session_busy and tx_engine.tx_session_open
+
+
+def test_a_session_opened_after_the_tab_closed_is_closed_again(
+    tx_engine: AprsEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Closing the APRS tab while the session is still opening must not leave it open."""
+    import threading
+
+    from comms.aprs.direwolf_tx import DirewolfTxSession
+
+    closed: list[DirewolfTxSession] = []
+    monkeypatch.setattr(DirewolfTxSession, "close", lambda self, drain=False: closed.append(self))
+
+    def open_then_tab_closes(self: DirewolfTxSession) -> None:
+        tx_engine._tx_resident = False  # what disable_tx_session() does first
+        tx_engine._tx_session = None
+
+    monkeypatch.setattr(DirewolfTxSession, "open", open_then_tab_closes)
+    done = threading.Event()
+    real_thread = threading.Thread
+
+    class _T(real_thread):  # type: ignore[misc]
+        def run(self) -> None:
+            super().run()
+            done.set()
+
+    monkeypatch.setattr("comms.aprs.engine.threading.Thread", _T)
+    tx_engine._tx_resident = True
+    tx_engine.prepare_tx()
+    assert done.wait(5)
+    assert len(closed) == 1

@@ -464,6 +464,11 @@ class AprsEngine(QObject):
         session = self._tx_session
         return self._tx_resident and session is not None and session.is_open
 
+    @property
+    def tx_session_busy(self) -> bool:
+        """True while the kept-open TX Direwolf holds the output or is being started."""
+        return self._tx_resident and (self.tx_session_open or self._tx_prepare_busy)
+
     def enable_tx_session(self) -> None:
         """Keep a TX Direwolf open from now on (the APRS tab is open); starts it."""
         if not self._tx_resident:
@@ -498,6 +503,9 @@ class AprsEngine(QObject):
                 if stale is not None:
                     stale.close()
                 session.open()
+                if not self._tx_resident or self._tx_session is not session:
+                    # The tab was closed (or the settings changed) while this was opening.
+                    session.close()
             except Exception as exc:
                 logger.warning("APRS TX: could not open the kept-open Direwolf: %s", exc)
             finally:
