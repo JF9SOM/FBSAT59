@@ -60,3 +60,32 @@ class TestParseTables:
         fetcher = AMSATStatusFetcher(db_conn)
         result = fetcher._parse_html(_SAMPLE_HTML)
         assert result["ao-7"] == "operational"
+
+
+class TestFetchFollowsRedirects:
+    """The old www.amsat.org/status/ address answers 308; the fetch must still work."""
+
+    def test_redirect_is_followed_and_status_saved(
+        self, db_conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import asyncio
+
+        import httpx
+
+        from data import amsat_status
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.host == "www.amsat.org":
+                return httpx.Response(308, headers={"location": "https://status.amsat.org/"})
+            return httpx.Response(200, text=_SAMPLE_HTML)
+
+        real_client = httpx.AsyncClient
+
+        def fake_client(**kwargs: object) -> httpx.AsyncClient:
+            return real_client(transport=httpx.MockTransport(handler), **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(httpx, "AsyncClient", fake_client)
+        monkeypatch.setattr(amsat_status, "AMSAT_STATUS_URL", "https://www.amsat.org/status/")
+        result = asyncio.run(AMSATStatusFetcher(db_conn).fetch_and_update())
+        assert result.get("ao-91") == "operational"
+        assert AMSATStatusFetcher(db_conn).load_cached() == result

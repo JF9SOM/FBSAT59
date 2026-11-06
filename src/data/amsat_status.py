@@ -1,7 +1,7 @@
 """
 AMSAT satellite operational status scraper
 
-Fetches satellite operational status from https://www.amsat.org/status/ and saves it to the DB.
+Fetches satellite operational status from https://status.amsat.org/ and saves it to the DB.
 Requires beautifulsoup4. Scraping is skipped if it is not installed.
 """
 
@@ -18,7 +18,8 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-AMSAT_STATUS_URL = "https://www.amsat.org/status/"
+# AMSAT moved the page; the old www.amsat.org/status/ now answers 308 to this address.
+AMSAT_STATUS_URL = "https://status.amsat.org/"
 
 _STATUS_MAP: dict[str, str] = {
     "operational": "operational",
@@ -65,7 +66,7 @@ class AMSATStatusFetcher:
             {"satellite_name_lower": "operational"|"partial"|"non_operational"}
         """
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
                 resp = await client.get(AMSAT_STATUS_URL)
                 resp.raise_for_status()
                 html = resp.text

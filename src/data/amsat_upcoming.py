@@ -50,7 +50,7 @@ class AMSATUpcomingFetcher:
             ["RS83S (Lobachevsky)", "HADES-SA (SpinnyONE)", ...]
         """
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
                 resp = await client.get(AMSAT_UPCOMING_URL)
                 resp.raise_for_status()
                 html = resp.text
