@@ -71,6 +71,10 @@ _ROLE_CALL_INFO = int(Qt.ItemDataRole.UserRole) + 3
 # from what we received (GitHub Issue #35). Black text keeps it readable in any theme.
 _OWN_TX_ROW_COLOR = QColor("#4fc3f7")
 _OWN_TX_TEXT_COLOR = QColor("#000000")
+# Row colour of a packet from another station addressed to us, as in the FT4 tab
+# (Qt.GlobalColor.yellow there). Black text keeps it readable in any theme.
+_FOR_ME_ROW_COLOR = QColor(Qt.GlobalColor.yellow)
+_FOR_ME_TEXT_COLOR = QColor("#000000")
 
 # Maidenhead locator (4 or 6 characters) inside a received text.
 _GRID_RE = re.compile(r"\b([A-R]{2}[0-9]{2}(?:[A-X]{2})?)\b", re.IGNORECASE)
@@ -1201,6 +1205,18 @@ class AprsTab(QWidget):
         broadcaster.reload_settings(self._conn)
         broadcaster.send_adif_record(build_adif_record(fields))
 
+    def _is_addressed_to_me(self, source: str, dest: str | None, addressee: str | None) -> bool:
+        """Return True when another station sent a packet addressed to our callsign.
+
+        The destination (UISS style) or the message addressee must match our own
+        callsign, ignoring the SSID. Our own packets coming back are not highlighted.
+        """
+        my_base = self._callsign_edit.text().strip().upper().split("-")[0]
+        if not my_base or source.split("-")[0].upper() == my_base:
+            return False
+        targets = {(dest or "").split("-")[0].upper(), (addressee or "").split("-")[0].upper()}
+        return my_base in targets
+
     def _append_log_item(
         self,
         ts: str,
@@ -1244,6 +1260,9 @@ class AprsTab(QWidget):
         if tx:
             item.setBackground(_OWN_TX_ROW_COLOR)
             item.setForeground(_OWN_TX_TEXT_COLOR)
+        elif self._is_addressed_to_me(source, dest, addressee):
+            item.setBackground(_FOR_ME_ROW_COLOR)
+            item.setForeground(_FOR_ME_TEXT_COLOR)
         self._log_list.addItem(item)
         self._log_list.scrollToBottom()
 

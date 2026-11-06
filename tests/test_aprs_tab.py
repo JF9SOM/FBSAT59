@@ -557,3 +557,33 @@ def test_sending_a_message_and_a_position_marks_the_rows_as_sent() -> None:
 
     source = inspect.getsource(aprs_tab.AprsTab)
     assert source.count("tx=True") == 2  # message echo and position echo
+
+
+def test_packets_addressed_to_us_are_highlighted_yellow(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    from PySide6.QtCore import Qt as _Qt
+    from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import QListWidgetItem
+
+    tab = _make_tab(qtbot, conn)
+    tab._callsign_edit.setText("JF1PTU-5")
+
+    def row(callsign: str, dest: str, addressee: str | None = None) -> QListWidgetItem:
+        tab.append_packet(
+            callsign=callsign, via="", comment="hi", raw_frame="", dest=dest, addressee=addressee
+        )
+        return tab._log_list.item(tab._log_list.count() - 1)
+
+    by_dest = row("JA1XYZ", dest="JF1PTU")
+    by_addressee = row("JA1XYZ", dest="APRS", addressee="JF1PTU-7")
+    assert by_dest.background().color() == QColor(_Qt.GlobalColor.yellow)
+    assert by_dest.foreground().color() == QColor("#000000")
+    assert by_addressee.background().color() == QColor(_Qt.GlobalColor.yellow)
+    # Other stations' CQ, packets for someone else, and our own echoes stay plain.
+    for plain_row in (
+        row("JA1XYZ", dest="CQ"),
+        row("JA1XYZ", dest="JA9ABC", addressee="JA9ABC"),
+        row("JF1PTU", dest="JF1PTU"),
+    ):
+        assert plain_row.background().style() == _Qt.BrushStyle.NoBrush
