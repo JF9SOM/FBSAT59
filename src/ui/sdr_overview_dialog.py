@@ -418,7 +418,11 @@ class SdrOverviewDialog(QDialog):
         default = str(self._path.with_suffix("").with_suffix(".overview.png"))
         name, _f = QFileDialog.getSaveFileName(self, _("Save PNG…"), default, "PNG (*.png)")
         if name:
-            img.save(name, "PNG")
+            # No format argument: the stubs want bytes but PySide6 6.11 only accepts str
+            # at runtime; Qt picks PNG from the suffix, so make sure there is one.
+            if not name.lower().endswith(".png"):
+                name += ".png"
+            img.save(name)
 
     def done(self, result: int) -> None:
         """Stop the background read when the window closes."""
