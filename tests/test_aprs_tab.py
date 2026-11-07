@@ -587,3 +587,16 @@ def test_packets_addressed_to_us_are_highlighted_yellow(
         row("JF1PTU", dest="JF1PTU"),
     ):
         assert plain_row.background().style() == _Qt.BrushStyle.NoBrush
+
+
+def test_clear_button_empties_the_screen_but_not_the_saved_history(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _make_tab(qtbot, conn)
+    for call in ("JA1XYZ", "JA2ABC"):
+        tab.append_packet(callsign=call, via="", comment="hi", raw_frame="", log=True)
+    saved = conn.execute("SELECT COUNT(*) FROM aprs_log").fetchone()[0]
+    assert tab._log_list.count() == 2 and saved == 2
+    tab._log_clear_btn.click()
+    assert tab._log_list.count() == 0
+    assert conn.execute("SELECT COUNT(*) FROM aprs_log").fetchone()[0] == saved

@@ -375,6 +375,15 @@ class AprsTab(QWidget):
         # Click a CQ or a packet addressed to us → fill To / Message for the reply.
         self._log_list.itemClicked.connect(self._on_log_item_clicked)
         log_layout.addWidget(self._log_list)
+        log_btn_row = QHBoxLayout()
+        log_btn_row.addStretch()
+        self._log_clear_btn = QPushButton(_("Clear"))
+        self._log_clear_btn.setToolTip(
+            _("Clear the list on the screen (the saved reception history is not deleted).")
+        )
+        self._log_clear_btn.clicked.connect(self._log_list.clear)
+        log_btn_row.addWidget(self._log_clear_btn)
+        log_layout.addLayout(log_btn_row)
         root.addWidget(log_group, stretch=1)
 
         # -- Send form --
