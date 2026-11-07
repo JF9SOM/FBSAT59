@@ -616,8 +616,9 @@ def test_clear_button_is_on_the_send_group_title_line_above_send(
 
 
 def test_input_label_follows_rig_and_sdr_not_the_engine_status(
-    qtbot: QtBot, conn: sqlite3.Connection
+    qtbot: QtBot, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr("comms.aprs.engine.find_direwolf", lambda: "/usr/bin/direwolf")
     tab = _make_tab(qtbot, conn)
     # The engine announcing "Connected (Rig + Direwolf ...)" must not reach the label.
     tab._on_engine_status("Connected (Rig + Direwolf, 1200 baud)")
