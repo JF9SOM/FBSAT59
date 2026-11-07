@@ -613,3 +613,16 @@ def test_clear_button_is_on_the_send_group_title_line_above_send(
     assert btn.parent() is tab._send_group
     assert btn.geometry().bottom() < tab._send_btn.geometry().top()
     assert btn.geometry().right() == tab._send_btn.geometry().right()
+
+
+def test_input_label_follows_rig_and_sdr_not_the_engine_status(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _make_tab(qtbot, conn)
+    # The engine announcing "Connected (Rig + Direwolf ...)" must not reach the label.
+    tab._on_engine_status("Connected (Rig + Direwolf, 1200 baud)")
+    assert tab._input_label.text() == "Connect Rig or SDR"
+    assert "Direwolf" not in tab._input_label.text()
+    tab._sdr_connected = True
+    tab._on_engine_status("Connected (SDR — Direwolf, 1200 baud, receive only)")
+    assert tab._input_label.text() == "SDR Connected"

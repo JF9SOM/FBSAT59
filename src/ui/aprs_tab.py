@@ -6,7 +6,7 @@ a message-send form, and an ADIF export button.
 Input source is determined automatically by the Rig Control state:
   - SDR connected  → SDR (receive-only, Python Bell 202 demodulation)
   - Rig connected  → Sound Card + Direwolf (send + receive)
-  - Neither        → tab shows a "no audio source" notice
+  - Neither        → the label reads "Connect Rig or SDR"
 
 The actual demodulation / Direwolf backend is wired in subsequent commits.
 This commit provides the complete UI and settings persistence.
@@ -608,9 +608,6 @@ class AprsTab(QWidget):
         """Update the input-source label and send-button state."""
         sc_ok = self._is_soundcard_configured()
 
-        modem = self._engine.current_modem
-        baud_suffix = f"  [{modem} baud]" if modem else ""
-
         can_tx = self._rig_connected and sc_ok
         direwolf_ok = bool(getattr(self._engine, "direwolf_available", lambda: True)())
         if not direwolf_ok:
@@ -622,20 +619,11 @@ class AprsTab(QWidget):
             self._input_label.setStyleSheet("color: #f44336;")
             self._send_btn.setEnabled(False)
         elif can_tx:
-            self._input_label.setText(
-                _("Input: Sound Card + Direwolf  (send + receive)") + baud_suffix
-            )
+            self._input_label.setText(_("Rig Connected"))
             self._input_label.setStyleSheet("color: #7bed9f;")
             self._send_btn.setEnabled(True)
         elif self._sdr_connected:
-            label = self._sdr_label or "SDR"
-            self._input_label.setText(_("Input: {dev}  (receive only — SDR)").format(dev=label))
-            self._input_label.setStyleSheet("color: #4a9eff;")
-            self._send_btn.setEnabled(False)
-        elif sc_ok and self._engine.is_running:
-            self._input_label.setText(
-                _("Input: Sound Card + Direwolf  (receive only — Rig not connected)") + baud_suffix
-            )
+            self._input_label.setText(_("SDR Connected"))
             self._input_label.setStyleSheet("color: #4a9eff;")
             self._send_btn.setEnabled(False)
         elif self._rig_connected and not sc_ok:
@@ -645,9 +633,7 @@ class AprsTab(QWidget):
             self._input_label.setStyleSheet("color: orange;")
             self._send_btn.setEnabled(False)
         else:
-            self._input_label.setText(
-                _("Input: No audio source — connect Rig or SDR in Radio Control")
-            )
+            self._input_label.setText(_("Connect Rig or SDR"))
             self._input_label.setStyleSheet("color: #f44336;")
             self._send_btn.setEnabled(False)
 
@@ -811,7 +797,12 @@ class AprsTab(QWidget):
         return True
 
     def _on_engine_status(self, status: str) -> None:
-        self._input_label.setText(status)
+        """Ignore the engine's own wording; the label shows the Rig / SDR state instead.
+
+        The engine reports "Connected (Rig + Direwolf ...)" as soon as the receive-only
+        Direwolf is up, even with no rig or SDR connected, which only confused users.
+        """
+        self._refresh_input_source()
 
     def _on_engine_error(self, msg: str) -> None:
         self._input_label.setText(f"⚠ {msg}")

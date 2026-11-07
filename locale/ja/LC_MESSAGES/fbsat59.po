@@ -8950,3 +8950,9 @@ msgstr "初期値: 300 / 100 ms。次の送信から反映されます。"
 
 msgid "Clear the list on the screen (the saved reception history is not deleted)."
 msgstr "画面の一覧を消します(保存した受信履歴は消えません)。"
+
+msgid "Rig Connected"
+msgstr "無線機接続済み"
+
+msgid "Connect Rig or SDR"
+msgstr "無線機またはSDRを接続してください"
