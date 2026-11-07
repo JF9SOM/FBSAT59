@@ -20,7 +20,7 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -375,15 +375,6 @@ class AprsTab(QWidget):
         # Click a CQ or a packet addressed to us → fill To / Message for the reply.
         self._log_list.itemClicked.connect(self._on_log_item_clicked)
         log_layout.addWidget(self._log_list)
-        log_btn_row = QHBoxLayout()
-        log_btn_row.addStretch()
-        self._log_clear_btn = QPushButton(_("Clear"))
-        self._log_clear_btn.setToolTip(
-            _("Clear the list on the screen (the saved reception history is not deleted).")
-        )
-        self._log_clear_btn.clicked.connect(self._log_list.clear)
-        log_btn_row.addWidget(self._log_clear_btn)
-        log_layout.addLayout(log_btn_row)
         root.addWidget(log_group, stretch=1)
 
         # -- Send form --
@@ -450,6 +441,18 @@ class AprsTab(QWidget):
         self._send_btn.setEnabled(False)
         self._send_btn.clicked.connect(self._on_send)
         send_layout.addWidget(self._send_btn)
+        # "Clear" sits in the free space of the group's title line, right above Send, so
+        # the packet list keeps its full height. It only empties the on-screen list; the
+        # saved reception history is not touched.
+        self._log_clear_btn = QPushButton(_("Clear"), send_group)
+        self._log_clear_btn.setToolTip(
+            _("Clear the list on the screen (the saved reception history is not deleted).")
+        )
+        self._log_clear_btn.clicked.connect(self._log_list.clear)
+        self._log_clear_btn.setFixedHeight(send_group.fontMetrics().height() + 4)
+        self._send_group = send_group
+        send_group.installEventFilter(self)
+        self._place_log_clear_btn()
         root.addWidget(send_group)
 
         # -- Send Position --
@@ -1213,6 +1216,20 @@ class AprsTab(QWidget):
         broadcaster = get_log_broadcaster()
         broadcaster.reload_settings(self._conn)
         broadcaster.send_adif_record(build_adif_record(fields))
+
+    def _place_log_clear_btn(self) -> None:
+        """Put the Clear button on the title line of the Send group, at its right edge."""
+        btn = self._log_clear_btn
+        btn.adjustSize()
+        # Right edge aligned with the Send button below.
+        btn.move(self._send_btn.geometry().right() + 1 - btn.width(), 0)
+        btn.raise_()
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
+        """Keep the Clear button at the right edge of the Send group when it is resized."""
+        if obj is getattr(self, "_send_group", None) and event.type() == QEvent.Type.Resize:
+            self._place_log_clear_btn()
+        return super().eventFilter(obj, event)
 
     def _is_addressed_to_me(self, source: str, dest: str | None, addressee: str | None) -> bool:
         """Return True when another station sent a packet addressed to our callsign.

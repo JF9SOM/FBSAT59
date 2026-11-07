@@ -600,3 +600,16 @@ def test_clear_button_empties_the_screen_but_not_the_saved_history(
     tab._log_clear_btn.click()
     assert tab._log_list.count() == 0
     assert conn.execute("SELECT COUNT(*) FROM aprs_log").fetchone()[0] == saved
+
+
+def test_clear_button_is_on_the_send_group_title_line_above_send(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _make_tab(qtbot, conn)
+    tab.resize(1000, 640)
+    tab.show()
+    qtbot.waitExposed(tab)
+    btn = tab._log_clear_btn
+    assert btn.parent() is tab._send_group
+    assert btn.geometry().bottom() < tab._send_btn.geometry().top()
+    assert btn.geometry().right() == tab._send_btn.geometry().right()
