@@ -418,7 +418,7 @@ class SdrOverviewDialog(QDialog):
         default = str(self._path.with_suffix("").with_suffix(".overview.png"))
         name, _f = QFileDialog.getSaveFileName(self, _("Save PNG…"), default, "PNG (*.png)")
         if name:
-            img.save(name, b"PNG")
+            img.save(name, "PNG")
 
     def done(self, result: int) -> None:
         """Stop the background read when the window closes."""
