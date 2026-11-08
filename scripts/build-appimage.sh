@@ -155,8 +155,23 @@ fi
 if ! command -v appimagetool &>/dev/null; then
     echo "Downloading appimagetool..."
     TOOL="$DIST_DIR/appimagetool-x86_64.AppImage"
-    curl -fsSL --retry 6 --retry-delay 15 --retry-all-errors -o "$TOOL" \
-        "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+    # gh (API download) first: the plain github.com/.../releases/download URL has answered
+    # "504 Gateway Time-out" for hours while gh worked. curl is the fallback.
+    got=0
+    if command -v gh &>/dev/null; then
+        for attempt in 1 2 3 4; do
+            if gh release download continuous --repo AppImage/AppImageKit \
+                --pattern appimagetool-x86_64.AppImage --dir "$DIST_DIR" --clobber; then
+                got=1
+                break
+            fi
+            sleep $((15 * attempt))
+        done
+    fi
+    if [ "$got" = 0 ]; then
+        curl -fsSL --retry 6 --retry-delay 15 --retry-all-errors -o "$TOOL" \
+            "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+    fi
     chmod +x "$TOOL"
     alias appimagetool="$TOOL"
     APPIMAGETOOL="$TOOL"

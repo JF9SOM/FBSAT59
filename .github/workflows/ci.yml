@@ -172,6 +172,8 @@ jobs:
           key: hamlib-dl-4.7.2-${{ runner.os }}
 
       - name: Build Hamlib 4.7.2 from source
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           HAMLIB_VER="4.7.2"
           PYVER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
@@ -179,7 +181,10 @@ jobs:
 
           mkdir -p hamlib-dl
           if [ ! -s hamlib-dl/hamlib-${HAMLIB_VER}.tar.gz ]; then
-            wget -q --tries=6 --retry-connrefused --waitretry=20 --retry-on-http-error=500,502,503,504 -O hamlib-dl/hamlib-${HAMLIB_VER}.tar.gz https://github.com/Hamlib/Hamlib/releases/download/${HAMLIB_VER}/hamlib-${HAMLIB_VER}.tar.gz
+            # gh (API download) works while the plain github.com/.../releases/download
+            # URLs answer 504; scripts/gh_retry.sh tries again on a failure.
+            bash scripts/gh_retry.sh release download "${HAMLIB_VER}" --repo Hamlib/Hamlib \
+              --pattern "hamlib-${HAMLIB_VER}.tar.gz" --dir hamlib-dl --clobber
           fi
           cp hamlib-dl/hamlib-${HAMLIB_VER}.tar.gz .
           tar -xzf hamlib-${HAMLIB_VER}.tar.gz
@@ -390,6 +395,8 @@ jobs:
           PYTHONPATH=src pyinstaller scripts/fbsat59.spec --noconfirm
 
       - name: Create AppImage
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: bash scripts/build-appimage.sh
 
       - name: Upload artifact
@@ -468,6 +475,8 @@ jobs:
 
       - name: Build Hamlib 4.7.2 Python binding (MinGW) and portable package
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $HAMLIB_VER = "4.7.2"
           $PYTAG = python -c "import sys; print(f'py{sys.version_info.major}{sys.version_info.minor}')"
@@ -480,26 +489,23 @@ jobs:
           choco install swig -y --no-progress
           $env:PATH = "C:\ProgramData\chocolatey\bin;$env:PATH"
 
-          # The Hamlib release files are sometimes served with "504 Gateway Time-out"
-          # for a while (it failed v0.3.90's Windows build four times in a row), so
-          # every download is retried a few times before giving up.
-          function Get-FileWithRetry([string]$Url, [string]$OutFile) {
+          # Download release files with gh (API download): the plain
+          # github.com/.../releases/download URLs answered "504 Gateway Time-out" for
+          # hours (it failed the v0.3.90 builds), while gh worked. Tries again on a failure.
+          function Get-GhAssetWithRetry([string[]]$GhArgs) {
             for ($i = 1; $i -le 6; $i++) {
-              try {
-                Invoke-WebRequest $Url -OutFile $OutFile
-                return
-              } catch {
-                Write-Host "Download failed (attempt $i/6): $($_.Exception.Message)"
-                if ($i -eq 6) { throw }
-                Start-Sleep -Seconds (15 * $i)
-              }
+              & gh @GhArgs
+              if ($LASTEXITCODE -eq 0) { return }
+              Write-Host "gh $($GhArgs -join ' ') failed (attempt $i/6)"
+              if ($i -eq 6) { throw "gh failed" }
+              Start-Sleep -Seconds (15 * $i)
             }
           }
 
           # Download Hamlib source (for .swg binding sources) and Windows DLLs
           New-Item -ItemType Directory -Force -Path hamlib-dl | Out-Null
           if (-not (Test-Path "hamlib-dl/hamlib-$HAMLIB_VER.tar.gz")) {
-            Get-FileWithRetry "https://github.com/Hamlib/Hamlib/releases/download/$HAMLIB_VER/hamlib-$HAMLIB_VER.tar.gz" "hamlib-dl/hamlib-$HAMLIB_VER.tar.gz"
+            Get-GhAssetWithRetry @('release','download',$HAMLIB_VER,'--repo','Hamlib/Hamlib','--pattern',"hamlib-$HAMLIB_VER.tar.gz",'--dir','hamlib-dl','--clobber')
           }
           Copy-Item "hamlib-dl/hamlib-$HAMLIB_VER.tar.gz" "hamlib.tar.gz"
           tar -xzf hamlib.tar.gz
@@ -520,7 +526,7 @@ jobs:
             Set-Content "hamlib-$HAMLIB_VER\bindings\hamlib.swg"
 
           if (-not (Test-Path "hamlib-dl/hamlib-w64-$HAMLIB_VER.zip")) {
-            Get-FileWithRetry "https://github.com/Hamlib/Hamlib/releases/download/$HAMLIB_VER/hamlib-w64-$HAMLIB_VER.zip" "hamlib-dl/hamlib-w64-$HAMLIB_VER.zip"
+            Get-GhAssetWithRetry @('release','download',$HAMLIB_VER,'--repo','Hamlib/Hamlib','--pattern',"hamlib-w64-$HAMLIB_VER.zip",'--dir','hamlib-dl','--clobber')
           }
           Copy-Item "hamlib-dl/hamlib-w64-$HAMLIB_VER.zip" "hamlib-win.zip"
           Expand-Archive -Path hamlib-win.zip -DestinationPath hamlib-extracted
@@ -915,10 +921,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           New-Item -ItemType Directory -Force -Path direwolf-bundle | Out-Null
-          bash scripts/gh_retry.sh release download direwolf-bundle `
-            --repo "${{ github.repository }}" `
-            --pattern "direwolf-windows-x86_64.zip" `
-            --dir "$env:RUNNER_TEMP\dw-dl"
+          for ($i = 1; $i -le 6; $i++) {
+            gh release download direwolf-bundle `
+              --repo "${{ github.repository }}" `
+              --pattern "direwolf-windows-x86_64.zip" `
+              --dir "$env:RUNNER_TEMP\dw-dl" --clobber
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($i -eq 6) { throw "gh failed" }
+            Start-Sleep -Seconds (15 * $i)
+          }
           Expand-Archive -Path "$env:RUNNER_TEMP\dw-dl\direwolf-windows-x86_64.zip" `
             -DestinationPath "$env:RUNNER_TEMP\dw-dl\dw-extracted"
           # Strip top-level "direwolf-flat\" if present
@@ -1154,6 +1165,8 @@ jobs:
           key: hamlib-dl-4.7.2-${{ runner.os }}
 
       - name: Install Hamlib and Python dependencies
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           # Install build tools via Homebrew (swig generates hamlib_wrap.c from .swg)
           brew install autoconf automake libtool pkg-config libusb dylibbundler swig
@@ -1169,7 +1182,10 @@ jobs:
           # Download Hamlib source
           mkdir -p hamlib-dl
           if [ ! -s hamlib-dl/hamlib-${HAMLIB_VER}.tar.gz ]; then
-            wget -q --tries=6 --retry-connrefused --waitretry=20 --retry-on-http-error=500,502,503,504 -O hamlib-dl/hamlib-${HAMLIB_VER}.tar.gz https://github.com/Hamlib/Hamlib/releases/download/${HAMLIB_VER}/hamlib-${HAMLIB_VER}.tar.gz
+            # gh (API download) works while the plain github.com/.../releases/download
+            # URLs answer 504; scripts/gh_retry.sh tries again on a failure.
+            bash scripts/gh_retry.sh release download "${HAMLIB_VER}" --repo Hamlib/Hamlib \
+              --pattern "hamlib-${HAMLIB_VER}.tar.gz" --dir hamlib-dl --clobber
           fi
           cp hamlib-dl/hamlib-${HAMLIB_VER}.tar.gz .
           tar -xzf hamlib-${HAMLIB_VER}.tar.gz
