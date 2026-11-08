@@ -12,6 +12,7 @@ import sys
 import threading
 import time
 import types
+from collections.abc import Iterator
 from typing import Any
 
 import numpy as np
@@ -23,6 +24,18 @@ from comms.audio_device_manager import AudioDeviceManager, _resample, validate_o
 # ---------------------------------------------------------------------------
 # Fake sounddevice.InputStream
 # ---------------------------------------------------------------------------
+
+
+def _patch_monotonic(monkeypatch: pytest.MonkeyPatch, times: Iterator[float]) -> None:
+    """Make only audio_device_manager see these clock values.
+
+    ``adm.time`` is the process-wide ``time`` module, so patching its ``monotonic`` also
+    changed the clock for every other caller -- a QTimer left over from an earlier test
+    (the ARICA-2 panel's) then ran out of values and raised StopIteration in the Qt event
+    loop, failing the test at random.
+    """
+    fake_time = types.SimpleNamespace(monotonic=lambda: next(times), sleep=time.sleep)
+    monkeypatch.setattr(adm, "time", fake_time)
 
 
 class _FakeInputStream:
@@ -373,7 +386,7 @@ class TestInputCallbackDiagnostics:
         stream = fake_sounddevice.instances[0]
 
         times = iter([100.0, 101.0])  # 1.0s apart -- well above _CB_GAP_WARN_S (0.5s)
-        monkeypatch.setattr(adm.time, "monotonic", lambda: next(times))
+        _patch_monotonic(monkeypatch, times)
 
         with caplog.at_level("WARNING", logger="comms.audio_device_manager"):
             stream.push(np.zeros(480, dtype=np.float32))  # establishes the baseline
@@ -392,7 +405,7 @@ class TestInputCallbackDiagnostics:
         stream = fake_sounddevice.instances[0]
 
         times = iter([100.0, 100.02])  # 20ms apart -- normal callback spacing
-        monkeypatch.setattr(adm.time, "monotonic", lambda: next(times))
+        _patch_monotonic(monkeypatch, times)
 
         with caplog.at_level("WARNING", logger="comms.audio_device_manager"):
             stream.push(np.zeros(480, dtype=np.float32))
@@ -414,7 +427,7 @@ class TestInputCallbackDiagnostics:
         # call at t=100.1 is within _RMS_LOG_INTERVAL_S (30 s) of the first
         # and must NOT log again.
         times = iter([100.0, 100.1])
-        monkeypatch.setattr(adm.time, "monotonic", lambda: next(times))
+        _patch_monotonic(monkeypatch, times)
 
         with caplog.at_level("INFO", logger="comms.audio_device_manager"):
             stream.push(np.full(480, 0.5, dtype=np.float32))
