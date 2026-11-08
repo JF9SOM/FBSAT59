@@ -297,7 +297,7 @@ class RadarView(QWidget):
 
         for el in _ELEVATION_RINGS:
             cr = int((90 - el) / 90.0 * r)
-            pen = QPen(QColor("#2c3e50"), 1)
+            pen = QPen(QColor("#6c8aa8"), 1)
             pen.setStyle(Qt.PenStyle.DashLine)
             p.setPen(pen)
             p.setBrush(Qt.BrushStyle.NoBrush)
@@ -309,7 +309,7 @@ class RadarView(QWidget):
                 p.drawText(int(cx) + cr + 2, int(cy) + 5, f"{el}°")
 
     def _draw_crosshairs(self, p: QPainter, cx: float, cy: float, r: float) -> None:
-        pen = QPen(QColor("#2c3e50"), 1)
+        pen = QPen(QColor("#6c8aa8"), 1)
         pen.setStyle(Qt.PenStyle.DashLine)
         p.setPen(pen)
         p.drawLine(int(cx), int(cy - r), int(cx), int(cy + r))

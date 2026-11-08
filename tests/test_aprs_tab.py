@@ -531,9 +531,7 @@ def test_missing_direwolf_shows_install_hint_and_disables_sending(
     assert not tab._pos_send_btn.isEnabled()
 
 
-def test_sent_rows_are_coloured_like_ft4_own_transmissions(
-    qtbot: QtBot, conn: sqlite3.Connection
-) -> None:
+def test_sent_rows_are_coloured_pale_blue(qtbot: QtBot, conn: sqlite3.Connection) -> None:
     from PySide6.QtCore import Qt as _Qt
     from PySide6.QtGui import QColor
 
@@ -544,7 +542,7 @@ def test_sent_rows_are_coloured_like_ft4_own_transmissions(
     tab.append_packet(callsign="JA1XYZ", via="", comment="hello", raw_frame="")
     sent = tab._log_list.item(tab._log_list.count() - 2)
     received = tab._log_list.item(tab._log_list.count() - 1)
-    assert sent.background().color() == QColor("#4fc3f7")
+    assert sent.background().color() == QColor("#b3e5fc")
     assert sent.foreground().color() == QColor("#000000")
     # A received row keeps the default look (no background brush is set).
     assert received.background().style() == _Qt.BrushStyle.NoBrush
@@ -628,3 +626,26 @@ def test_input_label_follows_rig_and_sdr_not_the_engine_status(
     tab._sdr_connected = True
     tab._on_engine_status("Connected (SDR — Direwolf, 1200 baud, receive only)")
     assert tab._input_label.text() == "SDR Connected"
+
+
+def test_own_digipeat_is_blue_and_own_tx_is_pale_blue(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    from PySide6.QtCore import Qt as _Qt
+    from PySide6.QtGui import QColor
+
+    tab = _make_tab(qtbot, conn)
+    tab._callsign_edit.setText("JF1PTU-6")
+
+    def last() -> object:
+        return tab._log_list.item(tab._log_list.count() - 1)
+
+    tab.append_packet(callsign="JF1PTU-6", via="RS0ISS*", comment="x", raw_frame="", dest="CQ")
+    assert last().background().color() == QColor("#4fc3f7")  # type: ignore[attr-defined]
+    # Not yet digipeated (no used hop) or another station: no blue.
+    tab.append_packet(callsign="JF1PTU-6", via="RS0ISS", comment="x", raw_frame="", dest="CQ")
+    assert last().background().style() == _Qt.BrushStyle.NoBrush  # type: ignore[attr-defined]
+    tab.append_packet(callsign="JA1XYZ", via="RS0ISS*", comment="x", raw_frame="", dest="CQ")
+    assert last().background().style() == _Qt.BrushStyle.NoBrush  # type: ignore[attr-defined]
+    tab._append_log_item("t", "JF1PTU-6", "RS0ISS", plain="p", raw="r", dest="CQ", tx=True)
+    assert last().background().color() == QColor("#b3e5fc")  # type: ignore[attr-defined]

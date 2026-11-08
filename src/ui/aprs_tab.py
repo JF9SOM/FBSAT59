@@ -66,10 +66,12 @@ _ROLE_RAW = int(Qt.ItemDataRole.UserRole) + 2
 # (sender, destination, addressee, text) of a received packet, for click-to-fill.
 _ROLE_CALL_INFO = int(Qt.ItemDataRole.UserRole) + 3
 
-# Row colour of a message / position we sent, in the receive log. The same light blue
-# as our own transmissions in the FT4 tab (ui/ft4_tab.py), so what we sent stands out
-# from what we received (GitHub Issue #35). Black text keeps it readable in any theme.
-_OWN_TX_ROW_COLOR = QColor("#4fc3f7")
+# Row colours in the receive log (GitHub Issue #35). A message / position we sent is pale
+# blue; our own packet coming back from a digipeater is the stronger blue, because only
+# the digipeat shows the transmission actually got through. Black text keeps both readable
+# in any theme.
+_OWN_TX_ROW_COLOR = QColor("#b3e5fc")
+_OWN_DIGIPEAT_ROW_COLOR = QColor("#4fc3f7")
 _OWN_TX_TEXT_COLOR = QColor("#000000")
 # Row colour of a packet from another station addressed to us, as in the FT4 tab
 # (Qt.GlobalColor.yellow there). Black text keeps it readable in any theme.
@@ -1233,6 +1235,15 @@ class AprsTab(QWidget):
         targets = {(dest or "").split("-")[0].upper(), (addressee or "").split("-")[0].upper()}
         return my_base in targets
 
+    def _is_own_digipeat(self, source: str, via: str) -> bool:
+        """Return True for our own packet that came back through a digipeater.
+
+        The source is our callsign (ignoring the SSID) and the path has a used
+        (``*``-marked) digipeater.
+        """
+        my_base = self._callsign_edit.text().strip().upper().split("-")[0]
+        return bool(my_base) and source.split("-")[0].upper() == my_base and "*" in via
+
     def _append_log_item(
         self,
         ts: str,
@@ -1275,6 +1286,9 @@ class AprsTab(QWidget):
             item.setData(_ROLE_COORDS, (float(lat), float(lon)))
         if tx:
             item.setBackground(_OWN_TX_ROW_COLOR)
+            item.setForeground(_OWN_TX_TEXT_COLOR)
+        elif self._is_own_digipeat(source, via):
+            item.setBackground(_OWN_DIGIPEAT_ROW_COLOR)
             item.setForeground(_OWN_TX_TEXT_COLOR)
         elif self._is_addressed_to_me(source, dest, addressee):
             item.setBackground(_FOR_ME_ROW_COLOR)
