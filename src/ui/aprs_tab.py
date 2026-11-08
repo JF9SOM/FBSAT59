@@ -359,6 +359,7 @@ class AprsTab(QWidget):
         _input_row_l.addWidget(self._input_label, 1)
         # Receive level meter, as in the FT4 tab: an empty bar right away shows that no
         # audio reaches the receiver (wrong input device, nothing plugged in, ...).
+        _input_row_l.addWidget(QLabel(_("RX Level:")))
         self._level_bar = QProgressBar()
         self._level_bar.setRange(0, 100)
         self._level_bar.setValue(0)
