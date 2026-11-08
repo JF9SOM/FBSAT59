@@ -166,7 +166,7 @@ jobs:
           PYVER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
           PYTAG=$(python3 -c "import sys; print(f'py{sys.version_info.major}{sys.version_info.minor}')")
 
-          wget -q https://github.com/Hamlib/Hamlib/releases/download/${HAMLIB_VER}/hamlib-${HAMLIB_VER}.tar.gz
+          wget -q --tries=6 --retry-connrefused --waitretry=20 --retry-on-http-error=500,502,503,504 https://github.com/Hamlib/Hamlib/releases/download/${HAMLIB_VER}/hamlib-${HAMLIB_VER}.tar.gz
           tar -xzf hamlib-${HAMLIB_VER}.tar.gz
 
           # Hamlib 4.7.2's own bindings/hamlib.swg hardcodes the Python 2
@@ -289,7 +289,7 @@ jobs:
         run: |
           ARCH=$(uname -m)
           mkdir -p direwolf-bundle
-          gh release download direwolf-bundle \
+          bash scripts/gh_retry.sh release download direwolf-bundle \
             --repo "${{ github.repository }}" \
             --pattern "direwolf-linux-${ARCH}.tar.gz" \
             --dir /tmp/dw-dl
@@ -346,7 +346,7 @@ jobs:
         run: |
           ARCH=$(uname -m)
           mkdir -p q65lib-bundle
-          gh release download q65lib-bundle \
+          bash scripts/gh_retry.sh release download q65lib-bundle \
             --repo "${{ github.repository }}" \
             --pattern "q65lib-linux-${ARCH}.tar.gz" \
             --dir /tmp/q65-dl 2>/dev/null || { echo "q65lib bundle not found; skipping"; exit 0; }
@@ -360,7 +360,7 @@ jobs:
         run: |
           ARCH=$(uname -m)
           mkdir -p ft8lib-bundle
-          gh release download ft8lib-bundle \
+          bash scripts/gh_retry.sh release download ft8lib-bundle \
             --repo "${{ github.repository }}" \
             --pattern "ft8lib-linux-${ARCH}.tar.gz" \
             --dir /tmp/ft8-dl 2>/dev/null || { echo "ft8lib bundle not found; skipping"; exit 0; }
@@ -882,7 +882,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           New-Item -ItemType Directory -Force -Path direwolf-bundle | Out-Null
-          gh release download direwolf-bundle `
+          bash scripts/gh_retry.sh release download direwolf-bundle `
             --repo "${{ github.repository }}" `
             --pattern "direwolf-windows-x86_64.zip" `
             --dir "$env:RUNNER_TEMP\dw-dl"
@@ -1123,7 +1123,7 @@ jobs:
           PY_EXT=$(python3 -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))")
 
           # Download Hamlib source
-          wget -q https://github.com/Hamlib/Hamlib/releases/download/${HAMLIB_VER}/hamlib-${HAMLIB_VER}.tar.gz
+          wget -q --tries=6 --retry-connrefused --waitretry=20 --retry-on-http-error=500,502,503,504 https://github.com/Hamlib/Hamlib/releases/download/${HAMLIB_VER}/hamlib-${HAMLIB_VER}.tar.gz
           tar -xzf hamlib-${HAMLIB_VER}.tar.gz
 
           # Hamlib 4.7.2's own bindings/hamlib.swg hardcodes the Python 2
@@ -1265,7 +1265,7 @@ jobs:
           )
           for url in "${PACKAGES[@]}"; do
             echo "Downloading $(basename "$url") ..."
-            curl -sL -O "$url"
+            curl -sSL --retry 6 --retry-delay 15 --retry-all-errors -O "$url"
           done
 
           pip install --quiet zstandard
@@ -1307,7 +1307,7 @@ jobs:
           # ourselves via SWIG the same way, continuing to link the
           # already-bundled prebuilt libSoapySDR.dylib (not rebuilding the
           # C++ core itself).
-          curl -sL -o SoapySDR.in.i \
+          curl -sSL --retry 6 --retry-delay 15 --retry-all-errors -o SoapySDR.in.i \
             https://raw.githubusercontent.com/pothosware/SoapySDR/soapy-sdr-0.8.1/python/SoapySDR.in.i
 
           # SoapySDR.in.i is a CMake configure_file(@ONLY) template with
@@ -1484,7 +1484,7 @@ jobs:
         run: |
           ARCH=$(uname -m)
           mkdir -p direwolf-bundle
-          gh release download direwolf-bundle \
+          bash scripts/gh_retry.sh release download direwolf-bundle \
             --repo "${{ github.repository }}" \
             --pattern "direwolf-macos-${ARCH}.tar.gz" \
             --dir /tmp/dw-dl
@@ -1542,7 +1542,7 @@ jobs:
         run: |
           ARCH=$(uname -m)
           mkdir -p q65lib-bundle
-          gh release download q65lib-bundle \
+          bash scripts/gh_retry.sh release download q65lib-bundle \
             --repo "${{ github.repository }}" \
             --pattern "q65lib-macos-${ARCH}.tar.gz" \
             --dir /tmp/q65-dl 2>/dev/null || { echo "q65lib bundle not found; skipping"; exit 0; }
@@ -1556,7 +1556,7 @@ jobs:
         run: |
           ARCH=$(uname -m)
           mkdir -p ft8lib-bundle
-          gh release download ft8lib-bundle \
+          bash scripts/gh_retry.sh release download ft8lib-bundle \
             --repo "${{ github.repository }}" \
             --pattern "ft8lib-macos-${ARCH}.tar.gz" \
             --dir /tmp/ft8-dl 2>/dev/null || { echo "ft8lib bundle not found; skipping"; exit 0; }

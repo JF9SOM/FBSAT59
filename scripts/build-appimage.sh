@@ -155,7 +155,7 @@ fi
 if ! command -v appimagetool &>/dev/null; then
     echo "Downloading appimagetool..."
     TOOL="$DIST_DIR/appimagetool-x86_64.AppImage"
-    curl -fsSL -o "$TOOL" \
+    curl -fsSL --retry 6 --retry-delay 15 --retry-all-errors -o "$TOOL" \
         "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
     chmod +x "$TOOL"
     alias appimagetool="$TOOL"
