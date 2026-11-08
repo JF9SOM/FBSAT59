@@ -602,7 +602,7 @@ def test_clear_button_empties_the_screen_but_not_the_saved_history(
     assert conn.execute("SELECT COUNT(*) FROM aprs_log").fetchone()[0] == saved
 
 
-def test_clear_button_is_on_the_send_group_title_line_above_send(
+def test_clear_button_is_on_the_received_packets_title_line(
     qtbot: QtBot, conn: sqlite3.Connection
 ) -> None:
     tab = _make_tab(qtbot, conn)
@@ -610,9 +610,10 @@ def test_clear_button_is_on_the_send_group_title_line_above_send(
     tab.show()
     qtbot.waitExposed(tab)
     btn = tab._log_clear_btn
-    assert btn.parent() is tab._send_group
-    assert btn.geometry().bottom() < tab._send_btn.geometry().top()
-    assert btn.geometry().right() == tab._send_btn.geometry().right()
+    assert btn.parent() is tab._log_group
+    # On the title line (above the list), left of the group's right edge.
+    assert btn.geometry().bottom() < tab._log_list.geometry().top()
+    assert btn.geometry().right() < tab._log_group.width() - 20
 
 
 def test_input_label_follows_rig_and_sdr_not_the_engine_status(
