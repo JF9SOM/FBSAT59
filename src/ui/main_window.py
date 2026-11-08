@@ -9969,6 +9969,64 @@ class MainWindow(QMainWindow):
         dlg = GrSatellitesDialog(self)
         dlg.exec()
 
+    def _reapply_ft991_mode_on_connect(self, slot: int) -> None:
+        """Send the selected transponder's mode (and CTCSS) again when an FT-991 connects.
+
+        The FT-991 Direct mode writes the mode with raw CAT when a transponder is
+        *selected*. If the rig was not reachable then (the USB cable plugged in after the
+        app started and the transponder was chosen), that write failed and nothing sent it
+        again, so the rig stayed in the mode it was left in (e.g. USB-D from FT4, which
+        sends the APRS AFSK as SSB instead of FM). Connecting sends it once more.
+        FT-991 Direct only; other rigs are untouched.
+        """
+        from rig.controller import HamlibDirectController
+
+        rig = self._rig_controller if slot == 1 else self._rig2_controller
+        xpdr = self._current_transmitter
+        if (
+            not isinstance(rig, HamlibDirectController)
+            or rig._model_id not in _FT991_DIRECT_MODEL_IDS
+            or rig.is_satmode
+            or not xpdr
+        ):
+            return
+        mode = str(xpdr.get("mode") or "")
+        if not mode:
+            return
+        dl_mode = mode
+        ul_mode = _MODE_INVERT.get(mode, mode) if bool(xpdr.get("invert", False)) else mode
+        ctcss_hz = float(self._ctcss_tone_hz or 0.0)
+        split = self._split_rigs()
+        if split is not None:
+            # Rig 1 / Rig 2 split into DL and UL duties: each rig gets its own side only.
+            if rig is split[1]:
+                modes = (ul_mode, ul_mode, ctcss_hz)
+            elif rig is split[0]:
+                modes = (dl_mode, dl_mode, 0.0)
+            else:
+                return
+        elif slot == 1:
+            modes = (dl_mode, ul_mode, ctcss_hz)
+        else:
+            return
+        logger.info(
+            "Rig %d connected: sending the transponder mode again (FT-991 Direct) dl=%s ul=%s",
+            slot,
+            modes[0],
+            modes[1],
+        )
+
+        def _send() -> None:
+            try:
+                rig.apply_transponder_state(*modes)
+            except RigControlError as exc:
+                self._rig_error.emit(str(exc))
+            except Exception as exc:
+                logger.error("FT-991 mode re-send after connect failed: %s", exc)
+                self._rig_error.emit(str(exc))
+
+        threading.Thread(target=_send, daemon=True).start()
+
     def _on_rig_slot_connected(self, slot: int) -> None:
         """Called when Rig 1 or Rig 2 connects.  Starts SDR pipeline if the slot is an SDR.
 
@@ -9983,7 +10041,8 @@ class MainWindow(QMainWindow):
         gates. See _on_play_recording_requested().
         """
         # CTCSS is sent at transponder-selection time for all rigs (IC-9100 style).
-        # No re-send needed here.
+        # No re-send needed here -- except for the FT-991 in Direct mode, see below.
+        self._reapply_ft991_mode_on_connect(slot)
 
         from rig.controller import SdrRigAdapter
         from sdr import SOAPY_AVAILABLE

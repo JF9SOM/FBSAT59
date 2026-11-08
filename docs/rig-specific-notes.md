@@ -1485,3 +1485,15 @@ IC-9700 が 433 MHz メイン FM のまま残っていた（クロスバンド�
 同一バンドでは仕様。修正: IC-9700（`_SATMODE_USE_VFO_SUB`）に限り、SATMODE OFF の後に Hamlib セッションを閉じ、生 CI-V `0F 01`
 （`_send_split_on_civ_pyserial()`、エコー対応・ACK 確認）で split ON を送ってから Hamlib を開き直し、以降の周波数・モード設定を続ける。
 **実機（IC-9700）未確認。** -1 の根本原因（Hamlib 側）は未特定。
+
+## FT-991 Direct: 接続時にトランスポンダーのモードを送り直す（2026-11-08）
+
+FT-991 Direct のモード（MD/CT）は、トランスポンダーを**選んだ瞬間**にだけ生 CAT で送られる。USB を起動後につないで
+からトランスポンダーを選ぶと、その書き込みは `could not open port` で失敗し、リグ接続後も誰も送り直さなかったため、
+リグは直前のモード（例: FT4 の USB-D/LSB-D）のままだった。SONATE-2 の APRS（FM デジピーター）に AFSK を SSB で送り、
+衛星にデコードされなかった（2026-11-08 16:20 のパス、JJ1WTK のログに JF9SOM が無い）。
+
+`MainWindow._reapply_ft991_mode_on_connect(slot)`: Rig 1/2 の接続時に、選択中のトランスポンダーのモード・CTCSS を
+`apply_transponder_state()` で 1 回送り直す。**FT-991 Direct（model 1035、非サットモード）のみ**。Rig 1/2 を RX/TX に
+分けているときは、各リグが自分の側のモード（TX リグだけ CTCSS）を受け取る。他のリグは変更なし。
+**実機では未確認**（次のパスで、ログに `Rig N connected: sending the transponder mode again` が出ること、リグ表示が FM になることを確認する）。

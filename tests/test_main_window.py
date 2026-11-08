@@ -12,6 +12,7 @@ from __future__ import annotations
 import sqlite3
 import time
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -6157,3 +6158,51 @@ class TestTransmitterChangeHandling:
         w._rig_controller = MagicMock(is_connected=False)
         w._on_transmitter_changed(dict(self._B))
         assert apply.call_count == 2
+
+
+def _fake_ft991_host(rig: object, xpdr: dict[str, object] | None) -> object:
+    """A stand-in MainWindow with just what _reapply_ft991_mode_on_connect() reads."""
+    from types import SimpleNamespace
+
+    errors: list[str] = []
+    return SimpleNamespace(
+        _rig_controller=rig,
+        _rig2_controller=None,
+        _current_transmitter=xpdr,
+        _ctcss_tone_hz=0.0,
+        _split_rigs=lambda: None,
+        _rig_error=SimpleNamespace(emit=errors.append),
+        errors=errors,
+    )
+
+
+def test_ft991_mode_is_sent_again_when_the_rig_connects(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rig.controller import HamlibDirectController
+    from ui.main_window import MainWindow
+
+    sent: list[tuple[object, ...]] = []
+
+    class _Rig(HamlibDirectController):
+        def __init__(self) -> None:  # no real rig
+            self._model_id = 1035
+            self._satmode = False
+
+        def apply_transponder_state(self, dl_mode: str, ul_mode: str, ctcss_hz: float) -> None:
+            sent.append((dl_mode, ul_mode, ctcss_hz))
+
+    class _Sync:  # run the send thread inline
+        def __init__(self, target: Any, daemon: bool = True) -> None:
+            self._target = target
+
+        def start(self) -> None:
+            self._target()
+
+    monkeypatch.setattr("ui.main_window.threading.Thread", _Sync)
+    host = _fake_ft991_host(_Rig(), {"mode": "AFSK", "invert": False})
+    MainWindow._reapply_ft991_mode_on_connect(host, 1)  # type: ignore[arg-type]
+    assert sent == [("AFSK", "AFSK", 0.0)]
+    # Nothing selected, or another rig type: nothing is sent.
+    sent.clear()
+    MainWindow._reapply_ft991_mode_on_connect(_fake_ft991_host(_Rig(), None), 1)  # type: ignore[arg-type]
+    MainWindow._reapply_ft991_mode_on_connect(_fake_ft991_host(object(), {"mode": "FM"}), 1)  # type: ignore[arg-type]
+    assert sent == []
