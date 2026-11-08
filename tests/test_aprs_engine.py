@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import sys
 from typing import Any
 
 import pytest
@@ -774,9 +775,8 @@ def test_input_is_found_by_name_not_by_the_saved_number(
             ),
         ),
     )
-    sd = _FakeSd(["Mic", "Other", "USB Audio CODEC"])  # the saved #1 is now another device
-    monkeypatch.setattr("sounddevice.query_devices", sd.query_devices)
-    monkeypatch.setattr("sounddevice.query_hostapis", sd.query_hostapis)
+    # the saved #1 is now another device
+    monkeypatch.setitem(sys.modules, "sounddevice", _FakeSd(["Mic", "Other", "USB Audio CODEC"]))
     assert adm.find_saved_input_device(conn) == (2, True)
     engine.start_rig("aprs", "JF9SOM", 0, "ARISS", modem="1200")
     assert engine._rx_in_device == 2
@@ -798,9 +798,7 @@ def test_start_fails_with_a_message_when_the_named_input_is_not_listed(
             ),
         ),
     )
-    sd = _FakeSd(["Mic"])
-    monkeypatch.setattr("sounddevice.query_devices", sd.query_devices)
-    monkeypatch.setattr("sounddevice.query_hostapis", sd.query_hostapis)
+    monkeypatch.setitem(sys.modules, "sounddevice", _FakeSd(["Mic"]))
     refreshed: list[int] = []
     monkeypatch.setattr(
         "comms.aprs.engine.get_audio_device_manager",

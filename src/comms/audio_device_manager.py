@@ -423,6 +423,8 @@ def find_saved_input_device(conn: Any, sd_module: Any = None) -> tuple[int | Non
         saved = data.get("input_device_index")
         saved_index = int(saved) if saved is not None else None
         name = data.get("input_device_name") or _name_from_label(data.get("input_device_label"))
+        if not name:
+            return saved_index, True  # nothing to look up by
         sd_mod: Any = sd_module
         if sd_mod is None:
             import sounddevice
