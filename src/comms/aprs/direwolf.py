@@ -38,6 +38,7 @@ KissClient (QThread)
 from __future__ import annotations
 
 import contextlib
+import math
 import os
 import shutil
 import socket
@@ -317,6 +318,10 @@ class AudioBridge(QThread):
         # afsk_audio_demod.AfskAudioSdrDemod).
         self._sdr_satellite = sdr_satellite
         self._stop_event = threading.Event()
+        # Peak level (dBFS) of the latest audio block fed to Direwolf, and when it
+        # arrived; read by the APRS tab's input level meter.
+        self.last_dbfs: float | None = None
+        self.last_level_time: float = 0.0
 
     _SAMPLE_RATE = 48000
     _BLOCK_SIZE = 2048  # samples per read
@@ -333,6 +338,10 @@ class AudioBridge(QThread):
             # Diagnostics must never stop reception.
             with contextlib.suppress(Exception):
                 get_tx_audio_recorder().feed(chunk)
+            with contextlib.suppress(Exception):
+                peak = float(abs(chunk).max()) if len(chunk) else 0.0
+                self.last_dbfs = 20.0 * math.log10(max(peak, 1e-6))
+                self.last_level_time = time.monotonic()
             try:
                 pcm = (chunk * 32767).astype("int16").tobytes()
                 self._proc.stdin.write(pcm)  # type: ignore[union-attr]
@@ -563,6 +572,15 @@ class DirewolfManager:
         self._kiss.start()
 
         return True, ""
+
+    def rx_level_dbfs(self, max_age_s: float = 1.5) -> float | None:
+        """Peak level (dBFS) of the audio fed to Direwolf, None when none arrived lately."""
+        audio = self._audio
+        if audio is None or audio.last_dbfs is None:
+            return None
+        if time.monotonic() - audio.last_level_time > max_age_s:
+            return None
+        return audio.last_dbfs
 
     def stop(self) -> None:
         """Gracefully stop all threads and terminate Direwolf.

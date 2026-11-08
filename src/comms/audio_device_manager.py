@@ -406,6 +406,20 @@ def resolve_device_index(
     return candidates[0], True
 
 
+def describe_input_device(device: int | None, sd_module: Any = None) -> str:
+    """Name of input *device* as PortAudio lists it now, for diagnostic logs."""
+    try:
+        sd_mod: Any = sd_module
+        if sd_mod is None:
+            import sounddevice
+
+            sd_mod = sounddevice
+        info = sd_mod.query_devices(device, "input")
+        return str(info["name"])
+    except Exception as exc:  # noqa: BLE001 -- a log helper must never raise
+        return f"unknown: {exc}"
+
+
 def heal_soundcard_settings(conn: Any, sd_module: Any = None) -> list[str]:
     """Re-point the saved Sound Card indices at the devices the user chose.
 
@@ -721,6 +735,10 @@ class AudioDeviceManager(QObject):
     #: though acquire_output()/release_output() are usually called from
     #: background TX worker threads — Qt auto-queues the delivery.
     tx_owner_changed = Signal(object, object)
+    #: Emitted after PortAudio's device list was rebuilt (reinitialize_portaudio()).
+    #: The saved Sound Card numbers may have been re-pointed by then, so a receiver
+    #: that opened its input earlier should check it still uses the right device.
+    inputs_reinitialised = Signal()
 
     _instance: AudioDeviceManager | None = None
     _instance_lock = threading.Lock()
@@ -773,6 +791,12 @@ class AudioDeviceManager(QObject):
             if stream is None:
                 stream = _SharedInputStream(device, functools.partial(self._feed_state, key))
                 self._inputs[key] = stream
+        logger.info(
+            "AudioDeviceManager: %s subscribes to input device #%s (%s)",
+            owner,
+            device,
+            describe_input_device(device),
+        )
         stream.add_subscriber(owner, samplerate, callback)
 
     def release_input(self, owner: str, device: int | None) -> None:
@@ -859,6 +883,14 @@ class AudioDeviceManager(QObject):
                     heal_soundcard_settings(self._heal_conn)
                 except Exception:
                     logger.exception("Could not re-point the saved Sound Card devices")
+            for stream in inputs:
+                logger.info(
+                    "AudioDeviceManager: after re-initialisation the shared input is on "
+                    "device #%s (%s)",
+                    stream._device,
+                    describe_input_device(stream._device),
+                )
+            self.inputs_reinitialised.emit()
             return True
 
     def output_busy(self) -> bool:

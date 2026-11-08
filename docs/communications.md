@@ -4768,3 +4768,19 @@ Direwolf が送出を始めるまで約 1 s。CSMA 設定（PERSIST/FULLDUP）�
 - 同じ相手の交信は `_logged_calls` で 1 回に限る（自局の 73 と相手の 73 の両方が来ても 1 件）。
   その相手に新しいメッセージを送ると再び記録できる
 - ADIF エクスポート・UDP 出力は、保存と同時にこの 1 件分だけが出る
+
+## APRS 受信が Sound Card の入力デバイスを取り違える問題への対策（2026-11-08）
+
+2026-11-08 16:20 の SONATE-2 パス: 無線機の USB を**アプリ起動後に**つないだところ、送信（CQ 約 14 回、PTT・再生とも正常）は
+出たが受信音声が一度も入らなかった（ログで `no receive audio was buffered`、入力レベルのログは動いていた 3 本がすべて無音）。
+FT4 はタブを開いたときに受信を始めるので起きなかったが、APRS の受信 Direwolf は**アプリ起動時**に保存済みの
+デバイス番号で入力を開き、そのまま保持していた（USB が無い起動時は別のデバイスを指す）。
+
+- `AprsEngine.restart_rx_if_input_changed()` — 保存済みの入力デバイス番号が、受信が開いている番号と違えば、受信を開き直す。
+  Rig 1 接続時（`AprsTab._on_rig_connected` が先に `refresh_devices_for_tab()` で PortAudio の一覧を作り直す）と、
+  `AudioDeviceManager.inputs_reinitialised` シグナル（PortAudio 再構築のたび）で呼ばれる
+- 診断ログ: 入力を開くたびに `AudioDeviceManager: <owner> subscribes to input device #N (<名前>)`、受信 Direwolf の開始時に
+  `APRS RX: Direwolf listens to Sound Card input #N (<名前>)`、再構築後に共有入力の番号と名前を出す
+- APRS タブの「入力: …」行の右端に FT4 と同じ入力レベルメーターを追加（250 ms ごとに `AprsEngine.rx_level_dbfs()`）。
+  空のままなら音声が受信側に届いていない
+- **実機では未確認**（次の USB 後つなぎのパスで、上のログとメーターで確認する）

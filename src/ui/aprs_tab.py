@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPlainTextEdit,
+    QProgressBar,
     QPushButton,
     QSizePolicy,
     QSpinBox,
@@ -44,6 +45,7 @@ from PySide6.QtWidgets import (
 
 from comms.aprs.log_db import ensure_aprs_log_schema
 from comms.aprs.tx_timing import MAX_MS, TxTiming, load_tx_timing, save_tx_timing
+from comms.audio_device_manager import get_audio_device_manager
 from data.lotw_names import band_freqs_from_transmitter, lotw_name_for_norad
 from i18n import _
 from ui.aprs_presets import (
@@ -355,6 +357,20 @@ class AprsTab(QWidget):
         _input_row_l.setContentsMargins(0, 0, 0, 0)
         _input_row_l.setSpacing(0)
         _input_row_l.addWidget(self._input_label, 1)
+        # Receive level meter, as in the FT4 tab: an empty bar right away shows that no
+        # audio reaches the receiver (wrong input device, nothing plugged in, ...).
+        self._level_bar = QProgressBar()
+        self._level_bar.setRange(0, 100)
+        self._level_bar.setValue(0)
+        self._level_bar.setTextVisible(False)
+        self._level_bar.setFixedHeight(14)
+        self._level_bar.setFixedWidth(80)
+        self._level_bar.setToolTip(_("-- dBFS"))
+        _input_row_l.addWidget(self._level_bar)
+        self._level_timer = QTimer(self)
+        self._level_timer.setInterval(250)
+        self._level_timer.timeout.connect(self._update_level_bar)
+        self._level_timer.start()
         settings_form.addRow(_input_row_w)
 
         root.addWidget(settings_group)
@@ -546,6 +562,19 @@ class AprsTab(QWidget):
     # Connection state slots
     # ------------------------------------------------------------------ #
 
+    def _update_level_bar(self) -> None:
+        """Show the peak level of the audio the receiver is getting (dBFS)."""
+        dbfs = self._engine.rx_level_dbfs() if self._engine.is_running else None
+        if dbfs is None:
+            self._level_bar.setValue(0)
+            self._level_bar.setToolTip(_("-- dBFS"))
+            return
+        pct = max(0.0, min(100.0, (dbfs + 60.0) / 60.0 * 100.0))
+        self._level_bar.setValue(int(pct))
+        color = "#2ecc71" if dbfs < -12.0 else ("#f1c40f" if dbfs < -3.0 else "#e74c3c")
+        self._level_bar.setStyleSheet(f"QProgressBar::chunk {{ background-color: {color}; }}")
+        self._level_bar.setToolTip(_("{db:.0f} dBFS").format(db=dbfs))
+
     def _on_rig_connected(self) -> None:
         """Rig 1 connected — may be a Hamlib rig or an SDR adapter."""
         rc = self._radio_control
@@ -558,6 +587,12 @@ class AprsTab(QWidget):
         else:
             self._rig_connected = True
             self._engine.set_rig(rig1)
+            # The Sound Card may have been plugged in after the app started: rebuild the
+            # device list and, if the saved input number moved, re-open the receive on
+            # the right device (the engine would otherwise stay on the old one).
+            with contextlib.suppress(Exception):
+                get_audio_device_manager().refresh_devices_for_tab()
+            self._engine.restart_rx_if_input_changed()
             self._try_start_engine()
             self._prepare_tx()
         self._refresh_input_source()

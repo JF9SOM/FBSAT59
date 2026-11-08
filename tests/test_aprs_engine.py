@@ -707,3 +707,36 @@ def test_a_session_opened_after_the_tab_closed_is_closed_again(
     tx_engine.prepare_tx()
     assert done.wait(5)
     assert len(closed) == 1
+
+
+def _set_input_device(conn: sqlite3.Connection, index: int) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
+        ("soundcard_settings", json.dumps({"configured": True, "input_device_index": index})),
+    )
+
+
+def test_restart_rx_if_input_changed_reopens_on_the_new_device(
+    engine: AprsEngine, conn: sqlite3.Connection
+) -> None:
+    _set_input_device(conn, 1)
+    engine.start_rig("aprs", "JF9SOM", 0, "ARISS", modem="1200")
+    fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
+    engine.restart_rx_if_input_changed()  # same number: nothing happens
+    assert fake_mgr.stop_calls == 0
+    _set_input_device(conn, 3)  # the saved number moved (e.g. a USB card plugged in later)
+    engine.restart_rx_if_input_changed()
+    assert fake_mgr.stop_calls == 1
+    assert len(fake_mgr.start_calls) == 2
+    assert engine._rx_in_device == 3
+    assert engine.is_running
+    assert engine._owners == {"aprs"}
+
+
+def test_restart_rx_if_input_changed_noop_when_not_running(
+    engine: AprsEngine, conn: sqlite3.Connection
+) -> None:
+    _set_input_device(conn, 3)
+    engine.restart_rx_if_input_changed()
+    fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
+    assert fake_mgr.start_calls == []

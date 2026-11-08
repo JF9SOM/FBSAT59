@@ -37,6 +37,7 @@ decoder; the two decoders' frames are merged and de-duplicated
 from __future__ import annotations
 
 import atexit
+import contextlib
 import json
 import logging
 import re
@@ -51,6 +52,7 @@ from comms.aprs.direwolf_tx import DirewolfTxSession, DirewolfTxWorker
 from comms.aprs.parser import AprsPacket, Ax25Frame, decode_ax25, parse_aprs
 from comms.aprs.tx_audio_log import get_tx_audio_recorder
 from comms.aprs.tx_timing import load_tx_timing
+from comms.audio_device_manager import describe_input_device, get_audio_device_manager
 from i18n import _
 
 logger = logging.getLogger(__name__)
@@ -99,6 +101,8 @@ class AprsEngine(QObject):
         # Used by restart_if_modem_changed().
         self._current_modem: str | None = None
         self._last_rig_params: tuple[str, int, str] | None = None
+        # Sound Card input device number the running Rig + Sound Card Direwolf listens to.
+        self._rx_in_device: int | None = None
         # True only while running via start_sdr_direwolf() (SDR-derived
         # audio feeding Direwolf) — distinguishes that mechanism from a
         # Rig + Sound Card Direwolf session that could be at the same baud
@@ -109,6 +113,12 @@ class AprsEngine(QObject):
         # Direwolf session in _mgr. See coherent_msk.py.
         self._coherent_demod: Any | None = None
         self._coherent_pipeline: Any | None = None
+        # The device list may be rebuilt after we opened the input (a USB sound card
+        # plugged in later, say) and the numbers shift: re-check then.
+        with contextlib.suppress(Exception):
+            get_audio_device_manager().inputs_reinitialised.connect(
+                self.restart_rx_if_input_changed
+            )
         # Frames published recently (raw bytes -> monotonic time). The coherent
         # decoder and Direwolf run side by side at 4800/9600 baud and often
         # decode the very same frame; the coherent one lags by up to a chunk.
@@ -213,8 +223,44 @@ class AprsEngine(QObject):
         self._running = True
         self._current_modem = modem
         self._last_rig_params = (callsign, ssid, via)
+        self._rx_in_device = in_dev
+        logger.info(
+            "APRS RX: Direwolf listens to Sound Card input #%s (%s), %s baud",
+            in_dev,
+            describe_input_device(in_dev),
+            modem,
+        )
         self.status_changed.emit(f"Connected (Rig + Direwolf, {modem} baud)")
         return True, ""
+
+    def restart_rx_if_input_changed(self) -> None:
+        """Re-open the Rig + Sound Card receive when its input device number changed.
+
+        The input is opened when the app starts. If the Sound Card was not plugged in
+        then, or the device list was rebuilt since, the saved number now points at a
+        different device and the receive would stay on the wrong (silent) one. No-op
+        when nothing is running, for an SDR-fed session, or when the number is the same.
+        """
+        if not self._running or self._last_rig_params is None or self._current_modem is None:
+            return
+        new_dev = self._load_soundcard_devices()[0]
+        if new_dev == self._rx_in_device:
+            return
+        logger.warning(
+            "APRS RX: Sound Card input moved from #%s to #%s (%s); restarting the receive",
+            self._rx_in_device,
+            new_dev,
+            describe_input_device(new_dev),
+        )
+        callsign, ssid, via = self._last_rig_params
+        modem = self._current_modem
+        self._teardown_pipeline()
+        self._start_rig_pipeline(callsign, ssid, via, modem)
+
+    def rx_level_dbfs(self) -> float | None:
+        """Peak level (dBFS) of the audio the receive Direwolf is getting, None if none."""
+        level = getattr(self._mgr, "rx_level_dbfs", None)
+        return level() if callable(level) else None
 
     def restart_if_modem_changed(self, new_modem: str) -> None:
         """Restart the Direwolf pipeline in place if it's on the wrong baud.

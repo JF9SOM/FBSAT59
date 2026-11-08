@@ -696,3 +696,19 @@ def test_73_from_a_station_we_never_messaged_is_not_logged(
     tab = _aprs_log_tab(qtbot, conn)
     _rx_msg(tab, "JA9ZZZ", "JF9SOM", "73")
     assert _rows(conn) == []
+
+
+def test_level_bar_follows_the_receive_level(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    tab = _make_tab(qtbot, conn)
+    levels: list[float | None] = [None]
+    tab._engine = type(  # type: ignore[assignment]
+        "E", (), {"is_running": True, "rx_level_dbfs": staticmethod(lambda: levels[0])}
+    )()
+    tab._update_level_bar()
+    assert tab._level_bar.value() == 0  # no audio at all: an empty bar
+    levels[0] = -30.0
+    tab._update_level_bar()
+    assert tab._level_bar.value() == 50
+    levels[0] = -3.0
+    tab._update_level_bar()
+    assert tab._level_bar.value() == 95
