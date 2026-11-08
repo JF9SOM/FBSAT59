@@ -52,7 +52,11 @@ from comms.aprs.direwolf_tx import DirewolfTxSession, DirewolfTxWorker
 from comms.aprs.parser import AprsPacket, Ax25Frame, decode_ax25, parse_aprs
 from comms.aprs.tx_audio_log import get_tx_audio_recorder
 from comms.aprs.tx_timing import load_tx_timing
-from comms.audio_device_manager import describe_input_device, get_audio_device_manager
+from comms.audio_device_manager import (
+    describe_input_device,
+    find_saved_input_device,
+    get_audio_device_manager,
+)
 from i18n import _
 
 logger = logging.getLogger(__name__)
@@ -207,7 +211,11 @@ class AprsEngine(QObject):
     def _start_rig_pipeline(
         self, callsign: str, ssid: int, via: str, modem: str
     ) -> tuple[bool, str]:
-        in_dev = self._load_soundcard_devices()[0]
+        in_dev, found = self._resolve_rx_input()
+        if not found:
+            err = _("The Sound Card input device was not found. Plug it in and connect Rig 1.")
+            self.error_occurred.emit(err)
+            return False, err
         ok, err = self._mgr.start(
             callsign=callsign,
             ssid=ssid,
@@ -233,6 +241,20 @@ class AprsEngine(QObject):
         self.status_changed.emit(f"Connected (Rig + Direwolf, {modem} baud)")
         return True, ""
 
+    def _resolve_rx_input(self) -> tuple[int | None, bool]:
+        """Sound Card input number found by the saved device *name* (not the saved number).
+
+        When no input of that name is listed, PortAudio's device list is rebuilt once
+        (a USB card plugged in after the app started is only listed after that) and
+        the search is repeated. Returns ``(index, found)``.
+        """
+        index, found = find_saved_input_device(self._conn)
+        if not found:
+            with contextlib.suppress(Exception):
+                get_audio_device_manager().refresh_devices_for_tab()
+            index, found = find_saved_input_device(self._conn)
+        return index, found
+
     def restart_rx_if_input_changed(self) -> None:
         """Re-open the Rig + Sound Card receive when its input device number changed.
 
@@ -243,8 +265,8 @@ class AprsEngine(QObject):
         """
         if not self._running or self._last_rig_params is None or self._current_modem is None:
             return
-        new_dev = self._load_soundcard_devices()[0]
-        if new_dev == self._rx_in_device:
+        new_dev, found = self._resolve_rx_input()
+        if not found or new_dev == self._rx_in_device:
             return
         logger.warning(
             "APRS RX: Sound Card input moved from #%s to #%s (%s); restarting the receive",

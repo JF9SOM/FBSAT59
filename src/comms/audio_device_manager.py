@@ -406,6 +406,40 @@ def resolve_device_index(
     return candidates[0], True
 
 
+def find_saved_input_device(conn: Any, sd_module: Any = None) -> tuple[int | None, bool]:
+    """Current PortAudio number of the Sound Card input saved in the settings, by name.
+
+    Returns ``(index, found)``. ``found`` is False only when a device name was saved
+    and no input device of that name exists now (then *index* is the saved number,
+    which may point at another device). Nothing saved gives ``(None, True)``.
+    """
+    try:
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'soundcard_settings'"
+        ).fetchone()
+        if not row or not row[0]:
+            return None, True
+        data = json.loads(row[0])
+        saved = data.get("input_device_index")
+        saved_index = int(saved) if saved is not None else None
+        name = data.get("input_device_name") or _name_from_label(data.get("input_device_label"))
+        sd_mod: Any = sd_module
+        if sd_mod is None:
+            import sounddevice
+
+            sd_mod = sounddevice
+        return resolve_device_index(
+            saved_index,
+            name,
+            data.get("input_device_hostapi"),
+            "input",
+            list(sd_mod.query_devices()),
+            [str(h["name"]) for h in sd_mod.query_hostapis()],
+        )
+    except Exception:  # noqa: BLE001 -- fall back to the saved number elsewhere
+        return None, True
+
+
 def describe_input_device(device: int | None, sd_module: Any = None) -> str:
     """Name of input *device* as PortAudio lists it now, for diagnostic logs."""
     try:

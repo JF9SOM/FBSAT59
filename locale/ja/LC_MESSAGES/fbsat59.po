@@ -8956,3 +8956,6 @@ msgstr "無線機接続済み"
 
 msgid "Connect Rig or SDR"
 msgstr "無線機またはSDRを接続してください"
+
+msgid "The Sound Card input device was not found. Plug it in and connect Rig 1."
+msgstr "サウンドカードの入力デバイスが見つかりません。接続してから Rig 1 を接続してください。"

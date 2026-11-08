@@ -716,6 +716,19 @@ def _set_input_device(conn: sqlite3.Connection, index: int) -> None:
     )
 
 
+class _FakeSd:
+    """A fake sounddevice with a settable device list."""
+
+    def __init__(self, names: list[str]) -> None:
+        self.names = names
+
+    def query_devices(self) -> list[dict[str, Any]]:
+        return [{"name": n, "max_input_channels": 1, "hostapi": 0} for n in self.names]
+
+    def query_hostapis(self) -> list[dict[str, Any]]:
+        return [{"name": "Core Audio"}]
+
+
 def test_restart_rx_if_input_changed_reopens_on_the_new_device(
     engine: AprsEngine, conn: sqlite3.Connection
 ) -> None:
@@ -738,5 +751,65 @@ def test_restart_rx_if_input_changed_noop_when_not_running(
 ) -> None:
     _set_input_device(conn, 3)
     engine.restart_rx_if_input_changed()
+    fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
+    assert fake_mgr.start_calls == []
+
+
+def test_input_is_found_by_name_not_by_the_saved_number(
+    engine: AprsEngine, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import comms.audio_device_manager as adm
+
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
+        (
+            "soundcard_settings",
+            json.dumps(
+                {
+                    "configured": True,
+                    "input_device_index": 1,
+                    "input_device_name": "USB Audio CODEC",
+                    "input_device_hostapi": "Core Audio",
+                }
+            ),
+        ),
+    )
+    sd = _FakeSd(["Mic", "Other", "USB Audio CODEC"])  # the saved #1 is now another device
+    monkeypatch.setattr("sounddevice.query_devices", sd.query_devices)
+    monkeypatch.setattr("sounddevice.query_hostapis", sd.query_hostapis)
+    assert adm.find_saved_input_device(conn) == (2, True)
+    engine.start_rig("aprs", "JF9SOM", 0, "ARISS", modem="1200")
+    assert engine._rx_in_device == 2
+
+
+def test_start_fails_with_a_message_when_the_named_input_is_not_listed(
+    engine: AprsEngine, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
+        (
+            "soundcard_settings",
+            json.dumps(
+                {
+                    "configured": True,
+                    "input_device_index": 1,
+                    "input_device_name": "USB Audio CODEC",
+                }
+            ),
+        ),
+    )
+    sd = _FakeSd(["Mic"])
+    monkeypatch.setattr("sounddevice.query_devices", sd.query_devices)
+    monkeypatch.setattr("sounddevice.query_hostapis", sd.query_hostapis)
+    refreshed: list[int] = []
+    monkeypatch.setattr(
+        "comms.aprs.engine.get_audio_device_manager",
+        lambda: type("M", (), {"refresh_devices_for_tab": lambda self: refreshed.append(1)})(),
+    )
+    errors: list[str] = []
+    engine.error_occurred.connect(errors.append)
+    ok, _err = engine.start_rig("aprs", "JF9SOM", 0, "ARISS", modem="1200")
+    assert not ok and errors
+    assert refreshed == [1]  # the device list was rebuilt once before giving up
     fake_mgr: _FakeDirewolfManager = engine._mgr  # type: ignore[assignment]
     assert fake_mgr.start_calls == []
