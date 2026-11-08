@@ -80,9 +80,17 @@ _OWN_TX_TEXT_COLOR = QColor("#000000")
 _FOR_ME_ROW_COLOR = QColor(Qt.GlobalColor.yellow)
 _FOR_ME_TEXT_COLOR = QColor("#000000")
 
-# A closing "73" inside a text: "73", "RR73", "R73", "R TU 73", "TU 73" (not inside a
-# longer number).
-_CLOSING_73_RE = re.compile(r"(?<!\d)73(?!\d)")
+# A closing "73" is a whole word of its own: 73, 73S, R73 or RR73 ("R TU 73", "TU 73" and
+# "73 TU" count too). Not part of a longer word: a grid square such as PM73 / QM73, a
+# callsign ending in 73 and a JCC number such as 0731 are not a closing.
+_CLOSING_73_WORD_RE = re.compile(r"(?:RR?)?73S?")
+
+
+def _is_closing_73(text: str) -> bool:
+    """Return True when *text* has a closing 73 word (see _CLOSING_73_WORD_RE)."""
+    words = re.split(r"[^A-Za-z0-9]+", text.upper())
+    return any(_CLOSING_73_WORD_RE.fullmatch(word) for word in words if word)
+
 
 # Maidenhead locator (4 or 6 characters) inside a received text.
 _GRID_RE = re.compile(r"\b([A-R]{2}[0-9]{2}(?:[A-X]{2})?)\b", re.IGNORECASE)
@@ -818,7 +826,7 @@ class AprsTab(QWidget):
             target, text = packet.message_addressee, packet.message_text
         else:
             target, text = packet.dest, packet.raw_info
-        if not _CLOSING_73_RE.search((text or "").strip()):
+        if not _is_closing_73(text or ""):
             return
         my_base = self._callsign_edit.text().strip().upper().split("-")[0]
         target_base = (target or "").strip().upper().split("-")[0]
@@ -1428,7 +1436,7 @@ class AprsTab(QWidget):
         self._pending_qso.add(to_base)
         if msg == "599":
             self._sent_report.add(to_base)
-        if _CLOSING_73_RE.search(msg):
+        if _is_closing_73(msg):
             self._finish_qso(to_base)
         else:
             self._logged_calls.discard(to_base)  # a new exchange with this station

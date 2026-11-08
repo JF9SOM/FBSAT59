@@ -746,3 +746,45 @@ def test_a_report_or_a_number_containing_73_is_not_a_closing(
     _rx_msg(tab, "JA1XYZ", "JF9SOM", "599 PM53 402103")
     _rx_msg(tab, "JA1XYZ", "JF9SOM", "call 1730")
     assert _rows(conn) == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["73", "RR73", "R73", "R TU 73", "TU 73", "73 TU", "73!", "73s", "pse 73 es tnx", "599 R73"],
+)
+def test_closing_73_words(text: str) -> None:
+    from ui.aprs_tab import _is_closing_73
+
+    assert _is_closing_73(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "599 PM73 402103",  # a grid square that ends in 73
+        "PM73",
+        "QM73",
+        "JA73",  # a callsign ending in 73
+        "JCC#0731",
+        "JCC#1730",
+        "173x",
+        "7300",
+        "145.873",
+        "599 PM53 402103",
+        "",
+    ],
+)
+def test_73_inside_another_word_or_number_is_not_a_closing(text: str) -> None:
+    from ui.aprs_tab import _is_closing_73
+
+    assert not _is_closing_73(text)
+
+
+def test_a_report_with_a_grid_ending_in_73_does_not_log_the_qso(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _aprs_log_tab(qtbot, conn)
+    _send(tab, "JA1XYZ", "599")
+    _rx(tab, "JA1XYZ", "JF9SOM", "599 PM73 402103")  # UISS style, grid PM73
+    _rx_msg(tab, "JA1XYZ", "JF9SOM", "599 PM73")
+    assert _rows(conn) == []
