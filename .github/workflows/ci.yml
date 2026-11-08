@@ -454,8 +454,24 @@ jobs:
           choco install swig -y --no-progress
           $env:PATH = "C:\ProgramData\chocolatey\bin;$env:PATH"
 
+          # The Hamlib release files are sometimes served with "504 Gateway Time-out"
+          # for a while (it failed v0.3.90's Windows build four times in a row), so
+          # every download is retried a few times before giving up.
+          function Get-FileWithRetry([string]$Url, [string]$OutFile) {
+            for ($i = 1; $i -le 6; $i++) {
+              try {
+                Invoke-WebRequest $Url -OutFile $OutFile
+                return
+              } catch {
+                Write-Host "Download failed (attempt $i/6): $($_.Exception.Message)"
+                if ($i -eq 6) { throw }
+                Start-Sleep -Seconds (15 * $i)
+              }
+            }
+          }
+
           # Download Hamlib source (for .swg binding sources) and Windows DLLs
-          Invoke-WebRequest "https://github.com/Hamlib/Hamlib/releases/download/$HAMLIB_VER/hamlib-$HAMLIB_VER.tar.gz" -OutFile hamlib.tar.gz
+          Get-FileWithRetry "https://github.com/Hamlib/Hamlib/releases/download/$HAMLIB_VER/hamlib-$HAMLIB_VER.tar.gz" "hamlib.tar.gz"
           tar -xzf hamlib.tar.gz
 
           # Hamlib 4.7.2's own bindings/hamlib.swg hardcodes the Python 2 API
@@ -473,7 +489,7 @@ jobs:
             -replace 'PyInt_FromLong', 'PyLong_FromLong' |
             Set-Content "hamlib-$HAMLIB_VER\bindings\hamlib.swg"
 
-          Invoke-WebRequest "https://github.com/Hamlib/Hamlib/releases/download/$HAMLIB_VER/hamlib-w64-$HAMLIB_VER.zip" -OutFile hamlib-win.zip
+          Get-FileWithRetry "https://github.com/Hamlib/Hamlib/releases/download/$HAMLIB_VER/hamlib-w64-$HAMLIB_VER.zip" "hamlib-win.zip"
           Expand-Archive -Path hamlib-win.zip -DestinationPath hamlib-extracted
           $extracted = Get-ChildItem -Path hamlib-extracted -Directory | Select-Object -First 1
           $binDir = "$($extracted.FullName)\bin"
