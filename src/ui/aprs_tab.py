@@ -80,6 +80,10 @@ _OWN_TX_TEXT_COLOR = QColor("#000000")
 _FOR_ME_ROW_COLOR = QColor(Qt.GlobalColor.yellow)
 _FOR_ME_TEXT_COLOR = QColor("#000000")
 
+# A closing "73" inside a text: "73", "RR73", "R73", "R TU 73", "TU 73" (not inside a
+# longer number).
+_CLOSING_73_RE = re.compile(r"(?<!\d)73(?!\d)")
+
 # Maidenhead locator (4 or 6 characters) inside a received text.
 _GRID_RE = re.compile(r"\b([A-R]{2}[0-9]{2}(?:[A-X]{2})?)\b", re.IGNORECASE)
 
@@ -801,17 +805,25 @@ class AprsTab(QWidget):
             self._their_grid[base] = match.group(1).upper()
 
     def _check_73_from_them(self, packet: object) -> None:
-        """Log the QSO when a station we messaged sends us "73"."""
+        """Log the QSO when a station we messaged sends us a closing 73 (73 / RR73 / R TU 73).
+
+        The packet may be an APRS message (addressee in the message) or UISS style
+        (the destination field holds the callsign it is meant for).
+        """
         from comms.aprs.parser import AprsPacket
 
-        if not isinstance(packet, AprsPacket) or packet.data_type != ":":
+        if not isinstance(packet, AprsPacket):
             return
-        if not re.match(r"73\b", (packet.message_text or "").strip()):
+        if packet.data_type == ":":
+            target, text = packet.message_addressee, packet.message_text
+        else:
+            target, text = packet.dest, packet.raw_info
+        if not _CLOSING_73_RE.search((text or "").strip()):
             return
         my_base = self._callsign_edit.text().strip().upper().split("-")[0]
-        addressee = (packet.message_addressee or "").strip().upper().split("-")[0]
+        target_base = (target or "").strip().upper().split("-")[0]
         base = packet.callsign.split("-")[0].upper()
-        if not my_base or addressee != my_base or base == my_base:
+        if not my_base or target_base != my_base or base == my_base:
             return
         # Only a station we have been exchanging with (we messaged it first).
         if base not in self._pending_qso and base not in self._sent_report:
@@ -1416,10 +1428,10 @@ class AprsTab(QWidget):
         self._pending_qso.add(to_base)
         if msg == "599":
             self._sent_report.add(to_base)
-        if msg != "73":
-            self._logged_calls.discard(to_base)  # a new exchange with this station
-        else:
+        if _CLOSING_73_RE.search(msg):
             self._finish_qso(to_base)
+        else:
+            self._logged_calls.discard(to_base)  # a new exchange with this station
 
         # Echo to receive log as sent marker
         src = f"{my_call}-{ssid}" if ssid else my_call

@@ -712,3 +712,37 @@ def test_level_bar_follows_the_receive_level(qtbot: QtBot, conn: sqlite3.Connect
     levels[0] = -3.0
     tab._update_level_bar()
     assert tab._level_bar.value() == 95
+
+
+def test_rr73_in_uiss_style_from_the_other_station_logs_the_qso(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    """GitHub Issue #35, 2026-11-08: JF6BCC sent "RR73" in a UISS-style frame (callsign in the
+    destination field, no ':' message); we answered "R TU 73". Both must close the QSO."""
+    tab = _aprs_log_tab(qtbot, conn)
+    tab._callsign_edit.setText("JF1PTU")
+    _send(tab, "JF6BCC", "599")
+    _rx(tab, "JF6BCC", "JF1PTU-5", "RR73")  # UISS style: no ':' data type
+    assert [r["callsign"] for r in _rows(conn)] == ["JF6BCC"]
+    _send(tab, "JF6BCC", "R TU 73")  # our closing text: the same QSO, not logged twice
+    assert len(_rows(conn)) == 1
+
+
+def test_r_tu_73_from_us_closes_a_qso_that_they_started(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _aprs_log_tab(qtbot, conn)
+    _rx(tab, "JK4DHT", "JF9SOM", "UR599 PM54")
+    _send(tab, "JK4DHT", "599")
+    _send(tab, "JK4DHT", "R TU 73")
+    assert [(r["callsign"], r["comment"]) for r in _rows(conn)] == [("JK4DHT", "QSO PM54")]
+
+
+def test_a_report_or_a_number_containing_73_is_not_a_closing(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _aprs_log_tab(qtbot, conn)
+    _send(tab, "JA1XYZ", "599")
+    _rx_msg(tab, "JA1XYZ", "JF9SOM", "599 PM53 402103")
+    _rx_msg(tab, "JA1XYZ", "JF9SOM", "call 1730")
+    assert _rows(conn) == []
