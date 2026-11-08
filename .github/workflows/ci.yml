@@ -160,13 +160,28 @@ jobs:
             libxext6 libxrandr2 libdrm2 \
             binutils coreutils
 
+      # Hamlib's release files are fetched from GitHub's release-file servers, which
+      # sometimes answer "504 Gateway Time-out" for hours (it broke the v0.3.90 builds).
+      # Keep the downloaded files in the Actions cache (a different service), so a
+      # build only downloads them when the cache is empty. Keep the version in the
+      # key in step with HAMLIB_VER below.
+      - name: Cache the Hamlib downloads
+        uses: actions/cache@v4
+        with:
+          path: hamlib-dl
+          key: hamlib-dl-4.7.2-${{ runner.os }}
+
       - name: Build Hamlib 4.7.2 from source
         run: |
           HAMLIB_VER="4.7.2"
           PYVER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
           PYTAG=$(python3 -c "import sys; print(f'py{sys.version_info.major}{sys.version_info.minor}')")
 
-          wget -q --tries=6 --retry-connrefused --waitretry=20 --retry-on-http-error=500,502,503,504 https://github.com/Hamlib/Hamlib/releases/download/${HAMLIB_VER}/hamlib-${HAMLIB_VER}.tar.gz
+          mkdir -p hamlib-dl
+          if [ ! -s hamlib-dl/hamlib-${HAMLIB_VER}.tar.gz ]; then
+            wget -q --tries=6 --retry-connrefused --waitretry=20 --retry-on-http-error=500,502,503,504 -O hamlib-dl/hamlib-${HAMLIB_VER}.tar.gz https://github.com/Hamlib/Hamlib/releases/download/${HAMLIB_VER}/hamlib-${HAMLIB_VER}.tar.gz
+          fi
+          cp hamlib-dl/hamlib-${HAMLIB_VER}.tar.gz .
           tar -xzf hamlib-${HAMLIB_VER}.tar.gz
 
           # Hamlib 4.7.2's own bindings/hamlib.swg hardcodes the Python 2
@@ -440,6 +455,17 @@ jobs:
       - name: Install Python dependencies
         run: pip install -e ".[packaging]"
 
+      # Hamlib's release files are fetched from GitHub's release-file servers, which
+      # sometimes answer "504 Gateway Time-out" for hours (it broke the v0.3.90 builds).
+      # Keep the downloaded files in the Actions cache (a different service), so a
+      # build only downloads them when the cache is empty. Keep the version in the
+      # key in step with HAMLIB_VER below.
+      - name: Cache the Hamlib downloads
+        uses: actions/cache@v4
+        with:
+          path: hamlib-dl
+          key: hamlib-dl-4.7.2-${{ runner.os }}
+
       - name: Build Hamlib 4.7.2 Python binding (MinGW) and portable package
         shell: pwsh
         run: |
@@ -471,7 +497,11 @@ jobs:
           }
 
           # Download Hamlib source (for .swg binding sources) and Windows DLLs
-          Get-FileWithRetry "https://github.com/Hamlib/Hamlib/releases/download/$HAMLIB_VER/hamlib-$HAMLIB_VER.tar.gz" "hamlib.tar.gz"
+          New-Item -ItemType Directory -Force -Path hamlib-dl | Out-Null
+          if (-not (Test-Path "hamlib-dl/hamlib-$HAMLIB_VER.tar.gz")) {
+            Get-FileWithRetry "https://github.com/Hamlib/Hamlib/releases/download/$HAMLIB_VER/hamlib-$HAMLIB_VER.tar.gz" "hamlib-dl/hamlib-$HAMLIB_VER.tar.gz"
+          }
+          Copy-Item "hamlib-dl/hamlib-$HAMLIB_VER.tar.gz" "hamlib.tar.gz"
           tar -xzf hamlib.tar.gz
 
           # Hamlib 4.7.2's own bindings/hamlib.swg hardcodes the Python 2 API
@@ -489,7 +519,10 @@ jobs:
             -replace 'PyInt_FromLong', 'PyLong_FromLong' |
             Set-Content "hamlib-$HAMLIB_VER\bindings\hamlib.swg"
 
-          Get-FileWithRetry "https://github.com/Hamlib/Hamlib/releases/download/$HAMLIB_VER/hamlib-w64-$HAMLIB_VER.zip" "hamlib-win.zip"
+          if (-not (Test-Path "hamlib-dl/hamlib-w64-$HAMLIB_VER.zip")) {
+            Get-FileWithRetry "https://github.com/Hamlib/Hamlib/releases/download/$HAMLIB_VER/hamlib-w64-$HAMLIB_VER.zip" "hamlib-dl/hamlib-w64-$HAMLIB_VER.zip"
+          }
+          Copy-Item "hamlib-dl/hamlib-w64-$HAMLIB_VER.zip" "hamlib-win.zip"
           Expand-Archive -Path hamlib-win.zip -DestinationPath hamlib-extracted
           $extracted = Get-ChildItem -Path hamlib-extracted -Directory | Select-Object -First 1
           $binDir = "$($extracted.FullName)\bin"
@@ -1109,6 +1142,17 @@ jobs:
             echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
           fi
 
+      # Hamlib's release files are fetched from GitHub's release-file servers, which
+      # sometimes answer "504 Gateway Time-out" for hours (it broke the v0.3.90 builds).
+      # Keep the downloaded files in the Actions cache (a different service), so a
+      # build only downloads them when the cache is empty. Keep the version in the
+      # key in step with HAMLIB_VER below.
+      - name: Cache the Hamlib downloads
+        uses: actions/cache@v4
+        with:
+          path: hamlib-dl
+          key: hamlib-dl-4.7.2-${{ runner.os }}
+
       - name: Install Hamlib and Python dependencies
         run: |
           # Install build tools via Homebrew (swig generates hamlib_wrap.c from .swg)
@@ -1123,7 +1167,11 @@ jobs:
           PY_EXT=$(python3 -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))")
 
           # Download Hamlib source
-          wget -q --tries=6 --retry-connrefused --waitretry=20 --retry-on-http-error=500,502,503,504 https://github.com/Hamlib/Hamlib/releases/download/${HAMLIB_VER}/hamlib-${HAMLIB_VER}.tar.gz
+          mkdir -p hamlib-dl
+          if [ ! -s hamlib-dl/hamlib-${HAMLIB_VER}.tar.gz ]; then
+            wget -q --tries=6 --retry-connrefused --waitretry=20 --retry-on-http-error=500,502,503,504 -O hamlib-dl/hamlib-${HAMLIB_VER}.tar.gz https://github.com/Hamlib/Hamlib/releases/download/${HAMLIB_VER}/hamlib-${HAMLIB_VER}.tar.gz
+          fi
+          cp hamlib-dl/hamlib-${HAMLIB_VER}.tar.gz .
           tar -xzf hamlib-${HAMLIB_VER}.tar.gz
 
           # Hamlib 4.7.2's own bindings/hamlib.swg hardcodes the Python 2
