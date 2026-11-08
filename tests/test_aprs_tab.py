@@ -649,3 +649,50 @@ def test_own_digipeat_is_blue_and_own_tx_is_pale_blue(
     assert last().background().style() == _Qt.BrushStyle.NoBrush  # type: ignore[attr-defined]
     tab._append_log_item("t", "JF1PTU-6", "RS0ISS", plain="p", raw="r", dest="CQ", tx=True)
     assert last().background().color() == QColor("#b3e5fc")  # type: ignore[attr-defined]
+
+
+def _rx_msg(tab: AprsTab, src: str, to: str, text: str) -> None:
+    from comms.aprs.parser import AprsPacket
+
+    tab._on_packet_received(
+        AprsPacket(
+            callsign=src,
+            dest="APRS",
+            via="DP0SNX*",
+            data_type=":",
+            raw_info=f":{to:<9}:{text}",
+            comment=text,
+            message_addressee=to,
+            message_text=text,
+        )
+    )
+
+
+def test_replies_are_not_logged_only_a_73_closes_the_qso(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _aprs_log_tab(qtbot, conn)
+    _send(tab, "JA1XYZ", "CQ")
+    _rx_msg(tab, "JA1XYZ", "JF9SOM", "hello")
+    _rx_msg(tab, "JA1XYZ", "JF9SOM", "UR 599")
+    assert _rows(conn) == []
+
+
+def test_73_from_the_other_station_logs_the_qso_once(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _aprs_log_tab(qtbot, conn)
+    _send(tab, "JA1XYZ", "CQ")
+    _rx_msg(tab, "JA1XYZ", "JF9SOM", "73")
+    assert [r["callsign"] for r in _rows(conn)] == ["JA1XYZ"]
+    _send(tab, "JA1XYZ", "73")  # our 73 after theirs: the same QSO, not logged again
+    _rx_msg(tab, "JA1XYZ", "JF9SOM", "73")
+    assert len(_rows(conn)) == 1
+
+
+def test_73_from_a_station_we_never_messaged_is_not_logged(
+    qtbot: QtBot, conn: sqlite3.Connection
+) -> None:
+    tab = _aprs_log_tab(qtbot, conn)
+    _rx_msg(tab, "JA9ZZZ", "JF9SOM", "73")
+    assert _rows(conn) == []

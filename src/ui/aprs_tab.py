@@ -187,8 +187,8 @@ class AprsTab(QWidget):
         # APRS-IS monitor window (created on first use, closed with this tab)
         self._is_window: Any = None
 
-        # Callsigns we have sent a message to this session (base call, no SSID).
-        # A QSO is logged only when the remote station replies with a real message.
+        # Callsigns we have sent a message to this session (base call, no SSID). A "73"
+        # from one of them closes the QSO.
         self._pending_qso: set[str] = set()
         # Base calls we have already sent a "599" report to; calling them again fills "73".
         self._sent_report: set[str] = set()
@@ -196,7 +196,9 @@ class AprsTab(QWidget):
         # square each one gave; a "73" to such a station that also got our "599" is logged.
         self._heard_to_me: set[str] = set()
         self._their_grid: dict[str, str] = {}
-        # Base calls already logged by the APRS-message reply path (no second log at 73).
+        # Base calls whose QSO is already logged: the other side's "73" after ours (or
+        # ours after theirs) must not log the same QSO twice. Cleared when we start a new
+        # exchange with that station.
         self._logged_calls: set[str] = set()
 
         # Receive-log display mode ("plain" | "raw"); restored in _load_display_mode().
@@ -732,13 +734,10 @@ class AprsTab(QWidget):
         if not isinstance(packet, AprsPacket):
             return
 
-        # Determine whether to persist this packet to the DB.
-        # Only log when the remote station sends us a real message text reply
-        # after we have messaged them first (bidirectional QSO confirmation).
-        log_to_db = self._is_confirmed_reply(packet)
+        # Nothing is saved per received packet: a QSO is logged only when a "73" closes it
+        # (ours in _on_send, or theirs here).
         self._note_heard(packet.callsign, packet.dest, packet.message_addressee, packet.raw_info)
-        if log_to_db:
-            self._logged_calls.add(packet.callsign.split("-")[0].upper())
+        self._check_73_from_them(packet)
 
         self.append_packet(
             callsign=packet.callsign,
@@ -747,7 +746,6 @@ class AprsTab(QWidget):
             raw_frame=packet.raw_info,
             lat=packet.latitude,
             lon=packet.longitude,
-            log=log_to_db,
             plain=packet.plain or packet.comment,
             plain_callsign=packet.plain_callsign,
             dest=packet.dest,
@@ -766,37 +764,23 @@ class AprsTab(QWidget):
         if (my_base in targets or "CQ" in targets) and (match := _GRID_RE.search(text or "")):
             self._their_grid[base] = match.group(1).upper()
 
-    def _is_confirmed_reply(self, packet: object) -> bool:
-        """Return True when *packet* completes a bidirectional QSO.
-
-        Conditions (all must hold):
-          1. The packet is an APRS message (data_type == ':').
-          2. The message text is non-empty and is not a bare ack.
-          3. The addressee matches our own callsign (ignoring SSID).
-          4. We previously sent a message to the sender's base callsign.
-        """
+    def _check_73_from_them(self, packet: object) -> None:
+        """Log the QSO when a station we messaged sends us "73"."""
         from comms.aprs.parser import AprsPacket
 
-        if not isinstance(packet, AprsPacket):
-            return False
-        if packet.data_type != ":":
-            return False
-        msg_text = (packet.message_text or "").strip()
-        if not msg_text or msg_text.lower().startswith("ack"):
-            return False
-
-        my_call = self._callsign_edit.text().strip().upper().split("-")[0]
+        if not isinstance(packet, AprsPacket) or packet.data_type != ":":
+            return
+        if not re.match(r"73\b", (packet.message_text or "").strip()):
+            return
+        my_base = self._callsign_edit.text().strip().upper().split("-")[0]
         addressee = (packet.message_addressee or "").strip().upper().split("-")[0]
-        if addressee != my_call:
-            return False
-
-        sender_base = packet.callsign.split("-")[0].upper()
-        if sender_base not in self._pending_qso:
-            return False
-
-        # Confirmed — remove from pending so duplicate replies don't re-log
-        self._pending_qso.discard(sender_base)
-        return True
+        base = packet.callsign.split("-")[0].upper()
+        if not my_base or addressee != my_base or base == my_base:
+            return
+        # Only a station we have been exchanging with (we messaged it first).
+        if base not in self._pending_qso and base not in self._sent_report:
+            return
+        self._log_qso(base)
 
     def _on_engine_status(self, status: str) -> None:
         """Ignore the engine's own wording; the label shows the Rig / SDR state instead.
@@ -1392,11 +1376,14 @@ class AprsTab(QWidget):
             return
 
         # Track outgoing message so a reply triggers QSO logging
-        self._pending_qso.add(to_call.split("-")[0].upper())
+        to_base = to_call.split("-")[0].upper()
+        self._pending_qso.add(to_base)
         if msg == "599":
-            self._sent_report.add(to_call.split("-")[0].upper())
-        elif msg == "73":
-            self._finish_qso(to_call.split("-")[0].upper())
+            self._sent_report.add(to_base)
+        if msg != "73":
+            self._logged_calls.discard(to_base)  # a new exchange with this station
+        else:
+            self._finish_qso(to_base)
 
         # Echo to receive log as sent marker
         src = f"{my_call}-{ssid}" if ssid else my_call
@@ -1537,21 +1524,28 @@ class AprsTab(QWidget):
         self._msg_edit.setText(message)
 
     def _finish_qso(self, base: str) -> None:
-        """Log the QSO when we send "73" after a 599 to a station that called us.
-
-        APRS has no real report exchange, so it is logged as 599/599. A QSO already
-        logged by the APRS-message reply path is not logged a second time.
-        """
+        """Log the QSO when we send "73" after a 599 to a station that called us."""
         had_report = base in self._sent_report
         self._sent_report.discard(base)
         heard = base in self._heard_to_me
         self._heard_to_me.discard(base)
+        if not (had_report and heard):
+            self._their_grid.pop(base, None)
+            return
+        self._log_qso(base)
+
+    def _log_qso(self, base: str) -> None:
+        """Save one QSO with *base* (once) and send its ADIF record to the UDP broadcaster.
+
+        APRS has no real report exchange, so it is logged as 599/599.
+        """
+        self._sent_report.discard(base)
+        self._heard_to_me.discard(base)
+        self._pending_qso.discard(base)
         grid = self._their_grid.pop(base, "")
-        if base in self._logged_calls:
-            self._logged_calls.discard(base)
+        if base in self._logged_calls or not hasattr(self._conn, "execute"):
             return
-        if not (had_report and heard) or not hasattr(self._conn, "execute"):
-            return
+        self._logged_calls.add(base)
         ul_hz, dl_hz = self._transponder_band_freqs()
         norad = self._selected_norad()
         via = self._via_edit.currentText().strip()
