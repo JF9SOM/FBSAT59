@@ -249,6 +249,40 @@ _SATMODE_USE_VFO_SUB: frozenset[int] = frozenset(
     ]
 )
 
+# IC-910H: set_freq(RIG_VFO_TX) fails with Hamlib error -1 (RIG_EINVAL) on every
+# UL write in satmode (GitHub Issue #33, real IC-910H, Hamlib 4.7.2). Reading
+# the 4.7.2 source: every Sub write is resolved to RIG_VFO_SUB_A while the
+# satmode cache is 1, and ic9700_set_vfo() rejects SUB_A in satmode. For these
+# models the UL write falls back to "select Sub, write the current VFO, select
+# Main", which never asks Hamlib to resolve a Sub VFO. See
+# HamlibDirectController._write_satmode_ul_freq().
+_SATMODE_UL_SUB_SELECT_FALLBACK: frozenset[int] = frozenset(
+    [
+        3044,  # IC-910H
+    ]
+)
+
+
+def _set_ul_freq_via_sub_select(rig: Any, hamlib: Any, ul_hz: int) -> None:
+    """Write the Sub (UL) frequency without letting Hamlib resolve a Sub VFO.
+
+    set_vfo(SUB) is allowed to report an error (Hamlib's follow-up read-back
+    can fail while the rig has already switched band); only the frequency
+    write itself is checked. The Main band is always selected again at the
+    end so the DL write that follows finds the rig where it expects it.
+    """
+    rig.set_vfo(hamlib.RIG_VFO_SUB)
+    sub_status = rig.error_status
+    rig.set_freq(hamlib.RIG_VFO_CURR, ul_hz)
+    write_status = rig.error_status
+    rig.set_vfo(hamlib.RIG_VFO_MAIN)
+    if sub_status != 0:
+        logger.info("RigDirect: UL via Sub select: set_vfo(SUB) status %s (ignored)", sub_status)
+    if write_status != 0:
+        raise RigControlError(
+            f"UL set_freq(CURR) after set_vfo(SUB) failed (Hamlib error {write_status})"
+        )
+
 
 def normalize_civ_addr(text: str) -> str:
     """Normalise a user-entered CI-V address into a Hamlib-parseable "0xNN" string.
@@ -520,6 +554,42 @@ def _next_direct_id() -> int:
 
 _hamlib_trace_lock = threading.Lock()
 _hamlib_file_trace_enabled = False
+# FILE* handed to Hamlib by _open_trace_file_via_crt(); never closed, because
+# Hamlib keeps writing to it for the lifetime of the process.
+_hamlib_trace_crt_file: int | None = None
+
+
+def _open_trace_file_via_crt(lib: Any, trace_path: str) -> bool:
+    """Redirect Hamlib's debug stream to a file on builds without
+    rig_set_debug_filename().
+
+    The Windows Hamlib 4.7.2 DLL exports rig_set_debug_file(FILE*) but NOT
+    rig_set_debug_filename() (confirmed on the shipped libhamlib-4.dll,
+    GitHub Issue #33: no trace file was ever produced on Windows). The DLL is
+    linked against msvcrt.dll, so a FILE* opened with that same CRT's
+    _wfopen() is valid inside the DLL. The stream is made unbuffered so the
+    trace survives a crash and can be copied while the app is still running.
+
+    Returns True when the redirect is active.
+    """
+    global _hamlib_trace_crt_file
+    if sys.platform != "win32" or not hasattr(lib, "rig_set_debug_file"):
+        return False
+    import ctypes
+
+    crt = ctypes.CDLL("msvcrt")
+    crt._wfopen.restype = ctypes.c_void_p
+    crt._wfopen.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+    crt.setvbuf.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_size_t]
+    fp = crt._wfopen(trace_path, "w")
+    if not fp:
+        return False
+    crt.setvbuf(fp, None, 4, 0)  # _IONBF
+    lib.rig_set_debug_file.restype = ctypes.c_void_p
+    lib.rig_set_debug_file.argtypes = [ctypes.c_void_p]
+    lib.rig_set_debug_file(fp)
+    _hamlib_trace_crt_file = fp
+    return True
 
 
 def _hamlib_trace_log_path() -> str | None:
@@ -713,6 +783,13 @@ def _hamlib_ensure_file_trace() -> None:
                 )
                 return
             if not hasattr(lib, "rig_set_debug_filename"):
+                if _open_trace_file_via_crt(lib, trace_path):
+                    _hamlib_file_trace_enabled = True
+                    logger.info(
+                        "RigDirect: Hamlib debug trace redirected to %s (via CRT FILE*)",
+                        trace_path,
+                    )
+                    return
                 logger.warning(
                     "RigDirect: rig_set_debug_filename not found in Hamlib library (tried %s)",
                     candidates,
@@ -1183,6 +1260,10 @@ class HamlibDirectController(RigController):
         self._last_dl_update_time: float = 0.0
         self._last_ul_hz: float | None = None
         self._last_ul_update_time: float = 0.0
+        # IC-910H only (_SATMODE_UL_SUB_SELECT_FALLBACK): which UL write method
+        # worked on this rig -- "tx" (set_freq(VFO_TX)) or "sub_select".
+        # None until the first UL write has been probed.
+        self._ul_write_method: str | None = None
         # Which VFO our own last cross-band satmode write attempt (DL or UL)
         # left the rig's Hamlib-tracked "current VFO" on -- see
         # last_written_vfo_is_main(). Not maintained for same-band/non-satmode
@@ -1889,6 +1970,38 @@ class HamlibDirectController(RigController):
                 if rig is not None:
                     with contextlib.suppress(Exception):
                         rig.close()
+
+    def _write_satmode_ul_freq(self, rig: Any, ul_hz: int, what: str) -> None:
+        """Write the cross-band satmode UL frequency on an IC-910H.
+
+        First write: try set_freq(VFO_TX) as for the IC-9100; if Hamlib
+        rejects it, fall back to _set_ul_freq_via_sub_select(). Whichever
+        worked is remembered in self._ul_write_method and logged, so a trace
+        from a real rig shows which path the IC-910H needs (GitHub Issue #33).
+        Raises RigControlError when no method works.
+        """
+        hamlib: Any = self._hamlib
+        if hamlib is None:  # freq preset runs before connect(): not set yet
+            import Hamlib as _H  # lazy — avoids Qt TLS collision at startup
+
+            hamlib = _H
+        if self._ul_write_method != "sub_select":
+            rig.set_freq(int(hamlib.RIG_VFO_TX), ul_hz)
+            try:
+                _check_rig_ok(rig, f"{what} set_freq(VFO_TX)")
+            except RigControlError as exc:
+                if self._ul_write_method == "tx":
+                    raise
+                logger.warning("RigDirect: %s; trying Sub select instead", exc)
+            else:
+                if self._ul_write_method is None:
+                    self._ul_write_method = "tx"
+                    logger.info("RigDirect: IC-910H UL write method: set_freq(VFO_TX)")
+                return
+        _set_ul_freq_via_sub_select(rig, hamlib, ul_hz)
+        if self._ul_write_method != "sub_select":
+            self._ul_write_method = "sub_select"
+            logger.info("RigDirect: IC-910H UL write method: Sub select (VFO_TX was rejected)")
 
     def _civ_addr_int(self) -> int:
         """Return the CI-V rig address as an integer (default 0x65 for IC-9100)."""
@@ -2606,7 +2719,10 @@ class HamlibDirectController(RigController):
                             # suspect for holding the GIL long enough to starve
                             # the TX audio callback.
                             _cat_t0 = time.monotonic()
-                            self._rig.set_freq(vfo_tx, int(vfob_hz))
+                            if self._model_id in _SATMODE_UL_SUB_SELECT_FALLBACK:
+                                self._write_satmode_ul_freq(self._rig, int(vfob_hz), "satmode UL")
+                            else:
+                                self._rig.set_freq(vfo_tx, int(vfob_hz))
                             _cat_dt_ms = (time.monotonic() - _cat_t0) * 1000.0
                             _log_cat_call_diag(
                                 _cat_dt_ms,
@@ -2615,7 +2731,8 @@ class HamlibDirectController(RigController):
                                 int(vfob_hz),
                                 _cat_dt_ms,
                             )
-                            _check_rig_ok(self._rig, f"satmode UL set_freq({vfo_name})")
+                            if self._model_id not in _SATMODE_UL_SUB_SELECT_FALLBACK:
+                                _check_rig_ok(self._rig, f"satmode UL set_freq({vfo_name})")
                             self._last_ul_hz = vfob_hz
                             self._last_ul_update_time = now
                             self._last_written_vfo = "Sub"
@@ -3049,8 +3166,13 @@ class HamlibDirectController(RigController):
                                 "RigDirect._apply_mode_and_ctcss_hamlib: freq preset UL=%.3fMHz",
                                 self._transponder_ul_hz / 1e6,
                             )
-                            rig2.set_freq(vfo_ul_preset, int(self._transponder_ul_hz))
-                            _check_rig_ok(rig2, "cross-band: freq preset UL")
+                            if self._model_id in _SATMODE_UL_SUB_SELECT_FALLBACK:
+                                self._write_satmode_ul_freq(
+                                    rig2, int(self._transponder_ul_hz), "cross-band: freq preset UL"
+                                )
+                            else:
+                                rig2.set_freq(vfo_ul_preset, int(self._transponder_ul_hz))
+                                _check_rig_ok(rig2, "cross-band: freq preset UL")
                             time.sleep(0.2)
 
                     # Mode: Main (DL) and Sub (UL)

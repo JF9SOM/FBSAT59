@@ -4907,3 +4907,94 @@ class TestReleaseSupersededDirect:
         assert release_superseded_direct(idle, object()) is False
         assert release_superseded_direct(None, object()) is False
         assert release_superseded_direct(MagicMock(), object()) is False
+
+
+class _FakeIc910Rig:
+    """Stand-in for a Hamlib Rig: records calls, rejects VFO_TX like a real
+    IC-910H does (Hamlib error -1) while a write to the current VFO works."""
+
+    def __init__(self, tx_ok: bool = False, curr_ok: bool = True) -> None:
+        self.error_status = 0
+        self.calls: list[tuple[str, int]] = []
+        self._tx_ok = tx_ok
+        self._curr_ok = curr_ok
+
+    def set_freq(self, vfo: int, hz: int) -> None:
+        self.calls.append(("set_freq", vfo))
+        ok = self._tx_ok if vfo == 105 else self._curr_ok
+        self.error_status = 0 if ok else -1
+
+    def set_vfo(self, vfo: int) -> None:
+        self.calls.append(("set_vfo", vfo))
+        # A real rig reports an error for set_vfo(SUB); it must be ignored.
+        self.error_status = -1 if vfo == 104 else 0
+
+
+class TestIc910UlWriteFallback:
+    """IC-910H (model 3044) rejects set_freq(VFO_TX) with Hamlib error -1 on
+    every UL write (GitHub Issue #33). The UL write falls back to selecting
+    Sub, writing the current VFO and selecting Main again."""
+
+    def _make_ctrl(self, rig: _FakeIc910Rig) -> HamlibDirectController:
+        ctrl = HamlibDirectController(model_id=3044, port="/dev/null")
+        ctrl._rig = rig
+        fake_hamlib = MagicMock()
+        fake_hamlib.RIG_VFO_MAIN = 103
+        fake_hamlib.RIG_VFO_SUB = 104
+        fake_hamlib.RIG_VFO_TX = 105
+        fake_hamlib.RIG_VFO_CURR = 106
+        ctrl._hamlib = fake_hamlib
+        return ctrl
+
+    def test_falls_back_to_sub_select_when_vfo_tx_is_rejected(self) -> None:
+        rig = _FakeIc910Rig(tx_ok=False)
+        ctrl = self._make_ctrl(rig)
+        ctrl._write_satmode_ul_freq(rig, 145_850_000, "test")
+        assert rig.calls == [
+            ("set_freq", 105),  # VFO_TX: rejected
+            ("set_vfo", 104),  # select Sub
+            ("set_freq", 106),  # write the current VFO
+            ("set_vfo", 103),  # back to Main
+        ]
+        assert ctrl._ul_write_method == "sub_select"
+
+    def test_later_writes_skip_the_rejected_vfo_tx(self) -> None:
+        rig = _FakeIc910Rig(tx_ok=False)
+        ctrl = self._make_ctrl(rig)
+        ctrl._write_satmode_ul_freq(rig, 145_850_000, "test")
+        rig.calls.clear()
+        ctrl._write_satmode_ul_freq(rig, 145_850_100, "test")
+        assert rig.calls == [("set_vfo", 104), ("set_freq", 106), ("set_vfo", 103)]
+
+    def test_keeps_vfo_tx_when_the_rig_accepts_it(self) -> None:
+        rig = _FakeIc910Rig(tx_ok=True)
+        ctrl = self._make_ctrl(rig)
+        ctrl._write_satmode_ul_freq(rig, 145_850_000, "test")
+        assert rig.calls == [("set_freq", 105)]
+        assert ctrl._ul_write_method == "tx"
+
+    def test_raises_when_no_method_works(self) -> None:
+        rig = _FakeIc910Rig(tx_ok=False, curr_ok=False)
+        ctrl = self._make_ctrl(rig)
+        with pytest.raises(RigControlError):
+            ctrl._write_satmode_ul_freq(rig, 145_850_000, "test")
+        assert ctrl._ul_write_method is None
+
+    def test_cross_band_doppler_write_reaches_the_sub_vfo(self) -> None:
+        rig = _FakeIc910Rig(tx_ok=False)
+        ctrl = self._make_ctrl(rig)
+        ctrl._hamlib.RIG_VFO_A = 101
+        ctrl._hamlib.RIG_VFO_B = 102
+        with ctrl._lock:
+            ctrl._state = RigState.CONNECTED
+        assert ctrl.set_vfo_frequencies(436_800_000.0, 145_850_000.0) is True
+        assert ("set_freq", 106) in rig.calls
+        assert ctrl._ul_write_method == "sub_select"
+
+
+class TestHamlibTraceViaCrt:
+    def test_not_used_off_windows(self) -> None:
+        from rig.controller import _open_trace_file_via_crt
+
+        with patch("rig.controller.sys.platform", "darwin"):
+            assert _open_trace_file_via_crt(MagicMock(), "/tmp/x.log") is False
