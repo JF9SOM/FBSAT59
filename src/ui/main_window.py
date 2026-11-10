@@ -252,7 +252,7 @@ def _band_center_or_low(low: float | None, high: float | None) -> float | None:
 # Filter-combo prefix for the read-only per-Autotrack-list satellite views
 _AUTOTRACK_FILTER_PREFIX = "Autotrack: "
 # Blank space in front of a communications tab's × button, in pixels.
-_TAB_CLOSE_GAP_PX = 16
+_TAB_CLOSE_GAP_PX = 7
 
 _OSCAR_RE = re.compile(
     r"\b((?:AO|BO|CO|DO|EO|FO|GO|HO|IO|JO|KO|LO|MO|NO|PO|QO|RS|SO|TO|UO|VO|XO|ZO))"
