@@ -40,7 +40,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QProgressBar,
     QPushButton,
-    QSlider,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -81,6 +80,7 @@ from ui.ft4_waterfall_dialog import Ft4WaterfallDialog
 from ui.tx_level import (
     TX_LEVEL_MAX_DB,
     TX_LEVEL_MIN_DB,
+    TxLevelSlider,
     db_to_gain,
     format_db,
     load_level_db,
@@ -942,7 +942,7 @@ class Ft4Tab(QWidget):
         qso_row.addWidget(self._adc_rx_check)
 
         qso_row.addWidget(QLabel(_("TX Level:")))
-        self._tx_level_slider = QSlider(Qt.Orientation.Horizontal)
+        self._tx_level_slider = TxLevelSlider()
         self._tx_level_slider.setRange(TX_LEVEL_MIN_DB, TX_LEVEL_MAX_DB)
         self._tx_level_slider.setValue(self._tx_level_db)
         self._tx_level_slider.setFixedWidth(80)

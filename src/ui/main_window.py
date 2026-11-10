@@ -251,6 +251,8 @@ def _band_center_or_low(low: float | None, high: float | None) -> float | None:
 # Two capturing groups: (prefix, number+suffix) so the display can normalise to "RS-95S".
 # Filter-combo prefix for the read-only per-Autotrack-list satellite views
 _AUTOTRACK_FILTER_PREFIX = "Autotrack: "
+# Blank space in front of a communications tab's × button, in pixels.
+_TAB_CLOSE_GAP_PX = 16
 
 _OSCAR_RE = re.compile(
     r"\b((?:AO|BO|CO|DO|EO|FO|GO|HO|IO|JO|KO|LO|MO|NO|PO|QO|RS|SO|TO|UO|VO|XO|ZO))"
@@ -3125,7 +3127,7 @@ class MainWindow(QMainWindow):
         Attaching a real QToolButton per tab avoids that native chrome
         entirely, so resident tabs (which never call this) are unaffected.
         """
-        from PySide6.QtWidgets import QTabBar, QToolButton
+        from PySide6.QtWidgets import QHBoxLayout, QTabBar, QToolButton
 
         btn = QToolButton()
         btn.setText("×")
@@ -3140,8 +3142,16 @@ class MainWindow(QMainWindow):
                 self._on_tab_close_requested(idx)
 
         btn.clicked.connect(_on_click)
+        # A blank gap in front of the × keeps it away from the tab label, so a
+        # click meant to select the tab does not close it by mistake (clicks
+        # on the gap fall through to the tab bar and just select the tab).
+        holder = QWidget()
+        holder_layout = QHBoxLayout(holder)
+        holder_layout.setContentsMargins(_TAB_CLOSE_GAP_PX, 0, 0, 0)
+        holder_layout.setSpacing(0)
+        holder_layout.addWidget(btn)
         idx = self._tab_widget.indexOf(tab)
-        self._tab_widget.tabBar().setTabButton(idx, QTabBar.ButtonPosition.RightSide, btn)
+        self._tab_widget.tabBar().setTabButton(idx, QTabBar.ButtonPosition.RightSide, holder)
 
     def _on_tab_close_requested(self, index: int) -> None:
         """Close a Communications tab and clean up its resources.

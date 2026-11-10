@@ -43,3 +43,35 @@ def test_load_level_db_prefers_new_key_then_migrates_then_defaults() -> None:
 
 def test_format_db() -> None:
     assert format_db(-23) == "-23 dB"
+
+
+def test_wheel_notch_moves_two_db(qtbot: object) -> None:
+    """One wheel notch changes the TX Level slider by TX_LEVEL_WHEEL_STEP_DB."""
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtGui import QWheelEvent
+
+    from ui.tx_level import TX_LEVEL_WHEEL_STEP_DB, TxLevelSlider
+
+    slider = TxLevelSlider()
+    qtbot.addWidget(slider)  # type: ignore[attr-defined]
+    slider.setRange(TX_LEVEL_MIN_DB, TX_LEVEL_MAX_DB)
+    slider.setValue(-20)
+
+    def wheel(delta: int) -> None:
+        slider.wheelEvent(
+            QWheelEvent(
+                QPointF(5, 5),
+                QPointF(5, 5),
+                QPoint(0, 0),
+                QPoint(0, delta),
+                Qt.MouseButton.NoButton,
+                Qt.KeyboardModifier.NoModifier,
+                Qt.ScrollPhase.NoScrollPhase,
+                False,
+            )
+        )
+
+    wheel(120)
+    assert slider.value() == -20 + TX_LEVEL_WHEEL_STEP_DB
+    wheel(-240)
+    assert slider.value() == -20 - TX_LEVEL_WHEEL_STEP_DB
