@@ -1038,6 +1038,10 @@ class MainWindow(QMainWindow):
         # Over-the-top plan (high-elevation pass on a rotator that can flip)
         # for the cached pass: (norad, pass AOS, plan or None). Same lock.
         self._rot_plan_cache: tuple[int, datetime, OverheadPlan | None] | None = None
+        # (norad, monotonic time, flip) of the last command sent while the
+        # satellite was above the horizon. Keeps the pose through the
+        # stand-by time after LOS. Touched from the rotator worker threads.
+        self._rot_last_up: tuple[int | None, float, bool] | None = None
         # Last-loaded rotator_settings (park / stop point / flip options).
         self._rot_park_settings: dict[str, Any] = {}
         # When True, the operator is manually pointing the rotator (Radio
@@ -9384,7 +9388,22 @@ class MainWindow(QMainWindow):
         if plan is not None:
             tgt = plan.target(now)
             if tgt is not None:
+                self._rot_last_up = (norad, time.monotonic(), tgt[2])
                 return tgt
+        last_up = self._rot_last_up
+        if el > 0.0:
+            self._rot_last_up = (norad, time.monotonic(), flip)
+        elif (
+            last_up is not None
+            and last_up[0] == norad
+            and time.monotonic() - last_up[1] < self._pass_margin_seconds()
+        ):
+            # Within the stand-by time after LOS the rotator keeps following the
+            # satellite (see RotatorController.set_pass_margin()). Stay in the
+            # pose the pass ended in: _rot_flip_for() has already moved on to the
+            # next pass, and switching to its pose now would tip the antenna
+            # over for a pass that may be hours away.
+            flip = last_up[2]
         return self._rot_az(bearing, flip), el, flip
 
     def _rot_flip_cached(self, norad: int | None) -> bool:
