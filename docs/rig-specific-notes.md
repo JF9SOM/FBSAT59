@@ -1497,3 +1497,12 @@ FT-991 Direct のモード（MD/CT）は、トランスポンダーを**選ん�
 `apply_transponder_state()` で 1 回送り直す。**FT-991 Direct（model 1035、非サットモード）のみ**。Rig 1/2 を RX/TX に
 分けているときは、各リグが自分の側のモード（TX リグだけ CTCSS）を受け取る。他のリグは変更なし。
 **実機では未確認**（次のパスで、ログに `Rig N connected: sending the transponder mode again` が出ること、リグ表示が FM になることを確認する）。
+
+## IC-9700 等: 下りのみのトランスミッター（ISS SSTV）で SAT モード・SPLIT を使わない（GitHub Issue #36、2026-11-11）
+
+上り周波数のない（受信専用）トランスミッターを選んでも、接続時に SAT モードへ入り、接続前プリセットが split ON を送っていた
+（`main_window` が上りなしを下り周波数で埋めて「同一バンド」と誤判定）。IC-9700 は SAT 画面・USB-D/LSB-D になり、
+ドップラーも SAT の Main へ書かれた。修正: Direct の SAT モード対応リグ（`_SATMODE_RIG_IDS`）で `_transponder_ul_hz is None`
+（`_transponder_is_rx_only()`）のとき、`connect()` は `set_func(SATMODE, 0)`＋（IC-9700 は）生 CI-V `0F 00` で split off、
+プリセットも同様、ドップラーは VFO-A へ DL のみ書く。`"SSTV"` を FM-D（PKTFM）にマップ（IC-9100 は従来どおり FM）。
+**実機（IC-9700）未確認。**

@@ -6544,7 +6544,13 @@ class MainWindow(QMainWindow):
             # _apply_mode_and_ctcss_hamlib can write them first (Stage 1 freq anchor).
             if isinstance(rig, HamlibDirectController) and rig._satmode:
                 rig._transponder_dl_hz = dl_hz
-                rig._transponder_ul_hz = ul_hz
+                # A receive-only transmitter (no uplink; ul_hz above fell back to dl_hz)
+                # is kept as None so the rig leaves SAT mode and split (Issue #36).
+                has_uplink = bool(
+                    self._current_transmitter.get("uplink_low")
+                    or self._current_transmitter.get("uplink_high")
+                )
+                rig._transponder_ul_hz = ul_hz if has_uplink else None
 
             # GitHub Issues #21/#22: does the newly selected transmitter
             # require a different SAT mode band anchor at all? True only when

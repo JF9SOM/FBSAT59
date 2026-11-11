@@ -151,6 +151,8 @@ def _build_live_hamlib_mode_map(_H: Any, model_id: int | None = None) -> dict[st
         "USB-D": _H.RIG_MODE_PKTUSB,  # data mode, e.g. FT4 calling freqs
         "LSB-D": _H.RIG_MODE_PKTLSB,
         "FM-D": data_fm,  # data FM, e.g. terrestrial APRS
+        # SSTV audio goes through the rig's USB audio codec, which needs data mode.
+        "SSTV": data_fm,
     }
 
 
@@ -1420,13 +1422,25 @@ class HamlibDirectController(RigController):
                     # is also checked now (raises RigControlError on failure)
                     # so a failure here surfaces to the status bar instead of
                     # leaving the rig silently un-configured.
+                    #
+                    # Receive-only transponder (downlink, no uplink: e.g. the
+                    # ISS SSTV downlink): leave SAT mode instead of entering it
+                    # (the rig keeps the previous SAT state otherwise) and turn
+                    # split off. GitHub Issue #36.
+                    rx_only = self._transponder_is_rx_only()
                     _open_rig_with_retry(rig, "RigDirect satmode entry: open()")
                     time.sleep(0.5)
-                    rig.set_func(_H.RIG_FUNC_SATMODE, 1)
-                    _check_rig_ok(rig, "RigDirect satmode entry: set_func(SATMODE,1)")
+                    rig.set_func(_H.RIG_FUNC_SATMODE, 0 if rx_only else 1)
+                    _check_rig_ok(rig, "RigDirect satmode entry: set_func(SATMODE)")
                     time.sleep(0.2)
                     rig.close()
                     time.sleep(0.3)
+                    if rx_only and self._model_id in _SATMODE_USE_VFO_SUB:
+                        # IC-9700: Hamlib's set_split_vfo() is unreliable (Issue #35),
+                        # so turn split off with a raw CI-V frame while the port is free.
+                        with self._port_lock:
+                            self._send_split_off_civ_pyserial()
+                        time.sleep(0.3)
                 with self._port_lock:
                     _open_rig_with_retry(rig, "RigDirect: reopen after satmode entry")
                     # IC-9700 does not correctly read back satmode=1 during open(),
@@ -1435,7 +1449,11 @@ class HamlibDirectController(RigController):
                     # correctly for subsequent set_freq / set_mode calls.
                     # IC-9100/IC-910H/IC-821H must NOT receive this extra call —
                     # sending set_func(SATMODE,1) twice breaks those rigs (confirmed).
-                    if self._satmode and self._model_id in _SATMODE_USE_VFO_SUB:
+                    if (
+                        self._satmode
+                        and self._model_id in _SATMODE_USE_VFO_SUB
+                        and not self._transponder_is_rx_only()
+                    ):
                         time.sleep(0.2)
                         rig.set_func(_H.RIG_FUNC_SATMODE, 1)
                         _check_rig_ok(rig, "RigDirect: IC-9700 extra set_func(SATMODE,1)")
@@ -1617,6 +1635,18 @@ class HamlibDirectController(RigController):
             self._transponder_dl_hz is not None
             and self._transponder_ul_hz is not None
             and self._freq_band(self._transponder_dl_hz) == self._freq_band(self._transponder_ul_hz)
+        )
+
+    def _transponder_is_rx_only(self) -> bool:
+        """True for a satmode rig when the selected transponder has a downlink but no uplink.
+
+        A receive-only transmitter (e.g. the ISS SSTV downlink) needs neither SAT mode nor
+        split: the rig is put on a plain VFO-A receive channel instead.
+        """
+        return (
+            self._satmode
+            and self._transponder_dl_hz is not None
+            and self._transponder_ul_hz is None
         )
 
     def _stage2_pending(self) -> bool:
@@ -2126,6 +2156,14 @@ class HamlibDirectController(RigController):
         afterwards. Expected to run while ``self._port_lock`` is held. Raises
         ``RigControlError`` when the rig never ACKs.
         """
+        self._send_split_civ_pyserial(True)
+
+    def _send_split_off_civ_pyserial(self) -> None:
+        """Turn the rig's split OFF with a raw CI-V frame (0F 00); see the ON variant."""
+        self._send_split_civ_pyserial(False)
+
+    def _send_split_civ_pyserial(self, on: bool) -> None:
+        """Send CI-V ``0F 01`` (split ON) or ``0F 00`` (split OFF) over pyserial."""
         import serial
 
         if self._civ_addr:
@@ -2134,7 +2172,7 @@ class HamlibDirectController(RigController):
             civ = _IC9700_DEFAULT_CIV_ADDR
         else:
             civ = self._civ_addr_int()
-        frame = bytes([0xFE, 0xFE, civ, 0xE0, 0x0F, 0x01, 0xFD])
+        frame = bytes([0xFE, 0xFE, civ, 0xE0, 0x0F, 0x01 if on else 0x00, 0xFD])
         ser = serial.Serial(
             self._port,
             self._baud_rate,
@@ -2151,10 +2189,14 @@ class HamlibDirectController(RigController):
                     # USB CI-V interfaces may echo the frame before the real reply.
                     resp = bytes(ser.read_until(b"\xfd"))
                 if resp.endswith(b"\xfb\xfd"):
-                    logger.info("RigDirect: split ON sent as raw CI-V (0F 01)")
+                    logger.info(
+                        "RigDirect: split %s sent as raw CI-V (0F %02X)",
+                        "ON" if on else "OFF",
+                        frame[5],
+                    )
                     return
                 logger.warning(
-                    "RigDirect._send_split_on_civ_pyserial: no ACK (attempt %d/3)", attempt + 1
+                    "RigDirect._send_split_civ_pyserial: no ACK (attempt %d/3)", attempt + 1
                 )
             raise RigControlError(f"CI-V no ACK after 3 attempts: {frame.hex()}")
         finally:
@@ -2523,7 +2565,19 @@ class HamlibDirectController(RigController):
                     and self._freq_band(vfoa_hz) == self._freq_band(vfob_hz)
                 )
 
-                if _is_same_band:
+                if self._transponder_is_rx_only():
+                    # Receive-only transponder (no uplink): plain VFO-A receive, no
+                    # SAT mode, no split (GitHub Issue #36).
+                    if self._satmode_active:
+                        self._satmode_exit_rx_only()
+                    if vfoa_hz is not None:
+                        last_dl = self._last_dl_hz
+                        if last_dl is None or abs(vfoa_hz - last_dl) >= 1.0:
+                            self._rig.set_freq(rx_vfo, int(vfoa_hz))
+                            _check_rig_ok(self._rig, "rx-only DL set_freq(VFOA)")
+                            self._last_dl_hz = vfoa_hz
+                            self._last_dl_update_time = time.monotonic()
+                elif _is_same_band:
                     # Same-band fallback: exit satmode once and use VFO-A/B split.
                     if self._satmode_active:
                         self._satmode_exit()
@@ -3043,6 +3097,8 @@ class HamlibDirectController(RigController):
             and self._freq_band(self._transponder_dl_hz) == self._freq_band(self._transponder_ul_hz)
         )
 
+        is_rx_only = self._transponder_is_rx_only()
+
         rig = None
         rig2 = None
         with self._port_lock:
@@ -3054,7 +3110,48 @@ class HamlibDirectController(RigController):
                 # on failure) so a rejected/timed-out command surfaces
                 # instead of leaving part of the rig un-configured while
                 # everything else silently proceeds as if it succeeded.
-                if is_same_band:
+                if is_rx_only:
+                    # Receive-only transponder (no uplink, e.g. the ISS SSTV
+                    # downlink): SAT mode off, split off, DL on VFO-A (GitHub Issue #36).
+                    vfo_a = int(_H.RIG_VFO_A)
+                    rig2 = _make_rig()
+                    _open_rig_with_retry(rig2, "rx-only: open()")
+                    time.sleep(0.5)
+                    rig2.set_func(_H.RIG_FUNC_SATMODE, 0)
+                    _check_rig_ok(rig2, "rx-only: set_func(SATMODE,0)")
+                    time.sleep(0.6)  # wait for the rig's normal-mode memory restore
+                    if self._model_id in _SATMODE_USE_VFO_SUB:
+                        # IC-9700: raw CI-V split OFF (Hamlib's set_split_vfo is
+                        # unreliable on this rig, see Issue #35).
+                        rig2.close()
+                        rig2 = None
+                        time.sleep(0.5)
+                        self._send_split_off_civ_pyserial()
+                        time.sleep(0.3)
+                        rig2 = _make_rig()
+                        _open_rig_with_retry(rig2, "rx-only: reopen after raw split OFF")
+                        time.sleep(0.5)
+                    else:
+                        rig2.set_split_vfo(int(_H.RIG_VFO_CURR), 0, vfo_a)
+                        _check_rig_ok(rig2, "rx-only: set_split_vfo(off)")
+                        time.sleep(0.2)
+                    rig2.set_freq(vfo_a, int(self._transponder_dl_hz))  # type: ignore[arg-type]
+                    _check_rig_ok(rig2, "rx-only: set_freq(VFOA/DL)")
+                    time.sleep(0.2)
+                    rig2.set_mode(dl_hamlib, 0, vfo_a)
+                    _check_rig_ok(rig2, "rx-only: set_mode(VFOA/DL)")
+                    time.sleep(0.2)
+                    rb_dl_mode, rb_dl_pb = rig2.get_mode(vfo_a)
+                    logger.info(
+                        "RigDirect._apply_mode_and_ctcss_hamlib: DIAG readback "
+                        "VFOA/DL mode=%d(requested %d) pb=%d (rx-only)",
+                        rb_dl_mode,
+                        dl_hamlib,
+                        rb_dl_pb,
+                    )
+                    rig2.set_vfo(vfo_a)
+                    logger.info("RigDirect._apply_mode_and_ctcss_hamlib: rx-only dl=%s OK", dl_mode)
+                elif is_same_band:
                     # Same-band path (V/V or U/U): exit SAT mode, use normal split.
                     # CTCSS is intentionally skipped — same-band satellite transponders
                     # do not require uplink access tones.
@@ -3674,7 +3771,7 @@ class HamlibDirectController(RigController):
                 and self._freq_band(self._transponder_dl_hz)
                 == self._freq_band(self._transponder_ul_hz)
             )
-            if not is_same_band_xpdr:
+            if not is_same_band_xpdr and not self._transponder_is_rx_only():
                 self._pending_mode_ctcss = True
         elif self._model_id in _FTX1_MODEL_IDS:
             self._apply_mode_and_ctcss_cat_ftx1(dl_mode, ul_mode, ctcss_hz)
@@ -3808,6 +3905,33 @@ class HamlibDirectController(RigController):
             self._last_ul_hz = None
             self._last_ul_update_time = 0.0
 
+    def _satmode_exit_rx_only(self) -> None:
+        """Leave SAT mode for a receive-only transponder: SATMODE off, split off, DL mode.
+
+        Fallback for a rig still in SAT mode when the Doppler loop starts; connect()
+        normally leaves SAT mode already.
+        """
+        if self._rig is None or self._hamlib is None:
+            return
+        _H = self._hamlib
+        if not hasattr(_H, "RIG_FUNC_SATMODE"):
+            return
+        rx_vfo = self._vfo_str_to_const("VFOA")
+        logger.info("RigDirect: exiting satmode → plain VFO-A receive (no uplink)")
+        try:
+            self._rig.set_func(_H.RIG_FUNC_SATMODE, 0)
+            time.sleep(0.4)  # wait for the rig's internal normal-mode memory restore
+            with contextlib.suppress(Exception):
+                self._rig.set_split_vfo(rx_vfo, 0, rx_vfo)
+            if self._current_dl_mode:
+                self.set_mode(self._current_dl_mode, vfo="VFOA")
+        except Exception as exc:
+            logger.warning("RigDirect: _satmode_exit_rx_only failed — %s", exc)
+        finally:
+            self._satmode_active = False
+            self._last_dl_hz = None
+            self._last_dl_update_time = 0.0
+
     def _init_split(self) -> None:
         """Enable split/satmode. Called once at connect.
 
@@ -3823,7 +3947,17 @@ class HamlibDirectController(RigController):
             logger.info("RigDirect: TX-only rig runs simplex, split not enabled")
             return
         try:
-            if self._satmode:
+            if self._satmode and self._transponder_is_rx_only():
+                # Receive-only transponder: SAT mode was left in connect(); plain VFO-A RX.
+                self._satmode_active = False
+                logger.info("RigDirect: receive-only transponder — SAT mode off, split off")
+                if self._model_id not in _SATMODE_USE_VFO_SUB and self._hamlib is not None:
+                    try:
+                        vfo_a = self._vfo_str_to_const("VFOA")
+                        self._rig.set_split_vfo(vfo_a, 0, vfo_a)
+                    except Exception as exc:
+                        logger.warning("RigDirect: split off failed — %s", exc)
+            elif self._satmode:
                 self._satmode_active = True
                 logger.info("RigDirect: satmode active (entered via CI-V 16 5A before open)")
             elif self._model_id in _FTX1_MODEL_IDS:

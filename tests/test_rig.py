@@ -937,6 +937,50 @@ class TestIc9700SplitOnRawCiv:
             self._run([])
 
 
+class TestReceiveOnlyTransponderOnSatmodeRig:
+    """GitHub Issue #36: a downlink-only transmitter (ISS SSTV) used to leave the IC-9700
+    in SAT mode with split on. It must use plain VFO-A receive instead."""
+
+    def _ctrl(self, dl: float | None, ul: float | None) -> HamlibDirectController:
+        ctrl = HamlibDirectController(model_id=3081, port="/dev/null")
+        ctrl._rig = MagicMock()
+        ctrl._rig.error_status = 0
+        fake_hamlib = MagicMock()
+        fake_hamlib.RIG_VFO_A = 1
+        fake_hamlib.RIG_VFO_B = 2
+        fake_hamlib.RIG_VFO_MAIN = 4194304
+        ctrl._hamlib = fake_hamlib
+        ctrl._transponder_dl_hz = dl
+        ctrl._transponder_ul_hz = ul
+        with ctrl._lock:
+            ctrl._state = RigState.CONNECTED
+        return ctrl
+
+    def test_rx_only_detection(self) -> None:
+        assert self._ctrl(437_550_000.0, None)._transponder_is_rx_only()
+        assert not self._ctrl(437_550_000.0, 145_900_000.0)._transponder_is_rx_only()
+        assert not self._ctrl(None, None)._transponder_is_rx_only()
+
+    def test_init_split_does_not_enter_satmode(self) -> None:
+        ctrl = self._ctrl(437_550_000.0, None)
+        ctrl._init_split()
+        assert ctrl._satmode_active is False
+
+    def test_init_split_enters_satmode_with_an_uplink(self) -> None:
+        ctrl = self._ctrl(435_612_000.0, 145_993_000.0)
+        ctrl._init_split()
+        assert ctrl._satmode_active is True
+
+    def test_doppler_writes_downlink_on_vfo_a_without_satmode(self) -> None:
+        ctrl = self._ctrl(437_550_000.0, None)
+        ctrl._satmode_active = True
+        ctrl.set_vfo_frequencies(437_546_000.0, None)
+        calls = [c.args for c in ctrl._rig.set_freq.call_args_list]
+        assert calls == [(ctrl._vfo_str_to_const("VFOA"), 437_546_000)]
+        ctrl._rig.set_func.assert_called_with(ctrl._hamlib.RIG_FUNC_SATMODE, 0)
+        assert ctrl._satmode_active is False
+
+
 class TestPttDopplerFreeze:
     """set_ptt(freeze_doppler=...) decides whether Doppler tracking continues
     through the TX window. Packet bursts (APRS, AX100 Digi) keep the default
