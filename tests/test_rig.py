@@ -961,6 +961,24 @@ class TestReceiveOnlyTransponderOnSatmodeRig:
         assert not self._ctrl(437_550_000.0, 145_900_000.0)._transponder_is_rx_only()
         assert not self._ctrl(None, None)._transponder_is_rx_only()
 
+    def test_split_verify_resends_on_mismatch(self) -> None:
+        ctrl = self._ctrl(437_550_000.0, None)
+        with (
+            patch.object(ctrl, "_read_split_civ_pyserial", side_effect=[True, False]),
+            patch.object(ctrl, "_send_split_civ_pyserial") as send,
+        ):
+            ctrl._ensure_split_state_civ(False, "test")
+        send.assert_called_once_with(False)
+
+    def test_split_verify_no_resend_when_matching(self) -> None:
+        ctrl = self._ctrl(437_550_000.0, None)
+        with (
+            patch.object(ctrl, "_read_split_civ_pyserial", return_value=False),
+            patch.object(ctrl, "_send_split_civ_pyserial") as send,
+        ):
+            ctrl._ensure_split_state_civ(False, "test")
+        send.assert_not_called()
+
     def test_init_split_does_not_enter_satmode(self) -> None:
         ctrl = self._ctrl(437_550_000.0, None)
         ctrl._init_split()

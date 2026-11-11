@@ -2202,6 +2202,71 @@ class HamlibDirectController(RigController):
         finally:
             ser.close()
 
+    def _read_split_civ_pyserial(self) -> bool | None:
+        """Read the rig's split state with a raw CI-V ``0F`` query over pyserial.
+
+        Returns True/False for split ON/OFF, or None when no valid reply arrived.
+        The caller must have closed the Hamlib session on ``self._port`` first.
+        """
+        import serial
+
+        if self._civ_addr:
+            civ = int(normalize_civ_addr(self._civ_addr), 16)
+        elif self._model_id in _SATMODE_USE_VFO_SUB:
+            civ = _IC9700_DEFAULT_CIV_ADDR
+        else:
+            civ = self._civ_addr_int()
+        frame = bytes([0xFE, 0xFE, civ, 0xE0, 0x0F, 0xFD])
+        ser = serial.Serial(
+            self._port,
+            self._baud_rate,
+            bytesize=self._data_bits,
+            stopbits=self._stop_bits,
+            timeout=0.5,
+        )
+        try:
+            for _ in range(3):
+                ser.reset_input_buffer()
+                ser.write(frame)
+                ser.flush()
+                # Skip the echo of our own frame (USB CI-V interfaces) and
+                # look for the reply ``FE FE E0 <civ> 0F <00|01> FD``.
+                for _ in range(3):
+                    resp = bytes(ser.read_until(b"\xfd"))
+                    if len(resp) >= 7 and resp[4] == 0x0F and resp[5] in (0x00, 0x01):
+                        return resp[5] == 0x01
+        finally:
+            ser.close()
+        return None
+
+    def _ensure_split_state_civ(self, want_on: bool, label: str) -> None:
+        """Read back the split state after a preset and re-send it once if it differs.
+
+        Issue #36: on the IC-9700 the split state was seen to differ from what the
+        app had just sent. This logs the real state and corrects it. The caller
+        must have closed the Hamlib session. Never raises (diagnostic/best effort).
+        """
+        try:
+            actual = self._read_split_civ_pyserial()
+            logger.info(
+                "RigDirect: split verify (%s): wanted %s, rig reports %s",
+                label,
+                "ON" if want_on else "OFF",
+                "ON" if actual else "OFF" if actual is not None else "no reply",
+            )
+            if actual is None or actual == want_on:
+                return
+            self._send_split_civ_pyserial(want_on)
+            time.sleep(0.3)
+            again = self._read_split_civ_pyserial()
+            logger.warning(
+                "RigDirect: split verify (%s): mismatch corrected, rig now reports %s",
+                label,
+                "ON" if again else "OFF" if again is not None else "no reply",
+            )
+        except Exception as exc:
+            logger.warning("RigDirect: split verify (%s) failed: %s", label, exc)
+
     def _send_sub_mode_civ_pyserial(self, ul_mode: str) -> tuple[int, int]:
         """Set the Sub (UL) VFO's mode + DATA flag via raw CI-V over pyserial,
         bypassing Hamlib's set_mode() for this one step (GitHub Issue #16).
@@ -3150,6 +3215,11 @@ class HamlibDirectController(RigController):
                         rb_dl_pb,
                     )
                     rig2.set_vfo(vfo_a)
+                    if self._model_id in _SATMODE_USE_VFO_SUB:
+                        rig2.close()
+                        rig2 = None
+                        time.sleep(0.3)
+                        self._ensure_split_state_civ(False, "rx-only")
                     logger.info("RigDirect._apply_mode_and_ctcss_hamlib: rx-only dl=%s OK", dl_mode)
                 elif is_same_band:
                     # Same-band path (V/V or U/U): exit SAT mode, use normal split.
@@ -3212,6 +3282,11 @@ class HamlibDirectController(RigController):
                         rb_ul_pb,
                     )
                     rig2.set_vfo(vfo_a)  # restore display to DL VFO
+                    if self._model_id in _SATMODE_USE_VFO_SUB:
+                        rig2.close()
+                        rig2 = None
+                        time.sleep(0.3)
+                        self._ensure_split_state_civ(True, "same-band")
                     logger.info(
                         "RigDirect._apply_mode_and_ctcss_hamlib: same-band dl=%s ul=%s no-CTCSS OK",
                         dl_mode,
