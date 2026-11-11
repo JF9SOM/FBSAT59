@@ -3517,7 +3517,20 @@ class MainWindow(QMainWindow):
             tab.set_satellite(self._selected_norad)
 
     def _on_sstv_satellite_requested(self, norad: int) -> None:
-        """SSTV / SSDV tab satellite combo changed: select it and pick its image transmitter."""
+        """SSTV / SSDV tab satellite combo changed: select it and pick its image transmitter.
+
+        When the tab merely announces the satellite that is already selected (it does so
+        right after being created) and Radio Control already holds one of its image
+        transmitters, keep the user's pick instead of re-choosing the first match.
+        """
+        current = self._radio_control.current_transmitter()
+        if (
+            norad == self._selected_norad
+            and current is not None
+            and current.get("norad_cat_id") == norad
+            and mode_detection.is_sstv_transmitter(current)
+        ):
+            return
         self._select_telemetry_satellite(norad, "sstv")
 
     def _on_open_digital_voice(self) -> None:
