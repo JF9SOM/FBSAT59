@@ -2239,7 +2239,7 @@ class HamlibDirectController(RigController):
             ser.close()
         return None
 
-    def _ensure_split_state_civ(self, want_on: bool, label: str) -> None:
+    def _ensure_split_state_civ(self, want_on: bool, label: str, send_first: bool = False) -> None:
         """Read back the split state after a preset and re-send it once if it differs.
 
         Issue #36: on the IC-9700 the split state was seen to differ from what the
@@ -2247,6 +2247,9 @@ class HamlibDirectController(RigController):
         must have closed the Hamlib session. Never raises (diagnostic/best effort).
         """
         try:
+            if send_first:
+                self._send_split_civ_pyserial(want_on)
+                time.sleep(0.3)
             actual = self._read_split_civ_pyserial()
             logger.info(
                 "RigDirect: split verify (%s): wanted %s, rig reports %s",
@@ -3186,16 +3189,11 @@ class HamlibDirectController(RigController):
                     _check_rig_ok(rig2, "rx-only: set_func(SATMODE,0)")
                     time.sleep(0.6)  # wait for the rig's normal-mode memory restore
                     if self._model_id in _SATMODE_USE_VFO_SUB:
-                        # IC-9700: raw CI-V split OFF (Hamlib's set_split_vfo is
-                        # unreliable on this rig, see Issue #35).
-                        rig2.close()
-                        rig2 = None
-                        time.sleep(0.5)
-                        self._send_split_off_civ_pyserial()
-                        time.sleep(0.3)
-                        rig2 = _make_rig()
-                        _open_rig_with_retry(rig2, "rx-only: reopen after raw split OFF")
-                        time.sleep(0.5)
+                        # IC-9700: Hamlib's set_split_vfo is unreliable (Issue #35),
+                        # and writing a frequency on another band makes the rig
+                        # restore that band's own split state, so split is sent
+                        # as raw CI-V once, AFTER the frequency/mode writes below.
+                        pass
                     else:
                         rig2.set_split_vfo(int(_H.RIG_VFO_CURR), 0, vfo_a)
                         _check_rig_ok(rig2, "rx-only: set_split_vfo(off)")
@@ -3219,7 +3217,7 @@ class HamlibDirectController(RigController):
                         rig2.close()
                         rig2 = None
                         time.sleep(0.3)
-                        self._ensure_split_state_civ(False, "rx-only")
+                        self._ensure_split_state_civ(False, "rx-only", send_first=True)
                     logger.info("RigDirect._apply_mode_and_ctcss_hamlib: rx-only dl=%s OK", dl_mode)
                 elif is_same_band:
                     # Same-band path (V/V or U/U): exit SAT mode, use normal split.
@@ -3236,18 +3234,11 @@ class HamlibDirectController(RigController):
                     time.sleep(0.6)  # wait for IC-9100 normal-mode memory restore
                     if self._model_id in _SATMODE_USE_VFO_SUB:
                         # IC-9700: Hamlib's set_split_vfo() is rejected here (error -1,
-                        # GitHub Issue #35), which aborted the whole preset so the
-                        # rig stayed on its old frequency. Send split ON as a raw
-                        # CI-V frame instead: close the Hamlib session (pyserial
-                        # needs the port), send it, then reopen.
-                        rig2.close()
-                        rig2 = None
-                        time.sleep(0.5)
-                        self._send_split_on_civ_pyserial()
-                        time.sleep(0.3)
-                        rig2 = _make_rig()
-                        _open_rig_with_retry(rig2, "same-band: reopen after raw split ON")
-                        time.sleep(0.5)
+                        # GitHub Issue #35), which aborted the whole preset. Split ON
+                        # is sent as a raw CI-V frame once, AFTER the frequency/mode
+                        # writes below (an earlier send is undone when the rig
+                        # restores another band's split state; Issue #36).
+                        pass
                     else:
                         rig2.set_split_vfo(vfo_curr, 1, vfo_b)
                         _check_rig_ok(rig2, "same-band: set_split_vfo")
@@ -3286,7 +3277,7 @@ class HamlibDirectController(RigController):
                         rig2.close()
                         rig2 = None
                         time.sleep(0.3)
-                        self._ensure_split_state_civ(True, "same-band")
+                        self._ensure_split_state_civ(True, "same-band", send_first=True)
                     logger.info(
                         "RigDirect._apply_mode_and_ctcss_hamlib: same-band dl=%s ul=%s no-CTCSS OK",
                         dl_mode,
