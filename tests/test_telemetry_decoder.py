@@ -1104,3 +1104,29 @@ def test_imported_formats_are_well_formed() -> None:
                     assert d["offset"] + d["length"] <= max_size, f"{norad} {d['name']}"
                 assert d["name"] not in seen, f"{norad} duplicate {d['name']}"
                 seen.add(d["name"])
+
+
+# -- Geoscan-2 (NORAD 64890): BEACON frames from the IQ recording of 2026-11-11 (gr-satellites
+# GEOSCAN framing, 72 bytes). Layout from SatNOGS geoscan.ksy. --
+_GEOSCAN2 = (
+    "848a82869e9c60a4a67264a664e103f0019eb6f46a038ac8000000610fc01e060010107e00000000da5e"
+    "fcfd8001fc0003000000000000000d031fee0b9e9e0426d301000d000000"
+)
+
+
+def test_geoscan2_beacon_values() -> None:
+    tf = decode_telemetry("", bytes.fromhex(_GEOSCAN2), 64890)
+    assert tf.telemetry_id == "BEACON"
+    f = {x.name: x for x in tf.fields}
+    assert f["dest_call"].unit == "BEACON" and f["src_call"].unit == "RS92S2"  # type: ignore[attr-defined]
+    assert f["eps_timestamp"].unit == "2026-11-11 18:40:30 UTC"  # type: ignore[attr-defined]
+    assert f["eps_cell_voltage_full"].raw_value == 7872  # type: ignore[attr-defined]
+    assert f["eps_sys_obc"].raw_value == 1 and f["eps_sys_rws"].raw_value == 0  # type: ignore[attr-defined]
+    assert f["comm_rssi"].raw_value == -98  # type: ignore[attr-defined]
+    assert f["comm_bus_voltage"].raw_value == 7939  # type: ignore[attr-defined]
+    assert f["comm_antenna_detector"].raw_value == 1  # type: ignore[attr-defined]
+
+
+def test_geoscan2_frame_types_listed() -> None:
+    defs = get_telemetry_id_defs(64890)
+    assert defs is not None and set(defs) == {"BEACON", "GNSS-42", "GNSS-43"}

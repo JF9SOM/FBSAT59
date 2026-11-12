@@ -295,6 +295,18 @@ gr-satellites モードの行は、`parse_gr_packet()` が空なら `parse_gr_pd
 - テスト: `tests/test_telemetry_decoder.py`（実フレーム 4 種の値）、`tests/test_telemetry_tab.py`
   （PDU ダンプの行が「全項目デコード結果」を埋める）。**GUI（実アプリでの見え方）は未確認**。
 
+### Geoscan-2（NORAD 64890）の BEACON 全項目デコード（2026-11-12）
+
+SatNOGS の `geoscan.ksy`（Geoscan 教育プラットフォーム）を [`64890.json`](../src/data/telemetry_formats/64890.json)
+に取り込んだ（ksy を写さず `frame_types` スキーマで書き直し）。フレームは 72 バイト、`848a`（AX.25 形式 `BEACON`、
+発信局 RS92S2）が EPS・OBC・ADCS・カメラ・通信系の約 60 項目。実録音
+（`64890_Geoscan-2_20261111T183558Z.iq.wav`、GPD の外付け SSD）から gr_satellites で 2 フレームを取り出して検証:
+電池 3937 mV×2≒7872 mV、VBUS 7939 mV、温度・RSSI・衛星時刻（録音時刻と整合）が妥当。
+同日の別録音（11/10）は 0 フレーム。GNSS-42/43 は ksy と Lobachevsky の検証済み定義から流用したが**実フレーム未受信**。
+**Lobachevsky（Geoscan 16U）とは BEACON のレイアウトが別物**（16U は EPS×2 構成）。
+未確認: `OBC boot count` が 24282 と大きい（ksy どおりのオフセット）、`ADCS mode` が 3（ksy の定義は 0〜2）。
+Geoscan-1/3/4/5/6 に同じ定義が当てはまるかは未確認なので 64890 のみ。
+
 ---
 
 ## ゴーストエントリ問題（症状のパターンと発見済みの実例、2026-09-05）
