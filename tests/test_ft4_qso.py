@@ -93,6 +93,13 @@ class TestAnsweringWithGrid:
         assert qso.advance(f"{MY_CALL} {THEIR_CALL} RR73") == f"{THEIR_CALL} {MY_CALL} 73"
         assert qso.state == QsoState.LOGGED
 
+    def test_multi_answer_rr73_ends_with_our_73(self, qso: Ft4QsoManager) -> None:
+        qso.respond_with_grid(THEIR_CALL, THEIR_GRID, their_snr_db=-9.0)
+        qso.advance(f"{MY_CALL} {THEIR_CALL} -07", their_snr=-9.0)
+        text = f"{MY_CALL} RR73; JA6SZV <{THEIR_CALL}> -30"
+        assert qso.advance(text) == f"{THEIR_CALL} {MY_CALL} 73"
+        assert qso.state == QsoState.LOGGED
+
 
 class TestAnsweringWithReport:
     """RST button: skip the grid, useful on a short satellite pass."""

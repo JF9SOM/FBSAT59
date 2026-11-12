@@ -305,6 +305,17 @@ class Ft4QsoManager:
         # FT4 directed messages are "<TO> <FROM> <payload>"; anything shorter
         # (a bare "73", a CQ) carries nothing this state machine acts on.
         words = decoded_text.upper().split()
+        # Multi-answer form: "<US> RR73; <OTHER> <<THEM>> -30" confirms us and
+        # reports to another station in one transmission. Treat it as the
+        # plain "<US> <THEM> RR73" so the state machine sees their roger.
+        if (
+            len(words) >= 4
+            and words[1].endswith(";")
+            and words[1][:-1] in _ROGER_WORDS
+            and words[3].startswith("<")
+            and words[3].endswith(">")
+        ):
+            words = [words[0], words[3][1:-1], words[1][:-1]]
         if len(words) < 3:
             # A bare acknowledgement still closes out a finished exchange.
             closing = self._state in (QsoState.CONFIRM, QsoState.RREPORT_SENT)
