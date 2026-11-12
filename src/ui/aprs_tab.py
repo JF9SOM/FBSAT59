@@ -501,6 +501,7 @@ class AprsTab(QWidget):
         self._pos_interval_spin.setSuffix(_(" min"))
         self._pos_interval_spin.setFixedWidth(80)
         pos_layout.addWidget(self._pos_interval_spin)
+        self._pos_interval_spin.valueChanged.connect(self._save_settings)
         pos_layout.addSpacing(12)
         pos_layout.addWidget(QLabel(_("Symbol:")))
         self._pos_symbol_combo = QComboBox()
@@ -974,6 +975,13 @@ class AprsTab(QWidget):
         fmt_idx = self._format_combo.findData(data.get("msg_format"))
         if fmt_idx >= 0:
             self._format_combo.setCurrentIndex(fmt_idx)
+        try:
+            interval = int(data.get("pos_interval_min", 5))
+        except (TypeError, ValueError):
+            interval = 5
+        self._pos_interval_spin.setValue(
+            max(self._pos_interval_spin.minimum(), min(self._pos_interval_spin.maximum(), interval))
+        )
 
     def _saved_via(self) -> str:
         """The Via to persist: the user's own, not one set for a satellite's digipeater."""
@@ -991,6 +999,7 @@ class AprsTab(QWidget):
             "ssid": self._ssid_spin.value(),
             "via": self._saved_via(),
             "msg_format": self._format_combo.currentData(),
+            "pos_interval_min": self._pos_interval_spin.value(),
         }
         self._conn.execute(
             "INSERT OR REPLACE INTO app_settings (key, value, updated_at) "
