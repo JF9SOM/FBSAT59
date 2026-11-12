@@ -214,5 +214,21 @@
     "baud": 9600,
     "ctcss_tone": null,
     "notes": "LASARsat digipeater: uplink and downlink are both 436.925 MHz, half duplex; the satellite repeats a packet shortly after hearing it. Put OK0LSR in the digipeater path. Source: https://lasar.io/lasarsat and the Libre Space Community thread \"AX25 software/hardware\" (dl7ndr). Rules of use not published."
+  },
+  {
+    "uuid": "community-geoscan2-cw-tlm",
+    "norad_cat_id": 64890,
+    "satellite_name": "Geoscan-2",
+    "description": "CW TLM beacon (RS92S2) - community",
+    "type": "Beacon",
+    "uplink_low": null,
+    "uplink_high": null,
+    "downlink_low": 436160000,
+    "downlink_high": null,
+    "mode": "CW",
+    "invert": false,
+    "baud": null,
+    "ctcss_tone": null,
+    "notes": "CW telemetry beacon seen in the 2026-11-10 IQ recording at about +1.2 kHz from the 436.160 MHz 9k6 downlink centre (Doppler-corrected recording; absolute frequency not measured). About 13 WPM, text like 'RS92S2 VB82 IB2 IS0 TBP19 ID3 TMP22 TSP19 QS0'. Not in SATNOGS; no published specification."
   }
 ]

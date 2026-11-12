@@ -4,7 +4,7 @@
   "callsign": "RS",
   "modulation": "GFSK9600",
   "reference": "https://gitlab.com/librespacefoundation/satnogs/satnogs-decoders/-/blob/master/ksy/geoscan.ksy",
-  "note": "BEACON layout is taken from the SatNOGS geoscan.ksy and checked against 2 frames of a real IQ recording (2026-11-11): battery 2x3.9 V, VBUS 7.9 V, temperatures and RSSI are physically plausible. GNSS-42/43 follow the same ksy (and the verified Lobachevsky layout) but no GNSS frame has been received yet.",
+  "note": "BEACON layout is taken from the SatNOGS geoscan.ksy and checked against 2 frames of a real IQ recording (2026-11-11): battery 2x3.9 V, VBUS 7.9 V, temperatures and RSSI are physically plausible. GNSS-42/43 follow the same ksy (and the verified Lobachevsky layout) but no GNSS frame has been received yet. cw_frames: the CW beacon has no published specification (SatNOGS has no CW decoder for Geoscan); the token names and their meanings are inferred from one decoded pass (IQ recording 2026-11-10, ~13 WPM) by comparison with the 9k6 BEACON values, and every label is marked inferred.",
   "frame_types": [
     {
       "id": "BEACON",
@@ -798,5 +798,69 @@
         }
       ]
     }
-  ]
+  ],
+  "cw_frames": {
+    "BEACON": {
+      "label": "CW beacon (RS92S2 VB.. IB.. IS.. TBP.. ID.. TMP.. TSP.. QS..)",
+      "label_ja": "CWビーコン（RS92S2 VB.. IB.. IS.. TBP.. ID.. TMP.. TSP.. QS..）",
+      "id_prefix": "RS92S2",
+      "text_regex": "VB(\\d{2,3})IB(\\d{1,3})IS(\\d{1,3})TBP(-?\\d{1,3})ID(\\d{1,3})TMP(-?\\d{1,3})TSP(-?\\d{1,3})QS(\\d{1,3})",
+      "near_regex": "VB[0-9O.]*IB[0-9O.]*IS[0-9O.]*TBP[0-9O.-]*ID[0-9O.]*TMP[0-9O.-]*TSP[0-9O.-]*QS[0-9O.]*",
+      "fields": [
+        {
+          "name": "vb",
+          "group": 1,
+          "label": "VB battery voltage (inferred, 0.1 V steps)",
+          "label_ja": "VB バッテリー電圧（推定・0.1V単位）",
+          "scale": 0.1,
+          "unit": "V"
+        },
+        {
+          "name": "ib",
+          "group": 2,
+          "label": "IB current (inferred, raw)",
+          "label_ja": "IB 電流（推定・生値）"
+        },
+        {
+          "name": "is",
+          "group": 3,
+          "label": "IS solar current (inferred, raw)",
+          "label_ja": "IS 太陽電池電流（推定・生値）"
+        },
+        {
+          "name": "tbp",
+          "group": 4,
+          "label": "TBP battery temperature (inferred)",
+          "label_ja": "TBP バッテリー温度（推定）",
+          "unit": "°C"
+        },
+        {
+          "name": "id",
+          "group": 5,
+          "label": "ID (unknown, raw)",
+          "label_ja": "ID（意味不明・生値）"
+        },
+        {
+          "name": "tmp",
+          "group": 6,
+          "label": "TMP temperature (inferred)",
+          "label_ja": "TMP 温度（推定）",
+          "unit": "°C"
+        },
+        {
+          "name": "tsp",
+          "group": 7,
+          "label": "TSP solar panel temperature (inferred)",
+          "label_ja": "TSP 太陽電池パネル温度（推定）",
+          "unit": "°C"
+        },
+        {
+          "name": "qs",
+          "group": 8,
+          "label": "QS (unknown, raw)",
+          "label_ja": "QS（意味不明・生値）"
+        }
+      ]
+    }
+  }
 }

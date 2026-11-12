@@ -477,3 +477,30 @@ def test_lenient_satnogs_frame_sends_a_wrong_length_block_as_received() -> None:
     longer = build_lenient_satnogs_frame(68796, "2FFE8594EB88012400")
     assert longer is not None and longer[8:] == bytes.fromhex("2FFE8594EB88012400")
     assert build_lenient_satnogs_frame(68796, "2FFE8594EBZZ0124") is None
+
+
+# -- Geoscan-2 (NORAD 64890): "RS92S2 VB82 IB2 IS0 TBP19 ID3 TMP22 TSP19 QS0" (inferred format) --
+# Text as the CW Decoder tab read it from the IQ recording of 2026-11-10 (callsign misread).
+_GEOSCAN2_CW = "?NS9 2 J R L N2S2 VB82 IB2 IS 0 TBP19 ID3 TMP22 TSP19 QS0"
+
+
+def test_geoscan2_cw_beacon_is_decoded_from_the_real_read() -> None:
+    result = decode_cw_frame(64890, _GEOSCAN2_CW)
+    assert result is not None and result.valid
+    assert result.key == "BEACON"
+    values = {f.name: f.raw_value for f in result.fields}
+    assert values == {"vb": 82, "ib": 2, "is": 0, "tbp": 19, "id": 3, "tmp": 22, "tsp": 19, "qs": 0}
+    assert {f.name: f.scaled_value for f in result.fields}["vb"] == pytest.approx(8.2)
+
+
+def test_geoscan2_cw_misread_beacon_is_a_near_miss() -> None:
+    text = "RS92S2 VB8.2 IB2 IS0 TBP19 ID3 TMP22 TSP19 QS0"
+    assert decode_cw_frame(64890, text) is None
+    assert is_near_miss(64890, text)
+
+
+def test_geoscan2_labels_say_inferred() -> None:
+    defs = get_telemetry_id_defs(64890)
+    assert defs is not None and "BEACON" in defs
+    labels = [str(f.get("label", "")) for f in defs["BEACON"]["fields"]]
+    assert all("inferred" in x or "unknown" in x for x in labels)

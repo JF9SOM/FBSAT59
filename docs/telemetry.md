@@ -305,6 +305,15 @@ SatNOGS の `geoscan.ksy`（Geoscan 教育プラットフォーム）を [`64890
 同日の別録音（11/10）は 0 フレーム。GNSS-42/43 は ksy と Lobachevsky の検証済み定義から流用したが**実フレーム未受信**。
 **Lobachevsky（Geoscan 16U）とは BEACON のレイアウトが別物**（16U は EPS×2 構成）。
 未確認: `OBC boot count` が 24282 と大きい（ksy どおりのオフセット）、`ADCS mode` が 3（ksy の定義は 0〜2）。
+**CW ビーコン（`cw_frames`、同日・推定）**: 公開仕様・SatNOGS の ksy とも**存在しない**（SatNOGS の Geoscan-2 は 9k6 の1送信機のみ）。
+2026-11-10 の IQ 録音（約 13 WPM、ドップラー補正済みで +1.2 kHz に細い線、187〜211 秒に強い）を CW Decoder で読むと
+`RS92S2 VB82 IB2 IS0 TBP19 ID3 TMP22 TSP19 QS0`（発信元は誤読）。この文字列から `text_regex` の `BEACON`（CW TLM モード、
+LASARsat と同型）を定義した。**項目名の意味は推定**で全ラベルに「推定」と付けてある（VB=電池電圧 0.1V 単位、IB/IS=電流、
+TBP/TMP/TSP=温度。ID・QS は不明の生値）。9k6 BEACON（11/11、消費 200 mA・太陽 0・電池 7.87 V・温度 16℃）と値の桁が整合する程度の
+根拠。**同時刻の CW と 9k6 で突き合わせた検証は未実施**、サンプルは1パスのみ（表記ゆれ・追加項目があれば `near_regex` の
+ニアミス表示になる）。CW TLM のコンボに出すため、SATNOGS に CW 送信機が無いので
+`community_transmitters.json` に `community-geoscan2-cw-tlm`（436.160 MHz、CW。**実周波数は未計測**）を追加した
+（コミュニティ衛星 12→13 件、`tests/test_main_window.py` の件数アサーション 3 箇所を更新。CI で確認すること）。Geoscan-2 のみ（他5機の CW は未確認）。
 Geoscan-1/3/4/5/6（64880/64893/64892/64891/64879）には同日、64890.json をコピーして追加した（SatNOGS DB が6機全てに同じ `geoscan` デコーダーを割り当て、gr-satellites も同じ GEOSCAN 74 バイト。**実フレームでの検証は Geoscan-2 のみ**）。
 
 ---
