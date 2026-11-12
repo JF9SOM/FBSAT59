@@ -305,7 +305,7 @@ SatNOGS の `geoscan.ksy`（Geoscan 教育プラットフォーム）を [`64890
 同日の別録音（11/10）は 0 フレーム。GNSS-42/43 は ksy と Lobachevsky の検証済み定義から流用したが**実フレーム未受信**。
 **Lobachevsky（Geoscan 16U）とは BEACON のレイアウトが別物**（16U は EPS×2 構成）。
 未確認: `OBC boot count` が 24282 と大きい（ksy どおりのオフセット）、`ADCS mode` が 3（ksy の定義は 0〜2）。
-Geoscan-1/3/4/5/6 に同じ定義が当てはまるかは未確認なので 64890 のみ。
+Geoscan-1/3/4/5/6（64880/64893/64892/64891/64879）には同日、64890.json をコピーして追加した（SatNOGS DB が6機全てに同じ `geoscan` デコーダーを割り当て、gr-satellites も同じ GEOSCAN 74 バイト。**実フレームでの検証は Geoscan-2 のみ**）。
 
 ---
 

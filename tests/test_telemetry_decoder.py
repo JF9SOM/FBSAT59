@@ -1130,3 +1130,10 @@ def test_geoscan2_beacon_values() -> None:
 def test_geoscan2_frame_types_listed() -> None:
     defs = get_telemetry_id_defs(64890)
     assert defs is not None and set(defs) == {"BEACON", "GNSS-42", "GNSS-43"}
+
+
+def test_geoscan_siblings_share_the_geoscan2_layout() -> None:
+    for norad in (64879, 64880, 64891, 64892, 64893):
+        tf = decode_telemetry("", bytes.fromhex(_GEOSCAN2), norad)
+        assert tf.telemetry_id == "BEACON", norad
+        assert {x.name: x for x in tf.fields}["comm_rssi"].raw_value == -98
