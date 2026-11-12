@@ -3572,6 +3572,25 @@ class HamlibDirectController(RigController):
         except Exception as exc:
             logger.error("RigDirect.ft991 CAT: %s", exc)
 
+    def _open_new_rig_session(self, _H: Any, what: str) -> Any:
+        """Create and open a fresh Hamlib Rig for this controller's port.
+
+        Closes the half-opened Rig if open fails, so a failed attempt never
+        leaves the serial port held (Issue #37).
+        """
+        new_rig = _H.Rig(self._model_id)
+        new_rig.set_conf("rig_pathname", self._port)
+        new_rig.set_conf("serial_speed", str(self._baud_rate))
+        if self._civ_addr:
+            new_rig.set_conf("civaddr", normalize_civ_addr(self._civ_addr))
+        try:
+            _open_rig_with_retry(new_rig, what)
+        except Exception:
+            with contextlib.suppress(Exception):
+                new_rig.close()
+            raise
+        return new_rig
+
     def _resend_mode_ctcss_via_rig(self) -> None:
         """Stage 2: re-apply mode and CTCSS via self._rig after first UL write.
 
@@ -3623,21 +3642,34 @@ class HamlibDirectController(RigController):
                     exc,
                 )
             time.sleep(0.3)
-            new_rig = _H.Rig(self._model_id)
-            new_rig.set_conf("rig_pathname", self._port)
-            new_rig.set_conf("serial_speed", str(self._baud_rate))
-            if self._civ_addr:
-                new_rig.set_conf("civaddr", normalize_civ_addr(self._civ_addr))
-            _open_rig_with_retry(new_rig, "stage2: reopen after Sub mode (pyserial)")
+            new_rig = self._open_new_rig_session(_H, "stage2: reopen after Sub mode (pyserial)")
             time.sleep(0.5)
+            # Publish the reopened session immediately: from here on the
+            # Doppler loop has a live handle again even if one of the
+            # CI-V steps below fails (Issue #37: a rejected SATMODE write
+            # used to leave self._rig None and stop Doppler for good).
+            self._rig = new_rig
             # IC-9700: re-force cache->satmode=1, same as the reopen in
             # _apply_mode_and_ctcss_hamlib() (without it, set_vfo(MAIN)
-            # below gets rejected with Hamlib error -9).
+            # below gets rejected with Hamlib error -9). The rig can answer
+            # NG right after a reopen, so retry a few times.
             if self._model_id in _SATMODE_USE_VFO_SUB:
-                new_rig.set_func(_H.RIG_FUNC_SATMODE, 1)
-                _check_rig_ok(new_rig, "stage2: IC-9700 extra set_func(SATMODE,1) after reopen")
+                for _attempt in range(1, 4):
+                    new_rig.set_func(_H.RIG_FUNC_SATMODE, 1)
+                    try:
+                        _check_rig_ok(
+                            new_rig, "stage2: IC-9700 extra set_func(SATMODE,1) after reopen"
+                        )
+                        break
+                    except RigControlError:
+                        if _attempt == 3:
+                            raise
+                        logger.warning(
+                            "RigDirect stage2: SATMODE set rejected (attempt %d/3), retrying",
+                            _attempt,
+                        )
+                        time.sleep(0.5)
                 time.sleep(0.2)
-            self._rig = new_rig
 
             self._rig.set_vfo(vfo_sub)
             _check_rig_ok(self._rig, "stage2: set_vfo(SUB) for CTCSS")
@@ -3666,6 +3698,18 @@ class HamlibDirectController(RigController):
             )
         except Exception as exc:
             logger.warning("RigDirect._resend_mode_ctcss_via_rig: %s", exc)
+            if self._rig is None:
+                # The old session was closed and no new one was published
+                # (reopen itself failed): try once more so Doppler tracking
+                # does not stay dead with "NoneType has no attribute set_freq".
+                try:
+                    import Hamlib as _H2  # noqa: PLC0415
+
+                    time.sleep(0.5)
+                    self._rig = self._open_new_rig_session(_H2, "stage2: recovery reopen")
+                    logger.info("RigDirect: stage2 recovery reopen succeeded")
+                except Exception as exc2:
+                    logger.error("RigDirect: stage2 recovery reopen failed: %s", exc2)
             # Recorded (not raised) so on-demand callers -- currently just
             # apply_mode_ctcss_live() -- can surface the failure to the user.
             # The Stage-2 caller (_set_vfo_frequencies_locked) does not check
