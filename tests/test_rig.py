@@ -989,6 +989,11 @@ class TestReceiveOnlyTransponderOnSatmodeRig:
         ctrl._init_split()
         assert ctrl._satmode_active is True
 
+    def test_init_split_does_not_enter_satmode_for_same_band(self) -> None:
+        ctrl = self._ctrl(145_800_000.0, 145_900_000.0)
+        ctrl._init_split()
+        assert ctrl._satmode_active is False
+
     def test_doppler_writes_downlink_on_vfo_a_without_satmode(self) -> None:
         ctrl = self._ctrl(437_550_000.0, None)
         ctrl._satmode_active = True

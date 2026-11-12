@@ -1428,9 +1428,12 @@ class HamlibDirectController(RigController):
                     # (the rig keeps the previous SAT state otherwise) and turn
                     # split off. GitHub Issue #36.
                     rx_only = self._transponder_is_rx_only()
+                    # A same-band pair (V/V, U/U) also never uses SAT mode, so do not
+                    # enter it just to leave it again (visible SAT flicker).
+                    leave_sat = rx_only or self._transponder_is_same_band()
                     _open_rig_with_retry(rig, "RigDirect satmode entry: open()")
                     time.sleep(0.5)
-                    rig.set_func(_H.RIG_FUNC_SATMODE, 0 if rx_only else 1)
+                    rig.set_func(_H.RIG_FUNC_SATMODE, 0 if leave_sat else 1)
                     _check_rig_ok(rig, "RigDirect satmode entry: set_func(SATMODE)")
                     time.sleep(0.2)
                     rig.close()
@@ -1453,6 +1456,7 @@ class HamlibDirectController(RigController):
                         self._satmode
                         and self._model_id in _SATMODE_USE_VFO_SUB
                         and not self._transponder_is_rx_only()
+                        and not self._transponder_is_same_band()
                     ):
                         time.sleep(0.2)
                         rig.set_func(_H.RIG_FUNC_SATMODE, 1)
@@ -4023,6 +4027,11 @@ class HamlibDirectController(RigController):
                         self._rig.set_split_vfo(vfo_a, 0, vfo_a)
                     except Exception as exc:
                         logger.warning("RigDirect: split off failed — %s", exc)
+            elif self._satmode and self._transponder_is_same_band():
+                # Same-band pair: SAT mode was left in connect(); the transponder preset
+                # turns on conventional VFO-A/B split.
+                self._satmode_active = False
+                logger.info("RigDirect: same-band transponder — SAT mode off, split via preset")
             elif self._satmode:
                 self._satmode_active = True
                 logger.info("RigDirect: satmode active (entered via CI-V 16 5A before open)")
