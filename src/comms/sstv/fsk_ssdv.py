@@ -68,6 +68,17 @@ _STEP_S = 3.0
 _WINDOW = int(_WINDOW_S * WORK_RATE)
 _STEP = int(_STEP_S * WORK_RATE)
 _STEP_SYMBOLS = int(_STEP_S * BAUD)  # sync hits are taken from the first half only
+# The 200 baud downlink ("FSK 200 bps 1125 Hz separation") carries the same packets four
+# times slower: one SSDV packet takes 2064 / 200 = 10.3 s, so the window must hold a whole
+# packet after a sync word found in its first _SLOW_STEP_S seconds. The tone spacing is
+# nominally 1125 Hz and was measured at 1150-1190 Hz on real passes (2026-10-30, 2026-11-12).
+SLOW_BAUD = 200
+SLOW_SEPARATIONS = tuple(float(v) for v in range(1050, 1260, 10))
+_SLOW_WINDOW_S = 14.0
+_SLOW_STEP_S = 3.5
+_SLOW_WINDOW = int(_SLOW_WINDOW_S * WORK_RATE)
+_SLOW_STEP = int(_SLOW_STEP_S * WORK_RATE)
+_SLOW_STEP_SYMBOLS = int(_SLOW_STEP_S * SLOW_BAUD)
 # Tone search: the pair must lie within +-_SEARCH_HZ of the centre, and each tone must
 # stand out from the median of the smoothed spectrum by this power ratio (about 7 dB).
 _SEARCH_HZ = 5500.0
@@ -197,31 +208,37 @@ def tone_sums(seg: np.ndarray, f_low: float, f_high: float) -> tuple[np.ndarray,
 
 
 def symbol_energies(
-    c_high: np.ndarray, c_low: np.ndarray, start: float, count: int
+    c_high: np.ndarray,
+    c_low: np.ndarray,
+    start: float,
+    count: int,
+    sps: float = SAMPLES_PER_SYMBOL,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Per-symbol energy at each tone for *count* symbols starting at sample *start*."""
-    pos = start + np.arange(count + 1) * SAMPLES_PER_SYMBOL
+    """Per-symbol energy at each tone for *count* symbols of *sps* samples from *start*."""
+    pos = start + np.arange(count + 1) * sps
     grid = np.arange(len(c_high))
     high = np.interp(pos, grid, c_high.real) + 1j * np.interp(pos, grid, c_high.imag)
     low = np.interp(pos, grid, c_low.real) + 1j * np.interp(pos, grid, c_low.imag)
     return np.abs(np.diff(high)) ** 2, np.abs(np.diff(low)) ** 2
 
 
-def best_phase(c_high: np.ndarray, c_low: np.ndarray) -> float:
+def best_phase(c_high: np.ndarray, c_low: np.ndarray, sps: float = SAMPLES_PER_SYMBOL) -> float:
     """Symbol timing phase (in samples) with the largest average decision margin."""
     n = len(c_high) - 1
     best_score = -1.0
     best = 0.0
-    for phase in np.arange(0.0, SAMPLES_PER_SYMBOL, 0.5):
-        count = int((n - phase) / SAMPLES_PER_SYMBOL) - 1
-        e_high, e_low = symbol_energies(c_high, c_low, phase, count)
+    for phase in np.arange(0.0, sps, 0.5):
+        count = int((n - phase) / sps) - 1
+        e_high, e_low = symbol_energies(c_high, c_low, phase, count, sps)
         score = float(np.sum(np.abs(e_high - e_low) / (e_high + e_low + 1e-12)))
         if score > best_score:
             best_score, best = score, float(phase)
     return best
 
 
-def sync_candidates(bits: np.ndarray, need: int | None = None) -> list[tuple[int, int]]:
+def sync_candidates(
+    bits: np.ndarray, need: int | None = None, step_symbols: int = _STEP_SYMBOLS
+) -> list[tuple[int, int]]:
     """Positions ``(bit_index, sync_errors)`` where the sync word matches with few errors.
 
     Only positions in the first half window are taken (the second half is the first half
@@ -237,14 +254,18 @@ def sync_candidates(bits: np.ndarray, need: int | None = None) -> list[tuple[int
     errors = np.zeros(count, dtype=np.int32)
     for k in range(16):
         errors += bits[k : k + count] != SYNC_BITS[k]
-    stop = min(count, _STEP_SYMBOLS, n - need + 1)
+    stop = min(count, step_symbols, n - need + 1)
     return [
         (int(i), int(errors[i])) for i in np.flatnonzero(errors[:stop] <= _MAX_SYNC_ERRORS_VERIFIED)
     ]
 
 
 def refine_packet(
-    c_high: np.ndarray, c_low: np.ndarray, start: float, count: int | None = None
+    c_high: np.ndarray,
+    c_low: np.ndarray,
+    start: float,
+    count: int | None = None,
+    sps: float = SAMPLES_PER_SYMBOL,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Re-time one packet: try small timing offsets, keep the one that captures most energy.
 
@@ -257,7 +278,7 @@ def refine_packet(
     best_score = -1.0
     best: tuple[np.ndarray, np.ndarray] | None = None
     for offset in _REFINE_OFFSETS:
-        e_high, e_low = symbol_energies(c_high, c_low, start + offset, count)
+        e_high, e_low = symbol_energies(c_high, c_low, start + offset, count, sps)
         score = float(np.sum(np.maximum(e_high, e_low)))
         if score > best_score:
             best_score, best = score, (e_high, e_low)
@@ -265,20 +286,26 @@ def refine_packet(
     return best
 
 
-def decode_window(seg: np.ndarray) -> list[FskSsdvPacket]:
-    """Decode one window of I/Q at WORK_RATE into SSDV packets."""
-    tones = find_tones(seg)
+def decode_window(
+    seg: np.ndarray,
+    baud: float = BAUD,
+    separations: tuple[float, ...] | None = None,
+    step_symbols: int = _STEP_SYMBOLS,
+) -> list[FskSsdvPacket]:
+    """Decode one window of I/Q at WORK_RATE into SSDV packets (2FSK at *baud*)."""
+    tones = find_tones(seg, separations=separations)
     if tones is None:
         return []
+    sps = WORK_RATE / baud
     c_high, c_low = tone_sums(seg, tones[0], tones[1])
-    phase = best_phase(c_high, c_low)
+    phase = best_phase(c_high, c_low, sps)
     n = len(c_high) - 1
-    e_high, e_low = symbol_energies(c_high, c_low, phase, int((n - phase) / SAMPLES_PER_SYMBOL) - 1)
+    e_high, e_low = symbol_energies(c_high, c_low, phase, int((n - phase) / sps) - 1, sps)
     margin = e_high - e_low
     candidates: list[tuple[int, int, float]] = []
     for polarity in (-1.0, 1.0):  # bit 1 is the low tone, so the normal polarity is -1
         bits = ((polarity * margin) > 0).astype(np.uint8)
-        candidates.extend((i, e, polarity) for i, e in sync_candidates(bits))
+        candidates.extend((i, e, polarity) for i, e in sync_candidates(bits, None, step_symbols))
     # One packet can be found in both polarities or one bit apart: keep the best of each.
     candidates.sort(key=lambda c: (c[1], c[0]))
     kept: list[tuple[int, int, float]] = []
@@ -289,7 +316,7 @@ def decode_window(seg: np.ndarray) -> list[FskSsdvPacket]:
     kept.sort(key=lambda c: c[0])
     packets: list[FskSsdvPacket] = []
     for index, _errors, polarity in kept:
-        eh, el = refine_packet(c_high, c_low, phase + index * SAMPLES_PER_SYMBOL)
+        eh, el = refine_packet(c_high, c_low, phase + index * sps, None, sps)
         bits = ((polarity * (eh - el)) > 0).astype(np.uint8)
         errors = int(np.count_nonzero(bits[:16] != SYNC_BITS))
         if errors > _MAX_SYNC_ERRORS_VERIFIED:
@@ -302,6 +329,11 @@ def decode_window(seg: np.ndarray) -> list[FskSsdvPacket]:
     return packets
 
 
+def decode_window_slow(seg: np.ndarray) -> list[FskSsdvPacket]:
+    """Decode one window of I/Q at WORK_RATE into SSDV packets (200 baud downlink)."""
+    return decode_window(seg, SLOW_BAUD, SLOW_SEPARATIONS, _SLOW_STEP_SYMBOLS)
+
+
 class FskSsdvStream:
     """Feeds arbitrary I/Q blocks to the 2FSK SSDV demodulator."""
 
@@ -309,23 +341,33 @@ class FskSsdvStream:
         self._rate = float(sample_rate)
         self._decimator = Decimator(self._rate)
         self._buf = np.zeros(0, dtype=np.complex64)
+        self._slow_buf = np.zeros(0, dtype=np.complex64)
 
     def reset(self) -> None:
         """Forget buffered samples."""
         self._buf = np.zeros(0, dtype=np.complex64)
+        self._slow_buf = np.zeros(0, dtype=np.complex64)
         self._decimator = Decimator(self._rate)
 
     def feed(self, iq: np.ndarray) -> list[FskSsdvPacket]:
-        """Add I/Q samples; return the SSDV packets found in the completed windows."""
+        """Add I/Q samples; return the SSDV packets found in the completed windows.
+
+        Both downlinks (800 baud and 200 baud) are tried: only one is on the air at a
+        time, and a window without that signal yields nothing (no CRC-32 match).
+        """
         if not _SCIPY_AVAILABLE:
             return []
         y = self._decimator.push(iq)
         if len(y):
             self._buf = np.concatenate([self._buf, y])
+            self._slow_buf = np.concatenate([self._slow_buf, y])
         out: list[FskSsdvPacket] = []
         while len(self._buf) >= _WINDOW:
             out.extend(decode_window(self._buf[:_WINDOW]))
             self._buf = self._buf[_STEP:]
+        while len(self._slow_buf) >= _SLOW_WINDOW:
+            out.extend(decode_window_slow(self._slow_buf[:_SLOW_WINDOW]))
+            self._slow_buf = self._slow_buf[_SLOW_STEP:]
         return out
 
 

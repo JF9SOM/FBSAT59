@@ -47,18 +47,23 @@ def fsk_iq(
     snr_db: float = 20.0,
     offset_hz: float = 150.0,
     seed: int = 1,
+    baud: int = BAUD,
+    low_hz: float = LOW_HZ,
+    high_hz: float = HIGH_HZ,
+    drift_hz_per_s: float = 0.0,
 ) -> np.ndarray:
     """Continuous-phase 2FSK I/Q carrying *packets* (each sent as filler + sync + 252 bytes)."""
     rng = np.random.default_rng(seed)
-    bits: list[int] = [1, 0] * int(lead_s * BAUD / 2)
+    bits: list[int] = [1, 0] * int(lead_s * baud / 2)
     for pkt in packets:
         bits += _bits(b"\x55" * 8 + pkt[2:4] + pkt[4:])
         bits += _bits(b"\x55" * 4)
-        bits += [1, 0] * int(gap_s * BAUD / 2)
+        bits += [1, 0] * int(gap_s * baud / 2)
     sym = np.array(bits)
-    n = int(len(sym) * FS / BAUD)
-    idx = (np.arange(n) * BAUD // FS).clip(max=len(sym) - 1)
-    freq = np.where(sym[idx] == 1, LOW_HZ, HIGH_HZ) + offset_hz
+    n = int(len(sym) * FS / baud)
+    idx = (np.arange(n) * baud // FS).clip(max=len(sym) - 1)
+    freq = np.where(sym[idx] == 1, low_hz, high_hz) + offset_hz
+    freq = freq + drift_hz_per_s * np.arange(n) / FS
     phase = 2 * np.pi * np.cumsum(freq) / FS
     sig = np.exp(1j * phase)
     sigma = 10 ** (-snr_db / 20) / np.sqrt(2)
@@ -152,3 +157,27 @@ def test_file_decoder_reports_a_bad_file(qtbot, tmp_path) -> None:  # type: igno
     with qtbot.waitSignal(job.failed, timeout=10_000):
         job.start()
     job.wait(3000)
+
+
+def test_decodes_the_200_baud_downlink() -> None:
+    """200 baud, tones 1160 Hz apart (measured on a real HADES-SA pass), with Doppler drift."""
+    sent = [hades_packet(pid) for pid in range(3)]
+    iq = fsk_iq(
+        sent,
+        baud=200,
+        low_hz=-580.0,
+        high_hz=580.0,
+        offset_hz=300.0,
+        drift_hz_per_s=3.8,
+        gap_s=0.8,
+        snr_db=12.0,
+        seed=5,
+    )
+    got = _run(iq, block=FS)
+    assert {p.data for p in got if p.verified} == set(sent)
+
+
+def test_200_baud_noise_only_gives_no_packets() -> None:
+    rng = np.random.default_rng(9)
+    noise = 0.1 * (rng.standard_normal(30 * FS) + 1j * rng.standard_normal(30 * FS))
+    assert _run(noise.astype(np.complex64), block=FS) == []
