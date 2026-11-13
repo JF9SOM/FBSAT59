@@ -53,3 +53,55 @@ class TestExtractFlat:
         with pytest.raises(bn.BootstrapError):
             bn._extract_flat(archive, tmp_path / "out")
         assert not (tmp_path / "evil.txt").exists()
+
+
+def _ssdv() -> bn.Component:
+    return next(c for c in bn._COMPONENTS if c.name == "ssdv")
+
+
+class TestPosixComponents:
+    """Linux / macOS: only ssdv is fetched, with that platform's asset and file names."""
+
+    def test_linux_asset_and_key_files(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(bn.sys, "platform", "linux")
+        monkeypatch.setattr(bn.platform, "machine", lambda: "x86_64")
+        comp = _ssdv()
+        assert comp.effective_asset() == "ssdv-linux-x86_64.tar.gz"
+        assert comp.effective_key_file() == "ssdv"
+        assert comp.effective_extra_key_files() == ("ssdv-dslwp",)
+
+    def test_macos_asset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(bn.sys, "platform", "darwin")
+        monkeypatch.setattr(bn.platform, "machine", lambda: "arm64")
+        assert _ssdv().effective_asset() == "ssdv-macos-arm64.tar.gz"
+
+    def test_windows_names_are_unchanged(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(bn.sys, "platform", "win32")
+        comp = _ssdv()
+        assert comp.effective_asset() == "ssdv-windows-x86_64.zip"
+        assert comp.effective_key_file() == "ssdv.exe"
+
+    def test_unsupported_machine_has_no_asset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(bn.sys, "platform", "linux")
+        monkeypatch.setattr(bn.platform, "machine", lambda: "aarch64")
+        assert _ssdv().effective_asset() is None
+
+    def test_linux_only_ssdv_is_selected(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        monkeypatch.setattr(bn.sys, "platform", "linux")
+        monkeypatch.setattr(bn.platform, "machine", lambda: "x86_64")
+        seen: list[str] = []
+
+        def fake_install(comp: bn.Component, *, force: bool, quiet: bool) -> str:
+            seen.append(comp.name)
+            return "present"
+
+        monkeypatch.setattr(bn, "_install_release_component", fake_install)
+        assert bn.main(["--quiet"]) == 0
+        assert seen == ["ssdv"]
+
+    def test_unsupported_platform_does_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(bn.sys, "platform", "linux")
+        monkeypatch.setattr(bn.platform, "machine", lambda: "aarch64")
+        assert bn.main(["--quiet"]) == 0

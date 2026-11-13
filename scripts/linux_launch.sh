@@ -7,12 +7,12 @@
 #   1. git pull --ff-only     (offline / local edits -> skipped)
 #   2. pip install -e .[dev,sdr,ax100digi]
 #                             (only when pyproject.toml changed)
-#   3. python src/main.py
+#   3. scripts/bootstrap_natives.py   (downloads ssdv once)
+#   4. python src/main.py
 #
-# Unlike scripts/win_launch.bat there is no bootstrap_natives.py step: that
-# downloader is Windows-only.  On Linux Hamlib comes from the venv's
-# activate script (LD_LIBRARY_PATH) and the other native pieces from the
-# system packages.
+# scripts/bootstrap_natives.py runs on every start but on Linux it only fetches
+# ssdv (the one native piece not in apt).  Hamlib comes from the venv's
+# activate script (LD_LIBRARY_PATH) and the rest from the system packages.
 #
 # The terminal stays open while the app runs (so you can watch the log) and
 # closes when the app exits cleanly.  A failure (missing venv, non-zero exit)
@@ -60,6 +60,13 @@ main() {
         python -m pip install -e '.[dev,sdr,ax100digi]' -q ||
             echo "[FBSAT59] pip install failed - starting with the packages already installed."
     fi
+
+    # Native pieces a source checkout cannot get from apt (today: the ssdv tool the SSDV tab
+    # needs).  A no-op once installed; offline it just fails after a timeout and the app
+    # starts without it.
+    echo "[FBSAT59] Checking native components..."
+    timeout 120 python scripts/bootstrap_natives.py --quiet ||
+        echo "[FBSAT59] native component check failed - starting anyway."
 
     echo "[FBSAT59] Starting FBSAT59..."
     python src/main.py

@@ -31,6 +31,7 @@ import argparse
 import importlib.util
 import json
 import os
+import platform
 import subprocess
 import sys
 import tarfile
@@ -61,6 +62,16 @@ _USER_AGENT = "fbsat59-bootstrap-natives"
 _CW_MODEL_URL = "https://raw.githubusercontent.com/e04/deepcw-engine/main/model.onnx"
 
 
+def _posix_tag() -> str | None:
+    """``linux-x86_64`` / ``macos-arm64`` for the supported Linux / macOS machines, else None."""
+    machine = platform.machine().lower()
+    if sys.platform.startswith("linux") and machine in ("x86_64", "amd64"):
+        return "linux-x86_64"
+    if sys.platform == "darwin" and machine in ("arm64", "aarch64"):
+        return "macos-arm64"
+    return None
+
+
 def _data_root() -> Path:
     """Return ``platformdirs.user_data_dir("fbsat59")`` as a Path."""
     return Path(platformdirs.user_data_dir("fbsat59"))
@@ -86,9 +97,32 @@ class Component:
     repo: str = _DEFAULT_REPO
     pip_package: str | None = None  # PyPI name, for pip-only components
     import_name: str = ""  # module checked to decide a pip component is present
+    # Linux / macOS: the same component on those platforms. ``posix_assets`` maps a platform
+    # tag (see _posix_tag) to the release asset; a component without one is Windows-only
+    # (on Linux / macOS those natives come from system packages or the bundled app).
+    posix_key_file: str = ""
+    posix_extra_key_files: tuple[str, ...] = ()
+    posix_assets: tuple[tuple[str, str], ...] = ()
 
     def install_dir(self) -> Path:
         return _data_root() / self.subdir
+
+    def posix_asset(self) -> str | None:
+        """The asset for this Linux / macOS machine, or None."""
+        tag = _posix_tag()
+        return dict(self.posix_assets).get(tag) if tag else None
+
+    def effective_key_file(self) -> str:
+        """The file whose presence means "installed" on this platform."""
+        return self.key_file if sys.platform == "win32" else self.posix_key_file
+
+    def effective_extra_key_files(self) -> tuple[str, ...]:
+        """The extra files that must also be present on this platform."""
+        return self.extra_key_files if sys.platform == "win32" else self.posix_extra_key_files
+
+    def effective_asset(self) -> str | None:
+        """The release asset to download on this platform."""
+        return self.asset_name if sys.platform == "win32" else self.posix_asset()
 
 
 # Order matters only for readability; Hamlib first because it is the one users
@@ -137,6 +171,13 @@ _COMPONENTS: tuple[Component, ...] = (
         extra_key_files=("ssdv-dslwp.exe",),  # daniestevez/ssdv fork, for ASRTU-1 SSDV
         release_tag="ssdv-bundle",  # dedicated pre-release tag (CI: build-ssdv.yml)
         asset_name="ssdv-windows-x86_64.zip",
+        # Linux (source run: no frozen app to bundle it) and macOS: same release.
+        posix_key_file="ssdv",
+        posix_extra_key_files=("ssdv-dslwp",),
+        posix_assets=(
+            ("linux-x86_64", "ssdv-linux-x86_64.tar.gz"),
+            ("macos-arm64", "ssdv-macos-arm64.tar.gz"),
+        ),
     ),
     Component(
         name="codec2",
@@ -224,13 +265,14 @@ def _pick_asset(comp: Component, release: dict) -> tuple[str, str, str | None]:
         aname, url, ver = candidates[-1]
         return aname, url, ver
 
-    assert comp.asset_name is not None
+    wanted = comp.effective_asset()
+    if wanted is None:
+        raise BootstrapError(f"{comp.name}: no asset for this platform")
     for asset in assets:
-        if asset.get("name") == comp.asset_name:
-            return comp.asset_name, asset.get("browser_download_url", ""), release.get("tag_name")
+        if asset.get("name") == wanted:
+            return wanted, asset.get("browser_download_url", ""), release.get("tag_name")
     raise BootstrapError(
-        f"{comp.name}: asset {comp.asset_name!r} not found in release "
-        f"{release.get('tag_name', '?')}"
+        f"{comp.name}: asset {wanted!r} not found in release {release.get('tag_name', '?')}"
     )
 
 
@@ -301,8 +343,10 @@ def _extract_flat(archive: Path, dest_dir: Path) -> None:
 
 def _install_release_component(comp: Component, *, force: bool, quiet: bool) -> str:
     install_dir = comp.install_dir()
-    key = install_dir / comp.key_file
-    if key.exists() and not force and all((install_dir / f).exists() for f in comp.extra_key_files):
+    key_file = comp.effective_key_file()
+    key = install_dir / key_file
+    extras = comp.effective_extra_key_files()
+    if key.exists() and not force and all((install_dir / f).exists() for f in extras):
         return "present"
 
     release = _resolve_release(comp)
@@ -313,7 +357,7 @@ def _install_release_component(comp: Component, *, force: bool, quiet: bool) -> 
         _extract_flat(archive, install_dir)
 
     if not key.exists():
-        raise BootstrapError(f"{comp.name}: {comp.key_file} missing after extracting {asset_name}")
+        raise BootstrapError(f"{comp.name}: {key_file} missing after extracting {asset_name}")
     if version:
         (install_dir / "version.txt").write_text(version, encoding="ascii")
     return f"installed {version or asset_name}"
@@ -389,11 +433,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--quiet", action="store_true", help="less output")
     args = parser.parse_args(argv)
 
-    if sys.platform != "win32":
-        _log(f"not Windows (sys.platform={sys.platform}); nothing to do", quiet=args.quiet)
-        return 0
-
     components = _select(args.only, args.skip)
+    if sys.platform != "win32":
+        # Only the components that have a Linux / macOS asset (ssdv); the rest comes from
+        # system packages there.
+        components = [c for c in components if c.posix_asset() is not None]
+        if not components:
+            _log(f"nothing to do on this platform ({sys.platform})", quiet=args.quiet)
+            return 0
+
     results: list[tuple[str, str, str]] = []  # (name, status, detail)
     for comp in components:
         try:
@@ -408,6 +456,8 @@ def main(argv: list[str] | None = None) -> int:
         except BootstrapError as exc:
             results.append((comp.name, "FAIL", str(exc)))
 
+    if not results:
+        return 0
     width = max(len(name) for name, _, _ in results)
     print("[bootstrap] summary:")
     for name, status, detail in results:
