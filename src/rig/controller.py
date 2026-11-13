@@ -1431,7 +1431,12 @@ class HamlibDirectController(RigController):
                     # A same-band pair (V/V, U/U) also never uses SAT mode, so do not
                     # enter it just to leave it again (visible SAT flicker).
                     leave_sat = rx_only or self._transponder_is_same_band()
-                    _open_rig_with_retry(rig, "RigDirect satmode entry: open()")
+                    # Wait for any in-flight disconnected-state mode/CTCSS write
+                    # (it holds _port_lock while it has COM open); opening the
+                    # port concurrently made Connect fail with "COM is in use"
+                    # (Issue #37).
+                    with self._port_lock:
+                        _open_rig_with_retry(rig, "RigDirect satmode entry: open()")
                     time.sleep(0.5)
                     rig.set_func(_H.RIG_FUNC_SATMODE, 0 if leave_sat else 1)
                     _check_rig_ok(rig, "RigDirect satmode entry: set_func(SATMODE)")

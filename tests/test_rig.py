@@ -5107,3 +5107,39 @@ class TestLiveCtcssAutoReconnect:
         ctrl.connect = MagicMock(return_value=False)  # type: ignore[method-assign]
         with patch("rig.controller.time.sleep"), pytest.raises(RigControlError):
             ctrl.apply_mode_ctcss_live("FM", "FM", 74.4)
+
+
+class TestConnectWaitsForPortLock:
+    """Issue #37: Connect must not open COM while a disconnected-state
+    mode/CTCSS write holds _port_lock."""
+
+    def test_satmode_connect_waits_for_port_lock(self) -> None:
+        import threading as _th
+
+        ctrl = HamlibDirectController(model_id=3081, port="/dev/null")
+        mock_rig = MagicMock(error_status=0)
+        fake_hamlib = MagicMock()
+        fake_hamlib.Rig.return_value = mock_rig
+        opened = _th.Event()
+        ctrl._port_lock.acquire()
+        released = False
+        try:
+            with (
+                patch.dict("sys.modules", {"Hamlib": fake_hamlib}),
+                patch("rig.controller.HAMLIB_AVAILABLE", True),
+                patch("rig.controller.time.sleep"),
+                patch(
+                    "rig.controller._open_rig_with_retry",
+                    side_effect=lambda *a, **k: opened.set(),
+                ),
+            ):
+                t = _th.Thread(target=ctrl.connect, daemon=True)
+                t.start()
+                assert not opened.wait(0.5)  # blocked while the lock is held
+                ctrl._port_lock.release()
+                released = True
+                assert opened.wait(5.0)
+                t.join(5.0)
+        finally:
+            if not released:
+                ctrl._port_lock.release()
