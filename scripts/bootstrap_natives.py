@@ -335,6 +335,8 @@ def _extract_flat(archive: Path, dest_dir: Path) -> None:
         members = tf.getmembers()
         prefix = members[0].name.split("/")[0] + "/" if members else ""
         for member in members:
+            if member.name == prefix.rstrip("/"):
+                continue  # the top-level directory entry itself
             if member.name.startswith(prefix):
                 member.name = member.name[len(prefix) :]
             if member.name:

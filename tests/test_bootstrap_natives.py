@@ -105,3 +105,20 @@ class TestPosixComponents:
         monkeypatch.setattr(bn.sys, "platform", "linux")
         monkeypatch.setattr(bn.platform, "machine", lambda: "aarch64")
         assert bn.main(["--quiet"]) == 0
+
+
+def test_tar_top_level_directory_is_not_left_behind(tmp_path: Path) -> None:
+    import io
+    import tarfile
+
+    archive = tmp_path / "a.tar.gz"
+    with tarfile.open(archive, "w:gz") as tf:
+        top = tarfile.TarInfo("pkg-flat")
+        top.type = tarfile.DIRTYPE
+        tf.addfile(top)
+        info = tarfile.TarInfo("pkg-flat/tool")
+        info.size = 3
+        tf.addfile(info, io.BytesIO(b"abc"))
+    dest = tmp_path / "out"
+    bn._extract_flat(archive, dest)
+    assert sorted(p.name for p in dest.iterdir()) == ["tool"]

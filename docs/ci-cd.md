@@ -106,5 +106,11 @@ SSDV タブが使う `ssdv`（https://github.com/fsphil/ssdv、GPL-3.0）は、`
 `ci.yml` の取り込みは、`ssdv-dslwp` が無い旧バンドルでも失敗せず警告のみ。`bootstrap_natives.py` は
 `extra_key_files` で `ssdv-dslwp.exe` が無い既存インストールを再取得する。**公開済みの `ssdv-bundle` は
 `build-ssdv.yml` を再実行するまで `ssdv-dslwp` を含まない。**
+**Linux / macOS のソース実行でも `ssdv` は自動導入される（2026-11-13）**: 配布アプリには同梱されるが、ソース実行の
+Linux は apt にも `ssdv` が無く、SSDV タブが「フレームは出るが画像にならない」状態になっていた（GPD で発覚）。
+`bootstrap_natives.py` の `ssdv` コンポーネントに Linux x86_64（`ssdv-linux-x86_64.tar.gz`）・macOS arm64 のアセットを
+追加し（`posix_assets`）、Windows 以外では **`ssdv` だけ**を対象にする（他は従来どおり Windows 専用）。
+`scripts/linux_launch.sh` が起動のたびに実行する（導入済みならネットワークに出ず即スキップ。オフラインは失敗しても起動は続ける）。
+導入先は `~/.local/share/fbsat59/ssdv/`（アプリが `find_ssdv()` で探す場所）。
 リリースが未作成でも本体ビルドは失敗しない（警告のみ）。詳細は [communications.md](communications.md) の
 「SSDV の受信・「生パケット」/「画像」サブタブ」。
