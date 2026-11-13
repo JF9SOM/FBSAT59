@@ -5065,3 +5065,42 @@ class TestHamlibTraceViaCrt:
 
         with patch("rig.controller.sys.platform", "darwin"):
             assert _open_trace_file_via_crt(MagicMock(), "/tmp/x.log") is False
+
+
+class TestLiveCtcssAutoReconnect:
+    """Issue #37: a failed live mode/CTCSS change must auto-reconnect."""
+
+    def _ctrl(self) -> HamlibDirectController:
+        ctrl = HamlibDirectController(model_id=3081, port="/dev/null")
+        ctrl._rig = MagicMock(error_status=0)
+        ctrl._satmode_active = True
+        with ctrl._lock:
+            ctrl._state = RigState.CONNECTED
+        return ctrl
+
+    def test_failure_triggers_reconnect_and_no_error(self) -> None:
+        ctrl = self._ctrl()
+
+        def fail() -> None:
+            ctrl._last_hamlib_error = "stage2: boom (Hamlib error -9)"
+
+        ctrl._resend_mode_ctcss_via_rig = fail  # type: ignore[method-assign]
+        ctrl.disconnect = MagicMock()  # type: ignore[method-assign]
+        ctrl.connect = MagicMock(return_value=True)  # type: ignore[method-assign]
+        with patch("rig.controller.time.sleep"):
+            ctrl.apply_mode_ctcss_live("FM", "FM", 74.4)
+        ctrl.disconnect.assert_called_once()
+        ctrl.connect.assert_called_once()
+        assert ctrl._pending_mode_ctcss is True
+
+    def test_failed_reconnect_still_raises(self) -> None:
+        ctrl = self._ctrl()
+
+        def fail() -> None:
+            ctrl._last_hamlib_error = "stage2: boom"
+
+        ctrl._resend_mode_ctcss_via_rig = fail  # type: ignore[method-assign]
+        ctrl.disconnect = MagicMock()  # type: ignore[method-assign]
+        ctrl.connect = MagicMock(return_value=False)  # type: ignore[method-assign]
+        with patch("rig.controller.time.sleep"), pytest.raises(RigControlError):
+            ctrl.apply_mode_ctcss_live("FM", "FM", 74.4)

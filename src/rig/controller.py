@@ -3747,14 +3747,44 @@ class HamlibDirectController(RigController):
             self._current_ctcss_hz = ctcss_hz
             self._last_hamlib_error = None
             self._resend_mode_ctcss_via_rig()
-            if self._last_hamlib_error:
-                raise RigControlError(self._last_hamlib_error)
+            failure = self._last_hamlib_error
+        if failure:
+            # Issue #37: after a failed live resend the IC-9700 can keep
+            # answering NG to every CI-V command for a minute or more, which
+            # freezes Doppler until the user disconnects and reconnects by
+            # hand. Do exactly that automatically.
+            if self._auto_reconnect_after_live_failure(failure):
+                return
+            raise RigControlError(failure)
         logger.info(
             "RigDirect: apply_mode_ctcss_live dl=%s ul=%s ctcss=%.1f (no disconnect)",
             dl_mode,
             ul_mode,
             ctcss_hz,
         )
+
+    def _auto_reconnect_after_live_failure(self, reason: str) -> bool:
+        """Disconnect and reconnect after a failed live mode/CTCSS change.
+
+        The cached transponder state (_current_dl/ul_mode, _current_ctcss_hz)
+        was already updated by the caller, so raising _pending_mode_ctcss makes
+        the normal Stage-2 resend apply it on the first Doppler write after
+        connect(). Returns True if the rig is connected again.
+        """
+        logger.warning("RigDirect: live mode/CTCSS failed (%s) -- auto-reconnecting", reason)
+        try:
+            self.disconnect()
+            time.sleep(1.0)
+            self._pending_mode_ctcss = True
+            ok = self.connect()
+        except Exception as exc:
+            logger.error("RigDirect: auto-reconnect raised: %s", exc)
+            return False
+        if ok:
+            logger.info("RigDirect: auto-reconnect succeeded; Doppler tracking resumes")
+        else:
+            logger.error("RigDirect: auto-reconnect failed")
+        return bool(ok)
 
     def _send_freq_preset_direct(self, dl_hz: float, ul_hz: float) -> None:
         """Briefly open the rig to write DL/UL frequencies at transponder selection.
