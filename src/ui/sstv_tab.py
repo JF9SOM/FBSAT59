@@ -85,7 +85,7 @@ _MODE_SSTV = "SSTV"
 _MODE_SSDV = "SSDV (AX.25)"
 _MODE_GR_SSDV = "SSDV (CCSDS BPSK 9k6)"
 # Fourth mode: bare 800 baud 2FSK SSDV (HADES-SA), demodulated by comms.sstv.fsk_ssdv.
-_MODE_FSK_SSDV = "SSDV (2FSK 800bps)"
+_MODE_FSK_SSDV = "SSDV (2FSK 800/200bps)"
 # Fifth mode: ERMINAZ-2U / 2V / 2X SSDV (APID 500 space packets over CCSDS TM frames, 9k6 GMSK),
 # received by this app's own demodulator (comms.erminaz) from an SDR's I/Q.
 _MODE_ERMINAZ_SSDV = "SSDV (ERMINAZ-2 9k6)"
@@ -420,8 +420,8 @@ class SstvTab(QWidget):
                 "SSDV (CCSDS BPSK 9k6): ASRTU-1 / AO-123 (NORAD 61781) 436.210 MHz, "
                 "decoded by gr-satellites. Needs an SDR.\n"
                 "\n"
-                "SSDV (2FSK 800bps): HADES-SA / SO-127 (NORAD 68446) 436.875 MHz, raw "
-                "800 baud 2FSK (AMSAT-EA format). Needs an SDR.\n"
+                "SSDV (2FSK 800/200bps): HADES-SA / SO-127 (NORAD 68446) 436.875 MHz, raw "
+                "800 or 200 baud 2FSK (AMSAT-EA format). Needs an SDR.\n"
                 "\n"
                 "Selecting HADES-SA or ASRTU-1 switches the mode automatically."
             )
@@ -1215,7 +1215,7 @@ class SstvTab(QWidget):
         self._update_raw_count()
 
     # ------------------------------------------------------------------ #
-    # SSDV (2FSK 800bps) mode (HADES-SA)
+    # SSDV (2FSK 800/200bps) mode (HADES-SA)
     # ------------------------------------------------------------------ #
 
     def _start_fsk_ssdv(self) -> None:
@@ -1245,7 +1245,7 @@ class SstvTab(QWidget):
         self._ssdv_frames = 0
         self._ssdv_packets = 0
         self._update_raw_count()
-        self._status_label.setText(_("SSDV (2FSK 800bps): waiting for packets…"))
+        self._status_label.setText(_("SSDV (2FSK 800/200bps): waiting for packets…"))
 
     def _stop_fsk_ssdv_reception(self) -> None:
         """Detach and stop the 2FSK demodulator, if running."""

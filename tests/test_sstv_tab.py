@@ -230,7 +230,7 @@ def test_satellite_combo_lists_the_satellites_of_each_mode(
     assert listed() == {7, 68796}  # ARICA-2 is always offered here
     t._mode_combo.setCurrentText("SSDV (CCSDS BPSK 9k6)")
     assert listed() == {61781}
-    t._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
+    t._mode_combo.setCurrentText("SSDV (2FSK 800/200bps)")
     assert listed() == {68446}
     with qtbot.waitSignal(t.satellite_selected) as blocker:
         t._mode_combo.setCurrentText("SSTV")
@@ -709,7 +709,7 @@ def test_mode_combo_offers_the_gr_satellites_mode(tab: SstvTab) -> None:
         "SSDV (AX.25)",
         "SSDV (CCSDS BPSK 9k6)",
         "SSDV (GEOSCAN 9k6)",
-        "SSDV (2FSK 800bps)",
+        "SSDV (2FSK 800/200bps)",
         "SSDV (ERMINAZ-2 9k6)",
     ]
 
@@ -803,7 +803,7 @@ def _connect_fsk_sdr(rc: _FakeRadioControl) -> _FskPipeline:
 
 
 def test_fsk_mode_without_an_sdr_says_so(tab: SstvTab) -> None:
-    tab._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
+    tab._mode_combo.setCurrentText("SSDV (2FSK 800/200bps)")
     assert tab._view_tabs.currentWidget() is tab._raw_page
     assert tab._status_label.text() == ""  # the top "Input:" label carries the notice
     assert tab._fsk_demod is None
@@ -813,7 +813,7 @@ def test_fsk_mode_subscribes_to_the_sdr_and_leaving_unsubscribes(
     tab: SstvTab, rc: _FakeRadioControl
 ) -> None:
     pipeline = _connect_fsk_sdr(rc)
-    tab._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
+    tab._mode_combo.setCurrentText("SSDV (2FSK 800/200bps)")
     demod = tab._fsk_demod
     assert demod is not None
     assert [cb for cb in pipeline.subscribers if cb.__self__ is demod] != []
@@ -823,7 +823,7 @@ def test_fsk_mode_subscribes_to_the_sdr_and_leaving_unsubscribes(
 
 
 def test_fsk_mode_starts_when_the_sdr_connects_later(tab: SstvTab, rc: _FakeRadioControl) -> None:
-    tab._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
+    tab._mode_combo.setCurrentText("SSDV (2FSK 800/200bps)")
     pipeline = _connect_fsk_sdr(rc)
     assert tab._fsk_demod is not None
     assert [cb for cb in pipeline.subscribers if cb.__self__ is tab._fsk_demod] != []
@@ -832,7 +832,7 @@ def test_fsk_mode_starts_when_the_sdr_connects_later(tab: SstvTab, rc: _FakeRadi
 def test_fsk_packets_show_as_hex_and_reach_the_decoder(tab: SstvTab) -> None:
     from tests.test_fsk_ssdv import hades_packet
 
-    tab._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
+    tab._mode_combo.setCurrentText("SSDV (2FSK 800/200bps)")
     tab._on_fsk_packet(hades_packet(0), True)
     tab._on_fsk_packet(hades_packet(1), True)
     assert tab._ssdv_frames == 2
@@ -847,7 +847,7 @@ def test_fsk_bit_errored_copy_is_repaired_and_never_replaces_a_valid_packet(
 ) -> None:
     from tests.test_fsk_ssdv import hades_packet
 
-    tab._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
+    tab._mode_combo.setCurrentText("SSDV (2FSK 800/200bps)")
     good = hades_packet(4)
     bad = bytearray(good)
     bad[50] ^= 0xFF
@@ -866,7 +866,7 @@ def test_fsk_bit_errored_copy_is_repaired_and_never_replaces_a_valid_packet(
 
 def test_hades_sa_selects_the_2fsk_mode(tab: SstvTab, rc: _FakeRadioControl) -> None:
     rc.transmitter_changed.emit({"description": "FSK 800 bps", "norad_cat_id": 68446})
-    assert tab._mode_combo.currentText() == "SSDV (2FSK 800bps)"
+    assert tab._mode_combo.currentText() == "SSDV (2FSK 800/200bps)"
     assert tab._view_tabs.currentWidget() is tab._raw_page
 
 
@@ -944,7 +944,7 @@ def test_ccsds_dslwp_packets_are_kept_too(
 def test_2fsk_packets_are_stored_for_hades_sa(tab: SstvTab) -> None:
     from tests.test_fsk_ssdv import hades_packet
 
-    tab._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
+    tab._mode_combo.setCurrentText("SSDV (2FSK 800/200bps)")
     tab._on_fsk_packet(hades_packet(0), True)
     tab._on_fsk_packet(hades_packet(1), True)
     assert tab._store is not None
@@ -966,7 +966,7 @@ def test_ax25_packets_are_stored_under_the_selected_satellite(
 def test_building_a_stored_picture_loads_all_its_packets(tab: SstvTab) -> None:
     from tests.test_fsk_ssdv import hades_packet
 
-    tab._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
+    tab._mode_combo.setCurrentText("SSDV (2FSK 800/200bps)")
     for n in range(3):
         tab._on_fsk_packet(hades_packet(n), True)
     assert tab._store is not None and tab._ssdv_decoder is not None
@@ -980,7 +980,7 @@ def test_stored_images_dialog_lists_pictures(qtbot: QtBot, tab: SstvTab) -> None
     from tests.test_fsk_ssdv import hades_packet
     from ui.ssdv_store_dialog import SsdvStoreDialog
 
-    tab._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
+    tab._mode_combo.setCurrentText("SSDV (2FSK 800/200bps)")
     tab._on_fsk_packet(hades_packet(0, image=32), True)
     tab._on_fsk_packet(hades_packet(1, image=32), True)
     assert tab._store is not None
@@ -1230,7 +1230,7 @@ def test_auto_save_checkbox_off_writes_no_file_and_on_writes_exactly_one(
 def test_building_a_stored_picture_also_shows_its_hex_packets(tab: SstvTab) -> None:
     from tests.test_fsk_ssdv import hades_packet
 
-    tab._mode_combo.setCurrentText("SSDV (2FSK 800bps)")
+    tab._mode_combo.setCurrentText("SSDV (2FSK 800/200bps)")
     for n in (2, 0, 1):
         tab._on_fsk_packet(hades_packet(n), True)
     tab._raw_edit.appendPlainText("a live line that must go away")

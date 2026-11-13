@@ -1,7 +1,7 @@
 """Persistent store of received SSDV packets, so one picture can be built from several passes.
 
 A satellite sends a picture's packets over and over; one pass rarely delivers them all.
-Every SSDV mode of the SSTV / SSDV tab (AX.25, CCSDS BPSK 9k6 "DSLWP", 2FSK 800bps) hands its
+Every SSDV mode of the SSTV / SSDV tab (AX.25, CCSDS BPSK 9k6 "DSLWP", 2FSK 800/200bps) hands its
 valid packets to this store. Packets are grouped per satellite, packet format and image id.
 A packet joins the newest group with the same image id and picture size; if that group
 already holds a *different* packet with the same number, the satellite has reused the image id

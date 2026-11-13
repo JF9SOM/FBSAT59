@@ -6025,8 +6025,8 @@ msgid ""
 "SSDV (CCSDS BPSK 9k6): ASRTU-1 / AO-123 (NORAD 61781) 436.210 MHz, decoded "
 "by gr-satellites. Needs an SDR.\n"
 "\n"
-"SSDV (2FSK 800bps): HADES-SA / SO-127 (NORAD 68446) 436.875 MHz, raw 800 "
-"baud 2FSK (AMSAT-EA format). Needs an SDR.\n"
+"SSDV (2FSK 800/200bps): HADES-SA / SO-127 (NORAD 68446) 436.875 MHz, raw 800 "
+"or 200 baud 2FSK (AMSAT-EA format). Needs an SDR.\n"
 "\n"
 "Selecting HADES-SA or ASRTU-1 switches the mode automatically."
 msgstr ""
@@ -6156,7 +6156,7 @@ msgid "⚠ Could not start the 2FSK demodulator."
 msgstr ""
 
 #: src/ui/sstv_tab.py:1248
-msgid "SSDV (2FSK 800bps): waiting for packets…"
+msgid "SSDV (2FSK 800/200bps): waiting for packets…"
 msgstr ""
 
 #: src/ui/sstv_tab.py:1304
