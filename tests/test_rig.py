@@ -1612,6 +1612,9 @@ class TestApplyModeCtcssLive:
         mock_rig_inst = MagicMock()
         mock_hamlib = self._mock_hamlib(mock_rig_inst, error_status=-5)
         ctrl = self._make_connected_ctrl(mock_rig_inst)
+        # Issue #37: a failure now triggers an auto-reconnect first; the error
+        # only surfaces when that reconnect fails too.
+        ctrl.connect = MagicMock(return_value=False)  # type: ignore[method-assign]
         with (
             patch.dict(
                 "sys.modules", {"Hamlib": mock_hamlib, "serial": self._mock_serial_module()}
