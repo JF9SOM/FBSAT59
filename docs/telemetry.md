@@ -295,6 +295,26 @@ gr-satellites モードの行は、`parse_gr_packet()` が空なら `parse_gr_pd
 - テスト: `tests/test_telemetry_decoder.py`（実フレーム 4 種の値）、`tests/test_telemetry_tab.py`
   （PDU ダンプの行が「全項目デコード結果」を埋める）。**GUI（実アプリでの見え方）は未確認**。
 
+### QMR-KWT 2（RS95S、NORAD 67291）の USP 同梱 satyaml（2026-11-20）
+
+gr-satellites のカタログに無い Sputnix プラットフォーム衛星。テレメトリは **USP フレーミング**
+（`framing: USP`。ARCCUBE-1 等と同じデフレーマ）で包んだ AX.25 UI フレーム（発信元 RS95S-1、宛先 R2ANF）。
+SatNOGS の DB では GMSK2k4／4k8／9k6 の送信機が混在しているが、**2026-02-17 頃に 2400→9600 baud へ切替**
+（Libre Space フォーラム）。
+[`src/data/gr_satellites_extra/QMR-KWT-2.yml`](../src/data/gr_satellites_extra/QMR-KWT-2.yml) に 9k6（偏移 2400）と 2k4（偏移 1200）を
+定義（フォーラムで PE0SAT 氏が共有した定義がベース。2k4 は未検証）。
+
+- **実録音での確認**: `67291_QMR-KWT_2_20261120T015656Z.iq.wav`（250 kHz、545 秒、GPD の外付け SSD）。
+  バーストは **30 秒周期・約 0.5 秒・−1 kHz 付近**（254/284/314/344/374/434 秒）。FM 弁別出力に 9600 Hz のクロック線、
+  二乗スペクトルの線間隔 9.6 kHz → 9600 baud・変調指数 0.5。gr_satellites（このファイルの yml、
+  `--wavfile … --iq`）で **284/314/344 秒の 3 バーストから 89 バイトのフレーム 3 つ**を復号（衛星内時刻は 30 秒間隔で進む）。
+  254/374/434 秒の弱いバーストは `--syncword_threshold` を 12 まで上げても 0 フレーム。
+- **アプリのコヒーレント MSK 検波では復号できない**: G3RUH＋HDLC 前提なので 0 フレーム（USP は CCSDS 型の畳み込み符号）。
+- **info の中身は未解読**: 先頭 `FB 02 00 01 00 19 00`。SatNOGS の `sputnixusp.ksy`（satnogs-decoders MR 499）が定義元だが、
+  単位・換算式の公開情報が無い。`67291.json` は未作成（受信・生バイト表示のみ）。
+- テスト: `tests/test_gr_satellites_backend.py::TestExtraSatyaml::test_shipped_qmr_kwt_2_definition`（定義の値のみ）。
+  **アプリ（Telemetry タブ）での実表示は未確認**。
+
 ### Geoscan-2（NORAD 64890）の BEACON 全項目デコード（2026-11-12）
 
 SatNOGS の `geoscan.ksy`（Geoscan 教育プラットフォーム）を [`64890.json`](../src/data/telemetry_formats/64890.json)

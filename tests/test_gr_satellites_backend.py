@@ -305,6 +305,18 @@ class TestExtraSatyaml:
         assert tx["frame size"] == 223
         assert tx["baudrate"] == 9600
 
+    def test_shipped_qmr_kwt_2_definition(self) -> None:
+        import yaml
+
+        data = yaml.safe_load((backend._EXTRA_SATYAML_DIR / "QMR-KWT-2.yml").read_text())
+        tx = data["transmitters"]["9k6 FSK USP downlink"]
+        assert data["norad"] == 67291
+        assert tx["framing"] == "USP"
+        assert tx["baudrate"] == 9600
+        assert tx["deviation"] == 2400
+        assert tx["frequency"] == 436.950e6
+        assert data["transmitters"]["2k4 FSK USP downlink"]["baudrate"] == 2400
+
     @pytest.mark.parametrize(("suffix", "norad"), [("2V", 98208), ("2X", 98209)])
     def test_shipped_erminaz_vhf_definitions(self, suffix: str, norad: int) -> None:
         import yaml

@@ -1,0 +1,32 @@
+# QMR-KWT 2 (RS95S, NORAD 67291), a Sputnix platform CubeSat with an FM repeater.
+# gr-satellites' own catalog has no entry for it. The telemetry uses Sputnix's USP framing
+# (the same deframer as e.g. ARCCUBE-1) around an AX.25 UI frame (src RS95S-1, dest R2ANF).
+# Verified on a real IQ recording (2026-11-20, 250 kHz, ~545 s): the 9600 baud GMSK bursts
+# (every 30 s, ~0.5 s long, modulation index 0.5) gave 3 frames of 89 bytes from the three
+# strongest bursts. The satellite switched from 2400 to 9600 baud around 2026-02-17; the 2400
+# entry follows the community definition (Libre Space forum) and is not verified by us.
+# The 89-byte info field starts with "FB 02 00 01 00 19 00"; its fields are not decoded.
+name: QMR-KWT-2
+alternative_names:
+   - RS95S
+norad: 67291
+data:
+   &tlm Telemetry:
+     telemetry: ax25
+transmitters:
+   9k6 FSK USP downlink:
+     frequency: 436.950e+6
+     modulation: FSK
+     baudrate: 9600
+     deviation: 2400
+     framing: USP
+     data:
+     - *tlm
+   2k4 FSK USP downlink:
+     frequency: 436.950e+6
+     modulation: FSK
+     baudrate: 2400
+     deviation: 1200
+     framing: USP
+     data:
+     - *tlm
