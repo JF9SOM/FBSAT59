@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import json
+import struct
 from pathlib import Path
 from typing import Any
 
@@ -237,6 +238,75 @@ def test_umka1_defs_have_one_sub_tab_per_record() -> None:
     defs = get_telemetry_id_defs(57172)
     assert defs is not None
     assert list(defs) == ["beacon_uhf", "telemetry_ps"]
+
+
+# Real QMR-KWT 2 (NORAD 67291) frames from the IQ recording of 2026-11-20 (gr-satellites USP
+# framing, 89-byte AX.25 info fields: a 0x4246 UHF beacon followed by a 0xED21 5-channel PS record).
+_QMR_INFO = [
+    bytes.fromhex(
+        "4642020001001900fe00ff711e13000e03aaff6a885b0400802500002a00c81e0021ed0400010030"
+        "00890cc6134b05ac006e00b804730000003100000000000000fafd2cfe25fedafd00400000d01eb0"
+        "5c04008550995a1a04"
+    ),
+    bytes.fromhex(
+        "4642020001001900ff00ff6e1e13000e21aaff6aa65b0400802500003800c81e0021ed0400010030"
+        "004b0c2c0e5605df006700ab03850000002e0000000000000000fe3efe38fee1fd00400000d01ece"
+        "5c0400a350995a1a04"
+    ),
+]
+
+
+def test_qmr_kwt2_uhf_beacon_and_ps_are_decoded() -> None:
+    tf = decode_telemetry("RS95S-1", _QMR_INFO[0], 67291)
+    assert tf.record_ids == ["beacon_uhf", "telemetry_ps_5ch"]
+    by_name = {f.name: f for f in tf.fields}
+    assert by_name["uhf_time"].unit == "2026-11-20 02:01:39 UTC"
+    assert by_name["uhf_uptime"].scaled_value == 285576
+    assert by_name["uhf_rxbitrate"].scaled_value == 9600
+    assert by_name["uhf_voltage"].scaled_value == 7880
+    assert by_name["uhf_pf"].scaled_value == 30
+    assert by_name["ps_usb2"].scaled_value == 5062
+    assert by_name["ps_iab"].scaled_value == 115
+    assert by_name["ps_ich2"].scaled_value == 49
+    assert by_name["ps_uab"].scaled_value == 7888
+    assert by_name["ps_reg_tel_id"].scaled_value == 285872
+    assert by_name["ps_t1"].scaled_value == pytest.approx(-5.18)
+    assert by_name["ps_t4"].scaled_value == pytest.approx(-5.50)
+
+
+def test_qmr_kwt2_second_frame_advances_by_thirty_seconds() -> None:
+    first = {f.name: f for f in decode_telemetry("RS95S-1", _QMR_INFO[0], 67291).fields}
+    second = {f.name: f for f in decode_telemetry("RS95S-1", _QMR_INFO[1], 67291).fields}
+    assert second["uhf_uptime"].scaled_value - first["uhf_uptime"].scaled_value == 30
+    assert second["ps_reg_tel_id"].scaled_value - first["ps_reg_tel_id"].scaled_value == 30
+    assert second["ps_t2"].scaled_value == pytest.approx(-4.50)
+
+
+def test_qmr_kwt2_record_layouts_fill_their_record_sizes() -> None:
+    """Every record's last field ends exactly at the SatNOGS ksy structure size."""
+    fmt = load_format(67291)
+    assert fmt is not None
+    sizes = {"4246": 25, "ED21": 48, "DE21": 46, "DF25": 43, "4216": 66}
+    types = fmt["records"]["types"]
+    assert set(types) == set(sizes)
+    for rtype, size in sizes.items():
+        assert max(f["offset"] + f["length"] for f in types[rtype]["fields"]) == size, rtype
+
+
+def test_qmr_kwt2_unverified_general_telemetry_record_is_decoded() -> None:
+    body = bytearray(66)
+    struct.pack_into("<H", body, 0, 3300)  # ps_usb1
+    struct.pack_into("<h", body, 12, -37)  # ps_iab
+    struct.pack_into(">h", body, 48, -97)  # uhf_rssi_rx
+    struct.pack_into("<H", body, 64, 7900)  # uhf_voltage
+    frame = struct.pack("<HHHH", 0x4216, 0, 0, len(body)) + bytes(body)
+    tf = decode_telemetry("RS95S-1", frame, 67291)
+    assert tf.record_ids == ["general_tlm"]
+    by_name = {f.name: f for f in tf.fields}
+    assert by_name["ps_usb1"].scaled_value == 3300
+    assert by_name["ps_iab"].scaled_value == -37
+    assert by_name["uhf_rssi_rx"].scaled_value == -97
+    assert by_name["uhf_voltage"].scaled_value == 7900
 
 
 # Real Lobachevsky (NORAD 67284) frames from the IQ recording of 2026-10-19 (decoded by

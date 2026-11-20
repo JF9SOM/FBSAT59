@@ -310,10 +310,22 @@ SatNOGS の DB では GMSK2k4／4k8／9k6 の送信機が混在しているが�
   `--wavfile … --iq`）で **284/314/344 秒の 3 バーストから 89 バイトのフレーム 3 つ**を復号（衛星内時刻は 30 秒間隔で進む）。
   254/374/434 秒の弱いバーストは `--syncword_threshold` を 12 まで上げても 0 フレーム。
 - **アプリのコヒーレント MSK 検波では復号できない**: G3RUH＋HDLC 前提なので 0 フレーム（USP は CCSDS 型の畳み込み符号）。
-- **info の中身は未解読**: 先頭 `FB 02 00 01 00 19 00`。SatNOGS の `sputnixusp.ksy`（satnogs-decoders MR 499）が定義元だが、
-  単位・換算式の公開情報が無い。`67291.json` は未作成（受信・生バイト表示のみ）。
-- テスト: `tests/test_gr_satellites_backend.py::TestExtraSatyaml::test_shipped_qmr_kwt_2_definition`（定義の値のみ）。
-  **アプリ（Telemetry タブ）での実表示は未確認**。
+- **info の中身（全項目表示、同日）**: [`67291.json`](../src/data/telemetry_formats/67291.json)（`records` スキーマ。
+  UmKA-1 の 57172.json と同じ Sputnix 基盤）。info は `u16 種別, u16, u16, u16 長さ` のレコードの連なりで、
+  受信した 3 フレームはすべて `0x4246`（UHF ビーコン 25 バイト）＋`0xED21`（5ch 電源系 48 バイト）の 89 バイト。
+  単位は SatNOGS `sputnixusp.ksy` のコメント（mV・mA・℃・dBm・秒）から。**実フレームでの裏付け**: `uhf_time` が
+  バースト時刻と 1 秒以内で一致、`uptime` が 30 秒ずつ増加、`rxbitrate`=9600、電池電圧 7888 mV＝UHF 電圧 7880 mV と整合。
+- **推定した単位**: 電池温度（`ps_t1〜t4`、生値 −518 など）は **生値÷100 ℃**（−5.2 ℃。生値を ℃ とすると不可能。
+  UmKA-1 の生値 568 も同フレームの UHF アンプ 5 ℃と整合）。`uhf_rss_rx` は常に 255（受信なしの意味と思われる。
+  UmKA-1 流に負値スケール −1 のまま）、`rssi_idle` 108〜113 は −113 dBm 前後の雑音レベル。
+  PS の時刻 `ps_time` は 2018-03-02 の値で UTC 未設定（正しい時刻は `uhf_time`）。
+  フラグ類・`ps_reg_tel_id`（uptime との差が 296 秒で一定）・`ps_nres`・`ps_flags` は生値。
+- **未受信の種別（ksy のみ・検証なし）**: `0xDE21`（4ch 電源系）、`0xDF25`（6U 定期テレメトリ。`uab`/`uab1`/`uab2` は
+  ksy が mA と書くが電圧と見て mV、チャンネル状態 30 ビットは 4 バイトの生値）、`0x4216`（汎用テレメトリ＝4ch 電源系＋UHF 部、
+  `rssi_rx` は int16 ビッグエンディアン）。
+- テスト: `tests/test_gr_satellites_backend.py::TestExtraSatyaml::test_shipped_qmr_kwt_2_definition`（定義の値）、
+  `tests/test_telemetry_decoder.py` の `test_qmr_kwt2_*`（実フレーム 2 つ、全レコードのサイズ整合、`0x4216` の合成フレーム）。
+  **アプリ（Telemetry タブ）での実表示は未確認**。UmKA-1 側の電池温度も同じ ÷100 の可能性が高いが、未変更（57172.json は生値表示のまま）。
 
 ### Geoscan-2（NORAD 64890）の BEACON 全項目デコード（2026-11-12）
 

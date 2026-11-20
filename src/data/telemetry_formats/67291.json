@@ -1,0 +1,1127 @@
+{
+  "norad": 67291,
+  "name": "QMR-KWT 2",
+  "callsign": "RS95S",
+  "modulation": "GFSK9k6",
+  "ax25_pid": "0xF0",
+  "reference": "https://gitlab.com/librespacefoundation/satnogs/satnogs-decoders/-/blob/master/ksy/sputnixusp.ksy",
+  "document": "SatNOGS decoders \"sputnixusp.ksy\" (Kaitai Struct), Sputnix Unified Protocol (same family as UmKA-1, 57172). Record types 0x4246 (UHF beacon) and 0xED21 (5-channel power system) are verified on 3 real frames of the 2026-11-20 IQ recording (UHF time matches the burst time within 1 s, uptime advances 30 s per frame, bit rate field 9600, battery voltage matches the UHF voltage). 0xDE21, 0xDF25 and 0x4216 follow the ksy but no such frame has been received. Units come from the ksy comments; the battery/board temperatures are raw/100 degC by inference (raw -518 would be impossible as degC; UmKA-1 shows +5.7 degC next to a 5 degC amplifier; QMR-KWT 2 shows -5.2 degC next to -2 degC). uhf_rss_rx is 255 (probably 'no signal') in all frames. The PS clock reads 2018-03-02, i.e. it is not set to UTC.",
+  "records": {
+    "types": {
+      "4246": {
+        "id": "beacon_uhf",
+        "label": "UHF beacon (0x4246)",
+        "label_ja": "UHFビーコン(0x4246)",
+        "fields": [
+          {
+            "name": "uhf_t_amp",
+            "offset": 0,
+            "length": 1,
+            "type": "int8",
+            "label": "UHF amplifier temperature",
+            "label_ja": "UHFアンプ温度",
+            "unit": "℃"
+          },
+          {
+            "name": "uhf_t_uhf",
+            "offset": 1,
+            "length": 1,
+            "type": "int8",
+            "label": "UHF temperature",
+            "label_ja": "UHF温度",
+            "unit": "℃"
+          },
+          {
+            "name": "uhf_rss_rx",
+            "offset": 2,
+            "length": 1,
+            "type": "uint8",
+            "label": "Received signal strength (RSSI, negative)",
+            "label_ja": "受信信号強度(RSSI、負値)",
+            "scale": -1.0,
+            "unit": "dBm"
+          },
+          {
+            "name": "uhf_rssi_idle",
+            "offset": 3,
+            "length": 1,
+            "type": "uint8",
+            "label": "Idle noise RSSI (negative)",
+            "label_ja": "アイドル時ノイズRSSI(負値)",
+            "scale": -1.0,
+            "unit": "dBm"
+          },
+          {
+            "name": "uhf_pf",
+            "offset": 4,
+            "length": 1,
+            "type": "int8",
+            "label": "Forward power",
+            "label_ja": "進行波電力",
+            "unit": "dBm"
+          },
+          {
+            "name": "uhf_pb",
+            "offset": 5,
+            "length": 1,
+            "type": "int8",
+            "label": "Reflected power",
+            "label_ja": "反射波電力",
+            "unit": "dBm"
+          },
+          {
+            "name": "uhf_nres",
+            "offset": 6,
+            "length": 1,
+            "type": "uint8",
+            "label": "UHF reset count",
+            "label_ja": "UHFリセット回数"
+          },
+          {
+            "name": "uhf_flags",
+            "offset": 7,
+            "length": 1,
+            "type": "uint8",
+            "label": "UHF service flag (raw)",
+            "label_ja": "UHFサービスフラグ(生値)"
+          },
+          {
+            "name": "uhf_time",
+            "offset": 8,
+            "length": 4,
+            "type": "unix_time_le",
+            "label": "UHF time (UTC)",
+            "label_ja": "UHF時刻(UTC)"
+          },
+          {
+            "name": "uhf_uptime",
+            "offset": 12,
+            "length": 4,
+            "type": "uint32_le",
+            "label": "UHF uptime",
+            "label_ja": "UHF稼働時間",
+            "unit": "s"
+          },
+          {
+            "name": "uhf_rxbitrate",
+            "offset": 16,
+            "length": 4,
+            "type": "uint32_le",
+            "label": "Uplink bit rate",
+            "label_ja": "アップリンクビットレート",
+            "unit": "bps"
+          },
+          {
+            "name": "uhf_current",
+            "offset": 20,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "UHF current consumption",
+            "label_ja": "UHF消費電流",
+            "unit": "mA"
+          },
+          {
+            "name": "uhf_voltage",
+            "offset": 22,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "UHF voltage",
+            "label_ja": "UHF電圧",
+            "unit": "mV"
+          },
+          {
+            "name": "uhf_sch_reserved",
+            "offset": 24,
+            "length": 1,
+            "type": "uint8",
+            "label": "(reserved bits)",
+            "label_ja": "(予約ビット)",
+            "mask": 128
+          },
+          {
+            "name": "uhf_backup_sch_active",
+            "offset": 24,
+            "length": 1,
+            "type": "uint8",
+            "label": "Backup schedule running",
+            "label_ja": "バックアップスケジュール実行中",
+            "mask": 64
+          },
+          {
+            "name": "uhf_reset_during_sch",
+            "offset": 24,
+            "length": 1,
+            "type": "uint8",
+            "label": "Reset during schedule execution",
+            "label_ja": "スケジュール実行中にリセット発生",
+            "mask": 32
+          },
+          {
+            "name": "uhf_num_active_schedules",
+            "offset": 24,
+            "length": 1,
+            "type": "uint8",
+            "label": "Active schedule count",
+            "label_ja": "有効スケジュール数",
+            "mask": 31
+          }
+        ]
+      },
+      "ED21": {
+        "id": "telemetry_ps_5ch",
+        "label": "Power system (PS) periodic telemetry, 5 channels (0xED21)",
+        "label_ja": "電源系(PS)定期テレメトリ・5ch(0xED21)",
+        "fields": [
+          {
+            "name": "ps_usb1",
+            "offset": 0,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 1 voltage",
+            "label_ja": "太陽電池1電圧",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_usb2",
+            "offset": 2,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 2 voltage",
+            "label_ja": "太陽電池2電圧",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_usb3",
+            "offset": 4,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 3 voltage",
+            "label_ja": "太陽電池3電圧",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_isb1",
+            "offset": 6,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 1 current",
+            "label_ja": "太陽電池1電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_isb2",
+            "offset": 8,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 2 current",
+            "label_ja": "太陽電池2電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_isb3",
+            "offset": 10,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 3 current",
+            "label_ja": "太陽電池3電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_iab",
+            "offset": 12,
+            "length": 2,
+            "type": "int16_le",
+            "label": "Battery current",
+            "label_ja": "バッテリー電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_ich1",
+            "offset": 14,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Channel 1 current",
+            "label_ja": "チャンネル1電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_ich2",
+            "offset": 16,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Channel 2 current",
+            "label_ja": "チャンネル2電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_ich3",
+            "offset": 18,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Channel 3 current",
+            "label_ja": "チャンネル3電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_ich4",
+            "offset": 20,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Channel 4 current",
+            "label_ja": "チャンネル4電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_ich5",
+            "offset": 22,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Channel 5 current",
+            "label_ja": "チャンネル5電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_t1",
+            "offset": 24,
+            "length": 2,
+            "type": "int16_le",
+            "label": "Battery temperature 1 (inferred: raw / 100)",
+            "label_ja": "電池温度1(推定:生値÷100)",
+            "unit": "℃",
+            "scale": 0.01
+          },
+          {
+            "name": "ps_t2",
+            "offset": 26,
+            "length": 2,
+            "type": "int16_le",
+            "label": "Battery temperature 2 (inferred: raw / 100)",
+            "label_ja": "電池温度2(推定:生値÷100)",
+            "unit": "℃",
+            "scale": 0.01
+          },
+          {
+            "name": "ps_t3",
+            "offset": 28,
+            "length": 2,
+            "type": "int16_le",
+            "label": "Battery temperature 3 (inferred: raw / 100)",
+            "label_ja": "電池温度3(推定:生値÷100)",
+            "unit": "℃",
+            "scale": 0.01
+          },
+          {
+            "name": "ps_t4",
+            "offset": 30,
+            "length": 2,
+            "type": "int16_le",
+            "label": "Battery temperature 4 (inferred: raw / 100)",
+            "label_ja": "電池温度4(推定:生値÷100)",
+            "unit": "℃",
+            "scale": 0.01
+          },
+          {
+            "name": "ps_flags1",
+            "offset": 32,
+            "length": 1,
+            "type": "uint8",
+            "label": "Flag 1 (battery/heater, raw)",
+            "label_ja": "フラグ1(バッテリー/ヒーター、生値)"
+          },
+          {
+            "name": "ps_flags2",
+            "offset": 33,
+            "length": 1,
+            "type": "uint8",
+            "label": "Flag 2 (channel state, raw)",
+            "label_ja": "フラグ2(チャンネル状態、生値)"
+          },
+          {
+            "name": "ps_flags3",
+            "offset": 34,
+            "length": 1,
+            "type": "uint8",
+            "label": "Flag 3 (charge connector voltage, raw)",
+            "label_ja": "フラグ3(充電コネクタ電圧、生値)"
+          },
+          {
+            "name": "ps_uab",
+            "offset": 36,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Battery voltage",
+            "label_ja": "電池電圧",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_reg_tel_id",
+            "offset": 38,
+            "length": 4,
+            "type": "uint32_le",
+            "label": "PS telemetry number",
+            "label_ja": "PSテレメトリ番号"
+          },
+          {
+            "name": "ps_time",
+            "offset": 42,
+            "length": 4,
+            "type": "uint32_le",
+            "label": "PS last telemetry time (raw; clock not set to UTC)",
+            "label_ja": "PS最終テレメトリ時刻(生値。UTC未設定)",
+            "unit": "s"
+          },
+          {
+            "name": "ps_nres",
+            "offset": 46,
+            "length": 1,
+            "type": "uint8",
+            "label": "PS reset count",
+            "label_ja": "PSリセット回数"
+          },
+          {
+            "name": "ps_flags",
+            "offset": 47,
+            "length": 1,
+            "type": "uint8",
+            "label": "PS flag (raw)",
+            "label_ja": "PSフラグ(生値)"
+          }
+        ]
+      },
+      "DE21": {
+        "id": "telemetry_ps",
+        "label": "Power system (PS) periodic telemetry, 4 channels (0xDE21; unverified on QMR-KWT 2)",
+        "label_ja": "電源系(PS)定期テレメトリ・4ch(0xDE21。QMR-KWT 2では未受信)",
+        "fields": [
+          {
+            "name": "ps_usb1",
+            "offset": 0,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 1 voltage",
+            "label_ja": "太陽電池1電圧",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_usb2",
+            "offset": 2,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 2 voltage",
+            "label_ja": "太陽電池2電圧",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_usb3",
+            "offset": 4,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 3 voltage",
+            "label_ja": "太陽電池3電圧",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_isb1",
+            "offset": 6,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 1 current",
+            "label_ja": "太陽電池1電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_isb2",
+            "offset": 8,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 2 current",
+            "label_ja": "太陽電池2電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_isb3",
+            "offset": 10,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 3 current",
+            "label_ja": "太陽電池3電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_iab",
+            "offset": 12,
+            "length": 2,
+            "type": "int16_le",
+            "label": "Battery current",
+            "label_ja": "バッテリー電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_ich1",
+            "offset": 14,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Channel 1 current",
+            "label_ja": "チャンネル1電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_ich2",
+            "offset": 16,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Channel 2 current",
+            "label_ja": "チャンネル2電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_ich3",
+            "offset": 18,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Channel 3 current",
+            "label_ja": "チャンネル3電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_ich4",
+            "offset": 20,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Channel 4 current",
+            "label_ja": "チャンネル4電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_t1",
+            "offset": 22,
+            "length": 2,
+            "type": "int16_le",
+            "label": "Battery temperature 1 (inferred: raw / 100)",
+            "label_ja": "電池温度1(推定:生値÷100)",
+            "unit": "℃",
+            "scale": 0.01
+          },
+          {
+            "name": "ps_t2",
+            "offset": 24,
+            "length": 2,
+            "type": "int16_le",
+            "label": "Battery temperature 2 (inferred: raw / 100)",
+            "label_ja": "電池温度2(推定:生値÷100)",
+            "unit": "℃",
+            "scale": 0.01
+          },
+          {
+            "name": "ps_t3",
+            "offset": 26,
+            "length": 2,
+            "type": "int16_le",
+            "label": "Battery temperature 3 (inferred: raw / 100)",
+            "label_ja": "電池温度3(推定:生値÷100)",
+            "unit": "℃",
+            "scale": 0.01
+          },
+          {
+            "name": "ps_t4",
+            "offset": 28,
+            "length": 2,
+            "type": "int16_le",
+            "label": "Battery temperature 4 (inferred: raw / 100)",
+            "label_ja": "電池温度4(推定:生値÷100)",
+            "unit": "℃",
+            "scale": 0.01
+          },
+          {
+            "name": "ps_flags1",
+            "offset": 30,
+            "length": 1,
+            "type": "uint8",
+            "label": "Flag 1 (battery/heater, raw)",
+            "label_ja": "フラグ1(バッテリー/ヒーター・生値)"
+          },
+          {
+            "name": "ps_flags2",
+            "offset": 31,
+            "length": 1,
+            "type": "uint8",
+            "label": "Flag 2 (channel state, raw)",
+            "label_ja": "フラグ2(チャンネル状態・生値)"
+          },
+          {
+            "name": "ps_flags3",
+            "offset": 32,
+            "length": 1,
+            "type": "uint8",
+            "label": "Flag 3 (charge connector voltage, raw)",
+            "label_ja": "フラグ3(充電コネクタ電圧・生値)"
+          },
+          {
+            "name": "ps_uab",
+            "offset": 34,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Battery voltage",
+            "label_ja": "バッテリー電圧",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_reg_tel_id",
+            "offset": 36,
+            "length": 4,
+            "type": "uint32_le",
+            "label": "PS telemetry number",
+            "label_ja": "PSテレメトリ番号"
+          },
+          {
+            "name": "ps_time",
+            "offset": 40,
+            "length": 4,
+            "type": "uint32_le",
+            "label": "PS last telemetry time (raw)",
+            "label_ja": "PS最終テレメトリ時刻(生値)",
+            "unit": "s"
+          },
+          {
+            "name": "ps_nres",
+            "offset": 44,
+            "length": 1,
+            "type": "uint8",
+            "label": "PS reset count",
+            "label_ja": "PSリセット回数"
+          },
+          {
+            "name": "ps_flags",
+            "offset": 45,
+            "length": 1,
+            "type": "uint8",
+            "label": "PS flag (raw)",
+            "label_ja": "PSフラグ(生値)"
+          }
+        ]
+      },
+      "DF25": {
+        "id": "telemetry_6u",
+        "label": "Regular telemetry, 6U platform (0xDF25; unverified)",
+        "label_ja": "定期テレメトリ・6Uプラットフォーム(0xDF25。未受信)",
+        "fields": [
+          {
+            "name": "ps_usb1",
+            "offset": 0,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 1 voltage",
+            "label_ja": "太陽電池1電圧",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_usb2",
+            "offset": 2,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 2 voltage",
+            "label_ja": "太陽電池2電圧",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_usb3",
+            "offset": 4,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 3 voltage",
+            "label_ja": "太陽電池3電圧",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_isb1",
+            "offset": 6,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 1 current",
+            "label_ja": "太陽電池1電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_isb2",
+            "offset": 8,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 2 current",
+            "label_ja": "太陽電池2電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_isb3",
+            "offset": 10,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 3 current",
+            "label_ja": "太陽電池3電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_iab",
+            "offset": 12,
+            "length": 2,
+            "type": "int16_le",
+            "label": "Battery current",
+            "label_ja": "電池電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_uab",
+            "offset": 14,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Battery voltage (inferred unit: mV)",
+            "label_ja": "電池電圧(単位は推定:mV)",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_uab1",
+            "offset": 16,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Battery 1 voltage (inferred unit: mV)",
+            "label_ja": "電池1電圧(単位は推定:mV)",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_uab2",
+            "offset": 18,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Battery 2 voltage (inferred unit: mV)",
+            "label_ja": "電池2電圧(単位は推定:mV)",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_t1",
+            "offset": 20,
+            "length": 2,
+            "type": "int16_le",
+            "label": "Temperature 1 (inferred: raw / 100)",
+            "label_ja": "温度1(推定:生値÷100)",
+            "unit": "℃",
+            "scale": 0.01
+          },
+          {
+            "name": "ps_t2",
+            "offset": 22,
+            "length": 2,
+            "type": "int16_le",
+            "label": "Temperature 2 (inferred: raw / 100)",
+            "label_ja": "温度2(推定:生値÷100)",
+            "unit": "℃",
+            "scale": 0.01
+          },
+          {
+            "name": "ps_capacity",
+            "offset": 24,
+            "length": 1,
+            "type": "uint8",
+            "label": "Capacity (raw)",
+            "label_ja": "容量(生値)"
+          },
+          {
+            "name": "ps_channels_1_8",
+            "offset": 25,
+            "length": 1,
+            "type": "uint8",
+            "label": "Channel status ch1-8 (bit 7 = ch1, raw)",
+            "label_ja": "チャンネル状態 ch1-8(bit7=ch1、生値)"
+          },
+          {
+            "name": "ps_channels_9_16",
+            "offset": 26,
+            "length": 1,
+            "type": "uint8",
+            "label": "Channel status ch9-16 (bit 7 = ch9, raw)",
+            "label_ja": "チャンネル状態 ch9-16(bit7=ch9、生値)"
+          },
+          {
+            "name": "ps_channels_17_24",
+            "offset": 27,
+            "length": 1,
+            "type": "uint8",
+            "label": "Channel status ch17-24 (bit 7 = ch17, raw)",
+            "label_ja": "チャンネル状態 ch17-24(bit7=ch17、生値)"
+          },
+          {
+            "name": "ps_channels_25_30",
+            "offset": 28,
+            "length": 1,
+            "type": "uint8",
+            "label": "Channel status ch25-30 (bit 7 = ch25; bits 1-0 reserved, raw)",
+            "label_ja": "チャンネル状態 ch25-30(bit7=ch25、下位2bitは予約、生値)"
+          },
+          {
+            "name": "ps_flags1",
+            "offset": 29,
+            "length": 1,
+            "type": "uint8",
+            "label": "Flag 1 (raw)",
+            "label_ja": "フラグ1(生値)"
+          },
+          {
+            "name": "ps_flags2",
+            "offset": 30,
+            "length": 1,
+            "type": "uint8",
+            "label": "Flag 2 (raw)",
+            "label_ja": "フラグ2(生値)"
+          },
+          {
+            "name": "ps_flags3",
+            "offset": 31,
+            "length": 1,
+            "type": "uint8",
+            "label": "Flag 3 (raw)",
+            "label_ja": "フラグ3(生値)"
+          },
+          {
+            "name": "ps_reg_tel_id",
+            "offset": 33,
+            "length": 4,
+            "type": "uint32_le",
+            "label": "PS telemetry number",
+            "label_ja": "PSテレメトリ番号"
+          },
+          {
+            "name": "ps_time",
+            "offset": 37,
+            "length": 4,
+            "type": "uint32_le",
+            "label": "PS last telemetry time (raw)",
+            "label_ja": "PS最終テレメトリ時刻(生値)",
+            "unit": "s"
+          },
+          {
+            "name": "ps_nres",
+            "offset": 41,
+            "length": 1,
+            "type": "uint8",
+            "label": "PS reset count",
+            "label_ja": "PSリセット回数"
+          },
+          {
+            "name": "ps_flags",
+            "offset": 42,
+            "length": 1,
+            "type": "uint8",
+            "label": "PS flag (raw)",
+            "label_ja": "PSフラグ(生値)"
+          }
+        ]
+      },
+      "4216": {
+        "id": "general_tlm",
+        "label": "General telemetry (0x4216; unverified)",
+        "label_ja": "汎用テレメトリ(0x4216。未受信)",
+        "fields": [
+          {
+            "name": "ps_usb1",
+            "offset": 0,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 1 voltage",
+            "label_ja": "太陽電池1電圧",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_usb2",
+            "offset": 2,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 2 voltage",
+            "label_ja": "太陽電池2電圧",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_usb3",
+            "offset": 4,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 3 voltage",
+            "label_ja": "太陽電池3電圧",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_isb1",
+            "offset": 6,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 1 current",
+            "label_ja": "太陽電池1電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_isb2",
+            "offset": 8,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 2 current",
+            "label_ja": "太陽電池2電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_isb3",
+            "offset": 10,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Solar cell 3 current",
+            "label_ja": "太陽電池3電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_iab",
+            "offset": 12,
+            "length": 2,
+            "type": "int16_le",
+            "label": "Battery current",
+            "label_ja": "バッテリー電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_ich1",
+            "offset": 14,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Channel 1 current",
+            "label_ja": "チャンネル1電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_ich2",
+            "offset": 16,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Channel 2 current",
+            "label_ja": "チャンネル2電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_ich3",
+            "offset": 18,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Channel 3 current",
+            "label_ja": "チャンネル3電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_ich4",
+            "offset": 20,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Channel 4 current",
+            "label_ja": "チャンネル4電流",
+            "unit": "mA"
+          },
+          {
+            "name": "ps_t1",
+            "offset": 22,
+            "length": 2,
+            "type": "int16_le",
+            "label": "Battery temperature 1 (inferred: raw / 100)",
+            "label_ja": "電池温度1(推定:生値÷100)",
+            "unit": "℃",
+            "scale": 0.01
+          },
+          {
+            "name": "ps_t2",
+            "offset": 24,
+            "length": 2,
+            "type": "int16_le",
+            "label": "Battery temperature 2 (inferred: raw / 100)",
+            "label_ja": "電池温度2(推定:生値÷100)",
+            "unit": "℃",
+            "scale": 0.01
+          },
+          {
+            "name": "ps_t3",
+            "offset": 26,
+            "length": 2,
+            "type": "int16_le",
+            "label": "Battery temperature 3 (inferred: raw / 100)",
+            "label_ja": "電池温度3(推定:生値÷100)",
+            "unit": "℃",
+            "scale": 0.01
+          },
+          {
+            "name": "ps_t4",
+            "offset": 28,
+            "length": 2,
+            "type": "int16_le",
+            "label": "Battery temperature 4 (inferred: raw / 100)",
+            "label_ja": "電池温度4(推定:生値÷100)",
+            "unit": "℃",
+            "scale": 0.01
+          },
+          {
+            "name": "ps_flags1",
+            "offset": 30,
+            "length": 1,
+            "type": "uint8",
+            "label": "Flag 1 (battery/heater, raw)",
+            "label_ja": "フラグ1(バッテリー/ヒーター・生値)"
+          },
+          {
+            "name": "ps_flags2",
+            "offset": 31,
+            "length": 1,
+            "type": "uint8",
+            "label": "Flag 2 (channel state, raw)",
+            "label_ja": "フラグ2(チャンネル状態・生値)"
+          },
+          {
+            "name": "ps_flags3",
+            "offset": 32,
+            "length": 1,
+            "type": "uint8",
+            "label": "Flag 3 (charge connector voltage, raw)",
+            "label_ja": "フラグ3(充電コネクタ電圧・生値)"
+          },
+          {
+            "name": "ps_uab",
+            "offset": 34,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "Battery voltage",
+            "label_ja": "バッテリー電圧",
+            "unit": "mV"
+          },
+          {
+            "name": "ps_reg_tel_id",
+            "offset": 36,
+            "length": 4,
+            "type": "uint32_le",
+            "label": "PS telemetry number",
+            "label_ja": "PSテレメトリ番号"
+          },
+          {
+            "name": "ps_time",
+            "offset": 40,
+            "length": 4,
+            "type": "uint32_le",
+            "label": "PS last telemetry time (raw)",
+            "label_ja": "PS最終テレメトリ時刻(生値)",
+            "unit": "s"
+          },
+          {
+            "name": "ps_nres",
+            "offset": 44,
+            "length": 1,
+            "type": "uint8",
+            "label": "PS reset count",
+            "label_ja": "PSリセット回数"
+          },
+          {
+            "name": "ps_flags",
+            "offset": 45,
+            "length": 1,
+            "type": "uint8",
+            "label": "PS flag (raw)",
+            "label_ja": "PSフラグ(生値)"
+          },
+          {
+            "name": "uhf_t_amp",
+            "offset": 46,
+            "length": 1,
+            "type": "int8",
+            "label": "UHF amplifier temperature",
+            "label_ja": "UHFアンプ温度",
+            "unit": "℃"
+          },
+          {
+            "name": "uhf_t_uhf",
+            "offset": 47,
+            "length": 1,
+            "type": "int8",
+            "label": "UHF temperature",
+            "label_ja": "UHF温度",
+            "unit": "℃"
+          },
+          {
+            "name": "uhf_rssi_rx",
+            "offset": 48,
+            "length": 2,
+            "type": "int16_be",
+            "label": "Received signal strength (RSSI)",
+            "label_ja": "受信信号強度(RSSI)",
+            "unit": "dBm"
+          },
+          {
+            "name": "uhf_pf",
+            "offset": 50,
+            "length": 1,
+            "type": "uint8",
+            "label": "Forward power",
+            "label_ja": "順方向電力",
+            "unit": "dBm"
+          },
+          {
+            "name": "uhf_pb",
+            "offset": 51,
+            "length": 1,
+            "type": "uint8",
+            "label": "Reflected power",
+            "label_ja": "反射電力",
+            "unit": "dBm"
+          },
+          {
+            "name": "uhf_nres",
+            "offset": 52,
+            "length": 1,
+            "type": "uint8",
+            "label": "UHF reset count",
+            "label_ja": "UHFリセット回数"
+          },
+          {
+            "name": "uhf_flags",
+            "offset": 53,
+            "length": 1,
+            "type": "uint8",
+            "label": "UHF service flag (raw)",
+            "label_ja": "UHFサービスフラグ(生値)"
+          },
+          {
+            "name": "uhf_time",
+            "offset": 54,
+            "length": 4,
+            "type": "unix_time_le",
+            "label": "UHF time (UTC)",
+            "label_ja": "UHF時刻(UTC)"
+          },
+          {
+            "name": "uhf_uptime",
+            "offset": 58,
+            "length": 4,
+            "type": "uint32_le",
+            "label": "UHF uptime",
+            "label_ja": "UHF稼働時間",
+            "unit": "s"
+          },
+          {
+            "name": "uhf_current",
+            "offset": 62,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "UHF current consumption",
+            "label_ja": "UHF消費電流",
+            "unit": "mA"
+          },
+          {
+            "name": "uhf_voltage",
+            "offset": 64,
+            "length": 2,
+            "type": "uint16_le",
+            "label": "UHF voltage",
+            "label_ja": "UHF電圧",
+            "unit": "mV"
+          }
+        ]
+      }
+    }
+  }
+}
