@@ -232,6 +232,7 @@ def test_umka1_records_are_decoded_with_the_sputnix_layout() -> None:
     assert by_name["ps_iab"].scaled_value == -37
     assert by_name["ps_uab"].scaled_value == 7968
     assert by_name["ps_reg_tel_id"].scaled_value == 11653
+    assert by_name["ps_t1"].scaled_value == pytest.approx(5.68)  # raw 568, inferred / 100 degC
 
 
 def test_umka1_defs_have_one_sub_tab_per_record() -> None:

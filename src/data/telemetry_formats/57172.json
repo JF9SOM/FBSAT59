@@ -276,32 +276,40 @@
             "offset": 22,
             "length": 2,
             "type": "int16_le",
-            "label": "Battery temperature 1 (raw, unit unconfirmed)",
-            "label_ja": "バッテリー温度1(生値・単位未確認)"
+            "label": "Battery temperature 1 (inferred: raw / 100)",
+            "label_ja": "電池温度1(推定:生値÷100)",
+            "scale": 0.01,
+            "unit": "℃"
           },
           {
             "name": "ps_t2",
             "offset": 24,
             "length": 2,
             "type": "int16_le",
-            "label": "Battery temperature 2 (raw, unit unconfirmed)",
-            "label_ja": "バッテリー温度2(生値・単位未確認)"
+            "label": "Battery temperature 2 (inferred: raw / 100)",
+            "label_ja": "電池温度2(推定:生値÷100)",
+            "scale": 0.01,
+            "unit": "℃"
           },
           {
             "name": "ps_t3",
             "offset": 26,
             "length": 2,
             "type": "int16_le",
-            "label": "Battery temperature 3 (raw, unit unconfirmed)",
-            "label_ja": "バッテリー温度3(生値・単位未確認)"
+            "label": "Battery temperature 3 (inferred: raw / 100)",
+            "label_ja": "電池温度3(推定:生値÷100)",
+            "scale": 0.01,
+            "unit": "℃"
           },
           {
             "name": "ps_t4",
             "offset": 28,
             "length": 2,
             "type": "int16_le",
-            "label": "Battery temperature 4 (raw, unit unconfirmed)",
-            "label_ja": "バッテリー温度4(生値・単位未確認)"
+            "label": "Battery temperature 4 (inferred: raw / 100)",
+            "label_ja": "電池温度4(推定:生値÷100)",
+            "scale": 0.01,
+            "unit": "℃"
           },
           {
             "name": "ps_flags1",
