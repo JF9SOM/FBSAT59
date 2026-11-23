@@ -951,6 +951,16 @@ class TelemetryTab(QWidget):
         )
         self._btn_import.clicked.connect(self._on_import_csv)
         footer.addWidget(self._btn_import)
+        self._btn_export = QPushButton(_("Export…"))
+        self._btn_export.setToolTip(
+            _(
+                "Save the frames logged for the selected satellite to a file: CSV, KISS hex\n"
+                "text (for a satellite team's decoding software) or a SatNOGS frame list.\n"
+                "Pick the date range in the next window."
+            )
+        )
+        self._btn_export.clicked.connect(self._on_export_frames)
+        footer.addWidget(self._btn_export)
         self._btn_clear = QPushButton(_("Clear"))
         self._btn_clear.clicked.connect(self._on_clear)
         footer.addWidget(self._btn_clear)
@@ -4061,6 +4071,72 @@ class TelemetryTab(QWidget):
             "SELECT name FROM satellites WHERE norad_cat_id = ?", (norad,)
         ).fetchone()
         return str(row[0]) if row else ""
+
+    # -- Export (frames logged for the selected satellite) ------------------------------------ #
+
+    # Kinds of ``telemetry_log`` rows shown by each mode (the same split "Load saved" uses).
+    _MODE_LOG_KINDS: dict[str, tuple[str, ...]] = {
+        _MODE_AFSK: ("ax25", "hdlc"),
+        _MODE_GR: ("gr",),
+        _MODE_CW: ("cw",),
+        _MODE_HADES: ("hades",),
+    }
+
+    def _on_export_frames(self) -> None:
+        """Ask for a date range and a format, then save the logged frames to a file."""
+        from comms.telemetry import frame_export
+        from ui.telemetry_export_dialog import TelemetryExportDialog
+
+        norad = self._active_norad()
+        if norad is None:
+            self._set_error(_("Select a satellite first."))
+            return
+        if not hasattr(self._conn, "execute"):
+            return
+        name = self._satellite_name(norad)
+        dialog = TelemetryExportDialog(f"{name} ({norad})" if name else str(norad), self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        start, end = dialog.range_utc()
+        fmt = dialog.export_format()
+        kinds = self._MODE_LOG_KINDS.get(self._current_mode(), ("ax25", "hdlc"))
+        frames = frame_export.select_frames(self._conn, norad, start, end, kinds)
+        if not frames:
+            self._lbl_status.setText(_("No saved frames in that date range."))
+            self._lbl_status.setStyleSheet("color: #aaa;")
+            return
+        text, written, skipped = frame_export.export_text(frames, fmt)
+        if not written:
+            self._set_error(
+                _("None of the {n} frame(s) has the whole frame saved; use the CSV format.").format(
+                    n=skipped
+                )
+            )
+            return
+        default = frame_export.default_filename(
+            norad, name, fmt, datetime.datetime.now(datetime.UTC)
+        )
+        filters = (
+            _("CSV files (*.csv);;All files (*)")
+            if fmt == frame_export.FORMAT_CSV
+            else _("Text files (*.txt);;All files (*)")
+        )
+        path, _filter = QFileDialog.getSaveFileName(
+            self, _("Export frames"), str(Path.home() / default), filters
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8", newline="") as handle:
+                handle.write(text)
+        except OSError as exc:
+            self._set_error(f"⚠ {exc}")
+            return
+        message = _("Exported {n} frame(s).").format(n=written)
+        if skipped:
+            message += " " + _("{n} left out (payload only).").format(n=skipped)
+        self._lbl_status.setText(message)
+        self._lbl_status.setStyleSheet("color: #27ae60;")
 
     # -- Import CSV (frames other stations sent to SatNOGS DB) ------------------------------- #
 

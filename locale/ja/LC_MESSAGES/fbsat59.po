@@ -8959,3 +8959,72 @@ msgstr "無線機またはSDRを接続してください"
 
 msgid "The Sound Card input device was not found. Plug it in and connect Rig 1."
 msgstr "サウンドカードの入力デバイスが見つかりません。接続してから Rig 1 を接続してください。"
+
+#: src/ui/telemetry_tab.py
+msgid "Export…"
+msgstr "エクスポート…"
+
+#: src/ui/telemetry_tab.py
+msgid ""
+"Save the frames logged for the selected satellite to a file: CSV, KISS hex\n"
+"text (for a satellite team's decoding software) or a SatNOGS frame list.\n"
+"Pick the date range in the next window."
+msgstr ""
+"選択中の衛星について記録されたフレームをファイルに保存します。\n"
+"CSV、KISS形式の16進テキスト（衛星チームの解析ソフト用）、\n"
+"SatNOGSのフレーム一覧のいずれかです。期間は次の画面で選びます。"
+
+#: src/ui/telemetry_tab.py
+msgid "No saved frames in that date range."
+msgstr "その期間に保存済みのフレームはありません。"
+
+#: src/ui/telemetry_tab.py
+#, python-brace-format
+msgid "None of the {n} frame(s) has the whole frame saved; use the CSV format."
+msgstr "{n}件のフレームはどれも全体が保存されていません。CSV形式を使ってください。"
+
+#: src/ui/telemetry_tab.py
+#, python-brace-format
+msgid "Exported {n} frame(s)."
+msgstr "{n}件のフレームをエクスポートしました。"
+
+#: src/ui/telemetry_tab.py
+#, python-brace-format
+msgid "{n} left out (payload only)."
+msgstr "{n}件は除外しました（ペイロードのみ）。"
+
+#: src/ui/telemetry_export_dialog.py
+msgid "Export frames"
+msgstr "フレームのエクスポート"
+
+#: src/ui/telemetry_export_dialog.py
+msgid "Start date (UTC):"
+msgstr "開始日（UTC）:"
+
+#: src/ui/telemetry_export_dialog.py
+msgid "End date (UTC):"
+msgstr "終了日（UTC）:"
+
+#: src/ui/telemetry_export_dialog.py
+msgid "Export format:"
+msgstr "形式:"
+
+#: src/ui/telemetry_export_dialog.py
+msgid "CSV (time, callsign, hex)"
+msgstr "CSV（時刻・コールサイン・16進）"
+
+#: src/ui/telemetry_export_dialog.py
+msgid "KISS hex text (C0 00 … C0)"
+msgstr "KISS形式の16進テキスト（C0 00 … C0）"
+
+#: src/ui/telemetry_export_dialog.py
+msgid "SatNOGS frame list (time|hex||)"
+msgstr "SatNOGSのフレーム一覧（時刻|16進||）"
+
+#: src/ui/telemetry_export_dialog.py
+msgid ""
+"The KISS and SatNOGS formats need the whole received frame; frames saved\n"
+"with the payload only are left out of them (the CSV keeps them)."
+msgstr ""
+"KISS形式とSatNOGS形式には受信したフレーム全体が必要です。\n"
+"ペイロードだけが保存されたフレームは除外されます（CSVには残ります）。"
