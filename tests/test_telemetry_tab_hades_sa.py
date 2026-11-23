@@ -199,19 +199,23 @@ def _csv(tmp_path: Any) -> Any:
     return path
 
 
-def test_footer_has_import_before_clear_and_no_export(
-    qtbot: QtBot, conn: sqlite3.Connection
-) -> None:
-    from PySide6.QtWidgets import QPushButton
+def test_footer_has_import_then_export_before_clear(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    """Import CSV…, then Export… (saves the logged frames, 2026-11-23), then Clear.
 
+    The old export of the table as CSV (``_on_export_csv``) stays removed.
+    """
     tab = _tab(qtbot, conn)
     tab.resize(1100, 600)
     tab.show()
-    assert not hasattr(tab, "_btn_export")
+    assert not hasattr(tab, "_on_export_csv")
     assert tab._btn_clear.text() == "Clear"
     assert tab._btn_import.text() == "Import CSV…"
-    assert tab._btn_import.geometry().x() < tab._btn_clear.geometry().x()
-    assert not [b for b in tab.findChildren(QPushButton) if "Export" in b.text()]
+    assert tab._btn_export.text() == "Export…"
+    assert (
+        tab._btn_import.geometry().x()
+        < tab._btn_export.geometry().x()
+        < tab._btn_clear.geometry().x()
+    )
 
 
 def test_import_adds_the_telemetry_oldest_first_without_copies(
