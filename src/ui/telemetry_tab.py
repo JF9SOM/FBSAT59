@@ -1265,9 +1265,13 @@ class TelemetryTab(QWidget):
         entries: dict[int, str] = {}
         if hasattr(self._conn, "execute"):
             with contextlib.suppress(Exception):
-                from comms.mode_detection import get_norads_for_tab
+                from comms.mode_detection import UNNE1B_NORADS, get_norads_for_tab
 
-                norads = get_norads_for_tab(self._conn, "telemetry")
+                # UNNE-1B's only AFSK transmitter is its FM voice repeater; its telemetry is
+                # the 200 baud HADES FSK mode's, so listing it here only misleads.
+                norads = [
+                    n for n in get_norads_for_tab(self._conn, "telemetry") if n not in UNNE1B_NORADS
+                ]
                 if norads:
                     placeholders = ",".join("?" * len(norads))
                     rows = self._conn.execute(

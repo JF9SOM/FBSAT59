@@ -97,6 +97,20 @@ def test_combo_lists_hades_sa_and_unne_1b(qtbot: QtBot, conn: sqlite3.Connection
     assert sorted(combo.itemData(i) for i in range(combo.count())) == [68446, 98205]
 
 
+def test_unne_1b_is_not_offered_in_the_ax25_mode(qtbot: QtBot, conn: sqlite3.Connection) -> None:
+    # Its 1200 baud AFSK transmitter is the FM voice repeater, not telemetry.
+    conn.execute("INSERT INTO satellites VALUES (101101, 'UNNE-1B', 0)")
+    for uuid, norad in (("e", 98205), ("f", 101101)):
+        conn.execute(
+            "INSERT INTO transmitters VALUES (?, ?, 'FM Repeater (AFSK)', 'AFSK', 1200, 1)",
+            (uuid, norad),
+        )
+    tab = _tab(qtbot, conn)
+    combo = tab._combo_afsk_sat
+    listed = {combo.itemData(i) for i in range(combo.count())}
+    assert not listed & {98205, 101101}
+
+
 def test_stream_choice_follows_the_satellite() -> None:
     assert isinstance(make_stream(250_000, HADES_SA_NORAD), HadesSaFskStream)
     assert not isinstance(make_stream(250_000, 98205), HadesSaFskStream)
