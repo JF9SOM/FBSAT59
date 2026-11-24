@@ -6950,6 +6950,43 @@ class MainWindow(QMainWindow):
 
             threading.Thread(target=_send_hamlib, daemon=True).start()
 
+    def _set_current_passes(self, passes: list[Any], source: str) -> None:
+        """Store the selected satellite's pass list and log who replaced it.
+
+        The radar picks its pass from this list, so a diagnostic line is kept
+        for every replacement (caller, satellite, first pass AOS/LOS).
+        """
+        self._current_passes = passes
+        first = passes[0] if passes else None
+        logger.info(
+            "Current passes set by %s: norad=%s count=%d first_aos=%s first_los=%s",
+            source,
+            self._selected_norad,
+            len(passes),
+            getattr(first, "aos", None),
+            getattr(first, "los", None),
+        )
+
+    def _with_ongoing_pass(self, passes: list[Any], start: datetime, end: datetime) -> list[Any]:
+        """Prepend the pass already in progress when the window [start, end] contains now.
+
+        get_passes(start) never returns a pass whose AOS lies before start,
+        so a search started mid-pass would drop the current pass (and the
+        radar would jump to the next one).
+        """
+        now = datetime.now(UTC)
+        if self._pass_predictor is None or self._selected_norad is None:
+            return passes
+        try:
+            if not (start <= now <= end):
+                return passes
+        except TypeError:
+            return passes
+        current = self._pass_predictor.get_current_pass(self._selected_norad, now)
+        if current is None or any(p.aos == current.aos for p in passes):
+            return passes
+        return [current, *passes]
+
     def _refresh_passes(self) -> None:
         """Fetch pass predictions for the selected satellite and update the pass list and chart."""
         if self._selected_norad is None:
@@ -6979,7 +7016,7 @@ class MainWindow(QMainWindow):
                 now,
                 now + timedelta(hours=24),
             )
-            self._current_passes = passes
+            self._set_current_passes(passes, "refresh_passes(moon)")
             self._pass_list.set_passes(passes)
             self._pass_chart.set_passes(passes, sat_name=name)
             return
@@ -6998,7 +7035,7 @@ class MainWindow(QMainWindow):
         current_pass = self._pass_predictor.get_current_pass(self._selected_norad, now)
         if current_pass is not None:
             passes = [current_pass, *passes]
-        self._current_passes = passes
+        self._set_current_passes(passes, "refresh_passes")
         self._pass_list.set_passes(passes)
         self._pass_chart.set_passes(passes, sat_name=name)
 
@@ -7027,7 +7064,7 @@ class MainWindow(QMainWindow):
                 now,
                 now + timedelta(hours=hours),
             )
-            self._current_passes = passes
+            self._set_current_passes(passes, "chart_range(moon)")
             self._pass_list.set_passes(passes)
             self._pass_chart.set_passes(passes, sat_name=name)
             return
@@ -7039,7 +7076,8 @@ class MainWindow(QMainWindow):
             now,
             now + timedelta(hours=hours),
         )
-        self._current_passes = passes
+        passes = self._with_ongoing_pass(passes, now, now + timedelta(hours=hours))
+        self._set_current_passes(passes, "chart_range")
         self._pass_list.set_passes(passes)
         self._pass_chart.set_passes(passes, sat_name=name)
 
@@ -7079,7 +7117,7 @@ class MainWindow(QMainWindow):
                 start_dt,
                 end_dt,
             )
-            self._current_passes = passes
+            self._set_current_passes(passes, "target_search(moon)")
             self._pass_list.set_passes(passes)
             self._pass_chart.set_passes(passes, sat_name=name)
             return
@@ -7087,7 +7125,8 @@ class MainWindow(QMainWindow):
         if self._pass_predictor is None:
             return
         passes = self._pass_predictor.get_passes(self._selected_norad, start_dt, end_dt)
-        self._current_passes = passes
+        passes = self._with_ongoing_pass(passes, start_dt, end_dt)
+        self._set_current_passes(passes, "target_search")
         self._pass_list.set_passes(passes)
         self._pass_chart.set_passes(passes, sat_name=name)
 
