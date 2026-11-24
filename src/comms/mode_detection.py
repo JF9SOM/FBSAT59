@@ -91,21 +91,22 @@ def is_digital_voice_transmitter(xpdr: dict[str, Any]) -> bool:
 
 # Satellites whose 200 baud 2FSK downlink the Telemetry tab's "HADES FSK" mode decodes
 # (comms.telemetry.hades_fsk). Only a satellite whose frames were actually decoded is listed:
-# UNNE-1B (98205, HADES-E2), CRC-verified on a real pass on 2026-10-18.
+# UNNE-1B (HADES-E2), CRC-verified on a real pass on 2026-10-18. Its NORAD ID was 98205 (a
+# provisional ID) until SatNOGS moved it to 101101; both are accepted.
 # HADES-SA (68446) joined on 2026-10-18: its 800 baud telemetry is decoded by
 # comms.telemetry.hades_sa_fsk and was checked against the 5 SatNOGS frame sets and a real pass.
 # HADES-L (98206) joined on 2026-10-20: 800 baud 2FSK bursts (comms.telemetry.hades_l_fsk), three
 # packets decoded from a real pass.
-HADES_FSK_NORADS = frozenset({98205, 68446, 98206})
+HADES_FSK_NORADS = frozenset({98205, 101101, 68446, 98206})
 HADES_SA_NORAD = 68446
-UNNE1B_NORAD = 98205
+UNNE1B_NORADS = frozenset({98205, 101101})
 HADES_L_NORAD = 98206
 
 
 def is_hades_fsk_transmitter(xpdr: dict[str, Any]) -> bool:
     """The FSK telemetry transmitter of a satellite the HADES FSK mode decodes.
 
-    UNNE-1B (98205): 200 baud FSK. HADES-SA (68446): the 800 baud GENESIS FSK downlink (the
+    UNNE-1B (98205 / 101101): 200 baud FSK. HADES-SA (68446): the 800 baud GENESIS FSK downlink (the
     same one the Digital Voice tab uses; it carries telemetry, SSDV and CODEC2 voice).
     HADES-L (98206): SatNOGS "Mode U - 800bps FSK TLM", 800 baud 2FSK bursts.
     """
@@ -115,7 +116,7 @@ def is_hades_fsk_transmitter(xpdr: dict[str, Any]) -> bool:
         return "GENESIS" in mode and xpdr.get("baud") == 800
     if norad == HADES_L_NORAD:
         return "FSK" in mode and xpdr.get("baud") == 800
-    if norad == UNNE1B_NORAD:
+    if norad in UNNE1B_NORADS:
         # SatNOGS lists the 200 baud telemetry transmitter as "BPSK" although it is 2FSK.
         return ("FSK" in mode or mode == "BPSK") and xpdr.get("baud") == 200
     return norad in HADES_FSK_NORADS and "FSK" in mode and xpdr.get("baud") == 200

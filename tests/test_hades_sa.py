@@ -31,6 +31,19 @@ def test_matcher_picks_the_800_baud_genesis_downlink_of_hades_sa() -> None:
     assert 68446 in mode_detection.HADES_FSK_NORADS
 
 
+def test_unne1b_is_recognised_under_both_of_its_norad_ids() -> None:
+    # SatNOGS moved UNNE-1B from the provisional 98205 to 101101 (its 200 baud transmitter
+    # is listed as "BPSK" there although it is 2FSK).
+    for norad in (98205, 101101):
+        assert norad in mode_detection.HADES_FSK_NORADS
+        assert mode_detection.is_hades_fsk_transmitter(
+            {"norad_cat_id": norad, "mode": "BPSK", "baud": 200}
+        )
+        assert not mode_detection.is_hades_fsk_transmitter(
+            {"norad_cat_id": norad, "mode": "FM", "baud": 200}
+        )
+
+
 def test_length_table_of_hades_sa_differs_for_status_and_bbs() -> None:
     assert packet_lengths(3) is HADES_SA_LENGTHS
     assert packet_lengths(3)[3] == 41 and packet_lengths(3)[15] == 73
