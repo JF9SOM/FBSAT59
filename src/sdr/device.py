@@ -2024,6 +2024,29 @@ class SdrDevice:
         except Exception:
             logger.debug("software AGC setGain(%.1f) failed", gain_db, exc_info=True)
 
+    def _bias_tee_driver(self) -> str:
+        """Driver name used to pick the Bias-T writeSetting() key.
+
+        For driver="remote" (SoapyRemote) this is the real hardware driver in
+        the "remote:driver" arg (e.g. "hackrf"); without that hint it stays
+        "remote" and the generic best-effort key is used.
+        """
+        driver = (self._info.driver or "").lower()
+        if driver == "remote":
+            hint = str((self._info.args or {}).get("remote:driver", "")).strip().lower()
+            if hint:
+                return hint
+        return driver
+
+    def _bias_tee_setting(self, enabled: bool) -> tuple[str, str]:
+        """Return the (key, value) pair that switches Bias-T for this device."""
+        driver = self._bias_tee_driver()
+        if "hackrf" in driver:
+            return "bias_tx", "true" if enabled else "false"
+        if "rtlsdr" in driver or "rtl" in driver:
+            return "biastee", "1" if enabled else "0"
+        return "biastee", "true" if enabled else "false"
+
     def set_bias_tee(self, enabled: bool) -> bool:
         """Enable or disable the Bias-T power supply on the antenna port.
 
@@ -2037,23 +2060,18 @@ class SdrDevice:
           rtlsdr     biastee    "1" / "0"
           airspy     biastee    "true" / "false"
           (others)   biastee    "true" / "false"  (best-effort)
+
+        For a SoapyRemote proxy (driver="remote") the key is chosen from the
+        real hardware driver named by the "remote:driver" arg, because the
+        remote server forwards writeSetting() to that driver unchanged.
         """
         with self._lock:
             self._bias_tee = enabled
             if self._dev is None:
                 return True
 
-            driver = (self._info.driver or "").lower()
-
-            if "hackrf" in driver:
-                key = "bias_tx"
-                value = "true" if enabled else "false"
-            elif "rtlsdr" in driver or "rtl" in driver:
-                key = "biastee"
-                value = "1" if enabled else "0"
-            else:
-                key = "biastee"
-                value = "true" if enabled else "false"
+            driver = self._bias_tee_driver()
+            key, value = self._bias_tee_setting(enabled)
 
             try:
                 self._dev.writeSetting(key, value)
@@ -2171,13 +2189,7 @@ class SdrDevice:
                 self._dev.setFrequencyComponent(SoapySDR.SOAPY_SDR_RX, 0, "CORR", self._ppm)
         if self._bias_tee:
             # Use driver-aware key selection (same logic as set_bias_tee)
-            driver = (self._info.driver or "").lower()
-            if "hackrf" in driver:
-                bias_key, bias_val = "bias_tx", "true"
-            elif "rtlsdr" in driver or "rtl" in driver:
-                bias_key, bias_val = "biastee", "1"
-            else:
-                bias_key, bias_val = "biastee", "true"
+            bias_key, bias_val = self._bias_tee_setting(True)
             with contextlib.suppress(Exception):
                 self._dev.writeSetting(bias_key, bias_val)
         return core_ok

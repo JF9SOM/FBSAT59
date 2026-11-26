@@ -515,6 +515,19 @@ else:
     value = "true" if enabled else "false"    # その他: 汎用フォールバック
 ```
 
+**SoapyRemote 経由では `remote:driver` の実ドライバ名でキーを選ぶ（2026-11-26 修正）**:
+リモート接続では `self._info.driver` が `"remote"` になるため、上記の分岐が常に最後の
+`biastee` に落ち、リモート先の HackRF には `bias_tx` ではなく `biastee` が送られていた。
+HackRF モジュールは `biastee` を例外なしに無視するため、ログは `Bias-T ON (driver='remote',
+key='biastee', ...)` と成功したように見えるのに、実際にはバイアスTが出なかった
+（SoapyRemote サーバー＋HackRF 構成で、USB 電流計が増えないことで判明。`SoapySDRUtil` 相当の
+API で `bias_tx` を書くと切り替わることは別途確認済み）。`SdrDevice._bias_tee_driver()` が
+`driver == "remote"` のとき `args["remote:driver"]`（空でなければ）を返し、
+`_bias_tee_setting(enabled)` がキー/値を決める。`set_bias_tee()` と、接続時の設定再適用
+（`_bias_tee` が True のときの `writeSetting`）の両方で共通利用。`remote:driver` ヒントが
+空のリモートホストは従来どおり `biastee`（best-effort）のまま。
+テスト: `tests/test_sdr_bias_tee_key.py`。
+
 #### CW 復調方式（エンベロープ検出なし・2026-06-09 確定）
 
 エンベロープ検出（`np.abs()` + LPF）はバンドパスフィルタで帯域制限したノイズにも
