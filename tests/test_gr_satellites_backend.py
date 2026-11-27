@@ -315,7 +315,8 @@ class TestExtraSatyaml:
         assert tx["baudrate"] == 9600
         assert tx["deviation"] == 2400
         assert tx["frequency"] == 436.950e6
-        assert data["transmitters"]["2k4 FSK USP downlink"]["baudrate"] == 2400
+        # Only 9600 baud: the 2400 baud demodulator made Fast decode about 2.5x slower.
+        assert list(data["transmitters"]) == ["9k6 FSK USP downlink"]
 
     def test_shipped_sakhacube_cholbon_definition(self) -> None:
         import yaml
