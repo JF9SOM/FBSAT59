@@ -326,6 +326,10 @@ class TestExtraSatyaml:
         assert rates == {2400, 4800, 9600}
         assert all(t["framing"] == "USP" for t in data["transmitters"].values())
         assert all(t["frequency"] == 437.350e6 for t in data["transmitters"].values())
+        # The Baud combo follows the first readable transmitter name: it must be 9600.
+        from comms.telemetry.baud_detect import detect_baud_from_satyaml
+
+        assert detect_baud_from_satyaml(list(data["transmitters"]), []) == "9600"
 
     @pytest.mark.parametrize(("suffix", "norad"), [("2V", 98208), ("2X", 98209)])
     def test_shipped_erminaz_vhf_definitions(self, suffix: str, norad: int) -> None:

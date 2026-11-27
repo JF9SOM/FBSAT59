@@ -13,12 +13,14 @@ norad: 67290
 data:
   &tlm Telemetry:
     telemetry: ax25
+# The 9600 baud entry comes first on purpose: the Telemetry tab's Baud combo follows the first
+# transmitter name it can read, and 9600 is the downlink actually received (2400 is not a choice
+# there, so 4800 would otherwise be picked).
 transmitters:
-  2k4 FSK downlink:
+  9k6 FSK downlink:
     frequency: 437.350e+6
     modulation: FSK
-    baudrate: 2400
-    deviation: 600
+    baudrate: 9600
     framing: USP
     data:
     - *tlm
@@ -29,10 +31,11 @@ transmitters:
     framing: USP
     data:
     - *tlm
-  9k6 FSK downlink:
+  2k4 FSK downlink:
     frequency: 437.350e+6
     modulation: FSK
-    baudrate: 9600
+    baudrate: 2400
+    deviation: 600
     framing: USP
     data:
     - *tlm
