@@ -320,15 +320,14 @@ class TestExtraSatyaml:
     def test_shipped_sakhacube_cholbon_definition(self) -> None:
         import yaml
 
-        data = yaml.safe_load((backend._EXTRA_SATYAML_DIR / "SAKHACUBE-CHOLBON.yml").read_text())
-        assert data["norad"] == 67290
-        rates = {t["baudrate"] for t in data["transmitters"].values()}
-        assert rates == {2400, 4800, 9600}
-        assert all(t["framing"] == "USP" for t in data["transmitters"].values())
-        assert all(t["frequency"] == 437.350e6 for t in data["transmitters"].values())
-        # The Baud combo follows the first readable transmitter name: it must be 9600.
         from comms.telemetry.baud_detect import detect_baud_from_satyaml
 
+        data = yaml.safe_load((backend._EXTRA_SATYAML_DIR / "SAKHACUBE-CHOLBON.yml").read_text())
+        assert data["norad"] == 67290
+        # Only 9600 baud: the 2400 baud demodulator made Fast decode about 4x slower.
+        assert list(data["transmitters"]) == ["9k6 FSK downlink"]
+        tx = data["transmitters"]["9k6 FSK downlink"]
+        assert (tx["baudrate"], tx["framing"], tx["frequency"]) == (9600, "USP", 437.350e6)
         assert detect_baud_from_satyaml(list(data["transmitters"]), []) == "9600"
 
     @pytest.mark.parametrize(("suffix", "norad"), [("2V", 98208), ("2X", 98209)])

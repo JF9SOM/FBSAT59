@@ -4,7 +4,7 @@
 # frame (src RS18S-1, dest R0QBG).
 # Verified on a real IQ recording (2026-11-26, 250 kHz, ~530 s): the 9600 baud downlink gave one
 # 156-byte frame (2 Reed-Solomon errors). The 2026-11-23 and 11-24 recordings (weaker, about 5 dB
-# over the noise) gave none; the 2400 and 4800 baud entries are not verified by us.
+# over the noise) gave none.
 name: SAKHACUBE-CHOLBON
 alternative_names:
   - RS18S
@@ -13,29 +13,16 @@ norad: 67290
 data:
   &tlm Telemetry:
     telemetry: ax25
-# The 9600 baud entry comes first on purpose: the Telemetry tab's Baud combo follows the first
-# transmitter name it can read, and 9600 is the downlink actually received (2400 is not a choice
-# there, so 4800 would otherwise be picked).
+# Only the 9600 baud downlink is listed. The upstream definition also has 2400 and 4800 baud
+# entries, but no frame was ever decoded on them, SatNOGS lists no 4800 transmitter, and the
+# 2400 baud demodulator alone takes about 4x as long as the 9600 one (57 s vs 13 s for 240 s of
+# 250 kHz IQ), which made Fast decode of a recording very slow. Add them back if the satellite
+# is seen on 2400 baud.
 transmitters:
   9k6 FSK downlink:
     frequency: 437.350e+6
     modulation: FSK
     baudrate: 9600
-    framing: USP
-    data:
-    - *tlm
-  4k8 FSK downlink:
-    frequency: 437.350e+6
-    modulation: FSK
-    baudrate: 4800
-    framing: USP
-    data:
-    - *tlm
-  2k4 FSK downlink:
-    frequency: 437.350e+6
-    modulation: FSK
-    baudrate: 2400
-    deviation: 600
     framing: USP
     data:
     - *tlm
