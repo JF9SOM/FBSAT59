@@ -317,6 +317,16 @@ class TestExtraSatyaml:
         assert tx["frequency"] == 436.950e6
         assert data["transmitters"]["2k4 FSK USP downlink"]["baudrate"] == 2400
 
+    def test_shipped_sakhacube_cholbon_definition(self) -> None:
+        import yaml
+
+        data = yaml.safe_load((backend._EXTRA_SATYAML_DIR / "SAKHACUBE-CHOLBON.yml").read_text())
+        assert data["norad"] == 67290
+        rates = {t["baudrate"] for t in data["transmitters"].values()}
+        assert rates == {2400, 4800, 9600}
+        assert all(t["framing"] == "USP" for t in data["transmitters"].values())
+        assert all(t["frequency"] == 437.350e6 for t in data["transmitters"].values())
+
     @pytest.mark.parametrize(("suffix", "norad"), [("2V", 98208), ("2X", 98209)])
     def test_shipped_erminaz_vhf_definitions(self, suffix: str, norad: int) -> None:
         import yaml

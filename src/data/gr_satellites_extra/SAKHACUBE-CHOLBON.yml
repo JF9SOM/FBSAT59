@@ -1,0 +1,38 @@
+# SAKHACUBE-CHOLBON (RS18S, NORAD 67290), a Sputnix platform CubeSat. Copied from the upstream
+# gr-satellites catalog (python/satyaml/SAKHACUBE-CHOLBON.yml, GPL), which the gr-satellites
+# release this app installs does not have yet. Same USP framing as QMR-KWT-2 around an AX.25 UI
+# frame (src RS18S-1, dest R0QBG).
+# Verified on a real IQ recording (2026-11-26, 250 kHz, ~530 s): the 9600 baud downlink gave one
+# 156-byte frame (2 Reed-Solomon errors). The 2026-11-23 and 11-24 recordings (weaker, about 5 dB
+# over the noise) gave none; the 2400 and 4800 baud entries are not verified by us.
+name: SAKHACUBE-CHOLBON
+alternative_names:
+  - RS18S
+  - Чолбон
+norad: 67290
+data:
+  &tlm Telemetry:
+    telemetry: ax25
+transmitters:
+  2k4 FSK downlink:
+    frequency: 437.350e+6
+    modulation: FSK
+    baudrate: 2400
+    deviation: 600
+    framing: USP
+    data:
+    - *tlm
+  4k8 FSK downlink:
+    frequency: 437.350e+6
+    modulation: FSK
+    baudrate: 4800
+    framing: USP
+    data:
+    - *tlm
+  9k6 FSK downlink:
+    frequency: 437.350e+6
+    modulation: FSK
+    baudrate: 9600
+    framing: USP
+    data:
+    - *tlm
